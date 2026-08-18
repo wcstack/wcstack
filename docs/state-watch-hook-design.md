@@ -181,6 +181,18 @@ computed は lazy。書き込みは `dirtyCacheEntryByAbsoluteStateAddress` で 
 
 重い getter を watch するのは利用者の判断。ドキュメントで「重い computed の watch は評価コストが毎バッチ乗る」と警告する。
 
+### 5-3. ワイルドカードを含む getter は eager 化しない
+
+`items.*.tax` のような getter パスは初回評価の対象外。理由は、評価に行ごとの `indexes` が要り、全行評価は**宣言しただけでリスト全体を舐める**ことになるため。
+
+したがってこの形は「**DOM にバインドされていれば発火する**」（binding が依存を張るので）。バインドが無ければ発火しない。スカラ getter と違って headless にならない、という非対称をそのまま制約として書く。
+
+### 5-4. 再 set と getter キャッシュ（既存挙動との境界）
+
+`_state` の再 set は **getter のキャッシュを無効化しない**（cache entry は絶対アドレス単位でグローバルに残り、dirty 化は書き込み経由でのみ起きる）。そのため、再 set の前後で同じ getter パスを watch し続けた場合、初回評価は**再 set 前のキャッシュ値**を読む。
+
+これは watch とは独立した既存の挙動であり、Phase C のスコープ外とする。watch 側の責務は「前回評価値の台帳を宣言と寿命を共にさせる」ことで、それは `clearComputedSnapshots` で満たしている。再 set で **別の** getter を watch する場合は新しい絶対アドレスになるため、初回評価は新 state の値になる。
+
 ---
 
 ## 6. ワイルドカード（D6）
@@ -190,6 +202,8 @@ computed は lazy。書き込みは `dirtyCacheEntryByAbsoluteStateAddress` で 
 バッチには listIndex 込みの絶対アドレスが載っているので、`items.*.price` の watch は**変化した行ごとに 1 回ずつ**呼ぶ。`$updatedCallback` の `indexesListByPath`（1 パスにつき indexes の配列を集約）とは形が違う ── watch はパス別ディスパッチが存在理由なので、集約せず素朴に per-address で呼ぶほうが用途に合う。
 
 呼び出し順序は **indexes 昇順**（§3-2 層 3）。enqueue 順ではない。
+
+**行が特定できないヒットは落とす**: ワイルドカードパスなのに絶対アドレスが listIndex を持たない場合（リストの依存展開で載る中間アドレス等）、発火させない。`indexes` が空のまま渡すと `cur` の解決が「indexes 不足」で失敗するだけで、ハンドラに渡せる意味も無い。
 
 ### 6-2. 粒度は「書き込みの分解」に従う
 

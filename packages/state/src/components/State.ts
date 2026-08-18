@@ -22,6 +22,7 @@ import { clearStreamNamespace } from "../stream/streamNamespace";
 import { abortAllStreams, clearStreamRegistry } from "../stream/streamRegistry";
 import { startStreams } from "../stream/streamRuntime";
 import { processWatchDeclaration } from "../watch/processWatchDeclaration";
+import { clearComputedSnapshots } from "../watch/computedSnapshots";
 import { clearWatchRegistry, deactivateWatch } from "../watch/watchRegistry";
 import { startWatch } from "../watch/watchRuntime";
 import { defineDCC } from "../dcc/defineDCC";
@@ -188,6 +189,9 @@ export class State extends HTMLElementBase implements IStateElement {
     // docs/state-watch-hook-design.md §8）。宣言が無ければ watchPaths は null で、
     // setByAddress の旧値キャプチャには一切入らない（§10 のゼロコスト契約）。
     clearWatchRegistry(this);
+    // computed の前回評価値も宣言と寿命を共にする（旧宣言の値を新しい watch の
+    // prev として渡さない）。切断では消さない — 再接続の初回評価が上書きする。
+    clearComputedSnapshots(this);
     this._watchPaths = processWatchDeclaration(this, value);
     // 接続中の再 set（S13）は新宣言で即再起動する。
     // 初回（_initialize 中）は _initialized が false なのでここでは起動されず、

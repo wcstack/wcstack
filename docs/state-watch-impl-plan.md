@@ -209,9 +209,16 @@ function fireWatchOnUpdateBatch(batch) {
 
 ---
 
-## Phase C — computed（getter）の eager 化
+## Phase C — computed（getter）の eager 化（完了）
 
 ゴール: getter を watch すると eager になる。設計書 §5 の 3 つの副作用を明示的にテストで固定する。
+
+**着地時の判明事項**:
+
+- 実測で確認: **バインドされていない getter は Phase A のままでは一度も発火しない**（依存が評価時にしか張られないため）。C-3 の初回評価がこの機能の成否そのもの。
+- **ワイルドカードを含む getter は eager 化しない**と決めた（設計書 §5-3）。初回評価に行ごとの indexes が要り、全行評価は宣言しただけでリスト全体を舐めることになる。この形は「バインドされていれば発火する」ままで、スカラ getter と非対称になる。
+- **`_state` 再 set は getter キャッシュを無効化しない**（設計書 §5-4）。同じ getter パスを再 set 前後で watch し続けると、初回評価が再 set 前のキャッシュ値を読む。watch とは独立した既存の挙動なのでスコープ外とし、watch 側は「台帳を宣言と寿命を共にさせる」責務だけを果たす。
+- **発見して修正した欠陥**: ワイルドカードパスなのに listIndex を持たない絶対アドレスがバッチに載ると、`indexes` が空のまま発火して `cur` の解決（`$resolve`）が「indexes 不足」で throw していた。例外隔離が握るため症状は `console.error` だけで、テストは「発火しない」で緑になる ── 隠れる形の失敗だった。収集段階で落とすよう修正（設計書 §6-1）。
 
 ### C-1. スナップショット台帳 — `src/watch/computedSnapshots.ts`
 

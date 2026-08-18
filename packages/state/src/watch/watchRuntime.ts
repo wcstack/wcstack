@@ -19,6 +19,8 @@
  * 2. 上記の順序規約のために hits をソートする必要がある（バッチの反復順は enqueue 順）。
  */
 
+import { getAbsolutePathInfo } from "../address/AbsolutePathInfo";
+import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
 import type { IAbsoluteStateAddress } from "../address/types";
 import type { IStateElement } from "../components/types";
 import { MAX_WATCH_CHAIN_DEPTH, WATCH_LISTENER_PRIORITY } from "../define";
@@ -26,6 +28,7 @@ import { getScopedIndexes } from "../list/wildcardLevel";
 import type { IStateProxy } from "../proxy/types";
 import { registerUpdateBatchListener } from "../updater/updater";
 import { beginWatchFiring, consumeWatchChainDepth, endWatchFiring } from "./chainDepth";
+import { getComputedSnapshot, setComputedSnapshot } from "./computedSnapshots";
 import { clearPrevValues, getPrevValue } from "./prevValues";
 import { addActiveWatchStateElement, getActiveWatchStateElements, getWatchEntries } from "./watchRegistry";
 import type { IWatchEntry } from "./types";
@@ -41,13 +44,61 @@ interface IWatchHit {
  * この stateElement の `$watch` を有効化する（`State.connectedCallback` ／接続中の
  * `_state` 再 set から呼ばれる。無効化は `clearWatchRegistry`）。
  *
- * `addActiveWatchStateElement` の薄いラッパだが、**State が runtime を import する
+ * `addActiveWatchStateElement` の薄いラッパではなく、**State が runtime を import する
  * 経路をここに一本化する**意味がある: drain リスナーの登録はこのモジュールの
  * 初期化副作用なので、registry だけを import すると発火機構ごと落ちる。
  * `$streams` の `startStreams` と対称の位置づけ。
  */
 export function startWatch(stateElement: IStateElement): void {
   addActiveWatchStateElement(stateElement);
+  primeComputedWatches(stateElement);
+}
+
+/**
+ * watch 対象の computed（getter）を 1 回評価する（設計書 §5-2 の eager 化、C-3）。
+ *
+ * これが要るのは、getter の依存（dynamicDependency）が**評価時にしか張られない**ため。
+ * 一度も評価されていない getter は依存グラフに載らず、依存の書き込みが walkDependency で
+ * そのパスへ到達しないので、バッチにも載らず watch が永久に発火しない。ここで 1 回
+ * 読むことで依存が張られ、同時に `prev` の初期スナップショットが埋まる。
+ *
+ * **これが「watch した getter は lazy でなくなる」の実体**であり、設計書 §5-2 で
+ * 規範として明記している副作用（毎バッチ評価・例外の表面化・依存の再登録）の起点。
+ *
+ * ワイルドカードを含む getter パス（`items.*.tax` など）は対象外: 初回評価に行ごとの
+ * indexes が要り、全行評価は宣言しただけでリスト全体を舐めることになる。この形は
+ * 「DOM にバインドされていれば発火する」ままとし、§5-3 に制約として書く。
+ */
+function primeComputedWatches(stateElement: IStateElement): void {
+  const entries = getWatchEntries(stateElement);
+  if (entries.size === 0) {
+    return;
+  }
+  const targets: IWatchEntry[] = [];
+  for (const entry of entries.values()) {
+    if (entry.pathInfo.wildcardCount === 0 && stateElement.getterPaths.has(entry.path)) {
+      targets.push(entry);
+    }
+  }
+  if (targets.length === 0) {
+    // getter を watch していないなら createState ごと省く（宣言の大半はこちら）
+    return;
+  }
+  stateElement.createState("readonly", (state) => {
+    for (const entry of targets) {
+      try {
+        setComputedSnapshot(stateElement, absoluteAddressOf(stateElement, entry), state[entry.path]);
+      } catch (e) {
+        // 初回評価の throw は接続を巻き添えにしない（発火時と同じ隔離方針、§7-1）
+        console.error(`[@wcstack/state] $watch initial evaluation of "${entry.path}" threw.`, e);
+      }
+    }
+  });
+}
+
+/** ワイルドカードを含まない watch パスの絶対アドレス（listIndex は常に null） */
+function absoluteAddressOf(stateElement: IStateElement, entry: IWatchEntry): IAbsoluteStateAddress {
+  return createAbsoluteStateAddress(getAbsolutePathInfo(stateElement, entry.pathInfo), null);
 }
 
 function fireWatchOnUpdateBatch(batch: ReadonlySet<IAbsoluteStateAddress>): void {
@@ -86,9 +137,17 @@ function fireWatchOnUpdateBatch(batch: ReadonlySet<IAbsoluteStateAddress>): void
       if (typeof entry === "undefined") {
         continue;
       }
-      const indexes = (entry.pathInfo.wildcardCount > 0 && absAddress.listIndex !== null)
-        ? getScopedIndexes(absAddress.listIndex, entry.pathInfo.wildcardCount)
-        : [];
+      let indexes: number[] = [];
+      if (entry.pathInfo.wildcardCount > 0) {
+        if (absAddress.listIndex === null) {
+          // ワイルドカードパスなのに行が特定できないヒット（リストの依存展開で載る
+          // 中間アドレス等）。indexes を空のまま発火すると cur の解決（$resolve）が
+          // 「indexes 不足」で throw し、例外隔離に落ちて console.error だけが残る。
+          // 行が定まらない以上ハンドラに渡せる意味が無いので、収集段階で落とす。
+          continue;
+        }
+        indexes = getScopedIndexes(absAddress.listIndex, entry.pathInfo.wildcardCount);
+      }
       hits.push({ stateElement, entry, absAddress, indexes });
     }
     if (hits.length === 0) {
@@ -144,10 +203,19 @@ function compareHits(a: IWatchHit, b: IWatchHit): number {
  */
 function fireOne(hit: IWatchHit): void {
   const { stateElement, entry, absAddress, indexes } = hit;
+  // getter は setByAddress を通らないので旧値台帳に載らない。前回評価値の
+  // スナップショット（バッチを跨いで生きる別台帳）から prev を取る（§5-2）。
+  const isComputed = stateElement.getterPaths.has(entry.path);
   try {
     stateElement.createState("writable", (state) => {
+      // 強制評価はここ。dirty なら再計算され、その結果が cur になる
       const cur = readCurrentValue(state, entry, indexes);
-      const prev = getPrevValue(absAddress);
+      const prev = isComputed ? getComputedSnapshot(stateElement, absAddress) : getPrevValue(absAddress);
+      if (isComputed) {
+        // ハンドラ本体が throw しても次回の prev は「今回の評価値」であるべきなので、
+        // handler 呼び出しより前に更新する
+        setComputedSnapshot(stateElement, absAddress, cur);
+      }
       entry.handler.call(state, cur, prev, ...indexes);
     });
   } catch (e) {
