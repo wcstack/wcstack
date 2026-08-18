@@ -99,13 +99,35 @@ function (cur, prev, ...indexes): void
 
 ### 3-2. 実行順序（規範）
 
-1 バッチにつき、**`$updatedCallback` → `$watch` → `$streams` の依存駆動 restart** の順。`$updatedCallback` が binding 適用ループの内側で呼ばれる以上この順序は構造的に決まっており、watch を先にするには `applyChangeFromBindings` の改造が要る。**改造しない**。
+順序は 3 つの層に分かれる。**どの層も「決まっている」か「利用者が宣言で決められる」かのどちらかで、暗黙の順序に依存させない。**
 
-理由: `$updatedCallback` は「DOM に何が適用されたか」の要約であり、watch は「state で何が変わったか」の通知。DOM 適用済みを前提に副作用を書けるほうが、両者の性格に合う。
+**層 1 — 機構間（固定。利用者の選択肢は無い）**
 
-watch リスナーと streams リスナーの相対順序は `registerUpdateBatchListener` の登録順（Set の挿入順）に従う。**watch を先に登録する**（watch ハンドラの書き込みが同じバッチの stream restart 判定に影響しないよう、watch → restart の一方向にする）。
+1 バッチにつき **`$updatedCallback` → `$watch` → `$streams` の依存駆動 restart**。
 
-### 3-3. 中間値は観測できない
+- `$updatedCallback` が先なのは構造的必然（binding 適用ループの内側で呼ばれる。`applyChangeFromBindings.ts:97-101`）。watch を先にするには同ファイルの改造が要るが、**改造しない**。`$updatedCallback` は「DOM に何が適用されたか」の要約、watch は「state で何が変わったか」の通知であり、DOM 適用済みを前提に副作用を書けるほうが両者の性格に合う
+- `$watch` が stream restart より先なのは、watch ハンドラの書き込みが同じバッチの restart 判定に影響しないようにするため（watch → restart の一方向）
+- **担保は import 順ではなく優先度で行う**。`registerUpdateBatchListener(listener, priority)` に priority を追加し、`WATCH_LISTENER_PRIORITY < STREAM_LISTENER_PRIORITY` を定数で固定する。モジュールの import 順に順序が乗っていると、無関係な import 整理で静かに壊れる
+
+**層 2 — watch ハンドラ間（`$watch` の宣言順。利用者が制御できる）**
+
+同一バッチで複数の watch が hit した場合、**`$watch` オブジェクトのキーの宣言順**に呼ぶ（`Object.keys` の順）。enqueue 順ではない。
+
+利用者が順序に意思を持てる唯一の層なので、ここを宣言順にする。「B より先に A を走らせたい」は宣言を並べ替えれば済み、それ以外に順序を指定する構文は用意しない。
+
+**層 3 — 同一 watch パスの複数行（index 昇順）**
+
+ワイルドカードパスが複数行で hit した場合、**indexes の辞書順（多段なら外側の段から昇順）**に呼ぶ。enqueue 順は書き込みの都合で決まるため「保証しない」としてしまうと、利用者は結局実装を読むことになる。昇順に固定する。
+
+### 3-3. 順序規約の要約
+
+| 層 | 順序 | 利用者の制御 |
+|---|---|---|
+| 機構間 | `$updatedCallback` → `$watch` → stream restart | 不可（固定） |
+| watch ハンドラ間 | `$watch` の宣言順 | **宣言を並べ替える** |
+| 同一パスの行間 | indexes 昇順 | 不可（固定） |
+
+### 3-4. 中間値は観測できない
 
 同一 tick 内の `a → b → c` は 1 バッチに畳まれ、watch は `cur = c` / `prev = a` を 1 回だけ受ける。これは binding 更新・`$streams` の status 遷移と同じ既存契約であり、watch だけ例外にはしない。
 
@@ -167,7 +189,7 @@ computed は lazy。書き込みは `dirtyCacheEntryByAbsoluteStateAddress` で 
 
 バッチには listIndex 込みの絶対アドレスが載っているので、`items.*.price` の watch は**変化した行ごとに 1 回ずつ**呼ぶ。`$updatedCallback` の `indexesListByPath`（1 パスにつき indexes の配列を集約）とは形が違う ── watch はパス別ディスパッチが存在理由なので、集約せず素朴に per-address で呼ぶほうが用途に合う。
 
-同一バッチ内の呼び出し順序は `contextByAbsoluteAddress` の挿入順（＝ enqueue 順）に従う。**行の昇順は保証しない**と明記する。
+呼び出し順序は **indexes 昇順**（§3-2 層 3）。enqueue 順ではない。
 
 ### 6-2. 粒度は「書き込みの分解」に従う
 

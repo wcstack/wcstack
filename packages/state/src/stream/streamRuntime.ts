@@ -31,6 +31,7 @@ import {
   DELIMITER,
   STATE_STREAM_ERROR_NAMESPACE_NAME,
   STATE_STREAM_STATUS_NAMESPACE_NAME,
+  STREAM_LISTENER_PRIORITY,
 } from "../define";
 import { registerUpdateBatchListener } from "../updater/updater";
 import { addActiveStateElement, getActiveStateElements } from "./activeStateElements";
@@ -233,4 +234,5 @@ function restartStreamsOnUpdateBatch(batch: ReadonlySet<IAbsoluteStateAddress>):
   }
 }
 
-registerUpdateBatchListener(restartStreamsOnUpdateBatch);
+// 優先度で `$watch` の後に固定する（設計書 §3-2 層 1）。import 順には依存しない。
+registerUpdateBatchListener(restartStreamsOnUpdateBatch, STREAM_LISTENER_PRIORITY);

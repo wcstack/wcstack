@@ -43,6 +43,29 @@ import { beginPropagationTransaction, getCurrentPropagationContext } from "../..
 import { getListParentListIndex } from "../../webComponent/baseListIndex";
 import { popCrossBoundaryAddress, pushCrossBoundaryAddress } from "../../webComponent/crossBoundaryAddress";
 import { consumeOccurrenceWrite } from "../occurrenceWrite";
+import { recordPrevValue } from "../../watch/prevValues";
+
+/**
+ * `$watch` の `prev` 台帳へ旧値を記録する（docs/state-watch-hook-design.md §4-1）。
+ *
+ * same-value guard が既に読んだ旧値だけを使い、watch のための追加読みはしない。
+ * `$watch` 未宣言時のコストは `watchPaths` の null 判定 1 個に収める（§10）。
+ */
+function recordWatchPrevValue(
+  stateElement: IStateHandler["stateElement"],
+  path: string,
+  absAddress: IAbsoluteStateAddress,
+  oldValue: unknown,
+  hasOldValue: boolean,
+): void {
+  const watchPaths = stateElement.watchPaths;
+  if (watchPaths == null || !hasOldValue) {
+    return;
+  }
+  if (watchPaths.has(path)) {
+    recordPrevValue(absAddress, oldValue);
+  }
+}
 
 // Phase 3: 書き込み時点の因果 context を update record に付与する。
 // binding 経由の書き込みは呼び出し元の dynamic scope から context を引き継ぎ、
@@ -326,6 +349,7 @@ function setByAddressCore(
           hasOldValue: devHasOldValue,
         });
       }
+      recordWatchPrevValue(stateElement, path, absAddress, devOldValue, devHasOldValue);
       try {
         if (key === undefined) {
           raiseError(`address.listIndex?.index is undefined path: ${path}`);
@@ -376,6 +400,7 @@ function setByAddressCore(
       hasOldValue: devHasOldValue,
     });
   }
+  recordWatchPrevValue(stateElement, path, absAddress, devOldValue, devHasOldValue);
   try {
     if (isSwappable) {
       return _setByAddressWithSwap(target, address, absAddress, value, receiver, handler, keyedMergePath);

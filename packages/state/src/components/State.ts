@@ -21,6 +21,9 @@ import { ListKeyMap, processListKeysDeclaration } from "../list/listKeys";
 import { clearStreamNamespace } from "../stream/streamNamespace";
 import { abortAllStreams, clearStreamRegistry } from "../stream/streamRegistry";
 import { startStreams } from "../stream/streamRuntime";
+import { processWatchDeclaration } from "../watch/processWatchDeclaration";
+import { clearWatchRegistry, deactivateWatch } from "../watch/watchRegistry";
+import { startWatch } from "../watch/watchRuntime";
 import { defineDCC } from "../dcc/defineDCC";
 import { getPathInfo } from "../address/PathInfo";
 import { IStateProxy, Mutability } from "../proxy/types";
@@ -96,6 +99,8 @@ export class State extends HTMLElementBase implements IStateElement {
   private _dynamicDependency: Map<string, string[]> = new Map<string, string[]>();
   private _staticDependency: Map<string, string[]> = new Map<string, string[]>();
   private _pathSet: Set<string> = new Set<string>();
+  // `$watch` 宣言の監視対象パス。宣言が無ければ null（setByAddress のゼロコスト契約）
+  private _watchPaths: ReadonlySet<string> | null = null;
   private _version = 0;
   private _rootNode: Node | null = null;
   private _boundComponent: Element | null = null;
@@ -178,10 +183,18 @@ export class State extends HTMLElementBase implements IStateElement {
     // $listKeys: 宣言が無ければ null のままで、setByAddress のキー突合経路には
     // 一切入らない（docs/state-list-key-design.md §7-1）。再 set で必ず置き換える。
     this._listKeys = processListKeysDeclaration(value);
+    // $watch: 旧宣言のハンドラが残らないよう registry を落としてから新宣言を解析する。
+    // _pathSet.clear() の後であること（依存グラフ登録をやり直す必要がある、
+    // docs/state-watch-hook-design.md §8）。宣言が無ければ watchPaths は null で、
+    // setByAddress の旧値キャプチャには一切入らない（§10 のゼロコスト契約）。
+    clearWatchRegistry(this);
+    this._watchPaths = processWatchDeclaration(this, value);
     // 接続中の再 set（S13）は新宣言で即再起動する。
     // 初回（_initialize 中）は _initialized が false なのでここでは起動されず、
     // connectedCallback 側の startStreams（$connectedCallback 完了後）が担う。
     if (this._initialized && this._rootNode !== null && !inSsr()) {
+      // watch は stream より先に有効化する（stream の起動時書き込みを観測できるように）
+      startWatch(this);
       startStreams(this);
       // $connectedCallback 実行中の再 set（setInitialState）では、ここで新宣言が
       // 起動済みのため connectedCallback 末尾の startStreams を skip させる。
@@ -499,6 +512,22 @@ export class State extends HTMLElementBase implements IStateElement {
     // _streamsStartedGeneration ガード: $connectedCallback 内の setInitialState
     // （接続中の再 set）で _state セッター側が新宣言を起動済みの場合は skip する
     // （skip しないと同一 connect サイクルで source が 2 回起動する、設計書 §2-3）。
+    // $watch の有効化（$connectedCallback 完了後 ＝ 初期化中の書き込みは購読対象外）。
+    // ガードは startStreams と同じ理由で必要（await 中の切断・再接続）。SSR では
+    // 走らせない — ハンドラの副作用がサーバとクライアントで二重に実行されるため
+    // （docs/state-watch-hook-design.md §11）。
+    // startStreams より先に呼ぶ: stream の起動時書き込み（initial リセット・status 遷移）は
+    // watch から観測できるべきで、逆向きは要らない。
+    // 再入不要: 接続中の _state 再 set は _state セッター側で startWatch 済みだが、
+    // startWatch は Set への add で冪等なので $streams のような世代ガードは要らない。
+    if (
+      !inSsr() &&
+      this._rootNode !== null &&
+      connectGeneration === this._connectGeneration
+    ) {
+      startWatch(this);
+    }
+
     if (
       !inSsr() &&
       this._rootNode !== null &&
@@ -531,6 +560,10 @@ export class State extends HTMLElementBase implements IStateElement {
         // registry は残るため再接続後の初回アクセスで同内容の proxy が再生成される）。
         abortAllStreams(this);
         clearStreamNamespace(this);
+        // watch は発火対象から外すだけで registry は保持する（stream の abortAllStreams と
+        // 同じ二段構え、設計書 §9）。registry まで捨てると、_state セッターが再度走らない
+        // 再接続で宣言を作り直せず watch が二度と発火しない。
+        deactivateWatch(this);
         this._rootNode = null;
       }
     }
@@ -554,6 +587,10 @@ export class State extends HTMLElementBase implements IStateElement {
 
   get listKeys(): ListKeyMap | null {
     return this._listKeys;
+  }
+
+  get watchPaths(): ReadonlySet<string> | null {
+    return this._watchPaths;
   }
 
   get elementPaths(): Set<string> {

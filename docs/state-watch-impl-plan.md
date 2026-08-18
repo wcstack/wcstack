@@ -1,6 +1,12 @@
 # 実装計画: `$watch`（@wcstack/state）
 
-- **状態**: 着手前（2026-08-19）。設計の正本は [state-watch-hook-design.md](./state-watch-hook-design.md)（以下「設計書」）。本書はその §2〜§11 を着手可能なタスク粒度・テスト対応・完了条件に展開した手順書。
+- **状態**: **Phase A 完了**（2026-08-19）。フルスイート 239 files / 2353 tests green・lint 0・`src/watch` は 100/100/100/100。次は Phase B。設計の正本は [state-watch-hook-design.md](./state-watch-hook-design.md)（以下「設計書」）。本書はその §2〜§11 を着手可能なタスク粒度・テスト対応・完了条件に展開した手順書。
+- **Phase A の裁定記録**:
+  - `setPathInfo` の再利用は問題なし（§6-1 の宿題）。`"prop"` 渡しでは `_pathSet` への追加と親子 `addStaticDependency` チェーン生成だけが走り、`listPaths` / `elementPaths` は触らない。なお `_pathSet` は `_state` セッターでクリアされるため、watch の依存登録も再 set のたびにやり直す必要がある（`processWatchDeclaration` を `_pathSet.clear()` より後に置くことで担保）。
+  - **切断時に registry を捨ててはいけない**（計画の初稿の誤り）。`_state` セッターは初回ロード時にしか走らないため、registry まで消すと再接続で宣言を作り直す経路が無く watch が二度と発火しない。`$streams` の `abortAllStreams` / `clearStreamRegistry` と同じ二段構え（`deactivateWatch` / `clearWatchRegistry`）に修正。
+  - **再入ガードは「ハンドラ実行中に enqueue が起きたか」で数える**必要がある。「watch が発火したら次バッチの深さを +1」にすると、毎操作で watch が発火するアプリが 32 操作で誤打ち切りされる。updater と watchRuntime の両方から参照する葉モジュール `watch/chainDepth.ts` を切り出し、`updater.enqueueAbsoluteAddress` から `noteEnqueueForWatchChain()` を呼ぶ形にした（devtools/sink.ts と同じ循環回避パターン）。
+  - **ワイルドカードの発火は Phase A の実装で既に動く**（照合がパス一致、`cur` は `$resolve`）。カバレッジを埋める必要もあり、基本ケース（行ごと発火・indexes・昇順）のテストは Phase A に含めた。Phase B は多段・`$listKeys` 併用・bind-component 越境の詰めに絞る。
+  - **manifest の予約名は Phase D を待たずに追加が必要**。`manifest.test.ts` が「define.ts の `$` 定数を過不足なく網羅する」ことをゲートしており、`STATE_WATCH_NAME` を足した時点で赤くなる。D-1 のうち manifest だけ Phase A で消化した（vscode-wcs 側は Phase D のまま）。
 - **ブランチ**: `feature/state-watch-hook`（設計書・本書と同居。実装コミットもここに積む）。
 - **参照実装**: `packages/state/src/stream/*` と `docs/state-streams-impl-plan.md`。宣言マップ・registry・drain リスナー・後始末・ゼロコスト契約はすべて `$streams` に先例があり、**構造をそのまま踏襲する**（差分は §0-2 に列挙）。
 - **作業ディレクトリ**: `packages/state/`。Phase D でのみ `packages/vscode-wcs/` に触れる。
@@ -16,7 +22,7 @@
   2. `npm run test:coverage` の閾値維持（100/97/100/100。`src/watch/*` は 100/100/100/100 を目標）
   3. `npm run lint` pass
 - テストは各モジュールと**同時に**書く。ファイル命名は `stream.*.test.ts` に倣い `watch.*.test.ts`。記述は日本語。
-- 受け入れ条件は §5 のマトリクス（P1–P14 / S1–S12）を正とし、各タスクに ID を付す。
+- 受け入れ条件は §5 のマトリクス（P1–P16 / S1–S12）を正とし、各タスクに ID を付す。
 - 公開 API の追加はない（`$watch` は宣言マップのみ）。`exports.ts` / rollup 設定は変更不要。
 
 ### 0-2. `$streams` との構造差分（ここだけが新規）
@@ -50,6 +56,7 @@ export interface IWatchEntry {
   readonly path: string;
   readonly pathInfo: IPathInfo;      // getPathInfo の結果（wildcardCount を持つ）
   readonly handler: WatchHandler;
+  readonly order: number;            // $watch の宣言順（設計書 §3-2 層 2 のソートキー）
 }
 ```
 
@@ -110,7 +117,14 @@ absAddress を生成した直後（devtoolsSink の分岐の隣）:
 
 ### A-5. runtime — `src/watch/watchRuntime.ts`
 
-`registerUpdateBatchListener` にモジュール初期化時に 1 つ登録する（`streamRuntime.ts:236` と同型）。**streams のリスナーより先に登録する**（設計書 §3-2 の順序規範）。import 順で担保されるので、`State.ts` 側の import 順にコメントを残す。
+`registerUpdateBatchListener` にモジュール初期化時に 1 つ登録する（`streamRuntime.ts:236` と同型）。
+
+**先に `updater.ts` に優先度を足す**（設計書 §3-2 層 1）:
+
+- `registerUpdateBatchListener(listener, priority = 0)` に第 2 引数を追加。内部の `Set` を優先度付きの配列に変え、`notifyUpdateBatchListeners` は昇順に呼ぶ。同値は登録順（安定ソート）
+- 定数は `define.ts` に `WATCH_LISTENER_PRIORITY = 10` / `STREAM_LISTENER_PRIORITY = 20` を置き、`streamRuntime.ts` の登録も明示的に書き換える
+- `unregisterUpdateBatchListener` は配列からの除去に変える（テスト間の分離用途は不変）
+- 既存の updater テストが `Set` を前提にしていないか確認する
 
 ```
 function fireWatchOnUpdateBatch(batch) {
@@ -135,7 +149,12 @@ function fireWatchOnUpdateBatch(batch) {
 
 発火は `stateElement.createState("writable", state => entry.handler.call(state, cur, prev))`（D8）。`cur` は `state[path]`（Phase A は完全一致パスなので素直に読める）。
 
-**収集と発火を 2 相に分ける理由**: ハンドラ内の書き込みが registry / active 集合を同期的に変えうる（`_state` 再 set・切断）。`restartStreamsOnUpdateBatch` が hits 実行時に live 再チェックしているのと同じ問題なので、**同じ再チェック（active か / entry が現行 registry のものか）を発火直前に行う**。
+**収集と発火を 2 相に分ける理由**は 2 つある:
+
+1. ハンドラ内の書き込みが registry / active 集合を同期的に変えうる（`_state` 再 set・切断）。`restartStreamsOnUpdateBatch` が hits 実行時に live 再チェックしているのと同じ問題なので、**同じ再チェック（active か / entry が現行 registry のものか）を発火直前に行う**
+2. **順序規約（設計書 §3-2 層 2・層 3）のために hits をソートする必要がある**。バッチの反復順は enqueue 順なので、収集してから並べ替える
+
+**ソートキー**: `(entry.order, indexes 辞書順)`。`entry.order` は宣言時に振る連番（`Object.keys` の順＝ `$watch` の宣言順）。indexes 比較は段ごとに数値比較し、先に差が出た段で決める。ソートは hits にのみ及ぶので、watch 未宣言時のコストはゼロ。
 
 テスト: `watch.watchRuntime.test.ts` — **P3**（binding ゼロで発火＝ headless の中核）・**P4**（cur/prev）・**P5**（1 バッチ 1 回に coalesce）・**S3**（同値は発火しない）・**S4**（occurrence は同値でも発火）・**S5**（`$postUpdate` で prev=undefined）・**S6**（越境アドレスは発火しない）で 10〜12 本。drain は `testApplyChange` か `await Promise.resolve()` で決定的に駆動する。
 
@@ -230,9 +249,10 @@ function fireWatchOnUpdateBatch(batch) {
 - `docs/state-watch-hook-design.md` に、実装中に判明した事実を追記（A-4 の「guard OFF では prev が取れない」など）
 - SPEC / `wcstack/wcstack-skill`（別リポジトリ）の references
 
-### D-3. example（任意・スコープ判断）
+### D-3. example（本 PR に含める）
 
-- `$streams` の完了を watch で拾う最小例が最も価値が高い（両機能の関係が 1 画面で分かる）。`packages/state/examples/` に置く
+- `packages/state/examples/` に置く。題材は **`$streams` の完了を `$watch` で拾う**最小例 — 両機能の関係と「binding に出していない値でも観測できる」という `$watch` の存在理由が 1 画面で分かる
+- 既存 example の作法に従う（CDN 一発の `https://esm.run/@wcstack/state/auto`、サーバー不要なら静的 HTML 1 枚）
 
 **Phase D コミット**: `docs(state): document $watch and update reserved-key consumers (phase D)`
 
@@ -254,8 +274,10 @@ function fireWatchOnUpdateBatch(batch) {
 | P10 | watch した getter が依存書き込みで発火する | C-2 |
 | P11 | getter の `prev` がバッチ跨ぎで保持される | C-2 |
 | P12 | 画面に出していない getter でも発火する（eager 化） | C-3 |
-| P13 | `$updatedCallback` → `$watch` → stream restart の順序 | A-5 |
-| P14 | `$watch` 未宣言時、drain に追加コストが乗らない | A-5 |
+| P13 | 順序層 1: `$updatedCallback` → `$watch` → stream restart（優先度で担保） | A-5 |
+| P14 | 順序層 2: 複数の watch ハンドラが `$watch` の宣言順に呼ばれる | A-5 |
+| P15 | 順序層 3: 同一パスの複数行が indexes 昇順に呼ばれる | B-1 |
+| P16 | `$watch` 未宣言時、drain に追加コストが乗らない | A-5 |
 | S1 | 宣言バリデーションの全違反ケース（`@` 越境含む） | A-3 |
 | S2 | 未宣言パスへの書き込みで旧値を記録しない | A-4 |
 | S3 | 同値の primitive 書き込みでは発火しない（guard 経由） | A-5 |
@@ -271,11 +293,9 @@ function fireWatchOnUpdateBatch(batch) {
 
 ---
 
-## 6. 着手前に決め切れていない点
+## 6. 着手前の判断（すべて確定済み・2026-08-19）
 
-実装中に判断し、確定したら設計書へ反映する。
-
-1. **`setPathInfo` の再利用可否**（A-3）— `"prop"` 渡しで副作用が無いことをコードで確認してから確定する。もし副作用があれば watch 専用の依存登録関数を切る
-2. **watch リスナーと stream リスナーの登録順の担保方法**（A-5）— import 順に依存するのは脆い。`registerUpdateBatchListener` に優先度を持たせるか、`State.ts` で明示登録するかを実装時に決める
-3. **`config.sameValueGuard = false` のときの `prev`**（A-4）— 現状の計画では `undefined`。追加の `getByAddress` を払ってでも取るべきかは、guard OFF が実質デバッグ用途である点を踏まえて判断する
-4. **Phase D-3 の example をこの PR に含めるか**別 PR にするか
+1. **`setPathInfo` を再利用する**（A-3）。`"prop"` 渡しなら親子チェーン生成だけが走る。実装時に副作用が無いことをコードで再確認し、State 側の JSDoc に「binding 以外に `$watch` 宣言からも呼ばれる」と明記する
+2. **リスナー順序は優先度で担保する**（A-5）。`registerUpdateBatchListener(listener, priority)` に priority を追加。import 順に順序が乗っていると無関係な import 整理で静かに壊れるため。順序規約は設計書 §3-2 / §3-3 の 3 層に確定
+3. **`config.sameValueGuard = false` のときの `prev` は `undefined`**（A-4）。追加の `getByAddress` は払わない。設計書 §4-1 に追記済み
+4. **example は本 PR に含める**（Phase D-3）
