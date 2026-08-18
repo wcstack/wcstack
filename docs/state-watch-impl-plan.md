@@ -182,9 +182,14 @@ function fireWatchOnUpdateBatch(batch) {
 
 ---
 
-## Phase B — ワイルドカード
+## Phase B — ワイルドカード（完了）
 
 ゴール: `"items.*.price"(cur, prev, index)` が行ごとに発火し、indexes が bind-component 越境でも壊れない。
+
+**結果: 実装変更ゼロ。** 照合がパス一致・`cur` は `$resolve`・indexes は `getScopedIndexes` と、すべて Phase A で既存機構に乗っていたため、Phase B はテストによる契約の確定だけになった（`watch.wildcard.test.ts` 6 本 ＋ `watch.bindComponent.test.ts` 3 本）。判明した事実 2 つ:
+
+- **`$listKeys` 未宣言時の行 watch は「変化した行だけ」ではなく全行**発火し、`prev` は常に `undefined`（どの行も `setByAddress` を通っていない）。設計書 §6-2 の表を実測値に修正した。行の差分を見たいなら `$listKeys` の宣言が事実上の前提になる。
+- **mapped な bind-component の子スコープでは `$watch` を宣言できない**（設計書 §9-1）。innerState proxy の get/has トラップが `$` 始まりを遮るため、宣言が `_state` セッターに届かない。`$streams` を含む全ての `$` 宣言マップに共通の既存仕様。plain 形なら宣言でき、親の `for` の中（Δ>0）でも indexes は自スコープ分だけになる。
 
 ### B-1. 逆引きと indexes 展開
 

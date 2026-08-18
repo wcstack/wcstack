@@ -195,13 +195,15 @@ computed は lazy。書き込みは `dirtyCacheEntryByAbsoluteStateAddress` で 
 
 同じ利用者操作でも、宣言の有無で watch の発火は変わる。これは watch の挙動ではなく**書き込みがどのアドレスに分解されるか**の差である。表で明記する:
 
+以下は実測（`watch.wildcard.test.ts`）。
+
 | 操作 | `$listKeys` 宣言 | 書き込みの分解 | `items` の watch | `items.*.price` の watch |
 |---|---|---|---|---|
-| `state.items = [...]` | なし | 配列 1 write | 発火（`prev` は参照型なので `undefined`） | 依存展開で載った行のみ発火（`prev` は `undefined` になりうる） |
+| `state.items = [...]` | なし | 配列 1 write | 発火（`prev` は参照型なので `undefined`） | **変化の有無に関わらず全行**発火。`prev` は**常に** `undefined`（どの行も `setByAddress` を通っていない） |
 | `state.items = [...]` | あり | キー突合 → 変化フィールドごとの per-path write（`setByAddress.ts:231-250`） | 発火 | **変化した行だけ**発火し、`prev` はスカラとして正しく取れる |
-| `state.items[0].price = 9` | — | 葉 1 write | 発火しない | 行 0 で発火 |
+| `state.items[0].price = 9` | — | 葉 1 write | 発火しない | 行 0 で発火・`prev` はスカラ |
 
-`$listKeys` を宣言したほうが watch の粒度と `prev` の質が上がる、という関係になる。これは既存の設計（キー付きリストは行の同一性を保つ）の自然な帰結なので、そのまま文書化する。
+`$listKeys` を宣言したほうが watch の粒度と `prev` の質が上がる、という関係になる。これは既存の設計（キー付きリストは行の同一性を保つ）の自然な帰結なので、そのまま文書化する。**行 watch で差分だけを見たい場合は `$listKeys` の宣言が事実上の前提**になる、と README にも書く。
 
 ---
 
@@ -247,7 +249,15 @@ watch ハンドラ内の書き込みは新しい microtask バッチを作るた
 - `_state` 再 set のたびに `processWatchDeclaration` で作り直す。旧宣言のパスの旧値台帳・スナップショット台帳は prune する（`stream/lastNotified.ts` の `pruneLastNotified` と同じ理由）
 - `disconnectedCallback` で登録解除。切断済み stateElement のハンドラは呼ばない（drain リスナー側で active 判定）
 - watch を 1 つも宣言していないアプリで drain に配列・イテレータ割り当てを発生させない（`restartStreamsOnUpdateBatch` の冒頭 early return と同型）
-- **越境しない**（D8）: `@stateName` 付きのアドレスは自 state のハンドラに一切マッチさせない。バッチには他 state のアドレスも載りうるので、`absolutePathInfo.stateName` で弾く
+- **越境しない**（D8）: `@stateName` 付きのアドレスは自 state のハンドラに一切マッチさせない。バッチには他 state のアドレスも載りうるので、`absolutePathInfo.stateElement` で弾く（`stateName` 文字列では同名 state を取り違える）
+
+### 9-1. mapped な bind-component では宣言できない（既存の境界仕様）
+
+`data-wcs="state.x: ..."` で親の値を子に写す **mapped 形の子スコープでは `$watch` を宣言できない**。子 state は innerState proxy に包まれ、その `get` / `has` トラップが `$` 始まりのプロパティを一律 `undefined` / `false` で返すため、宣言が `_state` セッターに届かない（`webComponent/innerState.ts`）。
+
+これは `$streams` を含む**全ての `$` 宣言マップに共通の既存仕様**であり、watch 固有の制約ではない。黙って発火しないので、テスト（`watch.bindComponent.test.ts`）で固定してある。
+
+**plain 形（マッピング対象が 0 件でローカル state を持つ子スコープ）では宣言できる。** そのコンポーネントが親の `for` の中に置かれていても（Δ>0）、ハンドラが受け取る `indexes` は `getScopedIndexes` により自スコープ分だけになるため、**設置場所によって引数の意味が変わらない**（実測済み）。
 
 ---
 
