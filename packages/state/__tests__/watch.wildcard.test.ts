@@ -9,6 +9,7 @@
  * - P8:  多段ワイルドカードで indexes の段数が合う
  * - P15: 同一パスの複数行が indexes 昇順に呼ばれる（多段でも辞書順）
  * - S11: `$listKeys` の有無で粒度と prev の質が設計書 §6-2 の表どおりに変わる
+ * - S13: 行 watch が headless に成立するのは `$listKeys` 宣言時だけ（設計書 §6-3）
  */
 import { describe, it, expect, beforeAll } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
@@ -163,6 +164,52 @@ describe("$watch と $listKeys の併用（設計書 §6-2 の表）", () => {
     expect(calls.map(([index]) => index)).toEqual([0, 1, 2]);
     expect(calls.map(([, cur]) => cur)).toEqual([1, 20, 3]);
     expect(calls.every(([, , prev]) => prev === undefined)).toBe(true);
+    host.remove();
+  });
+
+  it("S13: for バインディングも $listKeys も無いと、配列代入で行 watch は発火しないこと（headless の境界）", async () => {
+    // 依存グラフの `items → items.*` 静的子展開は walkDependency が listPaths を
+    // 見て初めて行う。listPaths は `for` バインディングでしか埋まらず、`$watch` 宣言の
+    // setPathInfo("prop") は listPaths を触らない（設計書 §8）。したがって行の絶対
+    // アドレスがバッチに 1 つも載らず、ハンドラは呼ばれない。
+    // **これはスカラーパスの headless 購読と非対称**なので、契約としてここで固定する。
+    const calls: unknown[] = [];
+    const { host, stateElement } = await mount({
+      items: [{ price: 1 }, { price: 2 }],
+      $watch: {
+        "items.*.price"(cur: unknown) { calls.push(cur); },
+      },
+    } as unknown as IState, ``);
+
+    stateElement.createState("writable", (state) => {
+      state.items = [{ price: 1 }, { price: 20 }];
+    });
+    await flush();
+
+    expect(calls).toEqual([]);
+    host.remove();
+  });
+
+  it("S13: $listKeys があれば for バインディング無しでも行 watch が発火すること", async () => {
+    // キー突合が配列代入を「変化フィールドごとの per-path 書き込み」に分解するため、
+    // 依存展開を経由せず葉のアドレスが直接バッチに載る ＝ headless で成立する。
+    const calls: Array<[number, unknown, unknown]> = [];
+    const { host, stateElement } = await mount({
+      items: [{ id: 1, price: 1 }, { id: 2, price: 2 }],
+      $listKeys: { items: "id" },
+      $watch: {
+        "items.*.price"(cur: unknown, prev: unknown, index: number) {
+          calls.push([index, cur, prev]);
+        },
+      },
+    } as unknown as IState, ``);
+
+    stateElement.createState("writable", (state) => {
+      state.items = [{ id: 1, price: 1 }, { id: 2, price: 20 }];
+    });
+    await flush();
+
+    expect(calls).toEqual([[1, 20, 2]]);
     host.remove();
   });
 

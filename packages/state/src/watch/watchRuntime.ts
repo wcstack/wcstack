@@ -48,8 +48,17 @@ interface IWatchHit {
  * 経路をここに一本化する**意味がある: drain リスナーの登録はこのモジュールの
  * 初期化副作用なので、registry だけを import すると発火機構ごと落ちる。
  * `$streams` の `startStreams` と対称の位置づけ。
+ *
+ * **宣言が 1 つも無ければ active 集合に入れない**（`startStreams` の
+ * `entries.size === 0` early return と同型）。ここを無条件にすると active 集合が
+ * 「接続中の全 `<wcs-state>`」になり、`fireWatchOnUpdateBatch` の early return が
+ * 実アプリで効かなくなる ＝ `$watch` 未使用アプリの drain にも収集ループが乗る
+ * （ゼロコスト契約、設計書 §10 ／ 実装計画 P16）。
  */
 export function startWatch(stateElement: IStateElement): void {
+  if (getWatchEntries(stateElement).size === 0) {
+    return;
+  }
   addActiveWatchStateElement(stateElement);
   primeComputedWatches(stateElement);
 }
@@ -70,13 +79,10 @@ export function startWatch(stateElement: IStateElement): void {
  * 「DOM にバインドされていれば発火する」ままとし、§5-3 に制約として書く。
  */
 function primeComputedWatches(stateElement: IStateElement): void {
-  const entries = getWatchEntries(stateElement);
-  if (entries.size === 0) {
-    return;
-  }
+  // 宣言が 1 つ以上あることは startWatch が保証済み
   const targets: IWatchEntry[] = [];
-  for (const entry of entries.values()) {
-    if (entry.pathInfo.wildcardCount === 0 && stateElement.getterPaths.has(entry.path)) {
+  for (const entry of getWatchEntries(stateElement).values()) {
+    if (isScalarComputed(stateElement, entry)) {
       targets.push(entry);
     }
   }
@@ -101,13 +107,30 @@ function absoluteAddressOf(stateElement: IStateElement, entry: IWatchEntry): IAb
   return createAbsoluteStateAddress(getAbsolutePathInfo(stateElement, entry.pathInfo), null);
 }
 
+/**
+ * 前回評価値のスナップショット台帳（computedSnapshots）に載せる entry か。
+ *
+ * ワイルドカードを含む getter を**除く**のが要点。除かないと台帳のキーが行ごとの
+ * 絶対アドレス（＝ listIndex を強参照）になり、prune 経路が `_state` 再 set しか
+ * 無いため、行が入れ替わり続けるページで単調増加する（リスト置換 5 回で 2→10 件を実測）。
+ * そもそもワイルドカード getter は eager 化の対象外（設計書 §5-3）なので、
+ * 「初回評価もしない・前回値も持たない」で primeComputedWatches と対称になる。
+ * この形の `prev` は常に undefined（getter は setByAddress を通らない）。
+ */
+function isScalarComputed(stateElement: IStateElement, entry: IWatchEntry): boolean {
+  return entry.pathInfo.wildcardCount === 0 && stateElement.getterPaths.has(entry.path);
+}
+
 function fireWatchOnUpdateBatch(batch: ReadonlySet<IAbsoluteStateAddress>): void {
   const activeStateElements = getActiveWatchStateElements();
-  if (activeStateElements.size === 0) {
-    // watch 未使用アプリの drain に配列・イテレータ割り当てのコストを載せない
-    return;
-  }
   try {
+    if (activeStateElements.size === 0) {
+      // watch 未使用アプリの drain に配列・イテレータ割り当てのコストを載せない。
+      // ここも finally を通す: 宣言済みの state が切断されている間（active からは
+      // 外れるが watchPaths は残る）の書き込みで台帳に旧値が積まれるため、
+      // クリアを早期 return の外に置くと次のバッチどころか永久に残る。
+      return;
+    }
     const depth = consumeWatchChainDepth();
     if (depth > MAX_WATCH_CHAIN_DEPTH) {
       // 打ち切るのは watch の発火のみ。値と binding 適用は巻き戻さない
@@ -200,16 +223,26 @@ function compareHits(a: IWatchHit, b: IWatchHit): number {
  * drain リスナーの throw は握りつぶさない契約（updater.ts）なので、watch 側で捕まえないと
  * 1 つのユーザー例外が他の watch と `$streams` の restart を巻き添えにする。
  * `$connectedCallback` / `$updatedCallback` の loud fail とは意図的に異なる扱い。
+ *
+ * 報告は throw 元で分ける: `cur` の解決（watch した getter の強制評価 ＝ §5-2 の副作用 b）と
+ * ハンドラ本体では原因も直し方も違うため、同じ文言に丸めない。
  */
 function fireOne(hit: IWatchHit): void {
   const { stateElement, entry, absAddress, indexes } = hit;
-  // getter は setByAddress を通らないので旧値台帳に載らない。前回評価値の
+  // スカラ getter は setByAddress を通らないので旧値台帳に載らない。前回評価値の
   // スナップショット（バッチを跨いで生きる別台帳）から prev を取る（§5-2）。
-  const isComputed = stateElement.getterPaths.has(entry.path);
+  const isComputed = isScalarComputed(stateElement, entry);
   try {
     stateElement.createState("writable", (state) => {
-      // 強制評価はここ。dirty なら再計算され、その結果が cur になる
-      const cur = readCurrentValue(state, entry, indexes);
+      let cur: unknown;
+      try {
+        // 強制評価はここ。dirty なら再計算され、その結果が cur になる
+        cur = readCurrentValue(state, entry, indexes);
+      } catch (e) {
+        // cur が得られない以上ハンドラは呼べない。次の hit へ進む
+        console.error(`[@wcstack/state] $watch evaluation of "${entry.path}" threw.`, e);
+        return;
+      }
       const prev = isComputed ? getComputedSnapshot(stateElement, absAddress) : getPrevValue(absAddress);
       if (isComputed) {
         // ハンドラ本体が throw しても次回の prev は「今回の評価値」であるべきなので、

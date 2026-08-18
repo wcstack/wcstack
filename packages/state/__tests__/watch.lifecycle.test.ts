@@ -5,7 +5,8 @@
  *
  * 受け入れ ID:
  * - P6:  宣言 → connect → 書き込み → 発火
- * - P16: `$watch` 未宣言時、watchPaths が null のまま（旧値キャプチャ経路に入らない）
+ * - P16: `$watch` 未宣言時、watchPaths が null のまま（旧値キャプチャ経路に入らない）かつ
+ *        発火対象集合にも載らない（drain の収集ループごと素通りする）
  * - S9:  `_state` 再 set で旧宣言のハンドラが発火しない
  * - S10: 切断後は発火しない／再接続で復活する
  */
@@ -54,15 +55,29 @@ describe("$watch State ライフサイクル統合", () => {
     host.remove();
   });
 
-  it("P16: $watch 未宣言なら watchPaths が null のままであること（ゼロコスト契約）", async () => {
+  it("P16: $watch 未宣言なら watchPaths が null で、発火対象集合にも載らないこと（ゼロコスト契約）", async () => {
     const { host, stateEl } = await connectHost("", { count: 0 } as unknown as IState);
+    // setByAddress 側のゼロコスト: 旧値キャプチャは watchPaths の null 判定 1 個で抜ける
     expect(stateEl.watchPaths).toBeNull();
-    expect(getActiveWatchStateElements().has(stateEl)).toBe(true);
+    expect(getWatchEntries(stateEl).size).toBe(0);
+    // drain 側のゼロコスト: active 集合に載せてしまうと fireWatchOnUpdateBatch の
+    // early return が効かず、宣言ゼロでもバッチのアドレス数ぶん収集ループが回る
+    expect(getActiveWatchStateElements().has(stateEl)).toBe(false);
 
-    // 発火対象に載っていても、宣言が無ければハンドラは 1 つも無く drain は素通りする
     stateEl.createState("writable", (state) => { state.count = 1; });
     await flushAsync();
-    expect(getWatchEntries(stateEl).size).toBe(0);
+    expect(getActiveWatchStateElements().has(stateEl)).toBe(false);
+    host.remove();
+  });
+
+  it("P16 補: 宣言が空オブジェクトでも発火対象集合に載らないこと", async () => {
+    const { host, stateEl } = await connectHost("", {
+      count: 0,
+      $watch: {},
+    } as unknown as IState);
+
+    expect(stateEl.watchPaths).toBeNull();
+    expect(getActiveWatchStateElements().has(stateEl)).toBe(false);
     host.remove();
   });
 
@@ -99,6 +114,8 @@ describe("$watch State ライフサイクル統合", () => {
     await flushAsync();
 
     expect(stateEl.watchPaths).toBeNull();
+    // 宣言が消えたら発火対象集合からも外れる（ゼロコスト契約へ戻る）
+    expect(getActiveWatchStateElements().has(stateEl)).toBe(false);
     stateEl.createState("writable", (state) => { state.count = 1; });
     await flushAsync();
     expect(handler).not.toHaveBeenCalled();
@@ -143,7 +160,7 @@ describe("$watch State ライフサイクル統合", () => {
     host.remove();
   });
 
-  it("SSR では発火対象に載らないこと（ハンドラの副作用を二重実行しない）", async () => {
+  it("enable-ssr のクライアント側では発火対象に載ること（inSsr() ではないため）", async () => {
     const handler = vi.fn();
     const host = document.createElement("watch-lc-ssr-host");
     const shadowRoot = host.attachShadow({ mode: "open" });

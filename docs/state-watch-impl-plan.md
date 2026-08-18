@@ -1,6 +1,11 @@
 # 実装計画: `$watch`（@wcstack/state）
 
-- **状態**: **Phase A–D 完了**（2026-08-19）。state は 243 files / 2376 tests green・lint 0・`src/watch` は 100/100/100/100、vscode-wcs は 412 tests green。残るのはリリース（minor bump）。設計の正本は [state-watch-hook-design.md](./state-watch-hook-design.md)（以下「設計書」）。本書はその §2〜§11 を着手可能なタスク粒度・テスト対応・完了条件に展開した手順書。
+- **状態**: **Phase A–D 完了 ＋ レビュー指摘の反映済み**（2026-08-19）。state は 243 files green・lint 0・`src/watch` は 100/100/100/100、vscode-wcs は 412 tests green。残るのはリリース（minor bump）。設計の正本は [state-watch-hook-design.md](./state-watch-hook-design.md)（以下「設計書」）。本書はその §2〜§11 を着手可能なタスク粒度・テスト対応・完了条件に展開した手順書。
+- **レビューで潰した 3 件**（いずれも Phase A–D 着地後に実測で発見。設計書の該当節を更新済み）:
+  1. **P16 が実は未達だった** — `startWatch` が宣言の有無に関わらず active 集合へ add していたため、集合が「接続中の全 `<wcs-state>`」になり `fireWatchOnUpdateBatch` の early return が死んでいた。`$watch` 未使用アプリでも収集ループがバッチのアドレス数ぶん回り、`getWatchEntries` の `?? new Map()` がアドレスごとに Map を 1 個アロケートしていた。`startStreams` の `entries.size === 0` early return と同型に修正し、空 Map を共有インスタンス化（設計書 §10）。**P16 のテストが `has(stateEl) === true` を期待して穴を仕様として固定していた**ので、テストごと直した。
+  2. **ワイルドカード getter watch の台帳が単調増加していた** — 発火側の `isComputed` が `wildcardCount` を見ておらず、行ごとの絶対アドレス（listIndex を強参照）を `computedSnapshots` に積んでいた。prune 経路は `_state` 再 set だけなので、リスト置換 5 回で 2→10 件に増えることを実測。§5-3 の「ワイルドカード getter は eager 化しない」と対称に、台帳へも載せないよう修正（`prev` は常に `undefined`）。回帰テストは台帳サイズが 0 のまま増えないことを見る。
+  3. **ワイルドカード行 watch は headless に成立していなかった** — `for` バインドも `$listKeys` も無いと一度も発火しない（実測）。実装は設計どおりで、**ドキュメントだけが逆を約束していた**。設計書 §6-3 を新設し README 英/日を訂正、非発火と `$listKeys` での発火を S13 として固定した。
+  - 併せて non-blocking 3 件: 早期 return で旧値台帳をクリアし損ねる経路を try/finally に統合／`cur` の評価エラーとハンドラの throw で `console.error` の文言を分離／S8 の上限を `MAX_WATCH_CHAIN_DEPTH` から導出。
 - **Phase A の裁定記録**:
   - `setPathInfo` の再利用は問題なし（§6-1 の宿題）。`"prop"` 渡しでは `_pathSet` への追加と親子 `addStaticDependency` チェーン生成だけが走り、`listPaths` / `elementPaths` は触らない。なお `_pathSet` は `_state` セッターでクリアされるため、watch の依存登録も再 set のたびにやり直す必要がある（`processWatchDeclaration` を `_pathSet.clear()` より後に置くことで担保）。
   - **切断時に registry を捨ててはいけない**（計画の初稿の誤り）。`_state` セッターは初回ロード時にしか走らないため、registry まで消すと再接続で宣言を作り直す経路が無く watch が二度と発火しない。`$streams` の `abortAllStreams` / `clearStreamRegistry` と同じ二段構え（`deactivateWatch` / `clearWatchRegistry`）に修正。
@@ -307,6 +312,7 @@ function fireWatchOnUpdateBatch(batch) {
 | S9 | `_state` 再 set で旧宣言のハンドラが発火しない | A-7 |
 | S10 | 切断後は発火しない | A-7 |
 | S11 | `$listKeys` の有無で粒度と `prev` の質が設計書 §6-2 の表どおりに変わる | B-1 |
+| S13 | 行 watch が headless に成立するのは `$listKeys` 宣言時だけ（設計書 §6-3） | B-1 |
 | S12 | getter 内の throw が例外隔離に乗る | C-2 |
 
 ---

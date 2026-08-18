@@ -127,6 +127,8 @@ function (cur, prev, ...indexes): void
 | watch ハンドラ間 | `$watch` の宣言順 | **宣言を並べ替える** |
 | 同一パスの行間 | indexes 昇順 | 不可（固定） |
 
+**層 2 の保証は同一 state 内に閉じる。** `order` は stateElement ごとに 0 から振る連番なので、1 つのバッチに複数の state 要素の watch が載った場合、要素を跨いだ順序は規定しない（跨ぐ順序に意味を持たせたい設計は、そもそも `@stateName` 越境 watch を要求することになる — D8 で不採用）。
+
 ### 3-4. 中間値は観測できない
 
 同一 tick 内の `a → b → c` は 1 バッチに畳まれ、watch は `cur = c` / `prev = a` を 1 回だけ受ける。これは binding 更新・`$streams` の status 遷移と同じ既存契約であり、watch だけ例外にはしない。
@@ -175,7 +177,7 @@ computed は lazy。書き込みは `dirtyCacheEntryByAbsoluteStateAddress` で 
 
 1. 宣言時にそのパスを依存グラフへ登録する（§8）
 2. drain 終端で、そのバッチに hit したら **強制評価**して `cur` を得る
-3. `prev` は前回評価値のスナップショット台帳（`Map<IAbsoluteStateAddress, unknown>`、stateElement 寿命）から取る。初回は `undefined`
+3. `prev` は前回評価値のスナップショット台帳（`Map<IAbsoluteStateAddress, unknown>`、stateElement 寿命）から取る。初回は `undefined`。**台帳に載せるのはワイルドカードを含まない getter だけ**（§5-3 の eager 化対象と同じ集合）。行ごとの絶対アドレスを積むと listIndex を強参照したまま prune 経路が `_state` 再 set しか無く、行が入れ替わり続けるページで単調増加する
 
 **「watch 対象の getter は lazy でなくなる」ことを規範として README / SPEC に明記する。** 副作用は 3 つ: (a) 画面に出していなくても毎バッチ評価される、(b) getter 内の例外が watch 経由で表面化する、(c) 評価のたびに依存が再登録される。これらは「opt-in で eager 化した」の当然の帰結であり、隠さない。
 
@@ -186,6 +188,8 @@ computed は lazy。書き込みは `dirtyCacheEntryByAbsoluteStateAddress` で 
 `items.*.tax` のような getter パスは初回評価の対象外。理由は、評価に行ごとの `indexes` が要り、全行評価は**宣言しただけでリスト全体を舐める**ことになるため。
 
 したがってこの形は「**DOM にバインドされていれば発火する**」（binding が依存を張るので）。バインドが無ければ発火しない。スカラ getter と違って headless にならない、という非対称をそのまま制約として書く。
+
+対称に、**前回評価値のスナップショット台帳にも載せない**（§5-2 の 3）。よってこの形の `prev` は常に `undefined` になる。「eager 化しないが prev だけは持つ」という中途半端な状態を作らない、という整合性の理由に加えて、行ごとのアドレスを台帳に積むと GC を妨げる実害がある。
 
 ### 5-4. 再 set と getter キャッシュ（既存挙動との境界）
 
@@ -209,7 +213,7 @@ computed は lazy。書き込みは `dirtyCacheEntryByAbsoluteStateAddress` で 
 
 同じ利用者操作でも、宣言の有無で watch の発火は変わる。これは watch の挙動ではなく**書き込みがどのアドレスに分解されるか**の差である。表で明記する:
 
-以下は実測（`watch.wildcard.test.ts`）。
+以下は実測（`watch.wildcard.test.ts`）。**リストが `for` でバインドされている前提**の表であることに注意（前提が崩れる場合は §6-3）。
 
 | 操作 | `$listKeys` 宣言 | 書き込みの分解 | `items` の watch | `items.*.price` の watch |
 |---|---|---|---|---|
@@ -218,6 +222,24 @@ computed は lazy。書き込みは `dirtyCacheEntryByAbsoluteStateAddress` で 
 | `state.items[0].price = 9` | — | 葉 1 write | 発火しない | 行 0 で発火・`prev` はスカラ |
 
 `$listKeys` を宣言したほうが watch の粒度と `prev` の質が上がる、という関係になる。これは既存の設計（キー付きリストは行の同一性を保つ）の自然な帰結なので、そのまま文書化する。**行 watch で差分だけを見たい場合は `$listKeys` の宣言が事実上の前提**になる、と README にも書く。
+
+### 6-3. 行 watch が headless に成立する条件（§5-3 と同型の非対称）
+
+**ワイルドカードパスの watch は、`for` バインドも `$listKeys` も無い場合は発火しない。** スカラーパスの headless 購読とはここが非対称で、制約として明記する。
+
+理由は §8 の依存グラフ登録の裏返しにある。`items` への配列代入が `items.*.price` へ届くのは `walkDependency` の `list → list.*` 静的子展開だが、この展開は `listPathSet.has(sourcePath)`（＝ `stateElement.listPaths`）を条件にしている（`dependency/walkDependency.ts:280`）。`listPaths` は `for` バインディング（`setPathInfo(path, "for")`）でしか埋まらず、watch 宣言の `setPathInfo(path, "prop")` は意図的にそこを触らない。したがって行の絶対アドレスがバッチに 1 つも載らない。
+
+| リストの状態 | `items.*.price` の watch |
+|---|---|
+| `for` でバインドされている | 発火する（§6-2 の表） |
+| バインド無し・`$listKeys` なし | **発火しない**（行アドレスがバッチに載らない） |
+| バインド無し・`$listKeys` あり | **発火する**。キー突合が per-path write に分解するので、依存展開を経由せず葉のアドレスが直接バッチに載る |
+
+つまり **headless な行 watch の前提は `$listKeys` の宣言**になる。§6-2 で「差分を見たいなら `$listKeys`」と書いた関係が、headless では「発火するかどうか」にまで効く。
+
+`listPaths` に watch パスを載せれば発火させられるが、それは「宣言しただけで for 相当の展開が走る」ことを意味し、swap 判定・`elementPaths` にも波及する。第 1 段では採らず、制約として書く（変更するなら別案件）。
+
+固定しているテストは `watch.wildcard.test.ts` の S13 2 本。
 
 ---
 
@@ -277,7 +299,7 @@ watch ハンドラ内の書き込みは新しい microtask バッチを作るた
 
 ## 10. 性能
 
-- **未宣言時ゼロコスト**: `stateElement.watchPaths === null` の分岐 1 個（`$listKeys` の契約と同じ）。drain リスナー側も active 集合が空なら即 return
+- **未宣言時ゼロコスト**: `stateElement.watchPaths === null` の分岐 1 個（`$listKeys` の契約と同じ）。drain リスナー側も active 集合が空なら即 return。**この early return を実際に効かせるには、`startWatch` が「宣言が 1 つも無い stateElement を active 集合に入れない」ことが要る**（`startStreams` の `entries.size === 0` early return と同型）。無条件に add すると active 集合が「接続中の全 `<wcs-state>`」になり、early return が死んで収集ループがバッチのアドレス数ぶん回る ── `$watch` を使っていないアプリにコストが乗る。registry の空 Map も共有インスタンスにして、収集ループ内のアロケーションを作らない
 - **旧値キャプチャは watch 宣言パスのみ**: 全書き込みに課金しない。判定は `PathInfo` のインスタンス同一性で O(1)。ただし対象は `setByAddressCore` の fast path（親を 1 回だけ解決するホットパス、`setByAddress.ts:296-346`）なので、分岐追加のコストは実測すること
 - **照合方向**: バッチ（大）を回すのではなく、宣言済み watch パス（小）を回して `batch.has(absAddress)` で引く。`restartStreamsOnUpdateBatch` の `depAddresses` 側を回す判断と同じ。ワイルドカードパスは絶対アドレスが行ごとに異なるため、パス単位の逆引き台帳（`Map<absolutePathInfo, handler>`）を持ち、バッチ側を回して `absolutePathInfo` で引く形に切り替える
 

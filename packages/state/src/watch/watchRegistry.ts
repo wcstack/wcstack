@@ -10,9 +10,13 @@
  * 一方向依存になる。よって循環せず、1 モジュールにまとめられる。
  *
  * リーク防止の不変条件（strong Set が切断済み要素の GC を妨げないための連動）:
- * - add は `State.connectedCallback`（$connectedCallback 完了後）だけが行う。
- * - delete は `clearWatchRegistry`（`_state` 再 set / disconnectedCallback）だけが行う。
+ * - add は `startWatch`（`State.connectedCallback` の $connectedCallback 完了後、および
+ *   接続中の `_state` 再 set）だけが行い、**宣言が 1 つも無い stateElement は入れない**。
+ * - delete は `deactivateWatch`（disconnectedCallback）／`clearWatchRegistry`（`_state`
+ *   再 set）だけが行う。
  * どちらの経路も必ずここを通るため「Set に居る = 接続中かつ宣言済み」が保たれる。
+ * この「宣言済み」の側が崩れると、`$watch` 未使用アプリの drain にも収集ループが乗る
+ * （ゼロコスト契約、docs/state-watch-hook-design.md §10）。
  */
 
 import type { IStateElement } from "../components/types";
@@ -22,6 +26,15 @@ const registryByStateElement: WeakMap<IStateElement, Map<string, IWatchEntry>> =
 const activeStateElements = new Set<IStateElement>();
 
 /**
+ * 未登録時に返す共有の空 Map。
+ *
+ * ここで毎回 `new Map()` すると、drain の収集ループが「バッチのアドレス 1 個につき
+ * Map を 1 個」アロケートすることになる（発火対象だが宣言を持たない stateElement を
+ * 通る経路）。読み出ししかしない返り値なので 1 個を使い回す。
+ */
+const EMPTY_ENTRIES: ReadonlyMap<string, IWatchEntry> = new Map<string, IWatchEntry>();
+
+/**
  * watch entry 群を置換登録する（`_state` セッターからの再構築で丸ごと差し替える）。
  */
 export function setWatchEntries(stateElement: IStateElement, entries: Map<string, IWatchEntry>): void {
@@ -29,14 +42,15 @@ export function setWatchEntries(stateElement: IStateElement, entries: Map<string
 }
 
 /**
- * 登録済みの watch entry 群を返す。未登録なら空 Map を返す（registry への登録はしない）。
+ * 登録済みの watch entry 群を返す。未登録なら共有の空 Map を返す
+ * （registry への登録はしない。返り値は読み出し専用）。
  */
-export function getWatchEntries(stateElement: IStateElement): Map<string, IWatchEntry> {
-  return registryByStateElement.get(stateElement) ?? new Map<string, IWatchEntry>();
+export function getWatchEntries(stateElement: IStateElement): ReadonlyMap<string, IWatchEntry> {
+  return registryByStateElement.get(stateElement) ?? EMPTY_ENTRIES;
 }
 
 /**
- * 発火対象として登録する（`State.connectedCallback` 専用。不変条件はモジュールヘッダ参照）。
+ * 発火対象として登録する（`startWatch` 専用。不変条件はモジュールヘッダ参照）。
  */
 export function addActiveWatchStateElement(stateElement: IStateElement): void {
   activeStateElements.add(stateElement);

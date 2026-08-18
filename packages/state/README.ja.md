@@ -1629,7 +1629,7 @@ $streams: {
 
 ## Watch（`$watch`）
 
-`$updatedCallback` は **binding 駆動** です。その更新で live DOM binding が実際に適用された path だけを報告するため、**描画していない値の変化は見えません**。**`$watch`** はその headless 版で、ページ上でそのパスがバインドされているかどうかに関わらず、state の変化で発火します。
+`$updatedCallback` は **binding 駆動** です。その更新で live DOM binding が実際に適用された path だけを報告するため、**描画していない値の変化は見えません**。**`$watch`** はその headless 版で、ページ上でそのパスがバインドされているかどうかに関わらず、state の変化で発火します（**ワイルドカードの行パスだけは例外**で、headless に成立させるには `$listKeys` が要ります。後述）。
 
 ```html
 <wcs-state>
@@ -1646,6 +1646,7 @@ $streams: {
         },
 
         // ワイルドカードパスは変化した行ごとに 1 回発火する
+        //（リストを `for` で描画しているか、`$listKeys` の宣言が要る。後述）
         "items.*.price"(cur, prev, index) {
           this.lastPriceChange = `#${index}: ${prev} → ${cur}`;
         },
@@ -1667,7 +1668,7 @@ $streams: {
 
 **`$watch` は独自の発火条件を持ちません。** 更新バッチに載ったものをそのまま発火します。これはうまく噛み合っていて、同値の primitive 書き込みは enqueue 前に落ちている（＝実質的に変化時のみ発火）一方、occurrence（`semantics: "event"` の property）は**意図的に**落とされないので `cur === prev` で発火します。エッジ検出が要るならハンドラ内で `cur` と `prev` を比較してください。
 
-**getter を watch すると eager になります。** computed は本来 lazy で、依存は評価時にしか記録されません —— つまり描画していない getter は本来一度も発火しません。`$watch` に宣言すると接続時に 1 回評価され、以後は依存に触れたバッチの終端で毎回評価されます。`prev` は前回の評価値です。重い computed を watch すればその評価コストが毎バッチ乗り、getter 内の例外は watch 経由で表面化します。ワイルドカード getter（`items.*.tax`）は eager 化**しません**（初回評価がリスト全体を舐めることになるため）。この形は DOM にバインドされている場合にのみ発火します。
+**getter を watch すると eager になります。** computed は本来 lazy で、依存は評価時にしか記録されません —— つまり描画していない getter は本来一度も発火しません。`$watch` に宣言すると接続時に 1 回評価され、以後は依存に触れたバッチの終端で毎回評価されます。`prev` は前回の評価値です。重い computed を watch すればその評価コストが毎バッチ乗り、getter 内の例外は watch 経由で表面化します。ワイルドカード getter（`items.*.tax`）は eager 化**しません**（初回評価がリスト全体を舐めることになるため）。この形は DOM にバインドされている場合にのみ発火し、`prev` は常に `undefined` です（行ごとの評価値を保持しないため）。
 
 発火順序は 3 層に分かれ、利用者が意思を持てるのは真ん中の層だけです。
 
@@ -1682,6 +1683,7 @@ $streams: {
 - **自 state のみ** —— パスに `@stateName` は書けません。他の state 要素の watch は宣言時に拒否されます。
 - **中間値は観測できません** —— 1 バッチ内の `a → b → c` は `cur = c` / `prev = a` で 1 回だけ発火します（binding 更新と同じ契約）。
 - **行単位の差分を見たいなら `$listKeys`** —— 未宣言のまま配列全体を代入すると、行 watch は**全行**について `prev === undefined` で発火します（どの行もパス書き込みを通っていないため）。`$listKeys` を宣言すればキー突合が per-field 書き込みに分解するので、変化した行だけが発火し `prev` もスカラで取れます。
+- **headless な行 watch には `$listKeys` が必要** —— `$watch` が単独では headless にならない唯一の箇所です。`items` から `items.*.price` への展開はリストの `for` バインディングが駆動しており、watch を宣言してもそのパスをリストとしては登録しません（意図的）。したがって `for` バインドも `$listKeys` も無い状態で配列を代入すると、行 watch は**一度も**発火しません。`$listKeys` を宣言する（キー突合がフィールドごとにパス書き込みするので展開を経由しない）か、リストを描画してください。スカラーパスは `user.name` のようなネストしたものも含め、この条件なしに headless で発火します。
 - **ハンドラの例外は隔離されます** —— throw はコンソールに報告され、残りの watch（と stream の restart）は続行します。loud fail する `$connectedCallback` / `$updatedCallback` とは異なる扱いです。
 - **書き込みの連鎖には上限があります** —— ハンドラの書き込みは新しいバッチを作るため、相互に書き合う watch は無限ループになり得ます。32 段で打ち切り、コンソールに報告します（値と DOM は巻き戻しません）。
 - **mapped な `bind-component` の子では使えません** —— 子の state は `$` 始まりのプロパティを遮る proxy に包まれるため、宣言が届きません（`$streams` も同様）。plain な（マップされていない）子では宣言できます。

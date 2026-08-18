@@ -1634,7 +1634,7 @@ See [docs/streams.md](docs/streams.md) for the full contract — lifecycle and o
 
 ## Watch (`$watch`)
 
-`$updatedCallback` is **binding-driven**: it reports the paths whose live DOM bindings were actually applied in that update, so a value you never render is invisible to it. **`$watch`** is the headless counterpart — it fires on state changes whether or not anything on the page is bound to the path.
+`$updatedCallback` is **binding-driven**: it reports the paths whose live DOM bindings were actually applied in that update, so a value you never render is invisible to it. **`$watch`** is the headless counterpart — it fires on state changes whether or not anything on the page is bound to the path. (One exception, spelled out below: a *wildcard* row path needs `$listKeys` to work headlessly.)
 
 ```html
 <wcs-state>
@@ -1651,6 +1651,7 @@ See [docs/streams.md](docs/streams.md) for the full contract — lifecycle and o
         },
 
         // wildcard paths fire once per changed row
+        // (needs the list rendered with `for`, or `$listKeys` declared — see below)
         "items.*.price"(cur, prev, index) {
           this.lastPriceChange = `#${index}: ${prev} → ${cur}`;
         },
@@ -1672,7 +1673,7 @@ The handler runs with `this` bound to a **writable** state proxy, so it can writ
 
 **Watch adds no firing condition of its own.** It fires for whatever landed in the update batch. That falls out well: an equal primitive write is already dropped before it is enqueued (so you effectively get change-only firing), while an occurrence write — a `semantics: "event"` property — is deliberately *not* dropped, and still fires with `cur === prev`. If you need edge detection, compare `cur` and `prev` in the handler.
 
-**Watching a getter makes it eager.** A computed getter is normally lazy, and its dependencies are only recorded when it is evaluated — so an unrendered getter would never fire at all. Declaring one in `$watch` evaluates it once at connect and again at the end of every batch that touches its dependencies. Its `prev` is the previous evaluation. Watch a heavy computed and you pay that evaluation on every batch; exceptions inside it surface through the watch instead of staying dormant. Wildcard getters (`items.*.tax`) are **not** made eager — priming one would sweep the whole list — so that form fires only when it is also bound to the DOM.
+**Watching a getter makes it eager.** A computed getter is normally lazy, and its dependencies are only recorded when it is evaluated — so an unrendered getter would never fire at all. Declaring one in `$watch` evaluates it once at connect and again at the end of every batch that touches its dependencies. Its `prev` is the previous evaluation. Watch a heavy computed and you pay that evaluation on every batch; exceptions inside it surface through the watch instead of staying dormant. Wildcard getters (`items.*.tax`) are **not** made eager — priming one would sweep the whole list — so that form fires only when it is also bound to the DOM, and its `prev` is always `undefined` (no per-row evaluation is remembered).
 
 Firing order is defined in three layers, and only the middle one is yours to steer:
 
@@ -1687,6 +1688,7 @@ Key rules:
 - **Only its own state** — a path may not carry `@stateName`; watching another state element is rejected at declaration time.
 - **Intermediate values are not observable** — a batch that goes `a → b → c` fires once with `cur = c`, `prev = a`, the same contract as binding updates.
 - **Row-level diffs want `$listKeys`** — without it, assigning a whole array fires the row watch for *every* row with `prev === undefined`, because no row went through a path write. With `$listKeys` declared, the key match decomposes the assignment into per-field writes, so only changed rows fire and `prev` is a real scalar.
+- **A headless row watch requires `$listKeys`** — this is the one place `$watch` is *not* headless on its own. Expanding `items` into `items.*.price` is driven by the list's `for` binding, and declaring a watch deliberately does not register the path as a list. So with neither a `for` binding nor `$listKeys`, assigning the array fires the row watch **zero** times. Add `$listKeys` (the key match writes each field by path, bypassing the expansion) or render the list. Scalar paths — including nested ones like `user.name` — are headless with no such condition.
 - **Handler exceptions are isolated** — a throw is reported to the console and the remaining watches (and stream restarts) still run. This differs from `$connectedCallback` / `$updatedCallback`, which fail loudly.
 - **Write chains are bounded** — a handler's writes form a new batch, so mutually-writing watches would loop forever; the chain is cut off after 32 links with a console error. Values and DOM are not rolled back.
 - **Not available on a mapped `bind-component` child** — its state is wrapped in a proxy that blanks out every `$`-prefixed property, so the declaration never arrives. This applies to `$streams` too. A plain (unmapped) child can declare it.

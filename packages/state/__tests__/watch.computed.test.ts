@@ -100,7 +100,7 @@ describe("$watch と computed（getter）", () => {
     host.remove();
   });
 
-  it("S12: getter 内の throw が例外隔離に乗り、他の watch を巻き添えにしないこと", async () => {
+  it("S12: getter 内の throw が例外隔離に乗り、他の watch を巻き添えにしないこと（報告は評価エラーとして出る）", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => { /* silence */ });
     const later = vi.fn();
     const { host, stateElement } = await mount({
@@ -123,8 +123,9 @@ describe("$watch と computed（getter）", () => {
     await flush();
 
     expect(later).toHaveBeenCalledTimes(1);
+    // throw 元が cur の評価（getter）なので、ハンドラ本体の throw とは文言を分けている
     expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('$watch handler for "boom" threw'),
+      expect.stringContaining('$watch evaluation of "boom" threw'),
       expect.any(Error),
     );
     host.remove();
@@ -159,13 +160,13 @@ describe("$watch と computed（getter）", () => {
     host.remove();
   });
 
-  it("ワイルドカード getter も DOM にバインドされていれば発火すること", async () => {
-    const calls: Array<[number, unknown]> = [];
+  it("ワイルドカード getter も DOM にバインドされていれば発火すること（prev は常に undefined）", async () => {
+    const calls: Array<[number, unknown, unknown]> = [];
     const { host, stateElement } = await mount({
       items: [{ price: 100 }, { price: 200 }],
       get "items.*.tax"(this: any) { return this["items.*.price"] * 0.1; },
       $watch: {
-        "items.*.tax"(cur: unknown, _prev: unknown, index: number) { calls.push([index, cur]); },
+        "items.*.tax"(cur: unknown, prev: unknown, index: number) { calls.push([index, cur, prev]); },
       },
     } as unknown as IState,
       `<ul><template data-wcs="for: items"><li data-wcs="textContent: items.*.tax"></li></template></ul>`);
@@ -175,7 +176,34 @@ describe("$watch と computed（getter）", () => {
     });
     await flush();
 
-    expect(calls).toEqual([[0, 30]]);
+    // eager 化の対象外（§5-3）と対称に、前回評価値の台帳にも載せない ＝ prev は undefined
+    expect(calls).toEqual([[0, 30, undefined]]);
+    host.remove();
+  });
+
+  it("ワイルドカード getter の発火では前回評価値の台帳が増えないこと（行ごとのアドレス蓄積を防ぐ）", async () => {
+    // 台帳のキーは絶対アドレス（listIndex を強参照）で、prune 経路は `_state` 再 set だけ。
+    // 行が入れ替わるたびに積むと、行を捨てても listIndex が解放されず単調増加する。
+    const { host, stateElement } = await mount({
+      items: [{ price: 100 }, { price: 200 }],
+      get "items.*.tax"(this: any) { return this["items.*.price"] * 0.1; },
+      $watch: {
+        "items.*.tax"() { /* noop */ },
+      },
+    } as unknown as IState,
+      `<ul><template data-wcs="for: items"><li data-wcs="textContent: items.*.tax"></li></template></ul>`);
+
+    const { __private__ } = await import("../src/watch/computedSnapshots");
+    const sizes: number[] = [];
+    for (let round = 0; round < 5; round++) {
+      stateElement.createState("writable", (state) => {
+        state.items = [{ price: 100 + round }, { price: 200 + round }];
+      });
+      await flush();
+      sizes.push(__private__.snapshotsByStateElement.get(stateElement)?.size ?? 0);
+    }
+
+    expect(sizes).toEqual([0, 0, 0, 0, 0]);
     host.remove();
   });
 

@@ -19,6 +19,7 @@
  */
 import { describe, it, expect, beforeAll, beforeEach, vi, afterEach } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
+import { MAX_WATCH_CHAIN_DEPTH } from "../src/define";
 import type { IState } from "../src/types";
 import { __private__ as chainDepthPrivate } from "../src/watch/chainDepth";
 import { __private__ as runtimePrivate } from "../src/watch/watchRuntime";
@@ -252,9 +253,10 @@ describe("$watch の発火", () => {
     await flushAsync();
 
     // 打ち切られている（無限ループにならない）ことと、報告が出ていることを確認する。
-    // 正確な回数は連鎖の畳まれ方に依存するので上限だけを見る。
+    // 正確な回数は連鎖の畳まれ方に依存するが、1 バッチにつき hit するのは a / b の
+    // どちらか 1 本なので、上限は定数から導出できる（定数を動かせばここも動く）。
     expect(ticks).toBeGreaterThan(0);
-    expect(ticks).toBeLessThan(200);
+    expect(ticks).toBeLessThanOrEqual(MAX_WATCH_CHAIN_DEPTH + 1);
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining("$watch chain depth limit exceeded"),
       expect.anything(),
