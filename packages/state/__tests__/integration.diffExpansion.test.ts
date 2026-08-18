@@ -174,4 +174,42 @@ describe("リスト置換の diff-filter 展開（統合）", () => {
     expect(texts()).toEqual(["0:a", "1:c"]);
     host.remove();
   });
+
+  it("DOM に直接バインドされていない中間 getter 経由でも $1 依存 getter が更新されること", async () => {
+    // .rank は DOM のどこにも現れず .label からしか読まれない。静的依存は
+    // State.setPathInfo が「バインドされたパスから親方向へ」張るため、この綴りでは
+    // items.*.rank が staticMap に載らない。移動行の展開対象をそこから引いていたため、
+    // 並び替え・挿入で rank が古い値のまま label に流れ込んでいた。
+    let rankEvals = 0;
+    const { host, shadowRoot, stateElement } = await mount(
+      {
+        items: [{ name: "a" }, { name: "b" }, { name: "c" }],
+        get "items.*.rank"(this: any) { rankEvals++; return this.$1 + 1; },
+        get "items.*.label"(this: any) { return `${this["items.*.rank"]}:${this["items.*.name"]}`; },
+      },
+      `<ul><template data-wcs="for: items"><li data-wcs="textContent: .label"></li></template></ul>`,
+    );
+    const texts = () => Array.from(shadowRoot.querySelectorAll("li")).map(li => li.textContent);
+    expect(texts()).toEqual(["1:a", "2:b", "3:c"]);
+    expect(stateElement.staticDependency.get("items.*")).not.toContain("items.*.rank");
+
+    // 並び替え: 全行の位置が変わる
+    stateElement.createState("writable", (s: any) => {
+      const i = s.items;
+      s.items = [i[2], i[0], i[1]];
+    });
+    await flush();
+    expect(texts()).toEqual(["1:c", "2:a", "3:b"]);
+
+    // 先頭挿入: 既存 3 行は位置 0,1,2 → 1,2,3 に移動
+    const before = rankEvals;
+    stateElement.createState("writable", (s: any) => {
+      s.items = [{ name: "x" }, ...s.items];
+    });
+    await flush();
+    expect(texts()).toEqual(["1:x", "2:c", "3:a", "4:b"]);
+    // 追加行 1 + 移動行 3。全行展開へのフォールバックではないこと
+    expect(rankEvals - before).toBe(4);
+    host.remove();
+  });
 });
