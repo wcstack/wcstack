@@ -53,6 +53,12 @@ export interface WcsMessageCatalog {
   // --- nestedAssignValidator / stateTypeValidator ---
   nestedAssign(suggestedPath: string): string;
   typeAnnotationIncompatible(valueType: string, rawType: string): string;
+  // --- watchDeclarationValidator ---
+  watchKeyCrossState(key: string): string;
+  watchKeyReserved(key: string): string;
+  watchKeyEmptySegment(key: string): string;
+  watchHandlerNotFunction(key: string): string;
+  watchPathMissing(key: string): string;
   // --- arrayMutationValidator ---
   arrayMutation(method: string, alternative: string): string;
   arrayIndexAssign(suggestedPath: string): string;
@@ -103,6 +109,11 @@ const ja: WcsMessageCatalog = {
   moustacheFouc: (e) =>
     `<template> 外の {{ }} 構文は FOUC（初期表示時にテンプレート文字列が見える）の原因になります。<!--@@:${e}--> またはコメント構文の使用を検討してください。`,
   nestedAssign: (sp) => `ネストされたプロパティへの代入はリアクティブ更新をトリガーしません。this["${sp}"] を使用してください。`,
+  watchKeyCrossState: (k) => `$watch のキー "${k}" は他の state を指しています。@ 付きの越境 watch は使えません（自 state のパスのみ）`,
+  watchKeyReserved: (k) => `$watch のキー "${k}" は "$" で始められません（予約名前空間）`,
+  watchKeyEmptySegment: (k) => `$watch のキー "${k}" に空のパスセグメントがあります`,
+  watchHandlerNotFunction: (k) => `$watch のエントリ "${k}" の値は関数である必要があります`,
+  watchPathMissing: (k) => `$watch のキー "${k}" は状態定義に存在しません（一度も発火しません）`,
   typeAnnotationIncompatible: (vt, rt) => `型 "${vt}" は @type {${rt}} と互換性がありません`,
   arrayMutation: (m, alt) =>
     `配列の破壊的メソッド "${m}" はリアクティブ更新をトリガーしません（同一参照の自己再代入でも要素の追加・削除は反映されません）。非破壊メソッドと再代入を使用してください（例: ${alt}）。`,
@@ -159,6 +170,11 @@ const en: WcsMessageCatalog = {
   moustacheFouc: (e) =>
     `{{ }} outside a <template> causes FOUC (the raw template string is visible before binding). Consider the comment syntax <!--@@:${e}--> instead.`,
   nestedAssign: (sp) => `Assigning to a nested property does not trigger a reactive update. Use this["${sp}"] instead.`,
+  watchKeyCrossState: (k) => `$watch key "${k}" targets another state. Cross-state watching with @ is not supported (own paths only)`,
+  watchKeyReserved: (k) => `$watch key "${k}" must not start with "$" (reserved namespace)`,
+  watchKeyEmptySegment: (k) => `$watch key "${k}" has an empty path segment`,
+  watchHandlerNotFunction: (k) => `The value of $watch entry "${k}" must be a function`,
+  watchPathMissing: (k) => `$watch key "${k}" does not exist in the state definition (it will never fire)`,
   typeAnnotationIncompatible: (vt, rt) => `Type "${vt}" is not compatible with @type {${rt}}`,
   arrayMutation: (m, alt) =>
     `Destructive array method "${m}" does not trigger a reactive update (re-assigning the same reference does not reflect added/removed elements either). Use a non-destructive method with reassignment (e.g. ${alt}).`,

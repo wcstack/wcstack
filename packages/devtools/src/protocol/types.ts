@@ -104,6 +104,21 @@ export type DevtoolsEventLike =
       readonly tokenName: string;
       readonly args: readonly unknown[];
       readonly subscriberCount: number;
+    }
+  | {
+      // `$watch` の実行中の throw。watch は例外を自分で閉じる（drain と他機能を
+      // 巻き添えにしないため）ので、これが無いと失敗が devtools から見えない。
+      readonly type: "state:watch-error";
+      readonly phase: "prime" | "evaluate" | "handler";
+      readonly stateName: string;
+      readonly path: string;
+      readonly error: unknown;
+    }
+  | {
+      // watch 起点の書き込み連鎖が深さ上限で打ち切られた。
+      readonly type: "state:watch-chain-limit";
+      readonly maxDepth: number;
+      readonly paths: readonly string[];
     };
 
 export type DevtoolsSinkLike = (event: DevtoolsEventLike) => void;

@@ -78,6 +78,26 @@ export function formatValue(value: unknown, depth: number = 2): string {
 }
 
 /**
+ * throw された値の要約。
+ *
+ * `formatValue` は class インスタンスを `[[ClassName]]` に畳むため、Error に
+ * そのまま使うと **最も知りたい message が消える**（`[[Error]]` だけになる）。
+ * Error 形（name / message を持つ）だけは `Name: message` に開く。
+ * 非 Error の throw（文字列・オブジェクト等）は通常の要約へ倒す。
+ */
+export function formatError(error: unknown): string {
+  if (error !== null && typeof error === "object") {
+    const { name, message } = error as { name?: unknown; message?: unknown };
+    if (typeof message === "string") {
+      const label = typeof name === "string" && name.length > 0 ? name : className(error as object);
+      const body = message.length > MAX_STRING ? message.slice(0, MAX_STRING) + "…" : message;
+      return body.length > 0 ? `${label}: ${body}` : label;
+    }
+  }
+  return formatValue(error, 1);
+}
+
+/**
  * token 引数の要約（先頭 3 引数 × 各 80 文字上限、devtools-tag-design.md §6）。
  */
 export function formatArgs(args: readonly unknown[]): string {

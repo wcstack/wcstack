@@ -192,6 +192,45 @@ describe('DevtoolsCore', () => {
       expect(timeline[1]).toMatchObject({ label: '1 address', detail: 'solo' });
     });
 
+    it('watch-errorをphase付きで記録すること（ランタイムが握った失敗の唯一の可視化点）', () => {
+      const { core, source } = setupConnected();
+      source.emit({ type: 'state:watch-error', phase: 'handler', stateName: 'main', path: 'items.*.price', error: new TypeError('boom') });
+      source.emit({ type: 'state:watch-error', phase: 'evaluate', stateName: 'main', path: 'total', error: 'plain string throw' });
+      const [handler, evaluate] = core.getTimeline();
+      expect(handler).toMatchObject({
+        kind: 'watch-error',
+        stateName: 'main',
+        label: 'items.*.price',
+        detail: 'handler: TypeError: boom',
+      });
+      expect(evaluate).toMatchObject({ kind: 'watch-error', label: 'total', detail: 'evaluate: "plain string throw"' });
+    });
+
+    it('hidden stateのwatch-errorを無視すること', () => {
+      const { core, source } = setupConnected();
+      source.emit({
+        type: 'state:watch-error',
+        phase: 'prime',
+        stateName: `${RESERVED_STATE_NAME_PREFIX}-ui`,
+        path: 'x',
+        error: new Error('e'),
+      });
+      expect(core.getTimeline()).toHaveLength(0);
+    });
+
+    it('watch-chain-limitを記録すること（state名を持たないバッチ単位の打ち切り）', () => {
+      const { core, source } = setupConnected();
+      source.emit({ type: 'state:watch-chain-limit', maxDepth: 32, paths: ['a', 'b'] });
+      expect(core.getTimeline()).toEqual([
+        expect.objectContaining({
+          kind: 'watch-chain-limit',
+          stateName: null,
+          label: 'depth > 32',
+          detail: 'a, b',
+        }),
+      ]);
+    });
+
     it('token-emitをkind別に記録しsubscriberCountを保持すること', () => {
       const { core, source } = setupConnected();
       source.emit({ type: 'state:token-emit', kind: 'command', stateName: 'main', tokenName: 'play', args: ['x'], subscriberCount: 0 });

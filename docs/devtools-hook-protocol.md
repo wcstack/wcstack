@@ -150,6 +150,28 @@ The files changed and the firing points. All go through §2's `sink` and conform
 - The bridge registers on attach and unregisters on detach (hanging off it as a consumer of the same standing
   as the `$streams` listener).
 - Event: `state:update-batch`, payload = `{ addresses: ReadonlySet<IAbsoluteStateAddress> }`.
+- **Ordering**: drain listeners run in ascending priority, and devtools uses
+  `DEVTOOLS_LISTENER_PRIORITY` (0) — **ahead of** `$watch` (10) and the `$streams` restart (20).
+  `state:update-batch` observes *what landed in this batch*, so it should report the raw set before
+  watch handlers and restarts add their side effects. Omitting the priority would default to 0 and
+  give the same result, but that would be a coincidence; the constant in `define.ts` pins the intent.
+
+### 4.3.1 `$watch` failures
+
+`$watch` **swallows handler exceptions itself**, so that one user error cannot take down the drain and
+the `$streams` restarts along with it ([state-watch-hook-design.md](./state-watch-hook-design.md) §7-1).
+That means a failure never surfaces unless someone is watching the console. These events are the one
+place it becomes visible.
+
+- Event: `state:watch-error`,
+  payload = `{ phase: "prime" | "evaluate" | "handler", stateName, path, error }`.
+  `phase` says where it threw — `prime` is the evaluation at connect, `evaluate` is resolving `cur`
+  (forcing a watched getter), `handler` is the handler body. A getter failure and a handler failure
+  are fixed differently, so they are not collapsed into one.
+- Event: `state:watch-chain-limit`, payload = `{ maxDepth, paths }`, emitted once when a watch-rooted
+  write chain is cut off at the depth limit. Values and DOM are not rolled back (same stance as
+  `propagation:hop-limit`). The cut-off is per batch, so it carries no `stateName`.
+- Both are constructed only inside `devtoolsSink !== null` (cost rule §1-1).
 
 ### 4.4 Growth and shrinkage of the binding ledger
 

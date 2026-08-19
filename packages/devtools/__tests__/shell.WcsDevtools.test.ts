@@ -506,6 +506,20 @@ describe('WcsDevtools shell', () => {
       expect(body.querySelectorAll('.badge-tag.warn')).toHaveLength(1);
     });
 
+    it('$watch の失敗行に警告を付けること（ランタイムが握るので唯一の気づける場所）', () => {
+      mount();
+      source.emit({ type: 'state:watch-error', phase: 'handler', stateName: 'main', path: 'total', error: new Error('boom') });
+      source.emit({ type: 'state:watch-chain-limit', maxDepth: 32, paths: ['a'] });
+      devtools.__flushRenderForTest();
+      const body = paneBody(devtools, 'timeline');
+      expect(body.textContent).toContain('handler: Error: boom');
+      expect(body.textContent).toContain('depth > 32');
+      const warned = Array.from(body.querySelectorAll('.badge-tag.warn')) as HTMLElement[];
+      expect(warned.map((el) => el.textContent)).toEqual(['watch-error', 'watch-chain-limit']);
+      expect(warned[0].title).toContain('$watch threw');
+      expect(warned[1].title).toContain('depth limit');
+    });
+
     it('切断後のpause/clearボタンは何もしないこと', () => {
       mount();
       devtools.remove();

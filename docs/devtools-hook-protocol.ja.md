@@ -147,6 +147,27 @@ interface IStateElementSummary {
 - bridge が attach 時に register / detach 時に unregister する（$streams リスナーと同格の
   消費者としてぶら下がる）。
 - イベント: `state:update-batch` payload = `{ addresses: ReadonlySet<IAbsoluteStateAddress> }`。
+- **実行順**: drain リスナーは優先度昇順で呼ばれ、devtools は
+  `DEVTOOLS_LISTENER_PRIORITY`（0）＝ `$watch`（10）・`$streams` restart（20）より**先**に流れる。
+  `state:update-batch` は「そのバッチに何が載ったか」の観測であり、watch ハンドラや restart の
+  副作用が乗る前の生の集合を報告すべきだから。優先度を省略しても既定 0 で同じ結果になるが、
+  それは偶然なので `define.ts` の定数で意図として固定してある。
+
+### 4.3.1 `$watch` の失敗
+
+`$watch` はハンドラの例外を**自分で握る**（1 つのユーザー例外で drain と `$streams` の
+restart を巻き添えにしないため、[state-watch-hook-design.ja.md](./state-watch-hook-design.md) §7-1）。
+つまり `console.error` を見ていない限り失敗が表に出ない。ここが唯一の可視化点になる。
+
+- イベント: `state:watch-error`
+  payload = `{ phase: "prime" | "evaluate" | "handler", stateName, path, error }`。
+  `phase` は throw 元 —— `prime` は接続時の初回評価、`evaluate` は `cur` の解決（watch した
+  getter の強制評価）、`handler` はハンドラ本体。getter の失敗とハンドラの失敗は直し方が
+  違うので畳まない。
+- イベント: `state:watch-chain-limit` payload = `{ maxDepth, paths }`。watch 起点の書き込み
+  連鎖が深さ上限で打ち切られたときに 1 回。値と binding 適用は巻き戻さない
+  （`propagation:hop-limit` と同じ姿勢）。バッチ単位の打ち切りなので `stateName` は持たない。
+- どちらも `devtoolsSink !== null` の内側でのみ生成する（コスト規範 §1-1）。
 
 ### 4.4 binding 台帳の増減
 

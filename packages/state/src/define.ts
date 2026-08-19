@@ -16,6 +16,12 @@ export const MAX_WATCH_CHAIN_DEPTH = 32;
 // watch が先なのは、watch ハンドラの書き込みが同じバッチの stream restart 判定に
 // 影響しないようにするため（watch → restart の一方向）。import 順に順序を持たせると
 // 無関係な import 整理で静かに壊れるため、明示的な優先度で固定する。
+//
+// devtools が最も先なのは、`state:update-batch` が「そのバッチに何が載ったか」の
+// 観測であり、watch / restart の副作用が乗る前の生の集合を報告すべきだから。
+// 既定値 0 のまま暗黙に先頭へ入るのに任せず、意図として定数で固定する
+// （docs/devtools-hook-protocol.md §4.3）。
+export const DEVTOOLS_LISTENER_PRIORITY = 0;
 export const WATCH_LISTENER_PRIORITY = 10;
 export const STREAM_LISTENER_PRIORITY = 20;
 

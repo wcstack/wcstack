@@ -36,6 +36,9 @@ const RESERVED_STREAMS_KEY = '$streams';
 const RESERVED_COMMAND_TOKENS_KEY = '$commandTokens';
 const RESERVED_EVENT_TOKENS_KEY = '$eventTokens';
 const RESERVED_LIST_KEYS_KEY = '$listKeys';
+// `$watch` はパスを新設しないので analyzeStatePaths では派生候補を作らない。
+// 宣言そのものの検証（キーがパスとして成立するか）は analyzeWatchEntries が担う。
+const RESERVED_WATCH_KEY = '$watch';
 
 /**
  * export default { ... } のオブジェクトリテラルからパス候補を生成する。
@@ -96,6 +99,81 @@ export function analyzeStatePaths(scriptContent: string, stateName: string = 'de
   }
 
   return paths;
+}
+
+/** `$watch` の 1 エントリ（キー ＝ 監視対象パス）と、原文での位置。 */
+export interface WatchEntryInfo {
+  /** 宣言キー。引用符を外した生の文字列（`items.*.price` など） */
+  readonly key: string;
+  /** scriptContent 内でのキーの範囲（引用符は含まない） */
+  readonly start: number;
+  readonly end: number;
+  /**
+   * 値が「関数ではないことが確実」か。識別子参照（`isLoading: onChange`）は
+   * 静的には解決できないので false（＝疑わない）に倒す。
+   */
+  readonly definitelyNotFunction: boolean;
+}
+
+/**
+ * `$watch: { "<path>": handler }` のエントリを位置付きで抽出する。
+ *
+ * `analyzeStatePaths` が `$watch` を「パスを作らない予約キー」として素通りするのに対し、
+ * こちらは **宣言そのものの妥当性**（キーがパスとして成立するか）を見る validator 用。
+ * `$watch` の失敗モードは一貫して「黙って発火しない」なので、キーのタイプミスを
+ * 静的に拾えるかどうかが効く。
+ */
+export function analyzeWatchEntries(scriptContent: string): WatchEntryInfo[] {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return [];
+
+  const watchProp = parseTopLevelProperties(root.content).find(p => p.name === RESERVED_WATCH_KEY);
+  if (
+    !watchProp || watchProp.kind !== 'data' || !watchProp.value ||
+    !isObjectLiteral(watchProp.value) || watchProp.valueStart === undefined
+  ) {
+    return [];
+  }
+
+  // 値テキストの先頭空白ぶんだけ `{` がずれる。中身はその次から始まる。
+  const leading = watchProp.value.length - watchProp.value.trimStart().length;
+  const innerStart = root.start + watchProp.valueStart + leading + 1;
+
+  const entries: WatchEntryInfo[] = [];
+  for (const entry of parseTopLevelProperties(extractObjectContent(watchProp.value))) {
+    if (entry.nameStart === undefined || entry.nameEnd === undefined) continue;
+    entries.push({
+      key: entry.name,
+      start: innerStart + entry.nameStart,
+      end: innerStart + entry.nameEnd,
+      // メソッド短縮記法は関数。data は値リテラルの形で判定し、識別子参照は疑わない。
+      definitelyNotFunction: entry.kind === 'data' && isNonFunctionLiteral(entry.value),
+    });
+  }
+  return entries;
+}
+
+/**
+ * 値が「関数ではない」と静的に断定できるリテラルか。
+ *
+ * 断定できる場合だけ true を返す（誤検出を出さないほうを優先する）。識別子参照・
+ * 呼び出し式・条件式などは「分からない」＝ false に倒す。
+ */
+function isNonFunctionLiteral(value: string | undefined): boolean {
+  if (value === undefined) return false;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return false;
+  // 関数の形（function 宣言 / アロー）が見えるなら明確に関数
+  const scan = maskCommentsAndStrings(trimmed);
+  if (/^(?:async\s+)?function\b/.test(trimmed) || scan.includes('=>')) return false;
+  // 明らかな非関数リテラルだけを拾う
+  return (
+    /^["'`]/.test(trimmed) ||
+    /^-?\d/.test(trimmed) ||
+    /^(?:true|false|null|undefined)\b/.test(trimmed) ||
+    trimmed.startsWith('[') ||
+    trimmed.startsWith('{')
+  );
 }
 
 /**
@@ -364,6 +442,14 @@ interface PropertyInfo {
   kind: 'data' | 'getter' | 'method';
   value?: string;
   typeHint?: string;
+  /**
+   * 解析対象の objectContent 内での名前の範囲（引用符は含まない）と値の開始位置。
+   * 診断のレンジ計算にだけ使う。宣言から合成した派生プロパティ（`$streams` の値
+   * 実体化など）は原文に対応する位置を持たないため未設定。
+   */
+  nameStart?: number;
+  nameEnd?: number;
+  valueStart?: number;
 }
 
 interface SimpleProperty {
@@ -372,16 +458,26 @@ interface SimpleProperty {
 }
 
 /**
- * `export default { ... }` からオブジェクトリテラルの中身を抽出する。
+ * `export default { ... }` のオブジェクトリテラルを、中身と **script 内での開始
+ * オフセット**の両方で返す。オフセットが要るのは診断のレンジ計算のため
+ * （watchDeclarationValidator）。
  */
-function extractDefaultExportObject(script: string): string | null {
+function locateDefaultExportObject(script: string): { content: string; start: number } | null {
   const scan = maskCommentsAndStrings(script);
   // defineState({ ... }) または { ... } を検出
   const match = scan.match(/export\s+default\s+(?:defineState\s*\(\s*)?(\{)/);
   if (!match) return null;
 
-  const startIndex = scan.indexOf(match[1], match.index!);
-  return extractBracedContent(script, scan, startIndex);
+  const braceIndex = scan.indexOf(match[1], match.index!);
+  // extractBracedContent は `{` の中身を返すので、中身の開始は `{` の次
+  return { content: extractBracedContent(script, scan, braceIndex), start: braceIndex + 1 };
+}
+
+/**
+ * `export default { ... }` からオブジェクトリテラルの中身を抽出する。
+ */
+function extractDefaultExportObject(script: string): string | null {
+  return locateDefaultExportObject(script)?.content ?? null;
 }
 
 /**
@@ -398,14 +494,22 @@ function parseTopLevelProperties(objectContent: string): PropertyInfo[] {
   // `streams` 部分にマッチして偽のパスが生まれる）。
   // `d` フラグ必須 — 引用符付きキーは鏡像では中身が空白なので、名前は
   // match.indices が示す範囲を原文から取り直す。
-  const regex = /(?:(?:get|set)\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:async\s+)?([$\w]+)\s*\([^)]*\)\s*\{)|(?:(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*:\s*)/gd;
+  // メソッド短縮記法も **引用符付きの名前**を受ける: `"items.*.price"(cur, prev) {}`。
+  // ドットや `*` を含むキーは引用符でしか書けず、`$watch` のワイルドカード行
+  // ハンドラはまさにこの形（README の idiom）。bare 識別子だけを見ていると
+  // 宣言そのものが解析結果から丸ごと消える。
+  // グループ: 1-3 accessor / 4-6 method / 7-9 data（各 double / single / bare）
+  const regex = /(?:(?:get|set)\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:async\s+)?(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*:\s*)/gd;
 
   let match: RegExpExecArray | null;
   while ((match = regex.exec(scan)) !== null) {
     const indices = match.indices!;
+    let nameSpan: [number, number] | undefined;
     const nameAt = (group: number): string | undefined => {
       const span = indices[group];
-      return span ? objectContent.slice(span[0], span[1]) : undefined;
+      if (!span) return undefined;
+      nameSpan = [span[0], span[1]];
+      return objectContent.slice(span[0], span[1]);
     };
     // 本体 `{ ... }` を読み飛ばして走査位置をその直後へ送る（本体内の `word:` を
     // トップレベルのプロパティと誤認しないため）。
@@ -418,28 +522,36 @@ function parseTopLevelProperties(objectContent: string): PropertyInfo[] {
     // accessor: get/set "path"() or get/set path()
     const accessorName = nameAt(1) ?? nameAt(2) ?? nameAt(3);
     if (accessorName) {
-      props.push({ name: accessorName, kind: 'getter' });
+      props.push({ name: accessorName, kind: 'getter', nameStart: nameSpan![0], nameEnd: nameSpan![1] });
       skipBody();
       continue;
     }
 
-    // method: name(args) {
-    const methodName = nameAt(4);
+    // method: name(args) { / "path"(args) {
+    const methodName = nameAt(4) ?? nameAt(5) ?? nameAt(6);
     if (methodName) {
-      props.push({ name: methodName, kind: 'method' });
+      props.push({ name: methodName, kind: 'method', nameStart: nameSpan![0], nameEnd: nameSpan![1] });
       skipBody();
       continue;
     }
 
     // data property: name: value
-    const propName = nameAt(5) ?? nameAt(6) ?? nameAt(7);
+    const propName = nameAt(7) ?? nameAt(8) ?? nameAt(9);
     if (propName) {
       const valueStartIndex = match.index + match[0].length;
       const value = extractFullValue(objectContent, scan, valueStartIndex);
       // JSDoc @type アノテーションがあれば優先、なければ値から推定
       const jsdocType = extractJsDocType(objectContent, match.index);
       const typeHint = jsdocType ?? inferTypeHint(value);
-      props.push({ name: propName, kind: 'data', value, typeHint });
+      props.push({
+        name: propName,
+        kind: 'data',
+        value,
+        typeHint,
+        nameStart: nameSpan![0],
+        nameEnd: nameSpan![1],
+        valueStart: valueStartIndex,
+      });
       // 値の末尾までスキップ
       regex.lastIndex = valueStartIndex + value.length;
     }

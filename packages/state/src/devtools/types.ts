@@ -66,6 +66,27 @@ export type DevtoolsEvent =
       readonly subscriberCount: number;
     }
   | {
+      // `$watch` の実行中に throw した（docs/state-watch-hook-design.md §7-1）。
+      // watch は 1 バッチで N 個走り drain フックを他機能と共有するため、例外は
+      // watch 側で閉じる（console.error のみ）。それだと devtools から
+      // 「静かに握られた失敗」が見えないので、同じ地点からここにも流す。
+      readonly type: "state:watch-error";
+      /** throw 元。cur の評価（getter）とハンドラ本体では原因も直し方も違う */
+      readonly phase: "prime" | "evaluate" | "handler";
+      readonly stateName: string;
+      /** `$watch` の宣言キー（ワイルドカードを含む生のパス） */
+      readonly path: string;
+      readonly error: unknown;
+    }
+  | {
+      // watch 起点の書き込み連鎖が深さ上限で打ち切られた（設計書 §7-2）。
+      // 値と binding 適用は巻き戻さない ＝ propagation:hop-limit と同じ姿勢。
+      readonly type: "state:watch-chain-limit";
+      readonly maxDepth: number;
+      /** 打ち切ったバッチに載っていたアドレスのパス（報告用） */
+      readonly paths: readonly string[];
+    }
+  | {
       readonly type: "propagation:suppressed";
       readonly reason: "confirmation" | "visited-edge";
       readonly transactionId: number;

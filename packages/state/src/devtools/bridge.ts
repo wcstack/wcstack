@@ -12,6 +12,7 @@
  */
 
 import { inSsr } from "../config";
+import { DEVTOOLS_LISTENER_PRIORITY } from "../define";
 import { getStateElementByName, getLiveStateElements } from "../stateElementByName";
 import { registerUpdateBatchListener, unregisterUpdateBatchListener, UpdateBatchListener } from "../updater/updater";
 import { raiseError } from "../raiseError";
@@ -125,7 +126,9 @@ function setSink(sink: DevtoolsSink | null): void {
   setDevtoolsSink(sink);
   const isActive = sink !== null;
   if (isActive && !wasActive) {
-    registerUpdateBatchListener(onUpdateBatch);
+    // `$watch` / `$streams` restart より先に流す（protocol §4.3）。優先度を省略しても
+    // 既定 0 で結果は同じだが、それは偶然なので定数で意図を固定する。
+    registerUpdateBatchListener(onUpdateBatch, DEVTOOLS_LISTENER_PRIORITY);
   } else if (!isActive && wasActive) {
     unregisterUpdateBatchListener(onUpdateBatch);
   }
