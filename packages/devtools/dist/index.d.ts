@@ -98,6 +98,16 @@ type DevtoolsEventLike = {
     readonly tokenName: string;
     readonly args: readonly unknown[];
     readonly subscriberCount: number;
+} | {
+    readonly type: "state:watch-error";
+    readonly phase: "prime" | "evaluate" | "handler";
+    readonly stateName: string;
+    readonly path: string;
+    readonly error: unknown;
+} | {
+    readonly type: "state:watch-chain-limit";
+    readonly maxDepth: number;
+    readonly paths: readonly string[];
 };
 type DevtoolsSinkLike = (event: DevtoolsEventLike) => void;
 interface IDevtoolsSourceLike {
@@ -141,7 +151,7 @@ interface IDevtoolsHookRegistryLike {
 
 /** 予約 state 名 prefix（protocol §5）。この prefix の要素・イベントは常に除外 */
 declare const RESERVED_STATE_NAME_PREFIX = "wcs-devtools";
-type TimelineKind = "write" | "batch" | "command" | "event" | "element-registered" | "element-unregistered";
+type TimelineKind = "write" | "batch" | "command" | "event" | "element-registered" | "element-unregistered" | "watch-error" | "watch-chain-limit";
 interface ITimelineEntry {
     readonly seq: number;
     readonly time: number;

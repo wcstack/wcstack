@@ -32,6 +32,8 @@
     "mul",
     "div",
     "mod",
+    "abs",
+    "clamp",
     "fix",
     "locale",
     "uc",
@@ -43,16 +45,20 @@
     "pad",
     "rep",
     "rev",
+    "truncate",
+    "join",
     "int",
     "float",
     "round",
     "floor",
     "ceil",
     "percent",
+    "unit",
     "date",
     "time",
     "datetime",
     "ymd",
+    "hms",
     "falsy",
     "truthy",
     "defaults",
@@ -215,6 +221,30 @@
         "number"
       ]
     },
+    "abs": {
+      "description": "絶対値",
+      "hasArgs": false,
+      "resultType": "number",
+      "acceptTypes": [
+        "number"
+      ],
+      "minArgs": 0,
+      "maxArgs": 0
+    },
+    "clamp": {
+      "description": "範囲内に丸める (min,max)",
+      "hasArgs": true,
+      "resultType": "number",
+      "acceptTypes": [
+        "number"
+      ],
+      "minArgs": 2,
+      "maxArgs": 2,
+      "argTypes": [
+        "number",
+        "number"
+      ]
+    },
     "fix": {
       "description": "固定小数点表記",
       "hasArgs": true,
@@ -346,6 +376,33 @@
       "minArgs": 0,
       "maxArgs": 0
     },
+    "truncate": {
+      "description": "切り詰めて省略記号 (length[,suffix])",
+      "hasArgs": true,
+      "resultType": "string",
+      "acceptTypes": [
+        "string"
+      ],
+      "minArgs": 1,
+      "maxArgs": 2,
+      "argTypes": [
+        "number",
+        "string"
+      ]
+    },
+    "join": {
+      "description": "配列を連結 ([separator])",
+      "hasArgs": true,
+      "resultType": "string",
+      "acceptTypes": [
+        "array"
+      ],
+      "minArgs": 0,
+      "maxArgs": 1,
+      "argTypes": [
+        "string"
+      ]
+    },
     "int": {
       "description": "整数にパース",
       "hasArgs": false,
@@ -420,6 +477,20 @@
         "number"
       ]
     },
+    "unit": {
+      "description": "単位（接尾辞）を付加",
+      "hasArgs": true,
+      "resultType": "string",
+      "acceptTypes": [
+        "number",
+        "string"
+      ],
+      "minArgs": 1,
+      "maxArgs": 1,
+      "argTypes": [
+        "string"
+      ]
+    },
     "date": {
       "description": "ロケール形式の日付",
       "hasArgs": false,
@@ -446,6 +517,17 @@
     },
     "ymd": {
       "description": "YYYY-MM-DD 形式",
+      "hasArgs": true,
+      "resultType": "string",
+      "acceptTypes": "any",
+      "minArgs": 0,
+      "maxArgs": 1,
+      "argTypes": [
+        "string"
+      ]
+    },
+    "hms": {
+      "description": "HH:MM:SS 形式",
       "hasArgs": true,
       "resultType": "string",
       "acceptTypes": "any",
@@ -531,6 +613,7 @@
     "$eventTokens",
     "$on",
     "$streams",
+    "$watch",
     "$listKeys",
     "$streamStatus",
     "$streamError"

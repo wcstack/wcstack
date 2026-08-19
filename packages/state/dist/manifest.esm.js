@@ -71,6 +71,15 @@ function valueMustBeBoolean(fnName) {
 function valueMustBeDate(fnName) {
     raiseError(`filter ${fnName} requires a date value`);
 }
+/**
+ * Throws error when filter requires array value but non-array provided.
+ *
+ * @param fnName - Name of the filter function
+ * @returns Never returns (always throws)
+ */
+function valueMustBeArray(fnName) {
+    raiseError(`filter ${fnName} requires an array value`);
+}
 
 /**
  * builtinFilters.ts
@@ -83,7 +92,7 @@ function valueMustBeDate(fnName) {
  * - Designed for common use as both input and output filters
  *
  * Design points:
- * - Comprehensive coverage of diverse filters: eq, ne, lt, gt, inc, fix, locale, uc, lc, cap, trim, slice, pad, int, float, round, date, time, ymd, falsy, truthy, defaults, boolean, number, string, null, etc.
+ * - Comprehensive coverage of diverse filters: eq, ne, lt, gt, inc, abs, clamp, fix, locale, uc, lc, cap, trim, slice, pad, truncate, join, int, float, round, percent, unit, date, time, ymd, hms, falsy, truthy, defaults, boolean, number, string, null, etc.
  * - Rich type checking and error handling for option values
  * - Centralized management of filter functions with FilterWithOptions type, easy to extend
  * - Dynamic retrieval of filter functions from filter names and options via builtinFilterFn
@@ -314,6 +323,48 @@ const mod = (options) => {
             valueMustBeNumber('mod');
         }
         return value % Number(opt);
+    };
+};
+/**
+ * Absolute value filter - returns the magnitude of a number.
+ *
+ * @param options - Unused
+ * @returns Filter function that returns the absolute value
+ */
+const abs = (_options) => {
+    return (value) => {
+        if (typeof value !== 'number') {
+            valueMustBeNumber('abs');
+        }
+        return Math.abs(value);
+    };
+};
+/**
+ * Clamp filter - constrains a number to the inclusive range [min, max].
+ *
+ * Saturating conversion in the same family as round/floor/ceil, so it stays on
+ * the wire rather than in state. Pairs with `unit` for style bindings:
+ * `style.width: ratio|clamp(0,1)|percent(0)`.
+ *
+ * @param options - Array with minimum as first element and maximum as second (both required)
+ * @returns Filter function that returns the clamped number
+ */
+const clamp = (options) => {
+    const opt1 = options?.[0] ?? optionsRequired('clamp');
+    if (!validateNumberString(opt1)) {
+        optionMustBeNumber('clamp');
+    }
+    const opt2 = options?.[1] ?? optionsRequired('clamp');
+    if (!validateNumberString(opt2)) {
+        optionMustBeNumber('clamp');
+    }
+    const min = Number(opt1);
+    const max = Number(opt2);
+    return (value) => {
+        if (typeof value !== 'number') {
+            valueMustBeNumber('clamp');
+        }
+        return Math.min(Math.max(value, min), max);
     };
 };
 /**
@@ -583,6 +634,76 @@ const percent = (options) => {
     };
 };
 /**
+ * Unit filter - appends a CSS unit (or any suffix) to the value.
+ *
+ * A number alone does nothing in CSS, so without this the unit has to be built in
+ * state — which drags presentation into the source of truth, and in the worst case
+ * forces a whole derived array just to carry `"42%"` strings.
+ * `style.height: samples.*.cpu|clamp(0,100)|fix(0)|unit(%)` keeps it on the wire.
+ *
+ * Accepts strings as well as numbers **on purpose**: the useful chains run through
+ * `fix` / `percent`, which already return strings. Rejecting non-numbers here would
+ * break exactly the combination this filter exists for.
+ *
+ * `null` / `undefined` pass through untouched rather than becoming `"undefinedpx"`,
+ * so the binding layer's "undefined skips the write, null clears" semantics survive.
+ *
+ * @param options - Array with the unit/suffix as first element (required)
+ * @returns Filter function that returns the value with the unit appended
+ */
+const unit = (options) => {
+    const opt = options?.[0] ?? optionsRequired('unit');
+    return (value) => {
+        if (value === null || typeof value === 'undefined') {
+            return value;
+        }
+        return String(value) + opt;
+    };
+};
+/**
+ * Join filter - joins array elements into a string.
+ *
+ * The default separator is `", "` rather than `","`: a bare comma is what `String()`
+ * already produces without any filter, so defaulting to it would make `|join` a no-op.
+ *
+ * @param options - Array with separator as first element (default: ', ')
+ * @returns Filter function that returns the joined string
+ */
+const join = (options) => {
+    const opt = options?.[0] ?? ', ';
+    return (value) => {
+        if (!Array.isArray(value)) {
+            valueMustBeArray('join');
+        }
+        return value.join(opt);
+    };
+};
+/**
+ * Truncate filter - shortens a string and appends an ellipsis.
+ *
+ * The length option counts **kept characters**, not the total including the suffix,
+ * matching the existing `slice(0, n)` reading. A string at or below the limit is
+ * returned untouched (no suffix).
+ *
+ * @param options - Array with max kept length as first element and suffix as second (default: '…')
+ * @returns Filter function that returns the truncated string
+ */
+const truncate = (options) => {
+    const opt1 = options?.[0] ?? optionsRequired('truncate');
+    if (!validateNumberString(opt1)) {
+        optionMustBeNumber('truncate');
+    }
+    const maxLength = Number(opt1);
+    const suffix = options?.[1] ?? '…';
+    return (value) => {
+        const v = String(value);
+        if (v.length <= maxLength) {
+            return v;
+        }
+        return v.slice(0, maxLength) + suffix;
+    };
+};
+/**
  * Date filter - formats Date object as localized date string.
  *
  * @param options - Array with locale string as first element (default: config.locale)
@@ -643,6 +764,27 @@ const ymd = (options) => {
         const month = (value.getMonth() + 1).toString().padStart(2, '0');
         const day = value.getDate().toString().padStart(2, '0');
         return `${year}${opt}${month}${opt}${day}`;
+    };
+};
+/**
+ * Hour-Minute-Second filter - formats Date object as HH:MM:SS string.
+ *
+ * The counterpart of `ymd`: a fixed, zero-padded, locale-independent rendering with a
+ * configurable separator, for when `time` (locale-formatted) is not stable enough.
+ *
+ * @param options - Array with separator string as first element (default: ':')
+ * @returns Filter function that returns formatted time string
+ */
+const hms = (options) => {
+    const opt = options?.[0] ?? ':';
+    return (value) => {
+        if (!(value instanceof Date)) {
+            valueMustBeDate('hms');
+        }
+        const hours = value.getHours().toString().padStart(2, '0');
+        const minutes = value.getMinutes().toString().padStart(2, '0');
+        const seconds = value.getSeconds().toString().padStart(2, '0');
+        return `${hours}${opt}${minutes}${opt}${seconds}`;
     };
 };
 /**
@@ -735,6 +877,8 @@ const builtinFilters = {
     "mul": mul,
     "div": div,
     "mod": mod,
+    "abs": abs,
+    "clamp": clamp,
     "fix": fix,
     "locale": locale,
     "uc": uc,
@@ -746,16 +890,20 @@ const builtinFilters = {
     "pad": pad,
     "rep": rep,
     "rev": rev,
+    "truncate": truncate,
+    "join": join,
     "int": int,
     "float": float,
     "round": round,
     "floor": floor,
     "ceil": ceil,
     "percent": percent,
+    "unit": unit,
     "date": date,
     "time": time,
     "datetime": datetime,
     "ymd": ymd,
+    "hms": hms,
     "falsy": falsy,
     "truthy": truthy,
     "defaults": defaults,
@@ -793,6 +941,8 @@ const builtinFilterMeta = {
     mul: { description: "乗算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
     div: { description: "除算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
     mod: { description: "剰余", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+    abs: { description: "絶対値", hasArgs: false, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 0 },
+    clamp: { description: "範囲内に丸める (min,max)", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 2, maxArgs: 2, argTypes: ["number", "number"] },
     // 数値フォーマット
     fix: { description: "固定小数点表記", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
     locale: { description: "ロケール形式で数値フォーマット", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["string"] },
@@ -806,6 +956,8 @@ const builtinFilterMeta = {
     pad: { description: "パディング (length[,char])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
     rep: { description: "繰り返し (count)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
     rev: { description: "文字順を反転", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+    truncate: { description: "切り詰めて省略記号 (length[,suffix])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
+    join: { description: "配列を連結 ([separator])", hasArgs: true, resultType: "string", acceptTypes: ["array"], minArgs: 0, maxArgs: 1, argTypes: ["string"] },
     // 数値パース・丸め
     int: { description: "整数にパース", hasArgs: false, resultType: "number", acceptTypes: ["string", "number"], minArgs: 0, maxArgs: 0 },
     float: { description: "浮動小数点数にパース", hasArgs: false, resultType: "number", acceptTypes: ["string", "number"], minArgs: 0, maxArgs: 0 },
@@ -813,11 +965,15 @@ const builtinFilterMeta = {
     floor: { description: "切り下げ", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
     ceil: { description: "切り上げ", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
     percent: { description: "パーセンテージ形式", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
+    // number だけでなく string も受ける。実用チェーンは fix / percent の後ろに繋がり、
+    // それらは既に string を返すため（builtinFilters.ts の unit を参照）
+    unit: { description: "単位（接尾辞）を付加", hasArgs: true, resultType: "string", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["string"] },
     // 日付・時刻
     date: { description: "ロケール形式の日付", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
     time: { description: "ロケール形式の時刻", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
     datetime: { description: "ロケール形式の日時", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
     ymd: { description: "YYYY-MM-DD 形式", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+    hms: { description: "HH:MM:SS 形式", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
     // 真偽値・変換
     falsy: { description: "偽値か判定", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
     truthy: { description: "真値か判定", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
@@ -870,6 +1026,7 @@ const STATE_COMMAND_NAMESPACE_NAME = "$command";
 const STATE_EVENT_TOKENS_NAME = "$eventTokens";
 const STATE_ON_NAME = "$on";
 const STATE_STREAMS_NAME = "$streams";
+const STATE_WATCH_NAME = "$watch";
 const STATE_LIST_KEYS_NAME = "$listKeys";
 const STATE_STREAM_STATUS_NAMESPACE_NAME = "$streamStatus";
 const STATE_STREAM_ERROR_NAMESPACE_NAME = "$streamError";
@@ -925,6 +1082,7 @@ function getWcsManifest() {
             STATE_EVENT_TOKENS_NAME,
             STATE_ON_NAME,
             STATE_STREAMS_NAME,
+            STATE_WATCH_NAME,
             STATE_LIST_KEYS_NAME,
             STATE_STREAM_STATUS_NAMESPACE_NAME,
             STATE_STREAM_ERROR_NAMESPACE_NAME,

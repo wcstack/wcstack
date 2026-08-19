@@ -82,6 +82,70 @@ function setConfig(partialConfig) {
     }
 }
 
+const DELIMITER = '.';
+const WILDCARD = '*';
+const MAX_WILDCARD_DEPTH = 128;
+const MAX_LOOP_DEPTH = 128;
+// 因果伝播（Phase 3）の 1 transaction あたり hop 上限。超過分の未処理 record は
+// quarantine し（適用済みの値は戻さない）、updater から例外は投げない。
+const MAX_PROPAGATION_HOPS = 32;
+// `$watch` ハンドラ起点の書き込み連鎖の打ち切り深さ（docs/state-watch-hook-design.md §7-2）。
+// watch ハンドラ内の書き込みは新しい microtask バッチを作るため MAX_PROPAGATION_HOPS の
+// ガードが効かず、書き込み先が動的なので `$streams` のような静的な自己依存検出もできない。
+// 値は MAX_PROPAGATION_HOPS と同値だが、別の打ち切り機構なので定数は共有しない。
+const MAX_WATCH_CHAIN_DEPTH = 32;
+// updater の drain 終了リスナーの実行順（昇順に呼ばれる。設計書 §3-2 層 1）。
+// watch が先なのは、watch ハンドラの書き込みが同じバッチの stream restart 判定に
+// 影響しないようにするため（watch → restart の一方向）。import 順に順序を持たせると
+// 無関係な import 整理で静かに壊れるため、明示的な優先度で固定する。
+//
+// devtools が最も先なのは、`state:update-batch` が「そのバッチに何が載ったか」の
+// 観測であり、watch / restart の副作用が乗る前の生の集合を報告すべきだから。
+// 既定値 0 のまま暗黙に先頭へ入るのに任せず、意図として定数で固定する
+// （docs/devtools-hook-protocol.md §4.3）。
+const DEVTOOLS_LISTENER_PRIORITY = 0;
+const WATCH_LISTENER_PRIORITY = 10;
+const STREAM_LISTENER_PRIORITY = 20;
+// data-wcs バインディング構文 `[prop][#mod]: [path][@state][|filter...]` の区切り文字（単一正本）。
+// これらは「死守の壁（構文契約）」であり値は不変。manifest.syntax.delimiters で公開される。
+const BINDING_SEPARATOR = ';'; // 複数バインディングの区切り
+const PROP_VALUE_SEPARATOR = ':'; // 左辺(prop)と右辺(path)の区切り
+const MODIFIER_SEPARATOR = '#'; // prop と修飾子の区切り
+const STATE_NAME_SEPARATOR = '@'; // path と @stateName の区切り
+const FILTER_SEPARATOR = '|'; // フィルタパイプの区切り
+/**
+ * stackIndexByIndexName
+ * インデックス名からスタックインデックスへのマッピング
+ * $1 => 0
+ * $2 => 1
+ * :
+ * ${i + 1} => i
+ * i < MAX_WILDCARD_DEPTH
+ */
+const tmpIndexByIndexName = {};
+for (let i = 0; i < MAX_WILDCARD_DEPTH; i++) {
+    tmpIndexByIndexName[`$${i + 1}`] = i;
+}
+const INDEX_BY_INDEX_NAME = Object.freeze(tmpIndexByIndexName);
+const NO_SET_TIMEOUT = 60 * 1000; // 1分
+const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
+const STATE_CONNECTED_CALLBACK_NAME = "$connectedCallback";
+const STATE_DISCONNECTED_CALLBACK_NAME = "$disconnectedCallback";
+const STATE_UPDATED_CALLBACK_NAME = "$updatedCallback";
+const WEBCOMPONENT_STATE_READY_CALLBACK_NAME = "$stateReadyCallback";
+const STATE_BINDABLES_NAME = "$bindables";
+const STATE_COMMANDS_NAME = "$commands";
+const STATE_COMMAND_TOKENS_NAME = "$commandTokens";
+const STATE_COMMAND_NAMESPACE_NAME = "$command";
+const STATE_EVENT_TOKENS_NAME = "$eventTokens";
+const STATE_ON_NAME = "$on";
+const STATE_STREAMS_NAME = "$streams";
+const STATE_WATCH_NAME = "$watch";
+const STATE_LIST_KEYS_NAME = "$listKeys";
+const STATE_STREAM_STATUS_NAMESPACE_NAME = "$streamStatus";
+const STATE_STREAM_ERROR_NAMESPACE_NAME = "$streamError";
+const DCC_DEFINITION_ATTRIBUTE = "data-wc-definition";
+
 const bindingPromiseByNode = new WeakMap();
 // resolve 済みマーク。エントリ未生成のまま resolve されたノードは、後から
 // wait された時に「生成して即 resolve」で追いつく。
@@ -122,52 +186,6 @@ function resolveInitializedBinding(node) {
     }
     resolvedNodes.add(node);
 }
-
-const DELIMITER = '.';
-const WILDCARD = '*';
-const MAX_WILDCARD_DEPTH = 128;
-const MAX_LOOP_DEPTH = 128;
-// 因果伝播（Phase 3）の 1 transaction あたり hop 上限。超過分の未処理 record は
-// quarantine し（適用済みの値は戻さない）、updater から例外は投げない。
-const MAX_PROPAGATION_HOPS = 32;
-// data-wcs バインディング構文 `[prop][#mod]: [path][@state][|filter...]` の区切り文字（単一正本）。
-// これらは「死守の壁（構文契約）」であり値は不変。manifest.syntax.delimiters で公開される。
-const BINDING_SEPARATOR = ';'; // 複数バインディングの区切り
-const PROP_VALUE_SEPARATOR = ':'; // 左辺(prop)と右辺(path)の区切り
-const MODIFIER_SEPARATOR = '#'; // prop と修飾子の区切り
-const STATE_NAME_SEPARATOR = '@'; // path と @stateName の区切り
-const FILTER_SEPARATOR = '|'; // フィルタパイプの区切り
-/**
- * stackIndexByIndexName
- * インデックス名からスタックインデックスへのマッピング
- * $1 => 0
- * $2 => 1
- * :
- * ${i + 1} => i
- * i < MAX_WILDCARD_DEPTH
- */
-const tmpIndexByIndexName = {};
-for (let i = 0; i < MAX_WILDCARD_DEPTH; i++) {
-    tmpIndexByIndexName[`$${i + 1}`] = i;
-}
-const INDEX_BY_INDEX_NAME = Object.freeze(tmpIndexByIndexName);
-const NO_SET_TIMEOUT = 60 * 1000; // 1分
-const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
-const STATE_CONNECTED_CALLBACK_NAME = "$connectedCallback";
-const STATE_DISCONNECTED_CALLBACK_NAME = "$disconnectedCallback";
-const STATE_UPDATED_CALLBACK_NAME = "$updatedCallback";
-const WEBCOMPONENT_STATE_READY_CALLBACK_NAME = "$stateReadyCallback";
-const STATE_BINDABLES_NAME = "$bindables";
-const STATE_COMMANDS_NAME = "$commands";
-const STATE_COMMAND_TOKENS_NAME = "$commandTokens";
-const STATE_COMMAND_NAMESPACE_NAME = "$command";
-const STATE_EVENT_TOKENS_NAME = "$eventTokens";
-const STATE_ON_NAME = "$on";
-const STATE_STREAMS_NAME = "$streams";
-const STATE_LIST_KEYS_NAME = "$listKeys";
-const STATE_STREAM_STATUS_NAMESPACE_NAME = "$streamStatus";
-const STATE_STREAM_ERROR_NAMESPACE_NAME = "$streamError";
-const DCC_DEFINITION_ATTRIBUTE = "data-wc-definition";
 
 const _cache$4 = new Map();
 let id = 0;
@@ -683,6 +701,15 @@ function valueMustBeBoolean(fnName) {
 function valueMustBeDate(fnName) {
     raiseError(`filter ${fnName} requires a date value`);
 }
+/**
+ * Throws error when filter requires array value but non-array provided.
+ *
+ * @param fnName - Name of the filter function
+ * @returns Never returns (always throws)
+ */
+function valueMustBeArray(fnName) {
+    raiseError(`filter ${fnName} requires an array value`);
+}
 
 /**
  * builtinFilters.ts
@@ -695,7 +722,7 @@ function valueMustBeDate(fnName) {
  * - Designed for common use as both input and output filters
  *
  * Design points:
- * - Comprehensive coverage of diverse filters: eq, ne, lt, gt, inc, fix, locale, uc, lc, cap, trim, slice, pad, int, float, round, date, time, ymd, falsy, truthy, defaults, boolean, number, string, null, etc.
+ * - Comprehensive coverage of diverse filters: eq, ne, lt, gt, inc, abs, clamp, fix, locale, uc, lc, cap, trim, slice, pad, truncate, join, int, float, round, percent, unit, date, time, ymd, hms, falsy, truthy, defaults, boolean, number, string, null, etc.
  * - Rich type checking and error handling for option values
  * - Centralized management of filter functions with FilterWithOptions type, easy to extend
  * - Dynamic retrieval of filter functions from filter names and options via builtinFilterFn
@@ -926,6 +953,48 @@ const mod = (options) => {
             valueMustBeNumber('mod');
         }
         return value % Number(opt);
+    };
+};
+/**
+ * Absolute value filter - returns the magnitude of a number.
+ *
+ * @param options - Unused
+ * @returns Filter function that returns the absolute value
+ */
+const abs = (_options) => {
+    return (value) => {
+        if (typeof value !== 'number') {
+            valueMustBeNumber('abs');
+        }
+        return Math.abs(value);
+    };
+};
+/**
+ * Clamp filter - constrains a number to the inclusive range [min, max].
+ *
+ * Saturating conversion in the same family as round/floor/ceil, so it stays on
+ * the wire rather than in state. Pairs with `unit` for style bindings:
+ * `style.width: ratio|clamp(0,1)|percent(0)`.
+ *
+ * @param options - Array with minimum as first element and maximum as second (both required)
+ * @returns Filter function that returns the clamped number
+ */
+const clamp = (options) => {
+    const opt1 = options?.[0] ?? optionsRequired('clamp');
+    if (!validateNumberString(opt1)) {
+        optionMustBeNumber('clamp');
+    }
+    const opt2 = options?.[1] ?? optionsRequired('clamp');
+    if (!validateNumberString(opt2)) {
+        optionMustBeNumber('clamp');
+    }
+    const min = Number(opt1);
+    const max = Number(opt2);
+    return (value) => {
+        if (typeof value !== 'number') {
+            valueMustBeNumber('clamp');
+        }
+        return Math.min(Math.max(value, min), max);
     };
 };
 /**
@@ -1195,6 +1264,76 @@ const percent = (options) => {
     };
 };
 /**
+ * Unit filter - appends a CSS unit (or any suffix) to the value.
+ *
+ * A number alone does nothing in CSS, so without this the unit has to be built in
+ * state — which drags presentation into the source of truth, and in the worst case
+ * forces a whole derived array just to carry `"42%"` strings.
+ * `style.height: samples.*.cpu|clamp(0,100)|fix(0)|unit(%)` keeps it on the wire.
+ *
+ * Accepts strings as well as numbers **on purpose**: the useful chains run through
+ * `fix` / `percent`, which already return strings. Rejecting non-numbers here would
+ * break exactly the combination this filter exists for.
+ *
+ * `null` / `undefined` pass through untouched rather than becoming `"undefinedpx"`,
+ * so the binding layer's "undefined skips the write, null clears" semantics survive.
+ *
+ * @param options - Array with the unit/suffix as first element (required)
+ * @returns Filter function that returns the value with the unit appended
+ */
+const unit = (options) => {
+    const opt = options?.[0] ?? optionsRequired('unit');
+    return (value) => {
+        if (value === null || typeof value === 'undefined') {
+            return value;
+        }
+        return String(value) + opt;
+    };
+};
+/**
+ * Join filter - joins array elements into a string.
+ *
+ * The default separator is `", "` rather than `","`: a bare comma is what `String()`
+ * already produces without any filter, so defaulting to it would make `|join` a no-op.
+ *
+ * @param options - Array with separator as first element (default: ', ')
+ * @returns Filter function that returns the joined string
+ */
+const join = (options) => {
+    const opt = options?.[0] ?? ', ';
+    return (value) => {
+        if (!Array.isArray(value)) {
+            valueMustBeArray('join');
+        }
+        return value.join(opt);
+    };
+};
+/**
+ * Truncate filter - shortens a string and appends an ellipsis.
+ *
+ * The length option counts **kept characters**, not the total including the suffix,
+ * matching the existing `slice(0, n)` reading. A string at or below the limit is
+ * returned untouched (no suffix).
+ *
+ * @param options - Array with max kept length as first element and suffix as second (default: '…')
+ * @returns Filter function that returns the truncated string
+ */
+const truncate = (options) => {
+    const opt1 = options?.[0] ?? optionsRequired('truncate');
+    if (!validateNumberString(opt1)) {
+        optionMustBeNumber('truncate');
+    }
+    const maxLength = Number(opt1);
+    const suffix = options?.[1] ?? '…';
+    return (value) => {
+        const v = String(value);
+        if (v.length <= maxLength) {
+            return v;
+        }
+        return v.slice(0, maxLength) + suffix;
+    };
+};
+/**
  * Date filter - formats Date object as localized date string.
  *
  * @param options - Array with locale string as first element (default: config.locale)
@@ -1255,6 +1394,27 @@ const ymd = (options) => {
         const month = (value.getMonth() + 1).toString().padStart(2, '0');
         const day = value.getDate().toString().padStart(2, '0');
         return `${year}${opt}${month}${opt}${day}`;
+    };
+};
+/**
+ * Hour-Minute-Second filter - formats Date object as HH:MM:SS string.
+ *
+ * The counterpart of `ymd`: a fixed, zero-padded, locale-independent rendering with a
+ * configurable separator, for when `time` (locale-formatted) is not stable enough.
+ *
+ * @param options - Array with separator string as first element (default: ':')
+ * @returns Filter function that returns formatted time string
+ */
+const hms = (options) => {
+    const opt = options?.[0] ?? ':';
+    return (value) => {
+        if (!(value instanceof Date)) {
+            valueMustBeDate('hms');
+        }
+        const hours = value.getHours().toString().padStart(2, '0');
+        const minutes = value.getMinutes().toString().padStart(2, '0');
+        const seconds = value.getSeconds().toString().padStart(2, '0');
+        return `${hours}${opt}${minutes}${opt}${seconds}`;
     };
 };
 /**
@@ -1347,6 +1507,8 @@ const builtinFilters = {
     "mul": mul,
     "div": div,
     "mod": mod,
+    "abs": abs,
+    "clamp": clamp,
     "fix": fix,
     "locale": locale,
     "uc": uc,
@@ -1358,16 +1520,20 @@ const builtinFilters = {
     "pad": pad,
     "rep": rep,
     "rev": rev,
+    "truncate": truncate,
+    "join": join,
     "int": int,
     "float": float,
     "round": round,
     "floor": floor,
     "ceil": ceil,
     "percent": percent,
+    "unit": unit,
     "date": date,
     "time": time,
     "datetime": datetime,
     "ymd": ymd,
+    "hms": hms,
     "falsy": falsy,
     "truthy": truthy,
     "defaults": defaults,
@@ -1397,11 +1563,44 @@ const builtinFilterFn = (name, options) => (filters) => {
     return filter(options);
 };
 
+/**
+ * フィルタ引数リストのパース。`filter(a, b)` の `a, b` 部分を受け取る。
+ *
+ * トリムの規則は「**クォートの外側だけ**」。`fix( 2 )` のような書き癖を吸収するために
+ * 素の引数は前後をトリムするが、クォートは「ここは literal」という宣言なので中身の
+ * 空白は残す。両方まとめてトリムしていたため `pad(5, ' ')` が空文字パディング
+ * （＝無変化）に化けており、空白区切りの `join(' / ')` も指定できなかった。
+ */
+/** 引数 1 つを確定する。クォート由来の文字が入った範囲より外側だけをトリムする。 */
+function finalizeArg(text, firstQuoteStart, lastQuoteEnd) {
+    // 先頭側: 最初のクォート文字より前だけが削れる（クォートが無ければ全体が対象）
+    const startLimit = firstQuoteStart === -1 ? text.length : firstQuoteStart;
+    let start = 0;
+    while (start < startLimit && /\s/.test(text[start])) {
+        start++;
+    }
+    // 末尾側: 最後のクォート文字より後ろだけが削れる（クォートが無ければ全体が対象）
+    const endLimit = lastQuoteEnd === -1 ? 0 : lastQuoteEnd;
+    let end = text.length;
+    while (end > endLimit && /\s/.test(text[end - 1])) {
+        end--;
+    }
+    return text.slice(start, end);
+}
 function parseFilterArgs(argsText) {
     const args = [];
     let current = '';
     let inQuote = null;
     let hasQuote = false;
+    let firstQuoteStart = -1;
+    let lastQuoteEnd = -1;
+    const flush = () => {
+        args.push(finalizeArg(current, firstQuoteStart, lastQuoteEnd));
+        current = '';
+        hasQuote = false;
+        firstQuoteStart = -1;
+        lastQuoteEnd = -1;
+    };
     for (let i = 0; i < argsText.length; i++) {
         const char = argsText[i];
         if (inQuote) {
@@ -1409,7 +1608,11 @@ function parseFilterArgs(argsText) {
                 inQuote = null;
             }
             else {
+                if (firstQuoteStart === -1) {
+                    firstQuoteStart = current.length;
+                }
                 current += char;
+                lastQuoteEnd = current.length;
             }
         }
         else if (char === '"' || char === "'") {
@@ -1417,15 +1620,13 @@ function parseFilterArgs(argsText) {
             hasQuote = true;
         }
         else if (char === ',') {
-            args.push(current.trim());
-            current = '';
-            hasQuote = false;
+            flush();
         }
         else {
             current += char;
         }
     }
-    const last = current.trim();
+    const last = finalizeArg(current, firstQuoteStart, lastQuoteEnd);
     if (last || hasQuote) {
         args.push(last);
     }
@@ -1779,12 +1980,96 @@ function getParseBindTextResults(node) {
 }
 
 /**
+ * bindings/lightDomComponentScope.ts — Light DOM の mapped `bind-component` を
+ * 「ホストとは別のバインディングスコープ」として扱うための判定
+ * （docs/architecture-hardening/15-state-component-mechanism-consistency.md §1.13）。
+ *
+ * Shadow DOM 形では、コンポーネントの `<wcs-state>` が**別 rootNode** にいることで
+ * 2 つのことが同時に成立している。
+ *
+ * 1. ホスト root の `waitForStateInitialize` の走査集合に入らない
+ * 2. 子スコープのバインディングがホストとは別の `buildBindings` パスで処理される
+ *
+ * Light DOM では両方が失われる。1 が失われると、
+ * 「ホストの `waitForStateInitialize` が子 state を待つ →
+ *   子 state は自分を束ねるホスト binding を待つ →
+ *   その binding を作る `initializeBindings` は `waitForStateInitialize` の後」
+ * という循環になり、初期化が永久に解決しない。2 が失われると、子スコープの
+ * `@name` 参照がホストと同じパスで解決されてしまい、子 state の名前登録より
+ * 先に評価される。
+ *
+ * このモジュールはその 2 つを明示的に復元するための判定だけを持つ。
+ *
+ * **plain（ホストからバインドしない state 注入）は対象外**であることに注意。
+ * plain は `waitInitializeBinding` を通らないので循環せず、従来どおりホストと
+ * 同じパスで初期化して問題ない。ここで一律に切り出すと、成立している plain 形が
+ * 「子 state の登録前に `@name` を解決する」形に退行する。
+ */
+/** `<wcs-state bind-component>` が Light DOM の mapped 形（＝別スコープ扱い）か。 */
+function isLightDomMappedStateElement(stateElement) {
+    if (!stateElement.hasAttribute("bind-component")) {
+        return false;
+    }
+    const parentNode = stateElement.parentNode;
+    // Shadow DOM 形では parentNode が ShadowRoot になる（かつホスト root の
+    // querySelectorAll にはそもそも出てこない）
+    if (!(parentNode instanceof Element)) {
+        return false;
+    }
+    // ホストからバインドされていなければ plain。従来どおりの扱いに任せる
+    return parentNode.hasAttribute(config.bindAttributeName);
+}
+/**
+ * `root` の内側にある Light DOM mapped コンポーネント要素を集める。
+ *
+ * `root` 自身は**含めない**。子スコープが自分のパスとして
+ * `initializeBindings(componentElement)` を呼ぶとき、その要素自身まで prune すると
+ * 何も初期化されなくなるため。
+ */
+function findNestedLightDomComponents(root) {
+    const components = [];
+    const stateElements = root.querySelectorAll(`${config.tagNames.state}[bind-component]`);
+    for (const stateElement of stateElements) {
+        if (!isLightDomMappedStateElement(stateElement)) {
+            continue;
+        }
+        const component = stateElement.parentNode;
+        if (component === root) {
+            continue;
+        }
+        components.push(component);
+    }
+    return components;
+}
+/** `node` が、いずれかのコンポーネント要素の**真の**子孫か。 */
+function isInsideAnyComponent(node, components) {
+    for (let i = 0; i < components.length; i++) {
+        const component = components[i];
+        if (component !== node && component.contains(node)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
  * data-wcs 属性または埋め込みノード<!--{{}}-->を持つノードをすべて取得する
+ *
+ * Light DOM の mapped コンポーネントの**内側**は除外する（§1.13）。そのサブツリーの
+ * `@name` 参照は、コンポーネント側の state が名前登録を済ませてからでないと解決できず、
+ * ホストと同じパスで拾うと登録前に評価されてしまう。除外したぶんは、その state が
+ * 初期化を終えた時点で自分のスコープとして `initializeBindings(componentElement)` を
+ * 呼び直す（Shadow DOM 形で rootNode ごとにパスが分かれるのと同じ形にする）。
+ *
+ * コンポーネント要素**自身**は除外しない。ホスト側の `data-wcs`（`state.msg: user.name`）
+ * はホストのスコープに属し、それが張られることで子側の待ちが解ける。
+ *
  * @param root
  * @returns
  */
 function getSubscriberNodes(root) {
     const subscriberNodes = [];
+    const nestedComponents = findNestedLightDomComponents(root);
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT, {
         acceptNode(node) {
             if (node.nodeType === Node.ELEMENT_NODE) {
@@ -1803,7 +2088,14 @@ function getSubscriberNodes(root) {
         }
     });
     while (walker.nextNode()) {
-        subscriberNodes.push(walker.currentNode);
+        const node = walker.currentNode;
+        // TreeWalker の acceptNode は「自分は拾うが子孫は辿らない」を表現できないため、
+        // コンポーネント要素自身を拾ったうえで、その子孫をここで落とす。
+        // nestedComponents が空（＝圧倒的多数）のときは contains 走査ごと発生しない。
+        if (nestedComponents.length > 0 && isInsideAnyComponent(node, nestedComponents)) {
+            continue;
+        }
+        subscriberNodes.push(node);
     }
     return subscriberNodes;
 }
@@ -2642,12 +2934,12 @@ class EventToken extends Token {
     }
 }
 
-const registryByStateElement$2 = new WeakMap();
+const registryByStateElement$3 = new WeakMap();
 function getOrCreateEventToken(stateElement, name) {
-    let registry = registryByStateElement$2.get(stateElement);
+    let registry = registryByStateElement$3.get(stateElement);
     if (typeof registry === "undefined") {
         registry = new Map();
-        registryByStateElement$2.set(stateElement, registry);
+        registryByStateElement$3.set(stateElement, registry);
     }
     let token = registry.get(name);
     if (typeof token === "undefined") {
@@ -2657,7 +2949,7 @@ function getOrCreateEventToken(stateElement, name) {
     return token;
 }
 function clearEventTokenRegistry(stateElement) {
-    registryByStateElement$2.delete(stateElement);
+    registryByStateElement$3.delete(stateElement);
 }
 
 /**
@@ -3401,6 +3693,42 @@ function detachTwowayEventHandler(binding) {
     }
 }
 
+const stateElementByWebComponent = new WeakMap();
+function setStateElementByWebComponent(webComponent, stateName, stateElement) {
+    let stateMap = stateElementByWebComponent.get(webComponent);
+    if (!stateMap) {
+        stateMap = new Map();
+        stateElementByWebComponent.set(webComponent, stateMap);
+    }
+    stateMap.set(stateName, stateElement);
+}
+function getStateElementByWebComponent(webComponent, stateName) {
+    const stateMap = stateElementByWebComponent.get(webComponent);
+    if (!stateMap) {
+        return null;
+    }
+    return stateMap.get(stateName) ?? null;
+}
+/**
+ * コンポーネントが mapped されている「1 つ外のスコープ」の state 要素。
+ * `buildPrimaryMappingRule` がプライマリ規則から記録する
+ * （規則の outer 側が属する state 要素 ＝ 値の正本を持つスコープそのもの）。
+ *
+ * 用途は Δ（base listIndex）の境界越え合成（§1.12）。`getLoopContextByNode` は
+ * `parentNode` しか辿らず shadow 境界を越えないため、Δ を外へ引き継ぐには
+ * 「1 つ外のスコープ」への明示的なリンクが要る。
+ *
+ * この台帳を MappingRule ではなくここに置くのは循環参照を避けるため
+ * （baseListIndex → MappingRule → BindingSession → outerListPath → baseListIndex）。
+ */
+const outerStateElementByWebComponent = new WeakMap();
+function setOuterStateElementByWebComponent(webComponent, stateElement) {
+    outerStateElementByWebComponent.set(webComponent, stateElement);
+}
+function getOuterStateElementByWebComponent(webComponent) {
+    return outerStateElementByWebComponent.get(webComponent) ?? null;
+}
+
 /**
  * webComponent/baseListIndex.ts
  *
@@ -3423,18 +3751,48 @@ function detachTwowayEventHandler(binding) {
  * ホットパスに walk は載らない。
  */
 function getBaseListIndex(stateElement) {
-    if (stateElement == null || stateElement.hasMappedComponentState !== true) {
-        return null;
+    let current = stateElement;
+    for (;;) {
+        if (current == null || current.hasMappedComponentState !== true) {
+            return null;
+        }
+        const component = current.boundComponent;
+        if (component == null) {
+            return null;
+        }
+        const listIndex = getLoopContextByNode(component)?.listIndex;
+        if (listIndex != null) {
+            return listIndex;
+        }
+        // このスコープには囲むループが無い。コンポーネントがさらに別の mapped な
+        // コンポーネントの shadow の中にいるなら、Δ は外側スコープから引き継ぐ（§1.12）。
+        //
+        // `getLoopContextByNode` は `parentNode` しか辿らず、ShadowRoot の parentNode は
+        // null なので shadow 境界で必ず止まる。境界 1 枚なら外側は素の文書スコープで
+        // Δ=0 が正しいが、2 枚重なっていると中間スコープの Δ が丸ごと落ちて
+        // 子の listIndex が正本スコープより浅い arity で作られる。
+        //
+        // 外側が mapped でない（＝値の正本がそのスコープにある）なら、そこから先の
+        // ループはこの子のリストとは無関係なので次の周回の先頭ガードで止まる。
+        current = getOuterStateElementByWebComponent(component);
     }
-    const component = stateElement.boundComponent;
-    if (component == null) {
-        return null;
-    }
-    return getLoopContextByNode(component)?.listIndex ?? null;
 }
 /** base の段数 Δ。base が無ければ 0。 */
 function getBaseDepth(stateElement) {
     return getBaseListIndex(stateElement)?.length ?? 0;
+}
+/**
+ * そのスコープでそのパスに実際に使われる listIndex の arity。
+ *
+ * パス自身のワイルドカード段数に、そのスコープが外側のループの内側にいる分（Δ）を
+ * 足したもの。`items.*` は子スコープから見れば 1 段でも、そのスコープが Δ=1 の位置に
+ * あれば台帳の listIndex は arity 2 になる（§1.10）。
+ *
+ * **境界を跨ぐ照合はこの実 arity どうしで行うこと**（§1.12）。片側だけ Δ を足すと、
+ * 境界が 2 枚以上あるときに中間スコープの Δ を二重計上して不一致になる。
+ */
+function getScopeArity(stateElement, pathInfo) {
+    return pathInfo.wildcardCount + getBaseDepth(stateElement);
 }
 /**
  * リストの行を生成するときの親 listIndex。
@@ -3449,23 +3807,6 @@ function getBaseDepth(stateElement) {
  */
 function getListParentListIndex(stateElement, containerListIndex) {
     return containerListIndex ?? getBaseListIndex(stateElement);
-}
-
-const stateElementByWebComponent = new WeakMap();
-function setStateElementByWebComponent(webComponent, stateName, stateElement) {
-    let stateMap = stateElementByWebComponent.get(webComponent);
-    if (!stateMap) {
-        stateMap = new Map();
-        stateElementByWebComponent.set(webComponent, stateMap);
-    }
-    stateMap.set(stateName, stateElement);
-}
-function getStateElementByWebComponent(webComponent, stateName) {
-    const stateMap = stateElementByWebComponent.get(webComponent);
-    if (!stateMap) {
-        return null;
-    }
-    return stateMap.get(stateName) ?? null;
 }
 
 const innerMappingByElement = new WeakMap();
@@ -3503,6 +3844,10 @@ function buildPrimaryMappingRule(webComponent, stateName, bindings) {
         primaryBindingByMappingRule.set(mappingRule, binding);
         innerMappingRule.set(innerAbsPathInfo, outerAbsPathInfo);
         outerMappingRule.set(outerAbsPathInfo, innerAbsPathInfo);
+        // 1 つ外のスコープへのリンク。Δ の境界越え合成（§1.12）が引く。
+        // プライマリ規則はすべて同じホスト要素の data-wcs 由来なので、どの規則から
+        // 採っても同じスコープを指す。
+        setOuterStateElementByWebComponent(webComponent, outerAbsPathInfo.stateElement);
     }
     innerMappingByElement.set(webComponent, innerMappingRule);
     outerMappingByElement.set(webComponent, outerMappingRule);
@@ -3728,12 +4073,56 @@ function getOuterRowPathInfo(innerStateElement, innerPathInfo) {
     if (innerPathInfo.wildcardCount === 0) {
         return null;
     }
+    return stepOuterRowPathInfo(innerStateElement, innerPathInfo);
+}
+/**
+ * `getOuterRowPathInfo` の 2 段目以降。境界が 2 枚以上重なっている（コンポーネントの
+ * shadow の中にさらに mapped な `bind-component` がある）場合、値の正本は 1 つ外では
+ * なく**最も外のスコープ**にある。1 段目だけに相乗りしていると、中間スコープは
+ * 素通しで自分の行バインディングを持たないため、正本スコープ起点の行フィールド
+ * 書き込みを購読する者が誰もいなくなる（§1.11）。
+ *
+ * 1 段目が成立したときだけ呼ばれる（＝mapped な行バインディング限定）ので、
+ * 通常のリストはこの walk を一切踏まない。返り値は 2 段目以降が無ければ `null` で、
+ * 圧倒的多数である深さ 1 の行では配列を確保しない。
+ *
+ * 各段で必ず外側の state 要素へ進む（`resolveOuterAbsolutePathInfo` は
+ * `boundComponent` の属するスコープを返す＝DOM 上の真の祖先）ので停止する。
+ * `propagateListPathToOuterState` の外向き伝播と同じ論拠。
+ */
+function getOuterRowPathInfosBeyond(firstOuterAbsPathInfo) {
+    let rest = null;
+    let stateElement = firstOuterAbsPathInfo.stateElement;
+    let pathInfo = firstOuterAbsPathInfo.pathInfo;
+    for (;;) {
+        const outerAbsPathInfo = stepOuterRowPathInfo(stateElement, pathInfo);
+        if (outerAbsPathInfo === null) {
+            return rest;
+        }
+        (rest ??= []).push(outerAbsPathInfo);
+        stateElement = outerAbsPathInfo.stateElement;
+        pathInfo = outerAbsPathInfo.pathInfo;
+    }
+}
+/**
+ * 境界 1 枚分の外向き解決。成立条件の判定を含む。
+ *
+ * 判定は**両側の実 arity（`getScopeArity` = パスの段数 + そのスコープの Δ）が
+ * 一致すること**。相乗り登録は子の listIndex をそのまま鍵に使うので、外側スコープが
+ * その arity で台帳を引けなければ意味がない。
+ *
+ * 境界 1 枚なら外側は Δ=0 なので、これは従来の `Δ + innerW === outerW` と同値。
+ * 2 枚以上あるときに外側の Δ を数えないと、中間スコープの Δ を二重計上して
+ * 成立するはずの段を落とす（§1.12）。
+ */
+function stepOuterRowPathInfo(innerStateElement, innerPathInfo) {
     const outerAbsPathInfo = resolveOuterAbsolutePathInfo(innerStateElement, innerPathInfo);
     if (outerAbsPathInfo === null || outerAbsPathInfo.stateElement === innerStateElement) {
         return null;
     }
-    const baseDepth = getBaseDepth(innerStateElement);
-    if (outerAbsPathInfo.pathInfo.wildcardCount !== innerPathInfo.wildcardCount + baseDepth) {
+    const innerArity = getScopeArity(innerStateElement, innerPathInfo);
+    const outerArity = getScopeArity(outerAbsPathInfo.stateElement, outerAbsPathInfo.pathInfo);
+    if (innerArity !== outerArity) {
         return null;
     }
     return outerAbsPathInfo;
@@ -4552,6 +4941,7 @@ class BindingSession {
                 patternPathInfo: null,
                 patternListIndex: null,
                 outerPatternPathInfo: null,
+                outerPatternPathInfosRest: null,
                 pendingDefinitions: 0,
                 initialPolicy: slot.policy,
                 resolvedAuthority: slot.authority,
@@ -4668,6 +5058,7 @@ class BindingSession {
             patternPathInfo: null,
             patternListIndex: null,
             outerPatternPathInfo: null,
+            outerPatternPathInfosRest: null,
             pendingDefinitions: 0,
             initialPolicy: null,
             resolvedAuthority: null,
@@ -4884,6 +5275,17 @@ class BindingSession {
             if (outerPathInfo !== null) {
                 addBindingByPattern(outerPathInfo, listIndex, binding);
                 record.outerPatternPathInfo = outerPathInfo;
+                // 境界が 2 枚以上重なっていると、値の正本は 1 つ外ではなく最も外のスコープに
+                // ある。中間スコープは配列を素通しするだけで自分の行バインディングを持たない
+                // ため、1 段目だけでは正本スコープ起点の行フィールド書き込みが誰にも届かない
+                // （§1.11）。成立する段すべてに載せる。
+                const restPathInfos = getOuterRowPathInfosBeyond(outerPathInfo);
+                if (restPathInfos !== null) {
+                    for (let i = 0; i < restPathInfos.length; i++) {
+                        addBindingByPattern(restPathInfos[i], listIndex, binding);
+                    }
+                    record.outerPatternPathInfosRest = restPathInfos;
+                }
             }
         }
         else {
@@ -4950,6 +5352,19 @@ class BindingSession {
                     // Cleanup is best-effort.
                 }
                 record.outerPatternPathInfo = null;
+            }
+            // 3 段目以降（§1.11）。各段も互いに独立した資源なので 1 つずつ守る
+            if (record.outerPatternPathInfosRest !== null) {
+                const restPathInfos = record.outerPatternPathInfosRest;
+                for (let i = 0; i < restPathInfos.length; i++) {
+                    try {
+                        removeBindingByPattern(restPathInfos[i], record.patternListIndex, binding);
+                    }
+                    catch {
+                        // Cleanup is best-effort.
+                    }
+                }
+                record.outerPatternPathInfosRest = null;
             }
             try {
                 removeBindingByPattern(record.patternPathInfo, record.patternListIndex, binding);
@@ -7453,9 +7868,17 @@ function _getFragmentInfo(rootNode, fragment, parseBindingTextResult, forPath) {
 }
 function collectStructuralFragments(rootNode, walkRoot, forPath) {
     const elseKeyword = config.commentElsePrefix;
+    // Light DOM の mapped コンポーネントの内側は、その子スコープが自分で処理する（§1.13）。
+    // fragment info は rootNode + state 名で登録されるため、ホストのパスでここを拾うと
+    // コンポーネント側の state がまだ名前登録を済ませておらず解決に失敗する。
+    // コンポーネント要素自身は template ではないので、REJECT でサブツリーごと落として問題ない。
+    const nestedComponents = findNestedLightDomComponents(walkRoot);
     const walker = document.createTreeWalker(walkRoot, NodeFilter.SHOW_ELEMENT, {
         acceptNode(node) {
             const element = node;
+            if (nestedComponents.length > 0 && nestedComponents.indexOf(element) !== -1) {
+                return NodeFilter.FILTER_REJECT;
+            }
             if (element.tagName.toLowerCase() === 'template') {
                 const bindText = element.getAttribute(config.bindAttributeName) || '';
                 if (bindText.length > 0) {
@@ -7576,6 +7999,13 @@ async function waitForStateInitialize(root) {
     const promises = [];
     await customElements.whenDefined(config.tagNames.state);
     for (const element of elements) {
+        // Light DOM の mapped コンポーネントの state は待たない。それはこの root の
+        // バインディングが張られてからでないと初期化できず（自分を束ねるホスト binding を
+        // 待つ）、ここで待つと循環する（§1.13）。Shadow DOM 形では別 rootNode にいるので
+        // そもそもこの集合に現れず、plain 形は循環しないので従来どおり待つ。
+        if (isLightDomMappedStateElement(element)) {
+            continue;
+        }
         const stateElement = element;
         promises.push(stateElement.initializePromise);
     }
@@ -7606,7 +8036,7 @@ async function buildBindings(root) {
     }
 }
 
-var version = "1.26.0";
+var version = "1.27.0";
 var pkg = {
 	version: version};
 
@@ -8441,27 +8871,89 @@ function setStateElementByName(rootNode, name, element) {
     }
 }
 
-const updateBatchListeners = new Set();
+/**
+ * watch/chainDepth.ts
+ *
+ * `$watch` ハンドラ起点の書き込み連鎖の深さを数える台帳
+ * （docs/state-watch-hook-design.md §7-2）。
+ *
+ * watch ハンドラ内の書き込みは新しい microtask バッチを作るため、伝播 context の
+ * hop 上限（MAX_PROPAGATION_HOPS）のガードが効かない。かつ書き込み先が動的なので、
+ * `$streams` のような「宣言時の自己依存検出」も使えない。よって実行時に数える。
+ *
+ * updater（enqueue 側）と watchRuntime（発火側）の両方から参照されるため、
+ * **依存ゼロの葉モジュール**にして循環 import を避ける（devtools/sink.ts と同じ方針）。
+ *
+ * 数え方: ハンドラ実行中に enqueue が起きたときだけ「次のバッチはこの連鎖の続き」と
+ * マークする。ハンドラが何も書かなければ次のバッチは深さ 0 に戻るので、利用者操作が
+ * 何度続いても深さは伸びない。
+ */
+/** ハンドラ実行中に立つ「今の連鎖の深さ + 1」。0 なら watch 起点ではない */
+let firingDepth = 0;
+/** 次に drain されるバッチの深さ */
+let pendingDepth = 0;
+/** watch の発火フェーズ開始（watchRuntime 専用） */
+function beginWatchFiring(depth) {
+    firingDepth = depth + 1;
+}
+/** watch の発火フェーズ終了（watchRuntime 専用。必ず finally で呼ぶ） */
+function endWatchFiring() {
+    firingDepth = 0;
+}
+/**
+ * 書き込みの enqueue を記録する（updater 専用）。
+ * ハンドラ実行中でなければ何もしない ＝ 通常の書き込みに深さは付かない。
+ */
+function noteEnqueueForWatchChain() {
+    if (firingDepth > pendingDepth) {
+        pendingDepth = firingDepth;
+    }
+}
+/** 次バッチの深さを消費する（watchRuntime 専用。読んだらリセット） */
+function consumeWatchChainDepth() {
+    const depth = pendingDepth;
+    pendingDepth = 0;
+    return depth;
+}
+
+const updateBatchListeners = [];
 /**
  * drain 終了リスナーを登録する。
+ *
+ * `priority` の昇順に呼ばれる（同値は登録順）。機構間の実行順序
+ * （`$watch` → `$streams` restart、docs/state-watch-hook-design.md §3-2 層 1）は
+ * この優先度で固定する — import 順に順序を持たせると、無関係な import 整理で
+ * 静かに壊れるため。定数は define.ts の `*_LISTENER_PRIORITY` を使うこと。
  */
-function registerUpdateBatchListener(listener) {
-    updateBatchListeners.add(listener);
+function registerUpdateBatchListener(listener, priority = 0) {
+    // 挿入ソート: 同値優先度の中では登録順を保つ（find は最初の「より大きい」要素を指す）
+    const index = updateBatchListeners.findIndex((registered) => registered.priority > priority);
+    const entry = { listener, priority };
+    if (index === -1) {
+        updateBatchListeners.push(entry);
+    }
+    else {
+        updateBatchListeners.splice(index, 0, entry);
+    }
 }
 /**
  * drain 終了リスナーを解除する（テスト間の分離用）。
  */
 function unregisterUpdateBatchListener(listener) {
-    updateBatchListeners.delete(listener);
+    const index = updateBatchListeners.findIndex((registered) => registered.listener === listener);
+    if (index !== -1) {
+        updateBatchListeners.splice(index, 1);
+    }
 }
 /**
- * 全リスナーに drain のバッチを通知する。
+ * 全リスナーに drain のバッチを優先度順で通知する。
  * リスナーの throw は握りつぶさない（内部バグの隠蔽防止）。
- * stream 側リスナーが entry ごとに自前で try/catch する契約（設計書 §3-2）。
+ * stream / watch 側リスナーが entry ごとに自前で try/catch する契約（設計書 §3-2）。
  */
 function notifyUpdateBatchListeners(batch) {
-    for (const listener of updateBatchListeners) {
-        listener(batch);
+    // 反復中の register / unregister（ハンドラ内の切断・再 set）に耐えるためコピーする
+    for (const registered of updateBatchListeners.slice()) {
+        registered.listener(batch);
     }
 }
 class Updater {
@@ -8469,6 +8961,9 @@ class Updater {
     constructor() {
     }
     enqueueAbsoluteAddress(absoluteAddress, context = null) {
+        // `$watch` ハンドラ実行中の書き込みだけを連鎖としてマークする（watch/chainDepth.ts）。
+        // ハンドラ実行中でなければ即 return する葉モジュール呼び出し 1 個のコスト。
+        noteEnqueueForWatchChain();
         const requireStartProcess = this._queueUpdateRecords.length === 0;
         this._queueUpdateRecords.push({ absoluteAddress, context });
         if (requireStartProcess) {
@@ -8695,7 +9190,9 @@ function setSink(sink) {
     setDevtoolsSink(sink);
     const isActive = sink !== null;
     if (isActive && !wasActive) {
-        registerUpdateBatchListener(onUpdateBatch);
+        // `$watch` / `$streams` restart より先に流す（protocol §4.3）。優先度を省略しても
+        // 既定 0 で結果は同じだが、それは偶然なので定数で意図を固定する。
+        registerUpdateBatchListener(onUpdateBatch, DEVTOOLS_LISTENER_PRIORITY);
     }
     else if (!isActive && wasActive) {
         unregisterUpdateBatchListener(onUpdateBatch);
@@ -9012,12 +9509,12 @@ function processCommandTokensDeclaration(state) {
     return names;
 }
 
-const registryByStateElement$1 = new WeakMap();
+const registryByStateElement$2 = new WeakMap();
 function getOrCreateCommandToken(stateElement, name) {
-    let registry = registryByStateElement$1.get(stateElement);
+    let registry = registryByStateElement$2.get(stateElement);
     if (typeof registry === "undefined") {
         registry = new Map();
-        registryByStateElement$1.set(stateElement, registry);
+        registryByStateElement$2.set(stateElement, registry);
     }
     let token = registry.get(name);
     if (typeof token === "undefined") {
@@ -9027,7 +9524,7 @@ function getOrCreateCommandToken(stateElement, name) {
     return token;
 }
 function clearCommandTokenRegistry(stateElement) {
-    registryByStateElement$1.delete(stateElement);
+    registryByStateElement$2.delete(stateElement);
 }
 
 /**
@@ -9262,24 +9759,24 @@ function invalidateLastNotified(stateElement, name) {
  *   設計書 §3-2 の「未接続（disconnect 済み）の stateElement の entry は restart
  *   しない」はこの不変条件で担保される。
  */
-const activeStateElements = new Set();
+const activeStateElements$1 = new Set();
 /**
  * 起動中 stateElement として登録する（startStreams 専用。不変条件はモジュールヘッダ参照）。
  */
 function addActiveStateElement(stateElement) {
-    activeStateElements.add(stateElement);
+    activeStateElements$1.add(stateElement);
 }
 /**
  * 起動中 stateElement から外す（abortAllStreams / clearStreamRegistry 専用）。
  */
 function deleteActiveStateElement(stateElement) {
-    activeStateElements.delete(stateElement);
+    activeStateElements$1.delete(stateElement);
 }
 /**
  * 起動中 stateElement を列挙する（drain リスナーの交差判定用）。
  */
 function getActiveStateElements() {
-    return activeStateElements;
+    return activeStateElements$1;
 }
 
 /**
@@ -9292,18 +9789,18 @@ function getActiveStateElements() {
  * - disconnect 時は abortAllStreams（abort のみ・registry 保持）、
  *   `_state` 再 set 時のみ clearStreamRegistry（abort ＋ 全削除）。
  */
-const registryByStateElement = new WeakMap();
+const registryByStateElement$1 = new WeakMap();
 /**
  * stream entry 群を置換登録する（`_state` セッターからの再構築で丸ごと差し替える）。
  */
 function setStreamEntries(stateElement, entries) {
-    registryByStateElement.set(stateElement, entries);
+    registryByStateElement$1.set(stateElement, entries);
 }
 /**
  * 登録済みの stream entry 群を返す。未登録なら空 Map を返す（registry への登録はしない）。
  */
 function getStreamEntries(stateElement) {
-    return registryByStateElement.get(stateElement) ?? new Map();
+    return registryByStateElement$1.get(stateElement) ?? new Map();
 }
 /**
  * 全 stream を abort して idle に戻す（設計書 §5-1）。registry は保持する。
@@ -9323,7 +9820,7 @@ function abortAllStreams(stateElement) {
     // 設計書 §3-2。add 側は startStreams — stream/activeStateElements.ts の
     // リーク防止不変条件を参照）。registry の有無に関わらず必ず外す。
     deleteActiveStateElement(stateElement);
-    const entries = registryByStateElement.get(stateElement);
+    const entries = registryByStateElement$1.get(stateElement);
     if (typeof entries === "undefined") {
         return;
     }
@@ -9343,7 +9840,7 @@ function clearStreamRegistry(stateElement) {
     // abortAllStreams が既に delete 済みだが、「clear = 全削除でも必ず restart 対象から
     // 外れる」不変条件を将来の abortAllStreams の変更から独立に保証するため明示的に呼ぶ。
     deleteActiveStateElement(stateElement);
-    registryByStateElement.delete(stateElement);
+    registryByStateElement$1.delete(stateElement);
 }
 
 /**
@@ -10069,7 +10566,501 @@ function restartStreamsOnUpdateBatch(batch) {
         }
     }
 }
-registerUpdateBatchListener(restartStreamsOnUpdateBatch);
+// 優先度で `$watch` の後に固定する（設計書 §3-2 層 1）。import 順には依存しない。
+registerUpdateBatchListener(restartStreamsOnUpdateBatch, STREAM_LISTENER_PRIORITY);
+
+/**
+ * watch/watchRegistry.ts
+ *
+ * `$watch` の registry と、drain リスナーの走査元になる「発火対象の stateElement 集合」
+ * （docs/state-watch-hook-design.md §9）。
+ *
+ * `$streams` は registry（delete 側）と runtime（add 側）が相互に依存するため
+ * active 集合を stream/activeStateElements.ts へ切り出しているが、`$watch` は
+ * **add が State のライフサイクル側、delete が registry 側**で、runtime は読むだけの
+ * 一方向依存になる。よって循環せず、1 モジュールにまとめられる。
+ *
+ * リーク防止の不変条件（strong Set が切断済み要素の GC を妨げないための連動）:
+ * - add は `startWatch`（`State.connectedCallback` の $connectedCallback 完了後、および
+ *   接続中の `_state` 再 set）だけが行い、**宣言が 1 つも無い stateElement は入れない**。
+ * - delete は `deactivateWatch`（disconnectedCallback）／`clearWatchRegistry`（`_state`
+ *   再 set）だけが行う。
+ * どちらの経路も必ずここを通るため「Set に居る = 接続中かつ宣言済み」が保たれる。
+ * この「宣言済み」の側が崩れると、`$watch` 未使用アプリの drain にも収集ループが乗る
+ * （ゼロコスト契約、docs/state-watch-hook-design.md §10）。
+ */
+const registryByStateElement = new WeakMap();
+const activeStateElements = new Set();
+/**
+ * 未登録時に返す共有の空 Map。
+ *
+ * ここで毎回 `new Map()` すると、drain の収集ループが「バッチのアドレス 1 個につき
+ * Map を 1 個」アロケートすることになる（発火対象だが宣言を持たない stateElement を
+ * 通る経路）。読み出ししかしない返り値なので 1 個を使い回す。
+ */
+const EMPTY_ENTRIES = new Map();
+/**
+ * watch entry 群を置換登録する（`_state` セッターからの再構築で丸ごと差し替える）。
+ */
+function setWatchEntries(stateElement, entries) {
+    registryByStateElement.set(stateElement, entries);
+}
+/**
+ * 登録済みの watch entry 群を返す。未登録なら共有の空 Map を返す
+ * （registry への登録はしない。返り値は読み出し専用）。
+ */
+function getWatchEntries(stateElement) {
+    return registryByStateElement.get(stateElement) ?? EMPTY_ENTRIES;
+}
+/**
+ * 発火対象として登録する（`startWatch` 専用。不変条件はモジュールヘッダ参照）。
+ */
+function addActiveWatchStateElement(stateElement) {
+    activeStateElements.add(stateElement);
+}
+/**
+ * 発火対象を列挙する（drain リスナーの early return 判定用）。
+ */
+function getActiveWatchStateElements() {
+    return activeStateElements;
+}
+/**
+ * 発火対象から外す（切断時）。**registry は保持する。**
+ *
+ * `$streams` の abortAllStreams と同じ二段構えで、切断は「発火しなくなる」だけにする。
+ * registry まで捨てると、再接続（connectedCallback → startWatch）で宣言を作り直す経路が
+ * 無い（`_state` セッターは初回ロード時にしか走らない）ため、watch が二度と発火しない。
+ */
+function deactivateWatch(stateElement) {
+    activeStateElements.delete(stateElement);
+}
+/**
+ * registry から削除し、発火対象からも外す（`_state` 再 set 時の再配線用）。
+ */
+function clearWatchRegistry(stateElement) {
+    activeStateElements.delete(stateElement);
+    registryByStateElement.delete(stateElement);
+}
+
+/**
+ * watch/processWatchDeclaration.ts
+ *
+ * `$watch: { "<path>": (cur, prev, ...indexes) => void }` 宣言マップを解析し、
+ * IWatchEntry を構築して watchRegistry に一括登録する
+ * （docs/state-watch-hook-design.md §2-2 / §8）。
+ *
+ * `$streams` の processStreamsDeclaration と対称だが、**キーが宣言名ではなくパス**である
+ * ぶん検証が異なる（`.` / `*` を許可し、代わりにパスとしての妥当性を見る）。
+ *
+ * 依存グラフ登録（§8）がこの関数の要点:
+ * `setPathInfo` は BindingSession（＝ DOM バインディング登録）からしか呼ばれないため、
+ * 静的依存グラフに載るのは「バインドされたパス」だけである。watch を宣言しただけでは
+ * walkDependency がそのパスを知らず、`items` への代入で `items.*.price` がバッチに載らない
+ * ＝ ハンドラが黙って一度も発火しない。宣言時に自分で登録することでこれを塞ぐ。
+ *
+ * 呼び出しは stateElement の `_pathSet` クリア後・getterPaths 確定後であること
+ * （State の `_state` セッターが順序を保証する）。
+ */
+/**
+ * `$watch` 宣言を registry へ反映し、監視対象パスの集合を返す。
+ *
+ * 宣言が無い（または空）なら **null** を返す。呼び出し側（State）はこれを
+ * `watchPaths` に保持し、setByAddress のホットパスは `!== null` の分岐 1 個で
+ * 抜けられる（ゼロコスト契約、§10）。
+ */
+function processWatchDeclaration(stateElement, state) {
+    const declared = state[STATE_WATCH_NAME];
+    if (typeof declared === "undefined") {
+        return null;
+    }
+    if (typeof declared !== "object" || declared === null) {
+        raiseError(`${STATE_WATCH_NAME} must be an object mapping state paths to handler functions.`);
+    }
+    const entries = new Map();
+    const paths = new Set();
+    let order = 0;
+    for (const [path, handler] of Object.entries(declared)) {
+        if (typeof handler !== "function") {
+            raiseError(`${STATE_WATCH_NAME} entry "${path}" must be a function.`);
+        }
+        if (path.length === 0) {
+            raiseError(`${STATE_WATCH_NAME} entry name must be a non-empty state path.`);
+        }
+        if (path.startsWith("$")) {
+            raiseError(`${STATE_WATCH_NAME} entry "${path}" must not start with "$" (reserved namespace).`);
+        }
+        // 越境 watch は不採用（設計 D8）。他 state のアドレスは発火対象にしないため、
+        // `@stateName` 付きのパスは受け取った時点で落とす（黙って発火しないより良い）。
+        if (path.includes(STATE_NAME_SEPARATOR)) {
+            raiseError(`${STATE_WATCH_NAME} entry "${path}" must not target another state ("${STATE_NAME_SEPARATOR}" is not allowed); watch only paths of its own state.`);
+        }
+        // Object.prototype の継承名は `path in state` 系の判定を汚すため一律拒否する
+        // （processStreamsDeclaration と同じ防衛線）。
+        if (path in Object.prototype) {
+            raiseError(`${STATE_WATCH_NAME} entry "${path}" must not be a property name inherited from Object.prototype (e.g. "__proto__", "constructor").`);
+        }
+        const pathInfo = getPathInfo(path);
+        // 空セグメント（"a..b" / 先頭・末尾の "."）は getPathInfo が黙って受理してしまうため、
+        // ここで落とす。放置すると解決不能なアドレスを依存グラフへ登録することになる。
+        for (const segment of pathInfo.segments) {
+            if (segment.length === 0) {
+                raiseError(`${STATE_WATCH_NAME} entry "${path}" has an empty path segment.`);
+            }
+        }
+        if (pathInfo.wildcardCount > MAX_WILDCARD_DEPTH) {
+            raiseError(`${STATE_WATCH_NAME} entry "${path}" exceeds the maximum wildcard depth (${MAX_WILDCARD_DEPTH}).`);
+        }
+        entries.set(path, {
+            path,
+            pathInfo,
+            handler: handler,
+            order: order++,
+        });
+        paths.add(path);
+        // 依存グラフ登録（§8）。"for" 以外の bindingType は親 → 子の staticDependency
+        // チェーンを生やすだけで listPaths / elementPaths を触らない（State.setPathInfo 参照）。
+        stateElement.setPathInfo(path, "prop");
+    }
+    setWatchEntries(stateElement, entries);
+    return paths.size > 0 ? paths : null;
+}
+
+/**
+ * watch/computedSnapshots.ts
+ *
+ * watch 対象の computed（getter）の「前回評価値」台帳
+ * （docs/state-watch-hook-design.md §5）。
+ *
+ * getter は `setByAddress` を通らないので、スカラ書き込み用の旧値台帳
+ * （watch/prevValues.ts）には載らない。`prev` を渡すには前回の評価値を
+ * **バッチを跨いで**保持する必要があり、こちらは drain ごとにクリアしない。
+ *
+ * 寿命は stateElement 単位（WeakMap）。`_state` 再 set では宣言ごと作り直すため
+ * 破棄する。切断では破棄しない —— 再接続時の初回評価が上書きするので、
+ * 残っていても害がなく、registry を保持する扱いとも揃う。
+ */
+const snapshotsByStateElement = new WeakMap();
+function getComputedSnapshot(stateElement, absAddress) {
+    return snapshotsByStateElement.get(stateElement)?.get(absAddress);
+}
+function setComputedSnapshot(stateElement, absAddress, value) {
+    let snapshots = snapshotsByStateElement.get(stateElement);
+    if (typeof snapshots === "undefined") {
+        snapshots = new Map();
+        snapshotsByStateElement.set(stateElement, snapshots);
+    }
+    snapshots.set(absAddress, value);
+}
+/** `_state` 再 set で宣言ごと作り直すときに破棄する */
+function clearComputedSnapshots(stateElement) {
+    snapshotsByStateElement.delete(stateElement);
+}
+
+/**
+ * watch/prevValues.ts
+ *
+ * `$watch` ハンドラへ渡す `prev`（バッチ開始時点の値）の台帳
+ * （docs/state-watch-hook-design.md §4-1）。
+ *
+ * 記録するのは **watch 宣言済みパスへの書き込みだけ**、かつ **バッチ内で最初の 1 回だけ**
+ * （first-write-wins）。したがって `prev` は「そのバッチが始まる前の値」、`cur` は
+ * drain 時点の確定値になる。同一バッチ内の中間値は観測できない（§3-4）。
+ *
+ * 値の出どころは same-value guard が既に読んでいる旧値であり、watch のために
+ * 追加の getByAddress は行わない（§10）。その帰結として:
+ * - 参照型（object / array）は guard が素通しするので `prev` は undefined
+ * - `config.sameValueGuard = false` でも undefined
+ * - `$postUpdate` / stream の status 通知は setByAddress を通らないので undefined
+ *
+ * 台帳は drain 終端（watchRuntime）でクリアされる。drain の外で書き込まれた分が
+ * 次のバッチへ持ち越されることはない。
+ */
+const prevValueByAbsoluteStateAddress = new Map();
+/**
+ * バッチ内で最初の書き込みのときだけ旧値を記録する（first-write-wins）。
+ */
+function recordPrevValue(absAddress, oldValue) {
+    if (prevValueByAbsoluteStateAddress.has(absAddress)) {
+        return;
+    }
+    prevValueByAbsoluteStateAddress.set(absAddress, oldValue);
+}
+/**
+ * 記録済みの旧値を返す。記録が無ければ undefined（§4-1 の「prev を保証しない」経路）。
+ */
+function getPrevValue(absAddress) {
+    return prevValueByAbsoluteStateAddress.get(absAddress);
+}
+/**
+ * 台帳をクリアする（drain 終端で必ず呼ぶ）。
+ */
+function clearPrevValues() {
+    prevValueByAbsoluteStateAddress.clear();
+}
+
+/**
+ * watch/watchRuntime.ts
+ *
+ * `$watch` の発火（docs/state-watch-hook-design.md §3 / §7）。
+ *
+ * updater の drain 終了フックに 1 つだけリスナーを登録し、バッチに載った絶対アドレスと
+ * 宣言済み watch パスを突き合わせて発火する。**binding の有無に関係なくバッチへ載る**ので、
+ * これが headless 購読の実体になる（binding 駆動の `$updatedCallback` との違い）。
+ *
+ * 実行順序（設計書 §3-2）:
+ * - 機構間は優先度で固定（`$updatedCallback` → `$watch` → `$streams` restart）。
+ *   `$updatedCallback` が先なのは binding 適用ループの内側で呼ばれる構造的必然。
+ * - watch ハンドラ間は `$watch` の宣言順（entry.order）。利用者が順序に意思を持てる唯一の層。
+ * - 同一パスの複数行は indexes 昇順。
+ *
+ * 収集と発火を 2 相に分ける理由:
+ * 1. ハンドラ内の書き込みが registry / active 集合を同期的に変えうる（`_state` 再 set・切断）
+ *    ため、発火直前に live 再チェックが要る（`$streams` の restart hits と同型）。
+ * 2. 上記の順序規約のために hits をソートする必要がある（バッチの反復順は enqueue 順）。
+ */
+/**
+ * この stateElement の `$watch` を有効化する（`State.connectedCallback` ／接続中の
+ * `_state` 再 set から呼ばれる。無効化は `clearWatchRegistry`）。
+ *
+ * `addActiveWatchStateElement` の薄いラッパではなく、**State が runtime を import する
+ * 経路をここに一本化する**意味がある: drain リスナーの登録はこのモジュールの
+ * 初期化副作用なので、registry だけを import すると発火機構ごと落ちる。
+ * `$streams` の `startStreams` と対称の位置づけ。
+ *
+ * **宣言が 1 つも無ければ active 集合に入れない**（`startStreams` の
+ * `entries.size === 0` early return と同型）。ここを無条件にすると active 集合が
+ * 「接続中の全 `<wcs-state>`」になり、`fireWatchOnUpdateBatch` の early return が
+ * 実アプリで効かなくなる ＝ `$watch` 未使用アプリの drain にも収集ループが乗る
+ * （ゼロコスト契約、設計書 §10 ／ 実装計画 P16）。
+ */
+function startWatch(stateElement) {
+    if (getWatchEntries(stateElement).size === 0) {
+        return;
+    }
+    addActiveWatchStateElement(stateElement);
+    primeComputedWatches(stateElement);
+}
+/**
+ * watch 対象の computed（getter）を 1 回評価する（設計書 §5-2 の eager 化、C-3）。
+ *
+ * これが要るのは、getter の依存（dynamicDependency）が**評価時にしか張られない**ため。
+ * 一度も評価されていない getter は依存グラフに載らず、依存の書き込みが walkDependency で
+ * そのパスへ到達しないので、バッチにも載らず watch が永久に発火しない。ここで 1 回
+ * 読むことで依存が張られ、同時に `prev` の初期スナップショットが埋まる。
+ *
+ * **これが「watch した getter は lazy でなくなる」の実体**であり、設計書 §5-2 で
+ * 規範として明記している副作用（毎バッチ評価・例外の表面化・依存の再登録）の起点。
+ *
+ * ワイルドカードを含む getter パス（`items.*.tax` など）は対象外: 初回評価に行ごとの
+ * indexes が要り、全行評価は宣言しただけでリスト全体を舐めることになる。この形は
+ * 「DOM にバインドされていれば発火する」ままとし、§5-3 に制約として書く。
+ */
+function primeComputedWatches(stateElement) {
+    // 宣言が 1 つ以上あることは startWatch が保証済み
+    const targets = [];
+    for (const entry of getWatchEntries(stateElement).values()) {
+        if (isScalarComputed(stateElement, entry)) {
+            targets.push(entry);
+        }
+    }
+    if (targets.length === 0) {
+        // getter を watch していないなら createState ごと省く（宣言の大半はこちら）
+        return;
+    }
+    stateElement.createState("readonly", (state) => {
+        for (const entry of targets) {
+            try {
+                setComputedSnapshot(stateElement, absoluteAddressOf(stateElement, entry), state[entry.path]);
+            }
+            catch (e) {
+                // 初回評価の throw は接続を巻き添えにしない（発火時と同じ隔離方針、§7-1）
+                reportWatchError(stateElement, entry.path, "prime", e);
+            }
+        }
+    });
+}
+/** ワイルドカードを含まない watch パスの絶対アドレス（listIndex は常に null） */
+function absoluteAddressOf(stateElement, entry) {
+    return createAbsoluteStateAddress(getAbsolutePathInfo(stateElement, entry.pathInfo), null);
+}
+/**
+ * 前回評価値のスナップショット台帳（computedSnapshots）に載せる entry か。
+ *
+ * ワイルドカードを含む getter を**除く**のが要点。除かないと台帳のキーが行ごとの
+ * 絶対アドレス（＝ listIndex を強参照）になり、prune 経路が `_state` 再 set しか
+ * 無いため、行が入れ替わり続けるページで単調増加する（リスト置換 5 回で 2→10 件を実測）。
+ * そもそもワイルドカード getter は eager 化の対象外（設計書 §5-3）なので、
+ * 「初回評価もしない・前回値も持たない」で primeComputedWatches と対称になる。
+ * この形の `prev` は常に undefined（getter は setByAddress を通らない）。
+ */
+function isScalarComputed(stateElement, entry) {
+    return entry.pathInfo.wildcardCount === 0 && stateElement.getterPaths.has(entry.path);
+}
+/**
+ * throw を報告する（設計書 §7-1）。
+ *
+ * `console.error` だけだと **devtools からは「静かに握られた失敗」が見えない**。
+ * watch は drain フックを `$streams` と共有しており、例外を watch 側で閉じるのが
+ * 前提なので、閉じた事実をここで観測可能にしておく必要がある。
+ * イベント生成は必ず `devtoolsSink !== null` の内側で行う（sink のコスト規範）。
+ */
+const WATCH_ERROR_SUBJECT = {
+    prime: "initial evaluation of",
+    evaluate: "evaluation of",
+    handler: "handler for",
+};
+function reportWatchError(stateElement, path, phase, error) {
+    console.error(`[@wcstack/state] $watch ${WATCH_ERROR_SUBJECT[phase]} "${path}" threw.`, error);
+    if (devtoolsSink !== null) {
+        devtoolsSink({
+            type: "state:watch-error",
+            phase,
+            stateName: stateElement.name,
+            path,
+            error,
+        });
+    }
+}
+function fireWatchOnUpdateBatch(batch) {
+    const activeStateElements = getActiveWatchStateElements();
+    try {
+        if (activeStateElements.size === 0) {
+            // watch 未使用アプリの drain に配列・イテレータ割り当てのコストを載せない。
+            // ここも finally を通す: 宣言済みの state が切断されている間（active からは
+            // 外れるが watchPaths は残る）の書き込みで台帳に旧値が積まれるため、
+            // クリアを早期 return の外に置くと次のバッチどころか永久に残る。
+            return;
+        }
+        const depth = consumeWatchChainDepth();
+        if (depth > MAX_WATCH_CHAIN_DEPTH) {
+            // 打ち切るのは watch の発火のみ。値と binding 適用は巻き戻さない
+            // （伝播 hop 上限超過時の quarantine と同じ姿勢、§7-2）。
+            const paths = Array.from(batch, (absAddress) => absAddress.absolutePathInfo.pathInfo.path);
+            console.error(`[@wcstack/state] $watch chain depth limit exceeded; watch handlers for this batch were skipped.`, { maxDepth: MAX_WATCH_CHAIN_DEPTH, paths });
+            if (devtoolsSink !== null) {
+                devtoolsSink({ type: "state:watch-chain-limit", maxDepth: MAX_WATCH_CHAIN_DEPTH, paths });
+            }
+            return;
+        }
+        // --- 収集フェーズ ---
+        const hits = [];
+        for (const absAddress of batch) {
+            // stateName 文字列ではなく stateElement 参照で引く。AbsolutePathInfo は
+            // stateElement 単位でキャッシュされるので、同名 state が複数の rootNode に
+            // 居ても取り違えない（address/AbsolutePathInfo.ts）。他 state のアドレスは
+            // ここで自然に落ちる ＝ 越境しない（設計 D8）。
+            const stateElement = absAddress.absolutePathInfo.stateElement;
+            if (!activeStateElements.has(stateElement)) {
+                continue;
+            }
+            const entry = getWatchEntries(stateElement).get(absAddress.absolutePathInfo.pathInfo.path);
+            if (typeof entry === "undefined") {
+                continue;
+            }
+            let indexes = [];
+            if (entry.pathInfo.wildcardCount > 0) {
+                if (absAddress.listIndex === null) {
+                    // ワイルドカードパスなのに行が特定できないヒット（リストの依存展開で載る
+                    // 中間アドレス等）。indexes を空のまま発火すると cur の解決（$resolve）が
+                    // 「indexes 不足」で throw し、例外隔離に落ちて console.error だけが残る。
+                    // 行が定まらない以上ハンドラに渡せる意味が無いので、収集段階で落とす。
+                    continue;
+                }
+                indexes = getScopedIndexes(absAddress.listIndex, entry.pathInfo.wildcardCount);
+            }
+            hits.push({ stateElement, entry, absAddress, indexes });
+        }
+        if (hits.length === 0) {
+            return;
+        }
+        hits.sort(compareHits);
+        // --- 発火フェーズ ---
+        beginWatchFiring(depth);
+        try {
+            for (const hit of hits) {
+                // 先行ハンドラが同期的に切断や `_state` 再 set を行い得るため、発火直前に
+                // 「まだ active か」「entry が現行 registry のものか」を再確認する。
+                if (!activeStateElements.has(hit.stateElement) ||
+                    getWatchEntries(hit.stateElement).get(hit.entry.path) !== hit.entry) {
+                    continue;
+                }
+                fireOne(hit);
+            }
+        }
+        finally {
+            endWatchFiring();
+        }
+    }
+    finally {
+        // 旧値台帳はこの drain 限りのもの。次のバッチへ持ち越さない（§4-1）。
+        clearPrevValues();
+    }
+}
+/**
+ * 層 2（宣言順）→ 層 3（indexes 昇順）の順に比較する（設計書 §3-3）。
+ */
+function compareHits(a, b) {
+    if (a.entry.order !== b.entry.order) {
+        return a.entry.order - b.entry.order;
+    }
+    const length = Math.min(a.indexes.length, b.indexes.length);
+    for (let i = 0; i < length; i++) {
+        if (a.indexes[i] !== b.indexes[i]) {
+            return a.indexes[i] - b.indexes[i];
+        }
+    }
+    return a.indexes.length - b.indexes.length;
+}
+/**
+ * ハンドラ 1 つを発火する。**例外はここで閉じる**（設計書 §7-1）。
+ *
+ * drain リスナーの throw は握りつぶさない契約（updater.ts）なので、watch 側で捕まえないと
+ * 1 つのユーザー例外が他の watch と `$streams` の restart を巻き添えにする。
+ * `$connectedCallback` / `$updatedCallback` の loud fail とは意図的に異なる扱い。
+ *
+ * 報告は throw 元で分ける: `cur` の解決（watch した getter の強制評価 ＝ §5-2 の副作用 b）と
+ * ハンドラ本体では原因も直し方も違うため、同じ文言に丸めない。
+ */
+function fireOne(hit) {
+    const { stateElement, entry, absAddress, indexes } = hit;
+    // スカラ getter は setByAddress を通らないので旧値台帳に載らない。前回評価値の
+    // スナップショット（バッチを跨いで生きる別台帳）から prev を取る（§5-2）。
+    const isComputed = isScalarComputed(stateElement, entry);
+    try {
+        stateElement.createState("writable", (state) => {
+            let cur;
+            try {
+                // 強制評価はここ。dirty なら再計算され、その結果が cur になる
+                cur = readCurrentValue(state, entry, indexes);
+            }
+            catch (e) {
+                // cur が得られない以上ハンドラは呼べない。次の hit へ進む
+                reportWatchError(stateElement, entry.path, "evaluate", e);
+                return;
+            }
+            const prev = isComputed ? getComputedSnapshot(stateElement, absAddress) : getPrevValue(absAddress);
+            if (isComputed) {
+                // ハンドラ本体が throw しても次回の prev は「今回の評価値」であるべきなので、
+                // handler 呼び出しより前に更新する
+                setComputedSnapshot(stateElement, absAddress, cur);
+            }
+            entry.handler.call(state, cur, prev, ...indexes);
+        });
+    }
+    catch (e) {
+        reportWatchError(stateElement, entry.path, "handler", e);
+    }
+}
+function readCurrentValue(state, entry, indexes) {
+    if (entry.pathInfo.wildcardCount === 0) {
+        return state[entry.path];
+    }
+    // ワイルドカードを含むパスは素の読みでは解決できない。getScopedIndexes が返した列は
+    // そのまま $resolve の引数として使える（list/wildcardLevel.ts の往復契約）。
+    return state.$resolve(entry.path, indexes);
+}
+// 優先度で `$streams` の restart より先に固定する（設計書 §3-2 層 1）。import 順には依存しない。
+registerUpdateBatchListener(fireWatchOnUpdateBatch, WATCH_LISTENER_PRIORITY);
 
 function getterFn(name) {
     return function () {
@@ -11270,13 +12261,22 @@ function selectExpansionIndexes(context, sourcePath, _lastValue, _newValue, list
 const EMPTY_PATH_INFOS = [];
 /**
  * 位置だけが変わった行（movedRows）で展開すべきパス群を求める。
- * `${listPath}.*` の静的 subtree を辿り、$1 等を読んだ実績のある getter
+ * `${listPath}.*` 配下にある、$1 等を読んだ実績のある getter
  * （indexDependentGetterPaths）だけを返す。行の同一性・listIndex は保たれ
  * index 以外の入力が不変なので、index を読まない getter / 値パスは再評価不要。
  * 戻り値:
  * - IPathInfo[]（空可）: この各パスだけを行の listIndex で展開する
  * - null: ネストしたワイルドカード配下に index 依存 getter がある
  *   （listIndex の階数が合わず個別展開できない）→ 呼び出し側で行全体展開に倒す
+ *
+ * 配下判定は staticMap の subtree 走査ではなく indexDependentGetterPaths 側の
+ * プレフィックス照合で行う。静的依存グラフは `State.setPathInfo` が
+ * 「バインドされたパスから親方向へ」張るため、DOM にバインドされていない中間
+ * getter（`.label` だけを描画し `.rank` は `.label` からしか読まれない綴り）は
+ * subtree に現れない。そこを走査すると index 依存 getter を取りこぼし、
+ * 「index を読む getter が subtree に無い＝位置のみ変わった行の値は不変」という
+ * 呼び出し側の判断が偽になって、移動行の getter が古い値のまま残る。
+ * この集合は $1 を読んだ getter の数しか持たないので、走査コストも subtree より小さい。
  */
 function getMovedRowExpansionPaths(context, wildcardPath, depPathInfo) {
     const indexGetters = context.stateElement.indexDependentGetterPaths;
@@ -11284,26 +12284,16 @@ function getMovedRowExpansionPaths(context, wildcardPath, depPathInfo) {
         return EMPTY_PATH_INFOS;
     }
     let result = null;
-    const queue = [wildcardPath];
-    const seen = new Set(queue);
-    for (let i = 0; i < queue.length; i++) {
-        const path = queue[i];
-        if (indexGetters.has(path)) {
-            const pathInfo = getPathInfo(path);
-            if (pathInfo.wildcardCount !== depPathInfo.wildcardCount) {
-                return null;
-            }
-            (result ??= []).push(pathInfo);
+    const prefix = wildcardPath + DELIMITER;
+    for (const path of indexGetters) {
+        if (path !== wildcardPath && !path.startsWith(prefix)) {
+            continue;
         }
-        const children = context.staticMap.get(path);
-        if (children) {
-            for (const child of children) {
-                if (!seen.has(child)) {
-                    seen.add(child);
-                    queue.push(child);
-                }
-            }
+        const pathInfo = getPathInfo(path);
+        if (pathInfo.wildcardCount !== depPathInfo.wildcardCount) {
+            return null;
         }
+        (result ??= []).push(pathInfo);
     }
     return result ?? EMPTY_PATH_INFOS;
 }
@@ -11531,6 +12521,21 @@ function walkDependency(stateName, stateElement, startAddress, staticDependency,
  * - finallyで必ず更新情報を登録し、再描画や依存解決に利用
  * - getter/setter経由のスコープ切り替えも考慮した設計
  */
+/**
+ * `$watch` の `prev` 台帳へ旧値を記録する（docs/state-watch-hook-design.md §4-1）。
+ *
+ * same-value guard が既に読んだ旧値だけを使い、watch のための追加読みはしない。
+ * `$watch` 未宣言時のコストは `watchPaths` の null 判定 1 個に収める（§10）。
+ */
+function recordWatchPrevValue(stateElement, path, absAddress, oldValue, hasOldValue) {
+    const watchPaths = stateElement.watchPaths;
+    if (watchPaths == null || !hasOldValue) {
+        return;
+    }
+    if (watchPaths.has(path)) {
+        recordPrevValue(absAddress, oldValue);
+    }
+}
 // Phase 3: 書き込み時点の因果 context を update record に付与する。
 // binding 経由の書き込みは呼び出し元の dynamic scope から context を引き継ぎ、
 // binding 外からの API update は新しい transaction を開始する（設計書 §4 規則 1）。
@@ -11764,6 +12769,7 @@ function setByAddressCore(target, address, value, receiver, handler, keyedMergeP
                     hasOldValue: devHasOldValue,
                 });
             }
+            recordWatchPrevValue(stateElement, path, absAddress, devOldValue, devHasOldValue);
             try {
                 if (key === undefined) {
                     raiseError(`address.listIndex?.index is undefined path: ${path}`);
@@ -11814,6 +12820,7 @@ function setByAddressCore(target, address, value, receiver, handler, keyedMergeP
             hasOldValue: devHasOldValue,
         });
     }
+    recordWatchPrevValue(stateElement, path, absAddress, devOldValue, devHasOldValue);
     try {
         if (isSwappable) {
             return _setByAddressWithSwap(target, address, absAddress, value, receiver, handler, keyedMergePath);
@@ -12558,14 +13565,19 @@ class InnerStateProxyHandler {
      */
     _outerLoopContext(innerPathInfo, outerAbsPathInfo) {
         const outerWildcardCount = outerAbsPathInfo.pathInfo.wildcardCount;
+        // 段数の照合は外側スコープの**実 arity**（パスの段数 + そのスコープの Δ）で行う。
+        // 境界 1 枚なら外側は Δ=0 で従来と同値、2 枚以上あるときに中間スコープの Δ を
+        // 数えないと候補が両方とも外れて loopContext が null になる（§1.12）。
+        // 添字（wildcardPaths）に使うのは Δ を含まない段数のままであることに注意。
+        const outerArity = getScopeArity(outerAbsPathInfo.stateElement, outerAbsPathInfo.pathInfo);
         const nodeLoopContext = getLoopContextByNode(this._webComponent);
-        if (nodeLoopContext !== null && nodeLoopContext.listIndex.length === outerWildcardCount) {
+        if (nodeLoopContext !== null && nodeLoopContext.listIndex.length === outerArity) {
             return nodeLoopContext;
         }
         if (outerWildcardCount > 0) {
             const address = getCrossBoundaryAddress(this._innerStateElement, innerPathInfo.path);
             const listIndex = address?.listIndex ?? null;
-            if (listIndex !== null && listIndex.length === outerWildcardCount) {
+            if (listIndex !== null && listIndex.length === outerArity) {
                 const outerWildcardPath = outerAbsPathInfo.pathInfo.wildcardPaths[outerWildcardCount - 1];
                 return createStateAddress(getPathInfo(outerWildcardPath), listIndex);
             }
@@ -12837,6 +13849,8 @@ class State extends HTMLElementBase {
     _dynamicDependency = new Map();
     _staticDependency = new Map();
     _pathSet = new Set();
+    // `$watch` 宣言の監視対象パス。宣言が無ければ null（setByAddress のゼロコスト契約）
+    _watchPaths = null;
     _version = 0;
     _rootNode = null;
     _boundComponent = null;
@@ -12916,10 +13930,21 @@ class State extends HTMLElementBase {
         // $listKeys: 宣言が無ければ null のままで、setByAddress のキー突合経路には
         // 一切入らない（docs/state-list-key-design.md §7-1）。再 set で必ず置き換える。
         this._listKeys = processListKeysDeclaration(value);
+        // $watch: 旧宣言のハンドラが残らないよう registry を落としてから新宣言を解析する。
+        // _pathSet.clear() の後であること（依存グラフ登録をやり直す必要がある、
+        // docs/state-watch-hook-design.md §8）。宣言が無ければ watchPaths は null で、
+        // setByAddress の旧値キャプチャには一切入らない（§10 のゼロコスト契約）。
+        clearWatchRegistry(this);
+        // computed の前回評価値も宣言と寿命を共にする（旧宣言の値を新しい watch の
+        // prev として渡さない）。切断では消さない — 再接続の初回評価が上書きする。
+        clearComputedSnapshots(this);
+        this._watchPaths = processWatchDeclaration(this, value);
         // 接続中の再 set（S13）は新宣言で即再起動する。
         // 初回（_initialize 中）は _initialized が false なのでここでは起動されず、
         // connectedCallback 側の startStreams（$connectedCallback 完了後）が担う。
         if (this._initialized && this._rootNode !== null && !inSsr()) {
+            // watch は stream より先に有効化する（stream の起動時書き込みを観測できるように）
+            startWatch(this);
             startStreams(this);
             // $connectedCallback 実行中の再 set（setInitialState）では、ここで新宣言が
             // 起動済みのため connectedCallback 末尾の startStreams を skip させる。
@@ -13058,6 +14083,36 @@ class State extends HTMLElementBase {
         }
     }
     /**
+     * Light DOM の mapped コンポーネントが、自分のサブツリーのバインディングを張る（§1.13）。
+     *
+     * Shadow DOM 形では子スコープが別 rootNode にあり、`setStateElementByName` の初回登録から
+     * その root ぶんの `buildBindings` が別パスとして起動する。Light DOM ではホストと同じ root に
+     * いるためそのパスが存在せず、かといってホストのパスに混ぜると `@name` の解決が
+     * この要素の名前登録より先に来てしまう。そこで `getSubscriberNodes` がホスト側の走査から
+     * このサブツリーを外し、名前登録が済んだここで同じことを自前で行う。
+     *
+     * `{{ }}` の変換だけはホストのパスが root 全体に対して済ませている（純粋にテキスト操作で
+     * state に依存しないため）。構造フラグメントの収集は fragment info を rootNode + state 名で
+     * 登録するので state 依存であり、ホストのパスからは外してここで走らせる。
+     *
+     * ループ文脈を null で渡すのは Shadow DOM 形（`initializeBindings(shadowRoot, null)`）と
+     * 揃えるため —— 子孫の `getLoopContextByNode` はコンポーネント要素まで遡って
+     * 親スコープの行を見つける。
+     */
+    _initializeLightDomComponentScope() {
+        const component = this._boundComponent;
+        if (component === null || this.parentNode !== component) {
+            // Shadow DOM 形（parentNode が ShadowRoot）は対象外
+            return;
+        }
+        if (!component.hasAttribute(config.bindAttributeName)) {
+            // plain 形はホストのパスに含まれたままなので、ここで張ると二重になる
+            return;
+        }
+        collectStructuralFragments(this._rootNode, component);
+        initializeBindings(component, null);
+    }
+    /**
      * mapped な `bind-component` が切断 → 再接続したときに、束ねているパスを読み直させる（§1.9）。
      *
      * リスト行の content は再利用されるので、行が作り直されると子はこの経路を通る
@@ -13158,6 +14213,9 @@ class State extends HTMLElementBase {
             await this._initializeBindWebComponent();
             await this._initialize();
             this._initialized = true;
+            // 名前登録（_initialize の末尾）が済んだこの時点でなければ、子スコープの
+            // `@name` 参照が解決できない（§1.13）
+            this._initializeLightDomComponentScope();
             this._resolveInitialize?.();
         }
         else if (!this._dcc && getStateElementByName(this._rootNode, this._name) !== this) {
@@ -13209,6 +14267,19 @@ class State extends HTMLElementBase {
         // _streamsStartedGeneration ガード: $connectedCallback 内の setInitialState
         // （接続中の再 set）で _state セッター側が新宣言を起動済みの場合は skip する
         // （skip しないと同一 connect サイクルで source が 2 回起動する、設計書 §2-3）。
+        // $watch の有効化（$connectedCallback 完了後 ＝ 初期化中の書き込みは購読対象外）。
+        // ガードは startStreams と同じ理由で必要（await 中の切断・再接続）。SSR では
+        // 走らせない — ハンドラの副作用がサーバとクライアントで二重に実行されるため
+        // （docs/state-watch-hook-design.md §11）。
+        // startStreams より先に呼ぶ: stream の起動時書き込み（initial リセット・status 遷移）は
+        // watch から観測できるべきで、逆向きは要らない。
+        // 再入不要: 接続中の _state 再 set は _state セッター側で startWatch 済みだが、
+        // startWatch は Set への add で冪等なので $streams のような世代ガードは要らない。
+        if (!inSsr() &&
+            this._rootNode !== null &&
+            connectGeneration === this._connectGeneration) {
+            startWatch(this);
+        }
         if (!inSsr() &&
             this._rootNode !== null &&
             connectGeneration === this._connectGeneration &&
@@ -13238,6 +14309,10 @@ class State extends HTMLElementBase {
                 // registry は残るため再接続後の初回アクセスで同内容の proxy が再生成される）。
                 abortAllStreams(this);
                 clearStreamNamespace(this);
+                // watch は発火対象から外すだけで registry は保持する（stream の abortAllStreams と
+                // 同じ二段構え、設計書 §9）。registry まで捨てると、_state セッターが再度走らない
+                // 再接続で宣言を作り直せず watch が二度と発火しない。
+                deactivateWatch(this);
                 this._rootNode = null;
             }
         }
@@ -13256,6 +14331,9 @@ class State extends HTMLElementBase {
     }
     get listKeys() {
         return this._listKeys;
+    }
+    get watchPaths() {
+        return this._watchPaths;
     }
     get elementPaths() {
         return this._elementPaths;
@@ -13568,6 +14646,8 @@ const builtinFilterMeta = {
     mul: { description: "乗算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
     div: { description: "除算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
     mod: { description: "剰余", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+    abs: { description: "絶対値", hasArgs: false, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 0 },
+    clamp: { description: "範囲内に丸める (min,max)", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 2, maxArgs: 2, argTypes: ["number", "number"] },
     // 数値フォーマット
     fix: { description: "固定小数点表記", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
     locale: { description: "ロケール形式で数値フォーマット", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["string"] },
@@ -13581,6 +14661,8 @@ const builtinFilterMeta = {
     pad: { description: "パディング (length[,char])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
     rep: { description: "繰り返し (count)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
     rev: { description: "文字順を反転", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+    truncate: { description: "切り詰めて省略記号 (length[,suffix])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
+    join: { description: "配列を連結 ([separator])", hasArgs: true, resultType: "string", acceptTypes: ["array"], minArgs: 0, maxArgs: 1, argTypes: ["string"] },
     // 数値パース・丸め
     int: { description: "整数にパース", hasArgs: false, resultType: "number", acceptTypes: ["string", "number"], minArgs: 0, maxArgs: 0 },
     float: { description: "浮動小数点数にパース", hasArgs: false, resultType: "number", acceptTypes: ["string", "number"], minArgs: 0, maxArgs: 0 },
@@ -13588,11 +14670,15 @@ const builtinFilterMeta = {
     floor: { description: "切り下げ", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
     ceil: { description: "切り上げ", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
     percent: { description: "パーセンテージ形式", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
+    // number だけでなく string も受ける。実用チェーンは fix / percent の後ろに繋がり、
+    // それらは既に string を返すため（builtinFilters.ts の unit を参照）
+    unit: { description: "単位（接尾辞）を付加", hasArgs: true, resultType: "string", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["string"] },
     // 日付・時刻
     date: { description: "ロケール形式の日付", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
     time: { description: "ロケール形式の時刻", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
     datetime: { description: "ロケール形式の日時", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
     ymd: { description: "YYYY-MM-DD 形式", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+    hms: { description: "HH:MM:SS 形式", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
     // 真偽値・変換
     falsy: { description: "偽値か判定", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
     truthy: { description: "真値か判定", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
@@ -13654,6 +14740,7 @@ function getWcsManifest() {
             STATE_EVENT_TOKENS_NAME,
             STATE_ON_NAME,
             STATE_STREAMS_NAME,
+            STATE_WATCH_NAME,
             STATE_LIST_KEYS_NAME,
             STATE_STREAM_STATUS_NAMESPACE_NAME,
             STATE_STREAM_ERROR_NAMESPACE_NAME,

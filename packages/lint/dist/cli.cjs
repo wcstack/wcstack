@@ -89,6 +89,13 @@ var WcsDiagnosticCode = {
   TokenUndeclared: "wcs/token-undeclared",
   TokenMisconfigured: "wcs/token-misconfigured",
   NestedAssign: "wcs/nested-assign",
+  // --- <wcs-state> script: $watch declaration ---
+  // ランタイム（watch/processWatchDeclaration.ts）が raiseError で落とす宣言。
+  // 越境 `@` / `$` 始まり / 空キー・空セグメント / 明らかな非関数ハンドラ。
+  WatchDeclarationInvalid: "wcs/watch-declaration-invalid",
+  // `$watch` のキーが状態定義に存在しない。バインディング側と違い黙って発火しない
+  // だけなので気づけない。severity は binding-path-missing に揃える（warning）。
+  WatchPathMissing: "wcs/watch-path-missing",
   TypeAnnotation: "wcs/type-annotation",
   TemplateSyntax: "wcs/template-syntax",
   // --- <wcs-state> script: array reactivity hazards ---
@@ -134,6 +141,8 @@ var builtinFilterMeta = {
   mul: { description: "\u4E57\u7B97", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
   div: { description: "\u9664\u7B97", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
   mod: { description: "\u5270\u4F59", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+  abs: { description: "\u7D76\u5BFE\u5024", hasArgs: false, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 0 },
+  clamp: { description: "\u7BC4\u56F2\u5185\u306B\u4E38\u3081\u308B (min,max)", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 2, maxArgs: 2, argTypes: ["number", "number"] },
   // 数値フォーマット
   fix: { description: "\u56FA\u5B9A\u5C0F\u6570\u70B9\u8868\u8A18", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
   locale: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u3067\u6570\u5024\u30D5\u30A9\u30FC\u30DE\u30C3\u30C8", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["string"] },
@@ -147,6 +156,8 @@ var builtinFilterMeta = {
   pad: { description: "\u30D1\u30C7\u30A3\u30F3\u30B0 (length[,char])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
   rep: { description: "\u7E70\u308A\u8FD4\u3057 (count)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
   rev: { description: "\u6587\u5B57\u9806\u3092\u53CD\u8EE2", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+  truncate: { description: "\u5207\u308A\u8A70\u3081\u3066\u7701\u7565\u8A18\u53F7 (length[,suffix])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
+  join: { description: "\u914D\u5217\u3092\u9023\u7D50 ([separator])", hasArgs: true, resultType: "string", acceptTypes: ["array"], minArgs: 0, maxArgs: 1, argTypes: ["string"] },
   // 数値パース・丸め
   int: { description: "\u6574\u6570\u306B\u30D1\u30FC\u30B9", hasArgs: false, resultType: "number", acceptTypes: ["string", "number"], minArgs: 0, maxArgs: 0 },
   float: { description: "\u6D6E\u52D5\u5C0F\u6570\u70B9\u6570\u306B\u30D1\u30FC\u30B9", hasArgs: false, resultType: "number", acceptTypes: ["string", "number"], minArgs: 0, maxArgs: 0 },
@@ -154,11 +165,15 @@ var builtinFilterMeta = {
   floor: { description: "\u5207\u308A\u4E0B\u3052", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
   ceil: { description: "\u5207\u308A\u4E0A\u3052", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
   percent: { description: "\u30D1\u30FC\u30BB\u30F3\u30C6\u30FC\u30B8\u5F62\u5F0F", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
+  // number だけでなく string も受ける。実用チェーンは fix / percent の後ろに繋がり、
+  // それらは既に string を返すため（builtinFilters.ts の unit を参照）
+  unit: { description: "\u5358\u4F4D\uFF08\u63A5\u5C3E\u8F9E\uFF09\u3092\u4ED8\u52A0", hasArgs: true, resultType: "string", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["string"] },
   // 日付・時刻
   date: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u65E5\u4ED8", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
   time: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u6642\u523B", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
   datetime: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u65E5\u6642", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
   ymd: { description: "YYYY-MM-DD \u5F62\u5F0F", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+  hms: { description: "HH:MM:SS \u5F62\u5F0F", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
   // 真偽値・変換
   falsy: { description: "\u507D\u5024\u304B\u5224\u5B9A", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
   truthy: { description: "\u771F\u5024\u304B\u5224\u5B9A", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
@@ -419,6 +434,7 @@ var RESERVED_STREAMS_KEY = "$streams";
 var RESERVED_COMMAND_TOKENS_KEY = "$commandTokens";
 var RESERVED_EVENT_TOKENS_KEY = "$eventTokens";
 var RESERVED_LIST_KEYS_KEY = "$listKeys";
+var RESERVED_WATCH_KEY = "$watch";
 function analyzeStatePaths(scriptContent, stateName = "default") {
   const objectContent = extractDefaultExportObject(scriptContent);
   if (!objectContent) return [];
@@ -451,6 +467,36 @@ function analyzeStatePaths(scriptContent, stateName = "default") {
     pushListKeyPaths(listKeyEntry, paths, stateName);
   }
   return paths;
+}
+function analyzeWatchEntries(scriptContent) {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return [];
+  const watchProp = parseTopLevelProperties(root.content).find((p) => p.name === RESERVED_WATCH_KEY);
+  if (!watchProp || watchProp.kind !== "data" || !watchProp.value || !isObjectLiteral(watchProp.value) || watchProp.valueStart === void 0) {
+    return [];
+  }
+  const leading = watchProp.value.length - watchProp.value.trimStart().length;
+  const innerStart = root.start + watchProp.valueStart + leading + 1;
+  const entries = [];
+  for (const entry of parseTopLevelProperties(extractObjectContent(watchProp.value))) {
+    if (entry.nameStart === void 0 || entry.nameEnd === void 0) continue;
+    entries.push({
+      key: entry.name,
+      start: innerStart + entry.nameStart,
+      end: innerStart + entry.nameEnd,
+      // メソッド短縮記法は関数。data は値リテラルの形で判定し、識別子参照は疑わない。
+      definitelyNotFunction: entry.kind === "data" && isNonFunctionLiteral(entry.value)
+    });
+  }
+  return entries;
+}
+function isNonFunctionLiteral(value) {
+  if (value === void 0) return false;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return false;
+  const scan = maskCommentsAndStrings(trimmed);
+  if (/^(?:async\s+)?function\b/.test(trimmed) || scan.includes("=>")) return false;
+  return /^["'`]/.test(trimmed) || /^-?\d/.test(trimmed) || /^(?:true|false|null|undefined)\b/.test(trimmed) || trimmed.startsWith("[") || trimmed.startsWith("{");
 }
 function collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys, stateName) {
   if (prop.name === RESERVED_STREAMS_KEY && prop.kind === "data" && prop.value && isObjectLiteral(prop.value)) {
@@ -598,23 +644,29 @@ function inferJsonTypeHint(value) {
   if (typeof value === "object") return "object";
   return void 0;
 }
-function extractDefaultExportObject(script) {
+function locateDefaultExportObject(script) {
   const scan = maskCommentsAndStrings(script);
   const match = scan.match(/export\s+default\s+(?:defineState\s*\(\s*)?(\{)/);
   if (!match) return null;
-  const startIndex = scan.indexOf(match[1], match.index);
-  return extractBracedContent(script, scan, startIndex);
+  const braceIndex = scan.indexOf(match[1], match.index);
+  return { content: extractBracedContent(script, scan, braceIndex), start: braceIndex + 1 };
+}
+function extractDefaultExportObject(script) {
+  return locateDefaultExportObject(script)?.content ?? null;
 }
 function parseTopLevelProperties(objectContent) {
   const props = [];
   const scan = maskCommentsAndStrings(objectContent);
-  const regex = /(?:(?:get|set)\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:async\s+)?([$\w]+)\s*\([^)]*\)\s*\{)|(?:(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*:\s*)/gd;
+  const regex = /(?:(?:get|set)\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:async\s+)?(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*:\s*)/gd;
   let match;
   while ((match = regex.exec(scan)) !== null) {
     const indices = match.indices;
+    let nameSpan;
     const nameAt = (group) => {
       const span = indices[group];
-      return span ? objectContent.slice(span[0], span[1]) : void 0;
+      if (!span) return void 0;
+      nameSpan = [span[0], span[1]];
+      return objectContent.slice(span[0], span[1]);
     };
     const skipBody = () => {
       const braceStart = match.index + match[0].length - 1;
@@ -623,23 +675,31 @@ function parseTopLevelProperties(objectContent) {
     };
     const accessorName = nameAt(1) ?? nameAt(2) ?? nameAt(3);
     if (accessorName) {
-      props.push({ name: accessorName, kind: "getter" });
+      props.push({ name: accessorName, kind: "getter", nameStart: nameSpan[0], nameEnd: nameSpan[1] });
       skipBody();
       continue;
     }
-    const methodName = nameAt(4);
+    const methodName = nameAt(4) ?? nameAt(5) ?? nameAt(6);
     if (methodName) {
-      props.push({ name: methodName, kind: "method" });
+      props.push({ name: methodName, kind: "method", nameStart: nameSpan[0], nameEnd: nameSpan[1] });
       skipBody();
       continue;
     }
-    const propName = nameAt(5) ?? nameAt(6) ?? nameAt(7);
+    const propName = nameAt(7) ?? nameAt(8) ?? nameAt(9);
     if (propName) {
       const valueStartIndex = match.index + match[0].length;
       const value = extractFullValue(objectContent, scan, valueStartIndex);
       const jsdocType = extractJsDocType(objectContent, match.index);
       const typeHint = jsdocType ?? inferTypeHint(value);
-      props.push({ name: propName, kind: "data", value, typeHint });
+      props.push({
+        name: propName,
+        kind: "data",
+        value,
+        typeHint,
+        nameStart: nameSpan[0],
+        nameEnd: nameSpan[1],
+        valueStart: valueStartIndex
+      });
       regex.lastIndex = valueStartIndex + value.length;
     }
   }
@@ -971,6 +1031,11 @@ var ja = {
   wcsTextInfo: (e) => `wcs-text \u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0: ${e}`,
   moustacheFouc: (e) => `<template> \u5916\u306E {{ }} \u69CB\u6587\u306F FOUC\uFF08\u521D\u671F\u8868\u793A\u6642\u306B\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u6587\u5B57\u5217\u304C\u898B\u3048\u308B\uFF09\u306E\u539F\u56E0\u306B\u306A\u308A\u307E\u3059\u3002<!--@@:${e}--> \u307E\u305F\u306F\u30B3\u30E1\u30F3\u30C8\u69CB\u6587\u306E\u4F7F\u7528\u3092\u691C\u8A0E\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
   nestedAssign: (sp) => `\u30CD\u30B9\u30C8\u3055\u308C\u305F\u30D7\u30ED\u30D1\u30C6\u30A3\u3078\u306E\u4EE3\u5165\u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\u3002this["${sp}"] \u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
+  watchKeyCrossState: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306F\u4ED6\u306E state \u3092\u6307\u3057\u3066\u3044\u307E\u3059\u3002@ \u4ED8\u304D\u306E\u8D8A\u5883 watch \u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08\u81EA state \u306E\u30D1\u30B9\u306E\u307F\uFF09`,
+  watchKeyReserved: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306F "$" \u3067\u59CB\u3081\u3089\u308C\u307E\u305B\u3093\uFF08\u4E88\u7D04\u540D\u524D\u7A7A\u9593\uFF09`,
+  watchKeyEmptySegment: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306B\u7A7A\u306E\u30D1\u30B9\u30BB\u30B0\u30E1\u30F3\u30C8\u304C\u3042\u308A\u307E\u3059`,
+  watchHandlerNotFunction: (k) => `$watch \u306E\u30A8\u30F3\u30C8\u30EA "${k}" \u306E\u5024\u306F\u95A2\u6570\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059`,
+  watchPathMissing: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093\uFF08\u4E00\u5EA6\u3082\u767A\u706B\u3057\u307E\u305B\u3093\uFF09`,
   typeAnnotationIncompatible: (vt, rt) => `\u578B "${vt}" \u306F @type {${rt}} \u3068\u4E92\u63DB\u6027\u304C\u3042\u308A\u307E\u305B\u3093`,
   arrayMutation: (m, alt) => `\u914D\u5217\u306E\u7834\u58CA\u7684\u30E1\u30BD\u30C3\u30C9 "${m}" \u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\uFF08\u540C\u4E00\u53C2\u7167\u306E\u81EA\u5DF1\u518D\u4EE3\u5165\u3067\u3082\u8981\u7D20\u306E\u8FFD\u52A0\u30FB\u524A\u9664\u306F\u53CD\u6620\u3055\u308C\u307E\u305B\u3093\uFF09\u3002\u975E\u7834\u58CA\u30E1\u30BD\u30C3\u30C9\u3068\u518D\u4EE3\u5165\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u4F8B: ${alt}\uFF09\u3002`,
   arrayIndexAssign: (sp) => `\u914D\u5217\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u3078\u306E\u76F4\u63A5\u4EE3\u5165\u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\u3002this["${sp}"] \u306E\u3088\u3046\u306A\u30C9\u30C3\u30C8\u30D1\u30B9\u4EE3\u5165\u3001\u307E\u305F\u306F with() \u3068\u518D\u4EE3\u5165\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
@@ -1013,6 +1078,11 @@ var en = {
   wcsTextInfo: (e) => `wcs-text binding: ${e}`,
   moustacheFouc: (e) => `{{ }} outside a <template> causes FOUC (the raw template string is visible before binding). Consider the comment syntax <!--@@:${e}--> instead.`,
   nestedAssign: (sp) => `Assigning to a nested property does not trigger a reactive update. Use this["${sp}"] instead.`,
+  watchKeyCrossState: (k) => `$watch key "${k}" targets another state. Cross-state watching with @ is not supported (own paths only)`,
+  watchKeyReserved: (k) => `$watch key "${k}" must not start with "$" (reserved namespace)`,
+  watchKeyEmptySegment: (k) => `$watch key "${k}" has an empty path segment`,
+  watchHandlerNotFunction: (k) => `The value of $watch entry "${k}" must be a function`,
+  watchPathMissing: (k) => `$watch key "${k}" does not exist in the state definition (it will never fire)`,
   typeAnnotationIncompatible: (vt, rt) => `Type "${vt}" is not compatible with @type {${rt}}`,
   arrayMutation: (m, alt) => `Destructive array method "${m}" does not trigger a reactive update (re-assigning the same reference does not reflect added/removed elements either). Use a non-destructive method with reassignment (e.g. ${alt}).`,
   arrayIndexAssign: (sp) => `Assigning directly to an array index does not trigger a reactive update. Use a dot-path assignment like this["${sp}"], or with() plus reassignment.`,
@@ -3078,6 +3148,55 @@ function blankJsComments(code) {
   return code.replace(/\/\*[\s\S]*?\*\//g, (m) => " ".repeat(m.length)).replace(/(^|[^:])\/\/[^\n]*/g, (m, pre) => pre + " ".repeat(m.length - pre.length));
 }
 
+// src/service/watchDeclarationValidator.ts
+var STATE_NAME_SEPARATOR = "@";
+function validateWatchDeclarations(html, stateTagName = "wcs-state", locale) {
+  const msgs = getMessages(locale);
+  const out = [];
+  for (const block of parseWcsScriptBlocks(html, stateTagName)) {
+    const entries = analyzeWatchEntries(block.content);
+    if (entries.length === 0) continue;
+    const paths = analyzeStatePaths(block.content, block.stateName);
+    const pathSet = new Set(paths.map((p) => p.path));
+    for (const entry of entries) {
+      const diagnostic = validateEntry(entry, pathSet, msgs);
+      if (diagnostic === null) continue;
+      out.push({
+        code: diagnostic.code,
+        start: block.contentStart + entry.start,
+        end: block.contentStart + entry.end,
+        message: diagnostic.message,
+        severity: diagnostic.severity
+      });
+    }
+  }
+  return out;
+}
+function validateEntry(entry, pathSet, msgs) {
+  const { key } = entry;
+  const invalid = (message) => ({ code: WcsDiagnosticCode.WatchDeclarationInvalid, message, severity: "error" });
+  if (key.includes(STATE_NAME_SEPARATOR)) {
+    return invalid(msgs.watchKeyCrossState(key));
+  }
+  if (key.startsWith("$")) {
+    return invalid(msgs.watchKeyReserved(key));
+  }
+  if (key.split(".").some((segment) => segment.length === 0)) {
+    return invalid(msgs.watchKeyEmptySegment(key));
+  }
+  if (entry.definitelyNotFunction) {
+    return invalid(msgs.watchHandlerNotFunction(key));
+  }
+  if (pathSet.size > 0 && !pathSet.has(key)) {
+    return {
+      code: WcsDiagnosticCode.WatchPathMissing,
+      message: msgs.watchPathMissing(key),
+      severity: "warning"
+    };
+  }
+  return null;
+}
+
 // src/core/validateDocument.ts
 function validateDocument(text, options = {}) {
   const bindAttribute = options.bindAttribute ?? "data-wcs";
@@ -3089,6 +3208,7 @@ function validateDocument(text, options = {}) {
   out.push(...validateIoNodes(text, bindAttribute, stateTagName, locale));
   out.push(...validateDocumentEnv(text, locale));
   out.push(...validateArrayMutations(text, stateTagName, locale));
+  out.push(...validateWatchDeclarations(text, stateTagName, locale));
   for (const d of validateStateTypes(text, stateTagName, locale)) {
     out.push({ code: WcsDiagnosticCode.TypeAnnotation, start: d.start, end: d.end, message: d.message, severity: d.severity });
   }
