@@ -17,6 +17,7 @@ import { validateArrayMutations } from "../service/arrayMutationValidator.js";
 import { validateTemplateSyntax } from "../service/templateSyntaxValidator.js";
 import { validateIoNodes } from "../service/ioNodeValidator.js";
 import { validateDocumentEnv } from "../service/documentEnvValidator.js";
+import { validateWatchDeclarations } from "../service/watchDeclarationValidator.js";
 
 export interface ValidateDocumentOptions {
   /** バインド属性名(既定 data-wcs)。 */
@@ -44,8 +45,10 @@ export function validateDocument(text: string, options: ValidateDocumentOptions 
   out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute, locale));
   out.push(...validateIoNodes(text, bindAttribute, stateTagName, locale));
   out.push(...validateDocumentEnv(text, locale));
-  // arrayMutationValidator は 2 コード持ちのため validator 側で code を付与して返す。
+  // arrayMutationValidator / watchDeclarationValidator は 2 コード持ちのため
+  // validator 側で code を付与して返す。
   out.push(...validateArrayMutations(text, stateTagName, locale));
+  out.push(...validateWatchDeclarations(text, stateTagName, locale));
   // 単一カテゴリの validator は集約時に code を付与する。
   for (const d of validateStateTypes(text, stateTagName, locale)) {
     out.push({ code: WcsDiagnosticCode.TypeAnnotation, start: d.start, end: d.end, message: d.message, severity: d.severity });

@@ -24,6 +24,7 @@ import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
 import type { IAbsoluteStateAddress } from "../address/types";
 import type { IStateElement } from "../components/types";
 import { MAX_WATCH_CHAIN_DEPTH, WATCH_LISTENER_PRIORITY } from "../define";
+import { devtoolsSink } from "../devtools/sink";
 import { getScopedIndexes } from "../list/wildcardLevel";
 import type { IStateProxy } from "../proxy/types";
 import { registerUpdateBatchListener } from "../updater/updater";
@@ -96,7 +97,7 @@ function primeComputedWatches(stateElement: IStateElement): void {
         setComputedSnapshot(stateElement, absoluteAddressOf(stateElement, entry), state[entry.path]);
       } catch (e) {
         // 初回評価の throw は接続を巻き添えにしない（発火時と同じ隔離方針、§7-1）
-        console.error(`[@wcstack/state] $watch initial evaluation of "${entry.path}" threw.`, e);
+        reportWatchError(stateElement, entry.path, "prime", e);
       }
     }
   });
@@ -121,6 +122,38 @@ function isScalarComputed(stateElement: IStateElement, entry: IWatchEntry): bool
   return entry.pathInfo.wildcardCount === 0 && stateElement.getterPaths.has(entry.path);
 }
 
+/**
+ * throw を報告する（設計書 §7-1）。
+ *
+ * `console.error` だけだと **devtools からは「静かに握られた失敗」が見えない**。
+ * watch は drain フックを `$streams` と共有しており、例外を watch 側で閉じるのが
+ * 前提なので、閉じた事実をここで観測可能にしておく必要がある。
+ * イベント生成は必ず `devtoolsSink !== null` の内側で行う（sink のコスト規範）。
+ */
+const WATCH_ERROR_SUBJECT: Readonly<Record<"prime" | "evaluate" | "handler", string>> = {
+  prime: "initial evaluation of",
+  evaluate: "evaluation of",
+  handler: "handler for",
+};
+
+function reportWatchError(
+  stateElement: IStateElement,
+  path: string,
+  phase: "prime" | "evaluate" | "handler",
+  error: unknown,
+): void {
+  console.error(`[@wcstack/state] $watch ${WATCH_ERROR_SUBJECT[phase]} "${path}" threw.`, error);
+  if (devtoolsSink !== null) {
+    devtoolsSink({
+      type: "state:watch-error",
+      phase,
+      stateName: stateElement.name,
+      path,
+      error,
+    });
+  }
+}
+
 function fireWatchOnUpdateBatch(batch: ReadonlySet<IAbsoluteStateAddress>): void {
   const activeStateElements = getActiveWatchStateElements();
   try {
@@ -135,13 +168,14 @@ function fireWatchOnUpdateBatch(batch: ReadonlySet<IAbsoluteStateAddress>): void
     if (depth > MAX_WATCH_CHAIN_DEPTH) {
       // 打ち切るのは watch の発火のみ。値と binding 適用は巻き戻さない
       // （伝播 hop 上限超過時の quarantine と同じ姿勢、§7-2）。
+      const paths = Array.from(batch, (absAddress) => absAddress.absolutePathInfo.pathInfo.path);
       console.error(
         `[@wcstack/state] $watch chain depth limit exceeded; watch handlers for this batch were skipped.`,
-        {
-          maxDepth: MAX_WATCH_CHAIN_DEPTH,
-          paths: Array.from(batch, (absAddress) => absAddress.absolutePathInfo.pathInfo.path),
-        },
+        { maxDepth: MAX_WATCH_CHAIN_DEPTH, paths },
       );
+      if (devtoolsSink !== null) {
+        devtoolsSink({ type: "state:watch-chain-limit", maxDepth: MAX_WATCH_CHAIN_DEPTH, paths });
+      }
       return;
     }
 
@@ -240,7 +274,7 @@ function fireOne(hit: IWatchHit): void {
         cur = readCurrentValue(state, entry, indexes);
       } catch (e) {
         // cur が得られない以上ハンドラは呼べない。次の hit へ進む
-        console.error(`[@wcstack/state] $watch evaluation of "${entry.path}" threw.`, e);
+        reportWatchError(stateElement, entry.path, "evaluate", e);
         return;
       }
       const prev = isComputed ? getComputedSnapshot(stateElement, absAddress) : getPrevValue(absAddress);
@@ -252,7 +286,7 @@ function fireOne(hit: IWatchHit): void {
       entry.handler.call(state, cur, prev, ...indexes);
     });
   } catch (e) {
-    console.error(`[@wcstack/state] $watch handler for "${entry.path}" threw.`, e);
+    reportWatchError(stateElement, entry.path, "handler", e);
   }
 }
 

@@ -311,7 +311,9 @@ watch ハンドラ内の書き込みは新しい microtask バッチを作るた
 - `packages/state/README.md` / `README.ja.md` と `packages/state/docs/streams.md`（:144）／ `streams.ja` 相当の **「現行 API に state-only な `$watch` / `$effects` はない」という明示記述を更新**
 - `docs/state-stream-type-design.md` §4-6（inward / outward の双対）から本文書へリンク
 - SPEC・`wcstack/wcstack-skill`（別リポジトリ）の references
-- devtools protocol に `watch:fired` を足すか（第 2 フェーズ判断）
+- **静的検証（実施済み）**: `$watch` のキーはパスなので、vscode-wcs / `@wcstack/lint` が照合する。`wcs/watch-path-missing`（warning・`binding-path-missing` と同 severity）と `wcs/watch-declaration-invalid`（error・ランタイムが raiseError で落とす形）。**この機構の失敗モードが一貫して「黙って発火しない」である以上、キーのタイプミスを静的に拾えるかどうかが実用上いちばん効く**
+- **devtools（実施済み）**: §7-1 の「例外を devtools sink にも流す」を実装した。`state:watch-error`（`phase: prime | evaluate | handler`）と `state:watch-chain-limit`。watch は例外を自分で握るので、これが無いと失敗が devtools から一切見えない
+- devtools protocol に `watch:fired`（発火そのもの）を足すか（第 2 フェーズ判断・未着手）
 - SSR / hydrater で watch を走らせるか ── **第 1 段では走らせない**。副作用の二重実行を避ける
 
 ---

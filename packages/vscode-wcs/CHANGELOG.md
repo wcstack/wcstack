@@ -4,6 +4,12 @@
 
 ### Features
 
+- **`$watch` 宣言の診断** — `@wcstack/state` の headless 変更購読（`$watch: { "<path>": handler }`）への追従。宣言キーは監視対象の state パスであり、`data-wcs` の右辺と同じ性質を持つ一方で、**誤りの出方が違う**: バインディング側のタイプミスは「描画されない」形で目に見えるが、`$watch` 側は**黙って一度も発火しない**。設計の正本: `docs/state-watch-hook-design.md`
+  - `wcs/watch-path-missing`（warning）— キーが状態定義に存在しない。severity は `wcs/binding-path-missing` に揃える（初期値が空配列の行フィールドなど、静的に解決できない正当な形があるため）。パス候補が 1 つも取れないスクリプトでは照合をスキップし誤警告を出さない
+  - `wcs/watch-declaration-invalid`（error）— ランタイム（`watch/processWatchDeclaration.ts`）が raiseError で落とす形。`@` 付きの越境 watch（設計 D8 で不採用）/ `$` 始まり / 空のパスセグメント / 明らかな非関数リテラルのハンドラ。識別子参照（`count: this.onChange`）は静的に解決できないため疑わない
+  - キー 1 つにつき報告は 1 件（直す順番を増やさない）
+  - preamble の `defineState` に `$watch` の文脈型を追加（ハンドラ引数が `noImplicitAny` 下で偽エラーにならない）
+- **引用符付きメソッド短縮記法の解析** — `"items.*.price"(cur, prev, index) {}` 形式（ドットや `*` を含むキーは引用符でしか書けず、`$watch` のワイルドカード行ハンドラはまさにこの形）がトップレベルプロパティとして認識されていなかった問題を修正。従来は宣言が解析結果から丸ごと消え、さらに本体内のオブジェクトリテラルが誤ってトップレベルのパス候補になり得た。既存 HTML 全件で診断の差分ゼロを実測
 - **`$listKeys` 宣言対応** — `@wcstack/state` のリストキー宣言（`$listKeys: { "<listPath>": "<field>" | (row) => key }`）への追従
   - 宣言されたリストパスを `<listPath>` / `<listPath>.*` / `<listPath>.length` として実体化。初期値が空配列（`items: []`）で要素の形が読めないケースでも `for: items.*.children` 等が補完・検証に載る
   - 文字列キー指定からは行のキーフィールド（`<listPath>.*.<field>`）も導出。関数キー指定はフィールド名が確定しないためリストパスのみ

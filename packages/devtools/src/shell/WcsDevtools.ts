@@ -811,6 +811,14 @@ export class WcsDevtools extends HTMLElement {
       kind.classList.add("warn");
       kind.title = "emitted with no subscribers";
     }
+    // `$watch` の失敗はランタイムが握って drain を守るため、ここが唯一の
+    // 「気づける場所」になる。空撃ちと同じ warn 表示に乗せる。
+    if (entry.kind === "watch-error" || entry.kind === "watch-chain-limit") {
+      kind.classList.add("warn");
+      kind.title = entry.kind === "watch-error"
+        ? "a $watch threw; the runtime isolated it (console.error only)"
+        : "a $watch write chain hit the depth limit and was cut off";
+    }
     const label = document.createElement("span");
     label.className = "label";
     const stateName = entry.stateName !== null ? `@${entry.stateName}` : "";

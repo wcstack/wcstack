@@ -20,6 +20,8 @@
 import { describe, it, expect, beforeAll, beforeEach, vi, afterEach } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { MAX_WATCH_CHAIN_DEPTH } from "../src/define";
+import { setDevtoolsSink } from "../src/devtools/sink";
+import type { DevtoolsEvent } from "../src/devtools/types";
 import type { IState } from "../src/types";
 import { __private__ as chainDepthPrivate } from "../src/watch/chainDepth";
 import { __private__ as runtimePrivate } from "../src/watch/watchRuntime";
@@ -326,6 +328,123 @@ describe("$watch の発火", () => {
 
     expect(handler).toHaveBeenCalledTimes(40);
     expect(errorSpy).not.toHaveBeenCalled();
+    host.remove();
+  });
+});
+
+describe("$watch の devtools 計装（設計書 §7-1）", () => {
+  // watch は例外を自分で閉じる（drain と他機能を巻き添えにしないため）。
+  // console.error だけだと devtools からは「静かに握られた失敗」が見えないので、
+  // 同じ地点から sink にも流す。
+  const events: DevtoolsEvent[] = [];
+
+  beforeEach(() => {
+    events.length = 0;
+    setDevtoolsSink((event) => events.push(event));
+  });
+
+  afterEach(() => {
+    setDevtoolsSink(null);
+  });
+
+  const watchEvents = () => events.filter((e) => e.type.startsWith("state:watch-"));
+
+  it("ハンドラの throw が state:watch-error（phase: handler）として流れること", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => { /* silence */ });
+    const { host, stateEl } = await connectHost("", {
+      a: 0,
+      $watch: { a() { throw new Error("boom"); } },
+    } as unknown as IState);
+
+    stateEl.createState("writable", (state) => { state.a = 1; });
+    await flushAsync();
+
+    expect(watchEvents()).toEqual([
+      expect.objectContaining({
+        type: "state:watch-error",
+        phase: "handler",
+        stateName: "default",
+        path: "a",
+        error: expect.any(Error),
+      }),
+    ]);
+    host.remove();
+  });
+
+  it("cur の評価（getter）の throw が phase: evaluate として流れること", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => { /* silence */ });
+    const { host, stateEl } = await connectHost("", {
+      count: 1,
+      get boom(this: any): number {
+        if (this.count > 1) throw new Error("boom");
+        return this.count;
+      },
+      $watch: { boom() { /* 到達しない */ } },
+    } as unknown as IState);
+
+    stateEl.createState("writable", (state) => { state.count = 2; });
+    await flushAsync();
+
+    expect(watchEvents()).toEqual([
+      expect.objectContaining({ type: "state:watch-error", phase: "evaluate", path: "boom" }),
+    ]);
+    host.remove();
+  });
+
+  it("接続時の初回評価の throw が phase: prime として流れること", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => { /* silence */ });
+    const { host } = await connectHost("", {
+      count: 1,
+      get boom(): number { throw new Error("boom at prime"); },
+      $watch: { boom() { /* noop */ } },
+    } as unknown as IState);
+    await flushAsync();
+
+    expect(watchEvents()).toEqual([
+      expect.objectContaining({ type: "state:watch-error", phase: "prime", path: "boom" }),
+    ]);
+    host.remove();
+  });
+
+  it("連鎖の打ち切りが state:watch-chain-limit として流れること", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => { /* silence */ });
+    const { host, stateEl } = await connectHost("", {
+      a: 0,
+      b: 0,
+      $watch: {
+        a(this: any, cur: unknown) { this.b = (cur as number) + 1; },
+        b(this: any, cur: unknown) { this.a = (cur as number) + 1; },
+      },
+    } as unknown as IState);
+
+    stateEl.createState("writable", (state) => { state.a = 1; });
+    await flushAsync();
+
+    const limits = events.filter((e) => e.type === "state:watch-chain-limit");
+    expect(limits).toHaveLength(1);
+    expect(limits[0]).toEqual(
+      expect.objectContaining({ type: "state:watch-chain-limit", maxDepth: MAX_WATCH_CHAIN_DEPTH }),
+    );
+    // 打ち切りバッチは連鎖の折り返し次第で a 側にも b 側にもなるので、
+    // どちらか一方であることだけを見る（報告の中身が空でないことが要点）。
+    const { paths } = limits[0] as { paths: readonly string[] };
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths.every((p) => p === "a" || p === "b")).toBe(true);
+    host.remove();
+  });
+
+  it("sink 未接続なら watch のイベントは生成されないこと（コスト規範）", async () => {
+    setDevtoolsSink(null);
+    vi.spyOn(console, "error").mockImplementation(() => { /* silence */ });
+    const { host, stateEl } = await connectHost("", {
+      a: 0,
+      $watch: { a() { throw new Error("boom"); } },
+    } as unknown as IState);
+
+    stateEl.createState("writable", (state) => { state.a = 1; });
+    await flushAsync();
+
+    expect(events).toEqual([]);
     host.remove();
   });
 });

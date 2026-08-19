@@ -51,6 +51,13 @@ export const WcsDiagnosticCode = {
   TokenUndeclared: "wcs/token-undeclared",
   TokenMisconfigured: "wcs/token-misconfigured",
   NestedAssign: "wcs/nested-assign",
+  // --- <wcs-state> script: $watch declaration ---
+  // ランタイム（watch/processWatchDeclaration.ts）が raiseError で落とす宣言。
+  // 越境 `@` / `$` 始まり / 空キー・空セグメント / 明らかな非関数ハンドラ。
+  WatchDeclarationInvalid: "wcs/watch-declaration-invalid",
+  // `$watch` のキーが状態定義に存在しない。バインディング側と違い黙って発火しない
+  // だけなので気づけない。severity は binding-path-missing に揃える（warning）。
+  WatchPathMissing: "wcs/watch-path-missing",
   TypeAnnotation: "wcs/type-annotation",
   TemplateSyntax: "wcs/template-syntax",
   // --- <wcs-state> script: array reactivity hazards ---
