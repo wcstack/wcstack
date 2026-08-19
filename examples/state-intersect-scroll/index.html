@@ -43,7 +43,7 @@
 <body>
 
 <h1>wcstack: infinite scroll <small>— &lt;wcs-intersect&gt;</small></h1>
-<p class="lead">state + intersection + <code>$streams</code> — a <code>&lt;wcs-intersect&gt;</code> sentinel selects the next page, while a dependency-driven stream fetches it with switchMap-style cancellation and bounded retry.</p>
+<p class="lead">state + intersection + <code>$streams</code> + <code>$watch</code> — a <code>&lt;wcs-intersect&gt;</code> sentinel selects the next page, a dependency-driven stream fetches it with switchMap-style cancellation and bounded retry, and a headless <code>$watch</code> commits the result without depending on anything being rendered.</p>
 
 <!-- ============================================================
      App State
@@ -164,6 +164,13 @@
       get loadedCount() {
         return this.items.length;
       },
+      // `$watch` のキーは `$` 始まりを受け付けない（予約名前空間）ので、
+      // `$streamStatus.pageResult` を非 `$` パスへ写す 1 行の getter を挟む。
+      // watch した getter は eager になる規約なので、この getter は
+      // **どこにもバインドされていなくても**接続時と依存が動くたびに評価される。
+      get streamStatus() {
+        return this["$streamStatus.pageResult"];
+      },
 
       retryNow() {
         this.scrollRetryArmed = false;
@@ -211,29 +218,36 @@
 
       // The stream value is a page-local result because restart resets it. Commit a
       // successful page into the long-lived feed, then re-arm the edge detector.
-      // $updatedCallback is binding-driven, so the visible stream-status meter below
-      // is also the explicit observation point for this imperative commit boundary.
-      $updatedCallback(paths) {
-        if (!paths.includes("$streamStatus.pageResult")) return;
+      //
+      // This used to be $updatedCallback, which is binding-driven: it only reports
+      // paths whose live DOM bindings were applied, so the stream-status meter below
+      // was load-bearing — deleting that one <b> stopped the feed from committing.
+      // $watch is the headless counterpart, so the meter is now display only.
+      $watch: {
+        streamStatus(status, previousStatus) {
+          if (status === "error") {
+            this.scrollRetryArmed = false;
+            this.errorScrollY = window.scrollY;
+            return;
+          }
+          if (status !== "done" || this.pageResult?.kind !== "success") return;
 
-        const status = this["$streamStatus.pageResult"];
-        if (status === "error") {
-          this.scrollRetryArmed = false;
-          this.errorScrollY = window.scrollY;
-          return;
-        }
-        if (status !== "done" || this.pageResult?.kind !== "success") return;
+          // No idempotency guard on this concat: the stream runtime's notification
+          // ledger delivers one "done" per run (same-status re-notifications are
+          // dropped), so the watched getter only lands in a batch when the status
+          // actually moved — and a run for the same page cannot reach "done" twice.
+          // `previousStatus` is the previous evaluation, which is why this can be a
+          // plain assertion rather than a guard.
+          console.assert(previousStatus !== "done", "done should not be observed twice");
 
-        // No idempotency guard on this concat: the stream runtime's notification
-        // ledger delivers one "done" per run (same-status re-notifications are
-        // dropped), and a run for the same page cannot reach "done" twice.
-        const batch = this.pageResult.items;
-        this.items = this.items.concat(batch);
-        if (batch.length < this.pageSize) {
-          this.noMore = true;
-          return;
-        }
-        this.$command.rearm.emit();
+          const batch = this.pageResult.items;
+          this.items = this.items.concat(batch);
+          if (batch.length < this.pageSize) {
+            this.noMore = true;
+            return;
+          }
+          this.$command.rearm.emit();
+        },
       },
     };
   </script>
@@ -242,9 +256,10 @@
 <!-- ============================================================
      Feed
      ============================================================ -->
-<!-- Load-bearing: $updatedCallback is binding-driven, and the stream-status
-     binding below is the subscription that delivers "$streamStatus.pageResult"
-     to it. Removing it stops the feed's commit callback. -->
+<!-- Display only. This used to be load-bearing: while the commit lived in
+     $updatedCallback (binding-driven), the stream-status binding below was the
+     subscription that delivered "$streamStatus.pageResult" to it, so removing it
+     stopped the feed. $watch subscribes without a binding, so this is now just UI. -->
 <div class="meter" role="status">
   <span>Loaded <b data-wcs="textContent: loadedCount"></b> items</span>
   <span>over <b data-wcs="textContent: page"></b> pages</span>
