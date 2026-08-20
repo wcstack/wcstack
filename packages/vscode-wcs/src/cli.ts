@@ -18,10 +18,52 @@
  */
 
 import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { runValidation, type CliFileInput, type RunValidationOptions } from "./core/cli/runValidation.js";
+import type { FileReader } from "./service/statePathResolver.js";
 
 function classify(path: string): CliFileInput["kind"] {
   return path.endsWith(".manifest.json") ? "manifest" : "html";
+}
+
+/**
+ * `<wcs-state src=...>` の外部 state を HTML ファイルのディレクトリ基準で読む reader。
+ * 読めないパス(不存在 / 権限)は undefined = 従来どおりスキップ(検証は
+ * 「候補ゼロなら沈黙」の保守側に倒れる)。static-wiring-dx-design.md §6-2。
+ *
+ * 読まないもの(undefined 固定):
+ * - スキーム付き URL(`https://...` 等)と protocol-relative(`//host/...`) —
+ *   ネットワーク参照であり、Windows では `//h/s` が resolve で UNC パスに化けて
+ *   readFileSync が SMB 接続(NTLM 送出・タイムアウト待ち)を起こす。静的検証
+ *   ツールはネットワークに出ない。
+ * - 先頭 `/` の絶対パス — ランタイムでは Web ルート基準であり、ファイルシステムの
+ *   ルートに写像すると無関係なファイルを読みうる。Web ルートは設定なしに決められない。
+ */
+export function createFileReader(htmlPath: string, read: (path: string) => string = (p) => readFileSync(p, "utf8")): FileReader {
+  const base = dirname(htmlPath);
+  // 同一ファイルは validator 3 つ + .ts プローブで最大 6 回要求される。メモ化で
+  // I/O を 1 回に抑え、validator 間で読む内容が変わる TOCTOU も同時に消す。
+  const cache = new Map<string, string | undefined>();
+  return (relativePath: string) => {
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(relativePath) || relativePath.startsWith("/")) {
+      return undefined;
+    }
+    if (cache.has(relativePath)) {
+      return cache.get(relativePath);
+    }
+    let content: string | undefined;
+    try {
+      content = read(resolve(base, relativePath));
+      // PowerShell の Out-File 等が書く UTF-8 BOM は JSON.parse を黙って壊すので剥がす。
+      if (content.charCodeAt(0) === 0xfeff) {
+        content = content.slice(1);
+      }
+    } catch {
+      content = undefined;
+    }
+    cache.set(relativePath, content);
+    return content;
+  };
 }
 
 /** argv を options とファイル一覧に分ける。IDE の設定に合わせるため attr / state-tag を受ける。 */
@@ -76,7 +118,8 @@ export function main(argv: readonly string[]): number {
       process.stderr.write(`cannot read ${path}: ${(e as Error).message}\n`);
       return 2;
     }
-    inputs.push({ source: path, text, kind: classify(path) });
+    const kind = classify(path);
+    inputs.push({ source: path, text, kind, fileReader: kind === "html" ? createFileReader(path) : undefined });
   }
 
   const result = runValidation(inputs, { ...options, locale });
@@ -91,7 +134,8 @@ export function main(argv: readonly string[]): number {
 
 // エントリポイント実行。esbuild は CJS を出力するので require/module が使える。
 // `wcs-validate` bin(symlink)経由でも argv[1] 依存でなく確実に起動する。
-// テストは core/cli/runValidation を import するため、この分岐は踏まない。
+// テスト(vitest = ESM)からの import では typeof require が "undefined" になるため
+// この分岐は踏まない。
 declare const require: NodeRequire | undefined;
 declare const module: NodeModule | undefined;
 if (typeof require !== "undefined" && typeof module !== "undefined" && require.main === module) {

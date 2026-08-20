@@ -10,7 +10,7 @@
 
 import { BUILTIN_FILTERS, type FilterInfo } from './completionData.js';
 import type { PathCandidate } from './stateAnalyzer.js';
-import { getStatePathsFromHtml } from './statePathResolver.js';
+import { getStatePathsFromHtml, type FileReader } from './statePathResolver.js';
 import { isInsideForTemplate, getInnermostForPath } from './forContext.js';
 import { WcsDiagnosticCode, type WcsDiagnosticCodeValue } from '../core/diagnostics.js';
 import { getMessages, type WcsMessageCatalog, type ExpectedTypeKind } from '../core/messages.js';
@@ -38,12 +38,12 @@ export interface BindingDiagnostic {
  * @param html - HTML 全文
  * @param attrName - バインド属性名（例: "data-wcs"）
  */
-export function validateBindings(html: string, attrName: string, stateTagName: string = 'wcs-state', locale?: string): BindingDiagnostic[] {
+export function validateBindings(html: string, attrName: string, stateTagName: string = 'wcs-state', locale?: string, fileReader?: FileReader): BindingDiagnostic[] {
   const diagnostics: BindingDiagnostic[] = [];
   const msgs = getMessages(locale);
 
   // 状態パスを収集（state 名ごとに分類）
-  const statePaths = getStatePathsFromHtml(html, stateTagName);
+  const statePaths = getStatePathsFromHtml(html, stateTagName, fileReader);
   const pathsByState = new Map<string, PathCandidate[]>();
   for (const p of statePaths) {
     const list = pathsByState.get(p.stateName) ?? [];

@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
+import { resolve } from "node:path";
 import { createPositionMapper } from "../src/core/offsetToPosition.js";
 import { validateDocument } from "../src/core/validateDocument.js";
 import { runValidation, type CliFileInput } from "../src/core/cli/runValidation.js";
 import { WcsDiagnosticCode, severityToLsp } from "../src/core/diagnostics.js";
 import type { LiveBindableDeclaration } from "../src/core/sidecar/types.js";
+import { createFileReader } from "../src/cli.js";
 
 describe("offsetToPosition", () => {
   it("offset を 1-based line:column に写像する", () => {
@@ -56,6 +58,120 @@ describe("IDE / CI parity — 同一入力から同一 {code, range, severity}",
     // 参考: LSP severity への写像も決定的
     expect(ideDiags.map((d) => severityToLsp(d.severity))).toEqual(cliDiags.map((d) => severityToLsp(d.severity)));
     expect(ideDiags.length).toBeGreaterThan(0);
+  });
+});
+
+describe("外部 state の fileReader 解決（static-wiring-dx-design.md §6-2）", () => {
+  const html = `
+<wcs-state src="./state.js"></wcs-state>
+<span data-wcs="textContent: count"></span>
+<span data-wcs="textContent: missingPath"></span>
+`;
+
+  it("fileReader なしでは候補ゼロで検証が沈黙する（従来動作の維持）", () => {
+    const result = runValidation([{ source: "page.html", text: html, kind: "html" }]);
+    const diags = result.diagnosticsBySource.get("page.html")!;
+    expect(diags.filter((d) => d.code === WcsDiagnosticCode.BindingPathMissing)).toHaveLength(0);
+  });
+
+  it("fileReader ありでは外部 .js state を解決しパス実在検証が働く（.ts 優先 → .js フォールバック）", () => {
+    const requested: string[] = [];
+    const fileReader = (path: string): string | undefined => {
+      requested.push(path);
+      return path.endsWith("state.js") ? "export default { count: 0 };" : undefined;
+    };
+    const result = runValidation([{ source: "page.html", text: html, kind: "html", fileReader }]);
+    const diags = result.diagnosticsBySource.get("page.html")!;
+    const missing = diags.filter((d) => d.code === WcsDiagnosticCode.BindingPathMissing);
+    expect(missing).toHaveLength(1);
+    expect(html.slice(missing[0].start, missing[0].end)).toContain("missingPath");
+    // .js の解決は同名 .ts を先に試す（statePathResolver の既存規則）
+    expect(requested[0]).toMatch(/state\.ts$/);
+    expect(requested[1]).toMatch(/state\.js$/);
+  });
+
+  it(".ts と .js が両方読めるとき .ts の内容が勝つこと", () => {
+    const fileReader = (path: string): string | undefined => {
+      if (path.endsWith("state.ts")) return "export default { tsOnly: 1 };";
+      if (path.endsWith("state.js")) return "export default { jsOnly: 1 };";
+      return undefined;
+    };
+    const tsHtml = `
+<wcs-state src="./state.js"></wcs-state>
+<span data-wcs="textContent: tsOnly"></span>
+<span data-wcs="textContent: jsOnly"></span>
+`;
+    const result = runValidation([{ source: "page.html", text: tsHtml, kind: "html", fileReader }]);
+    const missing = result.diagnosticsBySource.get("page.html")!
+      .filter((d) => d.code === WcsDiagnosticCode.BindingPathMissing);
+    // .ts が正なので jsOnly 側だけが不在警告になる
+    expect(missing).toHaveLength(1);
+    expect(tsHtml.slice(missing[0].start, missing[0].end)).toContain("jsOnly");
+  });
+
+  it("外部 .json state も解決される", () => {
+    const jsonHtml = `
+<wcs-state src="data/state.json"></wcs-state>
+<span data-wcs="textContent: user.name"></span>
+<span data-wcs="textContent: user.ghost"></span>
+`;
+    const fileReader = (path: string): string | undefined =>
+      path.endsWith("state.json") ? '{"user": {"name": "a"}}' : undefined;
+    const result = runValidation([{ source: "page.html", text: jsonHtml, kind: "html", fileReader }]);
+    const diags = result.diagnosticsBySource.get("page.html")!;
+    const missing = diags.filter((d) => d.code === WcsDiagnosticCode.BindingPathMissing);
+    expect(missing).toHaveLength(1);
+    expect(jsonHtml.slice(missing[0].start, missing[0].end)).toContain("user.ghost");
+  });
+});
+
+describe("createFileReader — HTML ファイルのディレクトリ基準で解決", () => {
+  it("相対パスを HTML のディレクトリから解決し、読めないパスは undefined を返す", () => {
+    const seen: string[] = [];
+    const reader = createFileReader("examples/demo/index.html", (path) => {
+      seen.push(path);
+      if (path.endsWith("state.js")) return "export default { a: 1 };";
+      throw new Error("ENOENT");
+    });
+    expect(reader("./state.js")).toBe("export default { a: 1 };");
+    expect(seen[0]).toBe(resolve("examples/demo", "./state.js"));
+    expect(reader("missing.json")).toBeUndefined();
+  });
+
+  it("URL・protocol-relative・絶対パスは read を呼ばず undefined を返す（ネットワーク/UNC/Webルート遮断）", () => {
+    const seen: string[] = [];
+    const reader = createFileReader("examples/demo/index.html", (path) => {
+      seen.push(path);
+      return "should never be read";
+    });
+    // Windows では resolve(base, "//host/share/x.js") が UNC パス \\host\share\... に
+    // 化けて readFileSync が SMB 接続を起こすため、読む前に遮断する。
+    expect(reader("//evil.example/share/state.js")).toBeUndefined();
+    expect(reader("https://evil.example/state.js")).toBeUndefined();
+    expect(reader("HTTPS://evil.example/state.js")).toBeUndefined();
+    expect(reader("file://c/state.js")).toBeUndefined();
+    // 先頭 `/` はランタイムでは Web ルート基準 = ファイルシステムに写像できない。
+    expect(reader("/states/app.json")).toBeUndefined();
+    expect(seen).toHaveLength(0);
+  });
+
+  it("同じパスの再要求は read を再実行しない（メモ化・成功/失敗とも）", () => {
+    const seen: string[] = [];
+    const reader = createFileReader("a/index.html", (path) => {
+      seen.push(path);
+      if (path.endsWith("ok.js")) return "export default {};";
+      throw new Error("ENOENT");
+    });
+    reader("ok.js");
+    reader("ok.js");
+    reader("missing.js");
+    expect(reader("missing.js")).toBeUndefined();
+    expect(seen).toHaveLength(2);
+  });
+
+  it("UTF-8 BOM を剥がすこと（BOM 付き JSON が黙って候補ゼロになるのを防ぐ）", () => {
+    const reader = createFileReader("a/index.html", () => "\uFEFF{\"a\": 1}");
+    expect(reader("state.json")).toBe('{"a": 1}');
   });
 });
 

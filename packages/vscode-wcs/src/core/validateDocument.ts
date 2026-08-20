@@ -18,6 +18,7 @@ import { validateTemplateSyntax } from "../service/templateSyntaxValidator.js";
 import { validateIoNodes } from "../service/ioNodeValidator.js";
 import { validateDocumentEnv } from "../service/documentEnvValidator.js";
 import { validateWatchDeclarations } from "../service/watchDeclarationValidator.js";
+import type { FileReader } from "../service/statePathResolver.js";
 
 export interface ValidateDocumentOptions {
   /** バインド属性名(既定 data-wcs)。 */
@@ -29,6 +30,13 @@ export interface ValidateDocumentOptions {
    * 安定契約は {code, range, severity} — message はロケールで変わってよい。
    */
   readonly locale?: string;
+  /**
+   * `<wcs-state src=...>` の外部 state ファイル(.json / .js / .ts)を読むコールバック。
+   * 未指定なら src 属性はスキップ(従来どおり候補ゼロ → パス検証は沈黙)。
+   * CLI が HTML ファイルのディレクトリ基準の実 reader を渡す
+   * (static-wiring-dx-design.md §6-2)。IDE 側は未配線のまま。
+   */
+  readonly fileReader?: FileReader;
 }
 
 /**
@@ -38,12 +46,13 @@ export function validateDocument(text: string, options: ValidateDocumentOptions 
   const bindAttribute = options.bindAttribute ?? "data-wcs";
   const stateTagName = options.stateTagName ?? "wcs-state";
   const locale = options.locale;
+  const fileReader = options.fileReader;
 
   const out: WcsDiagnostic[] = [];
   // bindingValidator / templateSyntaxValidator / ioNodeValidator / documentEnvValidator は既に code 付き。
-  out.push(...validateBindings(text, bindAttribute, stateTagName, locale));
-  out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute, locale));
-  out.push(...validateIoNodes(text, bindAttribute, stateTagName, locale));
+  out.push(...validateBindings(text, bindAttribute, stateTagName, locale, fileReader));
+  out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute, locale, fileReader));
+  out.push(...validateIoNodes(text, bindAttribute, stateTagName, locale, fileReader));
   out.push(...validateDocumentEnv(text, locale));
   // arrayMutationValidator / watchDeclarationValidator は 2 コード持ちのため
   // validator 側で code を付与して返す。

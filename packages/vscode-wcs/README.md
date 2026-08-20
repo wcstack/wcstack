@@ -144,7 +144,10 @@ drift against the live `static wcBindable` surface. Findings carry stable diagno
 codes (e.g. `manifest-schema-version`, `manifest-kind-invalid`).
 
 A single `validateDocument` entry point drives both the in-editor diagnostics and
-the CLI, so the IDE and CI report identically. The bundled **`wcs-validate`** CLI
+the CLI, so the IDE and CI report identically for the same inputs. One deliberate
+asymmetry: external state referenced via `<wcs-state src="...">` is resolved only
+by the CLI (relative to the HTML file) — the IDE analyzes the single HTML file and
+skips `src`. The bundled **`wcs-validate`** CLI
 runs the same checks headlessly — over `wcstack.manifest.json` sidecars and/or HTML
 `data-wcs` bindings — for CI. It is distributed on npm as
 [**`@wcstack/lint`**](https://www.npmjs.com/package/@wcstack/lint), a zero-dependency
