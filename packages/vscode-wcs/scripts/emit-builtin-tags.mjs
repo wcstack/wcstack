@@ -73,16 +73,23 @@ for (const dir of readdirSync(packagesRoot).sort()) {
     continue;
   }
   for (const [tagName, ctor] of captured) {
+    // Shell の static observedAttributes（FakeElement 既定は []）。wcBindable が
+    // attribute ヒントを持たないタグ（fetch 等は setter 自身が reflect する設計）でも、
+    // HTML 属性面はここに現れる。
+    const observedAttributes = Array.isArray(ctor.observedAttributes)
+      ? [...ctor.observedAttributes]
+      : [];
     const wb = ctor.wcBindable;
     if (!wb) {
       // ヘルパータグ（wcs-fetch-header 等）は契約なしの既知タグとして登録する。
-      tags[tagName] = { package: dir, inputs: {}, properties: [], commands: [] };
+      tags[tagName] = { package: dir, observedAttributes, inputs: {}, properties: [], commands: [] };
       continue;
     }
     const inputs = {};
     for (const i of wb.inputs ?? []) inputs[i.name] = i.attribute ?? null;
     tags[tagName] = {
       package: dir,
+      observedAttributes,
       inputs,
       properties: (wb.properties ?? []).map((p) => p.name),
       commands: (wb.commands ?? []).map((c) => c.name),
@@ -107,6 +114,8 @@ const banner = `/**
 export interface BuiltinTagContract {
   /** 由来パッケージ（packages/<name>）。 */
   readonly package: string;
+  /** Shell の static observedAttributes（HTML 属性面。wcBindable とは別軸）。 */
+  readonly observedAttributes: readonly string[];
   /** input 名 → ミラー属性名（属性ミラーなしは null）。 */
   readonly inputs: Readonly<Record<string, string | null>>;
   /** observable property（出力）名。 */
@@ -118,6 +127,44 @@ export interface BuiltinTagContract {
 export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = `;
 
 const outPath = path.join(here, "..", "src", "service", "generated", "builtinTags.generated.ts");
-mkdirSync(path.dirname(outPath), { recursive: true });
-writeFileSync(outPath, banner + JSON.stringify(tags, null, 2) + " as const;\n");
-console.log(`[emit-builtin-tags] wrote ${tagCount} tags -> ${path.relative(process.cwd(), outPath)}`);
+const tsOutput = banner + JSON.stringify(tags, null, 2) + " as const;\n";
+
+// 同じカタログから VS Code HTML custom data(タグ補完 + hover)を射影する。
+// VS Code は拡張の contributes.html.customData 経由で、他エディタは
+// `html.customData` 設定でこのファイルを読む。static-wiring-dx-design.md §6 即果実 3。
+const { buildHtmlCustomData } = await import("./html-custom-data.mjs");
+const customDataPath = path.join(here, "..", "wcs.html-data.json");
+const jsonOutput = JSON.stringify(buildHtmlCustomData(tags), null, 2) + "\n";
+
+// --check: 生成せず、コミット済み生成物が committed dist からの再生成と一致するかを
+// 検査する(protocol-types-sync 系の鮮度ゲート)。audio/midi 追加時にカタログが
+// 一度も再生成されず 12 タグ分 stale になっていた実害の恒久対策。
+// 改行は正規化して比較する(Windows の CRLF チェックアウト対策)。
+const CHECK = process.argv.includes("--check");
+const normalize = (s) => s.replace(/\r\n/g, "\n");
+if (CHECK) {
+  const { readFileSync } = await import("node:fs");
+  const drifted = [];
+  for (const [file, expected] of [[outPath, tsOutput], [customDataPath, jsonOutput]]) {
+    let actual = null;
+    try {
+      actual = normalize(readFileSync(file, "utf8"));
+    } catch {
+      // 読めない = 生成物が無い = drift
+    }
+    if (actual !== normalize(expected)) drifted.push(path.relative(process.cwd(), file));
+  }
+  if (drifted.length > 0) {
+    console.error(
+      `[emit-builtin-tags] DRIFT: ${drifted.join(", ")} — run \`npm run emit:builtin-tags\` in packages/vscode-wcs and commit the result.`,
+    );
+    process.exit(1);
+  }
+  console.log(`[emit-builtin-tags] check OK (${tagCount} tags)`);
+} else {
+  mkdirSync(path.dirname(outPath), { recursive: true });
+  writeFileSync(outPath, tsOutput);
+  console.log(`[emit-builtin-tags] wrote ${tagCount} tags -> ${path.relative(process.cwd(), outPath)}`);
+  writeFileSync(customDataPath, jsonOutput);
+  console.log(`[emit-builtin-tags] wrote html custom data -> ${path.relative(process.cwd(), customDataPath)}`);
+}

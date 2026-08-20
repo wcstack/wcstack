@@ -77,6 +77,10 @@ jobs:
       - run: node scripts/sync-io-core.mjs --check
       - run: node scripts/sync-package-configs.mjs --check
       - run: node scripts/sync-readme-agents-banner.mjs --check
+      # builtinTags カタログ + wcs.html-data.json が committed dist からの再生成と
+      # 一致するか(audio/midi 追加時に 12 タグ分 stale だった鮮度罠の恒久ゲート)。
+      # committed dist が入力なので npm ci 不要・src が dist より先行していても安定。
+      - run: node packages/vscode-wcs/scripts/emit-builtin-tags.mjs --check
 
   bindable-conformance:
     # settable wcBindable member ⇒ declared in inputs. A runtime check that

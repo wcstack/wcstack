@@ -64,6 +64,27 @@ export default {
 
 パターンパス（`items.*.name`）や省略パス（`.name`）は `<template for>` の外側では補完候補に含まれません。
 
+### wcs-* タグ補完（HTML Custom Data）
+
+拡張は [`wcs.html-data.json`](./wcs.html-data.json) を同梱します — 各 I/O パッケージの
+`static wcBindable` サーフェスと `observedAttributes` から生成される
+[VS Code HTML custom data](https://github.com/microsoft/vscode-custom-data) です
+（`npm run emit:builtin-tags` で再生成。コミット済みバンドルとの鮮度は CI がゲートします）。
+`<wcs-state>` の無い HTML ファイルでも次が効きます:
+
+- 全 `wcs-*` 要素のタグ名補完（`<wcs-f` → `<wcs-fetch>`）
+- タグ hover で契約面を表示 — バインド可能プロパティ・input・`command.*` 名 —
+  パッケージ README へのリンク付き
+- 属性補完（observedAttributes と input のミラー属性）
+- `data-wcs` をグローバル属性として宣言（バインディング構文の要約付き）
+
+標準の HTML 言語サービスを使う他エディタ（およびこの拡張を入れていない VS Code）でも、
+ファイルをプロジェクトにコピーして `html.customData` 設定から参照すれば同じ補完が得られます:
+
+```json
+{ "html.customData": ["./wcs.html-data.json"] }
+```
+
 #### ステート名補完
 
 `@` の後にステート名の補完が動作します。`data-wcs`、`{{ }}`、`<!--@@:-->` のすべての構文で利用可能です。
