@@ -38,35 +38,59 @@
       "attributes": [
         {
           "name": "fft",
-          "description": "Attribute mirror of the `fft` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `fft` input."
+          }
         },
         {
           "name": "id",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "master",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "note",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "out",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "param",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "poly",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "smoothing",
-          "description": "Attribute mirror of the `smoothing` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `smoothing` input."
+          }
         }
       ],
       "references": [
@@ -85,15 +109,24 @@
       "attributes": [
         {
           "name": "limiter",
-          "description": "Attribute mirror of the `limiter` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `limiter` input."
+          }
         },
         {
           "name": "resume-on-gesture",
-          "description": "Attribute mirror of the `resumeOnGesture` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `resumeOnGesture` input."
+          }
         },
         {
           "name": "volume",
-          "description": "Attribute mirror of the `volume` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `volume` input."
+          }
         }
       ],
       "references": [
@@ -112,47 +145,80 @@
       "attributes": [
         {
           "name": "detune",
-          "description": "Attribute mirror of the `detune` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `detune` input."
+          }
         },
         {
           "name": "frequency",
-          "description": "Attribute mirror of the `frequency` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `frequency` input."
+          }
         },
         {
           "name": "gain",
-          "description": "Attribute mirror of the `gain` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `gain` input."
+          }
         },
         {
           "name": "id",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "master",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "note",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "out",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "param",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "poly",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "q",
-          "description": "Attribute mirror of the `q` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `q` input."
+          }
         },
         {
           "name": "type",
-          "description": "Attribute mirror of the `type` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `type` input."
+          }
         }
       ],
       "references": [
@@ -171,11 +237,17 @@
       "attributes": [
         {
           "name": "manual",
-          "description": "Attribute mirror of the `manual` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
         },
         {
           "name": "name",
-          "description": "Attribute mirror of the `name` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `name` input."
+          }
         }
       ],
       "references": [
@@ -194,31 +266,52 @@
       "attributes": [
         {
           "name": "audio",
-          "description": "Attribute mirror of the `audio` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `audio` input."
+          }
         },
         {
           "name": "autostart",
-          "description": "Attribute mirror of the `autostart` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `autostart` input."
+          }
         },
         {
           "name": "device-id",
-          "description": "Attribute mirror of the `deviceId` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `deviceId` input."
+          }
         },
         {
           "name": "facing-mode",
-          "description": "Attribute mirror of the `facingMode` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `facingMode` input."
+          }
         },
         {
           "name": "height",
-          "description": "Attribute mirror of the `height` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `height` input."
+          }
         },
         {
           "name": "keep-alive",
-          "description": "Attribute mirror of the `keepAlive` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `keepAlive` input."
+          }
         },
         {
           "name": "width",
-          "description": "Attribute mirror of the `width` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `width` input."
+          }
         }
       ],
       "references": [
@@ -237,7 +330,10 @@
       "attributes": [
         {
           "name": "monitor",
-          "description": "Attribute mirror of the `monitor` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `monitor` input."
+          }
         }
       ],
       "references": [
@@ -284,11 +380,17 @@
       "attributes": [
         {
           "name": "max-wait",
-          "description": "Attribute mirror of the `maxWait` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `maxWait` input."
+          }
         },
         {
           "name": "wait",
-          "description": "Attribute mirror of the `wait` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `wait` input."
+          }
         }
       ],
       "references": [
@@ -307,15 +409,24 @@
       "attributes": [
         {
           "name": "mode",
-          "description": "Attribute mirror of the `mode` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `mode` input."
+          }
         },
         {
           "name": "tags",
-          "description": "Attribute mirror of the `tags` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `tags` input."
+          }
         },
         {
           "name": "timeout",
-          "description": "Attribute mirror of the `timeout` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `timeout` input."
+          }
         }
       ],
       "references": [
@@ -334,39 +445,66 @@
       "attributes": [
         {
           "name": "feedback",
-          "description": "Attribute mirror of the `feedback` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `feedback` input."
+          }
         },
         {
           "name": "id",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "master",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "mix",
-          "description": "Attribute mirror of the `mix` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `mix` input."
+          }
         },
         {
           "name": "note",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "out",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "param",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "poly",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "time",
-          "description": "Attribute mirror of the `time` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `time` input."
+          }
         }
       ],
       "references": [
@@ -385,47 +523,80 @@
       "attributes": [
         {
           "name": "attack",
-          "description": "Attribute mirror of the `attack` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `attack` input."
+          }
         },
         {
           "name": "decay",
-          "description": "Attribute mirror of the `decay` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `decay` input."
+          }
         },
         {
           "name": "depth",
-          "description": "Attribute mirror of the `depth` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `depth` input."
+          }
         },
         {
           "name": "id",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "master",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "note",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "out",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "param",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "poly",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "release",
-          "description": "Attribute mirror of the `release` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `release` input."
+          }
         },
         {
           "name": "sustain",
-          "description": "Attribute mirror of the `sustain` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `sustain` input."
+          }
         }
       ],
       "references": [
@@ -458,7 +629,10 @@
       "attributes": [
         {
           "name": "url",
-          "description": "Configures the `url` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Configures the `url` input."
+          }
         }
       ],
       "references": [
@@ -505,7 +679,10 @@
       "attributes": [
         {
           "name": "target",
-          "description": "Attribute mirror of the `target` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `target` input."
+          }
         }
       ],
       "references": [
@@ -524,31 +701,52 @@
       "attributes": [
         {
           "name": "gain",
-          "description": "Attribute mirror of the `gain` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `gain` input."
+          }
         },
         {
           "name": "id",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "master",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "note",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "out",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "param",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "poly",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         }
       ],
       "references": [
@@ -567,23 +765,38 @@
       "attributes": [
         {
           "name": "high-accuracy",
-          "description": "Attribute mirror of the `highAccuracy` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `highAccuracy` input."
+          }
         },
         {
           "name": "manual",
-          "description": "Attribute mirror of the `manual` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
         },
         {
           "name": "maximum-age",
-          "description": "Attribute mirror of the `maximumAge` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `maximumAge` input."
+          }
         },
         {
           "name": "timeout",
-          "description": "Attribute mirror of the `timeout` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `timeout` input."
+          }
         },
         {
           "name": "watch",
-          "description": "Attribute mirror of the `watch` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `watch` input."
+          }
         }
       ],
       "references": [
@@ -616,7 +829,10 @@
       "attributes": [
         {
           "name": "threshold",
-          "description": "Attribute mirror of the `threshold` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `threshold` input."
+          }
         }
       ],
       "references": [
@@ -635,23 +851,38 @@
       "attributes": [
         {
           "name": "disabled",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "root",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "root-margin",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "target",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "threshold",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         }
       ],
       "references": [
@@ -670,27 +901,45 @@
       "attributes": [
         {
           "name": "manual",
-          "description": "Attribute mirror of the `manual` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
         },
         {
           "name": "once",
-          "description": "Attribute mirror of the `once` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `once` input."
+          }
         },
         {
           "name": "root",
-          "description": "Attribute mirror of the `root` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `root` input."
+          }
         },
         {
           "name": "root-margin",
-          "description": "Attribute mirror of the `rootMargin` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `rootMargin` input."
+          }
         },
         {
           "name": "target",
-          "description": "Attribute mirror of the `target` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `target` input."
+          }
         },
         {
           "name": "threshold",
-          "description": "Attribute mirror of the `threshold` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `threshold` input."
+          }
         }
       ],
       "references": [
@@ -709,39 +958,66 @@
       "attributes": [
         {
           "name": "depth",
-          "description": "Attribute mirror of the `depth` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `depth` input."
+          }
         },
         {
           "name": "id",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "master",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "note",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "out",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "param",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "poly",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "rate",
-          "description": "Attribute mirror of the `rate` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `rate` input."
+          }
         },
         {
           "name": "type",
-          "description": "Attribute mirror of the `type` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `type` input."
+          }
         }
       ],
       "references": [
@@ -760,23 +1036,38 @@
       "attributes": [
         {
           "name": "continuous",
-          "description": "Attribute mirror of the `continuous` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `continuous` input."
+          }
         },
         {
           "name": "interim",
-          "description": "Attribute mirror of the `interim` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `interim` input."
+          }
         },
         {
           "name": "lang",
-          "description": "Attribute mirror of the `lang` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `lang` input."
+          }
         },
         {
           "name": "manual",
-          "description": "Attribute mirror of the `manual` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
         },
         {
           "name": "max-restarts",
-          "description": "Attribute mirror of the `maxRestarts` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `maxRestarts` input."
+          }
         }
       ],
       "references": [
@@ -809,23 +1100,38 @@
       "attributes": [
         {
           "name": "auto",
-          "description": "Attribute mirror of the `auto` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `auto` input."
+          }
         },
         {
           "name": "channel",
-          "description": "Attribute mirror of the `channel` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `channel` input."
+          }
         },
         {
           "name": "input",
-          "description": "Attribute mirror of the `input` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `input` input."
+          }
         },
         {
           "name": "output",
-          "description": "Attribute mirror of the `output` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `output` input."
+          }
         },
         {
           "name": "sysex",
-          "description": "Attribute mirror of the `sysex` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `sysex` input."
+          }
         }
       ],
       "references": [
@@ -858,27 +1164,45 @@
       "attributes": [
         {
           "name": "id",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "master",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "note",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "out",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "param",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "poly",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         }
       ],
       "references": [
@@ -897,47 +1221,80 @@
       "attributes": [
         {
           "name": "badge",
-          "description": "Attribute mirror of the `badge` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `badge` input."
+          }
         },
         {
           "name": "body",
-          "description": "Attribute mirror of the `body` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `body` input."
+          }
         },
         {
           "name": "dir",
-          "description": "Attribute mirror of the `dir` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `dir` input."
+          }
         },
         {
           "name": "icon",
-          "description": "Attribute mirror of the `icon` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `icon` input."
+          }
         },
         {
           "name": "lang",
-          "description": "Attribute mirror of the `lang` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `lang` input."
+          }
         },
         {
           "name": "manual",
-          "description": "Attribute mirror of the `manual` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
         },
         {
           "name": "mode",
-          "description": "Attribute mirror of the `mode` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `mode` input."
+          }
         },
         {
           "name": "renotify",
-          "description": "Attribute mirror of the `renotify` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `renotify` input."
+          }
         },
         {
           "name": "require-interaction",
-          "description": "Attribute mirror of the `requireInteraction` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `requireInteraction` input."
+          }
         },
         {
           "name": "silent",
-          "description": "Attribute mirror of the `silent` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `silent` input."
+          }
         },
         {
           "name": "tag",
-          "description": "Attribute mirror of the `tag` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `tag` input."
+          }
         }
       ],
       "references": [
@@ -956,47 +1313,80 @@
       "attributes": [
         {
           "name": "detune",
-          "description": "Attribute mirror of the `detune` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `detune` input."
+          }
         },
         {
           "name": "frequency",
-          "description": "Attribute mirror of the `frequency` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `frequency` input."
+          }
         },
         {
           "name": "glide",
-          "description": "Attribute mirror of the `glide` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `glide` input."
+          }
         },
         {
           "name": "id",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "master",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "note",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "out",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "param",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "poly",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "transpose",
-          "description": "Attribute mirror of the `transpose` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `transpose` input."
+          }
         },
         {
           "name": "type",
-          "description": "Attribute mirror of the `type` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `type` input."
+          }
         }
       ],
       "references": [
@@ -1015,15 +1405,24 @@
       "attributes": [
         {
           "name": "name",
-          "description": "Attribute mirror of the `name` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `name` input."
+          }
         },
         {
           "name": "sysex",
-          "description": "Attribute mirror of the `sysex` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `sysex` input."
+          }
         },
         {
           "name": "user-visible-only",
-          "description": "Attribute mirror of the `userVisibleOnly` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `userVisibleOnly` input."
+          }
         }
       ],
       "references": [
@@ -1042,7 +1441,10 @@
       "attributes": [
         {
           "name": "target",
-          "description": "Attribute mirror of the `target` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `target` input."
+          }
         }
       ],
       "references": [
@@ -1061,7 +1463,10 @@
       "attributes": [
         {
           "name": "target",
-          "description": "Attribute mirror of the `target` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `target` input."
+          }
         }
       ],
       "references": [
@@ -1080,15 +1485,24 @@
       "attributes": [
         {
           "name": "manual",
-          "description": "Attribute mirror of the `manual` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
         },
         {
           "name": "once",
-          "description": "Attribute mirror of the `once` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `once` input."
+          }
         },
         {
           "name": "repeat",
-          "description": "Attribute mirror of the `repeat` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `repeat` input."
+          }
         }
       ],
       "references": [
@@ -1107,19 +1521,31 @@
       "attributes": [
         {
           "name": "audio-bits",
-          "description": "Attribute mirror of the `audioBitsPerSecond` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `audioBitsPerSecond` input."
+          }
         },
         {
           "name": "mime-type",
-          "description": "Attribute mirror of the `mimeType` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `mimeType` input."
+          }
         },
         {
           "name": "timeslice",
-          "description": "Attribute mirror of the `timeslice` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `timeslice` input."
+          }
         },
         {
           "name": "video-bits",
-          "description": "Attribute mirror of the `videoBitsPerSecond` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `videoBitsPerSecond` input."
+          }
         }
       ],
       "references": [
@@ -1138,23 +1564,38 @@
       "attributes": [
         {
           "name": "box",
-          "description": "Attribute mirror of the `box` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `box` input."
+          }
         },
         {
           "name": "manual",
-          "description": "Attribute mirror of the `manual` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
         },
         {
           "name": "once",
-          "description": "Attribute mirror of the `once` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `once` input."
+          }
         },
         {
           "name": "round",
-          "description": "Attribute mirror of the `round` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `round` input."
+          }
         },
         {
           "name": "target",
-          "description": "Attribute mirror of the `target` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `target` input."
+          }
         }
       ],
       "references": [
@@ -1187,31 +1628,52 @@
       "attributes": [
         {
           "name": "amount",
-          "description": "Attribute mirror of the `amount` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `amount` input."
+          }
         },
         {
           "name": "id",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "master",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "note",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "out",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "param",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         },
         {
           "name": "poly",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         }
       ],
       "references": [
@@ -1244,27 +1706,45 @@
       "attributes": [
         {
           "name": "lang",
-          "description": "Attribute mirror of the `lang` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `lang` input."
+          }
         },
         {
           "name": "manual",
-          "description": "Attribute mirror of the `manual` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
         },
         {
           "name": "pitch",
-          "description": "Attribute mirror of the `pitch` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `pitch` input."
+          }
         },
         {
           "name": "rate",
-          "description": "Attribute mirror of the `rate` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `rate` input."
+          }
         },
         {
           "name": "voice",
-          "description": "Attribute mirror of the `voice` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `voice` input."
+          }
         },
         {
           "name": "volume",
-          "description": "Attribute mirror of the `volume` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `volume` input."
+          }
         }
       ],
       "references": [
@@ -1283,23 +1763,38 @@
       "attributes": [
         {
           "name": "events",
-          "description": "Attribute mirror of the `events` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `events` input."
+          }
         },
         {
           "name": "manual",
-          "description": "Attribute mirror of the `manual` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
         },
         {
           "name": "raw",
-          "description": "Attribute mirror of the `raw` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `raw` input."
+          }
         },
         {
           "name": "url",
-          "description": "Attribute mirror of the `url` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `url` input."
+          }
         },
         {
           "name": "with-credentials",
-          "description": "Attribute mirror of the `withCredentials` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `withCredentials` input."
+          }
         }
       ],
       "references": [
@@ -1318,11 +1813,17 @@
       "attributes": [
         {
           "name": "key",
-          "description": "Configures the `key` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Configures the `key` input."
+          }
         },
         {
           "name": "type",
-          "description": "Configures the `type` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Configures the `type` input."
+          }
         }
       ],
       "references": [
@@ -1341,11 +1842,17 @@
       "attributes": [
         {
           "name": "max-wait",
-          "description": "Attribute mirror of the `maxWait` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `maxWait` input."
+          }
         },
         {
           "name": "wait",
-          "description": "Attribute mirror of the `wait` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `wait` input."
+          }
         }
       ],
       "references": [
@@ -1378,23 +1885,38 @@
       "attributes": [
         {
           "name": "immediate",
-          "description": "Attribute mirror of the `immediate` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `immediate` input."
+          }
         },
         {
           "name": "interval",
-          "description": "Attribute mirror of the `interval` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `interval` input."
+          }
         },
         {
           "name": "manual",
-          "description": "Attribute mirror of the `manual` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
         },
         {
           "name": "once",
-          "description": "Attribute mirror of the `once` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `once` input."
+          }
         },
         {
           "name": "repeat",
-          "description": "Attribute mirror of the `repeat` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `repeat` input."
+          }
         }
       ],
       "references": [
@@ -1413,7 +1935,10 @@
       "attributes": [
         {
           "name": "url",
-          "description": "Configures the `url` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Configures the `url` input."
+          }
         }
       ],
       "references": [
@@ -1432,7 +1957,10 @@
       "attributes": [
         {
           "name": "poly",
-          "description": "Observed attribute."
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
         }
       ],
       "references": [
@@ -1451,15 +1979,24 @@
       "attributes": [
         {
           "name": "active",
-          "description": "Attribute mirror of the `active` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `active` input."
+          }
         },
         {
           "name": "manual",
-          "description": "Attribute mirror of the `manual` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
         },
         {
           "name": "type",
-          "description": "Attribute mirror of the `type` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `type` input."
+          }
         }
       ],
       "references": [
@@ -1478,35 +2015,59 @@
       "attributes": [
         {
           "name": "keep-alive",
-          "description": "Attribute mirror of the `keepAlive` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `keepAlive` input."
+          }
         },
         {
           "name": "manual",
-          "description": "Attribute mirror of the `manual` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
         },
         {
           "name": "max-restarts",
-          "description": "Attribute mirror of the `maxRestarts` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `maxRestarts` input."
+          }
         },
         {
           "name": "name",
-          "description": "Attribute mirror of the `name` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `name` input."
+          }
         },
         {
           "name": "restart-interval",
-          "description": "Attribute mirror of the `restartInterval` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `restartInterval` input."
+          }
         },
         {
           "name": "restart-on-error",
-          "description": "Attribute mirror of the `restartOnError` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `restartOnError` input."
+          }
         },
         {
           "name": "src",
-          "description": "Attribute mirror of the `src` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `src` input."
+          }
         },
         {
           "name": "type",
-          "description": "Attribute mirror of the `type` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `type` input."
+          }
         }
       ],
       "references": [
@@ -1525,31 +2086,52 @@
       "attributes": [
         {
           "name": "auto-reconnect",
-          "description": "Attribute mirror of the `autoReconnect` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `autoReconnect` input."
+          }
         },
         {
           "name": "binary-type",
-          "description": "Attribute mirror of the `binaryType` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `binaryType` input."
+          }
         },
         {
           "name": "manual",
-          "description": "Attribute mirror of the `manual` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
         },
         {
           "name": "max-reconnects",
-          "description": "Attribute mirror of the `maxReconnects` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `maxReconnects` input."
+          }
         },
         {
           "name": "protocols",
-          "description": "Attribute mirror of the `protocols` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `protocols` input."
+          }
         },
         {
           "name": "reconnect-interval",
-          "description": "Attribute mirror of the `reconnectInterval` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `reconnectInterval` input."
+          }
         },
         {
           "name": "url",
-          "description": "Attribute mirror of the `url` input."
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `url` input."
+          }
         }
       ],
       "references": [

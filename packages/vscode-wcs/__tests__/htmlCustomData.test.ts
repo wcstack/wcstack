@@ -5,9 +5,12 @@
  *   → builtinTags.generated.ts(emit-builtin-tags.mjs)
  *   → wcs.html-data.json(同スクリプトが buildHtmlCustomData で射影)
  *
- * このテストは「tracked な JSON が tracked なカタログの射影と一致する」ことを CI で
- * 強制する — カタログだけ再生成して JSON のコミットを忘れる、または射影ロジックだけ
- * 変えて JSON を再生成し忘れる、のどちらも検出する(filterMeta の golden テストと同型)。
+ * このテストは「tracked な JSON が tracked なカタログの射影と一致する」ことを固定する —
+ * カタログだけ再生成して JSON のコミットを忘れる、または射影ロジックだけ変えて JSON を
+ * 再生成し忘れる、のどちらも検出する(filterMeta の golden テストと同型)。
+ * CI ゲートとしての不変条件「両生成物 == committed dist からの再生成」は
+ * emit-builtin-tags.mjs --check(protocol-types-sync job)が担う。vscode-wcs の
+ * npm test は現状どのワークフローでも走らないため、このテスト自体はローカル担当。
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";

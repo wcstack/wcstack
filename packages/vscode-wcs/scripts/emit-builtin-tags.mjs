@@ -57,44 +57,55 @@ const SKIP = new Set([
   "poc-visual-editor", "vscode-wcs",
 ]);
 
-/** @type {Record<string, {package: string, inputs: Record<string, string | null>, properties: string[], commands: string[]}>} */
+/** @type {Record<string, {package: string, observedAttributes: string[], inputs: Record<string, string | null>, properties: string[], commands: string[]}>} */
 const tags = {};
 const failed = [];
+const skippedNoDist = [];
 
 for (const dir of readdirSync(packagesRoot).sort()) {
   if (SKIP.has(dir)) continue;
   const entry = path.join(packagesRoot, dir, "dist", "auto.min.js");
-  if (!existsSync(entry)) continue;
+  if (!existsSync(entry)) {
+    // dist が無いパッケージはカタログに載らない = --check でも検知できない盲点。
+    // 無音にせずログへ出す（新 I/O パッケージの emit 忘れの発見性）。
+    skippedNoDist.push(dir);
+    continue;
+  }
   captured.clear();
   try {
     await import(pathToFileURL(entry).href);
+    for (const [tagName, ctor] of captured) {
+      // Shell の static observedAttributes（FakeElement 既定は []）。wcBindable が
+      // attribute ヒントを持たないタグ（fetch 等は setter 自身が reflect する設計）でも、
+      // HTML 属性面はここに現れる。static getter が throw しても per-package の
+      // failed 報告に落ちるよう、抽出も try の中で行う。
+      const observedAttributes = Array.isArray(ctor.observedAttributes)
+        ? [...ctor.observedAttributes]
+        : [];
+      const wb = ctor.wcBindable;
+      if (!wb) {
+        // ヘルパータグ（wcs-fetch-header 等）は契約なしの既知タグとして登録する。
+        tags[tagName] = { package: dir, observedAttributes, inputs: {}, properties: [], commands: [] };
+        continue;
+      }
+      const inputs = {};
+      for (const i of wb.inputs ?? []) inputs[i.name] = i.attribute ?? null;
+      tags[tagName] = {
+        package: dir,
+        observedAttributes,
+        inputs,
+        properties: (wb.properties ?? []).map((p) => p.name),
+        commands: (wb.commands ?? []).map((c) => c.name),
+      };
+    }
   } catch (e) {
     failed.push(`${dir}: ${String(e).slice(0, 120)}`);
     continue;
   }
-  for (const [tagName, ctor] of captured) {
-    // Shell の static observedAttributes（FakeElement 既定は []）。wcBindable が
-    // attribute ヒントを持たないタグ（fetch 等は setter 自身が reflect する設計）でも、
-    // HTML 属性面はここに現れる。
-    const observedAttributes = Array.isArray(ctor.observedAttributes)
-      ? [...ctor.observedAttributes]
-      : [];
-    const wb = ctor.wcBindable;
-    if (!wb) {
-      // ヘルパータグ（wcs-fetch-header 等）は契約なしの既知タグとして登録する。
-      tags[tagName] = { package: dir, observedAttributes, inputs: {}, properties: [], commands: [] };
-      continue;
-    }
-    const inputs = {};
-    for (const i of wb.inputs ?? []) inputs[i.name] = i.attribute ?? null;
-    tags[tagName] = {
-      package: dir,
-      observedAttributes,
-      inputs,
-      properties: (wb.properties ?? []).map((p) => p.name),
-      commands: (wb.commands ?? []).map((c) => c.name),
-    };
-  }
+}
+
+if (skippedNoDist.length > 0) {
+  console.log(`[emit-builtin-tags] skipped (no dist/auto.min.js): ${skippedNoDist.join(", ")}`);
 }
 
 if (failed.length > 0) {

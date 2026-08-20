@@ -163,6 +163,14 @@ jobs:
       - name: Bindable settable-surface conformance (rebuilt dist)
         run: node scripts/conformance-bindable-inputs.mjs
 
+      # Regenerate the builtinTags catalog + wcs.html-data.json from the freshly
+      # rebuilt bundles and include them in the release commit. Without this, a
+      # release that changed any wcBindable / observedAttributes surface would
+      # commit new dist with a stale catalog, and the protocol-types-sync job's
+      # emit-builtin-tags --check would fail on the next unrelated PR.
+      - name: Regenerate builtin-tags catalog (rebuilt dist)
+        run: node packages/vscode-wcs/scripts/emit-builtin-tags.mjs
+
       # Subresource Integrity digests for every package's single-tag bootstrap.
       #
       # Computed here, from the freshly rebuilt tree that is about to be
@@ -193,6 +201,10 @@ jobs:
           for pkg in ${{ steps.discover.outputs.list }}; do
             git add "packages/$pkg/package-lock.json" "packages/$pkg/dist"
           done
+          # Generated from the rebuilt bundles above; committed together so the
+          # emit-builtin-tags --check gate stays green after the release lands.
+          git add packages/vscode-wcs/src/service/generated/builtinTags.generated.ts \
+                  packages/vscode-wcs/wcs.html-data.json
           git commit -m "chore: bump all packages to v${{ steps.bump.outputs.version }}"
 
       # Publish to npm — idempotent: skip any package whose target version is

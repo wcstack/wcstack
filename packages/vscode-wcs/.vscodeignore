@@ -1,6 +1,7 @@
 .vscode/
 __tests__/
 src/
+scripts/
 test-fixture/
 *.ts
 !*.d.ts

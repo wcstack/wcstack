@@ -14,8 +14,13 @@
 
 const REPO_TREE = "https://github.com/wcstack/wcstack/tree/main/packages";
 
+/** markdown の MarkupContent(バッククォートを hover でコード表示させる。素の string は plaintext 扱い)。 */
+function markdown(value) {
+  return { kind: "markdown", value };
+}
+
 /** 1 タグ分の markdown 説明を組み立てる。契約(wc-bindable 面)を hover に開示する。 */
-function tagDescription(tagName, contract) {
+function tagDescription(contract) {
   const lines = [`\`@wcstack/${contract.package}\` custom element (wc-bindable).`];
   if (contract.properties.length > 0) {
     lines.push("", `**Bindable properties**: ${contract.properties.map((p) => `\`${p}\``).join(", ")}`);
@@ -30,7 +35,7 @@ function tagDescription(tagName, contract) {
   if (contract.properties.length === 0 && inputNames.length === 0 && contract.commands.length === 0) {
     lines.push("", "Helper tag (no bindable surface).");
   }
-  return { kind: "markdown", value: lines.join("\n") };
+  return markdown(lines.join("\n"));
 }
 
 /**
@@ -38,7 +43,7 @@ function tagDescription(tagName, contract) {
  * 属性面は「input のミラー属性 ∪ Shell の observedAttributes」— fetch のように
  * wcBindable へ attribute ヒントを持たせない設計(setter 自身が reflect)のタグでも
  * observedAttributes 側に HTML 属性面が現れる。
- * @param {Record<string, {package: string, observedAttributes?: readonly string[], inputs: Record<string, string | null>, properties: readonly string[], commands: readonly string[]}>} tags
+ * @param {Readonly<Record<string, {package: string, observedAttributes?: readonly string[], inputs: Readonly<Record<string, string | null>>, properties: readonly string[], commands: readonly string[]}>>} tags
  */
 export function buildHtmlCustomData(tags) {
   const tagEntries = Object.keys(tags).sort().map((tagName) => {
@@ -47,7 +52,7 @@ export function buildHtmlCustomData(tags) {
     const byName = new Map();
     for (const [input, attribute] of Object.entries(contract.inputs)) {
       if (attribute !== null) {
-        byName.set(attribute, `Attribute mirror of the \`${input}\` input.`);
+        byName.set(attribute, markdown(`Attribute mirror of the \`${input}\` input.`));
       }
     }
     const inputNameSet = new Set(Object.keys(contract.inputs));
@@ -56,8 +61,8 @@ export function buildHtmlCustomData(tags) {
       byName.set(
         attribute,
         inputNameSet.has(attribute)
-          ? `Configures the \`${attribute}\` input.`
-          : "Observed attribute.",
+          ? markdown(`Configures the \`${attribute}\` input.`)
+          : markdown("Observed attribute."),
       );
     }
     const attributes = [...byName.entries()]
@@ -65,7 +70,7 @@ export function buildHtmlCustomData(tags) {
       .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     return {
       name: tagName,
-      description: tagDescription(tagName, contract),
+      description: tagDescription(contract),
       attributes,
       references: [
         { name: "Package README", url: `${REPO_TREE}/${contract.package}#readme` },
