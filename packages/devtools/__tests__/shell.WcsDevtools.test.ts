@@ -520,6 +520,24 @@ describe('WcsDevtools shell', () => {
       expect(warned[1].title).toContain('depth limit');
     });
 
+    it('propagation打ち切りとcontract driftの行に警告を付け、suppressed/coalescedは通常表示にすること', () => {
+      mount();
+      source.emit({ type: 'propagation:suppressed', reason: 'confirmation', transactionId: 1, edgeId: 2, node: document.createElement('input'), member: 'value' });
+      source.emit({ type: 'propagation:coalesced', absoluteAddress: addressOf('main', 'count'), droppedTransactionId: 1, winnerTransactionId: 2 });
+      source.emit({ type: 'propagation:hop-limit', absoluteAddress: addressOf('main', 'count'), transactionId: 3, hop: 16 });
+      source.emit({ type: 'contract:drift', reason: 'missing-member', tag: 'wcs-fetch', member: 'data' });
+      devtools.__flushRenderForTest();
+      const body = paneBody(devtools, 'timeline');
+      expect(body.textContent).toContain('confirmation (tx 1, edge 2)');
+      expect(body.textContent).toContain('tx 1 dropped (winner tx 2)');
+      expect(body.textContent).toContain('hop 16 (tx 3)');
+      expect(body.textContent).toContain('missing-member: data');
+      const warned = Array.from(body.querySelectorAll('.badge-tag.warn')) as HTMLElement[];
+      expect(warned.map((el) => el.textContent)).toEqual(['propagation-hop-limit', 'contract-drift']);
+      expect(warned[0].title).toContain('hop limit');
+      expect(warned[1].title).toContain('drifted');
+    });
+
     it('切断後のpause/clearボタンは何もしないこと', () => {
       mount();
       devtools.remove();

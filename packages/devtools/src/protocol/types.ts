@@ -119,6 +119,46 @@ export type DevtoolsEventLike =
       readonly type: "state:watch-chain-limit";
       readonly maxDepth: number;
       readonly paths: readonly string[];
+    }
+  | {
+      // two-way エコーの辺単位抑止（enablePropagationContext 時のみ流れる）。
+      readonly type: "propagation:suppressed";
+      readonly reason: "confirmation" | "visited-edge";
+      readonly transactionId: number;
+      readonly edgeId: number;
+      readonly node: Node;
+      readonly member: string;
+    }
+  | {
+      readonly type: "propagation:coalesced";
+      readonly absoluteAddress: IAbsoluteAddressLike;
+      readonly droppedTransactionId: number;
+      readonly winnerTransactionId: number;
+    }
+  | {
+      readonly type: "propagation:hop-limit";
+      readonly absoluteAddress: IAbsoluteAddressLike;
+      readonly transactionId: number;
+      readonly hop: number;
+    }
+  | {
+      // sidecar manifest から 1 コンポーネント契約を読んだ（opt-in contract analyzer）。
+      readonly type: "contract:manifest-read";
+      readonly tag: string;
+      readonly loaded: boolean;
+    }
+  | {
+      readonly type: "contract:unsupported-extension";
+      readonly namespace: string;
+    }
+  | {
+      // sidecar と live wcBindable 宣言の drift。live 宣言が正本。
+      readonly type: "contract:drift";
+      readonly reason: "component-not-loaded" | "missing-member" | "event-mismatch";
+      readonly tag: string;
+      readonly member?: string;
+      readonly sidecarEvent?: string;
+      readonly liveEvent?: string;
     };
 
 export type DevtoolsSinkLike = (event: DevtoolsEventLike) => void;

@@ -231,6 +231,80 @@ describe('DevtoolsCore', () => {
       ]);
     });
 
+    it('propagation:suppressedを記録すること（state名を持たない辺単位の抑止）', () => {
+      const { core, source } = setupConnected();
+      source.emit({
+        type: 'propagation:suppressed',
+        reason: 'visited-edge',
+        transactionId: 7,
+        edgeId: 3,
+        node: document.createElement('input'),
+        member: 'value',
+      });
+      expect(core.getTimeline()).toEqual([
+        expect.objectContaining({
+          kind: 'propagation-suppressed',
+          stateName: null,
+          label: 'value',
+          detail: 'visited-edge (tx 7, edge 3)',
+        }),
+      ]);
+    });
+
+    it('propagation:coalescedとhop-limitを記録し、hidden stateは無視すること', () => {
+      const { core, source } = setupConnected();
+      source.emit({ type: 'propagation:coalesced', absoluteAddress: addressOf('main', 'count'), droppedTransactionId: 1, winnerTransactionId: 2 });
+      source.emit({ type: 'propagation:hop-limit', absoluteAddress: addressOf('main', 'items.*', [0]), transactionId: 9, hop: 16 });
+      source.emit({ type: 'propagation:coalesced', absoluteAddress: addressOf(`${RESERVED_STATE_NAME_PREFIX}-ui`, 'x'), droppedTransactionId: 3, winnerTransactionId: 4 });
+      source.emit({ type: 'propagation:hop-limit', absoluteAddress: addressOf(`${RESERVED_STATE_NAME_PREFIX}-ui`, 'x'), transactionId: 5, hop: 16 });
+      const timeline = core.getTimeline();
+      expect(timeline).toHaveLength(2);
+      expect(timeline[0]).toMatchObject({
+        kind: 'propagation-coalesced',
+        stateName: 'main',
+        label: 'count',
+        detail: 'tx 1 dropped (winner tx 2)',
+      });
+      expect(timeline[1]).toMatchObject({
+        kind: 'propagation-hop-limit',
+        stateName: 'main',
+        label: 'items.*[0]',
+        detail: 'hop 16 (tx 9)',
+      });
+    });
+
+    it('contract:driftをreason別の詳細付きで記録すること', () => {
+      const { core, source } = setupConnected();
+      source.emit({ type: 'contract:drift', reason: 'component-not-loaded', tag: 'wcs-fetch' });
+      source.emit({ type: 'contract:drift', reason: 'missing-member', tag: 'wcs-fetch', member: 'data' });
+      source.emit({ type: 'contract:drift', reason: 'event-mismatch', tag: 'wcs-fetch', member: 'data', sidecarEvent: 'change', liveEvent: 'fetch-data-changed' });
+      const [notLoaded, missing, mismatch] = core.getTimeline();
+      expect(notLoaded).toMatchObject({ kind: 'contract-drift', stateName: null, label: 'wcs-fetch', detail: 'component-not-loaded' });
+      expect(missing).toMatchObject({ kind: 'contract-drift', detail: 'missing-member: data' });
+      expect(mismatch).toMatchObject({ kind: 'contract-drift', detail: 'event-mismatch: data (sidecar change / live fetch-data-changed)' });
+    });
+
+    it('contract:manifest-readとunsupported-extensionはtimeline行にしないこと（情報イベント）', () => {
+      const { core, source } = setupConnected();
+      source.emit({ type: 'contract:manifest-read', tag: 'wcs-fetch', loaded: true });
+      source.emit({ type: 'contract:unsupported-extension', namespace: 'vendor.x' });
+      expect(core.getTimeline()).toHaveLength(0);
+    });
+
+    it('event-mismatchでoptionalなsidecarEvent/liveEventが欠落してもundefinedを表示しないこと', () => {
+      // 型上 reason と optional フィールドは結合されていない（構造的型付け）ため、
+      // 欠落 payload を受けても表示が壊れないことを固定する。
+      const { core, source } = setupConnected();
+      source.emit({ type: 'contract:drift', reason: 'event-mismatch', tag: 'wcs-fetch' });
+      expect(core.getTimeline()[0]).toMatchObject({ detail: 'event-mismatch (sidecar ? / live ?)' });
+    });
+
+    it('union外の未知イベントは黙って素通しすること（additiveプロトコル）', () => {
+      const { core, source } = setupConnected();
+      source.emit({ type: 'future:unknown', payload: 1 } as unknown as DevtoolsEventLike);
+      expect(core.getTimeline()).toHaveLength(0);
+    });
+
     it('token-emitをkind別に記録しsubscriberCountを保持すること', () => {
       const { core, source } = setupConnected();
       source.emit({ type: 'state:token-emit', kind: 'command', stateName: 'main', tokenName: 'play', args: ['x'], subscriberCount: 0 });
