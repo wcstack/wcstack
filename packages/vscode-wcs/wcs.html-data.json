@@ -1,0 +1,2160 @@
+{
+  "version": 1.1,
+  "tags": [
+    {
+      "name": "wcs-accelerometer",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/accelerometer` custom element (wc-bindable).\n\n**Bindable properties**: `x`, `y`, `z`, `error`, `errorInfo`\n\n**Inputs**: `frequency`\n\n**Commands**: `command.start`, `command.stop`"
+      },
+      "attributes": [],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/accelerometer#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-ambient-light-sensor",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/ambient-light-sensor` custom element (wc-bindable).\n\n**Bindable properties**: `illuminance`, `error`, `errorInfo`\n\n**Inputs**: `frequency`\n\n**Commands**: `command.start`, `command.stop`"
+      },
+      "attributes": [],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/ambient-light-sensor#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-analyser",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/audio` custom element (wc-bindable).\n\n**Bindable properties**: `frame`\n\n**Inputs**: `fft`, `smoothing`\n\n**Commands**: `command.sample`"
+      },
+      "attributes": [
+        {
+          "name": "fft",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `fft` input."
+          }
+        },
+        {
+          "name": "id",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "master",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "note",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "out",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "param",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "poly",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "smoothing",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `smoothing` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/audio#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-audio",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/audio` custom element (wc-bindable).\n\n**Bindable properties**: `state`, `running`, `suspended`, `unsupported`, `voices`, `noteOn`, `noteOff`, `warnings`, `error`, `errorInfo`\n\n**Inputs**: `volume`, `limiter`, `resumeOnGesture`\n\n**Commands**: `command.resume`, `command.suspend`, `command.noteOn`, `command.noteOff`, `command.allNotesOff`"
+      },
+      "attributes": [
+        {
+          "name": "limiter",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `limiter` input."
+          }
+        },
+        {
+          "name": "resume-on-gesture",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `resumeOnGesture` input."
+          }
+        },
+        {
+          "name": "volume",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `volume` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/audio#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-biquad",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/audio` custom element (wc-bindable).\n\n**Inputs**: `frequency`, `q`, `gain`, `detune`, `type`"
+      },
+      "attributes": [
+        {
+          "name": "detune",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `detune` input."
+          }
+        },
+        {
+          "name": "frequency",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `frequency` input."
+          }
+        },
+        {
+          "name": "gain",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `gain` input."
+          }
+        },
+        {
+          "name": "id",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "master",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "note",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "out",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "param",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "poly",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "q",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `q` input."
+          }
+        },
+        {
+          "name": "type",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `type` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/audio#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-broadcast",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/broadcast` custom element (wc-bindable).\n\n**Bindable properties**: `message`, `error`, `errorInfo`\n\n**Inputs**: `name`, `manual`\n\n**Commands**: `command.open`, `command.post`, `command.close`"
+      },
+      "attributes": [
+        {
+          "name": "manual",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
+        },
+        {
+          "name": "name",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `name` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/broadcast#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-camera",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/camera` custom element (wc-bindable).\n\n**Bindable properties**: `active`, `permission`, `audioPermission`, `deviceId`, `devices`, `error`, `errorInfo`, `streamReady`, `ended`\n\n**Inputs**: `audio`, `facingMode`, `deviceId`, `width`, `height`, `autostart`, `keepAlive`\n\n**Commands**: `command.start`, `command.stop`, `command.switchCamera`"
+      },
+      "attributes": [
+        {
+          "name": "audio",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `audio` input."
+          }
+        },
+        {
+          "name": "autostart",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `autostart` input."
+          }
+        },
+        {
+          "name": "device-id",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `deviceId` input."
+          }
+        },
+        {
+          "name": "facing-mode",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `facingMode` input."
+          }
+        },
+        {
+          "name": "height",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `height` input."
+          }
+        },
+        {
+          "name": "keep-alive",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `keepAlive` input."
+          }
+        },
+        {
+          "name": "width",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `width` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/camera#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-clipboard",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/clipboard` custom element (wc-bindable).\n\n**Bindable properties**: `text`, `items`, `loading`, `error`, `readPermission`, `writePermission`, `monitoring`, `errorInfo`, `copied`, `cut`, `pasted`\n\n**Inputs**: `monitor`\n\n**Commands**: `command.writeText`, `command.write`, `command.readText`, `command.read`, `command.startMonitor`, `command.stopMonitor`"
+      },
+      "attributes": [
+        {
+          "name": "monitor",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `monitor` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/clipboard#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-contacts",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/contacts` custom element (wc-bindable).\n\n**Bindable properties**: `value`, `loading`, `error`, `cancelled`, `errorInfo`\n\n**Commands**: `command.select`"
+      },
+      "attributes": [],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/contacts#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-credential",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/credential` custom element (wc-bindable).\n\n**Bindable properties**: `value`, `loading`, `error`, `cancelled`, `errorInfo`\n\n**Commands**: `command.get`, `command.store`"
+      },
+      "attributes": [],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/credential#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-debounce",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/debounce` custom element (wc-bindable).\n\n**Bindable properties**: `value`, `fired`, `pending`\n\n**Inputs**: `source`, `wait`, `leading`, `trailing`, `maxWait`\n\n**Commands**: `command.trigger`, `command.cancel`, `command.flush`"
+      },
+      "attributes": [
+        {
+          "name": "max-wait",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `maxWait` input."
+          }
+        },
+        {
+          "name": "wait",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `wait` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/debounce#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-defined",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/defined` custom element (wc-bindable).\n\n**Bindable properties**: `defined`, `pending`, `missing`, `count`, `total`, `error`\n\n**Inputs**: `tags`, `mode`, `timeout`"
+      },
+      "attributes": [
+        {
+          "name": "mode",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `mode` input."
+          }
+        },
+        {
+          "name": "tags",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `tags` input."
+          }
+        },
+        {
+          "name": "timeout",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `timeout` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/defined#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-delay",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/audio` custom element (wc-bindable).\n\n**Inputs**: `time`, `feedback`, `mix`"
+      },
+      "attributes": [
+        {
+          "name": "feedback",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `feedback` input."
+          }
+        },
+        {
+          "name": "id",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "master",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "mix",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `mix` input."
+          }
+        },
+        {
+          "name": "note",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "out",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "param",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "poly",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "time",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `time` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/audio#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-env",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/audio` custom element (wc-bindable).\n\n**Inputs**: `attack`, `decay`, `sustain`, `release`, `depth`"
+      },
+      "attributes": [
+        {
+          "name": "attack",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `attack` input."
+          }
+        },
+        {
+          "name": "decay",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `decay` input."
+          }
+        },
+        {
+          "name": "depth",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `depth` input."
+          }
+        },
+        {
+          "name": "id",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "master",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "note",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "out",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "param",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "poly",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "release",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `release` input."
+          }
+        },
+        {
+          "name": "sustain",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `sustain` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/audio#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-eyedropper",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/eyedropper` custom element (wc-bindable).\n\n**Bindable properties**: `value`, `loading`, `error`, `cancelled`, `errorInfo`\n\n**Commands**: `command.open`, `command.abort`"
+      },
+      "attributes": [],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/eyedropper#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-fetch",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/fetch` custom element (wc-bindable).\n\n**Bindable properties**: `value`, `loading`, `error`, `status`, `objectURL`, `errorInfo`, `trigger`\n\n**Inputs**: `url`, `method`, `target`, `manual`, `body`, `responseType`, `trigger`\n\n**Commands**: `command.fetch`, `command.abort`"
+      },
+      "attributes": [
+        {
+          "name": "url",
+          "description": {
+            "kind": "markdown",
+            "value": "Configures the `url` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/fetch#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-fetch-body",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/fetch` custom element (wc-bindable).\n\nHelper tag (no bindable surface)."
+      },
+      "attributes": [],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/fetch#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-fetch-header",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/fetch` custom element (wc-bindable).\n\nHelper tag (no bindable surface)."
+      },
+      "attributes": [],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/fetch#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-fullscreen",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/fullscreen` custom element (wc-bindable).\n\n**Bindable properties**: `active`, `error`, `errorInfo`\n\n**Inputs**: `target`\n\n**Commands**: `command.requestFullscreen`, `command.exitFullscreen`"
+      },
+      "attributes": [
+        {
+          "name": "target",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `target` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/fullscreen#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-gain",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/audio` custom element (wc-bindable).\n\n**Inputs**: `gain`"
+      },
+      "attributes": [
+        {
+          "name": "gain",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `gain` input."
+          }
+        },
+        {
+          "name": "id",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "master",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "note",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "out",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "param",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "poly",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/audio#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-geo",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/geolocation` custom element (wc-bindable).\n\n**Bindable properties**: `position`, `latitude`, `longitude`, `accuracy`, `coords`, `timestamp`, `watching`, `loading`, `error`, `permission`, `errorInfo`, `trigger`\n\n**Inputs**: `highAccuracy`, `timeout`, `maximumAge`, `watch`, `manual`, `trigger`\n\n**Commands**: `command.getCurrentPosition`, `command.watchPosition`, `command.clearWatch`"
+      },
+      "attributes": [
+        {
+          "name": "high-accuracy",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `highAccuracy` input."
+          }
+        },
+        {
+          "name": "manual",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
+        },
+        {
+          "name": "maximum-age",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `maximumAge` input."
+          }
+        },
+        {
+          "name": "timeout",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `timeout` input."
+          }
+        },
+        {
+          "name": "watch",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `watch` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/geolocation#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-gyroscope",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/gyroscope` custom element (wc-bindable).\n\n**Bindable properties**: `x`, `y`, `z`, `error`, `errorInfo`\n\n**Inputs**: `frequency`\n\n**Commands**: `command.start`, `command.stop`"
+      },
+      "attributes": [],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/gyroscope#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-idle",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/idle` custom element (wc-bindable).\n\n**Bindable properties**: `userState`, `screenState`, `active`, `error`, `errorInfo`\n\n**Inputs**: `threshold`\n\n**Commands**: `command.requestPermission`, `command.start`, `command.stop`"
+      },
+      "attributes": [
+        {
+          "name": "threshold",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `threshold` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/idle#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-infinite-scroll",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/fetch` custom element (wc-bindable).\n\nHelper tag (no bindable surface)."
+      },
+      "attributes": [
+        {
+          "name": "disabled",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "root",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "root-margin",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "target",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "threshold",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/fetch#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-intersect",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/intersection` custom element (wc-bindable).\n\n**Bindable properties**: `entry`, `intersecting`, `ratio`, `visible`, `observing`, `trigger`\n\n**Inputs**: `target`, `root`, `rootMargin`, `threshold`, `once`, `manual`, `trigger`\n\n**Commands**: `command.observe`, `command.reobserve`, `command.unobserve`, `command.disconnect`, `command.reset`"
+      },
+      "attributes": [
+        {
+          "name": "manual",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
+        },
+        {
+          "name": "once",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `once` input."
+          }
+        },
+        {
+          "name": "root",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `root` input."
+          }
+        },
+        {
+          "name": "root-margin",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `rootMargin` input."
+          }
+        },
+        {
+          "name": "target",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `target` input."
+          }
+        },
+        {
+          "name": "threshold",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `threshold` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/intersection#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-lfo",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/audio` custom element (wc-bindable).\n\n**Inputs**: `rate`, `depth`, `type`"
+      },
+      "attributes": [
+        {
+          "name": "depth",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `depth` input."
+          }
+        },
+        {
+          "name": "id",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "master",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "note",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "out",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "param",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "poly",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "rate",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `rate` input."
+          }
+        },
+        {
+          "name": "type",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `type` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/audio#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-listen",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/speech` custom element (wc-bindable).\n\n**Bindable properties**: `interimTranscript`, `finalTranscript`, `result`, `listening`, `permission`, `error`, `errorInfo`, `unsupported`, `trigger`\n\n**Inputs**: `lang`, `continuous`, `interim`, `maxRestarts`, `manual`, `trigger`\n\n**Commands**: `command.start`, `command.stop`, `command.abort`"
+      },
+      "attributes": [
+        {
+          "name": "continuous",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `continuous` input."
+          }
+        },
+        {
+          "name": "interim",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `interim` input."
+          }
+        },
+        {
+          "name": "lang",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `lang` input."
+          }
+        },
+        {
+          "name": "manual",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
+        },
+        {
+          "name": "max-restarts",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `maxRestarts` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/speech#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-magnetometer",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/magnetometer` custom element (wc-bindable).\n\n**Bindable properties**: `x`, `y`, `z`, `error`, `errorInfo`\n\n**Inputs**: `frequency`\n\n**Commands**: `command.start`, `command.stop`"
+      },
+      "attributes": [],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/magnetometer#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-midi",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/midi` custom element (wc-bindable).\n\n**Bindable properties**: `message`, `type`, `channel`, `note`, `velocity`, `control`, `value`, `devices`, `connected`, `permission`, `granted`, `denied`, `unsupported`, `error`, `errorInfo`\n\n**Inputs**: `input`, `output`, `channel`, `sysex`, `auto`\n\n**Commands**: `command.request`, `command.close`, `command.send`"
+      },
+      "attributes": [
+        {
+          "name": "auto",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `auto` input."
+          }
+        },
+        {
+          "name": "channel",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `channel` input."
+          }
+        },
+        {
+          "name": "input",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `input` input."
+          }
+        },
+        {
+          "name": "output",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `output` input."
+          }
+        },
+        {
+          "name": "sysex",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `sysex` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/midi#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-network",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/network` custom element (wc-bindable).\n\n**Bindable properties**: `effectiveType`, `downlink`, `rtt`, `saveData`, `supported`"
+      },
+      "attributes": [],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/network#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-noise",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/audio` custom element (wc-bindable).\n\nHelper tag (no bindable surface)."
+      },
+      "attributes": [
+        {
+          "name": "id",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "master",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "note",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "out",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "param",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "poly",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/audio#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-notify",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/notification` custom element (wc-bindable).\n\n**Bindable properties**: `permission`, `granted`, `denied`, `prompt`, `unsupported`, `error`, `errorInfo`, `clicked`, `closed`, `shown`\n\n**Inputs**: `notice`, `mode`, `body`, `icon`, `badge`, `tag`, `lang`, `dir`, `requireInteraction`, `silent`, `renotify`, `manual`\n\n**Commands**: `command.request`, `command.notify`, `command.close`, `command.closeAll`"
+      },
+      "attributes": [
+        {
+          "name": "badge",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `badge` input."
+          }
+        },
+        {
+          "name": "body",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `body` input."
+          }
+        },
+        {
+          "name": "dir",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `dir` input."
+          }
+        },
+        {
+          "name": "icon",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `icon` input."
+          }
+        },
+        {
+          "name": "lang",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `lang` input."
+          }
+        },
+        {
+          "name": "manual",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
+        },
+        {
+          "name": "mode",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `mode` input."
+          }
+        },
+        {
+          "name": "renotify",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `renotify` input."
+          }
+        },
+        {
+          "name": "require-interaction",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `requireInteraction` input."
+          }
+        },
+        {
+          "name": "silent",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `silent` input."
+          }
+        },
+        {
+          "name": "tag",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `tag` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/notification#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-osc",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/audio` custom element (wc-bindable).\n\n**Inputs**: `frequency`, `detune`, `type`, `glide`, `transpose`"
+      },
+      "attributes": [
+        {
+          "name": "detune",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `detune` input."
+          }
+        },
+        {
+          "name": "frequency",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `frequency` input."
+          }
+        },
+        {
+          "name": "glide",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `glide` input."
+          }
+        },
+        {
+          "name": "id",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "master",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "note",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "out",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "param",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "poly",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "transpose",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `transpose` input."
+          }
+        },
+        {
+          "name": "type",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `type` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/audio#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-permission",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/permission` custom element (wc-bindable).\n\n**Bindable properties**: `state`, `granted`, `denied`, `prompt`, `unsupported`\n\n**Inputs**: `name`, `userVisibleOnly`, `sysex`"
+      },
+      "attributes": [
+        {
+          "name": "name",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `name` input."
+          }
+        },
+        {
+          "name": "sysex",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `sysex` input."
+          }
+        },
+        {
+          "name": "user-visible-only",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `userVisibleOnly` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/permission#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-pip",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/picture-in-picture` custom element (wc-bindable).\n\n**Bindable properties**: `active`, `error`, `errorInfo`\n\n**Inputs**: `target`\n\n**Commands**: `command.requestPictureInPicture`, `command.exitPictureInPicture`"
+      },
+      "attributes": [
+        {
+          "name": "target",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `target` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/picture-in-picture#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-pointer-lock",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/pointer-lock` custom element (wc-bindable).\n\n**Bindable properties**: `active`, `error`, `errorInfo`\n\n**Inputs**: `target`\n\n**Commands**: `command.requestPointerLock`, `command.exitPointerLock`"
+      },
+      "attributes": [
+        {
+          "name": "target",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `target` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/pointer-lock#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-raf",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/raf` custom element (wc-bindable).\n\n**Bindable properties**: `tick`, `elapsed`, `dt`, `running`, `suspended`, `trigger`\n\n**Inputs**: `once`, `repeat`, `manual`, `trigger`\n\n**Commands**: `command.start`, `command.stop`, `command.reset`, `command.pause`, `command.resume`"
+      },
+      "attributes": [
+        {
+          "name": "manual",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
+        },
+        {
+          "name": "once",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `once` input."
+          }
+        },
+        {
+          "name": "repeat",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `repeat` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/raf#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-recorder",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/camera` custom element (wc-bindable).\n\n**Bindable properties**: `recording`, `paused`, `duration`, `mimeType`, `blob`, `objectURL`, `error`, `errorInfo`, `recorded`, `dataavailable`\n\n**Inputs**: `mimeType`, `timeslice`, `audioBitsPerSecond`, `videoBitsPerSecond`\n\n**Commands**: `command.attachStream`, `command.start`, `command.stop`, `command.pause`, `command.resume`"
+      },
+      "attributes": [
+        {
+          "name": "audio-bits",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `audioBitsPerSecond` input."
+          }
+        },
+        {
+          "name": "mime-type",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `mimeType` input."
+          }
+        },
+        {
+          "name": "timeslice",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `timeslice` input."
+          }
+        },
+        {
+          "name": "video-bits",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `videoBitsPerSecond` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/camera#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-resize",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/resize` custom element (wc-bindable).\n\n**Bindable properties**: `entry`, `width`, `height`, `observing`, `trigger`\n\n**Inputs**: `target`, `box`, `round`, `once`, `manual`, `trigger`\n\n**Commands**: `command.observe`, `command.unobserve`, `command.disconnect`"
+      },
+      "attributes": [
+        {
+          "name": "box",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `box` input."
+          }
+        },
+        {
+          "name": "manual",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
+        },
+        {
+          "name": "once",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `once` input."
+          }
+        },
+        {
+          "name": "round",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `round` input."
+          }
+        },
+        {
+          "name": "target",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `target` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/resize#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-screen-orientation",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/screen-orientation` custom element (wc-bindable).\n\n**Bindable properties**: `type`, `angle`, `portrait`, `landscape`, `error`, `errorInfo`\n\n**Commands**: `command.lock`, `command.unlock`"
+      },
+      "attributes": [],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/screen-orientation#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-shaper",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/audio` custom element (wc-bindable).\n\n**Inputs**: `amount`"
+      },
+      "attributes": [
+        {
+          "name": "amount",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `amount` input."
+          }
+        },
+        {
+          "name": "id",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "master",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "note",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "out",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "param",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        },
+        {
+          "name": "poly",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/audio#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-share",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/share` custom element (wc-bindable).\n\n**Bindable properties**: `value`, `loading`, `error`, `cancelled`, `errorInfo`\n\n**Commands**: `command.share`"
+      },
+      "attributes": [],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/share#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-speak",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/speech` custom element (wc-bindable).\n\n**Bindable properties**: `voices`, `speaking`, `paused`, `pending`, `charIndex`, `spokenWord`, `error`, `errorInfo`, `unsupported`\n\n**Inputs**: `say`, `rate`, `pitch`, `volume`, `voice`, `lang`, `manual`\n\n**Commands**: `command.speak`, `command.cancel`, `command.pause`, `command.resume`"
+      },
+      "attributes": [
+        {
+          "name": "lang",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `lang` input."
+          }
+        },
+        {
+          "name": "manual",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
+        },
+        {
+          "name": "pitch",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `pitch` input."
+          }
+        },
+        {
+          "name": "rate",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `rate` input."
+          }
+        },
+        {
+          "name": "voice",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `voice` input."
+          }
+        },
+        {
+          "name": "volume",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `volume` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/speech#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-sse",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/sse` custom element (wc-bindable).\n\n**Bindable properties**: `message`, `connected`, `loading`, `error`, `errorInfo`, `readyState`, `trigger`\n\n**Inputs**: `url`, `withCredentials`, `events`, `raw`, `manual`, `trigger`\n\n**Commands**: `command.connect`, `command.close`"
+      },
+      "attributes": [
+        {
+          "name": "events",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `events` input."
+          }
+        },
+        {
+          "name": "manual",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
+        },
+        {
+          "name": "raw",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `raw` input."
+          }
+        },
+        {
+          "name": "url",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `url` input."
+          }
+        },
+        {
+          "name": "with-credentials",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `withCredentials` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/sse#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-storage",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/storage` custom element (wc-bindable).\n\n**Bindable properties**: `value`, `loading`, `error`, `errorInfo`, `trigger`\n\n**Inputs**: `key`, `type`, `value`, `manual`, `trigger`\n\n**Commands**: `command.load`, `command.save`, `command.remove`"
+      },
+      "attributes": [
+        {
+          "name": "key",
+          "description": {
+            "kind": "markdown",
+            "value": "Configures the `key` input."
+          }
+        },
+        {
+          "name": "type",
+          "description": {
+            "kind": "markdown",
+            "value": "Configures the `type` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/storage#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-throttle",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/debounce` custom element (wc-bindable).\n\n**Bindable properties**: `value`, `fired`, `pending`\n\n**Inputs**: `source`, `wait`, `leading`, `trailing`, `maxWait`\n\n**Commands**: `command.trigger`, `command.cancel`, `command.flush`"
+      },
+      "attributes": [
+        {
+          "name": "max-wait",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `maxWait` input."
+          }
+        },
+        {
+          "name": "wait",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `wait` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/debounce#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-tilt",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/tilt` custom element (wc-bindable).\n\n**Bindable properties**: `alpha`, `beta`, `gamma`, `absolute`, `permissionState`, `error`, `errorInfo`\n\n**Commands**: `command.requestPermission`, `command.start`, `command.stop`"
+      },
+      "attributes": [],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/tilt#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-timer",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/timer` custom element (wc-bindable).\n\n**Bindable properties**: `tick`, `elapsed`, `running`, `trigger`\n\n**Inputs**: `interval`, `once`, `repeat`, `immediate`, `manual`, `trigger`\n\n**Commands**: `command.start`, `command.stop`, `command.reset`, `command.pause`, `command.resume`"
+      },
+      "attributes": [
+        {
+          "name": "immediate",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `immediate` input."
+          }
+        },
+        {
+          "name": "interval",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `interval` input."
+          }
+        },
+        {
+          "name": "manual",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
+        },
+        {
+          "name": "once",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `once` input."
+          }
+        },
+        {
+          "name": "repeat",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `repeat` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/timer#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-upload",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/upload` custom element (wc-bindable).\n\n**Bindable properties**: `value`, `loading`, `progress`, `error`, `status`, `errorInfo`, `trigger`, `files`\n\n**Inputs**: `url`, `method`, `fieldName`, `multiple`, `maxSize`, `accept`, `manual`, `files`, `trigger`\n\n**Commands**: `command.upload`, `command.abort`"
+      },
+      "attributes": [
+        {
+          "name": "url",
+          "description": {
+            "kind": "markdown",
+            "value": "Configures the `url` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/upload#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-voice",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/audio` custom element (wc-bindable).\n\nHelper tag (no bindable surface)."
+      },
+      "attributes": [
+        {
+          "name": "poly",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/audio#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-wakelock",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/wakelock` custom element (wc-bindable).\n\n**Bindable properties**: `held`, `error`, `errorInfo`\n\n**Inputs**: `active`, `type`, `manual`\n\n**Commands**: `command.request`, `command.release`"
+      },
+      "attributes": [
+        {
+          "name": "active",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `active` input."
+          }
+        },
+        {
+          "name": "manual",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
+        },
+        {
+          "name": "type",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `type` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/wakelock#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-worker",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/worker` custom element (wc-bindable).\n\n**Bindable properties**: `message`, `error`, `errorInfo`, `running`\n\n**Inputs**: `src`, `type`, `name`, `manual`, `keepAlive`, `restartOnError`, `maxRestarts`, `restartInterval`\n\n**Commands**: `command.start`, `command.post`, `command.terminate`"
+      },
+      "attributes": [
+        {
+          "name": "keep-alive",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `keepAlive` input."
+          }
+        },
+        {
+          "name": "manual",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
+        },
+        {
+          "name": "max-restarts",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `maxRestarts` input."
+          }
+        },
+        {
+          "name": "name",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `name` input."
+          }
+        },
+        {
+          "name": "restart-interval",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `restartInterval` input."
+          }
+        },
+        {
+          "name": "restart-on-error",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `restartOnError` input."
+          }
+        },
+        {
+          "name": "src",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `src` input."
+          }
+        },
+        {
+          "name": "type",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `type` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/worker#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-ws",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/websocket` custom element (wc-bindable).\n\n**Bindable properties**: `message`, `connected`, `loading`, `error`, `errorInfo`, `readyState`, `trigger`, `send`\n\n**Inputs**: `url`, `protocols`, `autoReconnect`, `reconnectInterval`, `maxReconnects`, `binaryType`, `manual`, `trigger`, `send`\n\n**Commands**: `command.connect`, `command.sendMessage`, `command.close`"
+      },
+      "attributes": [
+        {
+          "name": "auto-reconnect",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `autoReconnect` input."
+          }
+        },
+        {
+          "name": "binary-type",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `binaryType` input."
+          }
+        },
+        {
+          "name": "manual",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `manual` input."
+          }
+        },
+        {
+          "name": "max-reconnects",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `maxReconnects` input."
+          }
+        },
+        {
+          "name": "protocols",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `protocols` input."
+          }
+        },
+        {
+          "name": "reconnect-interval",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `reconnectInterval` input."
+          }
+        },
+        {
+          "name": "url",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `url` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/websocket#readme"
+        }
+      ]
+    }
+  ],
+  "globalAttributes": [
+    {
+      "name": "data-wcs",
+      "description": {
+        "kind": "markdown",
+        "value": "wcstack binding attribute. Each expression is\n`property#modifier: path@state | filter(args)` and `;` separates multiple bindings.\nStructural directives (`for:` / `if:` / `elseif:` / `else`) go on `<template>`."
+      },
+      "references": [
+        {
+          "name": "Binding syntax",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/state#readme"
+        }
+      ]
+    }
+  ]
+}

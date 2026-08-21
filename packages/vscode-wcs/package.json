@@ -41,6 +41,11 @@
           "description": "Language of wcstack diagnostic messages. \"auto\" follows the VS Code display language (non-Japanese locales get English). Diagnostic codes and ranges are language-independent."
         }
       }
+    },
+    "html": {
+      "customData": [
+        "./wcs.html-data.json"
+      ]
     }
   },
   "scripts": {

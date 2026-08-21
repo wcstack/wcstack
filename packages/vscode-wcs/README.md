@@ -64,6 +64,28 @@ export default {
 
 Pattern paths (`items.*.name`) and shorthand paths (`.name`) are excluded from completions outside `<template for>`.
 
+### wcs-* Tag Completions (HTML Custom Data)
+
+The extension ships [`wcs.html-data.json`](./wcs.html-data.json) — [VS Code HTML custom
+data](https://github.com/microsoft/vscode-custom-data) generated from every I/O
+package's `static wcBindable` surface and `observedAttributes`
+(`npm run emit:builtin-tags`; freshness against the committed bundles is CI-gated).
+It provides, in any HTML file with no `<wcs-state>` required:
+
+- Tag-name completion for all `wcs-*` elements (`<wcs-f` → `<wcs-fetch>`)
+- Hover on a tag showing its contract — bindable properties, inputs, `command.*`
+  names — with a link to the package README
+- Attribute completion (observed attributes and input attribute mirrors)
+- `data-wcs` declared as a global attribute with a binding-syntax summary
+
+Other editors that use the standard HTML language service (and VS Code setups
+without this extension) get the same completions by copying the file into the
+project and referencing it from the `html.customData` setting:
+
+```json
+{ "html.customData": ["./wcs.html-data.json"] }
+```
+
 #### State Name Completions
 
 State name completions activate after `@`. Available in all syntax types: `data-wcs`, `{{ }}`, and `<!--@@:-->`.
