@@ -100,8 +100,9 @@ jobs:
   wcs-validate:
     # Phase 5a 静的契約の CI ゲート。vscode-wcs の validator core を wcs-validate CLI
     # 経由で repo の HTML / sidecar manifest に適用し、error severity の診断があれば
-    # build を落とす（spread 構文 / path / modifier / 壊れ manifest 等）。外部 state で
-    # 静的解決できないパスは warning に留まり build を落とさない（--errors-only で表示も抑制）。
+    # build を落とす（spread 構文 / path / modifier / 壊れ manifest 等）。
+    # <wcs-state src=...> の外部 state は CLI が HTML 相対で読み込んで解決する。
+    # それでも解決できないパスは warning に留まり build を落とさない（--errors-only で表示も抑制）。
     # vscode-wcs は @wcstack/* でなく detect-changes matrix 対象外なので独立 job にする。
     runs-on: ubuntu-latest
     steps:

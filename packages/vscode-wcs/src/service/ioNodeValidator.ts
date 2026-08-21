@@ -19,7 +19,7 @@
 import { WcsDiagnostic, WcsDiagnosticCode } from '../core/diagnostics.js';
 import { getMessages, type WcsMessageCatalog } from '../core/messages.js';
 import { BUILTIN_TAGS } from './generated/builtinTags.generated.js';
-import { getStatePathsFromHtml } from './statePathResolver.js';
+import { getStatePathsFromHtml, type FileReader } from './statePathResolver.js';
 import type { PathCandidate } from './stateAnalyzer.js';
 import { splitBindingExpressions, parseBindingExpression } from './bindingValidator.js';
 
@@ -56,6 +56,7 @@ export function validateIoNodes(
   bindAttribute: string = 'data-wcs',
   stateTagName: string = 'wcs-state',
   locale?: string,
+  fileReader?: FileReader,
 ): WcsDiagnostic[] {
   const diagnostics: WcsDiagnostic[] = [];
   const msgs = getMessages(locale);
@@ -65,7 +66,7 @@ export function validateIoNodes(
   // state スロットのシード値検査（trigger / storage）にだけ状態パスが要る。遅延解決。
   let statePaths: PathCandidate[] | null = null;
   const getPaths = (): PathCandidate[] =>
-    (statePaths ??= getStatePathsFromHtml(html, stateTagName));
+    (statePaths ??= getStatePathsFromHtml(html, stateTagName, fileReader));
 
   for (const occ of occurrences) {
     const contract = BUILTIN_TAGS[occ.tagName];

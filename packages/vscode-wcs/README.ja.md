@@ -142,8 +142,10 @@ this["user.name"] = "Bob";
 同名 tag/filter 衝突、衝突後 override の禁止、稼働中の `static wcBindable` サーフェスとの
 drift。診断には安定コード（例 `manifest-schema-version` / `manifest-kind-invalid`）が付きます。
 
-単一の `validateDocument` 入口が IDE 診断と CLI の両方を駆動するため、エディタと CI で
-結果が一致します。同梱の **`wcs-validate`** CLI は同じ検査を—— `wcstack.manifest.json`
+単一の `validateDocument` 入口が IDE 診断と CLI の両方を駆動するため、同じ入力に対して
+エディタと CI で結果が一致します。意図的な非対称が 1 つ: `<wcs-state src="...">` の
+外部 state は CLI だけが（HTML ファイル相対で）解決します——IDE は単一 HTML ファイルを
+解析対象とし `src` はスキップします。同梱の **`wcs-validate`** CLI は同じ検査を—— `wcstack.manifest.json`
 sidecar および／または HTML の `data-wcs` バインディングに対して——ヘッドレスに CI 実行します。
 CLI は npm では [**`@wcstack/lint`**](https://www.npmjs.com/package/@wcstack/lint)
 として配布されています（同一の CLI バンドルを同梱する依存ゼロのラッパー）:

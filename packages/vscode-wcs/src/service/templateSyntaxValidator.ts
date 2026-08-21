@@ -10,7 +10,7 @@
  */
 
 import { BUILTIN_FILTERS } from "./completionData.js";
-import { getStatePathsFromHtml } from "./statePathResolver.js";
+import { getStatePathsFromHtml, type FileReader } from "./statePathResolver.js";
 import { findAllCommentBindings, findAllMustacheSyntax } from "./templateSyntax.js";
 import { isInsideForTemplate, getInnermostForPath } from "./forContext.js";
 import { WcsDiagnosticCode } from "../core/diagnostics.js";
@@ -22,11 +22,12 @@ export function validateTemplateSyntax(
   stateTagName: string,
   bindAttrName: string = "data-wcs",
   locale?: string,
+  fileReader?: FileReader,
 ): BindingDiagnostic[] {
   const diagnostics: BindingDiagnostic[] = [];
   const msgs = getMessages(locale);
 
-  const allPaths = getStatePathsFromHtml(html, stateTagName);
+  const allPaths = getStatePathsFromHtml(html, stateTagName, fileReader);
   if (allPaths.length === 0) return diagnostics;
 
   const defaultPaths = allPaths.filter((p) => p.stateName === "default");

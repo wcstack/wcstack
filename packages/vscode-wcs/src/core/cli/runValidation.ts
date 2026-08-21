@@ -13,6 +13,7 @@ import { createPositionMapper } from "../offsetToPosition.js";
 import { validateDocument, ValidateDocumentOptions } from "../validateDocument.js";
 import { validateManifestSet } from "../sidecar/validate.js";
 import { LiveBindableDeclaration } from "../sidecar/types.js";
+import type { FileReader } from "../../service/statePathResolver.js";
 
 export type InputKind = "html" | "manifest";
 
@@ -20,15 +21,25 @@ export interface CliFileInput {
   readonly source: string;
   readonly text: string;
   readonly kind: InputKind;
+  /**
+   * この HTML の `<wcs-state src=...>` を解決する reader(HTML ファイルの
+   * ディレクトリ基準)。ファイルごとに基準ディレクトリが違うため options でなく
+   * 入力側に載せる。manifest 入力では無視。
+   */
+  readonly fileReader?: FileReader;
 }
 
-export interface RunValidationOptions extends ValidateDocumentOptions {
+/**
+ * fileReader は options でなく CliFileInput 側に載せる(HTML ファイルごとに基準
+ * ディレクトリが違うため)。Omit で型レベルでも options 経由の混入を防ぐ。
+ */
+export interface RunValidationOptions extends Omit<ValidateDocumentOptions, "fileReader"> {
   readonly liveDeclarations?: ReadonlyMap<string, LiveBindableDeclaration>;
   /**
    * true なら整形行(`lines`)に error severity の診断だけを載せる(warning / info は省く)。
    * `errorCount` / `warningCount` / `infoCount` と `exitCode` は全診断で不変。
-   * CI ゲートで大量の false-positive warning(外部 state で解決不能なパス等)を出力から
-   * 除き、build を落とす error だけを表示するために使う。
+   * CI ゲートで大量の false-positive warning(fileReader でも解決できない外部 state の
+   * パス等)を出力から除き、build を落とす error だけを表示するために使う。
    */
   readonly errorsOnly?: boolean;
 }
@@ -53,7 +64,8 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
   // HTML: ファイルごとに validateDocument。
   for (const input of inputs) {
     if (input.kind === "html") {
-      diagnosticsBySource.set(input.source, validateDocument(input.text, options));
+      const docOptions = input.fileReader !== undefined ? { ...options, fileReader: input.fileReader } : options;
+      diagnosticsBySource.set(input.source, validateDocument(input.text, docOptions));
     }
   }
 
