@@ -153,6 +153,39 @@ export function analyzeWatchEntries(scriptContent: string): WatchEntryInfo[] {
   return entries;
 }
 
+/** トップレベル宣言 1 件の名前スパン（scriptContent 相対・引用符は含まない）。 */
+export interface DeclarationSpan {
+  readonly name: string;
+  readonly kind: 'data' | 'getter' | 'method';
+  readonly start: number;
+  readonly end: number;
+}
+
+/**
+ * `export default { ... }` のトップレベル宣言名を位置付きで列挙する。
+ *
+ * 参照インデックス（core/index/referenceIndex）の「宣言側」の正本。パスの
+ * 第 1 セグメント（`user.name` → `user`）と、引用符付き getter のフルパス名
+ * （`"users.*.ageCategory"`）がここに現れる。ネストしたオブジェクトの内側
+ * （`user: { name: … }` の `name`）は列挙しない — go-to-definition はトップ
+ * レベル宣言へのフォールバックで運用する（v1 の割り切り）。
+ */
+export function analyzeDeclarationSpans(scriptContent: string): DeclarationSpan[] {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return [];
+  const out: DeclarationSpan[] = [];
+  for (const prop of parseTopLevelProperties(root.content)) {
+    if (prop.nameStart === undefined || prop.nameEnd === undefined) continue;
+    out.push({
+      name: prop.name,
+      kind: prop.kind,
+      start: root.start + prop.nameStart,
+      end: root.start + prop.nameEnd,
+    });
+  }
+  return out;
+}
+
 /**
  * 値が「関数ではない」と静的に断定できるリテラルか。
  *

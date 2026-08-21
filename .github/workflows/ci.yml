@@ -120,6 +120,11 @@ jobs:
         working-directory: packages/vscode-wcs
       - run: npm run build
         working-directory: packages/vscode-wcs
+      # vscode-wcs は detect-changes matrix 対象外のため、ユニットテスト
+      # （コーパスパリティテスト含む — examples の HTML 追加が正本パーサ基盤を
+      # 壊していないかのゲート）はこの job で実行する。
+      - run: npm test
+        working-directory: packages/vscode-wcs
       - name: Validate data-wcs bindings (error severity fails the build)
         run: |
           set -euo pipefail

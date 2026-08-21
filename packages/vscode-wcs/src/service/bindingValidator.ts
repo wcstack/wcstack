@@ -323,7 +323,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
 // Internal helpers
 // ============================================================
 
-interface BindAttrLocation {
+export interface BindAttrLocation {
   value: string;
   valueStart: number;
 }
@@ -347,7 +347,12 @@ export interface ParsedBinding {
 /**
  * HTML から全てのバインド属性を検出する。
  */
-function findAllBindAttributes(html: string, attrName: string): BindAttrLocation[] {
+/**
+ * HTML 中の全バインド属性を値の開始オフセット付きで検出する。
+ * （core/index/referenceIndex が同一走査を共有するため export — 走査が
+ * 二重実装になると診断とインデックスで属性の解釈が割れる。）
+ */
+export function findAllBindAttributes(html: string, attrName: string): BindAttrLocation[] {
   const attrs: BindAttrLocation[] = [];
   const escaped = attrName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const regex = new RegExp(`${escaped}\\s*=\\s*(["'])`, 'gi');
