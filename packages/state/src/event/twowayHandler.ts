@@ -1,4 +1,5 @@
 import { isPossibleTwoWay } from "./isPossibleTwoWay";
+import { EVENT_PROP_PREFIX, MODIFIER_READONLY } from "../define";
 import { config } from "../config";
 import { devtoolsSink } from "../devtools/sink";
 import { getLoopContextByNode } from "../list/loopContextByNode";
@@ -41,10 +42,10 @@ function getEventName(binding: IBindingInfo): string {
       eventName = propDesc.event;
     }
   }
-  // 3.modifier
+  // 3.modifier（`#onchange` 等 — `on` + イベント名の修飾子形。README「Modifiers」参照）
   for(const modifier of binding.propModifiers) {
-    if (modifier.startsWith('on')) {
-      eventName = modifier.slice(2);
+    if (modifier.startsWith(EVENT_PROP_PREFIX)) {
+      eventName = modifier.slice(EVENT_PROP_PREFIX.length);
     }
   }
   return eventName;
@@ -227,7 +228,7 @@ export function attachTwowayEventHandler(binding: IBindingInfo): void {
     }
   }
 
-  if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf('ro') === -1) {
+  if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf(MODIFIER_READONLY) === -1) {
     const eventName = getEventName(binding);
     const valueGetter = getValueGetter(binding);
     const isOccurrence = isOccurrenceProperty(binding);
@@ -262,7 +263,7 @@ export function detachTwowayEventHandler(binding: IBindingInfo): void {
     }
   }
 
-  if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf('ro') === -1) {
+  if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf(MODIFIER_READONLY) === -1) {
     const eventName = getEventName(binding);
     const valueGetter = getValueGetter(binding);
     const key = getHandlerKey(binding, eventName, valueGetter !== null, isOccurrenceProperty(binding));

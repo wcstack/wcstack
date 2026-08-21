@@ -78,4 +78,30 @@ export default [
     },
     plugins: [dts()],
   },
+  // Parser entry (DOM 非依存の正本パーサ。tooling が `@wcstack/state/parser` で消費)
+  {
+    input: 'src/parser.ts',
+    output: {
+      file: 'dist/parser.esm.js',
+      format: 'esm',
+      sourcemap: false,
+    },
+    plugins: [
+      json(),
+      typescript({
+        tsconfig: './tsconfig.json',
+        declaration: false,
+        declarationMap: false,
+        sourceMap: false,
+      }),
+    ],
+  },
+  {
+    input: 'src/parser.ts',
+    output: {
+      file: 'dist/parser.d.ts',
+      format: 'esm',
+    },
+    plugins: [dts()],
+  },
 ];

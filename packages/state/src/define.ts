@@ -33,6 +33,41 @@ export const MODIFIER_SEPARATOR = '#';    // prop と修飾子の区切り
 export const STATE_NAME_SEPARATOR = '@';  // path と @stateName の区切り
 export const FILTER_SEPARATOR = '|';      // フィルタパイプの区切り
 
+// 修飾子（`#` 後）の語彙（単一正本）。manifest.syntax.modifiers で公開される。
+// フラグ形（`#prevent` — 値を取らない）とキー値形（`#init=element` — `=` で値を取る）。
+// 消費箇所（event/handler・BindingSession・twowayHandler・bindings/initialSync）は
+// この定数を参照する — 文字列リテラルの散在は tooling への収載漏れの温床だった
+// （docs/static-wiring-dx-design.md §2-2）。
+export const MODIFIER_PREVENT = 'prevent';
+export const MODIFIER_STOP = 'stop';
+export const MODIFIER_READONLY = 'ro';
+export const MODIFIER_FLAGS: readonly string[] = Object.freeze([
+  MODIFIER_PREVENT, MODIFIER_STOP, MODIFIER_READONLY,
+]);
+export const MODIFIER_KEY_INIT = 'init';
+export const MODIFIER_KEY_SYNC = 'sync';
+export const MODIFIER_KEYS: readonly string[] = Object.freeze([
+  MODIFIER_KEY_INIT, MODIFIER_KEY_SYNC,
+]);
+
+// bindingType 判別と左辺 namespace の語彙（単一正本）。manifest.syntax.bindingTypes で
+// 公開される。パーサ（parseBindTextsForElement）とイベント層はこの定数に分岐する。
+// apply 層のディスパッチマップ（apply/applyChange.ts の applyChangeByFirstSegment）の
+// キー集合との一致は __tests__/manifest.test.ts の drift テストが強制する —
+// manifest エントリ（DOM 非依存）から apply 層を import しないための分離。
+export const ELSE_KEYWORD = 'else';
+export const SPREAD_PROP = '...';
+export const EVENT_PROP_PREFIX = 'on';
+export const EVENT_TOKEN_NAMESPACE = 'eventToken';
+export const COMMAND_NAMESPACE = 'command';
+export const CLASS_NAMESPACE = 'class';
+export const ATTR_NAMESPACE = 'attr';
+export const STYLE_NAMESPACE = 'style';
+
+// リストインデックス参照名（`$1`..`$N`）の接頭辞（単一正本）。
+// manifest.syntax.indexParam で公開される。
+export const INDEX_PARAM_PREFIX = '$';
+
 /**
  * stackIndexByIndexName
  * インデックス名からスタックインデックスへのマッピング
@@ -44,7 +79,7 @@ export const FILTER_SEPARATOR = '|';      // フィルタパイプの区切り
  */
 const tmpIndexByIndexName: { [key: PropertyKey]: number } = {};
 for (let i = 0; i < MAX_WILDCARD_DEPTH; i++) {
-  tmpIndexByIndexName[`$${i+1}`] = i;
+  tmpIndexByIndexName[`${INDEX_PARAM_PREFIX}${i+1}`] = i;
 }
 export const INDEX_BY_INDEX_NAME: { [key: PropertyKey]: number } = Object.freeze(tmpIndexByIndexName);
 

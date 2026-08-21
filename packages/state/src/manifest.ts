@@ -18,11 +18,23 @@ import { STRUCTURAL_BINDING_TYPE_SET } from "./structural/define.js";
 import {
   DELIMITER,
   WILDCARD,
+  MAX_WILDCARD_DEPTH,
   BINDING_SEPARATOR,
   PROP_VALUE_SEPARATOR,
   MODIFIER_SEPARATOR,
   STATE_NAME_SEPARATOR,
   FILTER_SEPARATOR,
+  MODIFIER_FLAGS,
+  MODIFIER_KEYS,
+  INDEX_PARAM_PREFIX,
+  ELSE_KEYWORD,
+  SPREAD_PROP,
+  EVENT_PROP_PREFIX,
+  EVENT_TOKEN_NAMESPACE,
+  COMMAND_NAMESPACE,
+  CLASS_NAMESPACE,
+  ATTR_NAMESPACE,
+  STYLE_NAMESPACE,
   STATE_CONNECTED_CALLBACK_NAME,
   STATE_DISCONNECTED_CALLBACK_NAME,
   STATE_UPDATED_CALLBACK_NAME,
@@ -69,6 +81,41 @@ export interface IWcsManifest {
     };
     /** 構造ディレクティブ（`<template data-wcs="for: ...">` 等） */
     structuralDirectives: readonly string[];
+    /**
+     * 修飾子（`#` 後）の語彙。flags は値を取らない形（`#prevent`）、keyValue は
+     * `=` で値を取る形（`#init=element`）、eventNamePrefix は `on` + イベント名の形
+     * （`#onchange` — two-way / radio / checkbox のイベント名上書き。README「Modifiers」）。
+     * define.ts の定数が単一正本で、ランタイムの消費箇所も同じ定数に分岐する。
+     */
+    modifiers: {
+      flags: readonly string[];
+      keyValue: readonly string[];
+      eventNamePrefix: string;
+    };
+    /** リストインデックス参照名（`$1`..`$N`）。prefix + 1 始まり連番、maxDepth まで。 */
+    indexParam: {
+      prefix: string;
+      maxDepth: number;
+    };
+    /**
+     * bindingType 判別の語彙（parseBindTextsForElement の分岐と同一の定数から導出）。
+     * 判別順: else → spread → 構造ディレクティブ/radio/checkbox → eventToken・`on*`
+     * （event）→ prop。propNamespaces は左辺先頭セグメントの特殊 namespace で、
+     * apply 層のディスパッチキー集合との一致はテストが強制する。
+     * 既知の未収載: `radio` / `checkbox`（BindingType union のみが正本）。
+     */
+    bindingTypes: {
+      elseKeyword: string;
+      spread: string;
+      eventPropertyPrefix: string;
+      propNamespaces: {
+        eventToken: string;
+        command: string;
+        class: string;
+        attr: string;
+        style: string;
+      };
+    };
   };
   /** 組み込みフィルタ名（builtinFilters から自動導出＝実装が正本） */
   filters: string[];
@@ -98,6 +145,27 @@ export function getWcsManifest(): IWcsManifest {
       },
       // 正本 STRUCTURAL_BINDING_TYPE_SET から導出（手書きの二重定義を排除）。
       structuralDirectives: Array.from(STRUCTURAL_BINDING_TYPE_SET),
+      modifiers: {
+        flags: MODIFIER_FLAGS,
+        keyValue: MODIFIER_KEYS,
+        eventNamePrefix: EVENT_PROP_PREFIX,
+      },
+      indexParam: {
+        prefix: INDEX_PARAM_PREFIX,
+        maxDepth: MAX_WILDCARD_DEPTH,
+      },
+      bindingTypes: {
+        elseKeyword: ELSE_KEYWORD,
+        spread: SPREAD_PROP,
+        eventPropertyPrefix: EVENT_PROP_PREFIX,
+        propNamespaces: {
+          eventToken: EVENT_TOKEN_NAMESPACE,
+          command: COMMAND_NAMESPACE,
+          class: CLASS_NAMESPACE,
+          attr: ATTR_NAMESPACE,
+          style: STYLE_NAMESPACE,
+        },
+      },
     },
     // 実装（Record のキー）から自動導出。手リストを持たない＝ドリフトの構造的排除。
     filters: Object.keys(outputBuiltinFilters),

@@ -24,6 +24,7 @@
  * 解決できないため。onclick / two-way ハンドラと同じく fire-time 解決に揃えている。
  */
 
+import { EVENT_TOKEN_NAMESPACE, MODIFIER_PREVENT, MODIFIER_STOP } from "../define";
 import { getLoopContextByNode } from "../list/loopContextByNode";
 import { setLoopContextSymbol } from "../proxy/symbols";
 import { getScopedIndexes } from "../list/wildcardLevel";
@@ -53,7 +54,7 @@ function getWcBindable(element: Element): ReadBindableResult | null {
 }
 
 export function attachEventTokenHandler(binding: IBindingInfo): boolean {
-  if (binding.propSegments[0] !== "eventToken") {
+  if (binding.propSegments[0] !== EVENT_TOKEN_NAMESPACE) {
     return false;
   }
   const element = binding.node as Element;
@@ -92,8 +93,8 @@ export function attachEventTokenHandler(binding: IBindingInfo): boolean {
   const stateName = binding.stateName;
   const modifiers = binding.propModifiers;
   const handler = (event: Event): void => {
-    if (modifiers.includes("prevent")) event.preventDefault();
-    if (modifiers.includes("stop")) event.stopPropagation();
+    if (modifiers.includes(MODIFIER_PREVENT)) event.preventDefault();
+    if (modifiers.includes(MODIFIER_STOP)) event.stopPropagation();
 
     // state は発火時の live root から解決する（attach 時は detached の可能性があるため）。
     const rootNode = element.getRootNode() as Node;
@@ -124,7 +125,7 @@ export function attachEventTokenHandler(binding: IBindingInfo): boolean {
 }
 
 export function detachEventTokenHandler(binding: IBindingInfo): boolean {
-  if (binding.propSegments[0] !== "eventToken") {
+  if (binding.propSegments[0] !== EVENT_TOKEN_NAMESPACE) {
     return false;
   }
   const listener = listenerByBinding.get(binding);

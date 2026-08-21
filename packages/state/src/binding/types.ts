@@ -9,7 +9,12 @@ export interface IFilterInfo {
   readonly filterFn: FilterFn;
 }
 
-export interface IBindingInfo {
+/**
+ * バインディング式のパース結果（DOM 非依存の部分）。`@wcstack/state/parser` の
+ * ParseBindTextResult がこれをそのまま公開するため、Node 等の DOM lib 型を
+ * ここに足してはならない（足すなら IBindingInfo 側へ）。
+ */
+export interface IParsedBinding {
   readonly propName: string;
   readonly propSegments: string[];
   readonly propModifiers: string[];
@@ -18,8 +23,11 @@ export interface IBindingInfo {
   readonly stateName: string;
   readonly inFilters: IFilterInfo[];
   readonly outFilters: IFilterInfo[];
-  readonly node: Node; // raw node
-  readonly replaceNode: Node; // replaced node or raw node
   readonly bindingType: BindingType;
   readonly uuid?: string | null; // for 'for', 'if', 'elseif', 'else' bindings
+}
+
+export interface IBindingInfo extends IParsedBinding {
+  readonly node: Node; // raw node
+  readonly replaceNode: Node; // replaced node or raw node
 }

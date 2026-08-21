@@ -1,4 +1,5 @@
 import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding.js";
+import { ATTR_NAMESPACE, CLASS_NAMESPACE, COMMAND_NAMESPACE, STYLE_NAMESPACE } from "../define.js";
 import { getBindingSession } from "../bindings/BindingSession.js";
 import { getCustomElement } from "../getCustomElement.js";
 import { getCustomElementRegistry } from "../platform/customElementRegistry.js";
@@ -23,12 +24,15 @@ import { getRootNodeByFragment } from "./rootNodeByFragment.js";
 import { scheduleDeferredApply } from "./scheduleDeferredApply.js";
 import { ApplyChangeFn, IApplyContext } from "./types.js";
 
-const applyChangeByFirstSegment: { [key: string]: ApplyChangeFn } = {
-  "class": applyChangeToClass,
-  "attr": applyChangeToAttribute,
-  "style": applyChangeToStyle,
-  "command": applyChangeToCommand,
-};
+// キーは define.ts の namespace 語彙定数（manifest.syntax.bindingTypes.propNamespaces と
+// 同一の正本）。集合の一致は __tests__/manifest.test.ts の drift テストが強制するため
+// export する（manifest エントリは DOM 非依存でこのファイルを import できない）。
+export const applyChangeByFirstSegment: { readonly [key: string]: ApplyChangeFn } = Object.freeze({
+  [CLASS_NAMESPACE]: applyChangeToClass,
+  [ATTR_NAMESPACE]: applyChangeToAttribute,
+  [STYLE_NAMESPACE]: applyChangeToStyle,
+  [COMMAND_NAMESPACE]: applyChangeToCommand,
+});
 
 const applyChangeByBindingType: { [key: string]: ApplyChangeFn } = {
   "text": applyChangeToText,

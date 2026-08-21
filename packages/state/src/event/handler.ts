@@ -2,7 +2,7 @@ import { createStateAddress } from "../address/StateAddress";
 import { IPathInfo } from "../address/types";
 import { isCommandToken } from "../command/CommandToken";
 import { ICommandToken } from "../command/types";
-import { STATE_COMMAND_NAMESPACE_NAME } from "../define";
+import { EVENT_PROP_PREFIX, MODIFIER_PREVENT, MODIFIER_STOP, STATE_COMMAND_NAMESPACE_NAME } from "../define";
 import { getLoopContextByNode } from "../list/loopContextByNode";
 import { getByAddressSymbol, setLoopContextSymbol } from "../proxy/symbols";
 import { getScopedIndexes } from "../list/wildcardLevel";
@@ -23,7 +23,7 @@ const handlerByHandlerKey: Map<string, (event: Event) => any> = new Map();
 const bindingRegistry = createHandlerBindingRegistry();
 
 function getHandlerKey(binding: IBindingInfo): string {
-  const modifierKey = binding.propModifiers.filter(m => m === 'prevent' || m === 'stop').sort().join(',');
+  const modifierKey = binding.propModifiers.filter(m => m === MODIFIER_PREVENT || m === MODIFIER_STOP).sort().join(',');
   return `${binding.stateName}::${binding.statePathName}::${modifierKey}`;
 }
 
@@ -33,8 +33,8 @@ const stateEventHandlerFunction = (
   modifiers: string[],
   statePathInfo: IPathInfo
 ) => (event: Event): any => {
-  if (modifiers.includes('prevent')) event.preventDefault();
-  if (modifiers.includes('stop')) event.stopPropagation();
+  if (modifiers.includes(MODIFIER_PREVENT)) event.preventDefault();
+  if (modifiers.includes(MODIFIER_STOP)) event.stopPropagation();
 
   const node = event.target as Element;
   const rootNode = node.getRootNode() as Node;
@@ -70,7 +70,7 @@ const stateEventHandlerFunction = (
 }
 
 export function attachEventHandler(binding: IBindingInfo): boolean {
-  if (!binding.propName.startsWith("on")) {
+  if (!binding.propName.startsWith(EVENT_PROP_PREFIX)) {
     return false;
   }
   const key = getHandlerKey(binding);
@@ -88,7 +88,7 @@ export function attachEventHandler(binding: IBindingInfo): boolean {
 }
 
 export function detachEventHandler(binding: IBindingInfo): boolean {
-  if (!binding.propName.startsWith("on")) {
+  if (!binding.propName.startsWith(EVENT_PROP_PREFIX)) {
     return false;
   }
   const key = getHandlerKey(binding);

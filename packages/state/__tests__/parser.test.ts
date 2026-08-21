@@ -1,0 +1,78 @@
+// @vitest-environment node
+/**
+ * parser.test.ts — `@wcstack/state/parser` サブパスエントリ（src/parser.ts）の契約検証。
+ *
+ * このファイルだけ **node 環境**で実行する（先頭の @vitest-environment 指示）。
+ * エントリの契約「DOM 非依存・純関数」を、happy-dom 抜きで import・実行できることで
+ * 構造的に証明する — DOM に触る import がエントリの依存チェーンへ紛れ込むと、
+ * このファイルの import 自体が落ちる。
+ */
+import { describe, it, expect } from "vitest";
+import { parseBindTextsForElement, getPathInfo } from "../src/parser";
+
+describe("parseBindTextsForElement（正本パーサの公開契約）", () => {
+  it("node 環境で実行されていること（@vitest-environment 指示の自己検証）", () => {
+    // コメント形式の環境指示が将来の vitest で解釈されなくなると「DOM 非依存の
+    // 構造的証明」が無言で蒸発するため、環境そのものを assert しておく。
+    expect(typeof document).toBe("undefined");
+    expect(typeof window).toBe("undefined");
+  });
+
+  it("単純な prop バインディングをパースすること", () => {
+    const [r] = parseBindTextsForElement("textContent: user.name");
+    expect(r.propName).toBe("textContent");
+    expect(r.propSegments).toEqual(["textContent"]);
+    expect(r.statePathName).toBe("user.name");
+    expect(r.stateName).toBe("default");
+    expect(r.bindingType).toBe("prop");
+    expect(r.propModifiers).toEqual([]);
+    expect(r.outFilters).toEqual([]);
+  });
+
+  it("修飾子・@state・フィルタ列を分解すること", () => {
+    const [r] = parseBindTextsForElement("value#ro: price@cart | fix(2)");
+    expect(r.propModifiers).toEqual(["ro"]);
+    expect(r.stateName).toBe("cart");
+    expect(r.outFilters).toHaveLength(1);
+    expect(r.outFilters[0].filterName).toBe("fix");
+    expect(r.outFilters[0].args).toEqual(["2"]);
+  });
+
+  it("`;` 区切りの複数バインディングを分割すること", () => {
+    const results = parseBindTextsForElement("textContent: a; class.active: b");
+    expect(results).toHaveLength(2);
+    expect(results[1].propSegments).toEqual(["class", "active"]);
+    expect(results[1].bindingType).toBe("prop");
+  });
+
+  it("bindingType を判別すること（event / eventToken / structural / else / spread）", () => {
+    expect(parseBindTextsForElement("onclick: doIt")[0].bindingType).toBe("event");
+    expect(parseBindTextsForElement("eventToken.value: changed")[0].bindingType).toBe("event");
+    expect(parseBindTextsForElement("for: items")[0].bindingType).toBe("for");
+    expect(parseBindTextsForElement("if: cond")[0].bindingType).toBe("if");
+    expect(parseBindTextsForElement("else:")[0].bindingType).toBe("else");
+    expect(parseBindTextsForElement("...: fetchX")[0].bindingType).toBe("spread");
+  });
+
+  it("不正構文は位置情報なしで throw すること（診断 range は消費側の責務 = D3 の契約固定）", () => {
+    expect(() => parseBindTextsForElement("noSeparator")).toThrow(/Missing ':'/);
+    expect(() => parseBindTextsForElement("if: a; textContent: b")).toThrow();
+    expect(() => parseBindTextsForElement("...: target | uc")).toThrow(/filters are not allowed/);
+    expect(() => parseBindTextsForElement("...:")).toThrow(/target path is required/);
+  });
+});
+
+describe("getPathInfo（パス解析の公開契約）", () => {
+  it("親チェーン（cumulativePaths）とワイルドカード情報を返すこと", () => {
+    const info = getPathInfo("users.*.name");
+    expect(info.segments).toEqual(["users", "*", "name"]);
+    expect(info.cumulativePaths).toEqual(["users", "users.*", "users.*.name"]);
+    expect(info.parentPath).toBe("users.*");
+    expect(info.wildcardCount).toBe(1);
+    expect(info.wildcardPositions).toEqual([1]);
+  });
+
+  it("同一パスは同一インスタンスを返すこと（正規化キーとしての同一性）", () => {
+    expect(getPathInfo("a.b.c")).toBe(getPathInfo("a.b.c"));
+  });
+});

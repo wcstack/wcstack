@@ -1,4 +1,5 @@
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
+import { EVENT_TOKEN_NAMESPACE, MODIFIER_READONLY } from "../define";
 import { IAbsoluteStateAddress } from "../address/types";
 import { getAbsolutePathInfo } from "../address/AbsolutePathInfo";
 import { IAbsolutePathInfo } from "../address/types";
@@ -813,7 +814,7 @@ export class BindingSession {
       return;
     }
 
-    if (binding.propSegments[0] === "eventToken") {
+    if (binding.propSegments[0] === EVENT_TOKEN_NAMESPACE) {
       this.attachAfterDefinition(record, () => {
         if (attachEventTokenHandler(binding)) {
           addRecordTeardown(record, () => detachEventTokenHandler(binding));
@@ -841,7 +842,7 @@ export class BindingSession {
       if (
         config.enableDirectionalInitialSync
         && isPossibleTwoWay(binding.node, binding.propName)
-        && binding.propModifiers.indexOf("ro") === -1
+        && binding.propModifiers.indexOf(MODIFIER_READONLY) === -1
       ) {
         const removeObserver = addTwowayValueObserver(binding.node, binding.propName, (value) => {
           if (!this.isAlive(record, record.generation)) return;
