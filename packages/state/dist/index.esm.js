@@ -113,6 +113,38 @@ const PROP_VALUE_SEPARATOR = ':'; // 左辺(prop)と右辺(path)の区切り
 const MODIFIER_SEPARATOR = '#'; // prop と修飾子の区切り
 const STATE_NAME_SEPARATOR = '@'; // path と @stateName の区切り
 const FILTER_SEPARATOR = '|'; // フィルタパイプの区切り
+// 修飾子（`#` 後）の語彙（単一正本）。manifest.syntax.modifiers で公開される。
+// フラグ形（`#prevent` — 値を取らない）とキー値形（`#init=element` — `=` で値を取る）。
+// 消費箇所（event/handler・BindingSession・twowayHandler・bindings/initialSync）は
+// この定数を参照する — 文字列リテラルの散在は tooling への収載漏れの温床だった
+// （docs/static-wiring-dx-design.md §2-2）。
+const MODIFIER_PREVENT = 'prevent';
+const MODIFIER_STOP = 'stop';
+const MODIFIER_READONLY = 'ro';
+const MODIFIER_FLAGS = Object.freeze([
+    MODIFIER_PREVENT, MODIFIER_STOP, MODIFIER_READONLY,
+]);
+const MODIFIER_KEY_INIT = 'init';
+const MODIFIER_KEY_SYNC = 'sync';
+const MODIFIER_KEYS = Object.freeze([
+    MODIFIER_KEY_INIT, MODIFIER_KEY_SYNC,
+]);
+// bindingType 判別と左辺 namespace の語彙（単一正本）。manifest.syntax.bindingTypes で
+// 公開される。パーサ（parseBindTextsForElement）とイベント層はこの定数に分岐する。
+// apply 層のディスパッチマップ（apply/applyChange.ts の applyChangeByFirstSegment）の
+// キー集合との一致は __tests__/manifest.test.ts の drift テストが強制する —
+// manifest エントリ（DOM 非依存）から apply 層を import しないための分離。
+const ELSE_KEYWORD = 'else';
+const SPREAD_PROP = '...';
+const EVENT_PROP_PREFIX = 'on';
+const EVENT_TOKEN_NAMESPACE = 'eventToken';
+const COMMAND_NAMESPACE = 'command';
+const CLASS_NAMESPACE = 'class';
+const ATTR_NAMESPACE = 'attr';
+const STYLE_NAMESPACE = 'style';
+// リストインデックス参照名（`$1`..`$N`）の接頭辞（単一正本）。
+// manifest.syntax.indexParam で公開される。
+const INDEX_PARAM_PREFIX = '$';
 /**
  * stackIndexByIndexName
  * インデックス名からスタックインデックスへのマッピング
@@ -124,7 +156,7 @@ const FILTER_SEPARATOR = '|'; // フィルタパイプの区切り
  */
 const tmpIndexByIndexName = {};
 for (let i = 0; i < MAX_WILDCARD_DEPTH; i++) {
-    tmpIndexByIndexName[`$${i + 1}`] = i;
+    tmpIndexByIndexName[`${INDEX_PARAM_PREFIX}${i + 1}`] = i;
 }
 const INDEX_BY_INDEX_NAME = Object.freeze(tmpIndexByIndexName);
 const NO_SET_TIMEOUT = 60 * 1000; // 1分
@@ -639,6 +671,75 @@ const STRUCTURAL_BINDING_TYPE_SET = new Set([
     "else",
     "for",
 ]);
+
+/**
+ * errorGuidance.ts — エラーメッセージへの self-fix 誘導（GTM 2-5 /
+ * docs/static-wiring-dx-design.md §3）。
+ *
+ * コンソールは「書き手（人間・AI とも）が誤った瞬間に必ず読む面」なので、
+ * (a) did-you-mean 候補 (b) lint への誘導 をエラーメッセージ自体に埋め込む。
+ * ここの関数は全て**エラーパスでのみ**呼ばれる — 正常系のコストはゼロ。
+ * auto.min.js に同梱されるため文字列は最小限に保つ（エラーパス専用モジュールの
+ * 遅延 import は `src/auto.ts` の SRI 自己完結制約で不可）。
+ *
+ * 診断 code の語彙はコンソール → lint → IDE の三面で共有する:
+ * メッセージ先頭の `[wcs/...]` は wcstack-intellisense / @wcstack/lint の
+ * 安定診断 code（packages/vscode-wcs/src/core/diagnostics.ts）と同一。
+ */
+/** 挿入・削除・置換の編集距離。長さ差が max を超えたら早期に max+1 を返す。 */
+function editDistance(a, b, max) {
+    if (Math.abs(a.length - b.length) > max) {
+        return max + 1;
+    }
+    const prev = new Array(b.length + 1);
+    const curr = new Array(b.length + 1);
+    for (let j = 0; j <= b.length; j++) {
+        prev[j] = j;
+    }
+    for (let i = 1; i <= a.length; i++) {
+        curr[0] = i;
+        for (let j = 1; j <= b.length; j++) {
+            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+            curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+        }
+        for (let j = 0; j <= b.length; j++) {
+            prev[j] = curr[j];
+        }
+    }
+    return prev[b.length];
+}
+/**
+ * 候補集合から編集距離 2 以内の最近傍を探し、` Did you mean "<best>"?` を返す。
+ * 該当なしは空文字。規準（距離 2・同距離は先勝ち・大小文字は畳んで比較）は
+ * lint の did-you-mean（ioNodeValidator の suggestion）と同じ — 三面で提案が
+ * 割れないように揃えている。動的キー等で候補が列挙できないサイトでは呼ばない
+ * = 誘導文のみに縮退（設計 §3 の縮退）。
+ */
+function didYouMean(input, candidates) {
+    // 空入力（`a|` の末尾パイプ等）に短い候補を提案しても無意味なので出さない。
+    if (input.length === 0) {
+        return "";
+    }
+    const folded = input.toLowerCase();
+    let best = null;
+    let bestDistance = 3;
+    for (const candidate of candidates) {
+        const distance = editDistance(folded, candidate.toLowerCase(), 2);
+        if (distance < bestDistance) {
+            best = candidate;
+            bestDistance = distance;
+        }
+    }
+    return best !== null ? ` Did you mean "${best}"?` : "";
+}
+/**
+ * lint への誘導（誘導付きメッセージ共通の一文）。
+ * **lint が実際にそのケースを検出するサイトにだけ付ける** — 検出しないケースに
+ * 付けると「エラー → lint 実行 → clean」の空振りで検証ループの信頼を毀損する
+ * （DCC 宣言・watch の一部 shape・構造型単独バインディング違反は lint 未検出のため
+ * 付けない。lint 側への検査追加は follow-up）。
+ */
+const LINT_HINT = " Validate statically: npx @wcstack/lint <file>.";
 
 /**
  * errorMessages.ts
@@ -1558,7 +1659,8 @@ const builtinFiltersByFilterIOType = {
 const builtinFilterFn = (name, options) => (filters) => {
     const filter = filters[name];
     if (!filter) {
-        raiseError(`filter not found: ${name}`);
+        // lint の wcs/filter-unknown と同じ語彙・同じ did-you-mean 規準（三面同語彙）。
+        raiseError(`[wcs/filter-unknown] filter not found: ${name}.${didYouMean(name, Object.keys(filters))}${LINT_HINT}`);
     }
     return filter(options);
 };
@@ -1779,11 +1881,11 @@ function parseBindTextsForElement(bindText) {
         }
         const propPart = bindText.slice(0, separatorIndex).trim();
         const statePart = bindText.slice(separatorIndex + 1).trim();
-        if (propPart === 'else') {
+        if (propPart === ELSE_KEYWORD) {
             const pathInfo = getPathInfo('#else');
             return {
-                propName: 'else',
-                propSegments: ['else'],
+                propName: ELSE_KEYWORD,
+                propSegments: [ELSE_KEYWORD],
                 propModifiers: [],
                 statePathName: '#else',
                 statePathInfo: pathInfo,
@@ -1793,7 +1895,7 @@ function parseBindTextsForElement(bindText) {
                 bindingType: 'else',
             };
         }
-        else if (propPart === '...') {
+        else if (propPart === SPREAD_PROP) {
             const stateResult = parseStatePart(statePart);
             if (stateResult.outFilters.length > 0) {
                 raiseError(`Invalid spread binding "${bindText}": filters are not allowed on spread targets.`);
@@ -1802,8 +1904,8 @@ function parseBindTextsForElement(bindText) {
                 raiseError(`Invalid spread binding "${bindText}": spread target path is required.`);
             }
             return {
-                propName: '...',
-                propSegments: ['...'],
+                propName: SPREAD_PROP,
+                propSegments: [SPREAD_PROP],
                 propModifiers: [],
                 inFilters: [],
                 ...stateResult,
@@ -1830,14 +1932,14 @@ function parseBindTextsForElement(bindText) {
             const propResult = parsePropPart(propPart);
             // eventToken.<prop>: <name> は要素 dispatch を state へ流す pub/sub 配線。
             // 値適用ではないため bindingType 'event' として listener attach 経路に乗せる。
-            if (propResult.propSegments[0] === 'eventToken') {
+            if (propResult.propSegments[0] === EVENT_TOKEN_NAMESPACE) {
                 return {
                     ...propResult,
                     ...stateResult,
                     bindingType: 'event',
                 };
             }
-            if (propResult.propSegments[0].startsWith('on')) {
+            if (propResult.propSegments[0].startsWith(EVENT_PROP_PREFIX)) {
                 return {
                     ...propResult,
                     ...stateResult,
@@ -1857,7 +1959,9 @@ function parseBindTextsForElement(bindText) {
     if (results.length > 1) {
         const isIncludeSingleBinding = results.some(r => STRUCTURAL_BINDING_TYPE_SET.has(r.bindingType));
         if (isIncludeSingleBinding) {
-            raiseError(`Invalid bindText: "${bindText}". 'if', 'elseif', 'else', and 'for' bindings must be single binding.`);
+            // LINT_HINT は付けない: 単独バインディング検査は lint 側に未実装で、誘導が
+            // 空振りする（lint への検査追加は follow-up）。
+            raiseError(`[wcs/template-syntax] Invalid bindText: "${bindText}". 'if', 'elseif', 'else', and 'for' bindings must be single binding. Put the structural binding alone in its own data-wcs (e.g. <template data-wcs="for: items">).`);
         }
     }
     return results;
@@ -2733,8 +2837,8 @@ function getHandlerKey$3(binding, eventName) {
 function getEventName$2(binding) {
     let eventName = 'input';
     for (const modifier of binding.propModifiers) {
-        if (modifier.startsWith('on')) {
-            eventName = modifier.slice(2);
+        if (modifier.startsWith(EVENT_PROP_PREFIX)) {
+            eventName = modifier.slice(EVENT_PROP_PREFIX.length);
         }
     }
     return eventName;
@@ -2789,7 +2893,7 @@ const checkboxEventHandlerFunction = (stateName, statePathName, inFilters) => (e
     });
 };
 function attachCheckboxEventHandler(binding) {
-    if (binding.bindingType === "checkbox" && binding.propModifiers.indexOf('ro') === -1) {
+    if (binding.bindingType === "checkbox" && binding.propModifiers.indexOf(MODIFIER_READONLY) === -1) {
         const eventName = getEventName$2(binding);
         const key = getHandlerKey$3(binding, eventName);
         let checkboxEventHandler = handlerByHandlerKey$3.get(key);
@@ -2804,7 +2908,7 @@ function attachCheckboxEventHandler(binding) {
     return false;
 }
 function detachCheckboxEventHandler(binding) {
-    if (binding.bindingType === "checkbox" && binding.propModifiers.indexOf('ro') === -1) {
+    if (binding.bindingType === "checkbox" && binding.propModifiers.indexOf(MODIFIER_READONLY) === -1) {
         const eventName = getEventName$2(binding);
         const key = getHandlerKey$3(binding, eventName);
         const checkboxEventHandler = handlerByHandlerKey$3.get(key);
@@ -2987,7 +3091,7 @@ function getWcBindable$1(element) {
     return readBindableDeclaration(element);
 }
 function attachEventTokenHandler(binding) {
-    if (binding.propSegments[0] !== "eventToken") {
+    if (binding.propSegments[0] !== EVENT_TOKEN_NAMESPACE) {
         return false;
     }
     const element = binding.node;
@@ -3014,16 +3118,16 @@ function attachEventTokenHandler(binding) {
     }
     const propDesc = bindable.knownProperties.get(propertyName);
     if (typeof propDesc === "undefined") {
-        raiseError(`Property "${propertyName}" is not declared in wcBindable.properties of <${element.tagName.toLowerCase()}>.`);
+        raiseError(`Property "${propertyName}" is not declared in wcBindable.properties of <${element.tagName.toLowerCase()}>.${didYouMean(propertyName, bindable.knownProperties.keys())}`);
     }
     const eventName = propDesc.event;
     const tokenName = binding.statePathName;
     const stateName = binding.stateName;
     const modifiers = binding.propModifiers;
     const handler = (event) => {
-        if (modifiers.includes("prevent"))
+        if (modifiers.includes(MODIFIER_PREVENT))
             event.preventDefault();
-        if (modifiers.includes("stop"))
+        if (modifiers.includes(MODIFIER_STOP))
             event.stopPropagation();
         // state は発火時の live root から解決する（attach 時は detached の可能性があるため）。
         const rootNode = element.getRootNode();
@@ -3032,7 +3136,8 @@ function attachEventTokenHandler(binding) {
             raiseError(`State element with name "${stateName}" not found for eventToken handler.`);
         }
         if (!stateElement.eventTokenNames.has(tokenName)) {
-            raiseError(`eventToken "${tokenName}" is not declared in $eventTokens of state "${stateName}".`);
+            // lint も同じケースを wcs/token-undeclared で検出する（三面同語彙）。
+            raiseError(`[wcs/token-undeclared] eventToken "${tokenName}" is not declared in $eventTokens of state "${stateName}".${didYouMean(tokenName, stateElement.eventTokenNames)}${LINT_HINT}`);
         }
         const loopContext = getLoopContextByNode(element);
         stateElement.createStateAsync("writable", async (state) => {
@@ -3052,7 +3157,7 @@ function attachEventTokenHandler(binding) {
     return true;
 }
 function detachEventTokenHandler(binding) {
-    if (binding.propSegments[0] !== "eventToken") {
+    if (binding.propSegments[0] !== EVENT_TOKEN_NAMESPACE) {
         return false;
     }
     const listener = listenerByBinding.get(binding);
@@ -3105,13 +3210,13 @@ const handlerByHandlerKey$2 = new Map();
 // binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
 const bindingRegistry$2 = createHandlerBindingRegistry();
 function getHandlerKey$2(binding) {
-    const modifierKey = binding.propModifiers.filter(m => m === 'prevent' || m === 'stop').sort().join(',');
+    const modifierKey = binding.propModifiers.filter(m => m === MODIFIER_PREVENT || m === MODIFIER_STOP).sort().join(',');
     return `${binding.stateName}::${binding.statePathName}::${modifierKey}`;
 }
 const stateEventHandlerFunction = (stateName, handlerName, modifiers, statePathInfo) => (event) => {
-    if (modifiers.includes('prevent'))
+    if (modifiers.includes(MODIFIER_PREVENT))
         event.preventDefault();
-    if (modifiers.includes('stop'))
+    if (modifiers.includes(MODIFIER_STOP))
         event.stopPropagation();
     const node = event.target;
     const rootNode = node.getRootNode();
@@ -3145,7 +3250,7 @@ const stateEventHandlerFunction = (stateName, handlerName, modifiers, statePathI
     });
 };
 function attachEventHandler(binding) {
-    if (!binding.propName.startsWith("on")) {
+    if (!binding.propName.startsWith(EVENT_PROP_PREFIX)) {
         return false;
     }
     const key = getHandlerKey$2(binding);
@@ -3160,7 +3265,7 @@ function attachEventHandler(binding) {
     return true;
 }
 function detachEventHandler(binding) {
-    if (!binding.propName.startsWith("on")) {
+    if (!binding.propName.startsWith(EVENT_PROP_PREFIX)) {
         return false;
     }
     const key = getHandlerKey$2(binding);
@@ -3189,8 +3294,8 @@ function getHandlerKey$1(binding, eventName) {
 function getEventName$1(binding) {
     let eventName = 'input';
     for (const modifier of binding.propModifiers) {
-        if (modifier.startsWith('on')) {
-            eventName = modifier.slice(2);
+        if (modifier.startsWith(EVENT_PROP_PREFIX)) {
+            eventName = modifier.slice(EVENT_PROP_PREFIX.length);
         }
     }
     return eventName;
@@ -3226,7 +3331,7 @@ const radioEventHandlerFunction = (stateName, statePathName, inFilters) => (even
     });
 };
 function attachRadioEventHandler(binding) {
-    if (binding.bindingType === "radio" && binding.propModifiers.indexOf('ro') === -1) {
+    if (binding.bindingType === "radio" && binding.propModifiers.indexOf(MODIFIER_READONLY) === -1) {
         const eventName = getEventName$1(binding);
         const key = getHandlerKey$1(binding, eventName);
         let radioEventHandler = handlerByHandlerKey$1.get(key);
@@ -3241,7 +3346,7 @@ function attachRadioEventHandler(binding) {
     return false;
 }
 function detachRadioEventHandler(binding) {
-    if (binding.bindingType === "radio" && binding.propModifiers.indexOf('ro') === -1) {
+    if (binding.bindingType === "radio" && binding.propModifiers.indexOf(MODIFIER_READONLY) === -1) {
         const eventName = getEventName$1(binding);
         const key = getHandlerKey$1(binding, eventName);
         const radioEventHandler = handlerByHandlerKey$1.get(key);
@@ -3480,10 +3585,10 @@ function getEventName(binding) {
             eventName = propDesc.event;
         }
     }
-    // 3.modifier
+    // 3.modifier（`#onchange` 等 — `on` + イベント名の修飾子形。README「Modifiers」参照）
     for (const modifier of binding.propModifiers) {
-        if (modifier.startsWith('on')) {
-            eventName = modifier.slice(2);
+        if (modifier.startsWith(EVENT_PROP_PREFIX)) {
+            eventName = modifier.slice(EVENT_PROP_PREFIX.length);
         }
     }
     return eventName;
@@ -3652,7 +3757,7 @@ function attachTwowayEventHandler(binding) {
             return;
         }
     }
-    if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf('ro') === -1) {
+    if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf(MODIFIER_READONLY) === -1) {
         const eventName = getEventName(binding);
         const valueGetter = getValueGetter(binding);
         const isOccurrence = isOccurrenceProperty(binding);
@@ -3678,7 +3783,7 @@ function detachTwowayEventHandler(binding) {
             return;
         }
     }
-    if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf('ro') === -1) {
+    if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf(MODIFIER_READONLY) === -1) {
         const eventName = getEventName(binding);
         const valueGetter = getValueGetter(binding);
         const key = getHandlerKey(binding, eventName, valueGetter !== null, isOccurrenceProperty(binding));
@@ -4266,7 +4371,7 @@ function readOption(binding, key) {
             continue;
         const modifierKey = modifier.slice(0, separator).trim();
         const value = modifier.slice(separator + 1).trim();
-        if (modifierKey !== "init" && modifierKey !== "sync") {
+        if (modifierKey !== MODIFIER_KEY_INIT && modifierKey !== MODIFIER_KEY_SYNC) {
             raiseError(`Unknown binding modifier "${modifierKey}" in "${modifier}".`);
         }
         if (modifierKey !== key)
@@ -4313,8 +4418,8 @@ function resolveInitialSyncPolicy(binding) {
         }
         return STATE_CALL_POLICY;
     }
-    const explicitAuthority = parseAuthority(readOption(binding, "init"));
-    const syncOn = parseSyncOn(readOption(binding, "sync"));
+    const explicitAuthority = parseAuthority(readOption(binding, MODIFIER_KEY_INIT));
+    const syncOn = parseSyncOn(readOption(binding, MODIFIER_KEY_SYNC));
     if (binding.bindingType === "event") {
         if (explicitAuthority !== null && explicitAuthority !== "none") {
             raiseError("Event bindings only allow init=none.");
@@ -4326,7 +4431,7 @@ function resolveInitialSyncPolicy(binding) {
     // property authority 検証(未宣言なら raiseError)に掛けてはならない。値の初期同期を
     // 持たない配線なので、現行互換の "state" authority を返す(command token は従来通り
     // 初期 apply で配線される)。
-    if (binding.propSegments[0] === "command") {
+    if (binding.propSegments[0] === COMMAND_NAMESPACE) {
         return statePolicy("state", syncOn);
     }
     if (binding.bindingType !== "prop") {
@@ -5099,7 +5204,7 @@ class BindingSession {
             record.eventAttached = true;
             return;
         }
-        if (binding.propSegments[0] === "eventToken") {
+        if (binding.propSegments[0] === EVENT_TOKEN_NAMESPACE) {
             this.attachAfterDefinition(record, () => {
                 if (attachEventTokenHandler(binding)) {
                     addRecordTeardown(record, () => detachEventTokenHandler(binding));
@@ -5125,7 +5230,7 @@ class BindingSession {
             // isPossibleTwoWay の未定義 CE raiseError も踏まない）。
             if (config.enableDirectionalInitialSync
                 && isPossibleTwoWay(binding.node, binding.propName)
-                && binding.propModifiers.indexOf("ro") === -1) {
+                && binding.propModifiers.indexOf(MODIFIER_READONLY) === -1) {
                 const removeObserver = addTwowayValueObserver(binding.node, binding.propName, (value) => {
                     if (!this.isAlive(record, record.generation))
                         return;
@@ -5544,7 +5649,8 @@ function applyChangeToCommand(binding, _context, newValue) {
         raiseError(`command binding requires a wc-bindable custom element. <${element.tagName.toLowerCase()}> is not wc-bindable.`);
     }
     if (!bindable.declaredCommands.has(methodName)) {
-        raiseError(`Command "${methodName}" is not declared in wcBindable.commands of <${element.tagName.toLowerCase()}>.`);
+        // eventTokenHandler の property 検証と対双の did-you-mean（設計 §3）。
+        raiseError(`Command "${methodName}" is not declared in wcBindable.commands of <${element.tagName.toLowerCase()}>.${didYouMean(methodName, bindable.declaredCommands.keys())}`);
     }
     // ここまで来たら旧解除して新 subscribe に切り替える。
     if (existing) {
@@ -6204,7 +6310,7 @@ function compileRowPlan(fragmentInfo) {
             // command.<name>（prop 扱い）と eventToken.<prop>（event 扱い）は token 配線の
             // teardown / attach 分岐が要るため不適格
             const namespace = template.propSegments[0];
-            if (namespace === "command" || namespace === "eventToken") {
+            if (namespace === COMMAND_NAMESPACE || namespace === EVENT_TOKEN_NAMESPACE) {
                 return null;
             }
             if (bindingType === "text") {
@@ -7298,12 +7404,15 @@ function scheduleDeferredApply(binding, tagName) {
     }, reject);
 }
 
-const applyChangeByFirstSegment = {
-    "class": applyChangeToClass,
-    "attr": applyChangeToAttribute,
-    "style": applyChangeToStyle,
-    "command": applyChangeToCommand,
-};
+// キーは define.ts の namespace 語彙定数（manifest.syntax.bindingTypes.propNamespaces と
+// 同一の正本）。集合の一致は __tests__/manifest.test.ts の drift テストが強制するため
+// export する（manifest エントリは DOM 非依存でこのファイルを import できない）。
+const applyChangeByFirstSegment = Object.freeze({
+    [CLASS_NAMESPACE]: applyChangeToClass,
+    [ATTR_NAMESPACE]: applyChangeToAttribute,
+    [STYLE_NAMESPACE]: applyChangeToStyle,
+    [COMMAND_NAMESPACE]: applyChangeToCommand,
+});
 const applyChangeByBindingType = {
     "text": applyChangeToText,
     "for": applyChangeToFor,
@@ -8036,7 +8145,7 @@ async function buildBindings(root) {
     }
 }
 
-var version = "1.27.0";
+var version = "1.28.0";
 var pkg = {
 	version: version};
 
@@ -9636,7 +9745,7 @@ function processOnDeclaration(stateElement, state, eventTokenNames) {
     }
     for (const [name, handler] of Object.entries(declared)) {
         if (!eventTokenNames.has(name)) {
-            raiseError(`${STATE_ON_NAME} entry "${name}" is not declared in $eventTokens.`);
+            raiseError(`${STATE_ON_NAME} entry "${name}" is not declared in $eventTokens.${didYouMean(name, eventTokenNames)}`);
         }
         if (typeof handler !== "function") {
             raiseError(`${STATE_ON_NAME} entry "${name}" must be a function.`);
@@ -10674,41 +10783,43 @@ function processWatchDeclaration(stateElement, state) {
         return null;
     }
     if (typeof declared !== "object" || declared === null) {
-        raiseError(`${STATE_WATCH_NAME} must be an object mapping state paths to handler functions.`);
+        // 非オブジェクト形は lint 側では候補ゼロ扱いで検出されないため LINT_HINT なし
+        // （以下、lint が実際に検出する shape（非関数・$ 始まり・@ 越境・空セグメント）にだけ付ける）。
+        raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} must be an object mapping state paths to handler functions.`);
     }
     const entries = new Map();
     const paths = new Set();
     let order = 0;
     for (const [path, handler] of Object.entries(declared)) {
         if (typeof handler !== "function") {
-            raiseError(`${STATE_WATCH_NAME} entry "${path}" must be a function.`);
+            raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" must be a function.${LINT_HINT}`);
         }
         if (path.length === 0) {
-            raiseError(`${STATE_WATCH_NAME} entry name must be a non-empty state path.`);
+            raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry name must be a non-empty state path.`);
         }
         if (path.startsWith("$")) {
-            raiseError(`${STATE_WATCH_NAME} entry "${path}" must not start with "$" (reserved namespace).`);
+            raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" must not start with "$" (reserved namespace).${LINT_HINT}`);
         }
         // 越境 watch は不採用（設計 D8）。他 state のアドレスは発火対象にしないため、
         // `@stateName` 付きのパスは受け取った時点で落とす（黙って発火しないより良い）。
         if (path.includes(STATE_NAME_SEPARATOR)) {
-            raiseError(`${STATE_WATCH_NAME} entry "${path}" must not target another state ("${STATE_NAME_SEPARATOR}" is not allowed); watch only paths of its own state.`);
+            raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" must not target another state ("${STATE_NAME_SEPARATOR}" is not allowed); watch only paths of its own state.${LINT_HINT}`);
         }
         // Object.prototype の継承名は `path in state` 系の判定を汚すため一律拒否する
         // （processStreamsDeclaration と同じ防衛線）。
         if (path in Object.prototype) {
-            raiseError(`${STATE_WATCH_NAME} entry "${path}" must not be a property name inherited from Object.prototype (e.g. "__proto__", "constructor").`);
+            raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" must not be a property name inherited from Object.prototype (e.g. "__proto__", "constructor").`);
         }
         const pathInfo = getPathInfo(path);
         // 空セグメント（"a..b" / 先頭・末尾の "."）は getPathInfo が黙って受理してしまうため、
         // ここで落とす。放置すると解決不能なアドレスを依存グラフへ登録することになる。
         for (const segment of pathInfo.segments) {
             if (segment.length === 0) {
-                raiseError(`${STATE_WATCH_NAME} entry "${path}" has an empty path segment.`);
+                raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" has an empty path segment.${LINT_HINT}`);
             }
         }
         if (pathInfo.wildcardCount > MAX_WILDCARD_DEPTH) {
-            raiseError(`${STATE_WATCH_NAME} entry "${path}" exceeds the maximum wildcard depth (${MAX_WILDCARD_DEPTH}).`);
+            raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" exceeds the maximum wildcard depth (${MAX_WILDCARD_DEPTH}).`);
         }
         entries.set(path, {
             path,
@@ -11171,6 +11282,20 @@ function getAllPropertyDescriptors(obj) {
  * 双方向バインド・spread・initialSync の bindable 判定が**警告なしで**丸ごと死ぬ。
  * 自前のファクトリが自前の reader に棄却される状態なので、生成前に落とす。
  */
+/**
+ * did-you-mean の候補（エラーパス専用）。`$` 予約名と継承 `constructor` を除き、
+ * `$bindables` には値プロパティだけ・`$commands` にはメソッドだけを提案する
+ * （逆側を提案すると次は「is a method / is not a method」エラーに嵌まるため）。
+ */
+function dccCandidateNames(descriptors, kind) {
+    return Object.keys(descriptors).filter((key) => {
+        if (key.startsWith("$") || key === "constructor") {
+            return false;
+        }
+        const isMethod = typeof descriptors[key].value === "function";
+        return kind === "method" ? isMethod : !isMethod;
+    });
+}
 function readNameList(state, declarationName) {
     const declared = state[declarationName];
     if (typeof declared === "undefined") {
@@ -11223,7 +11348,7 @@ function processDccDeclarations(state) {
                 streamBackedBindables.push(name);
                 continue;
             }
-            raiseError(`${STATE_BINDABLES_NAME} entry "${name}" is not declared on the state.`);
+            raiseError(`${STATE_BINDABLES_NAME} entry "${name}" is not declared on the state.${didYouMean(name, dccCandidateNames(descriptors, "value"))}`);
         }
         if (typeof descriptor.value === "function") {
             raiseError(`${STATE_BINDABLES_NAME} entry "${name}" is a method. Declare it in ${STATE_COMMANDS_NAME} instead.`);
@@ -11232,7 +11357,7 @@ function processDccDeclarations(state) {
     for (const name of commands) {
         const descriptor = descriptors[name];
         if (typeof descriptor === "undefined") {
-            raiseError(`${STATE_COMMANDS_NAME} entry "${name}" is not declared on the state.`);
+            raiseError(`${STATE_COMMANDS_NAME} entry "${name}" is not declared on the state.${didYouMean(name, dccCandidateNames(descriptors, "method"))}`);
         }
         if (typeof descriptor.value !== "function") {
             raiseError(`${STATE_COMMANDS_NAME} entry "${name}" is not a method. Declare it in ${STATE_BINDABLES_NAME} instead.`);
@@ -14722,6 +14847,27 @@ function getWcsManifest() {
             },
             // 正本 STRUCTURAL_BINDING_TYPE_SET から導出（手書きの二重定義を排除）。
             structuralDirectives: Array.from(STRUCTURAL_BINDING_TYPE_SET),
+            modifiers: {
+                flags: MODIFIER_FLAGS,
+                keyValue: MODIFIER_KEYS,
+                eventNamePrefix: EVENT_PROP_PREFIX,
+            },
+            indexParam: {
+                prefix: INDEX_PARAM_PREFIX,
+                maxDepth: MAX_WILDCARD_DEPTH,
+            },
+            bindingTypes: {
+                elseKeyword: ELSE_KEYWORD,
+                spread: SPREAD_PROP,
+                eventPropertyPrefix: EVENT_PROP_PREFIX,
+                propNamespaces: {
+                    eventToken: EVENT_TOKEN_NAMESPACE,
+                    command: COMMAND_NAMESPACE,
+                    class: CLASS_NAMESPACE,
+                    attr: ATTR_NAMESPACE,
+                    style: STYLE_NAMESPACE,
+                },
+            },
         },
         // 実装（Record のキー）から自動導出。手リストを持たない＝ドリフトの構造的排除。
         filters: Object.keys(outputBuiltinFilters),

@@ -21,12 +21,14 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/cli.ts
 var cli_exports = {};
 __export(cli_exports, {
+  createFileReader: () => createFileReader,
   main: () => main,
   parseArgs: () => parseArgs,
   resolveCliLocale: () => resolveCliLocale
 });
 module.exports = __toCommonJS(cli_exports);
 var import_node_fs = require("node:fs");
+var import_node_path = require("node:path");
 
 // src/core/offsetToPosition.ts
 function createPositionMapper(text) {
@@ -190,9 +192,24 @@ var STRUCTURAL_BINDING_TYPE_SET = /* @__PURE__ */ new Set([
   "for"
 ]);
 var MAX_WILDCARD_DEPTH = 128;
+var MODIFIER_PREVENT = "prevent";
+var MODIFIER_STOP = "stop";
+var MODIFIER_READONLY = "ro";
+var MODIFIER_FLAGS = Object.freeze([
+  MODIFIER_PREVENT,
+  MODIFIER_STOP,
+  MODIFIER_READONLY
+]);
+var MODIFIER_KEY_INIT = "init";
+var MODIFIER_KEY_SYNC = "sync";
+var MODIFIER_KEYS = Object.freeze([
+  MODIFIER_KEY_INIT,
+  MODIFIER_KEY_SYNC
+]);
+var INDEX_PARAM_PREFIX = "$";
 var tmpIndexByIndexName = {};
 for (let i = 0; i < MAX_WILDCARD_DEPTH; i++) {
-  tmpIndexByIndexName[`$${i + 1}`] = i;
+  tmpIndexByIndexName[`${INDEX_PARAM_PREFIX}${i + 1}`] = i;
 }
 Object.freeze(tmpIndexByIndexName);
 
@@ -1104,10 +1121,10 @@ function getMessages(locale) {
 
 // src/service/bindingValidator.ts
 var filterMap = new Map(BUILTIN_FILTERS.map((f) => [f.name, f]));
-function validateBindings(html, attrName, stateTagName = "wcs-state", locale) {
+function validateBindings(html, attrName, stateTagName = "wcs-state", locale, fileReader) {
   const diagnostics = [];
   const msgs = getMessages(locale);
-  const statePaths = getStatePathsFromHtml(html, stateTagName);
+  const statePaths = getStatePathsFromHtml(html, stateTagName, fileReader);
   const pathsByState = /* @__PURE__ */ new Map();
   for (const p of statePaths) {
     const list = pathsByState.get(p.stateName) ?? [];
@@ -1898,10 +1915,10 @@ function isInsideTag(html, offset, tagName) {
 }
 
 // src/service/templateSyntaxValidator.ts
-function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", locale) {
+function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", locale, fileReader) {
   const diagnostics = [];
   const msgs = getMessages(locale);
-  const allPaths = getStatePathsFromHtml(html, stateTagName);
+  const allPaths = getStatePathsFromHtml(html, stateTagName, fileReader);
   if (allPaths.length === 0) return diagnostics;
   const defaultPaths = allPaths.filter((p) => p.stateName === "default");
   const pathSet = new Set(defaultPaths.map((p) => p.path));
@@ -2015,6 +2032,7 @@ function isValidTemplatePath(path, pathSet, scopedPaths) {
 var BUILTIN_TAGS = {
   "wcs-accelerometer": {
     "package": "accelerometer",
+    "observedAttributes": [],
     "inputs": {
       "frequency": null
     },
@@ -2032,6 +2050,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-ambient-light-sensor": {
     "package": "ambient-light-sensor",
+    "observedAttributes": [],
     "inputs": {
       "frequency": null
     },
@@ -2045,8 +2064,240 @@ var BUILTIN_TAGS = {
       "stop"
     ]
   },
+  "wcs-audio": {
+    "package": "audio",
+    "observedAttributes": [
+      "volume",
+      "limiter",
+      "resume-on-gesture"
+    ],
+    "inputs": {
+      "volume": "volume",
+      "limiter": "limiter",
+      "resumeOnGesture": "resume-on-gesture"
+    },
+    "properties": [
+      "state",
+      "running",
+      "suspended",
+      "unsupported",
+      "voices",
+      "noteOn",
+      "noteOff",
+      "warnings",
+      "error",
+      "errorInfo"
+    ],
+    "commands": [
+      "resume",
+      "suspend",
+      "noteOn",
+      "noteOff",
+      "allNotesOff"
+    ]
+  },
+  "wcs-voice": {
+    "package": "audio",
+    "observedAttributes": [
+      "poly"
+    ],
+    "inputs": {},
+    "properties": [],
+    "commands": []
+  },
+  "wcs-osc": {
+    "package": "audio",
+    "observedAttributes": [
+      "frequency",
+      "detune",
+      "type",
+      "glide",
+      "transpose",
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {
+      "frequency": "frequency",
+      "detune": "detune",
+      "type": "type",
+      "glide": "glide",
+      "transpose": "transpose"
+    },
+    "properties": [],
+    "commands": []
+  },
+  "wcs-noise": {
+    "package": "audio",
+    "observedAttributes": [
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {},
+    "properties": [],
+    "commands": []
+  },
+  "wcs-biquad": {
+    "package": "audio",
+    "observedAttributes": [
+      "frequency",
+      "q",
+      "gain",
+      "detune",
+      "type",
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {
+      "frequency": "frequency",
+      "q": "q",
+      "gain": "gain",
+      "detune": "detune",
+      "type": "type"
+    },
+    "properties": [],
+    "commands": []
+  },
+  "wcs-gain": {
+    "package": "audio",
+    "observedAttributes": [
+      "gain",
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {
+      "gain": "gain"
+    },
+    "properties": [],
+    "commands": []
+  },
+  "wcs-delay": {
+    "package": "audio",
+    "observedAttributes": [
+      "time",
+      "feedback",
+      "mix",
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {
+      "time": "time",
+      "feedback": "feedback",
+      "mix": "mix"
+    },
+    "properties": [],
+    "commands": []
+  },
+  "wcs-shaper": {
+    "package": "audio",
+    "observedAttributes": [
+      "amount",
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {
+      "amount": "amount"
+    },
+    "properties": [],
+    "commands": []
+  },
+  "wcs-env": {
+    "package": "audio",
+    "observedAttributes": [
+      "attack",
+      "decay",
+      "sustain",
+      "release",
+      "depth",
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {
+      "attack": "attack",
+      "decay": "decay",
+      "sustain": "sustain",
+      "release": "release",
+      "depth": "depth"
+    },
+    "properties": [],
+    "commands": []
+  },
+  "wcs-lfo": {
+    "package": "audio",
+    "observedAttributes": [
+      "rate",
+      "depth",
+      "type",
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {
+      "rate": "rate",
+      "depth": "depth",
+      "type": "type"
+    },
+    "properties": [],
+    "commands": []
+  },
+  "wcs-analyser": {
+    "package": "audio",
+    "observedAttributes": [
+      "fft",
+      "smoothing",
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {
+      "fft": "fft",
+      "smoothing": "smoothing"
+    },
+    "properties": [
+      "frame"
+    ],
+    "commands": [
+      "sample"
+    ]
+  },
   "wcs-broadcast": {
     "package": "broadcast",
+    "observedAttributes": [
+      "name"
+    ],
     "inputs": {
       "name": "name",
       "manual": "manual"
@@ -2064,6 +2315,13 @@ var BUILTIN_TAGS = {
   },
   "wcs-camera": {
     "package": "camera",
+    "observedAttributes": [
+      "facing-mode",
+      "device-id",
+      "audio",
+      "width",
+      "height"
+    ],
     "inputs": {
       "audio": "audio",
       "facingMode": "facing-mode",
@@ -2092,6 +2350,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-recorder": {
     "package": "camera",
+    "observedAttributes": [],
     "inputs": {
       "mimeType": "mime-type",
       "timeslice": "timeslice",
@@ -2120,6 +2379,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-clipboard": {
     "package": "clipboard",
+    "observedAttributes": [],
     "inputs": {
       "monitor": "monitor"
     },
@@ -2147,6 +2407,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-contacts": {
     "package": "contacts",
+    "observedAttributes": [],
     "inputs": {},
     "properties": [
       "value",
@@ -2161,6 +2422,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-credential": {
     "package": "credential",
+    "observedAttributes": [],
     "inputs": {},
     "properties": [
       "value",
@@ -2176,6 +2438,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-debounce": {
     "package": "debounce",
+    "observedAttributes": [],
     "inputs": {
       "source": null,
       "wait": "wait",
@@ -2196,6 +2459,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-throttle": {
     "package": "debounce",
+    "observedAttributes": [],
     "inputs": {
       "source": null,
       "wait": "wait",
@@ -2216,6 +2480,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-defined": {
     "package": "defined",
+    "observedAttributes": [],
     "inputs": {
       "tags": "tags",
       "mode": "mode",
@@ -2233,6 +2498,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-eyedropper": {
     "package": "eyedropper",
+    "observedAttributes": [],
     "inputs": {},
     "properties": [
       "value",
@@ -2248,6 +2514,9 @@ var BUILTIN_TAGS = {
   },
   "wcs-fetch": {
     "package": "fetch",
+    "observedAttributes": [
+      "url"
+    ],
     "inputs": {
       "url": null,
       "method": null,
@@ -2273,24 +2542,36 @@ var BUILTIN_TAGS = {
   },
   "wcs-fetch-header": {
     "package": "fetch",
+    "observedAttributes": [],
     "inputs": {},
     "properties": [],
     "commands": []
   },
   "wcs-fetch-body": {
     "package": "fetch",
+    "observedAttributes": [],
     "inputs": {},
     "properties": [],
     "commands": []
   },
   "wcs-infinite-scroll": {
     "package": "fetch",
+    "observedAttributes": [
+      "target",
+      "root",
+      "root-margin",
+      "threshold",
+      "disabled"
+    ],
     "inputs": {},
     "properties": [],
     "commands": []
   },
   "wcs-fullscreen": {
     "package": "fullscreen",
+    "observedAttributes": [
+      "target"
+    ],
     "inputs": {
       "target": "target"
     },
@@ -2306,6 +2587,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-geo": {
     "package": "geolocation",
+    "observedAttributes": [],
     "inputs": {
       "highAccuracy": "high-accuracy",
       "timeout": "timeout",
@@ -2336,6 +2618,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-gyroscope": {
     "package": "gyroscope",
+    "observedAttributes": [],
     "inputs": {
       "frequency": null
     },
@@ -2353,6 +2636,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-idle": {
     "package": "idle",
+    "observedAttributes": [],
     "inputs": {
       "threshold": "threshold"
     },
@@ -2371,6 +2655,12 @@ var BUILTIN_TAGS = {
   },
   "wcs-intersect": {
     "package": "intersection",
+    "observedAttributes": [
+      "target",
+      "root",
+      "root-margin",
+      "threshold"
+    ],
     "inputs": {
       "target": "target",
       "root": "root",
@@ -2398,6 +2688,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-magnetometer": {
     "package": "magnetometer",
+    "observedAttributes": [],
     "inputs": {
       "frequency": null
     },
@@ -2413,8 +2704,46 @@ var BUILTIN_TAGS = {
       "stop"
     ]
   },
+  "wcs-midi": {
+    "package": "midi",
+    "observedAttributes": [
+      "input",
+      "output",
+      "channel"
+    ],
+    "inputs": {
+      "input": "input",
+      "output": "output",
+      "channel": "channel",
+      "sysex": "sysex",
+      "auto": "auto"
+    },
+    "properties": [
+      "message",
+      "type",
+      "channel",
+      "note",
+      "velocity",
+      "control",
+      "value",
+      "devices",
+      "connected",
+      "permission",
+      "granted",
+      "denied",
+      "unsupported",
+      "error",
+      "errorInfo"
+    ],
+    "commands": [
+      "request",
+      "close",
+      "send"
+    ]
+  },
   "wcs-network": {
     "package": "network",
+    "observedAttributes": [],
     "inputs": {},
     "properties": [
       "effectiveType",
@@ -2427,6 +2756,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-notify": {
     "package": "notification",
+    "observedAttributes": [],
     "inputs": {
       "notice": null,
       "mode": "mode",
@@ -2462,6 +2792,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-permission": {
     "package": "permission",
+    "observedAttributes": [],
     "inputs": {
       "name": "name",
       "userVisibleOnly": "user-visible-only",
@@ -2478,6 +2809,9 @@ var BUILTIN_TAGS = {
   },
   "wcs-pip": {
     "package": "picture-in-picture",
+    "observedAttributes": [
+      "target"
+    ],
     "inputs": {
       "target": "target"
     },
@@ -2493,6 +2827,9 @@ var BUILTIN_TAGS = {
   },
   "wcs-pointer-lock": {
     "package": "pointer-lock",
+    "observedAttributes": [
+      "target"
+    ],
     "inputs": {
       "target": "target"
     },
@@ -2508,6 +2845,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-raf": {
     "package": "raf",
+    "observedAttributes": [],
     "inputs": {
       "once": "once",
       "repeat": "repeat",
@@ -2532,6 +2870,11 @@ var BUILTIN_TAGS = {
   },
   "wcs-resize": {
     "package": "resize",
+    "observedAttributes": [
+      "target",
+      "box",
+      "round"
+    ],
     "inputs": {
       "target": "target",
       "box": "box",
@@ -2555,6 +2898,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-screen-orientation": {
     "package": "screen-orientation",
+    "observedAttributes": [],
     "inputs": {},
     "properties": [
       "type",
@@ -2571,6 +2915,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-share": {
     "package": "share",
+    "observedAttributes": [],
     "inputs": {},
     "properties": [
       "value",
@@ -2585,6 +2930,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-speak": {
     "package": "speech",
+    "observedAttributes": [],
     "inputs": {
       "say": null,
       "rate": "rate",
@@ -2614,6 +2960,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-listen": {
     "package": "speech",
+    "observedAttributes": [],
     "inputs": {
       "lang": "lang",
       "continuous": "continuous",
@@ -2641,6 +2988,9 @@ var BUILTIN_TAGS = {
   },
   "wcs-sse": {
     "package": "sse",
+    "observedAttributes": [
+      "url"
+    ],
     "inputs": {
       "url": "url",
       "withCredentials": "with-credentials",
@@ -2665,6 +3015,10 @@ var BUILTIN_TAGS = {
   },
   "wcs-storage": {
     "package": "storage",
+    "observedAttributes": [
+      "key",
+      "type"
+    ],
     "inputs": {
       "key": null,
       "type": null,
@@ -2687,6 +3041,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-tilt": {
     "package": "tilt",
+    "observedAttributes": [],
     "inputs": {},
     "properties": [
       "alpha",
@@ -2705,6 +3060,9 @@ var BUILTIN_TAGS = {
   },
   "wcs-timer": {
     "package": "timer",
+    "observedAttributes": [
+      "interval"
+    ],
     "inputs": {
       "interval": "interval",
       "once": "once",
@@ -2729,6 +3087,9 @@ var BUILTIN_TAGS = {
   },
   "wcs-upload": {
     "package": "upload",
+    "observedAttributes": [
+      "url"
+    ],
     "inputs": {
       "url": null,
       "method": null,
@@ -2757,6 +3118,10 @@ var BUILTIN_TAGS = {
   },
   "wcs-wakelock": {
     "package": "wakelock",
+    "observedAttributes": [
+      "active",
+      "type"
+    ],
     "inputs": {
       "active": "active",
       "type": "type",
@@ -2774,6 +3139,9 @@ var BUILTIN_TAGS = {
   },
   "wcs-ws": {
     "package": "websocket",
+    "observedAttributes": [
+      "url"
+    ],
     "inputs": {
       "url": "url",
       "protocols": "protocols",
@@ -2803,6 +3171,9 @@ var BUILTIN_TAGS = {
   },
   "wcs-worker": {
     "package": "worker",
+    "observedAttributes": [
+      "src"
+    ],
     "inputs": {
       "src": "src",
       "type": "type",
@@ -2844,13 +3215,13 @@ var DOM_COMMON_PROPERTIES = /* @__PURE__ */ new Set([
 ]);
 var STRUCTURAL_DIRECTIVES2 = /* @__PURE__ */ new Set(["for", "if", "elseif", "else"]);
 var EMPTYISH_SEEDS = /* @__PURE__ */ new Set(["''", '""', "``", "null", "[]", "{}"]);
-function validateIoNodes(html, bindAttribute = "data-wcs", stateTagName = "wcs-state", locale) {
+function validateIoNodes(html, bindAttribute = "data-wcs", stateTagName = "wcs-state", locale, fileReader) {
   const diagnostics = [];
   const msgs = getMessages(locale);
   const occurrences = findBuiltinTagOccurrences(html);
   if (occurrences.length === 0) return diagnostics;
   let statePaths = null;
-  const getPaths = () => statePaths ??= getStatePathsFromHtml(html, stateTagName);
+  const getPaths = () => statePaths ??= getStatePathsFromHtml(html, stateTagName, fileReader);
   for (const occ of occurrences) {
     const contract = BUILTIN_TAGS[occ.tagName];
     if (contract.properties.length === 0 && contract.commands.length === 0 && Object.keys(contract.inputs).length === 0) continue;
@@ -3202,10 +3573,11 @@ function validateDocument(text, options = {}) {
   const bindAttribute = options.bindAttribute ?? "data-wcs";
   const stateTagName = options.stateTagName ?? "wcs-state";
   const locale = options.locale;
+  const fileReader = options.fileReader;
   const out = [];
-  out.push(...validateBindings(text, bindAttribute, stateTagName, locale));
-  out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute, locale));
-  out.push(...validateIoNodes(text, bindAttribute, stateTagName, locale));
+  out.push(...validateBindings(text, bindAttribute, stateTagName, locale, fileReader));
+  out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute, locale, fileReader));
+  out.push(...validateIoNodes(text, bindAttribute, stateTagName, locale, fileReader));
   out.push(...validateDocumentEnv(text, locale));
   out.push(...validateArrayMutations(text, stateTagName, locale));
   out.push(...validateWatchDeclarations(text, stateTagName, locale));
@@ -3792,7 +4164,8 @@ function runValidation(inputs, options = {}) {
   const diagnosticsBySource = /* @__PURE__ */ new Map();
   for (const input of inputs) {
     if (input.kind === "html") {
-      diagnosticsBySource.set(input.source, validateDocument(input.text, options));
+      const docOptions = input.fileReader !== void 0 ? { ...options, fileReader: input.fileReader } : options;
+      diagnosticsBySource.set(input.source, validateDocument(input.text, docOptions));
     }
   }
   const manifestInputs = inputs.filter((i) => i.kind === "manifest");
@@ -3836,6 +4209,29 @@ function runValidation(inputs, options = {}) {
 function classify(path) {
   return path.endsWith(".manifest.json") ? "manifest" : "html";
 }
+function createFileReader(htmlPath, read = (p) => (0, import_node_fs.readFileSync)(p, "utf8")) {
+  const base = (0, import_node_path.dirname)(htmlPath);
+  const cache = /* @__PURE__ */ new Map();
+  return (relativePath) => {
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(relativePath) || relativePath.startsWith("/")) {
+      return void 0;
+    }
+    if (cache.has(relativePath)) {
+      return cache.get(relativePath);
+    }
+    let content;
+    try {
+      content = read((0, import_node_path.resolve)(base, relativePath));
+      if (content.charCodeAt(0) === 65279) {
+        content = content.slice(1);
+      }
+    } catch {
+      content = void 0;
+    }
+    cache.set(relativePath, content);
+    return content;
+  };
+}
 function parseArgs(argv) {
   const options = {};
   const files = [];
@@ -3875,7 +4271,8 @@ function main(argv) {
 `);
       return 2;
     }
-    inputs.push({ source: path, text, kind: classify(path) });
+    const kind = classify(path);
+    inputs.push({ source: path, text, kind, fileReader: kind === "html" ? createFileReader(path) : void 0 });
   }
   const result = runValidation(inputs, { ...options, locale });
   for (const line of result.lines) {
@@ -3893,6 +4290,7 @@ if (typeof require !== "undefined" && typeof module !== "undefined" && require.m
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  createFileReader,
   main,
   parseArgs,
   resolveCliLocale

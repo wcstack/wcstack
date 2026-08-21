@@ -108,6 +108,37 @@ type DevtoolsEventLike = {
     readonly type: "state:watch-chain-limit";
     readonly maxDepth: number;
     readonly paths: readonly string[];
+} | {
+    readonly type: "propagation:suppressed";
+    readonly reason: "confirmation" | "visited-edge";
+    readonly transactionId: number;
+    readonly edgeId: number;
+    readonly node: Node;
+    readonly member: string;
+} | {
+    readonly type: "propagation:coalesced";
+    readonly absoluteAddress: IAbsoluteAddressLike;
+    readonly droppedTransactionId: number;
+    readonly winnerTransactionId: number;
+} | {
+    readonly type: "propagation:hop-limit";
+    readonly absoluteAddress: IAbsoluteAddressLike;
+    readonly transactionId: number;
+    readonly hop: number;
+} | {
+    readonly type: "contract:manifest-read";
+    readonly tag: string;
+    readonly loaded: boolean;
+} | {
+    readonly type: "contract:unsupported-extension";
+    readonly namespace: string;
+} | {
+    readonly type: "contract:drift";
+    readonly reason: "component-not-loaded" | "missing-member" | "event-mismatch";
+    readonly tag: string;
+    readonly member?: string;
+    readonly sidecarEvent?: string;
+    readonly liveEvent?: string;
 };
 type DevtoolsSinkLike = (event: DevtoolsEventLike) => void;
 interface IDevtoolsSourceLike {
@@ -151,7 +182,7 @@ interface IDevtoolsHookRegistryLike {
 
 /** 予約 state 名 prefix（protocol §5）。この prefix の要素・イベントは常に除外 */
 declare const RESERVED_STATE_NAME_PREFIX = "wcs-devtools";
-type TimelineKind = "write" | "batch" | "command" | "event" | "element-registered" | "element-unregistered" | "watch-error" | "watch-chain-limit";
+type TimelineKind = "write" | "batch" | "command" | "event" | "element-registered" | "element-unregistered" | "watch-error" | "watch-chain-limit" | "propagation-suppressed" | "propagation-coalesced" | "propagation-hop-limit" | "contract-drift";
 interface ITimelineEntry {
     readonly seq: number;
     readonly time: number;

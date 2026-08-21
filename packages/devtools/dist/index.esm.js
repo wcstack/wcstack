@@ -214,7 +214,7 @@ function formatArgs(args) {
 const RESERVED_STATE_NAME_PREFIX = "wcs-devtools";
 const DEFAULT_TIMELINE_CAPACITY = 500;
 function pathKeyOf(stateName, path) {
-    return stateName + " " + path;
+    return stateName + "\u0000" + path;
 }
 class DevtoolsCore {
     _timelineCapacity;
@@ -599,6 +599,74 @@ class DevtoolsCore {
                     detail: event.paths.join(", "),
                     subscriberCount: null,
                 });
+                return;
+            }
+            case "propagation:suppressed": {
+                // two-way エコーの辺単位抑止。state 名を持たない（node+member が主語）
+                // ため hidden 判定はここでは行わない。
+                this._appendTimeline({
+                    sourceId,
+                    kind: "propagation-suppressed",
+                    stateName: null,
+                    label: event.member,
+                    detail: `${event.reason} (tx ${event.transactionId}, edge ${event.edgeId})`,
+                    subscriberCount: null,
+                });
+                return;
+            }
+            case "propagation:coalesced": {
+                const stateName = event.absoluteAddress.absolutePathInfo.stateName;
+                if (this.isHiddenStateName(stateName)) {
+                    return;
+                }
+                this._appendTimeline({
+                    sourceId,
+                    kind: "propagation-coalesced",
+                    stateName,
+                    label: this._labelOf(event.absoluteAddress),
+                    detail: `tx ${event.droppedTransactionId} dropped (winner tx ${event.winnerTransactionId})`,
+                    subscriberCount: null,
+                });
+                return;
+            }
+            case "propagation:hop-limit": {
+                const stateName = event.absoluteAddress.absolutePathInfo.stateName;
+                if (this.isHiddenStateName(stateName)) {
+                    return;
+                }
+                this._appendTimeline({
+                    sourceId,
+                    kind: "propagation-hop-limit",
+                    stateName,
+                    label: this._labelOf(event.absoluteAddress),
+                    detail: `hop ${event.hop} (tx ${event.transactionId})`,
+                    subscriberCount: null,
+                });
+                return;
+            }
+            case "contract:drift": {
+                // sidecar と live wcBindable の乖離。live が正本（wcstack-manifest-schema.md）。
+                // sidecarEvent / liveEvent は型上 optional（reason と結合されていない構造的
+                // 型付け）のため、欠落 payload でも "undefined" を表示しない防御を入れる。
+                const memberPart = event.member !== undefined ? `: ${event.member}` : "";
+                const eventPart = event.reason === "event-mismatch"
+                    ? ` (sidecar ${event.sidecarEvent ?? "?"} / live ${event.liveEvent ?? "?"})`
+                    : "";
+                this._appendTimeline({
+                    sourceId,
+                    kind: "contract-drift",
+                    stateName: null,
+                    label: event.tag,
+                    detail: `${event.reason}${memberPart}${eventPart}`,
+                    subscriberCount: null,
+                });
+                return;
+            }
+            case "contract:manifest-read":
+            case "contract:unsupported-extension": {
+                // 情報イベント。contract analyzer の戻り値 API から取得でき、timeline は
+                // 活動ログに絞る（static-wiring-dx-design.md §6 の行 4 種）。union に
+                // 載せることで「型に無いイベントを黙って捨てる」状態だけを解消する。
                 return;
             }
         }
@@ -1423,6 +1491,14 @@ class WcsDevtools extends HTMLElement {
             kind.title = entry.kind === "watch-error"
                 ? "a $watch threw; the runtime isolated it (console.error only)"
                 : "a $watch write chain hit the depth limit and was cut off";
+        }
+        // 伝播の打ち切りと契約 drift も「黙って起きる異常」なので warn に乗せる。
+        // suppressed / coalesced は定常動作（エコー抑止・合流）のため通常表示。
+        if (entry.kind === "propagation-hop-limit" || entry.kind === "contract-drift") {
+            kind.classList.add("warn");
+            kind.title = entry.kind === "propagation-hop-limit"
+                ? "a two-way propagation chain hit the hop limit and was cut off"
+                : "sidecar manifest drifted from the live wcBindable declaration (live wins)";
         }
         const label = document.createElement("span");
         label.className = "label";

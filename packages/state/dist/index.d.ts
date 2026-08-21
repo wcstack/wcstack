@@ -226,7 +226,12 @@ interface IFilterInfo {
     readonly args: string[];
     readonly filterFn: FilterFn;
 }
-interface IBindingInfo {
+/**
+ * バインディング式のパース結果（DOM 非依存の部分）。`@wcstack/state/parser` の
+ * ParseBindTextResult がこれをそのまま公開するため、Node 等の DOM lib 型を
+ * ここに足してはならない（足すなら IBindingInfo 側へ）。
+ */
+interface IParsedBinding {
     readonly propName: string;
     readonly propSegments: string[];
     readonly propModifiers: string[];
@@ -235,10 +240,12 @@ interface IBindingInfo {
     readonly stateName: string;
     readonly inFilters: IFilterInfo[];
     readonly outFilters: IFilterInfo[];
-    readonly node: Node;
-    readonly replaceNode: Node;
     readonly bindingType: BindingType;
     readonly uuid?: string | null;
+}
+interface IBindingInfo extends IParsedBinding {
+    readonly node: Node;
+    readonly replaceNode: Node;
 }
 
 interface IState {
@@ -691,6 +698,41 @@ interface IWcsManifest {
         };
         /** 構造ディレクティブ（`<template data-wcs="for: ...">` 等） */
         structuralDirectives: readonly string[];
+        /**
+         * 修飾子（`#` 後）の語彙。flags は値を取らない形（`#prevent`）、keyValue は
+         * `=` で値を取る形（`#init=element`）、eventNamePrefix は `on` + イベント名の形
+         * （`#onchange` — two-way / radio / checkbox のイベント名上書き。README「Modifiers」）。
+         * define.ts の定数が単一正本で、ランタイムの消費箇所も同じ定数に分岐する。
+         */
+        modifiers: {
+            flags: readonly string[];
+            keyValue: readonly string[];
+            eventNamePrefix: string;
+        };
+        /** リストインデックス参照名（`$1`..`$N`）。prefix + 1 始まり連番、maxDepth まで。 */
+        indexParam: {
+            prefix: string;
+            maxDepth: number;
+        };
+        /**
+         * bindingType 判別の語彙（parseBindTextsForElement の分岐と同一の定数から導出）。
+         * 判別順: else → spread → 構造ディレクティブ/radio/checkbox → eventToken・`on*`
+         * （event）→ prop。propNamespaces は左辺先頭セグメントの特殊 namespace で、
+         * apply 層のディスパッチキー集合との一致はテストが強制する。
+         * 既知の未収載: `radio` / `checkbox`（BindingType union のみが正本）。
+         */
+        bindingTypes: {
+            elseKeyword: string;
+            spread: string;
+            eventPropertyPrefix: string;
+            propNamespaces: {
+                eventToken: string;
+                command: string;
+                class: string;
+                attr: string;
+                style: string;
+            };
+        };
     };
     /** 組み込みフィルタ名（builtinFilters から自動導出＝実装が正本） */
     filters: string[];

@@ -1,14 +1,227 @@
-const _config = {
-    bindAttributeName: 'data-wcs',
-    tagNames: {
-        state: 'wcs-state'},
-    locale: 'en'};
-// backward compatible export (read-only usage)
-const config = _config;
+const DELIMITER = '.';
+const WILDCARD = '*';
+const MAX_WILDCARD_DEPTH = 128;
+// data-wcs バインディング構文 `[prop][#mod]: [path][@state][|filter...]` の区切り文字（単一正本）。
+// これらは「死守の壁（構文契約）」であり値は不変。manifest.syntax.delimiters で公開される。
+const BINDING_SEPARATOR = ';'; // 複数バインディングの区切り
+const PROP_VALUE_SEPARATOR = ':'; // 左辺(prop)と右辺(path)の区切り
+const MODIFIER_SEPARATOR = '#'; // prop と修飾子の区切り
+const STATE_NAME_SEPARATOR = '@'; // path と @stateName の区切り
+const FILTER_SEPARATOR = '|'; // フィルタパイプの区切り
+// bindingType 判別と左辺 namespace の語彙（単一正本）。manifest.syntax.bindingTypes で
+// 公開される。パーサ（parseBindTextsForElement）とイベント層はこの定数に分岐する。
+// apply 層のディスパッチマップ（apply/applyChange.ts の applyChangeByFirstSegment）の
+// キー集合との一致は __tests__/manifest.test.ts の drift テストが強制する —
+// manifest エントリ（DOM 非依存）から apply 層を import しないための分離。
+const ELSE_KEYWORD = 'else';
+const SPREAD_PROP = '...';
+const EVENT_PROP_PREFIX = 'on';
+const EVENT_TOKEN_NAMESPACE = 'eventToken';
+// リストインデックス参照名（`$1`..`$N`）の接頭辞（単一正本）。
+// manifest.syntax.indexParam で公開される。
+const INDEX_PARAM_PREFIX = '$';
+/**
+ * stackIndexByIndexName
+ * インデックス名からスタックインデックスへのマッピング
+ * $1 => 0
+ * $2 => 1
+ * :
+ * ${i + 1} => i
+ * i < MAX_WILDCARD_DEPTH
+ */
+const tmpIndexByIndexName = {};
+for (let i = 0; i < MAX_WILDCARD_DEPTH; i++) {
+    tmpIndexByIndexName[`${INDEX_PARAM_PREFIX}${i + 1}`] = i;
+}
+Object.freeze(tmpIndexByIndexName);
+
+const _cache = new Map();
+let id = 0;
+function getPathInfo(path) {
+    let pathInfo = _cache.get(path);
+    if (typeof pathInfo !== "undefined") {
+        return pathInfo;
+    }
+    pathInfo = Object.freeze(new PathInfo(path));
+    _cache.set(path, pathInfo);
+    return pathInfo;
+}
+class PathInfo {
+    id = ++id;
+    path;
+    segments;
+    lastSegment;
+    cumulativePaths;
+    cumulativePathSet;
+    cumulativePathInfos;
+    cumulativePathInfoSet;
+    parentPath;
+    wildcardPaths;
+    wildcardPathSet;
+    indexByWildcardPath;
+    wildcardPathInfos;
+    wildcardPathInfoSet;
+    wildcardParentPaths;
+    wildcardParentPathSet;
+    wildcardParentPathInfos;
+    wildcardParentPathInfoSet;
+    wildcardPositions;
+    lastWildcardPath;
+    lastWildcardInfo;
+    wildcardCount;
+    parentPathInfo;
+    constructor(path) {
+        // Helper to get or create StructuredPathInfo instances, avoiding redundant creation for self-reference
+        const getPattern = (_path) => {
+            return (path === _path) ? this : getPathInfo(_path);
+        };
+        // Split the pattern into individual path segments (e.g., "items.*.name" → ["items", "*", "name"])
+        const segments = path.split(".");
+        // Arrays to track all cumulative paths from root to each segment
+        const cumulativePaths = [];
+        const cumulativePathInfos = [];
+        // Arrays to track wildcard-specific information
+        const wildcardPaths = [];
+        const indexByWildcardPath = {}; // Maps wildcard path to its index position
+        const wildcardPathInfos = [];
+        const wildcardParentPaths = []; // Paths of parent segments for each wildcard
+        const wildcardParentPathInfos = [];
+        const wildcardPositions = [];
+        let currentPatternPath = "", prevPatternPath = "";
+        let wildcardCount = 0;
+        // Iterate through each segment to build cumulative paths and identify wildcards
+        for (let i = 0; i < segments.length; i++) {
+            currentPatternPath += segments[i];
+            // If this segment is a wildcard, track it with all wildcard-specific metadata
+            if (segments[i] === WILDCARD) {
+                wildcardPaths.push(currentPatternPath);
+                indexByWildcardPath[currentPatternPath] = wildcardCount; // Store wildcard's ordinal position
+                wildcardPathInfos.push(getPattern(currentPatternPath));
+                wildcardParentPaths.push(prevPatternPath); // Parent path is the previous cumulative path
+                wildcardParentPathInfos.push(getPattern(prevPatternPath));
+                wildcardPositions.push(i);
+                wildcardCount++;
+            }
+            // Track all cumulative paths for hierarchical navigation (e.g., "items", "items.*", "items.*.name")
+            cumulativePaths.push(currentPatternPath);
+            cumulativePathInfos.push(getPattern(currentPatternPath));
+            // Save current path as previous for next iteration, then add separator
+            prevPatternPath = currentPatternPath;
+            currentPatternPath += ".";
+        }
+        // Determine the deepest (last) wildcard path and the parent path of the entire pattern
+        const lastWildcardPath = wildcardPaths.length > 0 ? wildcardPaths[wildcardPaths.length - 1] : null;
+        const parentPath = cumulativePaths.length > 1 ? cumulativePaths[cumulativePaths.length - 2] : null;
+        // Assign all analyzed data to readonly properties
+        this.path = path;
+        this.segments = segments;
+        this.lastSegment = segments[segments.length - 1];
+        this.cumulativePaths = cumulativePaths;
+        this.cumulativePathSet = new Set(cumulativePaths); // Set for fast lookup
+        this.cumulativePathInfos = cumulativePathInfos;
+        this.cumulativePathInfoSet = new Set(cumulativePathInfos);
+        this.wildcardPaths = wildcardPaths;
+        this.wildcardPathSet = new Set(wildcardPaths);
+        this.indexByWildcardPath = indexByWildcardPath;
+        this.wildcardPathInfos = wildcardPathInfos;
+        this.wildcardPathInfoSet = new Set(wildcardPathInfos);
+        this.wildcardParentPaths = wildcardParentPaths;
+        this.wildcardParentPathSet = new Set(wildcardParentPaths);
+        this.wildcardParentPathInfos = wildcardParentPathInfos;
+        this.wildcardParentPathInfoSet = new Set(wildcardParentPathInfos);
+        this.wildcardPositions = wildcardPositions;
+        this.lastWildcardPath = lastWildcardPath;
+        this.lastWildcardInfo = lastWildcardPath ? getPattern(lastWildcardPath) : null;
+        this.parentPath = parentPath;
+        this.parentPathInfo = parentPath ? getPattern(parentPath) : null;
+        this.wildcardCount = wildcardCount;
+    }
+}
 
 function raiseError(message) {
     throw new Error(`[@wcstack/state] ${message}`);
 }
+
+const STRUCTURAL_BINDING_TYPE_SET = new Set([
+    "if",
+    "elseif",
+    "else",
+    "for",
+]);
+
+const _config = {
+    locale: 'en'};
+// backward compatible export (read-only usage)
+const config = _config;
+
+/**
+ * errorGuidance.ts — エラーメッセージへの self-fix 誘導（GTM 2-5 /
+ * docs/static-wiring-dx-design.md §3）。
+ *
+ * コンソールは「書き手（人間・AI とも）が誤った瞬間に必ず読む面」なので、
+ * (a) did-you-mean 候補 (b) lint への誘導 をエラーメッセージ自体に埋め込む。
+ * ここの関数は全て**エラーパスでのみ**呼ばれる — 正常系のコストはゼロ。
+ * auto.min.js に同梱されるため文字列は最小限に保つ（エラーパス専用モジュールの
+ * 遅延 import は `src/auto.ts` の SRI 自己完結制約で不可）。
+ *
+ * 診断 code の語彙はコンソール → lint → IDE の三面で共有する:
+ * メッセージ先頭の `[wcs/...]` は wcstack-intellisense / @wcstack/lint の
+ * 安定診断 code（packages/vscode-wcs/src/core/diagnostics.ts）と同一。
+ */
+/** 挿入・削除・置換の編集距離。長さ差が max を超えたら早期に max+1 を返す。 */
+function editDistance(a, b, max) {
+    if (Math.abs(a.length - b.length) > max) {
+        return max + 1;
+    }
+    const prev = new Array(b.length + 1);
+    const curr = new Array(b.length + 1);
+    for (let j = 0; j <= b.length; j++) {
+        prev[j] = j;
+    }
+    for (let i = 1; i <= a.length; i++) {
+        curr[0] = i;
+        for (let j = 1; j <= b.length; j++) {
+            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+            curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+        }
+        for (let j = 0; j <= b.length; j++) {
+            prev[j] = curr[j];
+        }
+    }
+    return prev[b.length];
+}
+/**
+ * 候補集合から編集距離 2 以内の最近傍を探し、` Did you mean "<best>"?` を返す。
+ * 該当なしは空文字。規準（距離 2・同距離は先勝ち・大小文字は畳んで比較）は
+ * lint の did-you-mean（ioNodeValidator の suggestion）と同じ — 三面で提案が
+ * 割れないように揃えている。動的キー等で候補が列挙できないサイトでは呼ばない
+ * = 誘導文のみに縮退（設計 §3 の縮退）。
+ */
+function didYouMean(input, candidates) {
+    // 空入力（`a|` の末尾パイプ等）に短い候補を提案しても無意味なので出さない。
+    if (input.length === 0) {
+        return "";
+    }
+    const folded = input.toLowerCase();
+    let best = null;
+    let bestDistance = 3;
+    for (const candidate of candidates) {
+        const distance = editDistance(folded, candidate.toLowerCase(), 2);
+        if (distance < bestDistance) {
+            best = candidate;
+            bestDistance = distance;
+        }
+    }
+    return best !== null ? ` Did you mean "${best}"?` : "";
+}
+/**
+ * lint への誘導（誘導付きメッセージ共通の一文）。
+ * **lint が実際にそのケースを検出するサイトにだけ付ける** — 検出しないケースに
+ * 付けると「エラー → lint 実行 → clean」の空振りで検証ループの信頼を毀損する
+ * （DCC 宣言・watch の一部 shape・構造型単独バインディング違反は lint 未検出のため
+ * 付けない。lint 側への検査追加は follow-up）。
+ */
+const LINT_HINT = " Validate statically: npx @wcstack/lint <file>.";
 
 /**
  * errorMessages.ts
@@ -913,234 +1126,327 @@ const builtinFilters = {
     "null": _null,
 };
 const outputBuiltinFilters = builtinFilters;
-
+const inputBuiltinFilters = builtinFilters;
+const builtinFiltersByFilterIOType = {
+    "input": inputBuiltinFilters,
+    "output": outputBuiltinFilters,
+};
 /**
- * filterMeta.ts — 組み込みフィルタの構造化メタデータ（単一正本・route-a A2-1）。
+ * Retrieves built-in filter function by name and options.
  *
- * これまで vscode-wcs（completionData.ts BUILTIN_FILTERS）が手で持っていたフィルタの
- * 引数仕様・型・説明を、実装側（@wcstack/state）に**正本として移設**したもの。
- * manifest.ts がこれを公開し、vscode-wcs はそれを消費して手リストを撤去できる。
- *
- * 完全性は __tests__/manifest.test.ts のドリフト検出が保証する
- * （filterMeta のキー集合 == builtinFilters のキー集合）。フィルタを追加して meta を
- * 書き忘れると CI が落ちる。
+ * @param name - Filter name
+ * @param options - Array of option strings
+ * @returns Function that takes FilterWithOptions and returns filter function
  */
-/** 組み込みフィルタ名 → 構造化メタデータ。キー集合は builtinFilters と一致しなければならない。 */
-const builtinFilterMeta = {
-    // 比較・論理
-    eq: { description: "等しいか比較", hasArgs: true, resultType: "boolean", acceptTypes: "any", minArgs: 1, maxArgs: 1, argTypes: ["any"] },
-    ne: { description: "異なるか比較", hasArgs: true, resultType: "boolean", acceptTypes: "any", minArgs: 1, maxArgs: 1, argTypes: ["any"] },
-    not: { description: "ブール値を反転", hasArgs: false, resultType: "boolean", acceptTypes: ["boolean"], minArgs: 0, maxArgs: 0 },
-    lt: { description: "より小さいか", hasArgs: true, resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
-    le: { description: "以下か", hasArgs: true, resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
-    gt: { description: "より大きいか", hasArgs: true, resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
-    ge: { description: "以上か", hasArgs: true, resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
-    // 算術
-    inc: { description: "加算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
-    dec: { description: "減算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
-    mul: { description: "乗算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
-    div: { description: "除算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
-    mod: { description: "剰余", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
-    abs: { description: "絶対値", hasArgs: false, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 0 },
-    clamp: { description: "範囲内に丸める (min,max)", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 2, maxArgs: 2, argTypes: ["number", "number"] },
-    // 数値フォーマット
-    fix: { description: "固定小数点表記", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
-    locale: { description: "ロケール形式で数値フォーマット", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["string"] },
-    // 文字列
-    uc: { description: "大文字に変換", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
-    lc: { description: "小文字に変換", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
-    cap: { description: "先頭文字を大文字に", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
-    trim: { description: "前後の空白を削除", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
-    slice: { description: "部分文字列 (start[,end])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "number"] },
-    substr: { description: "部分文字列 (pos,len)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "number"] },
-    pad: { description: "パディング (length[,char])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
-    rep: { description: "繰り返し (count)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
-    rev: { description: "文字順を反転", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
-    truncate: { description: "切り詰めて省略記号 (length[,suffix])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
-    join: { description: "配列を連結 ([separator])", hasArgs: true, resultType: "string", acceptTypes: ["array"], minArgs: 0, maxArgs: 1, argTypes: ["string"] },
-    // 数値パース・丸め
-    int: { description: "整数にパース", hasArgs: false, resultType: "number", acceptTypes: ["string", "number"], minArgs: 0, maxArgs: 0 },
-    float: { description: "浮動小数点数にパース", hasArgs: false, resultType: "number", acceptTypes: ["string", "number"], minArgs: 0, maxArgs: 0 },
-    round: { description: "四捨五入", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
-    floor: { description: "切り下げ", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
-    ceil: { description: "切り上げ", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
-    percent: { description: "パーセンテージ形式", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
-    // number だけでなく string も受ける。実用チェーンは fix / percent の後ろに繋がり、
-    // それらは既に string を返すため（builtinFilters.ts の unit を参照）
-    unit: { description: "単位（接尾辞）を付加", hasArgs: true, resultType: "string", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["string"] },
-    // 日付・時刻
-    date: { description: "ロケール形式の日付", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
-    time: { description: "ロケール形式の時刻", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
-    datetime: { description: "ロケール形式の日時", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
-    ymd: { description: "YYYY-MM-DD 形式", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
-    hms: { description: "HH:MM:SS 形式", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
-    // 真偽値・変換
-    falsy: { description: "偽値か判定", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
-    truthy: { description: "真値か判定", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
-    defaults: { description: "偽値の場合デフォルト値", hasArgs: true, resultType: "passthrough", acceptTypes: "any", minArgs: 1, maxArgs: 1, argTypes: ["any"] },
-    boolean: { description: "ブール値に変換", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
-    number: { description: "数値に変換", hasArgs: false, resultType: "number", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
-    string: { description: "文字列に変換", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
-    null: { description: "空文字列をnullに変換", hasArgs: false, resultType: "passthrough", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+const builtinFilterFn = (name, options) => (filters) => {
+    const filter = filters[name];
+    if (!filter) {
+        // lint の wcs/filter-unknown と同じ語彙・同じ did-you-mean 規準（三面同語彙）。
+        raiseError(`[wcs/filter-unknown] filter not found: ${name}.${didYouMean(name, Object.keys(filters))}${LINT_HINT}`);
+    }
+    return filter(options);
 };
 
-const STRUCTURAL_BINDING_TYPE_SET = new Set([
-    "if",
-    "elseif",
-    "else",
-    "for",
-]);
-
-const DELIMITER = '.';
-const WILDCARD = '*';
-const MAX_WILDCARD_DEPTH = 128;
-// data-wcs バインディング構文 `[prop][#mod]: [path][@state][|filter...]` の区切り文字（単一正本）。
-// これらは「死守の壁（構文契約）」であり値は不変。manifest.syntax.delimiters で公開される。
-const BINDING_SEPARATOR = ';'; // 複数バインディングの区切り
-const PROP_VALUE_SEPARATOR = ':'; // 左辺(prop)と右辺(path)の区切り
-const MODIFIER_SEPARATOR = '#'; // prop と修飾子の区切り
-const STATE_NAME_SEPARATOR = '@'; // path と @stateName の区切り
-const FILTER_SEPARATOR = '|'; // フィルタパイプの区切り
-// 修飾子（`#` 後）の語彙（単一正本）。manifest.syntax.modifiers で公開される。
-// フラグ形（`#prevent` — 値を取らない）とキー値形（`#init=element` — `=` で値を取る）。
-// 消費箇所（event/handler・BindingSession・twowayHandler・bindings/initialSync）は
-// この定数を参照する — 文字列リテラルの散在は tooling への収載漏れの温床だった
-// （docs/static-wiring-dx-design.md §2-2）。
-const MODIFIER_PREVENT = 'prevent';
-const MODIFIER_STOP = 'stop';
-const MODIFIER_READONLY = 'ro';
-const MODIFIER_FLAGS = Object.freeze([
-    MODIFIER_PREVENT, MODIFIER_STOP, MODIFIER_READONLY,
-]);
-const MODIFIER_KEY_INIT = 'init';
-const MODIFIER_KEY_SYNC = 'sync';
-const MODIFIER_KEYS = Object.freeze([
-    MODIFIER_KEY_INIT, MODIFIER_KEY_SYNC,
-]);
-// bindingType 判別と左辺 namespace の語彙（単一正本）。manifest.syntax.bindingTypes で
-// 公開される。パーサ（parseBindTextsForElement）とイベント層はこの定数に分岐する。
-// apply 層のディスパッチマップ（apply/applyChange.ts の applyChangeByFirstSegment）の
-// キー集合との一致は __tests__/manifest.test.ts の drift テストが強制する —
-// manifest エントリ（DOM 非依存）から apply 層を import しないための分離。
-const ELSE_KEYWORD = 'else';
-const SPREAD_PROP = '...';
-const EVENT_PROP_PREFIX = 'on';
-const EVENT_TOKEN_NAMESPACE = 'eventToken';
-const COMMAND_NAMESPACE = 'command';
-const CLASS_NAMESPACE = 'class';
-const ATTR_NAMESPACE = 'attr';
-const STYLE_NAMESPACE = 'style';
-// リストインデックス参照名（`$1`..`$N`）の接頭辞（単一正本）。
-// manifest.syntax.indexParam で公開される。
-const INDEX_PARAM_PREFIX = '$';
 /**
- * stackIndexByIndexName
- * インデックス名からスタックインデックスへのマッピング
- * $1 => 0
- * $2 => 1
- * :
- * ${i + 1} => i
- * i < MAX_WILDCARD_DEPTH
+ * フィルタ引数リストのパース。`filter(a, b)` の `a, b` 部分を受け取る。
+ *
+ * トリムの規則は「**クォートの外側だけ**」。`fix( 2 )` のような書き癖を吸収するために
+ * 素の引数は前後をトリムするが、クォートは「ここは literal」という宣言なので中身の
+ * 空白は残す。両方まとめてトリムしていたため `pad(5, ' ')` が空文字パディング
+ * （＝無変化）に化けており、空白区切りの `join(' / ')` も指定できなかった。
  */
-const tmpIndexByIndexName = {};
-for (let i = 0; i < MAX_WILDCARD_DEPTH; i++) {
-    tmpIndexByIndexName[`${INDEX_PARAM_PREFIX}${i + 1}`] = i;
+/** 引数 1 つを確定する。クォート由来の文字が入った範囲より外側だけをトリムする。 */
+function finalizeArg(text, firstQuoteStart, lastQuoteEnd) {
+    // 先頭側: 最初のクォート文字より前だけが削れる（クォートが無ければ全体が対象）
+    const startLimit = firstQuoteStart === -1 ? text.length : firstQuoteStart;
+    let start = 0;
+    while (start < startLimit && /\s/.test(text[start])) {
+        start++;
+    }
+    // 末尾側: 最後のクォート文字より後ろだけが削れる（クォートが無ければ全体が対象）
+    const endLimit = lastQuoteEnd === -1 ? 0 : lastQuoteEnd;
+    let end = text.length;
+    while (end > endLimit && /\s/.test(text[end - 1])) {
+        end--;
+    }
+    return text.slice(start, end);
 }
-Object.freeze(tmpIndexByIndexName);
-const STATE_CONNECTED_CALLBACK_NAME = "$connectedCallback";
-const STATE_DISCONNECTED_CALLBACK_NAME = "$disconnectedCallback";
-const STATE_UPDATED_CALLBACK_NAME = "$updatedCallback";
-const WEBCOMPONENT_STATE_READY_CALLBACK_NAME = "$stateReadyCallback";
-const STATE_BINDABLES_NAME = "$bindables";
-const STATE_COMMANDS_NAME = "$commands";
-const STATE_COMMAND_TOKENS_NAME = "$commandTokens";
-const STATE_COMMAND_NAMESPACE_NAME = "$command";
-const STATE_EVENT_TOKENS_NAME = "$eventTokens";
-const STATE_ON_NAME = "$on";
-const STATE_STREAMS_NAME = "$streams";
-const STATE_WATCH_NAME = "$watch";
-const STATE_LIST_KEYS_NAME = "$listKeys";
-const STATE_STREAM_STATUS_NAMESPACE_NAME = "$streamStatus";
-const STATE_STREAM_ERROR_NAMESPACE_NAME = "$streamError";
+function parseFilterArgs(argsText) {
+    const args = [];
+    let current = '';
+    let inQuote = null;
+    let hasQuote = false;
+    let firstQuoteStart = -1;
+    let lastQuoteEnd = -1;
+    const flush = () => {
+        args.push(finalizeArg(current, firstQuoteStart, lastQuoteEnd));
+        current = '';
+        hasQuote = false;
+        firstQuoteStart = -1;
+        lastQuoteEnd = -1;
+    };
+    for (let i = 0; i < argsText.length; i++) {
+        const char = argsText[i];
+        if (inQuote) {
+            if (char === inQuote) {
+                inQuote = null;
+            }
+            else {
+                if (firstQuoteStart === -1) {
+                    firstQuoteStart = current.length;
+                }
+                current += char;
+                lastQuoteEnd = current.length;
+            }
+        }
+        else if (char === '"' || char === "'") {
+            inQuote = char;
+            hasQuote = true;
+        }
+        else if (char === ',') {
+            flush();
+        }
+        else {
+            current += char;
+        }
+    }
+    const last = finalizeArg(current, firstQuoteStart, lastQuoteEnd);
+    if (last || hasQuote) {
+        args.push(last);
+    }
+    return args;
+}
 
-/**
- * manifest.ts — `<wcs-state>` の構文・フィルタ・予約名を機械可読な単一正本として公開する。
- *
- * 目的（route-a A2-1）: vscode-wcs（wcstack-intellisense）が現在ハードコードで二重実装している
- * 「フィルタ一覧・構文区切り・予約名」を、state 側の実装から導出した manifest に一本化し、
- * 手作業同期によるドリフトを構造的に断つための土台。
- *
- * 設計:
- * - `filters` は実装（builtinFilters の Record キー）から **自動導出**＝実装が唯一の正本。
- * - 構文・予約名は config / define.ts の定数から導出。
- * - 将来 `dist/wcs-manifest.json` としてビルド時に書き出し、vscode-wcs がそれを読む形に発展させる。
- * - ドリフト検出テスト（__tests__/manifest.test.ts）が、フィルタ集合の golden と実装の一致を CI で保証する。
- */
-/** マニフェストのバージョン（構造を変えたら上げる）。 */
-const WCS_MANIFEST_VERSION = 1;
-/** 機械可読な単一正本を返す。vscode-wcs はこれを消費する想定。 */
-function getWcsManifest() {
+const filterFnByKey = new Map();
+// format: filterName(arg1,arg2) or filterName
+function parseFilters(filterTextList, filterIOType) {
+    const builtinFilters = builtinFiltersByFilterIOType[filterIOType];
+    const filters = filterTextList.map((filterText) => {
+        const openParenIndex = filterText.indexOf('(');
+        const closeParenIndex = filterText.lastIndexOf(')');
+        // check parentheses
+        if (openParenIndex !== -1 && closeParenIndex === -1) {
+            raiseError(`Invalid filter format: missing closing parenthesis in "${filterText}"`);
+        }
+        if (closeParenIndex !== -1 && openParenIndex === -1) {
+            raiseError(`Invalid filter format: missing opening parenthesis in "${filterText}"`);
+        }
+        if (openParenIndex === -1) {
+            // no arguments
+            const filterName = filterText.trim();
+            const filterKey = `${filterName}():${filterIOType}`;
+            let filterFn = filterFnByKey.get(filterKey);
+            if (typeof filterFn === 'undefined') {
+                filterFn = builtinFilterFn(filterName, [])(builtinFilters);
+                filterFnByKey.set(filterKey, filterFn);
+            }
+            return {
+                filterName: filterName,
+                args: [],
+                filterFn: filterFn,
+            };
+        }
+        else {
+            const argsText = filterText.substring(openParenIndex + 1, closeParenIndex);
+            const filterName = filterText.substring(0, openParenIndex).trim();
+            const args = parseFilterArgs(argsText);
+            const filterKey = `${filterName}(${args.join(',')}):${filterIOType}`;
+            let filterFn = filterFnByKey.get(filterKey);
+            if (typeof filterFn === 'undefined') {
+                filterFn = builtinFilterFn(filterName, args)(builtinFilters);
+                filterFnByKey.set(filterKey, filterFn);
+            }
+            return {
+                filterName,
+                args,
+                filterFn,
+            };
+        }
+    });
+    return filters;
+}
+
+const trimFn = (s) => s.trim();
+
+const cacheFilterInfos$1 = new Map();
+// format: propName#moodifier1,modifier2
+// propName-format: path.to.property (e.g., textContent, style.color, not include :)
+// special path: 
+//   'attr.attributeName' for attributes (e.g., attr.href, attr.data-id)
+//   'style.propertyName' for style properties (e.g., style.backgroundColor, style.fontSize)
+//   'class.className' for class names (e.g., class.active, class.hidden)
+//   'onclick', 'onchange' etc. for event listeners
+function parsePropPart(propPart) {
+    const pos = propPart.indexOf(FILTER_SEPARATOR);
+    let propText = '';
+    let filterTexts = [];
+    let filtersText = '';
+    let filters = [];
+    if (pos !== -1) {
+        propText = propPart.slice(0, pos).trim();
+        filtersText = propPart.slice(pos + 1).trim();
+        if (cacheFilterInfos$1.has(filtersText)) {
+            filters = cacheFilterInfos$1.get(filtersText);
+        }
+        else {
+            filterTexts = filtersText.split(FILTER_SEPARATOR).map(trimFn);
+            filters = parseFilters(filterTexts, "input");
+            cacheFilterInfos$1.set(filtersText, filters);
+        }
+    }
+    else {
+        propText = propPart.trim();
+    }
+    const [propName, propModifiersText] = propText.split(MODIFIER_SEPARATOR).map(trimFn);
+    const propSegments = propName.split(DELIMITER).map(trimFn);
+    const propModifiers = propModifiersText
+        ? propModifiersText.split(',').map(trimFn)
+        : [];
     return {
-        version: WCS_MANIFEST_VERSION,
-        syntax: {
-            bindAttribute: config.bindAttributeName,
-            tagName: config.tagNames.state,
-            pathDelimiter: DELIMITER,
-            wildcard: WILDCARD,
-            delimiters: {
-                binding: BINDING_SEPARATOR,
-                propValue: PROP_VALUE_SEPARATOR,
-                modifier: MODIFIER_SEPARATOR,
-                stateName: STATE_NAME_SEPARATOR,
-                filter: FILTER_SEPARATOR,
-            },
-            // 正本 STRUCTURAL_BINDING_TYPE_SET から導出（手書きの二重定義を排除）。
-            structuralDirectives: Array.from(STRUCTURAL_BINDING_TYPE_SET),
-            modifiers: {
-                flags: MODIFIER_FLAGS,
-                keyValue: MODIFIER_KEYS,
-                eventNamePrefix: EVENT_PROP_PREFIX,
-            },
-            indexParam: {
-                prefix: INDEX_PARAM_PREFIX,
-                maxDepth: MAX_WILDCARD_DEPTH,
-            },
-            bindingTypes: {
-                elseKeyword: ELSE_KEYWORD,
-                spread: SPREAD_PROP,
-                eventPropertyPrefix: EVENT_PROP_PREFIX,
-                propNamespaces: {
-                    eventToken: EVENT_TOKEN_NAMESPACE,
-                    command: COMMAND_NAMESPACE,
-                    class: CLASS_NAMESPACE,
-                    attr: ATTR_NAMESPACE,
-                    style: STYLE_NAMESPACE,
-                },
-            },
-        },
-        // 実装（Record のキー）から自動導出。手リストを持たない＝ドリフトの構造的排除。
-        filters: Object.keys(outputBuiltinFilters),
-        filterMeta: builtinFilterMeta,
-        reservedLifecycle: [
-            STATE_CONNECTED_CALLBACK_NAME,
-            STATE_DISCONNECTED_CALLBACK_NAME,
-            STATE_UPDATED_CALLBACK_NAME,
-            WEBCOMPONENT_STATE_READY_CALLBACK_NAME,
-        ],
-        reservedStateApi: [
-            STATE_BINDABLES_NAME,
-            STATE_COMMANDS_NAME,
-            STATE_COMMAND_TOKENS_NAME,
-            STATE_COMMAND_NAMESPACE_NAME,
-            STATE_EVENT_TOKENS_NAME,
-            STATE_ON_NAME,
-            STATE_STREAMS_NAME,
-            STATE_WATCH_NAME,
-            STATE_LIST_KEYS_NAME,
-            STATE_STREAM_STATUS_NAMESPACE_NAME,
-            STATE_STREAM_ERROR_NAMESPACE_NAME,
-        ],
+        propName,
+        propSegments,
+        propModifiers,
+        inFilters: filters,
     };
 }
 
-export { STRUCTURAL_BINDING_TYPE_SET, WCS_MANIFEST_VERSION, builtinFilterMeta, getWcsManifest };
+const cacheFilterInfos = new Map();
+// format: statePath@stateName|filter|filter
+// statePath-format: path.to.property (e.g., user.name.first, users.*.name, users.0.name, not include @)
+// stateName: optional, default is 'default'
+// filters-format: filterName or filterName(arg1,arg2)
+function parseStatePart(statePart) {
+    const pos = statePart.indexOf(FILTER_SEPARATOR);
+    let stateAndPath = '';
+    let filterTexts = [];
+    let filtersText = '';
+    let filters = [];
+    if (pos !== -1) {
+        stateAndPath = statePart.slice(0, pos).trim();
+        filtersText = statePart.slice(pos + 1).trim();
+        if (cacheFilterInfos.has(filtersText)) {
+            filters = cacheFilterInfos.get(filtersText);
+        }
+        else {
+            filterTexts = filtersText.split(FILTER_SEPARATOR).map(trimFn);
+            filters = parseFilters(filterTexts, "output");
+            cacheFilterInfos.set(filtersText, filters);
+        }
+    }
+    else {
+        stateAndPath = statePart.trim();
+    }
+    const [statePathName, stateName = 'default'] = stateAndPath.split(STATE_NAME_SEPARATOR).map(trimFn);
+    const pathInfo = getPathInfo(statePathName);
+    return {
+        stateName,
+        statePathName,
+        statePathInfo: pathInfo,
+        outFilters: filters,
+    };
+}
+
+// format: propPart:statePart; propPart:statePart; ...
+// special-propPart:
+//   if: statePart (single binding for conditional rendering)
+//   else: (single binding for conditional rendering, and statePart is ignored)
+//   elseif: statePart only (single binding for conditional rendering)
+//   for: statePart only (single binding for loop rendering)
+//   onclick: statePart, onchange: statePart etc. (event listeners)
+//   ...: statePart (spread — expand wcBindable properties+inputs of target object)
+function parseBindTextsForElement(bindText) {
+    const [...bindTexts] = bindText.split(BINDING_SEPARATOR).map(trimFn).filter(s => s.length > 0);
+    const results = bindTexts.map((bindText) => {
+        const separatorIndex = bindText.indexOf(PROP_VALUE_SEPARATOR);
+        if (separatorIndex === -1) {
+            raiseError(`Invalid bindText: "${bindText}". Missing ':' separator between propPart and statePart.`);
+        }
+        const propPart = bindText.slice(0, separatorIndex).trim();
+        const statePart = bindText.slice(separatorIndex + 1).trim();
+        if (propPart === ELSE_KEYWORD) {
+            const pathInfo = getPathInfo('#else');
+            return {
+                propName: ELSE_KEYWORD,
+                propSegments: [ELSE_KEYWORD],
+                propModifiers: [],
+                statePathName: '#else',
+                statePathInfo: pathInfo,
+                stateName: '',
+                inFilters: [],
+                outFilters: [],
+                bindingType: 'else',
+            };
+        }
+        else if (propPart === SPREAD_PROP) {
+            const stateResult = parseStatePart(statePart);
+            if (stateResult.outFilters.length > 0) {
+                raiseError(`Invalid spread binding "${bindText}": filters are not allowed on spread targets.`);
+            }
+            if (stateResult.statePathName.length === 0) {
+                raiseError(`Invalid spread binding "${bindText}": spread target path is required.`);
+            }
+            return {
+                propName: SPREAD_PROP,
+                propSegments: [SPREAD_PROP],
+                propModifiers: [],
+                inFilters: [],
+                ...stateResult,
+                bindingType: 'spread',
+            };
+        }
+        else if (propPart === 'if'
+            || propPart === 'elseif'
+            || propPart === 'for'
+            || propPart === 'radio'
+            || propPart === 'checkbox') {
+            const stateResult = parseStatePart(statePart);
+            return {
+                propName: propPart,
+                propSegments: [propPart],
+                propModifiers: [],
+                inFilters: [],
+                ...stateResult,
+                bindingType: propPart,
+            };
+        }
+        else {
+            const stateResult = parseStatePart(statePart);
+            const propResult = parsePropPart(propPart);
+            // eventToken.<prop>: <name> は要素 dispatch を state へ流す pub/sub 配線。
+            // 値適用ではないため bindingType 'event' として listener attach 経路に乗せる。
+            if (propResult.propSegments[0] === EVENT_TOKEN_NAMESPACE) {
+                return {
+                    ...propResult,
+                    ...stateResult,
+                    bindingType: 'event',
+                };
+            }
+            if (propResult.propSegments[0].startsWith(EVENT_PROP_PREFIX)) {
+                return {
+                    ...propResult,
+                    ...stateResult,
+                    bindingType: 'event',
+                };
+            }
+            else {
+                return {
+                    ...propResult,
+                    ...stateResult,
+                    bindingType: 'prop',
+                };
+            }
+        }
+    });
+    // check for sigle binding for 'if', 'elseif', 'else', 'for'
+    if (results.length > 1) {
+        const isIncludeSingleBinding = results.some(r => STRUCTURAL_BINDING_TYPE_SET.has(r.bindingType));
+        if (isIncludeSingleBinding) {
+            // LINT_HINT は付けない: 単独バインディング検査は lint 側に未実装で、誘導が
+            // 空振りする（lint への検査追加は follow-up）。
+            raiseError(`[wcs/template-syntax] Invalid bindText: "${bindText}". 'if', 'elseif', 'else', and 'for' bindings must be single binding. Put the structural binding alone in its own data-wcs (e.g. <template data-wcs="for: items">).`);
+        }
+    }
+    return results;
+}
+
+export { getPathInfo, parseBindTextsForElement };

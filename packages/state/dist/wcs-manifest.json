@@ -17,7 +17,35 @@
       "elseif",
       "else",
       "for"
-    ]
+    ],
+    "modifiers": {
+      "flags": [
+        "prevent",
+        "stop",
+        "ro"
+      ],
+      "keyValue": [
+        "init",
+        "sync"
+      ],
+      "eventNamePrefix": "on"
+    },
+    "indexParam": {
+      "prefix": "$",
+      "maxDepth": 128
+    },
+    "bindingTypes": {
+      "elseKeyword": "else",
+      "spread": "...",
+      "eventPropertyPrefix": "on",
+      "propNamespaces": {
+        "eventToken": "eventToken",
+        "command": "command",
+        "class": "class",
+        "attr": "attr",
+        "style": "style"
+      }
+    }
   },
   "filters": [
     "eq",
