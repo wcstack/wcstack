@@ -21,6 +21,7 @@
 
 import { isCommandToken } from "../command/CommandToken";
 import { ICommandToken } from "../command/types";
+import { didYouMean } from "../errorGuidance";
 import { getCustomElement } from "../getCustomElement";
 import { getCustomElementRegistry } from "../platform/customElementRegistry";
 import { readBindableDeclaration, ReadBindableResult } from "../protocol/wcBindableReader";
@@ -71,7 +72,8 @@ export function applyChangeToCommand(binding: IBindingInfo, _context: IApplyCont
     raiseError(`command binding requires a wc-bindable custom element. <${element.tagName.toLowerCase()}> is not wc-bindable.`);
   }
   if (!bindable.declaredCommands.has(methodName)) {
-    raiseError(`Command "${methodName}" is not declared in wcBindable.commands of <${element.tagName.toLowerCase()}>.`);
+    // eventTokenHandler の property 検証と対双の did-you-mean（設計 §3）。
+    raiseError(`Command "${methodName}" is not declared in wcBindable.commands of <${element.tagName.toLowerCase()}>.${didYouMean(methodName, bindable.declaredCommands.keys())}`);
   }
 
   // ここまで来たら旧解除して新 subscribe に切り替える。

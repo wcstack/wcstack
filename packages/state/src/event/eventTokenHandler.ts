@@ -28,6 +28,7 @@ import { EVENT_TOKEN_NAMESPACE, MODIFIER_PREVENT, MODIFIER_STOP } from "../defin
 import { getLoopContextByNode } from "../list/loopContextByNode";
 import { setLoopContextSymbol } from "../proxy/symbols";
 import { getScopedIndexes } from "../list/wildcardLevel";
+import { didYouMean, LINT_HINT } from "../errorGuidance";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { getCustomElement } from "../getCustomElement";
@@ -85,7 +86,7 @@ export function attachEventTokenHandler(binding: IBindingInfo): boolean {
   }
   const propDesc = bindable.knownProperties.get(propertyName);
   if (typeof propDesc === "undefined") {
-    raiseError(`Property "${propertyName}" is not declared in wcBindable.properties of <${element.tagName.toLowerCase()}>.`);
+    raiseError(`Property "${propertyName}" is not declared in wcBindable.properties of <${element.tagName.toLowerCase()}>.${didYouMean(propertyName, bindable.knownProperties.keys())}`);
   }
   const eventName = propDesc.event;
 
@@ -103,7 +104,8 @@ export function attachEventTokenHandler(binding: IBindingInfo): boolean {
       raiseError(`State element with name "${stateName}" not found for eventToken handler.`);
     }
     if (!stateElement.eventTokenNames.has(tokenName)) {
-      raiseError(`eventToken "${tokenName}" is not declared in $eventTokens of state "${stateName}".`);
+      // lint も同じケースを wcs/token-undeclared で検出する（三面同語彙）。
+      raiseError(`[wcs/token-undeclared] eventToken "${tokenName}" is not declared in $eventTokens of state "${stateName}".${didYouMean(tokenName, stateElement.eventTokenNames)}${LINT_HINT}`);
     }
     const loopContext = getLoopContextByNode(element);
     stateElement.createStateAsync("writable", async (state) => {

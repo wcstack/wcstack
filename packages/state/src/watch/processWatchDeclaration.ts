@@ -21,6 +21,7 @@
 import { getPathInfo } from "../address/PathInfo";
 import type { IStateElement } from "../components/types";
 import { MAX_WILDCARD_DEPTH, STATE_NAME_SEPARATOR, STATE_WATCH_NAME } from "../define";
+import { LINT_HINT } from "../errorGuidance";
 import { raiseError } from "../raiseError";
 import type { IState } from "../types";
 import { setWatchEntries } from "./watchRegistry";
@@ -42,41 +43,43 @@ export function processWatchDeclaration(
     return null;
   }
   if (typeof declared !== "object" || declared === null) {
-    raiseError(`${STATE_WATCH_NAME} must be an object mapping state paths to handler functions.`);
+    // 非オブジェクト形は lint 側では候補ゼロ扱いで検出されないため LINT_HINT なし
+    // （以下、lint が実際に検出する shape（非関数・$ 始まり・@ 越境・空セグメント）にだけ付ける）。
+    raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} must be an object mapping state paths to handler functions.`);
   }
   const entries = new Map<string, IWatchEntry>();
   const paths = new Set<string>();
   let order = 0;
   for (const [path, handler] of Object.entries(declared as Record<string, unknown>)) {
     if (typeof handler !== "function") {
-      raiseError(`${STATE_WATCH_NAME} entry "${path}" must be a function.`);
+      raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" must be a function.${LINT_HINT}`);
     }
     if (path.length === 0) {
-      raiseError(`${STATE_WATCH_NAME} entry name must be a non-empty state path.`);
+      raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry name must be a non-empty state path.`);
     }
     if (path.startsWith("$")) {
-      raiseError(`${STATE_WATCH_NAME} entry "${path}" must not start with "$" (reserved namespace).`);
+      raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" must not start with "$" (reserved namespace).${LINT_HINT}`);
     }
     // 越境 watch は不採用（設計 D8）。他 state のアドレスは発火対象にしないため、
     // `@stateName` 付きのパスは受け取った時点で落とす（黙って発火しないより良い）。
     if (path.includes(STATE_NAME_SEPARATOR)) {
-      raiseError(`${STATE_WATCH_NAME} entry "${path}" must not target another state ("${STATE_NAME_SEPARATOR}" is not allowed); watch only paths of its own state.`);
+      raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" must not target another state ("${STATE_NAME_SEPARATOR}" is not allowed); watch only paths of its own state.${LINT_HINT}`);
     }
     // Object.prototype の継承名は `path in state` 系の判定を汚すため一律拒否する
     // （processStreamsDeclaration と同じ防衛線）。
     if (path in Object.prototype) {
-      raiseError(`${STATE_WATCH_NAME} entry "${path}" must not be a property name inherited from Object.prototype (e.g. "__proto__", "constructor").`);
+      raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" must not be a property name inherited from Object.prototype (e.g. "__proto__", "constructor").`);
     }
     const pathInfo = getPathInfo(path);
     // 空セグメント（"a..b" / 先頭・末尾の "."）は getPathInfo が黙って受理してしまうため、
     // ここで落とす。放置すると解決不能なアドレスを依存グラフへ登録することになる。
     for (const segment of pathInfo.segments) {
       if (segment.length === 0) {
-        raiseError(`${STATE_WATCH_NAME} entry "${path}" has an empty path segment.`);
+        raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" has an empty path segment.${LINT_HINT}`);
       }
     }
     if (pathInfo.wildcardCount > MAX_WILDCARD_DEPTH) {
-      raiseError(`${STATE_WATCH_NAME} entry "${path}" exceeds the maximum wildcard depth (${MAX_WILDCARD_DEPTH}).`);
+      raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" exceeds the maximum wildcard depth (${MAX_WILDCARD_DEPTH}).`);
     }
     entries.set(path, {
       path,

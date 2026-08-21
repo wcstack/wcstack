@@ -15,6 +15,7 @@
  * - Dynamic retrieval of filter functions from filter names and options via builtinFilterFn
  */
 import { config } from "../config.js";
+import { didYouMean, LINT_HINT } from "../errorGuidance.js";
 import { raiseError } from "../raiseError.js";
 import { optionMustBeNumber, optionsRequired, valueMustBeArray, valueMustBeBoolean, valueMustBeDate, valueMustBeNumber } from "./errorMessages.js";
 import { FilterFn, FilterWithOptions } from "./types";
@@ -799,7 +800,8 @@ export const builtinFiltersByFilterIOType = {
 export const builtinFilterFn = (name:string, options: string[]) => (filters: FilterWithOptions) => {
   const filter = filters[name];
   if (!filter) {
-    raiseError(`filter not found: ${name}`);
+    // lint の wcs/filter-unknown と同じ語彙・同じ did-you-mean 規準（三面同語彙）。
+    raiseError(`[wcs/filter-unknown] filter not found: ${name}.${didYouMean(name, Object.keys(filters))}${LINT_HINT}`);
   }
   return filter(options);
 }
