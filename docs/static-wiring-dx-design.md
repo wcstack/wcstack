@@ -92,7 +92,9 @@ vscode-wcs の補完・hover・診断はこれらを手書きしているため�
 GTM 2-5 で「lint 実行 0/9 の壁を破る本命」と認定済み・未実装のものを実装する。コンソールは「AI が誤った瞬間に必ず読む唯一の push 型チャネル」であり、人間の DX も同時に上がる。
 
 - **埋め込み内容**: (a) did-you-mean（編集距離 2。`ioNodeValidator.ts` の実装を state 側に小さく複製）(b) 正しい形の一行例 (c) `npx @wcstack/lint` への言及。
-- **埋め込み先の raiseError サイト**（実在確認済み): 構造型の単独バインディング違反（`parseBindTextsForElement.ts:100-105`）、`$watch` 宣言検証（`watch/processWatchDeclaration.ts:50-91`）、DCC 宣言検証（`dcc/processDccDeclarations.ts`）、wcBindable 重複棄却（`protocol/wcBindableReader.ts:118-129`）。
+- **埋め込み先の raiseError サイト**（実在確認済み): 構造型の単独バインディング違反（`parseBindTextsForElement.ts:100-105`）、`$watch` 宣言検証（`watch/processWatchDeclaration.ts:50-91`）、DCC 宣言検証（`dcc/processDccDeclarations.ts`）、未知フィルタ・eventToken/command/`$on` の宣言不一致（候補が列挙できる did-you-mean の本命サイト）。
+  - **訂正（実装時の実読）**: 当初挙げていた wcBindable 重複棄却（`protocol/wcBindableReader.ts`）は **raiseError せず沈黙 null を返す契約**（かつ AUTO-GENERATED の conformance mirror）のため対象外。この「宣言全体が警告なしで丸ごと死ぬ」経路の可視化は別施策（配線カバレッジ §4 側）。
+- **lint 誘導の精度原則**（実装時に確立）: `npx @wcstack/lint` への誘導文は **lint が実際にそのケースを検出するサイトにだけ**付ける。検出しないケースに付けると「エラー → lint 実行 → clean」の空振りで generate→validate→fix ループ自体の信頼を毀損する。`wcs/*` code 前置（三面同語彙）は検出可否と独立に付けてよい。lint 未検出のケース（構造型の単独バインディング違反・watch の非オブジェクト形など）は lint 側へ検査を追加してから誘導を戻す。
 - **診断 code の共有語彙**: コンソール→lint→IDE の三面で同じ `wcs/xxx` code を表記し、AI がエラー文からそのまま lint の診断に接続できるようにする。
 - **制約**: エラーパスのみで文字列構築（正常系ゼロコスト契約に非衝突）。メッセージは `auto.min.js` サイズに乗る。**エラーパス専用モジュールの遅延 import は不可**（`src/auto.ts` は `./exports` 以外を import できない — SRI 自己完結制約、[sri.md](./sri.md)）。文字列は inline に留め、量を絞る。
 - 動的キー・`$resolve` 組み立てパスでは候補が出せない → did-you-mean を省略し誘導文のみに縮退。
