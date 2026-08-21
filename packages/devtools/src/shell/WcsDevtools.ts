@@ -819,6 +819,14 @@ export class WcsDevtools extends HTMLElement {
         ? "a $watch threw; the runtime isolated it (console.error only)"
         : "a $watch write chain hit the depth limit and was cut off";
     }
+    // 伝播の打ち切りと契約 drift も「黙って起きる異常」なので warn に乗せる。
+    // suppressed / coalesced は定常動作（エコー抑止・合流）のため通常表示。
+    if (entry.kind === "propagation-hop-limit" || entry.kind === "contract-drift") {
+      kind.classList.add("warn");
+      kind.title = entry.kind === "propagation-hop-limit"
+        ? "a two-way propagation chain hit the hop limit and was cut off"
+        : "sidecar manifest drifted from the live wcBindable declaration (live wins)";
+    }
     const label = document.createElement("span");
     label.className = "label";
     const stateName = entry.stateName !== null ? `@${entry.stateName}` : "";
