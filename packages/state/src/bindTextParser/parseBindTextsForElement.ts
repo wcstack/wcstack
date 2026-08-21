@@ -7,6 +7,7 @@ import {
   PROP_VALUE_SEPARATOR,
   SPREAD_PROP,
 } from "../define.js";
+import { LINT_HINT } from "../errorGuidance.js";
 import { raiseError } from "../raiseError.js";
 import { STRUCTURAL_BINDING_TYPE_SET } from "../structural/define.js";
 import { parsePropPart } from "./parsePropPart.js";
@@ -107,9 +108,9 @@ export function parseBindTextsForElement(bindText: string): ParseBindTextResult[
   if (results.length > 1) {
     const isIncludeSingleBinding = results.some(r => STRUCTURAL_BINDING_TYPE_SET.has(r.bindingType));
     if (isIncludeSingleBinding) {
-      // LINT_HINT は付けない: 単独バインディング検査は lint 側に未実装で、誘導が
-      // 空振りする（lint への検査追加は follow-up）。
-      raiseError(`[wcs/template-syntax] Invalid bindText: "${bindText}". 'if', 'elseif', 'else', and 'for' bindings must be single binding. Put the structural binding alone in its own data-wcs (e.g. <template data-wcs="for: items">).`);
+      // lint 側の単独バインディング検査（bindingValidator の structuralMustBeSingle）が
+      // 同じケースを検出するため誘導を付ける（三面同語彙）。
+      raiseError(`[wcs/template-syntax] Invalid bindText: "${bindText}". 'if', 'elseif', 'else', and 'for' bindings must be single binding. Put the structural binding alone in its own data-wcs (e.g. <template data-wcs="for: items">).${LINT_HINT}`);
     }
   }
   return results;
