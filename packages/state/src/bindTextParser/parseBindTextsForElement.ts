@@ -100,7 +100,9 @@ export function parseBindTextsForElement(bindText: string): ParseBindTextResult[
   if (results.length > 1) {
     const isIncludeSingleBinding = results.some(r => STRUCTURAL_BINDING_TYPE_SET.has(r.bindingType));
     if (isIncludeSingleBinding) {
-      raiseError(`Invalid bindText: "${bindText}". 'if', 'elseif', 'else', and 'for' bindings must be single binding.`);
+      // LINT_HINT は付けない: 単独バインディング検査は lint 側に未実装で、誘導が
+      // 空振りする（lint への検査追加は follow-up）。
+      raiseError(`[wcs/template-syntax] Invalid bindText: "${bindText}". 'if', 'elseif', 'else', and 'for' bindings must be single binding. Put the structural binding alone in its own data-wcs (e.g. <template data-wcs="for: items">).`);
     }
   }
   return results;

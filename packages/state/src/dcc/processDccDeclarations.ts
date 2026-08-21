@@ -17,9 +17,28 @@
  */
 
 import { STATE_BINDABLES_NAME, STATE_COMMANDS_NAME, STATE_STREAMS_NAME } from "../define";
+import { didYouMean } from "../errorGuidance";
 import { getAllPropertyDescriptors } from "../getAllPropertyDescriptors";
 import { raiseError } from "../raiseError";
 import { IState } from "../types";
+
+/**
+ * did-you-mean の候補（エラーパス専用）。`$` 予約名と継承 `constructor` を除き、
+ * `$bindables` には値プロパティだけ・`$commands` にはメソッドだけを提案する
+ * （逆側を提案すると次は「is a method / is not a method」エラーに嵌まるため）。
+ */
+function dccCandidateNames(
+  descriptors: Record<string, PropertyDescriptor>,
+  kind: "value" | "method",
+): string[] {
+  return Object.keys(descriptors).filter((key) => {
+    if (key.startsWith("$") || key === "constructor") {
+      return false;
+    }
+    const isMethod = typeof descriptors[key].value === "function";
+    return kind === "method" ? isMethod : !isMethod;
+  });
+}
 
 function readNameList(state: IState, declarationName: string): string[] | null {
   const declared = (state as Record<string, unknown>)[declarationName];
@@ -86,7 +105,7 @@ export function processDccDeclarations(state: IState): IDccDeclarations {
         streamBackedBindables.push(name);
         continue;
       }
-      raiseError(`${STATE_BINDABLES_NAME} entry "${name}" is not declared on the state.`);
+      raiseError(`${STATE_BINDABLES_NAME} entry "${name}" is not declared on the state.${didYouMean(name, dccCandidateNames(descriptors, "value"))}`);
     }
     if (typeof descriptor.value === "function") {
       raiseError(`${STATE_BINDABLES_NAME} entry "${name}" is a method. Declare it in ${STATE_COMMANDS_NAME} instead.`);
@@ -96,7 +115,7 @@ export function processDccDeclarations(state: IState): IDccDeclarations {
   for (const name of commands) {
     const descriptor = descriptors[name];
     if (typeof descriptor === "undefined") {
-      raiseError(`${STATE_COMMANDS_NAME} entry "${name}" is not declared on the state.`);
+      raiseError(`${STATE_COMMANDS_NAME} entry "${name}" is not declared on the state.${didYouMean(name, dccCandidateNames(descriptors, "method"))}`);
     }
     if (typeof descriptor.value !== "function") {
       raiseError(`${STATE_COMMANDS_NAME} entry "${name}" is not a method. Declare it in ${STATE_BINDABLES_NAME} instead.`);
