@@ -1,5 +1,12 @@
 import { getPathInfo } from "../address/PathInfo.js";
-import { BINDING_SEPARATOR, PROP_VALUE_SEPARATOR } from "../define.js";
+import {
+  BINDING_SEPARATOR,
+  ELSE_KEYWORD,
+  EVENT_PROP_PREFIX,
+  EVENT_TOKEN_NAMESPACE,
+  PROP_VALUE_SEPARATOR,
+  SPREAD_PROP,
+} from "../define.js";
 import { raiseError } from "../raiseError.js";
 import { STRUCTURAL_BINDING_TYPE_SET } from "../structural/define.js";
 import { parsePropPart } from "./parsePropPart.js";
@@ -25,11 +32,11 @@ export function parseBindTextsForElement(bindText: string): ParseBindTextResult[
     }
     const propPart = bindText.slice(0, separatorIndex).trim();
     const statePart = bindText.slice(separatorIndex + 1).trim();
-    if (propPart === 'else') {
+    if (propPart === ELSE_KEYWORD) {
       const pathInfo = getPathInfo('#else');
       return {
-        propName: 'else',
-        propSegments: ['else'],
+        propName: ELSE_KEYWORD,
+        propSegments: [ELSE_KEYWORD],
         propModifiers: [],
         statePathName: '#else',
         statePathInfo: pathInfo,
@@ -38,7 +45,7 @@ export function parseBindTextsForElement(bindText: string): ParseBindTextResult[
         outFilters: [],
         bindingType: 'else',
       };
-    } else if (propPart === '...') {
+    } else if (propPart === SPREAD_PROP) {
       const stateResult = parseStatePart(statePart);
       if (stateResult.outFilters.length > 0) {
         raiseError(`Invalid spread binding "${bindText}": filters are not allowed on spread targets.`);
@@ -47,8 +54,8 @@ export function parseBindTextsForElement(bindText: string): ParseBindTextResult[
         raiseError(`Invalid spread binding "${bindText}": spread target path is required.`);
       }
       return {
-        propName: '...',
-        propSegments: ['...'],
+        propName: SPREAD_PROP,
+        propSegments: [SPREAD_PROP],
         propModifiers: [],
         inFilters: [],
         ...stateResult,
@@ -74,14 +81,14 @@ export function parseBindTextsForElement(bindText: string): ParseBindTextResult[
       const propResult = parsePropPart(propPart);
       // eventToken.<prop>: <name> は要素 dispatch を state へ流す pub/sub 配線。
       // 値適用ではないため bindingType 'event' として listener attach 経路に乗せる。
-      if (propResult.propSegments[0] === 'eventToken') {
+      if (propResult.propSegments[0] === EVENT_TOKEN_NAMESPACE) {
         return {
           ...propResult,
           ...stateResult,
           bindingType: 'event',
         };
       }
-      if (propResult.propSegments[0].startsWith('on')) {
+      if (propResult.propSegments[0].startsWith(EVENT_PROP_PREFIX)) {
         return {
           ...propResult,
           ...stateResult,

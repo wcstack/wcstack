@@ -16,6 +16,10 @@
       "types": "./dist/manifest.d.ts",
       "import": "./dist/manifest.esm.js"
     },
+    "./parser": {
+      "types": "./dist/parser.d.ts",
+      "import": "./dist/parser.esm.js"
+    },
     "./wcs-manifest.json": "./dist/wcs-manifest.json"
   },
   "files": [

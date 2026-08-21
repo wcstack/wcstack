@@ -1,5 +1,6 @@
 import { getStateAddressByBindingInfo } from "../binding/getStateAddressByBindingInfo";
 import { config } from "../config";
+import { COMMAND_NAMESPACE, MODIFIER_KEY_INIT, MODIFIER_KEY_SYNC } from "../define";
 import { getLoopContextByNode } from "../list/loopContextByNode";
 import { hasByAddressSymbol, setLoopContextSymbol } from "../proxy/symbols";
 import { readBindableDeclaration } from "../protocol/wcBindableReader";
@@ -34,7 +35,7 @@ function readOption(
     if (separator < 0) continue;
     const modifierKey = modifier.slice(0, separator).trim();
     const value = modifier.slice(separator + 1).trim();
-    if (modifierKey !== "init" && modifierKey !== "sync") {
+    if (modifierKey !== MODIFIER_KEY_INIT && modifierKey !== MODIFIER_KEY_SYNC) {
       raiseError(`Unknown binding modifier "${modifierKey}" in "${modifier}".`);
     }
     if (modifierKey !== key) continue;
@@ -83,8 +84,8 @@ export function resolveInitialSyncPolicy(binding: IBindingInfo): IInitialSyncPol
     return STATE_CALL_POLICY;
   }
 
-  const explicitAuthority = parseAuthority(readOption(binding, "init"));
-  const syncOn = parseSyncOn(readOption(binding, "sync"));
+  const explicitAuthority = parseAuthority(readOption(binding, MODIFIER_KEY_INIT));
+  const syncOn = parseSyncOn(readOption(binding, MODIFIER_KEY_SYNC));
   if (binding.bindingType === "event") {
     if (explicitAuthority !== null && explicitAuthority !== "none") {
       raiseError("Event bindings only allow init=none.");
@@ -96,7 +97,7 @@ export function resolveInitialSyncPolicy(binding: IBindingInfo): IInitialSyncPol
   // property authority 検証(未宣言なら raiseError)に掛けてはならない。値の初期同期を
   // 持たない配線なので、現行互換の "state" authority を返す(command token は従来通り
   // 初期 apply で配線される)。
-  if (binding.propSegments[0] === "command") {
+  if (binding.propSegments[0] === COMMAND_NAMESPACE) {
     return statePolicy("state", syncOn);
   }
   if (binding.bindingType !== "prop") {

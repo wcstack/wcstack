@@ -1,3 +1,4 @@
+import { EVENT_PROP_PREFIX, MODIFIER_READONLY } from "../define";
 import { getLoopContextByNode } from "../list/loopContextByNode";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
@@ -17,8 +18,8 @@ function getHandlerKey(binding: IBindingInfo, eventName: string): string {
 function getEventName(binding: IBindingInfo): string {
   let eventName = 'input';
   for(const modifier of binding.propModifiers) {
-    if (modifier.startsWith('on')) {
-      eventName = modifier.slice(2);
+    if (modifier.startsWith(EVENT_PROP_PREFIX)) {
+      eventName = modifier.slice(EVENT_PROP_PREFIX.length);
     }
   }
   return eventName;
@@ -62,7 +63,7 @@ const radioEventHandlerFunction = (
 }
 
 export function attachRadioEventHandler(binding: IBindingInfo): boolean {
-  if (binding.bindingType === "radio" && binding.propModifiers.indexOf('ro') === -1) {
+  if (binding.bindingType === "radio" && binding.propModifiers.indexOf(MODIFIER_READONLY) === -1) {
     const eventName = getEventName(binding);
     const key = getHandlerKey(binding, eventName);
     let radioEventHandler = handlerByHandlerKey.get(key);
@@ -82,7 +83,7 @@ export function attachRadioEventHandler(binding: IBindingInfo): boolean {
 }
 
 export function detachRadioEventHandler(binding: IBindingInfo): boolean {
-  if (binding.bindingType === "radio" && binding.propModifiers.indexOf('ro') === -1) {
+  if (binding.bindingType === "radio" && binding.propModifiers.indexOf(MODIFIER_READONLY) === -1) {
     const eventName = getEventName(binding);
     const key = getHandlerKey(binding, eventName);
     const radioEventHandler = handlerByHandlerKey.get(key);
