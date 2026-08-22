@@ -10,6 +10,7 @@
   - **参照の検索**（Shift+F12）: 双方向（出現 ⇄ 宣言・短縮形は展開後パスで統合）。`$1`〜`$9` は「外側から N 枚目の for テンプレート実体」でスコープし、無関係なループ間では統合しない
   - **インレイ**: `for` 短縮パスの展開後表示（ランタイムの属性書き換えと同一）・フィルタ鎖の結果型（`→ string`。passthrough フィルタは型不明扱い）・spread の展開規模（`→ 13 props` — 組み込み wcs-* タグ限定。wcBindable を持たないタグには出さない）
 - **text チャネルの正本化** — mustache / コメントバインディングの解析をランタイムと同じ `parseBindTextForEmbeddedNode` 経路（`;` 無分割）に統一。`{{ a; b }}` は「a; b」1 本のパスとして扱われ、分割由来の偽 problems が消滅。言語サーバー常駐時のパーサキャッシュ単調増加もドキュメント単位の `clearParserCaches` で抑止
+- **spread の無宣言タグ検査**（`wcs/spread-no-bindable`・error）— wcBindable を宣言しないヘルパータグ（`wcs-fetch-header` / `wcs-fetch-body` / `wcs-infinite-scroll` / `wcs-voice`）への `...:` spread はランタイム（`expandSpread`）が raiseError で落とす構成。生成カタログに `hasWcBindable` を記録し、静的に error として指摘する（空の wcBindable = `wcs-noise` は合法な 0 展開として対象外）
 - **入れ子配列のパス候補導出** — 配列の先頭要素の子（配列・オブジェクト）へ再帰し、`a.*.b.*` / `a.*.b.*.c` / `a.*.meta.title` が補完・検証・hover に載るようになった（script / JSON 両側・深度上限共有）。実 examples で偽の「未知パス」warning が 2 件解消
 
 - **`$watch` 宣言の診断** — `@wcstack/state` の headless 変更購読（`$watch: { "<path>": handler }`）への追従。宣言キーは監視対象の state パスであり、`data-wcs` の右辺と同じ性質を持つ一方で、**誤りの出方が違う**: バインディング側のタイプミスは「描画されない」形で目に見えるが、`$watch` 側は**黙って一度も発火しない**。設計の正本: `docs/state-watch-hook-design.md`
