@@ -409,18 +409,17 @@ function pushDataPropertyPathsAt(
   // データプロパティ
   paths.push({ path, kind: 'data', typeHint: prop.typeHint, rawInitial: prop.value?.trim(), stateName });
 
-  // 配列の場合、ワイルドカードパスと子パス、組み込みプロパティを生成
+  // 配列の場合、ワイルドカードパスと子パス、組み込みプロパティを生成。
+  // 先頭要素の子プロパティへは再帰する — 子が配列/オブジェクトなら
+  // `a.*.b.*` / `a.*.b.c` のような深いワイルドカード候補も導出される
+  // （ランタイムは任意深度のワイルドカードを解決するため、ここで打ち切ると
+  // 入れ子リストの正当なパスが「未知パス」扱いになる）。
   if (prop.value && isArrayLiteral(prop.value)) {
     paths.push({ path: `${path}.*`, kind: 'list', stateName });
     paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number', stateName });
-    const elementProps = extractArrayElementProperties(prop.value);
-    for (const childProp of elementProps) {
-      paths.push({
-        path: `${path}.*.${childProp.name}`,
-        kind: 'data',
-        typeHint: childProp.typeHint,
-        stateName,
-      });
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+    for (const childProp of extractArrayElementDataProperties(prop.value)) {
+      pushDataPropertyPathsAt(`${path}.*.${childProp.name}`, childProp, paths, stateName, depth + 1);
     }
     return;
   }
@@ -473,31 +472,44 @@ function collectJsonPaths(
   stateName: string,
   depth: number,
 ): void {
-  if (depth > 5) return; // 深すぎるネストは無視
+  if (depth >= MAX_OBJECT_NEST_DEPTH) return; // 深すぎるネストは無視
 
   for (const [key, value] of Object.entries(obj)) {
     // トップレベルの `$` キーは予約名（JSON state に書いてもデータパスにはならない）
     if (prefix === '' && key.startsWith('$')) continue;
     const path = prefix ? `${prefix}.${key}` : key;
-    const typeHint = inferJsonTypeHint(value);
+    pushJsonValuePaths(path, value, paths, stateName, depth);
+  }
+}
 
-    paths.push({ path, kind: 'data', typeHint, stateName });
+/**
+ * JSON 値 1 つ分のパス候補を生成する。配列は先頭要素の子へ再帰し、
+ * 入れ子リスト（`a.*.b.*` / `a.*.b.*.c`）の候補も導出する
+ * （script 側の pushDataPropertyPathsAt と同じ規則）。
+ */
+function pushJsonValuePaths(
+  path: string,
+  value: unknown,
+  paths: PathCandidate[],
+  stateName: string,
+  depth: number,
+): void {
+  paths.push({ path, kind: 'data', typeHint: inferJsonTypeHint(value), stateName });
 
-    if (Array.isArray(value)) {
-      paths.push({ path: `${path}.*`, kind: 'list', stateName });
-      paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number', stateName });
+  if (Array.isArray(value)) {
+    paths.push({ path: `${path}.*`, kind: 'list', stateName });
+    paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number', stateName });
 
-      // 最初の要素がオブジェクトなら子パスを生成
-      if (value.length > 0 && typeof value[0] === 'object' && value[0] !== null && !Array.isArray(value[0])) {
-        const firstElement = value[0] as Record<string, unknown>;
-        for (const [childKey, childValue] of Object.entries(firstElement)) {
-          const childPath = `${path}.*.${childKey}`;
-          paths.push({ path: childPath, kind: 'data', typeHint: inferJsonTypeHint(childValue), stateName });
-        }
+    // 最初の要素がオブジェクトなら子パスへ再帰
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+    if (value.length > 0 && typeof value[0] === 'object' && value[0] !== null && !Array.isArray(value[0])) {
+      const firstElement = value[0] as Record<string, unknown>;
+      for (const [childKey, childValue] of Object.entries(firstElement)) {
+        pushJsonValuePaths(`${path}.*.${childKey}`, childValue, paths, stateName, depth + 1);
       }
-    } else if (typeof value === 'object' && value !== null) {
-      collectJsonPaths(value as Record<string, unknown>, path, paths, stateName, depth + 1);
     }
+  } else if (typeof value === 'object' && value !== null) {
+    collectJsonPaths(value as Record<string, unknown>, path, paths, stateName, depth + 1);
   }
 }
 
@@ -791,29 +803,23 @@ function extractObjectContent(value: string): string {
 }
 
 /**
- * 配列リテラルの最初の要素がオブジェクトの場合、そのプロパティを抽出する。
+ * 配列リテラルの最初の要素がオブジェクトの場合、そのデータプロパティを
+ * `value` 込みの PropertyInfo で抽出する（入れ子の配列/オブジェクト再帰用）。
  */
-function extractArrayElementProperties(value: string): SimpleProperty[] {
+function extractArrayElementDataProperties(value: string): PropertyInfo[] {
   const trimmed = value.trim();
   if (!trimmed.startsWith('[')) return [];
 
-  // 最初のオブジェクトリテラル { ... } を探す
+  // 先頭要素が**オブジェクトリテラル**の場合だけ子を導出する（JSON 側の
+  // !Array.isArray(value[0]) ガードと同じ）。`[[{ a: 1 }]]`（配列の配列）で
+  // 内側の `{` を拾うと `weird.*.a` のような実在しないパスを候補化してしまう。
   const scan = maskCommentsAndStrings(trimmed);
-  const objectStart = scan.indexOf('{');
-  if (objectStart === -1) return [];
+  let first = 1;
+  while (first < scan.length && /\s/.test(scan[first])) first++;
+  if (scan[first] !== '{') return [];
 
-  const objectContent = extractBracedContent(trimmed, scan, objectStart);
-
-  // オブジェクトの全プロパティを行単位で解析
-  const props: SimpleProperty[] = [];
-  const allProps = parseTopLevelProperties(objectContent);
-  for (const prop of allProps) {
-    if (prop.kind === 'data') {
-      props.push({ name: prop.name, typeHint: prop.typeHint });
-    }
-  }
-
-  return props;
+  const objectContent = extractBracedContent(trimmed, scan, first);
+  return parseTopLevelProperties(objectContent).filter((prop) => prop.kind === 'data');
 }
 
 /**

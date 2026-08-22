@@ -318,11 +318,13 @@ describe('wiringLens: レビュー指摘の回帰（誤 hint ゼロ）', () => {
     expect(hover.markdown).not.toContain('keeps input type');
   });
 
-  it('$1（ループ添字）の references は for 横断で統合せず null を返すこと', () => {
+  it('$1（ループ添字）の references は for 横断で統合されないこと（同一ループ実体のみ）', () => {
     const html = `<wcs-state><script type="module">export default { users: ['u'], admins: ['a'] };</script></wcs-state>
 <template data-wcs="for: users"><i data-wcs="textContent: $1"></i></template>
 <template data-wcs="for: admins"><i data-wcs="textContent: $1"></i></template>`;
-    expect(getReferencesAt(html, html.indexOf('$1') + 1, false)).toBeNull();
+    // users ループの $1 から: admins 側は別の参照先なので含まれない
+    const refs = getReferencesAt(html, html.indexOf('$1') + 1, false)!;
+    expect(refs).toHaveLength(1);
   });
 
   it('ネストした相対 for（for: .products）を外側チェーンから再帰合成すること', () => {
@@ -384,6 +386,74 @@ describe('wiringLens: レビュー指摘の回帰（誤 hint ゼロ）', () => {
     const references = getReferencesAt(html, declOffset + 2, false)!;
     expect(references).toHaveLength(1);
     expect(html.slice(references[0].range.start, references[0].range.end)).toBe('changed');
+  });
+});
+
+describe('wiringLens: lens follow-ups（spread ヒント・$N スコープ・入れ子配列候補）', () => {
+  it('spread に組み込みタグの展開規模ヒント（→ N props）が付くこと', () => {
+    const html = `<wcs-state><script type="module">export default { fetchX: {} };</script></wcs-state>
+<wcs-fetch data-wcs="...: fetchX"></wcs-fetch>
+<my-widget data-wcs="...: fetchX"></my-widget>`;
+    const hints = getInlayHints(html, 0, html.length).filter((h) => h.kind === 'spread');
+    // wcs-fetch = inputs 7 + properties 7 で trigger が重複 → 13。
+    // ユーザー定義タグ（my-widget）は unexpanded（D8）— ヒント無し
+    expect(hints).toHaveLength(1);
+    expect(hints[0].label).toBe('→ 13 props');
+    const attr = '"...: fetchX"';
+    const exprEnd = html.indexOf(attr) + attr.length - 1;
+    expect(hints[0].offset).toBe(exprEnd);
+  });
+
+  it('wcBindable を持たないカタログタグへの spread にはヒントを出さないこと', () => {
+    // カタログは無宣言タグ（wcs-voice / wcs-fetch-header 等）も空契約に平坦化して
+    // いるが、無宣言タグへの spread はランタイムが raiseError する構成 —
+    // 「→ 0 props」を合法な展開として提示してはならない（誤 hint ゼロ）
+    const html = `<wcs-state><script type="module">export default { fetchX: {} };</script></wcs-state>
+<wcs-voice data-wcs="...: fetchX"></wcs-voice>
+<wcs-fetch-header data-wcs="...: fetchX"></wcs-fetch-header>`;
+    expect(getInlayHints(html, 0, html.length).filter((h) => h.kind === 'spread')).toHaveLength(0);
+  });
+
+  it('$1 の references が同一ループ実体だけに絞られ、ネスト内の同一参照は統合されること', () => {
+    const html = `<wcs-state><script type="module">export default { users: ['u'], admins: ['a'] };</script></wcs-state>
+<template data-wcs="for: users">
+  <i data-wcs="textContent: $1"></i>
+  <template data-wcs="for: .tags"><b data-wcs="textContent: $1"></b><s data-wcs="textContent: $2"></s></template>
+</template>
+<template data-wcs="for: admins"><i data-wcs="textContent: $1"></i></template>`;
+    // users ループ直下の $1 から: 同一 users ループを 1 枚目に持つ出現
+    //（直下 + 入れ子内の $1）が対象。admins 側の $1 は含まれない
+    const first = html.indexOf('textContent: $1') + 'textContent: '.length + 1;
+    const refs = getReferencesAt(html, first, false)!;
+    expect(refs).toHaveLength(2);
+    for (const ref of refs) {
+      expect(html.slice(ref.range.start, ref.range.end)).toBe('$1');
+    }
+    // $2（内側ループの添字）からは自分だけ
+    const second = html.indexOf('textContent: $2') + 'textContent: '.length + 1;
+    const refs2 = getReferencesAt(html, second, false)!;
+    expect(refs2).toHaveLength(1);
+    // ループ外の $N は null のまま
+    const outside = `${html}<i data-wcs="textContent: $1"></i>`;
+    const lastDollar = outside.lastIndexOf('$1') + 1;
+    expect(getReferencesAt(outside, lastDollar, false)).toBeNull();
+  });
+
+  it('入れ子配列の候補が導出され、深い短縮パスの hover が解決すること', () => {
+    const html = `<wcs-state><script type="module">
+    export default { categories: [{ products: [{ name: 'p' }], meta: { title: 't' } }] };
+    </script></wcs-state>
+<template data-wcs="for: categories">
+  <template data-wcs="for: .products">
+    <span data-wcs="textContent: .name"></span>
+  </template>
+</template>`;
+    const needle = '"textContent: .name"';
+    const offset = html.indexOf(needle) + needle.indexOf('.name') + 2;
+    const hover = getHoverAt(html, offset, { locale: 'en' })!;
+    expect(hover).not.toBeNull();
+    expect(hover.markdown).toContain('`.name` → `categories.*.products.*.name`');
+    expect(hover.markdown).toContain('data (string)');
   });
 });
 

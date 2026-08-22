@@ -1,8 +1,16 @@
 # Changelog
 
-## Unreleased
+## 1.11.0 (Unreleased)
 
 ### Features
+
+- **hover / 定義へ移動 / 参照の検索 / インレイヒント** — 位置情報付き参照インデックス（`core/index/referenceIndex`）へのクエリとして 4 機能を新設（`core/navigation/wiringLens` + `wcs-navigation` Volar プラグイン）。設計の正本: `docs/static-wiring-dx-design.md` §5-2 / §5-3
+  - **hover**: バインディングパスに種別（data / computed / list / メソッド / command・event トークン）・推定型・所属 state・宣言行。`for` 短縮パスは展開後（`` `.name` → `users.*.name` ``）を表示。フィルタ名にシグネチャ・説明・型変換、修飾子（`#prevent` / `#stop` / `#ro` / `#init=` / `#sync=` / `#on<event>`）に意味説明。解決できないパスには何も出さない（誤ヒントゼロ）— `src` 外部 state だけは「外部定義」と明示
+  - **定義へ移動**（F12）: ドットパスは第 1 セグメントへフォールバック。`$command.<name>` → `$commandTokens`、`$streamStatus.*`/`$streamError.*` → `$streams`、event-token 配線 → `$eventTokens`。`src` 外部 state は `<wcs-state src=…>` タグへ
+  - **参照の検索**（Shift+F12）: 双方向（出現 ⇄ 宣言・短縮形は展開後パスで統合）。`$1`〜`$9` は「外側から N 枚目の for テンプレート実体」でスコープし、無関係なループ間では統合しない
+  - **インレイ**: `for` 短縮パスの展開後表示（ランタイムの属性書き換えと同一）・フィルタ鎖の結果型（`→ string`。passthrough フィルタは型不明扱い）・spread の展開規模（`→ 13 props` — 組み込み wcs-* タグ限定。wcBindable を持たないタグには出さない）
+- **text チャネルの正本化** — mustache / コメントバインディングの解析をランタイムと同じ `parseBindTextForEmbeddedNode` 経路（`;` 無分割）に統一。`{{ a; b }}` は「a; b」1 本のパスとして扱われ、分割由来の偽 problems が消滅。言語サーバー常駐時のパーサキャッシュ単調増加もドキュメント単位の `clearParserCaches` で抑止
+- **入れ子配列のパス候補導出** — 配列の先頭要素の子（配列・オブジェクト）へ再帰し、`a.*.b.*` / `a.*.b.*.c` / `a.*.meta.title` が補完・検証・hover に載るようになった（script / JSON 両側・深度上限共有）。実 examples で偽の「未知パス」warning が 2 件解消
 
 - **`$watch` 宣言の診断** — `@wcstack/state` の headless 変更購読（`$watch: { "<path>": handler }`）への追従。宣言キーは監視対象の state パスであり、`data-wcs` の右辺と同じ性質を持つ一方で、**誤りの出方が違う**: バインディング側のタイプミスは「描画されない」形で目に見えるが、`$watch` 側は**黙って一度も発火しない**。設計の正本: `docs/state-watch-hook-design.md`
   - `wcs/watch-path-missing`（warning）— キーが状態定義に存在しない。severity は `wcs/binding-path-missing` に揃える（初期値が空配列の行フィールドなど、静的に解決できない正当な形があるため）。パス候補が 1 つも取れないスクリプトでは照合をスキップし誤警告を出さない

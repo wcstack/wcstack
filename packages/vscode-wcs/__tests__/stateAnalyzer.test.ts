@@ -47,6 +47,30 @@ export default {
     expect(paths.find(p => p.path === 'cart.items.length')?.typeHint).toBe('number');
   });
 
+  it('配列要素内の配列・オブジェクトへ再帰して深い候補を導出する', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  rows: [{ tags: ['a'], cols: [{ c: 1 }], meta: { title: 't' } }],
+};`);
+    const pathNames = paths.map(p => p.path);
+    expect(pathNames).toContain('rows.*.tags.*');
+    expect(pathNames).toContain('rows.*.tags.length');
+    expect(pathNames).toContain('rows.*.cols.*.c');
+    expect(pathNames).toContain('rows.*.meta.title');
+  });
+
+  it('配列の配列（先頭要素が非オブジェクト）から偽の子候補を作らないこと', () => {
+    // ランタイムの実形は weird.*.*.a — 内側の { を拾って weird.*.a を候補化すると
+    // 実在しないパスへの hover / 補完が生まれる（JSON 側の !Array.isArray ガードと同一規則）
+    const paths = analyzeStatePaths(`
+export default {
+  weird: [[{ a: 1 }]],
+};`);
+    const pathNames = paths.map(p => p.path);
+    expect(pathNames).toContain('weird.*');
+    expect(pathNames).not.toContain('weird.*.a');
+  });
+
   it('配列プロパティからワイルドカードパスを生成する', () => {
     const paths = analyzeStatePaths(`
 export default {
@@ -250,12 +274,13 @@ describe('analyzeJsonPaths', () => {
     expect(analyzeJsonPaths('{}')).toEqual([]);
   });
 
-  it('深すぎるネストは制限される', () => {
+  it('深すぎるネストは制限される（script 側と同じ MAX_OBJECT_NEST_DEPTH 予算）', () => {
     const json = '{"a":{"b":{"c":{"d":{"e":{"f":{"g":{"h":1}}}}}}}}';
     const paths = analyzeJsonPaths(json);
-    // depth 5 まで — a.b.c.d.e.f まで、g 以降は生成されない
-    expect(paths.map(p => p.path)).toContain('a.b.c.d.e.f');
-    expect(paths.map(p => p.path)).not.toContain('a.b.c.d.e.f.g.h');
+    // 深度予算は script 側（pushDataPropertyPathsAt）と共有 — a.b.c.d.e まで。
+    // 旧実装は JSON 側だけ 1 段深く辿れており、両解析の到達範囲が揃っていなかった
+    expect(paths.map(p => p.path)).toContain('a.b.c.d.e');
+    expect(paths.map(p => p.path)).not.toContain('a.b.c.d.e.f');
   });
 });
 
