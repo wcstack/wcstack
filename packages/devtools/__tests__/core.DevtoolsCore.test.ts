@@ -305,6 +305,18 @@ describe('DevtoolsCore', () => {
       expect(core.getTimeline()).toHaveLength(0);
     });
 
+    it('watch-firedはtimeline行にせず、カバレッジ台帳に積むこと', () => {
+      const { core, source } = setupConnected([
+        { ...summaryOf('main'), watchPaths: new Set(['count']) },
+      ]);
+      source.emit({ type: 'state:watch-fired', stateName: 'main', path: 'count' });
+      source.emit({ type: 'state:watch-fired', stateName: 'main', path: 'count' });
+      source.emit({ type: 'state:watch-fired', stateName: `${RESERVED_STATE_NAME_PREFIX}-ui`, path: 'x' });
+      expect(core.getTimeline()).toHaveLength(0);
+      const watch = core.getCoverageReport().find((e) => e.kind === 'watch' && e.name === 'count')!;
+      expect(watch).toMatchObject({ status: 'fired', count: 2 });
+    });
+
     it('token-emitをkind別に記録しsubscriberCountを保持すること', () => {
       const { core, source } = setupConnected();
       source.emit({ type: 'state:token-emit', kind: 'command', stateName: 'main', tokenName: 'play', args: ['x'], subscriberCount: 0 });
@@ -447,6 +459,195 @@ describe('DevtoolsCore', () => {
     });
   });
 
+  describe('配線カバレッジ（設計 §4: 宣言 × 実測）', () => {
+    const declaredOf = (stateName: string, propName: string, path: string, extra: Record<string, unknown> = {}) => ({
+      node: null,
+      propName,
+      statePathName: path,
+      stateName,
+      bindingType: 'prop',
+      inFilters: [],
+      outFilters: [],
+      origin: 'attribute' as const,
+      raw: `${propName}: ${path}`,
+      ...extra,
+    });
+
+    it('watchのfired/never/prerequisite-missingを区別すること', () => {
+      const { core, source } = setupConnected([
+        {
+          ...summaryOf('main'),
+          watchPaths: new Set(['count', 'items.*.price', 'rows.*.total', 'rows.*.cells.*.v']),
+          paths: {
+            list: new Set(['rows']), // rows は for バインド済み・items と rows.*.cells は未バインド
+            element: new Set<string>(),
+            getter: new Set<string>(),
+            setter: new Set<string>(),
+          },
+        },
+      ]);
+      source.emit({ type: 'state:watch-fired', stateName: 'main', path: 'count' });
+      const byName = new Map(core.getCoverageReport().filter((e) => e.kind === 'watch').map((e) => [e.name, e]));
+      expect(byName.get('count')).toMatchObject({ status: 'fired', count: 1 });
+      // ワイルドカード行 watch で対象リストが未バインド → 未発火でなく前提未成立。
+      // note は「for が観測できない」であって $listKeys の不在は断定しない
+      // （paths.list は for 由来のみで $listKeys 宣言は見えないため）
+      expect(byName.get('items.*.price')).toMatchObject({ status: 'prerequisite-missing' });
+      expect(byName.get('items.*.price')!.note).toContain('no for binding observed for list "items"');
+      expect(byName.get('items.*.price')!.note).toContain('$listKeys');
+      // リストがバインド済みなら通常の never
+      expect(byName.get('rows.*.total')).toMatchObject({ status: 'never' });
+      // 入れ子ワイルドカードは全 `.*` 階層を検査する（1 段目だけ見て見逃さない）
+      expect(byName.get('rows.*.cells.*.v')).toMatchObject({ status: 'prerequisite-missing' });
+      expect(byName.get('rows.*.cells.*.v')!.note).toContain('"rows.*.cells"');
+    });
+
+    it('token宣言のemitted/neverを数えること', () => {
+      const { core, source } = setupConnected([
+        {
+          ...summaryOf('main'),
+          commandTokenNames: new Set(['play', 'stop']),
+          eventTokenNames: new Set(['changed']),
+        },
+      ]);
+      source.emit({ type: 'state:token-emit', kind: 'command', stateName: 'main', tokenName: 'play', args: [], subscriberCount: 1 });
+      source.emit({ type: 'state:token-emit', kind: 'command', stateName: 'main', tokenName: 'play', args: [], subscriberCount: 1 });
+      source.emit({ type: 'state:token-emit', kind: 'event', stateName: 'main', tokenName: 'changed', args: [], subscriberCount: 1 });
+      const report = core.getCoverageReport();
+      expect(report.find((e) => e.kind === 'command' && e.name === 'play')).toMatchObject({ status: 'emitted', count: 2, note: null });
+      expect(report.find((e) => e.kind === 'command' && e.name === 'stop')).toMatchObject({ status: 'never' });
+      expect(report.find((e) => e.kind === 'eventToken' && e.name === 'changed')).toMatchObject({ status: 'emitted', count: 1 });
+    });
+
+    it('全emitが空撃ち（subscriberCount 0）ならemitted-unheardとして警告すること', () => {
+      const { core, source } = setupConnected([
+        {
+          ...summaryOf('main'),
+          commandTokenNames: new Set(['play', 'seek']),
+        },
+      ]);
+      // play: 全 2 回とも空撃ち → emitted-unheard
+      source.emit({ type: 'state:token-emit', kind: 'command', stateName: 'main', tokenName: 'play', args: [], subscriberCount: 0 });
+      source.emit({ type: 'state:token-emit', kind: 'command', stateName: 'main', tokenName: 'play', args: [], subscriberCount: 0 });
+      // seek: 3 回中 1 回だけ空撃ち → emitted のまま note で内訳を出す
+      source.emit({ type: 'state:token-emit', kind: 'command', stateName: 'main', tokenName: 'seek', args: [], subscriberCount: 0 });
+      source.emit({ type: 'state:token-emit', kind: 'command', stateName: 'main', tokenName: 'seek', args: [], subscriberCount: 2 });
+      source.emit({ type: 'state:token-emit', kind: 'command', stateName: 'main', tokenName: 'seek', args: [], subscriberCount: 1 });
+      const report = core.getCoverageReport();
+      expect(report.find((e) => e.name === 'play')).toMatchObject({
+        status: 'emitted-unheard', count: 2, note: 'all 2 emit(s) had 0 subscribers',
+      });
+      expect(report.find((e) => e.name === 'seek')).toMatchObject({
+        status: 'emitted', count: 3, note: '1/3 emit(s) had 0 subscribers',
+      });
+    });
+
+    it('stateNameがnullのemitはどの宣言とも突合できないため台帳に積まないこと', () => {
+      const { core, source } = setupConnected([
+        { ...summaryOf('main'), commandTokenNames: new Set(['play']) },
+      ]);
+      source.emit({ type: 'state:token-emit', kind: 'command', stateName: null, tokenName: 'play', args: [], subscriberCount: 1 });
+      expect(core.getCoverageReport().find((e) => e.name === 'play')).toMatchObject({ status: 'never', count: 0 });
+      // タイムラインには通常どおり載る
+      expect(core.getTimeline()).toHaveLength(1);
+    });
+
+    it('canonical declaredがあればbindingのattached/never-attachedを突合すること', () => {
+      const { core, source } = setupConnected([summaryOf('main')]);
+      (source as any).getDeclaredBindings = vi.fn(() => [
+        declaredOf('main', 'textContent', 'user.name'),
+        declaredOf('main', 'value', 'count'),
+        declaredOf('main', 'for', 'items', { bindingType: 'for' }),          // 構造 → 対象外
+        declaredOf('main', 'eventToken.value', 'changed', { bindingType: 'event' }), // token 節の担当
+      ]);
+      core.refreshRoster();
+      // user.name だけ live 台帳に attach 済み
+      source.emit({
+        type: 'state:binding-added',
+        absoluteAddress: addressOf('main', 'user.name'),
+        binding: bindingOf('main', 'user.name'),
+      });
+      const bindings = core.getCoverageReport().filter((e) => e.kind === 'binding');
+      expect(bindings).toHaveLength(2);
+      expect(bindings.find((e) => e.name.includes('user.name'))).toMatchObject({ status: 'attached' });
+      expect(bindings.find((e) => e.name.includes('count'))).toMatchObject({ status: 'never-attached' });
+    });
+
+    it('attached判定は「一度でもattachを観測したか」で行い、行の破棄で逆戻りしないこと', () => {
+      const { core, source } = setupConnected([summaryOf('main')]);
+      (source as any).getDeclaredBindings = vi.fn(() => [
+        declaredOf('main', 'textContent', 'items.*.label'),
+      ]);
+      core.refreshRoster();
+      // 行の実体化で attach → リスト差し替えで binding-removed（live 台帳は空に戻る）
+      const binding = bindingOf('main', 'items.*.label');
+      source.emit({ type: 'state:binding-added', absoluteAddress: addressOf('main', 'items.*.label', [0]), binding });
+      source.emit({ type: 'state:binding-removed', absoluteAddress: addressOf('main', 'items.*.label', [0]), binding });
+      expect(core.getWiringForPath('main', 'items.*.label')).toHaveLength(0);
+      // live 台帳は空でも「観測開始以降に一度 attach された」事実で attached のまま
+      expect(core.getCoverageReport().find((e) => e.kind === 'binding')).toMatchObject({ status: 'attached' });
+      // disconnect で ever 台帳もクリアされる（残留ゼロ）
+      core.disconnect();
+      expect(core.getCoverageReport()).toEqual([]);
+    });
+
+    it('bindingの突合は宣言（state/path/prop）単位でdedupeし、fragment由来にはnoteが付くこと', () => {
+      const { core, source } = setupConnected([summaryOf('main')]);
+      (source as any).getDeclaredBindings = vi.fn(() => [
+        declaredOf('main', 'textContent', 'row.label', { origin: 'fragment', node: null }),
+        // 同じ宣言が origin 違い（属性側）にもある形 — カバレッジ行としては同一
+        declaredOf('main', 'textContent', 'row.label', { origin: 'attribute' }),
+      ]);
+      core.refreshRoster();
+      const bindings = core.getCoverageReport().filter((e) => e.kind === 'binding');
+      expect(bindings).toHaveLength(1);
+      expect(bindings[0].note).toBe('template interior (attaches when rows materialize)');
+    });
+
+    it('getDeclaredBindings対応でもroster空ならcanonicalは空配列（nullではない）', () => {
+      const { core, source } = setupConnected([]);
+      (source as any).getDeclaredBindings = vi.fn(() => []);
+      expect(core.getCanonicalDeclared()).toEqual([]);
+    });
+
+    it('getCanonicalDeclaredは未対応ランタイムでnull・対応時はhidden除外込みで集めること', () => {
+      const { core, source } = setupConnected([summaryOf('main')]);
+      expect(core.getCanonicalDeclared()).toBeNull();
+      (source as any).getDeclaredBindings = vi.fn(() => [
+        declaredOf('main', 'textContent', 'a'),
+        declaredOf(`${RESERVED_STATE_NAME_PREFIX}-ui`, 'textContent', 'x'),
+      ]);
+      const declared = core.getCanonicalDeclared()!;
+      expect(declared).toHaveLength(1);
+      expect(declared[0].stateName).toBe('main');
+    });
+
+    it('getCanonicalDeclaredはsourceをまたぐ同一宣言タプルをdedupeすること', () => {
+      const { core, source, registry } = setupConnected([summaryOf('main')]);
+      (source as any).getDeclaredBindings = vi.fn(() => [declaredOf('main', 'textContent', 'a')]);
+      const second = createFakeSource('state:second', [summaryOf('main')]);
+      (second as any).getDeclaredBindings = vi.fn(() => [
+        declaredOf('main', 'textContent', 'a'), // 同一タプル（同じ root を別 source が走査した形）
+        declaredOf('main', 'value', 'b'),
+      ]);
+      registry.register(second);
+      const declared = core.getCanonicalDeclared()!;
+      expect(declared).toHaveLength(2);
+      expect(declared.map((d) => d.propName).sort()).toEqual(['textContent', 'value']);
+    });
+
+    it('disconnectでカバレッジ台帳と観測開始時刻がクリアされること', () => {
+      const { core, source } = setupConnected([
+        { ...summaryOf('main'), watchPaths: new Set(['count']) },
+      ]);
+      expect(core.observingSince).not.toBeNull();
+      source.emit({ type: 'state:watch-fired', stateName: 'main', path: 'count' });
+      core.disconnect();
+      expect(core.observingSince).toBeNull();
+      expect(core.getCoverageReport()).toEqual([]);
+    });
+  });
+
   describe('pull API委譲', () => {
     it('keysOf/readValue/writeValueがsourceへ委譲されること', () => {
       const { core, source } = setupConnected([summaryOf('main')]);
@@ -479,10 +680,11 @@ describe('DevtoolsCore', () => {
       const remove = core.onChange((kind) => kinds.push(kind));
       source.emit({ type: 'state:write', absoluteAddress: addressOf('main', 'a'), value: 1, oldValue: undefined, hasOldValue: false });
       source.emit({ type: 'state:binding-added', absoluteAddress: addressOf('main', 'a'), binding: bindingOf('main', 'a') });
-      expect(kinds).toEqual(['timeline', 'wiring']);
+      // binding-added は live 台帳（wiring）とカバレッジの ever 台帳（coverage）の両方を動かす
+      expect(kinds).toEqual(['timeline', 'wiring', 'coverage']);
       remove();
       source.emit({ type: 'state:write', absoluteAddress: addressOf('main', 'b'), value: 1, oldValue: undefined, hasOldValue: false });
-      expect(kinds).toHaveLength(2);
+      expect(kinds).toHaveLength(3);
     });
 
     it('refreshRosterがrosterを取り直して通知すること', () => {

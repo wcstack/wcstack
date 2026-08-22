@@ -18,6 +18,7 @@ import {
   DevtoolsEventLike,
   IAbsoluteAddressLike,
   IBindingLike,
+  IDeclaredBindingLike,
   IDevtoolsSourceLike,
   IStateElementSummaryLike,
 } from "../protocol/types";
@@ -69,8 +70,32 @@ export interface IWiringEntry {
   readonly bindingRef: WeakRef<IBindingLike>;
 }
 
-export type CoreChangeKind = "sources" | "roster" | "wiring" | "timeline";
+export type CoreChangeKind = "sources" | "roster" | "wiring" | "timeline" | "coverage";
 export type CoreChangeListener = (kind: CoreChangeKind) => void;
+
+/**
+ * 配線カバレッジ 1 行（static-wiring-dx-design.md §4 — 宣言 × 実測の突合）。
+ * - watch: `fired`（count 回）/ `never` / `prerequisite-missing`
+ *   （ワイルドカード行 watch はリストが `for` バインドされていないと発火前提が
+ *   成立しない — 「未発火」と区別しないと誤警告になる）
+ * - command / eventToken: `emitted`（count 回）/ `never` /
+ *   `emitted-unheard`（全 emit が subscriberCount 0 = 空撃ち。§4 の突合対象）
+ * - binding: canonical declared がある場合のみ。`attached` / `never-attached`
+ *   （attached は「観測開始以降に一度でも attach された」— live 台帳は WeakRef
+ *   pruning で縮むため、瞬間値で判定すると attached が never-attached へ戻る）
+ */
+export type CoverageStatus =
+  | "fired" | "emitted" | "emitted-unheard" | "attached"
+  | "never" | "prerequisite-missing" | "never-attached";
+
+export interface ICoverageEntry {
+  readonly stateName: string;
+  readonly kind: "watch" | "command" | "eventToken" | "binding";
+  readonly name: string;
+  readonly status: CoverageStatus;
+  readonly count: number;
+  readonly note: string | null;
+}
 
 export interface IDevtoolsCoreOptions {
   /** タイムライン ring buffer 件数（既定 500） */
@@ -79,8 +104,52 @@ export interface IDevtoolsCoreOptions {
   hiddenStateNames?: readonly string[];
 }
 
+/** 台帳キーの区切り文字（state 名・パスに現れ得ない NUL）。
+ *  エスケープ表記でなく生成式にしているのは、ツーリングがソース中の
+ *  `エスケープ列` リテラルを生バイトへ壊す事故が実際に起きたため。 */
+const NUL = String.fromCharCode(0);
+
 function pathKeyOf(stateName: string, path: string): string {
-  return stateName + "\u0000" + path;
+  return stateName + NUL + path;
+}
+
+function tokenKeyOf(stateName: string, kind: string, name: string): string {
+  return stateName + NUL + kind + NUL + name;
+}
+
+/** 宣言（stateName+path+propName）単位の attach キー。NUL 区切りは pathKeyOf と同じ理由 */
+function attachKeyOf(stateName: string, path: string, propName: string): string {
+  return pathKeyOf(stateName, path) + NUL + propName;
+}
+
+/** token emit の実測（カバレッジ台帳の値）。zeroSubscriberCount = 空撃ち回数 */
+interface ITokenEmitStat {
+  count: number;
+  zeroSubscriberCount: number;
+}
+
+/** token カバレッジ 1 行の判定（§4: 空撃ちのみ / 一部空撃ち / 正常 / 未発火） */
+function tokenCoverageOf(
+  stateName: string,
+  kind: "command" | "eventToken",
+  name: string,
+  stat: ITokenEmitStat | undefined,
+): ICoverageEntry {
+  if (stat === undefined) {
+    return { stateName, kind, name, status: "never", count: 0, note: null };
+  }
+  if (stat.zeroSubscriberCount === stat.count) {
+    return {
+      stateName, kind, name, status: "emitted-unheard", count: stat.count,
+      note: `all ${stat.count} emit(s) had 0 subscribers`,
+    };
+  }
+  return {
+    stateName, kind, name, status: "emitted", count: stat.count,
+    note: stat.zeroSubscriberCount > 0
+      ? `${stat.zeroSubscriberCount}/${stat.count} emit(s) had 0 subscribers`
+      : null,
+  };
 }
 
 export class DevtoolsCore {
@@ -95,6 +164,17 @@ export class DevtoolsCore {
   private _seq: number = 0;
   private _paused: boolean = false;
   private _changeListeners: Set<CoreChangeListener> = new Set();
+  /** 観測開始時刻（connect 時の performance.now。未接続は null）。 */
+  private _observingSince: number | null = null;
+  /** watch 発火回数（stateName + NUL + path → count）。カバレッジの実測面。 */
+  private _watchFiredCounts: Map<string, number> = new Map();
+  /** token emit 実測（stateName + NUL + kind + NUL + name → 回数と空撃ち回数）。 */
+  private _tokenEmitCounts: Map<string, ITokenEmitStat> = new Map();
+  /** 観測開始以降に一度でも attach を観測した宣言キー（attachKeyOf）。
+   *  live 配線台帳は WeakRef pruning / binding-removed で縮むため、binding
+   *  カバレッジの attached 判定はこちらで行う（瞬間値で判定すると行の
+   *  破棄・GC のたびに attached が never-attached へ逆戻りする）。 */
+  private _everAttachedKeys: Set<string> = new Set();
 
   constructor(options?: IDevtoolsCoreOptions) {
     this._timelineCapacity = options?.timelineCapacity ?? DEFAULT_TIMELINE_CAPACITY;
@@ -125,6 +205,9 @@ export class DevtoolsCore {
     if (this._removeListener !== null) {
       return;
     }
+    // カバレッジは「観測開始以降」の実測。台帳の過去は再構成できない（protocol §6）
+    // ため、UI はこの時刻を常時表示して非対称を明示する。
+    this._observingSince = performance.now();
     const registry = getOrCreateHookRegistry();
     this._removeListener = registry.addListener({
       onSourceRegistered: (source) => {
@@ -155,9 +238,19 @@ export class DevtoolsCore {
     this._roster.clear();
     this._wiringByPathKey.clear();
     this._wiringEntryByBinding = new WeakMap();
+    this._observingSince = null;
+    this._watchFiredCounts.clear();
+    this._tokenEmitCounts.clear();
+    this._everAttachedKeys.clear();
     this._notify("sources");
     this._notify("roster");
     this._notify("wiring");
+    this._notify("coverage");
+  }
+
+  /** 観測開始時刻（performance.now 基準。未接続は null）。 */
+  get observingSince(): number | null {
+    return this._observingSince;
   }
 
   onChange(listener: CoreChangeListener): () => void {
@@ -231,6 +324,124 @@ export class DevtoolsCore {
       }
     }
     return result;
+  }
+
+  /**
+   * ランタイム正本パーサによる宣言バインディング集合（protocol v1 追補）。
+   * getDeclaredBindings を実装した source が 1 つも無ければ null（消費側は
+   * declaredScan の簡易パーサへフォールバックする）。root は roster の rootNode
+   * を source ごとに重複排除して渡す。
+   */
+  getCanonicalDeclared(): IDeclaredBindingLike[] | null {
+    let supported = false;
+    const out: IDeclaredBindingLike[] = [];
+    // source をまたぐ重複（同じ root を複数 source が走査した場合）を宣言タプルで排除
+    const seen = new Set<string>();
+    for (const [sourceId, source] of this._sources) {
+      if (typeof source.getDeclaredBindings !== "function") {
+        continue;
+      }
+      supported = true;
+      const roots = new Set<Node>();
+      for (const entry of this._roster.get(sourceId) ?? []) {
+        roots.add(entry.rootNode);
+      }
+      for (const root of roots) {
+        for (const declared of source.getDeclaredBindings(root)) {
+          if (this.isHiddenStateName(declared.stateName)) {
+            continue;
+          }
+          const key = [declared.stateName, declared.statePathName, declared.propName,
+            declared.bindingType, declared.origin, declared.raw].join(NUL);
+          if (seen.has(key)) {
+            continue;
+          }
+          seen.add(key);
+          out.push(declared);
+        }
+      }
+    }
+    return supported ? out : null;
+  }
+
+  /**
+   * 配線カバレッジ（§4）: 宣言面（watchPaths / token 宣言 / canonical declared）と
+   * 実測面（watch-fired・token-emit の台帳・live 配線台帳）の突合。
+   * 「観測開始以降」の実測であることは observingSince を UI が常時表示して明示する。
+   */
+  getCoverageReport(): ICoverageEntry[] {
+    const out: ICoverageEntry[] = [];
+
+    for (const entry of this.getRoster()) {
+      const summary = entry.summary;
+      // --- watch: 宣言（watchPaths）× 実測（watch-fired 台帳） ---
+      for (const path of summary.watchPaths ?? []) {
+        const count = this._watchFiredCounts.get(pathKeyOf(entry.name, path)) ?? 0;
+        if (count > 0) {
+          out.push({ stateName: entry.name, kind: "watch", name: path, status: "fired", count, note: null });
+          continue;
+        }
+        // ワイルドカード行 watch は各 `.*` 階層のリストが `for` バインドされている
+        // （= paths.list に載っている）ことが発火前提（watch 設計 §6-3）。未成立は
+        // 「未発火」と区別する。ただし paths.list は for 由来のみで `$listKeys`
+        // 宣言はここから見えないため、断定でなく「for が観測できない」と報告する。
+        let missingList: string | null = null;
+        for (let star = path.indexOf(".*"); star !== -1; star = path.indexOf(".*", star + 2)) {
+          const listPath = path.slice(0, star);
+          if (!summary.paths.list.has(listPath)) {
+            missingList = listPath;
+            break;
+          }
+        }
+        if (missingList !== null) {
+          out.push({
+            stateName: entry.name, kind: "watch", name: path, status: "prerequisite-missing", count: 0,
+            note: `no for binding observed for list "${missingList}" (a $listKeys declaration would still let it fire)`,
+          });
+          continue;
+        }
+        out.push({ stateName: entry.name, kind: "watch", name: path, status: "never", count: 0, note: null });
+      }
+      // --- token: 宣言（commandTokenNames / eventTokenNames）× 実測（emit 台帳）。
+      // subscriberCount 0 = 空撃ち（§4）: 全 emit が空撃ちなら emitted-unheard として
+      // 警告する（emit 側だけ配線されて受け手が一つも居ない構成ミスの検出）。 ---
+      for (const name of summary.commandTokenNames) {
+        out.push(tokenCoverageOf(entry.name, "command", name,
+          this._tokenEmitCounts.get(tokenKeyOf(entry.name, "command", name))));
+      }
+      for (const name of summary.eventTokenNames) {
+        out.push(tokenCoverageOf(entry.name, "eventToken", name,
+          this._tokenEmitCounts.get(tokenKeyOf(entry.name, "event", name))));
+      }
+    }
+
+    // --- binding: canonical declared（宣言）× live 配線台帳（実測）。canonical が
+    // 取れないランタイムではこの節を出さない（declaredScan は集合でないため突合しない）。
+    const declared = this.getCanonicalDeclared();
+    if (declared !== null) {
+      const seen = new Set<string>();
+      for (const decl of declared) {
+        // 構造ディレクティブは行の実体化そのもの・eventToken は token 節が担当
+        if (decl.bindingType === "for" || decl.bindingType === "if"
+          || decl.bindingType === "elseif" || decl.bindingType === "else") continue;
+        if (decl.propName.startsWith("eventToken.")) continue;
+        const key = attachKeyOf(decl.stateName, decl.statePathName, decl.propName);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        // 「一度でも attach を観測したか」で判定（ever 台帳）。live 台帳は行の
+        // 破棄や GC（WeakRef pruning）で縮むため、瞬間値だと逆戻りする。
+        const attached = this._everAttachedKeys.has(key);
+        out.push({
+          stateName: decl.stateName, kind: "binding",
+          name: `${decl.propName} ← ${decl.statePathName}`,
+          status: attached ? "attached" : "never-attached",
+          count: attached ? 1 : 0,
+          note: decl.origin === "fragment" ? "template interior (attaches when rows materialize)" : null,
+        });
+      }
+    }
+
+    return out;
   }
 
   /** roster entry の state からトップレベルキーを列挙（keys 未実装ランタイムは空） */
@@ -423,7 +634,10 @@ export class DevtoolsCore {
         };
         set.add(entry);
         this._wiringEntryByBinding.set(event.binding, entry);
+        // カバレッジの実測面（B2）: attach の観測を ever 台帳へ積む（remove では消さない）
+        this._everAttachedKeys.add(attachKeyOf(stateName, path, event.binding.propName));
         this._notify("wiring");
+        this._notify("coverage");
         return;
       }
       case "state:binding-removed": {
@@ -456,6 +670,24 @@ export class DevtoolsCore {
         if (this.isHiddenStateName(event.stateName)) {
           return;
         }
+        // カバレッジの実測面: emit 回数と空撃ち回数を台帳に積む（§4）。
+        // stateName が null の emit はどの宣言とも突合できないため積まない。
+        if (event.stateName !== null) {
+          const emitKey = tokenKeyOf(event.stateName, event.kind, event.tokenName);
+          const stat = this._tokenEmitCounts.get(emitKey);
+          if (stat === undefined) {
+            this._tokenEmitCounts.set(emitKey, {
+              count: 1,
+              zeroSubscriberCount: event.subscriberCount === 0 ? 1 : 0,
+            });
+          } else {
+            stat.count += 1;
+            if (event.subscriberCount === 0) {
+              stat.zeroSubscriberCount += 1;
+            }
+          }
+          this._notify("coverage");
+        }
         this._appendTimeline({
           sourceId,
           kind: event.kind,
@@ -464,6 +696,16 @@ export class DevtoolsCore {
           detail: formatArgs(event.args),
           subscriberCount: event.subscriberCount,
         });
+        return;
+      }
+      case "state:watch-fired": {
+        if (this.isHiddenStateName(event.stateName)) {
+          return;
+        }
+        // timeline 行にはしない（発火は高頻度になりうる活動でありカバレッジが受け皿）。
+        const firedKey = pathKeyOf(event.stateName, event.path);
+        this._watchFiredCounts.set(firedKey, (this._watchFiredCounts.get(firedKey) ?? 0) + 1);
+        this._notify("coverage");
         return;
       }
       case "state:watch-error": {

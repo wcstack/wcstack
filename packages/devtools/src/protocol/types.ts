@@ -57,6 +57,29 @@ export interface IStateElementSummaryLike {
   readonly eventTokenNames: ReadonlySet<string>;
   readonly staticDependency: ReadonlyMap<string, readonly string[]>;
   readonly dynamicDependency: ReadonlyMap<string, readonly string[]>;
+  /**
+   * `$watch` の宣言パス集合（protocol v1 追補・配線カバレッジの宣言面）。
+   * 旧ランタイムにはフィールド自体が無いため optional。宣言なしは null。
+   */
+  readonly watchPaths?: ReadonlySet<string> | null;
+}
+
+/**
+ * 宣言レベルのバインディング 1 件（getDeclaredBindings の要素・protocol v1 追補）。
+ * ランタイム正本パーサの結果が構造的に流れる。宣言タプルで dedupe 済みの
+ * 「宣言の集合」であり、レンダリング行数に比例したインスタンス列ではない。
+ */
+export interface IDeclaredBindingLike {
+  /** 代表ノード（fragment 由来 = 構造テンプレート内部は null）。 */
+  readonly node: Node | null;
+  readonly propName: string;
+  readonly statePathName: string;
+  readonly stateName: string;
+  readonly bindingType: string;
+  readonly inFilters: readonly { readonly filterName: string; readonly args: readonly string[] }[];
+  readonly outFilters: readonly { readonly filterName: string; readonly args: readonly string[] }[];
+  readonly origin: "attribute" | "comment" | "fragment";
+  readonly raw: string;
 }
 
 export type DevtoolsEventLike =
@@ -121,6 +144,13 @@ export type DevtoolsEventLike =
       readonly paths: readonly string[];
     }
   | {
+      // `$watch` ハンドラの正常発火（protocol v1 追補・配線カバレッジの実測面）。
+      // 値は載せない — 「宣言したのに一度も発火しない」の検出には発火の事実で足りる。
+      readonly type: "state:watch-fired";
+      readonly stateName: string;
+      readonly path: string;
+    }
+  | {
       // two-way エコーの辺単位抑止（enablePropagationContext 時のみ流れる）。
       readonly type: "propagation:suppressed";
       readonly reason: "confirmation" | "visited-edge";
@@ -172,6 +202,11 @@ export interface IDevtoolsSourceLike {
   keys?(name: string, rootNode: Node): string[];
   read(name: string, rootNode: Node, path: string, indexes?: number[]): unknown;
   write(name: string, rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
+  /**
+   * protocol v1 追補 API（optional 扱いで呼ぶ）。ランタイム正本パーサによる
+   * 宣言レベルバインディングの集合（declaredScan の簡易パーサを置き換える正本）。
+   */
+  getDeclaredBindings?(rootNode: Node): IDeclaredBindingLike[];
   _setSink(sink: DevtoolsSinkLike | null): void;
 }
 
