@@ -91,6 +91,22 @@ describe("clearParserCaches（tooling 専用のキャッシュ解放）", () => 
     expect(after.path).toBe(before.path);
     expect(after.cumulativePaths).toEqual(before.cumulativePaths);
   });
+
+  it("フィルタ関数キャッシュも解放されること（クリア後は新しいクロージャ）", () => {
+    // filterFnByKey は filterName(args):ioType キーのモジュールレベル Map。
+    // 言語サーバー常駐では有効な編集中間フィルタ引数がキーごとに蓄積するため
+    // clearParserCaches の解放対象に含まれる（含まれないと intern 解放が部分解決）。
+    const [before] = parseBindTextsForElement("textContent: price | fix(2)");
+    const beforeFn = before.outFilters[0].filterFn;
+    // 同一キーはキャッシュされた同一クロージャを返す
+    const [again] = parseBindTextsForElement("textContent: price | fix(2)");
+    expect(again.outFilters[0].filterFn).toBe(beforeFn);
+    clearParserCaches();
+    const [after] = parseBindTextsForElement("textContent: price | fix(2)");
+    expect(after.outFilters[0].filterFn).not.toBe(beforeFn);
+    // 挙動は同一（クリアは意味論を変えない）
+    expect(after.outFilters[0].filterFn(1.234)).toBe(beforeFn(1.234));
+  });
 });
 
 describe("getPathInfo（パス解析の公開契約）", () => {
