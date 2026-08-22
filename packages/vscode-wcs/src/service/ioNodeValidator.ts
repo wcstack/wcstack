@@ -38,7 +38,8 @@ const STRUCTURAL_DIRECTIVES = new Set(['for', 'if', 'elseif', 'else']);
 /** `''` / `null` / `[]` / `{}` — storage の保存値を初期書き戻しで上書きする空値シード。 */
 const EMPTYISH_SEEDS = new Set(["''", '""', '``', 'null', '[]', '{}']);
 
-interface IoTagOccurrence {
+/** 組み込み wcs-* タグ 1 出現（core/navigation の spread ヒントが所属タグ特定に共有。走査が二重実装になると検査とヒントでタグ解釈が割れる）。 */
+export interface IoTagOccurrence {
   tagName: string;
   /** タグ全体の開始オフセット。 */
   tagStart: number;
@@ -241,7 +242,7 @@ function editDistance(a: string, b: string, bound: number): number {
 // ============================================================
 
 /** カタログ掲載タグの開きタグを全て検出する。 */
-function findBuiltinTagOccurrences(html: string): IoTagOccurrence[] {
+export function findBuiltinTagOccurrences(html: string): IoTagOccurrence[] {
   const out: IoTagOccurrence[] = [];
   // 属性値中の ">" を誤検出しないため、引用符内はまとめて読み飛ばす。
   const regex = /<(wcs-[a-z0-9-]+)((?:"[^"]*"|'[^']*'|[^>"'])*)>/gi;

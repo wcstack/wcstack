@@ -55,6 +55,15 @@ export function getInnermostForPath(html: string, offset: number, bindAttrName: 
   return chain.length === 0 ? null : chain[chain.length - 1];
 }
 
+/** offset を囲む for テンプレート 1 枚（生 for パス + テンプレート同一性のアンカー）。 */
+export interface IEnclosingFor {
+  /** for 属性値の生テキスト（`@state` / フィルタが付き得る）。 */
+  readonly path: string;
+  /** 開始タグ `<template` の開始オフセット。テンプレート実体の同一性キー
+   *  （`$1`〜`$9` のようにループ実体で参照先が決まる要素のスコープ判定に使う）。 */
+  readonly anchor: number;
+}
+
 /**
  * 指定オフセットを囲む**全ての** for テンプレートの生 for パス文字列を、
  * 外側 → 内側の順で返す。囲まれていなければ空配列。
@@ -66,6 +75,15 @@ export function getInnermostForPath(html: string, offset: number, bindAttrName: 
  * 必要な消費側は正本パーサ（statePathName）を通すこと。
  */
 export function getEnclosingForPaths(html: string, offset: number, bindAttrName: string = 'data-wcs'): string[] {
+  return getEnclosingFors(html, offset, bindAttrName).map((entry) => entry.path);
+}
+
+/**
+ * getEnclosingForPaths のアンカー付き版。外側 → 内側の順。
+ * `$N` の参照先はチェーン N 枚目（外側から）のテンプレート**実体**で決まるため、
+ * パス文字列でなくアンカーで同一性を判定する消費者向け。
+ */
+export function getEnclosingFors(html: string, offset: number, bindAttrName: string = 'data-wcs'): IEnclosingFor[] {
   const escaped = bindAttrName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const openRegex = new RegExp(
     `<template[^>]*${escaped}\\s*=\\s*["']\\s*for\\s*:\\s*([^"']+?)\\s*["']`,
@@ -73,7 +91,7 @@ export function getEnclosingForPaths(html: string, offset: number, bindAttrName:
   );
 
   // 開始位置の昇順で走査するので、囲んでいるものはそのまま外側 → 内側の順に並ぶ
-  const enclosing: string[] = [];
+  const enclosing: IEnclosingFor[] = [];
   let match: RegExpExecArray | null;
   while ((match = openRegex.exec(html)) !== null) {
     if (match.index >= offset) break;
@@ -84,7 +102,7 @@ export function getEnclosingForPaths(html: string, offset: number, bindAttrName:
 
     const depth = getForTemplateDepthAt(html, match.index, offset, bindAttrName);
     if (depth > 0) {
-      enclosing.push(match[1].trim());
+      enclosing.push({ path: match[1].trim(), anchor: match.index });
     }
   }
 

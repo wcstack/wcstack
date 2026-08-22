@@ -24,8 +24,9 @@
  * v1 の割り切り:
  * - 単一 HTML ファイル閉じ（referenceIndex と同じ）。外部 state の宣言へは
  *   ジャンプせず `<wcs-state src=…>` タグへのフォールバックジャンプ（§5-3）。
- * - spread の `→ N props` ヒントは未実装（属性の所属タグ特定ヘルパーが要る —
- *   ioNodeValidator の走査は非公開。follow-up）。
+ * - spread の `→ N props` ヒントは組み込み wcs-* タグ限定（D8: ブラウザ外の
+ *   expandSpread は builtinTags カタログでしか数えられない。ユーザー定義タグ・
+ *   DCC は unexpanded = 出さない）。所属タグ特定は ioNodeValidator の走査を共有。
  * - 参照収集は出現起点 = 展開後パスの完全一致、宣言起点 = 宣言名 + その配下
  *   （`user` からは `user.name` も参照に含む）。
  */
@@ -45,7 +46,9 @@ import {
 import { clearParserCaches } from '@wcstack/state/parser';
 import { getStatePathsFromHtml } from '../../service/statePathResolver.js';
 import type { PathCandidate } from '../../service/stateAnalyzer.js';
-import { getEnclosingForPaths } from '../../service/forContext.js';
+import { getEnclosingForPaths, getEnclosingFors } from '../../service/forContext.js';
+import { findBuiltinTagOccurrences, type IoTagOccurrence } from '../../service/ioNodeValidator.js';
+import { BUILTIN_TAGS } from '../../service/generated/builtinTags.generated.js';
 import { findAllBindAttributes } from '../../service/bindingValidator.js';
 import {
   findAllCommentBindings,
@@ -80,7 +83,7 @@ export interface IReferenceResult {
   readonly isDeclaration: boolean;
 }
 
-export type InlayHintKind = 'shorthand' | 'filterType';
+export type InlayHintKind = 'shorthand' | 'filterType' | 'spread';
 
 export interface IInlayHint {
   /** 挿入位置（ドキュメント絶対オフセット）。 */
@@ -636,9 +639,29 @@ export function getReferencesAt(
     const resolved = resolvedOf(occurrence);
     if (resolved === null) return null;
     // `$1`〜`$9`（ループ添字）はパス文字列が同じでも囲み for ごとに別の参照先。
-    // for 文脈でスコープしない限り横断統合は誤った参照の提示になるため出さない
-    // （誤 hint ゼロ。for 文脈スコープ化は follow-up）。
-    if (/^\$\d+$/.test(resolved)) return null;
+    // `$N` の参照先はチェーン N 枚目（外側から。README: 「$1 が外・$2 が内」）の
+    // for テンプレート実体なので、同じテンプレートをアンカーに持つ出現だけを集める。
+    const loopIndexMatch = /^\$([1-9])$/.exec(resolved);
+    if (loopIndexMatch !== null) {
+      const n = Number(loopIndexMatch[1]);
+      // getEnclosingFors は全文書走査 — 出現ごとの再計算を避けて位置でメモ化
+      const anchorCache = new Map<number, number | null>();
+      const anchorOf = (o: IPathOccurrence): number | null => {
+        const cached = anchorCache.get(o.pathRange.start);
+        if (cached !== undefined) return cached;
+        const chain = getEnclosingFors(html, o.pathRange.start, bindAttribute);
+        const anchor = chain.length >= n ? chain[n - 1].anchor : null;
+        anchorCache.set(o.pathRange.start, anchor);
+        return anchor;
+      };
+      const originAnchor = anchorOf(occurrence);
+      if (originAnchor === null) return null; // ループ外（または深さ不足）の $N — lint の領分
+      return index.occurrences
+        .filter((o) =>
+          o.kind === 'path' && o.stateName === occurrence.stateName
+          && o.path === resolved && anchorOf(o) === originAnchor)
+        .map((o) => ({ range: o.pathRange, isDeclaration: false }));
+    }
     const results: IReferenceResult[] = index.occurrences
       .filter((o) => o.kind === 'path' && o.stateName === occurrence.stateName && resolvedOf(o) === resolved)
       .map((o) => ({ range: o.pathRange, isDeclaration: false }));
@@ -717,11 +740,46 @@ export function getInlayHints(
   const getCandidates = (): PathCandidate[] =>
     (candidates ??= getStatePathsFromHtml(html, stateTagName));
 
+  // spread ヒント用: 属性の所属タグ（組み込み wcs-* のみ）を範囲包含で引く
+  let builtinOccurrences: IoTagOccurrence[] | null = null;
+  const findOwnerBuiltinTag = (docOffset: number): IoTagOccurrence | null => {
+    builtinOccurrences ??= findBuiltinTagOccurrences(html);
+    return (
+      builtinOccurrences.find(
+        (o) => docOffset >= o.attrsStart && docOffset < o.attrsStart + o.attrsText.length,
+      ) ?? null
+    );
+  };
+
   for (const site of enumerateExpressionSites(html, bindAttribute)) {
     const { binding } = site;
     if (binding.parsed === null || binding.pathRange === null) continue;
     if (binding.parsed.propSegments[0] === 'eventToken') continue; // トークン名はパスではない
     const pathDocRange = site.lift(binding.pathRange);
+
+    // --- spread の展開規模（式末尾に `→ N props`）。ブラウザ外の expandSpread は
+    // builtinTags カタログ限定（D8）— ユーザー定義タグ・DCC は unexpanded = 出さない。
+    // 展開対象は wcBindable の properties + inputs（dedupe。command / eventToken は
+    // spread 対象外の契約）。 ---
+    if (binding.parsed.bindingType === 'spread') {
+      if (site.channel !== 'attribute') continue;
+      const exprDocRange = site.lift(binding.exprRange);
+      if (exprDocRange.end < rangeStart || exprDocRange.end > rangeEnd) continue;
+      const owner = findOwnerBuiltinTag(pathDocRange.start);
+      if (owner !== null) {
+        const contract = BUILTIN_TAGS[owner.tagName];
+        const propCount = new Set([...Object.keys(contract.inputs), ...contract.properties]).size;
+        // カタログは「wcBindable 無し」のタグ（wcs-fetch-header 等）も空契約に
+        // 平坦化している。無宣言タグへの spread はランタイムが raiseError する
+        // 構成なので、0 件を「合法な 0 展開」として提示すると誤 hint になる —
+        // union が空なら出さない（真に空の wcBindable (wcs-noise) の「→ 0 props」
+        // も失うが情報価値ゼロ。カタログへの wcBindable 有無の記録は follow-up）。
+        if (propCount > 0) {
+          hints.push({ offset: exprDocRange.end, label: `→ ${propCount} props`, kind: 'spread' });
+        }
+      }
+      continue;
+    }
 
     // --- for 短縮パスの展開表示（`.name` の後ろに `= users.*.name`） ---
     const path = binding.parsed.statePathName;
