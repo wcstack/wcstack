@@ -194,8 +194,9 @@ describe('devtools/bridge', () => {
         expect(summary.paths.list.has('items')).toBe(true);
         expect(summary.paths.getter.has('total')).toBe(true);
         expect(summary.commandTokenNames.has('go')).toBe(true);
-        // watchPaths 未宣言（fake に無い）は null に畳まれる（protocol v1 追補）
+        // watchPaths / keyedListPaths 未宣言（fake に無い）は null に畳まれる（protocol v1 追補）
         expect(summary.watchPaths).toBeNull();
+        expect(summary.keyedListPaths).toBeNull();
       } finally {
         setStateElementByName(rootNode, 'summary-test', null);
       }
@@ -213,6 +214,25 @@ describe('devtools/bridge', () => {
         expect(summary.watchPaths).toEqual(new Set(['count', 'items.*.price']));
       } finally {
         setStateElementByName(element.rootNode, 'watch-summary', null);
+      }
+    });
+
+    it('summaryにkeyedListPathsが載ること（$listKeys宣言のリストパス集合・protocol v1追補）', () => {
+      registerDevtoolsSource();
+      const source = __getRegisteredSourceForTest()!;
+      const element = createMockStateElement('listkeys-summary', {
+        listKeys: new Map<string, string | ((row: unknown) => unknown)>([
+          ['items', 'id'],
+          ['rows.*.children', (row) => row],
+        ]),
+      } as never);
+      setStateElementByName(element.rootNode, 'listkeys-summary', element);
+      try {
+        const summary = source.getStateElements().find((s) => s.name === 'listkeys-summary')!;
+        // 出るのはリストパスのみ — キー指定（文字列/関数）は境界を越えない
+        expect(summary.keyedListPaths).toEqual(new Set(['items', 'rows.*.children']));
+      } finally {
+        setStateElementByName(element.rootNode, 'listkeys-summary', null);
       }
     });
 
