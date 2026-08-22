@@ -21,19 +21,22 @@
  * - 「構造ディレクティブは単独バインディング」の属性全体検査はここでは行わない
  *   （bindingValidator の structuralMustBeSingle が担当。problems は**式単位**の
  *   正本パーサ受理の記録であり、属性全体のランタイム受理と同義ではない）。
- * - **既知乖離（text チャネル）**: ランタイムのコメント/mustache 経路は
- *   parseBindTextForEmbeddedNode → parseStatePart で `;` を**分割しない**
- *   （`{{ a; b }}` は「a; b」という 1 本のパスとして束縛される）。現状の正本
- *   subpath は parseStatePart を公開していないため、ここでは `;` 分割の各式を
- *   個別に載せる（2 本目以降も problems / occurrences に必ず現れる）。
- *   parseBindTextForEmbeddedNode の subpath export 後に正本化する（follow-up）。
+ * - **text チャネルも正本化済み（v1.29.0 で parseBindTextForEmbeddedNode が
+ *   subpath export された）**: コメント/mustache 経路はランタイムと同じく
+ *   `;` を**分割しない**（`{{ a; b }}` は「a; b」という 1 本のパスとして 1 出現）。
+ *   属性経路（無条件 `;` 分割）との規則差は正本パーサ由来の仕様。
  */
 
 import { parseWcsScriptBlocks } from '../../language/htmlParse.js';
 import { findAllBindAttributes } from '../../service/bindingValidator.js';
 import { findAllMustacheSyntax, findAllCommentBindings } from '../../service/templateSyntax.js';
 import { analyzeDeclarationSpans } from '../../service/stateAnalyzer.js';
-import { parseBindTextWithPositions, type ITokenRange } from '../parser/positionalParser.js';
+import {
+  parseBindTextWithPositions,
+  parseEmbeddedTextWithPositions,
+  type ITokenRange,
+} from '../parser/positionalParser.js';
+import { clearParserCaches } from '@wcstack/state/parser';
 
 export type OccurrenceSource = 'attribute' | 'mustache' | 'comment';
 
@@ -98,10 +101,12 @@ function keyOf(stateName: string, path: string): string {
   return `${stateName}\u0000${path}`;
 }
 
-/** mustache / コメント構文の式（`path[@state][|filters]`）を正本パーサで解釈するための擬似左辺。 */
-const TEXT_EXPR_PREFIX = 'textContent:';
-
 export function buildReferenceIndex(html: string, options: IReferenceIndexOptions = {}): IReferenceIndex {
+  // 正本パーサの intern キャッシュは無制限（evict なし）。言語サーバー常駐で
+  // 編集中の中間パスが恒久 intern されないよう、ドキュメント単位の構築ごとに
+  // 捨てる（構築内のキャッシュ効果は保たれる。PathInfo の同一性保証は
+  // 1 回の構築内でしか使っていない）。
+  clearParserCaches();
   const bindAttribute = options.bindAttribute ?? 'data-wcs';
   const stateTagName = options.stateTagName ?? 'wcs-state';
 
@@ -139,34 +144,30 @@ export function buildReferenceIndex(html: string, options: IReferenceIndexOption
     ...findAllCommentBindings(html),
   ];
   for (const match of textMatches) {
-    // 式は右辺のみの形。擬似左辺を付けて正本パーサに通し、スパンは接頭辞ぶん戻す
-    // （構成文字列は単一なのでシフト量は全セグメント共通の定数）。ヘッダの既知乖離
-    // どおり `;` 分割の全セグメントを個別に載せる — 2 本目以降を黙って落とさない。
-    const constructed = `${TEXT_EXPR_PREFIX} ${match.expression}`;
-    const shiftBy = TEXT_EXPR_PREFIX.length + 1;
+    // ランタイムと同じ embedded 経路（`;` 無分割・式全体が 1 バインディング）で
+    // パースする。スパンは式ローカル → exprStart への単純シフト。
+    const binding = parseEmbeddedTextWithPositions(match.expression);
     const shift = (range: ITokenRange): ITokenRange => ({
-      start: Math.max(match.exprStart, match.exprStart + (range.start - shiftBy)),
-      end: Math.min(match.exprEnd, match.exprStart + (range.end - shiftBy)),
+      start: match.exprStart + range.start,
+      end: match.exprStart + range.end,
     });
-    for (const binding of parseBindTextWithPositions(constructed)) {
-      if (binding.parsed === null) {
-        problems.push({ message: binding.error ?? 'parse error', range: shift(binding.exprRange) });
-        continue;
-      }
-      if (binding.pathRange === null) continue;
-      occurrences.push({
-        source: match.kind,
-        kind: 'path',
-        stateName: binding.parsed.stateName,
-        path: binding.parsed.statePathName,
-        pathRange: shift(binding.pathRange),
-        exprRange: { start: match.exprStart, end: match.exprEnd },
-        propName: null,
-        propRange: null,
-        stateNameRange: binding.stateNameRange === null ? null : shift(binding.stateNameRange),
-        bindingType: 'text',
-      });
+    if (binding.parsed === null) {
+      problems.push({ message: binding.error ?? 'parse error', range: shift(binding.exprRange) });
+      continue;
     }
+    if (binding.pathRange === null) continue;
+    occurrences.push({
+      source: match.kind,
+      kind: 'path',
+      stateName: binding.parsed.stateName,
+      path: binding.parsed.statePathName,
+      pathRange: shift(binding.pathRange),
+      exprRange: { start: match.exprStart, end: match.exprEnd },
+      propName: null,
+      propRange: null,
+      stateNameRange: binding.stateNameRange === null ? null : shift(binding.stateNameRange),
+      bindingType: 'text',
+    });
   }
 
   // --- 宣言側: <wcs-state> インラインスクリプトのトップレベル宣言 ---

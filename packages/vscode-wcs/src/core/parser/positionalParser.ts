@@ -19,7 +19,11 @@
  * 判定すること（bindingValidator の structuralMustBeSingle が実装済み）。
  */
 
-import { parseBindTextsForElement, type ParseBindTextResult } from '@wcstack/state/parser';
+import {
+  parseBindTextForEmbeddedNode,
+  parseBindTextsForElement,
+  type ParseBindTextResult,
+} from '@wcstack/state/parser';
 import { getWcsManifest } from '../../service/wcsManifest.js';
 
 export interface ITokenRange {
@@ -52,6 +56,51 @@ function locate(haystack: string, needle: string, from: number, to: number): ITo
   const index = haystack.indexOf(needle, from);
   if (index === -1 || index + needle.length > to) return null;
   return { start: index, end: index + needle.length };
+}
+
+/**
+ * mustache / コメントバインディングの式を**ランタイムと同じ経路**
+ * （parseBindTextForEmbeddedNode → parseStatePart）で位置付きパースする。
+ *
+ * 属性経路との決定的な違い: `;` を**分割しない**（`{{ a; b }}` は「a; b」という
+ * 1 本のパス）。式全体が `path[@state][|filters]` の 1 バインディングで、
+ * 左辺は合成（propName 'textContent'）のため propRange は常に null。
+ * 入力 expression は templateSyntax の抽出結果（trim 済み）を想定する。
+ */
+export function parseEmbeddedTextWithPositions(expression: string): IPositionalBinding {
+  const exprRange: ITokenRange = { start: 0, end: expression.length };
+
+  let parsed: ParseBindTextResult | null = null;
+  let error: string | null = null;
+  try {
+    parsed = parseBindTextForEmbeddedNode(expression);
+  } catch (e) {
+    error = (e as Error).message;
+  }
+
+  if (parsed === null) {
+    return { exprRange, exprText: expression, parsed, error, propRange: null, pathRange: null, stateNameRange: null };
+  }
+
+  // 右辺のみの式: パスは先頭から最初の `|` まで、`@state` はその窓内。
+  const firstPipe = expression.indexOf(delimiters.filter);
+  const pathScopeEnd = firstPipe === -1 ? expression.length : firstPipe;
+  const pathLocal = locate(expression, parsed.statePathName, 0, pathScopeEnd);
+  let stateNameLocal: ITokenRange | null = null;
+  const at = expression.indexOf(delimiters.stateName);
+  if (at !== -1 && at < pathScopeEnd) {
+    stateNameLocal = locate(expression, parsed.stateName, at + 1, pathScopeEnd);
+  }
+
+  return {
+    exprRange,
+    exprText: expression,
+    parsed,
+    error,
+    propRange: null,
+    pathRange: pathLocal,
+    stateNameRange: stateNameLocal,
+  };
 }
 
 /**

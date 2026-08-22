@@ -127,13 +127,25 @@ export default { changed: 0, $eventTokens: ["changed"] };
     expect(SAMPLE.slice(ref.stateNameRange!.start, ref.stateNameRange!.end)).toBe('cart');
   });
 
-  it('text チャネルの `;` は既知乖離として全セグメントを載せること（2 本目を黙って落とさない）', () => {
-    // ランタイムは {{ a; b }} を無分割で「a; b」1 本のパスとして束縛する（ヘッダ参照）。
-    // 現行の暫定実装は分割して各式を載せる — 1 本目は出現・2 本目は problems に必ず現れる。
-    const idx = buildReferenceIndex('<template><p>{{ a; b }}</p></template>');
-    expect(idx.referencesOf('default', 'a')).toHaveLength(1);
+  it('text チャネルはランタイムと同じく `;` を分割しないこと（embedded 経路の正本化）', () => {
+    // ランタイムは {{ a; b }} を parseBindTextForEmbeddedNode（無分割）で
+    // 「a; b」1 本のパスとして束縛する。v1.29.0 で同関数が subpath export され、
+    // ここも同一経路になった — 分割由来の偽 problems は出ない。
+    const html = '<template><p>{{ a; b }}</p></template>';
+    const idx = buildReferenceIndex(html);
+    expect(idx.problems).toHaveLength(0);
+    expect(idx.referencesOf('default', 'a')).toHaveLength(0);
+    const refs = idx.referencesOf('default', 'a; b');
+    expect(refs).toHaveLength(1);
+    expect(html.slice(refs[0].pathRange.start, refs[0].pathRange.end)).toBe('a; b');
+  });
+
+  it('text チャネルの壊れた式は problems に載り、位置は式全体を指すこと', () => {
+    const html = '<template><p>{{ count | }}</p></template>';
+    const idx = buildReferenceIndex(html);
     expect(idx.problems).toHaveLength(1);
-    expect(idx.problems[0].message).toContain("Missing ':'");
+    const problem = idx.problems[0];
+    expect(html.slice(problem.range.start, problem.range.end)).toBe('count |');
   });
 });
 

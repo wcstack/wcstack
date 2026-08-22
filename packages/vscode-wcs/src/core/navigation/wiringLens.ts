@@ -36,7 +36,13 @@ import {
   type IPathOccurrence,
   type IReferenceIndex,
 } from '../index/referenceIndex.js';
-import { parseBindTextWithPositions, type IPositionalBinding, type ITokenRange } from '../parser/positionalParser.js';
+import {
+  parseBindTextWithPositions,
+  parseEmbeddedTextWithPositions,
+  type IPositionalBinding,
+  type ITokenRange,
+} from '../parser/positionalParser.js';
+import { clearParserCaches } from '@wcstack/state/parser';
 import { getStatePathsFromHtml } from '../../service/statePathResolver.js';
 import type { PathCandidate } from '../../service/stateAnalyzer.js';
 import { getEnclosingForPaths } from '../../service/forContext.js';
@@ -165,9 +171,6 @@ const LABELS: Record<WcsLocale, ILensLabels> = {
 
 const { delimiters } = getWcsManifest().syntax;
 
-/** mustache / コメント構文の式を正本パーサに通すための擬似左辺（referenceIndex と同一）。 */
-const TEXT_EXPR_PREFIX = 'textContent:';
-
 /**
  * for 短縮パスをランタイムと同一規則で展開する。短縮でなければそのまま返す。
  *
@@ -271,9 +274,8 @@ function filterTypeLineOf(meta: IFilterMeta, labels: ILensLabels): string | null
 }
 
 /**
- * バインド式の列挙 1 件。lift は式ローカル ITokenRange → ドキュメント絶対への持ち上げ。
- * attribute は恒等シフト、text チャネルは擬似左辺ぶんの巻き戻し + クランプ
- * （referenceIndex と同じ変換）。
+ * バインド式の列挙 1 件。lift は式ローカル ITokenRange → ドキュメント絶対への持ち上げ
+ * （attribute は valueStart、text は exprStart への単純シフト）。
  */
 interface IExpressionSite {
   readonly binding: IPositionalBinding;
@@ -281,7 +283,11 @@ interface IExpressionSite {
   lift(range: ITokenRange): ITokenRange;
 }
 
-/** HTML 中の全バインド式（属性 + mustache + コメント）を positional パース済みで列挙する。 */
+/**
+ * HTML 中の全バインド式（属性 + mustache + コメント）を positional パース済みで
+ * 列挙する。text チャネルはランタイムと同じ embedded 経路（`;` 無分割・
+ * 式全体が 1 バインディング）— referenceIndex と同一規則。
+ */
 function enumerateExpressionSites(html: string, bindAttribute: string): IExpressionSite[] {
   const sites: IExpressionSite[] = [];
   for (const attr of findAllBindAttributes(html, bindAttribute)) {
@@ -295,18 +301,11 @@ function enumerateExpressionSites(html: string, bindAttribute: string): IExpress
   }
   const textMatches = [...findAllMustacheSyntax(html), ...findAllCommentBindings(html)];
   for (const match of textMatches) {
-    const constructed = `${TEXT_EXPR_PREFIX} ${match.expression}`;
-    const shiftBy = TEXT_EXPR_PREFIX.length + 1;
-    for (const binding of parseBindTextWithPositions(constructed)) {
-      sites.push({
-        binding,
-        channel: 'text',
-        lift: (range) => ({
-          start: Math.max(match.exprStart, match.exprStart + (range.start - shiftBy)),
-          end: Math.min(match.exprEnd, match.exprStart + (range.end - shiftBy)),
-        }),
-      });
-    }
+    sites.push({
+      binding: parseEmbeddedTextWithPositions(match.expression),
+      channel: 'text',
+      lift: (range) => ({ start: match.exprStart + range.start, end: match.exprStart + range.end }),
+    });
   }
   return sites;
 }
@@ -441,22 +440,25 @@ function locateFilterAt(binding: IPositionalBinding, offset: number, site: IExpr
   // lift 前のローカル走査で十分 — 式テキストを組み立て直すのではなく、
   // フィルタ名を順に locate してヒットだけ lift する。
   const exprText = binding.exprText;
-  const colon = exprText.indexOf(delimiters.propValue);
+  // text チャネル（embedded）は右辺のみの式で原文に `:` を持たない — 右辺は
+  // 先頭から。属性は `:` で左辺 / 右辺が分かれる（フィルタ引数内の `:`
+  // （`date('HH:mm')` 等）を右辺開始と誤認しないよう、チャネルで分岐する）。
+  const colon = site.channel === 'attribute' ? exprText.indexOf(delimiters.propValue) : -1;
+  const rhsStart = site.channel === 'attribute' ? (colon === -1 ? exprText.length : colon + 1) : 0;
 
-  // out-filter 帯: `:` の後の最初の `|` 以降
-  if (parsed.outFilters.length > 0 && colon !== -1) {
-    const firstPipe = exprText.indexOf(delimiters.filter, colon + 1);
+  // out-filter 帯: 右辺の最初の `|` 以降
+  if (parsed.outFilters.length > 0) {
+    const firstPipe = exprText.indexOf(delimiters.filter, rhsStart);
     if (firstPipe !== -1) {
       const hit = walkFilterNames(exprText, parsed.outFilters.map((f) => f.filterName), firstPipe + 1, exprText.length, offset, binding, site);
       if (hit !== null) return hit;
     }
   }
-  // in-filter 帯: 左辺（`:` より前）の `|` 以降
-  if (parsed.inFilters.length > 0) {
-    const lhsEnd = colon === -1 ? exprText.length : colon;
+  // in-filter 帯: 属性の左辺（`:` より前）の `|` 以降（embedded に左辺は無い）
+  if (site.channel === 'attribute' && parsed.inFilters.length > 0 && colon !== -1) {
     const lhsPipe = exprText.indexOf(delimiters.filter);
-    if (lhsPipe !== -1 && lhsPipe < lhsEnd) {
-      const hit = walkFilterNames(exprText, parsed.inFilters.map((f) => f.filterName), lhsPipe + 1, lhsEnd, offset, binding, site);
+    if (lhsPipe !== -1 && lhsPipe < colon) {
+      const hit = walkFilterNames(exprText, parsed.inFilters.map((f) => f.filterName), lhsPipe + 1, colon, offset, binding, site);
       if (hit !== null) return hit;
     }
   }
@@ -703,6 +705,9 @@ export function getInlayHints(
   rangeEnd: number,
   options: IWiringLensOptions = {},
 ): IInlayHint[] {
+  // buildReferenceIndex を経ない唯一のエントリ — intern キャッシュの単調増加を
+  // ここでも抑える（理由は referenceIndex 側のコメント参照）
+  clearParserCaches();
   const bindAttribute = options.bindAttribute ?? 'data-wcs';
   const stateTagName = options.stateTagName ?? 'wcs-state';
   const hints: IInlayHint[] = [];
