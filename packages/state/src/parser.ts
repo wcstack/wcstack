@@ -38,9 +38,10 @@ export type { IFilterInfo, BindingType } from "./types.js";
 import { clearPathInfoCacheForTooling } from "./address/PathInfo.js";
 import { clearPropPartCacheForTooling } from "./bindTextParser/parsePropPart.js";
 import { clearStatePartCacheForTooling } from "./bindTextParser/parseStatePart.js";
+import { clearFilterFnCacheForTooling } from "./bindTextParser/parseFilters.js";
 
 /**
- * このエントリの内部キャッシュ（PathInfo intern・フィルタ列パース結果）を全て捨てる。
+ * このエントリの内部キャッシュ（PathInfo intern・propPart/statePart のパース結果・フィルタ関数クロージャ）を全て捨てる。
  *
  * 言語サーバー等の**長時間プロセス専用**。編集中の中間パス（`user.n` 等）が
  * 無制限キャッシュに恒久 intern されてメモリが単調増加するため、ドキュメント
@@ -52,4 +53,5 @@ export function clearParserCaches(): void {
   clearPathInfoCacheForTooling();
   clearPropPartCacheForTooling();
   clearStatePartCacheForTooling();
+  clearFilterFnCacheForTooling();
 }
