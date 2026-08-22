@@ -310,6 +310,8 @@ function parseWcsStateElements(html, stateTagName = "wcs-state") {
     const jsonAttr = extractAttribute(wcsMatch.tagContent, "json") ?? void 0;
     const stateAttr = extractAttribute(wcsMatch.tagContent, "state") ?? void 0;
     const srcAttr = extractAttribute(wcsMatch.tagContent, "src") ?? void 0;
+    const tagStart = pos;
+    const tagEnd = wcsMatch.end;
     pos = wcsMatch.end;
     const scriptBlocks = [];
     const wcsCloseIdx = findCloseTag(html, pos, stateTagName);
@@ -346,7 +348,7 @@ function parseWcsStateElements(html, stateTagName = "wcs-state") {
       pos = html.indexOf(">", scriptCloseIdx) + 1;
       if (pos === 0) break;
     }
-    elements.push({ stateName, jsonAttr, stateAttr, srcAttr, scriptBlocks });
+    elements.push({ stateName, jsonAttr, stateAttr, srcAttr, scriptBlocks, tagStart, tagEnd });
     pos = wcsEnd;
     if (wcsCloseIdx !== -1) {
       const closeEnd = html.indexOf(">", wcsCloseIdx);
@@ -514,6 +516,26 @@ function isNonFunctionLiteral(value) {
   const scan = maskCommentsAndStrings(trimmed);
   if (/^(?:async\s+)?function\b/.test(trimmed) || scan.includes("=>")) return false;
   return /^["'`]/.test(trimmed) || /^-?\d/.test(trimmed) || /^(?:true|false|null|undefined)\b/.test(trimmed) || trimmed.startsWith("[") || trimmed.startsWith("{");
+}
+function findNonObjectWatch(scriptContent) {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return null;
+  const watchProp = parseTopLevelProperties(root.content).find((p) => p.name === RESERVED_WATCH_KEY);
+  if (!watchProp || watchProp.nameStart === void 0 || watchProp.nameEnd === void 0) {
+    return null;
+  }
+  const span = { start: root.start + watchProp.nameStart, end: root.start + watchProp.nameEnd };
+  if (watchProp.kind === "method") {
+    return span;
+  }
+  if (watchProp.kind !== "data" || !watchProp.value) return null;
+  const trimmed = watchProp.value.trim();
+  if (trimmed.startsWith("{")) return null;
+  const scan = maskCommentsAndStrings(trimmed).trim();
+  const isArrowFunction = /^(?:async\s+)?\([^()]*\)\s*=>/.test(scan) || /^(?:async\s+)?[$\w]+\s*=>/.test(scan);
+  const isWholeLiteral = /^(["'`])[^"'`]*\1$/.test(scan) || /^-?\d[\w.]*$/.test(scan) || /^(?:true|false|null)$/.test(scan) || /^(?:async\s+)?function\b[\s\S]*\}$/.test(scan);
+  if (!isArrowFunction && !isWholeLiteral) return null;
+  return span;
 }
 function collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys, stateName) {
   if (prop.name === RESERVED_STREAMS_KEY && prop.kind === "data" && prop.value && isObjectLiteral(prop.value)) {
@@ -966,25 +988,27 @@ function isInsideForTemplate(html, offset, bindAttrName = "data-wcs") {
   return false;
 }
 function getInnermostForPath(html, offset, bindAttrName = "data-wcs") {
+  const chain = getEnclosingForPaths(html, offset, bindAttrName);
+  return chain.length === 0 ? null : chain[chain.length - 1];
+}
+function getEnclosingForPaths(html, offset, bindAttrName = "data-wcs") {
   const escaped = bindAttrName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const openRegex = new RegExp(
     `<template[^>]*${escaped}\\s*=\\s*["']\\s*for\\s*:\\s*([^"']+?)\\s*["']`,
     "gi"
   );
-  let bestMatch = null;
-  let bestPos = -1;
+  const enclosing = [];
   let match;
   while ((match = openRegex.exec(html)) !== null) {
     if (match.index >= offset) break;
     const tagEnd = html.indexOf(">", match.index);
     if (tagEnd === -1 || tagEnd >= offset) continue;
     const depth = getForTemplateDepthAt(html, match.index, offset, bindAttrName);
-    if (depth > 0 && match.index > bestPos) {
-      bestMatch = match[1].trim();
-      bestPos = match.index;
+    if (depth > 0) {
+      enclosing.push(match[1].trim());
     }
   }
-  return bestMatch;
+  return enclosing;
 }
 function getForTemplateDepthAt(html, openPos, offset, bindAttrName) {
   const tagEnd = html.indexOf(">", openPos);
@@ -1028,6 +1052,7 @@ var JA_EXPECTED_LABEL = {
 var ja = {
   spreadFilterNotAllowed: () => `\u30B9\u30D7\u30EC\u30C3\u30C9\u306E\u30BF\u30FC\u30B2\u30C3\u30C8\u306B\u30D5\u30A3\u30EB\u30BF\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093`,
   spreadTargetRequired: () => `\u30B9\u30D7\u30EC\u30C3\u30C9\u306B\u306F\u30BF\u30FC\u30B2\u30C3\u30C8\u30D1\u30B9\u304C\u5FC5\u8981\u3067\u3059`,
+  structuralMustBeSingle: (d) => `'${d}' \u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u306F\u5358\u72EC\u3067\u6307\u5B9A\u3059\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08';' \u3067\u4ED6\u306E\u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u3068\u4F75\u8A18\u3067\u304D\u307E\u305B\u3093\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09`,
   eventTokenUndeclared: (t) => `\u30A4\u30D9\u30F3\u30C8\u30C8\u30FC\u30AF\u30F3 "${t}" \u306F $eventTokens \u306B\u5BA3\u8A00\u3055\u308C\u3066\u3044\u307E\u305B\u3093`,
   commandRhsFormat: () => `command \u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u306E\u53F3\u8FBA\u306B\u306F $command.<name>\uFF08$commandTokens \u3067\u5BA3\u8A00\uFF09\u3092\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044`,
   commandTokenUndeclared: (t) => `\u30B3\u30DE\u30F3\u30C9\u30C8\u30FC\u30AF\u30F3 "${t}" \u306F $commandTokens \u306B\u5BA3\u8A00\u3055\u308C\u3066\u3044\u307E\u305B\u3093`,
@@ -1048,6 +1073,7 @@ var ja = {
   wcsTextInfo: (e) => `wcs-text \u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0: ${e}`,
   moustacheFouc: (e) => `<template> \u5916\u306E {{ }} \u69CB\u6587\u306F FOUC\uFF08\u521D\u671F\u8868\u793A\u6642\u306B\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u6587\u5B57\u5217\u304C\u898B\u3048\u308B\uFF09\u306E\u539F\u56E0\u306B\u306A\u308A\u307E\u3059\u3002<!--@@:${e}--> \u307E\u305F\u306F\u30B3\u30E1\u30F3\u30C8\u69CB\u6587\u306E\u4F7F\u7528\u3092\u691C\u8A0E\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
   nestedAssign: (sp) => `\u30CD\u30B9\u30C8\u3055\u308C\u305F\u30D7\u30ED\u30D1\u30C6\u30A3\u3078\u306E\u4EE3\u5165\u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\u3002this["${sp}"] \u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
+  watchNotObject: () => `$watch \u306F\u300C\u30D1\u30B9 \u2192 \u30CF\u30F3\u30C9\u30E9\u95A2\u6570\u300D\u306E\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u3053\u306E\u5F62\u306F\u30E9\u30F3\u30BF\u30A4\u30E0\u304C\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09`,
   watchKeyCrossState: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306F\u4ED6\u306E state \u3092\u6307\u3057\u3066\u3044\u307E\u3059\u3002@ \u4ED8\u304D\u306E\u8D8A\u5883 watch \u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08\u81EA state \u306E\u30D1\u30B9\u306E\u307F\uFF09`,
   watchKeyReserved: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306F "$" \u3067\u59CB\u3081\u3089\u308C\u307E\u305B\u3093\uFF08\u4E88\u7D04\u540D\u524D\u7A7A\u9593\uFF09`,
   watchKeyEmptySegment: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306B\u7A7A\u306E\u30D1\u30B9\u30BB\u30B0\u30E1\u30F3\u30C8\u304C\u3042\u308A\u307E\u3059`,
@@ -1075,6 +1101,7 @@ var EN_EXPECTED_LABEL = {
 var en = {
   spreadFilterNotAllowed: () => `Filters cannot be applied to a spread target`,
   spreadTargetRequired: () => `Spread requires a target path`,
+  structuralMustBeSingle: (d) => `'${d}' must be the only binding in this attribute (it cannot be combined with ';'; the runtime throws at load time)`,
   eventTokenUndeclared: (t) => `Event token "${t}" is not declared in $eventTokens`,
   commandRhsFormat: () => `The right side of a command binding must be $command.<name> (declared in $commandTokens)`,
   commandTokenUndeclared: (t) => `Command token "${t}" is not declared in $commandTokens`,
@@ -1095,6 +1122,7 @@ var en = {
   wcsTextInfo: (e) => `wcs-text binding: ${e}`,
   moustacheFouc: (e) => `{{ }} outside a <template> causes FOUC (the raw template string is visible before binding). Consider the comment syntax <!--@@:${e}--> instead.`,
   nestedAssign: (sp) => `Assigning to a nested property does not trigger a reactive update. Use this["${sp}"] instead.`,
+  watchNotObject: () => `$watch must be an object mapping state paths to handler functions (the runtime throws on this shape at load time)`,
   watchKeyCrossState: (k) => `$watch key "${k}" targets another state. Cross-state watching with @ is not supported (own paths only)`,
   watchKeyReserved: (k) => `$watch key "${k}" must not start with "$" (reserved namespace)`,
   watchKeyEmptySegment: (k) => `$watch key "${k}" has an empty path segment`,
@@ -1140,6 +1168,25 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale, fi
   const filterNameSet = new Set(BUILTIN_FILTERS.map((f) => f.name));
   for (const attr of attrs) {
     const bindings = splitBindingExpressions(attr.value);
+    const nonEmptyCount = bindings.filter((b) => b.trim().length > 0).length;
+    if (nonEmptyCount > 1) {
+      let scanPos = 0;
+      for (const b of bindings) {
+        const colon = b.indexOf(":");
+        const prop = (colon === -1 ? b : b.slice(0, colon)).trim();
+        if (STRUCTURAL_BINDING_TYPE_SET.has(prop)) {
+          const leading = b.length - b.trimStart().length;
+          diagnostics.push({
+            code: WcsDiagnosticCode.TemplateSyntax,
+            start: attr.valueStart + scanPos + leading,
+            end: attr.valueStart + scanPos + b.trimEnd().length,
+            message: msgs.structuralMustBeSingle(prop),
+            severity: "error"
+          });
+        }
+        scanPos += b.length + 1;
+      }
+    }
     let pos = 0;
     for (const binding of bindings) {
       const bindingStart = attr.valueStart + pos;
@@ -3525,6 +3572,16 @@ function validateWatchDeclarations(html, stateTagName = "wcs-state", locale) {
   const msgs = getMessages(locale);
   const out = [];
   for (const block of parseWcsScriptBlocks(html, stateTagName)) {
+    const nonObject = findNonObjectWatch(block.content);
+    if (nonObject !== null) {
+      out.push({
+        code: WcsDiagnosticCode.WatchDeclarationInvalid,
+        start: block.contentStart + nonObject.start,
+        end: block.contentStart + nonObject.end,
+        message: msgs.watchNotObject(),
+        severity: "error"
+      });
+    }
     const entries = analyzeWatchEntries(block.content);
     if (entries.length === 0) continue;
     const paths = analyzeStatePaths(block.content, block.stateName);

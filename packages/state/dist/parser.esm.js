@@ -36,6 +36,16 @@ for (let i = 0; i < MAX_WILDCARD_DEPTH; i++) {
 Object.freeze(tmpIndexByIndexName);
 
 const _cache = new Map();
+/**
+ * **tooling 専用**（`@wcstack/state/parser` の clearParserCaches からのみ呼ぶ）。
+ * ランタイム文脈で呼んではならない — PathInfo のインスタンス同一性は正規化キー
+ * （依存グラフ・アドレス比較）の前提であり、クリアすると同一パスの新旧インスタンスが
+ * 併存して identity 比較が黙って壊れる。言語サーバー等の長時間プロセスが、編集中の
+ * 中間パス（`user.n` 等）の恒久 intern によるメモリ単調増加を断つための出口。
+ */
+function clearPathInfoCacheForTooling() {
+    _cache.clear();
+}
 let id = 0;
 function getPathInfo(path) {
     let pathInfo = _cache.get(path);
@@ -138,22 +148,6 @@ class PathInfo {
     }
 }
 
-function raiseError(message) {
-    throw new Error(`[@wcstack/state] ${message}`);
-}
-
-const STRUCTURAL_BINDING_TYPE_SET = new Set([
-    "if",
-    "elseif",
-    "else",
-    "for",
-]);
-
-const _config = {
-    locale: 'en'};
-// backward compatible export (read-only usage)
-const config = _config;
-
 /**
  * errorGuidance.ts — エラーメッセージへの self-fix 誘導（GTM 2-5 /
  * docs/static-wiring-dx-design.md §3）。
@@ -217,11 +211,30 @@ function didYouMean(input, candidates) {
 /**
  * lint への誘導（誘導付きメッセージ共通の一文）。
  * **lint が実際にそのケースを検出するサイトにだけ付ける** — 検出しないケースに
- * 付けると「エラー → lint 実行 → clean」の空振りで検証ループの信頼を毀損する
- * （DCC 宣言・watch の一部 shape・構造型単独バインディング違反は lint 未検出のため
- * 付けない。lint 側への検査追加は follow-up）。
+ * 付けると「エラー → lint 実行 → clean」の空振りで検証ループの信頼を毀損する。
+ * 現在 lint 未検出のため付けないもの: DCC 宣言・watch の空キー / Object.prototype
+ * 継承名 / ワイルドカード深度超過。
+ * なお hint 付きサイト内でも被覆は部分的でありうる（例: `$watch: ident` の実体が
+ * 非オブジェクトだった場合、ランタイムは評価後の値で raise するが lint は宣言 shape
+ * から断定できず沈黙する）。サイト粒度の hint ではこの残余は構造的に避けられない。
  */
 const LINT_HINT = " Validate statically: npx @wcstack/lint <file>.";
+
+function raiseError(message) {
+    throw new Error(`[@wcstack/state] ${message}`);
+}
+
+const STRUCTURAL_BINDING_TYPE_SET = new Set([
+    "if",
+    "elseif",
+    "else",
+    "for",
+]);
+
+const _config = {
+    locale: 'en'};
+// backward compatible export (read-only usage)
+const config = _config;
 
 /**
  * errorMessages.ts
@@ -1269,6 +1282,10 @@ function parseFilters(filterTextList, filterIOType) {
 const trimFn = (s) => s.trim();
 
 const cacheFilterInfos$1 = new Map();
+/** tooling 専用（parser.ts の clearParserCaches からのみ呼ぶ）。 */
+function clearPropPartCacheForTooling() {
+    cacheFilterInfos$1.clear();
+}
 // format: propName#moodifier1,modifier2
 // propName-format: path.to.property (e.g., textContent, style.color, not include :)
 // special path: 
@@ -1311,6 +1328,10 @@ function parsePropPart(propPart) {
 }
 
 const cacheFilterInfos = new Map();
+/** tooling 専用（parser.ts の clearParserCaches からのみ呼ぶ）。 */
+function clearStatePartCacheForTooling() {
+    cacheFilterInfos.clear();
+}
 // format: statePath@stateName|filter|filter
 // statePath-format: path.to.property (e.g., user.name.first, users.*.name, users.0.name, not include @)
 // stateName: optional, default is 'default'
@@ -1441,12 +1462,66 @@ function parseBindTextsForElement(bindText) {
     if (results.length > 1) {
         const isIncludeSingleBinding = results.some(r => STRUCTURAL_BINDING_TYPE_SET.has(r.bindingType));
         if (isIncludeSingleBinding) {
-            // LINT_HINT は付けない: 単独バインディング検査は lint 側に未実装で、誘導が
-            // 空振りする（lint への検査追加は follow-up）。
-            raiseError(`[wcs/template-syntax] Invalid bindText: "${bindText}". 'if', 'elseif', 'else', and 'for' bindings must be single binding. Put the structural binding alone in its own data-wcs (e.g. <template data-wcs="for: items">).`);
+            // lint 側の単独バインディング検査（bindingValidator の structuralMustBeSingle）が
+            // 同じケースを検出するため誘導を付ける（三面同語彙）。
+            raiseError(`[wcs/template-syntax] Invalid bindText: "${bindText}". 'if', 'elseif', 'else', and 'for' bindings must be single binding. Put the structural binding alone in its own data-wcs (e.g. <template data-wcs="for: items">).${LINT_HINT}`);
         }
     }
     return results;
 }
 
-export { getPathInfo, parseBindTextsForElement };
+function parseBindTextForEmbeddedNode(bindText) {
+    const stateResult = parseStatePart(bindText);
+    return {
+        propName: 'textContent',
+        propSegments: ['textContent'],
+        propModifiers: [],
+        inFilters: [],
+        ...stateResult,
+        bindingType: 'text',
+    };
+}
+
+/**
+ * parser.ts — `data-wcs` バインディング構文の正本パーサを tooling 向けに公開する
+ * サブパスエントリ（`@wcstack/state/parser`）。
+ *
+ * `./manifest` と同じ「実装が唯一の正本」パターン（docs/static-wiring-dx-design.md D2）。
+ * vscode-wcs の正規表現パーサ・devtools の declaredScan 簡易パーサという複製実装を
+ * 段階的にこの正本へ寄せるための土台。
+ *
+ * 契約:
+ * - DOM 非依存・純関数（bindText 文字列 → ParseBindTextResult[]）。Node でそのまま動く
+ *   （__tests__/parser.test.ts が node 環境で検証する）。
+ * - **位置情報は持たず、不正構文は raiseError で throw する**。エラー耐性と診断 range の
+ *   生成は消費側（vscode-wcs の positional ラッパー）の責務（同 D3）— ランタイムの
+ *   サイズと責務をここで増やさない。
+ * - `getPathInfo` はパス文字列の解析済みビュー（セグメント・ワイルドカード位置・親パス
+ *   チェーン）を返す純関数。静的依存グラフの親チェーン展開はこの情報から機械的に再現できる。
+ *   同一パス → 同一インスタンスの保証は**このエントリのモジュールインスタンス内**でのみ
+ *   成立する（`.` エントリは別バンドル＝別キャッシュ。ランタイムの PathInfo と identity
+ *   比較してはならない）。キャッシュは無制限（evict なし）— 言語サーバー等の長時間
+ *   プロセスでは入力パス種数に単調比例してメモリが増える点に留意。
+ * - `ParseBindTextResult.uuid` はランタイム内部（構造テンプレートのハイドレーション台帳）
+ *   用のフィールドで、このパーサの戻り値では常に undefined。
+ *
+ * 公開面は意図的に最小（公開＝恒久契約）。`expandSpread` は live Element と
+ * CustomElementRegistry を要するためここには含めない — ブラウザ内の消費者
+ * （devtools の declared 正本化）は state 自身が pull API で答える。
+ */
+/**
+ * このエントリの内部キャッシュ（PathInfo intern・フィルタ列パース結果）を全て捨てる。
+ *
+ * 言語サーバー等の**長時間プロセス専用**。編集中の中間パス（`user.n` 等）が
+ * 無制限キャッシュに恒久 intern されてメモリが単調増加するため、ドキュメント
+ * クローズ等の区切りで呼ぶ。クリア後の getPathInfo は同一パスに**新しい**
+ * インスタンスを返す — 「同一パス → 同一参照」の保証はクリアを跨がない。
+ * ランタイム（`.` エントリ）にはこの API は無く、呼ばれることもない。
+ */
+function clearParserCaches() {
+    clearPathInfoCacheForTooling();
+    clearPropPartCacheForTooling();
+    clearStatePartCacheForTooling();
+}
+
+export { clearParserCaches, getPathInfo, parseBindTextForEmbeddedNode, parseBindTextsForElement };

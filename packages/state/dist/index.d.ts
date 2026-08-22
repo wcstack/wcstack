@@ -808,6 +808,11 @@ type DevtoolsEvent = {
     /** 打ち切ったバッチに載っていたアドレスのパス（報告用） */
     readonly paths: readonly string[];
 } | {
+    readonly type: "state:watch-fired";
+    readonly stateName: string;
+    /** `$watch` の宣言キー（ワイルドカードを含む生のパス） */
+    readonly path: string;
+} | {
     readonly type: "propagation:suppressed";
     readonly reason: "confirmation" | "visited-edge";
     readonly transactionId: number;

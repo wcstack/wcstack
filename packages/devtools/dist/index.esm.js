@@ -213,8 +213,37 @@ function formatArgs(args) {
 /** 予約 state 名 prefix（protocol §5）。この prefix の要素・イベントは常に除外 */
 const RESERVED_STATE_NAME_PREFIX = "wcs-devtools";
 const DEFAULT_TIMELINE_CAPACITY = 500;
+/** 台帳キーの区切り文字（state 名・パスに現れ得ない NUL）。
+ *  エスケープ表記でなく生成式にしているのは、ツーリングがソース中の
+ *  `エスケープ列` リテラルを生バイトへ壊す事故が実際に起きたため。 */
+const NUL = String.fromCharCode(0);
 function pathKeyOf(stateName, path) {
-    return stateName + "\u0000" + path;
+    return stateName + NUL + path;
+}
+function tokenKeyOf(stateName, kind, name) {
+    return stateName + NUL + kind + NUL + name;
+}
+/** 宣言（stateName+path+propName）単位の attach キー。NUL 区切りは pathKeyOf と同じ理由 */
+function attachKeyOf(stateName, path, propName) {
+    return pathKeyOf(stateName, path) + NUL + propName;
+}
+/** token カバレッジ 1 行の判定（§4: 空撃ちのみ / 一部空撃ち / 正常 / 未発火） */
+function tokenCoverageOf(stateName, kind, name, stat) {
+    if (stat === undefined) {
+        return { stateName, kind, name, status: "never", count: 0, note: null };
+    }
+    if (stat.zeroSubscriberCount === stat.count) {
+        return {
+            stateName, kind, name, status: "emitted-unheard", count: stat.count,
+            note: `all ${stat.count} emit(s) had 0 subscribers`,
+        };
+    }
+    return {
+        stateName, kind, name, status: "emitted", count: stat.count,
+        note: stat.zeroSubscriberCount > 0
+            ? `${stat.zeroSubscriberCount}/${stat.count} emit(s) had 0 subscribers`
+            : null,
+    };
 }
 class DevtoolsCore {
     _timelineCapacity;
@@ -228,6 +257,17 @@ class DevtoolsCore {
     _seq = 0;
     _paused = false;
     _changeListeners = new Set();
+    /** 観測開始時刻（connect 時の performance.now。未接続は null）。 */
+    _observingSince = null;
+    /** watch 発火回数（stateName + NUL + path → count）。カバレッジの実測面。 */
+    _watchFiredCounts = new Map();
+    /** token emit 実測（stateName + NUL + kind + NUL + name → 回数と空撃ち回数）。 */
+    _tokenEmitCounts = new Map();
+    /** 観測開始以降に一度でも attach を観測した宣言キー（attachKeyOf）。
+     *  live 配線台帳は WeakRef pruning / binding-removed で縮むため、binding
+     *  カバレッジの attached 判定はこちらで行う（瞬間値で判定すると行の
+     *  破棄・GC のたびに attached が never-attached へ逆戻りする）。 */
+    _everAttachedKeys = new Set();
     constructor(options) {
         this._timelineCapacity = options?.timelineCapacity ?? DEFAULT_TIMELINE_CAPACITY;
         this._hiddenStateNames = new Set(options?.hiddenStateNames ?? []);
@@ -252,6 +292,9 @@ class DevtoolsCore {
         if (this._removeListener !== null) {
             return;
         }
+        // カバレッジは「観測開始以降」の実測。台帳の過去は再構成できない（protocol §6）
+        // ため、UI はこの時刻を常時表示して非対称を明示する。
+        this._observingSince = performance.now();
         const registry = getOrCreateHookRegistry();
         this._removeListener = registry.addListener({
             onSourceRegistered: (source) => {
@@ -281,9 +324,18 @@ class DevtoolsCore {
         this._roster.clear();
         this._wiringByPathKey.clear();
         this._wiringEntryByBinding = new WeakMap();
+        this._observingSince = null;
+        this._watchFiredCounts.clear();
+        this._tokenEmitCounts.clear();
+        this._everAttachedKeys.clear();
         this._notify("sources");
         this._notify("roster");
         this._notify("wiring");
+        this._notify("coverage");
+    }
+    /** 観測開始時刻（performance.now 基準。未接続は null）。 */
+    get observingSince() {
+        return this._observingSince;
     }
     onChange(listener) {
         this._changeListeners.add(listener);
@@ -346,6 +398,120 @@ class DevtoolsCore {
             }
         }
         return result;
+    }
+    /**
+     * ランタイム正本パーサによる宣言バインディング集合（protocol v1 追補）。
+     * getDeclaredBindings を実装した source が 1 つも無ければ null（消費側は
+     * declaredScan の簡易パーサへフォールバックする）。root は roster の rootNode
+     * を source ごとに重複排除して渡す。
+     */
+    getCanonicalDeclared() {
+        let supported = false;
+        const out = [];
+        // source をまたぐ重複（同じ root を複数 source が走査した場合）を宣言タプルで排除
+        const seen = new Set();
+        for (const [sourceId, source] of this._sources) {
+            if (typeof source.getDeclaredBindings !== "function") {
+                continue;
+            }
+            supported = true;
+            const roots = new Set();
+            for (const entry of this._roster.get(sourceId) ?? []) {
+                roots.add(entry.rootNode);
+            }
+            for (const root of roots) {
+                for (const declared of source.getDeclaredBindings(root)) {
+                    if (this.isHiddenStateName(declared.stateName)) {
+                        continue;
+                    }
+                    const key = [declared.stateName, declared.statePathName, declared.propName,
+                        declared.bindingType, declared.origin, declared.raw].join(NUL);
+                    if (seen.has(key)) {
+                        continue;
+                    }
+                    seen.add(key);
+                    out.push(declared);
+                }
+            }
+        }
+        return supported ? out : null;
+    }
+    /**
+     * 配線カバレッジ（§4）: 宣言面（watchPaths / token 宣言 / canonical declared）と
+     * 実測面（watch-fired・token-emit の台帳・live 配線台帳）の突合。
+     * 「観測開始以降」の実測であることは observingSince を UI が常時表示して明示する。
+     */
+    getCoverageReport() {
+        const out = [];
+        for (const entry of this.getRoster()) {
+            const summary = entry.summary;
+            // --- watch: 宣言（watchPaths）× 実測（watch-fired 台帳） ---
+            for (const path of summary.watchPaths ?? []) {
+                const count = this._watchFiredCounts.get(pathKeyOf(entry.name, path)) ?? 0;
+                if (count > 0) {
+                    out.push({ stateName: entry.name, kind: "watch", name: path, status: "fired", count, note: null });
+                    continue;
+                }
+                // ワイルドカード行 watch は各 `.*` 階層のリストが `for` バインドされている
+                // （= paths.list に載っている）ことが発火前提（watch 設計 §6-3）。未成立は
+                // 「未発火」と区別する。ただし paths.list は for 由来のみで `$listKeys`
+                // 宣言はここから見えないため、断定でなく「for が観測できない」と報告する。
+                let missingList = null;
+                for (let star = path.indexOf(".*"); star !== -1; star = path.indexOf(".*", star + 2)) {
+                    const listPath = path.slice(0, star);
+                    if (!summary.paths.list.has(listPath)) {
+                        missingList = listPath;
+                        break;
+                    }
+                }
+                if (missingList !== null) {
+                    out.push({
+                        stateName: entry.name, kind: "watch", name: path, status: "prerequisite-missing", count: 0,
+                        note: `no for binding observed for list "${missingList}" (a $listKeys declaration would still let it fire)`,
+                    });
+                    continue;
+                }
+                out.push({ stateName: entry.name, kind: "watch", name: path, status: "never", count: 0, note: null });
+            }
+            // --- token: 宣言（commandTokenNames / eventTokenNames）× 実測（emit 台帳）。
+            // subscriberCount 0 = 空撃ち（§4）: 全 emit が空撃ちなら emitted-unheard として
+            // 警告する（emit 側だけ配線されて受け手が一つも居ない構成ミスの検出）。 ---
+            for (const name of summary.commandTokenNames) {
+                out.push(tokenCoverageOf(entry.name, "command", name, this._tokenEmitCounts.get(tokenKeyOf(entry.name, "command", name))));
+            }
+            for (const name of summary.eventTokenNames) {
+                out.push(tokenCoverageOf(entry.name, "eventToken", name, this._tokenEmitCounts.get(tokenKeyOf(entry.name, "event", name))));
+            }
+        }
+        // --- binding: canonical declared（宣言）× live 配線台帳（実測）。canonical が
+        // 取れないランタイムではこの節を出さない（declaredScan は集合でないため突合しない）。
+        const declared = this.getCanonicalDeclared();
+        if (declared !== null) {
+            const seen = new Set();
+            for (const decl of declared) {
+                // 構造ディレクティブは行の実体化そのもの・eventToken は token 節が担当
+                if (decl.bindingType === "for" || decl.bindingType === "if"
+                    || decl.bindingType === "elseif" || decl.bindingType === "else")
+                    continue;
+                if (decl.propName.startsWith("eventToken."))
+                    continue;
+                const key = attachKeyOf(decl.stateName, decl.statePathName, decl.propName);
+                if (seen.has(key))
+                    continue;
+                seen.add(key);
+                // 「一度でも attach を観測したか」で判定（ever 台帳）。live 台帳は行の
+                // 破棄や GC（WeakRef pruning）で縮むため、瞬間値だと逆戻りする。
+                const attached = this._everAttachedKeys.has(key);
+                out.push({
+                    stateName: decl.stateName, kind: "binding",
+                    name: `${decl.propName} ← ${decl.statePathName}`,
+                    status: attached ? "attached" : "never-attached",
+                    count: attached ? 1 : 0,
+                    note: decl.origin === "fragment" ? "template interior (attaches when rows materialize)" : null,
+                });
+            }
+        }
+        return out;
     }
     /** roster entry の state からトップレベルキーを列挙（keys 未実装ランタイムは空） */
     keysOf(entry) {
@@ -528,7 +694,10 @@ class DevtoolsCore {
                 };
                 set.add(entry);
                 this._wiringEntryByBinding.set(event.binding, entry);
+                // カバレッジの実測面（B2）: attach の観測を ever 台帳へ積む（remove では消さない）
+                this._everAttachedKeys.add(attachKeyOf(stateName, path, event.binding.propName));
                 this._notify("wiring");
+                this._notify("coverage");
                 return;
             }
             case "state:binding-removed": {
@@ -561,6 +730,25 @@ class DevtoolsCore {
                 if (this.isHiddenStateName(event.stateName)) {
                     return;
                 }
+                // カバレッジの実測面: emit 回数と空撃ち回数を台帳に積む（§4）。
+                // stateName が null の emit はどの宣言とも突合できないため積まない。
+                if (event.stateName !== null) {
+                    const emitKey = tokenKeyOf(event.stateName, event.kind, event.tokenName);
+                    const stat = this._tokenEmitCounts.get(emitKey);
+                    if (stat === undefined) {
+                        this._tokenEmitCounts.set(emitKey, {
+                            count: 1,
+                            zeroSubscriberCount: event.subscriberCount === 0 ? 1 : 0,
+                        });
+                    }
+                    else {
+                        stat.count += 1;
+                        if (event.subscriberCount === 0) {
+                            stat.zeroSubscriberCount += 1;
+                        }
+                    }
+                    this._notify("coverage");
+                }
                 this._appendTimeline({
                     sourceId,
                     kind: event.kind,
@@ -569,6 +757,16 @@ class DevtoolsCore {
                     detail: formatArgs(event.args),
                     subscriberCount: event.subscriberCount,
                 });
+                return;
+            }
+            case "state:watch-fired": {
+                if (this.isHiddenStateName(event.stateName)) {
+                    return;
+                }
+                // timeline 行にはしない（発火は高頻度になりうる活動でありカバレッジが受け皿）。
+                const firedKey = pathKeyOf(event.stateName, event.path);
+                this._watchFiredCounts.set(firedKey, (this._watchFiredCounts.get(firedKey) ?? 0) + 1);
+                this._notify("coverage");
                 return;
             }
             case "state:watch-error": {
@@ -868,6 +1066,10 @@ header .spacer { flex: 1; }
 .empty { color: #6f88a3; font-style: italic; padding: 4px 0; }
 .notice { color: #efe3a0; padding: 2px 0 6px; }
 .notice button { font: inherit; margin-left: 6px; cursor: pointer; }
+.wiring-row .detail { color: #6f88a3; }
+.wiring-tabs { padding: 0 0 4px; }
+.wiring-tabs button { font: inherit; cursor: pointer; margin-right: 4px; opacity: 0.6; }
+.wiring-tabs button.active { opacity: 1; font-weight: bold; }
 .hl-box {
   position: fixed;
   pointer-events: none;
@@ -911,6 +1113,8 @@ class WcsDevtools extends HTMLElement {
     _badge = null;
     _stateSelect = null;
     _paneElements = {};
+    /** Wiring ペインの表示モード（配線一覧 / カバレッジ突合）。 */
+    _wiringView = "wiring";
     _highlightLayer = null;
     _dirtyPanes = new Set();
     _renderScheduled = false;
@@ -948,6 +1152,12 @@ class WcsDevtools extends HTMLElement {
             }
             else if (kind === "wiring") {
                 this._markDirty("wiring");
+            }
+            else if (kind === "coverage") {
+                // カバレッジは Wiring ペインのタブとして描画される
+                if (this._wiringView === "coverage") {
+                    this._markDirty("wiring");
+                }
             }
             else {
                 this._markDirty("timeline");
@@ -1351,6 +1561,26 @@ class WcsDevtools extends HTMLElement {
         const core = this._core;
         const body = this._paneElements["wiring"];
         body.replaceChildren();
+        // 配線一覧 / カバレッジのビュートグル（devtools-tag-design.md §3.2 / 設計 §4）
+        const tabs = document.createElement("div");
+        tabs.className = "wiring-tabs";
+        for (const [view, label] of [["wiring", "wiring"], ["coverage", "coverage"]]) {
+            const button = document.createElement("button");
+            button.textContent = label;
+            if (this._wiringView === view) {
+                button.classList.add("active");
+            }
+            button.addEventListener("click", () => {
+                this._wiringView = view;
+                this._markDirty("wiring");
+            });
+            tabs.append(button);
+        }
+        body.append(tabs);
+        if (this._wiringView === "coverage") {
+            this._renderCoverageView(body);
+            return;
+        }
         let entries;
         let contextLabel;
         if (this._pickedNode !== null) {
@@ -1378,10 +1608,13 @@ class WcsDevtools extends HTMLElement {
             }
             return;
         }
-        // ライブ台帳が空 → declared ビューへフォールバック（protocol §6）
+        // ライブ台帳が空 → declared ビューへフォールバック（protocol §6）。
+        // ランタイムが getDeclaredBindings を実装していれば正本パーサの宣言集合を使い、
+        // 旧ランタイムだけ簡易パーサ（declaredScan — bindTextParser 非追随）に落ちる。
+        const canonical = core.getCanonicalDeclared();
         const selected = this._selectedRoster();
-        const declared = selected !== null ? scanDeclaredBindings(this._scanRootOf(selected)) : [];
-        if (declared.length === 0) {
+        const legacy = canonical === null && selected !== null ? scanDeclaredBindings(this._scanRootOf(selected)) : [];
+        if ((canonical?.length ?? 0) === 0 && legacy.length === 0) {
             body.append(this._emptyRow("no bindings observed"));
             return;
         }
@@ -1389,7 +1622,7 @@ class WcsDevtools extends HTMLElement {
         notice.className = "notice";
         const tag = document.createElement("span");
         tag.className = "badge-tag declared";
-        tag.textContent = "declared";
+        tag.textContent = canonical !== null ? "declared (canonical)" : "declared";
         notice.append(tag, document.createTextNode(" attached late — reload to capture live bindings "));
         const reload = document.createElement("button");
         reload.textContent = "reload";
@@ -1398,9 +1631,95 @@ class WcsDevtools extends HTMLElement {
         });
         notice.append(reload);
         body.append(notice);
-        for (const entry of declared) {
-            body.append(this._declaredRow(entry));
+        if (canonical !== null) {
+            for (const entry of canonical) {
+                body.append(this._canonicalDeclaredRow(entry));
+            }
         }
+        else {
+            for (const entry of legacy) {
+                body.append(this._declaredRow(entry));
+            }
+        }
+    }
+    /**
+     * カバレッジビュー: 宣言（watchPaths / token 宣言 / canonical declared）×
+     * 実測（発火・emit・attach）の突合表。観測開始以降の実測であることを常時明示する
+     * （protocol §6 — 台帳の過去は再構成できない）。
+     */
+    _renderCoverageView(body) {
+        const core = this._core;
+        const since = core.observingSince;
+        const info = document.createElement("div");
+        // 壁時計表示（performance.now 原点からの換算）。「ページ内経過秒」だと
+        // devtools を後から開いたときに観測開始点として読めない。
+        const sinceLabel = since === null
+            ? null
+            : new Date(Date.now() - (performance.now() - since)).toLocaleTimeString();
+        info.textContent = sinceLabel === null
+            ? "not observing"
+            : `observing since ${sinceLabel} (declared vs measured after this point)`;
+        body.append(info);
+        const report = core.getCoverageReport();
+        if (report.length === 0) {
+            body.append(this._emptyRow("nothing declared to cover"));
+            return;
+        }
+        for (const entry of report) {
+            const row = document.createElement("div");
+            row.className = "wiring-row";
+            const kind = document.createElement("span");
+            kind.className = "badge-tag";
+            kind.textContent = entry.kind;
+            const status = document.createElement("span");
+            status.className = "badge-tag";
+            status.textContent = entry.count > 1 ? `${entry.status} ×${entry.count}` : entry.status;
+            if (entry.status === "never" || entry.status === "never-attached"
+                || entry.status === "emitted-unheard") {
+                // 「宣言したのに一度も効いていない」= このビューの主役。空撃ちも同列の warn
+                status.classList.add("warn");
+            }
+            else if (entry.status === "prerequisite-missing") {
+                // 発火前提が未成立（未発火とは別問題）— declared 系の淡色で区別
+                status.classList.add("declared");
+            }
+            const label = document.createElement("span");
+            label.className = "path";
+            label.textContent = ` ${entry.name}@${entry.stateName} `;
+            row.append(kind, document.createTextNode(" "), label, status);
+            if (entry.note !== null) {
+                // note はホバー頼み（title）にせず常時表示する — 前提未成立の理由は
+                // このビューの本文情報で、ツールチップだと存在に気づけない
+                const note = document.createElement("span");
+                note.className = "detail";
+                note.textContent = ` ${entry.note}`;
+                row.append(note);
+            }
+            body.append(row);
+        }
+    }
+    /** canonical declared（正本パーサ由来・宣言集合）の 1 行。 */
+    _canonicalDeclaredRow(entry) {
+        const row = document.createElement("div");
+        row.className = "wiring-row";
+        const type = document.createElement("span");
+        type.className = "badge-tag declared";
+        type.textContent = entry.origin;
+        const prop = document.createElement("span");
+        prop.className = "prop";
+        prop.textContent = entry.propName;
+        const path = document.createElement("span");
+        path.className = "path";
+        const filters = entry.outFilters.map((f) => ` | ${f.filterName}(${f.args.join(",")})`).join("");
+        path.textContent = `${entry.statePathName}@${entry.stateName}${filters}`;
+        row.append(type, document.createTextNode(" "), prop, document.createTextNode(" ← "), path);
+        if (entry.node !== null) {
+            const target = entry.node;
+            row.addEventListener("click", () => {
+                this._highlightNodes([target]);
+            });
+        }
+        return row;
     }
     _scanRootOf(entry) {
         // instanceof はテスト環境（happy-dom）の Document 実体と一致しないことがあるため

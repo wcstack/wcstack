@@ -60,6 +60,34 @@ interface IStateElementSummaryLike {
     readonly eventTokenNames: ReadonlySet<string>;
     readonly staticDependency: ReadonlyMap<string, readonly string[]>;
     readonly dynamicDependency: ReadonlyMap<string, readonly string[]>;
+    /**
+     * `$watch` の宣言パス集合（protocol v1 追補・配線カバレッジの宣言面）。
+     * 旧ランタイムにはフィールド自体が無いため optional。宣言なしは null。
+     */
+    readonly watchPaths?: ReadonlySet<string> | null;
+}
+/**
+ * 宣言レベルのバインディング 1 件（getDeclaredBindings の要素・protocol v1 追補）。
+ * ランタイム正本パーサの結果が構造的に流れる。宣言タプルで dedupe 済みの
+ * 「宣言の集合」であり、レンダリング行数に比例したインスタンス列ではない。
+ */
+interface IDeclaredBindingLike {
+    /** 代表ノード（fragment 由来 = 構造テンプレート内部は null）。 */
+    readonly node: Node | null;
+    readonly propName: string;
+    readonly statePathName: string;
+    readonly stateName: string;
+    readonly bindingType: string;
+    readonly inFilters: readonly {
+        readonly filterName: string;
+        readonly args: readonly string[];
+    }[];
+    readonly outFilters: readonly {
+        readonly filterName: string;
+        readonly args: readonly string[];
+    }[];
+    readonly origin: "attribute" | "comment" | "fragment";
+    readonly raw: string;
 }
 type DevtoolsEventLike = {
     readonly type: "state:element-registered";
@@ -109,6 +137,10 @@ type DevtoolsEventLike = {
     readonly maxDepth: number;
     readonly paths: readonly string[];
 } | {
+    readonly type: "state:watch-fired";
+    readonly stateName: string;
+    readonly path: string;
+} | {
     readonly type: "propagation:suppressed";
     readonly reason: "confirmation" | "visited-edge";
     readonly transactionId: number;
@@ -150,6 +182,11 @@ interface IDevtoolsSourceLike {
     keys?(name: string, rootNode: Node): string[];
     read(name: string, rootNode: Node, path: string, indexes?: number[]): unknown;
     write(name: string, rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
+    /**
+     * protocol v1 追補 API（optional 扱いで呼ぶ）。ランタイム正本パーサによる
+     * 宣言レベルバインディングの集合（declaredScan の簡易パーサを置き換える正本）。
+     */
+    getDeclaredBindings?(rootNode: Node): IDeclaredBindingLike[];
     _setSink(sink: DevtoolsSinkLike | null): void;
 }
 interface IDevtoolsListenerLike {
@@ -207,8 +244,28 @@ interface IWiringEntry {
     readonly bindingType: string;
     readonly bindingRef: WeakRef<IBindingLike>;
 }
-type CoreChangeKind = "sources" | "roster" | "wiring" | "timeline";
+type CoreChangeKind = "sources" | "roster" | "wiring" | "timeline" | "coverage";
 type CoreChangeListener = (kind: CoreChangeKind) => void;
+/**
+ * 配線カバレッジ 1 行（static-wiring-dx-design.md §4 — 宣言 × 実測の突合）。
+ * - watch: `fired`（count 回）/ `never` / `prerequisite-missing`
+ *   （ワイルドカード行 watch はリストが `for` バインドされていないと発火前提が
+ *   成立しない — 「未発火」と区別しないと誤警告になる）
+ * - command / eventToken: `emitted`（count 回）/ `never` /
+ *   `emitted-unheard`（全 emit が subscriberCount 0 = 空撃ち。§4 の突合対象）
+ * - binding: canonical declared がある場合のみ。`attached` / `never-attached`
+ *   （attached は「観測開始以降に一度でも attach された」— live 台帳は WeakRef
+ *   pruning で縮むため、瞬間値で判定すると attached が never-attached へ戻る）
+ */
+type CoverageStatus = "fired" | "emitted" | "emitted-unheard" | "attached" | "never" | "prerequisite-missing" | "never-attached";
+interface ICoverageEntry {
+    readonly stateName: string;
+    readonly kind: "watch" | "command" | "eventToken" | "binding";
+    readonly name: string;
+    readonly status: CoverageStatus;
+    readonly count: number;
+    readonly note: string | null;
+}
 interface IDevtoolsCoreOptions {
     /** タイムライン ring buffer 件数（既定 500） */
     timelineCapacity?: number;
@@ -227,6 +284,17 @@ declare class DevtoolsCore {
     private _seq;
     private _paused;
     private _changeListeners;
+    /** 観測開始時刻（connect 時の performance.now。未接続は null）。 */
+    private _observingSince;
+    /** watch 発火回数（stateName + NUL + path → count）。カバレッジの実測面。 */
+    private _watchFiredCounts;
+    /** token emit 実測（stateName + NUL + kind + NUL + name → 回数と空撃ち回数）。 */
+    private _tokenEmitCounts;
+    /** 観測開始以降に一度でも attach を観測した宣言キー（attachKeyOf）。
+     *  live 配線台帳は WeakRef pruning / binding-removed で縮むため、binding
+     *  カバレッジの attached 判定はこちらで行う（瞬間値で判定すると行の
+     *  破棄・GC のたびに attached が never-attached へ逆戻りする）。 */
+    private _everAttachedKeys;
     constructor(options?: IDevtoolsCoreOptions);
     get connected(): boolean;
     get paused(): boolean;
@@ -236,6 +304,8 @@ declare class DevtoolsCore {
     connect(): void;
     /** 購読解除 + 台帳クリア（タイムラインは保持。protocol §7-2 の残留ゼロ） */
     disconnect(): void;
+    /** 観測開始時刻（performance.now 基準。未接続は null）。 */
+    get observingSince(): number | null;
     onChange(listener: CoreChangeListener): () => void;
     getSources(): IDevtoolsSourceLike[];
     getRoster(): IRosterEntry[];
@@ -249,6 +319,19 @@ declare class DevtoolsCore {
     getAllWiring(): IWiringEntry[];
     /** 指定ノード（またはその子孫のバインドノード）に載る配線 */
     getWiringForNode(node: Node): IWiringEntry[];
+    /**
+     * ランタイム正本パーサによる宣言バインディング集合（protocol v1 追補）。
+     * getDeclaredBindings を実装した source が 1 つも無ければ null（消費側は
+     * declaredScan の簡易パーサへフォールバックする）。root は roster の rootNode
+     * を source ごとに重複排除して渡す。
+     */
+    getCanonicalDeclared(): IDeclaredBindingLike[] | null;
+    /**
+     * 配線カバレッジ（§4）: 宣言面（watchPaths / token 宣言 / canonical declared）と
+     * 実測面（watch-fired・token-emit の台帳・live 配線台帳）の突合。
+     * 「観測開始以降」の実測であることは observingSince を UI が常時表示して明示する。
+     */
+    getCoverageReport(): ICoverageEntry[];
     /** roster entry の state からトップレベルキーを列挙（keys 未実装ランタイムは空） */
     keysOf(entry: IRosterEntry): string[];
     readValue(entry: IRosterEntry, path: string, indexes?: number[]): unknown;
@@ -284,6 +367,8 @@ declare class WcsDevtools extends HTMLElement {
     private _badge;
     private _stateSelect;
     private _paneElements;
+    /** Wiring ペインの表示モード（配線一覧 / カバレッジ突合）。 */
+    private _wiringView;
     private _highlightLayer;
     private _dirtyPanes;
     private _renderScheduled;
@@ -318,6 +403,14 @@ declare class WcsDevtools extends HTMLElement {
     private _renderTreeNode;
     private _beginEdit;
     private _renderWiringPane;
+    /**
+     * カバレッジビュー: 宣言（watchPaths / token 宣言 / canonical declared）×
+     * 実測（発火・emit・attach）の突合表。観測開始以降の実測であることを常時明示する
+     * （protocol §6 — 台帳の過去は再構成できない）。
+     */
+    private _renderCoverageView;
+    /** canonical declared（正本パーサ由来・宣言集合）の 1 行。 */
+    private _canonicalDeclaredRow;
     private _scanRootOf;
     private _wiringRow;
     private _declaredRow;

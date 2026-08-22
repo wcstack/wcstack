@@ -665,13 +665,6 @@ function setBindingsByNode(node, bindings) {
     bindingsByNode.set(node, bindings);
 }
 
-const STRUCTURAL_BINDING_TYPE_SET = new Set([
-    "if",
-    "elseif",
-    "else",
-    "for",
-]);
-
 /**
  * errorGuidance.ts — エラーメッセージへの self-fix 誘導（GTM 2-5 /
  * docs/static-wiring-dx-design.md §3）。
@@ -735,11 +728,21 @@ function didYouMean(input, candidates) {
 /**
  * lint への誘導（誘導付きメッセージ共通の一文）。
  * **lint が実際にそのケースを検出するサイトにだけ付ける** — 検出しないケースに
- * 付けると「エラー → lint 実行 → clean」の空振りで検証ループの信頼を毀損する
- * （DCC 宣言・watch の一部 shape・構造型単独バインディング違反は lint 未検出のため
- * 付けない。lint 側への検査追加は follow-up）。
+ * 付けると「エラー → lint 実行 → clean」の空振りで検証ループの信頼を毀損する。
+ * 現在 lint 未検出のため付けないもの: DCC 宣言・watch の空キー / Object.prototype
+ * 継承名 / ワイルドカード深度超過。
+ * なお hint 付きサイト内でも被覆は部分的でありうる（例: `$watch: ident` の実体が
+ * 非オブジェクトだった場合、ランタイムは評価後の値で raise するが lint は宣言 shape
+ * から断定できず沈黙する）。サイト粒度の hint ではこの残余は構造的に避けられない。
  */
 const LINT_HINT = " Validate statically: npx @wcstack/lint <file>.";
+
+const STRUCTURAL_BINDING_TYPE_SET = new Set([
+    "if",
+    "elseif",
+    "else",
+    "for",
+]);
 
 /**
  * errorMessages.ts
@@ -1959,9 +1962,9 @@ function parseBindTextsForElement(bindText) {
     if (results.length > 1) {
         const isIncludeSingleBinding = results.some(r => STRUCTURAL_BINDING_TYPE_SET.has(r.bindingType));
         if (isIncludeSingleBinding) {
-            // LINT_HINT は付けない: 単独バインディング検査は lint 側に未実装で、誘導が
-            // 空振りする（lint への検査追加は follow-up）。
-            raiseError(`[wcs/template-syntax] Invalid bindText: "${bindText}". 'if', 'elseif', 'else', and 'for' bindings must be single binding. Put the structural binding alone in its own data-wcs (e.g. <template data-wcs="for: items">).`);
+            // lint 側の単独バインディング検査（bindingValidator の structuralMustBeSingle）が
+            // 同じケースを検出するため誘導を付ける（三面同語彙）。
+            raiseError(`[wcs/template-syntax] Invalid bindText: "${bindText}". 'if', 'elseif', 'else', and 'for' bindings must be single binding. Put the structural binding alone in its own data-wcs (e.g. <template data-wcs="for: items">).${LINT_HINT}`);
         }
     }
     return results;
@@ -8145,7 +8148,7 @@ async function buildBindings(root) {
     }
 }
 
-var version = "1.28.0";
+var version = "1.29.0";
 var pkg = {
 	version: version};
 
@@ -9182,6 +9185,148 @@ function getUpdater() {
 }
 
 /**
+ * devtools/declaredBindings.ts — 宣言レベルのバインディング列挙
+ * （IDevtoolsSource.getDeclaredBindings の実装・protocol v1 追補）。
+ *
+ * devtools 側の DOM 再スキャン（declaredScan — 「正本 bindTextParser に非追随」と
+ * 自己申告する簡易パーサ）を置き換える正本実装。ランタイム自身のパーサと
+ * fragment レジストリで答えるため:
+ * - パース結果は実行時解釈と**同一**（複製パーサのドリフトが構造的に消える）
+ * - DOM から引き上げられた構造テンプレート内部（for/if の中身）も列挙できる
+ *   （DOM 再スキャンでは原理的に不可視だった領域）
+ *
+ * **戻り値は「宣言の集合」であり、インスタンスの multiset ではない**:
+ * レンダリング済みページでは行クローンが `data-wcs` 属性とネストアンカー
+ * （同一 UUID）を保持したまま live DOM に入るため、素朴な走査は宣言 1 件を
+ * 行数分だけ重複列挙してしまう。ここでは宣言タプル（stateName / path / prop /
+ * bindingType / フィルタ列）で dedupe し、宣言 1 件 = エントリ 1 件を保証する。
+ * インスタンス粒度（どの行のどのノードか）は live の binding 台帳
+ * （state:binding-added）の守備範囲で、こちらには持たせない。
+ * 同一タプルの独立した静的宣言（同じバインディングを書いた別要素）も 1 件に
+ * 畳まれる — node は最初に見つかったものを代表として持つ。
+ *
+ * fragment（構造テンプレート内部）は **rootNode 配下の live アンカーから到達可能な
+ * UUID の推移閉包**として列挙する。ページ大域のレジストリを直接舐めないため、
+ * 別 root の fragment や破棄済みビューの stale fragment は載らない。
+ *
+ * spread（`...:`）は attribute 起点では live Element の wcBindable から展開する
+ * （設計 §5-1）。対象カスタム要素が未定義なら既存契約どおり spread のまま残す。
+ *
+ * **既知の盲点（時系列依存）**: 構造テンプレート外のテキストバインディングは、
+ * binding start がコメントアンカーを空 Text に差し替えるため、**活性化後の DOM
+ * から消えて列挙に現れない**（mustache は変換前も素の Text で不可視）。早期
+ * アタッチ時は live 台帳（binding-added）が同領域を持つ。遅延アタッチでは
+ * declared / live のどちらからも見えない — protocol §6 の既知非対称の一部。
+ *
+ * エラーパス以外もフック接続時にしか呼ばれない pull API であり、ホットパスには
+ * 乗らない。壊れた宣言（不正 bindText）はエントリを捨てて先へ進む（検査は lint の
+ * 責務 — ここは観測面）。
+ */
+// bindings/parseCommentNode.ts の EMBEDDED_REGEX と同形（keyword を自前で保持する
+// ために複製する — parseCommentNode は keyword を捨てて値しか返さないため、
+// 「未登録の構造アンカー（SSR pre-hydration ウィンドウ等）」と「埋め込みテキスト」
+// を区別できず、UUID をパスとして誤パースした bogus エントリが生まれる）。
+const COMMENT_PATTERN = /^\s*@@\s*(.*?)\s*:\s*(.+?)\s*$/;
+function declarationKey(info) {
+    const filters = [...info.inFilters, ...info.outFilters]
+        .map((f) => `${f.filterName}(${f.args.join(",")})`)
+        .join("|");
+    return [info.stateName, info.statePathName, info.propName, info.bindingType, filters].join("\u0000");
+}
+function toInfo(node, parsed, origin, raw) {
+    return {
+        node,
+        propName: parsed.propName,
+        statePathName: parsed.statePathName,
+        stateName: parsed.stateName,
+        bindingType: parsed.bindingType,
+        inFilters: parsed.inFilters,
+        outFilters: parsed.outFilters,
+        origin,
+        raw,
+    };
+}
+/**
+ * rootNode 配下の live DOM と、そこから到達可能な fragment から宣言集合を列挙する。
+ * ヘッダの規定（宣言集合 / 到達閉包 / spread 展開 / テキストの盲点）を参照。
+ */
+function collectDeclaredBindings(rootNode) {
+    const out = [];
+    const seenKeys = new Set();
+    const visitedFragments = new Set();
+    const push = (info) => {
+        const key = declarationKey(info);
+        if (seenKeys.has(key))
+            return;
+        seenKeys.add(key);
+        out.push(info);
+    };
+    /** fragment の内部宣言を emit し、ネストした構造アンカーへ再帰する（到達閉包）。 */
+    const visitFragment = (uuid) => {
+        if (visitedFragments.has(uuid))
+            return;
+        visitedFragments.add(uuid);
+        const fragmentInfo = getFragmentInfoByUUID(uuid);
+        if (fragmentInfo === null)
+            return;
+        for (const nodeInfo of fragmentInfo.nodeInfos) {
+            for (const parsed of nodeInfo.parseBindTextResults) {
+                push(toInfo(null, parsed, "fragment", ""));
+                if (parsed.uuid != null) {
+                    visitFragment(parsed.uuid);
+                }
+            }
+        }
+    };
+    const doc = rootNode.ownerDocument ?? rootNode;
+    const walker = doc.createTreeWalker(rootNode, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT);
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+            const element = node;
+            const bindText = element.getAttribute(config.bindAttributeName);
+            if (bindText === null || bindText.length === 0)
+                continue;
+            try {
+                // spread は live Element の wcBindable から展開（未定義要素は spread のまま = 既存契約）
+                const results = expandSpread(element, parseBindTextsForElement(bindText));
+                for (const parsed of results) {
+                    push(toInfo(element, parsed, "attribute", bindText));
+                }
+            }
+            catch {
+                // 不正な宣言は観測面では捨てる（検査は lint / ランタイム raiseError の責務）
+            }
+            continue;
+        }
+        // コメントアンカー: 構造ディレクティブ（UUID → fragment 登録済み）または
+        // 埋め込みテキストバインディング。
+        const match = COMMENT_PATTERN.exec(node.data.trim());
+        if (match === null)
+            continue;
+        const keyword = match[1] || config.commentTextPrefix;
+        const value = match[2];
+        const fragmentInfo = getFragmentInfoByUUID(value);
+        if (fragmentInfo !== null) {
+            push(toInfo(node, fragmentInfo.parseBindTextResult, "comment", value));
+            visitFragment(value);
+            continue;
+        }
+        if (keyword !== config.commentTextPrefix) {
+            // 構造アンカーなのに fragment 未登録（SSR の pre-hydration ウィンドウ等）、
+            // または未知 keyword — UUID や不明値をパスとして誤パースしない。
+            continue;
+        }
+        try {
+            push(toInfo(node, parseBindTextForEmbeddedNode(value), "comment", value));
+        }
+        catch {
+            // 同上
+        }
+    }
+    return out;
+}
+
+/**
  * devtools/types.ts
  *
  * DevTools Hook Protocol (docs/devtools-hook-protocol.md) の型定義。
@@ -9322,6 +9467,9 @@ function createStateElementSummary(element) {
         eventTokenNames: element.eventTokenNames,
         staticDependency: element.staticDependency,
         dynamicDependency: element.dynamicDependency,
+        // protocol v1 追補（additive）— 配線カバレッジの宣言面（設計 §4）。
+        // 旧 IStateElement 実装（optional）では undefined になりうるため null に畳む。
+        watchPaths: element.watchPaths ?? null,
     };
 }
 function requireStateElement(name, rootNode) {
@@ -9402,6 +9550,9 @@ function registerDevtoolsSource() {
                     state[path] = value;
                 }
             });
+        },
+        getDeclaredBindings(rootNode) {
+            return collectDeclaredBindings(rootNode);
         },
         _setSink: setSink,
     };
@@ -10783,9 +10934,10 @@ function processWatchDeclaration(stateElement, state) {
         return null;
     }
     if (typeof declared !== "object" || declared === null) {
-        // 非オブジェクト形は lint 側では候補ゼロ扱いで検出されないため LINT_HINT なし
-        // （以下、lint が実際に検出する shape（非関数・$ 始まり・@ 越境・空セグメント）にだけ付ける）。
-        raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} must be an object mapping state paths to handler functions.`);
+        // lint 側の findNonObjectWatch が「断定できる形」を同 code で検出するため誘導を付ける。
+        // （LINT_HINT を付けない残りは、lint が検出しない空キー・Object.prototype 継承名・
+        // ワイルドカード深度超過の 3 shape。）
+        raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} must be an object mapping state paths to handler functions.${LINT_HINT}`);
     }
     const entries = new Map();
     const paths = new Set();
@@ -11154,6 +11306,11 @@ function fireOne(hit) {
                 // ハンドラ本体が throw しても次回の prev は「今回の評価値」であるべきなので、
                 // handler 呼び出しより前に更新する
                 setComputedSnapshot(stateElement, absAddress, cur);
+            }
+            // 正常発火の観測（設計書 §11 の予約イベント・配線カバレッジの実測面）。
+            // 値は載せない。イベント生成は sink 接続時のみ（ゼロコスト契約）。
+            if (devtoolsSink !== null) {
+                devtoolsSink({ type: "state:watch-fired", stateName: stateElement.name, path: entry.path });
             }
             entry.handler.call(state, cur, prev, ...indexes);
         });
