@@ -51,15 +51,29 @@ export function isInsideForTemplate(html: string, offset: number, bindAttrName: 
  * `<template data-wcs="for: .products">` 内（親 for: categories）なら `".products"` を返す。
  */
 export function getInnermostForPath(html: string, offset: number, bindAttrName: string = 'data-wcs'): string | null {
+  const chain = getEnclosingForPaths(html, offset, bindAttrName);
+  return chain.length === 0 ? null : chain[chain.length - 1];
+}
+
+/**
+ * 指定オフセットを囲む**全ての** for テンプレートの生 for パス文字列を、
+ * 外側 → 内側の順で返す。囲まれていなければ空配列。
+ *
+ * ランタイム（collectStructuralFragments）はネストした for を再帰的に合成する
+ * （内側テンプレート自身の for 属性を外側の for パスで先に展開してから降りる）
+ * ため、相対 for（`for: .products`）の静的解決には外側チェーン全体が要る。
+ * 値は属性値の生テキスト — `@state` やフィルタが付き得るので、パス部分が
+ * 必要な消費側は正本パーサ（statePathName）を通すこと。
+ */
+export function getEnclosingForPaths(html: string, offset: number, bindAttrName: string = 'data-wcs'): string[] {
   const escaped = bindAttrName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const openRegex = new RegExp(
     `<template[^>]*${escaped}\\s*=\\s*["']\\s*for\\s*:\\s*([^"']+?)\\s*["']`,
     'gi',
   );
 
-  let bestMatch: string | null = null;
-  let bestPos = -1;
-
+  // 開始位置の昇順で走査するので、囲んでいるものはそのまま外側 → 内側の順に並ぶ
+  const enclosing: string[] = [];
   let match: RegExpExecArray | null;
   while ((match = openRegex.exec(html)) !== null) {
     if (match.index >= offset) break;
@@ -69,13 +83,12 @@ export function getInnermostForPath(html: string, offset: number, bindAttrName: 
     if (tagEnd === -1 || tagEnd >= offset) continue;
 
     const depth = getForTemplateDepthAt(html, match.index, offset, bindAttrName);
-    if (depth > 0 && match.index > bestPos) {
-      bestMatch = match[1].trim();
-      bestPos = match.index;
+    if (depth > 0) {
+      enclosing.push(match[1].trim());
     }
   }
 
-  return bestMatch;
+  return enclosing;
 }
 
 /**
