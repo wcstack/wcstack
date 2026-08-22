@@ -1231,6 +1231,10 @@ function parseFilterArgs(argsText) {
 }
 
 const filterFnByKey = new Map();
+/** tooling 専用（parser.ts の clearParserCaches からのみ呼ぶ）。 */
+function clearFilterFnCacheForTooling() {
+    filterFnByKey.clear();
+}
 // format: filterName(arg1,arg2) or filterName
 function parseFilters(filterTextList, filterIOType) {
     const builtinFilters = builtinFiltersByFilterIOType[filterIOType];
@@ -1510,7 +1514,7 @@ function parseBindTextForEmbeddedNode(bindText) {
  * （devtools の declared 正本化）は state 自身が pull API で答える。
  */
 /**
- * このエントリの内部キャッシュ（PathInfo intern・フィルタ列パース結果）を全て捨てる。
+ * このエントリの内部キャッシュ（PathInfo intern・propPart/statePart のパース結果・フィルタ関数クロージャ）を全て捨てる。
  *
  * 言語サーバー等の**長時間プロセス専用**。編集中の中間パス（`user.n` 等）が
  * 無制限キャッシュに恒久 intern されてメモリが単調増加するため、ドキュメント
@@ -1522,6 +1526,7 @@ function clearParserCaches() {
     clearPathInfoCacheForTooling();
     clearPropPartCacheForTooling();
     clearStatePartCacheForTooling();
+    clearFilterFnCacheForTooling();
 }
 
 export { clearParserCaches, getPathInfo, parseBindTextForEmbeddedNode, parseBindTextsForElement };

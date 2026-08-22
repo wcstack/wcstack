@@ -101,7 +101,7 @@ declare function getPathInfo(path: string): IPathInfo;
  */
 
 /**
- * このエントリの内部キャッシュ（PathInfo intern・フィルタ列パース結果）を全て捨てる。
+ * このエントリの内部キャッシュ（PathInfo intern・propPart/statePart のパース結果・フィルタ関数クロージャ）を全て捨てる。
  *
  * 言語サーバー等の**長時間プロセス専用**。編集中の中間パス（`user.n` 等）が
  * 無制限キャッシュに恒久 intern されてメモリが単調増加するため、ドキュメント

@@ -110,6 +110,9 @@ var WcsDiagnosticCode = {
   // --- built-in wcs-* tag contract (generated/builtinTags.generated.ts が正本) ---
   // 未知メンバーへのバインド(プロパティ / command. / eventToken. キー)。黙って無視される。
   TagMemberUnknown: "wcs/tag-member-unknown",
+  // wcBindable 無宣言タグ(wcs-fetch-header 等のヘルパー)への spread。
+  // ランタイム(expandSpread)は raiseError で落とす。
+  SpreadNoBindable: "wcs/spread-no-bindable",
   // trigger バインド先スロットの true シード(エッジ検出なし・manual バイパスで即発火)。
   TriggerSeededTruthy: "wcs/trigger-seeded-truthy",
   // 非 manual <wcs-storage> value バインド先の空値シード(初期書き戻しが保存値を上書き)。
@@ -620,14 +623,9 @@ function pushDataPropertyPathsAt(path, prop, paths, stateName, depth) {
   if (prop.value && isArrayLiteral(prop.value)) {
     paths.push({ path: `${path}.*`, kind: "list", stateName });
     paths.push({ path: `${path}.length`, kind: "data", typeHint: "number", stateName });
-    const elementProps = extractArrayElementProperties(prop.value);
-    for (const childProp of elementProps) {
-      paths.push({
-        path: `${path}.*.${childProp.name}`,
-        kind: "data",
-        typeHint: childProp.typeHint,
-        stateName
-      });
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+    for (const childProp of extractArrayElementDataProperties(prop.value)) {
+      pushDataPropertyPathsAt(`${path}.*.${childProp.name}`, childProp, paths, stateName, depth + 1);
     }
     return;
   }
@@ -653,25 +651,27 @@ function analyzeJsonPaths(jsonString, stateName = "default") {
   return paths;
 }
 function collectJsonPaths(obj, prefix, paths, stateName, depth) {
-  if (depth > 5) return;
+  if (depth >= MAX_OBJECT_NEST_DEPTH) return;
   for (const [key, value] of Object.entries(obj)) {
     if (prefix === "" && key.startsWith("$")) continue;
     const path = prefix ? `${prefix}.${key}` : key;
-    const typeHint = inferJsonTypeHint(value);
-    paths.push({ path, kind: "data", typeHint, stateName });
-    if (Array.isArray(value)) {
-      paths.push({ path: `${path}.*`, kind: "list", stateName });
-      paths.push({ path: `${path}.length`, kind: "data", typeHint: "number", stateName });
-      if (value.length > 0 && typeof value[0] === "object" && value[0] !== null && !Array.isArray(value[0])) {
-        const firstElement = value[0];
-        for (const [childKey, childValue] of Object.entries(firstElement)) {
-          const childPath = `${path}.*.${childKey}`;
-          paths.push({ path: childPath, kind: "data", typeHint: inferJsonTypeHint(childValue), stateName });
-        }
+    pushJsonValuePaths(path, value, paths, stateName, depth);
+  }
+}
+function pushJsonValuePaths(path, value, paths, stateName, depth) {
+  paths.push({ path, kind: "data", typeHint: inferJsonTypeHint(value), stateName });
+  if (Array.isArray(value)) {
+    paths.push({ path: `${path}.*`, kind: "list", stateName });
+    paths.push({ path: `${path}.length`, kind: "data", typeHint: "number", stateName });
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+    if (value.length > 0 && typeof value[0] === "object" && value[0] !== null && !Array.isArray(value[0])) {
+      const firstElement = value[0];
+      for (const [childKey, childValue] of Object.entries(firstElement)) {
+        pushJsonValuePaths(`${path}.*.${childKey}`, childValue, paths, stateName, depth + 1);
       }
-    } else if (typeof value === "object" && value !== null) {
-      collectJsonPaths(value, path, paths, stateName, depth + 1);
     }
+  } else if (typeof value === "object" && value !== null) {
+    collectJsonPaths(value, path, paths, stateName, depth + 1);
   }
 }
 function inferJsonTypeHint(value) {
@@ -842,21 +842,15 @@ function extractObjectContent(value) {
   if (start === -1) return "";
   return extractBracedContent(trimmed, scan, start);
 }
-function extractArrayElementProperties(value) {
+function extractArrayElementDataProperties(value) {
   const trimmed = value.trim();
   if (!trimmed.startsWith("[")) return [];
   const scan = maskCommentsAndStrings(trimmed);
-  const objectStart = scan.indexOf("{");
-  if (objectStart === -1) return [];
-  const objectContent = extractBracedContent(trimmed, scan, objectStart);
-  const props = [];
-  const allProps = parseTopLevelProperties(objectContent);
-  for (const prop of allProps) {
-    if (prop.kind === "data") {
-      props.push({ name: prop.name, typeHint: prop.typeHint });
-    }
-  }
-  return props;
+  let first = 1;
+  while (first < scan.length && /\s/.test(scan[first])) first++;
+  if (scan[first] !== "{") return [];
+  const objectContent = extractBracedContent(trimmed, scan, first);
+  return parseTopLevelProperties(objectContent).filter((prop) => prop.kind === "data");
 }
 function extractJsDocType(content, propIndex) {
   const before = content.slice(Math.max(0, propIndex - 200), propIndex);
@@ -992,6 +986,9 @@ function getInnermostForPath(html, offset, bindAttrName = "data-wcs") {
   return chain.length === 0 ? null : chain[chain.length - 1];
 }
 function getEnclosingForPaths(html, offset, bindAttrName = "data-wcs") {
+  return getEnclosingFors(html, offset, bindAttrName).map((entry) => entry.path);
+}
+function getEnclosingFors(html, offset, bindAttrName = "data-wcs") {
   const escaped = bindAttrName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const openRegex = new RegExp(
     `<template[^>]*${escaped}\\s*=\\s*["']\\s*for\\s*:\\s*([^"']+?)\\s*["']`,
@@ -1005,7 +1002,7 @@ function getEnclosingForPaths(html, offset, bindAttrName = "data-wcs") {
     if (tagEnd === -1 || tagEnd >= offset) continue;
     const depth = getForTemplateDepthAt(html, match.index, offset, bindAttrName);
     if (depth > 0) {
-      enclosing.push(match[1].trim());
+      enclosing.push({ path: match[1].trim(), anchor: match.index });
     }
   }
   return enclosing;
@@ -1084,6 +1081,7 @@ var ja = {
   arrayIndexAssign: (sp) => `\u914D\u5217\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u3078\u306E\u76F4\u63A5\u4EE3\u5165\u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\u3002this["${sp}"] \u306E\u3088\u3046\u306A\u30C9\u30C3\u30C8\u30D1\u30B9\u4EE3\u5165\u3001\u307E\u305F\u306F with() \u3068\u518D\u4EE3\u5165\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
   tagMemberUnknown: (prop, tag) => `"${prop}" \u306F <${tag}> \u306E wcBindable \u30E1\u30F3\u30D0\u30FC\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u672A\u77E5\u30E1\u30F3\u30D0\u30FC\u3078\u306E\u30D0\u30A4\u30F3\u30C9\u306F\u9ED9\u3063\u3066\u7121\u8996\u3055\u308C\u307E\u3059\uFF09`,
   tagCommandUnknown: (name, tag, declared) => `"${name}" \u306F <${tag}> \u306E command \u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u5BA3\u8A00\u6E08\u307F: ${declared}\uFF09`,
+  spreadNoBindable: (tag) => `'...'\uFF08spread\uFF09\u306F <${tag}> \u306B\u6709\u52B9\u306A wcBindable \u5BA3\u8A00\u304C\u5FC5\u8981\u3067\u3059 \u2014 \u3053\u306E\u30BF\u30B0\u306F\u5BA3\u8A00\u3092\u6301\u305F\u306A\u3044\u305F\u3081\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30A8\u30E9\u30FC\u3092\u9001\u51FA\u3057\u307E\u3059`,
   tagEventTokenKeyUnknown: (name, tag, declared) => `eventToken \u306E\u30AD\u30FC "${name}" \u306F <${tag}> \u306E wcBindable \u30D7\u30ED\u30D1\u30C6\u30A3\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002\u751F DOM \u30A4\u30D9\u30F3\u30C8\u540D\u306F\u767A\u706B\u3057\u307E\u305B\u3093 \u2014 \u30D7\u30ED\u30D1\u30C6\u30A3\u540D\u3092\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u5BA3\u8A00\u6E08\u307F: ${declared}\uFF09`,
   didYouMean: (c) => `\u3002\u3082\u3057\u304B\u3057\u3066: "${c}"`,
   none: () => `\u306A\u3057`,
@@ -1133,6 +1131,7 @@ var en = {
   arrayIndexAssign: (sp) => `Assigning directly to an array index does not trigger a reactive update. Use a dot-path assignment like this["${sp}"], or with() plus reassignment.`,
   tagMemberUnknown: (prop, tag) => `"${prop}" is not a wcBindable member of <${tag}> (bindings to unknown members are silently ignored)`,
   tagCommandUnknown: (name, tag, declared) => `"${name}" is not a command of <${tag}> (declared: ${declared})`,
+  spreadNoBindable: (tag) => `'...' (spread) requires <${tag}> to expose a valid wcBindable declaration \u2014 this tag declares none, so the runtime raises an error`,
   tagEventTokenKeyUnknown: (name, tag, declared) => `eventToken key "${name}" is not a wcBindable property of <${tag}>. Raw DOM event names never fire \u2014 use the property name (declared: ${declared})`,
   didYouMean: (c) => `. Did you mean "${c}"?`,
   none: () => `none`,
@@ -2079,6 +2078,7 @@ function isValidTemplatePath(path, pathSet, scopedPaths) {
 var BUILTIN_TAGS = {
   "wcs-accelerometer": {
     "package": "accelerometer",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "frequency": null
@@ -2097,6 +2097,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-ambient-light-sensor": {
     "package": "ambient-light-sensor",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "frequency": null
@@ -2113,6 +2114,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-audio": {
     "package": "audio",
+    "hasWcBindable": true,
     "observedAttributes": [
       "volume",
       "limiter",
@@ -2145,6 +2147,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-voice": {
     "package": "audio",
+    "hasWcBindable": false,
     "observedAttributes": [
       "poly"
     ],
@@ -2154,6 +2157,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-osc": {
     "package": "audio",
+    "hasWcBindable": true,
     "observedAttributes": [
       "frequency",
       "detune",
@@ -2179,6 +2183,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-noise": {
     "package": "audio",
+    "hasWcBindable": true,
     "observedAttributes": [
       "id",
       "out",
@@ -2193,6 +2198,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-biquad": {
     "package": "audio",
+    "hasWcBindable": true,
     "observedAttributes": [
       "frequency",
       "q",
@@ -2218,6 +2224,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-gain": {
     "package": "audio",
+    "hasWcBindable": true,
     "observedAttributes": [
       "gain",
       "id",
@@ -2235,6 +2242,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-delay": {
     "package": "audio",
+    "hasWcBindable": true,
     "observedAttributes": [
       "time",
       "feedback",
@@ -2256,6 +2264,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-shaper": {
     "package": "audio",
+    "hasWcBindable": true,
     "observedAttributes": [
       "amount",
       "id",
@@ -2273,6 +2282,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-env": {
     "package": "audio",
+    "hasWcBindable": true,
     "observedAttributes": [
       "attack",
       "decay",
@@ -2298,6 +2308,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-lfo": {
     "package": "audio",
+    "hasWcBindable": true,
     "observedAttributes": [
       "rate",
       "depth",
@@ -2319,6 +2330,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-analyser": {
     "package": "audio",
+    "hasWcBindable": true,
     "observedAttributes": [
       "fft",
       "smoothing",
@@ -2342,6 +2354,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-broadcast": {
     "package": "broadcast",
+    "hasWcBindable": true,
     "observedAttributes": [
       "name"
     ],
@@ -2362,6 +2375,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-camera": {
     "package": "camera",
+    "hasWcBindable": true,
     "observedAttributes": [
       "facing-mode",
       "device-id",
@@ -2397,6 +2411,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-recorder": {
     "package": "camera",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "mimeType": "mime-type",
@@ -2426,6 +2441,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-clipboard": {
     "package": "clipboard",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "monitor": "monitor"
@@ -2454,6 +2470,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-contacts": {
     "package": "contacts",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {},
     "properties": [
@@ -2469,6 +2486,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-credential": {
     "package": "credential",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {},
     "properties": [
@@ -2485,6 +2503,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-debounce": {
     "package": "debounce",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "source": null,
@@ -2506,6 +2525,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-throttle": {
     "package": "debounce",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "source": null,
@@ -2527,6 +2547,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-defined": {
     "package": "defined",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "tags": "tags",
@@ -2545,6 +2566,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-eyedropper": {
     "package": "eyedropper",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {},
     "properties": [
@@ -2561,6 +2583,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-fetch": {
     "package": "fetch",
+    "hasWcBindable": true,
     "observedAttributes": [
       "url"
     ],
@@ -2589,6 +2612,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-fetch-header": {
     "package": "fetch",
+    "hasWcBindable": false,
     "observedAttributes": [],
     "inputs": {},
     "properties": [],
@@ -2596,6 +2620,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-fetch-body": {
     "package": "fetch",
+    "hasWcBindable": false,
     "observedAttributes": [],
     "inputs": {},
     "properties": [],
@@ -2603,6 +2628,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-infinite-scroll": {
     "package": "fetch",
+    "hasWcBindable": false,
     "observedAttributes": [
       "target",
       "root",
@@ -2616,6 +2642,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-fullscreen": {
     "package": "fullscreen",
+    "hasWcBindable": true,
     "observedAttributes": [
       "target"
     ],
@@ -2634,6 +2661,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-geo": {
     "package": "geolocation",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "highAccuracy": "high-accuracy",
@@ -2665,6 +2693,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-gyroscope": {
     "package": "gyroscope",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "frequency": null
@@ -2683,6 +2712,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-idle": {
     "package": "idle",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "threshold": "threshold"
@@ -2702,6 +2732,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-intersect": {
     "package": "intersection",
+    "hasWcBindable": true,
     "observedAttributes": [
       "target",
       "root",
@@ -2735,6 +2766,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-magnetometer": {
     "package": "magnetometer",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "frequency": null
@@ -2753,6 +2785,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-midi": {
     "package": "midi",
+    "hasWcBindable": true,
     "observedAttributes": [
       "input",
       "output",
@@ -2790,6 +2823,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-network": {
     "package": "network",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {},
     "properties": [
@@ -2803,6 +2837,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-notify": {
     "package": "notification",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "notice": null,
@@ -2839,6 +2874,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-permission": {
     "package": "permission",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "name": "name",
@@ -2856,6 +2892,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-pip": {
     "package": "picture-in-picture",
+    "hasWcBindable": true,
     "observedAttributes": [
       "target"
     ],
@@ -2874,6 +2911,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-pointer-lock": {
     "package": "pointer-lock",
+    "hasWcBindable": true,
     "observedAttributes": [
       "target"
     ],
@@ -2892,6 +2930,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-raf": {
     "package": "raf",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "once": "once",
@@ -2917,6 +2956,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-resize": {
     "package": "resize",
+    "hasWcBindable": true,
     "observedAttributes": [
       "target",
       "box",
@@ -2945,6 +2985,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-screen-orientation": {
     "package": "screen-orientation",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {},
     "properties": [
@@ -2962,6 +3003,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-share": {
     "package": "share",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {},
     "properties": [
@@ -2977,6 +3019,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-speak": {
     "package": "speech",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "say": null,
@@ -3007,6 +3050,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-listen": {
     "package": "speech",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "lang": "lang",
@@ -3035,6 +3079,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-sse": {
     "package": "sse",
+    "hasWcBindable": true,
     "observedAttributes": [
       "url"
     ],
@@ -3062,6 +3107,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-storage": {
     "package": "storage",
+    "hasWcBindable": true,
     "observedAttributes": [
       "key",
       "type"
@@ -3088,6 +3134,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-tilt": {
     "package": "tilt",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {},
     "properties": [
@@ -3107,6 +3154,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-timer": {
     "package": "timer",
+    "hasWcBindable": true,
     "observedAttributes": [
       "interval"
     ],
@@ -3134,6 +3182,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-upload": {
     "package": "upload",
+    "hasWcBindable": true,
     "observedAttributes": [
       "url"
     ],
@@ -3165,6 +3214,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-wakelock": {
     "package": "wakelock",
+    "hasWcBindable": true,
     "observedAttributes": [
       "active",
       "type"
@@ -3186,6 +3236,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-ws": {
     "package": "websocket",
+    "hasWcBindable": true,
     "observedAttributes": [
       "url"
     ],
@@ -3218,6 +3269,7 @@ var BUILTIN_TAGS = {
   },
   "wcs-worker": {
     "package": "worker",
+    "hasWcBindable": true,
     "observedAttributes": [
       "src"
     ],
@@ -3271,10 +3323,28 @@ function validateIoNodes(html, bindAttribute = "data-wcs", stateTagName = "wcs-s
   const getPaths = () => statePaths ??= getStatePathsFromHtml(html, stateTagName, fileReader);
   for (const occ of occurrences) {
     const contract = BUILTIN_TAGS[occ.tagName];
-    if (contract.properties.length === 0 && contract.commands.length === 0 && Object.keys(contract.inputs).length === 0) continue;
     const bindAttr = extractAttributeValue(occ.attrsText, bindAttribute);
     if (!bindAttr) continue;
     const valueStart = occ.attrsStart + bindAttr.valueOffsetInAttrs;
+    if (!contract.hasWcBindable) {
+      let spreadExprOffset = 0;
+      for (const expr of splitBindingExpressions(bindAttr.value)) {
+        const exprStart = valueStart + spreadExprOffset;
+        spreadExprOffset += expr.length + 1;
+        if (parseBindingExpression(expr).property !== "...") continue;
+        const start = exprStart + expr.indexOf("...");
+        diagnostics.push({
+          code: WcsDiagnosticCode.SpreadNoBindable,
+          start,
+          end: start + 3,
+          severity: "error",
+          tag: occ.tagName,
+          message: msgs.spreadNoBindable(occ.tagName)
+        });
+      }
+      continue;
+    }
+    if (contract.properties.length === 0 && contract.commands.length === 0 && Object.keys(contract.inputs).length === 0) continue;
     const hasManual = hasBooleanAttribute(occ.attrsText, "manual");
     let exprOffset = 0;
     for (const expr of splitBindingExpressions(bindAttr.value)) {

@@ -452,14 +452,21 @@ class DevtoolsCore {
                     out.push({ stateName: entry.name, kind: "watch", name: path, status: "fired", count, note: null });
                     continue;
                 }
-                // ワイルドカード行 watch は各 `.*` 階層のリストが `for` バインドされている
-                // （= paths.list に載っている）ことが発火前提（watch 設計 §6-3）。未成立は
-                // 「未発火」と区別する。ただし paths.list は for 由来のみで `$listKeys`
-                // 宣言はここから見えないため、断定でなく「for が観測できない」と報告する。
+                // ワイルドカード行 watch に**リスト書き込み**が届く前提 = 各 `.*` 階層の
+                // リストが「for バインド（paths.list）or `$listKeys` 宣言（keyedListPaths）」
+                // されていること（watch 設計 §6-3）。未成立は「未発火」と区別する。
+                // 前提はリスト置換経路に限る主張 — 明示 index 書き込み（`$resolve` /
+                // `items.0.price` 代入。$getAll で listIndex 台帳が生えた後）は前提に
+                // 依らず発火し得るため、「一度も発火しない」とは断定できない（実測済み）。
+                // keyedListPaths は protocol v1 追補 — フィールドを持たない旧ランタイム
+                // では $listKeys 側が観測できないため、note はさらに観測形に落とす 2 段。
+                const keyedKnown = summary.keyedListPaths !== undefined;
                 let missingList = null;
                 for (let star = path.indexOf(".*"); star !== -1; star = path.indexOf(".*", star + 2)) {
                     const listPath = path.slice(0, star);
-                    if (!summary.paths.list.has(listPath)) {
+                    const satisfied = summary.paths.list.has(listPath)
+                        || (summary.keyedListPaths?.has(listPath) ?? false);
+                    if (!satisfied) {
                         missingList = listPath;
                         break;
                     }
@@ -467,7 +474,9 @@ class DevtoolsCore {
                 if (missingList !== null) {
                     out.push({
                         stateName: entry.name, kind: "watch", name: path, status: "prerequisite-missing", count: 0,
-                        note: `no for binding observed for list "${missingList}" (a $listKeys declaration would still let it fire)`,
+                        note: keyedKnown
+                            ? `list "${missingList}" has no for binding and no $listKeys declaration — list writes never reach its rows (only explicit-index writes can fire this watch)`
+                            : `no for binding observed for list "${missingList}" (a $listKeys declaration would still let list writes fire it)`,
                     });
                     continue;
                 }

@@ -8148,7 +8148,7 @@ async function buildBindings(root) {
     }
 }
 
-var version = "1.29.0";
+var version = "1.30.0";
 var pkg = {
 	version: version};
 
@@ -9470,6 +9470,12 @@ function createStateElementSummary(element) {
         // protocol v1 追補（additive）— 配線カバレッジの宣言面（設計 §4）。
         // 旧 IStateElement 実装（optional）では undefined になりうるため null に畳む。
         watchPaths: element.watchPaths ?? null,
+        // ワイルドカード行 watch の発火前提「for バインド or $listKeys 宣言」の後者。
+        // ListKeyMap のキー（リストパス）だけを出す — キー指定（文字列/関数）は
+        // カバレッジ判定に不要で、関数はシリアライズ境界にも載せない。
+        keyedListPaths: element.listKeys === undefined || element.listKeys === null
+            ? null
+            : new Set(element.listKeys.keys()),
     };
 }
 function requireStateElement(name, rootNode) {
