@@ -769,12 +769,11 @@ export function getInlayHints(
       if (owner !== null) {
         const contract = BUILTIN_TAGS[owner.tagName];
         const propCount = new Set([...Object.keys(contract.inputs), ...contract.properties]).size;
-        // カタログは「wcBindable 無し」のタグ（wcs-fetch-header 等）も空契約に
-        // 平坦化している。無宣言タグへの spread はランタイムが raiseError する
-        // 構成なので、0 件を「合法な 0 展開」として提示すると誤 hint になる —
-        // union が空なら出さない（真に空の wcBindable (wcs-noise) の「→ 0 props」
-        // も失うが情報価値ゼロ。カタログへの wcBindable 有無の記録は follow-up）。
-        if (propCount > 0) {
+        // 無宣言タグ（hasWcBindable: false）への spread はランタイムが raiseError
+        // する構成 — ここはヒントを出さず、ioNodeValidator の
+        // wcs/spread-no-bindable（error）が指摘する。真に空の wcBindable
+        // （wcs-noise）の「→ 0 props」も情報価値ゼロなので union が空なら出さない。
+        if (contract.hasWcBindable && propCount > 0) {
           hints.push({ offset: exprDocRange.end, label: `→ ${propCount} props`, kind: 'spread' });
         }
       }

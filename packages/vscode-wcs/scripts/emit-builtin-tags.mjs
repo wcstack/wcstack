@@ -57,7 +57,7 @@ const SKIP = new Set([
   "poc-visual-editor", "vscode-wcs",
 ]);
 
-/** @type {Record<string, {package: string, observedAttributes: string[], inputs: Record<string, string | null>, properties: string[], commands: string[]}>} */
+/** @type {Record<string, {package: string, hasWcBindable: boolean, observedAttributes: string[], inputs: Record<string, string | null>, properties: string[], commands: string[]}>} */
 const tags = {};
 const failed = [];
 const skippedNoDist = [];
@@ -85,13 +85,16 @@ for (const dir of readdirSync(packagesRoot).sort()) {
       const wb = ctor.wcBindable;
       if (!wb) {
         // ヘルパータグ（wcs-fetch-header 等）は契約なしの既知タグとして登録する。
-        tags[tagName] = { package: dir, observedAttributes, inputs: {}, properties: [], commands: [] };
+        // hasWcBindable: false は「空の契約」と区別するための旗 — 無宣言タグへの
+        // spread はランタイムが raiseError するため、検証・ヒントの分岐に要る。
+        tags[tagName] = { package: dir, hasWcBindable: false, observedAttributes, inputs: {}, properties: [], commands: [] };
         continue;
       }
       const inputs = {};
       for (const i of wb.inputs ?? []) inputs[i.name] = i.attribute ?? null;
       tags[tagName] = {
         package: dir,
+        hasWcBindable: true,
         observedAttributes,
         inputs,
         properties: (wb.properties ?? []).map((p) => p.name),
@@ -125,6 +128,12 @@ const banner = `/**
 export interface BuiltinTagContract {
   /** 由来パッケージ（packages/<name>）。 */
   readonly package: string;
+  /**
+   * \`static wcBindable\` を宣言しているか。false はヘルパータグ
+   * （wcs-fetch-header 等）— 空の契約（wcs-noise）と区別する。無宣言タグへの
+   * spread はランタイム（expandSpread）が raiseError する。
+   */
+  readonly hasWcBindable: boolean;
   /** Shell の static observedAttributes（HTML 属性面。wcBindable とは別軸）。 */
   readonly observedAttributes: readonly string[];
   /** input 名 → ミラー属性名（属性ミラーなしは null）。 */

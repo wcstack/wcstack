@@ -70,6 +70,9 @@ export const WcsDiagnosticCode = {
   // --- built-in wcs-* tag contract (generated/builtinTags.generated.ts が正本) ---
   // 未知メンバーへのバインド(プロパティ / command. / eventToken. キー)。黙って無視される。
   TagMemberUnknown: "wcs/tag-member-unknown",
+  // wcBindable 無宣言タグ(wcs-fetch-header 等のヘルパー)への spread。
+  // ランタイム(expandSpread)は raiseError で落とす。
+  SpreadNoBindable: "wcs/spread-no-bindable",
   // trigger バインド先スロットの true シード(エッジ検出なし・manual バイパスで即発火)。
   TriggerSeededTruthy: "wcs/trigger-seeded-truthy",
   // 非 manual <wcs-storage> value バインド先の空値シード(初期書き戻しが保存値を上書き)。

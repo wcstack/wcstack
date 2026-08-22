@@ -9,6 +9,12 @@
 export interface BuiltinTagContract {
   /** 由来パッケージ（packages/<name>）。 */
   readonly package: string;
+  /**
+   * `static wcBindable` を宣言しているか。false はヘルパータグ
+   * （wcs-fetch-header 等）— 空の契約（wcs-noise）と区別する。無宣言タグへの
+   * spread はランタイム（expandSpread）が raiseError する。
+   */
+  readonly hasWcBindable: boolean;
   /** Shell の static observedAttributes（HTML 属性面。wcBindable とは別軸）。 */
   readonly observedAttributes: readonly string[];
   /** input 名 → ミラー属性名（属性ミラーなしは null）。 */
@@ -22,6 +28,7 @@ export interface BuiltinTagContract {
 export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   "wcs-accelerometer": {
     "package": "accelerometer",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "frequency": null
@@ -40,6 +47,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-ambient-light-sensor": {
     "package": "ambient-light-sensor",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "frequency": null
@@ -56,6 +64,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-audio": {
     "package": "audio",
+    "hasWcBindable": true,
     "observedAttributes": [
       "volume",
       "limiter",
@@ -88,6 +97,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-voice": {
     "package": "audio",
+    "hasWcBindable": false,
     "observedAttributes": [
       "poly"
     ],
@@ -97,6 +107,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-osc": {
     "package": "audio",
+    "hasWcBindable": true,
     "observedAttributes": [
       "frequency",
       "detune",
@@ -122,6 +133,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-noise": {
     "package": "audio",
+    "hasWcBindable": true,
     "observedAttributes": [
       "id",
       "out",
@@ -136,6 +148,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-biquad": {
     "package": "audio",
+    "hasWcBindable": true,
     "observedAttributes": [
       "frequency",
       "q",
@@ -161,6 +174,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-gain": {
     "package": "audio",
+    "hasWcBindable": true,
     "observedAttributes": [
       "gain",
       "id",
@@ -178,6 +192,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-delay": {
     "package": "audio",
+    "hasWcBindable": true,
     "observedAttributes": [
       "time",
       "feedback",
@@ -199,6 +214,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-shaper": {
     "package": "audio",
+    "hasWcBindable": true,
     "observedAttributes": [
       "amount",
       "id",
@@ -216,6 +232,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-env": {
     "package": "audio",
+    "hasWcBindable": true,
     "observedAttributes": [
       "attack",
       "decay",
@@ -241,6 +258,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-lfo": {
     "package": "audio",
+    "hasWcBindable": true,
     "observedAttributes": [
       "rate",
       "depth",
@@ -262,6 +280,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-analyser": {
     "package": "audio",
+    "hasWcBindable": true,
     "observedAttributes": [
       "fft",
       "smoothing",
@@ -285,6 +304,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-broadcast": {
     "package": "broadcast",
+    "hasWcBindable": true,
     "observedAttributes": [
       "name"
     ],
@@ -305,6 +325,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-camera": {
     "package": "camera",
+    "hasWcBindable": true,
     "observedAttributes": [
       "facing-mode",
       "device-id",
@@ -340,6 +361,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-recorder": {
     "package": "camera",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "mimeType": "mime-type",
@@ -369,6 +391,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-clipboard": {
     "package": "clipboard",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "monitor": "monitor"
@@ -397,6 +420,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-contacts": {
     "package": "contacts",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {},
     "properties": [
@@ -412,6 +436,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-credential": {
     "package": "credential",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {},
     "properties": [
@@ -428,6 +453,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-debounce": {
     "package": "debounce",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "source": null,
@@ -449,6 +475,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-throttle": {
     "package": "debounce",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "source": null,
@@ -470,6 +497,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-defined": {
     "package": "defined",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "tags": "tags",
@@ -488,6 +516,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-eyedropper": {
     "package": "eyedropper",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {},
     "properties": [
@@ -504,6 +533,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-fetch": {
     "package": "fetch",
+    "hasWcBindable": true,
     "observedAttributes": [
       "url"
     ],
@@ -532,6 +562,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-fetch-header": {
     "package": "fetch",
+    "hasWcBindable": false,
     "observedAttributes": [],
     "inputs": {},
     "properties": [],
@@ -539,6 +570,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-fetch-body": {
     "package": "fetch",
+    "hasWcBindable": false,
     "observedAttributes": [],
     "inputs": {},
     "properties": [],
@@ -546,6 +578,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-infinite-scroll": {
     "package": "fetch",
+    "hasWcBindable": false,
     "observedAttributes": [
       "target",
       "root",
@@ -559,6 +592,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-fullscreen": {
     "package": "fullscreen",
+    "hasWcBindable": true,
     "observedAttributes": [
       "target"
     ],
@@ -577,6 +611,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-geo": {
     "package": "geolocation",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "highAccuracy": "high-accuracy",
@@ -608,6 +643,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-gyroscope": {
     "package": "gyroscope",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "frequency": null
@@ -626,6 +662,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-idle": {
     "package": "idle",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "threshold": "threshold"
@@ -645,6 +682,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-intersect": {
     "package": "intersection",
+    "hasWcBindable": true,
     "observedAttributes": [
       "target",
       "root",
@@ -678,6 +716,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-magnetometer": {
     "package": "magnetometer",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "frequency": null
@@ -696,6 +735,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-midi": {
     "package": "midi",
+    "hasWcBindable": true,
     "observedAttributes": [
       "input",
       "output",
@@ -733,6 +773,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-network": {
     "package": "network",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {},
     "properties": [
@@ -746,6 +787,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-notify": {
     "package": "notification",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "notice": null,
@@ -782,6 +824,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-permission": {
     "package": "permission",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "name": "name",
@@ -799,6 +842,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-pip": {
     "package": "picture-in-picture",
+    "hasWcBindable": true,
     "observedAttributes": [
       "target"
     ],
@@ -817,6 +861,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-pointer-lock": {
     "package": "pointer-lock",
+    "hasWcBindable": true,
     "observedAttributes": [
       "target"
     ],
@@ -835,6 +880,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-raf": {
     "package": "raf",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "once": "once",
@@ -860,6 +906,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-resize": {
     "package": "resize",
+    "hasWcBindable": true,
     "observedAttributes": [
       "target",
       "box",
@@ -888,6 +935,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-screen-orientation": {
     "package": "screen-orientation",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {},
     "properties": [
@@ -905,6 +953,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-share": {
     "package": "share",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {},
     "properties": [
@@ -920,6 +969,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-speak": {
     "package": "speech",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "say": null,
@@ -950,6 +1000,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-listen": {
     "package": "speech",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {
       "lang": "lang",
@@ -978,6 +1029,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-sse": {
     "package": "sse",
+    "hasWcBindable": true,
     "observedAttributes": [
       "url"
     ],
@@ -1005,6 +1057,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-storage": {
     "package": "storage",
+    "hasWcBindable": true,
     "observedAttributes": [
       "key",
       "type"
@@ -1031,6 +1084,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-tilt": {
     "package": "tilt",
+    "hasWcBindable": true,
     "observedAttributes": [],
     "inputs": {},
     "properties": [
@@ -1050,6 +1104,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-timer": {
     "package": "timer",
+    "hasWcBindable": true,
     "observedAttributes": [
       "interval"
     ],
@@ -1077,6 +1132,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-upload": {
     "package": "upload",
+    "hasWcBindable": true,
     "observedAttributes": [
       "url"
     ],
@@ -1108,6 +1164,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-wakelock": {
     "package": "wakelock",
+    "hasWcBindable": true,
     "observedAttributes": [
       "active",
       "type"
@@ -1129,6 +1186,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-ws": {
     "package": "websocket",
+    "hasWcBindable": true,
     "observedAttributes": [
       "url"
     ],
@@ -1161,6 +1219,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   },
   "wcs-worker": {
     "package": "worker",
+    "hasWcBindable": true,
     "observedAttributes": [
       "src"
     ],

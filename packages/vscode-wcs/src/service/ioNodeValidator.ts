@@ -71,13 +71,37 @@ export function validateIoNodes(
 
   for (const occ of occurrences) {
     const contract = BUILTIN_TAGS[occ.tagName];
-    // ヘルパータグ（契約メンバーなし）は検査対象外 — バインド面が定義されていない。
-    if (contract.properties.length === 0 && contract.commands.length === 0
-      && Object.keys(contract.inputs).length === 0) continue;
-
     const bindAttr = extractAttributeValue(occ.attrsText, bindAttribute);
     if (!bindAttr) continue;
     const valueStart = occ.attrsStart + bindAttr.valueOffsetInAttrs;
+
+    // wcBindable 無宣言タグ（wcs-fetch-header 等のヘルパー）への spread は
+    // ランタイム（expandSpread）が raiseError で落とす — メンバー検査の
+    // 手前で error にする。空の契約（wcs-noise = 宣言はあるがメンバー 0）は
+    // 合法な 0 展開なので対象外。spread 以外のバインドは従来どおり検査しない
+    // （バインド面が定義されていない）。
+    if (!contract.hasWcBindable) {
+      let spreadExprOffset = 0;
+      for (const expr of splitBindingExpressions(bindAttr.value)) {
+        const exprStart = valueStart + spreadExprOffset;
+        spreadExprOffset += expr.length + 1; // ';' の分
+        if (parseBindingExpression(expr).property !== '...') continue;
+        // property が '...' なら expr 中に必ず '...' が現れる（スライス由来）
+        const start = exprStart + expr.indexOf('...');
+        diagnostics.push({
+          code: WcsDiagnosticCode.SpreadNoBindable,
+          start, end: start + 3,
+          severity: 'error', tag: occ.tagName,
+          message: msgs.spreadNoBindable(occ.tagName),
+        });
+      }
+      continue;
+    }
+
+    // 契約メンバーが 1 つも無いタグは検査対象外 — 突き合わせる面が無い。
+    if (contract.properties.length === 0 && contract.commands.length === 0
+      && Object.keys(contract.inputs).length === 0) continue;
+
     const hasManual = hasBooleanAttribute(occ.attrsText, 'manual');
 
     let exprOffset = 0;

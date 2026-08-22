@@ -69,6 +69,7 @@ export interface WcsMessageCatalog {
   // --- ioNodeValidator ---
   tagMemberUnknown(property: string, tag: string): string;
   tagCommandUnknown(name: string, tag: string, declared: string): string;
+  spreadNoBindable(tag: string): string;
   tagEventTokenKeyUnknown(name: string, tag: string, declared: string): string;
   /** 最近傍候補の「もしかして」suffix。 */
   didYouMean(candidate: string): string;
@@ -129,6 +130,8 @@ const ja: WcsMessageCatalog = {
     `"${prop}" は <${tag}> の wcBindable メンバーではありません（未知メンバーへのバインドは黙って無視されます）`,
   tagCommandUnknown: (name, tag, declared) =>
     `"${name}" は <${tag}> の command ではありません（宣言済み: ${declared}）`,
+  spreadNoBindable: (tag) =>
+    `'...'（spread）は <${tag}> に有効な wcBindable 宣言が必要です — このタグは宣言を持たないため、ランタイムはエラーを送出します`,
   tagEventTokenKeyUnknown: (name, tag, declared) =>
     `eventToken のキー "${name}" は <${tag}> の wcBindable プロパティではありません。生 DOM イベント名は発火しません — プロパティ名を指定してください（宣言済み: ${declared}）`,
   didYouMean: (c) => `。もしかして: "${c}"`,
@@ -192,6 +195,8 @@ const en: WcsMessageCatalog = {
     `"${prop}" is not a wcBindable member of <${tag}> (bindings to unknown members are silently ignored)`,
   tagCommandUnknown: (name, tag, declared) =>
     `"${name}" is not a command of <${tag}> (declared: ${declared})`,
+  spreadNoBindable: (tag) =>
+    `'...' (spread) requires <${tag}> to expose a valid wcBindable declaration — this tag declares none, so the runtime raises an error`,
   tagEventTokenKeyUnknown: (name, tag, declared) =>
     `eventToken key "${name}" is not a wcBindable property of <${tag}>. Raw DOM event names never fire — use the property name (declared: ${declared})`,
   didYouMean: (c) => `. Did you mean "${c}"?`,
