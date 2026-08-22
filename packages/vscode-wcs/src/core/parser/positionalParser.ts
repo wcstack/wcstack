@@ -30,6 +30,8 @@ export interface ITokenRange {
 export interface IPositionalBinding {
   /** trim 済みの式全体のスパン（入力 bindText 相対）。 */
   readonly exprRange: ITokenRange;
+  /** trim 済みの式テキスト（exprRange が指す原文。トークン単位の再照合用）。 */
+  readonly exprText: string;
   /** 正本パーサの結果。式が不正なら null。 */
   readonly parsed: ParseBindTextResult | null;
   /** 正本パーサの throw メッセージ（`[@wcstack/state]` プレフィックス込み）。成功時は null。 */
@@ -80,7 +82,7 @@ export function parseBindTextWithPositions(bindText: string): IPositionalBinding
     }
 
     if (parsed === null) {
-      results.push({ exprRange, parsed, error, propRange: null, pathRange: null, stateNameRange: null });
+      results.push({ exprRange, exprText: expr, parsed, error, propRange: null, pathRange: null, stateNameRange: null });
       continue;
     }
 
@@ -111,6 +113,7 @@ export function parseBindTextWithPositions(bindText: string): IPositionalBinding
 
     results.push({
       exprRange,
+      exprText: expr,
       parsed,
       error,
       propRange: lift(propLocal),

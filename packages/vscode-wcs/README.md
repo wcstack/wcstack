@@ -108,6 +108,17 @@ Completions and diagnostics also work in Mustache `{{ }}` and comment binding `<
 <p><!--@@wcs-text:count--></p>
 ```
 
+### Hover, Go to Definition, Find References, Inlay Hints
+
+Binding paths are runtime identifiers written directly in HTML, so navigation works without source maps. All four features are queries over the same positional reference index that powers diagnostics.
+
+- **Hover** on a binding path shows its kind (data / computed / list / method / command token / event token), inferred type, owning state, and declaration line. `for`-shorthand paths show their expansion (`` `.name` → `users.*.name` ``). Hovering a filter name shows its signature, description, and type transform (`number → string`); hovering a modifier (`#prevent`, `#ro`, `#init=`, `#sync=`, `#on<event>`) explains its semantics. Unresolvable paths get no hover (zero-false-hint policy) — except `src`-external states, which are explicitly labeled as externally defined.
+- **Go to Definition** (F12) jumps from a path in `data-wcs` / `{{ }}` / `<!--@@:-->` to its declaration in the inline `<wcs-state>` script. Dotted paths fall back to their first segment; `$command.<name>` jumps to `$commandTokens`, event-token wirings jump to `$eventTokens`. Paths of a `src`-external state jump to the `<wcs-state src=…>` tag.
+- **Find References** (Shift+F12) works in both directions: from a binding path to all its occurrences across every channel (shorthand occurrences are unified with their expanded form), and from a declaration name inside the state script to every binding that reads it (including subpaths).
+- **Inlay hints** show the expanded path after a `for`-shorthand (`.name` `= users.*.name`) — the exact attribute rewrite the runtime performs — and the result type at the end of a filter chain (`→ string`). Hints are omitted whenever the type cannot be statically determined.
+
+The hover text language follows `wcstack.messageLanguage` (default: VS Code display language).
+
 ### Binding Diagnostics
 
 Real-time validation for `data-wcs` attributes, `{{ }}` syntax, and `<!--@@:-->` syntax:

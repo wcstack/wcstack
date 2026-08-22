@@ -22,6 +22,10 @@ export interface WcsStateInfo {
   srcAttr?: string;
   /** 内部の <script type="module"> ブロック */
   scriptBlocks: WcsScriptBlock[];
+  /** 開始タグ `<wcs-state ...>` の開始オフセット（`<` の位置） */
+  tagStart: number;
+  /** 開始タグの終了オフセット（`>` の直後） */
+  tagEnd: number;
 }
 
 export interface WcsScriptBlock {
@@ -157,6 +161,8 @@ export function parseWcsStateElements(html: string, stateTagName: string = 'wcs-
     const jsonAttr = extractAttribute(wcsMatch.tagContent, 'json') ?? undefined;
     const stateAttr = extractAttribute(wcsMatch.tagContent, 'state') ?? undefined;
     const srcAttr = extractAttribute(wcsMatch.tagContent, 'src') ?? undefined;
+    const tagStart = pos;
+    const tagEnd = wcsMatch.end;
     pos = wcsMatch.end;
 
     // 内部の <script type="module"> ブロックを収集
@@ -202,7 +208,7 @@ export function parseWcsStateElements(html: string, stateTagName: string = 'wcs-
       if (pos === 0) break;
     }
 
-    elements.push({ stateName, jsonAttr, stateAttr, srcAttr, scriptBlocks });
+    elements.push({ stateName, jsonAttr, stateAttr, srcAttr, scriptBlocks, tagStart, tagEnd });
 
     pos = wcsEnd;
     if (wcsCloseIdx !== -1) {
