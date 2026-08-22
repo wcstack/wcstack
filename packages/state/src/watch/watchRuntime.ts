@@ -283,6 +283,11 @@ function fireOne(hit: IWatchHit): void {
         // handler 呼び出しより前に更新する
         setComputedSnapshot(stateElement, absAddress, cur);
       }
+      // 正常発火の観測（設計書 §11 の予約イベント・配線カバレッジの実測面）。
+      // 値は載せない。イベント生成は sink 接続時のみ（ゼロコスト契約）。
+      if (devtoolsSink !== null) {
+        devtoolsSink({ type: "state:watch-fired", stateName: stateElement.name, path: entry.path });
+      }
       entry.handler.call(state, cur, prev, ...indexes);
     });
   } catch (e) {

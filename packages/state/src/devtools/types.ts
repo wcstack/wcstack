@@ -87,6 +87,15 @@ export type DevtoolsEvent =
       readonly paths: readonly string[];
     }
   | {
+      // `$watch` ハンドラの正常発火（state-watch-hook-design.md §11 で予約済み・
+      // static-wiring-dx-design.md §4 の配線カバレッジが消費）。値は載せない —
+      // 「宣言したのに一度も発火しない」の検出には発火の事実だけで足りる。
+      readonly type: "state:watch-fired";
+      readonly stateName: string;
+      /** `$watch` の宣言キー（ワイルドカードを含む生のパス） */
+      readonly path: string;
+    }
+  | {
       readonly type: "propagation:suppressed";
       readonly reason: "confirmation" | "visited-edge";
       readonly transactionId: number;
@@ -152,6 +161,42 @@ export interface IStateElementSummary {
   readonly eventTokenNames: ReadonlySet<string>;
   readonly staticDependency: ReadonlyMap<string, readonly string[]>;
   readonly dynamicDependency: ReadonlyMap<string, readonly string[]>;
+  /**
+   * `$watch` の宣言パス集合（宣言なしは null）。protocol v1 追補（additive）—
+   * 配線カバレッジの「宣言面」（static-wiring-dx-design.md §4）。
+   */
+  readonly watchPaths: ReadonlySet<string> | null;
+}
+
+/**
+ * 宣言レベルのバインディング 1 件（getDeclaredBindings の要素）。
+ * 正本パーサ（bindTextParser）の結果をそのまま流す — devtools 側の簡易パーサ
+ * （declaredScan）が「bindTextParser 非追随」と自己申告していたドリフトの恒久解消。
+ * filters は IFilterInfo の構造的サブセット（filterName / args）として読める。
+ *
+ * getDeclaredBindings の戻り値は**宣言の集合**（宣言タプルで dedupe 済み）であり、
+ * レンダリング行数に比例したインスタンス列ではない。インスタンス粒度は live の
+ * binding 台帳（state:binding-added）の守備範囲。
+ */
+export interface IDeclaredBindingInfo {
+  /**
+   * 宣言を代表するノード（要素またはコメントアンカー。同一宣言の複数出現は
+   * 最初に見つかったノード）。構造テンプレート内部の宣言（origin: 'fragment'）は
+   * live DOM にノードを持たないため null。
+   */
+  readonly node: Node | null;
+  readonly propName: string;
+  readonly statePathName: string;
+  readonly stateName: string;
+  readonly bindingType: string;
+  readonly inFilters: readonly { readonly filterName: string; readonly args: readonly string[] }[];
+  readonly outFilters: readonly { readonly filterName: string; readonly args: readonly string[] }[];
+  readonly origin: "attribute" | "comment" | "fragment";
+  /**
+   * 宣言の原文。構造ディレクティブのアンカー（origin: 'comment'）は原文が DOM に
+   * 残らないためレジストリ UUID、fragment 由来は空文字。
+   */
+  readonly raw: string;
 }
 
 export interface IDevtoolsSource {
@@ -167,6 +212,13 @@ export interface IDevtoolsSource {
   keys(name: string, rootNode: Node): string[];
   read(name: string, rootNode: Node, path: string, indexes?: number[]): unknown;
   write(name: string, rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
+  /**
+   * rootNode 配下の宣言レベルのバインディングを正本パーサで列挙する
+   * （protocol v1 追補・additive）。live DOM（属性 + コメントアンカー）に加え、
+   * DOM から引き上げられた構造テンプレート内部（fragment レジストリ）も含む —
+   * DOM 再スキャン方式の declared ビューでは原理的に見えなかった領域。
+   */
+  getDeclaredBindings(rootNode: Node): IDeclaredBindingInfo[];
   /** registry 専用。listener の有無に応じて registry が差し替える */
   _setSink(sink: DevtoolsSink | null): void;
 }

@@ -26,7 +26,30 @@
  * （devtools の declared 正本化）は state 自身が pull API で答える。
  */
 export { parseBindTextsForElement } from "./bindTextParser/parseBindTextsForElement.js";
+// テキストバインディング（mustache 変換後のコメント・`<!--@@:-->`）の正本経路。
+// `;` を**分割しない**（式全体が `path[@state][|filters]`）— 属性経路との違いは
+// 消費側が既知乖離として文書化していた点で、これで text チャネルも正本化できる。
+export { parseBindTextForEmbeddedNode } from "./bindTextParser/parseBindTextForEmbeddedNode.js";
 export type { ParseBindTextResult } from "./bindTextParser/types.js";
 export { getPathInfo } from "./address/PathInfo.js";
 export type { IPathInfo } from "./address/types.js";
 export type { IFilterInfo, BindingType } from "./types.js";
+
+import { clearPathInfoCacheForTooling } from "./address/PathInfo.js";
+import { clearPropPartCacheForTooling } from "./bindTextParser/parsePropPart.js";
+import { clearStatePartCacheForTooling } from "./bindTextParser/parseStatePart.js";
+
+/**
+ * このエントリの内部キャッシュ（PathInfo intern・フィルタ列パース結果）を全て捨てる。
+ *
+ * 言語サーバー等の**長時間プロセス専用**。編集中の中間パス（`user.n` 等）が
+ * 無制限キャッシュに恒久 intern されてメモリが単調増加するため、ドキュメント
+ * クローズ等の区切りで呼ぶ。クリア後の getPathInfo は同一パスに**新しい**
+ * インスタンスを返す — 「同一パス → 同一参照」の保証はクリアを跨がない。
+ * ランタイム（`.` エントリ）にはこの API は無く、呼ばれることもない。
+ */
+export function clearParserCaches(): void {
+  clearPathInfoCacheForTooling();
+  clearPropPartCacheForTooling();
+  clearStatePartCacheForTooling();
+}

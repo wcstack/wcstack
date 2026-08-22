@@ -3,6 +3,17 @@ import { IPathInfo } from "./types.js";
 
 const _cache: Map<string, IPathInfo> = new Map();
 
+/**
+ * **tooling 専用**（`@wcstack/state/parser` の clearParserCaches からのみ呼ぶ）。
+ * ランタイム文脈で呼んではならない — PathInfo のインスタンス同一性は正規化キー
+ * （依存グラフ・アドレス比較）の前提であり、クリアすると同一パスの新旧インスタンスが
+ * 併存して identity 比較が黙って壊れる。言語サーバー等の長時間プロセスが、編集中の
+ * 中間パス（`user.n` 等）の恒久 intern によるメモリ単調増加を断つための出口。
+ */
+export function clearPathInfoCacheForTooling(): void {
+  _cache.clear();
+}
+
 let id: number = 0;
 export function getPathInfo(path: string): IPathInfo {
   let pathInfo = _cache.get(path);

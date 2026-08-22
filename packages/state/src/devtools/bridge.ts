@@ -18,6 +18,7 @@ import { registerUpdateBatchListener, unregisterUpdateBatchListener, UpdateBatch
 import { raiseError } from "../raiseError";
 import { VERSION } from "../version";
 import { IStateElement } from "../components/types";
+import { collectDeclaredBindings } from "./declaredBindings";
 import { devtoolsSink, setDevtoolsSink } from "./sink";
 import {
   DEVTOOLS_HOOK_GLOBAL,
@@ -149,6 +150,9 @@ function createStateElementSummary(element: IStateElement): IStateElementSummary
     eventTokenNames: element.eventTokenNames,
     staticDependency: element.staticDependency,
     dynamicDependency: element.dynamicDependency,
+    // protocol v1 追補（additive）— 配線カバレッジの宣言面（設計 §4）。
+    // 旧 IStateElement 実装（optional）では undefined になりうるため null に畳む。
+    watchPaths: element.watchPaths ?? null,
   };
 }
 
@@ -231,6 +235,9 @@ export function registerDevtoolsSource(): void {
           (state as unknown as Record<string, unknown>)[path] = value;
         }
       });
+    },
+    getDeclaredBindings(rootNode: Node) {
+      return collectDeclaredBindings(rootNode);
     },
     _setSink: setSink,
   };

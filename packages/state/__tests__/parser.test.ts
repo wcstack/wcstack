@@ -8,7 +8,12 @@
  * このファイルの import 自体が落ちる。
  */
 import { describe, it, expect } from "vitest";
-import { parseBindTextsForElement, getPathInfo } from "../src/parser";
+import {
+  parseBindTextsForElement,
+  parseBindTextForEmbeddedNode,
+  getPathInfo,
+  clearParserCaches,
+} from "../src/parser";
 
 describe("parseBindTextsForElement（正本パーサの公開契約）", () => {
   it("node 環境で実行されていること（@vitest-environment 指示の自己検証）", () => {
@@ -59,6 +64,32 @@ describe("parseBindTextsForElement（正本パーサの公開契約）", () => {
     expect(() => parseBindTextsForElement("if: a; textContent: b")).toThrow();
     expect(() => parseBindTextsForElement("...: target | uc")).toThrow(/filters are not allowed/);
     expect(() => parseBindTextsForElement("...:")).toThrow(/target path is required/);
+  });
+});
+
+describe("parseBindTextForEmbeddedNode（テキストバインディングの正本経路）", () => {
+  it("式全体を 1 本のパスとして扱い `;` を分割しないこと（属性経路との規定差）", () => {
+    const r = parseBindTextForEmbeddedNode("count | fix(0)");
+    expect(r.propName).toBe("textContent");
+    expect(r.bindingType).toBe("text");
+    expect(r.statePathName).toBe("count");
+    expect(r.outFilters[0].filterName).toBe("fix");
+    // 属性経路（parseBindTextsForElement）は `;` で無条件分割するが、埋め込み経路は
+    // parseStatePart 直行 = 分割しない。`a; b` は「a; b」という 1 本のパスになる
+    //（referenceIndex がこの差を既知乖離として文書化していた、そのランタイム実挙動）。
+    expect(parseBindTextForEmbeddedNode("a; b").statePathName).toBe("a; b");
+  });
+});
+
+describe("clearParserCaches（tooling 専用のキャッシュ解放）", () => {
+  it("クリア後の getPathInfo は新しいインスタンスを返すこと（同一参照保証はクリアを跨がない）", () => {
+    const before = getPathInfo("cache.test.path");
+    expect(getPathInfo("cache.test.path")).toBe(before);
+    clearParserCaches();
+    const after = getPathInfo("cache.test.path");
+    expect(after).not.toBe(before);
+    expect(after.path).toBe(before.path);
+    expect(after.cumulativePaths).toEqual(before.cumulativePaths);
   });
 });
 

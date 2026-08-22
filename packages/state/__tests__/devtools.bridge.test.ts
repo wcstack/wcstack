@@ -194,8 +194,48 @@ describe('devtools/bridge', () => {
         expect(summary.paths.list.has('items')).toBe(true);
         expect(summary.paths.getter.has('total')).toBe(true);
         expect(summary.commandTokenNames.has('go')).toBe(true);
+        // watchPaths 未宣言（fake に無い）は null に畳まれる（protocol v1 追補）
+        expect(summary.watchPaths).toBeNull();
       } finally {
         setStateElementByName(rootNode, 'summary-test', null);
+      }
+    });
+
+    it('summaryにwatchPathsが載ること（配線カバレッジの宣言面・protocol v1追補）', () => {
+      registerDevtoolsSource();
+      const source = __getRegisteredSourceForTest()!;
+      const element = createMockStateElement('watch-summary', {
+        watchPaths: new Set(['count', 'items.*.price']),
+      } as never);
+      setStateElementByName(element.rootNode, 'watch-summary', element);
+      try {
+        const summary = source.getStateElements().find((s) => s.name === 'watch-summary')!;
+        expect(summary.watchPaths).toEqual(new Set(['count', 'items.*.price']));
+      } finally {
+        setStateElementByName(element.rootNode, 'watch-summary', null);
+      }
+    });
+
+    it('getDeclaredBindingsが正本パーサの結果を返すこと（protocol v1追補）', () => {
+      registerDevtoolsSource();
+      const source = __getRegisteredSourceForTest()!;
+      const container = document.createElement('div');
+      container.innerHTML = '<span data-wcs="textContent: user.name | uc; class.on: flag"></span>';
+      container.appendChild(document.createComment('@@:count|fix(0)'));
+      document.body.appendChild(container);
+      try {
+        const declared = source.getDeclaredBindings(container);
+        const paths = declared.map((d) => `${d.origin}:${d.propName}:${d.statePathName}`);
+        expect(paths).toContain('attribute:textContent:user.name');
+        expect(paths).toContain('attribute:class.on:flag');
+        expect(paths).toContain('comment:textContent:count');
+        const withFilter = declared.find((d) => d.statePathName === 'user.name')!;
+        expect(withFilter.outFilters[0].filterName).toBe('uc');
+        const commentEntry = declared.find((d) => d.origin === 'comment')!;
+        expect(commentEntry.outFilters[0].filterName).toBe('fix');
+        expect(commentEntry.outFilters[0].args).toEqual(['0']);
+      } finally {
+        container.remove();
       }
     });
 
