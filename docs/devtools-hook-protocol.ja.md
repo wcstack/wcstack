@@ -85,6 +85,17 @@ interface IDevtoolsSource {
   keys(name: string, rootNode: Node): string[]; // トップレベルキー列挙（状態ツリーの描画起点）
   read(name: string, rootNode: Node, path: string, indexes?: number[]): unknown;
   write(name: string, rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
+  // v1 追補（additive）: ランタイム自身の正本パーサによる宣言レベルバインディングの
+  // **集合**。ソース = live DOM の属性 + コメントアンカー（spread は live wcBindable
+  // から展開・未定義要素は "spread" のまま）+ rootNode 配下のアンカーから到達可能な
+  // fragment UUID の推移閉包（DOM 再スキャンでは原理的に見えない構造テンプレート
+  // 内部。別 root や破棄済みビューの fragment は漏れ込まない）。宣言タプルで
+  // dedupe 済み — レンダリング行クローンでエントリは増えない（インスタンス粒度は
+  // binding 台帳の守備範囲）。既知の盲点: 構造テンプレート外のテキストバインディングは
+  // binding start がアンカーを Text に差し替えるため活性化後は列挙に現れない
+  //（早期アタッチなら binding 台帳が持つ・遅延アタッチではどちらにも無い — §6）。
+  // 旧ランタイムには無い可能性があるため optional 扱いで呼ぶ。
+  getDeclaredBindings(rootNode: Node): IDeclaredBindingInfo[];
   // --- 内部（registry 専用） ---
   _setSink(sink: ((e: DevtoolsEvent) => void) | null): void;
 }
@@ -101,6 +112,26 @@ interface IStateElementSummary {
   readonly eventTokenNames: ReadonlySet<string>;
   readonly staticDependency: ReadonlyMap<string, readonly string[]>;
   readonly dynamicDependency: ReadonlyMap<string, readonly string[]>;
+  // v1 追補（additive）: `$watch` の宣言パス集合（宣言なしは null）—
+  // 配線カバレッジの「宣言面」。旧ランタイムにはフィールド自体が無い可能性がある。
+  readonly watchPaths: ReadonlySet<string> | null;
+}
+
+// v1 追補: 宣言レベルのバインディング 1 件（getDeclaredBindings の要素）。
+// 正本パーサの結果がそのまま流れる — filters はランタイム IFilterInfo の
+// 構造的サブセット { filterName, args } として読める。
+interface IDeclaredBindingInfo {
+  readonly node: Node | null;   // origin "fragment" は live DOM にノードを持たないため null
+  readonly propName: string;
+  readonly statePathName: string;
+  readonly stateName: string;
+  readonly bindingType: string;
+  readonly inFilters: readonly { filterName: string; args: readonly string[] }[];
+  readonly outFilters: readonly { filterName: string; args: readonly string[] }[];
+  readonly origin: "attribute" | "comment" | "fragment";
+  // 宣言の原文。構造ディレクティブのアンカーは原文が DOM に残らないため
+  // レジストリ UUID、fragment 由来は空文字。
+  readonly raw: string;
 }
 ```
 
@@ -167,7 +198,13 @@ restart を巻き添えにしないため、[state-watch-hook-design.ja.md](./st
 - イベント: `state:watch-chain-limit` payload = `{ maxDepth, paths }`。watch 起点の書き込み
   連鎖が深さ上限で打ち切られたときに 1 回。値と binding 適用は巻き戻さない
   （`propagation:hop-limit` と同じ姿勢）。バッチ単位の打ち切りなので `stateName` は持たない。
-- どちらも `devtoolsSink !== null` の内側でのみ生成する（コスト規範 §1-1）。
+- イベント: `state:watch-fired`（v1 追補・additive —
+  [state-watch-hook-design.md](./state-watch-hook-design.md) §11 の予約イベント）
+  payload = `{ stateName, path }`。各ハンドラ呼び出しの直前に 1 回。**値は載せない** —
+  「宣言したのに一度も発火しない」の検出には発火の事実だけで足り、値を載せると発火
+  ホットパスに直列化コストが乗る。`IStateElementSummary.watchPaths`（宣言面）と対で
+  配線カバレッジの実測面になる。
+- いずれも `devtoolsSink !== null` の内側でのみ生成する（コスト規範 §1-1）。
 
 ### 4.4 binding 台帳の増減
 

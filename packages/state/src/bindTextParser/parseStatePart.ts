@@ -9,6 +9,11 @@ type StatePartParseResult = Pick<IBindingInfo,
 
 const cacheFilterInfos = new Map<string, IFilterInfo[]>();
 
+/** tooling 専用（parser.ts の clearParserCaches からのみ呼ぶ）。 */
+export function clearStatePartCacheForTooling(): void {
+  cacheFilterInfos.clear();
+}
+
 // format: statePath@stateName|filter|filter
 // statePath-format: path.to.property (e.g., user.name.first, users.*.name, users.0.name, not include @)
 // stateName: optional, default is 'default'

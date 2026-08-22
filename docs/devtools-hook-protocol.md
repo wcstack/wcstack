@@ -86,6 +86,19 @@ interface IDevtoolsSource {
   keys(name: string, rootNode: Node): string[]; // enumerating top-level keys (the origin for drawing the state tree)
   read(name: string, rootNode: Node, path: string, indexes?: number[]): unknown;
   write(name: string, rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
+  // v1 addendum (additive): the SET of declared-level bindings, enumerated by the
+  // runtime's own canonical parser. Sources: attributes + comment anchors in the
+  // live DOM (spread expanded from the live wcBindable; undefined elements stay
+  // "spread"), plus structural-template contents resolved as the transitive
+  // closure of fragment UUIDs reachable from anchors under rootNode — the area a
+  // DOM re-scan can never see, without leaking other roots' or torn-down views'
+  // fragments. Deduplicated by declaration tuple: rendered row clones do NOT
+  // multiply entries (instance granularity belongs to the binding ledger).
+  // Known blind spot: top-level text bindings vanish from the DOM once binding
+  // start swaps their comment anchor for a text node, so after activation they
+  // appear only in the binding ledger (and in neither, on late attach — §6).
+  // Old runtimes may lack this member; call it as optional.
+  getDeclaredBindings(rootNode: Node): IDeclaredBindingInfo[];
   // --- internal (registry only) ---
   _setSink(sink: ((e: DevtoolsEvent) => void) | null): void;
 }
@@ -102,6 +115,26 @@ interface IStateElementSummary {
   readonly eventTokenNames: ReadonlySet<string>;
   readonly staticDependency: ReadonlyMap<string, readonly string[]>;
   readonly dynamicDependency: ReadonlyMap<string, readonly string[]>;
+  // v1 addendum (additive): the `$watch` declaration keys (null when undeclared) —
+  // the declared side of wiring coverage. Old runtimes may not have the field.
+  readonly watchPaths: ReadonlySet<string> | null;
+}
+
+// v1 addendum: one declared-level binding (element of getDeclaredBindings). The
+// canonical parser's result flows through as-is — filters are readable as the
+// structural subset { filterName, args } of the runtime's IFilterInfo.
+interface IDeclaredBindingInfo {
+  readonly node: Node | null;   // null for origin "fragment" (no live-DOM node exists)
+  readonly propName: string;
+  readonly statePathName: string;
+  readonly stateName: string;
+  readonly bindingType: string;
+  readonly inFilters: readonly { filterName: string; args: readonly string[] }[];
+  readonly outFilters: readonly { filterName: string; args: readonly string[] }[];
+  readonly origin: "attribute" | "comment" | "fragment";
+  // The source text. Structural-directive anchors carry the registry UUID (the
+  // original text no longer exists in the DOM); fragment entries carry "".
+  readonly raw: string;
 }
 ```
 
@@ -171,7 +204,13 @@ place it becomes visible.
 - Event: `state:watch-chain-limit`, payload = `{ maxDepth, paths }`, emitted once when a watch-rooted
   write chain is cut off at the depth limit. Values and DOM are not rolled back (same stance as
   `propagation:hop-limit`). The cut-off is per batch, so it carries no `stateName`.
-- Both are constructed only inside `devtoolsSink !== null` (cost rule §1-1).
+- Event: `state:watch-fired` (v1 addendum, additive — the event reserved in
+  [state-watch-hook-design.md](./state-watch-hook-design.md) §11), payload = `{ stateName, path }`,
+  emitted immediately before each handler invocation. It deliberately carries **no values** —
+  detecting "declared but never fired" needs only the fact of firing, and values would put a
+  serialization cost on the hot firing path. Together with `IStateElementSummary.watchPaths`
+  (declared side) this is the measured side of wiring coverage.
+- All are constructed only inside `devtoolsSink !== null` (cost rule §1-1).
 
 ### 4.4 Growth and shrinkage of the binding ledger
 
