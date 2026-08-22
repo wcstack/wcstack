@@ -389,6 +389,137 @@ describe('WcsDevtools shell', () => {
       expect(paneBody(devtools, 'wiring').textContent).toContain('no bindings observed');
     });
 
+    it('runtimeがgetDeclaredBindingsを実装していれば正本の宣言集合を使うこと（canonicalバッジ + filters表示）', () => {
+      mount();
+      // mount が source を作り直すため、追補 API は mount 後に付ける
+      (source as any).getDeclaredBindings = vi.fn(() => [{
+        node: document.body,
+        propName: 'textContent',
+        statePathName: 'user.name',
+        stateName: 'default',
+        bindingType: 'prop',
+        inFilters: [],
+        outFilters: [{ filterName: 'uc', args: [] }],
+        origin: 'attribute',
+        raw: 'textContent: user.name | uc',
+      }]);
+      // 追補 API を後付けしたので roster イベントで Wiring ペインの再描画を誘発する
+      source.emit({ type: 'state:element-registered', name: 'main', rootNode: document, element: {} });
+      devtools.__flushRenderForTest();
+      const body = paneBody(devtools, 'wiring');
+      expect(body.textContent).toContain('declared (canonical)');
+      expect(body.textContent).toContain('user.name@default | uc()');
+      expect((source as any).getDeclaredBindings).toHaveBeenCalled();
+      // node 付き行はクリックでハイライトされる
+      body.querySelector<HTMLElement>('.wiring-row')!.click();
+      expect(shadowOf(devtools).querySelectorAll('.hl-box').length).toBeGreaterThan(0);
+    });
+
+    it('canonical宣言でnodeがnullの行（fragment由来）はクリックハンドラを持たないこと', () => {
+      mount();
+      (source as any).getDeclaredBindings = vi.fn(() => [{
+        node: null,
+        propName: 'textContent',
+        statePathName: 'row.label',
+        stateName: 'default',
+        bindingType: 'prop',
+        inFilters: [],
+        outFilters: [],
+        origin: 'fragment',
+        raw: '',
+      }]);
+      source.emit({ type: 'state:element-registered', name: 'main', rootNode: document, element: {} });
+      devtools.__flushRenderForTest();
+      const body = paneBody(devtools, 'wiring');
+      expect(body.textContent).toContain('row.label@default');
+      body.querySelector<HTMLElement>('.wiring-row')!.click();
+      expect(shadowOf(devtools).querySelectorAll('.hl-box').length).toBe(0);
+    });
+
+    it('coverageタブが宣言×実測の突合と観測開始時刻を描画すること', () => {
+      mount({
+        summaries: [{
+          ...summaryOf('main', document),
+          watchPaths: new Set(['count', 'items.*.price']),
+        } as never],
+      });
+      devtools.__flushRenderForTest();
+      const body = paneBody(devtools, 'wiring');
+      // タブ切り替え
+      const coverageTab = Array.from(body.querySelectorAll<HTMLElement>('.wiring-tabs button'))
+        .find((b) => b.textContent === 'coverage')!;
+      coverageTab.click();
+      source.emit({ type: 'state:watch-fired', stateName: 'main', path: 'count' });
+      devtools.__flushRenderForTest();
+      const after = paneBody(devtools, 'wiring');
+      expect(after.textContent).toContain('observing since');
+      expect(after.textContent).toContain('count@main');
+      expect(after.textContent).toContain('fired');
+      // 前提未成立（items が for 未バインド）は warn でなく declared 系の淡色。
+      // 理由 note はツールチップでなく本文に常時表示される
+      const badges = Array.from(after.querySelectorAll<HTMLElement>('.badge-tag'));
+      expect(badges.some((b) => b.textContent === 'prerequisite-missing' && b.classList.contains('declared'))).toBe(true);
+      expect(after.textContent).toContain('no for binding observed');
+
+      // 2 回目の発火で ×N 表示になる
+      source.emit({ type: 'state:watch-fired', stateName: 'main', path: 'count' });
+      devtools.__flushRenderForTest();
+      expect(paneBody(devtools, 'wiring').textContent).toContain('fired ×2');
+    });
+
+    it('coverageタブ: 全emitが空撃ちのtokenはemitted-unheardのwarn表示になること', () => {
+      mount({
+        summaries: [{
+          ...summaryOf('main', document),
+          commandTokenNames: new Set(['play']),
+        } as never],
+      });
+      devtools.__flushRenderForTest();
+      Array.from(paneBody(devtools, 'wiring').querySelectorAll<HTMLElement>('.wiring-tabs button'))
+        .find((b) => b.textContent === 'coverage')!.click();
+      source.emit({ type: 'state:token-emit', kind: 'command', stateName: 'main', tokenName: 'play', args: [], subscriberCount: 0 });
+      devtools.__flushRenderForTest();
+      const after = paneBody(devtools, 'wiring');
+      const badge = Array.from(after.querySelectorAll<HTMLElement>('.badge-tag'))
+        .find((b) => b.textContent === 'emitted-unheard')!;
+      expect(badge.classList.contains('warn')).toBe(true);
+      expect(after.textContent).toContain('all 1 emit(s) had 0 subscribers');
+    });
+
+    it('coverageタブ: bindingのnote（template interior）が表示されること', () => {
+      mount();
+      (source as any).getDeclaredBindings = vi.fn(() => [{
+        node: null,
+        propName: 'textContent',
+        statePathName: 'row.label',
+        stateName: 'default',
+        bindingType: 'prop',
+        inFilters: [],
+        outFilters: [],
+        origin: 'fragment',
+        raw: '',
+      }]);
+      source.emit({ type: 'state:element-registered', name: 'main', rootNode: document, element: {} });
+      devtools.__flushRenderForTest();
+      const body = paneBody(devtools, 'wiring');
+      Array.from(body.querySelectorAll<HTMLElement>('.wiring-tabs button'))
+        .find((b) => b.textContent === 'coverage')!.click();
+      devtools.__flushRenderForTest();
+      const after = paneBody(devtools, 'wiring');
+      expect(after.textContent).toContain('never-attached');
+      expect(after.textContent).toContain('template interior');
+    });
+
+    it('coverageタブ: 宣言が何も無ければその旨を表示すること', () => {
+      mount({ summaries: [] });
+      devtools.__flushRenderForTest();
+      const body = paneBody(devtools, 'wiring');
+      Array.from(body.querySelectorAll<HTMLElement>('.wiring-tabs button'))
+        .find((b) => b.textContent === 'coverage')!.click();
+      devtools.__flushRenderForTest();
+      expect(paneBody(devtools, 'wiring').textContent).toContain('nothing declared to cover');
+    });
+
     it('ライブ配線を描画し、行クリックでハイライトされること', () => {
       const bound = document.createElement('span');
       document.body.append(bound);
