@@ -64,8 +64,11 @@ export function didYouMean(input: string, candidates: Iterable<string>): string 
 /**
  * lint への誘導（誘導付きメッセージ共通の一文）。
  * **lint が実際にそのケースを検出するサイトにだけ付ける** — 検出しないケースに
- * 付けると「エラー → lint 実行 → clean」の空振りで検証ループの信頼を毀損する
- * （DCC 宣言・watch の一部 shape・構造型単独バインディング違反は lint 未検出のため
- * 付けない。lint 側への検査追加は follow-up）。
+ * 付けると「エラー → lint 実行 → clean」の空振りで検証ループの信頼を毀損する。
+ * 現在 lint 未検出のため付けないもの: DCC 宣言・watch の空キー / Object.prototype
+ * 継承名 / ワイルドカード深度超過。
+ * なお hint 付きサイト内でも被覆は部分的でありうる（例: `$watch: ident` の実体が
+ * 非オブジェクトだった場合、ランタイムは評価後の値で raise するが lint は宣言 shape
+ * から断定できず沈黙する）。サイト粒度の hint ではこの残余は構造的に避けられない。
  */
 export const LINT_HINT = " Validate statically: npx @wcstack/lint <file>.";

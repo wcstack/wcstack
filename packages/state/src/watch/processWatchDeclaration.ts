@@ -43,9 +43,10 @@ export function processWatchDeclaration(
     return null;
   }
   if (typeof declared !== "object" || declared === null) {
-    // 非オブジェクト形は lint 側では候補ゼロ扱いで検出されないため LINT_HINT なし
-    // （以下、lint が実際に検出する shape（非関数・$ 始まり・@ 越境・空セグメント）にだけ付ける）。
-    raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} must be an object mapping state paths to handler functions.`);
+    // lint 側の findNonObjectWatch が「断定できる形」を同 code で検出するため誘導を付ける。
+    // （LINT_HINT を付けない残りは、lint が検出しない空キー・Object.prototype 継承名・
+    // ワイルドカード深度超過の 3 shape。）
+    raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} must be an object mapping state paths to handler functions.${LINT_HINT}`);
   }
   const entries = new Map<string, IWatchEntry>();
   const paths = new Set<string>();

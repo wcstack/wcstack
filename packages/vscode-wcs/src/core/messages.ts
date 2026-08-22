@@ -30,6 +30,8 @@ export interface WcsMessageCatalog {
   // --- bindingValidator / templateSyntaxValidator ---
   spreadFilterNotAllowed(): string;
   spreadTargetRequired(): string;
+  /** 構造ディレクティブ（for/if/elseif/else）が他バインディングと併記されている。 */
+  structuralMustBeSingle(directive: string): string;
   eventTokenUndeclared(tokenName: string): string;
   commandRhsFormat(): string;
   commandTokenUndeclared(tokenPath: string): string;
@@ -54,6 +56,8 @@ export interface WcsMessageCatalog {
   nestedAssign(suggestedPath: string): string;
   typeAnnotationIncompatible(valueType: string, rawType: string): string;
   // --- watchDeclarationValidator ---
+  /** `$watch` の値がオブジェクトでないと静的に断定できる（ランタイムは読み込み時に throw）。 */
+  watchNotObject(): string;
   watchKeyCrossState(key: string): string;
   watchKeyReserved(key: string): string;
   watchKeyEmptySegment(key: string): string;
@@ -87,6 +91,7 @@ const JA_EXPECTED_LABEL: Record<ExpectedTypeKind, string> = {
 const ja: WcsMessageCatalog = {
   spreadFilterNotAllowed: () => `スプレッドのターゲットにフィルタは使用できません`,
   spreadTargetRequired: () => `スプレッドにはターゲットパスが必要です`,
+  structuralMustBeSingle: (d) => `'${d}' バインディングは単独で指定する必要があります（';' で他のバインディングと併記できません。ランタイムは読み込み時に throw します）`,
   eventTokenUndeclared: (t) => `イベントトークン "${t}" は $eventTokens に宣言されていません`,
   commandRhsFormat: () => `command バインディングの右辺には $command.<name>（$commandTokens で宣言）を指定してください`,
   commandTokenUndeclared: (t) => `コマンドトークン "${t}" は $commandTokens に宣言されていません`,
@@ -109,6 +114,7 @@ const ja: WcsMessageCatalog = {
   moustacheFouc: (e) =>
     `<template> 外の {{ }} 構文は FOUC（初期表示時にテンプレート文字列が見える）の原因になります。<!--@@:${e}--> またはコメント構文の使用を検討してください。`,
   nestedAssign: (sp) => `ネストされたプロパティへの代入はリアクティブ更新をトリガーしません。this["${sp}"] を使用してください。`,
+  watchNotObject: () => `$watch は「パス → ハンドラ関数」のオブジェクトである必要があります（この形はランタイムが読み込み時に throw します）`,
   watchKeyCrossState: (k) => `$watch のキー "${k}" は他の state を指しています。@ 付きの越境 watch は使えません（自 state のパスのみ）`,
   watchKeyReserved: (k) => `$watch のキー "${k}" は "$" で始められません（予約名前空間）`,
   watchKeyEmptySegment: (k) => `$watch のキー "${k}" に空のパスセグメントがあります`,
@@ -148,6 +154,7 @@ const EN_EXPECTED_LABEL: Record<ExpectedTypeKind, string> = {
 const en: WcsMessageCatalog = {
   spreadFilterNotAllowed: () => `Filters cannot be applied to a spread target`,
   spreadTargetRequired: () => `Spread requires a target path`,
+  structuralMustBeSingle: (d) => `'${d}' must be the only binding in this attribute (it cannot be combined with ';'; the runtime throws at load time)`,
   eventTokenUndeclared: (t) => `Event token "${t}" is not declared in $eventTokens`,
   commandRhsFormat: () => `The right side of a command binding must be $command.<name> (declared in $commandTokens)`,
   commandTokenUndeclared: (t) => `Command token "${t}" is not declared in $commandTokens`,
@@ -170,6 +177,7 @@ const en: WcsMessageCatalog = {
   moustacheFouc: (e) =>
     `{{ }} outside a <template> causes FOUC (the raw template string is visible before binding). Consider the comment syntax <!--@@:${e}--> instead.`,
   nestedAssign: (sp) => `Assigning to a nested property does not trigger a reactive update. Use this["${sp}"] instead.`,
+  watchNotObject: () => `$watch must be an object mapping state paths to handler functions (the runtime throws on this shape at load time)`,
   watchKeyCrossState: (k) => `$watch key "${k}" targets another state. Cross-state watching with @ is not supported (own paths only)`,
   watchKeyReserved: (k) => `$watch key "${k}" must not start with "$" (reserved namespace)`,
   watchKeyEmptySegment: (k) => `$watch key "${k}" has an empty path segment`,

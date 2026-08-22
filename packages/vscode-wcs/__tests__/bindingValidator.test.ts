@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { validateBindings } from '../src/service/bindingValidator';
+import { WcsDiagnosticCode } from '../src/core/diagnostics';
 
 const SAMPLE_HTML = `
 <wcs-state>
@@ -792,5 +793,53 @@ export default { tags: ["a", "b"], rows: [{ name: "x" }] };
     const html = `${STATE}\n<template data-wcs="for: missingList"><li data-wcs="textContent: ."></li></template>`;
     const diags = validateBindings(html, 'data-wcs');
     expect(diags.some(d => d.message.includes('（展開: missingList.*）'))).toBe(true);
+  });
+});
+
+describe('構造ディレクティブの単独バインディング検査（error・ランタイムは raiseError で落ちる形）', () => {
+  const structuralErrors = (html: string) =>
+    validateBindings(html, 'data-wcs').filter(
+      d => d.code === WcsDiagnosticCode.TemplateSyntax && d.message.includes('単独'),
+    );
+
+  const page = (attr: string) => `
+<wcs-state json='{"items": [1], "cond": true, "label": "a"}'></wcs-state>
+<template data-wcs="${attr}"><span></span></template>
+`;
+
+  it('for と他バインディングの併記を検出する（error・範囲は構造式）', () => {
+    const html = page('for: items; textContent: label');
+    const diags = structuralErrors(html);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].severity).toBe('error');
+    expect(html.slice(diags[0].start, diags[0].end)).toBe('for: items');
+  });
+
+  it('if / elseif / else の併記も検出する', () => {
+    expect(structuralErrors(page('textContent: label; if: cond'))).toHaveLength(1);
+    expect(structuralErrors(page('elseif: cond; textContent: label'))).toHaveLength(1);
+    expect(structuralErrors(page('else:; textContent: label'))).toHaveLength(1);
+  });
+
+  it('構造ディレクティブが複数併記されたら各式に 1 診断ずつ出る', () => {
+    expect(structuralErrors(page('if: cond; for: items'))).toHaveLength(2);
+  });
+
+  it('単独の構造ディレクティブ・非構造の複数併記・radio/checkbox は検出しない', () => {
+    expect(structuralErrors(page('for: items'))).toHaveLength(0);
+    expect(structuralErrors(page('textContent: label; class.active: cond'))).toHaveLength(0);
+    // radio / checkbox は STRUCTURAL_BINDING_TYPE_SET 外（ランタイムも併記を許す）
+    expect(structuralErrors(page('checkbox: items; onchange: label'))).toHaveLength(0);
+  });
+
+  it('修飾子付きの構造名（for#x）は検出しない — ランタイムは修飾子分離前の完全一致で構造判定するため通常 prop になる', () => {
+    // parseBindTextsForElement("for#x: items; textContent: label") は throw しない
+    // （bindingType: prop, prop）。lint が error にすると偽陽性で CI を落とす。
+    expect(structuralErrors(page('for#x: items; textContent: label'))).toHaveLength(0);
+    expect(structuralErrors(page('if#init: cond; textContent: label'))).toHaveLength(0);
+  });
+
+  it('末尾セミコロン（空要素）は複数扱いにしない（ランタイムの trim-filter と同じ数え方）', () => {
+    expect(structuralErrors(page('for: items;'))).toHaveLength(0);
   });
 });

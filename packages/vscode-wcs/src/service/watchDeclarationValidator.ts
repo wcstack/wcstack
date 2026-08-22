@@ -24,7 +24,7 @@
 import { parseWcsScriptBlocks } from '../language/htmlParse.js';
 import { getMessages, type WcsMessageCatalog } from '../core/messages.js';
 import { WcsDiagnostic, WcsDiagnosticCode, type WcsDiagnosticCodeValue } from '../core/diagnostics.js';
-import { analyzeStatePaths, analyzeWatchEntries, type WatchEntryInfo } from './stateAnalyzer.js';
+import { analyzeStatePaths, analyzeWatchEntries, findNonObjectWatch, type WatchEntryInfo } from './stateAnalyzer.js';
 
 /** 他 state を指す区切り（@wcstack/state define.ts の STATE_NAME_SEPARATOR）。 */
 const STATE_NAME_SEPARATOR = '@';
@@ -41,6 +41,20 @@ export function validateWatchDeclarations(
   const out: WcsDiagnostic[] = [];
 
   for (const block of parseWcsScriptBlocks(html, stateTagName)) {
+    // 値がオブジェクトでないと断定できる宣言（`$watch: "x"` / `$watch() {}` 等)。
+    // ランタイムは読み込み時に raiseError するため error。entries は 0 件になる形
+    // なので、下の early-continue より前に検査する。
+    const nonObject = findNonObjectWatch(block.content);
+    if (nonObject !== null) {
+      out.push({
+        code: WcsDiagnosticCode.WatchDeclarationInvalid,
+        start: block.contentStart + nonObject.start,
+        end: block.contentStart + nonObject.end,
+        message: msgs.watchNotObject(),
+        severity: 'error',
+      });
+    }
+
     const entries = analyzeWatchEntries(block.content);
     if (entries.length === 0) continue;
 

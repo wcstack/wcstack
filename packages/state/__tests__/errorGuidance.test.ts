@@ -51,7 +51,7 @@ describe("埋め込みサイトのメッセージ契約", () => {
     expect(message).toContain(LINT_HINT);
   });
 
-  it("構造型の単独バインディング違反: [wcs/template-syntax] + 正しい形（lint は未検出のため誘導なし）", () => {
+  it("構造型の単独バインディング違反: [wcs/template-syntax] + 正しい形 + lint 誘導", () => {
     let message = "";
     try {
       parseBindTextsForElement("for: items; textContent: a");
@@ -60,8 +60,8 @@ describe("埋め込みサイトのメッセージ契約", () => {
     }
     expect(message).toContain("[wcs/template-syntax]");
     expect(message).toContain('<template data-wcs="for: items">');
-    // lint に単独バインディング検査は未実装 — 誘導が空振りしないよう hint は付けない
-    expect(message).not.toContain(LINT_HINT);
+    // lint 側の structuralMustBeSingle が同じケースを検出する（vscode-wcs 側で追加済み）
+    expect(message).toContain(LINT_HINT);
   });
 
   it("DCC 非実在名: state の宣言名からの did-you-mean（$ 予約名は候補に出さない・lint 誘導なし）", () => {
@@ -105,9 +105,13 @@ describe("埋め込みサイトのメッセージ契約", () => {
     const dollar = messageOf({ "$streams": () => {} });
     expect(dollar).toContain("[wcs/watch-declaration-invalid]");
     expect(dollar).toContain(LINT_HINT);
-    // lint 未検出 shape(非オブジェクト)→ code のみ・誘導なし
+    // 非オブジェクト形も lint 側の findNonObjectWatch が検出する → 誘導あり
     const nonObject = messageOf("not an object");
     expect(nonObject).toContain("[wcs/watch-declaration-invalid]");
-    expect(nonObject).not.toContain(LINT_HINT);
+    expect(nonObject).toContain(LINT_HINT);
+    // lint 未検出のまま残る shape(Object.prototype 継承名)→ code のみ・誘導なし
+    const proto = messageOf({ constructor: () => {} });
+    expect(proto).toContain("[wcs/watch-declaration-invalid]");
+    expect(proto).not.toContain(LINT_HINT);
   });
 });

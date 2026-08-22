@@ -177,6 +177,55 @@ function isNonFunctionLiteral(value: string | undefined): boolean {
 }
 
 /**
+ * `$watch` の宣言が「オブジェクトでない」とランタイム同様に**断定できる**場合に
+ * その名前スパンを返す（該当なしは null）。
+ *
+ * ランタイム（@wcstack/state watch/processWatchDeclaration.ts）は
+ * `typeof declared !== "object" || declared === null` で raiseError する。静的に
+ * 断定できるのは:
+ * - メソッド短縮記法 `$watch() {}`（値は関数 = 非オブジェクト）
+ * - 明白な非オブジェクトリテラル（文字列・数値・真偽値・null・関数/アロー式）
+ *
+ * 断定しないもの（誤検出回避）: 識別子参照・呼び出し式（実行時までオブジェクトか
+ * 不明）、配列リテラル（typeof は "object" なのでランタイムは通す）、
+ * `undefined`（ランタイムは宣言なし扱いで早期 return）、getter（評価結果は不明）。
+ */
+export function findNonObjectWatch(scriptContent: string): { start: number; end: number } | null {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return null;
+  const watchProp = parseTopLevelProperties(root.content).find(p => p.name === RESERVED_WATCH_KEY);
+  if (!watchProp || watchProp.nameStart === undefined || watchProp.nameEnd === undefined) {
+    return null;
+  }
+  const span = { start: root.start + watchProp.nameStart, end: root.start + watchProp.nameEnd };
+  if (watchProp.kind === 'method') {
+    return span;
+  }
+  if (watchProp.kind !== 'data' || !watchProp.value) return null;
+  const trimmed = watchProp.value.trim();
+  if (trimmed.startsWith('{')) return null;
+  const scan = maskCommentsAndStrings(trimmed).trim();
+  // 値そのものがアロー関数（`(a, b) => ...` / `a => ...`）。呼び出し式・IIFE
+  // （`make(() => 1)` / `(() => ({}))()` 等）は値の型を決めないため対象外 —
+  // パラメータリストに括弧を含まない素直な形だけを断定する（fold to unknown）。
+  // アロー本体は値の末尾まで届くため、こちらは prefix 判定でよい。
+  const isArrowFunction =
+    /^(?:async\s+)?\([^()]*\)\s*=>/.test(scan) ||
+    /^(?:async\s+)?[$\w]+\s*=>/.test(scan);
+  // リテラル断定は **値全体がそのリテラルである**ことを要求する。先頭トークンだけ
+  // 見ると `true && {…}` / `null ?? {…}` / `"x" ? a : b` のような、実行時には
+  // オブジェクトになりうる式を誤って断定する（fold to unknown）。文字列は
+  // マスク済み鏡像（引用符は残り中身が空白化される）上で単一リテラルのみ照合。
+  const isWholeLiteral =
+    /^(["'`])[^"'`]*\1$/.test(scan) ||
+    /^-?\d[\w.]*$/.test(scan) ||
+    /^(?:true|false|null)$/.test(scan) ||
+    /^(?:async\s+)?function\b[\s\S]*\}$/.test(scan);
+  if (!isArrowFunction && !isWholeLiteral) return null;
+  return span;
+}
+
+/**
  * トップレベルの `$` 予約キーから、バインディングで使える派生パス候補を導出する。
  *
  * - `$streams: { <name>: { initial?, ... } }` → 値プロパティ `<name>`（実体化・後処理）＋

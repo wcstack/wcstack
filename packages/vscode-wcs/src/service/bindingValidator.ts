@@ -9,6 +9,7 @@
  */
 
 import { BUILTIN_FILTERS, type FilterInfo } from './completionData.js';
+import { STRUCTURAL_BINDING_TYPE_SET } from './wcsManifest.js';
 import type { PathCandidate } from './stateAnalyzer.js';
 import { getStatePathsFromHtml, type FileReader } from './statePathResolver.js';
 import { isInsideForTemplate, getInnermostForPath } from './forContext.js';
@@ -65,6 +66,32 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
 
   for (const attr of attrs) {
     const bindings = splitBindingExpressions(attr.value);
+
+    // 構造ディレクティブ（for/if/elseif/else）の単独バインディング検査。ランタイム
+    // （parseBindTextsForElement.ts）は違反を raiseError で落とす ＝ ページ初期化ごと
+    // 止まるため error。判定はランタイムと同値に保つ: 空要素の数え方（trim 後に
+    // 非空のみ）に加え、構造判定は **修飾子分離より前の完全一致**（`for#x` は
+    // ランタイムでは構造でなく通常 prop になるため、`#` を剥がしてはならない）。
+    const nonEmptyCount = bindings.filter(b => b.trim().length > 0).length;
+    if (nonEmptyCount > 1) {
+      let scanPos = 0;
+      for (const b of bindings) {
+        const colon = b.indexOf(':');
+        const prop = (colon === -1 ? b : b.slice(0, colon)).trim();
+        if ((STRUCTURAL_BINDING_TYPE_SET as ReadonlySet<string>).has(prop)) {
+          const leading = b.length - b.trimStart().length;
+          diagnostics.push({
+            code: WcsDiagnosticCode.TemplateSyntax,
+            start: attr.valueStart + scanPos + leading,
+            end: attr.valueStart + scanPos + b.trimEnd().length,
+            message: msgs.structuralMustBeSingle(prop),
+            severity: 'error',
+          });
+        }
+        scanPos += b.length + 1;
+      }
+    }
+
     let pos = 0;
 
     for (const binding of bindings) {

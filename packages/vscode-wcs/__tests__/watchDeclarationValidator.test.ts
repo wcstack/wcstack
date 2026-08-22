@@ -208,3 +208,57 @@ export default { beta: 1, $watch: { alpha(cur) { void cur; } } };
     expect(diags[0].message).toContain('Cross-state watching');
   });
 });
+
+describe('非オブジェクト $watch（error・ランタイムは読み込み時に throw する形）', () => {
+  const errorsOf = (html: string) =>
+    validateWatchDeclarations(html).filter(d => d.code === WcsDiagnosticCode.WatchDeclarationInvalid);
+
+  it('文字列・数値・真偽値・null リテラルを検出する', () => {
+    for (const value of ['"x"', '42', 'true', 'null']) {
+      const diags = errorsOf(makeHtml(`count: 0,\n  $watch: ${value},`));
+      expect(diags, `$watch: ${value}`).toHaveLength(1);
+      expect(diags[0].severity).toBe('error');
+      expect(diags[0].message).toContain('$watch');
+    }
+  });
+
+  it('メソッド短縮記法とアロー関数を検出する（値が関数 = typeof 非 object）', () => {
+    expect(errorsOf(makeHtml(`count: 0,\n  $watch(cur, prev) { console.log(cur); },`))).toHaveLength(1);
+    expect(errorsOf(makeHtml(`count: 0,\n  $watch: (cur, prev) => console.log(cur),`))).toHaveLength(1);
+    expect(errorsOf(makeHtml(`count: 0,\n  $watch: cur => cur,`))).toHaveLength(1);
+  });
+
+  it('断定できない形は検出しない（識別子参照・呼び出し・IIFE・配列・undefined・getter）', () => {
+    // 識別子・呼び出し・IIFE は実行時までオブジェクトか不明。配列は typeof "object" で
+    // ランタイムを通過する。undefined はランタイムが宣言なし扱い。getter は評価結果不明。
+    for (const value of ['watchMap', 'makeWatch()', '(() => ({}))()', '[]', 'undefined']) {
+      expect(errorsOf(makeHtml(`count: 0,\n  $watch: ${value},`)), `$watch: ${value}`).toHaveLength(0);
+    }
+    expect(errorsOf(makeHtml(`count: 0,\n  get $watch() { return {}; },`))).toHaveLength(0);
+  });
+
+  it('リテラルが値全体でない式は検出しない（`true && {…}` 等は実行時にオブジェクトになりうる）', () => {
+    const objectish = [
+      'true && { count(cur) { console.log(cur); } }',
+      'null ?? { count(cur) { console.log(cur); } }',
+      '"x" ? watchMap : otherMap',
+      '1 + makeCount()',
+    ];
+    for (const value of objectish) {
+      expect(errorsOf(makeHtml(`count: 0,\n  $watch: ${value},`)), `$watch: ${value}`).toHaveLength(0);
+    }
+    // 関数式に後続の呼び出しが付く形（結果は不明）も断定しない
+    expect(errorsOf(makeHtml(`count: 0,\n  $watch: function() { return {}; }(),`))).toHaveLength(0);
+  });
+
+  it('正常なオブジェクト宣言は検出しない', () => {
+    expect(errorsOf(makeHtml(`count: 0,\n  $watch: { count(cur, prev) {} },`))).toHaveLength(0);
+  });
+
+  it('validateDocument 経由でも同じ診断が出る（IDE/CLI パリティ）', () => {
+    const html = makeHtml(`count: 0,\n  $watch: "typo",`);
+    const viaDocument = validateDocument(html)
+      .filter(d => d.code === WcsDiagnosticCode.WatchDeclarationInvalid);
+    expect(viaDocument).toHaveLength(1);
+  });
+});
