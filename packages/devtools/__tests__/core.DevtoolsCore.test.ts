@@ -490,7 +490,7 @@ describe('DevtoolsCore', () => {
       const byName = new Map(core.getCoverageReport().filter((e) => e.kind === 'watch').map((e) => [e.name, e]));
       expect(byName.get('count')).toMatchObject({ status: 'fired', count: 1 });
       // ワイルドカード行 watch で対象リストが未バインド → 未発火でなく前提未成立。
-      // note は「for が観測できない」であって $listKeys の不在は断定しない
+      // keyedListPaths を持たない旧ランタイム（summaryOf に無い）では $listKeys 側が観測不能 —
       // （paths.list は for 由来のみで $listKeys 宣言は見えないため）
       expect(byName.get('items.*.price')).toMatchObject({ status: 'prerequisite-missing' });
       expect(byName.get('items.*.price')!.note).toContain('no for binding observed for list "items"');
@@ -500,6 +500,37 @@ describe('DevtoolsCore', () => {
       // 入れ子ワイルドカードは全 `.*` 階層を検査する（1 段目だけ見て見逃さない）
       expect(byName.get('rows.*.cells.*.v')).toMatchObject({ status: 'prerequisite-missing' });
       expect(byName.get('rows.*.cells.*.v')!.note).toContain('"rows.*.cells"');
+    });
+
+    it('$listKeys宣言（keyedListPaths）は for バインドと同格の発火前提として扱うこと', () => {
+      const { core } = setupConnected([
+        {
+          ...summaryOf('main'),
+          watchPaths: new Set(['items.*.price', 'orphan.*.x']),
+          // items は for バインド無しだが $listKeys 宣言あり → 前提成立（通常の never）
+          keyedListPaths: new Set(['items']),
+        } as never,
+      ]);
+      const byName = new Map(core.getCoverageReport().filter((e) => e.kind === 'watch').map((e) => [e.name, e]));
+      expect(byName.get('items.*.price')).toMatchObject({ status: 'never' });
+      // keyedListPaths が観測できるランタイムでは note は断定形。ただし主張は
+      // リスト書き込み経路にスコープする — 明示 index 書き込み（$resolve /
+      // items.0.price 代入。$getAll で listIndex 台帳が生えた後）は for も
+      // $listKeys も無くても発火し得ることを実測済みのため、「一度も発火しない」
+      // とは書かない（誤 hint ゼロ）。
+      expect(byName.get('orphan.*.x')).toMatchObject({ status: 'prerequisite-missing' });
+      expect(byName.get('orphan.*.x')!.note).toContain('no for binding and no $listKeys declaration');
+      expect(byName.get('orphan.*.x')!.note).toContain('list writes never reach its rows');
+      expect(byName.get('orphan.*.x')!.note).toContain('explicit-index writes');
+    });
+
+    it('keyedListPaths を持たない旧ランタイムでは $listKeys 不在を断定しない note のままなこと', () => {
+      const { core } = setupConnected([
+        { ...summaryOf('main'), watchPaths: new Set(['items.*.price']) },
+      ]);
+      const watch = core.getCoverageReport().find((e) => e.kind === 'watch' && e.name === 'items.*.price')!;
+      expect(watch.status).toBe('prerequisite-missing');
+      expect(watch.note).toContain('$listKeys declaration would still let list writes fire it');
     });
 
     it('token宣言のemitted/neverを数えること', () => {

@@ -166,6 +166,14 @@ export interface IStateElementSummary {
    * 配線カバレッジの「宣言面」（static-wiring-dx-design.md §4）。
    */
   readonly watchPaths: ReadonlySet<string> | null;
+  /**
+   * `$listKeys` で宣言されたリストパス集合（宣言なしは null）。protocol v1 追補
+   * （additive）— ワイルドカード行 watch に**リスト書き込み**が届く前提は
+   * 「for バインド or $listKeys 宣言」（state-watch-hook-design.md §6-3）なので、
+   * paths.list（for 由来）と合わせて初めてカバレッジの前提判定が正確になる
+   *（明示 index 書き込みは前提に依らず発火し得る）。
+   */
+  readonly keyedListPaths: ReadonlySet<string> | null;
 }
 
 /**

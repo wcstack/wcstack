@@ -62,6 +62,14 @@ export interface IStateElementSummaryLike {
    * 旧ランタイムにはフィールド自体が無いため optional。宣言なしは null。
    */
   readonly watchPaths?: ReadonlySet<string> | null;
+  /**
+   * `$listKeys` で宣言されたリストパス集合（protocol v1 追補）。ワイルドカード行
+   * watch に**リスト書き込み**が届く前提は「for バインド（paths.list）or
+   * $listKeys 宣言」なので、前提判定の正確化に paths.list と対で使う
+   *（明示 index 書き込みは前提に依らず発火し得る）。旧ランタイムにはフィールド自体が
+   * 無いため optional（undefined = $listKeys 側が観測不能）。宣言なしは null。
+   */
+  readonly keyedListPaths?: ReadonlySet<string> | null;
 }
 
 /**

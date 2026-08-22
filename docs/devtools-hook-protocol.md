@@ -118,6 +118,9 @@ interface IStateElementSummary {
   // v1 addendum (additive): the `$watch` declaration keys (null when undeclared) —
   // the declared side of wiring coverage. Old runtimes may not have the field.
   readonly watchPaths: ReadonlySet<string> | null;
+  // v1 addendum (additive): list paths declared in `$listKeys` (null when undeclared) —
+  // paired with paths.list to judge the wildcard row watch list-write prerequisite.
+  readonly keyedListPaths: ReadonlySet<string> | null;
 }
 
 // v1 addendum: one declared-level binding (element of getDeclaredBindings). The
@@ -210,6 +213,14 @@ place it becomes visible.
   detecting "declared but never fired" needs only the fact of firing, and values would put a
   serialization cost on the hot firing path. Together with `IStateElementSummary.watchPaths`
   (declared side) this is the measured side of wiring coverage.
+- Summary field: `IStateElementSummary.keyedListPaths` (v1 addendum, additive) — the set of list
+  paths declared in `$listKeys` (`null` when none). **List writes** reach a wildcard row watch only
+  when the list is either bound by a `for` (visible in `paths.list`) or declared in `$listKeys`
+  ([state-watch-hook-design.md](./state-watch-hook-design.md) §6-3); explicit-index writes
+  (`$resolve` / `items.0.price` assignments, once `$getAll` has materialized the listIndex ledger)
+  can fire it regardless, so the prerequisite governs the list-write path only. Consumers need both
+  sides to judge it exactly. Only the paths are exposed — key specs (strings/functions) never cross
+  the boundary.
 - All are constructed only inside `devtoolsSink !== null` (cost rule §1-1).
 
 ### 4.4 Growth and shrinkage of the binding ledger

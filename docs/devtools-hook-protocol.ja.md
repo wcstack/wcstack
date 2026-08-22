@@ -115,6 +115,9 @@ interface IStateElementSummary {
   // v1 追補（additive）: `$watch` の宣言パス集合（宣言なしは null）—
   // 配線カバレッジの「宣言面」。旧ランタイムにはフィールド自体が無い可能性がある。
   readonly watchPaths: ReadonlySet<string> | null;
+  // v1 追補（additive）: `$listKeys` 宣言のリストパス集合（宣言なしは null）—
+  // ワイルドカード行 watch のリスト書き込み前提判定に paths.list と対で使う。
+  readonly keyedListPaths: ReadonlySet<string> | null;
 }
 
 // v1 追補: 宣言レベルのバインディング 1 件（getDeclaredBindings の要素）。
@@ -204,6 +207,13 @@ restart を巻き添えにしないため、[state-watch-hook-design.ja.md](./st
   「宣言したのに一度も発火しない」の検出には発火の事実だけで足り、値を載せると発火
   ホットパスに直列化コストが乗る。`IStateElementSummary.watchPaths`（宣言面）と対で
   配線カバレッジの実測面になる。
+- summary フィールド: `IStateElementSummary.keyedListPaths`（v1 追補・additive）—
+  `$listKeys` で宣言されたリストパスの集合（宣言なしは null）。ワイルドカード行 watch に
+  **リスト書き込み**が届くのは「for バインド（paths.list に現れる）or `$listKeys` 宣言」の
+  場合のみ（[state-watch-hook-design.md](./state-watch-hook-design.md) §6-3）。明示 index
+  書き込み（`$resolve` / `items.0.price` 代入 — `$getAll` で listIndex 台帳が生えた後）は
+  前提に依らず発火し得るため、この前提はリスト書き込み経路に限る主張。正確な判定には
+  両面が要る。出すのはパスのみ — キー指定（文字列/関数）は境界を越えない。
 - いずれも `devtoolsSink !== null` の内側でのみ生成する（コスト規範 §1-1）。
 
 ### 4.4 binding 台帳の増減
