@@ -39,12 +39,21 @@ describe("createFileReaderForUri", () => {
     expect(createFileReaderForUri("file:///C:/a%2Fb/index.html")).toBeUndefined();
   });
 
-  it("UNC の file: URI は reader を作ること（その文書自体が共有上にある）", () => {
-    // `file://host/share/...` は Windows で UNC パスに写像される。CLI が相対パス
-    // `//host/...` を拒否するのは「意図しない SMB 接続を起こさない」ためだが、
-    // ここは開いている文書自身の場所であり、エディタが既に読んでいる共有。
-    // 兄弟ファイルを読むのは新しいネットワークアクセスを増やさない。
-    expect(createFileReaderForUri("file://remote-host/share/index.html", () => "x")).toBeTypeOf("function");
+  it("host 付き file: URI の扱いはプラットフォーム依存だが、どちらでも throw しないこと", () => {
+    // `file://host/share/...` は **Node の挙動が OS で割れる**:
+    //   Windows → UNC パス `\\host\share\...` に写像される（reader を作る）
+    //   POSIX   → localhost 以外の host は ERR_INVALID_FILE_URL_HOST で throw
+    // 契約はプラットフォーム不変な方（「throw せず reader か undefined を返す」）に
+    // 置く。Windows で reader を作るのは、そこが開いている文書自身の場所であり
+    // エディタが既に読んでいる共有だから（新しいネットワークアクセスを増やさない）。
+    // CLI が**相対パス** `//host/...` を拒否するのとは別の話。
+    let result: unknown;
+    expect(() => { result = createFileReaderForUri("file://remote-host/share/index.html", () => "x"); }).not.toThrow();
+    if (process.platform === "win32") {
+      expect(result).toBeTypeOf("function");
+    } else {
+      expect(result).toBeUndefined();
+    }
   });
 });
 
