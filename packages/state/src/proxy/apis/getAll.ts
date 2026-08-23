@@ -10,6 +10,7 @@ import { createStateAddress } from "../../address/StateAddress";
 import { IPathInfo, IStateAddress } from "../../address/types";
 import { createListDiff } from "../../list/createListDiff";
 import { IListIndex } from "../../list/types";
+import { indexArityMessage } from "../../pathDiagnostics";
 import { raiseError } from "../../raiseError";
 import { getScopedIndexes } from "../../list/wildcardLevel";
 import { getBaseDepth, getListParentListIndex } from "../../webComponent/baseListIndex";
@@ -44,6 +45,14 @@ export function getAll(
         }
       }
   
+      // 明示的に渡された添字だけを検査する。`$getAll` の添字は**前方一致の接頭辞**で、
+      // 足りない分は「その階層を全部展開する」という正しい意味を持つ（README の
+      // `$getAll("scores.*", [])` がこれ）。一方**超過は意味を持たず黙って捨てられ**、
+      // ワイルドカードの本数を取り違えたまま部分集合が返っていた。
+      // 省略時に下で導出する添字は文脈由来なので、この検査には掛けない。
+      if (typeof indexes !== "undefined" && indexes.length > pathInfo.wildcardParentPathInfos.length) {
+        raiseError(indexArityMessage("$getAll", path, pathInfo.wildcardParentPathInfos.length, indexes.length));
+      }
       if (typeof indexes === "undefined") {
         for(let i = 0; i < pathInfo.wildcardParentPathInfos.length; i++) {
           const wildcardPattern = pathInfo.wildcardParentPathInfos[i];

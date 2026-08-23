@@ -1,4 +1,5 @@
 import { INDEX_BY_INDEX_NAME } from "../define";
+import { wildcardScopeMessage } from "../pathDiagnostics";
 import { raiseError } from "../raiseError";
 import { ILoopContext } from "./types";
 import { listIndexAtWildcard } from "./wildcardLevel";
@@ -14,7 +15,10 @@ export function getIndexValueByLoopContext(loopContext: ILoopContext, indexName:
   }
   const listIndex = listIndexAtWildcard(loopContext.listIndex, indexPos, loopContext.pathInfo.wildcardCount);
   if (listIndex === null) {
-    raiseError(`Index not found at position ${indexPos} for loopContext:`);
+    // 位置が範囲外 ＝ `$2` を 1 段のループの中で読んだ、という取り違え。
+    // 元の文面（`Index not found at position 1 for loopContext:`）は内部の言葉で、
+    // 何段必要で何段あるのかが書かれていなかった。
+    raiseError(wildcardScopeMessage(`"${indexName}"`, indexPos + 1, loopContext.pathInfo.wildcardCount));
   }
   return listIndex.index;
 }

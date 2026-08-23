@@ -9,6 +9,9 @@ import { ILoopContext } from "../list/types";
 import { IState } from "../types";
 import { MAX_LOOP_DEPTH } from "../define";
 
+/** 循環報告に載せるスタック末尾の段数（当事者が見える最小限） */
+const CYCLE_REPORT_DEPTH = 8;
+
 class StateHandler implements IStateHandler {
   private _stateElement: IStateElement;
   private _stateName: string;
@@ -60,11 +63,38 @@ class StateHandler implements IStateHandler {
   }
 
   pushAddress(address: IStateAddress | null): void {
-    this._addressStackIndex++;
-    if (this._addressStackIndex >= MAX_LOOP_DEPTH) {
-      raiseError(`Exceeded maximum address stack depth of ${MAX_LOOP_DEPTH}. Possible infinite loop.`);
+    // 上限判定は **increment より前**に行う。後にすると、深さ超過で throw した時点で
+    // `_addressStackIndex` だけが進み `_addressStack[index]` は未代入のまま残る。
+    // 呼び出し側（getByAddress）は `pushAddress` を try の外で呼ぶので自分では pop
+    // しないが、外側フレームの finally が順に pop していき、その 1 本目が未代入の枠を
+    // 引いて `Address stack at index N is undefined.` を投げる ＝ **本来の
+    // 「無限ループの疑い」という診断が巻き戻しの最中に上書きされて消える**。
+    // getter の相互参照（`get a(){return this.b}` / `get b(){return this.a}`）は
+    // 実際にこれを踏み、原因と無関係な文面だけが残っていた。
+    if (this._addressStackIndex + 1 >= MAX_LOOP_DEPTH) {
+      raiseError(
+        `Exceeded maximum address stack depth of ${MAX_LOOP_DEPTH}. ` +
+        `Possible circular dependency between path getters: ${this._describeAddressCycle()}`,
+      );
     }
+    this._addressStackIndex++;
     this._addressStack[this._addressStackIndex] = address;
+  }
+
+  /**
+   * スタック末尾の繰り返し区間をパス名で示す（循環の当事者だけを見せる）。
+   * 上限に達したときのみ呼ばれるので、コストは異常系に閉じている。
+   */
+  private _describeAddressCycle(): string {
+    const paths: string[] = [];
+    for (let i = this._addressStackIndex; i >= 0 && paths.length < CYCLE_REPORT_DEPTH; i--) {
+      const entry = this._addressStack[i];
+      if (entry) {
+        paths.push(entry.pathInfo.path);
+      }
+    }
+    const unique = Array.from(new Set(paths));
+    return `${unique.reverse().join(" -> ")} -> ...`;
   }
 
   popAddress(): IStateAddress | null {

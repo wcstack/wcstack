@@ -171,7 +171,7 @@ describe('setByAddress', () => {
       return null;
     });
 
-    expect(() => setByAddress(target, address, 'b', target, handler as any)).toThrow(/listIndex/);
+    expect(() => setByAddress(target, address, 'b', target, handler as any)).toThrow(/\[wcs\/wildcard-rank\]/);
     expect(mockEnqueueAbsoluteAddress).toHaveBeenCalled();
   });
 
@@ -615,7 +615,7 @@ describe('setByAddress', () => {
       const handler = createHandler(stateElement);
       vi.mocked(getByAddress).mockReturnValue(fnParent);
 
-      expect(() => setByAddress(target, address, 'v', target, handler as any)).toThrow(/listIndex/);
+      expect(() => setByAddress(target, address, 'v', target, handler as any)).toThrow(/\[wcs\/wildcard-rank\]/);
       expect(mockEnqueueAbsoluteAddress).toHaveBeenCalled();
     });
 
@@ -629,7 +629,7 @@ describe('setByAddress', () => {
         const handler = createHandler(stateElement);
         vi.mocked(getByAddress).mockReturnValue(parent);
 
-        expect(() => setByAddress(target, address, 'b', target, handler as any)).toThrow(/listIndex/);
+        expect(() => setByAddress(target, address, 'b', target, handler as any)).toThrow(/\[wcs\/wildcard-rank\]/);
         expect(mockEnqueueAbsoluteAddress).toHaveBeenCalled();
       } finally {
         setConfig({ sameValueGuard: false });
