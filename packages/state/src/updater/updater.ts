@@ -177,16 +177,25 @@ class Updater {
         }
       }
     }
-    // context が無い場合は従来どおり 1 引数で呼ぶ（呼び出し契約の互換維持）
-    if (propagationContextByBinding.size > 0) {
-      applyChangeFromBindings(processBindings, propagationContextByBinding);
-    } else {
-      applyChangeFromBindings(processBindings);
-    }
     // drain 終了フック: binding 適用後に dedup 済みバッチを通知する（設計書 §3-2）。
     // testApplyChange も同じ _applyChange を通るため、テストから同期に駆動できる。
     // quarantine された address も state 値は適用済みのため通知対象に含める。
-    notifyUpdateBatchListeners(new Set(contextByAbsoluteAddress.keys()));
+    //
+    // try/finally なのは、適用側が throw しても `$watch` / `$streams` restart を
+    // 落とさないため。binding 1 本の失敗は applyChangeFromBindings が隔離するので
+    // ここへ来るのは $updatedCallback の throw（契約どおり loud に伝播させる）等に
+    // 限られるが、そのとき drain フックまで道連れにすると「機構間の順序は固定」
+    // （README の 3 層表）が黙って破れる。例外は握らない ＝ 伝播は維持する。
+    try {
+      // context が無い場合は従来どおり 1 引数で呼ぶ（呼び出し契約の互換維持）
+      if (propagationContextByBinding.size > 0) {
+        applyChangeFromBindings(processBindings, propagationContextByBinding);
+      } else {
+        applyChangeFromBindings(processBindings);
+      }
+    } finally {
+      notifyUpdateBatchListeners(new Set(contextByAbsoluteAddress.keys()));
+    }
   }
 
 }

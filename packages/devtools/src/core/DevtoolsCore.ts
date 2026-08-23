@@ -38,6 +38,8 @@ export type TimelineKind =
   | "element-unregistered"
   | "watch-error"
   | "watch-chain-limit"
+  | "path-unresolved"
+  | "binding-apply-error"
   | "propagation-suppressed"
   | "propagation-coalesced"
   | "propagation-hop-limit"
@@ -743,6 +745,38 @@ export class DevtoolsCore {
           // 載りうる）ため、hidden 判定はここでは行わない。
           label: `depth > ${event.maxDepth}`,
           detail: event.paths.join(", "),
+          subscriberCount: null,
+        });
+        return;
+      }
+      case "state:path-unresolved": {
+        if (this.isHiddenStateName(event.stateName)) {
+          return;
+        }
+        // ランタイムは warn で続行する（既存ページを止めないため）。lint を
+        // 走らせていない相手には、ここが「配線が死んでいる」唯一の可視面になる。
+        this._appendTimeline({
+          sourceId,
+          kind: "path-unresolved",
+          stateName: event.stateName,
+          label: event.path,
+          detail: `${event.source}: "${event.missingSegment}" is not declared`,
+          subscriberCount: null,
+        });
+        return;
+      }
+      case "state:binding-apply-error": {
+        if (this.isHiddenStateName(event.stateName)) {
+          return;
+        }
+        // 隔離された適用失敗。bindingType を detail 先頭に置くのは、構造
+        // （for / if）の失敗と値の失敗で影響範囲が違うため。
+        this._appendTimeline({
+          sourceId,
+          kind: "binding-apply-error",
+          stateName: event.stateName,
+          label: event.path,
+          detail: `${event.bindingType}: ${formatError(event.error)}`,
           subscriberCount: null,
         });
         return;

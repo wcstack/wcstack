@@ -1,6 +1,7 @@
 import { IAbsoluteStateAddress } from "../address/types";
 import { IStateElement } from "../components/types";
 import { config } from "../config";
+import { devtoolsSink } from "../devtools/sink";
 import { setLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
 import { updatedCallbackSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
@@ -11,6 +12,30 @@ import { applyChange } from "./applyChange";
 import { applyChangeToProperty } from "./applyChangeToProperty";
 import { getRootNodeByFragment } from "./rootNodeByFragment";
 import { IApplyContext, IDeferredSelectBinding } from "./types";
+
+/**
+ * バインディング 1 本の適用失敗を報告する（握り潰しではない）。
+ *
+ * `console.error` だけだと devtools からは「静かに握られた失敗」が見えないため、
+ * 同じ地点から sink にも流す（`state:watch-error` と同じ位置づけ）。
+ * 値と DOM は巻き戻さない — 伝播 hop 上限超過・watch 連鎖打ち切りと同じ姿勢。
+ */
+function reportBindingApplyError(binding: IBindingInfo, error: unknown): void {
+  console.error(
+    `[@wcstack/state] binding "${binding.bindingType}: ${binding.statePathName}" failed to apply; ` +
+    `the rest of this batch continues.`,
+    { node: binding.node, error },
+  );
+  if (devtoolsSink !== null) {
+    devtoolsSink({
+      type: "state:binding-apply-error",
+      stateName: binding.stateName,
+      path: binding.statePathName,
+      bindingType: binding.bindingType,
+      error,
+    });
+  }
+}
 
 /**
  * バインディング情報の配列を処理し、各バインディングに対して状態の変更を適用する。
@@ -73,7 +98,15 @@ export function applyChangeFromBindings(
       };
 
       do {
-        applyChange(binding, context);
+        // 1 本の失敗を 1 本に閉じ込める（§ エラー隔離）。隔離しないと、stale な
+        // アドレスを読んだ 1 本の throw がバッチの残り・$updatedCallback・drain
+        // リスナー（$watch / $streams restart）まで道連れにし、「値は新しいのに
+        // DOM は途中まで」という再現困難な半端状態を作る。
+        try {
+          applyChange(binding, context);
+        } catch (error) {
+          reportBindingApplyError(binding, error);
+        }
         bindingIndex++;
 
         const nextBindingInfo: IBindingInfo | undefined = bindings[bindingIndex];
@@ -88,7 +121,11 @@ export function applyChangeFromBindings(
   // applyChangeToProperty は propagationContextByBinding 以外の context を
   // 参照しないため、遅延分は最小 context を渡す
   for (const { binding, value } of deferredSelectBindings) {
-    applyChangeToProperty(binding, { propagationContextByBinding } as unknown as IApplyContext, value);
+    try {
+      applyChangeToProperty(binding, { propagationContextByBinding } as unknown as IApplyContext, value);
+    } catch (error) {
+      reportBindingApplyError(binding, error);
+    }
   }
 
   for(const [ absAddress, newListValue ] of newListValueByAbsAddress.entries()) {

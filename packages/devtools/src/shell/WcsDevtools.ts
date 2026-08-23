@@ -943,6 +943,14 @@ export class WcsDevtools extends HTMLElement {
         ? "a $watch threw; the runtime isolated it (console.error only)"
         : "a $watch write chain hit the depth limit and was cut off";
     }
+    // 配線の死（解決しないパス）と隔離された適用失敗も、ランタイムが console に
+    // 出すだけで続行する ＝ 見ていなければ気づけない種類なので warn に乗せる。
+    if (entry.kind === "path-unresolved" || entry.kind === "binding-apply-error") {
+      kind.classList.add("warn");
+      kind.title = entry.kind === "path-unresolved"
+        ? "a wired path does not resolve on the state; its updates are dropped"
+        : "a binding threw while applying; the runtime isolated it (console.error only)";
+    }
     // 伝播の打ち切りと契約 drift も「黙って起きる異常」なので warn に乗せる。
     // suppressed / coalesced は定常動作（エコー抑止・合流）のため通常表示。
     if (entry.kind === "propagation-hop-limit" || entry.kind === "contract-drift") {

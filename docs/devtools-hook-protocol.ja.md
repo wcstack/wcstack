@@ -216,6 +216,22 @@ restart を巻き添えにしないため、[state-watch-hook-design.ja.md](./st
   両面が要る。出すのはパスのみ — キー指定（文字列/関数）は境界を越えない。
 - いずれも `devtoolsSink !== null` の内側でのみ生成する（コスト規範 §1-1）。
 
+### 4.3.2 黙って死ぬ配線
+
+消費者から見えなかった失敗が 2 つある: **まったく解決しないパスへの配線**と、**適用中に throw した
+binding**。どちらもランタイムは報告して続行する ＝ ここに出ないとコンソール以外に現れない。
+
+- Event: `state:path-unresolved`（v1 追補・additive）、
+  payload = `{ source: "binding" | "watch", stateName, path, missingSegment }`。バインド確立時
+  （または `$watch` 宣言時）に「このパスは解決しない」と確定したとき、(state 要素, パス) ごとに
+  1 回だけ流れる。判定は**過小近似** — getter の戻り値の先・空リスト・null 親・mapped な
+  `bind-component` の子はすべて沈黙するので、**イベントが無いことは正しさの証明にならない**
+  （[pathDiagnostics.ts](../packages/state/src/pathDiagnostics.ts)）。
+- Event: `state:binding-apply-error`（v1 追補・additive）、
+  payload = `{ stateName, path, bindingType, error }`。binding 1 本の適用が throw したときに流れる。
+  ランタイムは失敗を隔離してバッチの残り・`$updatedCallback`・drain リスナーを守る —
+  `state:watch-error` と同じ姿勢であり、存在理由も同じ（見えない隔離は「失敗が無かった」と区別できない）。
+
 ### 4.4 binding 台帳の増減
 
 - [getBindingSetByAbsoluteStateAddress.ts](../packages/state/src/binding/getBindingSetByAbsoluteStateAddress.ts)

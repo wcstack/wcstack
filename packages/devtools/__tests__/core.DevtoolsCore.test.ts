@@ -218,6 +218,75 @@ describe('DevtoolsCore', () => {
       expect(core.getTimeline()).toHaveLength(0);
     });
 
+    it('path-unresolvedを記録すること（配線が黙って死んでいることの唯一の可視化点）', () => {
+      const { core, source } = setupConnected();
+      source.emit({
+        type: 'state:path-unresolved',
+        source: 'binding',
+        stateName: 'main',
+        path: 'user.nmae',
+        missingSegment: 'nmae',
+      });
+      source.emit({
+        type: 'state:path-unresolved',
+        source: 'watch',
+        stateName: 'main',
+        path: 'cout',
+        missingSegment: 'cout',
+      });
+      const [binding, watch] = core.getTimeline();
+      expect(binding).toMatchObject({
+        kind: 'path-unresolved',
+        stateName: 'main',
+        label: 'user.nmae',
+        detail: 'binding: "nmae" is not declared',
+      });
+      expect(watch).toMatchObject({ kind: 'path-unresolved', label: 'cout', detail: 'watch: "cout" is not declared' });
+    });
+
+    it('hidden stateのpath-unresolvedを無視すること', () => {
+      const { core, source } = setupConnected();
+      source.emit({
+        type: 'state:path-unresolved',
+        source: 'binding',
+        stateName: `${RESERVED_STATE_NAME_PREFIX}-ui`,
+        path: 'a.b',
+        missingSegment: 'b',
+      });
+      expect(core.getTimeline()).toHaveLength(0);
+    });
+
+    it('binding-apply-errorをbindingType付きで記録すること（隔離された適用失敗）', () => {
+      const { core, source } = setupConnected();
+      source.emit({
+        type: 'state:binding-apply-error',
+        stateName: 'main',
+        path: 'items.*.label',
+        bindingType: 'text',
+        error: new TypeError('boom'),
+      });
+      expect(core.getTimeline()).toEqual([
+        expect.objectContaining({
+          kind: 'binding-apply-error',
+          stateName: 'main',
+          label: 'items.*.label',
+          detail: 'text: TypeError: boom',
+        }),
+      ]);
+    });
+
+    it('hidden stateのbinding-apply-errorを無視すること', () => {
+      const { core, source } = setupConnected();
+      source.emit({
+        type: 'state:binding-apply-error',
+        stateName: `${RESERVED_STATE_NAME_PREFIX}-ui`,
+        path: 'x',
+        bindingType: 'prop',
+        error: new Error('e'),
+      });
+      expect(core.getTimeline()).toHaveLength(0);
+    });
+
     it('watch-chain-limitを記録すること（state名を持たないバッチ単位の打ち切り）', () => {
       const { core, source } = setupConnected();
       source.emit({ type: 'state:watch-chain-limit', maxDepth: 32, paths: ['a', 'b'] });

@@ -91,7 +91,9 @@ export function processWatchDeclaration(
     paths.add(path);
     // 依存グラフ登録（§8）。"for" 以外の bindingType は親 → 子の staticDependency
     // チェーンを生やすだけで listPaths / elementPaths を触らない（State.setPathInfo 参照）。
-    stateElement.setPathInfo(path, "prop");
+    // source="watch" は存在検査の診断 code を `wcs/watch-path-missing` に切り替える
+    // （watch キーの miss は raiseError にも掛からず、黙って発火しないだけになる）。
+    stateElement.setPathInfo(path, "prop", "watch");
   }
   setWatchEntries(stateElement, entries);
   return paths.size > 0 ? paths : null;

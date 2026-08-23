@@ -47,7 +47,8 @@ describe("propagateListPathToOuterState", () => {
 
     propagateListPathToOuterState(inner, "items");
 
-    expect(outer.setPathInfo).toHaveBeenCalledWith("rows", "for");
+    // source="internal": 翻訳済みの外側パスなので存在検査には掛けない
+    expect(outer.setPathInfo).toHaveBeenCalledWith("rows", "for", "internal");
   });
 
   it("mapped でない state（plain なコンポーネント / 通常の state）では何もしないこと", () => {

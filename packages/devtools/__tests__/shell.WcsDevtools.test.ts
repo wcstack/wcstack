@@ -651,6 +651,32 @@ describe('WcsDevtools shell', () => {
       expect(warned[1].title).toContain('depth limit');
     });
 
+    it('解決しないパスと隔離された適用失敗の行に警告を付けること（console を見ていないと気づけない種類）', () => {
+      mount();
+      source.emit({
+        type: 'state:path-unresolved',
+        source: 'binding',
+        stateName: 'main',
+        path: 'user.nmae',
+        missingSegment: 'nmae',
+      });
+      source.emit({
+        type: 'state:binding-apply-error',
+        stateName: 'main',
+        path: 'items.*.label',
+        bindingType: 'text',
+        error: new Error('boom'),
+      });
+      devtools.__flushRenderForTest();
+      const body = paneBody(devtools, 'timeline');
+      expect(body.textContent).toContain('binding: "nmae" is not declared');
+      expect(body.textContent).toContain('text: Error: boom');
+      const warned = Array.from(body.querySelectorAll('.badge-tag.warn')) as HTMLElement[];
+      expect(warned.map((el) => el.textContent)).toEqual(['path-unresolved', 'binding-apply-error']);
+      expect(warned[0].title).toContain('does not resolve');
+      expect(warned[1].title).toContain('isolated it');
+    });
+
     it('propagation打ち切りとcontract driftの行に警告を付け、suppressed/coalescedは通常表示にすること', () => {
       mount();
       source.emit({ type: 'propagation:suppressed', reason: 'confirmation', transactionId: 1, edgeId: 2, node: document.createElement('input'), member: 'value' });
