@@ -21,6 +21,21 @@ describe('registerComponents', () => {
     expect(defineSpy).toHaveBeenCalledWith(config.tagNames.autoloader, expect.any(Function));
   });
 
+  it('registryを渡すとglobalではなくそちらへ定義すること', () => {
+    // scoped registry は global の定義を継承しないので、そのツリーで使うには
+    // そのレジストリ自身への define が要る。
+    const defineSpy = vi.spyOn(customElements, 'define').mockImplementation(() => {});
+    const scoped = {
+      get: vi.fn(() => undefined),
+      define: vi.fn(),
+    } as unknown as CustomElementRegistry;
+
+    registerComponents(scoped);
+
+    expect(scoped.define).toHaveBeenCalledWith(config.tagNames.autoloader, expect.any(Function));
+    expect(defineSpy).not.toHaveBeenCalled();
+  });
+
   it('wcs-autoloaderが定義済みの場合、customElements.defineが呼ばれないこと', () => {
     const getSpy = vi.spyOn(customElements, 'get').mockReturnValue(class extends HTMLElement {});
     const defineSpy = vi.spyOn(customElements, 'define').mockImplementation(() => {});

@@ -2,9 +2,9 @@ import { setConfig } from "./config.js";
 import { registerComponents } from "./registerComponents.js";
 import { IWritableConfig } from "./types.js";
 
-export function bootstrapEyedropper(userConfig?: IWritableConfig): void {
+export function bootstrapEyedropper(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void {
   if (userConfig) {
     setConfig(userConfig);
   }
-  registerComponents();
+  registerComponents(registry);
 }

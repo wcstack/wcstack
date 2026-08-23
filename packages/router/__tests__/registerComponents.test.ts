@@ -51,6 +51,26 @@ describe('registerComponents', () => {
     expect(customElements.get(config.tagNames.layoutOutlet)).toBeDefined();
   });
 
+  it('registryを渡すとglobalではなくそちらへ全タグを登録すること', () => {
+    // scoped registry は global の定義を継承しないので、そのツリーで使うには
+    // そのレジストリ自身への define が要る。
+    const defined = new Map<string, CustomElementConstructor>();
+    const scoped = {
+      get: (name: string) => defined.get(name),
+      define: (name: string, ctor: CustomElementConstructor) => { defined.set(name, ctor); },
+    } as unknown as CustomElementRegistry;
+
+    registerComponents(scoped);
+
+    expect(defined.get(config.tagNames.router)).toBe(Router);
+    expect(defined.get(config.tagNames.route)).toBe(Route);
+    expect(defined.get(config.tagNames.outlet)).toBe(Outlet);
+    expect(defined.get(config.tagNames.link)).toBe(Link);
+    expect(defined.get(config.tagNames.layout)).toBe(Layout);
+    expect(defined.get(config.tagNames.layoutOutlet)).toBe(LayoutOutlet);
+    expect(customElements.get(config.tagNames.router)).toBeUndefined();
+  });
+
   it('登録されたカスタム要素が正しいクラスであること', () => {
     registerComponents();
     expect(customElements.get(config.tagNames.router)).toBe(Router);
