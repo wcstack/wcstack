@@ -312,7 +312,7 @@ describe('lazyLoad', () => {
     );
   });
 
-  it('タグが既にロード中の場合は待機すること', async () => {
+  it('タグが既にロード中の場合は進行中のロードを待ち、二重にロードしないこと', async () => {
     const mockConstructor = class extends HTMLElement {};
     const mockLoader: ILoader = {
       postfix: '.js',
@@ -332,17 +332,27 @@ describe('lazyLoad', () => {
       }
     };
 
-    loadingTags.add('ui-loading');
-    const whenDefinedSpy = vi.mocked(customElements.whenDefined);
-    whenDefinedSpy.mockImplementation((name: string) => {
-      registry.set(name, mockConstructor);
-      return Promise.resolve(mockConstructor);
-    });
+    // 進行中ロードの完了（= define）を待つ。待つ相手は whenDefined ではなく
+    // ロードそのものなので、define されないまま終わっても解決する
+    // （その形は lazyLoad.failedLoad.test.ts が押さえる）。
+    let finishInFlight: () => void = () => undefined;
+    loadingTags.set('ui-loading', new Promise<void>((resolve) => {
+      finishInFlight = () => {
+        registry.set('ui-loading', mockConstructor);
+        resolve();
+      };
+    }));
     document.body.innerHTML = '<ui-loading></ui-loading>';
 
-    await handlerForLazyLoad(document, config, prefixMap);
+    let settled = false;
+    const pending = handlerForLazyLoad(document, config, prefixMap).then(() => { settled = true; });
+    await Promise.resolve();
+    expect(settled).toBe(false);
 
-    expect(customElements.whenDefined).toHaveBeenCalledWith('ui-loading');
+    finishInFlight();
+    await pending;
+
+    expect(settled).toBe(true);
     expect(mockLoader.loader).not.toHaveBeenCalled();
   });
 
@@ -426,7 +436,7 @@ describe('lazyLoad', () => {
     root.innerHTML = '<ui-button></ui-button>';
     Object.defineProperty(root, 'customElementRegistry', { value: scoped });
 
-    loadingTags.add('ui-button');
+    loadingTags.set('ui-button', Promise.resolve());
     await handlerForLazyLoad(root, config, prefixMap);
 
     expect(mockLoader.loader).toHaveBeenCalledWith('@components/ui/button.js');
