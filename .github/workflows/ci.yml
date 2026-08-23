@@ -125,6 +125,19 @@ jobs:
       # 壊していないかのゲート）はこの job で実行する。
       - run: npm test
         working-directory: packages/vscode-wcs
+      # @wcstack/lint はソースを持たず、vscode-wcs をビルドして cli.cjs をコピーする
+      # だけのラッパー。挙動の正本は vscode-wcs にあるのに CLI 契約テストは lint 側に
+      # あり、その ci matrix は「packages/lint/ が変更された PR」でしか動かない。
+      # vscode-wcs は @wcstack/* でないので matrix にそもそも載らず、vscode-wcs だけを
+      # 触る変更は lint の契約テストを一度も走らせないまま通る。実際 array-mutation の
+      # severity 変更がこの穴を抜け、release の「Build all packages」で初めて落ちた。
+      # vscode-wcs の変更で必ず動くこの job から走らせて塞ぐ。
+      - name: Smoke-test the packaged CLI against the freshly built dist
+        run: |
+          set -euo pipefail
+          npm run build
+          npm test
+        working-directory: packages/lint
       - name: Validate data-wcs bindings (error severity fails the build)
         run: |
           set -euo pipefail

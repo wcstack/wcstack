@@ -26,6 +26,7 @@ const workDir = mkdtempSync(join(tmpdir(), "wcstack-lint-smoke-"));
 const cleanHtml = join(workDir, "clean.html");
 const brokenManifest = join(workDir, "broken.manifest.json");
 const mutationHtml = join(workDir, "mutation.html");
+const missingPathHtml = join(workDir, "missing-path.html");
 writeFileSync(cleanHtml, "<!doctype html>\n<html><body><p>hello</p></body></html>\n");
 writeFileSync(brokenManifest, "{ this is not json\n");
 writeFileSync(mutationHtml, `<!doctype html>
@@ -35,6 +36,12 @@ export default {
   add(item) { this.items.push(item); },
 };
 </script></wcs-state>
+`);
+writeFileSync(missingPathHtml, `<!doctype html>
+<wcs-state><script type="module">
+export default { message: "hi" };
+</script></wcs-state>
+<div data-wcs="textContent: missingPath"></div>
 `);
 
 const failures = [];
@@ -96,10 +103,19 @@ check("unreadable file → exit 2", ["--lang=en", join(workDir, "no-such-file.ht
   stderr: ["cannot read"],
 });
 
-// warning severity は exit code を変えない(CLI 契約)ことも同時に検査する。
-check("destructive array mutation → warning wcs/array-mutation, exit 0", ["--lang=en", mutationHtml], {
+// error severity は exit code を 1 にする(CLI 契約)。この family は非リアクティブ
+// 代入 = DOM が黙って更新されない欠陥なので error（docs/array-mutation-diagnostic-design.md）。
+check("destructive array mutation → error wcs/array-mutation, exit 1", ["--lang=en", mutationHtml], {
+  exit: 1,
+  stdout: [/error wcs\/array-mutation /, "1 error(s), 0 warning(s)"],
+});
+
+// 対になる検査: warning severity は exit code を変えない(CLI 契約)。上のケースが
+// error に上がった際、この契約の検査が道連れで消えかけた。severity を動かすときは
+// error/warning 両側のケースが残っているかを確かめること。
+check("unresolvable path → warning wcs/binding-path-missing, exit 0", ["--lang=en", missingPathHtml], {
   exit: 0,
-  stdout: [/warning wcs\/array-mutation /, "0 error(s), 1 warning(s)"],
+  stdout: [/warning wcs\/binding-path-missing /, "0 error(s), 1 warning(s)"],
 });
 
 rmSync(workDir, { recursive: true, force: true });
