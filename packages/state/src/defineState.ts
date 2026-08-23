@@ -176,6 +176,42 @@ export interface WcsStateApi {
   $getAll<V = any>(path: string, indexes?: number[]): V[];
 
   /**
+   * ワイルドカードを含むパスにマッチする**全アドレスへ一括で書き込む**（`$getAll` の対称形）。
+   *
+   * 配列を作り直さずに一括更新するための API。`this.users = this.users.map(...)` は
+   * ListIndex・行 getter キャッシュ・差分描画をまとめて作り直すが、`$setAll` は
+   * in-place な個別書き込みに分解するのでリストの同一性が保たれる。
+   *
+   * - `indexes` は `$getAll` と同じ**前方一致の接頭辞**（`[]` で全階層を展開）。省略は不可。
+   * - 関数を渡すと **mapper**（`(current, ...indexes) => next`）として要素ごとに評価される。
+   * - 配列は既定でブロードキャストされる。1 件ずつ配るには `{ spread: true }` を明示する。
+   * - `undefined` を書こうとした要素はスキップされる（クリアは `null`）。
+   *
+   * @returns 実際に書き込んだ件数（`undefined` でスキップした分を含まない）
+   *
+   * @example
+   * ```ts
+   * toggleAll(e: Event) {
+   *   this.$setAll("users.*.selected", [], (e.target as HTMLInputElement).checked);
+   * }
+   * invertAll() {
+   *   this.$setAll("users.*.selected", [], cur => !cur);
+   * }
+   * ```
+   */
+  $setAll<V = any>(
+    path: string,
+    indexes: number[],
+    value: V | ((current: V, ...indexes: number[]) => V | undefined),
+  ): number;
+  $setAll<V = any>(
+    path: string,
+    indexes: number[],
+    values: readonly V[],
+    options: { spread: true },
+  ): number;
+
+  /**
    * 指定パスの更新を手動でトリガーする。
    * Proxy の set トラップを経由せずに内部状態を変更した場合に使用。
    */

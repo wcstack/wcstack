@@ -943,6 +943,7 @@ export default {
 | API | 説明 |
 |---|---|
 | `this.$getAll(path, indexes?)` | ワイルドカードパスにマッチする全ての値を取得 |
+| `this.$setAll(path, indexes, value, options?)` | ワイルドカードパスにマッチする全アドレスへ一括書き込み |
 | `this.$resolve(path, indexes, value?)` | ワイルドカードパスを特定のインデックスで解決 |
 | `this.$postUpdate(path)` | 指定パスの更新通知を手動で発行 |
 | `this.$trackDependency(path)` | キャッシュ無効化のための依存関係を手動で登録 |
@@ -966,6 +967,48 @@ export default {
   }
 };
 ```
+
+#### `$setAll` — 配列要素を作り直さずに一括更新
+
+`$setAll` は `$getAll` の書き側の対称形で、ワイルドカードパスにマッチする全アドレスへ書き込みます。狙いは記述の短さではなく、**配列そのものを保つ**ことです。`this.users = this.users.map(...)` のように作り直すと ListIndex・行 getter のキャッシュ・差分描画がまとめて捨てられますが、`$setAll` は行ごとの in-place な書き込みに分解するのでリストの同一性が保たれます。
+
+```javascript
+export default {
+  users: [{ selected: false }, { selected: false }],
+
+  toggleAll(e) {
+    this.$setAll("users.*.selected", [], e.target.checked);   // ブロードキャスト
+  },
+  invertAll() {
+    this.$setAll("users.*.selected", [], cur => !cur);        // mapper
+  },
+  rankTopThree() {
+    // undefined を返したアドレスはスキップされる（＝この行は変えない）
+    this.$setAll("users.*.score", [], (cur, i) => i < 3 ? cur * 2 : undefined);
+  }
+};
+```
+
+形は 3 つあり、3 番目だけは明示的に要求する必要があります。
+
+| 第 3 引数 | 意味 |
+|---|---|
+| 関数 | **mapper** — マッチしたアドレスごとに `(current, ...indexes)` で呼ばれる |
+| それ以外 | **ブロードキャスト** — 配列も含め、同じ値が全アドレスに書かれる |
+| 配列 ＋ `{ spread: true }` | **spread** — マッチ順に 1 件ずつ配る |
+
+配列が既定でブロードキャストされるのは、対象プロパティ自体が配列型でありうるためです。`$setAll("users.*.tags", [], ["admin"])` は「全員に `["admin"]`」なのか「1 人目に `"admin"`」なのか判別できません。`{ spread: true }` を明示すればこの推測が消え、長さがマッチ件数と噛み合わなければ黙って誤配せずに throw します。
+
+`indexes` の意味は `$getAll` と同じ**前方一致の接頭辞**（不足はその階層を全展開）ですが、**省略はできません**。書き込みには暗黙のループ文脈を与えないため、`for` テンプレートの中でも `this.$setAll("users.*.selected", [], true)` は現在行ではなく**全行**を意味します。
+
+```javascript
+this.$setAll("matrix.*.*", [0], 0);                    // 0 行目だけ全列
+this.$setAll("users.*", [], rows, { spread: true });   // 配列を保ったまま各行を差し替え
+```
+
+`undefined` はどの形でも書き込まれず「このアドレスはスキップ」を意味します。mapper が `return` を忘れて全行を潰す事故を防ぐためで、クリアしたい場合は `null` を使います。戻り値は実際に書き込んだ件数です。
+
+なお `$setAll` は依存解決を一括化する仕組みではありません。描画は 1 バッチに畳まれますが、書き込みは 1 件ずつ登録されるので、コストは置き換え対象の手書きループと同じです。得られるのはリストが保たれることであって、実行回数の削減ではありません。
 
 #### `$resolve` — 明示的なインデックスでのアクセス
 
@@ -2045,7 +2088,7 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 
 | 診断 | 何を見るか | 直し方 |
 |---|---|---|
-| `wcs/index-arity` | `$resolve(path, indexes)` は `*` の本数と**厳密一致**、`$getAll(path, indexes)` は**上限**（不足は「残りの階層を全展開」という正当な接頭辞） | 本数を合わせる |
+| `wcs/index-arity` | `$resolve(path, indexes)` は `*` の本数と**厳密一致**、`$getAll(path, indexes)` / `$setAll(path, indexes, …)` は**上限**（不足は「残りの階層を全展開」という正当な接頭辞） | 本数を合わせる |
 | `wcs/wildcard-rank` | パスの `*` の本数（と `$N` の N）が、囲む `for` の段数を超えていないか | `for` を足すか、`$resolve(path, indexes)` で行を明示する |
 | `wcs/getter-cycle` | パス getter どうしが循環参照していないか | 循環を断つ |
 

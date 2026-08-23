@@ -204,16 +204,43 @@ export function missingRootPathMessage(
  * 決まるので、噛み合わないことは常にプログラマのミス。
  */
 export function indexArityMessage(
-  api: "$resolve" | "$getAll",
+  api: "$resolve" | "$getAll" | "$setAll",
   path: string,
   wildcardCount: number,
   actual: number,
 ): string {
+  // `$getAll` / `$setAll` の添字は前方一致の接頭辞なので上限、`$resolve` だけが厳密一致
+  // （docs/state-set-all-design.md §4）。
   const requirement = api === "$resolve"
     ? `exactly ${wildcardCount}`
     : `at most ${wildcardCount}`;
   return `[wcs/index-arity] ${api}("${path}") requires ${requirement} index(es) ` +
     `("*" appears ${wildcardCount} time(s) in the path) but got ${actual}.${LINT_HINT}`;
+}
+
+/**
+ * `$setAll(path, indexes, values, { spread: true })` の配列長がマッチ件数と噛み合わない。
+ *
+ * 静的には件数が分からない（実行時のリスト長に依存する）ので lint へは誘導しない。
+ * 黙って切り詰める／余りを捨てると誤配が通ってしまうため throw する
+ * （docs/state-set-all-design.md §3-3）。
+ */
+export function setAllSpreadArityMessage(
+  path: string,
+  matched: number,
+  actual: number,
+): string {
+  return `$setAll("${path}", …, { spread: true }) requires the values array to have ` +
+    `exactly one entry per matched address (matched ${matched}) but got ${actual}. ` +
+    `Did the list change between $getAll and $setAll?`;
+}
+
+/**
+ * `$setAll` の値と `options` の組み合わせが意味を成さない。
+ * （docs/state-set-all-design.md §3-1）
+ */
+export function setAllValueKindMessage(path: string, reason: string): string {
+  return `$setAll("${path}") ${reason}`;
 }
 
 /**

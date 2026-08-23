@@ -5,7 +5,7 @@
  * 「構文が正しいか」「そのパスが宣言されているか」までしか見ておらず、
  * **パス文字列から機械的に決まるはずの整合**は誰も検査していなかった。
  *
- *   wcs/index-arity              — `$getAll` / `$resolve` の添字の本数 vs パス中の `*` の本数
+ *   wcs/index-arity              — `$getAll` / `$setAll` / `$resolve` の添字の本数 vs パス中の `*` の本数
  *   wcs/getter-cycle             — パス getter どうしの循環参照
  *   wcs/updated-callback-unbound — `$updatedCallback` が未バインドのパスを判定に使っている
  *
@@ -32,8 +32,8 @@ import { buildReferenceIndex } from '../core/index/referenceIndex.js';
 /** ランタイム予約キー（@wcstack/state の define.ts が正本）。 */
 const STATE_UPDATED_CALLBACK = '$updatedCallback';
 
-/** `this.$getAll(` / `this.$resolve(` の呼び出し開始。`?.` 経由も拾う。 */
-const API_CALL = /\.\s*\$(getAll|resolve)\s*\(/g;
+/** `this.$getAll(` / `this.$setAll(` / `this.$resolve(` の呼び出し開始。`?.` 経由も拾う。 */
+const API_CALL = /\.\s*\$(getAll|setAll|resolve)\s*\(/g;
 
 /** 文字列リテラル 1 個ぶん（エスケープ対応）。テンプレートリテラルは対象外。 */
 const STRING_LITERAL = /^\s*(["'])((?:\\.|(?!\1)[^\\])*)\1\s*$/;
@@ -112,10 +112,10 @@ function literalArrayLength(arg: string): number | null {
 }
 
 /**
- * `$getAll` / `$resolve` の添字の本数を検査する。
+ * `$getAll` / `$setAll` / `$resolve` の添字の本数を検査する。
  *
  * `$resolve` は**厳密一致**（不足はランタイムが元から throw、超過は黙って無視されていた）、
- * `$getAll` は**上限**（不足は「残りの階層を全展開」という正当な意味を持つ接頭辞）。
+ * `$getAll` / `$setAll` は**上限**（不足は「残りの階層を全展開」という正当な意味を持つ接頭辞）。
  */
 function validateIndexArity(script: string, scriptStart: number, locale?: string): WcsDiagnostic[] {
   const msgs = getMessages(locale);
