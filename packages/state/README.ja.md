@@ -872,6 +872,36 @@ export default {
 
 4. **直接インデックスアクセス** — 数値インデックスで特定の要素にアクセスすることもできます：`this["users.0.name"]` はループコンテキストなしで `users[0].name` に解決されます。
 
+### getter は state に対して純粋であること
+
+getter のキャッシュを無効化するのは**依存グラフだけ**で、依存グラフに載るのは getter が **`this` を通して読んだもの**だけです。それ以外の入力は無効化から見えないため、**最初に計算した値がそのまま残り続けます**：
+
+```javascript
+// ❌ 二度と再計算されない — 依存グラフ上の何も変化しないため
+get stamp() { return `${this.label} @ ${Date.now()}`; }   // Date.now() は追跡外
+get theme() { return document.body.dataset.theme; }        // DOM は追跡外
+get total() { return this.price * exchangeRate; }          // モジュール変数は追跡外
+```
+
+規則は「**`this` を通してのみ読む。getter から state を書かない・DOM を触らない**」です。追跡外の入力をどうしても使いたい場合は、その入力を state に持たせてパスに代入する（通常の契約に戻す）か、以下の逃げ道を使ってください：
+
+| API | 用途 |
+|---|---|
+| `this.$trackDependency(path)` | 依存を明示的に追加し、そのパスの変更でこの getter を dirty にする |
+| `this.$postUpdate(path)` | 追跡外の入力が変わったことを getter の外から通知する |
+| `this.$untrackDependency(fn)` | 依存として登録せずにパスを読む（上の対称） |
+
+```javascript
+// ✅ 時計を state 側で刻み、getter は純粋なまま
+export default {
+  now: Date.now(),
+  get stamp() { return `${this.label} @ ${this.now}`; },
+  $connectedCallback() { setInterval(() => { this.now = Date.now(); }, 1000); },
+};
+```
+
+getter の例外は握り潰されません。評価された場所（バインディングの適用・`$watch` の評価・自分での読み取り）でそのまま表面化します。
+
 ### ループインデックス変数（`$1`, `$2`, ...）
 
 getter やイベントハンドラ内で、`this.$1`、`this.$2` などで現在のループイテレーションのインデックスを取得できます（0始まりの値、1始まりの命名）：
@@ -1627,6 +1657,48 @@ $streams: {
 
 完全な契約 —— ライフサイクルと所有権・restart セマンティクス・flush 粒度・スコープ外リスト —— は [docs/streams.ja.md](docs/streams.ja.md) を参照してください。
 
+## 評価のきっかけ（demand root）
+
+パス getter は **lazy** です。誰も読まなければ一度も評価されません。したがって「この getter は走るか」は getter 自身を読んでも決まりません —— **需要（demand）がどこから来るか**で決まります。
+
+需要の根は **3 つだけ**です：
+
+| 根 | 場所 | 描画に依存するか |
+|---|---|---|
+| **live DOM バインディング** | `data-wcs` / mustache / コメントバインディング | **する**（その要素が消えると需要も消える） |
+| **`$watch` の宣言** | state 側 | しない（headless） |
+| **`$streams` の `args`** | state 側 | しない（起動・restart のたびに評価される） |
+
+**`$updatedCallback` は根ではありません。** それは「バインディングが適用された結果」の報告であり、需要を作りません。
+
+### 描画がプログラムの意味論を変えうる
+
+この 3 つのうち 1 つ目が DOM にあることの帰結として、**表示専用のつもりの要素が購読の実体になり得ます**。実際に踏んだ例が [`examples/state-intersect-scroll`](../../examples/state-intersect-scroll) にあります：
+
+```html
+<!-- 表示のつもりだった要素。これが唯一の需要の根だった -->
+<b data-wcs="textContent: $streamStatus.pageResult"></b>
+```
+
+```javascript
+// $updatedCallback は binding 駆動 —— 上の <b> を消すと paths に現れなくなり、
+// フィードの commit が黙って止まる
+$updatedCallback(paths) {
+  if (!paths.includes("$streamStatus.pageResult")) return;
+  this.items = this.items.concat(this.pageResult.items);
+}
+```
+
+**規則:** 描画に依存させたくないロジックは、`$watch`（または `$streams` の `args`）に根を置いてください。`$updatedCallback` は「描かれたものに追随する」用途に限ります。
+
+上の例は `$watch` に置き換え済みで、`<b>` は表示専用に戻っています。この形（`$updatedCallback` が、どのバインディングにも現れないパスを判定に使っている）は **`wcs/updated-callback-unbound`** として静的に検出されます。
+
+### 残る制約
+
+需要の根が 3 か所に分かれること自体は変わりません。**ある getter が評価されるかを知るには、その 3 か所（ページの全バインディング・全 `$watch`・全 `$streams.args`）を見る必要があり、getter の定義だけを読んでも分かりません。** lint と DevTools の配線カバレッジはこの照合を機械にやらせるためのものです。
+
+なお `$watch` に宣言したスカラー getter は **eager** になります（接続時に 1 回、以後は依存に触れたバッチごとに評価）。ワイルドカード行の getter は eager 化しません（初回評価がリスト全体を舐めるため）。
+
 ## Watch（`$watch`）
 
 `$updatedCallback` は **binding 駆動** です。その更新で live DOM binding が実際に適用された path だけを報告するため、**描画していない値の変化は見えません**。**`$watch`** はその headless 版で、ページ上でそのパスがバインドされているかどうかに関わらず、state の変化で発火します（**ワイルドカードの行パスだけは例外**で、headless に成立させるには `$listKeys` が要ります。後述）。
@@ -1938,6 +2010,76 @@ export default {
 - `$disconnectedCallback` は同期的に呼び出されます。タイマーのクリア、イベントリスナーの削除、リソースの解放といったクリーンアップ処理に使用してください。
 - `$updatedCallback(paths, indexesListByPath)` は、その drain で live binding が適用された path の一覧を受け取ります。binding のない state 書き込みでは呼ばれず、`paths` にも現れません。ワイルドカードをもつパスが更新された場合は、`indexesListByPath` から対象のインデックス情報も取得可能です。`async` を使用できますが、戻り値は await されません。
 - Web Component を使用している場合は、コンポーネント側に `async $stateReadyCallback(stateProp)` を定義おくことで、`bind-component` でバインドした状態が利用可能になった瞬間にフックとして呼び出されます。
+
+## 診断と失敗の扱い
+
+### 存在しないパスへの配線は報告されます
+
+配線したパスが state 上で解決しないことが**確実**なとき、バインド確立時（`$watch` は宣言時）に 1 回だけ警告します。診断 code はコンソール・`@wcstack/lint`・VS Code 拡張で共通です：
+
+```
+[@wcstack/state] [wcs/binding-path-missing] Bound path "user.nmae" does not resolve on state "default":
+"nmae" is not declared. Did you mean "name"? Updates to this path will be silently
+dropped. Validate statically: npx @wcstack/lint <file>.
+```
+
+| 状況 | 挙動 |
+|---|---|
+| ネストしたパスの打ち間違い（`user.nmae`） | `console.warn`（`wcs/binding-path-missing`）。更新は届かないままなので、直すのは書き手 |
+| トップレベルのパスの打ち間違い（`cout`） | 読み取り時に throw。文面は上と同じ語彙（did-you-mean 付き） |
+| `$watch` のキーの打ち間違い | `console.warn`（`wcs/watch-path-missing`）。単一セグメントでも報告する |
+
+判定は**過小近似**です。静的に決められない形では黙ります —— 誤検知でページを騒がせないことを優先しているためで、以下はすべて警告しません：
+
+- 親が `null` / `undefined`（初期値 `null` に後から代入する形）
+- 初期値が空配列のリストの行フィールド（行の形が分からない）
+- 途中の getter の戻り値のサブプロパティ
+- mapped な `bind-component` の子スコープ（パスの正本は親側）
+- `$` 始まりの予約名前空間（`$command.*` など）
+
+裏を返すと、**警告が出ない ＝ 正しい保証にはなりません**。網羅した検査は `npx @wcstack/lint <file>` 側で行ってください。
+
+### 添字の本数・階数・循環も検査されます
+
+パス文字列から機械的に決まる整合は、実行時にも lint にも同じ診断 code で現れます。
+
+| 診断 | 何を見るか | 直し方 |
+|---|---|---|
+| `wcs/index-arity` | `$resolve(path, indexes)` は `*` の本数と**厳密一致**、`$getAll(path, indexes)` は**上限**（不足は「残りの階層を全展開」という正当な接頭辞） | 本数を合わせる |
+| `wcs/wildcard-rank` | パスの `*` の本数（と `$N` の N）が、囲む `for` の段数を超えていないか | `for` を足すか、`$resolve(path, indexes)` で行を明示する |
+| `wcs/getter-cycle` | パス getter どうしが循環参照していないか | 循環を断つ |
+
+`$resolve` / `$getAll` の**添字の超過は以前は黙って捨てられ**、取り違えたまま「もっともらしい値」が返っていました。現在はどちらもエラーです：
+
+```javascript
+// ❌ "*" は 1 本しか無いのに 2 本渡している → 以前は items[0] の値が返っていた
+this.$resolve("items.*.price", [row, col]);
+
+// ✅ 2 次元なら 2 本
+this.$resolve("matrix.*.*", [row, col]);
+// ✅ $getAll の不足は「残りを全部」の意味なので正当
+this.$getAll("matrix.*.*", [row]);
+```
+
+### バインディング 1 本の失敗は 1 本に閉じ込められます
+
+バインディングの適用が throw しても、そのバッチの残り・`$updatedCallback`・`$watch`・`$streams` の restart はすべて続行します。失敗は握り潰されず、`console.error` と DevTools（`state:binding-apply-error`）に出ます。
+
+```
+[@wcstack/state] binding "text: items.*.label" failed to apply; the rest of this batch continues.
+```
+
+隔離しない場合、1 本の throw が「値は新しいのに DOM は途中まで」という半端な状態を作り、しかも `$watch` と stream の restart が丸ごと消えていました（README のこの下にある発火順の契約が黙って破れる）。
+
+### 値と DOM は巻き戻しません
+
+異常系はすべて「報告して続行」で、適用済みの値を戻すことはありません。これは以下で共通の姿勢です：
+
+| 機構 | 上限 | 超過時 |
+|---|---|---|
+| 因果伝播の hop | 32 | その transaction の未処理レコードのみ quarantine |
+| `$watch` の書き込み連鎖 | 32 | そのバッチの watch 発火をスキップ |
+| バインディングの適用失敗 | — | その 1 本のみスキップ |
 
 ## 設定
 

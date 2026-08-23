@@ -186,6 +186,45 @@ export function analyzeDeclarationSpans(scriptContent: string): DeclarationSpan[
   return out;
 }
 
+/** getter / メソッド宣言 1 個（名前スパン + 本体テキストと位置）。意味論検査が本体を読む。 */
+export interface CallableBody {
+  readonly name: string;
+  readonly kind: 'getter' | 'method';
+  /** 名前の範囲（script 内の絶対オフセット。診断のレンジに使う） */
+  readonly start: number;
+  readonly end: number;
+  /** 本体（`{ ... }` の中身）の生テキスト */
+  readonly body: string;
+  /** 本体の開始オフセット（script 内の絶対位置。本体内のトークンのレンジ計算に使う） */
+  readonly bodyStart: number;
+}
+
+/**
+ * `export default { ... }` のトップレベル getter / メソッドを、名前スパンと本体付きで返す。
+ *
+ * `analyzeDeclarationSpans` は名前しか返さないため、本体を読む検査
+ * （`wcs/getter-cycle` / `wcs/updated-callback-unbound`）はこちらを使う。
+ * set 側は `kind: 'getter'` に含まれる（本体の形が同じなので同列に扱ってよい）。
+ */
+export function analyzeCallableBodies(scriptContent: string): CallableBody[] {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return [];
+  const out: CallableBody[] = [];
+  for (const prop of parseTopLevelProperties(root.content)) {
+    if (prop.kind !== 'getter' && prop.kind !== 'method') continue;
+    if (prop.nameStart === undefined || prop.nameEnd === undefined) continue;
+    out.push({
+      name: prop.name,
+      kind: prop.kind,
+      start: root.start + prop.nameStart,
+      end: root.start + prop.nameEnd,
+      body: prop.value ?? '',
+      bodyStart: root.start + (prop.valueStart ?? 0),
+    });
+  }
+  return out;
+}
+
 /**
  * 値が「関数ではない」と静的に断定できるリテラルか。
  *
@@ -607,25 +646,37 @@ function parseTopLevelProperties(objectContent: string): PropertyInfo[] {
     };
     // 本体 `{ ... }` を読み飛ばして走査位置をその直後へ送る（本体内の `word:` を
     // トップレベルのプロパティと誤認しないため）。
-    const skipBody = (): void => {
+    // 本体 `{ ... }` を読み飛ばしつつ、中身と開始位置を返す。
+    // 本体は捨てずに value / valueStart へ持つ — 意味論検査
+    // （wcs/getter-cycle・wcs/updated-callback-unbound）が「この関数が何を読んで
+    // いるか」を見るために要る。value を読む既存の消費者はすべて
+    // `kind === 'data'` で絞っているので影響しない。
+    const skipBody = (): { body: string; bodyStart: number } => {
       const braceStart = match!.index + match![0].length - 1;
       const body = extractBracedContent(objectContent, scan, braceStart);
       regex.lastIndex = braceStart + body.length + 2; // +2 for { and }
+      return { body, bodyStart: braceStart + 1 };
     };
 
     // accessor: get/set "path"() or get/set path()
     const accessorName = nameAt(1) ?? nameAt(2) ?? nameAt(3);
     if (accessorName) {
-      props.push({ name: accessorName, kind: 'getter', nameStart: nameSpan![0], nameEnd: nameSpan![1] });
-      skipBody();
+      const { body, bodyStart } = skipBody();
+      props.push({
+        name: accessorName, kind: 'getter', value: body, valueStart: bodyStart,
+        nameStart: nameSpan![0], nameEnd: nameSpan![1],
+      });
       continue;
     }
 
     // method: name(args) { / "path"(args) {
     const methodName = nameAt(4) ?? nameAt(5) ?? nameAt(6);
     if (methodName) {
-      props.push({ name: methodName, kind: 'method', nameStart: nameSpan![0], nameEnd: nameSpan![1] });
-      skipBody();
+      const { body, bodyStart } = skipBody();
+      props.push({
+        name: methodName, kind: 'method', value: body, valueStart: bodyStart,
+        nameStart: nameSpan![0], nameEnd: nameSpan![1],
+      });
       continue;
     }
 

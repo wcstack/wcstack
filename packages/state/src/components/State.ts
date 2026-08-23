@@ -42,6 +42,7 @@ import { Ssr } from "./Ssr";
 import { VERSION } from "../version";
 import { HTMLElementBase } from "../platform/HTMLElementBase";
 import { getAllPropertyDescriptors } from "../getAllPropertyDescriptors";
+import { checkDeclaredPath, PathInfoSource } from "../pathDiagnostics";
 
 function getStateInfo(
   state: IState
@@ -724,7 +725,7 @@ export class State extends HTMLElementBase implements IStateElement {
     return this._addDependency(this._staticDependency, sourcePath, targetPath);
   }
 
-  setPathInfo(path: string, bindingType: BindingType): void {
+  setPathInfo(path: string, bindingType: BindingType, source: PathInfoSource = "binding"): void {
     if (bindingType === "for") {
       const isNewListPath = !this._listPaths.has(path);
       this._listPaths.add(path);
@@ -739,6 +740,10 @@ export class State extends HTMLElementBase implements IStateElement {
     if (!this._pathSet.has(path)) {
       const pathInfo = getPathInfo(path);
       this._pathSet.add(path);
+      // 存在しないパスへの配線は「黙って更新されない」だけで終わるため、
+      // 新規パスを 1 回だけ検査して確実な miss を報告する（pathDiagnostics.ts）。
+      // パスごとに 1 回・バインド確立時のみで、更新のホットパスには乗らない。
+      checkDeclaredPath(this, this.__state, path, source);
       if (pathInfo.parentPath !== null) {
         let currentPathInfo = pathInfo;
         while(currentPathInfo.parentPath !== null) {

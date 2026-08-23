@@ -236,6 +236,31 @@ describe('updater/updater', () => {
       expect(batch.has(absoluteAddress2)).toBe(true);
     });
 
+    /**
+     * 適用側が throw しても drain フックは落とさない（予測可能性）。
+     *
+     * README の「機構間の順序は固定（$updatedCallback → $watch → $streams restart）」は、
+     * 適用が throw した瞬間に $watch と stream restart が丸ごと消えていた。binding 1 本の
+     * 失敗は applyChangeFromBindings 側で隔離されるので、ここへ来るのは
+     * $updatedCallback の throw 等。例外は握らず（loud のまま）通知だけ保証する。
+     */
+    it('applyChangeFromBindingsがthrowしてもリスナーは発火し、例外は伝播すること', () => {
+      const stateElement = createStateElement('default');
+      setStateElementByName(document, 'default', stateElement);
+      const absoluteAddress = createAbsAddress(stateElement, 'drainThrow');
+      createdAbsAddresses.push(absoluteAddress);
+
+      const listener = vi.fn();
+      register(listener);
+      // Once: vi.clearAllMocks() は実装を戻さないので、後続テストへ漏らさない
+      applyChangeFromBindingsMock.mockImplementationOnce(() => { throw new Error('boom'); });
+
+      expect(() => getUpdater().testApplyChange([absoluteAddress])).toThrow('boom');
+
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect((listener.mock.calls[0][0] as ReadonlySet<IAbsoluteStateAddress>).has(absoluteAddress)).toBe(true);
+    });
+
     it('testApplyChangeで同期にリスナーが発火すること（applyChangeFromBindingsの後）', () => {
       const stateElement = createStateElement('default');
       setStateElementByName(document, 'default', stateElement);

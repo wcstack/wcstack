@@ -12,7 +12,7 @@ import { BUILTIN_FILTERS, type FilterInfo } from './completionData.js';
 import { STRUCTURAL_BINDING_TYPE_SET } from './wcsManifest.js';
 import type { PathCandidate } from './stateAnalyzer.js';
 import { getStatePathsFromHtml, type FileReader } from './statePathResolver.js';
-import { isInsideForTemplate, getInnermostForPath } from './forContext.js';
+import { isInsideForTemplate, getInnermostForPath, getAvailableWildcardRank, countWildcardSegments } from './forContext.js';
 import { WcsDiagnosticCode, type WcsDiagnosticCodeValue } from '../core/diagnostics.js';
 import { getMessages, type WcsMessageCatalog, type ExpectedTypeKind } from '../core/messages.js';
 
@@ -260,6 +260,34 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
               message: msgs.loopIndexOutsideFor(pathTrimmed),
               severity: 'warning',
             });
+          }
+
+          // for の**段数**を超える階数を使用（`matrix.*.*` を 1 段の for で読む、
+          // `$2` を 1 段のループで読む）。上の 3 つは「for の外か否か」の二値しか
+          // 見ておらず、深さ方向は誰も検査していなかった。available === 0 は上の
+          // patternPathOutsideFor / loopIndexOutsideFor が担うので、ここは
+          // 「for の中に居るが段数が足りない」だけを見る（二重報告を避ける）。
+          // `@state` 越境は for のスコープと別 state なので判定しない（binding 生テキストで見る
+          // ── parsed.path は `@state` を落としたあとの値なので、そこでは判別できない）
+          if (insideFor && !pathTrimmed.startsWith('.') && !binding.includes('@')) {
+            const indexMatch = /^\$(\d+)$/.exec(pathTrimmed);
+            const needed = indexMatch !== null
+              ? Number(indexMatch[1])
+              : (pathTrimmed.includes('*') ? countWildcardSegments(pathTrimmed) : 0);
+            if (needed > 0) {
+              const available = getAvailableWildcardRank(html, attr.valueStart, attrName);
+              if (available > 0 && needed > available) {
+                const pathOffset = binding.indexOf(parsed.path);
+                const pathStart = bindingStart + pathOffset;
+                diagnostics.push({
+                  code: WcsDiagnosticCode.WildcardRank,
+                  start: pathStart,
+                  end: pathStart + pathTrimmed.length,
+                  message: msgs.wildcardRank(`"${pathTrimmed}"`, needed, available),
+                  severity: 'warning',
+                });
+              }
+            }
           }
 
           // UI で解決済みパス（数値セグメントを含む）を使用

@@ -96,6 +96,29 @@ export type DevtoolsEvent =
       readonly path: string;
     }
   | {
+      // バインド / `$watch` の対象パスが state 上で解決しないと確定した
+      // （pathDiagnostics.ts）。ランタイムは console.warn に留めて続行するため、
+      // 「配線したのに黙って死んでいる」を devtools からも見えるようにする。
+      readonly type: "state:path-unresolved";
+      /** 書き手が書いた面。診断 code が binding / watch で変わる */
+      readonly source: "binding" | "watch";
+      readonly stateName: string;
+      /** 宣言されたパス（ワイルドカードを含む生の文字列） */
+      readonly path: string;
+      /** 解決に失敗したセグメント */
+      readonly missingSegment: string;
+    }
+  | {
+      // binding 適用が throw したが、バッチの残りは続行した（apply/applyChangeFromBindings）。
+      // 例外を握らずに隔離した事実を観測可能にする（state:watch-error と同じ位置づけ）。
+      readonly type: "state:binding-apply-error";
+      readonly stateName: string;
+      /** バインディングの state パス（ワイルドカードを含む生の文字列） */
+      readonly path: string;
+      readonly bindingType: string;
+      readonly error: unknown;
+    }
+  | {
       readonly type: "propagation:suppressed";
       readonly reason: "confirmation" | "visited-edge";
       readonly transactionId: number;

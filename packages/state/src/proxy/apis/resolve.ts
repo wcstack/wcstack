@@ -20,6 +20,7 @@ import { getPathInfo } from "../../address/PathInfo";
 import { createStateAddress } from "../../address/StateAddress";
 import { getListIndexesByList } from "../../list/listIndexesByList";
 import { IListIndex } from "../../list/types";
+import { indexArityMessage } from "../../pathDiagnostics";
 import { raiseError } from "../../raiseError";
 import { getByAddress } from "../methods/getByAddress";
 import { setByAddress } from "../methods/setByAddress";
@@ -46,8 +47,12 @@ export function resolve(
       }
     }
 
-    if (pathInfo.wildcardParentPathInfos.length > indexes.length) {
-      raiseError(`indexes length is insufficient: ${path}`);
+    // 添字の本数はワイルドカードの本数と**厳密に一致**する必要がある。
+    // 不足は元から throw していたが、超過は黙って無視されていた（余分な要素を
+    // 誰も読まないため）＝ `$resolve("items.*.price", [row, col])` のような
+    // 「1 本しか無いのに 2 本渡す」取り違えが、間違った値を返したまま通っていた。
+    if (indexes.length !== pathInfo.wildcardParentPathInfos.length) {
+      raiseError(indexArityMessage("$resolve", path, pathInfo.wildcardParentPathInfos.length, indexes.length));
     }
     // ワイルドカード階層ごとにListIndexを解決していく
     let listIndex: IListIndex | null = null;

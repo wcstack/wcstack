@@ -33,7 +33,9 @@ export function propagateListPathToOuterState(innerStateElement: IStateElement, 
   if (outerAbsPathInfo === null || outerAbsPathInfo.stateElement === innerStateElement) {
     return;
   }
-  outerAbsPathInfo.stateElement.setPathInfo(outerAbsPathInfo.pathInfo.path, "for");
+  // source="internal": 翻訳済みの外側パスであり、書き手が書いた文字列ではない。
+  // 存在検査に掛けても直せる相手が居ないので掛けない（pathDiagnostics.ts）。
+  outerAbsPathInfo.stateElement.setPathInfo(outerAbsPathInfo.pathInfo.path, "for", "internal");
 }
 
 /**

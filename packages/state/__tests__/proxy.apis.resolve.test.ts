@@ -129,7 +129,7 @@ describe('resolve', () => {
 
     const resolveFn = resolve(target, '$resolve', target, handler as any);
 
-    expect(() => resolveFn('items.*', [])).toThrow(/indexes length is insufficient/);
+    expect(() => resolveFn('items.*', [])).toThrow(/\[wcs\/index-arity\].*requires exactly 1 index/);
   });
 
   it('多重ワイルドカードでネストしたインデックスを解決できること', () => {

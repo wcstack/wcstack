@@ -223,6 +223,24 @@ place it becomes visible.
   the boundary.
 - All are constructed only inside `devtoolsSink !== null` (cost rule §1-1).
 
+### 4.3.2 Silent wiring failures
+
+Two failures used to be invisible to a consumer: a wired path that does not resolve at all, and a
+binding that throws while applying. Both are now reported and the runtime continues, which means the
+console is the only other place they appear.
+
+- Event: `state:path-unresolved` (v1 addendum, additive),
+  payload = `{ source: "binding" | "watch", stateName, path, missingSegment }`, emitted once per
+  (state element, path) when binding establishment (or a `$watch` declaration) proves the path cannot
+  resolve. The check **under-approximates** — a getter return value, an empty list, a `null` parent or
+  a mapped `bind-component` child all stay silent — so absence of this event is not proof of
+  correctness ([pathDiagnostics.ts](../packages/state/src/pathDiagnostics.ts)).
+- Event: `state:binding-apply-error` (v1 addendum, additive),
+  payload = `{ stateName, path, bindingType, error }`, emitted when applying one binding throws. The
+  runtime isolates the failure so the rest of the batch, `$updatedCallback` and the drain listeners
+  still run — same stance as `state:watch-error`, and same reason for existing: an isolated failure
+  that nobody can see is indistinguishable from no failure.
+
 ### 4.4 Growth and shrinkage of the binding ledger
 
 - Firing points go into `addBindingByAbsoluteStateAddress` / `removeBindingByAbsoluteStateAddress` /

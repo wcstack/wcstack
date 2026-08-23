@@ -86,15 +86,27 @@ describe('getByAddress', () => {
     const address = createStateAddress(getPathInfo('users.*'), null);
     const handler = createHandler(mockStateElement);
 
-    expect(() => getByAddress(target, address, target, handler as any)).toThrow(/listIndex.*undefined/);
+    expect(() => getByAddress(target, address, target, handler as any)).toThrow(/\[wcs\/wildcard-rank\].*needs 1 enclosing loop level/);
   });
 
-  it('親が存在しないパスでtargetに無い場合はエラーになること', () => {
+  it('親が存在しないパスでtargetに無い場合は打ち間違いとして報告するエラーになること', () => {
     const target = {};
     const address = createStateAddress(getPathInfo('missing'), null);
     const handler = createHandler(mockStateElement);
 
-    expect(() => getByAddress(target, address, target, handler as any)).toThrow(/address.parentAddress is undefined/);
+    // 内部実装の言葉（address.parentAddress is undefined）ではなく、lint と同じ
+    // 診断 code で「そのパスは state に無い」と言う（pathDiagnostics.ts）
+    expect(() => getByAddress(target, address, target, handler as any))
+      .toThrow(/\[wcs\/binding-path-missing\] Path "missing" does not exist on state "default"/);
+  });
+
+  it('近いトップレベルのキーがあれば did-you-mean を添えること', () => {
+    const target = { count: 0 };
+    const address = createStateAddress(getPathInfo('cout'), null);
+    const handler = createHandler(mockStateElement);
+
+    expect(() => getByAddress(target, address, target, handler as any))
+      .toThrow(/Did you mean "count"\?/);
   });
 
   it('キャッシュがある場合はキャッシュを返すこと', () => {

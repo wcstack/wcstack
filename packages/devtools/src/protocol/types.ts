@@ -159,6 +159,25 @@ export type DevtoolsEventLike =
       readonly path: string;
     }
   | {
+      // バインド / `$watch` の対象パスが state 上で解決しないと確定した。
+      // ランタイムは console.warn で続行するので、これが無いと「配線したのに
+      // 黙って死んでいる」が devtools から見えない。
+      readonly type: "state:path-unresolved";
+      readonly source: "binding" | "watch";
+      readonly stateName: string;
+      readonly path: string;
+      readonly missingSegment: string;
+    }
+  | {
+      // binding 適用の throw。バッチの残りを守るためランタイムが隔離するので、
+      // watch-error と同じくこれが無いと失敗がどこにも現れない。
+      readonly type: "state:binding-apply-error";
+      readonly stateName: string;
+      readonly path: string;
+      readonly bindingType: string;
+      readonly error: unknown;
+    }
+  | {
       // two-way エコーの辺単位抑止（enablePropagationContext 時のみ流れる）。
       readonly type: "propagation:suppressed";
       readonly reason: "confirmation" | "visited-edge";

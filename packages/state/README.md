@@ -872,6 +872,36 @@ Two-way binding works with path setters — editing the input calls the setter, 
 
 4. **Direct index access** — You can also access specific elements by numeric index: `this["users.0.name"]` resolves as `users[0].name` without needing loop context.
 
+### Getters must be pure with respect to state
+
+A getter's cache is invalidated **only** through the dependency graph, and the graph only records what the getter read **through `this`**. Anything else a getter reads is invisible to invalidation, so the first value computed is the value you keep:
+
+```javascript
+// ❌ Never recomputes — nothing in the dependency graph ever changes
+get stamp() { return `${this.label} @ ${Date.now()}`; }   // Date.now() is untracked
+get theme() { return document.body.dataset.theme; }        // the DOM is untracked
+get total() { return this.price * exchangeRate; }          // a module variable is untracked
+```
+
+The rule: **read only through `this`, and don't write state or touch the DOM from a getter.** For the cases where an untracked input genuinely has to participate, put the input into state and assign to it (the normal path-assignment contract), or use the escape hatches:
+
+| API | Use it for |
+|---|---|
+| `this.$trackDependency(path)` | Register an extra dependency so this getter is dirtied when that path changes |
+| `this.$postUpdate(path)` | Announce that an untracked input changed, from outside the getter |
+| `this.$untrackDependency(fn)` | Read a path *without* registering it as a dependency (the inverse) |
+
+```javascript
+// ✅ The clock ticks in state; the getter stays pure
+export default {
+  now: Date.now(),
+  get stamp() { return `${this.label} @ ${this.now}`; },
+  $connectedCallback() { setInterval(() => { this.now = Date.now(); }, 1000); },
+};
+```
+
+Getters that throw are not swallowed: the exception surfaces where the getter was evaluated (a binding apply, a `$watch` evaluation, or your own read).
+
 ### Loop Index Variables (`$1`, `$2`, ...)
 
 Inside getters and event handlers, `this.$1`, `this.$2`, etc. provide the current loop iteration index (0-based value, 1-based naming):
@@ -1632,6 +1662,48 @@ Key rules:
 
 See [docs/streams.md](docs/streams.md) for the full contract — lifecycle and ownership, restart semantics, flush granularity, and the out-of-scope list.
 
+## Demand roots — what makes a getter run
+
+Path getters are **lazy**. One that nobody reads is never evaluated. So "does this getter run?" is not answerable from the getter itself — it depends on **where the demand comes from**.
+
+There are exactly **three** demand roots:
+
+| Root | Lives in | Depends on rendering |
+|---|---|---|
+| **A live DOM binding** | `data-wcs` / mustache / comment bindings | **Yes** — remove the element and the demand goes with it |
+| **A `$watch` declaration** | the state | No (headless) |
+| **A `$streams` `args` function** | the state | No (evaluated on start and on every restart) |
+
+**`$updatedCallback` is not a root.** It reports what the bindings did; it does not create demand.
+
+### Rendering can change program semantics
+
+Because the first root lives in the DOM, **an element you think of as display-only can be the actual subscription**. This one was hit for real, in [`examples/state-intersect-scroll`](../../examples/state-intersect-scroll):
+
+```html
+<!-- Meant as display. It was the only demand root. -->
+<b data-wcs="textContent: $streamStatus.pageResult"></b>
+```
+
+```javascript
+// $updatedCallback is binding-driven — delete that <b> and the path stops
+// appearing in `paths`, so the feed silently stops committing.
+$updatedCallback(paths) {
+  if (!paths.includes("$streamStatus.pageResult")) return;
+  this.items = this.items.concat(this.pageResult.items);
+}
+```
+
+**The rule:** logic that must not depend on what is rendered belongs on a `$watch` (or a `$streams` `args`). Keep `$updatedCallback` for "follow what was drawn".
+
+That example now uses `$watch`, and the `<b>` is display-only again. This shape — `$updatedCallback` testing a path that is not bound anywhere — is detected statically as **`wcs/updated-callback-unbound`**.
+
+### The limitation that remains
+
+Demand still comes from three separate places. **To know whether a getter is evaluated you have to inspect all three — every binding on the page, every `$watch`, and every `$streams` `args` — and reading the getter's definition will not tell you.** The linter and the DevTools wiring-coverage view exist to make a machine do that cross-check.
+
+Note that a scalar getter named in `$watch` becomes **eager** (evaluated once at connect, then at the end of every batch touching its dependencies). Wildcard row getters do not become eager, because the first evaluation would walk the whole list.
+
 ## Watch (`$watch`)
 
 `$updatedCallback` is **binding-driven**: it reports the paths whose live DOM bindings were actually applied in that update, so a value you never render is invisible to it. **`$watch`** is the headless counterpart — it fires on state changes whether or not anything on the page is bound to the path. (One exception, spelled out below: a *wildcard* row path needs `$listKeys` to work headlessly.)
@@ -1943,6 +2015,76 @@ All hooks except `$disconnectedCallback` support `async` — you can use `async/
 - `$disconnectedCallback` is called synchronously — use it for cleanup such as clearing timers, removing event listeners, or releasing resources
 - `$updatedCallback(paths, indexesListByPath)` receives the paths whose live bindings were applied in that drain. Unbound state writes do not invoke it or appear in `paths`. For wildcard updates, `indexesListByPath` contains the updated index sets. Can be `async`, but the return value is not awaited
 - In Web Components, define `async $stateReadyCallback(stateProp)` to receive a hook when the bound state becomes available via `bind-component`
+
+## Diagnostics and failure handling
+
+### Wiring to a path that does not exist is reported
+
+When a wired path provably does not resolve against the state, you get one warning at binding time (at declaration time for `$watch`). The diagnostic codes are shared by the console, `@wcstack/lint`, and the VS Code extension:
+
+```
+[@wcstack/state] [wcs/binding-path-missing] Bound path "user.nmae" does not resolve on state "default":
+"nmae" is not declared. Did you mean "name"? Updates to this path will be silently
+dropped. Validate statically: npx @wcstack/lint <file>.
+```
+
+| Situation | Behavior |
+|---|---|
+| Typo in a nested path (`user.nmae`) | `console.warn` (`wcs/binding-path-missing`). Updates still never arrive — you fix it |
+| Typo in a top-level path (`cout`) | Throws on read, with the same wording and did-you-mean |
+| Typo in a `$watch` key | `console.warn` (`wcs/watch-path-missing`), reported even for a single segment |
+
+The check **under-approximates**: it stays silent for anything it cannot decide statically, because a false alarm costs more than a missed one. None of these warn:
+
+- A `null` / `undefined` parent (the "seed as `null`, assign later" shape)
+- Row fields of a list that starts empty (the row shape is unknown)
+- Sub-properties of an intermediate getter's return value
+- Mapped `bind-component` child scopes (the parent owns the path)
+- Reserved `$` namespaces (`$command.*` and friends)
+
+So **no warning is not a proof of correctness.** For exhaustive checking, run `npx @wcstack/lint <file>`.
+
+### Index arity, wildcard rank, and getter cycles are checked too
+
+Anything that follows mechanically from the path string is reported at runtime and by the linter under the same diagnostic code.
+
+| Diagnostic | What it checks | Fix |
+|---|---|---|
+| `wcs/index-arity` | `$resolve(path, indexes)` must match the `*` count **exactly**; `$getAll(path, indexes)` has it as an **upper bound** (fewer is a legitimate prefix meaning "expand the rest") | Match the count |
+| `wcs/wildcard-rank` | The path's `*` count (and the N in `$N`) must not exceed the enclosing `for` nesting | Add a `for`, or name the row with `$resolve(path, indexes)` |
+| `wcs/getter-cycle` | Path getters must not form a dependency cycle | Break the cycle |
+
+Previously **extra indexes were silently discarded** by both APIs, so a mixed-up call returned a plausible-looking wrong value. Both now throw:
+
+```javascript
+// ❌ Only one "*" in the path, two indexes given — used to return items[0]'s value
+this.$resolve("items.*.price", [row, col]);
+
+// ✅ Two levels, two indexes
+this.$resolve("matrix.*.*", [row, col]);
+// ✅ Fewer is fine for $getAll — it means "expand the remaining levels"
+this.$getAll("matrix.*.*", [row]);
+```
+
+### One failing binding is confined to that binding
+
+If applying a binding throws, the rest of that batch, `$updatedCallback`, `$watch`, and `$streams` restarts all still run. The failure is not swallowed — it goes to `console.error` and to DevTools (`state:binding-apply-error`):
+
+```
+[@wcstack/state] binding "text: items.*.label" failed to apply; the rest of this batch continues.
+```
+
+Without that confinement, a single throw left "new values, half-updated DOM" behind, and silently dropped every `$watch` handler and stream restart for the batch — quietly breaking the firing-order contract documented above.
+
+### Values and the DOM are never rolled back
+
+Every failure mode reports and continues; nothing already applied is reverted:
+
+| Mechanism | Limit | On exceeding |
+|---|---|---|
+| Propagation hops | 32 | Quarantine the transaction's remaining records |
+| `$watch` write chain | 32 | Skip watch firing for that batch |
+| Binding apply failure | — | Skip that one binding |
 
 ## Configuration
 

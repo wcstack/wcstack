@@ -51,6 +51,20 @@ export const WcsDiagnosticCode = {
   TokenUndeclared: "wcs/token-undeclared",
   TokenMisconfigured: "wcs/token-misconfigured",
   NestedAssign: "wcs/nested-assign",
+  // --- 意味論（構文・存在検査では捕まらない取り違え。service/semanticValidator.ts） ---
+  // `$getAll` / `$resolve` の添字の本数がパスの `*` の本数と噛み合わない。
+  // ランタイムは同じ code で raiseError する（超過は以前は黙って無視されていた）。
+  IndexArity: "wcs/index-arity",
+  // ワイルドカードの階数がスコープの段数を超える（`matrix.*.*` を 1 段の for で読む、
+  // `$2` を 1 段のループで読む）。既存の「for の外」検査の深さ方向の一般化。
+  WildcardRank: "wcs/wildcard-rank",
+  // パス getter どうしの循環参照。ランタイムはアドレススタック上限まで再帰してから落ちる。
+  GetterCycle: "wcs/getter-cycle",
+  // `$updatedCallback` が、どのバインディングにも現れないパスを判定に使っている。
+  // 同コールバックは **binding 駆動**（live binding が適用された path しか報告しない）
+  // なので、その分岐は一度も実行されない。表示要素が購読の実体になる事故
+  // （examples/state-intersect-scroll の README に記録）の静的検出。
+  UpdatedCallbackUnbound: "wcs/updated-callback-unbound",
   // --- <wcs-state> script: $watch declaration ---
   // ランタイム（watch/processWatchDeclaration.ts）が raiseError で落とす宣言。
   // 越境 `@` / `$` 始まり / 空キー・空セグメント / 明らかな非関数ハンドラ。

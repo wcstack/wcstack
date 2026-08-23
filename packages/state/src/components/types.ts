@@ -1,5 +1,6 @@
 import { ListKeyMap } from "../list/listKeys";
 import { ILoopContextStack } from "../list/types";
+import type { PathInfoSource } from "../pathDiagnostics";
 import { IStateProxy, Mutability } from "../proxy/types";
 import { BindingType } from "../types";
 
@@ -93,8 +94,11 @@ export interface IStateElement {
    * パスを依存グラフへ登録する。DOM バインディング登録（BindingSession）のほか、
    * `$watch` 宣言（processWatchDeclaration）からも呼ばれる — 静的依存グラフに
    * 載るのがバインド済みパスだけだと headless 購読が成立しないため（設計書 §8）。
+   *
+   * `source` は存在検査の診断 code と適用範囲を決める（pathDiagnostics.ts）。
+   * 省略時は `"binding"`（テスト用モック互換のため optional）。
    */
-  setPathInfo(path: string, bindingType: BindingType): void;
+  setPathInfo(path: string, bindingType: BindingType, source?: PathInfoSource): void;
   addStaticDependency(parentPath: string, childPath: string): boolean;
   addDynamicDependency(fromPath: string, toPath: string): boolean;
   createStateAsync(mutability: Mutability, callback: (state: IStateProxy) => Promise<void>): Promise<void>;

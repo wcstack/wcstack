@@ -26,6 +26,9 @@ export function resolveLocale(locale?: string): WcsLocale {
 /** 型期待の対象種別（BindingTypeExpectation 用）。 */
 export type ExpectedTypeKind = 'array' | 'boolean' | 'string';
 
+/** 添字本数の要求（`$resolve` は厳密一致・`$getAll` は接頭辞なので上限）。 */
+export type IndexArityRequirement = 'exact' | 'atMost';
+
 export interface WcsMessageCatalog {
   // --- bindingValidator / templateSyntaxValidator ---
   spreadFilterNotAllowed(): string;
@@ -43,6 +46,14 @@ export interface WcsMessageCatalog {
   omittedPathOutsideFor(path: string): string;
   loopIndexOutsideFor(path: string): string;
   resolvedPathInUi(path: string): string;
+  /** `$getAll` / `$resolve` の添字の本数がパスの `*` の本数と噛み合わない。 */
+  indexArity(api: string, path: string, requirement: IndexArityRequirement, wildcardCount: number, actual: number): string;
+  /** ワイルドカードの階数がスコープの段数を超える（`$N` を含む）。 */
+  wildcardRank(subject: string, needed: number, available: number): string;
+  /** パス getter どうしの循環参照。 */
+  getterCycle(cycle: string): string;
+  /** `$updatedCallback` が未バインドのパスを判定に使っている（その分岐は走らない）。 */
+  updatedCallbackUnbound(path: string): string;
   handlerFilterNotAllowed(property: string): string;
   typeExpectation(label: string, expected: ExpectedTypeKind, resultType: string): string;
   filterUnknown(name: string): string;
@@ -103,6 +114,13 @@ const ja: WcsMessageCatalog = {
   omittedPathOutsideFor: (p) => `省略パス "${p}" は <template for> の外側では使用できません`,
   loopIndexOutsideFor: (p) => `ループインデックス "${p}" は <template for> の外側では使用できません`,
   resolvedPathInUi: (p) => `解決済みパス "${p}" は UI バインディングでは使用できません。パターンパスを使用してください`,
+  indexArity: (api, p, req, wc, actual) =>
+    `${api}("${p}") の添字は${req === "exact" ? `ちょうど ${wc} 個` : `${wc} 個以下`}である必要があります（パス中の "*" は ${wc} 個）。${actual} 個指定されています`,
+  wildcardRank: (subject, needed, available) =>
+    `${subject} は ${needed} 段のループが必要ですが、現在のスコープは ${available} 段です`,
+  getterCycle: (cycle) => `パス getter が循環参照しています: ${cycle}`,
+  updatedCallbackUnbound: (p) =>
+    `$updatedCallback は binding 駆動です。"${p}" はこのドキュメントのどのバインディングにも現れないため、この分岐は一度も実行されません。描画に依存せず反応するなら $watch を使ってください`,
   handlerFilterNotAllowed: (prop) => `イベントハンドラ "${prop}" にフィルタは使用できません`,
   typeExpectation: (label, expected, resultType) =>
     `"${label}" には${JA_EXPECTED_LABEL[expected]}が必要です（現在の型: ${resultType}）`,
@@ -168,6 +186,13 @@ const en: WcsMessageCatalog = {
   omittedPathOutsideFor: (p) => `Shorthand path "${p}" cannot be used outside a <template for>`,
   loopIndexOutsideFor: (p) => `Loop index "${p}" cannot be used outside a <template for>`,
   resolvedPathInUi: (p) => `Resolved path "${p}" cannot be used in a UI binding. Use a pattern path instead`,
+  indexArity: (api, p, req, wc, actual) =>
+    `${api}("${p}") requires ${req === "exact" ? "exactly" : "at most"} ${wc} index(es) ("*" appears ${wc} time(s) in the path) but got ${actual}`,
+  wildcardRank: (subject, needed, available) =>
+    `${subject} needs ${needed} enclosing loop level(s) but the current scope provides ${available}`,
+  getterCycle: (cycle) => `Path getters form a dependency cycle: ${cycle}`,
+  updatedCallbackUnbound: (p) =>
+    `$updatedCallback is binding-driven. "${p}" is not bound anywhere in this document, so this branch never runs. Use $watch to react without depending on what is rendered`,
   handlerFilterNotAllowed: (prop) => `Filters cannot be applied to event handler "${prop}"`,
   typeExpectation: (label, expected, resultType) =>
     `"${label}" requires ${EN_EXPECTED_LABEL[expected]} (current type: ${resultType})`,

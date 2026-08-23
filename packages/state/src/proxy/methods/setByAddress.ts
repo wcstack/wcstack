@@ -27,6 +27,7 @@ import { collectFieldWrites, IKeyedListMerge, mergeKeyedList } from "../../list/
 import { IListIndex } from "../../list/types";
 import { getPathInfo } from "../../address/PathInfo";
 import { createStateAddress } from "../../address/StateAddress";
+import { wildcardScopeMessage } from "../../pathDiagnostics";
 import { raiseError } from "../../raiseError";
 import { getUpdater } from "../../updater/updater";
 import { IStateHandler, IStateProxy } from "../types";
@@ -153,7 +154,14 @@ function _setByAddress(
       const parentValue = getByAddress(target, parentAddress, receiver, handler);
       const lastSegment = address.pathInfo.segments[address.pathInfo.segments.length - 1];
       if (lastSegment === WILDCARD) {
-        const index = address.listIndex?.index ?? raiseError(`address.listIndex?.index is undefined path: ${address.pathInfo.path}`);
+        // 読み取り側（getByAddress）と同じ取り違え。書き込みでも何段必要かを言う。
+        const index = address.listIndex?.index ?? raiseError(
+          wildcardScopeMessage(
+            `path "${address.pathInfo.path}"`,
+            address.pathInfo.wildcardCount,
+            address.listIndex?.length ?? 0,
+          ),
+        );
         return Reflect.set(parentValue, index, value);
       } else {
         return Reflect.set(parentValue, lastSegment, value);
@@ -352,7 +360,13 @@ function setByAddressCore(
       recordWatchPrevValue(stateElement, path, absAddress, devOldValue, devHasOldValue);
       try {
         if (key === undefined) {
-          raiseError(`address.listIndex?.index is undefined path: ${path}`);
+          // fast path 版の同じ取り違え（末尾ワイルドカードに listIndex が無い）。
+          // 通常経路と同じ語彙で「何段必要か」を言う（pathDiagnostics.ts）。
+          raiseError(wildcardScopeMessage(
+            `path "${path}"`,
+            address.pathInfo.wildcardCount,
+            address.listIndex?.length ?? 0,
+          ));
         }
         return Reflect.set(parentValue, key, value);
       } finally {
