@@ -33,6 +33,12 @@ export function getCustomTagInfo(e: Element): ITagInfo {
 
 const observedCustomElements: WeakSet<Element> = new WeakSet<Element>();
 
+// Elements that already carry a whenDefined() follow-up. `lazyLoads` rescans
+// until nothing more loads, and the MutationObserver reruns it on every DOM
+// change, so without this an element whose tag never gets defined collects one
+// never-settling continuation per scan.
+const upgradeWatchedElements: WeakSet<Element> = new WeakSet<Element>();
+
 async function observeShadowRoot(element: Element, config: IConfig, prefixMap: IPrefixMap) {
   observedCustomElements.add(element);
   await handlerForLazyLoad(element.shadowRoot!, config, prefixMap);
@@ -67,11 +73,33 @@ async function tagLoad(
   }
 
   const loadingTags = getLoadingTags(registry);
-  if (loadingTags.has(tagInfo.name)) {
-    await registry.whenDefined(tagInfo.name);
+  const inFlight = loadingTags.get(tagInfo.name);
+  if (inFlight !== undefined) {
+    // Wait on the load itself, never on the definition: a load that fails never
+    // defines the tag, so whenDefined() would stay pending forever and wedge
+    // every caller above — including the one that installs the MutationObserver,
+    // which stops all further lazy loading on the page.
+    await inFlight;
     return;
   }
-  loadingTags.add(tagInfo.name);
+
+  const load = performTagLoad(tagInfo, config, info, registry);
+  loadingTags.set(tagInfo.name, load);
+  try {
+    await load;
+  } finally {
+    loadingTags.delete(tagInfo.name);
+  }
+}
+
+// Never rejects: a failure is reported and recorded in `failedTags`, which keeps
+// the tag out of later scans.
+async function performTagLoad(
+  tagInfo: ITagInfo,
+  config: IConfig,
+  info: INameSpaceInfo,
+  registry: ICustomElementRegistryAdapter,
+): Promise<void> {
   try {
     let loader: ILoader;
     try {
@@ -107,8 +135,6 @@ async function tagLoad(
   } catch(e) {
     console.error(`Failed to lazy load component '${tagInfo.name}':`, e);
     failedTags.add(tagInfo.name);
-  } finally {
-    loadingTags.delete(tagInfo.name);
   }
 }
 
@@ -142,10 +168,13 @@ async function lazyLoad(
     const customClass = registry.get(tagInfo.name);
     if (customClass === undefined) {
       // undefined
-      registry.whenDefined(tagInfo.name).then(async () => {
-        // upgraded
-        await checkObserveShadowRoot(element, config, prefixMap);
-      });
+      if (!upgradeWatchedElements.has(element)) {
+        upgradeWatchedElements.add(element);
+        registry.whenDefined(tagInfo.name).then(async () => {
+          // upgraded
+          await checkObserveShadowRoot(element, config, prefixMap);
+        });
+      }
       if (!tagNames.has(tagInfo.name) && !failedTags.has(tagInfo.name)) {
         tagNames.add(tagInfo.name);
         tagInfos.push(tagInfo);
