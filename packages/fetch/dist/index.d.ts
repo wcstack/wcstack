@@ -159,7 +159,7 @@ interface WcsFetchValues<T = unknown> extends WcsFetchCoreValues<T> {
     trigger: boolean;
 }
 
-declare function bootstrapFetch(userConfig?: IWritableConfig): void;
+declare function bootstrapFetch(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

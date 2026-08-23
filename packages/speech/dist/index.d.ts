@@ -254,7 +254,7 @@ interface WcsListenCommands {
     abort(): void;
 }
 
-declare function bootstrapSpeech(userConfig?: IWritableConfig): void;
+declare function bootstrapSpeech(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

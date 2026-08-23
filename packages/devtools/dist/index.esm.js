@@ -808,6 +808,38 @@ class DevtoolsCore {
                 });
                 return;
             }
+            case "state:path-unresolved": {
+                if (this.isHiddenStateName(event.stateName)) {
+                    return;
+                }
+                // ランタイムは warn で続行する（既存ページを止めないため）。lint を
+                // 走らせていない相手には、ここが「配線が死んでいる」唯一の可視面になる。
+                this._appendTimeline({
+                    sourceId,
+                    kind: "path-unresolved",
+                    stateName: event.stateName,
+                    label: event.path,
+                    detail: `${event.source}: "${event.missingSegment}" is not declared`,
+                    subscriberCount: null,
+                });
+                return;
+            }
+            case "state:binding-apply-error": {
+                if (this.isHiddenStateName(event.stateName)) {
+                    return;
+                }
+                // 隔離された適用失敗。bindingType を detail 先頭に置くのは、構造
+                // （for / if）の失敗と値の失敗で影響範囲が違うため。
+                this._appendTimeline({
+                    sourceId,
+                    kind: "binding-apply-error",
+                    stateName: event.stateName,
+                    label: event.path,
+                    detail: `${event.bindingType}: ${formatError(event.error)}`,
+                    subscriberCount: null,
+                });
+                return;
+            }
             case "propagation:suppressed": {
                 // two-way エコーの辺単位抑止。state 名を持たない（node+member が主語）
                 // ため hidden 判定はここでは行わない。
@@ -1819,6 +1851,14 @@ class WcsDevtools extends HTMLElement {
             kind.title = entry.kind === "watch-error"
                 ? "a $watch threw; the runtime isolated it (console.error only)"
                 : "a $watch write chain hit the depth limit and was cut off";
+        }
+        // 配線の死（解決しないパス）と隔離された適用失敗も、ランタイムが console に
+        // 出すだけで続行する ＝ 見ていなければ気づけない種類なので warn に乗せる。
+        if (entry.kind === "path-unresolved" || entry.kind === "binding-apply-error") {
+            kind.classList.add("warn");
+            kind.title = entry.kind === "path-unresolved"
+                ? "a wired path does not resolve on the state; its updates are dropped"
+                : "a binding threw while applying; the runtime isolated it (console.error only)";
         }
         // 伝播の打ち切りと契約 drift も「黙って起きる異常」なので warn に乗せる。
         // suppressed / coalesced は定常動作（エコー抑止・合流）のため通常表示。

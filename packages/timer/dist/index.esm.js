@@ -659,17 +659,22 @@ class Timer extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.timer)) {
-        customElements.define(config.tagNames.timer, Timer);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.timer)) {
+        registry.define(config.tagNames.timer, Timer);
     }
 }
 
-function bootstrapTimer(userConfig) {
+function bootstrapTimer(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { TimerCore, Timer as WcsTimer, bootstrapTimer, getConfig };

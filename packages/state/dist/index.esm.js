@@ -351,14 +351,7 @@ function getCustomElement(node) {
     }
 }
 
-/**
- * Resolve the registry at operation time so importing the runtime remains safe
- * when browser globals are absent. The owner hook is reserved for scoped
- * registries; current callers fall back to the global registry.
- */
-function getCustomElementRegistry(owner = null) {
-    const globalRegistry = globalThis.customElements;
-    const registry = owner?.customElements ?? globalRegistry;
+function toAdapter(registry) {
     if (typeof registry !== "object" || registry === null)
         return null;
     const candidate = registry;
@@ -366,6 +359,33 @@ function getCustomElementRegistry(owner = null) {
         return null;
     }
     return candidate;
+}
+/**
+ * Resolve the registry that governs `owner` at operation time, so importing the
+ * runtime stays safe when browser globals are absent.
+ *
+ * Pass the node the operation is about (the bound element, its shadow root):
+ * with scoped custom element registries the same tag name can resolve to a
+ * different constructor per tree, so "is this tag defined?" is only meaningful
+ * relative to a node. Nodes on platforms without scoped registries report
+ * `undefined` and fall back to the global registry, which keeps every existing
+ * caller on today's behaviour.
+ */
+function getCustomElementRegistry(owner = null) {
+    if (owner !== null && typeof owner !== "undefined") {
+        const { customElementRegistry: scoped, customElements: owned } = owner;
+        // A node in a null-registry subtree resolves to no registry at all. Falling
+        // back to the global one would report globally-defined tags as usable and
+        // let us write own properties onto elements that are still un-upgraded --
+        // exactly the accessor shadowing the deferred-apply path exists to avoid.
+        if (scoped === null)
+            return null;
+        if (typeof scoped !== "undefined")
+            return toAdapter(scoped);
+        if (typeof owned !== "undefined")
+            return toAdapter(owned);
+    }
+    return toAdapter(globalThis.customElements);
 }
 function upgradeCustomElement(registry, root) {
     registry.upgrade?.(root);
@@ -544,7 +564,7 @@ function expandSpread(node, results, options = {}) {
         if (tagName === null) {
             raiseError(`Spread binding "${result.statePathName}" requires a custom element with wcBindable, but <${element.tagName.toLowerCase()}> is not a custom element.`);
         }
-        const registry = getCustomElementRegistry();
+        const registry = getCustomElementRegistry(element);
         if (registry === null) {
             raiseError(`CustomElementRegistry is unavailable for <${tagName}>.`);
         }
@@ -2302,6 +2322,23 @@ function setLoopContextByNode(node, loopContext) {
     loopContextByNode.set(node, loopContext);
 }
 
+/**
+ * devtools/sink.ts
+ *
+ * 計装点が参照するホットパス唯一の接点。依存ゼロの葉モジュールにすることで、
+ * 計装される側（stateElementByName / setByAddress / binding / token）と
+ * bridge の間の循環 import を避ける。
+ *
+ * コスト規範（protocol §1-1）: フック未接続時、計装点のコストは
+ * `devtoolsSink !== null` の分岐 1 個。イベントオブジェクトの生成は
+ * 必ずこのチェックの内側で行うこと。
+ */
+/** live binding としてエクスポート。計装点は `if (devtoolsSink !== null)` で参照する */
+let devtoolsSink = null;
+function setDevtoolsSink(sink) {
+    devtoolsSink = sink;
+}
+
 const lastListValueByAbsoluteStateAddress = new WeakMap();
 function getLastListValueByAbsoluteStateAddress(address) {
     return lastListValueByAbsoluteStateAddress.get(address) ?? [];
@@ -2574,23 +2611,6 @@ function getAbsoluteStateAddressByBinding(binding, knownRootNode) {
 }
 function clearAbsoluteStateAddressByBinding(binding) {
     absoluteStateAddressByBinding.delete(binding);
-}
-
-/**
- * devtools/sink.ts
- *
- * 計装点が参照するホットパス唯一の接点。依存ゼロの葉モジュールにすることで、
- * 計装される側（stateElementByName / setByAddress / binding / token）と
- * bridge の間の循環 import を避ける。
- *
- * コスト規範（protocol §1-1）: フック未接続時、計装点のコストは
- * `devtoolsSink !== null` の分岐 1 個。イベントオブジェクトの生成は
- * 必ずこのチェックの内側で行うこと。
- */
-/** live binding としてエクスポート。計装点は `if (devtoolsSink !== null)` で参照する */
-let devtoolsSink = null;
-function setDevtoolsSink(sink) {
-    devtoolsSink = sink;
 }
 
 /**
@@ -3100,7 +3120,7 @@ function attachEventTokenHandler(binding) {
     const element = binding.node;
     // カスタム要素が未定義なら定義後に再試行（wcBindable が必要なため）。
     const customTagName = getCustomElement(element);
-    const registry = getCustomElementRegistry();
+    const registry = getCustomElementRegistry(element);
     if (customTagName !== null && registry?.get(customTagName) === undefined) {
         if (registry === null) {
             raiseError(`CustomElementRegistry is unavailable for <${customTagName}>.`);
@@ -3396,7 +3416,7 @@ function isPossibleTwoWay(node, propName) {
     }
     const customTagName = getCustomElement(element);
     if (customTagName !== null) {
-        const customClass = getCustomElementRegistry()?.get(customTagName);
+        const customClass = getCustomElementRegistry(element)?.get(customTagName);
         if (typeof customClass === "undefined") {
             raiseError(`Custom element <${customTagName}> is not defined. Cannot determine if property "${propName}" is suitable for two-way binding.`);
         }
@@ -3579,7 +3599,7 @@ function getEventName(binding) {
     // 2.wcBindable protocol
     const customTagName = getCustomElement(binding.node);
     if (customTagName !== null) {
-        const customClass = getCustomElementRegistry()?.get(customTagName);
+        const customClass = getCustomElementRegistry(binding.node)?.get(customTagName);
         if (typeof customClass === "undefined") {
             raiseError(`Custom element <${customTagName}> is not defined. Cannot determine event name for two-way binding.`);
         }
@@ -3751,7 +3771,7 @@ function addTwowayValueObserver(node, propName, observer) {
 function attachTwowayEventHandler(binding) {
     const customTagName = getCustomElement(binding.node);
     if (customTagName !== null) {
-        const registry = getCustomElementRegistry();
+        const registry = getCustomElementRegistry(binding.node);
         const customClass = registry?.get(customTagName);
         if (typeof customClass === "undefined") {
             if (registry === null) {
@@ -3777,7 +3797,7 @@ function attachTwowayEventHandler(binding) {
 function detachTwowayEventHandler(binding) {
     const customTagName = getCustomElement(binding.node);
     if (customTagName !== null) {
-        const registry = getCustomElementRegistry();
+        const registry = getCustomElementRegistry(binding.node);
         const customClass = registry?.get(customTagName);
         if (typeof customClass === "undefined") {
             if (registry === null) {
@@ -4162,7 +4182,9 @@ function propagateListPathToOuterState(innerStateElement, innerPath) {
     if (outerAbsPathInfo === null || outerAbsPathInfo.stateElement === innerStateElement) {
         return;
     }
-    outerAbsPathInfo.stateElement.setPathInfo(outerAbsPathInfo.pathInfo.path, "for");
+    // source="internal": 翻訳済みの外側パスであり、書き手が書いた文字列ではない。
+    // 存在検査に掛けても直せる相手が居ないので掛けない（pathDiagnostics.ts）。
+    outerAbsPathInfo.stateElement.setPathInfo(outerAbsPathInfo.pathInfo.path, "for", "internal");
 }
 /**
  * 子スコープのリスト行パス（`items.*.name`）に対応する親スコープの絶対パス情報を返す。
@@ -4799,7 +4821,7 @@ class BindingSession {
         return true;
     }
     deferUntilDefined(node, tagName, callback, reject = () => undefined) {
-        const registry = getCustomElementRegistry();
+        const registry = getCustomElementRegistry(node);
         if (registry === null) {
             raiseError(`CustomElementRegistry is unavailable for <${tagName}>.`);
         }
@@ -5253,7 +5275,7 @@ class BindingSession {
             attach();
             return;
         }
-        const registry = getCustomElementRegistry();
+        const registry = getCustomElementRegistry(record.info.node);
         if (registry === null) {
             raiseError(`CustomElementRegistry is unavailable for <${tagName}>.`);
         }
@@ -5626,7 +5648,7 @@ function getWcBindable(element) {
     if (customTagName === null) {
         return null;
     }
-    const customClass = getCustomElementRegistry()?.get(customTagName);
+    const customClass = getCustomElementRegistry(element)?.get(customTagName);
     if (typeof customClass === "undefined") {
         raiseError(`Custom element <${customTagName}> is not defined for command binding.`);
     }
@@ -6969,7 +6991,7 @@ function getInputAttributeMirror(element, propName) {
     if (customTagName === null) {
         return null;
     }
-    const customClass = getCustomElementRegistry()?.get(customTagName);
+    const customClass = getCustomElementRegistry(element)?.get(customTagName);
     if (typeof customClass === "undefined") {
         return null;
     }
@@ -7329,6 +7351,246 @@ function applyChangeToWebComponent(binding, _context, _newValue) {
     });
 }
 
+/**
+ * pathDiagnostics.ts — バインド / `$watch` 対象パスの存在検査（silent failure の可視化）。
+ *
+ * なぜ必要か:
+ * `getByAddress` は「親が null / undefined のパスの読み」を undefined で返し、
+ * undefined はプロパティ書き込みがスキップされる値なので、`user.nmae` のような
+ * 打ち間違いは**エラーも警告も出さずに DOM が更新されない**だけになる。一方で
+ * トップレベルの打ち間違い（`cout`）は parentAddress を辿れず raiseError で落ちる。
+ * 同じ「パスを打ち間違えた」という 1 つの失敗が、パスの深さで silent / loud に
+ * 割れており、書き手からは区別がつかない。ここはその silent 側を埋める。
+ *
+ * 精度方針（過小近似）:
+ * 「確実に存在しない」と言い切れる場合にだけ報告する。getter の戻り値の先・
+ * 空配列・null 親・mapped な `bind-component` など、静的に決められない形はすべて
+ * `"unknown"` に倒して黙る（偽陽性ゼロ優先。docs/static-wiring-dx-design.md D7 /
+ * [ADR-06](../../docs/architecture-hardening/06-path-type-safety.md) の精度哲学）。
+ *
+ * 診断 code はコンソール → lint → IDE の三面で共有する（errorGuidance.ts の規約）。
+ */
+const UNKNOWN = Object.freeze({
+    existence: "unknown",
+    missingSegment: "",
+    candidates: Object.freeze([]),
+});
+const EXISTS = Object.freeze({
+    existence: "exists",
+    missingSegment: "",
+    candidates: Object.freeze([]),
+});
+/**
+ * `obj` 自身＋プロトタイプチェーン（Object.prototype 手前まで）から descriptor を引く。
+ * 打ち切り位置は getAllPropertyDescriptors と同じ — 「state が宣言したもの」だけを
+ * 存在とみなし、`toString` 等の Object.prototype 由来を存在扱いしない。
+ */
+function findDescriptor(obj, key) {
+    let proto = obj;
+    while (proto !== null && proto !== Object.prototype) {
+        const descriptor = Object.getOwnPropertyDescriptor(proto, key);
+        if (typeof descriptor !== "undefined") {
+            return descriptor;
+        }
+        proto = Object.getPrototypeOf(proto);
+    }
+    return undefined;
+}
+/** `obj` 自身＋プロトタイプチェーンのキー名（did-you-mean の候補集合） */
+function ownKeys(obj) {
+    const keys = [];
+    let proto = obj;
+    while (proto !== null && proto !== Object.prototype) {
+        for (const key of Object.getOwnPropertyNames(proto)) {
+            keys.push(key);
+        }
+        proto = Object.getPrototypeOf(proto);
+    }
+    return keys;
+}
+/**
+ * 失敗した階層の兄弟候補。生オブジェクトのキーに加え、その階層にフラット宣言
+ * （ドットパス getter）されているものも混ぜる — `cart.items.*.subtotl` の正解
+ * `subtotal` は行オブジェクトには無く getterPaths にしか居ないため。
+ */
+function collectCandidates(container, parentPrefix, declaredPaths) {
+    const candidates = ownKeys(container);
+    const prefix = parentPrefix.length > 0 ? parentPrefix + DELIMITER : "";
+    for (const declared of declaredPaths) {
+        if (prefix.length > 0 && !declared.startsWith(prefix)) {
+            continue;
+        }
+        const rest = declared.slice(prefix.length);
+        // 直下の 1 セグメントだけを候補にする（孫は別階層の名前なので提案しない）
+        if (rest.length > 0 && rest.indexOf(DELIMITER) === -1) {
+            candidates.push(rest);
+        }
+    }
+    return candidates;
+}
+/**
+ * `target` に対して `path` が解決しうるかを、値を読まずに（getter を評価せずに）判定する。
+ *
+ * 解決の順序は `getByAddress` の実装に合わせる: まず「パス文字列そのものがキーか」
+ * （ドットパス getter がこれ）、次にセグメントを 1 つずつ降りる。
+ */
+function resolvePathExistence(target, path, declaredPaths) {
+    // ドットパス getter / フラットキーの完全一致（`get "users.*.fullName"()` 等）
+    if (findDescriptor(target, path) !== undefined) {
+        return EXISTS;
+    }
+    const segments = getPathInfo(path).segments;
+    let current = target;
+    let prefix = "";
+    for (let i = 0; i < segments.length; i++) {
+        const segment = segments[i];
+        const parentPrefix = prefix;
+        prefix = i === 0 ? segment : prefix + DELIMITER + segment;
+        // 途中のプレフィックスがフラット宣言されている（`cart.totalPrice` が getter で、
+        // その戻り値のサブプロパティを読む形）。戻り値の形は評価しないと分からない
+        if (i > 0 && i < segments.length - 1 && findDescriptor(target, prefix) !== undefined) {
+            return UNKNOWN;
+        }
+        // null / undefined / primitive より深い読みは実行時 undefined 解決 = 判定不能。
+        // 「初期値 null のオブジェクトに後から代入する」形を偽陽性で潰さないため
+        if (Object(current) !== current) {
+            return UNKNOWN;
+        }
+        if (segment === WILDCARD) {
+            // 行の形は「いま入っている要素」からしか分からない。空配列・非配列は判定不能
+            if (!Array.isArray(current) || current.length === 0) {
+                return UNKNOWN;
+            }
+            current = current[0];
+            continue;
+        }
+        const descriptor = findDescriptor(current, segment);
+        if (typeof descriptor === "undefined") {
+            return {
+                existence: "missing",
+                missingSegment: segment,
+                candidates: collectCandidates(current, parentPrefix, declaredPaths),
+            };
+        }
+        if (typeof descriptor.get === "function") {
+            // getter の戻り値の先は評価しないと分からない（末尾なら存在は確定）
+            return i === segments.length - 1 ? EXISTS : UNKNOWN;
+        }
+        current = descriptor.value;
+    }
+    return EXISTS;
+}
+/** 診断 code は lint / IDE と同一語彙（errorGuidance.ts の三面共有規約） */
+const DIAGNOSTIC_CODE = {
+    binding: "wcs/binding-path-missing",
+    watch: "wcs/watch-path-missing",
+};
+const SUBJECT = {
+    binding: "Bound path",
+    watch: "$watch path",
+};
+/**
+ * ルート直下（単一セグメント）のパスが state に無いときのエラーメッセージ。
+ *
+ * この形だけは親アドレスを辿れないので読み取りが throw する ＝ 元から loud だが、
+ * 文面が `address.parentAddress is undefined path: cout` という内部実装の言葉で、
+ * 「打ち間違い」だと分からず did-you-mean も lint 誘導も無かった。深いパスの
+ * `console.warn` と同じ語彙に揃える。
+ */
+function missingRootPathMessage(stateName, path, target, declaredPaths) {
+    return `[${DIAGNOSTIC_CODE.binding}] Path "${path}" does not exist on state "${stateName}".` +
+        `${didYouMean(path, collectCandidates(target, "", declaredPaths))}${LINT_HINT}`;
+}
+/**
+ * `$resolve` / `$getAll` に渡した添字の本数がワイルドカードの本数と噛み合わない。
+ *
+ * 不足（`$resolve`）は元から throw していたが、**超過は両 API とも黙って無視**され、
+ * 取り違えた添字のまま「もっともらしい値」を返していた。本数はパス文字列から
+ * 決まるので、噛み合わないことは常にプログラマのミス。
+ */
+function indexArityMessage(api, path, wildcardCount, actual) {
+    const requirement = api === "$resolve"
+        ? `exactly ${wildcardCount}`
+        : `at most ${wildcardCount}`;
+    return `[wcs/index-arity] ${api}("${path}") requires ${requirement} index(es) ` +
+        `("*" appears ${wildcardCount} time(s) in the path) but got ${actual}.${LINT_HINT}`;
+}
+/**
+ * ワイルドカードを解決するループ文脈が足りない（＝パスの階数 > スコープの階数）。
+ *
+ * `matrix.*.*` を 1 段の `for` の中で読む、`$2` を 1 段のループの中で読む、といった
+ * 取り違えがこれ。元の文面は `address.listIndex?.index is undefined path: matrix.*` /
+ * `Index not found at position 1 for loopContext:` という内部実装の言葉で、
+ * **何を間違えたのかが書かれていなかった**。
+ */
+function wildcardScopeMessage(subject, needed, available) {
+    return `[wcs/wildcard-rank] ${subject} needs ${needed} enclosing loop level(s) but the current ` +
+        `scope provides ${available}. Wrap it in that many "for" templates, or use $resolve(path, indexes) ` +
+        `to name the row explicitly.${LINT_HINT}`;
+}
+/** 同じ (state 要素, パス) の報告は 1 回だけにする台帳 */
+const reportedPathsByStateElement = new WeakMap();
+function alreadyReported(stateElement, path) {
+    let reported = reportedPathsByStateElement.get(stateElement);
+    if (typeof reported === "undefined") {
+        reported = new Set();
+        reportedPathsByStateElement.set(stateElement, reported);
+    }
+    if (reported.has(path)) {
+        return true;
+    }
+    reported.add(path);
+    return false;
+}
+/**
+ * バインド確立時 / `$watch` 宣言時にパスの存在を検査し、確実に存在しないものだけ報告する。
+ *
+ * 報告は `console.warn` に留める（`raiseError` にしない）:
+ * 判定は過小近似とはいえ動的にキーが生える形まで排除できたわけではなく、
+ * 既存ページを起動不能にする代償に見合わない。silent を破ることが目的であり、
+ * 停止させることではない。
+ */
+function checkDeclaredPath(stateElement, state, path, source) {
+    if (source === "internal" || typeof state === "undefined") {
+        return;
+    }
+    // `$command` / `$streamStatus` / `$1` 等の予約名前空間は raw state に実体を持たない
+    if (path.startsWith("$")) {
+        return;
+    }
+    // mapped な bind-component の子スコープはパスの正本を持たない（親側で解決される）
+    if (stateElement.hasMappedComponentState === true) {
+        return;
+    }
+    // 単一セグメントのバインディングは読み取り時に raiseError で loud に落ちるので、
+    // ここで二重に報告しない。`$watch` は落ちずに黙って発火しないだけなので検査する
+    const segments = getPathInfo(path).segments;
+    if (source === "binding" && segments.length < 2) {
+        return;
+    }
+    if (alreadyReported(stateElement, path)) {
+        return;
+    }
+    const result = resolvePathExistence(state, path, stateElement.getterPaths);
+    if (result.existence !== "missing") {
+        return;
+    }
+    // 接頭辞は raiseError と同じ `[@wcstack/state] [wcs/...]` の並び（コンソールの
+    // grep 単位をパッケージで揃える）
+    console.warn(`[@wcstack/state] [${DIAGNOSTIC_CODE[source]}] ${SUBJECT[source]} "${path}" does not resolve on state "${stateElement.name}": ` +
+        `"${result.missingSegment}" is not declared.${didYouMean(result.missingSegment, result.candidates)}` +
+        ` Updates to this path will be silently dropped.${LINT_HINT}`);
+    if (devtoolsSink !== null) {
+        devtoolsSink({
+            type: "state:path-unresolved",
+            source,
+            stateName: stateElement.name,
+            path,
+            missingSegment: result.missingSegment,
+        });
+    }
+}
+
 // indexName ... $1, $2, ...
 function getIndexValueByLoopContext(loopContext, indexName) {
     if (loopContext.listIndex === null) {
@@ -7340,7 +7602,10 @@ function getIndexValueByLoopContext(loopContext, indexName) {
     }
     const listIndex = listIndexAtWildcard(loopContext.listIndex, indexPos, loopContext.pathInfo.wildcardCount);
     if (listIndex === null) {
-        raiseError(`Index not found at position ${indexPos} for loopContext:`);
+        // 位置が範囲外 ＝ `$2` を 1 段のループの中で読んだ、という取り違え。
+        // 元の文面（`Index not found at position 1 for loopContext:`）は内部の言葉で、
+        // 何段必要で何段あるのかが書かれていなかった。
+        raiseError(wildcardScopeMessage(`"${indexName}"`, indexPos + 1, loopContext.pathInfo.wildcardCount));
     }
     return listIndex.index;
 }
@@ -7392,7 +7657,7 @@ function scheduleDeferredApply(binding, tagName) {
         return;
     }
     // Compatibility fallback for direct applyChange() callers outside a session.
-    const registry = getCustomElementRegistry();
+    const registry = getCustomElementRegistry(binding.replaceNode);
     if (registry === null) {
         scheduledBindings.delete(binding);
         reportFailure(tagName, new Error("CustomElementRegistry is unavailable."));
@@ -7536,7 +7801,7 @@ function applyChange(binding, context) {
     if (definedApplyVerifiedByBinding.get(binding) !== true) {
         const customTag = getCustomElement(binding.replaceNode);
         if (customTag) {
-            if (getCustomElementRegistry()?.get(customTag) === undefined) {
+            if (getCustomElementRegistry(binding.replaceNode)?.get(customTag) === undefined) {
                 // 未 define のカスタム要素へは今は適用できない（accessor 未確立の要素に
                 // 素の own property を書くと upgrade 後に class accessor を隠してしまう）。
                 // whenDefined 後に最新 state 値で再適用する（two-way attach / deferred
@@ -7587,6 +7852,26 @@ function applyChange(binding, context) {
     }
 }
 
+/**
+ * バインディング 1 本の適用失敗を報告する（握り潰しではない）。
+ *
+ * `console.error` だけだと devtools からは「静かに握られた失敗」が見えないため、
+ * 同じ地点から sink にも流す（`state:watch-error` と同じ位置づけ）。
+ * 値と DOM は巻き戻さない — 伝播 hop 上限超過・watch 連鎖打ち切りと同じ姿勢。
+ */
+function reportBindingApplyError(binding, error) {
+    console.error(`[@wcstack/state] binding "${binding.bindingType}: ${binding.statePathName}" failed to apply; ` +
+        `the rest of this batch continues.`, { node: binding.node, error });
+    if (devtoolsSink !== null) {
+        devtoolsSink({
+            type: "state:binding-apply-error",
+            stateName: binding.stateName,
+            path: binding.statePathName,
+            bindingType: binding.bindingType,
+            error,
+        });
+    }
+}
 /**
  * バインディング情報の配列を処理し、各バインディングに対して状態の変更を適用する。
  *
@@ -7642,7 +7927,16 @@ function applyChangeFromBindings(bindings, propagationContextByBinding) {
                 propagationContextByBinding: propagationContextByBinding,
             };
             do {
-                applyChange(binding, context);
+                // 1 本の失敗を 1 本に閉じ込める（§ エラー隔離）。隔離しないと、stale な
+                // アドレスを読んだ 1 本の throw がバッチの残り・$updatedCallback・drain
+                // リスナー（$watch / $streams restart）まで道連れにし、「値は新しいのに
+                // DOM は途中まで」という再現困難な半端状態を作る。
+                try {
+                    applyChange(binding, context);
+                }
+                catch (error) {
+                    reportBindingApplyError(binding, error);
+                }
                 bindingIndex++;
                 const nextBindingInfo = bindings[bindingIndex];
                 if (!nextBindingInfo)
@@ -7658,7 +7952,12 @@ function applyChangeFromBindings(bindings, propagationContextByBinding) {
     // applyChangeToProperty は propagationContextByBinding 以外の context を
     // 参照しないため、遅延分は最小 context を渡す
     for (const { binding, value } of deferredSelectBindings) {
-        applyChangeToProperty(binding, { propagationContextByBinding }, value);
+        try {
+            applyChangeToProperty(binding, { propagationContextByBinding }, value);
+        }
+        catch (error) {
+            reportBindingApplyError(binding, error);
+        }
     }
     for (const [absAddress, newListValue] of newListValueByAbsAddress.entries()) {
         setLastListValueByAbsoluteStateAddress(absAddress, newListValue);
@@ -8109,7 +8408,13 @@ function collectStructuralFragments(rootNode, walkRoot, forPath) {
 async function waitForStateInitialize(root) {
     const elements = root.querySelectorAll(config.tagNames.state);
     const promises = [];
-    await customElements.whenDefined(config.tagNames.state);
+    const registry = getCustomElementRegistry(root);
+    if (registry === null) {
+        // null レジストリのサブツリーでは <wcs-state> が upgrade されないので
+        // initializePromise が生えず、待っても永久に初期化されない。
+        raiseError(`CustomElementRegistry is unavailable for <${config.tagNames.state}>.`);
+    }
+    await registry.whenDefined(config.tagNames.state);
     for (const element of elements) {
         // Light DOM の mapped コンポーネントの state は待たない。それはこの root の
         // バインディングが張られてからでないと初期化できず（自分を束ねるホスト binding を
@@ -8148,7 +8453,7 @@ async function buildBindings(root) {
     }
 }
 
-var version = "1.30.0";
+var version = "1.31.0";
 var pkg = {
 	version: version};
 
@@ -9166,17 +9471,27 @@ class Updater {
                 }
             }
         }
-        // context が無い場合は従来どおり 1 引数で呼ぶ（呼び出し契約の互換維持）
-        if (propagationContextByBinding.size > 0) {
-            applyChangeFromBindings(processBindings, propagationContextByBinding);
-        }
-        else {
-            applyChangeFromBindings(processBindings);
-        }
         // drain 終了フック: binding 適用後に dedup 済みバッチを通知する（設計書 §3-2）。
         // testApplyChange も同じ _applyChange を通るため、テストから同期に駆動できる。
         // quarantine された address も state 値は適用済みのため通知対象に含める。
-        notifyUpdateBatchListeners(new Set(contextByAbsoluteAddress.keys()));
+        //
+        // try/finally なのは、適用側が throw しても `$watch` / `$streams` restart を
+        // 落とさないため。binding 1 本の失敗は applyChangeFromBindings が隔離するので
+        // ここへ来るのは $updatedCallback の throw（契約どおり loud に伝播させる）等に
+        // 限られるが、そのとき drain フックまで道連れにすると「機構間の順序は固定」
+        // （README の 3 層表）が黙って破れる。例外は握らない ＝ 伝播は維持する。
+        try {
+            // context が無い場合は従来どおり 1 引数で呼ぶ（呼び出し契約の互換維持）
+            if (propagationContextByBinding.size > 0) {
+                applyChangeFromBindings(processBindings, propagationContextByBinding);
+            }
+            else {
+                applyChangeFromBindings(processBindings);
+            }
+        }
+        finally {
+            notifyUpdateBatchListeners(new Set(contextByAbsoluteAddress.keys()));
+        }
     }
 }
 const updater = new Updater();
@@ -10988,7 +11303,9 @@ function processWatchDeclaration(stateElement, state) {
         paths.add(path);
         // 依存グラフ登録（§8）。"for" 以外の bindingType は親 → 子の staticDependency
         // チェーンを生やすだけで listPaths / elementPaths を触らない（State.setPathInfo 参照）。
-        stateElement.setPathInfo(path, "prop");
+        // source="watch" は存在検査の診断 code を `wcs/watch-path-missing` に切り替える
+        // （watch キーの miss は raiseError にも掛からず、黙って発火しないだけになる）。
+        stateElement.setPathInfo(path, "prop", "watch");
     }
     setWatchEntries(stateElement, entries);
     return paths.size > 0 ? paths : null;
@@ -11579,11 +11896,18 @@ function defineDCC(hostElement, shadowRoot, state) {
     if (!tagName.includes("-")) {
         raiseError(`DCC: "${tagName}" is not a valid custom element name (must contain a hyphen).`);
     }
-    if (customElements.get(tagName)) {
+    // 定義先は「定義元ホストを支配するレジストリ」。scoped registry を持つツリーで
+    // global に define すると、その定義は自分の兄弟にすら適用されない。
+    const definitionRegistry = getCustomElementRegistry(hostElement);
+    if (definitionRegistry === null || typeof definitionRegistry.define !== "function") {
+        raiseError(`DCC: CustomElementRegistry is unavailable for "${tagName}".`);
+    }
+    if (definitionRegistry.get(tagName)) {
         // 重複定義は authoring error として落とす。従来は warn してスキップしていたが、
         // 先勝ちで別テンプレートのインスタンスが生えるため「動いているように見えて中身が違う」
         // 状態になる。state 名の重複（stateElementByName）が raiseError なのと作法を揃える
         // （docs/architecture-hardening/15-state-component-mechanism-consistency.md §3.4）。
+        // 一意性はレジストリ単位なので、別スコープの同名 DCC は衝突しない。
         raiseError(`DCC: "${tagName}" is already registered. A custom element name can only be defined once.`);
     }
     // ShadowRoot は cloneNode 不可のため、template 経由で内容をクローン
@@ -11638,7 +11962,7 @@ function defineDCC(hostElement, shadowRoot, state) {
             // カスタム要素として upgrade されていない。ホストが接続済みなら appendChild の時点で
             // upgrade されるが、未接続の shadow に挿した場合は upgrade 契機が無く、内側の
             // <wcs-state> が素の HTMLElement のまま残って createState が生えない。明示的に upgrade する。
-            const registry = getCustomElementRegistry();
+            const registry = getCustomElementRegistry(this._shadow);
             if (registry !== null) {
                 upgradeCustomElement(registry, this._shadow);
             }
@@ -11705,7 +12029,7 @@ function defineDCC(hostElement, shadowRoot, state) {
         });
     }
     // カスタム要素登録
-    customElements.define(tagName, DCCElement);
+    definitionRegistry.define(tagName, DCCElement);
 }
 
 /**
@@ -12077,7 +12401,10 @@ function _getByAddress(target, address, receiver, handler, stateElement) {
         }
     }
     else {
-        const parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
+        // 親アドレスが無い ＝ 単一セグメントのパスが state に存在しない。ここは元から
+        // throw していたが、文面が内部実装の言葉だったので打ち間違いだと分からなかった。
+        // 深いパスの console.warn（pathDiagnostics.checkDeclaredPath）と語彙を揃える。
+        const parentAddress = address.parentAddress ?? raiseError(missingRootPathMessage(stateElement.name, address.pathInfo.path, target, stateElement.getterPaths));
         const parentValue = getByAddress(target, parentAddress, receiver, handler);
         // 親が居ないパスの読みは undefined（＝「state に意見が無い」）。`Reflect.get` に
         // そのまま渡すと生の `TypeError: Reflect.get called on non-object` になり、
@@ -12095,7 +12422,11 @@ function _getByAddress(target, address, receiver, handler, stateElement) {
         }
         const lastSegment = address.pathInfo.segments[address.pathInfo.segments.length - 1];
         if (lastSegment === WILDCARD) {
-            const index = address.listIndex?.index ?? raiseError(`address.listIndex?.index is undefined path: ${address.pathInfo.path}`);
+            // listIndex が無いまま末尾ワイルドカードに到達 ＝ そのパスの階数を満たす
+            // ループ文脈が無い（`matrix.*.*` を 1 段の `for` の中で読む等）。元の文面は
+            // 内部の言葉（address.listIndex?.index is undefined）で、何段必要なのかが
+            // 書かれていなかった（pathDiagnostics.ts）。
+            const index = address.listIndex?.index ?? raiseError(wildcardScopeMessage(`path "${address.pathInfo.path}"`, address.pathInfo.wildcardCount, address.listIndex?.length ?? 0));
             return Reflect.get(parentValue, index);
         }
         else {
@@ -12891,7 +13222,8 @@ function _setByAddress(target, address, absAddress, value, receiver, handler, ke
             const parentValue = getByAddress(target, parentAddress, receiver, handler);
             const lastSegment = address.pathInfo.segments[address.pathInfo.segments.length - 1];
             if (lastSegment === WILDCARD) {
-                const index = address.listIndex?.index ?? raiseError(`address.listIndex?.index is undefined path: ${address.pathInfo.path}`);
+                // 読み取り側（getByAddress）と同じ取り違え。書き込みでも何段必要かを言う。
+                const index = address.listIndex?.index ?? raiseError(wildcardScopeMessage(`path "${address.pathInfo.path}"`, address.pathInfo.wildcardCount, address.listIndex?.length ?? 0));
                 return Reflect.set(parentValue, index, value);
             }
             else {
@@ -13060,7 +13392,9 @@ function setByAddressCore(target, address, value, receiver, handler, keyedMergeP
             recordWatchPrevValue(stateElement, path, absAddress, devOldValue, devHasOldValue);
             try {
                 if (key === undefined) {
-                    raiseError(`address.listIndex?.index is undefined path: ${path}`);
+                    // fast path 版の同じ取り違え（末尾ワイルドカードに listIndex が無い）。
+                    // 通常経路と同じ語彙で「何段必要か」を言う（pathDiagnostics.ts）。
+                    raiseError(wildcardScopeMessage(`path "${path}"`, address.pathInfo.wildcardCount, address.listIndex?.length ?? 0));
                 }
                 return Reflect.set(parentValue, key, value);
             }
@@ -13159,8 +13493,12 @@ function resolve(target, _prop, receiver, handler) {
                 }
             }
         }
-        if (pathInfo.wildcardParentPathInfos.length > indexes.length) {
-            raiseError(`indexes length is insufficient: ${path}`);
+        // 添字の本数はワイルドカードの本数と**厳密に一致**する必要がある。
+        // 不足は元から throw していたが、超過は黙って無視されていた（余分な要素を
+        // 誰も読まないため）＝ `$resolve("items.*.price", [row, col])` のような
+        // 「1 本しか無いのに 2 本渡す」取り違えが、間違った値を返したまま通っていた。
+        if (indexes.length !== pathInfo.wildcardParentPathInfos.length) {
+            raiseError(indexArityMessage("$resolve", path, pathInfo.wildcardParentPathInfos.length, indexes.length));
         }
         // ワイルドカード階層ごとにListIndexを解決していく
         let listIndex = null;
@@ -13212,6 +13550,14 @@ function getAll(target, prop, receiver, handler) {
                     stateElement.addDynamicDependency(pathInfo.path, lastInfo.path);
                 }
             }
+        }
+        // 明示的に渡された添字だけを検査する。`$getAll` の添字は**前方一致の接頭辞**で、
+        // 足りない分は「その階層を全部展開する」という正しい意味を持つ（README の
+        // `$getAll("scores.*", [])` がこれ）。一方**超過は意味を持たず黙って捨てられ**、
+        // ワイルドカードの本数を取り違えたまま部分集合が返っていた。
+        // 省略時に下で導出する添字は文脈由来なので、この検査には掛けない。
+        if (typeof indexes !== "undefined" && indexes.length > pathInfo.wildcardParentPathInfos.length) {
+            raiseError(indexArityMessage("$getAll", path, pathInfo.wildcardParentPathInfos.length, indexes.length));
         }
         if (typeof indexes === "undefined") {
             for (let i = 0; i < pathInfo.wildcardParentPathInfos.length; i++) {
@@ -13719,6 +14065,8 @@ function set(target, prop, value, receiver, handler) {
     }
 }
 
+/** 循環報告に載せるスタック末尾の段数（当事者が見える最小限） */
+const CYCLE_REPORT_DEPTH = 8;
 class StateHandler {
     _stateElement;
     _stateName;
@@ -13759,11 +14107,35 @@ class StateHandler {
         return this._loopContext;
     }
     pushAddress(address) {
-        this._addressStackIndex++;
-        if (this._addressStackIndex >= MAX_LOOP_DEPTH) {
-            raiseError(`Exceeded maximum address stack depth of ${MAX_LOOP_DEPTH}. Possible infinite loop.`);
+        // 上限判定は **increment より前**に行う。後にすると、深さ超過で throw した時点で
+        // `_addressStackIndex` だけが進み `_addressStack[index]` は未代入のまま残る。
+        // 呼び出し側（getByAddress）は `pushAddress` を try の外で呼ぶので自分では pop
+        // しないが、外側フレームの finally が順に pop していき、その 1 本目が未代入の枠を
+        // 引いて `Address stack at index N is undefined.` を投げる ＝ **本来の
+        // 「無限ループの疑い」という診断が巻き戻しの最中に上書きされて消える**。
+        // getter の相互参照（`get a(){return this.b}` / `get b(){return this.a}`）は
+        // 実際にこれを踏み、原因と無関係な文面だけが残っていた。
+        if (this._addressStackIndex + 1 >= MAX_LOOP_DEPTH) {
+            raiseError(`Exceeded maximum address stack depth of ${MAX_LOOP_DEPTH}. ` +
+                `Possible circular dependency between path getters: ${this._describeAddressCycle()}`);
         }
+        this._addressStackIndex++;
         this._addressStack[this._addressStackIndex] = address;
+    }
+    /**
+     * スタック末尾の繰り返し区間をパス名で示す（循環の当事者だけを見せる）。
+     * 上限に達したときのみ呼ばれるので、コストは異常系に閉じている。
+     */
+    _describeAddressCycle() {
+        const paths = [];
+        for (let i = this._addressStackIndex; i >= 0 && paths.length < CYCLE_REPORT_DEPTH; i--) {
+            const entry = this._addressStack[i];
+            if (entry) {
+                paths.push(entry.pathInfo.path);
+            }
+        }
+        const unique = Array.from(new Set(paths));
+        return `${unique.reverse().join(" -> ")} -> ...`;
     }
     popAddress() {
         if (this._addressStackIndex < 0) {
@@ -14353,7 +14725,13 @@ class State extends HTMLElementBase {
                 raiseError(`"bind-component" cannot be combined with ${conflicting.join(", ")}. The component's "${this.getAttribute("bind-component")}" property is the only state source.`);
             }
             const boundComponentStateProp = this.getAttribute("bind-component");
-            await customElements.whenDefined(customTagName.toLowerCase());
+            const componentRegistry = getCustomElementRegistry(boundComponent);
+            if (componentRegistry === null) {
+                // null レジストリのサブツリーではホストは永久に upgrade されない。
+                // whenDefined を待つと無言でウェッジするので落とす。
+                raiseError(`CustomElementRegistry is unavailable for <${customTagName}>.`);
+            }
+            await componentRegistry.whenDefined(customTagName.toLowerCase());
             // data-wcs属性がある場合は、上位の状態によりbinding情報の設定が完了するまで待機する
             if (boundComponent.hasAttribute(config.bindAttributeName)) {
                 await waitInitializeBinding(boundComponent);
@@ -14727,7 +15105,7 @@ class State extends HTMLElementBase {
     addStaticDependency(sourcePath, targetPath) {
         return this._addDependency(this._staticDependency, sourcePath, targetPath);
     }
-    setPathInfo(path, bindingType) {
+    setPathInfo(path, bindingType, source = "binding") {
         if (bindingType === "for") {
             const isNewListPath = !this._listPaths.has(path);
             this._listPaths.add(path);
@@ -14742,6 +15120,10 @@ class State extends HTMLElementBase {
         if (!this._pathSet.has(path)) {
             const pathInfo = getPathInfo(path);
             this._pathSet.add(path);
+            // 存在しないパスへの配線は「黙って更新されない」だけで終わるため、
+            // 新規パスを 1 回だけ検査して確実な miss を報告する（pathDiagnostics.ts）。
+            // パスごとに 1 回・バインド確立時のみで、更新のホットパスには乗らない。
+            checkDeclaredPath(this, this.__state, path, source);
             if (pathInfo.parentPath !== null) {
                 let currentPathInfo = pathInfo;
                 while (currentPathInfo.parentPath !== null) {
@@ -14803,20 +15185,25 @@ class State extends HTMLElementBase {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.ssr)) {
-        customElements.define(config.tagNames.ssr, Ssr);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.ssr)) {
+        registry.define(config.tagNames.ssr, Ssr);
     }
-    if (!customElements.get(config.tagNames.state)) {
-        customElements.define(config.tagNames.state, State);
+    if (!registry.get(config.tagNames.state)) {
+        registry.define(config.tagNames.state, State);
     }
 }
 
-function bootstrapState(config) {
+function bootstrapState(config, registry) {
     if (config) {
         setConfig(config);
     }
-    registerComponents();
+    registerComponents(registry);
     // DevTools Hook Protocol への source 登録（SSR では no-op・冪等）
     registerDevtoolsSource();
 }

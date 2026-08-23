@@ -90,7 +90,7 @@ interface WcsFullscreenCoreValues {
  */
 type WcsFullscreenValues = WcsFullscreenCoreValues;
 
-declare function bootstrapFullscreen(userConfig?: IWritableConfig): void;
+declare function bootstrapFullscreen(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

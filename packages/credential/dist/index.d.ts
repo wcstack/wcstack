@@ -139,7 +139,7 @@ interface WcsCredentialCoreValues {
  */
 type WcsCredentialValues = WcsCredentialCoreValues;
 
-declare function bootstrapCredential(userConfig?: IWritableConfig): void;
+declare function bootstrapCredential(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

@@ -111,9 +111,14 @@ interface WcsDefinedInputs {
     timeout: number;
 }
 
-declare function bootstrapDefined(userConfig?: IWritableConfig): void;
+declare function bootstrapDefined(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
+
+interface ICustomElementRegistryAdapter {
+    get(name: string): CustomElementConstructor | undefined;
+    whenDefined(name: string): Promise<CustomElementConstructor>;
+}
 
 /**
  * Headless custom-element readiness primitive. A thin, framework-agnostic wrapper
@@ -166,8 +171,12 @@ declare class DefinedCore extends EventTarget {
      *                 on. Defaults to the Core itself. The Shell passes the custom
      *                 element so events bubble from the DOM node; direct (headless)
      *                 users normally leave it undefined and listen on the Core.
+     * @param registry Registry to watch. Omit for the global one; the Shell passes
+     *                 the registry its own subtree resolves against, so a scoped
+     *                 registry gates on the definitions that tree can actually see.
+     *                 An explicit `null` means no registry governs the tags.
      */
-    constructor(tags?: string[], mode?: DefinedMode, timeoutMs?: number, target?: EventTarget);
+    constructor(tags?: string[], mode?: DefinedMode, timeoutMs?: number, target?: EventTarget, registry?: ICustomElementRegistryAdapter | null);
     get defined(): boolean;
     get pending(): string[];
     get missing(): string[];
@@ -183,7 +192,7 @@ declare class DefinedCore extends EventTarget {
      * on attribute changes in v1). To switch config mid-life, dispose() first, then
      * observe() again. Returns a promise that resolves once the watch settles, for SSR.
      */
-    observe(tags: string[], mode: DefinedMode, timeoutMs: number): Promise<void>;
+    observe(tags: string[], mode: DefinedMode, timeoutMs: number, registry?: ICustomElementRegistryAdapter | null): Promise<void>;
     /**
      * Stop the current watch: clear the timeout and invalidate any in-flight
      * whenDefined()/timeout callbacks (via the generation counter) so they no longer

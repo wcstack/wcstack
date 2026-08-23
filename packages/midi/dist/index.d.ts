@@ -173,7 +173,7 @@ interface WcsMidiInputs {
     auto: boolean;
 }
 
-declare function bootstrapMidi(userConfig?: IWritableConfig): void;
+declare function bootstrapMidi(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

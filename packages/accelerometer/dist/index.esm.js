@@ -525,17 +525,22 @@ class WcsAccelerometer extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.accelerometer)) {
-        customElements.define(config.tagNames.accelerometer, WcsAccelerometer);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.accelerometer)) {
+        registry.define(config.tagNames.accelerometer, WcsAccelerometer);
     }
 }
 
-function bootstrapAccelerometer(userConfig) {
+function bootstrapAccelerometer(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { AccelerometerCore, WCS_ACCELEROMETER_ERROR_CODE, WcsAccelerometer, bootstrapAccelerometer, getConfig };

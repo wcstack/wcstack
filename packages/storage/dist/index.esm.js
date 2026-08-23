@@ -742,17 +742,22 @@ class Storage extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.storage)) {
-        customElements.define(config.tagNames.storage, Storage);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.storage)) {
+        registry.define(config.tagNames.storage, Storage);
     }
 }
 
-function bootstrapStorage(userConfig) {
+function bootstrapStorage(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { StorageCore, WCS_STORAGE_ERROR_CODE, Storage as WcsStorage, bootstrapStorage, getConfig };

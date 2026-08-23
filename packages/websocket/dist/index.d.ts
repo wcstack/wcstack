@@ -120,7 +120,7 @@ interface WcsWsCommands {
     close(code?: number, reason?: string): void;
 }
 
-declare function bootstrapWebSocket(userConfig?: IWritableConfig): void;
+declare function bootstrapWebSocket(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

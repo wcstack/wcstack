@@ -16,7 +16,7 @@ var __copyProps = (to, from, except, desc) => {
   }
   return to;
 };
-var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+var __toCommonJS = (mod3) => __copyProps(__defProp({}, "__esModule", { value: true }), mod3);
 
 // src/cli.ts
 var cli_exports = {};
@@ -27,8 +27,34 @@ __export(cli_exports, {
   resolveCliLocale: () => resolveCliLocale
 });
 module.exports = __toCommonJS(cli_exports);
+var import_node_fs2 = require("node:fs");
+
+// src/fileReader.ts
 var import_node_fs = require("node:fs");
 var import_node_path = require("node:path");
+function createFileReader(htmlPath, read = (p) => (0, import_node_fs.readFileSync)(p, "utf8")) {
+  const base = (0, import_node_path.dirname)(htmlPath);
+  const cache = /* @__PURE__ */ new Map();
+  return (relativePath) => {
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(relativePath) || relativePath.startsWith("/")) {
+      return void 0;
+    }
+    if (cache.has(relativePath)) {
+      return cache.get(relativePath);
+    }
+    let content;
+    try {
+      content = read((0, import_node_path.resolve)(base, relativePath));
+      if (content.charCodeAt(0) === 65279) {
+        content = content.slice(1);
+      }
+    } catch {
+      content = void 0;
+    }
+    cache.set(relativePath, content);
+    return content;
+  };
+}
 
 // src/core/offsetToPosition.ts
 function createPositionMapper(text) {
@@ -91,6 +117,20 @@ var WcsDiagnosticCode = {
   TokenUndeclared: "wcs/token-undeclared",
   TokenMisconfigured: "wcs/token-misconfigured",
   NestedAssign: "wcs/nested-assign",
+  // --- 意味論（構文・存在検査では捕まらない取り違え。service/semanticValidator.ts） ---
+  // `$getAll` / `$resolve` の添字の本数がパスの `*` の本数と噛み合わない。
+  // ランタイムは同じ code で raiseError する（超過は以前は黙って無視されていた）。
+  IndexArity: "wcs/index-arity",
+  // ワイルドカードの階数がスコープの段数を超える（`matrix.*.*` を 1 段の for で読む、
+  // `$2` を 1 段のループで読む）。既存の「for の外」検査の深さ方向の一般化。
+  WildcardRank: "wcs/wildcard-rank",
+  // パス getter どうしの循環参照。ランタイムはアドレススタック上限まで再帰してから落ちる。
+  GetterCycle: "wcs/getter-cycle",
+  // `$updatedCallback` が、どのバインディングにも現れないパスを判定に使っている。
+  // 同コールバックは **binding 駆動**（live binding が適用された path しか報告しない）
+  // なので、その分岐は一度も実行されない。表示要素が購読の実体になる事故
+  // （examples/state-intersect-scroll の README に記録）の静的検出。
+  UpdatedCallbackUnbound: "wcs/updated-callback-unbound",
   // --- <wcs-state> script: $watch declaration ---
   // ランタイム（watch/processWatchDeclaration.ts）が raiseError で落とす宣言。
   // 越境 `@` / `$` 始まり / 空キー・空セグメント / 明らかな非関数ハンドラ。
@@ -131,6 +171,545 @@ function sortDiagnostics(diagnostics) {
 }
 
 // ../state/dist/manifest.esm.js
+var _config = {
+  bindAttributeName: "data-wcs",
+  tagNames: {
+    state: "wcs-state"
+  },
+  locale: "en"
+};
+var config = _config;
+function raiseError(message) {
+  throw new Error(`[@wcstack/state] ${message}`);
+}
+function optionsRequired(fnName) {
+  raiseError(`filter ${fnName} requires at least one option`);
+}
+function optionMustBeNumber(fnName) {
+  raiseError(`filter ${fnName} requires a number as option`);
+}
+function valueMustBeNumber(fnName) {
+  raiseError(`filter ${fnName} requires a number value`);
+}
+function valueMustBeBoolean(fnName) {
+  raiseError(`filter ${fnName} requires a boolean value`);
+}
+function valueMustBeDate(fnName) {
+  raiseError(`filter ${fnName} requires a date value`);
+}
+function valueMustBeArray(fnName) {
+  raiseError(`filter ${fnName} requires an array value`);
+}
+function validateNumberString(value) {
+  if (!value || isNaN(Number(value))) {
+    return false;
+  }
+  return true;
+}
+var eq = (options) => {
+  const opt = options?.[0] ?? optionsRequired("eq");
+  return (value) => {
+    if (typeof value === "number") {
+      if (!validateNumberString(opt)) {
+        optionMustBeNumber("eq");
+      }
+      return value === Number(opt);
+    }
+    if (typeof value === "string") {
+      return value === opt;
+    }
+    return value === opt;
+  };
+};
+var ne = (options) => {
+  const opt = options?.[0] ?? optionsRequired("ne");
+  return (value) => {
+    if (typeof value === "number") {
+      if (!validateNumberString(opt)) {
+        optionMustBeNumber("ne");
+      }
+      return value !== Number(opt);
+    }
+    if (typeof value === "string") {
+      return value !== opt;
+    }
+    return value !== opt;
+  };
+};
+var not = (_options) => {
+  return (value) => {
+    if (typeof value !== "boolean") {
+      valueMustBeBoolean("not");
+    }
+    return !value;
+  };
+};
+var lt = (options) => {
+  const opt = options?.[0] ?? optionsRequired("lt");
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("lt");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("lt");
+    }
+    return value < Number(opt);
+  };
+};
+var le = (options) => {
+  const opt = options?.[0] ?? optionsRequired("le");
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("le");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("le");
+    }
+    return value <= Number(opt);
+  };
+};
+var gt = (options) => {
+  const opt = options?.[0] ?? optionsRequired("gt");
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("gt");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("gt");
+    }
+    return value > Number(opt);
+  };
+};
+var ge = (options) => {
+  const opt = options?.[0] ?? optionsRequired("ge");
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("ge");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("ge");
+    }
+    return value >= Number(opt);
+  };
+};
+var inc = (options) => {
+  const opt = options?.[0] ?? optionsRequired("inc");
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("inc");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("inc");
+    }
+    return value + Number(opt);
+  };
+};
+var dec = (options) => {
+  const opt = options?.[0] ?? optionsRequired("dec");
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("dec");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("dec");
+    }
+    return value - Number(opt);
+  };
+};
+var mul = (options) => {
+  const opt = options?.[0] ?? optionsRequired("mul");
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("mul");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("mul");
+    }
+    return value * Number(opt);
+  };
+};
+var div = (options) => {
+  const opt = options?.[0] ?? optionsRequired("div");
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("div");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("div");
+    }
+    return value / Number(opt);
+  };
+};
+var mod = (options) => {
+  const opt = options?.[0] ?? optionsRequired("mod");
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("mod");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("mod");
+    }
+    return value % Number(opt);
+  };
+};
+var abs = (_options) => {
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("abs");
+    }
+    return Math.abs(value);
+  };
+};
+var clamp = (options) => {
+  const opt1 = options?.[0] ?? optionsRequired("clamp");
+  if (!validateNumberString(opt1)) {
+    optionMustBeNumber("clamp");
+  }
+  const opt2 = options?.[1] ?? optionsRequired("clamp");
+  if (!validateNumberString(opt2)) {
+    optionMustBeNumber("clamp");
+  }
+  const min = Number(opt1);
+  const max = Number(opt2);
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("clamp");
+    }
+    return Math.min(Math.max(value, min), max);
+  };
+};
+var fix = (options) => {
+  const opt = options?.[0] ?? "0";
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("fix");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("fix");
+    }
+    return value.toFixed(Number(opt));
+  };
+};
+var locale = (options) => {
+  const opt = options?.[0] ?? config.locale;
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("locale");
+    }
+    return value.toLocaleString(opt);
+  };
+};
+var uc = (_options) => {
+  return (value) => {
+    return String(value).toUpperCase();
+  };
+};
+var lc = (_options) => {
+  return (value) => {
+    return String(value).toLowerCase();
+  };
+};
+var cap = (_options) => {
+  return (value) => {
+    const v = String(value);
+    if (v.length === 0) {
+      return v;
+    }
+    if (v.length === 1) {
+      return v.toUpperCase();
+    }
+    return v.charAt(0).toUpperCase() + v.slice(1);
+  };
+};
+var trim = (_options) => {
+  return (value) => {
+    return String(value).trim();
+  };
+};
+var slice = (options) => {
+  const numberedOpts = [];
+  const opt1 = options?.[0] ?? optionsRequired("slice");
+  if (!validateNumberString(opt1)) {
+    optionMustBeNumber("slice");
+  }
+  numberedOpts.push(Number(opt1));
+  const opt2 = options?.[1];
+  if (typeof opt2 !== "undefined") {
+    if (!validateNumberString(opt2)) {
+      optionMustBeNumber("slice");
+    }
+    numberedOpts.push(Number(opt2));
+  }
+  return (value) => {
+    return String(value).slice(...numberedOpts);
+  };
+};
+var substr = (options) => {
+  const opt1 = options?.[0] ?? optionsRequired("substr");
+  if (!validateNumberString(opt1)) {
+    optionMustBeNumber("substr");
+  }
+  const opt2 = options?.[1] ?? optionsRequired("substr");
+  if (!validateNumberString(opt2)) {
+    optionMustBeNumber("substr");
+  }
+  return (value) => {
+    return String(value).substr(Number(opt1), Number(opt2));
+  };
+};
+var pad = (options) => {
+  const opt1 = options?.[0] ?? optionsRequired("pad");
+  if (!validateNumberString(opt1)) {
+    optionMustBeNumber("pad");
+  }
+  const opt2 = options?.[1] ?? "0";
+  return (value) => {
+    return String(value).padStart(Number(opt1), opt2);
+  };
+};
+var rep = (options) => {
+  const opt = options?.[0] ?? optionsRequired("rep");
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("rep");
+  }
+  return (value) => {
+    return String(value).repeat(Number(opt));
+  };
+};
+var rev = (_options) => {
+  return (value) => {
+    return String(value).split("").reverse().join("");
+  };
+};
+var int = (_options) => {
+  return (value) => {
+    return parseInt(String(value), 10);
+  };
+};
+var float = (_options) => {
+  return (value) => {
+    return parseFloat(String(value));
+  };
+};
+var round = (options) => {
+  const opt = options?.[0] ?? "0";
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("round");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("round");
+    }
+    const optValue = Math.pow(10, Number(opt));
+    return Math.round(value * optValue) / optValue;
+  };
+};
+var floor = (options) => {
+  const opt = options?.[0] ?? "0";
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("floor");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("floor");
+    }
+    const optValue = Math.pow(10, Number(opt));
+    return Math.floor(value * optValue) / optValue;
+  };
+};
+var ceil = (options) => {
+  const opt = options?.[0] ?? "0";
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("ceil");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("ceil");
+    }
+    const optValue = Math.pow(10, Number(opt));
+    return Math.ceil(value * optValue) / optValue;
+  };
+};
+var percent = (options) => {
+  const opt = options?.[0] ?? "0";
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("percent");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("percent");
+    }
+    return `${(value * 100).toFixed(Number(opt))}%`;
+  };
+};
+var unit = (options) => {
+  const opt = options?.[0] ?? optionsRequired("unit");
+  return (value) => {
+    if (value === null || typeof value === "undefined") {
+      return value;
+    }
+    return String(value) + opt;
+  };
+};
+var join = (options) => {
+  const opt = options?.[0] ?? ", ";
+  return (value) => {
+    if (!Array.isArray(value)) {
+      valueMustBeArray("join");
+    }
+    return value.join(opt);
+  };
+};
+var truncate = (options) => {
+  const opt1 = options?.[0] ?? optionsRequired("truncate");
+  if (!validateNumberString(opt1)) {
+    optionMustBeNumber("truncate");
+  }
+  const maxLength = Number(opt1);
+  const suffix = options?.[1] ?? "\u2026";
+  return (value) => {
+    const v = String(value);
+    if (v.length <= maxLength) {
+      return v;
+    }
+    return v.slice(0, maxLength) + suffix;
+  };
+};
+var date = (options) => {
+  const opt = options?.[0] ?? config.locale;
+  return (value) => {
+    if (!(value instanceof Date)) {
+      valueMustBeDate("date");
+    }
+    return value.toLocaleDateString(opt);
+  };
+};
+var time = (options) => {
+  const opt = options?.[0] ?? config.locale;
+  return (value) => {
+    if (!(value instanceof Date)) {
+      valueMustBeDate("time");
+    }
+    return value.toLocaleTimeString(opt);
+  };
+};
+var datetime = (options) => {
+  const opt = options?.[0] ?? config.locale;
+  return (value) => {
+    if (!(value instanceof Date)) {
+      valueMustBeDate("datetime");
+    }
+    return value.toLocaleString(opt);
+  };
+};
+var ymd = (options) => {
+  const opt = options?.[0] ?? "-";
+  return (value) => {
+    if (!(value instanceof Date)) {
+      valueMustBeDate("ymd");
+    }
+    const year = value.getFullYear().toString();
+    const month = (value.getMonth() + 1).toString().padStart(2, "0");
+    const day = value.getDate().toString().padStart(2, "0");
+    return `${year}${opt}${month}${opt}${day}`;
+  };
+};
+var hms = (options) => {
+  const opt = options?.[0] ?? ":";
+  return (value) => {
+    if (!(value instanceof Date)) {
+      valueMustBeDate("hms");
+    }
+    const hours = value.getHours().toString().padStart(2, "0");
+    const minutes = value.getMinutes().toString().padStart(2, "0");
+    const seconds = value.getSeconds().toString().padStart(2, "0");
+    return `${hours}${opt}${minutes}${opt}${seconds}`;
+  };
+};
+var falsy = (_options) => {
+  return (value) => value === false || value === null || value === void 0 || value === 0 || value === "" || Number.isNaN(value);
+};
+var truthy = (_options) => {
+  return (value) => value !== false && value !== null && value !== void 0 && value !== 0 && value !== "" && !Number.isNaN(value);
+};
+var defaults = (options) => {
+  const opt = options?.[0] ?? optionsRequired("defaults");
+  return (value) => {
+    if (value === false || value === null || value === void 0 || value === 0 || value === "" || Number.isNaN(value)) {
+      return opt;
+    }
+    return value;
+  };
+};
+var boolean = (_options) => {
+  return (value) => {
+    return Boolean(value);
+  };
+};
+var number = (_options) => {
+  return (value) => {
+    return Number(value);
+  };
+};
+var string = (_options) => {
+  return (value) => {
+    return String(value);
+  };
+};
+var _null = (_options) => {
+  return (value) => {
+    return value === "" ? null : value;
+  };
+};
+var builtinFilters = {
+  "eq": eq,
+  "ne": ne,
+  "not": not,
+  "lt": lt,
+  "le": le,
+  "gt": gt,
+  "ge": ge,
+  "inc": inc,
+  "dec": dec,
+  "mul": mul,
+  "div": div,
+  "mod": mod,
+  "abs": abs,
+  "clamp": clamp,
+  "fix": fix,
+  "locale": locale,
+  "uc": uc,
+  "lc": lc,
+  "cap": cap,
+  "trim": trim,
+  "slice": slice,
+  "substr": substr,
+  "pad": pad,
+  "rep": rep,
+  "rev": rev,
+  "truncate": truncate,
+  "join": join,
+  "int": int,
+  "float": float,
+  "round": round,
+  "floor": floor,
+  "ceil": ceil,
+  "percent": percent,
+  "unit": unit,
+  "date": date,
+  "time": time,
+  "datetime": datetime,
+  "ymd": ymd,
+  "hms": hms,
+  "falsy": falsy,
+  "truthy": truthy,
+  "defaults": defaults,
+  "boolean": boolean,
+  "number": number,
+  "string": string,
+  "null": _null
+};
+var outputBuiltinFilters = builtinFilters;
 var builtinFilterMeta = {
   // 比較・論理
   eq: { description: "\u7B49\u3057\u3044\u304B\u6BD4\u8F03", hasArgs: true, resultType: "boolean", acceptTypes: "any", minArgs: 1, maxArgs: 1, argTypes: ["any"] },
@@ -194,7 +773,14 @@ var STRUCTURAL_BINDING_TYPE_SET = /* @__PURE__ */ new Set([
   "else",
   "for"
 ]);
+var DELIMITER = ".";
+var WILDCARD = "*";
 var MAX_WILDCARD_DEPTH = 128;
+var BINDING_SEPARATOR = ";";
+var PROP_VALUE_SEPARATOR = ":";
+var MODIFIER_SEPARATOR = "#";
+var STATE_NAME_SEPARATOR = "@";
+var FILTER_SEPARATOR = "|";
 var MODIFIER_PREVENT = "prevent";
 var MODIFIER_STOP = "stop";
 var MODIFIER_READONLY = "ro";
@@ -209,12 +795,99 @@ var MODIFIER_KEYS = Object.freeze([
   MODIFIER_KEY_INIT,
   MODIFIER_KEY_SYNC
 ]);
+var ELSE_KEYWORD = "else";
+var SPREAD_PROP = "...";
+var EVENT_PROP_PREFIX = "on";
+var EVENT_TOKEN_NAMESPACE = "eventToken";
+var COMMAND_NAMESPACE = "command";
+var CLASS_NAMESPACE = "class";
+var ATTR_NAMESPACE = "attr";
+var STYLE_NAMESPACE = "style";
 var INDEX_PARAM_PREFIX = "$";
 var tmpIndexByIndexName = {};
 for (let i = 0; i < MAX_WILDCARD_DEPTH; i++) {
   tmpIndexByIndexName[`${INDEX_PARAM_PREFIX}${i + 1}`] = i;
 }
 Object.freeze(tmpIndexByIndexName);
+var STATE_CONNECTED_CALLBACK_NAME = "$connectedCallback";
+var STATE_DISCONNECTED_CALLBACK_NAME = "$disconnectedCallback";
+var STATE_UPDATED_CALLBACK_NAME = "$updatedCallback";
+var WEBCOMPONENT_STATE_READY_CALLBACK_NAME = "$stateReadyCallback";
+var STATE_BINDABLES_NAME = "$bindables";
+var STATE_COMMANDS_NAME = "$commands";
+var STATE_COMMAND_TOKENS_NAME = "$commandTokens";
+var STATE_COMMAND_NAMESPACE_NAME = "$command";
+var STATE_EVENT_TOKENS_NAME = "$eventTokens";
+var STATE_ON_NAME = "$on";
+var STATE_STREAMS_NAME = "$streams";
+var STATE_WATCH_NAME = "$watch";
+var STATE_LIST_KEYS_NAME = "$listKeys";
+var STATE_STREAM_STATUS_NAMESPACE_NAME = "$streamStatus";
+var STATE_STREAM_ERROR_NAMESPACE_NAME = "$streamError";
+var WCS_MANIFEST_VERSION = 1;
+function getWcsManifest() {
+  return {
+    version: WCS_MANIFEST_VERSION,
+    syntax: {
+      bindAttribute: config.bindAttributeName,
+      tagName: config.tagNames.state,
+      pathDelimiter: DELIMITER,
+      wildcard: WILDCARD,
+      delimiters: {
+        binding: BINDING_SEPARATOR,
+        propValue: PROP_VALUE_SEPARATOR,
+        modifier: MODIFIER_SEPARATOR,
+        stateName: STATE_NAME_SEPARATOR,
+        filter: FILTER_SEPARATOR
+      },
+      // 正本 STRUCTURAL_BINDING_TYPE_SET から導出（手書きの二重定義を排除）。
+      structuralDirectives: Array.from(STRUCTURAL_BINDING_TYPE_SET),
+      modifiers: {
+        flags: MODIFIER_FLAGS,
+        keyValue: MODIFIER_KEYS,
+        eventNamePrefix: EVENT_PROP_PREFIX
+      },
+      indexParam: {
+        prefix: INDEX_PARAM_PREFIX,
+        maxDepth: MAX_WILDCARD_DEPTH
+      },
+      bindingTypes: {
+        elseKeyword: ELSE_KEYWORD,
+        spread: SPREAD_PROP,
+        eventPropertyPrefix: EVENT_PROP_PREFIX,
+        propNamespaces: {
+          eventToken: EVENT_TOKEN_NAMESPACE,
+          command: COMMAND_NAMESPACE,
+          class: CLASS_NAMESPACE,
+          attr: ATTR_NAMESPACE,
+          style: STYLE_NAMESPACE
+        }
+      }
+    },
+    // 実装（Record のキー）から自動導出。手リストを持たない＝ドリフトの構造的排除。
+    filters: Object.keys(outputBuiltinFilters),
+    filterMeta: builtinFilterMeta,
+    reservedLifecycle: [
+      STATE_CONNECTED_CALLBACK_NAME,
+      STATE_DISCONNECTED_CALLBACK_NAME,
+      STATE_UPDATED_CALLBACK_NAME,
+      WEBCOMPONENT_STATE_READY_CALLBACK_NAME
+    ],
+    reservedStateApi: [
+      STATE_BINDABLES_NAME,
+      STATE_COMMANDS_NAME,
+      STATE_COMMAND_TOKENS_NAME,
+      STATE_COMMAND_NAMESPACE_NAME,
+      STATE_EVENT_TOKENS_NAME,
+      STATE_ON_NAME,
+      STATE_STREAMS_NAME,
+      STATE_WATCH_NAME,
+      STATE_LIST_KEYS_NAME,
+      STATE_STREAM_STATUS_NAMESPACE_NAME,
+      STATE_STREAM_ERROR_NAMESPACE_NAME
+    ]
+  };
+}
 
 // src/service/completionData.ts
 var BUILTIN_FILTERS = Object.entries(builtinFilterMeta).map(
@@ -360,7 +1033,7 @@ function parseWcsStateElements(html, stateTagName = "wcs-state") {
   }
   return elements;
 }
-function findScriptJsonById(html, id) {
+function findScriptJsonById(html, id2) {
   let pos = 0;
   const len = html.length;
   while (pos < len) {
@@ -377,7 +1050,7 @@ function findScriptJsonById(html, id) {
     }
     const typeAttr = extractAttribute(scriptMatch.tagContent, "type");
     const idAttr = extractAttribute(scriptMatch.tagContent, "id");
-    if (typeAttr?.toLowerCase() === "application/json" && idAttr === id) {
+    if (typeAttr?.toLowerCase() === "application/json" && idAttr === id2) {
       const contentStart = scriptMatch.end;
       const scriptCloseIdx = findCloseTag(html, contentStart, "script");
       if (scriptCloseIdx === -1) return null;
@@ -392,8 +1065,8 @@ function matchOpenTag(html, pos, tagName) {
   const nameStart = pos + 1;
   const nameEnd = nameStart + tagName.length;
   if (nameEnd > html.length) return null;
-  const slice = html.slice(nameStart, nameEnd);
-  if (slice.toLowerCase() !== tagName.toLowerCase()) return null;
+  const slice3 = html.slice(nameStart, nameEnd);
+  if (slice3.toLowerCase() !== tagName.toLowerCase()) return null;
   const charAfter = html[nameEnd];
   if (charAfter !== ">" && charAfter !== " " && charAfter !== "	" && charAfter !== "\n" && charAfter !== "\r" && charAfter !== "/") {
     return null;
@@ -511,6 +1184,39 @@ function analyzeWatchEntries(scriptContent) {
     });
   }
   return entries;
+}
+function analyzeDeclarationSpans(scriptContent) {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return [];
+  const out = [];
+  for (const prop of parseTopLevelProperties(root.content)) {
+    if (prop.nameStart === void 0 || prop.nameEnd === void 0) continue;
+    out.push({
+      name: prop.name,
+      kind: prop.kind,
+      start: root.start + prop.nameStart,
+      end: root.start + prop.nameEnd
+    });
+  }
+  return out;
+}
+function analyzeCallableBodies(scriptContent) {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return [];
+  const out = [];
+  for (const prop of parseTopLevelProperties(root.content)) {
+    if (prop.kind !== "getter" && prop.kind !== "method") continue;
+    if (prop.nameStart === void 0 || prop.nameEnd === void 0) continue;
+    out.push({
+      name: prop.name,
+      kind: prop.kind,
+      start: root.start + prop.nameStart,
+      end: root.start + prop.nameEnd,
+      body: prop.value ?? "",
+      bodyStart: root.start + (prop.valueStart ?? 0)
+    });
+  }
+  return out;
 }
 function isNonFunctionLiteral(value) {
   if (value === void 0) return false;
@@ -711,17 +1417,32 @@ function parseTopLevelProperties(objectContent) {
       const braceStart = match.index + match[0].length - 1;
       const body = extractBracedContent(objectContent, scan, braceStart);
       regex.lastIndex = braceStart + body.length + 2;
+      return { body, bodyStart: braceStart + 1 };
     };
     const accessorName = nameAt(1) ?? nameAt(2) ?? nameAt(3);
     if (accessorName) {
-      props.push({ name: accessorName, kind: "getter", nameStart: nameSpan[0], nameEnd: nameSpan[1] });
-      skipBody();
+      const { body, bodyStart } = skipBody();
+      props.push({
+        name: accessorName,
+        kind: "getter",
+        value: body,
+        valueStart: bodyStart,
+        nameStart: nameSpan[0],
+        nameEnd: nameSpan[1]
+      });
       continue;
     }
     const methodName = nameAt(4) ?? nameAt(5) ?? nameAt(6);
     if (methodName) {
-      props.push({ name: methodName, kind: "method", nameStart: nameSpan[0], nameEnd: nameSpan[1] });
-      skipBody();
+      const { body, bodyStart } = skipBody();
+      props.push({
+        name: methodName,
+        kind: "method",
+        value: body,
+        valueStart: bodyStart,
+        nameStart: nameSpan[0],
+        nameEnd: nameSpan[1]
+      });
       continue;
     }
     const propName = nameAt(7) ?? nameAt(8) ?? nameAt(9);
@@ -1007,6 +1728,37 @@ function getEnclosingFors(html, offset, bindAttrName = "data-wcs") {
   }
   return enclosing;
 }
+function countWildcardSegments(path) {
+  let count = 0;
+  for (const segment of path.split(".")) {
+    if (segment === "*") count++;
+  }
+  return count;
+}
+function forPathOf(raw) {
+  let path = raw.trim();
+  const pipe = path.indexOf("|");
+  if (pipe !== -1) path = path.slice(0, pipe).trim();
+  const at = path.indexOf("@");
+  if (at !== -1) path = path.slice(0, at).trim();
+  return path;
+}
+function getAvailableWildcardRank(html, offset, bindAttrName = "data-wcs") {
+  const chain = getEnclosingForPaths(html, offset, bindAttrName);
+  if (chain.length === 0) return 0;
+  let resolved = "";
+  for (const raw of chain) {
+    const path = forPathOf(raw);
+    if (path === ".") {
+      resolved = `${resolved}.*`;
+    } else if (path.startsWith(".")) {
+      resolved = `${resolved}.*.${path.slice(1)}`;
+    } else {
+      resolved = path;
+    }
+  }
+  return countWildcardSegments(resolved) + 1;
+}
 function getForTemplateDepthAt(html, openPos, offset, bindAttrName) {
   const tagEnd = html.indexOf(">", openPos);
   if (tagEnd === -1 || tagEnd >= offset) return 0;
@@ -1037,8 +1789,8 @@ function getForTemplateDepthAt(html, openPos, offset, bindAttrName) {
 }
 
 // src/core/messages.ts
-function resolveLocale(locale) {
-  if (locale === void 0 || locale === "" || /^ja\b|^ja[-_]/i.test(locale) || locale.toLowerCase() === "ja") return "ja";
+function resolveLocale(locale3) {
+  if (locale3 === void 0 || locale3 === "" || /^ja\b|^ja[-_]/i.test(locale3) || locale3.toLowerCase() === "ja") return "ja";
   return "en";
 }
 var JA_EXPECTED_LABEL = {
@@ -1060,6 +1812,10 @@ var ja = {
   omittedPathOutsideFor: (p) => `\u7701\u7565\u30D1\u30B9 "${p}" \u306F <template for> \u306E\u5916\u5074\u3067\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093`,
   loopIndexOutsideFor: (p) => `\u30EB\u30FC\u30D7\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9 "${p}" \u306F <template for> \u306E\u5916\u5074\u3067\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093`,
   resolvedPathInUi: (p) => `\u89E3\u6C7A\u6E08\u307F\u30D1\u30B9 "${p}" \u306F UI \u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u3067\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093\u3002\u30D1\u30BF\u30FC\u30F3\u30D1\u30B9\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044`,
+  indexArity: (api, p, req, wc, actual) => `${api}("${p}") \u306E\u6DFB\u5B57\u306F${req === "exact" ? `\u3061\u3087\u3046\u3069 ${wc} \u500B` : `${wc} \u500B\u4EE5\u4E0B`}\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u30D1\u30B9\u4E2D\u306E "*" \u306F ${wc} \u500B\uFF09\u3002${actual} \u500B\u6307\u5B9A\u3055\u308C\u3066\u3044\u307E\u3059`,
+  wildcardRank: (subject, needed, available) => `${subject} \u306F ${needed} \u6BB5\u306E\u30EB\u30FC\u30D7\u304C\u5FC5\u8981\u3067\u3059\u304C\u3001\u73FE\u5728\u306E\u30B9\u30B3\u30FC\u30D7\u306F ${available} \u6BB5\u3067\u3059`,
+  getterCycle: (cycle) => `\u30D1\u30B9 getter \u304C\u5FAA\u74B0\u53C2\u7167\u3057\u3066\u3044\u307E\u3059: ${cycle}`,
+  updatedCallbackUnbound: (p) => `$updatedCallback \u306F binding \u99C6\u52D5\u3067\u3059\u3002"${p}" \u306F\u3053\u306E\u30C9\u30AD\u30E5\u30E1\u30F3\u30C8\u306E\u3069\u306E\u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u306B\u3082\u73FE\u308C\u306A\u3044\u305F\u3081\u3001\u3053\u306E\u5206\u5C90\u306F\u4E00\u5EA6\u3082\u5B9F\u884C\u3055\u308C\u307E\u305B\u3093\u3002\u63CF\u753B\u306B\u4F9D\u5B58\u305B\u305A\u53CD\u5FDC\u3059\u308B\u306A\u3089 $watch \u3092\u4F7F\u3063\u3066\u304F\u3060\u3055\u3044`,
   handlerFilterNotAllowed: (prop) => `\u30A4\u30D9\u30F3\u30C8\u30CF\u30F3\u30C9\u30E9 "${prop}" \u306B\u30D5\u30A3\u30EB\u30BF\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093`,
   typeExpectation: (label, expected, resultType) => `"${label}" \u306B\u306F${JA_EXPECTED_LABEL[expected]}\u304C\u5FC5\u8981\u3067\u3059\uFF08\u73FE\u5728\u306E\u578B: ${resultType}\uFF09`,
   filterUnknown: (n) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306F\u7D44\u307F\u8FBC\u307F\u30D5\u30A3\u30EB\u30BF\u306B\u5B58\u5728\u3057\u307E\u305B\u3093`,
@@ -1110,6 +1866,10 @@ var en = {
   omittedPathOutsideFor: (p) => `Shorthand path "${p}" cannot be used outside a <template for>`,
   loopIndexOutsideFor: (p) => `Loop index "${p}" cannot be used outside a <template for>`,
   resolvedPathInUi: (p) => `Resolved path "${p}" cannot be used in a UI binding. Use a pattern path instead`,
+  indexArity: (api, p, req, wc, actual) => `${api}("${p}") requires ${req === "exact" ? "exactly" : "at most"} ${wc} index(es) ("*" appears ${wc} time(s) in the path) but got ${actual}`,
+  wildcardRank: (subject, needed, available) => `${subject} needs ${needed} enclosing loop level(s) but the current scope provides ${available}`,
+  getterCycle: (cycle) => `Path getters form a dependency cycle: ${cycle}`,
+  updatedCallbackUnbound: (p) => `$updatedCallback is binding-driven. "${p}" is not bound anywhere in this document, so this branch never runs. Use $watch to react without depending on what is rendered`,
   handlerFilterNotAllowed: (prop) => `Filters cannot be applied to event handler "${prop}"`,
   typeExpectation: (label, expected, resultType) => `"${label}" requires ${EN_EXPECTED_LABEL[expected]} (current type: ${resultType})`,
   filterUnknown: (n) => `Filter "${n}" is not a built-in filter`,
@@ -1142,15 +1902,15 @@ var en = {
   signalsDualEntry: () => `Both @wcstack/signals and @wcstack/signals/dom are imported on this page. On a CDN each entry is a self-contained bundle, so the reactive core is duplicated and reactivity breaks at the seam \u2014 import everything from the single /dom entry`
 };
 var CATALOGS = { ja, en };
-function getMessages(locale) {
-  return CATALOGS[resolveLocale(locale)];
+function getMessages(locale3) {
+  return CATALOGS[resolveLocale(locale3)];
 }
 
 // src/service/bindingValidator.ts
 var filterMap = new Map(BUILTIN_FILTERS.map((f) => [f.name, f]));
-function validateBindings(html, attrName, stateTagName = "wcs-state", locale, fileReader) {
+function validateBindings(html, attrName, stateTagName = "wcs-state", locale3, fileReader) {
   const diagnostics = [];
-  const msgs = getMessages(locale);
+  const msgs = getMessages(locale3);
   const statePaths = getStatePathsFromHtml(html, stateTagName, fileReader);
   const pathsByState = /* @__PURE__ */ new Map();
   for (const p of statePaths) {
@@ -1326,6 +2086,24 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale, fi
               message: msgs.loopIndexOutsideFor(pathTrimmed),
               severity: "warning"
             });
+          }
+          if (insideFor && !pathTrimmed.startsWith(".") && !binding.includes("@")) {
+            const indexMatch = /^\$(\d+)$/.exec(pathTrimmed);
+            const needed = indexMatch !== null ? Number(indexMatch[1]) : pathTrimmed.includes("*") ? countWildcardSegments(pathTrimmed) : 0;
+            if (needed > 0) {
+              const available = getAvailableWildcardRank(html, attr.valueStart, attrName);
+              if (available > 0 && needed > available) {
+                const pathOffset = binding.indexOf(parsed.path);
+                const pathStart = bindingStart + pathOffset;
+                diagnostics.push({
+                  code: WcsDiagnosticCode.WildcardRank,
+                  start: pathStart,
+                  end: pathStart + pathTrimmed.length,
+                  message: msgs.wildcardRank(`"${pathTrimmed}"`, needed, available),
+                  severity: "warning"
+                });
+              }
+            }
           }
           if (/\.\d+\.|\.\d+$/.test(pathTrimmed)) {
             const pathOffset = binding.indexOf(parsed.path);
@@ -1670,8 +2448,8 @@ function isLiteral(value) {
 }
 
 // src/service/stateTypeValidator.ts
-function validateStateTypes(html, stateTagName = "wcs-state", locale) {
-  const msgs = getMessages(locale);
+function validateStateTypes(html, stateTagName = "wcs-state", locale3) {
+  const msgs = getMessages(locale3);
   const blocks = parseWcsScriptBlocks(html, stateTagName);
   const diagnostics = [];
   for (const block of blocks) {
@@ -1798,8 +2576,8 @@ function isApiRoot(root) {
 // src/service/nestedAssignValidator.ts
 var NESTED_ASSIGN = new RegExp(`${ROOT_DOT}(${CHAIN_ONE_PLUS})${ASSIGN_TAIL}`, "g");
 var PRE_NESTED_INCDEC = new RegExp(`${PRE_INCDEC}${ROOT_DOT}(${CHAIN_ONE_PLUS})`, "g");
-function validateNestedAssigns(html, stateTagName = "wcs-state", locale) {
-  const msgs = getMessages(locale);
+function validateNestedAssigns(html, stateTagName = "wcs-state", locale3) {
+  const msgs = getMessages(locale3);
   const blocks = parseWcsScriptBlocks(html, stateTagName);
   const diagnostics = [];
   for (const block of blocks) {
@@ -1821,7 +2599,7 @@ function findNestedAssigns(script, baseOffset, msgs, out) {
         start,
         end: start + full.length,
         message: msgs.nestedAssign(suggestedPath),
-        severity: "warning"
+        severity: "error"
       });
     }
   }
@@ -1850,8 +2628,8 @@ var PRE_BRACKET_INDEX = new RegExp(`${PRE_INCDEC}${ROOT_BRACKET}(${BRACKETS_ONLY
 function toAccessor(path) {
   return /^[A-Za-z_]\w*$/.test(path) ? `this.${path}` : `this["${path}"]`;
 }
-function validateArrayMutations(html, stateTagName = "wcs-state", locale) {
-  const msgs = getMessages(locale);
+function validateArrayMutations(html, stateTagName = "wcs-state", locale3) {
+  const msgs = getMessages(locale3);
   const blocks = parseWcsScriptBlocks(html, stateTagName);
   const diagnostics = [];
   for (const block of blocks) {
@@ -1874,7 +2652,7 @@ function findDestructiveCalls(script, baseOffset, msgs, out) {
         start,
         end: start + full.length,
         message: msgs.arrayMutation(method, ALTERNATIVES[method](toAccessor(statePath))),
-        severity: "warning",
+        severity: "error",
         statePath
       });
     }
@@ -1894,7 +2672,7 @@ function findIndexAssigns(script, baseOffset, msgs, out) {
         start,
         end: start + full.length,
         message: msgs.arrayIndexAssign(suggestedPath),
-        severity: "warning",
+        severity: "error",
         statePath: suggestedPath
       });
     }
@@ -1961,9 +2739,9 @@ function isInsideTag(html, offset, tagName) {
 }
 
 // src/service/templateSyntaxValidator.ts
-function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", locale, fileReader) {
+function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", locale3, fileReader) {
   const diagnostics = [];
-  const msgs = getMessages(locale);
+  const msgs = getMessages(locale3);
   const allPaths = getStatePathsFromHtml(html, stateTagName, fileReader);
   if (allPaths.length === 0) return diagnostics;
   const defaultPaths = allPaths.filter((p) => p.stateName === "default");
@@ -2014,6 +2792,22 @@ function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", l
           message: msgs.omittedPathOutsideFor(pathPart),
           severity: "warning"
         });
+      }
+      if (insideFor && !pathPart.startsWith(".") && !pathPart.includes("@")) {
+        const indexMatch = /^\$(\d+)$/.exec(pathPart);
+        const needed = indexMatch !== null ? Number(indexMatch[1]) : pathPart.includes("*") ? countWildcardSegments(pathPart) : 0;
+        if (needed > 0) {
+          const available = getAvailableWildcardRank(html, item.matchStart, bindAttrName);
+          if (available > 0 && needed > available) {
+            diagnostics.push({
+              code: WcsDiagnosticCode.WildcardRank,
+              start: item.exprStart,
+              end: item.exprStart + pathPart.length,
+              message: msgs.wildcardRank(`"${pathPart}"`, needed, available),
+              severity: "warning"
+            });
+          }
+        }
       }
       if (/\.\d+\.|\.\d+$/.test(pathPart)) {
         diagnostics.push({
@@ -3314,9 +4108,9 @@ var DOM_COMMON_PROPERTIES = /* @__PURE__ */ new Set([
 ]);
 var STRUCTURAL_DIRECTIVES2 = /* @__PURE__ */ new Set(["for", "if", "elseif", "else"]);
 var EMPTYISH_SEEDS = /* @__PURE__ */ new Set(["''", '""', "``", "null", "[]", "{}"]);
-function validateIoNodes(html, bindAttribute = "data-wcs", stateTagName = "wcs-state", locale, fileReader) {
+function validateIoNodes(html, bindAttribute = "data-wcs", stateTagName = "wcs-state", locale3, fileReader) {
   const diagnostics = [];
-  const msgs = getMessages(locale);
+  const msgs = getMessages(locale3);
   const occurrences = findBuiltinTagOccurrences(html);
   if (occurrences.length === 0) return diagnostics;
   let statePaths = null;
@@ -3525,9 +4319,9 @@ function hasBooleanAttribute(attrsText, attrName) {
 }
 
 // src/service/documentEnvValidator.ts
-function validateDocumentEnv(html, locale) {
+function validateDocumentEnv(html, locale3) {
   const diagnostics = [];
-  const msgs = getMessages(locale);
+  const msgs = getMessages(locale3);
   const scanText = blankHtmlComments(html);
   const autos = findWcstackAutoScripts(scanText);
   const stateIndex = autos.findIndex((a) => a.pkg === "state");
@@ -3637,9 +4431,9 @@ function blankJsComments(code) {
 }
 
 // src/service/watchDeclarationValidator.ts
-var STATE_NAME_SEPARATOR = "@";
-function validateWatchDeclarations(html, stateTagName = "wcs-state", locale) {
-  const msgs = getMessages(locale);
+var STATE_NAME_SEPARATOR2 = "@";
+function validateWatchDeclarations(html, stateTagName = "wcs-state", locale3) {
+  const msgs = getMessages(locale3);
   const out = [];
   for (const block of parseWcsScriptBlocks(html, stateTagName)) {
     const nonObject = findNonObjectWatch(block.content);
@@ -3673,7 +4467,7 @@ function validateWatchDeclarations(html, stateTagName = "wcs-state", locale) {
 function validateEntry(entry, pathSet, msgs) {
   const { key } = entry;
   const invalid = (message) => ({ code: WcsDiagnosticCode.WatchDeclarationInvalid, message, severity: "error" });
-  if (key.includes(STATE_NAME_SEPARATOR)) {
+  if (key.includes(STATE_NAME_SEPARATOR2)) {
     return invalid(msgs.watchKeyCrossState(key));
   }
   if (key.startsWith("$")) {
@@ -3695,23 +4489,1484 @@ function validateEntry(entry, pathSet, msgs) {
   return null;
 }
 
+// ../state/dist/parser.esm.js
+var DELIMITER2 = ".";
+var WILDCARD2 = "*";
+var MAX_WILDCARD_DEPTH2 = 128;
+var BINDING_SEPARATOR2 = ";";
+var PROP_VALUE_SEPARATOR2 = ":";
+var MODIFIER_SEPARATOR2 = "#";
+var STATE_NAME_SEPARATOR3 = "@";
+var FILTER_SEPARATOR2 = "|";
+var ELSE_KEYWORD2 = "else";
+var SPREAD_PROP2 = "...";
+var EVENT_PROP_PREFIX2 = "on";
+var EVENT_TOKEN_NAMESPACE2 = "eventToken";
+var INDEX_PARAM_PREFIX2 = "$";
+var tmpIndexByIndexName2 = {};
+for (let i = 0; i < MAX_WILDCARD_DEPTH2; i++) {
+  tmpIndexByIndexName2[`${INDEX_PARAM_PREFIX2}${i + 1}`] = i;
+}
+Object.freeze(tmpIndexByIndexName2);
+var _cache = /* @__PURE__ */ new Map();
+function clearPathInfoCacheForTooling() {
+  _cache.clear();
+}
+var id = 0;
+function getPathInfo(path) {
+  let pathInfo = _cache.get(path);
+  if (typeof pathInfo !== "undefined") {
+    return pathInfo;
+  }
+  pathInfo = Object.freeze(new PathInfo(path));
+  _cache.set(path, pathInfo);
+  return pathInfo;
+}
+var PathInfo = class {
+  id = ++id;
+  path;
+  segments;
+  lastSegment;
+  cumulativePaths;
+  cumulativePathSet;
+  cumulativePathInfos;
+  cumulativePathInfoSet;
+  parentPath;
+  wildcardPaths;
+  wildcardPathSet;
+  indexByWildcardPath;
+  wildcardPathInfos;
+  wildcardPathInfoSet;
+  wildcardParentPaths;
+  wildcardParentPathSet;
+  wildcardParentPathInfos;
+  wildcardParentPathInfoSet;
+  wildcardPositions;
+  lastWildcardPath;
+  lastWildcardInfo;
+  wildcardCount;
+  parentPathInfo;
+  constructor(path) {
+    const getPattern = (_path) => {
+      return path === _path ? this : getPathInfo(_path);
+    };
+    const segments = path.split(".");
+    const cumulativePaths = [];
+    const cumulativePathInfos = [];
+    const wildcardPaths = [];
+    const indexByWildcardPath = {};
+    const wildcardPathInfos = [];
+    const wildcardParentPaths = [];
+    const wildcardParentPathInfos = [];
+    const wildcardPositions = [];
+    let currentPatternPath = "", prevPatternPath = "";
+    let wildcardCount = 0;
+    for (let i = 0; i < segments.length; i++) {
+      currentPatternPath += segments[i];
+      if (segments[i] === WILDCARD2) {
+        wildcardPaths.push(currentPatternPath);
+        indexByWildcardPath[currentPatternPath] = wildcardCount;
+        wildcardPathInfos.push(getPattern(currentPatternPath));
+        wildcardParentPaths.push(prevPatternPath);
+        wildcardParentPathInfos.push(getPattern(prevPatternPath));
+        wildcardPositions.push(i);
+        wildcardCount++;
+      }
+      cumulativePaths.push(currentPatternPath);
+      cumulativePathInfos.push(getPattern(currentPatternPath));
+      prevPatternPath = currentPatternPath;
+      currentPatternPath += ".";
+    }
+    const lastWildcardPath = wildcardPaths.length > 0 ? wildcardPaths[wildcardPaths.length - 1] : null;
+    const parentPath = cumulativePaths.length > 1 ? cumulativePaths[cumulativePaths.length - 2] : null;
+    this.path = path;
+    this.segments = segments;
+    this.lastSegment = segments[segments.length - 1];
+    this.cumulativePaths = cumulativePaths;
+    this.cumulativePathSet = new Set(cumulativePaths);
+    this.cumulativePathInfos = cumulativePathInfos;
+    this.cumulativePathInfoSet = new Set(cumulativePathInfos);
+    this.wildcardPaths = wildcardPaths;
+    this.wildcardPathSet = new Set(wildcardPaths);
+    this.indexByWildcardPath = indexByWildcardPath;
+    this.wildcardPathInfos = wildcardPathInfos;
+    this.wildcardPathInfoSet = new Set(wildcardPathInfos);
+    this.wildcardParentPaths = wildcardParentPaths;
+    this.wildcardParentPathSet = new Set(wildcardParentPaths);
+    this.wildcardParentPathInfos = wildcardParentPathInfos;
+    this.wildcardParentPathInfoSet = new Set(wildcardParentPathInfos);
+    this.wildcardPositions = wildcardPositions;
+    this.lastWildcardPath = lastWildcardPath;
+    this.lastWildcardInfo = lastWildcardPath ? getPattern(lastWildcardPath) : null;
+    this.parentPath = parentPath;
+    this.parentPathInfo = parentPath ? getPattern(parentPath) : null;
+    this.wildcardCount = wildcardCount;
+  }
+};
+function editDistance2(a, b, max) {
+  if (Math.abs(a.length - b.length) > max) {
+    return max + 1;
+  }
+  const prev = new Array(b.length + 1);
+  const curr = new Array(b.length + 1);
+  for (let j = 0; j <= b.length; j++) {
+    prev[j] = j;
+  }
+  for (let i = 1; i <= a.length; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+    }
+    for (let j = 0; j <= b.length; j++) {
+      prev[j] = curr[j];
+    }
+  }
+  return prev[b.length];
+}
+function didYouMean(input, candidates) {
+  if (input.length === 0) {
+    return "";
+  }
+  const folded = input.toLowerCase();
+  let best = null;
+  let bestDistance = 3;
+  for (const candidate of candidates) {
+    const distance = editDistance2(folded, candidate.toLowerCase(), 2);
+    if (distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  return best !== null ? ` Did you mean "${best}"?` : "";
+}
+var LINT_HINT = " Validate statically: npx @wcstack/lint <file>.";
+function raiseError2(message) {
+  throw new Error(`[@wcstack/state] ${message}`);
+}
+var STRUCTURAL_BINDING_TYPE_SET2 = /* @__PURE__ */ new Set([
+  "if",
+  "elseif",
+  "else",
+  "for"
+]);
+var _config2 = {
+  locale: "en"
+};
+var config2 = _config2;
+function optionsRequired2(fnName) {
+  raiseError2(`filter ${fnName} requires at least one option`);
+}
+function optionMustBeNumber2(fnName) {
+  raiseError2(`filter ${fnName} requires a number as option`);
+}
+function valueMustBeNumber2(fnName) {
+  raiseError2(`filter ${fnName} requires a number value`);
+}
+function valueMustBeBoolean2(fnName) {
+  raiseError2(`filter ${fnName} requires a boolean value`);
+}
+function valueMustBeDate2(fnName) {
+  raiseError2(`filter ${fnName} requires a date value`);
+}
+function valueMustBeArray2(fnName) {
+  raiseError2(`filter ${fnName} requires an array value`);
+}
+function validateNumberString2(value) {
+  if (!value || isNaN(Number(value))) {
+    return false;
+  }
+  return true;
+}
+var eq2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("eq");
+  return (value) => {
+    if (typeof value === "number") {
+      if (!validateNumberString2(opt)) {
+        optionMustBeNumber2("eq");
+      }
+      return value === Number(opt);
+    }
+    if (typeof value === "string") {
+      return value === opt;
+    }
+    return value === opt;
+  };
+};
+var ne2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("ne");
+  return (value) => {
+    if (typeof value === "number") {
+      if (!validateNumberString2(opt)) {
+        optionMustBeNumber2("ne");
+      }
+      return value !== Number(opt);
+    }
+    if (typeof value === "string") {
+      return value !== opt;
+    }
+    return value !== opt;
+  };
+};
+var not2 = (_options) => {
+  return (value) => {
+    if (typeof value !== "boolean") {
+      valueMustBeBoolean2("not");
+    }
+    return !value;
+  };
+};
+var lt2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("lt");
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("lt");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("lt");
+    }
+    return value < Number(opt);
+  };
+};
+var le2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("le");
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("le");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("le");
+    }
+    return value <= Number(opt);
+  };
+};
+var gt2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("gt");
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("gt");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("gt");
+    }
+    return value > Number(opt);
+  };
+};
+var ge2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("ge");
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("ge");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("ge");
+    }
+    return value >= Number(opt);
+  };
+};
+var inc2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("inc");
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("inc");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("inc");
+    }
+    return value + Number(opt);
+  };
+};
+var dec2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("dec");
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("dec");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("dec");
+    }
+    return value - Number(opt);
+  };
+};
+var mul2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("mul");
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("mul");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("mul");
+    }
+    return value * Number(opt);
+  };
+};
+var div2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("div");
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("div");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("div");
+    }
+    return value / Number(opt);
+  };
+};
+var mod2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("mod");
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("mod");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("mod");
+    }
+    return value % Number(opt);
+  };
+};
+var abs2 = (_options) => {
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("abs");
+    }
+    return Math.abs(value);
+  };
+};
+var clamp2 = (options) => {
+  const opt1 = options?.[0] ?? optionsRequired2("clamp");
+  if (!validateNumberString2(opt1)) {
+    optionMustBeNumber2("clamp");
+  }
+  const opt2 = options?.[1] ?? optionsRequired2("clamp");
+  if (!validateNumberString2(opt2)) {
+    optionMustBeNumber2("clamp");
+  }
+  const min = Number(opt1);
+  const max = Number(opt2);
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("clamp");
+    }
+    return Math.min(Math.max(value, min), max);
+  };
+};
+var fix2 = (options) => {
+  const opt = options?.[0] ?? "0";
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("fix");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("fix");
+    }
+    return value.toFixed(Number(opt));
+  };
+};
+var locale2 = (options) => {
+  const opt = options?.[0] ?? config2.locale;
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("locale");
+    }
+    return value.toLocaleString(opt);
+  };
+};
+var uc2 = (_options) => {
+  return (value) => {
+    return String(value).toUpperCase();
+  };
+};
+var lc2 = (_options) => {
+  return (value) => {
+    return String(value).toLowerCase();
+  };
+};
+var cap2 = (_options) => {
+  return (value) => {
+    const v = String(value);
+    if (v.length === 0) {
+      return v;
+    }
+    if (v.length === 1) {
+      return v.toUpperCase();
+    }
+    return v.charAt(0).toUpperCase() + v.slice(1);
+  };
+};
+var trim2 = (_options) => {
+  return (value) => {
+    return String(value).trim();
+  };
+};
+var slice2 = (options) => {
+  const numberedOpts = [];
+  const opt1 = options?.[0] ?? optionsRequired2("slice");
+  if (!validateNumberString2(opt1)) {
+    optionMustBeNumber2("slice");
+  }
+  numberedOpts.push(Number(opt1));
+  const opt2 = options?.[1];
+  if (typeof opt2 !== "undefined") {
+    if (!validateNumberString2(opt2)) {
+      optionMustBeNumber2("slice");
+    }
+    numberedOpts.push(Number(opt2));
+  }
+  return (value) => {
+    return String(value).slice(...numberedOpts);
+  };
+};
+var substr2 = (options) => {
+  const opt1 = options?.[0] ?? optionsRequired2("substr");
+  if (!validateNumberString2(opt1)) {
+    optionMustBeNumber2("substr");
+  }
+  const opt2 = options?.[1] ?? optionsRequired2("substr");
+  if (!validateNumberString2(opt2)) {
+    optionMustBeNumber2("substr");
+  }
+  return (value) => {
+    return String(value).substr(Number(opt1), Number(opt2));
+  };
+};
+var pad2 = (options) => {
+  const opt1 = options?.[0] ?? optionsRequired2("pad");
+  if (!validateNumberString2(opt1)) {
+    optionMustBeNumber2("pad");
+  }
+  const opt2 = options?.[1] ?? "0";
+  return (value) => {
+    return String(value).padStart(Number(opt1), opt2);
+  };
+};
+var rep2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("rep");
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("rep");
+  }
+  return (value) => {
+    return String(value).repeat(Number(opt));
+  };
+};
+var rev2 = (_options) => {
+  return (value) => {
+    return String(value).split("").reverse().join("");
+  };
+};
+var int2 = (_options) => {
+  return (value) => {
+    return parseInt(String(value), 10);
+  };
+};
+var float2 = (_options) => {
+  return (value) => {
+    return parseFloat(String(value));
+  };
+};
+var round2 = (options) => {
+  const opt = options?.[0] ?? "0";
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("round");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("round");
+    }
+    const optValue = Math.pow(10, Number(opt));
+    return Math.round(value * optValue) / optValue;
+  };
+};
+var floor2 = (options) => {
+  const opt = options?.[0] ?? "0";
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("floor");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("floor");
+    }
+    const optValue = Math.pow(10, Number(opt));
+    return Math.floor(value * optValue) / optValue;
+  };
+};
+var ceil2 = (options) => {
+  const opt = options?.[0] ?? "0";
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("ceil");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("ceil");
+    }
+    const optValue = Math.pow(10, Number(opt));
+    return Math.ceil(value * optValue) / optValue;
+  };
+};
+var percent2 = (options) => {
+  const opt = options?.[0] ?? "0";
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("percent");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("percent");
+    }
+    return `${(value * 100).toFixed(Number(opt))}%`;
+  };
+};
+var unit2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("unit");
+  return (value) => {
+    if (value === null || typeof value === "undefined") {
+      return value;
+    }
+    return String(value) + opt;
+  };
+};
+var join2 = (options) => {
+  const opt = options?.[0] ?? ", ";
+  return (value) => {
+    if (!Array.isArray(value)) {
+      valueMustBeArray2("join");
+    }
+    return value.join(opt);
+  };
+};
+var truncate2 = (options) => {
+  const opt1 = options?.[0] ?? optionsRequired2("truncate");
+  if (!validateNumberString2(opt1)) {
+    optionMustBeNumber2("truncate");
+  }
+  const maxLength = Number(opt1);
+  const suffix = options?.[1] ?? "\u2026";
+  return (value) => {
+    const v = String(value);
+    if (v.length <= maxLength) {
+      return v;
+    }
+    return v.slice(0, maxLength) + suffix;
+  };
+};
+var date2 = (options) => {
+  const opt = options?.[0] ?? config2.locale;
+  return (value) => {
+    if (!(value instanceof Date)) {
+      valueMustBeDate2("date");
+    }
+    return value.toLocaleDateString(opt);
+  };
+};
+var time2 = (options) => {
+  const opt = options?.[0] ?? config2.locale;
+  return (value) => {
+    if (!(value instanceof Date)) {
+      valueMustBeDate2("time");
+    }
+    return value.toLocaleTimeString(opt);
+  };
+};
+var datetime2 = (options) => {
+  const opt = options?.[0] ?? config2.locale;
+  return (value) => {
+    if (!(value instanceof Date)) {
+      valueMustBeDate2("datetime");
+    }
+    return value.toLocaleString(opt);
+  };
+};
+var ymd2 = (options) => {
+  const opt = options?.[0] ?? "-";
+  return (value) => {
+    if (!(value instanceof Date)) {
+      valueMustBeDate2("ymd");
+    }
+    const year = value.getFullYear().toString();
+    const month = (value.getMonth() + 1).toString().padStart(2, "0");
+    const day = value.getDate().toString().padStart(2, "0");
+    return `${year}${opt}${month}${opt}${day}`;
+  };
+};
+var hms2 = (options) => {
+  const opt = options?.[0] ?? ":";
+  return (value) => {
+    if (!(value instanceof Date)) {
+      valueMustBeDate2("hms");
+    }
+    const hours = value.getHours().toString().padStart(2, "0");
+    const minutes = value.getMinutes().toString().padStart(2, "0");
+    const seconds = value.getSeconds().toString().padStart(2, "0");
+    return `${hours}${opt}${minutes}${opt}${seconds}`;
+  };
+};
+var falsy2 = (_options) => {
+  return (value) => value === false || value === null || value === void 0 || value === 0 || value === "" || Number.isNaN(value);
+};
+var truthy2 = (_options) => {
+  return (value) => value !== false && value !== null && value !== void 0 && value !== 0 && value !== "" && !Number.isNaN(value);
+};
+var defaults2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("defaults");
+  return (value) => {
+    if (value === false || value === null || value === void 0 || value === 0 || value === "" || Number.isNaN(value)) {
+      return opt;
+    }
+    return value;
+  };
+};
+var boolean2 = (_options) => {
+  return (value) => {
+    return Boolean(value);
+  };
+};
+var number2 = (_options) => {
+  return (value) => {
+    return Number(value);
+  };
+};
+var string2 = (_options) => {
+  return (value) => {
+    return String(value);
+  };
+};
+var _null2 = (_options) => {
+  return (value) => {
+    return value === "" ? null : value;
+  };
+};
+var builtinFilters2 = {
+  "eq": eq2,
+  "ne": ne2,
+  "not": not2,
+  "lt": lt2,
+  "le": le2,
+  "gt": gt2,
+  "ge": ge2,
+  "inc": inc2,
+  "dec": dec2,
+  "mul": mul2,
+  "div": div2,
+  "mod": mod2,
+  "abs": abs2,
+  "clamp": clamp2,
+  "fix": fix2,
+  "locale": locale2,
+  "uc": uc2,
+  "lc": lc2,
+  "cap": cap2,
+  "trim": trim2,
+  "slice": slice2,
+  "substr": substr2,
+  "pad": pad2,
+  "rep": rep2,
+  "rev": rev2,
+  "truncate": truncate2,
+  "join": join2,
+  "int": int2,
+  "float": float2,
+  "round": round2,
+  "floor": floor2,
+  "ceil": ceil2,
+  "percent": percent2,
+  "unit": unit2,
+  "date": date2,
+  "time": time2,
+  "datetime": datetime2,
+  "ymd": ymd2,
+  "hms": hms2,
+  "falsy": falsy2,
+  "truthy": truthy2,
+  "defaults": defaults2,
+  "boolean": boolean2,
+  "number": number2,
+  "string": string2,
+  "null": _null2
+};
+var outputBuiltinFilters2 = builtinFilters2;
+var inputBuiltinFilters = builtinFilters2;
+var builtinFiltersByFilterIOType = {
+  "input": inputBuiltinFilters,
+  "output": outputBuiltinFilters2
+};
+var builtinFilterFn = (name, options) => (filters) => {
+  const filter = filters[name];
+  if (!filter) {
+    raiseError2(`[wcs/filter-unknown] filter not found: ${name}.${didYouMean(name, Object.keys(filters))}${LINT_HINT}`);
+  }
+  return filter(options);
+};
+function finalizeArg(text, firstQuoteStart, lastQuoteEnd) {
+  const startLimit = firstQuoteStart === -1 ? text.length : firstQuoteStart;
+  let start = 0;
+  while (start < startLimit && /\s/.test(text[start])) {
+    start++;
+  }
+  const endLimit = lastQuoteEnd === -1 ? 0 : lastQuoteEnd;
+  let end = text.length;
+  while (end > endLimit && /\s/.test(text[end - 1])) {
+    end--;
+  }
+  return text.slice(start, end);
+}
+function parseFilterArgs(argsText) {
+  const args = [];
+  let current = "";
+  let inQuote = null;
+  let hasQuote = false;
+  let firstQuoteStart = -1;
+  let lastQuoteEnd = -1;
+  const flush = () => {
+    args.push(finalizeArg(current, firstQuoteStart, lastQuoteEnd));
+    current = "";
+    hasQuote = false;
+    firstQuoteStart = -1;
+    lastQuoteEnd = -1;
+  };
+  for (let i = 0; i < argsText.length; i++) {
+    const char = argsText[i];
+    if (inQuote) {
+      if (char === inQuote) {
+        inQuote = null;
+      } else {
+        if (firstQuoteStart === -1) {
+          firstQuoteStart = current.length;
+        }
+        current += char;
+        lastQuoteEnd = current.length;
+      }
+    } else if (char === '"' || char === "'") {
+      inQuote = char;
+      hasQuote = true;
+    } else if (char === ",") {
+      flush();
+    } else {
+      current += char;
+    }
+  }
+  const last = finalizeArg(current, firstQuoteStart, lastQuoteEnd);
+  if (last || hasQuote) {
+    args.push(last);
+  }
+  return args;
+}
+var filterFnByKey = /* @__PURE__ */ new Map();
+function clearFilterFnCacheForTooling() {
+  filterFnByKey.clear();
+}
+function parseFilters(filterTextList, filterIOType) {
+  const builtinFilters3 = builtinFiltersByFilterIOType[filterIOType];
+  const filters = filterTextList.map((filterText) => {
+    const openParenIndex = filterText.indexOf("(");
+    const closeParenIndex = filterText.lastIndexOf(")");
+    if (openParenIndex !== -1 && closeParenIndex === -1) {
+      raiseError2(`Invalid filter format: missing closing parenthesis in "${filterText}"`);
+    }
+    if (closeParenIndex !== -1 && openParenIndex === -1) {
+      raiseError2(`Invalid filter format: missing opening parenthesis in "${filterText}"`);
+    }
+    if (openParenIndex === -1) {
+      const filterName = filterText.trim();
+      const filterKey = `${filterName}():${filterIOType}`;
+      let filterFn = filterFnByKey.get(filterKey);
+      if (typeof filterFn === "undefined") {
+        filterFn = builtinFilterFn(filterName, [])(builtinFilters3);
+        filterFnByKey.set(filterKey, filterFn);
+      }
+      return {
+        filterName,
+        args: [],
+        filterFn
+      };
+    } else {
+      const argsText = filterText.substring(openParenIndex + 1, closeParenIndex);
+      const filterName = filterText.substring(0, openParenIndex).trim();
+      const args = parseFilterArgs(argsText);
+      const filterKey = `${filterName}(${args.join(",")}):${filterIOType}`;
+      let filterFn = filterFnByKey.get(filterKey);
+      if (typeof filterFn === "undefined") {
+        filterFn = builtinFilterFn(filterName, args)(builtinFilters3);
+        filterFnByKey.set(filterKey, filterFn);
+      }
+      return {
+        filterName,
+        args,
+        filterFn
+      };
+    }
+  });
+  return filters;
+}
+var trimFn = (s) => s.trim();
+var cacheFilterInfos$1 = /* @__PURE__ */ new Map();
+function clearPropPartCacheForTooling() {
+  cacheFilterInfos$1.clear();
+}
+function parsePropPart(propPart) {
+  const pos = propPart.indexOf(FILTER_SEPARATOR2);
+  let propText = "";
+  let filterTexts = [];
+  let filtersText = "";
+  let filters = [];
+  if (pos !== -1) {
+    propText = propPart.slice(0, pos).trim();
+    filtersText = propPart.slice(pos + 1).trim();
+    if (cacheFilterInfos$1.has(filtersText)) {
+      filters = cacheFilterInfos$1.get(filtersText);
+    } else {
+      filterTexts = filtersText.split(FILTER_SEPARATOR2).map(trimFn);
+      filters = parseFilters(filterTexts, "input");
+      cacheFilterInfos$1.set(filtersText, filters);
+    }
+  } else {
+    propText = propPart.trim();
+  }
+  const [propName, propModifiersText] = propText.split(MODIFIER_SEPARATOR2).map(trimFn);
+  const propSegments = propName.split(DELIMITER2).map(trimFn);
+  const propModifiers = propModifiersText ? propModifiersText.split(",").map(trimFn) : [];
+  return {
+    propName,
+    propSegments,
+    propModifiers,
+    inFilters: filters
+  };
+}
+var cacheFilterInfos = /* @__PURE__ */ new Map();
+function clearStatePartCacheForTooling() {
+  cacheFilterInfos.clear();
+}
+function parseStatePart(statePart) {
+  const pos = statePart.indexOf(FILTER_SEPARATOR2);
+  let stateAndPath = "";
+  let filterTexts = [];
+  let filtersText = "";
+  let filters = [];
+  if (pos !== -1) {
+    stateAndPath = statePart.slice(0, pos).trim();
+    filtersText = statePart.slice(pos + 1).trim();
+    if (cacheFilterInfos.has(filtersText)) {
+      filters = cacheFilterInfos.get(filtersText);
+    } else {
+      filterTexts = filtersText.split(FILTER_SEPARATOR2).map(trimFn);
+      filters = parseFilters(filterTexts, "output");
+      cacheFilterInfos.set(filtersText, filters);
+    }
+  } else {
+    stateAndPath = statePart.trim();
+  }
+  const [statePathName, stateName = "default"] = stateAndPath.split(STATE_NAME_SEPARATOR3).map(trimFn);
+  const pathInfo = getPathInfo(statePathName);
+  return {
+    stateName,
+    statePathName,
+    statePathInfo: pathInfo,
+    outFilters: filters
+  };
+}
+function parseBindTextsForElement(bindText) {
+  const [...bindTexts] = bindText.split(BINDING_SEPARATOR2).map(trimFn).filter((s) => s.length > 0);
+  const results = bindTexts.map((bindText2) => {
+    const separatorIndex = bindText2.indexOf(PROP_VALUE_SEPARATOR2);
+    if (separatorIndex === -1) {
+      raiseError2(`Invalid bindText: "${bindText2}". Missing ':' separator between propPart and statePart.`);
+    }
+    const propPart = bindText2.slice(0, separatorIndex).trim();
+    const statePart = bindText2.slice(separatorIndex + 1).trim();
+    if (propPart === ELSE_KEYWORD2) {
+      const pathInfo = getPathInfo("#else");
+      return {
+        propName: ELSE_KEYWORD2,
+        propSegments: [ELSE_KEYWORD2],
+        propModifiers: [],
+        statePathName: "#else",
+        statePathInfo: pathInfo,
+        stateName: "",
+        inFilters: [],
+        outFilters: [],
+        bindingType: "else"
+      };
+    } else if (propPart === SPREAD_PROP2) {
+      const stateResult = parseStatePart(statePart);
+      if (stateResult.outFilters.length > 0) {
+        raiseError2(`Invalid spread binding "${bindText2}": filters are not allowed on spread targets.`);
+      }
+      if (stateResult.statePathName.length === 0) {
+        raiseError2(`Invalid spread binding "${bindText2}": spread target path is required.`);
+      }
+      return {
+        propName: SPREAD_PROP2,
+        propSegments: [SPREAD_PROP2],
+        propModifiers: [],
+        inFilters: [],
+        ...stateResult,
+        bindingType: "spread"
+      };
+    } else if (propPart === "if" || propPart === "elseif" || propPart === "for" || propPart === "radio" || propPart === "checkbox") {
+      const stateResult = parseStatePart(statePart);
+      return {
+        propName: propPart,
+        propSegments: [propPart],
+        propModifiers: [],
+        inFilters: [],
+        ...stateResult,
+        bindingType: propPart
+      };
+    } else {
+      const stateResult = parseStatePart(statePart);
+      const propResult = parsePropPart(propPart);
+      if (propResult.propSegments[0] === EVENT_TOKEN_NAMESPACE2) {
+        return {
+          ...propResult,
+          ...stateResult,
+          bindingType: "event"
+        };
+      }
+      if (propResult.propSegments[0].startsWith(EVENT_PROP_PREFIX2)) {
+        return {
+          ...propResult,
+          ...stateResult,
+          bindingType: "event"
+        };
+      } else {
+        return {
+          ...propResult,
+          ...stateResult,
+          bindingType: "prop"
+        };
+      }
+    }
+  });
+  if (results.length > 1) {
+    const isIncludeSingleBinding = results.some((r) => STRUCTURAL_BINDING_TYPE_SET2.has(r.bindingType));
+    if (isIncludeSingleBinding) {
+      raiseError2(`[wcs/template-syntax] Invalid bindText: "${bindText}". 'if', 'elseif', 'else', and 'for' bindings must be single binding. Put the structural binding alone in its own data-wcs (e.g. <template data-wcs="for: items">).${LINT_HINT}`);
+    }
+  }
+  return results;
+}
+function parseBindTextForEmbeddedNode(bindText) {
+  const stateResult = parseStatePart(bindText);
+  return {
+    propName: "textContent",
+    propSegments: ["textContent"],
+    propModifiers: [],
+    inFilters: [],
+    ...stateResult,
+    bindingType: "text"
+  };
+}
+function clearParserCaches() {
+  clearPathInfoCacheForTooling();
+  clearPropPartCacheForTooling();
+  clearStatePartCacheForTooling();
+  clearFilterFnCacheForTooling();
+}
+
+// src/core/parser/positionalParser.ts
+var { delimiters } = getWcsManifest().syntax;
+function locate(haystack, needle, from, to) {
+  if (needle.length === 0) return null;
+  const index = haystack.indexOf(needle, from);
+  if (index === -1 || index + needle.length > to) return null;
+  return { start: index, end: index + needle.length };
+}
+function parseEmbeddedTextWithPositions(expression) {
+  const exprRange = { start: 0, end: expression.length };
+  let parsed = null;
+  let error = null;
+  try {
+    parsed = parseBindTextForEmbeddedNode(expression);
+  } catch (e) {
+    error = e.message;
+  }
+  if (parsed === null) {
+    return { exprRange, exprText: expression, parsed, error, propRange: null, pathRange: null, stateNameRange: null };
+  }
+  const firstPipe = expression.indexOf(delimiters.filter);
+  const pathScopeEnd = firstPipe === -1 ? expression.length : firstPipe;
+  const pathLocal = locate(expression, parsed.statePathName, 0, pathScopeEnd);
+  let stateNameLocal = null;
+  const at = expression.indexOf(delimiters.stateName);
+  if (at !== -1 && at < pathScopeEnd) {
+    stateNameLocal = locate(expression, parsed.stateName, at + 1, pathScopeEnd);
+  }
+  return {
+    exprRange,
+    exprText: expression,
+    parsed,
+    error,
+    propRange: null,
+    pathRange: pathLocal,
+    stateNameRange: stateNameLocal
+  };
+}
+function parseBindTextWithPositions(bindText) {
+  const results = [];
+  const segments = bindText.split(delimiters.binding);
+  let segmentStart = 0;
+  for (const segment of segments) {
+    const leading = segment.length - segment.trimStart().length;
+    const expr = segment.trim();
+    const exprStart = segmentStart + leading;
+    segmentStart += segment.length + delimiters.binding.length;
+    if (expr.length === 0) continue;
+    const exprRange = { start: exprStart, end: exprStart + expr.length };
+    let parsed = null;
+    let error = null;
+    try {
+      parsed = parseBindTextsForElement(expr)[0] ?? null;
+    } catch (e) {
+      error = e.message;
+    }
+    if (parsed === null) {
+      results.push({ exprRange, exprText: expr, parsed, error, propRange: null, pathRange: null, stateNameRange: null });
+      continue;
+    }
+    const colon = expr.indexOf(delimiters.propValue);
+    const propEndLimit = colon === -1 ? expr.length : colon;
+    const propLocal = locate(expr, parsed.propName, 0, propEndLimit);
+    let pathLocal = null;
+    let stateNameLocal = null;
+    if (colon !== -1) {
+      const stateBase = colon + 1;
+      const firstPipe = expr.indexOf(delimiters.filter, stateBase);
+      const pathScopeEnd = firstPipe === -1 ? expr.length : firstPipe;
+      pathLocal = locate(expr, parsed.statePathName, stateBase, pathScopeEnd);
+      const at = expr.indexOf(delimiters.stateName, stateBase);
+      if (at !== -1 && at < pathScopeEnd) {
+        stateNameLocal = locate(expr, parsed.stateName, at + 1, pathScopeEnd);
+      }
+    }
+    const lift = (range) => range === null ? null : { start: exprStart + range.start, end: exprStart + range.end };
+    results.push({
+      exprRange,
+      exprText: expr,
+      parsed,
+      error,
+      propRange: lift(propLocal),
+      pathRange: lift(pathLocal),
+      stateNameRange: lift(stateNameLocal)
+    });
+  }
+  return results;
+}
+
+// src/core/index/referenceIndex.ts
+function keyOf(stateName, path) {
+  return `${stateName}\0${path}`;
+}
+function buildReferenceIndex(html, options = {}) {
+  clearParserCaches();
+  const bindAttribute = options.bindAttribute ?? "data-wcs";
+  const stateTagName = options.stateTagName ?? "wcs-state";
+  const occurrences = [];
+  const problems = [];
+  for (const attr of findAllBindAttributes(html, bindAttribute)) {
+    for (const binding of parseBindTextWithPositions(attr.value)) {
+      const lift = (range) => ({ start: attr.valueStart + range.start, end: attr.valueStart + range.end });
+      if (binding.parsed === null) {
+        problems.push({ message: binding.error ?? "parse error", range: lift(binding.exprRange) });
+        continue;
+      }
+      if (binding.pathRange === null) continue;
+      occurrences.push({
+        source: "attribute",
+        kind: binding.parsed.propSegments[0] === "eventToken" ? "eventToken" : "path",
+        stateName: binding.parsed.stateName,
+        path: binding.parsed.statePathName,
+        pathRange: lift(binding.pathRange),
+        exprRange: lift(binding.exprRange),
+        propName: binding.parsed.propName,
+        propRange: binding.propRange === null ? null : lift(binding.propRange),
+        stateNameRange: binding.stateNameRange === null ? null : lift(binding.stateNameRange),
+        bindingType: binding.parsed.bindingType
+      });
+    }
+  }
+  const textMatches = [
+    ...findAllMustacheSyntax(html),
+    ...findAllCommentBindings(html)
+  ];
+  for (const match of textMatches) {
+    const binding = parseEmbeddedTextWithPositions(match.expression);
+    const shift = (range) => ({
+      start: match.exprStart + range.start,
+      end: match.exprStart + range.end
+    });
+    if (binding.parsed === null) {
+      problems.push({ message: binding.error ?? "parse error", range: shift(binding.exprRange) });
+      continue;
+    }
+    if (binding.pathRange === null) continue;
+    occurrences.push({
+      source: match.kind,
+      kind: "path",
+      stateName: binding.parsed.stateName,
+      path: binding.parsed.statePathName,
+      pathRange: shift(binding.pathRange),
+      exprRange: { start: match.exprStart, end: match.exprEnd },
+      propName: null,
+      propRange: null,
+      stateNameRange: binding.stateNameRange === null ? null : shift(binding.stateNameRange),
+      bindingType: "text"
+    });
+  }
+  const declarations = [];
+  for (const block of parseWcsScriptBlocks(html, stateTagName)) {
+    for (const span of analyzeDeclarationSpans(block.content)) {
+      declarations.push({
+        stateName: block.stateName,
+        name: span.name,
+        kind: span.kind,
+        range: { start: block.contentStart + span.start, end: block.contentStart + span.end }
+      });
+    }
+  }
+  const byPath = /* @__PURE__ */ new Map();
+  for (const occurrence of occurrences) {
+    if (occurrence.kind !== "path") continue;
+    const key = keyOf(occurrence.stateName, occurrence.path);
+    const list = byPath.get(key);
+    if (list === void 0) {
+      byPath.set(key, [occurrence]);
+    } else {
+      list.push(occurrence);
+    }
+  }
+  const declarationByName = /* @__PURE__ */ new Map();
+  for (const declaration of declarations) {
+    const key = keyOf(declaration.stateName, declaration.name);
+    if (!declarationByName.has(key)) declarationByName.set(key, declaration);
+  }
+  return {
+    occurrences,
+    declarations,
+    problems,
+    referencesOf(stateName, path) {
+      return (byPath.get(keyOf(stateName, path)) ?? []).slice();
+    },
+    declarationOf(stateName, path) {
+      const exact = declarationByName.get(keyOf(stateName, path));
+      if (exact !== void 0) return exact;
+      const firstSegment = path.split(".")[0];
+      if (firstSegment === path) return null;
+      return declarationByName.get(keyOf(stateName, firstSegment)) ?? null;
+    },
+    occurrenceAt(offset) {
+      for (const occurrence of occurrences) {
+        if (offset >= occurrence.pathRange.start && offset < occurrence.pathRange.end) {
+          return occurrence;
+        }
+      }
+      return null;
+    }
+  };
+}
+
+// src/service/semanticValidator.ts
+var STATE_UPDATED_CALLBACK = "$updatedCallback";
+var API_CALL = /\.\s*\$(getAll|resolve)\s*\(/g;
+var STRING_LITERAL = /^\s*(["'])((?:\\.|(?!\1)[^\\])*)\1\s*$/;
+function splitCallArgs(source, open) {
+  const args = [];
+  const starts = [];
+  let depth = 0;
+  let argStart = open;
+  let i = open;
+  while (i < source.length) {
+    const ch = source[i];
+    if (ch === '"' || ch === "'" || ch === "`") {
+      const quote = ch;
+      i++;
+      while (i < source.length) {
+        if (source[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (source[i] === quote) {
+          i++;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+    if (ch === "(" || ch === "[" || ch === "{") {
+      depth++;
+      i++;
+      continue;
+    }
+    if (ch === ")" && depth === 0) {
+      args.push(source.slice(argStart, i));
+      starts.push(argStart);
+      return { args, starts, end: i + 1 };
+    }
+    if (ch === ")" || ch === "]" || ch === "}") {
+      depth--;
+      i++;
+      continue;
+    }
+    if (ch === "," && depth === 0) {
+      args.push(source.slice(argStart, i));
+      starts.push(argStart);
+      argStart = i + 1;
+      i++;
+      continue;
+    }
+    i++;
+  }
+  return null;
+}
+function literalString(arg) {
+  const match = STRING_LITERAL.exec(arg);
+  return match === null ? null : match[2];
+}
+function literalArrayLength(arg) {
+  const trimmed = arg.trim();
+  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return null;
+  const inner = trimmed.slice(1, -1);
+  if (inner.trim().length === 0) return 0;
+  if (/(^|[^.])\.\.\./.test(inner)) return null;
+  const parts = splitCallArgs(`${inner})`, 0);
+  if (parts === null) return null;
+  return parts.args.filter((part) => part.trim().length > 0).length;
+}
+function validateIndexArity(script, scriptStart, locale3) {
+  const msgs = getMessages(locale3);
+  const out = [];
+  API_CALL.lastIndex = 0;
+  let match;
+  while ((match = API_CALL.exec(script)) !== null) {
+    const api = `$${match[1]}`;
+    const parsed = splitCallArgs(script, match.index + match[0].length);
+    if (parsed === null) continue;
+    API_CALL.lastIndex = parsed.end;
+    if (parsed.args.length < 2) continue;
+    const path = literalString(parsed.args[0]);
+    if (path === null) continue;
+    const actual = literalArrayLength(parsed.args[1]);
+    if (actual === null) continue;
+    const wildcardCount = countWildcardSegments(path);
+    const requirement = api === "$resolve" ? "exact" : "atMost";
+    const mismatched = requirement === "exact" ? actual !== wildcardCount : actual > wildcardCount;
+    if (!mismatched) continue;
+    const argText = parsed.args[1];
+    const leading = argText.length - argText.trimStart().length;
+    out.push({
+      code: WcsDiagnosticCode.IndexArity,
+      start: scriptStart + parsed.starts[1] + leading,
+      end: scriptStart + parsed.starts[1] + argText.trimEnd().length,
+      message: msgs.indexArity(api, path, requirement, wildcardCount, actual),
+      severity: "warning"
+    });
+  }
+  return out;
+}
+var READ_BRACKET = /\bthis\s*\??\.\s*\[\s*(["'])((?:\\.|(?!\1)[^\\])*)\1\s*\]|\bthis\s*\??\[\s*(["'])((?:\\.|(?!\3)[^\\])*)\3\s*\]/g;
+var READ_DOT = /\bthis\s*\??\.\s*([A-Za-z_]\w*)/g;
+var READ_API = /\bthis\s*\??\.\s*\$(?:getAll|resolve)\s*\(\s*(["'])((?:\\.|(?!\1)[^\\])*)\1/g;
+function collectReadPaths(body) {
+  const paths = /* @__PURE__ */ new Set();
+  for (const [regex, groups] of [
+    [READ_BRACKET, [2, 4]],
+    [READ_API, [2]],
+    [READ_DOT, [1]]
+  ]) {
+    regex.lastIndex = 0;
+    let match;
+    while ((match = regex.exec(body)) !== null) {
+      for (const group of groups) {
+        const value = match[group];
+        if (value !== void 0 && value.length > 0 && !value.startsWith("$")) {
+          paths.add(value);
+        }
+      }
+    }
+  }
+  return paths;
+}
+function validateGetterCycles(script, scriptStart, locale3) {
+  const msgs = getMessages(locale3);
+  const getters = analyzeCallableBodies(script).filter((entry) => entry.kind === "getter");
+  if (getters.length === 0) return [];
+  const declared = new Set(getters.map((getter) => getter.name));
+  const edges = /* @__PURE__ */ new Map();
+  for (const getter of getters) {
+    const targets = [];
+    for (const read of collectReadPaths(getter.body)) {
+      if (declared.has(read)) targets.push(read);
+    }
+    edges.set(getter.name, targets);
+  }
+  const gray = /* @__PURE__ */ new Set();
+  const black = /* @__PURE__ */ new Set();
+  const stack = [];
+  const cyclesByEntry = /* @__PURE__ */ new Map();
+  const visit = (name) => {
+    if (black.has(name)) return;
+    if (gray.has(name)) {
+      const from = stack.indexOf(name);
+      const cycle = stack.slice(from).concat(name).join(" -> ");
+      for (const member of stack.slice(from)) {
+        if (!cyclesByEntry.has(member)) cyclesByEntry.set(member, cycle);
+      }
+      return;
+    }
+    gray.add(name);
+    stack.push(name);
+    for (const next of edges.get(name) ?? []) {
+      visit(next);
+    }
+    stack.pop();
+    gray.delete(name);
+    black.add(name);
+  };
+  for (const getter of getters) {
+    visit(getter.name);
+  }
+  if (cyclesByEntry.size === 0) return [];
+  const out = [];
+  for (const getter of getters) {
+    const cycle = cyclesByEntry.get(getter.name);
+    if (cycle === void 0) continue;
+    out.push({
+      code: WcsDiagnosticCode.GetterCycle,
+      start: scriptStart + getter.start,
+      end: scriptStart + getter.end,
+      message: msgs.getterCycle(cycle),
+      severity: "warning"
+    });
+  }
+  return out;
+}
+function blankComments(source) {
+  const out = source.split("");
+  let i = 0;
+  while (i < source.length) {
+    const ch = source[i];
+    if (ch === '"' || ch === "'" || ch === "`") {
+      const quote = ch;
+      i++;
+      while (i < source.length) {
+        if (source[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (source[i] === quote) {
+          i++;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+    if (ch === "/" && source[i + 1] === "/") {
+      while (i < source.length && source[i] !== "\n") {
+        out[i] = " ";
+        i++;
+      }
+      continue;
+    }
+    if (ch === "/" && source[i + 1] === "*") {
+      while (i < source.length && !(source[i] === "*" && source[i + 1] === "/")) {
+        out[i] = " ";
+        i++;
+      }
+      if (i < source.length) {
+        out[i] = " ";
+        out[i + 1] = " ";
+        i += 2;
+      }
+      continue;
+    }
+    i++;
+  }
+  return out.join("");
+}
+var PATH_TEST_LITERAL = /(?:\.\s*(?:includes|indexOf)\s*\(\s*|[!=]==\s*)(["'])((?:\\.|(?!\1)[^\\])*)\1/g;
+function validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale3) {
+  const blocks = parseWcsScriptBlocks(html, stateTagName);
+  if (blocks.length === 0) return [];
+  const hasCallback = blocks.some((block) => block.content.includes(STATE_UPDATED_CALLBACK));
+  if (!hasCallback) return [];
+  const msgs = getMessages(locale3);
+  const boundPaths = collectBoundPaths(html, stateTagName, bindAttrName);
+  const out = [];
+  for (const block of blocks) {
+    const callback = analyzeCallableBodies(block.content).find((entry) => entry.name === STATE_UPDATED_CALLBACK && entry.kind === "method");
+    if (callback === void 0) continue;
+    const declared = new Set(analyzeStatePaths(block.content, block.stateName).map((p) => p.path));
+    const bound = boundPaths.get(block.stateName) ?? /* @__PURE__ */ new Set();
+    const body = blankComments(callback.body);
+    PATH_TEST_LITERAL.lastIndex = 0;
+    let match;
+    const reported = /* @__PURE__ */ new Set();
+    while ((match = PATH_TEST_LITERAL.exec(body)) !== null) {
+      const path = match[2];
+      if (path.length === 0 || !declared.has(path) || bound.has(path)) continue;
+      if (reported.has(path)) continue;
+      reported.add(path);
+      const quoteAt = match.index + match[0].length - path.length - 1;
+      out.push({
+        code: WcsDiagnosticCode.UpdatedCallbackUnbound,
+        start: block.contentStart + callback.bodyStart + quoteAt,
+        end: block.contentStart + callback.bodyStart + quoteAt + path.length,
+        message: msgs.updatedCallbackUnbound(path),
+        severity: "warning"
+      });
+    }
+  }
+  return out;
+}
+function collectBoundPaths(html, stateTagName, bindAttrName) {
+  const byState = /* @__PURE__ */ new Map();
+  const add = (stateName, path) => {
+    let set = byState.get(stateName);
+    if (set === void 0) {
+      set = /* @__PURE__ */ new Set();
+      byState.set(stateName, set);
+    }
+    set.add(path);
+  };
+  const index = buildReferenceIndex(html, { bindAttribute: bindAttrName, stateTagName });
+  for (const occurrence of index.occurrences) {
+    add(occurrence.stateName, occurrence.path);
+    if (!occurrence.path.startsWith(".")) continue;
+    const forPath = getInnermostForPath(html, occurrence.pathRange.start, bindAttrName);
+    if (forPath === null || forPath.startsWith(".")) continue;
+    add(
+      occurrence.stateName,
+      occurrence.path === "." ? `${forPath}.*` : `${forPath}.*.${occurrence.path.slice(1)}`
+    );
+  }
+  return byState;
+}
+function validateSemantics(html, stateTagName = "wcs-state", locale3, bindAttrName = "data-wcs") {
+  const out = [];
+  for (const block of parseWcsScriptBlocks(html, stateTagName)) {
+    out.push(...validateIndexArity(block.content, block.contentStart, locale3));
+    out.push(...validateGetterCycles(block.content, block.contentStart, locale3));
+  }
+  out.push(...validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale3));
+  return out;
+}
+
 // src/core/validateDocument.ts
 function validateDocument(text, options = {}) {
   const bindAttribute = options.bindAttribute ?? "data-wcs";
   const stateTagName = options.stateTagName ?? "wcs-state";
-  const locale = options.locale;
+  const locale3 = options.locale;
   const fileReader = options.fileReader;
   const out = [];
-  out.push(...validateBindings(text, bindAttribute, stateTagName, locale, fileReader));
-  out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute, locale, fileReader));
-  out.push(...validateIoNodes(text, bindAttribute, stateTagName, locale, fileReader));
-  out.push(...validateDocumentEnv(text, locale));
-  out.push(...validateArrayMutations(text, stateTagName, locale));
-  out.push(...validateWatchDeclarations(text, stateTagName, locale));
-  for (const d of validateStateTypes(text, stateTagName, locale)) {
+  out.push(...validateBindings(text, bindAttribute, stateTagName, locale3, fileReader));
+  out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute, locale3, fileReader));
+  out.push(...validateIoNodes(text, bindAttribute, stateTagName, locale3, fileReader));
+  out.push(...validateDocumentEnv(text, locale3));
+  out.push(...validateSemantics(text, stateTagName, locale3, bindAttribute));
+  out.push(...validateArrayMutations(text, stateTagName, locale3));
+  out.push(...validateWatchDeclarations(text, stateTagName, locale3));
+  for (const d of validateStateTypes(text, stateTagName, locale3)) {
     out.push({ code: WcsDiagnosticCode.TypeAnnotation, start: d.start, end: d.end, message: d.message, severity: d.severity });
   }
-  for (const d of validateNestedAssigns(text, stateTagName, locale)) {
+  for (const d of validateNestedAssigns(text, stateTagName, locale3)) {
     out.push({ code: WcsDiagnosticCode.NestedAssign, start: d.start, end: d.end, message: d.message, severity: d.severity });
   }
   return sortDiagnostics(out);
@@ -4336,29 +6591,6 @@ function runValidation(inputs, options = {}) {
 function classify(path) {
   return path.endsWith(".manifest.json") ? "manifest" : "html";
 }
-function createFileReader(htmlPath, read = (p) => (0, import_node_fs.readFileSync)(p, "utf8")) {
-  const base = (0, import_node_path.dirname)(htmlPath);
-  const cache = /* @__PURE__ */ new Map();
-  return (relativePath) => {
-    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(relativePath) || relativePath.startsWith("/")) {
-      return void 0;
-    }
-    if (cache.has(relativePath)) {
-      return cache.get(relativePath);
-    }
-    let content;
-    try {
-      content = read((0, import_node_path.resolve)(base, relativePath));
-      if (content.charCodeAt(0) === 65279) {
-        content = content.slice(1);
-      }
-    } catch {
-      content = void 0;
-    }
-    cache.set(relativePath, content);
-    return content;
-  };
-}
 function parseArgs(argv) {
   const options = {};
   const files = [];
@@ -4383,7 +6615,7 @@ function resolveCliLocale(explicit, env = process.env) {
 }
 function main(argv) {
   const { options, files } = parseArgs(argv);
-  const locale = resolveCliLocale(options.locale);
+  const locale3 = resolveCliLocale(options.locale);
   if (files.length === 0) {
     process.stderr.write("usage: wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] <file> [<file> ...]\n");
     return 2;
@@ -4392,7 +6624,7 @@ function main(argv) {
   for (const path of files) {
     let text;
     try {
-      text = (0, import_node_fs.readFileSync)(path, "utf8");
+      text = (0, import_node_fs2.readFileSync)(path, "utf8");
     } catch (e) {
       process.stderr.write(`cannot read ${path}: ${e.message}
 `);
@@ -4401,7 +6633,7 @@ function main(argv) {
     const kind = classify(path);
     inputs.push({ source: path, text, kind, fileReader: kind === "html" ? createFileReader(path) : void 0 });
   }
-  const result = runValidation(inputs, { ...options, locale });
+  const result = runValidation(inputs, { ...options, locale: locale3 });
   for (const line of result.lines) {
     process.stdout.write(line + "\n");
   }

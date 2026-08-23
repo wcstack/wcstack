@@ -89,7 +89,7 @@ interface WcsPipCoreValues {
  */
 type WcsPipValues = WcsPipCoreValues;
 
-declare function bootstrapPip(userConfig?: IWritableConfig): void;
+declare function bootstrapPip(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

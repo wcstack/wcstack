@@ -1464,26 +1464,31 @@ class InfiniteScroll extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.fetch)) {
-        customElements.define(config.tagNames.fetch, Fetch);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.fetch)) {
+        registry.define(config.tagNames.fetch, Fetch);
     }
-    if (!customElements.get(config.tagNames.fetchHeader)) {
-        customElements.define(config.tagNames.fetchHeader, FetchHeader);
+    if (!registry.get(config.tagNames.fetchHeader)) {
+        registry.define(config.tagNames.fetchHeader, FetchHeader);
     }
-    if (!customElements.get(config.tagNames.fetchBody)) {
-        customElements.define(config.tagNames.fetchBody, FetchBody);
+    if (!registry.get(config.tagNames.fetchBody)) {
+        registry.define(config.tagNames.fetchBody, FetchBody);
     }
-    if (!customElements.get(config.tagNames.infiniteScroll)) {
-        customElements.define(config.tagNames.infiniteScroll, InfiniteScroll);
+    if (!registry.get(config.tagNames.infiniteScroll)) {
+        registry.define(config.tagNames.infiniteScroll, InfiniteScroll);
     }
 }
 
-function bootstrapFetch(userConfig) {
+function bootstrapFetch(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { FetchCore, WCS_FETCH_ERROR_CODE, Fetch as WcsFetch, InfiniteScroll as WcsInfiniteScroll, bootstrapFetch, getConfig };

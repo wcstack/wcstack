@@ -112,7 +112,7 @@ interface WcsDebounceCoreCommands {
 }
 type WcsDebounceCommands = WcsDebounceCoreCommands;
 
-declare function bootstrapDebounce(userConfig?: IWritableConfig): void;
+declare function bootstrapDebounce(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

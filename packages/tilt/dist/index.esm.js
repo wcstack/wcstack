@@ -469,17 +469,22 @@ class WcsTilt extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.tilt)) {
-        customElements.define(config.tagNames.tilt, WcsTilt);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.tilt)) {
+        registry.define(config.tagNames.tilt, WcsTilt);
     }
 }
 
-function bootstrapTilt(userConfig) {
+function bootstrapTilt(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { TiltCore, WCS_TILT_ERROR_CODE, WcsTilt, bootstrapTilt, getConfig };

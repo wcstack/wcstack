@@ -695,20 +695,25 @@ class Throttle extends Debounce {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.debounce)) {
-        customElements.define(config.tagNames.debounce, Debounce);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.debounce)) {
+        registry.define(config.tagNames.debounce, Debounce);
     }
-    if (!customElements.get(config.tagNames.throttle)) {
-        customElements.define(config.tagNames.throttle, Throttle);
+    if (!registry.get(config.tagNames.throttle)) {
+        registry.define(config.tagNames.throttle, Throttle);
     }
 }
 
-function bootstrapDebounce(userConfig) {
+function bootstrapDebounce(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { DebounceCore, Debounce as WcsDebounce, Throttle as WcsThrottle, bootstrapDebounce, getConfig, makeDebounceProperties };

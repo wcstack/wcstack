@@ -83,7 +83,7 @@ type WcsNetworkCoreValues = WcsNetworkSnapshot;
  */
 type WcsNetworkValues = WcsNetworkCoreValues;
 
-declare function bootstrapNetwork(userConfig?: IWritableConfig): void;
+declare function bootstrapNetwork(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

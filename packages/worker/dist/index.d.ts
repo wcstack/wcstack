@@ -154,7 +154,7 @@ interface WcsWorkerCommands {
     terminate(): void;
 }
 
-declare function bootstrapWorker(userConfig?: IWritableConfig): void;
+declare function bootstrapWorker(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

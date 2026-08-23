@@ -129,7 +129,7 @@ interface WcsSseCommands {
     close(): void;
 }
 
-declare function bootstrapSse(userConfig?: IWritableConfig): void;
+declare function bootstrapSse(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

@@ -177,7 +177,7 @@ interface WcsGeoCommands {
     clearWatch(): void;
 }
 
-declare function bootstrapGeolocation(userConfig?: IWritableConfig): void;
+declare function bootstrapGeolocation(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

@@ -745,17 +745,22 @@ class WcsIntersect extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.intersect)) {
-        customElements.define(config.tagNames.intersect, WcsIntersect);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.intersect)) {
+        registry.define(config.tagNames.intersect, WcsIntersect);
     }
 }
 
-function bootstrapIntersection(userConfig) {
+function bootstrapIntersection(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { IntersectionCore, WcsIntersect, bootstrapIntersection, getConfig };

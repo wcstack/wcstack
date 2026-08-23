@@ -111,7 +111,7 @@ type WcsScreenOrientationCoreValues = WcsScreenOrientationSnapshot & {
  */
 type WcsScreenOrientationValues = WcsScreenOrientationCoreValues;
 
-declare function bootstrapScreenOrientation(userConfig?: IWritableConfig): void;
+declare function bootstrapScreenOrientation(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

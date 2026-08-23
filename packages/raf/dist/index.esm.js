@@ -725,17 +725,22 @@ class Raf extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.raf)) {
-        customElements.define(config.tagNames.raf, Raf);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.raf)) {
+        registry.define(config.tagNames.raf, Raf);
     }
 }
 
-function bootstrapRaf(userConfig) {
+function bootstrapRaf(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { RafCore, Raf as WcsRaf, bootstrapRaf, getConfig };

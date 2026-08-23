@@ -94,7 +94,7 @@ interface WcsStorageValues<T = unknown> extends WcsStorageCoreValues<T> {
     trigger: boolean;
 }
 
-declare function bootstrapStorage(userConfig?: IWritableConfig): void;
+declare function bootstrapStorage(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

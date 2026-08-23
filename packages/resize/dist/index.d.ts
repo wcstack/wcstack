@@ -176,7 +176,7 @@ interface WcsResizeCommands {
     disconnect(): void;
 }
 
-declare function bootstrapResize(userConfig?: IWritableConfig): void;
+declare function bootstrapResize(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

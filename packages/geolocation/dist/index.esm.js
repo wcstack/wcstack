@@ -874,17 +874,22 @@ class WcsGeolocation extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.geo)) {
-        customElements.define(config.tagNames.geo, WcsGeolocation);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.geo)) {
+        registry.define(config.tagNames.geo, WcsGeolocation);
     }
 }
 
-function bootstrapGeolocation(userConfig) {
+function bootstrapGeolocation(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { GeolocationCore, WCS_GEO_ERROR_CODE, WcsGeolocation, bootstrapGeolocation, getConfig };

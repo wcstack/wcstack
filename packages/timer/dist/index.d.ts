@@ -112,7 +112,7 @@ interface WcsTimerCommands {
     resume(): void;
 }
 
-declare function bootstrapTimer(userConfig?: IWritableConfig): void;
+declare function bootstrapTimer(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

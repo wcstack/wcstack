@@ -149,6 +149,18 @@ type DevtoolsEventLike = {
     readonly stateName: string;
     readonly path: string;
 } | {
+    readonly type: "state:path-unresolved";
+    readonly source: "binding" | "watch";
+    readonly stateName: string;
+    readonly path: string;
+    readonly missingSegment: string;
+} | {
+    readonly type: "state:binding-apply-error";
+    readonly stateName: string;
+    readonly path: string;
+    readonly bindingType: string;
+    readonly error: unknown;
+} | {
     readonly type: "propagation:suppressed";
     readonly reason: "confirmation" | "visited-edge";
     readonly transactionId: number;
@@ -227,7 +239,7 @@ interface IDevtoolsHookRegistryLike {
 
 /** 予約 state 名 prefix（protocol §5）。この prefix の要素・イベントは常に除外 */
 declare const RESERVED_STATE_NAME_PREFIX = "wcs-devtools";
-type TimelineKind = "write" | "batch" | "command" | "event" | "element-registered" | "element-unregistered" | "watch-error" | "watch-chain-limit" | "propagation-suppressed" | "propagation-coalesced" | "propagation-hop-limit" | "contract-drift";
+type TimelineKind = "write" | "batch" | "command" | "event" | "element-registered" | "element-unregistered" | "watch-error" | "watch-chain-limit" | "path-unresolved" | "binding-apply-error" | "propagation-suppressed" | "propagation-coalesced" | "propagation-hop-limit" | "contract-drift";
 interface ITimelineEntry {
     readonly seq: number;
     readonly time: number;

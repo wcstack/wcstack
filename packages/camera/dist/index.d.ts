@@ -210,7 +210,7 @@ interface WcsRecorderCommands {
     resume(): void;
 }
 
-declare function bootstrapCamera(userConfig?: IWritableConfig): void;
+declare function bootstrapCamera(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

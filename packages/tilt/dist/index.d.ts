@@ -88,7 +88,7 @@ interface WcsTiltCoreValues {
  */
 type WcsTiltValues = WcsTiltCoreValues;
 
-declare function bootstrapTilt(userConfig?: IWritableConfig): void;
+declare function bootstrapTilt(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

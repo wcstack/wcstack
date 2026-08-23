@@ -101,7 +101,7 @@ interface WcsAmbientLightSensorCoreValues extends WcsAmbientLightSensorReading {
  */
 type WcsAmbientLightSensorValues = WcsAmbientLightSensorCoreValues;
 
-declare function bootstrapAmbientLightSensor(userConfig?: IWritableConfig): void;
+declare function bootstrapAmbientLightSensor(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

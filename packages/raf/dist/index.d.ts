@@ -110,7 +110,7 @@ interface WcsRafCommands {
     resume(): void;
 }
 
-declare function bootstrapRaf(userConfig?: IWritableConfig): void;
+declare function bootstrapRaf(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

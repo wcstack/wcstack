@@ -166,7 +166,7 @@ interface WcsContactsCoreValues {
  */
 type WcsContactsValues = WcsContactsCoreValues;
 
-declare function bootstrapContacts(userConfig?: IWritableConfig): void;
+declare function bootstrapContacts(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

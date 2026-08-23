@@ -1741,20 +1741,25 @@ class WcsListen extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.speak)) {
-        customElements.define(config.tagNames.speak, WcsSpeak);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.speak)) {
+        registry.define(config.tagNames.speak, WcsSpeak);
     }
-    if (!customElements.get(config.tagNames.listen)) {
-        customElements.define(config.tagNames.listen, WcsListen);
+    if (!registry.get(config.tagNames.listen)) {
+        registry.define(config.tagNames.listen, WcsListen);
     }
 }
 
-function bootstrapSpeech(userConfig) {
+function bootstrapSpeech(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { ListenCore, SpeakCore, WCS_LISTEN_ERROR_CODE, WCS_SPEAK_ERROR_CODE, WcsListen, WcsSpeak, bootstrapSpeech, getConfig };

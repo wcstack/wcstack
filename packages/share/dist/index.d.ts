@@ -154,7 +154,7 @@ interface WcsShareCoreValues {
  */
 type WcsShareValues = WcsShareCoreValues;
 
-declare function bootstrapShare(userConfig?: IWritableConfig): void;
+declare function bootstrapShare(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

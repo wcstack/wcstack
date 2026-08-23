@@ -644,17 +644,22 @@ class WcsBroadcast extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.broadcast)) {
-        customElements.define(config.tagNames.broadcast, WcsBroadcast);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.broadcast)) {
+        registry.define(config.tagNames.broadcast, WcsBroadcast);
     }
 }
 
-function bootstrapBroadcast(userConfig) {
+function bootstrapBroadcast(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { BroadcastCore, WCS_BROADCAST_ERROR_CODE, WcsBroadcast, bootstrapBroadcast, getConfig };

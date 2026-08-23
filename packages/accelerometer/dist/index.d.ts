@@ -103,7 +103,7 @@ interface WcsAccelerometerCoreValues extends WcsAccelerometerReading {
  */
 type WcsAccelerometerValues = WcsAccelerometerCoreValues;
 
-declare function bootstrapAccelerometer(userConfig?: IWritableConfig): void;
+declare function bootstrapAccelerometer(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

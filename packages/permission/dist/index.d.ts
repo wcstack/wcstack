@@ -109,7 +109,7 @@ interface WcsPermissionInputs {
     sysex: boolean;
 }
 
-declare function bootstrapPermission(userConfig?: IWritableConfig): void;
+declare function bootstrapPermission(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

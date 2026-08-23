@@ -568,17 +568,22 @@ class WcsFullscreen extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.fullscreen)) {
-        customElements.define(config.tagNames.fullscreen, WcsFullscreen);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.fullscreen)) {
+        registry.define(config.tagNames.fullscreen, WcsFullscreen);
     }
 }
 
-function bootstrapFullscreen(userConfig) {
+function bootstrapFullscreen(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { FullscreenCore, WCS_FULLSCREEN_ERROR_CODE, WcsFullscreen, bootstrapFullscreen, getConfig };

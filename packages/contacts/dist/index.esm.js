@@ -813,17 +813,22 @@ class WcsContacts extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.contacts)) {
-        customElements.define(config.tagNames.contacts, WcsContacts);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.contacts)) {
+        registry.define(config.tagNames.contacts, WcsContacts);
     }
 }
 
-function bootstrapContacts(userConfig) {
+function bootstrapContacts(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { ContactsCore, WCS_CONTACTS_ERROR_CODE, WcsContacts, bootstrapContacts, getConfig };

@@ -165,7 +165,7 @@ interface WcsAudioInputs {
     resumeOnGesture: boolean;
 }
 
-declare function bootstrapAudio(userConfig?: IWritableConfig): void;
+declare function bootstrapAudio(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

@@ -83,7 +83,7 @@ interface WcsIdleCoreValues {
  */
 type WcsIdleValues = WcsIdleCoreValues;
 
-declare function bootstrapIdle(userConfig?: IWritableConfig): void;
+declare function bootstrapIdle(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

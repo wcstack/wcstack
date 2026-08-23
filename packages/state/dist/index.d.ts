@@ -42,6 +42,35 @@ interface ILoopContextStack {
     createLoopContext(elementStateAddress: IStateAddress, callback: (loopContext: ILoopContext) => void | Promise<void>): void | Promise<void>;
 }
 
+/**
+ * pathDiagnostics.ts — バインド / `$watch` 対象パスの存在検査（silent failure の可視化）。
+ *
+ * なぜ必要か:
+ * `getByAddress` は「親が null / undefined のパスの読み」を undefined で返し、
+ * undefined はプロパティ書き込みがスキップされる値なので、`user.nmae` のような
+ * 打ち間違いは**エラーも警告も出さずに DOM が更新されない**だけになる。一方で
+ * トップレベルの打ち間違い（`cout`）は parentAddress を辿れず raiseError で落ちる。
+ * 同じ「パスを打ち間違えた」という 1 つの失敗が、パスの深さで silent / loud に
+ * 割れており、書き手からは区別がつかない。ここはその silent 側を埋める。
+ *
+ * 精度方針（過小近似）:
+ * 「確実に存在しない」と言い切れる場合にだけ報告する。getter の戻り値の先・
+ * 空配列・null 親・mapped な `bind-component` など、静的に決められない形はすべて
+ * `"unknown"` に倒して黙る（偽陽性ゼロ優先。docs/static-wiring-dx-design.md D7 /
+ * [ADR-06](../../docs/architecture-hardening/06-path-type-safety.md) の精度哲学）。
+ *
+ * 診断 code はコンソール → lint → IDE の三面で共有する（errorGuidance.ts の規約）。
+ */
+
+/** `setPathInfo` の呼び出し元の種別。診断 code と適用範囲がこれで変わる */
+type PathInfoSource = 
+/** data-wcs / mustache / コメントバインディング */
+"binding"
+/** `$watch` の宣言キー */
+ | "watch"
+/** ランタイム内部のパス翻訳（mapped な bind-component の外向き伝播）。検査しない */
+ | "internal";
+
 declare const setLoopContextSymbol: unique symbol;
 declare const getByAddressSymbol: unique symbol;
 declare const hasByAddressSymbol: unique symbol;
@@ -151,8 +180,11 @@ interface IStateElement {
      * パスを依存グラフへ登録する。DOM バインディング登録（BindingSession）のほか、
      * `$watch` 宣言（processWatchDeclaration）からも呼ばれる — 静的依存グラフに
      * 載るのがバインド済みパスだけだと headless 購読が成立しないため（設計書 §8）。
+     *
+     * `source` は存在検査の診断 code と適用範囲を決める（pathDiagnostics.ts）。
+     * 省略時は `"binding"`（テスト用モック互換のため optional）。
      */
-    setPathInfo(path: string, bindingType: BindingType): void;
+    setPathInfo(path: string, bindingType: BindingType, source?: PathInfoSource): void;
     addStaticDependency(parentPath: string, childPath: string): boolean;
     addDynamicDependency(fromPath: string, toPath: string): boolean;
     createStateAsync(mutability: Mutability, callback: (state: IStateProxy) => Promise<void>): Promise<void>;
@@ -315,7 +347,7 @@ interface IWritableConfig {
     sameValueGuard?: boolean;
 }
 
-declare function bootstrapState(config?: IWritableConfig): void;
+declare function bootstrapState(config?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -812,6 +844,22 @@ type DevtoolsEvent = {
     readonly stateName: string;
     /** `$watch` の宣言キー（ワイルドカードを含む生のパス） */
     readonly path: string;
+} | {
+    readonly type: "state:path-unresolved";
+    /** 書き手が書いた面。診断 code が binding / watch で変わる */
+    readonly source: "binding" | "watch";
+    readonly stateName: string;
+    /** 宣言されたパス（ワイルドカードを含む生の文字列） */
+    readonly path: string;
+    /** 解決に失敗したセグメント */
+    readonly missingSegment: string;
+} | {
+    readonly type: "state:binding-apply-error";
+    readonly stateName: string;
+    /** バインディングの state パス（ワイルドカードを含む生の文字列） */
+    readonly path: string;
+    readonly bindingType: string;
+    readonly error: unknown;
 } | {
     readonly type: "propagation:suppressed";
     readonly reason: "confirmation" | "visited-edge";

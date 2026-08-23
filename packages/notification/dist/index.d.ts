@@ -175,7 +175,7 @@ interface WcsNotifyInputs {
     manual: boolean;
 }
 
-declare function bootstrapNotification(userConfig?: IWritableConfig): void;
+declare function bootstrapNotification(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

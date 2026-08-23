@@ -74,7 +74,7 @@ type BuiltinParamTypes = "int" | "float" | "bool" | "uuid" | "slug" | "isoDate" 
  * This is the main entry point for setting up the router.
  * @param config - Optional partial configuration to override defaults
  */
-declare function bootstrapRouter(config?: Partial<IWritableConfig>): void;
+declare function bootstrapRouter(config?: Partial<IWritableConfig>, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

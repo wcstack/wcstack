@@ -125,7 +125,7 @@ interface WcsWakeLockCommands {
     release(): void;
 }
 
-declare function bootstrapWakeLock(userConfig?: IWritableConfig): void;
+declare function bootstrapWakeLock(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

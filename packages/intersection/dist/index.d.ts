@@ -161,7 +161,7 @@ interface WcsIntersectCommands {
     reset(): void;
 }
 
-declare function bootstrapIntersection(userConfig?: IWritableConfig): void;
+declare function bootstrapIntersection(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

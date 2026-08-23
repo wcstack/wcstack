@@ -142,7 +142,7 @@ interface WcsUploadValues<T = unknown> extends WcsUploadCoreValues<T> {
     files: FileList | File[] | null;
 }
 
-declare function bootstrapUpload(userConfig?: IWritableConfig): void;
+declare function bootstrapUpload(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

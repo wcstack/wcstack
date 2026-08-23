@@ -126,7 +126,7 @@ interface WcsBroadcastCommands {
     close(): void;
 }
 
-declare function bootstrapBroadcast(userConfig?: IWritableConfig): void;
+declare function bootstrapBroadcast(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

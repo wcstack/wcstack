@@ -1010,17 +1010,22 @@ class WcsNotify extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.notify)) {
-        customElements.define(config.tagNames.notify, WcsNotify);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.notify)) {
+        registry.define(config.tagNames.notify, WcsNotify);
     }
 }
 
-function bootstrapNotification(userConfig) {
+function bootstrapNotification(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { NotificationCore, WCS_NOTIFY_ERROR_CODE, WcsNotify, bootstrapNotification, getConfig };

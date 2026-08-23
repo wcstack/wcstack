@@ -527,17 +527,22 @@ class WcsIdle extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.idle)) {
-        customElements.define(config.tagNames.idle, WcsIdle);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.idle)) {
+        registry.define(config.tagNames.idle, WcsIdle);
     }
 }
 
-function bootstrapIdle(userConfig) {
+function bootstrapIdle(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { IdleCore, WCS_IDLE_ERROR_CODE, WcsIdle, bootstrapIdle, getConfig };

@@ -1137,17 +1137,22 @@ class WcsUpload extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.upload)) {
-        customElements.define(config.tagNames.upload, WcsUpload);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.upload)) {
+        registry.define(config.tagNames.upload, WcsUpload);
     }
 }
 
-function bootstrapUpload(userConfig) {
+function bootstrapUpload(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { UploadCore, WCS_UPLOAD_ERROR_CODE, WcsUpload, bootstrapUpload, getConfig };

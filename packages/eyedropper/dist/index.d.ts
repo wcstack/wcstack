@@ -135,7 +135,7 @@ interface WcsEyedropperCoreValues {
  */
 type WcsEyedropperValues = WcsEyedropperCoreValues;
 
-declare function bootstrapEyedropper(userConfig?: IWritableConfig): void;
+declare function bootstrapEyedropper(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

@@ -47,6 +47,35 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
+function toAdapter(registry) {
+    if (typeof registry !== "object" || registry === null)
+        return null;
+    const candidate = registry;
+    if (typeof candidate.get !== "function" || typeof candidate.whenDefined !== "function") {
+        return null;
+    }
+    return candidate;
+}
+/**
+ * Resolve the registry that governs `owner`.
+ *
+ * With scoped custom element registries a tag name only means something
+ * relative to a tree, so the gate has to watch the registry its own subtree
+ * resolves against -- watching the global one would report a tag as defined
+ * that nothing in this tree can ever use. Nodes on platforms without scoped
+ * registries report `undefined` and fall back to the global registry.
+ */
+function getCustomElementRegistry(owner = null) {
+    if (owner !== null && typeof owner !== "undefined") {
+        const scoped = owner.customElementRegistry;
+        if (scoped === null)
+            return null;
+        if (typeof scoped !== "undefined")
+            return toAdapter(scoped);
+    }
+    return toAdapter(globalThis.customElements);
+}
+
 /**
  * Headless custom-element readiness primitive. A thin, framework-agnostic wrapper
  * around `customElements.whenDefined()` exposed through the wc-bindable protocol.
@@ -124,8 +153,12 @@ class DefinedCore extends EventTarget {
      *                 on. Defaults to the Core itself. The Shell passes the custom
      *                 element so events bubble from the DOM node; direct (headless)
      *                 users normally leave it undefined and listen on the Core.
+     * @param registry Registry to watch. Omit for the global one; the Shell passes
+     *                 the registry its own subtree resolves against, so a scoped
+     *                 registry gates on the definitions that tree can actually see.
+     *                 An explicit `null` means no registry governs the tags.
      */
-    constructor(tags, mode = "all", timeoutMs = 0, target) {
+    constructor(tags, mode = "all", timeoutMs = 0, target, registry) {
         super();
         this._target = target ?? this;
         // Headless ergonomics: when tags are supplied up front, start watching
@@ -133,7 +166,7 @@ class DefinedCore extends EventTarget {
         // passes nothing and drives the first watch from connectedCallback via
         // observe(), once the element's attributes resolve.
         if (tags) {
-            this._init(tags, mode, timeoutMs);
+            this._init(tags, mode, timeoutMs, registry);
         }
     }
     get defined() {
@@ -167,9 +200,9 @@ class DefinedCore extends EventTarget {
      * on attribute changes in v1). To switch config mid-life, dispose() first, then
      * observe() again. Returns a promise that resolves once the watch settles, for SSR.
      */
-    observe(tags, mode, timeoutMs) {
+    observe(tags, mode, timeoutMs, registry) {
         if (!this._subscribed) {
-            this._init(tags, mode, timeoutMs);
+            this._init(tags, mode, timeoutMs, registry);
         }
         return this._ready;
     }
@@ -195,7 +228,10 @@ class DefinedCore extends EventTarget {
         this._resolveReady = null;
     }
     // --- Internal ---
-    _init(tags, mode, timeoutMs) {
+    _init(tags, mode, timeoutMs, registryArg) {
+        const registry = typeof registryArg === "undefined"
+            ? getCustomElementRegistry()
+            : registryArg;
         this._mode = mode;
         this._pending = [];
         this._missing = [];
@@ -216,10 +252,23 @@ class DefinedCore extends EventTarget {
             this._finishIfDone();
             return;
         }
+        // No registry governs these tags (a null-registry subtree that was never
+        // handed to registry.initialize()). Nothing there can ever be defined, so
+        // report them as `missing` right away rather than leaving them pending: with
+        // the default `timeout` of 0 nothing would ever move them, and the gate would
+        // wedge instead of failing. Terminal from the start, like an empty config.
+        if (registry === null) {
+            this._appendError("custom element registry unavailable");
+            this._missing.push(...tags);
+            this._recompute();
+            this._publish();
+            this._finishIfDone();
+            return;
+        }
         for (const tag of tags) {
             // Already registered (e.g. the autoloader defined it before connect): count
             // it synchronously, no listener needed.
-            if (customElements.get(tag)) {
+            if (registry.get(tag)) {
                 this._count++;
                 continue;
             }
@@ -236,7 +285,7 @@ class DefinedCore extends EventTarget {
             // so the class's never-throw guarantee holds regardless of environment — the
             // bad tag surfaces as `error` + `missing` either way.
             try {
-                customElements.whenDefined(tag).then(() => {
+                registry.whenDefined(tag).then(() => {
                     if (gen !== this._gen)
                         return;
                     const pi = this._pending.indexOf(tag);
@@ -552,24 +601,32 @@ class WcsDefined extends HTMLElement {
         // Begin the watch (or revive it after a reconnect). The returned promise is
         // held as connectedCallbackPromise for SSR. whenDefined failures surface as
         // `missing` / `error` state — never as a throw — so no .catch() is needed.
-        this._connectedCallbackPromise = this._core.observe(this._parseTags(), this.mode, this.timeout);
+        // Gate on the registry this element's own subtree resolves against: with a
+        // scoped registry the same tag name means a different definition per tree,
+        // so watching the global one would report readiness this tree cannot use.
+        this._connectedCallbackPromise = this._core.observe(this._parseTags(), this.mode, this.timeout, getCustomElementRegistry(this));
     }
     disconnectedCallback() {
         this._core.dispose();
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.defined)) {
-        customElements.define(config.tagNames.defined, WcsDefined);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.defined)) {
+        registry.define(config.tagNames.defined, WcsDefined);
     }
 }
 
-function bootstrapDefined(userConfig) {
+function bootstrapDefined(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { DefinedCore, WcsDefined, bootstrapDefined, getConfig };

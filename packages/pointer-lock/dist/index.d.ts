@@ -89,7 +89,7 @@ interface WcsPointerLockCoreValues {
  */
 type WcsPointerLockValues = WcsPointerLockCoreValues;
 
-declare function bootstrapPointerLock(userConfig?: IWritableConfig): void;
+declare function bootstrapPointerLock(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

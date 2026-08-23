@@ -102,7 +102,7 @@ interface WcsMagnetometerCoreValues extends WcsMagnetometerReading {
  */
 type WcsMagnetometerValues = WcsMagnetometerCoreValues;
 
-declare function bootstrapMagnetometer(userConfig?: IWritableConfig): void;
+declare function bootstrapMagnetometer(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

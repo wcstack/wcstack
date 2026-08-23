@@ -155,7 +155,7 @@ interface WcsClipboardCoreCommands {
 /** Commands exposed on the Shell — identical surface to the Core. */
 type WcsClipboardCommands = WcsClipboardCoreCommands;
 
-declare function bootstrapClipboard(userConfig?: IWritableConfig): void;
+declare function bootstrapClipboard(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

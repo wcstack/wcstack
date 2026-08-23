@@ -102,7 +102,7 @@ interface WcsGyroscopeCoreValues extends WcsGyroscopeReading {
  */
 type WcsGyroscopeValues = WcsGyroscopeCoreValues;
 
-declare function bootstrapGyroscope(userConfig?: IWritableConfig): void;
+declare function bootstrapGyroscope(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
