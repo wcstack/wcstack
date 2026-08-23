@@ -26,7 +26,7 @@ export function resolveLocale(locale?: string): WcsLocale {
 /** 型期待の対象種別（BindingTypeExpectation 用）。 */
 export type ExpectedTypeKind = 'array' | 'boolean' | 'string';
 
-/** 添字本数の要求（`$resolve` は厳密一致・`$getAll` は接頭辞なので上限）。 */
+/** 添字本数の要求（`$resolve` は厳密一致・`$getAll` / `$setAll` は接頭辞なので上限）。 */
 export type IndexArityRequirement = 'exact' | 'atMost';
 
 export interface WcsMessageCatalog {
@@ -46,7 +46,7 @@ export interface WcsMessageCatalog {
   omittedPathOutsideFor(path: string): string;
   loopIndexOutsideFor(path: string): string;
   resolvedPathInUi(path: string): string;
-  /** `$getAll` / `$resolve` の添字の本数がパスの `*` の本数と噛み合わない。 */
+  /** `$getAll` / `$setAll` / `$resolve` の添字の本数がパスの `*` の本数と噛み合わない。 */
   indexArity(api: string, path: string, requirement: IndexArityRequirement, wildcardCount: number, actual: number): string;
   /** ワイルドカードの階数がスコープの段数を超える（`$N` を含む）。 */
   wildcardRank(subject: string, needed: number, available: number): string;

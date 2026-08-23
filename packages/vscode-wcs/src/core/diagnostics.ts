@@ -52,7 +52,7 @@ export const WcsDiagnosticCode = {
   TokenMisconfigured: "wcs/token-misconfigured",
   NestedAssign: "wcs/nested-assign",
   // --- 意味論（構文・存在検査では捕まらない取り違え。service/semanticValidator.ts） ---
-  // `$getAll` / `$resolve` の添字の本数がパスの `*` の本数と噛み合わない。
+  // `$getAll` / `$setAll` / `$resolve` の添字の本数がパスの `*` の本数と噛み合わない。
   // ランタイムは同じ code で raiseError する（超過は以前は黙って無視されていた）。
   IndexArity: "wcs/index-arity",
   // ワイルドカードの階数がスコープの段数を超える（`matrix.*.*` を 1 段の for で読む、

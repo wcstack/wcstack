@@ -29,6 +29,10 @@ vi.mock('../src/proxy/apis/getAll', () => ({
   getAll: vi.fn()
 }));
 
+vi.mock('../src/proxy/apis/setAll', () => ({
+  setAll: vi.fn()
+}));
+
 vi.mock('../src/proxy/apis/postUpdate', () => ({
   postUpdate: vi.fn()
 }));
@@ -59,6 +63,7 @@ import { hasByAddress } from '../src/proxy/methods/hasByAddress';
 import { setByAddress } from '../src/proxy/methods/setByAddress';
 import { getListIndex } from '../src/proxy/methods/getListIndex';
 import { getAll } from '../src/proxy/apis/getAll';
+import { setAll } from '../src/proxy/apis/setAll';
 import { postUpdate } from '../src/proxy/apis/postUpdate';
 import { resolve } from '../src/proxy/apis/resolve';
 import { trackDependency } from '../src/proxy/apis/trackDependency';
@@ -72,6 +77,7 @@ const hasByAddressMock = vi.mocked(hasByAddress);
 const setByAddressMock = vi.mocked(setByAddress);
 const getListIndexMock = vi.mocked(getListIndex);
 const getAllMock = vi.mocked(getAll);
+const setAllMock = vi.mocked(setAll);
 const postUpdateMock = vi.mocked(postUpdate);
 const resolveMock = vi.mocked(resolve);
 const trackDependencyMock = vi.mocked(trackDependency);
@@ -197,6 +203,35 @@ describe('proxy/traps/get', () => {
     fn('items.*');
 
     expect(innerFn).toHaveBeenCalledWith('items.*', undefined);
+  });
+
+  it('$setAll が setAll を呼び出すこと', () => {
+    const innerFn = vi.fn().mockReturnValue(3);
+    setAllMock.mockReturnValueOnce(innerFn);
+    const handler = {} as any;
+    const target = { items: [{ price: 0 }] };
+    const receiver = { receiver: true };
+
+    const fn = get(target, '$setAll', receiver, handler) as
+      (path: string, indexes: number[], value: any, options?: any) => number;
+    const result = fn('items.*.price', [], 1);
+
+    expect(setAllMock).toHaveBeenCalledTimes(1);
+    expect(setAllMock).toHaveBeenCalledWith(target, '$setAll', receiver, handler);
+    expect(innerFn).toHaveBeenCalledWith('items.*.price', [], 1, undefined);
+    expect(result).toBe(3);
+  });
+
+  it('$setAll が options を素通しすること', () => {
+    const innerFn = vi.fn().mockReturnValue(2);
+    setAllMock.mockReturnValueOnce(innerFn);
+    const handler = {} as any;
+
+    const fn = get({}, '$setAll', {}, handler) as
+      (path: string, indexes: number[], value: any, options?: any) => number;
+    fn('items.*.price', [], [1, 2], { spread: true });
+
+    expect(innerFn).toHaveBeenCalledWith('items.*.price', [], [1, 2], { spread: true });
   });
 
   it('$postUpdate が postUpdate を呼び出すこと', () => {

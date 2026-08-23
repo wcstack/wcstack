@@ -53,6 +53,19 @@ describe("wcs/index-arity — 添字の本数", () => {
     expect(codes(validateSemantics(empty, "wcs-state", "en"), WcsDiagnosticCode.IndexArity)).toHaveLength(0);
   });
 
+  it("$setAll も超過だけ報告すること（$getAll と同じ接頭辞の規則）", () => {
+    const over = script(`{ m() { this.$setAll("items.*.price", [0, 1], 0); } }`);
+    const found = codes(validateSemantics(over, "wcs-state", "en"), WcsDiagnosticCode.IndexArity);
+    expect(found).toHaveLength(1);
+    expect(found[0].message).toContain('$setAll("items.*.price") requires at most 1 index(es)');
+
+    const under = script(`{ m() { this.$setAll("matrix.*.*", [0], 0); } }`);
+    expect(codes(validateSemantics(under, "wcs-state", "en"), WcsDiagnosticCode.IndexArity)).toHaveLength(0);
+
+    const empty = script(`{ m() { this.$setAll("items.*.price", [], 0); } }`);
+    expect(codes(validateSemantics(empty, "wcs-state", "en"), WcsDiagnosticCode.IndexArity)).toHaveLength(0);
+  });
+
   it("報告レンジが添字の配列リテラルを指すこと", () => {
     const html = script(`{ m() { return this.$resolve("items.*.price", [0, 1]); } }`);
     const found = validateSemantics(html, "wcs-state", "en").filter((d) => d.code === WcsDiagnosticCode.IndexArity);

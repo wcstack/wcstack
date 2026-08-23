@@ -4,7 +4,7 @@
  * StateClassのProxyトラップとして、プロパティアクセス時の値取得処理を担う関数（get）の実装です。
  *
  * 主な役割:
- * - 文字列プロパティの場合、特殊プロパティ（$1〜、$stateElement, $getAll, $postUpdate,
+ * - 文字列プロパティの場合、特殊プロパティ（$1〜、$stateElement, $getAll, $setAll, $postUpdate,
  *   $resolve, $trackDependency, $command, $streamStatus, $streamError）に応じた値やAPIを返却
  * - 通常のプロパティはgetResolvedPathInfoでパス情報を解決し、getListIndexでリストインデックスを取得
  * - getByRefで構造化パス・リストインデックスに対応した値を取得
@@ -31,6 +31,7 @@ import { disconnectedCallback } from "../apis/disconnectedCallback";
 import { getAll } from "../apis/getAll";
 import { postUpdate } from "../apis/postUpdate";
 import { resolve } from "../apis/resolve";
+import { ISetAllOptions, setAll } from "../apis/setAll";
 import { trackDependency } from "../apis/trackDependency";
 import { untrackDependency } from "../apis/untrackDependency";
 import { updatedCallback } from "../apis/updatedCallback";
@@ -103,6 +104,16 @@ export function get(
               receiver,
               handler
             )(path, indexes);
+          }
+        }
+        case "$setAll": {
+          return (path: string, indexes: number[], value: any, options?: ISetAllOptions): number => {
+            return setAll(
+              target,
+              prop,
+              receiver,
+              handler
+            )(path, indexes, value, options);
           }
         }
         case "$postUpdate": {

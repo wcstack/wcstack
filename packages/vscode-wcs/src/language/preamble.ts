@@ -54,6 +54,8 @@ type _WcsPathAccessor<T> = { [P in _WcsPaths<T>]: _WcsPathValue<T, P> };
 type _WcsStreamStatus = "idle" | "active" | "done" | "error";
 interface WcsStateApi {
   $getAll<V = any>(path: string, indexes?: number[]): V[];
+  $setAll<V = any>(path: string, indexes: number[], value: V | ((current: V, ...indexes: number[]) => V | undefined)): number;
+  $setAll<V = any>(path: string, indexes: number[], values: readonly V[], options: { spread: true }): number;
   $postUpdate(path: string): void;
   $resolve(path: string, indexes: number[], value?: any): any;
   $trackDependency(path: string): void;

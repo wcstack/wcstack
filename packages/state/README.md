@@ -943,6 +943,7 @@ Inside state objects (getters / methods), the following APIs are available via `
 | API | Description |
 |---|---|
 | `this.$getAll(path, indexes?)` | Get all values matching a wildcard path |
+| `this.$setAll(path, indexes, value, options?)` | Write to every address matching a wildcard path |
 | `this.$resolve(path, indexes, value?)` | Resolve a wildcard path with specific indexes |
 | `this.$postUpdate(path)` | Manually trigger update notification for a path |
 | `this.$trackDependency(path)` | Manually register a dependency for cache invalidation |
@@ -967,6 +968,48 @@ export default {
   }
 };
 ```
+
+#### `$setAll` — Update Every Array Element In Place
+
+`$setAll` is the write-side counterpart of `$getAll`: it writes to every address a wildcard path matches. The point is not brevity but **keeping the array itself**. Rebuilding it (`this.users = this.users.map(...)`) throws away the list indexes, the per-row getter caches, and the render diff; `$setAll` decomposes into in-place per-row writes instead, so the list identity survives.
+
+```javascript
+export default {
+  users: [{ selected: false }, { selected: false }],
+
+  toggleAll(e) {
+    this.$setAll("users.*.selected", [], e.target.checked);   // broadcast
+  },
+  invertAll() {
+    this.$setAll("users.*.selected", [], cur => !cur);        // mapper
+  },
+  rankTopThree() {
+    // `undefined` skips that address — "leave this row alone"
+    this.$setAll("users.*.score", [], (cur, i) => i < 3 ? cur * 2 : undefined);
+  }
+};
+```
+
+Three forms, and the third one has to be asked for explicitly:
+
+| Third argument | Meaning |
+|---|---|
+| a function | **mapper** — called as `(current, ...indexes)` per matched address |
+| anything else | **broadcast** — the same value is written everywhere, arrays included |
+| an array **plus** `{ spread: true }` | **spread** — one entry handed to each matched address, in match order |
+
+Arrays broadcast by default because the target property may itself be array-valued — `$setAll("users.*.tags", [], ["admin"])` would otherwise be ambiguous. Opting into `{ spread: true }` removes the guesswork, and a length that does not equal the match count throws rather than silently misaligning.
+
+`indexes` works exactly as in `$getAll` — a **prefix**, where missing levels mean "expand all of them" — but it is **required**. Writes get no implicit loop context, so inside a `for` template `this.$setAll("users.*.selected", [], true)` still means *every* user, never the current row.
+
+```javascript
+this.$setAll("matrix.*.*", [0], 0);        // row 0 only, every column
+this.$setAll("users.*", [], rows, { spread: true });   // replace each row, keep the array
+```
+
+`undefined` is never written — it means "skip this address" in all three forms, which keeps a mapper that forgets to `return` from wiping every row. Use `null` to clear. The return value is the number of addresses actually written.
+
+One thing `$setAll` is not: a shortcut for the dependency walk. Rendering still coalesces into a single batch, but each write is enqueued individually, so the cost matches the hand-written loop it replaces. What it buys you is the preserved list, not fewer cycles.
 
 #### `$resolve` — Access by Explicit Index
 
@@ -2050,7 +2093,7 @@ Anything that follows mechanically from the path string is reported at runtime a
 
 | Diagnostic | What it checks | Fix |
 |---|---|---|
-| `wcs/index-arity` | `$resolve(path, indexes)` must match the `*` count **exactly**; `$getAll(path, indexes)` has it as an **upper bound** (fewer is a legitimate prefix meaning "expand the rest") | Match the count |
+| `wcs/index-arity` | `$resolve(path, indexes)` must match the `*` count **exactly**; `$getAll(path, indexes)` / `$setAll(path, indexes, …)` have it as an **upper bound** (fewer is a legitimate prefix meaning "expand the rest") | Match the count |
 | `wcs/wildcard-rank` | The path's `*` count (and the N in `$N`) must not exceed the enclosing `for` nesting | Add a `for`, or name the row with `$resolve(path, indexes)` |
 | `wcs/getter-cycle` | Path getters must not form a dependency cycle | Break the cycle |
 
