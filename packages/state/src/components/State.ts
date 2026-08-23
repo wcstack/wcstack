@@ -26,6 +26,7 @@ import { clearComputedSnapshots } from "../watch/computedSnapshots";
 import { clearWatchRegistry, deactivateWatch } from "../watch/watchRegistry";
 import { startWatch } from "../watch/watchRuntime";
 import { defineDCC } from "../dcc/defineDCC";
+import { getCustomElementRegistry } from "../platform/customElementRegistry";
 import { getPathInfo } from "../address/PathInfo";
 import { IStateProxy, Mutability } from "../proxy/types";
 import { createStateProxy } from "../proxy/StateHandler";
@@ -312,7 +313,13 @@ export class State extends HTMLElementBase implements IStateElement {
         raiseError(`"bind-component" cannot be combined with ${conflicting.join(", ")}. The component's "${this.getAttribute("bind-component")}" property is the only state source.`);
       }
       const boundComponentStateProp = this.getAttribute("bind-component")!;
-      await customElements.whenDefined(customTagName.toLowerCase());
+      const componentRegistry = getCustomElementRegistry(boundComponent);
+      if (componentRegistry === null) {
+        // null レジストリのサブツリーではホストは永久に upgrade されない。
+        // whenDefined を待つと無言でウェッジするので落とす。
+        raiseError(`CustomElementRegistry is unavailable for <${customTagName}>.`);
+      }
+      await componentRegistry.whenDefined(customTagName.toLowerCase());
       // data-wcs属性がある場合は、上位の状態によりbinding情報の設定が完了するまで待機する
       if (boundComponent.hasAttribute(config.bindAttributeName)) {
         await waitInitializeBinding(boundComponent);

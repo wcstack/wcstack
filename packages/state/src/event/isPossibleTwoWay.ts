@@ -32,7 +32,7 @@ export function isPossibleTwoWay(node: Node, propName: string): boolean {
   }
   const customTagName = getCustomElement(element);
   if (customTagName !== null) {
-    const customClass = getCustomElementRegistry()?.get(customTagName);
+    const customClass = getCustomElementRegistry(element)?.get(customTagName);
     if (typeof customClass === "undefined") {
       raiseError(`Custom element <${customTagName}> is not defined. Cannot determine if property "${propName}" is suitable for two-way binding.`);
     }

@@ -16,7 +16,7 @@ export function getInputAttributeMirror(element: Element, propName: string): str
   if (customTagName === null) {
     return null;
   }
-  const customClass = getCustomElementRegistry()?.get(customTagName);
+  const customClass = getCustomElementRegistry(element)?.get(customTagName);
   if (typeof customClass === "undefined") {
     return null;
   }

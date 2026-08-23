@@ -157,7 +157,7 @@ export function applyChange(binding: IBindingInfo, context: IApplyContext): void
   if (definedApplyVerifiedByBinding.get(binding) !== true) {
     const customTag = getCustomElement(binding.replaceNode);
     if (customTag) {
-      if (getCustomElementRegistry()?.get(customTag) === undefined) {
+      if (getCustomElementRegistry(binding.replaceNode)?.get(customTag) === undefined) {
         // 未 define のカスタム要素へは今は適用できない（accessor 未確立の要素に
         // 素の own property を書くと upgrade 後に class accessor を隠してしまう）。
         // whenDefined 後に最新 state 値で再適用する（two-way attach / deferred

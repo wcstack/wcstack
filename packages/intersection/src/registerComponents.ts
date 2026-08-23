@@ -1,8 +1,13 @@
 import { WcsIntersect } from "./components/Intersect.js";
 import { config } from "./config.js";
 
-export function registerComponents(): void {
-  if (!customElements.get(config.tagNames.intersect)) {
-    customElements.define(config.tagNames.intersect, WcsIntersect);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+export function registerComponents(registry: CustomElementRegistry = customElements): void {
+  if (!registry.get(config.tagNames.intersect)) {
+    registry.define(config.tagNames.intersect, WcsIntersect);
   }
 }

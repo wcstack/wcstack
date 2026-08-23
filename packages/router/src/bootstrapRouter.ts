@@ -7,9 +7,9 @@ import { registerComponents } from "./registerComponents";
  * This is the main entry point for setting up the router.
  * @param config - Optional partial configuration to override defaults
  */
-export function bootstrapRouter(config?: Partial<IWritableConfig>): void {
+export function bootstrapRouter(config?: Partial<IWritableConfig>, registry?: CustomElementRegistry): void {
   if (config) {
     setConfig(config);
   }
-  registerComponents();
+  registerComponents(registry);
 }

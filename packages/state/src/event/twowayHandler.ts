@@ -33,7 +33,7 @@ function getEventName(binding: IBindingInfo): string {
   // 2.wcBindable protocol
   const customTagName = getCustomElement(binding.node as Element);
   if (customTagName !== null) {
-    const customClass = getCustomElementRegistry()?.get(customTagName);
+    const customClass = getCustomElementRegistry(binding.node)?.get(customTagName);
     if (typeof customClass === "undefined") {
       raiseError(`Custom element <${customTagName}> is not defined. Cannot determine event name for two-way binding.`);
     }
@@ -218,7 +218,7 @@ export function addTwowayValueObserver(
 export function attachTwowayEventHandler(binding: IBindingInfo): void {
   const customTagName = getCustomElement(binding.node as Element);
   if (customTagName !== null) {
-    const registry = getCustomElementRegistry();
+    const registry = getCustomElementRegistry(binding.node);
     const customClass = registry?.get(customTagName);
     if (typeof customClass === "undefined") {
       if (registry === null) {
@@ -253,7 +253,7 @@ export function attachTwowayEventHandler(binding: IBindingInfo): void {
 export function detachTwowayEventHandler(binding: IBindingInfo): void {
   const customTagName = getCustomElement(binding.node as Element);
   if (customTagName !== null) {
-    const registry = getCustomElementRegistry();
+    const registry = getCustomElementRegistry(binding.node);
     const customClass = registry?.get(customTagName);
     if (typeof customClass === "undefined") {
       if (registry === null) {

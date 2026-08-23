@@ -1,8 +1,13 @@
 import { WcsNetwork } from "./components/Network.js";
 import { config } from "./config.js";
 
-export function registerComponents(): void {
-  if (!customElements.get(config.tagNames.network)) {
-    customElements.define(config.tagNames.network, WcsNetwork);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+export function registerComponents(registry: CustomElementRegistry = customElements): void {
+  if (!registry.get(config.tagNames.network)) {
+    registry.define(config.tagNames.network, WcsNetwork);
   }
 }

@@ -1,8 +1,13 @@
 import { WcsResize } from "./components/Resize.js";
 import { config } from "./config.js";
 
-export function registerComponents(): void {
-  if (!customElements.get(config.tagNames.resize)) {
-    customElements.define(config.tagNames.resize, WcsResize);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+export function registerComponents(registry: CustomElementRegistry = customElements): void {
+  if (!registry.get(config.tagNames.resize)) {
+    registry.define(config.tagNames.resize, WcsResize);
   }
 }

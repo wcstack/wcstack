@@ -7,27 +7,32 @@ import { Link } from './components/Link';
 import { Head } from './components/Head';
 import { config } from './config';
 
-export function registerComponents() {
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+export function registerComponents(registry: CustomElementRegistry = customElements) {
   // Register custom element
-  if (!customElements.get(config.tagNames.layout)) {
-    customElements.define(config.tagNames.layout, Layout);
+  if (!registry.get(config.tagNames.layout)) {
+    registry.define(config.tagNames.layout, Layout);
   }
-  if (!customElements.get(config.tagNames.layoutOutlet)) {
-    customElements.define(config.tagNames.layoutOutlet, LayoutOutlet);
+  if (!registry.get(config.tagNames.layoutOutlet)) {
+    registry.define(config.tagNames.layoutOutlet, LayoutOutlet);
   }
-  if (!customElements.get(config.tagNames.outlet)) {
-    customElements.define(config.tagNames.outlet, Outlet);
+  if (!registry.get(config.tagNames.outlet)) {
+    registry.define(config.tagNames.outlet, Outlet);
   }
-  if (!customElements.get(config.tagNames.route)) {
-    customElements.define(config.tagNames.route, Route);
+  if (!registry.get(config.tagNames.route)) {
+    registry.define(config.tagNames.route, Route);
   }
-  if (!customElements.get(config.tagNames.router)) {
-    customElements.define(config.tagNames.router, Router);
+  if (!registry.get(config.tagNames.router)) {
+    registry.define(config.tagNames.router, Router);
   }
-  if (!customElements.get(config.tagNames.link)) {
-    customElements.define(config.tagNames.link, Link);
+  if (!registry.get(config.tagNames.link)) {
+    registry.define(config.tagNames.link, Link);
   }
-  if (!customElements.get(config.tagNames.head)) {
-    customElements.define(config.tagNames.head, Head);
+  if (!registry.get(config.tagNames.head)) {
+    registry.define(config.tagNames.head, Head);
   }
 }
