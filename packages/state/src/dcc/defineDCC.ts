@@ -17,11 +17,18 @@ export function defineDCC(hostElement: Element, shadowRoot: ShadowRoot, state: I
   if (!tagName.includes("-")) {
     raiseError(`DCC: "${tagName}" is not a valid custom element name (must contain a hyphen).`);
   }
-  if (customElements.get(tagName)) {
+  // 定義先は「定義元ホストを支配するレジストリ」。scoped registry を持つツリーで
+  // global に define すると、その定義は自分の兄弟にすら適用されない。
+  const definitionRegistry = getCustomElementRegistry(hostElement);
+  if (definitionRegistry === null || typeof definitionRegistry.define !== "function") {
+    raiseError(`DCC: CustomElementRegistry is unavailable for "${tagName}".`);
+  }
+  if (definitionRegistry.get(tagName)) {
     // 重複定義は authoring error として落とす。従来は warn してスキップしていたが、
     // 先勝ちで別テンプレートのインスタンスが生えるため「動いているように見えて中身が違う」
     // 状態になる。state 名の重複（stateElementByName）が raiseError なのと作法を揃える
     // （docs/architecture-hardening/15-state-component-mechanism-consistency.md §3.4）。
+    // 一意性はレジストリ単位なので、別スコープの同名 DCC は衝突しない。
     raiseError(`DCC: "${tagName}" is already registered. A custom element name can only be defined once.`);
   }
 
@@ -80,7 +87,7 @@ export function defineDCC(hostElement: Element, shadowRoot: ShadowRoot, state: I
       // カスタム要素として upgrade されていない。ホストが接続済みなら appendChild の時点で
       // upgrade されるが、未接続の shadow に挿した場合は upgrade 契機が無く、内側の
       // <wcs-state> が素の HTMLElement のまま残って createState が生えない。明示的に upgrade する。
-      const registry = getCustomElementRegistry();
+      const registry = getCustomElementRegistry(this._shadow);
       if (registry !== null) {
         upgradeCustomElement(registry, this._shadow);
       }
@@ -150,5 +157,5 @@ export function defineDCC(hostElement: Element, shadowRoot: ShadowRoot, state: I
   }
 
   // カスタム要素登録
-  customElements.define(tagName, DCCElement);
+  definitionRegistry.define(tagName, DCCElement);
 }

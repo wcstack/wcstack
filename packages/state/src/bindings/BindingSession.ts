@@ -411,7 +411,7 @@ export class BindingSession {
     callback: () => void,
     reject: (error: unknown) => void = () => undefined,
   ): () => void {
-    const registry = getCustomElementRegistry();
+    const registry = getCustomElementRegistry(node);
     if (registry === null) {
       raiseError(`CustomElementRegistry is unavailable for <${tagName}>.`);
     }
@@ -863,7 +863,7 @@ export class BindingSession {
       attach();
       return;
     }
-    const registry = getCustomElementRegistry();
+    const registry = getCustomElementRegistry(record.info.node);
     if (registry === null) {
       raiseError(`CustomElementRegistry is unavailable for <${tagName}>.`);
     }

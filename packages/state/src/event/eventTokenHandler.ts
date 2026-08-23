@@ -62,7 +62,7 @@ export function attachEventTokenHandler(binding: IBindingInfo): boolean {
 
   // カスタム要素が未定義なら定義後に再試行（wcBindable が必要なため）。
   const customTagName = getCustomElement(element);
-  const registry = getCustomElementRegistry();
+  const registry = getCustomElementRegistry(element);
   if (customTagName !== null && registry?.get(customTagName) === undefined) {
     if (registry === null) {
       raiseError(`CustomElementRegistry is unavailable for <${customTagName}>.`);

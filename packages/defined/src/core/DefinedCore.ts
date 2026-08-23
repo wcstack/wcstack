@@ -1,4 +1,8 @@
 import { DefinedMode, DefinedSnapshot, IWcBindable } from "../types.js";
+import {
+  ICustomElementRegistryAdapter,
+  getCustomElementRegistry,
+} from "../platform/customElementRegistry.js";
 
 /**
  * Headless custom-element readiness primitive. A thin, framework-agnostic wrapper
@@ -85,8 +89,18 @@ export class DefinedCore extends EventTarget {
    *                 on. Defaults to the Core itself. The Shell passes the custom
    *                 element so events bubble from the DOM node; direct (headless)
    *                 users normally leave it undefined and listen on the Core.
+   * @param registry Registry to watch. Omit for the global one; the Shell passes
+   *                 the registry its own subtree resolves against, so a scoped
+   *                 registry gates on the definitions that tree can actually see.
+   *                 An explicit `null` means no registry governs the tags.
    */
-  constructor(tags?: string[], mode: DefinedMode = "all", timeoutMs: number = 0, target?: EventTarget) {
+  constructor(
+    tags?: string[],
+    mode: DefinedMode = "all",
+    timeoutMs: number = 0,
+    target?: EventTarget,
+    registry?: ICustomElementRegistryAdapter | null,
+  ) {
     super();
     this._target = target ?? this;
     // Headless ergonomics: when tags are supplied up front, start watching
@@ -94,7 +108,7 @@ export class DefinedCore extends EventTarget {
     // passes nothing and drives the first watch from connectedCallback via
     // observe(), once the element's attributes resolve.
     if (tags) {
-      this._init(tags, mode, timeoutMs);
+      this._init(tags, mode, timeoutMs, registry);
     }
   }
 
@@ -137,9 +151,14 @@ export class DefinedCore extends EventTarget {
    * on attribute changes in v1). To switch config mid-life, dispose() first, then
    * observe() again. Returns a promise that resolves once the watch settles, for SSR.
    */
-  observe(tags: string[], mode: DefinedMode, timeoutMs: number): Promise<void> {
+  observe(
+    tags: string[],
+    mode: DefinedMode,
+    timeoutMs: number,
+    registry?: ICustomElementRegistryAdapter | null,
+  ): Promise<void> {
     if (!this._subscribed) {
-      this._init(tags, mode, timeoutMs);
+      this._init(tags, mode, timeoutMs, registry);
     }
     return this._ready;
   }
@@ -168,7 +187,15 @@ export class DefinedCore extends EventTarget {
 
   // --- Internal ---
 
-  private _init(tags: string[], mode: DefinedMode, timeoutMs: number): void {
+  private _init(
+    tags: string[],
+    mode: DefinedMode,
+    timeoutMs: number,
+    registryArg?: ICustomElementRegistryAdapter | null,
+  ): void {
+    const registry = typeof registryArg === "undefined"
+      ? getCustomElementRegistry()
+      : registryArg;
     this._mode = mode;
     this._pending = [];
     this._missing = [];
@@ -192,10 +219,24 @@ export class DefinedCore extends EventTarget {
       return;
     }
 
+    // No registry governs these tags (a null-registry subtree that was never
+    // handed to registry.initialize()). Nothing there can ever be defined, so
+    // report them as `missing` right away rather than leaving them pending: with
+    // the default `timeout` of 0 nothing would ever move them, and the gate would
+    // wedge instead of failing. Terminal from the start, like an empty config.
+    if (registry === null) {
+      this._appendError("custom element registry unavailable");
+      this._missing.push(...tags);
+      this._recompute();
+      this._publish();
+      this._finishIfDone();
+      return;
+    }
+
     for (const tag of tags) {
       // Already registered (e.g. the autoloader defined it before connect): count
       // it synchronously, no listener needed.
-      if (customElements.get(tag)) {
+      if (registry.get(tag)) {
         this._count++;
         continue;
       }
@@ -212,7 +253,7 @@ export class DefinedCore extends EventTarget {
       // so the class's never-throw guarantee holds regardless of environment — the
       // bad tag surfaces as `error` + `missing` either way.
       try {
-        customElements.whenDefined(tag).then(
+        registry.whenDefined(tag).then(
           () => {
             if (gen !== this._gen) return;
             const pi = this._pending.indexOf(tag);

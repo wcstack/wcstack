@@ -346,6 +346,124 @@ describe('lazyLoad', () => {
     expect(mockLoader.loader).not.toHaveBeenCalled();
   });
 
+  it('scoped registry を持つ root では global ではなくそちらへ define すること', async () => {
+    // scoped registry は global の定義を見ないので、global へ define すると
+    // その要素は永久に upgrade されず、追跡用の whenDefined も解決しない。
+    const mockConstructor = class extends HTMLElement {};
+    const mockLoader: ILoader = {
+      postfix: '.js',
+      loader: vi.fn().mockResolvedValue(mockConstructor)
+    };
+    const config = {
+      loaders: { [DEFAULT_KEY]: mockLoader },
+      observable: false,
+      scanImportmap: false
+    };
+    const prefixMap = {
+      'ui': {
+        key: '@components/ui/',
+        prefix: 'ui',
+        loaderKey: null,
+        isNameSpaced: true
+      }
+    };
+
+    const scopedRegistry = new Map<string, CustomElementConstructor>();
+    const scopedDefine = vi.fn((name: string, ctor: CustomElementConstructor) => {
+      scopedRegistry.set(name, ctor);
+    });
+    const scoped = {
+      get: vi.fn((name: string) => scopedRegistry.get(name)),
+      whenDefined: vi.fn(() => Promise.resolve(mockConstructor)),
+      define: scopedDefine,
+    };
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = host.attachShadow({ mode: 'open' });
+    root.innerHTML = '<ui-button></ui-button>';
+    Object.defineProperty(root, 'customElementRegistry', { value: scoped });
+
+    await handlerForLazyLoad(root, config, prefixMap);
+
+    expect(scopedDefine).toHaveBeenCalledWith('ui-button', mockConstructor);
+    expect(customElements.define).not.toHaveBeenCalled();
+  });
+
+  it('scoped registry のロード中タグは global の台帳と混ざらないこと', async () => {
+    // loadingTags が global 共有だと、別レジストリで進行中のロードを理由に
+    // 自分のレジストリへの define をスキップしてしまう。
+    const mockConstructor = class extends HTMLElement {};
+    const mockLoader: ILoader = {
+      postfix: '.js',
+      loader: vi.fn().mockResolvedValue(mockConstructor)
+    };
+    const config = {
+      loaders: { [DEFAULT_KEY]: mockLoader },
+      observable: false,
+      scanImportmap: false
+    };
+    const prefixMap = {
+      'ui': {
+        key: '@components/ui/',
+        prefix: 'ui',
+        loaderKey: null,
+        isNameSpaced: true
+      }
+    };
+
+    const scopedRegistry = new Map<string, CustomElementConstructor>();
+    const scopedDefine = vi.fn((name: string, ctor: CustomElementConstructor) => {
+      scopedRegistry.set(name, ctor);
+    });
+    const scoped = {
+      get: vi.fn((name: string) => scopedRegistry.get(name)),
+      whenDefined: vi.fn(() => Promise.resolve(mockConstructor)),
+      define: scopedDefine,
+    };
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = host.attachShadow({ mode: 'open' });
+    root.innerHTML = '<ui-button></ui-button>';
+    Object.defineProperty(root, 'customElementRegistry', { value: scoped });
+
+    loadingTags.add('ui-button');
+    await handlerForLazyLoad(root, config, prefixMap);
+
+    expect(mockLoader.loader).toHaveBeenCalledWith('@components/ui/button.js');
+    expect(scopedDefine).toHaveBeenCalledWith('ui-button', mockConstructor);
+  });
+
+  it('null レジストリの root では何もせず報告すること', async () => {
+    const mockLoader: ILoader = { postfix: '.js', loader: vi.fn() };
+    const config = {
+      loaders: { [DEFAULT_KEY]: mockLoader },
+      observable: true,
+      scanImportmap: false
+    };
+    const prefixMap = {
+      'ui': {
+        key: '@components/ui/',
+        prefix: 'ui',
+        loaderKey: null,
+        isNameSpaced: true
+      }
+    };
+
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = host.attachShadow({ mode: 'open' });
+    root.innerHTML = '<ui-button></ui-button>';
+    Object.defineProperty(root, 'customElementRegistry', { value: null });
+
+    const observer = await handlerForLazyLoad(root, config, prefixMap);
+
+    expect(observer).toBeNull();
+    expect(mockLoader.loader).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('null custom element registry')
+    );
+  });
+
   it('loader実行前に要素が定義された場合、ロードをスキップすること', async () => {
     const mockConstructor = class extends HTMLElement {};
     const mockLoader: ILoader = {

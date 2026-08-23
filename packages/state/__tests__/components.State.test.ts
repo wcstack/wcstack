@@ -590,6 +590,19 @@ describe('State component', () => {
     );
   });
 
+  it('bind-componentのホストがnullレジストリの場合はエラーになること', async () => {
+    // null レジストリのサブツリーではホストが永久に upgrade されないため、
+    // whenDefined を待つと無言でウェッジする。待たずに落とすこと。
+    const stateEl = createStateElement({ 'bind-component': 'outer' });
+    const host = createHostWithState(stateEl);
+    (stateEl as any)._rootNode = stateEl.getRootNode();
+    Object.defineProperty(host, 'customElementRegistry', { value: null });
+
+    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
+      /CustomElementRegistry is unavailable/
+    );
+  });
+
   it('bind-componentのプロパティがオブジェクトでない場合はエラーになること', async () => {
     const stateEl = createStateElement({ 'bind-component': 'outer' });
     const host = createHostWithState(stateEl);

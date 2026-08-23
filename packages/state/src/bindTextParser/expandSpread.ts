@@ -100,7 +100,7 @@ export function expandSpread(
     if (tagName === null) {
       raiseError(`Spread binding "${result.statePathName}" requires a custom element with wcBindable, but <${element.tagName.toLowerCase()}> is not a custom element.`);
     }
-    const registry = getCustomElementRegistry();
+    const registry = getCustomElementRegistry(element);
     if (registry === null) {
       raiseError(`CustomElementRegistry is unavailable for <${tagName}>.`);
     }

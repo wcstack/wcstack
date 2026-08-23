@@ -42,7 +42,7 @@ function getWcBindable(element: Element): ReadBindableResult | null {
   if (customTagName === null) {
     return null;
   }
-  const customClass = getCustomElementRegistry()?.get(customTagName);
+  const customClass = getCustomElementRegistry(element)?.get(customTagName);
   if (typeof customClass === "undefined") {
     raiseError(`Custom element <${customTagName}> is not defined for command binding.`);
   }
