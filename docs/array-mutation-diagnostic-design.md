@@ -33,7 +33,7 @@ generate–validate–fix ループでも人間の手書きでも頻出の footg
 | B | 検出方式 | **案 1: 純構文検出**（`this.<パス>.<破壊的メソッド>(` を機械的に検出、`$` プレフィックスパスはスキップ）。stateAnalyzer の型突合はしない。コアの明文方針「完全な精度は求めず軽量高速」（nestedAssignValidator と同じ精度哲学）に整合 |
 | C | 変異＋自己再代入イディオム | **検証を先に実行**（§3）。結果: 長さが変わる操作は自己再代入でも壊れる → **無条件警告**が正当と確定 |
 | D | エイリアス経由の変異 | 検出不能な false negative として本文書 §6 に明記して割り切る（正規表現では追跡不能、nested-assign と同じ判断） |
-| E | severity / コード名 | **warning**（nested-assign と同格・一貫）。メソッド別に非破壊代替をメッセージで提示。ja/en カタログ |
+| E | severity / コード名 | ~~**warning**（nested-assign と同格・一貫）~~ → **error**（2026-08-23 変更）。「同格」の要求は残したまま **nested-assign ごと error へ**引き上げた。§3 の実測が示すとおりこれらは条件付きの疑わしさではなく常に更新を取りこぼす。メソッド別に非破壊代替をメッセージで提示。ja/en カタログ |
 | F | 実装配置 | 新規 `service/arrayMutationValidator.ts`（1 カテゴリ = 1 ファイルの既存パターン）。VS Code quick-fix（自動書換）は**後続フェーズに分離**（診断のみ先行） |
 | G | 抑制手段 | 既存診断に抑制機構が無いため v1 は無しで一貫 |
 
@@ -90,7 +90,7 @@ ArrayIndexAssign: "wcs/array-index-assign",
 
 ### 4.2 severity / range / 付帯フィールド
 
-- severity: **warning**（両コードとも）
+- severity: **error**（両コードとも。2026-08-23 に warning から引き上げ。`wcs/nested-assign` も同時に error へ揃えた ── 3 つは同一の欠陥「代入がリアクティブ更新を通らない」を構文の形で分けているだけなので、severity を分ける根拠が無い）
 - range: 生ソース文字オフセット
   - `wcs/array-mutation`: `this` の先頭〜メソッド名末尾（`(` は含めない）
   - `wcs/array-index-assign`: マッチ全体 — 代入演算子の末尾まで（右辺は含まない。
@@ -276,7 +276,7 @@ this["<dotted.path>"] ([<式添字>])+ \s* ( <複合演算子>? = | ++ | -- )
 3. `wcs/nested-assign` との二重報告が無い（境界の相補性がテストで固定されている）
 4. vscode-wcs の既存テスト全 green、カバレッジ閾値（100/97/100/100 基準）維持
 5. `wcs-validate` CLI（packages/lint smoke test）で新コードが観測できる
-6. 診断は warning のため CLI の exit code 契約（error のみ 1）に変化が無いこと
+6. ~~診断は warning のため CLI の exit code 契約（error のみ 1）に変化が無いこと~~ → **error 化により CLI は exit 1 を返す**（2026-08-23）。引き上げ時点でリポジトリ内の該当は 0 件であることを実測済み
 
 ## 9. Phase 4 敵対的レビュー記録（2026-07-24）
 
