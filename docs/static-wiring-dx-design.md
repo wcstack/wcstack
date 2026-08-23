@@ -51,7 +51,7 @@ vscode-wcs の 30 診断はすべて「軽量パーサ + 宣言カタログの�
 
 - hover / go-to-definition / rename / inlay hint は**皆無**（provider は completion と diagnostics の 2 つのみ。grep 実測）。全メジャー FW が持つ水準。
 - state 側は devtools hook に 14 種のイベントを流しているが、devtools 側 union に `propagation:*` 3 種と `contract:*` 3 種が無く、`DevtoolsCore._ingest`（`packages/devtools/src/core/DevtoolsCore.ts:316-496`、switch に default 無し）で**黙って捨てられている**。
-- `statePathResolver.ts` の `fileReader`（外部 state の .json/.ts/.js 解決）は完全実装済みだが、**全呼び出し箇所が渡していないデッドコード**。外部 state のページは「候補ゼロ→検証スキップ」に落ちている。
+- ~~`statePathResolver.ts` の `fileReader`（外部 state の .json/.ts/.js 解決）は完全実装済みだが、**全呼び出し箇所が渡していないデッドコード**。外部 state のページは「候補ゼロ→検証スキップ」に落ちている。~~ → **解消済み**。CLI（§6-2）に続き IDE（`wcsCompletionPlugin` の `provideDiagnostics` / `provideCompletionItems`）も `src/fileReader.ts` の同じ reader を渡す。
 - `$watch` 宣言は pull API（`IStateElementSummary`）に一切載らず、正常動作中の watch は devtools から観測不能（エラーと深さ打ち切りのみ）。
 
 ---
@@ -135,7 +135,7 @@ data-wcs / `{{ }}` / コメントバインディングのパス ⇔ state 宣言
 ## 6. 即果実（背骨と独立・先行 PR 可、全て S 工数）
 
 1. **devtools `_ingest` の追随**: `DevtoolsEventLike` union に `propagation:suppressed/coalesced/hop-limit` + `contract:*` を追加し Timeline 行 4 種を足す。プロトコル変更ゼロ・100 行未満で、state が既に流している計装が可視化される（「state 14 種 emit vs devtools 8 種消費」の解消）。
-2. **CLI への `fileReader` 配線**: `cli.ts` に `readFileSync` ベースの reader を渡すだけで、外部 state（`src=`）ページの `binding-path-missing` が「検証スキップ」から実検査に変わる。resolver は完成品が眠っている（§1-4）。
+2. ~~**CLI への `fileReader` 配線**~~ → **完了**。`readFileSync` ベースの reader を `src/fileReader.ts` に単一正本化し、**CLI と IDE の両方**に配線した。片方だけだと同じ validator core を呼んでいても診断が一致せず「IDE は無警告なのに CI で落ちる」パリティ破れになるため、IDE 側（診断・補完の両サーフェス）まで含めて 1 件とする。
 3. **builtinTags → VS Code custom data / web-types 生成**: `emit-builtin-tags.mjs` に出力フォーマットを追加するだけで、拡張なしの全エディタ（AI エディタ含む）に wcs-* タグの属性補完 + hover が届く。CEM 出荷（44 パッケージ配線が必要な M 案件）の 8 割を先取り。
 
 ## 7. やらないこと（理由付き）

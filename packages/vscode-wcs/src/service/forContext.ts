@@ -109,6 +109,52 @@ export function getEnclosingFors(html: string, offset: number, bindAttrName: str
   return enclosing;
 }
 
+/** パスに含まれるワイルドカードセグメント（`*`）の本数。 */
+export function countWildcardSegments(path: string): number {
+  let count = 0;
+  for (const segment of path.split('.')) {
+    if (segment === '*') count++;
+  }
+  return count;
+}
+
+/** for 属性の生テキストから state パス部分だけを取り出す（`@state` / フィルタを落とす）。 */
+function forPathOf(raw: string): string {
+  let path = raw.trim();
+  const pipe = path.indexOf('|');
+  if (pipe !== -1) path = path.slice(0, pipe).trim();
+  const at = path.indexOf('@');
+  if (at !== -1) path = path.slice(0, at).trim();
+  return path;
+}
+
+/**
+ * 指定オフセットで**ワイルドカードを解決できる段数**（＝そのスコープの階数）。
+ * 囲む for が無ければ 0。
+ *
+ * 段数は「囲む for の枚数」ではない。for のパス自身が階数を持つ入れ子
+ * （`for: matrix` の中の `for: matrix.*`）があるため、ランタイム
+ * （structural/expandShorthandPaths.ts）と同じ合成を行ってから数える:
+ * 相対 for（`.products`）は外側の行パス `<prev>.*` に連結し、絶対 for はそのまま
+ * 置き換える。最後にそのパスの `*` の本数 + 1（ループ自身が 1 段増やす）が答え。
+ */
+export function getAvailableWildcardRank(html: string, offset: number, bindAttrName: string = 'data-wcs'): number {
+  const chain = getEnclosingForPaths(html, offset, bindAttrName);
+  if (chain.length === 0) return 0;
+  let resolved = '';
+  for (const raw of chain) {
+    const path = forPathOf(raw);
+    if (path === '.') {
+      resolved = `${resolved}.*`;
+    } else if (path.startsWith('.')) {
+      resolved = `${resolved}.*.${path.slice(1)}`;
+    } else {
+      resolved = path;
+    }
+  }
+  return countWildcardSegments(resolved) + 1;
+}
+
 /**
  * 指定位置での for テンプレートのネスト深度を計算する。
  * openPos から offset の間で template タグのネストを追跡。

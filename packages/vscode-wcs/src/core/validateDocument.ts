@@ -18,6 +18,7 @@ import { validateTemplateSyntax } from "../service/templateSyntaxValidator.js";
 import { validateIoNodes } from "../service/ioNodeValidator.js";
 import { validateDocumentEnv } from "../service/documentEnvValidator.js";
 import { validateWatchDeclarations } from "../service/watchDeclarationValidator.js";
+import { validateSemantics } from "../service/semanticValidator.js";
 import type { FileReader } from "../service/statePathResolver.js";
 
 export interface ValidateDocumentOptions {
@@ -33,8 +34,10 @@ export interface ValidateDocumentOptions {
   /**
    * `<wcs-state src=...>` の外部 state ファイル(.json / .js / .ts)を読むコールバック。
    * 未指定なら src 属性はスキップ(従来どおり候補ゼロ → パス検証は沈黙)。
-   * CLI が HTML ファイルのディレクトリ基準の実 reader を渡す
-   * (static-wiring-dx-design.md §6-2)。IDE 側は未配線のまま。
+   * CLI(cli.ts)と IDE(service/wcsCompletionPlugin.ts の provideDiagnostics)の
+   * **両方**が `fileReader.ts` の同じ reader を渡す — 片方だけだと同じ validator core を
+   * 呼んでいても診断が一致せず「CI で初めて落ちる」ずれになる
+   * (static-wiring-dx-design.md §6-2 / ADR-09 §7.1 の IDE / CLI パリティ)。
    */
   readonly fileReader?: FileReader;
 }
@@ -56,6 +59,7 @@ export function validateDocument(text: string, options: ValidateDocumentOptions 
   out.push(...validateDocumentEnv(text, locale));
   // arrayMutationValidator / watchDeclarationValidator は 2 コード持ちのため
   // validator 側で code を付与して返す。
+  out.push(...validateSemantics(text, stateTagName, locale, bindAttribute));
   out.push(...validateArrayMutations(text, stateTagName, locale));
   out.push(...validateWatchDeclarations(text, stateTagName, locale));
   // 単一カテゴリの validator は集約時に code を付与する。

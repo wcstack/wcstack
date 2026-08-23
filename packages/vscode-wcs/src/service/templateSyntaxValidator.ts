@@ -12,7 +12,7 @@
 import { BUILTIN_FILTERS } from "./completionData.js";
 import { getStatePathsFromHtml, type FileReader } from "./statePathResolver.js";
 import { findAllCommentBindings, findAllMustacheSyntax } from "./templateSyntax.js";
-import { isInsideForTemplate, getInnermostForPath } from "./forContext.js";
+import { isInsideForTemplate, getInnermostForPath, getAvailableWildcardRank, countWildcardSegments } from "./forContext.js";
 import { WcsDiagnosticCode } from "../core/diagnostics.js";
 import { getMessages } from "../core/messages.js";
 import type { BindingDiagnostic } from "./bindingValidator.js";
@@ -87,6 +87,27 @@ export function validateTemplateSyntax(
           severity: "warning",
         });
       }
+      // for の**段数**を超える階数（`matrix.*.*` / `$2`）。上の 2 つは「for の外か」の
+      // 二値しか見ておらず、深さ方向は未検査だった。available === 0 は上が担う。
+      if (insideFor && !pathPart.startsWith(".") && !pathPart.includes("@")) {
+        const indexMatch = /^\$(\d+)$/.exec(pathPart);
+        const needed = indexMatch !== null
+          ? Number(indexMatch[1])
+          : (pathPart.includes("*") ? countWildcardSegments(pathPart) : 0);
+        if (needed > 0) {
+          const available = getAvailableWildcardRank(html, item.matchStart, bindAttrName);
+          if (available > 0 && needed > available) {
+            diagnostics.push({
+              code: WcsDiagnosticCode.WildcardRank,
+              start: item.exprStart,
+              end: item.exprStart + pathPart.length,
+              message: msgs.wildcardRank(`"${pathPart}"`, needed, available),
+              severity: "warning",
+            });
+          }
+        }
+      }
+
       if (/\.\d+\.|\.\d+$/.test(pathPart)) {
         diagnostics.push({
           code: WcsDiagnosticCode.TemplateSyntax,
