@@ -62,6 +62,16 @@ describe("ViewTransitionCore", () => {
       expect(mock.transitions).toHaveLength(0);
     });
 
+    it("SSR（data-wcs-server）中は遷移を開始しない（G5・参加者に依らずここで閉じる）", async () => {
+      document.documentElement.setAttribute("data-wcs-server", "");
+      restores.push(() => document.documentElement.removeAttribute("data-wcs-server"));
+      const core = new ViewTransitionCore();
+      let ran = false;
+      await core.run(() => { ran = true; });
+      expect(ran).toBe(true);
+      expect(mock.transitions).toHaveLength(0);
+    });
+
     it("prefers-reduced-motion: reduce は既定でスキップする", async () => {
       restores.push(installMatchMedia(true));
       const core = new ViewTransitionCore();
@@ -378,6 +388,22 @@ describe("ViewTransitionCore", () => {
       expect(core.accepts("state")).toBe(true);
     });
 
+    it("participants / types は空白区切り文字列も受け付ける（文字単位に分解しない）", () => {
+      const core = new ViewTransitionCore();
+      core.participants = "router";
+      expect(core.accepts("router")).toBe(true);
+      expect(core.accepts("state")).toBe(false);
+      expect(core.accepts("r")).toBe(false);
+
+      core.participants = "  router   state ";
+      expect(core.participants).toEqual(["router", "state"]);
+
+      core.types = "fade slide";
+      expect(core.types).toEqual(["fade", "slide"]);
+      core.types = "";
+      expect(core.types).toEqual([]);
+    });
+
     it("naming / namingLimit は不正値を既定へ丸める", () => {
       const core = new ViewTransitionCore();
       expect(core.naming).toBe("manual");
@@ -486,6 +512,36 @@ describe("ViewTransitionCore", () => {
       core.dispose();
       expect(order).toEqual(["pending", "queued"]);
       expect(getTransitionRunner("state")).toBeNull();
+    });
+
+    it("キャプチャ中のバッチを queue より先に適用する（要求順を保つ）", async () => {
+      const core = new ViewTransitionCore();
+      core.mode = "queue";
+      core.install();
+      const order: string[] = [];
+
+      core.run(() => order.push("first"));
+      await flushMicrotasks();
+      const first = mock.transitions[0];
+      first.runUpdate();
+      expect(order).toEqual(["first"]);
+
+      // second は queue へ、third は pending へ積まれる
+      core.run(() => order.push("second"));
+      await flushMicrotasks();
+      core.run(() => order.push("third"));
+
+      // first の完了で second がキャプチャ中になり、third は queue へ回る
+      first.finish();
+      await flushMicrotasks();
+
+      core.dispose();
+      // 要求順どおり。キャプチャ中のバッチを飛ばすと third が second を追い越す
+      expect(order).toEqual(["first", "second", "third"]);
+
+      // 走行中の更新コールバックが後から走っても二度は適用しない
+      mock.transitions[1].runUpdate();
+      expect(order).toEqual(["first", "second", "third"]);
     });
 
     it("idle での dispose は何も適用しない", () => {

@@ -5,6 +5,8 @@
  * - arbiter が居ると drain の DOM 適用が「ひとまとまりの変更」として預けられる
  * - 初期レンダリングは包まれない（drain だけが参加点）
  * - state を受け付けない arbiter では従来どおり同期適用
+ * - 適用すべき binding が 0 本のバッチは arbiter へ渡さない
+ * - 機構間の順序（$updatedCallback と drain リスナー）が arbiter の有無で入れ替わる
  * - naming="auto" は行と if 分岐へ view-transition-name / class を割り当て、
  *   上限に達したら命名を止めて一度だけ警告する
  */
@@ -14,6 +16,7 @@ import { State } from "../src/components/State";
 import { getStateElementByName } from "../src/stateElementByName";
 import { TRANSITION_RUNNER_KEY } from "../src/protocol/transitionRunner";
 import { __test_resetTransitionNaming } from "../src/apply/viewTransitionNaming";
+import { registerUpdateBatchListener, unregisterUpdateBatchListener } from "../src/updater/updater";
 
 beforeAll(() => {
   bootstrapState();
@@ -121,6 +124,28 @@ describe("state の transition-runner 参加（統合）", () => {
     host.remove();
   });
 
+  it("binding の無いパスへの書き込みは arbiter へ渡さない（空の遷移を起こさない）", async () => {
+    const runner = installRunner();
+    const { host, stateElement } = await mount(
+      { label: "before", headless: 1 },
+      `<span class="l" data-wcs="textContent: label"></span>`,
+    );
+
+    // headless は DOM のどこにも配線されていない。書き込みは enqueue されるが、
+    // 適用すべき binding が無いので遷移は要求しない（mode="latest" なら実行中の
+    // 遷移を巻き添えにスキップしてしまう）。
+    stateElement.createState("writable", (s: any) => { s.headless = 2; });
+    await flush();
+    expect(runner.sources).toEqual([]);
+    expect(runner.deferred).toHaveLength(0);
+
+    // 配線のあるパスなら従来どおり渡る
+    stateElement.createState("writable", (s: any) => { s.label = "after"; });
+    await flush();
+    expect(runner.sources).toEqual(["state"]);
+    host.remove();
+  });
+
   it('naming="auto" は行と if 分岐へ一意な名前とクラスを付ける', async () => {
     installRunner({ naming: "auto", immediate: true });
     const { host, shadowRoot, stateElement } = await mount(
@@ -200,6 +225,58 @@ describe("state の transition-runner 参加（統合）", () => {
     const second = (shadowRoot.querySelector("li.row") as HTMLElement).style.getPropertyValue("view-transition-name");
     expect(second).toBe(first);
     host.remove();
+  });
+});
+
+describe("drain の機構間順序（$updatedCallback と drain 終了リスナー）", () => {
+  async function record(runner: FakeRunner | null) {
+    const order: string[] = [];
+    const listener = () => { order.push("batch-listener"); };
+    registerUpdateBatchListener(listener);
+    const { host, stateElement } = await mount(
+      {
+        label: "before",
+        $updatedCallback() { order.push("updated"); },
+      },
+      `<span class="l" data-wcs="textContent: label"></span>`,
+    );
+    order.length = 0; // 初期レンダリング分を落とす
+    stateElement.createState("writable", (s: any) => { s.label = "after"; });
+    await flush();
+    return {
+      order,
+      release() {
+        runner?.deferred.forEach((apply) => apply());
+      },
+      cleanup() {
+        unregisterUpdateBatchListener(listener);
+        host.remove();
+      },
+    };
+  }
+
+  it("arbiter が居なければ $updatedCallback → drain リスナー（README の 3 層表どおり）", async () => {
+    const probe = await record(null);
+    try {
+      expect(probe.order).toEqual(["updated", "batch-listener"]);
+    } finally {
+      probe.cleanup();
+    }
+  });
+
+  it("arbiter が state を受け付けると drain リスナー → $updatedCallback へ反転する", async () => {
+    // 意図的な反転（docs/view-transition-design.md §7.2）。$watch / $streams restart は
+    // state アドレスを消費するので microtask に留まり、$updatedCallback だけが
+    // バインディングと一緒にフレームへ乗る。
+    const runner = installRunner();
+    const probe = await record(runner);
+    try {
+      expect(probe.order).toEqual(["batch-listener"]);
+      probe.release();
+      expect(probe.order).toEqual(["batch-listener", "updated"]);
+    } finally {
+      probe.cleanup();
+    }
   });
 });
 

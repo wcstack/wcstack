@@ -363,7 +363,7 @@ Route swaps are a plain `removeChild` / `insertBefore` pair, so the outgoing vie
 </style>
 ```
 
-The router runs its guards first and hands only the hide/show pair to the transition, so a guard that awaits does not hold the transition open. Without the tag nothing changes — the swap stays synchronous. See [docs/view-transition-design.md](https://github.com/wcstack/wcstack/blob/main/docs/view-transition-design.md) §7.1.
+The router runs its guards first and hands only the hide/show pair to the transition, so a guard that awaits does not hold the transition open. The first route application — the one that paints the page on load — is always synchronous: there is no previous route to animate against, and an entrance is `@starting-style`'s job. Without the tag nothing changes at all; the swap stays synchronous. See [docs/view-transition-design.md](https://github.com/wcstack/wcstack/blob/main/docs/view-transition-design.md) §7.1.
 
 ## Path Specification (Router / Route / Link)
 

@@ -363,7 +363,7 @@ bootstrapRouter({
 </style>
 ```
 
-ルータはガードを先に走らせ、hide/show の対だけを遷移へ渡す。await するガードが遷移を開きっぱなしにしないため。タグが無ければ何も変わらない（差し替えは同期のまま）。[docs/view-transition-design.ja.md](https://github.com/wcstack/wcstack/blob/main/docs/view-transition-design.ja.md) §7.1 参照。
+ルータはガードを先に走らせ、hide/show の対だけを遷移へ渡す。await するガードが遷移を開きっぱなしにしないため。ページを最初に描く「最初のルート適用」は常に同期で行う —— 対比すべき旧ルートが無く、入場は @starting-style の担当だから。タグが無ければ何も変わらない（差し替えは同期のまま）。[docs/view-transition-design.ja.md](https://github.com/wcstack/wcstack/blob/main/docs/view-transition-design.ja.md) §7.1 参照。
 
 ## パス仕様案（Router / Route / Link 共通）
 

@@ -41,6 +41,20 @@ function toError(value: unknown): Error {
   return value instanceof Error ? value : new Error(String(value));
 }
 
+/**
+ * Accept both the array form and the space-separated string an attribute (or a
+ * `data-wcs` binding) produces. The Core is a public export, so `core.types = "a b"`
+ * is a call an adopter can make — and without normalizing it here that string
+ * would degrade into single characters (`new Set("router")` contains no
+ * `"router"`, so `accepts()` would answer false for every participant).
+ */
+function toStringList(value: readonly string[] | string): string[] {
+  if (typeof value === "string") {
+    return value.split(/\s+/).filter((token) => token !== "");
+  }
+  return [...value];
+}
+
 function prefersReducedMotion(): boolean {
   // never-throw: matchMedia is absent in happy-dom and in non-browser hosts.
   try {
@@ -206,8 +220,8 @@ export class ViewTransitionCore extends EventTarget {
     return this._types;
   }
 
-  set types(value: readonly string[]) {
-    this._types = value.slice();
+  set types(value: readonly string[] | string) {
+    this._types = toStringList(value);
   }
 
   get disabled(): boolean {
@@ -222,8 +236,9 @@ export class ViewTransitionCore extends EventTarget {
     return [...this._participants];
   }
 
-  set participants(value: readonly string[]) {
-    this._participants = new Set(value.length > 0 ? value : DEFAULT_PARTICIPANTS);
+  set participants(value: readonly string[] | string) {
+    const list = toStringList(value);
+    this._participants = new Set(list.length > 0 ? list : DEFAULT_PARTICIPANTS);
   }
 
   // --- observable outputs ---
@@ -272,9 +287,18 @@ export class ViewTransitionCore extends EventTarget {
 
   dispose(): void {
     this.uninstall();
-    // Anything still queued belongs to a page that is going away; apply it so the
-    // DOM does not stay behind the state that asked for the change.
-    const abandoned = [...(this._pending ?? []), ...this._queue.flat()];
+    // Anything still unapplied belongs to a page that is going away; apply it so
+    // the DOM does not stay behind the state that asked for the change.
+    //
+    // Order is request order, and that is why the capturing batch has to be taken
+    // first: its mutations were requested *before* everything in _pending and
+    // _queue, but they are the ones still waiting on a frame. Settling only the
+    // later two would apply them out of order. Clearing _batch also turns the
+    // running transition's update callback into a no-op, which is what keeps
+    // "applied exactly once" true across a dispose.
+    const capturing = this._batch;
+    this._batch = null;
+    const abandoned = [...(capturing ?? []), ...(this._pending ?? []), ...this._queue.flat()];
     this._pending = null;
     this._queue = [];
     for (const entry of abandoned) {
@@ -290,6 +314,12 @@ export class ViewTransitionCore extends EventTarget {
     if (doc === undefined || typeof (doc as { startViewTransition?: unknown }).startViewTransition !== "function") {
       return false;
     }
+    // SSR: no transition is started while rendering on the server (G5). The gate
+    // lives here rather than in each participant because the protocol is public —
+    // a third-party participant has no reason to know wcstack's SSR marker, and
+    // the arbiter is the one place that owns the policy. `@wcstack/server` sets
+    // the attribute on its own document and it never reaches the client HTML.
+    if (doc.documentElement?.hasAttribute("data-wcs-server") === true) return false;
     // A hidden tab gets no rendering opportunities, so the update callback would
     // not run until the page is looked at again — the DOM would silently freeze
     // for as long as the tab stays in the background. Apply straight through.

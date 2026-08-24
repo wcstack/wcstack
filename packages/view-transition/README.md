@@ -131,6 +131,8 @@ Transitions cannot nest, so something has to arbitrate. Every request made in th
 
 Auto naming is capped at `naming-limit` (200 by default) because every named element becomes its own snapshot group and a few hundred of them make a transition visibly slow. Past the cap naming stops and says so once in the console. Big lists should use `manual` and name deliberately.
 
+**`auto` is load-order sensitive.** Names are assigned as content mounts, so rows and branches that were already on the page when this tag upgraded never get one — nothing revisits them. Put this package's script tag **before** the `@wcstack/state` one so the arbiter is installed first; otherwise the first render participates in the root snapshot rather than morphing row by row. `manual` has no such ordering constraint, because the name is an ordinary binding.
+
 ## Binding it from state
 
 ```html
@@ -153,6 +155,10 @@ await core.run(() => { /* mutate the DOM */ });
 ```
 
 `install()` publishes the core on a well-known global symbol; `@wcstack/state` and `@wcstack/router` find it there without importing this package. The protocol is described in [docs/view-transition-design.md](https://github.com/wcstack/wcstack/blob/main/docs/view-transition-design.md) §4, and `getTransitionRunner` / `runTransition` / `TRANSITION_RUNNER_KEY` are exported for adopters who want to install an arbiter of their own.
+
+## Demo
+
+[`examples/list-transitions`](./examples/list-transitions/) — enter, leave and move in one page, with a checkbox that switches the arbiter off so the difference is visible. Buildless: open `index.html`.
 
 ## Browser support
 

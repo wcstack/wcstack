@@ -220,11 +220,11 @@ declare class ViewTransitionCore extends EventTarget {
     get reducedMotion(): ReducedMotionPolicy;
     set reducedMotion(value: ReducedMotionPolicy);
     get types(): readonly string[];
-    set types(value: readonly string[]);
+    set types(value: readonly string[] | string);
     get disabled(): boolean;
     set disabled(value: boolean);
     get participants(): readonly string[];
-    set participants(value: readonly string[]);
+    set participants(value: readonly string[] | string);
     get active(): boolean;
     get error(): Error | null;
     /**

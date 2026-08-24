@@ -212,7 +212,15 @@ class Updater {
       // View transition 参加点（docs/view-transition-design.md §7.2）。arbiter が
       // 居なければ runTransition はその場で applyBindings を呼び、undefined を返す
       // ＝ 従来と完全に同じ同期適用。SSR では遷移そのものを持たない（G5）。
-      if (inSsr()) {
+      //
+      // 適用する binding が 0 本のバッチは arbiter へ渡さない。書き込みはバインドの
+      // 有無に関わらず enqueue される（setByAddress）ため、headless なパス
+      // （`$watch` 専用・`$streams` の内部状態・リスト置換の中間アドレス）への
+      // 書き込みだけでもここへ到達する。それでページ全体をスナップショットするのは
+      // 無駄なだけでなく、既定の mode="latest" では「アニメーションすべき DOM 変更が
+      // 無い遷移」が実行中の本物の遷移をスキップしてしまう（ルート遷移が毎回途中で
+      // 切れる／active が空撃ちで振動する）。
+      if (inSsr() || processBindings.length === 0) {
         applyBindings();
       } else {
         const pending = runTransition("state", applyBindings);

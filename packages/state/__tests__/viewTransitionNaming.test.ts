@@ -84,6 +84,30 @@ describe("applyTransitionName", () => {
     expect(() => applyTransitionName(stubContent(fakeElement, fakeElement), "row", naming)).not.toThrow();
   });
 
+  it("style を持たない要素は上限もカウンタも消費しない", () => {
+    installRunner("auto");
+    const naming = getAutoNaming()!;
+    const fakeElement = { nodeType: Node.ELEMENT_NODE, nextSibling: null } as unknown as Node;
+    applyTransitionName(stubContent(fakeElement, fakeElement), "row", naming);
+
+    const element = document.createElement("li");
+    applyTransitionName(stubContent(element, element), "row", naming);
+    // 書けない要素で枠を焼いていたら wcs-row-2 になる
+    expect(element.style.getPropertyValue("view-transition-name")).toBe("wcs-row-1");
+  });
+
+  it("命名台帳は Symbol.for のスロットに載る（state 二重ロードでも名前が衝突しない）", () => {
+    installRunner("auto");
+    const naming = getAutoNaming()!;
+    const element = document.createElement("li");
+    applyTransitionName(stubContent(element, element), "row", naming);
+
+    const ledger = (globalThis as unknown as Record<symbol, unknown>)[
+      Symbol.for("wcstack.state.view-transition-naming")
+    ];
+    expect(ledger).toEqual({ counter: 1, assigned: 1, warned: false });
+  });
+
   it("最初の要素に一意な名前とグループクラスを付ける", () => {
     installRunner("auto");
     const naming = getAutoNaming()!;

@@ -48,6 +48,19 @@ describe("<wcs-view-transition>", () => {
     expect(getTransitionRunner("state")).toBeNull();
   });
 
+  it("disconnect は未適用の変更を落とさずに適用してから降りる", () => {
+    const element = create();
+    document.body.appendChild(element);
+    let applied = false;
+    element.core.run(() => { applied = true; });
+    // 遷移待ち: まだ適用されていない
+    expect(applied).toBe(false);
+
+    element.remove();
+    expect(applied).toBe(true);
+    expect(getTransitionRunner("state")).toBeNull();
+  });
+
   it("install に失敗した要素は disconnect で他人のスロットを壊さない", () => {
     vi.spyOn(console, "warn").mockImplementation(() => { /* silence */ });
     const first = create();

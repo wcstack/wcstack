@@ -3,15 +3,6 @@ import { upgradeProperties } from "../protocol/upgradeProperties.js";
 import { TransitionNaming } from "../protocol/transitionRunner.js";
 import { IWcBindable, ReducedMotionPolicy, TransitionMode } from "../types.js";
 
-function parseList(value: string | null): string[] {
-  if (value === null) return [];
-  return value.split(/\s+/).filter((token) => token !== "");
-}
-
-function toList(value: readonly string[] | string): string[] {
-  return typeof value === "string" ? parseList(value) : [...value];
-}
-
 /**
  * `<wcs-view-transition>` — the page's view-transition policy node.
  *
@@ -33,6 +24,9 @@ export class WcsViewTransition extends HTMLElement {
     "mode", "naming", "naming-limit", "reduced-motion", "types", "disabled", "for",
   ];
 
+  // `properties` and `commands` come from the Core through the spread, so a
+  // member added there cannot be missed here. Only `inputs` — the attribute
+  // surface, which exists on the element and not on the Core — is declared.
   static wcBindable: IWcBindable = {
     ...ViewTransitionCore.wcBindable,
     inputs: [
@@ -44,8 +38,6 @@ export class WcsViewTransition extends HTMLElement {
       { name: "types", attribute: "types" },
       { name: "participants", attribute: "for" },
     ],
-    // Inherited from the Core so a command added there cannot be missed here.
-    commands: ViewTransitionCore.wcBindable.commands,
   };
 
   private _core: ViewTransitionCore;
@@ -151,7 +143,7 @@ export class WcsViewTransition extends HTMLElement {
   }
 
   set types(value: readonly string[] | string) {
-    this._core.types = toList(value);
+    this._core.types = value;
   }
 
   get participants(): readonly string[] {
@@ -159,7 +151,7 @@ export class WcsViewTransition extends HTMLElement {
   }
 
   set participants(value: readonly string[] | string) {
-    this._core.participants = toList(value);
+    this._core.participants = value;
   }
 
   // --- observable outputs ---
@@ -188,7 +180,9 @@ export class WcsViewTransition extends HTMLElement {
 
   disconnectedCallback(): void {
     if (this._installed) {
-      this._core.uninstall();
+      // dispose(), not uninstall(): a mutation already handed to this arbiter must
+      // still be applied even though the page just removed its policy tag.
+      this._core.dispose();
       this._installed = false;
     }
   }
@@ -229,13 +223,13 @@ export class WcsViewTransition extends HTMLElement {
         this._core.reducedMotion = (value ?? "skip") as ReducedMotionPolicy;
         break;
       case "types":
-        this._core.types = parseList(value);
+        this._core.types = value ?? "";
         break;
       case "disabled":
         this._core.disabled = value !== null;
         break;
       case "for":
-        this._core.participants = parseList(value);
+        this._core.participants = value ?? "";
         break;
     }
   }

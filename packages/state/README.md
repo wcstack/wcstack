@@ -1798,6 +1798,8 @@ Firing order is defined in three layers, and only the middle one is yours to ste
 | Between handlers | declaration order in `$watch` | **reorder the declarations** |
 | Between rows of one path | ascending `indexes` | fixed |
 
+**The one thing that moves the mechanism layer** is a `<wcs-view-transition>` that accepts the `state` participant. Binding application — and with it `$updatedCallback` — then lands on a frame, while `$watch` and the `$streams` restart stay on the microtask the drain was queued on, because they consume state addresses and not the DOM. For as long as the tag is present the order is `$watch` → `$streams` restart → `$updatedCallback`. Nothing else on the page reorders this layer; see [docs/timing-and-firing-contract.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.md) §4.3.
+
 Key rules:
 
 - **Only its own state** — a path may not carry `@stateName`; watching another state element is rejected at declaration time.
@@ -2077,7 +2079,12 @@ li {
 <wcs-view-transition naming="auto"></wcs-view-transition>
 ```
 
-One consequence to know: while that tag accepts the `state` participant, the drain lands on a frame instead of a microtask, so code that writes state and then reads the DOM after `await Promise.resolve()` must wait for the transition (`$updatedCallback` is unaffected). Without the tag the drain is exactly what it was. See [docs/timing-and-firing-contract.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.md) §4.3.
+Two consequences to know while that tag accepts the `state` participant:
+
+- The drain lands on a frame instead of a microtask, so code that writes state and then reads the DOM after `await Promise.resolve()` must wait for the transition. `$updatedCallback` still fires immediately after the bindings are applied — its *position* is unchanged, but it moves a frame later along with them.
+- Because `$watch` and the `$streams` restart stay on the original microtask, they now run **before** `$updatedCallback` instead of after it.
+
+Only a batch that actually has bindings to apply is handed to the tag, so a write to a headless path never starts a transition. Without the tag the drain is exactly what it was. See [docs/timing-and-firing-contract.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.md) §4.3.
 
 ## Diagnostics and failure handling
 

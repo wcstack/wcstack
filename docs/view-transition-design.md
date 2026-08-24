@@ -61,7 +61,7 @@ other frameworks.
 | G2 | How is exclusion handled (one transition at a time)? | **By the `<wcs-view-transition>` tag.** It is the single arbiter: it coalesces every request made in the same microtask into one transition and applies a declared `mode` (`latest` / `queue` / `exhaust`) when one is already running. |
 | G3 | Automatic or manual `view-transition-name`? | **Both, selected on the tag** via `naming="manual" \| "auto"` (default `manual`). |
 | G4 | `prefers-reduced-motion` | **Skip by default.** The mutation then runs synchronously — byte-for-byte today's behavior. Override with `reduced-motion="animate"`. |
-| G5 | SSR / hydration | **Disabled.** No transition is started while `inSsr()`, and the tag is inert without `document.startViewTransition`. |
+| G5 | SSR / hydration | **Disabled.** The arbiter itself refuses to start a transition while the document carries `data-wcs-server`, and the tag is inert without `document.startViewTransition`. The gate lives in the arbiter, not in each participant: the protocol is public, and a third-party participant has no reason to know wcstack's SSR marker. `@wcstack/state` keeps its own `inSsr()` short-circuit as a fast path, and `@wcstack/router` needs none. |
 
 ## 4. The transition-runner protocol
 
@@ -105,6 +105,12 @@ Rules:
    its own promise rejects, the others still run.
 6. **No runner, or `accepts(source) === false`, means synchronous apply.** Neither
    package changes behavior unless the tag is on the page.
+7. **A participant does not call `run()` for a mutation that changes nothing.** The
+   arbiter has no way to tell an empty mutation from a real one, and a transition
+   it starts for one is not merely wasted: it takes a full-page snapshot, and under
+   the default `latest` it *skips the transition already running*. Filtering is the
+   participant's job because only the participant knows whether it has work — see
+   §7.2 for the case that makes this concrete.
 
 ## 5. `<wcs-view-transition>`
 
@@ -144,6 +150,16 @@ becomes its own snapshot group, and a few hundred of them make a transition
 visibly slow; past the cap state stops naming and warns once. A page with big
 lists should name deliberately in manual mode.
 
+The counter and the cap live on a `Symbol.for` slot rather than in module scope,
+for the same reason the runner key does: two copies of `@wcstack/state` on one page
+would otherwise both mint `wcs-row-1`, and a duplicate `view-transition-name`
+makes the browser abort the whole transition.
+
+Naming happens as content mounts, so it is **load-order sensitive**: rows and
+branches that mounted before `<wcs-view-transition>` upgraded are never revisited
+and stay unnamed. Put the tag's script ahead of the state bundle, or accept that
+the first render participates in the root snapshot instead of morphing per row.
+
 ## 7. Participant contracts
 
 ### 7.1 `@wcstack/router`
@@ -154,6 +170,16 @@ route guard may await anything; running that inside the update callback would ho
 the transition open for as long as the guard takes (and the browser gives it about
 four seconds). The split also fixes an ordering wart: previous routes were hidden
 before the guards ran.
+
+**The first route application is never wrapped**, on the same rule state follows
+("initial rendering is never wrapped") and for the same reason: with no previous
+route there is no old state to animate against — that is an entrance, and entrances
+belong to `@starting-style` (§1). It is also load-bearing. The router awaits its
+first route application inside `_initialize`, at a point where the document has not
+had its first render; a transition started there can sit in Chromium without its
+update callback ever being called, and the router then never finishes initializing.
+Only a real browser reproduces it, so `e2e/tests/view-transition.spec.ts` is the
+regression test.
 
 The `navigate` event's `intercept({ handler })` awaits `run()`, so navigation is
 "in progress" until the DOM has changed, and not for the duration of the animation.
@@ -168,6 +194,20 @@ The single wrap point is the drain in
   that writes state and then reads the DOM after `await Promise.resolve()` must
   instead await the transition (or use `$updatedCallback`, which still fires after
   the bindings have been applied, inside the callback).
+- **The mechanism order inverts.** `notifyUpdateBatchListeners` runs in the drain's
+  `finally`, on the original microtask, because `$watch` and the `$streams` restart
+  consume state addresses and not the DOM. `$updatedCallback` rides with the
+  bindings into the update callback. So the order the state README declares fixed —
+  `$updatedCallback` → `$watch` → `$streams` restart — becomes
+  `$watch` → `$streams` restart → `$updatedCallback` while the arbiter accepts
+  `state`. This is deliberate (holding `$watch` for a frame would be worse), and it
+  is the one documented exception to that layer being fixed.
+- **A batch with no bindings to apply is never handed to the arbiter.** Every write
+  is enqueued whether or not its path is bound, so the drain routinely runs with
+  `processBindings.length === 0` — a `$watch`-only path, a `$streams` internal
+  value, the intermediate addresses of a list replacement. Asking for a transition
+  there would snapshot the whole page for a mutation that changes nothing, and
+  under `latest` it would cut short a route transition that *is* animating.
 - Participation is **per document, not per element**: one updater drains every
   `<wcs-state>`, so `for="state"` turns it on for all of them.
 - Initial rendering is never wrapped. Only the drain is.
@@ -182,6 +222,9 @@ The single wrap point is the drain in
 3. The runner never rejects for its own reasons; only a throwing `mutate` rejects.
 4. Removal stays synchronous everywhere. No content is kept mounted to animate it.
 5. Auto-assigned names are unique for the lifetime of the document.
+6. A participant hands the arbiter only mutations that change something. An empty
+   batch takes the synchronous path, so no transition is ever started — and none is
+   ever cancelled — on behalf of a change nobody can see.
 
 ## 9. Roadmap
 

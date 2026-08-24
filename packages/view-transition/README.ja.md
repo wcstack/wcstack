@@ -131,6 +131,8 @@ npm install @wcstack/view-transition
 
 自動命名には `naming-limit`（既定 200）の上限がある。命名された要素は 1 つずつスナップショットグループになり、数百個あると遷移は目に見えて重くなるため。上限を超えると命名を止め、コンソールに一度だけ通知する。大きなリストは `manual` で意図的に命名すべき。
 
+**`auto` はロード順に依存する。** 名前は content の mount 時に割り当てられるので、このタグが upgrade した時点で既にページに載っていた行・分岐には付かない — 後から見直す仕組みは無い。arbiter が先に install されるよう、このパッケージの script タグを `@wcstack/state` より**前**に置くこと。さもないと初回描画の分は行ごとに morph せず、ルートのスナップショットに含まれる。`manual` は名前が普通のバインディングなので、この順序制約を持たない。
+
 ## state からのバインド
 
 ```html
@@ -153,6 +155,10 @@ await core.run(() => { /* DOM を変更する */ });
 ```
 
 `install()` は core をよく知られたグローバル Symbol に載せる。`@wcstack/state` と `@wcstack/router` はこのパッケージを import せずにそこから見つける。プロトコルは [docs/view-transition-design.ja.md](https://github.com/wcstack/wcstack/blob/main/docs/view-transition-design.ja.md) §4 に規定があり、独自 arbiter を載せたい採用者向けに `getTransitionRunner` / `runTransition` / `TRANSITION_RUNNER_KEY` を export している。
+
+## デモ
+
+[`examples/list-transitions`](./examples/list-transitions/) — 入場・退場・移動を 1 ページで並べ、チェックボックスで arbiter を止めて差を見られるようにしたデモ。ビルド不要で `index.html` を開くだけ。
 
 ## ブラウザ対応
 

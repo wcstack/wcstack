@@ -21,15 +21,40 @@ export type TransitionNameKind = "row" | "branch";
 
 /** Elements that already carry a generated name (never renamed). */
 const namedElements = new WeakSet<Element>();
-let counter = 0;
-let assignedCount = 0;
-let warned = false;
 
-// テスト用: モジュールスコープのカウンタを初期化する
+/**
+ * The generated-name ledger is per *document*, not per module instance.
+ *
+ * `view-transition-name` has to be unique across the whole document: the moment
+ * two elements share one, the browser aborts the transition outright. A
+ * module-scope counter breaks that as soon as `@wcstack/state` is loaded twice on
+ * one page (two CDN bundles), because both copies would start minting
+ * `wcs-row-1`. The transition-runner key is a `Symbol.for` for exactly this
+ * reason, and the counter needs the same protection.
+ *
+ * Sharing the cap is right for the same reason: the cost a cap exists to bound —
+ * one snapshot group per named element — is a document-wide cost, not a
+ * per-bundle one.
+ */
+const NAMING_LEDGER_KEY = Symbol.for("wcstack.state.view-transition-naming");
+
+interface INamingLedger {
+  counter: number;
+  assigned: number;
+  warned: boolean;
+}
+
+function getLedger(): INamingLedger {
+  const slot = globalThis as Record<symbol, INamingLedger | undefined>;
+  return (slot[NAMING_LEDGER_KEY] ??= { counter: 0, assigned: 0, warned: false });
+}
+
+// テスト用: ドキュメント単位の命名台帳を初期化する
 export function __test_resetTransitionNaming(): void {
-  counter = 0;
-  assignedCount = 0;
-  warned = false;
+  const ledger = getLedger();
+  ledger.counter = 0;
+  ledger.assigned = 0;
+  ledger.warned = false;
 }
 
 /**
@@ -79,9 +104,18 @@ export function applyTransitionName(
   if (element === null || namedElements.has(element)) {
     return;
   }
-  if (assignedCount >= naming.limit) {
-    if (!warned) {
-      warned = true;
+  // A node without `style` (anything outside HTMLElement / SVGElement) cannot
+  // carry a name. Bail before touching the ledger: consuming the cap and marking
+  // the element as named would burn a slot for a name that was never written,
+  // and leave that element permanently ineligible.
+  const style = (element as HTMLElement).style;
+  if (style === undefined) {
+    return;
+  }
+  const ledger = getLedger();
+  if (ledger.assigned >= naming.limit) {
+    if (!ledger.warned) {
+      ledger.warned = true;
       console.warn(
         `[@wcstack/state] auto view-transition-name limit (${naming.limit}) reached; ` +
         "further elements are left unnamed. Raise naming-limit on <wcs-view-transition>, " +
@@ -91,13 +125,9 @@ export function applyTransitionName(
     return;
   }
   namedElements.add(element);
-  assignedCount += 1;
-  counter += 1;
-  const style = (element as HTMLElement).style;
-  if (style === undefined) {
-    return;
-  }
-  style.setProperty("view-transition-name", `wcs-${kind}-${counter}`);
+  ledger.assigned += 1;
+  ledger.counter += 1;
+  style.setProperty("view-transition-name", `wcs-${kind}-${ledger.counter}`);
   // Group handle for CSS (`::view-transition-group(*.wcs-row)`). Ignored by
   // engines that predate view-transition-class, which costs nothing.
   style.setProperty("view-transition-class", `wcs-${kind}`);

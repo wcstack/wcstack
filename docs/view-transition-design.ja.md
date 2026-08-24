@@ -57,7 +57,7 @@ View Transition API はそれを全部迂回する。ブラウザが変更**前*
 | G2 | 排他（同時に 1 つ）はどう行うか | **`<wcs-view-transition>` タグが行う**。唯一の調停者として、同一 microtask 中の全リクエストを 1 つの遷移へ合流させ、実行中に来たリクエストには宣言された `mode`（`latest` / `queue` / `exhaust`）を適用する。 |
 | G3 | `view-transition-name` は自動か手動か | **両方。タグの `naming="manual" \| "auto"` で選ぶ**（既定 `manual`）。 |
 | G4 | `prefers-reduced-motion` | **既定でスキップ**。そのとき変更は同期実行され、現行と完全に同じ挙動になる。`reduced-motion="animate"` で上書き。 |
-| G5 | SSR / ハイドレーション | **無効**。`inSsr()` 中は遷移を開始しない。`document.startViewTransition` が無い環境ではタグ自体が不活性。 |
+| G5 | SSR / ハイドレーション | **無効**。ドキュメントが `data-wcs-server` を持つ間は arbiter 自身が遷移の開始を拒む。`document.startViewTransition` が無い環境ではタグ自体が不活性。ゲートは参加者ごとではなく arbiter に置く —— プロトコルは公開されており、第三者の参加者が wcstack の SSR マーカーを知っている理由は無いため。`@wcstack/state` は自前の `inSsr()` 短絡を fast path として残し、`@wcstack/router` には不要。 |
 
 ## 4. transition-runner プロトコル
 
@@ -98,6 +98,11 @@ interface IWcsTransitionRunner {
    だけが reject する。
 6. **runner が無い、または `accepts(source) === false` なら同期適用**。タグがページに
    無い限り、どちらのパッケージの挙動も変わらない。
+7. **何も変えない変更のために参加者は `run()` を呼ばない**。arbiter には空の変更と
+   本物の変更を見分ける手立てが無く、そこで開始される遷移はただ無駄なだけではない
+   —— ページ全体をスナップショットし、既定の `latest` では*実行中の遷移をスキップ
+   する*。仕事があるかどうかを知っているのは参加者だけなので、篩い分けは参加者の
+   責務になる。具体例は §7.2。
 
 ## 5. `<wcs-view-transition>`
 
@@ -136,6 +141,15 @@ input は `disabled` / `mode` / `naming` / `types`、command は `skip` / `start
 state は命名を止めて一度だけ警告する。大きなリストを持つページは manual で意図的に
 命名すべき。
 
+カウンタと上限はモジュールスコープではなく `Symbol.for` のスロットに置く。runner 鍵と
+同じ理由で、`@wcstack/state` が 1 ページに 2 部載ると両方が `wcs-row-1` を発行して
+しまい、`view-transition-name` の重複はブラウザに遷移そのものを abort させるため。
+
+命名は content の mount 時に起きるので**ロード順に依存する**。`<wcs-view-transition>`
+が upgrade する前に mount した行・分岐は二度と見直されず、名前が付かないままになる。
+タグのスクリプトを state バンドルより前に置くか、初回描画の分は行ごとに morph せず
+ルートのスナップショットに含まれることを受け入れること。
+
 ## 7. 参加者ごとの契約
 
 ### 7.1 `@wcstack/router`
@@ -145,6 +159,14 @@ state は命名を止めて一度だけ警告する。大きなリストを持�
 それを更新コールバック内で走らせると、ガードが終わるまで遷移が開きっぱなしになる
 （ブラウザの猶予は約 4 秒）。この分割は「ガードより先に旧ルートを隠していた」という
 順序の歪みも同時に直す。
+
+**最初のルート適用は決して包まない**。state の「初期レンダリングは決して包まない」と
+同じ規則で、理由も同じ —— 旧ルートが無ければ対比すべき旧状態も無く、それは差し替えでは
+なく入場であり、入場は `@starting-style` の担当（§1）。加えてこれは実務上も必須で、
+router は `_initialize` の中で最初のルート適用を await するが、その時点のドキュメントは
+まだ最初の描画を終えていない。そこで開始した遷移は Chromium で更新コールバックが
+呼ばれないまま留まることがあり、router の初期化がそのまま終わらなくなる。実ブラウザで
+しか再現しないので、回帰テストは `e2e/tests/view-transition.spec.ts`。
 
 `navigate` イベントの `intercept({ handler })` は `run()` を await する。つまり
 ナビゲーションは DOM が変わるまで進行中であり、アニメーションの間ずっとではない。
@@ -158,6 +180,20 @@ state は命名を止めて一度だけ警告する。大きなリストを持�
   `await Promise.resolve()` で DOM を読むコードは、遷移を待つ（あるいは
   `$updatedCallback` を使う。これはバインディング適用後、コールバック内で発火する）
   必要がある。
+- **機構間の順序が反転する**。`notifyUpdateBatchListeners` は drain の `finally` に
+  あり、元の microtask で走る —— `$watch` と `$streams` restart は state アドレスを
+  消費し DOM を見ないため。一方 `$updatedCallback` はバインディングと一緒に更新
+  コールバックへ乗る。したがって state の README が「固定」と宣言する
+  `$updatedCallback` → `$watch` → `$streams` restart は、arbiter が `state` を
+  受け付けている間だけ `$watch` → `$streams` restart → `$updatedCallback` になる。
+  これは意図的な選択であり（`$watch` を 1 フレーム待たせる方が悪い）、あの層が固定で
+  あることの唯一の明文化された例外である。
+- **適用すべきバインディングが 0 本のバッチは arbiter へ渡さない**。書き込みはパスが
+  バインドされているかに関わらず enqueue されるので、drain は
+  `processBindings.length === 0` で日常的に走る —— `$watch` 専用パス、`$streams` の
+  内部値、リスト置換の中間アドレス。そこで遷移を要求すると、何も変わらない変更の
+  ためにページ全体をスナップショットすることになり、`latest` では*本当に*アニメー
+  ションしているルート遷移を途中で切ってしまう。
 - 参加は**要素単位ではなくドキュメント単位**。updater は全 `<wcs-state>` をまとめて
   drain するので、`for="state"` は全部に効く。
 - 初期レンダリングは決して包まない。包むのは drain だけ。
@@ -174,6 +210,9 @@ state は命名を止めて一度だけ警告する。大きなリストを持�
 4. 削除はどこでも同期のまま。アニメーションのために content を mount したままにする
    ことはしない。
 5. 自動割り当ての名前はドキュメントの生存期間で一意。
+6. 参加者が arbiter へ渡すのは「何かを変える変更」だけ。空のバッチは同期パスを通る
+   ので、誰にも見えない変更のために遷移が開始されることも、開始済みの遷移が
+   取り消されることも無い。
 
 ## 9. ロードマップ
 

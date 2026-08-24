@@ -109,6 +109,29 @@ describe('showRouteContent — transition-runner 連携', () => {
     expect(next.setParams).toHaveBeenCalled();
   });
 
+  it('初回描画（旧ルートが無い）は arbiter へ渡さず同期適用する', async () => {
+    // 差し替えではなく入場なので対比すべき旧状態が無く、包む意味が無い。
+    // かつ router の初期化はこの適用を await するため、最初の描画より前に
+    // 開始した遷移が更新コールバックを呼ばないまま留まると初期化ごと固まる
+    // （e2e/tests/view-transition.spec.ts が実ブラウザ側の回帰テスト）。
+    const runner = installRunner();
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+
+    const container = document.createElement('div');
+    const placeholder = document.createComment('@@route:next');
+    container.appendChild(placeholder);
+    document.body.appendChild(container);
+
+    const next = createMockRoute({ placeHolder: placeholder });
+    const result = await showRouteContent(router, createMatchResult([next]), []);
+
+    expect(result).toBe(true);
+    expect(runner.sources).toEqual([]);
+    expect(runner.deferred).toHaveLength(0);
+    expect(next.setParams).toHaveBeenCalled();
+  });
+
   it('ガードが拒否したときは DOM 変更を arbiter へ渡さない（旧ルートも消えない）', async () => {
     const runner = installRunner();
     const router = document.createElement('wcs-router') as Router;
@@ -141,10 +164,14 @@ describe('showRouteContent — transition-runner 連携', () => {
     container.appendChild(placeholder);
     document.body.appendChild(container);
 
+    // 旧ルートを与える: lastRoutes が空だと初回描画ルート（常に同期）と
+    // 区別が付かず、accepts=false の検証にならない
+    const previous = createMockRoute();
     const next = createMockRoute({ placeHolder: placeholder });
-    await showRouteContent(router, createMatchResult([next]), []);
+    await showRouteContent(router, createMatchResult([next]), [previous]);
 
     expect(runner.deferred).toHaveLength(0);
     expect(next.setParams).toHaveBeenCalled();
+    expect(previous.clearParams).toHaveBeenCalled();
   });
 });

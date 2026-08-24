@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: view transitions for router route swaps</title>
+  <!-- Route swaps are the participant that splits guard phase from mutate phase
+       (docs/view-transition-design.md §7.1). Here the swap runs inside a real view
+       transition: the guard still resolves first, the hide/show pair is handed over
+       as one mutation, and the DOM lands exactly once. -->
+  <script>
+    window.__vt = { started: 0, supported: typeof document.startViewTransition === "function" };
+    if (window.__vt.supported) {
+      const native = document.startViewTransition;
+      document.startViewTransition = function (arg) {
+        window.__vt.started += 1;
+        return native.call(this, arg);
+      };
+    }
+  </script>
+  <script type="module" src="/packages/view-transition/dist/auto.min.js"></script>
+  <script type="module" src="/packages/router/dist/auto.min.js"></script>
+  <style>
+    ::view-transition-group(root) { animation-duration: 80ms; }
+  </style>
+</head>
+<body>
+  <wcs-view-transition for="router"></wcs-view-transition>
+
+  <wcs-router basename="/e2e/fixtures">
+    <template>
+      <wcs-route path="/">
+        <p id="view">home</p>
+      </wcs-route>
+      <wcs-route path="/about">
+        <p id="view">about</p>
+      </wcs-route>
+    </template>
+  </wcs-router>
+
+  <nav>
+    <wcs-link to="/">home</wcs-link>
+    <wcs-link to="/about">about</wcs-link>
+  </nav>
+</body>
+</html>

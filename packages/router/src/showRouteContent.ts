@@ -11,7 +11,7 @@ import { runTransition } from "./protocol/transitionRunner";
  *   1. ガード相 — 何も触らずに全ルートの guardCheck を待つ。
  *   2. 変更相 — 旧ルートの hide と新ルートの show を「ひとまとまりの DOM 変更」
  *      として transition arbiter に渡す。arbiter が居なければ同期実行され、
- *      従来と同じ挙動になる。
+ *      従来と同じ挙動になる。ただし初回描画は渡さない（下記）。
  *
  * ガードを変更相の中に入れないのは、更新コールバックの中で任意の await を
  * 走らせると遷移が開きっぱなしになるため（ブラウザの猶予は約 4 秒）。
@@ -50,7 +50,7 @@ export async function showRouteContent(
   // --- 変更相 ---
   const routesSet = new Set<IRoute>(matchResult.routes);
   const lastRouteSet = new Set<IRoute>(lastRoutes);
-  const pending = runTransition("router", () => {
+  const mutate = (): void => {
     // Hide previous routes
     for (const route of lastRoutes) {
       if (!routesSet.has(route)) {
@@ -63,7 +63,23 @@ export async function showRouteContent(
         force = showRoute(route, matchResult);
       }
     }
-  });
+  };
+  // 初回描画（＝置き換える旧ルートが無い）は遷移に渡さない。state 側の
+  // 「初期レンダリングは決して包まない、包むのは drain だけ」と同じ規則で、
+  // 理由も同じ: 差し替えではなく入場であり、対比すべき旧状態が無い。入場は
+  // @starting-style の担当（docs/view-transition-design.md §1）。
+  //
+  // これは好みの問題ではない。router の初期化は最初のルート適用を await するが、
+  // その時点のドキュメントはまだ最初の描画を終えていない。そこで開始した遷移は
+  // Chromium で更新コールバックが呼ばれないまま留まることがあり、_initialize が
+  // 永久に解決しなくなる（ページが白いまま・path が空のまま）。実ブラウザでのみ
+  // 再現するので e2e/tests/view-transition.spec.ts が唯一の回帰テストになる。
+  let pending: Promise<void> | undefined;
+  if (lastRoutes.length === 0) {
+    mutate();
+  } else {
+    pending = runTransition("router", mutate);
+  }
   // arbiter が居ないときは同期適用済みで undefined が返る。そこで await すると
   // 無条件に 1 tick 増えて、既存のナビゲーション完了タイミングが変わってしまう。
   if (pending !== undefined) {

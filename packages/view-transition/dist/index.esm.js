@@ -110,6 +110,19 @@ const DEFAULT_PARTICIPANTS = ["router", "state"];
 function toError(value) {
     return value instanceof Error ? value : new Error(String(value));
 }
+/**
+ * Accept both the array form and the space-separated string an attribute (or a
+ * `data-wcs` binding) produces. The Core is a public export, so `core.types = "a b"`
+ * is a call an adopter can make — and without normalizing it here that string
+ * would degrade into single characters (`new Set("router")` contains no
+ * `"router"`, so `accepts()` would answer false for every participant).
+ */
+function toStringList(value) {
+    if (typeof value === "string") {
+        return value.split(/\s+/).filter((token) => token !== "");
+    }
+    return [...value];
+}
 function prefersReducedMotion() {
     // never-throw: matchMedia is absent in happy-dom and in non-browser hosts.
     try {
@@ -253,7 +266,7 @@ class ViewTransitionCore extends EventTarget {
         return this._types;
     }
     set types(value) {
-        this._types = value.slice();
+        this._types = toStringList(value);
     }
     get disabled() {
         return this._disabled;
@@ -265,7 +278,8 @@ class ViewTransitionCore extends EventTarget {
         return [...this._participants];
     }
     set participants(value) {
-        this._participants = new Set(value.length > 0 ? value : DEFAULT_PARTICIPANTS);
+        const list = toStringList(value);
+        this._participants = new Set(list.length > 0 ? list : DEFAULT_PARTICIPANTS);
     }
     // --- observable outputs ---
     get active() {
@@ -306,9 +320,18 @@ class ViewTransitionCore extends EventTarget {
     }
     dispose() {
         this.uninstall();
-        // Anything still queued belongs to a page that is going away; apply it so the
-        // DOM does not stay behind the state that asked for the change.
-        const abandoned = [...(this._pending ?? []), ...this._queue.flat()];
+        // Anything still unapplied belongs to a page that is going away; apply it so
+        // the DOM does not stay behind the state that asked for the change.
+        //
+        // Order is request order, and that is why the capturing batch has to be taken
+        // first: its mutations were requested *before* everything in _pending and
+        // _queue, but they are the ones still waiting on a frame. Settling only the
+        // later two would apply them out of order. Clearing _batch also turns the
+        // running transition's update callback into a no-op, which is what keeps
+        // "applied exactly once" true across a dispose.
+        const capturing = this._batch;
+        this._batch = null;
+        const abandoned = [...(capturing ?? []), ...(this._pending ?? []), ...this._queue.flat()];
         this._pending = null;
         this._queue = [];
         for (const entry of abandoned) {
@@ -323,6 +346,13 @@ class ViewTransitionCore extends EventTarget {
         if (doc === undefined || typeof doc.startViewTransition !== "function") {
             return false;
         }
+        // SSR: no transition is started while rendering on the server (G5). The gate
+        // lives here rather than in each participant because the protocol is public —
+        // a third-party participant has no reason to know wcstack's SSR marker, and
+        // the arbiter is the one place that owns the policy. `@wcstack/server` sets
+        // the attribute on its own document and it never reaches the client HTML.
+        if (doc.documentElement?.hasAttribute("data-wcs-server") === true)
+            return false;
         // A hidden tab gets no rendering opportunities, so the update callback would
         // not run until the page is looked at again — the DOM would silently freeze
         // for as long as the tab stays in the background. Apply straight through.
@@ -490,14 +520,6 @@ function upgradeProperties(element) {
     }
 }
 
-function parseList(value) {
-    if (value === null)
-        return [];
-    return value.split(/\s+/).filter((token) => token !== "");
-}
-function toList(value) {
-    return typeof value === "string" ? parseList(value) : [...value];
-}
 /**
  * `<wcs-view-transition>` — the page's view-transition policy node.
  *
@@ -518,6 +540,9 @@ class WcsViewTransition extends HTMLElement {
     static observedAttributes = [
         "mode", "naming", "naming-limit", "reduced-motion", "types", "disabled", "for",
     ];
+    // `properties` and `commands` come from the Core through the spread, so a
+    // member added there cannot be missed here. Only `inputs` — the attribute
+    // surface, which exists on the element and not on the Core — is declared.
     static wcBindable = {
         ...ViewTransitionCore.wcBindable,
         inputs: [
@@ -529,8 +554,6 @@ class WcsViewTransition extends HTMLElement {
             { name: "types", attribute: "types" },
             { name: "participants", attribute: "for" },
         ],
-        // Inherited from the Core so a command added there cannot be missed here.
-        commands: ViewTransitionCore.wcBindable.commands,
     };
     _core;
     _internals = null;
@@ -627,13 +650,13 @@ class WcsViewTransition extends HTMLElement {
         return this._core.types;
     }
     set types(value) {
-        this._core.types = toList(value);
+        this._core.types = value;
     }
     get participants() {
         return this._core.participants;
     }
     set participants(value) {
-        this._core.participants = toList(value);
+        this._core.participants = value;
     }
     // --- observable outputs ---
     get active() {
@@ -654,7 +677,9 @@ class WcsViewTransition extends HTMLElement {
     }
     disconnectedCallback() {
         if (this._installed) {
-            this._core.uninstall();
+            // dispose(), not uninstall(): a mutation already handed to this arbiter must
+            // still be applied even though the page just removed its policy tag.
+            this._core.dispose();
             this._installed = false;
         }
     }
@@ -694,13 +719,13 @@ class WcsViewTransition extends HTMLElement {
                 this._core.reducedMotion = (value ?? "skip");
                 break;
             case "types":
-                this._core.types = parseList(value);
+                this._core.types = value ?? "";
                 break;
             case "disabled":
                 this._core.disabled = value !== null;
                 break;
             case "for":
-                this._core.participants = parseList(value);
+                this._core.participants = value ?? "";
                 break;
         }
     }
