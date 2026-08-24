@@ -349,6 +349,22 @@ bootstrapRouter({
 });
 ```
 
+## Route transition animations
+
+Route swaps are a plain `removeChild` / `insertBefore` pair, so the outgoing view cannot animate out on its own. Adding [`@wcstack/view-transition`](https://github.com/wcstack/wcstack/tree/main/packages/view-transition) to the page makes the swap run inside a View Transition, which you then style in CSS:
+
+```html
+<script type="module" src="https://esm.run/@wcstack/view-transition/auto"></script>
+<wcs-view-transition for="router"></wcs-view-transition>
+
+<style>
+  ::view-transition-old(root) { animation: fade-out 0.2s both; }
+  ::view-transition-new(root) { animation: fade-in 0.2s both; }
+</style>
+```
+
+The router runs its guards first and hands only the hide/show pair to the transition, so a guard that awaits does not hold the transition open. The first route application — the one that paints the page on load — is always synchronous: there is no previous route to animate against, and an entrance is `@starting-style`'s job. Without the tag nothing changes at all; the swap stays synchronous. See [docs/view-transition-design.md](https://github.com/wcstack/wcstack/blob/main/docs/view-transition-design.md) §7.1.
+
 ## Path Specification (Router / Route / Link)
 
 ### Terminology

@@ -1949,6 +1949,70 @@
       ]
     },
     {
+      "name": "wcs-view-transition",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/view-transition` custom element (wc-bindable).\n\n**Bindable properties**: `active`, `error`\n\n**Inputs**: `disabled`, `mode`, `naming`, `namingLimit`, `reducedMotion`, `types`, `participants`\n\n**Commands**: `command.skip`"
+      },
+      "attributes": [
+        {
+          "name": "disabled",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `disabled` input."
+          }
+        },
+        {
+          "name": "for",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `participants` input."
+          }
+        },
+        {
+          "name": "mode",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `mode` input."
+          }
+        },
+        {
+          "name": "naming",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `naming` input."
+          }
+        },
+        {
+          "name": "naming-limit",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `namingLimit` input."
+          }
+        },
+        {
+          "name": "reduced-motion",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `reducedMotion` input."
+          }
+        },
+        {
+          "name": "types",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `types` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/view-transition#readme"
+        }
+      ]
+    },
+    {
       "name": "wcs-voice",
       "description": {
         "kind": "markdown",

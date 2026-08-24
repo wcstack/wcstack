@@ -8,6 +8,7 @@ single-package demos live in that package's own `examples/` directory instead:
 - `packages/speech/examples/` — `speech-echo`, `speak-highlight`
 - `packages/defined/examples/` — `defined-loader`
 - `packages/midi/examples/` — `midi-fader`
+- `packages/view-transition/examples/` — `list-transitions`
 - `packages/state/examples/` — binding basics
 
 Every demo is buildless and loads packages straight from the CDN

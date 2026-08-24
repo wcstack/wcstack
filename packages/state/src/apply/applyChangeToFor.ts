@@ -19,6 +19,7 @@ import { getListParentListIndex } from "../webComponent/baseListIndex";
 import { applyChange } from "./applyChange";
 import { setRootNodeByFragment } from "./rootNodeByFragment";
 import { IApplyContext } from "./types";
+import { applyTransitionName, getAutoNaming } from "./viewTransitionNaming";
 
 const lastNodeByNode: WeakMap<Node, Node> = new WeakMap();
 const contentByListIndexByNode: WeakMap<Node, WeakMap<IListIndex, IContent>> = new WeakMap();
@@ -225,6 +226,10 @@ export function applyChangeToFor(
     setRootNodeByFragment(fragment, context.rootNode);
   }
   const ssrMode = inSsr();
+  // 自動命名ポリシーは行ごとではなく apply ごとに 1 回だけ引く
+  // （docs/view-transition-design.md §6）。既定の manual では null で、
+  // 以降の行ループは分岐 1 つ分しか増えない。
+  const autoNaming = getAutoNaming();
   const uuid = bindingInfo.uuid ?? '';
   // 追加行ごとの WeakMap 解決を避けるためプール配列も 1 回だけ引く（プールの配列
   // 実体は setPooledContent が一度作ったら不変なので、delete ループ後の参照で安定）
@@ -267,6 +272,9 @@ export function applyChangeToFor(
         }
         // コンテントを活性化
         activateContent(content, loopContext, context);
+        if (autoNaming !== null) {
+          applyTransitionName(content, "row", autoNaming);
+        }
       });
       if (typeof content === 'undefined') {
         raiseError(`Content not found for ListIndex: ${index.index} at path "${listPathInfo.path}"`);

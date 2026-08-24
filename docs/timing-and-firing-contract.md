@@ -118,6 +118,18 @@ Note that **this wait is not needed in order to read the initial snapshot of a m
 ### 4.2 Writing `undefined` is skipped (clear explicitly with `null`)
 The binder does not write `undefined` into properties/inputs (it skips the write itself). For details and the SPEC proposal see [spec-proposal-undefined-write-skip.md](./spec-proposal-undefined-write-skip.md) (ja).
 
+
+### 4.3 With `<wcs-view-transition>` on the page, the drain lands on a frame, not a microtask
+The drain (`Updater._applyChange`) normally applies its bindings synchronously inside the microtask it was queued on. When a `@wcstack/view-transition` arbiter is installed **and accepts the `state` participant** (`for=` includes `state`, the default), the binding application is handed to `document.startViewTransition`, which invokes it on a later frame.
+
+→ **Consequence 1**: code that writes state and then reads the DOM after `await Promise.resolve()` sees the old DOM. Wait for the transition, or use `$updatedCallback` — it still fires right after the bindings are applied, inside the update callback, so its *position* is unchanged even though it moves a frame later along with them.
+
+→ **Consequence 2 — the mechanism order inverts.** The drain-end batch listeners (`$watch` → `$streams` restart, §3) stay on the original microtask, because they consume state addresses and not the DOM. `$updatedCallback` does not. So the order §3 calls fixed — `$updatedCallback` → `$watch` → `$streams` restart — becomes `$watch` → `$streams` restart → `$updatedCallback` for as long as the arbiter accepts `state`. This is the only thing on a page that reorders that layer. A `$watch` handler that reads something `$updatedCallback` wrote cannot rely on the declared order while the tag is present.
+
+What does **not** change: initial rendering is never wrapped (only the drain is); `inSsr()` short-circuits to the synchronous path; and a batch with no bindings to apply is never handed to the arbiter, so a write to a headless path (`$watch`-only, `$streams` internal state) neither animates nor defers. With no arbiter installed — or with `for="router"` — the drain is byte-for-byte what it was.
+
+Normative description: [view-transition-design.md](./view-transition-design.md) §7.2.
+
 ---
 
 ## 5. example → the contracts it depends on (traceability)

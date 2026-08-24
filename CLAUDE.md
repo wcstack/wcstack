@@ -19,6 +19,7 @@ Each package lives under `packages/` and is independently built, tested, version
 - **`@wcstack/router`** (`<wcs-router>`, `<wcs-route>`, `<wcs-layout>`) — Declarative SPA routing on the Navigation API (popstate fallback). Typed path params (`:id(int)`, `:slug(slug)`), nested layouts, head management (`<wcs-head>`), route guards, basename support.
 - **`@wcstack/autoloader`** — Auto-detects and dynamically imports undefined custom elements by scanning the DOM and Import Map entries with `@components/` prefixes. Uses MutationObserver for dynamically-added elements.
 - **`@wcstack/signals`** — Signals-based lightweight reactive core (an alternative to `state`, not a replacement) with async-IO resource adapters and a `wc-bindable` → signal bridge.
+- **`@wcstack/view-transition`** (`<wcs-view-transition>`) — View Transition arbiter. A policy tag (renders nothing, binds no data) that makes `router` route swaps and `state` list/branch updates animate; it owns exclusion (`latest` / `queue` / `exhaust`) and the `view-transition-name` policy. `state`/`router` never import it — they find it through the transition-runner protocol on a global symbol. See [docs/view-transition-design.md](docs/view-transition-design.md).
 
 **I/O node components** — declarative wrappers over a Web platform API, exposed via the `wc-bindable-protocol` so they interoperate with `state`/`signals`:
 - **`@wcstack/fetch`** (`<wcs-fetch>`) — Async data fetching
@@ -122,6 +123,7 @@ These protocols are how `state`/`signals` talk to I/O node components, and how c
 - **`wc-bindable-protocol`** — A component declares its bindable surface with `static wcBindable`, exposing `properties` (two-way bindable), `event`, and `getter`. This lets `data-wcs` (and signals' `bindNode`) wire DOM elements together without per-element glue. I/O node components implement this so they interoperate with `state`.
 - **`command-token` protocol** — `state → element` imperative command invocation: `$commandTokens` / `$command.<name>` / `command.<method>:`. Positional arguments are passed through verbatim (`Token.emit` → `Reflect.apply`); the runtime does not `await` them.
 - **`event-token` protocol** — the dual of command-token: `element → state` event dispatch. `$eventTokens` / `eventToken.<prop>: <name>` / `$on`. Keys are `wcBindable` property names.
+- **`transition-runner` protocol** — how a package that mutates the DOM (`state`'s drain, `router`'s route swap) hands that mutation to whoever arbitrates view transitions. Canonical source `/protocol/transition-runner.ts`, mirrored per package by `scripts/sync-protocol-types.mjs`. No arbiter installed = the mutation runs directly and synchronously, exactly as before the protocol existed. Invariant: a mutation handed to `run()` is applied exactly once, whatever is decided about animating it.
 
 ### Component package layout (I/O node pattern)
 
@@ -160,7 +162,7 @@ Each I/O node component splits into two layers:
 
 - Root `examples/` holds cross-package demo apps only (e.g. `state-camera-record-upload`, `state-notification-chat`, `state-cross-tab-todo`, `ssr`) plus `websocket-chat/` — one chat scenario implemented in five stacks (vanilla / state / signals / React / Vue) on one shared WebSocket server. See `examples/README.md` for the full list and ports.
 - `examples/shared/server.js` is the shared static-file + JSON API core; each demo's `server.js` is a thin file declaring only its own routes. `websocket-chat/shared/` keeps its own self-contained server (needs the `ws` dependency).
-- Single-package demos live in that package's own `examples/` (e.g. `fetch` has `pagination` / `users-crud` / `infinite-scroll`, `speech` has `speech-echo` / `speak-highlight`, `defined` has `defined-loader`, `state` has its basics).
+- Single-package demos live in that package's own `examples/` (e.g. `fetch` has `pagination` / `users-crud` / `infinite-scroll`, `speech` has `speech-echo` / `speak-highlight`, `defined` has `defined-loader`, `view-transition` has `list-transitions`, `state` has its basics).
 - All state-based demos load packages via CDN one-liners (`https://esm.run/@wcstack/<pkg>/auto`); signals demos import from the single `@wcstack/signals/dom` CDN entry (mixing `.`/`.dom` entries on one CDN page duplicates the reactive core).
 
 ## Docs & Design Notes
