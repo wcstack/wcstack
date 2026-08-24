@@ -131,6 +131,16 @@ async $connectedCallback() {
 ### 4.2 `undefined` 書き込みはスキップ（明示クリアは `null`）
 binder は `undefined` を properties/inputs に書かない（書き込み自体をスキップ）。詳細と SPEC 提案は [spec-proposal-undefined-write-skip.md](./spec-proposal-undefined-write-skip.md)。
 
+
+### 4.3 `<wcs-view-transition>` があると drain は microtask ではなくフレームで着地する
+drain（`Updater._applyChange`）は通常、キューされた microtask の中で同期的にバインディングを適用する。`@wcstack/view-transition` の arbiter が install され、かつ **`state` 参加者を受け付けている**とき（`for=` に `state` が含まれる。既定）、バインディング適用は `document.startViewTransition` へ預けられ、後のフレームで呼ばれる。
+
+→ **帰結**: state に書いてから `await Promise.resolve()` で DOM を読むコードは古い DOM を見る。遷移を待つか、`$updatedCallback` を使うこと（こちらは影響を受けない。更新コールバックの中、バインディング適用直後に発火するため）。
+
+**変わらない**もの: drain 終了リスナー（`$watch` → `$streams` restart、§3）は state アドレスを消費し DOM を見ないので、従来どおり元の microtask で発火する。初期レンダリングは決して包まれない（包むのは drain だけ）。`inSsr()` は同期パスへ短絡する。arbiter が居ない場合、あるいは `for="router"` の場合、drain は従来と完全に同一。
+
+規範記述: [view-transition-design.ja.md](./view-transition-design.ja.md) §7.2。
+
 ---
 
 ## 5. example → 依存している契約（トレーサビリティ）

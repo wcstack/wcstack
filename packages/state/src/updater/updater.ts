@@ -1,7 +1,9 @@
 import { IAbsoluteStateAddress } from "../address/types";
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
 import { peekBindingsForAddress } from "../binding/getBindingSetByAbsoluteStateAddress";
+import { inSsr } from "../config";
 import { MAX_PROPAGATION_HOPS } from "../define";
+import { runTransition } from "../protocol/transitionRunner";
 import { devtoolsSink } from "../devtools/sink";
 import { IPropagationContext } from "../propagation/types";
 import { IBindingInfo } from "../types";
@@ -61,6 +63,18 @@ function notifyUpdateBatchListeners(batch: ReadonlySet<IAbsoluteStateAddress>): 
   for (const registered of updateBatchListeners.slice()) {
     registered.listener(batch);
   }
+}
+
+/**
+ * 遷移越しの適用が失敗したときの報告。
+ *
+ * 遷移の中では例外を同期的に呼び出し元へ投げ返せない。今日の drain は
+ * queueMicrotask の中で throw する ＝ uncaught として観測されるので、それと同じ
+ * 「loud に出す」挙動へ揃える。握り潰すと `$updatedCallback` の throw が黙って
+ * 消える（README の 3 層表が定める伝播の契約が破れる）。
+ */
+function reportDeferredApplyFailure(error: unknown): void {
+  queueMicrotask(() => { throw error; });
 }
 
 /** queue に積まれる update record（address + 書き込み時点の因果 context） */
@@ -187,11 +201,24 @@ class Updater {
     // 限られるが、そのとき drain フックまで道連れにすると「機構間の順序は固定」
     // （README の 3 層表）が黙って破れる。例外は握らない ＝ 伝播は維持する。
     try {
-      // context が無い場合は従来どおり 1 引数で呼ぶ（呼び出し契約の互換維持）
-      if (propagationContextByBinding.size > 0) {
-        applyChangeFromBindings(processBindings, propagationContextByBinding);
+      const applyBindings = (): void => {
+        // context が無い場合は従来どおり 1 引数で呼ぶ（呼び出し契約の互換維持）
+        if (propagationContextByBinding.size > 0) {
+          applyChangeFromBindings(processBindings, propagationContextByBinding);
+        } else {
+          applyChangeFromBindings(processBindings);
+        }
+      };
+      // View transition 参加点（docs/view-transition-design.md §7.2）。arbiter が
+      // 居なければ runTransition はその場で applyBindings を呼び、undefined を返す
+      // ＝ 従来と完全に同じ同期適用。SSR では遷移そのものを持たない（G5）。
+      if (inSsr()) {
+        applyBindings();
       } else {
-        applyChangeFromBindings(processBindings);
+        const pending = runTransition("state", applyBindings);
+        if (pending !== undefined) {
+          pending.catch(reportDeferredApplyFailure);
+        }
       }
     } finally {
       notifyUpdateBatchListeners(new Set(contextByAbsoluteAddress.keys()));
@@ -209,4 +236,5 @@ export function getUpdater(): Updater {
 // テスト用にprivateメソッドを公開
 export const __private__ = {
   Updater,
+  reportDeferredApplyFailure,
 };

@@ -40,6 +40,7 @@
 | [scoped-custom-element-registries.md](./scoped-custom-element-registries.md) | [scoped-custom-element-registries.ja.md](./scoped-custom-element-registries.ja.md) |
 | [screen-orientation-tag-design.md](./screen-orientation-tag-design.md) | [screen-orientation-tag-design.ja.md](./screen-orientation-tag-design.ja.md) |
 | [audio-impl-plan.md](./audio-impl-plan.md) | [audio-impl-plan.ja.md](./audio-impl-plan.ja.md) |
+| [view-transition-design.md](./view-transition-design.md) | [view-transition-design.ja.md](./view-transition-design.ja.md) |
 | [architecture-hardening/README.md](./architecture-hardening/README.md) | [README.ja.md](./architecture-hardening/README.ja.md) |
 | [architecture-hardening/09-remediation-design.md](./architecture-hardening/09-remediation-design.md) | [09…ja.md](./architecture-hardening/09-remediation-design.ja.md) |
 | [architecture-hardening/10-defaulting-rollout-status.md](./architecture-hardening/10-defaulting-rollout-status.md) | [10…ja.md](./architecture-hardening/10-defaulting-rollout-status.ja.md) |

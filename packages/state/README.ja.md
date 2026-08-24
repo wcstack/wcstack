@@ -2054,6 +2054,26 @@ export default {
 - `$updatedCallback(paths, indexesListByPath)` は、その drain で live binding が適用された path の一覧を受け取ります。binding のない state 書き込みでは呼ばれず、`paths` にも現れません。ワイルドカードをもつパスが更新された場合は、`indexesListByPath` から対象のインデックス情報も取得可能です。`async` を使用できますが、戻り値は await されません。
 - Web Component を使用している場合は、コンポーネント側に `async $stateReadyCallback(stateProp)` を定義おくことで、`bind-component` でバインドした状態が利用可能になった瞬間にフックとして呼び出されます。
 
+## 遷移アニメーション
+
+入場アニメーションにこのパッケージは要らない。新しい `for` 行も mount する `if` 分岐も「新しく挿入された要素」なので、素の CSS で足りる。
+
+```css
+li {
+  transition: opacity 0.2s, transform 0.2s;
+  @starting-style { opacity: 0; transform: translateY(-4px); }
+}
+```
+
+そこへ届かないのが**退場**と**移動**。削除された行は同期で detach され、並べ替えには中間状態が無い。[`@wcstack/view-transition`](https://github.com/wcstack/wcstack/tree/main/packages/view-transition) を足すと drain の DOM 変更が View Transition の中で行われ、変更前の状態はブラウザがスナップショットしてくれる。
+
+```html
+<script type="module" src="https://esm.run/@wcstack/view-transition/auto"></script>
+<wcs-view-transition naming="auto"></wcs-view-transition>
+```
+
+知っておくべき帰結が 1 つ: そのタグが `state` 参加者を受け付けている間、drain は microtask ではなくフレームで着地する。state に書いてから `await Promise.resolve()` で DOM を読むコードは遷移を待つ必要がある（`$updatedCallback` は影響を受けない）。タグが無ければ drain は従来どおり。[docs/timing-and-firing-contract.ja.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.ja.md) §4.3 参照。
+
 ## 診断と失敗の扱い
 
 ### 存在しないパスへの配線は報告されます

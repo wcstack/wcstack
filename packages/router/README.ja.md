@@ -349,6 +349,22 @@ bootstrapRouter({
 });
 ```
 
+## ルート遷移アニメーション
+
+ルートの差し替えは素の `removeChild` / `insertBefore` なので、去っていくビューは自力では退場できない。ページに [`@wcstack/view-transition`](https://github.com/wcstack/wcstack/tree/main/packages/view-transition) を足すと、差し替えが View Transition の中で行われ、見た目は CSS で書ける。
+
+```html
+<script type="module" src="https://esm.run/@wcstack/view-transition/auto"></script>
+<wcs-view-transition for="router"></wcs-view-transition>
+
+<style>
+  ::view-transition-old(root) { animation: fade-out 0.2s both; }
+  ::view-transition-new(root) { animation: fade-in 0.2s both; }
+</style>
+```
+
+ルータはガードを先に走らせ、hide/show の対だけを遷移へ渡す。await するガードが遷移を開きっぱなしにしないため。タグが無ければ何も変わらない（差し替えは同期のまま）。[docs/view-transition-design.ja.md](https://github.com/wcstack/wcstack/blob/main/docs/view-transition-design.ja.md) §7.1 参照。
+
 ## パス仕様案（Router / Route / Link 共通）
 
 ### 用語

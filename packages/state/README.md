@@ -2059,6 +2059,26 @@ All hooks except `$disconnectedCallback` support `async` — you can use `async/
 - `$updatedCallback(paths, indexesListByPath)` receives the paths whose live bindings were applied in that drain. Unbound state writes do not invoke it or appear in `paths`. For wildcard updates, `indexesListByPath` contains the updated index sets. Can be `async`, but the return value is not awaited
 - In Web Components, define `async $stateReadyCallback(stateProp)` to receive a hook when the bound state becomes available via `bind-component`
 
+## Transition animations
+
+Enter animations need nothing from this package — a new `for` row and a mounting `if` branch are newly inserted elements, so plain CSS covers them:
+
+```css
+li {
+  transition: opacity 0.2s, transform 0.2s;
+  @starting-style { opacity: 0; transform: translateY(-4px); }
+}
+```
+
+**Leaving** and **moving** cannot be reached that way: removed rows are detached synchronously, and a reorder has no intermediate state. Adding [`@wcstack/view-transition`](https://github.com/wcstack/wcstack/tree/main/packages/view-transition) makes the drain apply its DOM changes inside a View Transition, where the browser snapshots the old state for you:
+
+```html
+<script type="module" src="https://esm.run/@wcstack/view-transition/auto"></script>
+<wcs-view-transition naming="auto"></wcs-view-transition>
+```
+
+One consequence to know: while that tag accepts the `state` participant, the drain lands on a frame instead of a microtask, so code that writes state and then reads the DOM after `await Promise.resolve()` must wait for the transition (`$updatedCallback` is unaffected). Without the tag the drain is exactly what it was. See [docs/timing-and-firing-contract.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.md) §4.3.
+
 ## Diagnostics and failure handling
 
 ### Wiring to a path that does not exist is reported

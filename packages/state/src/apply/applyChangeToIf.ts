@@ -6,6 +6,7 @@ import { createContent } from "../structural/createContent";
 import { IContent } from "../structural/types";
 import { IBindingInfo } from "../types";
 import { IApplyContext } from "./types";
+import { applyTransitionName, getAutoNaming } from "./viewTransitionNaming";
 
 function bindingInfoText(bindingInfo: IBindingInfo): string {
   return `${bindingInfo.bindingType} ${bindingInfo.statePathName} ${bindingInfo.outFilters.map(f => f.filterName).join('|')} ${bindingInfo.node.isConnected ? '(connected)' : '(disconnected)'}`;
@@ -50,6 +51,11 @@ export function applyChangeToIf(
     }
     const loopContext = getLoopContextByNode(bindingInfo.node);
     activateContent(content, loopContext, context);
+    // 自動命名（docs/view-transition-design.md §6）。manual（既定）では null。
+    const autoNaming = getAutoNaming();
+    if (autoNaming !== null) {
+      applyTransitionName(content, "branch", autoNaming);
+    }
   }
 }
 
