@@ -113,32 +113,21 @@
     .badge { font-size: 0.72rem; padding: 2px 8px; border-radius: 12px; background: #e8eaf6; color: #3949ab; }
     .amount { margin-left: auto; font-weight: 600; color: #2e7d32; font-variant-numeric: tabular-nums; }
     .count { color: #666; font-size: 0.9rem; margin-bottom: 0.75rem; }
+    .generated { font-size: 0.85rem; color: #666; margin-top: 0.75rem; }
+    .stamp { font-variant-numeric: tabular-nums; }
 
     .note { font-size: 0.8rem; color: #8d6e63; background: #fff8e1; border: 1px solid #ffe082; border-radius: 6px; padding: 0.6rem 0.75rem; margin-top: 1rem; }
     .note code { background: #fff3cd; padding: 1px 5px; border-radius: 3px; }
     .missing { outline: 1px dashed #e57373; min-width: 2rem; display: inline-block; }
   </style>
 
-  <!-- ============================================================
-       BOOTSTRAP
-
-       @wcstack/router is activated with the usual one-liner. @wcstack/state is
-       NOT, and that is a finding rather than a preference:
-
-       `@wcstack/state/auto` calls bootstrapState() with no arguments, and
-       setConfig is not part of the public surface — so a page loaded through
-       the auto entry has no way to tell the locale-dependent filters
-       (locale / date / time / datetime) which locale to use. They stay on 'en'.
-
-       Using the named entry to pass `locale` is the only route today. Phase 1
-       should make bootstrapState default `locale` to <html lang>, after which
-       the auto one-liner works and this block collapses back to one line.
-       ============================================================ -->
+  <!-- Both packages activate with the usual one-liner. No locale is passed
+       anywhere: bootstrapState defaults `locale` to <html lang>, which the
+       snippet above already wrote. That makes <html lang> the single source of
+       truth — the locale-dependent filters, the catalog module and the router
+       basename all read the same attribute. -->
   <script type="module" src="https://esm.run/@wcstack/router/auto"></script>
-  <script type="module">
-    import { bootstrapState } from "https://esm.run/@wcstack/state";
-    bootstrapState({ locale: document.documentElement.lang });
-  </script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 </head>
 <body>
 
@@ -231,6 +220,13 @@
         </li>
       </template>
     </ul>
+
+    <!-- The only filter on the page. `|date` reads config.locale, which
+         bootstrapState took from <html lang>. Nothing here passes a locale. -->
+    <p class="generated">
+      <span data-wcs="textContent: t.orders.placed@i18n"></span>
+      <span class="stamp" data-wcs="textContent: generatedAt|date"></span>
+    </p>
 
     <p class="note">
       The label below is bound to <code>t.orders.subtotal</code>, which exists in

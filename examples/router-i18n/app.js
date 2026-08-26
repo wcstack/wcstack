@@ -28,6 +28,12 @@ export default {
 
   orders: ORDERS,
 
+  // The one value rendered through a *filter* rather than through Intl in a
+  // getter. Filters read `config.locale`, which bootstrapState defaults to
+  // <html lang> — so this line proves the whole chain without the page passing
+  // a locale to anything. Compare /en (8/26/2026) with /ja (2026/8/26).
+  generatedAt: new Date("2026-08-26T09:30:00Z"),
+
   // Dynamic key → row getter. `t` is frozen plain data, so this is a lookup,
   // not a reactive dependency: the dictionary cannot change under us.
   get "orders.*.statusLabel"() {

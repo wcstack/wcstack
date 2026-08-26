@@ -54,6 +54,13 @@ not a custom element: a tag would be upgraded far too late.
 Order: URL > explicit choice (`localStorage`) > `navigator.languages` >
 fallback. The URL wins so a shared link keeps its language.
 
+The snippet writes `<html lang>`, and **nothing on this page passes a locale to
+anything else**. The catalog module reads that attribute, the router basename
+comes from it, and `bootstrapState` defaults `config.locale` to it — so the one
+`|date` filter on the orders page prints `8/26/2026` under `/en` and
+`2026/8/26` under `/ja` without being told. One source of truth, in the place
+HTML already reserves for it.
+
 ### 2. The language switch has to be a *hard* navigation — and the basename is what guarantees it
 
 `<wcs-router>` hands every same-origin navigation **under its basename** to
@@ -130,9 +137,11 @@ WCS_LOCAL=1 node examples/router-i18n/server.js
 `WCS_LOCAL=1` rewrites the `esm.run` one-liners to `/packages/<pkg>/dist/…` and
 serves them from the repo, the same trick `e2e/serve.mjs` uses.
 
-> This demo needs `@wcstack/state` **newer than 1.31.0**: until then,
-> `<wcs-state src="/app.js">` resolved its URL against the state package's own
-> location, so a CDN-loaded page fetched the file from the CDN and 404'd. Use
-> `WCS_LOCAL=1` until the fix ships.
+> This demo needs `@wcstack/state` **newer than 1.31.0**, for two changes:
+> `<wcs-state src="/app.js">` used to resolve its URL against the state
+> package's own location (so a CDN-loaded page fetched it from the CDN and
+> 404'd), and `config.locale` did not yet default to `<html lang>` (so a page
+> using the `auto` one-liner had no way to set it at all). Use `WCS_LOCAL=1`
+> until both ship.
 
 When copying this example out of the repo, copy `examples/shared/` alongside it.

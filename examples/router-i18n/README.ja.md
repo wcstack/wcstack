@@ -53,6 +53,12 @@ defer されるので `catalog.js` が先に走ることは構造的にありえ
 決定順は URL > 明示選択（`localStorage`）> `navigator.languages` > fallback。
 URL を最優先にするのは、共有されたリンクで言語が変わらないようにするため。
 
+スニペットは `<html lang>` を書き、**このページはそれ以外のどこにもロケールを渡して
+いない**。辞書モジュールはこの属性を読み、router の basename もここから来て、
+`bootstrapState` は `config.locale` の既定をここから採る。だから注文ページに 1 つだけ
+置いた `|date` フィルタが、何も教えられずに `/en` で `8/26/2026`、`/ja` で `2026/8/26`
+と出る。正本は 1 つ、しかも HTML が元からそのために用意している場所である。
+
 ### 2. 言語切替は*ハード*ナビゲーションでなければならず、それを保証するのが basename
 
 `<wcs-router>` は **basename 配下の**同一オリジンナビゲーションをすべて
@@ -124,9 +130,11 @@ WCS_LOCAL=1 node examples/router-i18n/server.js
 `WCS_LOCAL=1` は `esm.run` の一行を `/packages/<pkg>/dist/…` に書き換えてリポジトリ
 から配る。`e2e/serve.mjs` と同じ手口である。
 
-> このデモは `@wcstack/state` の **1.31.0 より後**を必要とする。それ以前は
+> このデモは `@wcstack/state` の **1.31.0 より後**を必要とする。変更は 2 つ。
 > `<wcs-state src="/app.js">` が state パッケージ自身の場所を基準に URL を解決して
-> いたため、CDN から読み込んだページでは CDN 側を取りに行って 404 になった。
-> 修正が公開されるまでは `WCS_LOCAL=1` を使うこと。
+> いた（CDN から読み込んだページでは CDN 側を取りに行って 404）点と、
+> `config.locale` の既定が `<html lang>` でなかった（`auto` の一行で読み込んだ
+> ページにはロケールを設定する口が無かった）点である。両方が公開されるまでは
+> `WCS_LOCAL=1` を使うこと。
 
 このデモをリポジトリの外にコピーするときは `examples/shared/` も一緒に持っていく。

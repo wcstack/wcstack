@@ -2177,12 +2177,38 @@ All options with defaults:
 |---|---|---|
 | `bindAttributeName` | `'data-wcs'` | Binding attribute name |
 | `tagNames.state` | `'wcs-state'` | State element tag name |
-| `locale` | `'en'` | Default locale for filters |
+| `locale` | `<html lang>`, else `'en'` | Locale for the locale-dependent filters (`locale` / `date` / `time` / `datetime`) — see [Locale](#locale) |
 | `debug` | `false` | Debug mode |
 | `enableMustache` | `true` | Enable `{{ }}` syntax |
 | `enableDirectionalInitialSync` | `true` | Direction-aware binding authority (`#init=` / `#sync=` binding modifiers) — see [Binding Authority](#binding-authority-init--sync). Default on; set `false` to opt out |
 | `enablePropagationContext` | `true` | Causal propagation tracking across bindings (echo/diamond loop prevention). Default on; set `false` to opt out |
 | `enableContractAnalyzer` | `false` | Opt-in dev-time contract analyzer (exposes `analyzeContract`) |
+
+### Locale
+
+Four filters format by locale — `locale`, `date`, `time`, `datetime`. They read
+`config.locale`, which **defaults to `<html lang>`**:
+
+```html
+<html lang="ja-JP">
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+```
+
+Nothing else is needed; `<html lang>` is the standard place to record a page's
+language, and making it the default keeps one source of truth. It also means the
+CDN one-liner can set the locale at all — `auto` calls `bootstrapState()` with no
+arguments, so before this there was no way in. An explicit
+`bootstrapState({ locale })` still wins, and an invalid BCP-47 tag is reported
+and ignored rather than left to throw inside `Intl`.
+
+**The locale is fixed at bind time.** A filter captures it when the binding is
+built, and `config.locale` is not part of the dependency graph, so changing it
+later re-renders nothing. Set the language before the page's first binding is
+built — writing `<html lang>` in the markup, or from a synchronous `<head>`
+script, does that structurally. Per-call overrides stay available
+(`price|locale(fr-FR)`), and for a page that switches language without reloading,
+see [docs/i18n-design.md](../../docs/i18n-design.md) — the short answer is that
+translations belong on a path, not in a filter.
 
 > These three are **architecture-hardening** features; their normative reference is
 > `docs/architecture-hardening/`. `enablePropagationContext` defaults **on** — its

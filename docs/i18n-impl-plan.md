@@ -160,7 +160,7 @@ intercept されず、ブラウザが本物のナビゲーションを行う。*
 i18n 固有の話ではないが、**多言語ページを書く人が最初に踏む**ので §9-2 あたりに
 1 行あるとよい。
 
-#### 結果-5（設計の穴・未解決）: CDN 一発のページからロケールを設定する手段が無い
+#### 結果-5（設計の穴・**解決済み 2026-08-27**）: CDN 一発のページからロケールを設定する手段が無かった
 
 §8 の 3 番「`setConfig({ locale })`」は、**公開 API では書けない**。
 
@@ -171,14 +171,15 @@ i18n 固有の話ではないが、**多言語ページを書く人が最初に�
 
 これは **五つのルールの 1 番（CDN 一発）と D8 の不変条件が両立しない**ということで、i18n に限った不便ではない。
 
-**推奨の解（Phase 1 で実装）**: `bootstrapState` が `locale` を明示されなかったとき **`document.documentElement.lang` を既定にする**。
+**解（採択・実装済み）**: `bootstrapState` が `locale` を明示されなかったとき **`document.documentElement.lang` を既定にする**。
 
 - head スニペットは既に `<html lang>` を書いており（§8 の 2 番）、辞書モジュールもそこを読む。**ロケールの正本が 1 つになる**
 - 不変条件が「`setConfig` を最初のバインドより前に呼ぶ」から「**`<html lang>` が state モジュールのロードより前に確定している**」へ変わる。後者は head の同期スクリプトで構造的に保証され、順序事故が起きようがない
 - スニペットから `setConfig` を呼ぶ必要が消える ＝ §8 の 4 手順が 3 手順になる
 - 既存ページへの影響: `<html lang>` は多くのページが持っており、`'en'` 以外を書いているページの `|date` 出力が変わりうる。**破壊的変更として扱い、minor bump とリリースノートが要る**
+- 不正な BCP-47 タグ（`<html lang="english">` 等）をそのまま採ると、既定 `'en'` で動いていたページのフィルタが `Intl` の `RangeError` で落ちる。`Intl.getCanonicalLocales` で検証し、**不正なら警告して既定へ落とす**
 
-デモは暫定として名前付きエントリ経由で `bootstrapState({ locale })` を呼んでいる。この解が入ったら CDN 一行に戻す。
+**実装済み**（`bootstrapState.ts` の `localeFromDocument` / `resolveConfig`、テスト 5 本）。デモは CDN 一行に戻し、`|date` を 1 箇所だけ使って**ページがどこにもロケールを渡さずに `<html lang>` で書式が変わる**ことを検証している（`/en` → `8/26/2026`、`/ja` → `2026/8/26`）。
 
 #### 結果-4（設計補強）: `Object.freeze` は deep でなければ意味がない
 
@@ -200,7 +201,7 @@ Phase 0 と**並行可能**。設計書 §10。
 | **T1-1** | `locale` / `date` / `time` / `datetime` の 4 箇所で `const opt = options?.[0] ?? config.locale` を**返り値の関数の内側へ移す**（[builtinFilters.ts](../packages/state/src/filters/builtinFilters.ts) の 279 / 574 / 588 / 602 付近）。他の 42 フィルタは `config.locale` を読まないので対象外 |
 | **T1-2** | テストを `__tests__/filters.builtinFilters.test.ts` に追加。**2 つの挙動を両方固定する**: (a) `setConfig` 後に構築したバインドは新ロケールを使う (b) 構築済みのバインドは再描画されない限り変わらない。**(b) を仕様としてテストに書く**のが重要で、書かないと将来「なぜ切り替わらないのか」を誰かがバグとして直そうとする |
 | **T1-3** | 順序診断。最初のバインド構築後に `setConfig({locale})` でロケールが**変化した**ら `console.warn` する（1 回だけ）。実装は「最初のフィルタ構築時に `config.locale` を読んだ」フラグ 1 個で足りる |
-| **T1-1b** | **`bootstrapState` の `locale` 既定を `document.documentElement.lang` にする**（Phase 0 の結果-5）。これが無いと CDN 一発のページはロケールを設定できない。破壊的変更なので minor bump とリリースノート |
+| **T1-1b** | **完了（2026-08-27）**。`bootstrapState` の `locale` 既定を `document.documentElement.lang` にした（Phase 0 の結果-5）。明示指定が優先、不正な BCP-47 タグは警告して既定へ。**破壊的変更なので minor bump とリリースノートが要る**（未実施） |
 | **T1-4** | `packages/state/README.md` / `README.ja.md` に `config.locale` の位置づけ（「このページのロケール」）と不変条件（**確定は最初のバインド構築より前**。T1-1b 後は「`<html lang>` が state のロードより前」）を明記 |
 
 ### T1-3 の裁定事項
