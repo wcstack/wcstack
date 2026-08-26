@@ -123,6 +123,52 @@ So the router publishes `path`, and state renders the list from a
 `<template data-wcs="if: isList">` outside it. Same split as
 [router-spa](../router-spa/).
 
+## Copying the snippet
+
+The negotiation snippet in `index.html` is the part you lift into your own page.
+It is deliberately not a package: it has to run **synchronously, before any
+module**, and a custom element could not be upgraded in time (see D7 in the
+design doc).
+
+Four things to change:
+
+| | |
+|---|---|
+| `SUPPORTED` | your locales, mapped to their writing direction (`{ en: "ltr", ar: "rtl" }`) |
+| `FALLBACK` | the locale that must have a complete catalog |
+| `STORAGE_KEY` | only if it would collide with something else you store |
+| the `<a data-lang>` links | your language switch — the attribute is what records an explicit choice |
+
+Two constraints come with it:
+
+- **The app must be mounted at the origin root.** The snippet reads the locale
+  from the first path segment. A subpath deployment (`/shop/ja/orders`) needs a
+  mount prefix threaded through the segment maths and the `<base href>`.
+- **Every URL on the page must be absolute**, because `<base href="/ja/">` is
+  what hands the locale to the router, and relative URLs now resolve against it.
+
+Its behaviour is pinned by [`e2e/tests/router-i18n.spec.ts`](../../e2e/tests/router-i18n.spec.ts):
+the decision order, all three URL-repair shapes, and the hard/soft navigation
+split. That spec starts this demo's own server rather than the shared one, for
+the root-mount reason above.
+
+## Known gaps
+
+Two `@wcstack/router` defects surfaced while building this demo. Neither is
+specific to i18n — both affect any binding placed in those positions — and both
+are filed for Phase 3.
+
+- **A bound `<title>` inside `<wcs-head>` renders empty.** `<wcs-head>` reflects
+  its children into `document.head` with `cloneNode(true)`, and the clone is a
+  different node than the one state bound, so the binding never reaches it. The
+  page ends up with *no* title, which is worse than an untranslated one. This
+  demo therefore has no `<wcs-head>`; its static document `<title>` stands.
+- **A binding inside a `<wcs-route>` is not initialised the first time that
+  route is opened by soft navigation.** A hard load works, and so does a second
+  visit to the same route. Clicking About from the orders page shows the
+  headings blank on that first visit. `e2e/tests/router-i18n.spec.ts` pins this
+  as an expected failure, so it will announce itself when fixed.
+
 ## Verifying against the working tree
 
 By default the page loads the published CDN bundles. To run it against your

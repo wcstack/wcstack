@@ -85,6 +85,18 @@
     var base = document.createElement("base");
     base.setAttribute("href", "/" + lang + "/");
     document.head.appendChild(base);
+
+    // Remember an explicit choice — the second input of the decision order.
+    // The switch is a hard navigation, so writing on click is enough: the value
+    // is read on the next visit to a URL that carries no locale. Delegated from
+    // document because <body> does not exist yet.
+    document.addEventListener("click", function (event) {
+      var chosen = event.target.closest && event.target.closest("[data-lang]");
+      if (!chosen) return;
+      try {
+        localStorage.setItem(STORAGE_KEY, chosen.getAttribute("data-lang"));
+      } catch (e) { /* storage unavailable: the URL still carries the choice */ }
+    });
   })();
   </script>
 
@@ -160,8 +172,8 @@
   <!-- Language switch: plain anchors with an absolute, locale-prefixed href.
        Outside the basename => not intercepted => full page load. -->
   <span class="lang-switch">
-    <a href="/en/" hreflang="en" data-wcs="textContent: t.langName.en@i18n"></a>
-    <a href="/ja/" hreflang="ja" data-wcs="textContent: t.langName.ja@i18n"></a>
+    <a href="/en/" hreflang="en" data-lang="en" data-wcs="textContent: t.langName.en@i18n"></a>
+    <a href="/ja/" hreflang="ja" data-lang="ja" data-wcs="textContent: t.langName.ja@i18n"></a>
   </span>
 </nav>
 
@@ -173,18 +185,17 @@
      work (the About page below is translated in place), which makes the
      boundary easy to trip over: it is structural rendering, not binding, that
      has to move out. Same split as examples/router-spa. -->
+<!-- No <wcs-head> here, deliberately. A bound <title> inside it renders EMPTY:
+     <wcs-head> reflects its children into document.head with cloneNode(true),
+     and the clone is a different node than the one state bound, so the binding
+     never reaches it. The page would end up with no title at all — worse than an
+     untranslated one. Filed for Phase 3; until then the document's own static
+     <title> stands. -->
 <wcs-router data-wcs="path: path">
   <template>
-    <wcs-route path="/">
-      <wcs-head>
-        <title data-wcs="textContent: t.app.title@i18n"></title>
-      </wcs-head>
-    </wcs-route>
+    <wcs-route path="/"></wcs-route>
 
     <wcs-route path="/about">
-      <wcs-head>
-        <title data-wcs="textContent: t.about.heading@i18n"></title>
-      </wcs-head>
       <section>
         <h2 data-wcs="textContent: t.about.heading@i18n"></h2>
         <p class="lead" data-wcs="textContent: t.about.body@i18n"></p>
