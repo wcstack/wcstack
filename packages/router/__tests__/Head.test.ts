@@ -671,3 +671,61 @@ describe('Head', () => {
     });
   });
 });
+
+// hreflang をキーに含めないと、代表ロケールと x-default を同じ href で併記した
+// alternate リンクが同一キーになり、片方が head から落ちる。i18n では
+// x-default が既定言語版を指す標準的な書き方なので、実際に踏む。
+describe('Head — hreflang alternate', () => {
+  beforeEach(() => {
+    _resetHeadStack();
+  });
+
+  afterEach(() => {
+    document.head.querySelectorAll('link[rel="alternate"]').forEach((el) => el.remove());
+    _resetHeadStack();
+  });
+
+  it('href が同じでも hreflang が違えばキーが分かれること', () => {
+    const head = document.createElement('wcs-head') as Head;
+    const make = (hreflang: string) => {
+      const el = document.createElement('link');
+      el.setAttribute('rel', 'alternate');
+      el.setAttribute('href', 'https://example.com/en/');
+      el.setAttribute('hreflang', hreflang);
+      return el;
+    };
+    const en = (head as any)._getKey(make('en'));
+    const xDefault = (head as any)._getKey(make('x-default'));
+    expect(en).not.toBe(xDefault);
+  });
+
+  it('href も hreflang も同じならキーが一致すること（重複排除は維持）', () => {
+    const head = document.createElement('wcs-head') as Head;
+    const make = () => {
+      const el = document.createElement('link');
+      el.setAttribute('rel', 'alternate');
+      el.setAttribute('href', 'https://example.com/ja/');
+      el.setAttribute('hreflang', 'ja');
+      return el;
+    };
+    expect((head as any)._getKey(make())).toBe((head as any)._getKey(make()));
+  });
+
+  it('x-default と代表ロケールが同じ href でも両方 head に残ること', () => {
+    const head = document.createElement('wcs-head') as Head;
+    head.innerHTML =
+      '<link rel="alternate" hreflang="en" href="https://example.com/en/">' +
+      '<link rel="alternate" hreflang="ja" href="https://example.com/ja/">' +
+      '<link rel="alternate" hreflang="x-default" href="https://example.com/en/">';
+    document.body.appendChild(head);
+    head.connectedCallback();
+
+    const applied = Array.from(document.head.querySelectorAll('link[rel="alternate"]'))
+      .map((el) => el.getAttribute('hreflang'))
+      .sort();
+    expect(applied).toEqual(['en', 'ja', 'x-default']);
+
+    head.disconnectedCallback();
+    head.remove();
+  });
+});

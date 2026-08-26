@@ -163,11 +163,19 @@ are filed for Phase 3.
   different node than the one state bound, so the binding never reaches it. The
   page ends up with *no* title, which is worse than an untranslated one. This
   demo therefore has no `<wcs-head>`; its static document `<title>` stands.
-- **A binding inside a `<wcs-route>` is not initialised the first time that
-  route is opened by soft navigation.** A hard load works, and so does a second
-  visit to the same route. Clicking About from the orders page shows the
-  headings blank on that first visit. `e2e/tests/router-i18n.spec.ts` pins this
-  as an expected failure, so it will announce itself when fixed.
+- **A binding inside a `<wcs-route>` never works unless that route happened to
+  be the active one when the page loaded.** `data-wcs` bindings exist only for
+  nodes present when state builds them, and an inactive route's content is
+  detached at that moment — so it is never scanned, and inserting it later does
+  nothing. Navigating back and forth does not help. Clicking About from the
+  orders page leaves its headings blank, permanently.
+  `e2e/tests/router-i18n.spec.ts` pins this as an expected failure, so it will
+  announce itself when fixed.
+
+Both share one cause — **state does not bind subtrees that enter the document
+after startup** — which is why this demo renders everything data-driven from
+outside the router. The fix is an open design question, not a patch; see
+`docs/i18n-impl-plan.md` §3-0.
 
 ## Verifying against the working tree
 

@@ -114,7 +114,12 @@ export class Head extends HTMLElement {
       const rel = el.getAttribute('rel') || '';
       const href = el.getAttribute('href') || '';
       const media = el.getAttribute('media') || '';
-      return `link:${rel}:${href}:${media}`;
+      // hreflang もキーに含める。含めないと、代表ロケールと `x-default` を同じ
+      // href で併記する `rel="alternate"` の組が同一キーになり、片方が落ちる。
+      // これは i18n の標準的な書き方（x-default は既定言語版を指す）なので、
+      // 「同じ href の link は 1 本」という仮定はここで破れる。
+      const hreflang = el.getAttribute('hreflang') || '';
+      return `link:${rel}:${href}:${media}:${hreflang}`;
     }
 
     if (tag === 'base') {

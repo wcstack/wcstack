@@ -199,18 +199,30 @@ test.describe("examples/router-i18n — 言語切替はハードナビゲーシ�
 // 既知の欠陥（i18n 固有ではない・router × state の統合）。直ったらこのテストが
 // 「失敗するはずが成功した」で落ちるので、取りこぼさずに気づける。
 //
-// `<wcs-route>` の中のバインドは、そのルートを **soft navigation で初めて** 開いた
-// ときだけ初期値が入らない。ハードロードでは入り、2 回目の活性化でも入る。
-// `@i18n` 越境に限らず自 state のバインド（`path`）でも同じなので、原因は
-// クロス state ではなく「router がスタンプした内容への初期同期」の側にある。
+// `data-wcs` のバインドは、**state がバインドを構築した時点で document に居た
+// ノードにしか存在しない**。非活性なルートの内容はそのとき切り離されているので
+// 一度も走査されず、あとからナビゲーションで挿入されてもバインドされない
+// （MutationObserver は「既に関心のある session を持つノード」しか配送しない）。
+//
+// したがって症状は「初回だけ」ではなく **恒久的**: 何度行き来しても空のまま。
+// ハードロードでそのルートが active だった場合にだけ効く。`@i18n` 越境に限らず
+// 自 state のバインド（`path`）でも同じなので、クロス state 起因ではない。
 test.describe("examples/router-i18n — 既知の欠陥", () => {
   test.fail();
 
-  test("ルート内容のバインドが初回 soft navigation で初期化される", async ({ browser }) => {
+  test("非活性ルートの内容がナビゲーション後にバインドされる", async ({ browser }) => {
     const context = await browser.newContext({ locale: "en-US" });
     const page = await context.newPage();
     await page.goto(`${BASE}/en/`);
     await settled(page);
+
+    // 往復しても回復しないことまで含めて固定する（「初回だけ」ではない）
+    for (let i = 0; i < 2; i++) {
+      await page.locator('.top-nav a[href="/en/about"]').click();
+      await expect(page.locator("h2")).toBeAttached();
+      await page.locator('.top-nav a[href="/en/"]').click();
+      await expect(page.locator(".orders")).toBeAttached();
+    }
     await page.locator('.top-nav a[href="/en/about"]').click();
     await expect(page.locator("h2")).toHaveText("About this demo");
     await context.close();
