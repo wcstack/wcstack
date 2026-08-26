@@ -208,6 +208,31 @@ test.describe("examples/router-i18n — 言語切替はハードナビゲーシ�
 // ハードロードでそのルートが active だった場合にだけ効く。`@i18n` 越境に限らず
 // 自 state のバインド（`path`）でも同じなので、クロス state 起因ではない。
 test.describe("examples/router-i18n — 既知の欠陥", () => {
+  // 直せないあいだ、せめて黙って壊れないこと。router が「後から差し込む内容に
+  // バインドがある」と気づいた時点で、原因（バインド構築の時点）と回避策を
+  // 名指しで警告する。これが入るまでは、空の見出しから原因へ辿る手がかりが
+  // 一切なかった。
+  test("バインドが効かないことを router が警告すること", async ({ browser }) => {
+    const context = await browser.newContext({ locale: "en-US" });
+    const page = await context.newPage();
+    const warnings: string[] = [];
+    page.on("console", (msg) => {
+      if (msg.type() === "warning") warnings.push(msg.text());
+    });
+    await page.goto(`${BASE}/en/`);
+    await settled(page);
+    await page.locator('.top-nav a[href="/en/about"]').click();
+    await expect(page.locator("h2")).toBeAttached();
+
+    const unbound = warnings.filter((w) => w.includes("will never be applied"));
+    expect(unbound.length).toBeGreaterThan(0);
+    expect(unbound[0]).toContain("inside a route");
+    expect(unbound[0]).toContain("render empty");
+    await context.close();
+  });
+});
+
+test.describe("examples/router-i18n — 未修正の欠陥（tripwire）", () => {
   test.fail();
 
   test("非活性ルートの内容がナビゲーション後にバインドされる", async ({ browser }) => {

@@ -174,8 +174,14 @@ are filed for Phase 3.
 
 Both share one cause — **state does not bind subtrees that enter the document
 after startup** — which is why this demo renders everything data-driven from
-outside the router. The fix is an open design question, not a patch; see
-`docs/i18n-impl-plan.md` §3-0.
+outside the router.
+
+Fixing it needs a design decision rather than a patch, so in the meantime the
+router at least **says so**: stamping route content, or reflecting a
+`<wcs-head>` child, that carries `data-wcs` now logs a warning naming the cause
+and the way around it. Click through to About with the console open and you will
+see it. The fix itself is tracked in
+[`docs/binder-protocol-design.md`](../../docs/binder-protocol-design.md).
 
 ## Verifying against the working tree
 

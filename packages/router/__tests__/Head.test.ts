@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import './setup';
 import { Head, _resetHeadStack } from '../src/components/Head';
 
@@ -724,6 +724,50 @@ describe('Head — hreflang alternate', () => {
       .map((el) => el.getAttribute('hreflang'))
       .sort();
     expect(applied).toEqual(['en', 'ja', 'x-default']);
+
+    head.disconnectedCallback();
+    head.remove();
+  });
+});
+
+// <wcs-head> は子要素を cloneNode で head に映すので、元ノードのバインドは
+// クローンに引き継がれない。`<title data-wcs="…">` はページからタイトルを
+// 消すという、未翻訳より悪い形で失敗する。挙動は変えず警告だけ出す。
+describe('Head — バインドを含む子の警告', () => {
+  let warn: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    _resetHeadStack();
+    warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    _resetHeadStack();
+  });
+
+  it('data-wcs を持つ子があれば警告すること', () => {
+    const head = document.createElement('wcs-head') as Head;
+    head.innerHTML = '<title data-wcs="textContent: t.title@i18n"></title>';
+    document.body.appendChild(head);
+    head.connectedCallback();
+
+    expect(warn).toHaveBeenCalled();
+    const message = warn.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(message).toContain('wcs-head');
+    expect(message).toContain('cloneNode');
+
+    head.disconnectedCallback();
+    head.remove();
+  });
+
+  it('静的な子だけなら警告しないこと', () => {
+    const head = document.createElement('wcs-head') as Head;
+    head.innerHTML = '<title>Static</title>';
+    document.body.appendChild(head);
+    head.connectedCallback();
+
+    expect(warn).not.toHaveBeenCalled();
 
     head.disconnectedCallback();
     head.remove();
