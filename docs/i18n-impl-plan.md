@@ -243,16 +243,32 @@ Phase 0 と**並行可能**。設計書 §10。
 | **T2-1** | `negotiate(supported, fallback)` の実装。`Intl.getCanonicalLocales` ＋ `Intl.NumberFormat.supportedLocalesOf` で lookup マッチング。`Intl.LocaleMatcher` は提案段階なので依存しない |
 | **T2-2** | 決定順（D13）の実装: **URL > 明示選択(`localStorage`) > `navigator.languages` > fallback**。決定は起動時 1 回 |
 | **T2-3** | `documentElement.lang` / `dir` の反映。`dir` は対応ロケール宣言（`ar:rtl` 相当）から取る（設計書 §14-1 は未決のまま） |
-| **T2-4** | `setConfig({ locale })`（Phase 1 の不変条件を満たす位置） |
+| **T2-4** | ~~`setConfig({ locale })`~~ — **不要**。T1-1b で `<html lang>` が既定になったため、スニペットの手順は 4 → 3 に減った |
 | **T2-5** | 不正・未対応ロケールの `location.replace`（訂正 1） |
 | **T2-6** | SSR ページでは**サーバーが書いた `<html lang>` を上書きしない**分岐（設計書 §8-1） |
 | **T2-7** | スニペットを README（英/日）とデモのテンプレートとして配る |
 
-### DoD
+### 結果（2026-08-27・完了）
 
-- `negotiate` の表駆動テスト（`navigator.languages` の組み合わせ × 対応一覧 × fallback）
-- デモで D13 の 4 入力の優先順が観測できる
-- **テストの置き場を決める**（`examples/` にはテスト基盤が無い）。`packages/state/__tests__/` に間借りするのが第一候補。**これが D7 決定の唯一の弱点**なので、T2-7 で先送りにせず Phase 2 の着手時に決める（設計書 §14-2）
+T2-1〜T2-3、T2-5、T2-7 完了。T2-4 は消滅。**T2-6 は未着手**（SSR デモが無いので Phase 3 の T3-5 とまとめる）。
+
+明示選択（D13 の 2 番目）は宣言だけで実体が無かったので、言語リンクのクリックを `localStorage` に記録する 6 行をスニペットに足した。これで 4 入力すべてが実際に効く。
+
+#### テストの置き場（設計書 §14-2・**決定**）
+
+**`e2e/tests/router-i18n.spec.ts`。** `packages/state/__tests__/` への間借りは採らない。
+
+- `e2e` は「examples をローカル dist で回す実ブラウザスモーク」がそのまま目的で、CI ジョブが実行前に stale な dist を再ビルドする。**新しい基盤を一切足さずに済む**
+- スニペットは**同期スクリプトとして module より先に走る**ことに意味がある。happy-dom の単体テストでは、その順序も `location.replace` も `<base>` も検証できない。faithfulness で e2e が勝る
+- state パッケージのテストに state と無関係なコードを置かずに済む
+
+**ただし共有の `serve.mjs`（リポジトリルート配信）には載せられない。** スニペットは**アプリがオリジンのルートにある**前提（先頭セグメント＝ロケール）で書かれており、`/examples/router-i18n/` の下では先頭が `examples` になる。サブパス対応にはスニペットに mount 定数が要るが、**コピペ雛形を検証の都合で複雑にする取引**なので採らない。代わりに spec が `beforeAll` でデモ自身のサーバーを `WCS_LOCAL=1` で立て、配布されるとおりの形を検証する（ポートはワーカーごとにずらす）。
+
+#### DoD 結果
+
+- 9 tests green（決定順 4 入力 / URL 修復 3 形 / ハード・ソフトナビゲーションの別 / 既知欠陥の tripwire 1）
+- 全 e2e 84 passed
+- **`negotiate` の表駆動単体テストは書かない**。同じ入力空間（navigator × supported × storage × URL）を e2e が実ブラウザで覆っており、単体テストは同じことを弱い忠実度で二重化するだけになる
 
 ---
 
@@ -260,8 +276,12 @@ Phase 0 と**並行可能**。設計書 §10。
 
 Phase 2 に依存。
 
+**Phase 2 で見つかった router × state の実欠陥 2 件が最優先**（どちらも i18n 固有ではない）。
+
 | ID | 内容 |
 |---|---|
+| **T3-0a** | **`<wcs-head>` 内のバインドが効かない。** 子要素を `cloneNode(true)` で head に反映するため、クローンは state がバインドしたノードとは別物になる。症状は「翻訳されない」ではなく **`<title>` が空 ＝ ページからタイトルが消える**。再現＝ルートに `<wcs-head><title data-wcs="textContent: t.x@i18n">` を置いて `document.title` を見る。設計 §9-2 の「追加機構は不要（実証済み）」は**誤り**で、訂正済み |
+| **T3-0b** | **ルート内容のバインドが初回 soft navigation で初期化されない。** ハードロードでは入り、同じルートの 2 回目の活性化でも入る。**`@i18n` 越境に限らず自 state のバインド（`path`）でも同じ**なので、原因はクロス state ではなく「router がスタンプした内容への初期同期」。`e2e/tests/router-i18n.spec.ts` に `test.fail()` の tripwire として固定済み（直ると落ちて気づける） |
 | **T3-1** | `/:lang/...` を `slug` で受ける形をデモと README で確立（0-4: `enum` 型は追加しない） |
 | **T3-2** | 切替リンクのヘルパ — 現在パスのロケールセグメントだけを差し替える関数。**router から export するか README のスニペットに留めるかを決める**。3 行なので後者が有力 |
 | **T3-3** | `<wcs-head>` の link 重複キーに `hreflang` を含める（[Head.ts:113-118](../packages/router/src/components/Head.ts#L113) の 1 行）。**キー変更は既存の重複判定の挙動を変えるので回帰テスト必須**。`x-default` と代表ロケールが同一 href のとき両方生き残ることを固定する |
