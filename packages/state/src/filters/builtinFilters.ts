@@ -272,15 +272,32 @@ const fix = (options?:string[]): FilterFn<string> => {
 
 /**
  * Locale number filter - formats number according to locale.
- * 
+ *
+ * ロケール依存フィルタ（`locale` / `date` / `time` / `datetime`）は
+ * **明示引数だけを構築時に確定し、既定の `config.locale` は適用のたびに読む**。
+ *
+ * 以前は `options?.[0] ?? config.locale` を返り値の関数の**外**で解決していた。
+ * フィルタ関数はバインド構築時に一度だけ作られるので、これはロケールを
+ * クロージャに焼き込むことを意味する。`config.locale` の確定がバインド構築より
+ * 遅れると、それ以降どう直しても「同じページの中で日付だけ既定ロケール」が
+ * 永続し、しかも `config.locale` は依存グラフに載らないので再描画で回復もしない。
+ * 症状（日付だけ英語）は原因（起動順序）から遠く、追いにくい。
+ *
+ * 適用のたびに読めば、少なくとも**再適用されたバインドは回復する**。ロケールは
+ * 起動時に確定する前提（docs/i18n-design.md D1）なので通常この差は現れず、
+ * これは順序事故から復帰できるようにするための保険である。
+ *
+ * 明示引数（`|date(ja-JP)`）は構築時に固定でよい — バインド式の一部であり、
+ * 実行中に変わらない。
+ *
  * @param options - Array with locale string as first element (default: config.locale)
  * @returns Filter function that returns localized number string
  */
 const locale = (options?:string[]): FilterFn<string> => {
-  const opt = options?.[0] ?? config.locale;
+  const explicit = options?.[0];
   return (value: unknown): string => {
     if (typeof value !== 'number') {valueMustBeNumber('locale');}
-    return value.toLocaleString(opt);
+    return value.toLocaleString(explicit ?? config.locale);
   }
 }
 
@@ -572,10 +589,11 @@ const truncate = (options?:string[]): FilterFn<string> => {
  * @returns Filter function that returns date string
  */
 const date = (options?:string[]): FilterFn<string> => {
-  const opt = options?.[0] ?? config.locale;
+  // 既定ロケールは適用のたびに読む（`locale` フィルタの注記を参照）
+  const explicit = options?.[0];
   return (value: unknown): string => {
     if (!(value instanceof Date))  {valueMustBeDate('date');}
-    return value.toLocaleDateString(opt);
+    return value.toLocaleDateString(explicit ?? config.locale);
   }
 }
 
@@ -586,10 +604,11 @@ const date = (options?:string[]): FilterFn<string> => {
  * @returns Filter function that returns time string
  */
 const time = (options?:string[]): FilterFn<string> => {
-  const opt = options?.[0] ?? config.locale;
+  // 既定ロケールは適用のたびに読む（`locale` フィルタの注記を参照）
+  const explicit = options?.[0];
   return (value: unknown): string => {
     if (!(value instanceof Date)) {valueMustBeDate('time');}
-    return value.toLocaleTimeString(opt);
+    return value.toLocaleTimeString(explicit ?? config.locale);
   }
 }
 
@@ -600,10 +619,11 @@ const time = (options?:string[]): FilterFn<string> => {
  * @returns Filter function that returns datetime string
  */
 const datetime = (options?:string[]): FilterFn<string> => {
-  const opt = options?.[0] ?? config.locale;
+  // 既定ロケールは適用のたびに読む（`locale` フィルタの注記を参照）
+  const explicit = options?.[0];
   return (value: unknown): string => {
     if (!(value instanceof Date)) {valueMustBeDate('datetime');}
-    return value.toLocaleString(opt);
+    return value.toLocaleString(explicit ?? config.locale);
   }
 }
 
