@@ -1,6 +1,6 @@
 # 設計: i18n / l10n — 多言語対応
 
-- **状態**: 論点整理（2026-08-27）。**初稿・未決**。同日のレビュー指摘を反映し、**D1（ライブ切替）を降ろして再構成した**。§0 の決定レコードは提案であって合意ではない。実装前。
+- **状態**: 2026-08-27。**Phase 0 完了**（参照実装 `examples/router-i18n/` が browser で 20/20 green）。同日のレビューで **D1（ライブ切替）を降ろして再構成**し、Phase 0 の実測で **D9 を basename へ反転**した。§0 の決定レコードが正本。手順は [i18n-impl-plan.md](./i18n-impl-plan.md)。
 - **対象**: `@wcstack/state`（規範と既存フィルタの修理）、`@wcstack/router` / `@wcstack/server`（連携）。**新規パッケージは作らない**（D7 決定・§8-2）。
 - **一言で**: 「**翻訳はフィルタではなくパスである**」。ただし D1 を降ろした今、この決定を支えているのは依存グラフではなく**診断可能性**である（§2）。
 - **前提**: **ロケールは起動時に確定する。切替はナビゲーション（`/en/...` への遷移）で行う。** リロードなしの切替は非目標（§0-2 / §11）。
@@ -22,7 +22,7 @@
 | **D6** | 複数形・語形・書式 | 独自 ICU / MessageFormat は実装せず `Intl.*` に寄せる。ロケール固定なのでインスタンスは**モジュールレベルで作り置く**（§7） | 決定 |
 | **D7** | ロケール決定の実装形 | **パッケージを作らない**。交渉・`lang`/`dir` 反映・`setConfig`・redirect はすべて **head の同期スクリプト**が担う。カスタム要素にはしない（§8-2） | 決定（**2026-08-27**） |
 | **D8** | 既存フィルタ | 焼き込みを修理し、`config.locale` を**正規の仕組み**として位置づける。不変条件「ロケール確定はバインド構築より前」（§10） | 決定 |
-| **D9** | router 連携 | `/:lang` セグメントを `slug` で受ける。**言語切替はナビゲーションなので router が主役**。ただし**未対応ロケールの redirect は router ではなく head スニペットの責務**（§8-2 / §9-1）。basename とは分離 | 決定（**2026-08-27 に redirect の担当を変更**） |
+| **D9** | router 連携 | **ロケールは router の basename に置く**（`<base href="/ja/">`）。`/:lang` ルートパラメータは採らない — basename 内のリンクは router に intercept され、言語が変わらないまま何も壊れて見えないため（§9-1）。未対応ロケールの redirect も head スニペットの責務 | 決定（**2026-08-27 に Phase 0 の実測で反転**） |
 | **D10** | SSR | **ハイドレーション前にロケールが確定していること**。`<html lang>` が正（§9-3） | 決定 |
 | **D11** | 非目標 | 抽出ツール / `{{ }}` 内の関数呼び出し / 独自 ICU / 訳文への markup 埋め込み / 同梱辞書のマージ / **ライブ切替**（§11） | 決定 |
 | **D12** | 静的検査 | 未定義メッセージキーを検出する。**辞書が素のデータになったので既存のパス存在検査がそのまま効く**（§12） | 決定（初稿の「暫定」から昇格） |
@@ -31,7 +31,9 @@
 
 初稿からの差分: 旧 D14（切替の中間状態）は D1 の反転で**消滅**、旧 D15（訳漏れ）を D14 に繰り上げた。旧 D7（タグの責務）は D7（実装形）に置き換えた。
 
-**2026-08-27 の追記（実装確認による反映）**: D7 を候補 A（パッケージを作らない）で確定。併せて **D9 の redirect 担当を router guard から head スニペットへ移した** — router の guard は redirect 先を動的に決められないことがコード確認で判明したため（§9-1）。
+**2026-08-27 の追記（実装確認による反映）**: D7 を候補 A（パッケージを作らない）で確定。**D9 は 2 度動いた** — まず redirect 担当を router guard から head スニペットへ移し（guard は redirect 先を動的に決められない・§9-1-2）、次に Phase 0 の実測で **`/:lang` ルートパラメータから basename へ反転した**（basename 内のリンクは intercept され、言語が変わらないまま何も壊れて見えない・§9-1-1）。
+
+**Phase 0 完了（2026-08-27）**: 参照実装 `examples/router-i18n/` が Playwright で 20/20 green。§4〜§7 の形はすべて書いたとおり動いた。崩れた前提と修正は [i18n-impl-plan.md](./i18n-impl-plan.md) の Phase 0-結果に記録した（D9 の反転、`<wcs-state src>` の URL 解決バグ、deep freeze、構造レンダリングの置き場）。
 
 ### 0-1. 品質特性の優先順位
 
@@ -59,7 +61,7 @@
 - 切替中の中間状態、`pending`、`Intl` インスタンスの配送経路
 - shadow DOM のスコープ問題（§5）— 辞書をモジュールにできるので DOM スコープと無関係になる
 
-**残るもの:** ロケール交渉、`lang` / `dir` 反映、router の `/:lang`、SSR のロケール確定、既存フィルタの修理、静的検査。**これらは切替方式と無関係**なので初稿のまま生きている。
+**残るもの:** ロケール交渉、`lang` / `dir` 反映、router 連携、SSR のロケール確定、既存フィルタの修理、静的検査。**これらは切替方式と無関係**なので初稿のまま生きている。
 
 **再検討のトリガ**（この前提が崩れたら本節ごと見直す）:
 
@@ -161,12 +163,12 @@ const [current, fallback] = await Promise.all([
 ]);
 
 export { lang };
-export const t = Object.freeze(deepMerge(fallback.default, current.default));
+export const t = mergeAndDeepFreeze(fallback.default, current.default);
 ```
 
 - **ロケールは `<html lang>` から読む**。これは SSR ではサーバーが、静的ページでは head のスニペット（§8）が、DOM 解析前に書いている。**モジュール評価時点で必ず確定している**のがこの形の要点
 - **fallback はロード時に deep merge する**。ロケールが動かないので、実行時に 1 キーずつ fallback を辿る必要が無い。shallow merge では足りない — パスは階層で解決されるため、`t.form.submit` を書くには `form` がネストしたオブジェクトである必要がある
-- **`Object.freeze` した plain object にする**。理由は 2 つあり、後者のほうが見落とされやすい。(a) 辞書は不変なので誤書き込みを即エラーにできる。(b) **訳漏れ診断の前提**である — 実行時のパス存在検査は **getter に当たった時点で `UNKNOWN` を返して打ち切る**（[pathDiagnostics.ts:161](../packages/state/src/pathDiagnostics.ts#L161) 付近の `typeof descriptor.get === "function"` 分岐）。辞書が value descriptor だけで構成されている限り検査は最後まで進み `missing` を確定できる。**辞書に getter を 1 つ足すだけで §12 の診断がその枝ごと静かに死ぬ**（§4-3 / §12）
+- **deep freeze した plain object にする**。`Object.freeze` は浅いので、根だけ凍らせても `t.orders` は書き換え可能なまま残り、そこに誰かが getter を足せてしまう（Phase 0 の実測で判明）。理由は 2 つあり、後者のほうが見落とされやすい。(a) 辞書は不変なので誤書き込みを即エラーにできる。(b) **訳漏れ診断の前提**である — 実行時のパス存在検査は **getter に当たった時点で `UNKNOWN` を返して打ち切る**（[pathDiagnostics.ts:161](../packages/state/src/pathDiagnostics.ts#L161) 付近の `typeof descriptor.get === "function"` 分岐）。辞書が value descriptor だけで構成されている限り検査は最後まで進み `missing` を確定できる。**辞書に getter を 1 つ足すだけで §12 の診断がその枝ごと静かに死ぬ**（§4-3 / §12）
 - 動的 `import()` とトップレベル `await` を使う。バンドラもビルドも要らない（buildless 原則）
 
 ### 4-2. state はその射影
@@ -271,8 +273,8 @@ get "cart.summary"() {
 
 1. **交渉** — `navigator.languages` × 対応ロケール一覧 × fallback から実効ロケールを決める。`Intl.getCanonicalLocales` と `Intl.*.supportedLocalesOf` で最小の lookup マッチングを行う（`Intl.LocaleMatcher` は提案段階なので依存しない）
 2. **`document.documentElement` の `lang` / `dir` 反映**
-3. **`setConfig({ locale })`**（§10 の不変条件）
-4. **URL にロケールが無い / 未対応のとき、正しい URL へ redirect する** — `location.replace` で、**DOM 解析前に**。router の guard ではない（§8-2 / §9-1）
+3. **`config.locale` を実効ロケールに合わせる**（§10 の不変条件）。**ただし公開 API では書けない** — `setConfig` は export されておらず、`@wcstack/state/auto` は `bootstrapState()` を引数なしで呼ぶ。Phase 0 で判明した穴で、解は「`bootstrapState` の `locale` 既定を `<html lang>` にする」（[i18n-impl-plan.md](./i18n-impl-plan.md) 結果-5）。**それが入るまで、この手順は CDN 一発のページでは実行できない**
+4. **URL にロケールが無い / 未対応のとき、正しい URL へ redirect する** — `location.replace` で、**DOM 解析前に**。router の guard ではない（§9-1-2）
 
 ### 8-1. 決定順（D13）
 
@@ -316,14 +318,26 @@ get "cart.summary"() {
 
 言語切替がナビゲーションになったので、**router が i18n の主役**である。
 
-`/:lang/products` の形を採る。
+**ロケールは router の basename に置く。ルートパラメータにはしない。**（2026-08-27・Phase 0 の実測で反転）
 
-- 組み込みのパラメータ型は `int` / `float` / `bool` / `uuid` / `slug` / `isoDate` / `any` の**固定で、ユーザー拡張の口が無い**（[types.ts:40](../packages/router/src/types.ts#L40)、[builtinParamTypes.ts](../packages/router/src/builtinParamTypes.ts)）。**当面は `slug` で受けて guard で検証する**（D9）。`enum` 型の追加は core に手を入れる話なので、要求が出てからにする
-- **未対応ロケールの redirect は router では書けない**（下の 9-1-1）。head スニペットの責務
-- 言語切替 UI は**ただのリンク**である（`<a href="/en/products">`）。切替のための機構は要らない。現在のパスからロケールセグメントだけを差し替えるヘルパを README に置けば足りる
-- **basename とは分離する**。`/ja/` を basename にすると、ロケールがデプロイ先の設定と癒着して 1 デプロイ 1 言語になる
+- **`/:lang` を採れない理由**は下の 9-1-1。ひとことで言うと、basename の内側にある言語リンクは router に intercept され、**言語が変わらないまま何も壊れて見えない**
+- basename は head スニペットが `<base href="/ja/">` を書いて渡す（§8 の 3 番）。`basename` 属性を使うと「`<wcs-router>` がパース済みで、かつ upgrade 前」という狭い窓を狙うことになる
+- **ルートパターンからロケールが消える**（`/`・`/about`）。組み込みパラメータ型がユーザー拡張できない（[types.ts:40](../packages/router/src/types.ts#L40)、`RouteCore` が `Object.keys(builtinParamTypes)` で検査）ことも、ロケールセグメントの型検証も、**論点ごと消滅する**
+- アプリ内リンクもロケールを持たない（`<wcs-link to="/about">` が basename を前置する）。「現在のパスからロケールセグメントを差し替えるヘルパ」も要らない
+- 言語切替 UI は**ただのリンク**である（`<a href="/en/products">`）
+- 制約 1 つ: `<base>` を使う以上、**ページ上の URL をすべて絶対にする**
+- **未対応ロケールの redirect は router では書けない**（9-1-2）。head スニペットの責務
+- 初稿の「basename とは分離する（1 デプロイ 1 言語になる）」は、basename を**実行時に**決めるこの形には当たらない。1 つのデプロイが全言語を配る
 
-#### 9-1-1. redirect を guard に置けない理由（2026-08-27 の訂正）
+#### 9-1-1. `/:lang` を採れない理由
+
+`<wcs-router>` は **basename 配下の同一オリジンナビゲーションをすべて** `intercept()` に渡す（[Router.ts:222-243](../packages/router/src/components/Router.ts#L222)）。素の `<a>` クリックも Navigation API 経由でここに来る。
+
+ロケールがルートパラメータだと、言語リンク `/en/products` は basename（空）の内側にあるので **intercept される**。するとページはリロードされず、辞書モジュールは再評価されず、**言語は変わらない**。しかも例外もエラーも出ない — 一番たちの悪い壊れ方をする。
+
+basename が `/ja` なら `/en/products` は `_isOwnPath` を外れ、router は intercept を辞退し、ブラウザが本物のナビゲーションを行う。**「ただのリンクで切り替わる」は basename のおかげで成立する。**
+
+#### 9-1-2. redirect を guard に置けない理由（2026-08-27 の訂正）
 
 初稿は「未対応ロケールの URL は guard で fallback ロケールへ redirect する」としていた。**これは書けない。**
 
@@ -337,9 +351,17 @@ router の guard は **redirect 先を動的に決められない**。`GuardCanc
 
 **したがって router の guard は「あってもよい保険」であって、i18n の必須部品ではない。**
 
+#### 9-1-3. 構造レンダリングは router の外に置く
+
+i18n 固有ではないが、多言語ページを書く人が最初に踏むので明記する。
+
+`<wcs-route>` の中に置いた `<template data-wcs="for:">` / `if:` は**描画されない**。state がバインドを組み立てる時点でルートのノードは inert な `<template>` の中にあり、内側の構造フラグメントが登録されないためである。一方**ルート内の素のバインドは動く**（`<wcs-head>` の翻訳済み `<title>` も、静的ページの `@i18n` バインドも動く）ので、境界が見えにくい。
+
+分担は `examples/router-spa` が既に確立している。**router は `path` を publish し、state がその外側の `<template data-wcs="if: …">` でデータ駆動の DOM を描く。**
+
 ### 9-2. `<wcs-head>`
 
-`title` / `meta` は既存のバインドで `@i18n` を参照すれば翻訳できる。**追加機構は不要**。
+`title` / `meta` は既存のバインドで `@i18n` を参照すれば翻訳できる。**追加機構は不要**（Phase 0 で実証済み）。
 
 `hreflang` も**今日書ける**。`<wcs-head>` は子要素を `cloneNode(true)` で head に反映するので属性はそのまま通り、`link` の重複判定キーは `link:{rel}:{href}:{media}` である（[Head.ts:117](../packages/router/src/components/Head.ts#L117)）。href が言語ごとに違う代替リンクはキーが衝突しない。
 

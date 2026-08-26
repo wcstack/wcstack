@@ -103,6 +103,89 @@
 - V0-1〜V0-4 の結果を本書に追記する
 - **`examples/README.md` のポート表に追加**（規約）
 
+### 結果（2026-08-27・完了）
+
+`examples/router-i18n/` を実装し、Playwright で **20/20 green**。V0-1〜V0-4 は
+すべて成立した（`<html lang>` → 辞書モジュール → `<wcs-state src>` の順序、
+autoloader 非依存、shadow root からの同一実体 import、`missing` 診断の実発火）。
+
+**設計が持ちこたえた。** 辞書＝ES モジュール、射影としての `<wcs-state src>`、
+行ゲッターによる動的キー、ロード時 deep merge、`Intl` のモジュールスコープ生成は
+どれも書いたとおりに動く。一方で**前提が 4 つ崩れた**（§Phase 0-結果-1〜4）。
+
+#### 結果-1（実装バグ・修正済み）: `<wcs-state src>` の URL 解決基準が誤っていた
+
+`loadFromScriptFile` は `import(url)` を素で呼んでいた。動的 `import` の相対解決は
+**import を書いたモジュール**を基準にするので、`src` が `@wcstack/state` の所在から
+解決されていた。同一オリジンに置けば偶然一致するが、**CDN 一発で読み込んだ瞬間に
+`src="/app.js"` が CDN 側を指して 404 になる**。
+
+- `src="*.json"` 側は `fetch` なので document 基準で正しく解決されていた ＝ **同じ属性が
+  形式によって違う基準で解決されていた**
+- [csp.md](./csp.md) は inline state の代替として `src="./state.js"` を推奨しており、
+  **推奨されている回避策が推奨されているロード方法で動かない**状態だった
+- 既存 examples に `<wcs-state src>` の利用が 1 件も無かったため、露出していなかった
+
+修正は `new URL(url, document.baseURI)` の 1 行（[loadFromScriptFile.ts](../packages/state/src/stateLoader/loadFromScriptFile.ts)）。
+**T1-0 として Phase 1 の先頭に繰り上げ済み**（本書 Phase 1）。
+
+#### 結果-2（設計変更・反映要）: ロケールは `/:lang` ではなく **router の basename** に置く
+
+D9 は `/:lang` を `slug` で受ける形だった。**これは言語切替を壊す。**
+
+`<wcs-router>` は basename 配下の同一オリジンナビゲーションを**すべて** `intercept()`
+に渡す（[Router.ts:222-243](../packages/router/src/components/Router.ts#L222)）。素の
+`<a>` クリックも含む。したがって basename 内の言語リンクはクライアント側で処理され、
+**リロードも辞書モジュールの再評価も起きない ＝ 言語が変わらないのに何も壊れて見えない**。
+
+basename を `/{lang}` にすると解ける。`/en/` へのリンクは basename の外なので
+intercept されず、ブラウザが本物のナビゲーションを行う。**「ただのリンクで切り替わる」
+は basename のおかげで成立する。**
+
+- basename は head スニペットが `<base href="/ja/">` を書いて渡す。属性を使うと
+  「`<wcs-router>` がパース済みで、かつ upgrade 前」という狭い窓を狙うことになる
+- 制約 1 つ: ページ上の URL をすべて絶対にすること
+- 副産物: **ルートパターンからロケールが消える**（`/`・`/about`）。`enum` パラメータ型の
+  議論も、ロケールセグメントの検証も要らなくなる
+- D9 の「basename とは分離する」の根拠（1 デプロイ 1 言語になる）は、basename を
+  **実行時に**決めるこの形には当たらない
+
+#### 結果-3（設計補強）: 構造レンダリングは router の外
+
+`<wcs-route>` の中に置いた `<template data-wcs="for:">` は描画されない。state が
+バインドを組み立てる時点でルートのノードは inert な `<template>` の中にあるため。
+**ルート内の素のバインドは動く**ので境界が見えにくい（About ページはその場で翻訳
+されている）。既存の `examples/router-spa` が同じ分担を明示している。
+
+i18n 固有の話ではないが、**多言語ページを書く人が最初に踏む**ので §9-2 あたりに
+1 行あるとよい。
+
+#### 結果-5（設計の穴・未解決）: CDN 一発のページからロケールを設定する手段が無い
+
+§8 の 3 番「`setConfig({ locale })`」は、**公開 API では書けない**。
+
+- `setConfig` は [config.ts](../packages/state/src/config.ts) に居るが `exports.ts` から export されていない。公開されているのは `getConfig` だけ
+- 公開の入口は `bootstrapState({ locale })` ただ 1 つ。ところが **`@wcstack/state/auto` は `bootstrapState()` を引数なしで呼ぶ**（[auto.ts](../packages/state/src/auto.ts)）
+- したがって CDN 一発（`<script src="https://esm.run/@wcstack/state/auto">`）で読み込んだページには**ロケールを渡す口が無く**、`locale` / `date` / `time` / `datetime` は `'en'` に固定される
+- auto バンドルは SRI のため自己完結なので、別途 `@wcstack/state` を import して `bootstrapState` を呼んでも**別のモジュールインスタンス**になり効かない。名前付きエントリ 1 本に絞るしかない
+
+これは **五つのルールの 1 番（CDN 一発）と D8 の不変条件が両立しない**ということで、i18n に限った不便ではない。
+
+**推奨の解（Phase 1 で実装）**: `bootstrapState` が `locale` を明示されなかったとき **`document.documentElement.lang` を既定にする**。
+
+- head スニペットは既に `<html lang>` を書いており（§8 の 2 番）、辞書モジュールもそこを読む。**ロケールの正本が 1 つになる**
+- 不変条件が「`setConfig` を最初のバインドより前に呼ぶ」から「**`<html lang>` が state モジュールのロードより前に確定している**」へ変わる。後者は head の同期スクリプトで構造的に保証され、順序事故が起きようがない
+- スニペットから `setConfig` を呼ぶ必要が消える ＝ §8 の 4 手順が 3 手順になる
+- 既存ページへの影響: `<html lang>` は多くのページが持っており、`'en'` 以外を書いているページの `|date` 出力が変わりうる。**破壊的変更として扱い、minor bump とリリースノートが要る**
+
+デモは暫定として名前付きエントリ経由で `bootstrapState({ locale })` を呼んでいる。この解が入ったら CDN 一行に戻す。
+
+#### 結果-4（設計補強）: `Object.freeze` は deep でなければ意味がない
+
+`Object.freeze` は浅い。ネストしたカタログ（`t.orders.status`）が書き換え可能なまま
+残り、そこに誰かが getter を足せる ＝ §12 の診断がその枝ごと黙って死ぬ。**deep freeze
+を規範にする**（デモの `mergeAndFreeze` がそのまま参照実装）。
+
 ---
 
 ## Phase 1 — フィルタの焼き込み修理と順序不変条件（`packages/state/`）
@@ -113,10 +196,12 @@ Phase 0 と**並行可能**。設計書 §10。
 
 | ID | 内容 |
 |---|---|
+| **T1-0** | **完了（2026-08-27）**。`<wcs-state src="*.js">` を document の base URL で解決する（Phase 0 の結果-1）。`resolveAgainstDocument` を切り出して単体テスト 4 本。state 2529 tests green / lint 0 / カバレッジ閾値維持 |
 | **T1-1** | `locale` / `date` / `time` / `datetime` の 4 箇所で `const opt = options?.[0] ?? config.locale` を**返り値の関数の内側へ移す**（[builtinFilters.ts](../packages/state/src/filters/builtinFilters.ts) の 279 / 574 / 588 / 602 付近）。他の 42 フィルタは `config.locale` を読まないので対象外 |
 | **T1-2** | テストを `__tests__/filters.builtinFilters.test.ts` に追加。**2 つの挙動を両方固定する**: (a) `setConfig` 後に構築したバインドは新ロケールを使う (b) 構築済みのバインドは再描画されない限り変わらない。**(b) を仕様としてテストに書く**のが重要で、書かないと将来「なぜ切り替わらないのか」を誰かがバグとして直そうとする |
 | **T1-3** | 順序診断。最初のバインド構築後に `setConfig({locale})` でロケールが**変化した**ら `console.warn` する（1 回だけ）。実装は「最初のフィルタ構築時に `config.locale` を読んだ」フラグ 1 個で足りる |
-| **T1-4** | `packages/state/README.md` / `README.ja.md` に `config.locale` の位置づけ（「このページのロケール」）と不変条件（**確定は最初のバインド構築より前**）を明記 |
+| **T1-1b** | **`bootstrapState` の `locale` 既定を `document.documentElement.lang` にする**（Phase 0 の結果-5）。これが無いと CDN 一発のページはロケールを設定できない。破壊的変更なので minor bump とリリースノート |
+| **T1-4** | `packages/state/README.md` / `README.ja.md` に `config.locale` の位置づけ（「このページのロケール」）と不変条件（**確定は最初のバインド構築より前**。T1-1b 後は「`<html lang>` が state のロードより前」）を明記 |
 
 ### T1-3 の裁定事項
 
