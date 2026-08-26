@@ -4,24 +4,29 @@ import { showRoute } from "./showRoute";
 import { GuardCancel } from "./GuardCancel";
 import { runTransition } from "./protocol/transitionRunner";
 import { warnUnboundMarkup } from "./unboundMarkupWarning";
+import { bindSubtree } from "./protocol/binder";
 
 /**
- * ルートの内容にバインドがあれば 1 回だけ報告する。
+ * 差し込んだルート内容を binder へ渡す。binder が居なければ、バインドが効かない
+ * ことを 1 回だけ報告する。
  *
- * 直し方まで書くのは、これが仕様の穴ではなく**分担の境界**だからである。
- * データ駆動の DOM は router の外に置き、router が publish する `path` を
- * 見て `<template data-wcs="if: …">` で出し分ける（examples/router-spa と
- * examples/router-i18n が同じ分担を採っている）。
+ * 挿入の**後**に呼ぶ。`bind()` は初期値の適用まで同期で行うので、挿入前に呼ぶと
+ * まだ document に居ないノードを走査することになる。
+ *
+ * binder が居ないのは state を読み込んでいないページで、そこでは `data-wcs` が
+ * そもそも動かない。報告に直し方まで書くのは、これが仕様の穴ではなく**分担の
+ * 境界**だからである（examples/router-spa と examples/router-i18n が同じ分担）。
  */
-function warnRouteContent(route: IRoute): void {
+function bindRouteContent(route: IRoute): void {
   for (const node of route.childNodeArray) {
     if (node.nodeType !== 1) continue;
+    if (bindSubtree(node)) continue;
     warnUnboundMarkup(
       node as Element,
       `<${(node as Element).tagName.toLowerCase()}> inside a route`,
-      `Render data-driven markup outside <wcs-router> instead — bind the router's ` +
-      `\`path\` into state and gate the markup with <template data-wcs="if: …">. ` +
-      `See examples/router-i18n.`,
+      `Load @wcstack/state on this page, or render data-driven markup outside ` +
+      `<wcs-router> — bind the router's \`path\` into state and gate the markup ` +
+      `with <template data-wcs="if: …">. See examples/router-i18n.`,
     );
   }
 }
@@ -82,13 +87,13 @@ export async function showRouteContent(
     let force = false;
     for (const route of matchResult.routes) {
       if (!lastRouteSet.has(route) || route.shouldChange(matchResult.params) || force) {
-        // 初回描画（lastRoutes が空）で表示されるルートの内容は、state がバインドを
-        // 構築する時点で document に居るので正常に効く。ここで報告するのは
-        // 「あとから初めて差し込まれる内容」だけ（unboundMarkupWarning.ts）。
-        if (lastRoutes.length > 0 && !lastRouteSet.has(route)) {
-          warnRouteContent(route);
-        }
         force = showRoute(route, matchResult);
+        // 挿入の後。初回描画（lastRoutes が空）の内容は state のバインド構築時に
+        // document に居るので、そこは binder に渡す必要も報告する必要も無い。
+        // `bind()` 自体は冪等なので渡しても壊れないが、渡さないほうが安い。
+        if (lastRoutes.length > 0 && !lastRouteSet.has(route)) {
+          bindRouteContent(route);
+        }
       }
     }
   };

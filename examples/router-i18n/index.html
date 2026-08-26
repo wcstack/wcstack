@@ -185,17 +185,21 @@
      work (the About page below is translated in place), which makes the
      boundary easy to trip over: it is structural rendering, not binding, that
      has to move out. Same split as examples/router-spa. -->
-<!-- No <wcs-head> here, deliberately. A bound <title> inside it renders EMPTY:
-     <wcs-head> reflects its children into document.head with cloneNode(true),
-     and the clone is a different node than the one state bound, so the binding
-     never reaches it. The page would end up with no title at all — worse than an
-     untranslated one. Filed for Phase 3; until then the document's own static
-     <title> stands. -->
+<!-- The <title> is translated per route. That works because the router hands the
+     clone it puts into <head> to the binder protocol — before that, a bound
+     <title> here rendered empty and the page lost its title entirely. -->
 <wcs-router data-wcs="path: path">
   <template>
-    <wcs-route path="/"></wcs-route>
+    <wcs-route path="/">
+      <wcs-head>
+        <title data-wcs="textContent: t.app.title@i18n"></title>
+      </wcs-head>
+    </wcs-route>
 
     <wcs-route path="/about">
+      <wcs-head>
+        <title data-wcs="textContent: t.about.heading@i18n"></title>
+      </wcs-head>
       <section>
         <h2 data-wcs="textContent: t.about.heading@i18n"></h2>
         <p class="lead" data-wcs="textContent: t.about.body@i18n"></p>
