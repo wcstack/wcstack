@@ -2172,12 +2172,36 @@ bootstrapState({
 |---|---|---|
 | `bindAttributeName` | `'data-wcs'` | バインディング属性名 |
 | `tagNames.state` | `'wcs-state'` | 状態要素のタグ名 |
-| `locale` | `'en'` | フィルタのデフォルトロケール |
+| `locale` | `<html lang>`、無ければ `'en'` | ロケール依存フィルタ（`locale` / `date` / `time` / `datetime`）のロケール — [ロケール](#ロケール)を参照 |
 | `debug` | `false` | デバッグモード |
 | `enableMustache` | `true` | `{{ }}` 構文の有効化 |
 | `enableDirectionalInitialSync` | `true` | 方向認識のバインディング authority（`#init=` / `#sync=` バインド modifier）— [バインディング authority](#バインディング-authority-init--sync) 参照。既定 on。`false` で opt-out |
 | `enablePropagationContext` | `true` | バインド間の因果伝播トラッキング（echo/diamond のループ防止）。既定 on。`false` で opt-out |
 | `enableContractAnalyzer` | `false` | opt-in の開発時 contract analyzer（`analyzeContract` を公開） |
+
+### ロケール
+
+ロケールで書式化するフィルタは 4 つある — `locale` / `date` / `time` / `datetime`。
+これらは `config.locale` を読み、その既定は **`<html lang>`** である。
+
+```html
+<html lang="ja-JP">
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+```
+
+他に何も要らない。`<html lang>` はページの言語を書く HTML 標準の場所であり、
+そこを既定にすればロケールの正本が 1 つで済む。同時に、**CDN 一発のページが
+ロケールを設定できるようになる** — `auto` は `bootstrapState()` を引数なしで呼ぶので、
+これが無いと渡す口が無かった。明示指定（`bootstrapState({ locale })`）は常に優先し、
+不正な BCP-47 タグは `Intl` の中で落ちる前に警告して無視する。
+
+**ロケールはバインド時に固定される。** フィルタはバインド構築時にロケールを取り込み、
+`config.locale` は依存グラフに載らないので、後から変えても何も再描画されない。
+言語はページ最初のバインドが構築されるより前に決めること — マークアップに
+`<html lang>` を書くか、`<head>` の同期スクリプトで書けば構造的にそうなる。
+呼び出しごとの上書き（`price|locale(fr-FR)`）は従来どおり使える。リロードなしで
+言語を切り替えたい場合は [docs/i18n-design.md](../../docs/i18n-design.md) を参照。
+短く言えば、翻訳はフィルタではなくパスに置く。
 
 > この 3 つは **architecture-hardening** 機能で、規範は `docs/architecture-hardening/` に
 > あります。`enablePropagationContext` は**既定 on** — write-path コストは一方向バインドで

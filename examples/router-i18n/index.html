@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- ============================================================
+       LOCALE NEGOTIATION — must be a *synchronous* script, and must be first.
+       docs/i18n-design.md §8.
+
+       Everything downstream reads <html lang>: the catalog module, the Intl
+       formatters, the router basename. Module scripts are deferred, so a
+       synchronous script here is guaranteed to run before any of them. That is
+       why this is not a custom element — a tag could not be upgraded in time.
+       ============================================================ -->
+  <script>
+  (function () {
+    var SUPPORTED = { en: "ltr", ja: "ltr" };   // tag -> dir
+    var FALLBACK = "en";
+    var STORAGE_KEY = "wcs-i18n-lang";
+    // "Does this path segment claim to be a locale?" — needed to tell
+    // /orders (no locale, prefix it) from /xx/orders (wrong locale, replace it).
+    var LOCALE_SHAPED = /^[a-z]{2,3}(-[A-Za-z0-9]+)*$/;
+
+    function fromNavigator() {
+      var list = navigator.languages || [navigator.language || ""];
+      for (var i = 0; i < list.length; i++) {
+        // Lookup matching: walk subtags off the end (ja-JP -> ja).
+        // Note this cannot be delegated to Intl.supportedLocalesOf — that
+        // reports what *ICU* supports, not what this app has a catalog for.
+        var tag = String(list[i] || "").toLowerCase();
+        while (tag) {
+          if (SUPPORTED[tag]) return tag;
+          var cut = tag.lastIndexOf("-");
+          if (cut < 0) break;
+          tag = tag.slice(0, cut);
+        }
+      }
+      return null;
+    }
+
+    function stored() {
+      try {
+        var saved = localStorage.getItem(STORAGE_KEY);
+        return SUPPORTED[saved] ? saved : null;
+      } catch (e) {
+        return null;   // private mode / disabled storage is not an error here
+      }
+    }
+
+    var segments = location.pathname.split("/");
+    var head = segments[1] || "";
+
+    // Decision order (D13): URL > explicit choice > navigator > fallback.
+    // The URL wins so that a shared link keeps its language.
+    var lang = SUPPORTED[head] ? head : (stored() || fromNavigator() || FALLBACK);
+
+    document.documentElement.lang = lang;
+    document.documentElement.dir = SUPPORTED[lang];
+
+    if (!SUPPORTED[head]) {
+      // Repair the URL before anything renders or fetches. A locale-shaped but
+      // unknown segment is *replaced* (/xx/orders -> /en/orders); anything else
+      // gets the locale prefixed (/orders -> /en/orders).
+      if (head && LOCALE_SHAPED.test(head)) {
+        segments[1] = lang;
+      } else {
+        segments.splice(1, 0, lang);
+      }
+      location.replace(segments.join("/") + location.search + location.hash);
+      return;
+    }
+
+    // Hand the locale to the router as its basename, via <base href>.
+    //
+    // <wcs-router> resolves its basename from the `basename` attribute first
+    // and document.baseURI second, and there is no earlier moment than this to
+    // supply either: setting the attribute would need a script that runs after
+    // <wcs-router> is parsed but before the router module upgrades it, which is
+    // a narrow and fragile window. <base> has no such problem — it is the HTML
+    // mechanism for exactly this, and we already know the locale here.
+    //
+    // The one constraint it imposes: every URL on the page must be absolute,
+    // because relative ones now resolve against /<lang>/.
+    var base = document.createElement("base");
+    base.setAttribute("href", "/" + lang + "/");
+    document.head.appendChild(base);
+  })();
+  </script>
+
+  <title>wcstack: i18n demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; max-width: 780px; margin: 0 auto; padding: 2rem; color: #1a1a2e; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    h2 { font-size: 1.15rem; margin-bottom: 0.75rem; }
+    .lead { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; }
+    section { margin-bottom: 1.5rem; padding: 1.5rem; border: 1px solid #e0e0e0; border-radius: 8px; }
+
+    .top-nav { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; padding: 0.75rem 1rem; background: #f8f9fa; border-radius: 8px; }
+    .top-nav a { color: #555; text-decoration: none; font-size: 0.9rem; padding: 0.25rem 0.5rem; border-radius: 4px; }
+    .top-nav a:hover { background: #eceff1; }
+    .top-nav a.active { color: #3949ab; font-weight: 600; background: #e8eaf6; }
+    .lang-switch { margin-left: auto; display: flex; gap: 0.5rem; font-size: 0.85rem; }
+    .lang-switch a { border: 1px solid #ddd; }
+    .lang-switch a[aria-current="true"] { background: #e8eaf6; color: #3949ab; font-weight: 600; border-color: #c5cae9; }
+
+    .orders { list-style: none; }
+    .order { display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0; border-bottom: 1px solid #f0f0f0; }
+    li:last-child .order { border-bottom: none; }
+    .order-id { font-variant-numeric: tabular-nums; font-weight: 500; }
+    .placed { font-size: 0.8rem; color: #888; }
+    .badge { font-size: 0.72rem; padding: 2px 8px; border-radius: 12px; background: #e8eaf6; color: #3949ab; }
+    .amount { margin-left: auto; font-weight: 600; color: #2e7d32; font-variant-numeric: tabular-nums; }
+    .count { color: #666; font-size: 0.9rem; margin-bottom: 0.75rem; }
+    .generated { font-size: 0.85rem; color: #666; margin-top: 0.75rem; }
+    .stamp { font-variant-numeric: tabular-nums; }
+
+    .note { font-size: 0.8rem; color: #8d6e63; background: #fff8e1; border: 1px solid #ffe082; border-radius: 6px; padding: 0.6rem 0.75rem; margin-top: 1rem; }
+    .note code { background: #fff3cd; padding: 1px 5px; border-radius: 3px; }
+    .missing { outline: 1px dashed #e57373; min-width: 2rem; display: inline-block; }
+  </style>
+
+  <!-- Both packages activate with the usual one-liner. No locale is passed
+       anywhere: bootstrapState defaults `locale` to <html lang>, which the
+       snippet above already wrote. That makes <html lang> the single source of
+       truth — the locale-dependent filters, the catalog module and the router
+       basename all read the same attribute. -->
+  <script type="module" src="https://esm.run/@wcstack/router/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+</head>
+<body>
+
+<!-- ============================================================
+     The locale lives in the router's BASENAME, not in a route pattern.
+
+     This is the opposite of what the design first proposed (`/:lang/...` as a
+     typed route param), and the reason is interception: <wcs-router> hands
+     every same-origin navigation under its basename to the Navigation API's
+     intercept(), including plain <a> clicks. A language link inside the
+     basename would therefore be handled client-side — the page would never
+     reload, the catalog module would never re-evaluate, and the language would
+     silently not change.
+
+     With basename = "/ja", a link to /en/orders falls outside the basename,
+     the router declines to intercept, and the browser performs a real
+     navigation. The "just a link" switch works *because* of the basename, not
+     in spite of it.
+
+     Routes below carry no locale at all, which is the pleasant side effect.
+     ============================================================ -->
+<h1 data-wcs="textContent: t.app.title@i18n"></h1>
+<p class="lead" data-wcs="textContent: t.app.lead@i18n"></p>
+
+<nav class="top-nav" aria-label="Main">
+  <!-- Internal links: no locale. wcs-link prepends the basename. -->
+  <wcs-link to="/"><span data-wcs="textContent: t.nav.orders@i18n"></span></wcs-link>
+  <wcs-link to="/about"><span data-wcs="textContent: t.nav.about@i18n"></span></wcs-link>
+
+  <!-- Language switch: plain anchors with an absolute, locale-prefixed href.
+       Outside the basename => not intercepted => full page load. -->
+  <span class="lang-switch">
+    <a href="/en/" hreflang="en" data-wcs="textContent: t.langName.en@i18n"></a>
+    <a href="/ja/" hreflang="ja" data-wcs="textContent: t.langName.ja@i18n"></a>
+  </span>
+</nav>
+
+<!-- The router only says *where we are*. Its routes carry static nodes and the
+     translated <title>; everything data-driven is rendered by state below.
+     A <template data-wcs="for:"> placed inside a <wcs-route> does not render —
+     the route's nodes live in an inert <template> at build time, so state never
+     registers the inner structural fragment. Plain bindings inside a route do
+     work (the About page below is translated in place), which makes the
+     boundary easy to trip over: it is structural rendering, not binding, that
+     has to move out. Same split as examples/router-spa. -->
+<wcs-router data-wcs="path: path">
+  <template>
+    <wcs-route path="/">
+      <wcs-head>
+        <title data-wcs="textContent: t.app.title@i18n"></title>
+      </wcs-head>
+    </wcs-route>
+
+    <wcs-route path="/about">
+      <wcs-head>
+        <title data-wcs="textContent: t.about.heading@i18n"></title>
+      </wcs-head>
+      <section>
+        <h2 data-wcs="textContent: t.about.heading@i18n"></h2>
+        <p class="lead" data-wcs="textContent: t.about.body@i18n"></p>
+        <!-- Present only in en.js: on /ja this renders English via the deep merge. -->
+        <p class="note" data-wcs="textContent: t.about.fallbackNote@i18n"></p>
+      </section>
+    </wcs-route>
+  </template>
+  <wcs-outlet></wcs-outlet>
+</wcs-router>
+
+<!-- Rendered by state, gated on the path the router publishes. -->
+<template data-wcs="if: isList">
+  <section>
+    <h2 data-wcs="textContent: t.orders.heading@i18n"></h2>
+
+    <!-- Plural via Intl.PluralRules, computed in the app state. -->
+    <p class="count" data-wcs="textContent: orderCountText"></p>
+
+    <ul class="orders">
+      <template data-wcs="for: orders">
+        <li>
+          <div class="order">
+            <span class="order-id" data-wcs="textContent: orders.*.id"></span>
+            <!-- Dynamic key resolved by a row getter (§6). -->
+            <span class="badge" data-wcs="textContent: orders.*.statusLabel"></span>
+            <span class="placed">
+              <span data-wcs="textContent: t.orders.placed@i18n"></span>
+              <span data-wcs="textContent: orders.*.placedText"></span>
+            </span>
+            <span class="amount" data-wcs="textContent: orders.*.totalText"></span>
+          </div>
+        </li>
+      </template>
+    </ul>
+
+    <!-- The only filter on the page. `|date` reads config.locale, which
+         bootstrapState took from <html lang>. Nothing here passes a locale. -->
+    <p class="generated">
+      <span data-wcs="textContent: t.orders.placed@i18n"></span>
+      <span class="stamp" data-wcs="textContent: generatedAt|date"></span>
+    </p>
+
+    <p class="note">
+      The label below is bound to <code>t.orders.subtotal</code>, which exists in
+      no catalog. Open the console: the missing key is reported as
+      <code>wcs/binding-path-missing</code>, because the dictionary is plain data
+      rather than a getter — a getter would stop the check at "unknown".
+      <span class="missing" data-wcs="textContent: t.orders.subtotal@i18n"></span>
+    </p>
+  </section>
+</template>
+
+<!-- The dictionary, projected into a state element purely so templates can
+     reach it by path. Its canonical home is /i18n/catalog.js. -->
+<wcs-state name="i18n" src="/i18n/state.js"></wcs-state>
+
+<!-- The app's own state. It imports the catalog directly. -->
+<wcs-state src="/app.js"></wcs-state>
+
+</body>
+</html>
