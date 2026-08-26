@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { outputBuiltinFilters, builtinFilterFn } from '../src/filters/builtinFilters';
+import { getConfig, setConfig } from '../src/config';
 
 const getFilter = (name: string, options: string[] = []) =>
   builtinFilterFn(name, options)(outputBuiltinFilters);
@@ -519,5 +520,49 @@ describe('builtinFilters', () => {
     it('Date以外はエラーになること', () => {
       expect(() => getFilter('hms')('09:05:06' as unknown as Date)).toThrow(/requires a date value/);
     });
+  });
+});
+
+// ロケール依存フィルタ（locale / date / time / datetime）は、既定ロケールを
+// **適用のたびに** 読む。以前は返り値の関数の外で解決していたため、バインド構築
+// 時点の config.locale がクロージャに焼き込まれ、起動順序が少しでもずれると
+// 「同じページの中で日付だけ既定ロケール」が永続して回復しなかった。
+// 期待値は Intl そのものから作る（ICU の実装差に依存しないため）。
+describe('ロケール依存フィルタの既定ロケール解決', () => {
+  const original = getConfig().locale;
+  const NUM = 1234567.89;
+  const DATE = new Date(2026, 7, 26, 13, 5, 6);
+  const A = 'de-DE';
+  const B = 'en-US';
+
+  afterEach(() => {
+    setConfig({ locale: original });
+  });
+
+  const cases: ReadonlyArray<[string, unknown, (loc: string) => string]> = [
+    ['locale',   NUM,  (loc) => NUM.toLocaleString(loc)],
+    ['date',     DATE, (loc) => DATE.toLocaleDateString(loc)],
+    ['time',     DATE, (loc) => DATE.toLocaleTimeString(loc)],
+    ['datetime', DATE, (loc) => DATE.toLocaleString(loc)],
+  ];
+
+  it.each(cases)('%s: フィルタ生成後の config.locale 変更が次の適用に反映されること', (name, value, expected) => {
+    // 2 ロケールの書式が同じだと、この検査は焼き込みを見逃しても通ってしまう。
+    // ICU の実装が変わって差が消えたらここで落ちる。
+    expect(expected(A)).not.toBe(expected(B));
+
+    setConfig({ locale: A });
+    const fn = getFilter(name);                  // 生成 ＝ バインド構築に相当
+    expect(fn(value as never)).toBe(expected(A));
+
+    setConfig({ locale: B });                    // 生成より後にロケールが変わる
+    expect(fn(value as never)).toBe(expected(B));
+  });
+
+  it.each(cases)('%s: 明示引数は config.locale の変更に影響されないこと', (name, value, expected) => {
+    setConfig({ locale: A });
+    const fn = getFilter(name, [A]);             // 明示引数はバインド式の一部なので固定でよい
+    setConfig({ locale: B });
+    expect(fn(value as never)).toBe(expected(A));
   });
 });

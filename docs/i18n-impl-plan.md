@@ -198,7 +198,7 @@ Phase 0 と**並行可能**。設計書 §10。
 | ID | 内容 |
 |---|---|
 | **T1-0** | **完了（2026-08-27）**。`<wcs-state src="*.js">` を document の base URL で解決する（Phase 0 の結果-1）。`resolveAgainstDocument` を切り出して単体テスト 4 本。state 2529 tests green / lint 0 / カバレッジ閾値維持 |
-| **T1-1** | `locale` / `date` / `time` / `datetime` の 4 箇所で `const opt = options?.[0] ?? config.locale` を**返り値の関数の内側へ移す**（[builtinFilters.ts](../packages/state/src/filters/builtinFilters.ts) の 279 / 574 / 588 / 602 付近）。他の 42 フィルタは `config.locale` を読まないので対象外 |
+| **T1-1** | **完了（2026-08-27）**。4 箇所で明示引数だけを構築時に確定し、既定の `config.locale` は適用のたびに読むようにした（[builtinFilters.ts](../packages/state/src/filters/builtinFilters.ts)）。他の 42 フィルタは `config.locale` を読まないので対象外。テスト 8 本（4 フィルタ × 既定の追随／明示引数の固定）。期待値は `Intl` 自身から作り、2 ロケールの書式が同じだと検査が空振りする点も 1 行で塞いだ |
 | **T1-2** | テストを `__tests__/filters.builtinFilters.test.ts` に追加。**2 つの挙動を両方固定する**: (a) `setConfig` 後に構築したバインドは新ロケールを使う (b) 構築済みのバインドは再描画されない限り変わらない。**(b) を仕様としてテストに書く**のが重要で、書かないと将来「なぜ切り替わらないのか」を誰かがバグとして直そうとする |
 | **T1-3** | 順序診断。最初のバインド構築後に `setConfig({locale})` でロケールが**変化した**ら `console.warn` する（1 回だけ）。実装は「最初のフィルタ構築時に `config.locale` を読んだ」フラグ 1 個で足りる |
 | **T1-1b** | **完了（2026-08-27）**。`bootstrapState` の `locale` 既定を `document.documentElement.lang` にした（Phase 0 の結果-5）。明示指定が優先、不正な BCP-47 タグは警告して既定へ。**破壊的変更なので minor bump とリリースノートが要る**（未実施） |

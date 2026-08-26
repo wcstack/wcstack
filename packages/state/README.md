@@ -2201,14 +2201,18 @@ arguments, so before this there was no way in. An explicit
 `bootstrapState({ locale })` still wins, and an invalid BCP-47 tag is reported
 and ignored rather than left to throw inside `Intl`.
 
-**The locale is fixed at bind time.** A filter captures it when the binding is
-built, and `config.locale` is not part of the dependency graph, so changing it
-later re-renders nothing. Set the language before the page's first binding is
-built — writing `<html lang>` in the markup, or from a synchronous `<head>`
-script, does that structurally. Per-call overrides stay available
-(`price|locale(fr-FR)`), and for a page that switches language without reloading,
-see [docs/i18n-design.md](../../docs/i18n-design.md) — the short answer is that
-translations belong on a path, not in a filter.
+**Changing `config.locale` later does not re-render anything.** It is a global
+setting, not state, so it is not part of the dependency graph. The filters do
+read it on every application rather than capturing it when the binding is built,
+which means a binding that re-renders for its own reasons will pick up the new
+value — enough to recover from a mis-ordered startup, not enough to switch a
+page's language. Set the language before the page renders: writing `<html lang>`
+in the markup, or from a synchronous `<head>` script, does that structurally.
+
+Per-call overrides stay available and are fixed at bind time, since they are part
+of the binding expression: `price|locale(fr-FR)`. For a page that switches
+language without reloading, see [docs/i18n-design.md](../../docs/i18n-design.md) —
+the short answer is that translations belong on a path, not in a filter.
 
 > These three are **architecture-hardening** features; their normative reference is
 > `docs/architecture-hardening/`. `enablePropagationContext` defaults **on** — its
