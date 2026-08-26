@@ -3,6 +3,28 @@ import { hideRoute } from "./hideRoute";
 import { showRoute } from "./showRoute";
 import { GuardCancel } from "./GuardCancel";
 import { runTransition } from "./protocol/transitionRunner";
+import { warnUnboundMarkup } from "./unboundMarkupWarning";
+
+/**
+ * ルートの内容にバインドがあれば 1 回だけ報告する。
+ *
+ * 直し方まで書くのは、これが仕様の穴ではなく**分担の境界**だからである。
+ * データ駆動の DOM は router の外に置き、router が publish する `path` を
+ * 見て `<template data-wcs="if: …">` で出し分ける（examples/router-spa と
+ * examples/router-i18n が同じ分担を採っている）。
+ */
+function warnRouteContent(route: IRoute): void {
+  for (const node of route.childNodeArray) {
+    if (node.nodeType !== 1) continue;
+    warnUnboundMarkup(
+      node as Element,
+      `<${(node as Element).tagName.toLowerCase()}> inside a route`,
+      `Render data-driven markup outside <wcs-router> instead — bind the router's ` +
+      `\`path\` into state and gate the markup with <template data-wcs="if: …">. ` +
+      `See examples/router-i18n.`,
+    );
+  }
+}
 
 /**
  * ルートコンテンツを表示する。
@@ -60,6 +82,12 @@ export async function showRouteContent(
     let force = false;
     for (const route of matchResult.routes) {
       if (!lastRouteSet.has(route) || route.shouldChange(matchResult.params) || force) {
+        // 初回描画（lastRoutes が空）で表示されるルートの内容は、state がバインドを
+        // 構築する時点で document に居るので正常に効く。ここで報告するのは
+        // 「あとから初めて差し込まれる内容」だけ（unboundMarkupWarning.ts）。
+        if (lastRoutes.length > 0 && !lastRouteSet.has(route)) {
+          warnRouteContent(route);
+        }
         force = showRoute(route, matchResult);
       }
     }
