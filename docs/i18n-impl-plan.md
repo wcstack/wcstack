@@ -1,6 +1,6 @@
 # 実装計画: i18n / l10n
 
-- **状態**: 初稿（2026-08-27）。**着手前**。設計の正本は [i18n-design.md](./i18n-design.md)（D1 反転後・以下「設計書」）。本書はその §13 を着手可能なタスク粒度・受け入れ条件・完了条件に展開した手順書。
+- **状態**: 2026-08-27。**Phase 0〜4 完了・main 着地済み**（PR#186〜#192）。残るのは**リリースのみ**（末尾の「リリース時の作業」・ユーザー操作）。設計の正本は [i18n-design.md](./i18n-design.md)（以下「設計書」）。本書はその §13 を着手可能なタスク粒度・受け入れ条件・完了条件に展開した手順書。
 - **初稿計画（クロス state 読み取り前提）は破棄した。** D1（ライブ切替）を降ろしたことで、**`@wcstack/state` の core には一切触らない**計画になった。[state-cross-state-read-design.md](./state-cross-state-read-design.md) への依存は無い。
 - **ブランチ**: 未作成。`feature/i18n` を `--no-track` で切る。コミットは `git commit -F`。
 - **作業ディレクトリ**: Phase 0 が `examples/`、Phase 1 が `packages/state/`、Phase 2 が README（英日）とデモのテンプレート、Phase 3 が `packages/router/`、Phase 4 が `packages/lint/` と `packages/vscode-wcs/`。
@@ -417,3 +417,56 @@ Phase 0 に依存（規約が決まっていないと辿れない）。設計書
 5. **辞書の配布形式**（設計書 §14-5）— Phase 0 で両方試す
 
 **D7（実装形）は 2026-08-27 に確定したのでこの一覧から外した。** 着手を止めている裁定は残っていない。
+---
+
+## リリース時の作業（未実施・ユーザー操作）
+
+リリースは `workflow_dispatch` なので、実行はユーザーが行う。**minor bump が必要**で、
+理由は破壊的変更 1 件（`config.locale` の既定変更）。
+
+### 破壊的変更の告知文（そのまま貼れる形）
+
+```markdown
+### Breaking: `config.locale` now defaults to `<html lang>`
+
+The locale-dependent filters (`locale` / `date` / `time` / `datetime`) previously
+defaulted to `'en'` regardless of the page. They now read `<html lang>`.
+
+**Who is affected.** A page that declares a non-`en` `<html lang>` *and* uses one
+of those four filters will format in that language instead of English.
+
+**Keeping the old output.** Pass the locale explicitly:
+
+```js
+bootstrapState({ locale: 'en' });
+```
+
+**Why.** `bootstrapState({ locale })` was the only public way to set it, and the
+`auto` entry — the CDN one-liner this project leads with — calls it with no
+arguments. So pages on the recommended loading path had no way to set the locale
+at all. `<html lang>` is where HTML already records a page's language, and both
+SSR and a synchronous `<head>` script write it before any module runs, which
+turns "call the setter early enough" into a guarantee that holds structurally.
+
+An invalid BCP-47 tag is reported and ignored rather than left to throw inside
+`Intl`, so a malformed `lang` attribute cannot break filters that used to work.
+```
+
+### 同時に入る非破壊の変更（ノートに 1 行ずつ）
+
+- `fix(state)`: `<wcs-state src="*.js">` は document の base URL で解決するようになった。
+  以前は state パッケージ自身の場所を基準にしていたため、**CDN から読み込んだページで
+  404 になっていた**（`src="*.json"` は fetch なので元から正しく、同じ属性が拡張子で
+  違う基準で解決されていた）
+- `fix(state)`: ロケール依存フィルタの既定ロケールを適用のたびに読むようにした。
+  起動順序の事故から復帰できる
+- `feat(state,router)`: **binder プロトコル**。router が後から差し込むマークアップ
+  （非活性だったルートの内容・`<wcs-head>` の子）のバインドが効くようになった。
+  以前は恒久的に無反応だった
+- `fix(router)`: `<wcs-head>` の `<link>` 重複判定キーに `hreflang` を含めた。
+  `x-default` と代表ロケールが同じ href のとき片方が落ちていた
+
+### 確認事項
+
+- `@wcstack/lint` は state のビルド済み dist を消費するので、リリースのビルド後に
+  壊れていないことを確認する（過去に 2 回、CI マトリクス外で壊れた）
