@@ -351,6 +351,81 @@ describe('applyChangeToFor の並べ替え（LIS リオーダー）', () => {
     });
   });
 
+  // happy-dom 20.3.7 には moveBefore が無く、mountAfter の新分岐は vitest では
+  // 到達不能。実ブラウザ相当の前提検査（親違いは HierarchyRequestError）を持つ
+  // スタブで分岐と per-node ガードを固定する。実ブラウザ側の挙動（フォーカス保存）は
+  // e2e/tests/state-move-before.spec.ts が担保する。
+  function attachMoveBeforeStub(container: HTMLElement) {
+    const stub = vi.fn(function (node: Node, child: Node | null) {
+      if (node.parentNode !== container) {
+        throw new DOMException('moveBefore requires the same parent', 'HierarchyRequestError');
+      }
+      return Node.prototype.insertBefore.call(container, node, child);
+    });
+    (container as unknown as { moveBefore: typeof stub }).moveBefore = stub;
+    return stub;
+  }
+
+  it('moveBefore がある環境では接続済み reorder が moveBefore を通り、合算移動が 2 回以下であること', () => {
+    const list = ['r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8', 'r9'];
+    const { container, bindingInfo } = mount(list);
+    const spanByItem = new Map<unknown, Node>();
+    spans(container).forEach((span, i) => spanByItem.set(list[i], span));
+
+    const moveBeforeStub = attachMoveBeforeStub(container);
+    const swappedList = [...list];
+    [swappedList[1], swappedList[8]] = [swappedList[8], swappedList[1]];
+
+    const insertBeforeSpy = vi.spyOn(container, 'insertBefore');
+    apply(bindingInfo, swappedList);
+
+    // 接続済み reorder は moveBefore を通る
+    expect(moveBeforeStub.mock.calls.length).toBeGreaterThan(0);
+    // LIS 契約は取り外し方式に依存しない: moveBefore + insertBefore の合算で 2 回以下
+    expect(
+      moveBeforeStub.mock.calls.length + insertBeforeSpy.mock.calls.length
+    ).toBeLessThanOrEqual(2);
+    insertBeforeSpy.mockRestore();
+
+    const after = spans(container);
+    expect(after).toHaveLength(swappedList.length);
+    swappedList.forEach((item, i) => {
+      expect(after[i]).toBe(spanByItem.get(item));
+    });
+  });
+
+  it('moveBefore がある環境でも新規・プール由来ノードには使わないこと（per-node ガード）', () => {
+    const initial = Array.from({ length: 10 }, (_, i) => `row-${i}`);
+    const { container, bindingInfo } = mount(initial);
+    let spanByItem = new Map<unknown, Node>();
+    spans(container).forEach((span, i) => spanByItem.set(initial[i], span));
+
+    // スタブは親違いで throw する — ガードが per-node で正しくなければこのループが落ちる
+    attachMoveBeforeStub(container);
+
+    const rand = mulberry32(551);
+    let current = initial;
+    let nextId = initial.length;
+    for (let round = 0; round < 15; round++) {
+      const next = shuffled(current, rand).slice(0, Math.max(1, current.length - 2));
+      for (let k = 0; k < 3; k++) {
+        next.splice(Math.floor(rand() * (next.length + 1)), 0, `row-${nextId++}`);
+      }
+      apply(bindingInfo, next);
+
+      const after = spans(container);
+      expect(after).toHaveLength(next.length);
+      next.forEach((item, i) => {
+        if (spanByItem.has(item)) {
+          expect(after[i]).toBe(spanByItem.get(item));
+        }
+      });
+      spanByItem = new Map();
+      after.forEach((span, i) => spanByItem.set(next[i], span));
+      current = next;
+    }
+  });
+
   it('任意の順列を適用しても順序とノード同一性が保たれること', () => {
     const list = Array.from({ length: 12 }, (_, i) => `item-${i}`);
     const { container, bindingInfo } = mount(list);

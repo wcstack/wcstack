@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: focus survives keyed list reorder (moveBefore)</title>
+  <!-- docs/a11y-design.md §4: the single physical move site (Content.mountAfter)
+       uses Node.moveBefore() for connected same-parent reorders, so the row the
+       user is interacting with keeps focus, selection, and typed value across a
+       keyed swap. happy-dom has no moveBefore — this real-browser spec is the
+       only place the new branch actually runs against the platform. -->
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+  <style>
+    ul { list-style: none; padding: 0; }
+  </style>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+      export default {
+        items: [
+          { id: 1, label: "one" },
+          { id: 2, label: "two" },
+          { id: 3, label: "three" },
+          { id: 4, label: "four" },
+          { id: 5, label: "five" },
+        ],
+        swap() {
+          const next = [...this.items];
+          [next[1], next[3]] = [next[3], next[1]];
+          this.items = next;
+        },
+      };
+    </script>
+
+    <button id="swap" data-wcs="onclick: swap">swap rows 2 and 4</button>
+
+    <ul id="list">
+      <template data-wcs="for: items">
+        <li data-wcs="attr.data-id: .id">
+          <span>{{ .label }}</span>
+          <input aria-label="note">
+        </li>
+      </template>
+    </ul>
+  </wcs-state>
+</body>
+</html>
