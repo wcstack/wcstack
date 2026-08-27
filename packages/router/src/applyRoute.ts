@@ -4,12 +4,17 @@ import { matchRoutes } from "./matchRoutes";
 import { raiseError } from "./raiseError";
 import { showRouteContent } from "./showRouteContent";
 
+/**
+ * ルートを適用する。返り値は committed — guard 拒否（GuardCancel）で中断された
+ * 場合のみ false。呼び出し側はこれで commit 後の処理（フォールバック経路の
+ * スクロール等）をゲートできる（docs/a11y-design.md §3-2 / D4）。
+ */
 export async function applyRoute(
-  routerNode: IRouter, 
-  outlet: IOutlet, 
+  routerNode: IRouter,
+  outlet: IOutlet,
   fullPath: string,
   lastPath: string
-): Promise<void> {
+): Promise<boolean> {
   const basename = routerNode.basename;
   let sliced = fullPath;
   if (basename !== "") {
@@ -41,8 +46,9 @@ export async function applyRoute(
   const committed = await showRouteContent(routerNode, matchResult, lastRoutes);
   // GuardCancel により中断された場合は state を更新しない
   // （拒否されたパスでの wcs-router:path-changed 発火を防ぐため）
-  if (!committed) return;
+  if (!committed) return false;
   // if successful, update router and outlet state
   routerNode.path = path;
   outlet.lastRoutes = matchResult.routes;
+  return true;
 }

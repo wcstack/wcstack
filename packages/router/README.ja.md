@@ -294,12 +294,16 @@ console.log(route.typedParams.userId);  // 123 (number)
 |------|------|
 | `to` | 遷移先の絶対ルートパスもしくはURL。`/`で始まる場合はルートパス（basenameが付与される）。それ以外は外部URLとして扱われる |
 
-**アクティブ状態**: 生成された `<a>` はパスが現在のロケーションと一致する場合に `active` クラスを受け取る。ナビゲーションイベント（`currententrychange`, `wcs:navigate`, `popstate`）で更新される。
+**アクティブ状態**: 生成された `<a>` はパスが現在のロケーションと一致する場合に `active` クラスと、同じ事実の ARIA 表現である `aria-current="page"` を受け取る（スクリーンリーダーがナビゲーション内の現在地を読み上げられる）。ナビゲーションイベント（`currententrychange`, `wcs:navigate`, `popstate`）で更新される。
 
 ```css
 /* アクティブなリンクのスタイル */
 a.active { font-weight: bold; color: blue; }
 ```
+
+**属性の転送**: `<a>` の生成時に、すべての `aria-*` 属性と固定 5 名（`title` / `rel` / `target` / `download` / `hreflang`）をホストから anchor へコピーする。`to` / `style` / `class` は決して転送しない（ホストは `display:none` であり、`class` は `active` 契約を持つ）。接続後に追従するのは固定 5 名のみで、**動的な `aria-*` 変更は anchor に届かない** — `<wcs-link data-wcs="attr.aria-label: ...">` のような `data-wcs` バインドもコピー後にホストへ書くため届かない。`<wcs-link>` の `aria-*` は静的属性で書くこと。
+
+**素の `<a>` について**: Navigation API のあるブラウザでは、basename 配下の素の `<a href="/about">` も SPA 遷移になる（router が intercept する）。フォールバックブラウザでは成立しない（SPA 経路は `<wcs-link>` の click ハンドラのみ）ため、推奨は `<wcs-link>` のまま。
 
 ## 自動バインディング (`data-bind`)
 
@@ -376,7 +380,7 @@ router は、プラットフォームが既に正しく行うことについて�
 
 これらは仕様の既定値であり、明示は委譲が意図であることの記録。どちらかを `"manual"` に変える変更はリファクタではなくこの契約の変更にあたる。
 
-**フォールバック経路**（Navigation API の無いブラウザ）: ナビゲーションは `history.pushState` + `popstate` リスナで動く。戻る/進むのスクロール復元はブラウザの `history.scrollRestoration`（既定 `auto`）の仕事なので、router は `popstate` では決してスクロールしない。
+**フォールバック経路**（Navigation API の無いブラウザ）: ナビゲーションは `history.pushState` + `popstate` リスナで動く。commit した push 遷移の後は router がページ先頭へスクロールし、Navigation API の既定と揃える。route guard に拒否された遷移ではスクロールしない。戻る/進むのスクロール復元はブラウザの `history.scrollRestoration`（既定 `auto`）の仕事なので、router は `popstate` では決してスクロールしない。
 
 設計の記録は [docs/a11y-design.md](https://github.com/wcstack/wcstack/blob/main/docs/a11y-design.md) §3 を参照。
 

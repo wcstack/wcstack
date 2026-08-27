@@ -25,10 +25,17 @@ test.describe("router-a11y — Navigation API 経路の仕様既定 (A1/A2)", ()
 
     await page.evaluate(() => window.scrollTo(0, 1500));
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(1000);
+    // A5: 初期状態では home リンクが active + aria-current
+    await expect(page.getByRole("link", { name: "home" })).toHaveAttribute("aria-current", "page");
+
     const aboutLink = page.getByRole("link", { name: "about" });
     await aboutLink.focus();
     await aboutLink.click();
     await expect(page.locator("#view")).toHaveText("about");
+
+    // A5: aria-current が active class と同時に移る
+    await expect(aboutLink).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("link", { name: "home" })).not.toHaveAttribute("aria-current", "page");
 
     // scroll: "after-transition"（仕様既定）— push はトップへ
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
@@ -92,6 +99,31 @@ test.describe("router-a11y — フォールバック経路の強制 (T0-4)", () 
     expect(
       await page.evaluate(() => (window as unknown as Record<string, unknown>).__marker),
     ).toBe("same-document");
+    expect(errors).toEqual([]);
+    await context.close();
+  });
+
+  test("A3: フォールバック push 遷移後に scrollY=0、popstate ではブラウザ復元に任せる", async ({ browser, baseURL }) => {
+    const context = await browser.newContext({ baseURL });
+    await context.addInitScript(() => {
+      Object.defineProperty(window, "navigation", { value: undefined, configurable: true });
+    });
+    const page = await context.newPage();
+    const errors = collectErrors(page);
+    await page.goto(FIXTURE);
+    await expect(page.locator("#view")).toHaveText("home");
+
+    await page.evaluate(() => window.scrollTo(0, 1500));
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(1000);
+    await page.getByRole("link", { name: "about" }).click();
+    await expect(page.locator("#view")).toHaveText("about");
+    // 修理・既定オン（docs/a11y-design.md §3-2）: フォールバック push もトップへ
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+
+    // back では router はスクロールせず、ブラウザの scrollRestoration が復元する
+    await page.goBack();
+    await expect(page.locator("#view")).toHaveText("home");
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(1000);
     expect(errors).toEqual([]);
     await context.close();
   });
