@@ -139,6 +139,43 @@ function restoreGlobal(key: string, value: unknown): void {
   }
 }
 
+// --- matchMedia mock ---------------------------------------------------------
+
+// Injectable RafMediaQuery fake for the prefers-reduced-motion gate: tests
+// flip `matches` and fire `change` directly (happy-dom's MQL change delivery
+// cannot be driven deterministically enough for the gate-transition matrix).
+export class FakeMediaQuery {
+  matches = false;
+  queries: string[] = [];
+  private _listeners = new Set<() => void>();
+
+  // Arrow property so the instance's matchMedia can be passed straight into
+  // the RafCore constructor.
+  matchMedia = (query: string): FakeMediaQuery => {
+    this.queries.push(query);
+    return this;
+  };
+
+  addEventListener = (_type: "change", listener: () => void): void => {
+    this._listeners.add(listener);
+  };
+
+  removeEventListener = (_type: "change", listener: () => void): void => {
+    this._listeners.delete(listener);
+  };
+
+  get listenerCount(): number {
+    return this._listeners.size;
+  }
+
+  setMatches(matches: boolean): void {
+    this.matches = matches;
+    for (const listener of [...this._listeners]) {
+      listener();
+    }
+  }
+}
+
 // --- Visibility mock ---------------------------------------------------------
 
 // Overrides document.visibilityState (configurable so repeated calls and the

@@ -83,8 +83,17 @@ npm install @wcstack/raf
 | `once`    | boolean | `false` | 1 フレームだけ発火して停止。`repeat="1"` の糖衣。 |
 | `repeat`  | number  | `0`     | N フレームで停止（`0` = 無制限）。`once` より優先。 |
 | `manual`  | boolean | `false` | 接続時に自動 start しない。コマンド / trigger で開始。 |
+| `reduced-motion` | `"run"` \| `"pause"` | `"run"` | オプトインの `prefers-reduced-motion` ゲート。`"pause"` にすると、ユーザーの OS/ブラウザ設定が「動きを減らす」を要求している間はフレーム配送が止まり（`suspended` で観測可能）、解除されると `dt = 0` 境界で再開する。未知値は `"run"` に正規化。 |
 
 `<wcs-timer>` から意図的に削除したもの: `interval`（rAF に周期は無い）と `immediate`（初回フレームがすでに「次の描画機会」であり、それより早い意味のある時点が存在しない）。
+
+### `reduced-motion` の既定が `run` である理由
+
+`<wcs-view-transition>` が既定でスキップを選べるのは、落とすものが装飾だけだから。`<wcs-raf>` の tick は**機能出力**（ゲームループ・計測・canvas シミュレーション）であり、既定で止めるのは修理ではなく意見になる（docs/a11y-design.md §0-1）。ループが「動きのための動き」を駆動しているときだけ `reduced-motion="pause"` でオプトインする。
+
+### `pause()` の流用ではない理由
+
+`pause()` は**ユーザー意図**の記録（`start()`/`stop()` がクリアし、`resume()` が上書きする）。reduced-motion ゲートは**環境条件**であり、混ぜると `resume()` が OS 設定を上書きできてしまう。そこでゲートは `suspended` の第二原因 — `suspended = running && (hidden || reducedGate)` — として、visibility と同じ形でモデル化した。preference はライブ購読（`observe()` が `change` リスナを張る）: start 時チェックだけの実装では、reduce 中に開始したループが解除を検知する機会を永遠に持てない。
 
 ## 観測可能プロパティ（出力）
 
@@ -94,7 +103,7 @@ npm install @wcstack/raf
 | `elapsed`   | `wcs-raf:tick`            | 最後の reset からの**アクティブ**時間（Σdt、ms）。非表示・ポーズ期間は加算されない。粒度はフレーム単位。 |
 | `dt`        | `wcs-raf:tick`            | 直前フレームとの差分（ms）。**`start()` / `resume()` / visibility 中断の直後の初回フレームは `0`** — 中断を跨いだ値は観測者に届かない。上限クランプは無し: 遅いフレームの扱いはドメイン判断（物理ループなら自前の `Math.min(dt, …)`）。 |
 | `running`   | `wcs-raf:running-changed` | 開始済みの**意図**。非表示タブでフレームが届かなくても `true` のまま。 |
-| `suspended` | `wcs-raf:suspended-changed` | 配送の**実態**。`running` かつ非表示タブで `true`（rAF はスロットルでなく完全停止）。desired/actual の分離は `@wcstack/wakelock` の `active`/`held` と同型。 |
+| `suspended` | `wcs-raf:suspended-changed` | 配送の**実態**。原因は 2 つ: `running` かつ非表示タブ（rAF はスロットルでなく完全停止）、またはオプトインの `reduced-motion="pause"` ゲートがユーザー設定で効いている間。desired/actual の分離は `@wcstack/wakelock` の `active`/`held` と同型。 |
 
 `tick` / `elapsed` / `dt` は単一の `wcs-raf:tick` イベントからの派生です（`detail = { count, elapsed, dt, timestamp }`。`timestamp` はフレームの `DOMHighResTimeStamp`、`reset()` 通知では `0`）。`tick` は同値ガード無しで毎フレーム発火、`running` / `suspended` は同値ガード付きです。
 
