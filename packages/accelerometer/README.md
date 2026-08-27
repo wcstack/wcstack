@@ -197,6 +197,10 @@ core.dispose();
 
 The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
 
+## Accessibility
+
+**WCAG 2.5.4 Motion Actuation (Level A)**: anything operated by moving the device (shake to undo, jolt to restart) **must** also be operable without the motion, and the user must be able to disable the motion input — tremors fire shake detectors constantly, and a mounted device cannot be shaken at all. Give every motion gesture a button twin feeding the same code path, and expose a way to stop listening (the `stop` command). [`examples/state-tilt-maze`](https://github.com/wcstack/wcstack/tree/main/examples/state-tilt-maze) models this: shake-to-restart always has a Retry button next to it.
+
 ## License
 
 MIT

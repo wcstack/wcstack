@@ -208,6 +208,10 @@ lock.dispose();          // document リスナーを外す
 
 Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 
+## アクセシビリティ
+
+**WCAG 2.1.2 No Keyboard Trap（キーボードトラップなし）**: Esc でロックが必ず解除されることはブラウザが保証する — このキーを別用途に奪ってはならない。ただし、ユーザーが知らない保証付き脱出口は半分しか脱出口ではない: ロックが掛かる*前*に抜け方を伝え、アプリ内の出口（`exitPointerLock` コマンドを配線した可視のコントロール）も用意すること。ロック中の説明はポインタ操作なしで読める状態を保つ。
+
 ## ライセンス
 
 MIT

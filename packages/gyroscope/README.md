@@ -198,6 +198,10 @@ core.dispose();
 
 The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
 
+## Accessibility
+
+**WCAG 2.5.4 Motion Actuation (Level A)**: anything operated by rotating the device **must** also be operable without the motion, and the user must be able to disable the motion input — not every user can rotate a device, and involuntary movement turns rotation-rate input into noise. Give every motion-driven interaction a parallel input (keyboard, pointer, buttons) feeding the same code path, and expose a way to stop listening (the `stop` command). [`examples/state-tilt-maze`](https://github.com/wcstack/wcstack/tree/main/examples/state-tilt-maze) shows the shape with its sibling sensors.
+
 ## License
 
 MIT

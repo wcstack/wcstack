@@ -190,6 +190,10 @@ core.dispose();
 
 Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 
+## アクセシビリティ
+
+**WCAG 2.5.4 Motion Actuation（レベル A）**: デバイスを動かして操作するもの（シェイクで取り消し・振って再開など）は、動かさずにも操作できなければ**ならず**、モーション入力を無効化できなければならない — 振戦はシェイク検出を誤発火させ続けるし、固定された端末はそもそも振れない。モーションジェスチャには同じコードパスへ流れるボタンの双子を必ず用意し、監視を止める手段（`stop` コマンド）を露出すること。[`examples/state-tilt-maze`](https://github.com/wcstack/wcstack/tree/main/examples/state-tilt-maze) が手本: シェイク再開の隣には常に Retry ボタンがある。
+
 ## ライセンス
 
 MIT

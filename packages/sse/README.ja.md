@@ -495,6 +495,10 @@ bootstrapSse({
 - `wcs-sse:error` は単なる失敗シグナルではなく **プロパティ変更通知**（wc-bindable モデル）です: 失敗時には `detail` = エラーで発火し、接続が確立/回復して `error` プロパティがクリアされると `detail = null` で再度発火します。`error == null` は「過去にエラーが一度もなかった」ではなく「現在エラーがない」と解釈してください
 - **`errorInfo` タクソノミ**: `error` に現れるのと同じ失敗を、シリアライズ可能な `WcsIoErrorInfo`（安定した `code` / `phase` / `recoverable`）に分類する**追加的な**バインド可能出力（`wcs-sse:error-info-changed`）です。`error` の形状は変えません。`url` を指定しない `connect()` は `invalid-argument`（phase `start`、回復不可）です。ストリームの失敗はすべて `connection-error` で、`phase` / `recoverable` で場合を区別します: `new EventSource()` の構築失敗は phase `start` / 回復不可（`EventSource` が生成されないためブラウザの自動再接続は起きない）、ブラウザが自動再接続中の一過性切断（`readyState` CONNECTING）は phase `execute` / **`recoverable: true`——SSE で唯一の回復可能経路**（呼び出し側の介入なしに回復する）、恒久切断（`readyState` CLOSED）は phase `execute` / 回復不可です。`errorInfo` は `error` と同じタイミングで遷移し（ストリーム回復時に `null` にクリアされる）ます。共有の `WcsIoErrorInfo` 型と `WCS_SSE_ERROR_CODE` 定数は export 済みです。
 
+## アクセシビリティ
+
+**WCAG 2.2.2 Pause, Stop, Hide（一時停止・停止・非表示）**: 見えるコンテンツを書き換え続けるライブフィードには、ユーザーが使える一時停止が要る。部品はこのタグに揃っている — `close` でストリームが止まり、`connect` で再開する — ので、基準のコストはそこへ配線した可視のトグル 1 つ。[`examples/state-sse-dashboard`](https://github.com/wcstack/wcstack/tree/main/examples/state-sse-dashboard) が形を示している。真似る価値があるのは特にこの点: 一時停止は*更新*を止めるのであって、読むために止めたデータを消してはならない。
+
 ## ライセンス
 
 MIT
