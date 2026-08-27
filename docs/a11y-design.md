@@ -1,6 +1,6 @@
 # 設計: アクセシビリティ — ルート遷移・リスト再配置・モーション・読み上げ
 
-- **状態**: 2026-08-28 初稿・同日アーキテクチャレビュー反映（判定順序の明文化・`focus="heading"` の規定・`wcs-link` × data-wcs 制限・fallback 強制 e2e）。全論点を実装読解で裏取り済み（8 方面並列検証・訂正 3 件を §0-2 に記録）。**D1 / D2 / D6 は 2026-08-28 に推奨案どおり裁定済み — 全決定確定**。手順は [a11y-impl-plan.md](./a11y-impl-plan.md)。
+- **状態**: 2026-08-28 初稿・同日アーキテクチャレビュー反映（判定順序の明文化・`focus="heading"` の規定・`wcs-link` × data-wcs 制限・fallback 強制 e2e）→ **同日、全 Phase 実装完了（PR #194〜#202・main マージ済み・未リリース）**。全論点を実装読解で裏取り済み（8 方面並列検証・訂正 3 件を §0-2 に記録）。D1 / D2 / D6 は推奨案どおり裁定済み — 全決定確定。手順と実施記録は [a11y-impl-plan.md](./a11y-impl-plan.md)。
 - **対象**: `@wcstack/router`（scroll / focus / `aria-current` / 読み上げ）、`@wcstack/state`（リスト再配置の `moveBefore`）、`@wcstack/raf`（`prefers-reduced-motion`）、`vscode-wcs` + `@wcstack/lint`（静的検査）、examples（教材の底上げ）、Web API 地雷系 8 パッケージの README。
 - **一言で**: 「**修理は既定オン、意見はオプトイン**」。壊れているもの（フォールバック経路のスクロール・`aria-current` 欠落・リスト移動のフォーカス破壊）は黙って直る。意見が入るもの（フォーカスの移動先・読み上げ文言）は属性で明示したときだけ動く。
 - **前提**: 正解はすべて Web 標準側に既にある — Navigation API の intercept 既定・`Node.moveBefore()`・`prefers-reduced-motion`・`aria-current`。自前機構は最後の手段。a11y は新しい軸ではなく、5 つのルールの「HTML セマンティクスを維持する」の未払い分である。
@@ -297,4 +297,4 @@ suspended = running && (hidden || reducedGate)
 1. ~~D1 / D2 / D6 の裁定~~ — **2026-08-28 に推奨案どおり裁定済み**（全 Phase 着手可能）。
 2. **if 分岐のフォーカス復元** — unmount は本当に削除するので moveBefore の外。復元先の設計問題ごと需要待ち。
 3. **バインド title の再読み上げ** — announce は commit 時スナップショット（D2）。ナビゲーション外の title 変化に追従する需要が出たら別途。
-4. **フォールバック経路の実ブラウザ検証** — e2e は Chromium 単一だが、`getNavigation()` は呼び出しごとに `window.navigation` を動的参照する（`Navigation.ts:19-20`）ため、Playwright の `addInitScript` で `window.navigation` を undefined 化すれば **Chromium のまま**フォールバック経路を踏める見込み。成立確認は実装計画 T0-4。成立すれば WebKit project 追加は不要、不成立の場合のみ再検討。
+4. ~~フォールバック経路の実ブラウザ検証~~ — **解決済み（T0-4 で成立を実測）**。`getNavigation()` は呼び出しごとに `window.navigation` を動的参照する（`Navigation.ts:19-20`）ため、Playwright の `addInitScript` で `window.navigation` を undefined の own property で影にすると Chromium のままフォールバック経路（wcs-link click → pushState / back → popstate）を踏めた。A3 は実ブラウザ e2e で固定済み。WebKit project は不要。

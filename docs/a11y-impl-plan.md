@@ -1,6 +1,7 @@
 # 実装計画: アクセシビリティ
 
-- **状態**: 2026-08-28 初稿・着手前。同日アーキテクチャレビュー反映（T0-4 fallback 強制 e2e の追加・後半節番号の振り直し）。設計の正本は [a11y-design.md](./a11y-design.md)（以下「設計書」）。本書はその §11 を着手可能なタスク粒度・検証項目・DoD に展開した手順書。**D1 / D2 / D6 は 2026-08-28 に推奨案どおり裁定済み — 全 Phase 着手可能**。
+- **状態**: **2026-08-28 全 Phase 実施完了**（Phase 0=PR #195 / 1=#196 / 2=#197 / 3=#198 / 4=#199 / 5=#200 / 6=#201 / 7=#202・docs=#194。すべて main へマージ済み）。同日アーキテクチャレビュー反映（T0-4 fallback 強制 e2e の追加・後半節番号の振り直し）。設計の正本は [a11y-design.md](./a11y-design.md)（以下「設計書」）。本書はその §11 を着手可能なタスク粒度・検証項目・DoD に展開した手順書。D1 / D2 / D6 は 2026-08-28 に推奨案どおり裁定済み。残タスクは「リリース時の作業」（ユーザー操作）のみ。
+- **実施時に判明した実態差 2 件**: (a) websocket-chat react/vue の dist は**未追跡（完全 gitignore）** — リスク 7 の「追跡済み配信実体」前提は現状と不一致で、再ビルドしてもコミット対象なし（ソース修正のみコミット）。(b) state-notification-chat に「メッセージリスト」は実在しない — `role="log"` は唯一のページ内活動フィードである status 行に付けた（設計意図＝通知非依存のページ内告知はこれで満たされる）。
 - **ブランチ**: Phase ごとに `--no-track` で切る（例: `fix/router-scroll-a11y`, `improve/state-move-before`）。コミットは `git commit -F`。
 - **作業ディレクトリ**: Phase 0/1/3 = `packages/router/`、Phase 2 = `packages/state/` + `e2e/`、Phase 4 = `packages/raf/`、Phase 5 = `examples/` + `packages/state/examples/`、Phase 6 = `packages/vscode-wcs/` + `packages/lint/`、Phase 7 = docs と各 README。
 - **新規パッケージ**: **作らない**（設計書 D8）。
@@ -201,15 +202,15 @@ lint / wcs-validate green + 手動動作確認 + 既存 e2e smoke（tilt-maze / 
 
 ## 10. 追随チェックリスト
 
-- [ ] **wcstack-skill**（別リポジトリ wcstack/wcstack-skill）: Phase 1（wcs-link の aria-current / 転送属性）・Phase 3（router 新属性 `focus` / `announce`）・Phase 4（raf 新属性 `reduced-motion`）で references 更新。**Phase 0 / 2 / 5 / 6 / 7 は構文・属性・プロトコル変更なしのため追随不要（明示判定）**。
-- [ ] 各パッケージ README は英日両方（`README.md` / `README.ja.md`）。
-- [ ] `timing-and-firing-contract.md`（Phase 3 で追記 — 同書 §6 の保守規約が要求）。
-- [ ] `e2e/README.md` のスペック一覧（Phase 0 / 2 / 3 で spec を足すたび）。
+- [x] **wcstack-skill**（別リポジトリ wcstack/wcstack-skill）: references 更新済み — **wcstack-skill PR #2**（v1.32+ 注記付き。該当リリースが出たらマージし `metadata.wcstack-version` を bump する）。Phase 0 / 2 / 5 / 6 / 7 は構文・属性・プロトコル変更なしのため追随不要（明示判定）。
+- [x] 各パッケージ README は英日両方（`README.md` / `README.ja.md`）— 全 Phase で実施済み。
+- [x] `timing-and-firing-contract.md` §20（英日・Phase 3 で追記）。
+- [x] `e2e/README.md` のスペック一覧 — Phase 0/2/3 で追記、Phase 7 でドリフト全解消（9 smoke + 17 fixture = 実体 26 spec）。
 - [ ] vscode-wcs は独立バージョン — Phase 6 は vsix publish（ユーザー操作）+ `@wcstack/lint` リリースの両方が揃って初めて IDE / CLI が一致する。
 
 ## 11. 未解決
 
-設計書 §12 と同じ: if 分岐のフォーカス復元（需要待ち）、バインド title の再読み上げ、フォールバック強制 e2e（T0-4）の成立確認 — 不成立時のみ WebKit project 追加を再検討。（D1 / D2 / D6 は 2026-08-28 裁定済み）
+設計書 §12 と同じ: if 分岐のフォーカス復元（需要待ち）、バインド title の再読み上げ。（D1 / D2 / D6 は 2026-08-28 裁定済み。フォールバック強制 e2e は T0-4 で**成立を実測** — `window.navigation` の own-property 潰しで Chromium のまま pushState / popstate 経路を踏めた。WebKit project は不要）
 
 ---
 
