@@ -91,6 +91,11 @@ export const WcsDiagnosticCode = {
   TriggerSeededTruthy: "wcs/trigger-seeded-truthy",
   // 非 manual <wcs-storage> value バインド先の空値シード(初期書き戻しが保存値を上書き)。
   StorageSeedClobber: "wcs/storage-seed-clobber",
+  // --- accessibility (docs/a11y-design.md §8 / D9) ---
+  // `attr.aria-*` バインドの属性名が WAI-ARIA に存在しない(タイポ)。
+  // setAttribute はそのまま書き、支援技術は黙って無視する。severity は warning
+  // (error 昇格時は packages/lint/scripts/smoke-test.mjs の対ケース更新が必須)。
+  AriaAttrUnknown: "wcs/aria-attr-unknown",
   // --- document-level load configuration ---
   // @wcstack/state/auto より後に他 wcstack /auto が読まれている。
   ScriptOrder: "wcs/script-order",

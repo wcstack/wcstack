@@ -4,6 +4,8 @@
 
 ### Features
 
+- **`attr.aria-*` の属性名検査**（`wcs/aria-attr-unknown`・warning）— `attr.aria-labels: x` のような WAI-ARIA に存在しない属性名へのバインドを検出し、編集距離 2 以内の最近傍（「もしかして: "aria-label"」）を提示する。setAttribute はタイポをそのまま書き、支援技術は黙って無視する —「黙って無効になる」クラスの誤りの静的検出（設計の正本: `docs/a11y-design.md` §8 / D9）。照合リストは WAI-ARIA 1.2 全 states & properties + 実装が先行する 1.3 追加分（deprecated も有効名として許容）。severity は warning リテラル（error 昇格時は `packages/lint/scripts/smoke-test.mjs` の対ケース更新が必須）
+
 - **hover / 定義へ移動 / 参照の検索 / インレイヒント** — 位置情報付き参照インデックス（`core/index/referenceIndex`）へのクエリとして 4 機能を新設（`core/navigation/wiringLens` + `wcs-navigation` Volar プラグイン）。設計の正本: `docs/static-wiring-dx-design.md` §5-2 / §5-3
   - **hover**: バインディングパスに種別（data / computed / list / メソッド / command・event トークン）・推定型・所属 state・宣言行。`for` 短縮パスは展開後（`` `.name` → `users.*.name` ``）を表示。フィルタ名にシグネチャ・説明・型変換、修飾子（`#prevent` / `#stop` / `#ro` / `#init=` / `#sync=` / `#on<event>`）に意味説明。解決できないパスには何も出さない（誤ヒントゼロ）— `src` 外部 state だけは「外部定義」と明示
   - **定義へ移動**（F12）: ドットパスは第 1 セグメントへフォールバック。`$command.<name>` → `$commandTokens`、`$streamStatus.*`/`$streamError.*` → `$streams`、event-token 配線 → `$eventTokens`。`src` 外部 state は `<wcs-state src=…>` タグへ

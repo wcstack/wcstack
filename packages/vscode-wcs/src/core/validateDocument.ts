@@ -16,6 +16,7 @@ import { validateNestedAssigns } from "../service/nestedAssignValidator.js";
 import { validateArrayMutations } from "../service/arrayMutationValidator.js";
 import { validateTemplateSyntax } from "../service/templateSyntaxValidator.js";
 import { validateIoNodes } from "../service/ioNodeValidator.js";
+import { validateAriaAttributes } from "../service/ariaValidator.js";
 import { validateDocumentEnv } from "../service/documentEnvValidator.js";
 import { validateWatchDeclarations } from "../service/watchDeclarationValidator.js";
 import { validateSemantics } from "../service/semanticValidator.js";
@@ -56,6 +57,7 @@ export function validateDocument(text: string, options: ValidateDocumentOptions 
   out.push(...validateBindings(text, bindAttribute, stateTagName, locale, fileReader));
   out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute, locale, fileReader));
   out.push(...validateIoNodes(text, bindAttribute, stateTagName, locale, fileReader));
+  out.push(...validateAriaAttributes(text, bindAttribute, locale));
   out.push(...validateDocumentEnv(text, locale));
   // arrayMutationValidator / watchDeclarationValidator は 2 コード持ちのため
   // validator 側で code を付与して返す。
