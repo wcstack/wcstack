@@ -255,7 +255,7 @@
         ),
         h(
           "div",
-          { class: "log" },
+          { class: "log", role: "log" },
           // Reactive child: the placeholder unmounts once the first entry lands.
           () => (hasLog.get() ? null : h("div", { class: "log-empty" }, "Messages will appear here after connecting.")),
           For(

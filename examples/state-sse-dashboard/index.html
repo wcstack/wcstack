@@ -65,8 +65,17 @@
      ============================================================ -->
 <wcs-state>
   <script type="module">
+    // Pause plumbing for BOTH panes (WCAG 2.2.2 Pause, Stop, Hide). The right
+    // panel must NOT pause via an args restart: a restart resets the fold to
+    // `initial`, wiping exactly the numbers the user paused to read. Instead a
+    // module-scope bus reaches inside the long-lived source, which closes its
+    // EventSource on pause and reopens it on resume — the fold survives.
+    const pauseBus = new EventTarget();
+    let feedsPaused = false;
+
     export default {
       host: "a",
+      paused: false,
 
       // --- LEFT panel: <wcs-sse> outputs + a manual fold in $on -------------
       sseConnected: false,
@@ -83,6 +92,9 @@
       netSaveData: false,
 
       $eventTokens: ["sseMessage"],
+      // LEFT panel's pause: the tag owns that connection, so pausing it is the
+      // tag's own close / connect commands, fired through command tokens.
+      $commandTokens: ["closeFeed", "openFeed"],
 
       // --- RIGHT panel: the state OWNS the connection ----------------------
       $streams: {
@@ -98,24 +110,42 @@
           // unwinds a parked read and runs cancel() below (ReadableStream is
           // the fully-rescued source shape; see the state README "Streams").
           source: ({ host }) => {
-            const es = new EventSource(`/api/metrics?host=${host}`);
+            let es = null;
+            let onPause = null;
+            let onResume = null;
+            const teardown = () => {
+              pauseBus.removeEventListener("pause", onPause);
+              pauseBus.removeEventListener("resume", onResume);
+              es?.close();
+              es = null;
+            };
+            const open = (controller) => {
+              es = new EventSource(`/api/metrics?host=${host}`);
+              es.addEventListener("metric", (e) => controller.enqueue(JSON.parse(e.data)));
+              // EventSource retries by itself and only reaches CLOSED when the
+              // failure is terminal (bad status / wrong content-type); a dropped
+              // connection leaves readyState at CONNECTING, and ignoring that is
+              // exactly what lets native reconnection happen. controller.error()
+              // is the ONLY way this source can reach $streamStatus "error", and
+              // it does NOT run cancel() below — hence the explicit teardown here.
+              es.addEventListener("error", () => {
+                if (es === null || es.readyState !== EventSource.CLOSED) return;
+                teardown();
+                controller.error(new Error("EventSource closed: /api/metrics is unreachable."));
+              });
+            };
             return new ReadableStream({
               start(controller) {
-                es.addEventListener("metric", (e) => controller.enqueue(JSON.parse(e.data)));
-                // EventSource retries by itself and only reaches CLOSED when the
-                // failure is terminal (bad status / wrong content-type); a dropped
-                // connection leaves readyState at CONNECTING, and ignoring that is
-                // exactly what lets native reconnection happen. controller.error()
-                // is the ONLY way this source can reach $streamStatus "error", and
-                // it does NOT run cancel() below — hence the explicit close here.
-                es.addEventListener("error", () => {
-                  if (es.readyState !== EventSource.CLOSED) return;
-                  es.close();
-                  controller.error(new Error("EventSource closed: /api/metrics is unreachable."));
-                });
+                // Pause closes only the EventSource; the stream (and its folded
+                // value) stays put. Resume reopens against the same host.
+                onPause = () => { es?.close(); es = null; };
+                onResume = () => { if (es === null) open(controller); };
+                pauseBus.addEventListener("pause", onPause);
+                pauseBus.addEventListener("resume", onResume);
+                if (!feedsPaused) open(controller);
               },
               cancel() {
-                es.close();
+                teardown();
               },
             });
           },
@@ -198,8 +228,31 @@
 
       // --- actions -----------------------------------------------------------
 
+      // WCAG 2.2.2: one control pauses BOTH panes at once. This demo is a
+      // side-by-side comparison — pausing only one idiom would lie about the
+      // other. Left = the tag's close/connect commands; right = the pauseBus
+      // into the $streams source above.
+      togglePause() {
+        this.paused = !this.paused;
+        feedsPaused = this.paused;
+        if (this.paused) {
+          this.$command.closeFeed.emit();
+          pauseBus.dispatchEvent(new Event("pause"));
+        } else {
+          this.$command.openFeed.emit();
+          pauseBus.dispatchEvent(new Event("resume"));
+        }
+      },
+      get pauseLabel() { return this.paused ? "▶ Resume updates" : "⏸ Pause updates"; },
+      // aria-pressed wants the strings "true"/"false", not a boolean
+      get pausedAria() { return this.paused ? "true" : "false"; },
+
       setHost(next) {
         if (this.host === next) return;
+        // Switching feeds is an explicit request for new data: resume both
+        // panes first (the left tag auto-reconnects on the url change anyway —
+        // leaving only the right one paused would break the side-by-side truth).
+        if (this.paused) this.togglePause();
         this.host = next;
         // LEFT panel bookkeeping: <wcs-sse> reconnects itself when sseUrl
         // changes, but the history WE folded in $on does not reset itself —
@@ -239,7 +292,9 @@
   data-wcs="url: sseUrl;
             connected: sseConnected;
             loading: sseLoading;
-            eventToken.message: sseMessage"></wcs-sse>
+            eventToken.message: sseMessage;
+            command.close: $command.closeFeed;
+            command.connect: $command.openFeed"></wcs-sse>
 
 <!-- Pure monitor: no attributes, no commands — five outputs. <wcs-network>
      publishes its first snapshot in its own connectedCallback, which can run
@@ -262,6 +317,8 @@
     <span style="font-size:0.85rem;color:#666">Feed:</span>
     <button data-wcs="onclick: onHostA; class.active: isHostA">host A (calm)</button>
     <button data-wcs="onclick: onHostB; class.active: isHostB">host B (busy)</button>
+    <!-- WCAG 2.2.2: auto-updating content needs a pause — one control, both panes -->
+    <button data-wcs="onclick: togglePause; textContent: pauseLabel; attr.aria-pressed: pausedAria"></button>
   </div>
   <div class="net-tile">your connection<br><b data-wcs="textContent: netText"></b></div>
 </section>
@@ -316,6 +373,7 @@
   <li><b>Named events</b>: <code>events="metric,deploy"</code> funnels every named SSE event into the single <code>message</code> output — <code>message.event</code> tells you which one fired.</li>
   <li><b>network</b> is a pure monitor of the Network Information API (connection <em>quality</em>, not online/offline) — no attributes, no commands, five outputs. It is Chromium-only and the tile says so elsewhere.</li>
   <li><b>Both folds are bounded</b> (last-20 window): backpressure is explicitly abandoned, so unbounded accumulation on a long-lived stream is the one mistake this page must not make.</li>
+  <li><b>Pause stops both panes at once</b> (WCAG 2.2.2): the left through the tag's <code>close</code>/<code>connect</code> commands, the right through a pause hook <em>inside</em> the source — not an <code>args</code> restart, which would reset the fold to <code>initial</code> and wipe exactly the numbers you paused to read. Both EventSources really close (watch the server's connection counter drop).</li>
 </ul>
 
 </body>

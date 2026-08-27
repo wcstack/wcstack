@@ -191,7 +191,7 @@ export function App() {
             >Clear</button>
           </div>
 
-          <div className="log">
+          <div className="log" role="log">
             {messageLog.length === 0 ? (
               <div className="log-empty">Messages will appear here after connecting.</div>
             ) : (
