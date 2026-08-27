@@ -365,6 +365,21 @@ Route swaps are a plain `removeChild` / `insertBefore` pair, so the outgoing vie
 
 The router runs its guards first and hands only the hide/show pair to the transition, so a guard that awaits does not hold the transition open. The first route application — the one that paints the page on load — is always synchronous: there is no previous route to animate against, and an entrance is `@starting-style`'s job. Without the tag nothing changes at all; the swap stays synchronous. See [docs/view-transition-design.md](https://github.com/wcstack/wcstack/blob/main/docs/view-transition-design.md) §7.1.
 
+## Accessibility contract
+
+The router delegates scroll and focus handling to the browser wherever the platform already does the right thing.
+
+**Navigation API path** (Chromium and other supporting browsers): the router calls `event.intercept()` with the spec defaults written out explicitly — `scroll: "after-transition"` and `focusReset: "after-transition"`:
+
+- a push navigation scrolls to the top; a traverse (back/forward) restores the previous scroll position;
+- after the transition, focus moves to the first `[autofocus]` element of the new content, or to `<body>` when there is none.
+
+These are the specification defaults; writing them out records the delegation as intent. Changing either to `"manual"` is a change to this contract, not a refactor.
+
+**Fallback path** (browsers without the Navigation API): navigation runs through `history.pushState` plus a `popstate` listener. Back/forward scroll restoration is the browser's `history.scrollRestoration` (default `auto`), so the router never scrolls on `popstate`.
+
+See [docs/a11y-design.md](https://github.com/wcstack/wcstack/blob/main/docs/a11y-design.md) §3 for the design record.
+
 ## Path Specification (Router / Route / Link)
 
 ### Terminology
