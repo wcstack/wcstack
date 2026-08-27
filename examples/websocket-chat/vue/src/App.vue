@@ -186,7 +186,7 @@ function sendBroadcast() {
         >Clear</button>
       </div>
 
-      <div class="log" ref="logContainer">
+      <div class="log" role="log" ref="logContainer">
         <div v-if="messageLog.length === 0" class="log-empty">
           Messages will appear here after connecting.
         </div>
