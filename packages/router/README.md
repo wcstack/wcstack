@@ -407,6 +407,43 @@ Examples:
 	* `"/app"` and `"/app/"` are **the same** (app root)
 	* `"/app"` matches only `"/app"` or `"/app/..."` (does not match `"/appX"`)
 
+### 1.4 basename as the locale segment (multilingual sites)
+
+For a site served at `/en/…` and `/ja/…`, put the locale **in the basename**,
+not in a route pattern. Write `<base href="/ja/">` from a synchronous `<head>`
+script once the locale is known, and the router picks it up through resolution
+order 1.2.
+
+This is not a stylistic preference — a `/:lang` route parameter breaks the
+language switch:
+
+> `<wcs-router>` hands **every** same-origin navigation under its basename to
+> `intercept()`, plain `<a>` clicks included. With the locale inside the
+> basename, a link to another language is handled client-side: the page never
+> reloads, so anything the app loaded per-locale (a dictionary module, `Intl`
+> formatters) is never re-evaluated and **the language silently does not
+> change** — no error, nothing visibly broken.
+
+With basename `/ja`, a link to `/en/orders` falls outside `_isOwnPath`, the
+router declines to intercept, and the browser performs a real navigation. The
+"just a link" language switch works *because* of the basename.
+
+Two consequences worth having:
+
+* **Route patterns carry no locale** — `path="/"`, `path="/about"`. In-app links
+  stay locale-free too (`<wcs-link to="/about">` prepends the basename).
+* **Every URL on the page must be absolute**, since `<base>` now changes what
+  relative URLs resolve against.
+
+Repairing a URL that carries no locale, or an unknown one, belongs in that same
+head script (`location.replace`) rather than a route guard: a guard's redirect
+target is the static `guard="…"` attribute, so it cannot preserve the rest of
+the path. Doing it before the DOM is parsed also wastes no render and no fetch.
+
+See [`examples/router-i18n`](../../examples/router-i18n/) for the whole shape,
+and [docs/i18n-design.md](../../docs/i18n-design.md) for why the dictionary is
+an ES module rather than reactive state.
+
 ---
 
 ## 2) internalPath specification

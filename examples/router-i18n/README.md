@@ -174,6 +174,65 @@ driven by the `path` the router publishes. That is a division of labour rather
 than a limitation: the router decides *where we are*, state renders *what the
 data says*.
 
+## Checking the catalogs
+
+```bash
+node examples/router-i18n/check-catalogs.mjs
+```
+
+One translation problem cannot surface at runtime, so it has to be checked
+statically. A key missing from *every* catalog renders empty and logs
+`wcs/binding-path-missing`. But a key that exists in the fallback and is missing
+from one locale renders **perfectly — in the fallback's language**. Nothing
+breaks, nothing is logged, and the page quietly serves English to a Japanese
+reader. Only comparing the files finds it.
+
+The script is standalone rather than part of `wcs-validate`, because that
+validator is regex-based over inline `<wcs-state>` scripts by design — it has no
+module resolution — and the catalog is reached through a *dynamic* import keyed
+by the runtime locale, so which file backs `t` is not statically decidable
+anyway. Comparing two data files needs none of that machinery.
+
+**Plural groups are compared per language, not key-for-key.** Which categories
+exist is a property of the language: English needs `one` and `other`, Japanese
+only ever selects `other`. A naive comparison reports `orders.count.one` as
+missing from `ja.js` — where it would be dead weight, not a translation. The
+script asks `Intl.PluralRules` what each locale actually uses. A check that cries
+wolf gets muted, which costs more than not having it.
+
+On this demo it reports exactly one key, `about.fallbackNote`, missing from
+`ja.js` on purpose to show the fallback working.
+
+## Server-side rendering
+
+The head snippet is the *client* half of one rule: **the locale is settled
+before anything reads it**. Under SSR the server settles it instead, and the
+snippet must not second-guess that.
+
+The server decides from the URL segment, falling back to `Accept-Language`,
+and writes the result into the markup it sends:
+
+```js
+const locale = localeFromPath(url.pathname) ?? negotiate(req.headers["accept-language"]);
+const page = `<!DOCTYPE html>
+<html lang="${locale}">…`;
+```
+
+Everything downstream already reads `<html lang>` — the catalog module, the
+router basename, `config.locale` — so nothing else changes. The client snippet
+sees a supported locale in the URL and leaves it alone.
+
+**Getting this wrong is visible.** If the client settles on a different locale
+than the server rendered, the whole page swaps language immediately after
+hydration: a flash, plus a full re-render of markup that was already correct.
+That is why the locale must not be derived from anything the server cannot see
+(`navigator.languages`, `localStorage`) when a URL segment is present.
+
+This demo is client-only; [`examples/ssr`](../ssr/) covers server rendering and
+hydration on their own. They are kept apart on purpose — the SSR demo has
+nothing locale-dependent to observe, so wiring negotiation into it would add
+code that never demonstrates anything.
+
 ## Verifying against the working tree
 
 By default the page loads the published CDN bundles. To run it against your

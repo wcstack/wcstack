@@ -1,6 +1,6 @@
 # 実装計画: i18n / l10n
 
-- **状態**: 初稿（2026-08-27）。**着手前**。設計の正本は [i18n-design.md](./i18n-design.md)（D1 反転後・以下「設計書」）。本書はその §13 を着手可能なタスク粒度・受け入れ条件・完了条件に展開した手順書。
+- **状態**: 2026-08-27。**Phase 0〜4 完了・main 着地済み**（PR#186〜#192）。残るのは**リリースのみ**（末尾の「リリース時の作業」・ユーザー操作）。設計の正本は [i18n-design.md](./i18n-design.md)（以下「設計書」）。本書はその §13 を着手可能なタスク粒度・受け入れ条件・完了条件に展開した手順書。
 - **初稿計画（クロス state 読み取り前提）は破棄した。** D1（ライブ切替）を降ろしたことで、**`@wcstack/state` の core には一切触らない**計画になった。[state-cross-state-read-design.md](./state-cross-state-read-design.md) への依存は無い。
 - **ブランチ**: 未作成。`feature/i18n` を `--no-track` で切る。コミットは `git commit -F`。
 - **作業ディレクトリ**: Phase 0 が `examples/`、Phase 1 が `packages/state/`、Phase 2 が README（英日）とデモのテンプレート、Phase 3 が `packages/router/`、Phase 4 が `packages/lint/` と `packages/vscode-wcs/`。
@@ -250,7 +250,7 @@ Phase 0 と**並行可能**。設計書 §10。
 
 ### 結果（2026-08-27・完了）
 
-T2-1〜T2-3、T2-5、T2-7 完了。T2-4 は消滅。**T2-6 は未着手**（SSR デモが無いので Phase 3 の T3-5 とまとめる）。
+T2-1〜T2-3、T2-5、T2-7 完了。T2-4 は消滅。T2-6（SSR ではサーバーの `<html lang>` を上書きしない）は **T3-5 と同時に文書化で解決**。
 
 明示選択（D13 の 2 番目）は宣言だけで実体が無かったので、言語リンクのクリックを `localStorage` に記録する 6 行をスニペットに足した。これで 4 入力すべてが実際に効く。
 
@@ -285,7 +285,7 @@ Phase 2 に依存。
 | **T3-2** | 切替リンクのヘルパ — 現在パスのロケールセグメントだけを差し替える関数。**router から export するか README のスニペットに留めるかを決める**。3 行なので後者が有力 |
 | **T3-3** | `<wcs-head>` の link 重複キーに `hreflang` を含める（[Head.ts:113-118](../packages/router/src/components/Head.ts#L113) の 1 行）。**キー変更は既存の重複判定の挙動を変えるので回帰テスト必須**。`x-default` と代表ロケールが同一 href のとき両方生き残ることを固定する |
 | **T3-4** | guard は**静的 fallback による防御深度**としてのみ位置づける（訂正 1）。デモで `guard="/en"` を張るかは任意 |
-| **T3-5** | SSR: サーバーが URL の `:lang`（無ければ `Accept-Language`）から実効ロケールを決め `<html lang>` に書く経路を `examples/ssr` に反映 |
+| **T3-5** | **文書化で解決（2026-08-27）**。SSR のサーバー側手順を `examples/router-i18n` の README（英日）に書いた。**`examples/ssr` には配線しない** — あのデモにはロケール依存の要素が 1 つも無いので、交渉を足しても何も実証しない飾りのコードが増えるだけになる。規範（クライアントがサーバーの決定を覆さない／ずれるとハイドレーション直後に全文が入れ替わる）は書き切った |
 
 ### 3-0. 後から DOM に入ったノードはバインドされない（**設計判断待ち**）
 
@@ -343,14 +343,14 @@ Phase 0 に依存（規約が決まっていないと辿れない）。設計書
 
 | ID | 内容 |
 |---|---|
-| **T4-1** | `@i18n` を参照するバインドのパスを、辞書モジュールのキー集合と突合する。`<wcs-state src>` から `import` を辿る必要がある |
-| **T4-2** | **言語間でキー集合が一致しているか**。fallback の deep merge で埋まる訳漏れは実行時に見えないので、**ここが唯一の検出点** |
-| **T4-3** | 契約テストを**両側に置く**（罠）。挙動の正本は `packages/vscode-wcs` だが、lint 側にしかテストが無いと壊れるのが次のビルド時になり CI マトリクスに乗らない。過去に同型の事故が 2 回ある |
+| **T4-1** | **不可と判定（2026-08-27）**。`@i18n` バインドのパスを辞書のキー集合と突合するには、検証器がモジュールを解決する必要がある。ところが vscode-wcs の解析器は設計として **AST を使わず `<wcs-state>` のインラインスクリプトを正規表現で見る**もので、`src=` の追跡機構を持たない。さらに辞書は**実行時ロケールで決まる動的 import** の先にあるので、`t` の由来はそもそも静的に決まらない。**入れるなら検証器に別種の機構を足す話**になるため、検査 1 つとしては着手しない |
+| **T4-2** | **完了（2026-08-27）**。`examples/router-i18n/check-catalogs.mjs`。fallback の deep merge で埋まる訳漏れは実行時に見えないので**ここが唯一の検出点**。単体スクリプトにしたのは T4-1 と同じ理由（検証器にモジュール解決が無く、動的 import の先は静的に決まらない）。**複数形グループは `Intl.PluralRules` に各ロケールが実際に使うカテゴリを尋ねて比較する** — 素朴なキー突合は `ja` に `count.one` が無いことを誤検出し、誤検出する検査は無視されるようになる |
+| **T4-3** | ~~契約テストを両側に置く~~ — **該当しない**。検証器に手を入れないため（T4-1）。この罠（挙動の正本は vscode-wcs なのに lint 側にしかテストが無いと壊れるのが次のビルド時になる）は、検証器を触る作業に戻ったときのために残す |
 
 ### DoD
 
-- 両パッケージ green
-- T4-1 が `import` を辿れない構成（動的 URL 等）では**静かに諦めず「解析不能」を報告する**こと
+- チェッカーが実デモの意図的な訳漏れ 1 件だけを報告し、日本語に無い複数形カテゴリを誤検出しないこと（実測済み）
+- **T4-3（契約テストを両側に置く）は該当しなくなった** — 検証器に手を入れないため。代わりにチェッカー自身が実デモの意図的な訳漏れ 1 件を報告することを確認済み
 
 ---
 
@@ -417,3 +417,56 @@ Phase 0 に依存（規約が決まっていないと辿れない）。設計書
 5. **辞書の配布形式**（設計書 §14-5）— Phase 0 で両方試す
 
 **D7（実装形）は 2026-08-27 に確定したのでこの一覧から外した。** 着手を止めている裁定は残っていない。
+---
+
+## リリース時の作業（未実施・ユーザー操作）
+
+リリースは `workflow_dispatch` なので、実行はユーザーが行う。**minor bump が必要**で、
+理由は破壊的変更 1 件（`config.locale` の既定変更）。
+
+### 破壊的変更の告知文（そのまま貼れる形）
+
+```markdown
+### Breaking: `config.locale` now defaults to `<html lang>`
+
+The locale-dependent filters (`locale` / `date` / `time` / `datetime`) previously
+defaulted to `'en'` regardless of the page. They now read `<html lang>`.
+
+**Who is affected.** A page that declares a non-`en` `<html lang>` *and* uses one
+of those four filters will format in that language instead of English.
+
+**Keeping the old output.** Pass the locale explicitly:
+
+```js
+bootstrapState({ locale: 'en' });
+```
+
+**Why.** `bootstrapState({ locale })` was the only public way to set it, and the
+`auto` entry — the CDN one-liner this project leads with — calls it with no
+arguments. So pages on the recommended loading path had no way to set the locale
+at all. `<html lang>` is where HTML already records a page's language, and both
+SSR and a synchronous `<head>` script write it before any module runs, which
+turns "call the setter early enough" into a guarantee that holds structurally.
+
+An invalid BCP-47 tag is reported and ignored rather than left to throw inside
+`Intl`, so a malformed `lang` attribute cannot break filters that used to work.
+```
+
+### 同時に入る非破壊の変更（ノートに 1 行ずつ）
+
+- `fix(state)`: `<wcs-state src="*.js">` は document の base URL で解決するようになった。
+  以前は state パッケージ自身の場所を基準にしていたため、**CDN から読み込んだページで
+  404 になっていた**（`src="*.json"` は fetch なので元から正しく、同じ属性が拡張子で
+  違う基準で解決されていた）
+- `fix(state)`: ロケール依存フィルタの既定ロケールを適用のたびに読むようにした。
+  起動順序の事故から復帰できる
+- `feat(state,router)`: **binder プロトコル**。router が後から差し込むマークアップ
+  （非活性だったルートの内容・`<wcs-head>` の子）のバインドが効くようになった。
+  以前は恒久的に無反応だった
+- `fix(router)`: `<wcs-head>` の `<link>` 重複判定キーに `hreflang` を含めた。
+  `x-default` と代表ロケールが同じ href のとき片方が落ちていた
+
+### 確認事項
+
+- `@wcstack/lint` は state のビルド済み dist を消費するので、リリースのビルド後に
+  壊れていないことを確認する（過去に 2 回、CI マトリクス外で壊れた）
