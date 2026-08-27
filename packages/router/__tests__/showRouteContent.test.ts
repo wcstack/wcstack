@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { showRouteContent } from '../src/showRouteContent';
 import { Router } from '../src/components/Router';
 import { GuardCancel } from '../src/GuardCancel';
@@ -374,5 +374,100 @@ describe('showRouteContent', () => {
     expect(result).toBe(false);
 
     consoleWarnSpy.mockRestore();
+  });
+});
+
+// binder プロトコル: 後から差し込むルート内容はバインドの持ち主へ手渡す。
+// これが無いと、非活性だったルートの `data-wcs` は永久に効かない。
+describe('showRouteContent — binder への受け渡し', () => {
+  const globals = globalThis as Record<symbol, unknown>;
+  const BINDER_KEY = Symbol.for('wcstack.binder');
+
+  afterEach(() => {
+    delete globals[BINDER_KEY];
+    delete globals[Symbol.for('wcstack.binder.pending')];
+    delete globals[Symbol.for('wcstack.binder.taken')];
+  });
+
+  it('後から表示されるルートの内容を binder へ渡すこと', async () => {
+    const handed: Node[] = [];
+    globals[BINDER_KEY] = {
+      protocol: 'wcs-binder',
+      version: 1,
+      bind: (subtree: Node) => { handed.push(subtree); },
+    };
+
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+    const container = document.createElement('div');
+    const placeholder = document.createComment('@@route:binder');
+    container.appendChild(placeholder);
+    document.body.appendChild(container);
+
+    const content = document.createElement('section');
+    content.innerHTML = '<span data-wcs="textContent: x"></span>';
+    const previous = createMockRoute();
+    const route = createMockRoute({ placeHolder: placeholder, childNodeArray: [content] });
+
+    // lastRoutes が空でない ＝ 初回描画ではないので、渡す対象になる
+    await showRouteContent(router, createMatchResult([route]), [previous]);
+
+    expect(handed).toEqual([content]);
+    router.remove();
+    container.remove();
+  });
+
+  it('初回描画のルートは渡さないこと', async () => {
+    const handed: Node[] = [];
+    globals[BINDER_KEY] = {
+      protocol: 'wcs-binder',
+      version: 1,
+      bind: (subtree: Node) => { handed.push(subtree); },
+    };
+
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+    const container = document.createElement('div');
+    const placeholder = document.createComment('@@route:initial');
+    container.appendChild(placeholder);
+    document.body.appendChild(container);
+
+    const content = document.createElement('section');
+    content.innerHTML = '<span data-wcs="textContent: x"></span>';
+    const route = createMockRoute({ placeHolder: placeholder, childNodeArray: [content] });
+
+    // lastRoutes が空 ＝ 初回描画。state の走査が拾うので渡す必要が無い
+    await showRouteContent(router, createMatchResult([route]), []);
+
+    expect(handed).toEqual([]);
+    router.remove();
+    container.remove();
+  });
+
+  it('要素でないノードは渡さないこと', async () => {
+    const handed: Node[] = [];
+    globals[BINDER_KEY] = {
+      protocol: 'wcs-binder',
+      version: 1,
+      bind: (subtree: Node) => { handed.push(subtree); },
+    };
+
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+    const container = document.createElement('div');
+    const placeholder = document.createComment('@@route:textonly');
+    container.appendChild(placeholder);
+    document.body.appendChild(container);
+
+    const route = createMockRoute({
+      placeHolder: placeholder,
+      childNodeArray: [document.createTextNode('plain text')],
+    });
+
+    await showRouteContent(router, createMatchResult([route]), [createMockRoute()]);
+
+    expect(handed).toEqual([]);
+    router.remove();
+    container.remove();
   });
 });

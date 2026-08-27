@@ -365,7 +365,9 @@ i18n 固有ではないが、多言語ページを書く人が最初に踏むの
 
 `<wcs-head>` は子要素を `cloneNode(true)` で `document.head` に反映する。`data-wcs` 属性はコピーされるが、**クローンは state がバインドしたノードとは別のノード**なので、バインドは決して届かない。結果は「翻訳されない」ではなく「**`<title>` が空になる ＝ ページからタイトルが消える**」で、untranslated より悪い。
 
-したがって `<wcs-head>` 内のバインドによる翻訳は**現時点では成立しない**。Phase 3 の課題として [i18n-impl-plan.md](./i18n-impl-plan.md) に記録した。デモは `<wcs-head>` を置かず、document 自身の静的な `<title>` を残している。
+**解決済み（2026-08-27・binder プロトコル）**。router は head へ入れたクローンを binder に渡すようになり、そこで初めてバインドが張られる（[binder-protocol-design.md](./binder-protocol-design.md)）。デモは `<wcs-head>` を戻し、ルートごとに翻訳された `<title>` を出している。
+
+つまり初稿の結論「追加機構は不要」は**間違っていたが、追加機構を入れたことで結果的に真になった**。違うのは、それが `<wcs-head>` の機構ではなく state と router のあいだのプロトコルだったことである。
 
 `hreflang` も**今日書ける**。`<wcs-head>` は子要素を `cloneNode(true)` で head に反映するので属性はそのまま通り、`link` の重複判定キーは `link:{rel}:{href}:{media}` である（[Head.ts:117](../packages/router/src/components/Head.ts#L117)）。href が言語ごとに違う代替リンクはキーが衝突しない。
 

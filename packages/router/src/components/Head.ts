@@ -1,6 +1,7 @@
 import { raiseError } from "../raiseError";
 import { config } from "../config";
 import { warnUnboundMarkup } from "../unboundMarkupWarning";
+import { bindSubtree } from "../protocol/binder";
 
 /**
  * グローバルHeadスタック
@@ -198,15 +199,6 @@ export class Head extends HTMLElement {
     const allKeys = new Set<string>();
     for (const head of headStack) {
       for (const child of head._childElementArray) {
-        // head へ映すのは cloneNode なので、元ノードに付いていたバインドは
-        // クローンに引き継がれない。`<title data-wcs="…">` はページから
-        // タイトルを消すという、untranslated より悪い形で失敗する。
-        warnUnboundMarkup(
-          child,
-          `<${child.tagName.toLowerCase()}> inside <${config.tagNames.head}>`,
-          `<${config.tagNames.head}> reflects its children into <head> with cloneNode, ` +
-          `and the clone is not the node that was bound. Write the value statically here.`,
-        );
         allKeys.add(this._getKey(child));
       }
     }
@@ -254,6 +246,19 @@ export class Head extends HTMLElement {
         }
         // map を新しい要素に更新（後続の同 key 処理に備える）
         headElementMap.set(key, targetElement);
+        // head へ入れたのは cloneNode なので、元ノードのバインドは引き継がれない。
+        // `<title data-wcs="…">` はページからタイトルを消すという、未翻訳より
+        // 悪い形で失敗する。クローンを binder に渡して、そこで初めて束ねる。
+        // 挿入後に呼ぶのは、`bind()` が初期値の適用まで同期で行うため。
+        if (!bindSubtree(targetElement)) {
+          warnUnboundMarkup(
+            targetElement,
+            `<${targetElement.tagName.toLowerCase()}> inside <${config.tagNames.head}>`,
+            `<${config.tagNames.head}> reflects its children into <head> with cloneNode, ` +
+            `so the clone is not the node that was bound. Load @wcstack/state on this ` +
+            `page, or write the value statically here.`,
+          );
+        }
       } else {
         // 初期値もスタックにもない場合は削除
         current?.remove();

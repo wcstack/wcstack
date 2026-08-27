@@ -27,6 +27,7 @@ const canonicalReaderPath = join(repoRoot, "protocol", "wc-bindable-reader.ts");
 const canonicalUpgradePath = join(repoRoot, "protocol", "upgrade-properties.ts");
 const canonicalUpgradeTestPath = join(repoRoot, "protocol", "upgrade-properties.test.ts");
 const canonicalTransitionRunnerPath = join(repoRoot, "protocol", "transition-runner.ts");
+const canonicalBinderPath = join(repoRoot, "protocol", "binder.ts");
 
 // Packages that declare the strict wc-bindable manifest contract and must stay in sync.
 const TARGET_PACKAGES = [
@@ -57,6 +58,10 @@ const READER_TARGET_PACKAGES = ["state"];
 // transition-runner protocol (docs/view-transition-design.md §4): the two packages
 // that mutate the DOM on the page's behalf, plus the arbiter that installs itself.
 const TRANSITION_RUNNER_TARGET_PACKAGES = ["router", "state", "view-transition"];
+
+// binder protocol (docs/binder-protocol-design.md): the package that inserts DOM on
+// the page's behalf, plus the one that owns bindings and installs itself.
+const BINDER_TARGET_PACKAGES = ["router", "state"];
 
 // custom element の Shell を持つパッケージ（= connectedCallback で property upgrade が要る）。
 // state / server は Shell が wcBindable.inputs を宣言しないため対象外。
@@ -91,6 +96,7 @@ function main() {
   const upgradeTestContent = expectedContent(canonicalUpgradeTestPath, "upgrade-properties.test.ts")
     .replace('from "./upgrade-properties.js"', 'from "../src/protocol/upgradeProperties.js"');
   const transitionRunnerContent = expectedContent(canonicalTransitionRunnerPath, "transition-runner.ts");
+  const binderContent = expectedContent(canonicalBinderPath, "binder.ts");
   const targets = [
     ...TARGET_PACKAGES.map((pkg) => ({ pkg, fileName: "wcBindable.ts", content: typeContent })),
     ...READER_TARGET_PACKAGES.map((pkg) => ({ pkg, fileName: "wcBindableReader.ts", content: readerContent })),
@@ -105,6 +111,11 @@ function main() {
       pkg,
       fileName: "transitionRunner.ts",
       content: transitionRunnerContent,
+    })),
+    ...BINDER_TARGET_PACKAGES.map((pkg) => ({
+      pkg,
+      fileName: "binder.ts",
+      content: binderContent,
     })),
   ];
   const stale = [];
