@@ -152,6 +152,17 @@ function addInterestedSession(node: Node, session: BindingSession): void {
   interestedSessionsByNode.set(node, new Set([current, session]));
 }
 
+/**
+ * このノードに既にバインドが張られているか。
+ *
+ * binder プロトコル（`bind()`）の冪等判定に使う。`remember` が binding ごとに
+ * `addInterestedSession(binding.replaceNode, …)` を呼ぶので、バインド済みノードは
+ * 必ずこの台帳に載っている。新しい台帳を足さずに済むぶん、二重管理の齟齬が無い。
+ */
+export function hasInterestedSession(node: Node): boolean {
+  return interestedSessionsByNode.has(node);
+}
+
 function forEachInterestedSession(node: Node, callback: (session: BindingSession) => void): void {
   const current = interestedSessionsByNode.get(node);
   if (typeof current === "undefined") return;

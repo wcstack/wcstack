@@ -4,6 +4,7 @@ import { IStateElement } from "./components/types";
 import { config, inSsr } from "./config";
 import { raiseError } from "./raiseError";
 import { devtoolsSink } from "./devtools/sink";
+import { drainPendingBinds } from "./bindings/binder";
 
 const stateElementByNameByNode: WeakMap<Node, Map<string, IStateElement>> = new WeakMap();
 const bindingsReadyByNode: WeakMap<Node, Promise<void>> = new WeakMap();
@@ -30,6 +31,28 @@ export function getStateElementByName(rootNode:Node, name: string): IStateElemen
  */
 export function getBindingsReady(rootNode: Node): Promise<void> {
   return bindingsReadyByNode.get(rootNode) ?? Promise.resolve();
+}
+
+const bindingsBuiltRoots: WeakSet<Node> = new WeakSet();
+
+/**
+ * この rootNode の初期バインド構築が完了しているか。
+ *
+ * binder プロトコル（`bind()`）が使う。router の `<wcs-head>` はクローンを
+ * `connectedCallback` の中で head へ入れるので、**state が最初の走査を終える前**に
+ * bind を求めてくる。そこで同期に束ねても state 要素の初期化が済んでおらず、
+ * 結果は空のままになる。完了までは binder 側で保留する。
+ *
+ * 「まだ登録も済んでいない」と「もう構築が終わった」を取り違えないよう、判定は
+ * 完了の側で持つ。<wcs-state> の登録は connectedCallback の await より後に起きるので、
+ * 「エントリの有無」で進行中かを測ると読み込み順によって逆の答えを返す。
+ */
+export function areBindingsBuilt(rootNode: Node): boolean {
+  return bindingsBuiltRoots.has(rootNode);
+}
+
+function markBindingsBuilt(rootNode: Node): void {
+  bindingsBuiltRoots.add(rootNode);
 }
 
 export function setStateElementByName(rootNode:Node, name: string, element: IStateElement | null): void {
@@ -84,6 +107,11 @@ export function setStateElementByName(rootNode:Node, name: string, element: ISta
               } else {
                 await buildBindings(rootNode as Document);
               }
+              markBindingsBuilt(rootNode);
+              // binder が居ない時点で差し出されたサブツリーを引き取る。ここが
+              // 「state が確実に居る」最初の瞬間で、router の auto バンドルが
+              // state のそれより先に走る順序を吸収できる唯一の場所である。
+              drainPendingBinds();
               resolve();
             } catch (error) {
               reject(error);
@@ -96,6 +124,11 @@ export function setStateElementByName(rootNode:Node, name: string, element: ISta
           queueMicrotask(async () => {
             try {
               await buildBindings(rootNode as ShadowRoot);
+              markBindingsBuilt(rootNode);
+              // binder が居ない時点で差し出されたサブツリーを引き取る。ここが
+              // 「state が確実に居る」最初の瞬間で、router の auto バンドルが
+              // state のそれより先に走る順序を吸収できる唯一の場所である。
+              drainPendingBinds();
               resolve();
             } catch (error) {
               reject(error);

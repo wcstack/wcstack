@@ -15,6 +15,8 @@
  *
  * 警告は要素ごとに 1 回。壊れている場合にのみ走るので、正常系のコストはゼロ。
  */
+import { getBinder, wasBoundBy } from "./protocol/binder";
+
 const warned = new WeakSet<Element>();
 
 /** `data-wcs`。router は state の config を読めないので既定名を直接持つ */
@@ -34,11 +36,40 @@ export function warnUnboundMarkup(element: Element, where: string, remedy: strin
     return;
   }
   warned.add(element);
-  console.warn(
-    `[@wcstack/router] ${where} contains ${BIND_ATTRIBUTE} bindings that will never be applied. ` +
-    `A binding exists only for nodes that were in the document when @wcstack/state built its ` +
-    `bindings, and these nodes were not. They will render empty. ${remedy}`
-  );
+  // 判定は **DOMContentLoaded まで**遅らせる。router の auto バンドルは state の
+  // ものより先に走るので、`<wcs-head>` が差し出す時点では binder がまだ居ない。
+  // そこで即断すると、この直後に正しく束ねられるノードを「壊れている」と報告する。
+  //
+  // タイマーでは足りない。deferred な module script はパース完了後に実行されるので、
+  // `setTimeout(0)` は state の auto バンドルより**先に発火しうる**（実測）。
+  // DOMContentLoaded は全 deferred script の実行後に発火するので、そこでは決着している。
+  //
+  // 見るのは「束ね終わったか」ではなく **binder が居るか**。バインド構築は
+  // インライン state モジュールの読み込みを挟むので完了はさらに後になりうるが、
+  // binder が居るなら保留キューはいずれ引き取られるので報告する理由が無い。
+  whenLoadOrderSettled(() => {
+    if (getBinder() !== null || wasBoundBy(element)) {
+      return;
+    }
+    console.warn(
+      `[@wcstack/router] ${where} contains ${BIND_ATTRIBUTE} bindings that will never be applied. ` +
+      `A binding exists only for nodes that were in the document when @wcstack/state built its ` +
+      `bindings, and these nodes were not. They will render empty. ${remedy}`
+    );
+  });
+}
+
+function whenLoadOrderSettled(check: () => void): void {
+  if (document.readyState !== "complete") {
+    // `load` を待つ。`DOMContentLoaded` では足りない —— deferred script の実行中は
+    // readyState が既に `"interactive"` なので「まだ loading か」では判別できず、
+    // DOMContentLoaded を待つつもりが即断になる（実測）。`load` は必ず発火し、
+    // 全 deferred script より確実に後に来る。診断なので多少遅くて構わない。
+    window.addEventListener("load", check, { once: true });
+    return;
+  }
+  // 起動後の挿入（ナビゲーション）。読み込み順はとうに決着している。
+  check();
 }
 
 /** テスト用: 警告の「1 要素 1 回」を跨いで検証するためのリセット */

@@ -207,12 +207,44 @@ test.describe("examples/router-i18n — 言語切替はハードナビゲーシ�
 // したがって症状は「初回だけ」ではなく **恒久的**: 何度行き来しても空のまま。
 // ハードロードでそのルートが active だった場合にだけ効く。`@i18n` 越境に限らず
 // 自 state のバインド（`path`）でも同じなので、クロス state 起因ではない。
-test.describe("examples/router-i18n — 既知の欠陥", () => {
-  // 直せないあいだ、せめて黙って壊れないこと。router が「後から差し込む内容に
-  // バインドがある」と気づいた時点で、原因（バインド構築の時点）と回避策を
-  // 名指しで警告する。これが入るまでは、空の見出しから原因へ辿る手がかりが
-  // 一切なかった。
-  test("バインドが効かないことを router が警告すること", async ({ browser }) => {
+// binder プロトコル（docs/binder-protocol-design.md）が入るまで、`<wcs-route>` の
+// 中のバインドは**恒久的に**効かなかった。state はバインド構築時に document に
+// 居たノードしか走査せず、非活性なルートの内容はそのとき切り離されているため。
+// router が挿入後にサブツリーを binder へ渡すようになって解消した。
+test.describe("examples/router-i18n — 後から差し込まれた内容のバインド", () => {
+  test("非活性ルートの内容がナビゲーション後にバインドされる", async ({ browser }) => {
+    const context = await browser.newContext({ locale: "en-US" });
+    const page = await context.newPage();
+    const errors = collectErrors(page);
+    await page.goto(`${BASE}/en/`);
+    await settled(page);
+
+    // 往復しても崩れないことまで固定する（以前は何度行き来しても空のままだった）
+    for (let i = 0; i < 2; i++) {
+      await page.locator('.top-nav a[href="/en/about"]').click();
+      await expect(page.locator("h2")).toHaveText("About this demo");
+      await page.locator(`.top-nav a[href="/en/"]:not([data-lang])`).click();
+      await expect(page.locator(".orders")).toBeAttached();
+    }
+    await page.locator('.top-nav a[href="/en/about"]').click();
+    await expect(page.locator("h2")).toHaveText("About this demo");
+    // fallback の deep merge も後から差し込まれた側で効いている
+    await expect(page.locator(".note")).toContainText("This sentence has no Japanese");
+    expect(errors).toEqual([]);
+    await context.close();
+  });
+
+  test("ロケールを跨いでも差し込まれた内容が正しい言語で出ること", async ({ browser }) => {
+    const context = await browser.newContext({ locale: "ja-JP" });
+    const page = await context.newPage();
+    await page.goto(`${BASE}/ja/`);
+    await settled(page);
+    await page.locator('.top-nav a[href="/ja/about"]').click();
+    await expect(page.locator("h2")).toHaveText("このデモについて");
+    await context.close();
+  });
+
+  test("正常に束ねられたページでは警告を出さないこと", async ({ browser }) => {
     const context = await browser.newContext({ locale: "en-US" });
     const page = await context.newPage();
     const warnings: string[] = [];
@@ -222,34 +254,10 @@ test.describe("examples/router-i18n — 既知の欠陥", () => {
     await page.goto(`${BASE}/en/`);
     await settled(page);
     await page.locator('.top-nav a[href="/en/about"]').click();
-    await expect(page.locator("h2")).toBeAttached();
-
-    const unbound = warnings.filter((w) => w.includes("will never be applied"));
-    expect(unbound.length).toBeGreaterThan(0);
-    expect(unbound[0]).toContain("inside a route");
-    expect(unbound[0]).toContain("render empty");
-    await context.close();
-  });
-});
-
-test.describe("examples/router-i18n — 未修正の欠陥（tripwire）", () => {
-  test.fail();
-
-  test("非活性ルートの内容がナビゲーション後にバインドされる", async ({ browser }) => {
-    const context = await browser.newContext({ locale: "en-US" });
-    const page = await context.newPage();
-    await page.goto(`${BASE}/en/`);
-    await settled(page);
-
-    // 往復しても回復しないことまで含めて固定する（「初回だけ」ではない）
-    for (let i = 0; i < 2; i++) {
-      await page.locator('.top-nav a[href="/en/about"]').click();
-      await expect(page.locator("h2")).toBeAttached();
-      await page.locator('.top-nav a[href="/en/"]').click();
-      await expect(page.locator(".orders")).toBeAttached();
-    }
-    await page.locator('.top-nav a[href="/en/about"]').click();
     await expect(page.locator("h2")).toHaveText("About this demo");
+
+    // 診断が誤って出ると、利用者は警告そのものを無視するようになる
+    expect(warnings.filter((w) => w.includes("will never be applied"))).toEqual([]);
     await context.close();
   });
 });

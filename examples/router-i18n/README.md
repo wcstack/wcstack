@@ -152,36 +152,27 @@ the decision order, all three URL-repair shapes, and the hard/soft navigation
 split. That spec starts this demo's own server rather than the shared one, for
 the root-mount reason above.
 
-## Known gaps
+## Bindings in markup the router inserts
 
-Two `@wcstack/router` defects surfaced while building this demo. Neither is
-specific to i18n — both affect any binding placed in those positions — and both
-are filed for Phase 3.
-
-- **A bound `<title>` inside `<wcs-head>` renders empty.** `<wcs-head>` reflects
-  its children into `document.head` with `cloneNode(true)`, and the clone is a
-  different node than the one state bound, so the binding never reaches it. The
-  page ends up with *no* title, which is worse than an untranslated one. This
-  demo therefore has no `<wcs-head>`; its static document `<title>` stands.
-- **A binding inside a `<wcs-route>` never works unless that route happened to
-  be the active one when the page loaded.** `data-wcs` bindings exist only for
-  nodes present when state builds them, and an inactive route's content is
-  detached at that moment — so it is never scanned, and inserting it later does
-  nothing. Navigating back and forth does not help. Clicking About from the
-  orders page leaves its headings blank, permanently.
-  `e2e/tests/router-i18n.spec.ts` pins this as an expected failure, so it will
-  announce itself when fixed.
-
-Both share one cause — **state does not bind subtrees that enter the document
-after startup** — which is why this demo renders everything data-driven from
-outside the router.
-
-Fixing it needs a design decision rather than a patch, so in the meantime the
-router at least **says so**: stamping route content, or reflecting a
-`<wcs-head>` child, that carries `data-wcs` now logs a warning naming the cause
-and the way around it. Click through to About with the console open and you will
-see it. The fix itself is tracked in
+Markup that enters the document after startup — a route that was not active when
+the page loaded, a `<wcs-head>` child reflected into `<head>` — used to carry
+bindings that silently did nothing. Both cases now work, through the **binder
+protocol**: the router hands each inserted subtree to whoever owns bindings, and
+state binds it there. See
 [`docs/binder-protocol-design.md`](../../docs/binder-protocol-design.md).
+
+That is why this demo can translate its per-route `<title>` at all. Before it,
+a bound `<title>` inside `<wcs-head>` rendered empty and the page lost its
+title outright.
+
+**A page that loads the router but not `@wcstack/state` still gets a warning**
+naming what will not be applied and why — there is no binder to hand the nodes
+to, so the markup really is inert.
+
+Structural rendering (`for` / `if`) still belongs outside `<wcs-router>`,
+driven by the `path` the router publishes. That is a division of labour rather
+than a limitation: the router decides *where we are*, state renders *what the
+data says*.
 
 ## Server-side rendering
 
