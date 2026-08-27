@@ -298,12 +298,40 @@ describe('Router', () => {
       router.path = '/prev';
 
       const pushStateSpy = vi.spyOn(history, 'pushState');
-      const applySpy = vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(undefined);
+      const applySpy = vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(true);
 
       await router.navigate('/path');
 
       expect(pushStateSpy).toHaveBeenCalledWith(null, '', '/base/path');
       expect(applySpy).toHaveBeenCalledWith(router, router.outlet, '/base/path', '/prev');
+    });
+
+    it('フォールバック経路: commit 後にページ先頭へスクロールすること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      (router as any)._basename = '/base';
+      (router as any)._outlet = createOutlet();
+      (router as any)._outlet.routesNode = router;
+
+      vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(true);
+      const scrollSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+
+      await router.navigate('/path');
+
+      expect(scrollSpy).toHaveBeenCalledWith(0, 0);
+    });
+
+    it('フォールバック経路: guard 拒否 (committed=false) ではスクロールしないこと', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      (router as any)._basename = '/base';
+      (router as any)._outlet = createOutlet();
+      (router as any)._outlet.routesNode = router;
+
+      vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(false);
+      const scrollSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+
+      await router.navigate('/blocked');
+
+      expect(scrollSpy).not.toHaveBeenCalled();
     });
   });
 
@@ -327,7 +355,7 @@ describe('Router', () => {
       (router as any)._outlet.routesNode = router;
       (router as any)._path = '/prev';
 
-      const applySpy = vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(undefined);
+      const applySpy = vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(true);
       let capturedHandler: (() => Promise<void>) | null = null;
 
       const navEvent = {
@@ -370,7 +398,7 @@ describe('Router', () => {
       (router as any)._outlet.routesNode = router;
       (router as any)._path = '/prev';
 
-      const applySpy = vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(undefined);
+      const applySpy = vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(true);
       let capturedHandler: (() => Promise<void>) | null = null;
 
       const navEvent = {
@@ -426,7 +454,7 @@ describe('Router', () => {
       (router as any)._outlet.routesNode = router;
       (router as any)._path = '/prev';
 
-      const applySpy = vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(undefined);
+      const applySpy = vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(true);
 
       const originalLocation = window.location;
       delete (window as any).location;
@@ -484,7 +512,7 @@ describe('Router', () => {
         (r as any).routeChildNodes.push({ path: '/' }); 
         return fragment;
       });
-      const applySpy = vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(undefined);
+      const applySpy = vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(true);
 
       await (router as any)._initialize();
 
@@ -601,7 +629,7 @@ describe('Router', () => {
       (router as any)._outlet.routesNode = router;
       (router as any)._path = '/prev';
 
-      const applySpy = vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(undefined);
+      const applySpy = vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(true);
       const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
 
       const originalLocation = window.location;
@@ -615,6 +643,29 @@ describe('Router', () => {
 
       expect(applySpy).toHaveBeenCalledWith(router, router.outlet, '/next', '/prev');
       expect(dispatchSpy).toHaveBeenCalledWith(expect.any(CustomEvent));
+
+      (window as any).location = originalLocation;
+    });
+
+    it('popstateではスクロールしないこと (traverse の復元は history.scrollRestoration が正解)', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      (router as any)._outlet = createOutlet();
+      (router as any)._outlet.routesNode = router;
+      (router as any)._path = '/prev';
+
+      vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(true);
+      const scrollSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+
+      const originalLocation = window.location;
+      delete (window as any).location;
+      (window as any).location = {
+        pathname: '/next',
+        href: 'http://localhost/next',
+      };
+
+      await (router as any)._onPopState();
+
+      expect(scrollSpy).not.toHaveBeenCalled();
 
       (window as any).location = originalLocation;
     });

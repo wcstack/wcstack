@@ -209,7 +209,14 @@ export class Router extends HTMLElement implements IRouter {
       await navigation.navigate(fullPath)?.finished;
     } else {
       history.pushState(null, '', fullPath);
-      await applyRoute(this, this.outlet, fullPath, this._path);
+      const committed = await applyRoute(this, this.outlet, fullPath, this._path);
+      // 修理・既定オン（docs/a11y-design.md §3-2）: Navigation API 経路の仕様既定
+      // （scroll: "after-transition" — push はトップへ）とフォールバック経路を揃える。
+      // guard 拒否（committed === false）では動かさない。_onPopState 側は
+      // history.scrollRestoration によるブラウザ復元が正解なので、決してスクロールしない。
+      if (committed) {
+        window.scrollTo(0, 0);
+      }
       this._notifyLocationChange();
     }
   }

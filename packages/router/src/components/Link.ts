@@ -6,9 +6,14 @@ import { normalizeBasename, normalizePathname } from "../normalizePathname";
 import { ILink } from "./types";
 import type { Router } from "./Router";
 
+// 生成 anchor へミラーする固定属性（docs/a11y-design.md §5）。`aria-*` は開集合なので
+// observedAttributes には載せられず、anchor 生成時の一括コピーのみ（接続後の動的
+// aria-* 変更 — data-wcs バインド経由を含む — には追従しない。README の明記された制限）。
+const MIRRORED_ATTRIBUTES: readonly string[] = ['title', 'rel', 'target', 'download', 'hreflang'];
+
 export class Link extends HTMLElement implements ILink {
   static get observedAttributes(): string[] {
-    return ['to'];
+    return ['to', ...MIRRORED_ATTRIBUTES];
   }
 
   private _childNodeArray: Node[] = [];
@@ -101,6 +106,13 @@ export class Link extends HTMLElement implements ILink {
     const nextSibling = this.nextSibling;
     const link = document.createElement('a');
     this._setAnchorHref(link, this._path);
+    // ホスト属性の転送: `aria-*` prefix + 固定 5 名の一括コピー。
+    // to / style / class は除外 — ホストは display:none であり、class は active 契約を持つ。
+    for (const attr of Array.from(this.attributes)) {
+      if (attr.name.startsWith('aria-') || MIRRORED_ATTRIBUTES.includes(attr.name)) {
+        link.setAttribute(attr.name, attr.value);
+      }
+    }
     for(const childNode of this._childNodeArray) {
       link.appendChild(childNode);
     }
@@ -165,6 +177,16 @@ export class Link extends HTMLElement implements ILink {
         this._setAnchorHref(this._anchorElement, this._path);
         this._updateActiveState();
       }
+    } else if (MIRRORED_ATTRIBUTES.includes(name)) {
+      // 固定名のみ接続後も追従する。anchor 生成前（upgrade 前発火）は何もしない。
+      const anchor = this._anchorElement;
+      if (anchor) {
+        if (newValue === null) {
+          anchor.removeAttribute(name);
+        } else {
+          anchor.setAttribute(name, newValue);
+        }
+      }
     }
   }
 
@@ -177,8 +199,12 @@ export class Link extends HTMLElement implements ILink {
     if (this._anchorElement) {
       if (currentPath === linkPath) {
         this._anchorElement.classList.add('active');
+        // 修理・既定オン（docs/a11y-design.md §3-3）: active class と同じ事実の ARIA 表現。
+        // 鮮度保証は active class と同一（同じ分岐・同じ呼び出し経路）。
+        this._anchorElement.setAttribute('aria-current', 'page');
       } else {
         this._anchorElement.classList.remove('active');
+        this._anchorElement.removeAttribute('aria-current');
       }
     }
   };

@@ -873,4 +873,124 @@ describe('Link', () => {
       }).not.toThrow();
     });
   });
+
+  describe('aria-current と属性転送 (a11y Phase 1)', () => {
+    it('パスが一致する場合に aria-current="page" が付き、外れると消えること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const link = document.createElement('wcs-link') as Link;
+      link.setAttribute('to', '/test');
+      link.textContent = 'Link';
+
+      const originalHref = Object.getOwnPropertyDescriptor(window.location, 'href');
+      Object.defineProperty(window.location, 'href', {
+        writable: true,
+        value: 'http://localhost/test',
+      });
+
+      document.body.appendChild(link);
+      const anchor = link.anchorElement;
+
+      // active class と同じ分岐で aria-current が付く (鮮度保証は同一)
+      expect(anchor?.classList.contains('active')).toBe(true);
+      expect(anchor?.getAttribute('aria-current')).toBe('page');
+
+      Object.defineProperty(window.location, 'href', {
+        writable: true,
+        value: 'http://localhost/other',
+      });
+      (link as any)._updateActiveState();
+
+      expect(anchor?.classList.contains('active')).toBe(false);
+      expect(anchor?.hasAttribute('aria-current')).toBe(false);
+
+      if (originalHref) {
+        Object.defineProperty(window.location, 'href', originalHref);
+      }
+    });
+
+    it('aria-* と固定 5 名 (title/rel/target/download/hreflang) が生成 anchor へコピーされること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const link = document.createElement('wcs-link') as Link;
+      link.setAttribute('to', '/test');
+      link.setAttribute('aria-label', 'About page');
+      link.setAttribute('aria-describedby', 'desc');
+      link.setAttribute('title', 'About');
+      link.setAttribute('rel', 'help');
+      link.setAttribute('target', '_self');
+      link.setAttribute('download', 'file.txt');
+      link.setAttribute('hreflang', 'en');
+      link.textContent = 'Link';
+      document.body.appendChild(link);
+
+      const anchor = link.anchorElement!;
+      expect(anchor.getAttribute('aria-label')).toBe('About page');
+      expect(anchor.getAttribute('aria-describedby')).toBe('desc');
+      expect(anchor.getAttribute('title')).toBe('About');
+      expect(anchor.getAttribute('rel')).toBe('help');
+      expect(anchor.getAttribute('target')).toBe('_self');
+      expect(anchor.getAttribute('download')).toBe('file.txt');
+      expect(anchor.getAttribute('hreflang')).toBe('en');
+    });
+
+    it('to / style / class は anchor へ転送しないこと', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const link = document.createElement('wcs-link') as Link;
+      link.setAttribute('to', '/test');
+      link.setAttribute('class', 'my-class');
+      link.textContent = 'Link';
+      document.body.appendChild(link);
+
+      const anchor = link.anchorElement!;
+      expect(anchor.hasAttribute('to')).toBe(false);
+      // class は active 契約を持つので転送しない
+      expect(anchor.classList.contains('my-class')).toBe(false);
+      // ホストの display:none (style) が anchor に乗ったらリンクが消える — 転送しない
+      expect(anchor.hasAttribute('style')).toBe(false);
+    });
+
+    it('固定名属性の接続後変更 (追加・削除) が anchor へミラーされること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const link = document.createElement('wcs-link') as Link;
+      link.setAttribute('to', '/test');
+      link.textContent = 'Link';
+      document.body.appendChild(link);
+
+      const anchor = link.anchorElement!;
+      link.setAttribute('title', 'later');
+      expect(anchor.getAttribute('title')).toBe('later');
+
+      link.removeAttribute('title');
+      expect(anchor.hasAttribute('title')).toBe(false);
+    });
+
+    it('接続後の動的 aria-* 変更は追従しないこと (明記された制限)', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const link = document.createElement('wcs-link') as Link;
+      link.setAttribute('to', '/test');
+      link.textContent = 'Link';
+      document.body.appendChild(link);
+
+      const anchor = link.anchorElement!;
+      link.setAttribute('aria-label', 'later');
+      // aria-* は開集合で observedAttributes に載せられない — 生成時コピーのみ
+      expect(anchor.hasAttribute('aria-label')).toBe(false);
+    });
+
+    it('anchor 生成前の固定名 attributeChangedCallback は何もしないこと (upgrade 前発火)', () => {
+      const link = document.createElement('wcs-link') as Link;
+      expect(() => {
+        link.attributeChangedCallback('title', null, 'x');
+      }).not.toThrow();
+    });
+  });
 });

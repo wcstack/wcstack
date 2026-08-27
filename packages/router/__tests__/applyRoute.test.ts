@@ -136,8 +136,10 @@ describe('applyRoute', () => {
     vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
     vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
     
-    await applyRoute(router, outlet, '/page', '/previous');
-    
+    const committed = await applyRoute(router, outlet, '/page', '/previous');
+
+    // commit を返す (フォールバック経路のスクロール等のゲートに使われる)
+    expect(committed).toBe(true);
     expect(router.path).toBe('/page');
     expect(outlet.lastRoutes).toEqual([mockRoute]);
     expect(matchResult.lastPath).toBe('/previous');
@@ -288,8 +290,10 @@ describe('applyRoute', () => {
     const pathChangedListener = vi.fn();
     router.addEventListener('wcs-router:path-changed', pathChangedListener);
 
-    await applyRoute(router, outlet, '/blocked', '/initial');
+    const committed = await applyRoute(router, outlet, '/blocked', '/initial');
 
+    // committed=false が呼び出し側へ見える (D4: guard 拒否では何もしない)
+    expect(committed).toBe(false);
     // path / lastRoutes は更新されない
     expect(router.path).toBe('/initial');
     expect(outlet.lastRoutes).toEqual([prevRoute]);

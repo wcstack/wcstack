@@ -294,12 +294,16 @@ Link. Converted to an `<a>`, and the route path in the `to` attribute is convert
 |------|------|
 | `to` | Destination path or URL. Paths starting with `/` are treated as internal paths (basename is prepended). Other values are treated as external URLs. |
 
-**Active state**: The generated `<a>` receives the `active` class when its path matches the current location. Tracking is updated on navigation events (`currententrychange`, `wcs:navigate`, `popstate`).
+**Active state**: The generated `<a>` receives the `active` class when its path matches the current location, and `aria-current="page"` alongside it — the same fact, expressed in ARIA, so screen readers announce the current page in navigation. Tracking is updated on navigation events (`currententrychange`, `wcs:navigate`, `popstate`).
 
 ```css
 /* Style active links */
 a.active { font-weight: bold; color: blue; }
 ```
+
+**Attribute forwarding**: when the `<a>` is generated, all `aria-*` attributes plus five fixed names (`title`, `rel`, `target`, `download`, `hreflang`) are copied from the host to the anchor. `to`, `style`, and `class` are never forwarded (the host is `display:none`, and `class` carries the `active` contract). After connection, only the five fixed names keep tracking changes; **dynamic `aria-*` changes do not reach the anchor** — this includes `data-wcs` bindings such as `<wcs-link data-wcs="attr.aria-label: ...">`, which write to the host after the copy has happened. Write `aria-*` on `<wcs-link>` as static attributes.
+
+**Plain `<a>` note**: in browsers with the Navigation API, a plain `<a href="/about">` under the basename also becomes an SPA navigation (the router intercepts it). This does not hold in fallback browsers, where only `<wcs-link>`'s click handler provides SPA navigation — so `<wcs-link>` remains the recommendation.
 
 ## Auto-Binding (`data-bind`)
 
@@ -376,7 +380,7 @@ The router delegates scroll and focus handling to the browser wherever the platf
 
 These are the specification defaults; writing them out records the delegation as intent. Changing either to `"manual"` is a change to this contract, not a refactor.
 
-**Fallback path** (browsers without the Navigation API): navigation runs through `history.pushState` plus a `popstate` listener. Back/forward scroll restoration is the browser's `history.scrollRestoration` (default `auto`), so the router never scrolls on `popstate`.
+**Fallback path** (browsers without the Navigation API): navigation runs through `history.pushState` plus a `popstate` listener. After a committed push navigation the router scrolls to the top, matching the Navigation API default; a navigation rejected by a route guard does not scroll. Back/forward scroll restoration is the browser's `history.scrollRestoration` (default `auto`), so the router never scrolls on `popstate`.
 
 See [docs/a11y-design.md](https://github.com/wcstack/wcstack/blob/main/docs/a11y-design.md) §3 for the design record.
 
