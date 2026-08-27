@@ -14,6 +14,7 @@ import { collectErrors } from "./helpers";
 // を実ブラウザで踏める。この成立を固定し、Phase 1 の A3 の土台にする。
 
 const FIXTURE = "/e2e/fixtures/router-a11y.html";
+const OPTIN_FIXTURE = "/e2e/fixtures/router-a11y-optin.html";
 
 test.describe("router-a11y — Navigation API 経路の仕様既定 (A1/A2)", () => {
   test("push 遷移後にスクロールがトップへ戻り、フォーカスが body へリセットされる", async ({ page }) => {
@@ -126,5 +127,38 @@ test.describe("router-a11y — フォールバック経路の強制 (T0-4)", () 
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(1000);
     expect(errors).toEqual([]);
     await context.close();
+  });
+});
+
+test.describe("router-a11y — オプトインの focus= / announce= (A9/A10)", () => {
+  test("遷移後に live region へ新 title が入り、リーフの見出しへフォーカスする", async ({ page }) => {
+    const errors = collectErrors(page);
+    await page.goto(OPTIN_FIXTURE);
+    await expect(page.locator("#home-h")).toBeVisible();
+    const region = page.locator('wcs-router > div[role="status"]');
+    // 初回描画では announce しない（ページロードはブラウザの担当）
+    await expect(region).toHaveText("");
+    // wcs-head は初回から効いている
+    await expect(page).toHaveTitle("Home — a11y fixture");
+
+    await page.getByRole("link", { name: "about" }).click();
+    await expect(page.locator("#about-h")).toBeVisible();
+    // announce="title": commit 時の document.title のスナップショット（D2）
+    await expect(page).toHaveTitle("About — a11y fixture");
+    await expect(region).toHaveText("About — a11y fixture");
+    // focus="heading": リーフ内容の最初の見出しへ（focusReset は manual なので
+    // ブラウザの body リセットに上書きされない）
+    await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe("about-h");
+    expect(
+      await page.evaluate(() => document.activeElement?.getAttribute("tabindex")),
+    ).toBe("-1");
+
+    // traverse（back）でも同じポリシーが効く
+    await page.goBack();
+    await expect(page.locator("#home-h")).toBeVisible();
+    await expect(region).toHaveText("Home — a11y fixture");
+    await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe("home-h");
+
+    expect(errors).toEqual([]);
   });
 });

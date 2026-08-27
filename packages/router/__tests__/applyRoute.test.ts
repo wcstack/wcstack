@@ -300,4 +300,98 @@ describe('applyRoute', () => {
     // 拒否されたパスでの path-changed イベントは発火されない
     expect(pathChangedListener).not.toHaveBeenCalled();
   });
+
+  describe('a11y ポリシー適用 (commit 後フック・docs/a11y-design.md §3-4)', () => {
+    function setupA11yRouter(attrs: Record<string, string>) {
+      const router = document.createElement('wcs-router') as Router;
+      for (const [name, value] of Object.entries(attrs)) {
+        router.setAttribute(name, value);
+      }
+      document.body.appendChild(router);
+      const region = document.createElement('div');
+      router.appendChild(region);
+      (router as any)._a11yRegion = region;
+      const outlet = document.createElement('wcs-outlet') as Outlet;
+      return { router, region, outlet };
+    }
+
+    function matchResultWith(routes: unknown[]) {
+      return {
+        path: '/page',
+        routes: routes as Route[],
+        params: {},
+        typedParams: {},
+        lastPath: ''
+      };
+    }
+
+    it('commit 後に announce="title" で live region へ document.title が入ること', async () => {
+      const { router, region, outlet } = setupA11yRouter({ announce: 'title' });
+      outlet.lastRoutes = [{} as Route]; // 初回描画ではない
+
+      vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(
+        matchResultWith([{ childNodeArray: [] }])
+      );
+      vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+      document.title = 'After Nav';
+
+      await applyRoute(router, outlet, '/page', '/prev');
+
+      expect(region.textContent).toBe('After Nav');
+      document.title = '';
+    });
+
+    it('初回描画 (lastRoutes が空) では announce しないこと (§3-5)', async () => {
+      const { router, region, outlet } = setupA11yRouter({ announce: 'title' });
+      outlet.lastRoutes = [];
+
+      vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(
+        matchResultWith([{ childNodeArray: [] }])
+      );
+      vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+      document.title = 'Initial Load';
+
+      await applyRoute(router, outlet, '/page', '');
+
+      expect(region.textContent).toBe('');
+      document.title = '';
+    });
+
+    it('guard 拒否では announce も focus も動かないこと (D4)', async () => {
+      const h1 = document.createElement('h1');
+      document.body.appendChild(h1);
+      const { router, region, outlet } = setupA11yRouter({ announce: 'title', focus: 'heading' });
+      outlet.lastRoutes = [{} as Route];
+
+      vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(
+        matchResultWith([{ childNodeArray: [h1] }])
+      );
+      vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(false);
+      document.title = 'Blocked';
+
+      await applyRoute(router, outlet, '/blocked', '/prev');
+
+      expect(region.textContent).toBe('');
+      expect(h1.hasAttribute('tabindex')).toBe(false);
+      document.title = '';
+    });
+
+    it('commit 後に focus="heading" でリーフ route の見出しへフォーカスすること', async () => {
+      const h1 = document.createElement('h1');
+      document.body.appendChild(h1);
+      const { router, outlet } = setupA11yRouter({ focus: 'heading' });
+      outlet.lastRoutes = [{} as Route];
+
+      // routes はチェーン（親→リーフ）。リーフの内容だけが探索される
+      vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(
+        matchResultWith([{ childNodeArray: [] }, { childNodeArray: [h1] }])
+      );
+      vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+
+      await applyRoute(router, outlet, '/page', '/prev');
+
+      expect(h1.getAttribute('tabindex')).toBe('-1');
+      expect(document.activeElement).toBe(h1);
+    });
+  });
 });

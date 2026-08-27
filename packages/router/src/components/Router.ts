@@ -60,9 +60,48 @@ export class Router extends HTMLElement implements IRouter {
   private _navigateUrl: string | null = null;
   private _disconnectedDuringInit: boolean = false;
   private _initializing: boolean = false;
+  private _a11yRegion: HTMLElement | null = null;
 
   constructor() {
     super();
+  }
+
+  get a11yRegion(): HTMLElement | null {
+    return this._a11yRegion;
+  }
+
+  get focusPolicy(): string | null {
+    return this.getAttribute('focus');
+  }
+
+  get announcePolicy(): string | null {
+    return this.getAttribute('announce');
+  }
+
+  /**
+   * `announce=` 用 live region を <wcs-router> 直下に空のまま用意する
+   * （docs/a11y-design.md §3-4）。
+   * - 告知より**前**から DOM に居ないと SR に読まれないため、announce 時の
+   *   遅延生成はできない。
+   * - outlet 配下はナビゲーションごとに破棄され、オプトインで shadow root にも
+   *   なる。document.body 直下は router の寿命を超えて漏れ、マルチ router で
+   *   競合する。よって配置は <wcs-router> 直下の一択。
+   * - display:none は live region を殺すため、sr-only クリップで隠す。
+   */
+  private _ensureA11yRegion(): void {
+    if (this._a11yRegion !== null) {
+      return;
+    }
+    const region = document.createElement('div');
+    region.setAttribute('role', 'status');
+    region.style.position = 'absolute';
+    region.style.width = '1px';
+    region.style.height = '1px';
+    region.style.overflow = 'hidden';
+    region.style.clipPath = 'inset(50%)';
+    region.style.whiteSpace = 'nowrap';
+    this.appendChild(region);
+    this._a11yRegion = region;
   }
 
   /**
@@ -257,7 +296,9 @@ export class Router extends HTMLElement implements IRouter {
       // router のアクセシビリティ契約であり、ここを "manual" に変える変更は
       // 契約の変更にあたる（docs/a11y-design.md §3-1）。
       scroll: "after-transition",
-      focusReset: "after-transition",
+      // focus= 指定時のみ manual。渡さないと router のフォーカス移動とブラウザの
+      // after-transition リセットが二重処理になる（docs/a11y-design.md §3-5）。
+      focusReset: routesNode.focusPolicy !== null ? "manual" : "after-transition",
     });
   }
 
@@ -295,6 +336,8 @@ export class Router extends HTMLElement implements IRouter {
       if (this.routeChildNodes.length === 0) {
         raiseError(`${config.tagNames.router} has no route definitions.`);
       }
+      // 最初のナビゲーションより十分前に accessibility tree へ載せておく
+      this._ensureA11yRegion();
 
       const fullPath = this._normalizePathname(window.location.pathname);
       await applyRoute(this, this.outlet, fullPath, this._path);
@@ -316,6 +359,11 @@ export class Router extends HTMLElement implements IRouter {
       if (this._disconnectedDuringInit) {
         return;
       }
+    }
+    // 再接続時は disconnect で撤去された live region を回復する
+    // （初回接続では _initialize が生成済みなので no-op）
+    if (this._initialized) {
+      this._ensureA11yRegion();
     }
     const navigation = getNavigation();
     if (navigation && !this._listeningNavigate) {
@@ -341,6 +389,11 @@ export class Router extends HTMLElement implements IRouter {
     if (this._listeningPopState) {
       window.removeEventListener("popstate", this._onPopState);
       this._listeningPopState = false;
+    }
+    // live region は router の寿命に同期して撤去する（body 直下に置かない理由と同根）
+    if (this._a11yRegion !== null) {
+      this._a11yRegion.remove();
+      this._a11yRegion = null;
     }
   }
 }

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: router opt-in focus / announce</title>
+  <!-- Phase 3 of docs/a11y-impl-plan.md (T3-5): the opt-in policies.
+       focus="heading" moves focus to the leaf route's first heading after
+       commit; announce="title" writes the commit-time document.title snapshot
+       into the router-owned live region. Both are attribute opt-ins — the
+       sibling fixture router-a11y.html pins that WITHOUT these attributes the
+       browser defaults stay in charge. -->
+  <script type="module" src="/packages/router/dist/auto.min.js"></script>
+</head>
+<body>
+  <nav>
+    <wcs-link to="/">home</wcs-link>
+    <wcs-link to="/about">about</wcs-link>
+  </nav>
+
+  <wcs-router basename="/e2e/fixtures" focus="heading" announce="title">
+    <template>
+      <wcs-route path="/">
+        <wcs-head>
+          <title>Home — a11y fixture</title>
+        </wcs-head>
+        <h1 id="home-h">Home</h1>
+        <p>home body</p>
+      </wcs-route>
+      <wcs-route path="/about">
+        <wcs-head>
+          <title>About — a11y fixture</title>
+        </wcs-head>
+        <h1 id="about-h">About</h1>
+        <p>about body</p>
+      </wcs-route>
+    </template>
+  </wcs-router>
+</body>
+</html>

@@ -122,6 +122,8 @@
 | 属性 | 説明 |
 |------|------|
 | `basename` | サブフォルダのURLでルーティングする場合に、サブフォルダを指定。サブフォルダで動作させない場合は、指定不要 |
+| `focus` | commit したナビゲーション後に適用するオプトインのフォーカスポリシー。`"heading"` でリーフ route 内容の最初の見出しへフォーカス。「アクセシビリティ契約」参照 |
+| `announce` | オプトインのルート告知。`"title"` で commit 時点の `document.title` スナップショットを router 保有の live region へ書き込む。「アクセシビリティ契約」参照 |
 
 ### Route(wcs-route)
 
@@ -381,6 +383,11 @@ router は、プラットフォームが既に正しく行うことについて�
 これらは仕様の既定値であり、明示は委譲が意図であることの記録。どちらかを `"manual"` に変える変更はリファクタではなくこの契約の変更にあたる。
 
 **フォールバック経路**（Navigation API の無いブラウザ）: ナビゲーションは `history.pushState` + `popstate` リスナで動く。commit した push 遷移の後は router がページ先頭へスクロールし、Navigation API の既定と揃える。route guard に拒否された遷移ではスクロールしない。戻る/進むのスクロール復元はブラウザの `history.scrollRestoration`（既定 `auto`）の仕事なので、router は `popstate` では決してスクロールしない。
+
+**オプトインのポリシー** — `<wcs-router focus="heading" announce="title">`。どちらも既定はオフで、属性が無ければ上記のブラウザ挙動がすべて。どちらも commit したナビゲーションの直後にだけ走り、最初のルート適用（ページロードはブラウザの担当）と guard 拒否されたナビゲーションでは決して動かない。
+
+- `focus="heading"`: **リーフ** route が挿入した内容の最初の `h1`〜`h6` へフォーカスを移す（見出しに tabindex が無ければ `tabindex="-1"` を付与）。指定中は Navigation API 経路で `focusReset: "manual"` を渡し、ブラウザ既定のリセットとの二重処理を防ぐ。新しい内容に見出しが無ければ何もしない — オプトインするなら各ルートに見出しを置くこと。
+- `announce="title"`: commit 時点の `document.title` のスナップショットを router 保有の live region（`role="status"`・視覚的にクリップ・`<wcs-router>` 直下・router ごとに 1 つ）へ書き込む。既知の制限: バインド title（`<title data-wcs>`）は commit 時点で古いことがあり、ナビゲーション外の title 変化は再読み上げされない。
 
 設計の記録は [docs/a11y-design.md](https://github.com/wcstack/wcstack/blob/main/docs/a11y-design.md) §3 を参照。
 
