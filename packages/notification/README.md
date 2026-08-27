@@ -287,6 +287,10 @@ notify.dispose();                // detach subscriptions (open notifications sta
 
 The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
 
+## Accessibility
+
+**WCAG 2.2.1 Timing Adjustable**: a desktop notification is timed content — the OS decides how long it stays visible, and the user may miss it entirely (permission denied, do-not-disturb, or simply looking elsewhere). Never make a notification the *only* place information appears: mirror it in the page (a `role="log"` line, as [`examples/state-notification-chat`](https://github.com/wcstack/wcstack/tree/main/examples/state-notification-chat) does), and let the user reach the same content or action later. `requireInteraction` in the `notify` options keeps a notification on screen until dismissed where the platform honors it — use it when the content genuinely must not expire.
+
 ## License
 
 MIT

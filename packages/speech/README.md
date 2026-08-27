@@ -266,6 +266,10 @@ core.speak("Hello, world.");
 
 The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
 
+## Accessibility
+
+**WCAG 1.4.2 Audio Control (Level A)**: synthesized speech is audio — if it can start without a user action or run long, give the user a visible way to silence it (`<wcs-speak>`'s `pause` / `cancel` commands), independent of system volume. Synthesized speech also collides head-on with a screen reader's own voice: never use `<wcs-speak>` as a substitute for proper markup that the user's own reader would announce (their reader speaks in the voice, speed, and language *they* chose). For recognition, `<wcs-listen>` is an input method — treat it like the motion sensors: always a parallel input (typing) for the same action, and a visible way to stop the microphone (`stop` / `abort`).
+
 ## License
 
 MIT

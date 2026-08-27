@@ -285,6 +285,10 @@ notify.dispose();                // 購読を解除（開いている通知は�
 
 Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 
+## アクセシビリティ
+
+**WCAG 2.2.1 Timing Adjustable（調整可能な制限時間）**: デスクトップ通知は時限コンテンツである — 表示時間は OS が決め、ユーザーは丸ごと見逃しうる（権限拒否・集中モード・単に他所を見ていた）。情報の*唯一の*置き場を通知にしてはならない: ページ内にミラーし（[`examples/state-notification-chat`](https://github.com/wcstack/wcstack/tree/main/examples/state-notification-chat) の `role="log"` 行のように）、同じ内容・操作へ後からも到達できるようにする。`notify` オプションの `requireInteraction` は、プラットフォームが尊重する環境では通知を閉じるまで表示し続ける — 本当に失効してはならない内容にはこれを使う。
+
 ## ライセンス
 
 MIT

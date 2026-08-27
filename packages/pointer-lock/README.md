@@ -211,6 +211,10 @@ lock.dispose();          // detach the document listener
 
 The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
 
+## Accessibility
+
+**WCAG 2.1.2 No Keyboard Trap**: the browser guarantees that Esc always releases the pointer lock — never repurpose or intercept that key. But a guaranteed escape hatch the user does not know about is only half an escape hatch: tell the user how to leave *before* the lock engages, and offer an in-app exit as well (a visible control wired to the `exitPointerLock` command). While locked, keep any instructions readable without pointer interaction.
+
 ## License
 
 MIT

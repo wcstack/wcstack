@@ -675,6 +675,10 @@ bootstrapWebSocket({
 - 自動再接続は異常切断時のみ発動（コード 1000 以外）
 - **`errorInfo` タクソノミ**: `error` に現れるのと同じ失敗を、シリアライズ可能な `WcsIoErrorInfo`（安定した `code` / `phase` / `recoverable`）に分類する**追加的な**バインド可能出力（`wcs-ws:error-info-changed`）です。`error` の形状は変えません。`url` を指定しない `connect()` は `invalid-argument`（phase `start`、回復不可）、open 前の `send()` は `invalid-state`（phase `execute`、回復不可——先に connect が必要）、`new WebSocket()` の構築例外またはプラットフォームの `error` Event は `connection-error`（phase `execute`、**`recoverable: true`**——接続エラーは通常一過性で、再接続で回復しうる）です。`errorInfo` は `error` と同じタイミングで遷移し（`error` と共にクリアされる）ます。共有の `WcsIoErrorInfo` 型と `WCS_WEBSOCKET_ERROR_CODE` 定数は export 済みです。
 
+## アクセシビリティ
+
+**WCAG 2.2.2 Pause, Stop, Hide（一時停止・停止・非表示）**: 見えるコンテンツを書き換え続けるライブフィードには、ユーザーが使える一時停止が要る。部品はこのタグに揃っている — `close` でストリームが止まり、`connect` で再開する — ので、基準のコストはそこへ配線した可視のトグル 1 つ。一時停止では*更新*を止め、読むために止めた内容を消さないこと。追記型のメッセージログにはコンテナへの `role="log"`（[`examples/websocket-chat`](https://github.com/wcstack/wcstack/tree/main/examples/websocket-chat) と同様）で、新着がスクリーンリーダーに polite に読まれる。
+
 ## ライセンス
 
 MIT

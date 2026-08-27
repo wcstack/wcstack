@@ -190,6 +190,10 @@ Each `sample()` returns a **freshly allocated** array, so retaining a frame is s
 - **Units**: `glide` in seconds, `detune` in cents, `transpose` in semitones, `time` in seconds.
 - **SSR**: there is no `AudioContext` on a server, so the state is `unsupported` and the tags render nothing.
 
+## Accessibility
+
+**WCAG 1.4.2 Audio Control (Level A)**: audio that plays automatically for more than 3 seconds needs a mechanism to pause, stop, or mute it, independent of system volume — a screen-reader user has to hear their reader *over* your audio. In practice the browser's autoplay policy already pushes you the right way (a context starts suspended until a gesture); keep it that way: start sound from an explicit user action, and wire a visible stop control to the `suspend` command (or `allNotesOff` to silence voices while keeping the graph alive). `resume` brings it back.
+
 ## License
 
 MIT

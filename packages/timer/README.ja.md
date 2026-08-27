@@ -232,6 +232,10 @@ timer.start({ interval: 1000, repeat: 10 });
 
 Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 
+## アクセシビリティ
+
+**WCAG 2.2.2 Pause, Stop, Hide（一時停止・停止・非表示）**: 他のコンテンツと並んで自動更新されるコンテンツには、ユーザーが使える一時停止が要る。部品はこのタグに揃っている — `pause` / `resume` / `stop` は第一級のコマンド — ので、基準を満たすのに必要なのはそこへ配線した可視のコントロール 1 つ（`command.pause: $command.…` か、要素メソッドを呼ぶクリックハンドラ）。`<wcs-timer>` がティッカー・カルーセル・カウントダウンなど見えるものを駆動しているなら、そのコントロールをユーザーに渡すこと。
+
 ## ライセンス
 
 MIT
