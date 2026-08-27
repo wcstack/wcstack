@@ -117,11 +117,14 @@ describe('getAll', () => {
     setListIndexesByList(list, [listIndex0, listIndex1]);
 
     // lastAddressStack にワイルドカードパスのコンチE��ストを設宁E
+    // indexByWildcardPath のキーはワイルドカードパス自身（'items.*'）。
+    // 以前は 'items'（親パス）でモックしており、実 PathInfo が生成しない形で
+    // 文脈解決を「成功」させて本番の取り違えを隠していた。
     const contextListIndex = createListIndex(null, 0);
     const lastAddress = {
       pathInfo: {
         path: 'items.*.name',
-        indexByWildcardPath: { 'items': 0 },
+        indexByWildcardPath: { 'items.*': 0 },
         wildcardCount: 1,
       },
       listIndex: contextListIndex,
@@ -412,5 +415,80 @@ describe('getAll', () => {
     const result = getAllFn('name');
 
     expect(result).toEqual(['hello']);
+  });
+
+  it('indexes 省略時、path と共有の無いループ文脈が添字を持つ場合はエラーになること', () => {
+    mockStateElement = createStateElement();
+    setStateElementByName(document, 'default', mockStateElement);
+
+    // 文脈は others.* のループ（添字あり）だが、path 'items.*' とは共有ゼロ。
+    // 既定の [...$n] は異なる文脈の添字の流用になるため throw する
+    const contextListIndex = createListIndex(null, 2);
+    const lastAddress = {
+      pathInfo: {
+        path: 'others.*.x',
+        indexByWildcardPath: { 'others.*': 0 },
+        wildcardCount: 1,
+      },
+      listIndex: contextListIndex,
+    };
+    const handler = createHandler(mockStateElement, { addressStackLength: 1, lastAddressStack: lastAddress });
+    const target = {};
+
+    const getAllFn = getAll(target, '$getAll', target, handler as any);
+    expect(() => getAllFn('items.*')).toThrow(/shares no wildcard level/);
+  });
+
+  it('indexes 省略時、文脈が path より深い場合は共有分に切り詰められること', () => {
+    mockStateElement = createStateElement();
+    setStateElementByName(document, 'default', mockStateElement);
+
+    const list = ['a', 'b'];
+    const li0 = createListIndex(null, 0);
+    const li1 = createListIndex(null, 1);
+    setListIndexesByList(list, [li0, li1]);
+
+    // 2 段ループの文脈 [1, 0]。path 'items.*' と共有するのは外側 'items.*' の 1 段だけ
+    const innerListIndex = createListIndex(li1, 0);
+    const lastAddress = {
+      pathInfo: {
+        path: 'items.*.sub.*.y',
+        indexByWildcardPath: { 'items.*': 0, 'items.*.sub.*': 1 },
+        wildcardCount: 2,
+      },
+      listIndex: innerListIndex,
+    };
+    const handler = createHandler(mockStateElement, { addressStackLength: 1, lastAddressStack: lastAddress });
+    const target = {};
+
+    getByAddressMock
+      .mockReturnValueOnce(list)       // walkWildcardPattern
+      .mockReturnValueOnce(list)       // resolve
+      .mockReturnValueOnce('b');       // resolve: items.* index=1
+
+    const getAllFn = getAll(target, '$getAll', target, handler as any);
+    expect(getAllFn('items.*')).toEqual(['b']);
+  });
+
+  it('ワイルドカード無しのパスはループ文脈があってもエラーにならないこと', () => {
+    mockStateElement = createStateElement();
+    setStateElementByName(document, 'default', mockStateElement);
+
+    const contextListIndex = createListIndex(null, 0);
+    const lastAddress = {
+      pathInfo: {
+        path: 'others.*.x',
+        indexByWildcardPath: { 'others.*': 0 },
+        wildcardCount: 1,
+      },
+      listIndex: contextListIndex,
+    };
+    const handler = createHandler(mockStateElement, { addressStackLength: 1, lastAddressStack: lastAddress });
+    const target = {};
+
+    getByAddressMock.mockReturnValueOnce('hello');
+
+    const getAllFn = getAll(target, '$getAll', target, handler as any);
+    expect(getAllFn('name')).toEqual(['hello']);
   });
 });

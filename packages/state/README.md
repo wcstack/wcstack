@@ -769,19 +769,20 @@ export default {
          + this["regions.*.prefectures.*.cities.*.name"];
   },
 
-  // Prefecture level — aggregate from cities
+  // Prefecture level — aggregate from cities. `indexes` omitted: it defaults to
+  // the loop context ([$1, $2]), so only this prefecture's cities are summed
   get "regions.*.prefectures.*.totalPopulation"() {
-    return this.$getAll("regions.*.prefectures.*.cities.*.population", [])
+    return this.$getAll("regions.*.prefectures.*.cities.*.population")
       .reduce((a, b) => a + b, 0);
   },
 
-  // Region level — aggregate from prefectures
+  // Region level — aggregate from prefectures (context [$1] narrows to this region)
   get "regions.*.totalPopulation"() {
-    return this.$getAll("regions.*.prefectures.*.totalPopulation", [])
+    return this.$getAll("regions.*.prefectures.*.totalPopulation")
       .reduce((a, b) => a + b, 0);
   },
 
-  // Top level — aggregate from regions
+  // Top level — no loop context; [] means "every match"
   get totalPopulation() {
     return this.$getAll("regions.*.totalPopulation", [])
       .reduce((a, b) => a + b, 0);
@@ -968,6 +969,24 @@ export default {
   }
 };
 ```
+
+`indexes` is a **prefix** over the path's wildcards: missing levels expand fully, and `[]` always means "every match". When `indexes` is **omitted**, it defaults to the enclosing loop context (`[$1, $2, ...]`), applied to the wildcard levels the path shares with that context:
+
+```javascript
+export default {
+  regions: [ /* { prefectures: [ { population: … }, … ] } */ ],
+  // Loop context [$1] — omission narrows to the current region
+  get "regions.*.total"() {
+    return this.$getAll("regions.*.prefectures.*.population").reduce((a, b) => a + b, 0);
+  },
+  // No loop context — omission expands everything (same as [])
+  get grandTotal() {
+    return this.$getAll("regions.*.total").reduce((a, b) => a + b, 0);
+  }
+};
+```
+
+Context levels deeper than the path needs are dropped (a `[$1, $2]` context narrows a one-wildcard path by `[$1]`). But if the path shares **no** wildcard level with a context that does hold loop indexes — say `$getAll("users.*.name")` inside a `regions.*` getter — `$getAll` **throws** instead of silently reading every user: the context indexes belong to a different list, and neither reusing nor ignoring them is what the author meant. Pass indexes explicitly there (`[]` for every match).
 
 #### `$setAll` — Update Every Array Element In Place
 

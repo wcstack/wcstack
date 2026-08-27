@@ -769,19 +769,20 @@ export default {
          + this["regions.*.prefectures.*.cities.*.name"];
   },
 
-  // 県レベル — 市からの集約
+  // 県レベル — 市からの集約。`indexes` 省略時はループ文脈（[$1, $2]）が
+  // 既定になるので、この県の市だけが合計される
   get "regions.*.prefectures.*.totalPopulation"() {
-    return this.$getAll("regions.*.prefectures.*.cities.*.population", [])
+    return this.$getAll("regions.*.prefectures.*.cities.*.population")
       .reduce((a, b) => a + b, 0);
   },
 
-  // 地方レベル — 県からの集約
+  // 地方レベル — 県からの集約（文脈 [$1] でこの地方に絞られる）
   get "regions.*.totalPopulation"() {
-    return this.$getAll("regions.*.prefectures.*.totalPopulation", [])
+    return this.$getAll("regions.*.prefectures.*.totalPopulation")
       .reduce((a, b) => a + b, 0);
   },
 
-  // トップレベル — 地方からの集約
+  // トップレベル — ループ文脈なし。[] は「マッチ全件」
   get totalPopulation() {
     return this.$getAll("regions.*.totalPopulation", [])
       .reduce((a, b) => a + b, 0);
@@ -967,6 +968,24 @@ export default {
   }
 };
 ```
+
+`indexes` はパスの `*` に対する**前方一致の接頭辞**です。不足した階層は全展開され、`[]` は常に「マッチ全件」を意味します。**省略**した場合はループ文脈の添字（`[$1, $2, ...]`）が既定になり、パスが文脈と共有するワイルドカード階層に敷かれます：
+
+```javascript
+export default {
+  regions: [ /* { prefectures: [ { population: … }, … ] } */ ],
+  // ループ文脈 [$1] — 省略すると現在の地方に絞られる
+  get "regions.*.total"() {
+    return this.$getAll("regions.*.prefectures.*.population").reduce((a, b) => a + b, 0);
+  },
+  // ループ文脈なし — 省略は全展開（[] と同じ）
+  get grandTotal() {
+    return this.$getAll("regions.*.total").reduce((a, b) => a + b, 0);
+  }
+};
+```
+
+文脈がパスより深い分は切り詰められます（`[$1, $2]` の文脈は `*` 1 本のパスを `[$1]` で絞ります）。一方、文脈がループ添字を持っているのにパスと**ワイルドカード階層をまったく共有しない**場合 —— たとえば `regions.*` の getter 内での `$getAll("users.*.name")` —— は、黙って全 users を読む代わりに **throw** します。文脈の添字は別のリストのものであり、流用しても無視しても書き手の意図とは食い違うためです。この形では添字を明示してください（全件なら `[]`）。
 
 #### `$setAll` — 配列要素を作り直さずに一括更新
 
