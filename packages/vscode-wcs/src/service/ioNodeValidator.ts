@@ -227,8 +227,12 @@ function normalizeSeed(raw: string): string {
   return compact === '' ? raw : compact;
 }
 
-/** 編集距離 2 以内の最近傍メンバーを「もしかして」として提示する。 */
-function suggestion(input: string, candidates: readonly string[], msgs: WcsMessageCatalog): string {
+/**
+ * 編集距離 2 以内の最近傍メンバーを「もしかして」として提示する。
+ * （ariaValidator が同一ヘルパを共有するため export — 独自実装すると
+ * 「もしかして」の距離基準が validator ごとに割れる。）
+ */
+export function suggestion(input: string, candidates: readonly string[], msgs: WcsMessageCatalog): string {
   let best: string | null = null;
   let bestDistance = 3;
   for (const c of candidates) {

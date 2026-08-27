@@ -82,6 +82,8 @@ export interface WcsMessageCatalog {
   tagCommandUnknown(name: string, tag: string, declared: string): string;
   spreadNoBindable(tag: string): string;
   tagEventTokenKeyUnknown(name: string, tag: string, declared: string): string;
+  /** `attr.aria-*` の属性名が WAI-ARIA に存在しない（ariaValidator）。 */
+  ariaAttrUnknown(name: string): string;
   /** 最近傍候補の「もしかして」suffix。 */
   didYouMean(candidate: string): string;
   /** 宣言済みメンバーが空のときの placeholder。 */
@@ -152,6 +154,8 @@ const ja: WcsMessageCatalog = {
     `'...'（spread）は <${tag}> に有効な wcBindable 宣言が必要です — このタグは宣言を持たないため、ランタイムはエラーを送出します`,
   tagEventTokenKeyUnknown: (name, tag, declared) =>
     `eventToken のキー "${name}" は <${tag}> の wcBindable プロパティではありません。生 DOM イベント名は発火しません — プロパティ名を指定してください（宣言済み: ${declared}）`,
+  ariaAttrUnknown: (name) =>
+    `"${name}" は WAI-ARIA の属性ではありません。setAttribute はそのまま書き込みますが、支援技術には黙って無視されます`,
   didYouMean: (c) => `。もしかして: "${c}"`,
   none: () => `なし`,
   triggerSeededTruthy: (path) =>
@@ -224,6 +228,8 @@ const en: WcsMessageCatalog = {
     `'...' (spread) requires <${tag}> to expose a valid wcBindable declaration — this tag declares none, so the runtime raises an error`,
   tagEventTokenKeyUnknown: (name, tag, declared) =>
     `eventToken key "${name}" is not a wcBindable property of <${tag}>. Raw DOM event names never fire — use the property name (declared: ${declared})`,
+  ariaAttrUnknown: (name) =>
+    `"${name}" is not a WAI-ARIA attribute. setAttribute writes it anyway, and assistive technology silently ignores it`,
   didYouMean: (c) => `. Did you mean "${c}"?`,
   none: () => `none`,
   triggerSeededTruthy: (path) =>
