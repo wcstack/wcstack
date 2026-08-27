@@ -219,6 +219,21 @@ export function indexArityMessage(
 }
 
 /**
+ * `$getAll(path)`（添字省略）の既定値はループ文脈の添字 `[$1..$n]` だが、それを
+ * 敷けるのは path と文脈がワイルドカード連鎖を共有している場合だけ。共有ゼロなのに
+ * 文脈が添字を持っている場合、黙って全展開に倒すと「文脈で絞られている」という
+ * 書き手の期待と食い違い、異なる文脈の添字の流用とも区別が付かないため throw する。
+ *
+ * 実行時の評価文脈に依存する（`$setAll` の spread 長と同種）ので lint へは誘導しない。
+ */
+export function getAllContextMismatchMessage(path: string, contextPath: string): string {
+  return `$getAll("${path}") was called without indexes inside the loop context of ` +
+    `"${contextPath}", but the path shares no wildcard level with that context, ` +
+    `so the context indexes ($1..$n) do not apply. ` +
+    `Pass indexes explicitly ([] expands every level).`;
+}
+
+/**
  * `$setAll(path, indexes, values, { spread: true })` の配列長がマッチ件数と噛み合わない。
  *
  * 静的には件数が分からない（実行時のリスト長に依存する）ので lint へは誘導しない。
