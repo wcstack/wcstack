@@ -537,6 +537,86 @@ describe('Router', () => {
     });
   });
 
+  describe('a11y live region (docs/a11y-design.md §3-4)', () => {
+    it('_initializeで<wcs-router>直下に空のrole="status"リージョンを生成すること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      router.setAttribute('basename', '/app');
+      const template = document.createElement('template');
+      template.innerHTML = '<div>content</div>';
+      router.appendChild(template);
+
+      const fragment = document.createDocumentFragment();
+      vi.spyOn(parseModule, 'parse').mockImplementation(async (r) => {
+        (r as any).routeChildNodes.push({ path: '/' });
+        return fragment;
+      });
+      vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(true);
+
+      await (router as any)._initialize();
+
+      const region = router.a11yRegion;
+      expect(region).not.toBeNull();
+      expect(region!.parentElement).toBe(router);
+      expect(region!.getAttribute('role')).toBe('status');
+      expect(region!.textContent).toBe('');
+      // display:none は live region を殺すため使わない — sr-only クリップで隠す
+      expect(region!.style.display).not.toBe('none');
+      expect(region!.style.position).toBe('absolute');
+    });
+
+    it('disconnectedCallbackでリージョンを撤去し、再接続で回復すること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      (router as any)._initialized = true;
+      (router as any)._ensureA11yRegion();
+      const first = router.a11yRegion;
+      expect(first!.parentElement).toBe(router);
+
+      router.disconnectedCallback();
+      expect(router.a11yRegion).toBeNull();
+      expect(first!.parentElement).toBeNull();
+
+      await router.connectedCallback();
+      expect(router.a11yRegion).not.toBeNull();
+      expect(router.a11yRegion!.parentElement).toBe(router);
+      router.disconnectedCallback();
+    });
+  });
+
+  describe('focusReset の切り替え (docs/a11y-design.md §3-5)', () => {
+    function interceptOptionsOf(router: Router): any {
+      const captured: any[] = [];
+      const navEvent = {
+        canIntercept: true,
+        hashChange: false,
+        downloadRequest: null,
+        destination: { url: 'http://localhost/path' },
+        intercept: (options: any) => { captured.push(options); },
+      };
+      (router as any)._onNavigateFunc(navEvent);
+      return captured[0];
+    }
+
+    it('focus属性なしでは仕様既定 "after-transition" を渡すこと', () => {
+      const router = document.createElement('wcs-router') as Router;
+      (router as any)._basename = '';
+
+      const options = interceptOptionsOf(router);
+      expect(options.scroll).toBe('after-transition');
+      expect(options.focusReset).toBe('after-transition');
+    });
+
+    it('focus属性があるときは "manual" を渡すこと（ブラウザ既定リセットとの二重処理防止）', () => {
+      const router = document.createElement('wcs-router') as Router;
+      router.setAttribute('focus', 'heading');
+      (router as any)._basename = '';
+
+      const options = interceptOptionsOf(router);
+      expect(options.focusReset).toBe('manual');
+      // scroll 側は focus= の影響を受けない
+      expect(options.scroll).toBe('after-transition');
+    });
+  });
+
   describe('connected/disconnected', () => {
     it('connectedCallbackで初期化しnavigateイベントを登録すること', async () => {
       const router = document.createElement('wcs-router') as Router;

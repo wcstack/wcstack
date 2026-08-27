@@ -1,3 +1,4 @@
+import { applyA11yPolicies } from "./a11yPolicies";
 import { IOutlet, IRouter } from "./components/types";
 import { config } from "./config";
 import { matchRoutes } from "./matchRoutes";
@@ -50,5 +51,12 @@ export async function applyRoute(
   // if successful, update router and outlet state
   routerNode.path = path;
   outlet.lastRoutes = matchResult.routes;
+  // オプトインの focus/announce は commit 直後・mutate() の外で適用する（D3）。
+  // 初回描画（lastRoutes が空）では動かない — ページロードはブラウザの担当で、
+  // view-transition の「初回は包まない」と同じ判定・同じ理由（§3-5）。
+  // guard 拒否は上の return false で既に抜けている（D4）。
+  if (lastRoutes.length > 0) {
+    applyA11yPolicies(routerNode, matchResult);
+  }
   return true;
 }

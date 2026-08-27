@@ -73,6 +73,12 @@ export interface IRouter extends IRouteChildContainer {
   fallbackRoute: IRoute | null;
   path: string;
   navigate(path: string): Promise<void>;
+  /** `announce=` 用 live region。未生成なら null（docs/a11y-design.md §3-4） */
+  readonly a11yRegion: HTMLElement | null;
+  /** `<wcs-router focus=...>` の属性値（無ければ null） */
+  readonly focusPolicy: string | null;
+  /** `<wcs-router announce=...>` の属性値（無ければ null） */
+  readonly announcePolicy: string | null;
 }
 
 export interface IOutlet {

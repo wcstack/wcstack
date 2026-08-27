@@ -122,6 +122,8 @@ Define routes and layout slots inside a child template tag. A direct child templ
 | Attribute | Description |
 |------|------|
 | `basename` | When routing in a subfolder URL, specify the subfolder. Not required if you don’t run in a subfolder. |
+| `focus` | Opt-in focus policy applied after a committed navigation. `"heading"` focuses the first heading of the leaf route's content. See "Accessibility contract". |
+| `announce` | Opt-in route announcement. `"title"` writes the commit-time `document.title` snapshot into the router-owned live region. See "Accessibility contract". |
 
 ### Route (wcs-route)
 
@@ -381,6 +383,11 @@ The router delegates scroll and focus handling to the browser wherever the platf
 These are the specification defaults; writing them out records the delegation as intent. Changing either to `"manual"` is a change to this contract, not a refactor.
 
 **Fallback path** (browsers without the Navigation API): navigation runs through `history.pushState` plus a `popstate` listener. After a committed push navigation the router scrolls to the top, matching the Navigation API default; a navigation rejected by a route guard does not scroll. Back/forward scroll restoration is the browser's `history.scrollRestoration` (default `auto`), so the router never scrolls on `popstate`.
+
+**Opt-in policies** — `<wcs-router focus="heading" announce="title">`. Both default to off; with no attribute, the browser behavior above is all there is. Both run right after a committed navigation, never on the first route application (page load belongs to the browser), and never on a guard-rejected navigation.
+
+- `focus="heading"`: moves focus to the first `h1`–`h6` of the **leaf** route's inserted content, adding `tabindex="-1"` when the heading has none. While set, the router passes `focusReset: "manual"` on the Navigation API path so the browser's reset does not double-handle. If the new content has no heading, nothing happens — give every route a heading when you opt in.
+- `announce="title"`: writes the commit-time `document.title` snapshot into a router-owned live region (`role="status"`, visually clipped, direct child of `<wcs-router>`, one per router). Known limits: a bound title (`<title data-wcs>`) may still be stale at commit, and a title change outside navigation is not re-announced.
 
 See [docs/a11y-design.md](https://github.com/wcstack/wcstack/blob/main/docs/a11y-design.md) §3 for the design record.
 

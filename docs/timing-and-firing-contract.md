@@ -449,3 +449,25 @@ Rebuilding the graph discards every sounding voice. That is not an implementatio
 ### 19.6 Voice reclamation is on the audio clock (not timer-dependent)
 
 A released voice is reclaimed only once `freeAt = noteOff + release * 3 + 0.3` (on the audio clock) has passed. **No wall-clock timer is used**: in a background tab `setTimeout` is throttled to about one-minute intervals while audio keeps playing, so a timer-based approach would leak a voice per key press.
+
+---
+
+## 20. @wcstack/router — post-commit focus and announcement (2026-08-28)
+
+Reference: [`packages/router/src/a11yPolicies.ts`](../packages/router/src/a11yPolicies.ts), [a11y-design.md](./a11y-design.md) §3-4
+
+### 20.1 The opt-in policies run after commit, outside the mutation
+
+`focus="heading"` and `announce="title"` are applied inside `applyRoute`, immediately after the committed judgment (guard passed, mutation applied, `router.path` updated). The announcement write is a plain DOM update outside `mutate()` — it is never part of a view transition. A guard-rejected navigation reaches neither policy (a11y-design D4).
+
+### 20.2 The first route application never focuses or announces
+
+`lastRoutes.length === 0` skips both policies — the same predicate, and the same reason, as view-transition's "never wrap the first application" (§4.3): page load belongs to the browser.
+
+### 20.3 The announcement is a commit-time snapshot of `document.title`
+
+`<wcs-head>`'s static title swap completes synchronously inside `mutate()`, so the snapshot always reads the new route's static title. A bound title (`<title data-wcs>`) may still be stale at commit (the binder-queue delay window), and a title change outside navigation (e.g. a locale switch) is never re-announced. Both are documented limitations, not bugs (a11y-design D2).
+
+### 20.4 Interaction with §4.3 (view-transition frame landing)
+
+The policies run when the transition promise awaited by `applyRoute` resolves — that is at **mutation application**, not animation completion (the transition-runner contract). Under an arbiter that accepts `router`, focus and announcement therefore land on the frame where the route content was swapped, possibly while the animation is still playing. "After the animation" is not expressible under the current protocol and is a non-goal (a11y-design D3 / §10).
