@@ -90,6 +90,7 @@ happy-dom では再現しない挙動を対象にしています。
 | `deferred-apply` | 後から define された要素にも初期バインド値が適用されること |
 | `monitor-initial-snapshot` | devtools hook protocol の初期スナップショット |
 | `router-a11y` | router のスクロール/フォーカス契約 (docs/a11y-design.md §3-1)。Navigation API 経路の仕様既定 (push でトップへ・traverse で復元・フォーカスは body へ) と、`window.navigation` を undefined に潰す fallback 強制で pushState / popstate 経路の SPA 遷移が成立すること (T0-4) |
+| `state-move-before` | keyed swap 中の行内 `<input>` のフォーカス・入力値の保存 (docs/a11y-design.md §4)。mountAfter の moveBefore 分岐は happy-dom に moveBefore が無く実ブラウザでしか走らない |
 | `audio-graph-poc` / `audio-offline` | Web Audio のグラフ配線とレンダリング (OfflineAudioContext) |
 
 ### 未対象の examples

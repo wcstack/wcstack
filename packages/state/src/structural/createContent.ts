@@ -101,8 +101,24 @@ class Content implements IContent {
       let anchor: Node = targetNode;
       for(const node of this._movableNodes()) {
         if (anchor.nextSibling !== node) {
+          // moveBefore も childList mutation record を出すため、マークは両分岐の前
           markObserverSkipOnAdd(node);
-          parentNode.insertBefore(node, anchor.nextSibling);
+          // moveBefore は取り外しを伴わない移動 — 接続済み行の reorder で
+          // フォーカス・iframe・アニメーション状態を保存する（docs/a11y-design.md §4-1）。
+          // この 1 文は 4 つのノード状態を共有する: (a) 接続済み reorder、
+          // (b) clone フラグメント由来（root 違い）、(c) プール/unmount 済み（親なし）、
+          // (d) バッチフラグメント内。moveBefore は「同一ツリー・親あり」を要求し
+          // (b)(c)(d) では HierarchyRequestError を投げるため、same-parent ガード
+          // （同 root かつ親が非 null の同時証明 = フォーカス保存が意味を持つ (a) と
+          // 正確に一致）は外せない。ガードを外す「簡略化」をしてはならない。
+          const mover = parentNode as Node & {
+            moveBefore?: (node: Node, child: Node | null) => void;
+          };
+          if (node.parentNode === parentNode && typeof mover.moveBefore === "function") {
+            mover.moveBefore(node, anchor.nextSibling);
+          } else {
+            parentNode.insertBefore(node, anchor.nextSibling);
+          }
         }
         anchor = node;
       }
