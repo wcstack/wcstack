@@ -83,8 +83,17 @@ Note: the auto-started `once` frame fires about one frame after connect, exactly
 | `once`    | boolean | `false` | Fire a single frame, then stop. Sugar for `repeat="1"`. |
 | `repeat`  | number  | `0`     | Stop after N frames (`0` = unlimited). Takes precedence over `once`. |
 | `manual`  | boolean | `false` | Do not auto-start on connect; start via command / trigger. |
+| `reduced-motion` | `"run"` \| `"pause"` | `"run"` | Opt-in `prefers-reduced-motion` gate. With `"pause"`, frame delivery stops while the user's OS/browser preference requests reduced motion (surfaced via `suspended`), and resumes with a `dt = 0` boundary when it clears. Unknown values normalize to `"run"`. |
 
 Deliberately absent vs `<wcs-timer>`: `interval` (rAF has no period) and `immediate` (the first frame already **is** the next rendering opportunity — no earlier meaningful moment exists).
+
+### Why `reduced-motion` defaults to `run`
+
+`<wcs-view-transition>` can default its `reduced-motion` handling to skipping because what it drops is decoration only. A `<wcs-raf>` tick is **functional output** — game loops, measurements, canvas simulations — so stopping it by default would be an opinion, not a repair (docs/a11y-design.md §0-1). Opt in with `reduced-motion="pause"` when your loop drives motion for motion's sake.
+
+### Why it is not `pause()` reuse
+
+`pause()` records **user intent** (`start()`/`stop()` clear it, `resume()` overrides it). The reduced-motion gate is an **environment condition**: mixing the two would let `resume()` override the user's OS setting. Instead the gate is a second cause of `suspended` — `suspended = running && (hidden || reducedGate)` — exactly the shape visibility already has. The preference is subscribed live (`change` listener, established by `observe()`): with a start-time check only, a loop started under reduced motion could never notice the preference clearing.
 
 ## Observable Properties (outputs)
 
@@ -94,7 +103,7 @@ Deliberately absent vs `<wcs-timer>`: `interval` (rAF has no period) and `immedi
 | `elapsed`   | `wcs-raf:tick`            | Accumulated **active** milliseconds (Σdt) since the last reset — hidden/paused periods contribute nothing. Frame-granular: between frames the getter returns the value as of the last tick. |
 | `dt`        | `wcs-raf:tick`            | Delta to the previous frame in ms. **`0` on the first frame after `start()` / `resume()` / a visibility interruption** — a value spanning an interruption never reaches observers. No upper clamp: how to treat a slow frame is your domain decision (a physics loop typically applies its own `Math.min(dt, …)`). |
 | `running`   | `wcs-raf:running-changed` | The started **intent**: `true` from `start` until `stop`/`pause`/bounded completion. Stays `true` in a hidden tab even though no frames arrive. |
-| `suspended` | `wcs-raf:suspended-changed` | The delivery **actuality**: `true` while `running` in a hidden tab (rAF is fully stopped there — not throttled). The desired/actual split mirrors `@wcstack/wakelock`'s `active`/`held`. |
+| `suspended` | `wcs-raf:suspended-changed` | The delivery **actuality**, with two causes: `true` while `running` in a hidden tab (rAF is fully stopped there — not throttled), or while the opt-in `reduced-motion="pause"` gate is engaged by the user's preference. The desired/actual split mirrors `@wcstack/wakelock`'s `active`/`held`. |
 
 `tick` / `elapsed` / `dt` all derive from the single `wcs-raf:tick` event (`detail = { count, elapsed, dt, timestamp }`; `timestamp` is the frame's `DOMHighResTimeStamp`, `0` for the `reset()` notification). `tick` fires every frame with no equality guard; `running` / `suspended` are equality-guarded.
 

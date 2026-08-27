@@ -24,9 +24,14 @@ export class Raf extends HTMLElement {
       { name: "once", attribute: "once" },
       { name: "repeat", attribute: "repeat" },
       { name: "manual", attribute: "manual" },
+      { name: "reducedMotion", attribute: "reduced-motion" },
       { name: "trigger" },
     ],
   };
+
+  static get observedAttributes(): string[] {
+    return ["reduced-motion"];
+  }
 
   private _core: RafCore;
   private _trigger: boolean = false;
@@ -128,6 +133,25 @@ export class Raf extends HTMLElement {
       this.setAttribute("manual", "");
     } else {
       this.removeAttribute("manual");
+    }
+  }
+
+  get reducedMotion(): "run" | "pause" {
+    return this._core.reducedMotion;
+  }
+
+  set reducedMotion(value: string) {
+    // 属性へミラーし、attributeChangedCallback が正規化して Core へ届ける
+    this.setAttribute("reduced-motion", value);
+  }
+
+  attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null): void {
+    if (name === "reduced-motion") {
+      // 未知値・属性なしは既定 "run" へ正規化（view-transition の setter 慣行）。
+      // once/repeat と違い start 時の遅延読みでは足りない — ポリシーは実行中の
+      // ループにも効く（reduce 中の付け外しがゲートの付け外し）ため、変更時に
+      // Core へ届ける。
+      this._core.reducedMotion = newValue === "pause" ? "pause" : "run";
     }
   }
 
