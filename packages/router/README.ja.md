@@ -365,6 +365,21 @@ bootstrapRouter({
 
 ルータはガードを先に走らせ、hide/show の対だけを遷移へ渡す。await するガードが遷移を開きっぱなしにしないため。ページを最初に描く「最初のルート適用」は常に同期で行う —— 対比すべき旧ルートが無く、入場は @starting-style の担当だから。タグが無ければ何も変わらない（差し替えは同期のまま）。[docs/view-transition-design.ja.md](https://github.com/wcstack/wcstack/blob/main/docs/view-transition-design.ja.md) §7.1 参照。
 
+## アクセシビリティ契約
+
+router は、プラットフォームが既に正しく行うことについては、スクロールとフォーカスの扱いをブラウザへ委譲する。
+
+**Navigation API 経路**（Chromium ほか対応ブラウザ）: router は `event.intercept()` に仕様既定を明示的に書いて渡す — `scroll: "after-transition"` と `focusReset: "after-transition"`。
+
+- push 遷移はページ先頭へスクロールし、traverse（戻る/進む）は以前のスクロール位置を復元する
+- 遷移後、フォーカスは新しい内容の最初の `[autofocus]` 要素へ、無ければ `<body>` へ移る
+
+これらは仕様の既定値であり、明示は委譲が意図であることの記録。どちらかを `"manual"` に変える変更はリファクタではなくこの契約の変更にあたる。
+
+**フォールバック経路**（Navigation API の無いブラウザ）: ナビゲーションは `history.pushState` + `popstate` リスナで動く。戻る/進むのスクロール復元はブラウザの `history.scrollRestoration`（既定 `auto`）の仕事なので、router は `popstate` では決してスクロールしない。
+
+設計の記録は [docs/a11y-design.md](https://github.com/wcstack/wcstack/blob/main/docs/a11y-design.md) §3 を参照。
+
 ## パス仕様案（Router / Route / Link 共通）
 
 ### 用語

@@ -14,7 +14,11 @@ interface NavigateEventLike {
   hashChange: boolean;
   downloadRequest: string | null;
   destination: { url: string };
-  intercept: (options: { handler: () => Promise<void> }) => void;
+  intercept: (options: {
+    handler: () => Promise<void>;
+    scroll?: "after-transition" | "manual";
+    focusReset?: "after-transition" | "manual";
+  }) => void;
 }
 
 /**
@@ -241,6 +245,12 @@ export class Router extends HTMLElement implements IRouter {
           throw err;
         }
       },
+      // 仕様既定の明示（挙動変更なし）。scroll: push はトップへ / traverse は
+      // スクロール位置復元、focusReset: [autofocus] か body へ。この委譲が
+      // router のアクセシビリティ契約であり、ここを "manual" に変える変更は
+      // 契約の変更にあたる（docs/a11y-design.md §3-1）。
+      scroll: "after-transition",
+      focusReset: "after-transition",
     });
   }
 

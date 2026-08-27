@@ -89,6 +89,7 @@ happy-dom では再現しない挙動を対象にしています。
 | `bind-component-write` | mapped なコンポーネントでも state の read/write が素通しすること |
 | `deferred-apply` | 後から define された要素にも初期バインド値が適用されること |
 | `monitor-initial-snapshot` | devtools hook protocol の初期スナップショット |
+| `router-a11y` | router のスクロール/フォーカス契約 (docs/a11y-design.md §3-1)。Navigation API 経路の仕様既定 (push でトップへ・traverse で復元・フォーカスは body へ) と、`window.navigation` を undefined に潰す fallback 強制で pushState / popstate 経路の SPA 遷移が成立すること (T0-4) |
 | `audio-graph-poc` / `audio-offline` | Web Audio のグラフ配線とレンダリング (OfflineAudioContext) |
 
 ### 未対象の examples

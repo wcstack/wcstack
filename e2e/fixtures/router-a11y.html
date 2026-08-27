@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: router accessibility contract (scroll / focus)</title>
+  <!-- Phase 0 of docs/a11y-impl-plan.md (T0-3 / T0-4): pins the Navigation API
+       path's spec-default scroll / focus reset (A1), and proves the fallback
+       path (pushState / popstate) can be forced in Chromium by shadowing
+       window.navigation with undefined before page scripts run. The nav is
+       position:fixed so clicking a link never scrolls the page by itself. -->
+  <script type="module" src="/packages/router/dist/auto.min.js"></script>
+  <style>
+    nav { position: fixed; top: 0; right: 0; background: #fff; }
+    .spacer { height: 3000px; }
+  </style>
+</head>
+<body>
+  <nav>
+    <wcs-link to="/">home</wcs-link>
+    <wcs-link to="/about">about</wcs-link>
+  </nav>
+
+  <wcs-router basename="/e2e/fixtures">
+    <template>
+      <wcs-route path="/">
+        <h1 id="view">home</h1>
+        <div class="spacer">home body</div>
+      </wcs-route>
+      <wcs-route path="/about">
+        <h1 id="view">about</h1>
+        <div class="spacer">about body</div>
+      </wcs-route>
+    </template>
+  </wcs-router>
+</body>
+</html>
