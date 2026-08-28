@@ -2,7 +2,7 @@ import { parse } from "../parse.js";
 import { createOutlet } from "./Outlet.js";
 import { config } from "../config.js";
 import { raiseError } from "../raiseError.js";
-import { IOutlet, IRoute, IRouter, IRouterCommit } from "./types.js";
+import { ILink, IOutlet, IRoute, IRouteChildContainer, IRouteMatchResult, IRouter, IRouterCommit } from "./types.js";
 import { IWcBindable } from "../types.js";
 import { applyRoute } from "../applyRoute.js";
 import { getNavigation } from "../Navigation.js";
@@ -13,6 +13,14 @@ import { splitUrlTarget, effectiveSearch } from "../splitUrlTarget.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
 import { bindSubtree } from "../protocol/binder.js";
 import { inSsr } from "../inSsr.js";
+import { runGuardPhase } from "../showRouteContent.js";
+import { assignRouteParams } from "../showRoute.js";
+import {
+  ROUTE_END_PREFIX,
+  ROUTE_PH_PREFIX,
+  ROUTE_START_PREFIX,
+  SSR_OUTLET_ATTR,
+} from "../ssrMarkers.js";
 
 interface NavigateEventLike {
   canIntercept: boolean;
@@ -555,7 +563,14 @@ export class Router extends HTMLElement implements IRouter {
       // 起動できるよう、退避してパース後に復元する（docs/ssr-router-design.md §3.2）。
       const templateSnapshot = ssr ? this._template.content.cloneNode(true) : null;
       const fragment = await parse(this);
-      this._outlet.rootNode.appendChild(fragment);
+      // クライアント側でサーバー描画済み outlet（data-wcs-ssr）を見つけたら
+      // 採用（adoption）を試みる。fragment はまだ入れない — 採用が成立すれば
+      // fresh クローンは不要で、失敗したときだけ従来どおり流し込む（§4）。
+      const adoptable = !ssr &&
+        (this._outlet as unknown as Element).hasAttribute(SSR_OUTLET_ATTR);
+      if (!adoptable) {
+        this._outlet.rootNode.appendChild(fragment);
+      }
       if (templateSnapshot !== null) {
         const content = this._template.content;
         while (content.firstChild) {
@@ -579,12 +594,236 @@ export class Router extends HTMLElement implements IRouter {
         this._initialized = true;
         return;
       }
+      if (adoptable) {
+        const hydrated = await this._hydrateFromSsr(fullPath);
+        if (hydrated) {
+          this._notifyLocationChange();
+          this._initialized = true;
+          return;
+        }
+        // 採用不能: サーバー DOM を破棄して従来経路で描き直す。安全側は常に CSR
+        // （state の hydrateBindings →失敗→ buildBindings と同じ二段構え、§2-3）。
+        const outletEl = this._outlet as unknown as Element;
+        outletEl.removeAttribute(SSR_OUTLET_ATTR);
+        const rootNode = this._outlet.rootNode;
+        while (rootNode.firstChild) {
+          rootNode.removeChild(rootNode.firstChild);
+        }
+        rootNode.appendChild(fragment);
+      }
       await applyRoute(this, this.outlet, fullPath, this._path, window.location.search || "");
+      if (adoptable) {
+        // 描き直したノードを binder へ差し出す。state がサーバー DOM を既に
+        // ハイドレート済み（初期走査完了後）の場合、破棄と同時にそのバインドは
+        // 死んでおり、「初期描画は走査時に DOM に居る」前提も崩れているため。
+        this._offerInitialContentToBinder();
+      }
       this._notifyLocationChange();
       this._initialized = true;
     } finally {
       this._initializing = false;
     }
+  }
+
+  /**
+   * サーバー描画済み outlet の採用（docs/ssr-router-design.md §4）。
+   *
+   * 検証（一意な absolutePath・マーカーの整合・現在 URL のマッチとの一致）を
+   * **すべて DOM 変更の前に**行い、途中で断念しても半採用状態を残さない。
+   * 成立すれば DOM 変更ゼロで「すでにナビゲート済み」の状態を確立する —
+   * state がハイドレートしたバインディングは採用ノード上で生きたままになる。
+   *
+   * @returns 採用が成立した場合 true。false は呼び出し側（_initialize）が
+   *          サーバー DOM を破棄して従来描画にフォールバックする。
+   */
+  private async _hydrateFromSsr(fullPath: string): Promise<boolean> {
+    const outletRoot = this.outlet.rootNode;
+
+    // --- 検証相 ---
+
+    // absolutePath → route の一意対応。重複定義（parse が警告するケース）は
+    // マーカーの突合キーが曖昧になるため採用不能
+    const routesByPath = new Map<string, IRoute>();
+    let duplicated = false;
+    this._forEachRoute((route) => {
+      if (routesByPath.has(route.absolutePath)) {
+        duplicated = true;
+        return;
+      }
+      routesByPath.set(route.absolutePath, route);
+    });
+    if (duplicated) return false;
+
+    // layout は採用の初版スコープ外 — slot 投影の状態はマーカーだけでは
+    // 再構築できない（§4）。検出したらフォールバック
+    if ((outletRoot as Element | ShadowRoot).querySelector(config.tagNames.layoutOutlet) !== null) {
+      return false;
+    }
+
+    // マーカー走査（文書順の添字も記録し、start < end と範囲交差の検証に使う）
+    const phByPath = new Map<string, Comment>();
+    const startByPath = new Map<string, { comment: Comment, index: number }>();
+    const endByPath = new Map<string, { comment: Comment, index: number }>();
+    const walker = document.createTreeWalker(outletRoot, NodeFilter.SHOW_COMMENT);
+    let index = 0;
+    while (walker.nextNode()) {
+      const comment = walker.currentNode as Comment;
+      const data = comment.data;
+      index++;
+      if (data.startsWith(ROUTE_PH_PREFIX)) {
+        const key = data.slice(ROUTE_PH_PREFIX.length);
+        if (phByPath.has(key) || !routesByPath.has(key)) return false;
+        phByPath.set(key, comment);
+      } else if (data.startsWith(ROUTE_START_PREFIX)) {
+        const key = data.slice(ROUTE_START_PREFIX.length);
+        if (startByPath.has(key) || !routesByPath.has(key)) return false;
+        startByPath.set(key, { comment, index });
+      } else if (data.startsWith(ROUTE_END_PREFIX)) {
+        const key = data.slice(ROUTE_END_PREFIX.length);
+        if (endByPath.has(key) || !routesByPath.has(key)) return false;
+        endByPath.set(key, { comment, index });
+      }
+    }
+    // start / end は対で、同じ親の下で start が先。範囲同士は交差しない
+    // （交差していると内容収集の兄弟走査が他ルートの領域へはみ出す）
+    if (startByPath.size !== endByPath.size) return false;
+    const ranges: { start: number, end: number }[] = [];
+    for (const [key, start] of startByPath) {
+      const end = endByPath.get(key);
+      if (!end) return false;
+      if (end.comment.parentNode !== start.comment.parentNode) return false;
+      if (end.index <= start.index) return false;
+      ranges.push({ start: start.index, end: end.index });
+    }
+    for (const a of ranges) {
+      for (const b of ranges) {
+        if (a.start < b.start && b.start < a.end && a.end < b.end) return false;
+      }
+    }
+
+    // 現在 URL のマッチとマーカー集合の一致検証。サーバーが描いた集合と
+    // クライアントが今マッチする集合が違えば、URL か template が変わっている
+    const path = sliceBasename(fullPath, this._basename);
+    let matchResult: IRouteMatchResult | null = matchRoutes(this, path);
+    if (!matchResult) {
+      if (this._fallbackRoute === null) return false;
+      matchResult = {
+        routes: [this._fallbackRoute],
+        params: {},
+        typedParams: {},
+        path,
+        lastPath: this._path,
+      };
+    }
+    matchResult.lastPath = this._path;
+    if (matchResult.routes.length !== startByPath.size) return false;
+    for (const route of matchResult.routes) {
+      if (!startByPath.has(route.absolutePath)) return false;
+    }
+
+    // placeholder の集合はサーバー出力の形と**完全一致**でなければならない。
+    // serialize される placeholder = トップレベルルート + 各マッチルートの直接の子。
+    // 不足を許すと、そのルートへの後続ナビゲーションが anchor を失って無言で
+    // 空描画になる。過剰（非活性ルートの子孫の ph）を許すと、再設置がその
+    // placeholder を fresh クローンの内容から奪い、当該ルートを到達不能にする
+    const requiredPh = new Set<string>();
+    for (const route of this.routeChildNodes) {
+      requiredPh.add(route.absolutePath);
+    }
+    for (const matched of matchResult.routes) {
+      for (const child of matched.routeChildNodes) {
+        requiredPh.add(child.absolutePath);
+      }
+    }
+    if (phByPath.size !== requiredPh.size) return false;
+    for (const key of requiredPh) {
+      if (!phByPath.has(key)) return false;
+    }
+
+    // --- 採用相（以後は成立が確定している） ---
+
+    // placeholder をクライアント側インスタンスへ差し替える。以後のナビゲーションの
+    // anchor がサーバーの位置にそのまま据わる
+    for (const [key, comment] of phByPath) {
+      const route = routesByPath.get(key)!;
+      comment.parentNode!.replaceChild(route.placeHolder, comment);
+    }
+
+    // 各マッチルートの内容 = 自分の start/end マーカー間の兄弟ノード。ただし:
+    // - 子ルートの範囲（start〜end）は**丸ごと除外**する — CSR で親の childNodeArray に
+    //   入るのは子の placeholder だけで、子の内容は子が所有する（hideRoute の重複
+    //   除去と showRoute の誤再挿入を防ぐ）
+    // - Link が所有する anchor も除外する — CSR では anchor は Link の cc が後から
+    //   生成する Link の所有物で、childNodeArray には決して入らない。入れると
+    //   hide → show の往復で Link 自身の anchor 管理と二重になり anchor が重複する
+    for (const route of matchResult.routes) {
+      const start = startByPath.get(route.absolutePath)!.comment;
+      const end = endByPath.get(route.absolutePath)!.comment;
+      const nodes: Node[] = [];
+      const linkOwnedAnchors = new Set<Node>();
+      let node: Node | null = start.nextSibling;
+      while (node !== null && node !== end) {
+        if (node.nodeType === Node.COMMENT_NODE) {
+          const data = (node as Comment).data;
+          if (data.startsWith(ROUTE_START_PREFIX)) {
+            const childKey = data.slice(ROUTE_START_PREFIX.length);
+            node = endByPath.get(childKey)!.comment.nextSibling;
+            continue;
+          }
+        }
+        if (linkOwnedAnchors.has(node)) {
+          node = node.nextSibling;
+          continue;
+        }
+        if (node.nodeType === Node.ELEMENT_NODE &&
+            (node as Element).tagName.toLowerCase() === config.tagNames.link) {
+          // anchor は host より後ろに居るので、先に登録してから host を収集する
+          const anchor = (node as unknown as ILink).anchorElement;
+          if (anchor !== null) {
+            linkOwnedAnchors.add(anchor);
+          }
+        }
+        nodes.push(node);
+        node = node.nextSibling;
+      }
+      route.adoptChildNodes(nodes);
+    }
+
+    // マーカー除去と目印の撤去
+    for (const { comment } of startByPath.values()) comment.remove();
+    for (const { comment } of endByPath.values()) comment.remove();
+    (this.outlet as unknown as Element).removeAttribute(SSR_OUTLET_ATTR);
+
+    // 表示済み状態の確立。内容は既に見えているので挿入はしない — パラメータ
+    // 配送（setParams / data-bind / active イベント）だけ CSR と同じ規則で行う。
+    // lastRoutes を guard より先に立てるのは、guard 拒否後の fallback 遷移が
+    // 採用済み内容を hideRoute できるようにするため（CSR と異なり、内容は
+    // guard の結果を待たずにサーバーが既に見せている）
+    for (const route of matchResult.routes) {
+      assignRouteParams(route, matchResult);
+    }
+    this.outlet.lastRoutes = matchResult.routes;
+
+    // guard 相 — 採用はレンダリング最適化であって認可のスキップではない（§4-3）。
+    // 自前のサーバー出力は guard 付きルートを描かない（§2-4）ため通常は素通り
+    // するが、手書きや他システム由来の SSR HTML に対する防衛として実行する
+    if (!(await runGuardPhase(this, matchResult))) {
+      // fallback へのナビゲーションが microtask で予約済み。lastRoutes は
+      // 立っているので、その遷移が採用済み内容を隠す。commit はしない
+      //（拒否されたパスでの path-changed 発火を防ぐ — applyRoute と同じ規範）
+      return true;
+    }
+
+    // 観測面の commit（applyRoute と同じ規範・同じ順序）。
+    // routes はマッチ結果か [fallback] で必ず非空（検証相で確定済み）
+    this.commitNavigation({
+      params: matchResult.params,
+      typedParams: matchResult.typedParams,
+      routeName: matchResult.routes[matchResult.routes.length - 1].name,
+      search: window.location.search || "",
+      path,
+    });
+    return true;
   }
 
   /**
@@ -617,6 +856,34 @@ export class Router extends HTMLElement implements IRouter {
     // 「未構築なら保留して構築末尾で引き取る／構築済みなら同期バインド」の両側を
     // 吸収する。bindRouteContent（showRouteContent 側）は使わない — binder 不在の
     // 警告はサーバーでは誤誘導になるため、warn 無しで直接差し出す。
+    this._offerInitialContentToBinder();
+    // ハイドレーションマーカー（Phase 2 の入力、§3.3）。キーは placeholder の
+    // UUID ではなく absolutePath — UUID はパースごとに再生成されクライアントと
+    // 一致しない。absolutePath は同一 template から決定的に導ける。
+    // placeholder コメントも同じ理由で安定キーへ書き換える — クライアントの採用は
+    // これを自分の placeholder（クライアント側インスタンス）と差し替える。
+    this._forEachRoute((route) => {
+      route.placeHolder.data = `${ROUTE_PH_PREFIX}${route.absolutePath}`;
+    });
+    (this.outlet as unknown as Element).setAttribute(SSR_OUTLET_ATTR, '');
+    for (const route of this.outlet.lastRoutes) {
+      // applyRoute 成功後の placeholder は必ず outlet 配下の DOM に居る
+      const parentNode = route.placeHolder.parentNode!;
+      const contentNodes = route.childNodeArray;
+      const start = document.createComment(`${ROUTE_START_PREFIX}${route.absolutePath}`);
+      const end = document.createComment(`${ROUTE_END_PREFIX}${route.absolutePath}`);
+      parentNode.insertBefore(start, contentNodes[0] ?? route.placeHolder.nextSibling);
+      const last = contentNodes[contentNodes.length - 1];
+      parentNode.insertBefore(end, last ? last.nextSibling : start.nextSibling);
+    }
+  }
+
+  /**
+   * 初期表示ルートの内容を binder プロトコルへ差し出す。SSR 描画（_renderForSsr）と
+   * ハイドレーション不能時の描き直し（state が先にハイドレートを終えている可能性が
+   * ある）の両方から呼ぶ。bind() は冪等なので余分に差し出しても壊れない。
+   */
+  private _offerInitialContentToBinder(): void {
     for (const route of this.outlet.lastRoutes) {
       for (const node of route.childNodeArray) {
         if (node.nodeType === Node.ELEMENT_NODE) {
@@ -624,19 +891,16 @@ export class Router extends HTMLElement implements IRouter {
         }
       }
     }
-    // ハイドレーションマーカー（Phase 2 の入力、§3.3）。キーは placeholder の
-    // UUID ではなく absolutePath — UUID はパースごとに再生成されクライアントと
-    // 一致しない。absolutePath は同一 template から決定的に導ける。
-    (this.outlet as unknown as Element).setAttribute('data-wcs-ssr', '');
-    for (const route of this.outlet.lastRoutes) {
-      // applyRoute 成功後の placeholder は必ず outlet 配下の DOM に居る
-      const parentNode = route.placeHolder.parentNode!;
-      const contentNodes = route.childNodeArray;
-      const start = document.createComment(`@@wcs-route-start:${route.absolutePath}`);
-      const end = document.createComment(`@@wcs-route-end:${route.absolutePath}`);
-      parentNode.insertBefore(start, contentNodes[0] ?? route.placeHolder.nextSibling);
-      const last = contentNodes[contentNodes.length - 1];
-      parentNode.insertBefore(end, last ? last.nextSibling : start.nextSibling);
+  }
+
+  /** ルートツリー全体（ネスト含む）への走査 */
+  private _forEachRoute(
+    callback: (route: IRoute) => void,
+    container: IRouteChildContainer = this,
+  ): void {
+    for (const route of container.routeChildNodes) {
+      callback(route);
+      this._forEachRoute(callback, route);
     }
   }
 

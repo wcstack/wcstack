@@ -1,6 +1,6 @@
 # router SSR 設計 — サーバーでの初期ルート描画とクライアント採用
 
-Status: Phase 1 実装済み（Phase 2 以降は設計のみ）
+Status: Phase 1・2 実装済み（Phase 3 以降は設計のみ）
 Scope: `@wcstack/server`（レンダリング基盤）、`@wcstack/router`（SSR モード対応）、`@wcstack/state`（Phase 3 のみ・スナップショット順序）
 関連: [binder-protocol-design.md](./binder-protocol-design.md)、[view-transition-design.md](./view-transition-design.md)、[router-state-contract-design.md](./router-state-contract-design.md)
 
@@ -208,7 +208,7 @@ inSsr() かつ enable-ssr あり → SSR 初期化（下記）→ resolve して
   dispatch）は問題にならなかった — `commitNavigation` / `setParams` の発火を含む
   初期適用が結合テストで成立している。`GLOBALS_KEYS` への CustomEvent 追加は不要。
 
-## 4. Phase 2 — クライアント採用（設計のみ）
+## 4. Phase 2 — クライアント採用（実装済み）
 
 クライアントの `_initialize` は、outlet 予定位置に `data-wcs-ssr` 付きの
 `<wcs-outlet>` を見つけたとき**採用経路**に入る:
@@ -241,6 +241,45 @@ router がフォールバックで outlet を捨てた場合、捨てたノー�
 `<wcs-layout>` / slot 投影を含むルートの採用は初版スコープ外とし、検出したら
 フォールバックに落とす（LayoutOutlet の投影状態はマーカーだけでは再構築できない。
 必要になったら投影済み DOM の採用を別途設計する）。
+
+### 4.1 実装知見（実測・設計からの精緻化）
+
+- **placeholder 集合は完全一致検証**: serialize される placeholder = トップレベル
+  ルート + 各マッチルートの直接の子。**不足**を許すと当該ルートへの後続
+  ナビゲーションが anchor を失って無言の空描画になり、**過剰**（非活性ルートの
+  子孫の ph）を許すと再設置が fresh クローンの内容から placeholder を奪って
+  当該ルートを到達不能にする。どちらもフォールバック。
+- **マーカーの幾何**: 自前サーバーの出力では子ルートの範囲は親の範囲の**外**
+  （隣接）に置かれる — マーカー挿入は全ルートの表示完了後で、親の contentNodes の
+  末尾は子 placeholder のため、親の end はその直後（＝子内容の手前）に入る。
+  範囲の入れ子も検証（交差チェック）は正しい形として受理する（他システム由来の
+  SSR HTML）。交差だけを拒否する。
+- **Link 所有 anchor の除外**: 内容収集で `<wcs-link>` を見つけたらその
+  `anchorElement` を除外集合に登録する。CSR で anchor は childNodeArray に決して
+  入らない（Link の cc が後から生成する Link の所有物）ため、含めると hide → show
+  の往復で Link 自身の anchor 管理と二重になる。
+- **guard 相の共有**: showRouteContent のガード相を `runGuardPhase` として抽出し、
+  採用経路と通常経路が同一実装を使う。採用では内容がサーバーによって既に
+  見えているため、**lastRoutes を guard より先に立てる** — 拒否時の fallback
+  遷移が採用済み内容を hideRoute できる。
+- **フォールバック時の binder 差し出し**: 破棄と同時に state のハイドレート済み
+  バインドは死んでおり「初期描画は走査時に DOM に居る」前提も崩れているため、
+  描き直した内容を binder へ差し出す（冪等なので安全）。
+
+### 4.2 Link のハイドレーション
+
+`<wcs-link>` は cc で子を `<a>` へ移して描画するため、outlet 採用とは独立に
+SSR 出力へ anchor が serialize される。素朴にクライアントが再接続すると
+「host は空・serialize 済み anchor は放置」の二重 anchor になる。よって:
+
+- **サーバー**: 生成した anchor に `data-wcs-ssr-link` を付け、リスナは登録しない
+  （active class / aria-current は SSR 出力に載せる）。happy-dom は開始タグ時点で
+  cc を呼ぶため、静的 Link は 1 microtask 譲ってから初期化する（Router と同じ
+  待避 — 待機プロトコルには参加しないが、renderToString はプロトコル要素の
+  await で microtask を消化するため serialize より先に完了する）。
+- **クライアント**: cc で直後の兄弟に目印付き anchor を見つけたら**採用**する —
+  目印を外し、anchor の子を自分の childNodeArray とし、href をクライアントの
+  解決で引き直し、リスナを付けて active を更新する。目印が無ければ従来の生成。
 
 ## 5. Phase 3 — スナップショット順序（設計のみ）
 
@@ -281,7 +320,7 @@ CI 制約: ci.yml の matrix は「変更されたパッケージで `npm ci`」
 | 1a | server: `url` / `baseHref` / globals / 既定 `baseUrl` / pending queue 後始末 | `packages/server/__tests__/` — テスト内で定義したモック custom element（`window.location` を読み `hasConnectedCallbackPromise` を実装）で server の契約を検証。router 非依存で CI 安全 |
 | 1b | router: `inSsr` / 待機プロトコル / SSR モード（template 温存・a11y skip・guard バリア・binder 差し出し・マーカー） | `packages/router/__tests__/` — src 直 import なので CI 安全 |
 | 1c | server × router 実結合 | `packages/server/__e2e__/router-ssr.test.ts` — CI matrix 外（`test:e2e` は別コマンド）。state / router とも src 直 import で dist 鮮度から独立（§3.5） |
-| 2 | クライアント採用 | router unit + `e2e/`（Playwright、実ブラウザで SSR→hydrate） |
+| 2 | クライアント採用 | `packages/router/__tests__/ssrHydration.test.ts`（ラウンドトリップ + 検証失敗系）+ server `__e2e__` のフルラウンドトリップ（state ハイドレーション込み・採用ノード上でバインドが生きることを実測）。実ブラウザ検証は Phase 4 |
 | 3 | スナップショット順序 | state / server unit + e2e |
 | 4 | examples（`examples/ssr` の router 版）、README 反映（"Cannot Do" から router を降ろす）、wcstack-skill 追随 | — |
 

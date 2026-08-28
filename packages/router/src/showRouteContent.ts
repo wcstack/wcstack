@@ -32,6 +32,38 @@ function bindRouteContent(route: IRoute): void {
 }
 
 /**
+ * ガード相の単独実装。何も触らずに全ルートの guardCheck を待ち、GuardCancel なら
+ * フォールバックへの再ナビゲートを microtask で予約して false を返す。
+ *
+ * showRouteContent の相 1 であると同時に、SSR ハイドレーション
+ * （docs/ssr-router-design.md §4 — 採用はレンダリング最適化であって認可の
+ * スキップではない）からも同じ規則で呼ばれるため抽出した。
+ */
+export async function runGuardPhase(
+  routerNode: IRouter,
+  matchResult: IRouteMatchResult,
+): Promise<boolean> {
+  try {
+    for (const route of matchResult.routes) {
+      await route.guardCheck(matchResult);
+    }
+  } catch (e) {
+    if (e instanceof GuardCancel) {
+      console.warn(`Navigation cancelled: ${e.message}. Redirecting to ${e.fallbackPath}`);
+      queueMicrotask(() => {
+        routerNode.navigate(e.fallbackPath).catch((err) => {
+          console.error('Fallback navigation failed:', err);
+        });
+      });
+      return false;
+    } else {
+      throw e;
+    }
+  }
+  return true;
+}
+
+/**
  * ルートコンテンツを表示する。
  *
  * 二相構成（docs/view-transition-design.md §7.1）:
@@ -56,22 +88,8 @@ export async function showRouteContent(
   lastRoutes: IRoute[],
 ): Promise<boolean> {
   // --- ガード相 ---
-  try {
-    for (const route of matchResult.routes) {
-      await route.guardCheck(matchResult);
-    }
-  } catch (e) {
-    if (e instanceof GuardCancel) {
-      console.warn(`Navigation cancelled: ${e.message}. Redirecting to ${e.fallbackPath}`);
-      queueMicrotask(() => {
-        routerNode.navigate(e.fallbackPath).catch((err) => {
-          console.error('Fallback navigation failed:', err);
-        });
-      });
-      return false;
-    } else {
-      throw e;
-    }
+  if (!(await runGuardPhase(routerNode, matchResult))) {
+    return false;
   }
 
   // --- 変更相 ---
