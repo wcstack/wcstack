@@ -189,6 +189,42 @@ describe('renderToString + router', () => {
     }
   });
 
+  it('orchestrated: route 内容の構造テンプレートが <wcs-ssr> に載る（json 属性 state のレース解消）', async () => {
+    // Phase 3（docs/ssr-router-design.md §5）の本丸。json 属性 state は I/O 無しで
+    // 初回バインド構築が router の挿入より先に完了し得るため、inline 生成では
+    // route 内の for テンプレートがスナップショットに載るかが順序次第だった。
+    // orchestrated（bootstrapState が builder を登録 → renderToString が最終パスで
+    // 生成）では常に載る。
+    const result = await renderToString(`
+      <wcs-state enable-ssr json='{"items":[{"name":"Alice"},{"name":"Bob"}]}'></wcs-state>
+      <wcs-router enable-ssr>
+        <template>
+          <wcs-route path="/">
+            <ul>
+              <template data-wcs="for: items">
+                <li data-wcs="textContent: .name"></li>
+              </template>
+            </ul>
+          </wcs-route>
+        </template>
+      </wcs-router>
+    `, {
+      url: 'http://localhost:3000/',
+      bootstraps: [bootstrapState, bootstrapRouter],
+    });
+    const doc = parseResult(result);
+    // orchestrated が宣言され、レンダリング済み HTML にリストが展開されている
+    expect(doc.querySelectorAll('wcs-outlet li').length).toBe(2);
+    // スナップショットに route 内容の構造テンプレートが載っている
+    const ssrEl = doc.querySelector('wcs-ssr');
+    expect(ssrEl).not.toBeNull();
+    const tpl = ssrEl!.querySelector('template[id]');
+    expect(tpl).not.toBeNull();
+    expect(tpl!.innerHTML).toContain('data-wcs');
+    // wcs-ssr は 1 つだけ（inline 生成との二重生成が起きていない）
+    expect(doc.querySelectorAll('wcs-ssr').length).toBe(1);
+  });
+
   it('enable-ssr の無い router はサーバーで初期化されない（部分 CSR）', async () => {
     const result = await renderToString(`
       <wcs-router>

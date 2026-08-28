@@ -68,6 +68,14 @@ async function _parseNode(
           }
         }
         continue;
+      } else if (tagName === "template") {
+        // 不透明な葉として扱う。<template> の子は childNodes ではなく .content に
+        // 居るため、汎用の再構築（_parseNode → innerHTML = "" → appendChild）に
+        // 通すと content が空になり、ルート内容に書かれた state の構造テンプレート
+        // （for / if）を黙って破壊する。route 定義は template の中には置けない
+        // （inert）ので、中を辿る理由も無い。
+        fragment.appendChild(element);
+        continue;
       } else if (tagName === config.tagNames.layout) {
         // <wcs-layout> は他の case と異なり element と appendNode が別物になる。
         // - element: cloneElement (Layout 本体)。後続の `element.innerHTML = ""; element.appendChild(children)`
