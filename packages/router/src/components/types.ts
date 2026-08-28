@@ -56,6 +56,8 @@ export interface IRoute extends IRouteChildContainer {
   readonly absoluteSegmentCount: number;
   readonly segmentInfos: ISegmentInfo[];
   readonly absoluteSegmentInfos: ISegmentInfo[];
+  /** guard 属性の有無。SSR の guard バリア判定に使う（docs/ssr-router-design.md §2-4） */
+  readonly hasGuard: boolean;
   guardHandler: GuardHandler;
   shouldChange(newParams: Record<string, string>): boolean;
   guardCheck(matchResult: IRouteMatchResult): Promise<void>;

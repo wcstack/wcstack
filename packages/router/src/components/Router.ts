@@ -6,10 +6,13 @@ import { IOutlet, IRoute, IRouter, IRouterCommit } from "./types.js";
 import { IWcBindable } from "../types.js";
 import { applyRoute } from "../applyRoute.js";
 import { getNavigation } from "../Navigation.js";
+import { matchRoutes } from "../matchRoutes.js";
 import { normalizeBasename, normalizePathname, sliceBasename } from "../normalizePathname.js";
 import { parseSearchParams, shallowEqualRecords } from "../searchParams.js";
 import { splitUrlTarget, effectiveSearch } from "../splitUrlTarget.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { bindSubtree } from "../protocol/binder.js";
+import { inSsr } from "../inSsr.js";
 
 interface NavigateEventLike {
   canIntercept: boolean;
@@ -33,6 +36,13 @@ const EMPTY_RECORD: Record<string, never> = Object.freeze({});
  * Container element that manages route definitions and navigation.
  */
 export class Router extends HTMLElement implements IRouter {
+  /**
+   * @wcstack/server の待機プロトコル（docs/ssr-router-design.md §3.2）。
+   * renderToString はこのフラグを持つ要素の connectedCallbackPromise を待って
+   * からシリアライズする — 初期ルート適用の完了がサーバー出力に反映される。
+   */
+  static hasConnectedCallbackPromise = true;
+
   static wcBindable: IWcBindable = {
     protocol: "wc-bindable",
     version: 1,
@@ -91,9 +101,20 @@ export class Router extends HTMLElement implements IRouter {
   private _routeName: string = '';
   /** 最初の成功 commit を通過したか（§4.4 の初回ガード） */
   private _hasCommitted: boolean = false;
+  private _connectedCallbackPromise: Promise<void>;
+  private _resolveConnectedCallback: (() => void) | null = null;
+  private _rejectConnectedCallback: ((reason?: unknown) => void) | null = null;
 
   constructor() {
     super();
+    this._connectedCallbackPromise = new Promise<void>((resolve, reject) => {
+      this._resolveConnectedCallback = resolve;
+      this._rejectConnectedCallback = reject;
+    });
+  }
+
+  get connectedCallbackPromise(): Promise<void> {
+    return this._connectedCallbackPromise;
   }
 
   get a11yRegion(): HTMLElement | null {
@@ -512,6 +533,7 @@ export class Router extends HTMLElement implements IRouter {
   private async _initialize(): Promise<void> {
     this._initializing = true;
     try {
+      const ssr = inSsr();
       this._basename = this._normalizeBasename(
         this.getAttribute("basename") || this._getBasename() || ""
       );
@@ -527,15 +549,36 @@ export class Router extends HTMLElement implements IRouter {
       if (!this._template) {
         raiseError(`${config.tagNames.router} should have a <template> child element.`);
       }
+      // SSR: parse は template.content を破壊的に消費する（route 要素は中身を
+      // 移された抜け殻になり、非 route ノードは fragment へ移動する）。
+      // シリアライズ出力に完全なルート定義を残してクライアントが従来どおり
+      // 起動できるよう、退避してパース後に復元する（docs/ssr-router-design.md §3.2）。
+      const templateSnapshot = ssr ? this._template.content.cloneNode(true) : null;
       const fragment = await parse(this);
       this._outlet.rootNode.appendChild(fragment);
+      if (templateSnapshot !== null) {
+        const content = this._template.content;
+        while (content.firstChild) {
+          content.removeChild(content.firstChild);
+        }
+        content.appendChild(templateSnapshot);
+      }
       if (this.routeChildNodes.length === 0) {
         raiseError(`${config.tagNames.router} has no route definitions.`);
       }
-      // 最初のナビゲーションより十分前に accessibility tree へ載せておく
-      this._ensureA11yRegion();
+      if (!ssr) {
+        // 最初のナビゲーションより十分前に accessibility tree へ載せておく。
+        // サーバーでは作らない — 初回描画はアナウンスしない既存規則により不要で、
+        // 作るとクライアントの初期化が二重生成する（docs/ssr-router-design.md §3.2）。
+        this._ensureA11yRegion();
+      }
 
       const fullPath = this._normalizePathname(window.location.pathname);
+      if (ssr) {
+        await this._renderForSsr(fullPath);
+        this._initialized = true;
+        return;
+      }
       await applyRoute(this, this.outlet, fullPath, this._path, window.location.search || "");
       this._notifyLocationChange();
       this._initialized = true;
@@ -544,15 +587,92 @@ export class Router extends HTMLElement implements IRouter {
     }
   }
 
+  /**
+   * SSR モードの初期ルート描画（docs/ssr-router-design.md §3.2）。
+   * 初回描画は transition arbiter に渡らない既存規則（showRouteContent）により
+   * 常に同期適用される。navigate / popstate リスナ・a11y region・
+   * `wcs:navigate` 通知はサーバーでは不要（connectedCallback 側で登録しない）。
+   */
+  private async _renderForSsr(fullPath: string): Promise<void> {
+    // guard バリア: guard 付きルートを含むマッチはサーバーで描かない（§2-4）。
+    // guard は進入を守る認可点で、サーバーには判断材料（cookie 等）を渡す設計が
+    // 無い。outlet を空・マーカー無しのまま返し、クライアントが従来どおり guard を
+    // 実行して描く。ハンドラのロードは待たず属性の有無（hasGuard）で判定する。
+    const path = sliceBasename(fullPath, this._basename);
+    const matchResult = matchRoutes(this, path);
+    const routes = matchResult?.routes
+      ?? (this._fallbackRoute !== null ? [this._fallbackRoute] : []);
+    if (routes.length === 0) {
+      // マッチ無しかつ fallback 無し: クライアント（applyRoute）と同じ loud failure
+      raiseError(`${config.tagNames.router} No route matched for path: ${path}`);
+    }
+    if (routes.some((route) => route.hasGuard)) {
+      return;
+    }
+    await applyRoute(this, this.outlet, fullPath, this._path, window.location.search || "");
+    // 表示済みルート内容を binder へ差し出す。クライアント初回描画の
+    // 「state の走査時に既に document に居る」前提はサーバーでは成立しない —
+    // state のロード方式（json 属性は I/O 無し・inline script は dynamic import）と
+    // 文書順次第で、state の初回走査が router の挿入より先に完了し得る。binder は
+    // 「未構築なら保留して構築末尾で引き取る／構築済みなら同期バインド」の両側を
+    // 吸収する。bindRouteContent（showRouteContent 側）は使わない — binder 不在の
+    // 警告はサーバーでは誤誘導になるため、warn 無しで直接差し出す。
+    for (const route of this.outlet.lastRoutes) {
+      for (const node of route.childNodeArray) {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          bindSubtree(node);
+        }
+      }
+    }
+    // ハイドレーションマーカー（Phase 2 の入力、§3.3）。キーは placeholder の
+    // UUID ではなく absolutePath — UUID はパースごとに再生成されクライアントと
+    // 一致しない。absolutePath は同一 template から決定的に導ける。
+    (this.outlet as unknown as Element).setAttribute('data-wcs-ssr', '');
+    for (const route of this.outlet.lastRoutes) {
+      // applyRoute 成功後の placeholder は必ず outlet 配下の DOM に居る
+      const parentNode = route.placeHolder.parentNode!;
+      const contentNodes = route.childNodeArray;
+      const start = document.createComment(`@@wcs-route-start:${route.absolutePath}`);
+      const end = document.createComment(`@@wcs-route-end:${route.absolutePath}`);
+      parentNode.insertBefore(start, contentNodes[0] ?? route.placeHolder.nextSibling);
+      const last = contentNodes[contentNodes.length - 1];
+      parentNode.insertBefore(end, last ? last.nextSibling : start.nextSibling);
+    }
+  }
+
   async connectedCallback() {
     // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）。
     // await より前に同期で行い、初期化が古い値を読まないようにする。
     upgradeProperties(this);
+    // SSR モード（docs/ssr-router-design.md §3.2）:
+    // - enable-ssr 無し → サーバーでは一切初期化しない（クライアント専用 = 部分 CSR）
+    // - enable-ssr あり → SSR 初期化のみ。navigate / popstate リスナは登録しない
+    // どちらも connectedCallbackPromise を必ず決着させる — reject を配管しないと
+    // renderToString が mutex を握ったまま無言ハングする（state 側と同じ理由）。
+    if (inSsr()) {
+      try {
+        // happy-dom のパーサは開始タグの時点で connectedCallback を呼ぶため、
+        // この時点では子（<template>）がまだパースされていない。パース自体は
+        // 同期完了するので、1 microtask 譲れば子が揃う。クライアントでは
+        // deferred な auto バンドルの upgrade 時に子が揃っているため不要
+        // （サーバー専用の待避、docs/ssr-router-design.md §3.2）。
+        await Promise.resolve();
+        if (this.hasAttribute('enable-ssr') && !this._initialized) {
+          await this._initialize();
+        }
+      } catch (error) {
+        this._rejectConnectedCallback?.(error);
+        throw error;
+      }
+      this._resolveConnectedCallback?.();
+      return;
+    }
     if (!this._initialized) {
       this._disconnectedDuringInit = false;
       await this._initialize();
       // 初期化中に disconnectedCallback が呼ばれた場合はイベントリスナを登録しない
       if (this._disconnectedDuringInit) {
+        this._resolveConnectedCallback?.();
         return;
       }
     }
@@ -571,6 +691,7 @@ export class Router extends HTMLElement implements IRouter {
       window.addEventListener("popstate", this._onPopState);
       this._listeningPopState = true;
     }
+    this._resolveConnectedCallback?.();
   }
 
   disconnectedCallback() {

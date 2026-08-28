@@ -27,6 +27,9 @@ export const GLOBALS_KEYS = [
   'document', 'customElements', 'HTMLElement',
   'DocumentFragment', 'Node', 'NodeFilter', 'Comment', 'Text',
   'MutationObserver', 'ShadowRoot', 'Element', 'HTMLTemplateElement',
+  // URL を持つコンポーネント（@wcstack/router 等）が window.location /
+  // history を読めるようにする（docs/ssr-router-design.md §3.1）。
+  'window', 'location', 'history',
 ];
 
 export function installGlobals(window: Window): () => void {
@@ -78,13 +81,34 @@ export function extractStateData(stateEl: any): Record<string, any> {
   return data;
 }
 
-export type BootstrapFunction = () => void;
+/**
+ * 同期の bootstrap 関数、または非同期ローダー。
+ * `HTMLElement` を継承するクラスはモジュール評価時にグローバルの `HTMLElement` を
+ * 参照するため、純 Node 環境ではトップレベル import できないパッケージがある。
+ * その場合は `async () => (await import('@wcstack/router')).bootstrapRouter()` の
+ * ように非同期ローダーを渡す — 呼び出しは installGlobals の後なので、モジュール
+ * 評価時にはグローバルが揃っている（docs/ssr-router-design.md §3.1）。
+ */
+export type BootstrapFunction = () => void | Promise<void>;
 
 export interface RenderOptions {
-  /** 相対 URL を解決するベース URL (例: "http://localhost:3001") */
+  /** 相対 URL を解決するベース URL (例: "http://localhost:3001")。省略時は `url` の origin */
   baseUrl?: string;
   /** bootstrap 関数の配列。省略時は @wcstack/state を自動ロード */
   bootstraps?: BootstrapFunction[];
+  /**
+   * このリクエストの完全 URL (例: "http://localhost:3000/products/1")。
+   * `window.location` / `document.baseURI` に反映される。ルーティングする
+   * コンポーネント（@wcstack/router 等）のサーバーレンダリングに必要
+   * （docs/ssr-router-design.md §3.1）。
+   */
+  url?: string;
+  /**
+   * `<head>` へ注入する `<base href>` の値。`url` 指定時の既定は "/"。
+   * ブラウザで `<base>` を置く SPA と同じ条件をサーバー内に再現する
+   * （深い URL での basename 誤認を防ぐ）。サブパス配備では明示する。
+   */
+  baseHref?: string;
 }
 
 async function loadDefaultBootstraps(): Promise<BootstrapFunction[]> {
@@ -169,6 +193,9 @@ async function loadDefaultBootstraps(): Promise<BootstrapFunction[]> {
  * - `$connectedCallback` 中に動的追加されたカスタム要素も安定化ループで検出・待機（最大 10 回）
  *
  * ## SSR でできないこと
+ * - `<wcs-router>` のクライアント側ハイドレーション（初期ルートのサーバー描画は
+ *   `url` オプション + `<wcs-router enable-ssr>` で動作するが、クライアント側の
+ *   採用機構が入るまで実験的。docs/ssr-router-design.md 参照）
  * - `<head>` 内の `<script src="...">` や `<link>` の自動実行
  * - ブラウザ固有 API（localStorage, sessionStorage, navigator 等）
  * - Shadow DOM のレンダリング（Declarative Shadow DOM 非対応）
@@ -194,23 +221,37 @@ export async function renderToString(html: string, options?: RenderOptions): Pro
   // globalThis を差し替えるため、同時に1つしか実行できない
   const releaseMutex = await renderMutex.acquire();
 
-  const window = new Window();
+  const window = options?.url ? new Window({ url: options.url }) : new Window();
   const restoreGlobals = installGlobals(window);
   const document = window.document;
 
-  // 相対 URL を baseUrl で解決する URL コンストラクタパッチをインストール
-  const restoreBaseUrl = options?.baseUrl
-    ? installBaseUrl(options.baseUrl)
-    : null;
-
-  // bootstrap の解決
-  const bootstraps = options?.bootstraps ?? await loadDefaultBootstraps();
-
-  for (const bootstrap of bootstraps) {
-    bootstrap();
-  }
+  let restoreBaseUrl: (() => void) | null = null;
 
   try {
+    // url 指定時は <base href> を注入する（既定 "/"）。ブラウザで <base> を置く
+    // SPA と同じ条件を再現し、深い URL での basename 誤認を防ぐ
+    // （docs/ssr-router-design.md §3.1）。
+    if (options?.url !== undefined || options?.baseHref !== undefined) {
+      const base = document.createElement('base');
+      base.setAttribute('href', options.baseHref ?? '/');
+      document.head.appendChild(base);
+    }
+
+    // 相対 URL を baseUrl で解決する URL コンストラクタパッチをインストール。
+    // baseUrl 省略時は url の origin を既定にする。
+    const effectiveBaseUrl =
+      options?.baseUrl ?? (options?.url ? new URL(options.url).origin : undefined);
+    restoreBaseUrl = effectiveBaseUrl
+      ? installBaseUrl(effectiveBaseUrl)
+      : null;
+
+    // bootstrap の解決。非同期ローダー（BootstrapFunction 参照）を許容するため
+    // await する。try 内で行うのは、throw 時にもグローバル復元を保証するため。
+    const bootstraps = options?.bootstraps ?? await loadDefaultBootstraps();
+
+    for (const bootstrap of bootstraps) {
+      await bootstrap();
+    }
 
     // SSR モードを html 要素に設定
     document.documentElement.setAttribute('data-wcs-server', '');
@@ -252,6 +293,17 @@ export async function renderToString(html: string, options?: RenderOptions): Pro
 
     return document.body.innerHTML;
   } finally {
+    // binder プロトコルの保留キュー（Symbol.for なので installGlobals の restore
+    // 対象外＝プロセス寿命）を空にする。state を読み込まないページで挿入側
+    // （router 等）が差し出したノードは引き取り手が現れないまま蓄積するため、
+    // レンダリングごとに後始末する（docs/ssr-router-design.md §3.1）。
+    // これはプロトコルの公開シンボル面であり、パッケージ内部への依存ではない。
+    const pendingBinds = (globalThis as Record<symbol, unknown>)[
+      Symbol.for('wcstack.binder.pending')
+    ];
+    if (Array.isArray(pendingBinds)) {
+      pendingBinds.length = 0;
+    }
     restoreBaseUrl?.();
     restoreGlobals();
     await window.close();

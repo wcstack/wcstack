@@ -132,6 +132,10 @@ export class Route extends HTMLElement implements IRoute {
     return this.absolutePath;
   }
 
+  get hasGuard(): boolean {
+    return this._core.hasGuard;
+  }
+
   get guardHandler(): GuardHandler {
     return this._core.guardHandler;
   }

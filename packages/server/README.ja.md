@@ -75,9 +75,18 @@ console.log(renderer.html);
 
 ## API リファレンス
 
-### `renderToString(html: string): Promise<string>`
+### `renderToString(html: string, options?: RenderOptions): Promise<string>`
 
 `@wcstack/state` テンプレートを含む HTML 文字列をレンダリングします。`<wcs-state enable-ssr>` を持つ要素のハイドレーションデータ付きのレンダリング済み HTML を返します。
+
+**オプション:**
+
+| オプション | 説明 |
+|--------|-------------|
+| `url` | このリクエストの完全 URL（例 `"http://localhost:3000/products/1"`）。`window.location` / `document.baseURI` に反映される。URL でルーティングするコンポーネントのサーバーレンダリングに必要。 |
+| `baseHref` | `<head>` へ注入する `<base href>` の値。`url` 指定時の既定は `"/"`。サブパス配備では明示する。 |
+| `baseUrl` | 相対 fetch URL の解決に使うベース URL。既定は `url` の origin。 |
+| `bootstraps` | bootstrap 関数の配列（既定は `bootstrapState`）。非同期ローダーも渡せる — モジュールスコープで `HTMLElement` を継承するクラスを持つパッケージは純 Node でトップレベル import できないため、`async () => (await import('@wcstack/fetch')).bootstrapFetch()` のように渡す（ローダーは DOM グローバル設置後に実行される）。 |
 
 **レンダリングパイプライン:**
 1. happy-dom ウィンドウを作成し、ブラウザグローバルをインストール
@@ -287,6 +296,7 @@ createServer(async (req, res) => {
 
 ## SSR でできないこと
 
+- `<wcs-router>` のクライアント側ハイドレーション — 初期ルートのサーバー描画は動作する（`url` オプション + `<wcs-router enable-ssr>`）が、クライアント側 router がサーバー描画済みのルート DOM をまだ採用（adopt）しないため、ブラウザでも router を起動するページで有効にすると二重描画になる。採用機構が入るまで router SSR は実験的（静的 HTML 生成用途まで）。設計と進捗は [docs/ssr-router-design.md](https://github.com/wcstack/wcstack/blob/main/docs/ssr-router-design.md) を参照。
 - `<head>` 内の `<script src="...">` や `<link>` の自動実行
 - ブラウザ固有 API（localStorage, sessionStorage, navigator 等）
 - Shadow DOM のレンダリング（Declarative Shadow DOM 非対応）
