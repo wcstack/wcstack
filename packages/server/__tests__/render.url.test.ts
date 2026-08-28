@@ -131,6 +131,45 @@ describe('待機プロトコル（URL を持つ非同期要素）', () => {
   });
 });
 
+describe('getBindingsReady の収集タイミング', () => {
+  it('ready の取得は安定化ループの後（cc 内で実体登録される実装への追随）', async () => {
+    // state と同じ形: connectedCallback 完了前の getBindingsReady は「未登録」の
+    // 即時解決 Promise を返し、完了後は構築完了を表す遅延 Promise を返す。
+    // ループ中に掴んだ空 Promise で serialize すると構築前の HTML が返り、
+    // 構築の続きがグローバル復元後に走って document 消失でクラッシュする
+    let registered = false;
+    const bootstrap = () => {
+      const ctor = class extends (globalThis as any).HTMLElement {
+        static hasConnectedCallbackPromise = true;
+        static getBindingsReady(_root: Node): Promise<void> {
+          if (!registered) return Promise.resolve();
+          return new Promise<void>((resolve) => {
+            setTimeout(() => {
+              const el = (globalThis as any).document.querySelector('x-late-ready');
+              if (el) el.textContent = 'built';
+              resolve();
+            }, 10);
+          });
+        }
+        _resolve: (() => void) | null = null;
+        connectedCallbackPromise = new Promise<void>((resolve) => {
+          this._resolve = resolve;
+        });
+        async connectedCallback() {
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          registered = true;
+          this._resolve?.();
+        }
+      };
+      (globalThis as any).customElements.define('x-late-ready', ctor);
+    };
+    const result = await renderToString(`<x-late-ready></x-late-ready>`, {
+      bootstraps: [bootstrap],
+    });
+    expect(result).toContain('built');
+  });
+});
+
 describe('binder pending queue の後始末', () => {
   it('引き取り手のない保留ノードはレンダリング後に残らない', async () => {
     const PENDING_KEY = Symbol.for('wcstack.binder.pending');

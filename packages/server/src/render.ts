@@ -31,6 +31,11 @@ export const GLOBALS_KEYS = [
   // URL を持つコンポーネント（@wcstack/router 等）が window.location /
   // history を読めるようにする（docs/ssr-router-design.md §3.1）。
   'window', 'location', 'history',
+  // コンポーネントが発火するイベントをレンダリングウィンドウの realm に揃える。
+  // Node ネイティブの CustomEvent は happy-dom の EventTarget に拒否される
+  // （"parameter 1 is not of type 'Event'"）。vitest の happy-dom 環境では
+  // グローバルが happy-dom 側なので隠れ、素の Node サーバーでだけ顕在化する
+  'Event', 'CustomEvent',
 ];
 
 export function installGlobals(window: Window): () => void {
@@ -193,15 +198,20 @@ async function loadDefaultBootstraps(): Promise<BootstrapFunction[]> {
  * - `static hasConnectedCallbackPromise = true` プロトコル準拠の全カスタム要素を自動待機
  * - `$connectedCallback` 中に動的追加されたカスタム要素も安定化ループで検出・待機（最大 10 回）
  *
+ * ### router SSR
+ * - `<wcs-router enable-ssr>` + `url` オプションで初期ルートをサーバー描画。
+ *   クライアント側 router は描画済み DOM を採用（adopt）する。
+ *   詳細は README「Router SSR」/ docs/ssr-router-design.md
+ *
  * ## SSR でできないこと
- * - `<wcs-router>` SSR の完全保証（サーバー描画 + クライアント採用は動作するが、
- *   スナップショット順序レース等の残フェーズ完了まで実験的。
- *   docs/ssr-router-design.md 参照）
  * - `<head>` 内の `<script src="...">` や `<link>` の自動実行
  * - ブラウザ固有 API（localStorage, sessionStorage, navigator 等）
  * - Shadow DOM のレンダリング（Declarative Shadow DOM 非対応）
  * - イベントハンドラの登録（クライアント側のハイドレーションで復元）
  * - `<wcs-autoloader>` による動的コンポーネント読み込み
+ * - guard 付きルートのサーバー描画（設計上・クライアントで guard 実行）、
+ *   `<wcs-layout>` ルートの採用（クライアント描画へフォールバック）、
+ *   `<wcs-head>` のサーバー反映（body のみの出力に head は載らない）
  *
  * ## HTML の分割パターン
  * ```
@@ -274,7 +284,6 @@ export async function renderToString(html: string, options?: RenderOptions): Pro
     const MAX_ITERATIONS = 10;
     const awaitedElements = new WeakSet();
     const readyCtors = new Set<any>();
-    const readyPromises: Promise<void>[] = [];
 
     for (let i = 0; i < MAX_ITERATIONS; i++) {
       const connectedPromises: Promise<void>[] = [];
@@ -286,9 +295,8 @@ export async function renderToString(html: string, options?: RenderOptions): Pro
           awaitedElements.add(el);
           connectedPromises.push((el as any).connectedCallbackPromise);
         }
-        if (!readyCtors.has(ctor) && typeof ctor.getBindingsReady === 'function') {
+        if (typeof ctor.getBindingsReady === 'function') {
           readyCtors.add(ctor);
-          readyPromises.push(ctor.getBindingsReady(document));
         }
       }
 
@@ -296,8 +304,16 @@ export async function renderToString(html: string, options?: RenderOptions): Pro
       await Promise.all(connectedPromises);
     }
 
-    // 非同期初期化の完了を待機
-    await Promise.all(readyPromises);
+    // 非同期初期化（バインディング構築）の完了を待機。Promise の**取得**は
+    // 安定化ループの後に行う — getBindingsReady の実体（rootNode ごとの ready）は
+    // 各要素の connectedCallback 内・最初の await より後に登録されるため、ループ
+    // 初回の収集では「まだ登録前」の即時解決 Promise を掴むことがある。inline
+    // スナップショット時代は state の connectedCallback 自身が bindings を待って
+    // いたため隠れていた（orchestrated 化で顕在化）。取り逃すと構築の続きが
+    // グローバル復元後に走り、document 消失でクラッシュする
+    await Promise.all(
+      Array.from(readyCtors, (ctor) => (ctor as { getBindingsReady(root: Node): Promise<void> }).getBindingsReady(document as unknown as Node))
+    );
 
     // スナップショット最終パス（orchestrated）: 全要素の完了とバインディング構築の
     // 後に <wcs-ssr> を生成する。inline 生成（connectedCallback 内）が取り逃がす
@@ -306,6 +322,20 @@ export async function renderToString(html: string, options?: RenderOptions): Pro
 
     return document.body.innerHTML;
   } finally {
+    // エラー経路でも進行中のバインディング構築を待ってから globals を戻す。
+    // 構築は要素の connectedCallback とは独立した microtask 連鎖で走るため、
+    // 待たずに戻すと続きが document 消失で unhandled になりプロセスを落とす。
+    // 後始末はベストエフォート（rejected も含めて待つだけ待つ）
+    try {
+      const readyPending: Promise<void>[] = [];
+      for (const el of document.querySelectorAll('*-*')) {
+        const ctor = el.constructor as { getBindingsReady?(root: Node): Promise<void> };
+        if (typeof ctor.getBindingsReady === 'function') {
+          readyPending.push(ctor.getBindingsReady(document as unknown as Node));
+        }
+      }
+      await Promise.allSettled(readyPending);
+    } catch { /* best effort */ }
     // binder プロトコルの保留キュー（Symbol.for なので installGlobals の restore
     // 対象外＝プロセス寿命）を空にする。state を読み込まないページで挿入側
     // （router 等）が差し出したノードは引き取り手が現れないまま蓄積するため、
