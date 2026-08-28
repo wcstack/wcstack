@@ -1,6 +1,6 @@
 # router SSR 設計 — サーバーでの初期ルート描画とクライアント採用
 
-Status: Phase 1〜3 実装済み（Phase 4 は未着手）
+Status: 全フェーズ（1〜4）実装済み
 Scope: `@wcstack/server`（レンダリング基盤）、`@wcstack/router`（SSR モード対応）、`@wcstack/state`（Phase 3 のみ・スナップショット順序）
 関連: [binder-protocol-design.md](./binder-protocol-design.md)、[view-transition-design.md](./view-transition-design.md)、[router-state-contract-design.md](./router-state-contract-design.md)
 
@@ -204,9 +204,12 @@ inSsr() かつ enable-ssr あり → SSR 初期化（下記）→ resolve して
   リリース時にのみ再ビルドされるため、未リリースのプロトコル変更（今回は
   binder = PR#191）は junction → dist 経由では見えない。1c の結合テストは
   state / router とも **src を直接 import** して dist の鮮度から切り離した。
-- CustomEvent の realm 差（Node ネイティブの CustomEvent を happy-dom 要素へ
-  dispatch）は問題にならなかった — `commitNavigation` / `setParams` の発火を含む
-  初期適用が結合テストで成立している。`GLOBALS_KEYS` への CustomEvent 追加は不要。
+- ~~CustomEvent の realm 差は問題にならなかった~~ **Phase 4 で訂正**: この観測は
+  vitest の happy-dom 環境（グローバル CustomEvent が happy-dom 側）に依存した
+  誤りだった。**素の Node サーバーでは** Node ネイティブの CustomEvent が
+  happy-dom の EventTarget に拒否される（"parameter 1 is not of type 'Event'"）。
+  `GLOBALS_KEYS` へ `Event` / `CustomEvent` を追加して解決（§7 Phase 4 の知見）。
+  教訓: サーバー実行環境の検証は vitest 環境では代替できない。
 
 ## 4. Phase 2 — クライアント採用（実装済み）
 
@@ -340,7 +343,23 @@ CI 制約: ci.yml の matrix は「変更されたパッケージで `npm ci`」
 | 1c | server × router 実結合 | `packages/server/__e2e__/router-ssr.test.ts` — CI matrix 外（`test:e2e` は別コマンド）。state / router とも src 直 import で dist 鮮度から独立（§3.5） |
 | 2 | クライアント採用 | `packages/router/__tests__/ssrHydration.test.ts`（ラウンドトリップ + 検証失敗系）+ server `__e2e__` のフルラウンドトリップ（state ハイドレーション込み・採用ノード上でバインドが生きることを実測）。実ブラウザ検証は Phase 4 |
 | 3 | スナップショット順序 | state unit（orchestrated スキップ・最終パス・冪等性・後方互換）+ server unit（モック builder で宣言タイミングと呼び出し位置）+ server `__e2e__`（json 属性 state × route 内 for テンプレートのレース解消を実測） |
-| 4 | examples（`examples/ssr` の router 版）、README 反映（"Cannot Do" から router を降ろす）、wcstack-skill 追随 | — |
+| 4 | 実ブラウザ e2e・README 反映・serve.mjs の SSR ルート | `e2e/tests/ssr-router.spec.ts` — serve.mjs が `/ssr-router/*` を per-request で renderToString し、Chromium で SSR → 採用 → same-match ライブバインド → SPA 遷移 → 深い URL 直リロードを検証（5 spec・コンソールエラーゼロ）。`examples/ssr` の router 版は **リリース後に追随**（example は npm 公開版に依存する構成のため、未公開機能の example は壊れて見える）。wcstack-skill 追随も同様にリリース時 |
+
+### 7.1 Phase 4 の実装知見（実測）
+
+- **素の Node サーバーは vitest 環境と別物**: (a) CustomEvent の realm 差
+  （§3.5 の訂正参照）、(b) `getBindingsReady` の収集タイミング。後者は
+  renderToString が安定化ループの**初回反復で** ready Promise を掴んでいたことが
+  原因 — ready の実体（rootNode ごと）は各要素の connectedCallback 内・最初の
+  await より後に登録されるため、初回収集は「未登録」の即時解決 Promise を
+  返し得る。inline スナップショット時代は state の cc 自身が bindings を待って
+  いたため隠れ、orchestrated 化（cc の内部待ちを撤去）で顕在化した。ready の
+  **取得**を安定化ループの後へ移し、さらにエラー経路でも `finally` で構築完了を
+  待ってから globals を復元する（待たないと構築の続きが document 消失で
+  unhandled になり、**サーバープロセスごと落ちる**）。
+- serve.mjs の SSR ルートは state / router を**非同期 bootstrap ローダー**で
+  読み込む（§3.1 の機構の実地使用例）。server バンドルはモジュールスコープで
+  HTMLElement に触れないため eager import できる。
 
 ## 8. 却下した代替案
 

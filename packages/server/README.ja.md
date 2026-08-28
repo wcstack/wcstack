@@ -294,9 +294,30 @@ createServer(async (req, res) => {
 - `static hasConnectedCallbackPromise = true` プロトコル準拠の全カスタム要素を自動待機
 - 安定化ループ: await 後に DOM を再走査し、`$connectedCallback` 中に動的追加されたカスタム要素も待機（最大 10 回）
 
+### Router SSR
+
+`<wcs-router>` に `enable-ssr` を付け、リクエストの `url` を渡します（設計: [docs/ssr-router-design.md](https://github.com/wcstack/wcstack/blob/main/docs/ssr-router-design.md)）:
+
+```javascript
+const body = await renderToString(template, {
+  url: `http://localhost:3000${req.url}`,
+  bootstraps: [
+    bootstrapState,
+    // HTMLElement を継承するクラスは純 Node でトップレベル import できないため
+    // 非同期ローダーで渡す（DOM グローバル設置後にモジュール評価される）
+    async () => (await import('@wcstack/router')).bootstrapRouter(),
+  ],
+});
+```
+
+- リクエスト URL の初期ルートがサーバーで描画される — 型付きパラメータ・ネストルート・ルート内容中の構造テンプレート（`for:` / `if:`）を含む。
+- クライアント側 router はサーバー描画済み DOM を再描画せずに**採用（adopt）**する。採用ノード上で state のバインディングは生きたまま。サーバー出力が検証に通らない場合（URL 不一致・template 変更等）は静かに通常のクライアント描画へフォールバックする。
+- `<wcs-ssr>` スナップショットはサーバー主導の最終パス（ssr-snapshot プロトコル）で生成され、読み込み順に関係なくルート内容がハイドレーションデータに載る。
+- `<wcs-link>` の anchor はサーバーで描画され（`active` / `aria-current` 付き）、クライアントが採用する。
+- サブパス配備は `baseHref` を渡し、クライアントにも同じ `<base href>` を配信する。
+
 ## SSR でできないこと
 
-- `<wcs-router>` SSR の完全保証 — 初期ルートのサーバー描画（`url` オプション + `<wcs-router enable-ssr>`）・クライアント側の採用（adopt）・orchestrated な `<wcs-ssr>` スナップショットまで動作するが、実ブラウザ e2e 検証が残っているためベータ扱い。設計上の恒久的制限: guard 付きルートはサーバーで描画されない、`<wcs-layout>` を使うルートはクライアント描画にフォールバックする。設計と進捗は [docs/ssr-router-design.md](https://github.com/wcstack/wcstack/blob/main/docs/ssr-router-design.md) を参照。
 - `<head>` 内の `<script src="...">` や `<link>` の自動実行
 - ブラウザ固有 API（localStorage, sessionStorage, navigator 等）
 - Shadow DOM のレンダリング（Declarative Shadow DOM 非対応）
