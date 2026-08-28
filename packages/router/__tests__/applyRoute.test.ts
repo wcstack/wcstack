@@ -5,6 +5,7 @@ import { Outlet } from '../src/components/Outlet';
 import { Route } from '../src/components/Route';
 import * as matchRoutesModule from '../src/matchRoutes';
 import * as showRouteContentModule from '../src/showRouteContent';
+import * as a11yPoliciesModule from '../src/a11yPolicies';
 import './setup';
 
 describe('applyRoute', () => {
@@ -392,6 +393,235 @@ describe('applyRoute', () => {
 
       expect(h1.getAttribute('tabindex')).toBe('-1');
       expect(document.activeElement).toBe(h1);
+    });
+  });
+
+  // docs/router-state-contract-design.md §3 / §4.4
+  describe('観測面 commit と same-match 高速パス', () => {
+    function committedRouter(path: string, basename = ''): Router {
+      const router = document.createElement('wcs-router') as Router;
+      // appendChild すると _initialize が走って _basename を再解決してしまうため
+      // detached のまま使う（イベント dispatch は detached でも動く）
+      (router as any)._basename = basename;
+      router.commitNavigation({
+        params: {},
+        typedParams: {},
+        routeName: '',
+        search: '',
+        path,
+      });
+      return router;
+    }
+
+    it('commit で params / typedParams / routeName / searchParams が更新されること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+      const outlet = document.createElement('wcs-outlet') as Outlet;
+
+      const mockRoute = { name: 'detail' } as unknown as Route;
+      const matchResult = {
+        path: '/products/5',
+        routes: [mockRoute],
+        params: { productId: '5' },
+        typedParams: { productId: 5 },
+        lastPath: ''
+      };
+      vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
+      vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+
+      await applyRoute(router, outlet, '/products/5', '', '?tab=specs');
+
+      expect(router.params).toEqual({ productId: '5' });
+      expect(router.typedParams).toEqual({ productId: 5 });
+      expect(router.routeName).toBe('detail');
+      expect(router.searchParams).toEqual({ tab: 'specs' });
+      expect(router.path).toBe('/products/5');
+    });
+
+    it('露出オブジェクトは frozen スナップショットであること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+      const outlet = document.createElement('wcs-outlet') as Outlet;
+
+      const matchResult = {
+        path: '/p',
+        routes: [{ name: '' } as unknown as Route],
+        params: { id: '1' },
+        typedParams: { id: 1 },
+        lastPath: ''
+      };
+      vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
+      vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+
+      await applyRoute(router, outlet, '/p', '', '?a=1');
+
+      expect(Object.isFrozen(router.params)).toBe(true);
+      expect(Object.isFrozen(router.typedParams)).toBe(true);
+      expect(Object.isFrozen(router.searchParams)).toBe(true);
+      expect(() => { (router.params as any).x = '9'; }).toThrow();
+    });
+
+    it('fallback ルートでは params={} で routeName は fallback の name であること (D8)', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+      router.fallbackRoute = { name: 'notfound' } as unknown as Route;
+      const outlet = document.createElement('wcs-outlet') as Outlet;
+
+      vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(null);
+      vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+
+      await applyRoute(router, outlet, '/nonexistent', '/prev');
+
+      expect(router.params).toEqual({});
+      expect(router.routeName).toBe('notfound');
+    });
+
+    it('無名 fallback ルートでは routeName が "" であること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+      router.fallbackRoute = {} as unknown as Route;
+      const outlet = document.createElement('wcs-outlet') as Outlet;
+
+      vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(null);
+      vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+
+      await applyRoute(router, outlet, '/nonexistent', '/prev');
+
+      expect(router.routeName).toBe('');
+    });
+
+    it('guard 拒否では観測面イベントを一切発火しないこと (§3.4 規範 3)', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+      const outlet = document.createElement('wcs-outlet') as Outlet;
+
+      const matchResult = {
+        path: '/blocked',
+        routes: [{ name: 'blocked' } as unknown as Route],
+        params: { id: '1' },
+        typedParams: { id: 1 },
+        lastPath: ''
+      };
+      vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
+      vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(false);
+
+      const listeners = {
+        params: vi.fn(),
+        routeName: vi.fn(),
+        search: vi.fn(),
+        path: vi.fn(),
+      };
+      router.addEventListener('wcs-router:params-changed', listeners.params);
+      router.addEventListener('wcs-router:route-name-changed', listeners.routeName);
+      router.addEventListener('wcs-router:search-changed', listeners.search);
+      router.addEventListener('wcs-router:path-changed', listeners.path);
+
+      const committed = await applyRoute(router, outlet, '/blocked', '/prev', '?x=1');
+
+      expect(committed).toBe(false);
+      expect(listeners.params).not.toHaveBeenCalled();
+      expect(listeners.routeName).not.toHaveBeenCalled();
+      expect(listeners.search).not.toHaveBeenCalled();
+      expect(listeners.path).not.toHaveBeenCalled();
+      expect(router.params).toEqual({});
+      expect(router.searchParams).toEqual({});
+    });
+
+    it('same-match では matchRoutes / showRouteContent / a11y をスキップし search のみ commit すること', async () => {
+      const router = committedRouter('/products');
+      const outlet = document.createElement('wcs-outlet') as Outlet;
+      outlet.lastRoutes = [{} as Route];
+
+      const matchSpy = vi.spyOn(matchRoutesModule, 'matchRoutes');
+      const showSpy = vi.spyOn(showRouteContentModule, 'showRouteContent');
+      const a11ySpy = vi.spyOn(a11yPoliciesModule, 'applyA11yPolicies');
+
+      const searchListener = vi.fn();
+      const pathListener = vi.fn();
+      router.addEventListener('wcs-router:search-changed', searchListener);
+      router.addEventListener('wcs-router:path-changed', pathListener);
+
+      const committed = await applyRoute(router, outlet, '/products', '/products', '?page=2');
+
+      expect(committed).toBe(true);
+      // guard 相・DOM 変更・transition・a11y のいずれも通らない
+      expect(matchSpy).not.toHaveBeenCalled();
+      expect(showSpy).not.toHaveBeenCalled();
+      expect(a11ySpy).not.toHaveBeenCalled();
+      // search は commit され、search-changed のみが発火する
+      expect(router.searchParams).toEqual({ page: '2' });
+      expect(searchListener).toHaveBeenCalledTimes(1);
+      expect(pathListener).not.toHaveBeenCalled();
+    });
+
+    it('same-match で search が不変ならイベントは発火しないこと', async () => {
+      const router = committedRouter('/products');
+      const outlet = document.createElement('wcs-outlet') as Outlet;
+
+      const searchListener = vi.fn();
+      router.addEventListener('wcs-router:search-changed', searchListener);
+
+      await applyRoute(router, outlet, '/products', '/products', '');
+
+      expect(searchListener).not.toHaveBeenCalled();
+    });
+
+    it('basename 付きでも same-match が成立すること（スライス後比較 — D6）', async () => {
+      const router = committedRouter('/products', '/app');
+      const outlet = document.createElement('wcs-outlet') as Outlet;
+
+      const matchSpy = vi.spyOn(matchRoutesModule, 'matchRoutes');
+
+      // fullPath は basename 込み。スライス後の '/products' が router.path と一致する
+      const committed = await applyRoute(router, outlet, '/app/products', '/products', '?page=2');
+
+      expect(committed).toBe(true);
+      expect(matchSpy).not.toHaveBeenCalled();
+      expect(router.searchParams).toEqual({ page: '2' });
+    });
+
+    it('初回 commit 前には same-match を適用しないこと（§4.4 初回ガード）', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+      // commit を経ずに _path だけ一致させる（path setter は commit ではない）
+      router.path = '/products';
+      const outlet = document.createElement('wcs-outlet') as Outlet;
+
+      const matchResult = {
+        path: '/products',
+        routes: [{ name: '' } as unknown as Route],
+        params: {},
+        typedParams: {},
+        lastPath: ''
+      };
+      const matchSpy = vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
+      vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+
+      await applyRoute(router, outlet, '/products', '/products', '');
+
+      // same-match ではなく全経路を通る
+      expect(matchSpy).toHaveBeenCalledWith(router, '/products');
+    });
+
+    it('パス遷移（same-match でない）は従来どおり全経路を通ること', async () => {
+      const router = committedRouter('/products');
+      const outlet = document.createElement('wcs-outlet') as Outlet;
+
+      const matchResult = {
+        path: '/about',
+        routes: [{ name: 'about' } as unknown as Route],
+        params: {},
+        typedParams: {},
+        lastPath: ''
+      };
+      const matchSpy = vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
+      const showSpy = vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+
+      await applyRoute(router, outlet, '/about', '/products', '');
+
+      expect(matchSpy).toHaveBeenCalledWith(router, '/about');
+      expect(showSpy).toHaveBeenCalled();
+      expect(router.routeName).toBe('about');
     });
   });
 });

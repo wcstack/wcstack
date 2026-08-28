@@ -303,7 +303,7 @@ describe('Router', () => {
       await router.navigate('/path');
 
       expect(pushStateSpy).toHaveBeenCalledWith(null, '', '/base/path');
-      expect(applySpy).toHaveBeenCalledWith(router, router.outlet, '/base/path', '/prev');
+      expect(applySpy).toHaveBeenCalledWith(router, router.outlet, '/base/path', '/prev', '');
     });
 
     it('フォールバック経路: commit 後にページ先頭へスクロールすること', async () => {
@@ -332,6 +332,119 @@ describe('Router', () => {
       await router.navigate('/blocked');
 
       expect(scrollSpy).not.toHaveBeenCalled();
+    });
+
+    // docs/router-state-contract-design.md §4.1 — クエリ / ハッシュ込みターゲットの受理
+    describe('クエリ / ハッシュ込みターゲット (§4.1)', () => {
+      it('Navigation API: クエリ付きターゲットは basename を pathname にのみ結合して渡すこと', async () => {
+        const router = document.createElement('wcs-router') as Router;
+        (router as any)._basename = '/base';
+        const navigation = {
+          navigate: vi.fn(),
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        };
+        (window as any).navigation = navigation;
+
+        await router.navigate('/products?page=2');
+
+        expect(navigation.navigate).toHaveBeenCalledWith('/base/products?page=2');
+      });
+
+      it('フォールバック: クエリ付きターゲットで applyRoute にはクエリを渡さないこと（欠陥 6 の修理）', async () => {
+        const router = document.createElement('wcs-router') as Router;
+        (router as any)._basename = '/base';
+        (router as any)._outlet = createOutlet();
+        (router as any)._outlet.routesNode = router;
+        router.path = '/prev';
+
+        const pushStateSpy = vi.spyOn(history, 'pushState');
+        const applySpy = vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(true);
+        vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+
+        await router.navigate('/products?page=2');
+
+        // URL にはクエリを保つ
+        expect(pushStateSpy).toHaveBeenCalledWith(null, '', '/base/products?page=2');
+        // セグメントマッチにはクエリを渡さない（search は明示引数で渡る — §3.6）
+        expect(applySpy).toHaveBeenCalledWith(router, router.outlet, '/base/products', '/prev', '?page=2');
+      });
+
+      it('クエリのみターゲット（"?page=2"）は現在の pathname を維持すること', async () => {
+        const router = document.createElement('wcs-router') as Router;
+        (router as any)._basename = '';
+        const navigation = {
+          navigate: vi.fn(),
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        };
+        (window as any).navigation = navigation;
+
+        const originalLocation = window.location;
+        delete (window as any).location;
+        (window as any).location = { pathname: '/current', href: 'http://localhost/current' };
+        try {
+          await router.navigate('?page=2');
+        } finally {
+          (window as any).location = originalLocation;
+        }
+
+        expect(navigation.navigate).toHaveBeenCalledWith('/current?page=2');
+      });
+
+      it('`?` 単独はクエリの全消去（pathname 維持・クエリ無し URL）になること', async () => {
+        const router = document.createElement('wcs-router') as Router;
+        (router as any)._basename = '';
+        const navigation = {
+          navigate: vi.fn(),
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        };
+        (window as any).navigation = navigation;
+
+        const originalLocation = window.location;
+        delete (window as any).location;
+        (window as any).location = { pathname: '/current', href: 'http://localhost/current?page=2' };
+        try {
+          await router.navigate('?');
+        } finally {
+          (window as any).location = originalLocation;
+        }
+
+        expect(navigation.navigate).toHaveBeenCalledWith('/current');
+      });
+
+      it('ハッシュは分解時に温存して URL に渡すこと', async () => {
+        const router = document.createElement('wcs-router') as Router;
+        (router as any)._basename = '/base';
+        (router as any)._outlet = createOutlet();
+        (router as any)._outlet.routesNode = router;
+        router.path = '/prev';
+
+        const pushStateSpy = vi.spyOn(history, 'pushState');
+        const applySpy = vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(true);
+        vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+
+        await router.navigate('/docs?q=x#section');
+
+        expect(pushStateSpy).toHaveBeenCalledWith(null, '', '/base/docs?q=x#section');
+        expect(applySpy).toHaveBeenCalledWith(router, router.outlet, '/base/docs', '/prev', '?q=x');
+      });
+
+      it('navigate("") は従来どおりルート扱いになること', async () => {
+        const router = document.createElement('wcs-router') as Router;
+        (router as any)._basename = '/base';
+        const navigation = {
+          navigate: vi.fn(),
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        };
+        (window as any).navigation = navigation;
+
+        await router.navigate('');
+
+        expect(navigation.navigate).toHaveBeenCalledWith('/base/');
+      });
     });
   });
 
@@ -372,7 +485,7 @@ describe('Router', () => {
       expect(capturedHandler).not.toBeNull();
 
       await capturedHandler!.call({ _path: '/prev' });
-      expect(applySpy).toHaveBeenCalledWith(router, router.outlet, '/next', '/prev');
+      expect(applySpy).toHaveBeenCalledWith(router, router.outlet, '/next', '/prev', '');
     });
 
     it('basename配下でないURLはinterceptしないこと', () => {
@@ -415,7 +528,7 @@ describe('Router', () => {
       expect(capturedHandler).not.toBeNull();
 
       await capturedHandler!();
-      expect(applySpy).toHaveBeenCalledWith(router, router.outlet, '/app', '/prev');
+      expect(applySpy).toHaveBeenCalledWith(router, router.outlet, '/app', '/prev', '');
     });
 
     it('interceptハンドラ内でapplyRouteが例外を投げた場合、console.errorで通知して再スローすること', async () => {
@@ -721,7 +834,7 @@ describe('Router', () => {
 
       await (router as any)._onPopState();
 
-      expect(applySpy).toHaveBeenCalledWith(router, router.outlet, '/next', '/prev');
+      expect(applySpy).toHaveBeenCalledWith(router, router.outlet, '/next', '/prev', '');
       expect(dispatchSpy).toHaveBeenCalledWith(expect.any(CustomEvent));
 
       (window as any).location = originalLocation;
@@ -755,15 +868,256 @@ describe('Router', () => {
     it('wcBindableが正しく定義されていること', () => {
       expect(Router.wcBindable.protocol).toBe('wc-bindable');
       expect(Router.wcBindable.version).toBe(1);
-      expect(Router.wcBindable.properties).toHaveLength(2);
+      expect(Router.wcBindable.properties).toHaveLength(7);
       expect(Router.wcBindable.properties[0].name).toBe('navigateUrl');
       expect(Router.wcBindable.properties[0].event).toBe('wcs-router:navigate-url-changed');
-      expect(Router.wcBindable.properties[1].name).toBe('path');
-      expect(Router.wcBindable.properties[1].event).toBe('wcs-router:path-changed');
+      expect(Router.wcBindable.properties[1].name).toBe('replaceUrl');
+      expect(Router.wcBindable.properties[1].event).toBe('wcs-router:replace-url-changed');
+      expect(Router.wcBindable.properties[2].name).toBe('path');
+      expect(Router.wcBindable.properties[2].event).toBe('wcs-router:path-changed');
     });
 
+    // docs/router-state-contract-design.md §3.1 — 観測面は output-only
+    // （properties のみ・inputs に無い → state 側の既定 authority=element）
+    it('観測面 params/typedParams/searchParams/routeName が properties に宣言されていること', () => {
+      const names = Router.wcBindable.properties.map(p => p.name);
+      expect(names).toContain('params');
+      expect(names).toContain('typedParams');
+      expect(names).toContain('searchParams');
+      expect(names).toContain('routeName');
+
+      const byName = (n: string) => Router.wcBindable.properties.find(p => p.name === n)!;
+      expect(byName('params').event).toBe('wcs-router:params-changed');
+      expect(byName('typedParams').event).toBe('wcs-router:params-changed');
+      expect(byName('searchParams').event).toBe('wcs-router:search-changed');
+      expect(byName('routeName').event).toBe('wcs-router:route-name-changed');
+
+      // detail は { params, typedParams } — 両プロパティとも getter で分派する
+      const detail = { params: { id: '5' }, typedParams: { id: 5 } };
+      const ev = new CustomEvent('wcs-router:params-changed', { detail });
+      expect(byName('params').getter!(ev)).toBe(detail.params);
+      expect(byName('typedParams').getter!(ev)).toBe(detail.typedParams);
+
+      // 観測面は inputs に無い（output-only）
+      const inputNames = (Router.wcBindable.inputs ?? []).map(i => i.name);
+      for (const name of ['params', 'typedParams', 'searchParams', 'routeName']) {
+        expect(inputNames).not.toContain(name);
+      }
+    });
+  });
+
+  // docs/router-state-contract-design.md §3.4 — 発火規範 / §4.4 — same-match 判定
+  describe('commitNavigation / isSameMatch', () => {
+    const COMMIT = {
+      params: { id: '5' },
+      typedParams: { id: 5 },
+      routeName: 'detail',
+      search: '?q=x',
+      path: '/products/5',
+    };
+
+    it('発火順序が params → route-name → search → path であること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      const order: string[] = [];
+      for (const ev of [
+        'wcs-router:params-changed',
+        'wcs-router:route-name-changed',
+        'wcs-router:search-changed',
+        'wcs-router:path-changed',
+      ]) {
+        router.addEventListener(ev, () => order.push(ev));
+      }
+
+      router.commitNavigation(COMMIT);
+
+      expect(order).toEqual([
+        'wcs-router:params-changed',
+        'wcs-router:route-name-changed',
+        'wcs-router:search-changed',
+        'wcs-router:path-changed',
+      ]);
+    });
+
+    it('どのイベントのリスナーからも遷移後スナップショットの一貫した値が見えること（イベント前に全値コミット）', () => {
+      const router = document.createElement('wcs-router') as Router;
+      const seen: Array<Record<string, unknown>> = [];
+      for (const ev of [
+        'wcs-router:params-changed',
+        'wcs-router:route-name-changed',
+        'wcs-router:search-changed',
+        'wcs-router:path-changed',
+      ]) {
+        router.addEventListener(ev, () => {
+          seen.push({
+            params: router.params,
+            typedParams: router.typedParams,
+            routeName: router.routeName,
+            searchParams: router.searchParams,
+            path: router.path,
+          });
+        });
+      }
+
+      router.commitNavigation(COMMIT);
+
+      expect(seen).toHaveLength(4);
+      for (const snapshot of seen) {
+        expect(snapshot.params).toEqual({ id: '5' });
+        expect(snapshot.typedParams).toEqual({ id: 5 });
+        expect(snapshot.routeName).toBe('detail');
+        expect(snapshot.searchParams).toEqual({ q: 'x' });
+        expect(snapshot.path).toBe('/products/5');
+      }
+    });
+
+    it('params-changed の detail は { params, typedParams } であること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      let detail: any = null;
+      router.addEventListener('wcs-router:params-changed', (e) => {
+        detail = (e as CustomEvent).detail;
+      });
+
+      router.commitNavigation(COMMIT);
+
+      expect(detail.params).toEqual({ id: '5' });
+      expect(detail.typedParams).toEqual({ id: 5 });
+    });
+
+    it('変化しなかった面のイベントは発火しないこと（同一 commit の再適用は全て無発火）', () => {
+      const router = document.createElement('wcs-router') as Router;
+      router.commitNavigation(COMMIT);
+
+      const listeners = [vi.fn(), vi.fn(), vi.fn(), vi.fn()];
+      router.addEventListener('wcs-router:params-changed', listeners[0]);
+      router.addEventListener('wcs-router:route-name-changed', listeners[1]);
+      router.addEventListener('wcs-router:search-changed', listeners[2]);
+      router.addEventListener('wcs-router:path-changed', listeners[3]);
+
+      router.commitNavigation({ ...COMMIT });
+
+      for (const listener of listeners) {
+        expect(listener).not.toHaveBeenCalled();
+      }
+    });
+
+    it('変化しなかった面は同一性を保つこと（不変の面のオブジェクトは差し替えない）', () => {
+      const router = document.createElement('wcs-router') as Router;
+      router.commitNavigation(COMMIT);
+      const prevParams = router.params;
+      const prevSearch = router.searchParams;
+
+      // search だけ変える
+      router.commitNavigation({ ...COMMIT, search: '?q=y' });
+
+      expect(router.params).toBe(prevParams);
+      expect(router.searchParams).not.toBe(prevSearch);
+      expect(router.searchParams).toEqual({ q: 'y' });
+    });
+
+    it('isSameMatch は最初の成功 commit より前は常に false であること（初回ガード）', () => {
+      const router = document.createElement('wcs-router') as Router;
+      // path setter は commit ではない
+      router.path = '/products';
+      expect(router.isSameMatch('/products')).toBe(false);
+
+      router.commitNavigation({ ...COMMIT, path: '/products' });
+      expect(router.isSameMatch('/products')).toBe(true);
+      expect(router.isSameMatch('/about')).toBe(false);
+    });
+  });
+
+  // docs/router-state-contract-design.md §4.4 / D6b — intercept オプションの same-match 分岐
+  describe('_onNavigateFunc の same-match オプション', () => {
+    function setupCommittedRouter(): Router {
+      const router = document.createElement('wcs-router') as Router;
+      (router as any)._basename = '';
+      (router as any)._outlet = createOutlet();
+      (router as any)._outlet.routesNode = router;
+      router.commitNavigation({
+        params: {}, typedParams: {}, routeName: '', search: '', path: '/products',
+      });
+      return router;
+    }
+
+    function makeNavEvent(url: string, navigationType?: string) {
+      return {
+        canIntercept: true,
+        hashChange: false,
+        downloadRequest: null,
+        navigationType,
+        destination: { url },
+        intercept: vi.fn(),
+      };
+    }
+
+    it('same-match の push では scroll / focusReset が manual になること', () => {
+      const router = setupCommittedRouter();
+      const navEvent = makeNavEvent('http://localhost/products?page=2', 'push');
+
+      (router as any)._onNavigateFunc(navEvent);
+
+      const options = navEvent.intercept.mock.calls[0][0];
+      expect(options.scroll).toBe('manual');
+      expect(options.focusReset).toBe('manual');
+    });
+
+    it('same-match の replace でも scroll が manual になること', () => {
+      const router = setupCommittedRouter();
+      const navEvent = makeNavEvent('http://localhost/products?q=a', 'replace');
+
+      (router as any)._onNavigateFunc(navEvent);
+
+      const options = navEvent.intercept.mock.calls[0][0];
+      expect(options.scroll).toBe('manual');
+    });
+
+    it('same-match の traverse では scroll が仕様既定（ブラウザ復元）のままであること (D6b)', () => {
+      const router = setupCommittedRouter();
+      const navEvent = makeNavEvent('http://localhost/products?page=1', 'traverse');
+
+      (router as any)._onNavigateFunc(navEvent);
+
+      const options = navEvent.intercept.mock.calls[0][0];
+      expect(options.scroll).toBe('after-transition');
+      // focusReset は same-match で常に manual
+      expect(options.focusReset).toBe('manual');
+    });
+
+    it('パス遷移（same-match でない）では従来既定のままであること', () => {
+      const router = setupCommittedRouter();
+      const navEvent = makeNavEvent('http://localhost/about', 'push');
+
+      (router as any)._onNavigateFunc(navEvent);
+
+      const options = navEvent.intercept.mock.calls[0][0];
+      expect(options.scroll).toBe('after-transition');
+      expect(options.focusReset).toBe('after-transition');
+    });
+
+    it('フォールバック経路: same-match（クエリのみ遷移）では commit してもスクロールしないこと', async () => {
+      const router = setupCommittedRouter();
+      router.path = '/products';
+
+      vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(true);
+      const scrollSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+      vi.spyOn(history, 'pushState').mockImplementation(() => {});
+
+      const originalLocation = window.location;
+      delete (window as any).location;
+      (window as any).location = { pathname: '/products', href: 'http://localhost/products' };
+      try {
+        await router.navigate('?page=2');
+      } finally {
+        (window as any).location = originalLocation;
+      }
+
+      expect(scrollSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('wcBindable (inputs / commands)', () => {
     it('inputsにbasenameが宣言されていること', () => {
-      expect(Router.wcBindable.inputs).toHaveLength(2);
+      expect(Router.wcBindable.inputs).toHaveLength(3);
       expect(Router.wcBindable.inputs![0].name).toBe('basename');
       expect(Router.wcBindable.inputs![0].attribute).toBe('basename');
     });
@@ -783,10 +1137,19 @@ describe('Router', () => {
       expect(Router.wcBindable.inputs!.some(input => input.name === 'path')).toBe(false);
     });
 
-    it('commandsにnavigateが宣言されていること', () => {
-      expect(Router.wcBindable.commands).toHaveLength(1);
+    it('commandsにnavigateとreplaceが宣言されていること', () => {
+      expect(Router.wcBindable.commands).toHaveLength(2);
       expect(Router.wcBindable.commands![0].name).toBe('navigate');
       expect(Router.wcBindable.commands![0].async).toBe(true);
+      expect(Router.wcBindable.commands![1].name).toBe('replace');
+      expect(Router.wcBindable.commands![1].async).toBe(true);
+    });
+
+    // docs/router-state-contract-design.md §4.2 — replaceUrl は navigateUrl と完全同型
+    it('inputsにreplaceUrlが宣言されていること（settableな書き込み面）', () => {
+      const replaceUrl = Router.wcBindable.inputs!.find(input => input.name === 'replaceUrl');
+      expect(replaceUrl).toBeDefined();
+      expect(replaceUrl!.attribute).toBeUndefined();
     });
   });
 
@@ -874,6 +1237,145 @@ describe('Router', () => {
       });
       expect(errorSpy).toHaveBeenCalled();
       errorSpy.mockRestore();
+    });
+  });
+
+  // docs/router-state-contract-design.md §4.2 — null-idle transient（navigateUrl と完全同型）
+  describe('replaceUrl', () => {
+    it('replaceUrlの初期値がnullであること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      expect(router.replaceUrl).toBeNull();
+    });
+
+    it('replaceUrl設定でreplaceが呼ばれ、完了後に自己リセットすること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      const replaceSpy = vi.spyOn(router, 'replace').mockResolvedValue(undefined);
+
+      router.replaceUrl = '?q=abc';
+
+      expect(replaceSpy).toHaveBeenCalledWith('?q=abc');
+      await vi.waitFor(() => {
+        expect(router.replaceUrl).toBeNull();
+      });
+    });
+
+    it('replace完了後にリセットイベント（detail: null）が発火すること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      vi.spyOn(router, 'replace').mockResolvedValue(undefined);
+
+      const events: any[] = [];
+      router.addEventListener('wcs-router:replace-url-changed', (e) => {
+        events.push((e as CustomEvent).detail);
+      });
+
+      router.replaceUrl = '?q=abc';
+      await vi.waitFor(() => {
+        expect(events).toEqual([null]);
+      });
+    });
+
+    it('null / undefined / 空文字列の書き込みはno-opであること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      const replaceSpy = vi.spyOn(router, 'replace').mockResolvedValue(undefined);
+
+      router.replaceUrl = null;
+      router.replaceUrl = undefined as any;
+      router.replaceUrl = '';
+
+      expect(replaceSpy).not.toHaveBeenCalled();
+    });
+
+    it('同一 replace 中に同じ URL を再代入しても再起動しないこと', () => {
+      const router = document.createElement('wcs-router') as Router;
+      let resolveReplace!: () => void;
+      const replaceSpy = vi.spyOn(router, 'replace').mockReturnValue(
+        new Promise<void>((resolve) => { resolveReplace = resolve; })
+      );
+
+      router.replaceUrl = '?q=same';
+      router.replaceUrl = '?q=same';
+
+      expect(replaceSpy).toHaveBeenCalledTimes(1);
+      resolveReplace();
+    });
+
+    it('replaceがrejectしてもreplaceUrlがクリアされ通知されること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      vi.spyOn(router, 'replace').mockRejectedValue(new Error('boom'));
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const events: any[] = [];
+      router.addEventListener('wcs-router:replace-url-changed', (e) => {
+        events.push((e as CustomEvent).detail);
+      });
+
+      router.replaceUrl = '/bad';
+
+      await vi.waitFor(() => {
+        expect(router.replaceUrl).toBeNull();
+        expect(events).toEqual([null]);
+      });
+      expect(errorSpy).toHaveBeenCalled();
+      errorSpy.mockRestore();
+    });
+  });
+
+  // docs/router-state-contract-design.md §4.2 — replace() の履歴セマンティクス
+  describe('replace', () => {
+    it('Navigation API がある場合、history: "replace" 付きで navigation.navigate を呼ぶこと', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      (router as any)._basename = '/base';
+      const navigation = {
+        navigate: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      };
+      (window as any).navigation = navigation;
+
+      await router.replace('/path?q=1');
+
+      expect(navigation.navigate).toHaveBeenCalledWith('/base/path?q=1', { history: 'replace' });
+    });
+
+    it('フォールバックでは replaceState を使い履歴を増やさないこと', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      (router as any)._basename = '/base';
+      (router as any)._outlet = createOutlet();
+      (router as any)._outlet.routesNode = router;
+      router.path = '/prev';
+
+      const pushStateSpy = vi.spyOn(history, 'pushState');
+      const replaceStateSpy = vi.spyOn(history, 'replaceState');
+      const applySpy = vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(true);
+      vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+
+      await router.replace('/path?q=1');
+
+      expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '/base/path?q=1');
+      expect(pushStateSpy).not.toHaveBeenCalled();
+      expect(applySpy).toHaveBeenCalledWith(router, router.outlet, '/base/path', '/prev', '?q=1');
+    });
+
+    it('`?` での全消去を受理すること（pathname 維持・クエリ無し URL）', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      (router as any)._basename = '';
+      const navigation = {
+        navigate: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      };
+      (window as any).navigation = navigation;
+
+      const originalLocation = window.location;
+      delete (window as any).location;
+      (window as any).location = { pathname: '/list', href: 'http://localhost/list?page=3' };
+      try {
+        await router.replace('?');
+      } finally {
+        (window as any).location = originalLocation;
+      }
+
+      expect(navigation.navigate).toHaveBeenCalledWith('/list', { history: 'replace' });
     });
   });
 

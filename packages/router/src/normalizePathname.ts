@@ -43,6 +43,28 @@ export function normalizePathname(path: string): string {
 }
 
 /**
+ * fullPath から basename を取り除いた route path を返す。
+ *
+ * applyRoute のマッチング入力と same-match 判定
+ * （docs/router-state-contract-design.md §4.4）で共有する。same-match の比較は
+ * **basename スライス後の path 同士**で行う規範 — `router.path` に格納されるのは
+ * スライス後のパスであり、スライス前の fullPath と比較すると basename 運用で
+ * same-match が決して成立しない。
+ */
+export function sliceBasename(fullPath: string, basename: string): string {
+  let sliced = fullPath;
+  if (basename !== "") {
+    if (fullPath === basename) {
+      sliced = "";
+    } else if (fullPath.startsWith(basename + "/")) {
+      sliced = fullPath.slice(basename.length);
+    }
+  }
+  // when fullPath === basename (e.g. "/app"), treat it as root "/"
+  return sliced === "" ? "/" : sliced;
+}
+
+/**
  * basename を正規化する。
  * - "" or "/" -> ""
  * - "/app/" -> "/app"

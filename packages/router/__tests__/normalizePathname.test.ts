@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { normalizePathname, normalizeBasename, getExtPattern } from '../src/normalizePathname';
+import { normalizePathname, normalizeBasename, getExtPattern, sliceBasename } from '../src/normalizePathname';
 import { setConfig } from '../src/config';
 import './setup';
 
@@ -142,6 +142,25 @@ describe('normalizePathname', () => {
       const pattern = getExtPattern();
       // ".html" は "/aXhtml" のようなパスにマッチしてはいけない
       expect(pattern?.test('/aXhtml')).toBe(false);
+    });
+  });
+
+  // docs/router-state-contract-design.md §4.4 — applyRoute と same-match 判定の共有実装
+  describe('sliceBasename', () => {
+    it('basename 配下のパスから basename を取り除くこと', () => {
+      expect(sliceBasename('/app/products', '/app')).toBe('/products');
+    });
+
+    it('basename と完全一致する場合はルート "/" を返すこと', () => {
+      expect(sliceBasename('/app', '/app')).toBe('/');
+    });
+
+    it('basename 境界が一致しない場合はスライスしないこと', () => {
+      expect(sliceBasename('/appX/products', '/app')).toBe('/appX/products');
+    });
+
+    it('basename が空の場合はそのまま返すこと', () => {
+      expect(sliceBasename('/products', '')).toBe('/products');
     });
   });
 });

@@ -471,3 +471,25 @@ Reference: [`packages/router/src/a11yPolicies.ts`](../packages/router/src/a11yPo
 ### 20.4 Interaction with §4.3 (view-transition frame landing)
 
 The policies run when the transition promise awaited by `applyRoute` resolves — that is at **mutation application**, not animation completion (the transition-runner contract). Under an arbiter that accepts `router`, focus and announcement therefore land on the frame where the route content was swapped, possibly while the animation is still playing. "After the animation" is not expressible under the current protocol and is a non-goal (a11y-design D3 / §10).
+
+## 21. @wcstack/router — the observation-surface commit and firing contract (2026-08-28)
+
+Reference: [`packages/router/src/components/Router.ts`](../packages/router/src/components/Router.ts) `commitNavigation`, [router-state-contract-design.md](./router-state-contract-design.md) §3.4 / §4.4
+
+### 21.1 Commit first, fire after — and the firing order
+
+On a committed navigation, the router commits **all** internal values (`params`, `typedParams`, `searchParams`, `routeName`, `path`) synchronously, and only then fires the change events, in the fixed order `wcs-router:params-changed` → `wcs-router:route-name-changed` → `wcs-router:search-changed` → `wcs-router:path-changed` — each only when its value actually changed (params: shallow compare of string values; search: order-independent record compare; the rest: value compare). Any listener that reads the element's properties, from any of the four events, sees the consistent post-navigation snapshot; a half-committed state is not observable **on the element**. `path` fires last and doubles as the "navigation finished" signal.
+
+The guarantee's subject is the element properties. On the state side the four events write sequentially, so a handler wired to an early event can still observe mid-sequence *state* values; anything that depends on several surfaces should key off `path`.
+
+### 21.2 A guard-rejected navigation fires nothing
+
+`committed === false` updates no internal value and fires no event — the pre-existing "no `path-changed` on a rejected path" norm, extended to the whole surface.
+
+### 21.3 Same-match navigations skip the pipeline
+
+A navigation whose basename-sliced pathname equals the current committed `path` (never before the first successful commit) skips `matchRoutes`, the guard phase, `showRouteContent`, the transition-runner hand-off, and the a11y policies of §20. Only `search` is committed, so at most `search-changed` fires. In the Navigation API path, `scroll` stays at the spec default for traverse navigations (browser restoration) and is `"manual"` for push / replace; `focusReset` is always `"manual"` on a same-match.
+
+### 21.4 Late-attaching bindings miss nothing
+
+The observation members are read at binding attach, and the **first** commit's change detection compares against the internal initial values (`{}` / `""`), so a binding attached before the router's first route resolution is updated by the first commit's events, and one attached after reads the committed values directly. There is no seed and no await in either order.

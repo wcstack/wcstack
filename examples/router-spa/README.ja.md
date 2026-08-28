@@ -6,17 +6,22 @@
 
 このデモの主題は **「URL もただのリアクティブな状態である」** こと。
 `<wcs-router>` は wc-bindable プロトコルを話すので、router⇄state の橋渡しは
-バインディング 2 本だけで完結します:
+`data-wcs` 1 行で完結します:
 
 ```html
-<wcs-router data-wcs="path: path; navigateUrl: navigateUrl">
+<wcs-router data-wcs="path: path; typedParams: routeParams; searchParams: query;
+                      routeName: routeName; navigateUrl: navigateUrl; replaceUrl: replaceUrl">
 ```
 
-- `path` — router → state。ナビゲーションのたびに `state.path` が更新され、
-  getter がそこから現在のページと fetch の URL を導出します。
-- `navigateUrl` — state → router。state のメソッドがパスを代入すると
-  （`this.navigateUrl = "/products/3"`）router が遷移します。遷移完了時に
-  プロパティは自動で `null` に戻ります。
+- `typedParams` / `searchParams` / `routeName` / `path` — router → state。
+  ナビゲーションのたびに router の**解析済み**結果が state へ流れます:
+  `:productId(int)` の値は number として、クエリはプレーンな Record として、
+  マッチしたルートは name で届きます。state がパス文字列を解釈することは
+  ありません — このデモに正規表現は 1 つもありません。
+- `navigateUrl` / `replaceUrl` — state → router。state のメソッドがターゲットを
+  代入すると（`this.navigateUrl = "/products/3"`、
+  `this.replaceUrl = "?category=audio"`）router が遷移します（push / replace）。
+  遷移完了時にプロパティは自動で `null` に戻ります。
 
 ## はじめかた
 
@@ -41,22 +46,29 @@ http://localhost:3000/products/3 、 http://localhost:3000/about 。
 - **アクティブなナビリンク**: `<wcs-link>` は `<a>` を描画し、現在地に応じて
   `active` クラスを付け外しします。
 - **ナビゲーションが fetch を駆動**: 詳細ページの `<wcs-fetch>` の url は
-  `path` から導出される state getter — 「遷移すること」がそのまま fetch の
-  トリガーです。
+  `routeParams` から導出される state getter — 「遷移すること」がそのまま fetch
+  のトリガーです。
+- **クエリ文字列も状態**: カテゴリ絞り込みは URL に住みます
+  （`/?category=audio`）。読みは `searchParams`、書きは `replaceUrl` 経由なので
+  絞り込みで履歴は増えません — そしてクエリのみ遷移は *same-match* として扱われ、
+  router はガードを再実行せず、再スタンプもせず、フォーカスもスクロールも
+  動かしません。ディープリンクと戻る/進むで絞り込みは自然に復元されます。
 - **再訪は即表示**: 同じ商品を開き直しても再フェッチしません（url の同値
   ガード）。キャッシュ済みの値が即座に描画されます。
 
 ## データフロー
 
 ```
-アドレスバー / <wcs-link> / 履歴            this.navigateUrl = "/products/3"
-                 │                                        ▲
-                 ▼                                        │ openProduct()
-            <wcs-router> ──path──▶ state.path             │
-                 ▲                     │        （一覧の行クリック）
-                 │                     ▼
-            navigateUrl      getter が path から導出:
-                 └─────────  isList / isDetail / "productFetch.url"
+アドレスバー / <wcs-link> / 履歴          this.navigateUrl = "/products/3"
+                 │                        this.replaceUrl  = "?category=audio"
+                 ▼                                        ▲
+            <wcs-router> ──typedParams──▶ state.routeParams   （openProduct /
+                 ▲       ──searchParams─▶ state.query          selectCategory）
+                 │       ──routeName────▶ state.routeName
+       navigateUrl / replaceUrl               │
+                 └────────────────  getter が解析済み結果を消費:
+                                    productId / isList / category /
+                                    products（絞り込み済み）/ "productFetch.url"
                                        │
                                        ▼
                         <wcs-fetch>  （url 変化で自動フェッチ）
@@ -77,7 +89,8 @@ http://localhost:3000/products/3 、 http://localhost:3000/about 。
 `data-wcs` を収集し、router が後からスタンプするノードは監視しません。
 そのため router が出し入れするコンテンツは静的（`data-wcs` なし）に、
 データバインドされるコンテンツは state 管理の構造テンプレート配下に置きます。
-それぞれが得意なことをやり、結合は `path` バインディングだけです。
+それぞれが得意なことをやり、結合は `<wcs-router>` 上の wc-bindable
+バインディングだけです。
 
 ## 押さえどころ
 
@@ -89,18 +102,23 @@ http://localhost:3000/products/3 、 http://localhost:3000/about 。
 - **サーバーには SPA フォールバックが必要**: `server.js` は拡張子なし・
   非 API の GET（`/products/3` や `/about`）すべてに `index.html` を返し、
   リロードや直リンクをクライアント側ルーターに届けます。
-- **初期ロードにシードは不要**: `path` は output-only な `wcBindable` メンバなので
-  router が authority となり、state はバインディング確立時に router の現在パスを
-  読み取り、以降の変化は `path-changed` で受けます。router が最初のルート解決を
+- **初期ロードにシードは不要**: 観測メンバ（`typedParams` / `searchParams` /
+  `routeName` / `path`）は output-only な `wcBindable` メンバなので router が
+  authority となり、state はバインディング確立時に router の現在値を読み取り、
+  以降の変化は `*-changed` イベントで受けます。router が最初のルート解決を
   バインディング確立より先に終えていても、その値は「待つ」のではなく「読む」ため
-  取りこぼしがなく、ディープリンクも正しく描画されます。state から `path` を書き
-  戻すことはないので、抑止すべきエコー自体も存在しません。
-- **`navigateUrl` は output と input の両方として宣言**されており、これが
-  `this.navigateUrl = "/products/3"` で遷移できる理由です。`properties` にだけ
-  宣言されたメンバは output-only となり、state からは書き込まれません。
-- **`navigateUrl` は自己リセット**: 遷移完了時に router が `null` に戻す
-  （`navigate-url-changed` を発火する）ので、後で同じパスを代入しても再度
+  取りこぼしがなく、ディープリンクも正しく描画されます。state から書き戻すことは
+  ないので、抑止すべきエコー自体も存在しません。
+- **`navigateUrl` / `replaceUrl` は output と input の両方として宣言**されており、
+  これが `this.navigateUrl = "/products/3"` で遷移できる理由です。`properties` に
+  だけ宣言されたメンバは output-only となり、state からは書き込まれません。
+- **`navigateUrl` / `replaceUrl` は自己リセット**: 遷移完了時に router が `null` に
+  戻す（`*-url-changed` を発火する）ので、後で同じターゲットを代入しても再度
   遷移します。
+- **`/path` ターゲットは現在のクエリを引き継ぎません**: ページをまたいで
+  絞り込みを保つのは明示的な選択 — `openProduct()` / `goToProducts()` は
+  `searchParams` から組み立てたサフィックス（`get categorySuffix()`）を
+  付け足しています。
 - **ページ外の fetch は沈黙**: `get "productFetch.url"()` は詳細ページ以外で
   `undefined` を返し、`undefined` は要素に書き込まれない（write-skip
   セマンティクス）ため、`<wcs-fetch>` は直前の url を保持したまま何もしません。

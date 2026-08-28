@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: router observation surface flows into state</title>
+  <!-- Phase 1 of docs/router-state-contract-design.md — the router's observation
+       surface (typedParams / searchParams / routeName) reaches state through the
+       generic wc-bindable binding, with zero state-side changes. Also exercises
+       the same-match fast path: a query-only navigation must update searchParams
+       without restamping the route content. -->
+  <script type="module" src="/packages/router/dist/auto.min.js"></script>
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+</head>
+<body>
+  <nav>
+    <wcs-link to="/">list</wcs-link>
+    <wcs-link to="/products/5">product 5</wcs-link>
+    <wcs-link to="?page=2">page 2</wcs-link>
+  </nav>
+
+  <wcs-state>
+    <script type="module">
+      export default {
+        // Router observation surface — all output-only, authority = element:
+        // read on attach, streamed via the router's *-changed events after.
+        path: "",
+        routeParams: {},
+        query: {},
+        routeName: "",
+        // Write surfaces — null-idle transients.
+        navigateUrl: null,
+        replaceUrl: null,
+
+        // No regex, no path-string interpretation: the router's parsed results
+        // are consumed directly (the whole point of the contract).
+        get productId() {
+          return this.routeParams.productId ?? "";
+        },
+        get page() {
+          return this.query.page ?? "-";
+        },
+        get q() {
+          return this.query.q ?? "";
+        },
+
+        goDetail() {
+          this.navigateUrl = "/products/7";
+        },
+        setQuery() {
+          this.replaceUrl = "?q=hello";
+        },
+      };
+    </script>
+  </wcs-state>
+
+  <wcs-router basename="/e2e/fixtures"
+    data-wcs="path: path; typedParams: routeParams; searchParams: query; routeName: routeName; navigateUrl: navigateUrl; replaceUrl: replaceUrl">
+    <template>
+      <wcs-route path="/" name="list">
+        <h1 id="view">list</h1>
+      </wcs-route>
+      <wcs-route path="/products/:productId(int)" name="detail">
+        <h1 id="view">detail</h1>
+      </wcs-route>
+    </template>
+  </wcs-router>
+
+  <p>route: <output id="route-name" data-wcs="textContent: routeName"></output></p>
+  <p>productId: <output id="product-id" data-wcs="textContent: productId"></output></p>
+  <p>page: <output id="page" data-wcs="textContent: page"></output></p>
+  <p>q: <output id="q" data-wcs="textContent: q"></output></p>
+  <button id="go-detail" data-wcs="onclick: goDetail">go detail</button>
+  <button id="set-query" data-wcs="onclick: setQuery">set query</button>
+</body>
+</html>

@@ -2,11 +2,13 @@ import { parse } from "../parse.js";
 import { createOutlet } from "./Outlet.js";
 import { config } from "../config.js";
 import { raiseError } from "../raiseError.js";
-import { IOutlet, IRoute, IRouter } from "./types.js";
+import { IOutlet, IRoute, IRouter, IRouterCommit } from "./types.js";
 import { IWcBindable } from "../types.js";
 import { applyRoute } from "../applyRoute.js";
 import { getNavigation } from "../Navigation.js";
-import { normalizeBasename, normalizePathname } from "../normalizePathname.js";
+import { normalizeBasename, normalizePathname, sliceBasename } from "../normalizePathname.js";
+import { parseSearchParams, shallowEqualRecords } from "../searchParams.js";
+import { splitUrlTarget, effectiveSearch } from "../splitUrlTarget.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 interface NavigateEventLike {
@@ -14,12 +16,16 @@ interface NavigateEventLike {
   hashChange: boolean;
   downloadRequest: string | null;
   destination: { url: string };
+  /** Navigation API の navigationType。mock / polyfill では欠け得る */
+  navigationType?: "push" | "replace" | "traverse" | "reload";
   intercept: (options: {
     handler: () => Promise<void>;
     scroll?: "after-transition" | "manual";
     focusReset?: "after-transition" | "manual";
   }) => void;
 }
+
+const EMPTY_RECORD: Record<string, never> = Object.freeze({});
 
 /**
  * AppRoutes - Root component for @wcstack/router
@@ -32,7 +38,19 @@ export class Router extends HTMLElement implements IRouter {
     version: 1,
     properties: [
       { name: "navigateUrl", event: "wcs-router:navigate-url-changed", semantics: "state" },
+      { name: "replaceUrl", event: "wcs-router:replace-url-changed", semantics: "state" },
       { name: "path", event: "wcs-router:path-changed", semantics: "state" },
+      // 観測面（docs/router-state-contract-design.md §3.1）— output-only
+      // （properties のみ・inputs に無い）。state 側の既存規範により authority は
+      // element（attach 時に要素の現在値を読む）となり、state→element 書き込みは
+      // 恒久ブロックされる。params-changed の detail は { params, typedParams }
+      // なので、両プロパティとも getter で分派する。
+      { name: "params", event: "wcs-router:params-changed", semantics: "state",
+        getter: (e: Event) => (e as CustomEvent).detail.params },
+      { name: "typedParams", event: "wcs-router:params-changed", semantics: "state",
+        getter: (e: Event) => (e as CustomEvent).detail.typedParams },
+      { name: "searchParams", event: "wcs-router:search-changed", semantics: "state" },
+      { name: "routeName", event: "wcs-router:route-name-changed", semantics: "state" },
     ],
     // `navigateUrl` は observable output であると同時に settable な書き込み面でもある
     // （setter が navigate() を起動し、完了後に自分で null へ戻す）。properties にだけ
@@ -42,9 +60,11 @@ export class Router extends HTMLElement implements IRouter {
     inputs: [
       { name: "basename", attribute: "basename" },
       { name: "navigateUrl" },
+      { name: "replaceUrl" },
     ],
     commands: [
       { name: "navigate", async: true },
+      { name: "replace", async: true },
     ],
   };
 
@@ -58,9 +78,19 @@ export class Router extends HTMLElement implements IRouter {
   private _listeningPopState: boolean = false;
   private _listeningNavigate: boolean = false;
   private _navigateUrl: string | null = null;
+  private _replaceUrl: string | null = null;
   private _disconnectedDuringInit: boolean = false;
   private _initializing: boolean = false;
   private _a11yRegion: HTMLElement | null = null;
+  // 観測面の内部値（docs/router-state-contract-design.md §3）。露出オブジェクトは
+  // frozen スナップショット — params は router の所有物であり、消費側の変異は
+  // silent corruption ではなく loud failure にする。
+  private _params: Record<string, string> = EMPTY_RECORD;
+  private _typedParams: Record<string, any> = EMPTY_RECORD;
+  private _searchParams: Record<string, string> = EMPTY_RECORD;
+  private _routeName: string = '';
+  /** 最初の成功 commit を通過したか（§4.4 の初回ガード） */
+  private _hasCommitted: boolean = false;
 
   constructor() {
     super();
@@ -205,6 +235,97 @@ export class Router extends HTMLElement implements IRouter {
     }
   }
 
+  get params(): Record<string, string> {
+    return this._params;
+  }
+
+  get typedParams(): Record<string, any> {
+    return this._typedParams;
+  }
+
+  get searchParams(): Record<string, string> {
+    return this._searchParams;
+  }
+
+  get routeName(): string {
+    return this._routeName;
+  }
+
+  /**
+   * same-match 判定（docs/router-state-contract-design.md §4.4）。
+   *
+   * 比較は **basename スライス後の path 同士**（`_path` はスライス後で保存済み）。
+   * 判定が必要な地点は 2 箇所 — `_onNavigateFunc` の intercept オプション決定時と
+   * `applyRoute` の入口分岐 — で、両方がこの単一実装を呼ぶ。
+   *
+   * 初回ガード: 最初の成功 commit より前には適用しない。初期 `_path = ""` が
+   * 正規化後パス（常に `/` 始まり）と一致しないため偶然安全だが、
+   * normalizePathname の実装詳細に依存させず規範として明示する。
+   */
+  isSameMatch(path: string): boolean {
+    if (!this._hasCommitted) return false;
+    return this._path === path;
+  }
+
+  /**
+   * 観測面のコミットと発火（docs/router-state-contract-design.md §3.4）。
+   *
+   * 全内部値を先にコミットし、その後で初めてイベントを発火する — どのイベントの
+   * リスナーから要素プロパティを読んでも、遷移後スナップショットの一貫した値が
+   * 見える。発火順序は params → route-name → search → path。`path` を最後に
+   * 置くのは、既存例で `path` が「ナビゲーション完了」の信号として使われている
+   * ため。各イベントは変化した commit のみ発火する。
+   */
+  commitNavigation(commit: IRouterCommit): void {
+    const nextParams = Object.freeze({ ...commit.params });
+    const nextTypedParams = Object.freeze({ ...commit.typedParams });
+    const nextSearchParams = parseSearchParams(commit.search);
+    const paramsChanged = !shallowEqualRecords(this._params, nextParams);
+    const routeNameChanged = this._routeName !== commit.routeName;
+    const searchChanged = !shallowEqualRecords(this._searchParams, nextSearchParams);
+    const pathChanged = this._path !== commit.path;
+    // --- 先に全内部値をコミット ---
+    // 変化した面だけ差し替える（ナビゲーションごとに新しいオブジェクトになるので
+    // state の same-value guard を正しく通過する。不変の面は同一性を保つ）。
+    if (paramsChanged) {
+      this._params = nextParams;
+      this._typedParams = nextTypedParams;
+    }
+    if (routeNameChanged) {
+      this._routeName = commit.routeName;
+    }
+    if (searchChanged) {
+      this._searchParams = nextSearchParams;
+    }
+    this._path = commit.path;
+    this._hasCommitted = true;
+    // --- その後で発火（順序規範: params → route-name → search → path） ---
+    if (paramsChanged) {
+      this.dispatchEvent(new CustomEvent("wcs-router:params-changed", {
+        detail: { params: this._params, typedParams: this._typedParams },
+        bubbles: true,
+      }));
+    }
+    if (routeNameChanged) {
+      this.dispatchEvent(new CustomEvent("wcs-router:route-name-changed", {
+        detail: this._routeName,
+        bubbles: true,
+      }));
+    }
+    if (searchChanged) {
+      this.dispatchEvent(new CustomEvent("wcs-router:search-changed", {
+        detail: this._searchParams,
+        bubbles: true,
+      }));
+    }
+    if (pathChanged) {
+      this.dispatchEvent(new CustomEvent("wcs-router:path-changed", {
+        detail: commit.path,
+        bubbles: true,
+      }));
+    }
+  }
+
   get fallbackRoute(): IRoute | null {
     return this._fallbackRoute;
   }
@@ -235,25 +356,86 @@ export class Router extends HTMLElement implements IRouter {
     });
   }
 
+  get replaceUrl(): string | null {
+    return this._replaceUrl;
+  }
+
+  /**
+   * navigateUrl と完全同型の null-idle transient（docs/router-state-contract-design.md §4.2）。
+   * null は待機・書き込みで replace() を起動・完了で自己リセットして
+   * `wcs-router:replace-url-changed`（detail: null）を発火する。
+   */
+  set replaceUrl(value: string | null) {
+    if (value === null || value === undefined || value === "") return;
+    // 既に同一 URL の replace 中なら再起動しない
+    if (this._replaceUrl === value) return;
+    this._replaceUrl = value;
+    this.replace(value).catch((err) => {
+      console.error(`${config.tagNames.router} replace failed:`, err);
+    }).finally(() => {
+      this._replaceUrl = null;
+      this.dispatchEvent(new CustomEvent("wcs-router:replace-url-changed", {
+        detail: null,
+        bubbles: true,
+      }));
+    });
+  }
+
   async navigate(path: string): Promise<void> {
-    const fullPath = this._joinInternalPath(this._basename, path);
+    await this._performNavigation(path, false);
+  }
+
+  /**
+   * navigateUrl（push）の対になる replace 遷移（docs/router-state-contract-design.md §4.2）。
+   * Navigation API では `navigation.navigate(url, { history: "replace" })`、
+   * フォールバックでは `history.replaceState` + applyRoute + 通知。
+   */
+  async replace(path: string): Promise<void> {
+    await this._performNavigation(path, true);
+  }
+
+  private async _performNavigation(path: string, replace: boolean): Promise<void> {
+    // クエリ / ハッシュ込みターゲットの受理（docs/router-state-contract-design.md §4.1）。
+    // normalizePathname / basename 結合は pathname にのみ適用し、search / hash は
+    // 再結合して URL に渡す。pathname 空（"?k=v" / "?" / "#x"）は現在の pathname を
+    // 維持する。search / hash まで空（navigate("")）は従来どおりルート扱い。
+    const target = splitUrlTarget(path);
+    const fullPath =
+      target.pathname === "" && (target.search !== "" || target.hash !== "")
+        ? window.location.pathname
+        : this._joinInternalPath(this._basename, target.pathname);
+    const url = fullPath + effectiveSearch(target.search) + target.hash;
     const navigation = getNavigation();
     if (navigation?.navigate) {
       // Navigation API は { committed, finished } を返す。
       // finished を await することで、navigate() の Promise が
-      // 実際のナビゲーション完了まで pending となり、_navigateUrl の
-      // 二重 navigate ガード (setter 内 `if (this._navigateUrl === value)`) が
-      // 適切な時間ウィンドウで機能するようになる。
+      // 実際のナビゲーション完了まで pending となり、_navigateUrl / _replaceUrl の
+      // 二重起動ガード (setter 内の同一値チェック) が適切な時間ウィンドウで機能する。
       // Polyfill や mock 環境で undefined / 戻り値なしのケースもあるため optional chaining。
-      await navigation.navigate(fullPath)?.finished;
+      const result = replace
+        ? navigation.navigate(url, { history: "replace" })
+        : navigation.navigate(url);
+      await result?.finished;
     } else {
-      history.pushState(null, '', fullPath);
-      const committed = await applyRoute(this, this.outlet, fullPath, this._path);
+      if (replace) {
+        history.replaceState(null, '', url);
+      } else {
+        history.pushState(null, '', url);
+      }
+      // セグメントマッチにはクエリ・ハッシュを渡さない（渡すと 404 に落ちる —
+      // §1.1 欠陥 6 の修理）。search は明示引数で供給する（§3.6）。
+      const normalizedFullPath = this._normalizePathname(fullPath);
+      const sameMatch = this.isSameMatch(sliceBasename(normalizedFullPath, this._basename));
+      const committed = await applyRoute(
+        this, this.outlet, normalizedFullPath, this._path, effectiveSearch(target.search)
+      );
       // 修理・既定オン（docs/a11y-design.md §3-2）: Navigation API 経路の仕様既定
       // （scroll: "after-transition" — push はトップへ）とフォールバック経路を揃える。
       // guard 拒否（committed === false）では動かさない。_onPopState 側は
       // history.scrollRestoration によるブラウザ復元が正解なので、決してスクロールしない。
-      if (committed) {
+      // same-match（クエリのみ遷移）でも動かさない — 1 打鍵ごとにトップへ戻る事故の
+      // 防止（docs/router-state-contract-design.md §4.4）。
+      if (committed && !sameMatch) {
         window.scrollTo(0, 0);
       }
       this._notifyLocationChange();
@@ -281,24 +463,37 @@ export class Router extends HTMLElement implements IRouter {
     const fullPath = this._normalizePathname(url.pathname);
     // basename 配下でない URL は無視（マルチ Router 対応）
     if (!this._isOwnPath(fullPath)) return;
+    // same-match 判定は applyRoute 内の分岐と同じ共有実装（§4.4: スライス後比較）。
+    // intercept オプションは applyRoute 実行前に決める必要があるためここでも判定する。
+    const sameMatch = this.isSameMatch(sliceBasename(fullPath, this._basename));
+    // scroll は navigationType で分岐する: push / replace の same-match は "manual"
+    // （検索ボックスにバインドした書き込みの 1 打鍵ごとにスクロールがトップへ戻る
+    // 事故の防止）。traverse（戻る/進む）は仕様既定 = ブラウザのスクロール位置復元を
+    // 維持する — ?page=2 から戻る操作でスクロールが固定される事故を防ぐ。
+    const sameMatchScrollManual =
+      sameMatch &&
+      (navEvent.navigationType === "push" || navEvent.navigationType === "replace");
+    const search = url.search;
     const routesNode = this;
     navEvent.intercept({
       handler: async () => {
         try {
-          await applyRoute(routesNode, routesNode.outlet, fullPath, routesNode.path);
+          await applyRoute(routesNode, routesNode.outlet, fullPath, routesNode.path, search);
         } catch (err) {
           console.error(`${config.tagNames.router} applyRoute failed:`, err);
           throw err;
         }
       },
-      // 仕様既定の明示（挙動変更なし）。scroll: push はトップへ / traverse は
-      // スクロール位置復元、focusReset: [autofocus] か body へ。この委譲が
+      // 仕様既定の明示（same-match 以外は挙動変更なし）。scroll: push はトップへ /
+      // traverse はスクロール位置復元、focusReset: [autofocus] か body へ。この委譲が
       // router のアクセシビリティ契約であり、ここを "manual" に変える変更は
-      // 契約の変更にあたる（docs/a11y-design.md §3-1）。
-      scroll: "after-transition",
+      // 契約の変更にあたる（docs/a11y-design.md §3-1）。same-match の扱いは
+      // docs/router-state-contract-design.md §4.4 / D6b。
+      scroll: sameMatchScrollManual ? "manual" : "after-transition",
       // focus= 指定時のみ manual。渡さないと router のフォーカス移動とブラウザの
       // after-transition リセットが二重処理になる（docs/a11y-design.md §3-5）。
-      focusReset: routesNode.focusPolicy !== null ? "manual" : "after-transition",
+      // same-match は常に manual — 1 打鍵ごとにフォーカスが body へ飛ぶ事故の防止。
+      focusReset: sameMatch || routesNode.focusPolicy !== null ? "manual" : "after-transition",
     });
   }
 
@@ -309,7 +504,8 @@ export class Router extends HTMLElement implements IRouter {
     const fullPath = this._normalizePathname(window.location.pathname);
     // basename 配下でない URL は無視（マルチ Router 対応）
     if (!this._isOwnPath(fullPath)) return;
-    await applyRoute(this, this.outlet, fullPath, this._path);
+    // search は明示引数で供給（§3.6）。mock / 特殊環境で欠ける場合は "" 扱い
+    await applyRoute(this, this.outlet, fullPath, this._path, window.location.search || "");
     this._notifyLocationChange();
   };
 
@@ -340,7 +536,7 @@ export class Router extends HTMLElement implements IRouter {
       this._ensureA11yRegion();
 
       const fullPath = this._normalizePathname(window.location.pathname);
-      await applyRoute(this, this.outlet, fullPath, this._path);
+      await applyRoute(this, this.outlet, fullPath, this._path, window.location.search || "");
       this._notifyLocationChange();
       this._initialized = true;
     } finally {

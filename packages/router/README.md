@@ -125,6 +125,56 @@ Define routes and layout slots inside a child template tag. A direct child templ
 | `focus` | Opt-in focus policy applied after a committed navigation. `"heading"` focuses the first heading of the leaf route's content. See "Accessibility contract". |
 | `announce` | Opt-in route announcement. `"title"` writes the commit-time `document.title` snapshot into the router-owned live region. See "Accessibility contract". |
 
+#### State binding (wc-bindable)
+
+`<wcs-router>` is the live-DOM element that exposes the whole navigation state over the wc-bindable protocol, so `@wcstack/state` (or any binding core) wires it with a single `data-wcs`:
+
+```html
+<wcs-router data-wcs="path: path; typedParams: routeParams; searchParams: query;
+                      routeName: routeName; navigateUrl: navigateUrl; replaceUrl: replaceUrl">
+```
+
+| Member | Direction | Description |
+|------|------|------|
+| `path` | output only | Current route path (basename already sliced). Fires `wcs-router:path-changed`. |
+| `params` | output only | Merged params of the matched route chain, as strings (`Record<string, string>`). `{}` on a fallback match or before initialization. |
+| `typedParams` | output only | The same params, type-converted (`:id(int)` → `number`). Shares `wcs-router:params-changed` with `params` (the event detail is `{ params, typedParams }`). |
+| `searchParams` | output only | Current URL query as `Record<string, string>`. Duplicate keys (`?tag=a&tag=b`) are **last-wins**; values are decoded by `URLSearchParams` (including `+` → space). `{}` when there is no query. Fires `wcs-router:search-changed`. |
+| `routeName` | output only | `name` attribute of the deepest matched route. On a fallback match, the fallback route's `name` (so a 404 view can key off `routeName` too). `""` when unnamed or before initialization. Fires `wcs-router:route-name-changed`. |
+| `navigateUrl` | write surface (null-idle transient) | Write a target to push-navigate. `null` means idle; writing a string starts `navigate()`, and the property resets itself to `null` when the navigation finishes. `null` / `""` writes are no-ops. |
+| `replaceUrl` | write surface (null-idle transient) | Identical contract to `navigateUrl`, but the navigation **replaces** the current history entry. |
+| `basename` | input | Mirrors the `basename` attribute. |
+
+Commands `navigate(path)` and `replace(path)` (both async) are also declared, so they can be invoked through the command-token protocol.
+
+Output-only members are **read** when a binding attaches and streamed through their change events afterwards — the value is read, not awaited, so a binding that attaches after the router already resolved its first route misses nothing.
+
+**Firing contract**: on a committed navigation the router commits *all* internal values first and only then fires events, in the order `params-changed` → `route-name-changed` → `search-changed` → `path-changed`, each only when its value actually changed. Any listener that reads the element's properties sees the consistent post-navigation snapshot; `path` fires last and doubles as the "navigation finished" signal. A guard-rejected navigation updates nothing and fires nothing.
+
+The exposed objects are **frozen snapshots** owned by the router: a new object per navigation, never mutated in place. Mutating them throws — copy into your own state instead.
+
+**Choosing a write surface**:
+
+- Pagination, tabs — the back button should step through them: `navigateUrl = "?page=2"`.
+- Search boxes, filters — the history should not record every keystroke: `replaceUrl = "?q=" + …`, with `<wcs-debounce>` in front of high-frequency input.
+
+**Multiple routers**: `params` / `routeName` reflect each router's own match, but the page URL has a single query string — a query written through *any* router replaces the query for the whole page. Reads, however, are per-router: a router commits `searchParams` only when it processes a navigation under its own `basename`, so its value is "the query as of the last navigation this router processed".
+
+#### Query strings in navigation targets
+
+`navigate()` / `replace()` / `navigateUrl` / `replaceUrl` / `<wcs-link to>` accept:
+
+| Form | Meaning |
+|------|------|
+| `/path` | Path navigation. The current query is **not** carried over (assemble it from `searchParams` if you want to keep it). |
+| `/path?k=v` | Path navigation with a query. |
+| `?k=v` | Query-only navigation: the pathname keeps its current value. |
+| `?` | Clears the query (pathname stays). |
+
+`basename` joining and pathname normalization apply to the pathname only; query and hash are re-attached verbatim (the hash is passed through untouched — the router never routes on it). Queries never participate in route matching.
+
+A query-only navigation lands on the same matched route (**same-match**): route guards do not re-run (guards protect route *entry*, and a query change is not an entry), the route content is not restamped, no view transition is requested, no announcement is made, and focus / scroll stay where they are (browser scroll restoration still applies when traversing history). Only `searchParams` — and the URL — change.
+
 ### Route (wcs-route)
 
 Displays children when the route path matches. Match priority is static paths over parameters.
@@ -140,9 +190,9 @@ Displays children when the route path matches. Match priority is static paths ov
 
 | Property | Description |
 |------|------|
-| `params` | Matched parameters (strings). |
-| `typedParams` | Matched parameters (converted types). |
 | `guardHandler` | Sets the guard decision function. |
+
+> **Where are `params` / `typedParams`?** On `<wcs-router>` — see "State binding (wc-bindable)". After parsing, the route elements are detached controllers: they are not part of the live DOM, so they cannot be found with `querySelector` and cannot be bound with `data-wcs`. The router element is the observation surface for match results.
 
 Guard decision function type:
 `(toPath: string, fromPath: string) => boolean | Promise<boolean>`
@@ -203,15 +253,18 @@ By specifying types for path parameters, you can perform value validation and au
 
 **Retrieving Values**:
 
+The match result is exposed on the `<wcs-router>` element (the route elements themselves are detached controllers and cannot be queried from the live DOM):
+
+```html
+<!-- Declarative: bind the parsed result straight into state -->
+<wcs-router data-wcs="typedParams: routeParams"></wcs-router>
+```
+
 ```javascript
-// Get from the route element
-const route = document.querySelector('wcs-route[path="/users/:userId(int)"]');
-
-// Get as string
-console.log(route.params.userId);       // "123"
-
-// Get as typed value
-console.log(route.typedParams.userId);  // 123 (number)
+// Imperative: read from the router element
+const router = document.querySelector('wcs-router');
+console.log(router.params.userId);       // "123"
+console.log(router.typedParams.userId);  // 123 (number)
 ```
 
 **Behavior**:
@@ -294,9 +347,9 @@ Link. Converted to an `<a>`, and the route path in the `to` attribute is convert
 
 | Attribute | Description |
 |------|------|
-| `to` | Destination path or URL. Paths starting with `/` are treated as internal paths (basename is prepended). Other values are treated as external URLs. |
+| `to` | Destination path or URL. Paths starting with `/` are treated as internal paths (basename is prepended to the pathname; a `?query` / `#hash` suffix is kept as-is). A value starting with `?` is a **query-only** link: the href is assembled as "current pathname + that query" and tracks location changes. Other values are treated as external URLs. |
 
-**Active state**: The generated `<a>` receives the `active` class when its path matches the current location, and `aria-current="page"` alongside it — the same fact, expressed in ARIA, so screen readers announce the current page in navigation. Tracking is updated on navigation events (`currententrychange`, `wcs:navigate`, `popstate`).
+**Active state**: The generated `<a>` receives the `active` class when its path matches the current location, and `aria-current="page"` alongside it — the same fact, expressed in ARIA, so screen readers announce the current page in navigation. The comparison uses the **pathname only** — queries on either side never affect it (so `to="/products"` stays active on `/products?page=2`, and a query-only link is active whenever you are on its page). Tracking is updated on navigation events (`currententrychange`, `wcs:navigate`, `popstate`).
 
 ```css
 /* Style active links */
@@ -308,6 +361,13 @@ a.active { font-weight: bold; color: blue; }
 **Plain `<a>` note**: in browsers with the Navigation API, a plain `<a href="/about">` under the basename also becomes an SPA navigation (the router intercepts it). This does not hold in fallback browsers, where only `<wcs-link>`'s click handler provides SPA navigation — so `<wcs-link>` remains the recommendation.
 
 ## Auto-Binding (`data-bind`)
+
+Two mechanisms deliver route params, with different destinations:
+
+| You want params… | Use |
+|------|------|
+| …in state (reactive rendering, derived values) | Bind `typedParams` / `params` on `<wcs-router>` — see "State binding (wc-bindable)" |
+| …directly on elements inside the route (pages without state, generic components) | `data-bind` below |
 
 Elements with the `data-bind` attribute automatically receive matched route parameters. Four binding modes are available:
 
