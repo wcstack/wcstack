@@ -1,6 +1,6 @@
 # router SSR 設計 — サーバーでの初期ルート描画とクライアント採用
 
-Status: Phase 1・2 実装済み（Phase 3 以降は設計のみ）
+Status: Phase 1〜3 実装済み（Phase 4 は未着手）
 Scope: `@wcstack/server`（レンダリング基盤）、`@wcstack/router`（SSR モード対応）、`@wcstack/state`（Phase 3 のみ・スナップショット順序）
 関連: [binder-protocol-design.md](./binder-protocol-design.md)、[view-transition-design.md](./view-transition-design.md)、[router-state-contract-design.md](./router-state-contract-design.md)
 
@@ -281,21 +281,39 @@ SSR 出力へ anchor が serialize される。素朴にクライアントが再
   目印を外し、anchor の子を自分の childNodeArray とし、href をクライアントの
   解決で引き直し、リスナを付けて active を更新する。目印が無ければ従来の生成。
 
-## 5. Phase 3 — スナップショット順序（設計のみ）
+## 5. Phase 3 — スナップショット順序（実装済み）
 
 §3.4 のレースの構造的解消。`<wcs-ssr>` の生成を State の `connectedCallback` 内
-（`State.ts:489-509`）から**サーバー主導の最終パス**へ移す:
+から**サーバー主導の最終パス**へ移した。
 
-- `renderToString` は安定化ループと `readyPromises` の完了後、serialize の直前に
-  state の公開 API（新設 `buildSsrDocument(document)` 相当）を呼ぶ。この時点で
-  route 内容の挿入・バインドは全て完了している。
-- 互換性: サーバーは能力を `data-wcs-server` 属性の**値**で告知する
-  （例 `data-wcs-server="orchestrated"`）。新 state は値を見て inline 生成を
-  スキップし、旧 server（値が空）とは従来どおり inline 生成で動く。旧 state +
-  新 server は inline 生成のまま（今日のレースが残るだけで悪化しない）。
-- `Ssr.buildContent` が使う fragment UUID レジストリはモジュールグローバルで
-  state 要素ごとに分かれていない。複数 `enable-ssr` state の切り分けはこの
-  フェーズで併せて仕様化する。
+**ssr-snapshot プロトコル**（正本 `/protocol/ssr-snapshot.ts`、
+`scripts/sync-protocol-types.mjs` で state / server へ複製）:
+
+- 提供側（state）は `bootstrapState` でグローバル symbol
+  （`Symbol.for("wcstack.ssr.snapshotBuilder")`）へ builder を登録する。
+  binder と同じ規範 — 先客が居れば譲る。
+- renderer（server）は bootstraps 実行後に builder を探し、**居れば**
+  `data-wcs-server="orchestrated"` をパースより前に宣言し、安定化ループと
+  `readyPromises` の完了後・serialize 直前に `build(document)` を呼ぶ。
+- state の inline 生成は属性値が `orchestrated` のときだけスキップする。
+  よって旧 server（値 ""）+ 新 state は従来どおり inline、新 server + 旧 state は
+  builder 不在で値 "" のまま inline — どの組み合わせでも悪化しない。
+  `build()` は生成済み要素をスキップする冪等契約で、混在時の二重生成も防ぐ。
+- **import ではなく symbol にした理由**: builder は「そのページで実際に動いた
+  state コピー」のモジュールレジストリ（fragment UUID 等）に束縛されている
+  必要がある。server が自分の依存を import すると、CDN 二重ロード等でコピーが
+  食い違ったとき空のレジストリを読む。symbol なら正しいコピーが自分を登録する。
+- 複数 `enable-ssr` state の意味論は inline 生成と同一に保つ（文書順・fragment
+  レジストリ共有・props store は生成ごとにクリア）。その整理は本フェーズの
+  範囲外の既存挙動として明示的に引き継ぐ。
+
+**このフェーズが露出させた既存バグ（修理済み）**: router の `parse()` は非 route
+要素を「子を再帰処理 → `innerHTML = ""` → 再 append」で作り直すが、`<template>`
+の子は childNodes ではなく `.content` に居るため、この経路が content を黙って
+空にしていた。ルート内容に書いた state の構造テンプレート（for / if）は CSR でも
+壊れていた（旗艦例 router-spa が構造テンプレートを router の**外**に置いて
+`if:` でゲートしているのは、この地雷を偶然踏まない配置だった）。`parse()` は
+`<template>` を不透明な葉として扱うよう修理した。
 
 ## 6. スコープ外
 
@@ -321,7 +339,7 @@ CI 制約: ci.yml の matrix は「変更されたパッケージで `npm ci`」
 | 1b | router: `inSsr` / 待機プロトコル / SSR モード（template 温存・a11y skip・guard バリア・binder 差し出し・マーカー） | `packages/router/__tests__/` — src 直 import なので CI 安全 |
 | 1c | server × router 実結合 | `packages/server/__e2e__/router-ssr.test.ts` — CI matrix 外（`test:e2e` は別コマンド）。state / router とも src 直 import で dist 鮮度から独立（§3.5） |
 | 2 | クライアント採用 | `packages/router/__tests__/ssrHydration.test.ts`（ラウンドトリップ + 検証失敗系）+ server `__e2e__` のフルラウンドトリップ（state ハイドレーション込み・採用ノード上でバインドが生きることを実測）。実ブラウザ検証は Phase 4 |
-| 3 | スナップショット順序 | state / server unit + e2e |
+| 3 | スナップショット順序 | state unit（orchestrated スキップ・最終パス・冪等性・後方互換）+ server unit（モック builder で宣言タイミングと呼び出し位置）+ server `__e2e__`（json 属性 state × route 内 for テンプレートのレース解消を実測） |
 | 4 | examples（`examples/ssr` の router 版）、README 反映（"Cannot Do" から router を降ろす）、wcstack-skill 追随 | — |
 
 ## 8. 却下した代替案

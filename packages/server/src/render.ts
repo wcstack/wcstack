@@ -1,4 +1,5 @@
 import { Window } from 'happy-dom';
+import { getSsrSnapshotBuilder, SSR_ORCHESTRATED_VALUE } from './protocol/ssrSnapshot';
 
 /**
  * globalThis を差し替える renderToString の並列実行を防止する Mutex。
@@ -253,8 +254,15 @@ export async function renderToString(html: string, options?: RenderOptions): Pro
       await bootstrap();
     }
 
-    // SSR モードを html 要素に設定
-    document.documentElement.setAttribute('data-wcs-server', '');
+    // SSR モードを html 要素に設定。snapshot builder（bootstraps の実行が
+    // 登録し得る — ssr-snapshot プロトコル）が居れば orchestrated を宣言し、
+    // <wcs-ssr> 生成をサーバー主導の最終パスへ回す（docs/ssr-router-design.md §5）。
+    // 値の宣言はパースより前 — 各要素は connectedCallback で値を読むため
+    const snapshotBuilder = getSsrSnapshotBuilder();
+    document.documentElement.setAttribute(
+      'data-wcs-server',
+      snapshotBuilder !== null ? SSR_ORCHESTRATED_VALUE : ''
+    );
 
     // HTML をパース
     // connectedCallback が自動発火 → state ロード → $connectedCallback 実行
@@ -290,6 +298,11 @@ export async function renderToString(html: string, options?: RenderOptions): Pro
 
     // 非同期初期化の完了を待機
     await Promise.all(readyPromises);
+
+    // スナップショット最終パス（orchestrated）: 全要素の完了とバインディング構築の
+    // 後に <wcs-ssr> を生成する。inline 生成（connectedCallback 内）が取り逃がす
+    // 「後から挿入されたルート内容の構造テンプレート」も、この時点なら確定している
+    snapshotBuilder?.build(document as unknown as Document);
 
     return document.body.innerHTML;
   } finally {

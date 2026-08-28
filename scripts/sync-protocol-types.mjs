@@ -28,6 +28,7 @@ const canonicalUpgradePath = join(repoRoot, "protocol", "upgrade-properties.ts")
 const canonicalUpgradeTestPath = join(repoRoot, "protocol", "upgrade-properties.test.ts");
 const canonicalTransitionRunnerPath = join(repoRoot, "protocol", "transition-runner.ts");
 const canonicalBinderPath = join(repoRoot, "protocol", "binder.ts");
+const canonicalSsrSnapshotPath = join(repoRoot, "protocol", "ssr-snapshot.ts");
 
 // Packages that declare the strict wc-bindable manifest contract and must stay in sync.
 const TARGET_PACKAGES = [
@@ -63,6 +64,10 @@ const TRANSITION_RUNNER_TARGET_PACKAGES = ["router", "state", "view-transition"]
 // the page's behalf, plus the one that owns bindings and installs itself.
 const BINDER_TARGET_PACKAGES = ["router", "state"];
 
+// ssr-snapshot protocol (docs/ssr-router-design.md §5): the SSR renderer that
+// orchestrates the final snapshot pass, plus the state owner that provides it.
+const SSR_SNAPSHOT_TARGET_PACKAGES = ["server", "state"];
+
 // custom element の Shell を持つパッケージ（= connectedCallback で property upgrade が要る）。
 // state / server は Shell が wcBindable.inputs を宣言しないため対象外。
 const UPGRADE_TARGET_PACKAGES = TARGET_PACKAGES.filter((pkg) => pkg !== "state" && pkg !== "server");
@@ -97,6 +102,7 @@ function main() {
     .replace('from "./upgrade-properties.js"', 'from "../src/protocol/upgradeProperties.js"');
   const transitionRunnerContent = expectedContent(canonicalTransitionRunnerPath, "transition-runner.ts");
   const binderContent = expectedContent(canonicalBinderPath, "binder.ts");
+  const ssrSnapshotContent = expectedContent(canonicalSsrSnapshotPath, "ssr-snapshot.ts");
   const targets = [
     ...TARGET_PACKAGES.map((pkg) => ({ pkg, fileName: "wcBindable.ts", content: typeContent })),
     ...READER_TARGET_PACKAGES.map((pkg) => ({ pkg, fileName: "wcBindableReader.ts", content: readerContent })),
@@ -116,6 +122,11 @@ function main() {
       pkg,
       fileName: "binder.ts",
       content: binderContent,
+    })),
+    ...SSR_SNAPSHOT_TARGET_PACKAGES.map((pkg) => ({
+      pkg,
+      fileName: "ssrSnapshot.ts",
+      content: ssrSnapshotContent,
     })),
   ];
   const stale = [];

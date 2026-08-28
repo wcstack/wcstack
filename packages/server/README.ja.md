@@ -296,7 +296,7 @@ createServer(async (req, res) => {
 
 ## SSR でできないこと
 
-- `<wcs-router>` SSR の完全保証 — 初期ルートのサーバー描画（`url` オプション + `<wcs-router enable-ssr>`）とクライアント側の採用（adopt）は動作するが、残フェーズが完了するまで実験的扱い: `json` 属性 state との `<wcs-ssr>` スナップショット順序レースが未解消、guard 付きルートは設計上サーバーで描画されない、`<wcs-layout>` を使うルートはクライアント描画にフォールバックする。設計と進捗は [docs/ssr-router-design.md](https://github.com/wcstack/wcstack/blob/main/docs/ssr-router-design.md) を参照。
+- `<wcs-router>` SSR の完全保証 — 初期ルートのサーバー描画（`url` オプション + `<wcs-router enable-ssr>`）・クライアント側の採用（adopt）・orchestrated な `<wcs-ssr>` スナップショットまで動作するが、実ブラウザ e2e 検証が残っているためベータ扱い。設計上の恒久的制限: guard 付きルートはサーバーで描画されない、`<wcs-layout>` を使うルートはクライアント描画にフォールバックする。設計と進捗は [docs/ssr-router-design.md](https://github.com/wcstack/wcstack/blob/main/docs/ssr-router-design.md) を参照。
 - `<head>` 内の `<script src="...">` や `<link>` の自動実行
 - ブラウザ固有 API（localStorage, sessionStorage, navigator 等）
 - Shadow DOM のレンダリング（Declarative Shadow DOM 非対応）

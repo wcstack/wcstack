@@ -1,6 +1,7 @@
 import { setConfig } from "./config";
 import { registerDevtoolsSource } from "./devtools/bridge";
 import { registerBinder } from "./bindings/binder";
+import { registerSsrSnapshotBuilder } from "./buildSsrDocument";
 import { registerComponents } from "./registerComponents";
 import { IWritableConfig } from "./types";
 
@@ -61,6 +62,9 @@ export function bootstrapState(config?: IWritableConfig, registry?: CustomElemen
   // binder プロトコルの提供（docs/binder-protocol-design.md）。router が後から
   // 差し込むノードをバインドできるようにする。登録は冪等。
   registerBinder();
+  // ssr-snapshot プロトコルの提供（docs/ssr-router-design.md §5）。renderToString が
+  // <wcs-ssr> 生成をサーバー主導の最終パスへ回せるようにする。登録は冪等。
+  registerSsrSnapshotBuilder();
   // DevTools Hook Protocol への source 登録（SSR では no-op・冪等）
   registerDevtoolsSource();
 }

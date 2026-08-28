@@ -296,7 +296,7 @@ createServer(async (req, res) => {
 
 ## What SSR Cannot Do
 
-- Fully guarantee `<wcs-router>` SSR — server-side rendering of the initial route (pass `url` and put `enable-ssr` on `<wcs-router>`) and client-side adoption of the server-rendered DOM both work, but treat router SSR as experimental until the remaining phases land: the `<wcs-ssr>` snapshot-ordering race with `json`-attribute states is open, guarded routes are never server-rendered (by design), and routes using `<wcs-layout>` fall back to client-side rendering. See [docs/ssr-router-design.md](https://github.com/wcstack/wcstack/blob/main/docs/ssr-router-design.md) (ja) for the design and progress.
+- Fully guarantee `<wcs-router>` SSR — server-side rendering of the initial route (pass `url` and put `enable-ssr` on `<wcs-router>`), client-side adoption of the server-rendered DOM, and orchestrated `<wcs-ssr>` snapshots all work, but real-browser e2e coverage is still pending — treat router SSR as beta until then. Permanent limits by design: guarded routes are never server-rendered, and routes using `<wcs-layout>` fall back to client-side rendering. See [docs/ssr-router-design.md](https://github.com/wcstack/wcstack/blob/main/docs/ssr-router-design.md) (ja) for the design and progress.
 - Execute `<script src="...">` or `<link>` in `<head>`
 - Access browser-specific APIs (localStorage, sessionStorage, navigator, etc.)
 - Render Shadow DOM (Declarative Shadow DOM not supported)

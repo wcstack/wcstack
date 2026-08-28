@@ -1,4 +1,4 @@
-import { config, inSsr } from "../config";
+import { config, inSsr, isOrchestratedSsr } from "../config";
 import { loadFromInnerScript } from "../stateLoader/loadFromInnerScript";
 import { loadFromJsonFile } from "../stateLoader/loadFromJsonFile";
 import { loadFromScriptFile } from "../stateLoader/loadFromScriptFile";
@@ -486,8 +486,12 @@ export class State extends HTMLElementBase implements IStateElement {
       await this._callStateConnectedCallback();
     }
 
-    // サーバーモード + enable-ssr: バインディング完了後に <wcs-ssr> を生成
-    if (inSsr() && this.hasAttribute('enable-ssr')) {
+    // サーバーモード + enable-ssr: バインディング完了後に <wcs-ssr> を生成。
+    // orchestrated（サーバー主導の最終パス、docs/ssr-router-design.md §5）では
+    // 生成しない — renderToString が全要素の完了後にまとめて生成するため。
+    // ここで生成すると、router 等が後から挿入した内容の構造テンプレートを
+    // 取り逃がすレースがある（state のロード方式と文書順に依存）
+    if (inSsr() && this.hasAttribute('enable-ssr') && !isOrchestratedSsr()) {
       try {
         await getBindingsReady(this.rootNode);
 
