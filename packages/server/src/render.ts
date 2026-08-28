@@ -193,9 +193,9 @@ async function loadDefaultBootstraps(): Promise<BootstrapFunction[]> {
  * - `$connectedCallback` 中に動的追加されたカスタム要素も安定化ループで検出・待機（最大 10 回）
  *
  * ## SSR でできないこと
- * - `<wcs-router>` のクライアント側ハイドレーション（初期ルートのサーバー描画は
- *   `url` オプション + `<wcs-router enable-ssr>` で動作するが、クライアント側の
- *   採用機構が入るまで実験的。docs/ssr-router-design.md 参照）
+ * - `<wcs-router>` SSR の完全保証（サーバー描画 + クライアント採用は動作するが、
+ *   スナップショット順序レース等の残フェーズ完了まで実験的。
+ *   docs/ssr-router-design.md 参照）
  * - `<head>` 内の `<script src="...">` や `<link>` の自動実行
  * - ブラウザ固有 API（localStorage, sessionStorage, navigator 等）
  * - Shadow DOM のレンダリング（Declarative Shadow DOM 非対応）

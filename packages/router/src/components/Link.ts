@@ -4,6 +4,8 @@ import { raiseError } from "../raiseError";
 import { getNavigation } from "../Navigation";
 import { normalizeBasename, normalizePathname } from "../normalizePathname";
 import { splitUrlTarget, effectiveSearch } from "../splitUrlTarget";
+import { inSsr } from "../inSsr";
+import { SSR_LINK_ATTR } from "../ssrMarkers";
 import { ILink } from "./types";
 import type { Router } from "./Router";
 
@@ -110,33 +112,82 @@ export class Link extends HTMLElement implements ILink {
   }
 
   connectedCallback() {
+    if (inSsr()) {
+      // SSR（docs/ssr-router-design.md §3.2 / §4）: happy-dom のパーサは開始タグ
+      // 時点で cc を呼ぶため、同期のまま進めると静的 Link の子が空のまま
+      // anchor 化される。パースは同期完了するので 1 microtask 譲る。
+      // renderToString は待機プロトコル要素（state / router）の await で
+      // microtask を消化するため、serialize より先にこの初期化は完了する。
+      queueMicrotask(() => {
+        if (this.isConnected) {
+          this._connect();
+        }
+      });
+      return;
+    }
+    this._connect();
+  }
+
+  /**
+   * サーバーが生成した目印付き anchor（直後の兄弟）。クライアントの採用対象
+   */
+  private _findSsrAnchor(): HTMLAnchorElement | null {
+    const next = this.nextElementSibling;
+    if (next !== null && next.tagName === 'A' && next.hasAttribute(SSR_LINK_ATTR)) {
+      return next as HTMLAnchorElement;
+    }
+    return null;
+  }
+
+  private _connect(): void {
     if (!this._initialized) {
       this._initialize();
     }
     const parentNode = this.parentNode;
     if (!parentNode) {
       // should not happen if connected
-      return; 
+      return;
     }
-    const nextSibling = this.nextSibling;
-    const link = document.createElement('a');
-    this._setAnchorHref(link, this._path);
-    // ホスト属性の転送: `aria-*` prefix + 固定 5 名の一括コピー。
-    // to / style / class は除外 — ホストは display:none であり、class は active 契約を持つ。
-    for (const attr of Array.from(this.attributes)) {
-      if (attr.name.startsWith('aria-') || MIRRORED_ATTRIBUTES.includes(attr.name)) {
-        link.setAttribute(attr.name, attr.value);
+    const ssrAnchor = this._findSsrAnchor();
+    let link: HTMLAnchorElement;
+    if (ssrAnchor !== null) {
+      // SSR 採用: サーバーの anchor をそのまま自分の anchor にする。
+      // 生成経路（cc）でホストの子は anchor へ移動済みなので、子の正本は anchor 側
+      link = ssrAnchor;
+      link.removeAttribute(SSR_LINK_ATTR);
+      this._childNodeArray = Array.from(link.childNodes);
+      // href はクライアント側の解決で引き直す（basename / config の検算）
+      this._setAnchorHref(link, this._path);
+    } else {
+      const nextSibling = this.nextSibling;
+      link = document.createElement('a');
+      this._setAnchorHref(link, this._path);
+      // ホスト属性の転送: `aria-*` prefix + 固定 5 名の一括コピー。
+      // to / style / class は除外 — ホストは display:none であり、class は active 契約を持つ。
+      for (const attr of Array.from(this.attributes)) {
+        if (attr.name.startsWith('aria-') || MIRRORED_ATTRIBUTES.includes(attr.name)) {
+          link.setAttribute(attr.name, attr.value);
+        }
+      }
+      for(const childNode of this._childNodeArray) {
+        link.appendChild(childNode);
+      }
+      if (nextSibling) {
+        parentNode.insertBefore(link, nextSibling);
+      } else {
+        parentNode.appendChild(link);
       }
     }
-    for(const childNode of this._childNodeArray) {
-      link.appendChild(childNode);
-    }
-    if (nextSibling) {
-      parentNode.insertBefore(link, nextSibling);
-    } else {
-      parentNode.appendChild(link);
-    }
     this._anchorElement = link;
+
+    if (inSsr()) {
+      // サーバー: リスナは登録しない（レンダリングウィンドウは serialize 後に
+      // 閉じる）。active 状態は SSR 出力に載せ、クライアントの採用が引き取る
+      // 目印を付ける
+      this._updateActiveState();
+      link.setAttribute(SSR_LINK_ATTR, '');
+      return;
+    }
 
     // ロケーション変更を監視
     getNavigation()?.addEventListener('currententrychange', this._updateActiveState);
@@ -159,7 +210,7 @@ export class Link extends HTMLElement implements ILink {
       };
       link.addEventListener('click', this._onClick);
     }
-    this._updateActiveState();    
+    this._updateActiveState();
   }
 
   disconnectedCallback() {

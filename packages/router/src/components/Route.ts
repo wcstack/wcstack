@@ -55,6 +55,19 @@ export class Route extends HTMLElement implements IRoute {
     return this._childNodeArray;
   }
 
+  /**
+   * SSR ハイドレーションの採用（docs/ssr-router-design.md §4）。
+   * サーバー描画済みの DOM ノード列をこのルートの内容として引き取る。
+   * 以後の hideRoute / showRoute は採用ノードに対して従来どおり動く。
+   * template 由来の fresh クローン（自身の childNodes）は不要になるため破棄する。
+   */
+  adoptChildNodes(nodes: Node[]): void {
+    this._childNodeArray = [...nodes];
+    while (this.firstChild) {
+      this.removeChild(this.firstChild);
+    }
+  }
+
   get routes(): IRoute[] {
     // matchRoutes / testPath のホットパスで再帰的に呼ばれるため遅延キャッシュする。
     // initialize 後は routeParentNode が固定されるためキャッシュしても安全。

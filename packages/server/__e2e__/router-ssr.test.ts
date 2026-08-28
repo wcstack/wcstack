@@ -138,6 +138,57 @@ describe('renderToString + router', () => {
     expect(outlet.hasAttribute('data-wcs-ssr')).toBe(false);
   });
 
+  it('SSR → クライアント採用のフルラウンドトリップ（state ハイドレーション込み）', async () => {
+    // サーバー描画 → クライアント起動（このテスト環境の happy-dom）→
+    // router がサーバー DOM を採用し、state のバインドが採用ノード上で生きている
+    const ssrHtml = await renderToString(PAGE, {
+      url: 'http://localhost:3000/products',
+      bootstraps: [bootstrapState, bootstrapRouter],
+    });
+
+    // クライアント側の要素登録（renderToString 内の登録はレンダリング用
+    // ウィンドウのレジストリに対して行われたもので、この環境には及ばない）
+    bootstrapState();
+    bootstrapRouter();
+
+    // 実ブラウザの「パース完了 → define → upgrade」を happy-dom で再現するため
+    // ラッパー div 経由で一括接続する。<base> はサーバー側で renderToString が
+    // 注入したのと同じ条件（深い URL での basename 誤認防止）をクライアントにも作る
+    const base = document.createElement('base');
+    base.setAttribute('href', '/');
+    document.head.appendChild(base);
+    history.replaceState(null, '', '/products');
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = ssrHtml;
+    const h2Before = wrapper.querySelector('wcs-outlet h2');
+    document.body.appendChild(wrapper);
+    const routerEl = wrapper.querySelector('wcs-router') as any;
+    await routerEl.connectedCallbackPromise;
+    const stateEl = wrapper.querySelector('wcs-state') as any;
+    await stateEl.connectedCallbackPromise;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    try {
+      // 採用: 再描画されず、サーバーのノードがそのまま残る
+      const h2 = document.querySelector('wcs-outlet h2')!;
+      expect(h2).toBe(h2Before);
+      expect(h2.textContent).toBe('Products Page');
+      expect(document.querySelectorAll('wcs-outlet h2').length).toBe(1);
+      expect(document.querySelector('wcs-outlet')!.hasAttribute('data-wcs-ssr')).toBe(false);
+
+      // 採用ノードのバインドが生きている: state の変更が DOM に反映される
+      stateEl.createState('writable', (state: any) => {
+        state.title = 'Updated Title';
+      });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(h2.textContent).toBe('Updated Title');
+    } finally {
+      wrapper.remove();
+      base.remove();
+      history.replaceState(null, '', '/');
+    }
+  });
+
   it('enable-ssr の無い router はサーバーで初期化されない（部分 CSR）', async () => {
     const result = await renderToString(`
       <wcs-router>

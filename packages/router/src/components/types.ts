@@ -66,6 +66,11 @@ export interface IRoute extends IRouteChildContainer {
   setParams(params: Record<string, string>, typedParams: Record<string, any>): void;
   clearParams(): void;
   notifyGuardHandlerLoadFailed(): void;
+  /**
+   * SSR ハイドレーションの採用: サーバー描画済みノード列を内容として引き取る
+   * （docs/ssr-router-design.md §4）
+   */
+  adoptChildNodes(nodes: Node[]): void;
 }
 
 /**
