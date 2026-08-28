@@ -321,7 +321,7 @@ A mechanical sweep. One batch = one branch/PR (following the precedent of the io
 
 **Follow-up candidates (additive, demand-driven)**:
 1. **Filling in the derived boolean getters**: clipboard (read/write permission), geolocation, camera (both surfaces), listen, and tilt's permission; idle's `screen-locked`; network's `effective-type` family. These fill gaps in §4.2 consistency, and adding them automatically brings them into scope under the §3.2 rules
-2. **`wcs-route`'s `active`** (the router package): outside the I/O nodes, but it already has a `wcs-route:active-changed` event of the same shape, and as navigation highlighting (including on `wcs-link`) it is **the highest-value application of this work**. router has a different Shell/Core structure, so it needs its own design and a separate judgment
+2. ~~**`wcs-route`'s `active`** (the router package): outside the I/O nodes, but it already has a `wcs-route:active-changed` event of the same shape, and as navigation highlighting (including on `wcs-link`) it is **the highest-value application of this work**. router has a different Shell/Core structure, so it needs its own design and a separate judgment~~ — **does not hold** (2026-08-28, `docs/router-state-contract-design.md` §1.2 / §5.2): after parsing, route elements are detached controllers, and a detached element is unreachable from CSS, so a `:state()` on it can never match anything. The implemented counterpart for navigation highlighting is `wcs-link`'s `.active` / `aria-current`
 3. Remove the shim once happy-dom implements ElementInternals (harmless to leave, since it is "defined only where undefined")
 
 ## 8. Risks and mitigations

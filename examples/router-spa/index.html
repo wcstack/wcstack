@@ -24,6 +24,12 @@
     .path-chip { margin-left: auto; font-size: 0.75rem; color: #888; }
     .path-chip code { background: #eceff1; padding: 2px 8px; border-radius: 10px; color: #37474f; }
 
+    /* Category filter — the URL query (?category=...) is the selection state */
+    .cat-filter { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
+    .cat-btn { padding: 0.25rem 0.75rem; font: inherit; font-size: 0.8rem; border: 1px solid #ddd; border-radius: 12px; background: white; cursor: pointer; color: #555; }
+    .cat-btn:hover { background: #f5f6ff; }
+    .cat-btn.selected { background: #e8eaf6; border-color: #3949ab; color: #3949ab; font-weight: 600; }
+
     /* Product list — each row is a real button (keyboard reachable) */
     .product-list { list-style: none; }
     .product-item { display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.6rem 0.75rem; font: inherit; text-align: left; background: none; border: none; border-bottom: 1px solid #f0f0f0; cursor: pointer; }
@@ -78,17 +84,23 @@
 <wcs-state>
   <script type="module">
     export default {
-      // Current route path, fed by <wcs-router>. `path` is an output-only wcBindable
-      // member, so the router is its authority: state reads the router's current path
-      // when the binding attaches and takes every later change from path-changed.
-      // That is why a deep link (/products/3) paints the right page even though the
-      // router resolves its first route before this binding exists — the value is
-      // read, not awaited, so there is nothing to miss and nothing to seed.
+      // The router's observation surface, fed by <wcs-router>. These are all
+      // output-only wcBindable members, so the router is their authority: state
+      // reads the router's current values when the binding attaches and takes
+      // every later change from the router's *-changed events. That is why a
+      // deep link (/products/3?category=audio) paints the right page even though
+      // the router resolves its first route before this binding exists — the
+      // values are read, not awaited, so there is nothing to miss and nothing
+      // to seed.
       path: "",
-      // Write a path here to navigate programmatically: the binding pushes it
-      // into <wcs-router>.navigateUrl, whose setter runs navigate() and resets
-      // itself to null when the navigation finishes.
+      routeParams: {},   // <- typedParams: :productId(int) arrives as a number
+      query: {},         // <- searchParams: ?category=audio arrives as { category: "audio" }
+      routeName: "",     // <- name attribute of the deepest matched route
+      // Write a target here to navigate programmatically: the binding pushes it
+      // into <wcs-router>.navigateUrl / .replaceUrl, whose setters run the
+      // navigation and reset themselves to null when it finishes.
       navigateUrl: null,
+      replaceUrl: null,
 
       // 1 fetch = 1 state slot (same pattern as the state-search example).
       // <wcs-fetch> is the authority for these outputs, so they are seeded with
@@ -98,17 +110,43 @@
       productFetch: { value: null, loading: false, error: null, status: 0 },
 
       // --- URL -> page derivation -------------------------------------
-      // The router already matched :productId(int) to stamp the right
-      // <wcs-head>; this regex is the same int-only contract on the state side.
+      // No regex, no path-string interpretation: the router already matched
+      // :productId(int) and typed the value, and the route names identify the
+      // pages. State consumes the parsed results as-is.
       get productId() {
-        const m = this.path.match(/^\/products\/(-?\d+)$/);
-        return m ? Number(m[1]) : null;
+        return this.routeParams.productId ?? null;
       },
       get isList() {
-        return this.path === "/" || this.path === "";
+        return this.routeName === "products";
       },
       get isDetail() {
-        return this.productId !== null;
+        return this.routeName === "product-detail";
+      },
+
+      // --- Category filter (?category=...) -----------------------------
+      // The query flows in through `searchParams` and out through `replaceUrl`:
+      // filtering is a view concern, so it replaces the history entry instead
+      // of growing the stack (the back button should leave the page, not
+      // un-click filter buttons).
+      categories: ["peripherals", "displays", "accessories", "audio"],
+      get category() {
+        return this.query.category ?? "";
+      },
+      get noCategory() {
+        return this.category === "";
+      },
+      get "categories.*.selected"() {
+        return this["categories.*"] === this.category;
+      },
+      selectCategory() {
+        const cat = this["categories.*"];
+        // Clicking the active category clears the filter. "?" clears the query
+        // while keeping the pathname (a query-only navigation — the router
+        // treats it as a same-match: no guard re-run, no restamp, no scroll).
+        this.replaceUrl = cat === this.category ? "?" : "?category=" + cat;
+      },
+      selectAll() {
+        this.replaceUrl = "?";
       },
 
       // Detail URL derived from the path. Off the detail page this returns
@@ -123,9 +161,10 @@
       // --- List page flags --------------------------------------------
       // productsFetch.value is null until the catalog lands, so the view reads it
       // through `products` — an always-an-array projection, which is what a `for:`
-      // path has to be — and counts that.
+      // path has to be — filtered by the category from the URL query.
       get products() {
-        return this["productsFetch.value"] ?? [];
+        const all = this["productsFetch.value"] ?? [];
+        return this.category ? all.filter((p) => p.category === this.category) : all;
       },
       get productCount() {
         return this.products.length;
@@ -154,13 +193,19 @@
       },
 
       // --- Actions (state -> router navigation) ------------------------
+      // A "/path" target never carries the current query — keeping the filter
+      // across pages is an explicit choice, assembled from searchParams on the
+      // state side (the documented pattern for query carry-over).
+      get categorySuffix() {
+        return this.category ? "?category=" + this.category : "";
+      },
       // The click handler runs with the loop context of the row it fired from, so
       // the wildcard in products.*.id resolves to that row — no $resolve needed.
       openProduct() {
-        this.navigateUrl = "/products/" + this["products.*.id"];
+        this.navigateUrl = "/products/" + this["products.*.id"] + this.categorySuffix;
       },
       goToProducts() {
-        this.navigateUrl = "/";
+        this.navigateUrl = "/" + this.categorySuffix;
       },
     };
   </script>
@@ -169,27 +214,30 @@
 <!-- ============================================================
      Router — owns the URL, history, per-page <title> and the
      static pages (About / 404). The wc-bindable binding is the
-     whole bridge, and each side flows one way: path is an
-     output-only member (router -> state, read on attach and then
-     streamed via path-changed), while navigateUrl is declared as
-     both an output and an input, so state can write it to navigate
-     and the router writes it back to null when the nav finishes.
+     whole bridge: the router's parsed results flow out through
+     output-only members (typedParams / searchParams / routeName /
+     path — read on attach, then streamed via *-changed events),
+     and navigation requests flow back in through the null-idle
+     transients (navigateUrl pushes, replaceUrl replaces; both
+     reset themselves to null when the navigation finishes).
      ============================================================ -->
-<wcs-router data-wcs="path: path; navigateUrl: navigateUrl">
+<wcs-router data-wcs="path: path; typedParams: routeParams; searchParams: query;
+                      routeName: routeName; navigateUrl: navigateUrl; replaceUrl: replaceUrl">
   <template>
-    <wcs-route path="/">
+    <wcs-route path="/" name="products">
       <wcs-head><title>Products — wcstack router-spa</title></wcs-head>
     </wcs-route>
 
     <!-- Typed parameter: /products/abc fails the (int) constraint and falls
-         through to the fallback route below. -->
-    <wcs-route path="/products/:productId(int)">
+         through to the fallback route below. State receives the parsed value
+         through typedParams — as a number, no regex on the state side. -->
+    <wcs-route path="/products/:productId(int)" name="product-detail">
       <wcs-head><title>Product detail — wcstack router-spa</title></wcs-head>
     </wcs-route>
 
     <!-- A fully static page lives happily INSIDE the route: the router stamps
          these nodes into <wcs-outlet> when the path matches. -->
-    <wcs-route path="/about">
+    <wcs-route path="/about" name="about">
       <wcs-head><title>About — wcstack router-spa</title></wcs-head>
       <section class="page">
         <h2>About this demo</h2>
@@ -197,12 +245,14 @@
           <code>&lt;wcs-route path="/about"&gt;</code> and needs no state at all.</p>
         <p>The product pages work the other way around: their DOM lives in
           <code>&lt;template data-wcs="if: ..."&gt;</code> blocks <b>rendered by state</b>, and the router
-          only tells state where we are, through a one-way (output-only) <code>path</code> binding on
-          <code>&lt;wcs-router&gt;</code>. Each side does what it is best at.</p>
+          tells state where we are through one-way (output-only) bindings on
+          <code>&lt;wcs-router&gt;</code> — <code>typedParams</code>, <code>searchParams</code> and
+          <code>routeName</code> carry the parsed results, so state never interprets a path string.
+          Each side does what it is best at.</p>
       </section>
     </wcs-route>
 
-    <wcs-route fallback>
+    <wcs-route fallback name="not-found">
       <wcs-head><title>Not found — wcstack router-spa</title></wcs-head>
       <section class="page">
         <h2>404 — Nothing routes here</h2>
@@ -230,6 +280,17 @@
 <template data-wcs="if: isList">
   <section aria-label="Product list">
     <h2>Products (<span data-wcs="textContent: productCount"></span>)</h2>
+
+    <!-- Category filter — the URL query is the state (?category=audio). Writes
+         go through replaceUrl (history-neutral), reads come from searchParams.
+         Deep links and back/forward restore the filter for free. -->
+    <div class="cat-filter" role="group" aria-label="Filter by category">
+      <button type="button" class="cat-btn" data-wcs="onclick: selectAll; class.selected: noCategory">All</button>
+      <template data-wcs="for: categories">
+        <button type="button" class="cat-btn"
+          data-wcs="onclick: selectCategory; textContent: categories.*; class.selected: categories.*.selected"></button>
+      </template>
+    </div>
 
     <template data-wcs="if: productsFetch.loading">
       <div class="spinner" aria-hidden="true"></div>

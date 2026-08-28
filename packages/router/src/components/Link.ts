@@ -3,6 +3,7 @@ import { getUUID } from "../getUUID";
 import { raiseError } from "../raiseError";
 import { getNavigation } from "../Navigation";
 import { normalizeBasename, normalizePathname } from "../normalizePathname";
+import { splitUrlTarget, effectiveSearch } from "../splitUrlTarget";
 import { ILink } from "./types";
 import type { Router } from "./Router";
 
@@ -82,9 +83,23 @@ export class Link extends HTMLElement implements ILink {
     return base + path;
   }
 
+  /**
+   * router が扱う内部ターゲットか。`/` 始まりに加え、`?` 始まり（クエリのみ遷移 —
+   * docs/router-state-contract-design.md §4.1）も内部ターゲットとして受理する。
+   */
+  private _isInternalTarget(path: string): boolean {
+    return path.startsWith('/') || path.startsWith('?');
+  }
+
   private _setAnchorHref(anchor: HTMLAnchorElement,path: string) {
-    if (path.startsWith('/')) {
-      anchor.href = this._joinInternalPath(this.router.basename, path);
+    if (this._isInternalTarget(path)) {
+      // basename 結合・正規化は pathname にのみ適用し、search / hash は再結合する。
+      // pathname 空（to="?k=v"）は「現在 pathname + 指定クエリ」で組み立てる。
+      const { pathname, search, hash } = splitUrlTarget(path);
+      const joined = pathname === ""
+        ? window.location.pathname
+        : this._joinInternalPath(this.router.basename, pathname);
+      anchor.href = joined + effectiveSearch(search) + hash;
     } else {
       try {
         anchor.href = new URL(path).toString();
@@ -129,14 +144,15 @@ export class Link extends HTMLElement implements ILink {
     window.addEventListener('popstate', this._updateActiveState as EventListener);
 
     // Navigation API が無い場合は、クリックで router.navigate にフォールバック
-    if (this._path.startsWith('/') && !getNavigation()?.navigate) {
+    // （`?` 始まりのクエリのみリンクも対象 — 素の href だとフルページ遷移になる）
+    if (this._isInternalTarget(this._path) && !getNavigation()?.navigate) {
       this._onClick = async (e: MouseEvent) => {
         // only left-click without modifiers
         if (e.defaultPrevented) return;
         if (e.button !== 0) return;
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
         // 動的に外部URLに変わった場合はブラウザのデフォルト挙動に委ねる
-        if (!this._path.startsWith('/')) return;
+        if (!this._isInternalTarget(this._path)) return;
         e.preventDefault();
         await this.router.navigate(this._path);
         this._updateActiveState();
@@ -191,11 +207,22 @@ export class Link extends HTMLElement implements ILink {
   }
 
   private _updateActiveState = () => {
+    // クエリのみリンク（to="?k=v"）の href は現在 pathname に依存するため、
+    // active 判定と同じリスナー経路でロケーション変更に追従させる（§4.1）。
+    if (this._path.startsWith('?') && this._anchorElement) {
+      this._setAnchorHref(this._anchorElement, this._path);
+    }
+    // active 判定は pathname のみの比較（クエリ非感応 — §1.1 欠陥 7 の修理）。
     const currentPath = this._normalizePathname(new URL(window.location.href).pathname);
+    const { pathname } = splitUrlTarget(this._path);
     const linkPath = this._normalizePathname(
-      this._path.startsWith('/') ? this._joinInternalPath(this.router.basename, this._path) : this._path
+      this._isInternalTarget(this._path)
+        ? (pathname === ""
+            ? window.location.pathname
+            : this._joinInternalPath(this.router.basename, pathname))
+        : pathname
     );
-    
+
     if (this._anchorElement) {
       if (currentPath === linkPath) {
         this._anchorElement.classList.add('active');

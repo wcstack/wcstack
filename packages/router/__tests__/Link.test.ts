@@ -874,6 +874,119 @@ describe('Link', () => {
     });
   });
 
+  // docs/router-state-contract-design.md §4.1 — クエリ込みターゲットの受理
+  describe('クエリ込みターゲット (§4.1)', () => {
+    it('to="/path?k=v" の href はクエリを温存して組み立てること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const link = document.createElement('wcs-link') as Link;
+      link.setAttribute('to', '/products?page=2');
+      link.textContent = 'Page 2';
+      document.body.appendChild(link);
+
+      expect(link.anchorElement?.getAttribute('href')).toBe('/products?page=2');
+    });
+
+    it('to="?k=v" の href は現在 pathname + 指定クエリで組み立てること', () => {
+      (window as any).location.pathname = '/products';
+      (window as any).location.href = 'http://localhost/products';
+
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const link = document.createElement('wcs-link') as Link;
+      link.setAttribute('to', '?page=2');
+      link.textContent = 'Page 2';
+      document.body.appendChild(link);
+
+      expect(link.anchorElement?.getAttribute('href')).toBe('/products?page=2');
+    });
+
+    it('to="?k=v" の href はロケーション変更に追従すること（active と同じリスナー経路）', () => {
+      (window as any).location.pathname = '/products';
+      (window as any).location.href = 'http://localhost/products';
+
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const link = document.createElement('wcs-link') as Link;
+      link.setAttribute('to', '?page=2');
+      link.textContent = 'Page 2';
+      document.body.appendChild(link);
+
+      expect(link.anchorElement?.getAttribute('href')).toBe('/products?page=2');
+
+      // pathname が変わったら href も追従する
+      (window as any).location.pathname = '/items';
+      (window as any).location.href = 'http://localhost/items';
+      (link as any)._updateActiveState();
+
+      expect(link.anchorElement?.getAttribute('href')).toBe('/items?page=2');
+    });
+
+    it('active 判定はクエリ非感応であること（欠陥 7 の修理）', () => {
+      // 現在 URL にクエリが付いていても pathname 一致で active になる
+      (window as any).location.pathname = '/test';
+      (window as any).location.href = 'http://localhost/test?page=2';
+
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const link = document.createElement('wcs-link') as Link;
+      link.setAttribute('to', '/test');
+      link.textContent = 'Link';
+      document.body.appendChild(link);
+
+      expect(link.anchorElement?.classList.contains('active')).toBe(true);
+    });
+
+    it('to 側のクエリも active 判定から除外されること', () => {
+      (window as any).location.pathname = '/test';
+      (window as any).location.href = 'http://localhost/test';
+
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const link = document.createElement('wcs-link') as Link;
+      link.setAttribute('to', '/test?page=2');
+      link.textContent = 'Link';
+      document.body.appendChild(link);
+
+      expect(link.anchorElement?.classList.contains('active')).toBe(true);
+    });
+
+    it('フォールバック環境でクエリのみリンクのクリックが router.navigate に渡ること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const navigateSpy = vi.fn().mockResolvedValue(undefined);
+      (router as any).navigate = navigateSpy;
+
+      const link = document.createElement('wcs-link') as Link;
+      link.setAttribute('to', '?page=2');
+      link.textContent = 'Page 2';
+      document.body.appendChild(link);
+
+      const onClick = (link as any)._onClick as (e: MouseEvent) => void;
+      expect(onClick).toBeDefined();
+
+      const preventDefault = vi.fn();
+      await onClick({
+        defaultPrevented: false,
+        button: 0,
+        metaKey: false,
+        ctrlKey: false,
+        shiftKey: false,
+        altKey: false,
+        preventDefault,
+      } as any);
+
+      expect(preventDefault).toHaveBeenCalled();
+      expect(navigateSpy).toHaveBeenCalledWith('?page=2');
+    });
+  });
+
   describe('aria-current と属性転送 (a11y Phase 1)', () => {
     it('パスが一致する場合に aria-current="page" が付き、外れると消えること', () => {
       const router = document.createElement('wcs-router') as Router;

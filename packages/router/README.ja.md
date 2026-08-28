@@ -125,6 +125,56 @@
 | `focus` | commit したナビゲーション後に適用するオプトインのフォーカスポリシー。`"heading"` でリーフ route 内容の最初の見出しへフォーカス。「アクセシビリティ契約」参照 |
 | `announce` | オプトインのルート告知。`"title"` で commit 時点の `document.title` スナップショットを router 保有の live region へ書き込む。「アクセシビリティ契約」参照 |
 
+#### state バインディング（wc-bindable）
+
+`<wcs-router>` は live DOM に居る要素としてナビゲーション状態の全量を wc-bindable プロトコルで露出する。`@wcstack/state`（あるいは任意の binding core）は `data-wcs` 一つで配線できる：
+
+```html
+<wcs-router data-wcs="path: path; typedParams: routeParams; searchParams: query;
+                      routeName: routeName; navigateUrl: navigateUrl; replaceUrl: replaceUrl">
+```
+
+| メンバー | 方向 | 説明 |
+|------|------|------|
+| `path` | output のみ | 現在のルートパス（basename スライス後）。`wcs-router:path-changed` を発火 |
+| `params` | output のみ | マッチしたルートチェーンのマージ済みパラメータ（文字列、`Record<string, string>`）。fallback マッチ・初期化前は `{}` |
+| `typedParams` | output のみ | 同パラメータの型変換済み値（`:id(int)` → `number`）。イベントは `params` と共有（detail は `{ params, typedParams }`） |
+| `searchParams` | output のみ | 現在 URL のクエリ（`Record<string, string>`）。キー重複（`?tag=a&tag=b`）は **last-wins**、デコードは `URLSearchParams` に委ねる（`+` → 空白を含む）。クエリ無しは `{}`。`wcs-router:search-changed` を発火 |
+| `routeName` | output のみ | 最深マッチルートの `name` 属性値。fallback マッチ時は fallback ルートの `name`（404 画面も `routeName` 分岐で書ける）。無名・初期化前は `""`。`wcs-router:route-name-changed` を発火 |
+| `navigateUrl` | 書き込み面（null-idle transient） | ターゲットを書くと push 遷移。null は待機、文字列の書き込みで `navigate()` が起動し、完了後に自分で null へ戻る。null / `""` の書き込みは no-op |
+| `replaceUrl` | 書き込み面（null-idle transient） | `navigateUrl` と完全同型の契約。ただし現在の履歴エントリを**置き換える** |
+| `basename` | input | `basename` 属性のミラー |
+
+コマンド `navigate(path)` / `replace(path)`（いずれも async）も宣言され、command-token プロトコルから起動できる。
+
+output-only メンバーはバインド attach 時に**読まれ**、以後は変更イベントで流れる — 値は「読むもの」であり「待つもの」ではないので、router が最初のルートを解決した後に attach したバインドでも取りこぼしはない。
+
+**発火規範**: commit されたナビゲーションでは、router はまず**全内部値をコミット**し、その後で `params-changed` → `route-name-changed` → `search-changed` → `path-changed` の順に、値が実際に変化したものだけを発火する。どのイベントのリスナーから要素プロパティを読んでも遷移後スナップショットの一貫した値が見える。`path` は最後に発火し「ナビゲーション完了」の信号を兼ねる。guard 拒否されたナビゲーションでは何も更新せず何も発火しない。
+
+露出オブジェクトは router が所有する **frozen スナップショット**（ナビゲーションごとに新しいオブジェクト、in-place 変異なし）。変異は throw する — 自分の state へコピーして使うこと。
+
+**書き込み面の使い分け**:
+
+- ページネーション・タブ（戻るボタンで戻りたい）→ `navigateUrl = "?page=2"`
+- 検索ボックス・絞り込み（履歴を打鍵ごとに汚したくない）→ `replaceUrl = "?q=" + …`（高頻度入力には `<wcs-debounce>` を挟む）
+
+**マルチ Router**: `params` / `routeName` は各 Router 自身のマッチを反映するが、ページの URL にクエリは 1 つしかない — どの Router 経由で書いてもページ全体のクエリが置き換わる。一方**読み取り面は per-Router**: Router は自分の `basename` 配下のナビゲーションを処理したときだけ `searchParams` を commit するので、その値は「その Router が最後に処理したナビゲーション時点のクエリ」である。
+
+#### ナビゲーションターゲットのクエリ文字列
+
+`navigate()` / `replace()` / `navigateUrl` / `replaceUrl` / `<wcs-link to>` は次を受理する：
+
+| 形 | 意味 |
+|------|------|
+| `/path` | パス遷移。現在のクエリは**引き継がない**（引き継ぎたい場合は `searchParams` から組み立てる） |
+| `/path?k=v` | パス遷移＋クエリ指定 |
+| `?k=v` | クエリのみ遷移：pathname は現在値を維持 |
+| `?` | クエリの全消去（pathname 維持） |
+
+basename 結合と pathname 正規化は pathname にのみ適用され、クエリとハッシュはそのまま再結合される（ハッシュは素通し — router はハッシュではルーティングしない）。クエリはルートマッチングに一切関与しない。
+
+同一パスへのクエリのみ遷移は **same-match** ナビゲーションになる：ルートガードは再実行されず（ガードが守るのはルートへの**進入**であり、クエリ変化は進入ではない）、ルート内容は再スタンプされず、view transition も依頼されず、再アナウンスもされず、フォーカス・スクロールは動かない（履歴の traverse ではブラウザのスクロール復元が従来どおり働く）。変わるのは `searchParams` と URL だけである。
+
 ### Route(wcs-route)
 
 ルートパスが一致する場合、子要素を表示。パスの一致の優先順位は静的パス＞パラメータ。
@@ -140,9 +190,9 @@
 
 | プロパティ | 説明 |
 |------|------|
-| `params` | マッチしたパラメータ（文字列）を取得 |
-| `typedParams` | マッチしたパラメータ（型変換済み）を取得 |
 | `guardHandler` | ガード判定関数を設定 |
+
+> **`params` / `typedParams` はどこへ？** `<wcs-router>` にある — 「state バインディング（wc-bindable）」参照。パース後の route 要素は detached なコントローラであり live DOM に属さないため、`querySelector` では見つからず `data-wcs` でも結線できない。マッチ結果の観測面は router 要素である。
 
 ガード判定関数の型：
 `(toPath: string, fromPath: string) => boolean | Promise<boolean>`
@@ -203,15 +253,18 @@
 
 **値の取得**:
 
+マッチ結果は `<wcs-router>` 要素に露出される（route 要素自体は detached なコントローラで、live DOM からは取得できない）：
+
+```html
+<!-- 宣言的: 解析結果をそのまま state へバインド -->
+<wcs-router data-wcs="typedParams: routeParams"></wcs-router>
+```
+
 ```javascript
-// ルート要素から取得
-const route = document.querySelector('wcs-route[path="/users/:userId(int)"]');
-
-// 文字列として取得
-console.log(route.params.userId);       // "123"
-
-// 型変換済みの値として取得
-console.log(route.typedParams.userId);  // 123 (number)
+// 命令的: router 要素から読む
+const router = document.querySelector('wcs-router');
+console.log(router.params.userId);       // "123"
+console.log(router.typedParams.userId);  // 123 (number)
 ```
 
 **動作仕様**:
@@ -294,9 +347,9 @@ console.log(route.typedParams.userId);  // 123 (number)
 
 | 属性 | 説明 |
 |------|------|
-| `to` | 遷移先の絶対ルートパスもしくはURL。`/`で始まる場合はルートパス（basenameが付与される）。それ以外は外部URLとして扱われる |
+| `to` | 遷移先の絶対ルートパスもしくはURL。`/`で始まる場合はルートパス（basename は pathname にのみ付与され、`?クエリ` / `#ハッシュ` はそのまま温存される）。`?` で始まる場合は**クエリのみリンク**：href は「現在 pathname + 指定クエリ」で組み立てられ、ロケーション変更に追従する。それ以外は外部URLとして扱われる |
 
-**アクティブ状態**: 生成された `<a>` はパスが現在のロケーションと一致する場合に `active` クラスと、同じ事実の ARIA 表現である `aria-current="page"` を受け取る（スクリーンリーダーがナビゲーション内の現在地を読み上げられる）。ナビゲーションイベント（`currententrychange`, `wcs:navigate`, `popstate`）で更新される。
+**アクティブ状態**: 生成された `<a>` はパスが現在のロケーションと一致する場合に `active` クラスと、同じ事実の ARIA 表現である `aria-current="page"` を受け取る（スクリーンリーダーがナビゲーション内の現在地を読み上げられる）。比較は **pathname のみ**で行われ、どちら側のクエリも影響しない（`to="/products"` は `/products?page=2` でも active のまま。クエリのみリンクはそのページに居る間つねに active）。ナビゲーションイベント（`currententrychange`, `wcs:navigate`, `popstate`）で更新される。
 
 ```css
 /* アクティブなリンクのスタイル */
@@ -308,6 +361,13 @@ a.active { font-weight: bold; color: blue; }
 **素の `<a>` について**: Navigation API のあるブラウザでは、basename 配下の素の `<a href="/about">` も SPA 遷移になる（router が intercept する）。フォールバックブラウザでは成立しない（SPA 経路は `<wcs-link>` の click ハンドラのみ）ため、推奨は `<wcs-link>` のまま。
 
 ## 自動バインディング (`data-bind`)
+
+ルートパラメータの配送には行き先の異なる 2 つの機構がある：
+
+| パラメータの行き先 | 使うもの |
+|------|------|
+| state へ（リアクティブ描画・派生値） | `<wcs-router>` の `typedParams` / `params` バインド — 「state バインディング（wc-bindable）」参照 |
+| route 内の要素へ直接（state を使わないページ・汎用コンポーネント） | 下記の `data-bind` |
 
 `data-bind` 属性を持つ要素は、マッチしたルートパラメータを自動的に受け取る。4つのバインディングモードに対応：
 

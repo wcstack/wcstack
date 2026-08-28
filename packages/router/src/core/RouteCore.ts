@@ -3,7 +3,7 @@ import { builtinParamTypes } from "../builtinParamTypes.js";
 import { raiseError } from "../raiseError.js";
 import { config } from "../config.js";
 import { ISegmentInfo, SegmentType, IRouteMatchResult, GuardHandler } from "../components/types.js";
-import { BuiltinParamTypes, IWcBindable } from "../types.js";
+import { BuiltinParamTypes } from "../types.js";
 
 const weights: Record<SegmentType, number> = {
   'static': 2,
@@ -19,17 +19,21 @@ export interface RouteParseOptions {
   name?: string;
 }
 
+/**
+ * NOTE: RouteCore / Route は `static wcBindable` を**宣言しない**
+ * （docs/router-state-contract-design.md §5.1 / D2）。
+ *
+ * `<wcs-route>` は parse 時に clone された detached コントローラであり、live DOM に
+ * 入るのは placeholder コメントとスタンプされた子ノードだけ。data-wcs は live DOM
+ * 上の属性走査で結線する仕組みなので、宣言しても構造的に到達不能な「果たせない
+ * 約束」になる。params / typedParams / routeName の観測面は live DOM に居る
+ * `<wcs-router>` に集約した（Router.wcBindable）。
+ *
+ * `wcs-route:params-changed` / `wcs-route:active-changed` の dispatch は存置する —
+ * RouteCore は EventTarget であり、Core 直接消費（signals の正式推奨形）と
+ * ユニットテストの観測面として生きている。
+ */
 export class RouteCore extends EventTarget {
-  static wcBindable: IWcBindable = {
-    protocol: "wc-bindable",
-    version: 1,
-    properties: [
-      { name: "params", event: "wcs-route:params-changed", semantics: "state" },
-      { name: "typedParams", event: "wcs-route:params-changed", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.typedParams },
-      { name: "active", event: "wcs-route:active-changed", semantics: "state" },
-    ],
-  };
-
   private _target: EventTarget;
   private _parentCore: RouteCore | null = null;
   private _path: string = '';
