@@ -294,14 +294,36 @@ createServer(async (req, res) => {
 - Automatically awaits all custom elements with `static hasConnectedCallbackPromise = true`
 - Uses a stabilization loop: after awaiting, re-scans the DOM for newly added custom elements (up to 10 iterations), ensuring elements dynamically inserted during `$connectedCallback` are also awaited
 
+### Router SSR
+
+Put `enable-ssr` on `<wcs-router>` and pass the request `url` (design: [docs/ssr-router-design.md](https://github.com/wcstack/wcstack/blob/main/docs/ssr-router-design.md) (ja)):
+
+```javascript
+const body = await renderToString(template, {
+  url: `http://localhost:3000${req.url}`,
+  bootstraps: [
+    bootstrapState,
+    // classes extending HTMLElement cannot be imported top-level in plain
+    // Node — the async loader runs after DOM globals are installed
+    async () => (await import('@wcstack/router')).bootstrapRouter(),
+  ],
+});
+```
+
+- The initial route of the request URL is rendered on the server — typed params, nested routes, and structural templates (`for:` / `if:`) inside route content included.
+- The client-side router **adopts** the server-rendered DOM instead of re-rendering it; state bindings hydrated on those nodes stay live. If anything about the server output doesn't verify (URL mismatch, edited templates), the client silently falls back to normal client-side rendering.
+- `<wcs-ssr>` snapshots are built as a server-orchestrated final pass (the ssr-snapshot protocol), so hydration data always includes route content regardless of load order.
+- `<wcs-link>` anchors are server-rendered (with `active` / `aria-current`) and adopted on the client.
+- Sub-path deployments: pass `baseHref` and serve a matching `<base href>` to the client.
+
 ## What SSR Cannot Do
 
-- Fully guarantee `<wcs-router>` SSR — server-side rendering of the initial route (pass `url` and put `enable-ssr` on `<wcs-router>`), client-side adoption of the server-rendered DOM, and orchestrated `<wcs-ssr>` snapshots all work, but real-browser e2e coverage is still pending — treat router SSR as beta until then. Permanent limits by design: guarded routes are never server-rendered, and routes using `<wcs-layout>` fall back to client-side rendering. See [docs/ssr-router-design.md](https://github.com/wcstack/wcstack/blob/main/docs/ssr-router-design.md) (ja) for the design and progress.
 - Execute `<script src="...">` or `<link>` in `<head>`
 - Access browser-specific APIs (localStorage, sessionStorage, navigator, etc.)
 - Render Shadow DOM (Declarative Shadow DOM not supported)
 - Register event handlers (restored via client-side hydration)
 - Load components dynamically via `<wcs-autoloader>`
+- Server-render guarded routes (by design — the guard is an authorization point that runs client-side; the outlet is left empty), `<wcs-layout>` routes (adopted pages fall back to client-side rendering), or `<wcs-head>` contents (reflection targets `document.head`, which a body-only render cannot carry)
 
 ## HTML Splitting Pattern
 

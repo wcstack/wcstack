@@ -431,6 +431,17 @@ bootstrapRouter({
 
 ルータはガードを先に走らせ、hide/show の対だけを遷移へ渡す。await するガードが遷移を開きっぱなしにしないため。ページを最初に描く「最初のルート適用」は常に同期で行う —— 対比すべき旧ルートが無く、入場は @starting-style の担当だから。タグが無ければ何も変わらない（差し替えは同期のまま）。[docs/view-transition-design.ja.md](https://github.com/wcstack/wcstack/blob/main/docs/view-transition-design.ja.md) §7.1 参照。
 
+## サーバーサイドレンダリング（SSR）
+
+`<wcs-router enable-ssr>` を付けると [`@wcstack/server`](https://github.com/wcstack/wcstack/tree/main/packages/server) の SSR に参加する: `renderToString({ url })` がリクエスト URL の初期ルートをサーバーで描画し、クライアント側 router は起動時にサーバー描画済み DOM を再描画せずに**採用（adopt）**する — 採用ノード上で state のバインディングは生きたまま。属性が無ければ router はサーバーで一切初期化されず、従来どおりクライアントで描画される（部分 CSR）。
+
+- サーバー出力が現在の URL・ルート定義と検証で一致しない場合、クライアントは静かに通常のクライアント描画へフォールバックする。
+- guard 付きルートはサーバーで描画されない — guard は認可点でありクライアントで実行される。outlet は空のまま配信される。
+- `<wcs-layout>` を使うルートは採用時にクライアント描画へフォールバックする。
+- `<wcs-link>` の anchor はサーバーで描画され（`active` / `aria-current` 付き）、クライアントが採用する。
+
+サーバー側の設定は `@wcstack/server` の README、設計は [docs/ssr-router-design.md](https://github.com/wcstack/wcstack/blob/main/docs/ssr-router-design.md) を参照。
+
 ## アクセシビリティ契約
 
 router は、プラットフォームが既に正しく行うことについては、スクロールとフォーカスの扱いをブラウザへ委譲する。

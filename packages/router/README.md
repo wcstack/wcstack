@@ -431,6 +431,17 @@ Route swaps are a plain `removeChild` / `insertBefore` pair, so the outgoing vie
 
 The router runs its guards first and hands only the hide/show pair to the transition, so a guard that awaits does not hold the transition open. The first route application — the one that paints the page on load — is always synchronous: there is no previous route to animate against, and an entrance is `@starting-style`'s job. Without the tag nothing changes at all; the swap stays synchronous. See [docs/view-transition-design.md](https://github.com/wcstack/wcstack/blob/main/docs/view-transition-design.md) §7.1.
 
+## Server-side rendering (SSR)
+
+`<wcs-router enable-ssr>` opts the router into [`@wcstack/server`](https://github.com/wcstack/wcstack/tree/main/packages/server)'s SSR: `renderToString({ url })` renders the initial route of the request URL on the server, and the client-side router **adopts** the server-rendered DOM on boot instead of re-rendering it — state bindings hydrated on those nodes stay live. Without the attribute the router never initializes on the server and the page renders client-side as usual (partial CSR).
+
+- If the server output does not verify against the current URL and route definitions, the client silently falls back to normal client-side rendering.
+- Guarded routes are never rendered on the server — a guard is an authorization point and runs client-side; the outlet is served empty.
+- Routes using `<wcs-layout>` fall back to client-side rendering on adoption.
+- `<wcs-link>` renders its anchor on the server (with `active` / `aria-current`) and adopts it on the client.
+
+See the `@wcstack/server` README for the server-side setup and [docs/ssr-router-design.md](https://github.com/wcstack/wcstack/blob/main/docs/ssr-router-design.md) (ja) for the design.
+
 ## Accessibility contract
 
 The router delegates scroll and focus handling to the browser wherever the platform already does the right thing.
