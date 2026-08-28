@@ -335,6 +335,15 @@ export class RouteCore extends EventTarget {
     return false;
   }
 
+  /**
+   * guard 属性の有無（parsePath の options.hasGuard）。SSR の guard バリア
+   * — guard 付きルートはサーバーで描かない（docs/ssr-router-design.md §2-4）—
+   * がハンドラのロードを待たずに判定するために使う。
+   */
+  get hasGuard(): boolean {
+    return this._hasGuard;
+  }
+
   get guardHandler(): GuardHandler {
     if (!this._guardHandler) {
       raiseError(`${config.tagNames.route} has no guardHandler.`);

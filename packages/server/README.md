@@ -75,9 +75,18 @@ console.log(renderer.html);
 
 ## API Reference
 
-### `renderToString(html: string): Promise<string>`
+### `renderToString(html: string, options?: RenderOptions): Promise<string>`
 
 Renders an HTML string containing `@wcstack/state` templates. Returns fully-rendered HTML with hydration data for any `<wcs-state enable-ssr>` elements.
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `url` | Full URL of the request (e.g. `"http://localhost:3000/products/1"`). Reflected in `window.location` / `document.baseURI`. Required for server-rendering components that route on the URL. |
+| `baseHref` | Value for the `<base href>` injected into `<head>`. Defaults to `"/"` when `url` is given. Set it explicitly for sub-path deployments. |
+| `baseUrl` | Base URL for resolving relative fetch URLs. Defaults to the origin of `url`. |
+| `bootstraps` | Array of bootstrap functions (defaults to `bootstrapState`). Async loaders are allowed — packages whose classes extend `HTMLElement` at module scope cannot be imported top-level in plain Node, so pass e.g. `async () => (await import('@wcstack/fetch')).bootstrapFetch()`; the loader runs after DOM globals are installed. |
 
 **Rendering pipeline:**
 1. Creates a happy-dom window and installs browser globals
@@ -287,6 +296,7 @@ createServer(async (req, res) => {
 
 ## What SSR Cannot Do
 
+- Hydrate `<wcs-router>` on the client — server-side rendering of the initial route works (pass `url` and put `enable-ssr` on `<wcs-router>`), but the client-side router does not yet adopt the server-rendered route DOM, so enabling it on a page that also boots the router in the browser double-renders. Until that lands, treat router SSR as experimental / static-HTML-generation only. See [docs/ssr-router-design.md](https://github.com/wcstack/wcstack/blob/main/docs/ssr-router-design.md) (ja) for the design and progress.
 - Execute `<script src="...">` or `<link>` in `<head>`
 - Access browser-specific APIs (localStorage, sessionStorage, navigator, etc.)
 - Render Shadow DOM (Declarative Shadow DOM not supported)
