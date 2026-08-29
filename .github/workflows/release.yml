@@ -42,44 +42,43 @@ jobs:
       - name: Upgrade npm CLI (trusted publishing needs >= 11.5.1)
         run: npm install -g npm@11
 
-      # Discover release-target packages, in two sets.
+      # Discover release-target packages, as one ordered set used for both
+      # build and publish.
       #
-      # `list` — buildable packages: any packages/* scoped under @wcstack/.
-      # These have src, tests, a package-lock.json and a dist, so they go
-      # through install / build / test / rebuild / artifact-commit. Auto-includes
-      # new packages; excludes the vscode-wcs extension (published separately to
-      # the VS Code Marketplace).
+      # Members: any packages/* scoped under @wcstack/, sorted. These have src,
+      # tests, a package-lock.json and a dist. Auto-includes new packages;
+      # excludes the vscode-wcs extension (published separately to the VS Code
+      # Marketplace).
       #
-      # `publish_list` — the above plus the unscoped `wcstack` entry package.
-      # That one is documentation only: no dependencies, no build, no tests, no
-      # dist. It must not enter the build/test loops (they would fail on the
-      # missing lockfile and scripts), but it does have to stay on the shared
-      # version line, so it takes part in bump / verify / publish.
+      # The unscoped `wcstack` entry bundle is appended LAST, never sorted in:
+      # its build inlines the member packages' dist/auto.min.js files
+      # (state / router / fetch / storage / autoloader), so it must build after
+      # every member has been (re)built — in BOTH passes, so "Test all
+      # packages" tests a coherent bundle and the rebuild embeds the bumped
+      # VERSION constants. Plain sorted order happens to satisfy that today,
+      # but would break silently the moment a member sorting after "wcstack"
+      # (websocket, worker, ...) joins the bundle profile, so the ordering is
+      # explicit (docs/distribution-robustness-impl-plan.md D7). The entry
+      # package builds and tests like any other package since plan Phase 4;
+      # `list` and `publish_list` are now the same set, kept as two outputs so
+      # the consuming steps stay unchanged.
       - name: Discover packages
         id: discover
         run: |
           set -euo pipefail
-          # The entry package is selected by a flag, not by folding it into the
-          # case pattern: a pattern passed through a variable is not re-parsed,
-          # so `@wcstack/*|wcstack` would match nothing at all (the `|` stops
-          # being an alternation separator) and every list would come back empty.
-          collect() {
-            include_entry="$1"
+          members() {
             for dir in packages/*/; do
               [ -f "${dir}package.json" ] || continue
               name=$(node -p "require('./${dir}package.json').name")
               case "$name" in
                 @wcstack/*) basename "$dir" ;;
-                wcstack)    if [ "$include_entry" = "yes" ]; then basename "$dir"; fi ;;
               esac
             done | sort | tr '\n' ' '
           }
-          pkgs=$(collect no)
-          publish_pkgs=$(collect yes)
-          echo "Buildable packages: $pkgs"
-          echo "Publish targets:    $publish_pkgs"
+          pkgs="$(members)wcstack "
+          echo "Build/publish order: $pkgs"
           echo "list=$pkgs" >> "$GITHUB_OUTPUT"
-          echo "publish_list=$publish_pkgs" >> "$GITHUB_OUTPUT"
+          echo "publish_list=$pkgs" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
         run: |
@@ -162,6 +161,16 @@ jobs:
       # even though the CI job only sees committed dist.
       - name: Bindable settable-surface conformance (rebuilt dist)
         run: node scripts/conformance-bindable-inputs.mjs
+
+      # The rebuilt wcstack bundle is excluded from both post-rebuild gates by
+      # design: it has no dist/index.esm.js for the conformance script above
+      # (plan D5) and is SKIPped by emit-builtin-tags below (plan D8). Re-run
+      # its smoke tests against the freshly rebuilt dist — the tag census and
+      # the zero-static-imports check are the only execution gates the
+      # published bundle gets.
+      - name: Smoke-test the rebuilt wcstack bundle
+        run: npm test
+        working-directory: packages/wcstack
 
       # Regenerate the builtinTags catalog + wcs.html-data.json from the freshly
       # rebuilt bundles and include them in the release commit. Without this, a

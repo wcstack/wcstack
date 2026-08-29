@@ -55,6 +55,10 @@ const packagesRoot = path.resolve(here, "../..");
 const SKIP = new Set([
   "state", "router", "signals", "autoloader", "devtools", "server",
   "poc-visual-editor", "vscode-wcs",
+  // エントリバンドル（SPA コア 5 パッケージの auto を丸ごと内包）。import すると
+  // メンバーの全タグを再捕捉して catalog の package: を "wcstack" に上書きしてしまう
+  // （正本は各メンバー側）。docs/distribution-robustness-impl-plan.md D8。
+  "wcstack",
 ]);
 
 /** @type {Record<string, {package: string, hasWcBindable: boolean, observedAttributes: string[], inputs: Record<string, string | null>, properties: string[], commands: string[]}>} */

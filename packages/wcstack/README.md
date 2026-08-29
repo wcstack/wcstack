@@ -1,6 +1,6 @@
 # wcstack
 
-**wcstack** is a set of 45 zero-dependency Web Components packages: reactive data binding, declarative SPA routing, and 30+ Web APIs exposed as HTML tags. No build step, no bundler, no framework runtime. One CDN `<script>` tag per package.
+**wcstack** is a set of 45 zero-dependency Web Components packages: reactive data binding, declarative SPA routing, and 30+ Web APIs exposed as HTML tags. No build step, no bundler, no framework runtime. One CDN `<script>` tag per package — or one `wcstack/auto` tag for the whole SPA core.
 
 Project site: **https://wcstack.github.io** · Source: **https://github.com/wcstack/wcstack**
 
@@ -23,9 +23,9 @@ Both are spelled out under [What does not work](#what-does-not-work).
 
 ---
 
-## Do not install this package
+## Loading wcstack — single packages, or this package's SPA-core bundle
 
-This package contains documentation only. wcstack is buildless — load what you need from a CDN:
+wcstack is buildless — load what you need from a CDN. The default is one tag per package, paying only for what the page uses:
 
 ```html
 <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
@@ -33,9 +33,19 @@ This package contains documentation only. wcstack is buildless — load what you
 <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
 ```
 
-Each `/auto` script registers its custom elements and does nothing else. No initialization call, no bootstrap. Tags activate when the browser parses them.
+Each `/auto` script registers its custom elements and does nothing else. No initialization call, no bootstrap. Tags activate when the browser parses them. The tags fetch in parallel (every `/auto` is self-contained), so multiple tags cost requests, not a waterfall.
 
-If you do want npm packages, install the individual ones (`@wcstack/state`, `@wcstack/router`, …) rather than this one.
+For an app that uses the SPA core anyway, **this package ships the bundle**: `wcstack/auto` is `@wcstack/state` + `@wcstack/router` + `@wcstack/fetch` + `@wcstack/storage` + `@wcstack/autoloader` pre-linked by Rollup into one self-contained file (219 KB min / 61 KB gzip) — one request, and in production one `integrity` hash covering every line of the core that runs (digests ship with each GitHub Release; see `docs/sri.md`):
+
+```html
+<script type="module"
+        src="https://cdn.jsdelivr.net/npm/wcstack@1.32.0/dist/auto.min.js"
+        integrity="sha384-…"></script>
+```
+
+Loading the bundle alongside an individual package's `/auto` is safe: whichever copy evaluates first owns the page; the second is inert. Do **not** merge the files yourself through jsDelivr's `/combine/` endpoint — concatenated minified ESM does not even parse (`docs/sri.md` §3.1).
+
+If you want npm packages for local development, install the individual ones (`@wcstack/state`, `@wcstack/router`, …); this package publishes only the bundle and this guide.
 
 ---
 

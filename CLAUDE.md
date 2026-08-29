@@ -61,6 +61,7 @@ Each package lives under `packages/` and is independently built, tested, version
 - **`@wcstack/ambient-light-sensor`** (`<wcs-ambient-light-sensor>`) — Ambient Light sensor
 
 **Other packages:**
+- **`wcstack`** (unscoped entry package, `packages/wcstack`) — The npm entry point and the SPA-core bundle: `wcstack/auto` ships `dist/auto.min.js` bundling state + router + fetch + storage + autoloader by inlining the members' published `/auto` entries with Rollup (`exports` has only `./auto` — deliberately no `index.esm.js`). It must build after all members; release.yml appends it last to the build order. Its README doubles as the AI authoring guide (`npm view wcstack readme`). See docs/distribution-robustness-impl-plan.md.
 - **`@wcstack/server`** — Server-side rendering for wcstack components.
 - **`packages/vscode-wcs`** (`wcstack-intellisense`) — VSCode extension providing TypeScript language features for `<wcs-state>` inline scripts in HTML. Versioned independently from the published npm packages.
 
