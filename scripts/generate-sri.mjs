@@ -102,6 +102,12 @@ function toNotes(version, entries, skipped) {
       "jsDelivr's `+esm` endpoint, which re-bundles the package, so its bytes are not the published",
       "bytes and no fixed digest can match them.",
       "",
+      "Loading several packages? Use one pinned tag per package — each bootstrap is self-contained,",
+      "so the tags fetch in parallel and each keeps its own full-coverage digest. Do NOT use",
+      "jsDelivr's `/combine/` endpoint: concatenated minified ESM does not even parse (top-level",
+      "identifiers collide), and jsDelivr itself rules out SRI for combined responses. See",
+      "`docs/sri.md` §3.1.",
+      "",
     );
   }
   lines.push(

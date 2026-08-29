@@ -65,6 +65,25 @@ SRI を効かせるなら `cdn.jsdelivr.net` の**バージョン固定・直パ
 
 副次的な利点として、直パスなら CSP の `script-src` に許可するホストが 1 つで済む（`esm.run` 経由だとリダイレクト先も照合されるので 2 ホスト必要）。詳しくは [csp.ja.md §1](./csp.ja.md#1-配信元--esmrun-は-2-ホストを要求する)。
 
+### 3.1 jsDelivr `/combine/` も同様に不成立
+
+wcstack の配信に `/combine/` を使ってはならない（MUST NOT）。`esm.run` より深刻で、検証できないどころか**パースすら通らない**。
+
+このエンドポイントは列挙されたファイルを裸の `;` 区切りで連結するだけで、スコープのラップをしない。minifier はトップレベルの束縛を「モジュールスコープは自分の専有物」という前提でリネームするため、minify 済み ESM バンドル 2 つが 1 ファイルを共有した瞬間に識別子が衝突する。wcstack の `dist/auto.min.js` をどれでも 2 つ combine すると `SyntaxError: Identifier 't' has already been declared` になる（2026-08-29 実測: 公開済み 1.30.0 の `@wcstack/state` + `@wcstack/router` の combine 応答で確認。同じファイルのローカル連結でも同一エラーを再現）。これは構造的な性質であり、将来のリリースで直せる類のバグではない。
+
+仮にパースが通る組み合わせであっても、SRI は jsDelivr 自身が禁じている。combine 応答の先頭には「Do NOT use SRI with dynamically generated files!」というコメントが埋め込まれ、公式ガイダンスも「Only use SRI with full single-file links, and static versions」— 再生成時のバイト同一性は保証されない。運用面でも all-or-nothing で、構成ファイルが 1 つでも 404 なら全体が 404 になり、その 404 は 1 日エッジキャッシュされる。
+
+複数パッケージを読み込むときは、パッケージごとにバージョン固定の単一ファイルタグを並べる。各 `dist/auto.min.js` は自己完結なのでタグは並列にフェッチされ（潰すべき import のウォーターフォールはそもそも存在しない）、それぞれが全カバーのダイジェストを保つ:
+
+```html
+<script type="module"
+        src="https://cdn.jsdelivr.net/npm/@wcstack/state@1.26.0/dist/auto.min.js"
+        integrity="sha384-…"></script>
+<script type="module"
+        src="https://cdn.jsdelivr.net/npm/@wcstack/router@1.26.0/dist/auto.min.js"
+        integrity="sha384-…"></script>
+```
+
 ## 4. カバー範囲 — 何が守られ、何が守られないか
 
 | 対象 | integrity で守られるか |

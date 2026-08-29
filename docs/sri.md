@@ -65,6 +65,25 @@ To make SRI work, use a **version-pinned, direct path** on `cdn.jsdelivr.net`. N
 
 A secondary benefit: a direct path costs only one host in the CSP `script-src` (going through `esm.run` needs two, since the redirect target is matched as well). See [csp.md §1](./csp.md#1-delivery-origin--esmrun-requires-two-hosts).
 
+### 3.1 …and neither can jsDelivr `/combine/`
+
+`/combine/` MUST NOT be used to deliver wcstack — it fails harder than `esm.run`: the response is not merely unverifiable, it does not parse.
+
+The endpoint concatenates the listed files with a bare `;` separator and no scope wrapping. Minifiers rename top-level bindings on the assumption that the module scope is theirs alone, so two minified ESM bundles collide as soon as they share one file: combining any two wcstack `dist/auto.min.js` files yields `SyntaxError: Identifier 't' has already been declared` (measured 2026-08-29 against the published 1.30.0 bundles of `@wcstack/state` + `@wcstack/router`; a local concatenation of the same files reproduces the identical error). This is structural, not a bug a future release could fix.
+
+Even for a combination that happened to parse, SRI is ruled out by jsDelivr itself: the combined response opens with a banner comment — "Do NOT use SRI with dynamically generated files!" — and the official guidance is "Only use SRI with full single-file links, and static versions"; regenerated output is not guaranteed byte-identical. The endpoint is also all-or-nothing operationally: one 404 among the parts fails the whole URL, and that 404 is edge-cached for a day.
+
+To load several packages, use one version-pinned single-file tag per package. Each `dist/auto.min.js` is self-contained, so the tags fetch in parallel — there is no import waterfall to collapse — and each keeps its own full-coverage digest:
+
+```html
+<script type="module"
+        src="https://cdn.jsdelivr.net/npm/@wcstack/state@1.26.0/dist/auto.min.js"
+        integrity="sha384-…"></script>
+<script type="module"
+        src="https://cdn.jsdelivr.net/npm/@wcstack/router@1.26.0/dist/auto.min.js"
+        integrity="sha384-…"></script>
+```
+
 ## 4. Coverage — what is protected and what is not
 
 | Target | Protected by integrity? |
