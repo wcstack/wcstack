@@ -108,6 +108,12 @@ jobs:
     # <wcs-state src=...> の外部 state は CLI が HTML 相対で読み込んで解決する。
     # それでも解決できないパスは warning に留まり build を落とさない（--errors-only で表示も抑制）。
     # vscode-wcs は @wcstack/* でなく detect-changes matrix 対象外なので独立 job にする。
+    #
+    # vscode-wcs / lint は @wcstack/state の dist を file:../state（symlink）経由で
+    # inline して消費する。コミット済み dist はリリース間で src に遅行するため、最初に
+    # state を src から再ビルドし、「新鮮な state × vscode-wcs / lint」を PR 時点で
+    # ゲートする（#183 の残り半分 — stale dist に対して緑のまま release で初めて落ちる
+    # 経路を塞ぐ。docs/distribution-robustness-impl-plan.md Phase 2）。
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -115,7 +121,17 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: packages/vscode-wcs/package-lock.json
+          cache-dependency-path: |
+            packages/vscode-wcs/package-lock.json
+            packages/state/package-lock.json
+      # node_modules/@wcstack/state は npm の file: 依存で symlink になるため、
+      # vscode-wcs の npm ci より先に走っても後から走っても新鮮な dist が見える。
+      # esbuild の inline（vscode-wcs の build）より前であることだけが要件。
+      - name: Build @wcstack/state from source (vscode-wcs and lint inline its dist)
+        run: |
+          npm ci
+          npm run build
+        working-directory: packages/state
       - run: npm ci
         working-directory: packages/vscode-wcs
       - run: npm run build
@@ -131,7 +147,8 @@ jobs:
       # vscode-wcs は @wcstack/* でないので matrix にそもそも載らず、vscode-wcs だけを
       # 触る変更は lint の契約テストを一度も走らせないまま通る。実際 array-mutation の
       # severity 変更がこの穴を抜け、release の「Build all packages」で初めて落ちた。
-      # vscode-wcs の変更で必ず動くこの job から走らせて塞ぐ。
+      # vscode-wcs の変更で必ず動くこの job から走らせて塞ぐ。冒頭の state 再ビルドに
+      # より、この smoke も state の src 変更に対して新鮮な dist で走る。
       - name: Smoke-test the packaged CLI against the freshly built dist
         run: |
           set -euo pipefail
