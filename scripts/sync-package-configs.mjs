@@ -14,7 +14,7 @@
 //   node scripts/sync-package-configs.mjs --check  # CI: fail if any copy drifted
 
 import { readdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -50,6 +50,59 @@ function discoverPackages() {
 // CRLF/LF mixed checkouts are tolerated for comparison; writes are always LF.
 const normalize = (s) => s.replace(/\r\n/g, "\n");
 
+// --- Completeness guards ---------------------------------------------------
+// Same two-guard scheme as sync-protocol-types.mjs / sync-io-core.mjs. The file
+// list this script enforces comes from Object.keys(DEVIATIONS), not from reading
+// /config-templates/ — so guard (1) is what makes "drop a new template in the
+// dir, forget to register it" a hard failure instead of silent non-distribution.
+// Both guards fail in write mode too.
+
+function assertCanonicalDirComplete() {
+  const unregistered = readdirSync(join(repoRoot, "config-templates"), { withFileTypes: true })
+    .filter((e) => e.isFile() && !(e.name in DEVIATIONS))
+    .map((e) => e.name);
+  if (unregistered.length === 0) return;
+  console.error(
+    `Unregistered file(s) in /config-templates/: ${unregistered.join(", ")}\n` +
+    "Every file in the canonical dir must be copy-distributed by this script.\n" +
+    "Register each one in scripts/sync-package-configs.mjs (a DEVIATIONS key —\n" +
+    "with an empty object when no package deviates), or move it out of\n" +
+    "/config-templates/.",
+  );
+  process.exit(1);
+}
+
+const BANNER_PATTERN = /Generated from \/config-templates\/\S+ by scripts\/sync-package-configs\.mjs/;
+const SCAN_EXCLUDED_DIRS = new Set(["dist", ".tsc-out", "node_modules", "coverage"]);
+const SCAN_EXTENSIONS = new Set([".ts", ".js", ".mjs", ".cjs"]);
+
+function* scannableFiles(dir) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (!SCAN_EXCLUDED_DIRS.has(entry.name)) yield* scannableFiles(full);
+    } else if (SCAN_EXTENSIONS.has(extname(entry.name))) {
+      yield full;
+    }
+  }
+}
+
+function assertNoOrphanCopies(expectedDests) {
+  const orphans = [];
+  for (const file of scannableFiles(join(repoRoot, "packages"))) {
+    if (!BANNER_PATTERN.test(readFileSync(file, "utf8").slice(0, 400))) continue;
+    if (!expectedDests.has(file)) orphans.push(file.slice(repoRoot.length + 1).split(sep).join("/"));
+  }
+  if (orphans.length === 0) return;
+  console.error(
+    `Orphan generated copies (carry this script's banner but are not registered targets):\n  ${orphans.join("\n  ")}\n` +
+    "A copy in a non-@wcstack package cannot be synced; a DEVIATIONS package keeps a\n" +
+    "hand-written file and must not carry the banner. Fix the file or the registry in\n" +
+    "scripts/sync-package-configs.mjs.",
+  );
+  process.exit(1);
+}
+
 function bannerFor(file) {
   return (
     "// ===========================================================================\n" +
@@ -63,6 +116,14 @@ function bannerFor(file) {
 function main() {
   const checkOnly = process.argv.includes("--check");
   const packages = discoverPackages();
+
+  assertCanonicalDirComplete();
+  assertNoOrphanCopies(new Set(
+    Object.keys(DEVIATIONS).flatMap((file) =>
+      packages.filter((pkg) => !(pkg in DEVIATIONS[file])).map((pkg) => join(repoRoot, "packages", pkg, file)),
+    ),
+  ));
+
   const stale = [];
   let checked = 0;
 

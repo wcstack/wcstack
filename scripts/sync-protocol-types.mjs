@@ -16,8 +16,8 @@
 // signals is intentionally excluded: it maintains its own structural-subset
 // WcBindableDescriptor (design decision G2, guarded by bindNode.compat.test.ts).
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { dirname, join, resolve, sep } from "node:path";
+import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -71,6 +71,73 @@ const SSR_SNAPSHOT_TARGET_PACKAGES = ["server", "state"];
 // custom element の Shell を持つパッケージ（= connectedCallback で property upgrade が要る）。
 // state / server は Shell が wcBindable.inputs を宣言しないため対象外。
 const UPGRADE_TARGET_PACKAGES = TARGET_PACKAGES.filter((pkg) => pkg !== "state" && pkg !== "server");
+
+// --- Completeness guards ---------------------------------------------------
+// Two failure modes the stale-compare below cannot see:
+//   (1) a new canonical file lands in /protocol/ without being registered here
+//       — it would silently never be distributed;
+//   (2) a copy carrying this script's banner exists outside the registered
+//       targets (hand-copied into a new package, or left behind after
+//       de-registration) — it would silently drift from its canonical.
+// Both fail in write mode too: a sync run must never "succeed" while either
+// class of drift exists.
+
+const CANONICAL_SOURCES = new Set([
+  "wc-bindable.ts",
+  "wc-bindable-reader.ts",
+  "upgrade-properties.ts",
+  "upgrade-properties.test.ts",
+  "transition-runner.ts",
+  "binder.ts",
+  "ssr-snapshot.ts",
+]);
+
+function assertCanonicalDirComplete() {
+  const unregistered = readdirSync(join(repoRoot, "protocol"), { withFileTypes: true })
+    .filter((e) => e.isFile() && !CANONICAL_SOURCES.has(e.name))
+    .map((e) => e.name);
+  if (unregistered.length === 0) return;
+  console.error(
+    `Unregistered file(s) in /protocol/: ${unregistered.join(", ")}\n` +
+    "Every file in the canonical dir must be copy-distributed by this script.\n" +
+    "Register each one in scripts/sync-protocol-types.mjs (a canonical*Path constant,\n" +
+    "CANONICAL_SOURCES, a *_TARGET_PACKAGES list and a targets entry in main()),\n" +
+    "or move it out of /protocol/.",
+  );
+  process.exit(1);
+}
+
+// The banner names its canonical source, so a copy is identified by matching the
+// full banner line — loose mentions of the script name in comments do not match.
+const BANNER_PATTERN = /Generated from \/protocol\/\S+ by scripts\/sync-protocol-types\.mjs/;
+const SCAN_EXCLUDED_DIRS = new Set(["dist", ".tsc-out", "node_modules", "coverage"]);
+const SCAN_EXTENSIONS = new Set([".ts", ".js", ".mjs", ".cjs"]);
+
+function* scannableFiles(dir) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (!SCAN_EXCLUDED_DIRS.has(entry.name)) yield* scannableFiles(full);
+    } else if (SCAN_EXTENSIONS.has(extname(entry.name))) {
+      yield full;
+    }
+  }
+}
+
+function assertNoOrphanCopies(expectedDests) {
+  const orphans = [];
+  for (const file of scannableFiles(join(repoRoot, "packages"))) {
+    if (!BANNER_PATTERN.test(readFileSync(file, "utf8").slice(0, 400))) continue;
+    if (!expectedDests.has(file)) orphans.push(file.slice(repoRoot.length + 1).split(sep).join("/"));
+  }
+  if (orphans.length === 0) return;
+  console.error(
+    `Orphan generated copies (carry this script's banner but are not registered targets):\n  ${orphans.join("\n  ")}\n` +
+    "Add the package to the matching *_TARGET_PACKAGES list in scripts/sync-protocol-types.mjs,\n" +
+    "or delete the copy.",
+  );
+  process.exit(1);
+}
 
 const banner = (sourceName) =>
   "// ===========================================================================\n" +
@@ -129,6 +196,10 @@ function main() {
       content: ssrSnapshotContent,
     })),
   ];
+
+  assertCanonicalDirComplete();
+  assertNoOrphanCopies(new Set(targets.map(({ pkg, fileName, dir }) => destFor(pkg, fileName, dir))));
+
   const stale = [];
 
   for (const { pkg, fileName, content, dir } of targets) {
