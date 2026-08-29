@@ -1,5 +1,67 @@
 import { Window } from 'happy-dom';
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /protocol/ssr-snapshot.ts by scripts/sync-protocol-types.mjs.
+// Run `node scripts/sync-protocol-types.mjs` after editing the source.
+// ===========================================================================
+// ssr-snapshot protocol — how the SSR renderer asks whoever owns reactive
+// state to build hydration snapshots (<wcs-ssr>) as a final pass, after every
+// DOM inserter (router route content, late custom elements) has settled.
+//
+// Without this, the snapshot is built inside <wcs-state>'s connectedCallback
+// and races DOM inserted by other packages: whether a route's structural
+// templates make it into the snapshot depends on document order and state's
+// load mechanism (docs/ssr-router-design.md §5).
+//
+// The provider (@wcstack/state) installs itself on a well-known global symbol
+// at bootstrap. The renderer (@wcstack/server) looks the builder up after
+// running bootstraps: if present it announces orchestration by setting
+// `data-wcs-server="orchestrated"` on the document element BEFORE parsing, and
+// calls build() right before serialization. The provider keeps its inline
+// per-element fallback whenever the attribute value is anything else, so:
+//   - old renderer + new provider  -> inline build, yesterday's behavior
+//   - new renderer + old provider  -> no builder found, attribute stays "",
+//     the old provider builds inline as before
+//   - new renderer + new provider  -> orchestrated: snapshots are built last
+//     and therefore always see settled DOM
+//
+// The symbol (rather than a package import) also pins the builder to the state
+// copy that actually runs on the page — its module-scoped fragment registries
+// are the ones the snapshot must read.
+//
+// SINGLE SOURCE OF TRUTH: edit only this file (/protocol/ssr-snapshot.ts), then
+// run `node scripts/sync-protocol-types.mjs` to regenerate the per-package
+// copies (packages/<pkg>/src/protocol/ssrSnapshot.ts). Those copies are
+// generated — do not edit them.
+/**
+ * Global key the snapshot builder installs itself under. `Symbol.for` so
+ * independently loaded copies of this file (state's and server's) still agree.
+ */
+const SSR_SNAPSHOT_BUILDER_KEY = Symbol.for("wcstack.ssr.snapshotBuilder");
+/**
+ * `data-wcs-server` attribute value announcing that the renderer will call the
+ * builder as a final pass. Providers must skip their inline per-element build
+ * when they see this value, and keep it for any other value (including "").
+ */
+const SSR_ORCHESTRATED_VALUE = "orchestrated";
+/**
+ * The installed builder, or null when there is none or it speaks a shape this
+ * reader does not.
+ */
+function getSsrSnapshotBuilder() {
+    const candidate = globalThis[SSR_SNAPSHOT_BUILDER_KEY];
+    if (candidate === undefined || candidate === null)
+        return null;
+    if (candidate.protocol !== "wcs-ssr-snapshot")
+        return null;
+    if (typeof candidate.version !== "number" || candidate.version < 1)
+        return null;
+    if (typeof candidate.build !== "function")
+        return null;
+    return candidate;
+}
+
 /**
  * globalThis を差し替える renderToString の並列実行を防止する Mutex。
  * 同一 Node プロセス内で複数リクエストが同時に renderToString を呼んでも
@@ -24,6 +86,14 @@ const GLOBALS_KEYS = [
     'document', 'customElements', 'HTMLElement',
     'DocumentFragment', 'Node', 'NodeFilter', 'Comment', 'Text',
     'MutationObserver', 'ShadowRoot', 'Element', 'HTMLTemplateElement',
+    // URL を持つコンポーネント（@wcstack/router 等）が window.location /
+    // history を読めるようにする（docs/ssr-router-design.md §3.1）。
+    'window', 'location', 'history',
+    // コンポーネントが発火するイベントをレンダリングウィンドウの realm に揃える。
+    // Node ネイティブの CustomEvent は happy-dom の EventTarget に拒否される
+    // （"parameter 1 is not of type 'Event'"）。vitest の happy-dom 環境では
+    // グローバルが happy-dom 側なので隠れ、素の Node サーバーでだけ顕在化する
+    'Event', 'CustomEvent',
 ];
 function installGlobals(window) {
     const saved = {};
@@ -152,12 +222,20 @@ async function loadDefaultBootstraps() {
  * - `static hasConnectedCallbackPromise = true` プロトコル準拠の全カスタム要素を自動待機
  * - `$connectedCallback` 中に動的追加されたカスタム要素も安定化ループで検出・待機（最大 10 回）
  *
+ * ### router SSR
+ * - `<wcs-router enable-ssr>` + `url` オプションで初期ルートをサーバー描画。
+ *   クライアント側 router は描画済み DOM を採用（adopt）する。
+ *   詳細は README「Router SSR」/ docs/ssr-router-design.md
+ *
  * ## SSR でできないこと
  * - `<head>` 内の `<script src="...">` や `<link>` の自動実行
  * - ブラウザ固有 API（localStorage, sessionStorage, navigator 等）
  * - Shadow DOM のレンダリング（Declarative Shadow DOM 非対応）
  * - イベントハンドラの登録（クライアント側のハイドレーションで復元）
  * - `<wcs-autoloader>` による動的コンポーネント読み込み
+ * - guard 付きルートのサーバー描画（設計上・クライアントで guard 実行）、
+ *   `<wcs-layout>` ルートの採用（クライアント描画へフォールバック）、
+ *   `<wcs-head>` のサーバー反映（body のみの出力に head は載らない）
  *
  * ## HTML の分割パターン
  * ```
@@ -177,21 +255,37 @@ async function loadDefaultBootstraps() {
 async function renderToString(html, options) {
     // globalThis を差し替えるため、同時に1つしか実行できない
     const releaseMutex = await renderMutex.acquire();
-    const window = new Window();
+    const window = options?.url ? new Window({ url: options.url }) : new Window();
     const restoreGlobals = installGlobals(window);
     const document = window.document;
-    // 相対 URL を baseUrl で解決する URL コンストラクタパッチをインストール
-    const restoreBaseUrl = options?.baseUrl
-        ? installBaseUrl(options.baseUrl)
-        : null;
-    // bootstrap の解決
-    const bootstraps = options?.bootstraps ?? await loadDefaultBootstraps();
-    for (const bootstrap of bootstraps) {
-        bootstrap();
-    }
+    let restoreBaseUrl = null;
     try {
-        // SSR モードを html 要素に設定
-        document.documentElement.setAttribute('data-wcs-server', '');
+        // url 指定時は <base href> を注入する（既定 "/"）。ブラウザで <base> を置く
+        // SPA と同じ条件を再現し、深い URL での basename 誤認を防ぐ
+        // （docs/ssr-router-design.md §3.1）。
+        if (options?.url !== undefined || options?.baseHref !== undefined) {
+            const base = document.createElement('base');
+            base.setAttribute('href', options.baseHref ?? '/');
+            document.head.appendChild(base);
+        }
+        // 相対 URL を baseUrl で解決する URL コンストラクタパッチをインストール。
+        // baseUrl 省略時は url の origin を既定にする。
+        const effectiveBaseUrl = options?.baseUrl ?? (options?.url ? new URL(options.url).origin : undefined);
+        restoreBaseUrl = effectiveBaseUrl
+            ? installBaseUrl(effectiveBaseUrl)
+            : null;
+        // bootstrap の解決。非同期ローダー（BootstrapFunction 参照）を許容するため
+        // await する。try 内で行うのは、throw 時にもグローバル復元を保証するため。
+        const bootstraps = options?.bootstraps ?? await loadDefaultBootstraps();
+        for (const bootstrap of bootstraps) {
+            await bootstrap();
+        }
+        // SSR モードを html 要素に設定。snapshot builder（bootstraps の実行が
+        // 登録し得る — ssr-snapshot プロトコル）が居れば orchestrated を宣言し、
+        // <wcs-ssr> 生成をサーバー主導の最終パスへ回す（docs/ssr-router-design.md §5）。
+        // 値の宣言はパースより前 — 各要素は connectedCallback で値を読むため
+        const snapshotBuilder = getSsrSnapshotBuilder();
+        document.documentElement.setAttribute('data-wcs-server', snapshotBuilder !== null ? SSR_ORCHESTRATED_VALUE : '');
         // HTML をパース
         // connectedCallback が自動発火 → state ロード → $connectedCallback 実行
         document.body.innerHTML = html;
@@ -201,7 +295,6 @@ async function renderToString(html, options) {
         const MAX_ITERATIONS = 10;
         const awaitedElements = new WeakSet();
         const readyCtors = new Set();
-        const readyPromises = [];
         for (let i = 0; i < MAX_ITERATIONS; i++) {
             const connectedPromises = [];
             for (const el of document.querySelectorAll('*-*')) {
@@ -212,20 +305,53 @@ async function renderToString(html, options) {
                     awaitedElements.add(el);
                     connectedPromises.push(el.connectedCallbackPromise);
                 }
-                if (!readyCtors.has(ctor) && typeof ctor.getBindingsReady === 'function') {
+                if (typeof ctor.getBindingsReady === 'function') {
                     readyCtors.add(ctor);
-                    readyPromises.push(ctor.getBindingsReady(document));
                 }
             }
             if (connectedPromises.length === 0)
                 break;
             await Promise.all(connectedPromises);
         }
-        // 非同期初期化の完了を待機
-        await Promise.all(readyPromises);
+        // 非同期初期化（バインディング構築）の完了を待機。Promise の**取得**は
+        // 安定化ループの後に行う — getBindingsReady の実体（rootNode ごとの ready）は
+        // 各要素の connectedCallback 内・最初の await より後に登録されるため、ループ
+        // 初回の収集では「まだ登録前」の即時解決 Promise を掴むことがある。inline
+        // スナップショット時代は state の connectedCallback 自身が bindings を待って
+        // いたため隠れていた（orchestrated 化で顕在化）。取り逃すと構築の続きが
+        // グローバル復元後に走り、document 消失でクラッシュする
+        await Promise.all(Array.from(readyCtors, (ctor) => ctor.getBindingsReady(document)));
+        // スナップショット最終パス（orchestrated）: 全要素の完了とバインディング構築の
+        // 後に <wcs-ssr> を生成する。inline 生成（connectedCallback 内）が取り逃がす
+        // 「後から挿入されたルート内容の構造テンプレート」も、この時点なら確定している
+        snapshotBuilder?.build(document);
         return document.body.innerHTML;
     }
     finally {
+        // エラー経路でも進行中のバインディング構築を待ってから globals を戻す。
+        // 構築は要素の connectedCallback とは独立した microtask 連鎖で走るため、
+        // 待たずに戻すと続きが document 消失で unhandled になりプロセスを落とす。
+        // 後始末はベストエフォート（rejected も含めて待つだけ待つ）
+        try {
+            const readyPending = [];
+            for (const el of document.querySelectorAll('*-*')) {
+                const ctor = el.constructor;
+                if (typeof ctor.getBindingsReady === 'function') {
+                    readyPending.push(ctor.getBindingsReady(document));
+                }
+            }
+            await Promise.allSettled(readyPending);
+        }
+        catch { /* best effort */ }
+        // binder プロトコルの保留キュー（Symbol.for なので installGlobals の restore
+        // 対象外＝プロセス寿命）を空にする。state を読み込まないページで挿入側
+        // （router 等）が差し出したノードは引き取り手が現れないまま蓄積するため、
+        // レンダリングごとに後始末する（docs/ssr-router-design.md §3.1）。
+        // これはプロトコルの公開シンボル面であり、パッケージ内部への依存ではない。
+        const pendingBinds = globalThis[Symbol.for('wcstack.binder.pending')];
+        if (Array.isArray(pendingBinds)) {
+            pendingBinds.length = 0;
+        }
         restoreBaseUrl?.();
         restoreGlobals();
         await window.close();
@@ -233,7 +359,7 @@ async function renderToString(html, options) {
     }
 }
 
-var version = "1.31.0";
+var version = "1.32.0";
 var pkg = {
 	version: version};
 

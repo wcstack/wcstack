@@ -1480,7 +1480,7 @@
       "name": "wcs-raf",
       "description": {
         "kind": "markdown",
-        "value": "`@wcstack/raf` custom element (wc-bindable).\n\n**Bindable properties**: `tick`, `elapsed`, `dt`, `running`, `suspended`, `trigger`\n\n**Inputs**: `once`, `repeat`, `manual`, `trigger`\n\n**Commands**: `command.start`, `command.stop`, `command.reset`, `command.pause`, `command.resume`"
+        "value": "`@wcstack/raf` custom element (wc-bindable).\n\n**Bindable properties**: `tick`, `elapsed`, `dt`, `running`, `suspended`, `trigger`\n\n**Inputs**: `once`, `repeat`, `manual`, `reducedMotion`, `trigger`\n\n**Commands**: `command.start`, `command.stop`, `command.reset`, `command.pause`, `command.resume`"
       },
       "attributes": [
         {
@@ -1495,6 +1495,13 @@
           "description": {
             "kind": "markdown",
             "value": "Attribute mirror of the `once` input."
+          }
+        },
+        {
+          "name": "reduced-motion",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `reducedMotion` input."
           }
         },
         {

@@ -91,6 +91,8 @@ interface WcsRafInputs {
     once: boolean;
     repeat: number;
     manual: boolean;
+    /** "pause" でだけ prefers-reduced-motion ゲートが効く。未知値は "run" 扱い */
+    reducedMotion: string;
     trigger: boolean;
 }
 interface WcsRafCoreCommands {
@@ -136,6 +138,19 @@ interface RafScheduler {
     cancel(handle: unknown): void;
 }
 /**
+ * Injectable matchMedia pair for the `prefers-reduced-motion` gate. The
+ * default resolves `globalThis.matchMedia` at call time; tests inject a fake
+ * whose `matches` and `change` dispatch they control directly (happy-dom's
+ * MQL change delivery is not reliable enough to drive the gate transitions
+ * a 100/97 coverage target needs).
+ */
+interface RafMediaQuery {
+    readonly matches: boolean;
+    addEventListener(type: "change", listener: () => void): void;
+    removeEventListener(type: "change", listener: () => void): void;
+}
+type RafMatchMedia = (query: string) => RafMediaQuery;
+/**
  * Headless requestAnimationFrame primitive — `TimerCore`'s sibling with the
  * time source swapped from `setInterval` (a period) to rAF (the browser's
  * rendering opportunity). Exposed through the wc-bindable protocol: it streams
@@ -167,6 +182,16 @@ interface RafScheduler {
  *   started intent) stays true while `suspended` reports that delivery is
  *   actually stopped. `suspended` is only meaningful after `observe()` has
  *   subscribed to `visibilitychange`; without a document it stays false.
+ * - **`suspended` has two causes**: `running && (hidden || reducedGate)`.
+ *   The second cause is the opt-in `prefers-reduced-motion` gate
+ *   (`reducedMotion === "pause"` while the media query matches —
+ *   docs/a11y-design.md §6). It is deliberately NOT a `pause()` reuse:
+ *   `_paused` is user intent (cleared by `start()`/`stop()`), and mixing an
+ *   environment condition into it would let `resume()` override the OS
+ *   setting. Unlike visibility — where the browser itself stops delivering
+ *   frames — the reduced gate is enforced by this core: gate ON cancels the
+ *   armed frame, gate OFF re-arms with a dt=0 boundary (G3, the same shape
+ *   as a visibility interruption).
  * - **No `error` surface.** rAF has no persistent failure mode; on a platform
  *   without it, `start()` is a silent no-op (never-throw, resize precedent).
  */
@@ -188,12 +213,17 @@ declare class RafCore extends EventTarget {
     private _repeat;
     private _runStartTick;
     private _visibilityDoc;
-    constructor(target?: EventTarget, scheduler?: RafScheduler);
+    private _reducedMotion;
+    private _mql;
+    private _injectedMatchMedia;
+    constructor(target?: EventTarget, scheduler?: RafScheduler, matchMedia?: RafMatchMedia);
     get tick(): number;
     get elapsed(): number;
     get dt(): number;
     get running(): boolean;
     get suspended(): boolean;
+    get reducedMotion(): "run" | "pause";
+    set reducedMotion(value: "run" | "pause");
     get ready(): Promise<void>;
     observe(): Promise<void>;
     dispose(): void;
@@ -201,6 +231,9 @@ declare class RafCore extends EventTarget {
     private _setRunning;
     private _setSuspended;
     private _updateSuspended;
+    private _reducedGate;
+    private _onReducedMotionChange;
+    private _applyReducedGate;
     start(options?: RafStartOptions): void;
     stop(): void;
     reset(): void;
@@ -209,6 +242,7 @@ declare class RafCore extends EventTarget {
     private _frame;
     private _onVisibilityChange;
     private _resolveScheduler;
+    private _resolveMatchMedia;
     private _requestFrame;
     private _clearHandle;
 }
@@ -216,6 +250,7 @@ declare class RafCore extends EventTarget {
 declare class Raf extends HTMLElement {
     static hasConnectedCallbackPromise: boolean;
     static wcBindable: IWcBindable;
+    static get observedAttributes(): string[];
     private _core;
     private _trigger;
     private _connectedCallbackPromise;
@@ -231,6 +266,9 @@ declare class Raf extends HTMLElement {
     set repeat(value: number);
     get manual(): boolean;
     set manual(value: boolean);
+    get reducedMotion(): "run" | "pause";
+    set reducedMotion(value: string);
+    attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null): void;
     get tick(): number;
     get elapsed(): number;
     get dt(): number;

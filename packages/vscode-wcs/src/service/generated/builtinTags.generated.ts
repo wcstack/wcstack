@@ -881,11 +881,14 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   "wcs-raf": {
     "package": "raf",
     "hasWcBindable": true,
-    "observedAttributes": [],
+    "observedAttributes": [
+      "reduced-motion"
+    ],
     "inputs": {
       "once": "once",
       "repeat": "repeat",
       "manual": "manual",
+      "reducedMotion": "reduced-motion",
       "trigger": null
     },
     "properties": [

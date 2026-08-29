@@ -81,6 +81,16 @@ function setConfig(partialConfig) {
  *   started intent) stays true while `suspended` reports that delivery is
  *   actually stopped. `suspended` is only meaningful after `observe()` has
  *   subscribed to `visibilitychange`; without a document it stays false.
+ * - **`suspended` has two causes**: `running && (hidden || reducedGate)`.
+ *   The second cause is the opt-in `prefers-reduced-motion` gate
+ *   (`reducedMotion === "pause"` while the media query matches —
+ *   docs/a11y-design.md §6). It is deliberately NOT a `pause()` reuse:
+ *   `_paused` is user intent (cleared by `start()`/`stop()`), and mixing an
+ *   environment condition into it would let `resume()` override the OS
+ *   setting. Unlike visibility — where the browser itself stops delivering
+ *   frames — the reduced gate is enforced by this core: gate ON cancels the
+ *   armed frame, gate OFF re-arms with a dt=0 boundary (G3, the same shape
+ *   as a visibility interruption).
  * - **No `error` surface.** rAF has no persistent failure mode; on a platform
  *   without it, `start()` is a silent no-op (never-throw, resize precedent).
  */
@@ -148,10 +158,20 @@ class RafCore extends EventTarget {
     // and released in dispose(). Null before observe() or in non-DOM
     // environments — `suspended` then simply stays false.
     _visibilityDoc = null;
-    constructor(target, scheduler) {
+    // The reduced-motion policy ("run" = ignore the preference, the default)
+    // and the media query subscribed in observe() / released in dispose().
+    // The live `change` subscription is MANDATORY, not an optimization: with a
+    // start-time check only, a loop started while reduce is active would sit
+    // running=true with no armed frame and no way to ever notice the
+    // preference clearing — a permanent wedge (docs/a11y-design.md §6-2).
+    _reducedMotion = "run";
+    _mql = null;
+    _injectedMatchMedia;
+    constructor(target, scheduler, matchMedia) {
         super();
         this._target = target ?? this;
         this._injectedScheduler = scheduler ?? null;
+        this._injectedMatchMedia = matchMedia ?? null;
     }
     get tick() {
         return this._tick;
@@ -167,6 +187,17 @@ class RafCore extends EventTarget {
     }
     get suspended() {
         return this._suspended;
+    }
+    get reducedMotion() {
+        return this._reducedMotion;
+    }
+    set reducedMotion(value) {
+        // ポリシー変更はゲート入力の変化（MQL change と同じ扱い）。値の正規化
+        // （未知 → "run"）は Shell の担当で、Core は正規化済みの 2 値だけを受ける。
+        if (this._reducedMotion === value)
+            return;
+        this._reducedMotion = value;
+        this._applyReducedGate();
     }
     // SSR readiness (§3.8): resolves after the first probe. There is nothing to
     // probe, so this is an already-resolved promise.
@@ -190,6 +221,25 @@ class RafCore extends EventTarget {
             // common visible-at-observe case dispatches nothing.
             this._updateSuspended();
         }
+        if (this._mql === null) {
+            const matchMedia = this._resolveMatchMedia();
+            if (matchMedia !== null) {
+                // never-throw（view-transition の ViewTransitionCore と同じ先例）:
+                // 変な UA の matchMedia 例外で observe() 全体を殺さない。
+                try {
+                    const mql = matchMedia("(prefers-reduced-motion: reduce)");
+                    mql.addEventListener("change", this._onReducedMotionChange);
+                    this._mql = mql;
+                    // 購読時点の preference を反映する（visibility の同期と同じ理由:
+                    // reduce 中に observe された場合、次の change を待つと偽の
+                    // suspended=false を報告し、アーム済みフレームも生き残る）。
+                    this._applyReducedGate();
+                }
+                catch {
+                    this._mql = null;
+                }
+            }
+        }
         return this._ready;
     }
     dispose() {
@@ -198,6 +248,10 @@ class RafCore extends EventTarget {
         if (this._visibilityDoc !== null) {
             this._visibilityDoc.removeEventListener("visibilitychange", this._onVisibilityChange);
             this._visibilityDoc = null;
+        }
+        if (this._mql !== null) {
+            this._mql.removeEventListener("change", this._onReducedMotionChange);
+            this._mql = null;
         }
     }
     // --- State setters with event dispatch ---
@@ -231,8 +285,41 @@ class RafCore extends EventTarget {
         }));
     }
     _updateSuspended() {
+        // suspended の 2 原因: visibility と reduced-motion ゲート（クラスコメント参照）
         const hidden = this._visibilityDoc !== null && this._visibilityDoc.visibilityState === "hidden";
-        this._setSuspended(this._running && hidden);
+        this._setSuspended(this._running && (hidden || this._reducedGate()));
+    }
+    // The reduced gate is active only when the author opted in ("pause") AND
+    // the subscribed media query currently matches. Before observe() — or
+    // without matchMedia — there is no subscription and the gate stays open.
+    _reducedGate() {
+        return this._reducedMotion === "pause" && this._mql !== null && this._mql.matches;
+    }
+    _onReducedMotionChange = () => {
+        this._applyReducedGate();
+    };
+    // Reflect the current gate value into the run state. Unlike visibility —
+    // where the browser itself stops delivering frames and the armed handle can
+    // stay put — the reduced gate is enforced here: ON cancels the armed frame
+    // (through _clearHandle, so the generation guard also invalidates an
+    // in-flight callback), OFF re-arms exactly one loop with a dt=0 interruption
+    // boundary (G3). The `_handle === null` check keeps a redundant change event
+    // from stacking a second loop; the re-arm is a no-op while paused-by-user
+    // (`_running` false) or already armed.
+    _applyReducedGate() {
+        if (this._running) {
+            if (this._reducedGate()) {
+                this._clearHandle();
+            }
+            else if (this._handle === null) {
+                this._lastTs = null;
+                const scheduler = this._resolveScheduler();
+                if (scheduler !== null) {
+                    this._requestFrame(scheduler);
+                }
+            }
+        }
+        this._updateSuspended();
     }
     // --- Public API ---
     start(options = {}) {
@@ -285,6 +372,10 @@ class RafCore extends EventTarget {
         //   re-entrant listener already scheduled the run for us.
         if (!this._running || this._handle !== null)
             return;
+        // reduce ゲート中の start(): running=true / suspended=true のまま非アーム。
+        // ゲート解除は MQL change → _applyReducedGate() が再アームする（§6-2）。
+        if (this._reducedGate())
+            return;
         this._requestFrame(scheduler);
     }
     stop() {
@@ -335,6 +426,9 @@ class RafCore extends EventTarget {
         // _setRunning(true) above.
         if (!this._running || this._handle !== null)
             return;
+        // reduce ゲート中は非アーム（start() と同じ）
+        if (this._reducedGate())
+            return;
         this._requestFrame(scheduler);
     }
     // --- Internal ---
@@ -377,7 +471,13 @@ class RafCore extends EventTarget {
         // second frame loop. The generation guard cannot catch this: a tail
         // request here would capture the restart's own — current — generation
         // and produce a second equally-valid loop).
-        if (this._running && this._handle === null) {
+        //
+        // The reduced-gate check matters here too: a tick listener may have
+        // flipped the policy during the dispatch above. _applyReducedGate() ran
+        // then, but inside a frame `_handle` is already null (cleared on entry),
+        // so its _clearHandle() was a no-op and did NOT bump the generation —
+        // without this check the tail would happily re-arm through the gate.
+        if (this._running && this._handle === null && !this._reducedGate()) {
             const scheduler = this._resolveScheduler();
             if (scheduler !== null) {
                 this._requestFrame(scheduler);
@@ -412,6 +512,18 @@ class RafCore extends EventTarget {
             };
         }
         return this._globalScheduler;
+    }
+    _resolveMatchMedia() {
+        if (this._injectedMatchMedia !== null)
+            return this._injectedMatchMedia;
+        const g = globalThis;
+        // §3.7: availability is checked at call time (observe() may be called in
+        // SSR pre-pass or a worker, where matchMedia is absent — the gate then
+        // simply never engages).
+        if (typeof g.matchMedia !== "function") {
+            return null;
+        }
+        return (query) => g.matchMedia(query);
     }
     // Arm the next frame (§3.4). The callback closes over the generation
     // current at request time and re-checks it against the live `_gen` when the
@@ -534,9 +646,13 @@ class Raf extends HTMLElement {
             { name: "once", attribute: "once" },
             { name: "repeat", attribute: "repeat" },
             { name: "manual", attribute: "manual" },
+            { name: "reducedMotion", attribute: "reduced-motion" },
             { name: "trigger" },
         ],
     };
+    static get observedAttributes() {
+        return ["reduced-motion"];
+    }
     _core;
     _trigger = false;
     _connectedCallbackPromise = Promise.resolve();
@@ -638,6 +754,22 @@ class Raf extends HTMLElement {
         }
         else {
             this.removeAttribute("manual");
+        }
+    }
+    get reducedMotion() {
+        return this._core.reducedMotion;
+    }
+    set reducedMotion(value) {
+        // 属性へミラーし、attributeChangedCallback が正規化して Core へ届ける
+        this.setAttribute("reduced-motion", value);
+    }
+    attributeChangedCallback(name, _oldValue, newValue) {
+        if (name === "reduced-motion") {
+            // 未知値・属性なしは既定 "run" へ正規化（view-transition の setter 慣行）。
+            // once/repeat と違い start 時の遅延読みでは足りない — ポリシーは実行中の
+            // ループにも効く（reduce 中の付け外しがゲートの付け外し）ため、変更時に
+            // Core へ届ける。
+            this._core.reducedMotion = newValue === "pause" ? "pause" : "run";
         }
     }
     // --- Core delegated getters ---

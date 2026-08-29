@@ -118,7 +118,7 @@ var WcsDiagnosticCode = {
   TokenMisconfigured: "wcs/token-misconfigured",
   NestedAssign: "wcs/nested-assign",
   // --- 意味論（構文・存在検査では捕まらない取り違え。service/semanticValidator.ts） ---
-  // `$getAll` / `$resolve` の添字の本数がパスの `*` の本数と噛み合わない。
+  // `$getAll` / `$setAll` / `$resolve` の添字の本数がパスの `*` の本数と噛み合わない。
   // ランタイムは同じ code で raiseError する（超過は以前は黙って無視されていた）。
   IndexArity: "wcs/index-arity",
   // ワイルドカードの階数がスコープの段数を超える（`matrix.*.*` を 1 段の for で読む、
@@ -157,6 +157,11 @@ var WcsDiagnosticCode = {
   TriggerSeededTruthy: "wcs/trigger-seeded-truthy",
   // 非 manual <wcs-storage> value バインド先の空値シード(初期書き戻しが保存値を上書き)。
   StorageSeedClobber: "wcs/storage-seed-clobber",
+  // --- accessibility (docs/a11y-design.md §8 / D9) ---
+  // `attr.aria-*` バインドの属性名が WAI-ARIA に存在しない(タイポ)。
+  // setAttribute はそのまま書き、支援技術は黙って無視する。severity は warning
+  // (error 昇格時は packages/lint/scripts/smoke-test.mjs の対ケース更新が必須)。
+  AriaAttrUnknown: "wcs/aria-attr-unknown",
   // --- document-level load configuration ---
   // @wcstack/state/auto より後に他 wcstack /auto が読まれている。
   ScriptOrder: "wcs/script-order",
@@ -391,12 +396,12 @@ var fix = (options) => {
   };
 };
 var locale = (options) => {
-  const opt = options?.[0] ?? config.locale;
+  const explicit = options?.[0];
   return (value) => {
     if (typeof value !== "number") {
       valueMustBeNumber("locale");
     }
-    return value.toLocaleString(opt);
+    return value.toLocaleString(explicit ?? config.locale);
   };
 };
 var uc = (_options) => {
@@ -576,30 +581,30 @@ var truncate = (options) => {
   };
 };
 var date = (options) => {
-  const opt = options?.[0] ?? config.locale;
+  const explicit = options?.[0];
   return (value) => {
     if (!(value instanceof Date)) {
       valueMustBeDate("date");
     }
-    return value.toLocaleDateString(opt);
+    return value.toLocaleDateString(explicit ?? config.locale);
   };
 };
 var time = (options) => {
-  const opt = options?.[0] ?? config.locale;
+  const explicit = options?.[0];
   return (value) => {
     if (!(value instanceof Date)) {
       valueMustBeDate("time");
     }
-    return value.toLocaleTimeString(opt);
+    return value.toLocaleTimeString(explicit ?? config.locale);
   };
 };
 var datetime = (options) => {
-  const opt = options?.[0] ?? config.locale;
+  const explicit = options?.[0];
   return (value) => {
     if (!(value instanceof Date)) {
       valueMustBeDate("datetime");
     }
-    return value.toLocaleString(opt);
+    return value.toLocaleString(explicit ?? config.locale);
   };
 };
 var ymd = (options) => {
@@ -1839,6 +1844,7 @@ var ja = {
   tagCommandUnknown: (name, tag, declared) => `"${name}" \u306F <${tag}> \u306E command \u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u5BA3\u8A00\u6E08\u307F: ${declared}\uFF09`,
   spreadNoBindable: (tag) => `'...'\uFF08spread\uFF09\u306F <${tag}> \u306B\u6709\u52B9\u306A wcBindable \u5BA3\u8A00\u304C\u5FC5\u8981\u3067\u3059 \u2014 \u3053\u306E\u30BF\u30B0\u306F\u5BA3\u8A00\u3092\u6301\u305F\u306A\u3044\u305F\u3081\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30A8\u30E9\u30FC\u3092\u9001\u51FA\u3057\u307E\u3059`,
   tagEventTokenKeyUnknown: (name, tag, declared) => `eventToken \u306E\u30AD\u30FC "${name}" \u306F <${tag}> \u306E wcBindable \u30D7\u30ED\u30D1\u30C6\u30A3\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002\u751F DOM \u30A4\u30D9\u30F3\u30C8\u540D\u306F\u767A\u706B\u3057\u307E\u305B\u3093 \u2014 \u30D7\u30ED\u30D1\u30C6\u30A3\u540D\u3092\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u5BA3\u8A00\u6E08\u307F: ${declared}\uFF09`,
+  ariaAttrUnknown: (name) => `"${name}" \u306F WAI-ARIA \u306E\u5C5E\u6027\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002setAttribute \u306F\u305D\u306E\u307E\u307E\u66F8\u304D\u8FBC\u307F\u307E\u3059\u304C\u3001\u652F\u63F4\u6280\u8853\u306B\u306F\u9ED9\u3063\u3066\u7121\u8996\u3055\u308C\u307E\u3059`,
   didYouMean: (c) => `\u3002\u3082\u3057\u304B\u3057\u3066: "${c}"`,
   none: () => `\u306A\u3057`,
   triggerSeededTruthy: (path) => `trigger \u30D0\u30A4\u30F3\u30C9\u5148 "${path}" \u304C true \u3067\u30B7\u30FC\u30C9\u3055\u308C\u3066\u3044\u307E\u3059\u3002trigger \u306F\u30A8\u30C3\u30B8\u691C\u51FA\u306A\u3057\uFF08truthy \u66F8\u304D\u8FBC\u307F\u3067\u5373\u767A\u706B\u30FBmanual \u3082\u30D0\u30A4\u30D1\u30B9\uFF09\u306E\u305F\u3081\u3001\u30D0\u30A4\u30F3\u30C9\u6642\u306B\u5373\u767A\u706B\u3057\u307E\u3059\u3002false \u3067\u30B7\u30FC\u30C9\u3057\u3066\u304F\u3060\u3055\u3044`,
@@ -1893,6 +1899,7 @@ var en = {
   tagCommandUnknown: (name, tag, declared) => `"${name}" is not a command of <${tag}> (declared: ${declared})`,
   spreadNoBindable: (tag) => `'...' (spread) requires <${tag}> to expose a valid wcBindable declaration \u2014 this tag declares none, so the runtime raises an error`,
   tagEventTokenKeyUnknown: (name, tag, declared) => `eventToken key "${name}" is not a wcBindable property of <${tag}>. Raw DOM event names never fire \u2014 use the property name (declared: ${declared})`,
+  ariaAttrUnknown: (name) => `"${name}" is not a WAI-ARIA attribute. setAttribute writes it anyway, and assistive technology silently ignores it`,
   didYouMean: (c) => `. Did you mean "${c}"?`,
   none: () => `none`,
   triggerSeededTruthy: (path) => `The trigger-bound slot "${path}" is seeded with true. trigger has no edge detection (any truthy write fires, and it bypasses manual), so it fires immediately at bind. Seed it with false`,
@@ -4006,6 +4013,35 @@ var BUILTIN_TAGS = {
       "abort"
     ]
   },
+  "wcs-view-transition": {
+    "package": "view-transition",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "mode",
+      "naming",
+      "naming-limit",
+      "reduced-motion",
+      "types",
+      "disabled",
+      "for"
+    ],
+    "inputs": {
+      "disabled": "disabled",
+      "mode": "mode",
+      "naming": "naming",
+      "namingLimit": "naming-limit",
+      "reducedMotion": "reduced-motion",
+      "types": "types",
+      "participants": "for"
+    },
+    "properties": [
+      "active",
+      "error"
+    ],
+    "commands": [
+      "skip"
+    ]
+  },
   "wcs-wakelock": {
     "package": "wakelock",
     "hasWcBindable": true,
@@ -4316,6 +4352,98 @@ function extractAttributeValue(attrsText, attrName) {
 }
 function hasBooleanAttribute(attrsText, attrName) {
   return new RegExp(`(?:^|\\s)${attrName}(?:\\s|=|$)`, "i").test(attrsText);
+}
+
+// src/service/ariaValidator.ts
+var ARIA_ATTRIBUTES = /* @__PURE__ */ new Set([
+  // widget attributes
+  "aria-autocomplete",
+  "aria-checked",
+  "aria-disabled",
+  "aria-errormessage",
+  "aria-expanded",
+  "aria-haspopup",
+  "aria-hidden",
+  "aria-invalid",
+  "aria-label",
+  "aria-level",
+  "aria-modal",
+  "aria-multiline",
+  "aria-multiselectable",
+  "aria-orientation",
+  "aria-placeholder",
+  "aria-pressed",
+  "aria-readonly",
+  "aria-required",
+  "aria-selected",
+  "aria-sort",
+  "aria-valuemax",
+  "aria-valuemin",
+  "aria-valuenow",
+  "aria-valuetext",
+  // live region attributes
+  "aria-busy",
+  "aria-live",
+  "aria-relevant",
+  "aria-atomic",
+  // drag-and-drop (deprecated in 1.1, still valid names)
+  "aria-dropeffect",
+  "aria-grabbed",
+  // relationship attributes
+  "aria-activedescendant",
+  "aria-colcount",
+  "aria-colindex",
+  "aria-colindextext",
+  "aria-colspan",
+  "aria-controls",
+  "aria-describedby",
+  "aria-details",
+  "aria-flowto",
+  "aria-labelledby",
+  "aria-owns",
+  "aria-posinset",
+  "aria-rowcount",
+  "aria-rowindex",
+  "aria-rowindextext",
+  "aria-rowspan",
+  "aria-setsize",
+  // global additions
+  "aria-current",
+  "aria-keyshortcuts",
+  "aria-roledescription",
+  // 1.3 additions with broad implementation
+  "aria-braillelabel",
+  "aria-brailleroledescription",
+  "aria-description"
+]);
+function validateAriaAttributes(html, bindAttribute = "data-wcs", locale3) {
+  const diagnostics = [];
+  const msgs = getMessages(locale3);
+  for (const attr of findAllBindAttributes(html, bindAttribute)) {
+    let exprOffset = 0;
+    for (const expr of splitBindingExpressions(attr.value)) {
+      const exprStart = attr.valueStart + exprOffset;
+      exprOffset += expr.length + 1;
+      const property = parseBindingExpression(expr).property;
+      if (!property) continue;
+      const bare = property.split("#")[0];
+      if (!bare.toLowerCase().startsWith("attr.aria-")) continue;
+      const ariaName = bare.slice("attr.".length).toLowerCase();
+      if (ARIA_ATTRIBUTES.has(ariaName)) continue;
+      const propIndex = expr.indexOf(property);
+      const start = propIndex === -1 ? exprStart : exprStart + propIndex;
+      const end = propIndex === -1 ? exprStart + expr.length : start + property.length;
+      diagnostics.push({
+        code: WcsDiagnosticCode.AriaAttrUnknown,
+        start,
+        end,
+        severity: "warning",
+        member: ariaName,
+        message: msgs.ariaAttrUnknown(ariaName) + suggestion(ariaName, [...ARIA_ATTRIBUTES], msgs)
+      });
+    }
+  }
+  return diagnostics;
 }
 
 // src/service/documentEnvValidator.ts
@@ -4863,12 +4991,12 @@ var fix2 = (options) => {
   };
 };
 var locale2 = (options) => {
-  const opt = options?.[0] ?? config2.locale;
+  const explicit = options?.[0];
   return (value) => {
     if (typeof value !== "number") {
       valueMustBeNumber2("locale");
     }
-    return value.toLocaleString(opt);
+    return value.toLocaleString(explicit ?? config2.locale);
   };
 };
 var uc2 = (_options) => {
@@ -5048,30 +5176,30 @@ var truncate2 = (options) => {
   };
 };
 var date2 = (options) => {
-  const opt = options?.[0] ?? config2.locale;
+  const explicit = options?.[0];
   return (value) => {
     if (!(value instanceof Date)) {
       valueMustBeDate2("date");
     }
-    return value.toLocaleDateString(opt);
+    return value.toLocaleDateString(explicit ?? config2.locale);
   };
 };
 var time2 = (options) => {
-  const opt = options?.[0] ?? config2.locale;
+  const explicit = options?.[0];
   return (value) => {
     if (!(value instanceof Date)) {
       valueMustBeDate2("time");
     }
-    return value.toLocaleTimeString(opt);
+    return value.toLocaleTimeString(explicit ?? config2.locale);
   };
 };
 var datetime2 = (options) => {
-  const opt = options?.[0] ?? config2.locale;
+  const explicit = options?.[0];
   return (value) => {
     if (!(value instanceof Date)) {
       valueMustBeDate2("datetime");
     }
-    return value.toLocaleString(opt);
+    return value.toLocaleString(explicit ?? config2.locale);
   };
 };
 var ymd2 = (options) => {
@@ -5663,7 +5791,7 @@ function buildReferenceIndex(html, options = {}) {
 
 // src/service/semanticValidator.ts
 var STATE_UPDATED_CALLBACK = "$updatedCallback";
-var API_CALL = /\.\s*\$(getAll|resolve)\s*\(/g;
+var API_CALL = /\.\s*\$(getAll|setAll|resolve)\s*\(/g;
 var STRING_LITERAL = /^\s*(["'])((?:\\.|(?!\1)[^\\])*)\1\s*$/;
 function splitCallArgs(source, open) {
   const args = [];
@@ -5959,6 +6087,7 @@ function validateDocument(text, options = {}) {
   out.push(...validateBindings(text, bindAttribute, stateTagName, locale3, fileReader));
   out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute, locale3, fileReader));
   out.push(...validateIoNodes(text, bindAttribute, stateTagName, locale3, fileReader));
+  out.push(...validateAriaAttributes(text, bindAttribute, locale3));
   out.push(...validateDocumentEnv(text, locale3));
   out.push(...validateSemantics(text, stateTagName, locale3, bindAttribute));
   out.push(...validateArrayMutations(text, stateTagName, locale3));

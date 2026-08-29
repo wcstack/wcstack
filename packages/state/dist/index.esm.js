@@ -1,3 +1,60 @@
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /protocol/ssr-snapshot.ts by scripts/sync-protocol-types.mjs.
+// Run `node scripts/sync-protocol-types.mjs` after editing the source.
+// ===========================================================================
+// ssr-snapshot protocol — how the SSR renderer asks whoever owns reactive
+// state to build hydration snapshots (<wcs-ssr>) as a final pass, after every
+// DOM inserter (router route content, late custom elements) has settled.
+//
+// Without this, the snapshot is built inside <wcs-state>'s connectedCallback
+// and races DOM inserted by other packages: whether a route's structural
+// templates make it into the snapshot depends on document order and state's
+// load mechanism (docs/ssr-router-design.md §5).
+//
+// The provider (@wcstack/state) installs itself on a well-known global symbol
+// at bootstrap. The renderer (@wcstack/server) looks the builder up after
+// running bootstraps: if present it announces orchestration by setting
+// `data-wcs-server="orchestrated"` on the document element BEFORE parsing, and
+// calls build() right before serialization. The provider keeps its inline
+// per-element fallback whenever the attribute value is anything else, so:
+//   - old renderer + new provider  -> inline build, yesterday's behavior
+//   - new renderer + old provider  -> no builder found, attribute stays "",
+//     the old provider builds inline as before
+//   - new renderer + new provider  -> orchestrated: snapshots are built last
+//     and therefore always see settled DOM
+//
+// The symbol (rather than a package import) also pins the builder to the state
+// copy that actually runs on the page — its module-scoped fragment registries
+// are the ones the snapshot must read.
+//
+// SINGLE SOURCE OF TRUTH: edit only this file (/protocol/ssr-snapshot.ts), then
+// run `node scripts/sync-protocol-types.mjs` to regenerate the per-package
+// copies (packages/<pkg>/src/protocol/ssrSnapshot.ts). Those copies are
+// generated — do not edit them.
+/**
+ * Global key the snapshot builder installs itself under. `Symbol.for` so
+ * independently loaded copies of this file (state's and server's) still agree.
+ */
+const SSR_SNAPSHOT_BUILDER_KEY = Symbol.for("wcstack.ssr.snapshotBuilder");
+/**
+ * `data-wcs-server` attribute value announcing that the renderer will call the
+ * builder as a final pass. Providers must skip their inline per-element build
+ * when they see this value, and keep it for any other value (including "").
+ */
+const SSR_ORCHESTRATED_VALUE = "orchestrated";
+
+/**
+ * サーバー主導スナップショット（orchestrated）の判定
+ * （docs/ssr-router-design.md §5）。renderToString が snapshot builder を
+ * 見つけたときだけ `data-wcs-server="orchestrated"` を宣言する — 値が他の
+ * もの（旧 server の "" を含む）なら inline 生成が従来どおり働く。
+ * inSsr と同じ理由でキャッシュしない。
+ */
+function isOrchestratedSsr() {
+    const html = document.documentElement;
+    return html ? html.getAttribute('data-wcs-server') === SSR_ORCHESTRATED_VALUE : false;
+}
 function inSsr() {
     // キャッシュしない: SSR モードはプロセスの属性ではなく「現在の document」の
     // 属性。@wcstack/server はグローバル document を差し替えてサーバーレンダリング
@@ -1142,16 +1199,33 @@ const fix = (options) => {
 /**
  * Locale number filter - formats number according to locale.
  *
+ * ロケール依存フィルタ（`locale` / `date` / `time` / `datetime`）は
+ * **明示引数だけを構築時に確定し、既定の `config.locale` は適用のたびに読む**。
+ *
+ * 以前は `options?.[0] ?? config.locale` を返り値の関数の**外**で解決していた。
+ * フィルタ関数はバインド構築時に一度だけ作られるので、これはロケールを
+ * クロージャに焼き込むことを意味する。`config.locale` の確定がバインド構築より
+ * 遅れると、それ以降どう直しても「同じページの中で日付だけ既定ロケール」が
+ * 永続し、しかも `config.locale` は依存グラフに載らないので再描画で回復もしない。
+ * 症状（日付だけ英語）は原因（起動順序）から遠く、追いにくい。
+ *
+ * 適用のたびに読めば、少なくとも**再適用されたバインドは回復する**。ロケールは
+ * 起動時に確定する前提（docs/i18n-design.md D1）なので通常この差は現れず、
+ * これは順序事故から復帰できるようにするための保険である。
+ *
+ * 明示引数（`|date(ja-JP)`）は構築時に固定でよい — バインド式の一部であり、
+ * 実行中に変わらない。
+ *
  * @param options - Array with locale string as first element (default: config.locale)
  * @returns Filter function that returns localized number string
  */
 const locale = (options) => {
-    const opt = options?.[0] ?? config.locale;
+    const explicit = options?.[0];
     return (value) => {
         if (typeof value !== 'number') {
             valueMustBeNumber('locale');
         }
-        return value.toLocaleString(opt);
+        return value.toLocaleString(explicit ?? config.locale);
     };
 };
 /**
@@ -1464,12 +1538,13 @@ const truncate = (options) => {
  * @returns Filter function that returns date string
  */
 const date = (options) => {
-    const opt = options?.[0] ?? config.locale;
+    // 既定ロケールは適用のたびに読む（`locale` フィルタの注記を参照）
+    const explicit = options?.[0];
     return (value) => {
         if (!(value instanceof Date)) {
             valueMustBeDate('date');
         }
-        return value.toLocaleDateString(opt);
+        return value.toLocaleDateString(explicit ?? config.locale);
     };
 };
 /**
@@ -1479,12 +1554,13 @@ const date = (options) => {
  * @returns Filter function that returns time string
  */
 const time = (options) => {
-    const opt = options?.[0] ?? config.locale;
+    // 既定ロケールは適用のたびに読む（`locale` フィルタの注記を参照）
+    const explicit = options?.[0];
     return (value) => {
         if (!(value instanceof Date)) {
             valueMustBeDate('time');
         }
-        return value.toLocaleTimeString(opt);
+        return value.toLocaleTimeString(explicit ?? config.locale);
     };
 };
 /**
@@ -1494,12 +1570,13 @@ const time = (options) => {
  * @returns Filter function that returns datetime string
  */
 const datetime = (options) => {
-    const opt = options?.[0] ?? config.locale;
+    // 既定ロケールは適用のたびに読む（`locale` フィルタの注記を参照）
+    const explicit = options?.[0];
     return (value) => {
         if (!(value instanceof Date)) {
             valueMustBeDate('datetime');
         }
-        return value.toLocaleString(opt);
+        return value.toLocaleString(explicit ?? config.locale);
     };
 };
 /**
@@ -4568,6 +4645,16 @@ function addInterestedSession(node, session) {
     }
     interestedSessionsByNode.set(node, new Set([current, session]));
 }
+/**
+ * このノードに既にバインドが張られているか。
+ *
+ * binder プロトコル（`bind()`）の冪等判定に使う。`remember` が binding ごとに
+ * `addInterestedSession(binding.replaceNode, …)` を呼ぶので、バインド済みノードは
+ * 必ずこの台帳に載っている。新しい台帳を足さずに済むぶん、二重管理の齟齬が無い。
+ */
+function hasInterestedSession(node) {
+    return interestedSessionsByNode.has(node);
+}
 function forEachInterestedSession(node, callback) {
     const current = interestedSessionsByNode.get(node);
     if (typeof current === "undefined")
@@ -6452,8 +6539,23 @@ class Content {
             let anchor = targetNode;
             for (const node of this._movableNodes()) {
                 if (anchor.nextSibling !== node) {
+                    // moveBefore も childList mutation record を出すため、マークは両分岐の前
                     markObserverSkipOnAdd(node);
-                    parentNode.insertBefore(node, anchor.nextSibling);
+                    // moveBefore は取り外しを伴わない移動 — 接続済み行の reorder で
+                    // フォーカス・iframe・アニメーション状態を保存する（docs/a11y-design.md §4-1）。
+                    // この 1 文は 4 つのノード状態を共有する: (a) 接続済み reorder、
+                    // (b) clone フラグメント由来（root 違い）、(c) プール/unmount 済み（親なし）、
+                    // (d) バッチフラグメント内。moveBefore は「同一ツリー・親あり」を要求し
+                    // (b)(c)(d) では HierarchyRequestError を投げるため、same-parent ガード
+                    // （同 root かつ親が非 null の同時証明 = フォーカス保存が意味を持つ (a) と
+                    // 正確に一致）は外せない。ガードを外す「簡略化」をしてはならない。
+                    const mover = parentNode;
+                    if (node.parentNode === parentNode && typeof mover.moveBefore === "function") {
+                        mover.moveBefore(node, anchor.nextSibling);
+                    }
+                    else {
+                        parentNode.insertBefore(node, anchor.nextSibling);
+                    }
                 }
                 anchor = node;
             }
@@ -6665,6 +6767,157 @@ function createContent(bindingInfo) {
     return content;
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /protocol/transition-runner.ts by scripts/sync-protocol-types.mjs.
+// Run `node scripts/sync-protocol-types.mjs` after editing the source.
+// ===========================================================================
+// transition-runner protocol — how a package that mutates the DOM hands that
+// mutation to whoever is arbitrating view transitions on the page.
+//
+// @wcstack/state and @wcstack/router must not depend on @wcstack/view-transition
+// (zero runtime dependencies, independently publishable), so the arbiter installs
+// itself on a well-known global symbol and the participants look it up lazily.
+// No arbiter installed means the mutation is invoked directly, synchronously —
+// byte-for-byte the behavior these packages had before the protocol existed.
+//
+// docs/view-transition-design.md §4 is the normative description.
+//
+// SINGLE SOURCE OF TRUTH: edit only this file (/protocol/transition-runner.ts), then run
+// `node scripts/sync-protocol-types.mjs` to regenerate the per-package copies
+// (packages/<pkg>/src/protocol/transitionRunner.ts). Those copies are generated — do not edit them.
+/**
+ * Global key the arbiter installs itself under. `Symbol.for` so independently
+ * loaded copies of this file (two CDN bundles on one page) still agree.
+ */
+const TRANSITION_RUNNER_KEY = Symbol.for("wcstack.transition-runner");
+/**
+ * The installed arbiter, or null when there is none, it speaks a version this
+ * reader does not, or it does not accept this participant.
+ *
+ * Looked up on every call rather than cached: the tag can be added, removed, or
+ * reconfigured at any point in a page's life, and a stale cache would either
+ * animate what the author just switched off or miss what they switched on.
+ */
+function getTransitionRunner(source) {
+    const candidate = globalThis[TRANSITION_RUNNER_KEY];
+    if (candidate === undefined || candidate === null)
+        return null;
+    if (candidate.protocol !== "wcs-transition-runner")
+        return null;
+    if (typeof candidate.version !== "number" || candidate.version < 1)
+        return null;
+    if (typeof candidate.run !== "function")
+        return null;
+    if (typeof candidate.accepts !== "function" || !candidate.accepts(source))
+        return null;
+    return candidate;
+}
+/**
+ * Run `mutate` under the installed arbiter, or directly when there is none.
+ *
+ * Returns `undefined` in the no-arbiter case instead of a resolved promise: the
+ * state drain calls this on every batch, and awaiting is a caller's choice, not
+ * an allocation the common path should pay for. `await` accepts both.
+ */
+function runTransition(source, mutate, types) {
+    const runner = getTransitionRunner(source);
+    if (runner === null) {
+        mutate();
+        return undefined;
+    }
+    return runner.run(mutate, { source, types });
+}
+
+/** Elements that already carry a generated name (never renamed). */
+const namedElements = new WeakSet();
+/**
+ * The generated-name ledger is per *document*, not per module instance.
+ *
+ * `view-transition-name` has to be unique across the whole document: the moment
+ * two elements share one, the browser aborts the transition outright. A
+ * module-scope counter breaks that as soon as `@wcstack/state` is loaded twice on
+ * one page (two CDN bundles), because both copies would start minting
+ * `wcs-row-1`. The transition-runner key is a `Symbol.for` for exactly this
+ * reason, and the counter needs the same protection.
+ *
+ * Sharing the cap is right for the same reason: the cost a cap exists to bound —
+ * one snapshot group per named element — is a document-wide cost, not a
+ * per-bundle one.
+ */
+const NAMING_LEDGER_KEY = Symbol.for("wcstack.state.view-transition-naming");
+function getLedger() {
+    const slot = globalThis;
+    return (slot[NAMING_LEDGER_KEY] ??= { counter: 0, assigned: 0, warned: false });
+}
+/**
+ * The active auto-naming policy, or null when names are the author's business
+ * (the default) — one arbiter lookup per structural apply, not per row.
+ */
+function getAutoNaming() {
+    const runner = getTransitionRunner("state");
+    if (runner === null || runner.naming !== "auto") {
+        return null;
+    }
+    return { limit: runner.namingLimit };
+}
+function firstElementOf(content) {
+    const first = content.firstNode;
+    if (first === null) {
+        return null;
+    }
+    const last = content.lastNode;
+    for (let node = first; node !== null; node = node.nextSibling) {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+            return node;
+        }
+        if (node === last) {
+            break;
+        }
+    }
+    return null;
+}
+/**
+ * Give this content's first element a unique name plus a class for group
+ * styling, unless it already has one or the cap has been reached.
+ *
+ * The cap exists because every named element becomes its own snapshot group; a
+ * few hundred of them make a transition visibly slow. Past it naming stops and
+ * says so once — silently degrading would leave the author wondering why only
+ * the first part of a list animates.
+ */
+function applyTransitionName(content, kind, naming) {
+    const element = firstElementOf(content);
+    if (element === null || namedElements.has(element)) {
+        return;
+    }
+    // A node without `style` (anything outside HTMLElement / SVGElement) cannot
+    // carry a name. Bail before touching the ledger: consuming the cap and marking
+    // the element as named would burn a slot for a name that was never written,
+    // and leave that element permanently ineligible.
+    const style = element.style;
+    if (style === undefined) {
+        return;
+    }
+    const ledger = getLedger();
+    if (ledger.assigned >= naming.limit) {
+        if (!ledger.warned) {
+            ledger.warned = true;
+            console.warn(`[@wcstack/state] auto view-transition-name limit (${naming.limit}) reached; ` +
+                "further elements are left unnamed. Raise naming-limit on <wcs-view-transition>, " +
+                'or switch to naming="manual" and name only what should morph.');
+        }
+        return;
+    }
+    namedElements.add(element);
+    ledger.assigned += 1;
+    ledger.counter += 1;
+    style.setProperty("view-transition-name", `wcs-${kind}-${ledger.counter}`);
+    // Group handle for CSS (`::view-transition-group(*.wcs-row)`). Ignored by
+    // engines that predate view-transition-class, which costs nothing.
+    style.setProperty("view-transition-class", `wcs-${kind}`);
+}
+
 const lastNodeByNode = new WeakMap();
 const contentByListIndexByNode = new WeakMap();
 const pooledContentsByNode = new WeakMap();
@@ -6832,6 +7085,10 @@ function applyChangeToFor(bindingInfo, context, newValue) {
         setRootNodeByFragment(fragment, context.rootNode);
     }
     const ssrMode = inSsr();
+    // 自動命名ポリシーは行ごとではなく apply ごとに 1 回だけ引く
+    // （docs/view-transition-design.md §6）。既定の manual では null で、
+    // 以降の行ループは分岐 1 つ分しか増えない。
+    const autoNaming = getAutoNaming();
     const uuid = bindingInfo.uuid ?? '';
     // 追加行ごとの WeakMap 解決を避けるためプール配列も 1 回だけ引く（プールの配列
     // 実体は setPooledContent が一度作ったら不変なので、delete ループ後の参照で安定）
@@ -6875,6 +7132,9 @@ function applyChangeToFor(bindingInfo, context, newValue) {
                 }
                 // コンテントを活性化
                 activateContent(content, loopContext, context);
+                if (autoNaming !== null) {
+                    applyTransitionName(content, "row", autoNaming);
+                }
             });
             if (typeof content === 'undefined') {
                 raiseError(`Content not found for ListIndex: ${index.index} at path "${listPathInfo.path}"`);
@@ -6974,6 +7234,11 @@ function applyChangeToIf(bindingInfo, context, rawNewValue) {
         }
         const loopContext = getLoopContextByNode(bindingInfo.node);
         activateContent(content, loopContext, context);
+        // 自動命名（docs/view-transition-design.md §6）。manual（既定）では null。
+        const autoNaming = getAutoNaming();
+        if (autoNaming !== null) {
+            applyTransitionName(content, "branch", autoNaming);
+        }
     }
 }
 
@@ -7509,11 +7774,46 @@ function missingRootPathMessage(stateName, path, target, declaredPaths) {
  * 決まるので、噛み合わないことは常にプログラマのミス。
  */
 function indexArityMessage(api, path, wildcardCount, actual) {
+    // `$getAll` / `$setAll` の添字は前方一致の接頭辞なので上限、`$resolve` だけが厳密一致
+    // （docs/state-set-all-design.md §4）。
     const requirement = api === "$resolve"
         ? `exactly ${wildcardCount}`
         : `at most ${wildcardCount}`;
     return `[wcs/index-arity] ${api}("${path}") requires ${requirement} index(es) ` +
         `("*" appears ${wildcardCount} time(s) in the path) but got ${actual}.${LINT_HINT}`;
+}
+/**
+ * `$getAll(path)`（添字省略）の既定値はループ文脈の添字 `[$1..$n]` だが、それを
+ * 敷けるのは path と文脈がワイルドカード連鎖を共有している場合だけ。共有ゼロなのに
+ * 文脈が添字を持っている場合、黙って全展開に倒すと「文脈で絞られている」という
+ * 書き手の期待と食い違い、異なる文脈の添字の流用とも区別が付かないため throw する。
+ *
+ * 実行時の評価文脈に依存する（`$setAll` の spread 長と同種）ので lint へは誘導しない。
+ */
+function getAllContextMismatchMessage(path, contextPath) {
+    return `$getAll("${path}") was called without indexes inside the loop context of ` +
+        `"${contextPath}", but the path shares no wildcard level with that context, ` +
+        `so the context indexes ($1..$n) do not apply. ` +
+        `Pass indexes explicitly ([] expands every level).`;
+}
+/**
+ * `$setAll(path, indexes, values, { spread: true })` の配列長がマッチ件数と噛み合わない。
+ *
+ * 静的には件数が分からない（実行時のリスト長に依存する）ので lint へは誘導しない。
+ * 黙って切り詰める／余りを捨てると誤配が通ってしまうため throw する
+ * （docs/state-set-all-design.md §3-3）。
+ */
+function setAllSpreadArityMessage(path, matched, actual) {
+    return `$setAll("${path}", …, { spread: true }) requires the values array to have ` +
+        `exactly one entry per matched address (matched ${matched}) but got ${actual}. ` +
+        `Did the list change between $getAll and $setAll?`;
+}
+/**
+ * `$setAll` の値と `options` の組み合わせが意味を成さない。
+ * （docs/state-set-all-design.md §3-1）
+ */
+function setAllValueKindMessage(path, reason) {
+    return `$setAll("${path}") ${reason}`;
 }
 /**
  * ワイルドカードを解決するループ文脈が足りない（＝パスの階数 > スコープの階数）。
@@ -8453,7 +8753,7 @@ async function buildBindings(root) {
     }
 }
 
-var version = "1.31.0";
+var version = "1.32.0";
 var pkg = {
 	version: version};
 
@@ -9176,6 +9476,221 @@ async function hydrateBindings(root) {
     return true;
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /protocol/binder.ts by scripts/sync-protocol-types.mjs.
+// Run `node scripts/sync-protocol-types.mjs` after editing the source.
+// ===========================================================================
+// binder protocol — how a package that inserts DOM hands those nodes to whoever
+// owns data bindings on the page.
+//
+// The dual of transition-runner: that one hands a *mutation* to whoever animates
+// it, this one hands *new nodes* to whoever binds them.
+//
+// A `data-wcs` binding exists only for nodes @wcstack/state walked when it built
+// its bindings. Nodes that arrive later — the content of a route that was not
+// active at that moment, a <wcs-head> child reflected into <head> — were never
+// walked, so their bindings silently do nothing, however often they are inserted.
+// @wcstack/router must not depend on @wcstack/state (zero runtime dependencies,
+// independently publishable), so state installs a binder on a well-known global
+// symbol and inserters look it up lazily.
+//
+// No binder installed means nothing happens — byte-for-byte the behavior these
+// packages had before the protocol existed.
+//
+// docs/binder-protocol-design.md is the normative description.
+//
+// SINGLE SOURCE OF TRUTH: edit only this file (/protocol/binder.ts), then run
+// `node scripts/sync-protocol-types.mjs` to regenerate the per-package copies
+// (packages/<pkg>/src/protocol/binder.ts). Those copies are generated — do not edit them.
+/**
+ * Global key the binder installs itself under. `Symbol.for` so independently
+ * loaded copies of this file (two CDN bundles on one page) still agree.
+ */
+const BINDER_KEY = Symbol.for("wcstack.binder");
+/**
+ * The installed binder, or null when there is none or it speaks a version this
+ * reader does not.
+ *
+ * Looked up on every call rather than cached, for the same reason
+ * transition-runner does: the page's composition can change at any point, and a
+ * stale cache would keep calling into a binder that is no longer there.
+ */
+function getBinder() {
+    const candidate = globalThis[BINDER_KEY];
+    if (candidate === undefined || candidate === null)
+        return null;
+    if (candidate.protocol !== "wcs-binder")
+        return null;
+    if (typeof candidate.version !== "number" || candidate.version < 1)
+        return null;
+    if (typeof candidate.bind !== "function")
+        return null;
+    return candidate;
+}
+/**
+ * Subtrees offered before a binder existed, and the set of everything a binder
+ * has taken. Both live on global symbols so that independently loaded copies of
+ * this file — the router's and state's — share one queue.
+ *
+ * The queue is needed because of load order: the router's auto bundle runs
+ * before state's, so `<wcs-head>` reflects its children into `<head>` while
+ * there is still nothing to bind them. Offering them to a binder that arrives
+ * later is the difference between working and silently blank.
+ */
+const PENDING_KEY = Symbol.for("wcstack.binder.pending");
+const TAKEN_KEY = Symbol.for("wcstack.binder.taken");
+function pendingQueue() {
+    const globals = globalThis;
+    let queue = globals[PENDING_KEY];
+    if (queue === undefined) {
+        queue = [];
+        globals[PENDING_KEY] = queue;
+    }
+    return queue;
+}
+function takenSet() {
+    const globals = globalThis;
+    let taken = globals[TAKEN_KEY];
+    if (taken === undefined) {
+        taken = new WeakSet();
+        globals[TAKEN_KEY] = taken;
+    }
+    return taken;
+}
+/**
+ * Bind everything offered before this binder existed. Called by the binder right
+ * after it installs itself.
+ */
+function flushPendingBinds() {
+    const binder = getBinder();
+    if (binder === null)
+        return;
+    const queue = pendingQueue();
+    if (queue.length === 0)
+        return;
+    const pending = queue.splice(0, queue.length);
+    const taken = takenSet();
+    for (const subtree of pending) {
+        taken.add(subtree);
+        binder.bind(subtree);
+    }
+}
+
+/**
+ * binder プロトコルの提供側（docs/binder-protocol-design.md）。
+ *
+ * `buildBindings` は起動時に `document.body` を 1 回走査するだけなので、そのとき
+ * document に居なかったノードのバインドは存在しない。router が後から差し込む
+ * ルート内容や `<wcs-head>` のクローンがこれに当たり、書いたバインドが黙って
+ * 何もしない状態になっていた。`bind()` はその取りこぼしを 1 サブツリー分だけ
+ * 埋める。
+ *
+ * **走査を勝手に広げない。** MutationObserver が見た全追加ノードを走査する形に
+ * すると、バインドを 1 個も持たない挿入（大多数）にコストが乗り、さらに
+ * `innerHTML` で入れた外部由来の DOM が `data-wcs` を発火させることになる。
+ * ここで束ねるのは**明示的に渡されたものだけ**である。
+ */
+const BIND_ATTRIBUTE_SELECTOR = () => `[${config.bindAttributeName}]`;
+/**
+ * このサブツリーは既にバインド済みか。
+ *
+ * ルート内容は「起動時に active だったので全部バインド済み」か「一度も走査されて
+ * いないので全部未バインド」のどちらかで、途中の状態を取らない。したがって
+ * **宣言を持つ最初のノード 1 個**を見れば足りる。全ノードを走査して判定するのは
+ * 同じ結論により高いコストを払うだけになる。
+ */
+function alreadyBound(subtree) {
+    if (hasInterestedSession(subtree)) {
+        return true;
+    }
+    if (!isElement(subtree)) {
+        return false;
+    }
+    if (subtree.hasAttribute(config.bindAttributeName)) {
+        // 属性を持つのに台帳に居ない ＝ 未バインド
+        return false;
+    }
+    const first = subtree.querySelector(BIND_ATTRIBUTE_SELECTOR());
+    return first !== null && hasInterestedSession(first);
+}
+function isElement(node) {
+    return node.nodeType === 1;
+}
+function bindNow(subtree) {
+    if (alreadyBound(subtree)) {
+        return;
+    }
+    convertMustacheToComments(subtree);
+    collectStructuralFragments(subtree.getRootNode(), subtree);
+    // `getSubscriberNodes` の TreeWalker は**ルート自身を返さない**。`buildBindings` は
+    // `document.body` を渡すので今まで問題にならなかったが、ここには宣言をルートに
+    // 持つノードが来る（`<wcs-head>` が head へ入れる `<title data-wcs="…">`）。
+    // そのときだけ親から走査して、ルートを走査範囲に含める。兄弟の重複登録は
+    // `registeredNodeSet` が弾くので、余計なバインドは生まれない。
+    // 親は Element とは限らない（ShadowRoot 直下なら DocumentFragment、head 直下なら
+    // Element）。`parentElement` だと前者で null になり、ルートを含められない。
+    const declaresOnRoot = subtree.hasAttribute(config.bindAttributeName);
+    const parent = subtree.parentNode;
+    const canWalkFromParent = parent !== null
+        && (parent.nodeType === 1 || parent.nodeType === 9 || parent.nodeType === 11);
+    const walkRoot = declaresOnRoot && canWalkFromParent
+        ? parent
+        : subtree;
+    initializeBindings(walkRoot, null);
+}
+/**
+ * 初期バインド構築より前に差し出されたサブツリー。
+ *
+ * `<wcs-head>` は `connectedCallback` の中でクローンを head へ入れるので、
+ * state / router のどちらを先に読み込んでも「まだ構築が終わっていない」時点で
+ * bind を求めてくる。そこで同期に束ねても `<wcs-state>` の登録が済んでおらず、
+ * バインドは state を見つけられない。**構築の完了を唯一の合図にする。**
+ */
+const beforeFirstBuild = [];
+function bind(subtree) {
+    if (!isElement(subtree) || alreadyBound(subtree)) {
+        return;
+    }
+    if (!areBindingsBuilt(subtree.getRootNode())) {
+        beforeFirstBuild.push(subtree);
+        return;
+    }
+    bindNow(subtree);
+}
+/**
+ * 初期バインド構築の完了時に呼ぶ（stateElementByName.ts）。binder が居ない時点で
+ * 差し出された分（プロトコルの保留キュー）と、居たが早すぎた分をまとめて束ねる。
+ */
+function drainPendingBinds() {
+    const pending = beforeFirstBuild.splice(0, beforeFirstBuild.length);
+    for (const subtree of pending) {
+        bindNow(subtree);
+    }
+    flushPendingBinds();
+}
+const binder = {
+    protocol: "wcs-binder",
+    version: 1,
+    bind,
+};
+/**
+ * グローバル symbol へ自分を載せる。`bootstrapState` から呼ぶ。
+ *
+ * 既に別のコピーが載っているなら譲る。1 ページに 2 つの state バンドルが載る構成
+ * （CDN の取り違え）で、後から読まれた側が先客を追い出すと、先客がバインドした
+ * ノードの台帳と食い違う。
+ */
+function registerBinder() {
+    const globals = globalThis;
+    if (globals[BINDER_KEY] === undefined) {
+        globals[BINDER_KEY] = binder;
+    }
+    // ここでは引き取らない。`<wcs-state>` の登録は connectedCallback の await より
+    // 後なので、この時点ではまだ state が居ない。保留分は初期バインド構築の完了時に
+    // 流す（stateElementByName.ts）。そこが「state が確実に居る」最初の瞬間である。
+}
+
 const stateElementByNameByNode = new WeakMap();
 const bindingsReadyByNode = new WeakMap();
 // devtools 用の列挙可能な登録簿（protocol §4.1 — 唯一の常時 ON 台帳）。
@@ -9197,6 +9712,25 @@ function getStateElementByName(rootNode, name) {
  */
 function getBindingsReady(rootNode) {
     return bindingsReadyByNode.get(rootNode) ?? Promise.resolve();
+}
+const bindingsBuiltRoots = new WeakSet();
+/**
+ * この rootNode の初期バインド構築が完了しているか。
+ *
+ * binder プロトコル（`bind()`）が使う。router の `<wcs-head>` はクローンを
+ * `connectedCallback` の中で head へ入れるので、**state が最初の走査を終える前**に
+ * bind を求めてくる。そこで同期に束ねても state 要素の初期化が済んでおらず、
+ * 結果は空のままになる。完了までは binder 側で保留する。
+ *
+ * 「まだ登録も済んでいない」と「もう構築が終わった」を取り違えないよう、判定は
+ * 完了の側で持つ。<wcs-state> の登録は connectedCallback の await より後に起きるので、
+ * 「エントリの有無」で進行中かを測ると読み込み順によって逆の答えを返す。
+ */
+function areBindingsBuilt(rootNode) {
+    return bindingsBuiltRoots.has(rootNode);
+}
+function markBindingsBuilt(rootNode) {
+    bindingsBuiltRoots.add(rootNode);
 }
 function setStateElementByName(rootNode, name, element) {
     let stateElementByName = stateElementByNameByNode.get(rootNode);
@@ -9250,6 +9784,11 @@ function setStateElementByName(rootNode, name, element) {
                             else {
                                 await buildBindings(rootNode);
                             }
+                            markBindingsBuilt(rootNode);
+                            // binder が居ない時点で差し出されたサブツリーを引き取る。ここが
+                            // 「state が確実に居る」最初の瞬間で、router の auto バンドルが
+                            // state のそれより先に走る順序を吸収できる唯一の場所である。
+                            drainPendingBinds();
                             resolve();
                         }
                         catch (error) {
@@ -9264,6 +9803,11 @@ function setStateElementByName(rootNode, name, element) {
                     queueMicrotask(async () => {
                         try {
                             await buildBindings(rootNode);
+                            markBindingsBuilt(rootNode);
+                            // binder が居ない時点で差し出されたサブツリーを引き取る。ここが
+                            // 「state が確実に居る」最初の瞬間で、router の auto バンドルが
+                            // state のそれより先に走る順序を吸収できる唯一の場所である。
+                            drainPendingBinds();
                             resolve();
                         }
                         catch (error) {
@@ -9373,6 +9917,17 @@ function notifyUpdateBatchListeners(batch) {
         registered.listener(batch);
     }
 }
+/**
+ * 遷移越しの適用が失敗したときの報告。
+ *
+ * 遷移の中では例外を同期的に呼び出し元へ投げ返せない。今日の drain は
+ * queueMicrotask の中で throw する ＝ uncaught として観測されるので、それと同じ
+ * 「loud に出す」挙動へ揃える。握り潰すと `$updatedCallback` の throw が黙って
+ * 消える（README の 3 層表が定める伝播の契約が破れる）。
+ */
+function reportDeferredApplyFailure(error) {
+    queueMicrotask(() => { throw error; });
+}
 class Updater {
     _queueUpdateRecords = [];
     constructor() {
@@ -9481,12 +10036,34 @@ class Updater {
         // 限られるが、そのとき drain フックまで道連れにすると「機構間の順序は固定」
         // （README の 3 層表）が黙って破れる。例外は握らない ＝ 伝播は維持する。
         try {
-            // context が無い場合は従来どおり 1 引数で呼ぶ（呼び出し契約の互換維持）
-            if (propagationContextByBinding.size > 0) {
-                applyChangeFromBindings(processBindings, propagationContextByBinding);
+            const applyBindings = () => {
+                // context が無い場合は従来どおり 1 引数で呼ぶ（呼び出し契約の互換維持）
+                if (propagationContextByBinding.size > 0) {
+                    applyChangeFromBindings(processBindings, propagationContextByBinding);
+                }
+                else {
+                    applyChangeFromBindings(processBindings);
+                }
+            };
+            // View transition 参加点（docs/view-transition-design.md §7.2）。arbiter が
+            // 居なければ runTransition はその場で applyBindings を呼び、undefined を返す
+            // ＝ 従来と完全に同じ同期適用。SSR では遷移そのものを持たない（G5）。
+            //
+            // 適用する binding が 0 本のバッチは arbiter へ渡さない。書き込みはバインドの
+            // 有無に関わらず enqueue される（setByAddress）ため、headless なパス
+            // （`$watch` 専用・`$streams` の内部状態・リスト置換の中間アドレス）への
+            // 書き込みだけでもここへ到達する。それでページ全体をスナップショットするのは
+            // 無駄なだけでなく、既定の mode="latest" では「アニメーションすべき DOM 変更が
+            // 無い遷移」が実行中の本物の遷移をスキップしてしまう（ルート遷移が毎回途中で
+            // 切れる／active が空撃ちで振動する）。
+            if (inSsr() || processBindings.length === 0) {
+                applyBindings();
             }
             else {
-                applyChangeFromBindings(processBindings);
+                const pending = runTransition("state", applyBindings);
+                if (pending !== undefined) {
+                    pending.catch(reportDeferredApplyFailure);
+                }
             }
         }
         finally {
@@ -9881,6 +10458,58 @@ function registerDevtoolsSource() {
     getOrCreateHookRegistry().register(source);
 }
 
+/**
+ * ssr-snapshot プロトコルの提供側（docs/ssr-router-design.md §5）。
+ *
+ * `<wcs-ssr>` スナップショットを document 全体に対する最終パスとして生成する。
+ * connectedCallback 内の inline 生成は「その時点の DOM」しか見えず、router が
+ * 後から挿入するルート内容の構造テンプレートを取り逃がすレースがあった
+ * （state のロード方式と文書順に依存）。renderToString が全要素の完了と
+ * バインディング構築の後にこれを呼ぶことで、スナップショットは常に確定後の
+ * DOM を見る。
+ *
+ * 複数 `enable-ssr` state の意味論は inline 生成と同一に保つ（文書順に生成・
+ * fragment レジストリはモジュール共有・props store は生成ごとにクリア）。
+ * その整理は本プロトコルの範囲外の既存挙動として引き継ぐ。
+ */
+function buildSsrDocument(root) {
+    const stateTag = config.tagNames.state;
+    const ssrTag = config.tagNames.ssr;
+    const stateElements = root.querySelectorAll(`${stateTag}[enable-ssr]`);
+    for (const stateEl of stateElements) {
+        const name = stateEl.getAttribute("name") || "default";
+        // 既に直前へ生成済み（旧 server との組み合わせで inline 生成された等）なら
+        // 何もしない — build() は冪等でなければならない（プロトコル契約）
+        const prev = stateEl.previousElementSibling;
+        if (prev !== null &&
+            prev.tagName.toLowerCase() === ssrTag &&
+            (prev.getAttribute("name") || "default") === name) {
+            continue;
+        }
+        const ssrEl = document.createElement(ssrTag);
+        ssrEl.setAttribute("name", name);
+        ssrEl.setAttribute("version", VERSION);
+        Ssr.buildContent(ssrEl, Ssr.extractStateData(stateEl));
+        stateEl.parentNode?.insertBefore(ssrEl, stateEl);
+    }
+}
+const builder = {
+    protocol: "wcs-ssr-snapshot",
+    version: 1,
+    build: buildSsrDocument,
+};
+/**
+ * グローバル symbol へ自分を載せる。`bootstrapState` から呼ぶ。
+ * binder（registerBinder）と同じ規範 — 既に別のコピーが載っているなら譲る
+ * （そのコピーのレジストリが、そのページの正本だからである）。
+ */
+function registerSsrSnapshotBuilder() {
+    const globals = globalThis;
+    if (globals[SSR_SNAPSHOT_BUILDER_KEY] === undefined) {
+        globals[SSR_SNAPSHOT_BUILDER_KEY] = builder;
+    }
+}
+
 const CSP_GUIDE = "https://github.com/wcstack/wcstack/blob/main/docs/csp.md";
 /**
  * インライン `<script>` の評価失敗を、原因の分かるメッセージに変換する。
@@ -9961,9 +10590,26 @@ async function loadFromJsonFile(url) {
     }
 }
 
+/**
+ * `src` の値を **document の base URL** に対して解決する。
+ *
+ * `import(url)` の相対解決は「import を書いたモジュール」を基準にする。ここは
+ * `@wcstack/state` の中なので、素の `import(url)` は `<wcs-state src>` を
+ * **state パッケージの所在**から解決してしまう。同一オリジンに置いたページでは
+ * たまたま一致して見えるが、CDN 一発（`https://esm.run/@wcstack/state/auto`）で
+ * 読み込んだ瞬間に `src="/app.js"` が CDN 側の URL を指して 404 になる。
+ *
+ * `src` は HTML 属性なので、正しい基準は document の base URL である
+ * （`src="*.json"` 側は `fetch` がそう解決しており、同じ属性が形式によって
+ * 違う基準で解決されていた）。絶対 URL・`data:`・`blob:` は URL 解決で
+ * そのまま素通りするため、既存の使い方は影響を受けない。
+ */
+function resolveAgainstDocument(url) {
+    return new URL(url, document.baseURI).href;
+}
 async function loadFromScriptFile(url) {
     try {
-        const module = await import(/* @vite-ignore */ url);
+        const module = await import(/* @vite-ignore */ resolveAgainstDocument(url));
         return module.default || {};
     }
     catch (e) {
@@ -12176,6 +12822,41 @@ function disconnectedCallback(target, _prop, receiver, _handler) {
     }
 }
 
+/**
+ * getContextListIndex.ts
+ *
+ * Stateの内部APIとして、現在のプロパティ参照スコープにおける
+ * 指定したstructuredPath（ワイルドカード付きプロパティパス）に対応する
+ * リストインデックス（IListIndex）を取得する関数です。
+ *
+ * 主な役割:
+ * - handlerの最後にアクセスされたAddressから、指定パスに対応するリストインデックスを取得
+ * - ワイルドカード階層に対応し、多重ループやネストした配列バインディングにも利用可能
+ *
+ * 設計ポイント:
+ * - 直近のプロパティ参照情報を取得
+ * - info.indexByWildcardPathからstructuredPathのインデックスを特定
+ * - listIndex.at(index)で該当階層のリストインデックスを取得
+ * - パスが一致しない場合や参照が存在しない場合はnullを返す
+ */
+function getContextListIndex(handler, structuredPath) {
+    if (handler.addressStackLength === 0) {
+        return null;
+    }
+    const address = handler.lastAddressStack;
+    if (address === null) {
+        return null;
+    }
+    const index = address.pathInfo.indexByWildcardPath[structuredPath];
+    if (typeof index === "undefined") {
+        return null;
+    }
+    if (address.listIndex === null) {
+        return null;
+    }
+    return listIndexAtWildcard(address.listIndex, index, address.pathInfo.wildcardCount);
+}
+
 const cacheEntryByAbsoluteStateAddress = new WeakMap();
 function getCacheEntryByAbsoluteStateAddress(address) {
     return cacheEntryByAbsoluteStateAddress.get(address) ?? null;
@@ -12463,38 +13144,112 @@ function getByAddress(target, address, receiver, handler) {
 }
 
 /**
- * getContextListIndex.ts
+ * wildcardIndexes.ts
  *
- * Stateの内部APIとして、現在のプロパティ参照スコープにおける
- * 指定したstructuredPath（ワイルドカード付きプロパティパス）に対応する
- * リストインデックス（IListIndex）を取得する関数です。
+ * ワイルドカードを含むパスから「解決済み添字タプルの集合」を列挙する共有走査。
+ * `$getAll`（読み）と `$setAll`（書き）が**同じ展開規則・同じ順序**で動くための単一の正本
+ * （docs/state-set-all-design.md §6-1）。
  *
- * 主な役割:
- * - handlerの最後にアクセスされたAddressから、指定パスに対応するリストインデックスを取得
- * - ワイルドカード階層に対応し、多重ループやネストした配列バインディングにも利用可能
+ * 添字は**前方一致の接頭辞**で、足りない分は「その階層を全部展開する」という意味を持つ
+ * （README の `$getAll("scores.*", [])` がこれ）。返るタプルは常にワイルドカードの本数と
+ * 同じ長さになるので、そのまま `$resolve` の厳密一致な添字として使える。
  *
- * 設計ポイント:
- * - 直近のプロパティ参照情報を取得
- * - info.indexByWildcardPathからstructuredPathのインデックスを特定
- * - listIndex.at(index)で該当階層のリストインデックスを取得
- * - パスが一致しない場合や参照が存在しない場合はnullを返す
+ * 順序は**深さ優先・添字昇順**（ネストは添字タプルの辞書順）で決定的。
+ * `$getAll(p, i)` の戻り順と `$setAll(p, i, …)` の適用順が一致する根拠がこれであり、
+ * `$setAll` の `{ spread: true }` 形はこの順序に乗っている。
+ *
+ * Throws: LIST-201（インデックス未解決）、BIND-201（ワイルドカード情報不整合）
  */
-function getContextListIndex(handler, structuredPath) {
-    if (handler.addressStackLength === 0) {
-        return null;
+/**
+ * 各ワイルドカード階層で最後に観測したリスト値。**次の読みの差分基準**であり、
+ * ListIndex の同一性を跨いで保つために使う。
+ *
+ * 所有権は読み（`$getAll`）側にある。書き（`$setAll`）はこの走査を借りるだけで
+ * 記録を更新しない（`commitDiffBaseline: false`。設計 §6-2）。
+ */
+// ToDo: IAbsoluteStateAddressに変更する
+const lastValueByListAddress = new WeakMap();
+/**
+ * `pathInfo` のワイルドカードを `indexes`（前方一致の接頭辞）で絞り込みつつ展開し、
+ * マッチする添字タプルを列挙する。
+ *
+ * 添字の本数検査（上限）は呼び出し側の責務 — API 名を診断メッセージに出すため。
+ */
+function collectWildcardIndexes(target, receiver, handler, pathInfo, indexes, options) {
+    const newValueByAddress = new Map();
+    const walkWildcardPattern = (wildcardParentPathInfos, wildcardIndexPos, listIndex, indexes, indexPos, parentIndexes, results) => {
+        const wildcardParentPathInfo = wildcardParentPathInfos[wildcardIndexPos] ?? null;
+        if (wildcardParentPathInfo === null) {
+            results.push(parentIndexes);
+            return;
+        }
+        const wildcardAddress = createStateAddress(wildcardParentPathInfo, listIndex);
+        const oldValue = lastValueByListAddress.get(wildcardAddress);
+        const newValue = getByAddress(target, wildcardAddress, receiver, handler);
+        const listDiff = createListDiff(getListParentListIndex(handler.stateElement, listIndex), oldValue, newValue);
+        const listIndexes = listDiff.newIndexes;
+        const index = indexes[indexPos] ?? null;
+        newValueByAddress.set(wildcardAddress, newValue);
+        if (index === null) {
+            for (let i = 0; i < listIndexes.length; i++) {
+                const listIndex = listIndexes[i];
+                walkWildcardPattern(wildcardParentPathInfos, wildcardIndexPos + 1, listIndex, indexes, indexPos + 1, parentIndexes.concat(listIndex.index), results);
+            }
+        }
+        else {
+            // 範囲外 index はリスト自体の不在と別原因なので index を含める
+            // （docs/state-bind-component-nested-for-design.md §8.4）
+            const listIndex = listIndexes[index] ??
+                raiseError(`ListIndex not found at index ${index} of ${wildcardParentPathInfo.path}`);
+            if ((wildcardIndexPos + 1) < wildcardParentPathInfos.length) {
+                walkWildcardPattern(wildcardParentPathInfos, wildcardIndexPos + 1, listIndex, indexes, indexPos + 1, parentIndexes.concat(listIndex.index), results);
+            }
+            else {
+                // 最終ワイルドカード層まで到達しているので、結果を確定
+                results.push(parentIndexes.concat(listIndex.index));
+            }
+        }
+    };
+    const resultIndexes = [];
+    walkWildcardPattern(pathInfo.wildcardParentPathInfos, 0, null, indexes, 0, [], resultIndexes);
+    if (options.commitDiffBaseline) {
+        for (const [address, newValue] of newValueByAddress.entries()) {
+            lastValueByListAddress.set(address, newValue);
+        }
     }
-    const address = handler.lastAddressStack;
-    if (address === null) {
-        return null;
+    return resultIndexes;
+}
+
+/**
+ * getListIndexByIndexes.ts
+ *
+ * 解決済みの添字タプル（ワイルドカード 1 段につき 1 個）から、対応する ListIndex を
+ * **正本レジストリ**（listIndexesByList）経由で引き当てる。
+ *
+ * `$resolve` と `$setAll` の共有部分。列挙側（wildcardIndexes.ts）が走査中に生成した
+ * ListIndex をそのまま書き込み先にせず、ここで引き直すことで、binding が使っている
+ * ListIndex と同一の同一性に載る（docs/state-set-all-design.md §6-2）。
+ *
+ * 添字の本数がワイルドカードの本数と一致していることは呼び出し側の責務。
+ */
+function getListIndexByIndexes(target, receiver, handler, pathInfo, indexes) {
+    // ワイルドカード階層ごとにListIndexを解決していく
+    let listIndex = null;
+    for (let i = 0; i < pathInfo.wildcardParentPathInfos.length; i++) {
+        const wildcardParentPathInfo = pathInfo.wildcardParentPathInfos[i];
+        const wildcardAddress = createStateAddress(wildcardParentPathInfo, listIndex);
+        const tmpValue = getByAddress(target, wildcardAddress, receiver, handler);
+        const listIndexes = getListIndexesByList(tmpValue);
+        if (listIndexes == null) {
+            raiseError(`ListIndexes not found: ${wildcardParentPathInfo.path}`);
+        }
+        const index = indexes[i];
+        // 範囲外 index はリスト自体の不在と別原因なので index を含める
+        // （docs/state-bind-component-nested-for-design.md §8.4）
+        listIndex = listIndexes[index] ??
+            raiseError(`ListIndex not found at index ${index} of ${wildcardParentPathInfo.path}`);
     }
-    const index = address.pathInfo.indexByWildcardPath[structuredPath];
-    if (typeof index === "undefined") {
-        return null;
-    }
-    if (address.listIndex === null) {
-        return null;
-    }
-    return listIndexAtWildcard(address.listIndex, index, address.pathInfo.wildcardCount);
+    return listIndex;
 }
 
 /**
@@ -13500,22 +14255,8 @@ function resolve(target, _prop, receiver, handler) {
         if (indexes.length !== pathInfo.wildcardParentPathInfos.length) {
             raiseError(indexArityMessage("$resolve", path, pathInfo.wildcardParentPathInfos.length, indexes.length));
         }
-        // ワイルドカード階層ごとにListIndexを解決していく
-        let listIndex = null;
-        for (let i = 0; i < pathInfo.wildcardParentPathInfos.length; i++) {
-            const wildcardParentPathInfo = pathInfo.wildcardParentPathInfos[i];
-            const wildcardAddress = createStateAddress(wildcardParentPathInfo, listIndex);
-            const tmpValue = getByAddress(target, wildcardAddress, receiver, handler);
-            const listIndexes = getListIndexesByList(tmpValue);
-            if (listIndexes == null) {
-                raiseError(`ListIndexes not found: ${wildcardParentPathInfo.path}`);
-            }
-            const index = indexes[i];
-            // 範囲外 index はリスト自体の不在と別原因なので index を含める
-            // （docs/state-bind-component-nested-for-design.md §8.4）
-            listIndex = listIndexes[index] ??
-                raiseError(`ListIndex not found at index ${index} of ${wildcardParentPathInfo.path}`);
-        }
+        // ワイルドカード階層ごとにListIndexを解決していく（`$setAll` と共有）
+        const listIndex = getListIndexByIndexes(target, receiver, handler, pathInfo, indexes);
         // ToDo:WritableかReadonlyかを判定して適切なメソッドを呼び出す
         const address = createStateAddress(pathInfo, listIndex);
         const hasSetValue = typeof value !== "undefined";
@@ -13532,14 +14273,18 @@ function resolve(target, _prop, receiver, handler) {
  * getAllReadonly
  *
  * ワイルドカードを含む State パスから、対象となる全要素を配列で取得する。
- * Throws: LIST-201（インデックス未解決）、BIND-201（ワイルドカード情報不整合）
+ * 走査そのものは `$setAll` と共有する（wildcardIndexes.ts）。
+ *
+ * `indexes` 省略時の既定はループ文脈の添字 `[$1..$n]`。正確には「path と文脈が
+ * 共有するワイルドカード連鎖の分だけ文脈の添字を接頭辞として敷く」（整合最長接頭辞）。
+ * 共有が無いのに文脈が添字を持つ場合は throw する — 異なる文脈の添字は流用しない。
+ *
+ * Throws: LIST-201（インデックス未解決）、BIND-201（ワイルドカード情報不整合）、
+ * 添字本数超過（wcs/index-arity）、省略時の文脈不整合（getAllContextMismatchMessage）
  */
-// ToDo: IAbsoluteStateAddressに変更する
-const lastValueByListAddress = new WeakMap();
 function getAll(target, prop, receiver, handler) {
     const resolveFn = resolve(target, prop, receiver, handler);
     return (path, indexes) => {
-        const newValueByAddress = new Map();
         const pathInfo = getPathInfo(path);
         if (handler.addressStackLength > 0) {
             const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
@@ -13560,59 +14305,38 @@ function getAll(target, prop, receiver, handler) {
             raiseError(indexArityMessage("$getAll", path, pathInfo.wildcardParentPathInfos.length, indexes.length));
         }
         if (typeof indexes === "undefined") {
-            for (let i = 0; i < pathInfo.wildcardParentPathInfos.length; i++) {
-                const wildcardPattern = pathInfo.wildcardParentPathInfos[i];
-                const listIndex = getContextListIndex(handler, wildcardPattern.path);
+            // 省略時の既定はループ文脈の添字 `[$1..$n]`。ただし敷けるのは path と文脈が
+            // **共有するワイルドカード連鎖**の分だけなので、path のワイルドカードを
+            // 内側（最深）から探し、最初に文脈にヒットした階層の scoped indexes を接頭辞にする。
+            // ワイルドカードパスの序数はパス文字列自身の `*` の本数で決まるため、深い側が
+            // ヒットすれば浅い側は必ず含まれ、これが整合する最長の接頭辞になる。文脈が
+            // path より深い分は自然に切り詰められ、導出した接頭辞は path のワイルドカード
+            // 本数を超えないので、上の本数検査には掛けない。
+            for (let i = pathInfo.wildcardPaths.length - 1; i >= 0; i--) {
+                const listIndex = getContextListIndex(handler, pathInfo.wildcardPaths[i]);
                 if (listIndex) {
                     indexes = getScopedIndexes(listIndex, listIndex.length - getBaseDepth(handler.stateElement));
                     break;
                 }
             }
             if (typeof indexes === "undefined") {
+                // 共有ゼロ。文脈が自スコープの添字を実際に持っているなら、既定の `[...$n]` は
+                // **異なる文脈の添字の流用（混入）**になるため、黙って全展開へ倒さず throw する。
+                // 文脈そのものが無い（トップレベル getter / メソッド直下）なら全展開が既定。
+                const lastAddress = handler.addressStackLength > 0 ? handler.lastAddressStack : null;
+                const contextListIndex = lastAddress?.listIndex ?? null;
+                if (pathInfo.wildcardCount > 0 && lastAddress !== null && contextListIndex !== null &&
+                    contextListIndex.length - getBaseDepth(handler.stateElement) > 0) {
+                    raiseError(getAllContextMismatchMessage(path, lastAddress.pathInfo.path));
+                }
                 indexes = [];
             }
         }
-        const walkWildcardPattern = (wildcardParentPathInfos, wildcardIndexPos, listIndex, indexes, indexPos, parentIndexes, results) => {
-            const wildcardParentPathInfo = wildcardParentPathInfos[wildcardIndexPos] ?? null;
-            if (wildcardParentPathInfo === null) {
-                results.push(parentIndexes);
-                return;
-            }
-            const wildcardAddress = createStateAddress(wildcardParentPathInfo, listIndex);
-            const oldValue = lastValueByListAddress.get(wildcardAddress);
-            const newValue = getByAddress(target, wildcardAddress, receiver, handler);
-            const listDiff = createListDiff(getListParentListIndex(handler.stateElement, listIndex), oldValue, newValue);
-            const listIndexes = listDiff.newIndexes;
-            const index = indexes[indexPos] ?? null;
-            newValueByAddress.set(wildcardAddress, newValue);
-            if (index === null) {
-                for (let i = 0; i < listIndexes.length; i++) {
-                    const listIndex = listIndexes[i];
-                    walkWildcardPattern(wildcardParentPathInfos, wildcardIndexPos + 1, listIndex, indexes, indexPos + 1, parentIndexes.concat(listIndex.index), results);
-                }
-            }
-            else {
-                // 範囲外 index はリスト自体の不在と別原因なので index を含める
-                // （docs/state-bind-component-nested-for-design.md §8.4）
-                const listIndex = listIndexes[index] ??
-                    raiseError(`ListIndex not found at index ${index} of ${wildcardParentPathInfo.path}`);
-                if ((wildcardIndexPos + 1) < wildcardParentPathInfos.length) {
-                    walkWildcardPattern(wildcardParentPathInfos, wildcardIndexPos + 1, listIndex, indexes, indexPos + 1, parentIndexes.concat(listIndex.index), results);
-                }
-                else {
-                    // 最終ワイルドカード層まで到達しているので、結果を確定
-                    results.push(parentIndexes.concat(listIndex.index));
-                }
-            }
-        };
-        const resultIndexes = [];
-        walkWildcardPattern(pathInfo.wildcardParentPathInfos, 0, null, indexes, 0, [], resultIndexes);
+        // 読みなので差分基準を更新する（`$setAll` は更新しない。設計 §6-2）
+        const resultIndexes = collectWildcardIndexes(target, receiver, handler, pathInfo, indexes, { commitDiffBaseline: true });
         const resultValues = [];
         for (let i = 0; i < resultIndexes.length; i++) {
             resultValues.push(resolveFn(pathInfo.path, resultIndexes[i]));
-        }
-        for (const [address, newValue] of newValueByAddress.entries()) {
-            lastValueByListAddress.set(address, newValue);
         }
         return resultValues;
     };
@@ -13694,6 +14418,83 @@ function postUpdate(target, _prop, receiver, handler) {
         // set トラップを通らない変更が観測面に出る唯一の経路なので、ここでも撃つ
         // （docs/architecture-hardening/15-state-component-mechanism-consistency.md §2.1）。
         dispatchBindableEvent(stateElement, address.pathInfo);
+    };
+}
+
+/**
+ * setAll.ts
+ *
+ * ワイルドカードを含む State パスにマッチする**全アドレスへ一括で書き込む**。
+ * `$getAll`（読み）の対称形（docs/state-set-all-design.md）。
+ *
+ * 存在理由は糖衣ではなく「**リスト全置換の回避**」（設計 §1-1）。
+ * `this.users = this.users.map(...)` は配列を作り直すので ListIndex・行 getter
+ * キャッシュ・差分描画がまとめて作り直しになる。`$setAll` は意味としては一括更新、
+ * 実体は in-place な個別書き込みで、同じことを差分に載せたまま行う。
+ *
+ * 3 つの形（設計 §2）:
+ * - ブロードキャスト  `$setAll(path, indexes, value)`
+ * - mapper（第一級）  `$setAll(path, indexes, (current, ...indexes) => next)`
+ * - spread            `$setAll(path, indexes, values, { spread: true })`
+ */
+function setAll(target, _prop, receiver, handler) {
+    return (path, indexes, value, options) => {
+        const pathInfo = getPathInfo(path);
+        // 書き込み API に暗黙の文脈依存は持たせない。`for` の中で `[]` と書けば
+        // 「現在行」ではなく「全行」を意味する（設計 §4-1）。
+        if (!Array.isArray(indexes)) {
+            raiseError(setAllValueKindMessage(path, "requires an explicit indexes array (pass [] to expand every level)."));
+        }
+        // 添字は前方一致の接頭辞なので不足は正当。超過だけを弾く（`$getAll` と同じ規則）。
+        if (indexes.length > pathInfo.wildcardParentPathInfos.length) {
+            raiseError(indexArityMessage("$setAll", path, pathInfo.wildcardParentPathInfos.length, indexes.length));
+        }
+        const spread = options?.spread === true;
+        const isMapper = typeof value === "function";
+        if (spread && isMapper) {
+            raiseError(setAllValueKindMessage(path, "cannot combine { spread: true } with a mapper function."));
+        }
+        if (spread && !Array.isArray(value)) {
+            raiseError(setAllValueKindMessage(path, "requires an array as the value when { spread: true } is set."));
+        }
+        // --- 第 1 相: 書き込み先を全部確定する（設計 §6） ---
+        // 走査しながら書くと書き込みが ListIndex 集合を動かしうる。
+        // 差分基準（lastValueByListAddress）は読みの持ち物なので commit しない（§6-2）。
+        const resultIndexes = collectWildcardIndexes(target, receiver, handler, pathInfo, indexes, { commitDiffBaseline: false });
+        if (spread && value.length !== resultIndexes.length) {
+            raiseError(setAllSpreadArityMessage(path, resultIndexes.length, value.length));
+        }
+        const addresses = [];
+        for (let i = 0; i < resultIndexes.length; i++) {
+            const listIndex = getListIndexByIndexes(target, receiver, handler, pathInfo, resultIndexes[i]);
+            addresses.push(createStateAddress(pathInfo, listIndex));
+        }
+        // --- 第 2 相: 確定したアドレスにだけ書く ---
+        let written = 0;
+        for (let i = 0; i < addresses.length; i++) {
+            const address = addresses[i];
+            let nextValue;
+            if (isMapper) {
+                // 現在値は書く直前に読む。先行する書き込みが getter 経由で他行に及ぶ場合、
+                // mapper が見るべきなのは最新値。
+                const currentValue = getByAddress(target, address, receiver, handler);
+                nextValue = value(currentValue, ...resultIndexes[i]);
+            }
+            else if (spread) {
+                nextValue = value[i];
+            }
+            else {
+                nextValue = value;
+            }
+            // undefined は常にスキップ（設計 §5）。mapper の return 忘れで全行を潰さないため、
+            // かつ「この行は変えない」を表現できるようにするため。クリアは null。
+            if (typeof nextValue === "undefined") {
+                continue;
+            }
+            setByAddress(target, address, nextValue, receiver, handler);
+            written++;
+        }
+        return written;
     };
 }
 
@@ -13871,7 +14672,7 @@ function setLoopContext(handler, loopContext, callback) {
  * StateClassのProxyトラップとして、プロパティアクセス時の値取得処理を担う関数（get）の実装です。
  *
  * 主な役割:
- * - 文字列プロパティの場合、特殊プロパティ（$1〜、$stateElement, $getAll, $postUpdate,
+ * - 文字列プロパティの場合、特殊プロパティ（$1〜、$stateElement, $getAll, $setAll, $postUpdate,
  *   $resolve, $trackDependency, $command, $streamStatus, $streamError）に応じた値やAPIを返却
  * - 通常のプロパティはgetResolvedPathInfoでパス情報を解決し、getListIndexでリストインデックスを取得
  * - getByRefで構造化パス・リストインデックスに対応した値を取得
@@ -13932,6 +14733,11 @@ function get(target, prop, receiver, handler) {
                 case "$getAll": {
                     return (path, indexes) => {
                         return getAll(target, prop, receiver, handler)(path, indexes);
+                    };
+                }
+                case "$setAll": {
+                    return (path, indexes, value, options) => {
+                        return setAll(target, prop, receiver, handler)(path, indexes, value, options);
                     };
                 }
                 case "$postUpdate": {
@@ -14896,8 +15702,12 @@ class State extends HTMLElementBase {
         if (!this.hasAttribute('enable-ssr') || inSsr()) {
             await this._callStateConnectedCallback();
         }
-        // サーバーモード + enable-ssr: バインディング完了後に <wcs-ssr> を生成
-        if (inSsr() && this.hasAttribute('enable-ssr')) {
+        // サーバーモード + enable-ssr: バインディング完了後に <wcs-ssr> を生成。
+        // orchestrated（サーバー主導の最終パス、docs/ssr-router-design.md §5）では
+        // 生成しない — renderToString が全要素の完了後にまとめて生成するため。
+        // ここで生成すると、router 等が後から挿入した内容の構造テンプレートを
+        // 取り逃がすレースがある（state のロード方式と文書順に依存）
+        if (inSsr() && this.hasAttribute('enable-ssr') && !isOrchestratedSsr()) {
             try {
                 await getBindingsReady(this.rootNode);
                 const name = this.getAttribute('name') || 'default';
@@ -15199,11 +16009,63 @@ function registerComponents(registry = customElements) {
     }
 }
 
+/**
+ * `<html lang>` を既定ロケールとして採る。
+ *
+ * ロケール依存フィルタ（`locale` / `date` / `time` / `datetime`）は `config.locale`
+ * を読むが、それを設定できる公開の入口は `bootstrapState({ locale })` しかない。
+ * 一方 `auto` エントリは `bootstrapState()` を引数なしで呼ぶため、CDN 一発
+ * （`<script src=".../@wcstack/state/auto">`）で読み込んだページには**ロケールを
+ * 渡す口が無かった**。auto バンドルは SRI のため自己完結で、別途 `@wcstack/state`
+ * を import して `bootstrapState` を呼んでも別インスタンスになり効かない。
+ *
+ * `<html lang>` はページのロケールを書く HTML 標準の場所であり、SSR ではサーバーが、
+ * 静的ページでは head のスニペットが DOM 解析前に書く。そこを既定にすると
+ * **ロケールの正本が 1 つになり**、「設定を早く呼ぶ」という守りにくい順序の約束が
+ * 「`<html lang>` が state のロードより前にある」という構造的な保証に変わる。
+ *
+ * 明示指定（`bootstrapState({ locale })`）が常に優先する。
+ */
+function localeFromDocument() {
+    const lang = document.documentElement?.lang;
+    if (!lang) {
+        return undefined;
+    }
+    try {
+        // 妥当な BCP-47 タグでなければ Intl が RangeError を投げる。不正な lang を
+        // そのまま採ると、これまで既定 'en' で動いていたページのフィルタが実行時に
+        // 落ちる。既定へ落として警告するほうが、黙って壊すより回復しやすい。
+        Intl.getCanonicalLocales(lang);
+        return lang;
+    }
+    catch {
+        console.warn(`[@wcstack/state] <html lang="${lang}"> is not a valid BCP-47 language tag. ` +
+            `Falling back to the default locale for filters.`);
+        return undefined;
+    }
+}
+function resolveConfig(config) {
+    if (typeof config?.locale === "string") {
+        return config;
+    }
+    const locale = localeFromDocument();
+    if (locale === undefined) {
+        return config;
+    }
+    return { ...config, locale };
+}
 function bootstrapState(config, registry) {
-    if (config) {
-        setConfig(config);
+    const resolved = resolveConfig(config);
+    if (resolved) {
+        setConfig(resolved);
     }
     registerComponents(registry);
+    // binder プロトコルの提供（docs/binder-protocol-design.md）。router が後から
+    // 差し込むノードをバインドできるようにする。登録は冪等。
+    registerBinder();
+    // ssr-snapshot プロトコルの提供（docs/ssr-router-design.md §5）。renderToString が
+    // <wcs-ssr> 生成をサーバー主導の最終パスへ回せるようにする。登録は冪等。
+    registerSsrSnapshotBuilder();
     // DevTools Hook Protocol への source 登録（SSR では no-op・冪等）
     registerDevtoolsSource();
 }
