@@ -18,8 +18,8 @@
 //   node scripts/sync-io-core.mjs          # write/refresh all copies
 //   node scripts/sync-io-core.mjs --check   # CI: fail if any copy is stale/missing
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -74,6 +74,56 @@ const PACKAGE_FILES = {
   "pointer-lock": CAPABILITY_ONLY,
 };
 
+// --- Completeness guards ---------------------------------------------------
+// Same two-guard scheme as sync-protocol-types.mjs: (1) every file in /io-core/
+// must be registered in DEST_NAME, so a new canonical cannot land undistributed;
+// (2) every copy carrying this script's banner must be a registered target, so a
+// hand-copy into an unlisted package cannot silently drift. Both fail in write
+// mode too.
+
+function assertCanonicalDirComplete() {
+  const unregistered = readdirSync(join(repoRoot, "io-core"), { withFileTypes: true })
+    .filter((e) => e.isFile() && !(e.name in DEST_NAME))
+    .map((e) => e.name);
+  if (unregistered.length === 0) return;
+  console.error(
+    `Unregistered file(s) in /io-core/: ${unregistered.join(", ")}\n` +
+    "Every file in the canonical dir must be copy-distributed by this script.\n" +
+    "Register each one in scripts/sync-io-core.mjs (DEST_NAME plus the consuming\n" +
+    "packages in PACKAGE_FILES), or move it out of /io-core/.",
+  );
+  process.exit(1);
+}
+
+const BANNER_PATTERN = /Generated from \/io-core\/\S+ by scripts\/sync-io-core\.mjs/;
+const SCAN_EXCLUDED_DIRS = new Set(["dist", ".tsc-out", "node_modules", "coverage"]);
+const SCAN_EXTENSIONS = new Set([".ts", ".js", ".mjs", ".cjs"]);
+
+function* scannableFiles(dir) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (!SCAN_EXCLUDED_DIRS.has(entry.name)) yield* scannableFiles(full);
+    } else if (SCAN_EXTENSIONS.has(extname(entry.name))) {
+      yield full;
+    }
+  }
+}
+
+function assertNoOrphanCopies(expectedDests) {
+  const orphans = [];
+  for (const file of scannableFiles(join(repoRoot, "packages"))) {
+    if (!BANNER_PATTERN.test(readFileSync(file, "utf8").slice(0, 400))) continue;
+    if (!expectedDests.has(file)) orphans.push(file.slice(repoRoot.length + 1).split(sep).join("/"));
+  }
+  if (orphans.length === 0) return;
+  console.error(
+    `Orphan generated copies (carry this script's banner but are not registered targets):\n  ${orphans.join("\n  ")}\n` +
+    "Add the package to PACKAGE_FILES in scripts/sync-io-core.mjs, or delete the copy.",
+  );
+  process.exit(1);
+}
+
 const banner = (sourceName) =>
   "// ===========================================================================\n" +
   "// AUTO-GENERATED FILE - DO NOT EDIT.\n" +
@@ -100,6 +150,10 @@ function main() {
   const targets = Object.entries(PACKAGE_FILES).flatMap(([pkg, sources]) =>
     sources.map((source) => ({ pkg, fileName: DEST_NAME[source], content: contents.get(source) })),
   );
+
+  assertCanonicalDirComplete();
+  assertNoOrphanCopies(new Set(targets.map(({ pkg, fileName }) => destFor(pkg, fileName))));
+
   const stale = [];
 
   for (const { pkg, fileName, content } of targets) {
