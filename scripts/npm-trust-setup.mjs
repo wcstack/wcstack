@@ -127,17 +127,24 @@ if (unknownNames.length) {
 }
 const targets = only.size ? allTargets.filter((n) => only.has(n)) : allTargets;
 
-// How the latest published version was actually authenticated, read from the
-// registry's publisher record. An OIDC publish is attributed to GitHub Actions
-// and carries a trustedPublisher block; a token publish is attributed to the
-// account that owns the token. This is the outcome, not the configuration —
-// stronger evidence than "a trusted publisher is registered" — and `npm view`
-// is unauthenticated, so it costs no OTP window.
+// How the latest published version was actually authenticated. npm 10's
+// `view <pkg> _npmUser --json` returned an object whose trustedPublisher block
+// identified an OIDC publish, but npm 11 flattens the field to its display
+// string, so that block is no longer observable through the CLI (this misread
+// every package as TOKEN when the machine moved to npm 11). The version-stable
+// signal is the provenance attestation: a trusted publish attests
+// automatically, a token publish does not. This is the outcome, not the
+// configuration — stronger evidence than "a trusted publisher is registered" —
+// and `npm view` is unauthenticated, so it costs no OTP window. _npmUser is
+// still read for the attribution line (string on npm 11, object on npm 10).
 if (verify) {
   const oidc = [];
   const token = [];
   const unknown = [];
   for (const name of targets) {
+    // status 0 + a URL = attested (trusted publish); status 0 + empty output =
+    // published without provenance (token); non-zero = unreadable/nonexistent.
+    const att = localNpm(["view", name, "dist.attestations.url"]);
     const { status, stdout } = localNpm(["view", name, "_npmUser", "--json"]);
     const raw = (stdout ?? "").replace(/^﻿/, "").trim();
     let user;
@@ -146,9 +153,11 @@ if (verify) {
     } catch {
       user = null;
     }
-    if (user && typeof user === "object" && user.trustedPublisher) oidc.push(name);
-    else if (user) token.push([name, typeof user === "string" ? user : (user.name ?? "?")]);
-    else unknown.push(name);
+    const attested = att.status === 0 && (att.stdout ?? "").trim() !== "";
+    const readable = att.status === 0 || user !== null;
+    if (!readable) unknown.push(name);
+    else if (attested || (user !== null && typeof user === "object" && Boolean(user.trustedPublisher))) oidc.push(name);
+    else token.push([name, typeof user === "string" ? user : (user?.name ?? "?")]);
   }
   for (const name of oidc) console.log(`oidc         ${name}`);
   for (const [name, who] of token) console.log(`TOKEN        ${name} (published by ${who})`);
