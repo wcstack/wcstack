@@ -1,7 +1,24 @@
 {
   "name": "wcstack",
   "version": "1.31.0",
-  "description": "Entry point for wcstack - 45 zero-dependency Web Components packages. Reactive data binding, declarative routing and 30+ Web APIs as HTML tags. Buildless: one CDN script tag per package. Run `npm view wcstack readme` for the full authoring guide.",
+  "description": "wcstack SPA-core bundle: reactive state, router, fetch, storage and autoloader as one script tag with one SRI hash. Also the entry point for the wcstack ecosystem - run `npm view wcstack readme` for the full authoring guide.",
+  "type": "module",
+  "exports": {
+    "./auto": "./dist/auto.min.js"
+  },
+  "files": [
+    "README.md",
+    "dist"
+  ],
+  "scripts": {
+    "clean": "rimraf dist .tsc-out",
+    "build": "rimraf dist .tsc-out && tsc && rollup -c",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src",
+    "prepublishOnly": "npm run build && npm run test:coverage"
+  },
   "keywords": [
     "web-components",
     "custom-elements",
@@ -10,6 +27,7 @@
     "state-management",
     "router",
     "spa",
+    "bundle",
     "buildless",
     "zero-dependencies",
     "declarative",
@@ -26,7 +44,25 @@
     "url": "https://github.com/wcstack/wcstack/issues"
   },
   "license": "MIT",
-  "files": [
-    "README.md"
-  ]
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@rollup/plugin-node-resolve": "^16.0.0",
+    "@rollup/plugin-terser": "^0.4.4",
+    "@rollup/plugin-typescript": "^11.1.6",
+    "@vitest/coverage-v8": "^4.0.15",
+    "@wcstack/autoloader": "file:../autoloader",
+    "@wcstack/fetch": "file:../fetch",
+    "@wcstack/router": "file:../router",
+    "@wcstack/state": "file:../state",
+    "@wcstack/storage": "file:../storage",
+    "eslint": "^9.39.1",
+    "globals": "^16.5.0",
+    "happy-dom": "^20.0.11",
+    "rimraf": "^6.0.1",
+    "rollup": "^4.22.4",
+    "tslib": "^2.8.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.49.0",
+    "vitest": "^4.0.15"
+  }
 }

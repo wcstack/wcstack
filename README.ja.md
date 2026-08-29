@@ -352,6 +352,14 @@ const html = await renderToString(`
 
 全パッケージのダイジェストは各 GitHub Release の本文（と添付の `sri.json`）に載ります。CDN から取得したものではなく、公開する tree から算出しています。詳細と「意図的にカバーしない範囲」は [docs/sri.ja.md](docs/sri.ja.md)。
 
+複数パッケージを使うページには **`wcstack` エントリバンドル**があります。SPA コア（state / router / fetch / storage / autoloader）を自己完結の 1 タグに束ねたもので、1 リクエスト・ハッシュ 1 個がコア全体をカバーします（219 KB min / 61 KB gzip）。少なくて済むページでは従来どおり個別パッケージが既定です。jsDelivr の `/combine/` で自分で連結してはいけません（minify 済み ESM は連結に耐えません — [docs/sri.ja.md §3.1](docs/sri.ja.md)）:
+
+```html
+<script type="module"
+        src="https://cdn.jsdelivr.net/npm/wcstack@1.32.0/dist/auto.min.js"
+        integrity="sha384-..."></script>
+```
+
 ---
 
 ## コンポーネント状態で CSS を切り替える — `:state()`

@@ -84,6 +84,14 @@ To load several packages, use one version-pinned single-file tag per package. Ea
         integrity="sha384-…"></script>
 ```
 
+For the single-request form, use the **`wcstack` entry bundle** instead: one Rollup-built (identifier-safe — Rollup renames what concatenation collides) tag covering the SPA-core packages (state / router / fetch / storage / autoloader), with one full-coverage digest, listed in `sri.json` like every other package. Loading it alongside an individual package's `/auto` is safe: every member define is guarded and the protocol installs are first-wins, so whichever copy evaluates first owns the page.
+
+```html
+<script type="module"
+        src="https://cdn.jsdelivr.net/npm/wcstack@1.32.0/dist/auto.min.js"
+        integrity="sha384-…"></script>
+```
+
 ## 4. Coverage — what is protected and what is not
 
 | Target | Protected by integrity? |

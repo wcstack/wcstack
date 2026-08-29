@@ -19,15 +19,18 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Discover release-target packages: any packages/* whose package.json
-          # is scoped under @wcstack/. This auto-includes new packages and
-          # excludes non-published ones (e.g. the vscode-wcs extension).
+          # Discover CI-target packages: any packages/* whose package.json is
+          # scoped under @wcstack/, plus the unscoped `wcstack` entry bundle
+          # (a buildable package since docs/distribution-robustness-impl-plan.md
+          # Phase 4). Auto-includes new scoped packages; still excludes
+          # non-published ones (e.g. the vscode-wcs extension).
           all=()
           for dir in packages/*/; do
             [ -f "${dir}package.json" ] || continue
             name=$(node -p "require('./${dir}package.json').name")
             case "$name" in
               @wcstack/*) all+=("$(basename "$dir")") ;;
+              wcstack)    all+=("$(basename "$dir")") ;;
             esac
           done
 
