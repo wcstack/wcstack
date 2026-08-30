@@ -180,6 +180,15 @@ jobs:
           npm run build
           npm test
         working-directory: packages/testing
+      # wcs-tsc over every example page. Experimental and NON-GATING for one
+      # release (docs/app-testing-and-typescript-impl-plan.md §7-6): the goal is
+      # zero false positives over examples/ before it becomes a gate. Remove
+      # continue-on-error once a release cycle shows a clean run.
+      - name: Type-check <wcs-state> inline scripts in examples with wcs-tsc (experimental, non-gating)
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          node packages/typescript/dist/wcs-tsc.mjs -p examples/tsconfig.wcs-tsc.json
       - name: Validate data-wcs bindings (error severity fails the build)
         run: |
           set -euo pipefail

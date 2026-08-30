@@ -143,7 +143,7 @@ data-wcs / `{{ }}` / コメントバインディングのパス ⇔ state 宣言
 | 案 | 捨てる理由 |
 |---|---|
 | **rename（パス一括改名）** | TS の rename が追えるのは素の `this.x` ドットアクセスのみ。`this["users.*.name"]` ブラケット参照は preamble の `_WcsPaths<T>` 合成型経由で**宣言位置まで遡れない**ため、実態は正規表現一括置換 = 唯一「ユーザーのファイルを書き換える」形で精度リスクが顕在化する。需要シグナル（issue）が立つまで封印。 |
-| **`@wcstack/language-server` 汎用化** | `server.ts` は typescript + Volar 5 パッケージが runtime dependencies で、lint の「148KB 自己完結ラッパー」パターンは複製不能（typescript 同梱で数十 MB か zero-dep 放棄の二択）。しかも Cursor / Windsurf は VS Code 拡張をそのまま実行でき主要 AI エディタには既到達。残る聴衆に対しエディタ別検証・バグ対応の恒久コストが見合わない。 |
+| **`@wcstack/language-server` 汎用化** | `server.ts` は typescript + Volar 5 パッケージが runtime dependencies で、lint の「148KB 自己完結ラッパー」パターンは複製不能（typescript 同梱で数十 MB か zero-dep 放棄の二択）。しかも Cursor / Windsurf は VS Code 拡張をそのまま実行でき主要 AI エディタには既到達。残る聴衆に対しエディタ別検証・バグ対応の恒久コストが見合わない。**据え置き（2026-08-30 再確認）**: 他エディタ・CI には `wcs-validate`（stateSchema 消費）と `wcs-tsc`（`@wcstack/typescript`・同じ Language Plugin を runTsc 経由で）で到達する — [app-testing-and-typescript-impl-plan.md](./app-testing-and-typescript-impl-plan.md) D5 / [typescript.md](./typescript.md) §4。 |
 | **devtools 内 SVG グラフ描画** | ゼロ依存 vanilla DOM での有向グラフ自動レイアウト自作が隠れ L。機能価値は Wiring ペインのリスト + declared/connected バッジで出る。「絵」の役割は mermaid 静的出力（`wcs-validate graph --format=mermaid`、背骨後 S）に寄せる。 |
 | **属性文字列リンク（devtools → エディタ）** | 文字列コピー + workspace 検索で今日できることの自動化 = ガジェット。 |
 | **公開グラフフォーマットの凍結** | D6。内部表現で全消費者が賄える。 |

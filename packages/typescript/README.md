@@ -44,6 +44,25 @@ The recommended CI gate is
 npx wcs-schema check src/state.ts && npx wcs-validate --strict index.html
 ```
 
+### `wcs-tsc [--url-imports=any|error] [--wcs-defaults] [tsc arguments...]`
+
+`tsc` over `.html`: every `<wcs-state>` inline `<script type="module">` is type-checked through the same language plugin the VS Code extension uses (typed `this`, automatic `defineState` wrap, `@wcstack/state` imports stripped whether bare or a CDN URL), and diagnostics point into the HTML:
+
+```bash
+npm i -D @volar/typescript@~2.4.0 @volar/language-core@~2.4.0   # optional peers, only wcs-tsc needs them
+npx wcs-tsc --noEmit
+# index.html(9,14): error TS2551: Property 'coutn' does not exist on type '_WcsThis<…>'. Did you mean 'count'?
+```
+
+| Option | Description |
+|---|---|
+| `--url-imports=any` (default) | Every `http(s)://` module import types as `any` — buildless pages import from a CDN that tsc cannot resolve |
+| `--url-imports=error` | Leave URL imports alone (TS2307 each) |
+| `--wcs-defaults` | If the project tsconfig lacks `include` covering `**/*.html`, `noImplicitThis`, `allowJs` or `checkJs`, run with a temporary config that extends it and adds them (otherwise only a warning is printed and HTML may go unchecked) |
+| anything else | passed to tsc verbatim (`-p`, `--noEmit`, …) |
+
+Exit codes are tsc's (`0` clean, non-zero with diagnostics); `2` when `typescript` / `@volar/typescript` cannot be resolved or an option is invalid. A page with several `<wcs-state>` blocks is combined into one virtual module (imports hoisted, each block in its own scope); a page without inline state is an empty module. The mechanism is vue-tsc's: `@volar/typescript`'s `runTsc` patches the project's own `typescript/lib/tsc.js`.
+
 ## What the generated schema contains
 
 Only the JSON-Schema subset the sidecar spec allows (`type`, `properties`, `required`, `items`, `enum`, `const`, `anyOf`):

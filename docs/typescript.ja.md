@@ -86,6 +86,20 @@ document.querySelectorAll("wcs-route");           // NodeListOf<Route>
 - 対象: 全パッケージの全 `wcs-*` 要素。ヘルパー・ノードタグ（`wcs-fetch-header`・`wcs-voice`・`wcs-osc` …）、`wcs-state` / `wcs-ssr`、router のタグを含む。`wcs-guard-handler` は要素クラスを持たない config 名なので対象外。
 - ドリフトはテストされる: vscode-wcs の `tagNameMap.test.ts`（CI の `wcs-validate` job で常時実行）が組み込みタグカタログと宣言の一致を双方向で検査し、`state` / `router` / `devtools` は自分の `config.tagNames` と宣言を比較する。
 
-## 4. インライン state スクリプトの型検査: `wcs-tsc` — *予定（Phase 5）*
+## 4. インライン state スクリプトの型検査: `wcs-tsc`
 
-`wcs-tsc`（同じく `@wcstack/typescript`）は `.html` に対して `tsc` を回し、各 `<wcs-state>` のインライン `<script type="module">` を VS Code 拡張と同じ仮想コードプラグインで写像する。`this.coutn++` は `file.html:line:col TS2339` で CI を落とす。`tsconfig.json` に `"include": ["**/*.html"]` が必要で、`@volar/typescript` は optional peer。
+`wcs-tsc`（同じく `@wcstack/typescript`）は `.html` に対して `tsc` を回す。各 `<wcs-state>` のインライン `<script type="module">` は VS Code 拡張と**同じ** Volar 言語プラグインを通る — 型付き `this` のプリアンブル、素の `export default {}` の自動 `defineState` ラップ、`@wcstack/state` の import（bare **でも** CDN URL でも）の除去 — ので、エディタが下線を引くものがそのまま CI に出る:
+
+```bash
+npm i -D @wcstack/typescript typescript @volar/typescript@~2.4.0 @volar/language-core@~2.4.0
+npx wcs-tsc --noEmit                 # または npx wcs-tsc -p tsconfig.json --noEmit
+# index.html(9,14): error TS2551: Property 'coutn' does not exist on type '_WcsThis<{ count: number; … }>'. Did you mean 'count'?
+```
+
+仕組みは vue-tsc と同じ: `@volar/typescript` の `runTsc` がプロジェクト自身の `typescript/lib/tsc.js` にパッチを当て、`.html` を受け付けてプラグイン経由で program を組む。それ以外の tsc 引数はそのまま素通しで、exit code も tsc のもの。
+
+- **プロジェクト側の設定。** `tsconfig.json` が HTML に届く必要がある: `**/*.html` を覆う `include`（または `include` 無し = 既定で覆う）に加え、`noImplicitThis`（型付き `this`）・`allowJs`・`checkJs`。`wcs-tsc` は設定を監査して不足を警告し、`--wcs-defaults` なら元の設定を extends して不足を足した一時 config で実行する（終了時に削除）。
+- **CDN import。** buildless なページは `https://esm.run/...` から import するが、tsc はそれを解決できない。既定（`--url-imports=any`）では全ての `http(s)://` モジュールが `any` に型付き、`--url-imports=error` なら TS2307 で落ちる。`@wcstack/state` の URL import はどちらでも剥がされてプリアンブルが型を与える。
+- **1 ページに複数の `<wcs-state>`。** tsc は 1 ファイル 1 サービススクリプトしか扱えないので、ブロックを 1 本の仮想モジュールに合成する: import は先頭に巻き上げ、各ブロックは自分のスコープ（`{ const __wcs_state_N = defineState({ … }); }`）に入り、診断は HTML へ写像される。インライン state の無いページは空のモジュール — マークアップが TypeScript として読まれることはない。
+- peer: `typescript`（必須）、`@volar/typescript` + `@volar/language-core`（optional — このコマンドだけが必要とし、プロジェクト側から先に解決する）。パッケージのランタイム依存はゼロのまま。
+- このリポジトリの CI は examples の全ページに対して `wcs-tsc` を experimental・非ゲートの job として 1 リリース分回し、偽陽性ゼロを確認できたらゲート化する（[app-testing-and-typescript-impl-plan.md](./app-testing-and-typescript-impl-plan.md) §7-6）。

@@ -40,6 +40,18 @@ export default [
     external,
     plugins: tsPlugin(),
   },
+  // `wcs-tsc` bin
+  {
+    input: "src/cli/wcsTsc.ts",
+    output: {
+      file: "dist/wcs-tsc.mjs",
+      format: "esm",
+      sourcemap: true,
+      banner: "#!/usr/bin/env node",
+    },
+    external,
+    plugins: tsPlugin(),
+  },
   // Type declarations
   {
     input: "src/exports.ts",

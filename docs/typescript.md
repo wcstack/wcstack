@@ -86,6 +86,20 @@ document.querySelectorAll("wcs-route");           // NodeListOf<Route>
 - Covered: every `wcs-*` element of every package, including helper and node tags (`wcs-fetch-header`, `wcs-voice`, `wcs-osc`, …), `wcs-state` / `wcs-ssr`, and the router tags. `wcs-guard-handler` is a config name without an element class and is not mapped.
 - Drift is tested: vscode-wcs' `tagNameMap.test.ts` (always run by CI's `wcs-validate` job) checks that the built-in tag catalog and the declarations agree in both directions, and `state` / `router` / `devtools` compare their declaration with their own `config.tagNames`.
 
-## 4. Type-checking inline state scripts: `wcs-tsc` — *planned (Phase 5)*
+## 4. Type-checking inline state scripts: `wcs-tsc`
 
-`wcs-tsc` (also in `@wcstack/typescript`) will run `tsc` over `.html` files, mapping each `<wcs-state>` inline `<script type="module">` through the same virtual-code plugin the VS Code extension uses, so `this.coutn++` fails CI with a `file.html:line:col TS2339`. It requires `"include": ["**/*.html"]` in `tsconfig.json`, and `@volar/typescript` as an optional peer.
+`wcs-tsc` (also in `@wcstack/typescript`) runs `tsc` over `.html` files. Every `<wcs-state>` inline `<script type="module">` goes through the same Volar language plugin the VS Code extension uses — the typed-`this` preamble, the automatic `defineState` wrap of a bare `export default {}`, the removal of `@wcstack/state` imports (bare **or** CDN URL) — so what the editor underlines is what CI reports:
+
+```bash
+npm i -D @wcstack/typescript typescript @volar/typescript@~2.4.0 @volar/language-core@~2.4.0
+npx wcs-tsc --noEmit                 # or: npx wcs-tsc -p tsconfig.json --noEmit
+# index.html(9,14): error TS2551: Property 'coutn' does not exist on type '_WcsThis<{ count: number; … }>'. Did you mean 'count'?
+```
+
+It is vue-tsc's mechanism: `@volar/typescript`'s `runTsc` patches the project's own `typescript/lib/tsc.js` to accept `.html` and to build the program through the plugin; every other tsc argument passes through untouched, and the exit code is tsc's.
+
+- **Project setup.** The `tsconfig.json` must reach the HTML: an `include` that covers `**/*.html` (or no `include`, whose default does), plus `noImplicitThis` (typed `this`), `allowJs` and `checkJs`. `wcs-tsc` audits the config and warns when something is missing; `--wcs-defaults` runs with a temporary config that extends yours and adds them (deleted afterwards).
+- **CDN imports.** A buildless page imports from `https://esm.run/...`, which tsc cannot resolve. By default (`--url-imports=any`) every `http(s)://` module types as `any`; `--url-imports=error` leaves them to fail with TS2307. `@wcstack/state` URL imports are stripped and typed by the preamble either way.
+- **Several `<wcs-state>` on one page.** tsc handles one service script per file, so the blocks are combined into one virtual module: imports hoisted to the top, each block in its own scope (`{ const __wcs_state_N = defineState({ … }); }`), diagnostics mapped back to the HTML. A page without inline state is an empty module — its markup is never parsed as TypeScript.
+- Peers: `typescript` (required), `@volar/typescript` + `@volar/language-core` (optional — only this command needs them, resolved from the project first). The package keeps zero runtime dependencies.
+- CI in this repository runs `wcs-tsc` over every example page as an experimental, non-gating job for one release; it becomes a gate once a cycle shows no false positives ([app-testing-and-typescript-impl-plan.md](./app-testing-and-typescript-impl-plan.md) §7-6).
