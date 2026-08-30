@@ -50,6 +50,8 @@ console.log(html);
 // Fully rendered HTML with <wcs-ssr> hydration data
 ```
 
+The same call doubles as a **snapshot test** for a page: `expect(await renderToString(html)).toMatchSnapshot()` in vitest pins the rendered markup without a browser. For headless DOM tests that also exercise writes and handlers, `installGlobals()` (below) is the globals swap to reuse — see [Testing Your Page](../state/README.md#testing-your-page) in the state README.
+
 ### `RenderCore` — Observable rendering with caching
 
 ```javascript

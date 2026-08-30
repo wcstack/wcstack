@@ -363,6 +363,8 @@ Using several packages? The **`wcstack` entry bundle** packs the SPA core — st
         integrity="sha384-..."></script>
 ```
 
+Testing the page? It is plain DOM — mount it under happy-dom, await the bindings, assert: [Testing Your Page](packages/state/README.md#testing-your-page).
+
 ---
 
 ## Styling on component state — `:state()`

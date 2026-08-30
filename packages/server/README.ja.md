@@ -50,6 +50,8 @@ console.log(html);
 // ハイドレーションデータ付きのレンダリング済み HTML
 ```
 
+同じ呼び出しはページの**スナップショットテスト**にもなります。vitest で `expect(await renderToString(html)).toMatchSnapshot()` と書けば、ブラウザなしで描画結果を固定できます。書き込みやハンドラまで動かすヘッドレス DOM テストでは、後述の `installGlobals()` がそのまま再利用できるグローバル差し替えです — state README の[ページをテストする](../state/README.ja.md#ページをテストする)を参照してください。
+
 ### `RenderCore` — 監視可能なレンダリング（キャッシュ付き）
 
 ```javascript

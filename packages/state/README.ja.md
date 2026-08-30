@@ -2238,6 +2238,119 @@ bootstrapState({
 > が稼働中の `static wcBindable` サーフェスと sidecar manifest の drift を開発時診断として
 > 報告します。
 
+## ページをテストする
+
+`<wcs-state>` で組んだページは素の DOM なので、[happy-dom](https://github.com/capricorn86/happy-dom) でヘッドレスにテストできます — ブラウザ不要・ビルド不要・テスト専用 API 不要。レシピは 3 つ、いずれも書いてあるとおりに動きます（レシピ 1 は同じ行を実行する [`__tests__/readme.testingRecipe.test.ts`](__tests__/readme.testingRecipe.test.ts) で固定しています）。
+
+### 1. vitest + happy-dom
+
+`vitest.config.ts`:
+
+```ts
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: { environment: "happy-dom", setupFiles: ["./tests/setup.ts"] },
+});
+```
+
+`tests/setup.ts` — 要素の登録を 1 回だけ行い、インラインの `<script type="module">` state を `data:` URL ローダーに回します（Node は `blob:` URL を import できないため、この行が無いとインライン script の state は永久に読み込み中になります）:
+
+```ts
+import { bootstrapState } from "@wcstack/state";
+
+bootstrapState();
+URL.createObjectURL = undefined as any;
+```
+
+テスト:
+
+```ts
+import { expect, it } from "vitest";
+import { getBindingsReady } from "@wcstack/state";
+
+const settle = () => new Promise<void>((r) => setTimeout(r, 0));
+
+it("描画・再描画・ハンドラ実行", async () => {
+  // 1. テスト対象の断片をマウント
+  document.body.innerHTML = `
+    <wcs-state json='{"count": 1, "items": ["apple", "banana"]}'></wcs-state>
+    <p id="count" data-wcs="textContent: count"></p>
+    <ul id="items">
+      <template data-wcs="for: items">
+        <li data-wcs="textContent: items.*"></li>
+      </template>
+    </ul>
+  `;
+
+  // 2. state 要素を待ち、続けて `document` 配下の全バインドを待つ
+  const stateEl = document.querySelector("wcs-state") as any;
+  await stateEl.connectedCallbackPromise;
+  await getBindingsReady(document);
+
+  // 3. 初期描画を検証
+  expect(document.querySelector("#count")!.textContent).toBe("1");
+  expect(document.querySelectorAll("#items li").length).toBe(2);
+
+  // 4. writable プロキシ経由で書く — ハンドラがやっていることと同じ
+  await stateEl.createStateAsync("writable", async (state: any) => {
+    state.count = 42;
+    state.items = [...state.items, "cherry"];
+  });
+  await settle();
+
+  // 5. 再描画を検証
+  expect(document.querySelector("#count")!.textContent).toBe("42");
+  expect(document.querySelectorAll("#items li").length).toBe(3);
+});
+```
+
+ユーザー操作と同じ経路で動かすなら、state はインライン（メソッド込み）のまま DOM イベントを発火します。`data-wcs="onclick: up"` のハンドラは `button.click()` で走り、`settle()` 1 回の後に DOM へ反映されます。
+
+- `getBindingsReady(root)` は `root`（`document` か shadow root）配下の全バインド構築が終わると resolve し、バインド初期化に失敗すると reject します（v1.26+）。
+- 更新はマイクロタスク境界で収束します。書き込み後の `setTimeout(0)` 1 回で十分です。
+- `state.items = [...state.items, "cherry"]` がリアクティブな書き方です — `state.items.push()` は観測されません（ハンドラ内と同じ規則）。
+- happy-dom は `customElements.define` 時に既存ノードを**差し替えて**アップグレードします。「遅れて define された同一ノードに値が届く」はヘッドレスでは検証できません。happy-dom と実ブラウザのイベントタイミング差ももう 1 つの死角なので、そこは実ブラウザ e2e（Playwright）を 1 本残してください。
+
+### 2. 素の Node（vitest なし）
+
+`@wcstack/server` が SSR に使っているグローバル差し替えをそのまま export しているので再利用します。**`@wcstack/state` は `installGlobals` の後に動的 import** してください — 要素クラスはモジュール評価時に基底クラスを決めるので、ファイル先頭で静的 import すると happy-dom が構築できない要素が登録されます:
+
+```js
+import { Window } from "happy-dom";
+import { installGlobals } from "@wcstack/server";
+
+const window = new Window({ url: "http://localhost/" });
+const restore = installGlobals(window);   // document, customElements, HTMLElement, ...（GLOBALS_KEYS）
+try {
+  const { bootstrapState, getBindingsReady } = await import("@wcstack/state");
+  bootstrapState();
+  // ... 以降はレシピ 1 と同じ mount / await / assert
+} finally {
+  restore();
+  await window.happyDOM.close();
+}
+```
+
+`installGlobals` は `URL.createObjectURL` の無効化も行うので、インライン script の state はレシピ 1 と同じ経路で読み込まれます。
+
+### 3. 描画結果のスナップショット
+
+`@wcstack/server` の [`renderToString()`](../server/README.ja.md) は描画済みマークアップを文字列で返します。保存したスナップショットと比較してください:
+
+```ts
+import { expect, it } from "vitest";
+import { renderToString } from "@wcstack/server";
+
+it("描画結果がスナップショットと一致する", async () => {
+  const html = await renderToString(`
+    <wcs-state json='{"items": ["apple", "banana"]}' enable-ssr></wcs-state>
+    <ul><template data-wcs="for: items"><li data-wcs="textContent: items.*"></li></template></ul>
+  `);
+  expect(html).toMatchSnapshot();
+});
+```
+
 ## TypeScript サポート
 
 `defineState()` で状態オブジェクトをラップすると、メソッドや getter 内の `this` に型補完が効きます。ランタイムコストはゼロ（アイデンティティ関数）です。

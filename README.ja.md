@@ -361,6 +361,8 @@ const html = await renderToString(`
         integrity="sha384-..."></script>
 ```
 
+ページをテストするには？ 素の DOM なので、happy-dom 上にマウントしてバインドを待ち、assert するだけです: [ページをテストする](packages/state/README.ja.md#ページをテストする)。
+
 ---
 
 ## コンポーネント状態で CSS を切り替える — `:state()`
