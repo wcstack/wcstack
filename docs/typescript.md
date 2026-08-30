@@ -68,9 +68,23 @@ Pitfalls:
 - `--merge` replaces the named state's `stateSchema` wholesale; a hand-written schema for the same state does not survive (the sidecar spec forbids implicit merging). Hand-written schemas belong to states you do not generate.
 - Two application manifests declaring the same state name are a `wcs/manifest-state-collision` error with no winner; when passing manifests explicitly on the command line, pass one per state name.
 
-## 3. Typed element lookups: `HTMLElementTagNameMap` — *planned (Phase 3)*
+## 3. Typed element lookups: `HTMLElementTagNameMap`
 
-Each component package will augment `HTMLElementTagNameMap` with its default tag names, so `document.querySelector("wcs-fetch")` is a `WcsFetch`. The augmentation lives in the package's own `.d.ts`; it takes effect only once the package's types are in your program — `import "@wcstack/fetch"` (a side-effect import) or a `types` entry in `tsconfig.json`. A page that only loads `https://esm.run/@wcstack/fetch/auto` gains nothing here.
+Every component package augments `HTMLElementTagNameMap` with its **default** tag names, so a lookup by tag is typed as the element class:
+
+```ts
+import "@wcstack/fetch";                       // the augmentation ships in the package's index.d.ts
+import type { WcsFetch } from "@wcstack/fetch";
+
+const el = document.querySelector("wcs-fetch");   // WcsFetch | null
+el!.url = "/api/users";                           // typed property
+document.querySelectorAll("wcs-route");           // NodeListOf<Route>
+```
+
+- **It applies only when the package's types are in your program.** `import "@wcstack/fetch"` (a side-effect import — the runtime cost is nil when you already load the package), or a `"types": ["@wcstack/fetch"]` entry in `tsconfig.json`. A page that only loads `https://esm.run/@wcstack/fetch/auto` and never imports the package gets `HTMLElement`, as before.
+- **Default tag names only.** A project that renames tags through `IWritableTagNames` (`bootstrapFetch({ tagNames: { fetch: "my-fetch" } })`) is outside the map; declare its own augmentation if it wants typed lookups.
+- Covered: every `wcs-*` element of every package, including helper and node tags (`wcs-fetch-header`, `wcs-voice`, `wcs-osc`, …), `wcs-state` / `wcs-ssr`, and the router tags. `wcs-guard-handler` is a config name without an element class and is not mapped.
+- Drift is tested: vscode-wcs' `tagNameMap.test.ts` (always run by CI's `wcs-validate` job) checks that the built-in tag catalog and the declarations agree in both directions, and `state` / `router` / `devtools` compare their declaration with their own `config.tagNames`.
 
 ## 4. Type-checking inline state scripts: `wcs-tsc` — *planned (Phase 5)*
 

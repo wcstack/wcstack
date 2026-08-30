@@ -14,3 +14,15 @@ export type {
 // command-driven owner). The generic `WcsIoErrorInfo` type comes from the shared io-core.
 export type { WcsIoErrorInfo, WcsIoErrorPhase } from "./core/platformCapability.js";
 export { WCS_WORKER_ERROR_CODE } from "./core/workerCapabilities.js";
+
+// Typed element lookups (docs/typescript.md §3): `document.querySelector("wcs-worker")`
+// resolves to the element class. Default tag names only — a page that renames tags via
+// `IWritableTagNames` is outside this map. Declared here so the augmentation ships in
+// dist/index.d.ts; it applies once this package's types are in the consuming program
+// (`import "@wcstack/worker"` or a tsconfig `types` entry).
+import type { WcsWorker } from "./components/Worker.js";
+declare global {
+  interface HTMLElementTagNameMap {
+    "wcs-worker": WcsWorker;
+  }
+}
