@@ -247,6 +247,59 @@ describe("runValidation — CLI core", () => {
     // full では warning 行が存在する。
     expect(full.lines.some((l) => l.includes(" warning "))).toBe(true);
   });
+
+  describe("strict: exit code の閾値だけを warning に下げる(severity は不変)", () => {
+    // warning のみ(存在しないパス)。
+    const warnOnly: CliFileInput[] = [
+      { source: "warn.html", text: `<wcs-state json='{"a":1}'></wcs-state>\n<span data-wcs="textContent: coutn"></span>`, kind: "html" },
+    ];
+    // error のみ(壊れ manifest)。
+    const errorOnly: CliFileInput[] = [{ source: "bad.manifest.json", text: "{ oops", kind: "manifest" }];
+    // info のみ(<template> 外の mustache は FOUC の info)。
+    const infoOnly: CliFileInput[] = [
+      { source: "info.html", text: `<wcs-state json='{"a":1}'></wcs-state>\n<p>{{ a }}</p>`, kind: "html" },
+    ];
+
+    it("warning 側: strict なしは exit 0、strict ありは exit 1。severity ラベルと counts は両者で同じ", () => {
+      const lax = runValidation(warnOnly);
+      const strict = runValidation(warnOnly, { strict: true });
+      expect(lax.warningCount).toBe(1);
+      expect(lax.errorCount).toBe(0);
+      expect(lax.exitCode).toBe(0);
+
+      expect(strict.warningCount).toBe(1);
+      expect(strict.errorCount).toBe(0);
+      expect(strict.exitCode).toBe(1);
+      // 診断そのものは不変(severity を error に格上げしていない)。
+      expect(strict.lines).toEqual(lax.lines);
+      expect(strict.lines[0]).toMatch(/ warning wcs\/binding-path-missing /);
+      expect(strict.diagnosticsBySource.get("warn.html")).toEqual(lax.diagnosticsBySource.get("warn.html"));
+    });
+
+    it("error 側: strict の有無に関わらず exit 1", () => {
+      expect(runValidation(errorOnly).exitCode).toBe(1);
+      expect(runValidation(errorOnly, { strict: true }).exitCode).toBe(1);
+    });
+
+    it("info 側: strict でも info だけなら exit 0 のまま", () => {
+      const strict = runValidation(infoOnly, { strict: true });
+      expect(strict.infoCount).toBeGreaterThan(0);
+      expect(strict.warningCount).toBe(0);
+      expect(strict.errorCount).toBe(0);
+      expect(strict.exitCode).toBe(0);
+    });
+
+    it("strict + errorsOnly: 表示は error のみに絞られたまま、exit は warning で 1", () => {
+      const result = runValidation(warnOnly, { strict: true, errorsOnly: true });
+      expect(result.lines).toEqual([]);
+      expect(result.warningCount).toBe(1);
+      expect(result.exitCode).toBe(1);
+    });
+
+    it("strict: false は未指定と同じ", () => {
+      expect(runValidation(warnOnly, { strict: false }).exitCode).toBe(0);
+    });
+  });
 });
 
 describe("parseArgs — CLI 引数分解", () => {
@@ -265,5 +318,21 @@ describe("parseArgs — CLI 引数分解", () => {
     // フラグ無しなら errorsOnly は未設定(undefined)。
     const c = parseArgs(["a.html"]);
     expect(c.options.errorsOnly).toBeUndefined();
+  });
+
+  it("--strict を strict に分離し、errorsOnly と独立に立つ", async () => {
+    const { parseArgs } = await import("../src/cli.js");
+    const a = parseArgs(["--strict", "page.html"]);
+    expect(a.options.strict).toBe(true);
+    expect(a.options.errorsOnly).toBeUndefined();
+    expect(a.files).toEqual(["page.html"]);
+
+    const b = parseArgs(["--errors-only", "--strict", "a.html"]);
+    expect(b.options.strict).toBe(true);
+    expect(b.options.errorsOnly).toBe(true);
+
+    // フラグ無しなら strict は未設定(undefined)。
+    const c = parseArgs(["a.html"]);
+    expect(c.options.strict).toBeUndefined();
   });
 });

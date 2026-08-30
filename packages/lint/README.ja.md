@@ -26,7 +26,7 @@ npx wcs-validate --errors-only src/**/*.html
 `<wcs-state src="...">` で参照される外部 state（`.json` / `.js` / `.ts`）は HTML ファイルからの相対パスで解決され、パス検証の対象になります。URL・絶対パスは読み込まず、読めないファイルはスキップされ、解決できないパスは warning のままです。なお外部 state が**解決できた**ページには通常の検証面が全て適用されるため、error severity の検出（例: 配列でない値への `for:`）が「これまでパス未解決で沈黙していたビルド」を新たに落とすことがあります。
 
 ```
-wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-only] <file> [<file> ...]
+wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-only] [--strict] <file> [<file> ...]
 ```
 
 | オプション | 説明 |
@@ -35,6 +35,7 @@ wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-
 | `--state-tag=<name>` | state カスタム要素のタグ名（既定 `wcs-state`） |
 | `--lang=ja\|en` | 診断メッセージの言語。未指定時は環境ロケール（`LC_ALL` / `LC_MESSAGES` / `LANG` → OS ロケール）に従う。code / range は言語に依らず不変 |
 | `--errors-only`（別名 `--quiet`） | error severity の行だけ表示。warning / info の件数と exit code は不変 |
+| `--strict` | warning severity の診断でも exit `1` にする。severity 自体は不変（IDE の表示と同じ）で、exit code の閾値だけを error → warning に下げる。summary 行の末尾に `(strict)` が付く。パスの typo（`wcs/binding-path-missing` は warning）で CI を落としたいときに使う — ただし先に `<wcs-state src>` を全て解決可能にしておくこと（解決できない外部 state が残す warning でも落ちるようになる）。`--errors-only` と併用可: 表示は error のみのまま、exit code は warning を反映する |
 
 ## 出力と exit code
 
@@ -49,8 +50,8 @@ app.manifest.json:1:3 error wcs/manifest-broken Broken manifest JSON: ...
 
 | exit code | 意味 |
 |---|---|
-| `0` | error severity の診断なし（warning / info はあってもよい） |
-| `1` | error severity の診断が 1 件以上 |
+| `0` | error severity の診断なし（warning / info はあってもよい）。`--strict` 時は error も warning もなし |
+| `1` | error severity の診断が 1 件以上。`--strict` 時は error または warning が 1 件以上 |
 | `2` | usage エラー、またはファイル読み取り失敗 |
 
 ## 生成 → 検証 → 修正ループでの利用

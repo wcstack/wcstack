@@ -26,7 +26,7 @@ Files ending in `.manifest.json` are validated as sidecar manifests; everything 
 External state referenced via `<wcs-state src="...">` (`.json` / `.js` / `.ts`) is resolved relative to the HTML file and included in path validation. URLs and absolute paths are never read, unreadable files are skipped, and unresolved paths stay warnings. Note that once external state *does* resolve, the full validation surface applies to those pages — error-severity findings (e.g. `for:` bound to a non-array) can fail a build that was previously silent because the paths could not be checked.
 
 ```
-wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-only] <file> [<file> ...]
+wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-only] [--strict] <file> [<file> ...]
 ```
 
 | Option | Description |
@@ -35,6 +35,7 @@ wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-
 | `--state-tag=<name>` | State custom-element tag name (default `wcs-state`) |
 | `--lang=ja\|en` | Diagnostic message language. Defaults to the environment locale (`LC_ALL` / `LC_MESSAGES` / `LANG`, then the OS locale); codes and ranges are language-independent |
 | `--errors-only` (alias `--quiet`) | Print only error-severity lines; warning/info counts and the exit code are unchanged |
+| `--strict` | Exit `1` on warning-severity diagnostics too. Severities are unchanged (the IDE shows the same thing); only the exit-code threshold moves from error to warning. The summary line ends with `(strict)`. Use it to fail CI on a path typo (`wcs/binding-path-missing` is a warning) — but resolve every `<wcs-state src>` first (an unresolvable external state leaves warnings that would now fail the build). Combines with `--errors-only`: output stays error-only, the exit code still reflects warnings |
 
 ## Output & exit codes
 
@@ -49,8 +50,8 @@ app.manifest.json:1:3 error wcs/manifest-broken Broken manifest JSON: ...
 
 | Exit code | Meaning |
 |---|---|
-| `0` | No error-severity diagnostics (warnings/info may exist) |
-| `1` | At least one error-severity diagnostic |
+| `0` | No error-severity diagnostics (warnings/info may exist); with `--strict`, no error or warning |
+| `1` | At least one error-severity diagnostic; with `--strict`, at least one error or warning |
 | `2` | Usage error or unreadable file |
 
 ## Use in generate–validate–fix loops
