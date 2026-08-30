@@ -30,6 +30,9 @@ export const WcsDiagnosticCode = {
   // 同名 tag / filter の後勝ち禁止(§5-3)。override:true が無い再定義もこの collision で表す。
   ManifestTagCollision: "wcs/manifest-tag-collision",
   ManifestFilterCollision: "wcs/manifest-filter-collision",
+  // 同名 state の stateSchema が複数の application artifact に宣言されている(§5-3 の
+  // application 版・D8)。勝者なし: その state は未宣言扱い(schema 検証は沈黙)。
+  ManifestStateCollision: "wcs/manifest-state-collision",
   // 明示 override:true(§5-4)。衝突ではなく意図的な shadow の告知(info)。
   ManifestOverride: "wcs/manifest-override",
   // --- sidecar vs live declaration drift ---

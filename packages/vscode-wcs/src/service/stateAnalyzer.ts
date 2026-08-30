@@ -28,7 +28,14 @@ export interface PathCandidate {
   rawInitial?: string;
   /** 所属する state 名（デフォルト: 'default'） */
   stateName: string;
+  /**
+   * sidecar manifest の `stateSchema` から導出した候補（analyzeSchemaPaths）。
+   * 型は宣言された契約由来なので「確定」扱い — `for:` の非配列を error にする判定に使う。
+   */
+  fromSchema?: boolean;
 }
+
+import type { JsonSchemaNode } from '../core/sidecar/types.js';
 
 // ランタイム予約キー（@wcstack/state src/define.ts が正本）。
 // トップレベルの `$` プレフィックスキーは宣言・API 名前空間でありデータパスにならない。
@@ -945,4 +952,174 @@ function inferTypeHint(valueStart: string): string | undefined {
   if (v.startsWith('[')) return 'array';
   if (v.startsWith('{')) return 'object';
   return undefined;
+}
+
+// ============================================================
+// stateSchema（sidecar manifest）由来の候補
+// ============================================================
+
+/**
+ * `wcstack.application.states[name].stateSchema`（JSON-Schema subset・規範 §4）から
+ * パス候補を生成する。補完・hover・型期待（typeHint）に使う。**存在判定には使わない**
+ * — schema が宣言された state の存在判定は core/sidecar/schemaSubset.ts の
+ * `resolveSchemaPath` の三値（resolved / unknown / nonexistent）で行う。候補集合に
+ * 平坦化すると `{}`（unknown）の下のパスが「候補に無い = 不在」に化けて偽 error になる。
+ *
+ * 規則は collectJsonPaths と同じ: properties → data、配列（items）→ `<path>.*`（list）＋
+ * `<path>.length`（number）、items が object なら子へ再帰、深さ上限は MAX_OBJECT_NEST_DEPTH
+ * （生成器 wcs-schema も同じ深さで打ち切る）。`$ref` は root `$defs` で局所解決（循環・
+ * 未解決は捨てる）、`anyOf` は枝を合併し、型ヒントから null を除く。
+ */
+export function analyzeSchemaPaths(schema: JsonSchemaNode, stateName: string = 'default'): PathCandidate[] {
+  const paths: PathCandidate[] = [];
+  const defs = schema.$defs ?? {};
+  collectSchemaObjectPaths(schema, '', paths, stateName, defs, 0);
+  return paths;
+}
+
+/**
+ * script / JSON 由来の候補に schema 由来の候補を合流させる。同じ state・同じパスは
+ * schema が勝つ（D12: 明示の契約が正規表現推定より優先）。applicationStates が無ければ
+ * そのまま返す。
+ */
+export function mergeSchemaCandidates(
+  candidates: PathCandidate[],
+  applicationStates?: ReadonlyMap<string, JsonSchemaNode>,
+): PathCandidate[] {
+  if (applicationStates === undefined || applicationStates.size === 0) return candidates;
+  const schemaCandidates: PathCandidate[] = [];
+  const schemaKeys = new Set<string>();
+  for (const [stateName, schema] of applicationStates) {
+    for (const p of analyzeSchemaPaths(schema, stateName)) {
+      schemaCandidates.push(p);
+      schemaKeys.add(`${stateName} ${p.path}`);
+    }
+  }
+  const kept = candidates.filter(p => !schemaKeys.has(`${p.stateName} ${p.path}`));
+  return [...kept, ...schemaCandidates];
+}
+
+/** `$ref`（`#/$defs/<name>` のみ）と `anyOf` を展開して具体ノード列にする。循環・未解決は捨てる。 */
+function derefSchemaNodes(
+  node: JsonSchemaNode,
+  defs: Readonly<Record<string, JsonSchemaNode>>,
+): JsonSchemaNode[] {
+  const out: JsonSchemaNode[] = [];
+  const stack: { node: JsonSchemaNode; chain: ReadonlySet<string> }[] = [{ node, chain: new Set() }];
+  while (stack.length > 0) {
+    const { node: n, chain } = stack.pop()!;
+    if (n === null || typeof n !== 'object') continue;
+    if (typeof n.$ref === 'string') {
+      const match = /^#\/\$defs\/(.+)$/.exec(n.$ref);
+      if (match === null || chain.has(n.$ref)) continue;
+      const target = defs[match[1].replace(/~1/g, '/').replace(/~0/g, '~')];
+      if (target === undefined) continue;
+      stack.push({ node: target, chain: new Set([...chain, n.$ref]) });
+      continue;
+    }
+    if (Array.isArray(n.anyOf)) {
+      // LIFO なので逆順に積み、展開結果が宣言順（`a|b` の表記順）になるようにする
+      for (let i = n.anyOf.length - 1; i >= 0; i--) stack.push({ node: n.anyOf[i], chain });
+      continue;
+    }
+    out.push(n);
+  }
+  return out;
+}
+
+/**
+ * 展開済みノード列から型ヒントを決める。`integer` は number、null は除外、複数型は
+ * `a|b`（validateFilterChainTypes の union 表記）。`type` 無しは enum / const / properties /
+ * items から推定し、どれも無ければ undefined（= 型未確定・型期待検査は沈黙）。
+ */
+function schemaTypeHint(nodes: JsonSchemaNode[]): string | undefined {
+  const hints = new Set<string>();
+  for (const n of nodes) {
+    const types = typeof n.type === 'string' ? [n.type] : Array.isArray(n.type) ? n.type : [];
+    if (types.length > 0) {
+      for (const t of types) {
+        if (t === 'null') continue;
+        hints.add(t === 'integer' ? 'number' : t);
+      }
+      continue;
+    }
+    if (Array.isArray(n.enum)) {
+      for (const v of n.enum) {
+        const h = inferJsonTypeHint(v);
+        if (h !== undefined && h !== 'null') hints.add(h);
+      }
+    } else if (n.const !== undefined) {
+      const h = inferJsonTypeHint(n.const);
+      if (h !== undefined && h !== 'null') hints.add(h);
+    } else if (n.properties !== undefined) {
+      hints.add('object');
+    } else if (n.items !== undefined) {
+      hints.add('array');
+    }
+  }
+  return hints.size === 0 ? undefined : [...hints].join('|');
+}
+
+function collectSchemaObjectPaths(
+  node: JsonSchemaNode,
+  prefix: string,
+  paths: PathCandidate[],
+  stateName: string,
+  defs: Readonly<Record<string, JsonSchemaNode>>,
+  depth: number,
+): void {
+  if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+  const seen = new Set<string>();
+  for (const n of derefSchemaNodes(node, defs)) {
+    for (const [key, child] of Object.entries(n.properties ?? {})) {
+      // トップレベルの `$` キーは予約名（schema に書いてもデータパスにはならない）
+      if (prefix === '' && key.startsWith('$')) continue;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const path = prefix ? `${prefix}.${key}` : key;
+      pushSchemaValuePaths(path, child, paths, stateName, defs, depth);
+    }
+  }
+}
+
+function pushSchemaValuePaths(
+  path: string,
+  node: JsonSchemaNode,
+  paths: PathCandidate[],
+  stateName: string,
+  defs: Readonly<Record<string, JsonSchemaNode>>,
+  depth: number,
+): void {
+  const nodes = derefSchemaNodes(node, defs);
+  const typeHint = schemaTypeHint(nodes);
+  paths.push(withHint({ path, kind: 'data', stateName, fromSchema: true }, typeHint));
+
+  const items = nodes.map(n => n.items).find(i => i !== undefined && i !== null && typeof i === 'object');
+  const isArray = items !== undefined || (typeHint?.split('|').includes('array') ?? false);
+  if (isArray) {
+    const itemNodes = items !== undefined ? derefSchemaNodes(items, defs) : [];
+    paths.push(withHint({ path: `${path}.*`, kind: 'list', stateName, fromSchema: true }, schemaTypeHint(itemNodes)));
+    paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number', stateName, fromSchema: true });
+
+    // items がオブジェクトなら子パスへ再帰（JSON 側の「先頭要素の子」と同じ規則）
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+    const seen = new Set<string>();
+    for (const n of itemNodes) {
+      for (const [childKey, childNode] of Object.entries(n.properties ?? {})) {
+        if (seen.has(childKey)) continue;
+        seen.add(childKey);
+        pushSchemaValuePaths(`${path}.*.${childKey}`, childNode, paths, stateName, defs, depth + 1);
+      }
+    }
+    return;
+  }
+
+  if (nodes.some(n => n.properties !== undefined)) {
+    collectSchemaObjectPaths(node, path, paths, stateName, defs, depth + 1);
+  }
+}
+
+/** typeHint が undefined のときはキー自体を付けない（JSON 由来候補との toEqual 互換）。 */
+function withHint(candidate: PathCandidate, typeHint: string | undefined): PathCandidate {
+  return typeHint === undefined ? candidate : { ...candidate, typeHint };
 }

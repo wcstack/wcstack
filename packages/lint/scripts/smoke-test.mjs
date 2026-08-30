@@ -9,7 +9,7 @@
 // 意図的に壊した fixture を拾って build を落とすため、コミットしてはならない。
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +27,26 @@ const cleanHtml = join(workDir, "clean.html");
 const brokenManifest = join(workDir, "broken.manifest.json");
 const mutationHtml = join(workDir, "mutation.html");
 const missingPathHtml = join(workDir, "missing-path.html");
+// stateSchema 発見（D8）: HTML と同じディレクトリの wcstack.manifest.json を自動で読み、
+// 宣言済み state の未存在パスは error に上がる（D6）。tmp 下なので repo の CI gate は走査しない。
+const schemaDir = join(workDir, "schema");
+mkdirSync(schemaDir);
+const schemaHtml = join(schemaDir, "index.html");
+writeFileSync(join(schemaDir, "wcstack.manifest.json"), JSON.stringify({
+  schemaVersion: 1,
+  kind: "application",
+  manifestExtensions: {
+    "wcstack.application": {
+      version: 1,
+      states: { default: { stateSchema: { type: "object", properties: { message: { type: "string" } } } } },
+    },
+  },
+}));
+writeFileSync(schemaHtml, `<!doctype html>
+<wcs-state json='{"message": "hi"}'></wcs-state>
+<div data-wcs="textContent: message"></div>
+<div data-wcs="textContent: mesage"></div>
+`);
 writeFileSync(cleanHtml, "<!doctype html>\n<html><body><p>hello</p></body></html>\n");
 writeFileSync(brokenManifest, "{ this is not json\n");
 writeFileSync(mutationHtml, `<!doctype html>
@@ -116,6 +136,13 @@ check("destructive array mutation → error wcs/array-mutation, exit 1", ["--lan
 check("unresolvable path → warning wcs/binding-path-missing, exit 0", ["--lang=en", missingPathHtml], {
   exit: 0,
   stdout: [/warning wcs\/binding-path-missing /, "0 error(s), 1 warning(s)"],
+});
+
+// stateSchema が宣言された state（同ディレクトリの wcstack.manifest.json を自動発見）では、
+// 同じ typo が warning でなく error になり exit 1（D6 / D8）。manifest は引数に渡していない。
+check("nearest wcstack.manifest.json declares stateSchema → typo is error wcs/path-nonexistent, exit 1", ["--lang=en", schemaHtml], {
+  exit: 1,
+  stdout: [/index\.html:\d+:\d+ error wcs\/path-nonexistent .*"mesage"/, "1 error(s), 0 warning(s)"],
 });
 
 rmSync(workDir, { recursive: true, force: true });

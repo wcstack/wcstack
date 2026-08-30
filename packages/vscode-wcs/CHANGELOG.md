@@ -4,6 +4,8 @@
 
 ### Features
 
+- **sidecar `stateSchema` の消費**（`wcs/path-nonexistent` / `wcs/path-type-mismatch`・error）— `wcstack.application.states[name].stateSchema` は規範・型・`resolveSchemaPath` まで揃っていながら**消費者がゼロ**で、manifest を置いても診断は変わらなかった。HTML の位置から最も近い `wcstack.manifest.json` を自動発見し（規範 §5-1 を改定: 呼び出し側指定 → 最近傍 1 つ・合成なし。CLI 引数の application manifest は発見を丸ごと置き換える）、宣言された state では未存在パスを warning でなく **error** にする。存在判定は候補集合の平坦化ではなく `resolveSchemaPath` の三値で行い、素の `{}` の下（unknown）は沈黙、script 由来のメソッド / getter / `$listKeys` は schema に無くても存在扱い。`for:` に schema で非配列と確定したパスは `wcs/path-type-mismatch`。同じパスの型は schema が勝つ。同名 state を複数の application manifest が宣言すれば `wcs/manifest-state-collision`（error・勝者なし）。application の `stateSchema` も subset 規則（未知 keyword）で検査するようになった。IDE（`provideDiagnostics`）と CLI は同じ `discoverApplicationManifest` を同じ reader で通るので診断は一致する。設計の正本: `docs/app-testing-and-typescript-impl-plan.md` D6 / D8 / D12
+
 - **`attr.aria-*` の属性名検査**（`wcs/aria-attr-unknown`・warning）— `attr.aria-labels: x` のような WAI-ARIA に存在しない属性名へのバインドを検出し、編集距離 2 以内の最近傍（「もしかして: "aria-label"」）を提示する。setAttribute はタイポをそのまま書き、支援技術は黙って無視する —「黙って無効になる」クラスの誤りの静的検出（設計の正本: `docs/a11y-design.md` §8 / D9）。照合リストは WAI-ARIA 1.2 全 states & properties + 実装が先行する 1.3 追加分（deprecated も有効名として許容）。severity は warning リテラル（error 昇格時は `packages/lint/scripts/smoke-test.mjs` の対ケース更新が必須）
 
 - **hover / 定義へ移動 / 参照の検索 / インレイヒント** — 位置情報付き参照インデックス（`core/index/referenceIndex`）へのクエリとして 4 機能を新設（`core/navigation/wiringLens` + `wcs-navigation` Volar プラグイン）。設計の正本: `docs/static-wiring-dx-design.md` §5-2 / §5-3
