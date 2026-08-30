@@ -32,6 +32,15 @@ const configs = [
     outdir: 'dist',
     banner: { js: '#!/usr/bin/env node' },
   },
+  {
+    // @wcstack/typescript（wcs-schema）が同梱する validator core。cli.cjs と同じく
+    // 自己完結の単一 CJS。lint と同じ「vscode-wcs をビルドしてコピー」経路で配る。
+    ...sharedOptions,
+    entryPoints: ['src/schemaCore.ts'],
+    outdir: 'dist',
+    outbase: 'src',
+    entryNames: 'schema-core',
+  },
 ];
 
 if (isWatch) {

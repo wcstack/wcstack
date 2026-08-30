@@ -63,7 +63,7 @@ Claude Code reads [CLAUDE.md](./CLAUDE.md) (the more detailed, tool-specific gui
 
 ## Packages
 
-Forty-five independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
+Forty-six independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
 
 ### What if HTML had reactive data binding?
 
@@ -310,6 +310,7 @@ const html = await renderToString(`
 - [`@wcstack/signals`](packages/signals/) — A signals-based, fine-grained reactive **core** (the JS-first counterpart to `@wcstack/state`): `signal`/`computed`/`effect`, async `resource`/`streamResource`, keyed `For`/`Index`, and a `bindNode` adapter that drives the same wc-bindable IO nodes through signals. TC39-Signals-shaped, zero-dependency.
 - [`@wcstack/devtools`](packages/devtools/) — In-page DevTools overlay with `<wcs-devtools>`: inspect state trees (with inline editing through the normal reactive pipeline), see which DOM nodes each path is wired to, and watch a live timeline of writes, update batches, and command/event-token emissions — including zero-subscriber "empty emits". One script tag, connects via the DevTools Hook Protocol, zero-dependency.
 - [`@wcstack/lint`](packages/lint/) — Static-contract validator CLI (`npx @wcstack/lint`, command name `wcs-validate`): checks HTML `data-wcs` bindings and `wcstack.manifest.json` sidecars headlessly with the same validator core as the VS Code extension — identical diagnostic codes and ranges in IDE and CI, stable exit-code contract for generate–validate–fix loops. Zero-dependency.
+- [`@wcstack/typescript`](packages/typescript/) — TypeScript tooling for apps: `wcs-schema` compiles a typed state file and writes the sidecar `stateSchema` the validator consumes, so `data-wcs` paths are checked against real types in CI and every editor (typos become errors, false warnings disappear); `wcs-schema check` fails CI when the manifest drifts from the type. `typescript` is a peer dependency; zero runtime dependencies. The full TypeScript story is in [docs/typescript.md](docs/typescript.md).
 - [`wcstack-intellisense`](packages/vscode-wcs/) — VS Code extension that provides language support for `<wcs-state>` inline scripts.
 
 ---
@@ -453,6 +454,7 @@ wcstack/
 │   ├── signals/       # @wcstack/signals
 │   ├── devtools/      # @wcstack/devtools
 │   ├── lint/          # @wcstack/lint
+│   ├── typescript/    # @wcstack/typescript
 │   └── vscode-wcs/    # wcstack-intellisense (VS Code extension)
 ```
 
