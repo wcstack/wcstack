@@ -2250,6 +2250,8 @@ the short answer is that translations belong on a path, not in a filter.
 
 A page built on `<wcs-state>` is plain DOM, so it can be tested headlessly with [happy-dom](https://github.com/capricorn86/happy-dom) — no browser, no build step, no test-only API. Three recipes follow; every one of them runs as written (recipe 1 is pinned by [`__tests__/readme.testingRecipe.test.ts`](__tests__/readme.testingRecipe.test.ts), which executes the same lines).
 
+Want it as one import? [`@wcstack/testing`](../testing/README.md) packages recipe 1 as `mount()` / `settle()` / `fire()` (and waits for `<wcs-router>` too). The bare recipes below stay valid without it.
+
 ### 1. vitest + happy-dom
 
 `vitest.config.ts`:
@@ -2319,6 +2321,7 @@ To drive the page the way a user does, keep the state inline (methods included) 
 - Updates settle on the microtask queue; a single `setTimeout(0)` after a write is enough.
 - `state.items = [...state.items, "cherry"]` is the reactive form — `state.items.push()` is not observed (same rule as in handlers).
 - Under happy-dom, `customElements.define` upgrades existing nodes by **replacing** them; "a value reaches the same node after a late define" cannot be asserted headlessly. Event timing differences between happy-dom and real browsers are the other blind spot — keep one browser e2e (Playwright) for those.
+- happy-dom's `textContent` setter turns a numeric `0` into an empty string (browsers render `"0"`), so a `textContent: count` binding reads `""` at zero in this recipe. Assert on the state value, or use `@wcstack/testing`, whose `mount()` shims the setter.
 
 ### 2. Bare Node (no vitest)
 

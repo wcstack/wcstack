@@ -2242,6 +2242,8 @@ bootstrapState({
 
 `<wcs-state>` で組んだページは素の DOM なので、[happy-dom](https://github.com/capricorn86/happy-dom) でヘッドレスにテストできます — ブラウザ不要・ビルド不要・テスト専用 API 不要。レシピは 3 つ、いずれも書いてあるとおりに動きます（レシピ 1 は同じ行を実行する [`__tests__/readme.testingRecipe.test.ts`](__tests__/readme.testingRecipe.test.ts) で固定しています）。
 
+1 import で済ませたいなら [`@wcstack/testing`](../testing/README.ja.md) がレシピ 1 を `mount()` / `settle()` / `fire()` にまとめています（`<wcs-router>` も待ちます）。以下の素のレシピはそれ無しでも有効です。
+
 ### 1. vitest + happy-dom
 
 `vitest.config.ts`:
@@ -2311,6 +2313,7 @@ it("描画・再描画・ハンドラ実行", async () => {
 - 更新はマイクロタスク境界で収束します。書き込み後の `setTimeout(0)` 1 回で十分です。
 - `state.items = [...state.items, "cherry"]` がリアクティブな書き方です — `state.items.push()` は観測されません（ハンドラ内と同じ規則）。
 - happy-dom は `customElements.define` 時に既存ノードを**差し替えて**アップグレードします。「遅れて define された同一ノードに値が届く」はヘッドレスでは検証できません。happy-dom と実ブラウザのイベントタイミング差ももう 1 つの死角なので、そこは実ブラウザ e2e（Playwright）を 1 本残してください。
+- happy-dom の `textContent` setter は数値 `0` を空文字にします（ブラウザは `"0"`）。このレシピでは `textContent: count` のバインドが 0 のとき `""` に読めます。state の値で assert するか、setter をシムする `@wcstack/testing` の `mount()` を使ってください。
 
 ### 2. 素の Node（vitest なし）
 

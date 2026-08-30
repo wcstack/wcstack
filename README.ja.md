@@ -61,7 +61,7 @@ Claude Code は [CLAUDE.md](./CLAUDE.md)（より詳細なツール別ガイド�
 
 ## パッケージ
 
-46個の独立したランタイムパッケージ + 1つのツール拡張パッケージ。ランタイム依存ゼロ（SSR用のhappy-domを除く）。ビルド不要。
+47個の独立したランタイムパッケージ + 1つのツール拡張パッケージ。ランタイム依存ゼロ（SSR用のhappy-domを除く）。ビルド不要。
 
 ### もしHTMLにリアクティブなデータバインディングがあったら？
 
@@ -309,6 +309,7 @@ const html = await renderToString(`
 - [`@wcstack/devtools`](packages/devtools/) — `<wcs-devtools>` によるページ内 DevTools オーバーレイ。state ツリーの検査（通常のリアクティブパイプラインを通るインライン編集付き）、各パスがどの DOM ノードに配線されているかの表示、write / 更新バッチ / command・event トークン発火のライブタイムライン — 購読者ゼロの「空撃ち」警告付き。`<script>` 一行、DevTools Hook Protocol で接続、依存ゼロ。
 - [`@wcstack/lint`](packages/lint/) — 静的契約検査 CLI（`npx @wcstack/lint`・コマンド名 `wcs-validate`）。HTML の `data-wcs` バインディングと `wcstack.manifest.json` sidecar を、VS Code 拡張と同一の validator core でヘッドレスに検査 — IDE と CI で diagnostic code / range が完全一致し、安定した exit code 契約で生成→検証→修正ループに組み込める。依存ゼロ。
 - [`@wcstack/typescript`](packages/typescript/) — アプリ向け TypeScript ツール。`wcs-schema` が型付き state ファイルをコンパイルして検証器が消費する sidecar `stateSchema` を書き出し、`data-wcs` パスを CI でも全エディタでも本当の型で検査できるようにする（typo は error に、偽警告は消える）。`wcs-schema check` は manifest が型から乖離すると CI を落とす。`typescript` は peer dependency・ランタイム依存ゼロ。TypeScript の話全体は [docs/typescript.ja.md](docs/typescript.ja.md)。
+- [`@wcstack/testing`](packages/testing/) — ヘッドレステストヘルパー。`mount(html)` が要素を登録し、ページ断片を happy-dom 上に挿入して全要素と全バインドを待つ（`@wcstack/server` の `waitForReady` 経由で router のルートも）。`state().read/write`・`settle()`・`fire()` でユーザーやハンドラと同じ経路から動かす。README のレシピを 1 import にしたもの — 便利であって必須ではない。
 - [`wcstack-intellisense`](packages/vscode-wcs/) — `<wcs-state>` インラインスクリプト向けの VS Code 言語サポート拡張。
 
 ---
@@ -455,6 +456,7 @@ wcstack/
 │   ├── devtools/      # @wcstack/devtools
 │   ├── lint/          # @wcstack/lint
 │   ├── typescript/    # @wcstack/typescript
+│   ├── testing/       # @wcstack/testing
 │   └── vscode-wcs/    # wcstack-intellisense (VS Code拡張)
 ```
 

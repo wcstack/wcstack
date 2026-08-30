@@ -1,0 +1,76 @@
+{
+  "name": "@wcstack/testing",
+  "version": "1.32.0",
+  "description": "Headless test helpers for wcstack pages: mount HTML under happy-dom, await bindings, read/write state, settle updates - the README recipe as one import.",
+  "type": "module",
+  "main": "./dist/index.esm.js",
+  "module": "./dist/index.esm.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.esm.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "clean": "rimraf dist .tsc-out",
+    "build": "node scripts/build-deps.mjs && rimraf dist .tsc-out && tsc && rollup -c",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src"
+  },
+  "keywords": [
+    "web-components",
+    "wcstack",
+    "testing",
+    "vitest",
+    "happy-dom",
+    "data-wcs"
+  ],
+  "author": "mogera551",
+  "homepage": "https://wcstack.github.io",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wcstack/wcstack.git",
+    "directory": "packages/testing"
+  },
+  "bugs": {
+    "url": "https://github.com/wcstack/wcstack/issues"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "@wcstack/server": "^1.32.0",
+    "@wcstack/state": "^1.32.0",
+    "happy-dom": ">=20"
+  },
+  "peerDependenciesMeta": {
+    "happy-dom": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@rollup/plugin-typescript": "^11.1.6",
+    "@types/node": "^22.10.0",
+    "@typescript-eslint/eslint-plugin": "^8.33.1",
+    "@typescript-eslint/parser": "^8.33.1",
+    "@vitest/coverage-v8": "^4.0.15",
+    "@wcstack/router": "file:../router",
+    "@wcstack/server": "file:../server",
+    "@wcstack/state": "file:../state",
+    "eslint": "^9.39.1",
+    "globals": "^16.2.0",
+    "happy-dom": "^20.0.11",
+    "rimraf": "^6.0.1",
+    "rollup": "^4.22.4",
+    "rollup-plugin-dts": "^6.1.1",
+    "tslib": "^2.8.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.49.0",
+    "vitest": "^4.0.15"
+  }
+}

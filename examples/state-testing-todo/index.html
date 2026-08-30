@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>state-testing-todo — a page and its headless tests</title>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 28rem; margin: 2rem auto; }
+    li.done span { text-decoration: line-through; color: #888; }
+  </style>
+</head>
+<body>
+<main id="app">
+  <wcs-state>
+    <script type="module">
+      export default {
+        draft: "",
+        todos: [{ title: "Write the tests first", done: false }],
+        get remaining() {
+          return this.$getAll("todos.*.done", []).filter((done) => !done).length;
+        },
+        add() {
+          const title = this.draft.trim();
+          if (!title) return;
+          this.todos = [...this.todos, { title, done: false }];
+          this.draft = "";
+        },
+        clearDone() {
+          this.todos = this.todos.filter((todo) => !todo.done);
+        },
+      };
+    </script>
+  </wcs-state>
+
+  <h1>Todo</h1>
+  <form data-wcs="onsubmit#prevent: add">
+    <input id="draft" data-wcs="value: draft" placeholder="What needs doing?" autocomplete="off">
+    <button id="add" type="submit">Add</button>
+  </form>
+  <ul id="todos">
+    <template data-wcs="for: todos">
+      <li data-wcs="class.done: .done">
+        <label>
+          <input type="checkbox" data-wcs="checked: .done">
+          <span data-wcs="textContent: .title"></span>
+        </label>
+      </li>
+    </template>
+  </ul>
+  <p><b id="remaining" data-wcs="textContent: remaining"></b> left ·
+    <button id="clear" type="button" data-wcs="onclick: clearDone">Clear done</button></p>
+</main>
+</body>
+</html>

@@ -179,7 +179,9 @@ app.unmount();
 
 ### 6-3. 実装メモ
 
-- パッケージ雛形は server に倣う。`peerDependencies: { "@wcstack/state": "^1.32.0", "@wcstack/server": "^1.32.0" }`（D3）。happy-dom は server の `dependencies` から来るので testing は宣言しない。server の `@wcstack/state` 依存は `^1.9.1` のままで、利用者の `^1.32.0` と dedupe される（server 側の範囲を上げる必要はないが、揃えるなら server の PR で）。
+- パッケージ雛形は server に倣う。`peerDependencies: { "@wcstack/state": "^1.32.0", "@wcstack/server": "^1.32.0", "happy-dom": ">=20" }`（D3。happy-dom は **optional peer** — `installDom()` が `import("happy-dom")` するのは testing の位置からの解決なので、server の依存経由では届かない。vitest の happy-dom 環境では不要）。server の `@wcstack/state` 依存は `^1.9.1` のままで、利用者の `^1.32.0` と dedupe される。devDependencies は `file:../state` / `file:../router` / `file:../server`、build（`scripts/build-deps.mjs`）がその 3 つを src から再ビルドする（CI matrix の committed dist は src に遅行する — #183 型）。
+- **実装時に見つけた実欠陥 3 件（同 PR で修正）**: (1) state `loadFromInnerScript` の `data:` URL 経路は本文が同一だと ESM キャッシュに当たり **同じ state オブジェクトを共有**（テスト間の漏れ・SSR の同一テンプレート再描画でも）→ sourceURL に通し番号。(2) router CSR の `connectedCallbackPromise` は初期化が throw すると永久未決着（SSR 経路だけ reject 配管あり）。加えて happy-dom は開始タグで connectedCallback を呼ぶので `<template>` 未到着で throw → SSR 経路と同じ 1 microtask 待避。(3) router CSR は初回ルート内容を binder に渡さない（「state の走査時に既に document に居る」前提）が、`json=` の state は I/O 無しで router より先に走査を終える → binder が居れば差し出す。
+- **happy-dom の癖**: `textContent = 0` が空文字、`innerText = 0` は throw（ブラウザは "0"）。`mount()` が setter をシムする（own-property マーカーで Node / Element 両方を包む）。素のレシピ側は README の死角に記載。
 - 自身のテストは vitest happy-dom 環境。HTML は文字列リテラルで持つ（`*.html` としてコミットすると CI の `wcs-validate` gate が走査する — AGENTS.md の規則）。
 - 実例: `examples/state-testing-todo/`（最小 todo ＋ `__tests__/todo.test.ts`）を追加し、[examples/README.md](../examples/README.md) に載せる。e2e smoke には載せない（ブラウザで開く価値がない）。
 - 文書: README en/ja、`docs/typescript.md` からは触れない（型の話ではない）、state README `## Testing Your Page` の先頭に「1 import で済ませるなら `@wcstack/testing`」を追記、skill 追随。パッケージ数 8 箇所。
