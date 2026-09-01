@@ -8,13 +8,15 @@
  * このファイルは node I/O(fs / argv / stdout / exit)のみを担う薄い shell。
  * 検査ロジックは全て core/cli/runValidation.ts(pure・テスト対象)。
  *
- * 使い方: wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-only] <file> ...
+ * 使い方: wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-only] [--strict] <file> ...
  *   *.manifest.json → sidecar manifest として検査
  *   その他(.html 等)→ data-wcs バインディングとして検査
  *   --lang=ja|en → 診断メッセージの言語。決定則は「--lang > 環境(LC_ALL / LC_MESSAGES /
  *     LANG / Intl の OS ロケール — ja 系なら ja、それ以外は en) > フォールバック en」。
  *     code / range は言語に依らず不変。
  *   --errors-only(別名 --quiet)→ error severity の行だけ表示(warning は count のみ)
+ *   --strict → warning があっても exit 1(severity は不変・閾値だけ下げる)。typo
+ *     (`wcs/binding-path-missing` = warning)で CI を落としたいときに使う。
  */
 
 import { readFileSync } from "node:fs";
@@ -32,13 +34,14 @@ export { createFileReader } from "./fileReader.js";
 
 /** argv を options とファイル一覧に分ける。IDE の設定に合わせるため attr / state-tag を受ける。 */
 export function parseArgs(argv: readonly string[]): { options: RunValidationOptions; files: string[] } {
-  const options: { bindAttribute?: string; stateTagName?: string; errorsOnly?: boolean; locale?: string } = {};
+  const options: { bindAttribute?: string; stateTagName?: string; errorsOnly?: boolean; strict?: boolean; locale?: string } = {};
   const files: string[] = [];
   for (const arg of argv) {
     if (arg.startsWith("--attr=")) options.bindAttribute = arg.slice("--attr=".length);
     else if (arg.startsWith("--state-tag=")) options.stateTagName = arg.slice("--state-tag=".length);
     else if (arg.startsWith("--lang=")) options.locale = arg.slice("--lang=".length);
     else if (arg === "--errors-only" || arg === "--quiet") options.errorsOnly = true;
+    else if (arg === "--strict") options.strict = true;
     else if (!arg.startsWith("-")) files.push(arg);
   }
   return { options, files };
@@ -69,7 +72,7 @@ export function main(argv: readonly string[]): number {
   const { options, files } = parseArgs(argv);
   const locale = resolveCliLocale(options.locale);
   if (files.length === 0) {
-    process.stderr.write("usage: wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] <file> [<file> ...]\n");
+    process.stderr.write("usage: wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-only] [--strict] <file> [<file> ...]\n");
     return 2;
   }
 
@@ -90,8 +93,9 @@ export function main(argv: readonly string[]): number {
   for (const line of result.lines) {
     process.stdout.write(line + "\n");
   }
+  // strict で落ちたときに「何で落ちたか」が summary 行だけで読めるよう印を付ける。
   process.stdout.write(
-    `\n${result.errorCount} error(s), ${result.warningCount} warning(s), ${result.infoCount} info\n`,
+    `\n${result.errorCount} error(s), ${result.warningCount} warning(s), ${result.infoCount} info${options.strict ? " (strict)" : ""}\n`,
   );
   return result.exitCode;
 }

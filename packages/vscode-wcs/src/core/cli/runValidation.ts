@@ -43,6 +43,14 @@ export interface RunValidationOptions extends Omit<ValidateDocumentOptions, "fil
    * パス等)を出力から除き、build を落とす error だけを表示するために使う。
    */
   readonly errorsOnly?: boolean;
+  /**
+   * true なら warning severity でも `exitCode` を 1 にする(`--strict`)。
+   * severity 自体は動かさない — 診断の {code, range, severity} は IDE と同じまま、
+   * exit code の判定閾値だけを error → warning に下げる別軸のスイッチ。
+   * `errorsOnly` とは独立(併用時: 表示は error のみ・exit は warning でも 1)。
+   * 主用途は「`wcs/binding-path-missing`(typo)で CI を落とす」。
+   */
+  readonly strict?: boolean;
 }
 
 export interface RunValidationResult {
@@ -51,7 +59,7 @@ export interface RunValidationResult {
   readonly errorCount: number;
   readonly warningCount: number;
   readonly infoCount: number;
-  /** exit code(error があれば 1、なければ 0)。 */
+  /** exit code(error があれば 1。`strict` なら warning でも 1。それ以外 0)。 */
   readonly exitCode: 0 | 1;
   /** file source → 診断(テスト用)。 */
   readonly diagnosticsBySource: ReadonlyMap<string, readonly WcsDiagnostic[]>;
@@ -130,7 +138,7 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
     errorCount,
     warningCount,
     infoCount,
-    exitCode: errorCount > 0 ? 1 : 0,
+    exitCode: errorCount > 0 || (options.strict === true && warningCount > 0) ? 1 : 0,
     diagnosticsBySource,
   };
 }

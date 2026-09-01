@@ -138,6 +138,29 @@ check("unresolvable path → warning wcs/binding-path-missing, exit 0", ["--lang
   stdout: [/warning wcs\/binding-path-missing /, "0 error(s), 1 warning(s)"],
 });
 
+// --strict は exit code の閾値だけを warning に下げる(severity は不変)。error 側 /
+// warning 側 / clean の三点で固定する: severity を動かす変更が strict の契約を道連れに
+// しないよう、上の error/warning ペアと同じ対称性をここでも保つ。
+check("--strict: warning → exit 1, severity label unchanged, summary marked (strict)", ["--lang=en", "--strict", missingPathHtml], {
+  exit: 1,
+  stdout: [/warning wcs\/binding-path-missing /, "0 error(s), 1 warning(s), 0 info (strict)"],
+});
+
+check("--strict: error → exit 1 as before", ["--lang=en", "--strict", brokenManifest], {
+  exit: 1,
+  stdout: [/error wcs\/manifest-broken /, "(strict)"],
+});
+
+check("--strict: clean HTML → still exit 0", ["--lang=en", "--strict", cleanHtml], {
+  exit: 0,
+  stdout: ["0 error(s), 0 warning(s), 0 info (strict)"],
+});
+
+check("--strict + --errors-only: warning hidden from output but still fails", ["--lang=en", "--strict", "--errors-only", missingPathHtml], {
+  exit: 1,
+  stdout: ["0 error(s), 1 warning(s), 0 info (strict)"],
+});
+
 // stateSchema が宣言された state（同ディレクトリの wcstack.manifest.json を自動発見）では、
 // 同じ typo が warning でなく error になり exit 1（D6 / D8）。manifest は引数に渡していない。
 check("nearest wcstack.manifest.json declares stateSchema → typo is error wcs/path-nonexistent, exit 1", ["--lang=en", schemaHtml], {
