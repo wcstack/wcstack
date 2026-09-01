@@ -159,3 +159,122 @@ describe('ownKeyShadow', () => {
     expect(warn).toHaveBeenCalledTimes(2);
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * v2 マウント（Phase 2 slice 3）— warnOwnKeyShadowsForMount
+ * ------------------------------------------------------------------ */
+import { warnOwnKeyShadowsForMount } from '../src/webComponent/ownKeyShadow';
+import { buildMountRecord } from '../src/webComponent/mount';
+import { getPathInfo } from '../src/address/PathInfo';
+import type { IBindingInfo } from '../src/types';
+
+function mountHostBinding(propSegments: string[], statePathName: string): IBindingInfo {
+  return {
+    propName: propSegments.join('.'),
+    propSegments,
+    propModifiers: [],
+    statePathName,
+    statePathInfo: getPathInfo(statePathName),
+    stateName: 'default',
+    inFilters: [],
+    outFilters: [],
+    bindingType: 'prop',
+    uuid: null,
+    node: document.createElement('div'),
+    replaceNode: document.createElement('div'),
+  } as IBindingInfo;
+}
+
+describe('ownKeyShadow: v2 マウント（warnOwnKeyShadowsForMount）', () => {
+  let warn: ReturnType<typeof vi.spyOn>;
+  let component: Element;
+
+  function mountRecord(entries: [string[], string][], stateObject: Record<string, any>, stateElement: any = { name: 'default', ...outerStateElement({}) }) {
+    return buildMountRecord(
+      component,
+      'state',
+      entries.map(([segments, path]) => mountHostBinding(['state', ...segments], path)),
+      stateElement,
+      stateObject,
+    );
+  }
+
+  beforeEach(() => {
+    clearOwnKeyShadowReportsForTesting();
+    warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    component = document.createElement('my-mount-card');
+    getLoopContextByNodeMock.mockReturnValue(null);
+  });
+
+  afterEach(() => {
+    warn.mockRestore();
+  });
+
+  const warnings = () => warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('[wcs/mount-own-key-shadow]'));
+
+  it('私有キーが無ければ（アクセサ・メソッドだけ）何もしないこと', () => {
+    const r = mountRecord([[[] as any, 'user']], { get display() { return ''; }, save() {} });
+    warnOwnKeyShadowsForMount(r);
+    expect(warnings()).toEqual([]);
+  });
+
+  it('部分エントリと同名の作者キーは「私有が部分エントリを隠す」と報告すること（厳格 R1）', () => {
+    const r = mountRecord([[[] as any, 'user'], [['theme'], 'theme']], { theme: { mode: 'own' } });
+    warnOwnKeyShadowsForMount(r);
+    const w = warnings();
+    expect(w).toHaveLength(1);
+    expect(w[0]).toContain('hides the mounted entry "state.theme: theme"');
+  });
+
+  it('部分マウントのみ（ルート無し）で部分に当たらない私有キーは報告しないこと', () => {
+    const r = mountRecord([[['theme'], 'theme']], { editing: 'no' });
+    warnOwnKeyShadowsForMount(r);
+    expect(warnings()).toEqual([]);
+  });
+
+  it('ルート先が同名キーを持てば「私有がツリーを隠す」と報告すること', () => {
+    const r = mountRecord([[[] as any, 'user']], { name: '' }, { name: 'default', ...outerStateElement({ user: { name: 'Alice' } }) });
+    warnOwnKeyShadowsForMount(r);
+    const w = warnings();
+    expect(w).toHaveLength(1);
+    expect(w[0]).toContain('hides the mounted tree key "user.name"');
+  });
+
+  it('ルート先が同名キーを持たなければ報告しないこと', () => {
+    const r = mountRecord([[[] as any, 'user']], { editing: 'no' }, { name: 'default', ...outerStateElement({ user: { name: 'Alice' } }) });
+    warnOwnKeyShadowsForMount(r);
+    expect(warnings()).toEqual([]);
+  });
+
+  it('ルート先がワイルドカードでホストにループ文脈が無ければ createState を呼ばず諦めること', () => {
+    const stateElement = { name: 'default', createState: vi.fn() };
+    const r = mountRecord([[[] as any, 'users.*']], { name: '' }, stateElement);
+    warnOwnKeyShadowsForMount(r);
+    expect(stateElement.createState).not.toHaveBeenCalled();
+    expect(warnings()).toEqual([]);
+  });
+});
+
+describe('ownKeyShadow: v2 マウント — マウント先の型', () => {
+  let warn: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    clearOwnKeyShadowReportsForTesting();
+    warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    getLoopContextByNodeMock.mockReturnValue(null);
+  });
+  afterEach(() => {
+    warn.mockRestore();
+  });
+
+  it('ルート先がオブジェクトでなければ報告しないこと', () => {
+    const r = buildMountRecord(
+      document.createElement('my-prim-card'),
+      'state',
+      [mountHostBinding(['state'], 'user')],
+      { name: 'default', ...outerStateElement({ user: 'primitive' }) } as any,
+      { name: '' },
+    );
+    warnOwnKeyShadowsForMount(r);
+    expect(warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('[wcs/mount-own-key-shadow]'))).toEqual([]);
+  });
+});

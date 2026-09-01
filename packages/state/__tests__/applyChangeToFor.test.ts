@@ -1030,7 +1030,7 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(list, null);
   });
 
-  it('content台帳マップ自体が無いノードで既存インデックスを再適用するとエラーになること', () => {
+  it('content台帳マップ自体が無いノードは共有 lastListValue を無視して白紙から描き直すこと（マウントスコープ再初期化の形）', () => {
     setupContext();
 
     const container = document.createElement('div');
@@ -1051,7 +1051,11 @@ describe('applyChangeToFor', () => {
 
     const sameList = [1, 2];
     createListIndexes(null, list, sameList);
-    expect(() => apply(bindingInfo, sameList)).toThrow(/Content not found for ListIndex/);
+    // 以前はここで raise していた（共有 lastListValue が「既存 content の維持」を指示し、
+    // この binding には content が無い）。マウントスコープの再初期化（コンポーネントが
+    // connectedCallback で shadow を張り直す形）で実在するため、自分の content 台帳が
+    // 空の binding は共有記録を無視して全行 add で描き直す（applyChangeToFor のガード）
+    expect(() => apply(bindingInfo, sameList)).not.toThrow();
 
     setListIndexesByList(list, null);
   });

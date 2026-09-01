@@ -209,6 +209,56 @@ describe("bind-component: Light DOM の mapped 形（§1.13）", () => {
     host.remove();
   });
 
+  it("Light DOM の丸ごとマウントは v1 経路のまま、差し替え通知と再接続の読み直しが効くこと", async () => {
+    // v2 の単一ツリー化は Shadow DOM 形だけを切り替える（P3-7 まで）。Light DOM の
+    // ルート規則は v1 の再読込通知（rootReloadPaths / boundPaths）と再接続の
+    // ルート読み直し（_reloadMappedPathsAfterReconnect の rootPaths）に乗り続ける
+    const tag = uniqueTag("bcld-root");
+    const stateName = `sr${counter + 1}`;
+    class LightRoot extends HTMLElement {
+      state: Record<string, any> = {
+        // v1 melt の bindProperty が $updatedCallback を配線する分岐も踏む
+        $updatedCallback(_addresses: unknown[]) {},
+      };
+      connectedCallback() {
+        if (this.childElementCount === 0) {
+          this.innerHTML =
+            `<wcs-state bind-component="state" name="${stateName}"></wcs-state>` +
+            `<span class="name" data-wcs="textContent: name@${stateName}"></span>`;
+        }
+      }
+    }
+    customElements.define(tag, LightRoot);
+    const { host, hostState, component } = await mountMapped(stateName, tag, "state: user");
+    const inner = () => (component.querySelector(".name") as HTMLElement).textContent;
+
+    expect(inner()).toBe("Alice");
+
+    // 丸ごと差し替え → 値を運ばない再読込通知（子の登録済みパスの先頭セグメントを撃つ）
+    hostState.createState("writable", (s: any) => {
+      s.user = { name: "Dana" };
+    });
+    await flush();
+    await flush();
+    expect(inner()).toBe("Dana");
+
+    // 切断中の書き込みは届かない（no-op）が、再接続でルート規則の全パスを読み直す
+    const hostShadow = host.shadowRoot!;
+    component.remove();
+    await flush();
+    hostState.createState("writable", (s: any) => {
+      s["user.name"] = "Eve";
+    });
+    await flush();
+    hostShadow.appendChild(component);
+    await (component.querySelector("wcs-state") as State).connectedCallbackPromise;
+    await flush();
+    await flush();
+    expect(inner()).toBe("Eve");
+
+    host.remove();
+  });
+
   it("親スコープ起点の書き込みが Light DOM の子に届くこと", async () => {
     const tag = uniqueTag("bcld-mapped");
     const stateName = `sm${counter}`;

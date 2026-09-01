@@ -36,7 +36,7 @@ function hostBinding(propSegments: string[], statePathName: string): IBindingInf
   } as IBindingInfo;
 }
 
-function record(hostEntries: [string[], string][], stateObject: Record<string, any> = {}) {
+function record(hostEntries: [string[], string][], stateObject: Record<string, any> = {}, injectedKeys?: Set<string>) {
   const component = document.createElement('my-card');
   return buildMountRecord(
     component,
@@ -44,6 +44,7 @@ function record(hostEntries: [string[], string][], stateObject: Record<string, a
     hostEntries.map(([segments, path]) => hostBinding(['state', ...segments], path)),
     parentStateElement,
     stateObject,
+    injectedKeys,
   );
 }
 
@@ -60,7 +61,6 @@ describe('mount: buildMountRecord', () => {
     expect(r.markerBasePath).toBe('users.*.#m1');
     // 最長接頭辞一致のため長い順に整列
     expect(r.entries.map((e) => e.innerSegments.length)).toEqual([1, 0]);
-    expect(r.partialFirstSegments.has('theme')).toBe(true);
   });
 
   it('部分マウントのみでは Δ=0 でマーカーはトップレベルに置かれること', () => {
@@ -108,9 +108,20 @@ describe('mount: translateInnerPath（§4-1 の解決規則）', () => {
     expect(translateInnerPath(r, 'draft.title')).toBe('users.*.#m1.draft.title');
   });
 
-  it('規則 2: 部分規則が覆う own data key はツリーに落ちること（積みの取り違え防止・D19 と同じ）', () => {
-    const r = record([[[] as any, 'user'], [['theme'], 'theme']], { theme: { mode: 'injected' } });
+  it('規則 2: 作者の own data key は部分エントリと同名でも私有であること（v2 の厳格 R1）', () => {
+    const r = record([[[] as any, 'user'], [['theme'], 'theme']], { theme: { mode: 'own' } });
+    expect(translateInnerPath(r, 'theme.mode')).toBe('user.#m1.theme.mode');
+  });
+
+  it('規則 2: 積みで注入されたキーは作者のものでなく、ツリー（マウント表）に落ちること', () => {
+    const r = record(
+      [[[] as any, 'user'], [['theme'], 'theme']],
+      { theme: { mode: 'injected-by-host' } },
+      new Set(['theme']),
+    );
     expect(translateInnerPath(r, 'theme.mode')).toBe('theme.mode');
+    // 注入キーは私有スナップショットにも入らない
+    expect('theme' in r.privateSnapshot).toBe(false);
   });
 
   it('規則 1: メソッドと単純 getter はマーカー配下に写すこと', () => {
@@ -223,5 +234,71 @@ describe('mount: 登録簿', () => {
     expect(getMountRecordByPath(a, `user.${r.marker}.x`)).toBe(r);
     expect(getMountRecordByPath(b, `user.${r.marker}.x`)).toBeNull();
     expect(stateElementHasMounts(b)).toBe(false);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * slice 3 — アクセサの $n 補正と登録簿の細部
+ * ------------------------------------------------------------------ */
+import { getIndexShiftForMarkerPath } from '../src/webComponent/mount';
+import { setStateElementAlias } from '../src/stateElementByName';
+
+describe('mount: getIndexShiftForMarkerPath（getter 内 $n の補正値）', () => {
+  it('マーカー無し・未登録接尾は Δ、登録済みアクセサはその indexShift を返すこと', () => {
+    const r = record([[[] as any, 'users.*']], {
+      get display() { return ''; },
+      get 'tags.*.flag'() { return ''; },
+    });
+    // マーカーを含まないパス → ルートの Δ
+    expect(getIndexShiftForMarkerPath(r, 'users.*.name')).toBe(1);
+    // 翻訳の副作用でアクセサが登録される
+    expect(translateInnerPath(r, 'display')).toBe('users.*.#m1.display');
+    expect(translateInnerPath(r, 'tags.*.flag')).toBe('users.*.tags.*.#m1.flag');
+    // 現行規則では翻訳で増えるワイルドカード数 = ルート接頭辞の Δ に一致する
+    expect(getIndexShiftForMarkerPath(r, 'users.*.#m1.display')).toBe(1);
+    expect(getIndexShiftForMarkerPath(r, 'users.*.tags.*.#m1.flag')).toBe(1);
+    // マーカーはあるが未登録の接尾 → Δ にフォールバック
+    expect(getIndexShiftForMarkerPath(r, 'users.*.#m1.unregistered')).toBe(1);
+  });
+});
+
+describe('mount: setter だけのアクセサ', () => {
+  it('規則 1: setter しか無いキーもマーカー配下に写ること', () => {
+    const r = record([[[] as any, 'user']], { set title(_v: any) {} });
+    expect(translateInnerPath(r, 'title')).toBe('user.#m1.title');
+  });
+});
+
+describe('mount: setStateElementAlias', () => {
+  it('同一要素の再登録は冪等で、別要素への付け替えは throw すること', () => {
+    const root = document.createDocumentFragment();
+    const a = { name: 'default' } as any;
+    const b = { name: 'default' } as any;
+    setStateElementAlias(root, 'default', a);
+    expect(() => setStateElementAlias(root, 'default', a)).not.toThrow();
+    expect(() => setStateElementAlias(root, 'default', b)).toThrow(/already registered/);
+  });
+});
+
+describe('mount: アクセサ先頭セグメントの深いパス', () => {
+  it('規則 1/2: getter / setter を先頭に持つ複数セグメントもマーカー配下に写ること', () => {
+    const r = record([[[] as any, 'user']], {
+      get profile() { return {}; },
+      set title(_v: any) {},
+    });
+    expect(translateInnerPath(r, 'profile.avatar.url')).toBe('user.#m1.profile.avatar.url');
+    expect(translateInnerPath(r, 'title.deep')).toBe('user.#m1.title.deep');
+  });
+});
+
+describe('mount: setBindingsReadyForScope', () => {
+  it('reject する ready は markBindingsBuilt を握って呼び出し側にだけ伝えること', async () => {
+    const { setBindingsReadyForScope, getBindingsReady } = await import('../src/stateElementByName');
+    const root = document.createDocumentFragment();
+    const failure = Promise.reject(new Error('boom'));
+    setBindingsReadyForScope(root, failure);
+    await expect(getBindingsReady(root)).rejects.toThrow('boom');
+    // 内蔵の reject 握り（markBindingsBuilt を走らせない側）が unhandled rejection を出さない
+    await new Promise((r) => setTimeout(r));
   });
 });

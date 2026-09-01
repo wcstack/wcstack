@@ -20,7 +20,7 @@ const registeredNodeSet = new WeakSet<Node>();
  * パース結果は登録時（collectStructuralFragments）に変換済みで、二重に掛けると
  * 接頭辞が二重になる。
  */
-export type ParseResultTransform = (parsed: ParseBindTextResult) => ParseBindTextResult;
+export type ParseResultTransform = (parsed: ParseBindTextResult, forPath?: string) => ParseBindTextResult;
 
 function applyTransform(
   parseResults: ParseBindTextResult[],

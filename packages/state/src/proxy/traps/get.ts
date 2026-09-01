@@ -24,7 +24,7 @@ import { IAbsoluteStateAddress, IStateAddress } from "../../address/types";
 import { getCommandNamespace } from "../../command/commandNamespace";
 import { DELIMITER, INDEX_BY_INDEX_NAME, STATE_COMMAND_NAMESPACE_NAME, STATE_STREAM_ERROR_NAMESPACE_NAME, STATE_STREAM_STATUS_NAMESPACE_NAME } from "../../define";
 import { listIndexAtWildcard } from "../../list/wildcardLevel";
-import { getMountRecordByPath } from "../../webComponent/mount";
+import { getIndexShiftForMarkerPath, getMountRecordByPath } from "../../webComponent/mount";
 import { raiseError } from "../../raiseError";
 import { getStreamErrorNamespace, getStreamStatusNamespace } from "../../stream/streamNamespace";
 import { connectedCallback } from "../apis/connectedCallback";
@@ -96,7 +96,7 @@ export function get(
     if (handler.stateElement?.hasMounts === true && lastPathInfo.path.indexOf('#') !== -1) {
       const mountRecord = getMountRecordByPath(handler.stateElement, lastPathInfo.path);
       if (mountRecord !== null) {
-        scopedIndex = index + mountRecord.delta;
+        scopedIndex = index + getIndexShiftForMarkerPath(mountRecord, lastPathInfo.path);
       }
     }
     const indexListIndex = listIndexAtWildcard(listIndex, scopedIndex, lastPathInfo.wildcardCount);

@@ -151,7 +151,16 @@ export function applyChangeToFor(
   const listPathInfo = bindingInfo.statePathInfo;
   const listIndex = getListIndexByBindingInfo(bindingInfo);
   const absAddress = getAbsoluteStateAddressByBinding(bindingInfo);
-  const lastValue  = getLastListValueByAbsoluteStateAddress(absAddress);
+  const recordedLastValue = getLastListValueByAbsoluteStateAddress(absAddress);
+  // lastListValue はアドレスキーの共有台帳。まだ何も描いていない binding ノード
+  //（content 台帳が空）が、既に描画済みのアドレスに後から参加する形 — マウント
+  // スコープの再初期化（コンポーネントが connectedCallback で shadow を張り直す）や
+  // 後着ノードの binder 適用 — では、共有の記録で差分を取ると「既存 content の
+  // 再利用・維持」を指示され、この binding には無いので落ちる。自分の台帳が空なら
+  // 白紙から全行 add で描く（同じアドレスの他の binding の差分には影響しない）
+  const lastValue = recordedLastValue.length > 0 && !contentByListIndexByNode.has(bindingInfo.node)
+    ? []
+    : recordedLastValue;
   // 子スコープのトップレベルのリストは base を親に持つ（webComponent/baseListIndex.ts）
   const diff = createListDiff(
     getListParentListIndex(context.stateElement, listIndex), lastValue, newValue);

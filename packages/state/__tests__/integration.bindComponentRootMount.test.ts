@@ -148,6 +148,30 @@ describe("bind-component: 丸ごとマウント state: path (integration)", () =
     host.remove();
   });
 
+  it("shadow 張り直しの連打では、剥がされた <wcs-state> がスコープを触らないこと", async () => {
+    const { host, parentStateElement, card, cs } = await mountCard();
+    const inner = card.shadowRoot!.querySelector("wcs-state")!.outerHTML.replace(/>.*/s, ">") +
+      "</wcs-state>" + CARD_TEMPLATE + `<span class="theme" data-wcs="textContent: theme.mode"></span>`;
+
+    // 同期で 2 回張り直す: 1 回目に入った <wcs-state> は初期化の await 中に剥がされ、
+    // スコープを触らずに退場する（組み直すのは 2 回目に入ったもの）
+    card.shadowRoot!.innerHTML = inner;
+    card.shadowRoot!.innerHTML = inner;
+    await childReady(card);
+    await flush();
+    await flush();
+
+    expect(text(cs, ".name")).toBe("Alice");
+    parentStateElement.createState("writable", (s: any) => {
+      s["user.name"] = "Zoe";
+    });
+    await flush();
+    await flush();
+    expect(text(cs, ".name")).toBe("Zoe");
+
+    host.remove();
+  });
+
   it("M5: 部分マウント state.theme: theme を併用でき、部分規則が最長接頭辞で勝つこと", async () => {
     const { host, parentStateElement, cs } = await mountCard("; state.theme: theme");
 
@@ -236,6 +260,67 @@ describe("bind-component: 行そのものをマウント state: . (integration)"
     expect(tags(0)).toEqual(["c1"]);
 
     // 差し替え後も行フィールドの書き込みが届く（§1.9 の形）
+    parentStateElement.createState("writable", (s: any) => {
+      s["users.0.name"] = "Cleopatra";
+    });
+    await settle();
+    expect(names()).toEqual(["Cleopatra"]);
+
+    host.remove();
+  });
+
+  it("M17b: shadow を一度だけ組むコンポーネントは、再接続で台帳を張り直して行に追随すること（remount 経路）", async () => {
+    // M17 の wipe 型（connectedCallback のたびに innerHTML を張り直す）はスコープを
+    // 組み直す再初期化経路に乗る。こちらは shadow を一度だけ組む形 — 同じ <wcs-state> が
+    // 再接続され、remountScopeBindings / rebindAddresses（lastListValue の引き継ぎ込み）が走る
+    const tag = uniqueTag("bcrm-once");
+    class RowOnce extends HTMLElement {
+      state: Record<string, any> = {};
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" });
+      }
+      connectedCallback() {
+        if (this.shadowRoot!.firstChild === null) {
+          this.shadowRoot!.innerHTML = `<wcs-state bind-component="state"></wcs-state>${ROW_TEMPLATE}`;
+        }
+      }
+    }
+    customElements.define(tag, RowOnce);
+    const { host, shadowRoot, parentStateElement } = await mountHost(
+      '{"users":[{"id":"a","name":"Anna","tags":[{"name":"x"}]},{"id":"b","name":"Ben","tags":[{"name":"y"},{"name":"z"}]}]}',
+      `<div id="rows"><template data-wcs="for: users"><${tag} data-wcs="state: ."></${tag}></template></div>`,
+    );
+    const rows = () => Array.from(shadowRoot.querySelectorAll(tag));
+    const settle = async () => {
+      await flush();
+      await flush();
+      for (const row of rows()) {
+        await childReady(row);
+      }
+    };
+    await settle();
+    const names = () => rows().map((row) => text(row.shadowRoot!, ".name"));
+    const tags = (i: number) => Array.from(rows()[i].shadowRoot!.querySelectorAll(".tags li")).map((li) => li.textContent);
+
+    expect(names()).toEqual(["Anna", "Ben"]);
+
+    parentStateElement.createState("writable", (s: any) => {
+      s.users = [s.users[1], s.users[0]];
+    });
+    await settle();
+    expect(names()).toEqual(["Ben", "Anna"]);
+    expect(tags(0)).toEqual(["y", "z"]);
+    expect(tags(1)).toEqual(["x"]);
+
+    parentStateElement.createState("writable", (s: any) => {
+      s.users = [{ id: "c", name: "Cleo", tags: [{ name: "c1" }] }];
+    });
+    await settle();
+    expect(rows()).toHaveLength(1);
+    expect(names()).toEqual(["Cleo"]);
+    expect(tags(0)).toEqual(["c1"]);
+
     parentStateElement.createState("writable", (s: any) => {
       s["users.0.name"] = "Cleopatra";
     });

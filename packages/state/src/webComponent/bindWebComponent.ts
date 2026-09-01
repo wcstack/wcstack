@@ -55,6 +55,11 @@ export function bindWebComponent(
     configurable: true,
   });
   markWebComponentAsComplete(component, stateProp);
+  invokeStateReadyCallback(component, stateProp);
+}
+
+/** `$stateReadyCallback` の呼び出し（v1 の bindWebComponent と v2 のマウント経路で共用）。 */
+export function invokeStateReadyCallback(component: Element, stateProp: string): void {
   if (WEBCOMPONENT_STATE_READY_CALLBACK_NAME in component) {
     const func = (component as any)[WEBCOMPONENT_STATE_READY_CALLBACK_NAME];
     if (typeof func === 'function') {

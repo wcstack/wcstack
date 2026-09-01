@@ -6,6 +6,7 @@ import { IAbsolutePathInfo } from "../address/types";
 import { clearAbsoluteStateAddressByBinding, getAbsoluteStateAddressByBinding, resolveBindingRootNode } from "../binding/getAbsoluteStateAddressByBinding";
 import { addBindingByAbsoluteStateAddress, addBindingByPattern, removeBindingByAbsoluteStateAddress, removeBindingByPattern } from "../binding/getBindingSetByAbsoluteStateAddress";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
+import { getLastListValueByAbsoluteStateAddress, setLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
 import { IListIndex } from "../list/types";
 import { clearStateAddressByBindingInfo } from "../binding/getStateAddressByBindingInfo";
 import { config } from "../config";
@@ -517,6 +518,50 @@ export class BindingSession {
       record.teardowns = null;
     }
     this.records.clear();
+  }
+
+  /**
+   * マウントスコープ専用（Phase 2・webComponent/mountScope.ts）: 全 record の台帳登録を
+   * **現在のループ文脈の listIndex** で張り直す。行 content のプール再利用でコンポーネント
+   * 要素が別の行に付け替わると、スコープの binding は旧行の listIndex で台帳に載ったままに
+   * なる — その 1 点だけを直す（listener・record・依存グラフは張り直し不要）。
+   *
+   * `for` binding は lastListValue（差分の基準）を旧アドレスから新アドレスへ引き継ぐ。
+   * 引き継がないと再適用が全行 add と誤認し、旧行の DOM が残ったまま新行を重ねて
+   * マウントする。戻り値は再適用すべき binding（呼び出し側が applyChangeFromBindings する）。
+   */
+  rebindAddresses(): IBindingInfo[] {
+    const rebound: IBindingInfo[] = [];
+    for (const record of this.records) {
+      if (record.phase !== "active") continue;
+      const binding = record.info;
+      if (record.address === null && record.patternListIndex === null) continue;
+      const oldAbs = binding.bindingType === "for" ? getAbsoluteStateAddressByBinding(binding) : null;
+      if (record.address !== null) {
+        removeBindingByAbsoluteStateAddress(record.address, binding);
+        record.address = null;
+      } else {
+        removeBindingByPattern(record.patternPathInfo!, record.patternListIndex!, binding);
+        record.patternPathInfo = null;
+        record.patternListIndex = null;
+      }
+      clearStateAddressByBindingInfo(binding);
+      clearAbsoluteStateAddressByBinding(binding);
+      this.registerAddress(record);
+      if (oldAbs !== null) {
+        const newAbs = getAbsoluteStateAddressByBinding(binding);
+        if (newAbs !== oldAbs) {
+          const lastValue = getLastListValueByAbsoluteStateAddress(oldAbs);
+          if (lastValue != null) {
+            setLastListValueByAbsoluteStateAddress(newAbs, lastValue);
+          }
+        }
+      }
+      if (this.shouldApplyState(binding)) {
+        rebound.push(binding);
+      }
+    }
+    return rebound;
   }
 
   observe(node: Node): void {

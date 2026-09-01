@@ -90,6 +90,17 @@ describe('proxy/traps/get', () => {
     vi.clearAllMocks();
   });
 
+  it('マーカー風のパスでもマウント記録が引けなければ $n はシフトしないこと', () => {
+    // hasMounts な state で '#' を含むパスを評価中でも、そのマーカーが登録簿に
+    // 無ければ（他 state のマーカー・偽物）素の $n のまま
+    const listIndex = createListIndex(null, 7);
+    const handler = {
+      stateElement: { hasMounts: true, getterPaths: new Set() },
+      lastAddressStack: createStateAddress(getPathInfo('items.*.#zz.name'), listIndex),
+    } as any;
+    expect(get({}, '$1', {}, handler)).toBe(7);
+  });
+
   it('$1 で listIndex の値が取得できること', () => {
     const listIndex = createListIndex(null, 3);
     const handler = {

@@ -52,7 +52,13 @@ export function setStateElementAlias(rootNode: Node, name: string, element: ISta
     stateElementByName = new Map<string, IStateElement>();
     stateElementByNameByNode.set(rootNode, stateElementByName);
   }
-  if (stateElementByName.has(name)) {
+  const existing = stateElementByName.get(name);
+  if (typeof existing !== "undefined") {
+    // 再初期化（connectedCallback で shadow を張り直すコンポーネントの再接続）は
+    // 同じ親を同じ名前で指し直すだけなので冪等。別要素への付け替えは設定ミス
+    if (existing === element) {
+      return;
+    }
     raiseError(`State element with name "${name}" is already registered.`);
   }
   stateElementByName.set(name, element);

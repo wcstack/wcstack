@@ -72,7 +72,7 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
   ) {}
 
   private accessorNameFor(key: string): string | undefined {
-    return this.record.accessorBySuffixByMarkerParent.get(this.markerParentPath)?.get(key);
+    return this.record.accessorBySuffixByMarkerParent.get(this.markerParentPath)?.get(key)?.accessorName;
   }
 
   private accessorAddress(key: string): IStateAddress {
@@ -168,7 +168,15 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
         return true;
       }
     }
-    return Reflect.has(this.receiver, translateInnerPath(this.record, prop));
+    // 規則 3（ツリー）: v1 innerState の has と同じ「規則が解決するか」の意味論。
+    // 親 proxy の has は生オブジェクトの Reflect.has なので、複数セグメントの
+    // 翻訳後パスを in で聞いても常に偽 — 値の存在でなく規則の存在で答える
+    try {
+      translateInnerPath(this.record, prop);
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 
@@ -238,12 +246,18 @@ export function createPublicMountState(record: IMountRecord): Record<string, any
       if (typeof prop !== "string" || prop[0] === "$" || prop[0] === "#") {
         return false;
       }
-      let result = false;
-      parent.createState("readonly", (state) => {
-        result = withHostContext(state as IStateProxy, () =>
-          translateInnerPath(record, prop) in (state as object));
-      });
-      return result;
+      // 作者の面（私有キー・アクセサ・メソッド）はオブジェクトの own property
+      if (Object.prototype.hasOwnProperty.call(record.stateObject, prop)) {
+        return true;
+      }
+      // ツリーは「規則が解決するか」（v1 innerState の has と同じ意味論 — ルート
+      // マウントでは常に真、部分マウントのみでは接頭辞が一致するときだけ真）
+      try {
+        translateInnerPath(record, prop);
+        return true;
+      } catch {
+        return false;
+      }
     },
   });
 }

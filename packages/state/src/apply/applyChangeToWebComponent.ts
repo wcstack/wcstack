@@ -2,6 +2,7 @@ import { config } from "../config";
 import { DELIMITER } from "../define";
 import { raiseError } from "../raiseError";
 import { IBindingInfo } from "../types";
+import { getMountRecordByScopeRoot } from "../webComponent/mount";
 import { getRootReloadPaths } from "../webComponent/rootReloadPaths";
 import { getStateElementByWebComponent } from "../webComponent/stateElementByWebComponent";
 import { IApplyContext } from "./types";
@@ -31,6 +32,11 @@ import { IApplyContext } from "./types";
  */
 export function applyChangeToWebComponent(binding: IBindingInfo, _context: IApplyContext, _newValue: unknown): void {
   const element = binding.node as Element;
+  // v2 マウント（Phase 2）: 配送は静的依存と単一台帳が担うので、値を運ばない
+  // 再読込通知そのものが不要（webComponent/mountScope.ts のプローブが実証）
+  if (getMountRecordByScopeRoot(element.shadowRoot ?? element) !== null) {
+    return;
+  }
   const propSegments = binding.propSegments;
   const [ firstSegment, ...restSegments ] = propSegments;
   const innerStateElement = getStateElementByWebComponent(element, firstSegment);

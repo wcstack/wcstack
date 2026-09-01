@@ -32,13 +32,19 @@ import { IStateProxy, Mutability } from "../proxy/types";
 import { createStateProxy } from "../proxy/StateHandler";
 import { initializeBindings } from "../bindings/initializeBindings";
 import { collectStructuralFragments } from "../structural/collectStructuralFragments";
-import { bindWebComponent } from "../webComponent/bindWebComponent";
+import { bindWebComponent, invokeStateReadyCallback } from "../webComponent/bindWebComponent";
+import { getBindingsByNode } from "../bindings/getBindingsByNode";
+import { buildMountRecord, getRegisteredMountRecord, IMountRecord } from "../webComponent/mount";
+import { initializeMountScope, remountScopeBindings } from "../webComponent/mountScope";
+import { createPublicMountState } from "../webComponent/overlay";
+import { warnOwnKeyShadowsForMount } from "../webComponent/ownKeyShadow";
+import { markWebComponentAsComplete } from "../webComponent/completeWebComponent";
 import { getBaseDepth } from "../webComponent/baseListIndex";
 import { propagateListPathToOuterState } from "../webComponent/outerListPath";
 import { getPrimaryInnerPaths, hasRootMappingRule, resetDerivedMappingRules } from "../webComponent/MappingRule";
 import { getRootReloadPaths } from "../webComponent/rootReloadPaths";
 import { markWebComponentStatePropDeclared } from "../webComponent/completeWebComponent";
-import { takeOverwrittenObject } from "../webComponent/preCompletionWrites";
+import { getInjectedKeys, takeOverwrittenObject } from "../webComponent/preCompletionWrites";
 import { hasRootMountBinding } from "../webComponent/rootMountBinding";
 import { warnNamedStateDeprecated } from "../deprecation";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/symbols";
@@ -115,6 +121,8 @@ export class State extends HTMLElementBase implements IStateElement {
   private _boundComponentStateProp: string | null = null;
   private _hasMappedComponentState: boolean = false;
   private _hasMounts: boolean = false;
+  /** v2 マウント（Phase 2）: この bind-component 要素が構築したマウント記録 */
+  private _mountRecord: IMountRecord | null = null;
   private _bindableEventMap: Record<string, string> = {};
   private _commandTokenNames: Set<string> = new Set<string>();
   private _eventTokenNames: Set<string> = new Set<string>();
@@ -358,6 +366,55 @@ export class State extends HTMLElementBase implements IStateElement {
       }
       this._boundComponent = boundComponent;
       this._boundComponentStateProp = boundComponentStateProp;
+      // v2 マウント（Phase 2 slice 3・impl-plan §3-0）: **ルートエントリ**（`state: path` の
+      // 丸ごとマウント）を持つホスト配線は単一ツリーで構築する。部分マウントのみの
+      // 既存形は v1 機構のまま（次スライスで移行 — P2-0 のテスト仕分けと同時）。
+      // Light DOM は P2 後半（P3-7 と同時）。
+      if (parentNode instanceof ShadowRoot && boundComponent.hasAttribute(config.bindAttributeName)) {
+        const hostBindings = (getBindingsByNode(boundComponent) ?? []).filter(
+          (hostBinding) => hostBinding.propSegments[0] === boundComponentStateProp,
+        );
+        if (hostBindings.some((hostBinding) => hostBinding.propSegments.length === 1)) {
+          const parentStateElement = getStateElementByName(boundComponent.getRootNode() as Node, hostBindings[0].stateName)
+            ?? raiseError(`State element with name "${hostBindings[0].stateName}" not found for mount host <${customTagName}>.`);
+          // 再初期化（コンポーネントが connectedCallback で shadow の innerHTML を張り直す
+          // 作りだと、再接続のたびに新しい <wcs-state> がここへ来る）: 記録を再利用して
+          // マーカーを安定させる。このとき上の `state` はもう公開プロキシ（下の
+          // defineProperty 済み）だが、buildMountRecord を通らないので実害はない
+          let record = getRegisteredMountRecord(boundComponent, boundComponentStateProp);
+          const isReinitialize = record !== null;
+          if (record === null) {
+            record = buildMountRecord(
+              boundComponent,
+              boundComponentStateProp,
+              hostBindings,
+              parentStateElement,
+              state,
+              getInjectedKeys(boundComponent, boundComponentStateProp),
+            );
+            warnOwnKeyShadowsForMount(record);
+          }
+          this._mountRecord = record;
+          // shadow 張り直しの連打で、上の await 中に自分が剥がされた形。スコープは
+          // 次に入った <wcs-state> が組み直すので触らない（_mountRecord は立てて、
+          // connectedCallback の続きが v1 の _initialize に落ちないようにする）
+          if (this.parentNode !== parentNode) {
+            return;
+          }
+          initializeMountScope(record, parentNode);
+          if (!isReinitialize) {
+            const publicState = createPublicMountState(record);
+            Object.defineProperty(boundComponent, boundComponentStateProp, {
+              get: () => publicState,
+              enumerable: true,
+              configurable: true,
+            });
+            markWebComponentAsComplete(boundComponent, boundComponentStateProp);
+          }
+          invokeStateReadyCallback(boundComponent, boundComponentStateProp);
+          return;
+        }
+      }
       bindWebComponent(this, this._boundComponent, this._boundComponentStateProp, state);
     }
   }
@@ -498,12 +555,36 @@ export class State extends HTMLElementBase implements IStateElement {
         return;
       }
       await this._initializeBindWebComponent();
+      if (this._mountRecord !== null) {
+        // v2 マウント: この要素は独立ツリーを持たない（台帳エイリアスが親を指す）。
+        // 名前登録・state ロード・$connectedCallback / $watch / $streams は行わない
+        // （マウントスコープの $ 面は P2-9 — 設計書 §4-6）
+        this._initialized = true;
+        this._resolveInitialize?.();
+        this._resolveLoading?.();
+        this._resolveConnectedCallback?.();
+        return;
+      }
       await this._initialize();
       this._initialized = true;
       // 名前登録（_initialize の末尾）が済んだこの時点でなければ、子スコープの
       // `@name` 参照が解決できない（§1.13）
       this._initializeLightDomComponentScope();
       this._resolveInitialize?.();
+    } else if (this._mountRecord !== null) {
+      // マウント済みコンポーネントの再接続（行 content のプール再利用）: 現在の行の
+      // listIndex でマウントスコープの台帳を張り直し、最新値を適用する（§1.9 の v2 版）。
+      // microtask に遅らせるのは、この connectedCallback が親の行ループ（mountAfter）の
+      // 最中に同期で発火し、新しいループ文脈は直後の activateContent が張るため —
+      // 同期で張り直すと旧行の listIndex を読んでしまう
+      const mountRecord = this._mountRecord;
+      const scopeRoot = this.parentNode as ShadowRoot;
+      queueMicrotask(() => {
+        if (this._rootNode === null) return; // 再接続後すぐ切断された（プール返却）
+        remountScopeBindings(mountRecord, scopeRoot);
+      });
+      this._resolveConnectedCallback?.();
+      return;
     } else if (!this._dcc && getStateElementByName(this._rootNode, this._name) !== this) {
       // 再接続（disconnect で名前登録が解除された後の再 connect）: 登録を復元する。
       // createState が rootNode 経由でこの要素を解決できるようにするために必要
@@ -588,7 +669,20 @@ export class State extends HTMLElementBase implements IStateElement {
   }
 
   disconnectedCallback() {
+    if (this._mountRecord !== null) {
+      // v2 マウント: 名前登録・streams・watch を持たないので後始末は不要。
+      // 台帳エイリアスは消さない（プール再利用の再接続が同じスコープに戻る）
+      this._rootNode = null;
+      return;
+    }
     if (this._rootNode !== null) {
+      if (!this._initialized) {
+        // 初期化前に剥がされた（bind-component の await 中に shadow が張り直された等）。
+        // 名前登録も token も stream もまだ無く、state も作れないので後始末は不要。
+        // ここで createState すると "_state is not initialized" で CE リアクションが落ちる
+        this._rootNode = null;
+        return;
+      }
       // try/finally: ユーザーの $disconnectedCallback が throw しても後続の後始末を
       // 必ず実行する。特に abortAllStreams が飛ぶと stream が消費を続け（ゾンビ I/O）、
       // activeStateElements の強参照残留で GC が妨げられ、切断済み要素が依存駆動

@@ -51,17 +51,19 @@ function cloneNotParseBindTextResult(
  * `uuid` を持つ nodeInfo エントリ（入れ子フラグメントの参照 — 再帰で変換済み）には
  * 掛けない（collectNodesAndBindingInfos.applyTransform と同じ規則）。
  */
-export type FragmentParseTransform = (parsed: ParseBindTextResult) => ParseBindTextResult;
+export type FragmentParseTransform = (parsed: ParseBindTextResult, forPath?: string) => ParseBindTextResult;
 
 function transformNodeInfos(
   nodeInfos: IFragmentInfo["nodeInfos"],
   transform: FragmentParseTransform,
+  forPath: string | undefined,
 ): void {
   for (const nodeInfo of nodeInfos) {
     for (let i = 0; i < nodeInfo.parseBindTextResults.length; i++) {
       const parsed = nodeInfo.parseBindTextResults[i];
       if (parsed.uuid != null) continue;
-      nodeInfo.parseBindTextResults[i] = transform(parsed);
+      // forPath はこのフラグメントの中身を囲む for のスコープ相対パス（`$n` のシフト量の根拠）
+      nodeInfo.parseBindTextResults[i] = transform(parsed, forPath);
     }
   }
 }
@@ -90,7 +92,7 @@ function _getFragmentInfo(
     nodeInfos: getFragmentNodeInfos(fragment),
   }
   if (typeof transform !== "undefined") {
-    transformNodeInfos(fragmentInfo.nodeInfos, transform);
+    transformNodeInfos(fragmentInfo.nodeInfos, transform, forPath);
   }
   return fragmentInfo;
 }

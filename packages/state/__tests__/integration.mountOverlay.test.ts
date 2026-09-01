@@ -268,3 +268,122 @@ describe("mountOverlay: メソッドと $n のスコープ補正", () => {
     host.remove();
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * slice 3 — 実配線（<wcs-state bind-component> 経由）のオーバーレイ面
+ * ------------------------------------------------------------------ */
+
+function defineWiredComponent(tag: string, createState: () => Record<string, any>, innerTemplate: string): void {
+  class Component extends HTMLElement {
+    state: Record<string, any> = createState();
+    constructor() {
+      super();
+      this.attachShadow({ mode: "open" });
+    }
+    connectedCallback() {
+      this.shadowRoot!.innerHTML = `<wcs-state bind-component="state"></wcs-state>${innerTemplate}`;
+    }
+  }
+  customElements.define(tag, Component);
+}
+
+async function childReady(component: Element): Promise<void> {
+  const childShadow = component.shadowRoot!;
+  const childStateElement = childShadow.querySelector("wcs-state") as State;
+  await childStateElement.connectedCallbackPromise;
+  await State.getBindingsReady(childShadow);
+  await flush();
+}
+
+describe("mountOverlay: 実配線（slice 3）", () => {
+  it("setter アクセサ・メソッド・$postUpdate・has が chroot で成立すること", async () => {
+    const tag = uniqueTag("mo-wired");
+    defineWiredComponent(tag, () => ({
+      count: "1",
+      get display() { return `c${this.count}`; },
+      // 私有キーの直接代入はオーバーレイ内で完結する（親を通らない）ので、
+      // 再評価させたいときは作者が $postUpdate を打つ — D21 の規範形
+      set counter(v: any) { this.count = v; this.$postUpdate("display"); },
+      bump() { (this as any).counter = "9"; },
+      // オーバーレイの has トラップ（作者コードの `in this`）の面を 1 つの getter で踏む
+      get summary() {
+        const hits = ["count", "display", "bump", "name"].filter((k) => k in (this as any));
+        const leaked = ("$x" in (this as any)) || ("#z" in (this as any));
+        return hits.join(",") + (leaked ? "!" : "");
+      },
+    }),
+      `<span class="display" data-wcs="textContent: display"></span>` +
+      `<span class="summary" data-wcs="textContent: summary"></span>` +
+      `<button class="b" data-wcs="onclick: bump"></button>`);
+    const { host, shadowRoot } = await mountHost(
+      '{"user":{"name":"Alice"}}',
+      `<${tag} data-wcs="state: user"></${tag}>`,
+    );
+    const card = shadowRoot.querySelector(tag)!;
+    await childReady(card);
+    const cs = card.shadowRoot!;
+    const publicState = (card as any).state as Record<string, any>;
+
+    expect(text(cs, ".display")).toBe("c1");
+
+    // メソッド（onclick）→ setter アクセサ → 私有書き込み + $postUpdate
+    (cs.querySelector(".b") as HTMLElement).click();
+    await flush();
+    await flush();
+    expect(text(cs, ".display")).toBe("c9");
+    expect(publicState.count).toBe("9");
+
+    // 公開 chroot の私有キー書き込みは親ウォークを通るので通知も届く
+    publicState.count = "5";
+    await flush();
+    await flush();
+    expect(text(cs, ".display")).toBe("c5");
+
+    // オーバーレイの has（作者コードの `in this`）: 私有・アクセサ・メソッド・ツリーが見える
+    expect(text(cs, ".summary")).toBe("count,display,bump,name");
+
+    // 公開面の has: 作者の面は own property、ツリーは「規則が解決するか」
+    //（v1 innerState の has と同じ意味論 — ルートマウントでは未知キーも真）
+    expect("count" in publicState).toBe(true);
+    expect("display" in publicState).toBe(true);
+    expect("name" in publicState).toBe(true);
+    expect("anything" in publicState).toBe(true);
+    expect("$anything" in publicState).toBe(false);
+    expect("#m1" in publicState).toBe(false);
+
+    // 公開面の $ キーは親の意味論のまま素通し（P2-9 までの契約）
+    expect(typeof publicState.$postUpdate).toBe("function");
+    // Promise 誤認ガードとシンボル
+    expect(publicState.then).toBeUndefined();
+    expect((publicState as any)[Symbol.iterator]).toBeUndefined();
+    expect(() => { (publicState as any)[Symbol("x")] = 1; }).not.toThrow();
+
+    host.remove();
+  });
+
+  it("getter 内の $n が行スコープの添字に補正されること（トラップの Δ 補正）", async () => {
+    const tag = uniqueTag("mo-idx");
+    defineWiredComponent(tag, () => ({
+      get "tags.*.flag"() { return `i${(this as any).$1}`; },
+    }),
+      `<ul class="tags"><template data-wcs="for: tags"><li data-wcs="textContent: .flag"></li></template></ul>`);
+    const { host, shadowRoot } = await mountHost(
+      '{"users":[{"name":"Anna","tags":[{"name":"x"}]},{"name":"Ben","tags":[{"name":"y"},{"name":"z"}]}]}',
+      `<div><template data-wcs="for: users"><${tag} data-wcs="state: ."></${tag}></template></div>`,
+    );
+    await flush();
+    await flush();
+    const rows = Array.from(shadowRoot.querySelectorAll(tag));
+    for (const row of rows) {
+      await childReady(row);
+    }
+    const tagsOf = (i: number) => Array.from(rows[i].shadowRoot!.querySelectorAll(".tags li")).map((li) => li.textContent);
+
+    // 作者の $1 は自分のスコープの最初のワイルドカード（tags の添字）。
+    // 翻訳後のパス users.*.tags.*.#m.flag では $2 に当たる — トラップが Δ を足す
+    expect(tagsOf(0)).toEqual(["i0"]);
+    expect(tagsOf(1)).toEqual(["i0", "i1"]);
+
+    host.remove();
+  });
+});

@@ -3,7 +3,7 @@
 - **状態**: 2026-09-01 起草。設計の正本は [state-mount-design.md](./state-mount-design.md)（以下「設計書」）。本書はその §3〜§9 を着手可能なタスク粒度・受け入れ条件・完了条件に展開した手順書。設計書の要確認 6 件のうち **D4（R1）/ D8（絶対参照なし）/ D11（ルート必須）/ 属性名 `mount` は 2026-09-01 に著者が決定**。**同日のアーキテクチャレビューで D19〜D22 が追加され、Phase 1 は R1 込み（D19）に改稿**。残る D12 は Phase 2 で確認する。**Phase 0 は完了**（§1-2）。**Phase 1 着手（2026-09-01）**。
 - **届ける相手**: v2.0.0 の全利用者。Phase 1 だけは **v1.x の minor で先行出荷**する（非破壊・追加のみ）。
 - **前提**: app-testing の積み上げ 7 本は **main 着地済み**（PR#214〜#219・2026-09-01 に `git branch --merged main` で確認）。Phase 2 以降はいつでも切れる。
-- **ブランチ**: v2 は破壊的変更なので **統合ブランチ `v2`** を main から `--no-track` で切り、Phase 2〜5 の PR は `v2` に向ける。Phase 1 と deprecation は main 向け。コミットは `git commit -F`。dist を生成したら**戻してからコミット**する。
+- **ブランチ**: v2 は破壊的変更なので **統合ブランチ `v2`** に Phase 2〜5 の PR を向ける。**実際には Phase 1 がまだ main に無いため、`v2` は `feature/state-mount-phase0`（Phase 0+1 の先端）から `--no-track` で切った（2026-09-02）** — Phase 1 の契約テストの上で Phase 2 を書くため。Phase 0+1 の PR が main に入ったら `v2` に main を merge して追随する。Phase 1 と deprecation は main 向け。コミットは `git commit -F`。dist を生成したら**戻してからコミット**する。
 - **バージョン**: v2.0.0 で**全パッケージを揃える**（設計書 D17）。新規パッケージは作らない。
 
 ---
@@ -153,6 +153,36 @@ P0 のベースライン（§1-2 P0-3・§1-3）は別セッションの値で�
 ## 3. Phase 2 — 単一ツリー化（v2 core）
 
 **狙い**: 設計書 §5。台帳を 1 本にし、橋渡し機構を削除する。この Phase では `name` はまだ残す（トップレベルのみ）。
+
+### 3-0. 実装方式（2026-09-02・着手時に確定した機構）
+
+不変条件「マウントされたコンポーネントのバインディングは、その位置にテンプレートを展開して接頭辞を付けたものと区別できない」を**文字どおり実装する**: 解決サイト（proxy / updater / walk / applyChangeToFor / getValue）を書き換えるのではなく、**バインディングそのものを登録時に親ツリーの形へ変換**し、既存機構をそのまま流用する。
+
+1. **パース時の接頭辞合成**: マウントされたスコープの `collectNodesAndBindingInfos` は MountRecord を受け取り、各 `IBindingInfo`（ノードごとのオブジェクト。パース結果キャッシュは無接頭辞のまま）の `statePathName` / `statePathInfo` / `stateName` を §4-1 の規則で書き換える — getter / own data key → `<prefix>.#<id>.<key>`（D20 の予約セグメント）、それ以外 → 最長接頭辞一致で `<outer>.<rest>`。以後この binding は「親スコープにインラインで書かれた binding」と**同一の形**になり、台帳・依存グラフ・キャッシュ・LIS・プールは無改造で正しく動く。
+2. **台帳のエイリアス登録**: 子スコープの rootNode（ShadowRoot）に対し `setStateElementByName(shadowRoot, parentName, parentStateElement)` 相当のエイリアスを張る（buildBindings の初回登録トリガと衝突しない形にする）。`getRootNode()` を使う全ての解決サイト（`getAbsoluteStateAddressByBinding` / `applyChangeFromBindings` / `applyChange`）が無改造で親 state element に到達する。
+3. **ループ文脈の境界ホップ**: `getLoopContextByNode` が「マウントされた ShadowRoot」に達したら `shadowRoot.host` から歩き続ける（マウント記録があるときだけ）。ホスト行の listIndex [i] が子スコープに継承され、内側の `for` が [i, j] を作る — v1 の crossBoundaryAddress / baseListIndex（Δ 帳簿）はこれで丸ごと不要になる。
+4. **オーバーレイ dispatch（D20）**: 親 handler の getByAddress / setByAddress は `stateElement.hasMounts && path に '#'` のときだけマウント記録を引き、私有キーは privateObject を読み書き、getter は chroot proxy を `this` に評価する（pushAddress 下なので依存エッジは親のグラフに載る＝素の wildcard getter と同じ機構）。
+5. **`$n` の Δ 補正**: マーカーを含むパスの評価中は、そのマウントの Δ（接頭辞のワイルドカード数）を足して読む（設計書 §4-4 の「この 1 箇所だけが Δ を知る」）。
+6. **chroot proxy（公開面）**: `element.state` は「相対キー → 変換済みパス文字列」の薄い翻訳で、読み書きは親の proxy を通す。`$` API は §4-6 の表どおり接頭辞を合成して親 API へ委譲する。
+
+保留登録（P2-4 / D12）は「マウント記録が確定してから子スコープの walk を始める」ことで実現する（変換に必要な情報が揃うまで collection 自体を始めない — 暫定登録→修正はしない）。
+
+#### 3-0-1. スライス進捗（v2 ブランチ・2026-09-02）
+
+- **slice 1 済み**（`c4f79a5e`）: マウント記録（P2-2 相当）＋変換規則＋登録簿＋変換フックの配管（collect / structural / initializeBindings）。
+- **slice 2 済み**（`34f58ac4`）: オーバーレイ dispatch（P2-6 相当・getByAddress の 1 点）＋chroot 公開面＋`$n` の Δ 補正（trap / 変換時）＋境界ホップ（loopContextByNode）。
+- **slice 3 済み**: State.ts の配線。**ルートエントリ（`state: path` の 1 セグメント規則）を持つ Shadow DOM マウントだけが v2 経路**に乗る。部分マウントのみの形と Light DOM は v1 機構のまま（次スライスで P2-0 の仕分けと同時に移行）。RootMount 統合テスト（M1〜M17）は全て v2 経路で緑。
+
+slice 3 で確定した挙動・発見:
+
+1. **再初期化耐性**: `connectedCallback` で shadow の `innerHTML` を張り直すコンポーネントでは、再接続のたびに新しい `<wcs-state>` が同じ shadowRoot に入る。マウント記録は **(component, stateProp) 単位で再利用**（マーカー安定＝親側の登録簿・getterPaths が再接続で増えない）、`setStateElementAlias` は同一要素なら冪等、旧スコープは `BindingSession.dispose()` で捨てて組み直す。await 中に剥がされた `<wcs-state>` はスコープを触らず退場する（`_mountRecord` だけ立てて v1 の `_initialize` に落ちないようにする）。
+2. **applyChangeToFor の白紙ガード**: `lastListValue` はアドレスキーの共有台帳なので、まだ何も描いていない binding（content 台帳が空）が描画済みアドレスに後から参加すると、差分が「既存 content の再利用」を指示して落ちる。**自分の content 台帳が空の binding は共有記録を無視して全行 add で描く**。マウント再初期化だけでなく、後着ノードの binder 適用の同型も直る一般ガード。
+3. **remount 経路（shadow を一度だけ組む形）**: 同じ `<wcs-state>` の再接続は `BindingSession.rebindAddresses()`（台帳の張り直し＋ `for` の lastListValue を旧→新アドレスへ引き継ぎ）→ `applyChangeFromBindings`。再接続の connectedCallback は親の行ループ中に同期発火し、新しいループ文脈は直後の activateContent が張るため、**張り直しは queueMicrotask に遅らせる**。
+4. **has の意味論**: 親 proxy の has は生オブジェクトの `Reflect.has` なので、翻訳後の複数セグメントパスを `in` で聞くと常に偽。オーバーレイ／公開面の has は **v1 innerState と同じ「規則が解決するか」**で答える（ルートマウントでは未知キーも真）。
+5. **v2 マウントの `<wcs-state>` は独立ツリーを持たない**: 名前登録・state ロード・`$connectedCallback` / `$watch` / `$streams` を行わない（`$` 面の翻訳は P2-9・設計書 §4-6）。`applyChangeToWebComponent` は v2 マウントには no-op（配送は静的依存＋単一台帳が担う — v1 の再読込通知チャネルはこの経路では不要）。
+6. **実欠陥の修理（v1 から潜在）**: 初期化前の `<wcs-state bind-component>` が disconnect されると `_callStateDisconnectedCallback` の `createState` が "_state is not initialized" で CE リアクションごと落ちていた。初期化前ガードを追加。
+7. **カバレッジ**: slice 2 時点の 99.04 / 97.67 / 99.44 / 99.28（stmt/br/fn/line）→ slice 3 で **99.41 / 98.13 / 100 / 99.65**（全指標改善）。global 閾値（99.5/98.5/100/99.5）にはまだ届かない — ブランチ既知の負債で、P2-7 の v1 機構削除で地形が変わるためそこで締め直す。
+8. **jsfb A/B（同一セッション・P2-11 の途中経過）**: before/after で符号がまちまち（append/clear は非接触なのに −20%）＝マシンノイズ支配。回帰なし。keyed 不変条件（runNewNodes 0・recycledOnRun 1000）維持。
 
 ### 3-1. タスク
 
