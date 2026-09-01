@@ -44,6 +44,20 @@ describe('connectedCallbackPromise（CSR）', () => {
     document.body.appendChild(router);
     await expect(settled).resolves.toMatch(/rejected: .*<template>/);
   });
+
+  it('誰も await しない失敗は unhandled rejection にならず、後から await すれば reject が届く', async () => {
+    // 通常のページや他のユニットテストは connectedCallbackPromise を一切触らない。
+    // reject の配管を足した当初、template 無しの <wcs-router> を接続しただけで
+    // 「未処理の reject」として報告され、router の全テストファイルが巻き添えになった
+    // （CI で 205 件）。vitest は未処理の reject をテスト失敗として数えるので、
+    // このテストは「待つ間に何も起きない」ことを runner に検査させている。
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+    for (let i = 0; i < 3; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    await expect(router.connectedCallbackPromise).rejects.toThrow(/<template>/);
+  });
 });
 
 /**
