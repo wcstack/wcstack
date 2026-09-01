@@ -5,13 +5,12 @@ import { collectErrors } from "./helpers";
 //
 // 4 ページとも v1.32 では成立しない形を書いてある。fixme で止めてあり、実装 Phase の着地で
 // 順に外す（受け入れ ID は設計書 §7 / 計画 §7 のマトリクス）:
-//   - mount-root / mount-row  … Phase 1（`state: path` を既存機構の上で成立させる）
+//   - mount-root / mount-row  … Phase 1（`state: path` を既存機構の上で成立させる）— 済み（fixme を外した）
 //   - mount-light             … Phase 2（スコープを DOM 位置で解決、name 不要）
 //   - mount-volume            … Phase 3（`mount=` ボリューム、name / @ の撤去）
 //
 // fixme の理由文字列に Phase を書いておく: 外し忘れは「red なのに skip」ではなく
 // 「skip 一覧に Phase N と書いてある」で見つける。
-const PHASE1 = "state-mount Phase 1（state: path）で有効化 — docs/state-mount-impl-plan.md §2";
 const PHASE2 = "state-mount Phase 2（スコープの DOM 解決）で有効化 — docs/state-mount-impl-plan.md §3";
 const PHASE3 = "state-mount Phase 3（mount= ボリューム）で有効化 — docs/state-mount-impl-plan.md §4";
 
@@ -20,7 +19,6 @@ const rowIds = async (locator: import("@playwright/test").Locator) =>
 
 test.describe("e2e/fixtures/mount-root — 丸ごとマウント state: path", () => {
   test("M1/M16: 中の name と getter がツリーの user.* を読む", async ({ page }) => {
-    test.fixme(true, PHASE1);
     const errors = collectErrors(page);
     await page.goto("/e2e/fixtures/mount-root.html");
     await expect(page.locator("#card >>> .name")).toHaveText("Alice");
@@ -30,7 +28,6 @@ test.describe("e2e/fixtures/mount-root — 丸ごとマウント state: path", (
   });
 
   test("M2/M13: 中の入力がツリーに届き、親スコープのバインドが更新される", async ({ page }) => {
-    test.fixme(true, PHASE1);
     await page.goto("/e2e/fixtures/mount-root.html");
     await page.locator("#card >>> .edit").fill("Eve");
     await page.locator("#card >>> .edit").dispatchEvent("input");
@@ -39,7 +36,6 @@ test.describe("e2e/fixtures/mount-root — 丸ごとマウント state: path", (
   });
 
   test("M3: 親の user 丸ごと差し替えと部分書き込みが中に届く", async ({ page }) => {
-    test.fixme(true, PHASE1);
     await page.goto("/e2e/fixtures/mount-root.html");
     await page.click("#rename");
     await expect(page.locator("#card >>> .name")).toHaveText("Carol");
@@ -48,7 +44,6 @@ test.describe("e2e/fixtures/mount-root — 丸ごとマウント state: path", (
   });
 
   test("M5: 部分マウント state.theme: theme が併用できる", async ({ page }) => {
-    test.fixme(true, PHASE1);
     await page.goto("/e2e/fixtures/mount-root.html");
     await page.click("#toggle-theme");
     await expect(page.locator("#card >>> .theme")).toHaveText("dark");
@@ -60,7 +55,6 @@ test.describe("e2e/fixtures/mount-row — 行そのものをマウント state: 
   const tags = (n: number) => `#rows user-row:nth-of-type(${n}) >>> .tags li`;
 
   test("M4/M7/M10: 各行が自分の行を読み、中の for が users.*.tags.* を回す", async ({ page }) => {
-    test.fixme(true, PHASE1);
     const errors = collectErrors(page);
     await page.goto("/e2e/fixtures/mount-row.html");
     await expect(page.locator(row(1))).toHaveText("Anna");
@@ -71,7 +65,6 @@ test.describe("e2e/fixtures/mount-row — 行そのものをマウント state: 
   });
 
   test("M4: 行フィールドの書き込みがその行だけを更新する（id 不変）", async ({ page }) => {
-    test.fixme(true, PHASE1);
     await page.goto("/e2e/fixtures/mount-row.html");
     const before = await rowIds(page.locator("#rows user-row >>> .name"));
     await page.click("#rename-row");
@@ -81,14 +74,12 @@ test.describe("e2e/fixtures/mount-row — 行そのものをマウント state: 
   });
 
   test("M7: 親が行の配列を差し替えると中の for が追随する", async ({ page }) => {
-    test.fixme(true, PHASE1);
     await page.goto("/e2e/fixtures/mount-row.html");
     await page.click("#add-tag");
     await expect(page.locator(tags(1))).toHaveText(["x", "w"]);
   });
 
   test("M17: swap と丸ごと差し替えで行コンポーネントが付け替わる", async ({ page }) => {
-    test.fixme(true, PHASE1);
     await page.goto("/e2e/fixtures/mount-row.html");
     await page.click("#swap");
     await expect(page.locator(row(1))).toHaveText("Ben");

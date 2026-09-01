@@ -10,9 +10,9 @@
          stay flat, and this one is where the inner/outer proxy pair, derived mapping
          rules and per-row ledger piggyback show up as time and heap.
 
-         The host binding is v1's per-property form (`state.row: .`); Phase 2 switches it
-         to the root mount (`state: .`) and drops the `row.` prefix inside the component
-         (docs/state-mount-impl-plan.md P2-11). -->
+         The host binding is the root mount (`state: .`, Phase 1 — impl-plan P1-12; the P0-4
+         baseline was taken with v1's per-property form `state.row: .` and a `row.` prefix
+         inside the component). Phase 2 measures the same page on the single tree. -->
     <script type="importmap">
       {
         "imports": {
@@ -28,7 +28,7 @@
     </style>
     <script type="module">
       class BenchRow extends HTMLElement {
-        state = { row: { id: 0, label: "", selected: false } };
+        state = {};
         constructor() {
           super();
           this.attachShadow({ mode: "open" });
@@ -37,9 +37,9 @@
           if (this.shadowRoot.childElementCount === 0) {
             this.shadowRoot.innerHTML =
               `<wcs-state bind-component="state"></wcs-state>` +
-              `<div class="r" data-wcs="class.danger: row.selected">` +
-              `<span class="id" data-wcs="textContent: row.id"></span>` +
-              `<span class="label" data-wcs="textContent: row.label"></span>` +
+              `<div class="r" data-wcs="class.danger: selected">` +
+              `<span class="id" data-wcs="textContent: id"></span>` +
+              `<span class="label" data-wcs="textContent: label"></span>` +
               `</div>`;
           }
         }
@@ -109,7 +109,7 @@ export default {
 
     <div id="rows">
       <template data-wcs="for: data">
-        <bench-row data-wcs="state.row: .; onclick: onSelect"></bench-row>
+        <bench-row data-wcs="state: .; onclick: onSelect"></bench-row>
       </template>
     </div>
   </body>
