@@ -28,7 +28,8 @@ vi.mock('../src/apply/applyChangeToWebComponent', () => ({
   applyChangeToWebComponent: vi.fn()
 }));
 vi.mock('../src/webComponent/completeWebComponent', () => ({
-  isWebComponentComplete: vi.fn().mockReturnValue(false)
+  isWebComponentComplete: vi.fn().mockReturnValue(false),
+  isWebComponentStatePropDeclared: vi.fn().mockReturnValue(false)
 }));
 vi.mock('../src/apply/getValue', () => ({
   getValue: vi.fn()

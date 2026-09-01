@@ -46,6 +46,13 @@ export interface IStateElement {
   readonly hasMappedComponentState?: boolean;
   markComponentStateMapped?(): void;
   /**
+   * この state 要素に束ねられた（`setPathInfo` を通った）パスの集合。丸ごとマウント
+   * （ルート規則）の親→子通知が「登録済みパス全部を読み直せ」を組み立てるのに使う
+   * （webComponent/rootReloadPaths.ts）。
+   * optional なのはテスト用モック互換のため（undefined は「登録なし」扱い）。
+   */
+  readonly boundPaths?: ReadonlySet<string>;
+  /**
    * DCC の `$bindables` から生成した「パス → 変更イベント名」表。
    * 唯一の書き手は defineDCC で、読み手は setByAddress。
    * getter だけを公開して setter をインターフェースから落としていたため

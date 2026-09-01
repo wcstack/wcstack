@@ -15,6 +15,13 @@ import { getStateElementByWebComponent, setOuterStateElementByWebComponent } fro
 export interface IMappingRule {
   innerAbsPathInfo: IAbsolutePathInfo;
   outerAbsPathInfo: IAbsolutePathInfo;
+  /**
+   * ルート規則（`data-wcs="state: path"` — 内側パスが空）。子スコープの `/` を親の
+   * `path` に置く「丸ごとマウント」で、あらゆる内側パスに接頭辞ゼロで一致する。
+   * 部分規則（`state.sub: path`）と併用でき、導出は最長接頭辞一致で部分規則が勝つ
+   * （docs/state-mount-design.md §3-2 / D5、impl-plan Phase 1）。
+   */
+  isRoot: boolean;
 }
 
 const innerMappingByElement: WeakMap<Element, Map<IAbsolutePathInfo, IAbsolutePathInfo>> = new WeakMap();
@@ -23,11 +30,12 @@ const primaryMappingRuleSetByElement: WeakMap<Element, Set<IMappingRule>> = new 
 const primaryBindingByMappingRule: WeakMap<IMappingRule, IBindingInfo> = new WeakMap();
 
 function createMappingRuleByBinding(innerState: IStateElement, binding: IBindingInfo): IMappingRule {
-  const innerPathInfo = getPathInfo(binding.propSegments.slice(1).join(DELIMITER));
+  const innerPath = binding.propSegments.slice(1).join(DELIMITER);
+  const innerPathInfo = getPathInfo(innerPath);
   const innerAbsPathInfo = getAbsolutePathInfo(innerState, innerPathInfo);
   const outerAbsStateAddress = getAbsoluteStateAddressByBinding(binding);
   const outerAbsPathInfo  = outerAbsStateAddress.absolutePathInfo;
-  return { innerAbsPathInfo, outerAbsPathInfo };
+  return { innerAbsPathInfo, outerAbsPathInfo, isRoot: innerPath.length === 0 };
 }
 
 export function buildPrimaryMappingRule(webComponent: Element, stateName: string, bindings: IBindingInfo[]): void {
@@ -40,8 +48,16 @@ export function buildPrimaryMappingRule(webComponent: Element, stateName: string
   }
   const innerMappingRule = new Map<IAbsolutePathInfo, IAbsolutePathInfo>();
   const outerMappingRule = new Map<IAbsolutePathInfo, IAbsolutePathInfo>();
+  // 同じ内側パスを 2 つの規則が指す形（`state.x: b; state.x: c`、`state: a; state: b`）は
+  // どちらが勝つか書き手に見えないので、導出時ではなく構築時に落とす（設計書 §4-7 / M6）。
+  const seenInnerPaths = new Set<string>();
   for (const binding of bindings) {
     const mappingRule = createMappingRuleByBinding(innerState, binding);
+    const innerPath = mappingRule.innerAbsPathInfo.pathInfo.path;
+    if (seenInnerPaths.has(innerPath)) {
+      raiseError('Duplicate mapping rule for web component.');
+    }
+    seenInnerPaths.add(innerPath);
     let primaryMappingRuleSet = primaryMappingRuleSetByElement.get(webComponent);
     if (typeof primaryMappingRuleSet === 'undefined') {
       primaryMappingRuleSetByElement.set(webComponent, new Set([mappingRule]));
@@ -90,11 +106,14 @@ export function resetDerivedMappingRules(webComponent: Element): void {
 }
 
 /**
- * このコンポーネントに張られたプライマリ規則の**内側パス**を列挙する。
+ * このコンポーネントに張られたプライマリ規則の**内側パス**を列挙する（ルート規則を除く）。
  *
  * 切断 → 再接続を跨いだ子（行 content の再利用で起きる）は、切断中に親で起きた変更の
  * 通知を受け取れていない。再接続時に「束ねているパスを読み直せ」と撃つための入力で、
  * 何が変わったかは分からないのでプライマリ規則の粒度で丸ごと読み直す（§1.9）。
+ *
+ * ルート規則は内側パスが空で `$postUpdate("")` に意味が無いため含めない。ルート規則の
+ * 読み直しは子の登録済みパス全部（`getRootReloadPaths`）で行う。
  */
 export function getPrimaryInnerPaths(webComponent: Element): string[] {
   const primaryMappingRuleSet = primaryMappingRuleSetByElement.get(webComponent);
@@ -103,9 +122,31 @@ export function getPrimaryInnerPaths(webComponent: Element): string[] {
   }
   const paths: string[] = [];
   for (const rule of primaryMappingRuleSet) {
+    if (rule.isRoot) {
+      continue;
+    }
     paths.push(rule.innerAbsPathInfo.pathInfo.path);
   }
   return paths;
+}
+
+/** このコンポーネントのプライマリ規則の集合。無ければ null（plain）。 */
+export function getPrimaryMappingRules(webComponent: Element): ReadonlySet<IMappingRule> | null {
+  return primaryMappingRuleSetByElement.get(webComponent) ?? null;
+}
+
+/** ルート規則（`state: path` の丸ごとマウント）があるか。 */
+export function hasRootMappingRule(webComponent: Element): boolean {
+  const primaryMappingRuleSet = primaryMappingRuleSetByElement.get(webComponent);
+  if (typeof primaryMappingRuleSet === 'undefined') {
+    return false;
+  }
+  for (const rule of primaryMappingRuleSet) {
+    if (rule.isRoot) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function getInnerAbsolutePathInfo(webComponent: Element, outerAbsPathInfo: IAbsolutePathInfo): IAbsolutePathInfo | null {
@@ -118,6 +159,10 @@ export function getInnerAbsolutePathInfo(webComponent: Element, outerAbsPathInfo
 
 /**
  * 内側のパスを外側のパスへ翻訳する。規則が無ければプライマリ規則から導出する。
+ *
+ * 導出は**最長接頭辞一致**。ルート規則（接頭辞長 0）はあらゆる内側パスに一致するが、
+ * 部分規則（`state.theme: theme`）がより長い接頭辞で一致すればそちらが勝つ
+ * （`state: rows; state.theme: theme` の併用 — 設計書 §3-2）。
  *
  * `registerSubscriber` は導出に**副作用を持たせるか**の切り替え。既定（子の read /
  * write からの呼び出し）では導出した規則を台帳に memo し、対応するバインディングを
@@ -157,16 +202,28 @@ export function getOuterAbsolutePathInfo(
     return null;
   }
   let primaryMappingRule: IMappingRule | null = null;
+  let matchedPrefixLength = -1;
   for(const currentPrimaryMappingRule of primaryMappingRuleSet) {
+    if (currentPrimaryMappingRule.isRoot) {
+      // ルート規則は接頭辞長 0 で常に一致。部分規則が無ければこれが採られる
+      if (matchedPrefixLength < 0) {
+        primaryMappingRule = currentPrimaryMappingRule;
+        matchedPrefixLength = 0;
+      }
+      continue;
+    }
     // innerPathInfoがprimaryMappingRuleのinnerPathInfoを包含しているか
     if (!innerAbsPathInfo.pathInfo.cumulativePathInfoSet.has(currentPrimaryMappingRule.innerAbsPathInfo.pathInfo)) {
       continue;
     }
-    if (currentPrimaryMappingRule.innerAbsPathInfo.pathInfo.segments.length === innerAbsPathInfo.pathInfo.segments.length) {
+    const prefixLength = currentPrimaryMappingRule.innerAbsPathInfo.pathInfo.segments.length;
+    if (prefixLength === innerAbsPathInfo.pathInfo.segments.length) {
       raiseError('Duplicate mapping rule for web component.');
     }
-    primaryMappingRule = currentPrimaryMappingRule;
-    break;
+    if (prefixLength > matchedPrefixLength) {
+      primaryMappingRule = currentPrimaryMappingRule;
+      matchedPrefixLength = prefixLength;
+    }
   }
   if (primaryMappingRule === null) {
     // マッピングルールに一致しない場合はnullを返し、ローカル状態へのフォールバックを許可する
@@ -179,7 +236,7 @@ export function getOuterAbsolutePathInfo(
     raiseError('Binding not found for primary mapping rule on web component.');
   }
   /* c8 ignore stop */
-  const outerRemainingSegments = innerAbsPathInfo.pathInfo.segments.slice(primaryMappingRule.innerAbsPathInfo.pathInfo.segments.length);
+  const outerRemainingSegments = innerAbsPathInfo.pathInfo.segments.slice(matchedPrefixLength);
   const outerSegments = primaryMappingRule.outerAbsPathInfo.pathInfo.segments.concat(outerRemainingSegments);
   const outerPathInfo = getPathInfo(outerSegments.join(DELIMITER));
   const rootNode = webComponent.getRootNode() as Node;

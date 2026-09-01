@@ -7,7 +7,9 @@ vi.mock('../src/address/AbsolutePathInfo', () => ({
   getAbsolutePathInfo: vi.fn()
 }));
 vi.mock('../src/webComponent/MappingRule', () => ({
-  getOuterAbsolutePathInfo: vi.fn()
+  getOuterAbsolutePathInfo: vi.fn(),
+  hasRootMappingRule: vi.fn(() => false),
+  getPrimaryMappingRules: vi.fn(() => null)
 }));
 vi.mock('../src/list/loopContextByNode', () => ({
   getLoopContextByNode: vi.fn()

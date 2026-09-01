@@ -6,7 +6,7 @@ import { getCustomElementRegistry } from "../platform/customElementRegistry.js";
 import { raiseError } from "../raiseError.js";
 import { getStateElementByName } from "../stateElementByName.js";
 import { IBindingInfo } from "../types.js";
-import { isWebComponentComplete } from "../webComponent/completeWebComponent.js";
+import { isWebComponentComplete, isWebComponentStatePropDeclared } from "../webComponent/completeWebComponent.js";
 import { applyChangeToAttribute } from "./applyChangeToAttribute.js";
 import { applyChangeToCheckbox } from "./applyChangeToCheckbox.js";
 import { applyChangeToClass } from "./applyChangeToClass.js";
@@ -53,21 +53,37 @@ const deferredSelectBindingByBinding: WeakMap<IBindingInfo, boolean> = new WeakM
 const definedApplyVerifiedByBinding: WeakMap<IBindingInfo, boolean> = new WeakMap();
 
 /**
- * このバインディングを「値を運ばない親→子の再読込通知」（applyChangeToWebComponent）へ
- * 回してよいか。
- *
- * 長さ 1 の propSegments を除くのが要点。`data-wcs="state: user"` のように
- * bind-component の stateProp をそのままプロパティ名に書いた形は、完了台帳のキーが
- * stateProp 名になった以上ゲートを通ってしまうが、applyChangeToWebComponent は
- * 「先頭セグメント＝束ね先の state 要素、残り＝子側のパス」を前提にしており
- * 残余が空だと raiseError する。updater の drain は例外を捕まえないので、
- * 誤設定タグ 1 つが同じバッチの無関係な更新まで巻き添えにしてしまう。
- * ここで弾いておけば従来どおり applyChangeToProperty に落ち、挙動は変わらない
- * （getter だけの公開プロパティへの代入が握り潰される ＝ 無言の no-op）。
+ * 丸ごとマウント（`state: user`）の完了前の初期適用は書かない。子が完了すれば
+ * innerState 経由でライブに読むので、ここで親のオブジェクトを書く意味は無い
+ * （書くと害がある — webComponent/completeWebComponent.ts の宣言台帳を参照）。
  */
-function isWebComponentCompleteForBinding(binding: IBindingInfo): boolean {
-  return binding.propSegments.length > 1
-    && isWebComponentComplete(binding.replaceNode as Element, binding.propSegments[0]);
+function skipPendingRootMount(): void {}
+
+/**
+ * カスタム要素へのプロパティバインディングの適用関数を決める。
+ *
+ * - 完了済み（bindWebComponent が公開プロパティを差し替え終えた）→ 値を運ばない
+ *   再読込通知（applyChangeToWebComponent）。1 セグメント（`state: user`）も含む —
+ *   残余が空なら「子の登録済みパス全部を読み直せ」の意味（ルート規則。
+ *   docs/state-mount-design.md §3-2 / impl-plan P1-2）
+ * - 未完了だが `<wcs-state bind-component>` が宣言済みで、かつ 1 セグメント → 今回は
+ *   書かない（skipPendingRootMount）
+ * - それ以外 → 素のプロパティ書き込み（`state.name: x` の完了前の積みも含む）
+ *
+ * 以前は 1 セグメントを通知チャネルから除いていた（残余が空だと applyChangeToWebComponent
+ * が raiseError し、updater の drain が捕まえないので同じバッチの無関係な更新まで
+ * 巻き添えにした）。残余空がルート規則の意味を持った今、その除外は要らない。
+ */
+function resolveCustomElementApply(binding: IBindingInfo): ApplyChangeFn {
+  const element = binding.replaceNode as Element;
+  const stateProp = binding.propSegments[0];
+  if (isWebComponentComplete(element, stateProp)) {
+    return applyChangeToWebComponent;
+  }
+  if (binding.propSegments.length === 1 && isWebComponentStatePropDeclared(element, stateProp)) {
+    return skipPendingRootMount;
+  }
+  return applyChangeToProperty;
 }
 
 function _applyChange(binding: IBindingInfo, context: IApplyContext): void {
@@ -84,11 +100,9 @@ function _applyChange(binding: IBindingInfo, context: IApplyContext): void {
     return;
   }
   if (fnByBinding.has(binding)) {
-    if (isWebComponentCompleteForBinding(binding)) {
-      fn = applyChangeToWebComponent;
+    fn = resolveCustomElementApply(binding);
+    if (fn === applyChangeToWebComponent) {
       fnByBinding.set(binding, fn); // 確定したのでキャッシュ
-    } else {
-      fn = applyChangeToProperty;
     }
     fn(binding, context, filteredValue);
     return;
@@ -102,11 +116,9 @@ function _applyChange(binding: IBindingInfo, context: IApplyContext): void {
     if (typeof fn === 'undefined') {
       const customTag = getCustomElement(binding.replaceNode);
       if (customTag) {
-        if (isWebComponentCompleteForBinding(binding)) {
-          fn = applyChangeToWebComponent;
+        fn = resolveCustomElementApply(binding);
+        if (fn === applyChangeToWebComponent) {
           fnByBinding.set(binding, fn); // 確定したのでキャッシュ
-        } else {
-          fn = applyChangeToProperty;
         }
       } else {
         fn = applyChangeToProperty;

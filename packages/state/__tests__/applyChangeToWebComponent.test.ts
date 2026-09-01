@@ -50,11 +50,33 @@ describe('applyChangeToWebComponent', () => {
     vi.clearAllMocks();
   });
 
-  it('propSegmentsが1以下の場合はエラーになること', () => {
+  // ルート規則（`data-wcs="state: user"` の丸ごとマウント）: 残余パスが空なら、親が
+  // マウント先を丸ごと差し替えたという通知。子の登録済みパスの先頭セグメント全部を読み直す
+  // （docs/state-mount-design.md §3-2 / impl-plan P1-2）。
+  it('1 セグメント（ルート規則）は子の登録済みパスの先頭セグメント全部を通知すること', () => {
     const el = document.createElement('div');
-    const binding = createBinding(el, ['state']);
-    expect(() => applyChangeToWebComponent(binding, dummyContext, 'value'))
-      .toThrow(/Invalid propSegments for web component binding/);
+    const posted: string[] = [];
+    setStateElementByWebComponent(el, 'state', {
+      name: 'default',
+      boundPaths: new Set(['name', 'tags', 'tags.*.name', '$1']),
+      createState(_mutability: string, callback: (state: any) => void) {
+        callback({ $postUpdate: (path: string) => { posted.push(path); } });
+      },
+    } as any);
+
+    applyChangeToWebComponent(createBinding(el, ['state']), dummyContext, { name: 'x' });
+
+    expect(posted).toEqual(['name', 'tags']);
+  });
+
+  it('1 セグメントで子に登録済みパスが無ければ createState を呼ばないこと', () => {
+    const el = document.createElement('div');
+    const { posted, mutabilities } = bindProbeStateElement(el, 'state');
+
+    applyChangeToWebComponent(createBinding(el, ['state']), dummyContext, { name: 'x' });
+
+    expect(posted).toEqual([]);
+    expect(mutabilities).toEqual([]);
   });
 
   it('bind-component済みでない要素はエラーになること', () => {

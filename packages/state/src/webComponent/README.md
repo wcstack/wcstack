@@ -116,3 +116,28 @@ Shadow DOM を持たないコンポーネントでも使えるが、名前空間
 [`docs/architecture-hardening/15-state-component-mechanism-consistency.md`](../../../../docs/architecture-hardening/15-state-component-mechanism-consistency.md)
 に集約してある。この機構に関わるのは §1.1（公開 proxy の一本化 = G1）、§1.2（分岐条件）、
 §1.7（G1 で分離した内部チャネルを選ぶゲートが壊れており、親起点の変更が届いていなかった件）。
+
+## 丸ごとマウント（ルート規則）と R1 — Phase 1（docs/state-mount-design.md）
+
+`<my-c data-wcs="state: user">`（1 セグメント）は**ルート規則**（`IMappingRule.isRoot`）。内側パスが空で
+あらゆる内側パスに接頭辞ゼロで一致し、部分規則（`state.theme: theme`）と併用すると最長接頭辞で
+部分規則が勝つ（`getOuterAbsolutePathInfo`）。同じ内側パスを 2 つの規則が指す形は構築時に throw。
+
+- **親→子の通知**: 残余パスが空なら `applyChangeToWebComponent` は子の登録済みパス
+  （`IStateElement.boundPaths`）の先頭セグメント全部を `$postUpdate` する（`rootReloadPaths.ts`）。
+  再接続の読み直し（`_reloadMappedPathsAfterReconnect`）も同じ集合を使う
+- **R1（own data key ＝ 私有）**: ルート規則の下では、コンポーネントが自分で書いた data key は
+  マッピングより先にローカルで解決する（`innerState._isPrivateKey` — 先頭セグメントで判定）。
+  getter / setter は従来どおり規則 1。部分規則が覆う先頭セグメントは除く（1.x の既存挙動＝
+  マッピングが勝つ）。ルート規則の無いコンポーネントには適用しない
+- **完了前の親の初期適用**（`preCompletionWrites.ts`）: 1 セグメントの適用は子が宣言する前に走ると
+  `element.state = userObject` と作者のオブジェクトを置き換える。置き換え前を控えて
+  `_initializeBindWebComponent` が戻す。宣言済みなら `applyChange` が書き込みを抑止する
+  （`completeWebComponent.ts` の宣言台帳）。2 セグメントの適用が作者のオブジェクトに作ったキー
+  （積み）は注入キーとして控え、衝突報告から外す
+- **衝突の報告**（`ownKeyShadow.ts`・タグ × プロパティ × キーで 1 回）: ルート規則でマウント先に
+  同名キーがある own key（私有がツリーを隠す）と、部分規則と同名の own key（今日はホストが勝ち、
+  v2 で反転する）。どちらも「既定値を消すか名前を変える」で直る
+
+Phase 2（単一ツリー化）はこの機構ごと置き換えるが、`integration.bindComponentRootMount.test.ts`
+の契約はそのまま緑に保つ。

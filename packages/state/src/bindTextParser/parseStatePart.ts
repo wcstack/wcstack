@@ -1,5 +1,6 @@
 import { getPathInfo } from "../address/PathInfo";
 import { FILTER_SEPARATOR, STATE_NAME_SEPARATOR } from "../define";
+import { warnNamedStateDeprecated } from "../deprecation";
 import { IBindingInfo, IFilterInfo } from "../types";
 import { parseFilters } from "./parseFilters";
 import { trimFn } from "./utils";
@@ -36,6 +37,10 @@ export function parseStatePart(statePart: string): StatePartParseResult {
     }
   } else {
     stateAndPath = statePart.trim();
+  }
+  if (stateAndPath.indexOf(STATE_NAME_SEPARATOR) !== -1) {
+    // `path@name` は v2 で消える（docs/state-mount-design.md D16。既定では黙る）
+    warnNamedStateDeprecated('path', stateAndPath);
   }
   const [statePathName, stateName = 'default'] = stateAndPath.split(STATE_NAME_SEPARATOR).map(trimFn);
   const pathInfo = getPathInfo(statePathName);
