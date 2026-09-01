@@ -386,9 +386,11 @@ describe("bind-component: R1 — own data key は私有 (integration)", () => {
     host.remove();
   });
 
-  it("P1-11: 部分マウントと own key の衝突は既存挙動（ホストが勝つ）のまま、2.0 の反転を予告すること", async () => {
+  it("P1-11 の反転（D19）: 部分マウントでも作者の own data key が私有として勝ち、警告が出ること", async () => {
+    // 1.x では「ホストが勝つ」＋反転予告の警告だった（Phase 1 の P1-11）。
+    // v2 は厳格 R1: 作者の既定値 { message: "" } が私有になりマッピングを隠す
     const tag = uniqueTag("bcrm-partial");
-    defineComponent(tag, () => ({ message: "" }), `<span class="msg" data-wcs="textContent: message"></span>`);
+    defineComponent(tag, () => ({ message: "own-default" }), `<span class="msg" data-wcs="textContent: message"></span>`);
     const { host, shadowRoot } = await mountHost(
       '{"user":{"name":"Alice"}}',
       `<${tag} data-wcs="state.message: user.name"></${tag}>`,
@@ -396,11 +398,10 @@ describe("bind-component: R1 — own data key は私有 (integration)", () => {
     const c = shadowRoot.querySelector(tag)!;
     await childReady(c);
 
-    expect(text(c.shadowRoot!, ".msg")).toBe("Alice");
+    expect(text(c.shadowRoot!, ".msg")).toBe("own-default");
     const warnings = shadowWarnings();
     expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain('"state.message: user.name"');
-    expect(warnings[0]).toContain("in v2");
+    expect(warnings[0]).toContain('hides the mounted entry "state.message: user.name"');
 
     host.remove();
   });

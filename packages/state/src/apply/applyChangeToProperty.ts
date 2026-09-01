@@ -5,7 +5,8 @@ import { beginPropagationTransaction, extendPropagationContext, getCurrentPropag
 import { isPossibleTwoWay } from "../event/isPossibleTwoWay";
 import { getCustomElement } from "../getCustomElement";
 import { IBindingInfo } from "../types";
-import { recordInjectedKey, rememberOverwrittenObject } from "../webComponent/preCompletionWrites";
+import { isWebComponentComplete } from "../webComponent/completeWebComponent";
+import { recordInjectedKey, rememberOverwrittenObject, rememberOverwrittenValue } from "../webComponent/preCompletionWrites";
 import { IApplyContext } from "./types";
 import { addSsrProperty, trackSsrPropertyNode } from "./ssrPropertyStore";
 
@@ -187,8 +188,13 @@ export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyCon
     // キーを作る（積み）ことを控える。R1 の衝突報告はこのキーを作者のものとして扱わない
     // （webComponent/preCompletionWrites.ts）
     if (propSegments.length === 2 && typeof subObject === 'object' && subObject !== null
-      && !(lastSegment in subObject) && getCustomElement(element) !== null) {
-      recordInjectedKey(element, firstSegment, lastSegment);
+      && getCustomElement(element) !== null) {
+      if (!(lastSegment in subObject)) {
+        recordInjectedKey(element, firstSegment, lastSegment);
+      } else if (!isWebComponentComplete(element, firstSegment)) {
+        // 既存キーの上書き: 作者の値を控える（v2 の厳格 R1 が snapshot 前に復元する）
+        rememberOverwrittenValue(element, firstSegment, lastSegment, subObject[lastSegment]);
+      }
     }
     try {
       subObject[lastSegment] = newValue;

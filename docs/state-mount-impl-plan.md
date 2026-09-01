@@ -184,6 +184,15 @@ slice 3 で確定した挙動・発見:
 7. **カバレッジ**: slice 2 時点の 99.04 / 97.67 / 99.44 / 99.28（stmt/br/fn/line）→ slice 3 で **99.41 / 98.13 / 100 / 99.65**（全指標改善）。global 閾値（99.5/98.5/100/99.5）にはまだ届かない — ブランチ既知の負債で、P2-7 の v1 機構削除で地形が変わるためそこで締め直す。
 8. **jsfb A/B（同一セッション・P2-11 の途中経過）**: before/after で符号がまちまち（append/clear は非接触なのに −20%）＝マシンノイズ支配。回帰なし。keyed 不変条件（runNewNodes 0・recycledOnRun 1000）維持。
 
+- **slice 4 済み**: 部分マウントのみの Shadow DOM 形も v2 経路へ（ゲートは「ホスト配線が 1 本でもあるか」だけに）。Light DOM は引き続き v1。P2-0 のテスト仕分けを同時に実施 — Delivery / ListRow / NestedFor / DepthN / RowReplace / watch.bindComponent / P1-11 を v2 の意味論へ移植（既定値を落とす＝D19 の移行そのもの）。DepthN の N 枚接ぎ木（Δ>0 込み・50 本）が**特別扱いゼロ**（翻訳の合成だけ）で全緑 — v1 が §1.11/§1.12 で個別修理した多段は、v2 では構成的に成立する。
+
+slice 4 で確定した挙動・発見:
+
+9. **完了前の積みの抑止を部分規則へ一般化**: `skipPendingRootMount` → `skipPendingMountWrite`。宣言済みなら `state.x: path` の完了前適用も書かない（書くと厳格 R1 の privateSnapshot が親の値で汚染される）。積みが残るのは未宣言の窓だけ。
+10. **宣言前の窓の上書き控え**: happy-dom は template clone を upgrade 済みにするため、fragment 内の初期適用は宣言より先に走る。既存キーの上書きは `rememberOverwrittenValue` で作者の値を控え、v2 のマウント構築が snapshot 前に復元する（`preCompletionWrites.ts`）。新規キーは従来どおり injectedKeys（→ツリー）。
+11. **混在パスの既知制約**: 親側にワイルドカードが乗る部分マウントでは、内側の具体添字パス（`items.0.name` → `groups.*.children.0.name`）は「文脈と添字の混在」でエンジンが受けない。行フィールドの子側書き戻し・スコープ相対のイベント添字（getScopedIndexes）・`$getAll`/`$resolve` の接頭辞翻訳は **P2-9 に it.fails でピン留め**（ListRow 1 本・NestedFor 3 本）。
+12. **カバレッジ**: slice 4 で 99.19 / 97.91 / 99.9 / 99.45 — slice 3 から微減（innerState 等の v1 機構の行使者が Light DOM だけになった）。slice 2 ベースラインは全指標で上回ったまま。P2-7 の削除で解消する。
+
 ### 3-1. タスク
 
 | ID | タスク | 場所 | 受け入れ |

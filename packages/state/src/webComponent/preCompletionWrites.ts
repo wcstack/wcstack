@@ -63,3 +63,40 @@ export function recordInjectedKey(element: Element, prop: string, key: string): 
 export function getInjectedKeys(element: Element, prop: string): ReadonlySet<string> | undefined {
   return injectedKeysByElement.get(element)?.get(prop);
 }
+
+const overwrittenValuesByElement = new WeakMap<Element, Map<string, Map<string, unknown>>>();
+
+/**
+ * 2 セグメント書き込み（`state.row: rows.*` の積み）が作者の**既存**キーを上書きする
+ * 直前の値を控える。最初の 1 回だけ（＝作者の値）。宣言前の窓（happy-dom は template
+ * clone を upgrade 済みにするので、fragment 内の初期適用は宣言より先に走る）では
+ * 宣言台帳の抑止が効かず、v2 の厳格 R1 が snapshot する「作者の既定値」が親の値で
+ * 汚染される — v2 のマウント構築が snapshot 前にこれで復元する。
+ */
+export function rememberOverwrittenValue(element: Element, prop: string, key: string, previous: unknown): void {
+  let byProp = overwrittenValuesByElement.get(element);
+  if (!byProp) {
+    byProp = new Map();
+    overwrittenValuesByElement.set(element, byProp);
+  }
+  let byKey = byProp.get(prop);
+  if (!byKey) {
+    byKey = new Map();
+    byProp.set(prop, byKey);
+  }
+  if (!byKey.has(key)) {
+    byKey.set(key, previous);
+  }
+}
+
+/** 控えた作者の値を state オブジェクトへ戻して消す（v2 のマウント構築時・snapshot 前）。 */
+export function restoreOverwrittenValues(element: Element, prop: string, state: Record<string, unknown>): void {
+  const byKey = overwrittenValuesByElement.get(element)?.get(prop);
+  if (typeof byKey === "undefined") {
+    return;
+  }
+  for (const [key, previous] of byKey) {
+    state[key] = previous;
+  }
+  overwrittenValuesByElement.get(element)!.delete(prop);
+}

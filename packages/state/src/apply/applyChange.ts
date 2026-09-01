@@ -53,11 +53,15 @@ const deferredSelectBindingByBinding: WeakMap<IBindingInfo, boolean> = new WeakM
 const definedApplyVerifiedByBinding: WeakMap<IBindingInfo, boolean> = new WeakMap();
 
 /**
- * 丸ごとマウント（`state: user`）の完了前の初期適用は書かない。子が完了すれば
- * innerState 経由でライブに読むので、ここで親のオブジェクトを書く意味は無い
- * （書くと害がある — webComponent/completeWebComponent.ts の宣言台帳を参照）。
+ * 宣言済みマウントの完了前の初期適用は書かない。子が完了すればマウント経由で
+ * ライブに読むので、ここで親の値を書く意味は無い（書くと害がある —
+ * webComponent/completeWebComponent.ts の宣言台帳を参照）。v2 では部分規則
+ *（`state.name: user.name`）にも同じ原則を適用する: 積みの上書きが作者の既定値を
+ * 汚すと、厳格 R1（作者の own data key は私有・D19）の privateSnapshot が親の値で
+ * 汚染される。積みが要るのは**未宣言**（`<wcs-state bind-component>` がまだ来ていない
+ * 非同期定義や、そもそも bind-component の無い素のプロパティパス配線）だけ。
  */
-function skipPendingRootMount(): void {}
+function skipPendingMountWrite(): void {}
 
 /**
  * カスタム要素へのプロパティバインディングの適用関数を決める。
@@ -66,9 +70,9 @@ function skipPendingRootMount(): void {}
  *   再読込通知（applyChangeToWebComponent）。1 セグメント（`state: user`）も含む —
  *   残余が空なら「子の登録済みパス全部を読み直せ」の意味（ルート規則。
  *   docs/state-mount-design.md §3-2 / impl-plan P1-2）
- * - 未完了だが `<wcs-state bind-component>` が宣言済みで、かつ 1 セグメント → 今回は
- *   書かない（skipPendingRootMount）
- * - それ以外 → 素のプロパティ書き込み（`state.name: x` の完了前の積みも含む）
+ * - 未完了だが `<wcs-state bind-component>` が宣言済み → 今回は
+ *   書かない（skipPendingMountWrite — 部分規則も含む、上記）
+ * - それ以外（未宣言）→ 素のプロパティ書き込み（積み）
  *
  * 以前は 1 セグメントを通知チャネルから除いていた（残余が空だと applyChangeToWebComponent
  * が raiseError し、updater の drain が捕まえないので同じバッチの無関係な更新まで
@@ -80,8 +84,8 @@ function resolveCustomElementApply(binding: IBindingInfo): ApplyChangeFn {
   if (isWebComponentComplete(element, stateProp)) {
     return applyChangeToWebComponent;
   }
-  if (binding.propSegments.length === 1 && isWebComponentStatePropDeclared(element, stateProp)) {
-    return skipPendingRootMount;
+  if (isWebComponentStatePropDeclared(element, stateProp)) {
+    return skipPendingMountWrite;
   }
   return applyChangeToProperty;
 }

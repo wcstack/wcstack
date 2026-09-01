@@ -44,7 +44,7 @@ import { propagateListPathToOuterState } from "../webComponent/outerListPath";
 import { getPrimaryInnerPaths, hasRootMappingRule, resetDerivedMappingRules } from "../webComponent/MappingRule";
 import { getRootReloadPaths } from "../webComponent/rootReloadPaths";
 import { markWebComponentStatePropDeclared } from "../webComponent/completeWebComponent";
-import { getInjectedKeys, takeOverwrittenObject } from "../webComponent/preCompletionWrites";
+import { getInjectedKeys, restoreOverwrittenValues, takeOverwrittenObject } from "../webComponent/preCompletionWrites";
 import { hasRootMountBinding } from "../webComponent/rootMountBinding";
 import { warnNamedStateDeprecated } from "../deprecation";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/symbols";
@@ -374,7 +374,7 @@ export class State extends HTMLElementBase implements IStateElement {
         const hostBindings = (getBindingsByNode(boundComponent) ?? []).filter(
           (hostBinding) => hostBinding.propSegments[0] === boundComponentStateProp,
         );
-        if (hostBindings.some((hostBinding) => hostBinding.propSegments.length === 1)) {
+        if (hostBindings.length > 0) {
           const parentStateElement = getStateElementByName(boundComponent.getRootNode() as Node, hostBindings[0].stateName)
             ?? raiseError(`State element with name "${hostBindings[0].stateName}" not found for mount host <${customTagName}>.`);
           // 再初期化（コンポーネントが connectedCallback で shadow の innerHTML を張り直す
@@ -384,6 +384,9 @@ export class State extends HTMLElementBase implements IStateElement {
           let record = getRegisteredMountRecord(boundComponent, boundComponentStateProp);
           const isReinitialize = record !== null;
           if (record === null) {
+            // 宣言前の窓（fragment 内の初期適用）で積みが作者の既存キーを上書きして
+            // いたら、作者の値に戻してから snapshot する（厳格 R1 — D19/D21）
+            restoreOverwrittenValues(boundComponent, boundComponentStateProp, state);
             record = buildMountRecord(
               boundComponent,
               boundComponentStateProp,

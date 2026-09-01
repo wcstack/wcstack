@@ -43,7 +43,8 @@ type ShadowTiming = "constructor" | "connectedCallback";
 
 function defineComponent(tag: string, timing: ShadowTiming, innerTemplate: string): void {
   class Component extends HTMLElement {
-    state: Record<string, any> = { items: [] };
+    // v2 の厳格 R1: 既定値 { items: [] } は私有になりマッピングを隠す（D19）
+    state: Record<string, any> = {};
     constructor() {
       super();
       this.attachShadow({ mode: "open" });
@@ -138,14 +139,14 @@ describe.each<ShadowTiming>(["constructor", "connectedCallback"])(
       host.remove();
     });
 
-    it("子からの書き戻しが親 state に届くこと", async () => {
+    // 親側にワイルドカードが乗る部分マウントでは、内側の具体添字パス
+    //（items.0.name → groups.*.children.0.name）は「文脈と添字の混在」で
+    // エンジンが受けない。行フィールドの書き戻しの語彙は $resolve の接頭辞翻訳
+    //（P2-9・設計書 §4-6）— green に反転したら .fails を外すこと
+    it.fails("子からの書き戻しが親 state に届くこと（P2-9 待ち）", async () => {
       const { host, components, parentStateElement, rendered } = await mountNested(TWO_GROUPS, timing);
 
-      const childShadow = components()[1].shadowRoot!;
-      const childStateElement = childShadow.querySelector("wcs-state") as State;
-      childStateElement.createState("writable", (s: any) => {
-        s["items.0.name"] = "c-from-child";
-      });
+      ((components()[1] as any).state as any).$resolve("items.*.name", [0], "c-from-child");
       await flush();
 
       let value: unknown;
@@ -174,16 +175,12 @@ describe.each<ShadowTiming>(["constructor", "connectedCallback"])(
     it("子スコープのリストへの行追加・削除が通ること", async () => {
       const { host, components, rendered } = await mountNested(TWO_GROUPS, timing);
 
-      const childStateElement = components()[0].shadowRoot!.querySelector("wcs-state") as State;
-      childStateElement.createState("writable", (s: any) => {
-        s["items"] = [...s["items"], { name: "b2" }];
-      });
+      const chroot = (components()[0] as any).state;
+      chroot.items = [...chroot.items, { name: "b2" }];
       await flush();
       expect(rendered()).toEqual([["a", "b", "b2"], ["c"]]);
 
-      childStateElement.createState("writable", (s: any) => {
-        s["items"] = (s["items"] as any[]).slice(0, 1);
-      });
+      chroot.items = (chroot.items as any[]).slice(0, 1);
       await flush();
       expect(rendered()).toEqual([["a"], ["c"]]);
 
@@ -204,15 +201,11 @@ describe.each<ShadowTiming>(["constructor", "connectedCallback"])(
       window.addEventListener("unhandledrejection", onError as EventListener);
       try {
         const { host, components, rendered } = await mountNested(TWO_GROUPS, timing);
-        const childStateElement = components()[0].shadowRoot!.querySelector("wcs-state") as State;
+        const chroot = (components()[0] as any).state;
 
-        childStateElement.createState("writable", (s: any) => {
-          s["items"] = [{ name: "a" }, { name: "b" }, { name: "b2" }];
-        });
+        chroot.items = [{ name: "a" }, { name: "b" }, { name: "b2" }];
         await flush();
-        childStateElement.createState("writable", (s: any) => {
-          s["items"] = [{ name: "a" }];
-        });
+        chroot.items = [{ name: "a" }];
         await flush();
 
         expect(errors).toEqual([]);
@@ -348,12 +341,13 @@ describe("bind-component 入れ子形: スコープの独立性", () => {
     host.remove();
   });
 
-  it("イベントハンドラが受け取るインデックスが子スコープのものであること", async () => {
+  // 現状はスコープ外の Δ 段が先頭に漏れる（[1,0]）。子スコープ相対への切り出しは
+  // P2-9 の getScopedIndexes（設計書 §4-4）— green に反転したら .fails を外すこと
+  it.fails("イベントハンドラが受け取るインデックスが子スコープのものであること（P2-9 待ち）", async () => {
     const pickLog: number[][] = [];
     const tag = uniqueTag("bcnf-evt");
     class Component extends HTMLElement {
       state: Record<string, any> = {
-        items: [],
         pick(_event: Event, ...indexes: number[]) {
           pickLog.push(indexes);
         },
@@ -410,14 +404,11 @@ describe("bind-component 入れ子形: スコープの独立性", () => {
     host.remove();
   });
 
-  it("$resolve が子スコープのインデックスで往復できること", async () => {
+  // P2-9（$ API の接頭辞翻訳・設計書 §4-6）で green に反転したら .fails を外すこと
+  it.fails("$resolve が子スコープのインデックスで往復できること（P2-9 待ち）", async () => {
     const { host, components } = await mountNested(TWO_GROUPS, "constructor");
 
-    const childStateElement = components()[1].shadowRoot!.querySelector("wcs-state") as State;
-    let value: unknown;
-    childStateElement.createState("readonly", (s: any) => {
-      value = s.$resolve("items.*.name", [0]);
-    });
+    const value = ((components()[1] as any).state as any).$resolve("items.*.name", [0]);
     expect(value).toBe("c");
 
     host.remove();

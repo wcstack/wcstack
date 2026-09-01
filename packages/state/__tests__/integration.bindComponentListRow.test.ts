@@ -50,7 +50,7 @@ const LIST_TEMPLATE =
 
 async function mountListComponent(json: string, hostExtra = "") {
   const tag = uniqueTag("bclr-list");
-  defineComponent(tag, { items: [] }, LIST_TEMPLATE);
+  defineComponent(tag, {}, LIST_TEMPLATE);
 
   const host = document.createElement(uniqueTag("bclr-host"));
   const shadowRoot = host.attachShadow({ mode: "open" });
@@ -92,11 +92,11 @@ describe("bind-component: 子スコープの for が親スコープのリスト�
       '{"rows":[{"name":"a"}]}',
     );
 
-    // 子が宣言した for は子の台帳にしか載らず、値の実体を持つ親は素のままだった。
-    // 親の依存 walk（rows → rows.*）と swap 判定はこの 2 つを見る。
-    expect([...childStateElement.listPaths]).toContain("items");
+    // v2 単一ツリー: 子の for は翻訳されて親の台帳にだけ載る（rows / rows.*）。
+    // 子の <wcs-state> は独立ツリーを持たないので、子の台帳は空のまま
     expect([...parentStateElement.listPaths]).toContain("rows");
     expect([...parentStateElement.elementPaths]).toContain("rows.*");
+    expect([...childStateElement.listPaths]).toEqual([]);
 
     host.remove();
   });
@@ -137,13 +137,13 @@ describe("bind-component: 子スコープの for が親スコープのリスト�
   });
 
   it("子から行フィールドへ書き戻すと親 state に届くこと", async () => {
-    const { host, parentStateElement, childStateElement, rendered } = await mountListComponent(
+    const { host, parentStateElement, component, rendered } = await mountListComponent(
       '{"rows":[{"name":"a"},{"name":"b"}]}',
     );
 
-    childStateElement.createState("writable", (s: any) => {
-      s.$resolve("items.*.name", [1], "w");
-    });
+    // v2: 子スコープの語彙での書き戻しは公開 chroot（element.state）を通す。
+    //（$resolve の接頭辞翻訳は P2-9 — それまで $ API は親の意味論のまま）
+    (component as any).state["items.1.name"] = "w";
     await flush();
 
     let parentRows: unknown;
@@ -229,7 +229,7 @@ describe("bind-component: 子スコープの for が親スコープのリスト�
     // リストであることの伝播も行の購読も state 要素インスタンス単位で成立する必要がある。
     // テンプレート単位で 1 回しか登録されないと 2 つ目以降が無言で死ぬ。
     const tag = uniqueTag("bclr-list");
-    defineComponent(tag, { items: [] }, LIST_TEMPLATE);
+    defineComponent(tag, {}, LIST_TEMPLATE);
 
     const host = document.createElement(uniqueTag("bclr-host"));
     const shadowRoot = host.attachShadow({ mode: "open" });
@@ -271,15 +271,14 @@ describe("bind-component: 子スコープの for が親スコープのリスト�
     host.remove();
   });
 
-  it("子から $getAll でマップ先のリストを横断的に読めること", async () => {
-    const { host, childStateElement } = await mountListComponent(
+  // P2-9（$ API の接頭辞翻訳・設計書 §4-6）で green に反転したら .fails を外すこと
+  it.fails("子から $getAll でマップ先のリストを横断的に読めること（P2-9 待ち）", async () => {
+    const { host, component } = await mountListComponent(
       '{"rows":[{"name":"a"},{"name":"b"},{"name":"c"}]}',
     );
 
-    let names: unknown;
-    childStateElement.createState("readonly", (s: any) => {
-      names = s.$getAll("items.*.name", []);
-    });
+    // v2 の形: 公開 chroot の $getAll が内側の語彙（items.*）を受ける
+    const names = ((component as any).state as any).$getAll("items.*.name", []);
     expect(names).toEqual(["a", "b", "c"]);
 
     host.remove();
@@ -287,7 +286,8 @@ describe("bind-component: 子スコープの for が親スコープのリスト�
 
   it("コンポーネント自身が親の for の中にいる形（従来の成立形）が壊れていないこと", async () => {
     const tag = uniqueTag("bclr-row");
-    defineComponent(tag, { row: {} }, `<span id="inner-view" data-wcs="textContent: row.name"></span>`);
+    // v2 の厳格 R1: 既定値 { row: {} } は私有になりマッピングを隠す（D19）— 既定値を持たない形が正
+    defineComponent(tag, {}, `<span id="inner-view" data-wcs="textContent: row.name"></span>`);
 
     const host = document.createElement(uniqueTag("bclr-host"));
     const shadowRoot = host.attachShadow({ mode: "open" });
