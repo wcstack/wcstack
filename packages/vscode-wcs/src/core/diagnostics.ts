@@ -106,6 +106,10 @@ export const WcsDiagnosticCode = {
   BaseHrefMissing: "wcs/base-href-missing",
   // @wcstack/signals と /dom エントリの同一ページ混在(リアクティブコア二重化)。
   SignalsDualEntry: "wcs/signals-dual-entry",
+  // --- deprecations ---
+  // 名前付き State（`<wcs-state name>` / `path@name`）。v2 でマウント（`mount=` と接頭辞付きパス）に
+  // 置き換わる（docs/state-mount-design.md D16）。1.x では warning、v2 では parse error と同時に error。
+  NamedStateDeprecated: "wcs/named-state-deprecated",
 } as const;
 
 export type WcsDiagnosticCodeValue = (typeof WcsDiagnosticCode)[keyof typeof WcsDiagnosticCode];
