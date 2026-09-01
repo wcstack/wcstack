@@ -44,6 +44,25 @@ exit code: `0` 最新 · `1` 乖離あり（変更は JSON pointer で列挙: `+
 npx wcs-schema check src/state.ts && npx wcs-validate --strict index.html
 ```
 
+### `wcs-tsc [--url-imports=any|error] [--wcs-defaults] [tsc の引数...]`
+
+`.html` に対する `tsc`: 各 `<wcs-state>` のインライン `<script type="module">` を VS Code 拡張と同じ言語プラグイン（型付き `this`・自動 `defineState` ラップ・bare でも CDN URL でも `@wcstack/state` import を除去）で型検査し、診断は HTML の位置を指します:
+
+```bash
+npm i -D @volar/typescript@~2.4.0 @volar/language-core@~2.4.0   # optional peer・wcs-tsc だけが必要
+npx wcs-tsc --noEmit
+# index.html(9,14): error TS2551: Property 'coutn' does not exist on type '_WcsThis<…>'. Did you mean 'count'?
+```
+
+| オプション | 説明 |
+|---|---|
+| `--url-imports=any`（既定） | 全ての `http(s)://` モジュール import を `any` に型付ける — buildless なページは tsc が解決できない CDN から import する |
+| `--url-imports=error` | URL import をそのまま残す（それぞれ TS2307） |
+| `--wcs-defaults` | プロジェクトの tsconfig に `**/*.html` を覆う `include`・`noImplicitThis`・`allowJs`・`checkJs` が無ければ、元を extends してそれらを足した一時 config で実行する（無指定なら警告だけで HTML が検査されないことがある） |
+| それ以外 | tsc にそのまま渡す（`-p`・`--noEmit` …） |
+
+exit code は tsc のもの（`0` クリーン・診断があれば非ゼロ）。`typescript` / `@volar/typescript` が解決できないときと不正なオプションは `2`。1 ページに複数の `<wcs-state>` があれば 1 本の仮想モジュールに合成（import は巻き上げ・各ブロックは自分のスコープ）し、インライン state の無いページは空のモジュールになります。仕組みは vue-tsc と同じ: `@volar/typescript` の `runTsc` がプロジェクト自身の `typescript/lib/tsc.js` にパッチを当てます。
+
 ## 生成される schema の中身
 
 sidecar 規範が許す JSON-Schema サブセットだけ（`type` / `properties` / `required` / `items` / `enum` / `const` / `anyOf`）:

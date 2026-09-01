@@ -41,6 +41,16 @@ const configs = [
     outbase: 'src',
     entryNames: 'schema-core',
   },
+  {
+    // @wcstack/typescript（wcs-tsc）が同梱する Language Plugin。@volar/* は型 import
+    // だけなので、vscode-uri を含めて自己完結の単一 CJS になる。
+    ...sharedOptions,
+    external: [...sharedOptions.external, '@volar/language-core', '@volar/typescript'],
+    entryPoints: ['src/tscCore.ts'],
+    outdir: 'dist',
+    outbase: 'src',
+    entryNames: 'tsc-core',
+  },
 ];
 
 if (isWatch) {

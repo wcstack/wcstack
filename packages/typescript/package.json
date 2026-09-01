@@ -13,7 +13,8 @@
     }
   },
   "bin": {
-    "wcs-schema": "./dist/wcs-schema.mjs"
+    "wcs-schema": "./dist/wcs-schema.mjs",
+    "wcs-tsc": "./dist/wcs-tsc.mjs"
   },
   "files": [
     "dist"
@@ -48,10 +49,22 @@
   },
   "license": "MIT",
   "peerDependencies": {
+    "@volar/language-core": "~2.4.0",
+    "@volar/typescript": "~2.4.0",
     "typescript": ">=5.0"
+  },
+  "peerDependenciesMeta": {
+    "@volar/language-core": {
+      "optional": true
+    },
+    "@volar/typescript": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@volar/language-core": "~2.4.0",
+    "@volar/typescript": "~2.4.0",
     "@rollup/plugin-json": "^6.1.0",
     "@rollup/plugin-typescript": "^11.1.6",
     "@types/node": "^22.10.0",

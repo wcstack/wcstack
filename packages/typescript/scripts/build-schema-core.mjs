@@ -29,13 +29,16 @@ if (!existsSync(join(vscodeWcs, "node_modules"))) {
 }
 run("npm run build", vscodeWcs);
 
-const source = join(vscodeWcs, "dist", "schema-core.cjs");
-if (!existsSync(source)) {
-  console.error(`[typescript build] expected build output not found: ${source}`);
-  process.exit(1);
-}
-
 const dist = join(pkgRoot, "dist");
 mkdirSync(dist, { recursive: true });
-copyFileSync(source, join(dist, "schema-core.cjs"));
-console.log("[typescript build] dist/schema-core.cjs ready");
+// schema-core.cjs: validator core for wcs-schema's self-check and e2e tests.
+// tsc-core.cjs: the Volar language plugin wcs-tsc hands to @volar/typescript's runTsc.
+for (const name of ["schema-core.cjs", "tsc-core.cjs"]) {
+  const source = join(vscodeWcs, "dist", name);
+  if (!existsSync(source)) {
+    console.error(`[typescript build] expected build output not found: ${source}`);
+    process.exit(1);
+  }
+  copyFileSync(source, join(dist, name));
+  console.log(`[typescript build] dist/${name} ready`);
+}

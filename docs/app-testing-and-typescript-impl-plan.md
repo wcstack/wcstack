@@ -1,6 +1,6 @@
 # 実装計画: アプリ作者向けテスト支援と TypeScript の出口
 
-- **状態**: 2026-08-30 起草、同日アーキテクチャレビュー反映（D8〜D12 追加・実測 12〜14 追加・Phase 2a/4 の前提修正）。**未着手**。指摘「型安全とテスト支援がアプリ作者に届いていない」（①`@wcstack/testing` 相当が無い／②型は VSCode 拡張の診断のみ・CI では `@wcstack/lint` が唯一の網）への対処を、実測で補正した上で 6 案（L0 / T2 / T1 / T3 / L1 / T4）に分解し、着手可能なタスク粒度・受け入れ条件・完了条件に展開した手順書。
+- **状態**: 2026-08-30 起草、同日アーキテクチャレビュー反映（D8〜D12 追加・実測 12〜14 追加・Phase 2a/4 の前提修正）。**同日 Phase 0〜5 実装完了（ローカルブランチ・未 push・PR 未作成）**: `docs/app-testing-l0` → `feature/lint-strict` → `feature/state-schema-validation` → `feature/wcs-schema` → `feature/tag-name-map` → `feature/testing-package` → `feature/wcs-tsc`（P2a 以降は積み上げ。P0 は P4 に cherry-pick 済み）。各 Phase の実装時発見は各節末尾に記録。指摘「型安全とテスト支援がアプリ作者に届いていない」（①`@wcstack/testing` 相当が無い／②型は VSCode 拡張の診断のみ・CI では `@wcstack/lint` が唯一の網）への対処を、実測で補正した上で 6 案（L0 / T2 / T1 / T3 / L1 / T4）に分解し、着手可能なタスク粒度・受け入れ条件・完了条件に展開した手順書。
 - **届ける相手（2 種類・区別して扱う）**: **(A) CDN のみ**（Import Map / `https://esm.run/...`、tsc を回さない・wcstack の主利用者）と **(B) npm + tsc**（`@wcstack/*` を install し `tsconfig.json` を持つ）。Phase 0 / 1 / 2 は A・B 双方に届く（HTML と manifest だけで成立）。**Phase 3 / 5 は B にしか届かない**（Phase 3 の augmentation はパッケージの `.d.ts` がプログラムに載って初めて効き、URL import では tsc に到達しない。Phase 5 は `tsconfig.json` の `include` を要求する）。各 Phase の見出しに対象を付す。
 - **前提となる設計書**: [static-wiring-dx-design.md](./static-wiring-dx-design.md)（§7 で `@wcstack/language-server` 汎用化を棄却済み＝本書でも踏襲）、[wcstack-manifest-schema.md](./wcstack-manifest-schema.md)（`stateSchema` の規範）、[wcs-validate-npm-cli-proposal.md](./wcs-validate-npm-cli-proposal.md)（lint の zero-dep 配布パターン）、[sri.md](./sri.md)（`src/auto.ts` の自己完結不変条件）。
 - **ブランチ**: Phase ごとに `--no-track` で切る（`docs/app-testing-l0` → `feature/lint-strict` → `feature/state-schema-validation` → `feature/tag-name-map` → `feature/testing-package` → `feature/wcs-tsc`）。コミットは `git commit -F`。
@@ -203,6 +203,8 @@ app.unmount();
 7. 文書: `docs/typescript.md`、`packages/typescript/README`、skill §5。**D5 は据え置き**である旨を `static-wiring-dx-design.md` §7 の行に追記（「他エディタは wcs-validate + wcs-tsc で到達」）。
 
 **受け入れ条件**: `examples/` の全 HTML で `wcs-tsc --noEmit` が偽陽性 0 で通る。`this.coutn++` を仕込んだ HTML が `TS2339` で落ちる。
+
+**実装時の発見（2026-08-30）**: (a) `runTsc`（proxyCreateProgram）は `getExtraServiceScripts` を提供せず **1 ファイル 1 サービススクリプト**（vue-tsc と同じ）。よって Language Plugin に `mode: 'tsc'` を足し、全ブロックを 1 本の仮想 TS に合成する（プリアンブル 1 回・import 巻き上げ・ブロックごとのスコープ・`export default` → `const __wcs_state_N =`）。`getExtraServiceScripts` は定義するだけで警告が出るので tsc モードでは持たない。(b) `<wcs-state>` の無い HTML に `undefined` を返すと `.html` が素の TS として読まれ構文エラーの山になる → 空モジュールを返す。(c) typo の診断コードは `TS2339` ではなく候補付きの `TS2551`（"Did you mean 'count'?"）。(d) Volar は optional peer で `wcs-tsc` 起動時にプロジェクト側から解決（D10）。(e) tsc の exit code をそのまま使う（`noEmit` でも診断ありは非ゼロ）。(f) `stripWcsImport` は改行だけを残して import を消していたため、import 以降の診断位置が削った文字数ぶんずれていた（IDE でも同じ）→ 改行以外を空白に置換して文字数を保つ。(g) **examples 初回実測（experimental job の判断材料）**: 偽陽性 7 件・3 種 — `EyeDropper`（DOM lib に無い・`state-color-palette`）、`$streams` が実体化する値プロパティ（`pageResult`）をプリアンブルが知らない（`state-intersect-scroll`、`new Promise(resolve => …)` の `resolve()` 引数無しも同じページ）、例のコード自身の union 推論（`websocket-chat/state`）。ゲート化の前に、プリアンブルへの `$streams` 反映と DOM 拡張 API の ambient 宣言（または examples 側の `declare`）が要る。
 
 ---
 
