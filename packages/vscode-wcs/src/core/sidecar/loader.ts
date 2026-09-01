@@ -12,6 +12,7 @@ import { WcsDiagnostic, WcsDiagnosticCode } from "../diagnostics.js";
 import { DiagnosticContext } from "./schemaSubset.js";
 import { JsonSpan, parseJsonWithSpans, pointer } from "./jsonSource.js";
 import {
+  JsonSchemaNode,
   SUPPORTED_NAMESPACE_VERSION,
   SUPPORTED_SCHEMA_VERSION,
   TypesComponent,
@@ -124,6 +125,13 @@ export interface ResolvedTagContract {
 export interface ResolvedContracts {
   /** 衝突していない tag → 契約。衝突した tag は含めない(unknown 扱いにするため)。 */
   readonly tags: ReadonlyMap<string, ResolvedTagContract>;
+  /**
+   * 衝突していない application state → stateSchema(D8)。同名 state が複数の application
+   * artifact に宣言されていれば含めない(未宣言扱い = schema 検証は沈黙)。
+   */
+  readonly applicationStates: ReadonlyMap<string, JsonSchemaNode>;
+  /** application artifact が 1 つでも渡されたか(明示指定が発見結果を置き換える判定用)。 */
+  readonly hasApplicationArtifact: boolean;
   /** 衝突/override 診断を、それを生んだ artifact の source ごとに束ねたもの。 */
   readonly diagnosticsBySource: ReadonlyMap<string, readonly WcsDiagnostic[]>;
 }
@@ -150,9 +158,14 @@ export function resolvePackageContracts(loaded: readonly LoadedManifest[]): Reso
   const collided = new Set<string>();
   const firstSource = new Map<string, string>();
   const filterOwner = new Map<string, string>();
+  const stateOwner = new Map<string, string>();
+  const stateWinners = new Map<string, JsonSchemaNode>();
+  const collidedStates = new Set<string>();
+  let hasApplicationArtifact = false;
 
   for (const lm of loaded) {
     if (lm.manifest === null) continue;
+    if (lm.manifest.kind === "application") hasApplicationArtifact = true;
 
     // package: tag 契約の衝突/override。
     const types = lm.manifest.manifestExtensions?.["wcstack.types"];
@@ -208,6 +221,30 @@ export function resolvePackageContracts(loaded: readonly LoadedManifest[]): Reso
         );
       }
     }
+
+    // application: state 名の衝突(D8)。同名 stateSchema は後勝ちにせず、勝者なし。
+    if (lm.manifest.kind === "application" && application?.states !== undefined) {
+      for (const [name, entry] of Object.entries(application.states)) {
+        const schema = (entry as { stateSchema?: unknown } | null)?.stateSchema;
+        if (schema === null || typeof schema !== "object" || Array.isArray(schema)) continue;
+        const priorSource = stateOwner.get(name);
+        if (priorSource === undefined) {
+          stateOwner.set(name, lm.artifact.source);
+          stateWinners.set(name, schema as JsonSchemaNode);
+          continue;
+        }
+        collidedStates.add(name);
+        stateWinners.delete(name);
+        ctxFor(lm).add(
+          WcsDiagnosticCode.ManifestStateCollision,
+          pointer("manifestExtensions", "wcstack.application", "states", name),
+          `State "${name}" declares a stateSchema in multiple application artifacts (also in "${priorSource}"); neither is used.`,
+          "error",
+          { statePath: name },
+          true,
+        );
+      }
+    }
   }
 
   // 撤回された tag の override info は陳腐化するため取り除く(#5)。
@@ -218,5 +255,5 @@ export function resolvePackageContracts(loaded: readonly LoadedManifest[]): Reso
     if (kept.length > 0) diagnosticsBySource.set(source, kept);
   }
 
-  return { tags: winners, diagnosticsBySource };
+  return { tags: winners, applicationStates: stateWinners, hasApplicationArtifact, diagnosticsBySource };
 }

@@ -53,6 +53,37 @@ app.manifest.json:1:3 error wcs/manifest-broken Broken manifest JSON: ...
 | `1` | error severity の診断が 1 件以上 |
 | `2` | usage エラー、またはファイル読み取り失敗 |
 
+## state の契約を宣言する（`stateSchema`）
+
+契約が無いと、validator が解決できないパスは **warning**（`wcs/binding-path-missing`）に留まります: インラインスクリプトが静的に読めなくても `count` は実行時には存在するかもしれないからです。HTML と同じ（または上の）ディレクトリに `application` sidecar を置くと、同じ typo が **error** になります:
+
+```json
+{
+  "schemaVersion": 1,
+  "kind": "application",
+  "manifestExtensions": {
+    "wcstack.application": {
+      "version": 1,
+      "states": {
+        "default": {
+          "stateSchema": {
+            "type": "object",
+            "properties": {
+              "count": { "type": "number" },
+              "users": { "type": "array", "items": { "type": "object", "properties": { "name": { "type": "string" } } } }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+- **発見**: HTML ファイルから上へ辿って最も近い `wcstack.manifest.json` が自動で使われます — コマンドラインに渡す必要はありません。`application` artifact を含む `*.manifest.json` を引数に渡した場合は、その実行全体で発見を置き換えます。VS Code 拡張も同じファイルを発見するので IDE と CLI の結果は一致します。
+- **効果**: `stateSchema` を持つ state では、schema 上に確定的に存在しないバインドパスは `wcs/path-nonexistent`（**error**・exit `1`）、`for:` に非配列は `wcs/path-type-mismatch`（**error**）になります。schema が開いたままの箇所（素の `{}`）は沈黙し、インラインスクリプトのメソッド / getter / `$listKeys` は引き続き存在扱いです。schema の無い state は従来どおりです。
+- **schema の出どころ**: 手で書く（受け付けるのは JSON-Schema サブセット `type / properties / required / items / enum / const / anyOf / $defs / $ref` のみ）か、TypeScript の state ファイルから `wcs-schema`（`@wcstack/typescript`）で生成します。manifest は派生物なので、CI では `wcs-schema check` で同期を保ってください。
+
 ## 生成 → 検証 → 修正ループでの利用
 
 安定した diagnostic code・`source:line:col` range・exit code 契約により、CI のゲートにも AI コード生成フローにもそのまま組み込めます: HTML を生成 → `npx @wcstack/lint --errors-only` → 診断を読んで修正 → exit code `0` になるまで再実行。

@@ -29,9 +29,17 @@ export function validateManifestArtifact(artifact: ManifestArtifact): WcsDiagnos
 function validateLoadedSchemas(loaded: LoadedManifest): void {
   if (loaded.manifest === null) return;
   const types = loaded.manifest.manifestExtensions?.["wcstack.types"];
-  if (types === undefined) return;
-  for (const [tag, component] of Object.entries(types.components ?? {})) {
+  for (const [tag, component] of Object.entries(types?.components ?? {})) {
     validateComponentSchemas(tag, component, loaded.ctx);
+  }
+  // application: stateSchema も同じ subset 規則(§4)に従う。検証器がそれを消費する
+  // ようになった(D6)ので、未知 keyword が黙って unknown に倒れるより先に指摘する。
+  const application = loaded.manifest.manifestExtensions?.["wcstack.application"];
+  for (const [name, entry] of Object.entries(application?.states ?? {})) {
+    const schema = (entry as { stateSchema?: JsonSchemaNode } | null)?.stateSchema;
+    if (schema === null || typeof schema !== "object" || Array.isArray(schema)) continue;
+    const ptr = `${pointer("manifestExtensions", "wcstack.application", "states", name)}/stateSchema`;
+    validateSchemaSubset(schema, ptr, loaded.ctx, schema.$defs ?? {});
   }
 }
 
@@ -65,6 +73,10 @@ export interface ManifestSetResult {
   /** artifact ごとの診断(source をキーに、CLI が per-file 出力に使う)。 */
   readonly byArtifact: ReadonlyMap<string, readonly WcsDiagnostic[]>;
   readonly resolvedTags: ReadonlyMap<string, ManifestArtifact["source"]>;
+  /** 衝突していない application state → stateSchema(D8)。HTML 検証へ渡す。 */
+  readonly resolvedStates: ReadonlyMap<string, JsonSchemaNode>;
+  /** application artifact が 1 つでも含まれていたか(明示指定が発見結果を置き換える)。 */
+  readonly hasApplicationArtifact: boolean;
 }
 
 /**
@@ -112,6 +124,8 @@ export function validateManifestSet(input: ManifestSetInput): ManifestSetResult 
     diagnostics: sortDiagnostics(all),
     byArtifact: sortedByArtifact,
     resolvedTags,
+    resolvedStates: resolved.applicationStates,
+    hasApplicationArtifact: resolved.hasApplicationArtifact,
   };
 }
 
