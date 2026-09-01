@@ -47,7 +47,7 @@
       "light-view",
       "lv",
       `<span class="inner" data-wcs="textContent: message@lv"></span>`,
-      { message: "" },
+      {}, // v2 R1（D19）
     );
 
     // mapped + list: 子スコープが親のリストを回す（§1.8 の相乗り経路）
@@ -57,7 +57,7 @@
       `<ul class="leaf-view"><template data-wcs="for: items@ll">` +
         `<li data-wcs="textContent: items.*.name@ll; attr.data-row-id: items.*.id@ll"></li>` +
         `</template></ul>`,
-      { items: [] },
+      {}, // v2 R1（D19）
     );
 
     // plain: ホストから束ねない state 注入（従来から成立していた形）

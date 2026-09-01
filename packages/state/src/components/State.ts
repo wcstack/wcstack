@@ -314,8 +314,12 @@ export class State extends HTMLElementBase implements IStateElement {
       if (boundComponent === null || customTagName === null) {
         raiseError(`"bind-component" requires <${config.tagNames.state}> to be a direct child of a custom element.`);
       }
-      // LightDOMの場合、名前空間が上位スコープと共有されるためnameが必須
-      if (!(parentNode instanceof ShadowRoot) && !this.hasAttribute("name")) {
+      // Light DOM の name 必須は v1 の plain 形にだけ残る（名前空間を共有するため）。
+      // v2 のマウント（ホスト配線あり）は独立ツリーを持たず名前を使わない。
+      // data-wcs が無ければ確実に plain — 従来の位置で fail-fast する。
+      // data-wcs があるときの判定はホスト配線が要るため下（waitInitializeBinding の後）
+      if (!(parentNode instanceof ShadowRoot) && !this.hasAttribute("name")
+        && !boundComponent.hasAttribute(config.bindAttributeName)) {
         raiseError(`"bind-component" in Light DOM requires a "name" attribute to avoid namespace conflicts with the parent scope.`);
       }
       // bind-component はコンポーネント側の state プロパティを唯一のソースにする。
@@ -366,11 +370,18 @@ export class State extends HTMLElementBase implements IStateElement {
       }
       this._boundComponent = boundComponent;
       this._boundComponentStateProp = boundComponentStateProp;
+      // v1 の plain 形（ホスト配線なし）だけが名前空間を共有する — Light DOM では name 必須。
+      // ホスト配線があれば下の v2 マウントに乗る（名前不要）
+      if (!(parentNode instanceof ShadowRoot) && !this.hasAttribute("name")
+        && !(boundComponent.hasAttribute(config.bindAttributeName)
+          && (getBindingsByNode(boundComponent) ?? []).some((b) => b.propSegments[0] === boundComponentStateProp))) {
+        raiseError(`"bind-component" in Light DOM requires a "name" attribute to avoid namespace conflicts with the parent scope.`);
+      }
       // v2 マウント（Phase 2 slice 3・impl-plan §3-0）: **ルートエントリ**（`state: path` の
       // 丸ごとマウント）を持つホスト配線は単一ツリーで構築する。部分マウントのみの
       // 既存形は v1 機構のまま（次スライスで移行 — P2-0 のテスト仕分けと同時）。
       // Light DOM は P2 後半（P3-7 と同時）。
-      if (parentNode instanceof ShadowRoot && boundComponent.hasAttribute(config.bindAttributeName)) {
+      if (boundComponent.hasAttribute(config.bindAttributeName)) {
         const hostBindings = (getBindingsByNode(boundComponent) ?? []).filter(
           (hostBinding) => hostBinding.propSegments[0] === boundComponentStateProp,
         );
@@ -404,7 +415,9 @@ export class State extends HTMLElementBase implements IStateElement {
           if (this.parentNode !== parentNode) {
             return;
           }
-          initializeMountScope(record, parentNode);
+          // スコープ根: Shadow DOM 形はコンポーネントの shadowRoot、
+          // Light DOM 形はコンポーネント要素自身（そのサブツリーがスコープ・D7）
+          initializeMountScope(record, parentNode instanceof ShadowRoot ? parentNode : boundComponent);
           if (!isReinitialize) {
             const publicState = createPublicMountState(record);
             Object.defineProperty(boundComponent, boundComponentStateProp, {
@@ -581,7 +594,8 @@ export class State extends HTMLElementBase implements IStateElement {
       // 最中に同期で発火し、新しいループ文脈は直後の activateContent が張るため —
       // 同期で張り直すと旧行の listIndex を読んでしまう
       const mountRecord = this._mountRecord;
-      const scopeRoot = this.parentNode as ShadowRoot;
+      // Shadow DOM 形は shadowRoot、Light DOM 形はコンポーネント要素自身
+      const scopeRoot = this.parentNode as ShadowRoot | Element;
       queueMicrotask(() => {
         if (this._rootNode === null) return; // 再接続後すぐ切断された（プール返却）
         remountScopeBindings(mountRecord, scopeRoot);

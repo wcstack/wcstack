@@ -200,7 +200,7 @@ describe("bind-component: Light DOM の mapped 形（§1.13）", () => {
     defineLightComponent(
       tag,
       stateName,
-      { message: "" },
+      {}, // v2 R1: 既定値はマッピングを隠す（D19）
       `<span class="inner" data-wcs="textContent: message@${stateName}"></span>`,
     );
 
@@ -265,7 +265,7 @@ describe("bind-component: Light DOM の mapped 形（§1.13）", () => {
     defineLightComponent(
       tag,
       stateName,
-      { message: "" },
+      {}, // v2 R1: 既定値はマッピングを隠す（D19）
       `<span class="inner" data-wcs="textContent: message@${stateName}"></span>`,
     );
 
@@ -289,19 +289,18 @@ describe("bind-component: Light DOM の mapped 形（§1.13）", () => {
     defineLightComponent(
       tag,
       stateName,
-      { message: "" },
+      {}, // v2 R1: 既定値はマッピングを隠す（D19）
       `<span class="inner" data-wcs="textContent: message@${stateName}"></span>`,
     );
 
-    const { host, hostState, innerState, component } = await mountMapped(
+    const { host, hostState, component } = await mountMapped(
       stateName,
       tag,
       "state.message: user.name",
     );
 
-    innerState.createState("writable", (s: any) => {
-      s.message = "Dave";
-    });
+    // v2: 子側の書き込みは公開 chroot（element.state）を通す
+    (component as any).state.message = "Dave";
     await flush();
 
     expect((component.querySelector(".inner") as HTMLElement).textContent).toBe("Dave");
@@ -324,7 +323,7 @@ describe("bind-component: Light DOM の mapped 形（§1.13）", () => {
     defineLightComponent(
       tag,
       stateName,
-      { items: [] },
+      {}, // v2 R1（D19）
       `<ul><template data-wcs="for: items@${stateName}">` +
         `<li class="row" data-wcs="textContent: items.*.name@${stateName}"></li>` +
         `</template></ul>`,
@@ -370,7 +369,7 @@ describe("bind-component: Light DOM の mapped 形（§1.13）", () => {
     defineLightComponent(
       tag,
       stateName,
-      { row: {} },
+      {}, // v2 R1（D19）
       `<span class="inner" data-wcs="textContent: row.name@${stateName}"></span>`,
     );
 

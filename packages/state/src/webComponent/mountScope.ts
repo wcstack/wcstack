@@ -25,7 +25,14 @@ import { getMountRecordByScopeRoot, IMountRecord, registerMountRecord, translate
  * 呼び手（State._initializeBindWebComponent の v2 経路）は、この完了を
  * `setBindingsReadyForScope` で子 rootNode の ready として公開する。
  */
-export function initializeMountScope(record: IMountRecord, scopeRoot: ShadowRoot): void {
+/**
+ * スコープ根は Shadow DOM 形ならコンポーネントの shadowRoot、Light DOM 形なら
+ * コンポーネント要素自身（そのサブツリーがスコープ・D7）。Light DOM は rootNode を
+ * ホストと共有するのでエイリアス不要（親の名前登録がそのまま解決に使われる）。
+ * ホスト側の走査からの除外は getSubscriberNodes / collectStructuralFragments の
+ * Light DOM prune（§1.13 の機構）がそのまま担う。
+ */
+export function initializeMountScope(record: IMountRecord, scopeRoot: ShadowRoot | Element): void {
   // 再初期化（コンポーネントが connectedCallback で shadow の innerHTML を張り直し、
   // 新しい <wcs-state> が同じ shadowRoot に入った）: 旧スコープのバインディングは
   // 捨てられた DOM を指したまま親の台帳に残っている。session ごと破棄してから組み直す
@@ -41,12 +48,14 @@ export function initializeMountScope(record: IMountRecord, scopeRoot: ShadowRoot
     getOrCreateBindingSession(scopeRoot).dispose();
   }
   registerMountRecord(scopeRoot, record);
-  setStateElementAlias(scopeRoot, record.parentStateName, record.parentStateElement);
+  if (scopeRoot instanceof ShadowRoot) {
+    setStateElementAlias(scopeRoot, record.parentStateName, record.parentStateElement);
+  }
   buildMountScopeBindings(record, scopeRoot);
   setBindingsReadyForScope(scopeRoot, Promise.resolve());
 }
 
-function buildMountScopeBindings(record: IMountRecord, walkRoot: ShadowRoot): void {
+function buildMountScopeBindings(record: IMountRecord, walkRoot: ShadowRoot | Element): void {
   const transform = (parsed: ParseBindTextResult, forPath?: string): ParseBindTextResult =>
     translateParsedForMount(record, parsed, forPath);
   convertMustacheToComments(walkRoot);
@@ -56,9 +65,10 @@ function buildMountScopeBindings(record: IMountRecord, walkRoot: ShadowRoot): vo
   //（bindings/replaceToReplaceNode.ts）ため、DOM walk では文脈に届かない —
   // happy-dom は切断後も parentNode を残す非準拠で偶然通るが、実ブラウザでは落ちる
   const parentLoopContext = getLoopContextByNode(record.component);
-  // rootNode は「fragment info の setPathInfo が state element を引く場所」＝
-  // エイリアス済みの scopeRoot 自身（Light DOM 形は P3-7 で追加する）
-  collectStructuralFragments(walkRoot, walkRoot, undefined, transform);
+  // rootNode は「fragment info の setPathInfo が state element を引く場所」。
+  // Shadow DOM 形はエイリアス済みの scopeRoot 自身、Light DOM 形はホストの rootNode
+  const rootNode = walkRoot instanceof ShadowRoot ? walkRoot : walkRoot.getRootNode();
+  collectStructuralFragments(rootNode, walkRoot, undefined, transform);
   initializeBindings(walkRoot, parentLoopContext, transform);
 }
 

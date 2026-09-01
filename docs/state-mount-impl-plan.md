@@ -212,6 +212,8 @@ slice 4 で確定した挙動・発見:
 
   橋渡し機構（innerState の再帰解決・通知チャネル・Δ 帳簿）を通らないことがそのまま数字になった。plain 行（jsfb）は不変（ゲート維持）。v1 機構の削除（P2-7）前でこの値 — 削除後に再計測する。
 
+- **slice 8 済み（Light DOM マウントの v2 化）**: v2 ゲートを「ホスト配線が 1 本でもある bind-component」全形へ拡張。スコープ根は Shadow DOM 形＝shadowRoot／Light DOM 形＝コンポーネント要素自身（D7）。Light DOM はエイリアス不要（rootNode をホストと共有・翻訳が stateName を親に揃えるので @name 参照も自然に無効化）、ホスト走査からの除外は §1.13 の prune がそのまま担う。**name 必須は v1 の plain 形にだけ残る**（data-wcs 無し＝plain は従来位置で fail-fast、data-wcs ありはホスト配線判明後に検査）。e2e mount-light の PHASE2 fixme 2 本を解除 — L1/L2/L3 実ブラウザ green。e2e 計 51 green（残 skip は mount-volume の Phase 3 ピン 3 本のみ）。カバレッジは 98.53/97.31/99.09/98.78 に低下 — **v1 機構（innerState / MappingRule 派生 / crossBoundary / Δ 帳簿 / 通知チャネル）が最後の行使者を失った**ための想定内の谷。直後の P2-7 削除で回復させる。
+
 ### 3-1. タスク
 
 | ID | タスク | 場所 | 受け入れ |

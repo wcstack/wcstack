@@ -92,7 +92,6 @@ test.describe("e2e/fixtures/mount-row — 行そのものをマウント state: 
 
 test.describe("e2e/fixtures/mount-light — Light DOM に name が要らない", () => {
   test("L1/L3: name 無しの Light DOM コンポーネントがマウント先を読む", async ({ page }) => {
-    test.fixme(true, PHASE2);
     const errors = collectErrors(page);
     await page.goto("/e2e/fixtures/mount-light.html");
     await expect(page.locator("#single light-view .inner")).toHaveText("Alice");
@@ -104,7 +103,6 @@ test.describe("e2e/fixtures/mount-light — Light DOM に name が要らない",
   });
 
   test("L2: 同じ Light DOM コンポーネントを for の行に置ける", async ({ page }) => {
-    test.fixme(true, PHASE2);
     await page.goto("/e2e/fixtures/mount-light.html");
     await expect(page.locator("#list light-item .inner")).toHaveText(["Anna", "Ben"]);
     expect(await rowIds(page.locator("#list light-item .inner"))).toEqual(["a", "b"]);
