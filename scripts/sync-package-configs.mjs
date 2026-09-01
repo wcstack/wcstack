@@ -28,6 +28,7 @@ const DEVIATIONS = {
     server: "imports @rollup/plugin-json, package-specific build shape",
     state: "imports @rollup/plugin-json (inlines package.json), package-specific build shape",
     signals: "no src/auto bootstrap (design decision G2); lazy typescript plugin instantiation",
+    typescript: "node CLI package (wcs-schema / wcs-tsc bins), no src/auto bootstrap; extra bin entries and node built-ins external",
   },
   "eslint.config.js": {
     lint: "no src/ TypeScript to lint; `npm run lint` syntax-checks its two build/test scripts via node --check",
