@@ -18,3 +18,15 @@ export type {
 export type {
   IWcsTransitionRunner, IWcsTransitionRunOptions, TransitionNaming, TransitionSource
 } from "./protocol/transitionRunner.js";
+
+// Typed element lookups (docs/typescript.md §3): `document.querySelector("wcs-view-transition")`
+// resolves to the element class. Default tag names only — a page that renames tags via
+// `IWritableTagNames` is outside this map. Declared here so the augmentation ships in
+// dist/index.d.ts; it applies once this package's types are in the consuming program
+// (`import "@wcstack/view-transition"` or a tsconfig `types` entry).
+import type { WcsViewTransition } from "./components/ViewTransition.js";
+declare global {
+  interface HTMLElementTagNameMap {
+    "wcs-view-transition": WcsViewTransition;
+  }
+}

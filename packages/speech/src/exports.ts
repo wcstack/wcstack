@@ -19,3 +19,17 @@ export type {
 // set (SpeechRecognition vs SpeechSynthesis error enums).
 export type { WcsIoErrorInfo, WcsIoErrorPhase } from "./core/platformCapability.js";
 export { WCS_LISTEN_ERROR_CODE, WCS_SPEAK_ERROR_CODE } from "./core/speechCapabilities.js";
+
+// Typed element lookups (docs/typescript.md §3): `document.querySelector("wcs-speak")`
+// resolves to the element class. Default tag names only — a page that renames tags via
+// `IWritableTagNames` is outside this map. Declared here so the augmentation ships in
+// dist/index.d.ts; it applies once this package's types are in the consuming program
+// (`import "@wcstack/speech"` or a tsconfig `types` entry).
+import type { WcsSpeak } from "./components/Speak.js";
+import type { WcsListen } from "./components/Listen.js";
+declare global {
+  interface HTMLElementTagNameMap {
+    "wcs-speak": WcsSpeak;
+    "wcs-listen": WcsListen;
+  }
+}

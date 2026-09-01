@@ -68,9 +68,23 @@ npx wcs-schema check src/state.ts && npx wcs-validate --strict index.html
 - `--merge` は指定した state の `stateSchema` を丸ごと置き換える。同じ state の手書き schema は残らない（sidecar 規範は暗黙 merge を禁じている）。手書きの schema は生成しない state のためのもの。
 - 同名 state を 2 つの application manifest が宣言すると `wcs/manifest-state-collision`（error・勝者なし）。コマンドラインに manifest を明示するなら state 名ごとに 1 つ。
 
-## 3. 型付きの要素取得: `HTMLElementTagNameMap` — *予定（Phase 3）*
+## 3. 型付きの要素取得: `HTMLElementTagNameMap`
 
-各コンポーネントパッケージが既定タグ名で `HTMLElementTagNameMap` を拡張し、`document.querySelector("wcs-fetch")` が `WcsFetch` になる。拡張はパッケージ自身の `.d.ts` に置かれ、パッケージの型がプログラムに載って初めて効く — `import "@wcstack/fetch"`（副作用 import）か `tsconfig.json` の `types`。`https://esm.run/@wcstack/fetch/auto` を読むだけのページには何も起きない。
+全コンポーネントパッケージが**既定**タグ名で `HTMLElementTagNameMap` を拡張しているので、タグ名による取得が要素クラスに型付く:
+
+```ts
+import "@wcstack/fetch";                       // 拡張はパッケージの index.d.ts に同梱
+import type { WcsFetch } from "@wcstack/fetch";
+
+const el = document.querySelector("wcs-fetch");   // WcsFetch | null
+el!.url = "/api/users";                           // 型付きプロパティ
+document.querySelectorAll("wcs-route");           // NodeListOf<Route>
+```
+
+- **パッケージの型がプログラムに載っているときだけ効く。** `import "@wcstack/fetch"`（副作用 import — パッケージを既に読み込んでいれば実行時コストはゼロ）か、`tsconfig.json` の `"types": ["@wcstack/fetch"]`。`https://esm.run/@wcstack/fetch/auto` を読むだけで import しないページは従来どおり `HTMLElement`。
+- **既定タグ名のみ。** `IWritableTagNames` でタグ名を変えたプロジェクト（`bootstrapFetch({ tagNames: { fetch: "my-fetch" } })`）はこの map の対象外 — 型付きの取得が欲しければ自前で拡張を宣言する。
+- 対象: 全パッケージの全 `wcs-*` 要素。ヘルパー・ノードタグ（`wcs-fetch-header`・`wcs-voice`・`wcs-osc` …）、`wcs-state` / `wcs-ssr`、router のタグを含む。`wcs-guard-handler` は要素クラスを持たない config 名なので対象外。
+- ドリフトはテストされる: vscode-wcs の `tagNameMap.test.ts`（CI の `wcs-validate` job で常時実行）が組み込みタグカタログと宣言の一致を双方向で検査し、`state` / `router` / `devtools` は自分の `config.tagNames` と宣言を比較する。
 
 ## 4. インライン state スクリプトの型検査: `wcs-tsc` — *予定（Phase 5）*
 
