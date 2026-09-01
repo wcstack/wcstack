@@ -1,6 +1,6 @@
 # 実装計画: 名前付き State の廃止とマウントによるツリー拡張
 
-- **状態**: 2026-09-01 起草。**未着手**。設計の正本は [state-mount-design.md](./state-mount-design.md)（以下「設計書」）。本書はその §3〜§9 を着手可能なタスク粒度・受け入れ条件・完了条件に展開した手順書。設計書の**要確認 6 件（D4 / D8 / D11 / D12 / D14 / `mount` の語）は Phase 0 で決める**。Phase 1 以外は要確認の決着に依存する。
+- **状態**: 2026-09-01 起草。**未着手**。設計の正本は [state-mount-design.md](./state-mount-design.md)（以下「設計書」）。本書はその §3〜§9 を着手可能なタスク粒度・受け入れ条件・完了条件に展開した手順書。設計書の要確認 6 件のうち **D4（R1）/ D8（絶対参照なし）/ D11（ルート必須）/ 属性名 `mount` は 2026-09-01 に著者が決定**。残る D12 / D14 は実装 Phase（2 / 3）で確認する。**Phase 0 は完了**（§1-2）。
 - **届ける相手**: v2.0.0 の全利用者。Phase 1 だけは **v1.x の minor で先行出荷**する（非破壊・追加のみ）。
 - **前提**: 現在ローカルに積まれている 7 本（`docs/app-testing-l0` → … → `feature/wcs-tsc`）が main に着地してから Phase 2 以降を切る。Phase 4 が `@wcstack/typescript` / `@wcstack/testing` に触るため。Phase 0 / 1 は今すぐ着手できる。
 - **ブランチ**: v2 は破壊的変更なので **統合ブランチ `v2`** を main から `--no-track` で切り、Phase 2〜5 の PR は `v2` に向ける。Phase 1 と deprecation は main 向け。コミットは `git commit -F`。dist を生成したら**戻してからコミット**する。
@@ -62,7 +62,7 @@ ADR-15 §1.7 / §1.9 / nested-for §8.1 は全て「**別経路で流れる通�
 
 | ID | タスク | 成果物 |
 |---|---|---|
-| P0-1 | 設計書の要確認 6 件を決め、§0-2 の「状態」列を更新 | 設計書 |
+| P0-1 | ~~設計書の要確認 6 件を決め、§0-2 の「状態」列を更新~~ **済み（2026-09-01）**: D4=R1 / D8=不可 / D11=ルート必須 / 語=`mount`（設計書 §0-2・§10 反映済み）。D12 は Phase 2 の P2-4、D14 は Phase 3 の P3-9/P3-10 で確認 | 設計書 |
 | P0-2 | [state-cross-state-read-design.md](./state-cross-state-read-design.md) の状態行に「本設計（state-mount-design.md）で閉じた」を追記 | docs |
 | P0-3 | ~~ベースライン計測~~ **済み（2026-09-01・main `99ae8afb` の dist・ローカル Chromium・`e2e/bench-results/` は gitignore なので数値はここに記録）**。jsfb（`jsfb-verify.mjs`、keyed 判定 true・recycledOnRun 1000）: create1k **32.1 ms** / replace1k 19.55 / update10k 12.9 / select1k 0.1 / swap1k 0.8 / remove1k 2.8 / append1kTo10k 53.6 / clear10k 58.8。heap（`memory-profile.mjs`、MB）: ready 0.98 / run1k 5.65 / replace5 6.23 / update5 5.93 / creation10k 35.82 / clear10k 13.21。Phase 5 はこの値と比較する（同じマシン・同じコマンド） | 本書 |
 | P0-4 | ~~list-component ベンチの新設~~ **済み**: [`e2e/bench/list-component.mjs`](../e2e/bench/list-component.mjs) ＋ [`packages/state/__e2e__/benchmark-component/`](../packages/state/__e2e__/benchmark-component/index.html)（jsfb ページの行を `bind-component` コンポーネントに置き換えたもの。ホスト側は v1 の `state.row: .`、Phase 2 で `state: .` に切り替える）。計測は create1k / update（行 990 の label）/ select（行 2 への行フィールド書き込み）/ swap / clear と heap（ready / run1k / update5 / clear1k、`--big` で creation10k）。**ベースライン値は下の「P0-4 ベースライン」** | JSON |
@@ -70,7 +70,25 @@ ADR-15 §1.7 / §1.9 / nested-for §8.1 は全て「**別経路で流れる通�
 | P0-6 | ~~`__e2e__` / examples の名前使用箇所の精査~~ **済み（2026-09-01）**: `__e2e__` に `<wcs-state name=` は無し。examples は `router-i18n/index.html` の `name="i18n"` 1 箇所 ＋ `@i18n` 15 箇所のみ（他の `@` は `@keyframes` / `@media` / `@wcstack`）。残る精査対象は README（英・日）と `__tests__`（§9） | 本書 §9 |
 | P0-7 | §7 の受け入れマトリクスを確定 | 本書 |
 
-**完了条件**: 要確認ゼロ。ベースライン JSON がある。e2e 目標ページが red で存在する。
+### 1-3. P0-4 ベースライン（list-component・2026-09-01・main `99ae8afb` の dist・ローカル Chromium）
+
+`node bench/list-component.mjs --label before-mount`（timing は median of 5、heap は median of 3、ページエラーゼロ）。比較用に同じマシンで同時刻に取った plain jsfb（P0-3）を並べる。
+
+| 計測 | plain jsfb（`benchmark/`） | 行＝コンポーネント（`benchmark-component/`） | 比 |
+|---|---|---|---|
+| create1k | 32.1 ms | **106.5 ms**（min 101.7 / max 147.6） | ×3.3 |
+| update（every 10th row field） | 12.9 ms（10k 行） | **3.0 ms**（1k 行） | — |
+| select（行フィールド書き込み 2 本） | 0.1 ms | **0.3 ms** | ×3 |
+| swap | 0.8 ms | **1.4 ms** | ×1.8 |
+| clear | 58.8 ms（10k） | **8.2 ms**（1k） | — |
+| heap ready | 0.98 MB | 0.97 MB | — |
+| heap run1k | 5.65 MB | **13.13 MB** | +7.5 MB ≒ **7.5 KB / 行コンポーネント** |
+| heap update5 | 5.93 MB | 13.38 MB | |
+| heap clear1k | —（clear10k 13.21） | **12.32 MB** | clear 後もほぼ保持（プール ＋ 行ごとの台帳） |
+
+読み方: 行コンポーネント 1 つあたり **≈ 75 µs の生成コストと ≈ 7.5 KB のヒープ**が、inner/outer proxy・MappingRule・相乗り台帳・子 state 要素の分として上乗せされている。Phase 2（単一ツリー化）はこの差分を削る対象で、Phase 5 の P2 / P3 はこの表と比較する。plain 側（P1 / P4）は不変がゲート。
+
+**完了条件**: 要確認ゼロ（D12 / D14 は実装 Phase へ送った）。ベースライン値が本書にある。e2e 目標ページが fixme で存在する。→ **2026-09-01 達成**（ブランチ `feature/state-mount-phase0`）。
 
 ---
 

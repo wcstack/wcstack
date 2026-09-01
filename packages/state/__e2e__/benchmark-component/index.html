@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>@wcstack/state — rows as bind-component components</title>
+    <!-- The js-framework-benchmark page (../benchmark) with every row rendered by a
+         bind-component component instead of an inline <tr>. Driven by
+         e2e/bench/list-component.mjs. This is the page the v2 mount design is measured
+         on (docs/state-mount-design.md §7, plan P0-4 / P2-11): the plain jsfb page must
+         stay flat, and this one is where the inner/outer proxy pair, derived mapping
+         rules and per-row ledger piggyback show up as time and heap.
+
+         The host binding is v1's per-property form (`state.row: .`); Phase 2 switches it
+         to the root mount (`state: .`) and drops the `row.` prefix inside the component
+         (docs/state-mount-impl-plan.md P2-11). -->
+    <script type="importmap">
+      {
+        "imports": {
+          "@lib/buildData": "../benchmark/buildData.js"
+        }
+      }
+    </script>
+    <script type="module" src="../../dist/auto.min.js"></script>
+    <style>
+      :not(:defined) { display: none; }
+      .r { display: flex; gap: 1em; }
+      .danger { background: #fdd; }
+    </style>
+    <script type="module">
+      class BenchRow extends HTMLElement {
+        state = { row: { id: 0, label: "", selected: false } };
+        constructor() {
+          super();
+          this.attachShadow({ mode: "open" });
+        }
+        connectedCallback() {
+          if (this.shadowRoot.childElementCount === 0) {
+            this.shadowRoot.innerHTML =
+              `<wcs-state bind-component="state"></wcs-state>` +
+              `<div class="r" data-wcs="class.danger: row.selected">` +
+              `<span class="id" data-wcs="textContent: row.id"></span>` +
+              `<span class="label" data-wcs="textContent: row.label"></span>` +
+              `</div>`;
+          }
+        }
+      }
+      customElements.define("bench-row", BenchRow);
+    </script>
+  </head>
+  <body>
+    <wcs-state>
+      <script type="module">
+import { buildData } from '@lib/buildData';
+// `selected` is a plain row field here (the jsfb page derives it from selectedIndex
+// through a `data.*.selected` getter). A plain field keeps the measured path the one
+// that matters for components: a parent row-field write that must reach the row's
+// component. buildData rows do not carry it, and `class.danger` rejects undefined,
+// so every row is created with it.
+const rows = (n) => buildData(n).map((row) => ({ ...row, selected: false }));
+export default {
+  data: [],
+  selectedIndex: null,
+  onSelect(e, $1) {
+    if (this.selectedIndex !== null && this.selectedIndex !== $1)
+      this[`data.${this.selectedIndex}.selected`] = false;
+    this[`data.${$1}.selected`] = true;
+    this.selectedIndex = $1;
+  },
+  onRun() {
+    this.data = rows(1000);
+    this.selectedIndex = null;
+  },
+  onRunLots() {
+    this.data = rows(10000);
+    this.selectedIndex = null;
+  },
+  onAdd() {
+    this.data = this.data.concat(rows(1000));
+  },
+  onUpdate() {
+    for (let i = 0; i < this.data.length; i += 10) {
+      this[`data.${i}.label`] += " !!!";
+    }
+  },
+  onClear() {
+    this.data = [];
+    this.selectedIndex = null;
+  },
+  onSwapRows() {
+    if (this.data.length > 998) {
+      const data = this.data.slice();
+      [data[1], data[998]] = [data[998], data[1]];
+      this.data = data;
+    }
+  }
+}
+      </script>
+    </wcs-state>
+
+    <h1>@wcstack/state — rows as components</h1>
+    <p>
+      <button id="run" data-wcs="onclick: onRun">Create 1,000 rows</button>
+      <button id="runlots" data-wcs="onclick: onRunLots">Create 10,000 rows</button>
+      <button id="add" data-wcs="onclick: onAdd">Append 1,000 rows</button>
+      <button id="update" data-wcs="onclick: onUpdate">Update every 10th row</button>
+      <button id="clear" data-wcs="onclick: onClear">Clear</button>
+      <button id="swaprows" data-wcs="onclick: onSwapRows">Swap Rows</button>
+    </p>
+
+    <div id="rows">
+      <template data-wcs="for: data">
+        <bench-row data-wcs="state.row: .; onclick: onSelect"></bench-row>
+      </template>
+    </div>
+  </body>
+</html>
