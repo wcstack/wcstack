@@ -119,6 +119,12 @@ export class Router extends HTMLElement implements IRouter {
       this._resolveConnectedCallback = resolve;
       this._rejectConnectedCallback = reject;
     });
+    // 初期化の失敗は reject として配管するが、この Promise は readiness プロトコルの
+    // 消費者（renderToString / @wcstack/testing の mount）が居るときだけ await される。
+    // 誰も await しない通常のページやユニットテストで reject を「未処理」として
+    // 報告させないよう、ここで観測済みにしておく。await する側には従来どおり
+    // reject が届く（別の consumer が付いても settled 結果は共有される）。
+    this._connectedCallbackPromise.catch(() => {});
   }
 
   get connectedCallbackPromise(): Promise<void> {
