@@ -739,3 +739,22 @@ describe('Light DOM の name 必須（v2 のゲート後）', () => {
     );
   });
 });
+
+describe('Light DOM の name 必須（台帳が空の形）', () => {
+  it('data-wcs はあるが台帳に何も無い Light DOM も name 必須のままであること', async () => {
+    const stateEl = createStateElement({ 'bind-component': 'state' });
+    if (!customElements.get('x-light-noledger')) {
+      customElements.define('x-light-noledger', class extends HTMLElement {
+        state: Record<string, any> = {};
+      });
+    }
+    const host = document.createElement('x-light-noledger');
+    host.setAttribute('data-wcs', 'class.on: flag'); // 属性はあるが台帳未構築
+    host.appendChild(stateEl);
+    (stateEl as any)._rootNode = document;
+
+    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
+      /"bind-component" in Light DOM requires a "name" attribute/
+    );
+  });
+});

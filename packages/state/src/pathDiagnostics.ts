@@ -19,6 +19,7 @@
  */
 
 import { getPathInfo } from "./address/PathInfo";
+import { isPathUnderReservedVolume } from "./webComponent/volume";
 import type { IStateElement } from "./components/types";
 import { DELIMITER, WILDCARD } from "./define";
 import { devtoolsSink } from "./devtools/sink";
@@ -317,6 +318,10 @@ export function checkDeclaredPath(
   // マウントの予約セグメント（`users.*.#m1.editing` — D20）はオーバーレイに実体があり
   // raw state には無い。`#else`（構造プレースホルダ）も同様（webComponent/mount.ts）
   if (path.indexOf("#") !== -1) {
+    return;
+  }
+  // 予約済みのボリュームスロット配下はロード完了まで undefined が正（D22）
+  if (isPathUnderReservedVolume((stateElement as { rootNode?: Node }).rootNode ?? null, path)) {
     return;
   }
 

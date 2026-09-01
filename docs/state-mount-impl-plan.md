@@ -220,6 +220,10 @@ slice 4 で確定した挙動・発見:
 
 - **slice 11 済み（P2-12 — ドキュメント）**: webComponent/README.md を v2 機構（不変条件・6 点の機構・R1 と積み・再初期化/プール・Light DOM・削除の経緯と性能）に全面書き直し。ADR-15 §0 の実装表に「Phase 2 slice 9 で機構ごと削除（挙動は単一ツリーの上で成立）」の supersede 注記。packages/state README（英・日）の部分マウント注記を v2 の実挙動（厳格 R1・nameless Light DOM・$ API の語彙翻訳）に更新。
 
+- **slice 12 済み（P3-1/P3-2/P3-3 の中核 — ボリューム `mount=`）**: `<wcs-state mount="path">` の接ぎ木を実装（webComponent/volume.ts）。機構＝①データ（own key の部分木）はルートの書き込み proxy 経由で接ぎ木（通知・依存展開は通常の書き込み）②アクセサは**ルート state オブジェクトの quoted-path アクセサ**（`"i18n.t"`）として defineTreeAccessor — ワイルドカード getter と同じ機構に乗るので pushAddress 下で評価され依存がグラフに載る。`this` は chroot（receiver 翻訳・$postUpdate/$getAll/$setAll/$resolve は接頭辞翻訳）③$connectedCallback は chroot で実行（V7）。D22＝接続時にスロット予約（予約下の読みは 1 セグメントも深いパスも undefined・pathDiagnostics 沈黙・getByAddress のルート欠落 raise も予約下は素通り）。ルート登録（default）が保留ボリュームを microtask で引き取る（ロード順非依存・V5）。衝突（D3/D22 両方向）と接ぎ木失敗は 1 ボリュームに隔離（console.error — connectedCallback 内 throw の永久未解決化を避ける）。深いマウントは中間 {} を作成。**e2e state-mount 全 13 本 green（PHASE3 fixme 3 本解除・スペックの fixme はゼロに）**。未了＝$watch/$streams/$listKeys の接頭辞登録と $updatedCallback（相対）＝宣言面（P2-9b と同じ束・下記）、メソッドのツリー露出、深いマウントの親を丸ごと書く形の throw、アンマウント（切断後も接ぎ木は残る）。
+
+  **P2-9b/P3 宣言面の設計メモ（著者確認）**: コンポーネントマウントの $watch は「同一翻訳パスに複数インスタンス」が本質的（行コンポーネント）— 現在の watchRegistry は Map<path, entry> なので**多重エントリ化**と**インスタンス絞り込み**（自分の行の変更だけ受ける？＝D21 と同じ向きなら Yes）が要る。$streams はデータがツリーに落ちるため**複数インスタンスの書き込み衝突**が起きる（行ごとの stream は何処に書く？）。ボリューム（単一インスタンス）はどちらの問題も無いので、宣言面はボリューム→コンポーネントの順で入れるのが安全。
+
 ### 3-1. タスク
 
 | ID | タスク | 場所 | 受け入れ |

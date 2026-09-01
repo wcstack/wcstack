@@ -39,6 +39,7 @@ import { warnOwnKeyShadowsForMount } from "../webComponent/ownKeyShadow";
 import { markWebComponentAsComplete } from "../webComponent/completeWebComponent";
 import { markWebComponentStatePropDeclared } from "../webComponent/completeWebComponent";
 import { getInjectedKeys, restoreOverwrittenValues, takeOverwrittenObject } from "../webComponent/preCompletionWrites";
+import { graftOrQueueVolume, reserveVolumeSlot, validateVolumeMountPath } from "../webComponent/volume";
 import { hasRootMountBinding } from "../webComponent/rootMountBinding";
 import { warnNamedStateDeprecated } from "../deprecation";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/symbols";
@@ -235,41 +236,84 @@ export class State extends HTMLElementBase implements IStateElement {
     return Object.keys(data).length > 0 ? data : null;
   }
 
-  private async _initialize() {
-    // enable-ssr (クライアント側のみ): <wcs-ssr> から初期データを取得
-    const ssrState = !inSsr() ? this._loadFromSsrElement() : null;
+  /** state / src / json / inner <script> / API set のソース解決（_initialize とボリュームで共用）。 */
+  private async _loadStateFromSource(): Promise<Record<string, any>> {
     try {
       if (this.hasAttribute('state')) {
         const state = this.getAttribute('state');
-        this._state = loadFromScriptJson(state!);
+        return loadFromScriptJson(state!);
       } else if (this.hasAttribute('src')) {
         const src = this.getAttribute('src');
         if (src && src.endsWith('.json')) {
-          this._state = await loadFromJsonFile(src);
+          return await loadFromJsonFile(src);
         } else if (src && src.endsWith('.js')) {
-          this._state = await loadFromScriptFile(src);
+          return await loadFromScriptFile(src);
         } else {
           raiseError(`Unsupported src file type: ${src}`);
         }
       } else if (this.hasAttribute('json')) {
-         const json = this.getAttribute('json');
-          this._state = JSON.parse(json!);
+        const json = this.getAttribute('json');
+        return JSON.parse(json!);
       } else {
         const script = this.querySelector<HTMLScriptElement>('script[type="module"]');
         if (script) {
-          this._state = await loadFromInnerScript(script, `${this._name}`);
+          return await loadFromInnerScript(script, `${this._name}`);
         } else {
           const timerId = setTimeout(() => {
             console.warn(`[@wcstack/state] Warning: No state source found for <${config.tagNames.state}> element with name="${this._name}".`);
           }, NO_SET_TIMEOUT);
           // 要注意！！！APIでセットする場合はここで待機する必要がある --(1)
-          this._state = await this._setStatePromise!;
+          const state = await this._setStatePromise!;
           clearTimeout(timerId);
+          return state;
         }
       }
     } catch(e) {
       raiseError(`Failed to initialize state: ${e}`);
     }
+  }
+
+  /**
+   * ボリューム（`<wcs-state mount="path">`）: 独立ツリーを持たず、ロード完了で
+   * ルートに接ぎ木する（webComponent/volume.ts）。接続時にスロットを予約（D22）。
+   * ルートより先に接続されてもよい — ルート登録が保留分を引き取る（V5）。
+   */
+  private async _initializeVolume(): Promise<void> {
+    const mountPath = this.getAttribute("mount")!;
+    validateVolumeMountPath(mountPath);
+    if (this.hasAttribute("bind-component")) {
+      raiseError(`"mount" cannot be combined with "bind-component".`);
+    }
+    if (this.hasAttribute("name")) {
+      raiseError(`"mount" replaces "name" — a volume has no name of its own. Remove the name attribute.`);
+    }
+    const rootNode = this._rootNode!;
+    reserveVolumeSlot(rootNode, mountPath);
+    const volumeState = await this._loadStateFromSource();
+    const finish = (): void => {
+      this._initialized = true;
+      this._resolveInitialize?.();
+      this._resolveLoading?.();
+      this._resolveConnectedCallback?.();
+    };
+    // await 中に剥がされたら何もしない（スコープは持っていない）
+    if (this._rootNode === null) {
+      finish();
+      return;
+    }
+    graftOrQueueVolume(
+      rootNode,
+      getStateElementByName(rootNode, "default"),
+      mountPath,
+      volumeState,
+      finish,
+    );
+  }
+
+  private async _initialize() {
+    // enable-ssr (クライアント側のみ): <wcs-ssr> から初期データを取得
+    const ssrState = !inSsr() ? this._loadFromSsrElement() : null;
+    this._state = await this._loadStateFromSource();
     // SSR データがある場合、state 定義（メソッド/getter）を維持しつつデータ値を上書き
     if (ssrState !== null && this.__state) {
       for (const [key, value] of Object.entries(ssrState)) {
@@ -500,6 +544,11 @@ export class State extends HTMLElementBase implements IStateElement {
         await this._initializeDCC(parentNode.host, parentNode);
         return;
       }
+      // ボリューム（`mount="path"` — 接ぎ木・docs/state-mount-design.md §4-2）
+      if (this.hasAttribute("mount")) {
+        await this._initializeVolume();
+        return;
+      }
       await this._initializeBindWebComponent();
       if (this._mountRecord !== null) {
         // v2 マウント: この要素は独立ツリーを持たない（台帳エイリアスが親を指す）。
@@ -613,6 +662,12 @@ export class State extends HTMLElementBase implements IStateElement {
   }
 
   disconnectedCallback() {
+    if (this.hasAttribute("mount")) {
+      // ボリューム: 接ぎ木したデータ・アクセサはツリーに残る（アンマウントは未対応 —
+      // 揮発させると依存グラフに残った getter 登録が宙に浮く）。予約も維持する
+      this._rootNode = null;
+      return;
+    }
     if (this._mountRecord !== null) {
       // v2 マウント: 名前登録・streams・watch を持たないので後始末は不要。
       // 台帳エイリアスは消さない（プール再利用の再接続が同じスコープに戻る）
@@ -680,6 +735,23 @@ export class State extends HTMLElementBase implements IStateElement {
 
   get elementPaths(): Set<string> {
     return this._elementPaths;
+  }
+
+  /**
+   * ボリューム（webComponent/volume.ts）のアクセサ登録: ツリーパスをキーにした
+   * quoted-path アクセサを state オブジェクトに定義し、getter / setter 台帳と
+   * 依存グラフに載せる。ルートのワイルドカード getter（`"children.*.label"`）と
+   * 同じ機構に乗るので、評価は pushAddress 下・依存はグラフに載る。
+   */
+  defineTreeAccessor(path: string, descriptor: PropertyDescriptor): void {
+    Object.defineProperty(this._state, path, descriptor);
+    if (typeof descriptor.get === "function") {
+      this._getterPaths.add(path);
+    }
+    if (typeof descriptor.set === "function") {
+      this._setterPaths.add(path);
+    }
+    this.setPathInfo(path, "prop", "internal");
   }
 
   get getterPaths(): Set<string> {

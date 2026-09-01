@@ -12,13 +12,6 @@ export interface IStateElement {
    * optional なのはテスト用モック互換のため（undefined は「不明＝未初期化扱い」）。
    */
   readonly initialized?: boolean;
-  /**
-   * この state element が今使えるか（＝ 接続済みで rootNode を保持しているか）。
-   * `createState` は rootNode を要求するので、false のときに呼ぶと raiseError する。
-   * 台帳に載っていること（登録済み）と使えることは別で、要素をキーにした台帳には
-   * 切断済みの state element が残る窓がある（§1.9）。
-   * optional なのはテスト用モック互換のため（undefined は「不明＝使える扱い」）。
-   */
   readonly initializePromise: Promise<void>;
   readonly connectedCallbackPromise: Promise<void>;
   readonly listPaths: Set<string>;
@@ -108,6 +101,8 @@ export interface IStateElement {
    * `source` は存在検査の診断 code と適用範囲を決める（pathDiagnostics.ts）。
    * 省略時は `"binding"`（テスト用モック互換のため optional）。
    */
+  /** ボリュームのアクセサ登録（webComponent/volume.ts 専用） */
+  defineTreeAccessor(path: string, descriptor: PropertyDescriptor): void;
   setPathInfo(path: string, bindingType: BindingType, source?: PathInfoSource): void;
   addStaticDependency(parentPath: string, childPath: string): boolean;
   addDynamicDependency(fromPath: string, toPath: string): boolean;

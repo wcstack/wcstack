@@ -19,6 +19,7 @@
  */
 
 import { getAbsolutePathInfo } from "../../address/AbsolutePathInfo";
+import { isPathUnderReservedVolume } from "../../webComponent/volume";
 import { createAbsoluteStateAddress } from "../../address/AbsoluteStateAddress";
 import { IStateAddress } from "../../address/types";
 import { getCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
@@ -106,6 +107,12 @@ function _getByAddress(
     // 親アドレスが無い ＝ 単一セグメントのパスが state に存在しない。ここは元から
     // throw していたが、文面が内部実装の言葉だったので打ち間違いだと分からなかった。
     // 深いパスの console.warn（pathDiagnostics.checkDeclaredPath）と語彙を揃える。
+    // 予約済みのボリュームスロット（D22）: ロード前の読みは undefined が正で、
+    // 深いパスの親歩きがここに落ちても騒がない
+    if (address.parentAddress === null
+      && isPathUnderReservedVolume(safeVolumeRootNode(stateElement), address.pathInfo.path)) {
+      return undefined;
+    }
     const parentAddress = address.parentAddress ?? raiseError(
       missingRootPathMessage(stateElement.name, address.pathInfo.path, target, stateElement.getterPaths),
     );
@@ -181,4 +188,10 @@ export function getByAddress(
   } else {
     return _getByAddress(target, address, receiver, handler, stateElement);
   }
+}
+
+function safeVolumeRootNode(stateElement: { rootNode?: Node }): Node | null {
+  // 読みは createState セッション内でしか起きず、その間 rootNode は必ず有効
+  //（切断で null 化されるのは disconnectedCallback — セッション外）
+  return stateElement.rootNode ?? null;
 }

@@ -113,7 +113,6 @@ test.describe("e2e/fixtures/mount-light — Light DOM に name が要らない",
 
 test.describe("e2e/fixtures/mount-volume — mount= で接ぎ木するボリューム", () => {
   test("V1/V2/V5: ルートより先に置いたボリュームが i18n.* として読める", async ({ page }) => {
-    test.fixme(true, PHASE3);
     const errors = collectErrors(page);
     await page.goto("/e2e/fixtures/mount-volume.html");
     await expect(page.locator("#title")).toHaveText("Hello");
@@ -122,7 +121,6 @@ test.describe("e2e/fixtures/mount-volume — mount= で接ぎ木するボリュ�
   });
 
   test("V2/V3: ボリュームの getter とルートの getter が i18n.lang に依存する", async ({ page }) => {
-    test.fixme(true, PHASE3);
     await page.goto("/e2e/fixtures/mount-volume.html");
     await expect(page.locator("#label")).toHaveText("1 items");
     await page.click("#inc");
@@ -133,7 +131,6 @@ test.describe("e2e/fixtures/mount-volume — mount= で接ぎ木するボリュ�
   });
 
   test("V7: ボリュームの $connectedCallback が chroot で走る", async ({ page }) => {
-    test.fixme(true, PHASE3);
     await page.goto("/e2e/fixtures/mount-volume.html");
     const connected = await page.evaluate(async () => {
       const root = document.querySelector("wcs-state:not([mount])") as any;

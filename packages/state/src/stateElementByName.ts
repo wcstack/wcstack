@@ -5,6 +5,7 @@ import { config, inSsr } from "./config";
 import { raiseError } from "./raiseError";
 import { devtoolsSink } from "./devtools/sink";
 import { drainPendingBinds } from "./bindings/binder";
+import { drainPendingVolumes } from "./webComponent/volume";
 
 const stateElementByNameByNode: WeakMap<Node, Map<string, IStateElement>> = new WeakMap();
 const bindingsReadyByNode: WeakMap<Node, Promise<void>> = new WeakMap();
@@ -181,6 +182,11 @@ export function setStateElementByName(rootNode:Node, name: string, element: ISta
     }
     stateElementByName.set(name, element);
     liveStateElements.add(element);
+    // ルート（default）の登録は、先に接続されて保留中のボリュームを引き取る
+    //（webComponent/volume.ts・ロード順に依存しない — V5）
+    if (name === "default") {
+      drainPendingVolumes(rootNode, element);
+    }
     if (devtoolsSink !== null) {
       devtoolsSink({ type: "state:element-registered", name, rootNode, element });
     }
