@@ -1295,7 +1295,14 @@ customElements.define("user-card", UserCard);
 - **自前のキーは私有**です（[docs/state-mount-design.md](../../docs/state-mount-design.md) §4-3 の R1）: コンポーネントが自分で宣言したデータキー（`state = { mode: "view" }`）はその要素のもので、ツリーには書かれません。マウント先に同名のキーがあってそれを隠す形（`user.name` の上に `state = { name: "" }`）では、ランタイムが 1 回だけ warn します（`wcs/mount-own-key-shadow`）— ツリーを読みたければ既定値を消し、私有のままにしたければ名前を変えてください
 - 配列そのものをルートにマウントする形（`state: rows` ＋ 中で `for`）は 1.x では非対応です。行をマウントする（`state: .`）か、配列を持つオブジェクトをマウントして中で `for` を回してください（`state: group` ＋ `for: children`）。どちらも契約テストで固定されており、マウントがツリー拡張の唯一の手段になる v2 にそのまま引き継がれます
 
-> プロパティ単位の形（`state.message: user.name`）はそのまま動きます。マップされるキーに既定値を宣言しているコンポーネント（`state = { message: "" }` ＋ `state.message: ...`）には 1.x で 1 回だけ warn が出ます: 今日はホストの値が勝ちますが、v2 では自前のキーが私有になりホストの値を隠すので、既定値を消してください。
+> プロパティ単位の形（`state.message: user.name`）はそのまま動きます — 同じ機構の上の部分マウントです。
+> **v2 での変更（このブランチ）**: R1 はすべてのマウント形で厳格です — マップされるキーに既定値を
+> 宣言しているコンポーネント（`state = { message: "" }` ＋ `state.message: ...`）は自前のキーが
+> **私有**になり、ホストの値を隠します（1 回だけ `wcs/mount-own-key-shadow` が指します）。ツリーを
+> 読むには既定値を消してください。v2 ではさらに、Light DOM のマウントに `name` が不要になり、
+> `element.state`（および getter / メソッド内の `this`）の `$getAll` / `$setAll` / `$resolve` /
+> `$postUpdate` はコンポーネント自身の語彙で書けます — パスはマウント先へ翻訳され、ホスト行の
+> 添字は自動で前置されます。
 
 ### 独立した Web Component への状態注入（`__e2e__/single-component`）
 

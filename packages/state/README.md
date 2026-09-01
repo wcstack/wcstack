@@ -1296,7 +1296,15 @@ customElements.define("user-card", UserCard);
 - **Own keys are private** (rule R1 in [docs/state-mount-design.md](../../docs/state-mount-design.md) §4-3): a data key the component declares itself (`state = { mode: "view" }`) belongs to that element and is never written to the tree. If it hides a key that exists at the mount point (`state = { name: "" }` mounted over `user.name`), the runtime warns once (`wcs/mount-own-key-shadow`) — remove the default to read the tree, or rename it to keep it private.
 - Mounting an array as the root (`state: rows` with `for` over it inside) is not supported in 1.x; mount the row (`state: .`) or the object that holds the array (`state: group` with `for: children` inside). Both forms are contract-tested and carry over unchanged to v2, where mounts become the only way to extend the tree.
 
-> The per-property form (`state.message: user.name`) keeps working. A component that declares a default for a mapped key (`state = { message: "" }` together with `state.message: ...`) gets a one-time warning in 1.x: today the host value wins, in v2 the own key becomes private and would hide it — drop the default.
+> The per-property form (`state.message: user.name`) keeps working — it is a partial mount on
+> the same machinery. **v2 note (this branch)**: R1 is strict for every mount form — a
+> component that declares a default for a mapped key (`state = { message: "" }` together with
+> `state.message: ...`) keeps its own key **private**, hiding the host value (a one-time
+> `wcs/mount-own-key-shadow` warning points at it). Drop the default to read the tree. In v2
+> the mounted `<wcs-state>` also needs no `name` in Light DOM, and `$getAll` / `$setAll` /
+> `$resolve` / `$postUpdate` on `element.state` (and on `this` inside getters/methods) speak
+> the component's own vocabulary — paths are translated onto the mount and the host row's
+> indexes are prepended automatically.
 
 ### Standalone Web Component Injection (`__e2e__/single-component`)
 

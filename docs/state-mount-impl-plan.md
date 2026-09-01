@@ -218,6 +218,8 @@ slice 4 で確定した挙動・発見:
 
 - **slice 10 済み（カバレッジの全ゲート復帰）**: **99.56 / 98.52 / 100 / 99.76 — global 閾値（99.5/98.5/100/99.5）を全て回復**（v2 ブランチで初）。手段＝境界プローブの追加（オーバーレイのシンボル/then/非 base・$ ラッパの文脈なし/indexes 省略/読み形 readonly・preCompletionWrites の控えの往復・接尾なしアクセサとマーカー先頭のシフト・ssr-snapshot 読み手の形検査・binder の既バインド判定・handlerBindingRegistry の重複/部分解除・nameless Light DOM の unit 版・異マーカー素通り）＋**死んだ分岐の除去**（Light name 検査の到達不能な hasAttribute 操作数・noMountEntryMessage の "none" 腕・applyChangeToProperty の完了後ガード＝ルーティング不変条件で到達不能）。**happy-dom で覆えないもの**＝遅延定義の成功経路（scheduleDeferredSpreads の callback・BindingSession の waiting-definition 昇格）— happy-dom は既存要素の upgrade ができない。実ブラウザの正は e2e/state-deferred-apply.spec。rebindAddresses の pattern 腕（2 行）も未カバーのまま（構築に混在パスが要る稀形）。
 
+- **slice 11 済み（P2-12 — ドキュメント）**: webComponent/README.md を v2 機構（不変条件・6 点の機構・R1 と積み・再初期化/プール・Light DOM・削除の経緯と性能）に全面書き直し。ADR-15 §0 の実装表に「Phase 2 slice 9 で機構ごと削除（挙動は単一ツリーの上で成立）」の supersede 注記。packages/state README（英・日）の部分マウント注記を v2 の実挙動（厳格 R1・nameless Light DOM・$ API の語彙翻訳）に更新。
+
 ### 3-1. タスク
 
 | ID | タスク | 場所 | 受け入れ |
