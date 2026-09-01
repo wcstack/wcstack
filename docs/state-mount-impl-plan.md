@@ -199,6 +199,19 @@ slice 4 で確定した挙動・発見:
 
 - **slice 6 済み（P2-10 の前半 — 実ブラウザ e2e）**: e2e フィクスチャ 7 枚を D19 移行（既定値落とし）。**実ブラウザだけで出た実欠陥を 1 件修理** — text binding は登録前に comment が replaceNode へ差し替えられて切断される（bindings/replaceToReplaceNode.ts）ため、スコープ直下のバインディングは DOM walk でループ文脈に届かない。happy-dom は切断後も parentNode を残す非準拠で偶然通っていた。修理＝スコープ構築が行 content の初期化と同じく**直接エントリ**で文脈を渡し（buildMountScopeBindings が getLoopContextByNode(component) を initializeBindings へ）、remount 時は forEachActiveBindingNode で張り替える。マウント系 e2e 40 本＋広域 state e2e 16 本 green（fixme 5 本＝mount-light Phase 2 と mount-volume Phase 3）。jsfb keyed 不変条件維持。
 
+- **slice 7 済み（P2-11 の list-component A/B — v2 の性能ペイオフ実測）**: 同一セッションで feature/state-mount-phase0（v1 機構＋Phase 1 の state: .）と v2 slice 6 をブランチ切替でビルドし比較。行コンポーネント（benchmark-component・1000 行）:
+
+  | op | v1 (Phase 1) | v2 (slice 6) | Δ |
+  |---|---|---|---|
+  | create1k | 169.4 ms | **128.6 ms** | **−24%** |
+  | update | 4.0 ms | **2.2 ms** | **−45%** |
+  | select | 0.5 ms | 0.4 ms | −20% |
+  | swap | 2.2 ms | 2.2 ms | ±0 |
+  | clear | 10.6 ms | **7.5 ms** | **−29%** |
+  | heap run1k | 13.26 MB | **11.84 MB** | **−1.42 MB** |
+
+  橋渡し機構（innerState の再帰解決・通知チャネル・Δ 帳簿）を通らないことがそのまま数字になった。plain 行（jsfb）は不変（ゲート維持）。v1 機構の削除（P2-7）前でこの値 — 削除後に再計測する。
+
 ### 3-1. タスク
 
 | ID | タスク | 場所 | 受け入れ |
