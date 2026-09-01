@@ -50,6 +50,8 @@ console.log(html);
 // Fully rendered HTML with <wcs-ssr> hydration data
 ```
 
+The same call doubles as a **snapshot test** for a page: `expect(await renderToString(html)).toMatchSnapshot()` in vitest pins the rendered markup without a browser. For headless DOM tests that also exercise writes and handlers, `installGlobals()` (below) is the globals swap to reuse — see [Testing Your Page](../state/README.md#testing-your-page) in the state README.
+
 ### `RenderCore` — Observable rendering with caching
 
 ```javascript
@@ -135,6 +137,7 @@ static wcBindable = {
 | Function | Description |
 |----------|-------------|
 | `installGlobals(window)` | Installs happy-dom globals on `globalThis`. Returns a restore function. |
+| `waitForReady(root, { maxIterations? })` | Awaits every custom element under `root` (a `document` or a `ShadowRoot`) that follows the readiness protocols — `static hasConnectedCallbackPromise` elements' `connectedCallbackPromise` (re-scanning while new elements appear, e.g. `<wcs-router>`'s initial route), then `static getBindingsReady(root)` (`<wcs-state>`'s binding construction). This is the wait `renderToString` performs before serializing; [`@wcstack/testing`](../testing/README.md)'s `mount()` reuses it. Rejects if binding initialization fails. |
 | `extractStateData(stateEl)` | Extracts data properties from a `<wcs-state>` element (excludes `$`-prefixed keys and functions). |
 
 ### Constants

@@ -63,7 +63,7 @@ Claude Code reads [CLAUDE.md](./CLAUDE.md) (the more detailed, tool-specific gui
 
 ## Packages
 
-Forty-six independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
+Forty-seven independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
 
 ### What if HTML had reactive data binding?
 
@@ -311,6 +311,7 @@ const html = await renderToString(`
 - [`@wcstack/devtools`](packages/devtools/) — In-page DevTools overlay with `<wcs-devtools>`: inspect state trees (with inline editing through the normal reactive pipeline), see which DOM nodes each path is wired to, and watch a live timeline of writes, update batches, and command/event-token emissions — including zero-subscriber "empty emits". One script tag, connects via the DevTools Hook Protocol, zero-dependency.
 - [`@wcstack/lint`](packages/lint/) — Static-contract validator CLI (`npx @wcstack/lint`, command name `wcs-validate`): checks HTML `data-wcs` bindings and `wcstack.manifest.json` sidecars headlessly with the same validator core as the VS Code extension — identical diagnostic codes and ranges in IDE and CI, stable exit-code contract for generate–validate–fix loops. Zero-dependency.
 - [`@wcstack/typescript`](packages/typescript/) — TypeScript tooling for apps: `wcs-schema` compiles a typed state file and writes the sidecar `stateSchema` the validator consumes, so `data-wcs` paths are checked against real types in CI and every editor (typos become errors, false warnings disappear); `wcs-schema check` fails CI when the manifest drifts from the type. `typescript` is a peer dependency; zero runtime dependencies. The full TypeScript story is in [docs/typescript.md](docs/typescript.md).
+- [`@wcstack/testing`](packages/testing/) — Headless test helpers: `mount(html)` registers the elements, inserts the page fragment under happy-dom and waits for every element and binding (router routes included, via `@wcstack/server`'s `waitForReady`); `state().read/write`, `settle()`, `fire()` drive it like a user or a handler would. The README recipe as one import — a convenience, never a requirement.
 - [`wcstack-intellisense`](packages/vscode-wcs/) — VS Code extension that provides language support for `<wcs-state>` inline scripts.
 
 ---
@@ -362,6 +363,8 @@ Using several packages? The **`wcstack` entry bundle** packs the SPA core — st
         src="https://cdn.jsdelivr.net/npm/wcstack@1.32.0/dist/auto.min.js"
         integrity="sha384-..."></script>
 ```
+
+Testing the page? It is plain DOM — mount it under happy-dom, await the bindings, assert: [Testing Your Page](packages/state/README.md#testing-your-page).
 
 ---
 
@@ -455,6 +458,7 @@ wcstack/
 │   ├── devtools/      # @wcstack/devtools
 │   ├── lint/          # @wcstack/lint
 │   ├── typescript/    # @wcstack/typescript
+│   ├── testing/       # @wcstack/testing
 │   └── vscode-wcs/    # wcstack-intellisense (VS Code extension)
 ```
 

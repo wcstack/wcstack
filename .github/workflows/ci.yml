@@ -169,6 +169,17 @@ jobs:
           npm run build
           npm test
         working-directory: packages/typescript
+      # @wcstack/testing links @wcstack/server (file:../server) and reuses its
+      # waitForReady; its build rebuilds server from source, so this step gates
+      # "fresh server × testing" on every run (a server-only PR does not trigger the
+      # testing matrix job).
+      - name: Build and test @wcstack/testing against the freshly built server
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          npm test
+        working-directory: packages/testing
       - name: Validate data-wcs bindings (error severity fails the build)
         run: |
           set -euo pipefail

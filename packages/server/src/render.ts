@@ -122,6 +122,56 @@ async function loadDefaultBootstraps(): Promise<BootstrapFunction[]> {
   return [bootstrapState];
 }
 
+export interface WaitForReadyOptions {
+  /**
+   * 安定化ループの上限。`$connectedCallback` が動的に追加した要素を拾うため、
+   * 新しい要素が見つからなくなるまで走査を繰り返す（既定 10）。
+   */
+  maxIterations?: number;
+}
+
+/**
+ * `root`（document / ShadowRoot）配下のカスタム要素が readiness プロトコルに従って
+ * 初期化を終えるまで待つ。renderToString がシリアライズ前に行う待機と同じ手順で、
+ * `@wcstack/testing` の `mount()` もこれを呼ぶ（docs/app-testing-and-typescript-impl-plan.md D11）。
+ *
+ * 1. `static hasConnectedCallbackPromise = true` を持つ全要素の `connectedCallbackPromise`
+ *    を待つ。待っている間に追加された要素も拾う（安定化ループ）。
+ *    `<wcs-router>` の初期ルート適用・`<wcs-state>` の状態ロードはここで完了する。
+ * 2. `static getBindingsReady(root)` を持つクラス（`<wcs-state>`）の、この root に対する
+ *    バインディング構築完了を待つ。Promise の取得はループの後 — 実体は各要素の
+ *    connectedCallback 内・最初の await より後に登録されるため、先に掴むと「まだ
+ *    登録前」の即時解決 Promise を取り逃す。
+ *
+ * バインディング初期化の失敗は reject として伝わる（state v1.26+）。
+ */
+export async function waitForReady(root: ParentNode & Node, options?: WaitForReadyOptions): Promise<void> {
+  const maxIterations = options?.maxIterations ?? 10;
+  const awaitedElements = new WeakSet<Element>();
+  const readyCtors = new Set<{ getBindingsReady(root: Node): Promise<void> }>();
+
+  for (let i = 0; i < maxIterations; i++) {
+    const connectedPromises: Promise<void>[] = [];
+
+    for (const el of root.querySelectorAll('*-*')) {
+      if (awaitedElements.has(el)) continue;
+      const ctor = el.constructor as any;
+      if (ctor.hasConnectedCallbackPromise) {
+        awaitedElements.add(el);
+        connectedPromises.push((el as any).connectedCallbackPromise);
+      }
+      if (typeof ctor.getBindingsReady === 'function') {
+        readyCtors.add(ctor);
+      }
+    }
+
+    if (connectedPromises.length === 0) break;
+    await Promise.all(connectedPromises);
+  }
+
+  await Promise.all(Array.from(readyCtors, (ctor) => ctor.getBindingsReady(root)));
+}
+
 
 /**
  * HTML 文字列を SSR レンダリングして返す。
@@ -278,42 +328,10 @@ export async function renderToString(html: string, options?: RenderOptions): Pro
     // connectedCallback が自動発火 → state ロード → $connectedCallback 実行
     document.body.innerHTML = html;
 
-    // connectedCallbackPromise / getBindingsReady プロトコルを自動検出
-    // $connectedCallback が動的にカスタム要素を追加する場合があるため、
-    // 新しい要素が見つからなくなるまで走査を繰り返す（安定化ループ）
-    const MAX_ITERATIONS = 10;
-    const awaitedElements = new WeakSet();
-    const readyCtors = new Set<any>();
-
-    for (let i = 0; i < MAX_ITERATIONS; i++) {
-      const connectedPromises: Promise<void>[] = [];
-
-      for (const el of document.querySelectorAll('*-*')) {
-        if (awaitedElements.has(el)) continue;
-        const ctor = el.constructor as any;
-        if (ctor.hasConnectedCallbackPromise) {
-          awaitedElements.add(el);
-          connectedPromises.push((el as any).connectedCallbackPromise);
-        }
-        if (typeof ctor.getBindingsReady === 'function') {
-          readyCtors.add(ctor);
-        }
-      }
-
-      if (connectedPromises.length === 0) break;
-      await Promise.all(connectedPromises);
-    }
-
-    // 非同期初期化（バインディング構築）の完了を待機。Promise の**取得**は
-    // 安定化ループの後に行う — getBindingsReady の実体（rootNode ごとの ready）は
-    // 各要素の connectedCallback 内・最初の await より後に登録されるため、ループ
-    // 初回の収集では「まだ登録前」の即時解決 Promise を掴むことがある。inline
-    // スナップショット時代は state の connectedCallback 自身が bindings を待って
-    // いたため隠れていた（orchestrated 化で顕在化）。取り逃すと構築の続きが
-    // グローバル復元後に走り、document 消失でクラッシュする
-    await Promise.all(
-      Array.from(readyCtors, (ctor) => (ctor as { getBindingsReady(root: Node): Promise<void> }).getBindingsReady(document as unknown as Node))
-    );
+    // connectedCallbackPromise / getBindingsReady プロトコルを自動検出して待つ
+    // （安定化ループ + バインディング構築。取り逃すと構築の続きがグローバル復元後に
+    // 走り、document 消失でクラッシュする — 手順の詳細は waitForReady 参照）
+    await waitForReady(document as unknown as ParentNode & Node);
 
     // スナップショット最終パス（orchestrated）: 全要素の完了とバインディング構築の
     // 後に <wcs-ssr> を生成する。inline 生成（connectedCallback 内）が取り逃がす

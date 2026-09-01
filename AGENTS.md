@@ -17,6 +17,7 @@ If your task is to generate an application that *uses* wcstack (rather than modi
   ```
 
   Diagnostics carry stable codes and `source:line:col` ranges; exit code is `1` if any error-severity finding exists, `2` on usage/read failure. See [packages/lint](./packages/lint/README.md).
+- **Test the page headlessly** with vitest + happy-dom: mount the HTML, `await getBindingsReady(document)`, assert, write through `createStateAsync("writable")`, assert again. Recipes (including bare Node and `renderToString()` snapshots): [Testing Your Page](./packages/state/README.md#testing-your-page).
 
 ## Working ON this monorepo?
 

@@ -2246,6 +2246,122 @@ the short answer is that translations belong on a path, not in a filter.
 > `analyzeContract()` API reports drift between a live `static wcBindable` surface and
 > a sidecar manifest for dev-time diagnostics.
 
+## Testing Your Page
+
+A page built on `<wcs-state>` is plain DOM, so it can be tested headlessly with [happy-dom](https://github.com/capricorn86/happy-dom) — no browser, no build step, no test-only API. Three recipes follow; every one of them runs as written (recipe 1 is pinned by [`__tests__/readme.testingRecipe.test.ts`](__tests__/readme.testingRecipe.test.ts), which executes the same lines).
+
+Want it as one import? [`@wcstack/testing`](../testing/README.md) packages recipe 1 as `mount()` / `settle()` / `fire()` (and waits for `<wcs-router>` too). The bare recipes below stay valid without it.
+
+### 1. vitest + happy-dom
+
+`vitest.config.ts`:
+
+```ts
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: { environment: "happy-dom", setupFiles: ["./tests/setup.ts"] },
+});
+```
+
+`tests/setup.ts` — register the elements once, and route inline `<script type="module">` state through the `data:` URL loader (Node cannot import `blob:` URLs; without this line an inline-script state never finishes loading):
+
+```ts
+import { bootstrapState } from "@wcstack/state";
+
+bootstrapState();
+URL.createObjectURL = undefined as any;
+```
+
+A test:
+
+```ts
+import { expect, it } from "vitest";
+import { getBindingsReady } from "@wcstack/state";
+
+const settle = () => new Promise<void>((r) => setTimeout(r, 0));
+
+it("renders, re-renders, and runs handlers", async () => {
+  // 1. Mount the fragment under test
+  document.body.innerHTML = `
+    <wcs-state json='{"count": 1, "items": ["apple", "banana"]}'></wcs-state>
+    <p id="count" data-wcs="textContent: count"></p>
+    <ul id="items">
+      <template data-wcs="for: items">
+        <li data-wcs="textContent: items.*"></li>
+      </template>
+    </ul>
+  `;
+
+  // 2. Wait for the state element, then for every binding under `document`
+  const stateEl = document.querySelector("wcs-state") as any;
+  await stateEl.connectedCallbackPromise;
+  await getBindingsReady(document);
+
+  // 3. Assert the initial render
+  expect(document.querySelector("#count")!.textContent).toBe("1");
+  expect(document.querySelectorAll("#items li").length).toBe(2);
+
+  // 4. Write through a writable proxy — exactly what a handler does
+  await stateEl.createStateAsync("writable", async (state: any) => {
+    state.count = 42;
+    state.items = [...state.items, "cherry"];
+  });
+  await settle();
+
+  // 5. Assert the re-render
+  expect(document.querySelector("#count")!.textContent).toBe("42");
+  expect(document.querySelectorAll("#items li").length).toBe(3);
+});
+```
+
+To drive the page the way a user does, keep the state inline (methods included) and dispatch DOM events; a `data-wcs="onclick: up"` handler runs on `button.click()`, and the DOM reflects the write after one `settle()`.
+
+- `getBindingsReady(root)` resolves once every binding under `root` (a `document` or a shadow root) is built, and rejects if binding initialization fails (v1.26+).
+- Updates settle on the microtask queue; a single `setTimeout(0)` after a write is enough.
+- `state.items = [...state.items, "cherry"]` is the reactive form — `state.items.push()` is not observed (same rule as in handlers).
+- Under happy-dom, `customElements.define` upgrades existing nodes by **replacing** them; "a value reaches the same node after a late define" cannot be asserted headlessly. Event timing differences between happy-dom and real browsers are the other blind spot — keep one browser e2e (Playwright) for those.
+- happy-dom's `textContent` setter turns a numeric `0` into an empty string (browsers render `"0"`), so a `textContent: count` binding reads `""` at zero in this recipe. Assert on the state value, or use `@wcstack/testing`, whose `mount()` shims the setter.
+
+### 2. Bare Node (no vitest)
+
+`@wcstack/server` already exports the globals swap it uses for SSR; reuse it. **Import `@wcstack/state` dynamically after `installGlobals`** — the element classes pick their base class when the module is evaluated, so a static import at the top of the file registers elements that happy-dom cannot construct:
+
+```js
+import { Window } from "happy-dom";
+import { installGlobals } from "@wcstack/server";
+
+const window = new Window({ url: "http://localhost/" });
+const restore = installGlobals(window);   // document, customElements, HTMLElement, ... (GLOBALS_KEYS)
+try {
+  const { bootstrapState, getBindingsReady } = await import("@wcstack/state");
+  bootstrapState();
+  // ... the same mount / await / assert steps as recipe 1
+} finally {
+  restore();
+  await window.happyDOM.close();
+}
+```
+
+`installGlobals` also disables `URL.createObjectURL` for you, so inline-script state loads the same way as in recipe 1.
+
+### 3. Snapshot the rendered HTML
+
+[`renderToString()`](../server/README.md) from `@wcstack/server` returns the fully rendered markup as a string; compare it against a stored snapshot:
+
+```ts
+import { expect, it } from "vitest";
+import { renderToString } from "@wcstack/server";
+
+it("matches the rendered snapshot", async () => {
+  const html = await renderToString(`
+    <wcs-state json='{"items": ["apple", "banana"]}' enable-ssr></wcs-state>
+    <ul><template data-wcs="for: items"><li data-wcs="textContent: items.*"></li></template></ul>
+  `);
+  expect(html).toMatchSnapshot();
+});
+```
+
 ## TypeScript Support
 
 `defineState()` wraps your state object and provides type-safe `this` inside methods and getters — with zero runtime cost (identity function).
