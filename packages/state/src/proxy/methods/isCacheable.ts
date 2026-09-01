@@ -19,6 +19,13 @@ export function isCacheable(stateElement: IStateElement, address: IStateAddress)
   if (stateElement.hasMappedComponentState === true) {
     return false;
   }
+  // マーカーで終わるパス（`users.*.#m1` — オーバーレイ値）はキャッシュしない。
+  // オーバーレイ値 proxy は評価中の receiver / handler を閉じ込めるため、drain を
+  // 跨いで使い回せない（webComponent/overlay.ts）。マーカーの**下**のパス
+  // （私有キー・getter の値）は通常どおりキャッシュされ、依存 walk が無効化する。
+  if (stateElement.hasMounts === true && address.pathInfo.lastSegment.charCodeAt(0) === 35 /* '#' */) {
+    return false;
+  }
   return address.pathInfo.wildcardCount > 0 ||
          stateElement.getterPaths.has(address.pathInfo.path);
 }

@@ -314,6 +314,11 @@ export function checkDeclaredPath(
   if (path.startsWith("$")) {
     return;
   }
+  // マウントの予約セグメント（`users.*.#m1.editing` — D20）はオーバーレイに実体があり
+  // raw state には無い。`#else`（構造プレースホルダ）も同様（webComponent/mount.ts）
+  if (path.indexOf("#") !== -1) {
+    return;
+  }
   // mapped な bind-component の子スコープはパスの正本を持たない（親側で解決される）
   if (stateElement.hasMappedComponentState === true) {
     return;

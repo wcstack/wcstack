@@ -58,6 +58,18 @@ export interface IMountRecord {
   readonly setterKeys: ReadonlySet<string>;
   /** 部分規則が覆う内側の先頭セグメント（own data key でも私有にしない — D19 と同じ規則） */
   readonly partialFirstSegments: ReadonlySet<string>;
+  /**
+   * 私有データの初期スナップショット（own data key の浅い複製・D21）。
+   * マウントインスタンス（listIndex）ごとの私有オブジェクトはここから複製される。
+   */
+  readonly privateSnapshot: Readonly<Record<string, unknown>>;
+  /**
+   * マーカーの親パス（翻訳後） → { 接尾キー → 作者のアクセサ名 }。
+   * `display` は markerBase の親に `display → display`、
+   * ワイルドカード getter `"children.*.label"` は `group.children.*` に `label → children.*.label`。
+   * translateInnerPath のマーカー化で遅延登録され、オーバーレイの get が引く。
+   */
+  readonly accessorBySuffixByMarkerParent: Map<string, Map<string, string>>;
 }
 
 let nextMountId = 0;
@@ -120,6 +132,13 @@ export function buildMountRecord(
   const id = ++nextMountId;
   const marker = `#m${id}`;
   const { getterKeys, setterKeys } = collectAccessorKeys(stateObject);
+  const privateSnapshot: Record<string, unknown> = {};
+  for (const key of Object.keys(stateObject)) {
+    if (key.startsWith("$")) continue;
+    if (getterKeys.has(key) || setterKeys.has(key)) continue;
+    if (typeof stateObject[key] === "function") continue;
+    privateSnapshot[key] = stateObject[key];
+  }
   return {
     id,
     marker,
@@ -135,6 +154,8 @@ export function buildMountRecord(
     getterKeys,
     setterKeys,
     partialFirstSegments,
+    privateSnapshot,
+    accessorBySuffixByMarkerParent: new Map(),
   };
 }
 
@@ -169,6 +190,25 @@ function markerizePrivate(record: IMountRecord, innerPath: string): string {
   return record.markerBasePath + DELIMITER + innerPath;
 }
 
+/** アクセサの逆引き（マーカー親 → 接尾キー → 作者のアクセサ名）を登録する */
+function recordAccessorSuffix(record: IMountRecord, markerParentPath: string, suffix: string, accessorName: string): void {
+  let bySuffix = record.accessorBySuffixByMarkerParent.get(markerParentPath);
+  if (typeof bySuffix === "undefined") {
+    bySuffix = new Map();
+    record.accessorBySuffixByMarkerParent.set(markerParentPath, bySuffix);
+  }
+  bySuffix.set(suffix, accessorName);
+  if (record.getterKeys.has(accessorName)) {
+    // マーカーパスを親の getterPaths に載せる。checkDependency（評価中の読み →
+    // このアクセサの動的エッジ登録）と isCacheable（getter 値のキャッシュ）が
+    // getterPaths を正本にしているため、載せないと再評価もキャッシュも効かない。
+    // モック互換のため optional に扱う
+    (record.parentStateElement.getterPaths as Set<string> | undefined)?.add(
+      markerParentPath + DELIMITER + suffix,
+    );
+  }
+}
+
 /**
  * ワイルドカードを含む getter / setter のマーカー位置決め。ワイルドカード接頭辞が
  * ツリーに翻訳できるなら、その直後にマーカーを挟む（ループ文脈と listIndex の arity を
@@ -184,10 +224,12 @@ function markerizeAccessorPath(record: IMountRecord, innerPath: string): string 
     }
   }
   if (lastWildcard === -1) {
+    recordAccessorSuffix(record, record.markerBasePath, innerPath, innerPath);
     return markerizePrivate(record, innerPath);
   }
   const first = segments[0];
   if (isPrivateAnchor(record, first)) {
+    recordAccessorSuffix(record, record.markerBasePath, innerPath, innerPath);
     return markerizePrivate(record, innerPath);
   }
   const treeSegments = segments.slice(0, lastWildcard + 1);
@@ -197,9 +239,9 @@ function markerizeAccessorPath(record: IMountRecord, innerPath: string): string 
     // 部分マウントのみで、どの接頭辞にも含まれないツリー部（§4-1 の 4b）
     raiseError(noMountEntryMessage(record, innerPath));
   }
-  return rest.length === 0
-    ? translated + DELIMITER + record.marker
-    : translated + DELIMITER + record.marker + DELIMITER + rest.join(DELIMITER);
+  const markerParent = translated + DELIMITER + record.marker;
+  recordAccessorSuffix(record, markerParent, rest.join(DELIMITER), innerPath);
+  return rest.length === 0 ? markerParent : markerParent + DELIMITER + rest.join(DELIMITER);
 }
 
 /** 先頭セグメントが「作者のもの」（own data key・部分規則が覆わないもの／メソッド）か */
@@ -232,9 +274,21 @@ function noMountEntryMessage(record: IMountRecord, innerPath: string): string {
  *
  * `$`（予約名前空間・`$1` 等）と `#`（構造プレースホルダ）で始まるパスは翻訳しない。
  */
+const INDEX_PATH_REGEX = /^\$(\d+)$/;
+
 export function translateInnerPath(record: IMountRecord, innerPath: string): string {
   const head = innerPath[0];
   if (head === "$" || head === "#") {
+    // `$n` はスコープ相対（D9）。テンプレート側は変換時に Δ を織り込む —
+    // 行マウント（Δ=1）の内側 `for` で作者が書く `$1` は、親スコープの
+    // 先頭起点では `$2`（設計書 §4-4: `$n → listIndex.at(Δ + n - 1)`）。
+    // getter 内の `this.$1` は変換を通らないので、親トラップの Δ 補正が同じ式で扱う。
+    if (record.delta > 0) {
+      const match = INDEX_PATH_REGEX.exec(innerPath);
+      if (match !== null) {
+        return `$${Number(match[1]) + record.delta}`;
+      }
+    }
     return innerPath;
   }
   // 規則 1: 完全一致の getter / setter（`display`・`"children.*.label"`）
@@ -308,6 +362,8 @@ export function registerMountRecord(scopeRoot: Node, record: IMountRecord): void
     mountRecordsByStateElement.set(record.parentStateElement, byMarker);
   }
   byMarker.set(record.marker, record);
+  // D18: マウントの無い state はオーバーレイ dispatch を boolean 1 個で抜ける
+  record.parentStateElement.markHasMounts?.();
 }
 
 export function getMountRecordByScopeRoot(scopeRoot: Node): IMountRecord | null {

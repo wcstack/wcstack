@@ -30,6 +30,8 @@ import { raiseError } from "../../raiseError";
 import { collectStreamDependency } from "../../stream/argsTrace";
 import { getStreamErrorNamespace, getStreamStatusNamespace } from "../../stream/streamNamespace";
 import { popCrossBoundaryAddress, pushCrossBoundaryAddress } from "../../webComponent/crossBoundaryAddress";
+import { getMountRecordByPath } from "../../webComponent/mount";
+import { createOverlayValue } from "../../webComponent/overlay";
 import { IStateHandler } from "../types";
 import { checkDependency } from "./checkDependency";
 import { isCacheable } from "./isCacheable";
@@ -77,6 +79,16 @@ function _getByAddress(
   }
   if (firstSegment === STATE_STREAM_ERROR_NAMESPACE_NAME) {
     return walkNamespace(getStreamErrorNamespace(stateElement), address.pathInfo.segments);
+  }
+  // マウントのオーバーレイ dispatch（Phase 2・D20）。掛かるのは「マーカーで終わる
+  // パス」だけで、その下（私有キー・getter・メソッド）の読み書きは通常の親ウォークが
+  // 返された proxy への素の Reflect.get / Reflect.set として続く（webComponent/overlay.ts）。
+  // マウントの無い state は boolean 判定 1 個で抜ける（D18）
+  if (stateElement.hasMounts === true && address.pathInfo.lastSegment.charCodeAt(0) === 35 /* '#' */) {
+    const mountRecord = getMountRecordByPath(stateElement, address.pathInfo.path);
+    if (mountRecord !== null) {
+      return createOverlayValue(mountRecord, address, receiver, handler);
+    }
   }
   if (address.pathInfo.path in target) {
     // getterの中で参照の可能性があるので、addressをプッシュする

@@ -178,10 +178,19 @@ describe('mount: translateBindingForMount', () => {
   });
 
   it('パスも stateName も変わらなければ同一オブジェクトを返すこと', () => {
-    const r = record([[[] as any, 'users.*']]);
+    const r = record([[[] as any, 'user']]);
     const binding = hostBinding(['textContent'], '$1');
     const translated = translateBindingForMount(r, binding);
     expect(translated).toBe(binding);
+  });
+
+  it('Δ>0 のマウントでは $n がスコープ相対に繰り上がること（§4-4）', () => {
+    const r = record([[[] as any, 'users.*']]);
+    const translated = translateBindingForMount(r, hostBinding(['textContent'], '$1'));
+    expect(translated.statePathName).toBe('$2');
+    // Δ=0 なら不変
+    const r0 = record([[[] as any, 'user']]);
+    expect(translateBindingForMount(r0, hostBinding(['textContent'], '$1')).statePathName).toBe('$1');
   });
 });
 

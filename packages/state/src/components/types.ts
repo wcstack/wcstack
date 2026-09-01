@@ -46,6 +46,14 @@ export interface IStateElement {
   readonly hasMappedComponentState?: boolean;
   markComponentStateMapped?(): void;
   /**
+   * この state element にマウント（Phase 2 の単一ツリー — webComponent/mount.ts）が
+   * 1 つでも登録されているか。偽のとき getByAddress / isCacheable / `$n` 補正は
+   * boolean 判定 1 個でオーバーレイ経路を抜ける（設計書 D18）。
+   * optional なのはテスト用モック互換のため（undefined は「マウント無し」扱い）。
+   */
+  readonly hasMounts?: boolean;
+  markHasMounts?(): void;
+  /**
    * この state 要素に束ねられた（`setPathInfo` を通った）パスの集合。丸ごとマウント
    * （ルート規則）の親→子通知が「登録済みパス全部を読み直せ」を組み立てるのに使う
    * （webComponent/rootReloadPaths.ts）。

@@ -114,6 +114,7 @@ export class State extends HTMLElementBase implements IStateElement {
   private _boundComponent: Element | null = null;
   private _boundComponentStateProp: string | null = null;
   private _hasMappedComponentState: boolean = false;
+  private _hasMounts: boolean = false;
   private _bindableEventMap: Record<string, string> = {};
   private _commandTokenNames: Set<string> = new Set<string>();
   private _eventTokenNames: Set<string> = new Set<string>();
@@ -696,6 +697,15 @@ export class State extends HTMLElementBase implements IStateElement {
 
   get boundPaths(): ReadonlySet<string> {
     return this._pathSet;
+  }
+
+  get hasMounts(): boolean {
+    return this._hasMounts;
+  }
+
+  /** 唯一の呼び手は webComponent/mount.ts の registerMountRecord（Phase 2）。 */
+  markHasMounts(): void {
+    this._hasMounts = true;
   }
 
   /**
