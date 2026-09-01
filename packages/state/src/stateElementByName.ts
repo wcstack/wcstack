@@ -36,6 +36,38 @@ export function getBindingsReady(rootNode: Node): Promise<void> {
 const bindingsBuiltRoots: WeakSet<Node> = new WeakSet();
 
 /**
+ * マウントされたスコープ（コンポーネントの ShadowRoot）に、**親の** state element を
+ * 別名として載せる（Phase 2・impl-plan §3-0 の 2）。
+ *
+ * `getRootNode()` で state element を解決する全てのサイト
+ * （getAbsoluteStateAddressByBinding / applyChange / applyChangeFromBindings /
+ * fragmentInfoByUUID）が、この 1 エントリで無改造のまま親ツリーに到達する。
+ * `setStateElementByName` と違い、初回登録の副作用（buildBindings の起動・
+ * liveStateElements・devtools イベント）は持たない — マウントスコープの構築は
+ * webComponent/mountScope.ts が自前で行う。
+ */
+export function setStateElementAlias(rootNode: Node, name: string, element: IStateElement): void {
+  let stateElementByName = stateElementByNameByNode.get(rootNode);
+  if (!stateElementByName) {
+    stateElementByName = new Map<string, IStateElement>();
+    stateElementByNameByNode.set(rootNode, stateElementByName);
+  }
+  if (stateElementByName.has(name)) {
+    raiseError(`State element with name "${name}" is already registered.`);
+  }
+  stateElementByName.set(name, element);
+}
+
+/**
+ * マウントされたスコープの ready を登録する（`getBindingsReady(childShadow)` の互換面）。
+ * 完了で binder の `areBindingsBuilt` も真にする。
+ */
+export function setBindingsReadyForScope(rootNode: Node, ready: Promise<void>): void {
+  bindingsReadyByNode.set(rootNode, ready);
+  ready.then(() => markBindingsBuilt(rootNode), () => undefined);
+}
+
+/**
  * この rootNode の初期バインド構築が完了しているか。
  *
  * binder プロトコル（`bind()`）が使う。router の `<wcs-head>` はクローンを

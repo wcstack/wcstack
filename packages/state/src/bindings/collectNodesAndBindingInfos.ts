@@ -13,16 +13,37 @@ import { resolveInitializedBinding } from "./initializeBindingPromiseByNode";
 
 const registeredNodeSet = new WeakSet<Node>();
 
+/**
+ * パース結果の変換フック（Phase 2 のマウント — impl-plan §3-0 の 1）。
+ * マウントされたスコープの収集は、これで各パース結果を親ツリーの絶対パスへ書き換える。
+ * `uuid` を持つエントリ（構造フラグメントの参照）には掛けない — フラグメント側の
+ * パース結果は登録時（collectStructuralFragments）に変換済みで、二重に掛けると
+ * 接頭辞が二重になる。
+ */
+export type ParseResultTransform = (parsed: ParseBindTextResult) => ParseBindTextResult;
+
+function applyTransform(
+  parseResults: ParseBindTextResult[],
+  transform: ParseResultTransform | undefined,
+): ParseBindTextResult[] {
+  if (typeof transform === "undefined") {
+    return parseResults;
+  }
+  return parseResults.map((parsed) => (parsed.uuid != null ? parsed : transform(parsed)));
+}
+
 export interface IDeferredSpreadEntry {
   readonly node: Node;
   readonly tagName: string;
   readonly parseResults: ParseBindTextResult[];
+  readonly transform?: ParseResultTransform;
 }
 
 function processParseResultsForNode(
   node: Node,
   parseResults: ParseBindTextResult[],
   options: { allowDeferred: boolean },
+  transform?: ParseResultTransform,
 ): { bindings: IBindingInfo[], deferred: IDeferredSpreadEntry | null } {
   const expanded = expandSpread(node, parseResults, { allowDeferred: options.allowDeferred });
   if (hasUnresolvedSpread(expanded)) {
@@ -32,17 +53,19 @@ function processParseResultsForNode(
     if (tagName === null) {
       raiseError(`Spread binding deferred but element is not a custom element.`);
     }
-    return { bindings: [], deferred: { node, tagName, parseResults } };
+    return { bindings: [], deferred: { node, tagName, parseResults, transform } };
   }
   registeredNodeSet.add(node);
-  const bindings = getBindingInfos(node, expanded);
+  // 変換は spread 展開の**後**（展開されたプロパティごとのパスに掛かる）
+  const bindings = getBindingInfos(node, applyTransform(expanded, transform));
   setBindingsByNode(node, bindings);
   resolveInitializedBinding(node);
   return { bindings, deferred: null };
 }
 
 export function collectNodesAndBindingInfos(
-  root: Document | Element | DocumentFragment
+  root: Document | Element | DocumentFragment,
+  transform?: ParseResultTransform,
 ): [ Node[], IBindingInfo[], IDeferredSpreadEntry[] ] {
   const subscriberNodes = getSubscriberNodes(root);
   const allBindings: IBindingInfo[] = [];
@@ -50,7 +73,7 @@ export function collectNodesAndBindingInfos(
   for(const node of subscriberNodes) {
     if (registeredNodeSet.has(node)) continue;
     const parseResults = getParseBindTextResults(node);
-    const result = processParseResultsForNode(node, parseResults, { allowDeferred: true });
+    const result = processParseResultsForNode(node, parseResults, { allowDeferred: true }, transform);
     if (result.deferred !== null) {
       deferredSpreads.push(result.deferred);
       continue;
@@ -99,8 +122,8 @@ export function markNodeRegistered(node: Node): void {
  * returns them so the caller can attach handlers and apply state values.
  */
 export function processDeferredNode(entry: IDeferredSpreadEntry): IBindingInfo[] {
-  const { node, parseResults } = entry;
+  const { node, parseResults, transform } = entry;
   unregisterNode(node);
-  const result = processParseResultsForNode(node, parseResults, { allowDeferred: false });
+  const result = processParseResultsForNode(node, parseResults, { allowDeferred: false }, transform);
   return result.bindings;
 }
