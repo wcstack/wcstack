@@ -271,8 +271,7 @@ describe("bind-component: 子スコープの for が親スコープのリスト�
     host.remove();
   });
 
-  // P2-9（$ API の接頭辞翻訳・設計書 §4-6）で green に反転したら .fails を外すこと
-  it.fails("子から $getAll でマップ先のリストを横断的に読めること（P2-9 待ち）", async () => {
+  it("子から $getAll でマップ先のリストを横断的に読めること（P2-9・chroot の接頭辞翻訳）", async () => {
     const { host, component } = await mountListComponent(
       '{"rows":[{"name":"a"},{"name":"b"},{"name":"c"}]}',
     );

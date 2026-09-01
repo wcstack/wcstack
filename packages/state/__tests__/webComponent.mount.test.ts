@@ -302,3 +302,19 @@ describe('mount: setBindingsReadyForScope', () => {
     await new Promise((r) => setTimeout(r));
   });
 });
+
+describe('mount: composeMountIndexes（$ API の添字合成）', () => {
+  it('接頭辞が増えないパスは素通し、増えるパスは文脈添字を前置し、文脈不足は throw すること', async () => {
+    const { composeMountIndexes } = await import('../src/webComponent/mount');
+    const r = record([[[] as any, 'users.*']]);
+    // 接頭辞 0（$ 系や翻訳で増えない形）
+    expect(composeMountIndexes(r, 'tags.*.name', 'tags.*.name', [0], [7])).toEqual([0]);
+    // 接頭辞 1: ホスト行の添字を前置
+    expect(composeMountIndexes(r, 'tags.*.name', 'users.*.tags.*.name', [0], [3])).toEqual([3, 0]);
+    // indexes 未指定は未指定のまま（文脈既定は親 API に委ねる）
+    expect(composeMountIndexes(r, 'tags.*.name', 'users.*.tags.*.name', undefined, [3])).toBeUndefined();
+    // 文脈が足りない
+    expect(() => composeMountIndexes(r, 'tags.*.name', 'users.*.tags.*.name', [0], []))
+      .toThrow(/host context provides only 0/);
+  });
+});

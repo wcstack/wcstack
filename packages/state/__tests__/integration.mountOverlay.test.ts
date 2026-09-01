@@ -387,3 +387,53 @@ describe("mountOverlay: 実配線（slice 3）", () => {
     host.remove();
   });
 });
+
+describe("mountOverlay: $ API の接頭辞翻訳（P2-9・設計書 §4-6）", () => {
+  it("getter / メソッド内の $getAll・$resolve・$setAll が自スコープ相対で効くこと（行マウント）", async () => {
+    const tag = uniqueTag("mo-dollar");
+    defineWiredComponent(tag, () => ({
+      get tagsJoined() { return ((this as any).$getAll("tags.*.name", []) as string[]).join(","); },
+      renameFirst() { (this as any).$resolve("tags.*.name", [0], "Z"); },
+      shoutAll() { (this as any).$setAll("tags.*.name", [], (v: string) => `${v}!`); },
+    }),
+      `<span class="joined" data-wcs="textContent: tagsJoined"></span>` +
+      `<button class="first" data-wcs="onclick: renameFirst"></button>` +
+      `<button class="all" data-wcs="onclick: shoutAll"></button>`);
+    const { host, shadowRoot } = await mountHost(
+      '{"users":[{"tags":[{"name":"x"}]},{"tags":[{"name":"y"},{"name":"z"}]}]}',
+      `<div><template data-wcs="for: users"><${tag} data-wcs="state: ."></${tag}></template></div>`,
+    );
+    await flush();
+    await flush();
+    const rows = Array.from(shadowRoot.querySelectorAll(tag));
+    for (const row of rows) {
+      await childReady(row);
+    }
+    const joined = (i: number) => text(rows[i].shadowRoot!, ".joined");
+
+    // $getAll: 各行の getter が「自分の行の tags だけ」を読む（先頭添字の合成）
+    expect(joined(0)).toBe("x");
+    expect(joined(1)).toBe("y,z");
+
+    // $resolve 書き込み: 行 1 の先頭タグだけが変わる
+    (rows[1].shadowRoot!.querySelector(".first") as HTMLElement).click();
+    await flush();
+    await flush();
+    expect(joined(0)).toBe("x");
+    expect(joined(1)).toBe("Z,z");
+
+    // $setAll（mapper）: 行 0 の全タグだけが変わる
+    (rows[0].shadowRoot!.querySelector(".all") as HTMLElement).click();
+    await flush();
+    await flush();
+    expect(joined(0)).toBe("x!");
+    expect(joined(1)).toBe("Z,z");
+
+    // chroot 面: 行 1 の $getAll / $postUpdate も自スコープ相対
+    const chroot1 = (rows[1] as any).state as Record<string, any>;
+    expect(chroot1.$getAll("tags.*.name", [])).toEqual(["Z", "z"]);
+    expect(() => chroot1.$postUpdate("tagsJoined")).not.toThrow();
+
+    host.remove();
+  });
+});

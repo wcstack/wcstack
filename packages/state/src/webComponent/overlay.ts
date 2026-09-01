@@ -7,7 +7,7 @@ import { IListIndex } from "../list/types";
 import { checkDependency } from "../proxy/methods/checkDependency";
 import { setLoopContextSymbol } from "../proxy/symbols";
 import { IStateHandler, IStateProxy } from "../proxy/types";
-import { IMountRecord, translateInnerPath } from "./mount";
+import { composeMountIndexes, IMountRecord, translateInnerPath } from "./mount";
 
 /**
  * webComponent/overlay.ts — マウントのオーバーレイ（D20 / D21・impl-plan §3-0 の 4）。
@@ -91,6 +91,26 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
       if (prop === "$postUpdate") {
         return (path: string): void => {
           this.receiver.$postUpdate(translateInnerPath(this.record, path));
+        };
+      }
+      // §4-6（P2-9）: 相対パス → 接頭辞合成 → ルート API。作者のスコープ相対 indexes の
+      // 先頭に、評価中のマーカーアドレスの行添字（＝翻訳で増えたワイルドカード分）を足す
+      if (prop === "$getAll" || prop === "$setAll" || prop === "$resolve") {
+        const record = this.record;
+        const contextIndexes = this.listIndex?.indexes ?? [];
+        const receiver = this.receiver;
+        if (prop === "$resolve") {
+          return (path: string, indexes: number[] | undefined, ...rest: unknown[]): unknown => {
+            const translated = translateInnerPath(record, path);
+            const composed = composeMountIndexes(record, path, translated, indexes ?? [], contextIndexes);
+            return receiver.$resolve(translated, composed, ...rest);
+          };
+        }
+        const api = prop;
+        return (path: string, indexes?: number[], ...rest: unknown[]): unknown => {
+          const translated = translateInnerPath(record, path);
+          const composed = composeMountIndexes(record, path, translated, indexes, contextIndexes);
+          return receiver[api](translated, composed, ...rest);
         };
       }
       // `$1` 等は親トラップの Δ 補正がスコープ相対にする。他の `$` API は
@@ -209,6 +229,33 @@ export function createOverlayValue(
  * ホスト要素のループ文脈で包む（行マウント `state: .` の `users.*.…` を解決するため —
  * v1 の outerState → innerState と同じ形）。
  */
+function createChrootDollarApi(
+  record: IMountRecord,
+  api: "$getAll" | "$setAll" | "$resolve" | "$postUpdate",
+  withHostContext: <T>(state: IStateProxy, callback: () => T) => T,
+): (...args: any[]) => unknown {
+  const parent = record.parentStateElement;
+  const call = (mutability: "readonly" | "writable", fn: (state: any) => unknown): unknown => {
+    let result: unknown;
+    parent.createState(mutability, (state) => {
+      result = withHostContext(state as IStateProxy, () => fn(state));
+    });
+    return result;
+  };
+  if (api === "$postUpdate") {
+    return (path: string) => call("readonly", (state) => state.$postUpdate(translateInnerPath(record, path)));
+  }
+  return (path: string, indexes?: number[], ...rest: unknown[]) => {
+    const translated = translateInnerPath(record, path);
+    const contextIndexes = getLoopContextByNode(record.component)?.listIndex.indexes ?? [];
+    // $resolve は indexes 必須の API（省略は空列と同義に倒す）。書き込み形（第 3 引数あり）は writable
+    const composed = composeMountIndexes(
+      record, path, translated, api === "$resolve" ? (indexes ?? []) : indexes, contextIndexes);
+    const mutability = api === "$setAll" || (api === "$resolve" && rest.length > 0) ? "writable" : "readonly";
+    return call(mutability, (state) => state[api](translated, composed, ...rest));
+  };
+}
+
 export function createPublicMountState(record: IMountRecord): Record<string, any> {
   const parent = record.parentStateElement;
   const withHostContext = <T>(state: IStateProxy, callback: () => T): T => {
@@ -223,6 +270,11 @@ export function createPublicMountState(record: IMountRecord): Record<string, any
     get(_target, prop): any {
       if (typeof prop !== "string" || prop === "then") {
         return undefined;
+      }
+      // §4-6（P2-9）: 相対パス → 接頭辞合成 → ルート API（chroot 面）。
+      // 先頭添字はホスト要素のループ文脈から補う
+      if (prop === "$getAll" || prop === "$setAll" || prop === "$resolve" || prop === "$postUpdate") {
+        return createChrootDollarApi(record, prop, withHostContext);
       }
       let value: unknown;
       parent.createState("readonly", (state) => {

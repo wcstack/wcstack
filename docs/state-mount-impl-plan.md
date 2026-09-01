@@ -193,6 +193,10 @@ slice 4 で確定した挙動・発見:
 11. **混在パスの既知制約**: 親側にワイルドカードが乗る部分マウントでは、内側の具体添字パス（`items.0.name` → `groups.*.children.0.name`）は「文脈と添字の混在」でエンジンが受けない。行フィールドの子側書き戻し・スコープ相対のイベント添字（getScopedIndexes）・`$getAll`/`$resolve` の接頭辞翻訳は **P2-9 に it.fails でピン留め**（ListRow 1 本・NestedFor 3 本）。
 12. **カバレッジ**: slice 4 で 99.19 / 97.91 / 99.9 / 99.45 — slice 3 から微減（innerState 等の v1 機構の行使者が Light DOM だけになった）。slice 2 ベースラインは全指標で上回ったまま。P2-7 の削除で解消する。
 
+- **slice 5 済み（P2-9a — $ 呼び出し面）**: $getAll / $setAll / $resolve / $postUpdate の接頭辞翻訳を chroot（element.state）とオーバーレイ（getter / メソッド内の this）の両面に実装。作者のスコープ相対 indexes の先頭に、翻訳で増えたワイルドカード分の文脈添字を合成する（mount.ts composeMountIndexes）。イベントハンドラの添字もスコープ相対化 — 翻訳された for のループ要素パス → shift の台帳（record.indexShiftByLoopElementPath・translateParsedForMount が埋める）を handler.ts が引き、台帳に無いループ文脈（境界ホップで借りた外側の行）は作者から見えない＝0 本。slice 4 の it.fails ピン 4 本（ListRow $getAll・NestedFor $resolve 書き戻し ×2・イベント添字）を全て反転。
+
+  **P2-9b（未着手）**: $watch / $streams / $listKeys / $updatedCallback の相対宣言（マウントされた <wcs-state> は現状 $ 宣言を実行しない — slice 3 の 5 項）。宣言面はマウント構築時に相対→絶対でルート台帳へ登録する設計（§4-6 の表）。
+
 ### 3-1. タスク
 
 | ID | タスク | 場所 | 受け入れ |

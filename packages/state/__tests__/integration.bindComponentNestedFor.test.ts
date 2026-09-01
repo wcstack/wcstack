@@ -139,11 +139,7 @@ describe.each<ShadowTiming>(["constructor", "connectedCallback"])(
       host.remove();
     });
 
-    // 親側にワイルドカードが乗る部分マウントでは、内側の具体添字パス
-    //（items.0.name → groups.*.children.0.name）は「文脈と添字の混在」で
-    // エンジンが受けない。行フィールドの書き戻しの語彙は $resolve の接頭辞翻訳
-    //（P2-9・設計書 §4-6）— green に反転したら .fails を外すこと
-    it.fails("子からの書き戻しが親 state に届くこと（P2-9 待ち）", async () => {
+    it("子からの書き戻しが親 state に届くこと（P2-9・$resolve の接頭辞翻訳）", async () => {
       const { host, components, parentStateElement, rendered } = await mountNested(TWO_GROUPS, timing);
 
       ((components()[1] as any).state as any).$resolve("items.*.name", [0], "c-from-child");
@@ -341,9 +337,7 @@ describe("bind-component 入れ子形: スコープの独立性", () => {
     host.remove();
   });
 
-  // 現状はスコープ外の Δ 段が先頭に漏れる（[1,0]）。子スコープ相対への切り出しは
-  // P2-9 の getScopedIndexes（設計書 §4-4）— green に反転したら .fails を外すこと
-  it.fails("イベントハンドラが受け取るインデックスが子スコープのものであること（P2-9 待ち）", async () => {
+  it("イベントハンドラが受け取るインデックスが子スコープのものであること（P2-9・スコープ相対）", async () => {
     const pickLog: number[][] = [];
     const tag = uniqueTag("bcnf-evt");
     class Component extends HTMLElement {
@@ -404,8 +398,7 @@ describe("bind-component 入れ子形: スコープの独立性", () => {
     host.remove();
   });
 
-  // P2-9（$ API の接頭辞翻訳・設計書 §4-6）で green に反転したら .fails を外すこと
-  it.fails("$resolve が子スコープのインデックスで往復できること（P2-9 待ち）", async () => {
+  it("$resolve が子スコープのインデックスで往復できること（P2-9・接頭辞翻訳）", async () => {
     const { host, components } = await mountNested(TWO_GROUPS, "constructor");
 
     const value = ((components()[1] as any).state as any).$resolve("items.*.name", [0]);

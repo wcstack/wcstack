@@ -76,6 +76,13 @@ export interface IMountRecord {
    * translateInnerPath のマーカー化で遅延登録され、オーバーレイの get とトラップが引く。
    */
   readonly accessorBySuffixByMarkerParent: Map<string, Map<string, IAccessorEntry>>;
+  /**
+   * 翻訳された `for` のループ要素パス（`groups.*.children.*`）→ 翻訳で増えた
+   * ワイルドカード数。イベントハンドラの「スコープ相対の添字」（§4-4 / P2-9）が
+   * 引く — 添字列の末尾から (総数 − shift) 本だけが作者の見える添字。
+   * translateParsedForMount が for の翻訳時に埋める。
+   */
+  readonly indexShiftByLoopElementPath: Map<string, number>;
 }
 
 export interface IAccessorEntry {
@@ -163,6 +170,7 @@ export function buildMountRecord(
     injectedKeys,
     privateSnapshot,
     accessorBySuffixByMarkerParent: new Map(),
+    indexShiftByLoopElementPath: new Map(),
   };
 }
 
@@ -352,6 +360,14 @@ export function translateParsedForMount<T extends ITranslatable>(record: IMountR
     translated = shift === 0 ? parsed.statePathName : `$${Number(indexMatch[1]) + shift}`;
   } else {
     translated = translateInnerPath(record, parsed.statePathName);
+    if ((parsed as { bindingType?: string }).bindingType === "for" && translated !== parsed.statePathName) {
+      // スコープ相対の添字（P2-9）用: この for の行に立つループ文脈の要素パスと、
+      // 翻訳で増えたワイルドカード数を控える
+      const shift = getPathInfo(translated).wildcardCount - parsed.statePathInfo.wildcardCount;
+      if (shift > 0) {
+        record.indexShiftByLoopElementPath.set(translated + DELIMITER + WILDCARD, shift);
+      }
+    }
   }
   if (translated === parsed.statePathName && parsed.stateName === record.parentStateName) {
     return parsed;
@@ -382,6 +398,35 @@ export function getIndexShiftForMarkerPath(record: IMountRecord, markerPath: str
   const suffix = suffixStart > markerPath.length ? "" : markerPath.slice(suffixStart);
   const entry = record.accessorBySuffixByMarkerParent.get(parent)?.get(suffix);
   return typeof entry !== "undefined" ? entry.indexShift : record.delta;
+}
+
+/**
+ * `$getAll` / `$setAll` / `$resolve` の接頭辞翻訳（§4-6 / P2-9）: 作者のスコープ相対
+ * indexes の先頭に、翻訳で増えたワイルドカード分の文脈添字を合成する。
+ * contextIndexes はホスト要素（chroot）またはマーカーアドレス（オーバーレイ）の
+ * listIndex 添字列。プレフィックスが増えないパス（Δ=0 の翻訳）は素通し。
+ */
+export function composeMountIndexes(
+  record: IMountRecord,
+  innerPath: string,
+  translatedPath: string,
+  indexes: readonly number[] | undefined,
+  contextIndexes: readonly number[],
+): readonly number[] | undefined {
+  if (typeof indexes === "undefined") {
+    return undefined;
+  }
+  const prefixWildcards = getPathInfo(translatedPath).wildcardCount - getPathInfo(innerPath).wildcardCount;
+  if (prefixWildcards === 0) {
+    return indexes;
+  }
+  if (contextIndexes.length < prefixWildcards) {
+    raiseError(
+      `Cannot resolve "${innerPath}" from this mount: the mounted prefix has ${prefixWildcards} wildcard(s) ` +
+      `but the host context provides only ${contextIndexes.length} index(es).`,
+    );
+  }
+  return [...contextIndexes.slice(0, prefixWildcards), ...indexes];
 }
 
 // ---------------------------------------------------------------------------

@@ -8,6 +8,7 @@ import { getByAddressSymbol, setLoopContextSymbol } from "../proxy/symbols";
 import { getScopedIndexes } from "../list/wildcardLevel";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
+import { getMountRecordByScopeRoot } from "../webComponent/mount";
 import { IBindingInfo } from "../types";
 import { captureHandlerRejection } from "./captureHandlerRejection";
 import { createHandlerBindingRegistry } from "./handlerBindingRegistry";
@@ -47,8 +48,20 @@ const stateEventHandlerFunction = (
   const isCommand = isCommandTokenPath(handlerName);
   stateElement.createStateAsync("writable", async (state) => {
     const results = state[setLoopContextSymbol](loopContext, () => {
+      // マウントされたスコープ（v2）: 作者のハンドラが受ける添字は自スコープの
+      // ループ分だけ（§4-4 / P2-9）。翻訳で増えたワイルドカード数を落とす。
+      // 翻訳された for の台帳に無いループ文脈は外側スコープのもの（境界ホップで
+      // 借りた行）なので、作者から見える添字は 0 本
+      let scopedWildcardCount = loopContext !== null ? loopContext.pathInfo.wildcardCount : 0;
+      if (loopContext !== null && stateElement.hasMounts === true) {
+        const mountRecord = getMountRecordByScopeRoot(rootNode);
+        if (mountRecord !== null) {
+          const shift = mountRecord.indexShiftByLoopElementPath.get(loopContext.pathInfo.path);
+          scopedWildcardCount = typeof shift !== "undefined" ? scopedWildcardCount - shift : 0;
+        }
+      }
       const indexes = loopContext !== null
-        ? getScopedIndexes(loopContext.listIndex, loopContext.pathInfo.wildcardCount) : [];
+        ? getScopedIndexes(loopContext.listIndex, scopedWildcardCount) : [];
       if (isCommand) {
         // command token を解決して emit。引数はハンドラ呼び出しと同じく (event, ...listIndexes) を透過する。
         const token = state[getByAddressSymbol](createStateAddress(statePathInfo, null));
