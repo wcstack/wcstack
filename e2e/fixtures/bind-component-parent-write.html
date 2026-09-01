@@ -31,7 +31,7 @@
   <script type="module">
     // 葉のマッピング: 親の user.name を子の name に束ねる
     class LeafEditor extends HTMLElement {
-      state = { name: "" };
+      state = {}; // v2 R1（D19）
       constructor() {
         super();
         this.attachShadow({ mode: "open" });
@@ -48,7 +48,7 @@
     // オブジェクトのマッピング: 親の user を子の user に束ね、子はその下の name を読む。
     // user.name のルールは子が最初に読んだ時点で遅延導出される。
     class ObjEditor extends HTMLElement {
-      state = { user: {} };
+      state = {}; // v2 R1（D19）
       constructor() {
         super();
         this.attachShadow({ mode: "open" });

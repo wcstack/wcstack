@@ -197,6 +197,8 @@ slice 4 で確定した挙動・発見:
 
   **P2-9b（未着手）**: $watch / $streams / $listKeys / $updatedCallback の相対宣言（マウントされた <wcs-state> は現状 $ 宣言を実行しない — slice 3 の 5 項）。宣言面はマウント構築時に相対→絶対でルート台帳へ登録する設計（§4-6 の表）。
 
+- **slice 6 済み（P2-10 の前半 — 実ブラウザ e2e）**: e2e フィクスチャ 7 枚を D19 移行（既定値落とし）。**実ブラウザだけで出た実欠陥を 1 件修理** — text binding は登録前に comment が replaceNode へ差し替えられて切断される（bindings/replaceToReplaceNode.ts）ため、スコープ直下のバインディングは DOM walk でループ文脈に届かない。happy-dom は切断後も parentNode を残す非準拠で偶然通っていた。修理＝スコープ構築が行 content の初期化と同じく**直接エントリ**で文脈を渡し（buildMountScopeBindings が getLoopContextByNode(component) を initializeBindings へ）、remount 時は forEachActiveBindingNode で張り替える。マウント系 e2e 40 本＋広域 state e2e 16 本 green（fixme 5 本＝mount-light Phase 2 と mount-volume Phase 3）。jsfb keyed 不変条件維持。
+
 ### 3-1. タスク
 
 | ID | タスク | 場所 | 受け入れ |

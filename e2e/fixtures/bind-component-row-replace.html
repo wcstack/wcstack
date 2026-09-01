@@ -30,7 +30,7 @@
 `;
     // shadow を constructor で 1 回だけ組む（<wcs-state> は再接続で使い回される）
     class RowByCtor extends HTMLElement {
-      state = { row: {} };
+      state = {}; // v2 R1（D19）
       constructor() {
         super();
         this.attachShadow({ mode: "open" });
@@ -41,7 +41,7 @@
 
     // shadow を connectedCallback で組み直す（<wcs-state> は毎回新しくなる）
     class RowByCc extends HTMLElement {
-      state = { row: {} };
+      state = {}; // v2 R1（D19）
       constructor() {
         super();
         this.attachShadow({ mode: "open" });

@@ -1,5 +1,6 @@
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
 import { getOrCreateBindingSession } from "../bindings/BindingSession";
+import { getLoopContextByNode, setLoopContextByNode } from "../list/loopContextByNode";
 import { initializeBindings } from "../bindings/initializeBindings";
 import { convertMustacheToComments } from "../mustache/convertMustacheToComments";
 import { setBindingsReadyForScope, setStateElementAlias } from "../stateElementByName";
@@ -49,10 +50,16 @@ function buildMountScopeBindings(record: IMountRecord, walkRoot: ShadowRoot): vo
   const transform = (parsed: ParseBindTextResult, forPath?: string): ParseBindTextResult =>
     translateParsedForMount(record, parsed, forPath);
   convertMustacheToComments(walkRoot);
+  // スコープ直下のバインディングのループ文脈は、行 content の初期化と同じく
+  // **直接エントリ**で渡す（ホスト要素の文脈＝境界ホップの解決結果）。
+  // text binding は登録前に comment が replaceNode に差し替えられて切断される
+  //（bindings/replaceToReplaceNode.ts）ため、DOM walk では文脈に届かない —
+  // happy-dom は切断後も parentNode を残す非準拠で偶然通るが、実ブラウザでは落ちる
+  const parentLoopContext = getLoopContextByNode(record.component);
   // rootNode は「fragment info の setPathInfo が state element を引く場所」＝
   // エイリアス済みの scopeRoot 自身（Light DOM 形は P3-7 で追加する）
   collectStructuralFragments(walkRoot, walkRoot, undefined, transform);
-  initializeBindings(walkRoot, null, transform);
+  initializeBindings(walkRoot, parentLoopContext, transform);
 }
 
 /**
@@ -64,6 +71,10 @@ function buildMountScopeBindings(record: IMountRecord, walkRoot: ShadowRoot): vo
  */
 export function remountScopeBindings(record: IMountRecord, scopeRoot: ShadowRoot | Element): void {
   const session = getOrCreateBindingSession(scopeRoot);
+  // スコープ直下の直接エントリを現在の行の文脈へ張り替える（構築時と対称）。
+  // 台帳の張り直し（rebindAddresses）はこのエントリ経由で新しい listIndex を読む
+  const parentLoopContext = getLoopContextByNode(record.component);
+  session.forEachActiveBindingNode((node) => setLoopContextByNode(node, parentLoopContext));
   const rebound = session.rebindAddresses();
   // 空でも呼んで良い（ループが回らないだけ）— 分岐を持たない
   applyChangeFromBindings(rebound);

@@ -530,6 +530,18 @@ export class BindingSession {
    * 引き継がないと再適用が全行 add と誤認し、旧行の DOM が残ったまま新行を重ねて
    * マウントする。戻り値は再適用すべき binding（呼び出し側が applyChangeFromBindings する）。
    */
+  /**
+   * マウントスコープ再接続専用: アクティブな record の binding ノード（text は差し替え前の
+   * comment — ループ文脈の直接エントリはこのノードに載る）を列挙する。
+   * remountScopeBindings が現在の行の文脈へ張り替えるために使う。
+   */
+  forEachActiveBindingNode(callback: (node: Node) => void): void {
+    for (const record of this.records) {
+      if (record.phase !== "active") continue;
+      callback(record.info.node);
+    }
+  }
+
   rebindAddresses(): IBindingInfo[] {
     const rebound: IBindingInfo[] = [];
     for (const record of this.records) {

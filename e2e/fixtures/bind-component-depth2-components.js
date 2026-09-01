@@ -22,7 +22,7 @@ const panelTemplate = (cardTag) => `
 
 function define(tag, template, timing) {
   class Comp extends HTMLElement {
-    state = { list: [], items: [] };
+    state = {}; // v2 R1: 既定値はマッピングを隠す（D19）
     constructor() {
       super();
       this.attachShadow({ mode: "open" });
