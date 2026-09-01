@@ -121,3 +121,21 @@ describe('invokeStateReadyCallback', () => {
     }
   });
 });
+
+describe('invokeStateReadyCallback: 非 Error の reject', () => {
+  it('文字列 reject でもメッセージ化されること', async () => {
+    const component = document.createElement('div');
+    (component as any)[WEBCOMPONENT_STATE_READY_CALLBACK_NAME] = async () => {
+      throw 'plain-string-failure'; // eslint-disable-line no-throw-literal
+    };
+    const unhandled: unknown[] = [];
+    const onError = (event: PromiseRejectionEvent) => unhandled.push(event.reason);
+    window.addEventListener('unhandledrejection', onError as EventListener);
+    try {
+      invokeStateReadyCallback(component, 'outer');
+      await new Promise((r) => setTimeout(r));
+    } finally {
+      window.removeEventListener('unhandledrejection', onError as EventListener);
+    }
+  });
+});

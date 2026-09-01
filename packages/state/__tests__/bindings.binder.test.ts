@@ -122,6 +122,41 @@ describe('binder protocol', () => {
       expect(() => getBinder()?.bind(document.createTextNode('x'))).not.toThrow();
     });
 
+    it('既にバインド済みのサブツリー（自身が台帳に居る）は二度バインドしないこと', async () => {
+      const { bootstrapState } = await import('../src/bootstrapState');
+      const { State } = await import('../src/components/State');
+      bootstrapState();
+      registerBinder();
+
+      const host = document.createElement('binder-rebind-host');
+      const shadowRoot = host.attachShadow({ mode: 'open' });
+      shadowRoot.innerHTML =
+        `<wcs-state json='{"msg":"m1"}'></wcs-state><div id="late"></div>`;
+      document.body.appendChild(host);
+      await (shadowRoot.querySelector('wcs-state') as InstanceType<typeof State>).connectedCallbackPromise;
+      await State.getBindingsReady(shadowRoot);
+
+      // 後入れのサブツリー（ルート自身が data-wcs を持つ）を binder で 1 回バインド
+      const late = document.createElement('span');
+      late.setAttribute('data-wcs', 'textContent: msg');
+      shadowRoot.querySelector('#late')!.appendChild(late);
+      getBinder()?.bind(late);
+      await new Promise((r) => setTimeout(r));
+      expect(late.textContent).toBe('m1');
+
+      // 2 回目は alreadyBound（要素自身が台帳に居る）で即戻る
+      expect(() => getBinder()?.bind(late)).not.toThrow();
+
+      // ルートが属性を持たず、バインド済みの子孫を含む形も既バインド扱い
+      const wrap = document.createElement('div');
+      shadowRoot.querySelector('#late')!.appendChild(wrap);
+      wrap.appendChild(late);
+      expect(() => getBinder()?.bind(wrap)).not.toThrow();
+      expect(late.textContent).toBe('m1');
+
+      host.remove();
+    });
+
     it('宣言を持たないサブツリーは何も起こさないこと', () => {
       registerBinder();
       const node = document.createElement('div');

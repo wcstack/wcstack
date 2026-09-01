@@ -279,7 +279,7 @@ function isPrivateAnchor(record: IMountRecord, firstSegment: string): boolean {
 function noMountEntryMessage(record: IMountRecord, innerPath: string): string {
   return `Path "${innerPath}" in <${record.component.tagName.toLowerCase()}> does not resolve: ` +
     `it is not an own key of the component state and no mount entry covers it ` +
-    `(mounted prefixes: ${record.entries.filter(e => e.innerSegments.length > 0).map(e => e.innerSegments.join(DELIMITER)).join(", ") || "none"}). ` +
+    `(mounted prefixes: ${record.entries.filter(e => e.innerSegments.length > 0).map(e => e.innerSegments.join(DELIMITER)).join(", ")}). ` +
     `Mount it from the host ("${record.stateProp}: path" / "${record.stateProp}.${firstSegmentOf(innerPath)}: path") or declare the key on the component state.`;
 }
 

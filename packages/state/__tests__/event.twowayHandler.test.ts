@@ -711,3 +711,17 @@ describe('event/twowayHandler', () => {
     });
   });
 });
+
+describe('未定義のカスタム要素', () => {
+  it('attach は未 upgrade のカスタム要素に触らず戻ること（定義待ち側が後で attach する）', () => {
+    const el = document.createElement('never-defined-tw');
+    const binding = createBindingInfo(el);
+    expect(() => attachTwowayEventHandler(binding)).not.toThrow();
+  });
+
+  it('detach も未 upgrade のカスタム要素では何もしないこと', () => {
+    const el = document.createElement('never-defined-tw2');
+    const binding = createBindingInfo(el);
+    expect(() => detachTwowayEventHandler(binding)).not.toThrow();
+  });
+});

@@ -366,9 +366,10 @@ export class State extends HTMLElementBase implements IStateElement {
       this._boundComponentStateProp = boundComponentStateProp;
       // v1 の plain 形（ホスト配線なし）だけが名前空間を共有する — Light DOM では name 必須。
       // ホスト配線があれば下の v2 マウントに乗る（名前不要）
+      // data-wcs 無しの plain は上（await 前）で既に raise 済みなので、ここに来る
+      // Light DOM は必ず data-wcs を持つ — 検査は「state バインディングの有無」だけで良い
       if (!(parentNode instanceof ShadowRoot) && !this.hasAttribute("name")
-        && !(boundComponent.hasAttribute(config.bindAttributeName)
-          && (getBindingsByNode(boundComponent) ?? []).some((b) => b.propSegments[0] === boundComponentStateProp))) {
+        && !(getBindingsByNode(boundComponent) ?? []).some((b) => b.propSegments[0] === boundComponentStateProp)) {
         raiseError(`"bind-component" in Light DOM requires a "name" attribute to avoid namespace conflicts with the parent scope.`);
       }
       // v2 マウント（Phase 2 slice 3・impl-plan §3-0）: **ルートエントリ**（`state: path` の

@@ -216,6 +216,8 @@ slice 4 で確定した挙動・発見:
 
 - **slice 9 済み（P2-7 — v1 機構の削除）**: **−3,618 行**。削除＝innerState / MappingRule / crossBoundaryAddress / outerListPath / baseListIndex（Δ の帳簿・呼び出し側は素の listIndex に inline）/ rootReloadPaths / BindingSession の outerPattern 相乗り（§1.8/§1.11）/ State.ts の mapped 系（_hasMappedComponentState・_reloadMappedPathsAfterReconnect・_initializeLightDomComponentScope・boundPaths・bindProperty・hasRootNode）/ isCacheable・pathDiagnostics・getByAddress・setByAddress の mapped 分岐 / loopContext の Δ パラメータ / ownKeyShadow の v1 警告。**残すもの**＝plain 形（配線なし state 注入）の bindWebComponent + outerState + meltFrozenObject + stateElementByWebComponent（縮小）。applyChangeToWebComponent は「完了済みへの適用は意図的 no-op」だけの姿に。機構テスト 8 ファイル削除・4 ファイルを v2 の契約へ移植。2589 unit 緑・e2e 35 緑・**functions 100 / lines 99.62 復帰**。statements 99.38 / branches 97.88 は slices 1-2 由来のプローブ残債＋横断モジュールの行使喪失（binder / twowayHandler / Ssr / deferred-spread 等）— 仕上げのカバレッジ専用スライスで閉じる。wildcardLevel の末尾起点 slice は**削除しない**（スコープ相対の添字切り出しが v2 でも使う）。
 
+- **slice 10 済み（カバレッジの全ゲート復帰）**: **99.56 / 98.52 / 100 / 99.76 — global 閾値（99.5/98.5/100/99.5）を全て回復**（v2 ブランチで初）。手段＝境界プローブの追加（オーバーレイのシンボル/then/非 base・$ ラッパの文脈なし/indexes 省略/読み形 readonly・preCompletionWrites の控えの往復・接尾なしアクセサとマーカー先頭のシフト・ssr-snapshot 読み手の形検査・binder の既バインド判定・handlerBindingRegistry の重複/部分解除・nameless Light DOM の unit 版・異マーカー素通り）＋**死んだ分岐の除去**（Light name 検査の到達不能な hasAttribute 操作数・noMountEntryMessage の "none" 腕・applyChangeToProperty の完了後ガード＝ルーティング不変条件で到達不能）。**happy-dom で覆えないもの**＝遅延定義の成功経路（scheduleDeferredSpreads の callback・BindingSession の waiting-definition 昇格）— happy-dom は既存要素の upgrade ができない。実ブラウザの正は e2e/state-deferred-apply.spec。rebindAddresses の pattern 腕（2 行）も未カバーのまま（構築に混在パスが要る稀形）。
+
 ### 3-1. タスク
 
 | ID | タスク | 場所 | 受け入れ |

@@ -147,3 +147,30 @@ describe('ownKeyShadow: v2 マウント（warnOwnKeyShadowsForMount）', () => {
     expect(w[0]).toContain('hides the mounted tree key "users.*.name"');
   });
 });
+
+describe('ownKeyShadow: v2 マウント — 複数キーの読みは 1 回', () => {
+  let warn: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    clearOwnKeyShadowReportsForTesting();
+    warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    getLoopContextByNodeMock.mockReturnValue(null);
+  });
+  afterEach(() => {
+    warn.mockRestore();
+  });
+
+  it('私有キーが複数あってもマウント先の読みは 1 回で、該当キー全部を報告すること', () => {
+    const stateElement = { name: 'default', ...outerStateElement({ user: { a: 1, b: 2 } }) };
+    const r = buildMountRecord(
+      document.createElement('my-multi-card'),
+      'state',
+      [mountHostBinding(['state'], 'user')],
+      stateElement as any,
+      { a: '', b: '' },
+    );
+    warnOwnKeyShadowsForMount(r);
+    const w = warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('[wcs/mount-own-key-shadow]'));
+    expect(w).toHaveLength(2);
+    expect((stateElement as any).createState).toHaveBeenCalledTimes(1);
+  });
+});

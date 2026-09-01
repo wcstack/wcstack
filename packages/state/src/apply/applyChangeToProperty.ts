@@ -5,7 +5,6 @@ import { beginPropagationTransaction, extendPropagationContext, getCurrentPropag
 import { isPossibleTwoWay } from "../event/isPossibleTwoWay";
 import { getCustomElement } from "../getCustomElement";
 import { IBindingInfo } from "../types";
-import { isWebComponentComplete } from "../webComponent/completeWebComponent";
 import { recordInjectedKey, rememberOverwrittenObject, rememberOverwrittenValue } from "../webComponent/preCompletionWrites";
 import { IApplyContext } from "./types";
 import { addSsrProperty, trackSsrPropertyNode } from "./ssrPropertyStore";
@@ -191,8 +190,11 @@ export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyCon
       && getCustomElement(element) !== null) {
       if (!(lastSegment in subObject)) {
         recordInjectedKey(element, firstSegment, lastSegment);
-      } else if (!isWebComponentComplete(element, firstSegment)) {
-        // 既存キーの上書き: 作者の値を控える（v2 の厳格 R1 が snapshot 前に復元する）
+      } else {
+        // 既存キーの上書き: 作者の値を控える（v2 の厳格 R1 が snapshot 前に復元する）。
+        // 完了後の (element, stateProp) への適用はここへルーティングされない
+        //（applyChangeToWebComponent の no-op へ行く — apply/applyChange.ts）ので、
+        // ここに来る上書きは常に完了前＝控えの対象で良い
         rememberOverwrittenValue(element, firstSegment, lastSegment, subObject[lastSegment]);
       }
     }

@@ -209,6 +209,42 @@ describe("bind-component: Light DOM の mapped 形（§1.13）", () => {
     host.remove();
   });
 
+  it("v2: ホスト配線のある Light DOM マウントは name 属性が要らないこと（L1 の unit 版）", async () => {
+    const tag = uniqueTag("bcld-nameless");
+    class NamelessLight extends HTMLElement {
+      state: Record<string, any> = {};
+      connectedCallback() {
+        if (this.childElementCount === 0) {
+          this.innerHTML =
+            `<wcs-state bind-component="state"></wcs-state>` +
+            `<span class="inner" data-wcs="textContent: name"></span>`;
+        }
+      }
+    }
+    customElements.define(tag, NamelessLight);
+    const host = document.createElement(uniqueTag("bcld-host"));
+    const hostShadow = host.attachShadow({ mode: "open" });
+    hostShadow.innerHTML =
+      `<wcs-state json='{"user":{"name":"Alice"}}'></wcs-state>` +
+      `<${tag} data-wcs="state: user"></${tag}>`;
+    document.body.appendChild(host);
+    const hostState = hostShadow.querySelector("wcs-state") as State;
+    await hostState.connectedCallbackPromise;
+    await State.getBindingsReady(hostShadow);
+    const component = hostShadow.querySelector(tag) as HTMLElement;
+    await (component.querySelector("wcs-state") as State).connectedCallbackPromise;
+    await flush();
+
+    expect((component.querySelector(".inner") as HTMLElement).textContent).toBe("Alice");
+    hostState.createState("writable", (s: any) => {
+      s["user.name"] = "Noa";
+    });
+    await flush();
+    expect((component.querySelector(".inner") as HTMLElement).textContent).toBe("Noa");
+
+    host.remove();
+  });
+
   it("Light DOM の丸ごとマウントは v1 経路のまま、差し替え通知と再接続の読み直しが効くこと", async () => {
     // v2 の単一ツリー化は Shadow DOM 形だけを切り替える（P3-7 まで）。Light DOM の
     // ルート規則は v1 の再読込通知（rootReloadPaths / boundPaths）と再接続の

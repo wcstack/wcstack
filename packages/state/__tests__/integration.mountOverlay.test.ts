@@ -437,3 +437,150 @@ describe("mountOverlay: $ API の接頭辞翻訳（P2-9・設計書 §4-6）", (
     host.remove();
   });
 });
+
+describe("mountOverlay: トラップの端（シンボル・then・未解決キー）", () => {
+  it("オーバーレイと公開 chroot がシンボル・then・未解決キーを安全に受けること", async () => {
+    const { createOverlayValue } = await import("../src/webComponent/overlay");
+    const { buildMountRecord: build } = await import("../src/webComponent/mount");
+    const { createStateAddress } = await import("../src/address/StateAddress");
+    const { getPathInfo } = await import("../src/address/PathInfo");
+
+    // 部分マウントのみ（4b throw の形）の記録を直接組む
+    const component = document.createElement("mo-edge-card");
+    const parentStateElement = { name: "default", createState: (_m: string, cb: (s: any) => void) => cb({}) } as any;
+    const record = build(component, "state", [{
+      propName: "state.theme", propSegments: ["state", "theme"], propModifiers: [],
+      statePathName: "theme", statePathInfo: getPathInfo("theme"), stateName: "default",
+      inFilters: [], outFilters: [], bindingType: "prop", uuid: null,
+      node: component, replaceNode: component,
+    } as any], parentStateElement, { editing: "no" });
+
+    const handler = {
+      pushAddress() {}, popAddress() {}, beginUntrack() {}, endUntrack() {},
+    } as any;
+    const overlay = createOverlayValue(record, createStateAddress(getPathInfo(record.markerBasePath), null), {}, handler) as any;
+
+    // get: シンボル / then
+    const sym = Symbol("probe");
+    expect(overlay[sym]).toBeUndefined();
+    expect(overlay.then).toBeUndefined();
+    // has: 未設定のシンボルは素の Reflect.has（false）
+    expect(sym in overlay).toBe(false);
+    // set: シンボルは素通し（target に載る＝has も真に転じる）
+    expect(() => { overlay[sym] = 1; }).not.toThrow();
+    expect(sym in overlay).toBe(true);
+    // has: 部分マウントのみで解決しないキーは 4b throw を握って false
+    expect("unresolvable" in overlay).toBe(false);
+    // 私有キーは has が真
+    expect("editing" in overlay).toBe(true);
+
+    const { createPublicMountState } = await import("../src/webComponent/overlay");
+    const chroot = createPublicMountState(record) as any;
+    expect(chroot[sym]).toBeUndefined();
+    expect(() => { chroot[sym] = 1; }).not.toThrow();
+    expect(sym in chroot).toBe(false);
+    // 公開 has も 4b throw を握って false
+    expect("unresolvable" in chroot).toBe(false);
+  });
+});
+
+describe("mountOverlay: $ ラッパと非 base オーバーレイの端", () => {
+  function edgeRecord() {
+    const component = document.createElement("mo-edge2-card");
+    const parentStateElement = {
+      name: "default",
+      createState: (_m: string, cb: (s: any) => void) => cb({
+        $resolve: (...args: unknown[]) => args,
+        $other: "raw",
+      }),
+    } as any;
+    return { component, parentStateElement };
+  }
+
+  it("listIndex の無いオーバーレイの $ ラッパが空の文脈添字で成立すること", async () => {
+    const { createOverlayValue } = await import("../src/webComponent/overlay");
+    const { buildMountRecord: build } = await import("../src/webComponent/mount");
+    const { createStateAddress } = await import("../src/address/StateAddress");
+    const { getPathInfo } = await import("../src/address/PathInfo");
+    const { component, parentStateElement } = edgeRecord();
+    const record = build(component, "state", [{
+      propName: "state", propSegments: ["state"], propModifiers: [],
+      statePathName: "user", statePathInfo: getPathInfo("user"), stateName: "default",
+      inFilters: [], outFilters: [], bindingType: "prop", uuid: null,
+      node: component, replaceNode: component,
+    } as any], parentStateElement, {});
+    const receiver = {
+      $getAll: (...args: unknown[]) => ["got", ...args],
+      $resolve: (...args: unknown[]) => ["res", ...args],
+    } as any;
+    const handler = { pushAddress() {}, popAddress() {} } as any;
+    // listIndex null（Δ=0 のトップレベル）— contextIndexes は空列に倒れる
+    const overlay = createOverlayValue(record, createStateAddress(getPathInfo(record.markerBasePath), null), receiver, handler) as any;
+
+    expect(overlay.$getAll("name", [])).toEqual(["got", "user.name", []]);
+    // $resolve は indexes 省略を空列に倒す
+    expect(overlay.$resolve("name", undefined)).toEqual(["res", "user.name", []]);
+
+    // 非 base のオーバーレイ（ワイルドカードアクセサの親）: own データを持たない
+    const nonBase = createOverlayValue(record, createStateAddress(getPathInfo("other.#m9"), null), receiver, handler) as any;
+    expect("nope" in nonBase).toBe(true); // ルートマウントは規則 3 で常に解決する
+  });
+
+  it("chroot の $resolve 読み形（readonly）と素の $ キー・素の書き込みが通ること", async () => {
+    const { createPublicMountState } = await import("../src/webComponent/overlay");
+    const { buildMountRecord: build } = await import("../src/webComponent/mount");
+    const { getPathInfo } = await import("../src/address/PathInfo");
+    const { component } = edgeRecord();
+    const { setLoopContextSymbol } = await import("../src/proxy/symbols");
+    const calls: Array<[string, unknown[]]> = [];
+    const stateStub: any = {
+      [setLoopContextSymbol]: (_ctx: unknown, inner: () => void) => inner(),
+      $resolve: (...args: unknown[]) => { calls.push(["$resolve", args]); return "R"; },
+      $other: "raw-value",
+    };
+    const parentStateElement = {
+      name: "default",
+      createState: (mutability: string, cb: (s: any) => void) => { calls.push(["createState", [mutability]]); cb(stateStub); },
+    } as any;
+    const record = build(component, "state", [{
+      propName: "state", propSegments: ["state"], propModifiers: [],
+      statePathName: "user", statePathInfo: getPathInfo("user"), stateName: "default",
+      inFilters: [], outFilters: [], bindingType: "prop", uuid: null,
+      node: component, replaceNode: component,
+    } as any], parentStateElement, {});
+    const chroot = createPublicMountState(record) as any;
+
+    // 読み形（第 3 引数なし）→ readonly
+    expect(chroot.$resolve("name", [])).toBe("R");
+    // $getAll は indexes 省略を親 API に委ねる（文脈既定）
+    stateStub.$getAll = (...args: unknown[]) => { calls.push(["$getAll", args]); return []; };
+    expect(chroot.$getAll("name")).toEqual([]);
+    expect(calls.some(([k, a]) => k === "$getAll" && (a as unknown[])[1] === undefined)).toBe(true);
+    expect(calls.some(([k, a]) => k === "createState" && a[0] === "readonly")).toBe(true);
+    // ラップ対象外の $ キーは素通し
+    expect(chroot.$other).toBe("raw-value");
+    // 素の $ キーへの書き込みも素通し（親の意味論のまま）
+    expect(() => { chroot.$flag = true; }).not.toThrow();
+    expect(stateStub.$flag).toBe(true);
+  });
+});
+
+describe("mountOverlay: 他人のマーカー風パスは素通りすること", () => {
+  it("hasMounts な state でも登録簿に無いマーカーは通常解決に落ちること", async () => {
+    const tag = uniqueTag("mo-foreign");
+    defineWiredComponent(tag, () => ({}), `<span data-wcs="textContent: name"></span>`);
+    const { host, parentStateElement } = await mountHost(
+      '{"user":{"name":"Alice"}}',
+      `<${tag} data-wcs="state: user"></${tag}>`,
+    );
+    await childReady(host.shadowRoot!.querySelector(tag)!);
+
+    let value: unknown = "sentinel";
+    parentStateElement.createState("readonly", (s: any) => {
+      value = s["user.#zz9.q"];
+    });
+    expect(value).toBeUndefined();
+
+    host.remove();
+  });
+});

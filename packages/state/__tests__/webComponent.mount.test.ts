@@ -318,3 +318,66 @@ describe('mount: composeMountIndexes（$ API の添字合成）', () => {
       .toThrow(/host context provides only 0/);
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * カバレッジ仕上げ — アクセサ・マーカーの端の形
+ * ------------------------------------------------------------------ */
+describe('mount: リストそのものの上のアクセサ（接尾なし）', () => {
+  it('ワイルドカードで終わるアクセサはマーカー親自身に登録され、シフト照会も接尾なしで引けること', () => {
+    const r = record([[[] as any, 'users.*']], {
+      get 'tags.*'() { return []; },
+    });
+    // rest が空 → マーカー親そのもの（suffix ""）
+    expect(translateInnerPath(r, 'tags.*')).toBe('users.*.tags.*.#m1');
+    expect(getIndexShiftForMarkerPath(r, 'users.*.tags.*.#m1')).toBe(1);
+  });
+
+  it('部分マウントのみ（マーカーが先頭）のアクセサのシフトも引けること', () => {
+    const r = record([[['items'], 'rows']], {
+      get display() { return ''; },
+    });
+    expect(translateInnerPath(r, 'display')).toBe('#m1.display');
+    expect(getIndexShiftForMarkerPath(r, '#m1.display')).toBe(0);
+  });
+});
+
+describe('mount: preCompletionWrites（上書き控えの往復）', () => {
+  it('最初の上書きだけを控え、restore が作者の値を戻して控えを消すこと', async () => {
+    const { rememberOverwrittenValue, restoreOverwrittenValues } = await import('../src/webComponent/preCompletionWrites');
+    const el = document.createElement('div');
+    const state: Record<string, unknown> = { theme: 'injected-2' };
+
+    rememberOverwrittenValue(el, 'state', 'theme', 'authored');
+    rememberOverwrittenValue(el, 'state', 'theme', 'injected-1'); // 2 回目は無視（最初＝作者の値）
+    restoreOverwrittenValues(el, 'state', state);
+    expect(state.theme).toBe('authored');
+
+    // 控えは消えている（再 restore は何もしない）
+    state.theme = 'later';
+    restoreOverwrittenValues(el, 'state', state);
+    expect(state.theme).toBe('later');
+  });
+
+  it('控えの無い要素・プロパティでは restore が何もしないこと', async () => {
+    const { rememberOverwrittenValue, restoreOverwrittenValues } = await import('../src/webComponent/preCompletionWrites');
+    const el = document.createElement('div');
+    const state: Record<string, unknown> = { a: 1 };
+    restoreOverwrittenValues(el, 'state', state); // 要素ごと未登録
+    rememberOverwrittenValue(el, 'other', 'a', 0);
+    restoreOverwrittenValues(el, 'state', state); // プロパティ違い
+    expect(state.a).toBe(1);
+  });
+});
+
+describe('mount: 変換の同値ショートカットの端', () => {
+  it('パスは不変でも stateName が違えば pathInfo を共有した複製を返すこと', () => {
+    const r = record([[[] as any, 'user']]); // Δ=0
+    const binding = hostBinding(['textContent'], '$1');
+    (binding as any).stateName = 'other';
+    const translated = translateBindingForMount(r, binding);
+    expect(translated).not.toBe(binding);
+    expect(translated.statePathName).toBe('$1');
+    expect(translated.statePathInfo).toBe(binding.statePathInfo); // 同一 pathInfo を再利用
+    expect(translated.stateName).toBe('default');
+  });
+});
