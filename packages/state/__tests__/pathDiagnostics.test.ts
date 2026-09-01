@@ -178,12 +178,6 @@ describe("checkDeclaredPath", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it("mapped な bind-component の子スコープは検査しないこと（正本は親側）", () => {
-    const element = createStateElement({ hasMappedComponentState: true });
-    checkDeclaredPath(element, { user: { name: "Ann" } }, "user.nmae", "binding");
-    expect(warn).not.toHaveBeenCalled();
-  });
-
   it("内部のパス翻訳（internal）は検査しないこと", () => {
     checkDeclaredPath(createStateElement(), { a: {} }, "a.b", "internal");
     expect(warn).not.toHaveBeenCalled();

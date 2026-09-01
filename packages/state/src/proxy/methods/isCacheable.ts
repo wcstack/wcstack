@@ -16,9 +16,7 @@ import { IStateElement } from "../../components/types";
  * （docs/architecture-hardening/15-state-component-mechanism-consistency.md §1.8）。
  */
 export function isCacheable(stateElement: IStateElement, address: IStateAddress): boolean {
-  if (stateElement.hasMappedComponentState === true) {
-    return false;
-  }
+
   // マーカーで終わるパス（`users.*.#m1` — オーバーレイ値）はキャッシュしない。
   // オーバーレイ値 proxy は評価中の receiver / handler を閉じ込めるため、drain を
   // 跨いで使い回せない（webComponent/overlay.ts）。マーカーの**下**のパス

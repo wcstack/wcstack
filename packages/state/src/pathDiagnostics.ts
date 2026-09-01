@@ -319,10 +319,7 @@ export function checkDeclaredPath(
   if (path.indexOf("#") !== -1) {
     return;
   }
-  // mapped な bind-component の子スコープはパスの正本を持たない（親側で解決される）
-  if (stateElement.hasMappedComponentState === true) {
-    return;
-  }
+
   // 単一セグメントのバインディングは読み取り時に raiseError で loud に落ちるので、
   // ここで二重に報告しない。`$watch` は落ちずに黙って発火しないだけなので検査する
   const segments = getPathInfo(path).segments;

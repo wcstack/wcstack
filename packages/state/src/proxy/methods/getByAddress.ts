@@ -29,7 +29,6 @@ import { missingRootPathMessage, wildcardScopeMessage } from "../../pathDiagnost
 import { raiseError } from "../../raiseError";
 import { collectStreamDependency } from "../../stream/argsTrace";
 import { getStreamErrorNamespace, getStreamStatusNamespace } from "../../stream/streamNamespace";
-import { popCrossBoundaryAddress, pushCrossBoundaryAddress } from "../../webComponent/crossBoundaryAddress";
 import { getMountRecordByPath } from "../../webComponent/mount";
 import { createOverlayValue } from "../../webComponent/overlay";
 import { IStateHandler } from "../types";
@@ -99,15 +98,7 @@ function _getByAddress(
       } finally {
         handler.popAddress();
       }
-    } else if (stateElement.hasMappedComponentState === true) {
-      // target は innerState proxy。get トラップにはパス文字列しか渡らないので、
-      // 解決済みの listIndex を動的スコープで越境させる（§1.8）
-      pushCrossBoundaryAddress(stateElement, address);
-      try {
-        return Reflect.get(target, address.pathInfo.path);
-      } finally {
-        popCrossBoundaryAddress();
-      }
+
     } else {
       return Reflect.get(target, address.pathInfo.path);
     }

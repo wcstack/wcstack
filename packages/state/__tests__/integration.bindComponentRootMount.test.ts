@@ -58,6 +58,9 @@ async function childReady(component: Element): Promise<void> {
   await flush();
 }
 
+const shadowQuery = (host: Element, selector: string): Element =>
+  host.shadowRoot!.querySelector(selector)!;
+
 const text = (root: ParentNode, selector: string) => (root.querySelector(selector) as HTMLElement).textContent;
 
 const CARD_TEMPLATE =
@@ -237,6 +240,38 @@ describe("bind-component: 行そのものをマウント state: . (integration)"
     await settle();
     expect(tags(0)).toEqual(["x", "w"]);
     expect(tags(1)).toEqual(["y", "z"]);
+
+    host.remove();
+  });
+
+  it("入れ子 for（for の中の for）を持つスコープでも変換が全段に効くこと", async () => {
+    // フラグメント内の入れ子テンプレート参照（uuid エントリ）は変換を素通しし、
+    // 実体化時に内側フラグメント自身の変換が掛かる（collectStructuralFragments の対称性）
+    const tag = uniqueTag("bcrm-nest");
+    defineComponent(tag, () => ({}),
+      `<div class="groups"><template data-wcs="for: groups">` +
+      `<ul><template data-wcs="for: groups.*.items">` +
+      `<li data-wcs="textContent: groups.*.items.*.name"></li>` +
+      `</template></ul></template></div>`);
+    const { host, parentStateElement } = await mountHost(
+      JSON.stringify({ box: { groups: [
+        { items: [{ name: "a1" }, { name: "a2" }] },
+        { items: [{ name: "b1" }] },
+      ] } }),
+      `<${tag} data-wcs="state: box"></${tag}>`,
+    );
+    const c = shadowQuery(host, tag);
+    await childReady(c);
+    const texts = () => Array.from(c.shadowRoot!.querySelectorAll("li")).map((li) => li.textContent);
+
+    expect(texts()).toEqual(["a1", "a2", "b1"]);
+
+    parentStateElement.createState("writable", (s: any) => {
+      s["box.groups.1.items"] = [{ name: "b1" }, { name: "b2" }];
+    });
+    await flush();
+    await flush();
+    expect(texts()).toEqual(["a1", "a2", "b1", "b2"]);
 
     host.remove();
   });

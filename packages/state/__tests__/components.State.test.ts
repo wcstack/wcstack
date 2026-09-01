@@ -481,24 +481,6 @@ describe('State component', () => {
     expect(value).toEqual({ key: 'value' });
   });
 
-  it('bindPropertyでstateにプロパティを定義できること', async () => {
-    const stateEl = createStateElement();
-    stateEl.setInitialState({ count: 0 });
-    await stateEl.connectedCallback();
-    await stateEl.initializePromise;
-
-    stateEl.bindProperty('computed', {
-      get() { return 42; },
-      enumerable: true,
-      configurable: true,
-    });
-
-    let computedValue: any;
-    await stateEl.createState('readonly', (state: any) => {
-      computedValue = state.computed;
-    });
-    expect(computedValue).toBe(42);
-  });
 
   it('setInitialStateが呼ばれない場合にタイムアウト警告が出ること', async () => {
     vi.useFakeTimers();
@@ -685,6 +667,75 @@ describe('State component', () => {
 
     await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
       /bind failed/
+    );
+  });
+});
+
+describe('Light DOM の name 必須（v2 のゲート後）', () => {
+  it('マウント先の state 要素が見つからなければ throw すること', async () => {
+    const { setBindingsByNode } = await import('../src/bindings/getBindingsByNode');
+    const { getPathInfo } = await import('../src/address/PathInfo');
+    const stateEl = createStateElement({ 'bind-component': 'state' });
+    if (!customElements.get('x-light-orphan')) {
+      customElements.define('x-light-orphan', class extends HTMLElement {
+        state: Record<string, any> = {};
+      });
+    }
+    const host = document.createElement('x-light-orphan');
+    host.setAttribute('data-wcs', 'state: user');
+    setBindingsByNode(host, [{
+      propName: 'state',
+      propSegments: ['state'],
+      propModifiers: [],
+      statePathName: 'user',
+      statePathInfo: getPathInfo('user'),
+      stateName: 'no-such-state',
+      inFilters: [],
+      outFilters: [],
+      bindingType: 'prop',
+      uuid: null,
+      node: host,
+      replaceNode: host,
+    } as any]);
+    host.appendChild(stateEl);
+    (stateEl as any)._rootNode = document;
+
+    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
+      /State element with name "no-such-state" not found for mount host/
+    );
+  });
+
+  it('data-wcs はあるが state バインディングが無い Light DOM は name 必須のままであること', async () => {
+    const { setBindingsByNode } = await import('../src/bindings/getBindingsByNode');
+    const { getPathInfo } = await import('../src/address/PathInfo');
+    const stateEl = createStateElement({ 'bind-component': 'state' });
+    if (!customElements.get('x-light-classonly')) {
+      customElements.define('x-light-classonly', class extends HTMLElement {
+        state: Record<string, any> = {};
+      });
+    }
+    const host = document.createElement('x-light-classonly');
+    host.setAttribute('data-wcs', 'class.on: flag');
+    // state 以外のバインディングだけを持つ（ゲートの some が走って false になる形）
+    setBindingsByNode(host, [{
+      propName: 'class.on',
+      propSegments: ['class', 'on'],
+      propModifiers: [],
+      statePathName: 'flag',
+      statePathInfo: getPathInfo('flag'),
+      stateName: 'default',
+      inFilters: [],
+      outFilters: [],
+      bindingType: 'prop',
+      uuid: null,
+      node: host,
+      replaceNode: host,
+    } as any]);
+    host.appendChild(stateEl);
+    (stateEl as any)._rootNode = document;
+
+    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
+      /"bind-component" in Light DOM requires a "name" attribute/
     );
   });
 });

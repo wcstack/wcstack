@@ -19,7 +19,6 @@ export interface IStateElement {
    * 切断済みの state element が残る窓がある（§1.9）。
    * optional なのはテスト用モック互換のため（undefined は「不明＝使える扱い」）。
    */
-  readonly hasRootNode?: boolean;
   readonly initializePromise: Promise<void>;
   readonly connectedCallbackPromise: Promise<void>;
   readonly listPaths: Set<string>;
@@ -36,15 +35,12 @@ export interface IStateElement {
    * `bind-component` で束ねられているコンポーネント要素（親スコープ側のノード）。
    * マッピング規則の引き当てに使う。optional なのはテスト用モック互換のため。
    */
-  readonly boundComponent?: Element | null;
   /**
    * この state の実体が innerState proxy（＝ 値の正本が親スコープの state にある
    * mapped な `bind-component`）か。真のときだけ越境アドレスの受け渡しと
    * リストパスの外向き伝播が働く（§1.8）。
    * optional なのはテスト用モック互換のため（undefined は plain 扱い）。
    */
-  readonly hasMappedComponentState?: boolean;
-  markComponentStateMapped?(): void;
   /**
    * この state element にマウント（Phase 2 の単一ツリー — webComponent/mount.ts）が
    * 1 つでも登録されているか。偽のとき getByAddress / isCacheable / `$n` 補正は
@@ -59,7 +55,6 @@ export interface IStateElement {
    * （webComponent/rootReloadPaths.ts）。
    * optional なのはテスト用モック互換のため（undefined は「登録なし」扱い）。
    */
-  readonly boundPaths?: ReadonlySet<string>;
   /**
    * DCC の `$bindables` から生成した「パス → 変更イベント名」表。
    * 唯一の書き手は defineDCC で、読み手は setByAddress。
@@ -119,7 +114,6 @@ export interface IStateElement {
   createStateAsync(mutability: Mutability, callback: (state: IStateProxy) => Promise<void>): Promise<void>;
   createState(mutability: Mutability, callback: (state: IStateProxy) => void): void;
   nextVersion(): number;
-  bindProperty(prop: string, desc: PropertyDescriptor): void;
   setInitialState(state: Record<string, any>): void;
 }
 

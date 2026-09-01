@@ -214,6 +214,8 @@ slice 4 で確定した挙動・発見:
 
 - **slice 8 済み（Light DOM マウントの v2 化）**: v2 ゲートを「ホスト配線が 1 本でもある bind-component」全形へ拡張。スコープ根は Shadow DOM 形＝shadowRoot／Light DOM 形＝コンポーネント要素自身（D7）。Light DOM はエイリアス不要（rootNode をホストと共有・翻訳が stateName を親に揃えるので @name 参照も自然に無効化）、ホスト走査からの除外は §1.13 の prune がそのまま担う。**name 必須は v1 の plain 形にだけ残る**（data-wcs 無し＝plain は従来位置で fail-fast、data-wcs ありはホスト配線判明後に検査）。e2e mount-light の PHASE2 fixme 2 本を解除 — L1/L2/L3 実ブラウザ green。e2e 計 51 green（残 skip は mount-volume の Phase 3 ピン 3 本のみ）。カバレッジは 98.53/97.31/99.09/98.78 に低下 — **v1 機構（innerState / MappingRule 派生 / crossBoundary / Δ 帳簿 / 通知チャネル）が最後の行使者を失った**ための想定内の谷。直後の P2-7 削除で回復させる。
 
+- **slice 9 済み（P2-7 — v1 機構の削除）**: **−3,618 行**。削除＝innerState / MappingRule / crossBoundaryAddress / outerListPath / baseListIndex（Δ の帳簿・呼び出し側は素の listIndex に inline）/ rootReloadPaths / BindingSession の outerPattern 相乗り（§1.8/§1.11）/ State.ts の mapped 系（_hasMappedComponentState・_reloadMappedPathsAfterReconnect・_initializeLightDomComponentScope・boundPaths・bindProperty・hasRootNode）/ isCacheable・pathDiagnostics・getByAddress・setByAddress の mapped 分岐 / loopContext の Δ パラメータ / ownKeyShadow の v1 警告。**残すもの**＝plain 形（配線なし state 注入）の bindWebComponent + outerState + meltFrozenObject + stateElementByWebComponent（縮小）。applyChangeToWebComponent は「完了済みへの適用は意図的 no-op」だけの姿に。機構テスト 8 ファイル削除・4 ファイルを v2 の契約へ移植。2589 unit 緑・e2e 35 緑・**functions 100 / lines 99.62 復帰**。statements 99.38 / branches 97.88 は slices 1-2 由来のプローブ残債＋横断モジュールの行使喪失（binder / twowayHandler / Ssr / deferred-spread 等）— 仕上げのカバレッジ専用スライスで閉じる。wildcardLevel の末尾起点 slice は**削除しない**（スコープ相対の添字切り出しが v2 でも使う）。
+
 ### 3-1. タスク
 
 | ID | タスク | 場所 | 受け入れ |

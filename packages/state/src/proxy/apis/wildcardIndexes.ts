@@ -21,7 +21,6 @@ import { IPathInfo, IStateAddress } from "../../address/types";
 import { createListDiff } from "../../list/createListDiff";
 import { IListIndex } from "../../list/types";
 import { raiseError } from "../../raiseError";
-import { getListParentListIndex } from "../../webComponent/baseListIndex";
 import { getByAddress } from "../methods/getByAddress";
 import { IStateHandler } from "../types";
 
@@ -77,7 +76,7 @@ export function collectWildcardIndexes(
     const oldValue = lastValueByListAddress.get(wildcardAddress);
     const newValue = getByAddress(target, wildcardAddress, receiver, handler);
     const listDiff = createListDiff(
-      getListParentListIndex(handler.stateElement, listIndex), oldValue, newValue);
+      listIndex, oldValue, newValue);
     const listIndexes = listDiff.newIndexes;
     const index = indexes[indexPos] ?? null;
     newValueByAddress.set(wildcardAddress, newValue);

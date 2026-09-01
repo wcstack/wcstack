@@ -1,17 +1,16 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+/**
+ * v2: applyChangeToWebComponent は意図的な no-op。
+ *
+ * state プロパティのバインディングは全てマウント（webComponent/mountScope.ts）で、
+ * 配送は「翻訳されたバインディング＋単一台帳＋静的依存」が担う — v1 の親→子
+ * 再読込通知チャネル（innerState への $postUpdate）はこの経路では何も運ぶものが無い。
+ * ここではその契約（何もしない・何も要求しない）を固定する。
+ */
+import { describe, it, expect } from 'vitest';
 import { applyChangeToWebComponent } from '../src/apply/applyChangeToWebComponent';
-import { setStateElementByWebComponent } from '../src/webComponent/stateElementByWebComponent';
 import { getPathInfo } from '../src/address/PathInfo';
-import { config } from '../src/config';
 import type { IBindingInfo } from '../src/types';
 import type { IApplyContext } from '../src/apply/types';
-
-const dummyContext: IApplyContext = {
-  stateName: 'default',
-  stateElement: {} as any,
-  state: {} as any,
-  appliedBindingSet: new Set(),
-};
 
 function createBinding(element: Element, propSegments: string[]): IBindingInfo {
   return {
@@ -30,144 +29,19 @@ function createBinding(element: Element, propSegments: string[]): IBindingInfo {
   } as IBindingInfo;
 }
 
-function bindProbeStateElement(element: Element, stateProp: string, hasRootNode?: boolean) {
-  const posted: string[] = [];
-  const mutabilities: string[] = [];
-  const stateElement = {
-    name: 'default',
-    hasRootNode,
-    createState(mutability: string, callback: (state: any) => void) {
-      mutabilities.push(mutability);
-      callback({ $postUpdate: (path: string) => { posted.push(path); } });
-    },
-  } as any;
-  setStateElementByWebComponent(element, stateProp, stateElement);
-  return { posted, mutabilities };
-}
-
-describe('applyChangeToWebComponent', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  // ルート規則（`data-wcs="state: user"` の丸ごとマウント）: 残余パスが空なら、親が
-  // マウント先を丸ごと差し替えたという通知。子の登録済みパスの先頭セグメント全部を読み直す
-  // （docs/state-mount-design.md §3-2 / impl-plan P1-2）。
-  it('1 セグメント（ルート規則）は子の登録済みパスの先頭セグメント全部を通知すること', () => {
-    const el = document.createElement('div');
-    const posted: string[] = [];
-    setStateElementByWebComponent(el, 'state', {
-      name: 'default',
-      boundPaths: new Set(['name', 'tags', 'tags.*.name', '$1']),
-      createState(_mutability: string, callback: (state: any) => void) {
-        callback({ $postUpdate: (path: string) => { posted.push(path); } });
-      },
-    } as any);
-
-    applyChangeToWebComponent(createBinding(el, ['state']), dummyContext, { name: 'x' });
-
-    expect(posted).toEqual(['name', 'tags']);
-  });
-
-  it('1 セグメントで子に登録済みパスが無ければ createState を呼ばないこと', () => {
-    const el = document.createElement('div');
-    const { posted, mutabilities } = bindProbeStateElement(el, 'state');
-
-    applyChangeToWebComponent(createBinding(el, ['state']), dummyContext, { name: 'x' });
-
-    expect(posted).toEqual([]);
-    expect(mutabilities).toEqual([]);
-  });
-
-  it('bind-component済みでない要素はエラーになること', () => {
-    const el = document.createElement('div');
-    const binding = createBinding(el, ['state', 'title']);
-    expect(() => applyChangeToWebComponent(binding, dummyContext, 'value'))
-      .toThrow(/State element not bound to "state" on web component/);
-  });
-
-  // G1: 値は運ばず「そのパスを読み直せ」という通知だけを送る。値の正本は親 state 側にあり、
-  // 子は innerState proxy のマッピング経由で親を読みに行く。
-  // 以前は element[stateProp] という公開プロパティを経由していたため、
-  // 受け側 proxy の write が no-op である必要があり、それが this.state を壊していた。
-  it('公開プロパティを経由せず$postUpdateで通知すること', () => {
+describe('applyChangeToWebComponent（v2: no-op）', () => {
+  it('要素の状態に関わらず何もせず、値もプロパティも触らないこと', () => {
     const el = document.createElement('div') as any;
-    // 公開プロパティに触れたら気づけるよう罠を仕掛ける
-    Object.defineProperty(el, 'state', {
-      get() { throw new Error('outer proxy must not be touched'); },
-      configurable: true,
-    });
-    const { posted, mutabilities } = bindProbeStateElement(el, 'state');
+    el.state = { name: 'authored' };
+    const original = el.state;
 
-    const binding = createBinding(el, ['state', 'title']);
-    applyChangeToWebComponent(binding, dummyContext, 'new-title');
-
-    expect(posted).toEqual(['title']);
-    expect(mutabilities).toEqual(['readonly']);
-  });
-
-  it('ネストしたパスはドット結合されて通知されること', () => {
-    const el = document.createElement('div');
-    const { posted } = bindProbeStateElement(el, 'state');
-
-    const binding = createBinding(el, ['state', 'user', 'name']);
-    applyChangeToWebComponent(binding, dummyContext, 'Alice');
-
-    expect(posted).toEqual(['user.name']);
-  });
-
-  // §1.9: 台帳に載っていること（登録済み）と使えることは別。要素をキーにした台帳には
-  // 切断済みの state element が残る窓があり、そこへ createState すると raiseError する。
-  // updater の drain も applyChangeToFor の行ループも例外を捕まえないので、1 行が
-  // 同じバッチの残り全部を道連れにする。切断中の子への再読込通知は意味が無いので no-op。
-  it('切断済みの state element には通知せず no-op になること', () => {
-    const el = document.createElement('div');
-    const { posted, mutabilities } = bindProbeStateElement(el, 'state', false);
-
-    const binding = createBinding(el, ['state', 'title']);
-    expect(() => applyChangeToWebComponent(binding, dummyContext, 'x')).not.toThrow();
-
-    expect(posted).toEqual([]);
-    expect(mutabilities).toEqual([]);
-  });
-
-  it('切断済みのスキップは config.debug で観測できること', () => {
-    const el = document.createElement('div');
-    bindProbeStateElement(el, 'state', false);
-    const logged: unknown[][] = [];
-    const debugSpy = vi.spyOn(console, 'debug').mockImplementation((...args: unknown[]) => {
-      logged.push(args);
-    });
-    config.debug = true;
-    try {
-      applyChangeToWebComponent(createBinding(el, ['state', 'title']), dummyContext, 'x');
-    } finally {
-      config.debug = false;
-      debugSpy.mockRestore();
+    // 1 セグメント（ルート規則相当）・複数セグメント・未登録要素のどれでも no-op
+    for (const segments of [['state'], ['state', 'name'], ['other']]) {
+      expect(() =>
+        applyChangeToWebComponent(createBinding(el, segments), {} as IApplyContext, { name: 'incoming' }),
+      ).not.toThrow();
     }
-    expect(logged).toHaveLength(1);
-    expect(logged[0][0]).toContain('skipped parent→child notification');
-    expect(logged[0][1]).toMatchObject({ stateProp: 'state', path: 'title' });
-  });
-
-  it('hasRootNode 未実装のモックは従来どおり通知されること', () => {
-    const el = document.createElement('div');
-    const { posted } = bindProbeStateElement(el, 'state', undefined);
-
-    const binding = createBinding(el, ['state', 'title']);
-    applyChangeToWebComponent(binding, dummyContext, 'x');
-
-    expect(posted).toEqual(['title']);
-  });
-
-  it('通知は値に依存しないこと', () => {
-    const el = document.createElement('div');
-    const { posted } = bindProbeStateElement(el, 'state');
-
-    const binding = createBinding(el, ['state', 'title']);
-    applyChangeToWebComponent(binding, dummyContext, undefined);
-    applyChangeToWebComponent(binding, dummyContext, 'x');
-
-    expect(posted).toEqual(['title', 'title']);
+    expect(el.state).toBe(original);
+    expect(el.state.name).toBe('authored');
   });
 });

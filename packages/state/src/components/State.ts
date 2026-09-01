@@ -30,8 +30,6 @@ import { getCustomElementRegistry } from "../platform/customElementRegistry";
 import { getPathInfo } from "../address/PathInfo";
 import { IStateProxy, Mutability } from "../proxy/types";
 import { createStateProxy } from "../proxy/StateHandler";
-import { initializeBindings } from "../bindings/initializeBindings";
-import { collectStructuralFragments } from "../structural/collectStructuralFragments";
 import { bindWebComponent, invokeStateReadyCallback } from "../webComponent/bindWebComponent";
 import { getBindingsByNode } from "../bindings/getBindingsByNode";
 import { buildMountRecord, getRegisteredMountRecord, IMountRecord } from "../webComponent/mount";
@@ -39,10 +37,6 @@ import { initializeMountScope, remountScopeBindings } from "../webComponent/moun
 import { createPublicMountState } from "../webComponent/overlay";
 import { warnOwnKeyShadowsForMount } from "../webComponent/ownKeyShadow";
 import { markWebComponentAsComplete } from "../webComponent/completeWebComponent";
-import { getBaseDepth } from "../webComponent/baseListIndex";
-import { propagateListPathToOuterState } from "../webComponent/outerListPath";
-import { getPrimaryInnerPaths, hasRootMappingRule, resetDerivedMappingRules } from "../webComponent/MappingRule";
-import { getRootReloadPaths } from "../webComponent/rootReloadPaths";
 import { markWebComponentStatePropDeclared } from "../webComponent/completeWebComponent";
 import { getInjectedKeys, restoreOverwrittenValues, takeOverwrittenObject } from "../webComponent/preCompletionWrites";
 import { hasRootMountBinding } from "../webComponent/rootMountBinding";
@@ -109,7 +103,8 @@ export class State extends HTMLElementBase implements IStateElement {
   private _elementPaths: Set<string> = new Set<string>();
   private _getterPaths: Set<string> = new Set<string>();
   private _setterPaths: Set<string> = new Set<string>();
-  private _loopContextStack: ILoopContextStack = createLoopContextStack(() => getBaseDepth(this));
+  // v2: 境界ホップがループ文脈を継承するので Δ（base depth）の帳簿は無い
+  private _loopContextStack: ILoopContextStack = createLoopContextStack();
   private _dynamicDependency: Map<string, string[]> = new Map<string, string[]>();
   private _staticDependency: Map<string, string[]> = new Map<string, string[]>();
   private _pathSet: Set<string> = new Set<string>();
@@ -119,7 +114,6 @@ export class State extends HTMLElementBase implements IStateElement {
   private _rootNode: Node | null = null;
   private _boundComponent: Element | null = null;
   private _boundComponentStateProp: string | null = null;
-  private _hasMappedComponentState: boolean = false;
   private _hasMounts: boolean = false;
   /** v2 マウント（Phase 2）: この bind-component 要素が構築したマウント記録 */
   private _mountRecord: IMountRecord | null = null;
@@ -435,71 +429,6 @@ export class State extends HTMLElementBase implements IStateElement {
     }
   }
 
-  /**
-   * Light DOM の mapped コンポーネントが、自分のサブツリーのバインディングを張る（§1.13）。
-   *
-   * Shadow DOM 形では子スコープが別 rootNode にあり、`setStateElementByName` の初回登録から
-   * その root ぶんの `buildBindings` が別パスとして起動する。Light DOM ではホストと同じ root に
-   * いるためそのパスが存在せず、かといってホストのパスに混ぜると `@name` の解決が
-   * この要素の名前登録より先に来てしまう。そこで `getSubscriberNodes` がホスト側の走査から
-   * このサブツリーを外し、名前登録が済んだここで同じことを自前で行う。
-   *
-   * `{{ }}` の変換だけはホストのパスが root 全体に対して済ませている（純粋にテキスト操作で
-   * state に依存しないため）。構造フラグメントの収集は fragment info を rootNode + state 名で
-   * 登録するので state 依存であり、ホストのパスからは外してここで走らせる。
-   *
-   * ループ文脈を null で渡すのは Shadow DOM 形（`initializeBindings(shadowRoot, null)`）と
-   * 揃えるため —— 子孫の `getLoopContextByNode` はコンポーネント要素まで遡って
-   * 親スコープの行を見つける。
-   */
-  private _initializeLightDomComponentScope(): void {
-    const component = this._boundComponent;
-    if (component === null || this.parentNode !== component) {
-      // Shadow DOM 形（parentNode が ShadowRoot）は対象外
-      return;
-    }
-    if (!component.hasAttribute(config.bindAttributeName)) {
-      // plain 形はホストのパスに含まれたままなので、ここで張ると二重になる
-      return;
-    }
-    collectStructuralFragments(this._rootNode!, component);
-    initializeBindings(component, null);
-  }
-
-  /**
-   * mapped な `bind-component` が切断 → 再接続したときに、束ねているパスを読み直させる（§1.9）。
-   *
-   * リスト行の content は再利用されるので、行が作り直されると子はこの経路を通る
-   * （`_initialized` が真なので `_initializeBindWebComponent` / `_initialize` は走らず、
-   * 子のバインディングは張り直されない）。切断中に親で起きた変更の通知は
-   * `applyChangeToWebComponent` が切断済みを理由に落としているため、ここで読み直さないと
-   * 子のビューだけが古い値のまま取り残される。何が変わったかは分からないので、
-   * プライマリ規則の粒度で丸ごと読み直す。
-   *
-   * 読み直しの前に派生規則の memo を捨てる。派生規則の購読者（親スコープに立つ
-   * バインディング）は切断で teardown されており、memo が残っていると導出が二度と
-   * 走らないため購読者も張り直されない ＝ 以後この子だけがサブパスの書き込みを
-   * 受け取れなくなる。捨てておけば、直後の読み直しで導出と購読者登録が走る。
-   */
-  private _reloadMappedPathsAfterReconnect(): void {
-    if (!this._hasMappedComponentState || this._boundComponent === null) {
-      return;
-    }
-    // mapped ＝ プライマリ規則が 1 件以上あることと同義（bindWebComponent の分岐）
-    const innerPaths = getPrimaryInnerPaths(this._boundComponent);
-    // ルート規則（丸ごとマウント）は内側パスが空なので、子の登録済みパス全部を読み直す
-    // （webComponent/rootReloadPaths.ts）
-    const rootPaths = hasRootMappingRule(this._boundComponent) ? getRootReloadPaths(this) : [];
-    resetDerivedMappingRules(this._boundComponent);
-    this.createState("readonly", (state) => {
-      for (const path of innerPaths) {
-        state.$postUpdate(path);
-      }
-      for (const path of rootPaths) {
-        state.$postUpdate(path);
-      }
-    });
-  }
 
   private async _callStateConnectedCallback(): Promise<void> {
     await this.createStateAsync("writable", async (state) => {
@@ -583,9 +512,7 @@ export class State extends HTMLElementBase implements IStateElement {
       }
       await this._initialize();
       this._initialized = true;
-      // 名前登録（_initialize の末尾）が済んだこの時点でなければ、子スコープの
-      // `@name` 参照が解決できない（§1.13）
-      this._initializeLightDomComponentScope();
+
       this._resolveInitialize?.();
     } else if (this._mountRecord !== null) {
       // マウント済みコンポーネントの再接続（行 content のプール再利用）: 現在の行の
@@ -607,7 +534,6 @@ export class State extends HTMLElementBase implements IStateElement {
       // createState が rootNode 経由でこの要素を解決できるようにするために必要
       // （$connectedCallback の再実行と $streams の initial からの再起動が依存する、設計書 §2-3）。
       setStateElementByName(this._rootNode, this._name, this);
-      this._reloadMappedPathsAfterReconnect();
     }
     // enable-ssr (クライアント側): SSR で $connectedCallback 済みなのでスキップ
     // inSsr() (サーバー側): レンダリング中なので実行する
@@ -786,29 +712,11 @@ export class State extends HTMLElementBase implements IStateElement {
     return this._rootNode;
   }
 
-  /**
-   * `rootNode` を保持しているか ＝ `createState` を呼んでよいか（§1.9）。
-   * disconnect で落ち、connect の冒頭で復活する。
-   */
-  get hasRootNode(): boolean {
-    return this._rootNode !== null;
-  }
-
   get boundComponentStateProp(): string | null {
     return this._boundComponentStateProp;
   }
 
-  get boundComponent(): Element | null {
-    return this._boundComponent;
-  }
 
-  get hasMappedComponentState(): boolean {
-    return this._hasMappedComponentState;
-  }
-
-  get boundPaths(): ReadonlySet<string> {
-    return this._pathSet;
-  }
 
   get hasMounts(): boolean {
     return this._hasMounts;
@@ -817,14 +725,6 @@ export class State extends HTMLElementBase implements IStateElement {
   /** 唯一の呼び手は webComponent/mount.ts の registerMountRecord（Phase 2）。 */
   markHasMounts(): void {
     this._hasMounts = true;
-  }
-
-  /**
-   * この state の実体が innerState proxy であることを記録する。唯一の呼び手は
-   * `bindWebComponent` の mapped 分岐（§1.8）。
-   */
-  markComponentStateMapped(): void {
-    this._hasMappedComponentState = true;
   }
 
   get bindableEventMap(): Record<string, string> {
@@ -893,15 +793,8 @@ export class State extends HTMLElementBase implements IStateElement {
 
   setPathInfo(path: string, bindingType: BindingType, source: PathInfoSource = "binding"): void {
     if (bindingType === "for") {
-      const isNewListPath = !this._listPaths.has(path);
       this._listPaths.add(path);
       this._elementPaths.add(path + '.' + WILDCARD);
-      // mapped な bind-component の子が回している for は、配列の実体を親スコープが
-      // 持っている。親の依存 walk / swap 判定はどちらも「その state 要素の」
-      // listPaths・elementPaths を見るので、マップ先のパスにも同じ宣言を届ける（§1.8）。
-      if (isNewListPath && this._hasMappedComponentState) {
-        propagateListPathToOuterState(this, path);
-      }
     }
     if (!this._pathSet.has(path)) {
       const pathInfo = getPathInfo(path);
@@ -964,12 +857,6 @@ export class State extends HTMLElementBase implements IStateElement {
     this._indexDependentGetterPaths.add(path);
   }
 
-  bindProperty(prop: string, desc: PropertyDescriptor): void {
-    Object.defineProperty(this._state, prop, desc);
-    if (prop === STATE_UPDATED_CALLBACK_NAME) {
-      this._hasUpdatedCallback = true;
-    }
-  }
 
   setInitialState(state: Record<string, any>): void {
     if (!this._initialized) {

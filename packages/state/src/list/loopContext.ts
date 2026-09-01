@@ -8,11 +8,7 @@ type LoopContextCallback<T> = (loopContext: ILoopContext) => T | Promise<T>;
 class LoopContextStack {
   private _loopContextStack: (ILoopContext | undefined)[] = Array(MAX_LOOP_DEPTH).fill(undefined);
   private _length: number = 0;
-  private _getBaseDepth: () => number;
 
-  constructor(getBaseDepth: () => number) {
-    this._getBaseDepth = getBaseDepth;
-  }
 
   createLoopContext(
     elementStateAddress: IStateAddress,
@@ -48,10 +44,7 @@ class LoopContextStack {
       // Δ=0 の判定を先に置き、通れば base 深さの解決（DOM の親走査を含む）に
       // 一切触れない — 通常の state に追加コストを載せないため。
       if (loopContext.listIndex.length !== loopContext.pathInfo.wildcardCount) {
-        const baseDepth = this._getBaseDepth();
-        if (loopContext.listIndex.length !== loopContext.pathInfo.wildcardCount + baseDepth) {
-          raiseError(`Cannot push loop context when there is no active loop context: the list index chain (length ${loopContext.listIndex.length}) does not cover the wildcard path (wildcard count ${loopContext.pathInfo.wildcardCount}, base depth ${baseDepth}).`);
-        }
+        raiseError(`Cannot push loop context when there is no active loop context: the list index chain (length ${loopContext.listIndex.length}) does not cover the wildcard path (wildcard count ${loopContext.pathInfo.wildcardCount}).`);
       }
     }
     this._loopContextStack[this._length] = loopContext;
@@ -74,7 +67,7 @@ class LoopContextStack {
   }  
 }
 
-export function createLoopContextStack(getBaseDepth: () => number = () => 0): ILoopContextStack {
-  return new LoopContextStack(getBaseDepth);
+export function createLoopContextStack(): ILoopContextStack {
+  return new LoopContextStack();
 }
 
