@@ -11,10 +11,13 @@
 
 import { BUILTIN_FILTERS } from "./completionData.js";
 import { getStatePathsFromHtml, type FileReader } from "./statePathResolver.js";
+import { mergeSchemaCandidates } from "./stateAnalyzer.js";
 import { findAllCommentBindings, findAllMustacheSyntax } from "./templateSyntax.js";
 import { isInsideForTemplate, getInnermostForPath, getAvailableWildcardRank, countWildcardSegments } from "./forContext.js";
-import { WcsDiagnosticCode } from "../core/diagnostics.js";
+import { WcsDiagnosticCode, type WcsDiagnosticCodeValue } from "../core/diagnostics.js";
 import { getMessages } from "../core/messages.js";
+import { resolveSchemaPath } from "../core/sidecar/schemaSubset.js";
+import type { JsonSchemaNode } from "../core/sidecar/types.js";
 import type { BindingDiagnostic } from "./bindingValidator.js";
 
 export function validateTemplateSyntax(
@@ -23,11 +26,31 @@ export function validateTemplateSyntax(
   bindAttrName: string = "data-wcs",
   locale?: string,
   fileReader?: FileReader,
+  applicationStates?: ReadonlyMap<string, JsonSchemaNode>,
 ): BindingDiagnostic[] {
   const diagnostics: BindingDiagnostic[] = [];
   const msgs = getMessages(locale);
 
-  const allPaths = getStatePathsFromHtml(html, stateTagName, fileReader);
+  // schema 由来の候補も合流させる（bindingValidator と同じ規則・D12）。mustache は
+  // default state のみを検証するので、存在判定の三値化も default の schema に対して行う。
+  const allPaths = mergeSchemaCandidates(getStatePathsFromHtml(html, stateTagName, fileReader), applicationStates);
+  const defaultSchema = applicationStates?.get("default");
+  /** 存在しなければ code / severity / message を返す（stateSchema 宣言時は三値判定）。 */
+  const missingVerdict = (
+    path: string,
+    displayPath: string,
+    pathSet: Set<string>,
+    scoped: { path: string }[],
+  ): { code: WcsDiagnosticCodeValue; severity: "error" | "warning"; message: string } | null => {
+    if (isValidTemplatePath(path, pathSet, scoped)) return null;
+    if (defaultSchema !== undefined && !path.startsWith("$")) {
+      const resolution = resolveSchemaPath(defaultSchema, defaultSchema.$defs ?? {}, path.split("."));
+      return resolution.kind === "nonexistent"
+        ? { code: WcsDiagnosticCode.PathNonexistent, severity: "error", message: msgs.pathNonexistent(displayPath) }
+        : null;
+    }
+    return { code: WcsDiagnosticCode.BindingPathMissing, severity: "warning", message: msgs.pathMissing(displayPath) };
+  };
   if (allPaths.length === 0) return diagnostics;
 
   const defaultPaths = allPaths.filter((p) => p.stateName === "default");
@@ -126,24 +149,28 @@ export function validateTemplateSyntax(
           const expandedPath = pathPart === "."
             ? `${forPath}.*`
             : `${forPath}.*.${pathPart.slice(1)}`;
-          if (!isValidTemplatePath(expandedPath, pathSet, defaultPaths)) {
+          const verdict = missingVerdict(expandedPath, pathPart, pathSet, defaultPaths);
+          if (verdict) {
             diagnostics.push({
-              code: WcsDiagnosticCode.BindingPathMissing,
+              code: verdict.code,
               start: item.exprStart,
               end: item.exprStart + pathPart.length,
-              message: msgs.pathMissing(pathPart) + msgs.expansionSuffix(expandedPath),
-              severity: "warning",
+              message: verdict.message + msgs.expansionSuffix(expandedPath),
+              severity: verdict.severity,
             });
           }
         }
-      } else if (!isValidTemplatePath(pathPart, pathSet, defaultPaths)) {
-        diagnostics.push({
-          code: WcsDiagnosticCode.BindingPathMissing,
-          start: item.exprStart,
-          end: item.exprStart + pathPart.length,
-          message: msgs.pathMissing(pathPart),
-          severity: "warning",
-        });
+      } else {
+        const verdict = missingVerdict(pathPart, pathPart, pathSet, defaultPaths);
+        if (verdict) {
+          diagnostics.push({
+            code: verdict.code,
+            start: item.exprStart,
+            end: item.exprStart + pathPart.length,
+            message: verdict.message,
+            severity: verdict.severity,
+          });
+        }
       }
     }
 

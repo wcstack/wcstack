@@ -40,6 +40,10 @@ export interface WcsMessageCatalog {
   commandTokenUndeclared(tokenPath: string): string;
   streamPathMissing(path: string): string;
   pathMissing(path: string): string;
+  /** stateSchema が宣言された state で、パスが schema 上に確定的に存在しない（error）。 */
+  pathNonexistent(path: string): string;
+  /** stateSchema 上の型が構造ディレクティブの要求（`for` = 配列）と食い違う（error）。 */
+  pathTypeMismatch(path: string, label: string, expected: ExpectedTypeKind, actualType: string): string;
   /** 省略パス展開の注記（pathMissing 等の末尾に連結）。 */
   expansionSuffix(expandedPath: string): string;
   patternPathOutsideFor(path: string): string;
@@ -111,6 +115,9 @@ const ja: WcsMessageCatalog = {
   commandTokenUndeclared: (t) => `コマンドトークン "${t}" は $commandTokens に宣言されていません`,
   streamPathMissing: (p) => `パス "${p}" は $streams 宣言に存在しません`,
   pathMissing: (p) => `パス "${p}" は状態定義に存在しません`,
+  pathNonexistent: (p) => `パス "${p}" は宣言された stateSchema に存在しません`,
+  pathTypeMismatch: (p, label, expected, actual) =>
+    `パス "${p}" は stateSchema 上で ${actual} 型ですが、${label} には${JA_EXPECTED_LABEL[expected]}が必要です`,
   expansionSuffix: (x) => `（展開: ${x}）`,
   patternPathOutsideFor: (p) => `パターンパス "${p}" は <template for> の外側では使用できません`,
   omittedPathOutsideFor: (p) => `省略パス "${p}" は <template for> の外側では使用できません`,
@@ -185,6 +192,9 @@ const en: WcsMessageCatalog = {
   commandTokenUndeclared: (t) => `Command token "${t}" is not declared in $commandTokens`,
   streamPathMissing: (p) => `Path "${p}" does not exist in the $streams declaration`,
   pathMissing: (p) => `Path "${p}" does not exist in the state definition`,
+  pathNonexistent: (p) => `Path "${p}" does not exist in the declared stateSchema`,
+  pathTypeMismatch: (p, label, expected, actual) =>
+    `Path "${p}" is ${actual} in the stateSchema, but ${label} requires ${expected === 'array' ? 'an array' : expected === 'boolean' ? 'a boolean' : 'a string'}`,
   expansionSuffix: (x) => ` (expanded: ${x})`,
   patternPathOutsideFor: (p) => `Pattern path "${p}" cannot be used outside a <template for>`,
   omittedPathOutsideFor: (p) => `Shorthand path "${p}" cannot be used outside a <template for>`,

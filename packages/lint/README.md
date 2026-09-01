@@ -54,6 +54,37 @@ app.manifest.json:1:3 error wcs/manifest-broken Broken manifest JSON: ...
 | `1` | At least one error-severity diagnostic; with `--strict`, at least one error or warning |
 | `2` | Usage error or unreadable file |
 
+## Declaring a state contract (`stateSchema`)
+
+Without a contract, a path the validator cannot resolve is only a **warning** (`wcs/binding-path-missing`): `count` may well exist at runtime even when the inline script cannot be read statically. Put an `application` sidecar next to (or above) the HTML and the same typo becomes an **error**:
+
+```json
+{
+  "schemaVersion": 1,
+  "kind": "application",
+  "manifestExtensions": {
+    "wcstack.application": {
+      "version": 1,
+      "states": {
+        "default": {
+          "stateSchema": {
+            "type": "object",
+            "properties": {
+              "count": { "type": "number" },
+              "users": { "type": "array", "items": { "type": "object", "properties": { "name": { "type": "string" } } } }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+- **Discovery**: the nearest `wcstack.manifest.json` walking up from the HTML file is used automatically — nothing to pass on the command line. Passing `*.manifest.json` arguments that contain an `application` artifact replaces discovery for the whole run. The VS Code extension discovers the same file, so IDE and CLI agree.
+- **Effect**: for a state that has a `stateSchema`, a bound path that the schema definitely lacks is `wcs/path-nonexistent` (**error**, exit `1`); `for:` on a non-array is `wcs/path-type-mismatch` (**error**). Paths the schema leaves open (a bare `{}`) stay silent, and methods / getters / `$listKeys` from the inline script still count as existing. States without a schema are unchanged.
+- **Where the schema comes from**: write it by hand (only the JSON-Schema subset `type / properties / required / items / enum / const / anyOf / $defs / $ref` is accepted), or generate it from a TypeScript state file with `wcs-schema` (`@wcstack/typescript`). The manifest is a derived artifact — keep it in sync with `wcs-schema check` in CI.
+
 ## Use in generate–validate–fix loops
 
 Stable diagnostic codes, `source:line:col` ranges, and the exit-code contract make this CLI a drop-in gate for CI and for AI code-generation flows: generate HTML → `npx @wcstack/lint --errors-only` → read the diagnostics, fix, and re-run until exit code `0`.

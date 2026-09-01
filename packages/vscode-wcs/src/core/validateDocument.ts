@@ -21,6 +21,8 @@ import { validateDocumentEnv } from "../service/documentEnvValidator.js";
 import { validateWatchDeclarations } from "../service/watchDeclarationValidator.js";
 import { validateSemantics } from "../service/semanticValidator.js";
 import type { FileReader } from "../service/statePathResolver.js";
+import { discoverApplicationManifest } from "./sidecar/discover.js";
+import type { JsonSchemaNode } from "./sidecar/types.js";
 
 export interface ValidateDocumentOptions {
   /** バインド属性名(既定 data-wcs)。 */
@@ -41,6 +43,19 @@ export interface ValidateDocumentOptions {
    * (static-wiring-dx-design.md §6-2 / ADR-09 §7.1 の IDE / CLI パリティ)。
    */
   readonly fileReader?: FileReader;
+  /**
+   * state 名 → `stateSchema`(application manifest の `wcstack.application.states`)。
+   * 宣言された state では、未存在パスが `wcs/binding-path-missing`(warning)ではなく
+   * `wcs/path-nonexistent`(error)になる(docs/app-testing-and-typescript-impl-plan.md D6)。
+   * 存在判定は sidecar/schemaSubset.ts の `resolveSchemaPath` の三値で行い、`unknown`
+   * (素の `{}` の下・動的構造)は沈黙する。
+   *
+   * 未指定で `fileReader` があれば、HTML の位置から最近傍の `wcstack.manifest.json` を
+   * 発見して使う(D8・sidecar/discover.ts)。CLI は明示引数に application manifest が
+   * ある時だけここへ渡し(明示が発見を置き換える)、IDE は常に発見に任せる — どちらも
+   * 同じ `discoverApplicationManifest` を同じ reader で通るので診断が一致する。
+   */
+  readonly applicationStates?: ReadonlyMap<string, JsonSchemaNode>;
 }
 
 /**
@@ -51,11 +66,13 @@ export function validateDocument(text: string, options: ValidateDocumentOptions 
   const stateTagName = options.stateTagName ?? "wcs-state";
   const locale = options.locale;
   const fileReader = options.fileReader;
+  const applicationStates = options.applicationStates
+    ?? (fileReader !== undefined ? discoverApplicationManifest(fileReader)?.states : undefined);
 
   const out: WcsDiagnostic[] = [];
   // bindingValidator / templateSyntaxValidator / ioNodeValidator / documentEnvValidator は既に code 付き。
-  out.push(...validateBindings(text, bindAttribute, stateTagName, locale, fileReader));
-  out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute, locale, fileReader));
+  out.push(...validateBindings(text, bindAttribute, stateTagName, locale, fileReader, applicationStates));
+  out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute, locale, fileReader, applicationStates));
   out.push(...validateIoNodes(text, bindAttribute, stateTagName, locale, fileReader));
   out.push(...validateAriaAttributes(text, bindAttribute, locale));
   out.push(...validateDocumentEnv(text, locale));

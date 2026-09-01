@@ -85,9 +85,11 @@ describe("外部 state の fileReader 解決（static-wiring-dx-design.md §6-2�
     const missing = diags.filter((d) => d.code === WcsDiagnosticCode.BindingPathMissing);
     expect(missing).toHaveLength(1);
     expect(html.slice(missing[0].start, missing[0].end)).toContain("missingPath");
-    // .js の解決は同名 .ts を先に試す（statePathResolver の既存規則）
-    expect(requested[0]).toMatch(/state\.ts$/);
-    expect(requested[1]).toMatch(/state\.js$/);
+    // .js の解決は同名 .ts を先に試す（statePathResolver の既存規則）。reader は manifest
+    // 発見（wcstack.manifest.json）にも使われるので、state ファイルの要求だけを見る。
+    const stateRequests = requested.filter((p) => /state\.(ts|js)$/.test(p));
+    expect(stateRequests[0]).toMatch(/state\.ts$/);
+    expect(stateRequests[1]).toMatch(/state\.js$/);
   });
 
   it(".ts と .js が両方読めるとき .ts の内容が勝つこと", () => {
@@ -334,5 +336,111 @@ describe("parseArgs — CLI 引数分解", () => {
     // フラグ無しなら strict は未設定(undefined)。
     const c = parseArgs(["a.html"]);
     expect(c.options.strict).toBeUndefined();
+  });
+});
+
+describe("stateSchema（sidecar）の消費 — 発見 / 明示 / IDE-CLI パリティ（D6 / D8）", () => {
+  const appManifest = (properties: Record<string, unknown>): string =>
+    JSON.stringify({
+      schemaVersion: 1,
+      kind: "application",
+      manifestExtensions: {
+        "wcstack.application": { version: 1, states: { default: { stateSchema: { type: "object", properties } } } },
+      },
+    });
+  const manifest = appManifest({
+    count: { type: "number" },
+    users: { type: "array", items: { type: "object", properties: { name: { type: "string" } } } },
+  });
+  // 実測 5 の fixture: `[] as {name:string}[]` は正規表現アナライザでは users.*.name が読めない。
+  const stateTs = `export default { count: 0, users: [] as { name: string }[] };`;
+  const html = `<wcs-state src="./state.ts"></wcs-state>
+<p data-wcs="textContent: coutn"></p>
+<template data-wcs="for: users"><li data-wcs="textContent: .name"></li></template>
+<p>{{ users.length }}</p>
+<p>{{ cuont }}</p>`;
+  const readerWith = (manifestAt: string | null, text: string = manifest) =>
+    (p: string): string | undefined => {
+      if (p.endsWith("state.ts")) return stateTs;
+      if (manifestAt !== null && p === manifestAt) return text;
+      return undefined;
+    };
+
+  it("manifest 発見で users.*.name の偽警告が消え、coutn（data-wcs）と cuont（mustache）が error / exit 1", () => {
+    const result = runValidation([{ source: "app/index.html", text: html, kind: "html", fileReader: readerWith("wcstack.manifest.json") }]);
+    const diags = result.diagnosticsBySource.get("app/index.html")!;
+    expect(diags.filter((d) => d.code === WcsDiagnosticCode.BindingPathMissing)).toHaveLength(0);
+    const nonexistent = diags.filter((d) => d.code === WcsDiagnosticCode.PathNonexistent);
+    expect(nonexistent.map((d) => html.slice(d.start, d.end))).toEqual(["coutn", "cuont"]);
+    expect(result.errorCount).toBe(2);
+    expect(result.exitCode).toBe(1);
+    // 発見した manifest の診断は manifest 自身の source（HTML 相対）に載る。壊れていないので空。
+    expect(result.diagnosticsBySource.get("app/wcstack.manifest.json")).toEqual([]);
+  });
+
+  it("manifest が無ければ従来どおり warning のみ / exit 0（偽警告も残る）", () => {
+    const result = runValidation([{ source: "app/index.html", text: html, kind: "html", fileReader: readerWith(null) }]);
+    const diags = result.diagnosticsBySource.get("app/index.html")!;
+    expect(diags.filter((d) => d.code === WcsDiagnosticCode.PathNonexistent)).toHaveLength(0);
+    const missing = diags.filter((d) => d.code === WcsDiagnosticCode.BindingPathMissing);
+    expect(missing.map((d) => html.slice(d.start, d.end))).toEqual(["coutn", ".name", "cuont"]);
+    expect(result.exitCode).toBe(0);
+  });
+
+  it("親ディレクトリの manifest も発見され、その source は HTML 相対で表示される", () => {
+    const result = runValidation([{ source: "examples/app/index.html", text: html, kind: "html", fileReader: readerWith("../wcstack.manifest.json") }]);
+    expect(result.diagnosticsBySource.has("examples/wcstack.manifest.json")).toBe(true);
+    expect(result.exitCode).toBe(1);
+  });
+
+  it("発見した manifest が壊れていれば manifest の source に manifest-broken が載り、HTML は schema 無し扱い", () => {
+    const result = runValidation([{ source: "app/index.html", text: html, kind: "html", fileReader: readerWith("wcstack.manifest.json", "{ oops") }]);
+    const manifestDiags = result.diagnosticsBySource.get("app/wcstack.manifest.json")!;
+    expect(manifestDiags.map((d) => d.code)).toEqual([WcsDiagnosticCode.ManifestBroken]);
+    const diags = result.diagnosticsBySource.get("app/index.html")!;
+    expect(diags.filter((d) => d.code === WcsDiagnosticCode.PathNonexistent)).toHaveLength(0);
+    expect(diags.filter((d) => d.code === WcsDiagnosticCode.BindingPathMissing).length).toBeGreaterThan(0);
+    // 整形行も manifest 側の source で出る
+    expect(result.lines.some((l) => l.startsWith("app/wcstack.manifest.json:"))).toBe(true);
+  });
+
+  it("IDE 経路（validateDocument + 同じ reader）と CLI 経路が同一 {code, range, severity} を出す", () => {
+    const fileReader = readerWith("wcstack.manifest.json");
+    const ide = validateDocument(html, { fileReader });
+    const cli = runValidation([{ source: "app/index.html", text: html, kind: "html", fileReader }]).diagnosticsBySource.get("app/index.html")!;
+    expect(cli).toEqual(ide);
+    expect(ide.some((d) => d.code === WcsDiagnosticCode.PathNonexistent)).toBe(true);
+  });
+
+  it("明示引数の application manifest は発見結果を丸ごと置き換える", () => {
+    // 発見側は coutn を知らないが、明示側は coutn / cuont を宣言している → error なし
+    const explicit = appManifest({ coutn: { type: "number" }, cuont: { type: "number" }, users: { type: "array", items: { type: "object", properties: { name: { type: "string" } } } } });
+    const result = runValidation([
+      { source: "app/index.html", text: html, kind: "html", fileReader: readerWith("wcstack.manifest.json") },
+      { source: "app/other.manifest.json", text: explicit, kind: "manifest" },
+    ]);
+    const diags = result.diagnosticsBySource.get("app/index.html")!;
+    expect(diags.filter((d) => d.code === WcsDiagnosticCode.PathNonexistent)).toHaveLength(0);
+    expect(result.diagnosticsBySource.has("app/wcstack.manifest.json")).toBe(false);
+  });
+
+  it("明示 application manifest 2 つが同名 state を宣言 → manifest-state-collision（error）で勝者なし → HTML は schema 無し扱い", () => {
+    const result = runValidation([
+      { source: "app/index.html", text: html, kind: "html", fileReader: readerWith(null) },
+      { source: "a.manifest.json", text: manifest, kind: "manifest" },
+      { source: "b.manifest.json", text: appManifest({ coutn: { type: "number" } }), kind: "manifest" },
+    ]);
+    expect(result.diagnosticsBySource.get("b.manifest.json")!.map((d) => d.code)).toContain(WcsDiagnosticCode.ManifestStateCollision);
+    const diags = result.diagnosticsBySource.get("app/index.html")!;
+    expect(diags.filter((d) => d.code === WcsDiagnosticCode.PathNonexistent)).toHaveLength(0);
+    expect(diags.filter((d) => d.code === WcsDiagnosticCode.BindingPathMissing).length).toBeGreaterThan(0);
+    expect(result.exitCode).toBe(1);
+  });
+
+  it("application manifest の stateSchema も subset 規則で検査される（未知 keyword は warning）", () => {
+    const withPattern = appManifest({ count: { type: "string", pattern: "x" } });
+    const result = runValidation([{ source: "app/index.html", text: html, kind: "html", fileReader: readerWith("wcstack.manifest.json", withPattern) }]);
+    const manifestDiags = result.diagnosticsBySource.get("app/wcstack.manifest.json")!;
+    expect(manifestDiags.map((d) => d.code)).toContain(WcsDiagnosticCode.ManifestUnknownKeyword);
   });
 });

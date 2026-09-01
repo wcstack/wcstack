@@ -10,11 +10,13 @@
 
 import { BUILTIN_FILTERS, type FilterInfo } from './completionData.js';
 import { STRUCTURAL_BINDING_TYPE_SET } from './wcsManifest.js';
-import type { PathCandidate } from './stateAnalyzer.js';
+import { mergeSchemaCandidates, type PathCandidate } from './stateAnalyzer.js';
 import { getStatePathsFromHtml, type FileReader } from './statePathResolver.js';
 import { isInsideForTemplate, getInnermostForPath, getAvailableWildcardRank, countWildcardSegments } from './forContext.js';
 import { WcsDiagnosticCode, type WcsDiagnosticCodeValue } from '../core/diagnostics.js';
 import { getMessages, type WcsMessageCatalog, type ExpectedTypeKind } from '../core/messages.js';
+import { resolveSchemaPath } from '../core/sidecar/schemaSubset.js';
+import type { JsonSchemaNode } from '../core/sidecar/types.js';
 
 /** フィルタ名 → FilterInfo のマップ */
 const filterMap = new Map<string, FilterInfo>(BUILTIN_FILTERS.map(f => [f.name, f]));
@@ -38,13 +40,24 @@ export interface BindingDiagnostic {
  *
  * @param html - HTML 全文
  * @param attrName - バインド属性名（例: "data-wcs"）
+ * @param applicationStates - state 名 → stateSchema（sidecar manifest）。宣言された state では
+ *   未存在パスが `wcs/path-nonexistent`（error）になり、`for:` の型不一致は
+ *   `wcs/path-type-mismatch`（error）になる。同じパスの typeHint は schema が勝つ（D12）。
  */
-export function validateBindings(html: string, attrName: string, stateTagName: string = 'wcs-state', locale?: string, fileReader?: FileReader): BindingDiagnostic[] {
+export function validateBindings(
+  html: string,
+  attrName: string,
+  stateTagName: string = 'wcs-state',
+  locale?: string,
+  fileReader?: FileReader,
+  applicationStates?: ReadonlyMap<string, JsonSchemaNode>,
+): BindingDiagnostic[] {
   const diagnostics: BindingDiagnostic[] = [];
   const msgs = getMessages(locale);
 
-  // 状態パスを収集（state 名ごとに分類）
-  const statePaths = getStatePathsFromHtml(html, stateTagName, fileReader);
+  // 状態パスを収集（state 名ごとに分類）。schema 由来の候補は補完・型期待用に合流させる
+  // （同一パスは schema 優先）。存在判定は候補集合ではなく resolveSchemaPath で行う（下記）。
+  const statePaths = mergeSchemaCandidates(getStatePathsFromHtml(html, stateTagName, fileReader), applicationStates);
   const pathsByState = new Map<string, PathCandidate[]>();
   for (const p of statePaths) {
     const list = pathsByState.get(p.stateName) ?? [];
@@ -200,16 +213,19 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
             }
           }
           if (checkPath) {
-            const message = validatePathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, msgs);
-            if (message) {
+            const schema = applicationStates?.get(parsed.targetState);
+            const verdict = schema !== undefined
+              ? validateSchemaPathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, schema, msgs)
+              : toMissingVerdict(validatePathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, msgs));
+            if (verdict) {
               const pathOffset = binding.indexOf(parsed.path);
               const pathStart = bindingStart + pathOffset;
               diagnostics.push({
-                code: WcsDiagnosticCode.BindingPathMissing,
+                code: verdict.code,
                 start: pathStart,
                 end: pathStart + pathTrimmed.length,
-                message: `${message}${pathTrimmed.startsWith('.') ? msgs.expansionSuffix(checkPath) : ''}`,
-                severity: 'warning',
+                message: `${verdict.message}${pathTrimmed.startsWith('.') ? msgs.expansionSuffix(checkPath) : ''}`,
+                severity: verdict.severity,
               });
             }
           }
@@ -355,12 +371,21 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
             if (typeReq && resultType !== typeReq.expected) {
               const pathOffset = binding.indexOf(parsed.path);
               const pathStart = bindingStart + pathOffset;
+              // `for:` に対して stateSchema が非配列と**確定**している（schema 由来の候補・
+              // フィルタ無し）場合だけ、規範 §6「definite type mismatch → error」の code で
+              // 報告する。schema 無し / フィルタ経由の型は従来の期待違反のまま。
+              const schemaDefinite = typeReq.expected === 'array'
+                && parsed.filters.length === 0
+                && applicationStates?.has(parsed.targetState) === true
+                && scopedPaths.some(p => p.path === pathTrimmed && p.fromSchema === true);
               diagnostics.push({
-                code: WcsDiagnosticCode.BindingTypeExpectation,
+                code: schemaDefinite ? WcsDiagnosticCode.PathTypeMismatch : WcsDiagnosticCode.BindingTypeExpectation,
                 start: pathStart,
                 end: pathStart + pathTrimmed.length,
-                message: msgs.typeExpectation(typeReq.label, typeReq.expected, resultType),
-                severity: typeReq.severity,
+                message: schemaDefinite
+                  ? msgs.pathTypeMismatch(pathTrimmed, typeReq.label, typeReq.expected, resultType)
+                  : msgs.typeExpectation(typeReq.label, typeReq.expected, resultType),
+                severity: schemaDefinite ? 'error' : typeReq.severity,
               });
             }
           }
@@ -638,6 +663,48 @@ function validatePathExistence(
 
   if (!scopedPathSet.has(checkPath)) {
     return msgs.pathMissing(displayPath);
+  }
+  return null;
+}
+
+/** 存在判定の結果（code / severity 込み）。null = 問題なし。 */
+interface PathVerdict {
+  code: WcsDiagnosticCodeValue;
+  message: string;
+  severity: 'error' | 'warning';
+}
+
+function toMissingVerdict(message: string | null): PathVerdict | null {
+  return message ? { code: WcsDiagnosticCode.BindingPathMissing, message, severity: 'warning' } : null;
+}
+
+/**
+ * stateSchema が宣言された state の存在判定（docs/app-testing-and-typescript-impl-plan.md D6）。
+ *
+ * - `$` 名前空間（ループ添字 / command / stream）は schema に載らないので従来規則のまま。
+ * - script / JSON / schema 由来の候補集合に当たれば存在（メソッド・getter・`$listKeys` 派生など
+ *   schema に載らない宣言を先に拾う）。
+ * - 残りは `resolveSchemaPath` の三値: `nonexistent`（object と確定しているのに member が無い）
+ *   だけを `wcs/path-nonexistent`（error）にし、`unknown`（素の `{}` の下・型未確定）と
+ *   `ref-error`（manifest 側の診断が担う）は沈黙する。候補集合だけで判定すると unknown が
+ *   「候補に無い = 不在」に化けて偽 error になる。
+ */
+function validateSchemaPathExistence(
+  checkPath: string,
+  displayPath: string,
+  scopedPaths: PathCandidate[],
+  scopedPathSet: Set<string>,
+  commandNames: Set<string>,
+  schema: JsonSchemaNode,
+  msgs: WcsMessageCatalog,
+): PathVerdict | null {
+  if (checkPath.startsWith('$')) {
+    return toMissingVerdict(validatePathExistence(checkPath, displayPath, scopedPaths, scopedPathSet, commandNames, msgs));
+  }
+  if (scopedPathSet.has(checkPath)) return null;
+  const resolution = resolveSchemaPath(schema, schema.$defs ?? {}, checkPath.split('.'));
+  if (resolution.kind === 'nonexistent') {
+    return { code: WcsDiagnosticCode.PathNonexistent, message: msgs.pathNonexistent(displayPath), severity: 'error' };
   }
   return null;
 }

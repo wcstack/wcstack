@@ -11,8 +11,9 @@
 import { WcsDiagnostic, WcsSeverity } from "../diagnostics.js";
 import { createPositionMapper } from "../offsetToPosition.js";
 import { validateDocument, ValidateDocumentOptions } from "../validateDocument.js";
-import { validateManifestSet } from "../sidecar/validate.js";
-import { LiveBindableDeclaration } from "../sidecar/types.js";
+import { validateManifestArtifact, validateManifestSet } from "../sidecar/validate.js";
+import { discoverApplicationManifest, joinRelativeSource } from "../sidecar/discover.js";
+import { JsonSchemaNode, LiveBindableDeclaration } from "../sidecar/types.js";
 import type { FileReader } from "../../service/statePathResolver.js";
 
 export type InputKind = "html" | "manifest";
@@ -68,17 +69,13 @@ const severityLabel: Record<WcsSeverity, string> = { error: "error", warning: "w
 
 export function runValidation(inputs: readonly CliFileInput[], options: RunValidationOptions = {}): RunValidationResult {
   const diagnosticsBySource = new Map<string, readonly WcsDiagnostic[]>();
+  const textBySource = new Map(inputs.map((i) => [i.source, i.text]));
 
-  // HTML: ファイルごとに validateDocument。
-  for (const input of inputs) {
-    if (input.kind === "html") {
-      const docOptions = input.fileReader !== undefined ? { ...options, fileReader: input.fileReader } : options;
-      diagnosticsBySource.set(input.source, validateDocument(input.text, docOptions));
-    }
-  }
-
-  // manifest: 全 manifest をまとめて集合検証(衝突/override/drift は cross-artifact)。
+  // manifest(明示引数): 全 manifest をまとめて集合検証(衝突/override/drift は cross-artifact)。
+  // application artifact が含まれていれば、その解決済み stateSchema が HTML 検証の契約になり、
+  // 最近傍発見(D8)は行わない — 明示指定が発見結果を丸ごと置き換える。
   const manifestInputs = inputs.filter((i) => i.kind === "manifest");
+  let explicitStates: ReadonlyMap<string, JsonSchemaNode> | undefined;
   if (manifestInputs.length > 0) {
     const result = validateManifestSet({
       artifacts: manifestInputs.map((m) => ({ text: m.text, source: m.source })),
@@ -87,9 +84,35 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
     for (const input of manifestInputs) {
       diagnosticsBySource.set(input.source, result.byArtifact.get(input.source) ?? []);
     }
+    if (result.hasApplicationArtifact) explicitStates = result.resolvedStates;
   }
 
-  const textBySource = new Map(inputs.map((i) => [i.source, i.text]));
+  // HTML: ファイルごとに validateDocument。明示 application manifest が無ければ、HTML の
+  // 位置から最近傍の wcstack.manifest.json を発見して契約にする(IDE と同じ discover)。
+  // 発見した manifest 自身の診断(envelope / schema subset)は HTML の source に混ぜず、
+  // manifest の source(HTML 相対で表示)に載せる。同じ manifest を複数の HTML が発見しても
+  // 検証は 1 回。
+  for (const input of inputs) {
+    if (input.kind !== "html") continue;
+    let applicationStates = explicitStates;
+    if (applicationStates === undefined && input.fileReader !== undefined) {
+      const discovered = discoverApplicationManifest(input.fileReader);
+      applicationStates = discovered?.states ?? new Map();
+      if (discovered !== undefined) {
+        const source = joinRelativeSource(input.source, discovered.relativePath);
+        if (!diagnosticsBySource.has(source)) {
+          textBySource.set(source, discovered.text);
+          diagnosticsBySource.set(source, validateManifestArtifact({ text: discovered.text, source }));
+        }
+      }
+    }
+    const docOptions: ValidateDocumentOptions = {
+      ...options,
+      ...(input.fileReader !== undefined ? { fileReader: input.fileReader } : {}),
+      ...(applicationStates !== undefined ? { applicationStates } : {}),
+    };
+    diagnosticsBySource.set(input.source, validateDocument(input.text, docOptions));
+  }
   const lines: string[] = [];
   let errorCount = 0;
   let warningCount = 0;
