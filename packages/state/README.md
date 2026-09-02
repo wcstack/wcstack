@@ -236,6 +236,8 @@ Multiple state elements can coexist with the `name` attribute. Bindings referenc
 
 Default name is `"default"` (no `@` needed).
 
+> **Deprecated — removed in v2.** The `name` attribute and the `@name` selector are a second axis next to the path (a per-rootNode registry that does not cross shadow boundaries). v2 replaces them with **mounts**: `<wcs-state mount="cart">` grafts the state onto the root tree, and bindings read it as `cart.total`. Nothing changes in 1.x; the linter reports the sites as `wcs/named-state-deprecated` (warning) and the runtime warns only under `config.debug`. Migration table: [docs/state-mount-design.md](../../docs/state-mount-design.md) §9.
+
 ## Updating State
 
 In `@wcstack/state`, every piece of state has a **path** — like `count`, `user.name`, or `items`. To update state reactively, **assign to the path**:
@@ -1255,6 +1257,47 @@ customElements.define("my-light-component", MyLightComponent);
 - `data-wcs="state.message: user.name"` on the host element binds outer state paths to inner component state properties
 - Changes propagate bidirectionally between the component and the outer state
 
+### Whole-object Mount (`state: path`)
+
+Instead of wiring the component's state property by property, the host can mount a **whole subtree** of its state as the component's root. Inside the component every path is then relative to the mount point:
+
+```html
+<!-- Host -->
+<wcs-state json='{"user":{"name":"Alice","email":"alice@example.com"},"theme":{"mode":"light"}}'></wcs-state>
+<user-card data-wcs="state: user"></user-card>
+```
+
+```javascript
+// Component (Shadow DOM)
+class UserCard extends HTMLElement {
+  state = {
+    // a getter computed over the mount — `this.name` is the tree's `user.name`
+    get display() { return `${this.name} <${this.email}>`; },
+  };
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+  }
+  connectedCallback() {
+    this.shadowRoot.innerHTML = `
+      <wcs-state bind-component="state"></wcs-state>
+      <span data-wcs="textContent: name"></span>
+      <span data-wcs="textContent: display"></span>
+      <input data-wcs="value: name">
+    `;
+  }
+}
+customElements.define("user-card", UserCard);
+```
+
+- `state: user` mounts the component's root at the tree path `user`: `name` inside the component **is** `user.name`. Reads, writes (`value: name`, `this.state.name = ...`), getters and `for:` all resolve against the tree; the host's `this.user = {...}` replacement and `this["user.name"] = ...` writes both reach the component.
+- A partial mount can sit next to it: `state: user; state.theme: theme` mounts `theme` as a second entry point (longest prefix wins, so `theme.mode` inside the component reads the tree's `theme.mode`).
+- In a loop, mount **the row itself**: `<template data-wcs="for: users"><user-row data-wcs="state: ."></user-row></template>`. Inside the row component `name` is `users.*.name`, and its own `for: tags` runs over `users.*.tags.*`.
+- **Own keys are private** (rule R1 in [docs/state-mount-design.md](../../docs/state-mount-design.md) §4-3): a data key the component declares itself (`state = { mode: "view" }`) belongs to that element and is never written to the tree. If it hides a key that exists at the mount point (`state = { name: "" }` mounted over `user.name`), the runtime warns once (`wcs/mount-own-key-shadow`) — remove the default to read the tree, or rename it to keep it private.
+- Mounting an array as the root (`state: rows` with `for` over it inside) is not supported in 1.x; mount the row (`state: .`) or the object that holds the array (`state: group` with `for: children` inside). Both forms are contract-tested and carry over unchanged to v2, where mounts become the only way to extend the tree.
+
+> The per-property form (`state.message: user.name`) keeps working. A component that declares a default for a mapped key (`state = { message: "" }` together with `state.message: ...`) gets a one-time warning in 1.x: today the host value wins, in v2 the own key becomes private and would hide it — drop the default.
+
 ### Standalone Web Component Injection (`__e2e__/single-component`)
 
 Even when a component is independent from outer host state, you can inject reactive state with `bind-component`.
@@ -1301,6 +1344,11 @@ customElements.define("my-component", MyComponent);
 ```html
 <template data-wcs="for: users">
   <my-component data-wcs="state.message: .name"></my-component>
+</template>
+
+<!-- or mount the row itself: inside the component, `name` is `users.*.name` -->
+<template data-wcs="for: users">
+  <user-row data-wcs="state: ."></user-row>
 </template>
 ```
 

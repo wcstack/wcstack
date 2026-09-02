@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: state mount — a row component mounted at the row (state: .)</title>
+  <!-- Target syntax for the v2 mount design (docs/state-mount-design.md §3-2 / §4-4, plan P0-5).
+
+       Each row of `for: users` mounts a component at the row itself (`state: .` =
+       `state: users.*`). Inside, `name` is `users.*.name`, and the component's own
+       `for: tags` runs over `users.*.tags.*` — two wildcards, listIndex chain of two,
+       no Δ bookkeeping (§4-4). Row identity is asserted through data-row-id, which is
+       stamped from the row object: a full re-render would show as changed ids.
+
+       Acceptance ids: M4 M7 M10 M17. -->
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+  <style>
+:not(:defined) { display: none; }
+  </style>
+  <script type="module">
+    class UserRow extends HTMLElement {
+      state = {};
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" });
+      }
+      connectedCallback() {
+        this.shadowRoot.innerHTML = `
+<wcs-state bind-component="state"></wcs-state>
+<span class="name" data-wcs="textContent: name; attr.data-row-id: id"></span>
+<ul class="tags"><template data-wcs="for: tags"><li data-wcs="textContent: .name"></li></template></ul>`;
+      }
+    }
+    customElements.define("user-row", UserRow);
+  </script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+export default {
+  users: [
+    { id: "a", name: "Anna", tags: [{ name: "x" }] },
+    { id: "b", name: "Ben", tags: [{ name: "y" }, { name: "z" }] },
+  ],
+  renameRow() { this["users.1.name"] = "Bennett"; },
+  addTag() { this["users.0.tags"] = [...this["users.0.tags"], { name: "w" }]; },
+  swap() { this.users = [this.users[1], this.users[0]]; },
+  replaceRows() { this.users = [{ id: "c", name: "Cleo", tags: [] }]; },
+};
+    </script>
+  </wcs-state>
+
+  <ul id="host-view"><template data-wcs="for: users"><li data-wcs="textContent: .name"></li></template></ul>
+
+  <div id="rows">
+    <template data-wcs="for: users">
+      <user-row data-wcs="state: ."></user-row>
+    </template>
+  </div>
+
+  <button id="rename-row" data-wcs="onclick: renameRow">rename row 2</button>
+  <button id="add-tag" data-wcs="onclick: addTag">add tag to row 1</button>
+  <button id="swap" data-wcs="onclick: swap">swap</button>
+  <button id="replace-rows" data-wcs="onclick: replaceRows">replace rows</button>
+</body>
+</html>

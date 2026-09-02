@@ -2,6 +2,10 @@
 
 ## 1.11.0 (Unreleased)
 
+### Deprecations
+
+- **`wcs/named-state-deprecated`**（warning）— 名前付き State（`<wcs-state name="x">` / `path@x` / `{{ path@x }}`）は v2 で廃止され、`<wcs-state mount="x">` と接頭辞付きパス `x.path` に置き換わる（`docs/state-mount-design.md` D1 / D16、`docs/state-mount-impl-plan.md` Phase 1）。1.x には `mount=` が無いのでランタイムは既定で黙り（`config.debug` 下だけ warn 1 回）、この診断と README の告知が主経路。Light DOM の `bind-component`（今日 name が必須）には出さない。`@default` は「外せ」と言う。フィルタ引数の `@` は対象外。severity は warning（v2 で parse error になるとき error に昇格）
+
 ### Features
 
 - **`wcs-tsc` の器**（`@wcstack/typescript` が同梱する `dist/tsc-core.cjs`）— Language Plugin を `LanguagePlugin<URI | string>` に一般化（`@volar/typescript` の `runTsc` はファイルパス文字列で呼ぶ）し、`mode: 'tsc'` を追加。proxyCreateProgram は 1 ファイル 1 サービススクリプトしか扱えないため、tsc モードでは全 `<wcs-state>` ブロックを 1 本の仮想 TS に合成する（プリアンブル 1 回・import は巻き上げ・各ブロックは `{ const __wcs_state_N = defineState(…) }` のスコープ・診断は HTML へ写像）。`<wcs-state>` の無いページは空モジュール（undefined を返すと `.html` が素の TS として読まれ構文エラーになる）。`stripWcsImport` は CDN の URL 指定（`https://esm.run/@wcstack/state`・jsDelivr の `@version/+esm` 等）も剥がすようになり、IDE でも URL import 時の TS2307 が消えた。IDE 側の挙動（Language Server モード）は不変

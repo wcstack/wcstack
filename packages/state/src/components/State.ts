@@ -35,7 +35,12 @@ import { collectStructuralFragments } from "../structural/collectStructuralFragm
 import { bindWebComponent } from "../webComponent/bindWebComponent";
 import { getBaseDepth } from "../webComponent/baseListIndex";
 import { propagateListPathToOuterState } from "../webComponent/outerListPath";
-import { getPrimaryInnerPaths, resetDerivedMappingRules } from "../webComponent/MappingRule";
+import { getPrimaryInnerPaths, hasRootMappingRule, resetDerivedMappingRules } from "../webComponent/MappingRule";
+import { getRootReloadPaths } from "../webComponent/rootReloadPaths";
+import { markWebComponentStatePropDeclared } from "../webComponent/completeWebComponent";
+import { takeOverwrittenObject } from "../webComponent/preCompletionWrites";
+import { hasRootMountBinding } from "../webComponent/rootMountBinding";
+import { warnNamedStateDeprecated } from "../deprecation";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/symbols";
 import { waitInitializeBinding } from "../bindings/initializeBindingPromiseByNode";
 import { getCustomElement } from "../getCustomElement";
@@ -277,6 +282,11 @@ export class State extends HTMLElementBase implements IStateElement {
     }
     await this._loadingPromise;
     this._name = this.getAttribute('name') || 'default';
+    if (this.hasAttribute('name') && !this.hasAttribute('bind-component')) {
+      // 名前付き State は v2 でマウント（`mount=`）に置き換わる（docs/state-mount-design.md D16）。
+      // Light DOM の bind-component は今日 name が必須なので、そちらには言わない。
+      warnNamedStateDeprecated('attribute', this._name);
+    }
     setStateElementByName(this.rootNode!, this._name, this);
   }
 
@@ -313,6 +323,11 @@ export class State extends HTMLElementBase implements IStateElement {
         raiseError(`"bind-component" cannot be combined with ${conflicting.join(", ")}. The component's "${this.getAttribute("bind-component")}" property is the only state source.`);
       }
       const boundComponentStateProp = this.getAttribute("bind-component")!;
+      // 束ねる意思をここで宣言する（完了はずっと後）。丸ごとマウント `state: user` の
+      // 完了前の初期適用は、この宣言を見て書き込みを抑止する
+      // （webComponent/completeWebComponent.ts）。下の await より前でなければ、
+      // 親の初期適用が先に走って親のオブジェクトを state プロパティに書いてしまう。
+      markWebComponentStatePropDeclared(boundComponent, boundComponentStateProp);
       const componentRegistry = getCustomElementRegistry(boundComponent);
       if (componentRegistry === null) {
         // null レジストリのサブツリーではホストは永久に upgrade されない。
@@ -327,9 +342,18 @@ export class State extends HTMLElementBase implements IStateElement {
       if (!(boundComponentStateProp in boundComponent)) {
         raiseError(`Component does not have property "${boundComponentStateProp}" for state binding.`);
       }
-      const state = (boundComponent as any)[boundComponentStateProp] as Record<string, any>;
+      let state = (boundComponent as any)[boundComponentStateProp] as Record<string, any>;
       if (typeof state !== 'object' || state === null) {
         raiseError(`Component property "${boundComponentStateProp}" is not an object for state binding.`);
+      }
+      // 丸ごとマウント（`state: user`）の完了前の初期適用が、宣言より先に走って state
+      // プロパティを親のオブジェクトごと置き換えていたら、作者のオブジェクトに戻す
+      // （webComponent/preCompletionWrites.ts）。戻さないと親のキー全部が own data key に
+      // なり、R1 で全部が私有に化ける。
+      const authored = takeOverwrittenObject(boundComponent, boundComponentStateProp);
+      if (typeof authored !== 'undefined' && hasRootMountBinding(boundComponent, boundComponentStateProp)) {
+        (boundComponent as any)[boundComponentStateProp] = authored;
+        state = authored as Record<string, any>;
       }
       this._boundComponent = boundComponent;
       this._boundComponentStateProp = boundComponentStateProp;
@@ -389,9 +413,15 @@ export class State extends HTMLElementBase implements IStateElement {
     }
     // mapped ＝ プライマリ規則が 1 件以上あることと同義（bindWebComponent の分岐）
     const innerPaths = getPrimaryInnerPaths(this._boundComponent);
+    // ルート規則（丸ごとマウント）は内側パスが空なので、子の登録済みパス全部を読み直す
+    // （webComponent/rootReloadPaths.ts）
+    const rootPaths = hasRootMappingRule(this._boundComponent) ? getRootReloadPaths(this) : [];
     resetDerivedMappingRules(this._boundComponent);
     this.createState("readonly", (state) => {
       for (const path of innerPaths) {
+        state.$postUpdate(path);
+      }
+      for (const path of rootPaths) {
         state.$postUpdate(path);
       }
     });
@@ -662,6 +692,10 @@ export class State extends HTMLElementBase implements IStateElement {
 
   get hasMappedComponentState(): boolean {
     return this._hasMappedComponentState;
+  }
+
+  get boundPaths(): ReadonlySet<string> {
+    return this._pathSet;
   }
 
   /**

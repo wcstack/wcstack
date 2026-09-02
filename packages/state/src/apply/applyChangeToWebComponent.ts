@@ -2,6 +2,7 @@ import { config } from "../config";
 import { DELIMITER } from "../define";
 import { raiseError } from "../raiseError";
 import { IBindingInfo } from "../types";
+import { getRootReloadPaths } from "../webComponent/rootReloadPaths";
 import { getStateElementByWebComponent } from "../webComponent/stateElementByWebComponent";
 import { IApplyContext } from "./types";
 
@@ -23,13 +24,14 @@ import { IApplyContext } from "./types";
  * （apply/applyChange.ts）、`bindWebComponent` は完了済み ＝ state element は登録済み。
  * ただし**登録済みと使用可能は別**で、切断済みの state element が台帳に残っている
  * 窓がある（§1.9）。下の使用可能判定を参照。
+ *
+ * 残余パスが空（`data-wcs="state: user"` — ルート規則の丸ごとマウント）は、親が
+ * マウント先を丸ごと差し替えたという通知。何が変わったかは分からないので、子の
+ * 登録済みパス全部を読み直す（docs/state-mount-design.md §3-2 / impl-plan P1-2）。
  */
 export function applyChangeToWebComponent(binding: IBindingInfo, _context: IApplyContext, _newValue: unknown): void {
   const element = binding.node as Element;
   const propSegments = binding.propSegments;
-  if (propSegments.length <= 1) {
-    raiseError(`Invalid propSegments for web component binding: ${propSegments.join(DELIMITER)}`);
-  }
   const [ firstSegment, ...restSegments ] = propSegments;
   const innerStateElement = getStateElementByWebComponent(element, firstSegment);
   if (innerStateElement === null) {
@@ -55,6 +57,18 @@ export function applyChangeToWebComponent(binding: IBindingInfo, _context: IAppl
         { element, stateProp: firstSegment, path: restSegments.join(DELIMITER) },
       );
     }
+    return;
+  }
+  if (restSegments.length === 0) {
+    const paths = getRootReloadPaths(innerStateElement);
+    if (paths.length === 0) {
+      return;
+    }
+    innerStateElement.createState("readonly", (state) => {
+      for (const path of paths) {
+        state.$postUpdate(path);
+      }
+    });
     return;
   }
   innerStateElement.createState("readonly", (state) => {

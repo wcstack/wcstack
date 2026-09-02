@@ -8,6 +8,7 @@ import { createInnerState } from "./innerState";
 import { buildPrimaryMappingRule } from "./MappingRule";
 import { meltFrozenObject } from "./meltFrozenObject";
 import { createOuterState } from "./outerState";
+import { warnOwnKeyShadows } from "./ownKeyShadow";
 import { setStateElementByWebComponent } from "./stateElementByWebComponent";
 import { IOuterState } from "./types";
 
@@ -35,6 +36,9 @@ export function bindWebComponent(
   // innerState proxy、plain なら melt 済みのローカル state。
   if (bindings.length > 0) {
     buildPrimaryMappingRule(component, stateProp, bindings);
+    // own data key とマウントの衝突を 1 回だけ報告する（R1 の私有キーがツリーを隠す形と、
+    // 部分マウントで v2 に反転する形 — docs/state-mount-design.md D19）。
+    warnOwnKeyShadows(component, stateProp, state);
     // 値の正本が親スコープにあることを state 要素に記録する。越境アドレスの受け渡しと
     // リストパスの外向き伝播はこのフラグでのみ有効になる（§1.8）。
     innerStateElement.markComponentStateMapped?.();

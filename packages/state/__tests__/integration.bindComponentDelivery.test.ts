@@ -124,16 +124,16 @@ describe("bind-component: 親 state 起点の変更配送 (integration)", () => 
   });
 
   /**
-   * 完了台帳のキーが stateProp 名になったことで、`data-wcs="state: user"` のように
-   * stateProp をそのままプロパティ名に書いた形（propSegments が 1 セグメント）も
-   * ゲートを通ってしまう。applyChangeToWebComponent は「先頭＝束ね先、残り＝子のパス」を
-   * 前提にしており残余が空だと raiseError するため、updater の drain（例外を捕まえない）を
-   * 突き抜けて同じバッチの無関係な更新まで巻き添えにする。
-   * この形は元から無言の no-op なので、そのまま no-op に留めることを固定する。
+   * `data-wcs="state: user"`（propSegments が 1 セグメント）は以前は無言の no-op だった
+   * （残余パスが空だと applyChangeToWebComponent が raiseError するのでゲートで除いていた）。
+   * 今は**丸ごとマウント**（ルート規則）で、残余空は「子の登録済みパス全部を読み直せ」の
+   * 意味を持つ（docs/state-mount-design.md §3-2、impl-plan P1-9 で反転）。
+   * 同じバッチの無関係な更新を巻き添えにしないことは引き続き固定する。
+   * 詳細な契約は integration.bindComponentRootMount.test.ts。
    */
-  it("stateProp と同名の 1 セグメントバインディングが同じバッチの他の更新を巻き添えにしないこと", async () => {
+  it("stateProp と同名の 1 セグメントバインディングは丸ごとマウントになり、同じバッチの他の更新も完走すること", async () => {
     const tag = uniqueTag("bcd-editor");
-    defineEditor(tag, { name: "" }, `<span id="inner-view" data-wcs="textContent: name"></span>`);
+    defineEditor(tag, {}, `<span id="inner-view" data-wcs="textContent: name"></span>`);
 
     const host = document.createElement(uniqueTag("bcd-host"));
     const shadowRoot = host.attachShadow({ mode: "open" });
@@ -149,17 +149,27 @@ describe("bind-component: 親 state 起点の変更配送 (integration)", () => 
     await State.getBindingsReady(shadowRoot);
     await flush();
 
+    const component = shadowRoot.querySelector(tag) as HTMLElement;
+    const childStateElement = component.shadowRoot!.querySelector("wcs-state") as State;
+    await childStateElement.connectedCallbackPromise;
+    await State.getBindingsReady(component.shadowRoot!);
+    await flush();
+
     const hostView = () => (shadowRoot.querySelector("#host-view") as HTMLElement).textContent;
+    const innerView = () => (component.shadowRoot!.querySelector("#inner-view") as HTMLElement).textContent;
     expect(hostView()).toBe("Alice");
+    expect(innerView()).toBe("Alice");
 
     // バインドされたパスそのものへの書き込み。同じバッチに #host-view の更新も乗る。
     parentStateElement.createState("writable", (s: any) => {
       s.user = { name: "Carol" };
     });
     await flush();
+    await flush();
 
-    // 1 セグメント側は従来どおり何も起きないが、同じバッチの更新は完走する
+    // 丸ごとマウントの子も、同じバッチの親側の更新も完走する
     expect(hostView()).toBe("Carol");
+    expect(innerView()).toBe("Carol");
 
     host.remove();
   });

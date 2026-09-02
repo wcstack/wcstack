@@ -3,7 +3,9 @@ import { devtoolsSink } from "../devtools/sink";
 import { applyMirrorAttribute, getInputAttributeMirror } from "../event/getInputAttributeMirror";
 import { beginPropagationTransaction, extendPropagationContext, getCurrentPropagationContext, getEdgeId, getWireId, runWithPropagationContext, runWithWriteReceipt } from "../propagation/propagation";
 import { isPossibleTwoWay } from "../event/isPossibleTwoWay";
+import { getCustomElement } from "../getCustomElement";
 import { IBindingInfo } from "../types";
+import { recordInjectedKey, rememberOverwrittenObject } from "../webComponent/preCompletionWrites";
 import { IApplyContext } from "./types";
 import { addSsrProperty, trackSsrPropertyNode } from "./ssrPropertyStore";
 
@@ -59,7 +61,17 @@ export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyCon
   const propSegments = binding.propSegments;
   if (propSegments.length === 1) {
     const firstSegment = propSegments[0];
-    if ((element as any)[firstSegment] !== newValue) {
+    const current = (element as any)[firstSegment];
+    if (current !== newValue) {
+      // 完了前の丸ごとマウント（`state: user`）は、作者の state オブジェクトを親の
+      // オブジェクトで置き換えてしまう。あとで戻せるように置き換え前を控える
+      // （webComponent/preCompletionWrites.ts）。オブジェクト → オブジェクトの書き込みで
+      // 相手がカスタム要素のときだけ台帳に触る（通常の書き込みは typeof 判定で抜ける）。
+      if (current !== null && typeof current === 'object'
+        && newValue !== null && typeof newValue === 'object'
+        && getCustomElement(element) !== null) {
+        rememberOverwrittenObject(element, firstSegment, current);
+      }
       const performWrite = (): void => {
         let propertyWriteSucceeded = false;
         try {
@@ -157,7 +169,8 @@ export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyCon
     }
     subObject = subObject[segment];
   }
-  const oldValue = subObject[propSegments[propSegments.length - 1]];
+  const lastSegment = propSegments[propSegments.length - 1];
+  const oldValue = subObject[lastSegment];
   if (oldValue !== newValue) {
     if (Object.isFrozen(subObject)) {
       if (config.debug) {
@@ -170,8 +183,15 @@ export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyCon
       }
       return;
     }
+    // 完了前の部分マウント（`state.theme: theme`）が、作者の state オブジェクトに無かった
+    // キーを作る（積み）ことを控える。R1 の衝突報告はこのキーを作者のものとして扱わない
+    // （webComponent/preCompletionWrites.ts）
+    if (propSegments.length === 2 && typeof subObject === 'object' && subObject !== null
+      && !(lastSegment in subObject) && getCustomElement(element) !== null) {
+      recordInjectedKey(element, firstSegment, lastSegment);
+    }
     try {
-      subObject[propSegments[propSegments.length - 1]] = newValue;
+      subObject[lastSegment] = newValue;
     } catch (error) {
       if (config.debug) {
         console.warn(`Failed to set property on sub-object.`, {

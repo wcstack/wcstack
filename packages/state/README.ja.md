@@ -236,6 +236,8 @@
 
 デフォルト名は `"default"`（`@` 不要）です。
 
+> **非推奨 — v2 で廃止。** `name` 属性と `@name` セレクタは、パスの隣にあるもう 1 本の軸（rootNode ごとの登録簿で、Shadow 境界を越えない）です。v2 では**マウント**に置き換わります: `<wcs-state mount="cart">` が状態をルートツリーに接ぎ木し、バインディングは `cart.total` で読みます。1.x では何も変わりません。lint が使用箇所を `wcs/named-state-deprecated`（warning）で示し、ランタイムは `config.debug` 下でだけ warn します。移行の対応表: [docs/state-mount-design.md](../../docs/state-mount-design.md) §9。
+
 ## 状態の更新
 
 `@wcstack/state` では、すべての状態は**パス**を持ちます — `count`、`user.name`、`items` のように。状態をリアクティブに更新するには、**パスに代入**します:
@@ -1254,6 +1256,47 @@ customElements.define("my-light-component", MyLightComponent);
 - `data-wcs="state.message: user.name"` でホスト要素上の外部状態パスを内部コンポーネント状態プロパティにバインド
 - 変更はコンポーネントと外部状態間で双方向に伝播
 
+### 丸ごとマウント（`state: path`）
+
+プロパティ単位で配線する代わりに、ホストは自分の状態の**サブツリーを丸ごと**コンポーネントのルートとしてマウントできます。コンポーネントの中のパスは、すべてマウント先からの相対になります:
+
+```html
+<!-- ホスト側 -->
+<wcs-state json='{"user":{"name":"Alice","email":"alice@example.com"},"theme":{"mode":"light"}}'></wcs-state>
+<user-card data-wcs="state: user"></user-card>
+```
+
+```javascript
+// コンポーネント側（Shadow DOM）
+class UserCard extends HTMLElement {
+  state = {
+    // マウント先の上で計算する getter — `this.name` はツリーの `user.name`
+    get display() { return `${this.name} <${this.email}>`; },
+  };
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+  }
+  connectedCallback() {
+    this.shadowRoot.innerHTML = `
+      <wcs-state bind-component="state"></wcs-state>
+      <span data-wcs="textContent: name"></span>
+      <span data-wcs="textContent: display"></span>
+      <input data-wcs="value: name">
+    `;
+  }
+}
+customElements.define("user-card", UserCard);
+```
+
+- `state: user` はコンポーネントのルートをツリーのパス `user` に置きます。中の `name` は `user.name` **そのもの**です。読み・書き（`value: name`、`this.state.name = ...`）・getter・`for:` はすべてツリーに対して解決され、ホストの丸ごと差し替え（`this.user = {...}`）も部分書き込み（`this["user.name"] = ...`）もコンポーネントに届きます
+- 部分マウントを併用できます: `state: user; state.theme: theme` は `theme` を 2 つ目の入口としてマウントします（最長接頭辞が勝つので、中の `theme.mode` はツリーの `theme.mode` を読みます）
+- ループでは**行そのもの**をマウントします: `<template data-wcs="for: users"><user-row data-wcs="state: ."></user-row></template>`。行コンポーネントの中の `name` は `users.*.name`、中の `for: tags` は `users.*.tags.*` を回します
+- **自前のキーは私有**です（[docs/state-mount-design.md](../../docs/state-mount-design.md) §4-3 の R1）: コンポーネントが自分で宣言したデータキー（`state = { mode: "view" }`）はその要素のもので、ツリーには書かれません。マウント先に同名のキーがあってそれを隠す形（`user.name` の上に `state = { name: "" }`）では、ランタイムが 1 回だけ warn します（`wcs/mount-own-key-shadow`）— ツリーを読みたければ既定値を消し、私有のままにしたければ名前を変えてください
+- 配列そのものをルートにマウントする形（`state: rows` ＋ 中で `for`）は 1.x では非対応です。行をマウントする（`state: .`）か、配列を持つオブジェクトをマウントして中で `for` を回してください（`state: group` ＋ `for: children`）。どちらも契約テストで固定されており、マウントがツリー拡張の唯一の手段になる v2 にそのまま引き継がれます
+
+> プロパティ単位の形（`state.message: user.name`）はそのまま動きます。マップされるキーに既定値を宣言しているコンポーネント（`state = { message: "" }` ＋ `state.message: ...`）には 1.x で 1 回だけ warn が出ます: 今日はホストの値が勝ちますが、v2 では自前のキーが私有になりホストの値を隠すので、既定値を消してください。
+
 ### 独立した Web Component への状態注入（`__e2e__/single-component`）
 
 ホストの外部状態に依存しないコンポーネントでも、`bind-component` で `state` を注入してリアクティブにできます。
@@ -1300,6 +1343,11 @@ customElements.define("my-component", MyComponent);
 ```html
 <template data-wcs="for: users">
   <my-component data-wcs="state.message: .name"></my-component>
+</template>
+
+<!-- または行そのものをマウントする: コンポーネントの中の `name` は `users.*.name` -->
+<template data-wcs="for: users">
+  <user-row data-wcs="state: ."></user-row>
 </template>
 ```
 

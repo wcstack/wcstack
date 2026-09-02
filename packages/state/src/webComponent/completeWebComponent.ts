@@ -30,3 +30,33 @@ export function markWebComponentAsComplete(webComponent: Element, stateProp: str
 export function isWebComponentComplete(webComponent: Element, stateProp: string): boolean {
   return completedStatePropsByWebComponent.get(webComponent)?.has(stateProp) === true;
 }
+
+/**
+ * `<wcs-state bind-component="<prop>">` が接続され、(webComponent, stateProp) を束ねると
+ * **宣言した**台帳。完了（上）より前 — ホストの `whenDefined` / `waitInitializeBinding` を
+ * 待つ前 — に記録する。
+ *
+ * 用途は丸ごとマウント `data-wcs="state: user"` の**完了前の初期適用の抑止**。完了前の
+ * 1 セグメントバインディングは applyChangeToProperty が `element.state = userObject` と
+ * 親のオブジェクトそのものをコンポーネントの state プロパティに書いてしまい、
+ * bindWebComponent がそれを子 state の実体として取り込む — own data key が親のキー全部に
+ * なり、R1 では全部が私有に化ける。宣言済みなら値を書かずに完了を待つ（子は完了後に
+ * innerState 経由でライブに読む — docs/state-mount-design.md §3-2 / impl-plan P1-1）。
+ *
+ * 未宣言（子がまだ接続していない）の間は従来どおり書く。未 upgrade 要素への own property は
+ * upgrade 時のクラスフィールド初期化で置き換わるので、実害は無い。
+ */
+const declaredStatePropsByWebComponent = new WeakMap<Element, Set<string>>();
+
+export function markWebComponentStatePropDeclared(webComponent: Element, stateProp: string): void {
+  let declaredStateProps = declaredStatePropsByWebComponent.get(webComponent);
+  if (!declaredStateProps) {
+    declaredStateProps = new Set<string>();
+    declaredStatePropsByWebComponent.set(webComponent, declaredStateProps);
+  }
+  declaredStateProps.add(stateProp);
+}
+
+export function isWebComponentStatePropDeclared(webComponent: Element, stateProp: string): boolean {
+  return declaredStatePropsByWebComponent.get(webComponent)?.has(stateProp) === true;
+}

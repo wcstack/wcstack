@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: state mount — root mount (state: path)</title>
+  <!-- Target syntax for the v2 mount design (docs/state-mount-design.md §3-2, plan P0-5).
+
+       `state: user` mounts the component's scope at the tree path `user`: inside the
+       component, `name` IS `user.name`. `state.theme: theme` is a partial mount next to it
+       (a second mount point under the same scope, longest prefix wins). Today
+       (v1.32) `state: user` is a silent no-op, so this page renders nothing inside the
+       card; the spec is marked fixme until Phase 1 lands (docs/state-mount-impl-plan.md §2).
+
+       Acceptance ids: M1 M2 M3 M5 M13 M16. -->
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+  <style>
+:not(:defined) { display: none; }
+  </style>
+  <script type="module">
+    class UserCard extends HTMLElement {
+      // Under a mount the tree is the source of truth for `name` / `email`; the
+      // component declares only what it adds — a getter computed over the mount (M16).
+      state = {
+        get display() { return `${this.name} <${this.email}>`; },
+      };
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" });
+      }
+      connectedCallback() {
+        this.shadowRoot.innerHTML = `
+<wcs-state bind-component="state"></wcs-state>
+<span class="name" data-wcs="textContent: name"></span>
+<span class="display" data-wcs="textContent: display"></span>
+<span class="theme" data-wcs="textContent: theme.mode"></span>
+<input class="edit" data-wcs="value: name">`;
+      }
+    }
+    customElements.define("user-card", UserCard);
+  </script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+export default {
+  user: { name: "Alice", email: "alice@example.com" },
+  theme: { mode: "light" },
+  rename() { this["user.name"] = "Carol"; },
+  replaceUser() { this.user = { name: "Dana", email: "dana@example.com" }; },
+  toggleTheme() { this["theme.mode"] = this.theme.mode === "light" ? "dark" : "light"; },
+};
+    </script>
+  </wcs-state>
+
+  <p id="host-name" data-wcs="textContent: user.name"></p>
+  <user-card id="card" data-wcs="state: user; state.theme: theme"></user-card>
+
+  <button id="rename" data-wcs="onclick: rename">rename</button>
+  <button id="replace" data-wcs="onclick: replaceUser">replace user</button>
+  <button id="toggle-theme" data-wcs="onclick: toggleTheme">toggle theme</button>
+</body>
+</html>

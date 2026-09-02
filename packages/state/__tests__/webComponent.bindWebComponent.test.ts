@@ -20,6 +20,9 @@ vi.mock('../src/webComponent/stateElementByWebComponent', () => ({
 vi.mock('../src/webComponent/completeWebComponent', () => ({
   markWebComponentAsComplete: vi.fn()
 }));
+vi.mock('../src/webComponent/ownKeyShadow', () => ({
+  warnOwnKeyShadows: vi.fn()
+}));
 vi.mock('../src/webComponent/meltFrozenObject', () => ({
   meltFrozenObject: vi.fn((obj: any) => ({ ...obj, melted: true }))
 }));

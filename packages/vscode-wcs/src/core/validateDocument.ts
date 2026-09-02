@@ -19,6 +19,7 @@ import { validateIoNodes } from "../service/ioNodeValidator.js";
 import { validateAriaAttributes } from "../service/ariaValidator.js";
 import { validateDocumentEnv } from "../service/documentEnvValidator.js";
 import { validateWatchDeclarations } from "../service/watchDeclarationValidator.js";
+import { validateNamedState } from "../service/namedStateValidator.js";
 import { validateSemantics } from "../service/semanticValidator.js";
 import type { FileReader } from "../service/statePathResolver.js";
 import { discoverApplicationManifest } from "./sidecar/discover.js";
@@ -81,6 +82,8 @@ export function validateDocument(text: string, options: ValidateDocumentOptions 
   out.push(...validateSemantics(text, stateTagName, locale, bindAttribute));
   out.push(...validateArrayMutations(text, stateTagName, locale));
   out.push(...validateWatchDeclarations(text, stateTagName, locale));
+  // 名前付き State の deprecation（v2 でマウントに置き換わる。docs/state-mount-design.md D16）
+  out.push(...validateNamedState(text, bindAttribute, stateTagName, locale));
   // 単一カテゴリの validator は集約時に code を付与する。
   for (const d of validateStateTypes(text, stateTagName, locale)) {
     out.push({ code: WcsDiagnosticCode.TypeAnnotation, start: d.start, end: d.end, message: d.message, severity: d.severity });
