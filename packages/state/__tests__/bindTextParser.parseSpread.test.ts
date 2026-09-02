@@ -11,12 +11,8 @@ describe('parseBindTextsForElement - spread (...)', () => {
     expect(result[0].stateName).toBe('default');
   });
 
-  it('spread が @stateName を伝搬すること', () => {
-    const result = parseBindTextsForElement('...: fetchX@store');
-    expect(result).toHaveLength(1);
-    expect(result[0].bindingType).toBe('spread');
-    expect(result[0].statePathName).toBe('fetchX');
-    expect(result[0].stateName).toBe('store');
+  it('spread の @name も v2 の parse error になること', () => {
+    expect(() => parseBindTextsForElement('...: fetchX@store')).toThrow(/removed in v2/);
   });
 
   it('spread が wildcard を含むパスを許容すること', () => {

@@ -232,6 +232,8 @@ slice 4 で確定した挙動・発見:
 
 - **slice 14 済み（plain Light DOM の廃止 — 著者決定②の実装）**: 配線なし（ホストに `state[.sub]: path` が 1 本も無い）Light DOM の bind-component は **raiseError**（誘導文＝「shadow を付ける（plain Shadow 形・$ 宣言込み）」か「ホストから配線してマウント」）。name 属性の有無は無関係（name 必須の旧検査 2 箇所を廃止エラーに置換）。**巻き添え防止**＝`_failInitialization`（initializePromise 等を解決してから raise — 未解決のまま投げると waitForStateInitialize がページ全体を無言でウェッジする。`_initialized` は立てない — 切断時の後始末が未ロード state を触らないよう初期化前ガードに掛けたまま）。e2e＝専用ページ bind-component-light-dom-plain-removed.html（loud エラー＋同居 mapped が無傷）を新設し、共有フィクスチャから plain を除去（loud エラーが同居テストの errors=[] 断定を汚すため分離が必須）。これで **name の最後の消費者が消え、P3-4〜P3-6（名前撤去・登録簿の単数化）が開通**。
 
+- **slice 15 済み（name 面の撤去 — P3-4/P3-5 の宣言面）**: `name` 属性は **fail-fast**（`_failInitialization` — 誘導文＝`mount="<旧名>"` に置き換えて `<旧名>.<path>` で読む）。バインド文の `@name` は **parse error**（parseStatePart — 同じ誘導）。deprecation 機構（src/deprecation.ts + テスト）は削除、`_initialize` から名前読み取り・警告を撤去（内部の `_name`='default' と stateName 配管は Phase B＝slice 16+ で撤去）。テスト移行＝SSR 9 ファイルの `name="default"` 一括剥がし＋named ケース 2 件を nameless へ移植／parser・spread・devtools・initializeBindings・components.State は raise ピンに転換／volumeMount の複合テストから他 state 腕を除去（その選別は Phase B で stateName 配管ごと消える）／lightDom 統合テストと DSD は nameless 化（DSD のスコープ分離はシャドウ境界がネイティブに担う — named ケースは raise ピンへ）。e2e＝light-dom フィクスチャ 2 枚を nameless 移行（plain-removed は name があると name raise が先勝ちするため nameless 必須）・state 系 64 spec 全緑。2636 unit 緑・lint 緑・カバレッジ全ゲート緑（99.53/98.53/100/99.73）。既知＝webComponent.bindWebComponent.test.ts の unhandled rejection 2 件は HEAD 由来の既存（$stateReadyCallback エラー経路・slice 15 無関係）。
+
 ### 3-1. タスク
 
 | ID | タスク | 場所 | 受け入れ |

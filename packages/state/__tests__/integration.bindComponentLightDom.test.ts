@@ -34,12 +34,14 @@ function defineLightComponent(
   initialState: Record<string, any>,
   innerTemplate: string,
 ): void {
+  // v2: マウントは名前を持たない（`@name` も撤去 — 旧テンプレートから剥ぐ）
+  const cleanTemplate = innerTemplate.split(`@${stateName}`).join("");
   class LightComponent extends HTMLElement {
     state: Record<string, any> = structuredClone(initialState);
     connectedCallback() {
       if (this.childElementCount === 0) {
         this.innerHTML =
-          `<wcs-state bind-component="state" name="${stateName}"></wcs-state>${innerTemplate}`;
+          `<wcs-state bind-component="state"></wcs-state>${cleanTemplate}`;
       }
     }
   }
@@ -122,7 +124,7 @@ describe("bind-component: Light DOM の mapped 形（§1.13）", () => {
     // ホストのパスが張られてから子スコープが自分のパスを張る（§1.13）。
     // Shadow DOM 形と同じく、ホストの getBindingsReady は子スコープを含まない。
     await State.getBindingsReady(hostShadow);
-    const innerState = hostShadow.querySelector(`wcs-state[name="${stateName}"]`) as State;
+    const innerState = (hostShadow.querySelector(componentTag) as Element).querySelector("wcs-state") as State;
     await innerState.connectedCallbackPromise;
     await flush();
 
@@ -195,8 +197,8 @@ describe("bind-component: Light DOM の mapped 形（§1.13）", () => {
       connectedCallback() {
         if (this.childElementCount === 0) {
           this.innerHTML =
-            `<wcs-state bind-component="state" name="${stateName}"></wcs-state>` +
-            `<span class="name" data-wcs="textContent: name@${stateName}"></span>`;
+            `<wcs-state bind-component="state"></wcs-state>` +
+            `<span class="name" data-wcs="textContent: name"></span>`;
         }
       }
     }
@@ -354,14 +356,14 @@ describe("bind-component: Light DOM の mapped 形（§1.13）", () => {
       `</template>`;
     document.body.appendChild(host);
 
-    const hostState = hostShadow.querySelector("wcs-state:not([name])") as State;
+    const hostState = hostShadow.querySelector("wcs-state") as State;
     await hostState.connectedCallbackPromise;
     await State.getBindingsReady(hostShadow);
-    const innerState = hostShadow.querySelector(`wcs-state[name="${stateName}"]`) as State;
+    const component = hostShadow.querySelector(tag) as HTMLElement;
+    const innerState = component.querySelector("wcs-state") as State;
     await innerState.connectedCallbackPromise;
     await flush();
 
-    const component = hostShadow.querySelector(tag) as HTMLElement;
     expect((component.querySelector(".inner") as HTMLElement).textContent).toBe("G1");
 
     hostState.createState("writable", (s: any) => {

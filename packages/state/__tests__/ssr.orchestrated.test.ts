@@ -171,9 +171,10 @@ describe("orchestrated モードの inline 生成スキップと最終パス", (
   });
 
   it("直前の wcs-ssr が別名なら自分の分を生成する", async () => {
+    // v2 では state は default のみ — 名前の不一致は「先客の wcs-ssr が別名」で作る
     document.body.innerHTML = `
       <wcs-ssr name="other"></wcs-ssr>
-      <wcs-state enable-ssr name="cart" json='{"items":[]}'></wcs-state>
+      <wcs-state enable-ssr json='{"items":[]}'></wcs-state>
     `;
     const stateEl = document.querySelector("wcs-state") as any;
     await stateEl.connectedCallbackPromise;
@@ -183,9 +184,8 @@ describe("orchestrated モードの inline 生成スキップと最終パス", (
 
     const ssrEls = document.querySelectorAll("wcs-ssr");
     expect(ssrEls.length).toBe(2);
-    const cart = document.querySelector('wcs-ssr[name="cart"]');
-    expect(cart).not.toBeNull();
-    expect(cart!.nextElementSibling?.getAttribute("name")).toBe("cart");
+    const own = document.querySelector(String.raw`wcs-ssr[name="default"]`);
+    expect(own).not.toBeNull();
   });
 });
 

@@ -1,12 +1,10 @@
 import { test, expect } from "@playwright/test";
 import { collectErrors } from "./helpers";
 
-// Light DOM の `bind-component`。
-// docs/architecture-hardening/15-state-component-mechanism-consistency.md §1.13。
+// Light DOM の `bind-component`（v2: マウント形）。docs/state-mount-design.md。
 //
-// mapped 形（ホストから data-wcs で束ねる）は初期化が循環して永久に解決していなかった。
-// Shadow DOM 形が成立していたのは内側の state が別 rootNode にいるからで、rootNode による
-// 名前空間の分離が初期化順序の分離も担っていた。修正はその 2 つを明示的に復元している。
+// v1 では mapped 形の初期化が循環し（§1.13）、name 名前空間の分離で復旧していた。
+// v2 は単一ツリーのマウントなので内側のツリーも name も無く、親 ledger への変換だけが残る。
 //
 // Light DOM は Shadow の内側を覗く `>>>` が要らない代わりに、custom element の upgrade
 // タイミングが happy-dom と実ブラウザで最も食い違う場所なので、実機で確かめる価値がある。

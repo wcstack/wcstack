@@ -14,7 +14,7 @@ describe("ハイドレーション後の再レンダリング", () => {
           <li data-wcs="textContent: .name"></li>
         </template>
       </wcs-ssr>
-      <wcs-state enable-ssr name="default"></wcs-state>
+      <wcs-state enable-ssr></wcs-state>
       <ul>
         <!--@@wcs-for:u0-->
         <!--@@wcs-for-start:u0:items:0--><li data-wcs="textContent: items.*.name">Alice</li><!--@@wcs-for-end:u0:items:0-->
@@ -51,7 +51,7 @@ describe("ハイドレーション後の再レンダリング", () => {
           <li data-wcs="textContent: .name"></li>
         </template>
       </wcs-ssr>
-      <wcs-state enable-ssr name="default"></wcs-state>
+      <wcs-state enable-ssr></wcs-state>
       <ul>
         <!--@@wcs-for:u0-->
         <!--@@wcs-for-start:u0:items:0--><li data-wcs="textContent: items.*.name">Alice</li><!--@@wcs-for-end:u0:items:0-->
@@ -85,7 +85,7 @@ describe("ハイドレーション後の再レンダリング", () => {
           <p class="content">表示中</p>
         </template>
       </wcs-ssr>
-      <wcs-state enable-ssr name="default"></wcs-state>
+      <wcs-state enable-ssr></wcs-state>
       <!--@@wcs-if:u0-->
       <!--@@wcs-if-start:u0:show--><p class="content">表示中</p><!--@@wcs-if-end:u0:show-->
     `;
@@ -115,7 +115,7 @@ describe("ハイドレーション後の再レンダリング", () => {
           <p class="content">表示中</p>
         </template>
       </wcs-ssr>
-      <wcs-state enable-ssr name="default"></wcs-state>
+      <wcs-state enable-ssr></wcs-state>
       <!--@@wcs-if:u0-->
       <!--@@wcs-if-start:u0:show--><p class="content">表示中</p><!--@@wcs-if-end:u0:show-->
     `;

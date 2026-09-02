@@ -16,14 +16,14 @@
 :not(:defined) { display: none; }
   </style>
   <script type="module">
-    // 廃止対象: 配線なしの Light DOM bind-component（name があっても同じ）
+    // 廃止対象: 配線なしの Light DOM bind-component
     class LightPlain extends HTMLElement {
       state = { message: "injected" };
       connectedCallback() {
         if (this.childElementCount === 0) {
           this.innerHTML =
-            `<wcs-state bind-component="state" name="lp"></wcs-state>` +
-            `<span class="inner" data-wcs="textContent: message@lp"></span>`;
+            `<wcs-state bind-component="state"></wcs-state>` +
+            `<span class="inner" data-wcs="textContent: message"></span>`;
         }
       }
     }

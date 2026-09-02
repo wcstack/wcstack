@@ -26,7 +26,7 @@ describe('collectDeclaredBindings', () => {
     const container = document.createElement('div');
     container.innerHTML = [
       '<span data-wcs="textContent: user.name | uc"></span>',
-      '<input data-wcs="value#ro: price@cart; onclick: submitOrder">',
+      '<input data-wcs="value#ro: price; onclick: submitOrder">',
       '<i data-wcs="brokenNoSeparator"></i>',
     ].join('');
     container.appendChild(document.createComment('@@:count|fix(0)'));
@@ -37,7 +37,7 @@ describe('collectDeclaredBindings', () => {
     const summary = declared.map((d) => `${d.origin}:${d.propName}:${d.statePathName}@${d.stateName}`);
     expect(summary).toEqual([
       'attribute:textContent:user.name@default',
-      'attribute:value:price@cart',
+      'attribute:value:price@default',
       'attribute:onclick:submitOrder@default',
       'comment:textContent:count@default',
     ]);

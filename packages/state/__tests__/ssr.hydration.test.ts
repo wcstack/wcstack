@@ -11,7 +11,7 @@ describe("enable-ssr ハイドレーション", () => {
       <wcs-ssr name="default">
         <script type="application/json">{"message":"Hello from SSR"}</script>
       </wcs-ssr>
-      <wcs-state enable-ssr name="default"></wcs-state>
+      <wcs-state enable-ssr></wcs-state>
       <div data-wcs="textContent: message"></div>
     `;
 
@@ -38,7 +38,7 @@ describe("enable-ssr ハイドレーション", () => {
       <wcs-ssr name="default">
         <script type="application/json">{"count":42}</script>
       </wcs-ssr>
-      <wcs-state enable-ssr name="default" json='{"count":0}'></wcs-state>
+      <wcs-state enable-ssr json='{"count":0}'></wcs-state>
     `;
 
     const stateEl = document.querySelector("wcs-state") as any;
@@ -57,20 +57,6 @@ describe("enable-ssr ハイドレーション", () => {
     await stateEl.connectedCallbackPromise;
 
     expect(stateEl.__state.message).toBe("normal");
-  });
-
-  it("enable-ssr で名前付き state も <wcs-ssr> から取得する", async () => {
-    document.body.innerHTML = `
-      <wcs-ssr name="cart">
-        <script type="application/json">{"items":["apple","banana"]}</script>
-      </wcs-ssr>
-      <wcs-state enable-ssr name="cart" json='{"items":[]}'></wcs-state>
-    `;
-
-    const stateEl = document.querySelector("wcs-state") as any;
-    await stateEl.connectedCallbackPromise;
-
-    expect(stateEl.__state.items).toEqual(["apple", "banana"]);
   });
 
   it("enable-ssr で <wcs-ssr> が見つからない場���は通常の初期化を行う", async () => {
@@ -105,7 +91,7 @@ describe("enable-ssr ハイドレーション", () => {
       <wcs-ssr name="default">
         <script type="application/json">{"count":99,"computed":999}</script>
       </wcs-ssr>
-      <wcs-state enable-ssr name="default"></wcs-state>
+      <wcs-state enable-ssr></wcs-state>
     `;
 
     const stateEl = document.querySelector("wcs-state") as any;
@@ -134,7 +120,7 @@ describe("enable-ssr ハイドレーション", () => {
       <wcs-ssr name="default">
         <script type="application/json">{"count":10,"extra":"new-key"}</script>
       </wcs-ssr>
-      <wcs-state enable-ssr name="default" json='{"count":0}'></wcs-state>
+      <wcs-state enable-ssr json='{"count":0}'></wcs-state>
     `;
 
     const stateEl = document.querySelector("wcs-state") as any;
@@ -150,7 +136,7 @@ describe("enable-ssr ハイドレーション", () => {
       <wcs-ssr name="default">
         <script type="application/json">{"count":50,"greet":"overwritten"}</script>
       </wcs-ssr>
-      <wcs-state enable-ssr name="default"></wcs-state>
+      <wcs-state enable-ssr></wcs-state>
     `;
 
     const stateEl = document.querySelector("wcs-state") as any;

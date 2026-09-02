@@ -12,7 +12,7 @@ describe("ハイドレーション: テキストバインディング復元", ()
       <wcs-ssr name="default">
         <script type="application/json">{"name":"Alice"}</script>
       </wcs-ssr>
-      <wcs-state enable-ssr name="default" json='{"name":""}'></wcs-state>
+      <wcs-state enable-ssr json='{"name":""}'></wcs-state>
       <p>Hello <!--@@wcs-text-start:name-->Alice<!--@@wcs-text-end:name-->!</p>
     `;
 
@@ -30,7 +30,7 @@ describe("ハイドレーション: テキストバインディング復元", ()
       <wcs-ssr name="default">
         <script type="application/json">{"first":"John","last":"Doe"}</script>
       </wcs-ssr>
-      <wcs-state enable-ssr name="default" json='{"first":"","last":""}'></wcs-state>
+      <wcs-state enable-ssr json='{"first":"","last":""}'></wcs-state>
       <p><!--@@wcs-text-start:first-->John<!--@@wcs-text-end:first--> <!--@@wcs-text-start:last-->Doe<!--@@wcs-text-end:last--></p>
     `;
 
@@ -47,7 +47,7 @@ describe("ハイドレーション: テキストバインディング復元", ()
       <wcs-ssr name="default">
         <script type="application/json">{"count":42}</script>
       </wcs-ssr>
-      <wcs-state enable-ssr name="default"></wcs-state>
+      <wcs-state enable-ssr></wcs-state>
       <span>Count: <!--@@wcs-text-start:count-->42<!--@@wcs-text-end:count--></span>
     `;
 
@@ -73,7 +73,7 @@ describe("ハイドレーション: テキストバインディング復元", ()
       <wcs-ssr name="default">
         <script type="application/json">{"msg":"Hello SSR"}</script>
       </wcs-ssr>
-      <wcs-state enable-ssr name="default"></wcs-state>
+      <wcs-state enable-ssr></wcs-state>
       <div data-wcs="textContent: msg">Hello SSR</div>
     `;
 

@@ -186,14 +186,13 @@ describe('State component', () => {
     expect(value).toEqual({ fromInner: true });
   });
 
-  it('name属性で登録されること', async () => {
+  it('name 属性は v2 で撤去 — mount への誘導付きで fail-fast すること', async () => {
     const stateEl = createStateElement({ name: 'foo' });
     stateEl.setInitialState({});
-    await stateEl.connectedCallback();
+    await expect(stateEl.connectedCallback()).rejects.toThrow(/"name" attribute was removed in v2/);
+    await expect(stateEl.connectedCallback()).rejects.toThrow(/mount="foo"/);
+    // fail-fast でも初期化待ちはウェッジしない
     await stateEl.initializePromise;
-
-    expect(getStateElementByName(stateEl.rootNode, 'foo')).toBe(stateEl);
-    expect(getStateElementByName(stateEl.rootNode, 'default')).toBeNull();
   });
 
   it('name getterで現在の名前を取得できること', async () => {

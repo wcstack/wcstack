@@ -41,7 +41,6 @@ import { markWebComponentStatePropDeclared } from "../webComponent/completeWebCo
 import { getInjectedKeys, restoreOverwrittenValues, takeOverwrittenObject } from "../webComponent/preCompletionWrites";
 import { callVolumeLifecycle, graftOrQueueVolume, IVolumeGraftInfo, reserveVolumeSlot, validateVolumeMountPath } from "../webComponent/volume";
 import { hasRootMountBinding } from "../webComponent/rootMountBinding";
-import { warnNamedStateDeprecated } from "../deprecation";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/symbols";
 import { waitInitializeBinding } from "../bindings/initializeBindingPromiseByNode";
 import { getCustomElement } from "../getCustomElement";
@@ -331,12 +330,6 @@ export class State extends HTMLElementBase implements IStateElement {
       }
     }
     await this._loadingPromise;
-    this._name = this.getAttribute('name') || 'default';
-    if (this.hasAttribute('name') && !this.hasAttribute('bind-component')) {
-      // 名前付き State は v2 でマウント（`mount=`）に置き換わる（docs/state-mount-design.md D16）。
-      // Light DOM の bind-component は今日 name が必須なので、そちらには言わない。
-      warnNamedStateDeprecated('attribute', this._name);
-    }
     setStateElementByName(this.rootNode!, this._name, this);
   }
 
@@ -559,6 +552,14 @@ export class State extends HTMLElementBase implements IStateElement {
     // _streamsStartedGeneration も世代不一致となり自然に無効化される。
     const connectGeneration = ++this._connectGeneration;
     if (!this._initialized) {
+      // 名前次元は v2 で撤去（D16 / §9）。名前付き State はボリュームへ移行する
+      if (this.hasAttribute("name")) {
+        this._failInitialization(
+          `The "name" attribute was removed in v2 — there is a single state tree per root. ` +
+          `Mount this state onto the tree instead: <wcs-state mount="${this.getAttribute("name")}" ...> ` +
+          `and read it as "${this.getAttribute("name")}.<path>".`,
+        );
+      }
       // DCC 検出: ShadowRoot 内かつホストに data-wc-definition がある場合
       const parentNode = this.parentNode;
       if (parentNode instanceof ShadowRoot &&

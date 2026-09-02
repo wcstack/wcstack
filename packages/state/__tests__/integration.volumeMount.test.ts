@@ -724,15 +724,13 @@ describe("volume: 複合（2 ボリューム・ルート watch 併存・他 stat
     shadowRoot.innerHTML =
       `<wcs-state mount="cfgA"></wcs-state>` +
       `<wcs-state mount="cfgB"></wcs-state>` +
-      `<wcs-state name="side" json='{"x":1}'></wcs-state>` +
       `<wcs-state></wcs-state>` +
       `<b id="whole" data-wcs="textContent: cfgA"></b>` +
       `<p id="va" data-wcs="textContent: cfgA.value"></p>` +
-      `<u id="sx" data-wcs="textContent: x@side"></u>`;
+      ``;
     document.body.appendChild(host);
     const volumeA = shadowRoot.querySelector(`wcs-state[mount="cfgA"]`) as State;
     const volumeB = shadowRoot.querySelector(`wcs-state[mount="cfgB"]`) as State;
-    const sideElement = shadowRoot.querySelector(`wcs-state[name="side"]`) as State;
     const rootElement = shadowRoot.querySelector(`wcs-state:not([mount]):not([name])`) as State;
     volumeA.setInitialState({
       value: "a0",
@@ -750,18 +748,14 @@ describe("volume: 複合（2 ボリューム・ルート watch 併存・他 stat
     await rootElement.connectedCallbackPromise;
     await volumeA.connectedCallbackPromise;
     await volumeB.connectedCallbackPromise;
-    await sideElement.connectedCallbackPromise;
     await State.getBindingsReady(shadowRoot);
     await flush();
     await flush();
     events.length = 0;
 
-    // 同一バッチ: cfgA 配下＋接ぎ木自身＋他 state（side）
+    // 同一バッチ: cfgA 配下だけ（他 state の混在は名前撤去で消滅）
     rootElement.createState("writable", (s: any) => {
       s["cfgA.value"] = "a1";
-    });
-    sideElement.createState("writable", (s: any) => {
-      s.x = 2;
     });
     await flush();
     await flush();
@@ -772,9 +766,7 @@ describe("volume: 複合（2 ボリューム・ルート watch 併存・他 stat
     // A の $updatedCallback は相対 value を受け、B のは呼ばれない（size 0 の腕）
     expect(events.some((e) => e.startsWith("A-ucb:") && e.includes("value"))).toBe(true);
     expect(events.every((e) => !e.startsWith("B-ucb:"))).toBe(true);
-    // side の x は相対に混ざらない（他 state の ref スキップ）
-    expect(events.every((e) => !e.includes("x"))).toBe(true);
-    expect((shadowRoot.querySelector("#sx") as HTMLElement).textContent).toBe("2");
+
 
     host.remove();
   });

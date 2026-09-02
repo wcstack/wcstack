@@ -1,6 +1,6 @@
 import { getPathInfo } from "../address/PathInfo";
+import { raiseError } from "../raiseError";
 import { FILTER_SEPARATOR, STATE_NAME_SEPARATOR } from "../define";
-import { warnNamedStateDeprecated } from "../deprecation";
 import { IBindingInfo, IFilterInfo } from "../types";
 import { parseFilters } from "./parseFilters";
 import { trimFn } from "./utils";
@@ -39,10 +39,14 @@ export function parseStatePart(statePart: string): StatePartParseResult {
     stateAndPath = statePart.trim();
   }
   if (stateAndPath.indexOf(STATE_NAME_SEPARATOR) !== -1) {
-    // `path@name` は v2 で消える（docs/state-mount-design.md D16。既定では黙る）
-    warnNamedStateDeprecated('path', stateAndPath);
+    // 名前次元は v2 で撤去（docs/state-mount-design.md D16 / §9）。パスは 1 本のツリー。
+    raiseError(
+      `"${stateAndPath}": the "@name" selector was removed in v2 — there is a single state tree. ` +
+      `Mount the named state onto the tree (<wcs-state mount="...">) and read it by its path prefix instead.`,
+    );
   }
-  const [statePathName, stateName = 'default'] = stateAndPath.split(STATE_NAME_SEPARATOR).map(trimFn);
+  const statePathName = stateAndPath;
+  const stateName = 'default';
   const pathInfo = getPathInfo(statePathName);
   return {
     stateName,

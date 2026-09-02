@@ -129,13 +129,16 @@ describe('initializeBindings', () => {
   });
 
   it('stateElementが存在しない場合はエラーになること', () => {
-    const container = document.createElement('div');
+    // v2 では名前が無いので「default が未登録の rootNode」で構成する
+    const holder = document.createElement('div');
+    const shadow = holder.attachShadow({ mode: 'open' });
     const el = document.createElement('span');
-    el.setAttribute('data-wcs', 'textContent: message@missing');
-    container.appendChild(el);
-    document.body.appendChild(container);
+    el.setAttribute('data-wcs', 'textContent: message');
+    shadow.appendChild(el);
+    document.body.appendChild(holder);
 
-    expect(() => initializeBindings(container, null)).toThrow(/State element with name "missing" not found/);
+    expect(() => initializeBindings(shadow as unknown as DocumentFragment, null)).toThrow(/State element with name "default" not found/);
+    holder.remove();
   });
 
   it('eventバインディングは登録処理をスキップすること', () => {
