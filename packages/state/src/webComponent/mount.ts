@@ -92,6 +92,63 @@ export interface IAccessorEntry {
 
 let nextMountId = 0;
 
+const MOUNT_DOLLAR_DECLARATIONS = ["$watch", "$streams", "$listKeys", "$updatedCallback"] as const;
+const dollarDeclarationWarned = new Set<string>();
+
+/** テスト用: 宣言 warn の 1 回性台帳を空にする。 */
+export function clearMountDollarWarnsForTesting(): void {
+  dollarDeclarationWarned.clear();
+}
+
+/**
+ * マウントされたコンポーネントは `$watch` / `$streams` / `$listKeys` / `$updatedCallback` を
+ * 実行しない（v1 の mapped も同じ — innerState が `$` を遮っていた）。無言に捨てず、
+ * (tag, prop) につき 1 回だけ「ルートかボリュームに宣言する」誘導を出す。
+ * `$connectedCallback` / `$disconnectedCallback` / `$stateReadyCallback` は要素の
+ * ライフサイクルとしてスコープごとに残る（設計書 §4-6）。
+ */
+export function warnMountedDollarDeclarations(record: IMountRecord): void {
+  const declared = MOUNT_DOLLAR_DECLARATIONS.filter(
+    (name) => typeof (record.stateObject as Record<string, unknown>)[name] !== "undefined",
+  );
+  if (declared.length === 0) {
+    return;
+  }
+  const key = `${record.component.tagName.toLowerCase()}|${record.stateProp}`;
+  if (dollarDeclarationWarned.has(key)) {
+    return;
+  }
+  dollarDeclarationWarned.add(key);
+  console.warn(
+    `[@wcstack/state] [wcs/mount-dollar-declaration] <${key.split("|")[0]}>.${record.stateProp} declares ` +
+    `${declared.join(", ")}, which mounted components do not run. Declare them on the root state or a volume ` +
+    `(<wcs-state mount="...">) instead. See docs/state-mount-design.md §4-6.`,
+  );
+}
+
+/**
+ * マウントされたコンポーネントのライフサイクル呼び出し（`$connectedCallback` /
+ * `$disconnectedCallback`）。`this` は公開 chroot（`element[stateProp]`）。
+ * 例外・reject は 1 コンポーネントに閉じる（切断時は親も切断中でありうる）。
+ */
+export function callMountLifecycleCallback(record: IMountRecord, name: string): void {
+  const callback = (record.stateObject as Record<string, unknown>)[name];
+  if (typeof callback !== "function") {
+    return;
+  }
+  try {
+    const chroot = (record.component as unknown as Record<string, unknown>)[record.stateProp];
+    const result = (callback as (this: unknown) => unknown).call(chroot);
+    if (result instanceof Promise) {
+      result.catch((error) => {
+        console.error(`[@wcstack/state] mounted <${record.component.tagName.toLowerCase()}> ${name} failed.`, error);
+      });
+    }
+  } catch (error) {
+    console.error(`[@wcstack/state] mounted <${record.component.tagName.toLowerCase()}> ${name} failed.`, error);
+  }
+}
+
 /** テスト用: マーカー id を初期化する（マーカー文字列の安定化） */
 export function resetMountIdForTesting(): void {
   nextMountId = 0;

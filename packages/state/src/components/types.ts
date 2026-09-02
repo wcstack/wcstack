@@ -101,6 +101,10 @@ export interface IStateElement {
    * `source` は存在検査の診断 code と適用範囲を決める（pathDiagnostics.ts）。
    * 省略時は `"binding"`（テスト用モック互換のため optional）。
    */
+  /** ボリュームの宣言面の合流（webComponent/volume.ts 専用・実装は State のみ） */
+  addVolumeWatchPaths?(paths: ReadonlySet<string>): void;
+  mergeVolumeListKeys?(entries: ReadonlyMap<string, import("../list/listKeys").ListKeySpec>): void;
+  enableUpdatedCallback?(): void;
   /** ボリュームのアクセサ登録（webComponent/volume.ts 専用） */
   defineTreeAccessor(path: string, descriptor: PropertyDescriptor): void;
   setPathInfo(path: string, bindingType: BindingType, source?: PathInfoSource): void;

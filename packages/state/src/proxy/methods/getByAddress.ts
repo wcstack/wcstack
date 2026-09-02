@@ -19,7 +19,7 @@
  */
 
 import { getAbsolutePathInfo } from "../../address/AbsolutePathInfo";
-import { isPathUnderReservedVolume } from "../../webComponent/volume";
+import { isPathUnderReservedVolume } from "../../webComponent/volumeShared";
 import { createAbsoluteStateAddress } from "../../address/AbsoluteStateAddress";
 import { IStateAddress } from "../../address/types";
 import { getCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";

@@ -5,7 +5,7 @@ import { config, inSsr } from "./config";
 import { raiseError } from "./raiseError";
 import { devtoolsSink } from "./devtools/sink";
 import { drainPendingBinds } from "./bindings/binder";
-import { drainPendingVolumes } from "./webComponent/volume";
+import { drainPendingVolumes } from "./webComponent/volumeShared";
 
 const stateElementByNameByNode: WeakMap<Node, Map<string, IStateElement>> = new WeakMap();
 const bindingsReadyByNode: WeakMap<Node, Promise<void>> = new WeakMap();

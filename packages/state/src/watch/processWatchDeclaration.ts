@@ -34,6 +34,41 @@ import type { IWatchEntry, WatchHandler } from "./types";
  * `watchPaths` に保持し、setByAddress のホットパスは `!== null` の分岐 1 個で
  * 抜けられる（ゼロコスト契約、§10）。
  */
+/**
+ * `$watch` パスの静的検査（宣言側とボリュームの接頭辞登録 — webComponent/volume.ts —
+ * で共有）。検証に通れば pathInfo を返す。
+ */
+export function assertValidWatchPath(path: string): ReturnType<typeof getPathInfo> {
+  if (path.length === 0) {
+    raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry name must be a non-empty state path.`);
+  }
+  if (path.startsWith("$")) {
+    raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" must not start with "$" (reserved namespace).${LINT_HINT}`);
+  }
+  // 越境 watch は不採用（設計 D8）。他 state のアドレスは発火対象にしないため、
+  // `@stateName` 付きのパスは受け取った時点で落とす（黙って発火しないより良い）。
+  if (path.includes(STATE_NAME_SEPARATOR)) {
+    raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" must not target another state ("${STATE_NAME_SEPARATOR}" is not allowed); watch only paths of its own state.${LINT_HINT}`);
+  }
+  // Object.prototype の継承名は `path in state` 系の判定を汚すため一律拒否する
+  // （processStreamsDeclaration と同じ防衛線）。
+  if (path in Object.prototype) {
+    raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" must not be a property name inherited from Object.prototype (e.g. "__proto__", "constructor").`);
+  }
+  const pathInfo = getPathInfo(path);
+  // 空セグメント（"a..b" / 先頭・末尾の "."）は getPathInfo が黙って受理してしまうため、
+  // ここで落とす。放置すると解決不能なアドレスを依存グラフへ登録することになる。
+  for (const segment of pathInfo.segments) {
+    if (segment.length === 0) {
+      raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" has an empty path segment.${LINT_HINT}`);
+    }
+  }
+  if (pathInfo.wildcardCount > MAX_WILDCARD_DEPTH) {
+    raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" exceeds the maximum wildcard depth (${MAX_WILDCARD_DEPTH}).`);
+  }
+  return pathInfo;
+}
+
 export function processWatchDeclaration(
   stateElement: IStateElement,
   state: IState,
@@ -55,33 +90,7 @@ export function processWatchDeclaration(
     if (typeof handler !== "function") {
       raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" must be a function.${LINT_HINT}`);
     }
-    if (path.length === 0) {
-      raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry name must be a non-empty state path.`);
-    }
-    if (path.startsWith("$")) {
-      raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" must not start with "$" (reserved namespace).${LINT_HINT}`);
-    }
-    // 越境 watch は不採用（設計 D8）。他 state のアドレスは発火対象にしないため、
-    // `@stateName` 付きのパスは受け取った時点で落とす（黙って発火しないより良い）。
-    if (path.includes(STATE_NAME_SEPARATOR)) {
-      raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" must not target another state ("${STATE_NAME_SEPARATOR}" is not allowed); watch only paths of its own state.${LINT_HINT}`);
-    }
-    // Object.prototype の継承名は `path in state` 系の判定を汚すため一律拒否する
-    // （processStreamsDeclaration と同じ防衛線）。
-    if (path in Object.prototype) {
-      raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" must not be a property name inherited from Object.prototype (e.g. "__proto__", "constructor").`);
-    }
-    const pathInfo = getPathInfo(path);
-    // 空セグメント（"a..b" / 先頭・末尾の "."）は getPathInfo が黙って受理してしまうため、
-    // ここで落とす。放置すると解決不能なアドレスを依存グラフへ登録することになる。
-    for (const segment of pathInfo.segments) {
-      if (segment.length === 0) {
-        raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" has an empty path segment.${LINT_HINT}`);
-      }
-    }
-    if (pathInfo.wildcardCount > MAX_WILDCARD_DEPTH) {
-      raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" exceeds the maximum wildcard depth (${MAX_WILDCARD_DEPTH}).`);
-    }
+    const pathInfo = assertValidWatchPath(path);
     entries.set(path, {
       path,
       pathInfo,

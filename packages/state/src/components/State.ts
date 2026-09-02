@@ -17,7 +17,7 @@ import { processEventTokensDeclaration } from "../event/processEventTokensDeclar
 import { clearEventTokenRegistry } from "../event/eventTokenRegistry";
 import { processOnDeclaration } from "../event/processOnDeclaration";
 import { processStreamsDeclaration } from "../stream/processStreamsDeclaration";
-import { ListKeyMap, processListKeysDeclaration } from "../list/listKeys";
+import { ListKeyMap, ListKeySpec, processListKeysDeclaration } from "../list/listKeys";
 import { clearStreamNamespace } from "../stream/streamNamespace";
 import { abortAllStreams, clearStreamRegistry } from "../stream/streamRegistry";
 import { startStreams } from "../stream/streamRuntime";
@@ -32,14 +32,14 @@ import { IStateProxy, Mutability } from "../proxy/types";
 import { createStateProxy } from "../proxy/StateHandler";
 import { bindWebComponent, invokeStateReadyCallback } from "../webComponent/bindWebComponent";
 import { getBindingsByNode } from "../bindings/getBindingsByNode";
-import { buildMountRecord, getRegisteredMountRecord, IMountRecord } from "../webComponent/mount";
+import { buildMountRecord, callMountLifecycleCallback, getRegisteredMountRecord, IMountRecord, warnMountedDollarDeclarations } from "../webComponent/mount";
 import { initializeMountScope, remountScopeBindings } from "../webComponent/mountScope";
 import { createPublicMountState } from "../webComponent/overlay";
 import { warnOwnKeyShadowsForMount } from "../webComponent/ownKeyShadow";
 import { markWebComponentAsComplete } from "../webComponent/completeWebComponent";
 import { markWebComponentStatePropDeclared } from "../webComponent/completeWebComponent";
 import { getInjectedKeys, restoreOverwrittenValues, takeOverwrittenObject } from "../webComponent/preCompletionWrites";
-import { graftOrQueueVolume, reserveVolumeSlot, validateVolumeMountPath } from "../webComponent/volume";
+import { callVolumeLifecycle, graftOrQueueVolume, IVolumeGraftInfo, reserveVolumeSlot, validateVolumeMountPath } from "../webComponent/volume";
 import { hasRootMountBinding } from "../webComponent/rootMountBinding";
 import { warnNamedStateDeprecated } from "../deprecation";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/symbols";
@@ -116,6 +116,8 @@ export class State extends HTMLElementBase implements IStateElement {
   private _boundComponent: Element | null = null;
   private _boundComponentStateProp: string | null = null;
   private _hasMounts: boolean = false;
+  /** ボリューム（mount=）: 接ぎ木済みの控え（$disconnectedCallback 用） */
+  private _volumeGraftInfo: IVolumeGraftInfo | null = null;
   /** v2 マウント（Phase 2）: この bind-component 要素が構築したマウント記録 */
   private _mountRecord: IMountRecord | null = null;
   private _bindableEventMap: Record<string, string> = {};
@@ -290,7 +292,8 @@ export class State extends HTMLElementBase implements IStateElement {
     const rootNode = this._rootNode!;
     reserveVolumeSlot(rootNode, mountPath);
     const volumeState = await this._loadStateFromSource();
-    const finish = (): void => {
+    const finish = (info: IVolumeGraftInfo | null): void => {
+      this._volumeGraftInfo = info;
       this._initialized = true;
       this._resolveInitialize?.();
       this._resolveLoading?.();
@@ -298,7 +301,7 @@ export class State extends HTMLElementBase implements IStateElement {
     };
     // await 中に剥がされたら何もしない（スコープは持っていない）
     if (this._rootNode === null) {
-      finish();
+      finish(null);
       return;
     }
     graftOrQueueVolume(
@@ -467,6 +470,10 @@ export class State extends HTMLElementBase implements IStateElement {
             markWebComponentAsComplete(boundComponent, boundComponentStateProp);
           }
           invokeStateReadyCallback(boundComponent, boundComponentStateProp);
+          // 宣言面はマウントでは実行しない（1 回だけ誘導 warn — 設計書 §4-6）。
+          // ライフサイクルはスコープごとに残る — $connectedCallback を chroot で呼ぶ
+          warnMountedDollarDeclarations(record);
+          callMountLifecycleCallback(record, "$connectedCallback");
           return;
         }
       }
@@ -577,6 +584,8 @@ export class State extends HTMLElementBase implements IStateElement {
         if (this._rootNode === null) return; // 再接続後すぐ切断された（プール返却）
         remountScopeBindings(mountRecord, scopeRoot);
       });
+      // 接続ごとのライフサイクル（v1 の $connectedCallback 再実行と同じ意味論）
+      callMountLifecycleCallback(mountRecord, "$connectedCallback");
       this._resolveConnectedCallback?.();
       return;
     } else if (!this._dcc && getStateElementByName(this._rootNode, this._name) !== this) {
@@ -663,14 +672,20 @@ export class State extends HTMLElementBase implements IStateElement {
 
   disconnectedCallback() {
     if (this.hasAttribute("mount")) {
-      // ボリューム: 接ぎ木したデータ・アクセサはツリーに残る（アンマウントは未対応 —
-      // 揮発させると依存グラフに残った getter 登録が宙に浮く）。予約も維持する
+      // ボリューム: 接ぎ木したデータ・アクセサ・宣言はツリーに残る（アンマウントは
+      // 未対応 — 揮発させると依存グラフに残った getter 登録が宙に浮く）。予約も維持。
+      // $disconnectedCallback だけは要素のライフサイクルとして chroot で呼ぶ
+      if (this._volumeGraftInfo !== null) {
+        callVolumeLifecycle(this._volumeGraftInfo, "$disconnectedCallback");
+      }
       this._rootNode = null;
       return;
     }
     if (this._mountRecord !== null) {
       // v2 マウント: 名前登録・streams・watch を持たないので後始末は不要。
-      // 台帳エイリアスは消さない（プール再利用の再接続が同じスコープに戻る）
+      // 台帳エイリアスは消さない（プール再利用の再接続が同じスコープに戻る）。
+      // $disconnectedCallback だけは要素のライフサイクルとして呼ぶ（例外は隔離）
+      callMountLifecycleCallback(this._mountRecord, "$disconnectedCallback");
       this._rootNode = null;
       return;
     }
@@ -743,6 +758,38 @@ export class State extends HTMLElementBase implements IStateElement {
    * 依存グラフに載せる。ルートのワイルドカード getter（`"children.*.label"`）と
    * 同じ機構に乗るので、評価は pushAddress 下・依存はグラフに載る。
    */
+  /** ボリュームの watch パスをホットパス用ゲート（watchPaths）へ合流させる。 */
+  addVolumeWatchPaths(paths: ReadonlySet<string>): void {
+    if (paths.size === 0) {
+      return;
+    }
+    const merged = new Set(this._watchPaths ?? []);
+    for (const path of paths) {
+      merged.add(path);
+    }
+    this._watchPaths = merged;
+  }
+
+  /** ボリュームの $listKeys（接頭辞翻訳済み）をルートの表へ合流させる。衝突は設定ミス。 */
+  mergeVolumeListKeys(entries: ReadonlyMap<string, ListKeySpec>): void {
+    if (entries.size === 0) {
+      return;
+    }
+    const merged = new Map(this._listKeys ?? []);
+    for (const [path, spec] of entries) {
+      if (merged.has(path)) {
+        raiseError(`$listKeys entry "${path}" is declared by both the root and a volume (or two volumes). Keep exactly one.`);
+      }
+      merged.set(path, spec);
+    }
+    this._listKeys = merged;
+  }
+
+  /** ボリュームが $updatedCallback を持つとき、収集ゲートを開ける（apply/applyChange.ts）。 */
+  enableUpdatedCallback(): void {
+    this._hasUpdatedCallback = true;
+  }
+
   defineTreeAccessor(path: string, descriptor: PropertyDescriptor): void {
     Object.defineProperty(this._state, path, descriptor);
     if (typeof descriptor.get === "function") {

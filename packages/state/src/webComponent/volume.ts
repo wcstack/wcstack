@@ -18,9 +18,14 @@
  * ルートより先に接続されてもよい（V5）— ルートの登録（setStateElementByName の
  * `default`）が保留中のボリュームを引き取る。
  *
- * まだ載せていないもの（宣言面 P2-9b と同じ束）: `$watch` / `$streams` / `$listKeys` の
- * 接頭辞登録、`$updatedCallback`（相対）、ボリュームのメソッドのツリー露出、
- * 深いマウントの親を丸ごと書く形の throw（D22 後段）。
+ * 宣言面: `$watch` は接頭辞翻訳してルートの watch 台帳へ追記（ハンドラの `this` は
+ * chroot・indexes は接頭辞が静的なのでスコープ相対のまま）。`$listKeys` は翻訳して
+ * ルートの表へ合流（衝突は設定ミスとして throw）。`$updatedCallback` は自分の接頭辞
+ * 配下の更新だけを**相対パス**で受ける（proxy/apis/updatedCallback.ts が配送）。
+ * `$disconnectedCallback` はボリューム要素の切断時に chroot で呼ばれる（接ぎ木は残る）。
+ *
+ * まだ載せていないもの: `$streams` の接頭辞登録（status 名前空間の設計が別途要る）、
+ * ボリュームのメソッドのツリー露出、深いマウントの親を丸ごと書く形の throw（D22 後段）。
  */
 
 import { getPathInfo } from "../address/PathInfo";
@@ -28,50 +33,42 @@ import { IStateElement } from "../components/types";
 import { DELIMITER, WILDCARD } from "../define";
 import { raiseError } from "../raiseError";
 import { IStateProxy } from "../proxy/types";
+import { addVolumeUpdatedCallback, createVolumeChroot, IPendingVolumeRequest, IVolumeUpdatedCallback, queuePendingVolume, setVolumeGraftHandler } from "./volumeShared";
 
-/** 予約済みスロット（D22）。キーは rootNode、値はマウントパスの集合。 */
-const reservedSlotsByRootNode = new WeakMap<Node, Set<string>>();
+export { createVolumeChroot, drainPendingVolumes, getVolumeUpdatedCallbacks, isPathUnderReservedVolume, reserveVolumeSlot } from "./volumeShared";
+export type { IVolumeUpdatedCallback } from "./volumeShared";
+import { assertValidWatchPath } from "../watch/processWatchDeclaration";
+import { addVolumeWatchEntries } from "../watch/watchRegistry";
+import { startWatch } from "../watch/watchRuntime";
+import { ListKeySpec } from "../list/listKeys";
+import { STATE_LIST_KEYS_NAME, STATE_UPDATED_CALLBACK_NAME, STATE_WATCH_NAME } from "../define";
+import type { IWatchEntry } from "../watch/types";
 
-/** ルート登録待ちのボリューム。 */
-interface IPendingVolume {
+
+
+/** ボリューム要素の切断時に $disconnectedCallback を chroot で呼ぶための控え。 */
+export interface IVolumeGraftInfo {
+  readonly rootStateElement: IStateElement;
   readonly mountPath: string;
   readonly volumeState: Record<string, any>;
-  readonly onGrafted: () => void;
-}
-const pendingVolumesByRootNode = new WeakMap<Node, IPendingVolume[]>();
-
-export function reserveVolumeSlot(rootNode: Node, mountPath: string): void {
-  let slots = reservedSlotsByRootNode.get(rootNode);
-  if (typeof slots === "undefined") {
-    slots = new Set();
-    reservedSlotsByRootNode.set(rootNode, slots);
-  }
-  if (slots.has(mountPath)) {
-    raiseError(`Volume slot "${mountPath}" is already mounted on this tree.`);
-  }
-  slots.add(mountPath);
 }
 
-/**
- * パスが予約済みスロットの配下（または祖先）か。pathDiagnostics が「予約下の読みは
- * 警告しない」ために引く。祖先（`i18n` に対する `i18n.t.title` の `i18n`）も黙る —
- * バインディングは深いパスを張るが、診断は親ごとに走るため。
- */
-export function isPathUnderReservedVolume(rootNode: Node | null, path: string): boolean {
-  if (rootNode === null) {
-    return false;
+/** chroot を作る（$disconnectedCallback など graft 後のライフサイクル呼び出し用）。 */
+export function callVolumeLifecycle(info: IVolumeGraftInfo, name: string): void {
+  const callback = (info.volumeState as Record<string, unknown>)[name];
+  if (typeof callback !== "function") {
+    return;
   }
-  const slots = reservedSlotsByRootNode.get(rootNode);
-  if (typeof slots === "undefined" || slots.size === 0) {
-    return false;
-  }
-  for (const slot of slots) {
-    if (path === slot || path.startsWith(slot + DELIMITER) || slot.startsWith(path + DELIMITER)) {
-      return true;
+  info.rootStateElement.createState("writable", (state) => {
+    const result = (callback as (this: unknown) => unknown).call(createVolumeChroot(info.mountPath, state as IStateProxy));
+    if (result instanceof Promise) {
+      result.catch((error) => {
+        console.error(`[@wcstack/state] volume "${info.mountPath}" ${name} failed.`, error);
+      });
     }
-  }
-  return false;
+  });
 }
+
 
 /** マウントパスの静的検査（§4-2: 静的パスのみ）。 */
 export function validateVolumeMountPath(mountPath: string): void {
@@ -90,43 +87,6 @@ export function validateVolumeMountPath(mountPath: string): void {
       raiseError(`"mount" path "${mountPath}" must not use reserved characters ($, #, @).`);
     }
   }
-}
-
-/** ボリュームの chroot（相対キー → `<mountPath>.<key>` を receiver に翻訳する薄い proxy）。 */
-function createVolumeChroot(mountPath: string, receiver: any): Record<string, any> {
-  return new Proxy({} as Record<string, any>, {
-    get(_target, prop): any {
-      if (typeof prop !== "string" || prop === "then") {
-        return undefined;
-      }
-      if (prop[0] === "$") {
-        if (prop === "$postUpdate") {
-          return (path: string): void => {
-            receiver.$postUpdate(mountPath + DELIMITER + path);
-          };
-        }
-        if (prop === "$getAll" || prop === "$setAll" || prop === "$resolve") {
-          const api = prop;
-          return (path: string, ...rest: unknown[]): unknown =>
-            receiver[api](mountPath + DELIMITER + path, ...rest);
-        }
-        // 他の `$` は親の意味論のまま（宣言面は P2-9b）
-        return receiver[prop];
-      }
-      return receiver[mountPath + DELIMITER + prop];
-    },
-    set(_target, prop, value): boolean {
-      if (typeof prop !== "string") {
-        return true;
-      }
-      receiver[mountPath + DELIMITER + prop] = value;
-      return true;
-    },
-    has(_target, prop): boolean {
-      // ボリュームの面はツリーそのもの — マウント配下は常に解決する
-      return typeof prop === "string" && prop[0] !== "$" && prop[0] !== "#";
-    },
-  });
 }
 
 function splitVolumeState(volumeState: Record<string, any>): {
@@ -152,6 +112,79 @@ function splitVolumeState(volumeState: Record<string, any>): {
 }
 
 /**
+ * 宣言面の接頭辞登録（$watch / $listKeys / $updatedCallback — ヘッダ参照）。
+ * $streams は未対応（status 名前空間の設計が別途要る — 宣言があれば loud に落とす）。
+ */
+function processVolumeDeclarations(
+  rootStateElement: IStateElement,
+  mountPath: string,
+  volumeState: Record<string, any>,
+): void {
+  // $watch: 相対パスを検証 → 翻訳してルート台帳へ追記。ハンドラは chroot 包装。
+  const watchDeclared = (volumeState as Record<string, unknown>)[STATE_WATCH_NAME];
+  if (typeof watchDeclared !== "undefined") {
+    if (typeof watchDeclared !== "object" || watchDeclared === null) {
+      raiseError(`${STATE_WATCH_NAME} must be an object mapping state paths to handler functions.`);
+    }
+    const entries: IWatchEntry[] = [];
+    const paths = new Set<string>();
+    let order = 0;
+    for (const [path, handler] of Object.entries(watchDeclared as Record<string, unknown>)) {
+      if (typeof handler !== "function") {
+        raiseError(`${STATE_WATCH_NAME} entry "${path}" must be a function.`);
+      }
+      assertValidWatchPath(path);
+      const translated = mountPath + DELIMITER + path;
+      const wrapped = function (this: unknown, cur: unknown, prev: unknown, ...indexes: number[]): void {
+        // `this` は writable なルート proxy（watchRuntime の fireOne）— chroot で包む。
+        // 接頭辞は静的（ワイルドカード無し）なので indexes はスコープ相対のまま
+        (handler as (this: unknown, cur: unknown, prev: unknown, ...indexes: number[]) => void)
+          .call(createVolumeChroot(mountPath, this), cur, prev, ...indexes);
+      };
+      // order はルート宣言（0 起点）の後に来る大きな値 — 同一バッチではルートの
+      // watch が先に発火する（宣言順規約のボリューム拡張）
+      entries.push({ path: translated, pathInfo: getPathInfo(translated), handler: wrapped, order: 1_000_000 + order++ });
+      paths.add(translated);
+      rootStateElement.setPathInfo(translated, "prop", "watch");
+    }
+    if (entries.length > 0) {
+      addVolumeWatchEntries(rootStateElement, entries);
+      rootStateElement.addVolumeWatchPaths?.(paths);
+      startWatch(rootStateElement);
+    }
+  }
+
+  // $listKeys: 翻訳してルートの表へ合流（衝突は raise — キー突合の二重定義は曖昧）
+  const listKeysDeclared = (volumeState as Record<string, unknown>)[STATE_LIST_KEYS_NAME];
+  if (typeof listKeysDeclared !== "undefined") {
+    if (typeof listKeysDeclared !== "object" || listKeysDeclared === null) {
+      raiseError(`${STATE_LIST_KEYS_NAME} must be an object mapping list paths to key specs.`);
+    }
+    const translatedEntries = new Map<string, ListKeySpec>();
+    for (const [path, spec] of Object.entries(listKeysDeclared as Record<string, unknown>)) {
+      if (path.length === 0 || (typeof spec !== "string" && typeof spec !== "function")) {
+        raiseError(`${STATE_LIST_KEYS_NAME} entry "${path}" must map a list path to a field name or a key function.`);
+      }
+      translatedEntries.set(mountPath + DELIMITER + path, spec as ListKeySpec);
+    }
+    rootStateElement.mergeVolumeListKeys?.(translatedEntries);
+  }
+
+  // $updatedCallback（相対）: 自分の接頭辞配下の更新だけが相対パスで届く。
+  // 収集ゲート（hasUpdatedCallback）を開けるのはここ
+  const updated = (volumeState as Record<string, unknown>)[STATE_UPDATED_CALLBACK_NAME];
+  if (typeof updated === "function") {
+    addVolumeUpdatedCallback(rootStateElement, { mountPath, callback: updated as IVolumeUpdatedCallback["callback"] });
+    rootStateElement.enableUpdatedCallback?.();
+  }
+
+  // $streams は未対応（無言に捨てない）
+  if (typeof (volumeState as Record<string, unknown>)["$streams"] !== "undefined") {
+    raiseError(`Volume "${mountPath}" declares $streams, which volumes do not support yet. Declare the stream on the root state.`);
+  }
+}
+
+/**
  * 接ぎ木の本体。ルートの state 要素が使える状態で呼ぶこと。
  * 衝突検査（D3/D22）: マウントパスの位置に既に値があれば throw。
  */
@@ -159,7 +192,7 @@ export function graftVolume(
   rootStateElement: IStateElement,
   mountPath: string,
   volumeState: Record<string, any>,
-): void {
+): IVolumeGraftInfo {
   const { data, accessors } = splitVolumeState(volumeState);
   const pathInfo = getPathInfo(mountPath);
 
@@ -219,6 +252,8 @@ export function graftVolume(
     rootStateElement.defineTreeAccessor(treePath, wrapped);
   }
 
+  processVolumeDeclarations(rootStateElement, mountPath, volumeState);
+
   // $connectedCallback（V7）: chroot で呼ぶ。async でもよい（待たない — ルートの
   // $connectedCallback と同格の「自分のライフサイクル」）
   const connectedCallback = (volumeState as { $connectedCallback?: unknown }).$connectedCallback;
@@ -232,22 +267,24 @@ export function graftVolume(
       }
     });
   }
+  return { rootStateElement, mountPath, volumeState };
 }
 
 /**
  * ルートがまだ居なければ保留、居れば即接ぎ木。
  * ルートの名前登録（`default`）が保留分を `drainPendingVolumes` で引き取る。
  */
-function graftIsolated(rootStateElement: IStateElement, volume: IPendingVolume): void {
+function graftIsolated(rootStateElement: IStateElement, volume: IPendingVolumeRequest): void {
+  let info: IVolumeGraftInfo | null = null;
   try {
-    graftVolume(rootStateElement, volume.mountPath, volume.volumeState);
+    info = graftVolume(rootStateElement, volume.mountPath, volume.volumeState);
   } catch (error) {
     // 接ぎ木の失敗（衝突など）は 1 ボリュームに閉じる。ルートの初期化や他の
     // ボリュームを道連れにしない（connectedCallback 内の throw は promise を
     // 永久未解決にする — §8.2 と同じ構図）
     console.error(`[@wcstack/state] volume "${volume.mountPath}" failed to graft.`, error);
   } finally {
-    volume.onGrafted();
+    volume.onGrafted(info);
   }
 }
 
@@ -256,32 +293,17 @@ export function graftOrQueueVolume(
   rootStateElement: IStateElement | null,
   mountPath: string,
   volumeState: Record<string, any>,
-  onGrafted: () => void,
+  onGrafted: (info: IVolumeGraftInfo | null) => void,
 ): void {
   if (rootStateElement !== null) {
-    graftIsolated(rootStateElement, { mountPath, volumeState, onGrafted });
+    graftIsolated(rootStateElement, { mountPath, volumeState, onGrafted: onGrafted as IPendingVolumeRequest["onGrafted"] });
     return;
   }
-  let pending = pendingVolumesByRootNode.get(rootNode);
-  if (typeof pending === "undefined") {
-    pending = [];
-    pendingVolumesByRootNode.set(rootNode, pending);
-  }
-  pending.push({ mountPath, volumeState, onGrafted });
+  queuePendingVolume(rootNode, { mountPath, volumeState, onGrafted: onGrafted as IPendingVolumeRequest["onGrafted"] });
 }
 
-/** ルート登録時に保留中のボリュームを接ぎ木する（stateElementByName から呼ばれる）。 */
-export function drainPendingVolumes(rootNode: Node, rootStateElement: IStateElement): void {
-  const pending = pendingVolumesByRootNode.get(rootNode);
-  if (typeof pending === "undefined" || pending.length === 0) {
-    return;
-  }
-  pendingVolumesByRootNode.delete(rootNode);
-  // 登録はルートの _initialize の途中（createState はまだ危うい）— microtask に
-  // 遅らせてルートの接続完了後に接ぎ木する
-  queueMicrotask(() => {
-    for (const volume of pending) {
-      graftIsolated(rootStateElement, volume);
-    }
-  });
-}
+// stateElementByName の drainPendingVolumes は import 循環（updater まで届く）を避けて
+// 軽量な volumeShared に住む — graft の実体はここで注入する（State.ts が本モジュールを
+// 必ず import するため、ルート登録の前には確実に配線されている）
+setVolumeGraftHandler(graftIsolated);
+

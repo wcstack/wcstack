@@ -19,7 +19,7 @@
  */
 
 import { getPathInfo } from "./address/PathInfo";
-import { isPathUnderReservedVolume } from "./webComponent/volume";
+import { isPathUnderReservedVolume } from "./webComponent/volumeShared";
 import type { IStateElement } from "./components/types";
 import { DELIMITER, WILDCARD } from "./define";
 import { devtoolsSink } from "./devtools/sink";

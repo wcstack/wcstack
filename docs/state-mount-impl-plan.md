@@ -226,6 +226,10 @@ slice 4 で確定した挙動・発見:
 
   **P3-4 名前撤去の設計メモ（著者確認・着手前に要決着）**: **plain 形の Light DOM bind-component**（ホスト配線なし・state 注入だけ）は今日 name 必須＝名前空間で上位スコープと分離している。P3-6 で登録簿を rootNode→単数にすると、この形は「共有 rootNode に 2 つ目の独立ツリー」を置けなくなる。候補＝(a) plain light は廃止（Shadow DOM を使うか、ホスト配線を 1 本足してマウントにする）(b) コンポーネント要素自身をスコープ根にした独立ツリーとして残す（マウントと同じ D7 の判定だが「配線ゼロでも wcs-state bind-component があればスコープ根」に広げる — ホスト走査の除外規則が属性静的でなくなる点に注意）(c) name をこの形だけの互換シムとして残す（DoD の grep=0 と矛盾）。決まるまで P3-4〜P3-6 は着手しない。
 
+  **著者決定（2026-09-03）**: 宣言面＝推奨どおり（ボリュームに実装・コンポーネントは非対応 warn）。plain Light DOM＝**廃止（a）**。
+
+- **slice 13 済み（宣言面 — 著者決定①の実装）**: ボリュームに $watch（相対宣言→翻訳してルート台帳へ**追記**。watchRegistry にボリューム別台帳・同一パス多重可・ハンドラは chroot 包装・computed の prime 込み）／$listKeys（翻訳して mergeVolumeListKeys — 衝突は throw）／$updatedCallback（相対配送 — proxy/apis/updatedCallback が接頭辞で選別し相対パス＋スコープ添字で chroot 呼び出し・収集ゲートは enableUpdatedCallback）／$disconnectedCallback（切断時に chroot・接ぎ木は残る）。$streams は未対応のまま loud に raise（status 名前空間の設計が別途要る — 残課題）。コンポーネント側＝$watch/$streams/$listKeys/$updatedCallback は実行せず **(tag,prop) 1 回の warn**（`wcs/mount-dollar-declaration`・v1 mapped も元々非対応＝退行なし）。**$connectedCallback / $disconnectedCallback はスコープごとに実行**（this=公開 chroot・接続ごと・例外/reject 隔離。連鎖切断中は親セッションが先に死ぬためツリー読みは失敗しうる — 隔離どおり）。罠 2 件＝import 連鎖（updatedCallback→volume→watchRuntime→**updater 循環**）を volumeShared.ts（軽量共有面: 予約・chroot・ucb 台帳・保留キュー+graft ハンドラ注入）で切断／headless の行 watch は **S13 のピンどおり $listKeys が要る**（for 無しの配列代入では発火しない）。2645 unit 緑・e2e 13 緑・カバレッジ全ゲート緑（99.53/98.56/100/99.73）。
+
 ### 3-1. タスク
 
 | ID | タスク | 場所 | 受け入れ |

@@ -584,3 +584,92 @@ describe("mountOverlay: 他人のマーカー風パスは素通りすること",
     host.remove();
   });
 });
+
+describe("mountOverlay: 宣言 warn とライフサイクル（設計書 §4-6）", () => {
+  it("$watch 等の宣言は実行されず、(tag, prop) につき 1 回だけ誘導 warn が出ること", async () => {
+    const { clearMountDollarWarnsForTesting } = await import("../src/webComponent/mount");
+    clearMountDollarWarnsForTesting();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const watchFired: unknown[] = [];
+      const tag = uniqueTag("mo-decl");
+      defineWiredComponent(tag, () => ({
+        $watch: { name(cur: unknown) { watchFired.push(cur); } },
+        $listKeys: { tags: "id" },
+      }), `<span class="n" data-wcs="textContent: name"></span>`);
+      const { host, parentStateElement } = await mountHost(
+        '{"user":{"name":"Alice"}}',
+        `<${tag} data-wcs="state: user"></${tag}><${tag} data-wcs="state: user"></${tag}>`,
+      );
+      for (const c of Array.from(host.shadowRoot!.querySelectorAll(tag))) {
+        await childReady(c);
+      }
+      parentStateElement.createState("writable", (s: any) => {
+        s["user.name"] = "Bob";
+      });
+      await flush();
+      await flush();
+
+      expect(watchFired).toEqual([]); // 実行されない
+      const warns = warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes("[wcs/mount-dollar-declaration]"));
+      expect(warns).toHaveLength(1); // 2 インスタンスでも 1 回
+      expect(warns[0]).toContain("$watch, $listKeys");
+      expect(warns[0]).toContain("volume");
+      host.remove();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("$connectedCallback / $disconnectedCallback が chroot（element.state）で走ること", async () => {
+    const log: string[] = [];
+    const tag = uniqueTag("mo-life");
+    defineWiredComponent(tag, () => ({
+      seen: "no", // own key（私有）— $connectedCallback の chroot 書き込み先
+      $connectedCallback(this: any) { log.push(`connect:${this.name}`); this.seen = "yes"; },
+      $disconnectedCallback(this: any) { log.push(`disconnect:${this.name}`); },
+    }), `<span class="n" data-wcs="textContent: name"></span>`);
+    const { host, parentStateElement } = await mountHost(
+      '{"user":{"name":"Alice"}}',
+      `<${tag} data-wcs="state: user"></${tag}>`,
+    );
+    const card = host.shadowRoot!.querySelector(tag)!;
+    await childReady(card);
+
+    expect(log).toEqual(["connect:Alice"]);
+    // chroot 書き込み（私有キー）はインスタンスの面に載っている
+    expect((card as any).state.seen).toBe("yes");
+
+    // カード単体の切断（親は生きている）→ chroot でツリーを読める
+    card.remove();
+    await flush();
+    expect(log).toEqual(["connect:Alice", "disconnect:Alice"]);
+    // 親ツリーは汚していない（seen は私有）
+    parentStateElement.createState("readonly", (s: any) => {
+      expect("seen" in s.user).toBe(false);
+    });
+    host.remove();
+  });
+});
+
+describe("mountOverlay: 非同期ライフサイクルの reject 隔離", () => {
+  it("async $connectedCallback の reject は console.error に隔離されること", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const tag = uniqueTag("mo-life-async");
+      defineWiredComponent(tag, () => ({
+        async $connectedCallback() { throw new Error("cc-boom"); },
+      }), `<span data-wcs="textContent: name"></span>`);
+      const { host } = await mountHost(
+        '{"user":{"name":"Alice"}}',
+        `<${tag} data-wcs="state: user"></${tag}>`,
+      );
+      await childReady(host.shadowRoot!.querySelector(tag)!);
+      await flush();
+      expect(error.mock.calls.some((c) => String(c[0]).includes("$connectedCallback failed"))).toBe(true);
+      host.remove();
+    } finally {
+      error.mockRestore();
+    }
+  });
+});

@@ -31,7 +31,7 @@ import { registerUpdateBatchListener } from "../updater/updater";
 import { beginWatchFiring, consumeWatchChainDepth, endWatchFiring } from "./chainDepth";
 import { getComputedSnapshot, setComputedSnapshot } from "./computedSnapshots";
 import { clearPrevValues, getPrevValue } from "./prevValues";
-import { addActiveWatchStateElement, getActiveWatchStateElements, getWatchEntries } from "./watchRegistry";
+import { addActiveWatchStateElement, getActiveWatchStateElements, getVolumeWatchEntries, getWatchEntries } from "./watchRegistry";
 import type { IWatchEntry } from "./types";
 
 interface IWatchHit {
@@ -57,7 +57,7 @@ interface IWatchHit {
  * （ゼロコスト契約、設計書 §10 ／ 実装計画 P16）。
  */
 export function startWatch(stateElement: IStateElement): void {
-  if (getWatchEntries(stateElement).size === 0) {
+  if (getWatchEntries(stateElement).size === 0 && getVolumeWatchEntries(stateElement).size === 0) {
     return;
   }
   addActiveWatchStateElement(stateElement);
@@ -85,6 +85,13 @@ function primeComputedWatches(stateElement: IStateElement): void {
   for (const entry of getWatchEntries(stateElement).values()) {
     if (isScalarComputed(stateElement, entry)) {
       targets.push(entry);
+    }
+  }
+  for (const entries of getVolumeWatchEntries(stateElement).values()) {
+    for (const entry of entries) {
+      if (isScalarComputed(stateElement, entry)) {
+        targets.push(entry);
+      }
     }
   }
   if (targets.length === 0) {
@@ -190,10 +197,17 @@ function fireWatchOnUpdateBatch(batch: ReadonlySet<IAbsoluteStateAddress>): void
       if (!activeStateElements.has(stateElement)) {
         continue;
       }
-      const entry = getWatchEntries(stateElement).get(absAddress.absolutePathInfo.pathInfo.path);
-      if (typeof entry === "undefined") {
+      const path = absAddress.absolutePathInfo.pathInfo.path;
+      const own = getWatchEntries(stateElement).get(path);
+      const fromVolumes = getVolumeWatchEntries(stateElement).get(path);
+      if (typeof own === "undefined" && typeof fromVolumes === "undefined") {
         continue;
       }
+      const matched: IWatchEntry[] = typeof own === "undefined" ? [] : [own];
+      if (typeof fromVolumes !== "undefined") {
+        matched.push(...fromVolumes);
+      }
+      for (const entry of matched) {
       let indexes: number[] = [];
       if (entry.pathInfo.wildcardCount > 0) {
         if (absAddress.listIndex === null) {
@@ -206,6 +220,7 @@ function fireWatchOnUpdateBatch(batch: ReadonlySet<IAbsoluteStateAddress>): void
         indexes = getScopedIndexes(absAddress.listIndex, entry.pathInfo.wildcardCount);
       }
       hits.push({ stateElement, entry, absAddress, indexes });
+      }
     }
     if (hits.length === 0) {
       return;
@@ -218,10 +233,12 @@ function fireWatchOnUpdateBatch(batch: ReadonlySet<IAbsoluteStateAddress>): void
       for (const hit of hits) {
         // 先行ハンドラが同期的に切断や `_state` 再 set を行い得るため、発火直前に
         // 「まだ active か」「entry が現行 registry のものか」を再確認する。
-        if (
-          !activeStateElements.has(hit.stateElement) ||
-          getWatchEntries(hit.stateElement).get(hit.entry.path) !== hit.entry
-        ) {
+        if (!activeStateElements.has(hit.stateElement)) {
+          continue;
+        }
+        const stillOwn = getWatchEntries(hit.stateElement).get(hit.entry.path) === hit.entry;
+        const stillVolume = getVolumeWatchEntries(hit.stateElement).get(hit.entry.path)?.includes(hit.entry) === true;
+        if (!stillOwn && !stillVolume) {
           continue;
         }
         fireOne(hit);
