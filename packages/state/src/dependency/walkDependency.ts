@@ -40,7 +40,6 @@ function getIndexes(listDiff: IListDiff, searchType: SearchType): Iterable<IList
 }
 
 type ExpandContext = {
-  readonly stateName: string,
   readonly stateElement: IStateElement,
   readonly targetPathInfo: IPathInfo,
   readonly targetListIndexes: IListIndex[],
@@ -91,7 +90,6 @@ function _walkExpandWildcard(
 export type ListExpansion = "full" | "diff";
 
 type Context = {
-  readonly stateName: string,
   readonly stateElement: IStateElement,
   readonly staticMap: Map<string, string[]>,
   readonly dynamicMap: Map<string, string[]>,
@@ -361,7 +359,6 @@ function _collectDependencies(
             listIndex = null;
           }
           const expandContext: ExpandContext = {
-            stateName: context.stateName,
             stateElement: context.stateElement,
             targetPathInfo: depPathInfo,
             targetListIndexes: [],
@@ -396,7 +393,6 @@ function _collectDependencies(
 }
 
 export function walkDependency(
-  stateName: string,
   stateElement: IStateElement,
   startAddress: IStateAddress,
   staticDependency: Map<string, string[]>,
@@ -421,7 +417,6 @@ export function walkDependency(
   const ranks = getTopologicalRanks(startPath, staticDependency, dynamicDependency, MAX_DEPENDENCY_DEPTH);
   const context: Context = {
     ranks: ranks,
-    stateName: stateName,
     stateElement: stateElement,
     staticMap: staticDependency,
     dynamicMap: dynamicDependency,

@@ -7,11 +7,9 @@ import { Token } from "../token/Token";
 // ownerStateName は devtools 計装（protocol §4.5）のための内部 optional 引数。
 // event-token-protocol の外部仕様は不変更。
 export class EventToken extends Token {
-  private _ownerStateName: string | null;
 
-  constructor(name: string, ownerStateName?: string) {
+  constructor(name: string) {
     super(name);
-    this._ownerStateName = ownerStateName ?? null;
   }
 
   emit(...args: unknown[]): unknown[] {
@@ -19,7 +17,6 @@ export class EventToken extends Token {
       devtoolsSink({
         type: "state:token-emit",
         kind: "event",
-        stateName: this._ownerStateName,
         tokenName: this.name,
         args,
         subscriberCount: this.size,

@@ -47,7 +47,6 @@ describe('bindings.getParseBindTextResults.fragment', () => {
 			propModifiers: [],
 			statePathName: 'items',
 			statePathInfo: getPathInfo('items'),
-			stateName: 'default',
 			outFilters: [],
 			inFilters: [],
 			bindingType: 'for',

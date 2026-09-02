@@ -5,7 +5,6 @@ import type { IBindingInfo } from '../src/types';
 import type { IApplyContext } from '../src/apply/types';
 
 const dummyContext: IApplyContext = {
-  stateName: 'default',
   stateElement: {} as any,
   state: {} as any,
   appliedBindingSet: new Set(),
@@ -18,7 +17,6 @@ function createBinding(element: Element, className: string): IBindingInfo {
     propModifiers: [],
     statePathName: 'value',
     statePathInfo: getPathInfo('value'),
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'prop',

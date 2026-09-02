@@ -20,7 +20,7 @@
 
 import { getPathInfo } from "../address/PathInfo";
 import type { IStateElement } from "../components/types";
-import { MAX_WILDCARD_DEPTH, STATE_NAME_SEPARATOR, STATE_WATCH_NAME } from "../define";
+import { MAX_WILDCARD_DEPTH, STATE_WATCH_NAME } from "../define";
 import { LINT_HINT } from "../errorGuidance";
 import { raiseError } from "../raiseError";
 import type { IState } from "../types";
@@ -46,9 +46,9 @@ export function assertValidWatchPath(path: string): ReturnType<typeof getPathInf
     raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" must not start with "$" (reserved namespace).${LINT_HINT}`);
   }
   // 越境 watch は不採用（設計 D8）。他 state のアドレスは発火対象にしないため、
-  // `@stateName` 付きのパスは受け取った時点で落とす（黙って発火しないより良い）。
-  if (path.includes(STATE_NAME_SEPARATOR)) {
-    raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" must not target another state ("${STATE_NAME_SEPARATOR}" is not allowed); watch only paths of its own state.${LINT_HINT}`);
+  // "@" 付きのパスは受け取った時点で落とす（名前次元は v2 で撤去 — 黙って発火しないより良い）。
+  if (path.includes("@")) {
+    raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" must not contain "@" — the name selector was removed in v2; watch only paths of the state tree.${LINT_HINT}`);
   }
   // Object.prototype の継承名は `path in state` 系の判定を汚すため一律拒否する
   // （processStreamsDeclaration と同じ防衛線）。

@@ -26,7 +26,6 @@ function hostBinding(propSegments: string[], statePathName: string): IBindingInf
     propModifiers: [],
     statePathName,
     statePathInfo: getPathInfo(statePathName),
-    stateName: 'default',
     inFilters: [],
     outFilters: [],
     bindingType: 'prop',
@@ -183,7 +182,6 @@ describe('mount: translateBindingForMount', () => {
     expect(translated).not.toBe(binding);
     expect(translated.statePathName).toBe('users.*.name');
     expect(translated.statePathInfo).toBe(getPathInfo('users.*.name'));
-    expect(translated.stateName).toBe('default');
     // 元の binding は不変（パース結果キャッシュを汚さない）
     expect(binding.statePathName).toBe('name');
   });
@@ -370,14 +368,11 @@ describe('mount: preCompletionWrites（上書き控えの往復）', () => {
 });
 
 describe('mount: 変換の同値ショートカットの端', () => {
-  it('パスは不変でも stateName が違えば pathInfo を共有した複製を返すこと', () => {
+  it('パスが不変なら同一オブジェクトを返すこと（v2: 名前次元が消え、複製する理由が無い）', () => {
     const r = record([[[] as any, 'user']]); // Δ=0
     const binding = hostBinding(['textContent'], '$1');
-    (binding as any).stateName = 'other';
     const translated = translateBindingForMount(r, binding);
-    expect(translated).not.toBe(binding);
+    expect(translated).toBe(binding);
     expect(translated.statePathName).toBe('$1');
-    expect(translated.statePathInfo).toBe(binding.statePathInfo); // 同一 pathInfo を再利用
-    expect(translated.stateName).toBe('default');
   });
 });

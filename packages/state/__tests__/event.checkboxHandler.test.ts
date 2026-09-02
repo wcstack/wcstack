@@ -31,7 +31,6 @@ function createCheckboxBinding(node: Element, overrides?: Partial<IBindingInfo>)
     propModifiers: [],
     statePathName: 'selected',
     statePathInfo: getPathInfo('selected'),
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'checkbox',
@@ -378,7 +377,7 @@ describe('event/checkboxHandler', () => {
 
     it('event.targetがnullの場合はconsole.warnが出ること', () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      const handler = __private__.checkboxEventHandlerFunction('default', 'selected', []);
+      const handler = __private__.checkboxEventHandlerFunction('selected', []);
 
       handler({ target: null } as any);
 
@@ -389,7 +388,7 @@ describe('event/checkboxHandler', () => {
 
     it('event.targetがcheckboxでない場合はconsole.warnが出ること', () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      const handler = __private__.checkboxEventHandlerFunction('default', 'selected', []);
+      const handler = __private__.checkboxEventHandlerFunction('selected', []);
 
       const input = document.createElement('input');
       input.type = 'text';
@@ -403,15 +402,15 @@ describe('event/checkboxHandler', () => {
     it('stateElementが見つからない場合はraiseErrorが呼ばれること', () => {
       getStateElementByNameMock.mockReturnValue(null);
       raiseErrorMock.mockImplementation((msg: string) => { throw new Error(msg); });
-      const handler = __private__.checkboxEventHandlerFunction('default', 'selected', []);
+      const handler = __private__.checkboxEventHandlerFunction('selected', []);
 
       const input = document.createElement('input');
       input.type = 'checkbox';
       input.value = 'test';
       document.body.appendChild(input);
 
-      expect(() => handler({ target: input } as any)).toThrow('not found');
-      expect(raiseErrorMock).toHaveBeenCalledWith(expect.stringContaining('not found'));
+      expect(() => handler({ target: input } as any)).toThrow('No state tree found');
+      expect(raiseErrorMock).toHaveBeenCalledWith(expect.stringContaining('No state tree found'));
       document.body.removeChild(input);
     });
 
@@ -476,7 +475,7 @@ describe('event/checkboxHandler', () => {
       const input = document.createElement('input');
       const binding = createCheckboxBinding(input);
       const key = __private__.getHandlerKey(binding, 'input');
-      expect(key).toBe('default::selected::input::');
+      expect(key).toBe('selected::input::');
     });
 
     it('フィルター情報がキーに含まれること', () => {
@@ -484,7 +483,7 @@ describe('event/checkboxHandler', () => {
       const inFilters = [{ filterName: 'num', args: [], filterFn: (v: any) => Number(v) }];
       const binding = createCheckboxBinding(input, { inFilters });
       const key = __private__.getHandlerKey(binding, 'input');
-      expect(key).toBe('default::selected::input::num()');
+      expect(key).toBe('selected::input::num()');
     });
   });
 });

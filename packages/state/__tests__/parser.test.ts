@@ -28,7 +28,6 @@ describe("parseBindTextsForElement（正本パーサの公開契約）", () => {
     expect(r.propName).toBe("textContent");
     expect(r.propSegments).toEqual(["textContent"]);
     expect(r.statePathName).toBe("user.name");
-    expect(r.stateName).toBe("default");
     expect(r.bindingType).toBe("prop");
     expect(r.propModifiers).toEqual([]);
     expect(r.outFilters).toEqual([]);
@@ -37,7 +36,6 @@ describe("parseBindTextsForElement（正本パーサの公開契約）", () => {
   it("修飾子・フィルタ列を分解し、@state は v2 の parse error になること", () => {
     const [r] = parseBindTextsForElement("value#ro: price | fix(2)");
     expect(r.propModifiers).toEqual(["ro"]);
-    expect(r.stateName).toBe("default");
     expect(r.outFilters).toHaveLength(1);
     expect(r.outFilters[0].filterName).toBe("fix");
     expect(r.outFilters[0].args).toEqual(["2"]);

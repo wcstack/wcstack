@@ -73,7 +73,6 @@ function createContext(stateElement: IStateElement, extras: Partial<IApplyContex
   };
   return {
     rootNode: document,
-    stateName: 'default',
     stateElement,
     state: stateProxy,
     appliedBindingSet: new Set(),
@@ -167,17 +166,5 @@ describe('applyChange のゲートと fast path', () => {
     expect(stateElement.createStateCalls).toBe(0);
   });
 
-  it('sameRootVerified でも stateName 不一致なら従来の解決経路にフォールバックすること（テンプレート内 @state バインド相当）', () => {
-    const defaultElement = createMockStateElement('default');
-    const otherElement = createMockStateElement('other');
-    setStateElement(document, otherElement);
-    const context = createContext(defaultElement, { sameRootVerified: true });
-    const binding = createTextBinding('other');
-
-    applyChange(binding, context);
-
-    // フォールバック: 対象 state の createState が呼ばれ、その state で適用される
-    expect(otherElement.createStateCalls).toBe(1);
-    expect(defaultElement.createStateCalls).toBe(0);
-  });
 });
+

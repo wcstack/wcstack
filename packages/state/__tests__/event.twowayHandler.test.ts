@@ -27,7 +27,6 @@ function createBindingInfo(node: Element, overrides?: Partial<IBindingInfo>): IB
     propModifiers: [],
     statePathName: 'users.*.name',
     statePathInfo: getPathInfo('users.*.name'),
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'prop',
@@ -282,7 +281,7 @@ describe('event/twowayHandler', () => {
 
     expect(() => handler({ target: input } as unknown as Event)).toThrow('state element not found');
     expect(raiseError).toHaveBeenCalledWith(
-      'State element with name "default" not found for two-way binding.'
+      'No state tree found on this root for two-way binding.'
     );
   });
 

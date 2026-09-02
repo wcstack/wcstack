@@ -22,7 +22,6 @@ import {
   BINDING_SEPARATOR,
   PROP_VALUE_SEPARATOR,
   MODIFIER_SEPARATOR,
-  STATE_NAME_SEPARATOR,
   FILTER_SEPARATOR,
   MODIFIER_FLAGS,
   MODIFIER_KEYS,
@@ -71,12 +70,11 @@ export interface IWcsManifest {
     pathDelimiter: string;
     /** ワイルドカード（`*`） */
     wildcard: string;
-    /** バインディング構文 `[prop][#mod]: [path][@state][|filter...]` の区切り文字 */
+    /** バインディング構文 `[prop][#mod]: [path][|filter...]` の区切り文字 */
     delimiters: {
       binding: string;    // ; 複数バインディングの区切り
       propValue: string;  // : prop と path の区切り
       modifier: string;   // # prop と修飾子の区切り
-      stateName: string;  // @ path と stateName の区切り
       filter: string;     // | フィルタパイプの区切り
     };
     /** 構造ディレクティブ（`<template data-wcs="for: ...">` 等） */
@@ -140,7 +138,6 @@ export function getWcsManifest(): IWcsManifest {
         binding: BINDING_SEPARATOR,
         propValue: PROP_VALUE_SEPARATOR,
         modifier: MODIFIER_SEPARATOR,
-        stateName: STATE_NAME_SEPARATOR,
         filter: FILTER_SEPARATOR,
       },
       // 正本 STRUCTURAL_BINDING_TYPE_SET から導出（手書きの二重定義を排除）。

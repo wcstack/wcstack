@@ -11,7 +11,6 @@ export interface IDeferredSelectBinding {
 
 export interface IApplyContext {
   readonly rootNode: Node;
-  readonly stateName: string;
   readonly stateElement: IStateElement;
   readonly state: IStateProxy;
   appliedBindingSet: Set<IBindingInfo>;
@@ -21,7 +20,7 @@ export interface IApplyContext {
   /**
    * applyChangeFromBindings のグループ化ループが「この context に渡る binding の
    * 解決済みルートは context.rootNode に一致する」ことを検証済みであることを示す。
-   * true かつ stateName が一致する binding は applyChange 内の getRootNode 再解決を
+   * true の binding は applyChange 内の getRootNode 再解決を
    * 省略できる（大量バインディング drain のホットパス短縮）。
    */
   readonly sameRootVerified?: boolean;

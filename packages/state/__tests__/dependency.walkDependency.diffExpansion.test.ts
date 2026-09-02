@@ -36,9 +36,7 @@ function runWalkRaw(
     createListDiff(null, [], oldList);
     setLastListValueByAbsoluteStateAddress(usersAbsAddress(stateElement), oldList);
   }
-  return walkDependency(
-    'default',
-    stateElement,
+  return walkDependency(    stateElement,
     createStateAddress(getPathInfo('users'), null),
     staticDeps ?? new Map<string, string[]>([['users', ['users.*']]]),
     new Map<string, string[]>(),

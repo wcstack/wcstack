@@ -84,7 +84,6 @@ const createBindingInfo = (overrides?: Partial<IBindingInfo>): IBindingInfo => (
   propModifiers: [],
   statePathName: 'count',
   statePathInfo: getPathInfo('count'),
-  stateName: 'default',
   outFilters: [],
   inFilters: [],
   bindingType: 'prop',
@@ -688,7 +687,6 @@ describe('plain Light DOM の廃止（v2 のゲート後）', () => {
       propModifiers: [],
       statePathName: 'user',
       statePathInfo: getPathInfo('user'),
-      stateName: 'no-such-state',
       inFilters: [],
       outFilters: [],
       bindingType: 'prop',
@@ -700,7 +698,7 @@ describe('plain Light DOM の廃止（v2 のゲート後）', () => {
     (stateEl as any)._rootNode = document;
 
     await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
-      /State element with name "no-such-state" not found for mount host/
+      /No state tree found on this root/
     );
   });
 
@@ -722,7 +720,6 @@ describe('plain Light DOM の廃止（v2 のゲート後）', () => {
       propModifiers: [],
       statePathName: 'flag',
       statePathInfo: getPathInfo('flag'),
-      stateName: 'default',
       inFilters: [],
       outFilters: [],
       bindingType: 'prop',

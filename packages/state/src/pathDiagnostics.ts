@@ -188,12 +188,11 @@ const SUBJECT: Readonly<Record<"binding" | "watch", string>> = {
  * `console.warn` と同じ語彙に揃える。
  */
 export function missingRootPathMessage(
-  stateName: string,
   path: string,
   target: object,
   declaredPaths: Iterable<string>,
 ): string {
-  return `[${DIAGNOSTIC_CODE.binding}] Path "${path}" does not exist on state "${stateName}".` +
+  return `[${DIAGNOSTIC_CODE.binding}] Path "${path}" does not exist on the state tree.` +
     `${didYouMean(path, collectCandidates(target, "", declaredPaths))}${LINT_HINT}`;
 }
 
@@ -341,7 +340,7 @@ export function checkDeclaredPath(
   // 接頭辞は raiseError と同じ `[@wcstack/state] [wcs/...]` の並び（コンソールの
   // grep 単位をパッケージで揃える）
   console.warn(
-    `[@wcstack/state] [${DIAGNOSTIC_CODE[source]}] ${SUBJECT[source]} "${path}" does not resolve on state "${stateElement.name}": ` +
+    `[@wcstack/state] [${DIAGNOSTIC_CODE[source]}] ${SUBJECT[source]} "${path}" does not resolve on the state tree: ` +
     `"${result.missingSegment}" is not declared.${didYouMean(result.missingSegment, result.candidates)}` +
     ` Updates to this path will be silently dropped.${LINT_HINT}`,
   );
@@ -349,7 +348,6 @@ export function checkDeclaredPath(
     devtoolsSink({
       type: "state:path-unresolved",
       source,
-      stateName: stateElement.name,
       path,
       missingSegment: result.missingSegment,
     });

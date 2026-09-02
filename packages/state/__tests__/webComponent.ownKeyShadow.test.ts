@@ -41,7 +41,6 @@ function mountHostBinding(propSegments: string[], statePathName: string): IBindi
     propModifiers: [],
     statePathName,
     statePathInfo: getPathInfo(statePathName),
-    stateName: 'default',
     inFilters: [],
     outFilters: [],
     bindingType: 'prop',

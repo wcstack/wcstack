@@ -59,13 +59,13 @@ describe('devtools 計装点', () => {
       setStateElement(rootNode, element);
       expect(getLiveStateElements().has(element)).toBe(true);
       expect(events).toContainEqual(
-        expect.objectContaining({ type: 'state:element-registered', name: 'default', element })
+        expect.objectContaining({ type: 'state:element-registered', element })
       );
 
       setStateElement(rootNode, null);
       expect(getLiveStateElements().has(element)).toBe(false);
       expect(events).toContainEqual(
-        expect.objectContaining({ type: 'state:element-unregistered', name: 'default', element })
+        expect.objectContaining({ type: 'state:element-unregistered', element })
       );
     });
 
@@ -140,7 +140,6 @@ describe('devtools 計装点', () => {
         expect.objectContaining({
           type: 'state:token-emit',
           kind: 'command',
-          stateName: 'media',
           tokenName: 'play',
           args: ['a', 1],
           subscriberCount: 1,
@@ -152,27 +151,27 @@ describe('devtools 計装点', () => {
       const token = new CommandToken('orphan');
       token.emit();
       expect(events).toContainEqual(
-        expect.objectContaining({ type: 'state:token-emit', kind: 'command', stateName: null, subscriberCount: 0 })
+        expect.objectContaining({ type: 'state:token-emit', kind: 'command', subscriberCount: 0 })
       );
     });
 
     it('EventToken.emitがkind=eventのイベントを発すること', () => {
-      const token = new EventToken('changed', 'form');
+      const token = new EventToken('changed');
       token.emit({ value: 1 });
       expect(events).toContainEqual(
-        expect.objectContaining({ type: 'state:token-emit', kind: 'event', stateName: 'form', tokenName: 'changed' })
+        expect.objectContaining({ type: 'state:token-emit', kind: 'event', tokenName: 'changed' })
       );
     });
 
-    it('registryがstateElement.nameをownerとして渡すこと', () => {
+    it('registry 経由の emit も token-emit として流れること', () => {
       const stateElement = createMockStateElement('owner-state');
       getOrCreateCommandToken(stateElement, 'cmd').emit();
       getOrCreateEventToken(stateElement, 'evt').emit();
       expect(events).toContainEqual(
-        expect.objectContaining({ kind: 'command', tokenName: 'cmd', stateName: 'owner-state' })
+        expect.objectContaining({ kind: 'command', tokenName: 'cmd' })
       );
       expect(events).toContainEqual(
-        expect.objectContaining({ kind: 'event', tokenName: 'evt', stateName: 'owner-state' })
+        expect.objectContaining({ kind: 'event', tokenName: 'evt' })
       );
     });
 
@@ -191,7 +190,6 @@ describe('devtools 計装点', () => {
     function createHandler(stateElement: any) {
       return {
         stateElement,
-        stateName: stateElement.name,
         pushAddress: vi.fn(),
         popAddress: vi.fn(),
       };

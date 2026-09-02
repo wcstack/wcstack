@@ -45,7 +45,6 @@ function createBinding(
     propModifiers: [],
     statePathName: "target",
     statePathInfo: getPathInfo("target"),
-    stateName: "default",
     inFilters: [],
     outFilters: [],
     node,
@@ -200,7 +199,7 @@ describe("initialSync authority resolution and commit", () => {
     mocks.getStateElement.mockReturnValue(null);
     const binding = createBinding(document.createElement("div"));
     expect(() => resolveInitialAuthority(binding, "auto"))
-      .toThrow(/not found for binding/);
+      .toThrow(/No state tree found on this root for binding/);
   });
 
   it("auto 以外の authority はそのまま返すこと", () => {
@@ -227,6 +226,6 @@ describe("initialSync authority resolution and commit", () => {
     mocks.getStateElement.mockReturnValue(null);
     const binding = createBinding(document.createElement("div"));
     expect(() => commitProducerValue(binding, "value"))
-      .toThrow(/not found for initial binding sync/);
+      .toThrow(/No state tree found on this root for initial binding sync/);
   });
 });

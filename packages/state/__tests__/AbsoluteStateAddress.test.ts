@@ -51,8 +51,6 @@ describe('AbsoluteStateAddress', () => {
     const absoluteAddress2 = createAbsoluteStateAddress(absolutePathInfo2, null);
 
     expect(absoluteAddress1).not.toBe(absoluteAddress2);
-    expect(absoluteAddress1.absolutePathInfo.stateName).toBe('test');
-    expect(absoluteAddress2.absolutePathInfo.stateName).toBe('test2');
   });
 
   it('listIndex付きでAbsoluteStateAddressが作成されること', () => {

@@ -51,7 +51,7 @@ function createTestStateElement(state: IState): IStateElement {
       return false;
     },
     createState(mutability: Mutability, callback: (s: IStateProxy) => void) {
-      const proxy = createStateProxy(rootNode, state, name, mutability);
+      const proxy = createStateProxy(rootNode, state, mutability);
       return callback(proxy);
     },
   } as unknown as IStateElement;

@@ -29,7 +29,6 @@ function binding(node: Element, propSegments: string[]): IBindingInfo {
     propModifiers: [],
     statePathName: 'user',
     statePathInfo: getPathInfo('user'),
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'prop',

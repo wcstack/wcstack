@@ -34,9 +34,18 @@ function createPathInfo(path: string, wildcardCount = 0): IPathInfo {
   } as IPathInfo;
 }
 
+// v2: 所属は stateElement の同一性で判定される。テストでは名前ごとに安定した
+// ダミー要素を割り当てて「自分の ref / 他ツリーの ref」を作り分ける
+const elementsByName = new Map<string, object>();
+function elementFor(stateName: string): object {
+  let el = elementsByName.get(stateName);
+  if (!el) { el = { name: stateName }; elementsByName.set(stateName, el); }
+  return el;
+}
+
 function createAbsolutePathInfo(stateName: string, path: string, wildcardCount = 0): IAbsolutePathInfo {
   return {
-    stateName,
+    stateElement: elementFor(stateName) as any,
     pathInfo: createPathInfo(path, wildcardCount),
     parentAbsolutePathInfo: null,
   };
@@ -70,7 +79,7 @@ describe('proxy/apis/updatedCallback', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     handler = {
-      stateName: 'default',
+      stateElement: elementFor('default'),
     } as IStateHandler;
   });
 
@@ -126,7 +135,7 @@ describe('proxy/apis/updatedCallback', () => {
     expect(callbackFn).toHaveBeenCalledWith(['user.name', 'user.age'], {});
   });
 
-  it('異なる stateName の場合、"path@stateName" 形式で paths に追加すること', () => {
+  it('別 state 要素の ref は配送しないこと（v2: path@name 合成は撤去）', () => {
     const callbackFn = vi.fn();
     const target = { [STATE_UPDATED_CALLBACK_NAME]: callbackFn };
     const receiver = {};
@@ -137,7 +146,7 @@ describe('proxy/apis/updatedCallback', () => {
 
     updatedCallback(target, refs, receiver, handler);
 
-    expect(callbackFn).toHaveBeenCalledWith(['user.name', 'user.age@other'], {});
+    expect(callbackFn).toHaveBeenCalledWith(['user.name'], {});
   });
 
   it('重複するパスは Set により一意になること', () => {
@@ -201,7 +210,7 @@ describe('proxy/apis/updatedCallback', () => {
     expect(indexesListByPath).toEqual({ 'items.*.name': [[0], [1]] });
   });
 
-  it('異なる stateName のワイルドカードパスも正しく処理すること', () => {
+  it('別 state 要素のワイルドカード ref も配送されないこと', () => {
     const callbackFn = vi.fn();
     const target = { [STATE_UPDATED_CALLBACK_NAME]: callbackFn };
     const receiver = {};
@@ -213,10 +222,9 @@ describe('proxy/apis/updatedCallback', () => {
     updatedCallback(target, refs, receiver, handler);
 
     const [paths, indexesListByPath] = callbackFn.mock.calls[0];
-    expect(paths.sort()).toEqual(['items.*.age@other', 'items.*.name']);
+    expect(paths.sort()).toEqual(['items.*.name']);
     expect(indexesListByPath).toEqual({
       'items.*.name': [[0]],
-      'items.*.age@other': [[1]],
     });
   });
 

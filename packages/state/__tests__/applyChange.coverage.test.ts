@@ -76,7 +76,6 @@ function createBaseBindingInfo(): Omit<IBindingInfo, 'bindingType' | 'node' | 'r
   return {
     statePathName: 'value',
     statePathInfo: pathInfo,
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     propModifiers: [],
@@ -89,7 +88,6 @@ function createBaseBindingInfo(): Omit<IBindingInfo, 'bindingType' | 'node' | 'r
 describe('applyChange (coverage)', () => {
   const state = {} as any;
   const context: IApplyContext = {
-    stateName: 'default',
     rootNode: document as any,
     stateElement: {} as any,
     state,
@@ -308,17 +306,19 @@ describe('applyChange (coverage)', () => {
     expect(applyChangeToPropertyMock).not.toHaveBeenCalled();
   });
 
-  it('stateNameが異なる場合は別stateで適用されること', () => {
+  it('別ルートの binding は別 state で適用されること', () => {
+    const host = document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'open' });
     const textNode = document.createTextNode('x');
-    document.body.appendChild(textNode);
+    shadow.appendChild(textNode);
+    document.body.appendChild(host);
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
       bindingType: 'text',
       node: textNode,
       replaceNode: textNode,
       propName: 'text',
-      propSegments: [],
-      stateName: 'other'
+      propSegments: []
     } as IBindingInfo;
 
     const otherState = {} as any;
@@ -330,10 +330,10 @@ describe('applyChange (coverage)', () => {
     getValueMock.mockReturnValue('z');
     applyChange(bindingInfo, context);
 
-    expect(getStateElementByNameMock).toHaveBeenCalledWith(document);
+    expect(getStateElementByNameMock).toHaveBeenCalledWith(shadow);
     expect(applyChangeToTextMock).toHaveBeenCalledWith(
       bindingInfo,
-      expect.objectContaining({ stateName: 'other', state: otherState }),
+      expect.objectContaining({ state: otherState }),
       'z'
     );
   });
@@ -352,7 +352,6 @@ describe('applyChange (coverage)', () => {
 
     getValueMock.mockReturnValue('y');
     const ctx: IApplyContext = {
-      stateName: 'default',
       rootNode: document as any,
       stateElement: {} as any,
       state,
@@ -403,23 +402,25 @@ describe('applyChange (coverage)', () => {
     expect(applyChangeToTextMock).toHaveBeenCalledTimes(1);
   });
 
-  it('stateNameが異なる場合にstateElementが見つからなければエラーになること', () => {
+  it('別ルートに state が無ければエラーになること', () => {
+    const host = document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'open' });
     const textNode = document.createTextNode('x');
-    document.body.appendChild(textNode);
+    shadow.appendChild(textNode);
+    document.body.appendChild(host);
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
       bindingType: 'text',
       node: textNode,
       replaceNode: textNode,
       propName: 'text',
-      propSegments: [],
-      stateName: 'missing'
+      propSegments: []
     } as IBindingInfo;
 
     getStateElementByNameMock.mockReturnValue(null as any);
 
     expect(() => applyChange(bindingInfo, context))
-      .toThrow(/State element with name "missing" not found for binding/);
+      .toThrow(/No state tree found on this root for binding/);
   });
 
   it('未定義のカスタム要素の場合はスキップされること', () => {
@@ -500,7 +501,6 @@ describe('applyChange (coverage)', () => {
 
       getValueMock.mockReturnValue('y');
       const ctx: IApplyContext = {
-        stateName: 'default',
         rootNode: document as any,
         stateElement: {} as any,
         state,
@@ -534,7 +534,6 @@ describe('applyChange (coverage)', () => {
 
       getValueMock.mockReturnValue(true);
       const ctx: IApplyContext = {
-        stateName: 'default',
         rootNode: document as any,
         stateElement: {} as any,
         state,
@@ -567,7 +566,6 @@ describe('applyChange (coverage)', () => {
 
       getValueMock.mockReturnValue('first');
       const ctx: IApplyContext = {
-        stateName: 'default',
         rootNode: document as any,
         stateElement: {} as any,
         state,
@@ -603,7 +601,6 @@ describe('applyChange (coverage)', () => {
 
       getValueMock.mockReturnValue('opt1');
       const ctx: IApplyContext = {
-        stateName: 'default',
         rootNode: document as any,
         stateElement: {} as any,
         state,
@@ -644,7 +641,6 @@ describe('applyChange (coverage)', () => {
 
       getValueMock.mockReturnValue('v1');
       const ctx: IApplyContext = {
-        stateName: 'default',
         rootNode: document as any,
         stateElement: {} as any,
         state,
@@ -698,7 +694,6 @@ describe('applyChange (coverage)', () => {
 
       getValueMock.mockReturnValue('a');
       const ctx: IApplyContext = {
-        stateName: 'default',
         rootNode: document as any,
         stateElement: {} as any,
         state,

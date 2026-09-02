@@ -157,7 +157,7 @@ export function updateStreamStatus(
  *
  * - 起動中の各 stateElement の各 entry について、depAddresses と batch の交差を
  *   Set.has のインスタンス同一性で判定する（小さい方 = depAddresses を回して
- *   batch.has(dep)。AbsoluteStateAddress はキャッシュにより同一 (stateName, path,
+ *   batch.has(dep)。AbsoluteStateAddress はキャッシュにより同一 (stateElement, path,
  *   listIndex) が同一インスタンス、§2-1）。args なし（depAddresses 空）の entry は
  *   自然にスキップされる。
  * - status は問わず restart する（done / error からも依存の叩き直しで再試行、§2-2）。

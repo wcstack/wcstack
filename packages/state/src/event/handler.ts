@@ -25,11 +25,10 @@ const bindingRegistry = createHandlerBindingRegistry();
 
 function getHandlerKey(binding: IBindingInfo): string {
   const modifierKey = binding.propModifiers.filter(m => m === MODIFIER_PREVENT || m === MODIFIER_STOP).sort().join(',');
-  return `${binding.stateName}::${binding.statePathName}::${modifierKey}`;
+  return `${binding.statePathName}::${modifierKey}`;
 }
 
 const stateEventHandlerFunction = (
-  stateName: string,
   handlerName: string,
   modifiers: string[],
   statePathInfo: IPathInfo
@@ -41,7 +40,7 @@ const stateEventHandlerFunction = (
   const rootNode = node.getRootNode() as Node;
   const stateElement = getStateElement(rootNode);
   if (stateElement === null) {
-    raiseError(`State element with name "${stateName}" not found for event handler.`);
+    raiseError(`No state tree found on this root for event handler.`);
   }
 
   const loopContext = getLoopContextByNode(node);
@@ -72,13 +71,13 @@ const stateEventHandlerFunction = (
       }
       const handler = state[handlerName];
       if (typeof handler !== "function") {
-        raiseError(`Handler "${handlerName}" is not a function on state "${stateName}".`);
+        raiseError(`Handler "${handlerName}" is not a function on the state tree.`);
       }
       return Reflect.apply(handler, state, [event, ...indexes]);
     });
     // eventTokenHandler と同じく、この経路もハンドラの完了を待たない。async な
     // state メソッド / command subscriber の reject を unhandled にせず報告へ落とす。
-    captureHandlerRejection(results, `"${handlerName}" of state "${stateName}"`);
+    captureHandlerRejection(results, `"${handlerName}"`);
   });
 }
 
@@ -89,7 +88,7 @@ export function attachEventHandler(binding: IBindingInfo): boolean {
   const key = getHandlerKey(binding);
   let stateEventHandler = handlerByHandlerKey.get(key);
   if (typeof stateEventHandler === "undefined") {
-    stateEventHandler = stateEventHandlerFunction(binding.stateName, binding.statePathName, binding.propModifiers, binding.statePathInfo);
+    stateEventHandler = stateEventHandlerFunction(binding.statePathName, binding.propModifiers, binding.statePathInfo);
     handlerByHandlerKey.set(key, stateEventHandler);
   }
 

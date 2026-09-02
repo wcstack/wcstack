@@ -122,7 +122,7 @@ export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyCon
         // 同じ edge を再度通ろうとした場合だけ抑止する（設計書 §4 規則 2）。
         // 書き込みは WriteReceipt scope で包み、setter が同期 dispatch する
         // event が confirmation / 正規化を判定できるようにする（規則 3）。
-        const wireId = getWireId(element, firstSegment, binding.stateName, binding.statePathName);
+        const wireId = getWireId(element, firstSegment, binding.statePathName);
         const edgeId = getEdgeId(wireId, "to-element");
         const baseContext = _context?.propagationContextByBinding?.get(binding)
           ?? getCurrentPropagationContext()

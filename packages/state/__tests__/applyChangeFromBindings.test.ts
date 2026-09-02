@@ -86,15 +86,18 @@ describe('applyChangeFromBindings', () => {
     expect(applyChangeMock).toHaveBeenCalledTimes(2);
   });
 
-  it('stateName 文字列が変わる場合もグループが分割されること（配管は Phase B 撤去予定・登録簿は単一）', () => {
+  it('ルートが変わる場合はグループが分割されること', () => {
     const stateA = createStateProxy({ a: 1 });
     const createStateMock = vi.fn((_mutability: string, callback: (state: any) => void) => callback(stateA));
 
     getStateElementByNameMock.mockReturnValue({ createState: createStateMock } as any);
     const node1 = document.createElement('div');
-    const node2 = document.createElement('span');
     document.body.appendChild(node1);
-    document.body.appendChild(node2);
+    const host = document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'open' });
+    const node2 = document.createElement('span');
+    shadow.appendChild(node2);
+    document.body.appendChild(host);
     const bindingInfos = [
       createBindingInfo('app', 'a', node1),
       createBindingInfo('app2', 'b', node2)
@@ -102,7 +105,7 @@ describe('applyChangeFromBindings', () => {
 
     applyChangeFromBindings(bindingInfos);
 
-    // 同じルート＝同じ state element だが、stateName 境界で createState は 2 回に割れる
+    // ルート境界で createState は 2 回に割れる
     expect(createStateMock).toHaveBeenCalledTimes(2);
     expect(applyChangeMock).toHaveBeenCalledTimes(2);
   });
@@ -114,7 +117,7 @@ describe('applyChangeFromBindings', () => {
     document.body.appendChild(node);
     const bindingInfos = [createBindingInfo('missing', 'a', node)];
 
-    expect(() => applyChangeFromBindings(bindingInfos)).toThrow(/State element with name "missing" not found for binding/);
+    expect(() => applyChangeFromBindings(bindingInfos)).toThrow(/No state tree found on this root for binding/);
     expect(applyChangeMock).not.toHaveBeenCalled();
   });
 
@@ -416,7 +419,6 @@ describe('applyChangeFromBindings: バッチ内のエラー隔離', () => {
 
     expect(events).toEqual([{
       type: 'state:binding-apply-error',
-      stateName: 'app',
       path: 'p0',
       bindingType: 'text',
       error: cause,

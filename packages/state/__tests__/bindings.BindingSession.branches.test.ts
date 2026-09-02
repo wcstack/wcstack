@@ -55,7 +55,6 @@ function createBinding(node = document.createElement("input"), overrides: Partia
     propModifiers: [],
     statePathName: "value",
     statePathInfo: { path: "value", wildcardCount: 0 } as any,
-    stateName: "default",
     inFilters: [],
     outFilters: [],
     node,

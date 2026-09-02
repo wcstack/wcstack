@@ -44,7 +44,7 @@ export function getAbsoluteStateAddressByBinding(binding: IBindingInfo, knownRoo
   const listIndex = getListIndexByBindingInfo(binding);
   const stateElement = getStateElement(rootNode);
   if (stateElement === null) {
-    raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+    raiseError(`No state tree found on this root for binding.`);
   }
   const absolutePathInfo = getAbsolutePathInfo(stateElement, binding.statePathInfo);
   absoluteStateAddress = 

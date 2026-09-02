@@ -137,7 +137,7 @@ export function isBindingStateInitialized(binding: IBindingInfo): boolean {
   const rootNode = binding.replaceNode.getRootNode() as Node;
   const stateElement = getStateElement(rootNode);
   if (stateElement === null) {
-    raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+    raiseError(`No state tree found on this root for binding.`);
   }
   const address = getStateAddressByBindingInfo(binding);
   let initialized = false;
@@ -163,7 +163,7 @@ export function commitProducerValue(binding: IBindingInfo, value: unknown): void
   const rootNode = binding.node.getRootNode() as Node;
   const stateElement = getStateElement(rootNode);
   if (stateElement === null) {
-    raiseError(`State element with name "${binding.stateName}" not found for initial binding sync.`);
+    raiseError(`No state tree found on this root for initial binding sync.`);
   }
   const loopContext = getLoopContextByNode(binding.node);
   stateElement.createState("writable", (state) => {

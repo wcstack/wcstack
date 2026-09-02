@@ -97,7 +97,7 @@ describe('getByAddress', () => {
     // 内部実装の言葉（address.parentAddress is undefined）ではなく、lint と同じ
     // 診断 code で「そのパスは state に無い」と言う（pathDiagnostics.ts）
     expect(() => getByAddress(target, address, target, handler as any))
-      .toThrow(/\[wcs\/binding-path-missing\] Path "missing" does not exist on state "default"/);
+      .toThrow(/\[wcs\/binding-path-missing\] Path "missing" does not exist on the state tree/);
   });
 
   it('近いトップレベルのキーがあれば did-you-mean を添えること', () => {

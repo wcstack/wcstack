@@ -68,7 +68,6 @@ function createBinding(node: Element, statePathName: string): IBindingInfo {
     propModifiers: [],
     statePathName,
     statePathInfo: getPathInfo(statePathName),
-    stateName: "default",
     inFilters: [],
     outFilters: [],
     node,
@@ -117,7 +116,7 @@ describe("twowayHandler propagation", () => {
 
   it("同じ setter scope 内の Object.is 同値通知は confirmation として抑止すること", () => {
     const { node } = attach("confirmed");
-    const wireId = getWireId(node, "value", "default", "confirmed");
+    const wireId = getWireId(node, "value", "confirmed");
 
     runWithWriteReceipt(node, "value", "written", wireId, 100, () => {
       dispatchValueChange(node, "written");
@@ -137,7 +136,7 @@ describe("twowayHandler propagation", () => {
   it("confirmation は非 primitive の echo も抑止すること（same-value guard の外側）", () => {
     const { node } = attach("objectEcho");
     const payload = { latest: true };
-    const wireId = getWireId(node, "value", "default", "objectEcho");
+    const wireId = getWireId(node, "value", "objectEcho");
 
     runWithWriteReceipt(node, "value", payload, wireId, 101, () => {
       dispatchValueChange(node, payload);
@@ -152,7 +151,7 @@ describe("twowayHandler propagation", () => {
     setDevtoolsSink(null); // sink なしの confirmation 経路も同時に検証
     try {
       const { node } = attach("shadowDiag");
-      const wireId = getWireId(node, "value", "default", "shadowDiag");
+      const wireId = getWireId(node, "value", "shadowDiag");
 
       // primitive: guard も同じ結論（一致）
       runWithWriteReceipt(node, "value", "primitive", wireId, 110, () => {
@@ -186,7 +185,7 @@ describe("twowayHandler propagation", () => {
 
   it("setter scope 内の異なる値は正規化差分として新しい edge で継続すること", () => {
     const { node } = attach("normalized");
-    const wireId = getWireId(node, "value", "default", "normalized");
+    const wireId = getWireId(node, "value", "normalized");
     const outerContext = extendPropagationContext(
       beginPropagationTransaction(wireId),
       getEdgeId(wireId, "to-element"),
@@ -212,7 +211,7 @@ describe("twowayHandler propagation", () => {
 
   it("同じ transaction が同じ element→state edge を再度通る場合は抑止すること", () => {
     const { node } = attach("edgeSuppressed");
-    const wireId = getWireId(node, "value", "default", "edgeSuppressed");
+    const wireId = getWireId(node, "value", "edgeSuppressed");
     const visited = extendPropagationContext(
       beginPropagationTransaction(wireId),
       getEdgeId(wireId, "to-state"),
@@ -242,7 +241,7 @@ describe("twowayHandler propagation", () => {
 
   it("scope 終了後に届いた同値 event は stale receipt で confirmation にしないこと", () => {
     const { node } = attach("lateEvent");
-    const wireId = getWireId(node, "value", "default", "lateEvent");
+    const wireId = getWireId(node, "value", "lateEvent");
 
     runWithWriteReceipt(node, "value", "same", wireId, 102, () => undefined);
     dispatchValueChange(node, "same");

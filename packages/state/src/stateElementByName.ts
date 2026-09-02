@@ -98,7 +98,7 @@ export function setStateElement(rootNode: Node, element: IStateElement | null): 
     stateElementByNode.delete(rootNode);
     liveStateElements.delete(existing);
     if (devtoolsSink !== null) {
-      devtoolsSink({ type: "state:element-unregistered", name: "default", rootNode, element: existing });
+      devtoolsSink({ type: "state:element-unregistered", rootNode, element: existing });
     }
     if (config.debug) {
       console.debug(`State element unregistered`);
@@ -175,7 +175,7 @@ export function setStateElement(rootNode: Node, element: IStateElement | null): 
     //（webComponent/volume.ts・ロード順に依存しない — V5）
     drainPendingVolumes(rootNode, element);
     if (devtoolsSink !== null) {
-      devtoolsSink({ type: "state:element-registered", name: "default", rootNode, element });
+      devtoolsSink({ type: "state:element-registered", rootNode, element });
     }
     if (config.debug) {
       console.debug(`State element registered`, element);

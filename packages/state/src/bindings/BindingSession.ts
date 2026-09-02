@@ -250,7 +250,6 @@ function bindingKey(binding: IBindingInfo): string {
     binding.bindingType,
     binding.propName,
     binding.propModifiers.join(","),
-    binding.stateName,
     binding.statePathName,
     inFilters,
     outFilters,
@@ -1027,7 +1026,7 @@ export class BindingSession {
       const rootNode = resolveBindingRootNode(binding, knownRoot);
       const stateElement = getStateElement(rootNode);
       if (stateElement === null) {
-        raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+        raiseError(`No state tree found on this root for binding.`);
       }
       const absolutePathInfo = getAbsolutePathInfo(stateElement, binding.statePathInfo);
       addBindingByPattern(absolutePathInfo, listIndex, binding);
@@ -1044,7 +1043,7 @@ export class BindingSession {
     const rootNode = binding.replaceNode.getRootNode() as Node;
     const stateElement = getStateElement(rootNode);
     if (stateElement === null) {
-      raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+      raiseError(`No state tree found on this root for binding.`);
     }
     if (binding.bindingType !== "event") {
       stateElement.setPathInfo(binding.statePathName, binding.bindingType);

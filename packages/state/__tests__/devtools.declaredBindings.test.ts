@@ -34,12 +34,12 @@ describe('collectDeclaredBindings', () => {
     document.body.appendChild(container);
 
     const declared = collectDeclaredBindings(container);
-    const summary = declared.map((d) => `${d.origin}:${d.propName}:${d.statePathName}@${d.stateName}`);
+    const summary = declared.map((d) => `${d.origin}:${d.propName}:${d.statePathName}`);
     expect(summary).toEqual([
-      'attribute:textContent:user.name@default',
-      'attribute:value:price@default',
-      'attribute:onclick:submitOrder@default',
-      'comment:textContent:count@default',
+      'attribute:textContent:user.name',
+      'attribute:value:price',
+      'attribute:onclick:submitOrder',
+      'comment:textContent:count',
     ]);
     // 修飾子・フィルタも正本パーサの解釈そのまま（簡易パーサでは落ちていた情報）
     const twoway = declared.find((d) => d.statePathName === 'price')!;

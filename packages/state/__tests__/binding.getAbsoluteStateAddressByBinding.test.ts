@@ -44,7 +44,6 @@ function createBinding(overrides: Partial<IBindingInfo> = {}): IBindingInfo {
     propModifiers: [],
     statePathName: 'value',
     statePathInfo: pathInfo,
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'prop',
@@ -164,6 +163,6 @@ describe('getAbsoluteStateAddressByBinding', () => {
     getStateElementByNameMock.mockReturnValue(null);
 
     expect(() => getAbsoluteStateAddressByBinding(binding))
-      .toThrow(/State element with name "default" not found for binding/);
+      .toThrow(/No state tree found on this root/);
   });
 });

@@ -137,7 +137,6 @@ function setSink(sink: DevtoolsSink | null): void {
 
 function createStateElementSummary(element: IStateElement): IStateElementSummary {
   return {
-    name: element.name,
     rootNode: element.rootNode,
     element,
     paths: {
@@ -163,9 +162,9 @@ function createStateElementSummary(element: IStateElement): IStateElementSummary
   };
 }
 
-function requireStateElement(name: string, rootNode: Node): IStateElement {
+function requireStateElement(rootNode: Node): IStateElement {
   return getStateElement(rootNode) ??
-    raiseError(`devtools: state element not found: name="${name}"`);
+    raiseError(`devtools: no state tree on this root`);
 }
 
 function createSourceId(): string {
@@ -198,8 +197,8 @@ export function registerDevtoolsSource(): void {
       }
       return summaries;
     },
-    keys(name: string, rootNode: Node): string[] {
-      const element = requireStateElement(name, rootNode);
+    keys(rootNode: Node): string[] {
+      const element = requireStateElement(rootNode);
       const result: string[] = [];
       element.createState("readonly", (state) => {
         // Object.keys は Proxy の ownKeys 経由で target の own key を返す。
@@ -222,16 +221,16 @@ export function registerDevtoolsSource(): void {
       });
       return result;
     },
-    read(name: string, rootNode: Node, path: string, indexes?: number[]): unknown {
-      const element = requireStateElement(name, rootNode);
+    read(rootNode: Node, path: string, indexes?: number[]): unknown {
+      const element = requireStateElement(rootNode);
       let result: unknown;
       element.createState("readonly", (state) => {
         result = (state as unknown as Record<string, (p: string, i: number[]) => unknown>)["$resolve"](path, indexes ?? []);
       });
       return result;
     },
-    write(name: string, rootNode: Node, path: string, value: unknown, indexes?: number[]): void {
-      const element = requireStateElement(name, rootNode);
+    write(rootNode: Node, path: string, value: unknown, indexes?: number[]): void {
+      const element = requireStateElement(rootNode);
       element.createState("writable", (state) => {
         if (indexes !== undefined && indexes.length > 0) {
           // Note: $resolve は value===undefined を「取得」と解釈するため、

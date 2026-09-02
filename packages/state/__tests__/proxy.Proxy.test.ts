@@ -88,14 +88,14 @@ describe('proxy/StateHandler', () => {
   it('存在しないプロパティはエラーになること', () => {
     const stateElement = createMockStateElement();
     setStateElement(document, stateElement);
-    const proxy = createStateProxy(document, {}, 'default', 'readonly');
+    const proxy = createStateProxy(document, {}, 'readonly');
     expect(() => (proxy as any).unknown).toThrow();
   });
 
   it('ネストしたパスを取得できること', () => {
     const stateElement = createMockStateElement();
     setStateElement(document, stateElement);
-    const proxy = createStateProxy(document, { user: { name: 'Alice' } }, 'default', 'readonly');
+    const proxy = createStateProxy(document, { user: { name: 'Alice' } }, 'readonly');
     expect((proxy as any)['user.name']).toBe('Alice');
   });
 
@@ -103,7 +103,7 @@ describe('proxy/StateHandler', () => {
     const stateElement = createMockStateElement();
     setStateElement(document, stateElement);
     const state = { users: [{ name: 'Bob' }, { name: 'Carol' }] };
-    const proxy = createStateProxy(document, state, 'default', 'readonly');
+    const proxy = createStateProxy(document, state, 'readonly');
     const listIndex = createListIndex(null, 1);
     const loopContext = createStateAddress(getPathInfo('users.*'), listIndex);
 
@@ -116,7 +116,7 @@ describe('proxy/StateHandler', () => {
     const listPaths = new Set<string>(['items']);
     const stateElement = createMockStateElement({ listPaths });
     setStateElement(document, stateElement);
-    const proxy = createStateProxy(document, { items: list }, 'default', 'readonly');
+    const proxy = createStateProxy(document, { items: list }, 'readonly');
 
     expect(getListIndexesByList(list)).toBeNull();
     const value = (proxy as any).items;
@@ -128,7 +128,7 @@ describe('proxy/StateHandler', () => {
     const listPaths = new Set<string>(['items']);
     const stateElement = createMockStateElement({ listPaths });
     setStateElement(document, stateElement);
-    const proxy = createStateProxy(document, { items: [] }, 'default', 'writable');
+    const proxy = createStateProxy(document, { items: [] }, 'writable');
 
     const list = [10, 20];
     (proxy as any).items = list;
@@ -144,7 +144,6 @@ describe('proxy/StateHandler', () => {
       propModifiers: [],
       statePathName: 'count',
       statePathInfo: countPathInfo,
-      stateName: 'default',
       outFilters: [],
       inFilters: [],
       bindingType: 'prop',
@@ -159,7 +158,7 @@ describe('proxy/StateHandler', () => {
     setStateElement(document, stateElement);
     const absoluteAddress = createAbsoluteStateAddress(getAbsolutePathInfo(stateElement, address.pathInfo), address.listIndex);
     addBindingByAbsoluteStateAddress(absoluteAddress, bindingInfo);
-    const proxy = createStateProxy(document, { count: 0 }, 'default', 'writable');
+    const proxy = createStateProxy(document, { count: 0 }, 'writable');
 
     (proxy as any).count = 2;
     await new Promise<void>((resolve) => queueMicrotask(resolve));

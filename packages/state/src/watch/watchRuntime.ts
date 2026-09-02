@@ -154,7 +154,6 @@ function reportWatchError(
     devtoolsSink({
       type: "state:watch-error",
       phase,
-      stateName: stateElement.name,
       path,
       error,
     });
@@ -189,7 +188,7 @@ function fireWatchOnUpdateBatch(batch: ReadonlySet<IAbsoluteStateAddress>): void
     // --- 収集フェーズ ---
     const hits: IWatchHit[] = [];
     for (const absAddress of batch) {
-      // stateName 文字列ではなく stateElement 参照で引く。AbsolutePathInfo は
+      // stateElement 参照で引く。AbsolutePathInfo は
       // stateElement 単位でキャッシュされるので、同名 state が複数の rootNode に
       // 居ても取り違えない（address/AbsolutePathInfo.ts）。他 state のアドレスは
       // ここで自然に落ちる ＝ 越境しない（設計 D8）。
@@ -303,7 +302,7 @@ function fireOne(hit: IWatchHit): void {
       // 正常発火の観測（設計書 §11 の予約イベント・配線カバレッジの実測面）。
       // 値は載せない。イベント生成は sink 接続時のみ（ゼロコスト契約）。
       if (devtoolsSink !== null) {
-        devtoolsSink({ type: "state:watch-fired", stateName: stateElement.name, path: entry.path });
+        devtoolsSink({ type: "state:watch-fired", path: entry.path });
       }
       entry.handler.call(state, cur, prev, ...indexes);
     });

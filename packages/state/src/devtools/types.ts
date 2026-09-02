@@ -21,13 +21,11 @@ export const DEVTOOLS_PROTOCOL_VERSION = 1;
 export type DevtoolsEvent =
   | {
       readonly type: "state:element-registered";
-      readonly name: string;
       readonly rootNode: Node;
       readonly element: IStateElement;
     }
   | {
       readonly type: "state:element-unregistered";
-      readonly name: string;
       readonly rootNode: Node;
       readonly element: IStateElement;
     }
@@ -60,7 +58,6 @@ export type DevtoolsEvent =
   | {
       readonly type: "state:token-emit";
       readonly kind: "command" | "event";
-      readonly stateName: string | null;
       readonly tokenName: string;
       readonly args: readonly unknown[];
       readonly subscriberCount: number;
@@ -73,7 +70,6 @@ export type DevtoolsEvent =
       readonly type: "state:watch-error";
       /** throw 元。cur の評価（getter）とハンドラ本体では原因も直し方も違う */
       readonly phase: "prime" | "evaluate" | "handler";
-      readonly stateName: string;
       /** `$watch` の宣言キー（ワイルドカードを含む生のパス） */
       readonly path: string;
       readonly error: unknown;
@@ -91,7 +87,6 @@ export type DevtoolsEvent =
       // static-wiring-dx-design.md §4 の配線カバレッジが消費）。値は載せない —
       // 「宣言したのに一度も発火しない」の検出には発火の事実だけで足りる。
       readonly type: "state:watch-fired";
-      readonly stateName: string;
       /** `$watch` の宣言キー（ワイルドカードを含む生のパス） */
       readonly path: string;
     }
@@ -102,7 +97,6 @@ export type DevtoolsEvent =
       readonly type: "state:path-unresolved";
       /** 書き手が書いた面。診断 code が binding / watch で変わる */
       readonly source: "binding" | "watch";
-      readonly stateName: string;
       /** 宣言されたパス（ワイルドカードを含む生の文字列） */
       readonly path: string;
       /** 解決に失敗したセグメント */
@@ -112,7 +106,6 @@ export type DevtoolsEvent =
       // binding 適用が throw したが、バッチの残りは続行した（apply/applyChangeFromBindings）。
       // 例外を握らずに隔離した事実を観測可能にする（state:watch-error と同じ位置づけ）。
       readonly type: "state:binding-apply-error";
-      readonly stateName: string;
       /** バインディングの state パス（ワイルドカードを含む生の文字列） */
       readonly path: string;
       readonly bindingType: string;
@@ -171,7 +164,6 @@ export type ContractEvent = Extract<
 >;
 
 export interface IStateElementSummary {
-  readonly name: string;
   readonly rootNode: Node;
   readonly element: IStateElement;
   readonly paths: {
@@ -218,7 +210,6 @@ export interface IDeclaredBindingInfo {
   readonly node: Node | null;
   readonly propName: string;
   readonly statePathName: string;
-  readonly stateName: string;
   readonly bindingType: string;
   readonly inFilters: readonly { readonly filterName: string; readonly args: readonly string[] }[];
   readonly outFilters: readonly { readonly filterName: string; readonly args: readonly string[] }[];
@@ -240,9 +231,9 @@ export interface IDevtoolsSource {
    * メソッド・`$` 始まり・ワイルドカードを含むキーは除外。
    * 状態ツリー UI の描画起点（protocol §3）。
    */
-  keys(name: string, rootNode: Node): string[];
-  read(name: string, rootNode: Node, path: string, indexes?: number[]): unknown;
-  write(name: string, rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
+  keys(rootNode: Node): string[];
+  read(rootNode: Node, path: string, indexes?: number[]): unknown;
+  write(rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
   /**
    * rootNode 配下の宣言レベルのバインディングを正本パーサで列挙する
    * （protocol v1 追補・additive）。live DOM（属性 + コメントアンカー）に加え、

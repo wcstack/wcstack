@@ -76,7 +76,6 @@ function createOuterBindingInfo(node: Node): IBindingInfo {
     propModifiers: [],
     statePathName: 'items',
     statePathInfo: pathInfo,
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'for',
@@ -100,7 +99,6 @@ function createInnerFragmentInfo() {
     propModifiers: [],
     statePathName: 'items.*.children',
     statePathInfo: pathInfo,
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'for',
@@ -126,7 +124,6 @@ function createOuterFragmentInfoUnwrapped() {
     propModifiers: [],
     statePathName: 'items',
     statePathInfo: pathInfo,
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'for',
@@ -155,7 +152,6 @@ function createOuterFragmentInfoWrapped() {
     propModifiers: [],
     statePathName: 'items',
     statePathInfo: pathInfo,
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'for',
@@ -191,7 +187,6 @@ describe('applyChangeToFor ネストされたforループの回帰テスト', ()
     } as any;
 
     const context: IApplyContext = {
-      stateName: 'default',
       rootNode: document,
       stateElement: stateElement as any,
       state,

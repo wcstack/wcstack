@@ -84,7 +84,6 @@ function notifyWrite(
   updater.enqueueAbsoluteAddress(absAddress, propagationContext);
   // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
   walkDependency(
-    handler.stateName,
     handler.stateElement,
     address,
     handler.stateElement.staticDependency,

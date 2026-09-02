@@ -209,7 +209,6 @@ describe("checkDeclaredPath", () => {
     expect(events).toEqual([{
       type: "state:path-unresolved",
       source: "binding",
-      stateName: "default",
       path: "user.nmae",
       missingSegment: "nmae",
     }]);
@@ -217,16 +216,16 @@ describe("checkDeclaredPath", () => {
 });
 
 describe("missingRootPathMessage", () => {
-  it("診断 code・state 名・did-you-mean・lint 誘導を含むこと", () => {
-    const message = missingRootPathMessage("default", "cout", { count: 0 }, []);
+  it("診断 code・did-you-mean・lint 誘導を含むこと", () => {
+    const message = missingRootPathMessage("cout", { count: 0 }, []);
     expect(message).toContain("[wcs/binding-path-missing]");
-    expect(message).toContain('Path "cout" does not exist on state "default"');
+    expect(message).toContain('Path "cout" does not exist on the state tree');
     expect(message).toContain('Did you mean "count"?');
     expect(message).toContain("npx @wcstack/lint");
   });
 
   it("近い候補が無ければ did-you-mean を付けないこと", () => {
-    const message = missingRootPathMessage("default", "zzzzzzzz", { count: 0 }, []);
+    const message = missingRootPathMessage("zzzzzzzz", { count: 0 }, []);
     expect(message).not.toContain("Did you mean");
   });
 });

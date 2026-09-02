@@ -276,18 +276,12 @@ function restoreFragments(root: Document, ssrEl: Ssr): void {
     let parseBindTextResult = parseBindTextResults[0];
     const bindingType = parseBindTextResult.bindingType;
 
-    // else: 直前の if 条件の not → 条件反転
-    // elseif: 独自条件を持つが stateName は if から引き継ぐ
+    // else: 直前の if 条件の not → 条件反転（elseif は独自条件のままでよい）
     if (bindingType === 'else' && lastIfParseResult) {
       parseBindTextResult = {
         ...lastIfParseResult,
         outFilters: [...lastIfParseResult.outFilters, createNotFilter()],
         bindingType: 'else',
-      };
-    } else if (bindingType === 'elseif' && lastIfParseResult) {
-      parseBindTextResult = {
-        ...parseBindTextResult,
-        stateName: lastIfParseResult.stateName,
       };
     }
 

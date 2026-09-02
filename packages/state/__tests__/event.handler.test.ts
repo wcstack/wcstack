@@ -13,7 +13,6 @@ function createBindingInfo(node: Element, overrides?: Partial<IBindingInfo>): IB
     propModifiers: [],
     statePathName: 'handleClick',
     statePathInfo: getPathInfo('handleClick'),
-    stateName: 'default',
     filterTexts: [],
     bindingType: 'event',
     uuid: null,
@@ -131,7 +130,7 @@ describe('event/handler', () => {
     setStateElement(document, null);
     const event = new Event('click');
     Object.defineProperty(event, 'target', { value: el });
-    expect(() => handler(event)).toThrow(/State element with name "default" not found/);
+    expect(() => handler(event)).toThrow(/No state tree found on this root/);
   });
 
   it('stateのハンドラが関数でない場合はエラーになること', () => {

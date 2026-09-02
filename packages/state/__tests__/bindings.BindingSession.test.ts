@@ -73,7 +73,6 @@ function createBinding(node: Element): IBindingInfo {
     propModifiers: [],
     statePathName: "value",
     statePathInfo: { path: "value", wildcardCount: 0 } as any,
-    stateName: "default",
     inFilters: [],
     outFilters: [],
     node,

@@ -45,7 +45,7 @@ export function updatedCallback(
       const relativePaths: Set<string> = new Set();
       const relativeIndexes: Record<string, Array<number[]>> = {};
       for (const ref of refs) {
-        if (ref.absolutePathInfo.stateName !== handler.stateName) {
+        if (ref.absolutePathInfo.stateElement !== handler.stateElement) {
           continue;
         }
         const path = ref.absolutePathInfo.pathInfo.path;
@@ -78,13 +78,13 @@ export function updatedCallback(
     // ToDo:現状では1階層のみのワイルドカードに対応。多階層対応は後回し
     const indexesListByPath: Record<string, Array<number[]>> = {};
     for (const ref of refs) {
-      const pathInfo = ref.absolutePathInfo.pathInfo;
-      let pathName;
-      if (ref.absolutePathInfo.stateName === handler.stateName) {
-        pathName = pathInfo.path;
-      } else {
-        pathName = pathInfo.path + "@" + ref.absolutePathInfo.stateName;
+      // v2: ルートに 1 ツリー。他ツリー（別ルート）の ref はこの state の相対語彙で
+      // 表せないので配送しない（v1 の `path@name` 合成は名前次元と一緒に消えた）
+      if (ref.absolutePathInfo.stateElement !== handler.stateElement) {
+        continue;
       }
+      const pathInfo = ref.absolutePathInfo.pathInfo;
+      const pathName = pathInfo.path;
       paths.add(pathName);
       if (pathInfo.wildcardCount > 0) {
         const indexes = getScopedIndexes(ref.listIndex!, pathInfo.wildcardCount);

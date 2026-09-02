@@ -72,7 +72,6 @@ function createBinding(node: Element, statePathName: string, modifiers: string[]
     propModifiers: modifiers,
     statePathName,
     statePathInfo: { path: statePathName, wildcardCount: 0 } as any,
-    stateName: "default",
     inFilters: [],
     outFilters: [],
     node,

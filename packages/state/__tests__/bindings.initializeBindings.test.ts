@@ -137,7 +137,7 @@ describe('initializeBindings', () => {
     shadow.appendChild(el);
     document.body.appendChild(holder);
 
-    expect(() => initializeBindings(shadow as unknown as DocumentFragment, null)).toThrow(/State element with name "default" not found/);
+    expect(() => initializeBindings(shadow as unknown as DocumentFragment, null)).toThrow(/No state tree found on this root/);
     holder.remove();
   });
 
@@ -209,6 +209,6 @@ describe('initializeBindings', () => {
       setStateElement(document, null);
     });
 
-    expect(() => initializeBindings(container, null)).toThrow(/State element with name "default" not found for binding/);
+    expect(() => initializeBindings(container, null)).toThrow(/No state tree found on this root/);
   });
 });

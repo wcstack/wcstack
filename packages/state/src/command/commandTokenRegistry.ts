@@ -12,7 +12,7 @@ export function getOrCreateCommandToken(stateElement: IStateElement, name: strin
   }
   let token = registry.get(name);
   if (typeof token === "undefined") {
-    token = new CommandToken(name, stateElement.name);
+    token = new CommandToken(name);
     registry.set(name, token);
   }
   return token;

@@ -444,7 +444,7 @@ export class State extends HTMLElementBase implements IStateElement {
         );
         if (hostBindings.length > 0) {
           const parentStateElement = getStateElement(boundComponent.getRootNode() as Node)
-            ?? raiseError(`State element with name "${hostBindings[0].stateName}" not found for mount host <${customTagName}>.`);
+            ?? raiseError(`No state tree found on this root for mount host <${customTagName}>.`);
           // 再初期化（コンポーネントが connectedCallback で shadow の innerHTML を張り直す
           // 作りだと、再接続のたびに新しい <wcs-state> がここへ来る）: 記録を再利用して
           // マーカーを安定させる。このとき上の `state` はもう公開プロキシ（下の
@@ -960,7 +960,7 @@ export class State extends HTMLElementBase implements IStateElement {
 
   private _createState<T>(rootNode: Node, mutability: Mutability, callback: (state: IStateProxy) => T): T {
     try {
-      const stateProxy = createStateProxy(rootNode, this._state, this._name, mutability);
+      const stateProxy = createStateProxy(rootNode, this._state, mutability);
       return callback(stateProxy);
     } finally {
       // cleanup if needed

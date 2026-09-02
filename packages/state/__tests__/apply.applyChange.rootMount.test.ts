@@ -46,7 +46,6 @@ function createBinding(element: Element, propSegments: string[]): IBindingInfo {
     propModifiers: [],
     statePathName: 'user',
     statePathInfo: getPathInfo('user'),
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'prop',
@@ -59,7 +58,6 @@ function createBinding(element: Element, propSegments: string[]): IBindingInfo {
 function createContext(): IApplyContext {
   return {
     rootNode: document,
-    stateName: 'default',
     stateElement: { hasUpdatedCallback: false } as any,
     state: {} as any,
     appliedBindingSet: new Set(),

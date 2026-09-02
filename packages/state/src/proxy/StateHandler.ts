@@ -14,7 +14,6 @@ const CYCLE_REPORT_DEPTH = 8;
 
 class StateHandler implements IStateHandler {
   private _stateElement: IStateElement;
-  private _stateName: string;
   private _addressStack: (IStateAddress | null | undefined)[] = Array(MAX_LOOP_DEPTH).fill(undefined);
   private _addressStackIndex: number = -1;
   private _loopContext: ILoopContext | null | undefined;
@@ -23,20 +22,14 @@ class StateHandler implements IStateHandler {
  
   constructor(
     rootNode: Node,
-    stateName: string,
     mutability: Mutability
   ) {
-    this._stateName = stateName;
     const stateElement = getStateElement(rootNode);
     if (stateElement === null) {
-      raiseError(`StateHandler: State element with name "${this._stateName}" not found.`);
+      raiseError(`StateHandler: no state tree found on this root.`);
     }
     this._stateElement = stateElement;
     this._mutability = mutability;
-  }
-
-  get stateName(): string {
-    return this._stateName;
   }
 
   get stateElement(): IStateElement {
@@ -145,7 +138,7 @@ class StateHandler implements IStateHandler {
     receiver: any
   ): boolean {
     if (this._mutability === "readonly") {
-      raiseError(`State "${this._stateName}" is readonly.`);
+      raiseError(`This state is readonly.`);
     }
     return trapSet(target, prop, value, receiver, this);
   }
@@ -163,10 +156,9 @@ class StateHandler implements IStateHandler {
 export function createStateProxy(
   rootNode: Node,
   state: IState,
-  stateName: string,
   mutability: Mutability
 ): IStateProxy {
-  const handler = new StateHandler(rootNode, stateName, mutability);
+  const handler = new StateHandler(rootNode, mutability);
   const stateProxy = new Proxy<IStateProxy>(state as IStateProxy, handler);
   return stateProxy;
 }

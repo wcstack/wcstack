@@ -186,10 +186,10 @@ export function applyChange(binding: IBindingInfo, context: IApplyContext): void
     definedApplyVerifiedByBinding.set(binding, true);
   }
   // applyChangeFromBindings のグループ化ループが解決済みルートの一致を検証済みの
-  // 場合、stateName さえ一致すれば getRootNode の再解決（native 呼び出し）を省略
-  // できる。activateContent 経由（フラグメント内の新規 content）も、フラグメントは
-  // setRootNodeByFragment で context.rootNode に解決されるため同じ不変条件が成り立つ。
-  if (context.sameRootVerified === true && binding.stateName === context.stateName) {
+  // 場合、getRootNode の再解決（native 呼び出し）を省略できる。activateContent 経由
+  // （フラグメント内の新規 content）も、フラグメントは setRootNodeByFragment で
+  // context.rootNode に解決されるため同じ不変条件が成り立つ。
+  if (context.sameRootVerified === true) {
     _applyChange(binding, context);
     return;
   }
@@ -200,14 +200,13 @@ export function applyChange(binding: IBindingInfo, context: IApplyContext): void
       raiseError(`Root node for fragment not found for binding.`);
     }
   }
-  if (binding.stateName !== context.stateName || rootNode !== context.rootNode) {
+  if (rootNode !== context.rootNode) {
     const stateElement = getStateElement(rootNode);
     if (stateElement === null) {
-      raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+      raiseError(`No state tree found on this root for binding.`);
     }
     stateElement.createState("readonly", (targetState) => {
       const newContext = {
-        stateName: binding.stateName,
         rootNode: rootNode,
         stateElement: stateElement,
         state: targetState,

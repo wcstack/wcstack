@@ -8,7 +8,6 @@ describe('parseBindTextsForElement - spread (...)', () => {
     expect(result[0].bindingType).toBe('spread');
     expect(result[0].propName).toBe('...');
     expect(result[0].statePathName).toBe('fetchX');
-    expect(result[0].stateName).toBe('default');
   });
 
   it('spread の @name も v2 の parse error になること', () => {

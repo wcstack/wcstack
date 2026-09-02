@@ -29,7 +29,6 @@ function reportBindingApplyError(binding: IBindingInfo, error: unknown): void {
   if (devtoolsSink !== null) {
     devtoolsSink({
       type: "state:binding-apply-error",
-      stateName: binding.stateName,
       path: binding.statePathName,
       bindingType: binding.bindingType,
       error,
@@ -45,7 +44,7 @@ function reportBindingApplyError(binding: IBindingInfo, error: unknown): void {
  * Phase 2: 遅延されたselect.value/selectedIndex を適用（option要素の生成後）
  *
  * 最適化のため、以下のグループ化を行う:
- * 同じ stateNameとrootNode を持つバインディングをグループ化 → createState の呼び出しを削減
+ * 同じ rootNode を持つバインディングをグループ化 → createState の呼び出しを削減
  */
 export function applyChangeFromBindings(
   bindings: IBindingInfo[],
@@ -60,7 +59,6 @@ export function applyChangeFromBindings(
   // Phase 1: 構造的更新 + 値更新（select.value/selectedIndex は遅延）
   while(bindingIndex < bindings.length) {
     let binding = bindings[bindingIndex];
-    const stateName = binding.stateName;
     if (binding.replaceNode.isConnected === false) {
       // 切断されているバインディングは無視、本来は事前に除去されているはず
       if (config.debug) {
@@ -78,13 +76,12 @@ export function applyChangeFromBindings(
     }
     const stateElement = getStateElement(rootNode);
     if (stateElement === null) {
-      raiseError(`State element with name "${stateName}" not found for binding.`);
+      raiseError(`No state tree found on this root for binding.`);
     }
 
     stateElement.createState("readonly", (state) => {
       const context: IApplyContext = {
         rootNode: rootNode,
-        stateName: stateName,
         stateElement: stateElement,
         state: state,
         appliedBindingSet: appliedBindingSet,
@@ -112,7 +109,7 @@ export function applyChangeFromBindings(
         const nextBindingInfo: IBindingInfo | undefined = bindings[bindingIndex];
         if (!nextBindingInfo) break; // 終端に到達
         const nextRootNode = nextBindingInfo.replaceNode.getRootNode() as Node;
-        if (nextBindingInfo.stateName !== stateName || nextRootNode !== context.rootNode) break; // stateName が変わった
+        if (nextRootNode !== context.rootNode) break; // ルートが変わった
         binding = nextBindingInfo;
       } while(true); // eslint-disable-line no-constant-condition
     });

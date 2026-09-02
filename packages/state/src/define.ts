@@ -30,7 +30,6 @@ export const STREAM_LISTENER_PRIORITY = 20;
 export const BINDING_SEPARATOR = ';';     // 複数バインディングの区切り
 export const PROP_VALUE_SEPARATOR = ':';  // 左辺(prop)と右辺(path)の区切り
 export const MODIFIER_SEPARATOR = '#';    // prop と修飾子の区切り
-export const STATE_NAME_SEPARATOR = '@';  // path と @stateName の区切り
 export const FILTER_SEPARATOR = '|';      // フィルタパイプの区切り
 
 // 修飾子（`#` 後）の語彙（単一正本）。manifest.syntax.modifiers で公開される。

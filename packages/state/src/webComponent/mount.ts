@@ -43,7 +43,6 @@ export interface IMountRecord {
   readonly component: Element;
   readonly stateProp: string;
   readonly parentStateElement: IStateElement;
-  readonly parentStateName: string;
   /** マウント表（内側接頭辞の長い順 — 最長接頭辞一致は先頭ヒットで決まる） */
   readonly entries: readonly IMountEntry[];
   /** ルートエントリ（`state: path`）。無ければ null（部分マウントのみ） */
@@ -216,7 +215,6 @@ export function buildMountRecord(
     component,
     stateProp,
     parentStateElement,
-    parentStateName: parentStateElement.name,
     entries,
     rootEntry,
     delta: rootEntry === null ? 0 : rootEntry.outerPathInfo.wildcardCount,
@@ -399,14 +397,13 @@ export function translateInnerPath(record: IMountRecord, innerPath: string): str
 interface ITranslatable {
   readonly statePathName: string;
   readonly statePathInfo: IPathInfo;
-  readonly stateName: string;
 }
 
 /**
  * パース結果 / バインディングをマウント先の形へ変換した複製を返す
- * （パース結果キャッシュは触らない）。`$` / `#` パスも stateName だけは親のものに
- * 揃える — 解決サイト（applyChangeFromBindings / getAbsoluteStateAddressByBinding /
- * fragmentInfoByUUID）は (rootNode, stateName) で state element を引くため。
+ * （パース結果キャッシュは触らない）。解決サイト（applyChangeFromBindings /
+ * getAbsoluteStateAddressByBinding / fragmentInfoByUUID）は rootNode で
+ * state element を引く — スコープ根は台帳エイリアスで親ツリーに到達する。
  */
 export function translateParsedForMount<T extends ITranslatable>(record: IMountRecord, parsed: T, forPath?: string): T {
   let translated: string;
@@ -426,14 +423,13 @@ export function translateParsedForMount<T extends ITranslatable>(record: IMountR
       }
     }
   }
-  if (translated === parsed.statePathName && parsed.stateName === record.parentStateName) {
+  if (translated === parsed.statePathName) {
     return parsed;
   }
   return {
     ...parsed,
     statePathName: translated,
-    statePathInfo: translated === parsed.statePathName ? parsed.statePathInfo : getPathInfo(translated),
-    stateName: record.parentStateName,
+    statePathInfo: getPathInfo(translated),
   };
 }
 

@@ -119,7 +119,7 @@ class Updater {
 
   private _applyChange(updateRecords: IQueuedUpdateRecord[]): void {
     // Note: AbsoluteStateAddress はキャッシュされているため、
-    // 同一の (stateName, address) は同じインスタンスとなり、
+    // 同一の (stateElement, address) は同じインスタンスとなり、
     // Map / Set による重複排除が正しく機能する。
     // coalescing は last-write-wins: 同じ address は最後の update の
     // (値は state 側が既に保持) context をそのまま採用する（設計書 §4.1）。
@@ -150,7 +150,6 @@ class Updater {
         // 既に適用した値は戻さず、updater から例外は投げない（設計書 §4 規則 6）。
         console.error(`[@wcstack/state] propagation hop limit exceeded; update record quarantined.`, {
           path: absoluteAddress.absolutePathInfo.pathInfo.path,
-          stateName: absoluteAddress.absolutePathInfo.stateName,
           transactionId: context.transactionId,
           hop: context.hop,
           maxHops: MAX_PROPAGATION_HOPS,

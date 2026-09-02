@@ -20,7 +20,6 @@ export interface IParsedBinding {
   readonly propModifiers: string[];
   readonly statePathName: string;
   readonly statePathInfo: IPathInfo;
-  readonly stateName: string;
   readonly inFilters: IFilterInfo[];
   readonly outFilters: IFilterInfo[];
   readonly bindingType: BindingType;

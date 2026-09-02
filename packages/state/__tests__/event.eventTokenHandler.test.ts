@@ -31,7 +31,6 @@ function createBinding(node: Element, propertyName: string, tokenName: string, m
     propModifiers: modifiers,
     statePathName: tokenName,
     statePathInfo: getPathInfo(tokenName),
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'event',
@@ -118,7 +117,7 @@ describe('eventTokenHandler', () => {
     expect(attachEventTokenHandler(binding)).toBe(true);
     expect(addSpy).toHaveBeenCalledWith('my-error', expect.any(Function));
     const handler = addSpy.mock.calls[0][1] as (e: Event) => void;
-    expect(() => handler(new CustomEvent('my-error'))).toThrow(/not found/);
+    expect(() => handler(new CustomEvent('my-error'))).toThrow(/No state tree found/);
   });
 
   it('$eventTokensに宣言されていないtokenは発火時にエラーになること', () => {
@@ -195,7 +194,7 @@ describe('eventTokenHandler', () => {
     const handler = addSpy.mock.calls[0][1] as (e: Event) => void;
 
     setStateElement(el, null);
-    expect(() => handler(new CustomEvent('my-error'))).toThrow(/not found/);
+    expect(() => handler(new CustomEvent('my-error'))).toThrow(/No state tree found/);
     clearEventTokenRegistry(se);
   });
 

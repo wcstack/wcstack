@@ -4,7 +4,6 @@ import { parseStatePart } from '../src/bindTextParser/parseStatePart';
 describe('parseStatePart', () => {
   it('statePathのみをパースできること', () => {
     const result = parseStatePart('user.name');
-    expect(result.stateName).toBe('default');
     expect(result.statePathName).toBe('user.name');
     expect(result.statePathInfo?.path).toBe('user.name');
     expect(result.outFilters).toEqual([]);
@@ -17,7 +16,6 @@ describe('parseStatePart', () => {
 
   it('フィルタをパースできること', () => {
     const result = parseStatePart('count|gt(0)|uc');
-    expect(result.stateName).toBe('default');
     expect(result.statePathName).toBe('count');
     expect(result.outFilters.length).toBe(2);
     expect(result.outFilters[0].filterName).toBe('gt');
@@ -28,7 +26,6 @@ describe('parseStatePart', () => {
 
   it('トリムが効くこと', () => {
     const result = parseStatePart('  count  |  gt(0)  ');
-    expect(result.stateName).toBe('default');
     expect(result.statePathName).toBe('count');
     expect(result.outFilters.length).toBe(1);
     expect(result.outFilters[0].filterName).toBe('gt');

@@ -66,7 +66,6 @@ describe('getParseBindTextResults', () => {
       propModifiers: [],
       statePathName: 'items',
       statePathInfo: getPathInfo('items'),
-      stateName: 'default',
       outFilters: [],
       inFilters: [],
       bindingType: 'for',

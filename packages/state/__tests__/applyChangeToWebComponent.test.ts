@@ -19,7 +19,6 @@ function createBinding(element: Element, propSegments: string[]): IBindingInfo {
     propModifiers: [],
     statePathName: 'value',
     statePathInfo: getPathInfo('value'),
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'prop',

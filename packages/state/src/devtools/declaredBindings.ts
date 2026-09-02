@@ -12,7 +12,7 @@
  * **戻り値は「宣言の集合」であり、インスタンスの multiset ではない**:
  * レンダリング済みページでは行クローンが `data-wcs` 属性とネストアンカー
  * （同一 UUID）を保持したまま live DOM に入るため、素朴な走査は宣言 1 件を
- * 行数分だけ重複列挙してしまう。ここでは宣言タプル（stateName / path / prop /
+ * 行数分だけ重複列挙してしまう。ここでは宣言タプル（path / prop /
  * bindingType / フィルタ列）で dedupe し、宣言 1 件 = エントリ 1 件を保証する。
  * インスタンス粒度（どの行のどのノードか）は live の binding 台帳
  * （state:binding-added）の守備範囲で、こちらには持たせない。
@@ -55,7 +55,7 @@ function declarationKey(info: IDeclaredBindingInfo): string {
   const filters = [...info.inFilters, ...info.outFilters]
     .map((f) => `${f.filterName}(${f.args.join(",")})`)
     .join("|");
-  return [info.stateName, info.statePathName, info.propName, info.bindingType, filters].join("\u0000");
+  return [info.statePathName, info.propName, info.bindingType, filters].join("\u0000");
 }
 
 function toInfo(
@@ -68,7 +68,6 @@ function toInfo(
     node,
     propName: parsed.propName,
     statePathName: parsed.statePathName,
-    stateName: parsed.stateName,
     bindingType: parsed.bindingType,
     inFilters: parsed.inFilters,
     outFilters: parsed.outFilters,

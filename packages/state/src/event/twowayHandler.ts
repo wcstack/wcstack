@@ -23,7 +23,7 @@ const DEFAULT_GETTER = (e: Event) => (e as CustomEvent).detail;
 
 function getHandlerKey(binding: IBindingInfo, eventName: string, hasGetter: boolean, isOccurrence: boolean): string {
   const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
-  return `${binding.stateName}::${binding.propName}::${binding.statePathName}::${eventName}::${filterKey}::${hasGetter ? 'g' : 'n'}::${isOccurrence ? 'o' : 's'}`;
+  return `${binding.propName}::${binding.statePathName}::${eventName}::${filterKey}::${hasGetter ? 'g' : 'n'}::${isOccurrence ? 'o' : 's'}`;
 }
 
 function getEventName(binding: IBindingInfo): string {
@@ -76,7 +76,6 @@ function isOccurrenceProperty(binding: IBindingInfo): boolean {
 }
 
 const twowayEventHandlerFunction = (
-  stateName: string,
   propName: string,
   statePathName: string,
   inFilters: IFilterInfo[],
@@ -110,7 +109,7 @@ const twowayEventHandlerFunction = (
   let propagationContext: ReturnType<typeof getCurrentPropagationContext> = null;
   if (config.enablePropagationContext) {
     // Phase 3: element → state edge の因果判定（設計書 §4）。
-    const wireId = getWireId(node, propName, stateName, statePathName);
+    const wireId = getWireId(node, propName, statePathName);
     const receipt = matchWriteReceipt(node, propName);
     if (receipt !== null && Object.is(receipt.writtenValue, newValue)) {
       // 規則 4: 同じ setter call stack 内で同じ member から Object.is 同値の
@@ -167,7 +166,7 @@ const twowayEventHandlerFunction = (
   const rootNode = node.getRootNode() as Node;
   const stateElement = getStateElement(rootNode);
   if (stateElement === null) {
-    raiseError(`State element with name "${stateName}" not found for two-way binding.`);
+    raiseError(`No state tree found on this root for two-way binding.`);
   }
 
   const loopContext = getLoopContextByNode(node);
@@ -236,7 +235,6 @@ export function attachTwowayEventHandler(binding: IBindingInfo): void {
     let twowayEventHandler = handlerByHandlerKey.get(key);
     if (typeof twowayEventHandler === "undefined") {
       twowayEventHandler = twowayEventHandlerFunction(
-        binding.stateName,
         binding.propName,
         binding.statePathName,
         binding.inFilters,

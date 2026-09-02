@@ -40,7 +40,6 @@ function createBinding(node: Element, statePathName: string): IBindingInfo {
     propModifiers: [],
     statePathName,
     statePathInfo: getPathInfo(statePathName),
-    stateName: "default",
     inFilters: [],
     outFilters: [],
     node,
@@ -58,10 +57,10 @@ function createAbsAddress(path: string) {
 describe("propagation core", () => {
   it("wire ID は (node, member, state, path) で安定し edge ID は方向を含むこと", () => {
     const node = document.createElement("div");
-    const wireId = getWireId(node, "value", "default", "text");
-    expect(getWireId(node, "value", "default", "text")).toBe(wireId);
-    expect(getWireId(node, "checked", "default", "text")).not.toBe(wireId);
-    expect(getWireId(document.createElement("div"), "value", "default", "text")).not.toBe(wireId);
+    const wireId = getWireId(node, "value", "text");
+    expect(getWireId(node, "value", "text")).toBe(wireId);
+    expect(getWireId(node, "checked", "text")).not.toBe(wireId);
+    expect(getWireId(document.createElement("div"), "value", "text")).not.toBe(wireId);
     expect(getEdgeId(wireId, "to-element")).not.toBe(getEdgeId(wireId, "to-state"));
   });
 
@@ -139,7 +138,7 @@ describe("applyChangeToProperty propagation", () => {
     const second = document.createElement("input");
     const firstBinding = createBinding(first, "text");
     const secondBinding = createBinding(second, "text");
-    const firstEdge = getEdgeId(getWireId(first, "value", "default", "text"), "to-element");
+    const firstEdge = getEdgeId(getWireId(first, "value", "text"), "to-element");
     const visited = extendPropagationContext(beginPropagationTransaction(-1), firstEdge);
     const propagationContextByBinding = new Map<IBindingInfo, IPropagationContext | null>([
       [firstBinding, visited],
@@ -185,7 +184,7 @@ describe("applyChangeToProperty propagation", () => {
 
     applyChangeToProperty(binding, {} as IApplyContext, "written");
 
-    const edgeId = getEdgeId(getWireId(element, "value", "default", "text"), "to-element");
+    const edgeId = getEdgeId(getWireId(element, "value", "text"), "to-element");
     expect(observedReceiptValue).toBe("written");
     expect(observedContext).not.toBeNull();
     expect(observedContext!.hop).toBe(1);

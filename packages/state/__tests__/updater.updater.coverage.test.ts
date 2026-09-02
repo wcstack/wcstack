@@ -24,7 +24,6 @@ describe('updater/updater coverage', () => {
     const updater = new Updater();
 
     const mockAbsoluteAddress: IAbsoluteStateAddress = {
-      stateName: 'nonexistent',
       address: { pathInfo: { path: 'count' } } as any,
     };
 

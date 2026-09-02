@@ -52,7 +52,6 @@ describe('updater/updater', () => {
     const missingStateElement = createStateElement('missing');
     const absoluteAddress = createAbsAddress(missingStateElement, 'count');
     expect(absoluteAddress).toBeDefined();
-    expect(absoluteAddress.absolutePathInfo.stateName).toBe('missing');
   });
 
   it('enqueueでapplyChangeFromBindingsが呼ばれること', async () => {

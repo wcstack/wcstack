@@ -114,7 +114,7 @@ function _getByAddress(
       return undefined;
     }
     const parentAddress = address.parentAddress ?? raiseError(
-      missingRootPathMessage(stateElement.name, address.pathInfo.path, target, stateElement.getterPaths),
+      missingRootPathMessage(address.pathInfo.path, target, stateElement.getterPaths),
     );
     const parentValue = getByAddress(target, parentAddress, receiver, handler);
     // 親が居ないパスの読みは undefined（＝「state に意見が無い」）。`Reflect.get` に
