@@ -46,97 +46,33 @@ function defineLightComponent(
   customElements.define(tag, LightComponent);
 }
 
-describe("bind-component: Light DOM の plain 形（state 注入）", () => {
+describe("bind-component: Light DOM の plain 形は廃止（v2）", () => {
   /**
-   * 親からバインドしない形。値の正本はコンポーネント自身の `state` にあり、
-   * Shadow DOM を使わずに `<wcs-state bind-component>` でリアクティブ化だけを受ける。
-   * この経路は `waitInitializeBinding` を通らないので成立する。
+   * 廃止の決定（2026-09-03・著者）: 共有 rootNode に独立ツリーを置くには名前次元が要り、
+   * 単一登録簿（P3-6）と両立しない。移行は 2 択 — shadow を付けて plain Shadow 形にする
+   *（1 行・$ 宣言も全部動く）か、ホストから `state: path` で配線してマウントにする。
    */
-  async function mountPlain(stateName: string, componentTag: string) {
-    const host = document.createElement(uniqueTag("bcld-host"));
-    const hostShadow = host.attachShadow({ mode: "open" });
-    hostShadow.innerHTML =
-      `<wcs-state json='{"outer":"untouched"}'></wcs-state>` +
-      `<${componentTag}></${componentTag}>`;
-    document.body.appendChild(host);
+  it("配線なしの Light DOM bind-component は誘導付きで throw すること", async () => {
+    const tag = uniqueTag("bcld-plain-dead");
+    if (!customElements.get(tag)) {
+      customElements.define(tag, class extends HTMLElement {
+        state: Record<string, any> = { message: "Hello" };
+      });
+    }
+    const component = document.createElement(tag);
+    const stateEl = document.createElement("wcs-state") as State;
+    stateEl.setAttribute("bind-component", "state");
+    component.appendChild(stateEl);
+    (stateEl as any)._rootNode = document; // 非接続のまま直接呼ぶ（自動 connect を避ける）
 
-    const hostState = hostShadow.querySelector("wcs-state:not([name])") as State;
-    await hostState.connectedCallbackPromise;
-    const innerState = hostShadow.querySelector(`wcs-state[name="${stateName}"]`) as State;
-    await innerState.connectedCallbackPromise;
-    await State.getBindingsReady(hostShadow);
-    await flush();
-
-    const component = hostShadow.querySelector(componentTag) as HTMLElement;
-    return { host, hostShadow, innerState, component };
-  }
-
-  it("Light DOM でも state 注入で描画されること", async () => {
-    const tag = uniqueTag("bcld-plain");
-    const stateName = `sp${counter}`;
-    defineLightComponent(
-      tag,
-      stateName,
-      { message: "Hello" },
-      `<span class="inner" data-wcs="textContent: message@${stateName}"></span>`,
+    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
+      /plain \(unwired\) Light DOM "bind-component" is not supported/,
     );
-
-    const { host, component } = await mountPlain(stateName, tag);
-
-    expect((component.querySelector(".inner") as HTMLElement).textContent).toBe("Hello");
-
-    host.remove();
-  });
-
-  it("注入された state への書き込みが Light DOM の描画に反映されること", async () => {
-    const tag = uniqueTag("bcld-plain");
-    const stateName = `sp${counter}`;
-    defineLightComponent(
-      tag,
-      stateName,
-      { message: "Hello" },
-      `<span class="inner" data-wcs="textContent: message@${stateName}"></span>`,
-    );
-
-    const { host, innerState, component } = await mountPlain(stateName, tag);
-    const inner = component.querySelector(".inner") as HTMLElement;
-
-    innerState.createState("writable", (s: any) => {
-      s.message = "Updated";
-    });
-    await flush();
-
-    expect(inner.textContent).toBe("Updated");
-
-    host.remove();
-  });
-
-  it("Light DOM の子スコープが自分のリストを for で回せること", async () => {
-    const tag = uniqueTag("bcld-plainlist");
-    const stateName = `sp${counter}`;
-    defineLightComponent(
-      tag,
-      stateName,
-      { items: [{ name: "a" }, { name: "b" }] },
-      `<ul><template data-wcs="for: items@${stateName}">` +
-        `<li class="row" data-wcs="textContent: items.*.name@${stateName}"></li>` +
-        `</template></ul>`,
-    );
-
-    const { host, innerState, component } = await mountPlain(stateName, tag);
-    const rows = () =>
-      Array.from(component.querySelectorAll(".row")).map((el) => el.textContent);
-    expect(rows()).toEqual(["a", "b"]);
-
-    innerState.createState("writable", (s: any) => {
-      s["items.0.name"] = "a2";
-    });
-    await flush();
-    expect(rows()).toEqual(["a2", "b"]);
-
-    host.remove();
-  });
+    // fail-fast でも初期化待ちはウェッジしない（waitForStateInitialize の巻き添え防止）
+    await stateEl.initializePromise;  });
 });
+
+
 
 /**
  * **§1.13（未修正）: mapped な Light DOM は初期化がデッドロックする。**

@@ -60,13 +60,7 @@
       {}, // v2 R1（D19）
     );
 
-    // plain: ホストから束ねない state 注入（従来から成立していた形）
-    defineLight(
-      "light-plain",
-      "lp",
-      `<span class="inner" data-wcs="textContent: label@lp"></span>`,
-      { label: "injected" },
-    );
+    // plain（配線なし）の Light DOM は v2 で廃止 — 専用ページ bind-component-light-dom-plain-removed.html でピン留め
   </script>
 </head>
 <body>
@@ -91,9 +85,7 @@ export default {
     <light-list data-wcs="state.items: rows"></light-list>
   </div>
 
-  <div id="plain">
-    <light-plain></light-plain>
-  </div>
+
 
   <button id="rename" data-wcs="onclick: rename">rename</button>
   <button id="rename-row" data-wcs="onclick: renameRow">rename row</button>

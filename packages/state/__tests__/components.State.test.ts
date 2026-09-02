@@ -520,7 +520,7 @@ describe('State component', () => {
     );
   });
 
-  it('LightDOMでbind-componentにname属性がない場合はエラーになること', async () => {
+  it('plain（配線なし）の Light DOM bind-component は廃止エラーになること', async () => {
     const stateEl = createStateElement({ 'bind-component': 'outer' });
     // LightDOMの親コンポーネントをシミュレート
     if (!customElements.get('x-light-host')) {
@@ -531,7 +531,7 @@ describe('State component', () => {
     (stateEl as any)._rootNode = document; // LightDOM: rootNodeはdocument
 
     await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
-      /"bind-component" in Light DOM requires a "name" attribute/
+      /plain \(unwired\) Light DOM "bind-component" is not supported/
     );
   });
 
@@ -671,7 +671,7 @@ describe('State component', () => {
   });
 });
 
-describe('Light DOM の name 必須（v2 のゲート後）', () => {
+describe('plain Light DOM の廃止（v2 のゲート後）', () => {
   it('マウント先の state 要素が見つからなければ throw すること', async () => {
     const { setBindingsByNode } = await import('../src/bindings/getBindingsByNode');
     const { getPathInfo } = await import('../src/address/PathInfo');
@@ -705,7 +705,7 @@ describe('Light DOM の name 必須（v2 のゲート後）', () => {
     );
   });
 
-  it('data-wcs はあるが state バインディングが無い Light DOM は name 必須のままであること', async () => {
+  it('data-wcs はあるが state バインディングが無い Light DOM も plain として廃止エラーになること', async () => {
     const { setBindingsByNode } = await import('../src/bindings/getBindingsByNode');
     const { getPathInfo } = await import('../src/address/PathInfo');
     const stateEl = createStateElement({ 'bind-component': 'state' });
@@ -735,13 +735,13 @@ describe('Light DOM の name 必須（v2 のゲート後）', () => {
     (stateEl as any)._rootNode = document;
 
     await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
-      /"bind-component" in Light DOM requires a "name" attribute/
+      /plain \(unwired\) Light DOM "bind-component" is not supported/
     );
   });
 });
 
-describe('Light DOM の name 必須（台帳が空の形）', () => {
-  it('data-wcs はあるが台帳に何も無い Light DOM も name 必須のままであること', async () => {
+describe('plain Light DOM の廃止（台帳が空の形）', () => {
+  it('data-wcs はあるが台帳に何も無い Light DOM も plain として廃止エラーになること', async () => {
     const stateEl = createStateElement({ 'bind-component': 'state' });
     if (!customElements.get('x-light-noledger')) {
       customElements.define('x-light-noledger', class extends HTMLElement {
@@ -754,7 +754,7 @@ describe('Light DOM の name 必須（台帳が空の形）', () => {
     (stateEl as any)._rootNode = document;
 
     await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
-      /"bind-component" in Light DOM requires a "name" attribute/
+      /plain \(unwired\) Light DOM "bind-component" is not supported/
     );
   });
 });

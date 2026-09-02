@@ -340,6 +340,22 @@ export class State extends HTMLElementBase implements IStateElement {
     setStateElementByName(this.rootNode!, this._name, this);
   }
 
+  /**
+   * 設定エラーでの fail-fast。initializePromise 等を解決してから raise する —
+   * 未解決のまま投げると waitForStateInitialize（ホストの buildBindings）が
+   * この要素を待ち続け、**ページ全体が無言でウェッジする**（1 つの設定ミスが
+   * 無関係なバインディングまで道連れにする）。エラー自体は unhandled rejection
+   * として loud に残る。
+   */
+  private _failInitialization(message: string): never {
+    // _initialized は立てない — 切断時の後始末（createState を要する）が
+    // 未ロードの state を触らないよう、初期化前ガードに掛かるままにする
+    this._resolveInitialize?.();
+    this._resolveLoading?.();
+    this._resolveConnectedCallback?.();
+    raiseError(message);
+  }
+
   private async _initializeBindWebComponent() {
     if (this.hasAttribute("bind-component")) {
       // wcs-stateはコンポーネントのトップレベル要素であること
@@ -355,13 +371,17 @@ export class State extends HTMLElementBase implements IStateElement {
       if (boundComponent === null || customTagName === null) {
         raiseError(`"bind-component" requires <${config.tagNames.state}> to be a direct child of a custom element.`);
       }
-      // Light DOM の name 必須は v1 の plain 形にだけ残る（名前空間を共有するため）。
-      // v2 のマウント（ホスト配線あり）は独立ツリーを持たず名前を使わない。
-      // data-wcs が無ければ確実に plain — 従来の位置で fail-fast する。
+      // plain（ホスト配線なし）の Light DOM は廃止（v2・2026-09-03 著者決定）。
+      // 共有 rootNode に独立ツリーを置くには名前次元が要り、単一登録簿（P3-6）と
+      // 両立しない。shadow を付ければ plain Shadow 形（独立ツリー・$ 宣言込み）に
+      // そのままなる。data-wcs が無ければ確実に plain — 従来の位置で fail-fast。
       // data-wcs があるときの判定はホスト配線が要るため下（waitInitializeBinding の後）
-      if (!(parentNode instanceof ShadowRoot) && !this.hasAttribute("name")
-        && !boundComponent.hasAttribute(config.bindAttributeName)) {
-        raiseError(`"bind-component" in Light DOM requires a "name" attribute to avoid namespace conflicts with the parent scope.`);
+      if (!(parentNode instanceof ShadowRoot) && !boundComponent.hasAttribute(config.bindAttributeName)) {
+        this._failInitialization(
+          `A plain (unwired) Light DOM "bind-component" is not supported. ` +
+          `Attach a shadow root to <${customTagName}>, or mount it from the host ` +
+          `(data-wcs="${this.getAttribute("bind-component")}: path").`,
+        );
       }
       // bind-component はコンポーネント側の state プロパティを唯一のソースにする。
       // state / src / json / inner <script> と併記すると、この後の _initialize が
@@ -411,13 +431,15 @@ export class State extends HTMLElementBase implements IStateElement {
       }
       this._boundComponent = boundComponent;
       this._boundComponentStateProp = boundComponentStateProp;
-      // v1 の plain 形（ホスト配線なし）だけが名前空間を共有する — Light DOM では name 必須。
-      // ホスト配線があれば下の v2 マウントに乗る（名前不要）
-      // data-wcs 無しの plain は上（await 前）で既に raise 済みなので、ここに来る
-      // Light DOM は必ず data-wcs を持つ — 検査は「state バインディングの有無」だけで良い
-      if (!(parentNode instanceof ShadowRoot) && !this.hasAttribute("name")
+      // data-wcs はあるが state 配線が無い Light DOM も plain（廃止 — 上と同じ誘導）。
+      // 判定にホスト配線（台帳）が要るためここ（waitInitializeBinding の後）で行う
+      if (!(parentNode instanceof ShadowRoot)
         && !(getBindingsByNode(boundComponent) ?? []).some((b) => b.propSegments[0] === boundComponentStateProp)) {
-        raiseError(`"bind-component" in Light DOM requires a "name" attribute to avoid namespace conflicts with the parent scope.`);
+        this._failInitialization(
+          `A plain (unwired) Light DOM "bind-component" is not supported. ` +
+          `Attach a shadow root to <${customTagName}>, or mount it from the host ` +
+          `(data-wcs="${boundComponentStateProp}: path").`,
+        );
       }
       // v2 マウント（Phase 2 slice 3・impl-plan §3-0）: **ルートエントリ**（`state: path` の
       // 丸ごとマウント）を持つホスト配線は単一ツリーで構築する。部分マウントのみの

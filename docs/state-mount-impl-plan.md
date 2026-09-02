@@ -230,6 +230,8 @@ slice 4 で確定した挙動・発見:
 
 - **slice 13 済み（宣言面 — 著者決定①の実装）**: ボリュームに $watch（相対宣言→翻訳してルート台帳へ**追記**。watchRegistry にボリューム別台帳・同一パス多重可・ハンドラは chroot 包装・computed の prime 込み）／$listKeys（翻訳して mergeVolumeListKeys — 衝突は throw）／$updatedCallback（相対配送 — proxy/apis/updatedCallback が接頭辞で選別し相対パス＋スコープ添字で chroot 呼び出し・収集ゲートは enableUpdatedCallback）／$disconnectedCallback（切断時に chroot・接ぎ木は残る）。$streams は未対応のまま loud に raise（status 名前空間の設計が別途要る — 残課題）。コンポーネント側＝$watch/$streams/$listKeys/$updatedCallback は実行せず **(tag,prop) 1 回の warn**（`wcs/mount-dollar-declaration`・v1 mapped も元々非対応＝退行なし）。**$connectedCallback / $disconnectedCallback はスコープごとに実行**（this=公開 chroot・接続ごと・例外/reject 隔離。連鎖切断中は親セッションが先に死ぬためツリー読みは失敗しうる — 隔離どおり）。罠 2 件＝import 連鎖（updatedCallback→volume→watchRuntime→**updater 循環**）を volumeShared.ts（軽量共有面: 予約・chroot・ucb 台帳・保留キュー+graft ハンドラ注入）で切断／headless の行 watch は **S13 のピンどおり $listKeys が要る**（for 無しの配列代入では発火しない）。2645 unit 緑・e2e 13 緑・カバレッジ全ゲート緑（99.53/98.56/100/99.73）。
 
+- **slice 14 済み（plain Light DOM の廃止 — 著者決定②の実装）**: 配線なし（ホストに `state[.sub]: path` が 1 本も無い）Light DOM の bind-component は **raiseError**（誘導文＝「shadow を付ける（plain Shadow 形・$ 宣言込み）」か「ホストから配線してマウント」）。name 属性の有無は無関係（name 必須の旧検査 2 箇所を廃止エラーに置換）。**巻き添え防止**＝`_failInitialization`（initializePromise 等を解決してから raise — 未解決のまま投げると waitForStateInitialize がページ全体を無言でウェッジする。`_initialized` は立てない — 切断時の後始末が未ロード state を触らないよう初期化前ガードに掛けたまま）。e2e＝専用ページ bind-component-light-dom-plain-removed.html（loud エラー＋同居 mapped が無傷）を新設し、共有フィクスチャから plain を除去（loud エラーが同居テストの errors=[] 断定を汚すため分離が必須）。これで **name の最後の消費者が消え、P3-4〜P3-6（名前撤去・登録簿の単数化）が開通**。
+
 ### 3-1. タスク
 
 | ID | タスク | 場所 | 受け入れ |

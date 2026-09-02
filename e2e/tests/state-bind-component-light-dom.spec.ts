@@ -70,12 +70,18 @@ test.describe("e2e/fixtures/bind-component-light-dom", () => {
     expect(errors).toEqual([]);
   });
 
-  test("plain な Light DOM（state 注入）が引き続き成立すること", async ({ page }) => {
-    const errors = collectErrors(page);
-    await page.goto("/e2e/fixtures/bind-component-light-dom.html");
+  test("plain な Light DOM は廃止 — loud に落ち、ページの他の部分を巻き添えにしないこと", async ({ page }) => {
+    // v2（2026-09-03 著者決定）: 共有 rootNode に独立ツリーを置けないため plain light は
+    // 設定エラー。誘導＝shadow を付ける（plain Shadow 形）か、ホストから配線してマウント。
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    await page.goto("/e2e/fixtures/bind-component-light-dom-plain-removed.html");
 
-    await expect(page.locator("#plain light-plain .inner")).toHaveText("injected");
-
-    expect(errors).toEqual([]);
+    // 同じページの mapped コンポーネントは無傷（ウェッジしない）
+    await expect(page.locator("#mapped light-view-ok .inner")).toHaveText("Alice");
+    // plain は描画されない
+    await expect(page.locator("#plain light-plain .inner")).toHaveText("");
+    // エラーは loud（誘導文付き）
+    expect(pageErrors.some((m) => m.includes('plain (unwired) Light DOM "bind-component" is not supported'))).toBe(true);
   });
 });
