@@ -343,5 +343,11 @@ declare class WcsResize extends HTMLElement {
     attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void;
 }
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-resize": WcsResize;
+    }
+}
+
 export { ResizeCore, WcsResize, bootstrapResize, getConfig };
 export type { IWritableConfig, IWritableTagNames, ResizeBoxOption, ResizeOptions, WcsResizeBoxSize, WcsResizeCommands, WcsResizeCoreCommands, WcsResizeCoreValues, WcsResizeEntry, WcsResizeInputs, WcsResizeRect, WcsResizeValues };

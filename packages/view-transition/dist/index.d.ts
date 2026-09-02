@@ -306,5 +306,11 @@ declare class WcsViewTransition extends HTMLElement {
     private _applyAttribute;
 }
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-view-transition": WcsViewTransition;
+    }
+}
+
 export { TRANSITION_RUNNER_KEY, ViewTransitionCore, WcsViewTransition, bootstrapViewTransition, getConfig, getTransitionRunner, runTransition };
 export type { IWcsTransitionRunOptions, IWcsTransitionRunner, IWritableConfig, IWritableTagNames, ReducedMotionPolicy, TransitionMode, TransitionNaming, TransitionSource, WcsViewTransitionCommands, WcsViewTransitionCoreCommands, WcsViewTransitionCoreValues, WcsViewTransitionInputs, WcsViewTransitionValues };

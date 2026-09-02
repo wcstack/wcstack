@@ -339,5 +339,11 @@ declare class WcsIntersect extends HTMLElement {
     attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void;
 }
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-intersect": WcsIntersect;
+    }
+}
+
 export { IntersectionCore, WcsIntersect, bootstrapIntersection, getConfig };
 export type { IWritableConfig, IWritableTagNames, IntersectOptions, WcsIntersectCommands, WcsIntersectCoreCommands, WcsIntersectCoreValues, WcsIntersectEntry, WcsIntersectInputs, WcsIntersectRect, WcsIntersectValues };

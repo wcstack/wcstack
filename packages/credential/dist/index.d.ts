@@ -284,5 +284,11 @@ declare const WCS_CREDENTIAL_ERROR_CODE: {
     readonly CredentialFailed: "credential-failed";
 };
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-credential": WcsCredential;
+    }
+}
+
 export { CredentialCore, WCS_CREDENTIAL_ERROR_CODE, WcsCredential, bootstrapCredential, getConfig };
 export type { CredentialGetOptions, IWritableConfig, IWritableTagNames, StorableCredential, WcsCredentialCoreValues, WcsCredentialValues, WcsIoErrorInfo, WcsIoErrorPhase };

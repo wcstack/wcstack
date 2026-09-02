@@ -255,5 +255,11 @@ declare const WCS_SCREEN_ORIENTATION_ERROR_CODE: {
     readonly OrientationError: "orientation-error";
 };
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-screen-orientation": WcsScreenOrientation;
+    }
+}
+
 export { ScreenOrientationCore, WCS_SCREEN_ORIENTATION_ERROR_CODE, WcsScreenOrientation, bootstrapScreenOrientation, getConfig };
 export type { IWritableConfig, IWritableTagNames, OrientationLockType, WcsIoErrorInfo, WcsIoErrorPhase, WcsScreenOrientationCoreValues, WcsScreenOrientationSnapshot, WcsScreenOrientationValues };

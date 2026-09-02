@@ -208,5 +208,11 @@ declare class Timer extends HTMLElement {
     disconnectedCallback(): void;
 }
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-timer": Timer;
+    }
+}
+
 export { TimerCore, Timer as WcsTimer, bootstrapTimer, getConfig };
 export type { IWritableConfig, IWritableTagNames, TimerStartOptions, WcsTimerCommands, WcsTimerCoreCommands, WcsTimerCoreValues, WcsTimerInputs, WcsTimerTickDetail, WcsTimerValues };

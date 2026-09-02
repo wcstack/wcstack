@@ -203,5 +203,11 @@ declare class WcsPermission extends HTMLElement {
     disconnectedCallback(): void;
 }
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-permission": WcsPermission;
+    }
+}
+
 export { PermissionCore, WcsPermission, bootstrapPermission, getConfig };
 export type { IWritableConfig, IWritableTagNames, PermissionStateOrUnsupported, WcsPermissionCoreValues, WcsPermissionDescriptor, WcsPermissionInputs, WcsPermissionValues };

@@ -261,5 +261,11 @@ declare const WCS_BROADCAST_ERROR_CODE: {
     readonly BroadcastError: "broadcast-error";
 };
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-broadcast": WcsBroadcast;
+    }
+}
+
 export { BroadcastCore, WCS_BROADCAST_ERROR_CODE, WcsBroadcast, bootstrapBroadcast, getConfig };
 export type { IWritableConfig, IWritableTagNames, WcsBroadcastCommands, WcsBroadcastCoreCommands, WcsBroadcastCoreValues, WcsBroadcastErrorDetail, WcsBroadcastInputs, WcsBroadcastValues, WcsIoErrorInfo, WcsIoErrorPhase };

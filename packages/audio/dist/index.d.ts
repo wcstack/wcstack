@@ -680,5 +680,21 @@ declare class WcsAnalyser extends WcsAnalyser_base {
     sample(mode?: "wave" | "fft"): Uint8Array | null;
 }
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-audio": WcsAudio;
+        "wcs-voice": WcsVoice;
+        "wcs-osc": WcsOsc;
+        "wcs-noise": WcsNoise;
+        "wcs-biquad": WcsBiquad;
+        "wcs-gain": WcsGain;
+        "wcs-delay": WcsDelay;
+        "wcs-shaper": WcsShaper;
+        "wcs-env": WcsEnv;
+        "wcs-lfo": WcsLfo;
+        "wcs-analyser": WcsAnalyser;
+    }
+}
+
 export { AudioGraphCore, AudioNodeShell, STRUCTURAL_ATTRIBUTES, VoiceAllocator, WCS_AUDIO_ERROR_CODE, WcsAnalyser, WcsAudio, WcsBiquad, WcsDelay, WcsEnv, WcsGain, WcsLfo, WcsNoise, WcsOsc, WcsShaper, WcsVoice, bootstrapAudio, compilePatch, defaultCreateContext, deriveAudioErrorInfo, findAudioRoot, getConfig, graphChildren, releaseSharedContext, structureKey };
 export type { AudioContextState, AudioNodeKind, IAudioWarning, IWritableConfig, IWritableTagNames, Patch, PatchNode, PatchVoice, WcsAudioCoreValues, WcsAudioInputs, WcsAudioValues, WcsIoErrorInfo };

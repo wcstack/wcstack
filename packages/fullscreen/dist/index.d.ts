@@ -246,5 +246,11 @@ declare const WCS_FULLSCREEN_ERROR_CODE: {
     readonly FullscreenError: "fullscreen-error";
 };
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-fullscreen": WcsFullscreen;
+    }
+}
+
 export { FullscreenCore, WCS_FULLSCREEN_ERROR_CODE, WcsFullscreen, bootstrapFullscreen, getConfig };
 export type { IWritableConfig, IWritableTagNames, WcsFullscreenCoreValues, WcsFullscreenValues, WcsIoErrorInfo, WcsIoErrorPhase };

@@ -403,5 +403,11 @@ declare const WCS_MIDI_ERROR_CODE: {
  */
 declare function deriveMidiErrorInfo(name: string | undefined, message: string): WcsIoErrorInfo;
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-midi": WcsMidi;
+    }
+}
+
 export { MIDI_MESSAGE_TYPES, MidiCore, WCS_MIDI_ERROR_CODE, WcsMidi, bootstrapMidi, deriveMidiErrorInfo, getConfig, parseMessage };
 export type { IMidiDevice, IMidiMessage, IMidiOptions, IMidiParsed, IWritableConfig, IWritableTagNames, MidiMessageType, MidiPermissionState, WcsIoErrorInfo, WcsMidiCoreValues, WcsMidiInputs, WcsMidiValues };

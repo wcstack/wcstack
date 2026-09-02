@@ -1928,6 +1928,32 @@ function parsePropPart(propPart) {
     };
 }
 
+/**
+ * 名前付き State（`<wcs-state name>` / `path@name`）の deprecation 通知。
+ *
+ * v2 では名前の次元そのものが消え、`<wcs-state mount="path">` と接頭辞付きパスに
+ * 置き換わる（docs/state-mount-design.md D1 / D16）。1.x には `mount=` が無く、
+ * warn を出しても利用者は動けないので、**既定では出さない**（`config.debug` 下だけ）。
+ * 主経路は lint（`wcs/named-state-deprecated`）と README の告知。
+ *
+ * 出すときは種別 × 対象ごとに 1 回（起動のたびに同じ行が並ばないように）。
+ */
+const reported$1 = new Set();
+function warnNamedStateDeprecated(kind, subject) {
+    if (!config.debug) {
+        return;
+    }
+    const key = `${kind}:${subject}`;
+    if (reported$1.has(key)) {
+        return;
+    }
+    reported$1.add(key);
+    const hint = kind === 'attribute'
+        ? `<wcs-state name="${subject}"> will be removed in v2. Mount the state onto the root tree with <wcs-state mount="${subject}"> and read it as "${subject}.<path>".`
+        : `"${subject}" uses the "@name" state selector, which will be removed in v2. Read the mounted tree as "<name>.<path>" instead.`;
+    console.warn(`[@wcstack/state] [wcs/named-state-deprecated] ${hint} See docs/state-mount-design.md §9.`);
+}
+
 const cacheFilterInfos = new Map();
 // format: statePath@stateName|filter|filter
 // statePath-format: path.to.property (e.g., user.name.first, users.*.name, users.0.name, not include @)
@@ -1953,6 +1979,10 @@ function parseStatePart(statePart) {
     }
     else {
         stateAndPath = statePart.trim();
+    }
+    if (stateAndPath.indexOf(STATE_NAME_SEPARATOR) !== -1) {
+        // `path@name` は v2 で消える（docs/state-mount-design.md D16。既定では黙る）
+        warnNamedStateDeprecated('path', stateAndPath);
     }
     const [statePathName, stateName = 'default'] = stateAndPath.split(STATE_NAME_SEPARATOR).map(trimFn);
     const pathInfo = getPathInfo(statePathName);
@@ -4019,11 +4049,12 @@ const outerMappingByElement = new WeakMap();
 const primaryMappingRuleSetByElement = new WeakMap();
 const primaryBindingByMappingRule = new WeakMap();
 function createMappingRuleByBinding(innerState, binding) {
-    const innerPathInfo = getPathInfo(binding.propSegments.slice(1).join(DELIMITER));
+    const innerPath = binding.propSegments.slice(1).join(DELIMITER);
+    const innerPathInfo = getPathInfo(innerPath);
     const innerAbsPathInfo = getAbsolutePathInfo(innerState, innerPathInfo);
     const outerAbsStateAddress = getAbsoluteStateAddressByBinding(binding);
     const outerAbsPathInfo = outerAbsStateAddress.absolutePathInfo;
-    return { innerAbsPathInfo, outerAbsPathInfo };
+    return { innerAbsPathInfo, outerAbsPathInfo, isRoot: innerPath.length === 0 };
 }
 function buildPrimaryMappingRule(webComponent, stateName, bindings) {
     if (bindings.length === 0) {
@@ -4035,8 +4066,16 @@ function buildPrimaryMappingRule(webComponent, stateName, bindings) {
     }
     const innerMappingRule = new Map();
     const outerMappingRule = new Map();
+    // 同じ内側パスを 2 つの規則が指す形（`state.x: b; state.x: c`、`state: a; state: b`）は
+    // どちらが勝つか書き手に見えないので、導出時ではなく構築時に落とす（設計書 §4-7 / M6）。
+    const seenInnerPaths = new Set();
     for (const binding of bindings) {
         const mappingRule = createMappingRuleByBinding(innerState, binding);
+        const innerPath = mappingRule.innerAbsPathInfo.pathInfo.path;
+        if (seenInnerPaths.has(innerPath)) {
+            raiseError('Duplicate mapping rule for web component.');
+        }
+        seenInnerPaths.add(innerPath);
         let primaryMappingRuleSet = primaryMappingRuleSetByElement.get(webComponent);
         if (typeof primaryMappingRuleSet === 'undefined') {
             primaryMappingRuleSetByElement.set(webComponent, new Set([mappingRule]));
@@ -4084,11 +4123,14 @@ function resetDerivedMappingRules(webComponent) {
     outerMappingByElement.set(webComponent, outerMappingRule);
 }
 /**
- * このコンポーネントに張られたプライマリ規則の**内側パス**を列挙する。
+ * このコンポーネントに張られたプライマリ規則の**内側パス**を列挙する（ルート規則を除く）。
  *
  * 切断 → 再接続を跨いだ子（行 content の再利用で起きる）は、切断中に親で起きた変更の
  * 通知を受け取れていない。再接続時に「束ねているパスを読み直せ」と撃つための入力で、
  * 何が変わったかは分からないのでプライマリ規則の粒度で丸ごと読み直す（§1.9）。
+ *
+ * ルート規則は内側パスが空で `$postUpdate("")` に意味が無いため含めない。ルート規則の
+ * 読み直しは子の登録済みパス全部（`getRootReloadPaths`）で行う。
  */
 function getPrimaryInnerPaths(webComponent) {
     const primaryMappingRuleSet = primaryMappingRuleSetByElement.get(webComponent);
@@ -4097,12 +4139,36 @@ function getPrimaryInnerPaths(webComponent) {
     }
     const paths = [];
     for (const rule of primaryMappingRuleSet) {
+        if (rule.isRoot) {
+            continue;
+        }
         paths.push(rule.innerAbsPathInfo.pathInfo.path);
     }
     return paths;
 }
+/** このコンポーネントのプライマリ規則の集合。無ければ null（plain）。 */
+function getPrimaryMappingRules(webComponent) {
+    return primaryMappingRuleSetByElement.get(webComponent) ?? null;
+}
+/** ルート規則（`state: path` の丸ごとマウント）があるか。 */
+function hasRootMappingRule(webComponent) {
+    const primaryMappingRuleSet = primaryMappingRuleSetByElement.get(webComponent);
+    if (typeof primaryMappingRuleSet === 'undefined') {
+        return false;
+    }
+    for (const rule of primaryMappingRuleSet) {
+        if (rule.isRoot) {
+            return true;
+        }
+    }
+    return false;
+}
 /**
  * 内側のパスを外側のパスへ翻訳する。規則が無ければプライマリ規則から導出する。
+ *
+ * 導出は**最長接頭辞一致**。ルート規則（接頭辞長 0）はあらゆる内側パスに一致するが、
+ * 部分規則（`state.theme: theme`）がより長い接頭辞で一致すればそちらが勝つ
+ * （`state: rows; state.theme: theme` の併用 — 設計書 §3-2）。
  *
  * `registerSubscriber` は導出に**副作用を持たせるか**の切り替え。既定（子の read /
  * write からの呼び出し）では導出した規則を台帳に memo し、対応するバインディングを
@@ -4138,16 +4204,28 @@ function getOuterAbsolutePathInfo(webComponent, innerAbsPathInfo, registerSubscr
         return null;
     }
     let primaryMappingRule = null;
+    let matchedPrefixLength = -1;
     for (const currentPrimaryMappingRule of primaryMappingRuleSet) {
+        if (currentPrimaryMappingRule.isRoot) {
+            // ルート規則は接頭辞長 0 で常に一致。部分規則が無ければこれが採られる
+            if (matchedPrefixLength < 0) {
+                primaryMappingRule = currentPrimaryMappingRule;
+                matchedPrefixLength = 0;
+            }
+            continue;
+        }
         // innerPathInfoがprimaryMappingRuleのinnerPathInfoを包含しているか
         if (!innerAbsPathInfo.pathInfo.cumulativePathInfoSet.has(currentPrimaryMappingRule.innerAbsPathInfo.pathInfo)) {
             continue;
         }
-        if (currentPrimaryMappingRule.innerAbsPathInfo.pathInfo.segments.length === innerAbsPathInfo.pathInfo.segments.length) {
+        const prefixLength = currentPrimaryMappingRule.innerAbsPathInfo.pathInfo.segments.length;
+        if (prefixLength === innerAbsPathInfo.pathInfo.segments.length) {
             raiseError('Duplicate mapping rule for web component.');
         }
-        primaryMappingRule = currentPrimaryMappingRule;
-        break;
+        if (prefixLength > matchedPrefixLength) {
+            primaryMappingRule = currentPrimaryMappingRule;
+            matchedPrefixLength = prefixLength;
+        }
     }
     if (primaryMappingRule === null) {
         // マッピングルールに一致しない場合はnullを返し、ローカル状態へのフォールバックを許可する
@@ -4160,7 +4238,7 @@ function getOuterAbsolutePathInfo(webComponent, innerAbsPathInfo, registerSubscr
         raiseError('Binding not found for primary mapping rule on web component.');
     }
     /* c8 ignore stop */
-    const outerRemainingSegments = innerAbsPathInfo.pathInfo.segments.slice(primaryMappingRule.innerAbsPathInfo.pathInfo.segments.length);
+    const outerRemainingSegments = innerAbsPathInfo.pathInfo.segments.slice(matchedPrefixLength);
     const outerSegments = primaryMappingRule.outerAbsPathInfo.pathInfo.segments.concat(outerRemainingSegments);
     const outerPathInfo = getPathInfo(outerSegments.join(DELIMITER));
     const rootNode = webComponent.getRootNode();
@@ -5669,6 +5747,33 @@ function markWebComponentAsComplete(webComponent, stateProp) {
 }
 function isWebComponentComplete(webComponent, stateProp) {
     return completedStatePropsByWebComponent.get(webComponent)?.has(stateProp) === true;
+}
+/**
+ * `<wcs-state bind-component="<prop>">` が接続され、(webComponent, stateProp) を束ねると
+ * **宣言した**台帳。完了（上）より前 — ホストの `whenDefined` / `waitInitializeBinding` を
+ * 待つ前 — に記録する。
+ *
+ * 用途は丸ごとマウント `data-wcs="state: user"` の**完了前の初期適用の抑止**。完了前の
+ * 1 セグメントバインディングは applyChangeToProperty が `element.state = userObject` と
+ * 親のオブジェクトそのものをコンポーネントの state プロパティに書いてしまい、
+ * bindWebComponent がそれを子 state の実体として取り込む — own data key が親のキー全部に
+ * なり、R1 では全部が私有に化ける。宣言済みなら値を書かずに完了を待つ（子は完了後に
+ * innerState 経由でライブに読む — docs/state-mount-design.md §3-2 / impl-plan P1-1）。
+ *
+ * 未宣言（子がまだ接続していない）の間は従来どおり書く。未 upgrade 要素への own property は
+ * upgrade 時のクラスフィールド初期化で置き換わるので、実害は無い。
+ */
+const declaredStatePropsByWebComponent = new WeakMap();
+function markWebComponentStatePropDeclared(webComponent, stateProp) {
+    let declaredStateProps = declaredStatePropsByWebComponent.get(webComponent);
+    if (!declaredStateProps) {
+        declaredStateProps = new Set();
+        declaredStatePropsByWebComponent.set(webComponent, declaredStateProps);
+    }
+    declaredStateProps.add(stateProp);
+}
+function isWebComponentStatePropDeclared(webComponent, stateProp) {
+    return declaredStatePropsByWebComponent.get(webComponent)?.has(stateProp) === true;
 }
 
 function applyChangeToAttribute(binding, _context, newValue) {
@@ -7293,6 +7398,68 @@ function applyMirrorAttribute(element, attributeName, value) {
 }
 
 /**
+ * `bind-component` の**完了前**に親スコープの初期適用がコンポーネントの state プロパティへ
+ * 行った書き込みの控え（docs/state-mount-design.md D19 / impl-plan P1-1・P1-10）。
+ *
+ * 完了前の親→子の適用は `applyChangeToProperty` が素のプロパティに値を積む
+ * （webComponent/completeWebComponent.ts）。丸ごとマウントと R1 が入って、この積みが
+ * 2 つの取り違えを生むようになった。
+ *
+ * 1. **丸ごと（1 セグメント・`state: user`）**: `element.state = userObject` と親の
+ *    オブジェクトそのもので state プロパティを**置き換える**。子がまだ宣言していない
+ *    タイミング（happy-dom の template clone は upgrade 済みで、挿入前に適用が走る）では
+ *    宣言台帳のガードが効かず、作者の state オブジェクト（getter / 私有キー）が失われる。
+ *    → 置き換え前のオブジェクトを控え、子の初期化時に戻す（`takeOverwrittenObject`）。
+ * 2. **部分（2 セグメント・`state.theme: theme`）**: `element.state.theme = themeObject` と
+ *    作者のオブジェクトに**キーを注入する**。R1 の判定はこれを own data key と区別できない。
+ *    → 注入したキーを控え、衝突の報告（ownKeyShadow）から外す（`getInjectedKeys`）。
+ *    私有判定そのものは innerState が「部分規則が覆うキー」を静的に除くので、ここには依らない。
+ *
+ * どちらもカスタム要素・オブジェクト値のときだけ記録するので、通常のプロパティ書き込み
+ * （textContent / value / checked …）のホットパスには typeof 判定 1 つしか載らない。
+ */
+const overwrittenObjectByElement = new WeakMap();
+const injectedKeysByElement = new WeakMap();
+/** 1 セグメント書き込みで置き換えられる直前のオブジェクトを控える。最初の 1 回だけ（作者のもの）。 */
+function rememberOverwrittenObject(element, prop, previous) {
+    let byProp = overwrittenObjectByElement.get(element);
+    if (!byProp) {
+        byProp = new Map();
+        overwrittenObjectByElement.set(element, byProp);
+    }
+    if (!byProp.has(prop)) {
+        byProp.set(prop, previous);
+    }
+}
+/** 控えを取り出して消す。無ければ undefined。 */
+function takeOverwrittenObject(element, prop) {
+    const byProp = overwrittenObjectByElement.get(element);
+    if (!byProp) {
+        return undefined;
+    }
+    const previous = byProp.get(prop);
+    byProp.delete(prop);
+    return previous;
+}
+/** 2 セグメント書き込み（`state.theme`）が作者のオブジェクトに無かったキーを作ったことを控える。 */
+function recordInjectedKey(element, prop, key) {
+    let byProp = injectedKeysByElement.get(element);
+    if (!byProp) {
+        byProp = new Map();
+        injectedKeysByElement.set(element, byProp);
+    }
+    let keys = byProp.get(prop);
+    if (!keys) {
+        keys = new Set();
+        byProp.set(prop, keys);
+    }
+    keys.add(key);
+}
+function getInjectedKeys(element, prop) {
+    return injectedKeysByElement.get(element)?.get(prop);
+}
+
+/**
  * SSR 時に HTML 属性で表現できないプロパティバインディングを蓄積するストア。
  * ハイドレーション時にクライアント側で復元する。
  */
@@ -7388,7 +7555,17 @@ function applyChangeToProperty(binding, _context, newValue) {
     const propSegments = binding.propSegments;
     if (propSegments.length === 1) {
         const firstSegment = propSegments[0];
-        if (element[firstSegment] !== newValue) {
+        const current = element[firstSegment];
+        if (current !== newValue) {
+            // 完了前の丸ごとマウント（`state: user`）は、作者の state オブジェクトを親の
+            // オブジェクトで置き換えてしまう。あとで戻せるように置き換え前を控える
+            // （webComponent/preCompletionWrites.ts）。オブジェクト → オブジェクトの書き込みで
+            // 相手がカスタム要素のときだけ台帳に触る（通常の書き込みは typeof 判定で抜ける）。
+            if (current !== null && typeof current === 'object'
+                && newValue !== null && typeof newValue === 'object'
+                && getCustomElement(element) !== null) {
+                rememberOverwrittenObject(element, firstSegment, current);
+            }
             const performWrite = () => {
                 let propertyWriteSucceeded = false;
                 try {
@@ -7490,7 +7667,8 @@ function applyChangeToProperty(binding, _context, newValue) {
         }
         subObject = subObject[segment];
     }
-    const oldValue = subObject[propSegments[propSegments.length - 1]];
+    const lastSegment = propSegments[propSegments.length - 1];
+    const oldValue = subObject[lastSegment];
     if (oldValue !== newValue) {
         if (Object.isFrozen(subObject)) {
             if (config.debug) {
@@ -7503,8 +7681,15 @@ function applyChangeToProperty(binding, _context, newValue) {
             }
             return;
         }
+        // 完了前の部分マウント（`state.theme: theme`）が、作者の state オブジェクトに無かった
+        // キーを作る（積み）ことを控える。R1 の衝突報告はこのキーを作者のものとして扱わない
+        // （webComponent/preCompletionWrites.ts）
+        if (propSegments.length === 2 && typeof subObject === 'object' && subObject !== null
+            && !(lastSegment in subObject) && getCustomElement(element) !== null) {
+            recordInjectedKey(element, firstSegment, lastSegment);
+        }
         try {
-            subObject[propSegments[propSegments.length - 1]] = newValue;
+            subObject[lastSegment] = newValue;
         }
         catch (error) {
             if (config.debug) {
@@ -7563,6 +7748,34 @@ function applyChangeToText(binding, _context, newValue) {
 }
 
 /**
+ * ルート規則（`data-wcs="state: path"` の丸ごとマウント）で、親がマウント先を
+ * 丸ごと差し替えた／子が切断 → 再接続した、というときに子へ「読み直せ」と撃つパスの集合。
+ *
+ * 部分規則ならプライマリの内側パス（`state.items: rows` なら `items`）を撃てば依存 walk が
+ * 配下へ展開するが、ルート規則は内側パスが空で `$postUpdate("")` に意味が無い。
+ * 代わりに子の登録済みパス（`boundPaths`）の**先頭セグメント**を撃つ — `tags.*.name` は
+ * `tags` から静的依存で展開されるので、先頭だけで配下を覆える。
+ *
+ * `$` 名前空間（`$1` など）は state に実体を持たないので除く。私有キー（R1）への通知は
+ * 値が変わっていないので再描画が同値で終わるだけ（無害）。
+ */
+function getRootReloadPaths(innerStateElement) {
+    const boundPaths = innerStateElement.boundPaths;
+    if (typeof boundPaths === 'undefined') {
+        return [];
+    }
+    const roots = new Set();
+    for (const path of boundPaths) {
+        if (path[0] === '$') {
+            continue;
+        }
+        const dot = path.indexOf(DELIMITER);
+        roots.add(dot === -1 ? path : path.slice(0, dot));
+    }
+    return [...roots];
+}
+
+/**
  * 親 state → `bind-component` 済みコンポーネントの再読込通知（内部チャネル）。
  *
  * 値そのものは運ばない。バインドされたパスの正本は親 state 側にあり、子は
@@ -7580,13 +7793,14 @@ function applyChangeToText(binding, _context, newValue) {
  * （apply/applyChange.ts）、`bindWebComponent` は完了済み ＝ state element は登録済み。
  * ただし**登録済みと使用可能は別**で、切断済みの state element が台帳に残っている
  * 窓がある（§1.9）。下の使用可能判定を参照。
+ *
+ * 残余パスが空（`data-wcs="state: user"` — ルート規則の丸ごとマウント）は、親が
+ * マウント先を丸ごと差し替えたという通知。何が変わったかは分からないので、子の
+ * 登録済みパス全部を読み直す（docs/state-mount-design.md §3-2 / impl-plan P1-2）。
  */
 function applyChangeToWebComponent(binding, _context, _newValue) {
     const element = binding.node;
     const propSegments = binding.propSegments;
-    if (propSegments.length <= 1) {
-        raiseError(`Invalid propSegments for web component binding: ${propSegments.join(DELIMITER)}`);
-    }
     const [firstSegment, ...restSegments] = propSegments;
     const innerStateElement = getStateElementByWebComponent(element, firstSegment);
     if (innerStateElement === null) {
@@ -7609,6 +7823,18 @@ function applyChangeToWebComponent(binding, _context, _newValue) {
         if (config.debug) {
             console.debug(`[@wcstack/state] skipped parent→child notification for a disconnected state element on <${element.tagName.toLowerCase()}>.`, { element, stateProp: firstSegment, path: restSegments.join(DELIMITER) });
         }
+        return;
+    }
+    if (restSegments.length === 0) {
+        const paths = getRootReloadPaths(innerStateElement);
+        if (paths.length === 0) {
+            return;
+        }
+        innerStateElement.createState("readonly", (state) => {
+            for (const path of paths) {
+                state.$postUpdate(path);
+            }
+        });
         return;
     }
     innerStateElement.createState("readonly", (state) => {
@@ -7997,21 +8223,36 @@ const deferredSelectBindingByBinding = new WeakMap();
 // registry 照会を省略できる。scoped registry を導入する場合はこの不可逆前提を再検討。
 const definedApplyVerifiedByBinding = new WeakMap();
 /**
- * このバインディングを「値を運ばない親→子の再読込通知」（applyChangeToWebComponent）へ
- * 回してよいか。
- *
- * 長さ 1 の propSegments を除くのが要点。`data-wcs="state: user"` のように
- * bind-component の stateProp をそのままプロパティ名に書いた形は、完了台帳のキーが
- * stateProp 名になった以上ゲートを通ってしまうが、applyChangeToWebComponent は
- * 「先頭セグメント＝束ね先の state 要素、残り＝子側のパス」を前提にしており
- * 残余が空だと raiseError する。updater の drain は例外を捕まえないので、
- * 誤設定タグ 1 つが同じバッチの無関係な更新まで巻き添えにしてしまう。
- * ここで弾いておけば従来どおり applyChangeToProperty に落ち、挙動は変わらない
- * （getter だけの公開プロパティへの代入が握り潰される ＝ 無言の no-op）。
+ * 丸ごとマウント（`state: user`）の完了前の初期適用は書かない。子が完了すれば
+ * innerState 経由でライブに読むので、ここで親のオブジェクトを書く意味は無い
+ * （書くと害がある — webComponent/completeWebComponent.ts の宣言台帳を参照）。
  */
-function isWebComponentCompleteForBinding(binding) {
-    return binding.propSegments.length > 1
-        && isWebComponentComplete(binding.replaceNode, binding.propSegments[0]);
+function skipPendingRootMount() { }
+/**
+ * カスタム要素へのプロパティバインディングの適用関数を決める。
+ *
+ * - 完了済み（bindWebComponent が公開プロパティを差し替え終えた）→ 値を運ばない
+ *   再読込通知（applyChangeToWebComponent）。1 セグメント（`state: user`）も含む —
+ *   残余が空なら「子の登録済みパス全部を読み直せ」の意味（ルート規則。
+ *   docs/state-mount-design.md §3-2 / impl-plan P1-2）
+ * - 未完了だが `<wcs-state bind-component>` が宣言済みで、かつ 1 セグメント → 今回は
+ *   書かない（skipPendingRootMount）
+ * - それ以外 → 素のプロパティ書き込み（`state.name: x` の完了前の積みも含む）
+ *
+ * 以前は 1 セグメントを通知チャネルから除いていた（残余が空だと applyChangeToWebComponent
+ * が raiseError し、updater の drain が捕まえないので同じバッチの無関係な更新まで
+ * 巻き添えにした）。残余空がルート規則の意味を持った今、その除外は要らない。
+ */
+function resolveCustomElementApply(binding) {
+    const element = binding.replaceNode;
+    const stateProp = binding.propSegments[0];
+    if (isWebComponentComplete(element, stateProp)) {
+        return applyChangeToWebComponent;
+    }
+    if (binding.propSegments.length === 1 && isWebComponentStatePropDeclared(element, stateProp)) {
+        return skipPendingRootMount;
+    }
+    return applyChangeToProperty;
 }
 function _applyChange(binding, context) {
     const value = getValue(context.state, binding);
@@ -8026,12 +8267,9 @@ function _applyChange(binding, context) {
         return;
     }
     if (fnByBinding.has(binding)) {
-        if (isWebComponentCompleteForBinding(binding)) {
-            fn = applyChangeToWebComponent;
+        fn = resolveCustomElementApply(binding);
+        if (fn === applyChangeToWebComponent) {
             fnByBinding.set(binding, fn); // 確定したのでキャッシュ
-        }
-        else {
-            fn = applyChangeToProperty;
         }
         fn(binding, context, filteredValue);
         return;
@@ -8044,12 +8282,9 @@ function _applyChange(binding, context) {
         if (typeof fn === 'undefined') {
             const customTag = getCustomElement(binding.replaceNode);
             if (customTag) {
-                if (isWebComponentCompleteForBinding(binding)) {
-                    fn = applyChangeToWebComponent;
+                fn = resolveCustomElementApply(binding);
+                if (fn === applyChangeToWebComponent) {
                     fnByBinding.set(binding, fn); // 確定したのでキャッシュ
-                }
-                else {
-                    fn = applyChangeToProperty;
                 }
             }
             else {
@@ -8753,7 +8988,7 @@ async function buildBindings(root) {
     }
 }
 
-var version = "1.32.0";
+var version = "1.33.0";
 var pkg = {
 	version: version};
 
@@ -10533,9 +10768,19 @@ function describeImportFailure(name, error, cspBlocked) {
     return `Failed to evaluate the inline <script> of state "${name}": ${detail}. ` +
         `If this page sets a Content-Security-Policy, see ${CSP_GUIDE}`;
 }
+/**
+ * ロードごとに増える通し番号。`data:` URL フォールバック（createObjectURL の無い
+ * テスト / SSR 環境）では URL がスクリプト本文そのものなので、同じ本文を 2 度
+ * 読み込むと ESM ローダーのキャッシュに当たり **同じモジュール = 同じ default export
+ * オブジェクト** が返る — 2 つ目の `<wcs-state>` が 1 つ目の state を共有してしまう
+ * （テストでは前のテストの書き込みが次のテストに漏れ、SSR では同一テンプレートの
+ * 再描画で state が共有される）。blob: URL は生成のたびに一意なのでブラウザでは
+ * 起きない。sourceURL コメントに番号を混ぜて本文を毎回変え、両経路を揃える。
+ */
+let loadSequence = 0;
 async function loadFromInnerScript(script, name) {
     let scriptModule = null;
-    const uniq_comment = `\n//# sourceURL=${name}\n`;
+    const uniq_comment = `\n//# sourceURL=${name}#${++loadSequence}\n`;
     // import() が失敗した理由が CSP かどうかを判別するために、評価の間だけ違反を購読する。
     let cspBlocked = false;
     const onViolation = (event) => {
@@ -15010,9 +15255,58 @@ function meltFrozenObject(frozenObj) {
 class InnerStateProxyHandler {
     _webComponent;
     _innerStateElement;
+    /**
+     * ルート規則（`state: path` の丸ごとマウント）の下にいるか。プライマリ規則は
+     * bindWebComponent が createInnerState より先に組むので、構築時に確定する。
+     */
+    _rootMounted;
+    /**
+     * 部分規則（`state.theme: theme`）が覆う内側の先頭セグメント。ルート規則と併用された
+     * とき、これらのキーは own data key があってもマッピング（1.x の既存挙動）に落とす。
+     * 完了前の親の初期適用が `element.state.theme = obj` とキーを注入する（積み）ので、
+     * own key の有無では作者の意図を判定できない（webComponent/preCompletionWrites.ts）。
+     */
+    _partialFirstSegments;
     constructor(webComponent, stateName) {
         this._webComponent = webComponent;
         this._innerStateElement = getStateElementByWebComponent(webComponent, stateName) ?? raiseError('State element not found for web component.');
+        this._rootMounted = hasRootMappingRule(webComponent);
+        this._partialFirstSegments = null;
+        if (this._rootMounted) {
+            const rules = getPrimaryMappingRules(webComponent);
+            for (const rule of rules ?? []) {
+                if (!rule.isRoot) {
+                    (this._partialFirstSegments ??= new Set()).add(rule.innerAbsPathInfo.pathInfo.segments[0]);
+                }
+            }
+        }
+    }
+    /**
+     * R1（docs/state-mount-design.md D4 / D19）: ルートマウント下では、コンポーネントが
+     * 自分で書いた data key は**私有**で、マウント先のツリーを隠す。v1 の解決順
+     * （getter → マッピング → ローカル）のままルート規則を載せると、ルート規則は全キーに
+     * 一致するので own key が全部ツリーに隠され、2.0 と逆の意味論で出荷することになる。
+     *
+     * 判定は**先頭セグメント**で行う。getByAddress は `"draft.title" in target` → 偽 →
+     * 親アドレス `draft` の読み、と降りてくるので、先頭が私有ならその下は素のオブジェクト
+     * 走査になる（plain な state と同じ）。getter / setter は規則 1（chroot 評価）なので除く。
+     *
+     * 部分マウントだけのコンポーネントには適用しない（1.x の既存挙動＝マッピングが勝つ、を
+     * 維持する。2.0 での反転は bindWebComponent が warn で予告する — D19）。
+     */
+    _isPrivateKey(target, prop) {
+        if (!this._rootMounted) {
+            return false;
+        }
+        const dot = prop.indexOf(DELIMITER);
+        const first = dot === -1 ? prop : prop.slice(0, dot);
+        if (!Object.prototype.hasOwnProperty.call(target, first)) {
+            return false;
+        }
+        if (this._partialFirstSegments !== null && this._partialFirstSegments.has(first)) {
+            return false;
+        }
+        return !this._innerStateElement.getterPaths.has(first) && !this._innerStateElement.setterPaths.has(first);
     }
     /**
      * 親スコープで読み書きするときのループ文脈を決める。候補は 2 つある。
@@ -15065,6 +15359,10 @@ class InnerStateProxyHandler {
             if (this._innerStateElement.getterPaths.has(prop) && prop in target) {
                 return Reflect.get(target, prop, receiver);
             }
+            // 1'. R1: ルートマウント下の own data key → 私有（マッピングより先）
+            if (this._isPrivateKey(target, prop)) {
+                return Reflect.get(target, prop, receiver);
+            }
             // 2 & 3. マッピング完全一致 / サブパス → 親の状態
             const innerPathInfo = getPathInfo(prop);
             const innerAbsPathInfo = getAbsolutePathInfo(this._innerStateElement, innerPathInfo);
@@ -15094,6 +15392,10 @@ class InnerStateProxyHandler {
         if (typeof prop === 'string') {
             // 1. setter完全一致 → ローカル処理（this = receiverで親への書き込み可能）
             if (this._innerStateElement.setterPaths.has(prop) && prop in target) {
+                return Reflect.set(target, prop, value, receiver);
+            }
+            // 1'. R1: ルートマウント下の own data key → 私有に書く
+            if (this._isPrivateKey(target, prop)) {
                 return Reflect.set(target, prop, value, receiver);
             }
             // 2 & 3. マッピング完全一致 / サブパス → 親に書く
@@ -15128,6 +15430,11 @@ class InnerStateProxyHandler {
             // 1. getter/setter完全一致
             if ((this._innerStateElement.getterPaths.has(prop) || this._innerStateElement.setterPaths.has(prop)) && prop in target) {
                 return true;
+            }
+            // 1'. R1: 先頭が私有キーなら素のオブジェクトの答え（完全一致だけ真。`draft.title` は
+            // 偽を返して getByAddress に親アドレスから降りてもらう）
+            if (this._isPrivateKey(target, prop)) {
+                return prop in target;
             }
             // 2 & 3. マッピング
             const innerPathInfo = getPathInfo(prop);
@@ -15220,6 +15527,116 @@ function createOuterState(webComponent, stateName) {
     return new Proxy({}, handler);
 }
 
+/**
+ * コンポーネントの own data key とマウントの衝突を、バインド確立時に 1 回だけ報告する
+ * （docs/state-mount-design.md D4 / D19、impl-plan P1-10 / P1-11）。
+ *
+ * 2 つの形がある。
+ *
+ * - **ルートマウント**（`state: user`）: R1 では own data key は私有で、マウント先の
+ *   同名キー（`user.name`）を**隠す**。書き手が「既定値」のつもりで置いたキーがツリーを
+ *   読まなくなるので、マウント先の値がオブジェクトで同名キーを持つときに報告する。
+ * - **部分マウント**（`state.message: x` ＋ `state = { message: "" }`）: 1.x では
+ *   マッピングが勝つ（既存挙動・不変）が、v2 では R1 で own key が私有になり逆転する。
+ *   反転を 1.x の時点で予告する。
+ *
+ * どちらも「既定値を消す（ツリーを読む）か、名前を変える（私有のまま）」で直る。
+ * 報告はタグ名 × プロパティ × キーで 1 回（リストの行ごとに並ばないように）。
+ * ホットパス外（bindWebComponent の中・要素につき 1 回）。
+ */
+const reported = new Set();
+function ownDataKeys(state, injected) {
+    const keys = [];
+    for (const key of Object.keys(state)) {
+        if (key.startsWith('$')) {
+            continue;
+        }
+        // 完了前の親の初期適用（`state.theme: theme` の積み）が作ったキーは作者のものではない
+        if (typeof injected !== 'undefined' && injected.has(key)) {
+            continue;
+        }
+        const descriptor = Object.getOwnPropertyDescriptor(state, key);
+        if (typeof descriptor.get === 'function' || typeof descriptor.set === 'function') {
+            continue;
+        }
+        if (typeof descriptor.value === 'function') {
+            continue;
+        }
+        keys.push(key);
+    }
+    return keys;
+}
+/**
+ * ルート規則のマウント先の現在値を読む。ワイルドカードを含むマウント先（`users.*`）は
+ * ホスト要素のループ文脈で解決する。文脈が無ければ判定できないので undefined。
+ */
+function readMountTarget(component, rule) {
+    const outer = rule.outerAbsPathInfo;
+    const loopContext = getLoopContextByNode(component);
+    if (outer.pathInfo.wildcardCount > 0 && loopContext === null) {
+        return undefined;
+    }
+    let value = undefined;
+    outer.stateElement.createState("readonly", (state) => {
+        state[setLoopContextSymbol](loopContext, () => {
+            value = state[outer.pathInfo.path];
+        });
+    });
+    return value;
+}
+function report(key, message) {
+    if (reported.has(key)) {
+        return;
+    }
+    reported.add(key);
+    console.warn(`[@wcstack/state] [wcs/mount-own-key-shadow] ${message} See docs/state-mount-design.md §4-3.`);
+}
+function warnOwnKeyShadows(component, stateProp, state) {
+    const rules = getPrimaryMappingRules(component);
+    if (rules === null) {
+        return;
+    }
+    const keys = ownDataKeys(state, getInjectedKeys(component, stateProp));
+    if (keys.length === 0) {
+        return;
+    }
+    const tag = component.tagName.toLowerCase();
+    let rootRule = null;
+    const partialRuleByKey = new Map();
+    for (const rule of rules) {
+        if (rule.isRoot) {
+            rootRule = rule;
+        }
+        else if (rule.innerAbsPathInfo.pathInfo.segments.length === 1) {
+            partialRuleByKey.set(rule.innerAbsPathInfo.pathInfo.path, rule);
+        }
+    }
+    let mountTarget = undefined;
+    let mountTargetRead = false;
+    for (const key of keys) {
+        const partial = partialRuleByKey.get(key);
+        if (typeof partial !== 'undefined') {
+            const outerPath = partial.outerAbsPathInfo.pathInfo.path;
+            report(`${tag}|${stateProp}|${key}|partial`, `<${tag}>.${stateProp}.${key} is an own key of the component and is also mapped from the host ("${stateProp}.${key}: ${outerPath}"). ` +
+                `Today the host value wins; in v2 the own key becomes private and hides the host value. Remove the default, or drop the mapping.`);
+            continue;
+        }
+        if (rootRule === null) {
+            continue;
+        }
+        if (!mountTargetRead) {
+            mountTarget = readMountTarget(component, rootRule);
+            mountTargetRead = true;
+        }
+        if (typeof mountTarget !== 'object' || mountTarget === null || !(key in mountTarget)) {
+            continue;
+        }
+        const outerPath = rootRule.outerAbsPathInfo.pathInfo.path;
+        report(`${tag}|${stateProp}|${key}|root`, `<${tag}>.${stateProp}.${key} is private and hides the mounted tree key "${outerPath}.${key}" (${stateProp}: ${outerPath}). ` +
+            `Remove the default to read the tree, or rename it to keep it private.`);
+    }
+}
+
 const getOuter = (outerState) => () => outerState;
 function bindWebComponent(innerStateElement, component, stateProp, state) {
     setStateElementByWebComponent(component, stateProp, innerStateElement);
@@ -15236,6 +15653,9 @@ function bindWebComponent(innerStateElement, component, stateProp, state) {
     // innerState proxy、plain なら melt 済みのローカル state。
     if (bindings.length > 0) {
         buildPrimaryMappingRule(component, stateProp, bindings);
+        // own data key とマウントの衝突を 1 回だけ報告する（R1 の私有キーがツリーを隠す形と、
+        // 部分マウントで v2 に反転する形 — docs/state-mount-design.md D19）。
+        warnOwnKeyShadows(component, stateProp, state);
         // 値の正本が親スコープにあることを state 要素に記録する。越境アドレスの受け渡しと
         // リストパスの外向き伝播はこのフラグでのみ有効になる（§1.8）。
         innerStateElement.markComponentStateMapped?.();
@@ -15264,6 +15684,27 @@ function bindWebComponent(innerStateElement, component, stateProp, state) {
             raiseError(`${WEBCOMPONENT_STATE_READY_CALLBACK_NAME} is not a function.`);
         }
     }
+}
+
+/**
+ * ホストが `<stateProp>: path`（1 セグメント ＝ 丸ごとマウント・ルート規則）を
+ * このコンポーネントに書いているか。バインディング初期化が済んだ後に呼ぶこと
+ * （`State._initializeBindWebComponent` は `waitInitializeBinding` の後で呼ぶ）。
+ */
+function hasRootMountBinding(component, stateProp) {
+    if (!component.hasAttribute(config.bindAttributeName)) {
+        return false;
+    }
+    const bindings = getBindingsByNode(component);
+    if (bindings === null) {
+        return false;
+    }
+    for (const binding of bindings) {
+        if (binding.propSegments.length === 1 && binding.propSegments[0] === stateProp) {
+            return true;
+        }
+    }
+    return false;
 }
 
 function getStateInfo(state) {
@@ -15496,6 +15937,11 @@ class State extends HTMLElementBase {
         }
         await this._loadingPromise;
         this._name = this.getAttribute('name') || 'default';
+        if (this.hasAttribute('name') && !this.hasAttribute('bind-component')) {
+            // 名前付き State は v2 でマウント（`mount=`）に置き換わる（docs/state-mount-design.md D16）。
+            // Light DOM の bind-component は今日 name が必須なので、そちらには言わない。
+            warnNamedStateDeprecated('attribute', this._name);
+        }
         setStateElementByName(this.rootNode, this._name, this);
     }
     async _initializeBindWebComponent() {
@@ -15531,6 +15977,11 @@ class State extends HTMLElementBase {
                 raiseError(`"bind-component" cannot be combined with ${conflicting.join(", ")}. The component's "${this.getAttribute("bind-component")}" property is the only state source.`);
             }
             const boundComponentStateProp = this.getAttribute("bind-component");
+            // 束ねる意思をここで宣言する（完了はずっと後）。丸ごとマウント `state: user` の
+            // 完了前の初期適用は、この宣言を見て書き込みを抑止する
+            // （webComponent/completeWebComponent.ts）。下の await より前でなければ、
+            // 親の初期適用が先に走って親のオブジェクトを state プロパティに書いてしまう。
+            markWebComponentStatePropDeclared(boundComponent, boundComponentStateProp);
             const componentRegistry = getCustomElementRegistry(boundComponent);
             if (componentRegistry === null) {
                 // null レジストリのサブツリーではホストは永久に upgrade されない。
@@ -15545,9 +15996,18 @@ class State extends HTMLElementBase {
             if (!(boundComponentStateProp in boundComponent)) {
                 raiseError(`Component does not have property "${boundComponentStateProp}" for state binding.`);
             }
-            const state = boundComponent[boundComponentStateProp];
+            let state = boundComponent[boundComponentStateProp];
             if (typeof state !== 'object' || state === null) {
                 raiseError(`Component property "${boundComponentStateProp}" is not an object for state binding.`);
+            }
+            // 丸ごとマウント（`state: user`）の完了前の初期適用が、宣言より先に走って state
+            // プロパティを親のオブジェクトごと置き換えていたら、作者のオブジェクトに戻す
+            // （webComponent/preCompletionWrites.ts）。戻さないと親のキー全部が own data key に
+            // なり、R1 で全部が私有に化ける。
+            const authored = takeOverwrittenObject(boundComponent, boundComponentStateProp);
+            if (typeof authored !== 'undefined' && hasRootMountBinding(boundComponent, boundComponentStateProp)) {
+                boundComponent[boundComponentStateProp] = authored;
+                state = authored;
             }
             this._boundComponent = boundComponent;
             this._boundComponentStateProp = boundComponentStateProp;
@@ -15605,9 +16065,15 @@ class State extends HTMLElementBase {
         }
         // mapped ＝ プライマリ規則が 1 件以上あることと同義（bindWebComponent の分岐）
         const innerPaths = getPrimaryInnerPaths(this._boundComponent);
+        // ルート規則（丸ごとマウント）は内側パスが空なので、子の登録済みパス全部を読み直す
+        // （webComponent/rootReloadPaths.ts）
+        const rootPaths = hasRootMappingRule(this._boundComponent) ? getRootReloadPaths(this) : [];
         resetDerivedMappingRules(this._boundComponent);
         this.createState("readonly", (state) => {
             for (const path of innerPaths) {
+                state.$postUpdate(path);
+            }
+            for (const path of rootPaths) {
                 state.$postUpdate(path);
             }
         });
@@ -15853,6 +16319,9 @@ class State extends HTMLElementBase {
     }
     get hasMappedComponentState() {
         return this._hasMappedComponentState;
+    }
+    get boundPaths() {
+        return this._pathSet;
     }
     /**
      * この state の実体が innerState proxy であることを記録する。唯一の呼び手は

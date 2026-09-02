@@ -322,5 +322,11 @@ declare const WCS_WORKER_ERROR_CODE: {
     readonly WorkerError: "worker-error";
 };
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-worker": WcsWorker;
+    }
+}
+
 export { WCS_WORKER_ERROR_CODE, WcsWorker, WorkerCore, bootstrapWorker, getConfig };
 export type { IWritableConfig, IWritableTagNames, WcsIoErrorInfo, WcsIoErrorPhase, WcsWorkerCommands, WcsWorkerCoreCommands, WcsWorkerCoreValues, WcsWorkerErrorDetail, WcsWorkerInputs, WcsWorkerStartOptions, WcsWorkerValues };

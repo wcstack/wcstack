@@ -284,5 +284,11 @@ declare const WCS_ACCELEROMETER_ERROR_CODE: {
     readonly SensorError: "sensor-error";
 };
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-accelerometer": WcsAccelerometer;
+    }
+}
+
 export { AccelerometerCore, WCS_ACCELEROMETER_ERROR_CODE, WcsAccelerometer, bootstrapAccelerometer, getConfig };
 export type { IWritableConfig, IWritableTagNames, WcsAccelerometerCoreValues, WcsAccelerometerErrorDetail, WcsAccelerometerReading, WcsAccelerometerValues, WcsIoErrorInfo, WcsIoErrorPhase };

@@ -237,5 +237,11 @@ declare class WcsDefined extends HTMLElement {
     disconnectedCallback(): void;
 }
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-defined": WcsDefined;
+    }
+}
+
 export { DefinedCore, WcsDefined, bootstrapDefined, getConfig };
 export type { DefinedMode, DefinedSnapshot, IWritableConfig, IWritableTagNames, WcsDefinedCoreValues, WcsDefinedInputs, WcsDefinedValues };

@@ -274,5 +274,12 @@ declare class Throttle extends Debounce {
     protected _defaultMaxWait(): number | undefined;
 }
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-debounce": Debounce;
+        "wcs-throttle": Throttle;
+    }
+}
+
 export { DebounceCore, Debounce as WcsDebounce, Throttle as WcsThrottle, bootstrapDebounce, getConfig, makeDebounceProperties };
 export type { DebounceOptions, IWritableConfig, IWritableTagNames, WcsDebounceCommands, WcsDebounceCoreCommands, WcsDebounceCoreValues, WcsDebounceFiredDetail, WcsDebounceInputs, WcsDebounceSettledDetail, WcsDebounceValues };

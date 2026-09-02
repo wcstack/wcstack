@@ -132,6 +132,13 @@ interface IStateElement {
     readonly hasMappedComponentState?: boolean;
     markComponentStateMapped?(): void;
     /**
+     * この state 要素に束ねられた（`setPathInfo` を通った）パスの集合。丸ごとマウント
+     * （ルート規則）の親→子通知が「登録済みパス全部を読み直せ」を組み立てるのに使う
+     * （webComponent/rootReloadPaths.ts）。
+     * optional なのはテスト用モック互換のため（undefined は「登録なし」扱い）。
+     */
+    readonly boundPaths?: ReadonlySet<string>;
+    /**
      * DCC の `$bindables` から生成した「パス → 変更イベント名」表。
      * 唯一の書き手は defineDCC で、読み手は setByAddress。
      * getter だけを公開して setter をインターフェースから落としていたため
@@ -978,6 +985,171 @@ interface IContractManifest {
  * sink が接続されていれば同時に流す。
  */
 declare function analyzeContract(manifest: IContractManifest): readonly ContractEvent[];
+
+declare class State extends HTMLElementBase implements IStateElement {
+    static hasConnectedCallbackPromise: boolean;
+    static getBindingsReady(rootNode: Node): Promise<void>;
+    private __state;
+    private _hasUpdatedCallback;
+    private _crossRowListPaths;
+    private _indexDependentGetterPaths;
+    private _name;
+    private _initialized;
+    private _initializePromise;
+    private _resolveInitialize;
+    private _connectedCallbackPromise;
+    private _resolveConnectedCallback;
+    private _rejectConnectedCallback;
+    private _loadingPromise;
+    private _resolveLoading;
+    private _setStatePromise;
+    private _resolveSetState;
+    private _listPaths;
+    private _listKeys;
+    private _elementPaths;
+    private _getterPaths;
+    private _setterPaths;
+    private _loopContextStack;
+    private _dynamicDependency;
+    private _staticDependency;
+    private _pathSet;
+    private _watchPaths;
+    private _version;
+    private _rootNode;
+    private _boundComponent;
+    private _boundComponentStateProp;
+    private _hasMappedComponentState;
+    private _bindableEventMap;
+    private _commandTokenNames;
+    private _eventTokenNames;
+    private _dcc;
+    private _connectGeneration;
+    private _streamsStartedGeneration;
+    constructor();
+    private get _state();
+    private set _state(value);
+    get name(): string;
+    private _loadFromSsrElement;
+    private _initialize;
+    private _initializeBindWebComponent;
+    /**
+     * Light DOM の mapped コンポーネントが、自分のサブツリーのバインディングを張る（§1.13）。
+     *
+     * Shadow DOM 形では子スコープが別 rootNode にあり、`setStateElementByName` の初回登録から
+     * その root ぶんの `buildBindings` が別パスとして起動する。Light DOM ではホストと同じ root に
+     * いるためそのパスが存在せず、かといってホストのパスに混ぜると `@name` の解決が
+     * この要素の名前登録より先に来てしまう。そこで `getSubscriberNodes` がホスト側の走査から
+     * このサブツリーを外し、名前登録が済んだここで同じことを自前で行う。
+     *
+     * `{{ }}` の変換だけはホストのパスが root 全体に対して済ませている（純粋にテキスト操作で
+     * state に依存しないため）。構造フラグメントの収集は fragment info を rootNode + state 名で
+     * 登録するので state 依存であり、ホストのパスからは外してここで走らせる。
+     *
+     * ループ文脈を null で渡すのは Shadow DOM 形（`initializeBindings(shadowRoot, null)`）と
+     * 揃えるため —— 子孫の `getLoopContextByNode` はコンポーネント要素まで遡って
+     * 親スコープの行を見つける。
+     */
+    private _initializeLightDomComponentScope;
+    /**
+     * mapped な `bind-component` が切断 → 再接続したときに、束ねているパスを読み直させる（§1.9）。
+     *
+     * リスト行の content は再利用されるので、行が作り直されると子はこの経路を通る
+     * （`_initialized` が真なので `_initializeBindWebComponent` / `_initialize` は走らず、
+     * 子のバインディングは張り直されない）。切断中に親で起きた変更の通知は
+     * `applyChangeToWebComponent` が切断済みを理由に落としているため、ここで読み直さないと
+     * 子のビューだけが古い値のまま取り残される。何が変わったかは分からないので、
+     * プライマリ規則の粒度で丸ごと読み直す。
+     *
+     * 読み直しの前に派生規則の memo を捨てる。派生規則の購読者（親スコープに立つ
+     * バインディング）は切断で teardown されており、memo が残っていると導出が二度と
+     * 走らないため購読者も張り直されない ＝ 以後この子だけがサブパスの書き込みを
+     * 受け取れなくなる。捨てておけば、直後の読み直しで導出と購読者登録が走る。
+     */
+    private _reloadMappedPathsAfterReconnect;
+    private _callStateConnectedCallback;
+    private _initializeDCC;
+    private _callStateDisconnectedCallback;
+    connectedCallback(): Promise<void>;
+    disconnectedCallback(): void;
+    get initialized(): boolean;
+    get initializePromise(): Promise<void>;
+    get connectedCallbackPromise(): Promise<void>;
+    get listPaths(): Set<string>;
+    get listKeys(): ListKeyMap | null;
+    get watchPaths(): ReadonlySet<string> | null;
+    get elementPaths(): Set<string>;
+    get getterPaths(): Set<string>;
+    get setterPaths(): Set<string>;
+    get loopContextStack(): ILoopContextStack;
+    get dynamicDependency(): Map<string, string[]>;
+    get staticDependency(): Map<string, string[]>;
+    get version(): number;
+    get rootNode(): Node;
+    /**
+     * `rootNode` を保持しているか ＝ `createState` を呼んでよいか（§1.9）。
+     * disconnect で落ち、connect の冒頭で復活する。
+     */
+    get hasRootNode(): boolean;
+    get boundComponentStateProp(): string | null;
+    get boundComponent(): Element | null;
+    get hasMappedComponentState(): boolean;
+    get boundPaths(): ReadonlySet<string>;
+    /**
+     * この state の実体が innerState proxy であることを記録する。唯一の呼び手は
+     * `bindWebComponent` の mapped 分岐（§1.8）。
+     */
+    markComponentStateMapped(): void;
+    get bindableEventMap(): Record<string, string>;
+    get commandTokenNames(): ReadonlySet<string>;
+    get eventTokenNames(): ReadonlySet<string>;
+    setBindableEventMap(map: Record<string, string>): void;
+    private _addDependency;
+    /**
+     * source,           target
+     *
+     * products.*.price => products.*.tax
+     * get "products.*.tax"() { return this["products.*.price"] * 0.1; }
+     *
+     * products.*.price => products.summary
+     * get "products.summary"() { return this.$getAll("products.*.price", []).reduce(sum); }
+     *
+     * categories.*.name => categories.*.products.*.categoryName
+     * get "categories.*.products.*.categoryName"() { return this["categories.*.name"]; }
+     *
+     * @param sourcePath
+     * @param targetPath
+     */
+    addDynamicDependency(sourcePath: string, targetPath: string): boolean;
+    /**
+     * source,      target
+     * products => products.*
+     * products.* => products.*.price
+     * products.* => products.*.name
+     *
+     * @param sourcePath
+     * @param targetPath
+     */
+    addStaticDependency(sourcePath: string, targetPath: string): boolean;
+    setPathInfo(path: string, bindingType: BindingType, source?: PathInfoSource): void;
+    private _createState;
+    createStateAsync(mutability: Mutability, callback: (state: IStateProxy) => Promise<void>): Promise<void>;
+    createState(mutability: Mutability, callback: (state: IStateProxy) => void): void;
+    nextVersion(): number;
+    get hasUpdatedCallback(): boolean;
+    get crossRowListPaths(): ReadonlySet<string>;
+    addCrossRowListPath(path: string): void;
+    get indexDependentGetterPaths(): ReadonlySet<string>;
+    addIndexDependentGetterPath(path: string): void;
+    bindProperty(prop: string, desc: PropertyDescriptor): void;
+    setInitialState(state: Record<string, any>): void;
+}
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-state": State;
+        "wcs-ssr": Ssr;
+    }
+}
 
 export { Ssr, VERSION, WCS_MANIFEST_VERSION, analyzeContract, bootstrapState, buildBindings, builtinFilterMeta, defineState, getBindingsReady, getConfig, getWcsManifest };
 export type { ContractEvent, FilterArgType, FilterResultType, IContractManifest, IFilterMeta, ISsrElement, IWcsManifest, IWritableConfig, IWritableTagNames, WcsPathValue, WcsPaths, WcsStateApi, WcsThis };

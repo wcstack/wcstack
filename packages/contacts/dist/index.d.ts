@@ -283,5 +283,11 @@ declare const WCS_CONTACTS_ERROR_CODE: {
     readonly SelectFailed: "select-failed";
 };
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-contacts": WcsContacts;
+    }
+}
+
 export { ContactsCore, WCS_CONTACTS_ERROR_CODE, WcsContacts, bootstrapContacts, getConfig };
 export type { ContactAddress, ContactInfo, ContactProperty, ContactsSelectOptions, IWritableConfig, IWritableTagNames, WcsContactsCoreValues, WcsContactsValues, WcsIoErrorInfo, WcsIoErrorPhase };

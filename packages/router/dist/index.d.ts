@@ -86,6 +86,13 @@ interface IRouteMatchResult {
     lastPath: string;
 }
 type GuardHandler = (toPath: string, fromPath: string) => boolean | Promise<boolean>;
+interface _ILayout {
+    readonly uuid: string;
+    readonly enableShadowRoot: boolean;
+    readonly name: string;
+    loadTemplate(): Promise<HTMLTemplateElement>;
+}
+type ILayout = _ILayout & Pick<Element, 'childNodes'>;
 type SegmentType = 'static' | 'param' | 'catch-all';
 interface ISegmentInfo {
     type: SegmentType;
@@ -187,6 +194,16 @@ interface IOutlet {
     routesNode: IRouter;
     readonly rootNode: HTMLElement | ShadowRoot;
     lastRoutes: IRoute[];
+}
+interface ILayoutOutlet {
+    layout: ILayout;
+    readonly name: string;
+    assignParams(params: Record<string, any>): void;
+}
+interface ILink {
+    readonly uuid: string;
+    readonly router: IRouter;
+    readonly anchorElement: HTMLAnchorElement | null;
 }
 
 /**
@@ -499,6 +516,164 @@ declare class RouteCore extends EventTarget {
 }
 
 declare const VERSION: string;
+
+declare class Outlet extends HTMLElement implements IOutlet {
+    private _routesNode;
+    private _lastRoutes;
+    private _initialized;
+    constructor();
+    get routesNode(): IRouter;
+    set routesNode(value: IRouter);
+    get rootNode(): HTMLElement | ShadowRoot;
+    get lastRoutes(): IRoute[];
+    set lastRoutes(value: IRoute[]);
+    /**
+     * shadowRoot 有効化判定。Layout と挙動を揃え、属性で個別オーバーライド可能にする。
+     * - `enable-shadow-root` 属性あり → true
+     * - `disable-shadow-root` 属性あり → false
+     * - いずれもなし → config.enableShadowRoot を尊重
+     */
+    private _resolveEnableShadowRoot;
+    private _initialize;
+    connectedCallback(): void;
+    /**
+     * Outlet が disconnect された際の状態クリーンアップ。
+     *
+     * `_lastRoutes` をクリアすることで、再接続後の applyRoute における diff
+     * （既に show 済みのルートは show を skip する判定）が、切断中に外部から
+     * 操作された DOM と整合しなくなる事故を防ぐ。
+     *
+     * 仕様前提として Outlet は Router と一体運用される（Router が `_getOutlet()` で
+     * 自身の兄弟に Outlet を配置・参照する）。それでも単独で再接続される
+     * エッジケースに備える防衛的措置として `_lastRoutes` のみクリアする。
+     * `_initialized` と shadowRoot は維持し、再 attachShadow による
+     * InvalidStateError を回避する。
+     */
+    disconnectedCallback(): void;
+}
+
+declare class Layout extends HTMLElement implements ILayout {
+    private _uuid;
+    constructor();
+    private _loadTemplateFromSource;
+    private _loadTemplateFromDocument;
+    loadTemplate(): Promise<HTMLTemplateElement>;
+    get uuid(): string;
+    get enableShadowRoot(): boolean;
+    get name(): string;
+}
+
+declare class LayoutOutlet extends HTMLElement implements ILayoutOutlet {
+    private _layout;
+    private _initialized;
+    private _initializing;
+    private _disconnectedDuringInit;
+    private _layoutChildNodes;
+    constructor();
+    get layout(): ILayout;
+    set layout(value: ILayout);
+    get name(): string;
+    private _initialize;
+    connectedCallback(): Promise<void>;
+    disconnectedCallback(): void;
+    assignParams(params: Record<string, any>): void;
+}
+
+declare class Link extends HTMLElement implements ILink {
+    static get observedAttributes(): string[];
+    private _childNodeArray;
+    private _uuid;
+    private _path;
+    private _router;
+    private _anchorElement;
+    private _initialized;
+    private _onClick?;
+    constructor();
+    get uuid(): string;
+    /**
+     * 最寄りの Router を返す。
+     *
+     * 注意: この getter は DOM 走査で Router を探すため、
+     * Router がまだ upgrade されていない場合は HTMLElement として返る可能性がある。
+     * 通常は registerComponents() で Router を Link より先に upgrade することを推奨する。
+     */
+    get router(): Router;
+    private _initialize;
+    /**
+     * URL pathname を正規化する。Router と共通実装を使うことで
+     * basenameFileExtensions の取り扱いを揃え、active 判定の取りこぼしを防ぐ。
+     */
+    private _normalizePathname;
+    private _joinInternalPath;
+    /**
+     * router が扱う内部ターゲットか。`/` 始まりに加え、`?` 始まり（クエリのみ遷移 —
+     * docs/router-state-contract-design.md §4.1）も内部ターゲットとして受理する。
+     */
+    private _isInternalTarget;
+    private _setAnchorHref;
+    connectedCallback(): void;
+    /**
+     * サーバーが生成した目印付き anchor（直後の兄弟）。クライアントの採用対象
+     */
+    private _findSsrAnchor;
+    private _connect;
+    disconnectedCallback(): void;
+    attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void;
+    private _updateActiveState;
+    get anchorElement(): HTMLAnchorElement | null;
+}
+
+declare class Head extends HTMLElement {
+    private _initialized;
+    private _childElementArray;
+    constructor();
+    private _initialize;
+    connectedCallback(): void;
+    disconnectedCallback(): void;
+    get childElementArray(): Element[];
+    /**
+     * 要素の一意キーを生成（WeakMap でキャッシュ）
+     */
+    private _getKey;
+    /**
+     * 要素の一意キーを計算（実体）
+     */
+    private _computeKey;
+    /**
+     * head 内の要素を key で引ける Map を構築する。
+     * `_reapplyHead` のループ前に一度だけ呼び出し、O(N) lookup に置き換えるためのヘルパ。
+     *
+     * 設計仕様: 同一 key の要素が複数 `document.head` 内に存在する場合は **first-wins**
+     * （DOM 順で最初の要素のみ採用）。これは `_captureInitialHead` および
+     * `initialHeadValues` の挙動とも整合する。
+     * 重複は基本的にユーザーの記述ミスだが、_getKey の粒度（href/name 等の主要属性のみ）に
+     * よる「論理的重複」もあり得るため、サイレントに first-wins とする。
+     * 厳密な重複検出が必要な場合は呼び出し側で行う。
+     */
+    private _buildHeadElementMap;
+    /**
+     * 初期の<head>状態をキャプチャ
+     * document.head内の全ての要素をスキャンして保存する
+     */
+    private _captureInitialHead;
+    /**
+     * スタック全体からheadを再構築
+     * 後のHeadが優先される（上書き）
+     */
+    private _reapplyHead;
+}
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-router": Router;
+        "wcs-route": Route;
+        "wcs-outlet": Outlet;
+        "wcs-layout": Layout;
+        "wcs-layout-outlet": LayoutOutlet;
+        "wcs-link": Link;
+        "wcs-head": Head;
+    }
+}
 
 export { Route, RouteCore, Router, VERSION, bootstrapRouter, getConfig };
 export type { IWritableConfig, IWritableTagNames, RouteParseOptions };

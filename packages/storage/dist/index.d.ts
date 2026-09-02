@@ -199,5 +199,11 @@ declare const WCS_STORAGE_ERROR_CODE: {
     readonly StorageError: "storage-error";
 };
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-storage": Storage;
+    }
+}
+
 export { StorageCore, WCS_STORAGE_ERROR_CODE, Storage as WcsStorage, bootstrapStorage, getConfig };
 export type { IWritableConfig, IWritableTagNames, StorageType, WcsIoErrorInfo, WcsIoErrorPhase, WcsStorageCoreValues, WcsStorageError, WcsStorageValues };

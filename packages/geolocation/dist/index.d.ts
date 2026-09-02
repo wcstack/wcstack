@@ -356,5 +356,11 @@ declare const WCS_GEO_ERROR_CODE: {
     readonly Timeout: "timeout";
 };
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-geo": WcsGeolocation;
+    }
+}
+
 export { GeolocationCore, WCS_GEO_ERROR_CODE, WcsGeolocation, bootstrapGeolocation, getConfig };
 export type { GeoOptions, GeoPermissionState, IWritableConfig, IWritableTagNames, WcsGeoCommands, WcsGeoCoords, WcsGeoCoreCommands, WcsGeoCoreValues, WcsGeoErrorDetail, WcsGeoInputs, WcsGeoPositionDetail, WcsGeoValues, WcsIoErrorInfo, WcsIoErrorPhase };

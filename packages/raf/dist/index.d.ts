@@ -285,5 +285,11 @@ declare class Raf extends HTMLElement {
     disconnectedCallback(): void;
 }
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-raf": Raf;
+    }
+}
+
 export { RafCore, Raf as WcsRaf, bootstrapRaf, getConfig };
 export type { IWritableConfig, IWritableTagNames, RafScheduler, RafStartOptions, WcsRafCommands, WcsRafCoreCommands, WcsRafCoreValues, WcsRafInputs, WcsRafTickDetail, WcsRafValues };
