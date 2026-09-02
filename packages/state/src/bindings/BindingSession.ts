@@ -19,7 +19,7 @@ import { isPossibleTwoWay } from "../event/isPossibleTwoWay";
 import { getCustomElement } from "../getCustomElement";
 import { getCustomElementRegistry, upgradeCustomElement } from "../platform/customElementRegistry";
 import { raiseError } from "../raiseError";
-import { getStateElementByName } from "../stateElementByName";
+import { getStateElement } from "../stateElementByName";
 import { IBindingInfo } from "../types";
 import { consumeObserverSkipOnAdd, consumeObserverSkipOnRemove, decrementPendingObservation, hasPendingObservation, incrementPendingObservation } from "./observerSkip";
 import { DefinitionCoordinator, getDefinitionCoordinator } from "./DefinitionCoordinator";
@@ -1025,7 +1025,7 @@ export class BindingSession {
       // リスト行: (absolutePathInfo, listIndex) のパターン台帳に登録し、
       // AbsoluteStateAddress の intern（アドレス割当 + intern 用 WeakMap）を省略する
       const rootNode = resolveBindingRootNode(binding, knownRoot);
-      const stateElement = getStateElementByName(rootNode, binding.stateName);
+      const stateElement = getStateElement(rootNode);
       if (stateElement === null) {
         raiseError(`State element with name "${binding.stateName}" not found for binding.`);
       }
@@ -1042,7 +1042,7 @@ export class BindingSession {
     // データ駆動で行う（クロージャ不要）
     if (!record.options.registerPathInfo) return;
     const rootNode = binding.replaceNode.getRootNode() as Node;
-    const stateElement = getStateElementByName(rootNode, binding.stateName);
+    const stateElement = getStateElement(rootNode);
     if (stateElement === null) {
       raiseError(`State element with name "${binding.stateName}" not found for binding.`);
     }

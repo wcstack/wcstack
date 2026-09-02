@@ -6,7 +6,7 @@ import { loadFromScriptJson } from "../stateLoader/loadFromScriptJson";
 import { raiseError } from "../raiseError";
 import { BindingType, IState } from "../types";
 import { IStateElement } from "./types";
-import { setStateElementByName, getStateElementByName, getBindingsReady } from "../stateElementByName";
+import { setStateElement, getStateElement, getBindingsReady } from "../stateElementByName";
 import { ILoopContextStack } from "../list/types";
 import { createLoopContextStack } from "../list/loopContext";
 import { DCC_DEFINITION_ATTRIBUTE, NO_SET_TIMEOUT, STATE_CONNECTED_CALLBACK_NAME, STATE_DISCONNECTED_CALLBACK_NAME, STATE_UPDATED_CALLBACK_NAME, WILDCARD } from "../define";
@@ -305,7 +305,7 @@ export class State extends HTMLElementBase implements IStateElement {
     }
     graftOrQueueVolume(
       rootNode,
-      getStateElementByName(rootNode, "default"),
+      getStateElement(rootNode),
       mountPath,
       volumeState,
       finish,
@@ -330,7 +330,7 @@ export class State extends HTMLElementBase implements IStateElement {
       }
     }
     await this._loadingPromise;
-    setStateElementByName(this.rootNode!, this._name, this);
+    setStateElement(this.rootNode!, this);
   }
 
   /**
@@ -443,7 +443,7 @@ export class State extends HTMLElementBase implements IStateElement {
           (hostBinding) => hostBinding.propSegments[0] === boundComponentStateProp,
         );
         if (hostBindings.length > 0) {
-          const parentStateElement = getStateElementByName(boundComponent.getRootNode() as Node, hostBindings[0].stateName)
+          const parentStateElement = getStateElement(boundComponent.getRootNode() as Node)
             ?? raiseError(`State element with name "${hostBindings[0].stateName}" not found for mount host <${customTagName}>.`);
           // 再初期化（コンポーネントが connectedCallback で shadow の innerHTML を張り直す
           // 作りだと、再接続のたびに新しい <wcs-state> がここへ来る）: 記録を再利用して
@@ -611,11 +611,11 @@ export class State extends HTMLElementBase implements IStateElement {
       callMountLifecycleCallback(mountRecord, "$connectedCallback");
       this._resolveConnectedCallback?.();
       return;
-    } else if (!this._dcc && getStateElementByName(this._rootNode, this._name) !== this) {
+    } else if (!this._dcc && getStateElement(this._rootNode) !== this) {
       // 再接続（disconnect で名前登録が解除された後の再 connect）: 登録を復元する。
       // createState が rootNode 経由でこの要素を解決できるようにするために必要
       // （$connectedCallback の再実行と $streams の initial からの再起動が依存する、設計書 §2-3）。
-      setStateElementByName(this._rootNode, this._name, this);
+      setStateElement(this._rootNode, this);
     }
     // enable-ssr (クライアント側): SSR で $connectedCallback 済みなのでスキップ
     // inSsr() (サーバー側): レンダリング中なので実行する
@@ -728,7 +728,7 @@ export class State extends HTMLElementBase implements IStateElement {
       try {
         this._callStateDisconnectedCallback();
       } finally {
-        setStateElementByName(this.rootNode, this._name, null);
+        setStateElement(this.rootNode, null);
         clearCommandTokenRegistry(this);
         clearCommandNamespace(this);
         clearEventTokenRegistry(this);

@@ -59,7 +59,7 @@ vi.mock("../src/event/checkboxHandler", () => ({
   detachCheckboxEventHandler: mocks.detachCheckbox,
 }));
 vi.mock("../src/stateElementByName", () => ({
-  getStateElementByName: vi.fn(() => ({ setPathInfo: mocks.setPathInfo })),
+  getStateElement: vi.fn(() => ({ setPathInfo: mocks.setPathInfo })),
 }));
 
 import { BindingSession } from "../src/bindings/BindingSession";

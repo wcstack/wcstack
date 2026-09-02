@@ -7,7 +7,7 @@ vi.mock('../src/list/getListIndexByBindingInfo', () => ({
   getListIndexByBindingInfo: vi.fn()
 }));
 vi.mock('../src/stateElementByName', () => ({
-  getStateElementByName: vi.fn()
+  getStateElement: vi.fn()
 }));
 vi.mock('../src/address/AbsolutePathInfo', () => ({
   getAbsolutePathInfo: vi.fn()
@@ -22,7 +22,7 @@ import {
 } from '../src/binding/getAbsoluteStateAddressByBinding';
 import { getRootNodeByFragment } from '../src/apply/rootNodeByFragment';
 import { getListIndexByBindingInfo } from '../src/list/getListIndexByBindingInfo';
-import { getStateElementByName } from '../src/stateElementByName';
+import { getStateElement } from '../src/stateElementByName';
 import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
 import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
@@ -30,7 +30,7 @@ import type { IBindingInfo } from '../src/binding/types';
 
 const getRootNodeByFragmentMock = vi.mocked(getRootNodeByFragment);
 const getListIndexByBindingInfoMock = vi.mocked(getListIndexByBindingInfo);
-const getStateElementByNameMock = vi.mocked(getStateElementByName);
+const getStateElementByNameMock = vi.mocked(getStateElement);
 const getAbsolutePathInfoMock = vi.mocked(getAbsolutePathInfo);
 const createAbsoluteStateAddressMock = vi.mocked(createAbsoluteStateAddress);
 
@@ -75,7 +75,7 @@ describe('getAbsoluteStateAddressByBinding', () => {
     const result = getAbsoluteStateAddressByBinding(binding);
 
     expect(result).toBe(fakeAbsAddress);
-    expect(getStateElementByNameMock).toHaveBeenCalledWith(document, 'default');
+    expect(getStateElementByNameMock).toHaveBeenCalledWith(document);
     expect(getAbsolutePathInfoMock).toHaveBeenCalledWith(fakeStateElement, binding.statePathInfo);
 
     clearAbsoluteStateAddressByBinding(binding);
@@ -152,7 +152,7 @@ describe('getAbsoluteStateAddressByBinding', () => {
 
     expect(result).toBe(fakeAbsAddress);
     expect(getRootNodeByFragmentMock).toHaveBeenCalled();
-    expect(getStateElementByNameMock).toHaveBeenCalledWith(document, 'default');
+    expect(getStateElementByNameMock).toHaveBeenCalledWith(document);
 
     clearAbsoluteStateAddressByBinding(binding);
   });

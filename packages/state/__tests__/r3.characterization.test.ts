@@ -17,7 +17,7 @@
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
-import { getStateElementByName } from "../src/stateElementByName";
+import { getStateElement } from "../src/stateElementByName";
 import { setDevtoolsSink } from "../src/devtools/sink";
 import type { DevtoolsEvent } from "../src/devtools/types";
 import type { IAbsoluteStateAddress } from "../src/address/types";
@@ -56,7 +56,7 @@ async function mount(initial: any, innerHTML: string) {
   stateEl.setInitialState(initial);
   await stateEl.connectedCallbackPromise;
   await State.getBindingsReady(shadowRoot);
-  const stateElement = getStateElementByName(shadowRoot, "default")!;
+  const stateElement = getStateElement(shadowRoot)!;
   return { host, shadowRoot, stateElement };
 }
 

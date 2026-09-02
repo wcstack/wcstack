@@ -20,7 +20,7 @@ vi.mock("../src/list/getListIndexByBindingInfo", () => ({
   getListIndexByBindingInfo: vi.fn(() => mocks.listIndex),
 }));
 vi.mock("../src/stateElementByName", () => ({
-  getStateElementByName: vi.fn(() => mocks.stateElement),
+  getStateElement: vi.fn(() => mocks.stateElement),
 }));
 vi.mock("../src/binding/getAbsoluteStateAddressByBinding", () => ({
   getAbsoluteStateAddressByBinding: vi.fn(() => ({ absolutePathInfo: {}, listIndex: null })),

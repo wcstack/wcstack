@@ -1,7 +1,7 @@
 import { EVENT_PROP_PREFIX, MODIFIER_READONLY } from "../define";
 import { getLoopContextByNode } from "../list/loopContextByNode";
 import { raiseError } from "../raiseError";
-import { getStateElementByName } from "../stateElementByName";
+import { getStateElement } from "../stateElementByName";
 import { IBindingInfo, IFilterInfo } from "../types";
 import { setLoopContextSymbol } from "../proxy/symbols";
 import { createHandlerBindingRegistry } from "./handlerBindingRegistry";
@@ -47,7 +47,7 @@ const checkboxEventHandlerFunction = (
   }
 
   const rootNode = node.getRootNode() as Node;
-  const stateElement = getStateElementByName(rootNode, stateName);
+  const stateElement = getStateElement(rootNode);
   if (stateElement === null) {
     raiseError(`State element with name "${stateName}" not found for two-way binding.`);
   }

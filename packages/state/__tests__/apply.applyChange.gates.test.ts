@@ -23,7 +23,7 @@ vi.mock('../src/binding/getAbsoluteStateAddressByBinding', () => {
   };
 });
 import { applyChange } from '../src/apply/applyChange';
-import { setStateElementByName } from '../src/stateElementByName';
+import { setStateElement } from '../src/stateElementByName';
 import { getPathInfo } from '../src/address/PathInfo';
 import { getByAddressSymbol, setLoopContextSymbol } from '../src/proxy/symbols';
 import type { IStateElement } from '../src/components/types';
@@ -87,8 +87,8 @@ function createContext(stateElement: IStateElement, extras: Partial<IApplyContex
 describe('applyChange のゲートと fast path', () => {
   afterEach(() => {
     sessionHolder.session = null;
-    setStateElementByName(document, 'default', null);
-    setStateElementByName(document, 'other', null);
+    setStateElement(document, null);
+    setStateElement(document, null);
     document.body.innerHTML = '';
   });
 
@@ -139,7 +139,7 @@ describe('applyChange のゲートと fast path', () => {
 
   it('sameRootVerified が無ければ従来通り getRootNode を解決すること', () => {
     const stateElement = createMockStateElement('default');
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
     const context = createContext(stateElement);
     const binding = createTextBinding('default');
     const getRootNodeSpy = vi.fn(() => document);
@@ -170,7 +170,7 @@ describe('applyChange のゲートと fast path', () => {
   it('sameRootVerified でも stateName 不一致なら従来の解決経路にフォールバックすること（テンプレート内 @state バインド相当）', () => {
     const defaultElement = createMockStateElement('default');
     const otherElement = createMockStateElement('other');
-    setStateElementByName(document, 'other', otherElement);
+    setStateElement(document, otherElement);
     const context = createContext(defaultElement, { sameRootVerified: true });
     const binding = createTextBinding('other');
 

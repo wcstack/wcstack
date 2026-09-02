@@ -1,7 +1,7 @@
 import { IStateAddress } from "../address/types";
 import { IStateElement } from "../components/types";
 import { raiseError } from "../raiseError";
-import { getStateElementByName } from "../stateElementByName";
+import { getStateElement } from "../stateElementByName";
 import { IStateHandler, IStateProxy, Mutability } from "./types";
 import { get as trapGet } from "./traps/get";
 import { set as trapSet } from "./traps/set";
@@ -27,7 +27,7 @@ class StateHandler implements IStateHandler {
     mutability: Mutability
   ) {
     this._stateName = stateName;
-    const stateElement = getStateElementByName(rootNode, this._stateName);
+    const stateElement = getStateElement(rootNode);
     if (stateElement === null) {
       raiseError(`StateHandler: State element with name "${this._stateName}" not found.`);
     }

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { attachEventHandler, detachEventHandler, __private__ } from '../src/event/handler';
 import { getPathInfo } from '../src/address/PathInfo';
 import type { IBindingInfo } from '../src/types';
-import { setStateElementByName } from '../src/stateElementByName';
+import { setStateElement } from '../src/stateElementByName';
 import { getByAddressSymbol, setLoopContextSymbol } from '../src/proxy/symbols';
 import { CommandToken } from '../src/command/CommandToken';
 
@@ -25,11 +25,11 @@ function createBindingInfo(node: Element, overrides?: Partial<IBindingInfo>): IB
 
 describe('event/handler', () => {
   beforeEach(() => {
-    setStateElementByName(document, 'default', null);
+    setStateElement(document, null);
   });
 
   afterEach(() => {
-    setStateElementByName(document, 'default', null);
+    setStateElement(document, null);
   });
 
   it('attachEventHandlerはon*以外でfalseを返すこと', () => {
@@ -128,7 +128,7 @@ describe('event/handler', () => {
     attachEventHandler(binding);
     const handler = addSpy.mock.calls[0]?.[1] as ((event: Event) => any);
 
-    setStateElementByName(document, 'default', null);
+    setStateElement(document, null);
     const event = new Event('click');
     Object.defineProperty(event, 'target', { value: el });
     expect(() => handler(event)).toThrow(/State element with name "default" not found/);
@@ -144,7 +144,7 @@ describe('event/handler', () => {
       [setLoopContextSymbol]: (_ctx: any, cb: () => void) => cb(),
     } as any;
     let lastPromise: Promise<any> | null = null;
-    setStateElementByName(el, 'default', {
+    setStateElement(el, {
       createStateAsync: (mutability: string, callback: (s: any) => Promise<void>) => {
         lastPromise = callback(state);
         return lastPromise as Promise<void>;
@@ -174,7 +174,7 @@ describe('event/handler', () => {
       [setLoopContextSymbol]: (_ctx: any, cb: () => void) => cb()
     };
     let lastPromise: Promise<any> | null = null;
-    setStateElementByName(el, 'default', {
+    setStateElement(el, {
       createStateAsync: (_mutability: string, callback: (s: any) => Promise<void>) => {
         lastPromise = callback(state);
         return lastPromise as Promise<void>;
@@ -207,7 +207,7 @@ describe('event/handler', () => {
       [setLoopContextSymbol]: (_ctx: any, cb: () => void) => cb()
     };
     let lastPromise: Promise<any> | null = null;
-    setStateElementByName(el, 'default', {
+    setStateElement(el, {
       createStateAsync: (_mutability: string, callback: (s: any) => Promise<void>) => {
         lastPromise = callback(state);
         return lastPromise as Promise<void>;
@@ -240,7 +240,7 @@ describe('event/handler', () => {
       [setLoopContextSymbol]: (_ctx: any, cb: () => void) => cb()
     };
     let lastPromise: Promise<any> | null = null;
-    setStateElementByName(el, 'default', {
+    setStateElement(el, {
       createStateAsync: (_mutability: string, callback: (s: any) => Promise<void>) => {
         lastPromise = callback(state);
         return lastPromise as Promise<void>;
@@ -296,7 +296,7 @@ describe('event/handler', () => {
       [setLoopContextSymbol]: (_ctx: any, cb: () => void) => cb()
     };
     let lastPromise: Promise<any> | null = null;
-    setStateElementByName(el, 'default', {
+    setStateElement(el, {
       createStateAsync: (mutability: string, callback: (s: any) => Promise<void>) => {
         lastPromise = callback(state);
         return lastPromise as Promise<void>;
@@ -329,7 +329,7 @@ describe('event/handler', () => {
       [setLoopContextSymbol]: (_ctx: any, cb: () => void) => cb(),
     };
     let lastPromise: Promise<any> | null = null;
-    setStateElementByName(el, 'default', {
+    setStateElement(el, {
       createStateAsync: (_mutability: string, callback: (s: any) => Promise<void>) => {
         lastPromise = callback(state);
         return lastPromise as Promise<void>;
@@ -360,7 +360,7 @@ describe('event/handler', () => {
       [setLoopContextSymbol]: (_ctx: any, cb: () => void) => cb(),
     };
     let lastPromise: Promise<any> | null = null;
-    setStateElementByName(el, 'default', {
+    setStateElement(el, {
       createStateAsync: (_mutability: string, callback: (s: any) => Promise<void>) => {
         lastPromise = callback(state);
         return lastPromise as Promise<void>;

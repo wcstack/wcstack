@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { getAll } from '../src/proxy/apis/getAll';
 import { createListIndex } from '../src/list/createListIndex';
 import { setListIndexesByList } from '../src/list/listIndexesByList';
-import { setStateElementByName } from '../src/stateElementByName';
+import { setStateElement } from '../src/stateElementByName';
 
 vi.mock('../src/proxy/methods/getByAddress', () => ({
   getByAddress: vi.fn()
@@ -53,12 +53,12 @@ describe('getAll', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
-    setStateElementByName(document, 'default', null);
+    setStateElement(document, null);
   });
 
   it('単一ワイルドカードで全要素を取得できること', () => {
     mockStateElement = createStateElement();
-    setStateElementByName(document, 'default', mockStateElement);
+    setStateElement(document, mockStateElement);
     const handler = createHandler(mockStateElement);
     const target = {};
     const list = ['a', 'b', 'c'];
@@ -86,7 +86,7 @@ describe('getAll', () => {
 
   it('indexes を指定して特定�E要素のみ取得できること', () => {
     mockStateElement = createStateElement();
-    setStateElementByName(document, 'default', mockStateElement);
+    setStateElement(document, mockStateElement);
     const handler = createHandler(mockStateElement);
     const target = {};
     const list = ['a', 'b', 'c'];
@@ -109,7 +109,7 @@ describe('getAll', () => {
 
   it('indexes 未持E��時にコンチE��ストから�E動解決すること', () => {
     mockStateElement = createStateElement();
-    setStateElementByName(document, 'default', mockStateElement);
+    setStateElement(document, mockStateElement);
 
     const list = ['x', 'y'];
     const listIndex0 = createListIndex(null, 0);
@@ -145,7 +145,7 @@ describe('getAll', () => {
 
   it('indexes 未持E��でコンチE��ストにめElistIndex がなぁE��合�E空配�Eになること', () => {
     mockStateElement = createStateElement();
-    setStateElementByName(document, 'default', mockStateElement);
+    setStateElement(document, mockStateElement);
     // lastAddressStack なぁEↁEgetContextListIndex ぁEnull を返す
     const handler = createHandler(mockStateElement);
     const target = {};
@@ -172,7 +172,7 @@ describe('getAll', () => {
   it('getterパスの場合�E動的依存関係を登録すること', () => {
     mockStateElement = createStateElement();
     mockStateElement.getterPaths.add('computed');
-    setStateElementByName(document, 'default', mockStateElement);
+    setStateElement(document, mockStateElement);
 
     const lastAddress = {
       pathInfo: { path: 'computed' },
@@ -198,7 +198,7 @@ describe('getAll', () => {
 
   it('addressStackLength>0でlastAddressStackがnullなら依存関係を登録しなぁE��と', () => {
     mockStateElement = createStateElement();
-    setStateElementByName(document, 'default', mockStateElement);
+    setStateElement(document, mockStateElement);
     const handler = createHandler(mockStateElement, { addressStackLength: 1, lastAddressStack: null });
     const target = {};
     const list = ['a'];
@@ -220,7 +220,7 @@ describe('getAll', () => {
   it('addressStackLength>0で同一パスの場合�E依存関係を登録しなぁE��と', () => {
     mockStateElement = createStateElement();
     mockStateElement.getterPaths.add('items.*');
-    setStateElementByName(document, 'default', mockStateElement);
+    setStateElement(document, mockStateElement);
 
     const lastAddress = {
       pathInfo: { path: 'items.*' },
@@ -246,7 +246,7 @@ describe('getAll', () => {
 
   it('2回目の呼び出しで lastValue との差刁E��計算されること', () => {
     mockStateElement = createStateElement();
-    setStateElementByName(document, 'default', mockStateElement);
+    setStateElement(document, mockStateElement);
     const handler = createHandler(mockStateElement);
     const target = {};
 
@@ -287,7 +287,7 @@ describe('getAll', () => {
 
   it('多重ワイルドカードで indexes 持E��あり�E場合に再帰皁E��解決できること', () => {
     mockStateElement = createStateElement();
-    setStateElementByName(document, 'default', mockStateElement);
+    setStateElement(document, mockStateElement);
     const handler = createHandler(mockStateElement);
     const target = {};
 
@@ -318,7 +318,7 @@ describe('getAll', () => {
 
   it('listDiff.newIndexes ぁEnull の場合�Eエラーになること', () => {
     mockStateElement = createStateElement();
-    setStateElementByName(document, 'default', mockStateElement);
+    setStateElement(document, mockStateElement);
     const handler = createHandler(mockStateElement);
     const target = {};
 
@@ -340,7 +340,7 @@ describe('getAll', () => {
 
   it('indexes 持E��で篁E��外�EインチE��クスを指定した場合�Eエラーになること', () => {
     mockStateElement = createStateElement();
-    setStateElementByName(document, 'default', mockStateElement);
+    setStateElement(document, mockStateElement);
     const handler = createHandler(mockStateElement);
     const target = {};
     const list = ['a', 'b'];
@@ -359,7 +359,7 @@ describe('getAll', () => {
 
   it('oldValue に listIndexes がなぁE��合�E空配�EがoldIndexesとして使われること', () => {
     mockStateElement = createStateElement();
-    setStateElementByName(document, 'default', mockStateElement);
+    setStateElement(document, mockStateElement);
     const handler = createHandler(mockStateElement);
     const target = {};
 
@@ -405,7 +405,7 @@ describe('getAll', () => {
 
   it('ワイルドカードなし�Eパスでも値を取得できること', () => {
     mockStateElement = createStateElement();
-    setStateElementByName(document, 'default', mockStateElement);
+    setStateElement(document, mockStateElement);
     const handler = createHandler(mockStateElement);
     const target = {};
 
@@ -419,7 +419,7 @@ describe('getAll', () => {
 
   it('indexes 省略時、path と共有の無いループ文脈が添字を持つ場合はエラーになること', () => {
     mockStateElement = createStateElement();
-    setStateElementByName(document, 'default', mockStateElement);
+    setStateElement(document, mockStateElement);
 
     // 文脈は others.* のループ（添字あり）だが、path 'items.*' とは共有ゼロ。
     // 既定の [...$n] は異なる文脈の添字の流用になるため throw する
@@ -441,7 +441,7 @@ describe('getAll', () => {
 
   it('indexes 省略時、文脈が path より深い場合は共有分に切り詰められること', () => {
     mockStateElement = createStateElement();
-    setStateElementByName(document, 'default', mockStateElement);
+    setStateElement(document, mockStateElement);
 
     const list = ['a', 'b'];
     const li0 = createListIndex(null, 0);
@@ -472,7 +472,7 @@ describe('getAll', () => {
 
   it('ワイルドカード無しのパスはループ文脈があってもエラーにならないこと', () => {
     mockStateElement = createStateElement();
-    setStateElementByName(document, 'default', mockStateElement);
+    setStateElement(document, mockStateElement);
 
     const contextListIndex = createListIndex(null, 0);
     const lastAddress = {

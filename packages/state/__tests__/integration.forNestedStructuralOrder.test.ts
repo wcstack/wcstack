@@ -20,7 +20,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
-import { getStateElementByName } from "../src/stateElementByName";
+import { getStateElement } from "../src/stateElementByName";
 
 beforeAll(() => {
   bootstrapState();
@@ -38,7 +38,7 @@ async function mount(initial: unknown, innerHTML: string) {
   stateEl.setInitialState(initial);
   await stateEl.connectedCallbackPromise;
   await State.getBindingsReady(shadowRoot);
-  const stateElement = getStateElementByName(shadowRoot, "default")!;
+  const stateElement = getStateElement(shadowRoot)!;
   return {
     host,
     texts: () => Array.from(shadowRoot.querySelectorAll("li")).map((el) => el.textContent),

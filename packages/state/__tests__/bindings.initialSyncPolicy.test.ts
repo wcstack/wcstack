@@ -35,7 +35,7 @@ vi.mock("../src/binding/getStateAddressByBindingInfo", () => ({
   clearStateAddressByBindingInfo: mocks.clearStateAddress,
 }));
 vi.mock("../src/stateElementByName", () => ({
-  getStateElementByName: vi.fn(() => ({
+  getStateElement: vi.fn(() => ({
     setPathInfo: mocks.setPathInfo,
     createState: (_mutability: string, callback: (state: any) => void) => callback(mocks.state),
   })),

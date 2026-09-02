@@ -5,7 +5,7 @@ import { devtoolsSink } from "../devtools/sink";
 import { setLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
 import { updatedCallbackSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
-import { getStateElementByName } from "../stateElementByName";
+import { getStateElement } from "../stateElementByName";
 import { IPropagationContext } from "../propagation/types";
 import { IBindingInfo } from "../types";
 import { applyChange } from "./applyChange";
@@ -76,7 +76,7 @@ export function applyChangeFromBindings(
         raiseError(`Root node for fragment not found for binding.`);
       }
     }
-    const stateElement = getStateElementByName(rootNode, stateName);
+    const stateElement = getStateElement(rootNode);
     if (stateElement === null) {
       raiseError(`State element with name "${stateName}" not found for binding.`);
     }

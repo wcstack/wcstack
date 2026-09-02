@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../src/stateElementByName', () => ({
-  getStateElementByName: vi.fn(),
+  getStateElement: vi.fn(),
 }));
 
 vi.mock('../src/proxy/traps/get', () => ({
@@ -13,7 +13,7 @@ vi.mock('../src/proxy/traps/set', () => ({
 }));
 
 import { __private__, createStateProxy } from '../src/proxy/StateHandler';
-import { getStateElementByName } from '../src/stateElementByName';
+import { getStateElement } from '../src/stateElementByName';
 import { MAX_LOOP_DEPTH } from '../src/define';
 import { get as trapGet } from '../src/proxy/traps/get';
 import { set as trapSet } from '../src/proxy/traps/set';
@@ -30,13 +30,13 @@ describe('proxy/StateHandler (coverage)', () => {
   });
 
   it('stateElementが存在しない場合はエラーになること', () => {
-    vi.mocked(getStateElementByName).mockReturnValue(null as any);
+    vi.mocked(getStateElement).mockReturnValue(null as any);
     expect(() => new StateHandler(document, 'missing', 'readonly')).toThrow(/State element with name "missing" not found/);
   });
 
   it('初期状態のプロパティが正しいこと', () => {
     const stateElement = mockStateElement();
-    vi.mocked(getStateElementByName).mockReturnValue(stateElement);
+    vi.mocked(getStateElement).mockReturnValue(stateElement);
     const handler = new StateHandler(document, 'default', 'readonly');
     expect(handler.addressStackLength).toBe(0);
     expect(handler.stateName).toBe('default');
@@ -44,13 +44,13 @@ describe('proxy/StateHandler (coverage)', () => {
   });
 
   it('スタックが空の場合lastAddressStackはエラーになること', () => {
-    vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
+    vi.mocked(getStateElement).mockReturnValue(mockStateElement());
     const handler = new StateHandler(document, 'default', 'readonly');
     expect(() => handler.lastAddressStack).toThrow(/Last address stack is undefined/);
   });
 
   it('push/popでスタックが更新されること', () => {
-    vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
+    vi.mocked(getStateElement).mockReturnValue(mockStateElement());
     const handler = new StateHandler(document, 'default', 'readonly');
 
     const addrA = { id: 'a' } as any;
@@ -68,13 +68,13 @@ describe('proxy/StateHandler (coverage)', () => {
   });
 
   it('空スタックのpopはnullを返すこと', () => {
-    vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
+    vi.mocked(getStateElement).mockReturnValue(mockStateElement());
     const handler = new StateHandler(document, 'default', 'readonly');
     expect(handler.popAddress()).toBeNull();
   });
 
   it('pushAddressがMAX_LOOP_DEPTHを超えるとエラーになること', () => {
-    vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
+    vi.mocked(getStateElement).mockReturnValue(mockStateElement());
     const handler = new StateHandler(document, 'default', 'readonly');
     for (let i = 0; i < MAX_LOOP_DEPTH; i++) {
       handler.pushAddress(null);
@@ -83,7 +83,7 @@ describe('proxy/StateHandler (coverage)', () => {
   });
 
   it('popAddressでスロットがundefinedの場合エラーになること', () => {
-    vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
+    vi.mocked(getStateElement).mockReturnValue(mockStateElement());
     const handler = new StateHandler(document, 'default', 'readonly');
     handler.pushAddress({ id: 'a' } as any);
     // 内部スロットを強制的にundefinedにする
@@ -92,7 +92,7 @@ describe('proxy/StateHandler (coverage)', () => {
   });
 
   it('loopContextのset/clearができること', () => {
-    vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
+    vi.mocked(getStateElement).mockReturnValue(mockStateElement());
     const handler = new StateHandler(document, 'default', 'readonly');
     const loopContext = { pathInfo: {} as any, listIndex: {} as any } as any;
 
@@ -104,7 +104,7 @@ describe('proxy/StateHandler (coverage)', () => {
   });
 
   it('get/set/hasがtrapとReflectへ委譲されること', () => {
-    vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
+    vi.mocked(getStateElement).mockReturnValue(mockStateElement());
     const handler = new StateHandler(document, 'default', 'writable');
     const target = { value: 1 } as any;
 
@@ -119,7 +119,7 @@ describe('proxy/StateHandler (coverage)', () => {
   });
 
   it('readonlyではsetでエラーになること', () => {
-    vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
+    vi.mocked(getStateElement).mockReturnValue(mockStateElement());
     const handler = new StateHandler(document, 'default', 'readonly');
     const target = { value: 1 } as any;
 
@@ -129,7 +129,7 @@ describe('proxy/StateHandler (coverage)', () => {
 
   it('createStateProxyがStateProxyを生成すること', () => {
     const stateElement = mockStateElement();
-    vi.mocked(getStateElementByName).mockReturnValue(stateElement);
+    vi.mocked(getStateElement).mockReturnValue(stateElement);
 
     const state = { count: 1 };
     const proxy = createStateProxy(document, state, 'default', 'writable');

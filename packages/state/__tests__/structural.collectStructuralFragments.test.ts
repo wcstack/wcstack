@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { collectStructuralFragments } from '../src/structural/collectStructuralFragments';
 import { getFragmentInfoByUUID, setFragmentInfoByUUID } from '../src/structural/fragmentInfoByUUID';
 import { config } from '../src/config';
-import { setStateElementByName } from '../src/stateElementByName';
+import { setStateElement } from '../src/stateElementByName';
 
 let uuidCounter = 0;
 vi.mock('../src/getUUID', () => ({
@@ -12,17 +12,18 @@ vi.mock('../src/getUUID', () => ({
 vi.mock('../src/stateElementByName', () => {
   const map = new Map();
   return {
-    getStateElementByName: (_rootNode: Node, name: string) => map.get(name) || null,
-    setStateElementByName: (_rootNode: Node, name: string, el: any) => {
-      if (el === null) map.delete(name);
-      else map.set(name, el);
+    // 検分対象が detached なサブツリーでも届くよう document を既定キーにフォールバック（テスト台だけの緩和）
+    getStateElement: (rootNode: Node) => map.get(rootNode) || map.get(document) || null,
+    setStateElement: (rootNode: Node, el: any) => {
+      if (el === null) map.delete(rootNode);
+      else map.set(rootNode, el);
     }
   };
 });
 
 describe('collectStructuralFragments', () => {
   beforeEach(() => {
-    setStateElementByName(document, 'default', {
+    setStateElement(document, {
       setPathInfo: vi.fn(),
     } as any);
   });
@@ -178,8 +179,8 @@ describe('collectStructuralFragments', () => {
       parseBindTextsForElement: () => [{ bindingType: 'for', stateName: 'default' }]
     }));
 
-    const { setStateElementByName } = await import('../src/stateElementByName');
-    setStateElementByName(document, 'default', {
+    const { setStateElement } = await import('../src/stateElementByName');
+    setStateElement(document, {
       setPathInfo: vi.fn(),
     } as any);
 

@@ -4,7 +4,7 @@ import { getBindingSession } from "../bindings/BindingSession.js";
 import { getCustomElement } from "../getCustomElement.js";
 import { getCustomElementRegistry } from "../platform/customElementRegistry.js";
 import { raiseError } from "../raiseError.js";
-import { getStateElementByName } from "../stateElementByName.js";
+import { getStateElement } from "../stateElementByName.js";
 import { IBindingInfo } from "../types.js";
 import { isWebComponentComplete, isWebComponentStatePropDeclared } from "../webComponent/completeWebComponent.js";
 import { applyChangeToAttribute } from "./applyChangeToAttribute.js";
@@ -201,7 +201,7 @@ export function applyChange(binding: IBindingInfo, context: IApplyContext): void
     }
   }
   if (binding.stateName !== context.stateName || rootNode !== context.rootNode) {
-    const stateElement = getStateElementByName(rootNode, binding.stateName);
+    const stateElement = getStateElement(rootNode);
     if (stateElement === null) {
       raiseError(`State element with name "${binding.stateName}" not found for binding.`);
     }

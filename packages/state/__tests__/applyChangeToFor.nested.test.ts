@@ -3,7 +3,7 @@ import { applyChangeToFor } from '../src/apply/applyChangeToFor';
 import { setFragmentInfoByUUID } from '../src/structural/fragmentInfoByUUID';
 import { createListDiff } from '../src/list/createListDiff';
 import { setListIndexesByList } from '../src/list/listIndexesByList';
-import { setStateElementByName } from '../src/stateElementByName';
+import { setStateElement } from '../src/stateElementByName';
 import { getPathInfo } from '../src/address/PathInfo';
 import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
 import { createLoopContextStack } from '../src/list/loopContext';
@@ -174,7 +174,7 @@ describe('applyChangeToFor ネストされたforループの回帰テスト', ()
 
   function setup(createOuterFn: () => ReturnType<typeof createOuterFragmentInfoUnwrapped>) {
     const stateElement = createMockStateElement();
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
     // 内側フラグメントを先に登録（外側のnodeInfos生成時にUUID解決が必要）
     setFragmentInfoByUUID(innerUUID, document, createInnerFragmentInfo());
     setFragmentInfoByUUID(outerUUID, document, createOuterFn());
@@ -214,7 +214,7 @@ describe('applyChangeToFor ネストされたforループの回帰テスト', ()
   afterEach(() => {
     setFragmentInfoByUUID(outerUUID, document, null);
     setFragmentInfoByUUID(innerUUID, document, null);
-    setStateElementByName(document, 'default', null);
+    setStateElement(document, null);
     // Clear cached lastListValue to prevent cross-test contamination
     const itemsPathInfo = getPathInfo('items');
     const stateElement = { name: 'default' } as IStateElement;

@@ -3,7 +3,7 @@ import { applyChangeToFor } from '../src/apply/applyChangeToFor';
 import { setFragmentInfoByUUID } from '../src/structural/fragmentInfoByUUID';
 import { createListDiff } from '../src/list/createListDiff';
 import { setListIndexesByList } from '../src/list/listIndexesByList';
-import { setStateElementByName } from '../src/stateElementByName';
+import { setStateElement } from '../src/stateElementByName';
 import { getPathInfo } from '../src/address/PathInfo';
 import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
 import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
@@ -146,7 +146,7 @@ function createFragmentInfoWithIndexBinding() {
 
 afterEach(() => {
   setFragmentInfoByUUID(uuid, document, null);
-  setStateElementByName(document, 'default', null);
+  setStateElement(document, null);
   const pathInfo = getPathInfo('items');
   const stateElement = { name: 'default' } as IStateElement;
   const absPathInfo = getAbsolutePathInfo(stateElement, pathInfo);
@@ -159,7 +159,7 @@ describe('applyChangeToFor - changeIndexSet最適化', () => {
 
   function setupContext() {
     const stateElement = createMockStateElement();
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
     context = { stateName: 'default', rootNode: document, stateElement: stateElement as any, state, appliedBindingSet: new Set(), newListValueByAbsAddress: new Map(), updatedAbsAddressSetByStateElement: new Map(), deferredSelectBindings: [] };
     return stateElement;
   }

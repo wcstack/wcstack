@@ -38,7 +38,7 @@ import { getFragmentNodeInfos } from '../src/structural/getFragmentNodeInfos';
 import { getIndexBindingsByContent } from '../src/bindings/indexBindingsByContent';
 import { getBindingsByContent } from '../src/bindings/bindingsByContent';
 import { getBindingSessionByContent } from '../src/bindings/bindingSessionByContent';
-import { setStateElementByName } from '../src/stateElementByName';
+import { setStateElement } from '../src/stateElementByName';
 import { createLoopContextStack } from '../src/list/loopContext';
 import { getPathInfo } from '../src/address/PathInfo';
 import { config, setConfig } from '../src/config';
@@ -127,7 +127,7 @@ function forBindingInfo(node: Node): IBindingInfo {
 }
 
 function registerFragment(fragment: DocumentFragment, nodeInfos = getFragmentNodeInfos(fragment)) {
-  setStateElementByName(document, 'default', createMockStateElement());
+  setStateElement(document, createMockStateElement());
   setFragmentInfoByUUID(uuid, document, { fragment, parseBindTextResult: forParseResult(), nodeInfos });
 }
 
@@ -135,7 +135,7 @@ afterEach(() => {
   overrides.policy = null;
   overrides.attachEvent = null;
   setFragmentInfoByUUID(uuid, document, null);
-  setStateElementByName(document, 'default', null);
+  setStateElement(document, null);
   setConfig({ enableDirectionalInitialSync: true });
 });
 

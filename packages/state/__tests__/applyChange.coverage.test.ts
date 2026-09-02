@@ -35,7 +35,7 @@ vi.mock('../src/apply/getValue', () => ({
   getValue: vi.fn()
 }));
 vi.mock('../src/stateElementByName', () => ({
-  getStateElementByName: vi.fn()
+  getStateElement: vi.fn()
 }));
 vi.mock('../src/apply/rootNodeByFragment', () => ({
   getRootNodeByFragment: vi.fn()
@@ -55,7 +55,7 @@ import { applyChangeToProperty } from '../src/apply/applyChangeToProperty';
 import { applyChangeToWebComponent } from '../src/apply/applyChangeToWebComponent';
 import { isWebComponentComplete } from '../src/webComponent/completeWebComponent';
 import { getValue } from '../src/apply/getValue';
-import { getStateElementByName } from '../src/stateElementByName';
+import { getStateElement } from '../src/stateElementByName';
 import { getRootNodeByFragment } from '../src/apply/rootNodeByFragment';
 
 const applyChangeToTextMock = vi.mocked(applyChangeToText);
@@ -69,7 +69,7 @@ const applyChangeToPropertyMock = vi.mocked(applyChangeToProperty);
 const applyChangeToWebComponentMock = vi.mocked(applyChangeToWebComponent);
 const isWebComponentCompleteMock = vi.mocked(isWebComponentComplete);
 const getValueMock = vi.mocked(getValue);
-const getStateElementByNameMock = vi.mocked(getStateElementByName);
+const getStateElementByNameMock = vi.mocked(getStateElement);
 
 function createBaseBindingInfo(): Omit<IBindingInfo, 'bindingType' | 'node' | 'replaceNode' | 'propSegments' | 'propName'> {
   const pathInfo = getPathInfo('value');
@@ -330,7 +330,7 @@ describe('applyChange (coverage)', () => {
     getValueMock.mockReturnValue('z');
     applyChange(bindingInfo, context);
 
-    expect(getStateElementByNameMock).toHaveBeenCalledWith(document, 'other');
+    expect(getStateElementByNameMock).toHaveBeenCalledWith(document);
     expect(applyChangeToTextMock).toHaveBeenCalledWith(
       bindingInfo,
       expect.objectContaining({ stateName: 'other', state: otherState }),

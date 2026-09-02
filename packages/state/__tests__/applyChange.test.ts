@@ -5,7 +5,7 @@ import { applyChangeToIf } from '../src/apply/applyChangeToIf';
 import { getValue } from '../src/apply/getValue';
 import { getPathInfo } from '../src/address/PathInfo';
 import { getRootNodeByFragment } from '../src/apply/rootNodeByFragment';
-import { getStateElementByName } from '../src/stateElementByName';
+import { getStateElement } from '../src/stateElementByName';
 import type { IBindingInfo } from '../src/types';
 import type { IApplyContext } from '../src/apply/types';
 
@@ -22,7 +22,7 @@ vi.mock('../src/apply/rootNodeByFragment', () => ({
   getRootNodeByFragment: vi.fn()
 }));
 vi.mock('../src/stateElementByName', () => ({
-  getStateElementByName: vi.fn()
+  getStateElement: vi.fn()
 }));
 vi.mock('../src/binding/getAbsoluteStateAddressByBinding', () => ({
   getAbsoluteStateAddressByBinding: vi.fn(() => ({ absolutePathInfo: {}, listIndex: null }))
@@ -50,7 +50,7 @@ describe('applyChange', () => {
   const applyChangeToForMock = vi.mocked(applyChangeToFor);
   const applyChangeToIfMock = vi.mocked(applyChangeToIf);
   const getRootNodeByFragmentMock = vi.mocked(getRootNodeByFragment);
-  const getStateElementByNameMock = vi.mocked(getStateElementByName);
+  const getStateElementByNameMock = vi.mocked(getStateElement);
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -292,7 +292,7 @@ describe('applyChange', () => {
 
     getValueMock.mockReturnValue('cross-state');
     applyChange(bindingInfo, context);
-    expect(getStateElementByNameMock).toHaveBeenCalledWith(document, 'other');
+    expect(getStateElementByNameMock).toHaveBeenCalledWith(document);
     expect(mockCreateState).toHaveBeenCalledWith('readonly', expect.any(Function));
     expect(getValueMock).toHaveBeenCalled();
   });
@@ -336,7 +336,7 @@ describe('applyChange', () => {
 
     getValueMock.mockReturnValue('resolved');
     // rootNode resolves to document via getRootNodeByFragment, 
-    // but stateName differs so it tries getStateElementByName → null → error
+    // but stateName differs so it tries getStateElement → null → error
     expect(() => applyChange(bindingInfo, context)).toThrow(/State element with name "other" not found/);
     expect(getRootNodeByFragmentMock).toHaveBeenCalled();
   });

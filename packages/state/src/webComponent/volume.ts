@@ -15,7 +15,7 @@
  *
  * 接続時にはスロットを**予約**する（D22）: 予約下のパスの読みは `undefined` で、
  * pathDiagnostics は沈黙する（ロード前の一時状態は「未宣言」ではない）。
- * ルートより先に接続されてもよい（V5）— ルートの登録（setStateElementByName の
+ * ルートより先に接続されてもよい（V5）— ルートの登録（setStateElement の
  * `default`）が保留中のボリュームを引き取る。
  *
  * 宣言面: `$watch` は接頭辞翻訳してルートの watch 台帳へ追記（ハンドラの `this` は

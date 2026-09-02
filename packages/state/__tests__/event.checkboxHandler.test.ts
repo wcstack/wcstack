@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { IBindingInfo } from '../src/types';
 
 vi.mock('../src/stateElementByName', () => ({
-  getStateElementByName: vi.fn(),
+  getStateElement: vi.fn(),
 }));
 
 vi.mock('../src/list/loopContextByNode', () => ({
@@ -15,12 +15,12 @@ vi.mock('../src/raiseError', () => ({
 
 import { attachCheckboxEventHandler, detachCheckboxEventHandler, __private__ } from '../src/event/checkboxHandler';
 import { getPathInfo } from '../src/address/PathInfo';
-import { getStateElementByName } from '../src/stateElementByName';
+import { getStateElement } from '../src/stateElementByName';
 import { getLoopContextByNode } from '../src/list/loopContextByNode';
 import { raiseError } from '../src/raiseError';
 import { setLoopContextSymbol } from '../src/proxy/symbols';
 
-const getStateElementByNameMock = vi.mocked(getStateElementByName);
+const getStateElementByNameMock = vi.mocked(getStateElement);
 const getLoopContextByNodeMock = vi.mocked(getLoopContextByNode);
 const raiseErrorMock = vi.mocked(raiseError);
 

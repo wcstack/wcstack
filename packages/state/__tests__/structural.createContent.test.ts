@@ -6,17 +6,18 @@ import { setFragmentInfoByUUID } from '../src/structural/fragmentInfoByUUID';
 import { getPathInfo } from '../src/address/PathInfo';
 import type { ParseBindTextResult } from '../src/bindTextParser/types';
 import type { IBindingInfo } from '../src/types';
-import { setStateElementByName } from '../src/stateElementByName';
+import { setStateElement } from '../src/stateElementByName';
 
 const uuid = 'content-test-uuid';
 
 vi.mock('../src/stateElementByName', () => {
   const map = new Map();
   return {
-    getStateElementByName: (_rootNode: Node, name: string) => map.get(name) || null,
-    setStateElementByName: (_rootNode: Node, name: string, el: any) => {
-      if (el === null) map.delete(name);
-      else map.set(name, el);
+    // 検分対象が detached なサブツリーでも届くよう document を既定キーにフォールバック（テスト台だけの緩和）
+    getStateElement: (rootNode: Node) => map.get(rootNode) || map.get(document) || null,
+    setStateElement: (rootNode: Node, el: any) => {
+      if (el === null) map.delete(rootNode);
+      else map.set(rootNode, el);
     }
   };
 });
@@ -72,7 +73,7 @@ afterEach(() => {
 
 describe('createContent', () => {
   beforeEach(() => {
-    setStateElementByName(document, 'default', {
+    setStateElement(document, {
       setPathInfo: vi.fn(),
     } as any);
   });

@@ -16,7 +16,7 @@ import { startStream } from "../src/stream/streamRuntime";
 import { processStreamsDeclaration } from "../src/stream/processStreamsDeclaration";
 import { getStreamEntries } from "../src/stream/streamRegistry";
 import { createStateProxy } from "../src/proxy/StateHandler";
-import { setStateElementByName } from "../src/stateElementByName";
+import { setStateElement } from "../src/stateElementByName";
 import { getResolvedAddress } from "../src/address/ResolvedAddress";
 import { getAbsolutePathInfo } from "../src/address/AbsolutePathInfo";
 import { createAbsoluteStateAddress } from "../src/address/AbsoluteStateAddress";
@@ -59,7 +59,7 @@ function createTestStateElement(state: IState, getterPaths: string[] = []): ISta
       return callback(proxy);
     },
   } as unknown as IStateElement;
-  setStateElementByName(rootNode, name, stateElement);
+  setStateElement(rootNode, stateElement);
   return stateElement;
 }
 

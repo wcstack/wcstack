@@ -2,22 +2,22 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { setFragmentInfoByUUID, getFragmentInfoByUUID } from '../src/structural/fragmentInfoByUUID';
 import { getPathInfo } from '../src/address/PathInfo';
 import type { ParseBindTextResult } from '../src/bindTextParser/types';
-import { setStateElementByName } from '../src/stateElementByName';
+import { setStateElement } from '../src/stateElementByName';
 
 vi.mock('../src/stateElementByName', () => {
   const map = new Map();
   return {
-    getStateElementByName: (_rootNode: Node, name: string) => map.get(name) || null,
-    setStateElementByName: (_rootNode: Node, name: string, el: any) => {
-      if (el === null) map.delete(name);
-      else map.set(name, el);
+    getStateElement: (rootNode: Node) => map.get(rootNode) || null,
+    setStateElement: (rootNode: Node, el: any) => {
+      if (el === null) map.delete(rootNode);
+      else map.set(rootNode, el);
     }
   };
 });
 
 describe('fragmentInfoByUUID', () => {
   beforeEach(() => {
-    setStateElementByName(document, 'default', {
+    setStateElement(document, {
       setPathInfo: vi.fn(),
     } as any);
   });
@@ -71,12 +71,13 @@ describe('fragmentInfoByUUID', () => {
       nodeInfos: []
     };
 
-    expect(() => setFragmentInfoByUUID(uuid, document, fragmentInfo)).toThrow(/State element with name "missing-state" not found/);
+    const orphanRoot = document.createElement('div');
+    expect(() => setFragmentInfoByUUID(uuid, orphanRoot, fragmentInfo)).toThrow(/No state tree found on this root/);
   });
 
   it('nodeInfosの依存関係も登録されること', () => {
     const setPathInfo = vi.fn();
-    setStateElementByName(document, 'default', { setPathInfo } as any);
+    setStateElement(document, { setPathInfo } as any);
 
     const uuid = 'uuid-node-infos';
     const parseBindTextResult: ParseBindTextResult = {
@@ -122,43 +123,4 @@ describe('fragmentInfoByUUID', () => {
     expect(setPathInfo).toHaveBeenCalledWith('other', 'prop');
   });
 
-  it('StateElementが見つからない場合はエラーになること (nodeInfo)', () => {
-    const uuid = 'uuid-error-node';
-    const parseBindTextResult: ParseBindTextResult = {
-      propName: 'for',
-      propSegments: ['for'],
-      propModifiers: [],
-      statePathName: 'items',
-      statePathInfo: getPathInfo('items'),
-      stateName: 'default',
-      outFilters: [],
-      inFilters: [],
-      bindingType: 'for',
-      uuid: null,
-    };
-
-    const nodeParseBindTextResult: ParseBindTextResult = {
-      propName: 'value',
-      propSegments: ['value'],
-      propModifiers: [],
-      statePathName: 'other',
-      statePathInfo: getPathInfo('other'),
-      stateName: 'missing-state-node',
-      outFilters: [],
-      inFilters: [],
-      bindingType: 'prop',
-      uuid: null,
-    };
-
-    const fragmentInfo = {
-      fragment: document.createDocumentFragment(),
-      parseBindTextResult,
-      nodeInfos: [{
-        node: document.createComment('test'),
-        parseBindTextResults: [nodeParseBindTextResult]
-      }]
-    };
-
-    expect(() => setFragmentInfoByUUID(uuid, document, fragmentInfo)).toThrow(/State element with name "missing-state-node" not found/);
-  });
 });

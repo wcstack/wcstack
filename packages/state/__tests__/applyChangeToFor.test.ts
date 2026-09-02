@@ -18,7 +18,7 @@ import { setFragmentInfoByUUID } from '../src/structural/fragmentInfoByUUID';
 import type { ParseBindTextResult } from '../src/bindTextParser/types';
 import { createListDiff } from '../src/list/createListDiff';
 import { setListIndexesByList } from '../src/list/listIndexesByList';
-import { setStateElementByName } from '../src/stateElementByName';
+import { setStateElement } from '../src/stateElementByName';
 import { getPathInfo } from '../src/address/PathInfo';
 import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
 import { createLoopContextStack } from '../src/list/loopContext';
@@ -217,7 +217,7 @@ describe('applyChangeToFor', () => {
 
   function setupContext() {
     const stateElement = createMockStateElement();
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
     context = { stateName: 'default', rootNode: document, stateElement: stateElement as any, state, appliedBindingSet: new Set(), newListValueByAbsAddress: new Map(), updatedAbsAddressSetByStateElement: new Map(), deferredSelectBindings: [] };
     return stateElement;
   }
@@ -232,7 +232,7 @@ describe('applyChangeToFor', () => {
 
   afterEach(() => {
     setFragmentInfoByUUID(uuid, document, null);
-    setStateElementByName(document, 'default', null);
+    setStateElement(document, null);
     // Clear cached lastListValue to prevent cross-test contamination
     const pathInfo = getPathInfo('items');
     const stateElement = { name: 'default' } as IStateElement;
@@ -1137,7 +1137,7 @@ describe('applyChangeToFor', () => {
         // コールバックを呼ばなぁEↁEcontent ぁEundefined のまま
       }
     } as any;
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
     context = { stateName: 'default', rootNode: document, stateElement: stateElement as any, state, appliedBindingSet: new Set(), newListValueByAbsAddress: new Map(), updatedAbsAddressSetByStateElement: new Map(), deferredSelectBindings: [] };
 
     const container = document.createElement('div');

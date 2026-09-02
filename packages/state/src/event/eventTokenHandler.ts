@@ -30,7 +30,7 @@ import { setLoopContextSymbol } from "../proxy/symbols";
 import { getScopedIndexes } from "../list/wildcardLevel";
 import { didYouMean, LINT_HINT } from "../errorGuidance";
 import { raiseError } from "../raiseError";
-import { getStateElementByName } from "../stateElementByName";
+import { getStateElement } from "../stateElementByName";
 import { getCustomElement } from "../getCustomElement";
 import { getCustomElementRegistry } from "../platform/customElementRegistry";
 import { readBindableDeclaration, ReadBindableResult } from "../protocol/wcBindableReader";
@@ -99,7 +99,7 @@ export function attachEventTokenHandler(binding: IBindingInfo): boolean {
 
     // state は発火時の live root から解決する（attach 時は detached の可能性があるため）。
     const rootNode = element.getRootNode() as Node;
-    const stateElement = getStateElementByName(rootNode, stateName);
+    const stateElement = getStateElement(rootNode);
     if (stateElement === null) {
       raiseError(`State element with name "${stateName}" not found for eventToken handler.`);
     }

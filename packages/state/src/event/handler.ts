@@ -7,7 +7,7 @@ import { getLoopContextByNode } from "../list/loopContextByNode";
 import { getByAddressSymbol, setLoopContextSymbol } from "../proxy/symbols";
 import { getScopedIndexes } from "../list/wildcardLevel";
 import { raiseError } from "../raiseError";
-import { getStateElementByName } from "../stateElementByName";
+import { getStateElement } from "../stateElementByName";
 import { getMountRecordByScopeRoot } from "../webComponent/mount";
 import { IBindingInfo } from "../types";
 import { captureHandlerRejection } from "./captureHandlerRejection";
@@ -39,7 +39,7 @@ const stateEventHandlerFunction = (
 
   const node = event.target as Element;
   const rootNode = node.getRootNode() as Node;
-  const stateElement = getStateElementByName(rootNode, stateName);
+  const stateElement = getStateElement(rootNode);
   if (stateElement === null) {
     raiseError(`State element with name "${stateName}" not found for event handler.`);
   }

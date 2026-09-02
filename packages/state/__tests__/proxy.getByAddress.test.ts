@@ -3,7 +3,7 @@ import { getByAddress } from '../src/proxy/methods/getByAddress';
 import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
 import { createListIndex } from '../src/list/createListIndex';
-import { setStateElementByName } from '../src/stateElementByName';
+import { setStateElement } from '../src/stateElementByName';
 import { setCacheEntryByAbsoluteStateAddress } from '../src/cache/cacheEntryByAbsoluteStateAddress';
 import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
 import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
@@ -35,11 +35,11 @@ describe('getByAddress', () => {
 
   beforeEach(() => {
     mockStateElement = createStateElement();
-    setStateElementByName(document, 'default', mockStateElement);
+    setStateElement(document, mockStateElement);
   });
 
   afterEach(() => {
-    setStateElementByName(document, 'default', null);
+    setStateElement(document, null);
   });
 
   it('getterPathsに含まれる場合はpush/popしつつgetter経由で取得すること', () => {

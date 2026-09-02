@@ -13,7 +13,7 @@
 
 import { inSsr } from "../config";
 import { DEVTOOLS_LISTENER_PRIORITY } from "../define";
-import { getStateElementByName, getLiveStateElements } from "../stateElementByName";
+import { getStateElement, getLiveStateElements } from "../stateElementByName";
 import { registerUpdateBatchListener, unregisterUpdateBatchListener, UpdateBatchListener } from "../updater/updater";
 import { raiseError } from "../raiseError";
 import { VERSION } from "../version";
@@ -164,7 +164,7 @@ function createStateElementSummary(element: IStateElement): IStateElementSummary
 }
 
 function requireStateElement(name: string, rootNode: Node): IStateElement {
-  return getStateElementByName(rootNode, name) ??
+  return getStateElement(rootNode) ??
     raiseError(`devtools: state element not found: name="${name}"`);
 }
 

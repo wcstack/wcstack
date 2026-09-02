@@ -23,7 +23,7 @@ vi.mock('../src/bindings/initializeBindingPromiseByNode', () => ({
 }));
 
 import { State } from '../src/components/State';
-import { getStateElementByName, setStateElementByName } from '../src/stateElementByName';
+import { getStateElement, setStateElement } from '../src/stateElementByName';
 import { loadFromInnerScript } from '../src/stateLoader/loadFromInnerScript';
 import { loadFromJsonFile } from '../src/stateLoader/loadFromJsonFile';
 import { loadFromScriptFile } from '../src/stateLoader/loadFromScriptFile';
@@ -97,8 +97,8 @@ const createBindingInfo = (overrides?: Partial<IBindingInfo>): IBindingInfo => (
 describe('State component', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
-    setStateElementByName(document, 'default', null);
-    setStateElementByName(document, 'foo', null);
+    setStateElement(document, null);
+    setStateElement(document, null);
     createStateProxyMock.mockImplementation((_rootNode: any, state: any) => state);
     loadFromInnerScriptMock.mockResolvedValue({ fromInner: true });
     loadFromJsonFileMock.mockResolvedValue({ fromJson: true });
@@ -107,8 +107,8 @@ describe('State component', () => {
   });
 
   afterEach(() => {
-    setStateElementByName(document, 'default', null);
-    setStateElementByName(document, 'foo', null);
+    setStateElement(document, null);
+    setStateElement(document, null);
     vi.clearAllMocks();
   });
 
@@ -396,9 +396,9 @@ describe('State component', () => {
     await stateEl.connectedCallback();
     await stateEl.initializePromise;
     const rootNode = stateEl.rootNode;
-    expect(getStateElementByName(rootNode, 'default')).toBe(stateEl);
+    expect(getStateElement(rootNode)).toBe(stateEl);
     stateEl.disconnectedCallback();
-    expect(getStateElementByName(rootNode, 'default')).toBeNull();
+    expect(getStateElement(rootNode)).toBeNull();
   });
 
   it('disconnectedCallbackを2回呼んでもエラーにならないこと', async () => {

@@ -49,7 +49,7 @@ export function initializeMountScope(record: IMountRecord, scopeRoot: ShadowRoot
   }
   registerMountRecord(scopeRoot, record);
   if (scopeRoot instanceof ShadowRoot) {
-    setStateElementAlias(scopeRoot, record.parentStateName, record.parentStateElement);
+    setStateElementAlias(scopeRoot, record.parentStateElement);
   }
   buildMountScopeBindings(record, scopeRoot);
   setBindingsReadyForScope(scopeRoot, Promise.resolve());

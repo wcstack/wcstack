@@ -274,9 +274,9 @@ describe('mount: setStateElementAlias', () => {
     const root = document.createDocumentFragment();
     const a = { name: 'default' } as any;
     const b = { name: 'default' } as any;
-    setStateElementAlias(root, 'default', a);
-    expect(() => setStateElementAlias(root, 'default', a)).not.toThrow();
-    expect(() => setStateElementAlias(root, 'default', b)).toThrow(/already registered/);
+    setStateElementAlias(root, a);
+    expect(() => setStateElementAlias(root, a)).not.toThrow();
+    expect(() => setStateElementAlias(root, b)).toThrow(/already registered/);
   });
 });
 

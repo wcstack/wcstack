@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../src/stateElementByName", () => ({
-  getStateElementByName: vi.fn(() => ({
+  getStateElement: vi.fn(() => ({
     createState: (_mutability: string, callback: (state: any) => void) => callback(stateProxy),
   })),
 }));

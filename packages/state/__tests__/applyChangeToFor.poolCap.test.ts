@@ -23,7 +23,7 @@ import { getContentSetByNode } from '../src/structural/contentsByNode';
 import type { ParseBindTextResult } from '../src/bindTextParser/types';
 import { createListDiff } from '../src/list/createListDiff';
 import { setListIndexesByList } from '../src/list/listIndexesByList';
-import { setStateElementByName } from '../src/stateElementByName';
+import { setStateElement } from '../src/stateElementByName';
 import { getPathInfo } from '../src/address/PathInfo';
 import { createLoopContextStack } from '../src/list/loopContext';
 import type { IStateElement } from '../src/components/types';
@@ -118,7 +118,7 @@ describe('applyChangeToFor のプール上限', () => {
 
   function setupContext() {
     const stateElement = createMockStateElement();
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
     context = { stateName: 'default', rootNode: document, stateElement: stateElement as any, state, appliedBindingSet: new Set(), newListValueByAbsAddress: new Map(), updatedAbsAddressSetByStateElement: new Map(), deferredSelectBindings: [] };
   }
 
@@ -152,7 +152,7 @@ describe('applyChangeToFor のプール上限', () => {
       restoreCap = null;
     }
     setFragmentInfoByUUID(uuid, document, null);
-    setStateElementByName(document, 'default', null);
+    setStateElement(document, null);
     document.body.innerHTML = '';
   });
 

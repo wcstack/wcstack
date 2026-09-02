@@ -5,7 +5,7 @@ import { devtoolsSink } from "../devtools/sink";
 import { getLoopContextByNode } from "../list/loopContextByNode";
 import { beginPropagationTransaction, extendPropagationContext, getCurrentPropagationContext, getEdgeId, getWireId, matchWriteReceipt, runWithPropagationContext } from "../propagation/propagation";
 import { raiseError } from "../raiseError";
-import { getStateElementByName } from "../stateElementByName";
+import { getStateElement } from "../stateElementByName";
 import { IBindingInfo, IFilterInfo } from "../types";
 import { setLoopContextSymbol } from "../proxy/symbols";
 import { getCustomElement } from "../getCustomElement";
@@ -165,7 +165,7 @@ const twowayEventHandlerFunction = (
   }
 
   const rootNode = node.getRootNode() as Node;
-  const stateElement = getStateElementByName(rootNode, stateName);
+  const stateElement = getStateElement(rootNode);
   if (stateElement === null) {
     raiseError(`State element with name "${stateName}" not found for two-way binding.`);
   }

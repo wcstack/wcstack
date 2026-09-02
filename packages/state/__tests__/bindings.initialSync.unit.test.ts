@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IBindingInfo } from "../src/types";
 
 const mocks = vi.hoisted(() => ({
-  getStateElementByName: vi.fn(),
+  getStateElement: vi.fn(),
 }));
 
 vi.mock("../src/stateElementByName", () => ({
-  getStateElementByName: mocks.getStateElementByName,
+  getStateElement: mocks.getStateElement,
 }));
 
 import { getPathInfo } from "../src/address/PathInfo";
@@ -197,7 +197,7 @@ describe("initialSync authority resolution and commit", () => {
   });
 
   it("auto 解決時に state element が見つからなければエラーになること", () => {
-    mocks.getStateElementByName.mockReturnValue(null);
+    mocks.getStateElement.mockReturnValue(null);
     const binding = createBinding(document.createElement("div"));
     expect(() => resolveInitialAuthority(binding, "auto"))
       .toThrow(/not found for binding/);
@@ -206,14 +206,14 @@ describe("initialSync authority resolution and commit", () => {
   it("auto 以外の authority はそのまま返すこと", () => {
     const binding = createBinding(document.createElement("div"));
     expect(resolveInitialAuthority(binding, "element")).toBe("element");
-    expect(mocks.getStateElementByName).not.toHaveBeenCalled();
+    expect(mocks.getStateElement).not.toHaveBeenCalled();
   });
 
   it("commitProducerValue は in filter を通して state へ書き込むこと", () => {
     const state: Record<PropertyKey, any> = {
       [setLoopContextSymbol]: (_context: unknown, callback: () => unknown) => callback(),
     };
-    mocks.getStateElementByName.mockReturnValue({
+    mocks.getStateElement.mockReturnValue({
       createState: (_mutability: string, callback: (target: any) => void) => callback(state),
     });
     const binding = createBinding(document.createElement("div"), {
@@ -224,7 +224,7 @@ describe("initialSync authority resolution and commit", () => {
   });
 
   it("commitProducerValue は state element 不在をエラーにすること", () => {
-    mocks.getStateElementByName.mockReturnValue(null);
+    mocks.getStateElement.mockReturnValue(null);
     const binding = createBinding(document.createElement("div"));
     expect(() => commitProducerValue(binding, "value"))
       .toThrow(/not found for initial binding sync/);

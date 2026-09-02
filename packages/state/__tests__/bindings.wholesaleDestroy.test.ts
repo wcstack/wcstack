@@ -36,7 +36,7 @@ vi.mock("../src/binding/getBindingSetByAbsoluteStateAddress", () => ({
   removeBindingByAbsoluteStateAddress: mocks.removeAddress,
 }));
 vi.mock("../src/binding/getStateAddressByBindingInfo", () => ({ clearStateAddressByBindingInfo: mocks.clearState }));
-vi.mock("../src/stateElementByName", () => ({ getStateElementByName: vi.fn(() => mocks.stateElement) }));
+vi.mock("../src/stateElementByName", () => ({ getStateElement: vi.fn(() => mocks.stateElement) }));
 vi.mock("../src/event/handler", () => ({ attachEventHandler: mocks.attachEvent, detachEventHandler: mocks.detachEvent }));
 
 import { BindingSession } from "../src/bindings/BindingSession";
