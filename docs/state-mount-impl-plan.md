@@ -275,7 +275,7 @@ slice 4 で確定した挙動・発見:
   2. **`@wcstack/server` の deprecated `extractStateData()` 削除 — 採択・実装**。消費者は server 自身のテストと README の API 表のみ（`Ssr.extractStateData` が state 側の正）。関数・export・テスト 6 本・README 英日の表行を削除。リリースノートの破壊的変更表に追記。
   3. ~~`_upgradeProperty` の全パッケージ展開~~ — **不採択（前提が古い＝展開済み）**。`7775d8bf` "fix(shell): adopt inputs assigned before the element upgrades"（main / v2 双方に含まれる）で **39 パッケージ**に `src/protocol/upgradeProperties.ts`＋テスト＋Shell 配線が着地済み。未対応 5 つ（state / signals / devtools / server / vscode-wcs）は wc-bindable I/O ノードではない（要素なし or wcBindable 非宣言）。
   4. **semver・破壊的変更ポリシーの表明 — 採択・実装**。ルート README 英日に「Versioning and breaking changes」節（対象＝data-wcs 構文・wcBindable ほかプロトコル・ツール契約／対象外＝内部・文言・性能／deprecation 運用）。§10 に転記用の節を追加。
-  5. ~~spread undefined 書き戻しの SPEC 明文化~~ — **不採択（既に明文化済み）**。規範リファレンス（per-package README）の英日 :483 に「undefined は書き込みスキップ・クリアは null・全プロパティバインディングに適用」が規範文として存在（$setAll 側 :1027 も同旨）。メモリの「残＝SPEC 明文化」が stale だった。
+  5. ~~spread undefined 書き戻しの SPEC 明文化~~ — **リポ内は済み・残りは別リポ**。規範リファレンス（per-package README）の英日 :483 に「undefined は書き込みスキップ・クリアは null・全プロパティバインディングに適用」が規範文として存在（$setAll 側 :1027 も同旨）。残るのは **wc-bindable-protocol リポジトリの SPEC.md への規範文言追加**のみで、持ち込み用提案文書は [docs/spec-proposal-undefined-write-skip.md](./spec-proposal-undefined-write-skip.md) に完成済み（MUST NOT / null クリア / SHOULD 防御・clarification 扱い推奨）— リリース時の skill 追随と同じユーザー操作バケット。
   ついで＝server の waitForReady 反復テストの**既知フレークを修理**（slice 18 で「HEAD でも再現」と記録されていた実体＝残世代待ちの固定 30ms sleep が並列負荷で不足 → 上限付きポーリング化。修理後フルスイート 4 連続 88/88 緑）。
 
 ### 3-1. タスク
