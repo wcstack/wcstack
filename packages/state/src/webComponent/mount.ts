@@ -82,6 +82,13 @@ export interface IMountRecord {
    * translateParsedForMount が for の翻訳時に埋める。
    */
   readonly indexShiftByLoopElementPath: Map<string, number>;
+  /**
+   * この記録が親の getterPaths に追加したマーカーパス（recordAccessorSuffix）。
+   * 記録の恒久破棄時に cleanupCollectedMountRecord が親から回収する。
+   * record の外の消費者（FinalizationRegistry の held 値）も参照するため、
+   * record 本体が回収された後も held 経由で読める独立オブジェクトにしてある。
+   */
+  readonly addedGetterPaths: Set<string>;
 }
 
 export interface IAccessorEntry {
@@ -226,6 +233,7 @@ export function buildMountRecord(
     privateSnapshot,
     accessorBySuffixByMarkerParent: new Map(),
     indexShiftByLoopElementPath: new Map(),
+    addedGetterPaths: new Set(),
   };
 }
 
@@ -276,10 +284,11 @@ function recordAccessorSuffix(record: IMountRecord, markerParentPath: string, su
     // マーカーパスを親の getterPaths に載せる。checkDependency（評価中の読み →
     // このアクセサの動的エッジ登録）と isCacheable（getter 値のキャッシュ）が
     // getterPaths を正本にしているため、載せないと再評価もキャッシュも効かない。
-    // モック互換のため optional に扱う
-    (record.parentStateElement.getterPaths as Set<string> | undefined)?.add(
-      markerParentPath + DELIMITER + suffix,
-    );
+    // モック互換のため optional に扱う。追加分は記録の恒久破棄時に回収する
+    // ため addedGetterPaths にも控える（cleanupCollectedMountRecord）
+    const getterPath = markerParentPath + DELIMITER + suffix;
+    (record.parentStateElement.getterPaths as Set<string> | undefined)?.add(getterPath);
+    record.addedGetterPaths.add(getterPath);
   }
 }
 
@@ -507,8 +516,45 @@ export function getRegisteredMountRecord(component: Element, stateProp: string):
   return mountRecordByComponent.get(component)?.get(stateProp) ?? null;
 }
 
-/** 親 state element → マーカー → マウント記録（オーバーレイ dispatch と Δ 補正が引く） */
-const mountRecordsByStateElement = new WeakMap<IStateElement, Map<string, IMountRecord>>();
+/**
+ * 親 state element → マーカー → マウント記録（オーバーレイ dispatch と Δ 補正が引く）。
+ *
+ * 値は **WeakRef**（B6）。記録への強参照は要素キーの WeakMap
+ * （mountRecordByComponent / mountRecordByScopeRoot）だけが持つので、記録は
+ * コンポーネント要素と同寿命になる — プール返却では要素が生きているので記録も生き、
+ * 恒久破棄（route swap / `if` で捨てた形）では要素ごと回収可能になる。
+ * ここを強参照にすると、長寿命の親 state 要素に破棄済み要素（と Shadow サブツリー）が
+ * 際限なく蓄積する。
+ */
+const mountRecordsByStateElement = new WeakMap<IStateElement, Map<string, WeakRef<IMountRecord>>>();
+
+/** FinalizationRegistry の held 値: 記録が回収された後に台帳から掃除するもの。 */
+export interface ICollectedMountLedgers {
+  readonly byMarker: Map<string, WeakRef<IMountRecord>>;
+  readonly marker: string;
+  readonly getterPaths: Set<string> | undefined;
+  readonly addedGetterPaths: ReadonlySet<string>;
+}
+
+/**
+ * 恒久破棄されたマウント記録の台帳掃除（FinalizationRegistry のコールバック本体）。
+ * マーカーは記録ごとに一意（`#m<id>` 単調増加）なので、発火時点でこのマーカーの
+ * エントリは死んだ WeakRef のはず — 生きていれば触らない（防御）。
+ * エクスポートしているのは GC を強制できないテスト環境で直接検証するため。
+ */
+export function cleanupCollectedMountRecord(held: ICollectedMountLedgers): void {
+  const ref = held.byMarker.get(held.marker);
+  if (typeof ref !== "undefined" && typeof ref.deref() === "undefined") {
+    held.byMarker.delete(held.marker);
+  }
+  if (typeof held.getterPaths !== "undefined") {
+    for (const path of held.addedGetterPaths) {
+      held.getterPaths.delete(path);
+    }
+  }
+}
+
+const collectedMountRegistry = new FinalizationRegistry<ICollectedMountLedgers>(cleanupCollectedMountRecord);
 
 export function registerMountRecord(scopeRoot: Node, record: IMountRecord): void {
   mountRecordByScopeRoot.set(scopeRoot, record);
@@ -517,13 +563,24 @@ export function registerMountRecord(scopeRoot: Node, record: IMountRecord): void
     byMarker = new Map();
     mountRecordsByStateElement.set(record.parentStateElement, byMarker);
   }
-  byMarker.set(record.marker, record);
+  byMarker.set(record.marker, new WeakRef(record));
   let byProp = mountRecordByComponent.get(record.component);
   if (typeof byProp === 'undefined') {
     byProp = new Map();
     mountRecordByComponent.set(record.component, byProp);
   }
+  const isFirstRegistration = byProp.get(record.stateProp) !== record;
   byProp.set(record.stateProp, record);
+  if (isFirstRegistration) {
+    // 恒久破棄で台帳（byMarker・親 getterPaths への追加分）を回収する（B6）。
+    // 再初期化（同一 record の再登録 — マーカー安定のための再利用）では二重登録しない
+    collectedMountRegistry.register(record, {
+      byMarker,
+      marker: record.marker,
+      getterPaths: record.parentStateElement.getterPaths as Set<string> | undefined,
+      addedGetterPaths: record.addedGetterPaths,
+    });
+  }
   // D18: マウントの無い state はオーバーレイ dispatch を boolean 1 個で抜ける
   record.parentStateElement.markHasMounts?.();
 }
@@ -532,10 +589,44 @@ export function getMountRecordByScopeRoot(scopeRoot: Node): IMountRecord | null 
   return mountRecordByScopeRoot.get(scopeRoot) ?? null;
 }
 
+/**
+ * ノードから最も近いマウントスコープ根の記録を引く（event/handler.ts のスコープ相対
+ * 添字が使う）。Shadow DOM 形はスコープ根＝shadowRoot なので rootNode で直に引ける。
+ * Light DOM 形はスコープ根＝**コンポーネント要素自身**（D7・mountScope.ts）なので
+ * rootNode では引けず、祖先を辿って最初のスコープ根を探す。入れ子マウントでは
+ * 最も内側（＝そのノードのバインディングを翻訳した記録）が返る。
+ * `hasMounts` が真のときだけ呼ぶこと（無マウントの経路にこの走査を載せない — D18）。
+ */
+export function findMountRecordForNode(node: Node, rootNode: Node): IMountRecord | null {
+  const byRoot = mountRecordByScopeRoot.get(rootNode);
+  if (typeof byRoot !== "undefined") {
+    return byRoot;
+  }
+  let current: Node | null = node;
+  while (current !== null && current !== rootNode) {
+    const record = mountRecordByScopeRoot.get(current);
+    if (typeof record !== "undefined") {
+      return record;
+    }
+    current = current.parentNode;
+  }
+  return null;
+}
+
 /** この state element に登録済みのマウント記録を列挙する（devtools の overlays が読む）。 */
 export function getMountRecordsForStateElement(stateElement: IStateElement): IMountRecord[] {
   const byMarker = mountRecordsByStateElement.get(stateElement);
-  return typeof byMarker === "undefined" ? [] : [...byMarker.values()];
+  if (typeof byMarker === "undefined") {
+    return [];
+  }
+  const records: IMountRecord[] = [];
+  for (const ref of byMarker.values()) {
+    const record = ref.deref();
+    if (typeof record !== "undefined") {
+      records.push(record);
+    }
+  }
+  return records;
 }
 
 /** 親 state element がマウントを 1 つでも持つか（D18: 無ければ dispatch は分岐 1 つで抜ける） */
@@ -559,5 +650,24 @@ export function getMountRecordByPath(stateElement: IStateElement, path: string):
   }
   const end = path.indexOf(DELIMITER, hashIndex);
   const marker = end === -1 ? path.slice(hashIndex) : path.slice(hashIndex, end);
-  return byMarker.get(marker) ?? null;
+  const ref = byMarker.get(marker);
+  if (typeof ref === "undefined") {
+    return null;
+  }
+  const record = ref.deref();
+  if (typeof record === "undefined") {
+    // 記録は回収済み（finalizer 発火前の窓）— 遅延 prune
+    byMarker.delete(marker);
+    return null;
+  }
+  return record;
+}
+
+/** テスト用: マーカー台帳の WeakRef を差し替える（GC を強制できない環境で死んだ参照を再現する）。 */
+export function _setMountRecordRefForTesting(
+  stateElement: IStateElement,
+  marker: string,
+  ref: WeakRef<IMountRecord>,
+): void {
+  mountRecordsByStateElement.get(stateElement)?.set(marker, ref);
 }

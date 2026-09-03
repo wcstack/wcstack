@@ -771,3 +771,150 @@ describe("volume: 複合（2 ボリューム・ルート watch 併存・他 stat
     host.remove();
   });
 });
+
+/**
+ * D11 / V6（v2 レビューの修理）: ボリュームだけでルートの無いページを無言にしない。
+ * throw ではなく console.error（connectedCallback 内 throw は初期化待ちを永久未解決に
+ * するため — graftIsolated と同じ規範）。検査は「ルート候補の要素が存在するか」で、
+ * ルートの src ロードの遅さでは誤検知しない。
+ */
+describe("volume: ルート無しの検査（D11 / V6）", () => {
+  const reportedCalls = (spy: ReturnType<typeof vi.spyOn>) =>
+    spy.mock.calls.filter((c) => String(c[0]).includes("no root state tree to graft onto"));
+
+  it("ルート候補の無いページのボリュームは console.error で報告されること", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const host = document.createElement(uniqueTag("vol-noroot"));
+      const shadowRoot = host.attachShadow({ mode: "open" });
+      shadowRoot.innerHTML = `<wcs-state mount="i18n"></wcs-state>`;
+      document.body.appendChild(host);
+      await flush();
+      await flush();
+      const reported = reportedCalls(errorSpy);
+      expect(reported.length).toBe(1);
+      expect(String(reported[0][0])).toContain('mount="i18n"');
+      expect(String(reported[0][0])).toContain("D11");
+      host.remove();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("ルート要素が存在すれば、登録前（ロード中）でも報告せず、後から接ぎ木が成立すること", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const host = document.createElement(uniqueTag("vol-slowroot"));
+      const shadowRoot = host.attachShadow({ mode: "open" });
+      // ルートはソース属性無し（setInitialState 待ち）＝ 要素はあるが登録はまだ
+      shadowRoot.innerHTML =
+        `<wcs-state mount="i18n"></wcs-state>` +
+        `<wcs-state></wcs-state>`;
+      document.body.appendChild(host);
+      await flush();
+      await flush();
+      expect(reportedCalls(errorSpy).length).toBe(0);
+
+      const volumeElement = shadowRoot.querySelector(`wcs-state[mount]`) as State;
+      const rootElement = shadowRoot.querySelector(`wcs-state:not([mount])`) as State;
+      volumeElement.setInitialState(i18nVolume());
+      rootElement.setInitialState({ count: 1 });
+      await rootElement.connectedCallbackPromise;
+      await volumeElement.connectedCallbackPromise;
+      await flush();
+      await flush();
+      // 接ぎ木成立（報告も出ていない）
+      expect(reportedCalls(errorSpy).length).toBe(0);
+      let title = "";
+      rootElement.createState("readonly", (s: any) => { title = s["i18n.t.title"]; });
+      expect(title).toBe("Hello");
+      host.remove();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("パース中（readyState=loading）は DOMContentLoaded まで検査を遅らせること", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    Object.defineProperty(document, "readyState", { value: "loading", configurable: true });
+    try {
+      const host = document.createElement(uniqueTag("vol-loading"));
+      const shadowRoot = host.attachShadow({ mode: "open" });
+      shadowRoot.innerHTML = `<wcs-state mount="cfg"></wcs-state>`;
+      document.body.appendChild(host);
+      await flush();
+      await flush();
+      // パース完了前は報告しない（後続にルートが書かれているかもしれない）
+      expect(reportedCalls(errorSpy).length).toBe(0);
+
+      delete (document as any).readyState;
+      document.dispatchEvent(new Event("DOMContentLoaded"));
+      await flush();
+      await flush();
+      expect(reportedCalls(errorSpy).length).toBe(1);
+      host.remove();
+    } finally {
+      delete (document as any).readyState;
+      errorSpy.mockRestore();
+    }
+  });
+});
+
+/**
+ * D22 後段（v2 レビューの修理）: 接ぎ木済みスロットの**親**の丸ごと書きは throw。
+ * 黙って通すと接ぎ木データが消え、quoted-path アクセサだけが宙に浮く。
+ * スロット自身・配下のフィールドへの書き込みは通常のデータ差し替えとして通る。
+ */
+describe("volume: マウント親の丸ごと書きは throw（D22 後段）", () => {
+  it("深いマウント app.i18n の親 app の丸ごと書きが throw し、スロット自身と配下は書けること", async () => {
+    const host = document.createElement(uniqueTag("vol-host"));
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML =
+      `<wcs-state mount="app.i18n"></wcs-state>` +
+      `<wcs-state json='{"count":1}'></wcs-state>`;
+    document.body.appendChild(host);
+    const volumeElement = shadowRoot.querySelector(`wcs-state[mount]`) as State;
+    const rootElement = shadowRoot.querySelector(`wcs-state:not([mount])`) as State;
+    volumeElement.setInitialState(i18nVolume());
+    await rootElement.connectedCallbackPromise;
+    await volumeElement.connectedCallbackPromise;
+    await State.getBindingsReady(shadowRoot);
+    await flush();
+    await flush();
+
+    // 接ぎ木成立の確認
+    let title = "";
+    rootElement.createState("readonly", (s: any) => { title = s["app.i18n.t.title"]; });
+    expect(title).toBe("Hello");
+
+    // 親の丸ごと書きは throw（誘導文にスロットを含む）
+    expect(() => {
+      rootElement.createState("writable", (s: any) => { s.app = { replaced: true }; });
+    }).toThrow(/a volume is mounted at "app\.i18n"/);
+
+    // スロット自身の書き込みは通常のデータ差し替え・配下のフィールドも通る
+    rootElement.createState("writable", (s: any) => {
+      s["app.i18n.lang"] = "ja";
+    });
+    rootElement.createState("readonly", (s: any) => { title = s["app.i18n.t.title"]; });
+    expect(title).toBe("こんにちは");
+
+    // ボリュームと無関係なキーの書き込みはガードに掛からない
+    rootElement.createState("writable", (s: any) => { s.count = 2; });
+    host.remove();
+  });
+});
+
+describe("volume: findGraftedSlotUnder の単体面（D22 後段）", () => {
+  it("台帳の無い state は null・複数スロットでも真の祖先だけが照合されること", async () => {
+    const { findGraftedSlotUnder, recordGraftedSlot } = await import("../src/webComponent/volumeShared");
+    const stub = {} as any;
+    expect(findGraftedSlotUnder(stub, "a")).toBeNull();
+    recordGraftedSlot(stub, "a.b");
+    recordGraftedSlot(stub, "x.y");
+    expect(findGraftedSlotUnder(stub, "a")).toBe("a.b");
+    // スロット自身・無関係なパスは対象外
+    expect(findGraftedSlotUnder(stub, "a.b")).toBeNull();
+    expect(findGraftedSlotUnder(stub, "q")).toBeNull();
+  });
+});

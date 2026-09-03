@@ -43,6 +43,14 @@ export interface IStateElement {
   readonly hasMounts?: boolean;
   markHasMounts?(): void;
   /**
+   * この state element に接ぎ木済みのボリューム（`mount=` — webComponent/volume.ts）が
+   * 1 つでもあるか。偽のとき setByAddress の D22 後段ガード（マウントポイントを含む
+   * 親の丸ごと書き検査）は boolean 判定 1 個で抜ける（設計書 D18 と同じ形）。
+   * optional なのはテスト用モック互換のため（undefined は「ボリューム無し」扱い）。
+   */
+  readonly hasGraftedVolumes?: boolean;
+  markHasGraftedVolumes?(): void;
+  /**
    * この state 要素に束ねられた（`setPathInfo` を通った）パスの集合。丸ごとマウント
    * （ルート規則）の親→子通知が「登録済みパス全部を読み直せ」を組み立てるのに使う
    * （webComponent/rootReloadPaths.ts）。

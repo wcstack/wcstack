@@ -256,7 +256,19 @@ slice 4 で確定した挙動・発見:
 
 - **slice 26 済み（devtools hook protocol v2 — P4-5）**: `DEVTOOLS_PROTOCOL_VERSION` を **2** に（state 側・devtools 側の両方 — 形が非可換に変わったので version で正直に主張）。**`overlays(rootNode)` を新設**（D20 の可視化 — マーカー `#m<id>` ごとに componentTag/stateProp/マウント表(inner→outer)/Δ/私有キー/getter キーを要約。実体は mount.ts の `getMountRecordsForStateElement`）。docs/devtools-hook-protocol.md（英/日）の keys/read/write 形と version を v2 に更新。devtools-smoke の version 断定を 2 へ。integration.mountOverlay に overlays の実測テスト（マウント有り/無し）。state 2638・devtools 121・SMOKE OK・カバレッジ全ゲート緑。
 
+
 - **slice 27 済み（after 計測 — P5-1/P5-2）**: 設計書 §7 に after 表・§5-5 を実測へ置換。**高速化＝成立**（list-component create1k 169.4→128.6ms −24%・update −45%、全 Phase 後確認 125.6ms）。**メモリ＝成立**（行コンポーネント heap run1k 13.13→11.59MB ≒ −1.5KB/行）。**plain 不変＝成立**（jsfb 同一セッション A/B で v2 側が全指標同等以上: create 40.6→37.75 / replace 22.8→15.5 / clear 73.9→70.1。memory-profile ±2%。**絶対値は当日のマシン状態で ±20% 揺れる — 判定は必ず同一セッション A/B で**）。**「core 正味 −750 行」＝不成立を正直に記録**（src 正味 +1,339: ボリューム 469 行が新機能・厳格 R1 私有面 203 行が新規。橋渡し層の全廃 −1,327 と台帳 1 本化＝構造の主張は成立）。
+
+- **slice 29 済み（2026-09-04・レビュー（code-review 7 観点）の blocking 8 件の修理）**: レビューの実測検証＝unit 5 パッケージ・e2e 116 spec（実 Chromium）・カバレッジ実測は全て主張どおり緑。その上で見つかった blocking を修理:
+  1. **CI 赤 ①**: `webComponent.bindWebComponent.test.ts` の reject 系 2 テストが raiseError-in-catch の unhandled error で `npm test` を exit 1 にしていた（**slice 15 の「HEAD 由来の既存」は誤記** — main 版は throw-in-catch を明示回避しており、v2 の書き直しが導入したもの）。raiseError モックを記録型にしてメッセージ断定へ（報告経路の固定は強化）。→ state 2648 全緑・exit 0。
+  2. **CI 赤 ②**: `packages/server/__tests__` が未移行（**slice 18 の「server 作業ゼロ」は src のみの話で、テストが `wcs-ssr[name=]` セレクタ・`name=` fixture・1 root 2 state のまま** — 再ビルドした v2 dist に対して 10 件赤）。v2 形へ移行（nameless ヘルパ・「name 属性なし」ピン・root＋volume の D14 集約ピン・動的追加は `mount=` へ）。→ server 94/94 緑（waitForReady の既知 1 件も stale dist 起因だった — 再ビルドで緑）。
+  3. **Light DOM のイベント添字**（D9/§4-4 違反・実測 `[0,1]`）: event/handler.ts の記録解決が rootNode キーのみで、Light DOM のスコープ根（コンポーネント要素自身）を引けなかった。`findMountRecordForNode`（祖先走査・hasMounts ゲート内）を新設して Shadow/Light の意味論を揃えた。回帰テスト 2 本（inner-for＝スコープ相対 1 本・スコープ直下＝0 本）。
+  4. **マウント記録のリーク**: `mountRecordsByStateElement` の内側 Map が強参照で解除経路なし → 恒久破棄（route swap / if）した要素＋Shadow サブツリーが親 state 要素の寿命で蓄積。**WeakRef 化＋FinalizationRegistry**（`cleanupCollectedMountRecord` — マーカーエントリと親 getterPaths への追加分 `addedGetterPaths` を回収）。記録の強参照は要素キーの WeakMap だけ＝記録は要素と同寿命（プール再利用は従来どおり）。読み手（getMountRecordByPath / 列挙）は deref＋遅延 prune。
+  5. **D11/V6 実装**: ルート無しボリュームが無言 no-op だった → パース完了後（loading 中は DOMContentLoaded 待ち）に「ルート候補（mount/bind-component なしの `<wcs-state>`）の要素が無ければ」`console.error` 1 回（throw は connectedCallback 内で初期化待ちを永久未解決にするため不可 — graftIsolated と同じ規範。設計書 §4-7 に実装注記）。検査は要素の存在＝ルートの src ロードの遅さで誤検知しない。
+  6. **D22 後段実装**: 接ぎ木済みスロットの**真の祖先**の丸ごと書きは setByAddress が throw（`hasGraftedVolumes` boolean ゲート＝D18 の形・`recordGraftedSlot`/`findGraftedSlotUnder`）。スロット自身・配下は従来どおり。graft 前の中間 `{}` 生成は接ぎ木前なのでガード外（台帳を予約と分けた理由）。
+  7. **protocol 文書の v2 追随**: docs/devtools-hook-protocol.ja.md（`keys(name, rootNode)`・stateName payload 全面）と英語版の stateName 残存 9 箇所を出荷形（types.ts）に一致させ、`overlays` / `IMountOverlaySummary` を両言語に記載。
+  8. **wcstack エントリ README**: 文法行の `[@state]` と Paths 表の `path@cart` / `name="cart"` 行を v2 形（`mount=` 接頭辞）へ（AI 作法の正本 — ここが v1 構文を教えると生成コードが最初の一手で fail-fast する）。
+  検証＝state 2648（+10: 回帰テスト）・server 94・e2e mount/light-dom 系 green（下記）・カバレッジ/バラン維持。非 blocking の指摘（mount 属性変更の warn なし・N6 の mustache/shorthand 経路テスト・stale docs 群 ほか）はレビュー記録のとおり残し、リリース後に回す。
 
 ### 3-1. タスク
 

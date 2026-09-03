@@ -375,3 +375,81 @@ describe("bind-component: Light DOM の mapped 形（§1.13）", () => {
     host.remove();
   });
 });
+
+/**
+ * イベントハンドラの添字スコープ（D9 / 設計 §4-4）— Light DOM 形。
+ *
+ * Shadow 形は rootNode（shadowRoot）でマウント記録が引けるが、Light DOM 形の
+ * スコープ根はコンポーネント要素自身。event/handler.ts が rootNode だけで記録を
+ * 引いていた間は、行マウントの Light DOM で外側行の添字がハンドラに漏れていた
+ * （[0, 1] — v2 レビューで実測）。findMountRecordForNode の祖先走査が
+ * Shadow / Light の意味論を揃える回帰テスト。
+ */
+describe("bind-component: Light DOM マウントのイベント添字はスコープ相対", () => {
+  it("内側 for のハンドラは自スコープの添字だけ（外側行の添字は落ちる）", async () => {
+    const tag = uniqueTag("bcld-evt-row");
+    const calls: number[][] = [];
+    class EvtRow extends HTMLElement {
+      state: Record<string, any> = {
+        pick(_e: Event, ...idx: number[]) { calls.push(idx); },
+      };
+      connectedCallback() {
+        if (this.childElementCount === 0) {
+          this.innerHTML =
+            `<wcs-state bind-component="state"></wcs-state>` +
+            `<template data-wcs="for: tags"><button data-wcs="onclick: pick"></button></template>`;
+        }
+      }
+    }
+    customElements.define(tag, EvtRow);
+    const host = document.createElement(uniqueTag("bcld-evt-host"));
+    const hostShadow = host.attachShadow({ mode: "open" });
+    hostShadow.innerHTML =
+      `<wcs-state json='{"users":[{"tags":["x","y"]}]}'></wcs-state>` +
+      `<template data-wcs="for: users"><${tag} data-wcs="state: ."></${tag}></template>`;
+    document.body.appendChild(host);
+    await flush(); await flush(); await flush();
+
+    const buttons = hostShadow.querySelectorAll("button");
+    expect(buttons.length).toBe(2);
+    (buttons[1] as HTMLElement).dispatchEvent(new Event("click"));
+    await flush(); await flush();
+
+    // 翻訳後は users.*.tags.*（2 段）だが、作者から見えるのは tags の添字 1 本だけ
+    expect(calls).toEqual([[1]]);
+    host.remove();
+  });
+
+  it("スコープ直下のハンドラは添字 0 本（境界ホップで借りた外側の行は見えない）", async () => {
+    const tag = uniqueTag("bcld-evt-direct");
+    const calls: number[][] = [];
+    class EvtDirect extends HTMLElement {
+      state: Record<string, any> = {
+        save(_e: Event, ...idx: number[]) { calls.push(idx); },
+      };
+      connectedCallback() {
+        if (this.childElementCount === 0) {
+          this.innerHTML =
+            `<wcs-state bind-component="state"></wcs-state>` +
+            `<button data-wcs="onclick: save"></button>`;
+        }
+      }
+    }
+    customElements.define(tag, EvtDirect);
+    const host = document.createElement(uniqueTag("bcld-evt-host"));
+    const hostShadow = host.attachShadow({ mode: "open" });
+    hostShadow.innerHTML =
+      `<wcs-state json='{"users":[{"n":1},{"n":2}]}'></wcs-state>` +
+      `<template data-wcs="for: users"><${tag} data-wcs="state: ."></${tag}></template>`;
+    document.body.appendChild(host);
+    await flush(); await flush(); await flush();
+
+    const buttons = hostShadow.querySelectorAll("button");
+    expect(buttons.length).toBe(2);
+    (buttons[1] as HTMLElement).dispatchEvent(new Event("click"));
+    await flush(); await flush();
+
+    expect(calls).toEqual([[]]);
+    host.remove();
+  });
+});

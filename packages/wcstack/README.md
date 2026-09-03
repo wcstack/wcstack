@@ -152,7 +152,7 @@ Note `checked#ro:` on the checkbox. Without `#ro`, the two-way binding writes `.
 State and UI are connected by **path strings only**. There are no hooks, selectors, or per-element binding objects.
 
 ```
-property[#modifier]: path[@state][|filter[|filter(args)]...]
+property[#modifier]: path[|filter[|filter(args)]...]
 ```
 
 Multiple bindings are separated by `;`:
@@ -195,7 +195,7 @@ Combine after one `#`, comma separated: `value#ro,init=none: path`.
 | `count`, `user.name` | Plain property path |
 | `items.*.price` | Wildcard — the current row inside a `for:` loop |
 | `.price` | Shorthand for the current row's property inside a loop |
-| `path@cart` | Read from a *named* state element (`<wcs-state name="cart">`) |
+| `cart.path` | Read a mounted volume (`<wcs-state mount="cart">`) by its path prefix — one tree per root, extended by mounts (`name=` / `path@name` were removed in v2) |
 
 ### Structural directives
 

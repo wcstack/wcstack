@@ -43,6 +43,7 @@ import { devtoolsSink } from "../../devtools/sink";
 import { beginPropagationTransaction, getCurrentPropagationContext } from "../../propagation/propagation";
 import { consumeOccurrenceWrite } from "../occurrenceWrite";
 import { recordPrevValue } from "../../watch/prevValues";
+import { findGraftedSlotUnder } from "../../webComponent/volumeShared";
 
 /**
  * `$watch` の `prev` 台帳へ旧値を記録する（docs/state-watch-hook-design.md §4-1）。
@@ -303,6 +304,20 @@ function setByAddressCore(
 ): any {
   const stateElement = handler.stateElement;
   const path = address.pathInfo.path;
+  // D22 後段: 接ぎ木済みボリュームのマウントポイントを**含む親**の丸ごと書きは throw
+  // （設計書 §4-2）。黙って通すと接ぎ木データが消え、quoted-path アクセサだけが
+  // 宙に浮いて原因の見えない undefined / TypeError になる。スロット自身への書き込みは
+  // 通常のデータ差し替えとして通す。ボリュームの無い state は boolean 判定 1 個で抜ける（D18）
+  if (stateElement.hasGraftedVolumes === true) {
+    const shadowedSlot = findGraftedSlotUnder(stateElement, path);
+    if (shadowedSlot !== null) {
+      raiseError(
+        `Cannot replace "${path}" wholesale: a volume is mounted at "${shadowedSlot}" under it (D22). ` +
+        `Replacing an ancestor of a mount point silently discards the grafted data while its accessors remain. ` +
+        `Write "${shadowedSlot}" itself, or individual fields inside "${path}", instead.`,
+      );
+    }
+  }
   // occurrence（wc-bindable の `semantics: "event"`）由来の書き込みは、同値でも
   // 「もう一度起きた」ことを落としてはならないため same-value guard を 1 回だけ飛ばす。
   // トークンはここで消費されるので、この write の内側で走る他の書き込みには波及しない。

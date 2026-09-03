@@ -24,6 +24,7 @@ vi.mock('../src/raiseError', () => ({
 }));
 
 import { bindWebComponent, invokeStateReadyCallback } from '../src/webComponent/bindWebComponent';
+import { raiseError } from '../src/raiseError';
 import { createOuterState } from '../src/webComponent/outerState';
 import { setStateElementByWebComponent } from '../src/webComponent/stateElementByWebComponent';
 import { markWebComponentAsComplete } from '../src/webComponent/completeWebComponent';
@@ -108,16 +109,22 @@ describe('invokeStateReadyCallback', () => {
       throw new Error('boom');
     });
 
-    // 非同期 reject は raiseError が同期 throw に変換する（unhandled rejection として観測）
-    const unhandled: unknown[] = [];
-    const onError = (event: PromiseRejectionEvent) => unhandled.push(event.reason);
-    window.addEventListener('unhandledrejection', onError as EventListener);
+    // raiseError は Promise の catch ハンドラの中で呼ばれる。既定モックのまま throw
+    // させると誰にも捕まらない unhandled rejection になり、テストは通っても
+    // vitest がスイートエラーとして exit 1 にする（CI 赤）。ここでは記録型に
+    // 差し替えて「reject が raiseError にメッセージ付きで届く」報告経路そのものを断定する
+    const reported: string[] = [];
+    vi.mocked(raiseError).mockImplementation(((message: string) => {
+      reported.push(message);
+    }) as any);
     try {
       invokeStateReadyCallback(component, 'outer');
       await new Promise((r) => setTimeout(r));
-      expect(unhandled.length).toBeGreaterThanOrEqual(0);
+      expect(reported).toEqual([`Error in ${WEBCOMPONENT_STATE_READY_CALLBACK_NAME}: boom`]);
     } finally {
-      window.removeEventListener('unhandledrejection', onError as EventListener);
+      vi.mocked(raiseError).mockImplementation(((message: string): never => {
+        throw new Error(`[@wcstack/state] ${message}`);
+      }) as any);
     }
   });
 });
@@ -128,14 +135,20 @@ describe('invokeStateReadyCallback: 非 Error の reject', () => {
     (component as any)[WEBCOMPONENT_STATE_READY_CALLBACK_NAME] = async () => {
       throw 'plain-string-failure'; // eslint-disable-line no-throw-literal
     };
-    const unhandled: unknown[] = [];
-    const onError = (event: PromiseRejectionEvent) => unhandled.push(event.reason);
-    window.addEventListener('unhandledrejection', onError as EventListener);
+    // 上のテストと同じ理由で記録型（throw のままだと unhandled → exit 1）。
+    // 非 Error は String() でメッセージ化される契約をここで断定する
+    const reported: string[] = [];
+    vi.mocked(raiseError).mockImplementation(((message: string) => {
+      reported.push(message);
+    }) as any);
     try {
       invokeStateReadyCallback(component, 'outer');
       await new Promise((r) => setTimeout(r));
+      expect(reported).toEqual([`Error in ${WEBCOMPONENT_STATE_READY_CALLBACK_NAME}: plain-string-failure`]);
     } finally {
-      window.removeEventListener('unhandledrejection', onError as EventListener);
+      vi.mocked(raiseError).mockImplementation(((message: string): never => {
+        throw new Error(`[@wcstack/state] ${message}`);
+      }) as any);
     }
   });
 });

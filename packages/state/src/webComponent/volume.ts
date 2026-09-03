@@ -24,8 +24,11 @@
  * 配下の更新だけを**相対パス**で受ける（proxy/apis/updatedCallback.ts が配送）。
  * `$disconnectedCallback` はボリューム要素の切断時に chroot で呼ばれる（接ぎ木は残る）。
  *
+ * D22 後段: 接ぎ木済みスロットの**親**をルート側から丸ごと書く形は setByAddress が
+ * throw する（recordGraftedSlot → findGraftedSlotUnder・ゲートは hasGraftedVolumes）。
+ *
  * まだ載せていないもの: `$streams` の接頭辞登録（status 名前空間の設計が別途要る）、
- * ボリュームのメソッドのツリー露出、深いマウントの親を丸ごと書く形の throw（D22 後段）。
+ * ボリュームのメソッドのツリー露出。
  */
 
 import { getPathInfo } from "../address/PathInfo";
@@ -33,7 +36,7 @@ import { IStateElement } from "../components/types";
 import { DELIMITER, WILDCARD } from "../define";
 import { raiseError } from "../raiseError";
 import { IStateProxy } from "../proxy/types";
-import { addVolumeUpdatedCallback, createVolumeChroot, IPendingVolumeRequest, IVolumeUpdatedCallback, queuePendingVolume, setVolumeGraftHandler } from "./volumeShared";
+import { addVolumeUpdatedCallback, createVolumeChroot, IPendingVolumeRequest, IVolumeUpdatedCallback, queuePendingVolume, recordGraftedSlot, setVolumeGraftHandler } from "./volumeShared";
 
 export { createVolumeChroot, drainPendingVolumes, getVolumeUpdatedCallbacks, isPathUnderReservedVolume, reserveVolumeSlot } from "./volumeShared";
 export type { IVolumeUpdatedCallback } from "./volumeShared";
@@ -240,6 +243,11 @@ export function graftVolume(
     // データの接ぎ木 — 通常の書き込みなので通知・依存展開はそのまま走る
     (state as Record<string, unknown>)[mountPath] = data;
   });
+
+  // D22 後段: 以後このスロットの**親**の丸ごと書きは setByAddress が throw する
+  // （hydrate 採用でもアクセサは登録されるので同様に守る）。ゲートは boolean 1 個（D18）
+  recordGraftedSlot(rootStateElement, mountPath);
+  rootStateElement.markHasGraftedVolumes?.();
 
   // アクセサをルートの quoted-path アクセサとして登録（`"i18n.t"` — ワイルドカード
   // getter と同じ機構）。`this`（receiver）はアクティブなルート proxy なので、

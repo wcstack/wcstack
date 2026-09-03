@@ -11,6 +11,9 @@ import {
   registerMountRecord,
   getMountRecordByScopeRoot,
   getMountRecordByPath,
+  getMountRecordsForStateElement,
+  cleanupCollectedMountRecord,
+  _setMountRecordRefForTesting,
   stateElementHasMounts,
   resetMountIdForTesting,
 } from '../src/webComponent/mount';
@@ -374,5 +377,64 @@ describe('mount: 変換の同値ショートカットの端', () => {
     const translated = translateBindingForMount(r, binding);
     expect(translated).toBe(binding);
     expect(translated.statePathName).toBe('$1');
+  });
+});
+
+/**
+ * 記録の寿命（B6 — v2 レビューの修理）。記録への強参照は要素キーの WeakMap だけが持ち、
+ * 親 state 要素側のマーカー台帳は WeakRef。恒久破棄（route swap / if で捨てた形）で
+ * 要素ごと回収可能になり、FinalizationRegistry（cleanupCollectedMountRecord）が
+ * マーカーエントリと親 getterPaths への追加分を掃除する。
+ * GC は強制できないため、コールバック本体の直接検証と、死んだ参照を差し替えた
+ * 遅延 prune の検証で固定する。
+ */
+describe('mount: 記録の寿命（B6 — 恒久破棄で台帳から回収）', () => {
+  it('cleanupCollectedMountRecord が死んだマーカーエントリと親 getterPaths の追加分を掃除すること', () => {
+    const byMarker = new Map<string, WeakRef<any>>();
+    byMarker.set('#m9', { deref: () => undefined } as unknown as WeakRef<any>);
+    const getterPaths = new Set(['users.*.#m9.display', 'other.path']);
+    cleanupCollectedMountRecord({
+      byMarker,
+      marker: '#m9',
+      getterPaths,
+      addedGetterPaths: new Set(['users.*.#m9.display']),
+    });
+    expect(byMarker.has('#m9')).toBe(false);
+    expect(getterPaths.has('users.*.#m9.display')).toBe(false);
+    expect(getterPaths.has('other.path')).toBe(true);
+  });
+
+  it('生きている参照は消さず、getterPaths 無し・エントリ無しでも落ちないこと（防御）', () => {
+    const live = {} as any;
+    const byMarker = new Map<string, WeakRef<any>>([['#m9', { deref: () => live } as unknown as WeakRef<any>]]);
+    cleanupCollectedMountRecord({ byMarker, marker: '#m9', getterPaths: undefined, addedGetterPaths: new Set() });
+    expect(byMarker.has('#m9')).toBe(true);
+    cleanupCollectedMountRecord({ byMarker: new Map(), marker: '#mX', getterPaths: undefined, addedGetterPaths: new Set() });
+  });
+
+  it('死んだ WeakRef は getMountRecordByPath が遅延 prune し、列挙からも外れること', () => {
+    const parent = { getterPaths: new Set<string>() } as any;
+    const component = document.createElement('my-card');
+    const r = buildMountRecord(component, 'state', [hostBinding(['state'], 'users.*')], parent, {});
+    registerMountRecord(component, r);
+    expect(getMountRecordByPath(parent, `users.*.${r.marker}.editing`)).toBe(r);
+    expect(getMountRecordsForStateElement(parent)).toEqual([r]);
+
+    // GC を再現: WeakRef を死んだ参照に差し替える
+    _setMountRecordRefForTesting(parent, r.marker, { deref: () => undefined } as unknown as WeakRef<any>);
+    expect(getMountRecordsForStateElement(parent)).toEqual([]);
+    expect(getMountRecordByPath(parent, `users.*.${r.marker}.editing`)).toBeNull();
+    // 遅延 prune 済み: 2 回目はエントリ自体が無い経路で null
+    expect(getMountRecordByPath(parent, `users.*.${r.marker}.editing`)).toBeNull();
+  });
+
+  it('再登録（同一 record・マーカー再利用）が冪等に通り、記録が引き続き解決されること', () => {
+    const parent = { getterPaths: new Set<string>() } as any;
+    const component = document.createElement('my-card');
+    const r = buildMountRecord(component, 'state', [hostBinding(['state'], 'users.*')], parent, {});
+    registerMountRecord(component, r);
+    registerMountRecord(component, r);
+    expect(getMountRecordByPath(parent, `users.*.${r.marker}.x`)).toBe(r);
+    expect(getMountRecordsForStateElement(parent)).toEqual([r]);
   });
 });

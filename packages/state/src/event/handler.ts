@@ -8,7 +8,7 @@ import { getByAddressSymbol, setLoopContextSymbol } from "../proxy/symbols";
 import { getScopedIndexes } from "../list/wildcardLevel";
 import { raiseError } from "../raiseError";
 import { getStateElement } from "../stateElementByName";
-import { getMountRecordByScopeRoot } from "../webComponent/mount";
+import { findMountRecordForNode } from "../webComponent/mount";
 import { IBindingInfo } from "../types";
 import { captureHandlerRejection } from "./captureHandlerRejection";
 import { createHandlerBindingRegistry } from "./handlerBindingRegistry";
@@ -50,10 +50,13 @@ const stateEventHandlerFunction = (
       // マウントされたスコープ（v2）: 作者のハンドラが受ける添字は自スコープの
       // ループ分だけ（§4-4 / P2-9）。翻訳で増えたワイルドカード数を落とす。
       // 翻訳された for の台帳に無いループ文脈は外側スコープのもの（境界ホップで
-      // 借りた行）なので、作者から見える添字は 0 本
+      // 借りた行）なので、作者から見える添字は 0 本。
+      // 記録の解決はノードから（findMountRecordForNode）— Shadow 形は rootNode
+      // （shadowRoot）で直に引け、Light DOM 形はスコープ根がコンポーネント要素
+      // 自身なので祖先走査が要る（rootNode だけ見ると Light DOM で外側の添字が漏れる）
       let scopedWildcardCount = loopContext !== null ? loopContext.pathInfo.wildcardCount : 0;
       if (loopContext !== null && stateElement.hasMounts === true) {
-        const mountRecord = getMountRecordByScopeRoot(rootNode);
+        const mountRecord = findMountRecordForNode(node, rootNode);
         if (mountRecord !== null) {
           const shift = mountRecord.indexShiftByLoopElementPath.get(loopContext.pathInfo.path);
           scopedWildcardCount = typeof shift !== "undefined" ? scopedWildcardCount - shift : 0;

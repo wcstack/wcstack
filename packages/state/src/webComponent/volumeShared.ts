@@ -46,6 +46,43 @@ export function isPathUnderReservedVolume(rootNode: Node | null, path: string): 
   return false;
 }
 
+/**
+ * 接ぎ木済みスロット（D22 後段）。キーはルートの state element。
+ * setByAddress のガード（findGraftedSlotUnder）と graftVolume（recordGraftedSlot）が使う。
+ * 予約（reservedSlots）と別台帳なのは、接ぎ木**前**の中間 `{}` 生成
+ * （graftVolume の親作成）をガードに掛けないため。
+ */
+const graftedSlotsByStateElement = new WeakMap<IStateElement, Set<string>>();
+
+export function recordGraftedSlot(stateElement: IStateElement, mountPath: string): void {
+  let slots = graftedSlotsByStateElement.get(stateElement);
+  if (typeof slots === "undefined") {
+    slots = new Set();
+    graftedSlotsByStateElement.set(stateElement, slots);
+  }
+  slots.add(mountPath);
+}
+
+/**
+ * 書き込みパスが接ぎ木済みスロットの**真の祖先**なら、そのスロットを返す（D22 後段）。
+ * マウントポイントを含む親の丸ごと書きは、接ぎ木データを無言で捨てて quoted-path
+ * アクセサだけを宙に浮かせるため throw の根拠になる。スロット自身への書き込みは
+ * 通常のデータ差し替えなので対象外。`hasGraftedVolumes` が真のときだけ呼ぶこと。
+ */
+export function findGraftedSlotUnder(stateElement: IStateElement, path: string): string | null {
+  const slots = graftedSlotsByStateElement.get(stateElement);
+  if (typeof slots === "undefined" || slots.size === 0) {
+    return null;
+  }
+  const prefix = path + DELIMITER;
+  for (const slot of slots) {
+    if (slot.startsWith(prefix)) {
+      return slot;
+    }
+  }
+  return null;
+}
+
 /** ボリュームの chroot（相対キー → `<mountPath>.<key>` を receiver に翻訳する薄い proxy）。 */
 export function createVolumeChroot(mountPath: string, receiver: any): Record<string, any> {
   return new Proxy({} as Record<string, any>, {

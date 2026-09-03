@@ -117,6 +117,7 @@ export class State extends HTMLElementBase implements IStateElement {
   private _boundComponent: Element | null = null;
   private _boundComponentStateProp: string | null = null;
   private _hasMounts: boolean = false;
+  private _hasGraftedVolumes: boolean = false;
   /** ボリューム（mount=）: 接ぎ木済みの控え（$disconnectedCallback 用） */
   private _volumeGraftInfo: IVolumeGraftInfo | null = null;
   /** v2 マウント（Phase 2）: この bind-component 要素が構築したマウント記録 */
@@ -303,6 +304,11 @@ export class State extends HTMLElementBase implements IStateElement {
       this._resolveLoading?.();
       this._resolveConnectedCallback?.();
       throw error;
+    }
+    // D11: ルートの居ないページのボリュームを無言にしない（検査は要素の存在・
+    // パース完了後 — 下の module 関数を参照）
+    if (getStateElement(rootNode) === null) {
+      reportVolumeWithoutRoot(rootNode, mountPath);
     }
     const volumeState = await this._loadStateFromSource();
     const finish = (info: IVolumeGraftInfo | null): void => {
@@ -891,6 +897,15 @@ export class State extends HTMLElementBase implements IStateElement {
     this._hasMounts = true;
   }
 
+  get hasGraftedVolumes(): boolean {
+    return this._hasGraftedVolumes;
+  }
+
+  /** 唯一の呼び手は webComponent/volume.ts の graftVolume（D22 後段のガードが読む）。 */
+  markHasGraftedVolumes(): void {
+    this._hasGraftedVolumes = true;
+  }
+
   get bindableEventMap(): Record<string, string> {
     return this._bindableEventMap;
   }
@@ -1028,5 +1043,43 @@ export class State extends HTMLElementBase implements IStateElement {
     } else {
       this._state = state;
     }
+  }
+}
+
+/**
+ * D11（設計 §4-7）: ボリュームだけでルートの無いページを無言にしない。
+ * 接ぎ木は保留キューで待つ（V5 — ルートが後から来れば成立する）ため throw はせず、
+ * connectedCallback 内 throw は初期化待ちを永久未解決にする（_failInitialization の注記
+ * と同じ理由）。そこで文書のパース完了後に「ルート候補（mount も bind-component も
+ * 無い <wcs-state>）が**要素として**存在するか」を検査し、無ければ console.error で
+ * 誘導する。登録（ロード完了）でなく要素の存在で見るのは、ルートの src ロードの
+ * 遅さで誤検知しないため。ルートを後から動的に足すページでは報告が出るが、
+ * 接ぎ木自体はその後も成立する（文言で釈明）。
+ */
+function reportVolumeWithoutRoot(rootNode: Node, mountPath: string): void {
+  const check = (): void => {
+    if (getStateElement(rootNode) !== null) {
+      return; // ルートが登録された
+    }
+    // rootNode は Document / ShadowRoot / Element のいずれか — querySelectorAll は必ずある
+    const candidates = (rootNode as ParentNode).querySelectorAll(config.tagNames.state);
+    for (const el of candidates) {
+      if (!el.hasAttribute("mount") && !el.hasAttribute("bind-component")) {
+        return; // ルート候補が居る（ロード中かもしれない）— 登録を待つ
+      }
+    }
+    console.error(
+      `[@wcstack/state] <${config.tagNames.state} mount="${mountPath}"> has no root state tree to graft onto (D11). ` +
+      `A volume mounts onto the root tree — add a root <${config.tagNames.state}> to this root node ` +
+      `(an empty <${config.tagNames.state}></${config.tagNames.state}> is enough). ` +
+      `If the root is added dynamically later, the graft will still complete and this report can be ignored.`,
+    );
+  };
+  const doc = (rootNode.ownerDocument ?? rootNode) as Document;
+  if (doc.readyState === "loading") {
+    // パース中は後続にルートが書かれていてもまだ DOM に無い — 完了後に検査する
+    doc.addEventListener("DOMContentLoaded", () => queueMicrotask(check), { once: true });
+  } else {
+    setTimeout(check, 0);
   }
 }

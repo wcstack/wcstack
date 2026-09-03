@@ -282,14 +282,15 @@ R1 を採る理由: 一文で言える（「**自分で書いたキーは自分�
 | 状況 | 反応 |
 |---|---|
 | ルートが 2 つ | throw（今日の "already registered" と同じ） |
-| `mount` 先がルートに既にある | throw |
+| `mount` 先がルートに既にある | throw → **実装は `console.error` に隔離**（graftIsolated — connectedCallback 内 throw は初期化待ちを永久未解決にするため。1 ボリュームに閉じる・実装注記 2026-09-04） |
 | `mount` に `*` | throw |
-| ボリュームがあるのにルートが無い | throw（D11） |
+| ボリュームがあるのにルートが無い | throw（D11）→ **実装は loud エラー（`console.error`・パース完了後にルート候補の要素が無ければ 1 回）**。理由は上と同じ throw 不可の制約。接ぎ木は保留のままなので、後からルートを動的に足せば成立する（実装注記 2026-09-04） |
 | 私有キーがマウント先の既存キーを隠す | `console.warn` 1 回（バインド時）＋ lint |
 | `state: path` と `state.sub: path` が同じ `sub` を二重に指す | throw（今日の "Duplicate mapping rule" と同じ） |
 | コンポーネント内から存在しないツリーパスを読む | `undefined`（pathDiagnostics の warn は今日のまま） |
 | 部分マウントだけのコンポーネントで、どの接頭辞にも含まれないキーを読み書き | throw（§4-1 の 4b） |
 | 予約済み（ロード前）のボリュームスロット配下を読む | `undefined`・warn 無し（D22） |
+| ルート側から接ぎ木済みマウントポイントを**含む親**を丸ごと書く（`mount="a.b"` で `this.a = {...}`） | throw（D22 後段 — 接ぎ木データが無言で消えアクセサだけ宙に浮くため。スロット自身への書き込みはデータ差し替えとして通る） |
 | `mount` 属性の実行時変更 | 無視＋warn（再マウントは非目標） |
 | 親スコープから `items.*.upper`（子の getter / 私有キー）を読む | ツリーの未存在パスとして `undefined`＋pathDiagnostics の warn（D10 / D20） |
 | `@` を含むパス | v1.x: lint warning（実行時は `config.debug` 下で warn 1 回） → v2: **parse error**（移行ヒント付き） |

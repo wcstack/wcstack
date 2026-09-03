@@ -104,8 +104,19 @@ interface IDevtoolsSource {
   _setSink(sink: ((e: DevtoolsEvent) => void) | null): void;
 }
 
+// v2: summary of one mount record (element of overlays() — D20 made visible).
+interface IMountOverlaySummary {
+  readonly marker: string;        // the reserved segment (`#m<id>`, D20)
+  readonly componentTag: string;  // mounted component tag name (lowercase)
+  readonly stateProp: string;
+  // the mount table: inner prefix ("" = the root entry) → outer path
+  readonly mountTable: readonly { readonly inner: string; readonly outer: string }[];
+  readonly delta: number;         // Δ for `$n` correction (wildcards in the root prefix)
+  readonly privateKeys: readonly string[]; // own data keys living in the overlay space
+  readonly getterKeys: readonly string[];  // getter keys carried on marker paths
+}
+
 interface IStateElementSummary {
-  readonly name: string;
   readonly rootNode: Node;
   readonly element: Element;          // a live reference to <wcs-state> (principle 4)
   readonly paths: {
@@ -131,7 +142,6 @@ interface IDeclaredBindingInfo {
   readonly node: Node | null;   // null for origin "fragment" (no live-DOM node exists)
   readonly propName: string;
   readonly statePathName: string;
-  readonly stateName: string;
   readonly bindingType: string;
   readonly inFilters: readonly { filterName: string; args: readonly string[] }[];
   readonly outFilters: readonly { filterName: string; args: readonly string[] }[];
@@ -175,8 +185,9 @@ The files changed and the firing points. All go through §2's `sink` and conform
 
 - Fires in [setByAddress.ts](../packages/state/src/proxy/methods/setByAddress.ts) **after** the same-value guard
   (actual writes only).
-- payload = `{ stateName, path, listIndexes: number[] | null, value, oldValue? }`.
-  `oldValue` is included only where the guard already obtained it (a primitive with the guard on).
+- payload = `{ absoluteAddress, value, oldValue, hasOldValue }` (the `absoluteAddress` carries the
+  stateElement, path and listIndex — in v2 the state-element reference is the identity).
+  `oldValue` is meaningful only where the guard already obtained it (a primitive with the guard on).
   It MUST NOT perform an extra get for reference types (protecting the hot path).
 - The swap path (`_setByAddressWithSwap`) goes through the same point, so it needs no separate handling.
 
@@ -201,15 +212,15 @@ That means a failure never surfaces unless someone is watching the console. Thes
 place it becomes visible.
 
 - Event: `state:watch-error`,
-  payload = `{ phase: "prime" | "evaluate" | "handler", stateName, path, error }`.
+  payload = `{ phase: "prime" | "evaluate" | "handler", path, error }`.
   `phase` says where it threw — `prime` is the evaluation at connect, `evaluate` is resolving `cur`
   (forcing a watched getter), `handler` is the handler body. A getter failure and a handler failure
   are fixed differently, so they are not collapsed into one.
 - Event: `state:watch-chain-limit`, payload = `{ maxDepth, paths }`, emitted once when a watch-rooted
   write chain is cut off at the depth limit. Values and DOM are not rolled back (same stance as
-  `propagation:hop-limit`). The cut-off is per batch, so it carries no `stateName`.
+  `propagation:hop-limit`).
 - Event: `state:watch-fired` (v1 addendum, additive — the event reserved in
-  [state-watch-hook-design.md](./state-watch-hook-design.md) §11), payload = `{ stateName, path }`,
+  [state-watch-hook-design.md](./state-watch-hook-design.md) §11), payload = `{ path }`,
   emitted immediately before each handler invocation. It deliberately carries **no values** —
   detecting "declared but never fired" needs only the fact of firing, and values would put a
   serialization cost on the hot firing path. Together with `IStateElementSummary.watchPaths`
@@ -231,13 +242,13 @@ binding that throws while applying. Both are now reported and the runtime contin
 console is the only other place they appear.
 
 - Event: `state:path-unresolved` (v1 addendum, additive),
-  payload = `{ source: "binding" | "watch", stateName, path, missingSegment }`, emitted once per
+  payload = `{ source: "binding" | "watch", path, missingSegment }`, emitted once per
   (state element, path) when binding establishment (or a `$watch` declaration) proves the path cannot
   resolve. The check **under-approximates** — a getter return value, an empty list, a `null` parent or
   a mapped `bind-component` child all stay silent — so absence of this event is not proof of
   correctness ([pathDiagnostics.ts](../packages/state/src/pathDiagnostics.ts)).
 - Event: `state:binding-apply-error` (v1 addendum, additive),
-  payload = `{ stateName, path, bindingType, error }`, emitted when applying one binding throws. The
+  payload = `{ path, bindingType, error }`, emitted when applying one binding throws. The
   runtime isolates the failure so the rest of the batch, `$updatedCallback` and the drain listeners
   still run — same stance as `state:watch-error`, and same reason for existing: an isolated failure
   that nobody can see is indistinguishable from no failure.
@@ -256,11 +267,9 @@ console is the only other place they appear.
 
 - Thinly override `emit` in [CommandToken.ts](../packages/state/src/command/CommandToken.ts) and
   [EventToken.ts](../packages/state/src/event/EventToken.ts) (`sink && sink(...)` → `super.emit(...)`).
-- A token does not know its own stateElement, so owner information `{ stateName }` is added to the constructor
-  as an **internal optional argument**, passed in by the registry (`getOrCreateCommandToken` and friends).
-  The external protocol specs (command-token-protocol / event-token-protocol) are unchanged.
+- The external protocol specs (command-token-protocol / event-token-protocol) are unchanged.
 - Event: `state:token-emit`,
-  payload = `{ kind: "command" | "event", stateName, tokenName, args: unknown[], subscriberCount }`.
+  payload = `{ kind: "command" | "event", tokenName, args: unknown[], subscriberCount }`.
   An emit with `subscriberCount === 0` flows through as-is, as a "blank shot" — the point being to make the
   pre-whenDefined blank-shot command race that raf ran into **visible on the timeline**.
 
