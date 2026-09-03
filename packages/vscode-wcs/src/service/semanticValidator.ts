@@ -319,8 +319,10 @@ function validateUpdatedCallbackDemand(
     const callback = analyzeCallableBodies(block.content)
       .find((entry) => entry.name === STATE_UPDATED_CALLBACK && entry.kind === 'method');
     if (callback === undefined) continue;
-    const declared = new Set(analyzeStatePaths(block.content, block.stateName).map((p) => p.path));
-    const bound = boundPaths.get(block.stateName) ?? new Set<string>();
+    // ボリューム（mount=）の $updatedCallback は runtime が実行しない — スキップ
+    if (block.mountPath !== null) continue;
+    const declared = new Set(analyzeStatePaths(block.content).map((p) => p.path));
+    const bound = boundPaths;
     const body = blankComments(callback.body);
     PATH_TEST_LITERAL.lastIndex = 0;
     let match: RegExpExecArray | null;
@@ -345,7 +347,7 @@ function validateUpdatedCallbackDemand(
 }
 
 /**
- * このドキュメントでバインドされている state パスを state 名ごとに集める。
+ * このドキュメントでバインドされている state パスを集める（v2: 1 root 1 ツリー）。
  *
  * 正本パーサ経由の参照インデックスを使う。for 短縮パス（`.label`）は
  * インデックスに**字句どおり**載る仕様なので、ここで囲みテンプレートを見て
@@ -355,28 +357,19 @@ function collectBoundPaths(
   html: string,
   stateTagName: string,
   bindAttrName: string,
-): Map<string, Set<string>> {
-  const byState = new Map<string, Set<string>>();
-  const add = (stateName: string, path: string): void => {
-    let set = byState.get(stateName);
-    if (set === undefined) {
-      set = new Set<string>();
-      byState.set(stateName, set);
-    }
-    set.add(path);
-  };
+): Set<string> {
+  const bound = new Set<string>();
   const index = buildReferenceIndex(html, { bindAttribute: bindAttrName, stateTagName });
   for (const occurrence of index.occurrences) {
-    add(occurrence.stateName, occurrence.path);
+    bound.add(occurrence.path);
     if (!occurrence.path.startsWith('.')) continue;
     const forPath = getInnermostForPath(html, occurrence.pathRange.start, bindAttrName);
     if (forPath === null || forPath.startsWith('.')) continue;
-    add(
-      occurrence.stateName,
+    bound.add(
       occurrence.path === '.' ? `${forPath}.*` : `${forPath}.*.${occurrence.path.slice(1)}`,
     );
   }
-  return byState;
+  return bound;
 }
 
 /**

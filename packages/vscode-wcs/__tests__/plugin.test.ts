@@ -8,7 +8,6 @@ function makeBlock(content: string, contentStart = 0): WcsScriptBlock {
     content,
     contentStart,
     contentEnd: contentStart + content.length,
-    stateName: 'default',
   };
 }
 

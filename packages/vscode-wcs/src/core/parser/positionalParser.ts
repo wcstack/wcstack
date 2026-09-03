@@ -7,7 +7,7 @@
  * 1. **エラー耐性**: 正本は不正構文で throw する。ここでは式（`;` 区切り）単位で
  *    パースし、壊れた式は error として返して残りの式を生かす。
  * 2. **位置情報**: 正本の戻り値はオフセットを持たない。パース結果のトークン
- *    （propName / statePathName / stateName）を原文へ逆照合してスパンを返す。
+ *    （propName / statePathName）を原文へ逆照合してスパンを返す。
  *
  * 分割規則は**ランタイムと同値**に保つ: `;` は無条件分割（正本パーサ自身の
  * `bindText.split(BINDING_SEPARATOR)` と同じ。既存の splitBindingExpressions は
@@ -44,8 +44,6 @@ export interface IPositionalBinding {
   readonly propRange: ITokenRange | null;
   /** 右辺パス（eventToken ではトークン名）のスパン。else 等パスを持たない式は null。 */
   readonly pathRange: ITokenRange | null;
-  /** `@stateName` の名前部分のスパン。明示指定が無ければ null（stateName は 'default'）。 */
-  readonly stateNameRange: ITokenRange | null;
 }
 
 const { delimiters } = getWcsManifest().syntax;
@@ -79,18 +77,13 @@ export function parseEmbeddedTextWithPositions(expression: string): IPositionalB
   }
 
   if (parsed === null) {
-    return { exprRange, exprText: expression, parsed, error, propRange: null, pathRange: null, stateNameRange: null };
+    return { exprRange, exprText: expression, parsed, error, propRange: null, pathRange: null };
   }
 
   // 右辺のみの式: パスは先頭から最初の `|` まで、`@state` はその窓内。
   const firstPipe = expression.indexOf(delimiters.filter);
   const pathScopeEnd = firstPipe === -1 ? expression.length : firstPipe;
   const pathLocal = locate(expression, parsed.statePathName, 0, pathScopeEnd);
-  let stateNameLocal: ITokenRange | null = null;
-  const at = expression.indexOf(delimiters.stateName);
-  if (at !== -1 && at < pathScopeEnd) {
-    stateNameLocal = locate(expression, parsed.stateName, at + 1, pathScopeEnd);
-  }
 
   return {
     exprRange,
@@ -99,7 +92,6 @@ export function parseEmbeddedTextWithPositions(expression: string): IPositionalB
     error,
     propRange: null,
     pathRange: pathLocal,
-    stateNameRange: stateNameLocal,
   };
 }
 
@@ -131,7 +123,7 @@ export function parseBindTextWithPositions(bindText: string): IPositionalBinding
     }
 
     if (parsed === null) {
-      results.push({ exprRange, exprText: expr, parsed, error, propRange: null, pathRange: null, stateNameRange: null });
+      results.push({ exprRange, exprText: expr, parsed, error, propRange: null, pathRange: null });
       continue;
     }
 
@@ -144,17 +136,12 @@ export function parseBindTextWithPositions(bindText: string): IPositionalBinding
     const propLocal = locate(expr, parsed.propName, 0, propEndLimit);
 
     let pathLocal: ITokenRange | null = null;
-    let stateNameLocal: ITokenRange | null = null;
     if (colon !== -1) {
       const stateBase = colon + 1;
       const firstPipe = expr.indexOf(delimiters.filter, stateBase);
       const pathScopeEnd = firstPipe === -1 ? expr.length : firstPipe;
       // `#else` のような合成パス（原文に現れない）は locate が null を返す。
       pathLocal = locate(expr, parsed.statePathName, stateBase, pathScopeEnd);
-      const at = expr.indexOf(delimiters.stateName, stateBase);
-      if (at !== -1 && at < pathScopeEnd) {
-        stateNameLocal = locate(expr, parsed.stateName, at + 1, pathScopeEnd);
-      }
     }
 
     const lift = (range: ITokenRange | null): ITokenRange | null =>
@@ -167,7 +154,6 @@ export function parseBindTextWithPositions(bindText: string): IPositionalBinding
       error,
       propRange: lift(propLocal),
       pathRange: lift(pathLocal),
-      stateNameRange: lift(stateNameLocal),
     });
   }
 

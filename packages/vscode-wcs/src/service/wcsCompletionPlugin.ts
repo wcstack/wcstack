@@ -77,13 +77,13 @@ export function createWcsCompletionPlugin(): LanguageServicePlugin {
           // Mustache {{ }} 内のカーソルチェック
           const mustache = findMustacheAtOffset(text, offset);
           if (mustache) {
-            return buildPathAndFilterCompletions(text, offset, mustache.expression, mustache.exprStart, stateTagName, null, fileReader);
+            return buildPathAndFilterCompletions(text, offset, mustache.expression, mustache.exprStart, stateTagName, fileReader);
           }
 
           // コメントバインディング <!--@@:expr--> 内のカーソルチェック
           const comment = findCommentBindingAtOffset(text, offset);
           if (comment) {
-            return buildPathAndFilterCompletions(text, offset, comment.expression, comment.exprStart, stateTagName, null, fileReader);
+            return buildPathAndFilterCompletions(text, offset, comment.expression, comment.exprStart, stateTagName, fileReader);
           }
 
           // 属性値内にカーソルがあるか判定
@@ -174,13 +174,12 @@ export function createWcsCompletionPlugin(): LanguageServicePlugin {
 
             case 'path': {
               const allPaths = getStatePathsFromHtml(text, stateTagName, fileReader);
-              const targetStateName = context.targetState || 'default';
               const isEvent = context.propName.startsWith('on');
               const isForValue = context.propName === 'for';
               const isCommandProp = context.propName.startsWith('command.');
               const isEventTokenProp = context.propName.startsWith('eventToken.');
 
-              let pathCandidates = allPaths.filter(p => p.stateName === targetStateName);
+              let pathCandidates = allPaths.slice();
 
               if (isCommandProp) {
                 // command.<method>: の右辺は $command.<name> のみ
@@ -223,7 +222,6 @@ export function createWcsCompletionPlugin(): LanguageServicePlugin {
                     const replaceStart = document.positionAt(dotOffset);
 
                     const shorthandCandidates = allPaths
-                      .filter(p => p.stateName === targetStateName)
                       .filter(p => p.kind !== 'method' && p.kind !== 'list')
                       .filter(p => p.path.startsWith(expandedPrefix));
 
@@ -274,22 +272,6 @@ export function createWcsCompletionPlugin(): LanguageServicePlugin {
               return {
                 isIncomplete: false,
                 items: allItems,
-              };
-            }
-
-            case 'stateName': {
-              // 定義済み state 名の補完
-              const allPaths = getStatePathsFromHtml(text, stateTagName, fileReader);
-              const stateNames = [...new Set(allPaths.map(p => p.stateName))];
-              if (stateNames.length === 0) return undefined;
-
-              return {
-                isIncomplete: false,
-                items: stateNames.map(name => ({
-                  label: name,
-                  kind: 9 as const, // Module
-                  detail: 'state name',
-                })),
               };
             }
 
@@ -381,7 +363,6 @@ function buildPathAndFilterCompletions(
   expression: string,
   exprStart: number,
   stateTagName: string,
-  targetState: string | null,
   fileReader?: FileReader,
 ) {
   const cursorInExpr = offset - exprStart;
@@ -407,27 +388,13 @@ function buildPathAndFilterCompletions(
     };
   }
 
-  // `@` の後なら state 名補完
-  const atIndex = textBeforeCursor.indexOf('@');
-  if (atIndex !== -1) {
-    const allPaths = getStatePathsFromHtml(html, stateTagName, fileReader);
-    const stateNames = [...new Set(allPaths.map(p => p.stateName))];
-    return {
-      isIncomplete: false,
-      items: stateNames.map(name => ({
-        label: name,
-        kind: 9 as const,
-        detail: 'state name',
-      })),
-    };
-  }
+  // `@` は v2 の parse error（名前次元は撤去）— 補完は出さない
+  if (textBeforeCursor.indexOf('@') !== -1) return undefined;
 
   // パス補完（テキストバインディングなのでメソッド・トークン系は除外）
   const allPaths = getStatePathsFromHtml(html, stateTagName, fileReader);
-  const targetStateName = targetState || 'default';
   const pathCandidates = allPaths
-    .filter(p => p.kind !== 'method' && p.kind !== 'command' && p.kind !== 'eventToken')
-    .filter(p => p.stateName === targetStateName);
+    .filter(p => p.kind !== 'method' && p.kind !== 'command' && p.kind !== 'eventToken');
   if (pathCandidates.length === 0) return undefined;
 
   return {

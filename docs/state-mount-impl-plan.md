@@ -248,6 +248,8 @@ slice 4 で確定した挙動・発見:
 
 - **slice 22 済み（@wcstack/testing の name 撤去 — P4-4）**: `state(name?)` → `state()`。引数を渡すと**移行ヒント付き throw**（「mount= に載せて接頭辞で読む」）。ルート選択は「`mount` / `bind-component` 属性の無い最初の `<wcs-state>`」（ボリュームと bind-component 内側は対象外）。README（英/日）の表を v2 形に（mount()=DOM / mount==state の 1 行区別込み）。名前付きテスト 1 本を API エラーのピンへ転換。**罠＝ローカル symlink 先の committed dist が古く 9 件落ちる**（server の waitForReady 不在・router/state の鮮度）— server/router/state を再ビルドすると 14/14 緑（CI は実行前に stale dist を再ビルドする）。dist は戻してコミット。
 
+- **slice 23 済み（vscode-wcs / lint の name 撤去 — P4-1/P4-2）**: positionalParser から `@` 字句と stateNameRange を撤去（正本パーサが @ で throw → problems 経由で error 表示）。referenceIndex の索引キー (stateName, path) → path・referencesOf/declarationOf は path 単引数。htmlParse は `stateName` → `mountPath`（mount 属性）。**候補はマウント接頭辞で単一ツリーに合流**（statePathResolver がボリューム候補へ `<mountPath>.` を前置・$ 名前空間はマウント越しに表現できないので落とす — runtime と同型）。stateAnalyzer/PathCandidate から stateName 次元を除去・mergeSchemaCandidates は path キー。wiringLens は接頭辞ベース（hover の state 名表示を撤去・src 未解析フォールバックは「resolved がその要素の守備範囲（ルート全体／mount 接頭辞下）かつ範囲に候補ゼロ」）。補完＝@ 後は出さない（bindingContext から stateName kind を撤去）。namedStateValidator は **error 昇格＋runtime と同じ文言**（bind-component の除外も撤去 — v1 の Light DOM name 必須は消えた）。messages（ja/en）を「撤去済み」表現へ。P4-2＝lint 再ビルド 14/14 スモーク緑（**named-state-deprecated の error severity を契約ケースとして追加** — #183 型のドリフト封じ）。manifest-state-collision と sidecar states[name] の形は P4-3（schemaVersion 2）で処理。vscode-wcs 631 テスト全緑・esbuild 緑。
+
 ### 3-1. タスク
 
 | ID | タスク | 場所 | 受け入れ |

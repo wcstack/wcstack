@@ -58,12 +58,6 @@ export function validateBindings(
   // 状態パスを収集（state 名ごとに分類）。schema 由来の候補は補完・型期待用に合流させる
   // （同一パスは schema 優先）。存在判定は候補集合ではなく resolveSchemaPath で行う（下記）。
   const statePaths = mergeSchemaCandidates(getStatePathsFromHtml(html, stateTagName, fileReader), applicationStates);
-  const pathsByState = new Map<string, PathCandidate[]>();
-  for (const p of statePaths) {
-    const list = pathsByState.get(p.stateName) ?? [];
-    list.push(p);
-    pathsByState.set(p.stateName, list);
-  }
 
   // バインド属性を全て検出
   const attrs = findAllBindAttributes(html, attrName);
@@ -113,8 +107,8 @@ export function validateBindings(
       // パスとフィルタを抽出
       const parsed = parseBindingExpression(binding);
 
-      // パス検証（targetState でスコープ）
-      const scopedPaths = pathsByState.get(parsed.targetState) ?? [];
+      // パス検証（v2: 1 root 1 ツリー — スコープは無い）
+      const scopedPaths = statePaths;
       const scopedPathSet = new Set(scopedPaths.map(p => p.path));
       const propNoMod = parsed.property.replace(/#.*$/, '').trim();
 
@@ -213,7 +207,7 @@ export function validateBindings(
             }
           }
           if (checkPath) {
-            const schema = applicationStates?.get(parsed.targetState);
+            const schema = applicationStates?.get('default');
             const verdict = schema !== undefined
               ? validateSchemaPathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, schema, msgs)
               : toMissingVerdict(validatePathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, msgs));
@@ -376,7 +370,7 @@ export function validateBindings(
               // 報告する。schema 無し / フィルタ経由の型は従来の期待違反のまま。
               const schemaDefinite = typeReq.expected === 'array'
                 && parsed.filters.length === 0
-                && applicationStates?.has(parsed.targetState) === true
+                && applicationStates?.has('default') === true
                 && scopedPaths.some(p => p.path === pathTrimmed && p.fromSchema === true);
               diagnostics.push({
                 code: schemaDefinite ? WcsDiagnosticCode.PathTypeMismatch : WcsDiagnosticCode.BindingTypeExpectation,
@@ -418,7 +412,7 @@ interface ParsedFilter {
 export interface ParsedBinding {
   property: string;
   path: string | null;
-  targetState: string;
+
   filters: ParsedFilter[];
   /** prop 側の input フィルタ（`value|number: path` — 書き戻し方向に適用） */
   inputFilters: ParsedFilter[];
@@ -486,7 +480,7 @@ export function parseBindingExpression(expr: string): ParsedBinding {
 
   if (colonIndex === -1) {
     // else ディレクティブなど（パスなし）
-    return { property: expr.trim(), path: null, targetState: 'default', filters: [], inputFilters: [] };
+    return { property: expr.trim(), path: null, filters: [], inputFilters: [] };
   }
 
   // prop 側の input フィルタを分離（`value|number: path` — parsePropPart.ts と対応）
@@ -502,15 +496,15 @@ export function parseBindingExpression(expr: string): ParsedBinding {
   const pathSegment = segments[0] || '';
   const filterSegments = segments.slice(1);
 
-  // @state 部分を分離
+  // '@' から後ろは v2 の parse error（namedStateValidator が error で報告する）—
+  // 寛容パースはパス部分だけを対象にする
   const atIndex = pathSegment.indexOf('@');
   const path = atIndex !== -1 ? pathSegment.slice(0, atIndex) : pathSegment;
-  const targetState = atIndex !== -1 ? pathSegment.slice(atIndex + 1).trim() || 'default' : 'default';
 
   // フィルタ名・引数・オフセットを抽出
   const filters = parseFilterSegments(expr, filterSegments, colonIndex + 1 + pathSegment.length + 1);
 
-  return { property, path: path.trim() || null, targetState, filters, inputFilters };
+  return { property, path: path.trim() || null, filters, inputFilters };
 }
 
 /**

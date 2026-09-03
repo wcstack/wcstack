@@ -11,7 +11,6 @@ export default { count: 0 };
     const blocks = parseWcsScriptBlocks(html);
     expect(blocks).toHaveLength(1);
     expect(blocks[0].content).toContain('export default { count: 0 }');
-    expect(blocks[0].stateName).toBe('default');
   });
 
   it('タグ名・type 属性値の大文字小文字を区別しない（HTML 仕様準拠）', () => {
@@ -35,7 +34,6 @@ export default { items: [] };
 </wcs-state>`;
     const blocks = parseWcsScriptBlocks(html);
     expect(blocks).toHaveLength(1);
-    expect(blocks[0].stateName).toBe('cart');
   });
 
   it('シングルクォートの name 属性', () => {
@@ -43,7 +41,6 @@ export default { items: [] };
   <script type="module">export default {};</script>
 </wcs-state>`;
     const blocks = parseWcsScriptBlocks(html);
-    expect(blocks[0].stateName).toBe('user');
   });
 
   it('複数の <wcs-state> を抽出する', () => {
@@ -56,9 +53,7 @@ export default { items: [] };
 </wcs-state>`;
     const blocks = parseWcsScriptBlocks(html);
     expect(blocks).toHaveLength(2);
-    expect(blocks[0].stateName).toBe('a');
     expect(blocks[0].content).toContain('const a = 1');
-    expect(blocks[1].stateName).toBe('b');
     expect(blocks[1].content).toContain('const b = 2');
   });
 
@@ -173,7 +168,6 @@ describe('parseWcsStateElements', () => {
     const elements = parseWcsStateElements(html);
     expect(elements).toHaveLength(1);
     expect(elements[0].jsonAttr).toBe('{"count": 0}');
-    expect(elements[0].stateName).toBe('default');
   });
 
   it('state 属性を持つ <wcs-state> から stateAttr を取得する', () => {
@@ -196,7 +190,6 @@ describe('parseWcsStateElements', () => {
 </wcs-state>`;
     const elements = parseWcsStateElements(html);
     expect(elements).toHaveLength(1);
-    expect(elements[0].stateName).toBe('app');
     expect(elements[0].jsonAttr).toBe('{"a":1}');
     expect(elements[0].stateAttr).toBe('s');
     expect(elements[0].srcAttr).toBe('./d.json');
@@ -219,9 +212,7 @@ describe('parseWcsStateElements', () => {
 <wcs-state name="b" state="data-b"></wcs-state>`;
     const elements = parseWcsStateElements(html);
     expect(elements).toHaveLength(2);
-    expect(elements[0].stateName).toBe('a');
     expect(elements[0].jsonAttr).toBe('{"x":1}');
-    expect(elements[1].stateName).toBe('b');
     expect(elements[1].stateAttr).toBe('data-b');
   });
 

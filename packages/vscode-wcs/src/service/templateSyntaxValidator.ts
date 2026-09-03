@@ -53,7 +53,7 @@ export function validateTemplateSyntax(
   };
   if (allPaths.length === 0) return diagnostics;
 
-  const defaultPaths = allPaths.filter((p) => p.stateName === "default");
+  const defaultPaths = allPaths;
   const pathSet = new Set(defaultPaths.map((p) => p.path));
   const filterNameSet = new Set(BUILTIN_FILTERS.map((f) => f.name));
 

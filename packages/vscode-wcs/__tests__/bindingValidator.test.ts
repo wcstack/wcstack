@@ -915,21 +915,16 @@ export default { count: "0", get double() { return 1; }, inc() {} };
     expect(typeDiag!.message).toContain('number');
   });
 
-  it('@state 越境は state ごとの schema で判定する', () => {
-    const multi = new Map([
-      ['default', schema],
-      ['other', { type: 'object', properties: { x: { type: 'string' } } }],
-    ]);
+  it('schema はルートツリー全体で判定する（v2: 名前スコープは無い）', () => {
+    const single = new Map([['default', schema]]);
     const page = `
 <wcs-state src="./a.ts"></wcs-state>
-<wcs-state name="other" src="./b.ts"></wcs-state>
-<div data-wcs="textContent: x@other"></div>
-<div data-wcs="textContent: y@other"></div>
-<div data-wcs="textContent: x"></div>
+<div data-wcs="textContent: count"></div>
+<div data-wcs="textContent: y"></div>
 `;
-    const diags = validateBindings(page, 'data-wcs', 'wcs-state', 'en', undefined, multi);
+    const diags = validateBindings(page, 'data-wcs', 'wcs-state', 'en', undefined, single);
     const nonexistent = diags.filter(d => d.code === WcsDiagnosticCode.PathNonexistent);
-    expect(nonexistent.map(d => page.slice(d.start, d.end))).toEqual(['y', 'x']);
+    expect(nonexistent.map(d => page.slice(d.start, d.end))).toEqual(['y']);
   });
 
   it('$ 名前空間（ループ添字・command）は schema に載らないので従来規則のまま', () => {

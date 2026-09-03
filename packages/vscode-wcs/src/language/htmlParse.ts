@@ -12,8 +12,8 @@
  * 属性（json, state, src）と内部スクリプトブロックを保持する。
  */
 export interface WcsStateInfo {
-  /** name 属性の値（デフォルト: 'default'） */
-  stateName: string;
+  /** mount 属性の値（ボリューム）。無ければ null（＝ルートツリー） */
+  mountPath: string | null;
   /** json 属性の値（インライン JSON） */
   jsonAttr?: string;
   /** state 属性の値（<script type="application/json"> の ID 参照） */
@@ -35,8 +35,8 @@ export interface WcsScriptBlock {
   contentEnd: number;
   /** スクリプトの中身テキスト */
   content: string;
-  /** 所属する <wcs-state> の name 属性（デフォルト: 'default'） */
-  stateName: string;
+  /** 所属する <wcs-state> の mount 属性（ボリューム）。無ければ null */
+  mountPath: string | null;
 }
 
 /**
@@ -71,7 +71,7 @@ export function parseWcsScriptBlocks(html: string, stateTagName: string = 'wcs-s
       continue;
     }
 
-    const stateName = extractAttribute(wcsMatch.tagContent, 'name') ?? 'default';
+    const mountPath = extractAttribute(wcsMatch.tagContent, 'mount');
     pos = wcsMatch.end;
 
     // </wcs-state> の閉じタグまでの範囲内で <script type="module"> を探す
@@ -112,7 +112,7 @@ export function parseWcsScriptBlocks(html: string, stateTagName: string = 'wcs-s
         contentStart,
         contentEnd,
         content: html.slice(contentStart, contentEnd),
-        stateName,
+        mountPath,
       });
 
       // </script> タグの末尾まで進める
@@ -157,7 +157,7 @@ export function parseWcsStateElements(html: string, stateTagName: string = 'wcs-
       continue;
     }
 
-    const stateName = extractAttribute(wcsMatch.tagContent, 'name') ?? 'default';
+    const mountPath = extractAttribute(wcsMatch.tagContent, 'mount');
     const jsonAttr = extractAttribute(wcsMatch.tagContent, 'json') ?? undefined;
     const stateAttr = extractAttribute(wcsMatch.tagContent, 'state') ?? undefined;
     const srcAttr = extractAttribute(wcsMatch.tagContent, 'src') ?? undefined;
@@ -201,14 +201,14 @@ export function parseWcsStateElements(html: string, stateTagName: string = 'wcs-
         contentStart,
         contentEnd: scriptCloseIdx,
         content: html.slice(contentStart, scriptCloseIdx),
-        stateName,
+        mountPath,
       });
 
       pos = html.indexOf('>', scriptCloseIdx) + 1;
       if (pos === 0) break;
     }
 
-    elements.push({ stateName, jsonAttr, stateAttr, srcAttr, scriptBlocks, tagStart, tagEnd });
+    elements.push({ mountPath, jsonAttr, stateAttr, srcAttr, scriptBlocks, tagStart, tagEnd });
 
     pos = wcsEnd;
     if (wcsCloseIdx !== -1) {

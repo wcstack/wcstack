@@ -27,7 +27,6 @@ export interface PathCandidate {
    */
   rawInitial?: string;
   /** 所属する state 名（デフォルト: 'default'） */
-  stateName: string;
   /**
    * sidecar manifest の `stateSchema` から導出した候補（analyzeSchemaPaths）。
    * 型は宣言された契約由来なので「確定」扱い — `for:` の非配列を error にする判定に使う。
@@ -53,7 +52,7 @@ const RESERVED_WATCH_KEY = '$watch';
  * @param scriptContent - <script type="module"> の内容
  * @returns パス候補の配列
  */
-export function analyzeStatePaths(scriptContent: string, stateName: string = 'default'): PathCandidate[] {
+export function analyzeStatePaths(scriptContent: string): PathCandidate[] {
   const objectContent = extractDefaultExportObject(scriptContent);
   if (!objectContent) return [];
 
@@ -70,39 +69,39 @@ export function analyzeStatePaths(scriptContent: string, stateName: string = 'de
     // 候補だけを導出する。`$watch` は既存パスを購読するだけで新しいパスを作らないため、
     // `$streams`（値プロパティを実体化する）と違い個別処理は要らない。
     if (prop.name.startsWith('$')) {
-      collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys, stateName);
+      collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys);
       continue;
     }
 
     if (prop.kind === 'method') {
       // メソッドはパス補完には含めないが、検証用に登録
-      paths.push({ path: prop.name, kind: 'method', stateName });
+      paths.push({ path: prop.name, kind: 'method' });
       continue;
     }
 
     if (prop.kind === 'getter') {
       // computed getter / setter: "users.*.ageCategory" のようなパス。
       // get/set のペアは同じパスを 2 度宣言するので候補は 1 つに畳む。
-      if (!paths.some(p => p.stateName === stateName && p.path === prop.name)) {
-        paths.push({ path: prop.name, kind: 'computed', stateName });
+      if (!paths.some(p => p.path === prop.name)) {
+        paths.push({ path: prop.name, kind: 'computed' });
       }
       continue;
     }
 
-    pushDataPropertyPaths(prop, paths, stateName);
+    pushDataPropertyPaths(prop, paths);
   }
 
   // $streams 宣言による値プロパティの実体化（processStreamsDeclaration §1-3 相当）。
   // ユーザーが同名プロパティを明示宣言している場合は上書きしない。
   for (const streamValue of pendingStreamValues) {
-    if (paths.some(p => p.stateName === stateName && p.path === streamValue.name)) continue;
-    pushDataPropertyPaths(streamValue, paths, stateName);
+    if (paths.some(p => p.path === streamValue.name)) continue;
+    pushDataPropertyPaths(streamValue, paths);
   }
 
   // $listKeys 宣言によるリストパスの実体化（processListKeysDeclaration §3 相当）。
   // $streams 実体化の後に走らせて、stream 由来のリストにキー宣言が付くケースも拾う。
   for (const listKeyEntry of pendingListKeys) {
-    pushListKeyPaths(listKeyEntry, paths, stateName);
+    pushListKeyPaths(listKeyEntry, paths);
   }
 
   return paths;
@@ -320,7 +319,6 @@ function collectReservedKeyPaths(
   paths: PathCandidate[],
   pendingStreamValues: PropertyInfo[],
   pendingListKeys: PropertyInfo[],
-  stateName: string,
 ): void {
   if (prop.name === RESERVED_STREAMS_KEY && prop.kind === 'data' && prop.value && isObjectLiteral(prop.value)) {
     const entries = parseTopLevelProperties(extractObjectContent(prop.value));
@@ -336,22 +334,22 @@ function collectReservedKeyPaths(
         value: initial?.value,
         typeHint: initial?.typeHint,
       });
-      paths.push({ path: `$streamStatus.${entry.name}`, kind: 'data', typeHint: 'string', stateName });
-      paths.push({ path: `$streamError.${entry.name}`, kind: 'data', stateName });
+      paths.push({ path: `$streamStatus.${entry.name}`, kind: 'data', typeHint: 'string' });
+      paths.push({ path: `$streamError.${entry.name}`, kind: 'data' });
     }
     return;
   }
 
   if (prop.name === RESERVED_COMMAND_TOKENS_KEY && prop.value) {
     for (const name of extractStringArrayItems(prop.value)) {
-      paths.push({ path: `$command.${name}`, kind: 'command', stateName });
+      paths.push({ path: `$command.${name}`, kind: 'command' });
     }
     return;
   }
 
   if (prop.name === RESERVED_EVENT_TOKENS_KEY && prop.value) {
     for (const name of extractStringArrayItems(prop.value)) {
-      paths.push({ path: name, kind: 'eventToken', stateName });
+      paths.push({ path: name, kind: 'eventToken' });
     }
     return;
   }
@@ -377,24 +375,24 @@ function collectReservedKeyPaths(
  * raiseError で弾く形の宣言 — 空パス / 空セグメント / 末尾 `*` / `.` `*` を含むキー
  * フィールド名 — からは候補を作らない。壊れた宣言を静的側が追認しないため。
  */
-function pushListKeyPaths(entry: PropertyInfo, paths: PathCandidate[], stateName: string): void {
+function pushListKeyPaths(entry: PropertyInfo, paths: PathCandidate[]): void {
   const listPath = entry.name;
   const segments = listPath.split('.');
   if (listPath.length === 0 || segments.some(s => s.length === 0) || segments[segments.length - 1] === '*') {
     return;
   }
-  const has = (path: string): boolean => paths.some(p => p.stateName === stateName && p.path === path);
+  const has = (path: string): boolean => paths.some(p => p.path === path);
 
-  if (!has(listPath)) paths.push({ path: listPath, kind: 'data', typeHint: 'array', stateName });
-  if (!has(`${listPath}.*`)) paths.push({ path: `${listPath}.*`, kind: 'list', stateName });
+  if (!has(listPath)) paths.push({ path: listPath, kind: 'data', typeHint: 'array' });
+  if (!has(`${listPath}.*`)) paths.push({ path: `${listPath}.*`, kind: 'list' });
   if (!has(`${listPath}.length`)) {
-    paths.push({ path: `${listPath}.length`, kind: 'data', typeHint: 'number', stateName });
+    paths.push({ path: `${listPath}.length`, kind: 'data', typeHint: 'number' });
   }
 
   const keyField = extractStringLiteralValue(entry.value);
   if (keyField === null || keyField.includes('.') || keyField.includes('*')) return;
   if (!has(`${listPath}.*.${keyField}`)) {
-    paths.push({ path: `${listPath}.*.${keyField}`, kind: 'data', stateName });
+    paths.push({ path: `${listPath}.*.${keyField}`, kind: 'data' });
   }
 }
 
@@ -437,8 +435,8 @@ const MAX_OBJECT_NEST_DEPTH = 5;
  * データプロパティ1つ分のパス候補を生成する
  * （配列ならワイルドカード・`.length`・要素子パス、オブジェクトなら子パスも展開）。
  */
-function pushDataPropertyPaths(prop: PropertyInfo, paths: PathCandidate[], stateName: string): void {
-  pushDataPropertyPathsAt(prop.name, prop, paths, stateName, 0);
+function pushDataPropertyPaths(prop: PropertyInfo, paths: PathCandidate[]): void {
+  pushDataPropertyPathsAt(prop.name, prop, paths, 0);
 }
 
 /**
@@ -449,11 +447,10 @@ function pushDataPropertyPathsAt(
   path: string,
   prop: PropertyInfo,
   paths: PathCandidate[],
-  stateName: string,
   depth: number,
 ): void {
   // データプロパティ
-  paths.push({ path, kind: 'data', typeHint: prop.typeHint, rawInitial: prop.value?.trim(), stateName });
+  paths.push({ path, kind: 'data', typeHint: prop.typeHint, rawInitial: prop.value?.trim() });
 
   // 配列の場合、ワイルドカードパスと子パス、組み込みプロパティを生成。
   // 先頭要素の子プロパティへは再帰する — 子が配列/オブジェクトなら
@@ -461,11 +458,11 @@ function pushDataPropertyPathsAt(
   // （ランタイムは任意深度のワイルドカードを解決するため、ここで打ち切ると
   // 入れ子リストの正当なパスが「未知パス」扱いになる）。
   if (prop.value && isArrayLiteral(prop.value)) {
-    paths.push({ path: `${path}.*`, kind: 'list', stateName });
-    paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number', stateName });
+    paths.push({ path: `${path}.*`, kind: 'list' });
+    paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number' });
     if (depth >= MAX_OBJECT_NEST_DEPTH) return;
     for (const childProp of extractArrayElementDataProperties(prop.value)) {
-      pushDataPropertyPathsAt(`${path}.*.${childProp.name}`, childProp, paths, stateName, depth + 1);
+      pushDataPropertyPathsAt(`${path}.*.${childProp.name}`, childProp, paths, depth + 1);
     }
     return;
   }
@@ -476,7 +473,7 @@ function pushDataPropertyPathsAt(
     const childProps = parseTopLevelProperties(extractObjectContent(prop.value));
     for (const childProp of childProps) {
       if (childProp.kind !== 'data') continue;
-      pushDataPropertyPathsAt(`${path}.${childProp.name}`, childProp, paths, stateName, depth + 1);
+      pushDataPropertyPathsAt(`${path}.${childProp.name}`, childProp, paths, depth + 1);
     }
   }
 }
@@ -489,10 +486,9 @@ function pushDataPropertyPathsAt(
  * JSON にはメソッドや computed getter がないため、全て kind: 'data' となる。
  *
  * @param jsonString - JSON 文字列
- * @param stateName - 所属する state 名
  * @returns パス候補の配列（パース失敗時は空配列）
  */
-export function analyzeJsonPaths(jsonString: string, stateName: string = 'default'): PathCandidate[] {
+export function analyzeJsonPaths(jsonString: string): PathCandidate[] {
   let data: unknown;
   try {
     data = JSON.parse(jsonString);
@@ -503,7 +499,7 @@ export function analyzeJsonPaths(jsonString: string, stateName: string = 'defaul
   if (typeof data !== 'object' || data === null || Array.isArray(data)) return [];
 
   const paths: PathCandidate[] = [];
-  collectJsonPaths(data as Record<string, unknown>, '', paths, stateName, 0);
+  collectJsonPaths(data as Record<string, unknown>, '', paths, 0);
   return paths;
 }
 
@@ -515,7 +511,6 @@ function collectJsonPaths(
   obj: Record<string, unknown>,
   prefix: string,
   paths: PathCandidate[],
-  stateName: string,
   depth: number,
 ): void {
   if (depth >= MAX_OBJECT_NEST_DEPTH) return; // 深すぎるネストは無視
@@ -524,7 +519,7 @@ function collectJsonPaths(
     // トップレベルの `$` キーは予約名（JSON state に書いてもデータパスにはならない）
     if (prefix === '' && key.startsWith('$')) continue;
     const path = prefix ? `${prefix}.${key}` : key;
-    pushJsonValuePaths(path, value, paths, stateName, depth);
+    pushJsonValuePaths(path, value, paths, depth);
   }
 }
 
@@ -537,25 +532,24 @@ function pushJsonValuePaths(
   path: string,
   value: unknown,
   paths: PathCandidate[],
-  stateName: string,
   depth: number,
 ): void {
-  paths.push({ path, kind: 'data', typeHint: inferJsonTypeHint(value), stateName });
+  paths.push({ path, kind: 'data', typeHint: inferJsonTypeHint(value) });
 
   if (Array.isArray(value)) {
-    paths.push({ path: `${path}.*`, kind: 'list', stateName });
-    paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number', stateName });
+    paths.push({ path: `${path}.*`, kind: 'list' });
+    paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number' });
 
     // 最初の要素がオブジェクトなら子パスへ再帰
     if (depth >= MAX_OBJECT_NEST_DEPTH) return;
     if (value.length > 0 && typeof value[0] === 'object' && value[0] !== null && !Array.isArray(value[0])) {
       const firstElement = value[0] as Record<string, unknown>;
       for (const [childKey, childValue] of Object.entries(firstElement)) {
-        pushJsonValuePaths(`${path}.*.${childKey}`, childValue, paths, stateName, depth + 1);
+        pushJsonValuePaths(`${path}.*.${childKey}`, childValue, paths, depth + 1);
       }
     }
   } else if (typeof value === 'object' && value !== null) {
-    collectJsonPaths(value as Record<string, unknown>, path, paths, stateName, depth + 1);
+    collectJsonPaths(value as Record<string, unknown>, path, paths, depth + 1);
   }
 }
 
@@ -970,10 +964,10 @@ function inferTypeHint(valueStart: string): string | undefined {
  * （生成器 wcs-schema も同じ深さで打ち切る）。`$ref` は root `$defs` で局所解決（循環・
  * 未解決は捨てる）、`anyOf` は枝を合併し、型ヒントから null を除く。
  */
-export function analyzeSchemaPaths(schema: JsonSchemaNode, stateName: string = 'default'): PathCandidate[] {
+export function analyzeSchemaPaths(schema: JsonSchemaNode): PathCandidate[] {
   const paths: PathCandidate[] = [];
   const defs = schema.$defs ?? {};
-  collectSchemaObjectPaths(schema, '', paths, stateName, defs, 0);
+  collectSchemaObjectPaths(schema, '', paths, defs, 0);
   return paths;
 }
 
@@ -989,13 +983,13 @@ export function mergeSchemaCandidates(
   if (applicationStates === undefined || applicationStates.size === 0) return candidates;
   const schemaCandidates: PathCandidate[] = [];
   const schemaKeys = new Set<string>();
-  for (const [stateName, schema] of applicationStates) {
-    for (const p of analyzeSchemaPaths(schema, stateName)) {
+  for (const schema of applicationStates.values()) {
+    for (const p of analyzeSchemaPaths(schema)) {
       schemaCandidates.push(p);
-      schemaKeys.add(`${stateName} ${p.path}`);
+      schemaKeys.add(p.path);
     }
   }
-  const kept = candidates.filter(p => !schemaKeys.has(`${p.stateName} ${p.path}`));
+  const kept = candidates.filter(p => !schemaKeys.has(p.path));
   return [...kept, ...schemaCandidates];
 }
 
@@ -1064,7 +1058,6 @@ function collectSchemaObjectPaths(
   node: JsonSchemaNode,
   prefix: string,
   paths: PathCandidate[],
-  stateName: string,
   defs: Readonly<Record<string, JsonSchemaNode>>,
   depth: number,
 ): void {
@@ -1077,7 +1070,7 @@ function collectSchemaObjectPaths(
       if (seen.has(key)) continue;
       seen.add(key);
       const path = prefix ? `${prefix}.${key}` : key;
-      pushSchemaValuePaths(path, child, paths, stateName, defs, depth);
+      pushSchemaValuePaths(path, child, paths, defs, depth);
     }
   }
 }
@@ -1086,20 +1079,19 @@ function pushSchemaValuePaths(
   path: string,
   node: JsonSchemaNode,
   paths: PathCandidate[],
-  stateName: string,
   defs: Readonly<Record<string, JsonSchemaNode>>,
   depth: number,
 ): void {
   const nodes = derefSchemaNodes(node, defs);
   const typeHint = schemaTypeHint(nodes);
-  paths.push(withHint({ path, kind: 'data', stateName, fromSchema: true }, typeHint));
+  paths.push(withHint({ path, kind: 'data', fromSchema: true }, typeHint));
 
   const items = nodes.map(n => n.items).find(i => i !== undefined && i !== null && typeof i === 'object');
   const isArray = items !== undefined || (typeHint?.split('|').includes('array') ?? false);
   if (isArray) {
     const itemNodes = items !== undefined ? derefSchemaNodes(items, defs) : [];
-    paths.push(withHint({ path: `${path}.*`, kind: 'list', stateName, fromSchema: true }, schemaTypeHint(itemNodes)));
-    paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number', stateName, fromSchema: true });
+    paths.push(withHint({ path: `${path}.*`, kind: 'list', fromSchema: true }, schemaTypeHint(itemNodes)));
+    paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number', fromSchema: true });
 
     // items がオブジェクトなら子パスへ再帰（JSON 側の「先頭要素の子」と同じ規則）
     if (depth >= MAX_OBJECT_NEST_DEPTH) return;
@@ -1108,14 +1100,14 @@ function pushSchemaValuePaths(
       for (const [childKey, childNode] of Object.entries(n.properties ?? {})) {
         if (seen.has(childKey)) continue;
         seen.add(childKey);
-        pushSchemaValuePaths(`${path}.*.${childKey}`, childNode, paths, stateName, defs, depth + 1);
+        pushSchemaValuePaths(`${path}.*.${childKey}`, childNode, paths, defs, depth + 1);
       }
     }
     return;
   }
 
   if (nodes.some(n => n.properties !== undefined)) {
-    collectSchemaObjectPaths(node, path, paths, stateName, defs, depth + 1);
+    collectSchemaObjectPaths(node, path, paths, defs, depth + 1);
   }
 }
 

@@ -37,7 +37,6 @@ export default { count: 0, name: "test" };
     it('json 属性で name 属性の stateName が設定される', () => {
       const html = `<wcs-state name="cart" json='{"items": []}'></wcs-state>`;
       const paths = getStatePathsFromHtml(html);
-      expect(paths[0].stateName).toBe('cart');
     });
   });
 
@@ -245,9 +244,6 @@ export default defineState({
   <script type="module">export default { c: 3 };</script>
 </wcs-state>`;
       const paths = getStatePathsFromHtml(html);
-      expect(paths.find(p => p.path === 'a')?.stateName).toBe('first');
-      expect(paths.find(p => p.path === 'b')?.stateName).toBe('second');
-      expect(paths.find(p => p.path === 'c')?.stateName).toBe('third');
     });
   });
 });

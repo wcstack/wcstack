@@ -1,18 +1,16 @@
 /**
- * namedStateValidator.ts — 名前付き State（`<wcs-state name>` / `path@name`）の deprecation。
+ * namedStateValidator.ts — 名前付き State（`<wcs-state name>` / `path@name`）は v2 で撤去。
  *
- * v2 では名前の次元そのものが消え、`<wcs-state mount="path">` と接頭辞付きパスに
- * 置き換わる（docs/state-mount-design.md D1 / D16、impl-plan P1-7）。1.x には `mount=` が
- * 無いのでランタイムは既定で黙り（`config.debug` 下だけ warn）、この lint（warning）と
- * README の告知が主経路。
+ * 名前の次元そのものが消え、`<wcs-state mount="path">` と接頭辞付きパスに置き換わった
+ * （docs/state-mount-design.md D1 / D16、impl-plan P4-1）。ランタイムは name 属性で
+ * fail-fast し、`@` を含むパスは parse error にする — この lint はそれと同じ文言を
+ * 編集時に error で出す。
  *
  * 対象:
- *   - `<wcs-state name="x">` の name 属性（Light DOM の `bind-component` は今日 name が
- *     必須なので除く — v2 でまとめて消える）
+ *   - `<wcs-state name="x">` の name 属性（bind-component 込み — v1 の Light DOM
+ *     name 必須はまとめて消えた）
  *   - `data-wcs` の各式の `path@name`（フィルタより前・括弧の外だけを見る）
  *   - mustache `{{ path@name }}`
- *
- * severity は warning（1.x では動く。error 昇格は v2 の parse error と同時）。
  */
 
 import { WcsDiagnosticCode } from '../core/diagnostics.js';
@@ -68,7 +66,6 @@ export function validateNamedState(
   // 1. <wcs-state name="x">
   for (const element of parseWcsStateElements(html, stateTagName)) {
     const tagText = html.slice(element.tagStart, element.tagEnd);
-    if (/\sbind-component(?=[\s=>/])/i.test(tagText)) continue;
     const match = /(?:^|\s)name\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(tagText);
     if (match === null) continue;
     const value = match[1] ?? match[2] ?? match[3] ?? '';
@@ -80,7 +77,7 @@ export function validateNamedState(
       start: valueEnd - value.length,
       end: valueEnd,
       message: msgs.namedStateAttrDeprecated(value),
-      severity: 'warning',
+      severity: 'error',
     });
   }
 
@@ -95,7 +92,7 @@ export function validateNamedState(
           start: attr.valueStart + pos + selector.start,
           end: attr.valueStart + pos + selector.end,
           message: msgs.namedStatePathDeprecated(selector.name),
-          severity: 'warning',
+          severity: 'error',
         });
       }
       pos += expr.length + 1;
@@ -111,7 +108,7 @@ export function validateNamedState(
         start: mustache.exprStart + selector.start,
         end: mustache.exprStart + selector.end,
         message: msgs.namedStatePathDeprecated(selector.name),
-        severity: 'warning',
+        severity: 'error',
       });
     }
   }

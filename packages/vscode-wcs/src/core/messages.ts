@@ -181,11 +181,11 @@ const ja: WcsMessageCatalog = {
   signalsDualEntry: () =>
     `@wcstack/signals と @wcstack/signals/dom が同一ページから import されています。CDN では各エントリが自己完結バンドルのためリアクティブコアが二重化し、境界で反応が壊れます — すべて /dom エントリから import してください`,
   namedStateAttrDeprecated: (name) =>
-    `<wcs-state name="${name}"> は v2 で廃止されます。ルートツリーへのマウント <wcs-state mount="${name}"> に置き換え、パスは "${name}.<path>" で参照してください（docs/state-mount-design.md §9）`,
+    `name 属性は v2 で撤去されました（1 root 1 ツリー）。ルートツリーへのマウント <wcs-state mount="${name}"> に置き換え、パスは "${name}.<path>" で参照してください（docs/state-mount-design.md §9）`,
   namedStatePathDeprecated: (name) =>
     name === 'default'
-      ? `"@default" は不要で、v2 で廃止されます。"@default" を外してください（docs/state-mount-design.md §9）`
-      : `"@${name}" による state 指定は v2 で廃止されます。マウントしたツリーを "${name}.<path>" で参照してください（docs/state-mount-design.md §9）`,
+      ? `"@default" セレクタは v2 で撤去されました。"@default" を外してください（docs/state-mount-design.md §9）`
+      : `"@name" セレクタは v2 で撤去されました（1 root 1 ツリー）。マウントしたツリーを "${name}.<path>" で参照してください（docs/state-mount-design.md §9）`,
 };
 
 const EN_EXPECTED_LABEL: Record<ExpectedTypeKind, string> = {
@@ -264,11 +264,11 @@ const en: WcsMessageCatalog = {
   signalsDualEntry: () =>
     `Both @wcstack/signals and @wcstack/signals/dom are imported on this page. On a CDN each entry is a self-contained bundle, so the reactive core is duplicated and reactivity breaks at the seam — import everything from the single /dom entry`,
   namedStateAttrDeprecated: (name) =>
-    `<wcs-state name="${name}"> is deprecated and will be removed in v2. Mount the state onto the root tree with <wcs-state mount="${name}"> and read it as "${name}.<path>" (docs/state-mount-design.md §9)`,
+    `The "name" attribute was removed in v2 — there is a single state tree per root. Mount this state onto the tree instead: <wcs-state mount="${name}"> and read it as "${name}.<path>" (docs/state-mount-design.md §9)`,
   namedStatePathDeprecated: (name) =>
     name === 'default'
-      ? `The "@default" selector is redundant and will be removed in v2; drop it (docs/state-mount-design.md §9)`
-      : `The "@${name}" state selector is deprecated and will be removed in v2. Read the mounted tree as "${name}.<path>" instead (docs/state-mount-design.md §9)`,
+      ? `The "@default" selector was removed in v2 — drop it (docs/state-mount-design.md §9)`
+      : `The "@name" selector was removed in v2 — there is a single state tree. Mount the named state onto the tree (<wcs-state mount="...">) and read it as "${name}.<path>" (docs/state-mount-design.md §9)`,
 };
 
 const CATALOGS: Record<WcsLocale, WcsMessageCatalog> = { ja, en };
