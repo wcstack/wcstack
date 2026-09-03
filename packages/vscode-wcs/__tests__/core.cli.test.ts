@@ -180,7 +180,7 @@ describe("createFileReader — HTML ファイルのディレクトリ基準で�
 describe("runValidation — CLI core", () => {
   it("HTML と manifest を混在検査し source:line:col を整形する", () => {
     const html = `<wcs-state json='{"a":1}'></wcs-state>\n<span data-wcs="textContent: b"></span>`;
-    const manifest = JSON.stringify({ schemaVersion: 1, kind: "package", manifestExtensions: { "wcstack.types": { version: 1, components: { "wcs-x": { inputs: { u: { schema: { type: "string", pattern: "p" } } } } } } } });
+    const manifest = JSON.stringify({ schemaVersion: 2, kind: "package", manifestExtensions: { "wcstack.types": { version: 2, components: { "wcs-x": { inputs: { u: { schema: { type: "string", pattern: "p" } } } } } } } });
     const inputs: CliFileInput[] = [
       { source: "a.html", text: html, kind: "html" },
       { source: "x.manifest.json", text: manifest, kind: "manifest" },
@@ -209,8 +209,8 @@ describe("runValidation — CLI core", () => {
       ["wcs-fetch", { tag: "wcs-fetch", properties: [{ name: "value", event: "wcs-fetch:response" }], inputs: [], commands: [] }],
     ]);
     const manifest = JSON.stringify({
-      schemaVersion: 1, kind: "package",
-      manifestExtensions: { "wcstack.types": { version: 1, components: { "wcs-fetch": { observables: { value: { event: "WRONG" } } } } } },
+      schemaVersion: 2, kind: "package",
+      manifestExtensions: { "wcstack.types": { version: 2, components: { "wcs-fetch": { observables: { value: { event: "WRONG" } } } } } },
     });
     const result = runValidation([{ source: "f.manifest.json", text: manifest, kind: "manifest" }], { liveDeclarations: live });
     expect(result.errorCount).toBe(1);
@@ -342,10 +342,10 @@ describe("parseArgs — CLI 引数分解", () => {
 describe("stateSchema（sidecar）の消費 — 発見 / 明示 / IDE-CLI パリティ（D6 / D8）", () => {
   const appManifest = (properties: Record<string, unknown>): string =>
     JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       kind: "application",
       manifestExtensions: {
-        "wcstack.application": { version: 1, states: { default: { stateSchema: { type: "object", properties } } } },
+        "wcstack.application": { version: 2, stateSchema: { type: "object", properties } },
       },
     });
   const manifest = appManifest({

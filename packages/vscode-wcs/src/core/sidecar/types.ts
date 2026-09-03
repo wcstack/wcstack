@@ -83,16 +83,14 @@ export interface PlatformCapabilitiesExtension {
 }
 
 // --- wcstack.application (application) ---
-export interface ApplicationState {
-  readonly stateSchema: JsonSchemaNode;
-}
 export interface ApplicationFilter {
   readonly input?: JsonSchemaNode;
   readonly output?: JsonSchemaNode;
 }
 export interface ApplicationExtension {
   readonly version: number;
-  readonly states?: Readonly<Record<string, ApplicationState>>;
+  /** 単一ツリーの schema（v2 — 名前次元は無い。ボリュームは部分木として載る）。 */
+  readonly stateSchema?: JsonSchemaNode;
   readonly filters?: Readonly<Record<string, ApplicationFilter>>;
   readonly listContexts?: readonly string[];
 }
@@ -114,9 +112,9 @@ export interface WcstackManifest {
 }
 
 /** reader が対応する envelope major。 */
-export const SUPPORTED_SCHEMA_VERSION = 1;
+export const SUPPORTED_SCHEMA_VERSION = 2;
 /** 各 wcstack.* namespace が対応する version。 */
-export const SUPPORTED_NAMESPACE_VERSION = 1;
+export const SUPPORTED_NAMESPACE_VERSION = 2;
 
 /** live wcBindable 宣言(drift 照合用の最小形)。runtime が正本。 */
 export interface LiveBindableDeclaration {

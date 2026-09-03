@@ -45,8 +45,8 @@ export interface ValidateDocumentOptions {
    */
   readonly fileReader?: FileReader;
   /**
-   * state 名 → `stateSchema`(application manifest の `wcstack.application.states`)。
-   * 宣言された state では、未存在パスが `wcs/binding-path-missing`(warning)ではなく
+   * 単一ツリーの `stateSchema`(application manifest の `wcstack.application.stateSchema` — v2)。
+   * 宣言されていれば、未存在パスが `wcs/binding-path-missing`(warning)ではなく
    * `wcs/path-nonexistent`(error)になる(docs/app-testing-and-typescript-impl-plan.md D6)。
    * 存在判定は sidecar/schemaSubset.ts の `resolveSchemaPath` の三値で行い、`unknown`
    * (素の `{}` の下・動的構造)は沈黙する。
@@ -56,7 +56,7 @@ export interface ValidateDocumentOptions {
    * ある時だけここへ渡し(明示が発見を置き換える)、IDE は常に発見に任せる — どちらも
    * 同じ `discoverApplicationManifest` を同じ reader で通るので診断が一致する。
    */
-  readonly applicationStates?: ReadonlyMap<string, JsonSchemaNode>;
+  readonly applicationSchema?: JsonSchemaNode;
 }
 
 /**
@@ -67,13 +67,13 @@ export function validateDocument(text: string, options: ValidateDocumentOptions 
   const stateTagName = options.stateTagName ?? "wcs-state";
   const locale = options.locale;
   const fileReader = options.fileReader;
-  const applicationStates = options.applicationStates
-    ?? (fileReader !== undefined ? discoverApplicationManifest(fileReader)?.states : undefined);
+  const applicationSchema = options.applicationSchema
+    ?? (fileReader !== undefined ? discoverApplicationManifest(fileReader)?.schema : undefined);
 
   const out: WcsDiagnostic[] = [];
   // bindingValidator / templateSyntaxValidator / ioNodeValidator / documentEnvValidator は既に code 付き。
-  out.push(...validateBindings(text, bindAttribute, stateTagName, locale, fileReader, applicationStates));
-  out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute, locale, fileReader, applicationStates));
+  out.push(...validateBindings(text, bindAttribute, stateTagName, locale, fileReader, applicationSchema));
+  out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute, locale, fileReader, applicationSchema));
   out.push(...validateIoNodes(text, bindAttribute, stateTagName, locale, fileReader));
   out.push(...validateAriaAttributes(text, bindAttribute, locale));
   out.push(...validateDocumentEnv(text, locale));

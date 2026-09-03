@@ -40,7 +40,7 @@ export interface BindingDiagnostic {
  *
  * @param html - HTML 全文
  * @param attrName - バインド属性名（例: "data-wcs"）
- * @param applicationStates - state 名 → stateSchema（sidecar manifest）。宣言された state では
+ * @param applicationSchema - 単一ツリーの stateSchema（sidecar manifest — v2）。宣言されていれば
  *   未存在パスが `wcs/path-nonexistent`（error）になり、`for:` の型不一致は
  *   `wcs/path-type-mismatch`（error）になる。同じパスの typeHint は schema が勝つ（D12）。
  */
@@ -50,14 +50,14 @@ export function validateBindings(
   stateTagName: string = 'wcs-state',
   locale?: string,
   fileReader?: FileReader,
-  applicationStates?: ReadonlyMap<string, JsonSchemaNode>,
+  applicationSchema?: JsonSchemaNode,
 ): BindingDiagnostic[] {
   const diagnostics: BindingDiagnostic[] = [];
   const msgs = getMessages(locale);
 
   // 状態パスを収集（state 名ごとに分類）。schema 由来の候補は補完・型期待用に合流させる
   // （同一パスは schema 優先）。存在判定は候補集合ではなく resolveSchemaPath で行う（下記）。
-  const statePaths = mergeSchemaCandidates(getStatePathsFromHtml(html, stateTagName, fileReader), applicationStates);
+  const statePaths = mergeSchemaCandidates(getStatePathsFromHtml(html, stateTagName, fileReader), applicationSchema);
 
   // バインド属性を全て検出
   const attrs = findAllBindAttributes(html, attrName);
@@ -207,7 +207,7 @@ export function validateBindings(
             }
           }
           if (checkPath) {
-            const schema = applicationStates?.get('default');
+            const schema = applicationSchema;
             const verdict = schema !== undefined
               ? validateSchemaPathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, schema, msgs)
               : toMissingVerdict(validatePathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, msgs));
@@ -370,7 +370,7 @@ export function validateBindings(
               // 報告する。schema 無し / フィルタ経由の型は従来の期待違反のまま。
               const schemaDefinite = typeReq.expected === 'array'
                 && parsed.filters.length === 0
-                && applicationStates?.has('default') === true
+                && applicationSchema !== undefined
                 && scopedPaths.some(p => p.path === pathTrimmed && p.fromSchema === true);
               diagnostics.push({
                 code: schemaDefinite ? WcsDiagnosticCode.PathTypeMismatch : WcsDiagnosticCode.BindingTypeExpectation,

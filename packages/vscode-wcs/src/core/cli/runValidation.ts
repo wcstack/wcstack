@@ -75,7 +75,8 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
   // application artifact が含まれていれば、その解決済み stateSchema が HTML 検証の契約になり、
   // 最近傍発見(D8)は行わない — 明示指定が発見結果を丸ごと置き換える。
   const manifestInputs = inputs.filter((i) => i.kind === "manifest");
-  let explicitStates: ReadonlyMap<string, JsonSchemaNode> | undefined;
+  let explicitSchema: JsonSchemaNode | undefined;
+  let haveExplicitApplication = false;
   if (manifestInputs.length > 0) {
     const result = validateManifestSet({
       artifacts: manifestInputs.map((m) => ({ text: m.text, source: m.source })),
@@ -84,7 +85,10 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
     for (const input of manifestInputs) {
       diagnosticsBySource.set(input.source, result.byArtifact.get(input.source) ?? []);
     }
-    if (result.hasApplicationArtifact) explicitStates = result.resolvedStates;
+    if (result.hasApplicationArtifact) {
+      haveExplicitApplication = true;
+      explicitSchema = result.resolvedSchema;
+    }
   }
 
   // HTML: ファイルごとに validateDocument。明示 application manifest が無ければ、HTML の
@@ -94,10 +98,10 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
   // 検証は 1 回。
   for (const input of inputs) {
     if (input.kind !== "html") continue;
-    let applicationStates = explicitStates;
-    if (applicationStates === undefined && input.fileReader !== undefined) {
+    let applicationSchema = explicitSchema;
+    if (!haveExplicitApplication && input.fileReader !== undefined) {
       const discovered = discoverApplicationManifest(input.fileReader);
-      applicationStates = discovered?.states ?? new Map();
+      applicationSchema = discovered?.schema;
       if (discovered !== undefined) {
         const source = joinRelativeSource(input.source, discovered.relativePath);
         if (!diagnosticsBySource.has(source)) {
@@ -109,7 +113,7 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
     const docOptions: ValidateDocumentOptions = {
       ...options,
       ...(input.fileReader !== undefined ? { fileReader: input.fileReader } : {}),
-      ...(applicationStates !== undefined ? { applicationStates } : {}),
+      ...(applicationSchema !== undefined ? { applicationSchema } : {}),
     };
     diagnosticsBySource.set(input.source, validateDocument(input.text, docOptions));
   }

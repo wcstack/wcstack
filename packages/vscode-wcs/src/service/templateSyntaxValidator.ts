@@ -26,15 +26,15 @@ export function validateTemplateSyntax(
   bindAttrName: string = "data-wcs",
   locale?: string,
   fileReader?: FileReader,
-  applicationStates?: ReadonlyMap<string, JsonSchemaNode>,
+  applicationSchema?: JsonSchemaNode,
 ): BindingDiagnostic[] {
   const diagnostics: BindingDiagnostic[] = [];
   const msgs = getMessages(locale);
 
   // schema 由来の候補も合流させる（bindingValidator と同じ規則・D12）。mustache は
   // default state のみを検証するので、存在判定の三値化も default の schema に対して行う。
-  const allPaths = mergeSchemaCandidates(getStatePathsFromHtml(html, stateTagName, fileReader), applicationStates);
-  const defaultSchema = applicationStates?.get("default");
+  const allPaths = mergeSchemaCandidates(getStatePathsFromHtml(html, stateTagName, fileReader), applicationSchema);
+  const defaultSchema = applicationSchema;
   /** 存在しなければ code / severity / message を返す（stateSchema 宣言時は三値判定）。 */
   const missingVerdict = (
     path: string,

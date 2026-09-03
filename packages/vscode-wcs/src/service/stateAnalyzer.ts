@@ -972,22 +972,19 @@ export function analyzeSchemaPaths(schema: JsonSchemaNode): PathCandidate[] {
 }
 
 /**
- * script / JSON 由来の候補に schema 由来の候補を合流させる。同じ state・同じパスは
- * schema が勝つ（D12: 明示の契約が正規表現推定より優先）。applicationStates が無ければ
- * そのまま返す。
+ * script / JSON 由来の候補に schema 由来の候補を合流させる。同じパスは schema が
+ * 勝つ（D12: 明示の契約が正規表現推定より優先）。schema が無ければそのまま返す。
  */
 export function mergeSchemaCandidates(
   candidates: PathCandidate[],
-  applicationStates?: ReadonlyMap<string, JsonSchemaNode>,
+  applicationSchema?: JsonSchemaNode,
 ): PathCandidate[] {
-  if (applicationStates === undefined || applicationStates.size === 0) return candidates;
+  if (applicationSchema === undefined) return candidates;
   const schemaCandidates: PathCandidate[] = [];
   const schemaKeys = new Set<string>();
-  for (const schema of applicationStates.values()) {
-    for (const p of analyzeSchemaPaths(schema)) {
-      schemaCandidates.push(p);
-      schemaKeys.add(p.path);
-    }
+  for (const p of analyzeSchemaPaths(applicationSchema)) {
+    schemaCandidates.push(p);
+    schemaKeys.add(p.path);
   }
   const kept = candidates.filter(p => !schemaKeys.has(p.path));
   return [...kept, ...schemaCandidates];

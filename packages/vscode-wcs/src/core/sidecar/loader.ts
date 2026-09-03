@@ -74,10 +74,13 @@ export function loadManifest(artifact: ManifestArtifact): LoadedManifest {
     return { artifact, manifest: null, ctx, spans: parsed.spans };
   }
   if (obj.schemaVersion !== SUPPORTED_SCHEMA_VERSION) {
+    const migration = obj.schemaVersion === 1
+      ? ` schemaVersion 1 (states[name]) predates v2's single state tree — regenerate with \`wcs-schema emit\`.`
+      : "";
     ctx.add(
       WcsDiagnosticCode.ManifestSchemaVersion,
       pointer("schemaVersion"),
-      `Unsupported schemaVersion ${obj.schemaVersion}; this reader supports ${SUPPORTED_SCHEMA_VERSION}.`,
+      `Unsupported schemaVersion ${obj.schemaVersion}; this reader supports ${SUPPORTED_SCHEMA_VERSION}.${migration}`,
       "error",
     );
     return { artifact, manifest: null, ctx, spans: parsed.spans };
@@ -126,10 +129,10 @@ export interface ResolvedContracts {
   /** 衝突していない tag → 契約。衝突した tag は含めない(unknown 扱いにするため)。 */
   readonly tags: ReadonlyMap<string, ResolvedTagContract>;
   /**
-   * 衝突していない application state → stateSchema(D8)。同名 state が複数の application
-   * artifact に宣言されていれば含めない(未宣言扱い = schema 検証は沈黙)。
+   * application の stateSchema(D8 — v2: 単一ツリー)。複数の application artifact が
+   * 宣言していれば undefined(未宣言扱い = schema 検証は沈黙)。
    */
-  readonly applicationStates: ReadonlyMap<string, JsonSchemaNode>;
+  readonly applicationSchema: JsonSchemaNode | undefined;
   /** application artifact が 1 つでも渡されたか(明示指定が発見結果を置き換える判定用)。 */
   readonly hasApplicationArtifact: boolean;
   /** 衝突/override 診断を、それを生んだ artifact の source ごとに束ねたもの。 */
@@ -158,9 +161,10 @@ export function resolvePackageContracts(loaded: readonly LoadedManifest[]): Reso
   const collided = new Set<string>();
   const firstSource = new Map<string, string>();
   const filterOwner = new Map<string, string>();
-  const stateOwner = new Map<string, string>();
-  const stateWinners = new Map<string, JsonSchemaNode>();
-  const collidedStates = new Set<string>();
+  let schemaOwner: string | undefined;
+  let schemaWinner: JsonSchemaNode | undefined;
+  let schemaCollided = false;
+  void schemaCollided;
   let hasApplicationArtifact = false;
 
   for (const lm of loaded) {
@@ -222,27 +226,26 @@ export function resolvePackageContracts(loaded: readonly LoadedManifest[]): Reso
       }
     }
 
-    // application: state 名の衝突(D8)。同名 stateSchema は後勝ちにせず、勝者なし。
-    if (lm.manifest.kind === "application" && application?.states !== undefined) {
-      for (const [name, entry] of Object.entries(application.states)) {
-        const schema = (entry as { stateSchema?: unknown } | null)?.stateSchema;
-        if (schema === null || typeof schema !== "object" || Array.isArray(schema)) continue;
-        const priorSource = stateOwner.get(name);
-        if (priorSource === undefined) {
-          stateOwner.set(name, lm.artifact.source);
-          stateWinners.set(name, schema as JsonSchemaNode);
-          continue;
+    // application: stateSchema の衝突(D8 — v2: 単一ツリーのスロットは 1 つ)。
+    // 後勝ちにせず、勝者なし。
+    if (lm.manifest.kind === "application" && application?.stateSchema !== undefined) {
+      const schema = application.stateSchema;
+      if (schema !== null && typeof schema === "object" && !Array.isArray(schema)) {
+        if (schemaOwner === undefined) {
+          schemaOwner = lm.artifact.source;
+          schemaWinner = schema as JsonSchemaNode;
+        } else {
+          schemaCollided = true;
+          schemaWinner = undefined;
+          ctxFor(lm).add(
+            WcsDiagnosticCode.ManifestStateCollision,
+            pointer("manifestExtensions", "wcstack.application", "stateSchema"),
+            `Multiple application artifacts declare a stateSchema (also in "${schemaOwner}"); neither is used.`,
+            "error",
+            undefined,
+            true,
+          );
         }
-        collidedStates.add(name);
-        stateWinners.delete(name);
-        ctxFor(lm).add(
-          WcsDiagnosticCode.ManifestStateCollision,
-          pointer("manifestExtensions", "wcstack.application", "states", name),
-          `State "${name}" declares a stateSchema in multiple application artifacts (also in "${priorSource}"); neither is used.`,
-          "error",
-          { statePath: name },
-          true,
-        );
       }
     }
   }
@@ -255,5 +258,5 @@ export function resolvePackageContracts(loaded: readonly LoadedManifest[]): Reso
     if (kept.length > 0) diagnosticsBySource.set(source, kept);
   }
 
-  return { tags: winners, applicationStates: stateWinners, hasApplicationArtifact, diagnosticsBySource };
+  return { tags: winners, applicationSchema: schemaWinner, hasApplicationArtifact, diagnosticsBySource };
 }

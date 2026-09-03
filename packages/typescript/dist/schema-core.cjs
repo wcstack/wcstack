@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 "use strict";
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -18,68 +17,15 @@ var __copyProps = (to, from, except, desc) => {
 };
 var __toCommonJS = (mod3) => __copyProps(__defProp({}, "__esModule", { value: true }), mod3);
 
-// src/cli.ts
-var cli_exports = {};
-__export(cli_exports, {
-  createFileReader: () => createFileReader,
-  main: () => main,
-  parseArgs: () => parseArgs,
-  resolveCliLocale: () => resolveCliLocale
+// src/schemaCore.ts
+var schemaCore_exports = {};
+__export(schemaCore_exports, {
+  ALLOWED_SCHEMA_KEYWORDS: () => ALLOWED_SCHEMA_KEYWORDS,
+  WcsDiagnosticCode: () => WcsDiagnosticCode,
+  validateDocument: () => validateDocument,
+  validateManifestArtifact: () => validateManifestArtifact
 });
-module.exports = __toCommonJS(cli_exports);
-var import_node_fs2 = require("node:fs");
-
-// src/fileReader.ts
-var import_node_fs = require("node:fs");
-var import_node_path = require("node:path");
-function createFileReader(htmlPath, read = (p) => (0, import_node_fs.readFileSync)(p, "utf8")) {
-  const base = (0, import_node_path.dirname)(htmlPath);
-  const cache = /* @__PURE__ */ new Map();
-  return (relativePath) => {
-    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(relativePath) || relativePath.startsWith("/")) {
-      return void 0;
-    }
-    if (cache.has(relativePath)) {
-      return cache.get(relativePath);
-    }
-    let content;
-    try {
-      content = read((0, import_node_path.resolve)(base, relativePath));
-      if (content.charCodeAt(0) === 65279) {
-        content = content.slice(1);
-      }
-    } catch {
-      content = void 0;
-    }
-    cache.set(relativePath, content);
-    return content;
-  };
-}
-
-// src/core/offsetToPosition.ts
-function createPositionMapper(text) {
-  const lineStarts = [0];
-  for (let i = 0; i < text.length; i++) {
-    const c = text.charCodeAt(i);
-    if (c === 10) {
-      lineStarts.push(i + 1);
-    } else if (c === 13) {
-      if (text.charCodeAt(i + 1) === 10) i++;
-      lineStarts.push(i + 1);
-    }
-  }
-  return (offset) => {
-    const clamped = Math.max(0, Math.min(offset, text.length));
-    let lo = 0;
-    let hi = lineStarts.length - 1;
-    while (lo < hi) {
-      const mid = lo + hi + 1 >> 1;
-      if (lineStarts[mid] <= clamped) lo = mid;
-      else hi = mid - 1;
-    }
-    return { line: lo + 1, column: clamped - lineStarts[lo] + 1 };
-  };
-}
+module.exports = __toCommonJS(schemaCore_exports);
 
 // src/core/diagnostics.ts
 var WcsDiagnosticCode = {
@@ -180,6 +126,487 @@ var WcsDiagnosticCode = {
 function sortDiagnostics(diagnostics) {
   const severityRank = { error: 0, warning: 1, info: 2 };
   return [...diagnostics].sort((a, b) => a.start - b.start || severityRank[a.severity] - severityRank[b.severity] || (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
+}
+
+// src/core/sidecar/schemaSubset.ts
+var ALLOWED_SCHEMA_KEYWORDS = /* @__PURE__ */ new Set([
+  "type",
+  "properties",
+  "required",
+  "items",
+  "enum",
+  "const",
+  "anyOf",
+  "$defs",
+  "$ref"
+]);
+var DiagnosticContext = class {
+  constructor(spans) {
+    this.spans = spans;
+  }
+  diagnostics = [];
+  add(code, pointer2, message, severity, extra = {}, useKeySpan = false) {
+    const span = this.spans.get(pointer2);
+    const start = span === void 0 ? 0 : useKeySpan ? span.keyStart ?? span.start : span.start;
+    const end = span === void 0 ? 0 : useKeySpan ? span.keyEnd ?? span.end : span.end;
+    this.diagnostics.push({ code, start, end, message, severity, ...extra });
+  }
+};
+function isSchemaObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function isSchemaMap(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function validateSchemaSubset(schema, pointerBase, ctx, rootDefs) {
+  walkKeywords(schema, pointerBase, ctx, rootDefs);
+  const safe = /* @__PURE__ */ new Set();
+  detectCycles(schema, pointerBase, ctx, rootDefs, /* @__PURE__ */ new Set(), safe);
+  for (const [name, def] of Object.entries(rootDefs)) {
+    detectCycles(def, `${pointerBase}/$defs/${escape(name)}`, ctx, rootDefs, /* @__PURE__ */ new Set(), safe);
+  }
+}
+function walkKeywords(node, ptr, ctx, rootDefs) {
+  if (!isSchemaObject(node)) return;
+  for (const keyword of Object.keys(node)) {
+    if (!ALLOWED_SCHEMA_KEYWORDS.has(keyword)) {
+      ctx.add(
+        WcsDiagnosticCode.ManifestUnknownKeyword,
+        `${ptr}/${escape(keyword)}`,
+        `Unsupported schema keyword "${keyword}". Allowed: ${[...ALLOWED_SCHEMA_KEYWORDS].join(", ")}.`,
+        "warning",
+        {},
+        true
+      );
+    }
+  }
+  if (typeof node.$ref === "string") {
+    if (!node.$ref.startsWith("#/")) {
+      ctx.add(
+        WcsDiagnosticCode.ManifestExternalRef,
+        `${ptr}/$ref`,
+        `External $ref "${node.$ref}" is forbidden; only local "#/$defs/..." references are allowed.`,
+        "error"
+      );
+    } else if (resolveLocalRef(node.$ref, rootDefs) === void 0) {
+      ctx.add(
+        WcsDiagnosticCode.ManifestRefUnresolved,
+        `${ptr}/$ref`,
+        `Unresolved local $ref "${node.$ref}".`,
+        "error"
+      );
+    }
+  }
+  if (isSchemaMap(node.properties)) {
+    for (const [name, child] of Object.entries(node.properties)) {
+      walkKeywords(child, `${ptr}/properties/${escape(name)}`, ctx, rootDefs);
+    }
+  }
+  if (node.items !== void 0 && isSchemaObject(node.items)) {
+    walkKeywords(node.items, `${ptr}/items`, ctx, rootDefs);
+  }
+  if (Array.isArray(node.anyOf)) {
+    node.anyOf.forEach((child, i) => walkKeywords(child, `${ptr}/anyOf/${i}`, ctx, rootDefs));
+  }
+  if (isSchemaMap(node.$defs)) {
+    for (const [name, child] of Object.entries(node.$defs)) {
+      walkKeywords(child, `${ptr}/$defs/${escape(name)}`, ctx, rootDefs);
+    }
+  }
+}
+function detectCycles(node, ptr, ctx, rootDefs, refStack, safe) {
+  if (!isSchemaObject(node)) return;
+  if (typeof node.$ref === "string") {
+    const ref = node.$ref;
+    if (!ref.startsWith("#/")) return;
+    if (refStack.has(ref)) {
+      ctx.add(WcsDiagnosticCode.ManifestRefCycle, `${ptr}/$ref`, `Cyclic $ref detected at "${ref}".`, "error");
+      return;
+    }
+    if (safe.has(ref)) return;
+    const target = resolveLocalRef(ref, rootDefs);
+    if (target === void 0) return;
+    refStack.add(ref);
+    detectCycles(target, ptr, ctx, rootDefs, refStack, safe);
+    refStack.delete(ref);
+    safe.add(ref);
+    return;
+  }
+  if (isSchemaMap(node.properties)) {
+    for (const child of Object.values(node.properties)) detectCycles(child, ptr, ctx, rootDefs, refStack, safe);
+  }
+  if (node.items !== void 0 && isSchemaObject(node.items)) {
+    detectCycles(node.items, ptr, ctx, rootDefs, refStack, safe);
+  }
+  if (Array.isArray(node.anyOf)) {
+    for (const child of node.anyOf) detectCycles(child, ptr, ctx, rootDefs, refStack, safe);
+  }
+}
+function resolveLocalRef(ref, rootDefs) {
+  const match = /^#\/\$defs\/(.+)$/.exec(ref);
+  if (match === null) return void 0;
+  const name = match[1].replace(/~1/g, "/").replace(/~0/g, "~");
+  return rootDefs[name];
+}
+function resolveSchemaPath(root, rootDefs, segments) {
+  let current = root;
+  for (let depth = 0; depth < segments.length; depth++) {
+    const segment = segments[depth];
+    const resolved = derefUnion(current, rootDefs);
+    if (resolved.kind === "ref-error") return resolved;
+    const candidates = resolved.nodes;
+    if (segment === "*") {
+      const items = firstDefined(candidates, (n) => isSchemaObject(n.items) ? n.items : void 0);
+      if (items === void 0) {
+        return { kind: "unknown" };
+      }
+      current = items;
+      continue;
+    }
+    if (segment === "length" && candidates.some((n) => hasType(n, "array"))) {
+      current = { type: "number" };
+      continue;
+    }
+    const child = firstDefined(candidates, (n) => isSchemaMap(n.properties) ? n.properties[segment] : void 0);
+    if (child !== void 0) {
+      current = child;
+      continue;
+    }
+    const anyObject = candidates.some((n) => hasType(n, "object") || isSchemaMap(n.properties));
+    if (anyObject) {
+      return { kind: "nonexistent", segment, depth };
+    }
+    return { kind: "unknown" };
+  }
+  const final = derefUnion(current, rootDefs);
+  if (final.kind === "ref-error") return final;
+  return { kind: "resolved", schema: final.nodes.length === 1 ? final.nodes[0] : current };
+}
+function derefUnion(node, rootDefs) {
+  const out = [];
+  const stack = [{ node, chain: /* @__PURE__ */ new Set() }];
+  while (stack.length > 0) {
+    const { node: n, chain } = stack.pop();
+    if (typeof n.$ref === "string") {
+      if (!n.$ref.startsWith("#/") || chain.has(n.$ref)) {
+        return { kind: "ref-error", ref: n.$ref };
+      }
+      const target = resolveLocalRef(n.$ref, rootDefs);
+      if (target === void 0) return { kind: "ref-error", ref: n.$ref };
+      stack.push({ node: target, chain: /* @__PURE__ */ new Set([...chain, n.$ref]) });
+      continue;
+    }
+    if (Array.isArray(n.anyOf)) {
+      for (const branch of n.anyOf) stack.push({ node: branch, chain });
+      continue;
+    }
+    out.push(n);
+  }
+  return { kind: "ok", nodes: out };
+}
+function firstDefined(nodes, pick) {
+  for (const n of nodes) {
+    const v = pick(n);
+    if (v !== void 0) return v;
+  }
+  return void 0;
+}
+function hasType(node, t) {
+  const type = node.type;
+  if (type === void 0) return false;
+  return Array.isArray(type) ? type.includes(t) : type === t;
+}
+function escape(key) {
+  return key.replace(/~/g, "~0").replace(/\//g, "~1");
+}
+
+// src/core/sidecar/jsonSource.ts
+var JsonReader = class {
+  constructor(text) {
+    this.text = text;
+  }
+  pos = 0;
+  spans = /* @__PURE__ */ new Map();
+  parse() {
+    this.skipWs();
+    const value = this.parseValue("", void 0);
+    this.skipWs();
+    if (this.pos < this.text.length) {
+      throw this.fail(`Unexpected trailing content`);
+    }
+    return { value };
+  }
+  fail(message) {
+    const err = new Error(message);
+    err.offset = Math.min(this.pos, this.text.length);
+    return err;
+  }
+  skipWs() {
+    while (this.pos < this.text.length) {
+      const c = this.text.charCodeAt(this.pos);
+      if (c === 32 || c === 9 || c === 10 || c === 13) this.pos++;
+      else break;
+    }
+  }
+  parseValue(pointer2, keySpan) {
+    this.skipWs();
+    const start = this.pos;
+    const c = this.text[this.pos];
+    let value;
+    if (c === "{") value = this.parseObject(pointer2);
+    else if (c === "[") value = this.parseArray(pointer2);
+    else if (c === '"') value = this.parseString();
+    else if (c === "t" || c === "f") value = this.parseKeyword();
+    else if (c === "n") value = this.parseNull();
+    else if (c === "-" || c >= "0" && c <= "9") value = this.parseNumber();
+    else throw this.fail(`Unexpected character`);
+    const end = this.pos;
+    this.spans.set(pointer2, keySpan === void 0 ? { start, end } : { start, end, ...keySpan });
+    return value;
+  }
+  parseObject(pointer2) {
+    this.pos++;
+    const obj = {};
+    this.skipWs();
+    if (this.text[this.pos] === "}") {
+      this.pos++;
+      return obj;
+    }
+    for (; ; ) {
+      this.skipWs();
+      if (this.text[this.pos] !== '"') throw this.fail(`Expected object key`);
+      const keyStart = this.pos;
+      const key = this.parseString();
+      const keyEnd = this.pos;
+      this.skipWs();
+      if (this.text[this.pos] !== ":") throw this.fail(`Expected ':'`);
+      this.pos++;
+      const childPointer = `${pointer2}/${escapePointer(key)}`;
+      obj[key] = this.parseValue(childPointer, { keyStart, keyEnd });
+      this.skipWs();
+      const sep = this.text[this.pos];
+      if (sep === ",") {
+        this.pos++;
+        continue;
+      }
+      if (sep === "}") {
+        this.pos++;
+        return obj;
+      }
+      throw this.fail(`Expected ',' or '}'`);
+    }
+  }
+  parseArray(pointer2) {
+    this.pos++;
+    const arr = [];
+    this.skipWs();
+    if (this.text[this.pos] === "]") {
+      this.pos++;
+      return arr;
+    }
+    let index = 0;
+    for (; ; ) {
+      const childPointer = `${pointer2}/${index}`;
+      arr.push(this.parseValue(childPointer, void 0));
+      index++;
+      this.skipWs();
+      const sep = this.text[this.pos];
+      if (sep === ",") {
+        this.pos++;
+        continue;
+      }
+      if (sep === "]") {
+        this.pos++;
+        return arr;
+      }
+      throw this.fail(`Expected ',' or ']'`);
+    }
+  }
+  parseString() {
+    this.pos++;
+    let result = "";
+    for (; ; ) {
+      if (this.pos >= this.text.length) throw this.fail(`Unterminated string`);
+      const ch = this.text[this.pos++];
+      if (ch === '"') return result;
+      if (ch === "\\") {
+        const esc = this.text[this.pos++];
+        if (esc === '"') result += '"';
+        else if (esc === "\\") result += "\\";
+        else if (esc === "/") result += "/";
+        else if (esc === "b") result += "\b";
+        else if (esc === "f") result += "\f";
+        else if (esc === "n") result += "\n";
+        else if (esc === "r") result += "\r";
+        else if (esc === "t") result += "	";
+        else if (esc === "u") {
+          const hex = this.text.slice(this.pos, this.pos + 4);
+          if (!/^[0-9a-fA-F]{4}$/.test(hex)) throw this.fail(`Invalid unicode escape`);
+          result += String.fromCharCode(parseInt(hex, 16));
+          this.pos += 4;
+        } else throw this.fail(`Invalid escape`);
+      } else {
+        result += ch;
+      }
+    }
+  }
+  parseKeyword() {
+    if (this.text.startsWith("true", this.pos)) {
+      this.pos += 4;
+      return true;
+    }
+    if (this.text.startsWith("false", this.pos)) {
+      this.pos += 5;
+      return false;
+    }
+    throw this.fail(`Invalid literal`);
+  }
+  parseNull() {
+    if (this.text.startsWith("null", this.pos)) {
+      this.pos += 4;
+      return null;
+    }
+    throw this.fail(`Invalid literal`);
+  }
+  parseNumber() {
+    const match = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/.exec(this.text.slice(this.pos));
+    if (match === null) throw this.fail(`Invalid number`);
+    this.pos += match[0].length;
+    return Number(match[0]);
+  }
+};
+function escapePointer(key) {
+  return key.replace(/~/g, "~0").replace(/\//g, "~1");
+}
+function pointer(...segments) {
+  return segments.map((s) => `/${escapePointer(String(s))}`).join("");
+}
+function parseJsonWithSpans(text) {
+  const reader = new JsonReader(text);
+  try {
+    const { value } = reader.parse();
+    return { value, spans: reader.spans, error: null };
+  } catch (e) {
+    const offset = e.offset ?? 0;
+    return { value: void 0, spans: reader.spans, error: { offset, message: e.message } };
+  }
+}
+
+// src/core/sidecar/types.ts
+var SUPPORTED_SCHEMA_VERSION = 2;
+var SUPPORTED_NAMESPACE_VERSION = 2;
+
+// src/core/sidecar/loader.ts
+var NAMESPACE_KEYS = ["wcstack.types", "wcstack.async", "wcstack.platformCapabilities", "wcstack.application"];
+function loadManifest(artifact) {
+  const parsed = parseJsonWithSpans(artifact.text);
+  const ctx = new DiagnosticContext(parsed.spans);
+  if (parsed.error !== null) {
+    ctx.diagnostics.push({
+      code: WcsDiagnosticCode.ManifestBroken,
+      start: parsed.error.offset,
+      end: Math.min(parsed.error.offset + 1, artifact.text.length),
+      message: `Broken manifest JSON: ${parsed.error.message}.`,
+      severity: "error"
+    });
+    return { artifact, manifest: null, ctx, spans: parsed.spans };
+  }
+  const root = parsed.value;
+  if (root === null || typeof root !== "object" || Array.isArray(root)) {
+    ctx.add(WcsDiagnosticCode.ManifestBroken, "", `Manifest root must be a JSON object.`, "error");
+    return { artifact, manifest: null, ctx, spans: parsed.spans };
+  }
+  const obj = root;
+  if (obj.schemaVersion === void 0) {
+    ctx.add(WcsDiagnosticCode.ManifestSchemaVersion, "", `Manifest is missing an integer "schemaVersion".`, "error");
+    return { artifact, manifest: null, ctx, spans: parsed.spans };
+  }
+  if (typeof obj.schemaVersion !== "number" || !Number.isInteger(obj.schemaVersion)) {
+    ctx.add(
+      WcsDiagnosticCode.ManifestSchemaVersion,
+      pointer("schemaVersion"),
+      `Manifest "schemaVersion" must be an integer.`,
+      "error"
+    );
+    return { artifact, manifest: null, ctx, spans: parsed.spans };
+  }
+  if (obj.schemaVersion !== SUPPORTED_SCHEMA_VERSION) {
+    const migration = obj.schemaVersion === 1 ? ` schemaVersion 1 (states[name]) predates v2's single state tree \u2014 regenerate with \`wcs-schema emit\`.` : "";
+    ctx.add(
+      WcsDiagnosticCode.ManifestSchemaVersion,
+      pointer("schemaVersion"),
+      `Unsupported schemaVersion ${obj.schemaVersion}; this reader supports ${SUPPORTED_SCHEMA_VERSION}.${migration}`,
+      "error"
+    );
+    return { artifact, manifest: null, ctx, spans: parsed.spans };
+  }
+  if (obj.kind !== "package" && obj.kind !== "application") {
+    ctx.add(
+      WcsDiagnosticCode.ManifestKindInvalid,
+      obj.kind === void 0 ? "" : pointer("kind"),
+      `Manifest "kind" must be "package" or "application".`,
+      "error"
+    );
+    return { artifact, manifest: null, ctx, spans: parsed.spans };
+  }
+  const extensions = obj.manifestExtensions;
+  if (extensions !== null && typeof extensions === "object") {
+    for (const ns of NAMESPACE_KEYS) {
+      const nsObj = extensions[ns];
+      if (nsObj !== null && typeof nsObj === "object") {
+        const version = nsObj.version;
+        if (typeof version === "number" && version !== SUPPORTED_NAMESPACE_VERSION) {
+          ctx.add(
+            WcsDiagnosticCode.ManifestNamespaceVersion,
+            pointer("manifestExtensions", ns, "version"),
+            `Namespace "${ns}" version ${version} is unsupported (expected ${SUPPORTED_NAMESPACE_VERSION}).`,
+            "warning"
+          );
+        }
+      }
+    }
+  }
+  return { artifact, manifest: obj, ctx, spans: parsed.spans };
+}
+
+// src/core/sidecar/validate.ts
+function validateManifestArtifact(artifact) {
+  const loaded = loadManifest(artifact);
+  validateLoadedSchemas(loaded);
+  return sortDiagnostics(loaded.ctx.diagnostics);
+}
+function validateLoadedSchemas(loaded) {
+  if (loaded.manifest === null) return;
+  const types = loaded.manifest.manifestExtensions?.["wcstack.types"];
+  for (const [tag, component] of Object.entries(types?.components ?? {})) {
+    validateComponentSchemas(tag, component, loaded.ctx);
+  }
+  const application = loaded.manifest.manifestExtensions?.["wcstack.application"];
+  const stateSchema = application?.stateSchema;
+  if (stateSchema !== void 0 && stateSchema !== null && typeof stateSchema === "object" && !Array.isArray(stateSchema)) {
+    const ptr = pointer("manifestExtensions", "wcstack.application", "stateSchema");
+    validateSchemaSubset(stateSchema, ptr, loaded.ctx, stateSchema.$defs ?? {});
+  }
+}
+function validateComponentSchemas(tag, component, ctx) {
+  const base = pointer("manifestExtensions", "wcstack.types", "components", tag);
+  const walkSchema = (schema, ptr) => {
+    if (schema === void 0) return;
+    validateSchemaSubset(schema, ptr, ctx, schema.$defs ?? {});
+  };
+  for (const [name, observable] of Object.entries(component.observables ?? {})) {
+    walkSchema(observable.schema, `${base}/observables/${escapePtr(name)}/schema`);
+  }
+  for (const [name, input] of Object.entries(component.inputs ?? {})) {
+    walkSchema(input.schema, `${base}/inputs/${escapePtr(name)}/schema`);
+  }
+  for (const [name, command] of Object.entries(component.commands ?? {})) {
+    walkSchema(command.args, `${base}/commands/${escapePtr(name)}/args`);
+    walkSchema(command.result, `${base}/commands/${escapePtr(name)}/result`);
+  }
+}
+function escapePtr(key) {
+  return key.replace(/~/g, "~0").replace(/\//g, "~1");
 }
 
 // ../state/dist/manifest.esm.js
@@ -2042,198 +2469,6 @@ var en = {
 var CATALOGS = { ja, en };
 function getMessages(locale3) {
   return CATALOGS[resolveLocale(locale3)];
-}
-
-// src/core/sidecar/schemaSubset.ts
-var ALLOWED_SCHEMA_KEYWORDS = /* @__PURE__ */ new Set([
-  "type",
-  "properties",
-  "required",
-  "items",
-  "enum",
-  "const",
-  "anyOf",
-  "$defs",
-  "$ref"
-]);
-var DiagnosticContext = class {
-  constructor(spans) {
-    this.spans = spans;
-  }
-  diagnostics = [];
-  add(code, pointer2, message, severity, extra = {}, useKeySpan = false) {
-    const span = this.spans.get(pointer2);
-    const start = span === void 0 ? 0 : useKeySpan ? span.keyStart ?? span.start : span.start;
-    const end = span === void 0 ? 0 : useKeySpan ? span.keyEnd ?? span.end : span.end;
-    this.diagnostics.push({ code, start, end, message, severity, ...extra });
-  }
-};
-function isSchemaObject(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-function isSchemaMap(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-function validateSchemaSubset(schema, pointerBase, ctx, rootDefs) {
-  walkKeywords(schema, pointerBase, ctx, rootDefs);
-  const safe = /* @__PURE__ */ new Set();
-  detectCycles(schema, pointerBase, ctx, rootDefs, /* @__PURE__ */ new Set(), safe);
-  for (const [name, def] of Object.entries(rootDefs)) {
-    detectCycles(def, `${pointerBase}/$defs/${escape(name)}`, ctx, rootDefs, /* @__PURE__ */ new Set(), safe);
-  }
-}
-function walkKeywords(node, ptr, ctx, rootDefs) {
-  if (!isSchemaObject(node)) return;
-  for (const keyword of Object.keys(node)) {
-    if (!ALLOWED_SCHEMA_KEYWORDS.has(keyword)) {
-      ctx.add(
-        WcsDiagnosticCode.ManifestUnknownKeyword,
-        `${ptr}/${escape(keyword)}`,
-        `Unsupported schema keyword "${keyword}". Allowed: ${[...ALLOWED_SCHEMA_KEYWORDS].join(", ")}.`,
-        "warning",
-        {},
-        true
-      );
-    }
-  }
-  if (typeof node.$ref === "string") {
-    if (!node.$ref.startsWith("#/")) {
-      ctx.add(
-        WcsDiagnosticCode.ManifestExternalRef,
-        `${ptr}/$ref`,
-        `External $ref "${node.$ref}" is forbidden; only local "#/$defs/..." references are allowed.`,
-        "error"
-      );
-    } else if (resolveLocalRef(node.$ref, rootDefs) === void 0) {
-      ctx.add(
-        WcsDiagnosticCode.ManifestRefUnresolved,
-        `${ptr}/$ref`,
-        `Unresolved local $ref "${node.$ref}".`,
-        "error"
-      );
-    }
-  }
-  if (isSchemaMap(node.properties)) {
-    for (const [name, child] of Object.entries(node.properties)) {
-      walkKeywords(child, `${ptr}/properties/${escape(name)}`, ctx, rootDefs);
-    }
-  }
-  if (node.items !== void 0 && isSchemaObject(node.items)) {
-    walkKeywords(node.items, `${ptr}/items`, ctx, rootDefs);
-  }
-  if (Array.isArray(node.anyOf)) {
-    node.anyOf.forEach((child, i) => walkKeywords(child, `${ptr}/anyOf/${i}`, ctx, rootDefs));
-  }
-  if (isSchemaMap(node.$defs)) {
-    for (const [name, child] of Object.entries(node.$defs)) {
-      walkKeywords(child, `${ptr}/$defs/${escape(name)}`, ctx, rootDefs);
-    }
-  }
-}
-function detectCycles(node, ptr, ctx, rootDefs, refStack, safe) {
-  if (!isSchemaObject(node)) return;
-  if (typeof node.$ref === "string") {
-    const ref = node.$ref;
-    if (!ref.startsWith("#/")) return;
-    if (refStack.has(ref)) {
-      ctx.add(WcsDiagnosticCode.ManifestRefCycle, `${ptr}/$ref`, `Cyclic $ref detected at "${ref}".`, "error");
-      return;
-    }
-    if (safe.has(ref)) return;
-    const target = resolveLocalRef(ref, rootDefs);
-    if (target === void 0) return;
-    refStack.add(ref);
-    detectCycles(target, ptr, ctx, rootDefs, refStack, safe);
-    refStack.delete(ref);
-    safe.add(ref);
-    return;
-  }
-  if (isSchemaMap(node.properties)) {
-    for (const child of Object.values(node.properties)) detectCycles(child, ptr, ctx, rootDefs, refStack, safe);
-  }
-  if (node.items !== void 0 && isSchemaObject(node.items)) {
-    detectCycles(node.items, ptr, ctx, rootDefs, refStack, safe);
-  }
-  if (Array.isArray(node.anyOf)) {
-    for (const child of node.anyOf) detectCycles(child, ptr, ctx, rootDefs, refStack, safe);
-  }
-}
-function resolveLocalRef(ref, rootDefs) {
-  const match = /^#\/\$defs\/(.+)$/.exec(ref);
-  if (match === null) return void 0;
-  const name = match[1].replace(/~1/g, "/").replace(/~0/g, "~");
-  return rootDefs[name];
-}
-function resolveSchemaPath(root, rootDefs, segments) {
-  let current = root;
-  for (let depth = 0; depth < segments.length; depth++) {
-    const segment = segments[depth];
-    const resolved = derefUnion(current, rootDefs);
-    if (resolved.kind === "ref-error") return resolved;
-    const candidates = resolved.nodes;
-    if (segment === "*") {
-      const items = firstDefined(candidates, (n) => isSchemaObject(n.items) ? n.items : void 0);
-      if (items === void 0) {
-        return { kind: "unknown" };
-      }
-      current = items;
-      continue;
-    }
-    if (segment === "length" && candidates.some((n) => hasType(n, "array"))) {
-      current = { type: "number" };
-      continue;
-    }
-    const child = firstDefined(candidates, (n) => isSchemaMap(n.properties) ? n.properties[segment] : void 0);
-    if (child !== void 0) {
-      current = child;
-      continue;
-    }
-    const anyObject = candidates.some((n) => hasType(n, "object") || isSchemaMap(n.properties));
-    if (anyObject) {
-      return { kind: "nonexistent", segment, depth };
-    }
-    return { kind: "unknown" };
-  }
-  const final = derefUnion(current, rootDefs);
-  if (final.kind === "ref-error") return final;
-  return { kind: "resolved", schema: final.nodes.length === 1 ? final.nodes[0] : current };
-}
-function derefUnion(node, rootDefs) {
-  const out = [];
-  const stack = [{ node, chain: /* @__PURE__ */ new Set() }];
-  while (stack.length > 0) {
-    const { node: n, chain } = stack.pop();
-    if (typeof n.$ref === "string") {
-      if (!n.$ref.startsWith("#/") || chain.has(n.$ref)) {
-        return { kind: "ref-error", ref: n.$ref };
-      }
-      const target = resolveLocalRef(n.$ref, rootDefs);
-      if (target === void 0) return { kind: "ref-error", ref: n.$ref };
-      stack.push({ node: target, chain: /* @__PURE__ */ new Set([...chain, n.$ref]) });
-      continue;
-    }
-    if (Array.isArray(n.anyOf)) {
-      for (const branch of n.anyOf) stack.push({ node: branch, chain });
-      continue;
-    }
-    out.push(n);
-  }
-  return { kind: "ok", nodes: out };
-}
-function firstDefined(nodes, pick) {
-  for (const n of nodes) {
-    const v = pick(n);
-    if (v !== void 0) return v;
-  }
-  return void 0;
-}
-function hasType(node, t) {
-  const type = node.type;
-  if (type === void 0) return false;
-  return Array.isArray(type) ? type.includes(t) : type === t;
-}
-function escape(key) {
-  return key.replace(/~/g, "~0").replace(/\//g, "~1");
 }
 
 // src/service/bindingValidator.ts
@@ -6470,358 +6705,6 @@ function validateSemantics(html, stateTagName = "wcs-state", locale3, bindAttrNa
   return out;
 }
 
-// src/core/sidecar/jsonSource.ts
-var JsonReader = class {
-  constructor(text) {
-    this.text = text;
-  }
-  pos = 0;
-  spans = /* @__PURE__ */ new Map();
-  parse() {
-    this.skipWs();
-    const value = this.parseValue("", void 0);
-    this.skipWs();
-    if (this.pos < this.text.length) {
-      throw this.fail(`Unexpected trailing content`);
-    }
-    return { value };
-  }
-  fail(message) {
-    const err = new Error(message);
-    err.offset = Math.min(this.pos, this.text.length);
-    return err;
-  }
-  skipWs() {
-    while (this.pos < this.text.length) {
-      const c = this.text.charCodeAt(this.pos);
-      if (c === 32 || c === 9 || c === 10 || c === 13) this.pos++;
-      else break;
-    }
-  }
-  parseValue(pointer2, keySpan) {
-    this.skipWs();
-    const start = this.pos;
-    const c = this.text[this.pos];
-    let value;
-    if (c === "{") value = this.parseObject(pointer2);
-    else if (c === "[") value = this.parseArray(pointer2);
-    else if (c === '"') value = this.parseString();
-    else if (c === "t" || c === "f") value = this.parseKeyword();
-    else if (c === "n") value = this.parseNull();
-    else if (c === "-" || c >= "0" && c <= "9") value = this.parseNumber();
-    else throw this.fail(`Unexpected character`);
-    const end = this.pos;
-    this.spans.set(pointer2, keySpan === void 0 ? { start, end } : { start, end, ...keySpan });
-    return value;
-  }
-  parseObject(pointer2) {
-    this.pos++;
-    const obj = {};
-    this.skipWs();
-    if (this.text[this.pos] === "}") {
-      this.pos++;
-      return obj;
-    }
-    for (; ; ) {
-      this.skipWs();
-      if (this.text[this.pos] !== '"') throw this.fail(`Expected object key`);
-      const keyStart = this.pos;
-      const key = this.parseString();
-      const keyEnd = this.pos;
-      this.skipWs();
-      if (this.text[this.pos] !== ":") throw this.fail(`Expected ':'`);
-      this.pos++;
-      const childPointer = `${pointer2}/${escapePointer(key)}`;
-      obj[key] = this.parseValue(childPointer, { keyStart, keyEnd });
-      this.skipWs();
-      const sep = this.text[this.pos];
-      if (sep === ",") {
-        this.pos++;
-        continue;
-      }
-      if (sep === "}") {
-        this.pos++;
-        return obj;
-      }
-      throw this.fail(`Expected ',' or '}'`);
-    }
-  }
-  parseArray(pointer2) {
-    this.pos++;
-    const arr = [];
-    this.skipWs();
-    if (this.text[this.pos] === "]") {
-      this.pos++;
-      return arr;
-    }
-    let index = 0;
-    for (; ; ) {
-      const childPointer = `${pointer2}/${index}`;
-      arr.push(this.parseValue(childPointer, void 0));
-      index++;
-      this.skipWs();
-      const sep = this.text[this.pos];
-      if (sep === ",") {
-        this.pos++;
-        continue;
-      }
-      if (sep === "]") {
-        this.pos++;
-        return arr;
-      }
-      throw this.fail(`Expected ',' or ']'`);
-    }
-  }
-  parseString() {
-    this.pos++;
-    let result = "";
-    for (; ; ) {
-      if (this.pos >= this.text.length) throw this.fail(`Unterminated string`);
-      const ch = this.text[this.pos++];
-      if (ch === '"') return result;
-      if (ch === "\\") {
-        const esc = this.text[this.pos++];
-        if (esc === '"') result += '"';
-        else if (esc === "\\") result += "\\";
-        else if (esc === "/") result += "/";
-        else if (esc === "b") result += "\b";
-        else if (esc === "f") result += "\f";
-        else if (esc === "n") result += "\n";
-        else if (esc === "r") result += "\r";
-        else if (esc === "t") result += "	";
-        else if (esc === "u") {
-          const hex = this.text.slice(this.pos, this.pos + 4);
-          if (!/^[0-9a-fA-F]{4}$/.test(hex)) throw this.fail(`Invalid unicode escape`);
-          result += String.fromCharCode(parseInt(hex, 16));
-          this.pos += 4;
-        } else throw this.fail(`Invalid escape`);
-      } else {
-        result += ch;
-      }
-    }
-  }
-  parseKeyword() {
-    if (this.text.startsWith("true", this.pos)) {
-      this.pos += 4;
-      return true;
-    }
-    if (this.text.startsWith("false", this.pos)) {
-      this.pos += 5;
-      return false;
-    }
-    throw this.fail(`Invalid literal`);
-  }
-  parseNull() {
-    if (this.text.startsWith("null", this.pos)) {
-      this.pos += 4;
-      return null;
-    }
-    throw this.fail(`Invalid literal`);
-  }
-  parseNumber() {
-    const match = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/.exec(this.text.slice(this.pos));
-    if (match === null) throw this.fail(`Invalid number`);
-    this.pos += match[0].length;
-    return Number(match[0]);
-  }
-};
-function escapePointer(key) {
-  return key.replace(/~/g, "~0").replace(/\//g, "~1");
-}
-function pointer(...segments) {
-  return segments.map((s) => `/${escapePointer(String(s))}`).join("");
-}
-function parseJsonWithSpans(text) {
-  const reader = new JsonReader(text);
-  try {
-    const { value } = reader.parse();
-    return { value, spans: reader.spans, error: null };
-  } catch (e) {
-    const offset = e.offset ?? 0;
-    return { value: void 0, spans: reader.spans, error: { offset, message: e.message } };
-  }
-}
-
-// src/core/sidecar/types.ts
-var SUPPORTED_SCHEMA_VERSION = 2;
-var SUPPORTED_NAMESPACE_VERSION = 2;
-
-// src/core/sidecar/loader.ts
-var NAMESPACE_KEYS = ["wcstack.types", "wcstack.async", "wcstack.platformCapabilities", "wcstack.application"];
-function loadManifest(artifact) {
-  const parsed = parseJsonWithSpans(artifact.text);
-  const ctx = new DiagnosticContext(parsed.spans);
-  if (parsed.error !== null) {
-    ctx.diagnostics.push({
-      code: WcsDiagnosticCode.ManifestBroken,
-      start: parsed.error.offset,
-      end: Math.min(parsed.error.offset + 1, artifact.text.length),
-      message: `Broken manifest JSON: ${parsed.error.message}.`,
-      severity: "error"
-    });
-    return { artifact, manifest: null, ctx, spans: parsed.spans };
-  }
-  const root = parsed.value;
-  if (root === null || typeof root !== "object" || Array.isArray(root)) {
-    ctx.add(WcsDiagnosticCode.ManifestBroken, "", `Manifest root must be a JSON object.`, "error");
-    return { artifact, manifest: null, ctx, spans: parsed.spans };
-  }
-  const obj = root;
-  if (obj.schemaVersion === void 0) {
-    ctx.add(WcsDiagnosticCode.ManifestSchemaVersion, "", `Manifest is missing an integer "schemaVersion".`, "error");
-    return { artifact, manifest: null, ctx, spans: parsed.spans };
-  }
-  if (typeof obj.schemaVersion !== "number" || !Number.isInteger(obj.schemaVersion)) {
-    ctx.add(
-      WcsDiagnosticCode.ManifestSchemaVersion,
-      pointer("schemaVersion"),
-      `Manifest "schemaVersion" must be an integer.`,
-      "error"
-    );
-    return { artifact, manifest: null, ctx, spans: parsed.spans };
-  }
-  if (obj.schemaVersion !== SUPPORTED_SCHEMA_VERSION) {
-    const migration = obj.schemaVersion === 1 ? ` schemaVersion 1 (states[name]) predates v2's single state tree \u2014 regenerate with \`wcs-schema emit\`.` : "";
-    ctx.add(
-      WcsDiagnosticCode.ManifestSchemaVersion,
-      pointer("schemaVersion"),
-      `Unsupported schemaVersion ${obj.schemaVersion}; this reader supports ${SUPPORTED_SCHEMA_VERSION}.${migration}`,
-      "error"
-    );
-    return { artifact, manifest: null, ctx, spans: parsed.spans };
-  }
-  if (obj.kind !== "package" && obj.kind !== "application") {
-    ctx.add(
-      WcsDiagnosticCode.ManifestKindInvalid,
-      obj.kind === void 0 ? "" : pointer("kind"),
-      `Manifest "kind" must be "package" or "application".`,
-      "error"
-    );
-    return { artifact, manifest: null, ctx, spans: parsed.spans };
-  }
-  const extensions = obj.manifestExtensions;
-  if (extensions !== null && typeof extensions === "object") {
-    for (const ns of NAMESPACE_KEYS) {
-      const nsObj = extensions[ns];
-      if (nsObj !== null && typeof nsObj === "object") {
-        const version = nsObj.version;
-        if (typeof version === "number" && version !== SUPPORTED_NAMESPACE_VERSION) {
-          ctx.add(
-            WcsDiagnosticCode.ManifestNamespaceVersion,
-            pointer("manifestExtensions", ns, "version"),
-            `Namespace "${ns}" version ${version} is unsupported (expected ${SUPPORTED_NAMESPACE_VERSION}).`,
-            "warning"
-          );
-        }
-      }
-    }
-  }
-  return { artifact, manifest: obj, ctx, spans: parsed.spans };
-}
-function resolvePackageContracts(loaded) {
-  const perSource = /* @__PURE__ */ new Map();
-  const ctxBySource = /* @__PURE__ */ new Map();
-  const ctxFor = (lm) => {
-    let ctx = ctxBySource.get(lm.artifact.source);
-    if (ctx === void 0) {
-      ctx = new DiagnosticContext(lm.spans);
-      ctxBySource.set(lm.artifact.source, ctx);
-      perSource.set(lm.artifact.source, ctx.diagnostics);
-    }
-    return ctx;
-  };
-  const winners = /* @__PURE__ */ new Map();
-  const collided = /* @__PURE__ */ new Set();
-  const firstSource = /* @__PURE__ */ new Map();
-  const filterOwner = /* @__PURE__ */ new Map();
-  let schemaOwner;
-  let schemaWinner;
-  let schemaCollided = false;
-  void schemaCollided;
-  let hasApplicationArtifact = false;
-  for (const lm of loaded) {
-    if (lm.manifest === null) continue;
-    if (lm.manifest.kind === "application") hasApplicationArtifact = true;
-    const types = lm.manifest.manifestExtensions?.["wcstack.types"];
-    if (lm.manifest.kind === "package" && types !== void 0) {
-      for (const [tag, component] of Object.entries(types.components ?? {})) {
-        const ptr = pointer("manifestExtensions", "wcstack.types", "components", tag);
-        if (!winners.has(tag) && !collided.has(tag)) {
-          winners.set(tag, { tag, component, source: lm.artifact.source });
-          firstSource.set(tag, lm.artifact.source);
-          continue;
-        }
-        if (component.override === true) {
-          ctxFor(lm).add(
-            WcsDiagnosticCode.ManifestOverride,
-            ptr,
-            `Component "${tag}" explicitly overrides a prior package contract.`,
-            "info",
-            { tag },
-            true
-          );
-          continue;
-        }
-        const priorSource = firstSource.get(tag) ?? "an earlier artifact";
-        collided.add(tag);
-        winners.delete(tag);
-        ctxFor(lm).add(
-          WcsDiagnosticCode.ManifestTagCollision,
-          ptr,
-          `Component tag "${tag}" is defined by multiple package artifacts (also in "${priorSource}"). Set "override": true to intentionally shadow.`,
-          "error",
-          { tag },
-          true
-        );
-      }
-    }
-    const application = lm.manifest.manifestExtensions?.["wcstack.application"];
-    if (lm.manifest.kind === "application" && application?.filters !== void 0) {
-      for (const name of Object.keys(application.filters)) {
-        const priorSource = filterOwner.get(name);
-        if (priorSource === void 0) {
-          filterOwner.set(name, lm.artifact.source);
-          continue;
-        }
-        ctxFor(lm).add(
-          WcsDiagnosticCode.ManifestFilterCollision,
-          pointer("manifestExtensions", "wcstack.application", "filters", name),
-          `Filter "${name}" is defined by multiple application artifacts (also in "${priorSource}").`,
-          "error",
-          { member: name },
-          true
-        );
-      }
-    }
-    if (lm.manifest.kind === "application" && application?.stateSchema !== void 0) {
-      const schema = application.stateSchema;
-      if (schema !== null && typeof schema === "object" && !Array.isArray(schema)) {
-        if (schemaOwner === void 0) {
-          schemaOwner = lm.artifact.source;
-          schemaWinner = schema;
-        } else {
-          schemaCollided = true;
-          schemaWinner = void 0;
-          ctxFor(lm).add(
-            WcsDiagnosticCode.ManifestStateCollision,
-            pointer("manifestExtensions", "wcstack.application", "stateSchema"),
-            `Multiple application artifacts declare a stateSchema (also in "${schemaOwner}"); neither is used.`,
-            "error",
-            void 0,
-            true
-          );
-        }
-      }
-    }
-  }
-  const diagnosticsBySource = /* @__PURE__ */ new Map();
-  for (const [source, diags] of perSource) {
-    const kept = diags.filter((d) => !(d.code === WcsDiagnosticCode.ManifestOverride && d.tag !== void 0 && collided.has(d.tag)));
-    if (kept.length > 0) diagnosticsBySource.set(source, kept);
-  }
-  return { tags: winners, applicationSchema: schemaWinner, hasApplicationArtifact, diagnosticsBySource };
-}
-
 // src/core/sidecar/discover.ts
 var APPLICATION_MANIFEST_FILENAME = "wcstack.manifest.json";
 var MAX_ASCEND = 16;
@@ -6844,20 +6727,6 @@ function applicationSchemaOf(loaded) {
     return schema;
   }
   return void 0;
-}
-function joinRelativeSource(htmlSource, relativePath) {
-  const sepIndex = Math.max(htmlSource.lastIndexOf("/"), htmlSource.lastIndexOf("\\"));
-  const dirSegments = sepIndex === -1 ? [] : htmlSource.slice(0, sepIndex).split(/[\\/]/);
-  for (const segment of relativePath.split("/")) {
-    if (segment === "" || segment === ".") continue;
-    if (segment === "..") {
-      if (dirSegments.length > 0 && dirSegments[dirSegments.length - 1] !== "..") dirSegments.pop();
-      else dirSegments.push("..");
-      continue;
-    }
-    dirSegments.push(segment);
-  }
-  return dirSegments.join("/");
 }
 
 // src/core/validateDocument.ts
@@ -6885,272 +6754,11 @@ function validateDocument(text, options = {}) {
   }
   return sortDiagnostics(out);
 }
-
-// src/core/sidecar/drift.ts
-function checkDrift(tag, component, live, ctx) {
-  const liveProps = new Map(live.properties.map((p) => [p.name, p.event]));
-  const liveInputs = new Set((live.inputs ?? []).map((i) => i.name));
-  const liveCommands = new Set((live.commands ?? []).map((c) => c.name));
-  for (const [name, observable] of Object.entries(component.observables ?? {})) {
-    const memberPtr = pointer("manifestExtensions", "wcstack.types", "components", tag, "observables", name);
-    if (!liveProps.has(name)) {
-      ctx.add(
-        WcsDiagnosticCode.DriftMissingMember,
-        memberPtr,
-        `Sidecar declares observable "${name}" on <${tag}>, but the live wcBindable declaration has no such property.`,
-        "error",
-        { tag, member: name },
-        true
-      );
-      continue;
-    }
-    const liveEvent = liveProps.get(name);
-    if (observable.event !== liveEvent) {
-      ctx.add(
-        WcsDiagnosticCode.DriftEventMismatch,
-        pointer("manifestExtensions", "wcstack.types", "components", tag, "observables", name, "event"),
-        `Sidecar observable "${name}" on <${tag}> declares event "${observable.event}", but the live declaration uses "${liveEvent}".`,
-        "error",
-        { tag, member: name }
-      );
-    }
-  }
-  for (const name of Object.keys(component.inputs ?? {})) {
-    if (!liveInputs.has(name)) {
-      ctx.add(
-        WcsDiagnosticCode.DriftMissingMember,
-        pointer("manifestExtensions", "wcstack.types", "components", tag, "inputs", name),
-        `Sidecar declares input "${name}" on <${tag}>, but the live wcBindable declaration has no such input.`,
-        "error",
-        { tag, member: name },
-        true
-      );
-    }
-  }
-  for (const name of Object.keys(component.commands ?? {})) {
-    if (!liveCommands.has(name)) {
-      ctx.add(
-        WcsDiagnosticCode.DriftMissingMember,
-        pointer("manifestExtensions", "wcstack.types", "components", tag, "commands", name),
-        `Sidecar declares command "${name}" on <${tag}>, but the live wcBindable declaration has no such command.`,
-        "error",
-        { tag, member: name },
-        true
-      );
-    }
-  }
-}
-
-// src/core/sidecar/validate.ts
-function validateManifestArtifact(artifact) {
-  const loaded = loadManifest(artifact);
-  validateLoadedSchemas(loaded);
-  return sortDiagnostics(loaded.ctx.diagnostics);
-}
-function validateLoadedSchemas(loaded) {
-  if (loaded.manifest === null) return;
-  const types = loaded.manifest.manifestExtensions?.["wcstack.types"];
-  for (const [tag, component] of Object.entries(types?.components ?? {})) {
-    validateComponentSchemas(tag, component, loaded.ctx);
-  }
-  const application = loaded.manifest.manifestExtensions?.["wcstack.application"];
-  const stateSchema = application?.stateSchema;
-  if (stateSchema !== void 0 && stateSchema !== null && typeof stateSchema === "object" && !Array.isArray(stateSchema)) {
-    const ptr = pointer("manifestExtensions", "wcstack.application", "stateSchema");
-    validateSchemaSubset(stateSchema, ptr, loaded.ctx, stateSchema.$defs ?? {});
-  }
-}
-function validateComponentSchemas(tag, component, ctx) {
-  const base = pointer("manifestExtensions", "wcstack.types", "components", tag);
-  const walkSchema = (schema, ptr) => {
-    if (schema === void 0) return;
-    validateSchemaSubset(schema, ptr, ctx, schema.$defs ?? {});
-  };
-  for (const [name, observable] of Object.entries(component.observables ?? {})) {
-    walkSchema(observable.schema, `${base}/observables/${escapePtr(name)}/schema`);
-  }
-  for (const [name, input] of Object.entries(component.inputs ?? {})) {
-    walkSchema(input.schema, `${base}/inputs/${escapePtr(name)}/schema`);
-  }
-  for (const [name, command] of Object.entries(component.commands ?? {})) {
-    walkSchema(command.args, `${base}/commands/${escapePtr(name)}/args`);
-    walkSchema(command.result, `${base}/commands/${escapePtr(name)}/result`);
-  }
-}
-function validateManifestSet(input) {
-  const loadedList = input.artifacts.map(loadManifest);
-  const byArtifact = /* @__PURE__ */ new Map();
-  for (const loaded of loadedList) {
-    validateLoadedSchemas(loaded);
-    if (input.liveDeclarations !== void 0 && loaded.manifest?.kind === "package") {
-      const types = loaded.manifest.manifestExtensions?.["wcstack.types"];
-      for (const [tag, component] of Object.entries(types?.components ?? {})) {
-        const live = input.liveDeclarations.get(tag);
-        if (live !== void 0) {
-          checkDrift(tag, component, live, loaded.ctx);
-        }
-      }
-    }
-    const existing = byArtifact.get(loaded.artifact.source) ?? [];
-    byArtifact.set(loaded.artifact.source, [...existing, ...loaded.ctx.diagnostics]);
-  }
-  const resolved = resolvePackageContracts(loadedList);
-  for (const [source, diags] of resolved.diagnosticsBySource) {
-    const existing = byArtifact.get(source) ?? [];
-    byArtifact.set(source, [...existing, ...diags]);
-  }
-  const all = [];
-  for (const diags of byArtifact.values()) all.push(...diags);
-  const resolvedTags = /* @__PURE__ */ new Map();
-  for (const [tag, contract] of resolved.tags) resolvedTags.set(tag, contract.source);
-  const sortedByArtifact = /* @__PURE__ */ new Map();
-  for (const [source, diags] of byArtifact) sortedByArtifact.set(source, sortDiagnostics(diags));
-  return {
-    diagnostics: sortDiagnostics(all),
-    byArtifact: sortedByArtifact,
-    resolvedTags,
-    resolvedSchema: resolved.applicationSchema,
-    hasApplicationArtifact: resolved.hasApplicationArtifact
-  };
-}
-function escapePtr(key) {
-  return key.replace(/~/g, "~0").replace(/\//g, "~1");
-}
-
-// src/core/cli/runValidation.ts
-var severityLabel = { error: "error", warning: "warning", info: "info" };
-function runValidation(inputs, options = {}) {
-  const diagnosticsBySource = /* @__PURE__ */ new Map();
-  const textBySource = new Map(inputs.map((i) => [i.source, i.text]));
-  const manifestInputs = inputs.filter((i) => i.kind === "manifest");
-  let explicitSchema;
-  let haveExplicitApplication = false;
-  if (manifestInputs.length > 0) {
-    const result = validateManifestSet({
-      artifacts: manifestInputs.map((m) => ({ text: m.text, source: m.source })),
-      liveDeclarations: options.liveDeclarations
-    });
-    for (const input of manifestInputs) {
-      diagnosticsBySource.set(input.source, result.byArtifact.get(input.source) ?? []);
-    }
-    if (result.hasApplicationArtifact) {
-      haveExplicitApplication = true;
-      explicitSchema = result.resolvedSchema;
-    }
-  }
-  for (const input of inputs) {
-    if (input.kind !== "html") continue;
-    let applicationSchema = explicitSchema;
-    if (!haveExplicitApplication && input.fileReader !== void 0) {
-      const discovered = discoverApplicationManifest(input.fileReader);
-      applicationSchema = discovered?.schema;
-      if (discovered !== void 0) {
-        const source = joinRelativeSource(input.source, discovered.relativePath);
-        if (!diagnosticsBySource.has(source)) {
-          textBySource.set(source, discovered.text);
-          diagnosticsBySource.set(source, validateManifestArtifact({ text: discovered.text, source }));
-        }
-      }
-    }
-    const docOptions = {
-      ...options,
-      ...input.fileReader !== void 0 ? { fileReader: input.fileReader } : {},
-      ...applicationSchema !== void 0 ? { applicationSchema } : {}
-    };
-    diagnosticsBySource.set(input.source, validateDocument(input.text, docOptions));
-  }
-  const lines = [];
-  let errorCount = 0;
-  let warningCount = 0;
-  let infoCount = 0;
-  for (const source of [...diagnosticsBySource.keys()].sort()) {
-    const diags = diagnosticsBySource.get(source);
-    const mapper = createPositionMapper(textBySource.get(source) ?? "");
-    for (const d of diags) {
-      if (d.severity === "error") errorCount++;
-      else if (d.severity === "warning") warningCount++;
-      else infoCount++;
-      if (options.errorsOnly && d.severity !== "error") continue;
-      const pos = mapper(d.start);
-      lines.push(`${source}:${pos.line}:${pos.column} ${severityLabel[d.severity]} ${d.code} ${d.message}`);
-    }
-  }
-  return {
-    lines,
-    errorCount,
-    warningCount,
-    infoCount,
-    exitCode: errorCount > 0 || options.strict === true && warningCount > 0 ? 1 : 0,
-    diagnosticsBySource
-  };
-}
-
-// src/cli.ts
-function classify(path) {
-  return path.endsWith(".manifest.json") ? "manifest" : "html";
-}
-function parseArgs(argv) {
-  const options = {};
-  const files = [];
-  for (const arg of argv) {
-    if (arg.startsWith("--attr=")) options.bindAttribute = arg.slice("--attr=".length);
-    else if (arg.startsWith("--state-tag=")) options.stateTagName = arg.slice("--state-tag=".length);
-    else if (arg.startsWith("--lang=")) options.locale = arg.slice("--lang=".length);
-    else if (arg === "--errors-only" || arg === "--quiet") options.errorsOnly = true;
-    else if (arg === "--strict") options.strict = true;
-    else if (!arg.startsWith("-")) files.push(arg);
-  }
-  return { options, files };
-}
-function resolveCliLocale(explicit, env = process.env) {
-  if (explicit) return explicit;
-  const fromEnv = env.LC_ALL || env.LC_MESSAGES || env.LANG;
-  if (fromEnv) return fromEnv;
-  try {
-    return new Intl.DateTimeFormat().resolvedOptions().locale || "en";
-  } catch {
-    return "en";
-  }
-}
-function main(argv) {
-  const { options, files } = parseArgs(argv);
-  const locale3 = resolveCliLocale(options.locale);
-  if (files.length === 0) {
-    process.stderr.write("usage: wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-only] [--strict] <file> [<file> ...]\n");
-    return 2;
-  }
-  const inputs = [];
-  for (const path of files) {
-    let text;
-    try {
-      text = (0, import_node_fs2.readFileSync)(path, "utf8");
-    } catch (e) {
-      process.stderr.write(`cannot read ${path}: ${e.message}
-`);
-      return 2;
-    }
-    const kind = classify(path);
-    inputs.push({ source: path, text, kind, fileReader: kind === "html" ? createFileReader(path) : void 0 });
-  }
-  const result = runValidation(inputs, { ...options, locale: locale3 });
-  for (const line of result.lines) {
-    process.stdout.write(line + "\n");
-  }
-  process.stdout.write(
-    `
-${result.errorCount} error(s), ${result.warningCount} warning(s), ${result.infoCount} info${options.strict ? " (strict)" : ""}
-`
-  );
-  return result.exitCode;
-}
-if (typeof require !== "undefined" && typeof module !== "undefined" && require.main === module) {
-  process.exit(main(process.argv.slice(2)));
-}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
-  createFileReader,
-  main,
-  parseArgs,
-  resolveCliLocale
+  ALLOWED_SCHEMA_KEYWORDS,
+  WcsDiagnosticCode,
+  validateDocument,
+  validateManifestArtifact
 });
-//# sourceMappingURL=cli.cjs.map
+//# sourceMappingURL=schema-core.cjs.map

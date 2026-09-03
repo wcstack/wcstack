@@ -670,7 +670,7 @@ describe('mergeSchemaCandidates — script / JSON 候補との合流（D12: sche
   ];
 
   it('同じパスは schema が勝ち、schema に無い候補（メソッド等）は残る', () => {
-    const merged = mergeSchemaCandidates(script, new Map([['default', { type: 'object', properties: { count: { type: 'number' } } }]]));
+    const merged = mergeSchemaCandidates(script, { type: 'object', properties: { count: { type: 'number' } } });
     const countCands = merged.filter(p => p.path === 'count');
     expect(countCands).toHaveLength(1);
     expect(countCands[0]).toMatchObject({ typeHint: 'number', fromSchema: true });
@@ -678,8 +678,7 @@ describe('mergeSchemaCandidates — script / JSON 候補との合流（D12: sche
     expect(merged.find(p => p.path === 'other')).toMatchObject({ typeHint: 'string' });
   });
 
-  it('applicationStates が無い / 空ならそのまま返す', () => {
+  it('applicationSchema が無ければそのまま返す', () => {
     expect(mergeSchemaCandidates(script)).toBe(script);
-    expect(mergeSchemaCandidates(script, new Map())).toBe(script);
   });
 });

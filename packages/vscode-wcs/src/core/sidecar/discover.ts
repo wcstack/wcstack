@@ -35,8 +35,8 @@ export interface DiscoveredApplicationManifest {
   readonly relativePath: string;
   readonly text: string;
   readonly loaded: LoadedManifest;
-  /** state 名 → stateSchema。kind が application でなければ空。 */
-  readonly states: ReadonlyMap<string, JsonSchemaNode>;
+  /** 単一ツリーの stateSchema（v2）。kind が application でなければ undefined。 */
+  readonly schema: JsonSchemaNode | undefined;
 }
 
 /**
@@ -48,27 +48,24 @@ export function discoverApplicationManifest(fileReader: FileReader): DiscoveredA
     const text = fileReader(relativePath);
     if (text === undefined) continue;
     const loaded = loadManifest({ text, source: relativePath });
-    return { relativePath, text, loaded, states: applicationStatesOf(loaded) };
+    return { relativePath, text, loaded, schema: applicationSchemaOf(loaded) };
   }
   return undefined;
 }
 
 /**
- * 読み込み済み manifest から `wcstack.application.states[name].stateSchema` を取り出す。
- * application 以外・壊れた manifest・schema がオブジェクトでない entry は入れない。
+ * 読み込み済み manifest から `wcstack.application.stateSchema`（v2: 単一ツリー）を
+ * 取り出す。application 以外・壊れた manifest・オブジェクトでない schema は undefined。
  */
-export function applicationStatesOf(loaded: LoadedManifest): Map<string, JsonSchemaNode> {
-  const states = new Map<string, JsonSchemaNode>();
+export function applicationSchemaOf(loaded: LoadedManifest): JsonSchemaNode | undefined {
   const manifest = loaded.manifest;
-  if (manifest === null || manifest.kind !== "application") return states;
+  if (manifest === null || manifest.kind !== "application") return undefined;
   const application = manifest.manifestExtensions?.["wcstack.application"];
-  for (const [name, entry] of Object.entries(application?.states ?? {})) {
-    const schema = (entry as { stateSchema?: unknown } | null)?.stateSchema;
-    if (schema !== null && typeof schema === "object" && !Array.isArray(schema)) {
-      states.set(name, schema as JsonSchemaNode);
-    }
+  const schema = application?.stateSchema;
+  if (schema !== null && typeof schema === "object" && !Array.isArray(schema)) {
+    return schema as JsonSchemaNode;
   }
-  return states;
+  return undefined;
 }
 
 /**

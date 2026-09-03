@@ -34,12 +34,12 @@ const schemaDir = join(workDir, "schema");
 mkdirSync(schemaDir);
 const schemaHtml = join(schemaDir, "index.html");
 writeFileSync(join(schemaDir, "wcstack.manifest.json"), JSON.stringify({
-  schemaVersion: 1,
+  schemaVersion: 2,
   kind: "application",
   manifestExtensions: {
     "wcstack.application": {
-      version: 1,
-      states: { default: { stateSchema: { type: "object", properties: { message: { type: "string" } } } } },
+      version: 2,
+      stateSchema: { type: "object", properties: { message: { type: "string" } } },
     },
   },
 }));

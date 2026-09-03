@@ -29,10 +29,10 @@ describe("生成した stateSchema を検証器に通す", () => {
     const { schema } = generateStateSchema(file);
     const core = loadSchemaCore();
 
-    const manifestText = JSON.stringify(buildManifest("default", schema));
+    const manifestText = JSON.stringify(buildManifest(null, schema));
     expect(core.validateManifestArtifact({ text: manifestText, source: "wcstack.manifest.json" })).toEqual([]);
 
-    const diags = core.validateDocument(html, { applicationStates: new Map([["default", schema]]) });
+    const diags = core.validateDocument(html, { applicationSchema: schema });
     const codes = diags.map((d) => [d.code, html.slice(d.start, d.end)]);
     expect(codes).toContainEqual([core.WcsDiagnosticCode.PathNonexistent, "coutn"]);
     expect(codes).toContainEqual([core.WcsDiagnosticCode.PathTypeMismatch, "title"]);
