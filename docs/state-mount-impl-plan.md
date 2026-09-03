@@ -501,3 +501,46 @@ P0-6 の精査結果（2026-09-01 実測）:
 - wcstack-skill の PR マージ（plugin version 2.0）
 - vscode-wcs の vsix publish（v2 文言の診断）
 - npm の "disallow tokens" ＋ NPM_TOKEN secret 削除（既存の残件、本件とは独立）
+
+---
+
+## 10. リリースノート下書き（v2.0.0 — P5-3）
+
+> リリース時に本文へ転記する。バージョン揃え（P5-4: 全パッケージ 2.0.0・`wcstack` エントリ・ピン版数 5 箇所・skill plugin 2.0）と v2→main マージ（P5-5）はユーザー操作。
+
+### ハイライト
+
+**State は 1 つの rootNode に 1 本のツリー。拡張はマウントで行い、名前では行わない。**
+
+- `<wcs-state mount="path">` — ボリューム。データはツリーに接ぎ木され、`path.` 接頭辞で読む。getter / `$watch` / `$listKeys` / `$updatedCallback` / ライフサイクルはマウント相対で動く
+- `<my-c data-wcs="state: path">` — 丸ごとマウント。コンポーネントのバインディングは登録時に親ツリーの絶対パスへ変換される（台帳 1 本・橋渡し層なし）
+- Light DOM コンポーネントは Shadow 形と同じ書き方に（name / `@` 不要・行配置可）
+- 実測: 行コンポーネント create1k **−24%**・update **−45%**・ヒープ **−1.5KB/行**。コンポーネントの無いページは不変（jsfb ±ノイズ）
+
+### 破壊的変更
+
+| v1 | v2 | 検出 |
+|---|---|---|
+| `<wcs-state name="x">` | `<wcs-state mount="x">` | 実行時 fail-fast（誘導文付き）＋ lint error |
+| `path@x` / `@default` | `x.path` / `path` | parse error（誘導文付き）＋ lint error |
+| plain（配線なし）Light DOM `bind-component` | shadow を付けるか、ホストから配線してマウント | 実行時 raise（誘導文付き） |
+| mapped コンポーネントの own key 既定値 | 厳格 R1: 作者の own data key は私有（マッピングに覆われない） | `wcs/mount-own-key-shadow` warn |
+| SSR `<wcs-ssr name>` / `Ssr.findByName` | name なし / `Ssr.find(root)`（旧 server の name 付きスナップショットも読める） | — |
+| devtools hook protocol v1（name 付き keys/read/write・stateName payload） | **v2**: `keys(rootNode)` 等・`overlays(rootNode)` 新設 | version 2（first-wins） |
+| manifest `states[name]`（schemaVersion 1） | 単一 `stateSchema`（schemaVersion 2）。ボリュームは `wcs-schema emit --mount=<path>` で部分木 merge | 読み手が migration hint 付き error |
+| `@wcstack/testing` `state(name)` | `state()`（引数は移行ヒント付き throw） | — |
+| `wcs-schema --state=` | `--mount=<path>` | usage エラー（移行ヒント付き） |
+
+### 移行ガイド（機械的）
+
+1. `<wcs-state name="x"` → `<wcs-state mount="x"`（`name="default"` は単に削除）
+2. `path@x` → `x.path`・`path@default` → `path`（spread / shorthand も同じ）
+3. plain Light DOM bind-component → `attachShadow` を 1 行足す（または ホストに `state: path`）
+4. `testing.state("x")` → `testing.state()` ＋ パスに `x.` 接頭辞
+5. `wcs-schema emit` を再実行（schemaVersion 2 へ。ボリュームは `--mount=<path>` で追加）
+
+lint（`@wcstack/lint` / vscode-wcs）が全対象箇所を error で列挙する。
+
+### 成立範囲の明記（性能）
+
+数値はコンポーネントを行に持つリストでの実測。**コンポーネントもボリュームも無いページの性能・メモリは変わらない**（設計制約 D18・実測ゲート済み）。
