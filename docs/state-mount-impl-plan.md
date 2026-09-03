@@ -256,6 +256,8 @@ slice 4 で確定した挙動・発見:
 
 - **slice 26 済み（devtools hook protocol v2 — P4-5）**: `DEVTOOLS_PROTOCOL_VERSION` を **2** に（state 側・devtools 側の両方 — 形が非可換に変わったので version で正直に主張）。**`overlays(rootNode)` を新設**（D20 の可視化 — マーカー `#m<id>` ごとに componentTag/stateProp/マウント表(inner→outer)/Δ/私有キー/getter キーを要約。実体は mount.ts の `getMountRecordsForStateElement`）。docs/devtools-hook-protocol.md（英/日）の keys/read/write 形と version を v2 に更新。devtools-smoke の version 断定を 2 へ。integration.mountOverlay に overlays の実測テスト（マウント有り/無し）。state 2638・devtools 121・SMOKE OK・カバレッジ全ゲート緑。
 
+- **slice 27 済み（after 計測 — P5-1/P5-2）**: 設計書 §7 に after 表・§5-5 を実測へ置換。**高速化＝成立**（list-component create1k 169.4→128.6ms −24%・update −45%、全 Phase 後確認 125.6ms）。**メモリ＝成立**（行コンポーネント heap run1k 13.13→11.59MB ≒ −1.5KB/行）。**plain 不変＝成立**（jsfb 同一セッション A/B で v2 側が全指標同等以上: create 40.6→37.75 / replace 22.8→15.5 / clear 73.9→70.1。memory-profile ±2%。**絶対値は当日のマシン状態で ±20% 揺れる — 判定は必ず同一セッション A/B で**）。**「core 正味 −750 行」＝不成立を正直に記録**（src 正味 +1,339: ボリューム 469 行が新機能・厳格 R1 私有面 203 行が新規。橋渡し層の全廃 −1,327 と台帳 1 本化＝構造の主張は成立）。
+
 ### 3-1. タスク
 
 | ID | タスク | 場所 | 受け入れ |

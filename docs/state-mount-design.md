@@ -332,17 +332,16 @@ scopeRoot(Node: Document | ShadowRoot | mount host) → IStateElement | MountRec
 - マウント無し: `hasMounts === false` の分岐 1 つ。キャッシュ・依存 walk・LIS・BindingOwner ファンアウト対策は無改造
 - マウント有り: 子側のキャッシュ禁止（`isCacheable`）が消え、ルートのキャッシュがそのまま効く。越境スタックの push/pop、派生バインディングの生成、相乗り登録、2 段 proxy ホップが消える
 
-### 5-5. 削除・縮小・新規（見積り）
+### 5-5. 削除・縮小・新規（実測・2026-09-03）
 
-| 区分 | 対象 | 行 |
+| 区分 | 対象 | 行（実測） |
 |---|---|---|
-| 削除 | `innerState` / `outerState` / `MappingRule` / `crossBoundaryAddress` / `outerListPath` / `baseListIndex` / `applyChangeToWebComponent` | ≈ 840 |
-| 削除 | `BindingSession` 相乗り・`hasMappedComponentState` 分岐 ×6・`wildcardLevel` 末尾起点・`_reloadMappedPathsAfterReconnect`・`_initializeLightDomComponentScope` の名前依存部 | ≈ 200 |
-| 削除 | `stateName` 配管（src 40 ファイル）・`@` パーサ・`STATE_NAME_SEPARATOR`・`expandShorthandPaths` の `@`・manifest `delimiters.stateName` | ≈ 150 |
-| 新規 | chroot proxy・オーバーレイ表・マウント記録・スコープ解決・ボリューム接ぎ木・`$n` の Δ 補正 | ≈ 450 |
-| **正味** | | **≈ −750 行**（core のみ・テスト除く） |
+| 削除 | v1 橋渡し機構（P2-7: `innerState` / `MappingRule` / `crossBoundaryAddress` / `applyChangeToWebComponent` / 相乗り台帳ほか） | **−1,327**（src のみ・テスト込みで −3,618） |
+| 削除 | `stateName` 配管・`@` パーサ・登録簿の名前次元・deprecation 機構（Phase B） | 上記正味に含む |
+| 新規 | マウント記録＋変換（mount.ts 563）・オーバーレイ表（overlay.ts 315）・**ボリューム（volume.ts + volumeShared.ts 469 — v1 に無い新機能**）・スコープ（mountScope 91）・厳格 R1 の私有面（ownKeyShadow + preCompletionWrites 203） | +1,810（webComponent/ のみ） |
+| **正味** | packages/state/src 全体（分岐点比） | **+1,339**（+2,857 / −1,518）。`webComponent/` は 999 → 1,869 |
 
-見積りは Phase 2 完了時に実測で置き換える。
+**「core 正味 −750 行」仮説は不成立**。理由は数えれば明快で、(1) ボリューム（`mount=`）は v1 に存在しない新機能（469 行）、(2) 厳格 R1（D19）の私有キー機構と宣言面（$watch/$updatedCallback のボリューム翻訳）も新規容量である。**成立したのは構造の主張のほう** — 橋渡し層（inner/outer proxy・派生規則・相乗り登録・越境スタック）は 1,327 行まるごと消え、台帳は 1 本、ADR-15 §1.7〜§1.13 の機構は全廃止（§0 表は「廃止（state-mount）」に更新済み）。行数は「単純化の代理指標」として機能しなかった、が本書の記録である。
 
 ---
 
@@ -375,6 +374,16 @@ scopeRoot(Node: Document | ShadowRoot | mount host) → IStateElement | MountRec
 「メモリ削減」「高速化」を**無条件の売り文句にはしない**。成立する範囲（コンポーネントを使うページ）を README に書く。
 
 **ベースライン（2026-09-01・v1.32 の機構・[impl-plan §1-3](./state-mount-impl-plan.md)）**: 行をコンポーネントにすると plain jsfb に対して create1k **32.1 → 106.5 ms（×3.3）**、heap run1k **5.65 → 13.13 MB（＋7.5 KB / 行）**、clear 後も 12.32 MB を保持。この差分が Phase 2 の削減対象で、削れた量が「メモリ削減・高速化」の実測値になる。
+
+**after（2026-09-03・v2 全 Phase 完了時・同一マシン）**:
+
+| 仮説 | 実測 | 判定 |
+|---|---|---|
+| 高速化（コンポーネント経路） | list-component create1k **169.4 → 128.6 ms（−24%）**・update **−45%**（同一セッション A/B・impl-plan §3-0-1 slice 7）。全 Phase 後の確認値 125.6 ms | **成立** |
+| メモリ（行コンポーネント） | heap run1k **13.13 → 11.59 MB（−1.5 MB ≒ −1.5 KB/行）**・update5 13.38 → 11.81 | **成立（減少）** |
+| plain 不変（D18） | jsfb 同一セッション A/B: create1k 40.6→37.75・replace1k 22.8→15.5・clear10k 73.9→70.1（v2 側が全指標同等以上）。memory-profile は全項目 ±2% | **成立** |
+| コードの単純化 | §5-5 のとおり**行数では不成立**（ボリューム＝新機能の分だけ正味 +1,339）。橋渡し層の全廃（−1,327）と台帳 1 本化は成立 | **構造で成立・行数で不成立** |
+| かっこいい | README から「名前空間」「Named State」の語が消え、原則 #2 は「ホストが書くマウント表」1 文になった | 著者レビュー待ち |
 
 ---
 
