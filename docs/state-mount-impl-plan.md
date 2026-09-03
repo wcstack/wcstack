@@ -252,6 +252,8 @@ slice 4 で確定した挙動・発見:
 
 - **slice 24 済み（manifest schemaVersion 2 — P4-3）**: application namespace は **単一 `stateSchema`**（states[name] 撤去・envelope/namespace version = 2）。`wcs-schema` は `--state` → **`--mount=<path>`**（ボリュームの型を既存 stateSchema の**部分木として merge** — 中間 object ノードを生成。`--mount` 指定時は --merge 無しでも既存を読み込む）。`--state` は移行ヒント付き usage エラー。check は v1 manifest（schemaVersion 1 / states 形）を **v1-manifest** として検出し「emit で再生成」を指す。emit の再生成は v1 の states を持ち越さない（正本は型 — D9）。読み手側（vscode-wcs）＝SUPPORTED_SCHEMA_VERSION/NAMESPACE 2・schemaVersion 1 のエラーに移行ヒント併記・**manifest-state-collision は単一スロットの衝突として存続**（「2 つの application artifact が両方 stateSchema を宣言 → 勝者なし」— 計画の「削除」からの意図的乖離: 名前キーは消えたがスロット衝突は実在する）・applicationStates(Map) 連鎖を applicationSchema(単数) へ（loader/discover/validate/runValidation/validateDocument/bindingValidator/templateSyntaxValidator/mergeSchemaCandidates）。lint スモークの manifest fixture も v2 形へ（14/14 緑）。wcstack-manifest-schema.md §2/§3/§5 を v2 に改稿。typescript 56/56・vscode-wcs 630/630 緑・両ビルド緑。
 
+- **slice 25 済み（README・docs の追随 — P4-6/P4-7/P4-9）**: state README（英/日）＝原則 #2 と層テーブルを「ホストが書くマウント表」へ・「Named State」節を「Mounting Additional State（mount=）」に全面差し替え（v1 からの移行文込み）・構文リファレンスから `@state` 行を撤去・spread の @ 伝播 → 素パス・shorthand 表の @ 行削除・ の越境注記を「@ を含む宣言は raise」へ・**Light DOM 節を v2 形に書き換え**（name/@ 不要・ホスト配線必須・plain 廃止の誘導文・行配置可）。docs 追随＝i18n-design D4（@i18n → mount 済み注記）・state-watch-hook-design D8・state-set-all-design・device-orientation-tag-design の @ 記述・webComponent/README の @name 注記。examples/README に name 参照なし（P4-9 は対象なしを確認）。
+
 ### 3-1. タスク
 
 | ID | タスク | 場所 | 受け入れ |

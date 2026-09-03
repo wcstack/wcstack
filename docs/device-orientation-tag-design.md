@@ -30,7 +30,7 @@
 
 - **デバイスの傾き・向きに応じた宣言的な UI 変化**: パララックス演出、水準器アプリ、ゲームのステアリング入力、VR/AR 風の視点操作などを `alpha`/`beta`/`gamma` の束縛だけで実現する。
 - **iOS の gesture-gate を隠蔽する定型パターンの提供**: iOS 13+ Safari では明示的なユーザー操作なしに `deviceorientation` イベントを購読しても値が一切飛んでこない（無音で失敗する）。この差異を吸収し、「対応していればそのまま動く／iOS では明示ボタンが要る」という分岐を宣言的な `permissionState` 監視だけで扱えるようにする。
-- **既存ノードとの組み合わせ**: `hidden: permissionState|ne(granted)`（iOS で許可されるまでは傾き演出用の要素を隠す。`data-wcs` は `prop: path|filter` 形式——`@` はプロパティ側の否定演算子ではなく `path@stateName` の状態インスタンス指定、`!` 先頭否定は存在しない構文なので、実際に動く例は `eq`/`ne` フィルタで表す）、`<wcs-idle>` と並べて「gesture-gated permission パターン」の2つ目の実例として README を相互参照させる。
+- **既存ノードとの組み合わせ**: `hidden: permissionState|ne(granted)`（iOS で許可されるまでは傾き演出用の要素を隠す。`data-wcs` は `prop: path|filter` 形式——`@` も `!` 先頭否定も存在しない構文なので（`path@name` セレクタは v2 で撤去済み）、実際に動く例は `eq`/`ne` フィルタで表す）、`<wcs-idle>` と並べて「gesture-gated permission パターン」の2つ目の実例として README を相互参照させる。
 
 ---
 

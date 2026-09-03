@@ -29,8 +29,7 @@
    書かれたもの」と同一。
 2. **台帳エイリアス**（Shadow DOM 形のみ）— 子 rootNode → 親 state 要素
    （`setStateElementAlias`）。`getRootNode()` で解決する全サイトが無改造で親に到達する。
-   Light DOM 形は rootNode をホストと共有するのでエイリアス不要（`@name` 参照も
-   変換が stateName を親に揃えるので自然に無効化される）。
+   Light DOM 形は rootNode をホストと共有するのでエイリアス不要。
 3. **ループ文脈** — スコープ直下のバインディングには**直接エントリ**でホスト要素の文脈を
    渡す（`buildMountScopeBindings`）。text binding は登録前に comment が replaceNode へ
    差し替えられて切断されるため、DOM walk では文脈に届かない（happy-dom は切断後も

@@ -19,7 +19,7 @@
 | **D5** | computed（getter） | **opt-in で eager 化**。watch 対象の getter は宣言時に依存グラフへ登録され、drain 終端で強制評価される。「**watch した getter は lazy でなくなる**」を規範として明記する（§5）。 |
 | **D6** | ワイルドカード粒度 | **絶対アドレス単位で per-address 発火**（要素ごとに複数回）。indexes は `getScopedIndexes` に揃える（§6）。 |
 | **D7** | 再入・例外 | ハンドラごとに try/catch して `console.error` ＋ devtools に流し、drain と他 watch を巻き添えにしない。再入は **watch 連鎖の深さカウンタ**（既定 32）で打ち切る（§7）。 |
-| **D8** | `this` とスコープ | **writable proxy**（`$updatedCallback` と同じ）。**`@stateName` 越境の watch は認めない**（自 state のパスのみ）。 |
+| **D8** | `this` とスコープ | **writable proxy**（`$updatedCallback` と同じ）。**`@stateName` 越境の watch は認めない**（自 state のパスのみ）。*v2 で名前次元そのものが撤去され、この境界は構文レベルで消滅した（`@` を含む宣言は raise — [state-mount-design.md](./state-mount-design.md)）。* |
 
 ---
 
