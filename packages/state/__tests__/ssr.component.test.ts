@@ -22,18 +22,6 @@ describe("Ssr コンポーネント", () => {
     expect(ssrEl.stateData).toEqual({ count: 42, items: ["a", "b"] });
   });
 
-  it("name プロパティで name 属性を取得できる", () => {
-    document.body.innerHTML = `<wcs-ssr name="cart"></wcs-ssr>`;
-    const ssrEl = document.querySelector("wcs-ssr") as Ssr;
-    expect(ssrEl.name).toBe("cart");
-  });
-
-  it("name 属性がない場合は default", () => {
-    document.body.innerHTML = `<wcs-ssr></wcs-ssr>`;
-    const ssrEl = document.querySelector("wcs-ssr") as Ssr;
-    expect(ssrEl.name).toBe("default");
-  });
-
   it("templates で UUID → テンプレートの Map を取得できる", () => {
     document.body.innerHTML = `
       <wcs-ssr name="default">
@@ -92,36 +80,33 @@ describe("Ssr コンポーネント", () => {
     expect(ssrEl.hydrateProps["el-0"]).toEqual({ scrollTop: 100 });
   });
 
-  it("Ssr.findByName() で名前指定で検索できる", () => {
+  it("Ssr.find() で最初の <wcs-ssr> が返ること（v2: 1 root 1 ツリー）", () => {
     document.body.innerHTML = `
-      <wcs-ssr name="a"><script type="application/json">{"x":1}</script></wcs-ssr>
-      <wcs-ssr name="b"><script type="application/json">{"y":2}</script></wcs-ssr>
+      <wcs-ssr><script type="application/json">{"x":1}</script></wcs-ssr>
     `;
-    const a = Ssr.findByName(document.body, "a") as Ssr;
-    const b = Ssr.findByName(document.body, "b") as Ssr;
+    const a = Ssr.find(document.body) as Ssr;
     expect(a.stateData).toEqual({ x: 1 });
-    expect(b.stateData).toEqual({ y: 2 });
   });
 
-  it("Ssr.findByName() で見つからない場合は null", () => {
+  it("Ssr.find() で見つからない場合は null", () => {
     document.body.innerHTML = `<div></div>`;
-    expect(Ssr.findByName(document.body, "missing")).toBeNull();
+    expect(Ssr.find(document.body)).toBeNull();
   });
 
-  it("Ssr.findByName() で Document を渡した場合は documentElement から検索する", () => {
+  it("Ssr.find() で Document を渡した場合は documentElement から検索する", () => {
     document.body.innerHTML = `
-      <wcs-ssr name="doc-test"><script type="application/json">{"z":3}</script></wcs-ssr>
+      <wcs-ssr><script type="application/json">{"z":3}</script></wcs-ssr>
     `;
     // happy-dom の document は Document instanceof を通らないため、
     // documentElement 経由で検索する分岐をテスト
-    const result = Ssr.findByName(document.documentElement, "doc-test") as Ssr;
+    const result = Ssr.find(document.documentElement) as Ssr;
     expect(result).not.toBeNull();
     expect(result.stateData).toEqual({ z: 3 });
   });
 
-  it("Ssr.findByName() で Element でも Document でもない Node を渡すと null", () => {
+  it("Ssr.find() で Element でも Document でもない Node を渡すと null", () => {
     const textNode = document.createTextNode("hello");
-    expect(Ssr.findByName(textNode, "test")).toBeNull();
+    expect(Ssr.find(textNode)).toBeNull();
   });
 
   it("version プロパティで version 属性を取得できる", () => {

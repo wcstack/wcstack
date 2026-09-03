@@ -117,7 +117,6 @@ describe("orchestrated モードの inline 生成スキップと最終パス", (
 
     const ssrEl = document.querySelector("wcs-ssr");
     expect(ssrEl).not.toBeNull();
-    expect(ssrEl!.getAttribute("name")).toBe("default");
     expect(ssrEl!.nextElementSibling?.tagName.toLowerCase()).toBe("wcs-state");
     const data = JSON.parse(
       ssrEl!.querySelector('script[type="application/json"]')!.textContent!
@@ -170,10 +169,9 @@ describe("orchestrated モードの inline 生成スキップと最終パス", (
     expect(document.querySelector("wcs-ssr")).toBeNull();
   });
 
-  it("直前の wcs-ssr が別名なら自分の分を生成する", async () => {
-    // v2 では state は default のみ — 名前の不一致は「先客の wcs-ssr が別名」で作る
+  it("直前に先客の <wcs-ssr> が居れば生成しない（v2: 名前次元は無い — 直前の存在だけを見る）", async () => {
     document.body.innerHTML = `
-      <wcs-ssr name="other"></wcs-ssr>
+      <wcs-ssr></wcs-ssr>
       <wcs-state enable-ssr json='{"items":[]}'></wcs-state>
     `;
     const stateEl = document.querySelector("wcs-state") as any;
@@ -182,10 +180,7 @@ describe("orchestrated モードの inline 生成スキップと最終パス", (
 
     buildSsrDocument(document);
 
-    const ssrEls = document.querySelectorAll("wcs-ssr");
-    expect(ssrEls.length).toBe(2);
-    const own = document.querySelector(String.raw`wcs-ssr[name="default"]`);
-    expect(own).not.toBeNull();
+    expect(document.querySelectorAll("wcs-ssr").length).toBe(1);
   });
 });
 

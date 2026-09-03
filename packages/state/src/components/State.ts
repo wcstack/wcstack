@@ -228,10 +228,9 @@ export class State extends HTMLElementBase implements IStateElement {
 
   private _loadFromSsrElement(): IState | null {
     if (!this.hasAttribute('enable-ssr')) return null;
-    const name = this.getAttribute('name') || 'default';
     const root = this.parentNode;
     if (!root) return null;
-    const ssrEl = Ssr.findByName(root, name);
+    const ssrEl = Ssr.find(root);
     if (!ssrEl) return null;
     const data = ssrEl.stateData;
     return Object.keys(data).length > 0 ? data : null;
@@ -632,10 +631,8 @@ export class State extends HTMLElementBase implements IStateElement {
       try {
         await getBindingsReady(this.rootNode);
 
-        const name = this.getAttribute('name') || 'default';
         const stateData = Ssr.extractStateData(this);
         const ssrEl = document.createElement(config.tagNames.ssr);
-        ssrEl.setAttribute('name', name);
         ssrEl.setAttribute('version', VERSION);
         Ssr.buildContent(ssrEl, stateData);
         this.parentNode?.insertBefore(ssrEl, this);

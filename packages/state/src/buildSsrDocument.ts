@@ -22,19 +22,13 @@ export function buildSsrDocument(root: Document): void {
   const ssrTag = config.tagNames.ssr;
   const stateElements = root.querySelectorAll(`${stateTag}[enable-ssr]`);
   for (const stateEl of stateElements) {
-    const name = stateEl.getAttribute("name") || "default";
     // 既に直前へ生成済み（旧 server との組み合わせで inline 生成された等）なら
     // 何もしない — build() は冪等でなければならない（プロトコル契約）
     const prev = stateEl.previousElementSibling;
-    if (
-      prev !== null &&
-      prev.tagName.toLowerCase() === ssrTag &&
-      (prev.getAttribute("name") || "default") === name
-    ) {
+    if (prev !== null && prev.tagName.toLowerCase() === ssrTag) {
       continue;
     }
     const ssrEl = document.createElement(ssrTag);
-    ssrEl.setAttribute("name", name);
     ssrEl.setAttribute("version", VERSION);
     Ssr.buildContent(ssrEl, Ssr.extractStateData(stateEl));
     stateEl.parentNode?.insertBefore(ssrEl, stateEl);

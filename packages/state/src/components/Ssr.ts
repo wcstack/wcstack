@@ -6,7 +6,6 @@ import { getAllSsrPropertyNodes, getSsrProperties, clearSsrPropertyStore } from 
 import { HTMLElementBase } from "../platform/HTMLElementBase";
 
 export interface ISsrElement {
-  readonly name: string;
   readonly version: string;
   readonly stateData: IState;
   readonly templates: Map<string, HTMLTemplateElement>;
@@ -48,10 +47,6 @@ export class Ssr extends HTMLElementBase implements ISsrElement {
   private _stateData: IState | null = null;
   private _templates: Map<string, HTMLTemplateElement> | null = null;
   private _hydrateProps: Record<string, Record<string, unknown>> | null = null;
-
-  get name(): string {
-    return this.getAttribute('name') || 'default';
-  }
 
   get version(): string {
     return this.getAttribute('version') || '';
@@ -138,7 +133,7 @@ export class Ssr extends HTMLElementBase implements ISsrElement {
     }
   }
 
-  static findByName(root: Node, name: string): ISsrElement | null {
+  static find(root: Node): ISsrElement | null {
     const tagName = config.tagNames.ssr;
     const parentEl = root instanceof Element
       ? root
@@ -146,7 +141,7 @@ export class Ssr extends HTMLElementBase implements ISsrElement {
         ? root.documentElement
         : null;
     if (!parentEl) return null;
-    const el = parentEl.querySelector(`${tagName}[name="${name}"]`);
+    const el = parentEl.querySelector(tagName);
     return el as ISsrElement | null;
   }
 
