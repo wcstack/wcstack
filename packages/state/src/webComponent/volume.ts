@@ -195,6 +195,10 @@ export function graftVolume(
 ): IVolumeGraftInfo {
   const { data, accessors } = splitVolumeState(volumeState);
   const pathInfo = getPathInfo(mountPath);
+  // D14: enable-ssr のスナップショットから初期化されたルートでは、スロットに既に
+  // 値があれば**採用**する — モジュールはロード済み（getter / $ 宣言のため）だが、
+  // データは接ぎ木せず、衝突検査も掛けない（スロットは宣言済みボリュームの所有）
+  const hydrated = rootStateElement.hydratedFromSsr === true;
 
   rootStateElement.createState("writable", (state) => {
     // 衝突検査（D22: ルートデータとボリューム宣言の両方が揃った時点）。
@@ -202,6 +206,9 @@ export function graftVolume(
     // 生の Reflect.has）と親値の own キー判定で見る
     if (pathInfo.segments.length === 1) {
       if (mountPath in (state as object)) {
+        if (hydrated) {
+          return; // 採用（D14）
+        }
         raiseError(
           `Volume mount "${mountPath}" collides with an existing key on the root tree. ` +
           `Remove the root key or mount the volume elsewhere.`,
@@ -222,6 +229,9 @@ export function graftVolume(
     }
     if (pathInfo.segments.length > 1
       && typeof (state as Record<string, unknown>)[mountPath] !== "undefined") {
+      if (hydrated) {
+        return; // 採用（D14）
+      }
       raiseError(
         `Volume mount "${mountPath}" collides with an existing key on the root tree. ` +
         `Remove the root key or mount the volume elsewhere.`,

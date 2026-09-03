@@ -244,6 +244,8 @@ slice 4 で確定した挙動・発見:
 
 - **slice 20 済み（packages/devtools のフック protocol 追随 — P3-14・Phase B 完了）**: protocol/types.ts を state 側の鏡として name/stateName 全撤去（summary の name・keys/read/write の name 引数・全イベント payload・IAbsolutePathInfoLike は stateElement: unknown へ）。DevtoolsCore＝台帳キーから名前次元を削除（pathKeyOf(path)/tokenKeyOf(kind,name)/attachKeyOf(path,prop)）・**roster は rootLabelOf(rootNode) 由来のラベルで識別**（document／`<host-tag>`・重複は #n）・自己除外機構（RESERVED_STATE_NAME_PREFIX / hiddenStateNames / isHiddenStateName / hidden-states 属性）を機構ごと削除（v2 の panel は vanilla DOM で自分の state を持たない — 名前が無い以上、名前による自己識別も成立しない）。declaredScan の @name 分解も撤去（パス素通し — 壊れた宣言の可視化はランタイムの parse error）。shell＝セレクタと各行の `@name` 表示を撤去・選択キーは sourceId+label。テスト＝名前次元の scaffolding を identity（addressOf は stateElement: 旧名文字列）へ・hidden 系テスト 6 本削除・空バッチ／ShadowRoot ラベルのカバレッジテスト 2 本追加。e2e devtools-smoke の `count@default` 断定を v2 形へ。119 unit 緑・lint 緑・カバレッジゲート緑（100/98.47/100/100）・SMOKE OK。**Phase B（P3-4〜P3-14）完了 — 名前次元は runtime/protocol/tooling の全レイヤーから消滅**。
 
+- **slice 21 済み（SSR × ボリューム — P3-9 残・D14 の採用）**: ルートが enable-ssr スナップショットから初期化されたら `State.hydratedFromSsr` が立ち、graftVolume は**スロットに既存値があれば採用**（データを接ぎ木せず・衝突検査を掛けない — モジュールは getter / $ 宣言のためロード済み）。スナップショットに部分木が無ければ通常どおり接ぎ木・非 hydrate の衝突は従来どおり raise。スナップショットへのボリュームデータ混入は**自然に成立**（接ぎ木は raw state への通常書き込み・quoted-path アクセサは enumerable:false で extractStateData に出ない）。ボリュームの enable-ssr は warn 付きで無視（D14: ルートに集約）。**発見・修理＝ボリューム初期化の設定エラー（予約衝突等）が initializePromise をウェッジさせていた** — _failInitialization と同じ規範で resolve してから throw。予約はドキュメントどおり切断後も維持（アンマウント未対応の帰結 — テストはパスを分ける）。unit +5（ssr.volume.test.ts）・2637 全緑・lint 緑・カバレッジ全ゲート緑・mount+ssr e2e 18 spec 緑。server 側（P3-10）は作業なしで成立（スナップショット生成は state 側のプロトコル実装）。
+
 ### 3-1. タスク
 
 | ID | タスク | 場所 | 受け入れ |

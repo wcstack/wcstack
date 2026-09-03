@@ -105,6 +105,8 @@ export interface IStateElement {
   addVolumeWatchPaths?(paths: ReadonlySet<string>): void;
   mergeVolumeListKeys?(entries: ReadonlyMap<string, import("../list/listKeys").ListKeySpec>): void;
   enableUpdatedCallback?(): void;
+  /** enable-ssr スナップショットから初期化されたか（D14）。 */
+  readonly hydratedFromSsr?: boolean;
   /** ボリュームのアクセサ登録（webComponent/volume.ts 専用） */
   defineTreeAccessor(path: string, descriptor: PropertyDescriptor): void;
   setPathInfo(path: string, bindingType: BindingType, source?: PathInfoSource): void;

@@ -81,6 +81,8 @@ export class State extends HTMLElementBase implements IStateElement {
 
   private __state: IState | undefined;
   private _hasUpdatedCallback: boolean = false;
+  /** enable-ssr のスナップショットから初期化された（D14: ボリュームはデータを採用する） */
+  private _hydratedFromSsr: boolean = false;
   // 他行を読む getter が検出されたリストパス（diff-filter 展開の全行フォールバック対象）。
   // 依存マップ（static/dynamic）と同様に追加のみ・クリアしない（安全側に固定される）。
   private _crossRowListPaths: Set<string> = new Set<string>();
@@ -279,16 +281,29 @@ export class State extends HTMLElementBase implements IStateElement {
    * ルートより先に接続されてもよい — ルート登録が保留分を引き取る（V5）。
    */
   private async _initializeVolume(): Promise<void> {
-    const mountPath = this.getAttribute("mount")!;
-    validateVolumeMountPath(mountPath);
-    if (this.hasAttribute("bind-component")) {
-      raiseError(`"mount" cannot be combined with "bind-component".`);
-    }
-    if (this.hasAttribute("name")) {
-      raiseError(`"mount" replaces "name" — a volume has no name of its own. Remove the name attribute.`);
-    }
     const rootNode = this._rootNode!;
-    reserveVolumeSlot(rootNode, mountPath);
+    const mountPath = this.getAttribute("mount")!;
+    try {
+      validateVolumeMountPath(mountPath);
+      if (this.hasAttribute("bind-component")) {
+        raiseError(`"mount" cannot be combined with "bind-component".`);
+      }
+      if (this.hasAttribute("name")) {
+        raiseError(`"mount" replaces "name" — a volume has no name of its own. Remove the name attribute.`);
+      }
+      if (this.hasAttribute("enable-ssr")) {
+        // D14: スナップショットはルートに 1 本 — ボリューム側の enable-ssr は意味を持たない
+        console.warn(`[@wcstack/state] <${config.tagNames.state} mount="${mountPath}"> ignores "enable-ssr" — snapshots are per root tree (the root state element aggregates volume data).`);
+      }
+      reserveVolumeSlot(rootNode, mountPath);
+    } catch (error) {
+      // 設定エラーでも初期化待ちをウェッジさせない（_failInitialization と同じ規範 —
+      // 未解決のまま投げると waitForStateInitialize がページ全体を無言で止める）
+      this._resolveInitialize?.();
+      this._resolveLoading?.();
+      this._resolveConnectedCallback?.();
+      throw error;
+    }
     const volumeState = await this._loadStateFromSource();
     const finish = (info: IVolumeGraftInfo | null): void => {
       this._volumeGraftInfo = info;
@@ -314,6 +329,10 @@ export class State extends HTMLElementBase implements IStateElement {
   private async _initialize() {
     // enable-ssr (クライアント側のみ): <wcs-ssr> から初期データを取得
     const ssrState = !inSsr() ? this._loadFromSsrElement() : null;
+    if (ssrState !== null) {
+      // ボリュームの接ぎ木が「採用」へ切り替わる根拠（D14）。データ merge より先に立てる
+      this._hydratedFromSsr = true;
+    }
     this._state = await this._loadStateFromSource();
     // SSR データがある場合、state 定義（メソッド/getter）を維持しつつデータ値を上書き
     if (ssrState !== null && this.__state) {
@@ -808,6 +827,11 @@ export class State extends HTMLElementBase implements IStateElement {
   /** ボリュームが $updatedCallback を持つとき、収集ゲートを開ける（apply/applyChange.ts）。 */
   enableUpdatedCallback(): void {
     this._hasUpdatedCallback = true;
+  }
+
+  /** enable-ssr スナップショットから初期化されたか（D14 — webComponent/volume.ts が読む）。 */
+  get hydratedFromSsr(): boolean {
+    return this._hydratedFromSsr;
   }
 
   defineTreeAccessor(path: string, descriptor: PropertyDescriptor): void {
