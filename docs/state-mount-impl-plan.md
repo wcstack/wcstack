@@ -270,6 +270,14 @@ slice 4 で確定した挙動・発見:
   8. **wcstack エントリ README**: 文法行の `[@state]` と Paths 表の `path@cart` / `name="cart"` 行を v2 形（`mount=` 接頭辞）へ（AI 作法の正本 — ここが v1 構文を教えると生成コードが最初の一手で fail-fast する）。
   検証＝state 2648（+10: 回帰テスト）・server 94・e2e mount/light-dom 系 green（下記）・カバレッジ/バラン維持。非 blocking の指摘（mount 属性変更の warn なし・N6 の mustache/shorthand 経路テスト・stale docs 群 ほか）はレビュー記録のとおり残し、リリース後に回す。
 
+- **slice 30 済み（2026-09-04・「v2 同乗候補」5 件の検証と採択分の実装）**: 指摘 5 件を検証し 2 件を実装・3 件は根拠付きで不採択:
+  1. ~~`<stateProp>: <path>`（propSegments 長 1）の bind 時 fail-fast~~ — **不採択（v2 本体が解消済み）**。ADR-15 が見送った当時の前提「`state: user` は無言の no-op」が v2 で消滅 — その形は**ルートマウントの正規構文**（M1）になり、誤設定系は loud（重複規則 throw・plain Light DOM raise・4b throw・name raise）。残る applyChangeToWebComponent の no-op は「配送は翻訳済みバインディングが担う」正しい意味論で、fail-fast の対象が存在しない。
+  2. **`@wcstack/server` の deprecated `extractStateData()` 削除 — 採択・実装**。消費者は server 自身のテストと README の API 表のみ（`Ssr.extractStateData` が state 側の正）。関数・export・テスト 6 本・README 英日の表行を削除。リリースノートの破壊的変更表に追記。
+  3. ~~`_upgradeProperty` の全パッケージ展開~~ — **不採択（前提が古い＝展開済み）**。`7775d8bf` "fix(shell): adopt inputs assigned before the element upgrades"（main / v2 双方に含まれる）で **39 パッケージ**に `src/protocol/upgradeProperties.ts`＋テスト＋Shell 配線が着地済み。未対応 5 つ（state / signals / devtools / server / vscode-wcs）は wc-bindable I/O ノードではない（要素なし or wcBindable 非宣言）。
+  4. **semver・破壊的変更ポリシーの表明 — 採択・実装**。ルート README 英日に「Versioning and breaking changes」節（対象＝data-wcs 構文・wcBindable ほかプロトコル・ツール契約／対象外＝内部・文言・性能／deprecation 運用）。§10 に転記用の節を追加。
+  5. ~~spread undefined 書き戻しの SPEC 明文化~~ — **不採択（既に明文化済み）**。規範リファレンス（per-package README）の英日 :483 に「undefined は書き込みスキップ・クリアは null・全プロパティバインディングに適用」が規範文として存在（$setAll 側 :1027 も同旨）。メモリの「残＝SPEC 明文化」が stale だった。
+  ついで＝server の waitForReady 反復テストの**既知フレークを修理**（slice 18 で「HEAD でも再現」と記録されていた実体＝残世代待ちの固定 30ms sleep が並列負荷で不足 → 上限付きポーリング化。修理後フルスイート 4 連続 88/88 緑）。
+
 ### 3-1. タスク
 
 | ID | タスク | 場所 | 受け入れ |
@@ -542,6 +550,7 @@ P0-6 の精査結果（2026-09-01 実測）:
 | manifest `states[name]`（schemaVersion 1） | 単一 `stateSchema`（schemaVersion 2）。ボリュームは `wcs-schema emit --mount=<path>` で部分木 merge | 読み手が migration hint 付き error |
 | `@wcstack/testing` `state(name)` | `state()`（引数は移行ヒント付き throw） | — |
 | `wcs-schema --state=` | `--mount=<path>` | usage エラー（移行ヒント付き） |
+| `@wcstack/server` の `extractStateData()`（@deprecated） | `@wcstack/state` の `Ssr.extractStateData()` | 削除（import エラー） |
 
 ### 移行ガイド（機械的）
 
@@ -552,6 +561,10 @@ P0-6 の精査結果（2026-09-01 実測）:
 5. `wcs-schema emit` を再実行（schemaVersion 2 へ。ボリュームは `--mount=<path>` で追加）
 
 lint（`@wcstack/lint` / vscode-wcs）が全対象箇所を error で列挙する。
+
+### バージョニングポリシー（v2.0.0 で初表明）
+
+最初の破壊的リリースに合わせ、**semver の保証範囲**（`data-wcs` 構文・wcBindable ほか相互運用プロトコル・ツール契約が対象、内部構成・文言・性能は対象外）と deprecation 運用（削除前に minor で予告）をルート README（英・日「Versioning and breaking changes」節）に明文化した。リリースノートからこの節へリンクする。
 
 ### 成立範囲の明記（性能）
 

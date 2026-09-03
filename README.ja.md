@@ -475,6 +475,25 @@ npm run test:coverage    # カバレッジ（statements/functions/lines は100%�
 npm run lint             # ESLint
 ```
 
+## バージョニングと破壊的変更
+
+公開パッケージは全て同一バージョンで、リリースは一斉に行います（変更の有無に関わらず全パッケージが揃って上がります）。
+
+**semver の対象** — 以下を非互換に変えるときはメジャーリリースです:
+
+- `data-wcs` バインディング構文と、ドキュメントに記載されたその意味論（パス・フィルタ・構造ディレクティブ・spread）
+- 各パッケージのドキュメント化された要素サーフェス: タグ名・属性・`static wcBindable` 宣言（`properties` / `event` / `getter`）
+- 相互運用プロトコル: wc-bindable / command-token / event-token / transition-runner / binder / ssr-snapshot
+- ツールの契約: manifest スキーマ（`schemaVersion`）、`wcs-schema` / `wcs-tsc` CLI、`@wcstack/testing` API。devtools hook protocol は自身の `version` フィールドを持ち、非可換な変更はそれを上げてメジャーに同乗します
+
+**対象外** — minor / patch で変わり得ます:
+
+- 内部モジュール構成と、パッケージのエントリポイントから再エクスポートされていないもの
+- コンソールメッセージの文言・性能特性
+- ドキュメントで experimental / 予約と明示されているもの
+
+**deprecation の運用**: 可能な限り、削除の前に最低 1 つの minor リリースで予告します（移行先を指す lint ルールおよび/または実行時の告知）— v1.x は `wcs/named-state-deprecated` で名前付き State を予告し、v2.0 が `name=` / `@name` を削除しました。
+
 ## License
 
 MIT

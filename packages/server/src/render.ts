@@ -74,19 +74,6 @@ export function installBaseUrl(baseUrl: string): () => void {
   return () => { globalThis.URL = OrigURL; };
 }
 
-/** @deprecated Use Ssr.extractStateData() from @wcstack/state instead */
-export function extractStateData(stateEl: any): Record<string, any> {
-  const raw = (stateEl as any).__state;
-  if (!raw || typeof raw !== 'object') return {};
-  const data: Record<string, any> = {};
-  for (const [key, value] of Object.entries(raw)) {
-    if (!key.startsWith('$') && typeof value !== 'function') {
-      data[key] = value;
-    }
-  }
-  return data;
-}
-
 /**
  * 同期の bootstrap 関数、または非同期ローダー。
  * `HTMLElement` を継承するクラスはモジュール評価時にグローバルの `HTMLElement` を

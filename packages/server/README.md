@@ -138,7 +138,6 @@ static wcBindable = {
 |----------|-------------|
 | `installGlobals(window)` | Installs happy-dom globals on `globalThis`. Returns a restore function. |
 | `waitForReady(root, { maxIterations? })` | Awaits every custom element under `root` (a `document` or a `ShadowRoot`) that follows the readiness protocols — `static hasConnectedCallbackPromise` elements' `connectedCallbackPromise` (re-scanning while new elements appear, e.g. `<wcs-router>`'s initial route), then `static getBindingsReady(root)` (`<wcs-state>`'s binding construction). This is the wait `renderToString` performs before serializing; [`@wcstack/testing`](../testing/README.md)'s `mount()` reuses it. Rejects if binding initialization fails. |
-| `extractStateData(stateEl)` | Extracts data properties from a `<wcs-state>` element (excludes `$`-prefixed keys and functions). |
 
 ### Constants
 
