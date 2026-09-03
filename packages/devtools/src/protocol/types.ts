@@ -13,7 +13,7 @@
 export const DEVTOOLS_HOOK_GLOBAL = "__WCSTACK_DEVTOOLS_HOOK__";
 
 /** プロトコル版。additive change では上げない（protocol §2） */
-export const DEVTOOLS_PROTOCOL_VERSION = 1;
+export const DEVTOOLS_PROTOCOL_VERSION = 2;
 
 export interface IPathInfoLike {
   readonly path: string;

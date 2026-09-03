@@ -47,7 +47,7 @@ identity (even where a CDN leaves several copies of state on the page, each copy
 ```ts
 // both sides acquire it create-if-missing (independent of load order)
 interface IDevtoolsHookRegistry {
-  readonly version: 1;                       // the protocol version. An additive change does not raise it
+  readonly version: 2;                       // the protocol version. v2 removes the name dimension (one state tree per root — docs/state-mount-design.md); an additive change does not raise it
   readonly sources: Map<string, IDevtoolsSource>;
   register(source: IDevtoolsSource): void;   // runtime → registry
   unregister(sourceId: string): void;
@@ -83,9 +83,10 @@ interface IDevtoolsSource {
   readonly packageVersion: string;
   // --- pull ---
   getStateElements(): IStateElementSummary[];   // the origin of the attach-time snapshot
-  keys(name: string, rootNode: Node): string[]; // enumerating top-level keys (the origin for drawing the state tree)
-  read(name: string, rootNode: Node, path: string, indexes?: number[]): unknown;
-  write(name: string, rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
+  keys(rootNode: Node): string[];            // enumerating top-level keys (the origin for drawing the state tree)
+  read(rootNode: Node, path: string, indexes?: number[]): unknown;
+  write(rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
+  overlays(rootNode: Node): IMountOverlaySummary[]; // v2: mount records on this tree (marker #m<id>, mount table, delta, private/getter keys — the D20 overlay address space made visible)
   // v1 addendum (additive): the SET of declared-level bindings, enumerated by the
   // runtime's own canonical parser. Sources: attributes + comment anchors in the
   // live DOM (spread expanded from the live wcBindable; undefined elements stay

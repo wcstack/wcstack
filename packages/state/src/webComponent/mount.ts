@@ -532,6 +532,12 @@ export function getMountRecordByScopeRoot(scopeRoot: Node): IMountRecord | null 
   return mountRecordByScopeRoot.get(scopeRoot) ?? null;
 }
 
+/** この state element に登録済みのマウント記録を列挙する（devtools の overlays が読む）。 */
+export function getMountRecordsForStateElement(stateElement: IStateElement): IMountRecord[] {
+  const byMarker = mountRecordsByStateElement.get(stateElement);
+  return typeof byMarker === "undefined" ? [] : [...byMarker.values()];
+}
+
 /** 親 state element がマウントを 1 つでも持つか（D18: 無ければ dispatch は分岐 1 つで抜ける） */
 export function stateElementHasMounts(stateElement: IStateElement): boolean {
   const byMarker = mountRecordsByStateElement.get(stateElement);

@@ -16,7 +16,7 @@ import type { IStateElement } from "../components/types";
 export const DEVTOOLS_HOOK_GLOBAL = "__WCSTACK_DEVTOOLS_HOOK__";
 
 /** プロトコル版。additive change では上げない（protocol §2） */
-export const DEVTOOLS_PROTOCOL_VERSION = 1;
+export const DEVTOOLS_PROTOCOL_VERSION = 2;
 
 export type DevtoolsEvent =
   | {
@@ -163,6 +163,23 @@ export type ContractEvent = Extract<
   { readonly type: "contract:manifest-read" | "contract:unsupported-extension" | "contract:drift" }
 >;
 
+/** マウント記録 1 件の要約（overlays — protocol v2）。 */
+export interface IMountOverlaySummary {
+  /** D20 の予約セグメント（`#m<id>`） */
+  readonly marker: string;
+  /** マウントされたコンポーネントのタグ名（小文字） */
+  readonly componentTag: string;
+  readonly stateProp: string;
+  /** マウント表: 内側接頭辞（空 = ルートエントリ）→ 外側パス */
+  readonly mountTable: readonly { readonly inner: string; readonly outer: string }[];
+  /** `$n` 補正の Δ（ルート接頭辞のワイルドカード数） */
+  readonly delta: number;
+  /** 私有キー（作者の own data key — オーバーレイ空間に住む） */
+  readonly privateKeys: readonly string[];
+  /** マーカーパスに載る getter のキー */
+  readonly getterKeys: readonly string[];
+}
+
 export interface IStateElementSummary {
   readonly rootNode: Node;
   readonly element: IStateElement;
@@ -232,6 +249,12 @@ export interface IDevtoolsSource {
    * 状態ツリー UI の描画起点（protocol §3）。
    */
   keys(rootNode: Node): string[];
+  /**
+   * rootNode のツリーに載っているマウント記録の列挙（protocol v2 — D20 の可視化）。
+   * マーカー（`#m<id>`）ごとに、マウント表と私有面（オーバーレイ専用アドレス空間に
+   * 住むキー）を出す。マウントが無ければ空配列。
+   */
+  overlays(rootNode: Node): IMountOverlaySummary[];
   read(rootNode: Node, path: string, indexes?: number[]): unknown;
   write(rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
   /**

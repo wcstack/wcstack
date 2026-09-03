@@ -673,3 +673,47 @@ describe("mountOverlay: 非同期ライフサイクルの reject 隔離", () => 
     }
   });
 });
+
+describe("devtools: overlays(rootNode) がマウント記録を要約すること（protocol v2 / D20 の可視化）", () => {
+  it("マウント表・Δ・私有キー・getter キーが出ること", async () => {
+    const { registerDevtoolsSource, __getRegisteredSourceForTest, __resetDevtoolsBridgeForTest } =
+      await import("../src/devtools/bridge");
+    __resetDevtoolsBridgeForTest();
+    registerDevtoolsSource();
+    const source = __getRegisteredSourceForTest()!;
+
+    const tag = uniqueTag("mo-devtools");
+    defineShell(tag, `<wcs-state bind-component="state"></wcs-state><p data-wcs="textContent: name"></p>`);
+    const { shadowRoot, parentStateElement, host } = await mountHost(
+      '{"user":{"name":"Alice"}}',
+      `<${tag} data-wcs="state: user"></${tag}>`,
+    );
+    const component = shadowRoot.querySelector(tag)!;
+    mountComponent(component, parentStateElement, {
+      secret: "mine",
+      get shout() { return "!"; },
+    });
+
+    const overlays = (source as any).overlays(shadowRoot);
+    expect(overlays).toHaveLength(1);
+    expect(overlays[0].componentTag).toBe(tag);
+    expect(overlays[0].stateProp).toBe("state");
+    expect(overlays[0].marker).toMatch(/^#m\d+$/);
+    expect(overlays[0].mountTable).toEqual([{ inner: "", outer: "user" }]);
+    expect(overlays[0].delta).toBe(0);
+    expect(overlays[0].privateKeys).toContain("secret");
+    expect(overlays[0].getterKeys).toContain("shout");
+
+    // マウントの無いルートは空配列
+    const plainHost = document.createElement(uniqueTag("mo-plain"));
+    const plainShadow = plainHost.attachShadow({ mode: "open" });
+    plainShadow.innerHTML = `<wcs-state json='{"a":1}'></wcs-state>`;
+    document.body.appendChild(plainHost);
+    await (plainShadow.querySelector("wcs-state") as State).connectedCallbackPromise;
+    expect((source as any).overlays(plainShadow)).toEqual([]);
+
+    __resetDevtoolsBridgeForTest();
+    host.remove();
+    plainHost.remove();
+  });
+});

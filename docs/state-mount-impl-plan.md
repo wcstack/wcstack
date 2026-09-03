@@ -254,6 +254,8 @@ slice 4 で確定した挙動・発見:
 
 - **slice 25 済み（README・docs の追随 — P4-6/P4-7/P4-9）**: state README（英/日）＝原則 #2 と層テーブルを「ホストが書くマウント表」へ・「Named State」節を「Mounting Additional State（mount=）」に全面差し替え（v1 からの移行文込み）・構文リファレンスから `@state` 行を撤去・spread の @ 伝播 → 素パス・shorthand 表の @ 行削除・ の越境注記を「@ を含む宣言は raise」へ・**Light DOM 節を v2 形に書き換え**（name/@ 不要・ホスト配線必須・plain 廃止の誘導文・行配置可）。docs 追随＝i18n-design D4（@i18n → mount 済み注記）・state-watch-hook-design D8・state-set-all-design・device-orientation-tag-design の @ 記述・webComponent/README の @name 注記。examples/README に name 参照なし（P4-9 は対象なしを確認）。
 
+- **slice 26 済み（devtools hook protocol v2 — P4-5）**: `DEVTOOLS_PROTOCOL_VERSION` を **2** に（state 側・devtools 側の両方 — 形が非可換に変わったので version で正直に主張）。**`overlays(rootNode)` を新設**（D20 の可視化 — マーカー `#m<id>` ごとに componentTag/stateProp/マウント表(inner→outer)/Δ/私有キー/getter キーを要約。実体は mount.ts の `getMountRecordsForStateElement`）。docs/devtools-hook-protocol.md（英/日）の keys/read/write 形と version を v2 に更新。devtools-smoke の version 断定を 2 へ。integration.mountOverlay に overlays の実測テスト（マウント有り/無し）。state 2638・devtools 121・SMOKE OK・カバレッジ全ゲート緑。
+
 ### 3-1. タスク
 
 | ID | タスク | 場所 | 受け入れ |

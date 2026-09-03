@@ -47,7 +47,7 @@
 ```ts
 // 双方が create-if-missing で取得する（ロード順非依存）
 interface IDevtoolsHookRegistry {
-  readonly version: 1;                       // プロトコル版。additive change は版を上げない
+  readonly version: 2;                       // プロトコル版。additive change は版を上げない
   readonly sources: Map<string, IDevtoolsSource>;
   register(source: IDevtoolsSource): void;   // ランタイム → registry
   unregister(sourceId: string): void;

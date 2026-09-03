@@ -46,7 +46,7 @@ const hook = await page.evaluate(() => {
   const registry = globalThis.__WCSTACK_DEVTOOLS_HOOK__;
   return registry ? { version: registry.version, kinds: [...registry.sources.values()].map((s) => s.kind) } : null;
 });
-if (!hook || hook.version !== 1 || hook.kinds.join() !== "state") fail("hook registry wrong: " + JSON.stringify(hook));
+if (!hook || hook.version !== 2 || hook.kinds.join() !== "state") fail("hook registry wrong: " + JSON.stringify(hook));
 
 // 2. badge exists in shadow
 const hasBadge = await page.evaluate(() => {
