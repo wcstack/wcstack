@@ -18,7 +18,6 @@ export interface IDeclaredBinding {
   readonly element: Element;
   readonly propName: string;
   readonly path: string;
-  readonly stateName: string;
   readonly filters: readonly string[];
   /** 宣言ソース: data-wcs 属性か comment ノードか */
   readonly origin: "attribute" | "comment";
@@ -47,18 +46,13 @@ function parseEntry(
     return null;
   }
   const [pathPart, ...filterParts] = rhs.split("|").map((part) => part.trim());
-  let path = pathPart;
-  let stateName = "default";
-  const at = pathPart.lastIndexOf("@");
-  if (at > 0) {
-    path = pathPart.slice(0, at).trim();
-    stateName = pathPart.slice(at + 1).trim();
-  }
+  // v2: `@name` セレクタは撤去済み（ランタイムは parse error にする）。
+  // 簡易パーサはパスをそのまま流す — 壊れた宣言の可視化はランタイム側の役目。
+  const path = pathPart;
   return {
     element,
     propName,
     path,
-    stateName,
     filters: filterParts.filter((part) => part.length > 0),
     origin,
     raw: trimmed,

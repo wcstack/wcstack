@@ -20,7 +20,7 @@ export interface IPathInfoLike {
 }
 
 export interface IAbsolutePathInfoLike {
-  readonly stateName: string;
+  readonly stateElement: unknown;
   readonly pathInfo: IPathInfoLike;
 }
 
@@ -37,14 +37,12 @@ export interface IAbsoluteAddressLike {
 export interface IBindingLike {
   readonly propName: string;
   readonly statePathName: string;
-  readonly stateName: string;
   readonly bindingType: string;
   readonly node: Node;
   readonly replaceNode: Node;
 }
 
 export interface IStateElementSummaryLike {
-  readonly name: string;
   readonly rootNode: Node;
   readonly element: unknown;
   readonly paths: {
@@ -82,7 +80,6 @@ export interface IDeclaredBindingLike {
   readonly node: Node | null;
   readonly propName: string;
   readonly statePathName: string;
-  readonly stateName: string;
   readonly bindingType: string;
   readonly inFilters: readonly { readonly filterName: string; readonly args: readonly string[] }[];
   readonly outFilters: readonly { readonly filterName: string; readonly args: readonly string[] }[];
@@ -93,13 +90,11 @@ export interface IDeclaredBindingLike {
 export type DevtoolsEventLike =
   | {
       readonly type: "state:element-registered";
-      readonly name: string;
       readonly rootNode: Node;
       readonly element: unknown;
     }
   | {
       readonly type: "state:element-unregistered";
-      readonly name: string;
       readonly rootNode: Node;
       readonly element: unknown;
     }
@@ -131,7 +126,6 @@ export type DevtoolsEventLike =
   | {
       readonly type: "state:token-emit";
       readonly kind: "command" | "event";
-      readonly stateName: string | null;
       readonly tokenName: string;
       readonly args: readonly unknown[];
       readonly subscriberCount: number;
@@ -141,7 +135,6 @@ export type DevtoolsEventLike =
       // 巻き添えにしないため）ので、これが無いと失敗が devtools から見えない。
       readonly type: "state:watch-error";
       readonly phase: "prime" | "evaluate" | "handler";
-      readonly stateName: string;
       readonly path: string;
       readonly error: unknown;
     }
@@ -155,7 +148,6 @@ export type DevtoolsEventLike =
       // `$watch` ハンドラの正常発火（protocol v1 追補・配線カバレッジの実測面）。
       // 値は載せない — 「宣言したのに一度も発火しない」の検出には発火の事実で足りる。
       readonly type: "state:watch-fired";
-      readonly stateName: string;
       readonly path: string;
     }
   | {
@@ -164,7 +156,6 @@ export type DevtoolsEventLike =
       // 黙って死んでいる」が devtools から見えない。
       readonly type: "state:path-unresolved";
       readonly source: "binding" | "watch";
-      readonly stateName: string;
       readonly path: string;
       readonly missingSegment: string;
     }
@@ -172,7 +163,6 @@ export type DevtoolsEventLike =
       // binding 適用の throw。バッチの残りを守るためランタイムが隔離するので、
       // watch-error と同じくこれが無いと失敗がどこにも現れない。
       readonly type: "state:binding-apply-error";
-      readonly stateName: string;
       readonly path: string;
       readonly bindingType: string;
       readonly error: unknown;
@@ -226,9 +216,9 @@ export interface IDevtoolsSourceLike {
   readonly packageVersion: string;
   getStateElements(): IStateElementSummaryLike[];
   /** protocol v1 追補 API。古いランタイムには無い可能性があるため optional 扱いで呼ぶ */
-  keys?(name: string, rootNode: Node): string[];
-  read(name: string, rootNode: Node, path: string, indexes?: number[]): unknown;
-  write(name: string, rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
+  keys?(rootNode: Node): string[];
+  read(rootNode: Node, path: string, indexes?: number[]): unknown;
+  write(rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
   /**
    * protocol v1 追補 API（optional 扱いで呼ぶ）。ランタイム正本パーサによる
    * 宣言レベルバインディングの集合（declaredScan の簡易パーサを置き換える正本）。

@@ -2,7 +2,6 @@ export { bootstrapDevtools } from "./bootstrapDevtools.js";
 export { WcsDevtools } from "./shell/WcsDevtools.js";
 export {
   DevtoolsCore,
-  RESERVED_STATE_NAME_PREFIX,
 } from "./core/DevtoolsCore.js";
 export type {
   ITimelineEntry, IRosterEntry, IWiringEntry,

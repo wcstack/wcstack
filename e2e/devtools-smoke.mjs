@@ -62,7 +62,7 @@ if (!stateText.includes("count:") || !stateText.includes("todos:")) fail("state 
 // 4. wiring pane: LIVE bindings (devtools loaded first → not declared fallback)
 const wiringText = await pane("wiring");
 if (!/live binding/.test(wiringText) || /declared/.test(wiringText)) fail("wiring pane: " + wiringText.slice(0, 200));
-if (!/count@default/.test(wiringText)) fail("wiring lacks count binding: " + wiringText.slice(0, 300));
+if (!/textContent ← count/.test(wiringText)) fail("wiring lacks count binding: " + wiringText.slice(0, 300));
 
 // 5. +1 click (panel closed → no interception) → page updates, timeline records write+batch
 await page.click("text=+1");
@@ -70,7 +70,7 @@ await page.waitForTimeout(200);
 const counter = (await page.evaluate(() => document.querySelector(".big").textContent)).trim();
 if (counter !== "1") fail("counter did not update: " + counter);
 let timelineText = await pane("timeline");
-if (!timelineText.includes("write") || !timelineText.includes("count@default") || !timelineText.includes("batch")) {
+if (!timelineText.includes("write") || !timelineText.includes("count") || !timelineText.includes("batch")) {
   fail("timeline missing write/batch: " + timelineText.slice(0, 300));
 }
 

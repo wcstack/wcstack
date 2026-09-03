@@ -14,9 +14,8 @@ if (!customElements.get('wcs-devtools')) {
   customElements.define('wcs-devtools', WcsDevtools);
 }
 
-function summaryOf(name: string, rootNode: Node): IStateElementSummaryLike {
+function summaryOf(_name: string, rootNode: Node): IStateElementSummaryLike {
   return {
-    name,
     rootNode,
     element: {},
     paths: {
@@ -70,7 +69,7 @@ function createFakeSource(
     data,
     getStateElements: () => summaries,
     keys: options?.keys === null ? (undefined as never) : () => options?.keys ?? Object.keys(data),
-    read: vi.fn((name: string, rootNode: Node, path: string, indexes?: number[]) => {
+    read: vi.fn((_rootNode: Node, path: string, indexes?: number[]) => {
       if (options?.throwOn === path) {
         throw new Error('unreadable');
       }
@@ -88,14 +87,13 @@ function createFakeSource(
 }
 
 function addressOf(stateName: string, path: string): IAbsoluteAddressLike {
-  return { absolutePathInfo: { stateName, pathInfo: { path } }, listIndex: null };
+  return { absolutePathInfo: { stateElement: stateName, pathInfo: { path } }, listIndex: null };
 }
 
-function bindingOf(stateName: string, path: string, node: Node): IBindingLike {
+function bindingOf(_stateName: string, path: string, node: Node): IBindingLike {
   return {
     propName: 'textContent',
     statePathName: path,
-    stateName,
     bindingType: 'text',
     node,
     replaceNode: node,
@@ -324,7 +322,7 @@ describe('WcsDevtools shell', () => {
       let input = body.querySelector<HTMLInputElement>('input')!;
       input.value = '9';
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-      expect(source.write).toHaveBeenCalledWith('main', document, 'count', 9, []);
+      expect(source.write).toHaveBeenCalledWith(document, 'count', 9, []);
 
       // JSON にならない文字列はそのまま
       devtools.__flushRenderForTest();
@@ -332,7 +330,7 @@ describe('WcsDevtools shell', () => {
       input = body.querySelector<HTMLInputElement>('input')!;
       input.value = 'world';
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-      expect(source.write).toHaveBeenCalledWith('main', document, 'msg', 'world', []);
+      expect(source.write).toHaveBeenCalledWith(document, 'msg', 'world', []);
 
       // Escape は書き込まない
       devtools.__flushRenderForTest();
@@ -353,16 +351,16 @@ describe('WcsDevtools shell', () => {
       devtools.__flushRenderForTest();
       const select = shadowOf(devtools).querySelector<HTMLSelectElement>('select')!;
       expect(select.options.length).toBe(2);
-      select.value = 'state:shelltest:beta';
+      select.value = 'state:shelltest:div#2';
       select.dispatchEvent(new Event('change'));
       devtools.__flushRenderForTest();
-      expect(select.value).toBe('state:shelltest:beta');
+      expect(select.value).toBe('state:shelltest:div#2');
 
       // 空値の change は「未選択」扱いで先頭にフォールバックする
       select.value = '';
       select.dispatchEvent(new Event('change'));
       devtools.__flushRenderForTest();
-      expect(select.value).toBe('state:shelltest:alpha');
+      expect(select.value).toBe('state:shelltest:div');
     });
   });
 
@@ -373,7 +371,7 @@ describe('WcsDevtools shell', () => {
       devtools.__flushRenderForTest();
       const body = paneBody(devtools, 'wiring');
       expect(body.textContent).toContain('declared');
-      expect(body.textContent).toContain('count@default');
+      expect(body.textContent).toContain('count');
       // declared 行クリックでハイライト（要素は接続済み）
       const reloadSpy = vi.spyOn(window.location, 'reload').mockImplementation(() => {});
       body.querySelector<HTMLElement>('.notice button')!.click();
@@ -404,11 +402,11 @@ describe('WcsDevtools shell', () => {
         raw: 'textContent: user.name | uc',
       }]);
       // 追補 API を後付けしたので roster イベントで Wiring ペインの再描画を誘発する
-      source.emit({ type: 'state:element-registered', name: 'main', rootNode: document, element: {} });
+      source.emit({ type: 'state:element-registered', rootNode: document, element: {} });
       devtools.__flushRenderForTest();
       const body = paneBody(devtools, 'wiring');
       expect(body.textContent).toContain('declared (canonical)');
-      expect(body.textContent).toContain('user.name@default | uc()');
+      expect(body.textContent).toContain('user.name | uc()');
       expect((source as any).getDeclaredBindings).toHaveBeenCalled();
       // node 付き行はクリックでハイライトされる
       body.querySelector<HTMLElement>('.wiring-row')!.click();
@@ -428,10 +426,10 @@ describe('WcsDevtools shell', () => {
         origin: 'fragment',
         raw: '',
       }]);
-      source.emit({ type: 'state:element-registered', name: 'main', rootNode: document, element: {} });
+      source.emit({ type: 'state:element-registered', rootNode: document, element: {} });
       devtools.__flushRenderForTest();
       const body = paneBody(devtools, 'wiring');
-      expect(body.textContent).toContain('row.label@default');
+      expect(body.textContent).toContain('row.label');
       body.querySelector<HTMLElement>('.wiring-row')!.click();
       expect(shadowOf(devtools).querySelectorAll('.hl-box').length).toBe(0);
     });
@@ -449,11 +447,11 @@ describe('WcsDevtools shell', () => {
       const coverageTab = Array.from(body.querySelectorAll<HTMLElement>('.wiring-tabs button'))
         .find((b) => b.textContent === 'coverage')!;
       coverageTab.click();
-      source.emit({ type: 'state:watch-fired', stateName: 'main', path: 'count' });
+      source.emit({ type: 'state:watch-fired', path: 'count' });
       devtools.__flushRenderForTest();
       const after = paneBody(devtools, 'wiring');
       expect(after.textContent).toContain('observing since');
-      expect(after.textContent).toContain('count@main');
+      expect(after.textContent).toContain('count');
       expect(after.textContent).toContain('fired');
       // 前提未成立（items が for 未バインド）は warn でなく declared 系の淡色。
       // 理由 note はツールチップでなく本文に常時表示される
@@ -462,7 +460,7 @@ describe('WcsDevtools shell', () => {
       expect(after.textContent).toContain('no for binding observed');
 
       // 2 回目の発火で ×N 表示になる
-      source.emit({ type: 'state:watch-fired', stateName: 'main', path: 'count' });
+      source.emit({ type: 'state:watch-fired', path: 'count' });
       devtools.__flushRenderForTest();
       expect(paneBody(devtools, 'wiring').textContent).toContain('fired ×2');
     });
@@ -477,7 +475,7 @@ describe('WcsDevtools shell', () => {
       devtools.__flushRenderForTest();
       Array.from(paneBody(devtools, 'wiring').querySelectorAll<HTMLElement>('.wiring-tabs button'))
         .find((b) => b.textContent === 'coverage')!.click();
-      source.emit({ type: 'state:token-emit', kind: 'command', stateName: 'main', tokenName: 'play', args: [], subscriberCount: 0 });
+      source.emit({ type: 'state:token-emit', kind: 'command', tokenName: 'play', args: [], subscriberCount: 0 });
       devtools.__flushRenderForTest();
       const after = paneBody(devtools, 'wiring');
       const badge = Array.from(after.querySelectorAll<HTMLElement>('.badge-tag'))
@@ -499,7 +497,7 @@ describe('WcsDevtools shell', () => {
         origin: 'fragment',
         raw: '',
       }]);
-      source.emit({ type: 'state:element-registered', name: 'main', rootNode: document, element: {} });
+      source.emit({ type: 'state:element-registered', rootNode: document, element: {} });
       devtools.__flushRenderForTest();
       const body = paneBody(devtools, 'wiring');
       Array.from(body.querySelectorAll<HTMLElement>('.wiring-tabs button'))
@@ -528,7 +526,7 @@ describe('WcsDevtools shell', () => {
       devtools.__flushRenderForTest();
       const body = paneBody(devtools, 'wiring');
       expect(body.textContent).toContain('1 live binding');
-      expect(body.textContent).toContain('count@main');
+      expect(body.textContent).toContain('count');
       body.querySelector<HTMLElement>('.wiring-row')!.click();
       expect(shadowOf(devtools).querySelectorAll('.hl-box')).toHaveLength(1);
     });
@@ -626,12 +624,12 @@ describe('WcsDevtools shell', () => {
     it('イベント行を描画し、空撃ちtokenに警告を付けること', () => {
       mount();
       emitWrite('count');
-      source.emit({ type: 'state:token-emit', kind: 'command', stateName: 'main', tokenName: 'orphan', args: [1], subscriberCount: 0 });
+      source.emit({ type: 'state:token-emit', kind: 'command', tokenName: 'orphan', args: [1], subscriberCount: 0 });
       // stateName なしの行（batch）も混ぜる
       source.emit({ type: 'state:update-batch', addresses: new Set([addressOf('main', 'count')]) });
       devtools.__flushRenderForTest();
       const body = paneBody(devtools, 'timeline');
-      expect(body.textContent).toContain('count@main');
+      expect(body.textContent).toContain('count');
       expect(body.textContent).toContain('orphan');
       expect(body.textContent).toContain('1 address');
       expect(body.querySelectorAll('.badge-tag.warn')).toHaveLength(1);
@@ -639,7 +637,7 @@ describe('WcsDevtools shell', () => {
 
     it('$watch の失敗行に警告を付けること（ランタイムが握るので唯一の気づける場所）', () => {
       mount();
-      source.emit({ type: 'state:watch-error', phase: 'handler', stateName: 'main', path: 'total', error: new Error('boom') });
+      source.emit({ type: 'state:watch-error', phase: 'handler', path: 'total', error: new Error('boom') });
       source.emit({ type: 'state:watch-chain-limit', maxDepth: 32, paths: ['a'] });
       devtools.__flushRenderForTest();
       const body = paneBody(devtools, 'timeline');
@@ -735,13 +733,13 @@ describe('WcsDevtools shell', () => {
       expect(devtools.core!.getTimeline()).toHaveLength(0);
     });
 
-    it('buffer属性とhidden-states属性がCoreへ渡ること', () => {
+    it('buffer属性がCoreへ渡ること', () => {
       const rootNode = document.createElement('div');
       mount({
-        attrs: { buffer: '2', 'hidden-states': 'secret, ' },
-        summaries: [summaryOf('main', rootNode), summaryOf('secret', rootNode)],
+        attrs: { buffer: '2' },
+        summaries: [summaryOf('main', rootNode)],
       });
-      expect(devtools.core!.getRoster().map((entry) => entry.name)).toEqual(['main']);
+      expect(devtools.core!.getRoster()).toHaveLength(1);
       for (const path of ['a', 'b', 'c']) {
         emitWrite(path);
       }

@@ -242,6 +242,8 @@ slice 4 で確定した挙動・発見:
 
 - **slice 19 済み（examples/router-i18n の mount 移行 — P3-13）**: `<wcs-state name="i18n" src="/i18n/state.js">` → `mount="i18n"`・バインド 15 箇所を `t.…@i18n` → `i18n.t.…` 接頭辞形へ・README（英/日）と各コメント追随。app.js は `i18n` キーを宣言していないので衝突なし。ボリュームが root（app.js の無名 state）より文書順で先だが保留キュー（V5）が吸収。**router-i18n e2e 11 spec 全緑（WCS_LOCAL=1 で作業ツリー dist を検証）**・state+ssr-router+router-state-params+router-a11y 計 80 spec 全緑。Phase B の残＝P3-14（packages/devtools のフック protocol 追随）のみ。
 
+- **slice 20 済み（packages/devtools のフック protocol 追随 — P3-14・Phase B 完了）**: protocol/types.ts を state 側の鏡として name/stateName 全撤去（summary の name・keys/read/write の name 引数・全イベント payload・IAbsolutePathInfoLike は stateElement: unknown へ）。DevtoolsCore＝台帳キーから名前次元を削除（pathKeyOf(path)/tokenKeyOf(kind,name)/attachKeyOf(path,prop)）・**roster は rootLabelOf(rootNode) 由来のラベルで識別**（document／`<host-tag>`・重複は #n）・自己除外機構（RESERVED_STATE_NAME_PREFIX / hiddenStateNames / isHiddenStateName / hidden-states 属性）を機構ごと削除（v2 の panel は vanilla DOM で自分の state を持たない — 名前が無い以上、名前による自己識別も成立しない）。declaredScan の @name 分解も撤去（パス素通し — 壊れた宣言の可視化はランタイムの parse error）。shell＝セレクタと各行の `@name` 表示を撤去・選択キーは sourceId+label。テスト＝名前次元の scaffolding を identity（addressOf は stateElement: 旧名文字列）へ・hidden 系テスト 6 本削除・空バッチ／ShadowRoot ラベルのカバレッジテスト 2 本追加。e2e devtools-smoke の `count@default` 断定を v2 形へ。119 unit 緑・lint 緑・カバレッジゲート緑（100/98.47/100/100）・SMOKE OK。**Phase B（P3-4〜P3-14）完了 — 名前次元は runtime/protocol/tooling の全レイヤーから消滅**。
+
 ### 3-1. タスク
 
 | ID | タスク | 場所 | 受け入れ |

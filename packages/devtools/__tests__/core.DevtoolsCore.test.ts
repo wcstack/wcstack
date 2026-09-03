@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { DevtoolsCore, RESERVED_STATE_NAME_PREFIX } from '../src/core/DevtoolsCore';
+import { DevtoolsCore } from '../src/core/DevtoolsCore';
 import { getOrCreateHookRegistry } from '../src/protocol/registry';
 import {
   DEVTOOLS_HOOK_GLOBAL,
@@ -14,9 +14,8 @@ function cleanupGlobal(): void {
   delete (globalThis as Record<string, unknown>)[DEVTOOLS_HOOK_GLOBAL];
 }
 
-function summaryOf(name: string, rootNode: Node = document.createElement('div')): IStateElementSummaryLike {
+function summaryOf(_name: string, rootNode: Node = document.createElement('div')): IStateElementSummaryLike {
   return {
-    name,
     rootNode,
     element: {},
     paths: {
@@ -61,16 +60,15 @@ function createFakeSource(id: string, summaries: IStateElementSummaryLike[] = []
 
 function addressOf(stateName: string, path: string, indexes?: number[]): IAbsoluteAddressLike {
   return {
-    absolutePathInfo: { stateName, pathInfo: { path } },
+    absolutePathInfo: { stateElement: stateName, pathInfo: { path } },
     listIndex: indexes !== undefined ? { index: indexes[indexes.length - 1], indexes } : null,
   };
 }
 
-function bindingOf(stateName: string, path: string, propName = 'textContent'): IBindingLike {
+function bindingOf(_stateName: string, path: string, propName = 'textContent'): IBindingLike {
   return {
     propName,
     statePathName: path,
-    stateName,
     bindingType: 'text',
     node: document.createElement('span'),
     replaceNode: document.createElement('span'),
@@ -96,7 +94,7 @@ describe('DevtoolsCore', () => {
       expect(core.connected).toBe(true);
       expect(core.getSources()).toEqual([source]);
       expect(core.getRoster()).toHaveLength(1);
-      expect(core.getRoster()[0]).toMatchObject({ name: 'main', sourceId: 'state:test' });
+      expect(core.getRoster()[0]).toMatchObject({ label: 'div', sourceId: 'state:test' });
       core.connect(); // 冪等
       expect(core.getSources()).toHaveLength(1);
     });
@@ -120,27 +118,10 @@ describe('DevtoolsCore', () => {
       const late = createFakeSource('state:late', [summaryOf('extra')]);
       registry.register(late);
       expect(core.getSources()).toHaveLength(2);
-      expect(core.getRoster().some((entry) => entry.name === 'extra')).toBe(true);
+      expect(core.getRoster().some((entry) => entry.sourceId === 'state:late')).toBe(true);
       registry.unregister('state:late');
       expect(core.getSources()).toHaveLength(1);
-      expect(core.getRoster().some((entry) => entry.name === 'extra')).toBe(false);
-    });
-  });
-
-  describe('自己除外（protocol §5）', () => {
-    it('予約prefixと追加hidden名をrosterから除外すること', () => {
-      cleanupGlobal();
-      const registry = getOrCreateHookRegistry();
-      const source = createFakeSource('state:test', [
-        summaryOf('main'),
-        summaryOf(`${RESERVED_STATE_NAME_PREFIX}-ui`),
-        summaryOf('secret'),
-      ]);
-      registry.register(source);
-      const core = new DevtoolsCore({ hiddenStateNames: ['secret'] });
-      core.connect();
-      expect(core.getRoster().map((entry) => entry.name)).toEqual(['main']);
-      expect(core.isHiddenStateName(null)).toBe(false);
+      expect(core.getRoster().some((entry) => entry.sourceId === 'state:late')).toBe(false);
     });
   });
 
@@ -151,24 +132,26 @@ describe('DevtoolsCore', () => {
       source.emit({ type: 'state:write', absoluteAddress: addressOf('main', 'items.*', [2]), value: { a: 1 }, oldValue: undefined, hasOldValue: false });
       const timeline = core.getTimeline();
       expect(timeline).toHaveLength(2);
-      expect(timeline[0]).toMatchObject({ kind: 'write', stateName: 'main', label: 'count', detail: '5 (was 1)' });
+      expect(timeline[0]).toMatchObject({ kind: 'write', label: 'count', detail: '5 (was 1)' });
       expect(timeline[1]).toMatchObject({ kind: 'write', label: 'items.*[2]', detail: '{a: 1}' });
       expect(timeline[1].seq).toBeGreaterThan(timeline[0].seq);
     });
 
-    it('hidden stateのwrite・token・要素登録イベントを無視すること', () => {
+
+    it('空のupdate-batchはtimeline行にしないこと', () => {
       const { core, source } = setupConnected();
-      const hidden = `${RESERVED_STATE_NAME_PREFIX}-ui`;
-      source.emit({ type: 'state:write', absoluteAddress: addressOf(hidden, 'x'), value: 1, oldValue: undefined, hasOldValue: false });
-      source.emit({ type: 'state:token-emit', kind: 'command', stateName: hidden, tokenName: 't', args: [], subscriberCount: 1 });
-      source.emit({ type: 'state:element-registered', name: hidden, rootNode: document.createElement('div'), element: {} });
-      source.emit({ type: 'state:element-unregistered', name: hidden, rootNode: document.createElement('div'), element: {} });
-      source.emit({ type: 'state:binding-added', absoluteAddress: addressOf(hidden, 'x'), binding: bindingOf(hidden, 'x') });
+      source.emit({ type: 'state:update-batch', addresses: new Set() });
       expect(core.getTimeline()).toHaveLength(0);
-      expect(core.getAllWiring()).toHaveLength(0);
     });
 
-    it('update-batchを集約し、hiddenのみのバッチは無視すること', () => {
+    it('ShadowRoot ルートの roster ラベルはホストタグ名になること', () => {
+      const host = document.createElement('my-card');
+      const shadow = host.attachShadow({ mode: 'open' });
+      const { core } = setupConnected([summaryOf('main', shadow)]);
+      expect(core.getRoster()[0].label).toBe('<my-card>');
+    });
+
+    it('update-batchを集約すること', () => {
       const { core, source } = setupConnected();
       source.emit({
         type: 'state:update-batch',
@@ -177,12 +160,7 @@ describe('DevtoolsCore', () => {
           addressOf('main', 'b'),
           addressOf('main', 'c'),
           addressOf('main', 'd'),
-          addressOf(`${RESERVED_STATE_NAME_PREFIX}-ui`, 'x'),
         ]),
-      });
-      source.emit({
-        type: 'state:update-batch',
-        addresses: new Set([addressOf(`${RESERVED_STATE_NAME_PREFIX}-ui`, 'x')]),
       });
       source.emit({ type: 'state:update-batch', addresses: new Set([addressOf('main', 'solo')]) });
       const timeline = core.getTimeline();
@@ -194,28 +172,15 @@ describe('DevtoolsCore', () => {
 
     it('watch-errorをphase付きで記録すること（ランタイムが握った失敗の唯一の可視化点）', () => {
       const { core, source } = setupConnected();
-      source.emit({ type: 'state:watch-error', phase: 'handler', stateName: 'main', path: 'items.*.price', error: new TypeError('boom') });
-      source.emit({ type: 'state:watch-error', phase: 'evaluate', stateName: 'main', path: 'total', error: 'plain string throw' });
+      source.emit({ type: 'state:watch-error', phase: 'handler', path: 'items.*.price', error: new TypeError('boom') });
+      source.emit({ type: 'state:watch-error', phase: 'evaluate', path: 'total', error: 'plain string throw' });
       const [handler, evaluate] = core.getTimeline();
       expect(handler).toMatchObject({
         kind: 'watch-error',
-        stateName: 'main',
         label: 'items.*.price',
         detail: 'handler: TypeError: boom',
       });
       expect(evaluate).toMatchObject({ kind: 'watch-error', label: 'total', detail: 'evaluate: "plain string throw"' });
-    });
-
-    it('hidden stateのwatch-errorを無視すること', () => {
-      const { core, source } = setupConnected();
-      source.emit({
-        type: 'state:watch-error',
-        phase: 'prime',
-        stateName: `${RESERVED_STATE_NAME_PREFIX}-ui`,
-        path: 'x',
-        error: new Error('e'),
-      });
-      expect(core.getTimeline()).toHaveLength(0);
     });
 
     it('path-unresolvedを記録すること（配線が黙って死んでいることの唯一の可視化点）', () => {
@@ -223,44 +188,28 @@ describe('DevtoolsCore', () => {
       source.emit({
         type: 'state:path-unresolved',
         source: 'binding',
-        stateName: 'main',
         path: 'user.nmae',
         missingSegment: 'nmae',
       });
       source.emit({
         type: 'state:path-unresolved',
         source: 'watch',
-        stateName: 'main',
         path: 'cout',
         missingSegment: 'cout',
       });
       const [binding, watch] = core.getTimeline();
       expect(binding).toMatchObject({
         kind: 'path-unresolved',
-        stateName: 'main',
         label: 'user.nmae',
         detail: 'binding: "nmae" is not declared',
       });
       expect(watch).toMatchObject({ kind: 'path-unresolved', label: 'cout', detail: 'watch: "cout" is not declared' });
     });
 
-    it('hidden stateのpath-unresolvedを無視すること', () => {
-      const { core, source } = setupConnected();
-      source.emit({
-        type: 'state:path-unresolved',
-        source: 'binding',
-        stateName: `${RESERVED_STATE_NAME_PREFIX}-ui`,
-        path: 'a.b',
-        missingSegment: 'b',
-      });
-      expect(core.getTimeline()).toHaveLength(0);
-    });
-
     it('binding-apply-errorをbindingType付きで記録すること（隔離された適用失敗）', () => {
       const { core, source } = setupConnected();
       source.emit({
         type: 'state:binding-apply-error',
-        stateName: 'main',
         path: 'items.*.label',
         bindingType: 'text',
         error: new TypeError('boom'),
@@ -268,23 +217,10 @@ describe('DevtoolsCore', () => {
       expect(core.getTimeline()).toEqual([
         expect.objectContaining({
           kind: 'binding-apply-error',
-          stateName: 'main',
           label: 'items.*.label',
           detail: 'text: TypeError: boom',
         }),
       ]);
-    });
-
-    it('hidden stateのbinding-apply-errorを無視すること', () => {
-      const { core, source } = setupConnected();
-      source.emit({
-        type: 'state:binding-apply-error',
-        stateName: `${RESERVED_STATE_NAME_PREFIX}-ui`,
-        path: 'x',
-        bindingType: 'prop',
-        error: new Error('e'),
-      });
-      expect(core.getTimeline()).toHaveLength(0);
     });
 
     it('watch-chain-limitを記録すること（state名を持たないバッチ単位の打ち切り）', () => {
@@ -293,7 +229,6 @@ describe('DevtoolsCore', () => {
       expect(core.getTimeline()).toEqual([
         expect.objectContaining({
           kind: 'watch-chain-limit',
-          stateName: null,
           label: 'depth > 32',
           detail: 'a, b',
         }),
@@ -313,30 +248,25 @@ describe('DevtoolsCore', () => {
       expect(core.getTimeline()).toEqual([
         expect.objectContaining({
           kind: 'propagation-suppressed',
-          stateName: null,
           label: 'value',
           detail: 'visited-edge (tx 7, edge 3)',
         }),
       ]);
     });
 
-    it('propagation:coalescedとhop-limitを記録し、hidden stateは無視すること', () => {
+    it('propagation:coalescedとhop-limitを記録すること', () => {
       const { core, source } = setupConnected();
       source.emit({ type: 'propagation:coalesced', absoluteAddress: addressOf('main', 'count'), droppedTransactionId: 1, winnerTransactionId: 2 });
       source.emit({ type: 'propagation:hop-limit', absoluteAddress: addressOf('main', 'items.*', [0]), transactionId: 9, hop: 16 });
-      source.emit({ type: 'propagation:coalesced', absoluteAddress: addressOf(`${RESERVED_STATE_NAME_PREFIX}-ui`, 'x'), droppedTransactionId: 3, winnerTransactionId: 4 });
-      source.emit({ type: 'propagation:hop-limit', absoluteAddress: addressOf(`${RESERVED_STATE_NAME_PREFIX}-ui`, 'x'), transactionId: 5, hop: 16 });
       const timeline = core.getTimeline();
       expect(timeline).toHaveLength(2);
       expect(timeline[0]).toMatchObject({
         kind: 'propagation-coalesced',
-        stateName: 'main',
         label: 'count',
         detail: 'tx 1 dropped (winner tx 2)',
       });
       expect(timeline[1]).toMatchObject({
         kind: 'propagation-hop-limit',
-        stateName: 'main',
         label: 'items.*[0]',
         detail: 'hop 16 (tx 9)',
       });
@@ -348,7 +278,7 @@ describe('DevtoolsCore', () => {
       source.emit({ type: 'contract:drift', reason: 'missing-member', tag: 'wcs-fetch', member: 'data' });
       source.emit({ type: 'contract:drift', reason: 'event-mismatch', tag: 'wcs-fetch', member: 'data', sidecarEvent: 'change', liveEvent: 'fetch-data-changed' });
       const [notLoaded, missing, mismatch] = core.getTimeline();
-      expect(notLoaded).toMatchObject({ kind: 'contract-drift', stateName: null, label: 'wcs-fetch', detail: 'component-not-loaded' });
+      expect(notLoaded).toMatchObject({ kind: 'contract-drift', label: 'wcs-fetch', detail: 'component-not-loaded' });
       expect(missing).toMatchObject({ kind: 'contract-drift', detail: 'missing-member: data' });
       expect(mismatch).toMatchObject({ kind: 'contract-drift', detail: 'event-mismatch: data (sidecar change / live fetch-data-changed)' });
     });
@@ -378,9 +308,8 @@ describe('DevtoolsCore', () => {
       const { core, source } = setupConnected([
         { ...summaryOf('main'), watchPaths: new Set(['count']) },
       ]);
-      source.emit({ type: 'state:watch-fired', stateName: 'main', path: 'count' });
-      source.emit({ type: 'state:watch-fired', stateName: 'main', path: 'count' });
-      source.emit({ type: 'state:watch-fired', stateName: `${RESERVED_STATE_NAME_PREFIX}-ui`, path: 'x' });
+      source.emit({ type: 'state:watch-fired', path: 'count' });
+      source.emit({ type: 'state:watch-fired', path: 'count' });
       expect(core.getTimeline()).toHaveLength(0);
       const watch = core.getCoverageReport().find((e) => e.kind === 'watch' && e.name === 'count')!;
       expect(watch).toMatchObject({ status: 'fired', count: 2 });
@@ -388,11 +317,11 @@ describe('DevtoolsCore', () => {
 
     it('token-emitをkind別に記録しsubscriberCountを保持すること', () => {
       const { core, source } = setupConnected();
-      source.emit({ type: 'state:token-emit', kind: 'command', stateName: 'main', tokenName: 'play', args: ['x'], subscriberCount: 0 });
-      source.emit({ type: 'state:token-emit', kind: 'event', stateName: null, tokenName: 'changed', args: [], subscriberCount: 2 });
+      source.emit({ type: 'state:token-emit', kind: 'command', tokenName: 'play', args: ['x'], subscriberCount: 0 });
+      source.emit({ type: 'state:token-emit', kind: 'event', tokenName: 'changed', args: [], subscriberCount: 2 });
       const [command, event] = core.getTimeline();
       expect(command).toMatchObject({ kind: 'command', label: 'play', detail: '"x"', subscriberCount: 0 });
-      expect(event).toMatchObject({ kind: 'event', stateName: null, subscriberCount: 2 });
+      expect(event).toMatchObject({ kind: 'event', subscriberCount: 2 });
     });
 
     it('未知のsourceIdからの要素登録・解除イベントにも安全なこと', () => {
@@ -400,8 +329,8 @@ describe('DevtoolsCore', () => {
       // unregister 前の sink を捕まえておき、source 消滅後のイベント到達を再現する
       const sink = source.sink!;
       registry.unregister('state:test');
-      sink({ type: 'state:element-registered', name: 'ghost', rootNode: document.createElement('div'), element: {} });
-      sink({ type: 'state:element-unregistered', name: 'ghost', rootNode: document.createElement('div'), element: {} });
+      sink({ type: 'state:element-registered', rootNode: document.createElement('div'), element: {} });
+      sink({ type: 'state:element-unregistered', rootNode: document.createElement('div'), element: {} });
       expect(core.getRoster()).toHaveLength(0);
       expect(core.getTimeline().map((entry) => entry.kind)).toEqual(['element-registered', 'element-unregistered']);
     });
@@ -409,10 +338,10 @@ describe('DevtoolsCore', () => {
     it('要素登録・解除がタイムラインとrosterに反映されること', () => {
       const { core, source } = setupConnected([summaryOf('main')]);
       source.summaries = [summaryOf('main'), summaryOf('second')];
-      source.emit({ type: 'state:element-registered', name: 'second', rootNode: document.createElement('div'), element: {} });
+      source.emit({ type: 'state:element-registered', rootNode: document.createElement('div'), element: {} });
       expect(core.getRoster()).toHaveLength(2);
       source.summaries = [summaryOf('main')];
-      source.emit({ type: 'state:element-unregistered', name: 'second', rootNode: document.createElement('div'), element: {} });
+      source.emit({ type: 'state:element-unregistered', rootNode: document.createElement('div'), element: {} });
       expect(core.getRoster()).toHaveLength(1);
       expect(core.getTimeline().map((entry) => entry.kind)).toEqual(['element-registered', 'element-unregistered']);
     });
@@ -445,15 +374,15 @@ describe('DevtoolsCore', () => {
       const { core, source } = setupConnected();
       const binding = bindingOf('main', 'count');
       source.emit({ type: 'state:binding-added', absoluteAddress: addressOf('main', 'count'), binding });
-      expect(core.getWiringForPath('main', 'count')).toHaveLength(1);
-      expect(core.getWiringForPath('main', 'other')).toHaveLength(0);
+      expect(core.getWiringForPath('count')).toHaveLength(1);
+      expect(core.getWiringForPath('other')).toHaveLength(0);
 
       // 未知のbindingのremovedは無視
       source.emit({ type: 'state:binding-removed', absoluteAddress: addressOf('main', 'count'), binding: bindingOf('main', 'count') });
-      expect(core.getWiringForPath('main', 'count')).toHaveLength(1);
+      expect(core.getWiringForPath('count')).toHaveLength(1);
 
       source.emit({ type: 'state:binding-removed', absoluteAddress: addressOf('main', 'count'), binding });
-      expect(core.getWiringForPath('main', 'count')).toHaveLength(0);
+      expect(core.getWiringForPath('count')).toHaveLength(0);
       expect(core.getAllWiring()).toHaveLength(0);
     });
 
@@ -464,7 +393,7 @@ describe('DevtoolsCore', () => {
       source.emit({ type: 'state:binding-added', absoluteAddress: addressOf('main', 'count'), binding: first });
       source.emit({ type: 'state:binding-added', absoluteAddress: addressOf('main', 'count'), binding: second });
       source.emit({ type: 'state:binding-removed', absoluteAddress: addressOf('main', 'count'), binding: first });
-      expect(core.getWiringForPath('main', 'count')).toHaveLength(1);
+      expect(core.getWiringForPath('count')).toHaveLength(1);
     });
 
     it('cleared後の同一bindingのremovedにも安全なこと', () => {
@@ -474,7 +403,7 @@ describe('DevtoolsCore', () => {
       source.emit({ type: 'state:binding-cleared', absoluteAddress: addressOf('main', 'count') });
       // cleared はパス単位の一掃で、binding 個別台帳には残っている経路
       source.emit({ type: 'state:binding-removed', absoluteAddress: addressOf('main', 'count'), binding });
-      expect(core.getWiringForPath('main', 'count')).toHaveLength(0);
+      expect(core.getWiringForPath('count')).toHaveLength(0);
     });
 
     it('binding-clearedでパス単位に一掃されること', () => {
@@ -484,8 +413,8 @@ describe('DevtoolsCore', () => {
       source.emit({ type: 'state:binding-added', absoluteAddress: addressOf('main', 'other'), binding: bindingOf('main', 'other') });
       source.emit({ type: 'state:binding-cleared', absoluteAddress: addressOf('main', 'count') });
       source.emit({ type: 'state:binding-cleared', absoluteAddress: addressOf('main', 'unknown') });
-      expect(core.getWiringForPath('main', 'count')).toHaveLength(0);
-      expect(core.getWiringForPath('main', 'other')).toHaveLength(1);
+      expect(core.getWiringForPath('count')).toHaveLength(0);
+      expect(core.getWiringForPath('other')).toHaveLength(1);
     });
 
     it('getWiringForNodeがノード包含で配線を引けること', () => {
@@ -516,9 +445,9 @@ describe('DevtoolsCore', () => {
       try {
         const { core, source } = setupConnected();
         source.emit({ type: 'state:binding-added', absoluteAddress: addressOf('main', 'count'), binding: bindingOf('main', 'count') });
-        expect(core.getWiringForPath('main', 'count')).toHaveLength(1);
+        expect(core.getWiringForPath('count')).toHaveLength(1);
         dead = true;
-        expect(core.getWiringForPath('main', 'count')).toHaveLength(0);
+        expect(core.getWiringForPath('count')).toHaveLength(0);
         // 剪定済み（2回目も空）
         expect(core.getAllWiring()).toHaveLength(0);
       } finally {
@@ -529,11 +458,10 @@ describe('DevtoolsCore', () => {
   });
 
   describe('配線カバレッジ（設計 §4: 宣言 × 実測）', () => {
-    const declaredOf = (stateName: string, propName: string, path: string, extra: Record<string, unknown> = {}) => ({
+    const declaredOf = (_stateName: string, propName: string, path: string, extra: Record<string, unknown> = {}) => ({
       node: null,
       propName,
       statePathName: path,
-      stateName,
       bindingType: 'prop',
       inFilters: [],
       outFilters: [],
@@ -555,7 +483,7 @@ describe('DevtoolsCore', () => {
           },
         },
       ]);
-      source.emit({ type: 'state:watch-fired', stateName: 'main', path: 'count' });
+      source.emit({ type: 'state:watch-fired', path: 'count' });
       const byName = new Map(core.getCoverageReport().filter((e) => e.kind === 'watch').map((e) => [e.name, e]));
       expect(byName.get('count')).toMatchObject({ status: 'fired', count: 1 });
       // ワイルドカード行 watch で対象リストが未バインド → 未発火でなく前提未成立。
@@ -610,9 +538,9 @@ describe('DevtoolsCore', () => {
           eventTokenNames: new Set(['changed']),
         },
       ]);
-      source.emit({ type: 'state:token-emit', kind: 'command', stateName: 'main', tokenName: 'play', args: [], subscriberCount: 1 });
-      source.emit({ type: 'state:token-emit', kind: 'command', stateName: 'main', tokenName: 'play', args: [], subscriberCount: 1 });
-      source.emit({ type: 'state:token-emit', kind: 'event', stateName: 'main', tokenName: 'changed', args: [], subscriberCount: 1 });
+      source.emit({ type: 'state:token-emit', kind: 'command', tokenName: 'play', args: [], subscriberCount: 1 });
+      source.emit({ type: 'state:token-emit', kind: 'command', tokenName: 'play', args: [], subscriberCount: 1 });
+      source.emit({ type: 'state:token-emit', kind: 'event', tokenName: 'changed', args: [], subscriberCount: 1 });
       const report = core.getCoverageReport();
       expect(report.find((e) => e.kind === 'command' && e.name === 'play')).toMatchObject({ status: 'emitted', count: 2, note: null });
       expect(report.find((e) => e.kind === 'command' && e.name === 'stop')).toMatchObject({ status: 'never' });
@@ -627,12 +555,12 @@ describe('DevtoolsCore', () => {
         },
       ]);
       // play: 全 2 回とも空撃ち → emitted-unheard
-      source.emit({ type: 'state:token-emit', kind: 'command', stateName: 'main', tokenName: 'play', args: [], subscriberCount: 0 });
-      source.emit({ type: 'state:token-emit', kind: 'command', stateName: 'main', tokenName: 'play', args: [], subscriberCount: 0 });
+      source.emit({ type: 'state:token-emit', kind: 'command', tokenName: 'play', args: [], subscriberCount: 0 });
+      source.emit({ type: 'state:token-emit', kind: 'command', tokenName: 'play', args: [], subscriberCount: 0 });
       // seek: 3 回中 1 回だけ空撃ち → emitted のまま note で内訳を出す
-      source.emit({ type: 'state:token-emit', kind: 'command', stateName: 'main', tokenName: 'seek', args: [], subscriberCount: 0 });
-      source.emit({ type: 'state:token-emit', kind: 'command', stateName: 'main', tokenName: 'seek', args: [], subscriberCount: 2 });
-      source.emit({ type: 'state:token-emit', kind: 'command', stateName: 'main', tokenName: 'seek', args: [], subscriberCount: 1 });
+      source.emit({ type: 'state:token-emit', kind: 'command', tokenName: 'seek', args: [], subscriberCount: 0 });
+      source.emit({ type: 'state:token-emit', kind: 'command', tokenName: 'seek', args: [], subscriberCount: 2 });
+      source.emit({ type: 'state:token-emit', kind: 'command', tokenName: 'seek', args: [], subscriberCount: 1 });
       const report = core.getCoverageReport();
       expect(report.find((e) => e.name === 'play')).toMatchObject({
         status: 'emitted-unheard', count: 2, note: 'all 2 emit(s) had 0 subscribers',
@@ -642,15 +570,6 @@ describe('DevtoolsCore', () => {
       });
     });
 
-    it('stateNameがnullのemitはどの宣言とも突合できないため台帳に積まないこと', () => {
-      const { core, source } = setupConnected([
-        { ...summaryOf('main'), commandTokenNames: new Set(['play']) },
-      ]);
-      source.emit({ type: 'state:token-emit', kind: 'command', stateName: null, tokenName: 'play', args: [], subscriberCount: 1 });
-      expect(core.getCoverageReport().find((e) => e.name === 'play')).toMatchObject({ status: 'never', count: 0 });
-      // タイムラインには通常どおり載る
-      expect(core.getTimeline()).toHaveLength(1);
-    });
 
     it('canonical declaredがあればbindingのattached/never-attachedを突合すること', () => {
       const { core, source } = setupConnected([summaryOf('main')]);
@@ -683,7 +602,7 @@ describe('DevtoolsCore', () => {
       const binding = bindingOf('main', 'items.*.label');
       source.emit({ type: 'state:binding-added', absoluteAddress: addressOf('main', 'items.*.label', [0]), binding });
       source.emit({ type: 'state:binding-removed', absoluteAddress: addressOf('main', 'items.*.label', [0]), binding });
-      expect(core.getWiringForPath('main', 'items.*.label')).toHaveLength(0);
+      expect(core.getWiringForPath('items.*.label')).toHaveLength(0);
       // live 台帳は空でも「観測開始以降に一度 attach された」事実で attached のまま
       expect(core.getCoverageReport().find((e) => e.kind === 'binding')).toMatchObject({ status: 'attached' });
       // disconnect で ever 台帳もクリアされる（残留ゼロ）
@@ -710,16 +629,15 @@ describe('DevtoolsCore', () => {
       expect(core.getCanonicalDeclared()).toEqual([]);
     });
 
-    it('getCanonicalDeclaredは未対応ランタイムでnull・対応時はhidden除外込みで集めること', () => {
+    it('getCanonicalDeclaredは未対応ランタイムでnull・対応時は宣言集合を集めること', () => {
       const { core, source } = setupConnected([summaryOf('main')]);
       expect(core.getCanonicalDeclared()).toBeNull();
       (source as any).getDeclaredBindings = vi.fn(() => [
         declaredOf('main', 'textContent', 'a'),
-        declaredOf(`${RESERVED_STATE_NAME_PREFIX}-ui`, 'textContent', 'x'),
+        declaredOf('main', 'textContent', 'x'),
       ]);
       const declared = core.getCanonicalDeclared()!;
-      expect(declared).toHaveLength(1);
-      expect(declared[0].stateName).toBe('main');
+      expect(declared).toHaveLength(2);
     });
 
     it('getCanonicalDeclaredはsourceをまたぐ同一宣言タプルをdedupeすること', () => {
@@ -741,7 +659,7 @@ describe('DevtoolsCore', () => {
         { ...summaryOf('main'), watchPaths: new Set(['count']) },
       ]);
       expect(core.observingSince).not.toBeNull();
-      source.emit({ type: 'state:watch-fired', stateName: 'main', path: 'count' });
+      source.emit({ type: 'state:watch-fired', path: 'count' });
       core.disconnect();
       expect(core.observingSince).toBeNull();
       expect(core.getCoverageReport()).toEqual([]);
@@ -753,11 +671,11 @@ describe('DevtoolsCore', () => {
       const { core, source } = setupConnected([summaryOf('main')]);
       const [entry] = core.getRoster();
       expect(core.keysOf(entry)).toEqual(['count']);
-      expect(source.keys).toHaveBeenCalledWith('main', entry.rootNode);
+      expect(source.keys).toHaveBeenCalledWith(entry.rootNode);
       expect(core.readValue(entry, 'count', [1])).toBe(42);
-      expect(source.read).toHaveBeenCalledWith('main', entry.rootNode, 'count', [1]);
+      expect(source.read).toHaveBeenCalledWith(entry.rootNode, 'count', [1]);
       core.writeValue(entry, 'count', 9);
-      expect(source.write).toHaveBeenCalledWith('main', entry.rootNode, 'count', 9, undefined);
+      expect(source.write).toHaveBeenCalledWith(entry.rootNode, 'count', 9, undefined);
     });
 
     it('source消滅後・keys未実装ランタイムに安全なこと', () => {

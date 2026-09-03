@@ -31,8 +31,7 @@ auto エントリは `<wcs-devtools>` を定義し、ページに無ければ `<
 1 つ挿入する。配置や属性を制御したい場合は自分でタグを書く:
 
 ```html
-<wcs-devtools open dock="right" hotkey="Ctrl+Shift+X" buffer="1000"
-              hidden-states="analytics"></wcs-devtools>
+<wcs-devtools open dock="right" hotkey="Ctrl+Shift+X" buffer="1000"></wcs-devtools>
 ```
 
 ## ペイン
@@ -51,7 +50,6 @@ auto エントリは `<wcs-devtools>` を定義し、ページに無ければ `<
 | `dock` | `bottom` | `bottom` または `right` |
 | `hotkey` | `Alt+Shift+D` | 開閉ショートカット。`none` で無効 |
 | `buffer` | `500` | タイムライン ring buffer 件数（接続時に読む） |
-| `hidden-states` | — | 非表示にする state 名（カンマ区切り。`wcs-devtools` 始まりは常に非表示） |
 
 ## 遅延アタッチ
 

@@ -33,8 +33,7 @@ does not already contain one. To control placement/attributes, write the tag
 yourself:
 
 ```html
-<wcs-devtools open dock="right" hotkey="Ctrl+Shift+X" buffer="1000"
-              hidden-states="analytics"></wcs-devtools>
+<wcs-devtools open dock="right" hotkey="Ctrl+Shift+X" buffer="1000"></wcs-devtools>
 ```
 
 ## Panes
@@ -53,7 +52,6 @@ yourself:
 | `dock` | `bottom` | `bottom` or `right` |
 | `hotkey` | `Alt+Shift+D` | Toggle shortcut; `none` disables |
 | `buffer` | `500` | Timeline ring-buffer capacity (read at connect) |
-| `hidden-states` | — | Comma-separated state names to hide (names starting with `wcs-devtools` are always hidden) |
 
 ## Late attach
 
