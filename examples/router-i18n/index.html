@@ -163,19 +163,19 @@
 
      Routes below carry no locale at all, which is the pleasant side effect.
      ============================================================ -->
-<h1 data-wcs="textContent: t.app.title@i18n"></h1>
-<p class="lead" data-wcs="textContent: t.app.lead@i18n"></p>
+<h1 data-wcs="textContent: i18n.t.app.title"></h1>
+<p class="lead" data-wcs="textContent: i18n.t.app.lead"></p>
 
 <nav class="top-nav" aria-label="Main">
   <!-- Internal links: no locale. wcs-link prepends the basename. -->
-  <wcs-link to="/"><span data-wcs="textContent: t.nav.orders@i18n"></span></wcs-link>
-  <wcs-link to="/about"><span data-wcs="textContent: t.nav.about@i18n"></span></wcs-link>
+  <wcs-link to="/"><span data-wcs="textContent: i18n.t.nav.orders"></span></wcs-link>
+  <wcs-link to="/about"><span data-wcs="textContent: i18n.t.nav.about"></span></wcs-link>
 
   <!-- Language switch: plain anchors with an absolute, locale-prefixed href.
        Outside the basename => not intercepted => full page load. -->
   <span class="lang-switch">
-    <a href="/en/" hreflang="en" data-lang="en" data-wcs="textContent: t.langName.en@i18n"></a>
-    <a href="/ja/" hreflang="ja" data-lang="ja" data-wcs="textContent: t.langName.ja@i18n"></a>
+    <a href="/en/" hreflang="en" data-lang="en" data-wcs="textContent: i18n.t.langName.en"></a>
+    <a href="/ja/" hreflang="ja" data-lang="ja" data-wcs="textContent: i18n.t.langName.ja"></a>
   </span>
 </nav>
 
@@ -194,19 +194,19 @@
   <template>
     <wcs-route path="/">
       <wcs-head>
-        <title data-wcs="textContent: t.app.title@i18n"></title>
+        <title data-wcs="textContent: i18n.t.app.title"></title>
       </wcs-head>
     </wcs-route>
 
     <wcs-route path="/about">
       <wcs-head>
-        <title data-wcs="textContent: t.about.heading@i18n"></title>
+        <title data-wcs="textContent: i18n.t.about.heading"></title>
       </wcs-head>
       <section>
-        <h2 data-wcs="textContent: t.about.heading@i18n"></h2>
-        <p class="lead" data-wcs="textContent: t.about.body@i18n"></p>
+        <h2 data-wcs="textContent: i18n.t.about.heading"></h2>
+        <p class="lead" data-wcs="textContent: i18n.t.about.body"></p>
         <!-- Present only in en.js: on /ja this renders English via the deep merge. -->
-        <p class="note" data-wcs="textContent: t.about.fallbackNote@i18n"></p>
+        <p class="note" data-wcs="textContent: i18n.t.about.fallbackNote"></p>
       </section>
     </wcs-route>
   </template>
@@ -216,7 +216,7 @@
 <!-- Rendered by state, gated on the path the router publishes. -->
 <template data-wcs="if: isList">
   <section>
-    <h2 data-wcs="textContent: t.orders.heading@i18n"></h2>
+    <h2 data-wcs="textContent: i18n.t.orders.heading"></h2>
 
     <!-- Plural via Intl.PluralRules, computed in the app state. -->
     <p class="count" data-wcs="textContent: orderCountText"></p>
@@ -229,7 +229,7 @@
             <!-- Dynamic key resolved by a row getter (§6). -->
             <span class="badge" data-wcs="textContent: orders.*.statusLabel"></span>
             <span class="placed">
-              <span data-wcs="textContent: t.orders.placed@i18n"></span>
+              <span data-wcs="textContent: i18n.t.orders.placed"></span>
               <span data-wcs="textContent: orders.*.placedText"></span>
             </span>
             <span class="amount" data-wcs="textContent: orders.*.totalText"></span>
@@ -241,7 +241,7 @@
     <!-- The only filter on the page. `|date` reads config.locale, which
          bootstrapState took from <html lang>. Nothing here passes a locale. -->
     <p class="generated">
-      <span data-wcs="textContent: t.orders.placed@i18n"></span>
+      <span data-wcs="textContent: i18n.t.orders.placed"></span>
       <span class="stamp" data-wcs="textContent: generatedAt|date"></span>
     </p>
 
@@ -250,14 +250,14 @@
       no catalog. Open the console: the missing key is reported as
       <code>wcs/binding-path-missing</code>, because the dictionary is plain data
       rather than a getter — a getter would stop the check at "unknown".
-      <span class="missing" data-wcs="textContent: t.orders.subtotal@i18n"></span>
+      <span class="missing" data-wcs="textContent: i18n.t.orders.subtotal"></span>
     </p>
   </section>
 </template>
 
-<!-- The dictionary, projected into a state element purely so templates can
-     reach it by path. Its canonical home is /i18n/catalog.js. -->
-<wcs-state name="i18n" src="/i18n/state.js"></wcs-state>
+<!-- The dictionary, mounted onto the state tree purely so templates can
+     reach it by path (i18n.t...). Its canonical home is /i18n/catalog.js. -->
+<wcs-state mount="i18n" src="/i18n/state.js"></wcs-state>
 
 <!-- The app's own state. It imports the catalog directly. -->
 <wcs-state src="/app.js"></wcs-state>

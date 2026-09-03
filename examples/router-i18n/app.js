@@ -1,6 +1,6 @@
 /**
- * The app's own state. It imports the dictionary directly — no `@i18n`, no
- * cross-state read (docs/i18n-design.md §5 / §6).
+ * The app's own state. It imports the dictionary directly — no read through
+ * the i18n mount (docs/i18n-design.md §5 / §6).
  *
  * Every row label below is the case that drove the whole design: a *dynamic*
  * key (`t.orders.status[code]`) that a binding path cannot express, because a

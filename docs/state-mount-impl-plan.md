@@ -240,6 +240,8 @@ slice 4 で確定した挙動・発見:
 
 - **slice 18 済み（DCC セレクタ・SSR クライアント側の name 撤去 — P3-8/P3-9/P3-10）**: DCC の `stateTagSelector` から `:not([name])` を撤去（name 属性は存在しない — あれば fail-fast）・警告文と dcc/README を追随。SSR＝`Ssr.name` getter と `ISsrElement.name` を削除／`Ssr.findByName(root, name)` → `Ssr.find(root)`（最初の `<wcs-ssr>`）／buildSsrDocument・State の inline 生成から name 属性の付与と名前照合を撤去（冪等性検査＝「直前が wcs-ssr かどうか」だけ）。**旧 server が生成する `name="default"` 付きスナップショットも v2 クライアントは読める**（find は属性を見ない — ssr-router e2e 5 spec 緑で実証）。P3-10＝server パッケージは名前非依存を確認（プロトコルのみ・作業ゼロ。既存の waitForReady 反復回数テスト 1 件の失敗は HEAD でも再現する別問題）。テスト＝findByName 系 4 本を find へ移植・Ssr name getter テスト 2 本削除・orchestrated「別名なら生成」を「直前に先客が居れば生成しない」へ転換・DCC 警告テストは「state 無し」構成へ。2632 unit 緑・lint 緑・カバレッジ全ゲート緑（99.53/98.54/100/99.73）・state+ssr e2e 69 spec 全緑。
 
+- **slice 19 済み（examples/router-i18n の mount 移行 — P3-13）**: `<wcs-state name="i18n" src="/i18n/state.js">` → `mount="i18n"`・バインド 15 箇所を `t.…@i18n` → `i18n.t.…` 接頭辞形へ・README（英/日）と各コメント追随。app.js は `i18n` キーを宣言していないので衝突なし。ボリュームが root（app.js の無名 state）より文書順で先だが保留キュー（V5）が吸収。**router-i18n e2e 11 spec 全緑（WCS_LOCAL=1 で作業ツリー dist を検証）**・state+ssr-router+router-state-params+router-a11y 計 80 spec 全緑。Phase B の残＝P3-14（packages/devtools のフック protocol 追随）のみ。
+
 ### 3-1. タスク
 
 | ID | タスク | 場所 | 受け入れ |

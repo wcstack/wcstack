@@ -27,8 +27,8 @@ node examples/router-i18n/server.js       # http://localhost:3000
 - `Intl` のフォーマッタはモジュールスコープで 1 度だけ作れる
 - fallback は**ロード時に**マージする。キーごとに辿らない
 
-`<wcs-state name="i18n">` は、テンプレートから辞書へパスで届くためだけに存在する
-（`t.app.title@i18n`）。射影であって、辞書の第二の住所ではない。
+`<wcs-state mount="i18n">` は、テンプレートから辞書へパスで届くためだけに存在する
+（`i18n.t.app.title`）。マウントされたボリュームであって、辞書の第二の住所ではない。
 
 ## ファイル
 

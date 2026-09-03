@@ -28,8 +28,8 @@ live in reactive state. So the catalog is an **ES module**, and:
 - `Intl` formatters are built once at module scope
 - fallback is merged **at load time**, not looked up per key
 
-`<wcs-state name="i18n">` exists only so templates can reach the dictionary by
-path (`t.app.title@i18n`). It is a projection, not a second home.
+`<wcs-state mount="i18n">` exists only so templates can reach the dictionary by
+path (`i18n.t.app.title`). It is a mounted volume, not a second home.
 
 ## Files
 
