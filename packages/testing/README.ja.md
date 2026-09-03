@@ -50,7 +50,7 @@ npm install -D @wcstack/testing @wcstack/state @wcstack/server vitest happy-dom
 |---|---|
 | `root` | `document` か ShadowRoot — ここに query する |
 | `container` | `document.body` か shadow host |
-| `state(name?)` | その `name` 属性を持つ `<wcs-state>` のアクセサ（既定 `"default"` = 属性なし）。無ければ throw |
+| `state()` | ルートの `<wcs-state>` のアクセサ — v2 は 1 root 1 ツリーで名前は無い。ボリューム（`mount=`）はそのツリーの一部（パス接頭辞で読む）。（`mount()` は DOM のマウント・`mount=` は state のマウント）。無ければ throw |
 | `state().read(fn)` | readonly プロキシに対して `fn` を走らせ結果を返す |
 | `state().write(fn)` | writable プロキシに対して `fn`（同期 / 非同期）を走らせる — ハンドラと同じ。後に `await settle()` |
 | `state().element` | 要素そのもの |

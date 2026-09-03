@@ -246,6 +246,8 @@ slice 4 で確定した挙動・発見:
 
 - **slice 21 済み（SSR × ボリューム — P3-9 残・D14 の採用）**: ルートが enable-ssr スナップショットから初期化されたら `State.hydratedFromSsr` が立ち、graftVolume は**スロットに既存値があれば採用**（データを接ぎ木せず・衝突検査を掛けない — モジュールは getter / $ 宣言のためロード済み）。スナップショットに部分木が無ければ通常どおり接ぎ木・非 hydrate の衝突は従来どおり raise。スナップショットへのボリュームデータ混入は**自然に成立**（接ぎ木は raw state への通常書き込み・quoted-path アクセサは enumerable:false で extractStateData に出ない）。ボリュームの enable-ssr は warn 付きで無視（D14: ルートに集約）。**発見・修理＝ボリューム初期化の設定エラー（予約衝突等）が initializePromise をウェッジさせていた** — _failInitialization と同じ規範で resolve してから throw。予約はドキュメントどおり切断後も維持（アンマウント未対応の帰結 — テストはパスを分ける）。unit +5（ssr.volume.test.ts）・2637 全緑・lint 緑・カバレッジ全ゲート緑・mount+ssr e2e 18 spec 緑。server 側（P3-10）は作業なしで成立（スナップショット生成は state 側のプロトコル実装）。
 
+- **slice 22 済み（@wcstack/testing の name 撤去 — P4-4）**: `state(name?)` → `state()`。引数を渡すと**移行ヒント付き throw**（「mount= に載せて接頭辞で読む」）。ルート選択は「`mount` / `bind-component` 属性の無い最初の `<wcs-state>`」（ボリュームと bind-component 内側は対象外）。README（英/日）の表を v2 形に（mount()=DOM / mount==state の 1 行区別込み）。名前付きテスト 1 本を API エラーのピンへ転換。**罠＝ローカル symlink 先の committed dist が古く 9 件落ちる**（server の waitForReady 不在・router/state の鮮度）— server/router/state を再ビルドすると 14/14 緑（CI は実行前に stale dist を再ビルドする）。dist は戻してコミット。
+
 ### 3-1. タスク
 
 | ID | タスク | 場所 | 受け入れ |

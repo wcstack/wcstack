@@ -46,17 +46,14 @@ describe("mount — README レシピを 1 呼び出しに", () => {
     expect(app.root.querySelector("#count")!.textContent).toBe("6");
   });
 
-  it("state(name): 名前付き state を引き、無ければ throw", async () => {
+  it("state(): 引数は v2 で撤去（1 root 1 ツリー）— name 指定は移行ヒント付きで throw", async () => {
     const app = await mount(`
       <wcs-state json='{"a": 1}'></wcs-state>
-      <wcs-state name="other" json='{"b": 2}'></wcs-state>
       <p id="a" data-wcs="textContent: a"></p>
-      <p id="b" data-wcs="textContent: b@other"></p>
     `);
-    expect(app.root.querySelector("#b")!.textContent).toBe("2");
-    expect(app.state("other").read((s) => s.b)).toBe(2);
-    expect(app.state("other").element.getAttribute("name")).toBe("other");
-    expect(() => app.state("nope")).toThrow(/no <wcs-state name="nope">/);
+    expect(app.state().read((s) => s.a)).toBe(1);
+    expect(() => (app.state as (name?: string) => unknown)("other")).toThrow(/removed in v2/);
+    expect(() => (app.state as (name?: string) => unknown)("other")).toThrow(/mount=/);
     app.unmount();
     const empty = await mount("<p></p>");
     expect(() => empty.state()).toThrow(/no <wcs-state>/);

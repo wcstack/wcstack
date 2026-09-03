@@ -50,7 +50,7 @@ The returned `MountedApp`:
 |---|---|
 | `root` | `document` or the ShadowRoot — query it |
 | `container` | `document.body` or the shadow host |
-| `state(name?)` | Accessor for the `<wcs-state>` with that `name` attribute (default `"default"` = none). Throws if absent |
+| `state()` | Accessor for the root `<wcs-state>` — v2 has one state tree per root, so there is nothing to name. Volumes (`mount=`) are part of that tree: read them by path prefix. (`mount()` mounts DOM; `mount=` mounts state.) Throws if absent |
 | `state().read(fn)` | Run `fn` against a readonly proxy and return its result |
 | `state().write(fn)` | Run `fn` (sync or async) against a writable proxy — exactly what a handler does. Follow with `await settle()` |
 | `state().element` | The element itself |
