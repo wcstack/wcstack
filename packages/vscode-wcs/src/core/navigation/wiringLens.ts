@@ -226,10 +226,21 @@ function findUnanalyzedSrcElement(
   resolved: string,
   candidates: readonly { path: string }[],
 ): ReturnType<typeof parseWcsStateElements>[number] | undefined {
-  return parseWcsStateElements(html, stateTagName).find((e) => {
+  const elements = parseWcsStateElements(html, stateTagName);
+  const mountPrefixes = elements
+    .map((e) => e.mountPath)
+    .filter((m): m is string => m !== null);
+  const underMount = (path: string): boolean =>
+    mountPrefixes.some((m) => path === m || path.startsWith(m + '.'));
+  return elements.find((e) => {
     if (e.srcAttr === undefined) return false;
     if (e.mountPath === null) {
-      return candidates.length === 0;
+      // ルートの守備範囲 = どのマウント接頭辞にも入らないパス。resolved がそこに居て、
+      // その範囲に候補が 1 つも無いときフォールバックする。candidates 全体の length で
+      // 見ると、解析可能なインラインボリュームが同居しただけで（候補が非ゼロになり）
+      // ルートの外部定義フォールバックが失われる
+      if (underMount(resolved)) return false;
+      return !candidates.some((c) => !underMount(c.path));
     }
     const prefix = e.mountPath + '.';
     if (resolved !== e.mountPath && !resolved.startsWith(prefix)) return false;

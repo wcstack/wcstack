@@ -86,9 +86,16 @@ function _getFragmentInfo(
   // after replacing and collect node infos on child fragment
   const fragmentInfo = {
     fragment: fragment,
+    // own result（テンプレート自身の for/if/elseif）にも forPath を渡す — `$n` の
+    // シフト量は囲む for の翻訳が根拠（translateParsedForMount）で、渡し漏れると
+    // record.delta に落ち、翻訳がワイルドカードを増やす部分マウント内の for の
+    // `if: $n` / `elseif: $n` が誤った添字に解決される（transformNodeInfos と対称）。
+    // if/elseif の forPath（呼び手の childForPath）は外側 forPath そのもの。
+    // for テンプレートの own path は `$n` になり得ず、非 `$n` パスの変換は forPath を
+    // 読まないため、for に自パスが渡っても無害
     parseBindTextResult: typeof transform === "undefined" || !transformOwnResult
       ? parseBindingTextResult
-      : transform(parseBindingTextResult),
+      : transform(parseBindingTextResult, forPath),
     nodeInfos: getFragmentNodeInfos(fragment),
   }
   if (typeof transform !== "undefined") {

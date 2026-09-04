@@ -98,7 +98,9 @@ export interface IAccessorEntry {
 
 let nextMountId = 0;
 
-const MOUNT_DOLLAR_DECLARATIONS = ["$watch", "$streams", "$listKeys", "$updatedCallback"] as const;
+const MOUNT_DOLLAR_DECLARATIONS = [
+  "$watch", "$streams", "$listKeys", "$updatedCallback", "$commandTokens", "$eventTokens", "$on",
+] as const;
 const dollarDeclarationWarned = new Set<string>();
 
 /** テスト用: 宣言 warn の 1 回性台帳を空にする。 */
@@ -107,9 +109,12 @@ export function clearMountDollarWarnsForTesting(): void {
 }
 
 /**
- * マウントされたコンポーネントは `$watch` / `$streams` / `$listKeys` / `$updatedCallback` を
- * 実行しない（v1 の mapped も同じ — innerState が `$` を遮っていた）。無言に捨てず、
- * (tag, prop) につき 1 回だけ「ルートかボリュームに宣言する」誘導を出す。
+ * マウントされたコンポーネントは宣言面（`$watch` / `$streams` / `$listKeys` /
+ * `$updatedCallback` / `$commandTokens` / `$eventTokens` / `$on`）を実行しない
+ * （v1 の mapped も同じ — innerState が `$` を遮っていた）。無言に捨てず、
+ * (tag, prop) につき 1 回だけ「ルート（または対応する宣言はボリューム）に宣言する」
+ * 誘導を出す。テンプレート側の `$command.*` の**参照**（バインディングのパス）は
+ * ルート宣言のトークンに解決される（`$` 頭のパスは翻訳しない — translateInnerPath）。
  * `$connectedCallback` / `$disconnectedCallback` / `$stateReadyCallback` は要素の
  * ライフサイクルとしてスコープごとに残る（設計書 §4-6）。
  */
@@ -127,8 +132,9 @@ export function warnMountedDollarDeclarations(record: IMountRecord): void {
   dollarDeclarationWarned.add(key);
   console.warn(
     `[@wcstack/state] [wcs/mount-dollar-declaration] <${key.split("|")[0]}>.${record.stateProp} declares ` +
-    `${declared.join(", ")}, which mounted components do not run. Declare them on the root state or a volume ` +
-    `(<wcs-state mount="...">) instead. See docs/state-mount-design.md §4-6.`,
+    `${declared.join(", ")}, which mounted components do not run. Declare them on the root state instead ` +
+    `(a volume <wcs-state mount="..."> can host $watch / $listKeys / $updatedCallback). ` +
+    `See docs/state-mount-design.md §4-6.`,
   );
 }
 
@@ -268,14 +274,18 @@ function markerizePrivate(record: IMountRecord, innerPath: string): string {
   return record.markerBasePath + DELIMITER + innerPath;
 }
 
-/** アクセサの逆引き（マーカー親 → 接尾キー → 作者のアクセサ名と $n シフト）を登録する */
+/**
+ * アクセサの逆引き（マーカー親 → 接尾キー → 作者のアクセサ名と $n シフト）を登録する。
+ * suffix は常に非空（ワイルドカード終端アクセサは markerizeAccessorPath が raise 済み —
+ * 空を許すと trailing dot の不正パスが getterPaths に載る）。
+ */
 function recordAccessorSuffix(record: IMountRecord, markerParentPath: string, suffix: string, accessorName: string): void {
   let bySuffix = record.accessorBySuffixByMarkerParent.get(markerParentPath);
   if (typeof bySuffix === "undefined") {
     bySuffix = new Map();
     record.accessorBySuffixByMarkerParent.set(markerParentPath, bySuffix);
   }
-  const translatedPath = suffix.length === 0 ? markerParentPath : markerParentPath + DELIMITER + suffix;
+  const translatedPath = markerParentPath + DELIMITER + suffix;
   bySuffix.set(suffix, {
     accessorName,
     indexShift: getPathInfo(translatedPath).wildcardCount - getPathInfo(accessorName).wildcardCount,
@@ -285,10 +295,10 @@ function recordAccessorSuffix(record: IMountRecord, markerParentPath: string, su
     // このアクセサの動的エッジ登録）と isCacheable（getter 値のキャッシュ）が
     // getterPaths を正本にしているため、載せないと再評価もキャッシュも効かない。
     // モック互換のため optional に扱う。追加分は記録の恒久破棄時に回収する
-    // ため addedGetterPaths にも控える（cleanupCollectedMountRecord）
-    const getterPath = markerParentPath + DELIMITER + suffix;
-    (record.parentStateElement.getterPaths as Set<string> | undefined)?.add(getterPath);
-    record.addedGetterPaths.add(getterPath);
+    // ため addedGetterPaths にも控える（cleanupCollectedMountRecord）。
+    // suffix 空を素朴に結合すると trailing dot の不正パスになる — translatedPath を使う
+    (record.parentStateElement.getterPaths as Set<string> | undefined)?.add(translatedPath);
+    record.addedGetterPaths.add(translatedPath);
   }
 }
 
@@ -322,9 +332,21 @@ function markerizeAccessorPath(record: IMountRecord, innerPath: string): string 
     // 部分マウントのみで、どの接頭辞にも含まれないツリー部（§4-1 の 4b）
     raiseError(noMountEntryMessage(record, innerPath));
   }
+  if (rest.length === 0) {
+    // ワイルドカード終端アクセサ（行 getter `get "tags.*"()`）がツリーのリストへ翻訳される形:
+    // 翻訳結果がマーカー終端パス（`users.*.tags.*.#m`）になり、getByAddress のオーバーレイ
+    // dispatch が getter 評価より先に掛かってオーバーレイ proxy が値として返る
+    // （作者の getter は評価されない）。無言で壊れる形なのでサポート外として loud に落とす
+    raiseError(
+      `Wildcard-terminal accessor "${innerPath}" on mounted <${record.component.tagName.toLowerCase()}> ` +
+      `is not supported: it translates to a marker-terminal path where the mount overlay would shadow ` +
+      `the accessor. Declare the row value as a getter on the host tree, or back it with a ` +
+      `component-own array (a private key makes the whole path private).`,
+    );
+  }
   const markerParent = translated + DELIMITER + record.marker;
   recordAccessorSuffix(record, markerParent, rest.join(DELIMITER), innerPath);
-  return rest.length === 0 ? markerParent : markerParent + DELIMITER + rest.join(DELIMITER);
+  return markerParent + DELIMITER + rest.join(DELIMITER);
 }
 
 /** 先頭セグメントが「作者のもの」（own data key・メソッド。積みで注入されたキーは除く）か */
@@ -423,13 +445,15 @@ export function translateParsedForMount<T extends ITranslatable>(record: IMountR
     translated = shift === 0 ? parsed.statePathName : `$${Number(indexMatch[1]) + shift}`;
   } else {
     translated = translateInnerPath(record, parsed.statePathName);
-    if ((parsed as { bindingType?: string }).bindingType === "for" && translated !== parsed.statePathName) {
+    if ((parsed as { bindingType?: string }).bindingType === "for") {
       // スコープ相対の添字（P2-9）用: この for の行に立つループ文脈の要素パスと、
-      // 翻訳で増えたワイルドカード数を控える
+      // 翻訳で増えたワイルドカード数を控える。shift 0（Δ=0 の丸ごとマウント
+      // `state: user` や同名翻訳の部分マウント）でも必ず載せる —
+      // event/handler.ts は台帳に無いループ文脈を「外側スコープの借用行＝
+      // 添字 0 本」と解釈するため、登録漏れは自スコープの for の添字を
+      // 丸ごと落とす（§4-4 違反）
       const shift = getPathInfo(translated).wildcardCount - parsed.statePathInfo.wildcardCount;
-      if (shift > 0) {
-        record.indexShiftByLoopElementPath.set(translated + DELIMITER + WILDCARD, shift);
-      }
+      record.indexShiftByLoopElementPath.set(translated + DELIMITER + WILDCARD, shift);
     }
   }
   if (translated === parsed.statePathName) {
@@ -451,13 +475,20 @@ export function translateBindingForMount(record: IMountRecord, binding: IBinding
  * アクセサとして登録されたパスならその indexShift、そうでなければルートの Δ。
  */
 export function getIndexShiftForMarkerPath(record: IMountRecord, markerPath: string): number {
-  const markerIndex = markerPath.indexOf(record.marker);
-  if (markerIndex === -1) {
+  // 末尾マーカーをセグメント単位で正確に切り出す（getMountRecordByPath と同じ規則）。
+  // indexOf(record.marker) の前方一致だと `#m2` が別記録の `#m21` の中に誤ヒットし、
+  // 親パスをセグメント途中で切って登録簿の照会を外す（Δ への誤フォールバック）
+  const hashIndex = markerPath.lastIndexOf("#");
+  if (hashIndex === -1) {
     return record.delta;
   }
-  const parent = markerIndex === 0 ? record.marker : markerPath.slice(0, markerIndex + record.marker.length);
-  const suffixStart = markerIndex + record.marker.length + 1;
-  const suffix = suffixStart > markerPath.length ? "" : markerPath.slice(suffixStart);
+  const end = markerPath.indexOf(DELIMITER, hashIndex);
+  const marker = end === -1 ? markerPath.slice(hashIndex) : markerPath.slice(hashIndex, end);
+  if (marker !== record.marker) {
+    return record.delta;
+  }
+  const parent = end === -1 ? markerPath : markerPath.slice(0, end);
+  const suffix = end === -1 ? "" : markerPath.slice(end + 1);
   const entry = record.accessorBySuffixByMarkerParent.get(parent)?.get(suffix);
   return typeof entry !== "undefined" ? entry.indexShift : record.delta;
 }
@@ -591,17 +622,15 @@ export function getMountRecordByScopeRoot(scopeRoot: Node): IMountRecord | null 
 
 /**
  * ノードから最も近いマウントスコープ根の記録を引く（event/handler.ts のスコープ相対
- * 添字が使う）。Shadow DOM 形はスコープ根＝shadowRoot なので rootNode で直に引ける。
- * Light DOM 形はスコープ根＝**コンポーネント要素自身**（D7・mountScope.ts）なので
- * rootNode では引けず、祖先を辿って最初のスコープ根を探す。入れ子マウントでは
+ * 添字が使う）。Light DOM 形はスコープ根＝**コンポーネント要素自身**（D7・
+ * mountScope.ts）で rootNode の内側に入れ子になりうる（Shadow 形のスコープの中の
+ * Light DOM マウント）ため、**祖先を先に**辿って最初のスコープ根を探す — rootNode
+ * 直ヒットを先に返すと外側の記録を取り違える。祖先に無ければ rootNode 自身
+ * （Shadow DOM 形のスコープ根＝shadowRoot）で引く。入れ子マウントでは
  * 最も内側（＝そのノードのバインディングを翻訳した記録）が返る。
  * `hasMounts` が真のときだけ呼ぶこと（無マウントの経路にこの走査を載せない — D18）。
  */
 export function findMountRecordForNode(node: Node, rootNode: Node): IMountRecord | null {
-  const byRoot = mountRecordByScopeRoot.get(rootNode);
-  if (typeof byRoot !== "undefined") {
-    return byRoot;
-  }
   let current: Node | null = node;
   while (current !== null && current !== rootNode) {
     const record = mountRecordByScopeRoot.get(current);
@@ -610,7 +639,7 @@ export function findMountRecordForNode(node: Node, rootNode: Node): IMountRecord
     }
     current = current.parentNode;
   }
-  return null;
+  return mountRecordByScopeRoot.get(rootNode) ?? null;
 }
 
 /** この state element に登録済みのマウント記録を列挙する（devtools の overlays が読む）。 */
@@ -637,10 +666,14 @@ export function stateElementHasMounts(stateElement: IStateElement): boolean {
 
 /**
  * パスに含まれるマーカーからマウント記録を引く。`hasMounts` が真のときだけ呼ぶこと。
- * `#` を含まないパス（圧倒的多数）は indexOf 1 回で抜ける。
+ * `#` を含まないパス（圧倒的多数）は lastIndexOf 1 回で抜ける。
+ * 入れ子マウント（外側の私有キーの上に内側マウントが載る形）ではパスに複数の
+ * マーカーが並ぶ（`users.*.#m1.drafts.#m2`）— オーバーレイ dispatch と $n 補正が
+ * 要るのは**末尾**のマーカーの記録なので、先頭でなく最後の `#` で切る
+ * （先頭で切ると外側の記録が返り誤翻訳する）。
  */
 export function getMountRecordByPath(stateElement: IStateElement, path: string): IMountRecord | null {
-  const hashIndex = path.indexOf("#");
+  const hashIndex = path.lastIndexOf("#");
   if (hashIndex === -1) {
     return null;
   }

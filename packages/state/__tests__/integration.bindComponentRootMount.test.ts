@@ -441,3 +441,110 @@ describe("bind-component: R1 — own data key は私有 (integration)", () => {
     host.remove();
   });
 });
+
+/**
+ * イベントハンドラの添字スコープ（§4-4 / P2-9）— Δ=0 の丸ごとマウントと同名翻訳。
+ *
+ * 翻訳でワイルドカードが増えないマウント（`state: user` の Δ=0、`state.items: items`
+ * の同名翻訳）でも、自スコープの `for` の添字は作者に見えなければならない。
+ * indexShiftByLoopElementPath への登録が「translated !== parsed && shift > 0」に
+ * 限られていた間は台帳ミスが「借用行＝添字 0 本」と解釈され、クリック添字が空に
+ * なっていた（v2 レビューの修理 — mount.ts translateParsedForMount）。
+ */
+describe("bind-component: Δ=0 マウントのイベント添字はスコープ相対", () => {
+  it("丸ごとマウント（state: user・Δ=0）の内側 for のハンドラに行添字が届くこと", async () => {
+    const tag = uniqueTag("bcrm-evt-delta0");
+    const calls: number[][] = [];
+    defineComponent(tag, () => ({
+      pick(_e: Event, ...idx: number[]) { calls.push(idx); },
+    }), `<template data-wcs="for: items"><button data-wcs="onclick: pick"></button></template>`);
+    const { host, shadowRoot } = await mountHost(
+      '{"user":{"items":["x","y"]}}',
+      `<${tag} data-wcs="state: user"></${tag}>`,
+    );
+    const component = shadowRoot.querySelector(tag)!;
+    await childReady(component);
+
+    const buttons = component.shadowRoot!.querySelectorAll("button");
+    expect(buttons.length).toBe(2);
+    (buttons[1] as HTMLElement).dispatchEvent(new Event("click"));
+    await flush();
+    await flush();
+
+    expect(calls).toEqual([[1]]);
+    host.remove();
+  });
+
+  it("同名翻訳の部分マウント（state.items: items）の内側 for のハンドラにも行添字が届くこと", async () => {
+    const tag = uniqueTag("bcrm-evt-same");
+    const calls: number[][] = [];
+    defineComponent(tag, () => ({
+      pick(_e: Event, ...idx: number[]) { calls.push(idx); },
+    }), `<template data-wcs="for: items"><button data-wcs="onclick: pick"></button></template>`);
+    const { host, shadowRoot } = await mountHost(
+      '{"items":["x","y"]}',
+      `<${tag} data-wcs="state.items: items"></${tag}>`,
+    );
+    const component = shadowRoot.querySelector(tag)!;
+    await childReady(component);
+
+    const buttons = component.shadowRoot!.querySelectorAll("button");
+    expect(buttons.length).toBe(2);
+    (buttons[1] as HTMLElement).dispatchEvent(new Event("click"));
+    await flush();
+    await flush();
+
+    expect(calls).toEqual([[1]]);
+    host.remove();
+  });
+});
+
+/**
+ * v2 設定エラーの fail-fast 規範（レビュー修理）: _initializeBindWebComponent 内の
+ * raise は initializePromise / connectedCallbackPromise を解決してから伝播すること。
+ * 未解決のまま投げると waitForStateInitialize がページ全体を無言でウェッジする
+ * （_failInitialization の注記と同じ理由）。既存イディオムに合わせ、非接続のまま
+ * 直接呼んで rejection を捕まえる（DOM 駆動だと unhandled rejection になるため）。
+ */
+describe("bind-component: v2 設定エラーの fail-fast（初期化待ちをウェッジさせない）", () => {
+  it("2 本目の bind-component（別 prop）の raise でも初期化待ちが解決すること", async () => {
+    const { setStateElement } = await import("../src/stateElementByName");
+    const { host, shadowRoot, parentStateElement, card, cs } = await mountCard("; extra: theme");
+    // 自動 connect を避けるため一旦 document から外し、ルート登録と親の rootNode だけ
+    // 手で戻す（「親は生きているが 2 本目が来た」形をテスト都合で再現する）
+    host.remove();
+    setStateElement(shadowRoot, parentStateElement);
+    (parentStateElement as any)._rootNode = shadowRoot;
+    try {
+      const second = document.createElement("wcs-state") as State;
+      second.setAttribute("bind-component", "extra");
+      cs.appendChild(second); // 非接続なので connectedCallback は走らない
+
+      await expect((second as any)._initializeBindWebComponent())
+        .rejects.toThrow(/one <wcs-state bind-component> per component/);
+      // fail-fast でも初期化待ちはウェッジしない（旧挙動: 未解決 throw で永久待ち）
+      await second.initializePromise;
+      await second.connectedCallbackPromise;
+      expect(card).toBeTruthy();
+    } finally {
+      (parentStateElement as any)._rootNode = null;
+      setStateElement(shadowRoot, null);
+    }
+  });
+
+  it("親ツリーの居ないルートでのマウント再初期化の raise でも初期化待ちが解決すること", async () => {
+    const { host, card, cs } = await mountCard();
+    // ルート state 要素ごと外れた形（登録解除・binding 台帳とマウント記録は残る）
+    host.remove();
+    const replacement = document.createElement("wcs-state") as State;
+    replacement.setAttribute("bind-component", "state");
+    cs.appendChild(replacement); // 非接続なので connectedCallback は走らない
+
+    await expect((replacement as any)._initializeBindWebComponent())
+      .rejects.toThrow(/No state tree found on this root for mount host/);
+    // fail-fast でも初期化待ちはウェッジしない
+    await replacement.initializePromise;
+    await replacement.connectedCallbackPromise;
+    expect(card).toBeTruthy();
+  });
+});

@@ -9,7 +9,10 @@
  *
  * キーは「state プロパティ名」であって state 要素ではない。完了はプロパティ単位の
  * 事実（`defineProperty(component, stateProp, ...)` が済んだか）であり、
- * 1 つの要素に複数の state プロパティを束ねられる以上、粒度もプロパティ単位が正しい。
+ * 粒度もプロパティ単位が正しい（v2 の注記: **マウント**スコープは 1 コンポーネント
+ * 1 つに制約される — 2 本目の `<wcs-state bind-component>` は
+ * webComponent/mountScope.ts が raise する。プロパティ粒度の台帳自体は
+ * 型の取り違え防止として維持する）。
  * 以前は内側の `IStateElement` をキーにしていたが、照会側（apply/applyChange.ts）が
  * 手にしているのは *親スコープ* の `IStateElement` であり、どちらも同じ型なので
  * TypeScript が取り違えを検出できず、判定が恒久的に false になっていた

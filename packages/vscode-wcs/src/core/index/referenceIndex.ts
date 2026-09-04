@@ -162,7 +162,10 @@ export function buildReferenceIndex(html: string, options: IReferenceIndexOption
   const declarations: IDeclarationSite[] = [];
   for (const block of parseWcsScriptBlocks(html, stateTagName)) {
     // ボリューム（mount=）の宣言はマウントパス接頭辞でツリーに載る（v2）。
-    // $ 宣言はマウント越しに表現できないため索引に載せない（runtime も実行しない）
+    // `$` 宣言は**パスとしては**マウント越しに表現できないため索引に載せない
+    //（runtime は $watch / $listKeys / $updatedCallback を翻訳・相対配送で実行する —
+    // パス索引の対象にならないだけで「実行しない」わけではない。$streams は raise・
+    // トークンは warn）
     const prefix = block.mountPath === null ? '' : block.mountPath + '.';
     for (const span of analyzeDeclarationSpans(block.content)) {
       if (prefix !== '' && span.name.startsWith('$')) continue;

@@ -36,8 +36,7 @@ import { buildMountRecord, callMountLifecycleCallback, getRegisteredMountRecord,
 import { initializeMountScope, remountScopeBindings } from "../webComponent/mountScope";
 import { createPublicMountState } from "../webComponent/overlay";
 import { warnOwnKeyShadowsForMount } from "../webComponent/ownKeyShadow";
-import { markWebComponentAsComplete } from "../webComponent/completeWebComponent";
-import { markWebComponentStatePropDeclared } from "../webComponent/completeWebComponent";
+import { markWebComponentAsComplete, markWebComponentStatePropDeclared } from "../webComponent/completeWebComponent";
 import { getInjectedKeys, restoreOverwrittenValues, takeOverwrittenObject } from "../webComponent/preCompletionWrites";
 import { callVolumeLifecycle, graftOrQueueVolume, IVolumeGraftInfo, reserveVolumeSlot, validateVolumeMountPath } from "../webComponent/volume";
 import { hasRootMountBinding } from "../webComponent/rootMountBinding";
@@ -120,6 +119,8 @@ export class State extends HTMLElementBase implements IStateElement {
   private _hasGraftedVolumes: boolean = false;
   /** ボリューム（mount=）: 接ぎ木済みの控え（$disconnectedCallback 用） */
   private _volumeGraftInfo: IVolumeGraftInfo | null = null;
+  /** ボリューム: スロット予約済み・接ぎ木進行中（ロード完了前の再接続の再入ガード） */
+  private _volumeInitializing: boolean = false;
   /** v2 マウント（Phase 2）: この bind-component 要素が構築したマウント記録 */
   private _mountRecord: IMountRecord | null = null;
   private _bindableEventMap: Record<string, string> = {};
@@ -263,7 +264,8 @@ export class State extends HTMLElementBase implements IStateElement {
           return await loadFromInnerScript(script, `${this._name}`);
         } else {
           const timerId = setTimeout(() => {
-            console.warn(`[@wcstack/state] Warning: No state source found for <${config.tagNames.state}> element with name="${this._name}".`);
+            // v2: name 属性は撤去済み（fail-fast）— 文言に name を出さない（tagName で特定十分）
+            console.warn(`[@wcstack/state] Warning: No state source found for <${config.tagNames.state}> element.`);
           }, NO_SET_TIMEOUT);
           // 要注意！！！APIでセットする場合はここで待機する必要がある --(1)
           const state = await this._setStatePromise!;
@@ -289,9 +291,8 @@ export class State extends HTMLElementBase implements IStateElement {
       if (this.hasAttribute("bind-component")) {
         raiseError(`"mount" cannot be combined with "bind-component".`);
       }
-      if (this.hasAttribute("name")) {
-        raiseError(`"mount" replaces "name" — a volume has no name of its own. Remove the name attribute.`);
-      }
+      // name 併記は connectedCallback 冒頭の name チェックが mount 専用文言で先に落とす
+      //（ここに同じ検査を置いても到達しない）
       if (this.hasAttribute("enable-ssr")) {
         // D14: スナップショットはルートに 1 本 — ボリューム側の enable-ssr は意味を持たない
         console.warn(`[@wcstack/state] <${config.tagNames.state} mount="${mountPath}"> ignores "enable-ssr" — snapshots are per root tree (the root state element aggregates volume data).`);
@@ -305,12 +306,13 @@ export class State extends HTMLElementBase implements IStateElement {
       this._resolveConnectedCallback?.();
       throw error;
     }
+    // 予約成立後に立てる（設定エラーの再接続は従来どおり再 raise させる）
+    this._volumeInitializing = true;
     // D11: ルートの居ないページのボリュームを無言にしない（検査は要素の存在・
     // パース完了後 — 下の module 関数を参照）
     if (getStateElement(rootNode) === null) {
       reportVolumeWithoutRoot(rootNode, mountPath);
     }
-    const volumeState = await this._loadStateFromSource();
     const finish = (info: IVolumeGraftInfo | null): void => {
       this._volumeGraftInfo = info;
       this._initialized = true;
@@ -318,6 +320,21 @@ export class State extends HTMLElementBase implements IStateElement {
       this._resolveLoading?.();
       this._resolveConnectedCallback?.();
     };
+    let volumeState: Record<string, any>;
+    try {
+      volumeState = await this._loadStateFromSource();
+    } catch (error) {
+      // ロード失敗（404 / JSON パースエラー / import 失敗）は 1 ボリュームに閉じる
+      // （graftIsolated と同じ隔離規範 — 接ぎ木は載らず予約だけが残る着地）。
+      // 未解決のまま投げると waitForStateInitialize が全 <wcs-state> の
+      // initializePromise を Promise.all で待つためページ全体が無言でウェッジし、
+      // 上で立てた _volumeInitializing の再入ガードが remove → append の復旧も
+      // 握り潰す。予約成立後の失敗は graft 失敗と同じ着地（finish(null)）に合流し、
+      // 予約成立前の設定エラー（上の try/catch）だけが fail-fast で再 raise する
+      console.error(`[@wcstack/state] volume "${mountPath}" failed to load.`, error);
+      finish(null);
+      return;
+    }
     // await 中に剥がされたら何もしない（スコープは持っていない）
     if (this._rootNode === null) {
       finish(null);
@@ -458,17 +475,19 @@ export class State extends HTMLElementBase implements IStateElement {
           `(data-wcs="${boundComponentStateProp}: path").`,
         );
       }
-      // v2 マウント（Phase 2 slice 3・impl-plan §3-0）: **ルートエントリ**（`state: path` の
-      // 丸ごとマウント）を持つホスト配線は単一ツリーで構築する。部分マウントのみの
-      // 既存形は v1 機構のまま（次スライスで移行 — P2-0 のテスト仕分けと同時）。
-      // Light DOM は P2 後半（P3-7 と同時）。
+      // v2 マウント（Phase 2・impl-plan §3-0）: この stateProp へのホスト配線
+      //（ルートエントリ / 部分マウントのみ、Shadow / Light DOM とも）は単一ツリーで
+      // 構築する。ホスト配線が 1 本も無い plain Shadow 形だけが下の bindWebComponent
+      //（独立ツリー）に落ちる。
       if (boundComponent.hasAttribute(config.bindAttributeName)) {
         const hostBindings = (getBindingsByNode(boundComponent) ?? []).filter(
           (hostBinding) => hostBinding.propSegments[0] === boundComponentStateProp,
         );
         if (hostBindings.length > 0) {
+          // 設定エラーは _failInitialization 経由（未解決 throw は waitForStateInitialize を
+          // 永久待ちにしてページ全体をウェッジする — _failInitialization の注記参照）
           const parentStateElement = getStateElement(boundComponent.getRootNode() as Node)
-            ?? raiseError(`No state tree found on this root for mount host <${customTagName}>.`);
+            ?? this._failInitialization(`No state tree found on this root for mount host <${customTagName}>.`);
           // 再初期化（コンポーネントが connectedCallback で shadow の innerHTML を張り直す
           // 作りだと、再接続のたびに新しい <wcs-state> がここへ来る）: 記録を再利用して
           // マーカーを安定させる。このとき上の `state` はもう公開プロキシ（下の
@@ -497,8 +516,17 @@ export class State extends HTMLElementBase implements IStateElement {
             return;
           }
           // スコープ根: Shadow DOM 形はコンポーネントの shadowRoot、
-          // Light DOM 形はコンポーネント要素自身（そのサブツリーがスコープ・D7）
-          initializeMountScope(record, parentNode instanceof ShadowRoot ? parentNode : boundComponent);
+          // Light DOM 形はコンポーネント要素自身（そのサブツリーがスコープ・D7）。
+          // 設定エラー（1 スコープ根 1 マウント違反等）でも初期化待ちを
+          // ウェッジさせない（_failInitialization と同じ規範 — resolve してから伝播）
+          try {
+            initializeMountScope(record, parentNode instanceof ShadowRoot ? parentNode : boundComponent);
+          } catch (error) {
+            this._resolveInitialize?.();
+            this._resolveLoading?.();
+            this._resolveConnectedCallback?.();
+            throw error;
+          }
           if (!isReinitialize) {
             const publicState = createPublicMountState(record);
             Object.defineProperty(boundComponent, boundComponentStateProp, {
@@ -576,12 +604,15 @@ export class State extends HTMLElementBase implements IStateElement {
     // _streamsStartedGeneration も世代不一致となり自然に無効化される。
     const connectGeneration = ++this._connectGeneration;
     if (!this._initialized) {
-      // 名前次元は v2 で撤去（D16 / §9）。名前付き State はボリュームへ移行する
+      // 名前次元は v2 で撤去（D16 / §9）。名前付き State はボリュームへ移行する。
+      // mount 併記（移行途中で name を残した形）は専用文言で誘導する
       if (this.hasAttribute("name")) {
         this._failInitialization(
-          `The "name" attribute was removed in v2 — there is a single state tree per root. ` +
-          `Mount this state onto the tree instead: <wcs-state mount="${this.getAttribute("name")}" ...> ` +
-          `and read it as "${this.getAttribute("name")}.<path>".`,
+          this.hasAttribute("mount")
+            ? `"mount" replaces "name" — a volume has no name of its own. Remove the name attribute.`
+            : `The "name" attribute was removed in v2 — there is a single state tree per root. ` +
+              `Mount this state onto the tree instead: <wcs-state mount="${this.getAttribute("name")}" ...> ` +
+              `and read it as "${this.getAttribute("name")}.<path>".`,
         );
       }
       // DCC 検出: ShadowRoot 内かつホストに data-wc-definition がある場合
@@ -600,6 +631,13 @@ export class State extends HTMLElementBase implements IStateElement {
       }
       // ボリューム（`mount="path"` — 接ぎ木・docs/state-mount-design.md §4-2）
       if (this.hasAttribute("mount")) {
+        // ロード完了前の remove → append 再入: スロット予約も接ぎ木も進行中の
+        // _initializeVolume が持っている。再実行すると reserveVolumeSlot が自分の
+        // 予約に "already mounted" を誤 raise する（接ぎ木自体は進行中の呼び出しが
+        // 完了させる — connectedCallbackPromise もそちらが解決する）
+        if (this._volumeInitializing) {
+          return;
+        }
         await this._initializeVolume();
         return;
       }
@@ -618,6 +656,21 @@ export class State extends HTMLElementBase implements IStateElement {
       this._initialized = true;
 
       this._resolveInitialize?.();
+    } else if (this.hasAttribute("mount")) {
+      // 初期化済みボリュームの再接続（remove → append）: 接ぎ木・アクセサ・宣言は
+      // ツリーに残っている（disconnectedCallback と対称 — アンマウント未対応）。
+      // 下の「ルート再登録」分岐に落とすと、独立ツリーを持たないボリューム自身が
+      // この rootNode のツリー根として登録されてしまう（ルート不在時）か、
+      // "already registered" で落ちる（ルート健在時）。
+      // $connectedCallback だけは要素のライフサイクルとして chroot で再実行する
+      // （マウント済みコンポーネントの再接続と同じ意味論）。ルートが既に居ない・
+      // 別 rootNode へ移された形では接ぎ木先ツリーに到達できないので呼ばない
+      if (this._volumeGraftInfo !== null
+        && getStateElement(this._rootNode) === this._volumeGraftInfo.rootStateElement) {
+        callVolumeLifecycle(this._volumeGraftInfo, "$connectedCallback");
+      }
+      this._resolveConnectedCallback?.();
+      return;
     } else if (this._mountRecord !== null) {
       // マウント済みコンポーネントの再接続（行 content のプール再利用）: 現在の行の
       // listIndex でマウントスコープの台帳を張り直し、最新値を適用する（§1.9 の v2 版）。
@@ -1040,9 +1093,21 @@ export class State extends HTMLElementBase implements IStateElement {
   setInitialState(state: Record<string, any>): void {
     if (!this._initialized) {
       this._resolveSetState?.(state);
-    } else {
-      this._state = state;
+      return;
     }
+    // D22 と同型の防御: 接ぎ木済みボリューム / マウント記録の居るツリーの丸ごと再 set は、
+    // 接ぎ木データ・quoted-path アクセサ（defineTreeAccessor）・マーカーの getterPaths・
+    // 合流済み宣言面（$watch / $listKeys / $updatedCallback ゲート）を全て無言で捨てる。
+    // 「マウントポイントを含む親の丸ごと書きは throw」（setByAddress の D22 後段）と
+    // 同じ設定ミスとして loud に落とす。
+    if (this._hasGraftedVolumes || this._hasMounts) {
+      raiseError(
+        `Cannot replace the whole state of a tree that has grafted volumes or mounted components: ` +
+        `re-setting would silently drop grafted data, tree accessors and mount ledgers (D22). ` +
+        `Write the changed paths instead.`,
+      );
+    }
+    this._state = state;
   }
 }
 

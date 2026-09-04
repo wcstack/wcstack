@@ -23,7 +23,7 @@ npx vitest run __tests__/someFile.test.ts  # 単一テスト実行
 
 ```
 src/
-├── exports.ts              # パッケージエントリポイント (bootstrapState のみ公開)
+├── exports.ts              # パッケージエントリポイント (bootstrapState / defineState / Ssr / getWcsManifest 等)
 ├── bootstrapState.ts       # 初期化: registerComponents + registerHandler
 ├── config.ts               # グローバル設定 (属性名, コメントプレフィックス等)
 ├── define.ts               # 定数: DELIMITER('.'), WILDCARD('*'), MAX_WILDCARD_DEPTH(128)
@@ -34,7 +34,7 @@ src/
 │   ├── PathInfo.ts         # パス解析・ワイルドカード情報
 │   ├── StateAddress.ts     # パス + リストインデックスのアドレス
 │   ├── ResolvedAddress.ts  # ワイルドカード解決済みアドレス
-│   └── AbsoluteStateAddress.ts  # ステート名を含む絶対アドレス
+│   └── AbsoluteStateAddress.ts  # stateElement（どのツリーか）まで確定した絶対アドレス
 ├── proxy/
 │   ├── StateHandler.ts     # Proxy handler (get/set/has トラップ)
 │   ├── traps/              # get, set トラップの実装
@@ -96,13 +96,13 @@ src/
 
 ### Binding Syntax
 ```
-[property][#modifier]: [path][@state][|(filter | filter(args))...]
+[property][#modifier]: [path][|(filter | filter(args))...]
 ```
 - `property`: DOM プロパティ名 (textContent, value, class 等)
 - `#modifier`: 修飾子
 - `path`: 状態パス (ドット区切り、`*` でワイルドカード)
-- `@state`: 対象ステート名 (省略時は default)
 - `|filter`: フィルタパイプライン
+- **v2**: `@state` セレクタ（名前付き State）は撤去 — パスに `@` があると parse error（移行ヒント付き）。ツリーは 1 rootNode に 1 本で、部分ツリーは `<wcs-state mount="path">`（ボリューム）で接ぎ木し `path.` 接頭辞で読む
 
 #### Spread (`...`)
 
@@ -110,7 +110,7 @@ wc-bindable 対応カスタム要素に対して `...: target` で properties + 
 - `bindingType: 'spread'` として一旦パース → `bindTextParser/expandSpread.ts` で `wcBindable.properties + inputs` を読み propName ごとの個別エントリに展開
 - 後勝ちで explicit binding が spread を上書き（`config.debug` 時 `console.debug` で通知）
 - カスタム要素未登録時は `IDeferredSpreadEntry` を `customElements.whenDefined()` 待ちで保持し、登録後 `processDeferredNode` で再展開（`parseResults` を closure capture することで happy-dom の upgrade 時属性消失を回避）
-- filter は禁止、`@stateName` は伝播、右辺の `*` は途中可
+- filter は禁止、右辺の `*` は途中可
 - commands と event token は spread 対象外（pub/sub 境界を明示）
 
 **Composite Profile 対応** (COMPOSITE.md / SPEC-extensions § 4):
@@ -147,7 +147,7 @@ wc-bindable 対応カスタム要素に対して `...: target` で properties + 
 
 ## Testing
 
-- テストファイル: `__tests/*.test.ts`
+- テストファイル: `__tests__/*.test.ts`
 - テスト記述は日本語
 - カバレッジ閾値: statements 100%, branches 97%, functions 100%, lines 100%
 - 環境: happy-dom
@@ -157,6 +157,6 @@ wc-bindable 対応カスタム要素に対して `...: target` で properties + 
 
 - パス区切り文字は `.` (DELIMITER)
 - ワイルドカードは `*` (WILDCARD)
-- ステート名省略時のデフォルトは `'default'`
+- ツリーは 1 rootNode に 1 本（v2 で名前次元を撤去 — `name` 属性は fail-fast）。部分ツリーは `<wcs-state mount="path">` で接ぎ木する
 - コメントノードプレフィックス: `wcs-text`, `wcs-for`, `wcs-if`, `wcs-elseif`, `wcs-else`
 - バインド属性名: `data-wcs`

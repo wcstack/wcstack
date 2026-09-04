@@ -152,7 +152,7 @@ static wcBindable = {
 
 ```html
 <!-- renderToString() が生成 -->
-<wcs-ssr name="default" version="0.1.0">
+<wcs-ssr version="0.1.0">
 
   <!-- 状態スナップショット -->
   <script type="application/json">{"items":["Apple","Banana","Cherry"]}</script>

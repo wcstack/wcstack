@@ -268,13 +268,13 @@ slice 4 で確定した挙動・発見:
   6. **D22 後段実装**: 接ぎ木済みスロットの**真の祖先**の丸ごと書きは setByAddress が throw（`hasGraftedVolumes` boolean ゲート＝D18 の形・`recordGraftedSlot`/`findGraftedSlotUnder`）。スロット自身・配下は従来どおり。graft 前の中間 `{}` 生成は接ぎ木前なのでガード外（台帳を予約と分けた理由）。
   7. **protocol 文書の v2 追随**: docs/devtools-hook-protocol.ja.md（`keys(name, rootNode)`・stateName payload 全面）と英語版の stateName 残存 9 箇所を出荷形（types.ts）に一致させ、`overlays` / `IMountOverlaySummary` を両言語に記載。
   8. **wcstack エントリ README**: 文法行の `[@state]` と Paths 表の `path@cart` / `name="cart"` 行を v2 形（`mount=` 接頭辞）へ（AI 作法の正本 — ここが v1 構文を教えると生成コードが最初の一手で fail-fast する）。
-  検証＝state 2648（+10: 回帰テスト）・server 94・e2e mount/light-dom 系 green（下記）・カバレッジ/バラン維持。非 blocking の指摘（mount 属性変更の warn なし・N6 の mustache/shorthand 経路テスト・stale docs 群 ほか）はレビュー記録のとおり残し、リリース後に回す。
+  検証＝state 2648（+10: 回帰テスト）・server 94・e2e mount/light-dom 系 green（下記）・カバレッジ/バラン維持。非 blocking の指摘（mount 属性変更の warn なし・N6 の mustache/shorthand 経路テスト・stale docs 群・devtools の protocol v2 `overlays()` が UI 未消費〔プロトコル文書に注記済み〕・devtools の watch/token 実測台帳がツリー識別を持たず複数ツリーで合算〔`state:watch-fired` / `state:token-emit` payload へのツリー識別のプロトコル追補が要る — wiring 台帳側は stateElement スコープ済み〕ほか）はレビュー記録のとおり残し、リリース後に回す。最終ゲート（2026-09-05・v1 語彙残存）の据え置き分も同バケット: state テスト fixture の `@state`（structural.expandShorthandPaths.test.ts :42/:51 — 実装に `@` 分岐は無く汎用 suffix 素通しのピンのため実害なし）・ssr テスト群の `<wcs-ssr name="default">` 入力（**旧形スナップショット読取り互換の実効テストとして有効** — 書き換えず name 無し形フィクスチャの追加が望ましい）・設計記録の v1 語彙（docs/i18n-design.md :130/:204/:208・static-wiring-dx-design.md :129・devtools-tag-design.md :136 — 歴史的設計記録。i18n-design は D4 に v2 改稿注記済み）。同ゲートの修正済み分＝README 属性表/mapped 語彙・clipboard `@cb` 例・vscode-wcs hover（生成元＋JSON 再生成）・docs/typescript.md の named state 語彙・examples/ssr の `<wcs-ssr name>`・構文コメント 3 箇所・wcsTsc fixture の `name="plain"`→`mount`・mustache fixture の `count@cart`。
 
 - **slice 30 済み（2026-09-04・「v2 同乗候補」5 件の検証と採択分の実装）**: 指摘 5 件を検証し 2 件を実装・3 件は根拠付きで不採択:
   1. ~~`<stateProp>: <path>`（propSegments 長 1）の bind 時 fail-fast~~ — **不採択（v2 本体が解消済み）**。ADR-15 が見送った当時の前提「`state: user` は無言の no-op」が v2 で消滅 — その形は**ルートマウントの正規構文**（M1）になり、誤設定系は loud（重複規則 throw・plain Light DOM raise・4b throw・name raise）。残る applyChangeToWebComponent の no-op は「配送は翻訳済みバインディングが担う」正しい意味論で、fail-fast の対象が存在しない。
   2. **`@wcstack/server` の deprecated `extractStateData()` 削除 — 採択・実装**。消費者は server 自身のテストと README の API 表のみ（`Ssr.extractStateData` が state 側の正）。関数・export・テスト 6 本・README 英日の表行を削除。リリースノートの破壊的変更表に追記。
   3. ~~`_upgradeProperty` の全パッケージ展開~~ — **不採択（前提が古い＝展開済み）**。`7775d8bf` "fix(shell): adopt inputs assigned before the element upgrades"（main / v2 双方に含まれる）で **39 パッケージ**に `src/protocol/upgradeProperties.ts`＋テスト＋Shell 配線が着地済み。未対応 5 つ（state / signals / devtools / server / vscode-wcs）は wc-bindable I/O ノードではない（要素なし or wcBindable 非宣言）。
-  4. **semver・破壊的変更ポリシーの表明 — 採択・実装**。ルート README 英日に「Versioning and breaking changes」節（対象＝data-wcs 構文・wcBindable ほかプロトコル・ツール契約／対象外＝内部・文言・性能／deprecation 運用）。§10 に転記用の節を追加。
+  4. **semver・破壊的変更ポリシーの表明 — 採択・実装**。ルート README 英日に「Versioning and breaking changes」節（対象＝data-wcs 構文・wcBindable ほかプロトコル・ツール契約／対象外＝内部・文言・性能／deprecation 運用）。§11（リリースノート下書き）に転記用の節を追加。
   5. ~~spread undefined 書き戻しの SPEC 明文化~~ — **リポ内は済み・残りは別リポ**。規範リファレンス（per-package README）の英日 :483 に「undefined は書き込みスキップ・クリアは null・全プロパティバインディングに適用」が規範文として存在（$setAll 側 :1027 も同旨）。残るのは **wc-bindable-protocol リポジトリの SPEC.md への規範文言追加**のみで、持ち込み用提案文書は [docs/spec-proposal-undefined-write-skip.md](./spec-proposal-undefined-write-skip.md) に完成済み（MUST NOT / null クリア / SHOULD 防御・clarification 扱い推奨）— リリース時の skill 追随と同じユーザー操作バケット。
   ついで＝server の waitForReady 反復テストの**既知フレークを修理**（slice 18 で「HEAD でも再現」と記録されていた実体＝残世代待ちの固定 30ms sleep が並列負荷で不足 → 上限付きポーリング化。修理後フルスイート 4 連続 88/88 緑）。
 
@@ -517,14 +517,29 @@ P0-6 の精査結果（2026-09-01 実測）:
 ## 10. リリース時の作業（ユーザー操作）
 
 - `v2` → main のマージ、release.yml の実行
+- **dist の再生成**（P5-4 のバージョン揃えコミットと同時）: 追跡済みの
+  `packages/state/dist` / `packages/server/dist` は v2 ブランチでは v1.32.0 のまま
+  （開発中は「dist はビルドしたら戻してからコミット」の規約）。再ビルドせずに
+  マージすると、dist を直接消費する経路（vscode-wcs のビルド・examples・release の
+  lint スモーク）が再ビルドまで v1 挙動で動く（#183 と同型の罠）。
+  `npm run build` を state / server（および dist 追跡のある他パッケージ）で実行して
+  dist をコミットしてからリリースする。**再ビルド後スモーク**に含めること:
+  mount / bind-component 混在ページで `@wcstack/testing` の `state()` がルートツリーを
+  返す（`__tests__/mount.test.ts` の v2 選別テスト — committed dist が v1 のままだと
+  この経路は実行されない）
 - `@wcstack/typescript` / `@wcstack/testing` の初回 publish は 1.x の予定どおり（D15）。2.0 で `schemaVersion: 2`
 - wcstack-skill の PR マージ（plugin version 2.0）
 - vscode-wcs の vsix publish（v2 文言の診断）
 - npm の "disallow tokens" ＋ NPM_TOKEN secret 削除（既存の残件、本件とは独立）
 
+**開発時の注意（v2 ブランチでのテスト手順）**: dist 消費側パッケージ（vscode-wcs /
+testing / server の一部テスト）は追跡済み dist が v1.32.0 のままだと赤になる。
+clean checkout では先に `packages/state`（testing は加えて `server` / `router`）で
+`npm run build` してからテストを実行すること（検証後、dist はコミットせず戻す）。
+
 ---
 
-## 10. リリースノート下書き（v2.0.0 — P5-3）
+## 11. リリースノート下書き（v2.0.0 — P5-3）
 
 > リリース時に本文へ転記する。バージョン揃え（P5-4: 全パッケージ 2.0.0・`wcstack` エントリ・ピン版数 5 箇所・skill plugin 2.0）と v2→main マージ（P5-5）はユーザー操作。
 
@@ -551,10 +566,17 @@ P0-6 の精査結果（2026-09-01 実測）:
 | `@wcstack/testing` `state(name)` | `state()`（引数は移行ヒント付き throw） | — |
 | `wcs-schema --state=` | `--mount=<path>` | usage エラー（移行ヒント付き） |
 | `@wcstack/server` の `extractStateData()`（@deprecated） | `@wcstack/state` の `Ssr.extractStateData()` | 削除（import エラー） |
+| `$updatedCallback` への他 state 参照パスの配送（v1 の `path@name` 合成） | 名前次元ごと撤去。ボリュームの `$updatedCallback` は自分の接頭辞配下の更新を**相対パス**で受ける | — （届く形が変わる） |
+| 同一コンポーネントへの複数 `<wcs-state bind-component>`（別 prop） | 1 コンポーネント 1 マウントスコープ。配線は 1 本にまとめるかコンポーネントを分割 | 実行時 raise（誘導文付き） |
+| 接ぎ木済みボリューム / マウントの居るツリーへの `setInitialState()` 再 set | 変更したいパスを個別に書く（丸ごと再 set は接ぎ木・アクセサ・台帳を無言で壊すため throw — D22 同型） | 実行時 raise（誘導文付き） |
+| マウントされたコンポーネントのワイルドカード終端アクセサ（`get "tags.*"()` がツリーのリストへ翻訳される形） | ホストツリー側の getter か、コンポーネント own の配列（私有アンカー）に置き換え | 実行時 raise（誘導文付き） |
 
 ### 移行ガイド（機械的）
 
-1. `<wcs-state name="x"` → `<wcs-state mount="x"`（`name="default"` は単に削除）
+1. `<wcs-state name="x"` → `<wcs-state mount="x"`（`name="default"` は単に削除）。
+   宣言面の差に注意: ボリュームは `$watch` / `$listKeys` / `$updatedCallback`（相対）と
+   ライフサイクルを持つが、**`$streams` は raise・`$commandTokens` / `$eventTokens` / `$on` は
+   warn**（ルート state へ移す）— 単純リネームで済まない宣言はこの 4 つだけ
 2. `path@x` → `x.path`・`path@default` → `path`（spread / shorthand も同じ）
 3. plain Light DOM bind-component → `attachShadow` を 1 行足す（または ホストに `state: path`）
 4. `testing.state("x")` → `testing.state()` ＋ パスに `x.` 接頭辞

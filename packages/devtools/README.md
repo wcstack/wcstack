@@ -40,8 +40,8 @@ yourself:
 
 | Pane | What it shows |
 |---|---|
-| **State** | Every `<wcs-state>` (per runtime source): top-level keys, expandable arrays/objects, computed getters. Click a value to edit it inline — the write goes through the normal reactive pipeline (set trap → update batch → DOM), so the page reacts exactly as if application code had written it. Click a **path** to highlight the DOM nodes bound to it. |
-| **Wiring** | The live binding ledger: `property ← path@state` rows per binding, with type badges (`text` / `prop` / `for` / …). Use **⌖ pick** to click a page element and see only its bindings. Rows highlight their bound nodes on click. |
+| **State** | Every root state tree (one per root node, labelled by its root — v2 has no name dimension): top-level keys, expandable arrays/objects, computed getters. Click a value to edit it inline — the write goes through the normal reactive pipeline (set trap → update batch → DOM), so the page reacts exactly as if application code had written it. Click a **path** to highlight the DOM nodes bound to it. |
+| **Wiring** | The live binding ledger: `property ← path` rows per binding, with type badges (`text` / `prop` / `for` / …). Use **⌖ pick** to click a page element and see only its bindings. Rows highlight their bound nodes on click. |
 | **Timeline** | A ring buffer (default 500) of `write` (with old value when available), `batch` (deduplicated update addresses per drain), `command` / `event` token emissions (with argument summaries and subscriber counts — **zero-subscriber emissions get a warning badge**, catching wired-before-`whenDefined` races), and state element registration. ⏸ pauses, 🗑 clears. |
 
 ## Attributes

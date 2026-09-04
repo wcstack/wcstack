@@ -65,6 +65,10 @@ function resolveElementPaths(
   const out: PathCandidate[] = [];
   for (const p of raw) {
     if (p.path.startsWith('$')) continue;
+    // メソッドのツリー露出・イベントトークンもボリューム未対応（runtime はメソッドを
+    // 接ぎ木せず、$commandTokens / $eventTokens / $on 宣言は warn で捨てる）—
+    // 候補に載せると存在しないパスを補完・無警告通過させてしまう
+    if (p.kind === 'method' || p.kind === 'eventToken') continue;
     out.push({ ...p, path: prefix + p.path });
   }
   return out;

@@ -110,6 +110,10 @@ export const WcsDiagnosticCode = {
   // 名前付き State（`<wcs-state name>` / `path@name`）。v2 でマウント（`mount=` と接頭辞付きパス）に
   // 置き換わる（docs/state-mount-design.md D16）。1.x では warning、v2 では parse error と同時に error。
   NamedStateDeprecated: "wcs/named-state-deprecated",
+  // --- volume mount ---
+  // `<wcs-state mount="...">` の値が runtime の validateVolumeMountPath で raise する形
+  // （空・空セグメント・ワイルドカード・予約文字 $ # @）。runtime と同条件・同文言（v2）。
+  MountPathInvalid: "wcs/mount-path-invalid",
 } as const;
 
 export type WcsDiagnosticCodeValue = (typeof WcsDiagnosticCode)[keyof typeof WcsDiagnosticCode];

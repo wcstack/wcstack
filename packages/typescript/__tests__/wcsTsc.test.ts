@@ -43,7 +43,7 @@ const PAGE = `<!doctype html>
     });
   </script>
 </wcs-state>
-<wcs-state name="plain"><script type="module">
+<wcs-state mount="plain"><script type="module">
 export default { items: [] as string[], add() { this.items = [...this.items, 1]; } };
 </script></wcs-state>
 </body></html>

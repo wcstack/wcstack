@@ -16,6 +16,7 @@ import {
   _setMountRecordRefForTesting,
   stateElementHasMounts,
   resetMountIdForTesting,
+  findMountRecordForNode,
 } from '../src/webComponent/mount';
 import { getPathInfo } from '../src/address/PathInfo';
 import type { IBindingInfo } from '../src/types';
@@ -261,6 +262,30 @@ describe('mount: getIndexShiftForMarkerPath（getter 内 $n の補正値）', ()
     // マーカーはあるが未登録の接尾 → Δ にフォールバック
     expect(getIndexShiftForMarkerPath(r, 'users.*.#m1.unregistered')).toBe(1);
   });
+
+  it('別記録のマーカー（#m21）の中に自分のマーカー（#m2）が前方一致しても誤ヒットしないこと', () => {
+    // #m2 の記録を作る（id 2 まで進める）
+    record([[[] as any, 'other']]);
+    const r2 = record([[[] as any, 'users.*']], {
+      get display() { return ''; },
+    });
+    expect(r2.marker).toBe('#m2');
+    expect(translateInnerPath(r2, 'display')).toBe('users.*.#m2.display');
+    // 正しい自分のマーカーパスは登録簿から indexShift を引ける
+    expect(getIndexShiftForMarkerPath(r2, 'users.*.#m2.display')).toBe(1);
+    // 外側記録 #m21 のマーカーを含み末尾に自分の #m2 が来る入れ子形:
+    // indexOf の前方一致だと #m21 の中の #m2 に誤ヒットして親をセグメント途中で
+    // 切っていた — セグメント単位の切り出しで登録済み接尾（display）を正しく引く
+    const nested = 'a.#m21.users.*.#m2.display';
+    r2.accessorBySuffixByMarkerParent.set('a.#m21.users.*.#m2', new Map([
+      ['display', { accessorName: 'display', indexShift: 5 }],
+    ]));
+    expect(getIndexShiftForMarkerPath(r2, nested)).toBe(5);
+    // 末尾マーカーが自分のものでないパスは Δ にフォールバック（防御）
+    expect(getIndexShiftForMarkerPath(r2, 'a.#m21.leaf')).toBe(1);
+    // 末尾がマーカーそのもの（接尾の区切り無し）も Δ にフォールバック（未登録接尾 ""）
+    expect(getIndexShiftForMarkerPath(r2, 'users.*.#m2')).toBe(1);
+  });
 });
 
 describe('mount: setter だけのアクセサ', () => {
@@ -324,13 +349,25 @@ describe('mount: composeMountIndexes（$ API の添字合成）', () => {
  * カバレッジ仕上げ — アクセサ・マーカーの端の形
  * ------------------------------------------------------------------ */
 describe('mount: リストそのものの上のアクセサ（接尾なし）', () => {
-  it('ワイルドカードで終わるアクセサはマーカー親自身に登録され、シフト照会も接尾なしで引けること', () => {
+  it('ツリーのリストへ翻訳されるワイルドカード終端アクセサは loud に throw すること（マーカー終端はオーバーレイが getter を影にする）', () => {
     const r = record([[[] as any, 'users.*']], {
       get 'tags.*'() { return []; },
     });
-    // rest が空 → マーカー親そのもの（suffix ""）
-    expect(translateInnerPath(r, 'tags.*')).toBe('users.*.tags.*.#m1');
-    expect(getIndexShiftForMarkerPath(r, 'users.*.tags.*.#m1')).toBe(1);
+    // 旧挙動はマーカー終端パス（users.*.tags.*.#m1）を返し、getterPaths に
+    // trailing dot の不正パス（users.*.tags.*.#m1.）が載った上、読みは
+    // オーバーレイ proxy が返って getter が評価されなかった — サポート外として raise
+    expect(() => translateInnerPath(r, 'tags.*')).toThrow(/Wildcard-terminal accessor "tags\.\*"/);
+    // 不正な getterPath は登録されない
+    expect([...r.addedGetterPaths].every((p) => !p.endsWith('.'))).toBe(true);
+  });
+
+  it('私有配列の上のワイルドカード終端アクセサは私有アンカーに閉じて従来どおり通ること', () => {
+    const r = record([[[] as any, 'users.*']], {
+      tags: [],
+      get 'tags.*'() { return []; },
+    });
+    // 先頭セグメントが own data key → パスごと私有（マーカー終端にならない）
+    expect(translateInnerPath(r, 'tags.*')).toBe('users.*.#m1.tags.*');
   });
 
   it('部分マウントのみ（マーカーが先頭）のアクセサのシフトも引けること', () => {
@@ -377,6 +414,98 @@ describe('mount: 変換の同値ショートカットの端', () => {
     const translated = translateBindingForMount(r, binding);
     expect(translated).toBe(binding);
     expect(translated.statePathName).toBe('$1');
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * イベント添字のスコープ台帳（§4-4 / P2-9 — v2 レビューの修理）
+ * ------------------------------------------------------------------ */
+describe('mount: translateParsedForMount の for 台帳（indexShiftByLoopElementPath）', () => {
+  function forBinding(statePathName: string): IBindingInfo {
+    return { ...hostBinding(['textContent'], statePathName), bindingType: 'for' } as IBindingInfo;
+  }
+
+  it('Δ=0 の丸ごとマウント（state: user）の for も shift 0 で必ず載ること', () => {
+    // 載せないと event/handler.ts が「借用行＝添字 0 本」と誤解し、
+    // 自スコープの for の添字が空になる（§4-4 違反）
+    const r = record([[[] as any, 'user']]);
+    translateBindingForMount(r, forBinding('items'));
+    expect(r.indexShiftByLoopElementPath.get('user.items.*')).toBe(0);
+  });
+
+  it('同名翻訳（部分マウント state.items: items）の for も shift 0 で載ること', () => {
+    const r = record([[['items'], 'items']]);
+    translateBindingForMount(r, forBinding('items'));
+    expect(r.indexShiftByLoopElementPath.get('items.*')).toBe(0);
+  });
+
+  it('行マウント（state: users.*）の for は shift 1 で載ること（従来どおり）', () => {
+    const r = record([[[] as any, 'users.*']]);
+    translateBindingForMount(r, forBinding('tags'));
+    expect(r.indexShiftByLoopElementPath.get('users.*.tags.*')).toBe(1);
+  });
+
+  it('私有配列の for（Δ=0）も shift 0 で載ること', () => {
+    const r = record([[[] as any, 'user']], { drafts: [] });
+    translateBindingForMount(r, forBinding('drafts'));
+    expect(r.indexShiftByLoopElementPath.get('user.#m1.drafts.*')).toBe(0);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 入れ子マウントのマーカー解決（v2 レビューの修理）
+ * ------------------------------------------------------------------ */
+describe('mount: getMountRecordByPath は末尾マーカーで引くこと', () => {
+  it('外側の私有キーの上の内側マウント（マーカーが 2 つ並ぶパス）で内側の記録が返ること', () => {
+    const parent = { getterPaths: new Set<string>() } as any;
+    const outerComponent = document.createElement('my-outer');
+    const outerRoot = outerComponent.attachShadow({ mode: 'open' });
+    const outer = buildMountRecord(
+      outerComponent, 'state', [hostBinding(['state'], 'users.*')], parent, { drafts: [] });
+    registerMountRecord(outerRoot, outer);
+    // 内側コンポーネントは外側の私有キー drafts をルートにマウントされた形:
+    // ホスト配線の statePathName は外側スコープで翻訳済み（users.*.#m1.drafts）
+    const innerComponent = document.createElement('my-inner');
+    const innerRoot = innerComponent.attachShadow({ mode: 'open' });
+    const inner = buildMountRecord(
+      innerComponent, 'state', [hostBinding(['state'], translateInnerPath(outer, 'drafts'))], parent, {});
+    registerMountRecord(innerRoot, inner);
+    expect(inner.markerBasePath).toBe(`users.*.${outer.marker}.drafts.${inner.marker}`);
+
+    // オーバーレイ dispatch（マーカーで終わるパス）は**内側**の記録で解決される。
+    // 先頭の # で切ると外側（#m1）が返り誤翻訳になる
+    expect(getMountRecordByPath(parent, inner.markerBasePath)).toBe(inner);
+    // 内側マーカー配下のアクセサパスも内側の記録
+    expect(getMountRecordByPath(parent, `${inner.markerBasePath}.title`)).toBe(inner);
+    // 外側のマーカーで終わるパスは従来どおり外側
+    expect(getMountRecordByPath(parent, `users.*.${outer.marker}`)).toBe(outer);
+  });
+});
+
+describe('mount: findMountRecordForNode（Shadow スコープ内の Light DOM マウント）', () => {
+  it('rootNode（shadowRoot）直ヒットより、ノードの祖先にある Light DOM スコープ根が優先されること', () => {
+    const parent = { getterPaths: new Set<string>() } as any;
+    // 外側: Shadow 形（スコープ根 = shadowRoot）
+    const outerComponent = document.createElement('my-shadow-scope');
+    const outerRoot = outerComponent.attachShadow({ mode: 'open' });
+    const outer = buildMountRecord(
+      outerComponent, 'state', [hostBinding(['state'], 'users.*')], parent, {});
+    registerMountRecord(outerRoot, outer);
+    // 内側: 外側 shadow の中の Light DOM 形（スコープ根 = コンポーネント要素自身）
+    const innerComponent = document.createElement('my-light-scope');
+    outerRoot.appendChild(innerComponent);
+    const inner = buildMountRecord(
+      innerComponent, 'state', [hostBinding(['state'], 'users.*.friend')], parent, {});
+    registerMountRecord(innerComponent, inner);
+    const button = document.createElement('button');
+    innerComponent.appendChild(button);
+
+    // 内側スコープのノード → 内側の記録（rootNode を先に見ると外側を取り違える）
+    expect(findMountRecordForNode(button, outerRoot)).toBe(inner);
+    // 外側スコープ直下のノード → 外側の記録
+    const span = document.createElement('span');
+    outerRoot.appendChild(span);
+    expect(findMountRecordForNode(span, outerRoot)).toBe(outer);
   });
 });
 

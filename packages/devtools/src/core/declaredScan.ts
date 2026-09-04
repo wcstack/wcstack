@@ -8,7 +8,7 @@
  * 「宣言レベルの配線ビュー」を組む。ライブ台帳と違い binding 実体・
  * 接続状態は分からない（UI では "declared" バッジで区別する）。
  *
- * パースは表示目的の簡易版（`prop[#mod]: path[@state][|filters]` を
+ * パースは表示目的の簡易版（`prop[#mod]: path[|filters]` を
  * `;` 区切りで分解するだけ）。正確なセマンティクスの正本は
  * @wcstack/state の bindTextParser であり、ここでは追随しない。
  */

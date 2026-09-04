@@ -26,7 +26,6 @@ export interface PathCandidate {
    * 具体値を必要とするため typeHint とは別に公開する。JSON 由来のパスには付かない。
    */
   rawInitial?: string;
-  /** 所属する state 名（デフォルト: 'default'） */
   /**
    * sidecar manifest の `stateSchema` から導出した候補（analyzeSchemaPaths）。
    * 型は宣言された契約由来なので「確定」扱い — `for:` の非配列を error にする判定に使う。

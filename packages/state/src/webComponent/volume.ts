@@ -27,8 +27,9 @@
  * D22 後段: 接ぎ木済みスロットの**親**をルート側から丸ごと書く形は setByAddress が
  * throw する（recordGraftedSlot → findGraftedSlotUnder・ゲートは hasGraftedVolumes）。
  *
- * まだ載せていないもの: `$streams` の接頭辞登録（status 名前空間の設計が別途要る）、
- * ボリュームのメソッドのツリー露出。
+ * まだ載せていないもの: `$streams` の接頭辞登録（status 名前空間の設計が別途要る —
+ * 宣言は raise）、`$commandTokens` / `$eventTokens` / `$on`（トークンは要素の面 —
+ * ルートに宣言する。宣言は warn）、ボリュームのメソッドのツリー露出。
  */
 
 import { getPathInfo } from "../address/PathInfo";
@@ -86,7 +87,10 @@ export function validateVolumeMountPath(mountPath: string): void {
     if (segment === WILDCARD) {
       raiseError(`"mount" path "${mountPath}" must be static (wildcards are not allowed).`);
     }
-    if (segment.startsWith("$") || segment.startsWith("#") || segment.includes("@")) {
+    // 位置を問わず拒否（includes）: 中間の `#`（a#b）はマーカー判定
+    // （getMountRecordByPath の lastIndexOf("#")）と D22 診断免除に干渉する。
+    // `$` / `@` も文言（reserved characters）どおり対称に includes で見る
+    if (segment.includes("$") || segment.includes("#") || segment.includes("@")) {
       raiseError(`"mount" path "${mountPath}" must not use reserved characters ($, #, @).`);
     }
   }
@@ -115,28 +119,65 @@ function splitVolumeState(volumeState: Record<string, any>): {
 }
 
 /**
+ * raise しうる宣言面の検査（graftVolume の**冒頭** — データ接ぎ木・スロット記録・
+ * アクセサ登録より前）。後ろで検査すると $streams 等の宣言エラーが「データだけ載り
+ * アクセサ・宣言面が無い」半端な接ぎ木状態を残し、graftIsolated が握って
+ * onGrafted(null) → $disconnectedCallback も呼ばれない形になる。
+ */
+function validateVolumeDeclarations(
+  rootStateElement: IStateElement,
+  mountPath: string,
+  volumeState: Record<string, any>,
+): void {
+  const watchDeclared = (volumeState as Record<string, unknown>)[STATE_WATCH_NAME];
+  if (typeof watchDeclared !== "undefined") {
+    if (typeof watchDeclared !== "object" || watchDeclared === null) {
+      raiseError(`${STATE_WATCH_NAME} must be an object mapping state paths to handler functions.`);
+    }
+    for (const [path, handler] of Object.entries(watchDeclared as Record<string, unknown>)) {
+      if (typeof handler !== "function") {
+        raiseError(`${STATE_WATCH_NAME} entry "${path}" must be a function.`);
+      }
+      assertValidWatchPath(path);
+    }
+  }
+  const listKeysDeclared = (volumeState as Record<string, unknown>)[STATE_LIST_KEYS_NAME];
+  if (typeof listKeysDeclared !== "undefined") {
+    if (typeof listKeysDeclared !== "object" || listKeysDeclared === null) {
+      raiseError(`${STATE_LIST_KEYS_NAME} must be an object mapping list paths to key specs.`);
+    }
+    for (const [path, spec] of Object.entries(listKeysDeclared as Record<string, unknown>)) {
+      if (path.length === 0 || (typeof spec !== "string" && typeof spec !== "function")) {
+        raiseError(`${STATE_LIST_KEYS_NAME} entry "${path}" must map a list path to a field name or a key function.`);
+      }
+      // 衝突（mergeVolumeListKeys の raise と同義）も接ぎ木前に検出する
+      if (rootStateElement.listKeys?.has(mountPath + DELIMITER + path)) {
+        raiseError(`${STATE_LIST_KEYS_NAME} entry "${mountPath + DELIMITER + path}" is declared by both the root and a volume (or two volumes). Keep exactly one.`);
+      }
+    }
+  }
+  // $streams は未対応（無言に捨てない）
+  if (typeof (volumeState as Record<string, unknown>)["$streams"] !== "undefined") {
+    raiseError(`Volume "${mountPath}" declares $streams, which volumes do not support yet. Declare the stream on the root state.`);
+  }
+}
+
+/**
  * 宣言面の接頭辞登録（$watch / $listKeys / $updatedCallback — ヘッダ参照）。
- * $streams は未対応（status 名前空間の設計が別途要る — 宣言があれば loud に落とす）。
+ * 宣言の形は validateVolumeDeclarations（接ぎ木より前）で検査済み — ここは登録だけ。
  */
 function processVolumeDeclarations(
   rootStateElement: IStateElement,
   mountPath: string,
   volumeState: Record<string, any>,
 ): void {
-  // $watch: 相対パスを検証 → 翻訳してルート台帳へ追記。ハンドラは chroot 包装。
+  // $watch: 翻訳してルート台帳へ追記。ハンドラは chroot 包装。
   const watchDeclared = (volumeState as Record<string, unknown>)[STATE_WATCH_NAME];
   if (typeof watchDeclared !== "undefined") {
-    if (typeof watchDeclared !== "object" || watchDeclared === null) {
-      raiseError(`${STATE_WATCH_NAME} must be an object mapping state paths to handler functions.`);
-    }
     const entries: IWatchEntry[] = [];
     const paths = new Set<string>();
     let order = 0;
     for (const [path, handler] of Object.entries(watchDeclared as Record<string, unknown>)) {
-      if (typeof handler !== "function") {
-        raiseError(`${STATE_WATCH_NAME} entry "${path}" must be a function.`);
-      }
-      assertValidWatchPath(path);
       const translated = mountPath + DELIMITER + path;
       const wrapped = function (this: unknown, cur: unknown, prev: unknown, ...indexes: number[]): void {
         // `this` は writable なルート proxy（watchRuntime の fireOne）— chroot で包む。
@@ -157,17 +198,11 @@ function processVolumeDeclarations(
     }
   }
 
-  // $listKeys: 翻訳してルートの表へ合流（衝突は raise — キー突合の二重定義は曖昧）
+  // $listKeys: 翻訳してルートの表へ合流（衝突は validate 済み・merge 側の raise は防御）
   const listKeysDeclared = (volumeState as Record<string, unknown>)[STATE_LIST_KEYS_NAME];
   if (typeof listKeysDeclared !== "undefined") {
-    if (typeof listKeysDeclared !== "object" || listKeysDeclared === null) {
-      raiseError(`${STATE_LIST_KEYS_NAME} must be an object mapping list paths to key specs.`);
-    }
     const translatedEntries = new Map<string, ListKeySpec>();
     for (const [path, spec] of Object.entries(listKeysDeclared as Record<string, unknown>)) {
-      if (path.length === 0 || (typeof spec !== "string" && typeof spec !== "function")) {
-        raiseError(`${STATE_LIST_KEYS_NAME} entry "${path}" must map a list path to a field name or a key function.`);
-      }
       translatedEntries.set(mountPath + DELIMITER + path, spec as ListKeySpec);
     }
     rootStateElement.mergeVolumeListKeys?.(translatedEntries);
@@ -181,9 +216,15 @@ function processVolumeDeclarations(
     rootStateElement.enableUpdatedCallback?.();
   }
 
-  // $streams は未対応（無言に捨てない）
-  if (typeof (volumeState as Record<string, unknown>)["$streams"] !== "undefined") {
-    raiseError(`Volume "${mountPath}" declares $streams, which volumes do not support yet. Declare the stream on the root state.`);
+  // $commandTokens / $eventTokens / $on も未対応（トークンはパスではなく要素の面 —
+  // ルートに宣言する）。無言に捨てないが、接ぎ木自体は成立させる（warn 止まり）
+  for (const name of ["$commandTokens", "$eventTokens", "$on"]) {
+    if (typeof (volumeState as Record<string, unknown>)[name] !== "undefined") {
+      console.warn(
+        `[@wcstack/state] volume "${mountPath}" declares ${name}, which volumes do not support. ` +
+        `Declare it on the root state instead.`,
+      );
+    }
   }
 }
 
@@ -196,6 +237,9 @@ export function graftVolume(
   mountPath: string,
   volumeState: Record<string, any>,
 ): IVolumeGraftInfo {
+  // raise しうる宣言検査は接ぎ木より前（半端な接ぎ木状態を残さない — ここで
+  // 落ちた graft は「何も載っていない」が成立し、graftIsolated の隔離と整合する）
+  validateVolumeDeclarations(rootStateElement, mountPath, volumeState);
   const { data, accessors } = splitVolumeState(volumeState);
   const pathInfo = getPathInfo(mountPath);
   // D14: enable-ssr のスナップショットから初期化されたルートでは、スロットに既に

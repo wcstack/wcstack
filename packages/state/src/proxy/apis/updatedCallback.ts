@@ -31,13 +31,42 @@ import { createVolumeChroot, getVolumeUpdatedCallbacks } from "../../webComponen
  * @returns Promise or void depending on callback implementation
  */
 export function updatedCallback(
-  target: object, 
-  refs: IAbsoluteStateAddress[], 
+  target: object,
+  refs: IAbsoluteStateAddress[],
   receiver: any,
   handler: IStateHandler
 ): unknown {
+  const callback: unknown = Reflect.get(target, STATE_UPDATED_CALLBACK_NAME);
+  let result: unknown;
+  if (typeof callback === "function") {
+    const paths: Set<string> = new Set();
+    // ToDo:現状では1階層のみのワイルドカードに対応。多階層対応は後回し
+    const indexesListByPath: Record<string, Array<number[]>> = {};
+    for (const ref of refs) {
+      // v2: ルートに 1 ツリー。他ツリー（別ルート）の ref はこの state の相対語彙で
+      // 表せないので配送しない（v1 の `path@name` 合成は名前次元と一緒に消えた）
+      if (ref.absolutePathInfo.stateElement !== handler.stateElement) {
+        continue;
+      }
+      const pathInfo = ref.absolutePathInfo.pathInfo;
+      const pathName = pathInfo.path;
+      paths.add(pathName);
+      if (pathInfo.wildcardCount > 0) {
+        const indexes = getScopedIndexes(ref.listIndex!, pathInfo.wildcardCount);
+        const indexesList = indexesListByPath[pathName];
+        if (typeof indexesList === "undefined") {
+          indexesListByPath[pathName] = [indexes];
+        } else {
+          indexesList.push(indexes);
+        }
+      }
+    }
+    result = callback.call(receiver, Array.from(paths), indexesListByPath);
+  }
   // ボリュームの相対 $updatedCallback（webComponent/volume.ts）: 自分の接頭辞配下の
-  // 更新だけを相対パスで受ける。ルート自身の $updatedCallback の後に配送する
+  // 更新だけを相対パスで受ける。呼び出し順はルート自身の $updatedCallback の**後**
+  // （$watch の order 規約と同じ「ルート宣言が先」の向き — volume.ts）。
+  // ルートのコールバックが async でも待たない（順序の契約は呼び出し順のみ）
   const volumeCallbacks = handler.stateElement ? getVolumeUpdatedCallbacks(handler.stateElement) : [];
   if (volumeCallbacks.length > 0) {
     for (const volume of volumeCallbacks) {
@@ -72,30 +101,5 @@ export function updatedCallback(
       }
     }
   }
-  const callback: unknown = Reflect.get(target, STATE_UPDATED_CALLBACK_NAME);
-  if (typeof callback === "function") {
-    const paths: Set<string> = new Set();
-    // ToDo:現状では1階層のみのワイルドカードに対応。多階層対応は後回し
-    const indexesListByPath: Record<string, Array<number[]>> = {};
-    for (const ref of refs) {
-      // v2: ルートに 1 ツリー。他ツリー（別ルート）の ref はこの state の相対語彙で
-      // 表せないので配送しない（v1 の `path@name` 合成は名前次元と一緒に消えた）
-      if (ref.absolutePathInfo.stateElement !== handler.stateElement) {
-        continue;
-      }
-      const pathInfo = ref.absolutePathInfo.pathInfo;
-      const pathName = pathInfo.path;
-      paths.add(pathName);
-      if (pathInfo.wildcardCount > 0) {
-        const indexes = getScopedIndexes(ref.listIndex!, pathInfo.wildcardCount);
-        const indexesList = indexesListByPath[pathName];
-        if (typeof indexesList === "undefined") {
-          indexesListByPath[pathName] = [indexes];
-        } else {
-          indexesList.push(indexes);
-        }
-      }
-    }
-    return callback.call(receiver, Array.from(paths), indexesListByPath);
-  }
+  return result;
 }

@@ -1281,13 +1281,13 @@ customElements.define("user-card", UserCard);
 - 部分マウントを併用できます: `state: user; state.theme: theme` は `theme` を 2 つ目の入口としてマウントします（最長接頭辞が勝つので、中の `theme.mode` はツリーの `theme.mode` を読みます）
 - ループでは**行そのもの**をマウントします: `<template data-wcs="for: users"><user-row data-wcs="state: ."></user-row></template>`。行コンポーネントの中の `name` は `users.*.name`、中の `for: tags` は `users.*.tags.*` を回します
 - **自前のキーは私有**です（[docs/state-mount-design.md](../../docs/state-mount-design.md) §4-3 の R1）: コンポーネントが自分で宣言したデータキー（`state = { mode: "view" }`）はその要素のもので、ツリーには書かれません。マウント先に同名のキーがあってそれを隠す形（`user.name` の上に `state = { name: "" }`）では、ランタイムが 1 回だけ warn します（`wcs/mount-own-key-shadow`）— ツリーを読みたければ既定値を消し、私有のままにしたければ名前を変えてください
-- 配列そのものをルートにマウントする形（`state: rows` ＋ 中で `for`）は 1.x では非対応です。行をマウントする（`state: .`）か、配列を持つオブジェクトをマウントして中で `for` を回してください（`state: group` ＋ `for: children`）。どちらも契約テストで固定されており、マウントがツリー拡張の唯一の手段になる v2 にそのまま引き継がれます
+- 配列そのものをルートにマウントする形（`state: rows` ＋ 中で `for`）は非対応です。行をマウントする（`state: .`）か、配列を持つオブジェクトをマウントして中で `for` を回してください（`state: group` ＋ `for: children`）。どちらも契約テストで固定されており、マウントがツリー拡張の唯一の手段です
 
 > プロパティ単位の形（`state.message: user.name`）はそのまま動きます — 同じ機構の上の部分マウントです。
-> **v2 での変更（このブランチ）**: R1 はすべてのマウント形で厳格です — マップされるキーに既定値を
+> R1 はすべてのマウント形で厳格です — マップされるキーに既定値を
 > 宣言しているコンポーネント（`state = { message: "" }` ＋ `state.message: ...`）は自前のキーが
 > **私有**になり、ホストの値を隠します（1 回だけ `wcs/mount-own-key-shadow` が指します）。ツリーを
-> 読むには既定値を消してください。v2 ではさらに、Light DOM のマウントに `name` が不要になり、
+> 読むには既定値を消してください。Light DOM のマウントに `name` は不要で、
 > `element.state`（および getter / メソッド内の `this`）の `$getAll` / `$setAll` / `$resolve` /
 > `$postUpdate` はコンポーネント自身の語彙で書けます — パスはマウント先へ翻訳され、ホスト行の
 > 添字は自動で前置されます。
@@ -1864,7 +1864,7 @@ $updatedCallback(paths) {
 - **headless な行 watch には `$listKeys` が必要** —— `$watch` が単独では headless にならない唯一の箇所です。`items` から `items.*.price` への展開はリストの `for` バインディングが駆動しており、watch を宣言してもそのパスをリストとしては登録しません（意図的）。したがって `for` バインドも `$listKeys` も無い状態で配列を代入すると、行 watch は**一度も**発火しません。`$listKeys` を宣言する（キー突合がフィールドごとにパス書き込みするので展開を経由しない）か、リストを描画してください。スカラーパスは `user.name` のようなネストしたものも含め、この条件なしに headless で発火します。
 - **ハンドラの例外は隔離されます** —— throw はコンソールに報告され、残りの watch（と stream の restart）は続行します。loud fail する `$connectedCallback` / `$updatedCallback` とは異なる扱いです。
 - **書き込みの連鎖には上限があります** —— ハンドラの書き込みは新しいバッチを作るため、相互に書き合う watch は無限ループになり得ます。32 段で打ち切り、コンソールに報告します（値と DOM は巻き戻しません）。
-- **mapped な `bind-component` の子では使えません** —— 子の state は `$` 始まりのプロパティを遮る proxy に包まれるため、宣言が届きません（`$streams` も同様）。plain な（マップされていない）子では宣言できます。
+- **マウントされた `bind-component` スコープでは実行されません** —— マウントされたコンポーネントは宣言面を実行せず、`$watch` の宣言があると 1 回だけ console.warn でルート state（またはボリューム —— `<wcs-state mount>` は `$watch` / `$listKeys` / `$updatedCallback` を持てます）へ誘導します（`$streams` も同様）。plain な（配線なし Shadow の）子は独立ツリーを持つので宣言できます。
 - **SSR では実行されません** —— ハンドラの副作用がサーバーとクライアントで二重に走るためです。
 
 ## Inputs と属性ミラー
@@ -2165,7 +2165,7 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 - 親が `null` / `undefined`（初期値 `null` に後から代入する形）
 - 初期値が空配列のリストの行フィールド（行の形が分からない）
 - 途中の getter の戻り値のサブプロパティ
-- mapped な `bind-component` の子スコープ（パスの正本は親側）
+- マウントされたコンポーネントのマーカーパス（`#m…` —— 私有キー・getter の実体はマウントのオーバーレイ側にあり raw state には無い）
 - `$` 始まりの予約名前空間（`$command.*` など）
 
 裏を返すと、**警告が出ない ＝ 正しい保証にはなりません**。網羅した検査は `npx @wcstack/lint <file>` 側で行ってください。
@@ -2436,7 +2436,7 @@ bootstrapState();
 
 | 属性 | 説明 |
 |---|---|
-| `name` | 状態名（デフォルト: `"default"`） |
+| `mount` | この state をルートツリーへ**ボリューム**として接ぎ木する静的ツリーパス（v2 — 撤去された `name` 属性の後継。ツリーは 1 root に 1 本） |
 | `state` | `<script type="application/json">` 要素の ID |
 | `src` | `.json` または `.js` ファイルの URL |
 | `json` | インライン JSON 文字列 |
@@ -2446,7 +2446,6 @@ bootstrapState();
 
 | プロパティ / メソッド | 説明 |
 |---|---|
-| `name` | 状態名 |
 | `initializePromise` | 状態の完全な初期化時に解決される Promise |
 | `listPaths` | `for` ループで使用されるパスの Set |
 | `getterPaths` | getter として定義されたパスの Set |

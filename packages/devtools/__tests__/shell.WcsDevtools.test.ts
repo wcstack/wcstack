@@ -394,7 +394,6 @@ describe('WcsDevtools shell', () => {
         node: document.body,
         propName: 'textContent',
         statePathName: 'user.name',
-        stateName: 'default',
         bindingType: 'prop',
         inFilters: [],
         outFilters: [{ filterName: 'uc', args: [] }],
@@ -419,7 +418,6 @@ describe('WcsDevtools shell', () => {
         node: null,
         propName: 'textContent',
         statePathName: 'row.label',
-        stateName: 'default',
         bindingType: 'prop',
         inFilters: [],
         outFilters: [],
@@ -490,7 +488,6 @@ describe('WcsDevtools shell', () => {
         node: null,
         propName: 'textContent',
         statePathName: 'row.label',
-        stateName: 'default',
         bindingType: 'prop',
         inFilters: [],
         outFilters: [],
@@ -625,7 +622,7 @@ describe('WcsDevtools shell', () => {
       mount();
       emitWrite('count');
       source.emit({ type: 'state:token-emit', kind: 'command', tokenName: 'orphan', args: [1], subscriberCount: 0 });
-      // stateName なしの行（batch）も混ぜる
+      // batch 行（パスでなく件数が主語の行）も混ぜる
       source.emit({ type: 'state:update-batch', addresses: new Set([addressOf('main', 'count')]) });
       devtools.__flushRenderForTest();
       const body = paneBody(devtools, 'timeline');
@@ -654,13 +651,11 @@ describe('WcsDevtools shell', () => {
       source.emit({
         type: 'state:path-unresolved',
         source: 'binding',
-        stateName: 'main',
         path: 'user.nmae',
         missingSegment: 'nmae',
       });
       source.emit({
         type: 'state:binding-apply-error',
-        stateName: 'main',
         path: 'items.*.label',
         bindingType: 'text',
         error: new Error('boom'),
@@ -770,7 +765,6 @@ describe('WcsDevtools shell', () => {
         const binding: IBindingLike = {
           propName: 'textContent',
           statePathName: 'count',
-          stateName: 'main',
           bindingType: 'text',
           node: textInConnected,
           replaceNode: connected,

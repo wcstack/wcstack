@@ -1281,17 +1281,16 @@ customElements.define("user-card", UserCard);
 - A partial mount can sit next to it: `state: user; state.theme: theme` mounts `theme` as a second entry point (longest prefix wins, so `theme.mode` inside the component reads the tree's `theme.mode`).
 - In a loop, mount **the row itself**: `<template data-wcs="for: users"><user-row data-wcs="state: ."></user-row></template>`. Inside the row component `name` is `users.*.name`, and its own `for: tags` runs over `users.*.tags.*`.
 - **Own keys are private** (rule R1 in [docs/state-mount-design.md](../../docs/state-mount-design.md) §4-3): a data key the component declares itself (`state = { mode: "view" }`) belongs to that element and is never written to the tree. If it hides a key that exists at the mount point (`state = { name: "" }` mounted over `user.name`), the runtime warns once (`wcs/mount-own-key-shadow`) — remove the default to read the tree, or rename it to keep it private.
-- Mounting an array as the root (`state: rows` with `for` over it inside) is not supported in 1.x; mount the row (`state: .`) or the object that holds the array (`state: group` with `for: children` inside). Both forms are contract-tested and carry over unchanged to v2, where mounts become the only way to extend the tree.
+- Mounting an array as the root (`state: rows` with `for` over it inside) is not supported; mount the row (`state: .`) or the object that holds the array (`state: group` with `for: children` inside). Both forms are contract-tested; mounts are the only way to extend the tree.
 
 > The per-property form (`state.message: user.name`) keeps working — it is a partial mount on
-> the same machinery. **v2 note (this branch)**: R1 is strict for every mount form — a
-> component that declares a default for a mapped key (`state = { message: "" }` together with
-> `state.message: ...`) keeps its own key **private**, hiding the host value (a one-time
-> `wcs/mount-own-key-shadow` warning points at it). Drop the default to read the tree. In v2
-> the mounted `<wcs-state>` also needs no `name` in Light DOM, and `$getAll` / `$setAll` /
-> `$resolve` / `$postUpdate` on `element.state` (and on `this` inside getters/methods) speak
-> the component's own vocabulary — paths are translated onto the mount and the host row's
-> indexes are prepended automatically.
+> the same machinery. R1 is strict for every mount form — a component that declares a default
+> for a mapped key (`state = { message: "" }` together with `state.message: ...`) keeps its
+> own key **private**, hiding the host value (a one-time `wcs/mount-own-key-shadow` warning
+> points at it). Drop the default to read the tree. The mounted `<wcs-state>` needs no `name`
+> in Light DOM, and `$getAll` / `$setAll` / `$resolve` / `$postUpdate` on `element.state`
+> (and on `this` inside getters/methods) speak the component's own vocabulary — paths are
+> translated onto the mount and the host row's indexes are prepended automatically.
 
 ### Standalone Web Component Injection (`__e2e__/single-component`)
 
@@ -1331,8 +1330,7 @@ customElements.define("my-component", MyComponent);
 
 - `<wcs-state>` with `bind-component` must be a **direct child** of the component element (top-level)
 - The parent element must be a **custom element** (tag name containing a hyphen)
-- Light DOM components **require** a `name` attribute to avoid namespace conflicts with the parent scope
-- Light DOM bindings must reference the state name explicitly (e.g., `@my-light`)
+- Light DOM components must be wired from the host (the plain, unwired form was removed in v2)
 
 ### Loop with Components
 
@@ -1870,7 +1868,7 @@ Key rules:
 - **A headless row watch requires `$listKeys`** — this is the one place `$watch` is *not* headless on its own. Expanding `items` into `items.*.price` is driven by the list's `for` binding, and declaring a watch deliberately does not register the path as a list. So with neither a `for` binding nor `$listKeys`, assigning the array fires the row watch **zero** times. Add `$listKeys` (the key match writes each field by path, bypassing the expansion) or render the list. Scalar paths — including nested ones like `user.name` — are headless with no such condition.
 - **Handler exceptions are isolated** — a throw is reported to the console and the remaining watches (and stream restarts) still run. This differs from `$connectedCallback` / `$updatedCallback`, which fail loudly.
 - **Write chains are bounded** — a handler's writes form a new batch, so mutually-writing watches would loop forever; the chain is cut off after 32 links with a console error. Values and DOM are not rolled back.
-- **Not available on a mapped `bind-component` child** — its state is wrapped in a proxy that blanks out every `$`-prefixed property, so the declaration never arrives. This applies to `$streams` too. A plain (unmapped) child can declare it.
+- **Not run on a mounted `bind-component` scope** — mounted components do not execute declaration surfaces: the `$watch` declaration is ignored with a one-time console warning that points to the root state (or a volume — `<wcs-state mount>` hosts `$watch` / `$listKeys` / `$updatedCallback`). This applies to `$streams` too. A plain (unwired Shadow) child owns an independent tree and can declare it.
 - **SSR does not run watches** — handler side effects would otherwise execute on both server and client.
 
 ## Inputs and Attribute Mirror
@@ -2171,7 +2169,7 @@ The check **under-approximates**: it stays silent for anything it cannot decide 
 - A `null` / `undefined` parent (the "seed as `null`, assign later" shape)
 - Row fields of a list that starts empty (the row shape is unknown)
 - Sub-properties of an intermediate getter's return value
-- Mapped `bind-component` child scopes (the parent owns the path)
+- Marker paths of mounted components (`#m…` — private keys and getters live on the mount overlay, not the raw state)
 - Reserved `$` namespaces (`$command.*` and friends)
 
 So **no warning is not a proof of correctness.** For exhaustive checking, run `npx @wcstack/lint <file>`.
@@ -2445,7 +2443,7 @@ bootstrapState();
 
 | Attribute | Description |
 |---|---|
-| `name` | State name (default: `"default"`) |
+| `mount` | Static tree path to graft this state onto the root tree as a **volume** (v2 — replaces the removed `name` attribute; one state tree per root) |
 | `state` | ID of a `<script type="application/json">` element |
 | `src` | URL to `.json` or `.js` file |
 | `json` | Inline JSON string |
@@ -2455,7 +2453,6 @@ bootstrapState();
 
 | Property / Method | Description |
 |---|---|
-| `name` | State name |
 | `initializePromise` | Resolves when state is fully initialized |
 | `listPaths` | Set of paths used in `for` loops |
 | `getterPaths` | Set of paths defined as getters |

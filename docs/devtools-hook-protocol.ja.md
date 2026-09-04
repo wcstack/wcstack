@@ -84,7 +84,10 @@ interface IDevtoolsSource {
   getStateElements(): IStateElementSummary[];   // 接続時スナップショットの起点
   keys(rootNode: Node): string[];               // トップレベルキー列挙（状態ツリーの描画起点）
   // v2: マウント記録の列挙（D20 の可視化）。マーカー（#m<id>）ごとにマウント表と
-  // 私有面（オーバーレイ専用アドレス空間に住むキー）を要約する。マウント無しは空配列
+  // 私有面（オーバーレイ専用アドレス空間に住むキー）を要約する。マウント無しは空配列。
+  // 注: ランタイムは提供済みだが @wcstack/devtools の UI はまだ消費していない
+  //（オーバーレイペインは今後の作業 — v2 レビューの non-blocking 記録）。プロトコルに
+  // 先に載せてあるのは、消費側がランタイムのリリース無しで採用できるようにするため
   overlays(rootNode: Node): IMountOverlaySummary[];
   read(rootNode: Node, path: string, indexes?: number[]): unknown;
   write(rootNode: Node, path: string, value: unknown, indexes?: number[]): void;

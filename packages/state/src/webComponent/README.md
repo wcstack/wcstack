@@ -23,7 +23,7 @@
 実装は解決サイトの書き換えではなく**バインディングの変換**（impl-plan §3-0）:
 
 1. **パース時の接頭辞合成** — スコープの collect は `translateParsedForMount` で各
-   binding の `statePathName` / `statePathInfo` / `stateName` を親ツリーの絶対形へ
+   binding の `statePathName` / `statePathInfo` を親ツリーの絶対形へ
    書き換える（パース結果キャッシュは無接頭辞のまま・複製のみ）。以後この binding は
    台帳・依存グラフ・キャッシュ・LIS・プールのどれから見ても「親スコープにインラインで
    書かれたもの」と同一。

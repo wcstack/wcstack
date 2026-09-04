@@ -66,6 +66,12 @@ export interface IWiringEntry {
   readonly propName: string;
   readonly bindingType: string;
   readonly bindingRef: WeakRef<IBindingLike>;
+  /**
+   * 属する state 要素（absoluteAddress.absolutePathInfo.stateElement）。v2 は名前次元が
+   * 無いため、複数ツリーの同名パスは要素同一性で区別する（getWiringForPath のスコープ）。
+   * WeakRef なのはこの台帳が要素の寿命を延ばさないため。payload に無ければ null。
+   */
+  readonly stateElementRef: WeakRef<object> | null;
 }
 
 export type CoreChangeKind = "sources" | "roster" | "wiring" | "timeline" | "coverage";
@@ -170,9 +176,12 @@ export class DevtoolsCore {
   private _changeListeners: Set<CoreChangeListener> = new Set();
   /** 観測開始時刻（connect 時の performance.now。未接続は null）。 */
   private _observingSince: number | null = null;
-  /** watch 発火回数（path → count）。カバレッジの実測面。 */
+  /** watch 発火回数（path → count）。カバレッジの実測面。
+   *  既知の限界: `state:watch-fired` / `state:token-emit` の payload はツリー識別を
+   *  持たないため、複数ツリーが同名の watch パス / token 名を宣言するページでは
+   *  実測が合算される（ツリー別に分けるにはプロトコル追補が要る — slice 29 記録）。 */
   private _watchFiredCounts: Map<string, number> = new Map();
-  /** token emit 実測（kind + NUL + name → 回数と空撃ち回数）。 */
+  /** token emit 実測（kind + NUL + name → 回数と空撃ち回数）。上の限界注記と同じ。 */
   private _tokenEmitCounts: Map<string, ITokenEmitStat> = new Map();
   /** 観測開始以降に一度でも attach を観測した宣言キー（attachKeyOf）。
    *  live 配線台帳は WeakRef pruning / binding-removed で縮むため、binding
@@ -284,13 +293,23 @@ export class DevtoolsCore {
     this._notify("timeline");
   }
 
-  /** 指定パスに束縛された配線（生存している binding のみ） */
-  getWiringForPath(path: string): IWiringEntry[] {
+  /**
+   * 指定パスに束縛された配線（生存している binding のみ）。
+   * stateElement を渡すとそのツリーの配線だけに絞る（v2 は名前次元が無いため、
+   * 複数ツリーの同名パスは要素同一性で区別する）。stateElement を持たない
+   * 旧 payload 由来の entry は絞り込みでも残す（欠測を欠落にしない）。
+   */
+  getWiringForPath(path: string, stateElement?: unknown): IWiringEntry[] {
     const set = this._wiringByPathKey.get(pathKeyOf(path));
     if (set === undefined) {
       return [];
     }
-    return this._collectAlive(set);
+    const alive = this._collectAlive(set);
+    if (stateElement === undefined) {
+      return alive;
+    }
+    return alive.filter((entry) =>
+      entry.stateElementRef === null || entry.stateElementRef.deref() === stateElement);
   }
 
   /** 全配線のスナップショット（生存している binding のみ） */
@@ -605,12 +624,16 @@ export class DevtoolsCore {
           set = new Set();
           this._wiringByPathKey.set(key, set);
         }
+        const stateElement = event.absoluteAddress.absolutePathInfo.stateElement;
         const entry: IWiringEntry = {
           sourceId,
           path,
           propName: event.binding.propName,
           bindingType: event.binding.bindingType,
           bindingRef: new WeakRef(event.binding),
+          stateElementRef: typeof stateElement === "object" && stateElement !== null
+            ? new WeakRef(stateElement)
+            : null,
         };
         set.add(entry);
         this._wiringEntryByBinding.set(event.binding, entry);
@@ -694,8 +717,7 @@ export class DevtoolsCore {
         this._appendTimeline({
           sourceId,
           kind: "watch-chain-limit",
-          // 打ち切りはバッチ単位で state 名を持たない（複数 state のアドレスが
-          // 載りうる）ため、hidden 判定はここでは行わない。
+          // 打ち切りはバッチ単位（複数ツリーのアドレスが載りうる）— 行の主語は深さ上限
           label: `depth > ${event.maxDepth}`,
           detail: event.paths.join(", "),
           subscriberCount: null,
@@ -727,8 +749,7 @@ export class DevtoolsCore {
         return;
       }
       case "propagation:suppressed": {
-        // two-way エコーの辺単位抑止。state 名を持たない（node+member が主語）
-        // ため hidden 判定はここでは行わない。
+        // two-way エコーの辺単位抑止（主語は node + member — パスではない）
         this._appendTimeline({
           sourceId,
           kind: "propagation-suppressed",

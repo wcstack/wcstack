@@ -83,6 +83,15 @@ describe('validateNamedState', () => {
     expect(slice(html, diags[0])).toBe('@user');
   });
 
+  it('コメントバインディング <!--@@: path@name--> にも出ること（第 3 チャネル）', () => {
+    // mustache は実 DOM でこの形へ変換される — 直書きも同じ runtime parse error
+    const html = `<p><!--@@: total@cart--></p><p><!--@@: count--></p>`;
+    const diags = validateNamedState(html, 'data-wcs');
+    expect(diags).toHaveLength(1);
+    expect(diags[0].severity).toBe('error');
+    expect(slice(html, diags[0])).toBe('@cart');
+  });
+
   it('validateDocument が同じ code / severity で含めること', () => {
     const html = `<wcs-state name="cart" json='{"total":1}'></wcs-state><div data-wcs="textContent: total@cart"></div>`;
     const diags = validateDocument(html).filter((d) => d.code === WcsDiagnosticCode.NamedStateDeprecated);

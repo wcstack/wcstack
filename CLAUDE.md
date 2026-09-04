@@ -157,7 +157,7 @@ Each I/O node component splits into two layers:
 - `list/` provides array diffing for efficient DOM updates
 - `filters/` provides the value transformation pipeline
 - `command/`, `event/`, `token/`, `protocol/` implement the command-token / event-token / wc-bindable interop
-- Binding syntax: `[property][#modifier]: [path][@state][|(filter | filter(args))...]`
+- Binding syntax: `[property][#modifier]: [path][|(filter | filter(args))...]` — v2 removed the `@state` selector (parse error with a migration hint): one state tree per root; graft subtrees with `<wcs-state mount="path">` volumes and read them as `path.…`
 
 ## Examples
 

@@ -26,21 +26,24 @@ export default { count: 0 };
     expect(blocks[1].content).toContain('b: 2');
   });
 
-  it('name 属性を持つ <wcs-state> から stateName を取得する', () => {
-    const html = `<wcs-state name="cart">
+  it('mount 属性を持つ <wcs-state> から mountPath を取得する（v2 ボリューム）', () => {
+    const html = `<wcs-state mount="cart">
   <script type="module">
 export default { items: [] };
   </script>
 </wcs-state>`;
     const blocks = parseWcsScriptBlocks(html);
     expect(blocks).toHaveLength(1);
+    expect(blocks[0].mountPath).toBe('cart');
   });
 
-  it('シングルクォートの name 属性', () => {
-    const html = `<wcs-state name='user'>
+  it('シングルクォートの mount 属性も同じに取れる', () => {
+    const html = `<wcs-state mount='user'>
   <script type="module">export default {};</script>
 </wcs-state>`;
     const blocks = parseWcsScriptBlocks(html);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].mountPath).toBe('user');
   });
 
   it('複数の <wcs-state> を抽出する', () => {

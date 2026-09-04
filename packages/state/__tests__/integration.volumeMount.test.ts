@@ -139,6 +139,95 @@ describe("volume: $connectedCallback（V7）と chroot 書き込み", () => {
   });
 });
 
+describe("volume: ルートの丸ごと再 set の防御（D22 同型）", () => {
+  it("接ぎ木済みボリュームの居るルートへの setInitialState（S13 再 set）は throw し、接ぎ木は無傷であること", async () => {
+    const { host, rootElement } = await mountPage();
+    // 旧挙動: 無言で接ぎ木データ・アクセサ・宣言合流分が全て消えていた
+    expect(() => rootElement.setInitialState({ replaced: true }))
+      .toThrow(/grafted volumes or mounted components/);
+    let lang: unknown;
+    rootElement.createState("readonly", (s: any) => { lang = s["i18n.lang"]; });
+    expect(lang).toBe("en");
+    host.remove();
+  });
+});
+
+describe("volume: ロード完了前の remove → append（再入）", () => {
+  it("ロード中の再接続が二重初期化（already mounted の誤 raise）にならず、接ぎ木が成立すること", async () => {
+    const host = document.createElement(uniqueTag("vol-host"));
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML =
+      `<wcs-state mount="i18n"></wcs-state>` +
+      `<wcs-state json='{"count":1}'></wcs-state>` +
+      `<p id="lang" data-wcs="textContent: i18n.lang"></p>`;
+    document.body.appendChild(host);
+    const volumeElement = shadowRoot.querySelector(`wcs-state[mount]`) as State;
+    const rootElement = shadowRoot.querySelector(`wcs-state:not([mount])`) as State;
+
+    // ソース未提供（setInitialState 待ち）＝ロード中に remove → append
+    await flush();
+    volumeElement.remove();
+    await flush();
+    shadowRoot.insertBefore(volumeElement, rootElement);
+    // 再入した connectedCallback が reserveVolumeSlot を再実行しないこと
+    //（旧挙動: Volume slot "i18n" is already mounted の誤 raise）
+    await expect((volumeElement as any).connectedCallback()).resolves.toBeUndefined();
+
+    volumeElement.setInitialState(i18nVolume());
+    await rootElement.connectedCallbackPromise;
+    await volumeElement.connectedCallbackPromise;
+    await State.getBindingsReady(shadowRoot);
+    await flush();
+    await flush();
+    expect((shadowRoot.querySelector("#lang") as HTMLElement).textContent).toBe("en");
+    host.remove();
+  });
+});
+
+describe("volume: 宣言エラーは接ぎ木より前に落ちること", () => {
+  it("$streams 宣言のボリュームはデータ接ぎ木・アクセサ登録・$connectedCallback の前に落ちること", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const host = document.createElement(uniqueTag("vol-host"));
+      const shadowRoot = host.attachShadow({ mode: "open" });
+      shadowRoot.innerHTML =
+        `<wcs-state mount="cfg"></wcs-state>` +
+        `<wcs-state json='{"count":1}'></wcs-state>`;
+      document.body.appendChild(host);
+      const volumeElement = shadowRoot.querySelector(`wcs-state[mount]`) as State;
+      const rootElement = shadowRoot.querySelector(`wcs-state:not([mount])`) as State;
+      let connectedRan = false;
+      volumeElement.setInitialState({
+        value: "v0",
+        get derived() { return this.value; },
+        $streams: { load: {} },
+        $connectedCallback() { connectedRan = true; },
+      });
+      await rootElement.connectedCallbackPromise;
+      await volumeElement.connectedCallbackPromise;
+      await flush();
+      await flush();
+
+      // 隔離レポートは出る（無言にしない）
+      expect(error.mock.calls.some((c) => c.some((a) => String(a).includes("failed to graft")))).toBe(true);
+      // 半端な接ぎ木状態を残さない: データ・アクセサとも載らず、$connectedCallback も走らない
+      //（旧挙動: データとアクセサが載った後に落ちていた）
+      let value: unknown = "sentinel";
+      let derived: unknown = "sentinel";
+      rootElement.createState("readonly", (s: any) => {
+        value = s["cfg.value"];
+        derived = s["cfg.derived"];
+      });
+      expect(value).toBeUndefined();
+      expect(derived).toBeUndefined();
+      expect(connectedRan).toBe(false);
+      host.remove();
+    } finally {
+      error.mockRestore();
+    }
+  });
+});
+
 describe("volume: 予約と衝突（D22）", () => {
   it("ルートデータに同名キーがあれば接ぎ木時に throw（隔離されて console.error）すること", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -153,8 +242,10 @@ describe("volume: 予約と衝突（D22）", () => {
     }
   });
 
-  it("mount にワイルドカードや予約文字は使えないこと", async () => {
-    for (const bad of ["a.*", "$x", "a.#m", "a@b"]) {
+  it("mount にワイルドカードや予約文字は使えないこと（中間の #/$ も含む）", async () => {
+    // "a#b" / "a$b": 予約文字はセグメント先頭だけでなく位置を問わず拒否する
+    // （中間の # はマーカー判定・D22 診断免除と干渉する）
+    for (const bad of ["a.*", "$x", "a.#m", "a@b", "a#b", "a$b"]) {
       const el = document.createElement("wcs-state") as State;
       el.setAttribute("mount", bad);
       const holder = document.createElement("div");
@@ -189,16 +280,24 @@ describe("volume: 予約と衝突（D22）", () => {
 
 describe("volume: 検査と chroot の面（カバレッジ確定）", () => {
   it("mount と bind-component / name の併記は throw すること", async () => {
-    for (const attrs of [{ "bind-component": "state" }, { name: "x" }] as const) {
-      const el = document.createElement("wcs-state") as State;
-      el.setAttribute("mount", "vol");
-      for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
-      const holder = document.createElement("div");
-      holder.appendChild(el);
-      document.body.appendChild(holder);
-      await expect((el as any)._initializeVolume()).rejects.toThrow(/cannot be combined|replaces "name"/);
-      holder.remove();
-    }
+    // bind-component 併記は _initializeVolume が落とす
+    const el = document.createElement("wcs-state") as State;
+    el.setAttribute("mount", "vol");
+    el.setAttribute("bind-component", "state");
+    const holder = document.createElement("div");
+    holder.appendChild(el);
+    document.body.appendChild(holder);
+    await expect((el as any)._initializeVolume()).rejects.toThrow(/cannot be combined/);
+    holder.remove();
+
+    // name 併記は connectedCallback 冒頭の name チェックが専用文言で落とす
+    //（_initializeVolume 内の同検査は到達不能だったため撤去済み）。
+    // fail-fast でも初期化待ちはウェッジしない（_failInitialization 経由）
+    const el2 = document.createElement("wcs-state") as State;
+    el2.setAttribute("mount", "vol");
+    el2.setAttribute("name", "x");
+    await expect((el2 as any).connectedCallback()).rejects.toThrow(/"mount" replaces "name"/);
+    await el2.initializePromise;
   });
 
   it("同じスロットの二重予約と、空パス・空セグメントは throw すること", async () => {
@@ -579,6 +678,9 @@ describe("volume: 宣言面の端（検査・空宣言・非同期 reject・相�
     expect(() => graftVolume(rootStub(), "w3", { $listKeys: 7 })).toThrow(/must be an object/);
     expect(() => graftVolume(rootStub(), "w4", { $listKeys: { "": "id" } })).toThrow(/key function/);
     expect(() => graftVolume(rootStub(), "w5", { $listKeys: { items: 1 } })).toThrow(/key function/);
+    // ルート表との衝突も接ぎ木前に検出される（mergeVolumeListKeys の raise と同義）
+    const collidingRoot = { ...rootStub(), listKeys: new Map([["w7.items", "id"]]) } as any;
+    expect(() => graftVolume(collidingRoot, "w7", { $listKeys: { items: "id" } })).toThrow(/declared by both/);
     // 空宣言はどの台帳にも触らない
     expect(() => graftVolume(rootStub(), "w6", { $watch: {}, $listKeys: {} })).not.toThrow();
   });
@@ -916,5 +1018,202 @@ describe("volume: findGraftedSlotUnder の単体面（D22 後段）", () => {
     // スロット自身・無関係なパスは対象外
     expect(findGraftedSlotUnder(stub, "a.b")).toBeNull();
     expect(findGraftedSlotUnder(stub, "q")).toBeNull();
+  });
+});
+
+/**
+ * 初期化済みボリュームの再接続（remove → append）— v2 レビューの修理。
+ * connectedCallback の初期化済み分岐に mount ガードが無かった間は「ルート再登録」
+ * 分岐へ落ち、ルート健在なら "already registered" の raise、ルート不在なら
+ * **ボリューム自身がツリー根として登録**されていた（State.ts）。
+ */
+describe("volume: 再接続（remove → append）", () => {
+  it("ルート健在の再接続はルート登録に触れず、$connectedCallback が chroot で再実行されること", async () => {
+    const { getStateElement } = await import("../src/stateElementByName");
+    const { host, shadowRoot, rootElement, volumeElement, text } = await mountPage();
+
+    // $connectedCallback の再実行を観測するため、一度フラグを倒す
+    rootElement.createState("writable", (s: any) => { s["i18n.connected"] = false; });
+    await flush();
+
+    const parent = volumeElement.parentNode!;
+    volumeElement.remove();
+    await flush();
+    parent.insertBefore(volumeElement, parent.firstChild);
+    await flush();
+    await flush();
+
+    // ルート登録は無傷（ボリュームが根として登録されない・raise もしない）
+    expect(getStateElement(shadowRoot)).toBe(rootElement);
+    let connected: unknown;
+    rootElement.createState("readonly", (s: any) => { connected = s["i18n.connected"]; });
+    expect(connected).toBe(true); // 再実行された
+    // 接ぎ木データとバインディングは生きている
+    expect(text("#lang")).toBe("en");
+
+    host.remove();
+  });
+
+  it("ルート不在の再接続でボリューム自身がツリー根として登録されないこと", async () => {
+    const { getStateElement } = await import("../src/stateElementByName");
+    const { host, shadowRoot, rootElement, volumeElement } = await mountPage();
+
+    rootElement.remove();
+    volumeElement.remove();
+    await flush();
+    expect(getStateElement(shadowRoot)).toBeNull();
+
+    shadowRoot.appendChild(volumeElement);
+    await flush();
+    await flush();
+
+    // 独立ツリーを持たない要素が根に化けない（化けると以後の書き込み・解決が全て誤配線）
+    expect(getStateElement(shadowRoot)).toBeNull();
+
+    host.remove();
+  });
+});
+
+/**
+ * $updatedCallback の配送順 — ルート自身が先、ボリュームの相対配送が後
+ * （$watch の order 規約と同じ「ルート宣言が先」の向き。
+ * proxy/apis/updatedCallback.ts のコメントとの齟齬修理をピンする）。
+ */
+describe("volume: $updatedCallback の配送順（ルート → ボリューム）", () => {
+  it("同一バッチでルートの $updatedCallback がボリュームの相対配送より先に呼ばれること", async () => {
+    const order: string[] = [];
+    const host = document.createElement(uniqueTag("vol-host"));
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML =
+      `<wcs-state mount="cfg"></wcs-state>` +
+      `<wcs-state></wcs-state>` +
+      // 配送はバインディング適用の収集に載って起きる — cfg.value のバインドを 1 本置く
+      `<p id="v" data-wcs="textContent: cfg.value"></p>`;
+    document.body.appendChild(host);
+    const volumeElement = shadowRoot.querySelector(`wcs-state[mount]`) as State;
+    const rootElement = shadowRoot.querySelector(`wcs-state:not([mount])`) as State;
+    volumeElement.setInitialState({
+      value: "v0",
+      $updatedCallback(paths: string[]) { order.push(`volume:${paths.join("+")}`); },
+    });
+    rootElement.setInitialState({
+      count: 1,
+      $updatedCallback(paths: string[]) { order.push(`root:${paths.join("+")}`); },
+    });
+    await rootElement.connectedCallbackPromise;
+    await volumeElement.connectedCallbackPromise;
+    await State.getBindingsReady(shadowRoot);
+    await flush();
+    await flush();
+    order.length = 0; // 接ぎ木時の初期通知は捨てる
+
+    rootElement.createState("writable", (s: any) => {
+      s["cfg.value"] = "v1";
+    });
+    await flush();
+    await flush();
+
+    const rootIndex = order.findIndex((e) => e.startsWith("root:"));
+    const volumeIndex = order.findIndex((e) => e.startsWith("volume:"));
+    expect(rootIndex).toBeGreaterThanOrEqual(0);
+    expect(volumeIndex).toBeGreaterThanOrEqual(0);
+    expect(rootIndex).toBeLessThan(volumeIndex);
+    expect(order[volumeIndex]).toBe("volume:value"); // 相対パスで届く
+
+    host.remove();
+  });
+});
+
+/**
+ * $commandTokens / $eventTokens の宣言はボリュームでは未対応 — 無言に捨てず warn で
+ * ルート宣言へ誘導する（設計書 §4-6 の実装注記・v2 レビューの修理）。
+ */
+describe("volume: $commandTokens / $eventTokens の宣言は warn されること", () => {
+  it("宣言があると warn が出て、接ぎ木自体は成立すること", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const host = document.createElement(uniqueTag("vol-host"));
+      const shadowRoot = host.attachShadow({ mode: "open" });
+      shadowRoot.innerHTML =
+        `<wcs-state mount="cfg"></wcs-state>` +
+        `<wcs-state json='{"count":1}'></wcs-state>`;
+      document.body.appendChild(host);
+      const volumeElement = shadowRoot.querySelector(`wcs-state[mount]`) as State;
+      const rootElement = shadowRoot.querySelector(`wcs-state:not([mount])`) as State;
+      volumeElement.setInitialState({
+        value: "v0",
+        $commandTokens: ["focus"],
+        $eventTokens: { changed: "onChanged" },
+        $on: { changed() {} },
+      });
+      await rootElement.connectedCallbackPromise;
+      await volumeElement.connectedCallbackPromise;
+      await flush();
+      await flush();
+
+      const warns = warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes("volumes do not support"));
+      expect(warns.some((m) => m.includes("$commandTokens"))).toBe(true);
+      expect(warns.some((m) => m.includes("$eventTokens"))).toBe(true);
+      expect(warns.some((m) => m.includes("$on"))).toBe(true);
+      // 接ぎ木は成立している
+      let value: unknown;
+      rootElement.createState("readonly", (s: any) => { value = s["cfg.value"]; });
+      expect(value).toBe("v0");
+      host.remove();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+/**
+ * ボリュームのロード失敗（404 / JSON パースエラー / import 失敗）の隔離 — v2 レビューの修理。
+ * 旧挙動: _loadStateFromSource の throw で _resolveInitialize / _resolveLoading /
+ * _resolveConnectedCallback が未解決のまま残り、waitForStateInitialize（全 <wcs-state> の
+ * initializePromise を Promise.all で待つ）がページ全体を無言でウェッジ。さらに
+ * _volumeInitializing が立ったままなので remove → append の再接続も再入ガードに
+ * 握り潰され復旧不能だった。graftIsolated と同じ「1 ボリュームに閉じる」隔離に合流する。
+ */
+describe("volume: ロード失敗の隔離", () => {
+  it("json パースエラーのボリュームが initializePromise を解決し、ページの他のバインディングを止めないこと", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const host = document.createElement(uniqueTag("vol-host"));
+      const shadowRoot = host.attachShadow({ mode: "open" });
+      shadowRoot.innerHTML =
+        `<wcs-state mount="broken" json="{invalid"></wcs-state>` +
+        `<wcs-state json='{"count":1}'></wcs-state>` +
+        `<p id="count" data-wcs="textContent: count"></p>`;
+      document.body.appendChild(host);
+      const volumeElement = shadowRoot.querySelector(`wcs-state[mount]`) as State;
+      const rootElement = shadowRoot.querySelector(`wcs-state:not([mount])`) as State;
+
+      // 旧挙動: ここで永久待ち（waitForStateInitialize と同じ待ち先）
+      await volumeElement.initializePromise;
+      await volumeElement.connectedCallbackPromise;
+      await rootElement.connectedCallbackPromise;
+      await State.getBindingsReady(shadowRoot);
+      await flush();
+      await flush();
+
+      // 隔離レポートは出る（無言にしない）
+      expect(error.mock.calls.some((c) => c.some((a) => String(a).includes('volume "broken" failed to load')))).toBe(true);
+      // ページの他のバインディングは生きている
+      expect((shadowRoot.querySelector("#count") as HTMLElement).textContent).toBe("1");
+      // 接ぎ木は載っていない（予約だけが残る — 読みは undefined で騒がない）
+      let broken: unknown = "sentinel";
+      rootElement.createState("readonly", (s: any) => { broken = s.broken; });
+      expect(broken).toBeUndefined();
+
+      // 再接続（remove → append）が復旧不能にならないこと
+      //（旧挙動: _volumeInitializing の再入ガードで無言 return、promise は未解決のまま）
+      volumeElement.remove();
+      await flush();
+      shadowRoot.appendChild(volumeElement);
+      await expect((volumeElement as any).connectedCallback()).resolves.toBeUndefined();
+      host.remove();
+    } finally {
+      error.mockRestore();
+    }
   });
 });

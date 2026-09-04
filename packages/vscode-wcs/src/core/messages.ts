@@ -103,7 +103,13 @@ export interface WcsMessageCatalog {
   namedStateAttrDeprecated(name: string): string;
   /** `path@name` は v2 で `name.path` に置き換わる（`@default` は単に外す）。 */
   namedStatePathDeprecated(name: string): string;
+  // --- mountAttrValidator ---
+  /** `mount` 属性値が runtime の validateVolumeMountPath で raise する形（同条件・同文言）。 */
+  mountPathInvalid(problem: MountPathProblem, mountPath: string): string;
 }
+
+/** `mount` 属性値の不正の種類（runtime の validateVolumeMountPath の raise と 1:1）。 */
+export type MountPathProblem = 'empty' | 'emptySegment' | 'wildcard' | 'reserved';
 
 const JA_EXPECTED_LABEL: Record<ExpectedTypeKind, string> = {
   array: '配列型のパス',
@@ -186,6 +192,14 @@ const ja: WcsMessageCatalog = {
     name === 'default'
       ? `"@default" セレクタは v2 で撤去されました。"@default" を外してください（docs/state-mount-design.md §9）`
       : `"@name" セレクタは v2 で撤去されました（1 root 1 ツリー）。マウントしたツリーを "${name}.<path>" で参照してください（docs/state-mount-design.md §9）`,
+  mountPathInvalid: (problem, mountPath) => {
+    switch (problem) {
+      case 'empty': return `"mount" には空でないツリーパスが必要です（runtime: "mount" requires a non-empty tree path.）`;
+      case 'emptySegment': return `"mount" パス "${mountPath}" に空のセグメントがあります（runtime: has an empty segment.）`;
+      case 'wildcard': return `"mount" パス "${mountPath}" は静的でなければなりません — ワイルドカードは使えません（runtime: must be static.）`;
+      default: return `"mount" パス "${mountPath}" に予約文字（$, #, @）は使えません（runtime: must not use reserved characters.）`;
+    }
+  },
 };
 
 const EN_EXPECTED_LABEL: Record<ExpectedTypeKind, string> = {
@@ -269,6 +283,15 @@ const en: WcsMessageCatalog = {
     name === 'default'
       ? `The "@default" selector was removed in v2 — drop it (docs/state-mount-design.md §9)`
       : `The "@name" selector was removed in v2 — there is a single state tree. Mount the named state onto the tree (<wcs-state mount="...">) and read it as "${name}.<path>" (docs/state-mount-design.md §9)`,
+  mountPathInvalid: (problem, mountPath) => {
+    // runtime（state/src/webComponent/volume.ts validateVolumeMountPath）と同文言
+    switch (problem) {
+      case 'empty': return `"mount" requires a non-empty tree path.`;
+      case 'emptySegment': return `"mount" path "${mountPath}" has an empty segment.`;
+      case 'wildcard': return `"mount" path "${mountPath}" must be static (wildcards are not allowed).`;
+      default: return `"mount" path "${mountPath}" must not use reserved characters ($, #, @).`;
+    }
+  },
 };
 
 const CATALOGS: Record<WcsLocale, WcsMessageCatalog> = { ja, en };

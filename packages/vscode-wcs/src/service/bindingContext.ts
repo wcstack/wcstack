@@ -16,8 +16,9 @@ export type BindingContext =
 /**
  * data-wcs 属性値とカーソルのオフセットから補完コンテキストを解析する。
  *
- * バインディング構文: `[property][#modifier]: [path][@state][|filter|filter(args)...]`
- * 複数バインディングは `;` で区切る。
+ * バインディング構文: `[property][#modifier]: [path][|filter|filter(args)...]`
+ * 複数バインディングは `;` で区切る（v1 の `@state` セレクタは v2 で撤去 —
+ * `@` は検出だけして補完を止める。validator が parse error にする）。
  *
  * @param attrValue - data-wcs 属性の値全体
  * @param cursorOffset - 属性値内のカーソル位置（0始まり）

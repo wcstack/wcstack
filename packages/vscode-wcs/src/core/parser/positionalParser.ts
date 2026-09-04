@@ -61,7 +61,7 @@ function locate(haystack: string, needle: string, from: number, to: number): ITo
  * （parseBindTextForEmbeddedNode → parseStatePart）で位置付きパースする。
  *
  * 属性経路との決定的な違い: `;` を**分割しない**（`{{ a; b }}` は「a; b」という
- * 1 本のパス）。式全体が `path[@state][|filters]` の 1 バインディングで、
+ * 1 本のパス）。式全体が `path[|filters]` の 1 バインディングで、
  * 左辺は合成（propName 'textContent'）のため propRange は常に null。
  * 入力 expression は templateSyntax の抽出結果（trim 済み）を想定する。
  */

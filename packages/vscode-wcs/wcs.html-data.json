@@ -2218,7 +2218,7 @@
       "name": "data-wcs",
       "description": {
         "kind": "markdown",
-        "value": "wcstack binding attribute. Each expression is\n`property#modifier: path@state | filter(args)` and `;` separates multiple bindings.\nStructural directives (`for:` / `if:` / `elseif:` / `else`) go on `<template>`."
+        "value": "wcstack binding attribute. Each expression is\n`property#modifier: path | filter(args)` and `;` separates multiple bindings.\nStructural directives (`for:` / `if:` / `elseif:` / `else`) go on `<template>`."
       },
       "references": [
         {

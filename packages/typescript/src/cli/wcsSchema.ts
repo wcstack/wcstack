@@ -98,9 +98,15 @@ export function main(argv: readonly string[], io: CliIo = defaultIo()): number {
     io.stderr("--max-depth must be a positive integer\n");
     return 2;
   }
-  if (args.mount !== null && !/^[A-Za-z_$][\w$-]*(\.[A-Za-z_$][\w$-]*)*$/.test(args.mount)) {
-    io.stderr(`--mount must be a static tree path (got "${args.mount}")\n`);
-    return 2;
+  if (args.mount !== null) {
+    // runtime（state の validateVolumeMountPath）と同条件: 空セグメント・ワイルドカードと
+    // 予約文字（$ # @ — 位置を問わず）を拒否し、数字先頭などはランタイム同様に受理する。
+    // 旧 regex は `$` 先頭を受理し数字先頭を拒否していて runtime と両方向にずれていた
+    const problem = findMountPathProblem(args.mount);
+    if (problem !== null) {
+      io.stderr(`--mount ${problem} (got "${args.mount}")\n`);
+      return 2;
+    }
   }
 
   let generated;
@@ -113,6 +119,17 @@ export function main(argv: readonly string[], io: CliIo = defaultIo()): number {
   for (const warning of generated.warnings) io.stderr(`warning: ${warning}\n`);
 
   return args.command === "emit" ? emit(args, generated.schema, io) : check(args, generated.schema, io);
+}
+
+/** runtime（validateVolumeMountPath）が raise する形なら理由を返す（妥当なら null）。 */
+function findMountPathProblem(mountPath: string): string | null {
+  if (mountPath.length === 0) return "requires a non-empty tree path";
+  for (const segment of mountPath.split(".")) {
+    if (segment.length === 0) return "path has an empty segment";
+    if (segment === "*") return "path must be static (wildcards are not allowed)";
+    if (/[$#@]/.test(segment)) return "path must not use reserved characters ($, #, @)";
+  }
+  return null;
 }
 
 function emit(args: ParsedArgs, schema: ReturnType<typeof generateStateSchema>["schema"], io: CliIo): number {
@@ -161,13 +178,15 @@ function check(args: ParsedArgs, schema: ReturnType<typeof generateStateSchema>[
     return 2;
   }
   const slot = args.mount === null ? "state tree" : `mount "${args.mount}"`;
+  // 誘導コマンドは check と同じスロットを指すこと（--mount 抜きだとルートを差し替えてしまう）
+  const mountFlag = args.mount === null ? "" : ` --mount=${args.mount}`;
   const comparison = compareStateSchema(readFileSync(manifestPath, "utf8"), args.mount, schema);
   switch (comparison.kind) {
     case "same":
       io.stderr(`${args.manifest}: ${slot} is up to date\n`);
       return 0;
     case "missing-state":
-      io.stderr(`${args.manifest}: ${slot} has no stateSchema (run \`wcs-schema emit --merge\`)\n`);
+      io.stderr(`${args.manifest}: ${slot} has no stateSchema (run \`wcs-schema emit --merge${mountFlag}\`)\n`);
       return 2;
     case "v1-manifest":
       io.stderr(`${args.manifest}: schemaVersion 1 manifest (states[name]) — the name dimension was removed in v2. Regenerate with \`wcs-schema emit --out=${args.manifest}\` (single stateSchema, schemaVersion 2)\n`);
@@ -178,7 +197,7 @@ function check(args: ParsedArgs, schema: ReturnType<typeof generateStateSchema>[
     case "differs":
       io.stderr(`${args.manifest}: ${slot} is out of date (${comparison.changes.length} change(s)):\n`);
       for (const change of comparison.changes) io.stderr(`  ${change}\n`);
-      io.stderr(`run \`wcs-schema emit --merge --out=${args.manifest}\` to update it\n`);
+      io.stderr(`run \`wcs-schema emit --merge${mountFlag} --out=${args.manifest}\` to update it\n`);
       return 1;
   }
 }

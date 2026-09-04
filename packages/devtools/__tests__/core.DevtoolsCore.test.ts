@@ -396,6 +396,24 @@ describe('DevtoolsCore', () => {
       expect(core.getWiringForPath('count')).toHaveLength(1);
     });
 
+    it('getWiringForPathはstateElementで自ツリーの配線に絞れること（v2: 複数ツリーの同名パス）', () => {
+      const { core, source } = setupConnected();
+      const elementA = {};
+      const elementB = {};
+      const addrFor = (element: object): IAbsoluteAddressLike => ({
+        absolutePathInfo: { stateElement: element, pathInfo: { path: 'count' } },
+        listIndex: null,
+      });
+      source.emit({ type: 'state:binding-added', absoluteAddress: addrFor(elementA), binding: bindingOf('a', 'count') });
+      source.emit({ type: 'state:binding-added', absoluteAddress: addrFor(elementB), binding: bindingOf('b', 'count') });
+      expect(core.getWiringForPath('count')).toHaveLength(2);
+      expect(core.getWiringForPath('count', elementA)).toHaveLength(1);
+      expect(core.getWiringForPath('count', elementB)).toHaveLength(1);
+      // stateElement がオブジェクトでない旧 payload 由来の entry は絞り込みでも残す（欠測を欠落にしない）
+      source.emit({ type: 'state:binding-added', absoluteAddress: addressOf('legacy', 'count'), binding: bindingOf('c', 'count') });
+      expect(core.getWiringForPath('count', elementA)).toHaveLength(2);
+    });
+
     it('cleared後の同一bindingのremovedにも安全なこと', () => {
       const { core, source } = setupConnected();
       const binding = bindingOf('main', 'count');

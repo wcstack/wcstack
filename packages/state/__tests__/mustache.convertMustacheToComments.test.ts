@@ -126,14 +126,14 @@ describe('convertMustacheToComments', () => {
     expect(div.textContent).toBe('Hello World');
   });
 
-  it('フィルタ付き {{ count@cart|gt(0) }} が正しく変換されること', () => {
+  it('フィルタ付き {{ cart.count|gt(0) }} が正しく変換されること', () => {
     config.enableMustache = true;
     const div = document.createElement('div');
-    div.textContent = '{{ count@cart|gt(0) }}';
+    div.textContent = '{{ cart.count|gt(0) }}';
     convertMustacheToComments(div);
     expect(div.childNodes.length).toBe(1);
     expect(div.childNodes[0].nodeType).toBe(Node.COMMENT_NODE);
-    expect((div.childNodes[0] as Comment).data).toBe('@@: count@cart|gt(0)');
+    expect((div.childNodes[0] as Comment).data).toBe('@@: cart.count|gt(0)');
   });
 
   it('{{ }} 内の空白がトリムされること', () => {

@@ -274,8 +274,10 @@ R1 を採る理由: 一文で言える（「**自分で書いたキーは自分�
 | `$streams` | 相対で宣言、データはツリーの `prefix.path` に落ちる |
 | `$listKeys` | 相対で宣言、ルートの ListKeyMap に絶対で登録 |
 | `$connectedCallback` / `$disconnectedCallback` / `$stateReadyCallback` | スコープごとに残る（ライフサイクルは要素のもの） |
-| `$commandTokens` / `$eventTokens` / `$command.*` / `$on` | **スコープごと**に残る。トークンはパスではなく要素の面なのでツリーに載せない |
+| `$commandTokens` / `$eventTokens` / `$command.*` / `$on` | 宣言（`$commandTokens` / `$eventTokens` / `$on`）は**ルートに置く** — マウント／ボリュームでは実行しない（無言に捨てず warn で誘導・実装注記 2026-09-04。当初案「スコープごとに残す」は per-scope トークン台帳の設計が別途要るため未実装）。テンプレート側の `$command.*` の**参照**（バインディングのパス）はルート宣言のトークンに解決される（`$` 頭のパスは翻訳しない） |
 | `$1` / `$2` / `$wildcardIndexes` | スコープ相対（§4-4） |
+
+**実装注記（2026-09-04）**: 宣言面（`$watch` / `$streams` / `$listKeys` / `$updatedCallback`）の相対サポートは**ボリュームのみ**（`$streams` はボリュームでも未対応 — 宣言は raise）。マウントされた**コンポーネントスコープ**は宣言面を実行せず、(tag, prop) につき 1 回の warn でルート／ボリュームへ誘導する（webComponent/mount.ts の `warnMountedDollarDeclarations`）。
 
 ### 4-7. 診断（無言の取り違えを作らない）
 
@@ -283,6 +285,7 @@ R1 を採る理由: 一文で言える（「**自分で書いたキーは自分�
 |---|---|
 | ルートが 2 つ | throw（今日の "already registered" と同じ） |
 | `mount` 先がルートに既にある | throw → **実装は `console.error` に隔離**（graftIsolated — connectedCallback 内 throw は初期化待ちを永久未解決にするため。1 ボリュームに閉じる・実装注記 2026-09-04） |
+| ボリュームのロード失敗（`src` の 404・JSON パースエラー・inline script の import 失敗） | `console.error` に隔離（graft 失敗と同じ着地 — 接ぎ木は載らず予約だけが残る。予約成立**前**の設定エラーは従来どおり resolve 済み throw で fail-fast。未解決のまま投げると waitForStateInitialize がページ全体を無言でウェッジし、再入ガードが再接続の復旧も塞ぐため。実装注記 2026-09-05） |
 | `mount` に `*` | throw |
 | ボリュームがあるのにルートが無い | throw（D11）→ **実装は loud エラー（`console.error`・パース完了後にルート候補の要素が無ければ 1 回）**。理由は上と同じ throw 不可の制約。接ぎ木は保留のままなので、後からルートを動的に足せば成立する（実装注記 2026-09-04） |
 | 私有キーがマウント先の既存キーを隠す | `console.warn` 1 回（バインド時）＋ lint |
@@ -294,6 +297,9 @@ R1 を採る理由: 一文で言える（「**自分で書いたキーは自分�
 | `mount` 属性の実行時変更 | 無視＋warn（再マウントは非目標） |
 | 親スコープから `items.*.upper`（子の getter / 私有キー）を読む | ツリーの未存在パスとして `undefined`＋pathDiagnostics の warn（D10 / D20） |
 | `@` を含むパス | v1.x: lint warning（実行時は `config.debug` 下で warn 1 回） → v2: **parse error**（移行ヒント付き） |
+| 同一コンポーネントに 2 本目の `<wcs-state bind-component>`（別 prop） | throw（**1 コンポーネント 1 マウントスコープ** — 2 本目を受けると 1 本目の収集済みスコープが無言で死ぬため。実装注記 2026-09-04） |
+| 接ぎ木済みボリューム / マウント記録の居るツリーへの `setInitialState()` 再 set | throw（D22 同型 — 丸ごと再 set は接ぎ木データ・quoted-path アクセサ・マーカー台帳・合流済み宣言面を無言で捨てるため。変更したいパスを個別に書く。実装注記 2026-09-04） |
+| マウントされたコンポーネントのワイルドカード終端アクセサ（`get "tags.*"()` がツリーのリストへ翻訳される形） | throw（マーカー終端パスはオーバーレイが getter を影にして未評価の proxy が値になるため。私有配列上の同形（own key `tags` あり）は私有アンカーとして従来どおり通る。実装注記 2026-09-04） |
 
 ### 4-8. 初期化と ready
 

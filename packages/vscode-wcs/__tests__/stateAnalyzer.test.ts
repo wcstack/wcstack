@@ -257,10 +257,6 @@ describe('analyzeJsonPaths', () => {
     expect(paths.find(p => p.path === 'value')?.typeHint).toBe('null');
   });
 
-  it('stateName を指定できる', () => {
-    const paths = analyzeJsonPaths('{"count": 0}', 'cart');
-  });
-
   it('不正な JSON の場合は空配列を返す', () => {
     expect(analyzeJsonPaths('invalid json')).toEqual([]);
   });

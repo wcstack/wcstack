@@ -3,13 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <title>fixture: state mount — root mount (state: path)</title>
-  <!-- Target syntax for the v2 mount design (docs/state-mount-design.md §3-2, plan P0-5).
+  <!-- The v2 mount design (docs/state-mount-design.md §3-2, plan P0-5).
 
        `state: user` mounts the component's scope at the tree path `user`: inside the
        component, `name` IS `user.name`. `state.theme: theme` is a partial mount next to it
-       (a second mount point under the same scope, longest prefix wins). Today
-       (v1.32) `state: user` is a silent no-op, so this page renders nothing inside the
-       card; the spec is marked fixme until Phase 1 lands (docs/state-mount-impl-plan.md §2).
+       (a second mount point under the same scope, longest prefix wins). This is the
+       normative root-mount syntax since Phase 1 landed (docs/state-mount-impl-plan.md §2).
 
        Acceptance ids: M1 M2 M3 M5 M13 M16. -->
   <script type="module" src="/packages/state/dist/auto.min.js"></script>

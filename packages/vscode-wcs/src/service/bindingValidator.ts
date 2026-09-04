@@ -277,7 +277,8 @@ export function validateBindings(
           // 見ておらず、深さ方向は誰も検査していなかった。available === 0 は上の
           // patternPathOutsideFor / loopIndexOutsideFor が担うので、ここは
           // 「for の中に居るが段数が足りない」だけを見る（二重報告を避ける）。
-          // `@state` 越境は for のスコープと別 state なので判定しない（binding 生テキストで見る
+          // `@state` セレクタは v2 で撤去（runtime では parse error）— namedStateValidator が
+          // error を出すので、その式には段数検査を重ねない（binding 生テキストで見る
           // ── parsed.path は `@state` を落としたあとの値なので、そこでは判別できない）
           if (insideFor && !pathTrimmed.startsWith('.') && !binding.includes('@')) {
             const indexMatch = /^\$(\d+)$/.exec(pathTrimmed);

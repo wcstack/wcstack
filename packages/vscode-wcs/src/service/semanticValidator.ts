@@ -319,7 +319,9 @@ function validateUpdatedCallbackDemand(
     const callback = analyzeCallableBodies(block.content)
       .find((entry) => entry.name === STATE_UPDATED_CALLBACK && entry.kind === 'method');
     if (callback === undefined) continue;
-    // ボリューム（mount=）の $updatedCallback は runtime が実行しない — スキップ
+    // ボリューム（mount=）の $updatedCallback は runtime が**相対配送**で実行する
+    //（自分の接頭辞配下の更新が相対パスで届く）。バインド側は接頭辞付き絶対パスなので
+    // この突合には接頭辞補正が要る — 未対応のため誤報しない側に倒してスキップ
     if (block.mountPath !== null) continue;
     const declared = new Set(analyzeStatePaths(block.content).map((p) => p.path));
     const bound = boundPaths;

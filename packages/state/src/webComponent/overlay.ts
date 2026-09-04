@@ -6,6 +6,7 @@ import { getLoopContextByNode } from "../list/loopContextByNode";
 import { IListIndex } from "../list/types";
 import { checkDependency } from "../proxy/methods/checkDependency";
 import { setLoopContextSymbol } from "../proxy/symbols";
+import { raiseError } from "../raiseError";
 import { IStateHandler, IStateProxy } from "../proxy/types";
 import { composeMountIndexes, IMountRecord, translateInnerPath } from "./mount";
 
@@ -151,7 +152,16 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
       return Reflect.set(target, prop, value);
     }
     const accessorName = this.accessorNameFor(prop);
-    if (typeof accessorName !== "undefined" && this.record.setterKeys.has(accessorName)) {
+    if (typeof accessorName !== "undefined") {
+      if (!this.record.setterKeys.has(accessorName)) {
+        // setter の無い getter（computed）への書き込み。下のツリー行きフォールバックへ
+        // 落とすと translateInnerPath が同じマーカーパスを返して set が循環し
+        // RangeError（無限再帰）になる — 設定ミスとして loud に落とす
+        raiseError(
+          `Cannot write to "${accessorName}" on mounted <${this.record.component.tagName.toLowerCase()}>: ` +
+          `the accessor has no setter. Add a setter or write to the underlying state paths instead.`,
+        );
+      }
       // setter は命令的な代入（依存を張らない）— setByAddress の setter 規約に合わせる
       this.handler.pushAddress(this.accessorAddress(prop));
       this.handler.beginUntrack();

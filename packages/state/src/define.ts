@@ -25,7 +25,7 @@ export const DEVTOOLS_LISTENER_PRIORITY = 0;
 export const WATCH_LISTENER_PRIORITY = 10;
 export const STREAM_LISTENER_PRIORITY = 20;
 
-// data-wcs バインディング構文 `[prop][#mod]: [path][@state][|filter...]` の区切り文字（単一正本）。
+// data-wcs バインディング構文 `[prop][#mod]: [path][|filter...]` の区切り文字（単一正本・`@state` は v2 で撤去）。
 // これらは「死守の壁（構文契約）」であり値は不変。manifest.syntax.delimiters で公開される。
 export const BINDING_SEPARATOR = ';';     // 複数バインディングの区切り
 export const PROP_VALUE_SEPARATOR = ':';  // 左辺(prop)と右辺(path)の区切り

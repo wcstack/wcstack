@@ -151,3 +151,138 @@ describe("mountScope: 丸ごとマウントの構築（配線前プローブ）"
     host.remove();
   });
 });
+
+/**
+ * 1 スコープ根 1 マウント（v2 の制約）— v2 レビューの修理。
+ * 2 本目（別 stateProp）を受けると 1 本目の session を dispose した上、収集済み
+ * ノードは registeredNodeSet が弾いて再収集されず、スコープ全体が無言で死ぬ。
+ * 設定ミスとして 1 本目に触れる前に raise することをピンする。
+ */
+describe("mountScope: 1 スコープ根 1 マウント", () => {
+  it("同じスコープ根への別 stateProp のマウント初期化は raise し、既存スコープを壊さないこと", async () => {
+    const { getPathInfo } = await import("../src/address/PathInfo");
+    const tag = uniqueTag("ms-dup");
+    defineShell(tag, `<span class="name" data-wcs="textContent: name"></span>`);
+    const { host, shadowRoot, parentStateElement } = await mountHost(
+      '{"user":{"name":"Alice"},"theme":{"mode":"light"}}',
+      `<${tag} data-wcs="state: user"></${tag}>`,
+    );
+    const component = shadowRoot.querySelector(tag)!;
+    mountComponent(component, parentStateElement);
+    await flush();
+    const cs = component.shadowRoot!;
+    expect(text(cs, ".name")).toBe("Alice");
+
+    const record2 = buildMountRecord(
+      component,
+      "other",
+      [{
+        propName: "other", propSegments: ["other"], propModifiers: [],
+        statePathName: "theme", statePathInfo: getPathInfo("theme"),
+        inFilters: [], outFilters: [], bindingType: "prop", uuid: null,
+        node: component, replaceNode: component,
+      } as any],
+      parentStateElement as any,
+      {},
+    );
+    expect(() => initializeMountScope(record2, component.shadowRoot as ShadowRoot))
+      .toThrow(/one <wcs-state bind-component> per component/);
+
+    // 1 本目のスコープは無傷（親の書き込みが届く）
+    parentStateElement.createState("writable", (s: any) => { s["user.name"] = "Carol"; });
+    await flush();
+    await flush();
+    expect(text(cs, ".name")).toBe("Carol");
+
+    host.remove();
+  });
+});
+
+/**
+ * D22 同型の防御（レビュー修理）: マウント記録の居る親ツリーの丸ごと再 set
+ * （接続中の setInitialState）は、マーカーの getterPaths・台帳・翻訳済みバインディングの
+ * 前提を全て無言で壊すため loud に落とす。
+ */
+describe("mountScope: マウントの居る親への丸ごと再 set の防御", () => {
+  it("マウント記録の居る親への setInitialState（S13 再 set）は throw し、スコープは無傷であること", async () => {
+    const tag = uniqueTag("ms-reset");
+    defineShell(tag, `<span class="name" data-wcs="textContent: name"></span>`);
+    const { host, shadowRoot, parentStateElement } = await mountHost(
+      '{"user":{"name":"Alice"}}',
+      `<${tag} data-wcs="state: user"></${tag}>`,
+    );
+    const component = shadowRoot.querySelector(tag)!;
+    mountComponent(component, parentStateElement);
+    await flush();
+    const cs = component.shadowRoot!;
+    expect(text(cs, ".name")).toBe("Alice");
+
+    // 旧挙動: 無言で新 state に差し替わり、マーカーの getterPaths・台帳の前提が消えていた
+    expect(() => parentStateElement.setInitialState({ user: { name: "X" } }))
+      .toThrow(/grafted volumes or mounted components/);
+
+    // スコープは無傷（親の書き込みが届く）
+    parentStateElement.createState("writable", (s: any) => { s["user.name"] = "Carol"; });
+    await flush();
+    await flush();
+    expect(text(cs, ".name")).toBe("Carol");
+
+    host.remove();
+  });
+});
+
+/**
+ * own result への forPath 伝播（v2 レビューの修理 — collectStructuralFragments）:
+ * 翻訳がワイルドカードを増やす部分マウントでは、for の内側の `if: $n`（テンプレート
+ * 自身の条件）も囲む for のシフト量で繰り上がる必要がある。旧挙動: own result の変換
+ * だけ forPath 無しで呼ばれてシフトが Δ（部分マウントのみ＝0）に落ち、`$1` が外側
+ * group の添字に無言で解決されていた（group 0 は全行 first / group 1 は 0 行）。
+ */
+describe("mountScope: 部分マウント内の for + if: $n（own result の繰り上がり）", () => {
+  it("state.items: groups.*.children 内の for: items の中の if: $1|eq(0) が各グループの先頭行だけに立つこと", async () => {
+    const tag = uniqueTag("ms-grp");
+    // 部分マウント（state.items）のホスト側初期適用は element.state.items へ書く —
+    // 実配線のコンポーネントと同じく state フィールドを持つシェルにする
+    const innerTemplate =
+      `<ul class="items"><template data-wcs="for: items"><li>` +
+      `<template data-wcs="if: $1|eq(0)"><em class="first">first</em></template>` +
+      `<span class="val" data-wcs="textContent: .v"></span>` +
+      `</li></template></ul>`;
+    class GroupShell extends HTMLElement {
+      state: Record<string, any> = {};
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" });
+      }
+      connectedCallback() {
+        if (this.shadowRoot!.childElementCount === 0) {
+          this.shadowRoot!.innerHTML = innerTemplate;
+        }
+      }
+    }
+    customElements.define(tag, GroupShell);
+    const { host, shadowRoot, parentStateElement } = await mountHost(
+      '{"groups":[{"children":[{"v":"a"},{"v":"b"}]},{"children":[{"v":"c"},{"v":"d"}]}]}',
+      `<div id="rows"><template data-wcs="for: groups"><${tag} data-wcs="state.items: .children"></${tag}></template></div>`,
+    );
+    const comps = () => Array.from(shadowRoot.querySelectorAll(tag));
+    expect(comps()).toHaveLength(2);
+    for (const comp of comps()) {
+      mountComponent(comp, parentStateElement);
+    }
+    await flush();
+    await flush();
+
+    const vals = (i: number) =>
+      Array.from(comps()[i].shadowRoot!.querySelectorAll("li .val")).map((el) => el.textContent);
+    const firsts = (i: number) =>
+      Array.from(comps()[i].shadowRoot!.querySelectorAll("li")).map((li) => li.querySelector(".first") !== null);
+    expect(vals(0)).toEqual(["a", "b"]);
+    expect(vals(1)).toEqual(["c", "d"]);
+    // 各グループの先頭行（子の添字 $2 = 0）だけに first が立つ
+    expect(firsts(0)).toEqual([true, false]);
+    expect(firsts(1)).toEqual([true, false]);
+
+    host.remove();
+  });
+});

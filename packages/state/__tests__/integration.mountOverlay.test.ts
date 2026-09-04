@@ -717,3 +717,75 @@ describe("devtools: overlays(rootNode) がマウント記録を要約するこ�
     plainHost.remove();
   });
 });
+
+/**
+ * setter の無い getter（computed）への書き込み — v2 レビューの修理。
+ * set トラップがツリー行きフォールバックへ落とすと translateInnerPath が同じ
+ * マーカーパスを返して循環し RangeError（無限再帰）だった。設定ミスとして
+ * raiseError で loud に落とす。
+ */
+describe("mountOverlay: setter の無い getter への書き込みは raise すること", () => {
+  it("chroot（element.state）経由の代入が無限再帰せず、setter が無い旨で throw すること", async () => {
+    const tag = uniqueTag("mo-computed-write");
+    defineShell(tag, `<span class="display" data-wcs="textContent: display"></span>`);
+    const { host, shadowRoot, parentStateElement } = await mountHost(
+      '{"user":{"name":"Alice"}}',
+      `<${tag} data-wcs="state: user"></${tag}>`,
+    );
+    const component = shadowRoot.querySelector(tag)!;
+    const record = mountComponent(component, parentStateElement, {
+      get display() { return `<${(this as any).name}>`; },
+    });
+    await flush();
+    expect(text(component.shadowRoot!, ".display")).toBe("<Alice>");
+
+    const state = createPublicMountState(record);
+    expect(() => { state.display = "x"; }).toThrow(/has no setter/);
+    // setter 持ちの読み書き面は無傷（ツリーへの書き込みは通る）
+    state.name = "Eve";
+    await flush();
+    await flush();
+    expect(text(component.shadowRoot!, ".display")).toBe("<Eve>");
+
+    host.remove();
+  });
+});
+
+/**
+ * $commandTokens / $eventTokens の宣言もマウントでは実行されない — 無言に捨てず
+ * warn 対象に含める（設計書 §4-6 の実装注記・v2 レビューの修理）。
+ */
+describe("mountOverlay: $commandTokens / $eventTokens の宣言 warn", () => {
+  it("トークン宣言も誘導 warn の対象になること", async () => {
+    const { clearMountDollarWarnsForTesting, buildMountRecord: build, warnMountedDollarDeclarations } =
+      await import("../src/webComponent/mount");
+    clearMountDollarWarnsForTesting();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const component = document.createElement("mo-token-decl");
+      const record = build(
+        component,
+        "state",
+        [{
+          propName: "state", propSegments: ["state"], propModifiers: [],
+          statePathName: "user", statePathInfo: (await import("../src/address/PathInfo")).getPathInfo("user"),
+          inFilters: [], outFilters: [], bindingType: "prop", uuid: null,
+          node: component, replaceNode: component,
+        } as any],
+        { name: "default" } as any,
+        {
+          $commandTokens: ["focus"],
+          $eventTokens: { changed: "onChanged" },
+          $on: { changed() {} },
+        },
+      );
+      warnMountedDollarDeclarations(record);
+      const warns = warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes("[wcs/mount-dollar-declaration]"));
+      expect(warns).toHaveLength(1);
+      expect(warns[0]).toContain("$commandTokens, $eventTokens, $on");
+      expect(warns[0]).toContain("root state");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});

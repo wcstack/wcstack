@@ -11,13 +11,14 @@
  *     name 必須はまとめて消えた）
  *   - `data-wcs` の各式の `path@name`（フィルタより前・括弧の外だけを見る）
  *   - mustache `{{ path@name }}`
+ *   - コメントバインディング `<!--@@: path@name-->`（mustache の変換先 — 直書きも同じ構文）
  */
 
 import { WcsDiagnosticCode } from '../core/diagnostics.js';
 import { getMessages } from '../core/messages.js';
 import { parseWcsStateElements } from '../language/htmlParse.js';
 import { findAllBindAttributes, splitBindingExpressions, type BindingDiagnostic } from './bindingValidator.js';
-import { findAllMustacheSyntax } from './templateSyntax.js';
+import { findAllCommentBindings, findAllMustacheSyntax } from './templateSyntax.js';
 
 interface StateSelectorMatch {
   /** `@` の式内オフセット */
@@ -99,14 +100,15 @@ export function validateNamedState(
     }
   }
 
-  // 3. mustache
-  for (const mustache of findAllMustacheSyntax(html)) {
-    const selector = findStateSelector(mustache.expression, true);
+  // 3. mustache / コメントバインディング（`<!--@@: path@name-->` — 実 DOM では
+  // mustache がこの形へ変換される。直書きも同じ runtime parse error になる）
+  for (const item of [...findAllMustacheSyntax(html), ...findAllCommentBindings(html)]) {
+    const selector = findStateSelector(item.expression, true);
     if (selector !== null) {
       diagnostics.push({
         code: WcsDiagnosticCode.NamedStateDeprecated,
-        start: mustache.exprStart + selector.start,
-        end: mustache.exprStart + selector.end,
+        start: item.exprStart + selector.start,
+        end: item.exprStart + selector.end,
         message: msgs.namedStatePathDeprecated(selector.name),
         severity: 'error',
       });

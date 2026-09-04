@@ -87,6 +87,10 @@ interface IDevtoolsSource {
   read(rootNode: Node, path: string, indexes?: number[]): unknown;
   write(rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
   overlays(rootNode: Node): IMountOverlaySummary[]; // v2: mount records on this tree (marker #m<id>, mount table, delta, private/getter keys — the D20 overlay address space made visible)
+  // NOTE: overlays() is provided by the runtime but not yet consumed by the
+  // @wcstack/devtools UI (an overlay pane is future work — recorded as a
+  // non-blocking v2 review item). The member is part of the protocol so that
+  // consumers can adopt it without a runtime release.
   // v1 addendum (additive): the SET of declared-level bindings, enumerated by the
   // runtime's own canonical parser. Sources: attributes + comment anchors in the
   // live DOM (spread expanded from the live wcBindable; undefined elements stay

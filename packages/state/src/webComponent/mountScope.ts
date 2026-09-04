@@ -5,6 +5,7 @@ import { initializeBindings } from "../bindings/initializeBindings";
 import { convertMustacheToComments } from "../mustache/convertMustacheToComments";
 import { setBindingsReadyForScope, setStateElementAlias } from "../stateElementByName";
 import { collectStructuralFragments } from "../structural/collectStructuralFragments";
+import { raiseError } from "../raiseError";
 import { ParseBindTextResult } from "../bindTextParser/types";
 import { getMountRecordByScopeRoot, IMountRecord, registerMountRecord, translateParsedForMount } from "./mount";
 
@@ -33,10 +34,19 @@ import { getMountRecordByScopeRoot, IMountRecord, registerMountRecord, translate
  * Light DOM prune（§1.13 の機構）がそのまま担う。
  */
 export function initializeMountScope(record: IMountRecord, scopeRoot: ShadowRoot | Element): void {
-  // 再初期化（コンポーネントが connectedCallback で shadow の innerHTML を張り直し、
-  // 新しい <wcs-state> が同じ shadowRoot に入った）: 旧スコープのバインディングは
-  // 捨てられた DOM を指したまま親の台帳に残っている。session ごと破棄してから組み直す
-  // （dispose は records と deferred を空にするだけで session 自体は使い回せる）
+  const existing = getMountRecordByScopeRoot(scopeRoot);
+  // 1 スコープ根 1 マウント（v2）: 同じコンポーネントに 2 本目の
+  // `<wcs-state bind-component>`（別 stateProp）が来ても受けられない — 受けると
+  // 1 本目の session を dispose した上、収集済みノードは registeredNodeSet
+  // （collectNodesAndBindingInfos.ts）が弾いて再収集されず、スコープ全体が
+  // 無言で死ぬ。設定ミスとして 1 本目に触れる前に loud に落とす
+  if (existing !== null && existing.stateProp !== record.stateProp) {
+    raiseError(
+      `A mount scope is already initialized on this component for "${existing.stateProp}" — ` +
+      `one <wcs-state bind-component> per component (v2). ` +
+      `Merge the "${record.stateProp}" wiring into "${existing.stateProp}" or split the component.`,
+    );
+  }
   // 再初期化（コンポーネントが connectedCallback で shadow の innerHTML を張り直し、
   // 新しい <wcs-state> が同じ shadowRoot に入った）: 旧スコープのバインディングは
   // 捨てられた DOM を指したまま親の台帳に残りうるので session ごと破棄してから組み直す
@@ -44,7 +54,7 @@ export function initializeMountScope(record: IMountRecord, scopeRoot: ShadowRoot
   // dispose は records と deferred を空にするだけで session 自体は使い回せる）。
   // 旧 for が残した lastListValue は applyChangeToFor 側の「content 台帳が空の
   // binding は白紙から描く」ガードが吸収する
-  if (getMountRecordByScopeRoot(scopeRoot) !== null) {
+  if (existing !== null) {
     getOrCreateBindingSession(scopeRoot).dispose();
   }
   registerMountRecord(scopeRoot, record);

@@ -27,7 +27,7 @@
  */
 export { parseBindTextsForElement } from "./bindTextParser/parseBindTextsForElement.js";
 // テキストバインディング（mustache 変換後のコメント・`<!--@@:-->`）の正本経路。
-// `;` を**分割しない**（式全体が `path[@state][|filters]`）— 属性経路との違いは
+// `;` を**分割しない**（式全体が `path[|filters]` — `@state` は v2 で撤去）— 属性経路との違いは
 // 消費側が既知乖離として文書化していた点で、これで text チャネルも正本化できる。
 export { parseBindTextForEmbeddedNode } from "./bindTextParser/parseBindTextForEmbeddedNode.js";
 export type { ParseBindTextResult } from "./bindTextParser/types.js";

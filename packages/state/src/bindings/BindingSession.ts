@@ -6,7 +6,7 @@ import { IAbsolutePathInfo } from "../address/types";
 import { clearAbsoluteStateAddressByBinding, getAbsoluteStateAddressByBinding, resolveBindingRootNode } from "../binding/getAbsoluteStateAddressByBinding";
 import { addBindingByAbsoluteStateAddress, addBindingByPattern, removeBindingByAbsoluteStateAddress, removeBindingByPattern } from "../binding/getBindingSetByAbsoluteStateAddress";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
-import { getLastListValueByAbsoluteStateAddress, setLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
+import { getLastListValueByAbsoluteStateAddress, hasLastListValueByAbsoluteStateAddress, setLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
 import { IListIndex } from "../list/types";
 import { clearStateAddressByBindingInfo } from "../binding/getStateAddressByBindingInfo";
 import { config } from "../config";
@@ -548,11 +548,11 @@ export class BindingSession {
       this.registerAddress(record);
       if (oldAbs !== null) {
         const newAbs = getAbsoluteStateAddressByBinding(binding);
-        if (newAbs !== oldAbs) {
-          const lastValue = getLastListValueByAbsoluteStateAddress(oldAbs);
-          if (lastValue != null) {
-            setLastListValueByAbsoluteStateAddress(newAbs, lastValue);
-          }
+        // 記録の有無は has で見る（get は未記録でも `[]` を返すため、!= null 判定は
+        // 常に真 — 未記録の旧アドレスから空配列を持ち込んで、新アドレスに残っていた
+        // 正当な記録を潰しうる）
+        if (newAbs !== oldAbs && hasLastListValueByAbsoluteStateAddress(oldAbs)) {
+          setLastListValueByAbsoluteStateAddress(newAbs, getLastListValueByAbsoluteStateAddress(oldAbs));
         }
       }
       if (this.shouldApplyState(binding)) {

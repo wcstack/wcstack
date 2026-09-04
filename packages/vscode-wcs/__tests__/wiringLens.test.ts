@@ -182,6 +182,19 @@ describe('wiringLens: go-to-definition（§5-3）', () => {
     expect(target).toContain('./ext-state.js');
   });
 
+  it('解析不能 src のルートは、解析可能なインラインボリュームが同居しても外部定義フォールバックを保つこと', () => {
+    // 旧判定は「候補が全体でゼロ」だったため、ボリューム由来の候補があるだけで
+    // ルートの外部定義フォールバックが失われていた
+    const html = `<wcs-state src="./root-state.js"></wcs-state>
+<wcs-state mount="cfg" json='{"flag": true}'></wcs-state>
+<p data-wcs="textContent: some.path"></p>
+<p data-wcs="textContent: cfg.flag"></p>`;
+    const definition = getDefinitionAt(html, html.indexOf('some.path') + 2)!;
+    expect(definition).not.toBeNull();
+    const target = html.slice(definition.targetRange.start, definition.targetRange.end);
+    expect(target).toContain('./root-state.js');
+  });
+
   it('宣言が無くフォールバックも無いパスでは null を返すこと', () => {
     expect(getDefinitionAt(SAMPLE, offsetIn('missing.path', 'missing.path'))).toBeNull();
   });

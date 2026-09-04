@@ -59,6 +59,23 @@ describe("mount — README レシピを 1 呼び出しに", () => {
     expect(() => empty.state()).toThrow(/no <wcs-state>/);
   });
 
+  it("state(): mount= のボリュームが混在してもルートツリーの <wcs-state> を返す（v2 の選別）", async () => {
+    // ボリュームを文書順でルートより前に置く — 選別が「最初の <wcs-state>」だと
+    // ボリュームを掴んでしまう形
+    const app = await mount(`
+      <wcs-state mount="cfg" json='{"flag": true}'></wcs-state>
+      <wcs-state json='{"count": 7}'></wcs-state>
+      <p id="count" data-wcs="textContent: count"></p>
+      <p id="flag" data-wcs="textContent: cfg.flag"></p>
+    `);
+    const handle = app.state();
+    expect(handle.element.hasAttribute("mount")).toBe(false);
+    // ルートの読み書きと、接ぎ木されたボリュームのパス読みが同じハンドルで通る
+    expect(handle.read((s) => s.count)).toBe(7);
+    expect(handle.read((s) => (s as Record<string, unknown>)["cfg.flag"])).toBe(true);
+    app.unmount();
+  });
+
   it("root: 'shadow' は host の ShadowRoot に流し込み、バインドはその root に閉じる", async () => {
     const app = await mount(`
       <wcs-state json='{"msg": "in shadow"}'></wcs-state>

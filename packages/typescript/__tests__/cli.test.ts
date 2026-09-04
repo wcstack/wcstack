@@ -62,6 +62,18 @@ describe("wcs-schema emit", () => {
     expect(legacy.code).toBe(2);
     expect(legacy.stderr).toContain("--state was removed in v2");
     expect(run(["emit", "state.ts", "--mount=@bad"]).code).toBe(2);
+    // runtime（validateVolumeMountPath）と同条件: `$` は位置を問わず拒否（旧 regex は
+    // `$` 先頭を受理していた）、数字先頭は runtime 同様に受理
+    const dollar = run(["emit", "state.ts", "--mount=$bad"]);
+    expect(dollar.code).toBe(2);
+    expect(dollar.stderr).toContain("reserved characters");
+    expect(run(["emit", "state.ts", "--mount=a#b"]).code).toBe(2);
+    expect(run(["emit", "state.ts", "--mount=a..b"]).code).toBe(2);
+    expect(run(["emit", "state.ts", "--mount=a.*"]).code).toBe(2);
+    // 数字先頭は runtime 同様に受理（落ちるとすれば file 不在の方）
+    const digits = run(["emit", "nope-state.ts", "--mount=1a"]);
+    expect(digits.stderr).not.toContain("--mount");
+    expect(digits.stderr).toContain("cannot read");
     expect(run(["emit", "state.ts", "--max-depth=0"]).code).toBe(2);
     expect(run(["emit", "state.ts", "--max-depth=x"]).code).toBe(2);
     const missing = run(["emit", "nope/state.ts"]);
@@ -161,7 +173,10 @@ describe("wcs-schema check", () => {
     expect(drift.stderr).toContain("+ /properties/users/items/properties/age/type");
     expect(drift.stderr).toContain("wcs-schema emit --merge");
 
-    expect(run(["check", "state.ts", "--mount=other"], dir).code).toBe(2);
+    const missingMount = run(["check", "state.ts", "--mount=other"], dir);
+    expect(missingMount.code).toBe(2);
+    // 誘導コマンドは check と同じスロット（--mount=other）を指すこと
+    expect(missingMount.stderr).toContain("emit --merge --mount=other");
     tmp.write("check1/broken.manifest.json", "{ oops");
     expect(run(["check", "state.ts", "--manifest=broken.manifest.json"], dir).code).toBe(2);
     tmp.write("check1/v1.manifest.json", JSON.stringify({

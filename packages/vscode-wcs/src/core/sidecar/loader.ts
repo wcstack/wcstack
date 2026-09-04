@@ -163,8 +163,6 @@ export function resolvePackageContracts(loaded: readonly LoadedManifest[]): Reso
   const filterOwner = new Map<string, string>();
   let schemaOwner: string | undefined;
   let schemaWinner: JsonSchemaNode | undefined;
-  let schemaCollided = false;
-  void schemaCollided;
   let hasApplicationArtifact = false;
 
   for (const lm of loaded) {
@@ -235,7 +233,7 @@ export function resolvePackageContracts(loaded: readonly LoadedManifest[]): Reso
           schemaOwner = lm.artifact.source;
           schemaWinner = schema as JsonSchemaNode;
         } else {
-          schemaCollided = true;
+          // 衝突 = 勝者なし（読み手はこの undefined だけを見る）
           schemaWinner = undefined;
           ctxFor(lm).add(
             WcsDiagnosticCode.ManifestStateCollision,

@@ -60,20 +60,16 @@ app.manifest.json:1:3 error wcs/manifest-broken Broken manifest JSON: ...
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "kind": "application",
   "manifestExtensions": {
     "wcstack.application": {
-      "version": 1,
-      "states": {
-        "default": {
-          "stateSchema": {
-            "type": "object",
-            "properties": {
-              "count": { "type": "number" },
-              "users": { "type": "array", "items": { "type": "object", "properties": { "name": { "type": "string" } } } }
-            }
-          }
+      "version": 2,
+      "stateSchema": {
+        "type": "object",
+        "properties": {
+          "count": { "type": "number" },
+          "users": { "type": "array", "items": { "type": "object", "properties": { "name": { "type": "string" } } } }
         }
       }
     }
@@ -82,7 +78,7 @@ app.manifest.json:1:3 error wcs/manifest-broken Broken manifest JSON: ...
 ```
 
 - **発見**: HTML ファイルから上へ辿って最も近い `wcstack.manifest.json` が自動で使われます — コマンドラインに渡す必要はありません。`application` artifact を含む `*.manifest.json` を引数に渡した場合は、その実行全体で発見を置き換えます。VS Code 拡張も同じファイルを発見するので IDE と CLI の結果は一致します。
-- **効果**: `stateSchema` を持つ state では、schema 上に確定的に存在しないバインドパスは `wcs/path-nonexistent`（**error**・exit `1`）、`for:` に非配列は `wcs/path-type-mismatch`（**error**）になります。schema が開いたままの箇所（素の `{}`）は沈黙し、インラインスクリプトのメソッド / getter / `$listKeys` は引き続き存在扱いです。schema の無い state は従来どおりです。
+- **効果**: `stateSchema` を宣言すると、schema 上に確定的に存在しないバインドパスは `wcs/path-nonexistent`（**error**・exit `1`）、`for:` に非配列は `wcs/path-type-mismatch`（**error**）になります。schema が開いたままの箇所（素の `{}`）は沈黙し、インラインスクリプトのメソッド / getter / `$listKeys` は引き続き存在扱いです。`stateSchema` が無ければ従来どおりです。
 - **schema の出どころ**: 手で書く（受け付けるのは JSON-Schema サブセット `type / properties / required / items / enum / const / anyOf / $defs / $ref` のみ）か、TypeScript の state ファイルから `wcs-schema`（`@wcstack/typescript`）で生成します。manifest は派生物なので、CI では `wcs-schema check` で同期を保ってください。
 
 ## 生成 → 検証 → 修正ループでの利用

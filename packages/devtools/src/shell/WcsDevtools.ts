@@ -707,8 +707,9 @@ export class WcsDevtools extends HTMLElement {
         target instanceof Element ? `<${target.tagName.toLowerCase()}>` : target.nodeName;
     } else if (this._selectedPath !== null) {
       const selected = this._selectedRoster();
+      // 選択中のツリーでスコープ（複数ツリーの同名パスを混ぜない）
       entries =
-        selected !== null ? core.getWiringForPath(this._selectedPath) : [];
+        selected !== null ? core.getWiringForPath(this._selectedPath, selected.summary.element) : [];
       contextLabel = this._selectedPath;
     } else {
       entries = core.getAllWiring();
@@ -977,7 +978,7 @@ export class WcsDevtools extends HTMLElement {
   private _highlightPath(entry: IRosterEntry, path: string): void {
     const core = this._core!;
     const nodes: Node[] = [];
-    for (const wiring of core.getWiringForPath(path)) {
+    for (const wiring of core.getWiringForPath(path, entry.summary.element)) {
       const binding = wiring.bindingRef.deref();
       if (binding !== undefined) {
         nodes.push(binding.node, binding.replaceNode);

@@ -65,8 +65,8 @@ npx wcs-schema check src/state.ts && npx wcs-validate --strict index.html
 罠:
 
 - `--strict` は検証器が読めない `<wcs-state src>` 由来の warning でも落ちる — 先に全ての `src=` を HTML 相対で解決可能にしておく。
-- `--merge` は指定した state の `stateSchema` を丸ごと置き換える。同じ state の手書き schema は残らない（sidecar 規範は暗黙 merge を禁じている）。手書きの schema は生成しない state のためのもの。
-- 同名 state を 2 つの application manifest が宣言すると `wcs/manifest-state-collision`（error・勝者なし）。コマンドラインに manifest を明示するなら state 名ごとに 1 つ。
+- `--merge` は書き込むスロットだけを丸ごと置き換える —— `stateSchema` 全体、または `--mount=<path>` の部分木（ボリュームの型は単一ツリーの部分木として merge される）。同じスロットの手書き schema は残らない（sidecar 規範は暗黙 merge を禁じている）。手書きの schema は生成しないスロットのためのもの。
+- 2 つの application manifest が両方 `stateSchema` を宣言すると `wcs/manifest-state-collision`（error・勝者なし。v2 はページ 1 ツリー＝schema スロットは 1 つ）。生成 schema はちょうど 1 つの manifest に置く。
 
 ## 3. 型付きの要素取得: `HTMLElementTagNameMap`
 
