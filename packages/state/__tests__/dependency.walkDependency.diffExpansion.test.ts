@@ -65,7 +65,7 @@ function runWalk(
 }
 
 describe('walkDependency の diff-filter 展開', () => {
-  const stateElement = { name: 'default' } as IStateElement;
+  const stateElement = {} as IStateElement;
 
   afterEach(() => {
     clearLastListValueByAbsoluteStateAddress(usersAbsAddress(stateElement));

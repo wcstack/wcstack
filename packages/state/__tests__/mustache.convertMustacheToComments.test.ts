@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { config } from '../src/config';
 import { SVG_NAMESPACE } from '../src/define';
 import { convertMustacheToComments } from '../src/mustache/convertMustacheToComments';
+import { getParseBindTextResults } from '../src/bindings/getParseBindTextResults';
 
 describe('convertMustacheToComments', () => {
   let originalEnableMustache: boolean;
@@ -208,5 +209,20 @@ describe('convertMustacheToComments', () => {
     expect((paragraphs[0].childNodes[0] as Comment).data).toBe('@@: first');
     expect(paragraphs[1].childNodes[0].nodeType).toBe(Node.COMMENT_NODE);
     expect((paragraphs[1].childNodes[0] as Comment).data).toBe('@@: second');
+  });
+
+  // N6: mustache チャネル経由の `@` — 変換は素通しし、コメントバインディングの
+  // パース（チャネルの出口）で移行ヒント付き parse error に落ちる
+  it('{{ x@y }} は v2 で parse error — 移行ヒント付き文言に落ちること', () => {
+    config.enableMustache = true;
+    const div = document.createElement('div');
+    div.textContent = '{{ count@cart }}';
+    convertMustacheToComments(div);
+    const comment = div.childNodes[0] as Comment;
+    expect(comment.nodeType).toBe(Node.COMMENT_NODE);
+    expect(comment.data).toBe('@@: count@cart');
+
+    expect(() => getParseBindTextResults(comment)).toThrow(/removed in v2/);
+    expect(() => getParseBindTextResults(comment)).toThrow(/mount/);
   });
 });

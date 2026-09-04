@@ -27,8 +27,9 @@ function createAbsAddress(stateElement: any, path: string) {
   return createAbsoluteStateAddress(absPathInfo, null);
 }
 
-function createStateElement(name: string = 'default') {
-  return { name } as IStateElement;
+// 引数は呼び出し側の可読ラベルのみ（v2: IStateElement に name は無く、同一性は参照）
+function createStateElement(_name: string = 'default') {
+  return {} as IStateElement;
 }
 
 describe('updater/updater', () => {

@@ -4,6 +4,7 @@ import { STATE_UPDATED_CALLBACK_NAME } from '../src/define';
 import { IAbsoluteStateAddress, IAbsolutePathInfo, IPathInfo } from '../src/address/types';
 import { IStateHandler } from '../src/proxy/types';
 import { IListIndex } from '../src/list/types';
+import { addVolumeUpdatedCallback } from '../src/webComponent/volumeShared';
 
 function createPathInfo(path: string, wildcardCount = 0): IPathInfo {
   const segments = path.split('.');
@@ -334,5 +335,44 @@ describe('proxy/apis/updatedCallback', () => {
     expect(callbackFn).toHaveBeenCalledWith(['items.*.name'], {
       'items.*.name': [[]],
     });
+  });
+});
+
+// D20/D21: マーカーパス（`#m<id>` セグメント = マウント私有キーの内部語彙）は
+// マウントインスタンスの私有であり、$updatedCallback へは漏らさない。
+// 可視化チャネルは devtools の overlays()（プロトコル v2）。
+describe('proxy/apis/updatedCallback マーカーパスの非漏出（D20/D21）', () => {
+  it('マーカーパスはルートの $updatedCallback に配送しないこと', () => {
+    const handler = { stateElement: elementFor('default') } as IStateHandler;
+    const callbackFn = vi.fn();
+    const target = { [STATE_UPDATED_CALLBACK_NAME]: callbackFn };
+    const receiver = {};
+    const refs: IAbsoluteStateAddress[] = [
+      createAbsoluteStateAddress('default', 'users.*.#m1.editing', 1, createListIndex(0)),
+      createAbsoluteStateAddress('default', 'users.*.name', 1, createListIndex(0)),
+    ];
+
+    updatedCallback(target, refs, receiver, handler);
+
+    expect(callbackFn).toHaveBeenCalledWith(['users.*.name'], { 'users.*.name': [[0]] });
+  });
+
+  it('ボリューム相対の $updatedCallback にもマーカーパスを配送しないこと', () => {
+    const stateElement = elementFor('volume-root');
+    const handler = { stateElement } as IStateHandler;
+    const volumeCallback = vi.fn();
+    addVolumeUpdatedCallback(stateElement as any, { mountPath: 'vol', callback: volumeCallback });
+    const target = {};
+    const receiver = {};
+    const refs: IAbsoluteStateAddress[] = [
+      createAbsoluteStateAddress('volume-root', 'vol.items.*.#m2.editing', 1, createListIndex(0)),
+      createAbsoluteStateAddress('volume-root', 'vol.items.*.label', 1, createListIndex(0)),
+    ];
+
+    updatedCallback(target, refs, receiver, handler);
+
+    expect(volumeCallback).toHaveBeenCalledTimes(1);
+    expect(volumeCallback.mock.calls[0][0]).toEqual(['items.*.label']);
+    expect(volumeCallback.mock.calls[0][1]).toEqual({ 'items.*.label': [[0]] });
   });
 });

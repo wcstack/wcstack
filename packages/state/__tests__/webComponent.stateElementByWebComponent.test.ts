@@ -5,7 +5,7 @@ import { IStateElement } from '../src/components/types';
 describe('stateElementByWebComponent', () => {
   it('stateElementを設定して取得できること', () => {
     const webComponent = document.createElement('div');
-    const stateElement = { name: 'test-state' } as IStateElement;
+    const stateElement = {} as IStateElement;
 
     setStateElementByWebComponent(webComponent, 'state', stateElement);
     const result = getStateElementByWebComponent(webComponent, 'state');
@@ -23,7 +23,7 @@ describe('stateElementByWebComponent', () => {
 
   it('未登録のstateNameに対してはnullを返すこと', () => {
     const webComponent = document.createElement('div');
-    const stateElement = { name: 'test-state' } as IStateElement;
+    const stateElement = {} as IStateElement;
 
     setStateElementByWebComponent(webComponent, 'state', stateElement);
     const result = getStateElementByWebComponent(webComponent, 'props');
@@ -34,8 +34,8 @@ describe('stateElementByWebComponent', () => {
   it('異なるwebComponentに対して独立したstateElementを保持すること', () => {
     const webComponent1 = document.createElement('div');
     const webComponent2 = document.createElement('div');
-    const stateElement1 = { name: 'state1' } as IStateElement;
-    const stateElement2 = { name: 'state2' } as IStateElement;
+    const stateElement1 = {} as IStateElement;
+    const stateElement2 = {} as IStateElement;
 
     setStateElementByWebComponent(webComponent1, 'state', stateElement1);
     setStateElementByWebComponent(webComponent2, 'state', stateElement2);
@@ -46,8 +46,8 @@ describe('stateElementByWebComponent', () => {
 
   it('同じwebComponentに対してstateElementを上書きできること', () => {
     const webComponent = document.createElement('div');
-    const stateElement1 = { name: 'state1' } as IStateElement;
-    const stateElement2 = { name: 'state2' } as IStateElement;
+    const stateElement1 = {} as IStateElement;
+    const stateElement2 = {} as IStateElement;
 
     setStateElementByWebComponent(webComponent, 'state', stateElement1);
     expect(getStateElementByWebComponent(webComponent, 'state')).toBe(stateElement1);
@@ -58,9 +58,9 @@ describe('stateElementByWebComponent', () => {
 
   it('同じwebComponentに複数のstateNameで異なるstateElementを保持できること', () => {
     const webComponent = document.createElement('div');
-    const stateElement = { name: 'state' } as IStateElement;
-    const propsElement = { name: 'props' } as IStateElement;
-    const contextElement = { name: 'context' } as IStateElement;
+    const stateElement = {} as IStateElement;
+    const propsElement = {} as IStateElement;
+    const contextElement = {} as IStateElement;
 
     setStateElementByWebComponent(webComponent, 'state', stateElement);
     setStateElementByWebComponent(webComponent, 'props', propsElement);

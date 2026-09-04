@@ -145,7 +145,7 @@ afterEach(() => {
   setFragmentInfoByUUID(uuid, document, null);
   setStateElement(document, null);
   const pathInfo = getPathInfo('items');
-  const stateElement = { name: 'default' } as IStateElement;
+  const stateElement = {} as IStateElement;
   const absPathInfo = getAbsolutePathInfo(stateElement, pathInfo);
   clearLastListValueByAbsoluteStateAddress(createAbsoluteStateAddress(absPathInfo, null));
 });

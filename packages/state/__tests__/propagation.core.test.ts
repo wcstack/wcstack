@@ -50,7 +50,7 @@ function createBinding(node: Element, statePathName: string): IBindingInfo {
 }
 
 function createAbsAddress(path: string) {
-  const stateElement = { name: "default" } as IStateElement;
+  const stateElement = {} as IStateElement;
   return createAbsoluteStateAddress(getAbsolutePathInfo(stateElement, getPathInfo(path)), null);
 }
 

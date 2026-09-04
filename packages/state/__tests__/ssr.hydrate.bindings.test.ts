@@ -423,3 +423,60 @@ describe("hydrateBindings", () => {
     expect(document.querySelector("p.warning")?.textContent).toBe("warning");
   });
 });
+
+// v2 の生成器は <wcs-ssr> に name 属性を出さない（名前次元は撤去 — D16/§9）。
+// 上の name="default" 群は旧形（v1 出力）互換のピンとして残し、こちらが v2 形の代表。
+describe("hydrateBindings (v2 形: name 無し <wcs-ssr>)", () => {
+  it("通常バインディング: name 無し <wcs-ssr> でも textContent がSSRデータで復元される", async () => {
+    document.body.innerHTML = `
+      <wcs-ssr>
+        <script type="application/json">{"message":"Hello SSR v2"}</script>
+      </wcs-ssr>
+      <wcs-state enable-ssr json='{"message":""}'>
+      </wcs-state>
+      <p data-wcs="textContent: message">Hello SSR v2</p>
+    `;
+
+    const stateEl = document.querySelector("wcs-state") as any;
+    await stateEl.connectedCallbackPromise;
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    expect(stateEl.__state.message).toBe("Hello SSR v2");
+    const p = document.querySelector("p");
+    expect(p?.textContent).toBe("Hello SSR v2");
+  });
+
+  it("for ブロック: name 無し <wcs-ssr> でも SSR レンダリング済み DOM が復元される", async () => {
+    document.body.innerHTML = `
+      <wcs-ssr>
+        <script type="application/json">{"items":[{"name":"Alice"},{"name":"Bob"}]}</script>
+        <template id="u0" data-wcs="for: items">
+          <li data-wcs="textContent: items.*.name"></li>
+        </template>
+      </wcs-ssr>
+      <wcs-state enable-ssr json='{"items":[]}'>
+      </wcs-state>
+      <ul>
+        <!--@@wcs-for:u0-->
+        <!--@@wcs-for-start:u0:items:0--><li data-wcs="textContent: items.*.name">Alice</li><!--@@wcs-for-end:u0:items:0-->
+        <!--@@wcs-for-start:u0:items:1--><li data-wcs="textContent: items.*.name">Bob</li><!--@@wcs-for-end:u0:items:1-->
+      </ul>
+    `;
+
+    const stateEl = document.querySelector("wcs-state") as any;
+    await stateEl.connectedCallbackPromise;
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    expect(stateEl.__state.items).toEqual([{ name: "Alice" }, { name: "Bob" }]);
+    const items = document.querySelectorAll("li");
+    expect(items.length).toBe(2);
+    expect(items[0].textContent).toBe("Alice");
+    expect(items[1].textContent).toBe("Bob");
+
+    // ブロック境界コメント (start/end) は除去され、プレースホルダーは残る
+    const html = document.body.innerHTML;
+    expect(html).not.toContain("@@wcs-for-start");
+    expect(html).not.toContain("@@wcs-for-end");
+    expect(html).toContain("@@wcs-for:u0");
+  });
+});

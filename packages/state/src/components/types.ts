@@ -5,7 +5,6 @@ import { IStateProxy, Mutability } from "../proxy/types";
 import { BindingType } from "../types";
 
 export interface IStateElement {
-  readonly name: string;
   /**
    * state のロードが完了しているか。`initializePromise` の同期版で、
    * DCC のアクセサが「今すぐ読み書きしてよいか」を判断するのに使う。
