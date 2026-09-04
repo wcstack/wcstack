@@ -527,6 +527,17 @@ P0-6 の精査結果（2026-09-01 実測）:
   mount / bind-component 混在ページで `@wcstack/testing` の `state()` がルートツリーを
   返す（`__tests__/mount.test.ts` の v2 選別テスト — committed dist が v1 のままだと
   この経路は実行されない）
+- **server の依存レンジ `@wcstack/state: ^1.9.1` の書き換え（2.0.0 の必須前提）**:
+  release.yml のバンプは `npm version` のみで依存レンジを書き換えないため、このまま
+  major リリースすると server 2.0.0 が `^1.9.1` を出荷し、利用者のインストールで
+  state 1.33.0 が組になる（メジャー越えで初めて顕在化する破損ペア）。P5-4 の
+  バージョン揃えコミットで `packages/server/package.json` の依存を `^2.0.0` に書き換え、
+  `npm install --package-lock-only` で lock を同期してからコミットすること。
+  順序に注意: **state 2.0.0 が npm に publish された後でないと lock 同期が解決できない**
+  ので、(a) レンジ書き換えは publish 後のフォローアップコミットにするか、
+  (b) release 実行前にレンジだけ書き換え lock は release 後に同期する、のいずれか。
+  なお CI / release.yml のテストゲートはレジストリ版でなく sibling の state を
+  symlink して見るよう修正済み（ci.yml server matrix / release.yml Test all の直前）。
 - `@wcstack/typescript` / `@wcstack/testing` の初回 publish は 1.x の予定どおり（D15）。2.0 で `schemaVersion: 2`
 - wcstack-skill の PR マージ（plugin version 2.0）
 - vscode-wcs の vsix publish（v2 文言の診断）

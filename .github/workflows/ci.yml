@@ -216,6 +216,25 @@ jobs:
           cache: npm
           cache-dependency-path: packages/${{ matrix.package }}/package-lock.json
       - run: npm ci
+      # @wcstack/server renders with the state runtime it declares as a registry
+      # dependency, but the published state lags src between releases — after a
+      # state behavior change, server's v-next tests would run against the v-old
+      # registry install and fail (or worse, pass against stale behavior). Same
+      # #183-shaped gap wcs-validate closes for vscode-wcs/lint; local checkouts
+      # don't see it because node_modules/@wcstack/state is typically a symlink
+      # to the sibling package. Build the sibling from source and link it in.
+      - name: Build @wcstack/state from source (server consumes its dist; the registry install lags src)
+        if: ${{ matrix.package == 'server' }}
+        working-directory: packages/state
+        run: |
+          npm ci
+          npm run build
+      - name: Link the freshly built state into server's node_modules
+        if: ${{ matrix.package == 'server' }}
+        run: |
+          rm -rf node_modules/@wcstack/state
+          mkdir -p node_modules/@wcstack
+          ln -s ../../../state node_modules/@wcstack/state
       - run: npm run lint
       - run: npm run build
       - run: npm run typecheck --if-present

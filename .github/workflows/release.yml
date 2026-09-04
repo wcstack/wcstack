@@ -96,6 +96,17 @@ jobs:
             echo "::endgroup::"
           done
 
+      # @wcstack/server's npm ci installs @wcstack/state from the registry, which
+      # lags src until this very release is published — its tests would gate the
+      # release against the previous release's state behavior. Link the sibling
+      # build (fresh from "Build all packages" above) so the test loop sees
+      # "fresh state × server", same as ci.yml's server matrix job.
+      - name: Link sibling @wcstack/state into server (registry lags until publish)
+        run: |
+          rm -rf packages/server/node_modules/@wcstack/state
+          mkdir -p packages/server/node_modules/@wcstack
+          ln -s ../../../state packages/server/node_modules/@wcstack/state
+
       - name: Test all packages
         run: |
           for pkg in ${{ steps.discover.outputs.list }}; do
