@@ -356,5 +356,11 @@ declare const WCS_CLIPBOARD_ERROR_CODE: {
     readonly ClipboardError: "clipboard-error";
 };
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-clipboard": WcsClipboard;
+    }
+}
+
 export { ClipboardCore, WCS_CLIPBOARD_ERROR_CODE, WcsClipboard, bootstrapClipboard, getConfig };
 export type { ClipboardPermissionState, IWritableConfig, IWritableTagNames, WcsClipboardCommands, WcsClipboardCoreCommands, WcsClipboardCoreValues, WcsClipboardErrorDetail, WcsClipboardInputs, WcsClipboardReadDetail, WcsClipboardReadItem, WcsClipboardValues, WcsIoErrorInfo, WcsIoErrorPhase };

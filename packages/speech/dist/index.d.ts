@@ -643,5 +643,12 @@ declare const WCS_SPEAK_ERROR_CODE: {
     readonly SpeechError: "speech-error";
 };
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-speak": WcsSpeak;
+        "wcs-listen": WcsListen;
+    }
+}
+
 export { ListenCore, SpeakCore, WCS_LISTEN_ERROR_CODE, WCS_SPEAK_ERROR_CODE, WcsListen, WcsSpeak, bootstrapSpeech, getConfig };
 export type { IWritableConfig, IWritableTagNames, ListenOptions, ListenPermissionState, SpeakOptions, SpeechVoiceInfo, WcsIoErrorInfo, WcsIoErrorPhase, WcsListenAlternative, WcsListenCommands, WcsListenCoreCommands, WcsListenCoreValues, WcsListenErrorDetail, WcsListenInputs, WcsListenResultDetail, WcsListenValues, WcsSpeakCommands, WcsSpeakCoreCommands, WcsSpeakCoreValues, WcsSpeakErrorDetail, WcsSpeakInputs, WcsSpeakValues };

@@ -267,5 +267,11 @@ declare const WCS_WEBSOCKET_ERROR_CODE: {
     readonly ConnectionError: "connection-error";
 };
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-ws": WcsWebSocket;
+    }
+}
+
 export { WCS_WEBSOCKET_ERROR_CODE, WcsWebSocket, WebSocketCore, bootstrapWebSocket, getConfig };
 export type { IWritableConfig, IWritableTagNames, WcsIoErrorInfo, WcsIoErrorPhase, WcsWsCommands, WcsWsCoreCommands, WcsWsCoreValues, WcsWsError, WcsWsInputs, WcsWsValues, WebSocketConnectOptions };

@@ -291,5 +291,11 @@ declare const WCS_MAGNETOMETER_ERROR_CODE: {
     readonly SensorError: "sensor-error";
 };
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-magnetometer": WcsMagnetometer;
+    }
+}
+
 export { MagnetometerCore, WCS_MAGNETOMETER_ERROR_CODE, WcsMagnetometer, bootstrapMagnetometer, getConfig };
 export type { IWritableConfig, IWritableTagNames, WcsIoErrorInfo, WcsIoErrorPhase, WcsMagnetometerCoreValues, WcsMagnetometerErrorDetail, WcsMagnetometerReading, WcsMagnetometerValues };

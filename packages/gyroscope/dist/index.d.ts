@@ -291,5 +291,11 @@ declare const WCS_GYROSCOPE_ERROR_CODE: {
     readonly SensorError: "sensor-error";
 };
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-gyroscope": WcsGyroscope;
+    }
+}
+
 export { GyroscopeCore, WCS_GYROSCOPE_ERROR_CODE, WcsGyroscope, bootstrapGyroscope, getConfig };
 export type { IWritableConfig, IWritableTagNames, WcsGyroscopeCoreValues, WcsGyroscopeErrorDetail, WcsGyroscopeReading, WcsGyroscopeValues, WcsIoErrorInfo, WcsIoErrorPhase };

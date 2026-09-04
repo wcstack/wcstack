@@ -268,5 +268,11 @@ declare const WCS_POINTER_LOCK_ERROR_CODE: {
     readonly PointerLockError: "pointer-lock-error";
 };
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-pointer-lock": WcsPointerLock;
+    }
+}
+
 export { PointerLockCore, WCS_POINTER_LOCK_ERROR_CODE, WcsPointerLock, bootstrapPointerLock, getConfig };
 export type { IWritableConfig, IWritableTagNames, WcsIoErrorInfo, WcsIoErrorPhase, WcsPointerLockCoreValues, WcsPointerLockValues };

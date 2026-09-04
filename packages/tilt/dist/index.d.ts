@@ -233,5 +233,11 @@ declare const WCS_TILT_ERROR_CODE: {
     readonly TiltError: "tilt-error";
 };
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-tilt": WcsTilt;
+    }
+}
+
 export { TiltCore, WCS_TILT_ERROR_CODE, WcsTilt, bootstrapTilt, getConfig };
 export type { IWritableConfig, IWritableTagNames, TiltPermissionState, WcsIoErrorInfo, WcsIoErrorPhase, WcsTiltCoreValues, WcsTiltValues };

@@ -2234,6 +2234,12 @@ class Router extends HTMLElement {
             this._resolveConnectedCallback = resolve;
             this._rejectConnectedCallback = reject;
         });
+        // 初期化の失敗は reject として配管するが、この Promise は readiness プロトコルの
+        // 消費者（renderToString / @wcstack/testing の mount）が居るときだけ await される。
+        // 誰も await しない通常のページやユニットテストで reject を「未処理」として
+        // 報告させないよう、ここで観測済みにしておく。await する側には従来どおり
+        // reject が届く（別の consumer が付いても settled 結果は共有される）。
+        this._connectedCallbackPromise.catch(() => { });
     }
     get connectedCallbackPromise() {
         return this._connectedCallbackPromise;
@@ -2695,10 +2701,17 @@ class Router extends HTMLElement {
                 rootNode.appendChild(fragment);
             }
             await applyRoute(this, this.outlet, fullPath, this._path, window.location.search || "");
-            if (adoptable) {
-                // 描き直したノードを binder へ差し出す。state がサーバー DOM を既に
-                // ハイドレート済み（初期走査完了後）の場合、破棄と同時にそのバインドは
-                // 死んでおり、「初期描画は走査時に DOM に居る」前提も崩れているため。
+            if (adoptable || getBinder() !== null) {
+                // 初期描画の内容を binder へ差し出す。
+                // - adoptable（描き直し）: state がサーバー DOM を既にハイドレート済み（初期走査
+                //   完了後）の場合、破棄と同時にそのバインドは死んでいる。
+                // - binder が既に居る: state の初回走査が router の挿入より先に完了し得る
+                //   （`json=` の state は I/O 無しで走査を終える。/auto の文書順ではなく
+                //   bootstrap を先に済ませてから HTML を流し込むテストハーネス
+                //   — @wcstack/testing の mount() — で起きる。_renderForSsr と同じ理由）。
+                //   bind() は冪等なので、走査に間に合っていた分を再度渡しても壊れない。
+                // binder が居なければ渡さない: state を読まないページで保留キューに
+                // ノードを溜め続けないため（後から来る state は走査で拾う）。
                 this._offerInitialContentToBinder();
             }
             this._notifyLocationChange();
@@ -3015,7 +3028,25 @@ class Router extends HTMLElement {
         }
         if (!this._initialized) {
             this._disconnectedDuringInit = false;
-            await this._initialize();
+            try {
+                // ストリーミング型パーサ（happy-dom: `document.body.innerHTML = ...` の途中）は
+                // 開始タグの時点で connectedCallback を呼び、子（<template>）がまだ無い。
+                // SSR 経路と同じく 1 microtask 譲れば同期パースが完走して子が揃う。
+                // ブラウザの deferred なバンドルでは upgrade 時に子が揃っているので、
+                // template が既にあるときは譲らない（従来どおり）。
+                if (this._getTemplate() === null) {
+                    await Promise.resolve();
+                }
+                await this._initialize();
+            }
+            catch (error) {
+                // reject を配管しないと、初期化の失敗（template 無し・ルート定義無し・
+                // basename 不整合 …）が connectedCallbackPromise を永久に未決着にし、
+                // waitForReady（@wcstack/server / @wcstack/testing）が無言でハングする。
+                // SSR 経路と同じ扱いにする。
+                this._rejectConnectedCallback?.(error);
+                throw error;
+            }
             // 初期化中に disconnectedCallback が呼ばれた場合はイベントリスナを登録しない
             if (this._disconnectedDuringInit) {
                 this._resolveConnectedCallback?.();
@@ -3611,7 +3642,7 @@ function bootstrapRouter(config, registry) {
     registerComponents(registry);
 }
 
-var version = "1.32.0";
+var version = "1.33.0";
 var pkg = {
 	version: version};
 

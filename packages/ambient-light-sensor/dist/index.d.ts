@@ -277,5 +277,11 @@ declare const WCS_AMBIENT_LIGHT_SENSOR_ERROR_CODE: {
     readonly SensorError: "sensor-error";
 };
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-ambient-light-sensor": WcsAmbientLightSensor;
+    }
+}
+
 export { AmbientLightSensorCore, WCS_AMBIENT_LIGHT_SENSOR_ERROR_CODE, WcsAmbientLightSensor, bootstrapAmbientLightSensor, getConfig };
 export type { IWritableConfig, IWritableTagNames, WcsAmbientLightSensorCoreValues, WcsAmbientLightSensorErrorDetail, WcsAmbientLightSensorReading, WcsAmbientLightSensorValues, WcsIoErrorInfo, WcsIoErrorPhase };

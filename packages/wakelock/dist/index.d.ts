@@ -324,5 +324,11 @@ declare const WCS_WAKELOCK_ERROR_CODE: {
     readonly WakeLockError: "wakelock-error";
 };
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-wakelock": WcsWakeLock;
+    }
+}
+
 export { WCS_WAKELOCK_ERROR_CODE, WakeLockCore, WcsWakeLock, bootstrapWakeLock, getConfig };
 export type { IWritableConfig, IWritableTagNames, WakeLockKind, WcsIoErrorInfo, WcsIoErrorPhase, WcsWakeLockCommands, WcsWakeLockCoreCommands, WcsWakeLockCoreValues, WcsWakeLockInputs, WcsWakeLockValues };

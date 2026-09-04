@@ -255,5 +255,11 @@ declare const WCS_EYEDROPPER_ERROR_CODE: {
     readonly PickFailed: "pick-failed";
 };
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-eyedropper": WcsEyedropper;
+    }
+}
+
 export { EyedropperCore, WCS_EYEDROPPER_ERROR_CODE, WcsEyedropper, bootstrapEyedropper, getConfig };
 export type { IWritableConfig, IWritableTagNames, WcsEyedropperCoreValues, WcsEyedropperData, WcsEyedropperValues, WcsIoErrorInfo, WcsIoErrorPhase };

@@ -1381,6 +1381,7 @@ function parseStatePart(statePart) {
     else {
         stateAndPath = statePart.trim();
     }
+    if (stateAndPath.indexOf(STATE_NAME_SEPARATOR) !== -1) ;
     const [statePathName, stateName = 'default'] = stateAndPath.split(STATE_NAME_SEPARATOR).map(trimFn);
     const pathInfo = getPathInfo(statePathName);
     return {

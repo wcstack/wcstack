@@ -576,5 +576,12 @@ declare const WCS_MEDIA_ERROR_CODE: {
     readonly MediaError: "media-error";
 };
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-camera": WcsCamera;
+        "wcs-recorder": WcsRecorder;
+    }
+}
+
 export { CameraCore, RecorderCore, WCS_MEDIA_ERROR_CODE, WcsCamera, WcsRecorder, bootstrapCamera, getConfig };
 export type { CameraConstraints, FacingMode, IWritableConfig, IWritableTagNames, MediaDeviceSnapshot, MediaPermissionState, RecorderOptions, WcsCameraCommands, WcsCameraCoreCommands, WcsCameraCoreValues, WcsCameraInputs, WcsCameraValues, WcsIoErrorInfo, WcsIoErrorPhase, WcsMediaErrorDetail, WcsRecordedDetail, WcsRecorderCommands, WcsRecorderCoreCommands, WcsRecorderCoreValues, WcsRecorderInputs, WcsRecorderValues };

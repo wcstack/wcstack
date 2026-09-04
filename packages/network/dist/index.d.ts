@@ -150,5 +150,11 @@ declare class WcsNetwork extends HTMLElement {
     disconnectedCallback(): void;
 }
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-network": WcsNetwork;
+    }
+}
+
 export { NetworkCore, WcsNetwork, bootstrapNetwork, getConfig };
 export type { IWritableConfig, IWritableTagNames, WcsNetworkCoreValues, WcsNetworkSnapshot, WcsNetworkValues };

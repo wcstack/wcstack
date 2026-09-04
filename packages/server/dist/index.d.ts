@@ -33,6 +33,29 @@ interface RenderOptions {
      */
     baseHref?: string;
 }
+interface WaitForReadyOptions {
+    /**
+     * 安定化ループの上限。`$connectedCallback` が動的に追加した要素を拾うため、
+     * 新しい要素が見つからなくなるまで走査を繰り返す（既定 10）。
+     */
+    maxIterations?: number;
+}
+/**
+ * `root`（document / ShadowRoot）配下のカスタム要素が readiness プロトコルに従って
+ * 初期化を終えるまで待つ。renderToString がシリアライズ前に行う待機と同じ手順で、
+ * `@wcstack/testing` の `mount()` もこれを呼ぶ（docs/app-testing-and-typescript-impl-plan.md D11）。
+ *
+ * 1. `static hasConnectedCallbackPromise = true` を持つ全要素の `connectedCallbackPromise`
+ *    を待つ。待っている間に追加された要素も拾う（安定化ループ）。
+ *    `<wcs-router>` の初期ルート適用・`<wcs-state>` の状態ロードはここで完了する。
+ * 2. `static getBindingsReady(root)` を持つクラス（`<wcs-state>`）の、この root に対する
+ *    バインディング構築完了を待つ。Promise の取得はループの後 — 実体は各要素の
+ *    connectedCallback 内・最初の await より後に登録されるため、先に掴むと「まだ
+ *    登録前」の即時解決 Promise を取り逃す。
+ *
+ * バインディング初期化の失敗は reject として伝わる（state v1.26+）。
+ */
+declare function waitForReady(root: ParentNode & Node, options?: WaitForReadyOptions): Promise<void>;
 /**
  * HTML 文字列を SSR レンダリングして返す。
  *
@@ -211,5 +234,5 @@ declare class RenderCore extends EventTarget {
     render(html: string): Promise<string | null>;
 }
 
-export { GLOBALS_KEYS, RenderCore, VERSION, extractStateData, installBaseUrl, installGlobals, renderToString };
-export type { BootstrapFunction, IWcBindable, IWcBindableProperty, RenderOptions, WcsRenderValues };
+export { GLOBALS_KEYS, RenderCore, VERSION, extractStateData, installBaseUrl, installGlobals, renderToString, waitForReady };
+export type { BootstrapFunction, IWcBindable, IWcBindableProperty, RenderOptions, WaitForReadyOptions, WcsRenderValues };

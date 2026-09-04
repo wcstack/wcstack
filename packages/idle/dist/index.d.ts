@@ -233,5 +233,11 @@ declare const WCS_IDLE_ERROR_CODE: {
     readonly IdleError: "idle-error";
 };
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-idle": WcsIdle;
+    }
+}
+
 export { IdleCore, WCS_IDLE_ERROR_CODE, WcsIdle, bootstrapIdle, getConfig };
 export type { IWritableConfig, IWritableTagNames, IdleScreenState, IdleUserState, WcsIdleCoreValues, WcsIdleValues, WcsIoErrorInfo, WcsIoErrorPhase };

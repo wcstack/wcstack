@@ -276,5 +276,11 @@ declare const WCS_SHARE_ERROR_CODE: {
     readonly ShareFailed: "share-failed";
 };
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-share": WcsShare;
+    }
+}
+
 export { ShareCore, WCS_SHARE_ERROR_CODE, WcsShare, bootstrapShare, getConfig };
 export type { IWritableConfig, IWritableTagNames, WcsIoErrorInfo, WcsIoErrorPhase, WcsShareCoreValues, WcsShareData, WcsShareValues };

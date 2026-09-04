@@ -508,5 +508,11 @@ declare function scanDeclaredBindings(root: ParentNode, bindAttributeName?: stri
 
 declare function getOrCreateHookRegistry(): IDevtoolsHookRegistryLike;
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-devtools": WcsDevtools;
+    }
+}
+
 export { DEVTOOLS_HOOK_GLOBAL, DEVTOOLS_PROTOCOL_VERSION, DevtoolsCore, RESERVED_STATE_NAME_PREFIX, WcsDevtools, bootstrapDevtools, formatArgs, formatValue, getOrCreateHookRegistry, scanDeclaredBindings };
 export type { CoreChangeKind, CoreChangeListener, DevtoolsEventLike, DevtoolsSinkLike, IAbsoluteAddressLike, IAbsolutePathInfoLike, IBindingLike, IDeclaredBinding, IDevtoolsCoreOptions, IDevtoolsHookRegistryLike, IDevtoolsListenerLike, IDevtoolsSourceLike, IListIndexLike, IPathInfoLike, IRosterEntry, IStateElementSummaryLike, ITimelineEntry, IWiringEntry, TimelineKind };

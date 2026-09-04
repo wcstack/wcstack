@@ -268,5 +268,11 @@ declare const WCS_UPLOAD_ERROR_CODE: {
     readonly HttpError: "http-error";
 };
 
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-upload": WcsUpload;
+    }
+}
+
 export { UploadCore, WCS_UPLOAD_ERROR_CODE, WcsUpload, bootstrapUpload, getConfig };
 export type { IWritableConfig, IWritableTagNames, UploadRequestOptions, WcsIoErrorInfo, WcsIoErrorPhase, WcsUploadCoreValues, WcsUploadError, WcsUploadValues };
