@@ -140,6 +140,19 @@ jobs:
           for pkg in ${{ steps.discover.outputs.publish_list }}; do
             (cd "packages/$pkg" && npm version "$target" --no-git-tag-version --allow-same-version)
           done
+          # `npm version` rewrites only its own "version" field. Internal
+          # @wcstack/* dependency ranges (server ships @wcstack/state as a
+          # runtime dependency; testing declares state/server peers) keep their
+          # old ranges and, across a major, would hand consumers a mismatched
+          # pair at install time (e.g. server 2.0.0 + state 1.x, or an
+          # unsatisfiable peer). Align them to the unified target. Lockfiles
+          # cannot follow yet — the target versions reach the registry only at
+          # the publish step below — so the lock sync runs right after publish
+          # and amends the release commit before tagging.
+          rewritten=$(node scripts/align-internal-dep-ranges.mjs "$target" \
+            $(for pkg in ${{ steps.discover.outputs.publish_list }}; do printf 'packages/%s ' "$pkg"; done))
+          echo "Internal @wcstack/* ranges aligned in: ${rewritten:-<none>}"
+          echo "range_rewritten=$(echo $rewritten)" >> "$GITHUB_OUTPUT"
           echo "version=$target" >> "$GITHUB_OUTPUT"
 
       # Verify all packages now share the unified version.
@@ -264,6 +277,33 @@ jobs:
             fi
             echo "::endgroup::"
           done
+
+      # The bump step aligned internal @wcstack/* dependency ranges, but the
+      # lockfiles could not follow at that point: the target versions reached
+      # the registry only in the publish above. Sync them now and fold the
+      # result into the release commit (amended before tagging) so the tagged
+      # tree ships a consistent package.json + lock — otherwise the next
+      # npm ci in each rewritten package fails on the mismatch. Retries cover
+      # registry propagation lag right after publish.
+      - name: Sync lockfiles for the aligned internal ranges
+        if: ${{ steps.bump.outputs.range_rewritten != '' }}
+        run: |
+          set -euo pipefail
+          for dir in ${{ steps.bump.outputs.range_rewritten }}; do
+            for attempt in 1 2 3 4 5; do
+              if (cd "$dir" && npm install --package-lock-only --no-audit --no-fund); then
+                break
+              elif [ "$attempt" = 5 ]; then
+                echo "::error::lock sync failed in $dir after 5 attempts"
+                exit 1
+              else
+                echo "registry not caught up for $dir (attempt $attempt); retrying in 15s"
+                sleep 15
+              fi
+            done
+            git add "$dir/package-lock.json"
+          done
+          git commit --amend --no-edit
 
       # Push only after all npm publishes succeed so git history and tags reflect a completed release.
       - name: Tag and push release
