@@ -145,7 +145,7 @@ release.yml の discovery は `sort` 素通し([release.yml:75](../.github/workf
 
 ## 6. リリース時の追随(実装後・ユーザー操作を含む)
 
-- **ピン版数の照合**: README.md / README.ja.md / docs/sri.md / docs/sri.ja.md / packages/wcstack/README.md の 5 箇所が `wcstack@1.32.0` を先行ピンしている(次リリース = minor の予測値)。**リリース版数がこれと一致することを確認**し、patch が先行する等でずれる場合は 5 箇所を書き換えてからリリースする(ずれたまま publish すると npm README が永久に存在しない URL を案内する)。
+- **ピン版数の照合**: README.md / README.ja.md / docs/sri.md / docs/sri.ja.md / packages/wcstack/README.md の 5 箇所が `wcstack@2.0.0` を先行ピンしている(次リリース = v2 major の予測値。2026-09-05 更新 — 1.32.0/1.33.0 のリリースではこの照合が漏れ、1.32.0 ピンのまま出荷された)。**リリース版数がこれと一致することを確認**し、ずれる場合は 5 箇所を書き換えてからリリースする(ずれたまま publish すると npm README が古い版、または存在しない URL を案内する)。
 - **wcstack-skill references**: バンドル読み込みガイダンス(複数パッケージ時の推奨手順)を追加。CDN 読み込み手順の変更なのでスキル追随が必要。
 - **リリースノート**: (a) `/combine/` 禁止規範の新設、(b) `wcstack` バンドル新設(旧「documentation only」からの変更)、(c) 既存の未リリース群(i18n の minor bump 等)と同乗。
 - npm 初回 publish 不要(`wcstack` は 1.31.0 まで公開済み・trusted publisher 登録済み)。

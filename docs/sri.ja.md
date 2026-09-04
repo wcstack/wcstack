@@ -88,7 +88,7 @@ wcstack の配信に `/combine/` を使ってはならない（MUST NOT）。`es
 
 ```html
 <script type="module"
-        src="https://cdn.jsdelivr.net/npm/wcstack@1.32.0/dist/auto.min.js"
+        src="https://cdn.jsdelivr.net/npm/wcstack@2.0.0/dist/auto.min.js"
         integrity="sha384-…"></script>
 ```
 
