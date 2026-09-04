@@ -566,11 +566,11 @@ function loadSchemaCore() {
     return cached;
 }
 
-var version = "1.32.0";
+var version = "2.0.0";
 var pkg = {
 	version: version};
 
 const VERSION = pkg.version;
 
-export { APPLICATION_MANIFEST_FILENAME, APPLICATION_NAMESPACE, DEFAULT_COMPILER_OPTIONS, DEFAULT_MAX_DEPTH, SCHEMA_VERSION, VERSION, buildManifest, compareStateSchema, generateStateSchema, loadSchemaCore, loadStateFile, readStateSchema, resolveCompilerOptions, schemaCoreCandidates, stableStringify, stateTypeToSchema };
+export { APPLICATION_MANIFEST_FILENAME, APPLICATION_NAMESPACE, DEFAULT_COMPILER_OPTIONS, DEFAULT_MAX_DEPTH, SCHEMA_VERSION, VERSION, buildManifest, compareStateSchema, generateStateSchema, isV1Manifest, loadSchemaCore, loadStateFile, readStateSchema, resolveCompilerOptions, schemaCoreCandidates, stableStringify, stateTypeToSchema };
 //# sourceMappingURL=index.esm.js.map

@@ -11,7 +11,7 @@
 /** グローバル registry のプロパティ名 */
 const DEVTOOLS_HOOK_GLOBAL = "__WCSTACK_DEVTOOLS_HOOK__";
 /** プロトコル版。additive change では上げない（protocol §2） */
-const DEVTOOLS_PROTOCOL_VERSION = 1;
+const DEVTOOLS_PROTOCOL_VERSION = 2;
 
 /**
  * protocol/registry.ts
@@ -210,36 +210,44 @@ function formatArgs(args) {
  * 台帳はすべて devtools 側に置く（protocol 原則 2）。disconnect で
  * sources / roster / wiring をクリアし、残留参照を持たない。
  */
-/** 予約 state 名 prefix（protocol §5）。この prefix の要素・イベントは常に除外 */
-const RESERVED_STATE_NAME_PREFIX = "wcs-devtools";
 const DEFAULT_TIMELINE_CAPACITY = 500;
 /** 台帳キーの区切り文字（state 名・パスに現れ得ない NUL）。
  *  エスケープ表記でなく生成式にしているのは、ツーリングがソース中の
  *  `エスケープ列` リテラルを生バイトへ壊す事故が実際に起きたため。 */
 const NUL = String.fromCharCode(0);
-function pathKeyOf(stateName, path) {
-    return stateName + NUL + path;
+function pathKeyOf(path) {
+    return path;
 }
-function tokenKeyOf(stateName, kind, name) {
-    return stateName + NUL + kind + NUL + name;
+function tokenKeyOf(kind, name) {
+    return kind + NUL + name;
 }
-/** 宣言（stateName+path+propName）単位の attach キー。NUL 区切りは pathKeyOf と同じ理由 */
-function attachKeyOf(stateName, path, propName) {
-    return pathKeyOf(stateName, path) + NUL + propName;
+/** 宣言（path+propName）単位の attach キー。NUL 区切りは tokenKeyOf と同じ理由 */
+function attachKeyOf(path, propName) {
+    return path + NUL + propName;
+}
+/** roster 表示用のルート由来ラベル（v2: name 次元が無いのでルートで識別する） */
+function rootLabelOf(rootNode) {
+    if (typeof ShadowRoot !== "undefined" && rootNode instanceof ShadowRoot) {
+        return `<${rootNode.host.tagName.toLowerCase()}>`;
+    }
+    if (rootNode.nodeType === 9 /* DOCUMENT_NODE */) {
+        return "document";
+    }
+    return rootNode.nodeName.toLowerCase();
 }
 /** token カバレッジ 1 行の判定（§4: 空撃ちのみ / 一部空撃ち / 正常 / 未発火） */
-function tokenCoverageOf(stateName, kind, name, stat) {
+function tokenCoverageOf(kind, name, stat) {
     if (stat === undefined) {
-        return { stateName, kind, name, status: "never", count: 0, note: null };
+        return { kind, name, status: "never", count: 0, note: null };
     }
     if (stat.zeroSubscriberCount === stat.count) {
         return {
-            stateName, kind, name, status: "emitted-unheard", count: stat.count,
+            kind, name, status: "emitted-unheard", count: stat.count,
             note: `all ${stat.count} emit(s) had 0 subscribers`,
         };
     }
     return {
-        stateName, kind, name, status: "emitted", count: stat.count,
+        kind, name, status: "emitted", count: stat.count,
         note: stat.zeroSubscriberCount > 0
             ? `${stat.zeroSubscriberCount}/${stat.count} emit(s) had 0 subscribers`
             : null,
@@ -247,7 +255,6 @@ function tokenCoverageOf(stateName, kind, name, stat) {
 }
 class DevtoolsCore {
     _timelineCapacity;
-    _hiddenStateNames;
     _removeListener = null;
     _sources = new Map();
     _roster = new Map();
@@ -259,9 +266,12 @@ class DevtoolsCore {
     _changeListeners = new Set();
     /** 観測開始時刻（connect 時の performance.now。未接続は null）。 */
     _observingSince = null;
-    /** watch 発火回数（stateName + NUL + path → count）。カバレッジの実測面。 */
+    /** watch 発火回数（path → count）。カバレッジの実測面。
+     *  既知の限界: `state:watch-fired` / `state:token-emit` の payload はツリー識別を
+     *  持たないため、複数ツリーが同名の watch パス / token 名を宣言するページでは
+     *  実測が合算される（ツリー別に分けるにはプロトコル追補が要る — slice 29 記録）。 */
     _watchFiredCounts = new Map();
-    /** token emit 実測（stateName + NUL + kind + NUL + name → 回数と空撃ち回数）。 */
+    /** token emit 実測（kind + NUL + name → 回数と空撃ち回数）。上の限界注記と同じ。 */
     _tokenEmitCounts = new Map();
     /** 観測開始以降に一度でも attach を観測した宣言キー（attachKeyOf）。
      *  live 配線台帳は WeakRef pruning / binding-removed で縮むため、binding
@@ -270,7 +280,6 @@ class DevtoolsCore {
     _everAttachedKeys = new Set();
     constructor(options) {
         this._timelineCapacity = options?.timelineCapacity ?? DEFAULT_TIMELINE_CAPACITY;
-        this._hiddenStateNames = new Set(options?.hiddenStateNames ?? []);
     }
     get connected() {
         return this._removeListener !== null;
@@ -280,13 +289,6 @@ class DevtoolsCore {
     }
     set paused(value) {
         this._paused = value;
-    }
-    /** 表示から除外する state 名か（予約 prefix + hiddenStateNames、protocol §5） */
-    isHiddenStateName(name) {
-        if (name === null) {
-            return false;
-        }
-        return name.startsWith(RESERVED_STATE_NAME_PREFIX) || this._hiddenStateNames.has(name);
     }
     connect() {
         if (this._removeListener !== null) {
@@ -367,13 +369,22 @@ class DevtoolsCore {
         this._timeline = [];
         this._notify("timeline");
     }
-    /** 指定パスに束縛された配線（生存している binding のみ） */
-    getWiringForPath(stateName, path) {
-        const set = this._wiringByPathKey.get(pathKeyOf(stateName, path));
+    /**
+     * 指定パスに束縛された配線（生存している binding のみ）。
+     * stateElement を渡すとそのツリーの配線だけに絞る（v2 は名前次元が無いため、
+     * 複数ツリーの同名パスは要素同一性で区別する）。stateElement を持たない
+     * 旧 payload 由来の entry は絞り込みでも残す（欠測を欠落にしない）。
+     */
+    getWiringForPath(path, stateElement) {
+        const set = this._wiringByPathKey.get(pathKeyOf(path));
         if (set === undefined) {
             return [];
         }
-        return this._collectAlive(set);
+        const alive = this._collectAlive(set);
+        if (stateElement === undefined) {
+            return alive;
+        }
+        return alive.filter((entry) => entry.stateElementRef === null || entry.stateElementRef.deref() === stateElement);
     }
     /** 全配線のスナップショット（生存している binding のみ） */
     getAllWiring() {
@@ -421,10 +432,7 @@ class DevtoolsCore {
             }
             for (const root of roots) {
                 for (const declared of source.getDeclaredBindings(root)) {
-                    if (this.isHiddenStateName(declared.stateName)) {
-                        continue;
-                    }
-                    const key = [declared.stateName, declared.statePathName, declared.propName,
+                    const key = [declared.statePathName, declared.propName,
                         declared.bindingType, declared.origin, declared.raw].join(NUL);
                     if (seen.has(key)) {
                         continue;
@@ -447,9 +455,9 @@ class DevtoolsCore {
             const summary = entry.summary;
             // --- watch: 宣言（watchPaths）× 実測（watch-fired 台帳） ---
             for (const path of summary.watchPaths ?? []) {
-                const count = this._watchFiredCounts.get(pathKeyOf(entry.name, path)) ?? 0;
+                const count = this._watchFiredCounts.get(pathKeyOf(path)) ?? 0;
                 if (count > 0) {
-                    out.push({ stateName: entry.name, kind: "watch", name: path, status: "fired", count, note: null });
+                    out.push({ kind: "watch", name: path, status: "fired", count, note: null });
                     continue;
                 }
                 // ワイルドカード行 watch に**リスト書き込み**が届く前提 = 各 `.*` 階層の
@@ -473,23 +481,23 @@ class DevtoolsCore {
                 }
                 if (missingList !== null) {
                     out.push({
-                        stateName: entry.name, kind: "watch", name: path, status: "prerequisite-missing", count: 0,
+                        kind: "watch", name: path, status: "prerequisite-missing", count: 0,
                         note: keyedKnown
                             ? `list "${missingList}" has no for binding and no $listKeys declaration — list writes never reach its rows (only explicit-index writes can fire this watch)`
                             : `no for binding observed for list "${missingList}" (a $listKeys declaration would still let list writes fire it)`,
                     });
                     continue;
                 }
-                out.push({ stateName: entry.name, kind: "watch", name: path, status: "never", count: 0, note: null });
+                out.push({ kind: "watch", name: path, status: "never", count: 0, note: null });
             }
             // --- token: 宣言（commandTokenNames / eventTokenNames）× 実測（emit 台帳）。
             // subscriberCount 0 = 空撃ち（§4）: 全 emit が空撃ちなら emitted-unheard として
             // 警告する（emit 側だけ配線されて受け手が一つも居ない構成ミスの検出）。 ---
             for (const name of summary.commandTokenNames) {
-                out.push(tokenCoverageOf(entry.name, "command", name, this._tokenEmitCounts.get(tokenKeyOf(entry.name, "command", name))));
+                out.push(tokenCoverageOf("command", name, this._tokenEmitCounts.get(tokenKeyOf("command", name))));
             }
             for (const name of summary.eventTokenNames) {
-                out.push(tokenCoverageOf(entry.name, "eventToken", name, this._tokenEmitCounts.get(tokenKeyOf(entry.name, "event", name))));
+                out.push(tokenCoverageOf("eventToken", name, this._tokenEmitCounts.get(tokenKeyOf("event", name))));
             }
         }
         // --- binding: canonical declared（宣言）× live 配線台帳（実測）。canonical が
@@ -504,7 +512,7 @@ class DevtoolsCore {
                     continue;
                 if (decl.propName.startsWith("eventToken."))
                     continue;
-                const key = attachKeyOf(decl.stateName, decl.statePathName, decl.propName);
+                const key = attachKeyOf(decl.statePathName, decl.propName);
                 if (seen.has(key))
                     continue;
                 seen.add(key);
@@ -512,7 +520,7 @@ class DevtoolsCore {
                 // 破棄や GC（WeakRef pruning）で縮むため、瞬間値だと逆戻りする。
                 const attached = this._everAttachedKeys.has(key);
                 out.push({
-                    stateName: decl.stateName, kind: "binding",
+                    kind: "binding",
                     name: `${decl.propName} ← ${decl.statePathName}`,
                     status: attached ? "attached" : "never-attached",
                     count: attached ? 1 : 0,
@@ -528,21 +536,21 @@ class DevtoolsCore {
         if (source === undefined || typeof source.keys !== "function") {
             return [];
         }
-        return source.keys(entry.name, entry.rootNode);
+        return source.keys(entry.rootNode);
     }
     readValue(entry, path, indexes) {
         const source = this._sources.get(entry.sourceId);
         if (source === undefined) {
             return undefined;
         }
-        return source.read(entry.name, entry.rootNode, path, indexes);
+        return source.read(entry.rootNode, path, indexes);
     }
     writeValue(entry, path, value, indexes) {
         const source = this._sources.get(entry.sourceId);
         if (source === undefined) {
             return;
         }
-        source.write(entry.name, entry.rootNode, path, value, indexes);
+        source.write(entry.rootNode, path, value, indexes);
     }
     // --- internal ---
     _notify(kind) {
@@ -552,13 +560,14 @@ class DevtoolsCore {
     }
     _refreshRosterOf(source) {
         const entries = [];
+        const labelCounts = new Map();
         for (const summary of source.getStateElements()) {
-            if (this.isHiddenStateName(summary.name)) {
-                continue;
-            }
+            const base = rootLabelOf(summary.rootNode);
+            const seen = (labelCounts.get(base) ?? 0) + 1;
+            labelCounts.set(base, seen);
             entries.push({
                 sourceId: source.id,
-                name: summary.name,
+                label: seen === 1 ? base : `${base}#${seen}`,
                 rootNode: summary.rootNode,
                 summary,
             });
@@ -600,9 +609,6 @@ class DevtoolsCore {
     _ingest(sourceId, event) {
         switch (event.type) {
             case "state:element-registered": {
-                if (this.isHiddenStateName(event.name)) {
-                    return;
-                }
                 const source = this._sources.get(sourceId);
                 if (source !== undefined) {
                     this._refreshRosterOf(source);
@@ -611,17 +617,13 @@ class DevtoolsCore {
                 this._appendTimeline({
                     sourceId,
                     kind: "element-registered",
-                    stateName: event.name,
-                    label: event.name,
+                    label: rootLabelOf(event.rootNode),
                     detail: "",
                     subscriberCount: null,
                 });
                 return;
             }
             case "state:element-unregistered": {
-                if (this.isHiddenStateName(event.name)) {
-                    return;
-                }
                 const source = this._sources.get(sourceId);
                 if (source !== undefined) {
                     this._refreshRosterOf(source);
@@ -630,25 +632,19 @@ class DevtoolsCore {
                 this._appendTimeline({
                     sourceId,
                     kind: "element-unregistered",
-                    stateName: event.name,
-                    label: event.name,
+                    label: rootLabelOf(event.rootNode),
                     detail: "",
                     subscriberCount: null,
                 });
                 return;
             }
             case "state:write": {
-                const stateName = event.absoluteAddress.absolutePathInfo.stateName;
-                if (this.isHiddenStateName(stateName)) {
-                    return;
-                }
                 const detail = event.hasOldValue
                     ? `${formatValue(event.value)} (was ${formatValue(event.oldValue)})`
                     : formatValue(event.value);
                 this._appendTimeline({
                     sourceId,
                     kind: "write",
-                    stateName,
                     label: this._labelOf(event.absoluteAddress),
                     detail,
                     subscriberCount: null,
@@ -659,9 +655,6 @@ class DevtoolsCore {
                 const labels = [];
                 let total = 0;
                 for (const address of event.addresses) {
-                    if (this.isHiddenStateName(address.absolutePathInfo.stateName)) {
-                        continue;
-                    }
                     total++;
                     if (labels.length < 3) {
                         labels.push(this._labelOf(address));
@@ -674,7 +667,6 @@ class DevtoolsCore {
                 this._appendTimeline({
                     sourceId,
                     kind: "batch",
-                    stateName: null,
                     label: `${total} address${total === 1 ? "" : "es"}`,
                     detail: `${labels.join(", ")}${rest}`,
                     subscriberCount: null,
@@ -682,29 +674,28 @@ class DevtoolsCore {
                 return;
             }
             case "state:binding-added": {
-                const stateName = event.absoluteAddress.absolutePathInfo.stateName;
-                if (this.isHiddenStateName(stateName)) {
-                    return;
-                }
                 const path = event.absoluteAddress.absolutePathInfo.pathInfo.path;
-                const key = pathKeyOf(stateName, path);
+                const key = pathKeyOf(path);
                 let set = this._wiringByPathKey.get(key);
                 if (set === undefined) {
                     set = new Set();
                     this._wiringByPathKey.set(key, set);
                 }
+                const stateElement = event.absoluteAddress.absolutePathInfo.stateElement;
                 const entry = {
                     sourceId,
-                    stateName,
                     path,
                     propName: event.binding.propName,
                     bindingType: event.binding.bindingType,
                     bindingRef: new WeakRef(event.binding),
+                    stateElementRef: typeof stateElement === "object" && stateElement !== null
+                        ? new WeakRef(stateElement)
+                        : null,
                 };
                 set.add(entry);
                 this._wiringEntryByBinding.set(event.binding, entry);
                 // カバレッジの実測面（B2）: attach の観測を ever 台帳へ積む（remove では消さない）
-                this._everAttachedKeys.add(attachKeyOf(stateName, path, event.binding.propName));
+                this._everAttachedKeys.add(attachKeyOf(path, event.binding.propName));
                 this._notify("wiring");
                 this._notify("coverage");
                 return;
@@ -715,7 +706,7 @@ class DevtoolsCore {
                     return;
                 }
                 this._wiringEntryByBinding.delete(event.binding);
-                const key = pathKeyOf(entry.stateName, entry.path);
+                const key = pathKeyOf(entry.path);
                 const set = this._wiringByPathKey.get(key);
                 if (set !== undefined) {
                     set.delete(entry);
@@ -727,41 +718,33 @@ class DevtoolsCore {
                 return;
             }
             case "state:binding-cleared": {
-                const stateName = event.absoluteAddress.absolutePathInfo.stateName;
                 const path = event.absoluteAddress.absolutePathInfo.pathInfo.path;
-                const key = pathKeyOf(stateName, path);
+                const key = pathKeyOf(path);
                 if (this._wiringByPathKey.delete(key)) {
                     this._notify("wiring");
                 }
                 return;
             }
             case "state:token-emit": {
-                if (this.isHiddenStateName(event.stateName)) {
-                    return;
-                }
                 // カバレッジの実測面: emit 回数と空撃ち回数を台帳に積む（§4）。
-                // stateName が null の emit はどの宣言とも突合できないため積まない。
-                if (event.stateName !== null) {
-                    const emitKey = tokenKeyOf(event.stateName, event.kind, event.tokenName);
-                    const stat = this._tokenEmitCounts.get(emitKey);
-                    if (stat === undefined) {
-                        this._tokenEmitCounts.set(emitKey, {
-                            count: 1,
-                            zeroSubscriberCount: event.subscriberCount === 0 ? 1 : 0,
-                        });
-                    }
-                    else {
-                        stat.count += 1;
-                        if (event.subscriberCount === 0) {
-                            stat.zeroSubscriberCount += 1;
-                        }
-                    }
-                    this._notify("coverage");
+                const emitKey = tokenKeyOf(event.kind, event.tokenName);
+                const stat = this._tokenEmitCounts.get(emitKey);
+                if (stat === undefined) {
+                    this._tokenEmitCounts.set(emitKey, {
+                        count: 1,
+                        zeroSubscriberCount: event.subscriberCount === 0 ? 1 : 0,
+                    });
                 }
+                else {
+                    stat.count += 1;
+                    if (event.subscriberCount === 0) {
+                        stat.zeroSubscriberCount += 1;
+                    }
+                }
+                this._notify("coverage");
                 this._appendTimeline({
                     sourceId,
                     kind: event.kind,
-                    stateName: event.stateName,
                     label: event.tokenName,
                     detail: formatArgs(event.args),
                     subscriberCount: event.subscriberCount,
@@ -769,26 +752,19 @@ class DevtoolsCore {
                 return;
             }
             case "state:watch-fired": {
-                if (this.isHiddenStateName(event.stateName)) {
-                    return;
-                }
                 // timeline 行にはしない（発火は高頻度になりうる活動でありカバレッジが受け皿）。
-                const firedKey = pathKeyOf(event.stateName, event.path);
+                const firedKey = pathKeyOf(event.path);
                 this._watchFiredCounts.set(firedKey, (this._watchFiredCounts.get(firedKey) ?? 0) + 1);
                 this._notify("coverage");
                 return;
             }
             case "state:watch-error": {
-                if (this.isHiddenStateName(event.stateName)) {
-                    return;
-                }
                 // ランタイム側は例外を握って drain を守るため、ここに出ないと失敗が
                 // どこにも現れない（console を見ていない限り）。phase を detail の先頭に
                 // 置くのは、getter の評価失敗とハンドラの失敗で直し方が違うため。
                 this._appendTimeline({
                     sourceId,
                     kind: "watch-error",
-                    stateName: event.stateName,
                     label: event.path,
                     detail: `${event.phase}: ${formatError(event.error)}`,
                     subscriberCount: null,
@@ -799,9 +775,7 @@ class DevtoolsCore {
                 this._appendTimeline({
                     sourceId,
                     kind: "watch-chain-limit",
-                    stateName: null,
-                    // 打ち切りはバッチ単位で state 名を持たない（複数 state のアドレスが
-                    // 載りうる）ため、hidden 判定はここでは行わない。
+                    // 打ち切りはバッチ単位（複数ツリーのアドレスが載りうる）— 行の主語は深さ上限
                     label: `depth > ${event.maxDepth}`,
                     detail: event.paths.join(", "),
                     subscriberCount: null,
@@ -809,15 +783,11 @@ class DevtoolsCore {
                 return;
             }
             case "state:path-unresolved": {
-                if (this.isHiddenStateName(event.stateName)) {
-                    return;
-                }
                 // ランタイムは warn で続行する（既存ページを止めないため）。lint を
                 // 走らせていない相手には、ここが「配線が死んでいる」唯一の可視面になる。
                 this._appendTimeline({
                     sourceId,
                     kind: "path-unresolved",
-                    stateName: event.stateName,
                     label: event.path,
                     detail: `${event.source}: "${event.missingSegment}" is not declared`,
                     subscriberCount: null,
@@ -825,15 +795,11 @@ class DevtoolsCore {
                 return;
             }
             case "state:binding-apply-error": {
-                if (this.isHiddenStateName(event.stateName)) {
-                    return;
-                }
                 // 隔離された適用失敗。bindingType を detail 先頭に置くのは、構造
                 // （for / if）の失敗と値の失敗で影響範囲が違うため。
                 this._appendTimeline({
                     sourceId,
                     kind: "binding-apply-error",
-                    stateName: event.stateName,
                     label: event.path,
                     detail: `${event.bindingType}: ${formatError(event.error)}`,
                     subscriberCount: null,
@@ -841,12 +807,10 @@ class DevtoolsCore {
                 return;
             }
             case "propagation:suppressed": {
-                // two-way エコーの辺単位抑止。state 名を持たない（node+member が主語）
-                // ため hidden 判定はここでは行わない。
+                // two-way エコーの辺単位抑止（主語は node + member — パスではない）
                 this._appendTimeline({
                     sourceId,
                     kind: "propagation-suppressed",
-                    stateName: null,
                     label: event.member,
                     detail: `${event.reason} (tx ${event.transactionId}, edge ${event.edgeId})`,
                     subscriberCount: null,
@@ -854,14 +818,9 @@ class DevtoolsCore {
                 return;
             }
             case "propagation:coalesced": {
-                const stateName = event.absoluteAddress.absolutePathInfo.stateName;
-                if (this.isHiddenStateName(stateName)) {
-                    return;
-                }
                 this._appendTimeline({
                     sourceId,
                     kind: "propagation-coalesced",
-                    stateName,
                     label: this._labelOf(event.absoluteAddress),
                     detail: `tx ${event.droppedTransactionId} dropped (winner tx ${event.winnerTransactionId})`,
                     subscriberCount: null,
@@ -869,14 +828,9 @@ class DevtoolsCore {
                 return;
             }
             case "propagation:hop-limit": {
-                const stateName = event.absoluteAddress.absolutePathInfo.stateName;
-                if (this.isHiddenStateName(stateName)) {
-                    return;
-                }
                 this._appendTimeline({
                     sourceId,
                     kind: "propagation-hop-limit",
-                    stateName,
                     label: this._labelOf(event.absoluteAddress),
                     detail: `hop ${event.hop} (tx ${event.transactionId})`,
                     subscriberCount: null,
@@ -894,7 +848,6 @@ class DevtoolsCore {
                 this._appendTimeline({
                     sourceId,
                     kind: "contract-drift",
-                    stateName: null,
                     label: event.tag,
                     detail: `${event.reason}${memberPart}${eventPart}`,
                     subscriberCount: null,
@@ -922,7 +875,7 @@ class DevtoolsCore {
  * 「宣言レベルの配線ビュー」を組む。ライブ台帳と違い binding 実体・
  * 接続状態は分からない（UI では "declared" バッジで区別する）。
  *
- * パースは表示目的の簡易版（`prop[#mod]: path[@state][|filters]` を
+ * パースは表示目的の簡易版（`prop[#mod]: path[|filters]` を
  * `;` 区切りで分解するだけ）。正確なセマンティクスの正本は
  * @wcstack/state の bindTextParser であり、ここでは追随しない。
  */
@@ -943,18 +896,13 @@ function parseEntry(element, raw, origin) {
         return null;
     }
     const [pathPart, ...filterParts] = rhs.split("|").map((part) => part.trim());
-    let path = pathPart;
-    let stateName = "default";
-    const at = pathPart.lastIndexOf("@");
-    if (at > 0) {
-        path = pathPart.slice(0, at).trim();
-        stateName = pathPart.slice(at + 1).trim();
-    }
+    // v2: `@name` セレクタは撤去済み（ランタイムは parse error にする）。
+    // 簡易パーサはパスをそのまま流す — 壊れた宣言の可視化はランタイム側の役目。
+    const path = pathPart;
     return {
         element,
         propName,
         path,
-        stateName,
         filters: filterParts.filter((part) => part.length > 0),
         origin,
         raw: trimmed,
@@ -1178,13 +1126,8 @@ class WcsDevtools extends HTMLElement {
             this._buildShadow();
         }
         const capacity = Number(this.getAttribute("buffer") ?? "");
-        const hidden = (this.getAttribute("hidden-states") ?? "")
-            .split(",")
-            .map((name) => name.trim())
-            .filter((name) => name.length > 0);
         this._core = new DevtoolsCore({
             timelineCapacity: Number.isFinite(capacity) && capacity > 0 ? capacity : undefined,
-            hiddenStateNames: hidden,
         });
         this._removeCoreListener = this._core.onChange((kind) => {
             if (kind === "roster" || kind === "sources") {
@@ -1461,7 +1404,7 @@ class WcsDevtools extends HTMLElement {
         }
     }
     _rosterKey(entry) {
-        return `${entry.sourceId}:${entry.name}`;
+        return `${entry.sourceId}:${entry.label}`;
     }
     _selectedRoster() {
         const core = this._core;
@@ -1481,7 +1424,7 @@ class WcsDevtools extends HTMLElement {
         select.replaceChildren(...roster.map((entry) => {
             const option = document.createElement("option");
             option.value = this._rosterKey(entry);
-            option.textContent = `${entry.name} (${entry.sourceId.slice(0, 12)})`;
+            option.textContent = `${entry.label} (${entry.sourceId.slice(0, 12)})`;
             option.selected = selected !== null && this._rosterKey(entry) === this._rosterKey(selected);
             return option;
         }));
@@ -1632,8 +1575,9 @@ class WcsDevtools extends HTMLElement {
         }
         else if (this._selectedPath !== null) {
             const selected = this._selectedRoster();
+            // 選択中のツリーでスコープ（複数ツリーの同名パスを混ぜない）
             entries =
-                selected !== null ? core.getWiringForPath(selected.name, this._selectedPath) : [];
+                selected !== null ? core.getWiringForPath(this._selectedPath, selected.summary.element) : [];
             contextLabel = this._selectedPath;
         }
         else {
@@ -1726,7 +1670,7 @@ class WcsDevtools extends HTMLElement {
             }
             const label = document.createElement("span");
             label.className = "path";
-            label.textContent = ` ${entry.name}@${entry.stateName} `;
+            label.textContent = ` ${entry.name} `;
             row.append(kind, document.createTextNode(" "), label, status);
             if (entry.note !== null) {
                 // note はホバー頼み（title）にせず常時表示する — 前提未成立の理由は
@@ -1752,7 +1696,7 @@ class WcsDevtools extends HTMLElement {
         const path = document.createElement("span");
         path.className = "path";
         const filters = entry.outFilters.map((f) => ` | ${f.filterName}(${f.args.join(",")})`).join("");
-        path.textContent = `${entry.statePathName}@${entry.stateName}${filters}`;
+        path.textContent = `${entry.statePathName}${filters}`;
         row.append(type, document.createTextNode(" "), prop, document.createTextNode(" ← "), path);
         if (entry.node !== null) {
             const target = entry.node;
@@ -1781,7 +1725,7 @@ class WcsDevtools extends HTMLElement {
         const arrow = document.createTextNode(" ← ");
         const path = document.createElement("span");
         path.className = "path";
-        path.textContent = `${entry.path}@${entry.stateName}`;
+        path.textContent = entry.path;
         const type = document.createElement("span");
         type.className = "badge-tag";
         type.textContent = entry.bindingType;
@@ -1805,7 +1749,7 @@ class WcsDevtools extends HTMLElement {
         prop.textContent = entry.propName;
         const path = document.createElement("span");
         path.className = "path";
-        path.textContent = `${entry.path}@${entry.stateName}`;
+        path.textContent = entry.path;
         row.append(type, document.createTextNode(" "), prop, document.createTextNode(" ← "), path);
         row.addEventListener("click", () => {
             this._highlightNodes([entry.element]);
@@ -1870,8 +1814,7 @@ class WcsDevtools extends HTMLElement {
         }
         const label = document.createElement("span");
         label.className = "label";
-        const stateName = entry.stateName !== null ? `@${entry.stateName}` : "";
-        label.textContent = ` ${entry.label}${stateName} `;
+        label.textContent = ` ${entry.label} `;
         const detail = document.createElement("span");
         detail.className = "detail";
         detail.textContent = entry.detail;
@@ -1888,7 +1831,7 @@ class WcsDevtools extends HTMLElement {
     _highlightPath(entry, path) {
         const core = this._core;
         const nodes = [];
-        for (const wiring of core.getWiringForPath(entry.name, path)) {
+        for (const wiring of core.getWiringForPath(path, entry.summary.element)) {
             const binding = wiring.bindingRef.deref();
             if (binding !== undefined) {
                 nodes.push(binding.node, binding.replaceNode);
@@ -1954,5 +1897,5 @@ function bootstrapDevtools() {
     }
 }
 
-export { DEVTOOLS_HOOK_GLOBAL, DEVTOOLS_PROTOCOL_VERSION, DevtoolsCore, RESERVED_STATE_NAME_PREFIX, WcsDevtools, bootstrapDevtools, formatArgs, formatValue, getOrCreateHookRegistry, scanDeclaredBindings };
+export { DEVTOOLS_HOOK_GLOBAL, DEVTOOLS_PROTOCOL_VERSION, DevtoolsCore, WcsDevtools, bootstrapDevtools, formatArgs, formatValue, getOrCreateHookRegistry, scanDeclaredBindings };
 //# sourceMappingURL=index.esm.js.map

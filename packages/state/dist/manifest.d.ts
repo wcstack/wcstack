@@ -47,12 +47,11 @@ interface IWcsManifest {
         pathDelimiter: string;
         /** ワイルドカード（`*`） */
         wildcard: string;
-        /** バインディング構文 `[prop][#mod]: [path][@state][|filter...]` の区切り文字 */
+        /** バインディング構文 `[prop][#mod]: [path][|filter...]` の区切り文字 */
         delimiters: {
             binding: string;
             propValue: string;
             modifier: string;
-            stateName: string;
             filter: string;
         };
         /** 構造ディレクティブ（`<template data-wcs="for: ...">` 等） */

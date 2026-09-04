@@ -163,12 +163,11 @@ const MAX_WATCH_CHAIN_DEPTH = 32;
 const DEVTOOLS_LISTENER_PRIORITY = 0;
 const WATCH_LISTENER_PRIORITY = 10;
 const STREAM_LISTENER_PRIORITY = 20;
-// data-wcs バインディング構文 `[prop][#mod]: [path][@state][|filter...]` の区切り文字（単一正本）。
+// data-wcs バインディング構文 `[prop][#mod]: [path][|filter...]` の区切り文字（単一正本・`@state` は v2 で撤去）。
 // これらは「死守の壁（構文契約）」であり値は不変。manifest.syntax.delimiters で公開される。
 const BINDING_SEPARATOR = ';'; // 複数バインディングの区切り
 const PROP_VALUE_SEPARATOR = ':'; // 左辺(prop)と右辺(path)の区切り
 const MODIFIER_SEPARATOR = '#'; // prop と修飾子の区切り
-const STATE_NAME_SEPARATOR = '@'; // path と @stateName の区切り
 const FILTER_SEPARATOR = '|'; // フィルタパイプの区切り
 // 修飾子（`#` 後）の語彙（単一正本）。manifest.syntax.modifiers で公開される。
 // フラグ形（`#prevent` — 値を取らない）とキー値形（`#init=element` — `=` で値を取る）。
@@ -546,7 +545,7 @@ function raiseError(message) {
     throw new Error(`[@wcstack/state] ${message}`);
 }
 
-function makeExpandedEntry(name, base, stateName) {
+function makeExpandedEntry(name, base) {
     // Dot-relative spread keeps the loop item root (`.`) without producing `..foo`.
     const expandedPath = base === "." ? `.${name}` : `${base}.${name}`;
     return {
@@ -555,7 +554,6 @@ function makeExpandedEntry(name, base, stateName) {
         propModifiers: [],
         statePathName: expandedPath,
         statePathInfo: getPathInfo(expandedPath),
-        stateName,
         inFilters: [],
         outFilters: [],
         bindingType: 'prop',
@@ -640,13 +638,12 @@ function expandSpread(node, results, options = {}) {
             raiseError(`Spread binding "${result.statePathName}" requires <${tagName}> to expose a valid wcBindable declaration.`);
         }
         const targetBase = result.statePathName;
-        const stateName = result.stateName;
         const seen = new Set();
         for (const name of bindable.knownProperties.keys()) {
             if (seen.has(name))
                 continue;
             seen.add(name);
-            const entry = makeExpandedEntry(name, targetBase, stateName);
+            const entry = makeExpandedEntry(name, targetBase);
             spreadOrigin.add(entry);
             expanded.push(entry);
         }
@@ -656,7 +653,7 @@ function expandSpread(node, results, options = {}) {
             if (seen.has(name))
                 continue;
             seen.add(name);
-            const entry = makeExpandedEntry(name, targetBase, stateName);
+            const entry = makeExpandedEntry(name, targetBase);
             spreadOrigin.add(entry);
             expanded.push(entry);
         }
@@ -1928,36 +1925,9 @@ function parsePropPart(propPart) {
     };
 }
 
-/**
- * 名前付き State（`<wcs-state name>` / `path@name`）の deprecation 通知。
- *
- * v2 では名前の次元そのものが消え、`<wcs-state mount="path">` と接頭辞付きパスに
- * 置き換わる（docs/state-mount-design.md D1 / D16）。1.x には `mount=` が無く、
- * warn を出しても利用者は動けないので、**既定では出さない**（`config.debug` 下だけ）。
- * 主経路は lint（`wcs/named-state-deprecated`）と README の告知。
- *
- * 出すときは種別 × 対象ごとに 1 回（起動のたびに同じ行が並ばないように）。
- */
-const reported$1 = new Set();
-function warnNamedStateDeprecated(kind, subject) {
-    if (!config.debug) {
-        return;
-    }
-    const key = `${kind}:${subject}`;
-    if (reported$1.has(key)) {
-        return;
-    }
-    reported$1.add(key);
-    const hint = kind === 'attribute'
-        ? `<wcs-state name="${subject}"> will be removed in v2. Mount the state onto the root tree with <wcs-state mount="${subject}"> and read it as "${subject}.<path>".`
-        : `"${subject}" uses the "@name" state selector, which will be removed in v2. Read the mounted tree as "<name>.<path>" instead.`;
-    console.warn(`[@wcstack/state] [wcs/named-state-deprecated] ${hint} See docs/state-mount-design.md §9.`);
-}
-
 const cacheFilterInfos = new Map();
-// format: statePath@stateName|filter|filter
+// format: statePath|filter|filter
 // statePath-format: path.to.property (e.g., user.name.first, users.*.name, users.0.name, not include @)
-// stateName: optional, default is 'default'
 // filters-format: filterName or filterName(arg1,arg2)
 function parseStatePart(statePart) {
     const pos = statePart.indexOf(FILTER_SEPARATOR);
@@ -1980,14 +1950,14 @@ function parseStatePart(statePart) {
     else {
         stateAndPath = statePart.trim();
     }
-    if (stateAndPath.indexOf(STATE_NAME_SEPARATOR) !== -1) {
-        // `path@name` は v2 で消える（docs/state-mount-design.md D16。既定では黙る）
-        warnNamedStateDeprecated('path', stateAndPath);
+    if (stateAndPath.indexOf("@") !== -1) {
+        // 名前次元は v2 で撤去（docs/state-mount-design.md D16 / §9）。パスは 1 本のツリー。
+        raiseError(`"${stateAndPath}": the "@name" selector was removed in v2 — there is a single state tree. ` +
+            `Mount the named state onto the tree (<wcs-state mount="...">) and read it by its path prefix instead.`);
     }
-    const [statePathName, stateName = 'default'] = stateAndPath.split(STATE_NAME_SEPARATOR).map(trimFn);
+    const statePathName = stateAndPath;
     const pathInfo = getPathInfo(statePathName);
     return {
-        stateName,
         statePathName,
         statePathInfo: pathInfo,
         outFilters: filters,
@@ -2019,7 +1989,6 @@ function parseBindTextsForElement(bindText) {
                 propModifiers: [],
                 statePathName: '#else',
                 statePathInfo: pathInfo,
-                stateName: '',
                 inFilters: [],
                 outFilters: [],
                 bindingType: 'else',
@@ -2159,19 +2128,16 @@ function setFragmentInfoByUUID(uuid, rootNode, fragmentInfo) {
     }
     else {
         fragmentInfoByUUID.set(uuid, fragmentInfo);
-        const bindingPartial = fragmentInfo.parseBindTextResult;
-        const stateElement = getStateElementByName(rootNode, bindingPartial.stateName);
+        // v2: ルートに 1 ツリーなので参照は 1 回でよい（名前ごとの再解決は名前次元と一緒に消えた）
+        const stateElement = getStateElement(rootNode);
         if (stateElement === null) {
-            raiseError(`State element with name "${bindingPartial.stateName}" not found for fragment info.`);
+            raiseError(`No state tree found on this root for fragment info.`);
         }
+        const bindingPartial = fragmentInfo.parseBindTextResult;
         stateElement.setPathInfo(bindingPartial.statePathName, bindingPartial.bindingType);
         for (const nodeInfo of fragmentInfo.nodeInfos) {
             for (const nodeBindingPartial of nodeInfo.parseBindTextResults) {
-                const nodeStateElement = getStateElementByName(rootNode, nodeBindingPartial.stateName);
-                if (nodeStateElement === null) {
-                    raiseError(`State element with name "${nodeBindingPartial.stateName}" not found for fragment info node.`);
-                }
-                nodeStateElement.setPathInfo(nodeBindingPartial.statePathName, nodeBindingPartial.bindingType);
+                stateElement.setPathInfo(nodeBindingPartial.statePathName, nodeBindingPartial.bindingType);
             }
         }
     }
@@ -2234,10 +2200,11 @@ function getParseBindTextResults(node) {
  *
  * このモジュールはその 2 つを明示的に復元するための判定だけを持つ。
  *
- * **plain（ホストからバインドしない state 注入）は対象外**であることに注意。
- * plain は `waitInitializeBinding` を通らないので循環せず、従来どおりホストと
- * 同じパスで初期化して問題ない。ここで一律に切り出すと、成立している plain 形が
- * 「子 state の登録前に `@name` を解決する」形に退行する。
+ * **plain（ホストからバインドしない state 注入）の Light DOM は v2 で廃止**
+ *（State._initializeBindWebComponent が raise する — 共有 rootNode に独立ツリーを
+ * 置けないため。shadow を付ければ plain Shadow 形として従来どおり動く）。
+ * ここの判定が「ホストからバインドされているか」を見るのはその名残ではなく、
+ * マウント（配線あり）だけをスコープとして切り出すため。
  */
 /** `<wcs-state bind-component>` が Light DOM の mapped 形（＝別スコープ扱い）か。 */
 function isLightDomMappedStateElement(stateElement) {
@@ -2335,7 +2302,13 @@ function getSubscriberNodes(root) {
 }
 
 const registeredNodeSet = new WeakSet();
-function processParseResultsForNode(node, parseResults, options) {
+function applyTransform(parseResults, transform) {
+    if (typeof transform === "undefined") {
+        return parseResults;
+    }
+    return parseResults.map((parsed) => (parsed.uuid != null ? parsed : transform(parsed)));
+}
+function processParseResultsForNode(node, parseResults, options, transform) {
     const expanded = expandSpread(node, parseResults, { allowDeferred: options.allowDeferred });
     if (hasUnresolvedSpread(expanded)) {
         const tagName = node.nodeType === Node.ELEMENT_NODE
@@ -2344,15 +2317,16 @@ function processParseResultsForNode(node, parseResults, options) {
         if (tagName === null) {
             raiseError(`Spread binding deferred but element is not a custom element.`);
         }
-        return { bindings: [], deferred: { node, tagName, parseResults } };
+        return { bindings: [], deferred: { node, tagName, parseResults, transform } };
     }
     registeredNodeSet.add(node);
-    const bindings = getBindingInfos(node, expanded);
+    // 変換は spread 展開の**後**（展開されたプロパティごとのパスに掛かる）
+    const bindings = getBindingInfos(node, applyTransform(expanded, transform));
     setBindingsByNode(node, bindings);
     resolveInitializedBinding(node);
     return { bindings, deferred: null };
 }
-function collectNodesAndBindingInfos(root) {
+function collectNodesAndBindingInfos(root, transform) {
     const subscriberNodes = getSubscriberNodes(root);
     const allBindings = [];
     const deferredSpreads = [];
@@ -2360,7 +2334,7 @@ function collectNodesAndBindingInfos(root) {
         if (registeredNodeSet.has(node))
             continue;
         const parseResults = getParseBindTextResults(node);
-        const result = processParseResultsForNode(node, parseResults, { allowDeferred: true });
+        const result = processParseResultsForNode(node, parseResults, { allowDeferred: true }, transform);
         if (result.deferred !== null) {
             deferredSpreads.push(result.deferred);
             continue;
@@ -2403,10 +2377,535 @@ function markNodeRegistered(node) {
  * returns them so the caller can attach handlers and apply state values.
  */
 function processDeferredNode(entry) {
-    const { node, parseResults } = entry;
+    const { node, parseResults, transform } = entry;
     unregisterNode(node);
-    const result = processParseResultsForNode(node, parseResults, { allowDeferred: false });
+    const result = processParseResultsForNode(node, parseResults, { allowDeferred: false }, transform);
     return result.bindings;
+}
+
+let nextMountId = 0;
+const MOUNT_DOLLAR_DECLARATIONS = [
+    "$watch", "$streams", "$listKeys", "$updatedCallback", "$commandTokens", "$eventTokens", "$on",
+];
+const dollarDeclarationWarned = new Set();
+/**
+ * マウントされたコンポーネントは宣言面（`$watch` / `$streams` / `$listKeys` /
+ * `$updatedCallback` / `$commandTokens` / `$eventTokens` / `$on`）を実行しない
+ * （v1 の mapped も同じ — innerState が `$` を遮っていた）。無言に捨てず、
+ * (tag, prop) につき 1 回だけ「ルート（または対応する宣言はボリューム）に宣言する」
+ * 誘導を出す。テンプレート側の `$command.*` の**参照**（バインディングのパス）は
+ * ルート宣言のトークンに解決される（`$` 頭のパスは翻訳しない — translateInnerPath）。
+ * `$connectedCallback` / `$disconnectedCallback` / `$stateReadyCallback` は要素の
+ * ライフサイクルとしてスコープごとに残る（設計書 §4-6）。
+ */
+function warnMountedDollarDeclarations(record) {
+    const declared = MOUNT_DOLLAR_DECLARATIONS.filter((name) => typeof record.stateObject[name] !== "undefined");
+    if (declared.length === 0) {
+        return;
+    }
+    const key = `${record.component.tagName.toLowerCase()}|${record.stateProp}`;
+    if (dollarDeclarationWarned.has(key)) {
+        return;
+    }
+    dollarDeclarationWarned.add(key);
+    console.warn(`[@wcstack/state] [wcs/mount-dollar-declaration] <${key.split("|")[0]}>.${record.stateProp} declares ` +
+        `${declared.join(", ")}, which mounted components do not run. Declare them on the root state instead ` +
+        `(a volume <wcs-state mount="..."> can host $watch / $listKeys / $updatedCallback). ` +
+        `See docs/state-mount-design.md §4-6.`);
+}
+/**
+ * マウントされたコンポーネントのライフサイクル呼び出し（`$connectedCallback` /
+ * `$disconnectedCallback`）。`this` は公開 chroot（`element[stateProp]`）。
+ * 例外・reject は 1 コンポーネントに閉じる（切断時は親も切断中でありうる）。
+ */
+function callMountLifecycleCallback(record, name) {
+    const callback = record.stateObject[name];
+    if (typeof callback !== "function") {
+        return;
+    }
+    try {
+        const chroot = record.component[record.stateProp];
+        const result = callback.call(chroot);
+        if (result instanceof Promise) {
+            result.catch((error) => {
+                console.error(`[@wcstack/state] mounted <${record.component.tagName.toLowerCase()}> ${name} failed.`, error);
+            });
+        }
+    }
+    catch (error) {
+        console.error(`[@wcstack/state] mounted <${record.component.tagName.toLowerCase()}> ${name} failed.`, error);
+    }
+}
+function collectAccessorKeys(stateObject) {
+    const getterKeys = new Set();
+    const setterKeys = new Set();
+    const descriptors = Object.getOwnPropertyDescriptors(stateObject);
+    for (const [key, descriptor] of Object.entries(descriptors)) {
+        if (typeof descriptor.get === "function")
+            getterKeys.add(key);
+        if (typeof descriptor.set === "function")
+            setterKeys.add(key);
+    }
+    return { getterKeys, setterKeys };
+}
+/**
+ * ホストの `state[.sub]: path` バインディング群からマウント記録を組む。
+ * `bindings` は propSegments[0] === stateProp で選別済みであること
+ * （bindWebComponent が v1 の buildPrimaryMappingRule に渡すものと同じ集合）。
+ */
+function buildMountRecord(component, stateProp, bindings, parentStateElement, stateObject, injectedKeys = new Set()) {
+    if (bindings.length === 0) {
+        raiseError(`Cannot build a mount record without host bindings for "${stateProp}".`);
+    }
+    const entries = [];
+    const seenInnerPaths = new Set();
+    let rootEntry = null;
+    for (const binding of bindings) {
+        const innerSegments = binding.propSegments.slice(1);
+        const innerPath = innerSegments.join(DELIMITER);
+        if (seenInnerPaths.has(innerPath)) {
+            // 同じ内側パスを 2 つの規則が指す形はどちらが勝つか書き手に見えない（M6・Phase 1 と同じ）
+            raiseError('Duplicate mapping rule for web component.');
+        }
+        seenInnerPaths.add(innerPath);
+        const entry = { innerSegments, outerPathInfo: binding.statePathInfo };
+        entries.push(entry);
+        if (innerSegments.length === 0) {
+            rootEntry = entry;
+        }
+    }
+    entries.sort((a, b) => b.innerSegments.length - a.innerSegments.length);
+    const id = ++nextMountId;
+    const marker = `#m${id}`;
+    const { getterKeys, setterKeys } = collectAccessorKeys(stateObject);
+    const privateSnapshot = {};
+    for (const key of Object.keys(stateObject)) {
+        if (key.startsWith("$"))
+            continue;
+        if (getterKeys.has(key) || setterKeys.has(key))
+            continue;
+        if (typeof stateObject[key] === "function")
+            continue;
+        if (injectedKeys.has(key))
+            continue;
+        privateSnapshot[key] = stateObject[key];
+    }
+    return {
+        id,
+        marker,
+        component,
+        stateProp,
+        parentStateElement,
+        entries,
+        rootEntry,
+        delta: rootEntry === null ? 0 : rootEntry.outerPathInfo.wildcardCount,
+        markerBasePath: rootEntry === null ? marker : rootEntry.outerPathInfo.path + DELIMITER + marker,
+        stateObject,
+        getterKeys,
+        setterKeys,
+        injectedKeys,
+        privateSnapshot,
+        accessorBySuffixByMarkerParent: new Map(),
+        indexShiftByLoopElementPath: new Map(),
+        addedGetterPaths: new Set(),
+    };
+}
+function firstSegmentOf(path) {
+    const dot = path.indexOf(DELIMITER);
+    return dot === -1 ? path : path.slice(0, dot);
+}
+function startsWithSegments(segments, prefix) {
+    if (prefix.length > segments.length)
+        return false;
+    for (let i = 0; i < prefix.length; i++) {
+        if (segments[i] !== prefix[i])
+            return false;
+    }
+    return true;
+}
+/** 規則 3: 最長接頭辞一致でツリーの絶対パスへ翻訳する。一致しなければ null。 */
+function translateTreePath(record, segments) {
+    for (const entry of record.entries) {
+        if (startsWithSegments(segments, entry.innerSegments)) {
+            const rest = segments.slice(entry.innerSegments.length);
+            return rest.length === 0
+                ? entry.outerPathInfo.path
+                : entry.outerPathInfo.path + DELIMITER + rest.join(DELIMITER);
+        }
+    }
+    return null;
+}
+/** 私有アンカー: パス全体をマーカーの下に置く（`users.*.#m.editing` / `users.*.#m.drafts.*.title`） */
+function markerizePrivate(record, innerPath) {
+    return record.markerBasePath + DELIMITER + innerPath;
+}
+/**
+ * アクセサの逆引き（マーカー親 → 接尾キー → 作者のアクセサ名と $n シフト）を登録する。
+ * suffix は常に非空（ワイルドカード終端アクセサは markerizeAccessorPath が raise 済み —
+ * 空を許すと trailing dot の不正パスが getterPaths に載る）。
+ */
+function recordAccessorSuffix(record, markerParentPath, suffix, accessorName) {
+    let bySuffix = record.accessorBySuffixByMarkerParent.get(markerParentPath);
+    if (typeof bySuffix === "undefined") {
+        bySuffix = new Map();
+        record.accessorBySuffixByMarkerParent.set(markerParentPath, bySuffix);
+    }
+    const translatedPath = markerParentPath + DELIMITER + suffix;
+    bySuffix.set(suffix, {
+        accessorName,
+        indexShift: getPathInfo(translatedPath).wildcardCount - getPathInfo(accessorName).wildcardCount,
+    });
+    if (record.getterKeys.has(accessorName)) {
+        // マーカーパスを親の getterPaths に載せる。checkDependency（評価中の読み →
+        // このアクセサの動的エッジ登録）と isCacheable（getter 値のキャッシュ）が
+        // getterPaths を正本にしているため、載せないと再評価もキャッシュも効かない。
+        // モック互換のため optional に扱う。追加分は記録の恒久破棄時に回収する
+        // ため addedGetterPaths にも控える（cleanupCollectedMountRecord）。
+        // suffix 空を素朴に結合すると trailing dot の不正パスになる — translatedPath を使う
+        record.parentStateElement.getterPaths?.add(translatedPath);
+        record.addedGetterPaths.add(translatedPath);
+    }
+}
+/**
+ * ワイルドカードを含む getter / setter のマーカー位置決め。ワイルドカード接頭辞が
+ * ツリーに翻訳できるなら、その直後にマーカーを挟む（ループ文脈と listIndex の arity を
+ * 素の wildcard getter と同一に保つ）。先頭セグメントが私有ならパスごと私有アンカー。
+ */
+function markerizeAccessorPath(record, innerPath) {
+    const segments = innerPath.split(DELIMITER);
+    let lastWildcard = -1;
+    for (let i = segments.length - 1; i >= 0; i--) {
+        if (segments[i] === WILDCARD) {
+            lastWildcard = i;
+            break;
+        }
+    }
+    if (lastWildcard === -1) {
+        recordAccessorSuffix(record, record.markerBasePath, innerPath, innerPath);
+        return markerizePrivate(record, innerPath);
+    }
+    const first = segments[0];
+    if (isPrivateAnchor(record, first)) {
+        recordAccessorSuffix(record, record.markerBasePath, innerPath, innerPath);
+        return markerizePrivate(record, innerPath);
+    }
+    const treeSegments = segments.slice(0, lastWildcard + 1);
+    const rest = segments.slice(lastWildcard + 1);
+    const translated = translateTreePath(record, treeSegments);
+    if (translated === null) {
+        // 部分マウントのみで、どの接頭辞にも含まれないツリー部（§4-1 の 4b）
+        raiseError(noMountEntryMessage(record, innerPath));
+    }
+    if (rest.length === 0) {
+        // ワイルドカード終端アクセサ（行 getter `get "tags.*"()`）がツリーのリストへ翻訳される形:
+        // 翻訳結果がマーカー終端パス（`users.*.tags.*.#m`）になり、getByAddress のオーバーレイ
+        // dispatch が getter 評価より先に掛かってオーバーレイ proxy が値として返る
+        // （作者の getter は評価されない）。無言で壊れる形なのでサポート外として loud に落とす
+        raiseError(`Wildcard-terminal accessor "${innerPath}" on mounted <${record.component.tagName.toLowerCase()}> ` +
+            `is not supported: it translates to a marker-terminal path where the mount overlay would shadow ` +
+            `the accessor. Declare the row value as a getter on the host tree, or back it with a ` +
+            `component-own array (a private key makes the whole path private).`);
+    }
+    const markerParent = translated + DELIMITER + record.marker;
+    recordAccessorSuffix(record, markerParent, rest.join(DELIMITER), innerPath);
+    return markerParent + DELIMITER + rest.join(DELIMITER);
+}
+/** 先頭セグメントが「作者のもの」（own data key・メソッド。積みで注入されたキーは除く）か */
+function isPrivateAnchor(record, firstSegment) {
+    if (record.injectedKeys.has(firstSegment)) {
+        return false;
+    }
+    if (typeof record.stateObject[firstSegment] === "function" && !record.getterKeys.has(firstSegment)) {
+        return true;
+    }
+    return Object.prototype.hasOwnProperty.call(record.stateObject, firstSegment)
+        && !record.getterKeys.has(firstSegment)
+        && !record.setterKeys.has(firstSegment);
+}
+function noMountEntryMessage(record, innerPath) {
+    return `Path "${innerPath}" in <${record.component.tagName.toLowerCase()}> does not resolve: ` +
+        `it is not an own key of the component state and no mount entry covers it ` +
+        `(mounted prefixes: ${record.entries.filter(e => e.innerSegments.length > 0).map(e => e.innerSegments.join(DELIMITER)).join(", ")}). ` +
+        `Mount it from the host ("${record.stateProp}: path" / "${record.stateProp}.${firstSegmentOf(innerPath)}: path") or declare the key on the component state.`;
+}
+/**
+ * コンポーネントスコープの内側パスを、親ツリーの絶対パスへ翻訳する（設計書 §4-1）。
+ *
+ * 1. getter / setter（完全一致・またはワイルドカード getter）→ マーカーパス（chroot 評価）
+ * 2. own data key（部分規則が覆わないもの）・メソッド → マーカーパス（私有）
+ * 3. それ以外 → 最長接頭辞一致でツリーへ
+ * 4. 一致なし: ルートエントリがあれば必ず 3 で一致する。無ければ throw（4b）
+ *
+ * `$`（予約名前空間・`$1` 等）と `#`（構造プレースホルダ）で始まるパスは翻訳しない。
+ */
+const INDEX_PATH_REGEX = /^\$(\d+)$/;
+/**
+ * `$n` バインディングのスコープ補正量（D9・設計書 §4-4）。
+ * 囲む `for` の内側なら「その for パスが翻訳で得たワイルドカード数」— 行マウント
+ * （`state: .`）の `for: tags` は `users.*.tags` になり +1、部分マウント
+ * `state.items: groups.*.children` の `for: items` も +1。for の外（スコープ直下）は
+ * ルート接頭辞の Δ。翻訳がワイルドカードを増やさないマウント（`state: user`）は 0。
+ */
+function getIndexShiftForScope(record, forPath) {
+    if (typeof forPath === "undefined") {
+        return record.delta;
+    }
+    const translated = translateInnerPath(record, forPath);
+    return getPathInfo(translated).wildcardCount - getPathInfo(forPath).wildcardCount;
+}
+function translateInnerPath(record, innerPath) {
+    const head = innerPath[0];
+    if (head === "$" || head === "#") {
+        // `$` の予約名前空間はパスとしては翻訳しない（`$n` のスコープ補正は
+        // translateParsedForMount が囲む for の文脈で行う。getter 内の `this.$1` は
+        // 親トラップがアクセサの indexShift で補正する）
+        return innerPath;
+    }
+    // 規則 1: 完全一致の getter / setter（`display`・`"children.*.label"`）
+    if (record.getterKeys.has(innerPath) || record.setterKeys.has(innerPath)) {
+        return markerizeAccessorPath(record, innerPath);
+    }
+    const first = firstSegmentOf(innerPath);
+    // 規則 1'/2: 先頭セグメントが getter / setter / メソッド / own data key → マーカー配下
+    if (record.getterKeys.has(first) || record.setterKeys.has(first)) {
+        return markerizePrivate(record, innerPath);
+    }
+    if (isPrivateAnchor(record, first)) {
+        return markerizePrivate(record, innerPath);
+    }
+    // 規則 3: ツリー
+    const translated = translateTreePath(record, innerPath.split(DELIMITER));
+    if (translated !== null) {
+        return translated;
+    }
+    // 規則 4b: 部分マウントのみで一致なし
+    raiseError(noMountEntryMessage(record, innerPath));
+}
+/**
+ * パース結果 / バインディングをマウント先の形へ変換した複製を返す
+ * （パース結果キャッシュは触らない）。解決サイト（applyChangeFromBindings /
+ * getAbsoluteStateAddressByBinding / fragmentInfoByUUID）は rootNode で
+ * state element を引く — スコープ根は台帳エイリアスで親ツリーに到達する。
+ */
+function translateParsedForMount(record, parsed, forPath) {
+    let translated;
+    const indexMatch = INDEX_PATH_REGEX.exec(parsed.statePathName);
+    if (indexMatch !== null) {
+        // `$n` はスコープ相対（D9・§4-4）: 囲む for の翻訳で増えたワイルドカード数だけ繰り上げる
+        const shift = getIndexShiftForScope(record, forPath);
+        translated = shift === 0 ? parsed.statePathName : `$${Number(indexMatch[1]) + shift}`;
+    }
+    else {
+        translated = translateInnerPath(record, parsed.statePathName);
+        if (parsed.bindingType === "for") {
+            // スコープ相対の添字（P2-9）用: この for の行に立つループ文脈の要素パスと、
+            // 翻訳で増えたワイルドカード数を控える。shift 0（Δ=0 の丸ごとマウント
+            // `state: user` や同名翻訳の部分マウント）でも必ず載せる —
+            // event/handler.ts は台帳に無いループ文脈を「外側スコープの借用行＝
+            // 添字 0 本」と解釈するため、登録漏れは自スコープの for の添字を
+            // 丸ごと落とす（§4-4 違反）
+            const shift = getPathInfo(translated).wildcardCount - parsed.statePathInfo.wildcardCount;
+            record.indexShiftByLoopElementPath.set(translated + DELIMITER + WILDCARD, shift);
+        }
+    }
+    if (translated === parsed.statePathName) {
+        return parsed;
+    }
+    return {
+        ...parsed,
+        statePathName: translated,
+        statePathInfo: getPathInfo(translated),
+    };
+}
+/**
+ * マーカーパスのアクセサ評価中の `$n` シフト（トラップの補正が引く）。
+ * アクセサとして登録されたパスならその indexShift、そうでなければルートの Δ。
+ */
+function getIndexShiftForMarkerPath(record, markerPath) {
+    // 末尾マーカーをセグメント単位で正確に切り出す（getMountRecordByPath と同じ規則）。
+    // indexOf(record.marker) の前方一致だと `#m2` が別記録の `#m21` の中に誤ヒットし、
+    // 親パスをセグメント途中で切って登録簿の照会を外す（Δ への誤フォールバック）
+    const hashIndex = markerPath.lastIndexOf("#");
+    if (hashIndex === -1) {
+        return record.delta;
+    }
+    const end = markerPath.indexOf(DELIMITER, hashIndex);
+    const marker = end === -1 ? markerPath.slice(hashIndex) : markerPath.slice(hashIndex, end);
+    if (marker !== record.marker) {
+        return record.delta;
+    }
+    const parent = end === -1 ? markerPath : markerPath.slice(0, end);
+    const suffix = end === -1 ? "" : markerPath.slice(end + 1);
+    const entry = record.accessorBySuffixByMarkerParent.get(parent)?.get(suffix);
+    return typeof entry !== "undefined" ? entry.indexShift : record.delta;
+}
+/**
+ * `$getAll` / `$setAll` / `$resolve` の接頭辞翻訳（§4-6 / P2-9）: 作者のスコープ相対
+ * indexes の先頭に、翻訳で増えたワイルドカード分の文脈添字を合成する。
+ * contextIndexes はホスト要素（chroot）またはマーカーアドレス（オーバーレイ）の
+ * listIndex 添字列。プレフィックスが増えないパス（Δ=0 の翻訳）は素通し。
+ */
+function composeMountIndexes(record, innerPath, translatedPath, indexes, contextIndexes) {
+    if (typeof indexes === "undefined") {
+        return undefined;
+    }
+    const prefixWildcards = getPathInfo(translatedPath).wildcardCount - getPathInfo(innerPath).wildcardCount;
+    if (prefixWildcards === 0) {
+        return indexes;
+    }
+    if (contextIndexes.length < prefixWildcards) {
+        raiseError(`Cannot resolve "${innerPath}" from this mount: the mounted prefix has ${prefixWildcards} wildcard(s) ` +
+            `but the host context provides only ${contextIndexes.length} index(es).`);
+    }
+    return [...contextIndexes.slice(0, prefixWildcards), ...indexes];
+}
+// ---------------------------------------------------------------------------
+// 登録簿
+// ---------------------------------------------------------------------------
+/**
+ * スコープ根 → マウント記録。キーは Shadow DOM 形ならコンポーネントの shadowRoot、
+ * Light DOM 形ならコンポーネント要素自身（そのサブツリーがスコープ）。
+ */
+const mountRecordByScopeRoot = new WeakMap();
+/**
+ * コンポーネント要素 → stateProp → マウント記録。
+ * connectedCallback で shadow の innerHTML を張り直す作りのコンポーネントでは、
+ * 再接続のたびに新しい <wcs-state> が同じ shadowRoot に入り、スコープが再初期化される。
+ * 記録を要素単位で再利用することでマーカーが安定し、親側の登録簿
+ * （byMarker・getterPaths）が再接続のたびに増えない。stateObject はクラスフィールド
+ * なので要素と同寿命 — 記録の前提（作者のオブジェクトの同一性）が保たれる。
+ */
+const mountRecordByComponent = new WeakMap();
+/** 再初期化用: この要素の stateProp に対して登録済みの記録を引く。 */
+function getRegisteredMountRecord(component, stateProp) {
+    return mountRecordByComponent.get(component)?.get(stateProp) ?? null;
+}
+/**
+ * 親 state element → マーカー → マウント記録（オーバーレイ dispatch と Δ 補正が引く）。
+ *
+ * 値は **WeakRef**（B6）。記録への強参照は要素キーの WeakMap
+ * （mountRecordByComponent / mountRecordByScopeRoot）だけが持つので、記録は
+ * コンポーネント要素と同寿命になる — プール返却では要素が生きているので記録も生き、
+ * 恒久破棄（route swap / `if` で捨てた形）では要素ごと回収可能になる。
+ * ここを強参照にすると、長寿命の親 state 要素に破棄済み要素（と Shadow サブツリー）が
+ * 際限なく蓄積する。
+ */
+const mountRecordsByStateElement = new WeakMap();
+/**
+ * 恒久破棄されたマウント記録の台帳掃除（FinalizationRegistry のコールバック本体）。
+ * マーカーは記録ごとに一意（`#m<id>` 単調増加）なので、発火時点でこのマーカーの
+ * エントリは死んだ WeakRef のはず — 生きていれば触らない（防御）。
+ * エクスポートしているのは GC を強制できないテスト環境で直接検証するため。
+ */
+function cleanupCollectedMountRecord(held) {
+    const ref = held.byMarker.get(held.marker);
+    if (typeof ref !== "undefined" && typeof ref.deref() === "undefined") {
+        held.byMarker.delete(held.marker);
+    }
+    if (typeof held.getterPaths !== "undefined") {
+        for (const path of held.addedGetterPaths) {
+            held.getterPaths.delete(path);
+        }
+    }
+}
+const collectedMountRegistry = new FinalizationRegistry(cleanupCollectedMountRecord);
+function registerMountRecord(scopeRoot, record) {
+    mountRecordByScopeRoot.set(scopeRoot, record);
+    let byMarker = mountRecordsByStateElement.get(record.parentStateElement);
+    if (typeof byMarker === "undefined") {
+        byMarker = new Map();
+        mountRecordsByStateElement.set(record.parentStateElement, byMarker);
+    }
+    byMarker.set(record.marker, new WeakRef(record));
+    let byProp = mountRecordByComponent.get(record.component);
+    if (typeof byProp === 'undefined') {
+        byProp = new Map();
+        mountRecordByComponent.set(record.component, byProp);
+    }
+    const isFirstRegistration = byProp.get(record.stateProp) !== record;
+    byProp.set(record.stateProp, record);
+    if (isFirstRegistration) {
+        // 恒久破棄で台帳（byMarker・親 getterPaths への追加分）を回収する（B6）。
+        // 再初期化（同一 record の再登録 — マーカー安定のための再利用）では二重登録しない
+        collectedMountRegistry.register(record, {
+            byMarker,
+            marker: record.marker,
+            getterPaths: record.parentStateElement.getterPaths,
+            addedGetterPaths: record.addedGetterPaths,
+        });
+    }
+    // D18: マウントの無い state はオーバーレイ dispatch を boolean 1 個で抜ける
+    record.parentStateElement.markHasMounts?.();
+}
+function getMountRecordByScopeRoot(scopeRoot) {
+    return mountRecordByScopeRoot.get(scopeRoot) ?? null;
+}
+/**
+ * ノードから最も近いマウントスコープ根の記録を引く（event/handler.ts のスコープ相対
+ * 添字が使う）。Light DOM 形はスコープ根＝**コンポーネント要素自身**（D7・
+ * mountScope.ts）で rootNode の内側に入れ子になりうる（Shadow 形のスコープの中の
+ * Light DOM マウント）ため、**祖先を先に**辿って最初のスコープ根を探す — rootNode
+ * 直ヒットを先に返すと外側の記録を取り違える。祖先に無ければ rootNode 自身
+ * （Shadow DOM 形のスコープ根＝shadowRoot）で引く。入れ子マウントでは
+ * 最も内側（＝そのノードのバインディングを翻訳した記録）が返る。
+ * `hasMounts` が真のときだけ呼ぶこと（無マウントの経路にこの走査を載せない — D18）。
+ */
+function findMountRecordForNode(node, rootNode) {
+    let current = node;
+    while (current !== null && current !== rootNode) {
+        const record = mountRecordByScopeRoot.get(current);
+        if (typeof record !== "undefined") {
+            return record;
+        }
+        current = current.parentNode;
+    }
+    return mountRecordByScopeRoot.get(rootNode) ?? null;
+}
+/** この state element に登録済みのマウント記録を列挙する（devtools の overlays が読む）。 */
+function getMountRecordsForStateElement(stateElement) {
+    const byMarker = mountRecordsByStateElement.get(stateElement);
+    if (typeof byMarker === "undefined") {
+        return [];
+    }
+    const records = [];
+    for (const ref of byMarker.values()) {
+        const record = ref.deref();
+        if (typeof record !== "undefined") {
+            records.push(record);
+        }
+    }
+    return records;
+}
+/**
+ * パスに含まれるマーカーからマウント記録を引く。`hasMounts` が真のときだけ呼ぶこと。
+ * `#` を含まないパス（圧倒的多数）は lastIndexOf 1 回で抜ける。
+ * 入れ子マウント（外側の私有キーの上に内側マウントが載る形）ではパスに複数の
+ * マーカーが並ぶ（`users.*.#m1.drafts.#m2`）— オーバーレイ dispatch と $n 補正が
+ * 要るのは**末尾**のマーカーの記録なので、先頭でなく最後の `#` で切る
+ * （先頭で切ると外側の記録が返り誤翻訳する）。
+ */
+function getMountRecordByPath(stateElement, path) {
+    const hashIndex = path.lastIndexOf("#");
+    if (hashIndex === -1) {
+        return null;
+    }
+    const byMarker = mountRecordsByStateElement.get(stateElement);
+    if (typeof byMarker === "undefined") {
+        return null;
+    }
+    const end = path.indexOf(DELIMITER, hashIndex);
+    const marker = end === -1 ? path.slice(hashIndex) : path.slice(hashIndex, end);
+    const ref = byMarker.get(marker);
+    if (typeof ref === "undefined") {
+        return null;
+    }
+    const record = ref.deref();
+    if (typeof record === "undefined") {
+        // 記録は回収済み（finalizer 発火前の窓）— 遅延 prune
+        byMarker.delete(marker);
+        return null;
+    }
+    return record;
 }
 
 const loopContextByNode = new WeakMap();
@@ -2417,7 +2916,17 @@ function getLoopContextByNode(node) {
         if (loopContext) {
             return loopContext;
         }
-        paramNode = paramNode.parentNode;
+        let next = paramNode.parentNode;
+        if (next === null && paramNode instanceof ShadowRoot && getMountRecordByScopeRoot(paramNode) !== null) {
+            // マウントされた ShadowRoot はホストのループ文脈を継承する（impl-plan §3-0 の 3）。
+            // ホスト行の listIndex [i] が子スコープの `for` の親になり、内側の行は [i, j] を
+            // 作る — 絶対パスのワイルドカード数 ＝ listIndex 段数（設計書 §4-4）がこれで成立し、
+            // v1 の crossBoundaryAddress / baseListIndex（Δ の帳簿）は要らなくなる。
+            // マウントされていない ShadowRoot（plain コンポーネント・通常の Shadow ツリー）は
+            // 従来どおり境界で止まる。
+            next = paramNode.host;
+        }
+        paramNode = next;
     }
     return null;
 }
@@ -2453,6 +2962,9 @@ function getLastListValueByAbsoluteStateAddress(address) {
 function setLastListValueByAbsoluteStateAddress(address, value) {
     lastListValueByAbsoluteStateAddress.set(address, value);
 }
+function hasLastListValueByAbsoluteStateAddress(address) {
+    return lastListValueByAbsoluteStateAddress.has(address);
+}
 
 const setLoopContextSymbol = Symbol("$$setLoopContext");
 const getByAddressSymbol = Symbol("$$getByAddress");
@@ -2479,12 +2991,10 @@ function getAbsolutePathInfo(stateElement, pathInfo) {
 }
 class AbsolutePathInfo {
     pathInfo;
-    stateName;
     stateElement;
     parentAbsolutePathInfo;
     constructor(stateElement, pathInfo) {
         this.pathInfo = pathInfo;
-        this.stateName = stateElement.name;
         this.stateElement = stateElement;
         if (pathInfo.parentPathInfo === null) {
             this.parentAbsolutePathInfo = null;
@@ -2706,9 +3216,9 @@ function getAbsoluteStateAddressByBinding(binding, knownRootNode) {
     }
     const rootNode = resolveBindingRootNode(binding, knownRootNode);
     const listIndex = getListIndexByBindingInfo(binding);
-    const stateElement = getStateElementByName(rootNode, binding.stateName);
+    const stateElement = getStateElement(rootNode);
     if (stateElement === null) {
-        raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+        raiseError(`No state tree found on this root for binding.`);
     }
     const absolutePathInfo = getAbsolutePathInfo(stateElement, binding.statePathInfo);
     absoluteStateAddress =
@@ -2962,7 +3472,7 @@ const handlerByHandlerKey$3 = new Map();
 const bindingRegistry$3 = createHandlerBindingRegistry();
 function getHandlerKey$3(binding, eventName) {
     const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
-    return `${binding.stateName}::${binding.statePathName}::${eventName}::${filterKey}`;
+    return `${binding.statePathName}::${eventName}::${filterKey}`;
 }
 function getEventName$2(binding) {
     let eventName = 'input';
@@ -2973,7 +3483,7 @@ function getEventName$2(binding) {
     }
     return eventName;
 }
-const checkboxEventHandlerFunction = (stateName, statePathName, inFilters) => (event) => {
+const checkboxEventHandlerFunction = (statePathName, inFilters) => (event) => {
     const node = event.target;
     if (node === null) {
         console.warn(`[@wcstack/state] event.target is null.`);
@@ -2990,9 +3500,9 @@ const checkboxEventHandlerFunction = (stateName, statePathName, inFilters) => (e
         filteredNewValue = filter.filterFn(filteredNewValue);
     }
     const rootNode = node.getRootNode();
-    const stateElement = getStateElementByName(rootNode, stateName);
+    const stateElement = getStateElement(rootNode);
     if (stateElement === null) {
-        raiseError(`State element with name "${stateName}" not found for two-way binding.`);
+        raiseError(`No state tree found on this root for two-way binding.`);
     }
     const loopContext = getLoopContextByNode(node);
     stateElement.createState("writable", (state) => {
@@ -3028,7 +3538,7 @@ function attachCheckboxEventHandler(binding) {
         const key = getHandlerKey$3(binding, eventName);
         let checkboxEventHandler = handlerByHandlerKey$3.get(key);
         if (typeof checkboxEventHandler === "undefined") {
-            checkboxEventHandler = checkboxEventHandlerFunction(binding.stateName, binding.statePathName, binding.inFilters);
+            checkboxEventHandler = checkboxEventHandlerFunction(binding.statePathName, binding.inFilters);
             handlerByHandlerKey$3.set(key, checkboxEventHandler);
         }
         binding.node.addEventListener(eventName, checkboxEventHandler);
@@ -3144,21 +3654,15 @@ class Token {
 
 // EventToken は共有 pub/sub プリミティブ Token の薄い特化（element→state 方向）。
 // instanceof による型判別を成立させるため独立クラスとして維持する。
-//
-// ownerStateName は devtools 計装（protocol §4.5）のための内部 optional 引数。
-// event-token-protocol の外部仕様は不変更。
 class EventToken extends Token {
-    _ownerStateName;
-    constructor(name, ownerStateName) {
+    constructor(name) {
         super(name);
-        this._ownerStateName = ownerStateName ?? null;
     }
     emit(...args) {
         if (devtoolsSink !== null) {
             devtoolsSink({
                 type: "state:token-emit",
                 kind: "event",
-                stateName: this._ownerStateName,
                 tokenName: this.name,
                 args,
                 subscriberCount: this.size,
@@ -3177,7 +3681,7 @@ function getOrCreateEventToken(stateElement, name) {
     }
     let token = registry.get(name);
     if (typeof token === "undefined") {
-        token = new EventToken(name, stateElement.name);
+        token = new EventToken(name);
         registry.set(name, token);
     }
     return token;
@@ -3252,7 +3756,6 @@ function attachEventTokenHandler(binding) {
     }
     const eventName = propDesc.event;
     const tokenName = binding.statePathName;
-    const stateName = binding.stateName;
     const modifiers = binding.propModifiers;
     const handler = (event) => {
         if (modifiers.includes(MODIFIER_PREVENT))
@@ -3261,13 +3764,13 @@ function attachEventTokenHandler(binding) {
             event.stopPropagation();
         // state は発火時の live root から解決する（attach 時は detached の可能性があるため）。
         const rootNode = element.getRootNode();
-        const stateElement = getStateElementByName(rootNode, stateName);
+        const stateElement = getStateElement(rootNode);
         if (stateElement === null) {
-            raiseError(`State element with name "${stateName}" not found for eventToken handler.`);
+            raiseError(`No state tree found on this root for eventToken handler.`);
         }
         if (!stateElement.eventTokenNames.has(tokenName)) {
             // lint も同じケースを wcs/token-undeclared で検出する（三面同語彙）。
-            raiseError(`[wcs/token-undeclared] eventToken "${tokenName}" is not declared in $eventTokens of state "${stateName}".${didYouMean(tokenName, stateElement.eventTokenNames)}${LINT_HINT}`);
+            raiseError(`[wcs/token-undeclared] eventToken "${tokenName}" is not declared in $eventTokens.${didYouMean(tokenName, stateElement.eventTokenNames)}${LINT_HINT}`);
         }
         const loopContext = getLoopContextByNode(element);
         stateElement.createStateAsync("writable", async (state) => {
@@ -3279,7 +3782,7 @@ function attachEventTokenHandler(binding) {
             });
             // この経路はハンドラの完了を待たない（emit の戻り値はここでしか見えない）。
             // async な $on ハンドラの reject を unhandled にせず報告へ落とす。
-            captureHandlerRejection(results, `$on."${tokenName}" of state "${stateName}"`);
+            captureHandlerRejection(results, `$on."${tokenName}"`);
         });
     };
     element.addEventListener(eventName, handler);
@@ -3302,14 +3805,9 @@ function detachEventTokenHandler(binding) {
 // CommandToken は共有 pub/sub プリミティブ Token の薄い特化。
 // instanceof による型判別を成立させるため独立クラスとして維持する。
 //
-// ownerStateName は devtools 計装（protocol §4.5）のための内部 optional 引数。
-// command-token-protocol の外部仕様は不変更（registry が渡すだけで、
-// subscribe/emit の意味論には一切影響しない）。
 class CommandToken extends Token {
-    _ownerStateName;
-    constructor(name, ownerStateName) {
+    constructor(name) {
         super(name);
-        this._ownerStateName = ownerStateName ?? null;
     }
     emit(...args) {
         if (devtoolsSink !== null) {
@@ -3318,7 +3816,6 @@ class CommandToken extends Token {
             devtoolsSink({
                 type: "state:token-emit",
                 kind: "command",
-                stateName: this._ownerStateName,
                 tokenName: this.name,
                 args,
                 subscriberCount: this.size,
@@ -3341,25 +3838,40 @@ const handlerByHandlerKey$2 = new Map();
 const bindingRegistry$2 = createHandlerBindingRegistry();
 function getHandlerKey$2(binding) {
     const modifierKey = binding.propModifiers.filter(m => m === MODIFIER_PREVENT || m === MODIFIER_STOP).sort().join(',');
-    return `${binding.stateName}::${binding.statePathName}::${modifierKey}`;
+    return `${binding.statePathName}::${modifierKey}`;
 }
-const stateEventHandlerFunction = (stateName, handlerName, modifiers, statePathInfo) => (event) => {
+const stateEventHandlerFunction = (handlerName, modifiers, statePathInfo) => (event) => {
     if (modifiers.includes(MODIFIER_PREVENT))
         event.preventDefault();
     if (modifiers.includes(MODIFIER_STOP))
         event.stopPropagation();
     const node = event.target;
     const rootNode = node.getRootNode();
-    const stateElement = getStateElementByName(rootNode, stateName);
+    const stateElement = getStateElement(rootNode);
     if (stateElement === null) {
-        raiseError(`State element with name "${stateName}" not found for event handler.`);
+        raiseError(`No state tree found on this root for event handler.`);
     }
     const loopContext = getLoopContextByNode(node);
     const isCommand = isCommandTokenPath(handlerName);
     stateElement.createStateAsync("writable", async (state) => {
         const results = state[setLoopContextSymbol](loopContext, () => {
+            // マウントされたスコープ（v2）: 作者のハンドラが受ける添字は自スコープの
+            // ループ分だけ（§4-4 / P2-9）。翻訳で増えたワイルドカード数を落とす。
+            // 翻訳された for の台帳に無いループ文脈は外側スコープのもの（境界ホップで
+            // 借りた行）なので、作者から見える添字は 0 本。
+            // 記録の解決はノードから（findMountRecordForNode）— Shadow 形は rootNode
+            // （shadowRoot）で直に引け、Light DOM 形はスコープ根がコンポーネント要素
+            // 自身なので祖先走査が要る（rootNode だけ見ると Light DOM で外側の添字が漏れる）
+            let scopedWildcardCount = loopContext !== null ? loopContext.pathInfo.wildcardCount : 0;
+            if (loopContext !== null && stateElement.hasMounts === true) {
+                const mountRecord = findMountRecordForNode(node, rootNode);
+                if (mountRecord !== null) {
+                    const shift = mountRecord.indexShiftByLoopElementPath.get(loopContext.pathInfo.path);
+                    scopedWildcardCount = typeof shift !== "undefined" ? scopedWildcardCount - shift : 0;
+                }
+            }
             const indexes = loopContext !== null
-                ? getScopedIndexes(loopContext.listIndex, loopContext.pathInfo.wildcardCount) : [];
+                ? getScopedIndexes(loopContext.listIndex, scopedWildcardCount) : [];
             if (isCommand) {
                 // command token を解決して emit。引数はハンドラ呼び出しと同じく (event, ...listIndexes) を透過する。
                 const token = state[getByAddressSymbol](createStateAddress(statePathInfo, null));
@@ -3370,13 +3882,13 @@ const stateEventHandlerFunction = (stateName, handlerName, modifiers, statePathI
             }
             const handler = state[handlerName];
             if (typeof handler !== "function") {
-                raiseError(`Handler "${handlerName}" is not a function on state "${stateName}".`);
+                raiseError(`Handler "${handlerName}" is not a function on the state tree.`);
             }
             return Reflect.apply(handler, state, [event, ...indexes]);
         });
         // eventTokenHandler と同じく、この経路もハンドラの完了を待たない。async な
         // state メソッド / command subscriber の reject を unhandled にせず報告へ落とす。
-        captureHandlerRejection(results, `"${handlerName}" of state "${stateName}"`);
+        captureHandlerRejection(results, `"${handlerName}"`);
     });
 };
 function attachEventHandler(binding) {
@@ -3386,7 +3898,7 @@ function attachEventHandler(binding) {
     const key = getHandlerKey$2(binding);
     let stateEventHandler = handlerByHandlerKey$2.get(key);
     if (typeof stateEventHandler === "undefined") {
-        stateEventHandler = stateEventHandlerFunction(binding.stateName, binding.statePathName, binding.propModifiers, binding.statePathInfo);
+        stateEventHandler = stateEventHandlerFunction(binding.statePathName, binding.propModifiers, binding.statePathInfo);
         handlerByHandlerKey$2.set(key, stateEventHandler);
     }
     const eventName = binding.propName.slice(2);
@@ -3419,7 +3931,7 @@ const handlerByHandlerKey$1 = new Map();
 const bindingRegistry$1 = createHandlerBindingRegistry();
 function getHandlerKey$1(binding, eventName) {
     const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
-    return `${binding.stateName}::${binding.statePathName}::${eventName}::${filterKey}`;
+    return `${binding.statePathName}::${eventName}::${filterKey}`;
 }
 function getEventName$1(binding) {
     let eventName = 'input';
@@ -3430,7 +3942,7 @@ function getEventName$1(binding) {
     }
     return eventName;
 }
-const radioEventHandlerFunction = (stateName, statePathName, inFilters) => (event) => {
+const radioEventHandlerFunction = (statePathName, inFilters) => (event) => {
     const node = event.target;
     if (node === null) {
         console.warn(`[@wcstack/state] event.target is null.`);
@@ -3449,9 +3961,9 @@ const radioEventHandlerFunction = (stateName, statePathName, inFilters) => (even
         filteredNewValue = filter.filterFn(filteredNewValue);
     }
     const rootNode = node.getRootNode();
-    const stateElement = getStateElementByName(rootNode, stateName);
+    const stateElement = getStateElement(rootNode);
     if (stateElement === null) {
-        raiseError(`State element with name "${stateName}" not found for two-way binding.`);
+        raiseError(`No state tree found on this root for two-way binding.`);
     }
     const loopContext = getLoopContextByNode(node);
     stateElement.createState("writable", (state) => {
@@ -3466,7 +3978,7 @@ function attachRadioEventHandler(binding) {
         const key = getHandlerKey$1(binding, eventName);
         let radioEventHandler = handlerByHandlerKey$1.get(key);
         if (typeof radioEventHandler === "undefined") {
-            radioEventHandler = radioEventHandlerFunction(binding.stateName, binding.statePathName, binding.inFilters);
+            radioEventHandler = radioEventHandlerFunction(binding.statePathName, binding.inFilters);
             handlerByHandlerKey$1.set(key, radioEventHandler);
         }
         binding.node.addEventListener(eventName, radioEventHandler);
@@ -3542,7 +4054,7 @@ function isPossibleTwoWay(node, propName) {
  * 依存は types のみの葉モジュールとし、twowayHandler / applyChangeToProperty /
  * setByAddress / updater の計装点から循環 import なしで参照できるようにする。
  *
- * wire 識別は (node × member × stateName × statePathName) で行う。設計書の
+ * wire 識別は (node × member × statePathName) で行う。設計書の
  * WriteReceipt は bindingId + generation を持つが、twoway handler は共有
  * handler（handlerByHandlerKey）で binding インスタンスに到達できないため、
  * runtime の edge / receipt 照合キーは wire 単位とする。BindingSession
@@ -3552,21 +4064,21 @@ function isPossibleTwoWay(node, propName) {
 let nextWireId = 1;
 let nextTransactionId = 1;
 let nextSynchronousScopeId = 1;
-// node を強参照しない wire 台帳。inner key = `${stateName}::${statePathName}::${member}`
+// node を強参照しない wire 台帳。inner key = `${statePathName}::${member}`
 const wireIdsByNode = new WeakMap();
-function wireKey(member, stateName, statePathName) {
-    return `${stateName}::${statePathName}::${member}`;
+function wireKey(member, statePathName) {
+    return `${statePathName}::${member}`;
 }
 /**
  * wire（配線）の安定 ID を返す。edge ID の基底と receipt の bindingId に使う。
  */
-function getWireId(node, member, stateName, statePathName) {
+function getWireId(node, member, statePathName) {
     let byKey = wireIdsByNode.get(node);
     if (typeof byKey === "undefined") {
         byKey = new Map();
         wireIdsByNode.set(node, byKey);
     }
-    const key = wireKey(member, stateName, statePathName);
+    const key = wireKey(member, statePathName);
     let wireId = byKey.get(key);
     if (typeof wireId === "undefined") {
         wireId = nextWireId++;
@@ -3697,7 +4209,7 @@ const producerValueObserversByNode = new WeakMap();
 const DEFAULT_GETTER = (e) => e.detail;
 function getHandlerKey(binding, eventName, hasGetter, isOccurrence) {
     const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
-    return `${binding.stateName}::${binding.propName}::${binding.statePathName}::${eventName}::${filterKey}::${hasGetter ? 'g' : 'n'}::${isOccurrence ? 'o' : 's'}`;
+    return `${binding.propName}::${binding.statePathName}::${eventName}::${filterKey}::${hasGetter ? 'g' : 'n'}::${isOccurrence ? 'o' : 's'}`;
 }
 function getEventName(binding) {
     const tagName = binding.node.tagName.toLowerCase();
@@ -3746,7 +4258,7 @@ function isOccurrenceProperty(binding) {
     const propDesc = readBindableDeclaration(binding.node)?.knownProperties.get(binding.propName);
     return propDesc?.semantics === "event";
 }
-const twowayEventHandlerFunction = (stateName, propName, statePathName, inFilters, valueGetter, isOccurrence) => (event) => {
+const twowayEventHandlerFunction = (propName, statePathName, inFilters, valueGetter, isOccurrence) => (event) => {
     const node = event.target;
     if (node === null) {
         console.warn(`[@wcstack/state] event.target is null.`);
@@ -3775,7 +4287,7 @@ const twowayEventHandlerFunction = (stateName, propName, statePathName, inFilter
     let propagationContext = null;
     if (config.enablePropagationContext) {
         // Phase 3: element → state edge の因果判定（設計書 §4）。
-        const wireId = getWireId(node, propName, stateName, statePathName);
+        const wireId = getWireId(node, propName, statePathName);
         const receipt = matchWriteReceipt(node, propName);
         if (receipt !== null && Object.is(receipt.writtenValue, newValue)) {
             // 規則 4: 同じ setter call stack 内で同じ member から Object.is 同値の
@@ -3826,9 +4338,9 @@ const twowayEventHandlerFunction = (stateName, propName, statePathName, inFilter
         propagationContext = extendPropagationContext(baseContext ?? beginPropagationTransaction(wireId), toStateEdgeId);
     }
     const rootNode = node.getRootNode();
-    const stateElement = getStateElementByName(rootNode, stateName);
+    const stateElement = getStateElement(rootNode);
     if (stateElement === null) {
-        raiseError(`State element with name "${stateName}" not found for two-way binding.`);
+        raiseError(`No state tree found on this root for two-way binding.`);
     }
     const loopContext = getLoopContextByNode(node);
     const commitToState = () => {
@@ -3894,7 +4406,7 @@ function attachTwowayEventHandler(binding) {
         const key = getHandlerKey(binding, eventName, valueGetter !== null, isOccurrence);
         let twowayEventHandler = handlerByHandlerKey.get(key);
         if (typeof twowayEventHandler === "undefined") {
-            twowayEventHandler = twowayEventHandlerFunction(binding.stateName, binding.propName, binding.statePathName, binding.inFilters, valueGetter, isOccurrence);
+            twowayEventHandler = twowayEventHandlerFunction(binding.propName, binding.statePathName, binding.inFilters, valueGetter, isOccurrence);
             handlerByHandlerKey.set(key, twowayEventHandler);
         }
         binding.node.addEventListener(eventName, twowayEventHandler);
@@ -3926,505 +4438,6 @@ function detachTwowayEventHandler(binding) {
             handlerByHandlerKey.delete(key);
         }
     }
-}
-
-const stateElementByWebComponent = new WeakMap();
-function setStateElementByWebComponent(webComponent, stateName, stateElement) {
-    let stateMap = stateElementByWebComponent.get(webComponent);
-    if (!stateMap) {
-        stateMap = new Map();
-        stateElementByWebComponent.set(webComponent, stateMap);
-    }
-    stateMap.set(stateName, stateElement);
-}
-function getStateElementByWebComponent(webComponent, stateName) {
-    const stateMap = stateElementByWebComponent.get(webComponent);
-    if (!stateMap) {
-        return null;
-    }
-    return stateMap.get(stateName) ?? null;
-}
-/**
- * コンポーネントが mapped されている「1 つ外のスコープ」の state 要素。
- * `buildPrimaryMappingRule` がプライマリ規則から記録する
- * （規則の outer 側が属する state 要素 ＝ 値の正本を持つスコープそのもの）。
- *
- * 用途は Δ（base listIndex）の境界越え合成（§1.12）。`getLoopContextByNode` は
- * `parentNode` しか辿らず shadow 境界を越えないため、Δ を外へ引き継ぐには
- * 「1 つ外のスコープ」への明示的なリンクが要る。
- *
- * この台帳を MappingRule ではなくここに置くのは循環参照を避けるため
- * （baseListIndex → MappingRule → BindingSession → outerListPath → baseListIndex）。
- */
-const outerStateElementByWebComponent = new WeakMap();
-function setOuterStateElementByWebComponent(webComponent, stateElement) {
-    outerStateElementByWebComponent.set(webComponent, stateElement);
-}
-function getOuterStateElementByWebComponent(webComponent) {
-    return outerStateElementByWebComponent.get(webComponent) ?? null;
-}
-
-/**
- * webComponent/baseListIndex.ts
- *
- * mapped な `bind-component` の子スコープが「親スコープのどの行の内側にいるか」。
- *
- * ホストのコンポーネント要素が親スコープの `for` の中に置かれている場合、
- * 子スコープは実際には**ネストしたループの内側**にいる。その深さ Δ を表すのが
- * base listIndex で、子が作る listIndex はすべてこれを親に持つ。
- * 結果として `groups[i].children` の listIndex 台帳は arity Δ+1 になり、
- * これは親が `groups.*.children.*` に対して要求するものと同一になる
- * （台帳 `listIndexesByList` は配列オブジェクト同一性の WeakMap なので、
- * 1 つの配列につき 1 組しか持てない。親子で同じ組を使うのが唯一の整合手段）。
- *
- * 詳細は docs/state-bind-component-nested-for-design.md。
- *
- * **キャッシュしてはいけない。** 行 content はプールで再利用されるため、同じ
- * コンポーネント要素が別の行に付け替わる。要素をキーにした memo は §1.9 で
- * 踏んだ罠そのもので、再接続後に古い行を指し続ける。
- * 通常の state（`hasMappedComponentState` が偽）は最初の 1 行で抜けるので、
- * ホットパスに walk は載らない。
- */
-function getBaseListIndex(stateElement) {
-    let current = stateElement;
-    for (;;) {
-        if (current == null || current.hasMappedComponentState !== true) {
-            return null;
-        }
-        const component = current.boundComponent;
-        if (component == null) {
-            return null;
-        }
-        const listIndex = getLoopContextByNode(component)?.listIndex;
-        if (listIndex != null) {
-            return listIndex;
-        }
-        // このスコープには囲むループが無い。コンポーネントがさらに別の mapped な
-        // コンポーネントの shadow の中にいるなら、Δ は外側スコープから引き継ぐ（§1.12）。
-        //
-        // `getLoopContextByNode` は `parentNode` しか辿らず、ShadowRoot の parentNode は
-        // null なので shadow 境界で必ず止まる。境界 1 枚なら外側は素の文書スコープで
-        // Δ=0 が正しいが、2 枚重なっていると中間スコープの Δ が丸ごと落ちて
-        // 子の listIndex が正本スコープより浅い arity で作られる。
-        //
-        // 外側が mapped でない（＝値の正本がそのスコープにある）なら、そこから先の
-        // ループはこの子のリストとは無関係なので次の周回の先頭ガードで止まる。
-        current = getOuterStateElementByWebComponent(component);
-    }
-}
-/** base の段数 Δ。base が無ければ 0。 */
-function getBaseDepth(stateElement) {
-    return getBaseListIndex(stateElement)?.length ?? 0;
-}
-/**
- * そのスコープでそのパスに実際に使われる listIndex の arity。
- *
- * パス自身のワイルドカード段数に、そのスコープが外側のループの内側にいる分（Δ）を
- * 足したもの。`items.*` は子スコープから見れば 1 段でも、そのスコープが Δ=1 の位置に
- * あれば台帳の listIndex は arity 2 になる（§1.10）。
- *
- * **境界を跨ぐ照合はこの実 arity どうしで行うこと**（§1.12）。片側だけ Δ を足すと、
- * 境界が 2 枚以上あるときに中間スコープの Δ を二重計上して不一致になる。
- */
-function getScopeArity(stateElement, pathInfo) {
-    return pathInfo.wildcardCount + getBaseDepth(stateElement);
-}
-/**
- * リストの行を生成するときの親 listIndex。
- *
- * コンテナのアドレスがワイルドカードを持つ（＝囲むループがある）ならその listIndex、
- * 持たない（＝そのスコープのトップレベルのリスト）なら base。後者を null のままに
- * すると、子スコープのリストだけ arity 1 で作られて親の台帳と食い違う。
- *
- * **リストの行を作りうる全経路で使うこと。** 既存台帳があれば `createListDiff` は
- * 再利用するので初期描画では食い違いが見えず、**行を追加したときだけ**
- * `createListIndex(parentListIndex, i)` が新しい arity で作られて混在する。
- */
-function getListParentListIndex(stateElement, containerListIndex) {
-    return containerListIndex ?? getBaseListIndex(stateElement);
-}
-
-const innerMappingByElement = new WeakMap();
-const outerMappingByElement = new WeakMap();
-const primaryMappingRuleSetByElement = new WeakMap();
-const primaryBindingByMappingRule = new WeakMap();
-function createMappingRuleByBinding(innerState, binding) {
-    const innerPath = binding.propSegments.slice(1).join(DELIMITER);
-    const innerPathInfo = getPathInfo(innerPath);
-    const innerAbsPathInfo = getAbsolutePathInfo(innerState, innerPathInfo);
-    const outerAbsStateAddress = getAbsoluteStateAddressByBinding(binding);
-    const outerAbsPathInfo = outerAbsStateAddress.absolutePathInfo;
-    return { innerAbsPathInfo, outerAbsPathInfo, isRoot: innerPath.length === 0 };
-}
-function buildPrimaryMappingRule(webComponent, stateName, bindings) {
-    if (bindings.length === 0) {
-        return;
-    }
-    const innerState = getStateElementByWebComponent(webComponent, stateName);
-    if (innerState === null) {
-        raiseError('State element not found for web component.');
-    }
-    const innerMappingRule = new Map();
-    const outerMappingRule = new Map();
-    // 同じ内側パスを 2 つの規則が指す形（`state.x: b; state.x: c`、`state: a; state: b`）は
-    // どちらが勝つか書き手に見えないので、導出時ではなく構築時に落とす（設計書 §4-7 / M6）。
-    const seenInnerPaths = new Set();
-    for (const binding of bindings) {
-        const mappingRule = createMappingRuleByBinding(innerState, binding);
-        const innerPath = mappingRule.innerAbsPathInfo.pathInfo.path;
-        if (seenInnerPaths.has(innerPath)) {
-            raiseError('Duplicate mapping rule for web component.');
-        }
-        seenInnerPaths.add(innerPath);
-        let primaryMappingRuleSet = primaryMappingRuleSetByElement.get(webComponent);
-        if (typeof primaryMappingRuleSet === 'undefined') {
-            primaryMappingRuleSetByElement.set(webComponent, new Set([mappingRule]));
-        }
-        else {
-            primaryMappingRuleSet.add(mappingRule);
-        }
-        const innerAbsPathInfo = mappingRule.innerAbsPathInfo;
-        const outerAbsPathInfo = mappingRule.outerAbsPathInfo;
-        primaryBindingByMappingRule.set(mappingRule, binding);
-        innerMappingRule.set(innerAbsPathInfo, outerAbsPathInfo);
-        outerMappingRule.set(outerAbsPathInfo, innerAbsPathInfo);
-        // 1 つ外のスコープへのリンク。Δ の境界越え合成（§1.12）が引く。
-        // プライマリ規則はすべて同じホスト要素の data-wcs 由来なので、どの規則から
-        // 採っても同じスコープを指す。
-        setOuterStateElementByWebComponent(webComponent, outerAbsPathInfo.stateElement);
-    }
-    innerMappingByElement.set(webComponent, innerMappingRule);
-    outerMappingByElement.set(webComponent, outerMappingRule);
-}
-/**
- * プライマリ規則だけを残して、遅延導出された派生規則の memo を捨てる（§1.9）。
- *
- * 派生規則は導出と同時に「親スコープの購読者」を立てる。その購読者は子の切断で
- * teardown されるが、memo は要素をキーに残り続けるため、再接続後は**導出が二度と
- * 走らず購読者も張り直されない** — 親がサブパスへ書いても子に届かなくなる。
- * リスト行の content 再利用で実際に踏む（行を差し替えると、その行の子だけが
- * 以後の行フィールド書き込みを受け取れない）。
- *
- * `buildPrimaryMappingRule` は再バインド時に同じことをしている（台帳を作り直す）。
- * 再接続では bindWebComponent が走らないので、ここで同じ状態に戻す。
- */
-function resetDerivedMappingRules(webComponent) {
-    const primaryMappingRuleSet = primaryMappingRuleSetByElement.get(webComponent);
-    if (typeof primaryMappingRuleSet === 'undefined') {
-        return;
-    }
-    const innerMappingRule = new Map();
-    const outerMappingRule = new Map();
-    for (const rule of primaryMappingRuleSet) {
-        innerMappingRule.set(rule.innerAbsPathInfo, rule.outerAbsPathInfo);
-        outerMappingRule.set(rule.outerAbsPathInfo, rule.innerAbsPathInfo);
-    }
-    innerMappingByElement.set(webComponent, innerMappingRule);
-    outerMappingByElement.set(webComponent, outerMappingRule);
-}
-/**
- * このコンポーネントに張られたプライマリ規則の**内側パス**を列挙する（ルート規則を除く）。
- *
- * 切断 → 再接続を跨いだ子（行 content の再利用で起きる）は、切断中に親で起きた変更の
- * 通知を受け取れていない。再接続時に「束ねているパスを読み直せ」と撃つための入力で、
- * 何が変わったかは分からないのでプライマリ規則の粒度で丸ごと読み直す（§1.9）。
- *
- * ルート規則は内側パスが空で `$postUpdate("")` に意味が無いため含めない。ルート規則の
- * 読み直しは子の登録済みパス全部（`getRootReloadPaths`）で行う。
- */
-function getPrimaryInnerPaths(webComponent) {
-    const primaryMappingRuleSet = primaryMappingRuleSetByElement.get(webComponent);
-    if (typeof primaryMappingRuleSet === 'undefined') {
-        return [];
-    }
-    const paths = [];
-    for (const rule of primaryMappingRuleSet) {
-        if (rule.isRoot) {
-            continue;
-        }
-        paths.push(rule.innerAbsPathInfo.pathInfo.path);
-    }
-    return paths;
-}
-/** このコンポーネントのプライマリ規則の集合。無ければ null（plain）。 */
-function getPrimaryMappingRules(webComponent) {
-    return primaryMappingRuleSetByElement.get(webComponent) ?? null;
-}
-/** ルート規則（`state: path` の丸ごとマウント）があるか。 */
-function hasRootMappingRule(webComponent) {
-    const primaryMappingRuleSet = primaryMappingRuleSetByElement.get(webComponent);
-    if (typeof primaryMappingRuleSet === 'undefined') {
-        return false;
-    }
-    for (const rule of primaryMappingRuleSet) {
-        if (rule.isRoot) {
-            return true;
-        }
-    }
-    return false;
-}
-/**
- * 内側のパスを外側のパスへ翻訳する。規則が無ければプライマリ規則から導出する。
- *
- * 導出は**最長接頭辞一致**。ルート規則（接頭辞長 0）はあらゆる内側パスに一致するが、
- * 部分規則（`state.theme: theme`）がより長い接頭辞で一致すればそちらが勝つ
- * （`state: rows; state.theme: theme` の併用 — 設計書 §3-2）。
- *
- * `registerSubscriber` は導出に**副作用を持たせるか**の切り替え。既定（子の read /
- * write からの呼び出し）では導出した規則を台帳に memo し、対応するバインディングを
- * 親スコープの購読者として登録する。`false` を渡すと**参照専用**になり、台帳にも
- * 購読者にも触れない。
- *
- * 参照専用が要るのは、バインディング登録の最中（`BindingSession.registerAddress` →
- * `setPathInfo` / 行の相乗り登録）に翻訳だけしたい場合。ここで購読者登録まで走ると
- * `session.initialize` がセッション操作の内側から再入する。
- *
- * 参照専用の結果を台帳に memo しないのは、後から来た**本物の read が memo に当たって
- * 購読者登録を永久に飛ばしてしまう**ため。導出のやり直しは初回だけで、以降は本物の
- * read が張った memo に当たる（行 2 本目以降の登録は先頭行の read が埋めた台帳を引く）。
- */
-function getOuterAbsolutePathInfo(webComponent, innerAbsPathInfo, registerSubscriber = true) {
-    let innerMapping = innerMappingByElement.get(webComponent);
-    if (typeof innerMapping === 'undefined') {
-        innerMapping = new Map();
-        innerMappingByElement.set(webComponent, innerMapping);
-    }
-    if (innerMapping.has(innerAbsPathInfo)) {
-        return innerMapping.get(innerAbsPathInfo);
-    }
-    let outerMapping = outerMappingByElement.get(webComponent);
-    if (typeof outerMapping === 'undefined') {
-        outerMapping = new Map();
-        outerMappingByElement.set(webComponent, outerMapping);
-    }
-    // 内側からのアクセスの場合、ルールがなければプライマリルールから新たにルールとバインディングを生成する
-    const primaryMappingRuleSet = primaryMappingRuleSetByElement.get(webComponent);
-    if (typeof primaryMappingRuleSet === 'undefined') {
-        // マッピングルールが存在しない場合はnullを返し、ローカル状態へのフォールバックを許可する
-        return null;
-    }
-    let primaryMappingRule = null;
-    let matchedPrefixLength = -1;
-    for (const currentPrimaryMappingRule of primaryMappingRuleSet) {
-        if (currentPrimaryMappingRule.isRoot) {
-            // ルート規則は接頭辞長 0 で常に一致。部分規則が無ければこれが採られる
-            if (matchedPrefixLength < 0) {
-                primaryMappingRule = currentPrimaryMappingRule;
-                matchedPrefixLength = 0;
-            }
-            continue;
-        }
-        // innerPathInfoがprimaryMappingRuleのinnerPathInfoを包含しているか
-        if (!innerAbsPathInfo.pathInfo.cumulativePathInfoSet.has(currentPrimaryMappingRule.innerAbsPathInfo.pathInfo)) {
-            continue;
-        }
-        const prefixLength = currentPrimaryMappingRule.innerAbsPathInfo.pathInfo.segments.length;
-        if (prefixLength === innerAbsPathInfo.pathInfo.segments.length) {
-            raiseError('Duplicate mapping rule for web component.');
-        }
-        if (prefixLength > matchedPrefixLength) {
-            primaryMappingRule = currentPrimaryMappingRule;
-            matchedPrefixLength = prefixLength;
-        }
-    }
-    if (primaryMappingRule === null) {
-        // マッピングルールに一致しない場合はnullを返し、ローカル状態へのフォールバックを許可する
-        return null;
-    }
-    // マッチした残りのパスをouterPathInfoに付与して新たなルールを生成
-    const primaryBinding = primaryBindingByMappingRule.get(primaryMappingRule);
-    /* c8 ignore start */
-    if (typeof primaryBinding === 'undefined') {
-        raiseError('Binding not found for primary mapping rule on web component.');
-    }
-    /* c8 ignore stop */
-    const outerRemainingSegments = innerAbsPathInfo.pathInfo.segments.slice(matchedPrefixLength);
-    const outerSegments = primaryMappingRule.outerAbsPathInfo.pathInfo.segments.concat(outerRemainingSegments);
-    const outerPathInfo = getPathInfo(outerSegments.join(DELIMITER));
-    const rootNode = webComponent.getRootNode();
-    const outerStateElement = getStateElementByName(rootNode, primaryBinding.stateName);
-    if (outerStateElement === null) {
-        raiseError(`State element with name "${primaryBinding.stateName}" not found for web component.`);
-    }
-    const outerAbsPathInfo = getAbsolutePathInfo(outerStateElement, outerPathInfo);
-    if (!registerSubscriber) {
-        // 参照専用: 台帳にも購読者にも触れず、翻訳結果だけ返す
-        return outerAbsPathInfo;
-    }
-    innerMapping.set(innerAbsPathInfo, outerAbsPathInfo);
-    outerMapping.set(outerAbsPathInfo, innerAbsPathInfo);
-    // ルールに対応するバインディングを生成し、親スコープの購読者として登録する。
-    //
-    // 子が読んだサブパス（inner "user.name" ＝ outer "person.name"）は、子が
-    // そのパスに関心を宣言したということ。親がそこへ書いたときに子へ再読込通知が
-    // 届くよう、プライマリと同じ形のバインディングを立てて絶対アドレス台帳に載せる。
-    //
-    // propSegments は stateProp（プライマリの先頭セグメント）を保つ必要がある。
-    // 適用側は先頭セグメントで束ね先の state 要素を引く（apply/applyChangeToWebComponent.ts）
-    // ため、inner パスだけにすると通知先を解決できない。
-    //
-    // 登録はプライマリを所有する BindingSession 経由で行う。台帳登録・teardown・
-    // ノード削除時の破棄（MutationObserver 配送）が既存のライフサイクルにそのまま乗り、
-    // 絶対アドレス台帳のエントリが component を強参照したまま残るのを防ぐ。
-    // node 台帳（addBindingByNode）へは積まない — stateProp を保った結果、
-    // 再バインド時に buildPrimaryMappingRule のプライマリ抽出フィルタへ混入するため。
-    const propSegments = [primaryBinding.propSegments[0], ...innerAbsPathInfo.pathInfo.segments];
-    const newBinding = {
-        ...primaryBinding,
-        propName: propSegments.join(DELIMITER),
-        propSegments,
-        statePathName: outerAbsPathInfo.pathInfo.path,
-        statePathInfo: outerAbsPathInfo.pathInfo,
-    };
-    // 登録できないケースは登録だけ諦める。ここは翻訳が本務なので read を落とさない
-    // ＝ この機構が入る前と同じ挙動に留める（debug 時のみ観測可能にする）。2 通りある。
-    //
-    // (a) セッションが引けない: 内部的な想定外（プライマリは親スコープの収集で必ず
-    //     session.initialize を通っている）。
-    // (b) 導出した outer パスがワイルドカードを含むのに listIndex が決まらない:
-    //     子が配列マッピングの上で for を回している場合（規則 state.items: rows に対し
-    //     子の行が items.*.name を読む → outer は rows.*.name）。派生バインディングの
-    //     node は親スコープにあるコンポーネント要素で、ループは子の Shadow 内なので
-    //     コンポーネントからは行を特定できない ＝ この 1 本では行を表現できない。
-    //     ここで登録を試みると getAbsoluteStateAddressByBinding が raiseError する。
-    //     この形の親→子配送は派生バインディングではなく、子の行バインディング自身を
-    //     親のパターン台帳（(absolutePathInfo, listIndex)）へ相乗りさせて成立させる
-    //     （BindingSession.registerAddress / webComponent/outerListPath.ts、§1.8）。
-    const skipRegistration = (reason) => {
-        if (config.debug) {
-            console.warn(`parent→child notification for "${outerAbsPathInfo.pathInfo.path}" is not registered: ${reason}.`, { webComponent, primaryBinding });
-        }
-    };
-    const session = getBindingSession(primaryBinding);
-    if (session === null) {
-        skipRegistration('no binding session for the primary mapping rule');
-        return outerAbsPathInfo;
-    }
-    if (outerAbsPathInfo.pathInfo.wildcardCount > 0 && getListIndexByBindingInfo(newBinding) === null) {
-        skipRegistration('the derived outer path is a wildcard path but no list index resolves from the component');
-        return outerAbsPathInfo;
-    }
-    // 戻り値（初期 apply 対象）は使わない。この導出は子の read の最中に起きるので、
-    // 子は既に最新値を読んでおり、ここでの再通知は冗長かつ再入になる。
-    session.initialize([newBinding], { registerAddress: true });
-    return outerAbsPathInfo;
-}
-
-/**
- * webComponent/outerListPath.ts
- *
- * mapped な `bind-component` の子スコープが宣言した「リスト」を、値の正本を持つ
- * 親スコープ側へ伝えるための翻訳ヘルパ
- * （docs/architecture-hardening/15-state-component-mechanism-consistency.md §1.8）。
- *
- * 子の `for: items` が登録するのは子の state 要素の listPaths / elementPaths だけで、
- * 配列の実体を持つ親 state 要素は `rows` がリストであることを知らないままだった。
- * 親が `rows` を書いたときの依存 walk は `rows → rows.*` の静的子展開を
- * listPaths で判定するため、未登録だと行ごとの listIndex に展開されず
- * 「listIndex null のワイルドカードアドレス」1 本に潰れる（誰にも届かない）。
- * `rows.*` が elementPaths に無いと、行そのものへの代入（swap イディオム）も
- * listIndex 台帳の付け替えを伴わない素の代入に落ちる。
- */
-/**
- * 子スコープの `for:` パスに対応する親スコープのパスへ「これはリストだ」を伝える。
- * マッピング規則が無い（plain なコンポーネント / ローカル state のリスト）場合は何もしない。
- *
- * 親がさらに別コンポーネントの mapped state であれば、その親の `setPathInfo` から
- * 再びここへ入って外向きに伝播する。各段で必ず外側の state 要素へ進むので停止する。
- */
-function propagateListPathToOuterState(innerStateElement, innerPath) {
-    const outerAbsPathInfo = resolveOuterAbsolutePathInfo(innerStateElement, getPathInfo(innerPath));
-    if (outerAbsPathInfo === null || outerAbsPathInfo.stateElement === innerStateElement) {
-        return;
-    }
-    // source="internal": 翻訳済みの外側パスであり、書き手が書いた文字列ではない。
-    // 存在検査に掛けても直せる相手が居ないので掛けない（pathDiagnostics.ts）。
-    outerAbsPathInfo.stateElement.setPathInfo(outerAbsPathInfo.pathInfo.path, "for", "internal");
-}
-/**
- * 子スコープのリスト行パス（`items.*.name`）に対応する親スコープの絶対パス情報を返す。
- *
- * 呼び出し側（`BindingSession.registerAddress`）は、行バインディングを**この外側パスと
- * 子スコープの listIndex の組**で親のパターン台帳に相乗りさせる。したがって成立条件は
- * 「子の listIndex が外側パスの段数をちょうど満たすこと」＝
- * `Δ + innerW === outerW`（Δ = base 深さ）。
- *
- * - コンポーネントが親の `for` の外（Δ=0）: `outerW === innerW`（§1.8）
- * - コンポーネントが親の `for` の中（Δ>0）: 子の listIndex は base を親に持つので
- *   チェーン長が Δ+innerW になり、そのまま外側パスの段数と一致する
- *   （docs/state-bind-component-nested-for-design.md）
- */
-function getOuterRowPathInfo(innerStateElement, innerPathInfo) {
-    if (innerPathInfo.wildcardCount === 0) {
-        return null;
-    }
-    return stepOuterRowPathInfo(innerStateElement, innerPathInfo);
-}
-/**
- * `getOuterRowPathInfo` の 2 段目以降。境界が 2 枚以上重なっている（コンポーネントの
- * shadow の中にさらに mapped な `bind-component` がある）場合、値の正本は 1 つ外では
- * なく**最も外のスコープ**にある。1 段目だけに相乗りしていると、中間スコープは
- * 素通しで自分の行バインディングを持たないため、正本スコープ起点の行フィールド
- * 書き込みを購読する者が誰もいなくなる（§1.11）。
- *
- * 1 段目が成立したときだけ呼ばれる（＝mapped な行バインディング限定）ので、
- * 通常のリストはこの walk を一切踏まない。返り値は 2 段目以降が無ければ `null` で、
- * 圧倒的多数である深さ 1 の行では配列を確保しない。
- *
- * 各段で必ず外側の state 要素へ進む（`resolveOuterAbsolutePathInfo` は
- * `boundComponent` の属するスコープを返す＝DOM 上の真の祖先）ので停止する。
- * `propagateListPathToOuterState` の外向き伝播と同じ論拠。
- */
-function getOuterRowPathInfosBeyond(firstOuterAbsPathInfo) {
-    let rest = null;
-    let stateElement = firstOuterAbsPathInfo.stateElement;
-    let pathInfo = firstOuterAbsPathInfo.pathInfo;
-    for (;;) {
-        const outerAbsPathInfo = stepOuterRowPathInfo(stateElement, pathInfo);
-        if (outerAbsPathInfo === null) {
-            return rest;
-        }
-        (rest ??= []).push(outerAbsPathInfo);
-        stateElement = outerAbsPathInfo.stateElement;
-        pathInfo = outerAbsPathInfo.pathInfo;
-    }
-}
-/**
- * 境界 1 枚分の外向き解決。成立条件の判定を含む。
- *
- * 判定は**両側の実 arity（`getScopeArity` = パスの段数 + そのスコープの Δ）が
- * 一致すること**。相乗り登録は子の listIndex をそのまま鍵に使うので、外側スコープが
- * その arity で台帳を引けなければ意味がない。
- *
- * 境界 1 枚なら外側は Δ=0 なので、これは従来の `Δ + innerW === outerW` と同値。
- * 2 枚以上あるときに外側の Δ を数えないと、中間スコープの Δ を二重計上して
- * 成立するはずの段を落とす（§1.12）。
- */
-function stepOuterRowPathInfo(innerStateElement, innerPathInfo) {
-    const outerAbsPathInfo = resolveOuterAbsolutePathInfo(innerStateElement, innerPathInfo);
-    if (outerAbsPathInfo === null || outerAbsPathInfo.stateElement === innerStateElement) {
-        return null;
-    }
-    const innerArity = getScopeArity(innerStateElement, innerPathInfo);
-    const outerArity = getScopeArity(outerAbsPathInfo.stateElement, outerAbsPathInfo.pathInfo);
-    if (innerArity !== outerArity) {
-        return null;
-    }
-    return outerAbsPathInfo;
-}
-function resolveOuterAbsolutePathInfo(innerStateElement, innerPathInfo) {
-    if (innerStateElement.hasMappedComponentState !== true) {
-        return null;
-    }
-    const component = innerStateElement.boundComponent;
-    if (component == null) {
-        return null;
-    }
-    const innerAbsPathInfo = getAbsolutePathInfo(innerStateElement, innerPathInfo);
-    // 参照専用で引く。ここはバインディング登録の最中（registerAddress → setPathInfo /
-    // 行の相乗り登録）から呼ばれるので、翻訳のついでに購読者登録まで走らせると
-    // `session.initialize` がセッション操作の内側から再入する。
-    return getOuterAbsolutePathInfo(component, innerAbsPathInfo, false);
 }
 
 // framework 自身が detach し明示的に解体（deactivate/unmount）したノード。
@@ -4646,9 +4659,9 @@ function resolveInitialSyncPolicy(binding) {
 }
 function isBindingStateInitialized(binding) {
     const rootNode = binding.replaceNode.getRootNode();
-    const stateElement = getStateElementByName(rootNode, binding.stateName);
+    const stateElement = getStateElement(rootNode);
     if (stateElement === null) {
-        raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+        raiseError(`No state tree found on this root for binding.`);
     }
     const address = getStateAddressByBindingInfo(binding);
     let initialized = false;
@@ -4668,9 +4681,9 @@ function commitProducerValue(binding, value) {
         filteredValue = filter.filterFn(filteredValue);
     }
     const rootNode = binding.node.getRootNode();
-    const stateElement = getStateElementByName(rootNode, binding.stateName);
+    const stateElement = getStateElement(rootNode);
     if (stateElement === null) {
-        raiseError(`State element with name "${binding.stateName}" not found for initial binding sync.`);
+        raiseError(`No state tree found on this root for initial binding sync.`);
     }
     const loopContext = getLoopContextByNode(binding.node);
     stateElement.createState("writable", (state) => {
@@ -4834,7 +4847,6 @@ function bindingKey(binding) {
         binding.bindingType,
         binding.propName,
         binding.propModifiers.join(","),
-        binding.stateName,
         binding.statePathName,
         inFilters,
         outFilters,
@@ -5083,6 +5095,64 @@ class BindingSession {
         }
         this.records.clear();
     }
+    /**
+     * マウントスコープ専用（Phase 2・webComponent/mountScope.ts）: 全 record の台帳登録を
+     * **現在のループ文脈の listIndex** で張り直す。行 content のプール再利用でコンポーネント
+     * 要素が別の行に付け替わると、スコープの binding は旧行の listIndex で台帳に載ったままに
+     * なる — その 1 点だけを直す（listener・record・依存グラフは張り直し不要）。
+     *
+     * `for` binding は lastListValue（差分の基準）を旧アドレスから新アドレスへ引き継ぐ。
+     * 引き継がないと再適用が全行 add と誤認し、旧行の DOM が残ったまま新行を重ねて
+     * マウントする。戻り値は再適用すべき binding（呼び出し側が applyChangeFromBindings する）。
+     */
+    /**
+     * マウントスコープ再接続専用: アクティブな record の binding ノード（text は差し替え前の
+     * comment — ループ文脈の直接エントリはこのノードに載る）を列挙する。
+     * remountScopeBindings が現在の行の文脈へ張り替えるために使う。
+     */
+    forEachActiveBindingNode(callback) {
+        for (const record of this.records) {
+            if (record.phase !== "active")
+                continue;
+            callback(record.info.node);
+        }
+    }
+    rebindAddresses() {
+        const rebound = [];
+        for (const record of this.records) {
+            if (record.phase !== "active")
+                continue;
+            const binding = record.info;
+            if (record.address === null && record.patternListIndex === null)
+                continue;
+            const oldAbs = binding.bindingType === "for" ? getAbsoluteStateAddressByBinding(binding) : null;
+            if (record.address !== null) {
+                removeBindingByAbsoluteStateAddress(record.address, binding);
+                record.address = null;
+            }
+            else {
+                removeBindingByPattern(record.patternPathInfo, record.patternListIndex, binding);
+                record.patternPathInfo = null;
+                record.patternListIndex = null;
+            }
+            clearStateAddressByBindingInfo(binding);
+            clearAbsoluteStateAddressByBinding(binding);
+            this.registerAddress(record);
+            if (oldAbs !== null) {
+                const newAbs = getAbsoluteStateAddressByBinding(binding);
+                // 記録の有無は has で見る（get は未記録でも `[]` を返すため、!= null 判定は
+                // 常に真 — 未記録の旧アドレスから空配列を持ち込んで、新アドレスに残っていた
+                // 正当な記録を潰しうる）
+                if (newAbs !== oldAbs && hasLastListValueByAbsoluteStateAddress(oldAbs)) {
+                    setLastListValueByAbsoluteStateAddress(newAbs, getLastListValueByAbsoluteStateAddress(oldAbs));
+                }
+            }
+            if (this.shouldApplyState(binding)) {
+                rebound.push(binding);
+            }
+        }
+        return rebound;
+    }
     observe(node) {
         const root = observableRootFor(node);
         if (root === null)
@@ -5235,8 +5305,6 @@ class BindingSession {
                 address: null,
                 patternPathInfo: null,
                 patternListIndex: null,
-                outerPatternPathInfo: null,
-                outerPatternPathInfosRest: null,
                 pendingDefinitions: 0,
                 initialPolicy: slot.policy,
                 resolvedAuthority: slot.authority,
@@ -5352,8 +5420,6 @@ class BindingSession {
             address: null,
             patternPathInfo: null,
             patternListIndex: null,
-            outerPatternPathInfo: null,
-            outerPatternPathInfosRest: null,
             pendingDefinitions: 0,
             initialPolicy: null,
             resolvedAuthority: null,
@@ -5554,34 +5620,14 @@ class BindingSession {
             // リスト行: (absolutePathInfo, listIndex) のパターン台帳に登録し、
             // AbsoluteStateAddress の intern（アドレス割当 + intern 用 WeakMap）を省略する
             const rootNode = resolveBindingRootNode(binding, knownRoot);
-            const stateElement = getStateElementByName(rootNode, binding.stateName);
+            const stateElement = getStateElement(rootNode);
             if (stateElement === null) {
-                raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+                raiseError(`No state tree found on this root for binding.`);
             }
             const absolutePathInfo = getAbsolutePathInfo(stateElement, binding.statePathInfo);
             addBindingByPattern(absolutePathInfo, listIndex, binding);
             record.patternPathInfo = absolutePathInfo;
             record.patternListIndex = listIndex;
-            // mapped な bind-component の子スコープが回している行は、値の正本が親 state に
-            // ある。親が行へ書いたときの enqueue は親の絶対パス情報で起きるので、同じ
-            // listIndex（親子で共有されている）で親側のパターン台帳にも購読者として載せる。
-            // これが無いと親起点の行フィールド書き込みが子に一切届かない（§1.8）。
-            const outerPathInfo = getOuterRowPathInfo(stateElement, binding.statePathInfo);
-            if (outerPathInfo !== null) {
-                addBindingByPattern(outerPathInfo, listIndex, binding);
-                record.outerPatternPathInfo = outerPathInfo;
-                // 境界が 2 枚以上重なっていると、値の正本は 1 つ外ではなく最も外のスコープに
-                // ある。中間スコープは配列を素通しするだけで自分の行バインディングを持たない
-                // ため、1 段目だけでは正本スコープ起点の行フィールド書き込みが誰にも届かない
-                // （§1.11）。成立する段すべてに載せる。
-                const restPathInfos = getOuterRowPathInfosBeyond(outerPathInfo);
-                if (restPathInfos !== null) {
-                    for (let i = 0; i < restPathInfos.length; i++) {
-                        addBindingByPattern(restPathInfos[i], listIndex, binding);
-                    }
-                    record.outerPatternPathInfosRest = restPathInfos;
-                }
-            }
         }
         else {
             const address = getAbsoluteStateAddressByBinding(binding, knownRoot);
@@ -5593,9 +5639,9 @@ class BindingSession {
         if (!record.options.registerPathInfo)
             return;
         const rootNode = binding.replaceNode.getRootNode();
-        const stateElement = getStateElementByName(rootNode, binding.stateName);
+        const stateElement = getStateElement(rootNode);
         if (stateElement === null) {
-            raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+            raiseError(`No state tree found on this root for binding.`);
         }
         if (binding.bindingType !== "event") {
             stateElement.setPathInfo(binding.statePathName, binding.bindingType);
@@ -5638,29 +5684,6 @@ class BindingSession {
             }
         }
         else if (record.patternListIndex !== null) {
-            // 親スコープへの相乗り分は独立した資源なので、子側の解除が失敗しても取り残さない
-            if (record.outerPatternPathInfo !== null) {
-                try {
-                    removeBindingByPattern(record.outerPatternPathInfo, record.patternListIndex, binding);
-                }
-                catch {
-                    // Cleanup is best-effort.
-                }
-                record.outerPatternPathInfo = null;
-            }
-            // 3 段目以降（§1.11）。各段も互いに独立した資源なので 1 つずつ守る
-            if (record.outerPatternPathInfosRest !== null) {
-                const restPathInfos = record.outerPatternPathInfosRest;
-                for (let i = 0; i < restPathInfos.length; i++) {
-                    try {
-                        removeBindingByPattern(restPathInfos[i], record.patternListIndex, binding);
-                    }
-                    catch {
-                        // Cleanup is best-effort.
-                    }
-                }
-                record.outerPatternPathInfosRest = null;
-            }
             try {
                 removeBindingByPattern(record.patternPathInfo, record.patternListIndex, binding);
                 record.patternPathInfo = null;
@@ -5729,7 +5752,10 @@ function getBindingSession(binding) {
  *
  * キーは「state プロパティ名」であって state 要素ではない。完了はプロパティ単位の
  * 事実（`defineProperty(component, stateProp, ...)` が済んだか）であり、
- * 1 つの要素に複数の state プロパティを束ねられる以上、粒度もプロパティ単位が正しい。
+ * 粒度もプロパティ単位が正しい（v2 の注記: **マウント**スコープは 1 コンポーネント
+ * 1 つに制約される — 2 本目の `<wcs-state bind-component>` は
+ * webComponent/mountScope.ts が raise する。プロパティ粒度の台帳自体は
+ * 型の取り違え防止として維持する）。
  * 以前は内側の `IStateElement` をキーにしていたが、照会側（apply/applyChange.ts）が
  * 手にしているのは *親スコープ* の `IStateElement` であり、どちらも同じ型なので
  * TypeScript が取り違えを検出できず、判定が恒久的に false になっていた
@@ -7118,9 +7144,17 @@ function applyChangeToFor(bindingInfo, context, newValue) {
     const listPathInfo = bindingInfo.statePathInfo;
     const listIndex = getListIndexByBindingInfo(bindingInfo);
     const absAddress = getAbsoluteStateAddressByBinding(bindingInfo);
-    const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);
-    // 子スコープのトップレベルのリストは base を親に持つ（webComponent/baseListIndex.ts）
-    const diff = createListDiff(getListParentListIndex(context.stateElement, listIndex), lastValue, newValue);
+    const recordedLastValue = getLastListValueByAbsoluteStateAddress(absAddress);
+    // lastListValue はアドレスキーの共有台帳。まだ何も描いていない binding ノード
+    //（content 台帳が空）が、既に描画済みのアドレスに後から参加する形 — マウント
+    // スコープの再初期化（コンポーネントが connectedCallback で shadow を張り直す）や
+    // 後着ノードの binder 適用 — では、共有の記録で差分を取ると「既存 content の
+    // 再利用・維持」を指示され、この binding には無いので落ちる。自分の台帳が空なら
+    // 白紙から全行 add で描く（同じアドレスの他の binding の差分には影響しない）
+    const lastValue = recordedLastValue.length > 0 && !contentByListIndexByNode.has(bindingInfo.node)
+        ? []
+        : recordedLastValue;
+    const diff = createListDiff(listIndex, lastValue, newValue);
     context.newListValueByAbsAddress.set(absAddress, Array.isArray(newValue) ? newValue : []);
     const fullDelete = Array.isArray(lastValue)
         && lastValue.length === diff.deleteIndexSet.size
@@ -7458,6 +7492,40 @@ function recordInjectedKey(element, prop, key) {
 function getInjectedKeys(element, prop) {
     return injectedKeysByElement.get(element)?.get(prop);
 }
+const overwrittenValuesByElement = new WeakMap();
+/**
+ * 2 セグメント書き込み（`state.row: rows.*` の積み）が作者の**既存**キーを上書きする
+ * 直前の値を控える。最初の 1 回だけ（＝作者の値）。宣言前の窓（happy-dom は template
+ * clone を upgrade 済みにするので、fragment 内の初期適用は宣言より先に走る）では
+ * 宣言台帳の抑止が効かず、v2 の厳格 R1 が snapshot する「作者の既定値」が親の値で
+ * 汚染される — v2 のマウント構築が snapshot 前にこれで復元する。
+ */
+function rememberOverwrittenValue(element, prop, key, previous) {
+    let byProp = overwrittenValuesByElement.get(element);
+    if (!byProp) {
+        byProp = new Map();
+        overwrittenValuesByElement.set(element, byProp);
+    }
+    let byKey = byProp.get(prop);
+    if (!byKey) {
+        byKey = new Map();
+        byProp.set(prop, byKey);
+    }
+    if (!byKey.has(key)) {
+        byKey.set(key, previous);
+    }
+}
+/** 控えた作者の値を state オブジェクトへ戻して消す（v2 のマウント構築時・snapshot 前）。 */
+function restoreOverwrittenValues(element, prop, state) {
+    const byKey = overwrittenValuesByElement.get(element)?.get(prop);
+    if (typeof byKey === "undefined") {
+        return;
+    }
+    for (const [key, previous] of byKey) {
+        state[key] = previous;
+    }
+    overwrittenValuesByElement.get(element).delete(prop);
+}
 
 /**
  * SSR 時に HTML 属性で表現できないプロパティバインディングを蓄積するストア。
@@ -7618,7 +7686,7 @@ function applyChangeToProperty(binding, _context, newValue) {
                 // 同じ edge を再度通ろうとした場合だけ抑止する（設計書 §4 規則 2）。
                 // 書き込みは WriteReceipt scope で包み、setter が同期 dispatch する
                 // event が confirmation / 正規化を判定できるようにする（規則 3）。
-                const wireId = getWireId(element, firstSegment, binding.stateName, binding.statePathName);
+                const wireId = getWireId(element, firstSegment, binding.statePathName);
                 const edgeId = getEdgeId(wireId, "to-element");
                 const baseContext = _context?.propagationContextByBinding?.get(binding)
                     ?? getCurrentPropagationContext()
@@ -7685,8 +7753,17 @@ function applyChangeToProperty(binding, _context, newValue) {
         // キーを作る（積み）ことを控える。R1 の衝突報告はこのキーを作者のものとして扱わない
         // （webComponent/preCompletionWrites.ts）
         if (propSegments.length === 2 && typeof subObject === 'object' && subObject !== null
-            && !(lastSegment in subObject) && getCustomElement(element) !== null) {
-            recordInjectedKey(element, firstSegment, lastSegment);
+            && getCustomElement(element) !== null) {
+            if (!(lastSegment in subObject)) {
+                recordInjectedKey(element, firstSegment, lastSegment);
+            }
+            else {
+                // 既存キーの上書き: 作者の値を控える（v2 の厳格 R1 が snapshot 前に復元する）。
+                // 完了後の (element, stateProp) への適用はここへルーティングされない
+                //（applyChangeToWebComponent の no-op へ行く — apply/applyChange.ts）ので、
+                // ここに来る上書きは常に完了前＝控えの対象で良い
+                rememberOverwrittenValue(element, firstSegment, lastSegment, subObject[lastSegment]);
+            }
         }
         try {
             subObject[lastSegment] = newValue;
@@ -7748,97 +7825,171 @@ function applyChangeToText(binding, _context, newValue) {
 }
 
 /**
- * ルート規則（`data-wcs="state: path"` の丸ごとマウント）で、親がマウント先を
- * 丸ごと差し替えた／子が切断 → 再接続した、というときに子へ「読み直せ」と撃つパスの集合。
+ * カスタム要素の state プロパティバインディング（`state[.sub]: path`）に対する
+ * 適用のルート先（apply/applyChange.ts の resolveCustomElementApply）。
  *
- * 部分規則ならプライマリの内側パス（`state.items: rows` なら `items`）を撃てば依存 walk が
- * 配下へ展開するが、ルート規則は内側パスが空で `$postUpdate("")` に意味が無い。
- * 代わりに子の登録済みパス（`boundPaths`）の**先頭セグメント**を撃つ — `tags.*.name` は
- * `tags` から静的依存で展開されるので、先頭だけで配下を覆える。
+ * v2 では state プロパティのバインディングは全てマウント（webComponent/mountScope.ts）で、
+ * 配送は「翻訳されたバインディング＋単一台帳＋静的依存」が担う — 親→子の再読込
+ * 通知チャネル（v1 の innerState への $postUpdate）はこの経路では何も運ぶものが無い。
+ * 完了済みの (element, stateProp) への適用は意図的な no-op。
  *
- * `$` 名前空間（`$1` など）は state に実体を持たないので除く。私有キー（R1）への通知は
- * 値が変わっていないので再描画が同値で終わるだけ（無害）。
+ * 未完了（宣言前）の適用はここへ来ない（applyChangeToProperty の積み、または
+ * skipPendingMountWrite — apply/applyChange.ts）。
  */
-function getRootReloadPaths(innerStateElement) {
-    const boundPaths = innerStateElement.boundPaths;
-    if (typeof boundPaths === 'undefined') {
-        return [];
-    }
-    const roots = new Set();
-    for (const path of boundPaths) {
-        if (path[0] === '$') {
-            continue;
-        }
-        const dot = path.indexOf(DELIMITER);
-        roots.add(dot === -1 ? path : path.slice(0, dot));
-    }
-    return [...roots];
+function applyChangeToWebComponent(_binding, _context, _newValue) {
+    // no-op（上記）
+    return;
 }
 
 /**
- * 親 state → `bind-component` 済みコンポーネントの再読込通知（内部チャネル）。
+ * webComponent/volumeShared.ts — ボリュームの軽量共有面。
  *
- * 値そのものは運ばない。バインドされたパスの正本は親 state 側にあり、子は
- * innerState proxy のマッピング経由で親を読みに行くため、必要なのは
- * 「そのパスを読み直せ」という通知だけ。
- *
- * 以前は `element[stateProp][path] = value` と、コンポーネントの公開プロパティを
- * 経由してこの通知を送っていた。受け側の proxy が値を捨てて `$postUpdate` を呼ぶ
- * 作りだったのはそのためだが、同じ proxy が `this.state` として作者にも見えていたので、
- * 公開 API 側の書き込みまで no-op になっていた。通知はここで state element を直接
- * 引く形に分離し、公開 proxy は素通し意味論に統一した
- * （docs/architecture-hardening/15-state-component-mechanism-consistency.md §1.1 / G1）。
- *
- * この関数が選ばれるのは `isWebComponentComplete` が真のときだけなので
- * （apply/applyChange.ts）、`bindWebComponent` は完了済み ＝ state element は登録済み。
- * ただし**登録済みと使用可能は別**で、切断済みの state element が台帳に残っている
- * 窓がある（§1.9）。下の使用可能判定を参照。
- *
- * 残余パスが空（`data-wcs="state: user"` — ルート規則の丸ごとマウント）は、親が
- * マウント先を丸ごと差し替えたという通知。何が変わったかは分からないので、子の
- * 登録済みパス全部を読み直す（docs/state-mount-design.md §3-2 / impl-plan P1-2）。
+ * ホットパス（proxy/methods/getByAddress・proxy/apis/updatedCallback・pathDiagnostics）が
+ * 引く台帳と chroot だけを置く。graft 本体（webComponent/volume.ts）は watch runtime 等の
+ * 重い依存を持つため、ここに混ぜると「updater を部分モックするテスト」が import 連鎖で
+ * 壊れる（watchRuntime は import 時に drain リスナーを登録する）。
  */
-function applyChangeToWebComponent(binding, _context, _newValue) {
-    const element = binding.node;
-    const propSegments = binding.propSegments;
-    const [firstSegment, ...restSegments] = propSegments;
-    const innerStateElement = getStateElementByWebComponent(element, firstSegment);
-    if (innerStateElement === null) {
-        raiseError(`State element not bound to "${firstSegment}" on web component.`);
+/** 予約済みスロット（D22）。キーは rootNode、値はマウントパスの集合。 */
+const reservedSlotsByRootNode = new WeakMap();
+function reserveVolumeSlot(rootNode, mountPath) {
+    let slots = reservedSlotsByRootNode.get(rootNode);
+    if (typeof slots === "undefined") {
+        slots = new Set();
+        reservedSlotsByRootNode.set(rootNode, slots);
     }
-    // 切断済みの state element には送らない。
-    //
-    // リスト行にコンポーネントがあるとき、行の再生成では **DOM に戻る前に** apply が走る。
-    // 行の content（と中のコンポーネント要素）は再利用されるので、要素をキーにした
-    // 台帳 `stateElementByWebComponent` は前回の state element を指したままで、
-    // その要素は既に切断されている（`rootNode` を失っている）。そこへ `createState` すると
-    // raiseError し、**updater の drain も applyChangeToFor の行ループも例外を捕まえない**ため、
-    // 1 つの行が同じバッチの残り全部を道連れにする — 実測では for が空になったまま、
-    // 以後どんな更新でも復帰しなくなる（§1.9）。
-    //
-    // ここは値を運ばない再読込通知なので、切断中の子に送る意味がそもそも無い。
-    // 子が DOM に戻れば、子のバインディングが innerState 経由で親をライブ読みするため
-    // 現在値はそのとき正しく入る（初期配送と同じ経路）。よって no-op で落として良い。
-    if (innerStateElement.hasRootNode === false) {
-        if (config.debug) {
-            console.debug(`[@wcstack/state] skipped parent→child notification for a disconnected state element on <${element.tagName.toLowerCase()}>.`, { element, stateProp: firstSegment, path: restSegments.join(DELIMITER) });
-        }
-        return;
+    if (slots.has(mountPath)) {
+        raiseError(`Volume slot "${mountPath}" is already mounted on this tree.`);
     }
-    if (restSegments.length === 0) {
-        const paths = getRootReloadPaths(innerStateElement);
-        if (paths.length === 0) {
-            return;
+    slots.add(mountPath);
+}
+/**
+ * パスが予約済みスロットの配下（または祖先）か。pathDiagnostics と getByAddress の
+ * ルート欠落 raise が「予約下の読みは undefined が正」（D22）のために引く。
+ */
+function isPathUnderReservedVolume(rootNode, path) {
+    if (rootNode === null) {
+        return false;
+    }
+    const slots = reservedSlotsByRootNode.get(rootNode);
+    if (typeof slots === "undefined" || slots.size === 0) {
+        return false;
+    }
+    for (const slot of slots) {
+        if (path === slot || path.startsWith(slot + DELIMITER) || slot.startsWith(path + DELIMITER)) {
+            return true;
         }
-        innerStateElement.createState("readonly", (state) => {
-            for (const path of paths) {
-                state.$postUpdate(path);
+    }
+    return false;
+}
+/**
+ * 接ぎ木済みスロット（D22 後段）。キーはルートの state element。
+ * setByAddress のガード（findGraftedSlotUnder）と graftVolume（recordGraftedSlot）が使う。
+ * 予約（reservedSlots）と別台帳なのは、接ぎ木**前**の中間 `{}` 生成
+ * （graftVolume の親作成）をガードに掛けないため。
+ */
+const graftedSlotsByStateElement = new WeakMap();
+function recordGraftedSlot(stateElement, mountPath) {
+    let slots = graftedSlotsByStateElement.get(stateElement);
+    if (typeof slots === "undefined") {
+        slots = new Set();
+        graftedSlotsByStateElement.set(stateElement, slots);
+    }
+    slots.add(mountPath);
+}
+/**
+ * 書き込みパスが接ぎ木済みスロットの**真の祖先**なら、そのスロットを返す（D22 後段）。
+ * マウントポイントを含む親の丸ごと書きは、接ぎ木データを無言で捨てて quoted-path
+ * アクセサだけを宙に浮かせるため throw の根拠になる。スロット自身への書き込みは
+ * 通常のデータ差し替えなので対象外。`hasGraftedVolumes` が真のときだけ呼ぶこと。
+ */
+function findGraftedSlotUnder(stateElement, path) {
+    const slots = graftedSlotsByStateElement.get(stateElement);
+    if (typeof slots === "undefined" || slots.size === 0) {
+        return null;
+    }
+    const prefix = path + DELIMITER;
+    for (const slot of slots) {
+        if (slot.startsWith(prefix)) {
+            return slot;
+        }
+    }
+    return null;
+}
+/** ボリュームの chroot（相対キー → `<mountPath>.<key>` を receiver に翻訳する薄い proxy）。 */
+function createVolumeChroot(mountPath, receiver) {
+    return new Proxy({}, {
+        get(_target, prop) {
+            if (typeof prop !== "string" || prop === "then") {
+                return undefined;
             }
-        });
+            if (prop[0] === "$") {
+                if (prop === "$postUpdate") {
+                    return (path) => {
+                        receiver.$postUpdate(mountPath + DELIMITER + path);
+                    };
+                }
+                if (prop === "$getAll" || prop === "$setAll" || prop === "$resolve") {
+                    const api = prop;
+                    return (path, ...rest) => receiver[api](mountPath + DELIMITER + path, ...rest);
+                }
+                // 他の `$` は親の意味論のまま（宣言面はボリュームが登録時に翻訳する）
+                return receiver[prop];
+            }
+            return receiver[mountPath + DELIMITER + prop];
+        },
+        set(_target, prop, value) {
+            if (typeof prop !== "string") {
+                return true;
+            }
+            receiver[mountPath + DELIMITER + prop] = value;
+            return true;
+        },
+        has(_target, prop) {
+            // ボリュームの面はツリーそのもの — マウント配下は常に解決する
+            return typeof prop === "string" && prop[0] !== "$" && prop[0] !== "#";
+        },
+    });
+}
+const volumeUpdatedCallbacksByRoot = new WeakMap();
+const NO_VOLUME_UPDATED_CALLBACKS = [];
+function addVolumeUpdatedCallback(stateElement, entry) {
+    let callbacks = volumeUpdatedCallbacksByRoot.get(stateElement);
+    if (typeof callbacks === "undefined") {
+        callbacks = [];
+        volumeUpdatedCallbacksByRoot.set(stateElement, callbacks);
+    }
+    callbacks.push(entry);
+}
+function getVolumeUpdatedCallbacks(stateElement) {
+    return volumeUpdatedCallbacksByRoot.get(stateElement) ?? NO_VOLUME_UPDATED_CALLBACKS;
+}
+const pendingVolumesByRootNode = new WeakMap();
+let graftHandler = null;
+function setVolumeGraftHandler(handler) {
+    graftHandler = handler;
+}
+function queuePendingVolume(rootNode, request) {
+    let pending = pendingVolumesByRootNode.get(rootNode);
+    if (typeof pending === "undefined") {
+        pending = [];
+        pendingVolumesByRootNode.set(rootNode, pending);
+    }
+    pending.push(request);
+}
+/** ルート登録時に保留中のボリュームを接ぎ木する（stateElementByName から呼ばれる）。 */
+function drainPendingVolumes(rootNode, rootStateElement) {
+    const pending = pendingVolumesByRootNode.get(rootNode);
+    if (typeof pending === "undefined" || pending.length === 0 || graftHandler === null) {
         return;
     }
-    innerStateElement.createState("readonly", (state) => {
-        state.$postUpdate(restSegments.join(DELIMITER));
+    pendingVolumesByRootNode.delete(rootNode);
+    // 登録はルートの _initialize の途中（createState はまだ危うい）— microtask に
+    // 遅らせてルートの接続完了後に接ぎ木する
+    const handler = graftHandler;
+    queueMicrotask(() => {
+        for (const request of pending) {
+            handler(rootStateElement, request);
+        }
     });
 }
 
@@ -7988,8 +8139,8 @@ const SUBJECT = {
  * 「打ち間違い」だと分からず did-you-mean も lint 誘導も無かった。深いパスの
  * `console.warn` と同じ語彙に揃える。
  */
-function missingRootPathMessage(stateName, path, target, declaredPaths) {
-    return `[${DIAGNOSTIC_CODE.binding}] Path "${path}" does not exist on state "${stateName}".` +
+function missingRootPathMessage(path, target, declaredPaths) {
+    return `[${DIAGNOSTIC_CODE.binding}] Path "${path}" does not exist on the state tree.` +
         `${didYouMean(path, collectCandidates(target, "", declaredPaths))}${LINT_HINT}`;
 }
 /**
@@ -8084,8 +8235,13 @@ function checkDeclaredPath(stateElement, state, path, source) {
     if (path.startsWith("$")) {
         return;
     }
-    // mapped な bind-component の子スコープはパスの正本を持たない（親側で解決される）
-    if (stateElement.hasMappedComponentState === true) {
+    // マウントの予約セグメント（`users.*.#m1.editing` — D20）はオーバーレイに実体があり
+    // raw state には無い。`#else`（構造プレースホルダ）も同様（webComponent/mount.ts）
+    if (path.indexOf("#") !== -1) {
+        return;
+    }
+    // 予約済みのボリュームスロット配下はロード完了まで undefined が正（D22）
+    if (isPathUnderReservedVolume(stateElement.rootNode ?? null, path)) {
         return;
     }
     // 単一セグメントのバインディングは読み取り時に raiseError で loud に落ちるので、
@@ -8103,14 +8259,13 @@ function checkDeclaredPath(stateElement, state, path, source) {
     }
     // 接頭辞は raiseError と同じ `[@wcstack/state] [wcs/...]` の並び（コンソールの
     // grep 単位をパッケージで揃える）
-    console.warn(`[@wcstack/state] [${DIAGNOSTIC_CODE[source]}] ${SUBJECT[source]} "${path}" does not resolve on state "${stateElement.name}": ` +
+    console.warn(`[@wcstack/state] [${DIAGNOSTIC_CODE[source]}] ${SUBJECT[source]} "${path}" does not resolve on the state tree: ` +
         `"${result.missingSegment}" is not declared.${didYouMean(result.missingSegment, result.candidates)}` +
         ` Updates to this path will be silently dropped.${LINT_HINT}`);
     if (devtoolsSink !== null) {
         devtoolsSink({
             type: "state:path-unresolved",
             source,
-            stateName: stateElement.name,
             path,
             missingSegment: result.missingSegment,
         });
@@ -8223,11 +8378,15 @@ const deferredSelectBindingByBinding = new WeakMap();
 // registry 照会を省略できる。scoped registry を導入する場合はこの不可逆前提を再検討。
 const definedApplyVerifiedByBinding = new WeakMap();
 /**
- * 丸ごとマウント（`state: user`）の完了前の初期適用は書かない。子が完了すれば
- * innerState 経由でライブに読むので、ここで親のオブジェクトを書く意味は無い
- * （書くと害がある — webComponent/completeWebComponent.ts の宣言台帳を参照）。
+ * 宣言済みマウントの完了前の初期適用は書かない。子が完了すればマウント経由で
+ * ライブに読むので、ここで親の値を書く意味は無い（書くと害がある —
+ * webComponent/completeWebComponent.ts の宣言台帳を参照）。v2 では部分規則
+ *（`state.name: user.name`）にも同じ原則を適用する: 積みの上書きが作者の既定値を
+ * 汚すと、厳格 R1（作者の own data key は私有・D19）の privateSnapshot が親の値で
+ * 汚染される。積みが要るのは**未宣言**（`<wcs-state bind-component>` がまだ来ていない
+ * 非同期定義や、そもそも bind-component の無い素のプロパティパス配線）だけ。
  */
-function skipPendingRootMount() { }
+function skipPendingMountWrite() { }
 /**
  * カスタム要素へのプロパティバインディングの適用関数を決める。
  *
@@ -8235,9 +8394,9 @@ function skipPendingRootMount() { }
  *   再読込通知（applyChangeToWebComponent）。1 セグメント（`state: user`）も含む —
  *   残余が空なら「子の登録済みパス全部を読み直せ」の意味（ルート規則。
  *   docs/state-mount-design.md §3-2 / impl-plan P1-2）
- * - 未完了だが `<wcs-state bind-component>` が宣言済みで、かつ 1 セグメント → 今回は
- *   書かない（skipPendingRootMount）
- * - それ以外 → 素のプロパティ書き込み（`state.name: x` の完了前の積みも含む）
+ * - 未完了だが `<wcs-state bind-component>` が宣言済み → 今回は
+ *   書かない（skipPendingMountWrite — 部分規則も含む、上記）
+ * - それ以外（未宣言）→ 素のプロパティ書き込み（積み）
  *
  * 以前は 1 セグメントを通知チャネルから除いていた（残余が空だと applyChangeToWebComponent
  * が raiseError し、updater の drain が捕まえないので同じバッチの無関係な更新まで
@@ -8249,8 +8408,8 @@ function resolveCustomElementApply(binding) {
     if (isWebComponentComplete(element, stateProp)) {
         return applyChangeToWebComponent;
     }
-    if (binding.propSegments.length === 1 && isWebComponentStatePropDeclared(element, stateProp)) {
-        return skipPendingRootMount;
+    if (isWebComponentStatePropDeclared(element, stateProp)) {
+        return skipPendingMountWrite;
     }
     return applyChangeToProperty;
 }
@@ -8349,10 +8508,10 @@ function applyChange(binding, context) {
         definedApplyVerifiedByBinding.set(binding, true);
     }
     // applyChangeFromBindings のグループ化ループが解決済みルートの一致を検証済みの
-    // 場合、stateName さえ一致すれば getRootNode の再解決（native 呼び出し）を省略
-    // できる。activateContent 経由（フラグメント内の新規 content）も、フラグメントは
-    // setRootNodeByFragment で context.rootNode に解決されるため同じ不変条件が成り立つ。
-    if (context.sameRootVerified === true && binding.stateName === context.stateName) {
+    // 場合、getRootNode の再解決（native 呼び出し）を省略できる。activateContent 経由
+    // （フラグメント内の新規 content）も、フラグメントは setRootNodeByFragment で
+    // context.rootNode に解決されるため同じ不変条件が成り立つ。
+    if (context.sameRootVerified === true) {
         _applyChange(binding, context);
         return;
     }
@@ -8363,14 +8522,13 @@ function applyChange(binding, context) {
             raiseError(`Root node for fragment not found for binding.`);
         }
     }
-    if (binding.stateName !== context.stateName || rootNode !== context.rootNode) {
-        const stateElement = getStateElementByName(rootNode, binding.stateName);
+    if (rootNode !== context.rootNode) {
+        const stateElement = getStateElement(rootNode);
         if (stateElement === null) {
-            raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+            raiseError(`No state tree found on this root for binding.`);
         }
         stateElement.createState("readonly", (targetState) => {
             const newContext = {
-                stateName: binding.stateName,
                 rootNode: rootNode,
                 stateElement: stateElement,
                 state: targetState,
@@ -8400,7 +8558,6 @@ function reportBindingApplyError(binding, error) {
     if (devtoolsSink !== null) {
         devtoolsSink({
             type: "state:binding-apply-error",
-            stateName: binding.stateName,
             path: binding.statePathName,
             bindingType: binding.bindingType,
             error,
@@ -8415,7 +8572,7 @@ function reportBindingApplyError(binding, error) {
  * Phase 2: 遅延されたselect.value/selectedIndex を適用（option要素の生成後）
  *
  * 最適化のため、以下のグループ化を行う:
- * 同じ stateNameとrootNode を持つバインディングをグループ化 → createState の呼び出しを削減
+ * 同じ rootNode を持つバインディングをグループ化 → createState の呼び出しを削減
  */
 function applyChangeFromBindings(bindings, propagationContextByBinding) {
     let bindingIndex = 0;
@@ -8426,7 +8583,6 @@ function applyChangeFromBindings(bindings, propagationContextByBinding) {
     // Phase 1: 構造的更新 + 値更新（select.value/selectedIndex は遅延）
     while (bindingIndex < bindings.length) {
         let binding = bindings[bindingIndex];
-        const stateName = binding.stateName;
         if (binding.replaceNode.isConnected === false) {
             // 切断されているバインディングは無視、本来は事前に除去されているはず
             if (config.debug) {
@@ -8442,14 +8598,13 @@ function applyChangeFromBindings(bindings, propagationContextByBinding) {
                 raiseError(`Root node for fragment not found for binding.`);
             }
         }
-        const stateElement = getStateElementByName(rootNode, stateName);
+        const stateElement = getStateElement(rootNode);
         if (stateElement === null) {
-            raiseError(`State element with name "${stateName}" not found for binding.`);
+            raiseError(`No state tree found on this root for binding.`);
         }
         stateElement.createState("readonly", (state) => {
             const context = {
                 rootNode: rootNode,
-                stateName: stateName,
                 stateElement: stateElement,
                 state: state,
                 appliedBindingSet: appliedBindingSet,
@@ -8477,8 +8632,8 @@ function applyChangeFromBindings(bindings, propagationContextByBinding) {
                 if (!nextBindingInfo)
                     break; // 終端に到達
                 const nextRootNode = nextBindingInfo.replaceNode.getRootNode();
-                if (nextBindingInfo.stateName !== stateName || nextRootNode !== context.rootNode)
-                    break; // stateName が変わった
+                if (nextRootNode !== context.rootNode)
+                    break; // ルートが変わった
                 binding = nextBindingInfo;
             } while (true); // eslint-disable-line no-constant-condition
         });
@@ -8518,8 +8673,8 @@ function scheduleDeferredSpreads(deferredSpreads, parentLoopContext, session) {
         });
     }
 }
-function initializeBindings(root, parentLoopContext) {
-    const [subscriberNodes, allBindings, deferredSpreads] = collectNodesAndBindingInfos(root);
+function initializeBindings(root, parentLoopContext, transform) {
+    const [subscriberNodes, allBindings, deferredSpreads] = collectNodesAndBindingInfos(root, transform);
     const session = getOrCreateBindingSession(root);
     for (const node of subscriberNodes) {
         setLoopContextByNode(node, parentLoopContext);
@@ -8639,16 +8794,11 @@ const COMMENT_REGEX = /^(\s*@@\s*(?:.*?)\s*:\s*)(.+?)(\s*)$/;
 function expandShorthandInStatePart(statePart, forPath) {
     const prefix = forPath + DELIMITER + WILDCARD;
     const pipeIndex = statePart.indexOf('|');
-    const atIndex = statePart.indexOf('@');
     let pathPart;
     let suffix;
     if (pipeIndex !== -1) {
         pathPart = statePart.slice(0, pipeIndex).trim();
         suffix = statePart.slice(pipeIndex);
-    }
-    else if (atIndex !== -1) {
-        pathPart = statePart.slice(0, atIndex).trim();
-        suffix = statePart.slice(atIndex);
     }
     else {
         pathPart = statePart.trim();
@@ -8798,21 +8948,47 @@ function cloneNotParseBindTextResult(bindingType, parseBindTextResult) {
         bindingType: bindingType,
     };
 }
-function _getFragmentInfo(rootNode, fragment, parseBindingTextResult, forPath) {
+function transformNodeInfos(nodeInfos, transform, forPath) {
+    for (const nodeInfo of nodeInfos) {
+        for (let i = 0; i < nodeInfo.parseBindTextResults.length; i++) {
+            const parsed = nodeInfo.parseBindTextResults[i];
+            if (parsed.uuid != null)
+                continue;
+            // forPath はこのフラグメントの中身を囲む for のスコープ相対パス（`$n` のシフト量の根拠）
+            nodeInfo.parseBindTextResults[i] = transform(parsed, forPath);
+        }
+    }
+}
+function _getFragmentInfo(rootNode, fragment, parseBindingTextResult, forPath, transform, 
+// else 節はテンプレート自身の結果を if の**変換済み**結果から clone するため、
+// そこだけ再変換しない（nodeInfos は通常どおり変換する）
+transformOwnResult = true) {
     optimizeFragment(fragment);
     if (typeof forPath === "string") {
         expandShorthandPaths(fragment, forPath);
     }
-    collectStructuralFragments(rootNode, fragment, forPath);
+    collectStructuralFragments(rootNode, fragment, forPath, transform);
     // after replacing and collect node infos on child fragment
     const fragmentInfo = {
         fragment: fragment,
-        parseBindTextResult: parseBindingTextResult,
+        // own result（テンプレート自身の for/if/elseif）にも forPath を渡す — `$n` の
+        // シフト量は囲む for の翻訳が根拠（translateParsedForMount）で、渡し漏れると
+        // record.delta に落ち、翻訳がワイルドカードを増やす部分マウント内の for の
+        // `if: $n` / `elseif: $n` が誤った添字に解決される（transformNodeInfos と対称）。
+        // if/elseif の forPath（呼び手の childForPath）は外側 forPath そのもの。
+        // for テンプレートの own path は `$n` になり得ず、非 `$n` パスの変換は forPath を
+        // 読まないため、for に自パスが渡っても無害
+        parseBindTextResult: typeof transform === "undefined" || !transformOwnResult
+            ? parseBindingTextResult
+            : transform(parseBindingTextResult, forPath),
         nodeInfos: getFragmentNodeInfos(fragment),
     };
+    if (typeof transform !== "undefined") {
+        transformNodeInfos(fragmentInfo.nodeInfos, transform, forPath);
+    }
     return fragmentInfo;
 }
-function collectStructuralFragments(rootNode, walkRoot, forPath) {
+function collectStructuralFragments(rootNode, walkRoot, forPath, transform) {
     const elseKeyword = config.commentElsePrefix;
     // Light DOM の mapped コンポーネントの内側は、その子スコープが自分で処理する（§1.13）。
     // fragment info は rootNode + state 名で登録されるため、ホストのパスでここを拾うと
@@ -8865,9 +9041,9 @@ function collectStructuralFragments(rootNode, walkRoot, forPath) {
             if (lastIfFragmentInfo === null) {
                 raiseError(`'else' binding found without preceding 'if' or 'elseif' binding.`);
             }
-            // else condition
+            // else condition（if の変換済み結果の clone なので自身の再変換はしない）
             parseBindTextResult = cloneNotParseBindTextResult("else", lastIfFragmentInfo.parseBindTextResult);
-            fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath);
+            fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath, transform, false);
             setFragmentInfoByUUID(uuid, rootNode, fragmentInfo);
             const lastElseFragmentInfo = elseFragmentInfos.at(-1);
             const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
@@ -8888,7 +9064,7 @@ function collectStructuralFragments(rootNode, walkRoot, forPath) {
             if (lastIfFragmentInfo === null) {
                 raiseError(`'elseif' binding found without preceding 'if' or 'elseif' binding.`);
             }
-            fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath);
+            fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath, transform);
             setFragmentInfoByUUID(uuid, rootNode, fragmentInfo);
             const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
             // create else fragment
@@ -8920,7 +9096,7 @@ function collectStructuralFragments(rootNode, walkRoot, forPath) {
             }
         }
         else {
-            fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath);
+            fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath, transform);
             setFragmentInfoByUUID(uuid, rootNode, fragmentInfo);
             const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
             template.replaceWith(placeHolder);
@@ -8988,7 +9164,7 @@ async function buildBindings(root) {
     }
 }
 
-var version = "1.33.0";
+var version = "2.0.0";
 var pkg = {
 	version: version};
 
@@ -9026,9 +9202,6 @@ class Ssr extends HTMLElementBase {
     _stateData = null;
     _templates = null;
     _hydrateProps = null;
-    get name() {
-        return this.getAttribute('name') || 'default';
-    }
     get version() {
         return this.getAttribute('version') || '';
     }
@@ -9106,7 +9279,7 @@ class Ssr extends HTMLElementBase {
             return {};
         }
     }
-    static findByName(root, name) {
+    static find(root) {
         const tagName = config.tagNames.ssr;
         const parentEl = root instanceof Element
             ? root
@@ -9115,7 +9288,7 @@ class Ssr extends HTMLElementBase {
                 : null;
         if (!parentEl)
             return null;
-        const el = parentEl.querySelector(`${tagName}[name="${name}"]`);
+        const el = parentEl.querySelector(tagName);
         return el;
     }
     /**
@@ -9508,9 +9681,8 @@ function hydrateBlocks(root, blocks) {
         const fragmentInfo = getFragmentInfoByUUID(uuid);
         if (!fragmentInfo)
             continue;
-        const stateName = fragmentInfo.parseBindTextResult.stateName;
         const statePathName = fragmentInfo.parseBindTextResult.statePathName;
-        const stateElement = getStateElementByName(rootNode, stateName);
+        const stateElement = getStateElement(rootNode);
         if (!stateElement)
             continue;
         stateElement.createState("readonly", (state) => {
@@ -9552,19 +9724,12 @@ function restoreFragments(root, ssrEl) {
         const parseBindTextResults = parseBindTextsForElement(bindText);
         let parseBindTextResult = parseBindTextResults[0];
         const bindingType = parseBindTextResult.bindingType;
-        // else: 直前の if 条件の not → 条件反転
-        // elseif: 独自条件を持つが stateName は if から引き継ぐ
+        // else: 直前の if 条件の not → 条件反転（elseif は独自条件のままでよい）
         if (bindingType === 'else' && lastIfParseResult) {
             parseBindTextResult = {
                 ...lastIfParseResult,
                 outFilters: [...lastIfParseResult.outFilters, createNotFilter()],
                 bindingType: 'else',
-            };
-        }
-        else if (bindingType === 'elseif' && lastIfParseResult) {
-            parseBindTextResult = {
-                ...parseBindTextResult,
-                stateName: lastIfParseResult.stateName,
             };
         }
         // if chain の追跡
@@ -9672,7 +9837,7 @@ async function hydrateBindings(root) {
         if (binding.bindingType === 'for') {
             const absAddr = getAbsoluteStateAddressByBinding(binding);
             const rootNode = binding.replaceNode.getRootNode();
-            const stateElement = getStateElementByName(rootNode, binding.stateName);
+            const stateElement = getStateElement(rootNode);
             if (stateElement) {
                 stateElement.createState("readonly", (state) => {
                     const value = state[binding.statePathName];
@@ -9926,7 +10091,8 @@ function registerBinder() {
     // 流す（stateElementByName.ts）。そこが「state が確実に居る」最初の瞬間である。
 }
 
-const stateElementByNameByNode = new WeakMap();
+// v2: 1 rootNode 1 ツリー（P3-6）。名前次元は無い — 追加の state はマウント（mount= / bind-component）で載る。
+const stateElementByNode = new WeakMap();
 const bindingsReadyByNode = new WeakMap();
 // devtools 用の列挙可能な登録簿（protocol §4.1 — 唯一の常時 ON 台帳）。
 // サイズは <wcs-state> 要素数に拘束され、unregister（disconnectedCallback）で
@@ -9935,12 +10101,8 @@ const liveStateElements = new Set();
 function getLiveStateElements() {
     return liveStateElements;
 }
-function getStateElementByName(rootNode, name) {
-    let stateElementByName = stateElementByNameByNode.get(rootNode);
-    if (!stateElementByName) {
-        return null;
-    }
-    return stateElementByName.get(name) || null;
+function getStateElement(rootNode) {
+    return stateElementByNode.get(rootNode) ?? null;
 }
 /**
  * 指定された rootNode のバインディング初期化が完了するまで待機する Promise を返す。
@@ -9949,6 +10111,37 @@ function getBindingsReady(rootNode) {
     return bindingsReadyByNode.get(rootNode) ?? Promise.resolve();
 }
 const bindingsBuiltRoots = new WeakSet();
+/**
+ * マウントされたスコープ（コンポーネントの ShadowRoot）に、**親の** state element を
+ * 別名として載せる（Phase 2・impl-plan §3-0 の 2）。
+ *
+ * `getRootNode()` で state element を解決する全てのサイト
+ * （getAbsoluteStateAddressByBinding / applyChange / applyChangeFromBindings /
+ * fragmentInfoByUUID）が、この 1 エントリで無改造のまま親ツリーに到達する。
+ * `setStateElement` と違い、初回登録の副作用（buildBindings の起動・
+ * liveStateElements・devtools イベント）は持たない — マウントスコープの構築は
+ * webComponent/mountScope.ts が自前で行う。
+ */
+function setStateElementAlias(rootNode, element) {
+    const existing = stateElementByNode.get(rootNode);
+    if (typeof existing !== "undefined") {
+        // 再初期化（connectedCallback で shadow を張り直すコンポーネントの再接続）は
+        // 同じ親を指し直すだけなので冪等。別要素への付け替えは設定ミス
+        if (existing === element) {
+            return;
+        }
+        raiseError(`A state tree is already registered on this root.`);
+    }
+    stateElementByNode.set(rootNode, element);
+}
+/**
+ * マウントされたスコープの ready を登録する（`getBindingsReady(childShadow)` の互換面）。
+ * 完了で binder の `areBindingsBuilt` も真にする。
+ */
+function setBindingsReadyForScope(rootNode, ready) {
+    bindingsReadyByNode.set(rootNode, ready);
+    ready.then(() => markBindingsBuilt(rootNode), () => undefined);
+}
 /**
  * この rootNode の初期バインド構築が完了しているか。
  *
@@ -9967,33 +10160,25 @@ function areBindingsBuilt(rootNode) {
 function markBindingsBuilt(rootNode) {
     bindingsBuiltRoots.add(rootNode);
 }
-function setStateElementByName(rootNode, name, element) {
-    let stateElementByName = stateElementByNameByNode.get(rootNode);
+function setStateElement(rootNode, element) {
+    const existing = stateElementByNode.get(rootNode);
     if (element === null) {
-        // 削除の場合、Mapが存在しない場合は何もしない
-        if (!stateElementByName) {
+        // 削除の場合、登録が無ければ何もしない
+        if (existing === undefined) {
             return;
         }
-        const removed = stateElementByName.get(name);
-        stateElementByName.delete(name);
-        if (stateElementByName.size === 0) {
-            stateElementByNameByNode.delete(rootNode);
-        }
-        if (removed !== undefined) {
-            liveStateElements.delete(removed);
-            if (devtoolsSink !== null) {
-                devtoolsSink({ type: "state:element-unregistered", name, rootNode, element: removed });
-            }
+        stateElementByNode.delete(rootNode);
+        liveStateElements.delete(existing);
+        if (devtoolsSink !== null) {
+            devtoolsSink({ type: "state:element-unregistered", rootNode, element: existing });
         }
         if (config.debug) {
-            console.debug(`State element unregistered: name="${name}"`);
+            console.debug(`State element unregistered`);
         }
     }
     else {
         // 登録の場合
-        if (!stateElementByName) {
-            stateElementByName = new Map();
-            stateElementByNameByNode.set(rootNode, stateElementByName);
+        if (existing === undefined) {
             // 初めてルートノードに登録する場合
             // enable-ssr 属性があり、サーバーサイドでない場合はハイドレーション
             const enableSsr = !inSsr() && element.hasAttribute?.('enable-ssr');
@@ -10053,16 +10238,22 @@ function setStateElementByName(rootNode, name, element) {
                 bindingsReadyByNode.set(rootNode, ready);
             }
         }
-        if (stateElementByName.has(name)) {
-            raiseError(`State element with name "${name}" is already registered.`);
+        if (existing !== undefined) {
+            // v2 は 1 rootNode 1 ツリー。2 つ目の <wcs-state> は設定エラー — 追加の状態は
+            // マウント（mount= / ホスト配線の bind-component）でツリーに載せる
+            raiseError(`A state tree is already registered on this root — one <wcs-state> per root in v2. ` +
+                `Mount additional states onto the tree instead: <wcs-state mount="...">.`);
         }
-        stateElementByName.set(name, element);
+        stateElementByNode.set(rootNode, element);
         liveStateElements.add(element);
+        // ルートの登録は、先に接続されて保留中のボリュームを引き取る
+        //（webComponent/volume.ts・ロード順に依存しない — V5）
+        drainPendingVolumes(rootNode, element);
         if (devtoolsSink !== null) {
-            devtoolsSink({ type: "state:element-registered", name, rootNode, element });
+            devtoolsSink({ type: "state:element-registered", rootNode, element });
         }
         if (config.debug) {
-            console.debug(`State element registered: name="${name}"`, element);
+            console.debug(`State element registered`, element);
         }
     }
 }
@@ -10190,7 +10381,7 @@ class Updater {
     }
     _applyChange(updateRecords) {
         // Note: AbsoluteStateAddress はキャッシュされているため、
-        // 同一の (stateName, address) は同じインスタンスとなり、
+        // 同一の (stateElement, address) は同じインスタンスとなり、
         // Map / Set による重複排除が正しく機能する。
         // coalescing は last-write-wins: 同じ address は最後の update の
         // (値は state 側が既に保持) context をそのまま採用する（設計書 §4.1）。
@@ -10219,7 +10410,6 @@ class Updater {
                 // 既に適用した値は戻さず、updater から例外は投げない（設計書 §4 規則 6）。
                 console.error(`[@wcstack/state] propagation hop limit exceeded; update record quarantined.`, {
                     path: absoluteAddress.absolutePathInfo.pathInfo.path,
-                    stateName: absoluteAddress.absolutePathInfo.stateName,
                     transactionId: context.transactionId,
                     hop: context.hop,
                     maxHops: MAX_PROPAGATION_HOPS,
@@ -10325,7 +10515,7 @@ function getUpdater() {
  * **戻り値は「宣言の集合」であり、インスタンスの multiset ではない**:
  * レンダリング済みページでは行クローンが `data-wcs` 属性とネストアンカー
  * （同一 UUID）を保持したまま live DOM に入るため、素朴な走査は宣言 1 件を
- * 行数分だけ重複列挙してしまう。ここでは宣言タプル（stateName / path / prop /
+ * 行数分だけ重複列挙してしまう。ここでは宣言タプル（path / prop /
  * bindingType / フィルタ列）で dedupe し、宣言 1 件 = エントリ 1 件を保証する。
  * インスタンス粒度（どの行のどのノードか）は live の binding 台帳
  * （state:binding-added）の守備範囲で、こちらには持たせない。
@@ -10358,14 +10548,13 @@ function declarationKey(info) {
     const filters = [...info.inFilters, ...info.outFilters]
         .map((f) => `${f.filterName}(${f.args.join(",")})`)
         .join("|");
-    return [info.stateName, info.statePathName, info.propName, info.bindingType, filters].join("\u0000");
+    return [info.statePathName, info.propName, info.bindingType, filters].join("\u0000");
 }
 function toInfo(node, parsed, origin, raw) {
     return {
         node,
         propName: parsed.propName,
         statePathName: parsed.statePathName,
-        stateName: parsed.stateName,
         bindingType: parsed.bindingType,
         inFilters: parsed.inFilters,
         outFilters: parsed.outFilters,
@@ -10465,7 +10654,7 @@ function collectDeclaredBindings(rootNode) {
 /** グローバル registry のプロパティ名 */
 const DEVTOOLS_HOOK_GLOBAL = "__WCSTACK_DEVTOOLS_HOOK__";
 /** プロトコル版。additive change では上げない（protocol §2） */
-const DEVTOOLS_PROTOCOL_VERSION = 1;
+const DEVTOOLS_PROTOCOL_VERSION = 2;
 
 /**
  * devtools/bridge.ts
@@ -10581,7 +10770,6 @@ function setSink(sink) {
 }
 function createStateElementSummary(element) {
     return {
-        name: element.name,
         rootNode: element.rootNode,
         element,
         paths: {
@@ -10605,9 +10793,9 @@ function createStateElementSummary(element) {
             : new Set(element.listKeys.keys()),
     };
 }
-function requireStateElement(name, rootNode) {
-    return getStateElementByName(rootNode, name) ??
-        raiseError(`devtools: state element not found: name="${name}"`);
+function requireStateElement(rootNode) {
+    return getStateElement(rootNode) ??
+        raiseError(`devtools: no state tree on this root`);
 }
 function createSourceId() {
     // getUUID() はモジュールローカル連番のため、state コピーが複数ある
@@ -10637,8 +10825,23 @@ function registerDevtoolsSource() {
             }
             return summaries;
         },
-        keys(name, rootNode) {
-            const element = requireStateElement(name, rootNode);
+        overlays(rootNode) {
+            const element = requireStateElement(rootNode);
+            return getMountRecordsForStateElement(element).map((record) => ({
+                marker: record.marker,
+                componentTag: record.component.tagName.toLowerCase(),
+                stateProp: record.stateProp,
+                mountTable: record.entries.map((entry) => ({
+                    inner: entry.innerSegments.join("."),
+                    outer: entry.outerPathInfo.path,
+                })),
+                delta: record.delta,
+                privateKeys: Object.keys(record.privateSnapshot),
+                getterKeys: [...record.getterKeys],
+            }));
+        },
+        keys(rootNode) {
+            const element = requireStateElement(rootNode);
             const result = [];
             element.createState("readonly", (state) => {
                 // Object.keys は Proxy の ownKeys 経由で target の own key を返す。
@@ -10662,16 +10865,16 @@ function registerDevtoolsSource() {
             });
             return result;
         },
-        read(name, rootNode, path, indexes) {
-            const element = requireStateElement(name, rootNode);
+        read(rootNode, path, indexes) {
+            const element = requireStateElement(rootNode);
             let result;
             element.createState("readonly", (state) => {
                 result = state["$resolve"](path, indexes ?? []);
             });
             return result;
         },
-        write(name, rootNode, path, value, indexes) {
-            const element = requireStateElement(name, rootNode);
+        write(rootNode, path, value, indexes) {
+            const element = requireStateElement(rootNode);
             element.createState("writable", (state) => {
                 if (indexes !== undefined && indexes.length > 0) {
                     // Note: $resolve は value===undefined を「取得」と解釈するため、
@@ -10710,19 +10913,19 @@ function registerDevtoolsSource() {
 function buildSsrDocument(root) {
     const stateTag = config.tagNames.state;
     const ssrTag = config.tagNames.ssr;
-    const stateElements = root.querySelectorAll(`${stateTag}[enable-ssr]`);
+    // スナップショットはルートツリーに 1 本（D14）: ボリューム（mount=）と bind-component は
+    // 独立ツリー（__state）を持たないため、含めると空の <wcs-ssr> を生成してしまう。
+    // Ssr.find は文書先頭一致なので、ルートより前の空スナップショットをルートが掴み、
+    // ハイドレーション全体が無言で CSR 退化する
+    const stateElements = root.querySelectorAll(`${stateTag}[enable-ssr]:not([mount]):not([bind-component])`);
     for (const stateEl of stateElements) {
-        const name = stateEl.getAttribute("name") || "default";
         // 既に直前へ生成済み（旧 server との組み合わせで inline 生成された等）なら
         // 何もしない — build() は冪等でなければならない（プロトコル契約）
         const prev = stateEl.previousElementSibling;
-        if (prev !== null &&
-            prev.tagName.toLowerCase() === ssrTag &&
-            (prev.getAttribute("name") || "default") === name) {
+        if (prev !== null && prev.tagName.toLowerCase() === ssrTag) {
             continue;
         }
         const ssrEl = document.createElement(ssrTag);
-        ssrEl.setAttribute("name", name);
         ssrEl.setAttribute("version", VERSION);
         Ssr.buildContent(ssrEl, Ssr.extractStateData(stateEl));
         stateEl.parentNode?.insertBefore(ssrEl, stateEl);
@@ -10778,9 +10981,9 @@ function describeImportFailure(name, error, cspBlocked) {
  * 起きない。sourceURL コメントに番号を混ぜて本文を毎回変え、両経路を揃える。
  */
 let loadSequence = 0;
-async function loadFromInnerScript(script, name) {
+async function loadFromInnerScript(script, sourceLabel) {
     let scriptModule = null;
-    const uniq_comment = `\n//# sourceURL=${name}#${++loadSequence}\n`;
+    const uniq_comment = `\n//# sourceURL=${sourceLabel}#${++loadSequence}\n`;
     // import() が失敗した理由が CSP かどうかを判別するために、評価の間だけ違反を購読する。
     let cspBlocked = false;
     const onViolation = (event) => {
@@ -10812,7 +11015,7 @@ async function loadFromInnerScript(script, name) {
     catch (e) {
         // 呼び出し元（State._initialize / _initializeDCC）が raiseError で
         // `[@wcstack/state]` を付けるため、ここでは prefix を重ねない。
-        throw new Error(describeImportFailure(name, e, cspBlocked), { cause: e });
+        throw new Error(describeImportFailure(sourceLabel, e, cspBlocked), { cause: e });
     }
     finally {
         document.removeEventListener("securitypolicyviolation", onViolation);
@@ -10879,10 +11082,6 @@ function loadFromScriptJson(id) {
 class LoopContextStack {
     _loopContextStack = Array(MAX_LOOP_DEPTH).fill(undefined);
     _length = 0;
-    _getBaseDepth;
-    constructor(getBaseDepth) {
-        this._getBaseDepth = getBaseDepth;
-    }
     createLoopContext(elementStateAddress, callback) {
         if (elementStateAddress.listIndex === null) {
             raiseError(`Cannot create loop context for a state address that does not have a list index.`);
@@ -10915,10 +11114,7 @@ class LoopContextStack {
             // Δ=0 の判定を先に置き、通れば base 深さの解決（DOM の親走査を含む）に
             // 一切触れない — 通常の state に追加コストを載せないため。
             if (loopContext.listIndex.length !== loopContext.pathInfo.wildcardCount) {
-                const baseDepth = this._getBaseDepth();
-                if (loopContext.listIndex.length !== loopContext.pathInfo.wildcardCount + baseDepth) {
-                    raiseError(`Cannot push loop context when there is no active loop context: the list index chain (length ${loopContext.listIndex.length}) does not cover the wildcard path (wildcard count ${loopContext.pathInfo.wildcardCount}, base depth ${baseDepth}).`);
-                }
+                raiseError(`Cannot push loop context when there is no active loop context: the list index chain (length ${loopContext.listIndex.length}) does not cover the wildcard path (wildcard count ${loopContext.pathInfo.wildcardCount}).`);
             }
         }
         this._loopContextStack[this._length] = loopContext;
@@ -10942,8 +11138,8 @@ class LoopContextStack {
         return retValue;
     }
 }
-function createLoopContextStack(getBaseDepth = () => 0) {
-    return new LoopContextStack(getBaseDepth);
+function createLoopContextStack() {
+    return new LoopContextStack();
 }
 
 /**
@@ -10990,7 +11186,7 @@ function getOrCreateCommandToken(stateElement, name) {
     }
     let token = registry.get(name);
     if (typeof token === "undefined") {
-        token = new CommandToken(name, stateElement.name);
+        token = new CommandToken(name);
         registry.set(name, token);
     }
     return token;
@@ -11965,7 +12161,7 @@ function updateStreamStatus(stateElement, entry, status, error) {
  *
  * - 起動中の各 stateElement の各 entry について、depAddresses と batch の交差を
  *   Set.has のインスタンス同一性で判定する（小さい方 = depAddresses を回して
- *   batch.has(dep)。AbsoluteStateAddress はキャッシュにより同一 (stateName, path,
+ *   batch.has(dep)。AbsoluteStateAddress はキャッシュにより同一 (stateElement, path,
  *   listIndex) が同一インスタンス、§2-1）。args なし（depAddresses 空）の entry は
  *   自然にスキップされる。
  * - status は問わず restart する（done / error からも依存の叩き直しで再試行、§2-2）。
@@ -12062,6 +12258,14 @@ registerUpdateBatchListener(restartStreamsOnUpdateBatch, STREAM_LISTENER_PRIORIT
  * （ゼロコスト契約、docs/state-watch-hook-design.md §10）。
  */
 const registryByStateElement = new WeakMap();
+/**
+ * ボリュームが追記した watch entry（webComponent/volume.ts — 接頭辞翻訳済み・
+ * ハンドラは chroot 包装済み）。ルート自身の宣言（上の registry・_state 再 set で
+ * 丸ごと差し替わる）とはライフサイクルが違うため別台帳にする。同じ翻訳パスに
+ * ルートの宣言とボリュームの宣言が並ぶことも、複数ボリュームが同名パスに並ぶことも
+ * ある（配列・登録順）。
+ */
+const volumeEntriesByStateElement = new WeakMap();
 const activeStateElements = new Set();
 /**
  * 未登録時に返す共有の空 Map。
@@ -12113,6 +12317,27 @@ function clearWatchRegistry(stateElement) {
     activeStateElements.delete(stateElement);
     registryByStateElement.delete(stateElement);
 }
+/** ボリュームの watch entry を追記する（置換しない）。 */
+function addVolumeWatchEntries(stateElement, entries) {
+    let byPath = volumeEntriesByStateElement.get(stateElement);
+    if (typeof byPath === "undefined") {
+        byPath = new Map();
+        volumeEntriesByStateElement.set(stateElement, byPath);
+    }
+    for (const entry of entries) {
+        const list = byPath.get(entry.path);
+        if (typeof list === "undefined") {
+            byPath.set(entry.path, [entry]);
+        }
+        else {
+            list.push(entry);
+        }
+    }
+}
+const EMPTY_VOLUME_ENTRIES = new Map();
+function getVolumeWatchEntries(stateElement) {
+    return volumeEntriesByStateElement.get(stateElement) ?? EMPTY_VOLUME_ENTRIES;
+}
 
 /**
  * watch/processWatchDeclaration.ts
@@ -12140,6 +12365,40 @@ function clearWatchRegistry(stateElement) {
  * `watchPaths` に保持し、setByAddress のホットパスは `!== null` の分岐 1 個で
  * 抜けられる（ゼロコスト契約、§10）。
  */
+/**
+ * `$watch` パスの静的検査（宣言側とボリュームの接頭辞登録 — webComponent/volume.ts —
+ * で共有）。検証に通れば pathInfo を返す。
+ */
+function assertValidWatchPath(path) {
+    if (path.length === 0) {
+        raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry name must be a non-empty state path.`);
+    }
+    if (path.startsWith("$")) {
+        raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" must not start with "$" (reserved namespace).${LINT_HINT}`);
+    }
+    // 越境 watch は不採用（設計 D8）。他 state のアドレスは発火対象にしないため、
+    // "@" 付きのパスは受け取った時点で落とす（名前次元は v2 で撤去 — 黙って発火しないより良い）。
+    if (path.includes("@")) {
+        raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" must not contain "@" — the name selector was removed in v2; watch only paths of the state tree.${LINT_HINT}`);
+    }
+    // Object.prototype の継承名は `path in state` 系の判定を汚すため一律拒否する
+    // （processStreamsDeclaration と同じ防衛線）。
+    if (path in Object.prototype) {
+        raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" must not be a property name inherited from Object.prototype (e.g. "__proto__", "constructor").`);
+    }
+    const pathInfo = getPathInfo(path);
+    // 空セグメント（"a..b" / 先頭・末尾の "."）は getPathInfo が黙って受理してしまうため、
+    // ここで落とす。放置すると解決不能なアドレスを依存グラフへ登録することになる。
+    for (const segment of pathInfo.segments) {
+        if (segment.length === 0) {
+            raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" has an empty path segment.${LINT_HINT}`);
+        }
+    }
+    if (pathInfo.wildcardCount > MAX_WILDCARD_DEPTH) {
+        raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" exceeds the maximum wildcard depth (${MAX_WILDCARD_DEPTH}).`);
+    }
+    return pathInfo;
+}
 function processWatchDeclaration(stateElement, state) {
     const declared = state[STATE_WATCH_NAME];
     if (typeof declared === "undefined") {
@@ -12158,33 +12417,7 @@ function processWatchDeclaration(stateElement, state) {
         if (typeof handler !== "function") {
             raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" must be a function.${LINT_HINT}`);
         }
-        if (path.length === 0) {
-            raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry name must be a non-empty state path.`);
-        }
-        if (path.startsWith("$")) {
-            raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" must not start with "$" (reserved namespace).${LINT_HINT}`);
-        }
-        // 越境 watch は不採用（設計 D8）。他 state のアドレスは発火対象にしないため、
-        // `@stateName` 付きのパスは受け取った時点で落とす（黙って発火しないより良い）。
-        if (path.includes(STATE_NAME_SEPARATOR)) {
-            raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" must not target another state ("${STATE_NAME_SEPARATOR}" is not allowed); watch only paths of its own state.${LINT_HINT}`);
-        }
-        // Object.prototype の継承名は `path in state` 系の判定を汚すため一律拒否する
-        // （processStreamsDeclaration と同じ防衛線）。
-        if (path in Object.prototype) {
-            raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" must not be a property name inherited from Object.prototype (e.g. "__proto__", "constructor").`);
-        }
-        const pathInfo = getPathInfo(path);
-        // 空セグメント（"a..b" / 先頭・末尾の "."）は getPathInfo が黙って受理してしまうため、
-        // ここで落とす。放置すると解決不能なアドレスを依存グラフへ登録することになる。
-        for (const segment of pathInfo.segments) {
-            if (segment.length === 0) {
-                raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" has an empty path segment.${LINT_HINT}`);
-            }
-        }
-        if (pathInfo.wildcardCount > MAX_WILDCARD_DEPTH) {
-            raiseError(`[wcs/watch-declaration-invalid] ${STATE_WATCH_NAME} entry "${path}" exceeds the maximum wildcard depth (${MAX_WILDCARD_DEPTH}).`);
-        }
+        const pathInfo = assertValidWatchPath(path);
         entries.set(path, {
             path,
             pathInfo,
@@ -12311,7 +12544,7 @@ function clearPrevValues() {
  * （ゼロコスト契約、設計書 §10 ／ 実装計画 P16）。
  */
 function startWatch(stateElement) {
-    if (getWatchEntries(stateElement).size === 0) {
+    if (getWatchEntries(stateElement).size === 0 && getVolumeWatchEntries(stateElement).size === 0) {
         return;
     }
     addActiveWatchStateElement(stateElement);
@@ -12338,6 +12571,13 @@ function primeComputedWatches(stateElement) {
     for (const entry of getWatchEntries(stateElement).values()) {
         if (isScalarComputed(stateElement, entry)) {
             targets.push(entry);
+        }
+    }
+    for (const entries of getVolumeWatchEntries(stateElement).values()) {
+        for (const entry of entries) {
+            if (isScalarComputed(stateElement, entry)) {
+                targets.push(entry);
+            }
         }
     }
     if (targets.length === 0) {
@@ -12392,7 +12632,6 @@ function reportWatchError(stateElement, path, phase, error) {
         devtoolsSink({
             type: "state:watch-error",
             phase,
-            stateName: stateElement.name,
             path,
             error,
         });
@@ -12422,7 +12661,7 @@ function fireWatchOnUpdateBatch(batch) {
         // --- 収集フェーズ ---
         const hits = [];
         for (const absAddress of batch) {
-            // stateName 文字列ではなく stateElement 参照で引く。AbsolutePathInfo は
+            // stateElement 参照で引く。AbsolutePathInfo は
             // stateElement 単位でキャッシュされるので、同名 state が複数の rootNode に
             // 居ても取り違えない（address/AbsolutePathInfo.ts）。他 state のアドレスは
             // ここで自然に落ちる ＝ 越境しない（設計 D8）。
@@ -12430,22 +12669,30 @@ function fireWatchOnUpdateBatch(batch) {
             if (!activeStateElements.has(stateElement)) {
                 continue;
             }
-            const entry = getWatchEntries(stateElement).get(absAddress.absolutePathInfo.pathInfo.path);
-            if (typeof entry === "undefined") {
+            const path = absAddress.absolutePathInfo.pathInfo.path;
+            const own = getWatchEntries(stateElement).get(path);
+            const fromVolumes = getVolumeWatchEntries(stateElement).get(path);
+            if (typeof own === "undefined" && typeof fromVolumes === "undefined") {
                 continue;
             }
-            let indexes = [];
-            if (entry.pathInfo.wildcardCount > 0) {
-                if (absAddress.listIndex === null) {
-                    // ワイルドカードパスなのに行が特定できないヒット（リストの依存展開で載る
-                    // 中間アドレス等）。indexes を空のまま発火すると cur の解決（$resolve）が
-                    // 「indexes 不足」で throw し、例外隔離に落ちて console.error だけが残る。
-                    // 行が定まらない以上ハンドラに渡せる意味が無いので、収集段階で落とす。
-                    continue;
-                }
-                indexes = getScopedIndexes(absAddress.listIndex, entry.pathInfo.wildcardCount);
+            const matched = typeof own === "undefined" ? [] : [own];
+            if (typeof fromVolumes !== "undefined") {
+                matched.push(...fromVolumes);
             }
-            hits.push({ stateElement, entry, absAddress, indexes });
+            for (const entry of matched) {
+                let indexes = [];
+                if (entry.pathInfo.wildcardCount > 0) {
+                    if (absAddress.listIndex === null) {
+                        // ワイルドカードパスなのに行が特定できないヒット（リストの依存展開で載る
+                        // 中間アドレス等）。indexes を空のまま発火すると cur の解決（$resolve）が
+                        // 「indexes 不足」で throw し、例外隔離に落ちて console.error だけが残る。
+                        // 行が定まらない以上ハンドラに渡せる意味が無いので、収集段階で落とす。
+                        continue;
+                    }
+                    indexes = getScopedIndexes(absAddress.listIndex, entry.pathInfo.wildcardCount);
+                }
+                hits.push({ stateElement, entry, absAddress, indexes });
+            }
         }
         if (hits.length === 0) {
             return;
@@ -12457,8 +12704,12 @@ function fireWatchOnUpdateBatch(batch) {
             for (const hit of hits) {
                 // 先行ハンドラが同期的に切断や `_state` 再 set を行い得るため、発火直前に
                 // 「まだ active か」「entry が現行 registry のものか」を再確認する。
-                if (!activeStateElements.has(hit.stateElement) ||
-                    getWatchEntries(hit.stateElement).get(hit.entry.path) !== hit.entry) {
+                if (!activeStateElements.has(hit.stateElement)) {
+                    continue;
+                }
+                const stillOwn = getWatchEntries(hit.stateElement).get(hit.entry.path) === hit.entry;
+                const stillVolume = getVolumeWatchEntries(hit.stateElement).get(hit.entry.path)?.includes(hit.entry) === true;
+                if (!stillOwn && !stillVolume) {
                     continue;
                 }
                 fireOne(hit);
@@ -12524,7 +12775,7 @@ function fireOne(hit) {
             // 正常発火の観測（設計書 §11 の予約イベント・配線カバレッジの実測面）。
             // 値は載せない。イベント生成は sink 接続時のみ（ゼロコスト契約）。
             if (devtoolsSink !== null) {
-                devtoolsSink({ type: "state:watch-fired", stateName: stateElement.name, path: entry.path });
+                devtoolsSink({ type: "state:watch-fired", path: entry.path });
             }
             entry.handler.call(state, cur, prev, ...indexes);
         });
@@ -12814,7 +13065,7 @@ function defineDCC(hostElement, shadowRoot, state) {
         ? createBindableEventMap(tagName, bindables)
         : {};
     // DCC クラス生成
-    const stateTagSelector = `${config.tagNames.state}:not([name])`;
+    const stateTagSelector = config.tagNames.state;
     const DCCElement = class extends HTMLElement {
         static template = template;
         static shadowRootMode = shadowRootMode;
@@ -12875,11 +13126,10 @@ function defineDCC(hostElement, shadowRoot, state) {
                     stateEl.setBindableEventMap(DCCElement.bindableEventMap);
                 }
                 else {
-                    // $bindables を宣言しているのに束ねる先が無い。stateTagSelector は
-                    // `:not([name])` なので name 付きの <wcs-state> は一致せず、この分岐に落ちると
+                    // $bindables を宣言しているのに束ねる先が無い。この分岐に落ちると
                     // 変更イベントが一切出ないまま静かに壊れる
                     // （docs/architecture-hardening/15-state-component-mechanism-consistency.md §2.5）。
-                    console.warn(`[@wcstack/state] DCC: "${tagName}" declares ${STATE_BINDABLES_NAME} but its template has no <${config.tagNames.state}> without a "name" attribute. Change events will not be dispatched.`);
+                    console.warn(`[@wcstack/state] DCC: "${tagName}" declares ${STATE_BINDABLES_NAME} but its template has no <${config.tagNames.state}>. Change events will not be dispatched.`);
                 }
             }
         }
@@ -13121,56 +13371,6 @@ function dirtyCacheEntryByAbsoluteStateAddress(address) {
     }
 }
 
-/**
- * webComponent/crossBoundaryAddress.ts
- *
- * mapped な `bind-component` の state は innerState proxy を target に持つ。
- * そこへの読み書きは `Reflect.get/set(target, path)` で行われるため、Proxy の
- * トラップに渡るのは**パス文字列だけ**で、解決済みの listIndex が落ちる。
- *
- * 子スコープが `for:` でマップ先の配列を回している場合、行バインディングが読む
- * `items.*.name` は親スコープの `rows.*.name` に翻訳されるが、どの行かは listIndex
- * にしか無い。ループ文脈はコンポーネント要素（親スコープ側）にぶら下がっており、
- * 子スコープのループはコンポーネントの内側なので `getLoopContextByNode` では引けない
- * （docs/architecture-hardening/15-state-component-mechanism-consistency.md §1.8）。
- *
- * そこで越境直前のアドレスを動的スコープで受け渡す。push/pop するのは
- * `hasMappedComponentState` が真の state 要素の読み書きだけで、通常の state の
- * ホットパス（getByAddress / setByAddress）には一切載らない。
- */
-// 行ごとの読み書きで通るため、エントリオブジェクトを割り当てずに 2 本の並行配列で持つ
-// （リスト描画は「行数 × 行内バインディング数」回ここを通る）。
-const stateElementStack = [];
-const addressStack = [];
-let depth = 0;
-function pushCrossBoundaryAddress(stateElement, address) {
-    stateElementStack[depth] = stateElement;
-    addressStack[depth] = address;
-    depth++;
-}
-function popCrossBoundaryAddress() {
-    depth--;
-    // 参照を残さない（state 要素・listIndex を保持し続けないため）
-    stateElementStack[depth] = undefined;
-    addressStack[depth] = undefined;
-}
-/**
- * 越境直前のアドレスを取り出す。スタック最上位が「この state 要素の、このパスの
- * 読み書き」であるときだけ返す。ネストしたコンポーネントでは最内の越境が
- * 最上位になるため、同一性の照合だけで取り違えを防げる。
- */
-function getCrossBoundaryAddress(stateElement, path) {
-    if (depth === 0) {
-        return null;
-    }
-    const top = depth - 1;
-    const address = addressStack[top];
-    if (stateElementStack[top] !== stateElement || address?.pathInfo.path !== path) {
-        return null;
-    }
-    return address;
-}
-
 function checkDependency(handler, address) {
     // $untrackDependency スコープ中／setter 実行中は依存を張らない
     if (handler.untracking) {
@@ -13222,6 +13422,268 @@ function checkDependency(handler, address) {
     }
 }
 
+const privateDataByRecord = new WeakMap();
+/** マウントインスタンス（record × listIndex）の私有データ。無ければ初期スナップショットから複製 */
+function getPrivateData(record, listIndex) {
+    let table = privateDataByRecord.get(record);
+    if (typeof table === "undefined") {
+        table = { byListIndex: new WeakMap(), noIndex: null };
+        privateDataByRecord.set(record, table);
+    }
+    if (listIndex === null) {
+        return table.noIndex ??= { ...record.privateSnapshot };
+    }
+    let data = table.byListIndex.get(listIndex);
+    if (typeof data === "undefined") {
+        data = { ...record.privateSnapshot };
+        table.byListIndex.set(listIndex, data);
+    }
+    return data;
+}
+class OverlayValueHandler {
+    record;
+    markerParentPath;
+    listIndex;
+    isBase;
+    receiver;
+    handler;
+    constructor(record, markerParentPath, listIndex, isBase, receiver, handler) {
+        this.record = record;
+        this.markerParentPath = markerParentPath;
+        this.listIndex = listIndex;
+        this.isBase = isBase;
+        this.receiver = receiver;
+        this.handler = handler;
+    }
+    accessorNameFor(key) {
+        return this.record.accessorBySuffixByMarkerParent.get(this.markerParentPath)?.get(key)?.accessorName;
+    }
+    accessorAddress(key) {
+        return createStateAddress(getPathInfo(this.markerParentPath + DELIMITER + key), this.listIndex);
+    }
+    get(target, prop, _receiver) {
+        if (typeof prop !== "string") {
+            return Reflect.get(target, prop);
+        }
+        if (prop === "then") {
+            // Promise と誤認されないための恒例のガード（innerState と同じ）
+            return undefined;
+        }
+        if (prop[0] === "$") {
+            if (prop === "$postUpdate") {
+                return (path) => {
+                    this.receiver.$postUpdate(translateInnerPath(this.record, path));
+                };
+            }
+            // §4-6（P2-9）: 相対パス → 接頭辞合成 → ルート API。作者のスコープ相対 indexes の
+            // 先頭に、評価中のマーカーアドレスの行添字（＝翻訳で増えたワイルドカード分）を足す
+            if (prop === "$getAll" || prop === "$setAll" || prop === "$resolve") {
+                const record = this.record;
+                const contextIndexes = this.listIndex?.indexes ?? [];
+                const receiver = this.receiver;
+                if (prop === "$resolve") {
+                    return (path, indexes, ...rest) => {
+                        const translated = translateInnerPath(record, path);
+                        const composed = composeMountIndexes(record, path, translated, indexes ?? [], contextIndexes);
+                        return receiver.$resolve(translated, composed, ...rest);
+                    };
+                }
+                const api = prop;
+                return (path, indexes, ...rest) => {
+                    const translated = translateInnerPath(record, path);
+                    const composed = composeMountIndexes(record, path, translated, indexes, contextIndexes);
+                    return receiver[api](translated, composed, ...rest);
+                };
+            }
+            // `$1` 等は親トラップの Δ 補正がスコープ相対にする。他の `$` API は
+            // 親スコープの意味論のまま（接頭辞翻訳は P2-9 — §4-6 の表）
+            return this.receiver[prop];
+        }
+        const accessorName = this.accessorNameFor(prop);
+        if (typeof accessorName !== "undefined") {
+            // 作者の getter を chroot（この proxy）を `this` に評価。マーカーパスを push して
+            // 中の読みが依存エッジ（read → このアクセサ）として親グラフに載るようにする
+            this.handler.pushAddress(this.accessorAddress(prop));
+            try {
+                return Reflect.get(this.record.stateObject, accessorName, _receiver);
+            }
+            finally {
+                this.handler.popAddress();
+            }
+        }
+        if (this.isBase) {
+            if (Object.prototype.hasOwnProperty.call(target, prop)) {
+                // 私有データの読みはオーバーレイ内で完結し親 proxy を通らないので、
+                // 依存エッジ（この私有キー → 評価中の getter）だけは明示的に登録する。
+                // 登録しないと `this.suffix` を読む getter が私有キーの書き込みで再評価されない
+                checkDependency(this.handler, this.accessorAddress(prop));
+                return target[prop];
+            }
+            const method = this.record.stateObject[prop];
+            if (typeof method === "function") {
+                return method.bind(_receiver);
+            }
+        }
+        // ツリー（規則 3）: アクティブな親 receiver の文字列読みに落とす。
+        // ループ文脈は push 済みの外側アドレス（マーカー親のワイルドカード）から解決される
+        return this.receiver[translateInnerPath(this.record, prop)];
+    }
+    set(target, prop, value, _receiver) {
+        if (typeof prop !== "string") {
+            return Reflect.set(target, prop, value);
+        }
+        const accessorName = this.accessorNameFor(prop);
+        if (typeof accessorName !== "undefined") {
+            if (!this.record.setterKeys.has(accessorName)) {
+                // setter の無い getter（computed）への書き込み。下のツリー行きフォールバックへ
+                // 落とすと translateInnerPath が同じマーカーパスを返して set が循環し
+                // RangeError（無限再帰）になる — 設定ミスとして loud に落とす
+                raiseError(`Cannot write to "${accessorName}" on mounted <${this.record.component.tagName.toLowerCase()}>: ` +
+                    `the accessor has no setter. Add a setter or write to the underlying state paths instead.`);
+            }
+            // setter は命令的な代入（依存を張らない）— setByAddress の setter 規約に合わせる
+            this.handler.pushAddress(this.accessorAddress(prop));
+            this.handler.beginUntrack();
+            try {
+                return Reflect.set(this.record.stateObject, accessorName, value, _receiver);
+            }
+            finally {
+                this.handler.endUntrack();
+                this.handler.popAddress();
+            }
+        }
+        if (this.isBase && Object.prototype.hasOwnProperty.call(target, prop)) {
+            target[prop] = value;
+            return true;
+        }
+        this.receiver[translateInnerPath(this.record, prop)] = value;
+        return true;
+    }
+    has(target, prop) {
+        if (typeof prop !== "string") {
+            return Reflect.has(target, prop);
+        }
+        if (prop[0] === "$" || prop[0] === "#") {
+            return false;
+        }
+        if (typeof this.accessorNameFor(prop) !== "undefined") {
+            return true;
+        }
+        if (this.isBase) {
+            if (Object.prototype.hasOwnProperty.call(target, prop)) {
+                return true;
+            }
+            if (typeof this.record.stateObject[prop] === "function") {
+                return true;
+            }
+        }
+        // 規則 3（ツリー）: v1 innerState の has と同じ「規則が解決するか」の意味論。
+        // 親 proxy の has は生オブジェクトの Reflect.has なので、複数セグメントの
+        // 翻訳後パスを in で聞いても常に偽 — 値の存在でなく規則の存在で答える
+        try {
+            translateInnerPath(this.record, prop);
+            return true;
+        }
+        catch {
+            return false;
+        }
+    }
+}
+/**
+ * マーカーで終わるアドレスのオーバーレイ値を作る（getByAddress の dispatch 点）。
+ * 評価中の receiver / handler を閉じ込めるため、呼び出しごとに作る（キャッシュ不可）。
+ */
+function createOverlayValue(record, address, receiver, handler) {
+    const markerParentPath = address.pathInfo.path;
+    const isBase = markerParentPath === record.markerBasePath;
+    const privateData = isBase ? getPrivateData(record, address.listIndex) : {};
+    return new Proxy(privateData, new OverlayValueHandler(record, markerParentPath, address.listIndex, isBase, receiver, handler));
+}
+/**
+ * `element.state` の公開面（chroot・M13）。相対キーを変換して親の proxy を通すだけの
+ * 薄い翻訳で、値の解決（私有・getter・ツリー）は全て親ウォーク＋オーバーレイが担う。
+ * ホスト要素のループ文脈で包む（行マウント `state: .` の `users.*.…` を解決するため —
+ * v1 の outerState → innerState と同じ形）。
+ */
+function createChrootDollarApi(record, api, withHostContext) {
+    const parent = record.parentStateElement;
+    const call = (mutability, fn) => {
+        let result;
+        parent.createState(mutability, (state) => {
+            result = withHostContext(state, () => fn(state));
+        });
+        return result;
+    };
+    if (api === "$postUpdate") {
+        return (path) => call("readonly", (state) => state.$postUpdate(translateInnerPath(record, path)));
+    }
+    return (path, indexes, ...rest) => {
+        const translated = translateInnerPath(record, path);
+        const contextIndexes = getLoopContextByNode(record.component)?.listIndex.indexes ?? [];
+        // $resolve は indexes 必須の API（省略は空列と同義に倒す）。書き込み形（第 3 引数あり）は writable
+        const composed = composeMountIndexes(record, path, translated, api === "$resolve" ? (indexes ?? []) : indexes, contextIndexes);
+        const mutability = api === "$setAll" || (api === "$resolve" && rest.length > 0) ? "writable" : "readonly";
+        return call(mutability, (state) => state[api](translated, composed, ...rest));
+    };
+}
+function createPublicMountState(record) {
+    const parent = record.parentStateElement;
+    const withHostContext = (state, callback) => {
+        const loopContext = getLoopContextByNode(record.component);
+        let result;
+        state[setLoopContextSymbol](loopContext, () => {
+            result = callback();
+        });
+        return result;
+    };
+    return new Proxy({}, {
+        get(_target, prop) {
+            if (typeof prop !== "string" || prop === "then") {
+                return undefined;
+            }
+            // §4-6（P2-9）: 相対パス → 接頭辞合成 → ルート API（chroot 面）。
+            // 先頭添字はホスト要素のループ文脈から補う
+            if (prop === "$getAll" || prop === "$setAll" || prop === "$resolve" || prop === "$postUpdate") {
+                return createChrootDollarApi(record, prop, withHostContext);
+            }
+            let value;
+            parent.createState("readonly", (state) => {
+                value = withHostContext(state, () => state[prop[0] === "$" ? prop : translateInnerPath(record, prop)]);
+            });
+            return value;
+        },
+        set(_target, prop, value) {
+            if (typeof prop !== "string") {
+                return true;
+            }
+            parent.createState("writable", (state) => {
+                withHostContext(state, () => {
+                    state[prop[0] === "$" ? prop : translateInnerPath(record, prop)] = value;
+                });
+            });
+            return true;
+        },
+        has(_target, prop) {
+            if (typeof prop !== "string" || prop[0] === "$" || prop[0] === "#") {
+                return false;
+            }
+            // 作者の面（私有キー・アクセサ・メソッド）はオブジェクトの own property
+            if (Object.prototype.hasOwnProperty.call(record.stateObject, prop)) {
+                return true;
+            }
+            // ツリーは「規則が解決するか」（v1 innerState の has と同じ意味論 — ルート
+            // マウントでは常に真、部分マウントのみでは接頭辞が一致するときだけ真）
+            try {
+                translateInnerPath(record, prop);
+                return true;
+            }
+            catch {
+                return false;
+            }
+        },
+    });
+}
+
 /**
  * このアドレスの値をキャッシュしてよいか（getByAddress / setByAddress 共通の判定）。
  *
@@ -13237,7 +13699,11 @@ function checkDependency(handler, address) {
  * （docs/architecture-hardening/15-state-component-mechanism-consistency.md §1.8）。
  */
 function isCacheable(stateElement, address) {
-    if (stateElement.hasMappedComponentState === true) {
+    // マーカーで終わるパス（`users.*.#m1` — オーバーレイ値）はキャッシュしない。
+    // オーバーレイ値 proxy は評価中の receiver / handler を閉じ込めるため、drain を
+    // 跨いで使い回せない（webComponent/overlay.ts）。マーカーの**下**のパス
+    // （私有キー・getter の値）は通常どおりキャッシュされ、依存 walk が無効化する。
+    if (stateElement.hasMounts === true && address.pathInfo.lastSegment.charCodeAt(0) === 35 /* '#' */) {
         return false;
     }
     return address.pathInfo.wildcardCount > 0 ||
@@ -13300,6 +13766,16 @@ function _getByAddress(target, address, receiver, handler, stateElement) {
     if (firstSegment === STATE_STREAM_ERROR_NAMESPACE_NAME) {
         return walkNamespace(getStreamErrorNamespace(stateElement), address.pathInfo.segments);
     }
+    // マウントのオーバーレイ dispatch（Phase 2・D20）。掛かるのは「マーカーで終わる
+    // パス」だけで、その下（私有キー・getter・メソッド）の読み書きは通常の親ウォークが
+    // 返された proxy への素の Reflect.get / Reflect.set として続く（webComponent/overlay.ts）。
+    // マウントの無い state は boolean 判定 1 個で抜ける（D18）
+    if (stateElement.hasMounts === true && address.pathInfo.lastSegment.charCodeAt(0) === 35 /* '#' */) {
+        const mountRecord = getMountRecordByPath(stateElement, address.pathInfo.path);
+        if (mountRecord !== null) {
+            return createOverlayValue(mountRecord, address, receiver, handler);
+        }
+    }
     if (address.pathInfo.path in target) {
         // getterの中で参照の可能性があるので、addressをプッシュする
         if (stateElement.getterPaths.has(address.pathInfo.path)) {
@@ -13311,17 +13787,6 @@ function _getByAddress(target, address, receiver, handler, stateElement) {
                 handler.popAddress();
             }
         }
-        else if (stateElement.hasMappedComponentState === true) {
-            // target は innerState proxy。get トラップにはパス文字列しか渡らないので、
-            // 解決済みの listIndex を動的スコープで越境させる（§1.8）
-            pushCrossBoundaryAddress(stateElement, address);
-            try {
-                return Reflect.get(target, address.pathInfo.path);
-            }
-            finally {
-                popCrossBoundaryAddress();
-            }
-        }
         else {
             return Reflect.get(target, address.pathInfo.path);
         }
@@ -13330,7 +13795,13 @@ function _getByAddress(target, address, receiver, handler, stateElement) {
         // 親アドレスが無い ＝ 単一セグメントのパスが state に存在しない。ここは元から
         // throw していたが、文面が内部実装の言葉だったので打ち間違いだと分からなかった。
         // 深いパスの console.warn（pathDiagnostics.checkDeclaredPath）と語彙を揃える。
-        const parentAddress = address.parentAddress ?? raiseError(missingRootPathMessage(stateElement.name, address.pathInfo.path, target, stateElement.getterPaths));
+        // 予約済みのボリュームスロット（D22）: ロード前の読みは undefined が正で、
+        // 深いパスの親歩きがここに落ちても騒がない
+        if (address.parentAddress === null
+            && isPathUnderReservedVolume(safeVolumeRootNode(stateElement), address.pathInfo.path)) {
+            return undefined;
+        }
+        const parentAddress = address.parentAddress ?? raiseError(missingRootPathMessage(address.pathInfo.path, target, stateElement.getterPaths));
         const parentValue = getByAddress(target, parentAddress, receiver, handler);
         // 親が居ないパスの読みは undefined（＝「state に意見が無い」）。`Reflect.get` に
         // そのまま渡すと生の `TypeError: Reflect.get called on non-object` になり、
@@ -13387,6 +13858,11 @@ function getByAddress(target, address, receiver, handler) {
         return _getByAddress(target, address, receiver, handler, stateElement);
     }
 }
+function safeVolumeRootNode(stateElement) {
+    // 読みは createState セッション内でしか起きず、その間 rootNode は必ず有効
+    //（切断で null 化されるのは disconnectedCallback — セッション外）
+    return stateElement.rootNode ?? null;
+}
 
 /**
  * wildcardIndexes.ts
@@ -13431,7 +13907,7 @@ function collectWildcardIndexes(target, receiver, handler, pathInfo, indexes, op
         const wildcardAddress = createStateAddress(wildcardParentPathInfo, listIndex);
         const oldValue = lastValueByListAddress.get(wildcardAddress);
         const newValue = getByAddress(target, wildcardAddress, receiver, handler);
-        const listDiff = createListDiff(getListParentListIndex(handler.stateElement, listIndex), oldValue, newValue);
+        const listDiff = createListDiff(listIndex, oldValue, newValue);
         const listIndexes = listDiff.newIndexes;
         const index = indexes[indexPos] ?? null;
         newValueByAddress.set(wildcardAddress, newValue);
@@ -13834,7 +14310,7 @@ function _walkExpandWildcard(context, currentWildcardIndex, parentListIndex) {
     const parentAbsAddress = createAbsoluteStateAddress(parentAbsPathInfo, parentListIndex);
     const lastValue = getLastListValueByAbsoluteStateAddress(parentAbsAddress);
     const newValue = context.stateProxy[getByAddressSymbol](parentAddress);
-    const listDiff = createListDiff(getListParentListIndex(context.stateElement, parentAddress.listIndex), lastValue, newValue);
+    const listDiff = createListDiff(parentAddress.listIndex, lastValue, newValue);
     const loopIndexes = getIndexes(listDiff, context.searchType);
     if (currentWildcardIndex === context.wildcardPaths.length - 1) {
         context.targetListIndexes.push(...loopIndexes);
@@ -13977,7 +14453,7 @@ function _collectDependencies(context, address, nextEntries) {
                 const absPathInfo = getAbsolutePathInfo(context.stateElement, address.pathInfo);
                 const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
                 const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);
-                const listDiff = createListDiff(getListParentListIndex(context.stateElement, address.listIndex), lastValue, newValue);
+                const listDiff = createListDiff(address.listIndex, lastValue, newValue);
                 const selection = selectExpansionIndexes(context, sourcePath, lastValue, newValue, listDiff);
                 for (const listIndex of selection.fullRows) {
                     const depAddress = createStateAddress(depPathInfo, listIndex);
@@ -14058,7 +14534,6 @@ function _collectDependencies(context, address, nextEntries) {
                         listIndex = null;
                     }
                     const expandContext = {
-                        stateName: context.stateName,
                         stateElement: context.stateElement,
                         targetListIndexes: [],
                         wildcardPaths: depPathInfo.wildcardPaths,
@@ -14092,7 +14567,7 @@ function _collectDependencies(context, address, nextEntries) {
         }
     }
 }
-function walkDependency(stateName, stateElement, startAddress, staticDependency, dynamicDependency, listPathSet, stateProxy, searchType, callback, options) {
+function walkDependency(stateElement, startAddress, staticDependency, dynamicDependency, listPathSet, stateProxy, searchType, callback, options) {
     // 依存ゼロの葉パス（staticMap / dynamicMap にエントリ無し）は context や Set を
     // 割り当てず、開始アドレスの callback だけで完結する。リスト行の値書き込み
     // （update ホットパス）は set 毎にここを通る。開始アドレスへの callback は
@@ -14107,7 +14582,6 @@ function walkDependency(stateName, stateElement, startAddress, staticDependency,
     const ranks = getTopologicalRanks(startPath, staticDependency, dynamicDependency, MAX_DEPENDENCY_DEPTH);
     const context = {
         ranks: ranks,
-        stateName: stateName,
         stateElement: stateElement,
         staticMap: staticDependency,
         dynamicMap: dynamicDependency,
@@ -14166,7 +14640,7 @@ function notifyWrite(address, absAddress, receiver, handler, keyedMergePath) {
     const updater = getUpdater();
     updater.enqueueAbsoluteAddress(absAddress, propagationContext);
     // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
-    walkDependency(handler.stateName, handler.stateElement, address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "new", (depAddress) => {
+    walkDependency(handler.stateElement, address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "new", (depAddress) => {
         // キャッシュを無効化（ダーティ）
         if (depAddress === address)
             return;
@@ -14197,17 +14671,6 @@ function _setByAddress(target, address, absAddress, value, receiver, handler, ke
                 finally {
                     handler.endUntrack();
                     handler.popAddress();
-                }
-            }
-            else if (handler.stateElement.hasMappedComponentState === true) {
-                // target は innerState proxy。set トラップにはパス文字列しか渡らないので、
-                // 解決済みの listIndex を動的スコープで越境させる（§1.8）
-                pushCrossBoundaryAddress(handler.stateElement, address);
-                try {
-                    return Reflect.set(target, address.pathInfo.path, value);
-                }
-                finally {
-                    popCrossBoundaryAddress();
                 }
             }
             else {
@@ -14298,7 +14761,7 @@ function setKeyedListByAddress(target, address, merge, oldList, receiver, handle
     // 格納より前に引くのは、格納時の walkDependency（listExpansion: "diff"）が
     // 先にハイブリッド配列の台帳を作ってしまうと、後から上書きした台帳との間で
     // 同じ分裂が起きるため。先に確定させておけば以降は全経路がこれに合流する。
-    const listParentListIndex = getListParentListIndex(handler.stateElement, address.listIndex);
+    const listParentListIndex = address.listIndex;
     if (getListIndexesByList(oldList) === null) {
         // 一度も描画されていないリストは台帳自体が無い。先に生やしておかないと
         // isSameList 経路が空の oldIndexes をそのまま新台帳にしてしまう。
@@ -14347,6 +14810,18 @@ function setByAddress(target, address, value, receiver, handler) {
 function setByAddressCore(target, address, value, receiver, handler, keyedMergePath) {
     const stateElement = handler.stateElement;
     const path = address.pathInfo.path;
+    // D22 後段: 接ぎ木済みボリュームのマウントポイントを**含む親**の丸ごと書きは throw
+    // （設計書 §4-2）。黙って通すと接ぎ木データが消え、quoted-path アクセサだけが
+    // 宙に浮いて原因の見えない undefined / TypeError になる。スロット自身への書き込みは
+    // 通常のデータ差し替えとして通す。ボリュームの無い state は boolean 判定 1 個で抜ける（D18）
+    if (stateElement.hasGraftedVolumes === true) {
+        const shadowedSlot = findGraftedSlotUnder(stateElement, path);
+        if (shadowedSlot !== null) {
+            raiseError(`Cannot replace "${path}" wholesale: a volume is mounted at "${shadowedSlot}" under it (D22). ` +
+                `Replacing an ancestor of a mount point silently discards the grafted data while its accessors remain. ` +
+                `Write "${shadowedSlot}" itself, or individual fields inside "${path}", instead.`);
+        }
+    }
     // occurrence（wc-bindable の `semantics: "event"`）由来の書き込みは、同値でも
     // 「もう一度起きた」ことを落としてはならないため same-value guard を 1 回だけ飛ばす。
     // トークンはここで消費されるので、この write の内側で走る他の書き込みには波及しない。
@@ -14560,7 +15035,7 @@ function getAll(target, prop, receiver, handler) {
             for (let i = pathInfo.wildcardPaths.length - 1; i >= 0; i--) {
                 const listIndex = getContextListIndex(handler, pathInfo.wildcardPaths[i]);
                 if (listIndex) {
-                    indexes = getScopedIndexes(listIndex, listIndex.length - getBaseDepth(handler.stateElement));
+                    indexes = getScopedIndexes(listIndex, listIndex.length);
                     break;
                 }
             }
@@ -14571,7 +15046,7 @@ function getAll(target, prop, receiver, handler) {
                 const lastAddress = handler.addressStackLength > 0 ? handler.lastAddressStack : null;
                 const contextListIndex = lastAddress?.listIndex ?? null;
                 if (pathInfo.wildcardCount > 0 && lastAddress !== null && contextListIndex !== null &&
-                    contextListIndex.length - getBaseDepth(handler.stateElement) > 0) {
+                    contextListIndex.length > 0) {
                     raiseError(getAllContextMismatchMessage(path, lastAddress.pathInfo.path));
                 }
                 indexes = [];
@@ -14651,7 +15126,7 @@ function postUpdate(target, _prop, receiver, handler) {
         const updater = getUpdater();
         updater.enqueueAbsoluteAddress(absAddress);
         // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
-        walkDependency(handler.stateName, handler.stateElement, address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "new", (depAddress) => {
+        walkDependency(handler.stateElement, address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "new", (depAddress) => {
             // キャッシュを無効化（ダーティ）
             const absDepPathInfo = getAbsolutePathInfo(stateElement, depAddress.pathInfo);
             const absDepAddress = createAbsoluteStateAddress(absDepPathInfo, depAddress.listIndex);
@@ -14829,19 +15304,19 @@ function untrackDependency(_target, _prop, _receiver, handler) {
  */
 function updatedCallback(target, refs, receiver, handler) {
     const callback = Reflect.get(target, STATE_UPDATED_CALLBACK_NAME);
+    let result;
     if (typeof callback === "function") {
         const paths = new Set();
         // ToDo:現状では1階層のみのワイルドカードに対応。多階層対応は後回し
         const indexesListByPath = {};
         for (const ref of refs) {
+            // v2: ルートに 1 ツリー。他ツリー（別ルート）の ref はこの state の相対語彙で
+            // 表せないので配送しない（v1 の `path@name` 合成は名前次元と一緒に消えた）
+            if (ref.absolutePathInfo.stateElement !== handler.stateElement) {
+                continue;
+            }
             const pathInfo = ref.absolutePathInfo.pathInfo;
-            let pathName;
-            if (ref.absolutePathInfo.stateName === handler.stateName) {
-                pathName = pathInfo.path;
-            }
-            else {
-                pathName = pathInfo.path + "@" + ref.absolutePathInfo.stateName;
-            }
+            const pathName = pathInfo.path;
             paths.add(pathName);
             if (pathInfo.wildcardCount > 0) {
                 const indexes = getScopedIndexes(ref.listIndex, pathInfo.wildcardCount);
@@ -14854,8 +15329,48 @@ function updatedCallback(target, refs, receiver, handler) {
                 }
             }
         }
-        return callback.call(receiver, Array.from(paths), indexesListByPath);
+        result = callback.call(receiver, Array.from(paths), indexesListByPath);
     }
+    // ボリュームの相対 $updatedCallback（webComponent/volume.ts）: 自分の接頭辞配下の
+    // 更新だけを相対パスで受ける。呼び出し順はルート自身の $updatedCallback の**後**
+    // （$watch の order 規約と同じ「ルート宣言が先」の向き — volume.ts）。
+    // ルートのコールバックが async でも待たない（順序の契約は呼び出し順のみ）
+    const volumeCallbacks = handler.stateElement ? getVolumeUpdatedCallbacks(handler.stateElement) : [];
+    if (volumeCallbacks.length > 0) {
+        for (const volume of volumeCallbacks) {
+            const prefix = volume.mountPath + DELIMITER;
+            const relativePaths = new Set();
+            const relativeIndexes = {};
+            for (const ref of refs) {
+                if (ref.absolutePathInfo.stateElement !== handler.stateElement) {
+                    continue;
+                }
+                const path = ref.absolutePathInfo.pathInfo.path;
+                if (path !== volume.mountPath && !path.startsWith(prefix)) {
+                    continue;
+                }
+                const relative = path === volume.mountPath ? "" : path.slice(prefix.length);
+                if (relative === "") {
+                    continue; // マウントポイント自身（接ぎ木そのもの）は相対で表せない
+                }
+                relativePaths.add(relative);
+                const wildcardCount = ref.absolutePathInfo.pathInfo.wildcardCount;
+                if (wildcardCount > 0 && ref.listIndex !== null) {
+                    const indexes = getScopedIndexes(ref.listIndex, wildcardCount);
+                    (relativeIndexes[relative] ??= []).push(indexes);
+                }
+            }
+            if (relativePaths.size > 0) {
+                try {
+                    volume.callback.call(createVolumeChroot(volume.mountPath, receiver), Array.from(relativePaths), relativeIndexes);
+                }
+                catch (error) {
+                    console.error(`[@wcstack/state] volume "${volume.mountPath}" $updatedCallback threw.`, error);
+                }
+            }
+        }
+    }
+    return result;
 }
 
 /**
@@ -14966,7 +15481,18 @@ function get(target, prop, receiver, handler) {
         }
         // `$1` は「このスコープの」1 段目。base 深さ Δ を持つ子スコープでも
         // 番号がずれないよう末尾から数える（list/wildcardLevel.ts）
-        const indexListIndex = listIndexAtWildcard(listIndex, index, lastAddress.pathInfo.wildcardCount);
+        let scopedIndex = index;
+        const lastPathInfo = lastAddress.pathInfo;
+        // マウントのアクセサ評価中（マーカーパスが push されている）はスコープ相対の Δ を
+        // 足す（設計書 §4-4: `$n → listIndex.at(Δ + n - 1)`。テンプレート側の `$n` は
+        // 変換時に織り込み済み — webComponent/mount.ts の translateInnerPath）
+        if (handler.stateElement?.hasMounts === true && lastPathInfo.path.indexOf('#') !== -1) {
+            const mountRecord = getMountRecordByPath(handler.stateElement, lastPathInfo.path);
+            if (mountRecord !== null) {
+                scopedIndex = index + getIndexShiftForMarkerPath(mountRecord, lastPathInfo.path);
+            }
+        }
+        const indexListIndex = listIndexAtWildcard(listIndex, scopedIndex, lastPathInfo.wildcardCount);
         return indexListIndex?.index ?? raiseError(`ListIndex not found: ${prop.toString()}`);
     }
     if (typeof prop === "string") {
@@ -15120,23 +15646,18 @@ function set(target, prop, value, receiver, handler) {
 const CYCLE_REPORT_DEPTH = 8;
 class StateHandler {
     _stateElement;
-    _stateName;
     _addressStack = Array(MAX_LOOP_DEPTH).fill(undefined);
     _addressStackIndex = -1;
     _loopContext;
     _mutability;
     _untrackDepth = 0;
-    constructor(rootNode, stateName, mutability) {
-        this._stateName = stateName;
-        const stateElement = getStateElementByName(rootNode, this._stateName);
+    constructor(rootNode, mutability) {
+        const stateElement = getStateElement(rootNode);
         if (stateElement === null) {
-            raiseError(`StateHandler: State element with name "${this._stateName}" not found.`);
+            raiseError(`StateHandler: no state tree found on this root.`);
         }
         this._stateElement = stateElement;
         this._mutability = mutability;
-    }
-    get stateName() {
-        return this._stateName;
     }
     get stateElement() {
         return this._stateElement;
@@ -15220,7 +15741,7 @@ class StateHandler {
     }
     set(target, prop, value, receiver) {
         if (this._mutability === "readonly") {
-            raiseError(`State "${this._stateName}" is readonly.`);
+            raiseError(`This state is readonly.`);
         }
         return set(target, prop, value, receiver, this);
     }
@@ -15229,8 +15750,8 @@ class StateHandler {
         //    return Reflect.has(target, prop) || this.symbols.has(prop) || this.apis.has(prop);
     }
 }
-function createStateProxy(rootNode, state, stateName, mutability) {
-    const handler = new StateHandler(rootNode, stateName, mutability);
+function createStateProxy(rootNode, state, mutability) {
+    const handler = new StateHandler(rootNode, mutability);
     const stateProxy = new Proxy(state, handler);
     return stateProxy;
 }
@@ -15252,228 +15773,21 @@ function meltFrozenObject(frozenObj) {
     return cloneWithDescriptors(frozenObj);
 }
 
-class InnerStateProxyHandler {
-    _webComponent;
-    _innerStateElement;
-    /**
-     * ルート規則（`state: path` の丸ごとマウント）の下にいるか。プライマリ規則は
-     * bindWebComponent が createInnerState より先に組むので、構築時に確定する。
-     */
-    _rootMounted;
-    /**
-     * 部分規則（`state.theme: theme`）が覆う内側の先頭セグメント。ルート規則と併用された
-     * とき、これらのキーは own data key があってもマッピング（1.x の既存挙動）に落とす。
-     * 完了前の親の初期適用が `element.state.theme = obj` とキーを注入する（積み）ので、
-     * own key の有無では作者の意図を判定できない（webComponent/preCompletionWrites.ts）。
-     */
-    _partialFirstSegments;
-    constructor(webComponent, stateName) {
-        this._webComponent = webComponent;
-        this._innerStateElement = getStateElementByWebComponent(webComponent, stateName) ?? raiseError('State element not found for web component.');
-        this._rootMounted = hasRootMappingRule(webComponent);
-        this._partialFirstSegments = null;
-        if (this._rootMounted) {
-            const rules = getPrimaryMappingRules(webComponent);
-            for (const rule of rules ?? []) {
-                if (!rule.isRoot) {
-                    (this._partialFirstSegments ??= new Set()).add(rule.innerAbsPathInfo.pathInfo.segments[0]);
-                }
-            }
-        }
+const stateElementByWebComponent = new WeakMap();
+function setStateElementByWebComponent(webComponent, stateProp, stateElement) {
+    let stateMap = stateElementByWebComponent.get(webComponent);
+    if (!stateMap) {
+        stateMap = new Map();
+        stateElementByWebComponent.set(webComponent, stateMap);
     }
-    /**
-     * R1（docs/state-mount-design.md D4 / D19）: ルートマウント下では、コンポーネントが
-     * 自分で書いた data key は**私有**で、マウント先のツリーを隠す。v1 の解決順
-     * （getter → マッピング → ローカル）のままルート規則を載せると、ルート規則は全キーに
-     * 一致するので own key が全部ツリーに隠され、2.0 と逆の意味論で出荷することになる。
-     *
-     * 判定は**先頭セグメント**で行う。getByAddress は `"draft.title" in target` → 偽 →
-     * 親アドレス `draft` の読み、と降りてくるので、先頭が私有ならその下は素のオブジェクト
-     * 走査になる（plain な state と同じ）。getter / setter は規則 1（chroot 評価）なので除く。
-     *
-     * 部分マウントだけのコンポーネントには適用しない（1.x の既存挙動＝マッピングが勝つ、を
-     * 維持する。2.0 での反転は bindWebComponent が warn で予告する — D19）。
-     */
-    _isPrivateKey(target, prop) {
-        if (!this._rootMounted) {
-            return false;
-        }
-        const dot = prop.indexOf(DELIMITER);
-        const first = dot === -1 ? prop : prop.slice(0, dot);
-        if (!Object.prototype.hasOwnProperty.call(target, first)) {
-            return false;
-        }
-        if (this._partialFirstSegments !== null && this._partialFirstSegments.has(first)) {
-            return false;
-        }
-        return !this._innerStateElement.getterPaths.has(first) && !this._innerStateElement.setterPaths.has(first);
-    }
-    /**
-     * 親スコープで読み書きするときのループ文脈を決める。候補は 2 つある。
-     *
-     * 1. **越境直前のアドレスの listIndex**。子スコープの `for` が回している行
-     *    （§1.8）。子の listIndex は base（＝ホストの親スコープ行）を親に持つので
-     *    チェーン長は Δ+W_inner ＝ W_outer になり、そのまま外側の文脈として使える
-     *    （docs/state-bind-component-nested-for-design.md）。
-     * 2. **コンポーネント要素のノードループ文脈**。コンポーネント自身が親の `for` の
-     *    中にいるが、読んでいるパスは子スコープのループの外という形（`state.row: rows.*`）。
-     *
-     * 1 を先に見るのは、内側ほど具体的だから。入れ子形では 2 も非 null（＝Δ 段だけ）に
-     * なるが、それでは外側パスの段数に足りない。段数が一致する候補だけを採るのが
-     * 判定の本体で、両方外れたら null（親側の解決に委ね、解けなければ raiseError。
-     * 無言の取り違えを作らない）。
-     */
-    _outerLoopContext(innerPathInfo, outerAbsPathInfo) {
-        const outerWildcardCount = outerAbsPathInfo.pathInfo.wildcardCount;
-        // 段数の照合は外側スコープの**実 arity**（パスの段数 + そのスコープの Δ）で行う。
-        // 境界 1 枚なら外側は Δ=0 で従来と同値、2 枚以上あるときに中間スコープの Δ を
-        // 数えないと候補が両方とも外れて loopContext が null になる（§1.12）。
-        // 添字（wildcardPaths）に使うのは Δ を含まない段数のままであることに注意。
-        const outerArity = getScopeArity(outerAbsPathInfo.stateElement, outerAbsPathInfo.pathInfo);
-        const nodeLoopContext = getLoopContextByNode(this._webComponent);
-        if (nodeLoopContext !== null && nodeLoopContext.listIndex.length === outerArity) {
-            return nodeLoopContext;
-        }
-        if (outerWildcardCount > 0) {
-            const address = getCrossBoundaryAddress(this._innerStateElement, innerPathInfo.path);
-            const listIndex = address?.listIndex ?? null;
-            if (listIndex !== null && listIndex.length === outerArity) {
-                const outerWildcardPath = outerAbsPathInfo.pathInfo.wildcardPaths[outerWildcardCount - 1];
-                return createStateAddress(getPathInfo(outerWildcardPath), listIndex);
-            }
-        }
-        // どちらも段数が合わない。従来どおりノードの文脈へフォールバックし、
-        // 解けなければ後段が raiseError する（無言の取り違えを作らない）
-        return nodeLoopContext;
-    }
-    get(target, prop, receiver) {
-        if (typeof prop === 'string') {
-            if (prop === "then") {
-                // Promiseのthenと誤認識されるのを防ぐため、Promiseに存在するプロパティはProxyのgetで処理しない
-                return undefined;
-            }
-            if (prop[0] === '$') {
-                return undefined;
-            }
-            // 1. getter完全一致 → ローカル計算（this = receiverで依存自動追跡）
-            if (this._innerStateElement.getterPaths.has(prop) && prop in target) {
-                return Reflect.get(target, prop, receiver);
-            }
-            // 1'. R1: ルートマウント下の own data key → 私有（マッピングより先）
-            if (this._isPrivateKey(target, prop)) {
-                return Reflect.get(target, prop, receiver);
-            }
-            // 2 & 3. マッピング完全一致 / サブパス → 親の状態
-            const innerPathInfo = getPathInfo(prop);
-            const innerAbsPathInfo = getAbsolutePathInfo(this._innerStateElement, innerPathInfo);
-            const outerAbsPathInfo = getOuterAbsolutePathInfo(this._webComponent, innerAbsPathInfo);
-            if (outerAbsPathInfo !== null) {
-                const loopContext = this._outerLoopContext(innerPathInfo, outerAbsPathInfo);
-                let value = undefined;
-                outerAbsPathInfo.stateElement.createState("readonly", (state) => {
-                    state[setLoopContextSymbol](loopContext, () => {
-                        value = state[outerAbsPathInfo.pathInfo.path];
-                    });
-                });
-                return value;
-            }
-            // 4. ローカルデータプロパティ → ローカル値
-            if (prop in target) {
-                return Reflect.get(target, prop, receiver);
-            }
-            // 5. エラー
-            raiseError(`Property "${prop}" not found in inner state: no mapping rule and no local state property.`);
-        }
-        else {
-            return Reflect.get(target, prop, receiver);
-        }
-    }
-    set(target, prop, value, receiver) {
-        if (typeof prop === 'string') {
-            // 1. setter完全一致 → ローカル処理（this = receiverで親への書き込み可能）
-            if (this._innerStateElement.setterPaths.has(prop) && prop in target) {
-                return Reflect.set(target, prop, value, receiver);
-            }
-            // 1'. R1: ルートマウント下の own data key → 私有に書く
-            if (this._isPrivateKey(target, prop)) {
-                return Reflect.set(target, prop, value, receiver);
-            }
-            // 2 & 3. マッピング完全一致 / サブパス → 親に書く
-            const innerPathInfo = getPathInfo(prop);
-            const innerAbsPathInfo = getAbsolutePathInfo(this._innerStateElement, innerPathInfo);
-            const outerAbsPathInfo = getOuterAbsolutePathInfo(this._webComponent, innerAbsPathInfo);
-            if (outerAbsPathInfo !== null) {
-                const loopContext = this._outerLoopContext(innerPathInfo, outerAbsPathInfo);
-                outerAbsPathInfo.stateElement.createState("writable", (state) => {
-                    state[setLoopContextSymbol](loopContext, () => {
-                        state[outerAbsPathInfo.pathInfo.path] = value;
-                    });
-                });
-                return true;
-            }
-            // 4. ローカルデータプロパティ → ローカルに書く
-            if (prop in target) {
-                return Reflect.set(target, prop, value, receiver);
-            }
-            // 5. エラー
-            raiseError(`Property "${prop}" not found in inner state: no mapping rule and no local state property.`);
-        }
-        else {
-            return Reflect.set(target, prop, value, receiver);
-        }
-    }
-    has(target, prop) {
-        if (typeof prop === 'string') {
-            if (prop[0] === '$') {
-                return false;
-            }
-            // 1. getter/setter完全一致
-            if ((this._innerStateElement.getterPaths.has(prop) || this._innerStateElement.setterPaths.has(prop)) && prop in target) {
-                return true;
-            }
-            // 1'. R1: 先頭が私有キーなら素のオブジェクトの答え（完全一致だけ真。`draft.title` は
-            // 偽を返して getByAddress に親アドレスから降りてもらう）
-            if (this._isPrivateKey(target, prop)) {
-                return prop in target;
-            }
-            // 2 & 3. マッピング
-            const innerPathInfo = getPathInfo(prop);
-            const innerAbsPathInfo = getAbsolutePathInfo(this._innerStateElement, innerPathInfo);
-            const outerAbsPathInfo = getOuterAbsolutePathInfo(this._webComponent, innerAbsPathInfo);
-            if (outerAbsPathInfo !== null) {
-                return true;
-            }
-            // 4. ローカルデータ
-            if (prop in target) {
-                return true;
-            }
-            // 5. 存在しない
-            return false;
-        }
-        else {
-            return Reflect.has(target, prop);
-        }
-    }
+    stateMap.set(stateProp, stateElement);
 }
-function createInnerState(webComponent, stateName) {
-    const handler = new InnerStateProxyHandler(webComponent, stateName);
-    const innerState = getStateElementByWebComponent(webComponent, stateName);
-    /* c8 ignore start */
-    if (innerState === null) {
-        raiseError('State element not found for web component.');
+function getStateElementByWebComponent(webComponent, stateProp) {
+    const stateMap = stateElementByWebComponent.get(webComponent);
+    if (!stateMap) {
+        return null;
     }
-    /* c8 ignore stop */
-    if (innerState.boundComponentStateProp === null) {
-        raiseError('State element is not bound to any component state prop.');
-    }
-    if (!(innerState.boundComponentStateProp in webComponent)) {
-        raiseError(`State element is not bound to a valid component state prop: ${innerState.boundComponentStateProp}`);
-    }
-    const state = webComponent[innerState.boundComponentStateProp];
-    if (typeof state !== 'object' || state === null) {
-        raiseError(`Invalid state object for component state prop: ${innerState.boundComponentStateProp}`);
-    }
-    return new Proxy(meltFrozenObject(state), handler);
+    return stateMap.get(stateProp) ?? null;
 }
 
 /**
@@ -15495,8 +15809,8 @@ function createInnerState(webComponent, stateName) {
  */
 class OuterStateProxyHandler {
     _innerStateElement;
-    constructor(webComponent, stateName) {
-        this._innerStateElement = getStateElementByWebComponent(webComponent, stateName) ?? raiseError('State element not found for web component.');
+    constructor(webComponent, stateProp) {
+        this._innerStateElement = getStateElementByWebComponent(webComponent, stateProp) ?? raiseError('State element not found for web component.');
     }
     get(target, prop, receiver) {
         if (typeof prop === 'string') {
@@ -15522,9 +15836,127 @@ class OuterStateProxyHandler {
         }
     }
 }
-function createOuterState(webComponent, stateName) {
-    const handler = new OuterStateProxyHandler(webComponent, stateName);
+function createOuterState(webComponent, stateProp) {
+    const handler = new OuterStateProxyHandler(webComponent, stateProp);
     return new Proxy({}, handler);
+}
+
+const getOuter = (outerState) => () => outerState;
+function bindWebComponent(innerStateElement, component, stateProp, state) {
+    // v2: ホスト配線（`state[.sub]: path`）のある形は全てマウント（State.ts の v2 経路）に
+    // 乗るため、ここへ来るのは **plain**（配線なしの state 注入）だけ。melt した作者の
+    // オブジェクトをそのまま自分の state 要素の実体にする。
+    setStateElementByWebComponent(component, stateProp, innerStateElement);
+    innerStateElement.setInitialState(meltFrozenObject(state));
+    // 公開プロパティは outerState proxy（read はライブ・write は自分の state 要素へ）
+    const outerState = createOuterState(component, stateProp);
+    Object.defineProperty(component, stateProp, {
+        get: getOuter(outerState),
+        enumerable: true,
+        configurable: true,
+    });
+    markWebComponentAsComplete(component, stateProp);
+    invokeStateReadyCallback(component, stateProp);
+}
+/** `$stateReadyCallback` の呼び出し（v1 の bindWebComponent と v2 のマウント経路で共用）。 */
+function invokeStateReadyCallback(component, stateProp) {
+    if (WEBCOMPONENT_STATE_READY_CALLBACK_NAME in component) {
+        const func = component[WEBCOMPONENT_STATE_READY_CALLBACK_NAME];
+        if (typeof func === 'function') {
+            func.call(component, stateProp).catch((error) => {
+                raiseError(`Error in ${WEBCOMPONENT_STATE_READY_CALLBACK_NAME}: ${error instanceof Error ? error.message : String(error)}`);
+            });
+        }
+        else {
+            raiseError(`${WEBCOMPONENT_STATE_READY_CALLBACK_NAME} is not a function.`);
+        }
+    }
+}
+
+/**
+ * webComponent/mountScope.ts — マウントされたスコープの構築（Phase 2・impl-plan §3-0）。
+ *
+ * v1 の buildBindings（rootNode ごとの独立ツリー構築）に対応する、マウント版の 1 パス。
+ * やることは 3 つだけで、以後このスコープのバインディングは「親スコープにインラインで
+ * 書かれたもの」と完全に同じ経路（台帳・依存グラフ・updater・for/プール）を流れる。
+ *
+ * 1. マウント記録の登録（ループ文脈の境界ホップとオーバーレイ dispatch が引く）
+ * 2. 台帳エイリアス（Shadow DOM 形のみ）: 子 rootNode → 親 state element。
+ *    `getRootNode()` で解決する全サイトがこれで親ツリーに到達する
+ * 3. 変換付きの収集: mustache 変換 → 構造フラグメント収集 → バインディング初期化。
+ *    パース結果は translateParsedForMount で親ツリーの絶対パスに書き換わる
+ *    （フラグメントは登録時に変換されるので、行の実体化は無改造・無コスト）
+ *
+ * 呼び手（State._initializeBindWebComponent の v2 経路）は、この完了を
+ * `setBindingsReadyForScope` で子 rootNode の ready として公開する。
+ */
+/**
+ * スコープ根は Shadow DOM 形ならコンポーネントの shadowRoot、Light DOM 形なら
+ * コンポーネント要素自身（そのサブツリーがスコープ・D7）。Light DOM は rootNode を
+ * ホストと共有するのでエイリアス不要（親の名前登録がそのまま解決に使われる）。
+ * ホスト側の走査からの除外は getSubscriberNodes / collectStructuralFragments の
+ * Light DOM prune（§1.13 の機構）がそのまま担う。
+ */
+function initializeMountScope(record, scopeRoot) {
+    const existing = getMountRecordByScopeRoot(scopeRoot);
+    // 1 スコープ根 1 マウント（v2）: 同じコンポーネントに 2 本目の
+    // `<wcs-state bind-component>`（別 stateProp）が来ても受けられない — 受けると
+    // 1 本目の session を dispose した上、収集済みノードは registeredNodeSet
+    // （collectNodesAndBindingInfos.ts）が弾いて再収集されず、スコープ全体が
+    // 無言で死ぬ。設定ミスとして 1 本目に触れる前に loud に落とす
+    if (existing !== null && existing.stateProp !== record.stateProp) {
+        raiseError(`A mount scope is already initialized on this component for "${existing.stateProp}" — ` +
+            `one <wcs-state bind-component> per component (v2). ` +
+            `Merge the "${record.stateProp}" wiring into "${existing.stateProp}" or split the component.`);
+    }
+    // 再初期化（コンポーネントが connectedCallback で shadow の innerHTML を張り直し、
+    // 新しい <wcs-state> が同じ shadowRoot に入った）: 旧スコープのバインディングは
+    // 捨てられた DOM を指したまま親の台帳に残りうるので session ごと破棄してから組み直す
+    //（普段は session の MutationObserver が先に破棄している — これは取りこぼし保険。
+    // dispose は records と deferred を空にするだけで session 自体は使い回せる）。
+    // 旧 for が残した lastListValue は applyChangeToFor 側の「content 台帳が空の
+    // binding は白紙から描く」ガードが吸収する
+    if (existing !== null) {
+        getOrCreateBindingSession(scopeRoot).dispose();
+    }
+    registerMountRecord(scopeRoot, record);
+    if (scopeRoot instanceof ShadowRoot) {
+        setStateElementAlias(scopeRoot, record.parentStateElement);
+    }
+    buildMountScopeBindings(record, scopeRoot);
+    setBindingsReadyForScope(scopeRoot, Promise.resolve());
+}
+function buildMountScopeBindings(record, walkRoot) {
+    const transform = (parsed, forPath) => translateParsedForMount(record, parsed, forPath);
+    convertMustacheToComments(walkRoot);
+    // スコープ直下のバインディングのループ文脈は、行 content の初期化と同じく
+    // **直接エントリ**で渡す（ホスト要素の文脈＝境界ホップの解決結果）。
+    // text binding は登録前に comment が replaceNode に差し替えられて切断される
+    //（bindings/replaceToReplaceNode.ts）ため、DOM walk では文脈に届かない —
+    // happy-dom は切断後も parentNode を残す非準拠で偶然通るが、実ブラウザでは落ちる
+    const parentLoopContext = getLoopContextByNode(record.component);
+    // rootNode は「fragment info の setPathInfo が state element を引く場所」。
+    // Shadow DOM 形はエイリアス済みの scopeRoot 自身、Light DOM 形はホストの rootNode
+    const rootNode = walkRoot instanceof ShadowRoot ? walkRoot : walkRoot.getRootNode();
+    collectStructuralFragments(rootNode, walkRoot, undefined, transform);
+    initializeBindings(walkRoot, parentLoopContext, transform);
+}
+/**
+ * プール再利用の再接続（行 content の再利用で、コンポーネント要素が**別の行**に
+ * 付け替わった）: マウントスコープの全バインディングを現在のループ文脈の listIndex で
+ * 台帳へ張り直し、最新値を適用する。v1 の `_reloadMappedPathsAfterReconnect`（派生規則
+ * memo の破棄＋プライマリ粒度の $postUpdate）に対応する、単一ツリー版の 1 手。
+ * swap では listIndex が行と一緒に動くので張り直しは冪等（同じ台帳に戻るだけ）。
+ */
+function remountScopeBindings(record, scopeRoot) {
+    const session = getOrCreateBindingSession(scopeRoot);
+    // スコープ直下の直接エントリを現在の行の文脈へ張り替える（構築時と対称）。
+    // 台帳の張り直し（rebindAddresses）はこのエントリ経由で新しい listIndex を読む
+    const parentLoopContext = getLoopContextByNode(record.component);
+    session.forEachActiveBindingNode((node) => setLoopContextByNode(node, parentLoopContext));
+    const rebound = session.rebindAddresses();
+    // 空でも呼んで良い（ループが回らないだけ）— 分岐を持たない
+    applyChangeFromBindings(rebound);
 }
 
 /**
@@ -15545,45 +15977,6 @@ function createOuterState(webComponent, stateName) {
  * ホットパス外（bindWebComponent の中・要素につき 1 回）。
  */
 const reported = new Set();
-function ownDataKeys(state, injected) {
-    const keys = [];
-    for (const key of Object.keys(state)) {
-        if (key.startsWith('$')) {
-            continue;
-        }
-        // 完了前の親の初期適用（`state.theme: theme` の積み）が作ったキーは作者のものではない
-        if (typeof injected !== 'undefined' && injected.has(key)) {
-            continue;
-        }
-        const descriptor = Object.getOwnPropertyDescriptor(state, key);
-        if (typeof descriptor.get === 'function' || typeof descriptor.set === 'function') {
-            continue;
-        }
-        if (typeof descriptor.value === 'function') {
-            continue;
-        }
-        keys.push(key);
-    }
-    return keys;
-}
-/**
- * ルート規則のマウント先の現在値を読む。ワイルドカードを含むマウント先（`users.*`）は
- * ホスト要素のループ文脈で解決する。文脈が無ければ判定できないので undefined。
- */
-function readMountTarget(component, rule) {
-    const outer = rule.outerAbsPathInfo;
-    const loopContext = getLoopContextByNode(component);
-    if (outer.pathInfo.wildcardCount > 0 && loopContext === null) {
-        return undefined;
-    }
-    let value = undefined;
-    outer.stateElement.createState("readonly", (state) => {
-        state[setLoopContextSymbol](loopContext, () => {
-            value = state[outer.pathInfo.path];
-        });
-    });
-    return value;
-}
 function report(key, message) {
     if (reported.has(key)) {
         return;
@@ -15591,100 +15984,365 @@ function report(key, message) {
     reported.add(key);
     console.warn(`[@wcstack/state] [wcs/mount-own-key-shadow] ${message} See docs/state-mount-design.md §4-3.`);
 }
-function warnOwnKeyShadows(component, stateProp, state) {
-    const rules = getPrimaryMappingRules(component);
-    if (rules === null) {
-        return;
-    }
-    const keys = ownDataKeys(state, getInjectedKeys(component, stateProp));
+/**
+ * v2 マウント（Phase 2）の衝突報告。厳格 R1: 作者の own data key（privateSnapshot）は
+ * 私有で、マウント先の同名キー（ルート）／同名の部分エントリ（1 セグメント）を**隠す**。
+ * 積みで注入されたキーは privateSnapshot に入らないので対象外。
+ */
+function warnOwnKeyShadowsForMount(record) {
+    const keys = Object.keys(record.privateSnapshot);
     if (keys.length === 0) {
         return;
     }
-    const tag = component.tagName.toLowerCase();
-    let rootRule = null;
-    const partialRuleByKey = new Map();
-    for (const rule of rules) {
-        if (rule.isRoot) {
-            rootRule = rule;
-        }
-        else if (rule.innerAbsPathInfo.pathInfo.segments.length === 1) {
-            partialRuleByKey.set(rule.innerAbsPathInfo.pathInfo.path, rule);
+    const tag = record.component.tagName.toLowerCase();
+    const stateProp = record.stateProp;
+    const partialOuterByKey = new Map();
+    for (const entry of record.entries) {
+        if (entry.innerSegments.length === 1) {
+            partialOuterByKey.set(entry.innerSegments[0], entry.outerPathInfo.path);
         }
     }
     let mountTarget = undefined;
     let mountTargetRead = false;
     for (const key of keys) {
-        const partial = partialRuleByKey.get(key);
-        if (typeof partial !== 'undefined') {
-            const outerPath = partial.outerAbsPathInfo.pathInfo.path;
-            report(`${tag}|${stateProp}|${key}|partial`, `<${tag}>.${stateProp}.${key} is an own key of the component and is also mapped from the host ("${stateProp}.${key}: ${outerPath}"). ` +
-                `Today the host value wins; in v2 the own key becomes private and hides the host value. Remove the default, or drop the mapping.`);
+        const partialOuter = partialOuterByKey.get(key);
+        if (typeof partialOuter !== "undefined") {
+            report(`${tag}|${stateProp}|${key}|root`, `<${tag}>.${stateProp}.${key} is private and hides the mounted entry "${stateProp}.${key}: ${partialOuter}" (the host value no longer reaches it). ` +
+                `Remove the default to read the tree, or rename it to keep it private.`);
             continue;
         }
-        if (rootRule === null) {
+        if (record.rootEntry === null) {
             continue;
         }
         if (!mountTargetRead) {
-            mountTarget = readMountTarget(component, rootRule);
+            mountTarget = readMountRootTarget(record);
             mountTargetRead = true;
         }
-        if (typeof mountTarget !== 'object' || mountTarget === null || !(key in mountTarget)) {
+        if (typeof mountTarget !== "object" || mountTarget === null || !(key in mountTarget)) {
             continue;
         }
-        const outerPath = rootRule.outerAbsPathInfo.pathInfo.path;
+        const outerPath = record.rootEntry.outerPathInfo.path;
         report(`${tag}|${stateProp}|${key}|root`, `<${tag}>.${stateProp}.${key} is private and hides the mounted tree key "${outerPath}.${key}" (${stateProp}: ${outerPath}). ` +
             `Remove the default to read the tree, or rename it to keep it private.`);
     }
 }
-
-const getOuter = (outerState) => () => outerState;
-function bindWebComponent(innerStateElement, component, stateProp, state) {
-    setStateElementByWebComponent(component, stateProp, innerStateElement);
-    // 分岐は「data-wcs 属性の有無」ではなく「<stateProp>.* バインドが 1 件以上あるか」で決める。
-    // 属性はあってもマッピング対象が 0 件（例: data-wcs="class.on: flag" だけ）の場合、
-    // buildPrimaryMappingRule は primaryMappingRule を 1 件も作らないまま return するため、
-    // outerState の lastValue / $postUpdate 意味論だけが残る。その状態では
-    // component[stateProp] の read が常に undefined・write が完全な no-op になる
-    // （docs/architecture-hardening/15-state-component-mechanism-consistency.md §1.2）。
-    const bindings = component.hasAttribute(config.bindAttributeName)
-        ? (getBindingsByNode(component) ?? []).filter(binding => binding.propSegments[0] === stateProp)
-        : [];
-    // 分岐が決めるのは「子の state の中身」だけ。mapped なら親 state へ解決する
-    // innerState proxy、plain なら melt 済みのローカル state。
-    if (bindings.length > 0) {
-        buildPrimaryMappingRule(component, stateProp, bindings);
-        // own data key とマウントの衝突を 1 回だけ報告する（R1 の私有キーがツリーを隠す形と、
-        // 部分マウントで v2 に反転する形 — docs/state-mount-design.md D19）。
-        warnOwnKeyShadows(component, stateProp, state);
-        // 値の正本が親スコープにあることを state 要素に記録する。越境アドレスの受け渡しと
-        // リストパスの外向き伝播はこのフラグでのみ有効になる（§1.8）。
-        innerStateElement.markComponentStateMapped?.();
-        innerStateElement.setInitialState(createInnerState(component, stateProp));
+function readMountRootTarget(record) {
+    const rootEntry = record.rootEntry;
+    const loopContext = getLoopContextByNode(record.component);
+    if (rootEntry.outerPathInfo.wildcardCount > 0 && loopContext === null) {
+        return undefined;
     }
-    else {
-        innerStateElement.setInitialState(meltFrozenObject(state));
-    }
-    // 外向きに露出する proxy は両者で同一。mapped でも read はライブ・write は
-    // innerState 経由で親 state に届く（§1.1 / G1）。
-    const outerState = createOuterState(component, stateProp);
-    Object.defineProperty(component, stateProp, {
-        get: getOuter(outerState),
-        enumerable: true,
-        configurable: true,
+    let value = undefined;
+    record.parentStateElement.createState("readonly", (state) => {
+        state[setLoopContextSymbol](loopContext, () => {
+            value = state[rootEntry.outerPathInfo.path];
+        });
     });
-    markWebComponentAsComplete(component, stateProp);
-    if (WEBCOMPONENT_STATE_READY_CALLBACK_NAME in component) {
-        const func = component[WEBCOMPONENT_STATE_READY_CALLBACK_NAME];
-        if (typeof func === 'function') {
-            func.call(component, stateProp).catch((error) => {
-                raiseError(`Error in ${WEBCOMPONENT_STATE_READY_CALLBACK_NAME}: ${error instanceof Error ? error.message : String(error)}`);
+    return value;
+}
+
+/**
+ * webComponent/volume.ts — ボリューム（`<wcs-state mount="path">` の接ぎ木）。
+ * docs/state-mount-design.md §3-1 / §4-2、D11 / D14 / D22。impl-plan P3-1 / P3-2 / P3-3。
+ *
+ * ボリュームは自分の台帳を持たない。ロード完了で
+ *
+ * 1. **データ**（own data key の部分木）をルートの書き込み proxy 経由で
+ *    `root[mountPath] = data` と接ぎ木する — 通知・依存展開は通常の書き込みと同じ。
+ * 2. **アクセサ**（getter / setter）を **ルートの state オブジェクトの quoted-path
+ *    プロパティ**（`"i18n.t"`）として定義する — ルートのワイルドカード getter
+ *    （`"children.*.label"`）と同じ機構にそのまま乗るので、評価は pushAddress 下で行われ、
+ *    中の読みは依存エッジとして親グラフに載る。`this` は chroot（`this.lang` は
+ *    `i18n.lang`）— 評価時の receiver（アクティブなルート proxy）を包む翻訳 proxy。
+ * 3. `$connectedCallback` を chroot で呼ぶ（V7）。
+ *
+ * 接続時にはスロットを**予約**する（D22）: 予約下のパスの読みは `undefined` で、
+ * pathDiagnostics は沈黙する（ロード前の一時状態は「未宣言」ではない）。
+ * ルートより先に接続されてもよい（V5）— ルートの登録（setStateElement の
+ * `default`）が保留中のボリュームを引き取る。
+ *
+ * 宣言面: `$watch` は接頭辞翻訳してルートの watch 台帳へ追記（ハンドラの `this` は
+ * chroot・indexes は接頭辞が静的なのでスコープ相対のまま）。`$listKeys` は翻訳して
+ * ルートの表へ合流（衝突は設定ミスとして throw）。`$updatedCallback` は自分の接頭辞
+ * 配下の更新だけを**相対パス**で受ける（proxy/apis/updatedCallback.ts が配送）。
+ * `$disconnectedCallback` はボリューム要素の切断時に chroot で呼ばれる（接ぎ木は残る）。
+ *
+ * D22 後段: 接ぎ木済みスロットの**親**をルート側から丸ごと書く形は setByAddress が
+ * throw する（recordGraftedSlot → findGraftedSlotUnder・ゲートは hasGraftedVolumes）。
+ *
+ * まだ載せていないもの: `$streams` の接頭辞登録（status 名前空間の設計が別途要る —
+ * 宣言は raise）、`$commandTokens` / `$eventTokens` / `$on`（トークンは要素の面 —
+ * ルートに宣言する。宣言は warn）、ボリュームのメソッドのツリー露出。
+ */
+/** chroot を作る（$disconnectedCallback など graft 後のライフサイクル呼び出し用）。 */
+function callVolumeLifecycle(info, name) {
+    const callback = info.volumeState[name];
+    if (typeof callback !== "function") {
+        return;
+    }
+    info.rootStateElement.createState("writable", (state) => {
+        const result = callback.call(createVolumeChroot(info.mountPath, state));
+        if (result instanceof Promise) {
+            result.catch((error) => {
+                console.error(`[@wcstack/state] volume "${info.mountPath}" ${name} failed.`, error);
             });
         }
-        else {
-            raiseError(`${WEBCOMPONENT_STATE_READY_CALLBACK_NAME} is not a function.`);
+    });
+}
+/** マウントパスの静的検査（§4-2: 静的パスのみ）。 */
+function validateVolumeMountPath(mountPath) {
+    if (mountPath.length === 0) {
+        raiseError(`"mount" requires a non-empty tree path.`);
+    }
+    const pathInfo = getPathInfo(mountPath);
+    for (const segment of pathInfo.segments) {
+        if (segment.length === 0) {
+            raiseError(`"mount" path "${mountPath}" has an empty segment.`);
+        }
+        if (segment === WILDCARD) {
+            raiseError(`"mount" path "${mountPath}" must be static (wildcards are not allowed).`);
+        }
+        // 位置を問わず拒否（includes）: 中間の `#`（a#b）はマーカー判定
+        // （getMountRecordByPath の lastIndexOf("#")）と D22 診断免除に干渉する。
+        // `$` / `@` も文言（reserved characters）どおり対称に includes で見る
+        if (segment.includes("$") || segment.includes("#") || segment.includes("@")) {
+            raiseError(`"mount" path "${mountPath}" must not use reserved characters ($, #, @).`);
         }
     }
 }
+function splitVolumeState(volumeState) {
+    const data = {};
+    const accessors = new Map();
+    for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(volumeState))) {
+        if (key.startsWith("$")) {
+            continue; // 宣言面（$connectedCallback は graftVolume が直接読む・他は P2-9b）
+        }
+        if (typeof descriptor.get === "function" || typeof descriptor.set === "function") {
+            accessors.set(key, descriptor);
+            continue;
+        }
+        if (typeof descriptor.value === "function") {
+            continue; // メソッドのツリー露出は未対応（ヘッダ参照）
+        }
+        data[key] = descriptor.value;
+    }
+    return { data, accessors };
+}
+/**
+ * raise しうる宣言面の検査（graftVolume の**冒頭** — データ接ぎ木・スロット記録・
+ * アクセサ登録より前）。後ろで検査すると $streams 等の宣言エラーが「データだけ載り
+ * アクセサ・宣言面が無い」半端な接ぎ木状態を残し、graftIsolated が握って
+ * onGrafted(null) → $disconnectedCallback も呼ばれない形になる。
+ */
+function validateVolumeDeclarations(rootStateElement, mountPath, volumeState) {
+    const watchDeclared = volumeState[STATE_WATCH_NAME];
+    if (typeof watchDeclared !== "undefined") {
+        if (typeof watchDeclared !== "object" || watchDeclared === null) {
+            raiseError(`${STATE_WATCH_NAME} must be an object mapping state paths to handler functions.`);
+        }
+        for (const [path, handler] of Object.entries(watchDeclared)) {
+            if (typeof handler !== "function") {
+                raiseError(`${STATE_WATCH_NAME} entry "${path}" must be a function.`);
+            }
+            assertValidWatchPath(path);
+        }
+    }
+    const listKeysDeclared = volumeState[STATE_LIST_KEYS_NAME];
+    if (typeof listKeysDeclared !== "undefined") {
+        if (typeof listKeysDeclared !== "object" || listKeysDeclared === null) {
+            raiseError(`${STATE_LIST_KEYS_NAME} must be an object mapping list paths to key specs.`);
+        }
+        for (const [path, spec] of Object.entries(listKeysDeclared)) {
+            if (path.length === 0 || (typeof spec !== "string" && typeof spec !== "function")) {
+                raiseError(`${STATE_LIST_KEYS_NAME} entry "${path}" must map a list path to a field name or a key function.`);
+            }
+            // 衝突（mergeVolumeListKeys の raise と同義）も接ぎ木前に検出する
+            if (rootStateElement.listKeys?.has(mountPath + DELIMITER + path)) {
+                raiseError(`${STATE_LIST_KEYS_NAME} entry "${mountPath + DELIMITER + path}" is declared by both the root and a volume (or two volumes). Keep exactly one.`);
+            }
+        }
+    }
+    // $streams は未対応（無言に捨てない）
+    if (typeof volumeState["$streams"] !== "undefined") {
+        raiseError(`Volume "${mountPath}" declares $streams, which volumes do not support yet. Declare the stream on the root state.`);
+    }
+}
+/**
+ * 宣言面の接頭辞登録（$watch / $listKeys / $updatedCallback — ヘッダ参照）。
+ * 宣言の形は validateVolumeDeclarations（接ぎ木より前）で検査済み — ここは登録だけ。
+ */
+function processVolumeDeclarations(rootStateElement, mountPath, volumeState) {
+    // $watch: 翻訳してルート台帳へ追記。ハンドラは chroot 包装。
+    const watchDeclared = volumeState[STATE_WATCH_NAME];
+    if (typeof watchDeclared !== "undefined") {
+        const entries = [];
+        const paths = new Set();
+        let order = 0;
+        for (const [path, handler] of Object.entries(watchDeclared)) {
+            const translated = mountPath + DELIMITER + path;
+            const wrapped = function (cur, prev, ...indexes) {
+                // `this` は writable なルート proxy（watchRuntime の fireOne）— chroot で包む。
+                // 接頭辞は静的（ワイルドカード無し）なので indexes はスコープ相対のまま
+                handler
+                    .call(createVolumeChroot(mountPath, this), cur, prev, ...indexes);
+            };
+            // order はルート宣言（0 起点）の後に来る大きな値 — 同一バッチではルートの
+            // watch が先に発火する（宣言順規約のボリューム拡張）
+            entries.push({ path: translated, pathInfo: getPathInfo(translated), handler: wrapped, order: 1_000_000 + order++ });
+            paths.add(translated);
+            rootStateElement.setPathInfo(translated, "prop", "watch");
+        }
+        if (entries.length > 0) {
+            addVolumeWatchEntries(rootStateElement, entries);
+            rootStateElement.addVolumeWatchPaths?.(paths);
+            startWatch(rootStateElement);
+        }
+    }
+    // $listKeys: 翻訳してルートの表へ合流（衝突は validate 済み・merge 側の raise は防御）
+    const listKeysDeclared = volumeState[STATE_LIST_KEYS_NAME];
+    if (typeof listKeysDeclared !== "undefined") {
+        const translatedEntries = new Map();
+        for (const [path, spec] of Object.entries(listKeysDeclared)) {
+            translatedEntries.set(mountPath + DELIMITER + path, spec);
+        }
+        rootStateElement.mergeVolumeListKeys?.(translatedEntries);
+    }
+    // $updatedCallback（相対）: 自分の接頭辞配下の更新だけが相対パスで届く。
+    // 収集ゲート（hasUpdatedCallback）を開けるのはここ
+    const updated = volumeState[STATE_UPDATED_CALLBACK_NAME];
+    if (typeof updated === "function") {
+        addVolumeUpdatedCallback(rootStateElement, { mountPath, callback: updated });
+        rootStateElement.enableUpdatedCallback?.();
+    }
+    // $commandTokens / $eventTokens / $on も未対応（トークンはパスではなく要素の面 —
+    // ルートに宣言する）。無言に捨てないが、接ぎ木自体は成立させる（warn 止まり）
+    for (const name of ["$commandTokens", "$eventTokens", "$on"]) {
+        if (typeof volumeState[name] !== "undefined") {
+            console.warn(`[@wcstack/state] volume "${mountPath}" declares ${name}, which volumes do not support. ` +
+                `Declare it on the root state instead.`);
+        }
+    }
+}
+/**
+ * 接ぎ木の本体。ルートの state 要素が使える状態で呼ぶこと。
+ * 衝突検査（D3/D22）: マウントパスの位置に既に値があれば throw。
+ */
+function graftVolume(rootStateElement, mountPath, volumeState) {
+    // raise しうる宣言検査は接ぎ木より前（半端な接ぎ木状態を残さない — ここで
+    // 落ちた graft は「何も載っていない」が成立し、graftIsolated の隔離と整合する）
+    validateVolumeDeclarations(rootStateElement, mountPath, volumeState);
+    const { data, accessors } = splitVolumeState(volumeState);
+    const pathInfo = getPathInfo(mountPath);
+    // D14: enable-ssr のスナップショットから初期化されたルートでは、スロットに既に
+    // 値があれば**採用**する — モジュールはロード済み（getter / $ 宣言のため）だが、
+    // データは接ぎ木せず、衝突検査も掛けない（スロットは宣言済みボリュームの所有）
+    const hydrated = rootStateElement.hydratedFromSsr === true;
+    rootStateElement.createState("writable", (state) => {
+        // 衝突検査（D22: ルートデータとボリューム宣言の両方が揃った時点）。
+        // 1 セグメントの proxy 読みは「無いキー」で raise するため in（has トラップ＝
+        // 生の Reflect.has）と親値の own キー判定で見る
+        if (pathInfo.segments.length === 1) {
+            if (mountPath in state) {
+                if (hydrated) {
+                    return; // 採用（D14）
+                }
+                raiseError(`Volume mount "${mountPath}" collides with an existing key on the root tree. ` +
+                    `Remove the root key or mount the volume elsewhere.`);
+            }
+        }
+        // 深いマウント: 中間の `{}` を作る（`a.b` で `a` が無ければ作る）
+        let parent = "";
+        for (let i = 0; i < pathInfo.segments.length - 1; i++) {
+            const segment = pathInfo.segments[i];
+            const exists = parent === ""
+                ? (segment in state)
+                : typeof state[parent + DELIMITER + segment] !== "undefined";
+            parent = parent === "" ? segment : parent + DELIMITER + segment;
+            if (!exists) {
+                state[parent] = {};
+            }
+        }
+        if (pathInfo.segments.length > 1
+            && typeof state[mountPath] !== "undefined") {
+            if (hydrated) {
+                return; // 採用（D14）
+            }
+            raiseError(`Volume mount "${mountPath}" collides with an existing key on the root tree. ` +
+                `Remove the root key or mount the volume elsewhere.`);
+        }
+        // データの接ぎ木 — 通常の書き込みなので通知・依存展開はそのまま走る
+        state[mountPath] = data;
+    });
+    // D22 後段: 以後このスロットの**親**の丸ごと書きは setByAddress が throw する
+    // （hydrate 採用でもアクセサは登録されるので同様に守る）。ゲートは boolean 1 個（D18）
+    recordGraftedSlot(rootStateElement, mountPath);
+    rootStateElement.markHasGraftedVolumes?.();
+    // アクセサをルートの quoted-path アクセサとして登録（`"i18n.t"` — ワイルドカード
+    // getter と同じ機構）。`this`（receiver）はアクティブなルート proxy なので、
+    // chroot で包んで相対読みをマウント配下へ翻訳する
+    for (const [key, descriptor] of accessors) {
+        const treePath = mountPath + DELIMITER + key;
+        const originalGet = descriptor.get;
+        const originalSet = descriptor.set;
+        const wrapped = { enumerable: false, configurable: true };
+        if (typeof originalGet === "function") {
+            wrapped.get = function () {
+                return originalGet.call(createVolumeChroot(mountPath, this));
+            };
+        }
+        if (typeof originalSet === "function") {
+            wrapped.set = function (value) {
+                originalSet.call(createVolumeChroot(mountPath, this), value);
+            };
+        }
+        rootStateElement.defineTreeAccessor(treePath, wrapped);
+    }
+    processVolumeDeclarations(rootStateElement, mountPath, volumeState);
+    // $connectedCallback（V7）: chroot で呼ぶ。async でもよい（待たない — ルートの
+    // $connectedCallback と同格の「自分のライフサイクル」）
+    const connectedCallback = volumeState.$connectedCallback;
+    if (typeof connectedCallback === "function") {
+        rootStateElement.createState("writable", (state) => {
+            const result = connectedCallback.call(createVolumeChroot(mountPath, state));
+            if (result instanceof Promise) {
+                result.catch((error) => {
+                    console.error(`[@wcstack/state] volume "${mountPath}" $connectedCallback failed.`, error);
+                });
+            }
+        });
+    }
+    return { rootStateElement, mountPath, volumeState };
+}
+/**
+ * ルートがまだ居なければ保留、居れば即接ぎ木。
+ * ルートの名前登録（`default`）が保留分を `drainPendingVolumes` で引き取る。
+ */
+function graftIsolated(rootStateElement, volume) {
+    let info = null;
+    try {
+        info = graftVolume(rootStateElement, volume.mountPath, volume.volumeState);
+    }
+    catch (error) {
+        // 接ぎ木の失敗（衝突など）は 1 ボリュームに閉じる。ルートの初期化や他の
+        // ボリュームを道連れにしない（connectedCallback 内の throw は promise を
+        // 永久未解決にする — §8.2 と同じ構図）
+        console.error(`[@wcstack/state] volume "${volume.mountPath}" failed to graft.`, error);
+    }
+    finally {
+        volume.onGrafted(info);
+    }
+}
+function graftOrQueueVolume(rootNode, rootStateElement, mountPath, volumeState, onGrafted) {
+    if (rootStateElement !== null) {
+        graftIsolated(rootStateElement, { mountPath, volumeState, onGrafted: onGrafted });
+        return;
+    }
+    queuePendingVolume(rootNode, { mountPath, volumeState, onGrafted: onGrafted });
+}
+// stateElementByName の drainPendingVolumes は import 循環（updater まで届く）を避けて
+// 軽量な volumeShared に住む — graft の実体はここで注入する（State.ts が本モジュールを
+// 必ず import するため、ルート登録の前には確実に配線されている）
+setVolumeGraftHandler(graftIsolated);
 
 /**
  * ホストが `<stateProp>: path`（1 セグメント ＝ 丸ごとマウント・ルート規則）を
@@ -15730,6 +16388,8 @@ class State extends HTMLElementBase {
     }
     __state;
     _hasUpdatedCallback = false;
+    /** enable-ssr のスナップショットから初期化された（D14: ボリュームはデータを採用する） */
+    _hydratedFromSsr = false;
     // 他行を読む getter が検出されたリストパス（diff-filter 展開の全行フォールバック対象）。
     // 依存マップ（static/dynamic）と同様に追加のみ・クリアしない（安全側に固定される）。
     _crossRowListPaths = new Set();
@@ -15752,7 +16412,8 @@ class State extends HTMLElementBase {
     _elementPaths = new Set();
     _getterPaths = new Set();
     _setterPaths = new Set();
-    _loopContextStack = createLoopContextStack(() => getBaseDepth(this));
+    // v2: 境界ホップがループ文脈を継承するので Δ（base depth）の帳簿は無い
+    _loopContextStack = createLoopContextStack();
     _dynamicDependency = new Map();
     _staticDependency = new Map();
     _pathSet = new Set();
@@ -15762,7 +16423,14 @@ class State extends HTMLElementBase {
     _rootNode = null;
     _boundComponent = null;
     _boundComponentStateProp = null;
-    _hasMappedComponentState = false;
+    _hasMounts = false;
+    _hasGraftedVolumes = false;
+    /** ボリューム（mount=）: 接ぎ木済みの控え（$disconnectedCallback 用） */
+    _volumeGraftInfo = null;
+    /** ボリューム: スロット予約済み・接ぎ木進行中（ロード完了前の再接続の再入ガード） */
+    _volumeInitializing = false;
+    /** v2 マウント（Phase 2）: この bind-component 要素が構築したマウント記録 */
+    _mountRecord = null;
     _bindableEventMap = {};
     _commandTokenNames = new Set();
     _eventTokenNames = new Set();
@@ -15868,31 +16536,29 @@ class State extends HTMLElementBase {
     _loadFromSsrElement() {
         if (!this.hasAttribute('enable-ssr'))
             return null;
-        const name = this.getAttribute('name') || 'default';
         const root = this.parentNode;
         if (!root)
             return null;
-        const ssrEl = Ssr.findByName(root, name);
+        const ssrEl = Ssr.find(root);
         if (!ssrEl)
             return null;
         const data = ssrEl.stateData;
         return Object.keys(data).length > 0 ? data : null;
     }
-    async _initialize() {
-        // enable-ssr (クライアント側のみ): <wcs-ssr> から初期データを取得
-        const ssrState = !inSsr() ? this._loadFromSsrElement() : null;
+    /** state / src / json / inner <script> / API set のソース解決（_initialize とボリュームで共用）。 */
+    async _loadStateFromSource() {
         try {
             if (this.hasAttribute('state')) {
                 const state = this.getAttribute('state');
-                this._state = loadFromScriptJson(state);
+                return loadFromScriptJson(state);
             }
             else if (this.hasAttribute('src')) {
                 const src = this.getAttribute('src');
                 if (src && src.endsWith('.json')) {
-                    this._state = await loadFromJsonFile(src);
+                    return await loadFromJsonFile(src);
                 }
                 else if (src && src.endsWith('.js')) {
-                    this._state = await loadFromScriptFile(src);
+                    return await loadFromScriptFile(src);
                 }
                 else {
                     raiseError(`Unsupported src file type: ${src}`);
@@ -15900,26 +16566,103 @@ class State extends HTMLElementBase {
             }
             else if (this.hasAttribute('json')) {
                 const json = this.getAttribute('json');
-                this._state = JSON.parse(json);
+                return JSON.parse(json);
             }
             else {
                 const script = this.querySelector('script[type="module"]');
                 if (script) {
-                    this._state = await loadFromInnerScript(script, `${this._name}`);
+                    return await loadFromInnerScript(script, `${this._name}`);
                 }
                 else {
                     const timerId = setTimeout(() => {
-                        console.warn(`[@wcstack/state] Warning: No state source found for <${config.tagNames.state}> element with name="${this._name}".`);
+                        // v2: name 属性は撤去済み（fail-fast）— 文言に name を出さない（tagName で特定十分）
+                        console.warn(`[@wcstack/state] Warning: No state source found for <${config.tagNames.state}> element.`);
                     }, NO_SET_TIMEOUT);
                     // 要注意！！！APIでセットする場合はここで待機する必要がある --(1)
-                    this._state = await this._setStatePromise;
+                    const state = await this._setStatePromise;
                     clearTimeout(timerId);
+                    return state;
                 }
             }
         }
         catch (e) {
             raiseError(`Failed to initialize state: ${e}`);
         }
+    }
+    /**
+     * ボリューム（`<wcs-state mount="path">`）: 独立ツリーを持たず、ロード完了で
+     * ルートに接ぎ木する（webComponent/volume.ts）。接続時にスロットを予約（D22）。
+     * ルートより先に接続されてもよい — ルート登録が保留分を引き取る（V5）。
+     */
+    async _initializeVolume() {
+        const rootNode = this._rootNode;
+        const mountPath = this.getAttribute("mount");
+        try {
+            validateVolumeMountPath(mountPath);
+            if (this.hasAttribute("bind-component")) {
+                raiseError(`"mount" cannot be combined with "bind-component".`);
+            }
+            // name 併記は connectedCallback 冒頭の name チェックが mount 専用文言で先に落とす
+            //（ここに同じ検査を置いても到達しない）
+            if (this.hasAttribute("enable-ssr")) {
+                // D14: スナップショットはルートに 1 本 — ボリューム側の enable-ssr は意味を持たない
+                console.warn(`[@wcstack/state] <${config.tagNames.state} mount="${mountPath}"> ignores "enable-ssr" — snapshots are per root tree (the root state element aggregates volume data).`);
+            }
+            reserveVolumeSlot(rootNode, mountPath);
+        }
+        catch (error) {
+            // 設定エラーでも初期化待ちをウェッジさせない（_failInitialization と同じ規範 —
+            // 未解決のまま投げると waitForStateInitialize がページ全体を無言で止める）
+            this._resolveInitialize?.();
+            this._resolveLoading?.();
+            this._resolveConnectedCallback?.();
+            throw error;
+        }
+        // 予約成立後に立てる（設定エラーの再接続は従来どおり再 raise させる）
+        this._volumeInitializing = true;
+        // D11: ルートの居ないページのボリュームを無言にしない（検査は要素の存在・
+        // パース完了後 — 下の module 関数を参照）
+        if (getStateElement(rootNode) === null) {
+            reportVolumeWithoutRoot(rootNode, mountPath);
+        }
+        const finish = (info) => {
+            this._volumeGraftInfo = info;
+            this._initialized = true;
+            this._resolveInitialize?.();
+            this._resolveLoading?.();
+            this._resolveConnectedCallback?.();
+        };
+        let volumeState;
+        try {
+            volumeState = await this._loadStateFromSource();
+        }
+        catch (error) {
+            // ロード失敗（404 / JSON パースエラー / import 失敗）は 1 ボリュームに閉じる
+            // （graftIsolated と同じ隔離規範 — 接ぎ木は載らず予約だけが残る着地）。
+            // 未解決のまま投げると waitForStateInitialize が全 <wcs-state> の
+            // initializePromise を Promise.all で待つためページ全体が無言でウェッジし、
+            // 上で立てた _volumeInitializing の再入ガードが remove → append の復旧も
+            // 握り潰す。予約成立後の失敗は graft 失敗と同じ着地（finish(null)）に合流し、
+            // 予約成立前の設定エラー（上の try/catch）だけが fail-fast で再 raise する
+            console.error(`[@wcstack/state] volume "${mountPath}" failed to load.`, error);
+            finish(null);
+            return;
+        }
+        // await 中に剥がされたら何もしない（スコープは持っていない）
+        if (this._rootNode === null) {
+            finish(null);
+            return;
+        }
+        graftOrQueueVolume(rootNode, getStateElement(rootNode), mountPath, volumeState, finish);
+    }
+    async _initialize() {
+        // enable-ssr (クライアント側のみ): <wcs-ssr> から初期データを取得
+        const ssrState = !inSsr() ? this._loadFromSsrElement() : null;
+        if (ssrState !== null) {
+            // ボリュームの接ぎ木が「採用」へ切り替わる根拠（D14）。データ merge より先に立てる
+            this._hydratedFromSsr = true;
+        }
+        this._state = await this._loadStateFromSource();
         // SSR データがある場合、state 定義（メソッド/getter）を維持しつつデータ値を上書き
         if (ssrState !== null && this.__state) {
             for (const [key, value] of Object.entries(ssrState)) {
@@ -15936,13 +16679,22 @@ class State extends HTMLElementBase {
             }
         }
         await this._loadingPromise;
-        this._name = this.getAttribute('name') || 'default';
-        if (this.hasAttribute('name') && !this.hasAttribute('bind-component')) {
-            // 名前付き State は v2 でマウント（`mount=`）に置き換わる（docs/state-mount-design.md D16）。
-            // Light DOM の bind-component は今日 name が必須なので、そちらには言わない。
-            warnNamedStateDeprecated('attribute', this._name);
-        }
-        setStateElementByName(this.rootNode, this._name, this);
+        setStateElement(this.rootNode, this);
+    }
+    /**
+     * 設定エラーでの fail-fast。initializePromise 等を解決してから raise する —
+     * 未解決のまま投げると waitForStateInitialize（ホストの buildBindings）が
+     * この要素を待ち続け、**ページ全体が無言でウェッジする**（1 つの設定ミスが
+     * 無関係なバインディングまで道連れにする）。エラー自体は unhandled rejection
+     * として loud に残る。
+     */
+    _failInitialization(message) {
+        // _initialized は立てない — 切断時の後始末（createState を要する）が
+        // 未ロードの state を触らないよう、初期化前ガードに掛かるままにする
+        this._resolveInitialize?.();
+        this._resolveLoading?.();
+        this._resolveConnectedCallback?.();
+        raiseError(message);
     }
     async _initializeBindWebComponent() {
         if (this.hasAttribute("bind-component")) {
@@ -15959,9 +16711,15 @@ class State extends HTMLElementBase {
             if (boundComponent === null || customTagName === null) {
                 raiseError(`"bind-component" requires <${config.tagNames.state}> to be a direct child of a custom element.`);
             }
-            // LightDOMの場合、名前空間が上位スコープと共有されるためnameが必須
-            if (!(parentNode instanceof ShadowRoot) && !this.hasAttribute("name")) {
-                raiseError(`"bind-component" in Light DOM requires a "name" attribute to avoid namespace conflicts with the parent scope.`);
+            // plain（ホスト配線なし）の Light DOM は廃止（v2・2026-09-03 著者決定）。
+            // 共有 rootNode に独立ツリーを置くには名前次元が要り、単一登録簿（P3-6）と
+            // 両立しない。shadow を付ければ plain Shadow 形（独立ツリー・$ 宣言込み）に
+            // そのままなる。data-wcs が無ければ確実に plain — 従来の位置で fail-fast。
+            // data-wcs があるときの判定はホスト配線が要るため下（waitInitializeBinding の後）
+            if (!(parentNode instanceof ShadowRoot) && !boundComponent.hasAttribute(config.bindAttributeName)) {
+                this._failInitialization(`A plain (unwired) Light DOM "bind-component" is not supported. ` +
+                    `Attach a shadow root to <${customTagName}>, or mount it from the host ` +
+                    `(data-wcs="${this.getAttribute("bind-component")}: path").`);
             }
             // bind-component はコンポーネント側の state プロパティを唯一のソースにする。
             // state / src / json / inner <script> と併記すると、この後の _initialize が
@@ -16011,72 +16769,77 @@ class State extends HTMLElementBase {
             }
             this._boundComponent = boundComponent;
             this._boundComponentStateProp = boundComponentStateProp;
+            // data-wcs はあるが state 配線が無い Light DOM も plain（廃止 — 上と同じ誘導）。
+            // 判定にホスト配線（台帳）が要るためここ（waitInitializeBinding の後）で行う
+            if (!(parentNode instanceof ShadowRoot)
+                && !(getBindingsByNode(boundComponent) ?? []).some((b) => b.propSegments[0] === boundComponentStateProp)) {
+                this._failInitialization(`A plain (unwired) Light DOM "bind-component" is not supported. ` +
+                    `Attach a shadow root to <${customTagName}>, or mount it from the host ` +
+                    `(data-wcs="${boundComponentStateProp}: path").`);
+            }
+            // v2 マウント（Phase 2・impl-plan §3-0）: この stateProp へのホスト配線
+            //（ルートエントリ / 部分マウントのみ、Shadow / Light DOM とも）は単一ツリーで
+            // 構築する。ホスト配線が 1 本も無い plain Shadow 形だけが下の bindWebComponent
+            //（独立ツリー）に落ちる。
+            if (boundComponent.hasAttribute(config.bindAttributeName)) {
+                const hostBindings = (getBindingsByNode(boundComponent) ?? []).filter((hostBinding) => hostBinding.propSegments[0] === boundComponentStateProp);
+                if (hostBindings.length > 0) {
+                    // 設定エラーは _failInitialization 経由（未解決 throw は waitForStateInitialize を
+                    // 永久待ちにしてページ全体をウェッジする — _failInitialization の注記参照）
+                    const parentStateElement = getStateElement(boundComponent.getRootNode())
+                        ?? this._failInitialization(`No state tree found on this root for mount host <${customTagName}>.`);
+                    // 再初期化（コンポーネントが connectedCallback で shadow の innerHTML を張り直す
+                    // 作りだと、再接続のたびに新しい <wcs-state> がここへ来る）: 記録を再利用して
+                    // マーカーを安定させる。このとき上の `state` はもう公開プロキシ（下の
+                    // defineProperty 済み）だが、buildMountRecord を通らないので実害はない
+                    let record = getRegisteredMountRecord(boundComponent, boundComponentStateProp);
+                    const isReinitialize = record !== null;
+                    if (record === null) {
+                        // 宣言前の窓（fragment 内の初期適用）で積みが作者の既存キーを上書きして
+                        // いたら、作者の値に戻してから snapshot する（厳格 R1 — D19/D21）
+                        restoreOverwrittenValues(boundComponent, boundComponentStateProp, state);
+                        record = buildMountRecord(boundComponent, boundComponentStateProp, hostBindings, parentStateElement, state, getInjectedKeys(boundComponent, boundComponentStateProp));
+                        warnOwnKeyShadowsForMount(record);
+                    }
+                    this._mountRecord = record;
+                    // shadow 張り直しの連打で、上の await 中に自分が剥がされた形。スコープは
+                    // 次に入った <wcs-state> が組み直すので触らない（_mountRecord は立てて、
+                    // connectedCallback の続きが v1 の _initialize に落ちないようにする）
+                    if (this.parentNode !== parentNode) {
+                        return;
+                    }
+                    // スコープ根: Shadow DOM 形はコンポーネントの shadowRoot、
+                    // Light DOM 形はコンポーネント要素自身（そのサブツリーがスコープ・D7）。
+                    // 設定エラー（1 スコープ根 1 マウント違反等）でも初期化待ちを
+                    // ウェッジさせない（_failInitialization と同じ規範 — resolve してから伝播）
+                    try {
+                        initializeMountScope(record, parentNode instanceof ShadowRoot ? parentNode : boundComponent);
+                    }
+                    catch (error) {
+                        this._resolveInitialize?.();
+                        this._resolveLoading?.();
+                        this._resolveConnectedCallback?.();
+                        throw error;
+                    }
+                    if (!isReinitialize) {
+                        const publicState = createPublicMountState(record);
+                        Object.defineProperty(boundComponent, boundComponentStateProp, {
+                            get: () => publicState,
+                            enumerable: true,
+                            configurable: true,
+                        });
+                        markWebComponentAsComplete(boundComponent, boundComponentStateProp);
+                    }
+                    invokeStateReadyCallback(boundComponent, boundComponentStateProp);
+                    // 宣言面はマウントでは実行しない（1 回だけ誘導 warn — 設計書 §4-6）。
+                    // ライフサイクルはスコープごとに残る — $connectedCallback を chroot で呼ぶ
+                    warnMountedDollarDeclarations(record);
+                    callMountLifecycleCallback(record, "$connectedCallback");
+                    return;
+                }
+            }
             bindWebComponent(this, this._boundComponent, this._boundComponentStateProp, state);
         }
-    }
-    /**
-     * Light DOM の mapped コンポーネントが、自分のサブツリーのバインディングを張る（§1.13）。
-     *
-     * Shadow DOM 形では子スコープが別 rootNode にあり、`setStateElementByName` の初回登録から
-     * その root ぶんの `buildBindings` が別パスとして起動する。Light DOM ではホストと同じ root に
-     * いるためそのパスが存在せず、かといってホストのパスに混ぜると `@name` の解決が
-     * この要素の名前登録より先に来てしまう。そこで `getSubscriberNodes` がホスト側の走査から
-     * このサブツリーを外し、名前登録が済んだここで同じことを自前で行う。
-     *
-     * `{{ }}` の変換だけはホストのパスが root 全体に対して済ませている（純粋にテキスト操作で
-     * state に依存しないため）。構造フラグメントの収集は fragment info を rootNode + state 名で
-     * 登録するので state 依存であり、ホストのパスからは外してここで走らせる。
-     *
-     * ループ文脈を null で渡すのは Shadow DOM 形（`initializeBindings(shadowRoot, null)`）と
-     * 揃えるため —— 子孫の `getLoopContextByNode` はコンポーネント要素まで遡って
-     * 親スコープの行を見つける。
-     */
-    _initializeLightDomComponentScope() {
-        const component = this._boundComponent;
-        if (component === null || this.parentNode !== component) {
-            // Shadow DOM 形（parentNode が ShadowRoot）は対象外
-            return;
-        }
-        if (!component.hasAttribute(config.bindAttributeName)) {
-            // plain 形はホストのパスに含まれたままなので、ここで張ると二重になる
-            return;
-        }
-        collectStructuralFragments(this._rootNode, component);
-        initializeBindings(component, null);
-    }
-    /**
-     * mapped な `bind-component` が切断 → 再接続したときに、束ねているパスを読み直させる（§1.9）。
-     *
-     * リスト行の content は再利用されるので、行が作り直されると子はこの経路を通る
-     * （`_initialized` が真なので `_initializeBindWebComponent` / `_initialize` は走らず、
-     * 子のバインディングは張り直されない）。切断中に親で起きた変更の通知は
-     * `applyChangeToWebComponent` が切断済みを理由に落としているため、ここで読み直さないと
-     * 子のビューだけが古い値のまま取り残される。何が変わったかは分からないので、
-     * プライマリ規則の粒度で丸ごと読み直す。
-     *
-     * 読み直しの前に派生規則の memo を捨てる。派生規則の購読者（親スコープに立つ
-     * バインディング）は切断で teardown されており、memo が残っていると導出が二度と
-     * 走らないため購読者も張り直されない ＝ 以後この子だけがサブパスの書き込みを
-     * 受け取れなくなる。捨てておけば、直後の読み直しで導出と購読者登録が走る。
-     */
-    _reloadMappedPathsAfterReconnect() {
-        if (!this._hasMappedComponentState || this._boundComponent === null) {
-            return;
-        }
-        // mapped ＝ プライマリ規則が 1 件以上あることと同義（bindWebComponent の分岐）
-        const innerPaths = getPrimaryInnerPaths(this._boundComponent);
-        // ルート規則（丸ごとマウント）は内側パスが空なので、子の登録済みパス全部を読み直す
-        // （webComponent/rootReloadPaths.ts）
-        const rootPaths = hasRootMappingRule(this._boundComponent) ? getRootReloadPaths(this) : [];
-        resetDerivedMappingRules(this._boundComponent);
-        this.createState("readonly", (state) => {
-            for (const path of innerPaths) {
-                state.$postUpdate(path);
-            }
-            for (const path of rootPaths) {
-                state.$postUpdate(path);
-            }
-        });
     }
     async _callStateConnectedCallback() {
         await this.createStateAsync("writable", async (state) => {
@@ -16134,6 +16897,15 @@ class State extends HTMLElementBase {
         // _streamsStartedGeneration も世代不一致となり自然に無効化される。
         const connectGeneration = ++this._connectGeneration;
         if (!this._initialized) {
+            // 名前次元は v2 で撤去（D16 / §9）。名前付き State はボリュームへ移行する。
+            // mount 併記（移行途中で name を残した形）は専用文言で誘導する
+            if (this.hasAttribute("name")) {
+                this._failInitialization(this.hasAttribute("mount")
+                    ? `"mount" replaces "name" — a volume has no name of its own. Remove the name attribute.`
+                    : `The "name" attribute was removed in v2 — there is a single state tree per root. ` +
+                        `Mount this state onto the tree instead: <wcs-state mount="${this.getAttribute("name")}" ...> ` +
+                        `and read it as "${this.getAttribute("name")}.<path>".`);
+            }
             // DCC 検出: ShadowRoot 内かつホストに data-wc-definition がある場合
             const parentNode = this.parentNode;
             if (parentNode instanceof ShadowRoot &&
@@ -16148,20 +16920,73 @@ class State extends HTMLElementBase {
                 await this._initializeDCC(parentNode.host, parentNode);
                 return;
             }
+            // ボリューム（`mount="path"` — 接ぎ木・docs/state-mount-design.md §4-2）
+            if (this.hasAttribute("mount")) {
+                // ロード完了前の remove → append 再入: スロット予約も接ぎ木も進行中の
+                // _initializeVolume が持っている。再実行すると reserveVolumeSlot が自分の
+                // 予約に "already mounted" を誤 raise する（接ぎ木自体は進行中の呼び出しが
+                // 完了させる — connectedCallbackPromise もそちらが解決する）
+                if (this._volumeInitializing) {
+                    return;
+                }
+                await this._initializeVolume();
+                return;
+            }
             await this._initializeBindWebComponent();
+            if (this._mountRecord !== null) {
+                // v2 マウント: この要素は独立ツリーを持たない（台帳エイリアスが親を指す）。
+                // 名前登録・state ロード・$connectedCallback / $watch / $streams は行わない
+                // （マウントスコープの $ 面は P2-9 — 設計書 §4-6）
+                this._initialized = true;
+                this._resolveInitialize?.();
+                this._resolveLoading?.();
+                this._resolveConnectedCallback?.();
+                return;
+            }
             await this._initialize();
             this._initialized = true;
-            // 名前登録（_initialize の末尾）が済んだこの時点でなければ、子スコープの
-            // `@name` 参照が解決できない（§1.13）
-            this._initializeLightDomComponentScope();
             this._resolveInitialize?.();
         }
-        else if (!this._dcc && getStateElementByName(this._rootNode, this._name) !== this) {
+        else if (this.hasAttribute("mount")) {
+            // 初期化済みボリュームの再接続（remove → append）: 接ぎ木・アクセサ・宣言は
+            // ツリーに残っている（disconnectedCallback と対称 — アンマウント未対応）。
+            // 下の「ルート再登録」分岐に落とすと、独立ツリーを持たないボリューム自身が
+            // この rootNode のツリー根として登録されてしまう（ルート不在時）か、
+            // "already registered" で落ちる（ルート健在時）。
+            // $connectedCallback だけは要素のライフサイクルとして chroot で再実行する
+            // （マウント済みコンポーネントの再接続と同じ意味論）。ルートが既に居ない・
+            // 別 rootNode へ移された形では接ぎ木先ツリーに到達できないので呼ばない
+            if (this._volumeGraftInfo !== null
+                && getStateElement(this._rootNode) === this._volumeGraftInfo.rootStateElement) {
+                callVolumeLifecycle(this._volumeGraftInfo, "$connectedCallback");
+            }
+            this._resolveConnectedCallback?.();
+            return;
+        }
+        else if (this._mountRecord !== null) {
+            // マウント済みコンポーネントの再接続（行 content のプール再利用）: 現在の行の
+            // listIndex でマウントスコープの台帳を張り直し、最新値を適用する（§1.9 の v2 版）。
+            // microtask に遅らせるのは、この connectedCallback が親の行ループ（mountAfter）の
+            // 最中に同期で発火し、新しいループ文脈は直後の activateContent が張るため —
+            // 同期で張り直すと旧行の listIndex を読んでしまう
+            const mountRecord = this._mountRecord;
+            // Shadow DOM 形は shadowRoot、Light DOM 形はコンポーネント要素自身
+            const scopeRoot = this.parentNode;
+            queueMicrotask(() => {
+                if (this._rootNode === null)
+                    return; // 再接続後すぐ切断された（プール返却）
+                remountScopeBindings(mountRecord, scopeRoot);
+            });
+            // 接続ごとのライフサイクル（v1 の $connectedCallback 再実行と同じ意味論）
+            callMountLifecycleCallback(mountRecord, "$connectedCallback");
+            this._resolveConnectedCallback?.();
+            return;
+        }
+        else if (!this._dcc && getStateElement(this._rootNode) !== this) {
             // 再接続（disconnect で名前登録が解除された後の再 connect）: 登録を復元する。
             // createState が rootNode 経由でこの要素を解決できるようにするために必要
             // （$connectedCallback の再実行と $streams の initial からの再起動が依存する、設計書 §2-3）。
-            setStateElementByName(this._rootNode, this._name, this);
-            this._reloadMappedPathsAfterReconnect();
+            setStateElement(this._rootNode, this);
         }
         // enable-ssr (クライアント側): SSR で $connectedCallback 済みなのでスキップ
         // inSsr() (サーバー側): レンダリング中なので実行する
@@ -16176,10 +17001,8 @@ class State extends HTMLElementBase {
         if (inSsr() && this.hasAttribute('enable-ssr') && !isOrchestratedSsr()) {
             try {
                 await getBindingsReady(this.rootNode);
-                const name = this.getAttribute('name') || 'default';
                 const stateData = Ssr.extractStateData(this);
                 const ssrEl = document.createElement(config.tagNames.ssr);
-                ssrEl.setAttribute('name', name);
                 ssrEl.setAttribute('version', VERSION);
                 Ssr.buildContent(ssrEl, stateData);
                 this.parentNode?.insertBefore(ssrEl, this);
@@ -16231,7 +17054,32 @@ class State extends HTMLElementBase {
         this._resolveConnectedCallback?.();
     }
     disconnectedCallback() {
+        if (this.hasAttribute("mount")) {
+            // ボリューム: 接ぎ木したデータ・アクセサ・宣言はツリーに残る（アンマウントは
+            // 未対応 — 揮発させると依存グラフに残った getter 登録が宙に浮く）。予約も維持。
+            // $disconnectedCallback だけは要素のライフサイクルとして chroot で呼ぶ
+            if (this._volumeGraftInfo !== null) {
+                callVolumeLifecycle(this._volumeGraftInfo, "$disconnectedCallback");
+            }
+            this._rootNode = null;
+            return;
+        }
+        if (this._mountRecord !== null) {
+            // v2 マウント: 名前登録・streams・watch を持たないので後始末は不要。
+            // 台帳エイリアスは消さない（プール再利用の再接続が同じスコープに戻る）。
+            // $disconnectedCallback だけは要素のライフサイクルとして呼ぶ（例外は隔離）
+            callMountLifecycleCallback(this._mountRecord, "$disconnectedCallback");
+            this._rootNode = null;
+            return;
+        }
         if (this._rootNode !== null) {
+            if (!this._initialized) {
+                // 初期化前に剥がされた（bind-component の await 中に shadow が張り直された等）。
+                // 名前登録も token も stream もまだ無く、state も作れないので後始末は不要。
+                // ここで createState すると "_state is not initialized" で CE リアクションが落ちる
+                this._rootNode = null;
+                return;
+            }
             // try/finally: ユーザーの $disconnectedCallback が throw しても後続の後始末を
             // 必ず実行する。特に abortAllStreams が飛ぶと stream が消費を続け（ゾンビ I/O）、
             // activeStateElements の強参照残留で GC が妨げられ、切断済み要素が依存駆動
@@ -16241,7 +17089,7 @@ class State extends HTMLElementBase {
                 this._callStateDisconnectedCallback();
             }
             finally {
-                setStateElementByName(this.rootNode, this._name, null);
+                setStateElement(this.rootNode, null);
                 clearCommandTokenRegistry(this);
                 clearCommandNamespace(this);
                 clearEventTokenRegistry(this);
@@ -16280,6 +17128,55 @@ class State extends HTMLElementBase {
     get elementPaths() {
         return this._elementPaths;
     }
+    /**
+     * ボリューム（webComponent/volume.ts）のアクセサ登録: ツリーパスをキーにした
+     * quoted-path アクセサを state オブジェクトに定義し、getter / setter 台帳と
+     * 依存グラフに載せる。ルートのワイルドカード getter（`"children.*.label"`）と
+     * 同じ機構に乗るので、評価は pushAddress 下・依存はグラフに載る。
+     */
+    /** ボリュームの watch パスをホットパス用ゲート（watchPaths）へ合流させる。 */
+    addVolumeWatchPaths(paths) {
+        if (paths.size === 0) {
+            return;
+        }
+        const merged = new Set(this._watchPaths ?? []);
+        for (const path of paths) {
+            merged.add(path);
+        }
+        this._watchPaths = merged;
+    }
+    /** ボリュームの $listKeys（接頭辞翻訳済み）をルートの表へ合流させる。衝突は設定ミス。 */
+    mergeVolumeListKeys(entries) {
+        if (entries.size === 0) {
+            return;
+        }
+        const merged = new Map(this._listKeys ?? []);
+        for (const [path, spec] of entries) {
+            if (merged.has(path)) {
+                raiseError(`$listKeys entry "${path}" is declared by both the root and a volume (or two volumes). Keep exactly one.`);
+            }
+            merged.set(path, spec);
+        }
+        this._listKeys = merged;
+    }
+    /** ボリュームが $updatedCallback を持つとき、収集ゲートを開ける（apply/applyChange.ts）。 */
+    enableUpdatedCallback() {
+        this._hasUpdatedCallback = true;
+    }
+    /** enable-ssr スナップショットから初期化されたか（D14 — webComponent/volume.ts が読む）。 */
+    get hydratedFromSsr() {
+        return this._hydratedFromSsr;
+    }
+    defineTreeAccessor(path, descriptor) {
+        Object.defineProperty(this._state, path, descriptor);
+        if (typeof descriptor.get === "function") {
+            this._getterPaths.add(path);
+        }
+        if (typeof descriptor.set === "function") {
+            this._setterPaths.add(path);
+        }
+        this.setPathInfo(path, "prop", "internal");
+    }
     get getterPaths() {
         return this._getterPaths;
     }
@@ -16304,31 +17201,22 @@ class State extends HTMLElementBase {
         }
         return this._rootNode;
     }
-    /**
-     * `rootNode` を保持しているか ＝ `createState` を呼んでよいか（§1.9）。
-     * disconnect で落ち、connect の冒頭で復活する。
-     */
-    get hasRootNode() {
-        return this._rootNode !== null;
-    }
     get boundComponentStateProp() {
         return this._boundComponentStateProp;
     }
-    get boundComponent() {
-        return this._boundComponent;
+    get hasMounts() {
+        return this._hasMounts;
     }
-    get hasMappedComponentState() {
-        return this._hasMappedComponentState;
+    /** 唯一の呼び手は webComponent/mount.ts の registerMountRecord（Phase 2）。 */
+    markHasMounts() {
+        this._hasMounts = true;
     }
-    get boundPaths() {
-        return this._pathSet;
+    get hasGraftedVolumes() {
+        return this._hasGraftedVolumes;
     }
-    /**
-     * この state の実体が innerState proxy であることを記録する。唯一の呼び手は
-     * `bindWebComponent` の mapped 分岐（§1.8）。
-     */
-    markComponentStateMapped() {
-        this._hasMappedComponentState = true;
+    /** 唯一の呼び手は webComponent/volume.ts の graftVolume（D22 後段のガードが読む）。 */
+    markHasGraftedVolumes() {
+        this._hasGraftedVolumes = true;
     }
     get bindableEventMap() {
         return this._bindableEventMap;
@@ -16386,15 +17274,8 @@ class State extends HTMLElementBase {
     }
     setPathInfo(path, bindingType, source = "binding") {
         if (bindingType === "for") {
-            const isNewListPath = !this._listPaths.has(path);
             this._listPaths.add(path);
             this._elementPaths.add(path + '.' + WILDCARD);
-            // mapped な bind-component の子が回している for は、配列の実体を親スコープが
-            // 持っている。親の依存 walk / swap 判定はどちらも「その state 要素の」
-            // listPaths・elementPaths を見るので、マップ先のパスにも同じ宣言を届ける（§1.8）。
-            if (isNewListPath && this._hasMappedComponentState) {
-                propagateListPathToOuterState(this, path);
-            }
         }
         if (!this._pathSet.has(path)) {
             const pathInfo = getPathInfo(path);
@@ -16416,7 +17297,7 @@ class State extends HTMLElementBase {
     }
     _createState(rootNode, mutability, callback) {
         try {
-            const stateProxy = createStateProxy(rootNode, this._state, this._name, mutability);
+            const stateProxy = createStateProxy(rootNode, this._state, mutability);
             return callback(stateProxy);
         }
         finally {
@@ -16448,19 +17329,58 @@ class State extends HTMLElementBase {
     addIndexDependentGetterPath(path) {
         this._indexDependentGetterPaths.add(path);
     }
-    bindProperty(prop, desc) {
-        Object.defineProperty(this._state, prop, desc);
-        if (prop === STATE_UPDATED_CALLBACK_NAME) {
-            this._hasUpdatedCallback = true;
-        }
-    }
     setInitialState(state) {
         if (!this._initialized) {
             this._resolveSetState?.(state);
+            return;
         }
-        else {
-            this._state = state;
+        // D22 と同型の防御: 接ぎ木済みボリューム / マウント記録の居るツリーの丸ごと再 set は、
+        // 接ぎ木データ・quoted-path アクセサ（defineTreeAccessor）・マーカーの getterPaths・
+        // 合流済み宣言面（$watch / $listKeys / $updatedCallback ゲート）を全て無言で捨てる。
+        // 「マウントポイントを含む親の丸ごと書きは throw」（setByAddress の D22 後段）と
+        // 同じ設定ミスとして loud に落とす。
+        if (this._hasGraftedVolumes || this._hasMounts) {
+            raiseError(`Cannot replace the whole state of a tree that has grafted volumes or mounted components: ` +
+                `re-setting would silently drop grafted data, tree accessors and mount ledgers (D22). ` +
+                `Write the changed paths instead.`);
         }
+        this._state = state;
+    }
+}
+/**
+ * D11（設計 §4-7）: ボリュームだけでルートの無いページを無言にしない。
+ * 接ぎ木は保留キューで待つ（V5 — ルートが後から来れば成立する）ため throw はせず、
+ * connectedCallback 内 throw は初期化待ちを永久未解決にする（_failInitialization の注記
+ * と同じ理由）。そこで文書のパース完了後に「ルート候補（mount も bind-component も
+ * 無い <wcs-state>）が**要素として**存在するか」を検査し、無ければ console.error で
+ * 誘導する。登録（ロード完了）でなく要素の存在で見るのは、ルートの src ロードの
+ * 遅さで誤検知しないため。ルートを後から動的に足すページでは報告が出るが、
+ * 接ぎ木自体はその後も成立する（文言で釈明）。
+ */
+function reportVolumeWithoutRoot(rootNode, mountPath) {
+    const check = () => {
+        if (getStateElement(rootNode) !== null) {
+            return; // ルートが登録された
+        }
+        // rootNode は Document / ShadowRoot / Element のいずれか — querySelectorAll は必ずある
+        const candidates = rootNode.querySelectorAll(config.tagNames.state);
+        for (const el of candidates) {
+            if (!el.hasAttribute("mount") && !el.hasAttribute("bind-component")) {
+                return; // ルート候補が居る（ロード中かもしれない）— 登録を待つ
+            }
+        }
+        console.error(`[@wcstack/state] <${config.tagNames.state} mount="${mountPath}"> has no root state tree to graft onto (D11). ` +
+            `A volume mounts onto the root tree — add a root <${config.tagNames.state}> to this root node ` +
+            `(an empty <${config.tagNames.state}></${config.tagNames.state}> is enough). ` +
+            `If the root is added dynamically later, the graft will still complete and this report can be ignored.`);
+    };
+    const doc = (rootNode.ownerDocument ?? rootNode);
+    if (doc.readyState === "loading") {
+        // パース中は後続にルートが書かれていてもまだ DOM に無い — 完了後に検査する
+        doc.addEventListener("DOMContentLoaded", () => queueMicrotask(check), { once: true });
+    }
+    else {
+        setTimeout(check, 0);
     }
 }
 
@@ -16723,7 +17643,6 @@ function getWcsManifest() {
                 binding: BINDING_SEPARATOR,
                 propValue: PROP_VALUE_SEPARATOR,
                 modifier: MODIFIER_SEPARATOR,
-                stateName: STATE_NAME_SEPARATOR,
                 filter: FILTER_SEPARATOR,
             },
             // 正本 STRUCTURAL_BINDING_TYPE_SET から導出（手書きの二重定義を排除）。

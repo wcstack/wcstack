@@ -98,14 +98,6 @@ interface IStateElement {
      * optional なのはテスト用モック互換のため（undefined は「不明＝未初期化扱い」）。
      */
     readonly initialized?: boolean;
-    /**
-     * この state element が今使えるか（＝ 接続済みで rootNode を保持しているか）。
-     * `createState` は rootNode を要求するので、false のときに呼ぶと raiseError する。
-     * 台帳に載っていること（登録済み）と使えることは別で、要素をキーにした台帳には
-     * 切断済みの state element が残る窓がある（§1.9）。
-     * optional なのはテスト用モック互換のため（undefined は「不明＝使える扱い」）。
-     */
-    readonly hasRootNode?: boolean;
     readonly initializePromise: Promise<void>;
     readonly connectedCallbackPromise: Promise<void>;
     readonly listPaths: Set<string>;
@@ -122,22 +114,34 @@ interface IStateElement {
      * `bind-component` で束ねられているコンポーネント要素（親スコープ側のノード）。
      * マッピング規則の引き当てに使う。optional なのはテスト用モック互換のため。
      */
-    readonly boundComponent?: Element | null;
     /**
      * この state の実体が innerState proxy（＝ 値の正本が親スコープの state にある
      * mapped な `bind-component`）か。真のときだけ越境アドレスの受け渡しと
      * リストパスの外向き伝播が働く（§1.8）。
      * optional なのはテスト用モック互換のため（undefined は plain 扱い）。
      */
-    readonly hasMappedComponentState?: boolean;
-    markComponentStateMapped?(): void;
+    /**
+     * この state element にマウント（Phase 2 の単一ツリー — webComponent/mount.ts）が
+     * 1 つでも登録されているか。偽のとき getByAddress / isCacheable / `$n` 補正は
+     * boolean 判定 1 個でオーバーレイ経路を抜ける（設計書 D18）。
+     * optional なのはテスト用モック互換のため（undefined は「マウント無し」扱い）。
+     */
+    readonly hasMounts?: boolean;
+    markHasMounts?(): void;
+    /**
+     * この state element に接ぎ木済みのボリューム（`mount=` — webComponent/volume.ts）が
+     * 1 つでもあるか。偽のとき setByAddress の D22 後段ガード（マウントポイントを含む
+     * 親の丸ごと書き検査）は boolean 判定 1 個で抜ける（設計書 D18 と同じ形）。
+     * optional なのはテスト用モック互換のため（undefined は「ボリューム無し」扱い）。
+     */
+    readonly hasGraftedVolumes?: boolean;
+    markHasGraftedVolumes?(): void;
     /**
      * この state 要素に束ねられた（`setPathInfo` を通った）パスの集合。丸ごとマウント
      * （ルート規則）の親→子通知が「登録済みパス全部を読み直せ」を組み立てるのに使う
      * （webComponent/rootReloadPaths.ts）。
      * optional なのはテスト用モック互換のため（undefined は「登録なし」扱い）。
      */
-    readonly boundPaths?: ReadonlySet<string>;
     /**
      * DCC の `$bindables` から生成した「パス → 変更イベント名」表。
      * 唯一の書き手は defineDCC で、読み手は setByAddress。
@@ -191,13 +195,20 @@ interface IStateElement {
      * `source` は存在検査の診断 code と適用範囲を決める（pathDiagnostics.ts）。
      * 省略時は `"binding"`（テスト用モック互換のため optional）。
      */
+    /** ボリュームの宣言面の合流（webComponent/volume.ts 専用・実装は State のみ） */
+    addVolumeWatchPaths?(paths: ReadonlySet<string>): void;
+    mergeVolumeListKeys?(entries: ReadonlyMap<string, ListKeySpec>): void;
+    enableUpdatedCallback?(): void;
+    /** enable-ssr スナップショットから初期化されたか（D14）。 */
+    readonly hydratedFromSsr?: boolean;
+    /** ボリュームのアクセサ登録（webComponent/volume.ts 専用） */
+    defineTreeAccessor(path: string, descriptor: PropertyDescriptor): void;
     setPathInfo(path: string, bindingType: BindingType, source?: PathInfoSource): void;
     addStaticDependency(parentPath: string, childPath: string): boolean;
     addDynamicDependency(fromPath: string, toPath: string): boolean;
     createStateAsync(mutability: Mutability, callback: (state: IStateProxy) => Promise<void>): Promise<void>;
     createState(mutability: Mutability, callback: (state: IStateProxy) => void): void;
     nextVersion(): number;
-    bindProperty(prop: string, desc: PropertyDescriptor): void;
     setInitialState(state: Record<string, any>): void;
 }
 
@@ -232,7 +243,6 @@ interface IStateAddress {
     readonly parentAddress: IStateAddress | null;
 }
 interface IAbsolutePathInfo {
-    readonly stateName: string;
     readonly stateElement: IStateElement;
     readonly pathInfo: IPathInfo;
     readonly parentAbsolutePathInfo: IAbsolutePathInfo | null;
@@ -276,7 +286,6 @@ interface IParsedBinding {
     readonly propModifiers: string[];
     readonly statePathName: string;
     readonly statePathInfo: IPathInfo;
-    readonly stateName: string;
     readonly inFilters: IFilterInfo[];
     readonly outFilters: IFilterInfo[];
     readonly bindingType: BindingType;
@@ -371,7 +380,6 @@ declare function getBindingsReady(rootNode: Node): Promise<void>;
 declare const HTMLElementBase: typeof HTMLElement;
 
 interface ISsrElement {
-    readonly name: string;
     readonly version: string;
     readonly stateData: IState;
     readonly templates: Map<string, HTMLTemplateElement>;
@@ -383,7 +391,6 @@ declare class Ssr extends HTMLElementBase implements ISsrElement {
     private _stateData;
     private _templates;
     private _hydrateProps;
-    get name(): string;
     get version(): string;
     get stateData(): IState;
     get templates(): Map<string, HTMLTemplateElement>;
@@ -400,7 +407,7 @@ declare class Ssr extends HTMLElementBase implements ISsrElement {
     private _loadStateData;
     private _loadTemplates;
     private _loadHydrateProps;
-    static findByName(root: Node, name: string): ISsrElement | null;
+    static find(root: Node): ISsrElement | null;
     /**
      * stateData と構造テンプレート・プロパティから <wcs-ssr> の中身を構築する。
      * server パッケージの renderToString から呼ばれる。
@@ -758,12 +765,11 @@ interface IWcsManifest {
         pathDelimiter: string;
         /** ワイルドカード（`*`） */
         wildcard: string;
-        /** バインディング構文 `[prop][#mod]: [path][@state][|filter...]` の区切り文字 */
+        /** バインディング構文 `[prop][#mod]: [path][|filter...]` の区切り文字 */
         delimiters: {
             binding: string;
             propValue: string;
             modifier: string;
-            stateName: string;
             filter: string;
         };
         /** 構造ディレクティブ（`<template data-wcs="for: ...">` 等） */
@@ -828,12 +834,10 @@ declare function getWcsManifest(): IWcsManifest;
 
 type DevtoolsEvent = {
     readonly type: "state:element-registered";
-    readonly name: string;
     readonly rootNode: Node;
     readonly element: IStateElement;
 } | {
     readonly type: "state:element-unregistered";
-    readonly name: string;
     readonly rootNode: Node;
     readonly element: IStateElement;
 } | {
@@ -860,7 +864,6 @@ type DevtoolsEvent = {
 } | {
     readonly type: "state:token-emit";
     readonly kind: "command" | "event";
-    readonly stateName: string | null;
     readonly tokenName: string;
     readonly args: readonly unknown[];
     readonly subscriberCount: number;
@@ -868,7 +871,6 @@ type DevtoolsEvent = {
     readonly type: "state:watch-error";
     /** throw 元。cur の評価（getter）とハンドラ本体では原因も直し方も違う */
     readonly phase: "prime" | "evaluate" | "handler";
-    readonly stateName: string;
     /** `$watch` の宣言キー（ワイルドカードを含む生のパス） */
     readonly path: string;
     readonly error: unknown;
@@ -879,21 +881,18 @@ type DevtoolsEvent = {
     readonly paths: readonly string[];
 } | {
     readonly type: "state:watch-fired";
-    readonly stateName: string;
     /** `$watch` の宣言キー（ワイルドカードを含む生のパス） */
     readonly path: string;
 } | {
     readonly type: "state:path-unresolved";
     /** 書き手が書いた面。診断 code が binding / watch で変わる */
     readonly source: "binding" | "watch";
-    readonly stateName: string;
     /** 宣言されたパス（ワイルドカードを含む生の文字列） */
     readonly path: string;
     /** 解決に失敗したセグメント */
     readonly missingSegment: string;
 } | {
     readonly type: "state:binding-apply-error";
-    readonly stateName: string;
     /** バインディングの state パス（ワイルドカードを含む生の文字列） */
     readonly path: string;
     readonly bindingType: string;
@@ -991,6 +990,8 @@ declare class State extends HTMLElementBase implements IStateElement {
     static getBindingsReady(rootNode: Node): Promise<void>;
     private __state;
     private _hasUpdatedCallback;
+    /** enable-ssr のスナップショットから初期化された（D14: ボリュームはデータを採用する） */
+    private _hydratedFromSsr;
     private _crossRowListPaths;
     private _indexDependentGetterPaths;
     private _name;
@@ -1018,7 +1019,14 @@ declare class State extends HTMLElementBase implements IStateElement {
     private _rootNode;
     private _boundComponent;
     private _boundComponentStateProp;
-    private _hasMappedComponentState;
+    private _hasMounts;
+    private _hasGraftedVolumes;
+    /** ボリューム（mount=）: 接ぎ木済みの控え（$disconnectedCallback 用） */
+    private _volumeGraftInfo;
+    /** ボリューム: スロット予約済み・接ぎ木進行中（ロード完了前の再接続の再入ガード） */
+    private _volumeInitializing;
+    /** v2 マウント（Phase 2）: この bind-component 要素が構築したマウント記録 */
+    private _mountRecord;
     private _bindableEventMap;
     private _commandTokenNames;
     private _eventTokenNames;
@@ -1030,42 +1038,24 @@ declare class State extends HTMLElementBase implements IStateElement {
     private set _state(value);
     get name(): string;
     private _loadFromSsrElement;
+    /** state / src / json / inner <script> / API set のソース解決（_initialize とボリュームで共用）。 */
+    private _loadStateFromSource;
+    /**
+     * ボリューム（`<wcs-state mount="path">`）: 独立ツリーを持たず、ロード完了で
+     * ルートに接ぎ木する（webComponent/volume.ts）。接続時にスロットを予約（D22）。
+     * ルートより先に接続されてもよい — ルート登録が保留分を引き取る（V5）。
+     */
+    private _initializeVolume;
     private _initialize;
+    /**
+     * 設定エラーでの fail-fast。initializePromise 等を解決してから raise する —
+     * 未解決のまま投げると waitForStateInitialize（ホストの buildBindings）が
+     * この要素を待ち続け、**ページ全体が無言でウェッジする**（1 つの設定ミスが
+     * 無関係なバインディングまで道連れにする）。エラー自体は unhandled rejection
+     * として loud に残る。
+     */
+    private _failInitialization;
     private _initializeBindWebComponent;
-    /**
-     * Light DOM の mapped コンポーネントが、自分のサブツリーのバインディングを張る（§1.13）。
-     *
-     * Shadow DOM 形では子スコープが別 rootNode にあり、`setStateElementByName` の初回登録から
-     * その root ぶんの `buildBindings` が別パスとして起動する。Light DOM ではホストと同じ root に
-     * いるためそのパスが存在せず、かといってホストのパスに混ぜると `@name` の解決が
-     * この要素の名前登録より先に来てしまう。そこで `getSubscriberNodes` がホスト側の走査から
-     * このサブツリーを外し、名前登録が済んだここで同じことを自前で行う。
-     *
-     * `{{ }}` の変換だけはホストのパスが root 全体に対して済ませている（純粋にテキスト操作で
-     * state に依存しないため）。構造フラグメントの収集は fragment info を rootNode + state 名で
-     * 登録するので state 依存であり、ホストのパスからは外してここで走らせる。
-     *
-     * ループ文脈を null で渡すのは Shadow DOM 形（`initializeBindings(shadowRoot, null)`）と
-     * 揃えるため —— 子孫の `getLoopContextByNode` はコンポーネント要素まで遡って
-     * 親スコープの行を見つける。
-     */
-    private _initializeLightDomComponentScope;
-    /**
-     * mapped な `bind-component` が切断 → 再接続したときに、束ねているパスを読み直させる（§1.9）。
-     *
-     * リスト行の content は再利用されるので、行が作り直されると子はこの経路を通る
-     * （`_initialized` が真なので `_initializeBindWebComponent` / `_initialize` は走らず、
-     * 子のバインディングは張り直されない）。切断中に親で起きた変更の通知は
-     * `applyChangeToWebComponent` が切断済みを理由に落としているため、ここで読み直さないと
-     * 子のビューだけが古い値のまま取り残される。何が変わったかは分からないので、
-     * プライマリ規則の粒度で丸ごと読み直す。
-     *
-     * 読み直しの前に派生規則の memo を捨てる。派生規則の購読者（親スコープに立つ
-     * バインディング）は切断で teardown されており、memo が残っていると導出が二度と
-     * 走らないため購読者も張り直されない ＝ 以後この子だけがサブパスの書き込みを
-     * 受け取れなくなる。捨てておけば、直後の読み直しで導出と購読者登録が走る。
-     */
-    private _reloadMappedPathsAfterReconnect;
     private _callStateConnectedCallback;
     private _initializeDCC;
     private _callStateDisconnectedCallback;
@@ -1078,6 +1068,21 @@ declare class State extends HTMLElementBase implements IStateElement {
     get listKeys(): ListKeyMap | null;
     get watchPaths(): ReadonlySet<string> | null;
     get elementPaths(): Set<string>;
+    /**
+     * ボリューム（webComponent/volume.ts）のアクセサ登録: ツリーパスをキーにした
+     * quoted-path アクセサを state オブジェクトに定義し、getter / setter 台帳と
+     * 依存グラフに載せる。ルートのワイルドカード getter（`"children.*.label"`）と
+     * 同じ機構に乗るので、評価は pushAddress 下・依存はグラフに載る。
+     */
+    /** ボリュームの watch パスをホットパス用ゲート（watchPaths）へ合流させる。 */
+    addVolumeWatchPaths(paths: ReadonlySet<string>): void;
+    /** ボリュームの $listKeys（接頭辞翻訳済み）をルートの表へ合流させる。衝突は設定ミス。 */
+    mergeVolumeListKeys(entries: ReadonlyMap<string, ListKeySpec>): void;
+    /** ボリュームが $updatedCallback を持つとき、収集ゲートを開ける（apply/applyChange.ts）。 */
+    enableUpdatedCallback(): void;
+    /** enable-ssr スナップショットから初期化されたか（D14 — webComponent/volume.ts が読む）。 */
+    get hydratedFromSsr(): boolean;
+    defineTreeAccessor(path: string, descriptor: PropertyDescriptor): void;
     get getterPaths(): Set<string>;
     get setterPaths(): Set<string>;
     get loopContextStack(): ILoopContextStack;
@@ -1085,20 +1090,13 @@ declare class State extends HTMLElementBase implements IStateElement {
     get staticDependency(): Map<string, string[]>;
     get version(): number;
     get rootNode(): Node;
-    /**
-     * `rootNode` を保持しているか ＝ `createState` を呼んでよいか（§1.9）。
-     * disconnect で落ち、connect の冒頭で復活する。
-     */
-    get hasRootNode(): boolean;
     get boundComponentStateProp(): string | null;
-    get boundComponent(): Element | null;
-    get hasMappedComponentState(): boolean;
-    get boundPaths(): ReadonlySet<string>;
-    /**
-     * この state の実体が innerState proxy であることを記録する。唯一の呼び手は
-     * `bindWebComponent` の mapped 分岐（§1.8）。
-     */
-    markComponentStateMapped(): void;
+    get hasMounts(): boolean;
+    /** 唯一の呼び手は webComponent/mount.ts の registerMountRecord（Phase 2）。 */
+    markHasMounts(): void;
+    get hasGraftedVolumes(): boolean;
+    /** 唯一の呼び手は webComponent/volume.ts の graftVolume（D22 後段のガードが読む）。 */
+    markHasGraftedVolumes(): void;
     get bindableEventMap(): Record<string, string>;
     get commandTokenNames(): ReadonlySet<string>;
     get eventTokenNames(): ReadonlySet<string>;
@@ -1140,7 +1138,6 @@ declare class State extends HTMLElementBase implements IStateElement {
     addCrossRowListPath(path: string): void;
     get indexDependentGetterPaths(): ReadonlySet<string>;
     addIndexDependentGetterPath(path: string): void;
-    bindProperty(prop: string, desc: PropertyDescriptor): void;
     setInitialState(state: Record<string, any>): void;
 }
 

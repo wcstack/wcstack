@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/midi",
-  "version": "1.33.0",
+  "version": "2.0.0",
   "description": "Declarative Web MIDI component for Web Components. Framework-agnostic MIDI input/output via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",

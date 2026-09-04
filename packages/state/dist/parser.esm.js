@@ -1,12 +1,11 @@
 const DELIMITER = '.';
 const WILDCARD = '*';
 const MAX_WILDCARD_DEPTH = 128;
-// data-wcs バインディング構文 `[prop][#mod]: [path][@state][|filter...]` の区切り文字（単一正本）。
+// data-wcs バインディング構文 `[prop][#mod]: [path][|filter...]` の区切り文字（単一正本・`@state` は v2 で撤去）。
 // これらは「死守の壁（構文契約）」であり値は不変。manifest.syntax.delimiters で公開される。
 const BINDING_SEPARATOR = ';'; // 複数バインディングの区切り
 const PROP_VALUE_SEPARATOR = ':'; // 左辺(prop)と右辺(path)の区切り
 const MODIFIER_SEPARATOR = '#'; // prop と修飾子の区切り
-const STATE_NAME_SEPARATOR = '@'; // path と @stateName の区切り
 const FILTER_SEPARATOR = '|'; // フィルタパイプの区切り
 // bindingType 判別と左辺 namespace の語彙（単一正本）。manifest.syntax.bindingTypes で
 // 公開される。パーサ（parseBindTextsForElement）とイベント層はこの定数に分岐する。
@@ -1356,9 +1355,8 @@ const cacheFilterInfos = new Map();
 function clearStatePartCacheForTooling() {
     cacheFilterInfos.clear();
 }
-// format: statePath@stateName|filter|filter
+// format: statePath|filter|filter
 // statePath-format: path.to.property (e.g., user.name.first, users.*.name, users.0.name, not include @)
-// stateName: optional, default is 'default'
 // filters-format: filterName or filterName(arg1,arg2)
 function parseStatePart(statePart) {
     const pos = statePart.indexOf(FILTER_SEPARATOR);
@@ -1381,11 +1379,14 @@ function parseStatePart(statePart) {
     else {
         stateAndPath = statePart.trim();
     }
-    if (stateAndPath.indexOf(STATE_NAME_SEPARATOR) !== -1) ;
-    const [statePathName, stateName = 'default'] = stateAndPath.split(STATE_NAME_SEPARATOR).map(trimFn);
+    if (stateAndPath.indexOf("@") !== -1) {
+        // 名前次元は v2 で撤去（docs/state-mount-design.md D16 / §9）。パスは 1 本のツリー。
+        raiseError(`"${stateAndPath}": the "@name" selector was removed in v2 — there is a single state tree. ` +
+            `Mount the named state onto the tree (<wcs-state mount="...">) and read it by its path prefix instead.`);
+    }
+    const statePathName = stateAndPath;
     const pathInfo = getPathInfo(statePathName);
     return {
-        stateName,
         statePathName,
         statePathInfo: pathInfo,
         outFilters: filters,
@@ -1417,7 +1418,6 @@ function parseBindTextsForElement(bindText) {
                 propModifiers: [],
                 statePathName: '#else',
                 statePathInfo: pathInfo,
-                stateName: '',
                 inFilters: [],
                 outFilters: [],
                 bindingType: 'else',

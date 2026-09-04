@@ -3,8 +3,6 @@ import { Window } from 'happy-dom';
 declare const GLOBALS_KEYS: string[];
 declare function installGlobals(window: Window): () => void;
 declare function installBaseUrl(baseUrl: string): () => void;
-/** @deprecated Use Ssr.extractStateData() from @wcstack/state instead */
-declare function extractStateData(stateEl: any): Record<string, any>;
 /**
  * 同期の bootstrap 関数、または非同期ローダー。
  * `HTMLElement` を継承するクラスはモジュール評価時にグローバルの `HTMLElement` を
@@ -234,5 +232,5 @@ declare class RenderCore extends EventTarget {
     render(html: string): Promise<string | null>;
 }
 
-export { GLOBALS_KEYS, RenderCore, VERSION, extractStateData, installBaseUrl, installGlobals, renderToString, waitForReady };
+export { GLOBALS_KEYS, RenderCore, VERSION, installBaseUrl, installGlobals, renderToString, waitForReady };
 export type { BootstrapFunction, IWcBindable, IWcBindableProperty, RenderOptions, WaitForReadyOptions, WcsRenderValues };

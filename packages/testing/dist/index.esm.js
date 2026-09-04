@@ -99,11 +99,15 @@ async function mount(html, options = {}) {
     return {
         root,
         container,
-        state(name = "default") {
+        state(...legacyArgs) {
+            if (legacyArgs.length > 0) {
+                throw new Error(`@wcstack/testing: state(name) was removed in v2 — there is one state tree per root. ` +
+                    `Mount the named state onto the tree (<wcs-state mount="...">) and read it by its path prefix via state().`);
+            }
             const element = [...root.querySelectorAll(stateTagName)]
-                .find((el) => (el.getAttribute("name") ?? "default") === name);
+                .find((el) => !el.hasAttribute("mount") && !el.hasAttribute("bind-component"));
             if (element === undefined) {
-                throw new Error(`@wcstack/testing: no <${stateTagName}${name === "default" ? "" : ` name="${name}"`}> under the mounted root`);
+                throw new Error(`@wcstack/testing: no <${stateTagName}> under the mounted root`);
             }
             return {
                 element,

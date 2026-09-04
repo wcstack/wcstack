@@ -1014,12 +1014,11 @@ const STRUCTURAL_BINDING_TYPE_SET = new Set([
 const DELIMITER = '.';
 const WILDCARD = '*';
 const MAX_WILDCARD_DEPTH = 128;
-// data-wcs バインディング構文 `[prop][#mod]: [path][@state][|filter...]` の区切り文字（単一正本）。
+// data-wcs バインディング構文 `[prop][#mod]: [path][|filter...]` の区切り文字（単一正本・`@state` は v2 で撤去）。
 // これらは「死守の壁（構文契約）」であり値は不変。manifest.syntax.delimiters で公開される。
 const BINDING_SEPARATOR = ';'; // 複数バインディングの区切り
 const PROP_VALUE_SEPARATOR = ':'; // 左辺(prop)と右辺(path)の区切り
 const MODIFIER_SEPARATOR = '#'; // prop と修飾子の区切り
-const STATE_NAME_SEPARATOR = '@'; // path と @stateName の区切り
 const FILTER_SEPARATOR = '|'; // フィルタパイプの区切り
 // 修飾子（`#` 後）の語彙（単一正本）。manifest.syntax.modifiers で公開される。
 // フラグ形（`#prevent` — 値を取らない）とキー値形（`#init=element` — `=` で値を取る）。
@@ -1111,7 +1110,6 @@ function getWcsManifest() {
                 binding: BINDING_SEPARATOR,
                 propValue: PROP_VALUE_SEPARATOR,
                 modifier: MODIFIER_SEPARATOR,
-                stateName: STATE_NAME_SEPARATOR,
                 filter: FILTER_SEPARATOR,
             },
             // 正本 STRUCTURAL_BINDING_TYPE_SET から導出（手書きの二重定義を排除）。

@@ -22,12 +22,12 @@ declare function bootstrapDevtools(): void;
 /** グローバル registry のプロパティ名 */
 declare const DEVTOOLS_HOOK_GLOBAL = "__WCSTACK_DEVTOOLS_HOOK__";
 /** プロトコル版。additive change では上げない（protocol §2） */
-declare const DEVTOOLS_PROTOCOL_VERSION = 1;
+declare const DEVTOOLS_PROTOCOL_VERSION = 2;
 interface IPathInfoLike {
     readonly path: string;
 }
 interface IAbsolutePathInfoLike {
-    readonly stateName: string;
+    readonly stateElement: unknown;
     readonly pathInfo: IPathInfoLike;
 }
 interface IListIndexLike {
@@ -41,13 +41,11 @@ interface IAbsoluteAddressLike {
 interface IBindingLike {
     readonly propName: string;
     readonly statePathName: string;
-    readonly stateName: string;
     readonly bindingType: string;
     readonly node: Node;
     readonly replaceNode: Node;
 }
 interface IStateElementSummaryLike {
-    readonly name: string;
     readonly rootNode: Node;
     readonly element: unknown;
     readonly paths: {
@@ -84,7 +82,6 @@ interface IDeclaredBindingLike {
     readonly node: Node | null;
     readonly propName: string;
     readonly statePathName: string;
-    readonly stateName: string;
     readonly bindingType: string;
     readonly inFilters: readonly {
         readonly filterName: string;
@@ -99,12 +96,10 @@ interface IDeclaredBindingLike {
 }
 type DevtoolsEventLike = {
     readonly type: "state:element-registered";
-    readonly name: string;
     readonly rootNode: Node;
     readonly element: unknown;
 } | {
     readonly type: "state:element-unregistered";
-    readonly name: string;
     readonly rootNode: Node;
     readonly element: unknown;
 } | {
@@ -130,14 +125,12 @@ type DevtoolsEventLike = {
 } | {
     readonly type: "state:token-emit";
     readonly kind: "command" | "event";
-    readonly stateName: string | null;
     readonly tokenName: string;
     readonly args: readonly unknown[];
     readonly subscriberCount: number;
 } | {
     readonly type: "state:watch-error";
     readonly phase: "prime" | "evaluate" | "handler";
-    readonly stateName: string;
     readonly path: string;
     readonly error: unknown;
 } | {
@@ -146,17 +139,14 @@ type DevtoolsEventLike = {
     readonly paths: readonly string[];
 } | {
     readonly type: "state:watch-fired";
-    readonly stateName: string;
     readonly path: string;
 } | {
     readonly type: "state:path-unresolved";
     readonly source: "binding" | "watch";
-    readonly stateName: string;
     readonly path: string;
     readonly missingSegment: string;
 } | {
     readonly type: "state:binding-apply-error";
-    readonly stateName: string;
     readonly path: string;
     readonly bindingType: string;
     readonly error: unknown;
@@ -199,9 +189,9 @@ interface IDevtoolsSourceLike {
     readonly packageVersion: string;
     getStateElements(): IStateElementSummaryLike[];
     /** protocol v1 追補 API。古いランタイムには無い可能性があるため optional 扱いで呼ぶ */
-    keys?(name: string, rootNode: Node): string[];
-    read(name: string, rootNode: Node, path: string, indexes?: number[]): unknown;
-    write(name: string, rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
+    keys?(rootNode: Node): string[];
+    read(rootNode: Node, path: string, indexes?: number[]): unknown;
+    write(rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
     /**
      * protocol v1 追補 API（optional 扱いで呼ぶ）。ランタイム正本パーサによる
      * 宣言レベルバインディングの集合（declaredScan の簡易パーサを置き換える正本）。
@@ -237,32 +227,35 @@ interface IDevtoolsHookRegistryLike {
  * sources / roster / wiring をクリアし、残留参照を持たない。
  */
 
-/** 予約 state 名 prefix（protocol §5）。この prefix の要素・イベントは常に除外 */
-declare const RESERVED_STATE_NAME_PREFIX = "wcs-devtools";
 type TimelineKind = "write" | "batch" | "command" | "event" | "element-registered" | "element-unregistered" | "watch-error" | "watch-chain-limit" | "path-unresolved" | "binding-apply-error" | "propagation-suppressed" | "propagation-coalesced" | "propagation-hop-limit" | "contract-drift";
 interface ITimelineEntry {
     readonly seq: number;
     readonly time: number;
     readonly sourceId: string;
     readonly kind: TimelineKind;
-    readonly stateName: string | null;
     readonly label: string;
     readonly detail: string;
     readonly subscriberCount: number | null;
 }
 interface IRosterEntry {
     readonly sourceId: string;
-    readonly name: string;
+    /** 表示・選択用のルート由来ラベル（document / ホストタグ、重複は #n を付ける） */
+    readonly label: string;
     readonly rootNode: Node;
     readonly summary: IStateElementSummaryLike;
 }
 interface IWiringEntry {
     readonly sourceId: string;
-    readonly stateName: string;
     readonly path: string;
     readonly propName: string;
     readonly bindingType: string;
     readonly bindingRef: WeakRef<IBindingLike>;
+    /**
+     * 属する state 要素（absoluteAddress.absolutePathInfo.stateElement）。v2 は名前次元が
+     * 無いため、複数ツリーの同名パスは要素同一性で区別する（getWiringForPath のスコープ）。
+     * WeakRef なのはこの台帳が要素の寿命を延ばさないため。payload に無ければ null。
+     */
+    readonly stateElementRef: WeakRef<object> | null;
 }
 type CoreChangeKind = "sources" | "roster" | "wiring" | "timeline" | "coverage";
 type CoreChangeListener = (kind: CoreChangeKind) => void;
@@ -279,7 +272,6 @@ type CoreChangeListener = (kind: CoreChangeKind) => void;
  */
 type CoverageStatus = "fired" | "emitted" | "emitted-unheard" | "attached" | "never" | "prerequisite-missing" | "never-attached";
 interface ICoverageEntry {
-    readonly stateName: string;
     readonly kind: "watch" | "command" | "eventToken" | "binding";
     readonly name: string;
     readonly status: CoverageStatus;
@@ -289,12 +281,9 @@ interface ICoverageEntry {
 interface IDevtoolsCoreOptions {
     /** タイムライン ring buffer 件数（既定 500） */
     timelineCapacity?: number;
-    /** 追加で除外する state 名（予約 prefix は常に除外） */
-    hiddenStateNames?: readonly string[];
 }
 declare class DevtoolsCore {
     private _timelineCapacity;
-    private _hiddenStateNames;
     private _removeListener;
     private _sources;
     private _roster;
@@ -306,9 +295,12 @@ declare class DevtoolsCore {
     private _changeListeners;
     /** 観測開始時刻（connect 時の performance.now。未接続は null）。 */
     private _observingSince;
-    /** watch 発火回数（stateName + NUL + path → count）。カバレッジの実測面。 */
+    /** watch 発火回数（path → count）。カバレッジの実測面。
+     *  既知の限界: `state:watch-fired` / `state:token-emit` の payload はツリー識別を
+     *  持たないため、複数ツリーが同名の watch パス / token 名を宣言するページでは
+     *  実測が合算される（ツリー別に分けるにはプロトコル追補が要る — slice 29 記録）。 */
     private _watchFiredCounts;
-    /** token emit 実測（stateName + NUL + kind + NUL + name → 回数と空撃ち回数）。 */
+    /** token emit 実測（kind + NUL + name → 回数と空撃ち回数）。上の限界注記と同じ。 */
     private _tokenEmitCounts;
     /** 観測開始以降に一度でも attach を観測した宣言キー（attachKeyOf）。
      *  live 配線台帳は WeakRef pruning / binding-removed で縮むため、binding
@@ -319,8 +311,6 @@ declare class DevtoolsCore {
     get connected(): boolean;
     get paused(): boolean;
     set paused(value: boolean);
-    /** 表示から除外する state 名か（予約 prefix + hiddenStateNames、protocol §5） */
-    isHiddenStateName(name: string | null): boolean;
     connect(): void;
     /** 購読解除 + 台帳クリア（タイムラインは保持。protocol §7-2 の残留ゼロ） */
     disconnect(): void;
@@ -333,8 +323,13 @@ declare class DevtoolsCore {
     refreshRoster(): void;
     getTimeline(): readonly ITimelineEntry[];
     clearTimeline(): void;
-    /** 指定パスに束縛された配線（生存している binding のみ） */
-    getWiringForPath(stateName: string, path: string): IWiringEntry[];
+    /**
+     * 指定パスに束縛された配線（生存している binding のみ）。
+     * stateElement を渡すとそのツリーの配線だけに絞る（v2 は名前次元が無いため、
+     * 複数ツリーの同名パスは要素同一性で区別する）。stateElement を持たない
+     * 旧 payload 由来の entry は絞り込みでも残す（欠測を欠落にしない）。
+     */
+    getWiringForPath(path: string, stateElement?: unknown): IWiringEntry[];
     /** 全配線のスナップショット（生存している binding のみ） */
     getAllWiring(): IWiringEntry[];
     /** 指定ノード（またはその子孫のバインドノード）に載る配線 */
@@ -475,7 +470,7 @@ declare function formatArgs(args: readonly unknown[]): string;
  * 「宣言レベルの配線ビュー」を組む。ライブ台帳と違い binding 実体・
  * 接続状態は分からない（UI では "declared" バッジで区別する）。
  *
- * パースは表示目的の簡易版（`prop[#mod]: path[@state][|filters]` を
+ * パースは表示目的の簡易版（`prop[#mod]: path[|filters]` を
  * `;` 区切りで分解するだけ）。正確なセマンティクスの正本は
  * @wcstack/state の bindTextParser であり、ここでは追随しない。
  */
@@ -484,7 +479,6 @@ interface IDeclaredBinding {
     readonly element: Element;
     readonly propName: string;
     readonly path: string;
-    readonly stateName: string;
     readonly filters: readonly string[];
     /** 宣言ソース: data-wcs 属性か comment ノードか */
     readonly origin: "attribute" | "comment";
@@ -514,5 +508,5 @@ declare global {
     }
 }
 
-export { DEVTOOLS_HOOK_GLOBAL, DEVTOOLS_PROTOCOL_VERSION, DevtoolsCore, RESERVED_STATE_NAME_PREFIX, WcsDevtools, bootstrapDevtools, formatArgs, formatValue, getOrCreateHookRegistry, scanDeclaredBindings };
+export { DEVTOOLS_HOOK_GLOBAL, DEVTOOLS_PROTOCOL_VERSION, DevtoolsCore, WcsDevtools, bootstrapDevtools, formatArgs, formatValue, getOrCreateHookRegistry, scanDeclaredBindings };
 export type { CoreChangeKind, CoreChangeListener, DevtoolsEventLike, DevtoolsSinkLike, IAbsoluteAddressLike, IAbsolutePathInfoLike, IBindingLike, IDeclaredBinding, IDevtoolsCoreOptions, IDevtoolsHookRegistryLike, IDevtoolsListenerLike, IDevtoolsSourceLike, IListIndexLike, IPathInfoLike, IRosterEntry, IStateElementSummaryLike, ITimelineEntry, IWiringEntry, TimelineKind };

@@ -42,8 +42,11 @@ interface MountedApp {
     readonly root: Document | ShadowRoot;
     /** The node whose children are the mounted HTML: `document.body` or the shadow host. */
     readonly container: Element;
-    /** Accessor for the `<wcs-state>` named `name` (default `"default"`, i.e. no `name` attribute). Throws if absent. */
-    state(name?: string): StateHandle;
+    /**
+     * Accessor for the root `<wcs-state>` (v2: one state tree per root — volumes
+     * (`mount=`) and `bind-component` elements are not it). Throws if absent.
+     */
+    state(): StateHandle;
     /** Remove the mounted HTML. */
     unmount(): void;
 }

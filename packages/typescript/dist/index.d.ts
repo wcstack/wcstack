@@ -125,6 +125,12 @@ interface ApplicationManifest {
 declare function buildManifest(mountPath: string | null, schema: JsonSchemaNode, existing?: unknown): ApplicationManifest;
 /** Read the single `stateSchema` from a parsed manifest object, or undefined. */
 declare function readStateSchema(manifest: unknown): unknown;
+/**
+ * True for a v1-shaped manifest (`schemaVersion: 1` or a `states` map in the
+ * application namespace). `check` uses it to point at the regeneration path
+ * instead of reporting a confusing "missing stateSchema".
+ */
+declare function isV1Manifest(manifest: unknown): boolean;
 /** JSON with object keys sorted at every level — the canonical form used for comparison. */
 declare function stableStringify(value: unknown): string;
 type SchemaComparison = {
@@ -185,5 +191,5 @@ declare function loadSchemaCore(): SchemaCore;
 
 declare const VERSION: string;
 
-export { APPLICATION_MANIFEST_FILENAME, APPLICATION_NAMESPACE, DEFAULT_COMPILER_OPTIONS, DEFAULT_MAX_DEPTH, SCHEMA_VERSION, VERSION, buildManifest, compareStateSchema, generateStateSchema, loadSchemaCore, loadStateFile, readStateSchema, resolveCompilerOptions, schemaCoreCandidates, stableStringify, stateTypeToSchema };
+export { APPLICATION_MANIFEST_FILENAME, APPLICATION_NAMESPACE, DEFAULT_COMPILER_OPTIONS, DEFAULT_MAX_DEPTH, SCHEMA_VERSION, VERSION, buildManifest, compareStateSchema, generateStateSchema, isV1Manifest, loadSchemaCore, loadStateFile, readStateSchema, resolveCompilerOptions, schemaCoreCandidates, stableStringify, stateTypeToSchema };
 export type { ApplicationManifest, GenerateOptions, GeneratedSchema, JsonSchemaNode, LoadStateOptions, LoadedState, SchemaComparison, SchemaCore, SchemaOptions, WcsDiagnostic };

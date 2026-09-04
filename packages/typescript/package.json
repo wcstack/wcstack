@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/typescript",
-  "version": "1.33.0",
+  "version": "2.0.0",
   "description": "TypeScript tooling for wcstack apps: wcs-schema generates the sidecar stateSchema from a typed state file, so wcs-validate checks data-wcs paths against real types in CI and every editor.",
   "type": "module",
   "main": "./dist/index.esm.js",

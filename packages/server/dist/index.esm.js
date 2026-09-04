@@ -130,19 +130,6 @@ function installBaseUrl(baseUrl) {
     globalThis.URL.revokeObjectURL = OrigURL.revokeObjectURL;
     return () => { globalThis.URL = OrigURL; };
 }
-/** @deprecated Use Ssr.extractStateData() from @wcstack/state instead */
-function extractStateData(stateEl) {
-    const raw = stateEl.__state;
-    if (!raw || typeof raw !== 'object')
-        return {};
-    const data = {};
-    for (const [key, value] of Object.entries(raw)) {
-        if (!key.startsWith('$') && typeof value !== 'function') {
-            data[key] = value;
-        }
-    }
-    return data;
-}
 async function loadDefaultBootstraps() {
     const { bootstrapState } = await import('@wcstack/state');
     return [bootstrapState];
@@ -370,7 +357,7 @@ async function renderToString(html, options) {
     }
 }
 
-var version = "1.33.0";
+var version = "2.0.0";
 var pkg = {
 	version: version};
 
@@ -433,5 +420,5 @@ class RenderCore extends EventTarget {
     }
 }
 
-export { GLOBALS_KEYS, RenderCore, VERSION, extractStateData, installBaseUrl, installGlobals, renderToString, waitForReady };
+export { GLOBALS_KEYS, RenderCore, VERSION, installBaseUrl, installGlobals, renderToString, waitForReady };
 //# sourceMappingURL=index.esm.js.map

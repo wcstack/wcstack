@@ -175,7 +175,11 @@ var WcsDiagnosticCode = {
   // --- deprecations ---
   // 名前付き State（`<wcs-state name>` / `path@name`）。v2 でマウント（`mount=` と接頭辞付きパス）に
   // 置き換わる（docs/state-mount-design.md D16）。1.x では warning、v2 では parse error と同時に error。
-  NamedStateDeprecated: "wcs/named-state-deprecated"
+  NamedStateDeprecated: "wcs/named-state-deprecated",
+  // --- volume mount ---
+  // `<wcs-state mount="...">` の値が runtime の validateVolumeMountPath で raise する形
+  // （空・空セグメント・ワイルドカード・予約文字 $ # @）。runtime と同条件・同文言（v2）。
+  MountPathInvalid: "wcs/mount-path-invalid"
 };
 function sortDiagnostics(diagnostics) {
   const severityRank = { error: 0, warning: 1, info: 2 };
@@ -1752,6 +1756,7 @@ function resolveElementPaths(element, html, fileReader) {
   const out = [];
   for (const p of raw) {
     if (p.path.startsWith("$")) continue;
+    if (p.kind === "method" || p.kind === "eventToken") continue;
     out.push({ ...p, path: prefix + p.path });
   }
   return out;
@@ -1978,7 +1983,19 @@ var ja = {
   baseHrefMissing: () => `@wcstack/router \u3092\u4F7F\u3046 SPA \u306B\u306F <head> \u5185\u306E <base href="/"> \u304C\u5FC5\u8981\u3067\u3059\uFF08\u7121\u3044\u3068\u30C7\u30A3\u30FC\u30D7\u30EA\u30F3\u30AF\u3067 basename \u304C\u8AA4\u5C0E\u51FA\u3055\u308C\u307E\u3059\uFF09`,
   signalsDualEntry: () => `@wcstack/signals \u3068 @wcstack/signals/dom \u304C\u540C\u4E00\u30DA\u30FC\u30B8\u304B\u3089 import \u3055\u308C\u3066\u3044\u307E\u3059\u3002CDN \u3067\u306F\u5404\u30A8\u30F3\u30C8\u30EA\u304C\u81EA\u5DF1\u5B8C\u7D50\u30D0\u30F3\u30C9\u30EB\u306E\u305F\u3081\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u30B3\u30A2\u304C\u4E8C\u91CD\u5316\u3057\u3001\u5883\u754C\u3067\u53CD\u5FDC\u304C\u58CA\u308C\u307E\u3059 \u2014 \u3059\u3079\u3066 /dom \u30A8\u30F3\u30C8\u30EA\u304B\u3089 import \u3057\u3066\u304F\u3060\u3055\u3044`,
   namedStateAttrDeprecated: (name) => `name \u5C5E\u6027\u306F v2 \u3067\u64A4\u53BB\u3055\u308C\u307E\u3057\u305F\uFF081 root 1 \u30C4\u30EA\u30FC\uFF09\u3002\u30EB\u30FC\u30C8\u30C4\u30EA\u30FC\u3078\u306E\u30DE\u30A6\u30F3\u30C8 <wcs-state mount="${name}"> \u306B\u7F6E\u304D\u63DB\u3048\u3001\u30D1\u30B9\u306F "${name}.<path>" \u3067\u53C2\u7167\u3057\u3066\u304F\u3060\u3055\u3044\uFF08docs/state-mount-design.md \xA79\uFF09`,
-  namedStatePathDeprecated: (name) => name === "default" ? `"@default" \u30BB\u30EC\u30AF\u30BF\u306F v2 \u3067\u64A4\u53BB\u3055\u308C\u307E\u3057\u305F\u3002"@default" \u3092\u5916\u3057\u3066\u304F\u3060\u3055\u3044\uFF08docs/state-mount-design.md \xA79\uFF09` : `"@name" \u30BB\u30EC\u30AF\u30BF\u306F v2 \u3067\u64A4\u53BB\u3055\u308C\u307E\u3057\u305F\uFF081 root 1 \u30C4\u30EA\u30FC\uFF09\u3002\u30DE\u30A6\u30F3\u30C8\u3057\u305F\u30C4\u30EA\u30FC\u3092 "${name}.<path>" \u3067\u53C2\u7167\u3057\u3066\u304F\u3060\u3055\u3044\uFF08docs/state-mount-design.md \xA79\uFF09`
+  namedStatePathDeprecated: (name) => name === "default" ? `"@default" \u30BB\u30EC\u30AF\u30BF\u306F v2 \u3067\u64A4\u53BB\u3055\u308C\u307E\u3057\u305F\u3002"@default" \u3092\u5916\u3057\u3066\u304F\u3060\u3055\u3044\uFF08docs/state-mount-design.md \xA79\uFF09` : `"@name" \u30BB\u30EC\u30AF\u30BF\u306F v2 \u3067\u64A4\u53BB\u3055\u308C\u307E\u3057\u305F\uFF081 root 1 \u30C4\u30EA\u30FC\uFF09\u3002\u30DE\u30A6\u30F3\u30C8\u3057\u305F\u30C4\u30EA\u30FC\u3092 "${name}.<path>" \u3067\u53C2\u7167\u3057\u3066\u304F\u3060\u3055\u3044\uFF08docs/state-mount-design.md \xA79\uFF09`,
+  mountPathInvalid: (problem, mountPath) => {
+    switch (problem) {
+      case "empty":
+        return `"mount" \u306B\u306F\u7A7A\u3067\u306A\u3044\u30C4\u30EA\u30FC\u30D1\u30B9\u304C\u5FC5\u8981\u3067\u3059\uFF08runtime: "mount" requires a non-empty tree path.\uFF09`;
+      case "emptySegment":
+        return `"mount" \u30D1\u30B9 "${mountPath}" \u306B\u7A7A\u306E\u30BB\u30B0\u30E1\u30F3\u30C8\u304C\u3042\u308A\u307E\u3059\uFF08runtime: has an empty segment.\uFF09`;
+      case "wildcard":
+        return `"mount" \u30D1\u30B9 "${mountPath}" \u306F\u9759\u7684\u3067\u306A\u3051\u308C\u3070\u306A\u308A\u307E\u305B\u3093 \u2014 \u30EF\u30A4\u30EB\u30C9\u30AB\u30FC\u30C9\u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08runtime: must be static.\uFF09`;
+      default:
+        return `"mount" \u30D1\u30B9 "${mountPath}" \u306B\u4E88\u7D04\u6587\u5B57\uFF08$, #, @\uFF09\u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08runtime: must not use reserved characters.\uFF09`;
+    }
+  }
 };
 var EN_EXPECTED_LABEL = {
   array: "an array-typed path",
@@ -2037,7 +2054,19 @@ var en = {
   baseHrefMissing: () => `An SPA using @wcstack/router needs <base href="/"> in <head> (without it, deep links misderive the basename)`,
   signalsDualEntry: () => `Both @wcstack/signals and @wcstack/signals/dom are imported on this page. On a CDN each entry is a self-contained bundle, so the reactive core is duplicated and reactivity breaks at the seam \u2014 import everything from the single /dom entry`,
   namedStateAttrDeprecated: (name) => `The "name" attribute was removed in v2 \u2014 there is a single state tree per root. Mount this state onto the tree instead: <wcs-state mount="${name}"> and read it as "${name}.<path>" (docs/state-mount-design.md \xA79)`,
-  namedStatePathDeprecated: (name) => name === "default" ? `The "@default" selector was removed in v2 \u2014 drop it (docs/state-mount-design.md \xA79)` : `The "@name" selector was removed in v2 \u2014 there is a single state tree. Mount the named state onto the tree (<wcs-state mount="...">) and read it as "${name}.<path>" (docs/state-mount-design.md \xA79)`
+  namedStatePathDeprecated: (name) => name === "default" ? `The "@default" selector was removed in v2 \u2014 drop it (docs/state-mount-design.md \xA79)` : `The "@name" selector was removed in v2 \u2014 there is a single state tree. Mount the named state onto the tree (<wcs-state mount="...">) and read it as "${name}.<path>" (docs/state-mount-design.md \xA79)`,
+  mountPathInvalid: (problem, mountPath) => {
+    switch (problem) {
+      case "empty":
+        return `"mount" requires a non-empty tree path.`;
+      case "emptySegment":
+        return `"mount" path "${mountPath}" has an empty segment.`;
+      case "wildcard":
+        return `"mount" path "${mountPath}" must be static (wildcards are not allowed).`;
+      default:
+        return `"mount" path "${mountPath}" must not use reserved characters ($, #, @).`;
+    }
+  }
 };
 var CATALOGS = { ja, en };
 function getMessages(locale3) {
@@ -3118,9 +3147,8 @@ function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", l
     }
     if (!item.expression) continue;
     const parts = item.expression.split("|");
-    let pathPart = (parts[0] || "").trim();
-    const atIdx = pathPart.indexOf("@");
-    if (atIdx !== -1) pathPart = pathPart.slice(0, atIdx).trim();
+    const pathPart = (parts[0] || "").trim();
+    if (pathPart.includes("@")) continue;
     const insideFor = item.insideTemplate && isInsideForTemplate(html, item.matchStart, bindAttrName);
     if (pathPart && !/^-?\d|^["'`]|^true$|^false$|^null$/.test(pathPart)) {
       if (!insideFor && pathPart.includes("*")) {
@@ -3141,7 +3169,7 @@ function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", l
           severity: "warning"
         });
       }
-      if (insideFor && !pathPart.startsWith(".") && !pathPart.includes("@")) {
+      if (insideFor && !pathPart.startsWith(".")) {
         const indexMatch = /^\$(\d+)$/.exec(pathPart);
         const needed = indexMatch !== null ? Number(indexMatch[1]) : pathPart.includes("*") ? countWildcardSegments(pathPart) : 0;
         if (needed > 0) {
@@ -5021,17 +5049,52 @@ function validateNamedState(html, attrName, stateTagName = "wcs-state", locale3)
       pos += expr.length + 1;
     }
   }
-  for (const mustache of findAllMustacheSyntax(html)) {
-    const selector = findStateSelector(mustache.expression, true);
+  for (const item of [...findAllMustacheSyntax(html), ...findAllCommentBindings(html)]) {
+    const selector = findStateSelector(item.expression, true);
     if (selector !== null) {
       diagnostics.push({
         code: WcsDiagnosticCode.NamedStateDeprecated,
-        start: mustache.exprStart + selector.start,
-        end: mustache.exprStart + selector.end,
+        start: item.exprStart + selector.start,
+        end: item.exprStart + selector.end,
         message: msgs.namedStatePathDeprecated(selector.name),
         severity: "error"
       });
     }
+  }
+  return diagnostics;
+}
+
+// src/service/mountAttrValidator.ts
+function findMountPathProblem(mountPath) {
+  if (mountPath.length === 0) return "empty";
+  for (const segment of mountPath.split(".")) {
+    if (segment.length === 0) return "emptySegment";
+    if (segment === "*") return "wildcard";
+    if (segment.includes("$") || segment.includes("#") || segment.includes("@")) return "reserved";
+  }
+  return null;
+}
+function validateMountAttributes(html, stateTagName = "wcs-state", locale3) {
+  const msgs = getMessages(locale3);
+  const diagnostics = [];
+  for (const element of parseWcsStateElements(html, stateTagName)) {
+    if (element.mountPath === null) continue;
+    const problem = findMountPathProblem(element.mountPath);
+    if (problem === null) continue;
+    const tagText = html.slice(element.tagStart, element.tagEnd);
+    const match = /(?:^|\s)mount\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(tagText);
+    if (match === null) continue;
+    const value = match[1] ?? match[2] ?? match[3] ?? "";
+    const quoted = match[1] !== void 0 || match[2] !== void 0;
+    const valueEnd = element.tagStart + match.index + match[0].length - (quoted ? 1 : 0);
+    const attrStart = element.tagStart + match.index + (/^\s/.test(match[0]) ? 1 : 0);
+    diagnostics.push({
+      code: WcsDiagnosticCode.MountPathInvalid,
+      start: value.length === 0 ? attrStart : valueEnd - value.length,
+      end: valueEnd + (quoted && value.length === 0 ? 1 : 0),
+      message: msgs.mountPathInvalid(problem, element.mountPath),
+      severity: "error"
+    });
   }
   return diagnostics;
 }
@@ -6736,8 +6799,6 @@ function resolvePackageContracts(loaded) {
   const filterOwner = /* @__PURE__ */ new Map();
   let schemaOwner;
   let schemaWinner;
-  let schemaCollided = false;
-  void schemaCollided;
   let hasApplicationArtifact = false;
   for (const lm of loaded) {
     if (lm.manifest === null) continue;
@@ -6800,7 +6861,6 @@ function resolvePackageContracts(loaded) {
           schemaOwner = lm.artifact.source;
           schemaWinner = schema;
         } else {
-          schemaCollided = true;
           schemaWinner = void 0;
           ctxFor(lm).add(
             WcsDiagnosticCode.ManifestStateCollision,
@@ -6877,6 +6937,7 @@ function validateDocument(text, options = {}) {
   out.push(...validateArrayMutations(text, stateTagName, locale3));
   out.push(...validateWatchDeclarations(text, stateTagName, locale3));
   out.push(...validateNamedState(text, bindAttribute, stateTagName, locale3));
+  out.push(...validateMountAttributes(text, stateTagName, locale3));
   for (const d of validateStateTypes(text, stateTagName, locale3)) {
     out.push({ code: WcsDiagnosticCode.TypeAnnotation, start: d.start, end: d.end, message: d.message, severity: d.severity });
   }
