@@ -48,8 +48,11 @@ export interface MountedApp {
   readonly root: Document | ShadowRoot;
   /** The node whose children are the mounted HTML: `document.body` or the shadow host. */
   readonly container: Element;
-  /** Accessor for the `<wcs-state>` named `name` (default `"default"`, i.e. no `name` attribute). Throws if absent. */
-  state(name?: string): StateHandle;
+  /**
+   * Accessor for the root `<wcs-state>` (v2: one state tree per root — volumes
+   * (`mount=`) and `bind-component` elements are not it). Throws if absent.
+   */
+  state(): StateHandle;
   /** Remove the mounted HTML. */
   unmount(): void;
 }
@@ -152,11 +155,17 @@ export async function mount(html: string, options: MountOptions = {}): Promise<M
   return {
     root,
     container,
-    state(name = "default"): StateHandle {
+    state(...legacyArgs: never[]): StateHandle {
+      if (legacyArgs.length > 0) {
+        throw new Error(
+          `@wcstack/testing: state(name) was removed in v2 — there is one state tree per root. ` +
+          `Mount the named state onto the tree (<wcs-state mount="...">) and read it by its path prefix via state().`,
+        );
+      }
       const element = [...root.querySelectorAll<StateElementLike>(stateTagName)]
-        .find((el) => (el.getAttribute("name") ?? "default") === name);
+        .find((el) => !el.hasAttribute("mount") && !el.hasAttribute("bind-component"));
       if (element === undefined) {
-        throw new Error(`@wcstack/testing: no <${stateTagName}${name === "default" ? "" : ` name="${name}"`}> under the mounted root`);
+        throw new Error(`@wcstack/testing: no <${stateTagName}> under the mounted root`);
       }
       return {
         element,

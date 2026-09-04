@@ -151,7 +151,7 @@ script-src 'self' 'sha384-{auto.min.js のダイジェスト}';
 
 ```html
 <!-- CSP 安全 -->
-<wcs-state name="app" src="./state.js"></wcs-state>
+<wcs-state src="./state.js"></wcs-state>
 ```
 
 ## 5. router のガードは blob: 必須（回避策なし）

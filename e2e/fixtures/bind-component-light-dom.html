@@ -3,20 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <title>fixture: bind-component in Light DOM</title>
-  <!-- Covers docs/architecture-hardening/15-state-component-mechanism-consistency.md §1.13.
+  <!-- Covers the Light DOM mount form (v2 single-tree; docs/state-mount-design.md).
 
-       Everything §1.1-§1.12 verified was the Shadow DOM form. The Light DOM form existed only
-       in the README, with no test and no example anywhere in the repo. Measured, the mapped form
-       deadlocked: the host root's waitForStateInitialize waits on every <wcs-state> in the root,
-       which in Light DOM includes the component's own; that one waits for the host's binding to
-       the component element; and that binding is created by initializeBindings, which runs after
-       waitForStateInitialize.
-
-       Shadow DOM avoids this only because the inner state lives in a different rootNode -- the
-       namespace separation was quietly providing initialization-order separation too. The fix
-       restores both explicitly: the mapped Light DOM state is excluded from the host's wait, its
-       subtree is pruned from the host's binding and structural-fragment passes, and the component
-       scope binds itself once its name is registered.
+       In v2 a wired Light DOM bind-component is a mount: its bindings are translated onto
+       the parent ledger at parse time, there is no inner tree and no name. The v1 form
+       (name="..." + @name references) was removed; this page is the migrated shape.
 
        This page is the real-browser check, where custom-element upgrade timing differs from
        happy-dom. Both the plain form (state injection, which always worked) and the mapped form
@@ -27,15 +18,15 @@
 :not(:defined) { display: none; }
   </style>
   <script type="module">
-    // Light DOM: shadow を使わず、要素直下に <wcs-state bind-component name="..."> を置く。
-    // 名前空間が上位と共有されるため name は必須で、束縛は @name で明示する。
-    function defineLight(tag, stateName, markup, initialState) {
+    // Light DOM: shadow を使わず、要素直下に <wcs-state bind-component> を置く。
+    // v2 では name は無く、パスは親ツリーへの変換で解決される。
+    function defineLight(tag, markup, initialState) {
       class LightComponent extends HTMLElement {
         state = structuredClone(initialState);
         connectedCallback() {
           if (this.childElementCount === 0) {
             this.innerHTML =
-              `<wcs-state bind-component="state" name="${stateName}"></wcs-state>` + markup;
+              `<wcs-state bind-component="state"></wcs-state>` + markup;
           }
         }
       }
@@ -45,28 +36,20 @@
     // mapped: ホストから data-wcs で束ねる（§1.13 でデッドロックしていた形）
     defineLight(
       "light-view",
-      "lv",
-      `<span class="inner" data-wcs="textContent: message@lv"></span>`,
-      { message: "" },
+      `<span class="inner" data-wcs="textContent: message"></span>`,
+      {}, // v2 R1（D19）
     );
 
     // mapped + list: 子スコープが親のリストを回す（§1.8 の相乗り経路）
     defineLight(
       "light-list",
-      "ll",
-      `<ul class="leaf-view"><template data-wcs="for: items@ll">` +
-        `<li data-wcs="textContent: items.*.name@ll; attr.data-row-id: items.*.id@ll"></li>` +
+      `<ul class="leaf-view"><template data-wcs="for: items">` +
+        `<li data-wcs="textContent: items.*.name; attr.data-row-id: items.*.id"></li>` +
         `</template></ul>`,
-      { items: [] },
+      {}, // v2 R1（D19）
     );
 
-    // plain: ホストから束ねない state 注入（従来から成立していた形）
-    defineLight(
-      "light-plain",
-      "lp",
-      `<span class="inner" data-wcs="textContent: label@lp"></span>`,
-      { label: "injected" },
-    );
+    // plain（配線なし）の Light DOM は v2 で廃止 — 専用ページ bind-component-light-dom-plain-removed.html でピン留め
   </script>
 </head>
 <body>
@@ -91,9 +74,7 @@ export default {
     <light-list data-wcs="state.items: rows"></light-list>
   </div>
 
-  <div id="plain">
-    <light-plain></light-plain>
-  </div>
+
 
   <button id="rename" data-wcs="onclick: rename">rename</button>
   <button id="rename-row" data-wcs="onclick: renameRow">rename row</button>

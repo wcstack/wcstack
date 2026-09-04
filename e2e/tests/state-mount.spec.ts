@@ -1,18 +1,11 @@
 import { test, expect } from "@playwright/test";
 import { collectErrors } from "./helpers";
 
-// v2 のマウント構文の目標ページ（docs/state-mount-design.md §3、docs/state-mount-impl-plan.md P0-5）。
+// v2 のマウント構文の e2e（docs/state-mount-design.md §3、docs/state-mount-impl-plan.md P0-5）。
 //
-// 4 ページとも v1.32 では成立しない形を書いてある。fixme で止めてあり、実装 Phase の着地で
-// 順に外す（受け入れ ID は設計書 §7 / 計画 §7 のマトリクス）:
-//   - mount-root / mount-row  … Phase 1（`state: path` を既存機構の上で成立させる）— 済み（fixme を外した）
-//   - mount-light             … Phase 2（スコープを DOM 位置で解決、name 不要）
-//   - mount-volume            … Phase 3（`mount=` ボリューム、name / @ の撤去）
-//
-// fixme の理由文字列に Phase を書いておく: 外し忘れは「red なのに skip」ではなく
-// 「skip 一覧に Phase N と書いてある」で見つける。
-const PHASE2 = "state-mount Phase 2（スコープの DOM 解決）で有効化 — docs/state-mount-impl-plan.md §3";
-const PHASE3 = "state-mount Phase 3（mount= ボリューム）で有効化 — docs/state-mount-impl-plan.md §4";
+// 4 ページ（mount-root / mount-row / mount-light / mount-volume）は当初 v1.32 で成立しない
+// 目標ページとして fixme で止めてあり、Phase 1〜3 の着地で順に外した — 現在は全ページ有効
+//（受け入れ ID は設計書 §7 / 計画 §7 のマトリクス）。
 
 const rowIds = async (locator: import("@playwright/test").Locator) =>
   locator.evaluateAll((els) => els.map((el) => el.getAttribute("data-row-id")));
@@ -92,7 +85,6 @@ test.describe("e2e/fixtures/mount-row — 行そのものをマウント state: 
 
 test.describe("e2e/fixtures/mount-light — Light DOM に name が要らない", () => {
   test("L1/L3: name 無しの Light DOM コンポーネントがマウント先を読む", async ({ page }) => {
-    test.fixme(true, PHASE2);
     const errors = collectErrors(page);
     await page.goto("/e2e/fixtures/mount-light.html");
     await expect(page.locator("#single light-view .inner")).toHaveText("Alice");
@@ -104,7 +96,6 @@ test.describe("e2e/fixtures/mount-light — Light DOM に name が要らない",
   });
 
   test("L2: 同じ Light DOM コンポーネントを for の行に置ける", async ({ page }) => {
-    test.fixme(true, PHASE2);
     await page.goto("/e2e/fixtures/mount-light.html");
     await expect(page.locator("#list light-item .inner")).toHaveText(["Anna", "Ben"]);
     expect(await rowIds(page.locator("#list light-item .inner"))).toEqual(["a", "b"]);
@@ -115,7 +106,6 @@ test.describe("e2e/fixtures/mount-light — Light DOM に name が要らない",
 
 test.describe("e2e/fixtures/mount-volume — mount= で接ぎ木するボリューム", () => {
   test("V1/V2/V5: ルートより先に置いたボリュームが i18n.* として読める", async ({ page }) => {
-    test.fixme(true, PHASE3);
     const errors = collectErrors(page);
     await page.goto("/e2e/fixtures/mount-volume.html");
     await expect(page.locator("#title")).toHaveText("Hello");
@@ -124,7 +114,6 @@ test.describe("e2e/fixtures/mount-volume — mount= で接ぎ木するボリュ�
   });
 
   test("V2/V3: ボリュームの getter とルートの getter が i18n.lang に依存する", async ({ page }) => {
-    test.fixme(true, PHASE3);
     await page.goto("/e2e/fixtures/mount-volume.html");
     await expect(page.locator("#label")).toHaveText("1 items");
     await page.click("#inc");
@@ -135,7 +124,6 @@ test.describe("e2e/fixtures/mount-volume — mount= で接ぎ木するボリュ�
   });
 
   test("V7: ボリュームの $connectedCallback が chroot で走る", async ({ page }) => {
-    test.fixme(true, PHASE3);
     await page.goto("/e2e/fixtures/mount-volume.html");
     const connected = await page.evaluate(async () => {
       const root = document.querySelector("wcs-state:not([mount])") as any;

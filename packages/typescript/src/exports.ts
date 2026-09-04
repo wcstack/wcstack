@@ -6,7 +6,7 @@ export { generateStateSchema } from "./generate.js";
 export type { GenerateOptions, GeneratedSchema } from "./generate.js";
 export {
   buildManifest,
-  readStateSchema,
+  readStateSchema, isV1Manifest,
   stableStringify,
   compareStateSchema,
   APPLICATION_MANIFEST_FILENAME,

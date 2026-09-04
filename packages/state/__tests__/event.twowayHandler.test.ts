@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { IBindingInfo } from '../src/types';
 
 vi.mock('../src/stateElementByName', () => ({
-  getStateElementByName: vi.fn(),
+  getStateElement: vi.fn(),
 }));
 
 vi.mock('../src/list/loopContextByNode', () => ({
@@ -15,7 +15,7 @@ vi.mock('../src/raiseError', () => ({
 
 import { addTwowayValueObserver, attachTwowayEventHandler, detachTwowayEventHandler, __private__ } from '../src/event/twowayHandler';
 import { getPathInfo } from '../src/address/PathInfo';
-import { getStateElementByName } from '../src/stateElementByName';
+import { getStateElement } from '../src/stateElementByName';
 import { getLoopContextByNode } from '../src/list/loopContextByNode';
 import { raiseError } from '../src/raiseError';
 import { setLoopContextSymbol } from '../src/proxy/symbols';
@@ -27,7 +27,6 @@ function createBindingInfo(node: Element, overrides?: Partial<IBindingInfo>): IB
     propModifiers: [],
     statePathName: 'users.*.name',
     statePathInfo: getPathInfo('users.*.name'),
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'prop',
@@ -162,7 +161,7 @@ describe('event/twowayHandler', () => {
       [setLoopContextSymbol]: vi.fn((ctx, fn) => fn()),
     };
     const createState = vi.fn((mutability, fn) => fn(state));
-    vi.mocked(getStateElementByName).mockReturnValue({ createState } as any);
+    vi.mocked(getStateElement).mockReturnValue({ createState } as any);
 
     const binding = createBindingInfo(input, { statePathName: 'users.*.name-set' });
     attachTwowayEventHandler(binding);
@@ -188,7 +187,7 @@ describe('event/twowayHandler', () => {
       [setLoopContextSymbol]: vi.fn((ctx, fn) => fn()),
     };
     const createState = vi.fn((mutability, fn) => fn(state));
-    vi.mocked(getStateElementByName).mockReturnValue({ createState } as any);
+    vi.mocked(getStateElement).mockReturnValue({ createState } as any);
 
     const trimFilter = { filterName: 'trim', args: [] as string[], filterFn: (v: any) => String(v).trim() };
     const ucFilter = { filterName: 'uc', args: [] as string[], filterFn: (v: any) => String(v).toUpperCase() };
@@ -271,7 +270,7 @@ describe('event/twowayHandler', () => {
     input.value = 'Bob';
     const addSpy = vi.spyOn(input, 'addEventListener');
 
-    vi.mocked(getStateElementByName).mockReturnValue(null as any);
+    vi.mocked(getStateElement).mockReturnValue(null as any);
     vi.mocked(raiseError).mockImplementation(() => {
       throw new Error('state element not found');
     });
@@ -282,7 +281,7 @@ describe('event/twowayHandler', () => {
 
     expect(() => handler({ target: input } as unknown as Event)).toThrow('state element not found');
     expect(raiseError).toHaveBeenCalledWith(
-      'State element with name "default" not found for two-way binding.'
+      'No state tree found on this root for two-way binding.'
     );
   });
 
@@ -550,7 +549,7 @@ describe('event/twowayHandler', () => {
 
       const state: any = { [setLoopContextSymbol]: vi.fn((_ctx: any, fn: any) => fn()) };
       const createState = vi.fn((_mutability: any, fn: any) => fn(state));
-      vi.mocked(getStateElementByName).mockReturnValue({ createState } as any);
+      vi.mocked(getStateElement).mockReturnValue({ createState } as any);
       vi.mocked(getLoopContextByNode).mockReturnValue(null as any);
 
       const binding = createBindingInfo(el, { statePathName: 'form.value-detail' });
@@ -582,7 +581,7 @@ describe('event/twowayHandler', () => {
 
       const state: any = { [setLoopContextSymbol]: vi.fn((_ctx: any, fn: any) => fn()) };
       const createState = vi.fn((_mutability: any, fn: any) => fn(state));
-      vi.mocked(getStateElementByName).mockReturnValue({ createState } as any);
+      vi.mocked(getStateElement).mockReturnValue({ createState } as any);
       vi.mocked(getLoopContextByNode).mockReturnValue(null as any);
 
       const binding = createBindingInfo(el, { statePathName: 'form.value-custom' });
@@ -709,5 +708,19 @@ describe('event/twowayHandler', () => {
       removeOther();
       expect(__private__.producerValueObserversByNode.get(node)).toBeUndefined();
     });
+  });
+});
+
+describe('未定義のカスタム要素', () => {
+  it('attach は未 upgrade のカスタム要素に触らず戻ること（定義待ち側が後で attach する）', () => {
+    const el = document.createElement('never-defined-tw');
+    const binding = createBindingInfo(el);
+    expect(() => attachTwowayEventHandler(binding)).not.toThrow();
+  });
+
+  it('detach も未 upgrade のカスタム要素では何もしないこと', () => {
+    const el = document.createElement('never-defined-tw2');
+    const binding = createBindingInfo(el);
+    expect(() => detachTwowayEventHandler(binding)).not.toThrow();
   });
 });

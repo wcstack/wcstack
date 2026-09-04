@@ -14,7 +14,6 @@ import { listIndexAtWildcard } from "../list/wildcardLevel";
 import { getByAddressSymbol } from "../proxy/symbols";
 import { IStateProxy } from "../proxy/types";
 import { raiseError } from "../raiseError";
-import { getListParentListIndex } from "../webComponent/baseListIndex";
 import { getTopologicalRanks } from "./topologicalRank";
 import { SearchType } from "./types";
 
@@ -41,7 +40,6 @@ function getIndexes(listDiff: IListDiff, searchType: SearchType): Iterable<IList
 }
 
 type ExpandContext = {
-  readonly stateName: string,
   readonly stateElement: IStateElement,
   readonly targetPathInfo: IPathInfo,
   readonly targetListIndexes: IListIndex[],
@@ -64,7 +62,7 @@ function _walkExpandWildcard(
   const lastValue = getLastListValueByAbsoluteStateAddress(parentAbsAddress);
   const newValue = context.stateProxy[getByAddressSymbol](parentAddress);
   const listDiff = createListDiff(
-    getListParentListIndex(context.stateElement, parentAddress.listIndex), lastValue, newValue);
+    parentAddress.listIndex, lastValue, newValue);
 
   const loopIndexes = getIndexes(listDiff, context.searchType);
   if (currentWildcardIndex === context.wildcardPaths.length - 1) {
@@ -92,7 +90,6 @@ function _walkExpandWildcard(
 export type ListExpansion = "full" | "diff";
 
 type Context = {
-  readonly stateName: string,
   readonly stateElement: IStateElement,
   readonly staticMap: Map<string, string[]>,
   readonly dynamicMap: Map<string, string[]>,
@@ -284,7 +281,7 @@ function _collectDependencies(
         const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
         const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);
         const listDiff = createListDiff(
-          getListParentListIndex(context.stateElement, address.listIndex), lastValue, newValue);
+          address.listIndex, lastValue, newValue);
         const selection = selectExpansionIndexes(context, sourcePath, lastValue, newValue, listDiff);
         for(const listIndex of selection.fullRows) {
           const depAddress = createStateAddress(depPathInfo, listIndex);
@@ -362,7 +359,6 @@ function _collectDependencies(
             listIndex = null;
           }
           const expandContext: ExpandContext = {
-            stateName: context.stateName,
             stateElement: context.stateElement,
             targetPathInfo: depPathInfo,
             targetListIndexes: [],
@@ -397,7 +393,6 @@ function _collectDependencies(
 }
 
 export function walkDependency(
-  stateName: string,
   stateElement: IStateElement,
   startAddress: IStateAddress,
   staticDependency: Map<string, string[]>,
@@ -422,7 +417,6 @@ export function walkDependency(
   const ranks = getTopologicalRanks(startPath, staticDependency, dynamicDependency, MAX_DEPENDENCY_DEPTH);
   const context: Context = {
     ranks: ranks,
-    stateName: stateName,
     stateElement: stateElement,
     staticMap: staticDependency,
     dynamicMap: dynamicDependency,

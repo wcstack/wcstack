@@ -6,6 +6,7 @@ import { IAbsolutePathInfo } from "../address/types";
 import { clearAbsoluteStateAddressByBinding, getAbsoluteStateAddressByBinding, resolveBindingRootNode } from "../binding/getAbsoluteStateAddressByBinding";
 import { addBindingByAbsoluteStateAddress, addBindingByPattern, removeBindingByAbsoluteStateAddress, removeBindingByPattern } from "../binding/getBindingSetByAbsoluteStateAddress";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
+import { getLastListValueByAbsoluteStateAddress, hasLastListValueByAbsoluteStateAddress, setLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
 import { IListIndex } from "../list/types";
 import { clearStateAddressByBindingInfo } from "../binding/getStateAddressByBindingInfo";
 import { config } from "../config";
@@ -18,9 +19,8 @@ import { isPossibleTwoWay } from "../event/isPossibleTwoWay";
 import { getCustomElement } from "../getCustomElement";
 import { getCustomElementRegistry, upgradeCustomElement } from "../platform/customElementRegistry";
 import { raiseError } from "../raiseError";
-import { getStateElementByName } from "../stateElementByName";
+import { getStateElement } from "../stateElementByName";
 import { IBindingInfo } from "../types";
-import { getOuterRowPathInfo, getOuterRowPathInfosBeyond } from "../webComponent/outerListPath";
 import { consumeObserverSkipOnAdd, consumeObserverSkipOnRemove, decrementPendingObservation, hasPendingObservation, incrementPendingObservation } from "./observerSkip";
 import { DefinitionCoordinator, getDefinitionCoordinator } from "./DefinitionCoordinator";
 import { commitProducerValue, hasInitialSyncModifier, IInitialSyncPolicy, ResolvedInitialAuthority, resolveInitialAuthority, resolveInitialSyncPolicy } from "./initialSync";
@@ -73,18 +73,6 @@ interface IInternalBindingRecord extends IBindingRecord {
    */
   patternPathInfo: IAbsolutePathInfo | null;
   patternListIndex: IListIndex | null;
-  /**
-   * mapped な `bind-component` の行バインディングを、値の正本を持つ親スコープの
-   * 絶対パス情報にも登録したときの控え（listIndex は patternListIndex と同一）。
-   * plain な state では常に null（§1.8）。
-   */
-  outerPatternPathInfo: IAbsolutePathInfo | null;
-  /**
-   * 境界が 2 枚以上重なっているときの 3 段目以降の相乗り控え（§1.11）。
-   * 深さ 1 —— つまりほぼ全ての行 —— では `null` のままで、配列を確保しない
-   * （`interestedSessionsByNode` と同じく「単数で持ち、2 つ目から昇格する」）。
-   */
-  outerPatternPathInfosRest: IAbsolutePathInfo[] | null;
   pendingDefinitions: number;
   initialPolicy: IInitialSyncPolicy | null;
   resolvedAuthority: ResolvedInitialAuthority | null;
@@ -262,7 +250,6 @@ function bindingKey(binding: IBindingInfo): string {
     binding.bindingType,
     binding.propName,
     binding.propModifiers.join(","),
-    binding.stateName,
     binding.statePathName,
     inFilters,
     outFilters,
@@ -519,6 +506,62 @@ export class BindingSession {
     this.records.clear();
   }
 
+  /**
+   * マウントスコープ専用（Phase 2・webComponent/mountScope.ts）: 全 record の台帳登録を
+   * **現在のループ文脈の listIndex** で張り直す。行 content のプール再利用でコンポーネント
+   * 要素が別の行に付け替わると、スコープの binding は旧行の listIndex で台帳に載ったままに
+   * なる — その 1 点だけを直す（listener・record・依存グラフは張り直し不要）。
+   *
+   * `for` binding は lastListValue（差分の基準）を旧アドレスから新アドレスへ引き継ぐ。
+   * 引き継がないと再適用が全行 add と誤認し、旧行の DOM が残ったまま新行を重ねて
+   * マウントする。戻り値は再適用すべき binding（呼び出し側が applyChangeFromBindings する）。
+   */
+  /**
+   * マウントスコープ再接続専用: アクティブな record の binding ノード（text は差し替え前の
+   * comment — ループ文脈の直接エントリはこのノードに載る）を列挙する。
+   * remountScopeBindings が現在の行の文脈へ張り替えるために使う。
+   */
+  forEachActiveBindingNode(callback: (node: Node) => void): void {
+    for (const record of this.records) {
+      if (record.phase !== "active") continue;
+      callback(record.info.node);
+    }
+  }
+
+  rebindAddresses(): IBindingInfo[] {
+    const rebound: IBindingInfo[] = [];
+    for (const record of this.records) {
+      if (record.phase !== "active") continue;
+      const binding = record.info;
+      if (record.address === null && record.patternListIndex === null) continue;
+      const oldAbs = binding.bindingType === "for" ? getAbsoluteStateAddressByBinding(binding) : null;
+      if (record.address !== null) {
+        removeBindingByAbsoluteStateAddress(record.address, binding);
+        record.address = null;
+      } else {
+        removeBindingByPattern(record.patternPathInfo!, record.patternListIndex!, binding);
+        record.patternPathInfo = null;
+        record.patternListIndex = null;
+      }
+      clearStateAddressByBindingInfo(binding);
+      clearAbsoluteStateAddressByBinding(binding);
+      this.registerAddress(record);
+      if (oldAbs !== null) {
+        const newAbs = getAbsoluteStateAddressByBinding(binding);
+        // 記録の有無は has で見る（get は未記録でも `[]` を返すため、!= null 判定は
+        // 常に真 — 未記録の旧アドレスから空配列を持ち込んで、新アドレスに残っていた
+        // 正当な記録を潰しうる）
+        if (newAbs !== oldAbs && hasLastListValueByAbsoluteStateAddress(oldAbs)) {
+          setLastListValueByAbsoluteStateAddress(newAbs, getLastListValueByAbsoluteStateAddress(oldAbs));
+        }
+      }
+      if (this.shouldApplyState(binding)) {
+        rebound.push(binding);
+      }
+    }
+    return rebound;
+  }
+
   observe(node: Node): void {
     const root = observableRootFor(node);
     if (root === null) return;
@@ -666,8 +709,6 @@ export class BindingSession {
         address: null,
         patternPathInfo: null,
         patternListIndex: null,
-        outerPatternPathInfo: null,
-        outerPatternPathInfosRest: null,
         pendingDefinitions: 0,
         initialPolicy: slot.policy,
         resolvedAuthority: slot.authority,
@@ -784,8 +825,6 @@ export class BindingSession {
       address: null,
       patternPathInfo: null,
       patternListIndex: null,
-      outerPatternPathInfo: null,
-      outerPatternPathInfosRest: null,
       pendingDefinitions: 0,
       initialPolicy: null,
       resolvedAuthority: null,
@@ -985,34 +1024,14 @@ export class BindingSession {
       // リスト行: (absolutePathInfo, listIndex) のパターン台帳に登録し、
       // AbsoluteStateAddress の intern（アドレス割当 + intern 用 WeakMap）を省略する
       const rootNode = resolveBindingRootNode(binding, knownRoot);
-      const stateElement = getStateElementByName(rootNode, binding.stateName);
+      const stateElement = getStateElement(rootNode);
       if (stateElement === null) {
-        raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+        raiseError(`No state tree found on this root for binding.`);
       }
       const absolutePathInfo = getAbsolutePathInfo(stateElement, binding.statePathInfo);
       addBindingByPattern(absolutePathInfo, listIndex, binding);
       record.patternPathInfo = absolutePathInfo;
       record.patternListIndex = listIndex;
-      // mapped な bind-component の子スコープが回している行は、値の正本が親 state に
-      // ある。親が行へ書いたときの enqueue は親の絶対パス情報で起きるので、同じ
-      // listIndex（親子で共有されている）で親側のパターン台帳にも購読者として載せる。
-      // これが無いと親起点の行フィールド書き込みが子に一切届かない（§1.8）。
-      const outerPathInfo = getOuterRowPathInfo(stateElement, binding.statePathInfo);
-      if (outerPathInfo !== null) {
-        addBindingByPattern(outerPathInfo, listIndex, binding);
-        record.outerPatternPathInfo = outerPathInfo;
-        // 境界が 2 枚以上重なっていると、値の正本は 1 つ外ではなく最も外のスコープに
-        // ある。中間スコープは配列を素通しするだけで自分の行バインディングを持たない
-        // ため、1 段目だけでは正本スコープ起点の行フィールド書き込みが誰にも届かない
-        // （§1.11）。成立する段すべてに載せる。
-        const restPathInfos = getOuterRowPathInfosBeyond(outerPathInfo);
-        if (restPathInfos !== null) {
-          for (let i = 0; i < restPathInfos.length; i++) {
-            addBindingByPattern(restPathInfos[i], listIndex, binding);
-          }
-          record.outerPatternPathInfosRest = restPathInfos;
-        }
-      }
     } else {
       const address = getAbsoluteStateAddressByBinding(binding, knownRoot);
       addBindingByAbsoluteStateAddress(address, binding);
@@ -1022,9 +1041,9 @@ export class BindingSession {
     // データ駆動で行う（クロージャ不要）
     if (!record.options.registerPathInfo) return;
     const rootNode = binding.replaceNode.getRootNode() as Node;
-    const stateElement = getStateElementByName(rootNode, binding.stateName);
+    const stateElement = getStateElement(rootNode);
     if (stateElement === null) {
-      raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+      raiseError(`No state tree found on this root for binding.`);
     }
     if (binding.bindingType !== "event") {
       stateElement.setPathInfo(binding.statePathName, binding.bindingType);
@@ -1067,27 +1086,6 @@ export class BindingSession {
         // Cleanup is best-effort; one faulty resource must not retain the rest.
       }
     } else if (record.patternListIndex !== null) {
-      // 親スコープへの相乗り分は独立した資源なので、子側の解除が失敗しても取り残さない
-      if (record.outerPatternPathInfo !== null) {
-        try {
-          removeBindingByPattern(record.outerPatternPathInfo, record.patternListIndex, binding);
-        } catch {
-          // Cleanup is best-effort.
-        }
-        record.outerPatternPathInfo = null;
-      }
-      // 3 段目以降（§1.11）。各段も互いに独立した資源なので 1 つずつ守る
-      if (record.outerPatternPathInfosRest !== null) {
-        const restPathInfos = record.outerPatternPathInfosRest;
-        for (let i = 0; i < restPathInfos.length; i++) {
-          try {
-            removeBindingByPattern(restPathInfos[i], record.patternListIndex, binding);
-          } catch {
-            // Cleanup is best-effort.
-          }
-        }
-        record.outerPatternPathInfosRest = null;
-      }
       try {
         removeBindingByPattern(record.patternPathInfo!, record.patternListIndex, binding);
         record.patternPathInfo = null;

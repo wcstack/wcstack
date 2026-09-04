@@ -9,7 +9,6 @@ import { ParseBindTextResult } from "./types";
 function makeExpandedEntry(
   name: string,
   base: string,
-  stateName: string,
 ): ParseBindTextResult {
   // Dot-relative spread keeps the loop item root (`.`) without producing `..foo`.
   const expandedPath = base === "." ? `.${name}` : `${base}.${name}`;
@@ -19,7 +18,6 @@ function makeExpandedEntry(
     propModifiers: [],
     statePathName: expandedPath,
     statePathInfo: getPathInfo(expandedPath),
-    stateName,
     inFilters: [],
     outFilters: [],
     bindingType: 'prop',
@@ -119,12 +117,11 @@ export function expandSpread(
       raiseError(`Spread binding "${result.statePathName}" requires <${tagName}> to expose a valid wcBindable declaration.`);
     }
     const targetBase = result.statePathName;
-    const stateName = result.stateName;
     const seen = new Set<string>();
     for (const name of bindable.knownProperties.keys()) {
       if (seen.has(name)) continue;
       seen.add(name);
-      const entry = makeExpandedEntry(name, targetBase, stateName);
+      const entry = makeExpandedEntry(name, targetBase);
       spreadOrigin.add(entry);
       expanded.push(entry);
     }
@@ -133,7 +130,7 @@ export function expandSpread(
     for (const name of bindable.declaredInputs.keys()) {
       if (seen.has(name)) continue;
       seen.add(name);
-      const entry = makeExpandedEntry(name, targetBase, stateName);
+      const entry = makeExpandedEntry(name, targetBase);
       spreadOrigin.add(entry);
       expanded.push(entry);
     }

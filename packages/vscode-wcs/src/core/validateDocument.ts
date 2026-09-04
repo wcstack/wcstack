@@ -20,6 +20,7 @@ import { validateAriaAttributes } from "../service/ariaValidator.js";
 import { validateDocumentEnv } from "../service/documentEnvValidator.js";
 import { validateWatchDeclarations } from "../service/watchDeclarationValidator.js";
 import { validateNamedState } from "../service/namedStateValidator.js";
+import { validateMountAttributes } from "../service/mountAttrValidator.js";
 import { validateSemantics } from "../service/semanticValidator.js";
 import type { FileReader } from "../service/statePathResolver.js";
 import { discoverApplicationManifest } from "./sidecar/discover.js";
@@ -45,8 +46,8 @@ export interface ValidateDocumentOptions {
    */
   readonly fileReader?: FileReader;
   /**
-   * state 名 → `stateSchema`(application manifest の `wcstack.application.states`)。
-   * 宣言された state では、未存在パスが `wcs/binding-path-missing`(warning)ではなく
+   * 単一ツリーの `stateSchema`(application manifest の `wcstack.application.stateSchema` — v2)。
+   * 宣言されていれば、未存在パスが `wcs/binding-path-missing`(warning)ではなく
    * `wcs/path-nonexistent`(error)になる(docs/app-testing-and-typescript-impl-plan.md D6)。
    * 存在判定は sidecar/schemaSubset.ts の `resolveSchemaPath` の三値で行い、`unknown`
    * (素の `{}` の下・動的構造)は沈黙する。
@@ -56,7 +57,7 @@ export interface ValidateDocumentOptions {
    * ある時だけここへ渡し(明示が発見を置き換える)、IDE は常に発見に任せる — どちらも
    * 同じ `discoverApplicationManifest` を同じ reader で通るので診断が一致する。
    */
-  readonly applicationStates?: ReadonlyMap<string, JsonSchemaNode>;
+  readonly applicationSchema?: JsonSchemaNode;
 }
 
 /**
@@ -67,13 +68,13 @@ export function validateDocument(text: string, options: ValidateDocumentOptions 
   const stateTagName = options.stateTagName ?? "wcs-state";
   const locale = options.locale;
   const fileReader = options.fileReader;
-  const applicationStates = options.applicationStates
-    ?? (fileReader !== undefined ? discoverApplicationManifest(fileReader)?.states : undefined);
+  const applicationSchema = options.applicationSchema
+    ?? (fileReader !== undefined ? discoverApplicationManifest(fileReader)?.schema : undefined);
 
   const out: WcsDiagnostic[] = [];
   // bindingValidator / templateSyntaxValidator / ioNodeValidator / documentEnvValidator は既に code 付き。
-  out.push(...validateBindings(text, bindAttribute, stateTagName, locale, fileReader, applicationStates));
-  out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute, locale, fileReader, applicationStates));
+  out.push(...validateBindings(text, bindAttribute, stateTagName, locale, fileReader, applicationSchema));
+  out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute, locale, fileReader, applicationSchema));
   out.push(...validateIoNodes(text, bindAttribute, stateTagName, locale, fileReader));
   out.push(...validateAriaAttributes(text, bindAttribute, locale));
   out.push(...validateDocumentEnv(text, locale));
@@ -84,6 +85,8 @@ export function validateDocument(text: string, options: ValidateDocumentOptions 
   out.push(...validateWatchDeclarations(text, stateTagName, locale));
   // 名前付き State の deprecation（v2 でマウントに置き換わる。docs/state-mount-design.md D16）
   out.push(...validateNamedState(text, bindAttribute, stateTagName, locale));
+  // mount= の値検証（runtime の validateVolumeMountPath と同条件・同文言 — name= の鏡映と対称）
+  out.push(...validateMountAttributes(text, stateTagName, locale));
   // 単一カテゴリの validator は集約時に code を付与する。
   for (const d of validateStateTypes(text, stateTagName, locale)) {
     out.push({ code: WcsDiagnosticCode.TypeAnnotation, start: d.start, end: d.end, message: d.message, severity: d.severity });

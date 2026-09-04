@@ -46,20 +46,34 @@ describe("mount — README レシピを 1 呼び出しに", () => {
     expect(app.root.querySelector("#count")!.textContent).toBe("6");
   });
 
-  it("state(name): 名前付き state を引き、無ければ throw", async () => {
+  it("state(): 引数は v2 で撤去（1 root 1 ツリー）— name 指定は移行ヒント付きで throw", async () => {
     const app = await mount(`
       <wcs-state json='{"a": 1}'></wcs-state>
-      <wcs-state name="other" json='{"b": 2}'></wcs-state>
       <p id="a" data-wcs="textContent: a"></p>
-      <p id="b" data-wcs="textContent: b@other"></p>
     `);
-    expect(app.root.querySelector("#b")!.textContent).toBe("2");
-    expect(app.state("other").read((s) => s.b)).toBe(2);
-    expect(app.state("other").element.getAttribute("name")).toBe("other");
-    expect(() => app.state("nope")).toThrow(/no <wcs-state name="nope">/);
+    expect(app.state().read((s) => s.a)).toBe(1);
+    expect(() => (app.state as (name?: string) => unknown)("other")).toThrow(/removed in v2/);
+    expect(() => (app.state as (name?: string) => unknown)("other")).toThrow(/mount=/);
     app.unmount();
     const empty = await mount("<p></p>");
     expect(() => empty.state()).toThrow(/no <wcs-state>/);
+  });
+
+  it("state(): mount= のボリュームが混在してもルートツリーの <wcs-state> を返す（v2 の選別）", async () => {
+    // ボリュームを文書順でルートより前に置く — 選別が「最初の <wcs-state>」だと
+    // ボリュームを掴んでしまう形
+    const app = await mount(`
+      <wcs-state mount="cfg" json='{"flag": true}'></wcs-state>
+      <wcs-state json='{"count": 7}'></wcs-state>
+      <p id="count" data-wcs="textContent: count"></p>
+      <p id="flag" data-wcs="textContent: cfg.flag"></p>
+    `);
+    const handle = app.state();
+    expect(handle.element.hasAttribute("mount")).toBe(false);
+    // ルートの読み書きと、接ぎ木されたボリュームのパス読みが同じハンドルで通る
+    expect(handle.read((s) => s.count)).toBe(7);
+    expect(handle.read((s) => (s as Record<string, unknown>)["cfg.flag"])).toBe(true);
+    app.unmount();
   });
 
   it("root: 'shadow' は host の ShadowRoot に流し込み、バインドはその root に閉じる", async () => {

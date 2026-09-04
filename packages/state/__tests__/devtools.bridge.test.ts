@@ -7,7 +7,7 @@ import {
 } from '../src/devtools/bridge';
 import { DEVTOOLS_HOOK_GLOBAL, DEVTOOLS_PROTOCOL_VERSION, IDevtoolsListener } from '../src/devtools/types';
 import { devtoolsSink } from '../src/devtools/sink';
-import { setStateElementByName } from '../src/stateElementByName';
+import { setStateElement } from '../src/stateElementByName';
 import { getUpdater } from '../src/updater/updater';
 import { CommandToken } from '../src/command/CommandToken';
 
@@ -100,11 +100,11 @@ describe('devtools/bridge', () => {
       expect(devtoolsSink).not.toBeNull();
 
       // 計装点（token emit）からのイベントが sourceId 付きで届くこと
-      const token = new CommandToken('go', 'main');
+      const token = new CommandToken('go');
       token.emit(1, 2);
       expect(onEvent).toHaveBeenCalledWith(
         __getRegisteredSourceForTest()!.id,
-        expect.objectContaining({ type: 'state:token-emit', kind: 'command', tokenName: 'go', stateName: 'main' })
+        expect.objectContaining({ type: 'state:token-emit', kind: 'command', tokenName: 'go' })
       );
 
       removeListener();
@@ -184,10 +184,10 @@ describe('devtools/bridge', () => {
         commandTokenNames: new Set(['go']),
       });
       const rootNode = element.rootNode;
-      setStateElementByName(rootNode, 'summary-test', element);
+      setStateElement(rootNode, element);
       try {
         const summaries = source.getStateElements();
-        const summary = summaries.find((s) => s.name === 'summary-test')!;
+        const summary = summaries.find((s) => s.element === element)!;
         expect(summary).toBeDefined();
         expect(summary.element).toBe(element);
         expect(summary.rootNode).toBe(rootNode);
@@ -198,7 +198,7 @@ describe('devtools/bridge', () => {
         expect(summary.watchPaths).toBeNull();
         expect(summary.keyedListPaths).toBeNull();
       } finally {
-        setStateElementByName(rootNode, 'summary-test', null);
+        setStateElement(rootNode, null);
       }
     });
 
@@ -208,12 +208,12 @@ describe('devtools/bridge', () => {
       const element = createMockStateElement('watch-summary', {
         watchPaths: new Set(['count', 'items.*.price']),
       } as never);
-      setStateElementByName(element.rootNode, 'watch-summary', element);
+      setStateElement(element.rootNode, element);
       try {
-        const summary = source.getStateElements().find((s) => s.name === 'watch-summary')!;
+        const summary = source.getStateElements().find((s) => s.element === element)!;
         expect(summary.watchPaths).toEqual(new Set(['count', 'items.*.price']));
       } finally {
-        setStateElementByName(element.rootNode, 'watch-summary', null);
+        setStateElement(element.rootNode, null);
       }
     });
 
@@ -226,13 +226,13 @@ describe('devtools/bridge', () => {
           ['rows.*.children', (row) => row],
         ]),
       } as never);
-      setStateElementByName(element.rootNode, 'listkeys-summary', element);
+      setStateElement(element.rootNode, element);
       try {
-        const summary = source.getStateElements().find((s) => s.name === 'listkeys-summary')!;
+        const summary = source.getStateElements().find((s) => s.element === element)!;
         // 出るのはリストパスのみ — キー指定（文字列/関数）は境界を越えない
         expect(summary.keyedListPaths).toEqual(new Set(['items', 'rows.*.children']));
       } finally {
-        setStateElementByName(element.rootNode, 'listkeys-summary', null);
+        setStateElement(element.rootNode, null);
       }
     });
 
@@ -277,9 +277,9 @@ describe('devtools/bridge', () => {
           cb(stateObject);
         }),
       });
-      setStateElementByName(element.rootNode, 'keys-test', element);
+      setStateElement(element.rootNode, element);
       try {
-        const keys = source.keys('keys-test', element.rootNode);
+        const keys = source.keys(element.rootNode);
         expect(keys).toContain('count');
         expect(keys).toContain('items');
         expect(keys).toContain('total');
@@ -289,14 +289,14 @@ describe('devtools/bridge', () => {
         expect(keys).not.toContain('items.*.double');
         expect(keys).not.toContain('$hidden');
       } finally {
-        setStateElementByName(element.rootNode, 'keys-test', null);
+        setStateElement(element.rootNode, null);
       }
     });
 
     it('keysは未登録のstate要素でthrowすること', () => {
       registerDevtoolsSource();
       const source = __getRegisteredSourceForTest()!;
-      expect(() => source.keys('missing', document.createElement('div'))).toThrow(/state element not found/);
+      expect(() => source.keys(document.createElement('div'))).toThrow(/no state tree on this root/);
     });
 
     it('readがreadonly createState経由で$resolveを呼ぶこと', () => {
@@ -309,16 +309,16 @@ describe('devtools/bridge', () => {
           cb({ $resolve: resolveMock });
         }),
       });
-      setStateElementByName(element.rootNode, 'read-test', element);
+      setStateElement(element.rootNode, element);
       try {
-        const result = source.read('read-test', element.rootNode, 'items.*.name', [2]);
+        const result = source.read(element.rootNode, 'items.*.name', [2]);
         expect(result).toBe(42);
         expect(resolveMock).toHaveBeenCalledWith('items.*.name', [2]);
         // indexes 省略時は [] で呼ぶこと
-        source.read('read-test', element.rootNode, 'count');
+        source.read(element.rootNode, 'count');
         expect(resolveMock).toHaveBeenLastCalledWith('count', []);
       } finally {
-        setStateElementByName(element.rootNode, 'read-test', null);
+        setStateElement(element.rootNode, null);
       }
     });
 
@@ -333,17 +333,17 @@ describe('devtools/bridge', () => {
           cb(plainState);
         }),
       });
-      setStateElementByName(element.rootNode, 'write-test', element);
+      setStateElement(element.rootNode, element);
       try {
-        source.write('write-test', element.rootNode, 'items.*.name', 'x', [1]);
+        source.write(element.rootNode, 'items.*.name', 'x', [1]);
         expect(resolveMock).toHaveBeenCalledWith('items.*.name', [1], 'x');
-        source.write('write-test', element.rootNode, 'count', 9);
+        source.write(element.rootNode, 'count', 9);
         expect(plainState['count']).toBe(9);
         // indexes が空配列なら直接代入side
-        source.write('write-test', element.rootNode, 'count', 10, []);
+        source.write(element.rootNode, 'count', 10, []);
         expect(plainState['count']).toBe(10);
       } finally {
-        setStateElementByName(element.rootNode, 'write-test', null);
+        setStateElement(element.rootNode, null);
       }
     });
 
@@ -351,8 +351,8 @@ describe('devtools/bridge', () => {
       registerDevtoolsSource();
       const source = __getRegisteredSourceForTest()!;
       const rootNode = document.createElement('div');
-      expect(() => source.read('missing', rootNode, 'a')).toThrow(/state element not found/);
-      expect(() => source.write('missing', rootNode, 'a', 1)).toThrow(/state element not found/);
+      expect(() => source.read(rootNode, 'a')).toThrow(/no state tree on this root/);
+      expect(() => source.write(rootNode, 'a', 1)).toThrow(/no state tree on this root/);
     });
   });
 });

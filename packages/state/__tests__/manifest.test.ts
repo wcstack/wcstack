@@ -61,7 +61,6 @@ describe("wcs-manifest（単一正本・A2-1）", () => {
       binding: ";",
       propValue: ":",
       modifier: "#",
-      stateName: "@",
       filter: "|",
     });
     expect([...m.syntax.structuralDirectives].sort()).toEqual(["else", "elseif", "for", "if"]);

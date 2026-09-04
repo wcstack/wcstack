@@ -11,7 +11,7 @@ export function getOrCreateEventToken(stateElement: IStateElement, name: string)
   }
   let token = registry.get(name);
   if (typeof token === "undefined") {
-    token = new EventToken(name, stateElement.name);
+    token = new EventToken(name);
     registry.set(name, token);
   }
   return token;

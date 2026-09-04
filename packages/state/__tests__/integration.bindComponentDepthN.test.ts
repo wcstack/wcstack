@@ -83,7 +83,7 @@ async function mountChain(depth: number, timing: BuildTiming) {
   const tags: string[] = [];
   for (let level = depth; level >= 1; level--) {
     const tag = uniqueTag(`bcn-l${level}`);
-    defineComponent(tag, { box: {} }, innerMarkup, timing);
+    defineComponent(tag, {}, innerMarkup, timing); // v2 R1: 既定値はマッピングを隠す（D19）
     innerMarkup =
       `<span class="view" data-wcs="textContent: box.label"></span>` +
       `<${tag} data-wcs="state.box: box"></${tag}>`;
@@ -99,12 +99,14 @@ async function mountChain(depth: number, timing: BuildTiming) {
   // 各段の scope を上から順に確立する
   const states: State[] = [await readyScope(hostShadow)];
   const roots: ParentNode[] = [hostShadow];
+  const elements: HTMLElement[] = [];
   let current: ParentNode = hostShadow;
   for (const tag of tags) {
     const element = current.querySelector(tag) as HTMLElement;
     const shadow = element.shadowRoot!;
     states.push(await readyScope(shadow));
     roots.push(shadow);
+    elements.push(element);
     current = shadow;
   }
   await flush();
@@ -112,6 +114,8 @@ async function mountChain(depth: number, timing: BuildTiming) {
   return {
     host,
     states,
+    /** 段 level（1..depth）のコンポーネントの公開 chroot（v2 の子側書き込み面） */
+    chrootOf: (level: number) => (elements[level - 1] as any).state as Record<string, any>,
     /** 各段のビューの表示値。index 0 が host、index depth が最下層。 */
     views: () => roots.map((root) => textOf(root, ".view")),
   };
@@ -145,11 +149,10 @@ describe.each<BuildTiming>(["constructor", "connectedCallback"])(
       });
 
       it("最下層スコープからの書き戻しが最上位まで届くこと", async () => {
-        const { host, states, views } = await mountChain(depth, timing);
+        const { host, chrootOf, views } = await mountChain(depth, timing);
 
-        states[depth].createState("writable", (s: any) => {
-          s["box.label"] = "C";
-        });
+        // v2: 子側の書き込みは公開 chroot（element.state）を通す
+        chrootOf(depth)["box.label"] = "C";
         await flush();
 
         expectAll(views(), "C");
@@ -157,12 +160,10 @@ describe.each<BuildTiming>(["constructor", "connectedCallback"])(
       });
 
       it("中間スコープからの書き込みが上下どちらにも届くこと", async () => {
-        const { host, states, views } = await mountChain(depth, timing);
+        const { host, chrootOf, views } = await mountChain(depth, timing);
 
         const middle = Math.max(1, Math.floor(depth / 2));
-        states[middle].createState("writable", (s: any) => {
-          s["box.label"] = "D";
-        });
+        chrootOf(middle)["box.label"] = "D";
         await flush();
 
         expectAll(views(), "D");
@@ -200,7 +201,7 @@ describe.each([1, 2, 3])("bind-component: リストが境界を %i 枚越える"
     const tags: string[] = [];
     for (let level = depth; level >= 1; level--) {
       const tag = uniqueTag(`bcl-l${level}`);
-      defineComponent(tag, { list: [] }, innerMarkup, "connectedCallback");
+      defineComponent(tag, {}, innerMarkup, "connectedCallback"); // v2 R1: 既定値はマッピングを隠す（D19）
       // 最上段だけ host の `rows` を、それ以外は 1 つ外の `list` を受ける
       const outerPath = level === 1 ? "rows" : "list";
       innerMarkup = `<${tag} data-wcs="state.list: ${outerPath}"></${tag}>`;
@@ -215,11 +216,13 @@ describe.each([1, 2, 3])("bind-component: リストが境界を %i 枚越える"
 
     const hostState = await readyScope(hostShadow);
     const states: State[] = [hostState];
+    let leafElement: HTMLElement | null = null;
     let current: ParentNode = hostShadow;
     for (const tag of tags) {
       const element = current.querySelector(tag) as HTMLElement;
       const shadow = element.shadowRoot!;
       states.push(await readyScope(shadow));
+      leafElement = element;
       current = shadow;
     }
     await flush();
@@ -227,7 +230,7 @@ describe.each([1, 2, 3])("bind-component: リストが境界を %i 枚越える"
     const rows = () =>
       Array.from((current as ParentNode).querySelectorAll(".row")).map((el) => el.textContent);
 
-    return { host, hostState, leafState: states[depth], rows };
+    return { host, hostState, leafChroot: () => (leafElement as any).state as Record<string, any>, rows };
   }
 
   it("初期描画が全境界を越えて行を作ること", async () => {
@@ -274,11 +277,10 @@ describe.each([1, 2, 3])("bind-component: リストが境界を %i 枚越える"
   });
 
   it("最下層からの行フィールド書き戻しが最上位に届くこと", async () => {
-    const { host, hostState, leafState, rows } = await mountListChain();
+    const { host, hostState, leafChroot, rows } = await mountListChain();
 
-    leafState.createState("writable", (s: any) => {
-      s["list.0.name"] = "z";
-    });
+    // v2: 子側の書き込みは公開 chroot を通す（rows へは全段の翻訳が合成される）
+    leafChroot()["list.0.name"] = "z";
     await flush();
 
     expect(rows()).toEqual(["z", "b"]);
@@ -324,7 +326,7 @@ describe.each([2, 3])("bind-component: 親ループの中の中間コンポー�
     const tags: string[] = [];
     for (let level = depth; level >= 1; level--) {
       const tag = uniqueTag(`bcd${depth}-l${level}`);
-      defineComponent(tag, { items: [] }, innerMarkup, "connectedCallback");
+      defineComponent(tag, {}, innerMarkup, "connectedCallback"); // v2 R1: 既定値はマッピングを隠す（D19）
       // 最上段だけ親ループの行（Δ=1 の位置）を受け、それ以外は 1 つ外の `items`
       const outerPath = level === 1 ? "groups.*.children" : "items";
       innerMarkup = `<${tag} data-wcs="state.items: ${outerPath}"></${tag}>`;

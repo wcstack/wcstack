@@ -31,16 +31,15 @@ auto エントリは `<wcs-devtools>` を定義し、ページに無ければ `<
 1 つ挿入する。配置や属性を制御したい場合は自分でタグを書く:
 
 ```html
-<wcs-devtools open dock="right" hotkey="Ctrl+Shift+X" buffer="1000"
-              hidden-states="analytics"></wcs-devtools>
+<wcs-devtools open dock="right" hotkey="Ctrl+Shift+X" buffer="1000"></wcs-devtools>
 ```
 
 ## ペイン
 
 | ペイン | 内容 |
 |---|---|
-| **State** | 各 `<wcs-state>`（ランタイム source 単位）のトップレベルキー、配列/オブジェクトの展開、computed getter。値クリックでインライン編集 — 書き込みは通常のリアクティブパイプライン（set トラップ → 更新バッチ → DOM）を通るため、アプリコードが書いたのと同じようにページが反応する。**パス**クリックで束縛ノードをハイライト。 |
-| **Wiring** | ライブ binding 台帳: binding ごとの `property ← path@state` 行と型バッジ（`text` / `prop` / `for` / …）。**⌖ pick** でページ要素をクリックするとその要素の配線だけに絞れる。行クリックで束縛ノードをハイライト。 |
+| **State** | 各ルート state ツリー（root node ごとに 1 本・ラベルはルート由来 — v2 に名前次元は無い）のトップレベルキー、配列/オブジェクトの展開、computed getter。値クリックでインライン編集 — 書き込みは通常のリアクティブパイプライン（set トラップ → 更新バッチ → DOM）を通るため、アプリコードが書いたのと同じようにページが反応する。**パス**クリックで束縛ノードをハイライト。 |
+| **Wiring** | ライブ binding 台帳: binding ごとの `property ← path` 行と型バッジ（`text` / `prop` / `for` / …）。**⌖ pick** でページ要素をクリックするとその要素の配線だけに絞れる。行クリックで束縛ノードをハイライト。 |
 | **Timeline** | ring buffer（既定 500 件）: `write`（旧値が取れた場合は併記）、`batch`（drain ごとの dedup 済み更新アドレス）、`command` / `event` トークン発火（引数要約 + 購読者数 — **購読者ゼロの空撃ちには警告バッジ**。whenDefined 前配線レースの検出に効く）、state 要素の登録/解除。⏸ で一時停止、🗑 でクリア。 |
 
 ## 属性
@@ -51,7 +50,6 @@ auto エントリは `<wcs-devtools>` を定義し、ページに無ければ `<
 | `dock` | `bottom` | `bottom` または `right` |
 | `hotkey` | `Alt+Shift+D` | 開閉ショートカット。`none` で無効 |
 | `buffer` | `500` | タイムライン ring buffer 件数（接続時に読む） |
-| `hidden-states` | — | 非表示にする state 名（カンマ区切り。`wcs-devtools` 始まりは常に非表示） |
 
 ## 遅延アタッチ
 

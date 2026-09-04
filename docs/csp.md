@@ -151,7 +151,7 @@ The browser never executes the contents of that inline `<script>` (it is a child
 
 ```html
 <!-- CSP-safe -->
-<wcs-state name="app" src="./state.js"></wcs-state>
+<wcs-state src="./state.js"></wcs-state>
 ```
 
 ## 5. Router guards require blob: (no way around it)

@@ -44,7 +44,7 @@ function parseWcsScriptBlocks(html, stateTagName = "wcs-state") {
       pos++;
       continue;
     }
-    const stateName = extractAttribute(wcsMatch.tagContent, "name") ?? "default";
+    const mountPath = extractAttribute(wcsMatch.tagContent, "mount");
     pos = wcsMatch.end;
     const wcsCloseIdx = findCloseTag(html, pos, stateTagName);
     const wcsEnd = wcsCloseIdx === -1 ? len : wcsCloseIdx;
@@ -76,7 +76,7 @@ function parseWcsScriptBlocks(html, stateTagName = "wcs-state") {
         contentStart,
         contentEnd,
         content: html.slice(contentStart, contentEnd),
-        stateName
+        mountPath
       });
       pos = html.indexOf(">", scriptCloseIdx) + 1;
       if (pos === 0) break;

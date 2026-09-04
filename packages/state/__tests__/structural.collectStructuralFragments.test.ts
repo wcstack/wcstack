@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { collectStructuralFragments } from '../src/structural/collectStructuralFragments';
 import { getFragmentInfoByUUID, setFragmentInfoByUUID } from '../src/structural/fragmentInfoByUUID';
 import { config } from '../src/config';
-import { setStateElementByName } from '../src/stateElementByName';
+import { setStateElement } from '../src/stateElementByName';
 
 let uuidCounter = 0;
 vi.mock('../src/getUUID', () => ({
@@ -12,17 +12,18 @@ vi.mock('../src/getUUID', () => ({
 vi.mock('../src/stateElementByName', () => {
   const map = new Map();
   return {
-    getStateElementByName: (_rootNode: Node, name: string) => map.get(name) || null,
-    setStateElementByName: (_rootNode: Node, name: string, el: any) => {
-      if (el === null) map.delete(name);
-      else map.set(name, el);
+    // 検分対象が detached なサブツリーでも届くよう document を既定キーにフォールバック（テスト台だけの緩和）
+    getStateElement: (rootNode: Node) => map.get(rootNode) || map.get(document) || null,
+    setStateElement: (rootNode: Node, el: any) => {
+      if (el === null) map.delete(rootNode);
+      else map.set(rootNode, el);
     }
   };
 });
 
 describe('collectStructuralFragments', () => {
   beforeEach(() => {
-    setStateElementByName(document, 'default', {
+    setStateElement(document, {
       setPathInfo: vi.fn(),
     } as any);
   });
@@ -178,8 +179,8 @@ describe('collectStructuralFragments', () => {
       parseBindTextsForElement: () => [{ bindingType: 'for', stateName: 'default' }]
     }));
 
-    const { setStateElementByName } = await import('../src/stateElementByName');
-    setStateElementByName(document, 'default', {
+    const { setStateElement } = await import('../src/stateElementByName');
+    setStateElement(document, {
       setPathInfo: vi.fn(),
     } as any);
 
@@ -555,6 +556,70 @@ describe('collectStructuralFragments', () => {
       // forPathがないので展開されない
       const fragmentSpan = info?.fragment.querySelector('span');
       expect(fragmentSpan?.getAttribute(config.bindAttributeName)).toBe('textContent: .name');
+    });
+  });
+
+  /**
+   * マウント変換の own result への forPath 伝播（v2 レビューの修理）。
+   * 翻訳がワイルドカードを増やす部分マウント（state.items: groups.*.children）では、
+   * for の内側の `if: $n` / `elseif: $n` は囲む for のシフト量（+1）で繰り上がる必要がある。
+   * 旧挙動: own result の変換だけ forPath 無しで呼ばれ、translateParsedForMount の
+   * `$n` シフトが record.delta（部分マウントのみ＝0）に落ちて `$1` のまま外側の添字を
+   * 無言で返していた（nodeInfos 側は transformNodeInfos(..., forPath) で正しかった）。
+   */
+  describe('マウント変換で for 内の if/elseif: $n の own result が繰り上がること', () => {
+    it('部分マウント（state.items: groups.*.children）内の for: items の中の if: $1 / elseif: $1 が $2 になること', async () => {
+      const { buildMountRecord, translateParsedForMount } = await import('../src/webComponent/mount');
+      const { getPathInfo } = await import('../src/address/PathInfo');
+      const component = document.createElement('my-frag-card');
+      const record = buildMountRecord(
+        component,
+        'state',
+        [{
+          propName: 'state.items', propSegments: ['state', 'items'], propModifiers: [],
+          statePathName: 'groups.*.children', statePathInfo: getPathInfo('groups.*.children'),
+          inFilters: [], outFilters: [], bindingType: 'prop', uuid: null,
+          node: component, replaceNode: component,
+        } as any],
+        { name: 'default', getterPaths: new Set<string>() } as any,
+        {},
+      );
+      const transform = (parsed: any, forPath?: string) => translateParsedForMount(record, parsed, forPath);
+
+      const root = document.createElement('div');
+      const forTemplate = document.createElement('template');
+      forTemplate.setAttribute(config.bindAttributeName, 'for: items');
+      const ifTemplate = document.createElement('template');
+      ifTemplate.setAttribute(config.bindAttributeName, 'if: $1|eq(0)');
+      const ifSpan = document.createElement('span');
+      ifSpan.setAttribute(config.bindAttributeName, 'textContent: $1');
+      ifTemplate.content.appendChild(ifSpan);
+      const elseifTemplate = document.createElement('template');
+      elseifTemplate.setAttribute(config.bindAttributeName, 'elseif: $1|eq(1)');
+      forTemplate.content.appendChild(ifTemplate);
+      forTemplate.content.appendChild(elseifTemplate);
+      root.appendChild(forTemplate);
+
+      collectStructuralFragments(root, root, undefined, transform);
+
+      // 外側 for: items → groups.*.children（翻訳で +1 ワイルドカード）
+      const forInfo = getFragmentInfoByUUID('uuid-collect-0');
+      expect(forInfo?.parseBindTextResult.statePathName).toBe('groups.*.children');
+
+      // if の own result（条件）も囲む for のシフト量で繰り上がる
+      //（旧挙動: $1 のまま外側 group の添字に解決されていた）
+      const ifInfo = getFragmentInfoByUUID('uuid-collect-1');
+      expect(ifInfo).not.toBeNull();
+      expect(ifInfo?.parseBindTextResult.bindingType).toBe('if');
+      expect(ifInfo?.parseBindTextResult.statePathName).toBe('$2');
+      // nodeInfos 側（従来から正しい）と一致すること
+      expect(ifInfo?.nodeInfos[0].parseBindTextResults[0].statePathName).toBe('$2');
+
+      // elseif の own result も同じ line を通る — 同様に繰り上がる
+      const elseifInfo = getFragmentInfoByUUID('uuid-collect-2');
+      expect(elseifInfo).not.toBeNull();
+      expect(elseifInfo?.parseBindTextResult.bindingType).toBe('elseif');
+      expect(elseifInfo?.parseBindTextResult.statePathName).toBe('$2');
     });
   });
 });

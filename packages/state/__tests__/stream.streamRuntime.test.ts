@@ -15,7 +15,7 @@ import { startStream, startStreams, updateStreamStatus } from "../src/stream/str
 import { processStreamsDeclaration } from "../src/stream/processStreamsDeclaration";
 import { abortAllStreams, getStreamEntries } from "../src/stream/streamRegistry";
 import { createStateProxy } from "../src/proxy/StateHandler";
-import { setStateElementByName } from "../src/stateElementByName";
+import { setStateElement } from "../src/stateElementByName";
 import { getUpdater } from "../src/updater/updater";
 import type { IStateElement } from "../src/components/types";
 import type { IStateProxy, Mutability } from "../src/proxy/types";
@@ -51,11 +51,11 @@ function createTestStateElement(state: IState): IStateElement {
       return false;
     },
     createState(mutability: Mutability, callback: (s: IStateProxy) => void) {
-      const proxy = createStateProxy(rootNode, state, name, mutability);
+      const proxy = createStateProxy(rootNode, state, mutability);
       return callback(proxy);
     },
   } as unknown as IStateElement;
-  setStateElementByName(rootNode, name, stateElement);
+  setStateElement(rootNode, stateElement);
   return stateElement;
 }
 

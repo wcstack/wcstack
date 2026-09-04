@@ -59,7 +59,7 @@ vi.mock("../src/event/checkboxHandler", () => ({
   detachCheckboxEventHandler: mocks.detachCheckbox,
 }));
 vi.mock("../src/stateElementByName", () => ({
-  getStateElementByName: vi.fn(() => ({ setPathInfo: mocks.setPathInfo })),
+  getStateElement: vi.fn(() => ({ setPathInfo: mocks.setPathInfo })),
 }));
 
 import { BindingSession } from "../src/bindings/BindingSession";
@@ -73,7 +73,6 @@ function createBinding(node: Element): IBindingInfo {
     propModifiers: [],
     statePathName: "value",
     statePathInfo: { path: "value", wildcardCount: 0 } as any,
-    stateName: "default",
     inFilters: [],
     outFilters: [],
     node,

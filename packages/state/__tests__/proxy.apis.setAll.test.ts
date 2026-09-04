@@ -4,7 +4,7 @@ import { getAll } from '../src/proxy/apis/getAll';
 import { createListIndex } from '../src/list/createListIndex';
 import { setListIndexesByList } from '../src/list/listIndexesByList';
 import { IListIndex } from '../src/list/types';
-import { setStateElementByName } from '../src/stateElementByName';
+import { setStateElement } from '../src/stateElementByName';
 
 vi.mock('../src/proxy/methods/getByAddress', () => ({
   getByAddress: vi.fn()
@@ -94,12 +94,12 @@ function registerList(list: readonly unknown[], parent: IListIndex | null = null
 describe('setAll', () => {
   afterEach(() => {
     vi.clearAllMocks();
-    setStateElementByName(document, 'default', null);
+    setStateElement(document, null);
   });
 
   function setup(root: any, handlerOverrides?: Partial<any>) {
     const stateElement = createStateElement();
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
     const handler = createHandler(stateElement, handlerOverrides);
     bindGraph(root);
     const target = {};
@@ -290,7 +290,7 @@ describe('setAll', () => {
     registerList(root.users);
     const stateElement = createStateElement();
     stateElement.getterPaths.add('computed');
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
     const handler = createHandler(stateElement, {
       addressStackLength: 1,
       lastAddressStack: { pathInfo: { path: 'computed' }, listIndex: null },

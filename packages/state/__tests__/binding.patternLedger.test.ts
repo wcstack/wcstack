@@ -20,7 +20,7 @@ vi.mock("../src/list/getListIndexByBindingInfo", () => ({
   getListIndexByBindingInfo: vi.fn(() => mocks.listIndex),
 }));
 vi.mock("../src/stateElementByName", () => ({
-  getStateElementByName: vi.fn(() => mocks.stateElement),
+  getStateElement: vi.fn(() => mocks.stateElement),
 }));
 vi.mock("../src/binding/getAbsoluteStateAddressByBinding", () => ({
   getAbsoluteStateAddressByBinding: vi.fn(() => ({ absolutePathInfo: {}, listIndex: null })),
@@ -166,7 +166,6 @@ describe("registerAddress のパターン経路（防御）", () => {
       propModifiers: [],
       statePathName: "items.*.v",
       statePathInfo: { path: "items.*.v", wildcardCount: 1 } as any,
-      stateName: "default",
       inFilters: [],
       outFilters: [],
       node,
@@ -174,6 +173,6 @@ describe("registerAddress のパターン経路（防御）", () => {
       bindingType: "prop",
     };
     const session = new BindingSession();
-    expect(() => session.initialize([binding])).toThrow(/State element with name "default" not found/);
+    expect(() => session.initialize([binding])).toThrow(/No state tree found on this root/);
   });
 });

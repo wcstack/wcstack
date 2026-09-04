@@ -1,6 +1,6 @@
 # 設計: 名前付き State の廃止とマウントによるツリー拡張
 
-- **状態**: 2026-09-01 起草。同日、著者が **D4（R1）/ D8（絶対参照なし）/ D11（ルート必須）/ 属性名 `mount`** を決定し、Phase 0 のベースライン計測と目標構文の e2e（fixme）を着地させた（[state-mount-impl-plan.md](./state-mount-impl-plan.md) §1）。**同日のアーキテクチャレビュー**（致命 2・重要 8）を受けて **D19〜D22 を追加し、D7 / D10 / D14 / D15 / D16 / D18 を改稿**した（状態列に「レビュー」と付した決定はレビューの推奨案を採用したもので、著者が差し戻せる）。残る要確認は **D12**（実装で確認）だけ。**Phase 1 実装済み（2026-09-01・R1 込み・[impl-plan §2](./state-mount-impl-plan.md)）**。次は Phase 2（`v2` ブランチ）。**次期メジャー（v2.0.0）の目玉機能**。
+- **状態**: 2026-09-01 起草。同日、著者が **D4（R1）/ D8（絶対参照なし）/ D11（ルート必須）/ 属性名 `mount`** を決定し、Phase 0 のベースライン計測と目標構文の e2e（fixme）を着地させた（[state-mount-impl-plan.md](./state-mount-impl-plan.md) §1）。**同日のアーキテクチャレビュー**（致命 2・重要 8）を受けて **D19〜D22 を追加し、D7 / D10 / D14 / D15 / D16 / D18 を改稿**した（状態列に「レビュー」と付した決定はレビューの推奨案を採用したもので、著者が差し戻せる）。残る要確認は **D12**（実装で確認）だけ。**Phase 1 実装済み（2026-09-01・R1 込み）**。**2026-09-02〜03 に Phase 2〜5 の実装をすべて `v2` ブランチで完了**（[impl-plan §3-0-1](./state-mount-impl-plan.md) に全スライス記録・§7 に実測）。D12 も実装で確認済み。残るは著者レビュー・リリース作業（P5-3〜P5-5）と wcstack-skill 追随のみ。**次期メジャー（v2.0.0）の目玉機能**。
 - **対象**: `@wcstack/state` の core（`address/` / `binding/` / `bindings/` / `webComponent/` / `proxy/` / `bindTextParser/`）。追随が要るのは `@wcstack/server`（SSR スナップショットのキー）、`@wcstack/testing`（`state(name)`）、`@wcstack/typescript`（manifest の `states[name]`）、`vscode-wcs` / `@wcstack/lint`（`@name` の構文）、devtools hook protocol（`keys(name, rootNode)`）、wcstack-skill の references。
 - **一言で**: 「**State は 1 つの rootNode に 1 本のツリー。拡張はマウントで行い、名前では行わない**」。`<wcs-state name="x">` と `path@x` を廃止し、`<wcs-state mount="x">` と `x.path`、および `<my-c data-wcs="state: path">`（丸ごとマウント）に置き換える。
 - **不変条件（この設計の一文）**: **マウントされたコンポーネントのバインディングは、その位置にテンプレートを展開してパスに接頭辞を付けたものと区別できない。** 台帳は 1 本、アドレスは絶対、橋渡しは存在しない。**唯一の例外は私有キーと getter**（展開したテンプレートには存在しないもの）で、それらはオーバーレイ専用のアドレス空間に載り、スコープの外からは見えない（D20）。
@@ -274,25 +274,32 @@ R1 を採る理由: 一文で言える（「**自分で書いたキーは自分�
 | `$streams` | 相対で宣言、データはツリーの `prefix.path` に落ちる |
 | `$listKeys` | 相対で宣言、ルートの ListKeyMap に絶対で登録 |
 | `$connectedCallback` / `$disconnectedCallback` / `$stateReadyCallback` | スコープごとに残る（ライフサイクルは要素のもの） |
-| `$commandTokens` / `$eventTokens` / `$command.*` / `$on` | **スコープごと**に残る。トークンはパスではなく要素の面なのでツリーに載せない |
+| `$commandTokens` / `$eventTokens` / `$command.*` / `$on` | 宣言（`$commandTokens` / `$eventTokens` / `$on`）は**ルートに置く** — マウント／ボリュームでは実行しない（無言に捨てず warn で誘導・実装注記 2026-09-04。当初案「スコープごとに残す」は per-scope トークン台帳の設計が別途要るため未実装）。テンプレート側の `$command.*` の**参照**（バインディングのパス）はルート宣言のトークンに解決される（`$` 頭のパスは翻訳しない） |
 | `$1` / `$2` / `$wildcardIndexes` | スコープ相対（§4-4） |
+
+**実装注記（2026-09-04）**: 宣言面（`$watch` / `$streams` / `$listKeys` / `$updatedCallback`）の相対サポートは**ボリュームのみ**（`$streams` はボリュームでも未対応 — 宣言は raise）。マウントされた**コンポーネントスコープ**は宣言面を実行せず、(tag, prop) につき 1 回の warn でルート／ボリュームへ誘導する（webComponent/mount.ts の `warnMountedDollarDeclarations`）。
 
 ### 4-7. 診断（無言の取り違えを作らない）
 
 | 状況 | 反応 |
 |---|---|
 | ルートが 2 つ | throw（今日の "already registered" と同じ） |
-| `mount` 先がルートに既にある | throw |
+| `mount` 先がルートに既にある | throw → **実装は `console.error` に隔離**（graftIsolated — connectedCallback 内 throw は初期化待ちを永久未解決にするため。1 ボリュームに閉じる・実装注記 2026-09-04） |
+| ボリュームのロード失敗（`src` の 404・JSON パースエラー・inline script の import 失敗） | `console.error` に隔離（graft 失敗と同じ着地 — 接ぎ木は載らず予約だけが残る。予約成立**前**の設定エラーは従来どおり resolve 済み throw で fail-fast。未解決のまま投げると waitForStateInitialize がページ全体を無言でウェッジし、再入ガードが再接続の復旧も塞ぐため。実装注記 2026-09-05） |
 | `mount` に `*` | throw |
-| ボリュームがあるのにルートが無い | throw（D11） |
+| ボリュームがあるのにルートが無い | throw（D11）→ **実装は loud エラー（`console.error`・パース完了後にルート候補の要素が無ければ 1 回）**。理由は上と同じ throw 不可の制約。接ぎ木は保留のままなので、後からルートを動的に足せば成立する（実装注記 2026-09-04） |
 | 私有キーがマウント先の既存キーを隠す | `console.warn` 1 回（バインド時）＋ lint |
 | `state: path` と `state.sub: path` が同じ `sub` を二重に指す | throw（今日の "Duplicate mapping rule" と同じ） |
 | コンポーネント内から存在しないツリーパスを読む | `undefined`（pathDiagnostics の warn は今日のまま） |
 | 部分マウントだけのコンポーネントで、どの接頭辞にも含まれないキーを読み書き | throw（§4-1 の 4b） |
 | 予約済み（ロード前）のボリュームスロット配下を読む | `undefined`・warn 無し（D22） |
+| ルート側から接ぎ木済みマウントポイントを**含む親**を丸ごと書く（`mount="a.b"` で `this.a = {...}`） | throw（D22 後段 — 接ぎ木データが無言で消えアクセサだけ宙に浮くため。スロット自身への書き込みはデータ差し替えとして通る） |
 | `mount` 属性の実行時変更 | 無視＋warn（再マウントは非目標） |
 | 親スコープから `items.*.upper`（子の getter / 私有キー）を読む | ツリーの未存在パスとして `undefined`＋pathDiagnostics の warn（D10 / D20） |
 | `@` を含むパス | v1.x: lint warning（実行時は `config.debug` 下で warn 1 回） → v2: **parse error**（移行ヒント付き） |
+| 同一コンポーネントに 2 本目の `<wcs-state bind-component>`（別 prop） | throw（**1 コンポーネント 1 マウントスコープ** — 2 本目を受けると 1 本目の収集済みスコープが無言で死ぬため。実装注記 2026-09-04） |
+| 接ぎ木済みボリューム / マウント記録の居るツリーへの `setInitialState()` 再 set | throw（D22 同型 — 丸ごと再 set は接ぎ木データ・quoted-path アクセサ・マーカー台帳・合流済み宣言面を無言で捨てるため。変更したいパスを個別に書く。実装注記 2026-09-04） |
+| マウントされたコンポーネントのワイルドカード終端アクセサ（`get "tags.*"()` がツリーのリストへ翻訳される形） | throw（マーカー終端パスはオーバーレイが getter を影にして未評価の proxy が値になるため。私有配列上の同形（own key `tags` あり）は私有アンカーとして従来どおり通る。実装注記 2026-09-04） |
 
 ### 4-8. 初期化と ready
 
@@ -332,17 +339,16 @@ scopeRoot(Node: Document | ShadowRoot | mount host) → IStateElement | MountRec
 - マウント無し: `hasMounts === false` の分岐 1 つ。キャッシュ・依存 walk・LIS・BindingOwner ファンアウト対策は無改造
 - マウント有り: 子側のキャッシュ禁止（`isCacheable`）が消え、ルートのキャッシュがそのまま効く。越境スタックの push/pop、派生バインディングの生成、相乗り登録、2 段 proxy ホップが消える
 
-### 5-5. 削除・縮小・新規（見積り）
+### 5-5. 削除・縮小・新規（実測・2026-09-03）
 
-| 区分 | 対象 | 行 |
+| 区分 | 対象 | 行（実測） |
 |---|---|---|
-| 削除 | `innerState` / `outerState` / `MappingRule` / `crossBoundaryAddress` / `outerListPath` / `baseListIndex` / `applyChangeToWebComponent` | ≈ 840 |
-| 削除 | `BindingSession` 相乗り・`hasMappedComponentState` 分岐 ×6・`wildcardLevel` 末尾起点・`_reloadMappedPathsAfterReconnect`・`_initializeLightDomComponentScope` の名前依存部 | ≈ 200 |
-| 削除 | `stateName` 配管（src 40 ファイル）・`@` パーサ・`STATE_NAME_SEPARATOR`・`expandShorthandPaths` の `@`・manifest `delimiters.stateName` | ≈ 150 |
-| 新規 | chroot proxy・オーバーレイ表・マウント記録・スコープ解決・ボリューム接ぎ木・`$n` の Δ 補正 | ≈ 450 |
-| **正味** | | **≈ −750 行**（core のみ・テスト除く） |
+| 削除 | v1 橋渡し機構（P2-7: `innerState` / `MappingRule` / `crossBoundaryAddress` / `applyChangeToWebComponent` / 相乗り台帳ほか） | **−1,327**（src のみ・テスト込みで −3,618） |
+| 削除 | `stateName` 配管・`@` パーサ・登録簿の名前次元・deprecation 機構（Phase B） | 上記正味に含む |
+| 新規 | マウント記録＋変換（mount.ts 563）・オーバーレイ表（overlay.ts 315）・**ボリューム（volume.ts + volumeShared.ts 469 — v1 に無い新機能**）・スコープ（mountScope 91）・厳格 R1 の私有面（ownKeyShadow + preCompletionWrites 203） | +1,810（webComponent/ のみ） |
+| **正味** | packages/state/src 全体（分岐点比） | **+1,339**（+2,857 / −1,518）。`webComponent/` は 999 → 1,869 |
 
-見積りは Phase 2 完了時に実測で置き換える。
+**「core 正味 −750 行」仮説は不成立**。理由は数えれば明快で、(1) ボリューム（`mount=`）は v1 に存在しない新機能（469 行）、(2) 厳格 R1（D19）の私有キー機構と宣言面（$watch/$updatedCallback のボリューム翻訳）も新規容量である。**成立したのは構造の主張のほう** — 橋渡し層（inner/outer proxy・派生規則・相乗り登録・越境スタック）は 1,327 行まるごと消え、台帳は 1 本、ADR-15 §1.7〜§1.13 の機構は全廃止（§0 表は「廃止（state-mount）」に更新済み）。行数は「単純化の代理指標」として機能しなかった、が本書の記録である。
 
 ---
 
@@ -375,6 +381,16 @@ scopeRoot(Node: Document | ShadowRoot | mount host) → IStateElement | MountRec
 「メモリ削減」「高速化」を**無条件の売り文句にはしない**。成立する範囲（コンポーネントを使うページ）を README に書く。
 
 **ベースライン（2026-09-01・v1.32 の機構・[impl-plan §1-3](./state-mount-impl-plan.md)）**: 行をコンポーネントにすると plain jsfb に対して create1k **32.1 → 106.5 ms（×3.3）**、heap run1k **5.65 → 13.13 MB（＋7.5 KB / 行）**、clear 後も 12.32 MB を保持。この差分が Phase 2 の削減対象で、削れた量が「メモリ削減・高速化」の実測値になる。
+
+**after（2026-09-03・v2 全 Phase 完了時・同一マシン）**:
+
+| 仮説 | 実測 | 判定 |
+|---|---|---|
+| 高速化（コンポーネント経路） | list-component create1k **169.4 → 128.6 ms（−24%）**・update **−45%**（同一セッション A/B・impl-plan §3-0-1 slice 7）。全 Phase 後の確認値 125.6 ms | **成立** |
+| メモリ（行コンポーネント） | heap run1k **13.13 → 11.59 MB（−1.5 MB ≒ −1.5 KB/行）**・update5 13.38 → 11.81 | **成立（減少）** |
+| plain 不変（D18） | jsfb 同一セッション A/B: create1k 40.6→37.75・replace1k 22.8→15.5・clear10k 73.9→70.1（v2 側が全指標同等以上）。memory-profile は全項目 ±2% | **成立** |
+| コードの単純化 | §5-5 のとおり**行数では不成立**（ボリューム＝新機能の分だけ正味 +1,339）。橋渡し層の全廃（−1,327）と台帳 1 本化は成立 | **構造で成立・行数で不成立** |
+| かっこいい | README から「名前空間」「Named State」の語が消え、原則 #2 は「ホストが書くマウント表」1 文になった | 著者レビュー待ち |
 
 ---
 

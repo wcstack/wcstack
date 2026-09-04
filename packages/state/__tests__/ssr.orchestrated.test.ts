@@ -117,7 +117,6 @@ describe("orchestrated モードの inline 生成スキップと最終パス", (
 
     const ssrEl = document.querySelector("wcs-ssr");
     expect(ssrEl).not.toBeNull();
-    expect(ssrEl!.getAttribute("name")).toBe("default");
     expect(ssrEl!.nextElementSibling?.tagName.toLowerCase()).toBe("wcs-state");
     const data = JSON.parse(
       ssrEl!.querySelector('script[type="application/json"]')!.textContent!
@@ -170,10 +169,42 @@ describe("orchestrated モードの inline 生成スキップと最終パス", (
     expect(document.querySelector("wcs-ssr")).toBeNull();
   });
 
-  it("直前の wcs-ssr が別名なら自分の分を生成する", async () => {
+  it("ボリューム（mount= + enable-ssr）は最終パスの対象外 — <wcs-ssr> はルートの 1 本だけ（D14）", async () => {
+    // 旧挙動: ボリュームにも空の <wcs-ssr> が生成され、先頭一致の Ssr.find が
+    // ルートより前の空スナップショットを掴んでハイドレーションが無言で CSR 退化していた
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      document.body.innerHTML = `
+        <wcs-state enable-ssr mount="cfg" json='{"value":1}'></wcs-state>
+        <wcs-state enable-ssr json='{"count":7}'></wcs-state>
+      `;
+      const elements = Array.from(document.querySelectorAll("wcs-state")) as any[];
+      const volumeEl = elements[0];
+      const rootEl = elements[1];
+      await rootEl.connectedCallbackPromise;
+      await volumeEl.connectedCallbackPromise;
+      await getBindingsReady(document);
+      await new Promise((r) => setTimeout(r));
+
+      buildSsrDocument(document);
+
+      const ssrEls = document.querySelectorAll("wcs-ssr");
+      expect(ssrEls.length).toBe(1);
+      // ルート直前の 1 本（Ssr.find がルートのデータに到達できる位置）
+      expect(ssrEls[0].nextElementSibling).toBe(rootEl);
+      const data = JSON.parse(
+        ssrEls[0].querySelector('script[type="application/json"]')!.textContent!
+      );
+      expect(data.count).toBe(7);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("直前に先客の <wcs-ssr> が居れば生成しない（v2: 名前次元は無い — 直前の存在だけを見る）", async () => {
     document.body.innerHTML = `
-      <wcs-ssr name="other"></wcs-ssr>
-      <wcs-state enable-ssr name="cart" json='{"items":[]}'></wcs-state>
+      <wcs-ssr></wcs-ssr>
+      <wcs-state enable-ssr json='{"items":[]}'></wcs-state>
     `;
     const stateEl = document.querySelector("wcs-state") as any;
     await stateEl.connectedCallbackPromise;
@@ -181,11 +212,7 @@ describe("orchestrated モードの inline 生成スキップと最終パス", (
 
     buildSsrDocument(document);
 
-    const ssrEls = document.querySelectorAll("wcs-ssr");
-    expect(ssrEls.length).toBe(2);
-    const cart = document.querySelector('wcs-ssr[name="cart"]');
-    expect(cart).not.toBeNull();
-    expect(cart!.nextElementSibling?.getAttribute("name")).toBe("cart");
+    expect(document.querySelectorAll("wcs-ssr").length).toBe(1);
   });
 });
 

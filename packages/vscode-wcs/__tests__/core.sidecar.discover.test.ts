@@ -1,16 +1,16 @@
 import { describe, it, expect } from "vitest";
 import {
-  applicationStatesOf,
+  applicationSchemaOf,
   discoverApplicationManifest,
   joinRelativeSource,
 } from "../src/core/sidecar/discover.js";
 import { loadManifest } from "../src/core/sidecar/loader.js";
 
-const appManifest = (states: Record<string, unknown>): string =>
+const appManifest = (stateSchema: unknown): string =>
   JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: 2,
     kind: "application",
-    manifestExtensions: { "wcstack.application": { version: 1, states } },
+    manifestExtensions: { "wcstack.application": { version: 2, stateSchema } },
   });
 
 const numberSchema = { type: "object", properties: { a: { type: "number" } } };
@@ -20,23 +20,22 @@ describe("discover — 最近傍の wcstack.manifest.json（D8）", () => {
     const requested: string[] = [];
     const reader = (p: string): string | undefined => {
       requested.push(p);
-      if (p === "wcstack.manifest.json") return appManifest({ default: { stateSchema: numberSchema } });
-      if (p === "../wcstack.manifest.json") return appManifest({ default: { stateSchema: { type: "object", properties: { parent: {} } } } });
+      if (p === "wcstack.manifest.json") return appManifest(numberSchema);
+      if (p === "../wcstack.manifest.json") return appManifest({ type: "object", properties: { parent: {} } });
       return undefined;
     };
     const d = discoverApplicationManifest(reader)!;
     expect(d.relativePath).toBe("wcstack.manifest.json");
-    expect([...d.states.keys()]).toEqual(["default"]);
-    expect(d.states.get("default")!.properties).toHaveProperty("a");
+    expect(d.schema!.properties).toHaveProperty("a");
     expect(requested).toEqual(["wcstack.manifest.json"]);
   });
 
   it("同階層に無ければ上へ辿り、最初に読めたものを採る（合成しない）", () => {
     const reader = (p: string): string | undefined =>
-      p === "../../wcstack.manifest.json" ? appManifest({ default: { stateSchema: numberSchema }, other: { stateSchema: numberSchema } }) : undefined;
+      p === "../../wcstack.manifest.json" ? appManifest(numberSchema) : undefined;
     const d = discoverApplicationManifest(reader)!;
     expect(d.relativePath).toBe("../../wcstack.manifest.json");
-    expect([...d.states.keys()].sort()).toEqual(["default", "other"]);
+    expect(d.schema!.properties).toHaveProperty("a");
   });
 
   it("どこにも無ければ undefined。上限階層で打ち切る（無限に登らない）", () => {
@@ -49,40 +48,36 @@ describe("discover — 最近傍の wcstack.manifest.json（D8）", () => {
   it("最近傍が壊れていてもそれを採り、上は見ない（診断は manifest 側に載せる）", () => {
     const reader = (p: string): string | undefined => {
       if (p === "wcstack.manifest.json") return "{ oops";
-      if (p === "../wcstack.manifest.json") return appManifest({ default: { stateSchema: numberSchema } });
+      if (p === "../wcstack.manifest.json") return appManifest(numberSchema);
       return undefined;
     };
     const d = discoverApplicationManifest(reader)!;
     expect(d.relativePath).toBe("wcstack.manifest.json");
     expect(d.loaded.manifest).toBeNull();
-    expect(d.states.size).toBe(0);
+    expect(d.schema).toBeUndefined();
   });
 
-  it("package kind の manifest からは state を取らない", () => {
-    const pkg = JSON.stringify({ schemaVersion: 1, kind: "package", manifestExtensions: { "wcstack.types": { version: 1, components: {} } } });
+  it("package kind の manifest からは stateSchema を取らない", () => {
+    const pkg = JSON.stringify({ schemaVersion: 2, kind: "package", manifestExtensions: { "wcstack.types": { version: 2, components: {} } } });
     const d = discoverApplicationManifest((p) => (p === "wcstack.manifest.json" ? pkg : undefined))!;
-    expect(d.states.size).toBe(0);
+    expect(d.schema).toBeUndefined();
   });
 
-  it("stateSchema がオブジェクトでない entry は入れない", () => {
+  it("stateSchema がオブジェクトでなければ undefined", () => {
     const loaded = loadManifest({
-      text: appManifest({ ok: { stateSchema: numberSchema }, bad: { stateSchema: "nope" }, none: {}, nul: null }),
+      text: appManifest("nope"),
       source: "m.json",
     });
-    expect([...applicationStatesOf(loaded).keys()]).toEqual(["ok"]);
+    expect(applicationSchemaOf(loaded)).toBeUndefined();
+    const loadedArray = loadManifest({ text: appManifest([1]), source: "m.json" });
+    expect(applicationSchemaOf(loadedArray)).toBeUndefined();
   });
 });
 
-describe("joinRelativeSource — 発見した manifest の表示用 source", () => {
-  it("HTML のディレクトリに相対パスを畳み込む（`..` は親へ、区切りは / に正規化）", () => {
-    expect(joinRelativeSource("examples/app/index.html", "wcstack.manifest.json")).toBe("examples/app/wcstack.manifest.json");
-    expect(joinRelativeSource("examples/app/index.html", "../wcstack.manifest.json")).toBe("examples/wcstack.manifest.json");
-    expect(joinRelativeSource("examples/app/index.html", "../../wcstack.manifest.json")).toBe("wcstack.manifest.json");
-    expect(joinRelativeSource("a\\b\\index.html", "../wcstack.manifest.json")).toBe("a/wcstack.manifest.json");
-  });
-
-  it("ディレクトリを登り切ったら `..` を残す", () => {
+describe("joinRelativeSource", () => {
+  it("HTML の source と manifest 相対パスを結合し正規化する", () => {
+    expect(joinRelativeSource("app/index.html", "wcstack.manifest.json")).toBe("app/wcstack.manifest.json");
+    expect(joinRelativeSource("app/index.html", "../wcstack.manifest.json")).toBe("wcstack.manifest.json");
     expect(joinRelativeSource("index.html", "../wcstack.manifest.json")).toBe("../wcstack.manifest.json");
-    expect(joinRelativeSource("a/index.html", "../../../m.json")).toBe("../../m.json");
   });
 });

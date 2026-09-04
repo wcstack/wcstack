@@ -26,6 +26,7 @@ const workDir = mkdtempSync(join(tmpdir(), "wcstack-lint-smoke-"));
 const cleanHtml = join(workDir, "clean.html");
 const brokenManifest = join(workDir, "broken.manifest.json");
 const mutationHtml = join(workDir, "mutation.html");
+const namedStateHtml = join(workDir, "named-state.html");
 const missingPathHtml = join(workDir, "missing-path.html");
 // stateSchema 発見（D8）: HTML と同じディレクトリの wcstack.manifest.json を自動で読み、
 // 宣言済み state の未存在パスは error に上がる（D6）。tmp 下なので repo の CI gate は走査しない。
@@ -33,12 +34,12 @@ const schemaDir = join(workDir, "schema");
 mkdirSync(schemaDir);
 const schemaHtml = join(schemaDir, "index.html");
 writeFileSync(join(schemaDir, "wcstack.manifest.json"), JSON.stringify({
-  schemaVersion: 1,
+  schemaVersion: 2,
   kind: "application",
   manifestExtensions: {
     "wcstack.application": {
-      version: 1,
-      states: { default: { stateSchema: { type: "object", properties: { message: { type: "string" } } } } },
+      version: 2,
+      stateSchema: { type: "object", properties: { message: { type: "string" } } },
     },
   },
 }));
@@ -46,6 +47,9 @@ writeFileSync(schemaHtml, `<!doctype html>
 <wcs-state json='{"message": "hi"}'></wcs-state>
 <div data-wcs="textContent: message"></div>
 <div data-wcs="textContent: mesage"></div>
+`);
+writeFileSync(namedStateHtml, `<!doctype html>
+<html><body><wcs-state name="cart" json='{"total":1}'></wcs-state><p data-wcs="textContent: x@cart"></p></body></html>
 `);
 writeFileSync(cleanHtml, "<!doctype html>\n<html><body><p>hello</p></body></html>\n");
 writeFileSync(brokenManifest, "{ this is not json\n");
@@ -128,6 +132,13 @@ check("unreadable file → exit 2", ["--lang=en", join(workDir, "no-such-file.ht
 check("destructive array mutation → error wcs/array-mutation, exit 1", ["--lang=en", mutationHtml], {
   exit: 1,
   stdout: [/error wcs\/array-mutation /, "1 error(s), 0 warning(s)"],
+});
+
+// v2: 名前次元は撤去 — name 属性 / @name は runtime の fail-fast と同じ文言の error。
+// severity を warning に戻すと release スモークが契約ドリフトとして落ちる（#183 の教訓）。
+check("named state (name= / @name) → error wcs/named-state-deprecated, exit 1", ["--lang=en", namedStateHtml], {
+  exit: 1,
+  stdout: [/error wcs\/named-state-deprecated /],
 });
 
 // 対になる検査: warning severity は exit code を変えない(CLI 契約)。上のケースが

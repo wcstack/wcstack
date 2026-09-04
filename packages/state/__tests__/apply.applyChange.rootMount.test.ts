@@ -4,7 +4,7 @@
  * - 完了前で宣言済み → 書かない（親のオブジェクトをコンポーネントの state プロパティに
  *   載せてしまうと、bindWebComponent がそれを子 state の実体として取り込む）
  * - 未宣言 → 従来どおりプロパティ書き込み
- * - 完了後 → 値を運ばない再読込通知（登録済みパスの先頭セグメント全部）
+ * - 完了後 → no-op（v2: 配送は翻訳済みバインディング＋単一台帳が担う）
  *
  * docs/state-mount-design.md §3-2、impl-plan P1-1 / P1-2、webComponent/completeWebComponent.ts。
  */
@@ -46,7 +46,6 @@ function createBinding(element: Element, propSegments: string[]): IBindingInfo {
     propModifiers: [],
     statePathName: 'user',
     statePathInfo: getPathInfo('user'),
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'prop',
@@ -59,7 +58,6 @@ function createBinding(element: Element, propSegments: string[]): IBindingInfo {
 function createContext(): IApplyContext {
   return {
     rootNode: document,
-    stateName: 'default',
     stateElement: { hasUpdatedCallback: false } as any,
     state: {} as any,
     appliedBindingSet: new Set(),
@@ -90,6 +88,17 @@ describe('applyChange: 丸ごとマウントのゲート', () => {
     expect(el.state).toBe(original);
   });
 
+  it('宣言済み・未完了は部分規則（state.name）でも書かないこと（v2 の一般化）', () => {
+    const el = document.createElement(defineTag()) as any;
+    document.body.appendChild(el);
+    const original = { ...el.state };
+    markWebComponentStatePropDeclared(el, 'state');
+
+    applyChange(createBinding(el, ['state', 'name']), createContext());
+
+    expect(el.state).toEqual(original);
+  });
+
   it('未宣言なら従来どおりプロパティに書くこと', () => {
     const el = document.createElement(defineTag()) as any;
     document.body.appendChild(el);
@@ -99,26 +108,21 @@ describe('applyChange: 丸ごとマウントのゲート', () => {
     expect(el.state).toEqual({ name: 'Alice' });
   });
 
-  it('完了後は登録済みパスの先頭セグメント全部を読み直す通知になり、以後キャッシュされること', () => {
+  it('完了後は no-op（配送は翻訳済みバインディング＋単一台帳が担う）で、プロパティも書かないこと', () => {
     const el = document.createElement(defineTag()) as any;
     document.body.appendChild(el);
-    const posted: string[] = [];
-    setStateElementByWebComponent(el, 'state', {
-      name: 'default',
-      boundPaths: new Set(['name', 'tags.*.name']),
-      createState(_mode: string, cb: (state: any) => void) {
-        cb({ $postUpdate: (path: string) => { posted.push(path); } });
-      },
-    } as any);
+    const createState = vi.fn();
+    setStateElementByWebComponent(el, 'state', { name: 'default', createState } as any);
     markWebComponentStatePropDeclared(el, 'state');
     markWebComponentAsComplete(el, 'state');
     const original = el.state;
 
     const binding = createBinding(el, ['state']);
     applyChange(binding, createContext());
+    // 2 回目は fnByBinding にキャッシュされた経路
     applyChange(binding, createContext());
 
-    expect(posted).toEqual(['name', 'tags', 'name', 'tags']);
+    expect(createState).not.toHaveBeenCalled();
     expect(el.state).toBe(original);
   });
 });

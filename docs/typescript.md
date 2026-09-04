@@ -65,8 +65,8 @@ npx wcs-schema check src/state.ts && npx wcs-validate --strict index.html
 Pitfalls:
 
 - `--strict` also fails on warnings from `<wcs-state src>` files the validator cannot read — make every `src=` resolvable relative to its HTML first.
-- `--merge` replaces the named state's `stateSchema` wholesale; a hand-written schema for the same state does not survive (the sidecar spec forbids implicit merging). Hand-written schemas belong to states you do not generate.
-- Two application manifests declaring the same state name are a `wcs/manifest-state-collision` error with no winner; when passing manifests explicitly on the command line, pass one per state name.
+- `--merge` replaces the slot being written wholesale — the whole `stateSchema`, or the subtree at `--mount=<path>` (a volume's type merges as a subtree of the single tree); a hand-written schema for that slot does not survive (the sidecar spec forbids implicit merging). Hand-written schemas belong to slots you do not generate.
+- Two application manifests both declaring a `stateSchema` are a `wcs/manifest-state-collision` error with no winner (v2: one state tree per page, one schema slot); keep the generated schema in exactly one manifest.
 
 ## 3. Typed element lookups: `HTMLElementTagNameMap`
 

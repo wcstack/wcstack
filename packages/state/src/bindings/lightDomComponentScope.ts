@@ -19,10 +19,11 @@
  *
  * このモジュールはその 2 つを明示的に復元するための判定だけを持つ。
  *
- * **plain（ホストからバインドしない state 注入）は対象外**であることに注意。
- * plain は `waitInitializeBinding` を通らないので循環せず、従来どおりホストと
- * 同じパスで初期化して問題ない。ここで一律に切り出すと、成立している plain 形が
- * 「子 state の登録前に `@name` を解決する」形に退行する。
+ * **plain（ホストからバインドしない state 注入）の Light DOM は v2 で廃止**
+ *（State._initializeBindWebComponent が raise する — 共有 rootNode に独立ツリーを
+ * 置けないため。shadow を付ければ plain Shadow 形として従来どおり動く）。
+ * ここの判定が「ホストからバインドされているか」を見るのはその名残ではなく、
+ * マウント（配線あり）だけをスコープとして切り出すため。
  */
 
 import { config } from "../config";

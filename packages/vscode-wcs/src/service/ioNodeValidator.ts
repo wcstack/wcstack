@@ -191,7 +191,7 @@ function validateBindingAgainstContract(
 
   // trigger の true シード: エッジ検出なし・manual バイパスのためバインド時に即発火する。
   if (property === 'trigger' && 'trigger' in contract.inputs && parsed.path) {
-    const cand = findDataSlot(getPaths(), parsed.path, parsed.targetState);
+    const cand = findDataSlot(getPaths(), parsed.path);
     if (cand?.rawInitial === 'true') {
       diagnostics.push({
         code: WcsDiagnosticCode.TriggerSeededTruthy,
@@ -206,7 +206,7 @@ function validateBindingAgainstContract(
   // `#init=element` / `#init=auto` は load-before-bind の宣言的な解なので対象外。
   if (tagName === 'wcs-storage' && property === 'value' && !hasManual && parsed.path
     && !/(?:^|,)init=(?:element|auto)\b/.test(modifiers)) {
-    const cand = findDataSlot(getPaths(), parsed.path, parsed.targetState);
+    const cand = findDataSlot(getPaths(), parsed.path);
     if (cand?.rawInitial !== undefined && EMPTYISH_SEEDS.has(normalizeSeed(cand.rawInitial))) {
       diagnostics.push({
         code: WcsDiagnosticCode.StorageSeedClobber,
@@ -217,8 +217,8 @@ function validateBindingAgainstContract(
   }
 }
 
-function findDataSlot(paths: PathCandidate[], path: string, stateName: string): PathCandidate | undefined {
-  return paths.find(c => c.kind === 'data' && c.path === path && c.stateName === stateName);
+function findDataSlot(paths: PathCandidate[], path: string): PathCandidate | undefined {
+  return paths.find(c => c.kind === 'data' && c.path === path);
 }
 
 /** `[ ]` / `{ }` の内部空白を潰して EMPTYISH_SEEDS と比較できる形にする。 */

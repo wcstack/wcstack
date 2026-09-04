@@ -24,9 +24,6 @@ import {
 } from "../protocol/types";
 import { formatArgs, formatError, formatValue } from "./formatValue";
 
-/** 予約 state 名 prefix（protocol §5）。この prefix の要素・イベントは常に除外 */
-export const RESERVED_STATE_NAME_PREFIX = "wcs-devtools";
-
 const DEFAULT_TIMELINE_CAPACITY = 500;
 
 export type TimelineKind =
@@ -50,7 +47,6 @@ export interface ITimelineEntry {
   readonly time: number;
   readonly sourceId: string;
   readonly kind: TimelineKind;
-  readonly stateName: string | null;
   readonly label: string;
   readonly detail: string;
   readonly subscriberCount: number | null;
@@ -58,18 +54,24 @@ export interface ITimelineEntry {
 
 export interface IRosterEntry {
   readonly sourceId: string;
-  readonly name: string;
+  /** 表示・選択用のルート由来ラベル（document / ホストタグ、重複は #n を付ける） */
+  readonly label: string;
   readonly rootNode: Node;
   readonly summary: IStateElementSummaryLike;
 }
 
 export interface IWiringEntry {
   readonly sourceId: string;
-  readonly stateName: string;
   readonly path: string;
   readonly propName: string;
   readonly bindingType: string;
   readonly bindingRef: WeakRef<IBindingLike>;
+  /**
+   * 属する state 要素（absoluteAddress.absolutePathInfo.stateElement）。v2 は名前次元が
+   * 無いため、複数ツリーの同名パスは要素同一性で区別する（getWiringForPath のスコープ）。
+   * WeakRef なのはこの台帳が要素の寿命を延ばさないため。payload に無ければ null。
+   */
+  readonly stateElementRef: WeakRef<object> | null;
 }
 
 export type CoreChangeKind = "sources" | "roster" | "wiring" | "timeline" | "coverage";
@@ -91,7 +93,6 @@ export type CoverageStatus =
   | "never" | "prerequisite-missing" | "never-attached";
 
 export interface ICoverageEntry {
-  readonly stateName: string;
   readonly kind: "watch" | "command" | "eventToken" | "binding";
   readonly name: string;
   readonly status: CoverageStatus;
@@ -102,8 +103,6 @@ export interface ICoverageEntry {
 export interface IDevtoolsCoreOptions {
   /** タイムライン ring buffer 件数（既定 500） */
   timelineCapacity?: number;
-  /** 追加で除外する state 名（予約 prefix は常に除外） */
-  hiddenStateNames?: readonly string[];
 }
 
 /** 台帳キーの区切り文字（state 名・パスに現れ得ない NUL）。
@@ -111,17 +110,28 @@ export interface IDevtoolsCoreOptions {
  *  `エスケープ列` リテラルを生バイトへ壊す事故が実際に起きたため。 */
 const NUL = String.fromCharCode(0);
 
-function pathKeyOf(stateName: string, path: string): string {
-  return stateName + NUL + path;
+function pathKeyOf(path: string): string {
+  return path;
 }
 
-function tokenKeyOf(stateName: string, kind: string, name: string): string {
-  return stateName + NUL + kind + NUL + name;
+function tokenKeyOf(kind: string, name: string): string {
+  return kind + NUL + name;
 }
 
-/** 宣言（stateName+path+propName）単位の attach キー。NUL 区切りは pathKeyOf と同じ理由 */
-function attachKeyOf(stateName: string, path: string, propName: string): string {
-  return pathKeyOf(stateName, path) + NUL + propName;
+/** 宣言（path+propName）単位の attach キー。NUL 区切りは tokenKeyOf と同じ理由 */
+function attachKeyOf(path: string, propName: string): string {
+  return path + NUL + propName;
+}
+
+/** roster 表示用のルート由来ラベル（v2: name 次元が無いのでルートで識別する） */
+function rootLabelOf(rootNode: Node): string {
+  if (typeof ShadowRoot !== "undefined" && rootNode instanceof ShadowRoot) {
+    return `<${rootNode.host.tagName.toLowerCase()}>`;
+  }
+  if (rootNode.nodeType === 9 /* DOCUMENT_NODE */) {
+    return "document";
+  }
+  return rootNode.nodeName.toLowerCase();
 }
 
 /** token emit の実測（カバレッジ台帳の値）。zeroSubscriberCount = 空撃ち回数 */
@@ -132,22 +142,21 @@ interface ITokenEmitStat {
 
 /** token カバレッジ 1 行の判定（§4: 空撃ちのみ / 一部空撃ち / 正常 / 未発火） */
 function tokenCoverageOf(
-  stateName: string,
   kind: "command" | "eventToken",
   name: string,
   stat: ITokenEmitStat | undefined,
 ): ICoverageEntry {
   if (stat === undefined) {
-    return { stateName, kind, name, status: "never", count: 0, note: null };
+    return { kind, name, status: "never", count: 0, note: null };
   }
   if (stat.zeroSubscriberCount === stat.count) {
     return {
-      stateName, kind, name, status: "emitted-unheard", count: stat.count,
+      kind, name, status: "emitted-unheard", count: stat.count,
       note: `all ${stat.count} emit(s) had 0 subscribers`,
     };
   }
   return {
-    stateName, kind, name, status: "emitted", count: stat.count,
+    kind, name, status: "emitted", count: stat.count,
     note: stat.zeroSubscriberCount > 0
       ? `${stat.zeroSubscriberCount}/${stat.count} emit(s) had 0 subscribers`
       : null,
@@ -156,7 +165,6 @@ function tokenCoverageOf(
 
 export class DevtoolsCore {
   private _timelineCapacity: number;
-  private _hiddenStateNames: Set<string>;
   private _removeListener: (() => void) | null = null;
   private _sources: Map<string, IDevtoolsSourceLike> = new Map();
   private _roster: Map<string, IRosterEntry[]> = new Map();
@@ -168,9 +176,12 @@ export class DevtoolsCore {
   private _changeListeners: Set<CoreChangeListener> = new Set();
   /** 観測開始時刻（connect 時の performance.now。未接続は null）。 */
   private _observingSince: number | null = null;
-  /** watch 発火回数（stateName + NUL + path → count）。カバレッジの実測面。 */
+  /** watch 発火回数（path → count）。カバレッジの実測面。
+   *  既知の限界: `state:watch-fired` / `state:token-emit` の payload はツリー識別を
+   *  持たないため、複数ツリーが同名の watch パス / token 名を宣言するページでは
+   *  実測が合算される（ツリー別に分けるにはプロトコル追補が要る — slice 29 記録）。 */
   private _watchFiredCounts: Map<string, number> = new Map();
-  /** token emit 実測（stateName + NUL + kind + NUL + name → 回数と空撃ち回数）。 */
+  /** token emit 実測（kind + NUL + name → 回数と空撃ち回数）。上の限界注記と同じ。 */
   private _tokenEmitCounts: Map<string, ITokenEmitStat> = new Map();
   /** 観測開始以降に一度でも attach を観測した宣言キー（attachKeyOf）。
    *  live 配線台帳は WeakRef pruning / binding-removed で縮むため、binding
@@ -180,7 +191,6 @@ export class DevtoolsCore {
 
   constructor(options?: IDevtoolsCoreOptions) {
     this._timelineCapacity = options?.timelineCapacity ?? DEFAULT_TIMELINE_CAPACITY;
-    this._hiddenStateNames = new Set(options?.hiddenStateNames ?? []);
   }
 
   get connected(): boolean {
@@ -193,14 +203,6 @@ export class DevtoolsCore {
 
   set paused(value: boolean) {
     this._paused = value;
-  }
-
-  /** 表示から除外する state 名か（予約 prefix + hiddenStateNames、protocol §5） */
-  isHiddenStateName(name: string | null): boolean {
-    if (name === null) {
-      return false;
-    }
-    return name.startsWith(RESERVED_STATE_NAME_PREFIX) || this._hiddenStateNames.has(name);
   }
 
   connect(): void {
@@ -291,13 +293,23 @@ export class DevtoolsCore {
     this._notify("timeline");
   }
 
-  /** 指定パスに束縛された配線（生存している binding のみ） */
-  getWiringForPath(stateName: string, path: string): IWiringEntry[] {
-    const set = this._wiringByPathKey.get(pathKeyOf(stateName, path));
+  /**
+   * 指定パスに束縛された配線（生存している binding のみ）。
+   * stateElement を渡すとそのツリーの配線だけに絞る（v2 は名前次元が無いため、
+   * 複数ツリーの同名パスは要素同一性で区別する）。stateElement を持たない
+   * 旧 payload 由来の entry は絞り込みでも残す（欠測を欠落にしない）。
+   */
+  getWiringForPath(path: string, stateElement?: unknown): IWiringEntry[] {
+    const set = this._wiringByPathKey.get(pathKeyOf(path));
     if (set === undefined) {
       return [];
     }
-    return this._collectAlive(set);
+    const alive = this._collectAlive(set);
+    if (stateElement === undefined) {
+      return alive;
+    }
+    return alive.filter((entry) =>
+      entry.stateElementRef === null || entry.stateElementRef.deref() === stateElement);
   }
 
   /** 全配線のスナップショット（生存している binding のみ） */
@@ -350,10 +362,7 @@ export class DevtoolsCore {
       }
       for (const root of roots) {
         for (const declared of source.getDeclaredBindings(root)) {
-          if (this.isHiddenStateName(declared.stateName)) {
-            continue;
-          }
-          const key = [declared.stateName, declared.statePathName, declared.propName,
+          const key = [declared.statePathName, declared.propName,
             declared.bindingType, declared.origin, declared.raw].join(NUL);
           if (seen.has(key)) {
             continue;
@@ -378,9 +387,9 @@ export class DevtoolsCore {
       const summary = entry.summary;
       // --- watch: 宣言（watchPaths）× 実測（watch-fired 台帳） ---
       for (const path of summary.watchPaths ?? []) {
-        const count = this._watchFiredCounts.get(pathKeyOf(entry.name, path)) ?? 0;
+        const count = this._watchFiredCounts.get(pathKeyOf(path)) ?? 0;
         if (count > 0) {
-          out.push({ stateName: entry.name, kind: "watch", name: path, status: "fired", count, note: null });
+          out.push({ kind: "watch", name: path, status: "fired", count, note: null });
           continue;
         }
         // ワイルドカード行 watch に**リスト書き込み**が届く前提 = 各 `.*` 階層の
@@ -404,25 +413,25 @@ export class DevtoolsCore {
         }
         if (missingList !== null) {
           out.push({
-            stateName: entry.name, kind: "watch", name: path, status: "prerequisite-missing", count: 0,
+            kind: "watch", name: path, status: "prerequisite-missing", count: 0,
             note: keyedKnown
               ? `list "${missingList}" has no for binding and no $listKeys declaration — list writes never reach its rows (only explicit-index writes can fire this watch)`
               : `no for binding observed for list "${missingList}" (a $listKeys declaration would still let list writes fire it)`,
           });
           continue;
         }
-        out.push({ stateName: entry.name, kind: "watch", name: path, status: "never", count: 0, note: null });
+        out.push({ kind: "watch", name: path, status: "never", count: 0, note: null });
       }
       // --- token: 宣言（commandTokenNames / eventTokenNames）× 実測（emit 台帳）。
       // subscriberCount 0 = 空撃ち（§4）: 全 emit が空撃ちなら emitted-unheard として
       // 警告する（emit 側だけ配線されて受け手が一つも居ない構成ミスの検出）。 ---
       for (const name of summary.commandTokenNames) {
-        out.push(tokenCoverageOf(entry.name, "command", name,
-          this._tokenEmitCounts.get(tokenKeyOf(entry.name, "command", name))));
+        out.push(tokenCoverageOf("command", name,
+          this._tokenEmitCounts.get(tokenKeyOf("command", name))));
       }
       for (const name of summary.eventTokenNames) {
-        out.push(tokenCoverageOf(entry.name, "eventToken", name,
-          this._tokenEmitCounts.get(tokenKeyOf(entry.name, "event", name))));
+        out.push(tokenCoverageOf("eventToken", name,
+          this._tokenEmitCounts.get(tokenKeyOf("event", name))));
       }
     }
 
@@ -436,14 +445,14 @@ export class DevtoolsCore {
         if (decl.bindingType === "for" || decl.bindingType === "if"
           || decl.bindingType === "elseif" || decl.bindingType === "else") continue;
         if (decl.propName.startsWith("eventToken.")) continue;
-        const key = attachKeyOf(decl.stateName, decl.statePathName, decl.propName);
+        const key = attachKeyOf(decl.statePathName, decl.propName);
         if (seen.has(key)) continue;
         seen.add(key);
         // 「一度でも attach を観測したか」で判定（ever 台帳）。live 台帳は行の
         // 破棄や GC（WeakRef pruning）で縮むため、瞬間値だと逆戻りする。
         const attached = this._everAttachedKeys.has(key);
         out.push({
-          stateName: decl.stateName, kind: "binding",
+          kind: "binding",
           name: `${decl.propName} ← ${decl.statePathName}`,
           status: attached ? "attached" : "never-attached",
           count: attached ? 1 : 0,
@@ -461,7 +470,7 @@ export class DevtoolsCore {
     if (source === undefined || typeof source.keys !== "function") {
       return [];
     }
-    return source.keys(entry.name, entry.rootNode);
+    return source.keys(entry.rootNode);
   }
 
   readValue(entry: IRosterEntry, path: string, indexes?: number[]): unknown {
@@ -469,7 +478,7 @@ export class DevtoolsCore {
     if (source === undefined) {
       return undefined;
     }
-    return source.read(entry.name, entry.rootNode, path, indexes);
+    return source.read(entry.rootNode, path, indexes);
   }
 
   writeValue(entry: IRosterEntry, path: string, value: unknown, indexes?: number[]): void {
@@ -477,7 +486,7 @@ export class DevtoolsCore {
     if (source === undefined) {
       return;
     }
-    source.write(entry.name, entry.rootNode, path, value, indexes);
+    source.write(entry.rootNode, path, value, indexes);
   }
 
   // --- internal ---
@@ -490,13 +499,14 @@ export class DevtoolsCore {
 
   private _refreshRosterOf(source: IDevtoolsSourceLike): void {
     const entries: IRosterEntry[] = [];
+    const labelCounts = new Map<string, number>();
     for (const summary of source.getStateElements()) {
-      if (this.isHiddenStateName(summary.name)) {
-        continue;
-      }
+      const base = rootLabelOf(summary.rootNode);
+      const seen = (labelCounts.get(base) ?? 0) + 1;
+      labelCounts.set(base, seen);
       entries.push({
         sourceId: source.id,
-        name: summary.name,
+        label: seen === 1 ? base : `${base}#${seen}`,
         rootNode: summary.rootNode,
         summary,
       });
@@ -542,9 +552,6 @@ export class DevtoolsCore {
   private _ingest(sourceId: string, event: DevtoolsEventLike): void {
     switch (event.type) {
       case "state:element-registered": {
-        if (this.isHiddenStateName(event.name)) {
-          return;
-        }
         const source = this._sources.get(sourceId);
         if (source !== undefined) {
           this._refreshRosterOf(source);
@@ -553,17 +560,13 @@ export class DevtoolsCore {
         this._appendTimeline({
           sourceId,
           kind: "element-registered",
-          stateName: event.name,
-          label: event.name,
+          label: rootLabelOf(event.rootNode),
           detail: "",
           subscriberCount: null,
         });
         return;
       }
       case "state:element-unregistered": {
-        if (this.isHiddenStateName(event.name)) {
-          return;
-        }
         const source = this._sources.get(sourceId);
         if (source !== undefined) {
           this._refreshRosterOf(source);
@@ -572,25 +575,19 @@ export class DevtoolsCore {
         this._appendTimeline({
           sourceId,
           kind: "element-unregistered",
-          stateName: event.name,
-          label: event.name,
+          label: rootLabelOf(event.rootNode),
           detail: "",
           subscriberCount: null,
         });
         return;
       }
       case "state:write": {
-        const stateName = event.absoluteAddress.absolutePathInfo.stateName;
-        if (this.isHiddenStateName(stateName)) {
-          return;
-        }
         const detail = event.hasOldValue
           ? `${formatValue(event.value)} (was ${formatValue(event.oldValue)})`
           : formatValue(event.value);
         this._appendTimeline({
           sourceId,
           kind: "write",
-          stateName,
           label: this._labelOf(event.absoluteAddress),
           detail,
           subscriberCount: null,
@@ -601,9 +598,6 @@ export class DevtoolsCore {
         const labels: string[] = [];
         let total = 0;
         for (const address of event.addresses) {
-          if (this.isHiddenStateName(address.absolutePathInfo.stateName)) {
-            continue;
-          }
           total++;
           if (labels.length < 3) {
             labels.push(this._labelOf(address));
@@ -616,7 +610,6 @@ export class DevtoolsCore {
         this._appendTimeline({
           sourceId,
           kind: "batch",
-          stateName: null,
           label: `${total} address${total === 1 ? "" : "es"}`,
           detail: `${labels.join(", ")}${rest}`,
           subscriberCount: null,
@@ -624,29 +617,28 @@ export class DevtoolsCore {
         return;
       }
       case "state:binding-added": {
-        const stateName = event.absoluteAddress.absolutePathInfo.stateName;
-        if (this.isHiddenStateName(stateName)) {
-          return;
-        }
         const path = event.absoluteAddress.absolutePathInfo.pathInfo.path;
-        const key = pathKeyOf(stateName, path);
+        const key = pathKeyOf(path);
         let set = this._wiringByPathKey.get(key);
         if (set === undefined) {
           set = new Set();
           this._wiringByPathKey.set(key, set);
         }
+        const stateElement = event.absoluteAddress.absolutePathInfo.stateElement;
         const entry: IWiringEntry = {
           sourceId,
-          stateName,
           path,
           propName: event.binding.propName,
           bindingType: event.binding.bindingType,
           bindingRef: new WeakRef(event.binding),
+          stateElementRef: typeof stateElement === "object" && stateElement !== null
+            ? new WeakRef(stateElement)
+            : null,
         };
         set.add(entry);
         this._wiringEntryByBinding.set(event.binding, entry);
         // カバレッジの実測面（B2）: attach の観測を ever 台帳へ積む（remove では消さない）
-        this._everAttachedKeys.add(attachKeyOf(stateName, path, event.binding.propName));
+        this._everAttachedKeys.add(attachKeyOf(path, event.binding.propName));
         this._notify("wiring");
         this._notify("coverage");
         return;
@@ -657,7 +649,7 @@ export class DevtoolsCore {
           return;
         }
         this._wiringEntryByBinding.delete(event.binding);
-        const key = pathKeyOf(entry.stateName, entry.path);
+        const key = pathKeyOf(entry.path);
         const set = this._wiringByPathKey.get(key);
         if (set !== undefined) {
           set.delete(entry);
@@ -669,40 +661,32 @@ export class DevtoolsCore {
         return;
       }
       case "state:binding-cleared": {
-        const stateName = event.absoluteAddress.absolutePathInfo.stateName;
         const path = event.absoluteAddress.absolutePathInfo.pathInfo.path;
-        const key = pathKeyOf(stateName, path);
+        const key = pathKeyOf(path);
         if (this._wiringByPathKey.delete(key)) {
           this._notify("wiring");
         }
         return;
       }
       case "state:token-emit": {
-        if (this.isHiddenStateName(event.stateName)) {
-          return;
-        }
         // カバレッジの実測面: emit 回数と空撃ち回数を台帳に積む（§4）。
-        // stateName が null の emit はどの宣言とも突合できないため積まない。
-        if (event.stateName !== null) {
-          const emitKey = tokenKeyOf(event.stateName, event.kind, event.tokenName);
-          const stat = this._tokenEmitCounts.get(emitKey);
-          if (stat === undefined) {
-            this._tokenEmitCounts.set(emitKey, {
-              count: 1,
-              zeroSubscriberCount: event.subscriberCount === 0 ? 1 : 0,
-            });
-          } else {
-            stat.count += 1;
-            if (event.subscriberCount === 0) {
-              stat.zeroSubscriberCount += 1;
-            }
+        const emitKey = tokenKeyOf(event.kind, event.tokenName);
+        const stat = this._tokenEmitCounts.get(emitKey);
+        if (stat === undefined) {
+          this._tokenEmitCounts.set(emitKey, {
+            count: 1,
+            zeroSubscriberCount: event.subscriberCount === 0 ? 1 : 0,
+          });
+        } else {
+          stat.count += 1;
+          if (event.subscriberCount === 0) {
+            stat.zeroSubscriberCount += 1;
           }
-          this._notify("coverage");
         }
+        this._notify("coverage");
         this._appendTimeline({
           sourceId,
           kind: event.kind,
-          stateName: event.stateName,
           label: event.tokenName,
           detail: formatArgs(event.args),
           subscriberCount: event.subscriberCount,
@@ -710,26 +694,19 @@ export class DevtoolsCore {
         return;
       }
       case "state:watch-fired": {
-        if (this.isHiddenStateName(event.stateName)) {
-          return;
-        }
         // timeline 行にはしない（発火は高頻度になりうる活動でありカバレッジが受け皿）。
-        const firedKey = pathKeyOf(event.stateName, event.path);
+        const firedKey = pathKeyOf(event.path);
         this._watchFiredCounts.set(firedKey, (this._watchFiredCounts.get(firedKey) ?? 0) + 1);
         this._notify("coverage");
         return;
       }
       case "state:watch-error": {
-        if (this.isHiddenStateName(event.stateName)) {
-          return;
-        }
         // ランタイム側は例外を握って drain を守るため、ここに出ないと失敗が
         // どこにも現れない（console を見ていない限り）。phase を detail の先頭に
         // 置くのは、getter の評価失敗とハンドラの失敗で直し方が違うため。
         this._appendTimeline({
           sourceId,
           kind: "watch-error",
-          stateName: event.stateName,
           label: event.path,
           detail: `${event.phase}: ${formatError(event.error)}`,
           subscriberCount: null,
@@ -740,9 +717,7 @@ export class DevtoolsCore {
         this._appendTimeline({
           sourceId,
           kind: "watch-chain-limit",
-          stateName: null,
-          // 打ち切りはバッチ単位で state 名を持たない（複数 state のアドレスが
-          // 載りうる）ため、hidden 判定はここでは行わない。
+          // 打ち切りはバッチ単位（複数ツリーのアドレスが載りうる）— 行の主語は深さ上限
           label: `depth > ${event.maxDepth}`,
           detail: event.paths.join(", "),
           subscriberCount: null,
@@ -750,15 +725,11 @@ export class DevtoolsCore {
         return;
       }
       case "state:path-unresolved": {
-        if (this.isHiddenStateName(event.stateName)) {
-          return;
-        }
         // ランタイムは warn で続行する（既存ページを止めないため）。lint を
         // 走らせていない相手には、ここが「配線が死んでいる」唯一の可視面になる。
         this._appendTimeline({
           sourceId,
           kind: "path-unresolved",
-          stateName: event.stateName,
           label: event.path,
           detail: `${event.source}: "${event.missingSegment}" is not declared`,
           subscriberCount: null,
@@ -766,15 +737,11 @@ export class DevtoolsCore {
         return;
       }
       case "state:binding-apply-error": {
-        if (this.isHiddenStateName(event.stateName)) {
-          return;
-        }
         // 隔離された適用失敗。bindingType を detail 先頭に置くのは、構造
         // （for / if）の失敗と値の失敗で影響範囲が違うため。
         this._appendTimeline({
           sourceId,
           kind: "binding-apply-error",
-          stateName: event.stateName,
           label: event.path,
           detail: `${event.bindingType}: ${formatError(event.error)}`,
           subscriberCount: null,
@@ -782,12 +749,10 @@ export class DevtoolsCore {
         return;
       }
       case "propagation:suppressed": {
-        // two-way エコーの辺単位抑止。state 名を持たない（node+member が主語）
-        // ため hidden 判定はここでは行わない。
+        // two-way エコーの辺単位抑止（主語は node + member — パスではない）
         this._appendTimeline({
           sourceId,
           kind: "propagation-suppressed",
-          stateName: null,
           label: event.member,
           detail: `${event.reason} (tx ${event.transactionId}, edge ${event.edgeId})`,
           subscriberCount: null,
@@ -795,14 +760,9 @@ export class DevtoolsCore {
         return;
       }
       case "propagation:coalesced": {
-        const stateName = event.absoluteAddress.absolutePathInfo.stateName;
-        if (this.isHiddenStateName(stateName)) {
-          return;
-        }
         this._appendTimeline({
           sourceId,
           kind: "propagation-coalesced",
-          stateName,
           label: this._labelOf(event.absoluteAddress),
           detail: `tx ${event.droppedTransactionId} dropped (winner tx ${event.winnerTransactionId})`,
           subscriberCount: null,
@@ -810,14 +770,9 @@ export class DevtoolsCore {
         return;
       }
       case "propagation:hop-limit": {
-        const stateName = event.absoluteAddress.absolutePathInfo.stateName;
-        if (this.isHiddenStateName(stateName)) {
-          return;
-        }
         this._appendTimeline({
           sourceId,
           kind: "propagation-hop-limit",
-          stateName,
           label: this._labelOf(event.absoluteAddress),
           detail: `hop ${event.hop} (tx ${event.transactionId})`,
           subscriberCount: null,
@@ -836,7 +791,6 @@ export class DevtoolsCore {
         this._appendTimeline({
           sourceId,
           kind: "contract-drift",
-          stateName: null,
           label: event.tag,
           detail: `${event.reason}${memberPart}${eventPart}`,
           subscriberCount: null,

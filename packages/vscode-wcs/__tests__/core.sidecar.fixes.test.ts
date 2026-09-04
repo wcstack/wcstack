@@ -93,7 +93,7 @@ describe("fix: filter collision + override purge (low)", () => {
   function appFilters(source: string, names: string[]) {
     const filters: Record<string, unknown> = {};
     for (const n of names) filters[n] = {};
-    return loadManifest({ source, text: JSON.stringify({ schemaVersion: 1, kind: "application", manifestExtensions: { "wcstack.application": { version: 1, filters } } }) });
+    return loadManifest({ source, text: JSON.stringify({ schemaVersion: 2, kind: "application", manifestExtensions: { "wcstack.application": { version: 2, filters } } }) });
   }
   it("同名 filter の二重定義は collision(§5-3)", () => {
     const resolved = resolvePackageContracts([appFilters("a.json", ["fmt"]), appFilters("b.json", ["fmt"])]);
@@ -104,7 +104,7 @@ describe("fix: filter collision + override purge (low)", () => {
   it("collision で撤回された tag の override info は残さない", () => {
     function pkg(source: string, override = false) {
       const component = override ? { override: true, observables: {} } : { observables: {} };
-      return loadManifest({ source, text: JSON.stringify({ schemaVersion: 1, kind: "package", manifestExtensions: { "wcstack.types": { version: 1, components: { "wcs-x": component } } } }) });
+      return loadManifest({ source, text: JSON.stringify({ schemaVersion: 2, kind: "package", manifestExtensions: { "wcstack.types": { version: 2, components: { "wcs-x": component } } } }) });
     }
     // a: winner, b: override(info), c: collision(撤回)
     const resolved = resolvePackageContracts([pkg("a.json"), pkg("b.json", true), pkg("c.json")]);

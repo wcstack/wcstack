@@ -44,44 +44,44 @@ describe('getBindingContext', () => {
   describe('path コンテキスト', () => {
     it('コロンの直後でパス補完', () => {
       const ctx = getBindingContext('textContent: ', 13);
-      expect(ctx).toEqual({ kind: 'path', propName: 'textContent', partial: '', targetState: null });
+      expect(ctx).toEqual({ kind: 'path', propName: 'textContent', partial: ''});
     });
 
     it('パスの途中でパス補完', () => {
       const ctx = getBindingContext('textContent: users.', 19);
-      expect(ctx).toEqual({ kind: 'path', propName: 'textContent', partial: 'users.', targetState: null });
+      expect(ctx).toEqual({ kind: 'path', propName: 'textContent', partial: 'users.'});
     });
 
     it('for ディレクティブのパス補完', () => {
       const ctx = getBindingContext('for: ', 5);
-      expect(ctx).toEqual({ kind: 'path', propName: 'for', partial: '', targetState: null });
+      expect(ctx).toEqual({ kind: 'path', propName: 'for', partial: ''});
     });
   });
 
   describe('filter コンテキスト', () => {
     it('| の直後でフィルタ補完', () => {
       const ctx = getBindingContext('textContent: count|', 19);
-      expect(ctx).toEqual({ kind: 'filter', propName: 'textContent', partial: '', targetState: null });
+      expect(ctx).toEqual({ kind: 'filter', propName: 'textContent', partial: ''});
     });
 
     it('フィルタ名の途中で補完', () => {
       const ctx = getBindingContext('textContent: count|gt', 21);
-      expect(ctx).toEqual({ kind: 'filter', propName: 'textContent', partial: 'gt', targetState: null });
+      expect(ctx).toEqual({ kind: 'filter', propName: 'textContent', partial: 'gt'});
     });
 
     it('複数フィルタの2つ目', () => {
       const ctx = getBindingContext('textContent: count|gt(10)|', 26);
-      expect(ctx).toEqual({ kind: 'filter', propName: 'textContent', partial: '', targetState: null });
+      expect(ctx).toEqual({ kind: 'filter', propName: 'textContent', partial: ''});
     });
 
     it('イベントハンドラのフィルタコンテキスト', () => {
       const ctx = getBindingContext('onclick: increment|', 19);
-      expect(ctx).toEqual({ kind: 'filter', propName: 'onclick', partial: '', targetState: null });
+      expect(ctx).toEqual({ kind: 'filter', propName: 'onclick', partial: ''});
     });
 
     it('@stateName 指定ありのフィルタコンテキスト', () => {
       const ctx = getBindingContext('textContent: count@cart|', 24);
-      expect(ctx).toEqual({ kind: 'filter', propName: 'textContent', partial: '', targetState: 'cart' });
+      expect(ctx).toEqual({ kind: 'filter', propName: 'textContent', partial: ''});
     });
 
     it('フィルタ引数内は none', () => {
@@ -90,15 +90,10 @@ describe('getBindingContext', () => {
     });
   });
 
-  describe('stateName コンテキスト', () => {
-    it('@ の直後で state 名補完', () => {
-      const ctx = getBindingContext('textContent: count@', 19);
-      expect(ctx).toEqual({ kind: 'stateName', partial: '' });
-    });
-
-    it('@ の後に部分入力', () => {
-      const ctx = getBindingContext('textContent: count@car', 22);
-      expect(ctx).toEqual({ kind: 'stateName', partial: 'car' });
+  describe('@ を含む式（v2: 名前次元は撤去）', () => {
+    it('@ の後では補完しない（式は parse error）', () => {
+      expect(getBindingContext('textContent: count@', 19)).toEqual({ kind: 'none' });
+      expect(getBindingContext('textContent: count@car', 22)).toEqual({ kind: 'none' });
     });
   });
 });

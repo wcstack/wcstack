@@ -89,7 +89,7 @@ describe('processWatchDeclaration', () => {
   it('パスに "@" を含む場合はエラーになること（越境 watch は不採用）', () => {
     const se = fakeStateElement();
     expect(() => processWatchDeclaration(se, { $watch: { 'count@other': noop } } as unknown as IState))
-      .toThrow(/must not target another state/);
+      .toThrow(/must not contain "@"/);
   });
 
   it('パスが Object.prototype の継承名の場合はエラーになること', () => {

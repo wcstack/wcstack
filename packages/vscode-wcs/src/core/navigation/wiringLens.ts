@@ -215,12 +215,45 @@ function expandOccurrencePath(
  * 派生パスをその宣言元へ写像する（`$command.<n>` は `$commandTokens` 宣言が、
  * `$streamStatus.<n>` / `$streamError.<n>` は `$streams` 宣言が生んでいる）。
  */
-function declarationFor(index: IReferenceIndex, stateName: string, path: string): IDeclarationSite | null {
-  const direct = index.declarationOf(stateName, path);
+/**
+ * 解析できない src を持つ <wcs-state> のうち、resolved パスがその守備範囲
+ * （ルート: 全体 / ボリューム: マウント接頭辞下）にあり、かつその範囲に候補が
+ * 1 つも無いものを返す（v2: 1 root 1 ツリー — 範囲はマウント接頭辞で区切る）。
+ */
+function findUnanalyzedSrcElement(
+  html: string,
+  stateTagName: string,
+  resolved: string,
+  candidates: readonly { path: string }[],
+): ReturnType<typeof parseWcsStateElements>[number] | undefined {
+  const elements = parseWcsStateElements(html, stateTagName);
+  const mountPrefixes = elements
+    .map((e) => e.mountPath)
+    .filter((m): m is string => m !== null);
+  const underMount = (path: string): boolean =>
+    mountPrefixes.some((m) => path === m || path.startsWith(m + '.'));
+  return elements.find((e) => {
+    if (e.srcAttr === undefined) return false;
+    if (e.mountPath === null) {
+      // ルートの守備範囲 = どのマウント接頭辞にも入らないパス。resolved がそこに居て、
+      // その範囲に候補が 1 つも無いときフォールバックする。candidates 全体の length で
+      // 見ると、解析可能なインラインボリュームが同居しただけで（候補が非ゼロになり）
+      // ルートの外部定義フォールバックが失われる
+      if (underMount(resolved)) return false;
+      return !candidates.some((c) => !underMount(c.path));
+    }
+    const prefix = e.mountPath + '.';
+    if (resolved !== e.mountPath && !resolved.startsWith(prefix)) return false;
+    return !candidates.some((c) => c.path === e.mountPath || c.path.startsWith(prefix));
+  });
+}
+
+function declarationFor(index: IReferenceIndex, path: string): IDeclarationSite | null {
+  const direct = index.declarationOf(path);
   if (direct !== null) return direct;
-  if (path.startsWith('$command.')) return index.declarationOf(stateName, '$commandTokens');
+  if (path.startsWith('$command.')) return index.declarationOf('$commandTokens');
   if (path.startsWith('$streamStatus.') || path.startsWith('$streamError.')) {
-    return index.declarationOf(stateName, '$streams');
+    return index.declarationOf('$streams');
   }
   return null;
 }
@@ -341,9 +374,9 @@ function hoverForOccurrence(
 ): IHoverResult | null {
   if (occurrence.kind === 'eventToken') {
     // 右辺はトークン名（state パスではない）。$eventTokens 宣言があれば行を添える
-    const declaration = index.declarationOf(occurrence.stateName, '$eventTokens');
+    const declaration = index.declarationOf('$eventTokens');
     const lines = [`\`${occurrence.path}\` — ${labels.eventToken}`];
-    let detail = `${labels.state}: \`${occurrence.stateName}\``;
+    let detail = '';
     if (declaration !== null) {
       detail += ` · ${labels.declaredAtLine(lineOf(html, declaration.range.start))}`;
     }
@@ -356,19 +389,17 @@ function hoverForOccurrence(
 
   const candidates = getStatePathsFromHtml(html, stateTagName);
   const candidate =
-    candidates.find((c) => c.stateName === occurrence.stateName && c.path === resolved) ?? null;
+    candidates.find((c) => c.path === resolved) ?? null;
 
   if (candidate === null) {
-    // src 外部 state で候補ゼロなら「外部定義」を明示（誤 hint ゼロだが沈黙もしない）。
+    // 解析できない src を持つ要素（ルート、またはパスがマウント接頭辞下のボリューム）
+    // の配下なら「外部定義」を明示する（誤 hint ゼロだが沈黙もしない）。
     // それ以外（未知パス）は lint の領分 — hover は出さない。
-    const stateHasCandidates = candidates.some((c) => c.stateName === occurrence.stateName);
-    const element = parseWcsStateElements(html, stateTagName).find(
-      (e) => e.stateName === occurrence.stateName && e.srcAttr !== undefined,
-    );
-    if (element !== undefined && element.srcAttr !== undefined && !stateHasCandidates) {
+    const element = findUnanalyzedSrcElement(html, stateTagName, resolved, candidates);
+    if (element !== undefined && element.srcAttr !== undefined) {
       const lines = [
         `\`${resolved}\``,
-        `${labels.externalState(element.srcAttr)} · ${labels.state}: \`${occurrence.stateName}\``,
+        labels.externalState(element.srcAttr),
       ];
       return { markdown: lines.join('\n\n'), range: occurrence.pathRange };
     }
@@ -377,8 +408,8 @@ function hoverForOccurrence(
 
   const header =
     occurrence.path === resolved ? `\`${resolved}\`` : `\`${occurrence.path}\` → \`${resolved}\``;
-  let detail = `${kindLabelOf(candidate, labels)} · ${labels.state}: \`${occurrence.stateName}\``;
-  const declaration = declarationFor(index, occurrence.stateName, resolved);
+  let detail = kindLabelOf(candidate, labels);
+  const declaration = declarationFor(index, resolved);
   if (declaration !== null) {
     detail += ` · ${labels.declaredAtLine(lineOf(html, declaration.range.start))}`;
   }
@@ -578,29 +609,30 @@ export function getDefinitionAt(
 
   let declaration: IDeclarationSite | null = null;
   if (occurrence.kind === 'eventToken') {
-    declaration = index.declarationOf(occurrence.stateName, '$eventTokens');
+    declaration = index.declarationOf('$eventTokens');
   } else {
     const resolved = expandOccurrencePath(html, occurrence.path, occurrence.pathRange.start, bindAttribute);
     if (resolved !== null) {
-      declaration = declarationFor(index, occurrence.stateName, resolved);
+      declaration = declarationFor(index, resolved);
     }
   }
   if (declaration !== null) {
     return { originRange: occurrence.pathRange, targetRange: declaration.range };
   }
 
-  // フォールバック（§5-3）: インライン宣言を 1 つも持たない src 外部 state は
+  // フォールバック（§5-3）: 解析できない src を持つ要素の配下のパスは
   // `<wcs-state src=…>` の開始タグへジャンプする（定義はこの src の先に居る）。
-  const hasInlineDeclarations = index.declarations.some((d) => d.stateName === occurrence.stateName);
-  if (!hasInlineDeclarations) {
-    const element = parseWcsStateElements(html, stateTagName).find(
-      (e) => e.stateName === occurrence.stateName && e.srcAttr !== undefined,
-    );
-    if (element !== undefined) {
-      return {
-        originRange: occurrence.pathRange,
-        targetRange: { start: element.tagStart, end: element.tagEnd },
-      };
+  {
+    const resolvedForSrc = expandOccurrencePath(html, occurrence.path, occurrence.pathRange.start, bindAttribute);
+    if (resolvedForSrc !== null) {
+      const element = findUnanalyzedSrcElement(
+        html, stateTagName, resolvedForSrc, getStatePathsFromHtml(html, stateTagName));
+      if (element !== undefined) {
+        return {
+          originRange: occurrence.pathRange,
+          targetRange: { start: element.tagStart, end: element.tagEnd },
+        };
+      }
     }
   }
   return null;
@@ -628,10 +660,10 @@ export function getReferencesAt(
     if (occurrence.kind === 'eventToken') {
       // トークン名は state パスと別空間 — 同名トークンの出現だけを集める
       const results: IReferenceResult[] = index.occurrences
-        .filter((o) => o.kind === 'eventToken' && o.stateName === occurrence.stateName && o.path === occurrence.path)
+        .filter((o) => o.kind === 'eventToken' && o.path === occurrence.path)
         .map((o) => ({ range: o.pathRange, isDeclaration: false }));
       if (includeDeclaration) {
-        const declaration = index.declarationOf(occurrence.stateName, '$eventTokens');
+        const declaration = index.declarationOf('$eventTokens');
         if (declaration !== null) results.unshift({ range: declaration.range, isDeclaration: true });
       }
       return results;
@@ -658,15 +690,15 @@ export function getReferencesAt(
       if (originAnchor === null) return null; // ループ外（または深さ不足）の $N — lint の領分
       return index.occurrences
         .filter((o) =>
-          o.kind === 'path' && o.stateName === occurrence.stateName
+          o.kind === 'path'
           && o.path === resolved && anchorOf(o) === originAnchor)
         .map((o) => ({ range: o.pathRange, isDeclaration: false }));
     }
     const results: IReferenceResult[] = index.occurrences
-      .filter((o) => o.kind === 'path' && o.stateName === occurrence.stateName && resolvedOf(o) === resolved)
+      .filter((o) => o.kind === 'path' && resolvedOf(o) === resolved)
       .map((o) => ({ range: o.pathRange, isDeclaration: false }));
     if (includeDeclaration) {
-      const declaration = declarationFor(index, occurrence.stateName, resolved);
+      const declaration = declarationFor(index, resolved);
       if (declaration !== null) results.unshift({ range: declaration.range, isDeclaration: true });
     }
     return results;
@@ -683,7 +715,7 @@ export function getReferencesAt(
     if (declaredTokens === null) {
       declaredTokens = new Set(
         getStatePathsFromHtml(html, stateTagName)
-          .filter((c) => c.stateName === declaration.stateName && c.kind === kind)
+          .filter((c) => c.kind === kind)
           .map((c) => c.path),
       );
     }
@@ -691,7 +723,6 @@ export function getReferencesAt(
   };
 
   const matches = (o: IPathOccurrence): boolean => {
-    if (o.stateName !== declaration.stateName) return false;
     if (declaration.name === '$eventTokens') {
       return o.kind === 'eventToken' && getDeclaredTokens('eventToken').has(o.path);
     }
@@ -800,7 +831,7 @@ export function getInlayHints(
       resolved === null
         ? undefined
         : getCandidates().find(
-            (c) => c.stateName === binding.parsed!.stateName && c.path === resolved,
+            (c) => c.path === resolved,
           )?.typeHint;
 
     let current: string | null = inputType ?? null;

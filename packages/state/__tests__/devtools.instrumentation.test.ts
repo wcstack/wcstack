@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setDevtoolsSink, devtoolsSink } from '../src/devtools/sink';
 import { DevtoolsEvent } from '../src/devtools/types';
-import { setStateElementByName, getLiveStateElements } from '../src/stateElementByName';
+import { setStateElement, getLiveStateElements } from '../src/stateElementByName';
 import {
   addBindingByAbsoluteStateAddress,
   removeBindingByAbsoluteStateAddress,
@@ -56,38 +56,35 @@ describe('devtools 計装点', () => {
       const element = createMockStateElement('instr-a');
       const rootNode = element.rootNode;
 
-      setStateElementByName(rootNode, 'instr-a', element);
+      setStateElement(rootNode, element);
       expect(getLiveStateElements().has(element)).toBe(true);
       expect(events).toContainEqual(
-        expect.objectContaining({ type: 'state:element-registered', name: 'instr-a', element })
+        expect.objectContaining({ type: 'state:element-registered', element })
       );
 
-      setStateElementByName(rootNode, 'instr-a', null);
+      setStateElement(rootNode, null);
       expect(getLiveStateElements().has(element)).toBe(false);
       expect(events).toContainEqual(
-        expect.objectContaining({ type: 'state:element-unregistered', name: 'instr-a', element })
+        expect.objectContaining({ type: 'state:element-unregistered', element })
       );
     });
 
     it('sink未接続では登録簿だけ更新されイベントは出ないこと', () => {
       setDevtoolsSink(null);
       const element = createMockStateElement('instr-b');
-      setStateElementByName(element.rootNode, 'instr-b', element);
+      setStateElement(element.rootNode, element);
       expect(getLiveStateElements().has(element)).toBe(true);
-      setStateElementByName(element.rootNode, 'instr-b', null);
+      setStateElement(element.rootNode, null);
       expect(getLiveStateElements().has(element)).toBe(false);
       expect(events.length).toBe(0);
     });
 
-    it('未登録名の解除ではイベントを出さないこと', () => {
-      const element = createMockStateElement('instr-c');
-      const rootNode = element.rootNode;
-      setStateElementByName(rootNode, 'instr-c', element);
+    it('未登録ルートの解除ではイベントを出さないこと', () => {
+      const orphanRoot = document.createElement('div');
       events.length = 0;
-      // 同一rootNodeの別名を解除 → removed undefined の分岐
-      setStateElementByName(rootNode, 'no-such-name', null);
+      // 登録の無いルートの解除 → existing undefined の分岐
+      setStateElement(orphanRoot, null);
       expect(events.length).toBe(0);
-      setStateElementByName(rootNode, 'instr-c', null);
     });
   });
 
@@ -143,7 +140,6 @@ describe('devtools 計装点', () => {
         expect.objectContaining({
           type: 'state:token-emit',
           kind: 'command',
-          stateName: 'media',
           tokenName: 'play',
           args: ['a', 1],
           subscriberCount: 1,
@@ -155,27 +151,27 @@ describe('devtools 計装点', () => {
       const token = new CommandToken('orphan');
       token.emit();
       expect(events).toContainEqual(
-        expect.objectContaining({ type: 'state:token-emit', kind: 'command', stateName: null, subscriberCount: 0 })
+        expect.objectContaining({ type: 'state:token-emit', kind: 'command', subscriberCount: 0 })
       );
     });
 
     it('EventToken.emitがkind=eventのイベントを発すること', () => {
-      const token = new EventToken('changed', 'form');
+      const token = new EventToken('changed');
       token.emit({ value: 1 });
       expect(events).toContainEqual(
-        expect.objectContaining({ type: 'state:token-emit', kind: 'event', stateName: 'form', tokenName: 'changed' })
+        expect.objectContaining({ type: 'state:token-emit', kind: 'event', tokenName: 'changed' })
       );
     });
 
-    it('registryがstateElement.nameをownerとして渡すこと', () => {
+    it('registry 経由の emit も token-emit として流れること', () => {
       const stateElement = createMockStateElement('owner-state');
       getOrCreateCommandToken(stateElement, 'cmd').emit();
       getOrCreateEventToken(stateElement, 'evt').emit();
       expect(events).toContainEqual(
-        expect.objectContaining({ kind: 'command', tokenName: 'cmd', stateName: 'owner-state' })
+        expect.objectContaining({ kind: 'command', tokenName: 'cmd' })
       );
       expect(events).toContainEqual(
-        expect.objectContaining({ kind: 'event', tokenName: 'evt', stateName: 'owner-state' })
+        expect.objectContaining({ kind: 'event', tokenName: 'evt' })
       );
     });
 
@@ -194,7 +190,6 @@ describe('devtools 計装点', () => {
     function createHandler(stateElement: any) {
       return {
         stateElement,
-        stateName: stateElement.name,
         pushAddress: vi.fn(),
         popAddress: vi.fn(),
       };

@@ -34,109 +34,47 @@ function defineLightComponent(
   initialState: Record<string, any>,
   innerTemplate: string,
 ): void {
+  // v2: マウントは名前を持たない（`@name` も撤去 — 旧テンプレートから剥ぐ）
+  const cleanTemplate = innerTemplate.split(`@${stateName}`).join("");
   class LightComponent extends HTMLElement {
     state: Record<string, any> = structuredClone(initialState);
     connectedCallback() {
       if (this.childElementCount === 0) {
         this.innerHTML =
-          `<wcs-state bind-component="state" name="${stateName}"></wcs-state>${innerTemplate}`;
+          `<wcs-state bind-component="state"></wcs-state>${cleanTemplate}`;
       }
     }
   }
   customElements.define(tag, LightComponent);
 }
 
-describe("bind-component: Light DOM の plain 形（state 注入）", () => {
+describe("bind-component: Light DOM の plain 形は廃止（v2）", () => {
   /**
-   * 親からバインドしない形。値の正本はコンポーネント自身の `state` にあり、
-   * Shadow DOM を使わずに `<wcs-state bind-component>` でリアクティブ化だけを受ける。
-   * この経路は `waitInitializeBinding` を通らないので成立する。
+   * 廃止の決定（2026-09-03・著者）: 共有 rootNode に独立ツリーを置くには名前次元が要り、
+   * 単一登録簿（P3-6）と両立しない。移行は 2 択 — shadow を付けて plain Shadow 形にする
+   *（1 行・$ 宣言も全部動く）か、ホストから `state: path` で配線してマウントにする。
    */
-  async function mountPlain(stateName: string, componentTag: string) {
-    const host = document.createElement(uniqueTag("bcld-host"));
-    const hostShadow = host.attachShadow({ mode: "open" });
-    hostShadow.innerHTML =
-      `<wcs-state json='{"outer":"untouched"}'></wcs-state>` +
-      `<${componentTag}></${componentTag}>`;
-    document.body.appendChild(host);
+  it("配線なしの Light DOM bind-component は誘導付きで throw すること", async () => {
+    const tag = uniqueTag("bcld-plain-dead");
+    if (!customElements.get(tag)) {
+      customElements.define(tag, class extends HTMLElement {
+        state: Record<string, any> = { message: "Hello" };
+      });
+    }
+    const component = document.createElement(tag);
+    const stateEl = document.createElement("wcs-state") as State;
+    stateEl.setAttribute("bind-component", "state");
+    component.appendChild(stateEl);
+    (stateEl as any)._rootNode = document; // 非接続のまま直接呼ぶ（自動 connect を避ける）
 
-    const hostState = hostShadow.querySelector("wcs-state:not([name])") as State;
-    await hostState.connectedCallbackPromise;
-    const innerState = hostShadow.querySelector(`wcs-state[name="${stateName}"]`) as State;
-    await innerState.connectedCallbackPromise;
-    await State.getBindingsReady(hostShadow);
-    await flush();
-
-    const component = hostShadow.querySelector(componentTag) as HTMLElement;
-    return { host, hostShadow, innerState, component };
-  }
-
-  it("Light DOM でも state 注入で描画されること", async () => {
-    const tag = uniqueTag("bcld-plain");
-    const stateName = `sp${counter}`;
-    defineLightComponent(
-      tag,
-      stateName,
-      { message: "Hello" },
-      `<span class="inner" data-wcs="textContent: message@${stateName}"></span>`,
+    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
+      /plain \(unwired\) Light DOM "bind-component" is not supported/,
     );
-
-    const { host, component } = await mountPlain(stateName, tag);
-
-    expect((component.querySelector(".inner") as HTMLElement).textContent).toBe("Hello");
-
-    host.remove();
-  });
-
-  it("注入された state への書き込みが Light DOM の描画に反映されること", async () => {
-    const tag = uniqueTag("bcld-plain");
-    const stateName = `sp${counter}`;
-    defineLightComponent(
-      tag,
-      stateName,
-      { message: "Hello" },
-      `<span class="inner" data-wcs="textContent: message@${stateName}"></span>`,
-    );
-
-    const { host, innerState, component } = await mountPlain(stateName, tag);
-    const inner = component.querySelector(".inner") as HTMLElement;
-
-    innerState.createState("writable", (s: any) => {
-      s.message = "Updated";
-    });
-    await flush();
-
-    expect(inner.textContent).toBe("Updated");
-
-    host.remove();
-  });
-
-  it("Light DOM の子スコープが自分のリストを for で回せること", async () => {
-    const tag = uniqueTag("bcld-plainlist");
-    const stateName = `sp${counter}`;
-    defineLightComponent(
-      tag,
-      stateName,
-      { items: [{ name: "a" }, { name: "b" }] },
-      `<ul><template data-wcs="for: items@${stateName}">` +
-        `<li class="row" data-wcs="textContent: items.*.name@${stateName}"></li>` +
-        `</template></ul>`,
-    );
-
-    const { host, innerState, component } = await mountPlain(stateName, tag);
-    const rows = () =>
-      Array.from(component.querySelectorAll(".row")).map((el) => el.textContent);
-    expect(rows()).toEqual(["a", "b"]);
-
-    innerState.createState("writable", (s: any) => {
-      s["items.0.name"] = "a2";
-    });
-    await flush();
-    expect(rows()).toEqual(["a2", "b"]);
-
-    host.remove();
-  });
+    // fail-fast でも初期化待ちはウェッジしない（waitForStateInitialize の巻き添え防止）
+    await stateEl.initializePromise;  });
 });
+
+
 
 /**
  * **§1.13（未修正）: mapped な Light DOM は初期化がデッドロックする。**
@@ -186,7 +124,7 @@ describe("bind-component: Light DOM の mapped 形（§1.13）", () => {
     // ホストのパスが張られてから子スコープが自分のパスを張る（§1.13）。
     // Shadow DOM 形と同じく、ホストの getBindingsReady は子スコープを含まない。
     await State.getBindingsReady(hostShadow);
-    const innerState = hostShadow.querySelector(`wcs-state[name="${stateName}"]`) as State;
+    const innerState = (hostShadow.querySelector(componentTag) as Element).querySelector("wcs-state") as State;
     await innerState.connectedCallbackPromise;
     await flush();
 
@@ -200,12 +138,98 @@ describe("bind-component: Light DOM の mapped 形（§1.13）", () => {
     defineLightComponent(
       tag,
       stateName,
-      { message: "" },
+      {}, // v2 R1: 既定値はマッピングを隠す（D19）
       `<span class="inner" data-wcs="textContent: message@${stateName}"></span>`,
     );
 
     const { host, component } = await mountMapped(stateName, tag, "state.message: user.name");
     expect((component.querySelector(".inner") as HTMLElement).textContent).toBe("Alice");
+    host.remove();
+  });
+
+  it("v2: ホスト配線のある Light DOM マウントは name 属性が要らないこと（L1 の unit 版）", async () => {
+    const tag = uniqueTag("bcld-nameless");
+    class NamelessLight extends HTMLElement {
+      state: Record<string, any> = {};
+      connectedCallback() {
+        if (this.childElementCount === 0) {
+          this.innerHTML =
+            `<wcs-state bind-component="state"></wcs-state>` +
+            `<span class="inner" data-wcs="textContent: name"></span>`;
+        }
+      }
+    }
+    customElements.define(tag, NamelessLight);
+    const host = document.createElement(uniqueTag("bcld-host"));
+    const hostShadow = host.attachShadow({ mode: "open" });
+    hostShadow.innerHTML =
+      `<wcs-state json='{"user":{"name":"Alice"}}'></wcs-state>` +
+      `<${tag} data-wcs="state: user"></${tag}>`;
+    document.body.appendChild(host);
+    const hostState = hostShadow.querySelector("wcs-state") as State;
+    await hostState.connectedCallbackPromise;
+    await State.getBindingsReady(hostShadow);
+    const component = hostShadow.querySelector(tag) as HTMLElement;
+    await (component.querySelector("wcs-state") as State).connectedCallbackPromise;
+    await flush();
+
+    expect((component.querySelector(".inner") as HTMLElement).textContent).toBe("Alice");
+    hostState.createState("writable", (s: any) => {
+      s["user.name"] = "Noa";
+    });
+    await flush();
+    expect((component.querySelector(".inner") as HTMLElement).textContent).toBe("Noa");
+
+    host.remove();
+  });
+
+  it("Light DOM の丸ごとマウントは v1 経路のまま、差し替え通知と再接続の読み直しが効くこと", async () => {
+    // v2 の単一ツリー化は Shadow DOM 形だけを切り替える（P3-7 まで）。Light DOM の
+    // ルート規則は v1 の再読込通知（rootReloadPaths / boundPaths）と再接続の
+    // ルート読み直し（_reloadMappedPathsAfterReconnect の rootPaths）に乗り続ける
+    const tag = uniqueTag("bcld-root");
+    const stateName = `sr${counter + 1}`;
+    class LightRoot extends HTMLElement {
+      state: Record<string, any> = {
+        // v1 melt の bindProperty が $updatedCallback を配線する分岐も踏む
+        $updatedCallback(_addresses: unknown[]) {},
+      };
+      connectedCallback() {
+        if (this.childElementCount === 0) {
+          this.innerHTML =
+            `<wcs-state bind-component="state"></wcs-state>` +
+            `<span class="name" data-wcs="textContent: name"></span>`;
+        }
+      }
+    }
+    customElements.define(tag, LightRoot);
+    const { host, hostState, component } = await mountMapped(stateName, tag, "state: user");
+    const inner = () => (component.querySelector(".name") as HTMLElement).textContent;
+
+    expect(inner()).toBe("Alice");
+
+    // 丸ごと差し替え → 値を運ばない再読込通知（子の登録済みパスの先頭セグメントを撃つ）
+    hostState.createState("writable", (s: any) => {
+      s.user = { name: "Dana" };
+    });
+    await flush();
+    await flush();
+    expect(inner()).toBe("Dana");
+
+    // 切断中の書き込みは届かない（no-op）が、再接続でルート規則の全パスを読み直す
+    const hostShadow = host.shadowRoot!;
+    component.remove();
+    await flush();
+    hostState.createState("writable", (s: any) => {
+      s["user.name"] = "Eve";
+    });
+    await flush();
+    hostShadow.appendChild(component);
+    await (component.querySelector("wcs-state") as State).connectedCallbackPromise;
+    await flush();
+    await flush();
+    expect(inner()).toBe("Eve");
+
     host.remove();
   });
 
@@ -215,7 +239,7 @@ describe("bind-component: Light DOM の mapped 形（§1.13）", () => {
     defineLightComponent(
       tag,
       stateName,
-      { message: "" },
+      {}, // v2 R1: 既定値はマッピングを隠す（D19）
       `<span class="inner" data-wcs="textContent: message@${stateName}"></span>`,
     );
 
@@ -239,19 +263,18 @@ describe("bind-component: Light DOM の mapped 形（§1.13）", () => {
     defineLightComponent(
       tag,
       stateName,
-      { message: "" },
+      {}, // v2 R1: 既定値はマッピングを隠す（D19）
       `<span class="inner" data-wcs="textContent: message@${stateName}"></span>`,
     );
 
-    const { host, hostState, innerState, component } = await mountMapped(
+    const { host, hostState, component } = await mountMapped(
       stateName,
       tag,
       "state.message: user.name",
     );
 
-    innerState.createState("writable", (s: any) => {
-      s.message = "Dave";
-    });
+    // v2: 子側の書き込みは公開 chroot（element.state）を通す
+    (component as any).state.message = "Dave";
     await flush();
 
     expect((component.querySelector(".inner") as HTMLElement).textContent).toBe("Dave");
@@ -274,7 +297,7 @@ describe("bind-component: Light DOM の mapped 形（§1.13）", () => {
     defineLightComponent(
       tag,
       stateName,
-      { items: [] },
+      {}, // v2 R1（D19）
       `<ul><template data-wcs="for: items@${stateName}">` +
         `<li class="row" data-wcs="textContent: items.*.name@${stateName}"></li>` +
         `</template></ul>`,
@@ -320,7 +343,7 @@ describe("bind-component: Light DOM の mapped 形（§1.13）", () => {
     defineLightComponent(
       tag,
       stateName,
-      { row: {} },
+      {}, // v2 R1（D19）
       `<span class="inner" data-wcs="textContent: row.name@${stateName}"></span>`,
     );
 
@@ -333,14 +356,14 @@ describe("bind-component: Light DOM の mapped 形（§1.13）", () => {
       `</template>`;
     document.body.appendChild(host);
 
-    const hostState = hostShadow.querySelector("wcs-state:not([name])") as State;
+    const hostState = hostShadow.querySelector("wcs-state") as State;
     await hostState.connectedCallbackPromise;
     await State.getBindingsReady(hostShadow);
-    const innerState = hostShadow.querySelector(`wcs-state[name="${stateName}"]`) as State;
+    const component = hostShadow.querySelector(tag) as HTMLElement;
+    const innerState = component.querySelector("wcs-state") as State;
     await innerState.connectedCallbackPromise;
     await flush();
 
-    const component = hostShadow.querySelector(tag) as HTMLElement;
     expect((component.querySelector(".inner") as HTMLElement).textContent).toBe("G1");
 
     hostState.createState("writable", (s: any) => {
@@ -349,6 +372,84 @@ describe("bind-component: Light DOM の mapped 形（§1.13）", () => {
     await flush();
     expect((component.querySelector(".inner") as HTMLElement).textContent).toBe("G1b");
 
+    host.remove();
+  });
+});
+
+/**
+ * イベントハンドラの添字スコープ（D9 / 設計 §4-4）— Light DOM 形。
+ *
+ * Shadow 形は rootNode（shadowRoot）でマウント記録が引けるが、Light DOM 形の
+ * スコープ根はコンポーネント要素自身。event/handler.ts が rootNode だけで記録を
+ * 引いていた間は、行マウントの Light DOM で外側行の添字がハンドラに漏れていた
+ * （[0, 1] — v2 レビューで実測）。findMountRecordForNode の祖先走査が
+ * Shadow / Light の意味論を揃える回帰テスト。
+ */
+describe("bind-component: Light DOM マウントのイベント添字はスコープ相対", () => {
+  it("内側 for のハンドラは自スコープの添字だけ（外側行の添字は落ちる）", async () => {
+    const tag = uniqueTag("bcld-evt-row");
+    const calls: number[][] = [];
+    class EvtRow extends HTMLElement {
+      state: Record<string, any> = {
+        pick(_e: Event, ...idx: number[]) { calls.push(idx); },
+      };
+      connectedCallback() {
+        if (this.childElementCount === 0) {
+          this.innerHTML =
+            `<wcs-state bind-component="state"></wcs-state>` +
+            `<template data-wcs="for: tags"><button data-wcs="onclick: pick"></button></template>`;
+        }
+      }
+    }
+    customElements.define(tag, EvtRow);
+    const host = document.createElement(uniqueTag("bcld-evt-host"));
+    const hostShadow = host.attachShadow({ mode: "open" });
+    hostShadow.innerHTML =
+      `<wcs-state json='{"users":[{"tags":["x","y"]}]}'></wcs-state>` +
+      `<template data-wcs="for: users"><${tag} data-wcs="state: ."></${tag}></template>`;
+    document.body.appendChild(host);
+    await flush(); await flush(); await flush();
+
+    const buttons = hostShadow.querySelectorAll("button");
+    expect(buttons.length).toBe(2);
+    (buttons[1] as HTMLElement).dispatchEvent(new Event("click"));
+    await flush(); await flush();
+
+    // 翻訳後は users.*.tags.*（2 段）だが、作者から見えるのは tags の添字 1 本だけ
+    expect(calls).toEqual([[1]]);
+    host.remove();
+  });
+
+  it("スコープ直下のハンドラは添字 0 本（境界ホップで借りた外側の行は見えない）", async () => {
+    const tag = uniqueTag("bcld-evt-direct");
+    const calls: number[][] = [];
+    class EvtDirect extends HTMLElement {
+      state: Record<string, any> = {
+        save(_e: Event, ...idx: number[]) { calls.push(idx); },
+      };
+      connectedCallback() {
+        if (this.childElementCount === 0) {
+          this.innerHTML =
+            `<wcs-state bind-component="state"></wcs-state>` +
+            `<button data-wcs="onclick: save"></button>`;
+        }
+      }
+    }
+    customElements.define(tag, EvtDirect);
+    const host = document.createElement(uniqueTag("bcld-evt-host"));
+    const hostShadow = host.attachShadow({ mode: "open" });
+    hostShadow.innerHTML =
+      `<wcs-state json='{"users":[{"n":1},{"n":2}]}'></wcs-state>` +
+      `<template data-wcs="for: users"><${tag} data-wcs="state: ."></${tag}></template>`;
+    document.body.appendChild(host);
+    await flush(); await flush(); await flush();
+
+    const buttons = hostShadow.querySelectorAll("button");
+    expect(buttons.length).toBe(2);
+    (buttons[1] as HTMLElement).dispatchEvent(new Event("click"));
+    await flush(); await flush();
+
+    expect(calls).toEqual([[]]);
     host.remove();
   });
 });

@@ -8,7 +8,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { collectDeclaredBindings } from '../src/devtools/declaredBindings';
 import { setFragmentInfoByUUID } from '../src/structural/fragmentInfoByUUID';
-import { setStateElementByName } from '../src/stateElementByName';
+import { setStateElement } from '../src/stateElementByName';
 import { parseBindTextsForElement } from '../src/bindTextParser/parseBindTextsForElement';
 import { parseBindTextForEmbeddedNode } from '../src/bindTextParser/parseBindTextForEmbeddedNode';
 import type { IStateElement } from '../src/components/types';
@@ -17,7 +17,7 @@ const FRAGMENT_UUID = 'declared-test-uuid-1';
 
 afterEach(() => {
   setFragmentInfoByUUID(FRAGMENT_UUID, document, null);
-  setStateElementByName(document, 'default', null);
+  setStateElement(document, null);
   document.body.innerHTML = '';
 });
 
@@ -26,7 +26,7 @@ describe('collectDeclaredBindings', () => {
     const container = document.createElement('div');
     container.innerHTML = [
       '<span data-wcs="textContent: user.name | uc"></span>',
-      '<input data-wcs="value#ro: price@cart; onclick: submitOrder">',
+      '<input data-wcs="value#ro: price; onclick: submitOrder">',
       '<i data-wcs="brokenNoSeparator"></i>',
     ].join('');
     container.appendChild(document.createComment('@@:count|fix(0)'));
@@ -34,12 +34,12 @@ describe('collectDeclaredBindings', () => {
     document.body.appendChild(container);
 
     const declared = collectDeclaredBindings(container);
-    const summary = declared.map((d) => `${d.origin}:${d.propName}:${d.statePathName}@${d.stateName}`);
+    const summary = declared.map((d) => `${d.origin}:${d.propName}:${d.statePathName}`);
     expect(summary).toEqual([
-      'attribute:textContent:user.name@default',
-      'attribute:value:price@cart',
-      'attribute:onclick:submitOrder@default',
-      'comment:textContent:count@default',
+      'attribute:textContent:user.name',
+      'attribute:value:price',
+      'attribute:onclick:submitOrder',
+      'comment:textContent:count',
     ]);
     // 修飾子・フィルタも正本パーサの解釈そのまま（簡易パーサでは落ちていた情報）
     const twoway = declared.find((d) => d.statePathName === 'price')!;
@@ -53,7 +53,7 @@ describe('collectDeclaredBindings', () => {
     // 行の実体化（importNode）は data-wcs 属性を保持したままクローンを live DOM に
     // 入れる。宣言タプル dedupe により、行数に関係なく宣言 1 件 = エントリ 1 件。
     const stateElement = { name: 'default', setPathInfo: vi.fn() } as unknown as IStateElement;
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
 
     const container = document.createElement('div');
     container.appendChild(document.createComment(`@@wcs-for:${FRAGMENT_UUID}`));
@@ -84,7 +84,7 @@ describe('collectDeclaredBindings', () => {
   it('ネストした構造ディレクティブは到達閉包で 1 回ずつ列挙されること', () => {
     const CHILD_UUID = 'declared-test-uuid-child';
     const stateElement = { name: 'default', setPathInfo: vi.fn() } as unknown as IStateElement;
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
 
     const container = document.createElement('div');
     container.appendChild(document.createComment(`@@wcs-for:${FRAGMENT_UUID}`));
@@ -178,7 +178,7 @@ describe('collectDeclaredBindings', () => {
       name: 'default',
       setPathInfo: vi.fn(),
     } as unknown as IStateElement;
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
 
     const container = document.createElement('div');
     // 構造ディレクティブのアンカーコメント（活性化後の live DOM にはこれだけが残る）

@@ -5,7 +5,7 @@ import { beginPropagationTransaction, extendPropagationContext, getCurrentPropag
 import { isPossibleTwoWay } from "../event/isPossibleTwoWay";
 import { getCustomElement } from "../getCustomElement";
 import { IBindingInfo } from "../types";
-import { recordInjectedKey, rememberOverwrittenObject } from "../webComponent/preCompletionWrites";
+import { recordInjectedKey, rememberOverwrittenObject, rememberOverwrittenValue } from "../webComponent/preCompletionWrites";
 import { IApplyContext } from "./types";
 import { addSsrProperty, trackSsrPropertyNode } from "./ssrPropertyStore";
 
@@ -122,7 +122,7 @@ export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyCon
         // 同じ edge を再度通ろうとした場合だけ抑止する（設計書 §4 規則 2）。
         // 書き込みは WriteReceipt scope で包み、setter が同期 dispatch する
         // event が confirmation / 正規化を判定できるようにする（規則 3）。
-        const wireId = getWireId(element, firstSegment, binding.stateName, binding.statePathName);
+        const wireId = getWireId(element, firstSegment, binding.statePathName);
         const edgeId = getEdgeId(wireId, "to-element");
         const baseContext = _context?.propagationContextByBinding?.get(binding)
           ?? getCurrentPropagationContext()
@@ -187,8 +187,16 @@ export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyCon
     // キーを作る（積み）ことを控える。R1 の衝突報告はこのキーを作者のものとして扱わない
     // （webComponent/preCompletionWrites.ts）
     if (propSegments.length === 2 && typeof subObject === 'object' && subObject !== null
-      && !(lastSegment in subObject) && getCustomElement(element) !== null) {
-      recordInjectedKey(element, firstSegment, lastSegment);
+      && getCustomElement(element) !== null) {
+      if (!(lastSegment in subObject)) {
+        recordInjectedKey(element, firstSegment, lastSegment);
+      } else {
+        // 既存キーの上書き: 作者の値を控える（v2 の厳格 R1 が snapshot 前に復元する）。
+        // 完了後の (element, stateProp) への適用はここへルーティングされない
+        //（applyChangeToWebComponent の no-op へ行く — apply/applyChange.ts）ので、
+        // ここに来る上書きは常に完了前＝控えの対象で良い
+        rememberOverwrittenValue(element, firstSegment, lastSegment, subObject[lastSegment]);
+      }
     }
     try {
       subObject[lastSegment] = newValue;

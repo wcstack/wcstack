@@ -10,12 +10,12 @@ import { WcsDiagnosticCode } from '../src/core/diagnostics';
 const slice = (html: string, d: { start: number; end: number }) => html.slice(d.start, d.end);
 
 describe('validateNamedState', () => {
-  it('<wcs-state name="x"> の name 属性値に warning を出し、mount= を指すこと', () => {
+  it('<wcs-state name="x"> の name 属性値に error を出し、mount= を指すこと', () => {
     const html = `<wcs-state name="cart" json='{"total":1}'></wcs-state>`;
     const diags = validateNamedState(html, 'data-wcs');
     expect(diags).toHaveLength(1);
     expect(diags[0].code).toBe(WcsDiagnosticCode.NamedStateDeprecated);
-    expect(diags[0].severity).toBe('warning');
+    expect(diags[0].severity).toBe('error');
     expect(slice(html, diags[0])).toBe('cart');
     expect(diags[0].message).toContain('mount="cart"');
     expect(diags[0].message).toContain('"cart.<path>"');
@@ -28,9 +28,11 @@ describe('validateNamedState', () => {
     expect(slice(bare, validateNamedState(bare, 'data-wcs')[0])).toBe('cart');
   });
 
-  it('Light DOM の bind-component（name 必須）には出さないこと', () => {
+  it('bind-component でも name 属性は error（v1 の Light DOM name 必須は撤去済み）', () => {
     const html = `<my-light><wcs-state bind-component="state" name="my-light"></wcs-state></my-light>`;
-    expect(validateNamedState(html, 'data-wcs')).toHaveLength(0);
+    const diags = validateNamedState(html, 'data-wcs');
+    expect(diags).toHaveLength(1);
+    expect(diags[0].severity).toBe('error');
   });
 
   it('name の無い <wcs-state> には出さないこと', () => {
@@ -38,19 +40,20 @@ describe('validateNamedState', () => {
     expect(validateNamedState(html, 'data-wcs')).toHaveLength(0);
   });
 
-  it('data-wcs の path@name に warning を出し、接頭辞への置き換えを指すこと', () => {
+  it('data-wcs の path@name に error を出し、接頭辞への置き換えを指すこと', () => {
     const html = `<div data-wcs="textContent: total@cart; class.on: flag"></div>`;
     const diags = validateNamedState(html, 'data-wcs');
     expect(diags).toHaveLength(1);
     expect(slice(html, diags[0])).toBe('@cart');
-    expect(diags[0].message).toContain('"@cart"');
+    expect(diags[0].severity).toBe('error');
+    expect(diags[0].message).toContain('v2 で撤去');
     expect(diags[0].message).toContain('"cart.<path>"');
   });
 
   it('英語ロケールでもメッセージが移行先を指すこと', () => {
     const html = `<div data-wcs="textContent: total@cart"></div>`;
     const diags = validateNamedState(html, 'data-wcs', 'wcs-state', 'en');
-    expect(diags[0].message).toContain('deprecated');
+    expect(diags[0].message).toContain('removed in v2');
     expect(diags[0].message).toContain('"cart.<path>"');
   });
 
@@ -80,11 +83,20 @@ describe('validateNamedState', () => {
     expect(slice(html, diags[0])).toBe('@user');
   });
 
+  it('コメントバインディング <!--@@: path@name--> にも出ること（第 3 チャネル）', () => {
+    // mustache は実 DOM でこの形へ変換される — 直書きも同じ runtime parse error
+    const html = `<p><!--@@: total@cart--></p><p><!--@@: count--></p>`;
+    const diags = validateNamedState(html, 'data-wcs');
+    expect(diags).toHaveLength(1);
+    expect(diags[0].severity).toBe('error');
+    expect(slice(html, diags[0])).toBe('@cart');
+  });
+
   it('validateDocument が同じ code / severity で含めること', () => {
     const html = `<wcs-state name="cart" json='{"total":1}'></wcs-state><div data-wcs="textContent: total@cart"></div>`;
     const diags = validateDocument(html).filter((d) => d.code === WcsDiagnosticCode.NamedStateDeprecated);
     expect(diags).toHaveLength(2);
-    expect(diags.every((d) => d.severity === 'warning')).toBe(true);
+    expect(diags.every((d) => d.severity === 'error')).toBe(true);
   });
 });
 

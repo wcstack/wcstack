@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../src/stateElementByName', () => ({
-  getStateElementByName: vi.fn()
+  getStateElement: vi.fn()
 }));
 vi.mock('../src/apply/applyChange', () => ({
   applyChange: vi.fn()
@@ -14,7 +14,7 @@ vi.mock('../src/list/lastListValueByAbsoluteStateAddress', () => ({
 }));
 
 import { applyChangeFromBindings } from '../src/apply/applyChangeFromBindings';
-import { getStateElementByName } from '../src/stateElementByName';
+import { getStateElement } from '../src/stateElementByName';
 import { applyChange } from '../src/apply/applyChange';
 import { getRootNodeByFragment } from '../src/apply/rootNodeByFragment';
 import { setLastListValueByAbsoluteStateAddress } from '../src/list/lastListValueByAbsoluteStateAddress';
@@ -24,7 +24,7 @@ import { updatedCallbackSymbol } from '../src/proxy/symbols';
 import type { IBindingInfo } from '../src/types';
 import { setDevtoolsSink } from '../src/devtools/sink';
 
-const getStateElementByNameMock = vi.mocked(getStateElementByName);
+const getStateElementByNameMock = vi.mocked(getStateElement);
 const applyChangeMock = vi.mocked(applyChange);
 const getRootNodeByFragmentMock = vi.mocked(getRootNodeByFragment);
 const setLastListValueMock = vi.mocked(setLastListValueByAbsoluteStateAddress);
@@ -86,21 +86,18 @@ describe('applyChangeFromBindings', () => {
     expect(applyChangeMock).toHaveBeenCalledTimes(2);
   });
 
-  it('stateNameが変わる場合はcreateStateが分割されること', () => {
+  it('ルートが変わる場合はグループが分割されること', () => {
     const stateA = createStateProxy({ a: 1 });
-    const stateB = createStateProxy({ b: 2 });
-    const createStateMockA = vi.fn((_mutability: string, callback: (state: any) => void) => callback(stateA));
-    const createStateMockB = vi.fn((_mutability: string, callback: (state: any) => void) => callback(stateB));
+    const createStateMock = vi.fn((_mutability: string, callback: (state: any) => void) => callback(stateA));
 
-    getStateElementByNameMock.mockImplementation((_rootNode: Node, name: string) => {
-      if (name === 'app') return { createState: createStateMockA } as any;
-      if (name === 'app2') return { createState: createStateMockB } as any;
-      return null as any;
-    });
+    getStateElementByNameMock.mockReturnValue({ createState: createStateMock } as any);
     const node1 = document.createElement('div');
-    const node2 = document.createElement('span');
     document.body.appendChild(node1);
-    document.body.appendChild(node2);
+    const host = document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'open' });
+    const node2 = document.createElement('span');
+    shadow.appendChild(node2);
+    document.body.appendChild(host);
     const bindingInfos = [
       createBindingInfo('app', 'a', node1),
       createBindingInfo('app2', 'b', node2)
@@ -108,8 +105,8 @@ describe('applyChangeFromBindings', () => {
 
     applyChangeFromBindings(bindingInfos);
 
-    expect(createStateMockA).toHaveBeenCalledTimes(1);
-    expect(createStateMockB).toHaveBeenCalledTimes(1);
+    // ルート境界で createState は 2 回に割れる
+    expect(createStateMock).toHaveBeenCalledTimes(2);
     expect(applyChangeMock).toHaveBeenCalledTimes(2);
   });
 
@@ -120,7 +117,7 @@ describe('applyChangeFromBindings', () => {
     document.body.appendChild(node);
     const bindingInfos = [createBindingInfo('missing', 'a', node)];
 
-    expect(() => applyChangeFromBindings(bindingInfos)).toThrow(/State element with name "missing" not found for binding/);
+    expect(() => applyChangeFromBindings(bindingInfos)).toThrow(/No state tree found on this root for binding/);
     expect(applyChangeMock).not.toHaveBeenCalled();
   });
 
@@ -422,7 +419,6 @@ describe('applyChangeFromBindings: バッチ内のエラー隔離', () => {
 
     expect(events).toEqual([{
       type: 'state:binding-apply-error',
-      stateName: 'app',
       path: 'p0',
       bindingType: 'text',
       error: cause,

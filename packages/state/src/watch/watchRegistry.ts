@@ -23,6 +23,15 @@ import type { IStateElement } from "../components/types";
 import type { IWatchEntry } from "./types";
 
 const registryByStateElement: WeakMap<IStateElement, Map<string, IWatchEntry>> = new WeakMap();
+
+/**
+ * ボリュームが追記した watch entry（webComponent/volume.ts — 接頭辞翻訳済み・
+ * ハンドラは chroot 包装済み）。ルート自身の宣言（上の registry・_state 再 set で
+ * 丸ごと差し替わる）とはライフサイクルが違うため別台帳にする。同じ翻訳パスに
+ * ルートの宣言とボリュームの宣言が並ぶことも、複数ボリュームが同名パスに並ぶことも
+ * ある（配列・登録順）。
+ */
+const volumeEntriesByStateElement: WeakMap<IStateElement, Map<string, IWatchEntry[]>> = new WeakMap();
 const activeStateElements = new Set<IStateElement>();
 
 /**
@@ -80,6 +89,29 @@ export function deactivateWatch(stateElement: IStateElement): void {
 export function clearWatchRegistry(stateElement: IStateElement): void {
   activeStateElements.delete(stateElement);
   registryByStateElement.delete(stateElement);
+}
+
+/** ボリュームの watch entry を追記する（置換しない）。 */
+export function addVolumeWatchEntries(stateElement: IStateElement, entries: readonly IWatchEntry[]): void {
+  let byPath = volumeEntriesByStateElement.get(stateElement);
+  if (typeof byPath === "undefined") {
+    byPath = new Map();
+    volumeEntriesByStateElement.set(stateElement, byPath);
+  }
+  for (const entry of entries) {
+    const list = byPath.get(entry.path);
+    if (typeof list === "undefined") {
+      byPath.set(entry.path, [entry]);
+    } else {
+      list.push(entry);
+    }
+  }
+}
+
+const EMPTY_VOLUME_ENTRIES: ReadonlyMap<string, readonly IWatchEntry[]> = new Map();
+
+export function getVolumeWatchEntries(stateElement: IStateElement): ReadonlyMap<string, readonly IWatchEntry[]> {
+  return volumeEntriesByStateElement.get(stateElement) ?? EMPTY_VOLUME_ENTRIES;
 }
 
 export const __private__ = {

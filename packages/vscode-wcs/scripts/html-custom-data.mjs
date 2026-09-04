@@ -88,7 +88,7 @@ export function buildHtmlCustomData(tags) {
           kind: "markdown",
           value: [
             "wcstack binding attribute. Each expression is",
-            "`property#modifier: path@state | filter(args)` and `;` separates multiple bindings.",
+            "`property#modifier: path | filter(args)` and `;` separates multiple bindings.",
             "Structural directives (`for:` / `if:` / `elseif:` / `else`) go on `<template>`.",
           ].join("\n"),
         },

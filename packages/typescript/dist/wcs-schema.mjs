@@ -354,40 +354,77 @@ function generateStateSchema(file, options = {}) {
  *
  * The manifest is a **derived artifact** (D9): the TypeScript type is the source
  * of truth, `wcs-schema emit` writes the manifest, and `wcs-schema check`
- * detects drift between the two in CI. `--merge` replaces exactly one
- * `states[name].stateSchema` and keeps everything else (other states, filters,
- * listContexts) — a hand-written schema for the same state does not survive,
- * by design: there is no implicit merge in the sidecar spec (§5).
+ * detects drift between the two in CI.
+ *
+ * v2 (schemaVersion 2): the application namespace carries a **single**
+ * `stateSchema` — one state tree per root, no name dimension
+ * (docs/state-mount-design.md D15). A volume (`<wcs-state mount="path">`)
+ * contributes a **subtree**: `--mount=<path>` merges the module's schema under
+ * that path inside the single `stateSchema`. `--merge` keeps everything else in
+ * an existing manifest (filters, listContexts); a hand-written schema for the
+ * same slot does not survive, by design: there is no implicit merge in the
+ * sidecar spec (§5).
  */
 const APPLICATION_MANIFEST_FILENAME = "wcstack.manifest.json";
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const APPLICATION_NAMESPACE = "wcstack.application";
 /**
- * Create the manifest object for one state, or graft the state into `existing`
- * (a parsed manifest object; envelope fields are filled in when absent).
+ * Create the manifest object for the state tree, or graft into `existing`
+ * (a parsed manifest object; envelope fields are normalized to v2 — a v1
+ * manifest's `states` map does not survive, its replacement is exactly this
+ * regeneration path).
+ *
+ * `mountPath === null` replaces the whole `stateSchema`; a mount path merges
+ * the schema as a subtree at that path (intermediate object nodes are created).
  */
-function buildManifest(stateName, schema, existing) {
+function buildManifest(mountPath, schema, existing) {
     const base = existing !== null && typeof existing === "object" && !Array.isArray(existing)
         ? { ...existing }
         : {};
-    base.schemaVersion = typeof base.schemaVersion === "number" ? base.schemaVersion : SCHEMA_VERSION;
+    base.schemaVersion = SCHEMA_VERSION;
     base.kind = "application";
     const extensions = base.manifestExtensions !== null && typeof base.manifestExtensions === "object" && !Array.isArray(base.manifestExtensions)
         ? { ...base.manifestExtensions }
         : {};
     const nsRaw = extensions[APPLICATION_NAMESPACE];
     const ns = nsRaw !== null && typeof nsRaw === "object" && !Array.isArray(nsRaw) ? { ...nsRaw } : {};
-    ns.version = typeof ns.version === "number" ? ns.version : SCHEMA_VERSION;
-    const statesRaw = ns.states;
-    const states = statesRaw !== null && typeof statesRaw === "object" && !Array.isArray(statesRaw) ? { ...statesRaw } : {};
-    states[stateName] = { stateSchema: schema };
-    ns.states = states;
+    ns.version = SCHEMA_VERSION;
+    // v1 leftovers: the name dimension is gone; regeneration does not carry it
+    delete ns.states;
+    if (mountPath === null) {
+        ns.stateSchema = schema;
+    }
+    else {
+        const rootRaw = ns.stateSchema;
+        const root = rootRaw !== null && typeof rootRaw === "object" && !Array.isArray(rootRaw)
+            ? { ...rootRaw }
+            : { type: "object" };
+        let node = root;
+        const segments = mountPath.split(".");
+        for (let i = 0; i < segments.length; i++) {
+            const properties = node.properties !== null && typeof node.properties === "object" && !Array.isArray(node.properties)
+                ? { ...node.properties }
+                : {};
+            node.properties = properties;
+            if (i === segments.length - 1) {
+                properties[segments[i]] = schema;
+                break;
+            }
+            const childRaw = properties[segments[i]];
+            const child = childRaw !== null && typeof childRaw === "object" && !Array.isArray(childRaw)
+                ? { ...childRaw }
+                : { type: "object" };
+            properties[segments[i]] = child;
+            node = child;
+        }
+        ns.stateSchema = root;
+    }
     extensions[APPLICATION_NAMESPACE] = ns;
     base.manifestExtensions = extensions;
     return base;
 }
-/** Read `states[name].stateSchema` from a parsed manifest object, or undefined. */
-function readStateSchema(manifest, stateName) {
+/** Read the single `stateSchema` from a parsed manifest object, or undefined. */
+function readStateSchema(manifest) {
     if (manifest === null || typeof manifest !== "object")
         return undefined;
     const extensions = manifest.manifestExtensions;
@@ -396,13 +433,38 @@ function readStateSchema(manifest, stateName) {
     const ns = extensions[APPLICATION_NAMESPACE];
     if (ns === null || typeof ns !== "object")
         return undefined;
-    const states = ns.states;
-    if (states === null || typeof states !== "object")
-        return undefined;
-    const entry = states[stateName];
-    if (entry === null || typeof entry !== "object")
-        return undefined;
-    return entry.stateSchema;
+    return ns.stateSchema;
+}
+/**
+ * True for a v1-shaped manifest (`schemaVersion: 1` or a `states` map in the
+ * application namespace). `check` uses it to point at the regeneration path
+ * instead of reporting a confusing "missing stateSchema".
+ */
+function isV1Manifest(manifest) {
+    if (manifest === null || typeof manifest !== "object")
+        return false;
+    if (manifest.schemaVersion === 1)
+        return true;
+    const extensions = manifest.manifestExtensions;
+    if (extensions === null || typeof extensions !== "object")
+        return false;
+    const ns = extensions[APPLICATION_NAMESPACE];
+    if (ns === null || typeof ns !== "object")
+        return false;
+    return ns.states !== undefined;
+}
+/** Navigate `properties` by mount-path segments; undefined when the subtree is absent. */
+function subtreeAt(schema, mountPath) {
+    let node = schema;
+    for (const segment of mountPath.split(".")) {
+        if (node === null || typeof node !== "object")
+            return undefined;
+        const properties = node.properties;
+        if (properties === null || typeof properties !== "object")
+            return undefined;
+        node = properties[segment];
+    }
+    return node;
 }
 /** JSON with object keys sorted at every level — the canonical form used for comparison. */
 function stableStringify(value) {
@@ -421,11 +483,12 @@ function sortKeys(value) {
     return value;
 }
 /**
- * Compare the schema generated from the type with the one stored in `manifestText`.
+ * Compare the schema generated from the type with the one stored in `manifestText`
+ * (the whole tree, or the subtree at `mountPath`).
  * `changes` lists JSON pointers: `+ ptr` (only in generated), `- ptr` (only in
  * manifest), `~ ptr` (both, different value).
  */
-function compareStateSchema(manifestText, stateName, generated) {
+function compareStateSchema(manifestText, mountPath, generated) {
     let parsed;
     try {
         parsed = JSON.parse(manifestText);
@@ -433,7 +496,12 @@ function compareStateSchema(manifestText, stateName, generated) {
     catch (e) {
         return { kind: "broken", message: e.message };
     }
-    const stored = readStateSchema(parsed, stateName);
+    if (isV1Manifest(parsed))
+        return { kind: "v1-manifest" };
+    let stored = readStateSchema(parsed);
+    if (stored !== undefined && mountPath !== null) {
+        stored = subtreeAt(stored, mountPath);
+    }
     if (stored === undefined)
         return { kind: "missing-state" };
     if (stableStringify(stored) === stableStringify(generated))
@@ -499,7 +567,7 @@ function loadSchemaCore() {
     return cached;
 }
 
-var version = "1.33.0";
+var version = "1.32.0";
 var pkg = {
 	version: version};
 
@@ -508,26 +576,28 @@ const VERSION = pkg.version;
 /**
  * wcsSchema.ts — the `wcs-schema` command.
  *
- *   wcs-schema emit  <state.ts|state.js> [--state=default] [--out=wcstack.manifest.json] [--merge] [--tsconfig=<path>] [--max-depth=5]
- *   wcs-schema check <state.ts|state.js> [--state=default] [--manifest=wcstack.manifest.json] [--tsconfig=<path>] [--max-depth=5]
+ *   wcs-schema emit  <state.ts|state.js> [--mount=<path>] [--out=wcstack.manifest.json] [--merge] [--tsconfig=<path>] [--max-depth=5]
+ *   wcs-schema check <state.ts|state.js> [--mount=<path>] [--manifest=wcstack.manifest.json] [--tsconfig=<path>] [--max-depth=5]
  *
  * exit codes
  *   emit : 0 written / 2 usage, unreadable file, syntax error, or the generated manifest failed its self-check
  *   check: 0 manifest matches the type / 1 drift (changes listed on stderr) / 2 usage, unreadable file, broken or state-less manifest
  *
  * `--out=-` prints the manifest to stdout instead of writing a file. `--merge`
- * keeps everything in an existing manifest except `states[<name>].stateSchema`.
+ * keeps everything in an existing manifest except the slot being written —
+ * the whole `stateSchema`, or the subtree at `--mount=<path>` (a volume's type
+ * merges as a subtree of the single tree, docs/state-mount-design.md D15).
  *
  * The generated artifact is always run through the validator core's
  * `validateManifestArtifact` (dist/schema-core.cjs, built from vscode-wcs) so a
  * generator bug can never write a manifest the validator would reject.
  */
-const USAGE = "usage: wcs-schema emit  <state.ts|state.js> [--state=default] [--out=wcstack.manifest.json] [--merge] [--tsconfig=<path>] [--max-depth=5]\n" +
-    "       wcs-schema check <state.ts|state.js> [--state=default] [--manifest=wcstack.manifest.json] [--tsconfig=<path>] [--max-depth=5]\n";
+const USAGE = "usage: wcs-schema emit  <state.ts|state.js> [--mount=<path>] [--out=wcstack.manifest.json] [--merge] [--tsconfig=<path>] [--max-depth=5]\n" +
+    "       wcs-schema check <state.ts|state.js> [--mount=<path>] [--manifest=wcstack.manifest.json] [--tsconfig=<path>] [--max-depth=5]\n";
 function parseArgs(argv) {
     let command;
     let file;
-    let state = "default";
+    let mount = null;
     let out = APPLICATION_MANIFEST_FILENAME;
     let manifest = APPLICATION_MANIFEST_FILENAME;
     let merge = false;
@@ -539,8 +609,10 @@ function parseArgs(argv) {
             command ??= "version";
         else if (arg === "--help" || arg === "-h")
             command ??= "help";
+        else if (arg.startsWith("--mount="))
+            mount = arg.slice("--mount=".length);
         else if (arg.startsWith("--state="))
-            state = arg.slice("--state=".length);
+            unknown.push(arg); // v2: 名前次元は撤去 — --mount=<path> へ
         else if (arg.startsWith("--out="))
             out = arg.slice("--out=".length);
         else if (arg.startsWith("--manifest="))
@@ -560,7 +632,7 @@ function parseArgs(argv) {
         else
             unknown.push(arg);
     }
-    return { command, file, state, out, manifest, merge, tsconfig, maxDepth, unknown };
+    return { command, file, mount, out, manifest, merge, tsconfig, maxDepth, unknown };
 }
 function main(argv, io = defaultIo()) {
     const args = parseArgs(argv);
@@ -573,8 +645,12 @@ function main(argv, io = defaultIo()) {
         return 0;
     }
     if (args.command === undefined || args.file === undefined || args.unknown.length > 0) {
-        if (args.unknown.length > 0)
+        if (args.unknown.some((arg) => arg.startsWith("--state="))) {
+            io.stderr('--state was removed in v2 — there is a single state tree. Use --mount=<path> for a volume, or no flag for the root tree.\n');
+        }
+        else if (args.unknown.length > 0) {
             io.stderr(`unknown argument(s): ${args.unknown.join(" ")}\n`);
+        }
         io.stderr(USAGE);
         return 2;
     }
@@ -582,8 +658,8 @@ function main(argv, io = defaultIo()) {
         io.stderr("--max-depth must be a positive integer\n");
         return 2;
     }
-    if (!/^[A-Za-z_$][\w$-]*$/.test(args.state)) {
-        io.stderr(`--state must be a state name (got "${args.state}")\n`);
+    if (args.mount !== null && !/^[A-Za-z_$][\w$-]*(\.[A-Za-z_$][\w$-]*)*$/.test(args.mount)) {
+        io.stderr(`--mount must be a static tree path (got "${args.mount}")\n`);
         return 2;
     }
     let generated;
@@ -602,7 +678,7 @@ function emit(args, schema, io) {
     const toStdout = args.out === "-";
     const outPath = toStdout ? undefined : resolve(io.cwd(), args.out);
     let existing;
-    if (args.merge && outPath !== undefined && existsSync(outPath)) {
+    if ((args.merge || args.mount !== null) && outPath !== undefined && existsSync(outPath)) {
         try {
             existing = JSON.parse(readFileSync(outPath, "utf8"));
         }
@@ -611,7 +687,7 @@ function emit(args, schema, io) {
             return 2;
         }
     }
-    const manifest = buildManifest(args.state, schema, existing);
+    const manifest = buildManifest(args.mount, schema, existing);
     const text = `${JSON.stringify(manifest, null, 2)}\n`;
     // Self-check: the validator must accept what the generator wrote.
     const core = loadSchemaCore();
@@ -631,7 +707,7 @@ function emit(args, schema, io) {
         return 0;
     }
     writeFileSync(outPath, text, "utf8");
-    io.stderr(`wrote ${args.out} (state "${args.state}")\n`);
+    io.stderr(`wrote ${args.out} (${args.mount === null ? "state tree" : `mount "${args.mount}"`})\n`);
     return 0;
 }
 function check(args, schema, io) {
@@ -640,19 +716,23 @@ function check(args, schema, io) {
         io.stderr(`cannot read ${args.manifest}: no such file (run \`wcs-schema emit\` first)\n`);
         return 2;
     }
-    const comparison = compareStateSchema(readFileSync(manifestPath, "utf8"), args.state, schema);
+    const slot = args.mount === null ? "state tree" : `mount "${args.mount}"`;
+    const comparison = compareStateSchema(readFileSync(manifestPath, "utf8"), args.mount, schema);
     switch (comparison.kind) {
         case "same":
-            io.stderr(`${args.manifest}: state "${args.state}" is up to date\n`);
+            io.stderr(`${args.manifest}: ${slot} is up to date\n`);
             return 0;
         case "missing-state":
-            io.stderr(`${args.manifest}: state "${args.state}" has no stateSchema (run \`wcs-schema emit --merge\`)\n`);
+            io.stderr(`${args.manifest}: ${slot} has no stateSchema (run \`wcs-schema emit --merge\`)\n`);
+            return 2;
+        case "v1-manifest":
+            io.stderr(`${args.manifest}: schemaVersion 1 manifest (states[name]) — the name dimension was removed in v2. Regenerate with \`wcs-schema emit --out=${args.manifest}\` (single stateSchema, schemaVersion 2)\n`);
             return 2;
         case "broken":
             io.stderr(`${args.manifest}: broken JSON: ${comparison.message}\n`);
             return 2;
         case "differs":
-            io.stderr(`${args.manifest}: state "${args.state}" is out of date (${comparison.changes.length} change(s)):\n`);
+            io.stderr(`${args.manifest}: ${slot} is out of date (${comparison.changes.length} change(s)):\n`);
             for (const change of comparison.changes)
                 io.stderr(`  ${change}\n`);
             io.stderr(`run \`wcs-schema emit --merge --out=${args.manifest}\` to update it\n`);

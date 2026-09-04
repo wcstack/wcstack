@@ -60,20 +60,16 @@ Without a contract, a path the validator cannot resolve is only a **warning** (`
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "kind": "application",
   "manifestExtensions": {
     "wcstack.application": {
-      "version": 1,
-      "states": {
-        "default": {
-          "stateSchema": {
-            "type": "object",
-            "properties": {
-              "count": { "type": "number" },
-              "users": { "type": "array", "items": { "type": "object", "properties": { "name": { "type": "string" } } } }
-            }
-          }
+      "version": 2,
+      "stateSchema": {
+        "type": "object",
+        "properties": {
+          "count": { "type": "number" },
+          "users": { "type": "array", "items": { "type": "object", "properties": { "name": { "type": "string" } } } }
         }
       }
     }
@@ -82,7 +78,7 @@ Without a contract, a path the validator cannot resolve is only a **warning** (`
 ```
 
 - **Discovery**: the nearest `wcstack.manifest.json` walking up from the HTML file is used automatically — nothing to pass on the command line. Passing `*.manifest.json` arguments that contain an `application` artifact replaces discovery for the whole run. The VS Code extension discovers the same file, so IDE and CLI agree.
-- **Effect**: for a state that has a `stateSchema`, a bound path that the schema definitely lacks is `wcs/path-nonexistent` (**error**, exit `1`); `for:` on a non-array is `wcs/path-type-mismatch` (**error**). Paths the schema leaves open (a bare `{}`) stay silent, and methods / getters / `$listKeys` from the inline script still count as existing. States without a schema are unchanged.
+- **Effect**: when a `stateSchema` is declared, a bound path that the schema definitely lacks is `wcs/path-nonexistent` (**error**, exit `1`); `for:` on a non-array is `wcs/path-type-mismatch` (**error**). Paths the schema leaves open (a bare `{}`) stay silent, and methods / getters / `$listKeys` from the inline script still count as existing. Without a `stateSchema`, behavior is unchanged.
 - **Where the schema comes from**: write it by hand (only the JSON-Schema subset `type / properties / required / items / enum / const / anyOf / $defs / $ref` is accepted), or generate it from a TypeScript state file with `wcs-schema` (`@wcstack/typescript`). The manifest is a derived artifact — keep it in sync with `wcs-schema check` in CI.
 
 ## Use in generate–validate–fix loops

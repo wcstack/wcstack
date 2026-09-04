@@ -102,8 +102,13 @@ describe('waitForReady', () => {
       document.body.innerHTML = `<${name}></${name}>`;
       await waitForReady(document as unknown as ParentNode & Node, { maxIterations: 3 });
       expect(added).toBe(3);
-      // 残りの世代を流し切ってから window を閉じる
-      await new Promise((r) => setTimeout(r, 30));
+      // 残りの世代を流し切ってから window を閉じる。固定 sleep（旧 30ms）は
+      // 並列実行の負荷で 1 世代の setTimeout(0) が遅れると届かずフレークするため、
+      // 上限付きポーリングで決定的に待つ（既知の揺れの修理・2026-09-04）
+      const deadline = Date.now() + 2000;
+      while (added < 6 && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
       expect(added).toBe(6);
     });
   });

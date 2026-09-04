@@ -26,15 +26,15 @@ export function validateTemplateSyntax(
   bindAttrName: string = "data-wcs",
   locale?: string,
   fileReader?: FileReader,
-  applicationStates?: ReadonlyMap<string, JsonSchemaNode>,
+  applicationSchema?: JsonSchemaNode,
 ): BindingDiagnostic[] {
   const diagnostics: BindingDiagnostic[] = [];
   const msgs = getMessages(locale);
 
   // schema 由来の候補も合流させる（bindingValidator と同じ規則・D12）。mustache は
   // default state のみを検証するので、存在判定の三値化も default の schema に対して行う。
-  const allPaths = mergeSchemaCandidates(getStatePathsFromHtml(html, stateTagName, fileReader), applicationStates);
-  const defaultSchema = applicationStates?.get("default");
+  const allPaths = mergeSchemaCandidates(getStatePathsFromHtml(html, stateTagName, fileReader), applicationSchema);
+  const defaultSchema = applicationSchema;
   /** 存在しなければ code / severity / message を返す（stateSchema 宣言時は三値判定）。 */
   const missingVerdict = (
     path: string,
@@ -53,7 +53,7 @@ export function validateTemplateSyntax(
   };
   if (allPaths.length === 0) return diagnostics;
 
-  const defaultPaths = allPaths.filter((p) => p.stateName === "default");
+  const defaultPaths = allPaths;
   const pathSet = new Set(defaultPaths.map((p) => p.path));
   const filterNameSet = new Set(BUILTIN_FILTERS.map((f) => f.name));
 
@@ -84,10 +84,12 @@ export function validateTemplateSyntax(
     if (!item.expression) continue;
 
     const parts = item.expression.split("|");
-    let pathPart = (parts[0] || "").trim();
+    const pathPart = (parts[0] || "").trim();
 
-    const atIdx = pathPart.indexOf("@");
-    if (atIdx !== -1) pathPart = pathPart.slice(0, atIdx).trim();
+    // `path@name`（名前付き State セレクタ）は v2 で撤去 — runtime では parse error。
+    // namedStateValidator が同位置へ error を出すので、ここで `@` 前を strip して
+    // 受理すると診断が二重になる上、存在しないパスとして誤報しうる — 検証しない
+    if (pathPart.includes("@")) continue;
 
     const insideFor = item.insideTemplate && isInsideForTemplate(html, item.matchStart, bindAttrName);
 
@@ -112,7 +114,8 @@ export function validateTemplateSyntax(
       }
       // for の**段数**を超える階数（`matrix.*.*` / `$2`）。上の 2 つは「for の外か」の
       // 二値しか見ておらず、深さ方向は未検査だった。available === 0 は上が担う。
-      if (insideFor && !pathPart.startsWith(".") && !pathPart.includes("@")) {
+      //（`@` 入りの式は上で continue 済み）
+      if (insideFor && !pathPart.startsWith(".")) {
         const indexMatch = /^\$(\d+)$/.exec(pathPart);
         const needed = indexMatch !== null
           ? Number(indexMatch[1])

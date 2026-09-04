@@ -791,7 +791,6 @@ var MAX_WILDCARD_DEPTH = 128;
 var BINDING_SEPARATOR = ";";
 var PROP_VALUE_SEPARATOR = ":";
 var MODIFIER_SEPARATOR = "#";
-var STATE_NAME_SEPARATOR = "@";
 var FILTER_SEPARATOR = "|";
 var MODIFIER_PREVENT = "prevent";
 var MODIFIER_STOP = "stop";
@@ -849,7 +848,6 @@ function getWcsManifest() {
         binding: BINDING_SEPARATOR,
         propValue: PROP_VALUE_SEPARATOR,
         modifier: MODIFIER_SEPARATOR,
-        stateName: STATE_NAME_SEPARATOR,
         filter: FILTER_SEPARATOR
       },
       // 正本 STRUCTURAL_BINDING_TYPE_SET から導出（手書きの二重定義を排除）。
@@ -922,7 +920,7 @@ var RESERVED_COMMAND_TOKENS_KEY = "$commandTokens";
 var RESERVED_EVENT_TOKENS_KEY = "$eventTokens";
 var RESERVED_LIST_KEYS_KEY = "$listKeys";
 var RESERVED_WATCH_KEY = "$watch";
-function analyzeStatePaths(scriptContent, stateName = "default") {
+function analyzeStatePaths(scriptContent) {
   const objectContent = extractDefaultExportObject(scriptContent);
   if (!objectContent) return [];
   const paths = [];
@@ -931,27 +929,27 @@ function analyzeStatePaths(scriptContent, stateName = "default") {
   const pendingListKeys = [];
   for (const prop of topLevelProps) {
     if (prop.name.startsWith("$")) {
-      collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys, stateName);
+      collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys);
       continue;
     }
     if (prop.kind === "method") {
-      paths.push({ path: prop.name, kind: "method", stateName });
+      paths.push({ path: prop.name, kind: "method" });
       continue;
     }
     if (prop.kind === "getter") {
-      if (!paths.some((p) => p.stateName === stateName && p.path === prop.name)) {
-        paths.push({ path: prop.name, kind: "computed", stateName });
+      if (!paths.some((p) => p.path === prop.name)) {
+        paths.push({ path: prop.name, kind: "computed" });
       }
       continue;
     }
-    pushDataPropertyPaths(prop, paths, stateName);
+    pushDataPropertyPaths(prop, paths);
   }
   for (const streamValue of pendingStreamValues) {
-    if (paths.some((p) => p.stateName === stateName && p.path === streamValue.name)) continue;
-    pushDataPropertyPaths(streamValue, paths, stateName);
+    if (paths.some((p) => p.path === streamValue.name)) continue;
+    pushDataPropertyPaths(streamValue, paths);
   }
   for (const listKeyEntry of pendingListKeys) {
-    pushListKeyPaths(listKeyEntry, paths, stateName);
+    pushListKeyPaths(listKeyEntry, paths);
   }
   return paths;
 }
@@ -1038,7 +1036,7 @@ function findNonObjectWatch(scriptContent) {
   if (!isArrowFunction && !isWholeLiteral) return null;
   return span;
 }
-function collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys, stateName) {
+function collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys) {
   if (prop.name === RESERVED_STREAMS_KEY && prop.kind === "data" && prop.value && isObjectLiteral(prop.value)) {
     const entries = parseTopLevelProperties(extractObjectContent(prop.value));
     for (const entry of entries) {
@@ -1050,20 +1048,20 @@ function collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKe
         value: initial?.value,
         typeHint: initial?.typeHint
       });
-      paths.push({ path: `$streamStatus.${entry.name}`, kind: "data", typeHint: "string", stateName });
-      paths.push({ path: `$streamError.${entry.name}`, kind: "data", stateName });
+      paths.push({ path: `$streamStatus.${entry.name}`, kind: "data", typeHint: "string" });
+      paths.push({ path: `$streamError.${entry.name}`, kind: "data" });
     }
     return;
   }
   if (prop.name === RESERVED_COMMAND_TOKENS_KEY && prop.value) {
     for (const name of extractStringArrayItems(prop.value)) {
-      paths.push({ path: `$command.${name}`, kind: "command", stateName });
+      paths.push({ path: `$command.${name}`, kind: "command" });
     }
     return;
   }
   if (prop.name === RESERVED_EVENT_TOKENS_KEY && prop.value) {
     for (const name of extractStringArrayItems(prop.value)) {
-      paths.push({ path: name, kind: "eventToken", stateName });
+      paths.push({ path: name, kind: "eventToken" });
     }
     return;
   }
@@ -1075,22 +1073,22 @@ function collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKe
     return;
   }
 }
-function pushListKeyPaths(entry, paths, stateName) {
+function pushListKeyPaths(entry, paths) {
   const listPath = entry.name;
   const segments = listPath.split(".");
   if (listPath.length === 0 || segments.some((s) => s.length === 0) || segments[segments.length - 1] === "*") {
     return;
   }
-  const has = (path) => paths.some((p) => p.stateName === stateName && p.path === path);
-  if (!has(listPath)) paths.push({ path: listPath, kind: "data", typeHint: "array", stateName });
-  if (!has(`${listPath}.*`)) paths.push({ path: `${listPath}.*`, kind: "list", stateName });
+  const has = (path) => paths.some((p) => p.path === path);
+  if (!has(listPath)) paths.push({ path: listPath, kind: "data", typeHint: "array" });
+  if (!has(`${listPath}.*`)) paths.push({ path: `${listPath}.*`, kind: "list" });
   if (!has(`${listPath}.length`)) {
-    paths.push({ path: `${listPath}.length`, kind: "data", typeHint: "number", stateName });
+    paths.push({ path: `${listPath}.length`, kind: "data", typeHint: "number" });
   }
   const keyField = extractStringLiteralValue(entry.value);
   if (keyField === null || keyField.includes(".") || keyField.includes("*")) return;
   if (!has(`${listPath}.*.${keyField}`)) {
-    paths.push({ path: `${listPath}.*.${keyField}`, kind: "data", stateName });
+    paths.push({ path: `${listPath}.*.${keyField}`, kind: "data" });
   }
 }
 function extractStringLiteralValue(value) {
@@ -1113,17 +1111,17 @@ function extractStringArrayItems(value) {
   return items;
 }
 var MAX_OBJECT_NEST_DEPTH = 5;
-function pushDataPropertyPaths(prop, paths, stateName) {
-  pushDataPropertyPathsAt(prop.name, prop, paths, stateName, 0);
+function pushDataPropertyPaths(prop, paths) {
+  pushDataPropertyPathsAt(prop.name, prop, paths, 0);
 }
-function pushDataPropertyPathsAt(path, prop, paths, stateName, depth) {
-  paths.push({ path, kind: "data", typeHint: prop.typeHint, rawInitial: prop.value?.trim(), stateName });
+function pushDataPropertyPathsAt(path, prop, paths, depth) {
+  paths.push({ path, kind: "data", typeHint: prop.typeHint, rawInitial: prop.value?.trim() });
   if (prop.value && isArrayLiteral(prop.value)) {
-    paths.push({ path: `${path}.*`, kind: "list", stateName });
-    paths.push({ path: `${path}.length`, kind: "data", typeHint: "number", stateName });
+    paths.push({ path: `${path}.*`, kind: "list" });
+    paths.push({ path: `${path}.length`, kind: "data", typeHint: "number" });
     if (depth >= MAX_OBJECT_NEST_DEPTH) return;
     for (const childProp of extractArrayElementDataProperties(prop.value)) {
-      pushDataPropertyPathsAt(`${path}.*.${childProp.name}`, childProp, paths, stateName, depth + 1);
+      pushDataPropertyPathsAt(`${path}.*.${childProp.name}`, childProp, paths, depth + 1);
     }
     return;
   }
@@ -1132,11 +1130,11 @@ function pushDataPropertyPathsAt(path, prop, paths, stateName, depth) {
     const childProps = parseTopLevelProperties(extractObjectContent(prop.value));
     for (const childProp of childProps) {
       if (childProp.kind !== "data") continue;
-      pushDataPropertyPathsAt(`${path}.${childProp.name}`, childProp, paths, stateName, depth + 1);
+      pushDataPropertyPathsAt(`${path}.${childProp.name}`, childProp, paths, depth + 1);
     }
   }
 }
-function analyzeJsonPaths(jsonString, stateName = "default") {
+function analyzeJsonPaths(jsonString) {
   let data;
   try {
     data = JSON.parse(jsonString);
@@ -1145,31 +1143,31 @@ function analyzeJsonPaths(jsonString, stateName = "default") {
   }
   if (typeof data !== "object" || data === null || Array.isArray(data)) return [];
   const paths = [];
-  collectJsonPaths(data, "", paths, stateName, 0);
+  collectJsonPaths(data, "", paths, 0);
   return paths;
 }
-function collectJsonPaths(obj, prefix, paths, stateName, depth) {
+function collectJsonPaths(obj, prefix, paths, depth) {
   if (depth >= MAX_OBJECT_NEST_DEPTH) return;
   for (const [key, value] of Object.entries(obj)) {
     if (prefix === "" && key.startsWith("$")) continue;
     const path = prefix ? `${prefix}.${key}` : key;
-    pushJsonValuePaths(path, value, paths, stateName, depth);
+    pushJsonValuePaths(path, value, paths, depth);
   }
 }
-function pushJsonValuePaths(path, value, paths, stateName, depth) {
-  paths.push({ path, kind: "data", typeHint: inferJsonTypeHint(value), stateName });
+function pushJsonValuePaths(path, value, paths, depth) {
+  paths.push({ path, kind: "data", typeHint: inferJsonTypeHint(value) });
   if (Array.isArray(value)) {
-    paths.push({ path: `${path}.*`, kind: "list", stateName });
-    paths.push({ path: `${path}.length`, kind: "data", typeHint: "number", stateName });
+    paths.push({ path: `${path}.*`, kind: "list" });
+    paths.push({ path: `${path}.length`, kind: "data", typeHint: "number" });
     if (depth >= MAX_OBJECT_NEST_DEPTH) return;
     if (value.length > 0 && typeof value[0] === "object" && value[0] !== null && !Array.isArray(value[0])) {
       const firstElement = value[0];
       for (const [childKey, childValue] of Object.entries(firstElement)) {
-        pushJsonValuePaths(`${path}.*.${childKey}`, childValue, paths, stateName, depth + 1);
+        pushJsonValuePaths(`${path}.*.${childKey}`, childValue, paths, depth + 1);
       }
     }
   } else if (typeof value === "object" && value !== null) {
-    collectJsonPaths(value, path, paths, stateName, depth + 1);
+    collectJsonPaths(value, path, paths, depth + 1);
   }
 }
 function inferJsonTypeHint(value) {
@@ -1409,23 +1407,21 @@ function inferTypeHint(valueStart) {
   if (v.startsWith("{")) return "object";
   return void 0;
 }
-function analyzeSchemaPaths(schema, stateName = "default") {
+function analyzeSchemaPaths(schema) {
   const paths = [];
   const defs = schema.$defs ?? {};
-  collectSchemaObjectPaths(schema, "", paths, stateName, defs, 0);
+  collectSchemaObjectPaths(schema, "", paths, defs, 0);
   return paths;
 }
-function mergeSchemaCandidates(candidates, applicationStates) {
-  if (applicationStates === void 0 || applicationStates.size === 0) return candidates;
+function mergeSchemaCandidates(candidates, applicationSchema) {
+  if (applicationSchema === void 0) return candidates;
   const schemaCandidates = [];
   const schemaKeys = /* @__PURE__ */ new Set();
-  for (const [stateName, schema] of applicationStates) {
-    for (const p of analyzeSchemaPaths(schema, stateName)) {
-      schemaCandidates.push(p);
-      schemaKeys.add(`${stateName} ${p.path}`);
-    }
+  for (const p of analyzeSchemaPaths(applicationSchema)) {
+    schemaCandidates.push(p);
+    schemaKeys.add(p.path);
   }
-  const kept = candidates.filter((p) => !schemaKeys.has(`${p.stateName} ${p.path}`));
+  const kept = candidates.filter((p) => !schemaKeys.has(p.path));
   return [...kept, ...schemaCandidates];
 }
 function derefSchemaNodes(node, defs) {
@@ -1477,7 +1473,7 @@ function schemaTypeHint(nodes) {
   }
   return hints.size === 0 ? void 0 : [...hints].join("|");
 }
-function collectSchemaObjectPaths(node, prefix, paths, stateName, defs, depth) {
+function collectSchemaObjectPaths(node, prefix, paths, defs, depth) {
   if (depth >= MAX_OBJECT_NEST_DEPTH) return;
   const seen = /* @__PURE__ */ new Set();
   for (const n of derefSchemaNodes(node, defs)) {
@@ -1486,33 +1482,33 @@ function collectSchemaObjectPaths(node, prefix, paths, stateName, defs, depth) {
       if (seen.has(key)) continue;
       seen.add(key);
       const path = prefix ? `${prefix}.${key}` : key;
-      pushSchemaValuePaths(path, child, paths, stateName, defs, depth);
+      pushSchemaValuePaths(path, child, paths, defs, depth);
     }
   }
 }
-function pushSchemaValuePaths(path, node, paths, stateName, defs, depth) {
+function pushSchemaValuePaths(path, node, paths, defs, depth) {
   const nodes = derefSchemaNodes(node, defs);
   const typeHint = schemaTypeHint(nodes);
-  paths.push(withHint({ path, kind: "data", stateName, fromSchema: true }, typeHint));
+  paths.push(withHint({ path, kind: "data", fromSchema: true }, typeHint));
   const items = nodes.map((n) => n.items).find((i) => i !== void 0 && i !== null && typeof i === "object");
   const isArray = items !== void 0 || (typeHint?.split("|").includes("array") ?? false);
   if (isArray) {
     const itemNodes = items !== void 0 ? derefSchemaNodes(items, defs) : [];
-    paths.push(withHint({ path: `${path}.*`, kind: "list", stateName, fromSchema: true }, schemaTypeHint(itemNodes)));
-    paths.push({ path: `${path}.length`, kind: "data", typeHint: "number", stateName, fromSchema: true });
+    paths.push(withHint({ path: `${path}.*`, kind: "list", fromSchema: true }, schemaTypeHint(itemNodes)));
+    paths.push({ path: `${path}.length`, kind: "data", typeHint: "number", fromSchema: true });
     if (depth >= MAX_OBJECT_NEST_DEPTH) return;
     const seen = /* @__PURE__ */ new Set();
     for (const n of itemNodes) {
       for (const [childKey, childNode] of Object.entries(n.properties ?? {})) {
         if (seen.has(childKey)) continue;
         seen.add(childKey);
-        pushSchemaValuePaths(`${path}.*.${childKey}`, childNode, paths, stateName, defs, depth + 1);
+        pushSchemaValuePaths(`${path}.*.${childKey}`, childNode, paths, defs, depth + 1);
       }
     }
     return;
   }
   if (nodes.some((n) => n.properties !== void 0)) {
-    collectSchemaObjectPaths(node, path, paths, stateName, defs, depth + 1);
+    collectSchemaObjectPaths(node, path, paths, defs, depth + 1);
   }
 }
 function withHint(candidate, typeHint) {
@@ -1536,7 +1532,7 @@ function parseWcsScriptBlocks(html, stateTagName = "wcs-state") {
       pos++;
       continue;
     }
-    const stateName = extractAttribute(wcsMatch.tagContent, "name") ?? "default";
+    const mountPath = extractAttribute(wcsMatch.tagContent, "mount");
     pos = wcsMatch.end;
     const wcsCloseIdx = findCloseTag(html, pos, stateTagName);
     const wcsEnd = wcsCloseIdx === -1 ? len : wcsCloseIdx;
@@ -1568,7 +1564,7 @@ function parseWcsScriptBlocks(html, stateTagName = "wcs-state") {
         contentStart,
         contentEnd,
         content: html.slice(contentStart, contentEnd),
-        stateName
+        mountPath
       });
       pos = html.indexOf(">", scriptCloseIdx) + 1;
       if (pos === 0) break;
@@ -1597,7 +1593,7 @@ function parseWcsStateElements(html, stateTagName = "wcs-state") {
       pos++;
       continue;
     }
-    const stateName = extractAttribute(wcsMatch.tagContent, "name") ?? "default";
+    const mountPath = extractAttribute(wcsMatch.tagContent, "mount");
     const jsonAttr = extractAttribute(wcsMatch.tagContent, "json") ?? void 0;
     const stateAttr = extractAttribute(wcsMatch.tagContent, "state") ?? void 0;
     const srcAttr = extractAttribute(wcsMatch.tagContent, "src") ?? void 0;
@@ -1634,12 +1630,12 @@ function parseWcsStateElements(html, stateTagName = "wcs-state") {
         contentStart,
         contentEnd: scriptCloseIdx,
         content: html.slice(contentStart, scriptCloseIdx),
-        stateName
+        mountPath
       });
       pos = html.indexOf(">", scriptCloseIdx) + 1;
       if (pos === 0) break;
     }
-    elements.push({ stateName, jsonAttr, stateAttr, srcAttr, scriptBlocks, tagStart, tagEnd });
+    elements.push({ mountPath, jsonAttr, stateAttr, srcAttr, scriptBlocks, tagStart, tagEnd });
     pos = wcsEnd;
     if (wcsCloseIdx !== -1) {
       const closeEnd = html.indexOf(">", wcsCloseIdx);
@@ -1750,33 +1746,44 @@ function getStatePathsFromHtml(html, stateTagName = "wcs-state", fileReader) {
   return allPaths;
 }
 function resolveElementPaths(element, html, fileReader) {
+  const raw = resolveElementPathsRaw(element, html, fileReader);
+  if (element.mountPath === null) return raw;
+  const prefix = element.mountPath + ".";
+  const out = [];
+  for (const p of raw) {
+    if (p.path.startsWith("$")) continue;
+    out.push({ ...p, path: prefix + p.path });
+  }
+  return out;
+}
+function resolveElementPathsRaw(element, html, fileReader) {
   if (element.stateAttr) {
     const jsonContent = findScriptJsonById(html, element.stateAttr);
     if (jsonContent) {
-      const paths = analyzeJsonPaths(jsonContent, element.stateName);
+      const paths = analyzeJsonPaths(jsonContent);
       if (paths.length > 0) return paths;
     }
   }
   if (element.srcAttr && fileReader) {
-    const paths = resolveSrcAttribute(element.srcAttr, element.stateName, fileReader);
+    const paths = resolveSrcAttribute(element.srcAttr, fileReader);
     if (paths.length > 0) return paths;
   }
   if (element.jsonAttr) {
-    const paths = analyzeJsonPaths(element.jsonAttr, element.stateName);
+    const paths = analyzeJsonPaths(element.jsonAttr);
     if (paths.length > 0) return paths;
   }
   if (element.scriptBlocks.length > 0) {
     return element.scriptBlocks.flatMap(
-      (block) => analyzeStatePaths(block.content, block.stateName)
+      (block) => analyzeStatePaths(block.content)
     );
   }
   return [];
 }
-function resolveSrcAttribute(srcPath, stateName, fileReader) {
+function resolveSrcAttribute(srcPath, fileReader) {
   if (srcPath.endsWith(".json")) {
     const content = fileReader(srcPath);
     if (content) {
-      return analyzeJsonPaths(content, stateName);
+      return analyzeJsonPaths(content);
     }
     return [];
   }
@@ -1784,18 +1791,18 @@ function resolveSrcAttribute(srcPath, stateName, fileReader) {
     const tsPath = srcPath.replace(/\.js$/, ".ts");
     const tsContent = fileReader(tsPath);
     if (tsContent) {
-      return analyzeStatePaths(tsContent, stateName);
+      return analyzeStatePaths(tsContent);
     }
     const jsContent = fileReader(srcPath);
     if (jsContent) {
-      return analyzeStatePaths(jsContent, stateName);
+      return analyzeStatePaths(jsContent);
     }
     return [];
   }
   if (srcPath.endsWith(".ts")) {
     const content = fileReader(srcPath);
     if (content) {
-      return analyzeStatePaths(content, stateName);
+      return analyzeStatePaths(content);
     }
     return [];
   }
@@ -1970,8 +1977,8 @@ var ja = {
   devtoolsAfterState: () => `@wcstack/devtools/auto \u306F @wcstack/state/auto \u3088\u308A\u5148\u306B\u8AAD\u307F\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044\uFF08\u5F8C\u3060\u3068\u914D\u7DDA\u53F0\u5E33\u304C\u30E9\u30A4\u30D6\u3067 captured \u3055\u308C\u307E\u305B\u3093\uFF09`,
   baseHrefMissing: () => `@wcstack/router \u3092\u4F7F\u3046 SPA \u306B\u306F <head> \u5185\u306E <base href="/"> \u304C\u5FC5\u8981\u3067\u3059\uFF08\u7121\u3044\u3068\u30C7\u30A3\u30FC\u30D7\u30EA\u30F3\u30AF\u3067 basename \u304C\u8AA4\u5C0E\u51FA\u3055\u308C\u307E\u3059\uFF09`,
   signalsDualEntry: () => `@wcstack/signals \u3068 @wcstack/signals/dom \u304C\u540C\u4E00\u30DA\u30FC\u30B8\u304B\u3089 import \u3055\u308C\u3066\u3044\u307E\u3059\u3002CDN \u3067\u306F\u5404\u30A8\u30F3\u30C8\u30EA\u304C\u81EA\u5DF1\u5B8C\u7D50\u30D0\u30F3\u30C9\u30EB\u306E\u305F\u3081\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u30B3\u30A2\u304C\u4E8C\u91CD\u5316\u3057\u3001\u5883\u754C\u3067\u53CD\u5FDC\u304C\u58CA\u308C\u307E\u3059 \u2014 \u3059\u3079\u3066 /dom \u30A8\u30F3\u30C8\u30EA\u304B\u3089 import \u3057\u3066\u304F\u3060\u3055\u3044`,
-  namedStateAttrDeprecated: (name) => `<wcs-state name="${name}"> \u306F v2 \u3067\u5EC3\u6B62\u3055\u308C\u307E\u3059\u3002\u30EB\u30FC\u30C8\u30C4\u30EA\u30FC\u3078\u306E\u30DE\u30A6\u30F3\u30C8 <wcs-state mount="${name}"> \u306B\u7F6E\u304D\u63DB\u3048\u3001\u30D1\u30B9\u306F "${name}.<path>" \u3067\u53C2\u7167\u3057\u3066\u304F\u3060\u3055\u3044\uFF08docs/state-mount-design.md \xA79\uFF09`,
-  namedStatePathDeprecated: (name) => name === "default" ? `"@default" \u306F\u4E0D\u8981\u3067\u3001v2 \u3067\u5EC3\u6B62\u3055\u308C\u307E\u3059\u3002"@default" \u3092\u5916\u3057\u3066\u304F\u3060\u3055\u3044\uFF08docs/state-mount-design.md \xA79\uFF09` : `"@${name}" \u306B\u3088\u308B state \u6307\u5B9A\u306F v2 \u3067\u5EC3\u6B62\u3055\u308C\u307E\u3059\u3002\u30DE\u30A6\u30F3\u30C8\u3057\u305F\u30C4\u30EA\u30FC\u3092 "${name}.<path>" \u3067\u53C2\u7167\u3057\u3066\u304F\u3060\u3055\u3044\uFF08docs/state-mount-design.md \xA79\uFF09`
+  namedStateAttrDeprecated: (name) => `name \u5C5E\u6027\u306F v2 \u3067\u64A4\u53BB\u3055\u308C\u307E\u3057\u305F\uFF081 root 1 \u30C4\u30EA\u30FC\uFF09\u3002\u30EB\u30FC\u30C8\u30C4\u30EA\u30FC\u3078\u306E\u30DE\u30A6\u30F3\u30C8 <wcs-state mount="${name}"> \u306B\u7F6E\u304D\u63DB\u3048\u3001\u30D1\u30B9\u306F "${name}.<path>" \u3067\u53C2\u7167\u3057\u3066\u304F\u3060\u3055\u3044\uFF08docs/state-mount-design.md \xA79\uFF09`,
+  namedStatePathDeprecated: (name) => name === "default" ? `"@default" \u30BB\u30EC\u30AF\u30BF\u306F v2 \u3067\u64A4\u53BB\u3055\u308C\u307E\u3057\u305F\u3002"@default" \u3092\u5916\u3057\u3066\u304F\u3060\u3055\u3044\uFF08docs/state-mount-design.md \xA79\uFF09` : `"@name" \u30BB\u30EC\u30AF\u30BF\u306F v2 \u3067\u64A4\u53BB\u3055\u308C\u307E\u3057\u305F\uFF081 root 1 \u30C4\u30EA\u30FC\uFF09\u3002\u30DE\u30A6\u30F3\u30C8\u3057\u305F\u30C4\u30EA\u30FC\u3092 "${name}.<path>" \u3067\u53C2\u7167\u3057\u3066\u304F\u3060\u3055\u3044\uFF08docs/state-mount-design.md \xA79\uFF09`
 };
 var EN_EXPECTED_LABEL = {
   array: "an array-typed path",
@@ -2029,8 +2036,8 @@ var en = {
   devtoolsAfterState: () => `Load @wcstack/devtools/auto BEFORE @wcstack/state/auto (otherwise the wiring ledger is not captured live)`,
   baseHrefMissing: () => `An SPA using @wcstack/router needs <base href="/"> in <head> (without it, deep links misderive the basename)`,
   signalsDualEntry: () => `Both @wcstack/signals and @wcstack/signals/dom are imported on this page. On a CDN each entry is a self-contained bundle, so the reactive core is duplicated and reactivity breaks at the seam \u2014 import everything from the single /dom entry`,
-  namedStateAttrDeprecated: (name) => `<wcs-state name="${name}"> is deprecated and will be removed in v2. Mount the state onto the root tree with <wcs-state mount="${name}"> and read it as "${name}.<path>" (docs/state-mount-design.md \xA79)`,
-  namedStatePathDeprecated: (name) => name === "default" ? `The "@default" selector is redundant and will be removed in v2; drop it (docs/state-mount-design.md \xA79)` : `The "@${name}" state selector is deprecated and will be removed in v2. Read the mounted tree as "${name}.<path>" instead (docs/state-mount-design.md \xA79)`
+  namedStateAttrDeprecated: (name) => `The "name" attribute was removed in v2 \u2014 there is a single state tree per root. Mount this state onto the tree instead: <wcs-state mount="${name}"> and read it as "${name}.<path>" (docs/state-mount-design.md \xA79)`,
+  namedStatePathDeprecated: (name) => name === "default" ? `The "@default" selector was removed in v2 \u2014 drop it (docs/state-mount-design.md \xA79)` : `The "@name" selector was removed in v2 \u2014 there is a single state tree. Mount the named state onto the tree (<wcs-state mount="...">) and read it as "${name}.<path>" (docs/state-mount-design.md \xA79)`
 };
 var CATALOGS = { ja, en };
 function getMessages(locale3) {
@@ -2231,16 +2238,10 @@ function escape(key) {
 
 // src/service/bindingValidator.ts
 var filterMap = new Map(BUILTIN_FILTERS.map((f) => [f.name, f]));
-function validateBindings(html, attrName, stateTagName = "wcs-state", locale3, fileReader, applicationStates) {
+function validateBindings(html, attrName, stateTagName = "wcs-state", locale3, fileReader, applicationSchema) {
   const diagnostics = [];
   const msgs = getMessages(locale3);
-  const statePaths = mergeSchemaCandidates(getStatePathsFromHtml(html, stateTagName, fileReader), applicationStates);
-  const pathsByState = /* @__PURE__ */ new Map();
-  for (const p of statePaths) {
-    const list = pathsByState.get(p.stateName) ?? [];
-    list.push(p);
-    pathsByState.set(p.stateName, list);
-  }
+  const statePaths = mergeSchemaCandidates(getStatePathsFromHtml(html, stateTagName, fileReader), applicationSchema);
   const attrs = findAllBindAttributes(html, attrName);
   let structuralTemplates = null;
   const getStructuralTemplates = () => {
@@ -2273,7 +2274,7 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale3, f
     for (const binding of bindings) {
       const bindingStart = attr.valueStart + pos;
       const parsed = parseBindingExpression(binding);
-      const scopedPaths = pathsByState.get(parsed.targetState) ?? [];
+      const scopedPaths = statePaths;
       const scopedPathSet = new Set(scopedPaths.map((p) => p.path));
       const propNoMod = parsed.property.replace(/#.*$/, "").trim();
       if (propNoMod === "...") {
@@ -2357,7 +2358,7 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale3, f
             }
           }
           if (checkPath) {
-            const schema = applicationStates?.get(parsed.targetState);
+            const schema = applicationSchema;
             const verdict = schema !== void 0 ? validateSchemaPathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, schema, msgs) : toMissingVerdict(validatePathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, msgs));
             if (verdict) {
               const pathOffset = binding.indexOf(parsed.path);
@@ -2486,7 +2487,7 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale3, f
             if (typeReq && resultType !== typeReq.expected) {
               const pathOffset = binding.indexOf(parsed.path);
               const pathStart = bindingStart + pathOffset;
-              const schemaDefinite = typeReq.expected === "array" && parsed.filters.length === 0 && applicationStates?.has(parsed.targetState) === true && scopedPaths.some((p) => p.path === pathTrimmed && p.fromSchema === true);
+              const schemaDefinite = typeReq.expected === "array" && parsed.filters.length === 0 && applicationSchema !== void 0 && scopedPaths.some((p) => p.path === pathTrimmed && p.fromSchema === true);
               diagnostics.push({
                 code: schemaDefinite ? WcsDiagnosticCode.PathTypeMismatch : WcsDiagnosticCode.BindingTypeExpectation,
                 start: pathStart,
@@ -2540,7 +2541,7 @@ function splitBindingExpressions(value) {
 function parseBindingExpression(expr) {
   const colonIndex = expr.indexOf(":");
   if (colonIndex === -1) {
-    return { property: expr.trim(), path: null, targetState: "default", filters: [], inputFilters: [] };
+    return { property: expr.trim(), path: null, filters: [], inputFilters: [] };
   }
   const rawProp = expr.slice(0, colonIndex);
   const propSegments = splitByPipe(rawProp);
@@ -2552,9 +2553,8 @@ function parseBindingExpression(expr) {
   const filterSegments = segments.slice(1);
   const atIndex = pathSegment.indexOf("@");
   const path = atIndex !== -1 ? pathSegment.slice(0, atIndex) : pathSegment;
-  const targetState = atIndex !== -1 ? pathSegment.slice(atIndex + 1).trim() || "default" : "default";
   const filters = parseFilterSegments(expr, filterSegments, colonIndex + 1 + pathSegment.length + 1);
-  return { property, path: path.trim() || null, targetState, filters, inputFilters };
+  return { property, path: path.trim() || null, filters, inputFilters };
 }
 function parseFilterSegments(expr, segments, searchStart) {
   const filters = [];
@@ -3078,11 +3078,11 @@ function isInsideTag(html, offset, tagName) {
 }
 
 // src/service/templateSyntaxValidator.ts
-function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", locale3, fileReader, applicationStates) {
+function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", locale3, fileReader, applicationSchema) {
   const diagnostics = [];
   const msgs = getMessages(locale3);
-  const allPaths = mergeSchemaCandidates(getStatePathsFromHtml(html, stateTagName, fileReader), applicationStates);
-  const defaultSchema = applicationStates?.get("default");
+  const allPaths = mergeSchemaCandidates(getStatePathsFromHtml(html, stateTagName, fileReader), applicationSchema);
+  const defaultSchema = applicationSchema;
   const missingVerdict = (path, displayPath, pathSet2, scoped) => {
     if (isValidTemplatePath(path, pathSet2, scoped)) return null;
     if (defaultSchema !== void 0 && !path.startsWith("$")) {
@@ -3092,7 +3092,7 @@ function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", l
     return { code: WcsDiagnosticCode.BindingPathMissing, severity: "warning", message: msgs.pathMissing(displayPath) };
   };
   if (allPaths.length === 0) return diagnostics;
-  const defaultPaths = allPaths.filter((p) => p.stateName === "default");
+  const defaultPaths = allPaths;
   const pathSet = new Set(defaultPaths.map((p) => p.path));
   const filterNameSet = new Set(BUILTIN_FILTERS.map((f) => f.name));
   const mustaches = findAllMustacheSyntax(html);
@@ -4603,7 +4603,7 @@ function validateBindingAgainstContract(tagName, contract, parsed, property, sta
     return;
   }
   if (property === "trigger" && "trigger" in contract.inputs && parsed.path) {
-    const cand = findDataSlot(getPaths(), parsed.path, parsed.targetState);
+    const cand = findDataSlot(getPaths(), parsed.path);
     if (cand?.rawInitial === "true") {
       diagnostics.push({
         code: WcsDiagnosticCode.TriggerSeededTruthy,
@@ -4617,7 +4617,7 @@ function validateBindingAgainstContract(tagName, contract, parsed, property, sta
     }
   }
   if (tagName === "wcs-storage" && property === "value" && !hasManual && parsed.path && !/(?:^|,)init=(?:element|auto)\b/.test(modifiers)) {
-    const cand = findDataSlot(getPaths(), parsed.path, parsed.targetState);
+    const cand = findDataSlot(getPaths(), parsed.path);
     if (cand?.rawInitial !== void 0 && EMPTYISH_SEEDS.has(normalizeSeed(cand.rawInitial))) {
       diagnostics.push({
         code: WcsDiagnosticCode.StorageSeedClobber,
@@ -4631,8 +4631,8 @@ function validateBindingAgainstContract(tagName, contract, parsed, property, sta
     }
   }
 }
-function findDataSlot(paths, path, stateName) {
-  return paths.find((c) => c.kind === "data" && c.path === path && c.stateName === stateName);
+function findDataSlot(paths, path) {
+  return paths.find((c) => c.kind === "data" && c.path === path);
 }
 function normalizeSeed(raw) {
   const compact = raw.replace(/\s+/g, "");
@@ -4907,7 +4907,7 @@ function blankJsComments(code) {
 }
 
 // src/service/watchDeclarationValidator.ts
-var STATE_NAME_SEPARATOR2 = "@";
+var STATE_NAME_SEPARATOR = "@";
 function validateWatchDeclarations(html, stateTagName = "wcs-state", locale3) {
   const msgs = getMessages(locale3);
   const out = [];
@@ -4924,7 +4924,7 @@ function validateWatchDeclarations(html, stateTagName = "wcs-state", locale3) {
     }
     const entries = analyzeWatchEntries(block.content);
     if (entries.length === 0) continue;
-    const paths = analyzeStatePaths(block.content, block.stateName);
+    const paths = analyzeStatePaths(block.content);
     const pathSet = new Set(paths.map((p) => p.path));
     for (const entry of entries) {
       const diagnostic = validateEntry(entry, pathSet, msgs);
@@ -4943,7 +4943,7 @@ function validateWatchDeclarations(html, stateTagName = "wcs-state", locale3) {
 function validateEntry(entry, pathSet, msgs) {
   const { key } = entry;
   const invalid = (message) => ({ code: WcsDiagnosticCode.WatchDeclarationInvalid, message, severity: "error" });
-  if (key.includes(STATE_NAME_SEPARATOR2)) {
+  if (key.includes(STATE_NAME_SEPARATOR)) {
     return invalid(msgs.watchKeyCrossState(key));
   }
   if (key.startsWith("$")) {
@@ -4992,7 +4992,6 @@ function validateNamedState(html, attrName, stateTagName = "wcs-state", locale3)
   const diagnostics = [];
   for (const element of parseWcsStateElements(html, stateTagName)) {
     const tagText = html.slice(element.tagStart, element.tagEnd);
-    if (/\sbind-component(?=[\s=>/])/i.test(tagText)) continue;
     const match = /(?:^|\s)name\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(tagText);
     if (match === null) continue;
     const value = match[1] ?? match[2] ?? match[3] ?? "";
@@ -5003,7 +5002,7 @@ function validateNamedState(html, attrName, stateTagName = "wcs-state", locale3)
       start: valueEnd - value.length,
       end: valueEnd,
       message: msgs.namedStateAttrDeprecated(value),
-      severity: "warning"
+      severity: "error"
     });
   }
   for (const attr of findAllBindAttributes(html, attrName)) {
@@ -5016,7 +5015,7 @@ function validateNamedState(html, attrName, stateTagName = "wcs-state", locale3)
           start: attr.valueStart + pos + selector.start,
           end: attr.valueStart + pos + selector.end,
           message: msgs.namedStatePathDeprecated(selector.name),
-          severity: "warning"
+          severity: "error"
         });
       }
       pos += expr.length + 1;
@@ -5030,7 +5029,7 @@ function validateNamedState(html, attrName, stateTagName = "wcs-state", locale3)
         start: mustache.exprStart + selector.start,
         end: mustache.exprStart + selector.end,
         message: msgs.namedStatePathDeprecated(selector.name),
-        severity: "warning"
+        severity: "error"
       });
     }
   }
@@ -5044,7 +5043,6 @@ var MAX_WILDCARD_DEPTH2 = 128;
 var BINDING_SEPARATOR2 = ";";
 var PROP_VALUE_SEPARATOR2 = ":";
 var MODIFIER_SEPARATOR2 = "#";
-var STATE_NAME_SEPARATOR3 = "@";
 var FILTER_SEPARATOR2 = "|";
 var ELSE_KEYWORD2 = "else";
 var SPREAD_PROP2 = "...";
@@ -5900,11 +5898,12 @@ function parseStatePart(statePart) {
   } else {
     stateAndPath = statePart.trim();
   }
-  if (stateAndPath.indexOf(STATE_NAME_SEPARATOR3) !== -1) ;
-  const [statePathName, stateName = "default"] = stateAndPath.split(STATE_NAME_SEPARATOR3).map(trimFn);
+  if (stateAndPath.indexOf("@") !== -1) {
+    raiseError2(`"${stateAndPath}": the "@name" selector was removed in v2 \u2014 there is a single state tree. Mount the named state onto the tree (<wcs-state mount="...">) and read it by its path prefix instead.`);
+  }
+  const statePathName = stateAndPath;
   const pathInfo = getPathInfo(statePathName);
   return {
-    stateName,
     statePathName,
     statePathInfo: pathInfo,
     outFilters: filters
@@ -5927,7 +5926,6 @@ function parseBindTextsForElement(bindText) {
         propModifiers: [],
         statePathName: "#else",
         statePathInfo: pathInfo,
-        stateName: "",
         inFilters: [],
         outFilters: [],
         bindingType: "else"
@@ -6027,24 +6025,18 @@ function parseEmbeddedTextWithPositions(expression) {
     error = e.message;
   }
   if (parsed === null) {
-    return { exprRange, exprText: expression, parsed, error, propRange: null, pathRange: null, stateNameRange: null };
+    return { exprRange, exprText: expression, parsed, error, propRange: null, pathRange: null };
   }
   const firstPipe = expression.indexOf(delimiters.filter);
   const pathScopeEnd = firstPipe === -1 ? expression.length : firstPipe;
   const pathLocal = locate(expression, parsed.statePathName, 0, pathScopeEnd);
-  let stateNameLocal = null;
-  const at = expression.indexOf(delimiters.stateName);
-  if (at !== -1 && at < pathScopeEnd) {
-    stateNameLocal = locate(expression, parsed.stateName, at + 1, pathScopeEnd);
-  }
   return {
     exprRange,
     exprText: expression,
     parsed,
     error,
     propRange: null,
-    pathRange: pathLocal,
-    stateNameRange: stateNameLocal
+    pathRange: pathLocal
   };
 }
 function parseBindTextWithPositions(bindText) {
@@ -6066,23 +6058,18 @@ function parseBindTextWithPositions(bindText) {
       error = e.message;
     }
     if (parsed === null) {
-      results.push({ exprRange, exprText: expr, parsed, error, propRange: null, pathRange: null, stateNameRange: null });
+      results.push({ exprRange, exprText: expr, parsed, error, propRange: null, pathRange: null });
       continue;
     }
     const colon = expr.indexOf(delimiters.propValue);
     const propEndLimit = colon === -1 ? expr.length : colon;
     const propLocal = locate(expr, parsed.propName, 0, propEndLimit);
     let pathLocal = null;
-    let stateNameLocal = null;
     if (colon !== -1) {
       const stateBase = colon + 1;
       const firstPipe = expr.indexOf(delimiters.filter, stateBase);
       const pathScopeEnd = firstPipe === -1 ? expr.length : firstPipe;
       pathLocal = locate(expr, parsed.statePathName, stateBase, pathScopeEnd);
-      const at = expr.indexOf(delimiters.stateName, stateBase);
-      if (at !== -1 && at < pathScopeEnd) {
-        stateNameLocal = locate(expr, parsed.stateName, at + 1, pathScopeEnd);
-      }
     }
     const lift = (range) => range === null ? null : { start: exprStart + range.start, end: exprStart + range.end };
     results.push({
@@ -6091,17 +6078,13 @@ function parseBindTextWithPositions(bindText) {
       parsed,
       error,
       propRange: lift(propLocal),
-      pathRange: lift(pathLocal),
-      stateNameRange: lift(stateNameLocal)
+      pathRange: lift(pathLocal)
     });
   }
   return results;
 }
 
 // src/core/index/referenceIndex.ts
-function keyOf(stateName, path) {
-  return `${stateName}\0${path}`;
-}
 function buildReferenceIndex(html, options = {}) {
   clearParserCaches();
   const bindAttribute = options.bindAttribute ?? "data-wcs";
@@ -6119,13 +6102,11 @@ function buildReferenceIndex(html, options = {}) {
       occurrences.push({
         source: "attribute",
         kind: binding.parsed.propSegments[0] === "eventToken" ? "eventToken" : "path",
-        stateName: binding.parsed.stateName,
         path: binding.parsed.statePathName,
         pathRange: lift(binding.pathRange),
         exprRange: lift(binding.exprRange),
         propName: binding.parsed.propName,
         propRange: binding.propRange === null ? null : lift(binding.propRange),
-        stateNameRange: binding.stateNameRange === null ? null : lift(binding.stateNameRange),
         bindingType: binding.parsed.bindingType
       });
     }
@@ -6148,22 +6129,21 @@ function buildReferenceIndex(html, options = {}) {
     occurrences.push({
       source: match.kind,
       kind: "path",
-      stateName: binding.parsed.stateName,
       path: binding.parsed.statePathName,
       pathRange: shift(binding.pathRange),
       exprRange: { start: match.exprStart, end: match.exprEnd },
       propName: null,
       propRange: null,
-      stateNameRange: binding.stateNameRange === null ? null : shift(binding.stateNameRange),
       bindingType: "text"
     });
   }
   const declarations = [];
   for (const block of parseWcsScriptBlocks(html, stateTagName)) {
+    const prefix = block.mountPath === null ? "" : block.mountPath + ".";
     for (const span of analyzeDeclarationSpans(block.content)) {
+      if (prefix !== "" && span.name.startsWith("$")) continue;
       declarations.push({
-        stateName: block.stateName,
-        name: span.name,
+        name: prefix + span.name,
         kind: span.kind,
         range: { start: block.contentStart + span.start, end: block.contentStart + span.end }
       });
@@ -6172,7 +6152,7 @@ function buildReferenceIndex(html, options = {}) {
   const byPath = /* @__PURE__ */ new Map();
   for (const occurrence of occurrences) {
     if (occurrence.kind !== "path") continue;
-    const key = keyOf(occurrence.stateName, occurrence.path);
+    const key = occurrence.path;
     const list = byPath.get(key);
     if (list === void 0) {
       byPath.set(key, [occurrence]);
@@ -6182,22 +6162,22 @@ function buildReferenceIndex(html, options = {}) {
   }
   const declarationByName = /* @__PURE__ */ new Map();
   for (const declaration of declarations) {
-    const key = keyOf(declaration.stateName, declaration.name);
+    const key = declaration.name;
     if (!declarationByName.has(key)) declarationByName.set(key, declaration);
   }
   return {
     occurrences,
     declarations,
     problems,
-    referencesOf(stateName, path) {
-      return (byPath.get(keyOf(stateName, path)) ?? []).slice();
+    referencesOf(path) {
+      return (byPath.get(path) ?? []).slice();
     },
-    declarationOf(stateName, path) {
-      const exact = declarationByName.get(keyOf(stateName, path));
+    declarationOf(path) {
+      const exact = declarationByName.get(path);
       if (exact !== void 0) return exact;
       const firstSegment = path.split(".")[0];
       if (firstSegment === path) return null;
-      return declarationByName.get(keyOf(stateName, firstSegment)) ?? null;
+      return declarationByName.get(firstSegment) ?? null;
     },
     occurrenceAt(offset) {
       for (const occurrence of occurrences) {
@@ -6442,8 +6422,9 @@ function validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale3
   for (const block of blocks) {
     const callback = analyzeCallableBodies(block.content).find((entry) => entry.name === STATE_UPDATED_CALLBACK && entry.kind === "method");
     if (callback === void 0) continue;
-    const declared = new Set(analyzeStatePaths(block.content, block.stateName).map((p) => p.path));
-    const bound = boundPaths.get(block.stateName) ?? /* @__PURE__ */ new Set();
+    if (block.mountPath !== null) continue;
+    const declared = new Set(analyzeStatePaths(block.content).map((p) => p.path));
+    const bound = boundPaths;
     const body = blankComments(callback.body);
     PATH_TEST_LITERAL.lastIndex = 0;
     let match;
@@ -6466,27 +6447,18 @@ function validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale3
   return out;
 }
 function collectBoundPaths(html, stateTagName, bindAttrName) {
-  const byState = /* @__PURE__ */ new Map();
-  const add = (stateName, path) => {
-    let set = byState.get(stateName);
-    if (set === void 0) {
-      set = /* @__PURE__ */ new Set();
-      byState.set(stateName, set);
-    }
-    set.add(path);
-  };
+  const bound = /* @__PURE__ */ new Set();
   const index = buildReferenceIndex(html, { bindAttribute: bindAttrName, stateTagName });
   for (const occurrence of index.occurrences) {
-    add(occurrence.stateName, occurrence.path);
+    bound.add(occurrence.path);
     if (!occurrence.path.startsWith(".")) continue;
     const forPath = getInnermostForPath(html, occurrence.pathRange.start, bindAttrName);
     if (forPath === null || forPath.startsWith(".")) continue;
-    add(
-      occurrence.stateName,
+    bound.add(
       occurrence.path === "." ? `${forPath}.*` : `${forPath}.*.${occurrence.path.slice(1)}`
     );
   }
-  return byState;
+  return bound;
 }
 function validateSemantics(html, stateTagName = "wcs-state", locale3, bindAttrName = "data-wcs") {
   const out = [];
@@ -6671,8 +6643,8 @@ function parseJsonWithSpans(text) {
 }
 
 // src/core/sidecar/types.ts
-var SUPPORTED_SCHEMA_VERSION = 1;
-var SUPPORTED_NAMESPACE_VERSION = 1;
+var SUPPORTED_SCHEMA_VERSION = 2;
+var SUPPORTED_NAMESPACE_VERSION = 2;
 
 // src/core/sidecar/loader.ts
 var NAMESPACE_KEYS = ["wcstack.types", "wcstack.async", "wcstack.platformCapabilities", "wcstack.application"];
@@ -6709,10 +6681,11 @@ function loadManifest(artifact) {
     return { artifact, manifest: null, ctx, spans: parsed.spans };
   }
   if (obj.schemaVersion !== SUPPORTED_SCHEMA_VERSION) {
+    const migration = obj.schemaVersion === 1 ? ` schemaVersion 1 (states[name]) predates v2's single state tree \u2014 regenerate with \`wcs-schema emit\`.` : "";
     ctx.add(
       WcsDiagnosticCode.ManifestSchemaVersion,
       pointer("schemaVersion"),
-      `Unsupported schemaVersion ${obj.schemaVersion}; this reader supports ${SUPPORTED_SCHEMA_VERSION}.`,
+      `Unsupported schemaVersion ${obj.schemaVersion}; this reader supports ${SUPPORTED_SCHEMA_VERSION}.${migration}`,
       "error"
     );
     return { artifact, manifest: null, ctx, spans: parsed.spans };
@@ -6761,9 +6734,10 @@ function resolvePackageContracts(loaded) {
   const collided = /* @__PURE__ */ new Set();
   const firstSource = /* @__PURE__ */ new Map();
   const filterOwner = /* @__PURE__ */ new Map();
-  const stateOwner = /* @__PURE__ */ new Map();
-  const stateWinners = /* @__PURE__ */ new Map();
-  const collidedStates = /* @__PURE__ */ new Set();
+  let schemaOwner;
+  let schemaWinner;
+  let schemaCollided = false;
+  void schemaCollided;
   let hasApplicationArtifact = false;
   for (const lm of loaded) {
     if (lm.manifest === null) continue;
@@ -6819,26 +6793,24 @@ function resolvePackageContracts(loaded) {
         );
       }
     }
-    if (lm.manifest.kind === "application" && application?.states !== void 0) {
-      for (const [name, entry] of Object.entries(application.states)) {
-        const schema = entry?.stateSchema;
-        if (schema === null || typeof schema !== "object" || Array.isArray(schema)) continue;
-        const priorSource = stateOwner.get(name);
-        if (priorSource === void 0) {
-          stateOwner.set(name, lm.artifact.source);
-          stateWinners.set(name, schema);
-          continue;
+    if (lm.manifest.kind === "application" && application?.stateSchema !== void 0) {
+      const schema = application.stateSchema;
+      if (schema !== null && typeof schema === "object" && !Array.isArray(schema)) {
+        if (schemaOwner === void 0) {
+          schemaOwner = lm.artifact.source;
+          schemaWinner = schema;
+        } else {
+          schemaCollided = true;
+          schemaWinner = void 0;
+          ctxFor(lm).add(
+            WcsDiagnosticCode.ManifestStateCollision,
+            pointer("manifestExtensions", "wcstack.application", "stateSchema"),
+            `Multiple application artifacts declare a stateSchema (also in "${schemaOwner}"); neither is used.`,
+            "error",
+            void 0,
+            true
+          );
         }
-        collidedStates.add(name);
-        stateWinners.delete(name);
-        ctxFor(lm).add(
-          WcsDiagnosticCode.ManifestStateCollision,
-          pointer("manifestExtensions", "wcstack.application", "states", name),
-          `State "${name}" declares a stateSchema in multiple application artifacts (also in "${priorSource}"); neither is used.`,
-          "error",
-          { statePath: name },
-          true
-        );
       }
     }
   }
@@ -6847,7 +6819,7 @@ function resolvePackageContracts(loaded) {
     const kept = diags.filter((d) => !(d.code === WcsDiagnosticCode.ManifestOverride && d.tag !== void 0 && collided.has(d.tag)));
     if (kept.length > 0) diagnosticsBySource.set(source, kept);
   }
-  return { tags: winners, applicationStates: stateWinners, hasApplicationArtifact, diagnosticsBySource };
+  return { tags: winners, applicationSchema: schemaWinner, hasApplicationArtifact, diagnosticsBySource };
 }
 
 // src/core/sidecar/discover.ts
@@ -6859,22 +6831,19 @@ function discoverApplicationManifest(fileReader) {
     const text = fileReader(relativePath);
     if (text === void 0) continue;
     const loaded = loadManifest({ text, source: relativePath });
-    return { relativePath, text, loaded, states: applicationStatesOf(loaded) };
+    return { relativePath, text, loaded, schema: applicationSchemaOf(loaded) };
   }
   return void 0;
 }
-function applicationStatesOf(loaded) {
-  const states = /* @__PURE__ */ new Map();
+function applicationSchemaOf(loaded) {
   const manifest = loaded.manifest;
-  if (manifest === null || manifest.kind !== "application") return states;
+  if (manifest === null || manifest.kind !== "application") return void 0;
   const application = manifest.manifestExtensions?.["wcstack.application"];
-  for (const [name, entry] of Object.entries(application?.states ?? {})) {
-    const schema = entry?.stateSchema;
-    if (schema !== null && typeof schema === "object" && !Array.isArray(schema)) {
-      states.set(name, schema);
-    }
+  const schema = application?.stateSchema;
+  if (schema !== null && typeof schema === "object" && !Array.isArray(schema)) {
+    return schema;
   }
-  return states;
+  return void 0;
 }
 function joinRelativeSource(htmlSource, relativePath) {
   const sepIndex = Math.max(htmlSource.lastIndexOf("/"), htmlSource.lastIndexOf("\\"));
@@ -6897,10 +6866,10 @@ function validateDocument(text, options = {}) {
   const stateTagName = options.stateTagName ?? "wcs-state";
   const locale3 = options.locale;
   const fileReader = options.fileReader;
-  const applicationStates = options.applicationStates ?? (fileReader !== void 0 ? discoverApplicationManifest(fileReader)?.states : void 0);
+  const applicationSchema = options.applicationSchema ?? (fileReader !== void 0 ? discoverApplicationManifest(fileReader)?.schema : void 0);
   const out = [];
-  out.push(...validateBindings(text, bindAttribute, stateTagName, locale3, fileReader, applicationStates));
-  out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute, locale3, fileReader, applicationStates));
+  out.push(...validateBindings(text, bindAttribute, stateTagName, locale3, fileReader, applicationSchema));
+  out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute, locale3, fileReader, applicationSchema));
   out.push(...validateIoNodes(text, bindAttribute, stateTagName, locale3, fileReader));
   out.push(...validateAriaAttributes(text, bindAttribute, locale3));
   out.push(...validateDocumentEnv(text, locale3));
@@ -6985,11 +6954,10 @@ function validateLoadedSchemas(loaded) {
     validateComponentSchemas(tag, component, loaded.ctx);
   }
   const application = loaded.manifest.manifestExtensions?.["wcstack.application"];
-  for (const [name, entry] of Object.entries(application?.states ?? {})) {
-    const schema = entry?.stateSchema;
-    if (schema === null || typeof schema !== "object" || Array.isArray(schema)) continue;
-    const ptr = `${pointer("manifestExtensions", "wcstack.application", "states", name)}/stateSchema`;
-    validateSchemaSubset(schema, ptr, loaded.ctx, schema.$defs ?? {});
+  const stateSchema = application?.stateSchema;
+  if (stateSchema !== void 0 && stateSchema !== null && typeof stateSchema === "object" && !Array.isArray(stateSchema)) {
+    const ptr = pointer("manifestExtensions", "wcstack.application", "stateSchema");
+    validateSchemaSubset(stateSchema, ptr, loaded.ctx, stateSchema.$defs ?? {});
   }
 }
 function validateComponentSchemas(tag, component, ctx) {
@@ -7041,7 +7009,7 @@ function validateManifestSet(input) {
     diagnostics: sortDiagnostics(all),
     byArtifact: sortedByArtifact,
     resolvedTags,
-    resolvedStates: resolved.applicationStates,
+    resolvedSchema: resolved.applicationSchema,
     hasApplicationArtifact: resolved.hasApplicationArtifact
   };
 }
@@ -7055,7 +7023,8 @@ function runValidation(inputs, options = {}) {
   const diagnosticsBySource = /* @__PURE__ */ new Map();
   const textBySource = new Map(inputs.map((i) => [i.source, i.text]));
   const manifestInputs = inputs.filter((i) => i.kind === "manifest");
-  let explicitStates;
+  let explicitSchema;
+  let haveExplicitApplication = false;
   if (manifestInputs.length > 0) {
     const result = validateManifestSet({
       artifacts: manifestInputs.map((m) => ({ text: m.text, source: m.source })),
@@ -7064,14 +7033,17 @@ function runValidation(inputs, options = {}) {
     for (const input of manifestInputs) {
       diagnosticsBySource.set(input.source, result.byArtifact.get(input.source) ?? []);
     }
-    if (result.hasApplicationArtifact) explicitStates = result.resolvedStates;
+    if (result.hasApplicationArtifact) {
+      haveExplicitApplication = true;
+      explicitSchema = result.resolvedSchema;
+    }
   }
   for (const input of inputs) {
     if (input.kind !== "html") continue;
-    let applicationStates = explicitStates;
-    if (applicationStates === void 0 && input.fileReader !== void 0) {
+    let applicationSchema = explicitSchema;
+    if (!haveExplicitApplication && input.fileReader !== void 0) {
       const discovered = discoverApplicationManifest(input.fileReader);
-      applicationStates = discovered?.states ?? /* @__PURE__ */ new Map();
+      applicationSchema = discovered?.schema;
       if (discovered !== void 0) {
         const source = joinRelativeSource(input.source, discovered.relativePath);
         if (!diagnosticsBySource.has(source)) {
@@ -7083,7 +7055,7 @@ function runValidation(inputs, options = {}) {
     const docOptions = {
       ...options,
       ...input.fileReader !== void 0 ? { fileReader: input.fileReader } : {},
-      ...applicationStates !== void 0 ? { applicationStates } : {}
+      ...applicationSchema !== void 0 ? { applicationSchema } : {}
     };
     diagnosticsBySource.set(input.source, validateDocument(input.text, docOptions));
   }

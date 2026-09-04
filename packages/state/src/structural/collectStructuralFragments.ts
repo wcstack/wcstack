@@ -35,28 +35,77 @@ function cloneNotParseBindTextResult(
   };
 }
 
+/**
+ * パース結果の変換フック（Phase 2 のマウント — impl-plan §3-0 の 1）。
+ *
+ * マウントされたスコープでは、フラグメントのパース結果（テンプレート自身の for/if と
+ * nodeInfos の中身）を**登録時にここで**親ツリーの絶対パスへ書き換える。行の実体化
+ * （collectNodesAndBindingInfosByFragment）は変換済みの nodeInfos をそのまま使うので、
+ * 行生成のホットパスに変換コストは載らない。
+ *
+ * shorthand 展開（`.name` → `<forPath>.*.name`）は**変換前の**内側パスで行う —
+ * 変換後のパスを forPath に使うと、展開結果が絶対パスになり二重変換の判別が
+ * つかなくなるため。したがって入れ子のフラグメントも常に「スコープ相対のパース結果 →
+ * 変換」の順を保ち、変換は各レベルで一度だけ掛かる。
+ *
+ * `uuid` を持つ nodeInfo エントリ（入れ子フラグメントの参照 — 再帰で変換済み）には
+ * 掛けない（collectNodesAndBindingInfos.applyTransform と同じ規則）。
+ */
+export type FragmentParseTransform = (parsed: ParseBindTextResult, forPath?: string) => ParseBindTextResult;
+
+function transformNodeInfos(
+  nodeInfos: IFragmentInfo["nodeInfos"],
+  transform: FragmentParseTransform,
+  forPath: string | undefined,
+): void {
+  for (const nodeInfo of nodeInfos) {
+    for (let i = 0; i < nodeInfo.parseBindTextResults.length; i++) {
+      const parsed = nodeInfo.parseBindTextResults[i];
+      if (parsed.uuid != null) continue;
+      // forPath はこのフラグメントの中身を囲む for のスコープ相対パス（`$n` のシフト量の根拠）
+      nodeInfo.parseBindTextResults[i] = transform(parsed, forPath);
+    }
+  }
+}
+
 function _getFragmentInfo(
   rootNode: Node,
   fragment: DocumentFragment,
   parseBindingTextResult: ParseBindTextResult,
-  forPath?: string
+  forPath?: string,
+  transform?: FragmentParseTransform,
+  // else 節はテンプレート自身の結果を if の**変換済み**結果から clone するため、
+  // そこだけ再変換しない（nodeInfos は通常どおり変換する）
+  transformOwnResult: boolean = true,
 ): IFragmentInfo {
   optimizeFragment(fragment);
   if (typeof forPath === "string") {
     expandShorthandPaths(fragment, forPath);
   }
-  collectStructuralFragments(rootNode, fragment, forPath);
+  collectStructuralFragments(rootNode, fragment, forPath, transform);
   // after replacing and collect node infos on child fragment
   const fragmentInfo = {
     fragment: fragment,
-    parseBindTextResult: parseBindingTextResult,
+    // own result（テンプレート自身の for/if/elseif）にも forPath を渡す — `$n` の
+    // シフト量は囲む for の翻訳が根拠（translateParsedForMount）で、渡し漏れると
+    // record.delta に落ち、翻訳がワイルドカードを増やす部分マウント内の for の
+    // `if: $n` / `elseif: $n` が誤った添字に解決される（transformNodeInfos と対称）。
+    // if/elseif の forPath（呼び手の childForPath）は外側 forPath そのもの。
+    // for テンプレートの own path は `$n` になり得ず、非 `$n` パスの変換は forPath を
+    // 読まないため、for に自パスが渡っても無害
+    parseBindTextResult: typeof transform === "undefined" || !transformOwnResult
+      ? parseBindingTextResult
+      : transform(parseBindingTextResult, forPath),
     nodeInfos: getFragmentNodeInfos(fragment),
+  }
+  if (typeof transform !== "undefined") {
+    transformNodeInfos(fragmentInfo.nodeInfos, transform, forPath);
   }
   return fragmentInfo;
 }
 
 
-export function collectStructuralFragments(rootNode: Node, walkRoot: Document | Element | DocumentFragment, forPath?: string): void {
+export function collectStructuralFragments(rootNode: Node, walkRoot: Document | Element | DocumentFragment, forPath?: string, transform?: FragmentParseTransform): void {
   const elseKeyword = config.commentElsePrefix;
   // Light DOM の mapped コンポーネントの内側は、その子スコープが自分で処理する（§1.13）。
   // fragment info は rootNode + state 名で登録されるため、ホストのパスでここを拾うと
@@ -117,9 +166,9 @@ export function collectStructuralFragments(rootNode: Node, walkRoot: Document | 
       if (lastIfFragmentInfo === null) {
         raiseError(`'else' binding found without preceding 'if' or 'elseif' binding.`);
       }
-      // else condition
+      // else condition（if の変換済み結果の clone なので自身の再変換はしない）
       parseBindTextResult = cloneNotParseBindTextResult("else", lastIfFragmentInfo.parseBindTextResult);
-      fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath);
+      fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath, transform, false);
       setFragmentInfoByUUID(uuid, rootNode, fragmentInfo);
 
       const lastElseFragmentInfo = elseFragmentInfos.at(-1);
@@ -140,7 +189,7 @@ export function collectStructuralFragments(rootNode: Node, walkRoot: Document | 
         raiseError(`'elseif' binding found without preceding 'if' or 'elseif' binding.`);
       }
 
-      fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath);
+      fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath, transform);
       setFragmentInfoByUUID(uuid, rootNode, fragmentInfo);
       const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
 
@@ -173,7 +222,7 @@ export function collectStructuralFragments(rootNode: Node, walkRoot: Document | 
       }
 
     } else {
-      fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath);
+      fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath, transform);
       setFragmentInfoByUUID(uuid, rootNode, fragmentInfo);
       const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
       template.replaceWith(placeHolder);

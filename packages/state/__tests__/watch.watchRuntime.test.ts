@@ -362,11 +362,10 @@ describe("$watch の devtools 計装（設計書 §7-1）", () => {
     // 発火自体は起きている（watch-fired はハンドラ呼び出し前に流れる）ので、
     // fired → error の順で 2 イベントになる。
     expect(watchEvents()).toEqual([
-      expect.objectContaining({ type: "state:watch-fired", stateName: "default", path: "a" }),
+      expect.objectContaining({ type: "state:watch-fired", path: "a" }),
       expect.objectContaining({
         type: "state:watch-error",
         phase: "handler",
-        stateName: "default",
         path: "a",
         error: expect.any(Error),
       }),
@@ -385,10 +384,10 @@ describe("$watch の devtools 計装（設計書 §7-1）", () => {
 
     const fired = watchEvents();
     expect(fired).toEqual([
-      expect.objectContaining({ type: "state:watch-fired", stateName: "default", path: "a" }),
+      expect.objectContaining({ type: "state:watch-fired", path: "a" }),
     ]);
-    // payload は stateName / path のみ（cur / prev / value を載せない契約）
-    expect(Object.keys(fired[0]).sort()).toEqual(["path", "stateName", "type"]);
+    // payload は path のみ（cur / prev / value を載せない契約）
+    expect(Object.keys(fired[0]).sort()).toEqual(["path", "type"]);
     host.remove();
   });
 

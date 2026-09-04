@@ -1,7 +1,6 @@
 import { getLoopContextByNode } from "../list/loopContextByNode";
 import { setLoopContextSymbol } from "../proxy/symbols";
-import { getPrimaryMappingRules, IMappingRule } from "./MappingRule";
-import { getInjectedKeys } from "./preCompletionWrites";
+import { IMountRecord } from "./mount";
 
 /**
  * コンポーネントの own data key とマウントの衝突を、バインド確立時に 1 回だけ報告する
@@ -27,46 +26,7 @@ export function clearOwnKeyShadowReportsForTesting(): void {
   reported.clear();
 }
 
-function ownDataKeys(state: Record<string, any>, injected: ReadonlySet<string> | undefined): string[] {
-  const keys: string[] = [];
-  for (const key of Object.keys(state)) {
-    if (key.startsWith('$')) {
-      continue;
-    }
-    // 完了前の親の初期適用（`state.theme: theme` の積み）が作ったキーは作者のものではない
-    if (typeof injected !== 'undefined' && injected.has(key)) {
-      continue;
-    }
-    const descriptor = Object.getOwnPropertyDescriptor(state, key)!;
-    if (typeof descriptor.get === 'function' || typeof descriptor.set === 'function') {
-      continue;
-    }
-    if (typeof descriptor.value === 'function') {
-      continue;
-    }
-    keys.push(key);
-  }
-  return keys;
-}
 
-/**
- * ルート規則のマウント先の現在値を読む。ワイルドカードを含むマウント先（`users.*`）は
- * ホスト要素のループ文脈で解決する。文脈が無ければ判定できないので undefined。
- */
-function readMountTarget(component: Element, rule: IMappingRule): unknown {
-  const outer = rule.outerAbsPathInfo;
-  const loopContext = getLoopContextByNode(component);
-  if (outer.pathInfo.wildcardCount > 0 && loopContext === null) {
-    return undefined;
-  }
-  let value: unknown = undefined;
-  outer.stateElement.createState("readonly", (state) => {
-    state[setLoopContextSymbol](loopContext, () => {
-      value = state[outer.pathInfo.path];
-    });
-  });
-  return value;
-}
 
 function report(key: string, message: string): void {
   if (reported.has(key)) {
@@ -76,53 +36,66 @@ function report(key: string, message: string): void {
   console.warn(`[@wcstack/state] [wcs/mount-own-key-shadow] ${message} See docs/state-mount-design.md §4-3.`);
 }
 
-export function warnOwnKeyShadows(component: Element, stateProp: string, state: Record<string, any>): void {
-  const rules = getPrimaryMappingRules(component);
-  if (rules === null) {
-    return;
-  }
-  const keys = ownDataKeys(state, getInjectedKeys(component, stateProp));
+/**
+ * v2 マウント（Phase 2）の衝突報告。厳格 R1: 作者の own data key（privateSnapshot）は
+ * 私有で、マウント先の同名キー（ルート）／同名の部分エントリ（1 セグメント）を**隠す**。
+ * 積みで注入されたキーは privateSnapshot に入らないので対象外。
+ */
+export function warnOwnKeyShadowsForMount(record: IMountRecord): void {
+  const keys = Object.keys(record.privateSnapshot);
   if (keys.length === 0) {
     return;
   }
-  const tag = component.tagName.toLowerCase();
-  let rootRule: IMappingRule | null = null;
-  const partialRuleByKey = new Map<string, IMappingRule>();
-  for (const rule of rules) {
-    if (rule.isRoot) {
-      rootRule = rule;
-    } else if (rule.innerAbsPathInfo.pathInfo.segments.length === 1) {
-      partialRuleByKey.set(rule.innerAbsPathInfo.pathInfo.path, rule);
+  const tag = record.component.tagName.toLowerCase();
+  const stateProp = record.stateProp;
+  const partialOuterByKey = new Map<string, string>();
+  for (const entry of record.entries) {
+    if (entry.innerSegments.length === 1) {
+      partialOuterByKey.set(entry.innerSegments[0], entry.outerPathInfo.path);
     }
   }
   let mountTarget: unknown = undefined;
   let mountTargetRead = false;
   for (const key of keys) {
-    const partial = partialRuleByKey.get(key);
-    if (typeof partial !== 'undefined') {
-      const outerPath = partial.outerAbsPathInfo.pathInfo.path;
+    const partialOuter = partialOuterByKey.get(key);
+    if (typeof partialOuter !== "undefined") {
       report(
-        `${tag}|${stateProp}|${key}|partial`,
-        `<${tag}>.${stateProp}.${key} is an own key of the component and is also mapped from the host ("${stateProp}.${key}: ${outerPath}"). ` +
-        `Today the host value wins; in v2 the own key becomes private and hides the host value. Remove the default, or drop the mapping.`,
+        `${tag}|${stateProp}|${key}|root`,
+        `<${tag}>.${stateProp}.${key} is private and hides the mounted entry "${stateProp}.${key}: ${partialOuter}" (the host value no longer reaches it). ` +
+        `Remove the default to read the tree, or rename it to keep it private.`,
       );
       continue;
     }
-    if (rootRule === null) {
+    if (record.rootEntry === null) {
       continue;
     }
     if (!mountTargetRead) {
-      mountTarget = readMountTarget(component, rootRule);
+      mountTarget = readMountRootTarget(record);
       mountTargetRead = true;
     }
-    if (typeof mountTarget !== 'object' || mountTarget === null || !(key in (mountTarget as object))) {
+    if (typeof mountTarget !== "object" || mountTarget === null || !(key in (mountTarget as object))) {
       continue;
     }
-    const outerPath = rootRule.outerAbsPathInfo.pathInfo.path;
+    const outerPath = record.rootEntry.outerPathInfo.path;
     report(
       `${tag}|${stateProp}|${key}|root`,
       `<${tag}>.${stateProp}.${key} is private and hides the mounted tree key "${outerPath}.${key}" (${stateProp}: ${outerPath}). ` +
       `Remove the default to read the tree, or rename it to keep it private.`,
     );
   }
+}
+
+function readMountRootTarget(record: IMountRecord): unknown {
+  const rootEntry = record.rootEntry!;
+  const loopContext = getLoopContextByNode(record.component);
+  if (rootEntry.outerPathInfo.wildcardCount > 0 && loopContext === null) {
+    return undefined;
+  }
+  let value: unknown = undefined;
+  record.parentStateElement.createState("readonly", (state) => {
+    state[setLoopContextSymbol](loopContext, () => {
+      value = (state as Record<string, unknown>)[rootEntry.outerPathInfo.path];
+    });
+  });
+  return value;
 }

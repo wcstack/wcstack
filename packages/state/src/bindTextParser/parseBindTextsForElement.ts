@@ -41,7 +41,6 @@ export function parseBindTextsForElement(bindText: string): ParseBindTextResult[
         propModifiers: [],
         statePathName: '#else',
         statePathInfo: pathInfo,
-        stateName: '',
         inFilters: [],
         outFilters: [],
         bindingType: 'else',

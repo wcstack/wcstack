@@ -18,7 +18,7 @@ import { setFragmentInfoByUUID } from '../src/structural/fragmentInfoByUUID';
 import type { ParseBindTextResult } from '../src/bindTextParser/types';
 import { createListDiff } from '../src/list/createListDiff';
 import { setListIndexesByList } from '../src/list/listIndexesByList';
-import { setStateElementByName } from '../src/stateElementByName';
+import { setStateElement } from '../src/stateElementByName';
 import { getPathInfo } from '../src/address/PathInfo';
 import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
 import { createLoopContextStack } from '../src/list/loopContext';
@@ -51,7 +51,6 @@ function createBindingInfo(node: Node, overrides: Partial<IBindingInfo> = {}): I
     propModifiers: [],
     statePathName: 'items',
     statePathInfo: pathInfo,
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'for',
@@ -120,7 +119,6 @@ function createFragmentInfo() {
     propModifiers: [],
     statePathName: 'items',
     statePathInfo: getPathInfo('items'),
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'for',
@@ -146,7 +144,6 @@ function createFragmentInfoWithBinding() {
     propModifiers: [],
     statePathName: 'items',
     statePathInfo: getPathInfo('items'),
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'for',
@@ -174,7 +171,6 @@ function createFragmentInfoWithMultipleBindings() {
     propModifiers: [],
     statePathName: 'items',
     statePathInfo: getPathInfo('items'),
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'for',
@@ -197,7 +193,6 @@ function createEmptyFragmentInfo() {
     propModifiers: [],
     statePathName: 'items',
     statePathInfo: getPathInfo('items'),
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'for',
@@ -217,7 +212,7 @@ describe('applyChangeToFor', () => {
 
   function setupContext() {
     const stateElement = createMockStateElement();
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
     context = { stateName: 'default', rootNode: document, stateElement: stateElement as any, state, appliedBindingSet: new Set(), newListValueByAbsAddress: new Map(), updatedAbsAddressSetByStateElement: new Map(), deferredSelectBindings: [] };
     return stateElement;
   }
@@ -232,7 +227,7 @@ describe('applyChangeToFor', () => {
 
   afterEach(() => {
     setFragmentInfoByUUID(uuid, document, null);
-    setStateElementByName(document, 'default', null);
+    setStateElement(document, null);
     // Clear cached lastListValue to prevent cross-test contamination
     const pathInfo = getPathInfo('items');
     const stateElement = { name: 'default' } as IStateElement;
@@ -1030,7 +1025,7 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(list, null);
   });
 
-  it('content台帳マップ自体が無いノードで既存インデックスを再適用するとエラーになること', () => {
+  it('content台帳マップ自体が無いノードは共有 lastListValue を無視して白紙から描き直すこと（マウントスコープ再初期化の形）', () => {
     setupContext();
 
     const container = document.createElement('div');
@@ -1051,7 +1046,11 @@ describe('applyChangeToFor', () => {
 
     const sameList = [1, 2];
     createListIndexes(null, list, sameList);
-    expect(() => apply(bindingInfo, sameList)).toThrow(/Content not found for ListIndex/);
+    // 以前はここで raise していた（共有 lastListValue が「既存 content の維持」を指示し、
+    // この binding には content が無い）。マウントスコープの再初期化（コンポーネントが
+    // connectedCallback で shadow を張り直す形）で実在するため、自分の content 台帳が
+    // 空の binding は共有記録を無視して全行 add で描き直す（applyChangeToFor のガード）
+    expect(() => apply(bindingInfo, sameList)).not.toThrow();
 
     setListIndexesByList(list, null);
   });
@@ -1133,7 +1132,7 @@ describe('applyChangeToFor', () => {
         // コールバックを呼ばなぁEↁEcontent ぁEundefined のまま
       }
     } as any;
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
     context = { stateName: 'default', rootNode: document, stateElement: stateElement as any, state, appliedBindingSet: new Set(), newListValueByAbsAddress: new Map(), updatedAbsAddressSetByStateElement: new Map(), deferredSelectBindings: [] };
 
     const container = document.createElement('div');

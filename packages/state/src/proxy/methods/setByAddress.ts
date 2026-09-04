@@ -41,10 +41,9 @@ import { getAbsolutePathInfo } from "../../address/AbsolutePathInfo";
 import { config } from "../../config";
 import { devtoolsSink } from "../../devtools/sink";
 import { beginPropagationTransaction, getCurrentPropagationContext } from "../../propagation/propagation";
-import { getListParentListIndex } from "../../webComponent/baseListIndex";
-import { popCrossBoundaryAddress, pushCrossBoundaryAddress } from "../../webComponent/crossBoundaryAddress";
 import { consumeOccurrenceWrite } from "../occurrenceWrite";
 import { recordPrevValue } from "../../watch/prevValues";
+import { findGraftedSlotUnder } from "../../webComponent/volumeShared";
 
 /**
  * `$watch` の `prev` 台帳へ旧値を記録する（docs/state-watch-hook-design.md §4-1）。
@@ -86,7 +85,6 @@ function notifyWrite(
   updater.enqueueAbsoluteAddress(absAddress, propagationContext);
   // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
   walkDependency(
-    handler.stateName,
     handler.stateElement,
     address,
     handler.stateElement.staticDependency,
@@ -134,15 +132,7 @@ function _setByAddress(
           handler.endUntrack();
           handler.popAddress();
         }
-      } else if (handler.stateElement.hasMappedComponentState === true) {
-        // target は innerState proxy。set トラップにはパス文字列しか渡らないので、
-        // 解決済みの listIndex を動的スコープで越境させる（§1.8）
-        pushCrossBoundaryAddress(handler.stateElement, address);
-        try {
-          return Reflect.set(target, address.pathInfo.path, value);
-        } finally {
-          popCrossBoundaryAddress();
-        }
+
       } else {
         return Reflect.set(target, address.pathInfo.path, value);
       }
@@ -250,7 +240,7 @@ function setKeyedListByAddress(
   // 格納より前に引くのは、格納時の walkDependency（listExpansion: "diff"）が
   // 先にハイブリッド配列の台帳を作ってしまうと、後から上書きした台帳との間で
   // 同じ分裂が起きるため。先に確定させておけば以降は全経路がこれに合流する。
-  const listParentListIndex = getListParentListIndex(handler.stateElement, address.listIndex);
+  const listParentListIndex = address.listIndex;
   if (getListIndexesByList(oldList) === null) {
     // 一度も描画されていないリストは台帳自体が無い。先に生やしておかないと
     // isSameList 経路が空の oldIndexes をそのまま新台帳にしてしまう。
@@ -314,6 +304,20 @@ function setByAddressCore(
 ): any {
   const stateElement = handler.stateElement;
   const path = address.pathInfo.path;
+  // D22 後段: 接ぎ木済みボリュームのマウントポイントを**含む親**の丸ごと書きは throw
+  // （設計書 §4-2）。黙って通すと接ぎ木データが消え、quoted-path アクセサだけが
+  // 宙に浮いて原因の見えない undefined / TypeError になる。スロット自身への書き込みは
+  // 通常のデータ差し替えとして通す。ボリュームの無い state は boolean 判定 1 個で抜ける（D18）
+  if (stateElement.hasGraftedVolumes === true) {
+    const shadowedSlot = findGraftedSlotUnder(stateElement, path);
+    if (shadowedSlot !== null) {
+      raiseError(
+        `Cannot replace "${path}" wholesale: a volume is mounted at "${shadowedSlot}" under it (D22). ` +
+        `Replacing an ancestor of a mount point silently discards the grafted data while its accessors remain. ` +
+        `Write "${shadowedSlot}" itself, or individual fields inside "${path}", instead.`,
+      );
+    }
+  }
   // occurrence（wc-bindable の `semantics: "event"`）由来の書き込みは、同値でも
   // 「もう一度起きた」ことを落としてはならないため same-value guard を 1 回だけ飛ばす。
   // トークンはここで消費されるので、この write の内側で走る他の書き込みには波及しない。

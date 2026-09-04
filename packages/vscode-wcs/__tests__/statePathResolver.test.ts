@@ -34,10 +34,11 @@ export default { count: 0, name: "test" };
       expect(pathNames).toContain('users.*.name');
     });
 
-    it('json 属性で name 属性の stateName が設定される', () => {
-      const html = `<wcs-state name="cart" json='{"items": []}'></wcs-state>`;
-      const paths = getStatePathsFromHtml(html);
-      expect(paths[0].stateName).toBe('cart');
+    it('json 属性のボリューム（mount=）はマウントパス接頭辞付きで載る', () => {
+      const html = `<wcs-state mount="cart" json='{"items": []}'></wcs-state>`;
+      const pathNames = getStatePathsFromHtml(html).map(p => p.path);
+      expect(pathNames).toContain('cart.items');
+      expect(pathNames).not.toContain('items');
     });
   });
 
@@ -235,19 +236,43 @@ export default defineState({
     });
   });
 
-  describe('複数の <wcs-state>', () => {
-    it('異なる初期化方法の複数 state を同時に解析する', () => {
+  describe('複数の <wcs-state>（ルート + ボリューム）', () => {
+    it('異なる初期化方法のルートとボリュームを同時に解析し、ボリュームは接頭辞付きで載る', () => {
       const html = `
 <script type="application/json" id="s1">{ "a": 1 }</script>
-<wcs-state name="first" state="s1"></wcs-state>
-<wcs-state name="second" json='{"b": 2}'></wcs-state>
-<wcs-state name="third">
+<wcs-state state="s1"></wcs-state>
+<wcs-state mount="cfg" json='{"b": 2}'></wcs-state>
+<wcs-state mount="deep.vol">
   <script type="module">export default { c: 3 };</script>
 </wcs-state>`;
-      const paths = getStatePathsFromHtml(html);
-      expect(paths.find(p => p.path === 'a')?.stateName).toBe('first');
-      expect(paths.find(p => p.path === 'b')?.stateName).toBe('second');
-      expect(paths.find(p => p.path === 'c')?.stateName).toBe('third');
+      const pathNames = getStatePathsFromHtml(html).map(p => p.path);
+      expect(pathNames).toContain('a');
+      expect(pathNames).toContain('cfg.b');
+      expect(pathNames).toContain('deep.vol.c');
+    });
+  });
+
+  describe('ボリューム（mount=）候補の選別（v2）', () => {
+    it('メソッドとイベントトークンはボリューム候補に載らないこと（runtime 未対応）', () => {
+      const html = `<wcs-state mount="cart">
+  <script type="module">
+export default {
+  items: [],
+  get total() { return 0; },
+  save() {},
+  $eventTokens: ["saved"],
+  $commandTokens: ["fetch"],
+};
+  </script>
+</wcs-state>`;
+      const pathNames = getStatePathsFromHtml(html).map(p => p.path);
+      expect(pathNames).toContain('cart.items');
+      // getter はアクセサとして接ぎ木される（候補に残る）
+      expect(pathNames).toContain('cart.total');
+      // メソッドのツリー露出は未対応・$eventTokens / $commandTokens は warn で捨てられる
+      expect(pathNames).not.toContain('cart.save');
+      expect(pathNames).not.toContain('cart.saved');
+      expect(pathNames.some(p => p.includes('$'))).toBe(false);
     });
   });
 });

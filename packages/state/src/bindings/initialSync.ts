@@ -5,7 +5,7 @@ import { getLoopContextByNode } from "../list/loopContextByNode";
 import { hasByAddressSymbol, setLoopContextSymbol } from "../proxy/symbols";
 import { readBindableDeclaration } from "../protocol/wcBindableReader";
 import { raiseError } from "../raiseError";
-import { getStateElementByName } from "../stateElementByName";
+import { getStateElement } from "../stateElementByName";
 import { IBindingInfo } from "../types";
 
 export type InitialAuthority = "state" | "element" | "auto" | "none";
@@ -135,9 +135,9 @@ export function resolveInitialSyncPolicy(binding: IBindingInfo): IInitialSyncPol
 
 export function isBindingStateInitialized(binding: IBindingInfo): boolean {
   const rootNode = binding.replaceNode.getRootNode() as Node;
-  const stateElement = getStateElementByName(rootNode, binding.stateName);
+  const stateElement = getStateElement(rootNode);
   if (stateElement === null) {
-    raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+    raiseError(`No state tree found on this root for binding.`);
   }
   const address = getStateAddressByBindingInfo(binding);
   let initialized = false;
@@ -161,9 +161,9 @@ export function commitProducerValue(binding: IBindingInfo, value: unknown): void
     filteredValue = filter.filterFn(filteredValue);
   }
   const rootNode = binding.node.getRootNode() as Node;
-  const stateElement = getStateElementByName(rootNode, binding.stateName);
+  const stateElement = getStateElement(rootNode);
   if (stateElement === null) {
-    raiseError(`State element with name "${binding.stateName}" not found for initial binding sync.`);
+    raiseError(`No state tree found on this root for initial binding sync.`);
   }
   const loopContext = getLoopContextByNode(binding.node);
   stateElement.createState("writable", (state) => {

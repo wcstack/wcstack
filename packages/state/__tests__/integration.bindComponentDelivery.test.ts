@@ -75,7 +75,7 @@ async function mountParentScope(json: string, componentTag: string, componentBin
 describe("bind-component: 親 state 起点の変更配送 (integration)", () => {
   it("マップされたパスそのものへの親の書き込みが子のビューに届くこと", async () => {
     const tag = uniqueTag("bcd-editor");
-    defineEditor(tag, { name: "" }, `<span id="inner-view" data-wcs="textContent: name"></span>`);
+    defineEditor(tag, {}, `<span id="inner-view" data-wcs="textContent: name"></span>`);
 
     const { host, parentStateElement, hostView, innerView } = await mountParentScope(
       '{"user":{"name":"Alice"}}',
@@ -101,7 +101,7 @@ describe("bind-component: 親 state 起点の変更配送 (integration)", () => 
 
   it("マップ先より深いサブパスへの親の書き込みが子のビューに届くこと", async () => {
     const tag = uniqueTag("bcd-editor");
-    defineEditor(tag, { user: {} }, `<span id="inner-view" data-wcs="textContent: user.name"></span>`);
+    defineEditor(tag, {}, `<span id="inner-view" data-wcs="textContent: user.name"></span>`);
 
     const { host, parentStateElement, hostView, innerView } = await mountParentScope(
       '{"user":{"name":"Alice"}}',

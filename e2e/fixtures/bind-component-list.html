@@ -29,7 +29,7 @@
   </style>
   <script type="module">
     class ListView extends HTMLElement {
-      state = { items: [] };
+      state = {}; // v2 R1（D19）
       constructor() {
         super();
         this.attachShadow({ mode: "open" });

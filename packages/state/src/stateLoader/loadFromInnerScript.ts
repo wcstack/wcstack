@@ -38,9 +38,9 @@ function describeImportFailure(name: string, error: unknown, cspBlocked: boolean
  */
 let loadSequence = 0;
 
-export async function loadFromInnerScript(script: HTMLScriptElement, name: string): Promise<IState> {
+export async function loadFromInnerScript(script: HTMLScriptElement, sourceLabel: string): Promise<IState> {
   let scriptModule: ScriptModule | null = null;
-  const uniq_comment = `\n//# sourceURL=${name}#${++loadSequence}\n`;
+  const uniq_comment = `\n//# sourceURL=${sourceLabel}#${++loadSequence}\n`;
   // import() が失敗した理由が CSP かどうかを判別するために、評価の間だけ違反を購読する。
   let cspBlocked = false;
   const onViolation = (event: Event) => {
@@ -69,7 +69,7 @@ export async function loadFromInnerScript(script: HTMLScriptElement, name: strin
   } catch (e) {
     // 呼び出し元（State._initialize / _initializeDCC）が raiseError で
     // `[@wcstack/state]` を付けるため、ここでは prefix を重ねない。
-    throw new Error(describeImportFailure(name, e, cspBlocked), { cause: e });
+    throw new Error(describeImportFailure(sourceLabel, e, cspBlocked), { cause: e });
   } finally {
     document.removeEventListener("securitypolicyviolation", onViolation);
   }

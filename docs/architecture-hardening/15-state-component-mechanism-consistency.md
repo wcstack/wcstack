@@ -63,6 +63,15 @@ This document applies the "does the bind take" axis of [13-framework-adapter-bin
 | §3.5 | types and layering (`IStateElement` has no setter) | ✅ fixed |
 | §3.6 | the READMEs under `src/` disagree with the implementation | ✅ fixed |
 
+> **Superseded (2026-09-02, v2 branch — state-mount Phase 2)**: the mechanisms named in the
+> implementation table below (innerState / MappingRule / crossBoundaryAddress / outerListPath /
+> baseListIndex / the parent-to-child notify channel / the outer-pattern piggyback) were
+> **deleted** in Phase 2 slice 9 (P2-7, −3,618 lines). The behaviors this document pinned
+> (§1.1–§1.13) now hold on the single-tree mount machinery — binding translation onto the
+> parent ledger — with no per-shape special cases; see
+> [state-mount-impl-plan.md §3-0](../state-mount-impl-plan.md) and the correspondence table in
+> its §7-8. The rows above stay as the historical record of what the v1 bridging had to fix.
+
 The fixes were implemented in the following.
 
 | File | Topic |

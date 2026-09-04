@@ -47,7 +47,7 @@
 ```ts
 // 双方が create-if-missing で取得する（ロード順非依存）
 interface IDevtoolsHookRegistry {
-  readonly version: 1;                       // プロトコル版。additive change は版を上げない
+  readonly version: 2;                       // プロトコル版。additive change は版を上げない
   readonly sources: Map<string, IDevtoolsSource>;
   register(source: IDevtoolsSource): void;   // ランタイム → registry
   unregister(sourceId: string): void;
@@ -82,9 +82,15 @@ interface IDevtoolsSource {
   readonly packageVersion: string;
   // --- pull ---
   getStateElements(): IStateElementSummary[];   // 接続時スナップショットの起点
-  keys(name: string, rootNode: Node): string[]; // トップレベルキー列挙（状態ツリーの描画起点）
-  read(name: string, rootNode: Node, path: string, indexes?: number[]): unknown;
-  write(name: string, rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
+  keys(rootNode: Node): string[];               // トップレベルキー列挙（状態ツリーの描画起点）
+  // v2: マウント記録の列挙（D20 の可視化）。マーカー（#m<id>）ごとにマウント表と
+  // 私有面（オーバーレイ専用アドレス空間に住むキー）を要約する。マウント無しは空配列。
+  // 注: ランタイムは提供済みだが @wcstack/devtools の UI はまだ消費していない
+  //（オーバーレイペインは今後の作業 — v2 レビューの non-blocking 記録）。プロトコルに
+  // 先に載せてあるのは、消費側がランタイムのリリース無しで採用できるようにするため
+  overlays(rootNode: Node): IMountOverlaySummary[];
+  read(rootNode: Node, path: string, indexes?: number[]): unknown;
+  write(rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
   // v1 追補（additive）: ランタイム自身の正本パーサによる宣言レベルバインディングの
   // **集合**。ソース = live DOM の属性 + コメントアンカー（spread は live wcBindable
   // から展開・未定義要素は "spread" のまま）+ rootNode 配下のアンカーから到達可能な
@@ -100,8 +106,19 @@ interface IDevtoolsSource {
   _setSink(sink: ((e: DevtoolsEvent) => void) | null): void;
 }
 
+// v2: マウント記録 1 件の要約（overlays の要素・D20 の可視化）。
+interface IMountOverlaySummary {
+  readonly marker: string;        // D20 の予約セグメント（`#m<id>`）
+  readonly componentTag: string;  // マウントされたコンポーネントのタグ名（小文字）
+  readonly stateProp: string;
+  // マウント表: 内側接頭辞（空 = ルートエントリ）→ 外側パス
+  readonly mountTable: readonly { readonly inner: string; readonly outer: string }[];
+  readonly delta: number;         // `$n` 補正の Δ（ルート接頭辞のワイルドカード数）
+  readonly privateKeys: readonly string[]; // 私有キー（オーバーレイ空間に住む own data key）
+  readonly getterKeys: readonly string[];  // マーカーパスに載る getter のキー
+}
+
 interface IStateElementSummary {
-  readonly name: string;
   readonly rootNode: Node;
   readonly element: Element;          // <wcs-state> 生参照（原則 4）
   readonly paths: {
@@ -127,7 +144,6 @@ interface IDeclaredBindingInfo {
   readonly node: Node | null;   // origin "fragment" は live DOM にノードを持たないため null
   readonly propName: string;
   readonly statePathName: string;
-  readonly stateName: string;
   readonly bindingType: string;
   readonly inFilters: readonly { filterName: string; args: readonly string[] }[];
   readonly outFilters: readonly { filterName: string; args: readonly string[] }[];
@@ -163,14 +179,15 @@ interface IDeclaredBindingInfo {
 - これだけは常時 ON の台帳（原則 2 の明示的例外）。サイズは `<wcs-state>` 要素数に拘束され、
   disconnect で必ず削除されるためリークしない。`getStateElements()` の実体。
 - イベント: `state:element-registered` / `state:element-unregistered`
-  payload = `{ name, rootNode, element }`。
+  payload = `{ rootNode, element }`（v2: 名前次元は無い — 1 rootNode 1 ツリー）。
 
 ### 4.2 書き込みログ
 
 - [setByAddress.ts](../packages/state/src/proxy/methods/setByAddress.ts) の
   same-value guard **通過後**（実書き込みのみ）に発火。
-- payload = `{ stateName, path, listIndexes: number[] | null, value, oldValue? }`。
-  `oldValue` は guard が既に取得している場合（primitive かつ guard ON）のみ含める。
+- payload = `{ absoluteAddress, value, oldValue, hasOldValue }`（`absoluteAddress` が
+  stateElement・path・listIndex を運ぶ — v2 の絶対アドレスは stateElement 参照が正）。
+  `oldValue` は guard が既に取得している場合（primitive かつ guard ON）のみ意味を持つ。
   参照型のために追加の get はしない（MUST NOT — ホットパス保護）。
 - swap 経路（`_setByAddressWithSwap`）も同一点を通るため個別対応不要。
 
@@ -194,16 +211,16 @@ restart を巻き添えにしないため、[state-watch-hook-design.ja.md](./st
 つまり `console.error` を見ていない限り失敗が表に出ない。ここが唯一の可視化点になる。
 
 - イベント: `state:watch-error`
-  payload = `{ phase: "prime" | "evaluate" | "handler", stateName, path, error }`。
+  payload = `{ phase: "prime" | "evaluate" | "handler", path, error }`。
   `phase` は throw 元 —— `prime` は接続時の初回評価、`evaluate` は `cur` の解決（watch した
   getter の強制評価）、`handler` はハンドラ本体。getter の失敗とハンドラの失敗は直し方が
   違うので畳まない。
 - イベント: `state:watch-chain-limit` payload = `{ maxDepth, paths }`。watch 起点の書き込み
   連鎖が深さ上限で打ち切られたときに 1 回。値と binding 適用は巻き戻さない
-  （`propagation:hop-limit` と同じ姿勢）。バッチ単位の打ち切りなので `stateName` は持たない。
+  （`propagation:hop-limit` と同じ姿勢）。
 - イベント: `state:watch-fired`（v1 追補・additive —
   [state-watch-hook-design.md](./state-watch-hook-design.md) §11 の予約イベント）
-  payload = `{ stateName, path }`。各ハンドラ呼び出しの直前に 1 回。**値は載せない** —
+  payload = `{ path }`。各ハンドラ呼び出しの直前に 1 回。**値は載せない** —
   「宣言したのに一度も発火しない」の検出には発火の事実だけで足り、値を載せると発火
   ホットパスに直列化コストが乗る。`IStateElementSummary.watchPaths`（宣言面）と対で
   配線カバレッジの実測面になる。
@@ -222,13 +239,13 @@ restart を巻き添えにしないため、[state-watch-hook-design.ja.md](./st
 binding**。どちらもランタイムは報告して続行する ＝ ここに出ないとコンソール以外に現れない。
 
 - Event: `state:path-unresolved`（v1 追補・additive）、
-  payload = `{ source: "binding" | "watch", stateName, path, missingSegment }`。バインド確立時
+  payload = `{ source: "binding" | "watch", path, missingSegment }`。バインド確立時
   （または `$watch` 宣言時）に「このパスは解決しない」と確定したとき、(state 要素, パス) ごとに
   1 回だけ流れる。判定は**過小近似** — getter の戻り値の先・空リスト・null 親・mapped な
   `bind-component` の子はすべて沈黙するので、**イベントが無いことは正しさの証明にならない**
   （[pathDiagnostics.ts](../packages/state/src/pathDiagnostics.ts)）。
 - Event: `state:binding-apply-error`（v1 追補・additive）、
-  payload = `{ stateName, path, bindingType, error }`。binding 1 本の適用が throw したときに流れる。
+  payload = `{ path, bindingType, error }`。binding 1 本の適用が throw したときに流れる。
   ランタイムは失敗を隔離してバッチの残り・`$updatedCallback`・drain リスナーを守る —
   `state:watch-error` と同じ姿勢であり、存在理由も同じ（見えない隔離は「失敗が無かった」と区別できない）。
 
@@ -247,12 +264,9 @@ binding**。どちらもランタイムは報告して続行する ＝ ここに
 - [CommandToken.ts](../packages/state/src/command/CommandToken.ts) /
   [EventToken.ts](../packages/state/src/event/EventToken.ts) の `emit` を薄く override
   （`sink && sink(...)` → `super.emit(...)`）。
-- token は自分の stateElement を知らないため、コンストラクタに owner 情報
-  `{ stateName }` を**内部 optional 引数**として追加し、registry
-  （`getOrCreateCommandToken` 等）が渡す。プロトコル外部仕様（command-token-protocol /
-  event-token-protocol）は不変更。
+- プロトコル外部仕様（command-token-protocol / event-token-protocol）は不変更。
 - イベント: `state:token-emit`
-  payload = `{ kind: "command" | "event", stateName, tokenName, args: unknown[], subscriberCount }`。
+  payload = `{ kind: "command" | "event", tokenName, args: unknown[], subscriberCount }`。
   `subscriberCount === 0` の emit は「空撃ち」としてそのまま流す — raf で踏んだ
   whenDefined 前の command 空撃ちレースが**タイムライン上で見える**ようにするのが狙い。
 

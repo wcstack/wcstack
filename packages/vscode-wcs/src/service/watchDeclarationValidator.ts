@@ -60,7 +60,7 @@ export function validateWatchDeclarations(
 
     // パス候補が 1 つも取れない（解析できないスクリプト）なら存在検証は行わない。
     // `$streamStatus` の照合が候補ゼロでスキップするのと同じ誤警告回避。
-    const paths = analyzeStatePaths(block.content, block.stateName);
+    const paths = analyzeStatePaths(block.content);
     const pathSet = new Set(paths.map(p => p.path));
 
     for (const entry of entries) {

@@ -35,9 +35,7 @@ describe('walkDependency', () => {
     const listPathSet = new Set<string>(['users']);
     const visited: string[] = [];
 
-    const result = walkDependency(
-      'default',
-      defaultStateElement,
+    const result = walkDependency(      defaultStateElement,
       startAddress,
       staticDependency,
       dynamicDependency,
@@ -64,9 +62,7 @@ describe('walkDependency', () => {
     const dynamicDependency = new Map<string, string[]>();
     const listPathSet = new Set<string>(['users']);
 
-    walkDependency(
-      'default',
-      defaultStateElement,
+    walkDependency(      defaultStateElement,
       startAddress,
       staticDependency,
       dynamicDependency,
@@ -81,9 +77,7 @@ describe('walkDependency', () => {
       createListIndex(null, 1),
     ]);
 
-    const result = walkDependency(
-      'default',
-      defaultStateElement,
+    const result = walkDependency(      defaultStateElement,
       startAddress,
       staticDependency,
       dynamicDependency,
@@ -108,9 +102,7 @@ describe('walkDependency', () => {
     const listPathSet = new Set<string>(['users']);
 
     // First call to seed lastValueByListAddress
-    walkDependency(
-      'default',
-      defaultStateElement,
+    walkDependency(      defaultStateElement,
       startAddress,
       staticDependency,
       new Map(),
@@ -126,9 +118,7 @@ describe('walkDependency', () => {
       createListIndex(null, 1),
     ]);
 
-    const result = walkDependency(
-      'default',
-      defaultStateElement,
+    const result = walkDependency(      defaultStateElement,
       startAddress,
       staticDependency,
       new Map(),
@@ -154,9 +144,7 @@ describe('walkDependency', () => {
     const spy = vi.spyOn(listIndexesByList, 'getListIndexesByList');
 
     const beforeFirst = spy.mock.calls.length;
-    walkDependency(
-      'default',
-      defaultStateElement,
+    walkDependency(      defaultStateElement,
       startAddress,
       staticDependency,
       new Map(),
@@ -172,9 +160,7 @@ describe('walkDependency', () => {
       createListIndex(null, 1),
     ]);
 
-    walkDependency(
-      'default',
-      defaultStateElement,
+    walkDependency(      defaultStateElement,
       startAddress,
       staticDependency,
       new Map(),
@@ -196,9 +182,7 @@ describe('walkDependency', () => {
     const dynamicDependency = new Map<string, string[]>();
     const listPathSet = new Set<string>();
 
-    const result = walkDependency(
-      'default',
-      defaultStateElement,
+    const result = walkDependency(      defaultStateElement,
       startAddress,
       staticDependency,
       dynamicDependency,
@@ -220,9 +204,7 @@ describe('walkDependency', () => {
     const dynamicDependency = new Map<string, string[]>();
     const listPathSet = new Set<string>(['user']);
 
-    const result = walkDependency(
-      'default',
-      defaultStateElement,
+    const result = walkDependency(      defaultStateElement,
       startAddress,
       staticDependency,
       dynamicDependency,
@@ -247,9 +229,7 @@ describe('walkDependency', () => {
     ]);
     const listPathSet = new Set<string>();
 
-    const result = walkDependency(
-      'default',
-      defaultStateElement,
+    const result = walkDependency(      defaultStateElement,
       startAddress,
       staticDependency,
       dynamicDependency,
@@ -276,9 +256,7 @@ describe('walkDependency', () => {
     ]);
     const listPathSet = new Set<string>();
 
-    const result = walkDependency(
-      'default',
-      defaultStateElement,
+    const result = walkDependency(      defaultStateElement,
       startAddress,
       staticDependency,
       dynamicDependency,
@@ -305,9 +283,7 @@ describe('walkDependency', () => {
     ]);
 
     // First call to seed lastValueByListAddress for expansion
-    walkDependency(
-      'default',
-      defaultStateElement,
+    walkDependency(      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,
@@ -317,9 +293,7 @@ describe('walkDependency', () => {
       () => {}
     );
 
-    const result = walkDependency(
-      'default',
-      defaultStateElement,
+    const result = walkDependency(      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,
@@ -347,9 +321,7 @@ describe('walkDependency', () => {
     const spy = vi.spyOn(listIndexesByList, 'getListIndexesByList');
 
     const beforeFirst = spy.mock.calls.length;
-    walkDependency(
-      'default',
-      defaultStateElement,
+    walkDependency(      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,
@@ -360,9 +332,7 @@ describe('walkDependency', () => {
     );
     const afterFirst = spy.mock.calls.length;
 
-    walkDependency(
-      'default',
-      defaultStateElement,
+    walkDependency(      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,
@@ -388,9 +358,7 @@ describe('walkDependency', () => {
       ['groups.*.name', ['groups.*.teams.*.members.*.id']],
     ]);
 
-    const result = walkDependency(
-      'default',
-      defaultStateElement,
+    const result = walkDependency(      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,
@@ -420,9 +388,7 @@ describe('walkDependency', () => {
 
     const types = ['old', 'new', 'add', 'change', 'delete'] as const;
     for (const type of types) {
-      expect(() => walkDependency(
-        'default',
-        defaultStateElement,
+      expect(() => walkDependency(        defaultStateElement,
         startAddress,
         staticDependency,
         dynamicDependency,
@@ -448,9 +414,7 @@ describe('walkDependency', () => {
       ['users.*.name', ['users.*.orders.*.items.*.id']],
     ]);
 
-    const result = walkDependency(
-      'default',
-      defaultStateElement,
+    const result = walkDependency(      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,
@@ -480,9 +444,7 @@ describe('walkDependency', () => {
       ['users.*.name', ['users.*.orders.*.items.*.id']],
     ]);
 
-    const result = walkDependency(
-      'default',
-      defaultStateElement,
+    const result = walkDependency(      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,
@@ -507,9 +469,7 @@ describe('walkDependency', () => {
       ['users.*.name', ['users.*.orders.*.id']],
     ]);
 
-    expect(() => walkDependency(
-      'default',
-      defaultStateElement,
+    expect(() => walkDependency(      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,
@@ -527,9 +487,7 @@ describe('walkDependency', () => {
       ['users.*.name', ['users.*.dispName']],
     ]);
 
-    expect(() => walkDependency(
-      'default',
-      defaultStateElement,
+    expect(() => walkDependency(      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,
@@ -547,9 +505,7 @@ describe('walkDependency', () => {
       ['users.*.name', ['users.summary']],
     ]);
 
-    const result = walkDependency(
-      'default',
-      defaultStateElement,
+    const result = walkDependency(      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,
@@ -572,9 +528,7 @@ describe('walkDependency', () => {
       ['users.*.name', ['users.*.name']],
     ]);
 
-    const result = walkDependency(
-      'default',
-      defaultStateElement,
+    const result = walkDependency(      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,
@@ -599,9 +553,7 @@ describe('walkDependency', () => {
     const startAddress = createStateAddress(getPathInfo('p0'), null);
     const stateProxy = createStateProxy({});
 
-    expect(() => walkDependency(
-      'default',
-      defaultStateElement,
+    expect(() => walkDependency(      defaultStateElement,
       startAddress,
       staticDependency,
       new Map(),
@@ -621,9 +573,7 @@ describe('walkDependency', () => {
     const dynamicDependency = new Map<string, string[]>();
     const listPathSet = new Set<string>(['users']);
 
-    const result = walkDependency(
-      'default',
-      defaultStateElement,
+    const result = walkDependency(      defaultStateElement,
       startAddress,
       staticDependency,
       dynamicDependency,
@@ -646,9 +596,7 @@ describe('walkDependency', () => {
       ['users.*.name', ['users.*.orders.*.id']],
     ]);
 
-    const result = walkDependency(
-      'default',
-      defaultStateElement,
+    const result = walkDependency(      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,
@@ -672,9 +620,7 @@ describe('walkDependency', () => {
       ['users.*.name', ['groups.*.id']],
     ]);
 
-    const result = walkDependency(
-      'default',
-      defaultStateElement,
+    const result = walkDependency(      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,

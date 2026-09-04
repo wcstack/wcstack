@@ -4,6 +4,7 @@ import {
   collectNodesAndBindingInfos,
   collectNodesAndBindingInfosByFragment,
   IDeferredSpreadEntry,
+  ParseResultTransform,
   processDeferredNode,
 } from "./collectNodesAndBindingInfos";
 import { IFragmentNodeInfo, IRowPlan } from "../structural/types";
@@ -33,8 +34,9 @@ function scheduleDeferredSpreads(
 export function initializeBindings(
   root: Document | DocumentFragment | Element,
   parentLoopContext: ILoopContext | null,
+  transform?: ParseResultTransform,
 ): void {
-  const [subscriberNodes, allBindings, deferredSpreads] = collectNodesAndBindingInfos(root);
+  const [subscriberNodes, allBindings, deferredSpreads] = collectNodesAndBindingInfos(root, transform);
   const session = getOrCreateBindingSession(root);
   for (const node of subscriberNodes) {
     setLoopContextByNode(node, parentLoopContext);

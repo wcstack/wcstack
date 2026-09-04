@@ -477,6 +477,25 @@ npm run test:coverage    # Coverage (100% statements/functions/lines, 97%+ branc
 npm run lint             # ESLint
 ```
 
+## Versioning and breaking changes
+
+All published packages share one version and are released in lockstep — a release bumps every package, whether or not it changed.
+
+**Covered by semver** — changing any of these incompatibly means a major release:
+
+- The `data-wcs` binding syntax and its documented semantics (paths, filters, structural directives, spread).
+- Each package's documented element surface: tag names, attributes, and the `static wcBindable` declaration (`properties` / `event` / `getter`).
+- The interop protocols: wc-bindable, command-token, event-token, transition-runner, binder, ssr-snapshot.
+- Tooling contracts: the manifest schema (`schemaVersion`), the `wcs-schema` / `wcs-tsc` CLIs, and the `@wcstack/testing` API. The devtools hook protocol carries its own `version` field; a non-additive change bumps it and rides a major release.
+
+**Not covered** — may change in a minor or patch release:
+
+- Internal module layout and anything not re-exported from a package entry point.
+- Console message wording and performance characteristics.
+- Anything explicitly marked experimental or reserved in the docs.
+
+**Deprecation practice**: where feasible, a surface is flagged for at least one minor release (a lint rule and/or a runtime notice pointing at the replacement) before the next major removes it — v1.x flagged named state with `wcs/named-state-deprecated` before v2.0 removed `name=` / `@name`.
+
 ## License
 
 MIT

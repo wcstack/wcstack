@@ -19,12 +19,10 @@ export function getAbsolutePathInfo(stateElement: IStateElement, pathInfo: IPath
 
 class AbsolutePathInfo implements IAbsolutePathInfo {
   readonly pathInfo: IPathInfo;
-  readonly stateName: string;
   readonly stateElement: IStateElement;
   readonly parentAbsolutePathInfo: IAbsolutePathInfo | null;
   constructor(stateElement: IStateElement, pathInfo: IPathInfo) {
     this.pathInfo = pathInfo;
-    this.stateName = stateElement.name;
     this.stateElement = stateElement;
     if (pathInfo.parentPathInfo === null) {
       this.parentAbsolutePathInfo = null;

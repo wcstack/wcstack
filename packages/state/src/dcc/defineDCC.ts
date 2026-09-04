@@ -47,7 +47,7 @@ export function defineDCC(hostElement: Element, shadowRoot: ShadowRoot, state: I
     : {};
 
   // DCC クラス生成
-  const stateTagSelector = `${config.tagNames.state}:not([name])` as const;
+  const stateTagSelector = config.tagNames.state;
 
   const DCCElement = class extends HTMLElement {
     static template = template;
@@ -109,11 +109,10 @@ export function defineDCC(hostElement: Element, shadowRoot: ShadowRoot, state: I
         if (stateEl) {
           stateEl.setBindableEventMap(DCCElement.bindableEventMap);
         } else {
-          // $bindables を宣言しているのに束ねる先が無い。stateTagSelector は
-          // `:not([name])` なので name 付きの <wcs-state> は一致せず、この分岐に落ちると
+          // $bindables を宣言しているのに束ねる先が無い。この分岐に落ちると
           // 変更イベントが一切出ないまま静かに壊れる
           // （docs/architecture-hardening/15-state-component-mechanism-consistency.md §2.5）。
-          console.warn(`[@wcstack/state] DCC: "${tagName}" declares ${STATE_BINDABLES_NAME} but its template has no <${config.tagNames.state}> without a "name" attribute. Change events will not be dispatched.`);
+          console.warn(`[@wcstack/state] DCC: "${tagName}" declares ${STATE_BINDABLES_NAME} but its template has no <${config.tagNames.state}>. Change events will not be dispatched.`);
         }
       }
     }

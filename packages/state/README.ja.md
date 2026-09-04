@@ -46,13 +46,13 @@
 |----------|----------------|--------------|
 | **状態** (`<wcs-state>`) | データ構造とビジネスロジック | どのDOM要素がバインドされているか |
 | **UI** (`data-wcs`) | パス文字列と表示意図 | 状態がどう保存・算出されているか |
-| **コンポーネント** (`@name`) | 名前付き状態から必要なパス | 他コンポーネントの内部実装 |
+| **コンポーネント** (`state: path`) | ホストが書くマウント表 | 他コンポーネントの内部実装 |
 
 3つのレベルのパス契約が疎結合を実現しています:
 
 1. **UI ↔ 状態** — `data-wcs="textContent: user.name"` という属性がバインディングのすべてです。フックもセレクタもリアクティブプリミティブもありません。コンポーネントのJavaScriptには、状態を参照するコードが**一行も**必要ありません。
 
-2. **コンポーネント ↔ コンポーネント** — コンポーネント間の通信は、名前付き状態の参照（`@stateName`）で行われます。コンポーネント同士がお互いを直接インポートしたり参照したりすることはありません。共有するのはパスの命名規約だけです。
+2. **コンポーネント ↔ コンポーネント** — ホストが各コンポーネントへ部分木をマウントし（`<my-card data-wcs="state: user">`）、ボリュームが追加モジュールをツリーに接ぎ木します（`<wcs-state mount="i18n">`）。コンポーネント同士がお互いを直接インポートしたり参照したりすることはありません。すべての接続は単一ツリー上のパス接頭辞だけです。
 
 3. **ループコンテキスト** — `for` ループ内では `*` が抽象インデックスとして機能します。`items.*.price` のようなバインディングは自動的に現在の要素へと解決されます。テンプレートは自身の具体的な位置（インデックス）を知る必要がなく、ワイルドカードがその契約となります。
 
@@ -222,21 +222,20 @@
 
 > **Content-Security-Policy 下では:** 5 番（内包 `<script type="module">`）は `blob:` URL 経由で評価されるため `script-src blob:` が必要です。ページの nonce では救えません。厳格な CSP を敷く場合は 4 番（`src="./state.js"`）を使ってください。追加ディレクティブは不要です。詳細は [docs/csp.ja.md](../../docs/csp.ja.md)。
 
-### 名前付き状態
+### 追加の状態をマウントする（`mount=`）
 
-複数の状態要素を `name` 属性で共存できます。バインディングでは `@name` で参照します：
+状態のツリーは **1 つの root に 1 本**です。状態をモジュールに分けたい場合はボリュームをマウントします。データはマウントパスの位置でルートツリーに接ぎ木され、バインディングは接頭辞付きのパスで読みます。
 
 ```html
-<wcs-state name="cart">...</wcs-state>
-<wcs-state name="user">...</wcs-state>
+<wcs-state mount="cart" src="./cart.js"></wcs-state>
+<wcs-state src="./app.js"></wcs-state>
 
-<div data-wcs="textContent: total@cart"></div>
-<div data-wcs="textContent: name@user"></div>
+<div data-wcs="textContent: cart.total"></div>
 ```
 
-デフォルト名は `"default"`（`@` 不要）です。
+ボリュームは getter・`$watch`・`$listKeys`・`$updatedCallback`・`$connectedCallback`/`$disconnectedCallback` を宣言できます（すべてマウントパス相対）。読み込み順は自由です（ルートより先に接続されたボリュームは、ルートの登録時に接ぎ木されます）。マウントパスは静的パスのみです（`*`・`$`・`#`・`@` は不可）。
 
-> **非推奨 — v2 で廃止。** `name` 属性と `@name` セレクタは、パスの隣にあるもう 1 本の軸（rootNode ごとの登録簿で、Shadow 境界を越えない）です。v2 では**マウント**に置き換わります: `<wcs-state mount="cart">` が状態をルートツリーに接ぎ木し、バインディングは `cart.total` で読みます。1.x では何も変わりません。lint が使用箇所を `wcs/named-state-deprecated`（warning）で示し、ランタイムは `config.debug` 下でだけ warn します。移行の対応表: [docs/state-mount-design.md](../../docs/state-mount-design.md) §9。
+> **v1 の名前付き状態からの移行:** `<wcs-state name="cart">` + `total@cart` は `<wcs-state mount="cart">` + `cart.total` になります。v2 では `name` 属性は fail-fast し、パス中の `@` は parse error です（どちらもこの誘導文付き）。移行の対応表: [docs/state-mount-design.md](../../docs/state-mount-design.md) §9。
 
 ## 状態の更新
 
@@ -289,7 +288,7 @@ this.items.sort((a, b) => a.id - b.id);
 ### `data-wcs` 属性
 
 ```
-property[#modifier]: path[@state][|filter[|filter(args)...]]
+property[#modifier]: path[|filter[|filter(args)...]]
 ```
 
 複数バインディングは `;` で区切ります：
@@ -303,7 +302,6 @@ property[#modifier]: path[@state][|filter[|filter(args)...]]
 | `property` | バインドする DOM プロパティ | `value`, `textContent`, `checked` |
 | `#modifier` | バインディング修飾子 | `#ro`, `#prevent`, `#stop`, `#onchange` |
 | `path` | 状態プロパティパス | `count`, `user.name`, `users.*.name` |
-| `@state` | 名前付き状態の参照 | `@cart`, `@user` |
 | `\|filter` | 変換フィルタチェーン | `\|gt(0)`, `\|round\|locale` |
 
 ### プロパティ種別
@@ -488,7 +486,7 @@ export default {
 
 - spread 右辺へのフィルタ（`...: target|filter`）はエラー
 - 右辺パスの途中に `*` を含めても OK（例：`...: stores.*.fetch`）
-- `@stateName` 修飾子は各展開エントリへ伝播（`...: fetchX@store`）
+- 右辺は素のツリーパス（`...: fetchX`、途中の `*` も可）
 - カスタム要素クラスが未登録の場合、`customElements.whenDefined(tag)` 解決時に遅延展開される（autoloader による遅延ロードに対応）
 - `wcBindable` 宣言**のない**要素はエラー（明示配線で書いてください）。spread は何を展開すべきかを契約から読み取るため
 
@@ -557,7 +555,6 @@ this.items = await (await fetch("/api/items")).json();
 | `.name` | `users.*.name` | 現在の要素のプロパティ |
 | `.` | `users.*` | 現在の要素そのもの |
 | `.name\|uc` | `users.*.name\|uc` | フィルタは保持される |
-| `.name@state` | `users.*.name@state` | 状態名は保持される |
 
 プリミティブ配列では、`.` が要素の値を直接参照します：
 
@@ -1204,7 +1201,7 @@ customElements.define("my-component", MyComponent);
 
 ### コンポーネント定義（Light DOM）
 
-Light DOM コンポーネントは Shadow DOM を使用しません。CSS と同様に state の名前空間も上位スコープと共有されるため、`name` 属性が必須です。
+Light DOM コンポーネントは Shadow DOM を使用しません。v2 では Shadow 形と同じ書き方になります —— コンポーネントのバインディングはマウント位置でホストのツリーへ変換されるため、**name も `@` セレクタも不要**で、同じコンポーネントをリストの行ごとに置けます:
 
 ```javascript
 class MyLightComponent extends HTMLElement {
@@ -1212,30 +1209,21 @@ class MyLightComponent extends HTMLElement {
 
   connectedCallback() {
     this.innerHTML = `
-      <wcs-state bind-component="state" name="my-light"></wcs-state>
-      <div data-wcs="text: message@my-light"></div>
-      <input type="text" data-wcs="value: message@my-light" />
+      <wcs-state bind-component="state"></wcs-state>
+      <div data-wcs="text: message"></div>
+      <input type="text" data-wcs="value: message" />
     `;
   }
 }
 customElements.define("my-light-component", MyLightComponent);
 ```
 
-- Light DOM コンポーネントでは `name` 属性が**必須**です（名前空間が上位スコープと共有されるため）
-- バインディングでは `@my-light` のように状態名を明示的に参照する必要があります
 - `<wcs-state>` はコンポーネント要素の直下に配置する必要があります
+- **ホストからの配線が必須**です（`<my-light-component data-wcs="state.message: user.name">` または `state: user`）。配線の無い plain な Light DOM `bind-component` は v2 では成立しません（親と root を共有したまま独立ツリーは持てない）—— 誘導文付きで loud に失敗します: shadow を付けるか、ホストから配線してマウントにしてください。
 
-- ホスト側からのバインド（`<my-light-component data-wcs="state.message: user.name">`）も
-  Shadow DOM 形と同様に使えます。コンポーネントのサブツリーは**独立したバインディングスコープ**
-  として扱われ、コンポーネント側の状態が名前登録を終えてから配線されます
-
-> **注意**: Light DOM は名前空間を上位スコープと共有するため、**同じ `name` を持つインスタンスを
-> 同一スコープに複数置くことはできません**。リストの行ごとにコンポーネントを配置するような形は
-> Shadow DOM を使ってください。
->
-> また `State.getBindingsReady(root)` はコンポーネントのスコープを含みません（Shadow DOM 形で
-> 子が別 rootNode にあるのと同じ扱いです）。コンポーネント内部の描画完了まで待ちたい場合は、
-> コンポーネント側の `<wcs-state>` の初期化を待ってください。
+> **注意**: `State.getBindingsReady(root)` はマウント記録の確定後、マウントスコープも待ちます。
+> コンポーネント内部の描画完了まで待ちたい場合は、コンポーネント側の `<wcs-state>` の初期化を
+> 待ってください。
 
 ### ホスト側の使用方法
 
@@ -1293,9 +1281,16 @@ customElements.define("user-card", UserCard);
 - 部分マウントを併用できます: `state: user; state.theme: theme` は `theme` を 2 つ目の入口としてマウントします（最長接頭辞が勝つので、中の `theme.mode` はツリーの `theme.mode` を読みます）
 - ループでは**行そのもの**をマウントします: `<template data-wcs="for: users"><user-row data-wcs="state: ."></user-row></template>`。行コンポーネントの中の `name` は `users.*.name`、中の `for: tags` は `users.*.tags.*` を回します
 - **自前のキーは私有**です（[docs/state-mount-design.md](../../docs/state-mount-design.md) §4-3 の R1）: コンポーネントが自分で宣言したデータキー（`state = { mode: "view" }`）はその要素のもので、ツリーには書かれません。マウント先に同名のキーがあってそれを隠す形（`user.name` の上に `state = { name: "" }`）では、ランタイムが 1 回だけ warn します（`wcs/mount-own-key-shadow`）— ツリーを読みたければ既定値を消し、私有のままにしたければ名前を変えてください
-- 配列そのものをルートにマウントする形（`state: rows` ＋ 中で `for`）は 1.x では非対応です。行をマウントする（`state: .`）か、配列を持つオブジェクトをマウントして中で `for` を回してください（`state: group` ＋ `for: children`）。どちらも契約テストで固定されており、マウントがツリー拡張の唯一の手段になる v2 にそのまま引き継がれます
+- 配列そのものをルートにマウントする形（`state: rows` ＋ 中で `for`）は非対応です。行をマウントする（`state: .`）か、配列を持つオブジェクトをマウントして中で `for` を回してください（`state: group` ＋ `for: children`）。どちらも契約テストで固定されており、マウントがツリー拡張の唯一の手段です
 
-> プロパティ単位の形（`state.message: user.name`）はそのまま動きます。マップされるキーに既定値を宣言しているコンポーネント（`state = { message: "" }` ＋ `state.message: ...`）には 1.x で 1 回だけ warn が出ます: 今日はホストの値が勝ちますが、v2 では自前のキーが私有になりホストの値を隠すので、既定値を消してください。
+> プロパティ単位の形（`state.message: user.name`）はそのまま動きます — 同じ機構の上の部分マウントです。
+> R1 はすべてのマウント形で厳格です — マップされるキーに既定値を
+> 宣言しているコンポーネント（`state = { message: "" }` ＋ `state.message: ...`）は自前のキーが
+> **私有**になり、ホストの値を隠します（1 回だけ `wcs/mount-own-key-shadow` が指します）。ツリーを
+> 読むには既定値を消してください。Light DOM のマウントに `name` は不要で、
+> `element.state`（および getter / メソッド内の `this`）の `$getAll` / `$setAll` / `$resolve` /
+> `$postUpdate` はコンポーネント自身の語彙で書けます — パスはマウント先へ翻訳され、ホスト行の
+> 添字は自動で前置されます。
 
 ### 独立した Web Component への状態注入（`__e2e__/single-component`）
 
@@ -1335,8 +1330,7 @@ customElements.define("my-component", MyComponent);
 
 - `bind-component` 付きの `<wcs-state>` はコンポーネント要素の**直下**（トップレベル）に配置すること
 - 親要素は**カスタム要素**（ハイフンを含むタグ名）であること
-- Light DOM コンポーネントでは `name` 属性が**必須**（上位スコープとの名前空間衝突を回避するため）
-- Light DOM のバインディングでは状態名を明示的に参照すること（例: `@my-light`）
+- Light DOM コンポーネントはホストからの配線が必須（plain 形は v2 で廃止）
 
 ### ループ内でのコンポーネント使用
 
@@ -1864,13 +1858,13 @@ $updatedCallback(paths) {
 
 主なルール:
 
-- **自 state のみ** —— パスに `@stateName` は書けません。他の state 要素の watch は宣言時に拒否されます。
+- **ツリーのパスのみ** —— パスに `@`（v1 の名前セレクタ）は書けません。含む宣言は loud に拒否されます。
 - **中間値は観測できません** —— 1 バッチ内の `a → b → c` は `cur = c` / `prev = a` で 1 回だけ発火します（binding 更新と同じ契約）。
 - **行単位の差分を見たいなら `$listKeys`** —— 未宣言のまま配列全体を代入すると、行 watch は**全行**について `prev === undefined` で発火します（どの行もパス書き込みを通っていないため）。`$listKeys` を宣言すればキー突合が per-field 書き込みに分解するので、変化した行だけが発火し `prev` もスカラで取れます。
 - **headless な行 watch には `$listKeys` が必要** —— `$watch` が単独では headless にならない唯一の箇所です。`items` から `items.*.price` への展開はリストの `for` バインディングが駆動しており、watch を宣言してもそのパスをリストとしては登録しません（意図的）。したがって `for` バインドも `$listKeys` も無い状態で配列を代入すると、行 watch は**一度も**発火しません。`$listKeys` を宣言する（キー突合がフィールドごとにパス書き込みするので展開を経由しない）か、リストを描画してください。スカラーパスは `user.name` のようなネストしたものも含め、この条件なしに headless で発火します。
 - **ハンドラの例外は隔離されます** —— throw はコンソールに報告され、残りの watch（と stream の restart）は続行します。loud fail する `$connectedCallback` / `$updatedCallback` とは異なる扱いです。
 - **書き込みの連鎖には上限があります** —— ハンドラの書き込みは新しいバッチを作るため、相互に書き合う watch は無限ループになり得ます。32 段で打ち切り、コンソールに報告します（値と DOM は巻き戻しません）。
-- **mapped な `bind-component` の子では使えません** —— 子の state は `$` 始まりのプロパティを遮る proxy に包まれるため、宣言が届きません（`$streams` も同様）。plain な（マップされていない）子では宣言できます。
+- **マウントされた `bind-component` スコープでは実行されません** —— マウントされたコンポーネントは宣言面を実行せず、`$watch` の宣言があると 1 回だけ console.warn でルート state（またはボリューム —— `<wcs-state mount>` は `$watch` / `$listKeys` / `$updatedCallback` を持てます）へ誘導します（`$streams` も同様）。plain な（配線なし Shadow の）子は独立ツリーを持つので宣言できます。
 - **SSR では実行されません** —— ハンドラの副作用がサーバーとクライアントで二重に走るためです。
 
 ## Inputs と属性ミラー
@@ -2171,7 +2165,7 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 - 親が `null` / `undefined`（初期値 `null` に後から代入する形）
 - 初期値が空配列のリストの行フィールド（行の形が分からない）
 - 途中の getter の戻り値のサブプロパティ
-- mapped な `bind-component` の子スコープ（パスの正本は親側）
+- マウントされたコンポーネントのマーカーパス（`#m…` —— 私有キー・getter の実体はマウントのオーバーレイ側にあり raw state には無い）
 - `$` 始まりの予約名前空間（`$command.*` など）
 
 裏を返すと、**警告が出ない ＝ 正しい保証にはなりません**。網羅した検査は `npx @wcstack/lint <file>` 側で行ってください。
@@ -2442,7 +2436,7 @@ bootstrapState();
 
 | 属性 | 説明 |
 |---|---|
-| `name` | 状態名（デフォルト: `"default"`） |
+| `mount` | この state をルートツリーへ**ボリューム**として接ぎ木する静的ツリーパス（v2 — 撤去された `name` 属性の後継。ツリーは 1 root に 1 本） |
 | `state` | `<script type="application/json">` 要素の ID |
 | `src` | `.json` または `.js` ファイルの URL |
 | `json` | インライン JSON 文字列 |
@@ -2452,7 +2446,6 @@ bootstrapState();
 
 | プロパティ / メソッド | 説明 |
 |---|---|
-| `name` | 状態名 |
 | `initializePromise` | 状態の完全な初期化時に解決される Promise |
 | `listPaths` | `for` ループで使用されるパスの Set |
 | `getterPaths` | getter として定義されたパスの Set |

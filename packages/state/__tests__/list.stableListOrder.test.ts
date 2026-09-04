@@ -21,7 +21,7 @@ import { createListDiff } from '../src/list/createListDiff';
 import { createListIndex } from '../src/list/createListIndex';
 import type { IListDiff, IListIndex } from '../src/list/types';
 import { setListIndexesByList, getListIndexesByList } from '../src/list/listIndexesByList';
-import { setStateElementByName } from '../src/stateElementByName';
+import { setStateElement } from '../src/stateElementByName';
 import { getPathInfo } from '../src/address/PathInfo';
 import { createLoopContextStack } from '../src/list/loopContext';
 import type { IStateElement } from '../src/components/types';
@@ -165,7 +165,6 @@ function createBindingInfo(node: Node, overrides: Partial<IBindingInfo> = {}): I
     propModifiers: [],
     statePathName: 'items',
     statePathInfo: pathInfo,
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'for',
@@ -224,7 +223,6 @@ function createEmptyFragmentInfo() {
     propModifiers: [],
     statePathName: 'items',
     statePathInfo: getPathInfo('items'),
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'for',
@@ -245,7 +243,6 @@ function createFragmentInfoWithBinding() {
     propModifiers: [],
     statePathName: 'items',
     statePathInfo: getPathInfo('items'),
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'for',
@@ -286,7 +283,7 @@ describe('applyChangeToFor の並べ替え（LIS リオーダー）', () => {
 
   function setupContext() {
     const stateElement = createMockStateElement();
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
     context = { stateName: 'default', rootNode: document, stateElement: stateElement as any, state, appliedBindingSet: new Set(), newListValueByAbsAddress: new Map(), updatedAbsAddressSetByStateElement: new Map(), deferredSelectBindings: [] };
     return stateElement;
   }
@@ -320,7 +317,7 @@ describe('applyChangeToFor の並べ替え（LIS リオーダー）', () => {
 
   afterEach(() => {
     setFragmentInfoByUUID(uuid, document, null);
-    setStateElementByName(document, 'default', null);
+    setStateElement(document, null);
     // lastListValue の台帳はモック化した getAbsoluteStateAddressByBinding が
     // binding ごとに固有の住所を返すため、テスト間の隔離は mount() が毎回
     // 新しい bindingInfo を作ることで担保される（明示クリア不要）。

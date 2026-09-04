@@ -14,7 +14,6 @@ function createMockBindingInfo(path: string, node: Node): IBindingInfo {
     propModifiers: [],
     statePathName: path,
     statePathInfo: getPathInfo(path),
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     node,

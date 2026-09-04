@@ -71,18 +71,8 @@ describe('expandSpread', () => {
     expect(out.map(r => r.statePathName)).toEqual(['fetchX.value', 'fetchX.url', 'fetchX.method']);
   });
 
-  it('@stateName を各エントリへ伝搬すること', () => {
-    const tag = uniqueTagName();
-    defineElement(tag, {
-      protocol: 'wc-bindable',
-      version: 1,
-      properties: [{ name: 'value', event: `${tag}:value-changed` }],
-    });
-    const el = createElement(tag);
-    const results = parseBindTextsForElement('...: fetchX@store');
-    const out = expandSpread(el, results);
-    expect(out[0].stateName).toBe('store');
-    expect(out[0].statePathName).toBe('fetchX.value');
+  it('@stateName は v2 の parse error（spread も同じ）', () => {
+    expect(() => parseBindTextsForElement('...: fetchX@store')).toThrow(/removed in v2/);
   });
 
   it('途中の wildcard を含むパスも展開すること', () => {

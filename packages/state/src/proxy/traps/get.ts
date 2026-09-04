@@ -24,6 +24,7 @@ import { IAbsoluteStateAddress, IStateAddress } from "../../address/types";
 import { getCommandNamespace } from "../../command/commandNamespace";
 import { DELIMITER, INDEX_BY_INDEX_NAME, STATE_COMMAND_NAMESPACE_NAME, STATE_STREAM_ERROR_NAMESPACE_NAME, STATE_STREAM_STATUS_NAMESPACE_NAME } from "../../define";
 import { listIndexAtWildcard } from "../../list/wildcardLevel";
+import { getIndexShiftForMarkerPath, getMountRecordByPath } from "../../webComponent/mount";
 import { raiseError } from "../../raiseError";
 import { getStreamErrorNamespace, getStreamStatusNamespace } from "../../stream/streamNamespace";
 import { connectedCallback } from "../apis/connectedCallback";
@@ -87,7 +88,18 @@ export function get(
     }
     // `$1` は「このスコープの」1 段目。base 深さ Δ を持つ子スコープでも
     // 番号がずれないよう末尾から数える（list/wildcardLevel.ts）
-    const indexListIndex = listIndexAtWildcard(listIndex, index, lastAddress!.pathInfo.wildcardCount);
+    let scopedIndex = index;
+    const lastPathInfo = lastAddress!.pathInfo;
+    // マウントのアクセサ評価中（マーカーパスが push されている）はスコープ相対の Δ を
+    // 足す（設計書 §4-4: `$n → listIndex.at(Δ + n - 1)`。テンプレート側の `$n` は
+    // 変換時に織り込み済み — webComponent/mount.ts の translateInnerPath）
+    if (handler.stateElement?.hasMounts === true && lastPathInfo.path.indexOf('#') !== -1) {
+      const mountRecord = getMountRecordByPath(handler.stateElement, lastPathInfo.path);
+      if (mountRecord !== null) {
+        scopedIndex = index + getIndexShiftForMarkerPath(mountRecord, lastPathInfo.path);
+      }
+    }
+    const indexListIndex = listIndexAtWildcard(listIndex, scopedIndex, lastPathInfo.wildcardCount);
     return indexListIndex?.index ?? raiseError(`ListIndex not found: ${prop.toString()}`);
   }
   if (typeof prop === "string") {

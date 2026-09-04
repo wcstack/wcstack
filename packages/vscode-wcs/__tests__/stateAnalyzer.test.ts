@@ -257,11 +257,6 @@ describe('analyzeJsonPaths', () => {
     expect(paths.find(p => p.path === 'value')?.typeHint).toBe('null');
   });
 
-  it('stateName を指定できる', () => {
-    const paths = analyzeJsonPaths('{"count": 0}', 'cart');
-    expect(paths[0].stateName).toBe('cart');
-  });
-
   it('不正な JSON の場合は空配列を返す', () => {
     expect(analyzeJsonPaths('invalid json')).toEqual([]);
   });
@@ -598,7 +593,7 @@ describe('analyzeSchemaPaths — stateSchema（sidecar）からの候補', () =>
       },
     };
     const byPath = new Map(analyzeSchemaPaths(schema).map(p => [p.path, p]));
-    expect(byPath.get('count')).toMatchObject({ kind: 'data', typeHint: 'number', fromSchema: true, stateName: 'default' });
+    expect(byPath.get('count')).toMatchObject({ kind: 'data', typeHint: 'number', fromSchema: true });
     expect(byPath.get('name')).toMatchObject({ typeHint: 'string' });
     expect(byPath.get('users')).toMatchObject({ kind: 'data', typeHint: 'array' });
     expect(byPath.get('users.*')).toMatchObject({ kind: 'list', fromSchema: true });
@@ -630,7 +625,7 @@ describe('analyzeSchemaPaths — stateSchema（sidecar）からの候補', () =>
     };
     const paths = analyzeSchemaPaths(schema, 'other');
     const byPath = new Map(paths.map(p => [p.path, p]));
-    expect(byPath.get('maybe')).toMatchObject({ typeHint: 'string', stateName: 'other' });
+    expect(byPath.get('maybe')).toMatchObject({ typeHint: 'string' });
     expect(byPath.get('mode')).toMatchObject({ typeHint: 'string' });
     expect(byPath.get('flag')).toMatchObject({ typeHint: 'boolean' });
     expect(byPath.get('owner')).toMatchObject({ typeHint: 'object' });
@@ -665,22 +660,21 @@ describe('analyzeSchemaPaths — stateSchema（sidecar）からの候補', () =>
 
 describe('mergeSchemaCandidates — script / JSON 候補との合流（D12: schema 優先）', () => {
   const script: PathCandidate[] = [
-    { path: 'count', kind: 'data', typeHint: 'string', rawInitial: '"0"', stateName: 'default' },
-    { path: 'inc', kind: 'method', stateName: 'default' },
-    { path: 'count', kind: 'data', typeHint: 'string', stateName: 'other' },
+    { path: 'count', kind: 'data', typeHint: 'string', rawInitial: '"0"' },
+    { path: 'inc', kind: 'method' },
+    { path: 'other', kind: 'data', typeHint: 'string' },
   ];
 
-  it('同じ state・同じパスは schema が勝ち、schema に無い候補（メソッド等）と他 state は残る', () => {
-    const merged = mergeSchemaCandidates(script, new Map([['default', { type: 'object', properties: { count: { type: 'number' } } }]]));
-    const defaultCount = merged.filter(p => p.stateName === 'default' && p.path === 'count');
-    expect(defaultCount).toHaveLength(1);
-    expect(defaultCount[0]).toMatchObject({ typeHint: 'number', fromSchema: true });
+  it('同じパスは schema が勝ち、schema に無い候補（メソッド等）は残る', () => {
+    const merged = mergeSchemaCandidates(script, { type: 'object', properties: { count: { type: 'number' } } });
+    const countCands = merged.filter(p => p.path === 'count');
+    expect(countCands).toHaveLength(1);
+    expect(countCands[0]).toMatchObject({ typeHint: 'number', fromSchema: true });
     expect(merged.some(p => p.path === 'inc' && p.kind === 'method')).toBe(true);
-    expect(merged.find(p => p.stateName === 'other' && p.path === 'count')).toMatchObject({ typeHint: 'string' });
+    expect(merged.find(p => p.path === 'other')).toMatchObject({ typeHint: 'string' });
   });
 
-  it('applicationStates が無い / 空ならそのまま返す', () => {
+  it('applicationSchema が無ければそのまま返す', () => {
     expect(mergeSchemaCandidates(script)).toBe(script);
-    expect(mergeSchemaCandidates(script, new Map())).toBe(script);
   });
 });

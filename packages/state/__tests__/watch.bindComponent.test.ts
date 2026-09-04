@@ -63,9 +63,33 @@ function defineComponent(tag: string, initialItems: Array<{ name: string }>): vo
  * `mapped` が true なら `data-wcs="state.items: groups.*.children"` を付けて親の値を写し、
  * false なら属性を付けずコンポーネント自身のローカル state で `for` を回す。
  */
+/** mapped 形用: authored items を持たない（v2 R1 で私有になりマッピングを隠すため・D19）。$watch 宣言だけ持つ。 */
+function defineMappedComponent(tag: string): void {
+  class Component extends HTMLElement {
+    state: Record<string, any> = {
+      $watch: {
+        "items.*.name"(cur: unknown, prev: unknown, ...indexes: number[]) {
+          observed.push([indexes, cur, prev]);
+        },
+      },
+    };
+    constructor() {
+      super();
+      this.attachShadow({ mode: "open" });
+      this.shadowRoot!.innerHTML =
+        `<wcs-state bind-component="state"></wcs-state>${LIST_TEMPLATE}`;
+    }
+  }
+  customElements.define(tag, Component);
+}
+
 async function mountInParentFor(mapped: boolean) {
   const tag = uniqueTag("watch-bc-item");
-  defineComponent(tag, [{ name: "x0" }, { name: "x1" }]);
+  if (mapped) {
+    defineMappedComponent(tag);
+  } else {
+    defineComponent(tag, [{ name: "x0" }, { name: "x1" }]);
+  }
 
   const attr = mapped ? ` data-wcs="state.items: groups.*.children"` : "";
   const host = document.createElement(uniqueTag("watch-bc-host"));
@@ -102,22 +126,24 @@ async function mountInParentFor(mapped: boolean) {
   const renderedOf = (i: number) =>
     Array.from(components[i].shadowRoot!.querySelectorAll("li")).map((li) => li.textContent);
 
-  return { host, parentStateElement, childStateElements, renderedOf };
+  return { host, parentStateElement, components, childStateElements, renderedOf };
 }
 
 describe("$watch と bind-component 境界", () => {
-  it("mapped 形では $watch 宣言が子スコープに届かないこと（innerState proxy が `$` を遮る既存仕様）", async () => {
+  it("mapped 形では $watch 宣言が子スコープに届かないこと（v2: マウントは独立ツリーを持たず $ 宣言を実行しない）", async () => {
     observed.length = 0;
-    const { host, childStateElements, renderedOf } = await mountInParentFor(true);
+    const { host, parentStateElement, components, childStateElements, renderedOf } = await mountInParentFor(true);
 
     // 親の値は正しく写っている（マッピング自体は生きている）
     expect(renderedOf(1)).toEqual(["b0", "b1"]);
     // が、`$watch` は宣言として届かないので registry は空
+    //（v1 は innerState の `$` 遮断、v2 はマウントが state ロード自体を行わない — どちらも既定で不成立。
+    //  マウントスコープの $ 面の設計は P2-9 / 設計書 §4-6）
     expect(childStateElements[1].watchPaths).toBeNull();
     expect(getWatchEntries(childStateElements[1]).size).toBe(0);
 
-    childStateElements[1].createState("writable", (state) => {
-      state.$resolve("items.*.name", [1], "B1!");
+    parentStateElement.createState("writable", (state: any) => {
+      state["groups.1.children.1.name"] = "B1!";
     });
     await flush();
 

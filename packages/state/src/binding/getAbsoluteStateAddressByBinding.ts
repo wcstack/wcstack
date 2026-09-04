@@ -4,7 +4,7 @@ import { IAbsoluteStateAddress } from "../address/types";
 import { getRootNodeByFragment } from "../apply/rootNodeByFragment";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
 import { raiseError } from "../raiseError";
-import { getStateElementByName } from "../stateElementByName";
+import { getStateElement } from "../stateElementByName";
 import { IBindingInfo } from "./types";
 
 const absoluteStateAddressByBinding: WeakMap<IBindingInfo, IAbsoluteStateAddress> = new WeakMap();
@@ -42,9 +42,9 @@ export function getAbsoluteStateAddressByBinding(binding: IBindingInfo, knownRoo
   const rootNode: Node = resolveBindingRootNode(binding, knownRootNode);
 
   const listIndex = getListIndexByBindingInfo(binding);
-  const stateElement = getStateElementByName(rootNode, binding.stateName);
+  const stateElement = getStateElement(rootNode);
   if (stateElement === null) {
-    raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+    raiseError(`No state tree found on this root for binding.`);
   }
   const absolutePathInfo = getAbsolutePathInfo(stateElement, binding.statePathInfo);
   absoluteStateAddress = 

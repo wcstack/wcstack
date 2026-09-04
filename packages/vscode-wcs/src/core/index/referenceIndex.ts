@@ -51,7 +51,6 @@ export type OccurrenceKind = 'path' | 'eventToken';
 export interface IPathOccurrence {
   readonly source: OccurrenceSource;
   readonly kind: OccurrenceKind;
-  readonly stateName: string;
   readonly path: string;
   /** パス文字列そのもののスパン。 */
   readonly pathRange: ITokenRange;
@@ -60,15 +59,12 @@ export interface IPathOccurrence {
   /** 左辺 propName のスパン（mustache / comment は null）。 */
   readonly propName: string | null;
   readonly propRange: ITokenRange | null;
-  /** `@stateName` 明示指定の名前部分のスパン（省略時は null）。 */
-  readonly stateNameRange: ITokenRange | null;
   /** 正本パーサの bindingType（mustache / comment は 'text' 扱い）。 */
   readonly bindingType: string;
 }
 
 /** 宣言サイト（インラインスクリプトのトップレベル宣言）。 */
 export interface IDeclarationSite {
-  readonly stateName: string;
   readonly name: string;
   readonly kind: 'data' | 'getter' | 'method';
   readonly range: ITokenRange;
@@ -90,15 +86,11 @@ export interface IReferenceIndex {
   readonly declarations: readonly IDeclarationSite[];
   readonly problems: readonly IParseProblem[];
   /** 指定 state の指定パスの出現を全て返す。 */
-  referencesOf(stateName: string, path: string): IPathOccurrence[];
+  referencesOf(path: string): IPathOccurrence[];
   /** パス（または宣言名）の宣言サイト。完全一致 → 第 1 セグメントの順で解決。 */
-  declarationOf(stateName: string, path: string): IDeclarationSite | null;
+  declarationOf(path: string): IDeclarationSite | null;
   /** ドキュメントオフセット位置にあるパス出現（パス文字列上のみヒット）。 */
   occurrenceAt(offset: number): IPathOccurrence | null;
-}
-
-function keyOf(stateName: string, path: string): string {
-  return `${stateName}\u0000${path}`;
 }
 
 export function buildReferenceIndex(html: string, options: IReferenceIndexOptions = {}): IReferenceIndex {
@@ -126,13 +118,11 @@ export function buildReferenceIndex(html: string, options: IReferenceIndexOption
       occurrences.push({
         source: 'attribute',
         kind: binding.parsed.propSegments[0] === 'eventToken' ? 'eventToken' : 'path',
-        stateName: binding.parsed.stateName,
         path: binding.parsed.statePathName,
         pathRange: lift(binding.pathRange),
         exprRange: lift(binding.exprRange),
         propName: binding.parsed.propName,
         propRange: binding.propRange === null ? null : lift(binding.propRange),
-        stateNameRange: binding.stateNameRange === null ? null : lift(binding.stateNameRange),
         bindingType: binding.parsed.bindingType,
       });
     }
@@ -159,13 +149,11 @@ export function buildReferenceIndex(html: string, options: IReferenceIndexOption
     occurrences.push({
       source: match.kind,
       kind: 'path',
-      stateName: binding.parsed.stateName,
       path: binding.parsed.statePathName,
       pathRange: shift(binding.pathRange),
       exprRange: { start: match.exprStart, end: match.exprEnd },
       propName: null,
       propRange: null,
-      stateNameRange: binding.stateNameRange === null ? null : shift(binding.stateNameRange),
       bindingType: 'text',
     });
   }
@@ -173,10 +161,16 @@ export function buildReferenceIndex(html: string, options: IReferenceIndexOption
   // --- 宣言側: <wcs-state> インラインスクリプトのトップレベル宣言 ---
   const declarations: IDeclarationSite[] = [];
   for (const block of parseWcsScriptBlocks(html, stateTagName)) {
+    // ボリューム（mount=）の宣言はマウントパス接頭辞でツリーに載る（v2）。
+    // `$` 宣言は**パスとしては**マウント越しに表現できないため索引に載せない
+    //（runtime は $watch / $listKeys / $updatedCallback を翻訳・相対配送で実行する —
+    // パス索引の対象にならないだけで「実行しない」わけではない。$streams は raise・
+    // トークンは warn）
+    const prefix = block.mountPath === null ? '' : block.mountPath + '.';
     for (const span of analyzeDeclarationSpans(block.content)) {
+      if (prefix !== '' && span.name.startsWith('$')) continue;
       declarations.push({
-        stateName: block.stateName,
-        name: span.name,
+        name: prefix + span.name,
         kind: span.kind,
         range: { start: block.contentStart + span.start, end: block.contentStart + span.end },
       });
@@ -189,7 +183,7 @@ export function buildReferenceIndex(html: string, options: IReferenceIndexOption
   const byPath = new Map<string, IPathOccurrence[]>();
   for (const occurrence of occurrences) {
     if (occurrence.kind !== 'path') continue;
-    const key = keyOf(occurrence.stateName, occurrence.path);
+    const key = occurrence.path;
     const list = byPath.get(key);
     if (list === undefined) {
       byPath.set(key, [occurrence]);
@@ -199,7 +193,7 @@ export function buildReferenceIndex(html: string, options: IReferenceIndexOption
   }
   const declarationByName = new Map<string, IDeclarationSite>();
   for (const declaration of declarations) {
-    const key = keyOf(declaration.stateName, declaration.name);
+    const key = declaration.name;
     // 同名宣言（get/set ペア等）は最初の宣言を正とする
     if (!declarationByName.has(key)) declarationByName.set(key, declaration);
   }
@@ -208,16 +202,16 @@ export function buildReferenceIndex(html: string, options: IReferenceIndexOption
     occurrences,
     declarations,
     problems,
-    referencesOf(stateName, path) {
+    referencesOf(path) {
       // 内部配列を渡すと呼び出し側の変異でインデックスが壊れるため複製を返す
-      return (byPath.get(keyOf(stateName, path)) ?? []).slice();
+      return (byPath.get(path) ?? []).slice();
     },
-    declarationOf(stateName, path) {
-      const exact = declarationByName.get(keyOf(stateName, path));
+    declarationOf(path) {
+      const exact = declarationByName.get(path);
       if (exact !== undefined) return exact;
       const firstSegment = path.split('.')[0];
       if (firstSegment === path) return null;
-      return declarationByName.get(keyOf(stateName, firstSegment)) ?? null;
+      return declarationByName.get(firstSegment) ?? null;
     },
     occurrenceAt(offset) {
       for (const occurrence of occurrences) {

@@ -5,15 +5,9 @@ import { ICommandToken } from "./types";
 // CommandToken は共有 pub/sub プリミティブ Token の薄い特化。
 // instanceof による型判別を成立させるため独立クラスとして維持する。
 //
-// ownerStateName は devtools 計装（protocol §4.5）のための内部 optional 引数。
-// command-token-protocol の外部仕様は不変更（registry が渡すだけで、
-// subscribe/emit の意味論には一切影響しない）。
 export class CommandToken extends Token implements ICommandToken {
-  private _ownerStateName: string | null;
-
-  constructor(name: string, ownerStateName?: string) {
+  constructor(name: string) {
     super(name);
-    this._ownerStateName = ownerStateName ?? null;
   }
 
   emit(...args: unknown[]): unknown[] {
@@ -23,7 +17,6 @@ export class CommandToken extends Token implements ICommandToken {
       devtoolsSink({
         type: "state:token-emit",
         kind: "command",
-        stateName: this._ownerStateName,
         tokenName: this.name,
         args,
         subscriberCount: this.size,

@@ -70,7 +70,6 @@ function createStateElement(overrides?: Partial<any>) {
 function createHandler(stateElement: any, overrides?: Partial<any>) {
   return {
     stateElement,
-    stateName: 'default',
     pushAddress: vi.fn(),
     popAddress: vi.fn(),
     beginUntrack: vi.fn(),

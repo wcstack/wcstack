@@ -10,7 +10,6 @@ function createBindingInfo(node: Node, replaceNode: Node): IBindingInfo {
     propModifiers: [],
     statePathName: 'message',
     statePathInfo: getPathInfo('message'),
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'text',

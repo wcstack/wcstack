@@ -67,6 +67,14 @@
 | §3.5 | 型・レイヤ（`IStateElement` に setter が無い） | ✅ 修正済み |
 | §3.6 | `src/` 配下の README が実装と食い違う | ✅ 修正済み |
 
+> **Superseded（2026-09-02・v2 ブランチ — state-mount Phase 2）**: 下の実装表に並ぶ
+> 機構（innerState / MappingRule / crossBoundaryAddress / outerListPath / baseListIndex /
+> 親→子通知チャネル / outer-pattern 相乗り）は Phase 2 slice 9（P2-7・−3,618 行）で
+> **削除**された。本書がピンした挙動（§1.1〜§1.13）は、単一ツリーのマウント機構
+> （親台帳へのバインディング変換）の上で形ごとの特例なしに成立している —
+> [state-mount-impl-plan.md §3-0](../state-mount-impl-plan.md) と同 §7-8 の対応表を参照。
+> 上の表は v1 橋渡し層が直さねばならなかったものの歴史記録として残す。
+
 修正の実装は以下。
 
 | ファイル | 対象 |

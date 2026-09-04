@@ -26,12 +26,12 @@ const SAMPLE = `<!doctype html>
     };
   </script>
 </wcs-state>
-<wcs-state name="cart">
+<wcs-state mount="cart">
   <script type="module">
     export default { total: 100 };
   </script>
 </wcs-state>
-<wcs-state name="ext" src="./ext-state.js"></wcs-state>
+<wcs-state mount="ext" src="./ext-state.js"></wcs-state>
 <div data-wcs="textContent: count | fix(0)"></div>
 <input data-wcs="value#ro: user.name">
 <input data-wcs="value#init=element,sync=connect: user.name">
@@ -45,9 +45,9 @@ const SAMPLE = `<!doctype html>
 <p>{{ total }}</p>
 <p>{{ count | fix(0) }}</p>
 <!--@@: user.name -->
-<span data-wcs="textContent: total@cart"></span>
+<span data-wcs="textContent: cart.total"></span>
 <span data-wcs="textContent: missing.path"></span>
-<span data-wcs="textContent: something@ext"></span>
+<span data-wcs="textContent: ext.something"></span>
 `;
 
 /** needle の path 部分の中央オフセット（occurrence / トークンヒット用） */
@@ -60,12 +60,11 @@ function offsetIn(needle: string, token: string): number {
 }
 
 describe('wiringLens: hover（§5-2）', () => {
-  it('データパスの hover に種別・型・state・宣言行が出ること', () => {
+  it('データパスの hover に種別・型・宣言行が出ること', () => {
     const hover = getHoverAt(SAMPLE, offsetIn('"textContent: count | fix(0)"', 'count'), { locale: 'en' })!;
     expect(hover).not.toBeNull();
     expect(hover.markdown).toContain('`count`');
     expect(hover.markdown).toContain('data (number)');
-    expect(hover.markdown).toContain('`default`');
     expect(hover.markdown).toMatch(/L\d+/);
   });
 
@@ -86,7 +85,7 @@ describe('wiringLens: hover（§5-2）', () => {
   });
 
   it('src 外部 state のパスは「外部定義」を明示すること', () => {
-    const hover = getHoverAt(SAMPLE, offsetIn('something@ext', 'something'), { locale: 'en' })!;
+    const hover = getHoverAt(SAMPLE, offsetIn('ext.something', 'ext.something'), { locale: 'en' })!;
     expect(hover.markdown).toContain('./ext-state.js');
     expect(hover.markdown).toContain('not statically analyzed');
   });
@@ -95,9 +94,8 @@ describe('wiringLens: hover（§5-2）', () => {
     expect(getHoverAt(SAMPLE, offsetIn('missing.path', 'missing.path'))).toBeNull();
   });
 
-  it('@state 越境パスの hover が対象 state 側で解決されること', () => {
-    const hover = getHoverAt(SAMPLE, offsetIn('total@cart', 'total'), { locale: 'en' })!;
-    expect(hover.markdown).toContain('`cart`');
+  it('ボリューム（mount=）のパスがマウント接頭辞で解決されること', () => {
+    const hover = getHoverAt(SAMPLE, offsetIn('cart.total', 'cart.total'), { locale: 'en' })!;
     expect(hover.markdown).toContain('data (number)');
   });
 
@@ -178,10 +176,23 @@ describe('wiringLens: go-to-definition（§5-3）', () => {
   });
 
   it('src 外部 state のパスは <wcs-state src=…> 開始タグへフォールバックすること', () => {
-    const definition = getDefinitionAt(SAMPLE, offsetIn('something@ext', 'something'))!;
+    const definition = getDefinitionAt(SAMPLE, offsetIn('ext.something', 'ext.something'))!;
     const target = SAMPLE.slice(definition.targetRange.start, definition.targetRange.end);
-    expect(target).toContain('<wcs-state name="ext"');
+    expect(target).toContain('<wcs-state mount="ext"');
     expect(target).toContain('./ext-state.js');
+  });
+
+  it('解析不能 src のルートは、解析可能なインラインボリュームが同居しても外部定義フォールバックを保つこと', () => {
+    // 旧判定は「候補が全体でゼロ」だったため、ボリューム由来の候補があるだけで
+    // ルートの外部定義フォールバックが失われていた
+    const html = `<wcs-state src="./root-state.js"></wcs-state>
+<wcs-state mount="cfg" json='{"flag": true}'></wcs-state>
+<p data-wcs="textContent: some.path"></p>
+<p data-wcs="textContent: cfg.flag"></p>`;
+    const definition = getDefinitionAt(html, html.indexOf('some.path') + 2)!;
+    expect(definition).not.toBeNull();
+    const target = html.slice(definition.targetRange.start, definition.targetRange.end);
+    expect(target).toContain('./root-state.js');
   });
 
   it('宣言が無くフォールバックも無いパスでは null を返すこと', () => {
@@ -229,9 +240,9 @@ describe('wiringLens: find-references（§5-3）', () => {
     expect(SAMPLE.slice(references[0].range.start, references[0].range.end)).toBe('changed');
   });
 
-  it('@state 越境の参照が対象 state 側でだけ集まること', () => {
-    const references = getReferencesAt(SAMPLE, offsetIn('total@cart', 'total'), false)!;
-    // {{ total }}（default state）は含まれない
+  it('ボリューム接頭辞のパスは接頭辞ごと別パスとして集まること', () => {
+    const references = getReferencesAt(SAMPLE, offsetIn('cart.total', 'cart.total'), false)!;
+    // {{ total }}（ルートの computed）は含まれない
     expect(references).toHaveLength(1);
   });
 
@@ -292,14 +303,13 @@ describe('wiringLens: レビュー指摘の回帰（誤 hint ゼロ）', () => {
     expect(hover.range.start).toBe(base + attr.lastIndexOf('uc'));
   });
 
-  it('for パスの @state / フィルタは正本パーサで除去してから展開すること（ランタイムの書き換えと同一）', () => {
-    const html = `<wcs-state name="cart"><script type="module">export default { rows: [{ label: 1 }] };</script></wcs-state>
-<template data-wcs="for: rows@cart"><span data-wcs="textContent: .label"></span></template>
+  it('for パスのフィルタは正本パーサで除去してから展開すること（ランタイムの書き換えと同一）', () => {
+    const html = `<wcs-state><script type="module">export default { rows: [{ label: 1 }] };</script></wcs-state>
 <template data-wcs="for: rows|slice(0,2)"><span data-wcs="textContent: .label"></span></template>`;
     const labels = getInlayHints(html, 0, html.length)
       .filter((h) => h.kind === 'shorthand')
       .map((h) => h.label);
-    expect(labels).toEqual(['= rows.*.label', '= rows.*.label']);
+    expect(labels).toEqual(['= rows.*.label']);
   });
 
   it('passthrough フィルタ（defaults / null）は型を断定せずヒントを抑止すること', () => {
@@ -461,7 +471,7 @@ describe('htmlParse: WcsStateInfo のタグスパン', () => {
   it('開始タグの tagStart / tagEnd が実タグを指すこと', () => {
     const elements = parseWcsStateElements(SAMPLE);
     expect(elements).toHaveLength(3);
-    const ext = elements.find((e) => e.stateName === 'ext')!;
+    const ext = elements.find((e) => e.mountPath === 'ext')!;
     const tag = SAMPLE.slice(ext.tagStart, ext.tagEnd);
     expect(tag.startsWith('<wcs-state')).toBe(true);
     expect(tag.endsWith('>')).toBe(true);

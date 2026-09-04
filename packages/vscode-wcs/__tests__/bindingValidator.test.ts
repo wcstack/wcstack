@@ -854,7 +854,7 @@ describe('validateBindings — stateSchema（sidecar）が宣言された state�
       title: { type: 'string' },
     },
   };
-  const states = new Map([['default', schema]]);
+
   // src は解決しない（fileReader なし）= script 候補ゼロ。schema だけが契約。
   const html = `
 <wcs-state src="./state.ts"></wcs-state>
@@ -869,7 +869,7 @@ describe('validateBindings — stateSchema（sidecar）が宣言された state�
 `;
 
   it('未存在パスは wcs/path-nonexistent（error）。素の {} の下は unknown で沈黙。for 内の短縮パスは展開後で判定', () => {
-    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en', undefined, states);
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en', undefined, schema);
     const nonexistent = diags.filter(d => d.code === WcsDiagnosticCode.PathNonexistent);
     expect(nonexistent.map(d => html.slice(d.start, d.end))).toEqual(['coutn', '.nmae']);
     expect(nonexistent.every(d => d.severity === 'error')).toBe(true);
@@ -881,7 +881,7 @@ describe('validateBindings — stateSchema（sidecar）が宣言された state�
   });
 
   it('for: に非配列（schema で確定）は wcs/path-type-mismatch（error）', () => {
-    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en', undefined, states);
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en', undefined, schema);
     const mismatch = diags.filter(d => d.code === WcsDiagnosticCode.PathTypeMismatch);
     expect(mismatch).toHaveLength(1);
     expect(html.slice(mismatch[0].start, mismatch[0].end)).toBe('title');
@@ -907,7 +907,7 @@ export default { count: "0", get double() { return 1; }, inc() {} };
 <button data-wcs="onclick: inc"></button>
 <div data-wcs="class.on: count"></div>
 `;
-    const diags = validateBindings(page, 'data-wcs', 'wcs-state', 'en', undefined, states);
+    const diags = validateBindings(page, 'data-wcs', 'wcs-state', 'en', undefined, schema);
     expect(diags.filter(d => d.code === WcsDiagnosticCode.PathNonexistent)).toHaveLength(0);
     // class.on は boolean 期待。script は "0"（string）だが schema は number → number で報告される
     const typeDiag = diags.find(d => d.code === WcsDiagnosticCode.BindingTypeExpectation);
@@ -915,21 +915,16 @@ export default { count: "0", get double() { return 1; }, inc() {} };
     expect(typeDiag!.message).toContain('number');
   });
 
-  it('@state 越境は state ごとの schema で判定する', () => {
-    const multi = new Map([
-      ['default', schema],
-      ['other', { type: 'object', properties: { x: { type: 'string' } } }],
-    ]);
+  it('schema はルートツリー全体で判定する（v2: 名前スコープは無い）', () => {
+    
     const page = `
 <wcs-state src="./a.ts"></wcs-state>
-<wcs-state name="other" src="./b.ts"></wcs-state>
-<div data-wcs="textContent: x@other"></div>
-<div data-wcs="textContent: y@other"></div>
-<div data-wcs="textContent: x"></div>
+<div data-wcs="textContent: count"></div>
+<div data-wcs="textContent: y"></div>
 `;
-    const diags = validateBindings(page, 'data-wcs', 'wcs-state', 'en', undefined, multi);
+    const diags = validateBindings(page, 'data-wcs', 'wcs-state', 'en', undefined, schema);
     const nonexistent = diags.filter(d => d.code === WcsDiagnosticCode.PathNonexistent);
-    expect(nonexistent.map(d => page.slice(d.start, d.end))).toEqual(['y', 'x']);
+    expect(nonexistent.map(d => page.slice(d.start, d.end))).toEqual(['y']);
   });
 
   it('$ 名前空間（ループ添字・command）は schema に載らないので従来規則のまま', () => {
@@ -938,7 +933,7 @@ export default { count: "0", get double() { return 1; }, inc() {} };
 <template data-wcs="for: users"><span data-wcs="textContent: $1"></span></template>
 <wcs-x data-wcs="command.run: $command.go"></wcs-x>
 `;
-    const diags = validateBindings(page, 'data-wcs', 'wcs-state', 'en', undefined, states);
+    const diags = validateBindings(page, 'data-wcs', 'wcs-state', 'en', undefined, schema);
     expect(diags.filter(d => d.code === WcsDiagnosticCode.PathNonexistent)).toHaveLength(0);
   });
 });

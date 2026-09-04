@@ -28,19 +28,18 @@ describe("parseBindTextsForElement（正本パーサの公開契約）", () => {
     expect(r.propName).toBe("textContent");
     expect(r.propSegments).toEqual(["textContent"]);
     expect(r.statePathName).toBe("user.name");
-    expect(r.stateName).toBe("default");
     expect(r.bindingType).toBe("prop");
     expect(r.propModifiers).toEqual([]);
     expect(r.outFilters).toEqual([]);
   });
 
-  it("修飾子・@state・フィルタ列を分解すること", () => {
-    const [r] = parseBindTextsForElement("value#ro: price@cart | fix(2)");
+  it("修飾子・フィルタ列を分解し、@state は v2 の parse error になること", () => {
+    const [r] = parseBindTextsForElement("value#ro: price | fix(2)");
     expect(r.propModifiers).toEqual(["ro"]);
-    expect(r.stateName).toBe("cart");
     expect(r.outFilters).toHaveLength(1);
     expect(r.outFilters[0].filterName).toBe("fix");
     expect(r.outFilters[0].args).toEqual(["2"]);
+    expect(() => parseBindTextsForElement("value: price@cart")).toThrow(/removed in v2/);
   });
 
   it("`;` 区切りの複数バインディングを分割すること", () => {

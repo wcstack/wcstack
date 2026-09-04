@@ -17,17 +17,19 @@ describe('parseBindTextWithPositions', () => {
     expect(b.parsed?.bindingType).toBe('prop');
     expect(sliceOf(text, b.propRange)).toBe('textContent');
     expect(sliceOf(text, b.pathRange)).toBe('user.name');
-    expect(b.stateNameRange).toBeNull();
     expect(sliceOf(text, b.exprRange)).toBe(text);
   });
 
-  it('修飾子・@state・フィルタ込みでも各トークンを正しく指すこと', () => {
-    const text = '  value#ro: price@cart | fix(2)  ';
+  it('修飾子・フィルタ込みでも各トークンを正しく指し、@state は v2 の parse error になること', () => {
+    const text = '  value#ro: price | fix(2)  ';
     const [b] = parseBindTextWithPositions(text);
     expect(sliceOf(text, b.propRange)).toBe('value');
     expect(sliceOf(text, b.pathRange)).toBe('price');
-    expect(sliceOf(text, b.stateNameRange)).toBe('cart');
-    expect(sliceOf(text, b.exprRange)).toBe('value#ro: price@cart | fix(2)');
+    expect(sliceOf(text, b.exprRange)).toBe('value#ro: price | fix(2)');
+
+    const [broken] = parseBindTextWithPositions('value: price@cart');
+    expect(broken.parsed).toBeNull();
+    expect(broken.error).toContain('removed in v2');
   });
 
   it('複数バインディングを式単位に分割し、空要素はスキップすること', () => {

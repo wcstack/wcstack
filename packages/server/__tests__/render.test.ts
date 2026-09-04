@@ -8,9 +8,10 @@ function parseResult(html: string) {
   return window.document;
 }
 
-function getSsrData(html: string, name = 'default'): Record<string, any> {
+// v2: <wcs-ssr> は name 属性を持たない（1 rootNode 1 ツリー — Ssr.find(root) は先頭を読む）
+function getSsrData(html: string): Record<string, any> {
   const doc = parseResult(html);
-  const ssrEl = doc.querySelector(`wcs-ssr[name="${name}"]`);
+  const ssrEl = doc.querySelector('wcs-ssr');
   const script = ssrEl?.querySelector('script[type="application/json"]');
   return JSON.parse(script?.textContent ?? '{}');
 }
@@ -70,12 +71,15 @@ describe('enable-ssr 属性', () => {
     expect(ssrEl?.nextElementSibling?.tagName).toBe('WCS-STATE');
   });
 
-  it('name 属性が wcs-state と一致する', async () => {
+  it('v2: 生成された <wcs-ssr> は name 属性を持たない', async () => {
     const result = await renderToString(`
-      <wcs-state enable-ssr name="cart" json='{"items":[]}'></wcs-state>
+      <wcs-state enable-ssr json='{"items":[]}'></wcs-state>
     `);
-    const data = getSsrData(result, 'cart');
-    expect(data.items).toEqual([]);
+    const doc = parseResult(result);
+    const ssrEl = doc.querySelector('wcs-ssr');
+    expect(ssrEl).not.toBeNull();
+    expect(ssrEl!.hasAttribute('name')).toBe(false);
+    expect(getSsrData(result).items).toEqual([]);
   });
 
   it('$ プレフィックスや関数はデータに含まれない', async () => {
@@ -86,15 +90,17 @@ describe('enable-ssr 属性', () => {
     expect(data).toEqual({ count: 10 });
   });
 
-  it('複数の wcs-state で enable-ssr があるものだけ <wcs-ssr> が生成される', async () => {
+  it('v2: ルート＋ボリュームでも <wcs-ssr> はルートの 1 本だけで、ボリュームのデータは接ぎ木済みで含まれる（D14）', async () => {
+    // v1 の「複数の wcs-state で enable-ssr があるものだけ生成」の v2 転換。
+    // 1 root 1 ツリーなので 2 本目は mount= のボリューム — スナップショットは
+    // ルートに集約され、ボリュームは自分の <wcs-ssr> を作らない
     const result = await renderToString(`
-      <wcs-state enable-ssr name="a" json='{"x":1}'></wcs-state>
-      <wcs-state name="b" json='{"y":2}'></wcs-state>
+      <wcs-state enable-ssr json='{"x":1}'></wcs-state>
+      <wcs-state mount="v" json='{"y":2}'></wcs-state>
     `);
     const doc = parseResult(result);
-    expect(doc.querySelector('wcs-ssr[name="a"]')).not.toBeNull();
-    expect(doc.querySelector('wcs-ssr[name="b"]')).toBeNull();
-    expect(getSsrData(result, 'a')).toEqual({ x: 1 });
+    expect(doc.querySelectorAll('wcs-ssr').length).toBe(1);
+    expect(getSsrData(result)).toEqual({ x: 1, v: { y: 2 } });
   });
 });
 
@@ -284,9 +290,9 @@ describe('安定化ループ（動的追加カスタム要素の待機）', () =
           export default {
             ready: false,
             async $connectedCallback() {
-              // 動的に2つ目の wcs-state を追加
+              // 動的に 2 つ目の state 要素を追加（v2: 追加はボリューム mount=）
               const el = document.createElement('wcs-state');
-              el.setAttribute('name', 'dynamic');
+              el.setAttribute('mount', 'dynamic');
               el.setAttribute('json', '{"value":"from-dynamic"}');
               document.body.appendChild(el);
               this.ready = true;
@@ -299,7 +305,7 @@ describe('安定化ループ（動的追加カスタム要素の待機）', () =
     expect(result).toContain('>true<');
     // 動的に追加された wcs-state が DOM に存在する
     const doc = parseResult(result);
-    const dynamicState = doc.querySelector('wcs-state[name="dynamic"]');
+    const dynamicState = doc.querySelector('wcs-state[mount="dynamic"]');
     expect(dynamicState).not.toBeNull();
   });
 });

@@ -1,7 +1,7 @@
 import { EVENT_PROP_PREFIX, MODIFIER_READONLY } from "../define";
 import { getLoopContextByNode } from "../list/loopContextByNode";
 import { raiseError } from "../raiseError";
-import { getStateElementByName } from "../stateElementByName";
+import { getStateElement } from "../stateElementByName";
 import { IBindingInfo, IFilterInfo } from "../types";
 import { setLoopContextSymbol } from "../proxy/symbols";
 import { createHandlerBindingRegistry } from "./handlerBindingRegistry";
@@ -12,7 +12,7 @@ const bindingRegistry = createHandlerBindingRegistry();
 
 function getHandlerKey(binding: IBindingInfo, eventName: string): string {
   const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
-  return `${binding.stateName}::${binding.statePathName}::${eventName}::${filterKey}`;
+  return `${binding.statePathName}::${eventName}::${filterKey}`;
 }
 
 function getEventName(binding: IBindingInfo): string {
@@ -26,7 +26,6 @@ function getEventName(binding: IBindingInfo): string {
 }
 
 const checkboxEventHandlerFunction = (
-  stateName: string,
   statePathName: string,
   inFilters: IFilterInfo[],
 ) => (event: Event): any => {
@@ -47,9 +46,9 @@ const checkboxEventHandlerFunction = (
   }
 
   const rootNode = node.getRootNode() as Node;
-  const stateElement = getStateElementByName(rootNode, stateName);
+  const stateElement = getStateElement(rootNode);
   if (stateElement === null) {
-    raiseError(`State element with name "${stateName}" not found for two-way binding.`);
+    raiseError(`No state tree found on this root for two-way binding.`);
   }
 
   const loopContext = getLoopContextByNode(node);
@@ -85,7 +84,6 @@ export function attachCheckboxEventHandler(binding: IBindingInfo): boolean {
     let checkboxEventHandler = handlerByHandlerKey.get(key);
     if (typeof checkboxEventHandler === "undefined") {
       checkboxEventHandler = checkboxEventHandlerFunction(
-        binding.stateName,
         binding.statePathName,
         binding.inFilters
       );

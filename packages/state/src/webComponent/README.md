@@ -1,143 +1,116 @@
-# webComponent/ — `bind-component`
+# webComponent/ — マウント（`bind-component`）
 
-**正本は [`packages/state/README.md`](../../README.md) の "Web Component Binding" 節。**
+**利用者向けの正本は [`packages/state/README.md`](../../README.md) の "Web Component Binding" /
+"Whole-object Mount" 節、設計の正本は
+[docs/state-mount-design.md](../../../../docs/state-mount-design.md)（D1〜D22）と
+[docs/state-mount-impl-plan.md](../../../../docs/state-mount-impl-plan.md)（§3-0 が実装機構）。**
 ここは実装側の補足のみを置く。
 
 `<wcs-state bind-component="<prop>">` がコンポーネント直下にあると、
-`State._initializeBindWebComponent` が親要素の `<prop>` を state のソースとして取り込み、
-`bindWebComponent()` がそのプロパティを proxy に差し替える。
+`State._initializeBindWebComponent` がホスト要素の `<prop>` を取り込み、次の 2 形に分岐する。
+
+- **マウント**（ホストに `state[.sub]: path` の配線が 1 本以上）— コンポーネントの
+  テンプレートは**親ツリーの一部**としてバインドされる（v2 の単一ツリー・下記）。
+- **plain**（配線なしの state 注入）— コンポーネント自身の state をリアクティブ化するだけ。
+  `bindWebComponent()` が melt した作者のオブジェクトを自分の state 要素の実体にし、
+  公開プロパティを outerState proxy に差し替える。
+
+## 不変条件（v2）
+
+> マウントされたコンポーネントのバインディングは、その位置にテンプレートを展開して
+> パスに接頭辞を付けたものと区別できない。
+
+実装は解決サイトの書き換えではなく**バインディングの変換**（impl-plan §3-0）:
+
+1. **パース時の接頭辞合成** — スコープの collect は `translateParsedForMount` で各
+   binding の `statePathName` / `statePathInfo` を親ツリーの絶対形へ
+   書き換える（パース結果キャッシュは無接頭辞のまま・複製のみ）。以後この binding は
+   台帳・依存グラフ・キャッシュ・LIS・プールのどれから見ても「親スコープにインラインで
+   書かれたもの」と同一。
+2. **台帳エイリアス**（Shadow DOM 形のみ）— 子 rootNode → 親 state 要素
+   （`setStateElementAlias`）。`getRootNode()` で解決する全サイトが無改造で親に到達する。
+   Light DOM 形は rootNode をホストと共有するのでエイリアス不要。
+3. **ループ文脈** — スコープ直下のバインディングには**直接エントリ**でホスト要素の文脈を
+   渡す（`buildMountScopeBindings`）。text binding は登録前に comment が replaceNode へ
+   差し替えられて切断されるため、DOM walk では文脈に届かない（happy-dom は切断後も
+   parentNode を残す非準拠で偶然通るが、実ブラウザでは落ちる）。スコープ内の `for` が
+   作る行は境界ホップ（`loopContextByNode` — マウントされた ShadowRoot → host）で
+   ホスト行の listIndex を親に持つ。
+4. **オーバーレイ dispatch**（D20） — 私有キー・getter・メソッドは予約セグメント
+   `#m<id>`（パス文法で書けない）を挟んだ絶対アドレスに載る。親 handler の
+   `getByAddress` は `hasMounts && lastSegment が '#'` のときだけ登録簿を引き、
+   オーバーレイ値（`overlay.ts`）を返す。getter は chroot を `this` に、pushAddress 下で
+   評価されるので依存エッジは素の wildcard getter と同じ機構で親グラフに載る。
+5. **`$n` の Δ 補正**（§4-4） — テンプレート側の `$n` は変換時に囲む for の翻訳で増えた
+   ワイルドカード数だけ繰り上げ、getter 内の `this.$1` は trap が
+   `getIndexShiftForMarkerPath` で補正する。イベントハンドラの添字は
+   `indexShiftByLoopElementPath`（変換された for → shift の台帳）でスコープ相対に落とす。
+6. **chroot 公開面**（`element.state`） — 相対キー → 変換 → 親 proxy の薄い翻訳。
+   `$getAll` / `$setAll` / `$resolve` / `$postUpdate` は接頭辞翻訳＋文脈添字の前置
+   （`composeMountIndexes`）。他の `$` は親の意味論のまま（宣言面 `$watch` / `$streams` /
+   `$listKeys` / `$updatedCallback` は P2-9b — マウントされた `<wcs-state>` は state
+   ロード・名前登録・`$` 宣言の実行を行わない）。
 
 ## ファイル
 
 | ファイル | 役割 |
 |---|---|
-| `bindWebComponent.ts` | 分岐の入口。outer proxy を要素に defineProperty し、`$stateReadyCallback` を呼ぶ |
-| `innerState.ts` | 子側の state proxy。ローカル getter/setter → マッピング → ローカル値 の順で解決する |
-| `outerState.ts` | 公開プロパティ（`element[prop]`）の proxy。read / write とも子の state proxy へ素通し |
-| `MappingRule.ts` | 親パス ↔ 子パスの対応表。プライマリ規則から部分パスの規則を派生させる |
-| `crossBoundaryAddress.ts` | 越境直前のアドレスを渡す動的スコープ（Proxy トラップで落ちる listIndex の補完） |
-| `outerListPath.ts` | 子の `for` パス・行パスを親スコープのパスへ翻訳する |
-| `meltFrozenObject.ts` | `Object.freeze` された初期 state を書き込み可能に複製する |
-| `stateElementByWebComponent.ts` / `completeWebComponent.ts` | 台帳 |
+| `mount.ts` | マウント記録（変換規則・マーカー・アクセサ台帳・shift 台帳）と登録簿 |
+| `mountScope.ts` | スコープの構築（変換付き collect）・再初期化・プール再接続の張り直し |
+| `overlay.ts` | オーバーレイ値（私有・getter・メソッド）と chroot 公開面 |
+| `ownKeyShadow.ts` | 厳格 R1 の衝突報告（作者の own key がツリー/部分エントリを隠す） |
+| `preCompletionWrites.ts` | 宣言前の窓の積みの控え（注入キー・上書きされた作者の値） |
+| `bindWebComponent.ts` | plain 形の入口＋ `$stateReadyCallback` |
+| `outerState.ts` / `meltFrozenObject.ts` | plain 形の公開 proxy と melt |
+| `stateElementByWebComponent.ts` / `completeWebComponent.ts` | 台帳（plain の解決・完了/宣言） |
+| `rootMountBinding.ts` | 完了前クロバーの復旧判定（authored オブジェクトの取り戻し） |
 
-## 2 つの分岐
+## R1（厳格・D19）と積み
 
-`bindWebComponent` は **`<prop>.*` バインディングが 1 件以上あるか**で分岐する
-（`data-wcs` 属性の有無ではない — 属性だけあってマッピングが 0 件だと
-outer proxy が死ぬため。§1.2）。
+作者の own data key は**私有** — マウント先の同名キー（ルート）も同名の部分エントリも
+**隠す**（`ownKeyShadow.ts` が 1 回だけ warn）。私有の実体はマウントインスタンス
+（listIndex）ごとに `privateSnapshot` から複製される（D21）。
 
-分岐が決めるのは**子の state の中身だけ**で、公開面の意味論は両者で同一（§1.1 / G1）。
+完了前の親の初期適用（積み）は宣言済みなら書かない（`skipPendingMountWrite` —
+apply/applyChange.ts）。宣言より先に走る窓（実ブラウザでは行 fragment、happy-dom では
+template clone が upgrade 済み）では、**新規キー**は `injectedKeys`（作者のものではない →
+ツリーに落ちる）、**既存キーの上書き**は `rememberOverwrittenValue` で作者の値を控え、
+マウント構築が snapshot 前に復元する。
 
-- **mapped**（`<my-c data-wcs="state.msg: user.name">`）— 値の正本は親 state。
-  子の state は innerState proxy になり、マップされたパスの read / write は親 state に解決する。
-- **plain**（親からのバインドなし）— 値の正本は子の state。melt 済みのローカル state。
+## 再初期化・プール再利用
 
-## 親 → 子の通知は公開プロパティを通らない
+- connectedCallback で shadow の innerHTML を張り直すコンポーネントは、再接続のたびに
+  新しい `<wcs-state>` が同じ shadowRoot に入る。記録は (component, stateProp) で再利用
+  （マーカー安定）、alias は冪等、旧スコープは `BindingSession.dispose()` で捨てて組み直す。
+- shadow を 1 回だけ組む形の再接続は `remountScopeBindings` — 直接エントリを現在の行の
+  文脈に張り替え、`rebindAddresses()` が台帳を張り直す（`for` は lastListValue を旧→新へ
+  引き継ぐ。行ループ中の同期発火を避けるため microtask に遅延）。
+- content 台帳が空の `for` binding は共有 lastListValue を無視して白紙から描く
+  （apply/applyChangeToFor.ts — 再初期化・後着 binder の一般ガード）。
 
-親 state が変わったときに子へ送るのは「そのパスを読み直せ」という通知だけで、値は運ばない
-（正本は親側にあり、子は innerState のマッピング経由でライブに読むため）。
-`applyChangeToWebComponent` が `getStateElementByWebComponent` で子の state 要素を直接引いて
-`$postUpdate(残余パス)` を呼ぶ。`element[prop]` には一切触らない — 公開 API と内部チャネルを
-同じ proxy が兼ねていたのが §1.1 の原因だった。
+## 親 → 子の「通知」は存在しない
 
-このチャネルが選ばれるのは `isWebComponentComplete(要素, stateProp)` が真のとき、つまり
-`bindWebComponent` が公開プロパティを差し替え終えたあと。完了前は `applyChangeToProperty` が
-まだ素のオブジェクトである state プロパティに初期値を積み、`bindWebComponent` が melt して取り込む。
-**この台帳のキーは stateProp 名**であり state 要素ではない（§1.7 — 以前は内側の `IStateElement` を
-キーに記録して親スコープの `IStateElement` で照会しており、同じ型なので型検査を素通りしたまま
-判定が恒久 false になっていた）。
-
-子が**マップ先より深いサブパス**を読んだ場合（規則は `state.user: user` だが子は `user.name` を読む）、
-`MappingRule` がその場で規則を導出し、同時に対応するバインディングを
-**プライマリを所有する `BindingSession`** に登録する。これで親がそのサブパスへ書いたときにも
-通知が届く。セッション経由にしているのは、台帳登録・teardown・ノード削除時の破棄を
-既存のライフサイクルに乗せ、絶対アドレス台帳のエントリが要素を強参照したまま残らないようにするため。
-
-## 子スコープが親のリストを `for` で回す
-
-規則 `state.items: rows` に対して子が `<template data-wcs="for: items">` を持つ形（§1.8）。
-値の正本は親、行の同一性（`IListIndex`）は**配列オブジェクトの同一性**で親子が共有している
-（`listIndexesByList` は配列を鍵にした WeakMap）。成立に必要なのは 4 点。
-
-1. **越境をアドレスで行う** — Proxy のトラップにはパス文字列しか渡らないので、
-   `crossBoundaryAddress` で直前アドレスを渡し、innerState が外側のワイルドカードパスの
-   ループ文脈に組み直す。`getLoopContextByNode` はコンポーネント要素にぶら下がる文脈しか引けず、
-   子スコープのループはその内側にあるため引けない
-2. **`for` パスのリスト宣言を親へ伝播** — `State.setPathInfo` から `outerListPath` 経由。
-   親の依存 walk（`rows → rows.*` の行展開）と swap 判定は親自身の `listPaths` / `elementPaths` を見る
-3. **行バインディングを親のパターン台帳へ相乗り** — `BindingSession.registerAddress` が
-   同じ listIndex で親の `rows.*.name` にも購読者として載せる。親起点の行フィールド書き込みはこれで届く
-4. **mapped な state ではキャッシュを持たない** — 正本は親にあり無効化も親が担うので、
-   子側に複製を持つと無効化が届かない（`proxy/methods/isCacheable.ts`）
-
-## 入れ子形（コンポーネント自身も親の `for` の中）
-
-規則 `state.items: groups.*.children` に対して子が `for: items` を持つ形（§1.10）。
-親から見た行は arity 2、子から見た行は arity 1 だが、`listIndexesByList` は 1 つの配列につき
-1 組の listIndex しか持てない。そこで子スコープを「親ループの内側のネストしたループ」として扱う。
-
-- **base listIndex**（`baseListIndex.ts`）＝ ホストコンポーネントの親スコープ行（深さ Δ）。
-  子が作る listIndex はすべてこれを親に持つので、`groups[i].children` の台帳は arity Δ+1 になり
-  親が要求するものと同一になる。**キャッシュしない** — 行 content はプールで再利用され、
-  同じ要素が別の行に付け替わるため
-- **末尾起点の段解決**（`list/wildcardLevel.ts`）＝ 「パス上のワイルドカード位置 → チェーン段」を
-  `at(i)` でなく `at(i - W)` で引く。Δ=0 では同じ要素を指すので既存スコープの挙動は変わらない。
-  ただし**範囲外要求のガードは必須**（`$2` を 1 段ループで読む形が黙って `$1` を返すのを防ぐ）
-- **行を作りうる全経路で base を親に渡す**（`applyChangeToFor` / `walkDependency` ×2 /
-  `getAll` / `setByAddress`）。`createListDiff` は既存台帳を再利用するので、取りこぼしは
-  初期描画では見えず**行を追加したときだけ**台帳に arity が混在する
-- **Δ はユーザーランドに漏らさない** — `$1` / イベントハンドラのインデックス /
-  `$updatedCallback` / `$getAll` はスコープ内の位置を報告する。コンポーネントの作者は
-  自分がリストの中に置かれるかを知らずに書くため。`$resolve` は台帳の配列位置で引くので無改造
-
-境界を跨ぐと適用順のトポロジカル保証が無く、**親起点の行通知がその行を外す子の `for` より
-先に来る**。消えた行の読みは `undefined`（＝ プロパティ書き込みをスキップする値）になり、
-直後の `for` が整合させる。詳細は
-[docs/state-bind-component-nested-for-design.md](../../../../docs/state-bind-component-nested-for-design.md)。
+配送は変換済みバインディング＋単一台帳＋静的依存が担う。`applyChangeToWebComponent`
+（完了済み (element, stateProp) への適用のルート先）は**意図的な no-op**。
 
 ## Light DOM
 
-Shadow DOM を持たないコンポーネントでも使えるが、名前空間が上位スコープと共有されるため
-`name` 属性が必須（`<wcs-state bind-component="state" name="light-user">`）。
-バインドは `@light-user` で state 名を明示する。
+スコープ根はコンポーネント要素自身（D7）。ホスト側走査からの除外は §1.13 の prune
+（`lightDomComponentScope.ts`）がそのまま担う。**name 属性が要るのは v1 の plain 形だけ**
+（名前空間を共有するため）。マウントは独立ツリーを持たないので名前は不要。
 
 ## DCC との排他
 
-`bind-component` と DCC はコンポーネントごとにどちらか一方だけを使う。
-`bind-component` のコンポーネントは `static wcBindable` を持たない ＝ wc-bindable の producer では
-ないため、spread（`...: obj`）と command token は使えない。宣言されたプロパティ面ではなく
-**パス**で配線するのがこの機構であり、これは意図的な設計。
-機構の選び方と対応表は
-[`packages/state/README.md` の「Choosing a Component Mechanism」](../../README.md#choosing-a-component-mechanism)。
+`bind-component` は DCC ホスト（`data-wc-definition`）の内側では使えない（fail-fast）。
+DCC の state はテンプレートに属し、インスタンスごとにロードされる — 定義時点のホストの
+プロパティをソースにする `bind-component` とは両立しない（§3.1）。
 
 ## 設計の経緯
 
-実装と設計の食い違いの記録は
-[`docs/architecture-hardening/15-state-component-mechanism-consistency.md`](../../../../docs/architecture-hardening/15-state-component-mechanism-consistency.md)
-に集約してある。この機構に関わるのは §1.1（公開 proxy の一本化 = G1）、§1.2（分岐条件）、
-§1.7（G1 で分離した内部チャネルを選ぶゲートが壊れており、親起点の変更が届いていなかった件）。
-
-## 丸ごとマウント（ルート規則）と R1 — Phase 1（docs/state-mount-design.md）
-
-`<my-c data-wcs="state: user">`（1 セグメント）は**ルート規則**（`IMappingRule.isRoot`）。内側パスが空で
-あらゆる内側パスに接頭辞ゼロで一致し、部分規則（`state.theme: theme`）と併用すると最長接頭辞で
-部分規則が勝つ（`getOuterAbsolutePathInfo`）。同じ内側パスを 2 つの規則が指す形は構築時に throw。
-
-- **親→子の通知**: 残余パスが空なら `applyChangeToWebComponent` は子の登録済みパス
-  （`IStateElement.boundPaths`）の先頭セグメント全部を `$postUpdate` する（`rootReloadPaths.ts`）。
-  再接続の読み直し（`_reloadMappedPathsAfterReconnect`）も同じ集合を使う
-- **R1（own data key ＝ 私有）**: ルート規則の下では、コンポーネントが自分で書いた data key は
-  マッピングより先にローカルで解決する（`innerState._isPrivateKey` — 先頭セグメントで判定）。
-  getter / setter は従来どおり規則 1。部分規則が覆う先頭セグメントは除く（1.x の既存挙動＝
-  マッピングが勝つ）。ルート規則の無いコンポーネントには適用しない
-- **完了前の親の初期適用**（`preCompletionWrites.ts`）: 1 セグメントの適用は子が宣言する前に走ると
-  `element.state = userObject` と作者のオブジェクトを置き換える。置き換え前を控えて
-  `_initializeBindWebComponent` が戻す。宣言済みなら `applyChange` が書き込みを抑止する
-  （`completeWebComponent.ts` の宣言台帳）。2 セグメントの適用が作者のオブジェクトに作ったキー
-  （積み）は注入キーとして控え、衝突報告から外す
-- **衝突の報告**（`ownKeyShadow.ts`・タグ × プロパティ × キーで 1 回）: ルート規則でマウント先に
-  同名キーがある own key（私有がツリーを隠す）と、部分規則と同名の own key（今日はホストが勝ち、
-  v2 で反転する）。どちらも「既定値を消すか名前を変える」で直る
-
-Phase 2（単一ツリー化）はこの機構ごと置き換えるが、`integration.bindComponentRootMount.test.ts`
-の契約はそのまま緑に保つ。
+v1 の橋渡し機構（innerState / MappingRule / crossBoundaryAddress / outerListPath /
+baseListIndex（Δ の帳簿）/ 再読込通知チャネル / outerPattern 相乗り）は Phase 2 slice 9
+（P2-7）で削除した（−3,618 行）。個別修理の履歴は
+[docs/architecture-hardening/15](../../../../docs/architecture-hardening/15-state-component-mechanism-consistency.md)
+（§0 の表の「実装」列は廃止 — 挙動は本機構の上で impl-plan §7-8 の対応表どおり成立する）。
+性能: 行コンポーネント create1k **169.4 → 128.6 ms（−24%）**・update −45%・ヒープ −1.4MB
+（impl-plan §3-0-1 slice 7）。

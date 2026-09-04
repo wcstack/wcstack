@@ -12,7 +12,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
-import { getStateElementByName } from "../src/stateElementByName";
+import { getStateElement } from "../src/stateElementByName";
 import type { IState } from "../src/types";
 
 beforeAll(() => {
@@ -100,7 +100,7 @@ async function mount() {
   await stateEl.connectedCallbackPromise;
   await State.getBindingsReady(shadowRoot);
   await flush();
-  const stateElement = getStateElementByName(shadowRoot, "default")!;
+  const stateElement = getStateElement(shadowRoot)!;
   const read = (path: string) => {
     let value: unknown;
     stateElement.createState("readonly", (state) => { value = state[path]; });

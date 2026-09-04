@@ -20,7 +20,6 @@ function createBindingInfo(overrides: Partial<IBindingInfo> = {}): IBindingInfo 
     propModifiers: [],
     statePathName: 'items',
     statePathInfo: getPathInfo('items'),
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'text',

@@ -103,7 +103,13 @@ export interface WcsMessageCatalog {
   namedStateAttrDeprecated(name: string): string;
   /** `path@name` は v2 で `name.path` に置き換わる（`@default` は単に外す）。 */
   namedStatePathDeprecated(name: string): string;
+  // --- mountAttrValidator ---
+  /** `mount` 属性値が runtime の validateVolumeMountPath で raise する形（同条件・同文言）。 */
+  mountPathInvalid(problem: MountPathProblem, mountPath: string): string;
 }
+
+/** `mount` 属性値の不正の種類（runtime の validateVolumeMountPath の raise と 1:1）。 */
+export type MountPathProblem = 'empty' | 'emptySegment' | 'wildcard' | 'reserved';
 
 const JA_EXPECTED_LABEL: Record<ExpectedTypeKind, string> = {
   array: '配列型のパス',
@@ -181,11 +187,19 @@ const ja: WcsMessageCatalog = {
   signalsDualEntry: () =>
     `@wcstack/signals と @wcstack/signals/dom が同一ページから import されています。CDN では各エントリが自己完結バンドルのためリアクティブコアが二重化し、境界で反応が壊れます — すべて /dom エントリから import してください`,
   namedStateAttrDeprecated: (name) =>
-    `<wcs-state name="${name}"> は v2 で廃止されます。ルートツリーへのマウント <wcs-state mount="${name}"> に置き換え、パスは "${name}.<path>" で参照してください（docs/state-mount-design.md §9）`,
+    `name 属性は v2 で撤去されました（1 root 1 ツリー）。ルートツリーへのマウント <wcs-state mount="${name}"> に置き換え、パスは "${name}.<path>" で参照してください（docs/state-mount-design.md §9）`,
   namedStatePathDeprecated: (name) =>
     name === 'default'
-      ? `"@default" は不要で、v2 で廃止されます。"@default" を外してください（docs/state-mount-design.md §9）`
-      : `"@${name}" による state 指定は v2 で廃止されます。マウントしたツリーを "${name}.<path>" で参照してください（docs/state-mount-design.md §9）`,
+      ? `"@default" セレクタは v2 で撤去されました。"@default" を外してください（docs/state-mount-design.md §9）`
+      : `"@name" セレクタは v2 で撤去されました（1 root 1 ツリー）。マウントしたツリーを "${name}.<path>" で参照してください（docs/state-mount-design.md §9）`,
+  mountPathInvalid: (problem, mountPath) => {
+    switch (problem) {
+      case 'empty': return `"mount" には空でないツリーパスが必要です（runtime: "mount" requires a non-empty tree path.）`;
+      case 'emptySegment': return `"mount" パス "${mountPath}" に空のセグメントがあります（runtime: has an empty segment.）`;
+      case 'wildcard': return `"mount" パス "${mountPath}" は静的でなければなりません — ワイルドカードは使えません（runtime: must be static.）`;
+      default: return `"mount" パス "${mountPath}" に予約文字（$, #, @）は使えません（runtime: must not use reserved characters.）`;
+    }
+  },
 };
 
 const EN_EXPECTED_LABEL: Record<ExpectedTypeKind, string> = {
@@ -264,11 +278,20 @@ const en: WcsMessageCatalog = {
   signalsDualEntry: () =>
     `Both @wcstack/signals and @wcstack/signals/dom are imported on this page. On a CDN each entry is a self-contained bundle, so the reactive core is duplicated and reactivity breaks at the seam — import everything from the single /dom entry`,
   namedStateAttrDeprecated: (name) =>
-    `<wcs-state name="${name}"> is deprecated and will be removed in v2. Mount the state onto the root tree with <wcs-state mount="${name}"> and read it as "${name}.<path>" (docs/state-mount-design.md §9)`,
+    `The "name" attribute was removed in v2 — there is a single state tree per root. Mount this state onto the tree instead: <wcs-state mount="${name}"> and read it as "${name}.<path>" (docs/state-mount-design.md §9)`,
   namedStatePathDeprecated: (name) =>
     name === 'default'
-      ? `The "@default" selector is redundant and will be removed in v2; drop it (docs/state-mount-design.md §9)`
-      : `The "@${name}" state selector is deprecated and will be removed in v2. Read the mounted tree as "${name}.<path>" instead (docs/state-mount-design.md §9)`,
+      ? `The "@default" selector was removed in v2 — drop it (docs/state-mount-design.md §9)`
+      : `The "@name" selector was removed in v2 — there is a single state tree. Mount the named state onto the tree (<wcs-state mount="...">) and read it as "${name}.<path>" (docs/state-mount-design.md §9)`,
+  mountPathInvalid: (problem, mountPath) => {
+    // runtime（state/src/webComponent/volume.ts validateVolumeMountPath）と同文言
+    switch (problem) {
+      case 'empty': return `"mount" requires a non-empty tree path.`;
+      case 'emptySegment': return `"mount" path "${mountPath}" has an empty segment.`;
+      case 'wildcard': return `"mount" path "${mountPath}" must be static (wildcards are not allowed).`;
+      default: return `"mount" path "${mountPath}" must not use reserved characters ($, #, @).`;
+    }
+  },
 };
 
 const CATALOGS: Record<WcsLocale, WcsMessageCatalog> = { ja, en };

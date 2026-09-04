@@ -19,6 +19,7 @@
  */
 
 import { getPathInfo } from "./address/PathInfo";
+import { isPathUnderReservedVolume } from "./webComponent/volumeShared";
 import type { IStateElement } from "./components/types";
 import { DELIMITER, WILDCARD } from "./define";
 import { devtoolsSink } from "./devtools/sink";
@@ -187,12 +188,11 @@ const SUBJECT: Readonly<Record<"binding" | "watch", string>> = {
  * `console.warn` と同じ語彙に揃える。
  */
 export function missingRootPathMessage(
-  stateName: string,
   path: string,
   target: object,
   declaredPaths: Iterable<string>,
 ): string {
-  return `[${DIAGNOSTIC_CODE.binding}] Path "${path}" does not exist on state "${stateName}".` +
+  return `[${DIAGNOSTIC_CODE.binding}] Path "${path}" does not exist on the state tree.` +
     `${didYouMean(path, collectCandidates(target, "", declaredPaths))}${LINT_HINT}`;
 }
 
@@ -314,10 +314,16 @@ export function checkDeclaredPath(
   if (path.startsWith("$")) {
     return;
   }
-  // mapped な bind-component の子スコープはパスの正本を持たない（親側で解決される）
-  if (stateElement.hasMappedComponentState === true) {
+  // マウントの予約セグメント（`users.*.#m1.editing` — D20）はオーバーレイに実体があり
+  // raw state には無い。`#else`（構造プレースホルダ）も同様（webComponent/mount.ts）
+  if (path.indexOf("#") !== -1) {
     return;
   }
+  // 予約済みのボリュームスロット配下はロード完了まで undefined が正（D22）
+  if (isPathUnderReservedVolume((stateElement as { rootNode?: Node }).rootNode ?? null, path)) {
+    return;
+  }
+
   // 単一セグメントのバインディングは読み取り時に raiseError で loud に落ちるので、
   // ここで二重に報告しない。`$watch` は落ちずに黙って発火しないだけなので検査する
   const segments = getPathInfo(path).segments;
@@ -334,7 +340,7 @@ export function checkDeclaredPath(
   // 接頭辞は raiseError と同じ `[@wcstack/state] [wcs/...]` の並び（コンソールの
   // grep 単位をパッケージで揃える）
   console.warn(
-    `[@wcstack/state] [${DIAGNOSTIC_CODE[source]}] ${SUBJECT[source]} "${path}" does not resolve on state "${stateElement.name}": ` +
+    `[@wcstack/state] [${DIAGNOSTIC_CODE[source]}] ${SUBJECT[source]} "${path}" does not resolve on the state tree: ` +
     `"${result.missingSegment}" is not declared.${didYouMean(result.missingSegment, result.candidates)}` +
     ` Updates to this path will be silently dropped.${LINT_HINT}`,
   );
@@ -342,7 +348,6 @@ export function checkDeclaredPath(
     devtoolsSink({
       type: "state:path-unresolved",
       source,
-      stateName: stateElement.name,
       path,
       missingSegment: result.missingSegment,
     });

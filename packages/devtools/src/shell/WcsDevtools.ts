@@ -194,13 +194,8 @@ export class WcsDevtools extends HTMLElement {
       this._buildShadow();
     }
     const capacity = Number(this.getAttribute("buffer") ?? "");
-    const hidden = (this.getAttribute("hidden-states") ?? "")
-      .split(",")
-      .map((name) => name.trim())
-      .filter((name) => name.length > 0);
     this._core = new DevtoolsCore({
       timelineCapacity: Number.isFinite(capacity) && capacity > 0 ? capacity : undefined,
-      hiddenStateNames: hidden,
     });
     this._removeCoreListener = this._core.onChange((kind) => {
       if (kind === "roster" || kind === "sources") {
@@ -505,7 +500,7 @@ export class WcsDevtools extends HTMLElement {
   }
 
   private _rosterKey(entry: IRosterEntry): string {
-    return `${entry.sourceId}:${entry.name}`;
+    return `${entry.sourceId}:${entry.label}`;
   }
 
   private _selectedRoster(): IRosterEntry | null {
@@ -529,7 +524,7 @@ export class WcsDevtools extends HTMLElement {
       ...roster.map((entry) => {
         const option = document.createElement("option");
         option.value = this._rosterKey(entry);
-        option.textContent = `${entry.name} (${entry.sourceId.slice(0, 12)})`;
+        option.textContent = `${entry.label} (${entry.sourceId.slice(0, 12)})`;
         option.selected = selected !== null && this._rosterKey(entry) === this._rosterKey(selected);
         return option;
       })
@@ -712,8 +707,9 @@ export class WcsDevtools extends HTMLElement {
         target instanceof Element ? `<${target.tagName.toLowerCase()}>` : target.nodeName;
     } else if (this._selectedPath !== null) {
       const selected = this._selectedRoster();
+      // 選択中のツリーでスコープ（複数ツリーの同名パスを混ぜない）
       entries =
-        selected !== null ? core.getWiringForPath(selected.name, this._selectedPath) : [];
+        selected !== null ? core.getWiringForPath(this._selectedPath, selected.summary.element) : [];
       contextLabel = this._selectedPath;
     } else {
       entries = core.getAllWiring();
@@ -809,7 +805,7 @@ export class WcsDevtools extends HTMLElement {
       }
       const label = document.createElement("span");
       label.className = "path";
-      label.textContent = ` ${entry.name}@${entry.stateName} `;
+      label.textContent = ` ${entry.name} `;
       row.append(kind, document.createTextNode(" "), label, status);
       if (entry.note !== null) {
         // note はホバー頼み（title）にせず常時表示する — 前提未成立の理由は
@@ -836,7 +832,7 @@ export class WcsDevtools extends HTMLElement {
     const path = document.createElement("span");
     path.className = "path";
     const filters = entry.outFilters.map((f) => ` | ${f.filterName}(${f.args.join(",")})`).join("");
-    path.textContent = `${entry.statePathName}@${entry.stateName}${filters}`;
+    path.textContent = `${entry.statePathName}${filters}`;
     row.append(type, document.createTextNode(" "), prop, document.createTextNode(" ← "), path);
     if (entry.node !== null) {
       const target = entry.node;
@@ -869,7 +865,7 @@ export class WcsDevtools extends HTMLElement {
     const arrow = document.createTextNode(" ← ");
     const path = document.createElement("span");
     path.className = "path";
-    path.textContent = `${entry.path}@${entry.stateName}`;
+    path.textContent = entry.path;
     const type = document.createElement("span");
     type.className = "badge-tag";
     type.textContent = entry.bindingType;
@@ -894,7 +890,7 @@ export class WcsDevtools extends HTMLElement {
     prop.textContent = entry.propName;
     const path = document.createElement("span");
     path.className = "path";
-    path.textContent = `${entry.path}@${entry.stateName}`;
+    path.textContent = entry.path;
     row.append(type, document.createTextNode(" "), prop, document.createTextNode(" ← "), path);
     row.addEventListener("click", () => {
       this._highlightNodes([entry.element]);
@@ -961,8 +957,8 @@ export class WcsDevtools extends HTMLElement {
     }
     const label = document.createElement("span");
     label.className = "label";
-    const stateName = entry.stateName !== null ? `@${entry.stateName}` : "";
-    label.textContent = ` ${entry.label}${stateName} `;
+
+    label.textContent = ` ${entry.label} `;
     const detail = document.createElement("span");
     detail.className = "detail";
     detail.textContent = entry.detail;
@@ -982,7 +978,7 @@ export class WcsDevtools extends HTMLElement {
   private _highlightPath(entry: IRosterEntry, path: string): void {
     const core = this._core!;
     const nodes: Node[] = [];
-    for (const wiring of core.getWiringForPath(entry.name, path)) {
+    for (const wiring of core.getWiringForPath(path, entry.summary.element)) {
       const binding = wiring.bindingRef.deref();
       if (binding !== undefined) {
         nodes.push(binding.node, binding.replaceNode);

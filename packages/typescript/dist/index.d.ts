@@ -85,14 +85,20 @@ declare function generateStateSchema(file: string, options?: GenerateOptions): G
  *
  * The manifest is a **derived artifact** (D9): the TypeScript type is the source
  * of truth, `wcs-schema emit` writes the manifest, and `wcs-schema check`
- * detects drift between the two in CI. `--merge` replaces exactly one
- * `states[name].stateSchema` and keeps everything else (other states, filters,
- * listContexts) — a hand-written schema for the same state does not survive,
- * by design: there is no implicit merge in the sidecar spec (§5).
+ * detects drift between the two in CI.
+ *
+ * v2 (schemaVersion 2): the application namespace carries a **single**
+ * `stateSchema` — one state tree per root, no name dimension
+ * (docs/state-mount-design.md D15). A volume (`<wcs-state mount="path">`)
+ * contributes a **subtree**: `--mount=<path>` merges the module's schema under
+ * that path inside the single `stateSchema`. `--merge` keeps everything else in
+ * an existing manifest (filters, listContexts); a hand-written schema for the
+ * same slot does not survive, by design: there is no implicit merge in the
+ * sidecar spec (§5).
  */
 
 declare const APPLICATION_MANIFEST_FILENAME = "wcstack.manifest.json";
-declare const SCHEMA_VERSION = 1;
+declare const SCHEMA_VERSION = 2;
 declare const APPLICATION_NAMESPACE = "wcstack.application";
 interface ApplicationManifest {
     schemaVersion: number;
@@ -100,9 +106,7 @@ interface ApplicationManifest {
     manifestExtensions: {
         [APPLICATION_NAMESPACE]: {
             version: number;
-            states?: Record<string, {
-                stateSchema: JsonSchemaNode;
-            }>;
+            stateSchema?: JsonSchemaNode;
             [key: string]: unknown;
         };
         [namespace: string]: unknown;
@@ -110,12 +114,17 @@ interface ApplicationManifest {
     [key: string]: unknown;
 }
 /**
- * Create the manifest object for one state, or graft the state into `existing`
- * (a parsed manifest object; envelope fields are filled in when absent).
+ * Create the manifest object for the state tree, or graft into `existing`
+ * (a parsed manifest object; envelope fields are normalized to v2 — a v1
+ * manifest's `states` map does not survive, its replacement is exactly this
+ * regeneration path).
+ *
+ * `mountPath === null` replaces the whole `stateSchema`; a mount path merges
+ * the schema as a subtree at that path (intermediate object nodes are created).
  */
-declare function buildManifest(stateName: string, schema: JsonSchemaNode, existing?: unknown): ApplicationManifest;
-/** Read `states[name].stateSchema` from a parsed manifest object, or undefined. */
-declare function readStateSchema(manifest: unknown, stateName: string): unknown;
+declare function buildManifest(mountPath: string | null, schema: JsonSchemaNode, existing?: unknown): ApplicationManifest;
+/** Read the single `stateSchema` from a parsed manifest object, or undefined. */
+declare function readStateSchema(manifest: unknown): unknown;
 /** JSON with object keys sorted at every level — the canonical form used for comparison. */
 declare function stableStringify(value: unknown): string;
 type SchemaComparison = {
@@ -126,15 +135,18 @@ type SchemaComparison = {
 } | {
     readonly kind: "missing-state";
 } | {
+    readonly kind: "v1-manifest";
+} | {
     readonly kind: "broken";
     readonly message: string;
 };
 /**
- * Compare the schema generated from the type with the one stored in `manifestText`.
+ * Compare the schema generated from the type with the one stored in `manifestText`
+ * (the whole tree, or the subtree at `mountPath`).
  * `changes` lists JSON pointers: `+ ptr` (only in generated), `- ptr` (only in
  * manifest), `~ ptr` (both, different value).
  */
-declare function compareStateSchema(manifestText: string, stateName: string, generated: JsonSchemaNode): SchemaComparison;
+declare function compareStateSchema(manifestText: string, mountPath: string | null, generated: JsonSchemaNode): SchemaComparison;
 
 /**
  * schemaCore.ts — the validator core bundle (`dist/schema-core.cjs`, built from

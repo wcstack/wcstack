@@ -29,7 +29,7 @@ export default { total: 0 };
 <span data-wcs="textContent: user.name"></span>
 <input data-wcs="value#ro: count; onclick: addItem">
 <template data-wcs="for: items"><span data-wcs="textContent: .label"></span></template>
-<p data-wcs="textContent: total@cart"></p>
+<p data-wcs="textContent: total"></p>
 <p>{{ count | fix(0) }}</p>
 <p><!--@@:user.name--></p>
 `;
@@ -49,43 +49,43 @@ describe('buildReferenceIndex', () => {
   });
 
   it('referencesOf がパス単位の出現を返し、スパンが原文と一致すること', () => {
-    const refs = index.referencesOf('default', 'user.name');
+    const refs = index.referencesOf('user.name');
     expect(refs).toHaveLength(2); // 属性 + コメントバインディング
     for (const ref of refs) {
       expect(SAMPLE.slice(ref.pathRange.start, ref.pathRange.end)).toBe('user.name');
     }
-    const mustacheRef = index.referencesOf('default', 'count').find(r => r.source === 'mustache');
+    const mustacheRef = index.referencesOf('count').find(r => r.source === 'mustache');
     expect(mustacheRef).toBeDefined();
     expect(SAMPLE.slice(mustacheRef!.pathRange.start, mustacheRef!.pathRange.end)).toBe('count');
   });
 
-  it('@state 越境の出現が対象 state に載ること', () => {
-    const refs = index.referencesOf('cart', 'total');
-    expect(refs).toHaveLength(1);
-    expect(SAMPLE.slice(refs[0].pathRange.start, refs[0].pathRange.end)).toBe('total');
+  it('@state を含む式は v2 の parse error として problems に落ちること', () => {
+    const idx = buildReferenceIndex('<p data-wcs="textContent: total@cart"></p>');
+    expect(idx.problems).toHaveLength(1);
+    expect(idx.problems[0].message).toContain('removed in v2');
+    expect(idx.referencesOf('total')).toHaveLength(0);
   });
 
   it('declarationOf が完全一致 → 第 1 セグメントの順で解決すること', () => {
-    const exact = index.declarationOf('default', 'count');
+    const exact = index.declarationOf('count');
     expect(exact).not.toBeNull();
     expect(SAMPLE.slice(exact!.range.start, exact!.range.end)).toBe('count');
 
     // ドット付きパスはトップレベル名へフォールバック
-    const fallback = index.declarationOf('default', 'user.name');
+    const fallback = index.declarationOf('user.name');
     expect(fallback?.name).toBe('user');
 
     // 引用符付き getter はフルパス名で完全一致
-    const getter = index.declarationOf('default', 'items.*.upper');
+    const getter = index.declarationOf('items.*.upper');
     expect(getter?.kind).toBe('getter');
     expect(SAMPLE.slice(getter!.range.start, getter!.range.end)).toBe('items.*.upper');
 
     // 別 state の宣言
-    expect(index.declarationOf('cart', 'total')?.stateName).toBe('cart');
-    expect(index.declarationOf('default', 'nosuch')).toBeNull();
+    expect(index.declarationOf('nosuch')).toBeNull();
   });
 
   it('occurrenceAt がパス文字列上のオフセットだけにヒットすること', () => {
-    const ref = index.referencesOf('default', 'user.name')[0];
+    const ref = index.referencesOf('user.name')[0];
     expect(index.occurrenceAt(ref.pathRange.start)).toBe(ref);
     expect(index.occurrenceAt(ref.pathRange.end - 1)).toBe(ref);
     expect(index.occurrenceAt(ref.pathRange.end)).not.toBe(ref);
@@ -94,7 +94,7 @@ describe('buildReferenceIndex', () => {
   it('壊れた式は problems に落ち、他の出現を止めないこと', () => {
     const broken = buildReferenceIndex('<span data-wcs="oops"></span><span data-wcs="textContent: ok"></span>');
     expect(broken.problems).toHaveLength(1);
-    expect(broken.referencesOf('default', 'ok')).toHaveLength(1);
+    expect(broken.referencesOf('ok')).toHaveLength(1);
   });
 
   it('eventToken の右辺はパス空間に入れないこと（データプロパティ同名の誤解決防止）', () => {
@@ -110,21 +110,20 @@ export default { changed: 0, $eventTokens: ["changed"] };
     expect(tokenOccurrence).toBeDefined();
     expect(tokenOccurrence!.path).toBe('changed');
     // referencesOf はデータパス出現(textContent 側)だけを返す
-    const refs = idx.referencesOf('default', 'changed');
+    const refs = idx.referencesOf('changed');
     expect(refs).toHaveLength(1);
     expect(refs[0].kind).toBe('path');
   });
 
   it('referencesOf は複製を返すこと（呼び出し側の変異でインデックスが壊れない）', () => {
-    const refs = index.referencesOf('default', 'user.name');
+    const refs = index.referencesOf('user.name');
     refs.length = 0;
-    expect(index.referencesOf('default', 'user.name')).toHaveLength(2);
+    expect(index.referencesOf('user.name')).toHaveLength(2);
   });
 
-  it('propRange / stateNameRange が出現に載ること', () => {
-    const ref = index.referencesOf('cart', 'total')[0];
+  it('propRange が出現に載ること', () => {
+    const ref = index.referencesOf('total')[0];
     expect(SAMPLE.slice(ref.propRange!.start, ref.propRange!.end)).toBe('textContent');
-    expect(SAMPLE.slice(ref.stateNameRange!.start, ref.stateNameRange!.end)).toBe('cart');
   });
 
   it('text チャネルはランタイムと同じく `;` を分割しないこと（embedded 経路の正本化）', () => {
@@ -134,8 +133,8 @@ export default { changed: 0, $eventTokens: ["changed"] };
     const html = '<template><p>{{ a; b }}</p></template>';
     const idx = buildReferenceIndex(html);
     expect(idx.problems).toHaveLength(0);
-    expect(idx.referencesOf('default', 'a')).toHaveLength(0);
-    const refs = idx.referencesOf('default', 'a; b');
+    expect(idx.referencesOf('a')).toHaveLength(0);
+    const refs = idx.referencesOf('a; b');
     expect(refs).toHaveLength(1);
     expect(html.slice(refs[0].pathRange.start, refs[0].pathRange.end)).toBe('a; b');
   });

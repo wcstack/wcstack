@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../src/stateElementByName', () => ({
-  getStateElementByName: vi.fn(),
+  getStateElement: vi.fn(),
 }));
 
 vi.mock('../src/proxy/traps/get', () => ({
@@ -13,7 +13,7 @@ vi.mock('../src/proxy/traps/set', () => ({
 }));
 
 import { __private__, createStateProxy } from '../src/proxy/StateHandler';
-import { getStateElementByName } from '../src/stateElementByName';
+import { getStateElement } from '../src/stateElementByName';
 import { MAX_LOOP_DEPTH } from '../src/define';
 import { get as trapGet } from '../src/proxy/traps/get';
 import { set as trapSet } from '../src/proxy/traps/set';
@@ -30,28 +30,27 @@ describe('proxy/StateHandler (coverage)', () => {
   });
 
   it('stateElementが存在しない場合はエラーになること', () => {
-    vi.mocked(getStateElementByName).mockReturnValue(null as any);
-    expect(() => new StateHandler(document, 'missing', 'readonly')).toThrow(/State element with name "missing" not found/);
+    vi.mocked(getStateElement).mockReturnValue(null as any);
+    expect(() => new StateHandler(document, 'readonly')).toThrow(/no state tree found on this root/);
   });
 
   it('初期状態のプロパティが正しいこと', () => {
     const stateElement = mockStateElement();
-    vi.mocked(getStateElementByName).mockReturnValue(stateElement);
-    const handler = new StateHandler(document, 'default', 'readonly');
+    vi.mocked(getStateElement).mockReturnValue(stateElement);
+    const handler = new StateHandler(document, 'readonly');
     expect(handler.addressStackLength).toBe(0);
-    expect(handler.stateName).toBe('default');
     expect(handler.stateElement).toBe(stateElement);
   });
 
   it('スタックが空の場合lastAddressStackはエラーになること', () => {
-    vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
-    const handler = new StateHandler(document, 'default', 'readonly');
+    vi.mocked(getStateElement).mockReturnValue(mockStateElement());
+    const handler = new StateHandler(document, 'readonly');
     expect(() => handler.lastAddressStack).toThrow(/Last address stack is undefined/);
   });
 
   it('push/popでスタックが更新されること', () => {
-    vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
-    const handler = new StateHandler(document, 'default', 'readonly');
+    vi.mocked(getStateElement).mockReturnValue(mockStateElement());
+    const handler = new StateHandler(document, 'readonly');
 
     const addrA = { id: 'a' } as any;
     const addrB = { id: 'b' } as any;
@@ -68,14 +67,14 @@ describe('proxy/StateHandler (coverage)', () => {
   });
 
   it('空スタックのpopはnullを返すこと', () => {
-    vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
-    const handler = new StateHandler(document, 'default', 'readonly');
+    vi.mocked(getStateElement).mockReturnValue(mockStateElement());
+    const handler = new StateHandler(document, 'readonly');
     expect(handler.popAddress()).toBeNull();
   });
 
   it('pushAddressがMAX_LOOP_DEPTHを超えるとエラーになること', () => {
-    vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
-    const handler = new StateHandler(document, 'default', 'readonly');
+    vi.mocked(getStateElement).mockReturnValue(mockStateElement());
+    const handler = new StateHandler(document, 'readonly');
     for (let i = 0; i < MAX_LOOP_DEPTH; i++) {
       handler.pushAddress(null);
     }
@@ -83,8 +82,8 @@ describe('proxy/StateHandler (coverage)', () => {
   });
 
   it('popAddressでスロットがundefinedの場合エラーになること', () => {
-    vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
-    const handler = new StateHandler(document, 'default', 'readonly');
+    vi.mocked(getStateElement).mockReturnValue(mockStateElement());
+    const handler = new StateHandler(document, 'readonly');
     handler.pushAddress({ id: 'a' } as any);
     // 内部スロットを強制的にundefinedにする
     (handler as any)._addressStack[(handler as any)._addressStackIndex] = undefined;
@@ -92,8 +91,8 @@ describe('proxy/StateHandler (coverage)', () => {
   });
 
   it('loopContextのset/clearができること', () => {
-    vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
-    const handler = new StateHandler(document, 'default', 'readonly');
+    vi.mocked(getStateElement).mockReturnValue(mockStateElement());
+    const handler = new StateHandler(document, 'readonly');
     const loopContext = { pathInfo: {} as any, listIndex: {} as any } as any;
 
     handler.setLoopContext(loopContext);
@@ -104,8 +103,8 @@ describe('proxy/StateHandler (coverage)', () => {
   });
 
   it('get/set/hasがtrapとReflectへ委譲されること', () => {
-    vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
-    const handler = new StateHandler(document, 'default', 'writable');
+    vi.mocked(getStateElement).mockReturnValue(mockStateElement());
+    const handler = new StateHandler(document, 'writable');
     const target = { value: 1 } as any;
 
     expect(handler.get(target, 'value', target)).toBe('get-result');
@@ -119,20 +118,20 @@ describe('proxy/StateHandler (coverage)', () => {
   });
 
   it('readonlyではsetでエラーになること', () => {
-    vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
-    const handler = new StateHandler(document, 'default', 'readonly');
+    vi.mocked(getStateElement).mockReturnValue(mockStateElement());
+    const handler = new StateHandler(document, 'readonly');
     const target = { value: 1 } as any;
 
-    expect(() => handler.set(target, 'value', 2, target)).toThrow(/State "default" is readonly/);
+    expect(() => handler.set(target, 'value', 2, target)).toThrow(/This state is readonly/);
     expect(trapSet).not.toHaveBeenCalled();
   });
 
   it('createStateProxyがStateProxyを生成すること', () => {
     const stateElement = mockStateElement();
-    vi.mocked(getStateElementByName).mockReturnValue(stateElement);
+    vi.mocked(getStateElement).mockReturnValue(stateElement);
 
     const state = { count: 1 };
-    const proxy = createStateProxy(document, state, 'default', 'writable');
+    const proxy = createStateProxy(document, state, 'writable');
 
     expect(proxy).toBeDefined();
     expect(typeof proxy).toBe('object');

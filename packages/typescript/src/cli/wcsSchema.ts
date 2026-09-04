@@ -1,15 +1,17 @@
 /**
  * wcsSchema.ts — the `wcs-schema` command.
  *
- *   wcs-schema emit  <state.ts|state.js> [--state=default] [--out=wcstack.manifest.json] [--merge] [--tsconfig=<path>] [--max-depth=5]
- *   wcs-schema check <state.ts|state.js> [--state=default] [--manifest=wcstack.manifest.json] [--tsconfig=<path>] [--max-depth=5]
+ *   wcs-schema emit  <state.ts|state.js> [--mount=<path>] [--out=wcstack.manifest.json] [--merge] [--tsconfig=<path>] [--max-depth=5]
+ *   wcs-schema check <state.ts|state.js> [--mount=<path>] [--manifest=wcstack.manifest.json] [--tsconfig=<path>] [--max-depth=5]
  *
  * exit codes
  *   emit : 0 written / 2 usage, unreadable file, syntax error, or the generated manifest failed its self-check
  *   check: 0 manifest matches the type / 1 drift (changes listed on stderr) / 2 usage, unreadable file, broken or state-less manifest
  *
  * `--out=-` prints the manifest to stdout instead of writing a file. `--merge`
- * keeps everything in an existing manifest except `states[<name>].stateSchema`.
+ * keeps everything in an existing manifest except the slot being written —
+ * the whole `stateSchema`, or the subtree at `--mount=<path>` (a volume's type
+ * merges as a subtree of the single tree, docs/state-mount-design.md D15).
  *
  * The generated artifact is always run through the validator core's
  * `validateManifestArtifact` (dist/schema-core.cjs, built from vscode-wcs) so a
@@ -30,13 +32,13 @@ export interface CliIo {
 }
 
 const USAGE =
-  "usage: wcs-schema emit  <state.ts|state.js> [--state=default] [--out=wcstack.manifest.json] [--merge] [--tsconfig=<path>] [--max-depth=5]\n" +
-  "       wcs-schema check <state.ts|state.js> [--state=default] [--manifest=wcstack.manifest.json] [--tsconfig=<path>] [--max-depth=5]\n";
+  "usage: wcs-schema emit  <state.ts|state.js> [--mount=<path>] [--out=wcstack.manifest.json] [--merge] [--tsconfig=<path>] [--max-depth=5]\n" +
+  "       wcs-schema check <state.ts|state.js> [--mount=<path>] [--manifest=wcstack.manifest.json] [--tsconfig=<path>] [--max-depth=5]\n";
 
 export interface ParsedArgs {
   readonly command: "emit" | "check" | "version" | "help" | undefined;
   readonly file: string | undefined;
-  readonly state: string;
+  readonly mount: string | null;
   readonly out: string;
   readonly manifest: string;
   readonly merge: boolean;
@@ -48,7 +50,7 @@ export interface ParsedArgs {
 export function parseArgs(argv: readonly string[]): ParsedArgs {
   let command: ParsedArgs["command"];
   let file: string | undefined;
-  let state = "default";
+  let mount: string | null = null;
   let out = APPLICATION_MANIFEST_FILENAME;
   let manifest = APPLICATION_MANIFEST_FILENAME;
   let merge = false;
@@ -58,7 +60,8 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   for (const arg of argv) {
     if (arg === "--version" || arg === "-v") command ??= "version";
     else if (arg === "--help" || arg === "-h") command ??= "help";
-    else if (arg.startsWith("--state=")) state = arg.slice("--state=".length);
+    else if (arg.startsWith("--mount=")) mount = arg.slice("--mount=".length);
+    else if (arg.startsWith("--state=")) unknown.push(arg); // v2: 名前次元は撤去 — --mount=<path> へ
     else if (arg.startsWith("--out=")) out = arg.slice("--out=".length);
     else if (arg.startsWith("--manifest=")) manifest = arg.slice("--manifest=".length);
     else if (arg.startsWith("--tsconfig=")) tsconfig = arg.slice("--tsconfig=".length);
@@ -69,7 +72,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     else if (file === undefined) file = arg;
     else unknown.push(arg);
   }
-  return { command, file, state, out, manifest, merge, tsconfig, maxDepth, unknown };
+  return { command, file, mount, out, manifest, merge, tsconfig, maxDepth, unknown };
 }
 
 export function main(argv: readonly string[], io: CliIo = defaultIo()): number {
@@ -83,7 +86,11 @@ export function main(argv: readonly string[], io: CliIo = defaultIo()): number {
     return 0;
   }
   if (args.command === undefined || args.file === undefined || args.unknown.length > 0) {
-    if (args.unknown.length > 0) io.stderr(`unknown argument(s): ${args.unknown.join(" ")}\n`);
+    if (args.unknown.some((arg) => arg.startsWith("--state="))) {
+      io.stderr('--state was removed in v2 — there is a single state tree. Use --mount=<path> for a volume, or no flag for the root tree.\n');
+    } else if (args.unknown.length > 0) {
+      io.stderr(`unknown argument(s): ${args.unknown.join(" ")}\n`);
+    }
     io.stderr(USAGE);
     return 2;
   }
@@ -91,9 +98,15 @@ export function main(argv: readonly string[], io: CliIo = defaultIo()): number {
     io.stderr("--max-depth must be a positive integer\n");
     return 2;
   }
-  if (!/^[A-Za-z_$][\w$-]*$/.test(args.state)) {
-    io.stderr(`--state must be a state name (got "${args.state}")\n`);
-    return 2;
+  if (args.mount !== null) {
+    // runtime（state の validateVolumeMountPath）と同条件: 空セグメント・ワイルドカードと
+    // 予約文字（$ # @ — 位置を問わず）を拒否し、数字先頭などはランタイム同様に受理する。
+    // 旧 regex は `$` 先頭を受理し数字先頭を拒否していて runtime と両方向にずれていた
+    const problem = findMountPathProblem(args.mount);
+    if (problem !== null) {
+      io.stderr(`--mount ${problem} (got "${args.mount}")\n`);
+      return 2;
+    }
   }
 
   let generated;
@@ -108,12 +121,23 @@ export function main(argv: readonly string[], io: CliIo = defaultIo()): number {
   return args.command === "emit" ? emit(args, generated.schema, io) : check(args, generated.schema, io);
 }
 
+/** runtime（validateVolumeMountPath）が raise する形なら理由を返す（妥当なら null）。 */
+function findMountPathProblem(mountPath: string): string | null {
+  if (mountPath.length === 0) return "requires a non-empty tree path";
+  for (const segment of mountPath.split(".")) {
+    if (segment.length === 0) return "path has an empty segment";
+    if (segment === "*") return "path must be static (wildcards are not allowed)";
+    if (/[$#@]/.test(segment)) return "path must not use reserved characters ($, #, @)";
+  }
+  return null;
+}
+
 function emit(args: ParsedArgs, schema: ReturnType<typeof generateStateSchema>["schema"], io: CliIo): number {
   const toStdout = args.out === "-";
   const outPath = toStdout ? undefined : resolve(io.cwd(), args.out);
 
   let existing: unknown;
-  if (args.merge && outPath !== undefined && existsSync(outPath)) {
+  if ((args.merge || args.mount !== null) && outPath !== undefined && existsSync(outPath)) {
     try {
       existing = JSON.parse(readFileSync(outPath, "utf8"));
     } catch (e) {
@@ -122,7 +146,7 @@ function emit(args: ParsedArgs, schema: ReturnType<typeof generateStateSchema>["
     }
   }
 
-  const manifest = buildManifest(args.state, schema, existing);
+  const manifest = buildManifest(args.mount, schema, existing);
   const text = `${JSON.stringify(manifest, null, 2)}\n`;
 
   // Self-check: the validator must accept what the generator wrote.
@@ -143,7 +167,7 @@ function emit(args: ParsedArgs, schema: ReturnType<typeof generateStateSchema>["
     return 0;
   }
   writeFileSync(outPath!, text, "utf8");
-  io.stderr(`wrote ${args.out} (state "${args.state}")\n`);
+  io.stderr(`wrote ${args.out} (${args.mount === null ? "state tree" : `mount "${args.mount}"`})\n`);
   return 0;
 }
 
@@ -153,21 +177,27 @@ function check(args: ParsedArgs, schema: ReturnType<typeof generateStateSchema>[
     io.stderr(`cannot read ${args.manifest}: no such file (run \`wcs-schema emit\` first)\n`);
     return 2;
   }
-  const comparison = compareStateSchema(readFileSync(manifestPath, "utf8"), args.state, schema);
+  const slot = args.mount === null ? "state tree" : `mount "${args.mount}"`;
+  // 誘導コマンドは check と同じスロットを指すこと（--mount 抜きだとルートを差し替えてしまう）
+  const mountFlag = args.mount === null ? "" : ` --mount=${args.mount}`;
+  const comparison = compareStateSchema(readFileSync(manifestPath, "utf8"), args.mount, schema);
   switch (comparison.kind) {
     case "same":
-      io.stderr(`${args.manifest}: state "${args.state}" is up to date\n`);
+      io.stderr(`${args.manifest}: ${slot} is up to date\n`);
       return 0;
     case "missing-state":
-      io.stderr(`${args.manifest}: state "${args.state}" has no stateSchema (run \`wcs-schema emit --merge\`)\n`);
+      io.stderr(`${args.manifest}: ${slot} has no stateSchema (run \`wcs-schema emit --merge${mountFlag}\`)\n`);
+      return 2;
+    case "v1-manifest":
+      io.stderr(`${args.manifest}: schemaVersion 1 manifest (states[name]) — the name dimension was removed in v2. Regenerate with \`wcs-schema emit --out=${args.manifest}\` (single stateSchema, schemaVersion 2)\n`);
       return 2;
     case "broken":
       io.stderr(`${args.manifest}: broken JSON: ${comparison.message}\n`);
       return 2;
     case "differs":
-      io.stderr(`${args.manifest}: state "${args.state}" is out of date (${comparison.changes.length} change(s)):\n`);
+      io.stderr(`${args.manifest}: ${slot} is out of date (${comparison.changes.length} change(s)):\n`);
       for (const change of comparison.changes) io.stderr(`  ${change}\n`);
-      io.stderr(`run \`wcs-schema emit --merge --out=${args.manifest}\` to update it\n`);
+      io.stderr(`run \`wcs-schema emit --merge${mountFlag} --out=${args.manifest}\` to update it\n`);
       return 1;
   }
 }

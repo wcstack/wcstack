@@ -12,14 +12,6 @@ export interface IStateElement {
    * optional なのはテスト用モック互換のため（undefined は「不明＝未初期化扱い」）。
    */
   readonly initialized?: boolean;
-  /**
-   * この state element が今使えるか（＝ 接続済みで rootNode を保持しているか）。
-   * `createState` は rootNode を要求するので、false のときに呼ぶと raiseError する。
-   * 台帳に載っていること（登録済み）と使えることは別で、要素をキーにした台帳には
-   * 切断済みの state element が残る窓がある（§1.9）。
-   * optional なのはテスト用モック互換のため（undefined は「不明＝使える扱い」）。
-   */
-  readonly hasRootNode?: boolean;
   readonly initializePromise: Promise<void>;
   readonly connectedCallbackPromise: Promise<void>;
   readonly listPaths: Set<string>;
@@ -36,22 +28,34 @@ export interface IStateElement {
    * `bind-component` で束ねられているコンポーネント要素（親スコープ側のノード）。
    * マッピング規則の引き当てに使う。optional なのはテスト用モック互換のため。
    */
-  readonly boundComponent?: Element | null;
   /**
    * この state の実体が innerState proxy（＝ 値の正本が親スコープの state にある
    * mapped な `bind-component`）か。真のときだけ越境アドレスの受け渡しと
    * リストパスの外向き伝播が働く（§1.8）。
    * optional なのはテスト用モック互換のため（undefined は plain 扱い）。
    */
-  readonly hasMappedComponentState?: boolean;
-  markComponentStateMapped?(): void;
+  /**
+   * この state element にマウント（Phase 2 の単一ツリー — webComponent/mount.ts）が
+   * 1 つでも登録されているか。偽のとき getByAddress / isCacheable / `$n` 補正は
+   * boolean 判定 1 個でオーバーレイ経路を抜ける（設計書 D18）。
+   * optional なのはテスト用モック互換のため（undefined は「マウント無し」扱い）。
+   */
+  readonly hasMounts?: boolean;
+  markHasMounts?(): void;
+  /**
+   * この state element に接ぎ木済みのボリューム（`mount=` — webComponent/volume.ts）が
+   * 1 つでもあるか。偽のとき setByAddress の D22 後段ガード（マウントポイントを含む
+   * 親の丸ごと書き検査）は boolean 判定 1 個で抜ける（設計書 D18 と同じ形）。
+   * optional なのはテスト用モック互換のため（undefined は「ボリューム無し」扱い）。
+   */
+  readonly hasGraftedVolumes?: boolean;
+  markHasGraftedVolumes?(): void;
   /**
    * この state 要素に束ねられた（`setPathInfo` を通った）パスの集合。丸ごとマウント
    * （ルート規則）の親→子通知が「登録済みパス全部を読み直せ」を組み立てるのに使う
    * （webComponent/rootReloadPaths.ts）。
    * optional なのはテスト用モック互換のため（undefined は「登録なし」扱い）。
    */
-  readonly boundPaths?: ReadonlySet<string>;
   /**
    * DCC の `$bindables` から生成した「パス → 変更イベント名」表。
    * 唯一の書き手は defineDCC で、読み手は setByAddress。
@@ -105,13 +109,20 @@ export interface IStateElement {
    * `source` は存在検査の診断 code と適用範囲を決める（pathDiagnostics.ts）。
    * 省略時は `"binding"`（テスト用モック互換のため optional）。
    */
+  /** ボリュームの宣言面の合流（webComponent/volume.ts 専用・実装は State のみ） */
+  addVolumeWatchPaths?(paths: ReadonlySet<string>): void;
+  mergeVolumeListKeys?(entries: ReadonlyMap<string, import("../list/listKeys").ListKeySpec>): void;
+  enableUpdatedCallback?(): void;
+  /** enable-ssr スナップショットから初期化されたか（D14）。 */
+  readonly hydratedFromSsr?: boolean;
+  /** ボリュームのアクセサ登録（webComponent/volume.ts 専用） */
+  defineTreeAccessor(path: string, descriptor: PropertyDescriptor): void;
   setPathInfo(path: string, bindingType: BindingType, source?: PathInfoSource): void;
   addStaticDependency(parentPath: string, childPath: string): boolean;
   addDynamicDependency(fromPath: string, toPath: string): boolean;
   createStateAsync(mutability: Mutability, callback: (state: IStateProxy) => Promise<void>): Promise<void>;
   createState(mutability: Mutability, callback: (state: IStateProxy) => void): void;
   nextVersion(): number;
-  bindProperty(prop: string, desc: PropertyDescriptor): void;
   setInitialState(state: Record<string, any>): void;
 }
 

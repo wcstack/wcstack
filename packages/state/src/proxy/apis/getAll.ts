@@ -16,7 +16,6 @@ import { getPathInfo } from "../../address/PathInfo";
 import { getAllContextMismatchMessage, indexArityMessage } from "../../pathDiagnostics";
 import { raiseError } from "../../raiseError";
 import { getScopedIndexes } from "../../list/wildcardLevel";
-import { getBaseDepth } from "../../webComponent/baseListIndex";
 import { getContextListIndex } from "../methods/getContextListIndex";
 import { IStateHandler } from "../types";
 import { collectWildcardIndexes } from "./wildcardIndexes";
@@ -63,7 +62,7 @@ export function getAll(
         for (let i = pathInfo.wildcardPaths.length - 1; i >= 0; i--) {
           const listIndex = getContextListIndex(handler, pathInfo.wildcardPaths[i]);
           if (listIndex) {
-            indexes = getScopedIndexes(listIndex, listIndex.length - getBaseDepth(handler.stateElement));
+            indexes = getScopedIndexes(listIndex, listIndex.length);
             break;
           }
         }
@@ -74,7 +73,7 @@ export function getAll(
           const lastAddress = handler.addressStackLength > 0 ? handler.lastAddressStack : null;
           const contextListIndex = lastAddress?.listIndex ?? null;
           if (pathInfo.wildcardCount > 0 && lastAddress !== null && contextListIndex !== null &&
-              contextListIndex.length - getBaseDepth(handler.stateElement) > 0) {
+              contextListIndex.length > 0) {
             raiseError(getAllContextMismatchMessage(path, lastAddress.pathInfo.path));
           }
           indexes = [];

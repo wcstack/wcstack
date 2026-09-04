@@ -1,12 +1,10 @@
 import { test, expect } from "@playwright/test";
 import { collectErrors } from "./helpers";
 
-// Light DOM の `bind-component`。
-// docs/architecture-hardening/15-state-component-mechanism-consistency.md §1.13。
+// Light DOM の `bind-component`（v2: マウント形）。docs/state-mount-design.md。
 //
-// mapped 形（ホストから data-wcs で束ねる）は初期化が循環して永久に解決していなかった。
-// Shadow DOM 形が成立していたのは内側の state が別 rootNode にいるからで、rootNode による
-// 名前空間の分離が初期化順序の分離も担っていた。修正はその 2 つを明示的に復元している。
+// v1 では mapped 形の初期化が循環し（§1.13）、name 名前空間の分離で復旧していた。
+// v2 は単一ツリーのマウントなので内側のツリーも name も無く、親 ledger への変換だけが残る。
 //
 // Light DOM は Shadow の内側を覗く `>>>` が要らない代わりに、custom element の upgrade
 // タイミングが happy-dom と実ブラウザで最も食い違う場所なので、実機で確かめる価値がある。
@@ -70,12 +68,18 @@ test.describe("e2e/fixtures/bind-component-light-dom", () => {
     expect(errors).toEqual([]);
   });
 
-  test("plain な Light DOM（state 注入）が引き続き成立すること", async ({ page }) => {
-    const errors = collectErrors(page);
-    await page.goto("/e2e/fixtures/bind-component-light-dom.html");
+  test("plain な Light DOM は廃止 — loud に落ち、ページの他の部分を巻き添えにしないこと", async ({ page }) => {
+    // v2（2026-09-03 著者決定）: 共有 rootNode に独立ツリーを置けないため plain light は
+    // 設定エラー。誘導＝shadow を付ける（plain Shadow 形）か、ホストから配線してマウント。
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    await page.goto("/e2e/fixtures/bind-component-light-dom-plain-removed.html");
 
-    await expect(page.locator("#plain light-plain .inner")).toHaveText("injected");
-
-    expect(errors).toEqual([]);
+    // 同じページの mapped コンポーネントは無傷（ウェッジしない）
+    await expect(page.locator("#mapped light-view-ok .inner")).toHaveText("Alice");
+    // plain は描画されない
+    await expect(page.locator("#plain light-plain .inner")).toHaveText("");
+    // エラーは loud（誘導文付き）
+    expect(pageErrors.some((m) => m.includes('plain (unwired) Light DOM "bind-component" is not supported'))).toBe(true);
   });
 });

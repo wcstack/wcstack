@@ -138,7 +138,6 @@ static wcBindable = {
 |----------|-------------|
 | `installGlobals(window)` | happy-dom のグローバルを `globalThis` にインストール。復元関数を返す |
 | `waitForReady(root, { maxIterations? })` | `root`（`document` または `ShadowRoot`）配下で readiness プロトコルに従う全カスタム要素を待つ — `static hasConnectedCallbackPromise` を持つ要素の `connectedCallbackPromise`（待機中に増えた要素も再走査。`<wcs-router>` の初期ルートなど）、次に `static getBindingsReady(root)`（`<wcs-state>` のバインディング構築）。`renderToString` がシリアライズ前に行う待機そのもので、[`@wcstack/testing`](../testing/README.ja.md) の `mount()` が再利用する。バインディング初期化に失敗すると reject |
-| `extractStateData(stateEl)` | `<wcs-state>` 要素からデータプロパティを抽出（`$` プレフィックスのキーと関数は除外） |
 
 ### 定数
 
@@ -153,7 +152,7 @@ static wcBindable = {
 
 ```html
 <!-- renderToString() が生成 -->
-<wcs-ssr name="default" version="0.1.0">
+<wcs-ssr version="0.1.0">
 
   <!-- 状態スナップショット -->
   <script type="application/json">{"items":["Apple","Banana","Cherry"]}</script>
