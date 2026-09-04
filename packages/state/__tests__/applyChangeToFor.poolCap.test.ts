@@ -60,7 +60,6 @@ function createMockStateElement(): IStateElement {
     [getByAddressSymbol]: () => undefined,
   };
   return {
-    name: 'default',
     initializePromise: Promise.resolve(),
     listPaths: new Set<string>(),
     elementPaths: new Set<string>(),

@@ -194,13 +194,6 @@ describe('State component', () => {
     await stateEl.initializePromise;
   });
 
-  it('name getterで現在の名前を取得できること', async () => {
-    const stateEl = createStateElement();
-    stateEl.setInitialState({});
-    await stateEl.connectedCallback();
-    expect(stateEl.name).toBe('default');
-  });
-
   it('state属性でスクリプトJSONを読み込めること', async () => {
     const stateEl = createStateElement({ state: 'state-data' });
     await stateEl.connectedCallback();
@@ -752,5 +745,46 @@ describe('plain Light DOM の廃止（台帳が空の形）', () => {
     await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
       /plain \(unwired\) Light DOM "bind-component" is not supported/
     );
+  });
+});
+
+// 設計 §4-7「mount 属性の実行時変更 | 無視＋warn（再マウントは非目標）」。
+// 初期化前の属性設定（パース時・接続前の setAttribute）は正規の使い方なので黙る。
+describe('mount 属性の動的変更（設計 §4-7: 無視＋warn）', () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
+  it('初期化前の mount 属性設定（正規の使い方）では warn しないこと', () => {
+    const stateEl = createStateElement();
+    stateEl.setAttribute('mount', 'settings');
+    stateEl.setAttribute('mount', 'settings2');
+    stateEl.removeAttribute('mount');
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('初期化後の mount 属性変更は未サポートとして warn で知らせること', async () => {
+    const stateEl = createStateElement();
+    stateEl.setInitialState({ count: 0 });
+    await stateEl.connectedCallback();
+    await stateEl.initializePromise;
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    stateEl.setAttribute('mount', 'settings');
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const message = String(warnSpy.mock.calls[0][0]);
+    expect(message).toContain('[@wcstack/state]');
+    expect(message).toMatch(/mount/);
+    expect(message).toMatch(/not supported/);
+
+    // 同値 set は変更ではないので warn を重ねない
+    stateEl.setAttribute('mount', 'settings');
+    expect(warnSpy).toHaveBeenCalledTimes(1);
   });
 });

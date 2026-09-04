@@ -78,6 +78,16 @@ export class State extends HTMLElementBase implements IStateElement {
     return getBindingsReady(rootNode);
   }
 
+  /**
+   * `mount` の動的変更は未サポート（再マウントは非目標 — 設計書 §4-7）。
+   * 初期化済み要素での変更は無言で捨てず warn で知らせる。初期化前の属性設定
+   * （パース時・接続前の setAttribute）は正規の使い方なので黙る。
+   * `name` は connectedCallback 冒頭で fail-fast 済みなので観測しない。
+   */
+  static get observedAttributes(): string[] {
+    return ["mount"];
+  }
+
   private __state: IState | undefined;
   private _hasUpdatedCallback: boolean = false;
   /** enable-ssr のスナップショットから初期化された（D14: ボリュームはデータを採用する） */
@@ -88,7 +98,6 @@ export class State extends HTMLElementBase implements IStateElement {
   // $1 等のインデックスを読んだ getter パス（実行時検出）。位置のみ変わった行の
   // 静的子展開はこの集合の subtree に限定される。追加のみ・クリアしない（安全側）。
   private _indexDependentGetterPaths: Set<string> = new Set<string>();
-  private _name: string = 'default';
   private _initialized: boolean = false;
   private _initializePromise: Promise<void>;
   private _resolveInitialize: (() => void) | null = null;
@@ -226,8 +235,16 @@ export class State extends HTMLElementBase implements IStateElement {
     this._resolveLoading?.();
   }
 
-  get name(): string {
-    return this._name;
+  attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void {
+    // observedAttributes は "mount" のみ。同値 set（oldValue === newValue）は変更ではない
+    if (!this._initialized || oldValue === newValue) {
+      return;
+    }
+    console.warn(
+      `[@wcstack/state] Changing the "mount" attribute after initialization is not supported and is ignored ` +
+      `(was ${oldValue === null ? "absent" : `"${oldValue}"`}, now ${newValue === null ? "absent" : `"${newValue}"`}). ` +
+      `Remove this <${config.tagNames.state}> element and create a new one with the desired mount path instead.`,
+    );
   }
 
   private _loadFromSsrElement(): IState | null {
@@ -261,7 +278,9 @@ export class State extends HTMLElementBase implements IStateElement {
       } else {
         const script = this.querySelector<HTMLScriptElement>('script[type="module"]');
         if (script) {
-          return await loadFromInnerScript(script, `${this._name}`);
+          // sourceURL ラベル。v2 はルートに 1 ツリーなので名前次元は無く、要素の
+          // タグ名（DCC 経路が host のタグ名を渡すのと同じ流儀）で特定十分
+          return await loadFromInnerScript(script, config.tagNames.state);
         } else {
           const timerId = setTimeout(() => {
             // v2: name 属性は撤去済み（fail-fast）— 文言に name を出さない（tagName で特定十分）

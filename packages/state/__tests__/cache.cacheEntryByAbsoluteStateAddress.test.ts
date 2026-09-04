@@ -9,7 +9,7 @@ import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
 import { getPathInfo } from '../src/address/PathInfo';
 import type { IStateElement } from '../src/components/types';
 
-const defaultStateElement = { name: 'default' } as IStateElement;
+const defaultStateElement = {} as IStateElement;
 
 function createAddress(path: string) {
   const pathInfo = getPathInfo(path);

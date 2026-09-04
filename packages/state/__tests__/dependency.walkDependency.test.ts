@@ -9,7 +9,7 @@ import * as listIndexesByList from '../src/list/listIndexesByList';
 import { getByAddressSymbol } from '../src/proxy/symbols';
 import type { IStateElement } from '../src/components/types';
 
-const defaultStateElement = { name: 'default' } as IStateElement;
+const defaultStateElement = {} as IStateElement;
 
 function createStateProxy(values: Record<string, any>) {
   return {

@@ -230,7 +230,7 @@ describe('applyChangeToFor', () => {
     setStateElement(document, null);
     // Clear cached lastListValue to prevent cross-test contamination
     const pathInfo = getPathInfo('items');
-    const stateElement = { name: 'default' } as IStateElement;
+    const stateElement = {} as IStateElement;
     const absPathInfo = getAbsolutePathInfo(stateElement, pathInfo);
     const absAddress = createAbsoluteStateAddress(absPathInfo, null);
     clearLastListValueByAbsoluteStateAddress(absAddress);

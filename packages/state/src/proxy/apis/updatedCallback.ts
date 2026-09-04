@@ -50,6 +50,14 @@ export function updatedCallback(
       }
       const pathInfo = ref.absolutePathInfo.pathInfo;
       const pathName = pathInfo.path;
+      // D20/D21: マーカーパス（`#m<id>` セグメント = マウント私有キーの内部アドレス）は
+      // マウントインスタンスの私有語彙。ルートの $updatedCallback へ素通しすると、
+      // 作者に解釈不能で再初期化のたびに変わる内部 id が漏れるため配送しない
+      // （`#` はパス文法で書けない文字 — ツリーパスとは構造的に衝突しない）。
+      // 私有キーの可視化は devtools の overlays() 経由（プロトコル v2）。
+      if (pathName.indexOf("#") !== -1) {
+        continue;
+      }
       paths.add(pathName);
       if (pathInfo.wildcardCount > 0) {
         const indexes = getScopedIndexes(ref.listIndex!, pathInfo.wildcardCount);
@@ -79,6 +87,10 @@ export function updatedCallback(
         }
         const path = ref.absolutePathInfo.pathInfo.path;
         if (path !== volume.mountPath && !path.startsWith(prefix)) {
+          continue;
+        }
+        // マーカーパス（マウント私有キー）はボリューム相対配送にも漏らさない（上と同じ D20/D21）
+        if (path.indexOf("#") !== -1) {
           continue;
         }
         const relative = path === volume.mountPath ? "" : path.slice(prefix.length);

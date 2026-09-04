@@ -212,7 +212,7 @@ describe('applyChangeToFor ネストされたforループの回帰テスト', ()
     setStateElement(document, null);
     // Clear cached lastListValue to prevent cross-test contamination
     const itemsPathInfo = getPathInfo('items');
-    const stateElement = { name: 'default' } as IStateElement;
+    const stateElement = {} as IStateElement;
     const itemsAbsPathInfo = getAbsolutePathInfo(stateElement, itemsPathInfo);
     clearLastListValueByAbsoluteStateAddress(createAbsoluteStateAddress(itemsAbsPathInfo, null));
     const childrenPathInfo = getPathInfo('items.*.children');

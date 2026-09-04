@@ -279,6 +279,8 @@ R1 を採る理由: 一文で言える（「**自分で書いたキーは自分�
 
 **実装注記（2026-09-04）**: 宣言面（`$watch` / `$streams` / `$listKeys` / `$updatedCallback`）の相対サポートは**ボリュームのみ**（`$streams` はボリュームでも未対応 — 宣言は raise）。マウントされた**コンポーネントスコープ**は宣言面を実行せず、(tag, prop) につき 1 回の warn でルート／ボリュームへ誘導する（webComponent/mount.ts の `warnMountedDollarDeclarations`）。
 
+**実装注記（2026-09-05）**: ルート（およびボリューム相対）の `$updatedCallback` にはマーカーパス（`#m<id>` セグメントを含む私有キーの更新アドレス）を**配送しない** — 私有キーはマウントインスタンスの私有（D20/D21）で、`#` 語彙はスコープ外へ漏らさない（漏れる id は作者に解釈不能で再初期化のたびに変わる）。可視化は devtools の `overlays()` 経由（proxy/apis/updatedCallback.ts）。
+
 ### 4-7. 診断（無言の取り違えを作らない）
 
 | 状況 | 反応 |

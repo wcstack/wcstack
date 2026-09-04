@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { expandShorthandPaths, expandShorthandInBindAttribute } from '../src/structural/expandShorthandPaths';
+import { parseBindTextsForElement } from '../src/bindTextParser/parseBindTextsForElement';
 import { config } from '../src/config';
 
 describe('expandShorthandPaths', () => {
@@ -39,22 +40,24 @@ describe('expandShorthandPaths', () => {
       expect(comment.data).toBe('@@: users.*.name|uc');
     });
 
-    it('.name@state を forPath.*.name@state に展開すること', () => {
-      const comment = document.createComment('@@: .name@myState');
+    // 展開はテキスト連結のみでパス部を解釈しない（素通し性のピン — 旧 `@state` fixture の v2 置換）
+    it('ワイルドカード付き相対パスをそのまま連結して展開すること', () => {
+      const comment = document.createComment('@@: .tags.*');
       const fragment = createFragment(comment);
 
       expandShorthandPaths(fragment, 'users');
 
-      expect(comment.data).toBe('@@: users.*.name@myState');
+      expect(comment.data).toBe('@@: users.*.tags.*');
     });
 
-    it('.name@state|filter を正しく展開すること', () => {
-      const comment = document.createComment('@@: .name@myState|uc');
+    // 最初の `|` 以降（引数・空白・二つ目のフィルタ込み）は 1 バイトも触らない（素通し性のピン）
+    it('フィルタ引数・複数フィルタ付き suffix を変更せず素通しすること', () => {
+      const comment = document.createComment('@@: .name|slice(0, 3)|uc');
       const fragment = createFragment(comment);
 
       expandShorthandPaths(fragment, 'users');
 
-      expect(comment.data).toBe('@@: users.*.name@myState|uc');
+      expect(comment.data).toBe('@@: users.*.name|slice(0, 3)|uc');
     });
 
     it('キーワード付きコメント @@wcs-text: .name を展開すること', () => {
@@ -217,5 +220,13 @@ describe('expandShorthandInBindAttribute', () => {
   it('コロンなしのパートを正しく処理すること', () => {
     const result = expandShorthandInBindAttribute('textContent: .name;invalidpart', 'users');
     expect(result).toBe('textContent: users.*.name;invalidpart');
+  });
+
+  // N6: shorthand チャネル経由の `@` — 展開は素通しし、パース時に移行ヒント付き parse error に落ちる
+  it('@ 入り相対パスは素通しで展開され、パース時に移行ヒント付き parse error になること', () => {
+    const expanded = expandShorthandInBindAttribute('textContent: .name@cart', 'users');
+    expect(expanded).toBe('textContent: users.*.name@cart');
+    expect(() => parseBindTextsForElement(expanded)).toThrow(/removed in v2/);
+    expect(() => parseBindTextsForElement(expanded)).toThrow(/mount/);
   });
 });

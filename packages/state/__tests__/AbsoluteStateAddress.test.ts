@@ -5,9 +5,10 @@ import { getPathInfo } from '../src/address/PathInfo';
 import { createListIndex } from '../src/list/createListIndex';
 import type { IStateElement } from '../src/components/types';
 
-const testStateElement = { name: 'test' } as IStateElement;
-const test2StateElement = { name: 'test2' } as IStateElement;
-const defaultStateElement = { name: 'default' } as IStateElement;
+// 同一性（参照）だけが意味を持つダミー state 要素（v2: IStateElement に name は無い）
+const testStateElement = {} as IStateElement;
+const test2StateElement = {} as IStateElement;
+const defaultStateElement = {} as IStateElement;
 
 describe('AbsoluteStateAddress', () => {
 
