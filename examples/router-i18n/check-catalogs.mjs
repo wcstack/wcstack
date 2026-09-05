@@ -11,11 +11,16 @@
  * Nothing is broken, nothing is logged, and the page quietly serves English to
  * a Japanese reader. Only comparing the files finds it.
  *
- * Deliberately standalone rather than part of `wcs-validate`. That validator is
- * regex-based over inline `<wcs-state>` scripts by design — it has no module
- * resolution — and the catalog is reached through a *dynamic* import keyed by
- * the runtime locale, so which file backs `t` is not statically decidable
- * anyway. Comparing two data files needs none of that machinery.
+ * Deliberately standalone rather than part of `wcs-validate` — for a tooling
+ * reason, not a decidability one. That validator is regex-based over inline
+ * `<wcs-state>` scripts by design and has no module resolution, so it cannot
+ * reach the catalog files today. The check itself *is* statically decidable:
+ * the candidate modules are enumerable from the head snippet's SUPPORTED
+ * declaration, and this design's own invariant — key sets agree across
+ * locales, which is what this very script enforces — means any one catalog
+ * determines the key set. If the validator ever grows module resolution, this
+ * comparison can move in. Comparing two data files needs none of that
+ * machinery, so it lives here until then.
  *
  * Copy it alongside the snippet; the only thing to change is the two constants.
  */
@@ -26,7 +31,7 @@ const CATALOG_DIR = fileURLToPath(new URL("./i18n/", import.meta.url));
 const FALLBACK = "en";
 
 /** Files that are catalogs, not the machinery around them. */
-const NOT_A_CATALOG = new Set(["catalog.js", "format.js", "state.js"]);
+const NOT_A_CATALOG = new Set(["catalog.js", "format.js", "state.js", "merge.js"]);
 
 const PLURAL_CATEGORIES = new Set(["zero", "one", "two", "few", "many", "other"]);
 

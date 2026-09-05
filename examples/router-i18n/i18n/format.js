@@ -13,3 +13,17 @@ export const currency = new Intl.NumberFormat(lang, { style: "currency", currenc
 export const date = new Intl.DateTimeFormat(lang, { dateStyle: "medium" });
 export const plural = new Intl.PluralRules(lang);
 export const languageName = new Intl.DisplayNames([lang], { type: "language" });
+
+/**
+ * Message application, in exactly one place (docs/i18n-design.md §7).
+ *
+ * Catalog strings keep their `{name}` placeholders as data; every getter that
+ * renders one goes through here instead of calling `.replace()` inline. When
+ * `Intl.MessageFormat` (MessageFormat 2.0) ships, migrating means swapping
+ * this one function — not hunting down a hand-rolled replace in every getter.
+ */
+export function fmt(message, args) {
+  return message.replace(/\{(\w+)\}/g, (match, name) =>
+    args[name] === undefined ? match : String(args[name]),
+  );
+}

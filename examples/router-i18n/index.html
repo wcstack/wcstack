@@ -82,8 +82,12 @@
     // a narrow and fragile window. <base> has no such problem — it is the HTML
     // mechanism for exactly this, and we already know the locale here.
     //
-    // The one constraint it imposes: every URL on the page must be absolute,
-    // because relative ones now resolve against /<lang>/.
+    // The tax it imposes: every URL on the page now resolves against /<lang>/,
+    // including the ones nobody thinks of as URLs. An in-page anchor
+    // (href="#faq") navigates to /<lang>/#faq — a route change, and the router
+    // intercepts it — and inline-SVG fragment references (url(#gradient),
+    // clip-path) break the same way. Write every URL absolute, fragments
+    // included. docs/i18n-design.md §9-1-4.
     var base = document.createElement("base");
     base.setAttribute("href", "/" + lang + "/");
     document.head.appendChild(base);
