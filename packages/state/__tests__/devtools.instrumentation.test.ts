@@ -130,7 +130,7 @@ describe('devtools 計装点', () => {
 
   describe('token emit（protocol §4.5）', () => {
     it('CommandToken.emitがkind=commandのイベントを発し、結果はTokenと同一なこと', () => {
-      const token = new CommandToken('play', 'media');
+      const token = new CommandToken('play');
       const fn = vi.fn().mockReturnValue('ok');
       token.subscribe(fn);
       const results = token.emit('a', 1);
@@ -145,6 +145,9 @@ describe('devtools 計装点', () => {
           subscriberCount: 1,
         })
       );
+      // 直接生成（registry 非経由）の token はツリー識別を持たない（v2 追補は optional）
+      const emitted = events.find((e) => e.type === 'state:token-emit') as { stateElement?: unknown };
+      expect(emitted.stateElement).toBeUndefined();
     });
 
     it('subscriber 0の空撃ちもsubscriberCount=0で流れること', () => {
@@ -173,6 +176,23 @@ describe('devtools 計装点', () => {
       expect(events).toContainEqual(
         expect.objectContaining({ kind: 'event', tokenName: 'evt' })
       );
+    });
+
+    it('registry 経由の emit は payload に発火元 stateElement が載ること（protocol v2 追補・ツリー識別）', () => {
+      // 複数ツリーが同名 token を宣言するページで devtools の実測台帳が
+      // 合算にならないための識別。registry が生成時に owner を焼き込む。
+      const ownerA = createMockStateElement('owner-a');
+      const ownerB = createMockStateElement('owner-b');
+      getOrCreateCommandToken(ownerA, 'shared').emit();
+      getOrCreateCommandToken(ownerB, 'shared').emit();
+      getOrCreateEventToken(ownerA, 'sharedEvt').emit();
+      const emits = events.filter((e) => e.type === 'state:token-emit') as Array<{
+        kind: string; tokenName: string; stateElement?: unknown;
+      }>;
+      expect(emits).toHaveLength(3);
+      expect(emits[0]).toMatchObject({ kind: 'command', tokenName: 'shared', stateElement: ownerA });
+      expect(emits[1]).toMatchObject({ kind: 'command', tokenName: 'shared', stateElement: ownerB });
+      expect(emits[2]).toMatchObject({ kind: 'event', tokenName: 'sharedEvt', stateElement: ownerA });
     });
 
     it('sink未接続ではemitは素通りすること', () => {

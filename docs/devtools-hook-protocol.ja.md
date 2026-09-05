@@ -85,9 +85,11 @@ interface IDevtoolsSource {
   keys(rootNode: Node): string[];               // トップレベルキー列挙（状態ツリーの描画起点）
   // v2: マウント記録の列挙（D20 の可視化）。マーカー（#m<id>）ごとにマウント表と
   // 私有面（オーバーレイ専用アドレス空間に住むキー）を要約する。マウント無しは空配列。
-  // 注: ランタイムは提供済みだが @wcstack/devtools の UI はまだ消費していない
-  //（オーバーレイペインは今後の作業 — v2 レビューの non-blocking 記録）。プロトコルに
-  // 先に載せてあるのは、消費側がランタイムのリリース無しで採用できるようにするため
+  // 注: 2026-09-05 から @wcstack/devtools の State ペインが消費する（選択ツリーの
+  // キー一覧の下の「Overlays」セクション — マウントの私有キー・getter はオーバーレイ
+  // 空間に住み keys()/read() に現れないため、ここが唯一の可視面）。UI は optional
+  // 扱いで呼ぶ: overlays() の無いランタイム（v2 より前の state）ではセクションごと
+  // 非表示、空配列でも見出しを残さない。
   overlays(rootNode: Node): IMountOverlaySummary[];
   read(rootNode: Node, path: string, indexes?: number[]): unknown;
   write(rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
@@ -220,10 +222,15 @@ restart を巻き添えにしないため、[state-watch-hook-design.ja.md](./st
   （`propagation:hop-limit` と同じ姿勢）。
 - イベント: `state:watch-fired`（v1 追補・additive —
   [state-watch-hook-design.md](./state-watch-hook-design.md) §11 の予約イベント）
-  payload = `{ path }`。各ハンドラ呼び出しの直前に 1 回。**値は載せない** —
+  payload = `{ path, stateElement? }`。各ハンドラ呼び出しの直前に 1 回。**値は載せない** —
   「宣言したのに一度も発火しない」の検出には発火の事実だけで足り、値を載せると発火
   ホットパスに直列化コストが乗る。`IStateElementSummary.watchPaths`（宣言面）と対で
   配線カバレッジの実測面になる。
+  `stateElement`（v2 追補 2026-09-05・additive/optional）は発火元ツリーの識別 —
+  複数ツリーが同名 watch パスを宣言するページで、消費側が実測台帳をツリー別に持てる。
+  旧 payload にはフィールドが無く、識別の無い発火はどのツリーにも帰属できないため、
+  消費側は**全ツリーの照会へ合算で残さなければならない**（欠測を欠落にしない —
+  wiring 台帳の stateElement スコープと同じ姿勢）。
 - summary フィールド: `IStateElementSummary.keyedListPaths`（v1 追補・additive）—
   `$listKeys` で宣言されたリストパスの集合（宣言なしは null）。ワイルドカード行 watch に
   **リスト書き込み**が届くのは「for バインド（paths.list に現れる）or `$listKeys` 宣言」の
@@ -266,9 +273,13 @@ binding**。どちらもランタイムは報告して続行する ＝ ここに
   （`sink && sink(...)` → `super.emit(...)`）。
 - プロトコル外部仕様（command-token-protocol / event-token-protocol）は不変更。
 - イベント: `state:token-emit`
-  payload = `{ kind: "command" | "event", tokenName, args: unknown[], subscriberCount }`。
+  payload = `{ kind: "command" | "event", tokenName, args: unknown[], subscriberCount, stateElement? }`。
   `subscriberCount === 0` の emit は「空撃ち」としてそのまま流す — raf で踏んだ
   whenDefined 前の command 空撃ちレースが**タイムライン上で見える**ようにするのが狙い。
+  `stateElement`（v2 追補 2026-09-05・additive/optional）は属するツリーの識別 — token
+  registry が生成時に焼き込む。registry 外で直接生成された token と旧ランタイムの emit
+  には載らない。`state:watch-fired` と同じく、識別の無い emit は捨てずに全ツリーの
+  照会へ合算で残す。
 
 ### 4.6 v1 でやらない計装
 

@@ -16,7 +16,7 @@
 import { DevtoolsCore, IRosterEntry, ITimelineEntry, IWiringEntry } from "../core/DevtoolsCore";
 import { formatValue } from "../core/formatValue";
 import { IDeclaredBinding, scanDeclaredBindings } from "../core/declaredScan";
-import { IDeclaredBindingLike } from "../protocol/types";
+import { IDeclaredBindingLike, IMountOverlaySummaryLike } from "../protocol/types";
 
 const STYLE_TEXT = /* css */ `
 :host {
@@ -110,6 +110,11 @@ header .spacer { flex: 1; }
 .notice { color: #efe3a0; padding: 2px 0 6px; }
 .notice button { font: inherit; margin-left: 6px; cursor: pointer; }
 .wiring-row .detail { color: #6f88a3; }
+.overlays-heading { margin-top: 10px; }
+.overlay-row { padding: 1px 0; white-space: nowrap; }
+.overlay-row .prop { color: #b7f0c0; }
+.overlay-row .path { color: #9fd0ff; }
+.overlay-row .detail { color: #6f88a3; }
 .wiring-tabs { padding: 0 0 4px; }
 .wiring-tabs button { font: inherit; cursor: pointer; margin-right: 4px; opacity: 0.6; }
 .wiring-tabs button.active { opacity: 1; font-weight: bold; }
@@ -539,11 +544,75 @@ export class WcsDevtools extends HTMLElement {
     const keys = core.keysOf(selected);
     if (keys.length === 0) {
       body.append(this._emptyRow("no readable keys (runtime without keys() API?)"));
+      // keys が読めないランタイムでも overlays は独立に読める可能性があるため出す
+      this._renderOverlaysSection(body, selected);
       return;
     }
     for (const key of keys) {
       this._renderTreeNode(body, selected, { path: key, indexes: [] }, key, 0);
     }
+    this._renderOverlaysSection(body, selected);
+  }
+
+  /**
+   * 選択ツリーのマウント記録セクション（overlays — protocol v2・D20 の可視化）。
+   * マウントの私有キー・getter はオーバーレイ専用アドレス空間（マーカー `#m<id>`）に
+   * 住み、上の状態ツリー（keys/read）には現れないため、ここが唯一の可視面。
+   * overlays 未提供の旧ランタイム（null）ではセクションごと出さない（後方互換）。
+   * マウント無し（空配列）も見出しだけ残さない。pull は State ペインの再描画
+   * （roster / sources 変更・ツリー切替）にそのまま乗る — 専用 polling は足さない
+   * （観測者効果の排除、devtools-tag-design.md の rAF 合流と同じ姿勢）。
+   */
+  private _renderOverlaysSection(body: HTMLElement, entry: IRosterEntry): void {
+    const overlays = this._core!.overlaysOf(entry);
+    if (overlays === null || overlays.length === 0) {
+      return;
+    }
+    const heading = document.createElement("h3");
+    heading.className = "overlays-heading";
+    heading.textContent = `Overlays (${overlays.length} mount${overlays.length === 1 ? "" : "s"})`;
+    body.append(heading);
+    for (const overlay of overlays) {
+      body.append(this._overlayRow(overlay));
+    }
+  }
+
+  /** マウント記録 1 件の描画（マーカー・コンポーネント・マウント表・私有面）。 */
+  private _overlayRow(overlay: IMountOverlaySummaryLike): HTMLElement {
+    const row = document.createElement("div");
+    row.className = "overlay-row";
+    const marker = document.createElement("span");
+    marker.className = "badge-tag";
+    marker.textContent = overlay.marker;
+    const tag = document.createElement("span");
+    tag.className = "prop";
+    tag.textContent = `<${overlay.componentTag}>`;
+    const prop = document.createElement("span");
+    prop.className = "path";
+    // stateProp はホスト側の `state[.sub]:` 宣言の書き手語彙
+    prop.textContent = overlay.stateProp;
+    row.append(marker, document.createTextNode(" "), tag, document.createTextNode(" "), prop);
+    const details: string[] = [];
+    for (const entry of overlay.mountTable) {
+      // 内側接頭辞が空 = ルートエントリ。外側パスへの対応で読ませる
+      details.push(`${entry.inner === "" ? "(root)" : entry.inner} → ${entry.outer}`);
+    }
+    if (overlay.delta > 0) {
+      details.push(`Δ${overlay.delta}`);
+    }
+    if (overlay.privateKeys.length > 0) {
+      details.push(`private: ${overlay.privateKeys.join(", ")}`);
+    }
+    if (overlay.getterKeys.length > 0) {
+      details.push(`getters: ${overlay.getterKeys.join(", ")}`);
+    }
+    if (details.length > 0) {
+      const detail = document.createElement("span");
+      detail.className = "detail";
+      detail.textContent = ` ${details.join(" · ")}`;
+      row.append(detail);
+    }
+    return row;
   }
 
   private _renderTreeNode(
@@ -781,7 +850,10 @@ export class WcsDevtools extends HTMLElement {
       : `observing since ${sinceLabel} (declared vs measured after this point)`;
     body.append(info);
 
-    const report = core.getCoverageReport();
+    // 選択中のツリーでスコープ（複数ツリーの同名 watch パス / token 名を混ぜない —
+    // wiring のパス文脈と同じ流儀。protocol v2 追補のツリー識別が実測面を分ける）
+    const selected = this._selectedRoster();
+    const report = core.getCoverageReport(selected?.summary.element);
     if (report.length === 0) {
       body.append(this._emptyRow("nothing declared to cover"));
       return;

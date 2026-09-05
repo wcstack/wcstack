@@ -11,7 +11,8 @@ export function getOrCreateEventToken(stateElement: IStateElement, name: string)
   }
   let token = registry.get(name);
   if (typeof token === "undefined") {
-    token = new EventToken(name);
+    // stateElement を渡すのは devtools のツリー識別（protocol v2 追補）のため
+    token = new EventToken(name, stateElement);
     registry.set(name, token);
   }
   return token;

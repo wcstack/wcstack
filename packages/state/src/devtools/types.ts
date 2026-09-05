@@ -61,6 +61,13 @@ export type DevtoolsEvent =
       readonly tokenName: string;
       readonly args: readonly unknown[];
       readonly subscriberCount: number;
+      /**
+       * 発火元ツリーの state 要素（protocol v2 追補 2026-09-05・additive）。
+       * registry（getOrCreate*Token）経由で作られた token だけが持つ — 直接生成された
+       * token や旧ランタイムの payload には無い（optional）。無い emit の実測は
+       * ツリー別に分けられないため、消費側は全ツリーの照会へ合算で残す。
+       */
+      readonly stateElement?: IStateElement;
     }
   | {
       // `$watch` の実行中に throw した（docs/state-watch-hook-design.md §7-1）。
@@ -89,6 +96,13 @@ export type DevtoolsEvent =
       readonly type: "state:watch-fired";
       /** `$watch` の宣言キー（ワイルドカードを含む生のパス） */
       readonly path: string;
+      /**
+       * 発火元ツリーの state 要素（protocol v2 追補 2026-09-05・additive）。
+       * 複数ツリーが同名の watch パスを宣言するページで実測台帳をツリー別に
+       * 分けるための識別。旧ランタイムの payload には無い（optional）— 無い発火は
+       * 消費側が全ツリーの照会へ合算で残す。値を載せない契約（§4.3.1）は不変。
+       */
+      readonly stateElement?: IStateElement;
     }
   | {
       // バインド / `$watch` の対象パスが state 上で解決しないと確定した

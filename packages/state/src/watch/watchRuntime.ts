@@ -301,8 +301,10 @@ function fireOne(hit: IWatchHit): void {
       }
       // 正常発火の観測（設計書 §11 の予約イベント・配線カバレッジの実測面）。
       // 値は載せない。イベント生成は sink 接続時のみ（ゼロコスト契約）。
+      // stateElement は発火元ツリーの識別（protocol v2 追補）— これが無いと
+      // 複数ツリーが同名 watch パスを宣言するページで実測が合算される。
       if (devtoolsSink !== null) {
-        devtoolsSink({ type: "state:watch-fired", path: entry.path });
+        devtoolsSink({ type: "state:watch-fired", path: entry.path, stateElement });
       }
       entry.handler.call(state, cur, prev, ...indexes);
     });

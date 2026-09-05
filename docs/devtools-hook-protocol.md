@@ -87,10 +87,12 @@ interface IDevtoolsSource {
   read(rootNode: Node, path: string, indexes?: number[]): unknown;
   write(rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
   overlays(rootNode: Node): IMountOverlaySummary[]; // v2: mount records on this tree (marker #m<id>, mount table, delta, private/getter keys — the D20 overlay address space made visible)
-  // NOTE: overlays() is provided by the runtime but not yet consumed by the
-  // @wcstack/devtools UI (an overlay pane is future work — recorded as a
-  // non-blocking v2 review item). The member is part of the protocol so that
-  // consumers can adopt it without a runtime release.
+  // NOTE: consumed by the @wcstack/devtools State pane since 2026-09-05 (an
+  // "Overlays" section under the selected tree's key list — the one visible
+  // surface for mount private keys and getters, which live in the overlay
+  // address space and never appear in keys()/read()). The UI calls it as
+  // optional: a runtime without overlays() (pre-v2 state) hides the whole
+  // section, and an empty array renders no heading either.
   // v1 addendum (additive): the SET of declared-level bindings, enumerated by the
   // runtime's own canonical parser. Sources: attributes + comment anchors in the
   // live DOM (spread expanded from the live wcBindable; undefined elements stay
@@ -224,11 +226,16 @@ place it becomes visible.
   write chain is cut off at the depth limit. Values and DOM are not rolled back (same stance as
   `propagation:hop-limit`).
 - Event: `state:watch-fired` (v1 addendum, additive — the event reserved in
-  [state-watch-hook-design.md](./state-watch-hook-design.md) §11), payload = `{ path }`,
+  [state-watch-hook-design.md](./state-watch-hook-design.md) §11), payload = `{ path, stateElement? }`,
   emitted immediately before each handler invocation. It deliberately carries **no values** —
   detecting "declared but never fired" needs only the fact of firing, and values would put a
   serialization cost on the hot firing path. Together with `IStateElementSummary.watchPaths`
   (declared side) this is the measured side of wiring coverage.
+  `stateElement` (v2 addendum 2026-09-05, additive/optional) identifies the firing tree, so a
+  consumer can keep the measured ledger per tree on pages where several trees declare the same
+  watch path. Old payloads lack the field — a firing without it cannot be attributed to a tree,
+  and the consumer MUST keep it in the aggregate for every tree's query (a gap in the data must
+  not become a gap in the report; same stance as the wiring ledger's stateElement scoping).
 - Summary field: `IStateElementSummary.keyedListPaths` (v1 addendum, additive) — the set of list
   paths declared in `$listKeys` (`null` when none). **List writes** reach a wildcard row watch only
   when the list is either bound by a `for` (visible in `paths.list`) or declared in `$listKeys`
@@ -273,9 +280,13 @@ console is the only other place they appear.
   [EventToken.ts](../packages/state/src/event/EventToken.ts) (`sink && sink(...)` → `super.emit(...)`).
 - The external protocol specs (command-token-protocol / event-token-protocol) are unchanged.
 - Event: `state:token-emit`,
-  payload = `{ kind: "command" | "event", tokenName, args: unknown[], subscriberCount }`.
+  payload = `{ kind: "command" | "event", tokenName, args: unknown[], subscriberCount, stateElement? }`.
   An emit with `subscriberCount === 0` flows through as-is, as a "blank shot" — the point being to make the
   pre-whenDefined blank-shot command race that raf ran into **visible on the timeline**.
+  `stateElement` (v2 addendum 2026-09-05, additive/optional) identifies the owning tree — the token
+  registries bake it in at creation, so tokens constructed outside a registry (and old runtimes) emit
+  without it. As with `state:watch-fired`, a consumer keeps unattributed emits in the aggregate for
+  every tree's query instead of dropping them.
 
 ### 4.6 Instrumentation v1 does not do
 

@@ -672,6 +672,109 @@ describe('DevtoolsCore', () => {
       expect(declared.map((d) => d.propName).sort()).toEqual(['textContent', 'value']);
     });
 
+    it('watch実測はpayloadのstateElementでツリー別に分かれること（protocol v2 追補）', () => {
+      // 複数ツリーが同名 watch パスを宣言するページ。従来は全ツリー合算だった
+      //（slice 29 non-blocking 記録）— ツリー識別の追補でツリー別に数える。
+      const elementA = {};
+      const elementB = {};
+      const { core, source } = setupConnected([
+        { ...summaryOf('a'), element: elementA, watchPaths: new Set(['count']) },
+        { ...summaryOf('b'), element: elementB, watchPaths: new Set(['count']) },
+      ]);
+      source.emit({ type: 'state:watch-fired', path: 'count', stateElement: elementA });
+      source.emit({ type: 'state:watch-fired', path: 'count', stateElement: elementA });
+      source.emit({ type: 'state:watch-fired', path: 'count', stateElement: elementB });
+      // roster 順（A → B）に watch 行が並び、各行は自ツリーの実測だけを数える
+      const watches = core.getCoverageReport().filter((e) => e.kind === 'watch');
+      expect(watches).toHaveLength(2);
+      expect(watches[0]).toMatchObject({ name: 'count', status: 'fired', count: 2 });
+      expect(watches[1]).toMatchObject({ name: 'count', status: 'fired', count: 1 });
+    });
+
+    it('stateElementの無い旧payloadのwatch実測は全ツリーの照会に合算で残ること（後方互換）', () => {
+      const elementA = {};
+      const elementB = {};
+      const { core, source } = setupConnected([
+        { ...summaryOf('a'), element: elementA, watchPaths: new Set(['count']) },
+        { ...summaryOf('b'), element: elementB, watchPaths: new Set(['count']) },
+      ]);
+      source.emit({ type: 'state:watch-fired', path: 'count' }); // 旧 payload（識別なし）
+      source.emit({ type: 'state:watch-fired', path: 'count', stateElement: elementA });
+      const watches = core.getCoverageReport().filter((e) => e.kind === 'watch');
+      // A = 自ツリー 1 + 合算 1、B = 合算 1（欠測を欠落にしない — wiring 台帳と同じ流儀）
+      expect(watches[0]).toMatchObject({ status: 'fired', count: 2 });
+      expect(watches[1]).toMatchObject({ status: 'fired', count: 1 });
+    });
+
+    it('getCoverageReportはstateElementで自ツリーの宣言行に絞れること', () => {
+      const elementA = {};
+      const elementB = {};
+      const { core, source } = setupConnected([
+        { ...summaryOf('a'), element: elementA, watchPaths: new Set(['count']), commandTokenNames: new Set(['play']) },
+        { ...summaryOf('b'), element: elementB, watchPaths: new Set(['count']) },
+      ]);
+      source.emit({ type: 'state:watch-fired', path: 'count', stateElement: elementA });
+      const scoped = core.getCoverageReport(elementA);
+      expect(scoped).toHaveLength(2); // A の watch 行 + command 行のみ（B の行は出ない）
+      expect(scoped.find((e) => e.kind === 'watch')).toMatchObject({ name: 'count', count: 1 });
+      expect(scoped.find((e) => e.kind === 'command')).toMatchObject({ name: 'play', status: 'never' });
+      expect(core.getCoverageReport(elementB).filter((e) => e.kind === 'watch')[0])
+        .toMatchObject({ name: 'count', status: 'never' });
+    });
+
+    it('token実測もツリー別に分かれ、空撃ち判定が自ツリーの実測で決まること', () => {
+      const elementA = {};
+      const elementB = {};
+      const { core, source } = setupConnected([
+        { ...summaryOf('a'), element: elementA, commandTokenNames: new Set(['play']) },
+        { ...summaryOf('b'), element: elementB, commandTokenNames: new Set(['play']) },
+      ]);
+      // A は空撃ちのみ・B は正常 emit — 合算だと A の空撃ちが B の正常に紛れて
+      // emitted-unheard 警告が両方から消える（これが分離の動機）
+      source.emit({ type: 'state:token-emit', kind: 'command', tokenName: 'play', args: [], subscriberCount: 0, stateElement: elementA });
+      source.emit({ type: 'state:token-emit', kind: 'command', tokenName: 'play', args: [], subscriberCount: 2, stateElement: elementB });
+      const commands = core.getCoverageReport().filter((e) => e.kind === 'command');
+      expect(commands[0]).toMatchObject({ status: 'emitted-unheard', count: 1 });
+      expect(commands[1]).toMatchObject({ status: 'emitted', count: 1, note: null });
+      // 旧 payload（識別なし）は両ツリーに合算される
+      source.emit({ type: 'state:token-emit', kind: 'command', tokenName: 'play', args: [], subscriberCount: 1 });
+      const after = core.getCoverageReport().filter((e) => e.kind === 'command');
+      expect(after[0]).toMatchObject({ status: 'emitted', count: 2, note: '1/2 emit(s) had 0 subscribers' });
+      expect(after[1]).toMatchObject({ status: 'emitted', count: 2 });
+    });
+
+    it('GC済みツリー（WeakRef切れ）の実測区分は遅延剪定されること', () => {
+      const originalWeakRef = globalThis.WeakRef;
+      let dead = false;
+      class FakeWeakRef<T extends object> {
+        private _target: T;
+        constructor(target: T) {
+          this._target = target;
+        }
+        deref(): T | undefined {
+          return dead ? undefined : this._target;
+        }
+      }
+      vi.stubGlobal('WeakRef', FakeWeakRef);
+      try {
+        const elementA = {};
+        const { core, source } = setupConnected([
+          { ...summaryOf('a'), element: elementA, watchPaths: new Set(['count']) },
+        ]);
+        source.emit({ type: 'state:watch-fired', path: 'count', stateElement: elementA });
+        expect(core.getCoverageReport().find((e) => e.kind === 'watch')).toMatchObject({ count: 1 });
+        // ツリー GC 後は実測区分ごと消える（全区分が死んだキーは台帳から剪定）
+        dead = true;
+        expect(core.getCoverageReport().find((e) => e.kind === 'watch')).toMatchObject({ status: 'never', count: 0 });
+        // 剪定後も旧 payload 由来の null 区分は改めて積める（合算面は生き続ける）
+        source.emit({ type: 'state:watch-fired', path: 'count' });
+        expect(core.getCoverageReport().find((e) => e.kind === 'watch')).toMatchObject({ count: 1 });
+      } finally {
+        vi.stubGlobal('WeakRef', originalWeakRef);
+        vi.unstubAllGlobals();
+      }
+    });
+
     it('disconnectでカバレッジ台帳と観測開始時刻がクリアされること', () => {
       const { core, source } = setupConnected([
         { ...summaryOf('main'), watchPaths: new Set(['count']) },
@@ -694,6 +797,32 @@ describe('DevtoolsCore', () => {
       expect(source.read).toHaveBeenCalledWith(entry.rootNode, 'count', [1]);
       core.writeValue(entry, 'count', 9);
       expect(source.write).toHaveBeenCalledWith(entry.rootNode, 'count', 9, undefined);
+    });
+
+    it('overlaysOfがsourceへ委譲されること（protocol v2 — D20 の可視化）', () => {
+      const { core, source } = setupConnected([summaryOf('main')]);
+      const overlay = {
+        marker: '#m1',
+        componentTag: 'user-card',
+        stateProp: 'user',
+        mountTable: [{ inner: '', outer: 'users.*' }],
+        delta: 1,
+        privateKeys: ['draft'],
+        getterKeys: ['fullName'],
+      };
+      (source as any).overlays = vi.fn(() => [overlay]);
+      const [entry] = core.getRoster();
+      expect(core.overlaysOf(entry)).toEqual([overlay]);
+      expect((source as any).overlays).toHaveBeenCalledWith(entry.rootNode);
+    });
+
+    it('overlays未実装ランタイム・source消滅後はoverlaysOfがnullを返すこと（後方互換）', () => {
+      const { core, registry } = setupConnected([summaryOf('main')]);
+      const [entry] = core.getRoster();
+      // createFakeSource は overlays を持たない = v2 より前のランタイム相当
+      expect(core.overlaysOf(entry)).toBeNull();
+      registry.unregister('state:test');
+      expect(core.overlaysOf(entry)).toBeNull();
     });
 
     it('source消滅後・keys未実装ランタイムに安全なこと', () => {

@@ -12,7 +12,8 @@ export function getOrCreateCommandToken(stateElement: IStateElement, name: strin
   }
   let token = registry.get(name);
   if (typeof token === "undefined") {
-    token = new CommandToken(name);
+    // stateElement を渡すのは devtools のツリー識別（protocol v2 追補）のため
+    token = new CommandToken(name, stateElement);
     registry.set(name, token);
   }
   return token;

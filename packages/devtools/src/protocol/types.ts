@@ -71,6 +71,27 @@ export interface IStateElementSummaryLike {
 }
 
 /**
+ * マウント記録 1 件の要約（overlays の要素 — protocol v2・D20 の可視化）。
+ * マウントの私有キー・getter はオーバーレイ専用アドレス空間（マーカー `#m<id>`）に
+ * 住み、状態ツリーの keys/read には現れないため、これが唯一の可視面になる。
+ */
+export interface IMountOverlaySummaryLike {
+  /** D20 の予約セグメント（`#m<id>`） */
+  readonly marker: string;
+  /** マウントされたコンポーネントのタグ名（小文字） */
+  readonly componentTag: string;
+  readonly stateProp: string;
+  /** マウント表: 内側接頭辞（空 = ルートエントリ）→ 外側パス */
+  readonly mountTable: readonly { readonly inner: string; readonly outer: string }[];
+  /** `$n` 補正の Δ（ルート接頭辞のワイルドカード数） */
+  readonly delta: number;
+  /** 私有キー（オーバーレイ空間に住む own data key） */
+  readonly privateKeys: readonly string[];
+  /** マーカーパスに載る getter のキー */
+  readonly getterKeys: readonly string[];
+}
+
+/**
  * 宣言レベルのバインディング 1 件（getDeclaredBindings の要素・protocol v1 追補）。
  * ランタイム正本パーサの結果が構造的に流れる。宣言タプルで dedupe 済みの
  * 「宣言の集合」であり、レンダリング行数に比例したインスタンス列ではない。
@@ -129,6 +150,12 @@ export type DevtoolsEventLike =
       readonly tokenName: string;
       readonly args: readonly unknown[];
       readonly subscriberCount: number;
+      /**
+       * 発火元ツリーの state 要素（protocol v2 追補 2026-09-05・additive）。
+       * 旧ランタイム・registry 非経由の token の payload には無い（optional）—
+       * 無い emit の実測はツリー別に分けられないため、全ツリーの照会へ合算で残す。
+       */
+      readonly stateElement?: unknown;
     }
   | {
       // `$watch` の実行中の throw。watch は例外を自分で閉じる（drain と他機能を
@@ -149,6 +176,13 @@ export type DevtoolsEventLike =
       // 値は載せない — 「宣言したのに一度も発火しない」の検出には発火の事実で足りる。
       readonly type: "state:watch-fired";
       readonly path: string;
+      /**
+       * 発火元ツリーの state 要素（protocol v2 追補 2026-09-05・additive）。
+       * 複数ツリーが同名 watch パスを宣言するページで実測台帳をツリー別に分ける。
+       * 旧ランタイムの payload には無い（optional）— 無い発火は全ツリーの照会へ
+       * 合算で残す。
+       */
+      readonly stateElement?: unknown;
     }
   | {
       // バインド / `$watch` の対象パスが state 上で解決しないと確定した。
@@ -217,6 +251,12 @@ export interface IDevtoolsSourceLike {
   getStateElements(): IStateElementSummaryLike[];
   /** protocol v1 追補 API。古いランタイムには無い可能性があるため optional 扱いで呼ぶ */
   keys?(rootNode: Node): string[];
+  /**
+   * protocol v2 API（optional 扱いで呼ぶ）。rootNode のツリーに載っている
+   * マウント記録の列挙（D20 の可視化）。マウントが無ければ空配列。
+   * v2 より前のランタイムには無いため、無ければ UI はセクションごと出さない。
+   */
+  overlays?(rootNode: Node): IMountOverlaySummaryLike[];
   read(rootNode: Node, path: string, indexes?: number[]): unknown;
   write(rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
   /**
