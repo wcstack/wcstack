@@ -36,12 +36,12 @@ HTMLのセマンティクスを崩さないためには、仕様のどこが拡�
 
 wcstack は、文字通り別の **パス** を選んだ。
 
-UIと状態を結びつけている**唯一の契約（コントラクト）**は**パス文字列**です。 — `user.name`、`cart.items.*.subtotal`、`@shared`。フックもインポートも結合のためのコードもありません。コンポーネントのJavaScriptには状態を参照するコードが一切含まれていません。HTMLだけが、すべてのデータ依存関係を宣言的に記述します。
+UIと状態を結びつけている**唯一の契約（コントラクト）**は**パス文字列**です。 — `user.name`、`cart.items.*.subtotal`、そして `state: user` のようなマウントポイント。フックもインポートも結合のためのコードもありません。コンポーネントのJavaScriptには状態を参照するコードが一切含まれていません。HTMLだけが、すべてのデータ依存関係を宣言的に記述します。
 
 ```
-State  ← "user.name" →  UI          パスが2つのレイヤーを結ぶ
-Comp A ← "@app" →       Comp B      名前付きパスがコンポーネントを横断する
-Loop   ← "items.*" →    Template    ワイルドカードがインデックスを抽象化する
+State  ← "user.name" →    UI          パスが2つのレイヤーを結ぶ
+Host   ← "state: user" →  Component   マウントがコンポーネントを 1 本のツリーに接ぎ木する
+Loop   ← "items.*" →      Template    ワイルドカードがインデックスを抽象化する
 ```
 
 つまり、UIを作り直しても状態に触れなくていい。状態をリファクタリングしてもDOMに触れなくていい。HTMLを読めばすべてが分かる。REST APIのURLと同じ発想 — シンプルな文字列契約、共有コードなし。
@@ -107,7 +107,7 @@ Claude Code は [CLAUDE.md](./CLAUDE.md)（より詳細なツール別ガイド�
 
 - **パスgetter** — `get "users.*.fullName"()` あらゆる深さの算出プロパティ
 - **構造ディレクティブ** — `<template>` による `for`、`if` / `elseif` / `else`
-- **40以上のフィルタ** — 比較、算術、文字列、日付、フォーマット
+- **46種類のフィルタ** — 比較、算術、文字列、日付、フォーマット
 - **双方向バインディング** — `<input>`、`<select>`、`<textarea>` で自動
 - **Mustache構文** — テキストノード内の `{{ path|filter }}`
 - **Web Componentバインディング** — Shadow DOMとの双方向状態同期
@@ -308,7 +308,7 @@ const html = await renderToString(`
 - [`@wcstack/signals`](packages/signals/) — シグナルベースのきめ細かいリアクティブ**コア**（`@wcstack/state` の JS ファースト版）。`signal`/`computed`/`effect`、非同期の `resource`/`streamResource`、keyed な `For`/`Index`、同じ wc-bindable IO ノードをシグナル経由で駆動する `bindNode` アダプタ。TC39-Signals 準拠、依存ゼロ。
 - [`@wcstack/devtools`](packages/devtools/) — `<wcs-devtools>` によるページ内 DevTools オーバーレイ。state ツリーの検査（通常のリアクティブパイプラインを通るインライン編集付き）、各パスがどの DOM ノードに配線されているかの表示、write / 更新バッチ / command・event トークン発火のライブタイムライン — 購読者ゼロの「空撃ち」警告付き。`<script>` 一行、DevTools Hook Protocol で接続、依存ゼロ。
 - [`@wcstack/lint`](packages/lint/) — 静的契約検査 CLI（`npx @wcstack/lint`・コマンド名 `wcs-validate`）。HTML の `data-wcs` バインディングと `wcstack.manifest.json` sidecar を、VS Code 拡張と同一の validator core でヘッドレスに検査 — IDE と CI で diagnostic code / range が完全一致し、安定した exit code 契約で生成→検証→修正ループに組み込める。依存ゼロ。
-- [`@wcstack/typescript`](packages/typescript/) — アプリ向け TypeScript ツール。`wcs-schema` が型付き state ファイルをコンパイルして検証器が消費する sidecar `stateSchema` を書き出し、`data-wcs` パスを CI でも全エディタでも本当の型で検査できるようにする（typo は error に、偽警告は消える）。`wcs-schema check` は manifest が型から乖離すると CI を落とす。`typescript` は peer dependency・ランタイム依存ゼロ。TypeScript の話全体は [docs/typescript.ja.md](docs/typescript.ja.md)。
+- [`@wcstack/typescript`](packages/typescript/) — アプリ向け TypeScript ツール。`wcs-schema` が型付き state ファイルをコンパイルして検証器が消費する sidecar `stateSchema` を書き出し、`data-wcs` パスを CI でも全エディタでも本当の型で検査できるようにする（typo は error に、偽警告は消える）。`wcs-schema check` は manifest が型から乖離すると CI を落とし、`wcs-tsc` は HTML 内のインライン `<script type="module">` state を同じコンパイラで型検査する。`typescript` は peer dependency・ランタイム依存ゼロ。TypeScript の話全体は [docs/typescript.ja.md](docs/typescript.ja.md)。
 - [`@wcstack/testing`](packages/testing/) — ヘッドレステストヘルパー。`mount(html)` が要素を登録し、ページ断片を happy-dom 上に挿入して全要素と全バインドを待つ（`@wcstack/server` の `waitForReady` 経由で router のルートも）。`state().read/write`・`settle()`・`fire()` でユーザーやハンドラと同じ経路から動かす。README のレシピを 1 import にしたもの — 便利であって必須ではない。
 - [`wcstack-intellisense`](packages/vscode-wcs/) — `<wcs-state>` インラインスクリプト向けの VS Code 言語サポート拡張。
 
@@ -348,17 +348,17 @@ const html = await renderToString(`
 
 ```html
 <script type="module"
-        src="https://cdn.jsdelivr.net/npm/@wcstack/state@2.0.0/dist/auto.min.js"
+        src="https://cdn.jsdelivr.net/npm/@wcstack/state@2.1.0/dist/auto.min.js"
         integrity="sha384-..."></script>
 ```
 
 全パッケージのダイジェストは各 GitHub Release の本文（と添付の `sri.json`）に載ります。CDN から取得したものではなく、公開する tree から算出しています。詳細と「意図的にカバーしない範囲」は [docs/sri.ja.md](docs/sri.ja.md)。
 
-複数パッケージを使うページには **`wcstack` エントリバンドル**があります。SPA コア（state / router / fetch / storage / autoloader）を自己完結の 1 タグに束ねたもので、1 リクエスト・ハッシュ 1 個がコア全体をカバーします（219 KB min / 61 KB gzip）。少なくて済むページでは従来どおり個別パッケージが既定です。jsDelivr の `/combine/` で自分で連結してはいけません（minify 済み ESM は連結に耐えません — [docs/sri.ja.md §3.1](docs/sri.ja.md)）:
+複数パッケージを使うページには **`wcstack` エントリバンドル**があります。SPA コア（state / router / fetch / storage / autoloader）を自己完結の 1 タグに束ねたもので、1 リクエスト・ハッシュ 1 個がコア全体をカバーします（254 KB min / 71 KB gzip）。少なくて済むページでは従来どおり個別パッケージが既定です。jsDelivr の `/combine/` で自分で連結してはいけません（minify 済み ESM は連結に耐えません — [docs/sri.ja.md §3.1](docs/sri.ja.md)）:
 
 ```html
 <script type="module"
-        src="https://cdn.jsdelivr.net/npm/wcstack@2.0.0/dist/auto.min.js"
+        src="https://cdn.jsdelivr.net/npm/wcstack@2.1.0/dist/auto.min.js"
         integrity="sha384-..."></script>
 ```
 
@@ -457,6 +457,7 @@ wcstack/
 │   ├── lint/          # @wcstack/lint
 │   ├── typescript/    # @wcstack/typescript
 │   ├── testing/       # @wcstack/testing
+│   ├── wcstack/       # wcstack（エントリパッケージ: wcstack/auto の SPA コアバンドル）
 │   └── vscode-wcs/    # wcstack-intellisense (VS Code拡張)
 ```
 
