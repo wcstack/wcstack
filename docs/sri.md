@@ -88,7 +88,7 @@ For the single-request form, use the **`wcstack` entry bundle** instead: one Rol
 
 ```html
 <script type="module"
-        src="https://cdn.jsdelivr.net/npm/wcstack@2.0.0/dist/auto.min.js"
+        src="https://cdn.jsdelivr.net/npm/wcstack@2.1.0/dist/auto.min.js"
         integrity="sha384-…"></script>
 ```
 

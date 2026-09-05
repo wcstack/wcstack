@@ -14,7 +14,7 @@
 
 - 変数を取り出す API
 - 要素ごとに状態を束縛するオブジェクト
-- hook
+- hook（`useState` / `useStore` 系。`$connectedCallback` などのライフサイクルコールバックはこれに当たりません）
 - selector
 - reactive primitive をコンポーネントへ引き込むための glue code
 
@@ -22,11 +22,11 @@
 
 なぜなら、このライブラリでは UI と状態の結合点を JavaScript の中に置かないからです。状態を「取り出して」コンポーネントへ渡すのではなく、HTML 側がパス文字列によって状態を参照します。要素は状態を所有せず、状態も要素を知りません。両者が共有するのはパスだけです。
 
-## 既存FWとは比較しません
+## 位置づけ — 選ぶとき・選ばないとき
 
-これは React / Vue / Solid と同じ問題を別の方法で解いているのではありません。**前提自体が違います。**
+これは React / Vue / Solid の別構文ではありません。あちらは UI と状態の結合点をコンポーネントの中に置き、こちらはパス文字列に置きます。**前提自体が違う**ので、比較は正しい軸で行ったときにだけ意味を持ちます。
 
-| 一般的なFWが前提にするもの | `@wcstack/state` が前提にするもの |
+| コンポーネント型 FW が前提にするもの | `@wcstack/state` が前提にするもの |
 |---|---|
 | コンポーネントが UI と状態の結合点 | パス文字列が UI と状態の結合点 |
 | JavaScript が描画の中心 | HTML と DOM が中心 |
@@ -34,7 +34,16 @@
 | hook / selector / signal で購読する | 属性とパスで束縛する |
 | フレームワークの実行モデルにアプリ全体を載せる | ブラウザ標準の上に薄い reactive layer を足す |
 
-比較表を作るより先に、この前提差を理解してください。同じ棚に置いても、解いている問題の切り取り方が違います。
+より近い親戚は **属性ディレクティブ型・ビルド不要のライブラリ** — Alpine.js や petite-vue の系統です。前提（素の HTML への属性・コンパイラ不要）は共有しつつ、選択を分ける違いが 2 つあります。
+
+- **式言語を持たない。** それらは属性に JavaScript 式を書き、実行時に評価します。`data-wcs` に載るのはパスとフィルタチェーンだけで、計算は state 側のパス getter に置きます。バインディングを静的に検査できる（`@wcstack/lint`・VS Code 拡張・`@wcstack/typescript`）のも、`unsafe-eval` なしの厳格な CSP で動く（[docs/csp.ja.md](../../docs/csp.ja.md)）のも、この選択の帰結です。
+- **Web Components 同士を配線する。** wc-bindable・command-token・event-token の各プロトコルと `bind-component` マウントが、互いを import しない要素同士を接続します。[I/O ノード群](../../README.ja.md#追加パッケージ)はその上に成り立っています。
+
+**選ぶとき**: HTML が主役のページ — サーバー描画や静的なマークアップにリアクティブな部分を足す、カスタム要素を組み合わせてページを作る、「HTML を読めばデータ依存が全部わかる」ことに価値があり、ビルド工程が前提ではなくコストであるとき。
+
+**選ばないとき**: チームが既にコンポーネント型 FW の中で暮らしている — I/O ノードは[フレームワークアダプタ](../../docs/framework-adapter-integration.ja.md)経由で使ってください。ホットパスが巨大な keyed リスト — [パフォーマンス](#パフォーマンス)節の計測では生成・追加が [`@wcstack/signals`](../signals/) の 2.5〜3.5 倍で、相互運用できる signals のほうが適任です。テンプレートに式を書きたい — 意図的に存在しません。テンプレートの型検査をツールではなくコンパイラに求める — パスは文字列で、`@wcstack/typescript` は差を縮めますが埋めはしません。
+
+この軸に乗せれば比較は具体的になります。下の[パフォーマンス](#パフォーマンス)節がその一例で、`e2e/bench/` のドライバで手元のハードウェアでも再現できます。
 
 ## 第一原理: パスが唯一の契約
 
@@ -95,6 +104,9 @@
 - **宣言的データバインディング** — `data-wcs` 属性によるプロパティ / テキスト / イベント / 構造バインディング
 - **リアクティブ Proxy** — ES Proxy による依存追跡付き自動 DOM 更新
 - **構造ディレクティブ** — `<template>` 要素による `for`, `if` / `elseif` / `else`
+- **ボリューム** — `<wcs-state mount="cart">` がモジュールを 1 本の state ツリーに接ぎ木し、バインディングは `cart.…` で読む
+- **行の同一性** — `$listKeys` が再取得した配列でも行の DOM と行オブジェクトを保つ
+- **ワイルドカード集計** — `$getAll` / `$setAll` が配列を作り直さずに `items.*.price` を横断して読み書きする
 - **組み込みフィルタ** — フォーマット、比較、算術、日付など 46 種類
 - **双方向バインディング** — `<input>`, `<select>`, `<textarea>` で自動有効
 - **Web Component バインディング** — Shadow DOM コンポーネントとの双方向状態バインディング
@@ -106,7 +118,9 @@
 - **複数の状態ソース** — JSON, JS モジュール, インラインスクリプト, API, 属性
 - **SVG サポート** — `<svg>` 要素内でのフルバインディング対応
 - **ライフサイクルフック** — `$connectedCallback` / `$disconnectedCallback` / `$updatedCallback`、Web Component 用 `$stateReadyCallback`
-- **TypeScript サポート** — `defineState()` によるドットパス自動補完付き型付き状態定義（[詳細](docs/define-state.ja.md)）
+- **headless な watch** — `$watch` はパスが描画されていてもいなくても state の変化で発火する
+- **診断** — 解決しないパス・添字の本数・getter の循環を `@wcstack/lint`・VS Code 拡張と同じ診断 code で報告する
+- **TypeScript サポート** — `defineState()` によるドットパス自動補完付き型付き状態定義（[詳細](docs/define-state.ja.md)）。`@wcstack/typescript` は同じ型を HTML の検証器へ運び（`wcs-schema`）、インライン state スクリプトを型検査する（`wcs-tsc`）— [docs/typescript.ja.md](../../docs/typescript.ja.md)
 - **サーバーサイドレンダリング** — `enable-ssr` 属性 + `@wcstack/server` でフル SSR と自動ハイドレーション
 - **依存ゼロ** — ランタイム依存なし
 
@@ -233,7 +247,7 @@
 <div data-wcs="textContent: cart.total"></div>
 ```
 
-ボリュームは getter・`$watch`・`$listKeys`・`$updatedCallback`・`$connectedCallback`/`$disconnectedCallback` を宣言できます（すべてマウントパス相対）。読み込み順は自由です（ルートより先に接続されたボリュームは、ルートの登録時に接ぎ木されます）。マウントパスは静的パスのみです（`*`・`$`・`#`・`@` は不可）。
+ボリュームは getter・`$watch`・`$listKeys`・`$updatedCallback`・`$connectedCallback`/`$disconnectedCallback` を宣言できます（すべてマウントパス相対）。読み込み順は自由です（ルートより先に接続されたボリュームは、ルートの登録時に接ぎ木されます）。マウントパスは静的パスのみです（`*`・`$`・`#`・`@` は不可）。初期化後に `mount` 属性を変更することはできません — 変更は console 警告付きで無視されます。要素を取り除き、望むパスで新しい要素を追加してください。
 
 > **v1 の名前付き状態からの移行:** `<wcs-state name="cart">` + `total@cart` は `<wcs-state mount="cart">` + `cart.total` になります。v2 では `name` 属性は fail-fast し、パス中の `@` は parse error です（どちらもこの誘導文付き）。移行の対応表: [docs/state-mount-design.md](../../docs/state-mount-design.md) §9。
 
@@ -2114,7 +2128,7 @@ export default {
 - フック内の `this` は読み書き可能な状態プロキシです。
 - `$connectedCallback` は要素が接続される**たびに**呼ばれます（一度削除された後の再接続も含みます）。再確立が必要なセットアップ処理に適しています。
 - `$disconnectedCallback` は同期的に呼び出されます。タイマーのクリア、イベントリスナーの削除、リソースの解放といったクリーンアップ処理に使用してください。
-- `$updatedCallback(paths, indexesListByPath)` は、その drain で live binding が適用された path の一覧を受け取ります。binding のない state 書き込みでは呼ばれず、`paths` にも現れません。ワイルドカードをもつパスが更新された場合は、`indexesListByPath` から対象のインデックス情報も取得可能です。`async` を使用できますが、戻り値は await されません。
+- `$updatedCallback(paths, indexesListByPath)` は、その drain で live binding が適用された path の一覧を受け取ります。binding のない state 書き込みでは呼ばれず、`paths` にも現れません。ワイルドカードをもつパスが更新された場合は、`indexesListByPath` から対象のインデックス情報も取得可能です。マウントされたコンポーネントのマーカーパス（`#m…`）は `paths` に現れません — コンポーネントの私有キーは私有のままです（DevTools の overlays 表示で見えます）。`async` を使用できますが、戻り値は await されません。
 - Web Component を使用している場合は、コンポーネント側に `async $stateReadyCallback(stateProp)` を定義おくことで、`bind-component` でバインドした状態が利用可能になった瞬間にフックとして呼び出されます。
 
 ## 遷移アニメーション
@@ -2149,7 +2163,7 @@ li {
 配線したパスが state 上で解決しないことが**確実**なとき、バインド確立時（`$watch` は宣言時）に 1 回だけ警告します。診断 code はコンソール・`@wcstack/lint`・VS Code 拡張で共通です：
 
 ```
-[@wcstack/state] [wcs/binding-path-missing] Bound path "user.nmae" does not resolve on state "default":
+[@wcstack/state] [wcs/binding-path-missing] Bound path "user.nmae" does not resolve on the state tree:
 "nmae" is not declared. Did you mean "name"? Updates to this path will be silently
 dropped. Validate statically: npx @wcstack/lint <file>.
 ```
@@ -2233,12 +2247,14 @@ bootstrapState({
 |---|---|---|
 | `bindAttributeName` | `'data-wcs'` | バインディング属性名 |
 | `tagNames.state` | `'wcs-state'` | 状態要素のタグ名 |
+| `tagNames.ssr` | `'wcs-ssr'` | SSR ハイドレーションデータ要素のタグ名 |
 | `locale` | `<html lang>`、無ければ `'en'` | ロケール依存フィルタ（`locale` / `date` / `time` / `datetime`）のロケール — [ロケール](#ロケール)を参照 |
 | `debug` | `false` | デバッグモード |
 | `enableMustache` | `true` | `{{ }}` 構文の有効化 |
 | `enableDirectionalInitialSync` | `true` | 方向認識のバインディング authority（`#init=` / `#sync=` バインド modifier）— [バインディング authority](#バインディング-authority-init--sync) 参照。既定 on。`false` で opt-out |
 | `enablePropagationContext` | `true` | バインド間の因果伝播トラッキング（echo/diamond のループ防止）。既定 on。`false` で opt-out |
 | `enableContractAnalyzer` | `false` | opt-in の開発時 contract analyzer（`analyzeContract` を公開） |
+| `sameValueGuard` | `true` | 現在値と `Object.is` で同値なプリミティブ書き込みを enqueue 前に落とす — バインディングと `$watch` は実質「変化時のみ」発火する（参照型は常に通す）。`false` で同値書き込みを通し、`$watch` の `prev` は `undefined` になる |
 
 ### ロケール
 
@@ -2421,6 +2437,8 @@ export default defineState({
 
 ユーティリティ型 `WcsPaths<T>` と `WcsPathValue<T, P>` もエクスポートされます。詳細は [docs/define-state.ja.md](docs/define-state.ja.md) を参照してください。
 
+`defineState()` が型を付けるのは state ファイルです。その型を HTML まで運ぶのが [`@wcstack/typescript`](../typescript/README.ja.md) の 2 つの CLI で、`wcs-schema` は `@wcstack/lint` と VS Code 拡張が `data-wcs` パスの検証に使う `stateSchema` sidecar を書き出し、`wcs-tsc` はインラインの `<script type="module">` state に TypeScript コンパイラを掛けます。全体像は [docs/typescript.ja.md](../../docs/typescript.ja.md)。
+
 ## API リファレンス
 
 ### `bootstrapState()`
@@ -2432,6 +2450,21 @@ import { bootstrapState } from '@wcstack/state';
 bootstrapState();
 ```
 
+### その他のエクスポート
+
+| エクスポート | 説明 |
+|---|---|
+| `getBindingsReady(root)` | `root`（`document` または shadow root）配下の全バインディングが構築されたら解決。バインディング初期化が失敗すれば reject |
+| `buildBindings(root)` | `document` / `ShadowRoot` 配下のバインディングを明示的に構築する — その root に最初に登録された `<wcs-state>` がスケジュールするもの |
+| `getConfig()` | 現在の設定（読み取り専用ビュー） |
+| `defineState(obj)` | メソッドと getter 内の `this` に型を付けるアイデンティティ関数 — [TypeScript サポート](#typescript-サポート) 参照 |
+| `VERSION` | パッケージのバージョン。`<wcs-ssr>` に刻印され、ハイドレーション時に照合される |
+| `getWcsManifest()` / `WCS_MANIFEST_VERSION` | バインディング構文・組み込みフィルタ・予約名の機械可読 manifest — 実装から導出され、`@wcstack/lint` と VS Code 拡張が消費する |
+| `builtinFilterMeta` | 全組み込みフィルタの引数・戻り値メタデータ |
+| `analyzeContract()` | 開発時の contract analyzer。`enableContractAnalyzer` が off なら no-op |
+
+ツール向けのサブパスエントリ: `@wcstack/state/parser`（`data-wcs` パーサを DOM 非依存の純関数として公開）、`@wcstack/state/manifest`、`@wcstack/state/wcs-manifest.json`（manifest をビルド済み JSON として公開）。
+
 ### `<wcs-state>` 要素
 
 | 属性 | 説明 |
@@ -2441,19 +2474,20 @@ bootstrapState();
 | `src` | `.json` または `.js` ファイルの URL |
 | `json` | インライン JSON 文字列 |
 | `bind-component` | Web Component バインディングのプロパティ名 |
+| `enable-ssr` | SSR を有効化: サーバーはこの state の `<wcs-ssr>` ハイドレーションデータを出力し、クライアントは再描画せずそこから復元する — [サーバーサイドレンダリング](#サーバーサイドレンダリング) 参照 |
 
 ### IStateElement
 
 | プロパティ / メソッド | 説明 |
 |---|---|
 | `initializePromise` | 状態の完全な初期化時に解決される Promise |
+| `connectedCallbackPromise` | `connectedCallback` の完了（state のロードと `$connectedCallback` の実行）で解決される Promise — テストのレシピが await するもの |
 | `listPaths` | `for` ループで使用されるパスの Set |
 | `getterPaths` | getter として定義されたパスの Set |
 | `setterPaths` | setter として定義されたパスの Set |
 | `createState(mutability, callback)` | 状態プロキシを作成（`"readonly"` または `"writable"`） |
 | `createStateAsync(mutability, callback)` | `createState` の非同期版 |
 | `setInitialState(state)` | プログラムから状態を設定（初期化前） |
-| `bindProperty(prop, descriptor)` | 生の状態オブジェクトにプロパティを定義 |
 | `nextVersion()` | バージョン番号をインクリメントして返す |
 
 ## アーキテクチャ
@@ -2463,11 +2497,14 @@ bootstrapState()
   └── registerComponents()              // <wcs-state> カスタム要素を登録
 
 <wcs-state> connectedCallback
-  ├── _initializeBindWebComponent()     // bind-component: 親コンポーネントから状態を取得
-  ├── _initialize()                     // 状態をロード (state属性 / src / json / script / API)
-  │     └── setStateElementByName()     // WeakMap<Node, Map<name, element>> に登録
-  │           └── (rootNode への初回登録時)
-  │                 └── queueMicrotask → buildBindings()
+  ├── 置かれ方によりいずれか 1 つ:
+  │   ├── _initializeDCC()              // data-wc-definition ホスト配下: DCC クラスを定義
+  │   ├── _initializeVolume()           // mount=: このボリュームをルートツリーへ接ぎ木
+  │   ├── _initializeBindWebComponent() // bind-component: ホストのツリーをマウント点でエイリアス
+  │   └── _initialize()                 // ルート: 状態をロード (state属性 / src / json / script / API)
+  │         └── setStateElement()       // WeakMap<Node, IStateElement> に登録 — 1 root 1 ツリー
+  │               └── (rootNode への初回登録時)
+  │                     └── queueMicrotask → buildBindings()
   ├── _callStateConnectedCallback()     // $connectedCallback が定義されていれば呼び出し
 
 buildBindings(root)
@@ -2491,7 +2528,7 @@ buildBindings(root)
 - **PathInfo** — 静的パスメタデータ（セグメント、ワイルドカード数、親パス）
 - **ListIndex** — ランタイムループインデックスチェーン
 - **StateAddress** — PathInfo + ListIndex の組み合わせ
-- **AbsoluteStateAddress** — 状態名 + StateAddress（クロス状態参照用）
+- **AbsolutePathInfo / AbsoluteStateAddress** — ツリーを持つ state 要素に固定した PathInfo と、その ListIndex の組。マウントされたコンポーネントとボリュームは相対パスをこの層でホストのツリーへ翻訳する。v2 は 1 root 1 ツリーなので、アドレスに状態名はない
 
 ## パフォーマンス
 
@@ -2531,7 +2568,10 @@ buildBindings(root)
   し、残りのページは宣言的なまま保てます。
 - クリア後に残るヒープは、次のリスト生成を安くする有界の行プールです。
 
-絶対値は 1 台の開発機での計測です（v1.21.6 + PR#87 の clear リーク修正）。
+絶対値は 1 台の開発機で v1.21.6 + PR#87（clear リーク修正）時点に取ったものです。
+v2.0 のマウント作業は同じドライバの同一セッション A/B でゲートし、実行ごとの
+ノイズ内に収まった（[docs/state-mount-impl-plan.md](../../docs/state-mount-impl-plan.md)
+§2-2 と slice 27）ため、表は取り直していません。絶対値はマシン状態で ±20% 揺れます。
 `e2e/bench/` のドライバで手元のハードウェアでも再現できます。
 
 ## サーバーサイドレンダリング

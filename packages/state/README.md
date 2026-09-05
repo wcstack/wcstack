@@ -14,7 +14,7 @@ The following are not missing features. **They do not exist by design.**
 
 - APIs for pulling variables out of state into components
 - Per-element binding objects that mediate state access
-- hooks
+- hooks (`useState` / `useStore`-style — the `$connectedCallback` lifecycle callbacks are not that)
 - selectors
 - glue code that imports reactive primitives into component code
 
@@ -22,11 +22,11 @@ None of these exist by design.
 
 Why: this library does not put the UI-state coupling point inside JavaScript. State is not pulled into components. HTML refers to state through path strings. Elements do not own state, and state does not know elements. The only shared contract is the path.
 
-## Do Not Compare This to Existing Frameworks
+## Where It Sits — and When Not to Choose It
 
-This is not solving the same problem as React / Vue / Solid with a different syntax. **The premises are different.**
+This is not React / Vue / Solid with a different syntax. Those put the coupling point between UI and state inside a component; this puts it in a path string. **The premises are different**, and a comparison only says something when it is made along the right axis.
 
-| What mainstream frameworks assume | What `@wcstack/state` assumes |
+| What component frameworks assume | What `@wcstack/state` assumes |
 |---|---|
 | Components are the coupling point between UI and state | Path strings are the coupling point between UI and state |
 | JavaScript is the center of rendering | HTML and the DOM are the center |
@@ -34,7 +34,16 @@ This is not solving the same problem as React / Vue / Solid with a different syn
 | hooks / selectors / signals express subscriptions | Attributes and paths express bindings |
 | The whole app runs inside a framework execution model | A thin reactive layer is added on top of web standards |
 
-Before making a comparison chart, understand this difference in premises. These tools may live in the same ecosystem, but they cut the problem space very differently.
+The nearer relatives are the **attribute-directive, no-build libraries** — Alpine.js, petite-vue and their kind. They share the premise (attributes on plain HTML, no compiler) and differ on two points that decide the choice:
+
+- **No expression language.** Those libraries put JavaScript expressions in attributes and evaluate them at runtime. `data-wcs` carries a path and a filter chain, nothing else; computation lives in path getters on the state. That is what lets a binding be checked statically (`@wcstack/lint`, the VS Code extension, `@wcstack/typescript`) and lets a page run under a strict CSP with no `unsafe-eval` ([docs/csp.md](../../docs/csp.md)).
+- **It wires Web Components to each other.** The wc-bindable, command-token and event-token protocols and `bind-component` mounts connect elements that never import one another. The [I/O node packages](../../README.md#additional-packages) are what that buys.
+
+**Choose it** for HTML-first pages: server-rendered or static markup with reactive parts, a page composed from custom elements, anywhere "read the HTML and know every data dependency" matters and a build step is a cost rather than a given.
+
+**Do not choose it** when the team already lives inside a component framework — use the I/O nodes through the [framework adapters](../../docs/framework-adapter-integration.md) instead; when the hot path is a very large keyed list — [Performance](#performance) measures create / append at 2.5–3.5× [`@wcstack/signals`](../signals/), which interoperates with this package and is the better fit there; when templates need inline expressions — deliberately absent; or when the template must be type-checked by the compiler rather than by tooling — paths are strings, and `@wcstack/typescript` narrows that gap without closing it.
+
+On those axes the comparison is concrete: the [Performance](#performance) section below is one, and the drivers under `e2e/bench/` regenerate it on your own hardware.
 
 ## First Principle: Path as the Universal Contract
 
@@ -95,6 +104,9 @@ That's it. No build, no bootstrap code, no framework.
 - **Declarative data binding** — `data-wcs` attribute for property / text / event / structural binding
 - **Reactive Proxy** — ES Proxy-based automatic DOM updates with dependency tracking
 - **Structural directives** — `for`, `if` / `elseif` / `else` via `<template>` elements
+- **Volumes** — `<wcs-state mount="cart">` grafts a module onto the single state tree; bindings read it as `cart.…`
+- **Row identity** — `$listKeys` keeps row DOM and row objects across refetched arrays
+- **Wildcard aggregation** — `$getAll` / `$setAll` read and write across `items.*.price` without rebuilding the array
 - **Built-in filters** — 46 filters for formatting, comparison, arithmetic, date, and more
 - **Two-way binding** — automatic for `<input>`, `<select>`, `<textarea>`
 - **Web Component binding** — bidirectional state binding with Shadow DOM components
@@ -106,7 +118,9 @@ That's it. No build, no bootstrap code, no framework.
 - **Multiple state sources** — JSON, JS module, inline script, API, attribute
 - **SVG support** — full binding support inside `<svg>` elements
 - **Lifecycle hooks** — `$connectedCallback` / `$disconnectedCallback` / `$updatedCallback`, plus `$stateReadyCallback` for Web Components
-- **TypeScript support** — `defineState()` for typed state definitions with dot-path autocompletion ([details](docs/define-state.md))
+- **Headless watch** — `$watch` fires on state changes whether or not the path is rendered
+- **Diagnostics** — unresolved paths, index arity and getter cycles are reported with the same codes as `@wcstack/lint` and the VS Code extension
+- **TypeScript support** — `defineState()` for typed state definitions with dot-path autocompletion ([details](docs/define-state.md)); `@wcstack/typescript` carries the same types into the HTML validator (`wcs-schema`) and type-checks inline state scripts (`wcs-tsc`) — see [docs/typescript.md](../../docs/typescript.md)
 - **Server-Side Rendering** — `enable-ssr` attribute + `@wcstack/server` for full SSR with automatic hydration
 - **Zero dependencies** — no runtime dependencies
 
@@ -233,7 +247,7 @@ There is **one state tree per root**. To split state across modules, mount a vol
 <div data-wcs="textContent: cart.total"></div>
 ```
 
-A volume may declare getters, `$watch`, `$listKeys`, `$updatedCallback`, and `$connectedCallback`/`$disconnectedCallback` — all relative to its mount path. Load order does not matter (a volume connected before the root is grafted when the root registers). Mount paths must be static (`*`, `$`, `#`, `@` are rejected).
+A volume may declare getters, `$watch`, `$listKeys`, `$updatedCallback`, and `$connectedCallback`/`$disconnectedCallback` — all relative to its mount path. Load order does not matter (a volume connected before the root is grafted when the root registers). Mount paths must be static (`*`, `$`, `#`, `@` are rejected). Changing `mount` after the element has initialized is not supported: the change is ignored with a console warning — remove the element and add a new one with the desired path.
 
 > **Migrating from v1's named states:** `<wcs-state name="cart">` + `total@cart` becomes `<wcs-state mount="cart">` + `cart.total`. In v2 the `name` attribute fails fast and `@` in a path is a parse error, each with this exact guidance. Migration table: [docs/state-mount-design.md](../../docs/state-mount-design.md) §9.
 
@@ -2118,7 +2132,7 @@ All hooks except `$disconnectedCallback` support `async` — you can use `async/
 - `this` inside hooks is the state proxy with full read/write access
 - `$connectedCallback` is called **every time** the element is connected (including re-insertion after removal), making it suitable for setup that should be re-established
 - `$disconnectedCallback` is called synchronously — use it for cleanup such as clearing timers, removing event listeners, or releasing resources
-- `$updatedCallback(paths, indexesListByPath)` receives the paths whose live bindings were applied in that drain. Unbound state writes do not invoke it or appear in `paths`. For wildcard updates, `indexesListByPath` contains the updated index sets. Can be `async`, but the return value is not awaited
+- `$updatedCallback(paths, indexesListByPath)` receives the paths whose live bindings were applied in that drain. Unbound state writes do not invoke it or appear in `paths`. For wildcard updates, `indexesListByPath` contains the updated index sets. Marker paths of mounted components (`#m…`) never appear in `paths` — a component's private keys stay private (DevTools shows them in its overlays view). Can be `async`, but the return value is not awaited
 - In Web Components, define `async $stateReadyCallback(stateProp)` to receive a hook when the bound state becomes available via `bind-component`
 
 ## Transition animations
@@ -2153,7 +2167,7 @@ Only a batch that actually has bindings to apply is handed to the tag, so a writ
 When a wired path provably does not resolve against the state, you get one warning at binding time (at declaration time for `$watch`). The diagnostic codes are shared by the console, `@wcstack/lint`, and the VS Code extension:
 
 ```
-[@wcstack/state] [wcs/binding-path-missing] Bound path "user.nmae" does not resolve on state "default":
+[@wcstack/state] [wcs/binding-path-missing] Bound path "user.nmae" does not resolve on the state tree:
 "nmae" is not declared. Did you mean "name"? Updates to this path will be silently
 dropped. Validate statically: npx @wcstack/lint <file>.
 ```
@@ -2237,12 +2251,14 @@ All options with defaults:
 |---|---|---|
 | `bindAttributeName` | `'data-wcs'` | Binding attribute name |
 | `tagNames.state` | `'wcs-state'` | State element tag name |
+| `tagNames.ssr` | `'wcs-ssr'` | Tag name of the SSR hydration-data element |
 | `locale` | `<html lang>`, else `'en'` | Locale for the locale-dependent filters (`locale` / `date` / `time` / `datetime`) — see [Locale](#locale) |
 | `debug` | `false` | Debug mode |
 | `enableMustache` | `true` | Enable `{{ }}` syntax |
 | `enableDirectionalInitialSync` | `true` | Direction-aware binding authority (`#init=` / `#sync=` binding modifiers) — see [Binding Authority](#binding-authority-init--sync). Default on; set `false` to opt out |
 | `enablePropagationContext` | `true` | Causal propagation tracking across bindings (echo/diamond loop prevention). Default on; set `false` to opt out |
 | `enableContractAnalyzer` | `false` | Opt-in dev-time contract analyzer (exposes `analyzeContract`) |
+| `sameValueGuard` | `true` | Drop a primitive write whose value is `Object.is`-equal to the current one before anything is enqueued — bindings and `$watch` effectively fire on change only; reference types always pass. `false` lets equal writes through and makes `$watch`'s `prev` `undefined` |
 
 ### Locale
 
@@ -2428,6 +2444,8 @@ export default defineState({
 
 Utility types `WcsPaths<T>` and `WcsPathValue<T, P>` are also exported for advanced use cases. See [docs/define-state.md](docs/define-state.md) for full documentation.
 
+`defineState()` types the state file. To carry those types into the HTML, [`@wcstack/typescript`](../typescript/README.md) adds two CLIs: `wcs-schema` writes the `stateSchema` sidecar that `@wcstack/lint` and the VS Code extension validate `data-wcs` paths against, and `wcs-tsc` runs the TypeScript compiler over inline `<script type="module">` state. The whole story is in [docs/typescript.md](../../docs/typescript.md).
+
 ## API Reference
 
 ### `bootstrapState()`
@@ -2439,6 +2457,21 @@ import { bootstrapState } from '@wcstack/state';
 bootstrapState();
 ```
 
+### Other exports
+
+| Export | Description |
+|---|---|
+| `getBindingsReady(root)` | Resolves once every binding under `root` (a `document` or a shadow root) is built; rejects if binding initialization fails |
+| `buildBindings(root)` | Build the bindings under a `document` or `ShadowRoot` explicitly — what the first `<wcs-state>` registered on a root schedules for it |
+| `getConfig()` | The current configuration (read-only view) |
+| `defineState(obj)` | Identity function that types `this` inside methods and getters — see [TypeScript Support](#typescript-support) |
+| `VERSION` | The package version; stamped into `<wcs-ssr>` and compared on hydration |
+| `getWcsManifest()` / `WCS_MANIFEST_VERSION` | Machine-readable manifest of the binding syntax, built-in filters and reserved names — derived from the implementation, consumed by `@wcstack/lint` and the VS Code extension |
+| `builtinFilterMeta` | Argument and result metadata for every built-in filter |
+| `analyzeContract()` | Dev-time contract analyzer; a no-op unless `enableContractAnalyzer` is on |
+
+Subpath entries for tooling: `@wcstack/state/parser` (the `data-wcs` parser as a DOM-free pure function), `@wcstack/state/manifest`, and `@wcstack/state/wcs-manifest.json` (the manifest as a prebuilt JSON file).
+
 ### `<wcs-state>` Element
 
 | Attribute | Description |
@@ -2448,19 +2481,20 @@ bootstrapState();
 | `src` | URL to `.json` or `.js` file |
 | `json` | Inline JSON string |
 | `bind-component` | Property name for web component binding |
+| `enable-ssr` | Opt into SSR: the server emits `<wcs-ssr>` hydration data for this state and the client hydrates from it instead of re-rendering — see [Server-Side Rendering](#server-side-rendering) |
 
 ### IStateElement
 
 | Property / Method | Description |
 |---|---|
 | `initializePromise` | Resolves when state is fully initialized |
+| `connectedCallbackPromise` | Resolves once `connectedCallback` has completed (state loaded, `$connectedCallback` run) — what the testing recipes await |
 | `listPaths` | Set of paths used in `for` loops |
 | `getterPaths` | Set of paths defined as getters |
 | `setterPaths` | Set of paths defined as setters |
 | `createState(mutability, callback)` | Create a state proxy (`"readonly"` or `"writable"`) |
 | `createStateAsync(mutability, callback)` | Async version of `createState` |
 | `setInitialState(state)` | Set state programmatically (before initialization) |
-| `bindProperty(prop, descriptor)` | Define a property on the raw state object |
 | `nextVersion()` | Increment and return version number |
 
 ## Architecture
@@ -2470,11 +2504,14 @@ bootstrapState()
   └── registerComponents()              // Register <wcs-state> custom element
 
 <wcs-state> connectedCallback
-  ├── _initializeBindWebComponent()     // bind-component: get state from parent component
-  ├── _initialize()                     // Load state (state attr / src / json / script / API)
-  │     └── setStateElementByName()     // Register to WeakMap<Node, Map<name, element>>
-  │           └── (first registration per rootNode)
-  │                 └── queueMicrotask → buildBindings()
+  ├── one of, by placement:
+  │   ├── _initializeDCC()              // under a data-wc-definition host: define the DCC class
+  │   ├── _initializeVolume()           // mount=: graft this volume onto the root tree
+  │   ├── _initializeBindWebComponent() // bind-component: alias the host's tree at the mount point
+  │   └── _initialize()                 // root: load state (state attr / src / json / script / API)
+  │         └── setStateElement()       // Register to WeakMap<Node, IStateElement> — one tree per root
+  │               └── (first registration per rootNode)
+  │                     └── queueMicrotask → buildBindings()
   ├── _callStateConnectedCallback()     // Call $connectedCallback if defined
 
 buildBindings(root)
@@ -2498,7 +2535,7 @@ Paths like `users.*.name` are decomposed into:
 - **PathInfo** — static path metadata (segments, wildcard count, parent path)
 - **ListIndex** — runtime loop index chain
 - **StateAddress** — combination of PathInfo + ListIndex
-- **AbsoluteStateAddress** — state name + StateAddress (for cross-state references)
+- **AbsolutePathInfo / AbsoluteStateAddress** — a PathInfo pinned to the state element that owns the tree, plus its ListIndex. Mounted components and volumes translate their relative paths onto the host tree at this level; v2 has one tree per root, so an address carries no state name
 
 ## Performance
 
@@ -2540,9 +2577,13 @@ How to read this, honestly:
 - The heap retained after a clear is the bounded row pool that makes the next
   list population cheap.
 
-Absolute numbers are from one development machine (v1.21.6 + the clear-leak fix
-in PR#87); the drivers in `e2e/bench/` reproduce the comparison on your own
-hardware.
+Absolute numbers are from one development machine, taken at v1.21.6 + the
+clear-leak fix in PR#87. The v2.0 mount work was gated on the same drivers by
+same-session A/B runs and stayed within run-to-run noise
+([docs/state-mount-impl-plan.md](../../docs/state-mount-impl-plan.md) §2-2 and
+slice 27), so the table has not been re-taken; absolute values swing by ±20%
+with machine state, and the drivers in `e2e/bench/` reproduce the comparison on
+your own hardware.
 
 ## Server-Side Rendering
 

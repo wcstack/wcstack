@@ -38,12 +38,12 @@ In every existing framework, the **component** is where UI meets state. Even wit
 
 wcstack takes a different path. Literally.
 
-The **only** contract between UI and state is a **path string** — `user.name`, `cart.items.*.subtotal`, `@shared`. No hooks. No imports. No glue code. The component's JavaScript doesn't contain a single line that references state. The HTML alone describes every data dependency.
+The **only** contract between UI and state is a **path string** — `user.name`, `cart.items.*.subtotal`, or a mount point such as `state: user`. No hooks. No imports. No glue code. The component's JavaScript doesn't contain a single line that references state. The HTML alone describes every data dependency.
 
 ```
-State  ← "user.name" →  UI          Path binds the two layers
-Comp A ← "@app" →       Comp B      Named path crosses components
-Loop   ← "items.*" →    Template    Wildcard abstracts the index
+State  ← "user.name" →    UI          Path binds the two layers
+Host   ← "state: user" →  Component   A mount grafts a component onto the one tree
+Loop   ← "items.*" →      Template    Wildcard abstracts the index
 ```
 
 This means you can redesign the UI without touching state, refactor state without touching the DOM, and read the HTML to understand everything. It's the same idea as a REST URL — a simple string contract, no shared code.
@@ -109,7 +109,7 @@ Forty-seven independent runtime packages + one tooling extension package. Zero r
 
 - **Path getters** — `get "users.*.fullName"()` computed properties at any depth
 - **Structural directives** — `for`, `if` / `elseif` / `else` via `<template>`
-- **40+ built-in filters** — comparison, arithmetic, string, date, formatting
+- **46 built-in filters** — comparison, arithmetic, string, date, formatting
 - **Two-way binding** — automatic for `<input>`, `<select>`, `<textarea>`
 - **Mustache syntax** — `{{ path|filter }}` in text nodes
 - **Web Component binding** — bidirectional state sync with Shadow DOM
@@ -310,7 +310,7 @@ const html = await renderToString(`
 - [`@wcstack/signals`](packages/signals/) — A signals-based, fine-grained reactive **core** (the JS-first counterpart to `@wcstack/state`): `signal`/`computed`/`effect`, async `resource`/`streamResource`, keyed `For`/`Index`, and a `bindNode` adapter that drives the same wc-bindable IO nodes through signals. TC39-Signals-shaped, zero-dependency.
 - [`@wcstack/devtools`](packages/devtools/) — In-page DevTools overlay with `<wcs-devtools>`: inspect state trees (with inline editing through the normal reactive pipeline), see which DOM nodes each path is wired to, and watch a live timeline of writes, update batches, and command/event-token emissions — including zero-subscriber "empty emits". One script tag, connects via the DevTools Hook Protocol, zero-dependency.
 - [`@wcstack/lint`](packages/lint/) — Static-contract validator CLI (`npx @wcstack/lint`, command name `wcs-validate`): checks HTML `data-wcs` bindings and `wcstack.manifest.json` sidecars headlessly with the same validator core as the VS Code extension — identical diagnostic codes and ranges in IDE and CI, stable exit-code contract for generate–validate–fix loops. Zero-dependency.
-- [`@wcstack/typescript`](packages/typescript/) — TypeScript tooling for apps: `wcs-schema` compiles a typed state file and writes the sidecar `stateSchema` the validator consumes, so `data-wcs` paths are checked against real types in CI and every editor (typos become errors, false warnings disappear); `wcs-schema check` fails CI when the manifest drifts from the type. `typescript` is a peer dependency; zero runtime dependencies. The full TypeScript story is in [docs/typescript.md](docs/typescript.md).
+- [`@wcstack/typescript`](packages/typescript/) — TypeScript tooling for apps: `wcs-schema` compiles a typed state file and writes the sidecar `stateSchema` the validator consumes, so `data-wcs` paths are checked against real types in CI and every editor (typos become errors, false warnings disappear); `wcs-schema check` fails CI when the manifest drifts from the type; `wcs-tsc` type-checks the inline `<script type="module">` state inside an HTML file with the same compiler. `typescript` is a peer dependency; zero runtime dependencies. The full TypeScript story is in [docs/typescript.md](docs/typescript.md).
 - [`@wcstack/testing`](packages/testing/) — Headless test helpers: `mount(html)` registers the elements, inserts the page fragment under happy-dom and waits for every element and binding (router routes included, via `@wcstack/server`'s `waitForReady`); `state().read/write`, `settle()`, `fire()` drive it like a user or a handler would. The README recipe as one import — a convenience, never a requirement.
 - [`wcstack-intellisense`](packages/vscode-wcs/) — VS Code extension that provides language support for `<wcs-state>` inline scripts.
 
@@ -350,17 +350,17 @@ For production, pin the version and add an `integrity` attribute. `dist/auto.min
 
 ```html
 <script type="module"
-        src="https://cdn.jsdelivr.net/npm/@wcstack/state@2.0.0/dist/auto.min.js"
+        src="https://cdn.jsdelivr.net/npm/@wcstack/state@2.1.0/dist/auto.min.js"
         integrity="sha384-..."></script>
 ```
 
 Digests for every package ship in each GitHub Release (and as an attached `sri.json`), computed from the published tree rather than read back from the CDN. Details, and what the hash deliberately does not cover: [docs/sri.md](docs/sri.md).
 
-Using several packages? The **`wcstack` entry bundle** packs the SPA core — state, router, fetch, storage, autoloader — into a single self-contained tag: one request, and one hash covering the whole core (219 KB min / 61 KB gzip). Single packages stay the default for pages that need less; do not concatenate the files yourself via jsDelivr `/combine/` (minified ESM does not survive concatenation — [docs/sri.md §3.1](docs/sri.md)):
+Using several packages? The **`wcstack` entry bundle** packs the SPA core — state, router, fetch, storage, autoloader — into a single self-contained tag: one request, and one hash covering the whole core (254 KB min / 71 KB gzip). Single packages stay the default for pages that need less; do not concatenate the files yourself via jsDelivr `/combine/` (minified ESM does not survive concatenation — [docs/sri.md §3.1](docs/sri.md)):
 
 ```html
 <script type="module"
-        src="https://cdn.jsdelivr.net/npm/wcstack@2.0.0/dist/auto.min.js"
+        src="https://cdn.jsdelivr.net/npm/wcstack@2.1.0/dist/auto.min.js"
         integrity="sha384-..."></script>
 ```
 
@@ -459,6 +459,7 @@ wcstack/
 │   ├── lint/          # @wcstack/lint
 │   ├── typescript/    # @wcstack/typescript
 │   ├── testing/       # @wcstack/testing
+│   ├── wcstack/       # wcstack (entry package: the wcstack/auto SPA-core bundle)
 │   └── vscode-wcs/    # wcstack-intellisense (VS Code extension)
 ```
 
