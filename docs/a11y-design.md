@@ -20,7 +20,7 @@
 | **D4** | guard 拒否時 | **何もしない**。`applyRoute` の返り値を `Promise<boolean>`（committed）に変え、呼び出し側でゲートする（§3-2） | 決定（提案） |
 | **D5** | `moveBefore` | `createContent.ts:105` の **1 文だけ**に same-parent ガード付きで導入（§4）。他の挿入箇所は触らない。**if 分岐のフォーカス消失は `moveBefore` では直らない**（unmount は本当に削除する）— 対象外（§10） | 決定（提案） |
 | **D6** | reduced-motion | `<wcs-raf reduced-motion="pause">`（**既定 `run`・オプトイン**）。suspended の**第二原因**としてモデル化（visibility と同型・§6）。MQL change 購読は**必須**（start 時チェックのみだと恒久ウェッジ）。**timer は保留**（polling への適用根拠が弱い） | **決定**（2026-08-28 裁定・timer 保留で確定） |
-| **D7** | `<wcs-link>` | `aria-current="page"` を active class と同時に**既定オン**。属性転送は「anchor 生成時の一括コピー（`aria-*` prefix + 固定 5 名）+ 固定 5 名の observedAttributes 追随」（§5）。動的 `aria-*` は **data-wcs バインド経由も含めて**追従しない明記された制限（§5）。**素の `<a>` への推奨格上げはしない**（fallback ブラウザで全画面遷移になる） | 決定（提案） |
+| **D7** | `<wcs-link>` | `aria-current="page"` を active class と同時に**既定オン**。属性転送は「anchor 生成時の一括コピー（`aria-*` prefix + 固定名）+ 固定名の observedAttributes 追随」（§5。初版は 5 名、2026-09-06 レビューで `lang` / `dir` を加えて 7 名）。動的 `aria-*` は **data-wcs バインド経由も含めて**追従しない明記された制限（§5）。**素の `<a>` への推奨格上げはしない**（fallback ブラウザで全画面遷移になる） | 決定（提案） |
 | **D8** | 新規パッケージ | **作らない**。i18n D7 と同じ裁定。ポリシータグ切り出しは実需 2 件目（state 側の告知需要）が出るまで保留 | 決定（提案） |
 | **D9** | 静的検査 | 第一弾は **`wcs/aria-attr-unknown`**（`attr.aria-*` のタイポ検出・**warning**）のみ（§8）。「wcs-link 近傍の aria-current」は**ルールにしない**（生成 anchor は author markup に無い — D7 のランタイム修正が正解）。aria-hidden 配下 focusable 検査は非目標 | 決定（提案） |
 | **D10** | README | 地雷系 8 パッケージに "Accessibility" 節を追加。WCAG 条項・essential 例外・停止手段を明記（§9） | 決定（提案） |
@@ -133,7 +133,9 @@ navEvent.intercept({
 **`focus="heading"` の規定**（D1 裁定の対象仕様）:
 
 - **探索範囲**: マッチした route チェーンの**最深（リーフ）route が挿入した内容**を document order で走査し、最初の `h1`〜`h6`。ネスト layout で複数 route が同時に入れ替わっても、読者が「新しい画面」と認識する単位はリーフ。祖先 route の内容へは遡らない。
-- **見出し不在時**: **何もしない**（warning も出さない）。Navigation API 経路では `focusReset: "manual"` が渡っているが、旧フォーカス要素が遷移で削除されていればブラウザが body へ落とすため、結果は仕様既定の focusReset と同等に収束する。`focus="heading"` を使う author は各ルート内容に見出しを置く — README の利用条件として明記する。
+- **見出し不在時**（2026-09-06 レビュー反映で改訂 — 初版の「何もしない」は誤り）: router が**仕様既定の focusReset を自前で再現する** — 最初の `[autofocus]` 要素へ、無ければ blur で `<body>` へ落とす。初版の「旧フォーカス要素が遷移で消えていればブラウザが body へ落とすので収束する」は、旧フォーカス要素が**生き残る**最も一般的なケース（layout の永続ナビの `<wcs-link>` クリック）で成り立たない — `focusReset: "manual"` を渡した以上、ブラウザ既定は止まっており、自前で落とさない限りフォーカスは前画面のナビに取り残される。`focus="heading"` を使う author は各ルート内容の**冒頭**に見出しを置く — README の利用条件として明記する（focus のスクロールインは push 遷移の scroll-to-top に負けるため、下方の見出しは画面外フォーカスになる）。
+- **可視性**: 探索は**可視の**見出しに限る（`checkVisibility` — 未実装環境は可視扱い）。`hidden` / `display:none` の見出しへの focus() は no-op で、「manual だけ渡して何もしない」と同じ穴になるため。
+- **値の正規化**: `focusPolicy` / `announcePolicy` getter は有効値（`"heading"` / `"title"`）以外をすべて null に正規化した union で露出する。空文字・タイポは「ポリシーなし」= 仕様既定へ委譲され、intercept の focusReset 決定と適用側の判定が割れる余地を構造的に塞ぐ（2026-09-06 レビューの blocking 対応）。
 
 **announce の代替案（棄却）**: route ごとの明示文言属性（`<wcs-route announce-label>` 等）は、`<wcs-head>` で一元化・i18n 済みの title と二重管理になるため棄却。将来の必要は `announce=` の値追加で拡張できる（値を enum にしたのはその余地）。
 
@@ -197,8 +199,8 @@ if 分岐の切替（`applyChangeToIf.ts:35-36` → `unmount`）・行削除・f
 
 `aria-current` は §3-3。属性転送は複合方式（検証済みのトレードオフ比較から）:
 
-1. **anchor 生成時の一括コピー**（`Link.ts:102-106` の間）: `aria-` prefix 一致 + 固定 5 名（`title` / `rel` / `target` / `download` / `hreflang`）をホストから複写。**`to` / `style` / `class` は除外**（ホストは `display:none`、class は `active` 契約を汚す）。
-2. **固定 5 名だけ observedAttributes に追加**（`Link.ts:11`）し、`attributeChangedCallback` にミラー分岐（`:161-169` の null ガード維持）。
+1. **anchor 生成時の一括コピー**（`Link.ts:102-106` の間）: `aria-` prefix 一致 + 固定 7 名（`title` / `rel` / `target` / `download` / `hreflang` / `lang` / `dir`）をホストから複写。`lang` / `dir` は SR の読み上げ言語・方向に直結するため 2026-09-06 レビューで追加（多言語ナビで anchor に届かないと読み上げが崩れる）。**`to` / `style` / `class` は除外**（ホストは `display:none`、class は `active` 契約を汚す）。
+2. **固定 7 名だけ observedAttributes に追加**（`Link.ts:11`）し、`attributeChangedCallback` にミラー分岐（`:161-169` の null ガード維持）。
 3. `aria-*` は**開集合**なので attributeChangedCallback では原理的に追えない（observedAttributes は定義時静的評価）。「接続後の動的 `aria-*` 変更は追従しない」を**明記された制限**とする。disconnect が anchor を破棄し reconnect が再生成するため、移動では再同期される。MutationObserver 追加は実需が出るまでやらない。
 
 **data-wcs バインドとの相互作用**（明記された制限の具体例）: `<wcs-link data-wcs="attr.aria-label: ...">` は**生成 anchor に届かない**。state/binder はホスト属性を接続後に動的に書くが `aria-*` は observedAttributes に載せられず、state ロードが anchor 生成より遅ければ一括コピー時点でも属性は無い。§1-2 の「attr.aria-* で正しく書ける」は wcs-link ホストには適用されない — 回避は静的属性で書くこと。README に具体例つきで明記し、lint 第二弾候補（§8）に積む。「MutationObserver は実需まで作らない」はこの相互作用を**承知の上**の棄却であり、実需の観測は README / lint への反応で行う。

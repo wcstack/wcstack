@@ -1023,7 +1023,7 @@ describe('Link', () => {
       }
     });
 
-    it('aria-* と固定 5 名 (title/rel/target/download/hreflang) が生成 anchor へコピーされること', () => {
+    it('aria-* と固定 7 名 (title/rel/target/download/hreflang/lang/dir) が生成 anchor へコピーされること', () => {
       const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
@@ -1036,6 +1036,9 @@ describe('Link', () => {
       link.setAttribute('target', '_self');
       link.setAttribute('download', 'file.txt');
       link.setAttribute('hreflang', 'en');
+      // lang / dir は SR の読み上げ言語・方向に直結する — 多言語ナビ対応
+      link.setAttribute('lang', 'ar');
+      link.setAttribute('dir', 'rtl');
       link.textContent = 'Link';
       document.body.appendChild(link);
 
@@ -1047,6 +1050,27 @@ describe('Link', () => {
       expect(anchor.getAttribute('target')).toBe('_self');
       expect(anchor.getAttribute('download')).toBe('file.txt');
       expect(anchor.getAttribute('hreflang')).toBe('en');
+      expect(anchor.getAttribute('lang')).toBe('ar');
+      expect(anchor.getAttribute('dir')).toBe('rtl');
+    });
+
+    it('lang / dir の接続後変更も anchor へミラーされること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const link = document.createElement('wcs-link') as Link;
+      link.setAttribute('to', '/test');
+      link.textContent = 'Link';
+      document.body.appendChild(link);
+
+      const anchor = link.anchorElement!;
+      link.setAttribute('lang', 'ja');
+      link.setAttribute('dir', 'ltr');
+      expect(anchor.getAttribute('lang')).toBe('ja');
+      expect(anchor.getAttribute('dir')).toBe('ltr');
+
+      link.removeAttribute('lang');
+      expect(anchor.hasAttribute('lang')).toBe(false);
     });
 
     it('to / style / class は anchor へ転送しないこと', () => {
