@@ -386,8 +386,11 @@ describe("$watch の devtools 計装（設計書 §7-1）", () => {
     expect(fired).toEqual([
       expect.objectContaining({ type: "state:watch-fired", path: "a" }),
     ]);
-    // payload は path のみ（cur / prev / value を載せない契約）
-    expect(Object.keys(fired[0]).sort()).toEqual(["path", "type"]);
+    // payload は path + 発火元ツリー識別のみ（cur / prev / value を載せない契約は不変）。
+    // stateElement は protocol v2 追補 — 複数ツリーの同名 watch パスの実測を
+    // devtools 側でツリー別に分けるための識別。
+    expect(Object.keys(fired[0]).sort()).toEqual(["path", "stateElement", "type"]);
+    expect((fired[0] as { stateElement?: unknown }).stateElement).toBe(stateEl);
     host.remove();
   });
 

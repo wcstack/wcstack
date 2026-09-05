@@ -341,6 +341,79 @@ describe('WcsDevtools shell', () => {
       expect((source.write as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callCount);
     });
 
+    it('overlays対応ランタイムではマウント記録セクションを描画すること（protocol v2 — D20 の可視化）', () => {
+      mount();
+      // mount が source を作り直すため、v2 API は mount 後に付ける（canonical と同じ流儀）
+      (source as any).overlays = vi.fn(() => [{
+        marker: '#m1',
+        componentTag: 'user-card',
+        stateProp: 'user',
+        mountTable: [{ inner: '', outer: 'users.*' }, { inner: 'address', outer: 'addresses.*' }],
+        delta: 1,
+        privateKeys: ['draft'],
+        getterKeys: ['fullName'],
+      }]);
+      source.emit({ type: 'state:element-registered', rootNode: document, element: {} });
+      devtools.__flushRenderForTest();
+      const text = paneBody(devtools, 'state').textContent!;
+      expect(text).toContain('Overlays (1 mount)');
+      expect(text).toContain('#m1');
+      expect(text).toContain('<user-card>');
+      expect(text).toContain('user');
+      // マウント表はルートエントリを (root) と読ませ、私有面・getter・Δ も本文に出す
+      expect(text).toContain('(root) → users.*');
+      expect(text).toContain('address → addresses.*');
+      expect(text).toContain('Δ1');
+      expect(text).toContain('private: draft');
+      expect(text).toContain('getters: fullName');
+      expect((source as any).overlays).toHaveBeenCalledWith(document);
+    });
+
+    it('overlays未提供のランタイム（旧state）ではセクションごと出さないこと（後方互換）', () => {
+      mount(); // createFakeSource は overlays を持たない = v2 より前のランタイム相当
+      devtools.__flushRenderForTest();
+      expect(paneBody(devtools, 'state').textContent).not.toContain('Overlays');
+    });
+
+    it('マウントが無いツリー（空配列）でも見出しを残さないこと', () => {
+      mount();
+      (source as any).overlays = vi.fn(() => []);
+      source.emit({ type: 'state:element-registered', rootNode: document, element: {} });
+      devtools.__flushRenderForTest();
+      expect(paneBody(devtools, 'state').textContent).not.toContain('Overlays');
+    });
+
+    it('ツリー切替でoverlaysセクションが選択ツリーの記録に追随すること', () => {
+      const rootA = document.createElement('div');
+      const rootB = document.createElement('div');
+      mount({
+        summaries: [summaryOf('alpha', rootA), summaryOf('beta', rootB)],
+        data: { count: 1 },
+      });
+      const recordOf = (marker: string, tag: string) => ({
+        marker,
+        componentTag: tag,
+        stateProp: 'item',
+        mountTable: [],
+        delta: 0,
+        privateKeys: [],
+        getterKeys: [],
+      });
+      (source as any).overlays = vi.fn((rootNode: Node) =>
+        rootNode === rootA ? [recordOf('#mA', 'card-a')] : [recordOf('#mB', 'card-b')]);
+      source.emit({ type: 'state:element-registered', rootNode: rootA, element: {} });
+      devtools.__flushRenderForTest();
+      expect(paneBody(devtools, 'state').textContent).toContain('#mA');
+      expect(paneBody(devtools, 'state').textContent).not.toContain('#mB');
+
+      const select = shadowOf(devtools).querySelector<HTMLSelectElement>('select')!;
+      select.value = 'state:shelltest:div#2';
+      select.dispatchEvent(new Event('change'));
+      devtools.__flushRenderForTest();
+      expect(paneBody(devtools, 'state').textContent).toContain('#mB');
+      expect(paneBody(devtools, 'state').textContent).not.toContain('#mA');
+    });
+
     it('state選択の切り替えができること', () => {
       const rootA = document.createElement('div');
       const rootB = document.createElement('div');
@@ -461,6 +534,41 @@ describe('WcsDevtools shell', () => {
       source.emit({ type: 'state:watch-fired', path: 'count' });
       devtools.__flushRenderForTest();
       expect(paneBody(devtools, 'wiring').textContent).toContain('fired ×2');
+    });
+
+    it('coverageタブは選択ツリーでスコープされ、ツリー切替に追随すること（protocol v2 追補）', () => {
+      const rootA = document.createElement('div');
+      const rootB = document.createElement('div');
+      const elementA = {};
+      const elementB = {};
+      mount({
+        summaries: [
+          { ...summaryOf('alpha', rootA), element: elementA, watchPaths: new Set(['count']) } as never,
+          { ...summaryOf('beta', rootB), element: elementB, watchPaths: new Set(['count']) } as never,
+        ],
+        data: { count: 1 },
+      });
+      devtools.__flushRenderForTest();
+      Array.from(paneBody(devtools, 'wiring').querySelectorAll<HTMLElement>('.wiring-tabs button'))
+        .find((b) => b.textContent === 'coverage')!.click();
+      // ツリー A だけが発火（payload にツリー識別が載る）
+      source.emit({ type: 'state:watch-fired', path: 'count', stateElement: elementA });
+      devtools.__flushRenderForTest();
+      const bodyA = paneBody(devtools, 'wiring');
+      // 選択ツリー（既定 = 先頭 A）の行だけが出て、B の never 行は混ざらない
+      expect(bodyA.textContent).toContain('fired');
+      const watchRowsA = Array.from(bodyA.querySelectorAll<HTMLElement>('.badge-tag'))
+        .filter((b) => b.textContent === 'watch');
+      expect(watchRowsA).toHaveLength(1);
+
+      // ツリー B へ切替 → 同名パスでも B の実測（未発火）で描画される
+      const select = shadowOf(devtools).querySelector<HTMLSelectElement>('select')!;
+      select.value = 'state:shelltest:div#2';
+      select.dispatchEvent(new Event('change'));
+      devtools.__flushRenderForTest();
+      const bodyB = paneBody(devtools, 'wiring');
+      expect(bodyB.textContent).toContain('never');
+      expect(bodyB.textContent).not.toContain('fired');
     });
 
     it('coverageタブ: 全emitが空撃ちのtokenはemitted-unheardのwarn表示になること', () => {
