@@ -37,8 +37,9 @@ path (`i18n.t.app.title`). It is a mounted volume, not a second home.
 |---|---|
 | `index.html` | The head snippet (negotiation, `lang`/`dir`, `<base>`, redirect) and the page |
 | `i18n/catalog.js` | **Canonical dictionary.** Reads `<html lang>`, imports one locale, deep merges the fallback, deep freezes |
+| `i18n/merge.js` | The merge helper, DOM-free so it can be unit-tested. Contract: fully frozen, value descriptors only, no reference shared with a source |
 | `i18n/en.js`, `i18n/ja.js` | Message catalogs — plain nested objects |
-| `i18n/format.js` | `Intl.*` instances for the active locale |
+| `i18n/format.js` | `Intl.*` instances for the active locale, plus `fmt()` — the one place a `{n}` placeholder is applied, so an `Intl.MessageFormat` migration is a one-function swap |
 | `i18n/state.js` | Three lines: the `<wcs-state src>` projection |
 | `app.js` | App state. Imports the catalog directly for row labels and plurals |
 
@@ -74,8 +75,12 @@ the basename, the router declines to intercept, and the browser navigates for
 real. The switch works *because* of the basename.
 
 The basename is supplied by writing `<base href="/ja/">` from the head snippet —
-the earliest possible moment, and the standard HTML mechanism for it. The one
-constraint: every URL on the page must be absolute.
+the earliest possible moment, and the standard HTML mechanism for it. It comes
+with a tax: **every URL on the page now resolves against `/<lang>/`**, including
+the ones nobody thinks of as URLs. An in-page anchor (`href="#faq"`) navigates
+to `/<lang>/#faq` — a route change, and the router intercepts it — and
+inline-SVG fragment references (`url(#gradient)`, `clip-path`) break the same
+way. Write every URL absolute, fragments included (design §9-1-4).
 
 Nice side effect: route patterns carry no locale at all (`/`, `/about`), and
 in-app links are locale-free (`<wcs-link to="/about">`).
@@ -145,7 +150,11 @@ Two constraints come with it:
   from the first path segment. A subpath deployment (`/shop/ja/orders`) needs a
   mount prefix threaded through the segment maths and the `<base href>`.
 - **Every URL on the page must be absolute**, because `<base href="/ja/">` is
-  what hands the locale to the router, and relative URLs now resolve against it.
+  what hands the locale to the router, and relative URLs now resolve against it —
+  including in-page anchors (`href="#faq"` becomes `/<lang>/#faq`, a route
+  change) and inline-SVG fragment references (`url(#gradient)`). A relative
+  `<wcs-state src="./state.js">` resolves against the base too; write it
+  root-absolute (design §9-1-4).
 
 Its behaviour is pinned by [`e2e/tests/router-i18n.spec.ts`](../../e2e/tests/router-i18n.spec.ts):
 the decision order, all three URL-repair shapes, and the hard/soft navigation
@@ -187,11 +196,14 @@ from one locale renders **perfectly — in the fallback's language**. Nothing
 breaks, nothing is logged, and the page quietly serves English to a Japanese
 reader. Only comparing the files finds it.
 
-The script is standalone rather than part of `wcs-validate`, because that
-validator is regex-based over inline `<wcs-state>` scripts by design — it has no
-module resolution — and the catalog is reached through a *dynamic* import keyed
-by the runtime locale, so which file backs `t` is not statically decidable
-anyway. Comparing two data files needs none of that machinery.
+The script is standalone rather than part of `wcs-validate` for a tooling
+reason, not a decidability one: that validator is regex-based over inline
+`<wcs-state>` scripts by design and has no module resolution, so it cannot
+reach the catalog files. The check itself *is* statically decidable — the
+candidate modules are enumerable from the snippet's `SUPPORTED` declaration,
+and since key sets must agree across locales, any one catalog determines the
+key set. Comparing two data files needs none of that machinery, so the
+comparison lives here until the validator grows module resolution.
 
 **Plural groups are compared per language, not key-for-key.** Which categories
 exist is a property of the language: English needs `one` and `other`, Japanese

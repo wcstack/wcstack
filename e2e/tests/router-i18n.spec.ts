@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { spawn, type ChildProcess } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { collectErrors } from "./helpers";
 
@@ -103,6 +103,31 @@ test.describe("examples/router-i18n — ロケール交渉", () => {
     await page.goto(`${BASE}/en/about`);
     await settled(page);
     expect(page.url()).toBe(`${BASE}/en/about`);
+    await context.close();
+  });
+
+  test("localStorage が SecurityError を投げても <html lang> は確定する", async ({ browser }) => {
+    // クッキー／サイトデータ遮断環境では localStorage は「プロパティアクセス
+    // 自体が」throw する。スニペットのこの読み出しは <html lang> を書くより
+    // 前にあるので、素通しにすると P1（lang が DOM 解析前に確定）から始まる
+    // 不変条件連鎖 — 辞書・フィルタ・basename の全部 — が丸ごと切れる。
+    // try/catch はその単一障害点を守る行であり、このテストが消させない
+    // （docs/i18n-design.md §8-1）。
+    const context = await browser.newContext({ locale: "ja-JP" });
+    await context.addInitScript(() => {
+      Object.defineProperty(window, "localStorage", {
+        get() {
+          throw new DOMException("Storage is disabled", "SecurityError");
+        },
+      });
+    });
+    const page = await context.newPage();
+    const errors = collectErrors(page);
+    await page.goto(`${BASE}/`);
+    await settled(page);
+    expect(page.url()).toBe(`${BASE}/ja/`);
+    await expect(page.locator("h1")).toHaveText("注文履歴");
+    expect(errors).toEqual([]);
     await context.close();
   });
 
@@ -259,5 +284,50 @@ test.describe("examples/router-i18n — 後から差し込まれた内容のバ�
     // 診断が誤って出ると、利用者は警告そのものを無視するようになる
     expect(warnings.filter((w) => w.includes("will never be applied"))).toEqual([]);
     await context.close();
+  });
+});
+
+// ── 辞書マージの不変条件（docs/i18n-design.md §4-1 / §12）──────────────────
+// 設計 2 節が「辞書に getter が 1 つも無い」に乗っている。deep freeze はマージ
+// **後**のオブジェクトへの getter 追加を防ぐが、ソース側カタログにあった getter
+// がマージ結果に生き残るかはマージ実装に依存する — 実際、初版の実装は片側にしか
+// 無いサブツリーを参照のまま返しており、その枝だけ凍結も getter 平坦化も効いて
+// いなかった。ここで 1 本のテストとして固定する。ブラウザは要らないので Node 側
+// で直接検証する（catalog.js は document を読むため、ヘルパは merge.js に分離）。
+test.describe("examples/router-i18n — mergeAndFreeze の不変条件", () => {
+  test("ソース側の getter が結果に残らず、片側サブツリーも凍結された複製になる", async () => {
+    const { mergeAndFreeze } = (await import(
+      pathToFileURL(resolve(REPO_ROOT, "examples/router-i18n/i18n/merge.js")).href
+    )) as { mergeAndFreeze: (base: object, over: object) => Record<string, Record<string, unknown>> };
+
+    const base = {
+      shared: { get evil() { return "computed"; }, plain: "base" },
+      baseOnly: { get evil() { return "computed"; }, leaf: "b" },
+    };
+    const over = {
+      shared: { plain: "over" },
+      overOnly: { get evil() { return "computed"; }, leaf: "o" },
+    };
+    const t = mergeAndFreeze(base, over);
+
+    // getter は評価され、value descriptor に平坦化されること。getter が残ると
+    // パス存在検査が UNKNOWN で打ち切られ、その枝の訳漏れ診断が静かに死ぬ。
+    for (const branch of ["shared", "baseOnly", "overOnly"] as const) {
+      const desc = Object.getOwnPropertyDescriptor(t[branch], "evil");
+      expect(desc?.get, `${branch}.evil はゲッターのまま生き残ってはいけない`).toBeUndefined();
+      expect(desc?.value).toBe("computed");
+    }
+
+    // 片側にしか無いサブツリーもソースの参照ではなく、凍結された複製であること
+    expect(t.baseOnly).not.toBe(base.baseOnly);
+    expect(t.overOnly).not.toBe(over.overOnly);
+    expect(Object.isFrozen(t)).toBe(true);
+    expect(Object.isFrozen(t.baseOnly)).toBe(true);
+    expect(Object.isFrozen(t.overOnly)).toBe(true);
+
+    // マージ本体の意味論も同時に固定する（over が勝ち、無ければ base が残る）
+    expect(t.shared.plain).toBe("over");
+    expect(t.baseOnly.leaf).toBe("b");
+    expect(t.overOnly.leaf).toBe("o");
   });
 });

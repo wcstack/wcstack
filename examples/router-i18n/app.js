@@ -8,7 +8,7 @@
  * which is where the existing norm already puts computation.
  */
 import { t } from "./i18n/catalog.js";
-import { currency, date, plural } from "./i18n/format.js";
+import { currency, date, fmt, plural } from "./i18n/format.js";
 
 const ORDERS = [
   { id: "A-1041", status: "delivered", total: 12800, placedAt: "2026-07-14" },
@@ -53,9 +53,10 @@ export default {
 
   // Plural selection is Intl.PluralRules, not a hand-rolled n===1 check. In
   // Japanese this always picks "other"; in English it picks "one" for a single
-  // order. No ICU parser, no dependency (§7).
+  // order. No ICU parser, no dependency — and the placeholder is applied by
+  // fmt(), the single site an Intl.MessageFormat migration will touch (§7).
   get orderCountText() {
     const n = this.orders.length;
-    return t.orders.count[plural.select(n)].replace("{n}", n);
+    return fmt(t.orders.count[plural.select(n)], { n });
   },
 };
