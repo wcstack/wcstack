@@ -728,6 +728,35 @@ describe('Router', () => {
       // scroll 側は focus= の影響を受けない
       expect(options.scroll).toBe('after-transition');
     });
+
+    it('focus="" では仕様既定 "after-transition" のままにすること（manual だけ渡して何もしない状態を作らない）', () => {
+      const router = document.createElement('wcs-router') as Router;
+      router.setAttribute('focus', '');
+      (router as any)._basename = '';
+
+      const options = interceptOptionsOf(router);
+      expect(options.focusReset).toBe('after-transition');
+      expect(router.focusPolicy).toBeNull();
+    });
+
+    it('focus の未知値（タイポ）では仕様既定 "after-transition" のままにすること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      router.setAttribute('focus', 'headding');
+      (router as any)._basename = '';
+
+      const options = interceptOptionsOf(router);
+      expect(options.focusReset).toBe('after-transition');
+      expect(router.focusPolicy).toBeNull();
+    });
+
+    it('announce の未知値は announcePolicy として null に正規化されること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      router.setAttribute('announce', 'tittle');
+      expect(router.announcePolicy).toBeNull();
+
+      router.setAttribute('announce', 'title');
+      expect(router.announcePolicy).toBe('title');
+    });
   });
 
   describe('connected/disconnected', () => {

@@ -9,10 +9,12 @@ import { SSR_LINK_ATTR } from "../ssrMarkers";
 import { ILink } from "./types";
 import type { Router } from "./Router";
 
-// 生成 anchor へミラーする固定属性（docs/a11y-design.md §5）。`aria-*` は開集合なので
-// observedAttributes には載せられず、anchor 生成時の一括コピーのみ（接続後の動的
-// aria-* 変更 — data-wcs バインド経由を含む — には追従しない。README の明記された制限）。
-const MIRRORED_ATTRIBUTES: readonly string[] = ['title', 'rel', 'target', 'download', 'hreflang'];
+// 生成 anchor へミラーする固定属性（docs/a11y-design.md §5）。`lang` / `dir` は SR の
+// 読み上げ言語・方向に直結するため含める（多言語ナビで anchor 側に届かないと
+// 読み上げが崩れる）。`aria-*` は開集合なので observedAttributes には載せられず、
+// anchor 生成時の一括コピーのみ（接続後の動的 aria-* 変更 — data-wcs バインド経由を
+// 含む — には追従しない。README の明記された制限）。
+const MIRRORED_ATTRIBUTES: readonly string[] = ['title', 'rel', 'target', 'download', 'hreflang', 'lang', 'dir'];
 
 export class Link extends HTMLElement implements ILink {
   static get observedAttributes(): string[] {
@@ -162,7 +164,7 @@ export class Link extends HTMLElement implements ILink {
       const nextSibling = this.nextSibling;
       link = document.createElement('a');
       this._setAnchorHref(link, this._path);
-      // ホスト属性の転送: `aria-*` prefix + 固定 5 名の一括コピー。
+      // ホスト属性の転送: `aria-*` prefix + 固定 7 名の一括コピー。
       // to / style / class は除外 — ホストは display:none であり、class は active 契約を持つ。
       for (const attr of Array.from(this.attributes)) {
         if (attr.name.startsWith('aria-') || MIRRORED_ATTRIBUTES.includes(attr.name)) {

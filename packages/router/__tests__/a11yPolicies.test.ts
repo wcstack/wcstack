@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { applyA11yPolicies } from '../src/a11yPolicies';
 import type { IRoute, IRouteMatchResult, IRouter } from '../src/components/types';
 import './setup';
@@ -87,16 +87,87 @@ describe('applyA11yPolicies', () => {
       expect(document.activeElement).toBe(h2);
     });
 
-    it('リーフ route に見出しが無ければ何もしないこと（§3-4 の規定）', () => {
+    it('リーフ route に見出しが無ければ仕様既定の focusReset を再現し、生存中の旧フォーカスを body へ落とすこと（§3-4 の規定）', () => {
+      // 最も一般的なケース: layout の永続ナビをクリックした遷移。旧フォーカス要素
+      // （リンク）は遷移後も生き残るため、「消えていればブラウザが body へ落とす」は
+      // 成り立たない。focusReset: "manual" を渡した responsibility として自前で落とす。
       const div = document.createElement('div');
       div.innerHTML = '<p>no headings</p>';
       const outside = document.createElement('button');
       document.body.append(div, outside);
       outside.focus();
+      expect(document.activeElement).toBe(outside);
 
       applyA11yPolicies(stubRouter({ focusPolicy: 'heading' }), matchResultOf([div]));
 
-      expect(document.activeElement).toBe(outside);
+      expect(document.activeElement).toBe(document.body);
+    });
+
+    it('リーフ route に見出しが無く [autofocus] があれば、そこへフォーカスすること（仕様既定と同じ優先順）', () => {
+      const div = document.createElement('div');
+      div.innerHTML = '<p>no headings</p>';
+      const autofocusInput = document.createElement('input');
+      autofocusInput.setAttribute('autofocus', '');
+      const outside = document.createElement('button');
+      document.body.append(div, autofocusInput, outside);
+      outside.focus();
+
+      applyA11yPolicies(stubRouter({ focusPolicy: 'heading' }), matchResultOf([div]));
+
+      expect(document.activeElement).toBe(autofocusInput);
+    });
+
+    it('見出し不在かつ activeElement が HTMLElement でなくても throw しないこと', () => {
+      const div = document.createElement('div');
+      div.innerHTML = '<p>no headings</p>';
+      document.body.appendChild(div);
+      const spy = vi.spyOn(document, 'activeElement', 'get').mockReturnValue(null as unknown as Element);
+
+      expect(() =>
+        applyA11yPolicies(stubRouter({ focusPolicy: 'heading' }), matchResultOf([div]))
+      ).not.toThrow();
+
+      spy.mockRestore();
+    });
+
+    it('非表示（checkVisibility が false）の見出しはスキップし、次の可視見出しを選ぶこと', () => {
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = '<h2 id="hidden-h" hidden>hidden</h2><h3 id="visible-h">visible</h3>';
+      document.body.appendChild(wrapper);
+      // happy-dom 20.3 に checkVisibility は無いため、要素にスタブして分岐を覆う
+      const hidden = wrapper.querySelector('#hidden-h') as HTMLElement;
+      const visible = wrapper.querySelector('#visible-h') as HTMLElement;
+      (hidden as any).checkVisibility = () => false;
+      (visible as any).checkVisibility = () => true;
+
+      applyA11yPolicies(stubRouter({ focusPolicy: 'heading' }), matchResultOf([wrapper]));
+
+      expect(document.activeElement).toBe(visible);
+      expect(hidden.hasAttribute('tabindex')).toBe(false);
+    });
+
+    it('トップレベル見出し自身が非表示なら、後続ノードの見出しへ進むこと', () => {
+      const hiddenH1 = document.createElement('h1');
+      (hiddenH1 as any).checkVisibility = () => false;
+      const laterH2 = document.createElement('h2');
+      document.body.append(hiddenH1, laterH2);
+
+      applyA11yPolicies(stubRouter({ focusPolicy: 'heading' }), matchResultOf([hiddenH1, laterH2]));
+
+      expect(document.activeElement).toBe(laterH2);
+    });
+
+    it('見出しがすべて非表示なら見出し不在と同じ扱いで body へ落とすこと', () => {
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = '<h2>hidden</h2>';
+      const outside = document.createElement('button');
+      document.body.append(wrapper, outside);
+      (wrapper.querySelector('h2') as any).checkVisibility = () => false;
+      outside.focus();
+
+      applyA11yPolicies(stubRouter({ focusPolicy: 'heading' }), matchResultOf([wrapper]));
+
+      expect(document.activeElement).toBe(document.body);
     });
 
     it('既存の tabindex を上書きしないこと', () => {
@@ -140,9 +211,10 @@ describe('applyA11yPolicies', () => {
 
       applyA11yPolicies(stubRouter({ focusPolicy: 'heading' }), matchResult);
 
-      // 祖先の h1 は選ばれない
-      expect(document.activeElement).toBe(outside);
+      // 祖先の h1 は選ばれず、リーフ見出し不在として body へ落ちる
       expect(parentHeading.hasAttribute('tabindex')).toBe(false);
+      expect(document.activeElement).not.toBe(parentHeading);
+      expect(document.activeElement).toBe(document.body);
     });
   });
 });

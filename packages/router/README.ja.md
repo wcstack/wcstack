@@ -356,7 +356,7 @@ console.log(router.typedParams.userId);  // 123 (number)
 a.active { font-weight: bold; color: blue; }
 ```
 
-**属性の転送**: `<a>` の生成時に、すべての `aria-*` 属性と固定 5 名（`title` / `rel` / `target` / `download` / `hreflang`）をホストから anchor へコピーする。`to` / `style` / `class` は決して転送しない（ホストは `display:none` であり、`class` は `active` 契約を持つ）。接続後に追従するのは固定 5 名のみで、**動的な `aria-*` 変更は anchor に届かない** — `<wcs-link data-wcs="attr.aria-label: ...">` のような `data-wcs` バインドもコピー後にホストへ書くため届かない。`<wcs-link>` の `aria-*` は静的属性で書くこと。
+**属性の転送**: `<a>` の生成時に、すべての `aria-*` 属性と固定 7 名（`title` / `rel` / `target` / `download` / `hreflang` / `lang` / `dir`）をホストから anchor へコピーする（`lang` / `dir` はスクリーンリーダーの読み上げ言語・方向に直結する）。`to` / `style` / `class` は決して転送しない（ホストは `display:none` であり、`class` は `active` 契約を持つ）。接続後に追従するのは固定 7 名のみで、**動的な `aria-*` 変更は anchor に届かない** — `<wcs-link data-wcs="attr.aria-label: ...">` のような `data-wcs` バインドもコピー後にホストへ書くため届かない。`<wcs-link>` の `aria-*` は静的属性で書くこと。
 
 **素の `<a>` について**: Navigation API のあるブラウザでは、basename 配下の素の `<a href="/about">` も SPA 遷移になる（router が intercept する）。フォールバックブラウザでは成立しない（SPA 経路は `<wcs-link>` の click ハンドラのみ）ため、推奨は `<wcs-link>` のまま。
 
@@ -457,8 +457,8 @@ router は、プラットフォームが既に正しく行うことについて�
 
 **オプトインのポリシー** — `<wcs-router focus="heading" announce="title">`。どちらも既定はオフで、属性が無ければ上記のブラウザ挙動がすべて。どちらも commit したナビゲーションの直後にだけ走り、最初のルート適用（ページロードはブラウザの担当）と guard 拒否されたナビゲーションでは決して動かない。
 
-- `focus="heading"`: **リーフ** route が挿入した内容の最初の `h1`〜`h6` へフォーカスを移す（見出しに tabindex が無ければ `tabindex="-1"` を付与）。指定中は Navigation API 経路で `focusReset: "manual"` を渡し、ブラウザ既定のリセットとの二重処理を防ぐ。新しい内容に見出しが無ければ何もしない — オプトインするなら各ルートに見出しを置くこと。
-- `announce="title"`: commit 時点の `document.title` のスナップショットを router 保有の live region（`role="status"`・視覚的にクリップ・`<wcs-router>` 直下・router ごとに 1 つ）へ書き込む。既知の制限: バインド title（`<title data-wcs>`）は commit 時点で古いことがあり、ナビゲーション外の title 変化は再読み上げされない。
+- `focus="heading"`: **リーフ** route が挿入した内容の最初の**可視の** `h1`〜`h6` へフォーカスを移す（見出しに tabindex が無ければ `tabindex="-1"` を付与。`hidden` / `display:none` の見出しは focus() が空振りするためスキップ）。指定中は Navigation API 経路で `focusReset: "manual"` を渡し、ブラウザ既定のリセットとの二重処理を防ぐ。可視の見出しが無ければ、router が仕様既定のリセットを自前で再現する — 最初の `[autofocus]` 要素へ、無ければ `<body>` へ落とす（永続ナビのリンク等、旧フォーカス要素が遷移後も生き残るケースでフォーカスが前画面に取り残されないため）。それでもオプトインするなら各ルートに見出しを置き、ルート内容の**冒頭**に置くこと — 見出しへの focus はスクロールインを起こすが、push 遷移直後の scroll-to-top が勝つため、ページ下方の見出しは画面外のままフォーカスされる。ポリシーが有効になるのは値がちょうど `"heading"` のときだけで、空文字・未知値はブラウザ既定に落ちる。
+- `announce="title"`: commit 時点の `document.title` のスナップショットを router 保有の live region（`role="status"`・視覚的にクリップ・`<wcs-router>` 直下・router ごとに 1 つ）へ書き込む。既知の制限: バインド title（`<title data-wcs>`）は commit 時点で古いことがあり、ナビゲーション外の title 変化は再読み上げされない。また同じ title を共有するルート間の遷移は live region のテキストが変化しないため、SR / ブラウザの組み合わせによっては再読み上げされないことがある。
 
 設計の記録は [docs/a11y-design.md](https://github.com/wcstack/wcstack/blob/main/docs/a11y-design.md) §3 を参照。
 

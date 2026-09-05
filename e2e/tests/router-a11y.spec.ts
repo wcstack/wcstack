@@ -161,4 +161,29 @@ test.describe("router-a11y — オプトインの focus= / announce= (A9/A10)", 
 
     expect(errors).toEqual([]);
   });
+
+  test("見出しの無いルートへ永続ナビから遷移すると、フォーカスは生存中のリンクに残らず body へ落ちる", async ({ page }) => {
+    // focus="heading" は focusReset: "manual" を渡してブラウザ既定のリセットを
+    // 止めている。見出し不在時に router が仕様既定を自前で再現しないと、
+    // 旧フォーカス要素（この nav リンク）は遷移後も生き残るため、フォーカスが
+    // 前画面のナビに取り残される（レビュー blocking の再発防止）。
+    const errors = collectErrors(page);
+    await page.goto(OPTIN_FIXTURE);
+    await expect(page.locator("#home-h")).toBeVisible();
+
+    const plainLink = page.getByRole("link", { name: "plain" });
+    await plainLink.focus();
+    await plainLink.click();
+    await expect(page.locator("#plain-p")).toBeVisible();
+
+    // リンクは生き残っている（削除による自然な body 落ちではない）
+    await expect(plainLink).toBeVisible();
+    // [autofocus] は無いので body へ
+    await expect
+      .poll(() => page.evaluate(() => document.activeElement === document.body))
+      .toBe(true);
+    // announce は見出しの有無と独立に効く
+    await expect(page.locator('wcs-router > div[role="status"]')).toHaveText("Plain — a11y fixture");
+    expect(errors).toEqual([]);
+  });
 });

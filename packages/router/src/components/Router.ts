@@ -135,12 +135,18 @@ export class Router extends HTMLElement implements IRouter {
     return this._a11yRegion;
   }
 
-  get focusPolicy(): string | null {
-    return this.getAttribute('focus');
+  /**
+   * `focus=` / `announce=` は有効値の union へ正規化して露出する。空文字やタイポは
+   * 「ポリシーなし」= null — intercept の focusReset 決定（_onNavigateFunc）と
+   * applyA11yPolicies の適用判定が同じ値を見るため、「manual だけ渡して実フォーカス
+   * 移動が無い」不整合が構造的に起きない（docs/a11y-design.md §3-5）。
+   */
+  get focusPolicy(): "heading" | null {
+    return this.getAttribute('focus') === 'heading' ? 'heading' : null;
   }
 
-  get announcePolicy(): string | null {
-    return this.getAttribute('announce');
+  get announcePolicy(): "title" | null {
+    return this.getAttribute('announce') === 'title' ? 'title' : null;
   }
 
   /**
@@ -525,8 +531,10 @@ export class Router extends HTMLElement implements IRouter {
       // 契約の変更にあたる（docs/a11y-design.md §3-1）。same-match の扱いは
       // docs/router-state-contract-design.md §4.4 / D6b。
       scroll: sameMatchScrollManual ? "manual" : "after-transition",
-      // focus= 指定時のみ manual。渡さないと router のフォーカス移動とブラウザの
-      // after-transition リセットが二重処理になる（docs/a11y-design.md §3-5）。
+      // focus= が有効値のときのみ manual。渡さないと router のフォーカス移動と
+      // ブラウザの after-transition リセットが二重処理になる（docs/a11y-design.md §3-5）。
+      // focusPolicy は正規化済み getter — 空文字・未知値は null になり仕様既定へ
+      // 委譲されるため、「manual だけ渡して何もしない」状態は構造的に生じない。
       // same-match は常に manual — 1 打鍵ごとにフォーカスが body へ飛ぶ事故の防止。
       focusReset: sameMatch || routesNode.focusPolicy !== null ? "manual" : "after-transition",
     });

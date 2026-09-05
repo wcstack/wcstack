@@ -15,6 +15,7 @@
   <nav>
     <wcs-link to="/">home</wcs-link>
     <wcs-link to="/about">about</wcs-link>
+    <wcs-link to="/plain">plain</wcs-link>
   </nav>
 
   <wcs-router basename="/e2e/fixtures" focus="heading" announce="title">
@@ -32,6 +33,16 @@
         </wcs-head>
         <h1 id="about-h">About</h1>
         <p>about body</p>
+      </wcs-route>
+      <!-- 見出しの無いルート: focus="heading" は仕様既定の focusReset を自前で
+           再現する（[autofocus] 不在なので body へ）。永続ナビの wcs-link は遷移後も
+           生き残る = 「旧フォーカスが消えるからブラウザが落とす」は成り立たない
+           ケースを実ブラウザで踏む -->
+      <wcs-route path="/plain">
+        <wcs-head>
+          <title>Plain — a11y fixture</title>
+        </wcs-head>
+        <p id="plain-p">plain body, no heading</p>
       </wcs-route>
     </template>
   </wcs-router>
