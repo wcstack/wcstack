@@ -185,10 +185,14 @@ interface IRouter extends IRouteChildContainer {
     commitNavigation(commit: IRouterCommit): void;
     /** `announce=` 用 live region。未生成なら null（docs/a11y-design.md §3-4） */
     readonly a11yRegion: HTMLElement | null;
-    /** `<wcs-router focus=...>` の属性値（無ければ null） */
-    readonly focusPolicy: string | null;
-    /** `<wcs-router announce=...>` の属性値（無ければ null） */
-    readonly announcePolicy: string | null;
+    /**
+     * `<wcs-router focus=...>` の正規化済みポリシー。有効値以外（属性なし・空文字・
+     * 未知値）はすべて null — 判定箇所ごとに生文字列の解釈が割れないよう、
+     * 解釈はこの getter の 1 箇所に閉じる（docs/a11y-design.md §3-5）。
+     */
+    readonly focusPolicy: "heading" | null;
+    /** `<wcs-router announce=...>` の正規化済みポリシー（focusPolicy と同じ規範） */
+    readonly announcePolicy: "title" | null;
 }
 interface IOutlet {
     routesNode: IRouter;
@@ -245,8 +249,14 @@ declare class Router extends HTMLElement implements IRouter {
     constructor();
     get connectedCallbackPromise(): Promise<void>;
     get a11yRegion(): HTMLElement | null;
-    get focusPolicy(): string | null;
-    get announcePolicy(): string | null;
+    /**
+     * `focus=` / `announce=` は有効値の union へ正規化して露出する。空文字やタイポは
+     * 「ポリシーなし」= null — intercept の focusReset 決定（_onNavigateFunc）と
+     * applyA11yPolicies の適用判定が同じ値を見るため、「manual だけ渡して実フォーカス
+     * 移動が無い」不整合が構造的に起きない（docs/a11y-design.md §3-5）。
+     */
+    get focusPolicy(): "heading" | null;
+    get announcePolicy(): "title" | null;
     /**
      * `announce=` 用 live region を <wcs-router> 直下に空のまま用意する
      * （docs/a11y-design.md §3-4）。

@@ -91,7 +91,6 @@ interface IStateProxy extends IState {
 type Mutability = "readonly" | "writable";
 
 interface IStateElement {
-    readonly name: string;
     /**
      * state のロードが完了しているか。`initializePromise` の同期版で、
      * DCC のアクセサが「今すぐ読み書きしてよいか」を判断するのに使う。
@@ -867,6 +866,13 @@ type DevtoolsEvent = {
     readonly tokenName: string;
     readonly args: readonly unknown[];
     readonly subscriberCount: number;
+    /**
+     * 発火元ツリーの state 要素（protocol v2 追補 2026-09-05・additive）。
+     * registry（getOrCreate*Token）経由で作られた token だけが持つ — 直接生成された
+     * token や旧ランタイムの payload には無い（optional）。無い emit の実測は
+     * ツリー別に分けられないため、消費側は全ツリーの照会へ合算で残す。
+     */
+    readonly stateElement?: IStateElement;
 } | {
     readonly type: "state:watch-error";
     /** throw 元。cur の評価（getter）とハンドラ本体では原因も直し方も違う */
@@ -883,6 +889,13 @@ type DevtoolsEvent = {
     readonly type: "state:watch-fired";
     /** `$watch` の宣言キー（ワイルドカードを含む生のパス） */
     readonly path: string;
+    /**
+     * 発火元ツリーの state 要素（protocol v2 追補 2026-09-05・additive）。
+     * 複数ツリーが同名の watch パスを宣言するページで実測台帳をツリー別に
+     * 分けるための識別。旧ランタイムの payload には無い（optional）— 無い発火は
+     * 消費側が全ツリーの照会へ合算で残す。値を載せない契約（§4.3.1）は不変。
+     */
+    readonly stateElement?: IStateElement;
 } | {
     readonly type: "state:path-unresolved";
     /** 書き手が書いた面。診断 code が binding / watch で変わる */
@@ -988,13 +1001,19 @@ declare function analyzeContract(manifest: IContractManifest): readonly Contract
 declare class State extends HTMLElementBase implements IStateElement {
     static hasConnectedCallbackPromise: boolean;
     static getBindingsReady(rootNode: Node): Promise<void>;
+    /**
+     * `mount` の動的変更は未サポート（再マウントは非目標 — 設計書 §4-7）。
+     * 初期化済み要素での変更は無言で捨てず warn で知らせる。初期化前の属性設定
+     * （パース時・接続前の setAttribute）は正規の使い方なので黙る。
+     * `name` は connectedCallback 冒頭で fail-fast 済みなので観測しない。
+     */
+    static get observedAttributes(): string[];
     private __state;
     private _hasUpdatedCallback;
     /** enable-ssr のスナップショットから初期化された（D14: ボリュームはデータを採用する） */
     private _hydratedFromSsr;
     private _crossRowListPaths;
     private _indexDependentGetterPaths;
-    private _name;
     private _initialized;
     private _initializePromise;
     private _resolveInitialize;
@@ -1036,7 +1055,7 @@ declare class State extends HTMLElementBase implements IStateElement {
     constructor();
     private get _state();
     private set _state(value);
-    get name(): string;
+    attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void;
     private _loadFromSsrElement;
     /** state / src / json / inner <script> / API set のソース解決（_initialize とボリュームで共用）。 */
     private _loadStateFromSource;

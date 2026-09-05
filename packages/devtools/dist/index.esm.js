@@ -266,13 +266,14 @@ class DevtoolsCore {
     _changeListeners = new Set();
     /** 観測開始時刻（connect 時の performance.now。未接続は null）。 */
     _observingSince = null;
-    /** watch 発火回数（path → count）。カバレッジの実測面。
-     *  既知の限界: `state:watch-fired` / `state:token-emit` の payload はツリー識別を
-     *  持たないため、複数ツリーが同名の watch パス / token 名を宣言するページでは
-     *  実測が合算される（ツリー別に分けるにはプロトコル追補が要る — slice 29 記録）。 */
-    _watchFiredCounts = new Map();
-    /** token emit 実測（kind + NUL + name → 回数と空撃ち回数）。上の限界注記と同じ。 */
-    _tokenEmitCounts = new Map();
+    /** watch 発火実測（path → ツリー別区分列）。カバレッジの実測面。
+     *  protocol v2 追補で payload がツリー識別（stateElement）を持つようになり、
+     *  複数ツリーが同名 watch パスを宣言するページでもツリー別に数えられる。
+     *  識別の無い旧 payload は null 区分に積み、どのツリーの照会にも合算で残す
+     *  （slice 29 non-blocking 記録の解消）。 */
+    _watchFiredStats = new Map();
+    /** token emit 実測（kind + NUL + name → ツリー別区分列）。上の追補注記と同じ。 */
+    _tokenEmitStats = new Map();
     /** 観測開始以降に一度でも attach を観測した宣言キー（attachKeyOf）。
      *  live 配線台帳は WeakRef pruning / binding-removed で縮むため、binding
      *  カバレッジの attached 判定はこちらで行う（瞬間値で判定すると行の
@@ -327,8 +328,8 @@ class DevtoolsCore {
         this._wiringByPathKey.clear();
         this._wiringEntryByBinding = new WeakMap();
         this._observingSince = null;
-        this._watchFiredCounts.clear();
-        this._tokenEmitCounts.clear();
+        this._watchFiredStats.clear();
+        this._tokenEmitStats.clear();
         this._everAttachedKeys.clear();
         this._notify("sources");
         this._notify("roster");
@@ -448,14 +449,24 @@ class DevtoolsCore {
      * 配線カバレッジ（§4）: 宣言面（watchPaths / token 宣言 / canonical declared）と
      * 実測面（watch-fired・token-emit の台帳・live 配線台帳）の突合。
      * 「観測開始以降」の実測であることは observingSince を UI が常時表示して明示する。
+     *
+     * watch / token の実測は各行の属するツリー（roster entry の element）でスコープする
+     * （protocol v2 追補 — 複数ツリーの同名宣言を合算しない）。ツリー識別の無い
+     * 旧 payload 由来の実測はどの行にも合算で残す（欠測を欠落にしない）。
+     * stateElement を渡すとそのツリーの宣言行だけに絞る（getWiringForPath と同じ流儀）。
+     * binding 節（canonical declared × ever-attach）は宣言・実測ともツリー識別を
+     * 持たないため絞り込みの対象外。
      */
-    getCoverageReport() {
+    getCoverageReport(stateElement) {
         const out = [];
         for (const entry of this.getRoster()) {
             const summary = entry.summary;
-            // --- watch: 宣言（watchPaths）× 実測（watch-fired 台帳） ---
+            if (stateElement !== undefined && summary.element !== stateElement) {
+                continue;
+            }
+            // --- watch: 宣言（watchPaths）× 実測（watch-fired 台帳・自ツリー + 旧 payload 合算） ---
             for (const path of summary.watchPaths ?? []) {
-                const count = this._watchFiredCounts.get(pathKeyOf(path)) ?? 0;
+                const count = this._measuredFor(this._watchFiredStats, pathKeyOf(path), summary.element)?.count ?? 0;
                 if (count > 0) {
                     out.push({ kind: "watch", name: path, status: "fired", count, note: null });
                     continue;
@@ -494,10 +505,10 @@ class DevtoolsCore {
             // subscriberCount 0 = 空撃ち（§4）: 全 emit が空撃ちなら emitted-unheard として
             // 警告する（emit 側だけ配線されて受け手が一つも居ない構成ミスの検出）。 ---
             for (const name of summary.commandTokenNames) {
-                out.push(tokenCoverageOf("command", name, this._tokenEmitCounts.get(tokenKeyOf("command", name))));
+                out.push(tokenCoverageOf("command", name, this._measuredFor(this._tokenEmitStats, tokenKeyOf("command", name), summary.element)));
             }
             for (const name of summary.eventTokenNames) {
-                out.push(tokenCoverageOf("eventToken", name, this._tokenEmitCounts.get(tokenKeyOf("event", name))));
+                out.push(tokenCoverageOf("eventToken", name, this._measuredFor(this._tokenEmitStats, tokenKeyOf("event", name), summary.element)));
             }
         }
         // --- binding: canonical declared（宣言）× live 配線台帳（実測）。canonical が
@@ -538,6 +549,18 @@ class DevtoolsCore {
         }
         return source.keys(entry.rootNode);
     }
+    /**
+     * roster entry のツリーに載るマウント記録（overlays — protocol v2・D20 の可視化）。
+     * overlays を実装しないランタイム（v2 より前）では null — UI はセクションごと
+     * 出さない（後方互換）。マウントが無いツリーは空配列。
+     */
+    overlaysOf(entry) {
+        const source = this._sources.get(entry.sourceId);
+        if (source === undefined || typeof source.overlays !== "function") {
+            return null;
+        }
+        return source.overlays(entry.rootNode);
+    }
     readValue(entry, path, indexes) {
         const source = this._sources.get(entry.sourceId);
         if (source === undefined) {
@@ -573,6 +596,60 @@ class DevtoolsCore {
             });
         }
         this._roster.set(source.id, entries);
+    }
+    /**
+     * key の実測台帳から stateElement 区分の stat を探すか作る（ingest 用）。
+     * payload の stateElement がオブジェクトでない（旧 payload / 直接生成 token）
+     * ときは null 区分 = 全ツリー合算面に積む。
+     */
+    _statFor(map, key, stateElement) {
+        let entries = map.get(key);
+        if (entries === undefined) {
+            entries = [];
+            map.set(key, entries);
+        }
+        const element = typeof stateElement === "object" && stateElement !== null ? stateElement : null;
+        for (const entry of entries) {
+            if (element === null ? entry.stateElementRef === null : entry.stateElementRef?.deref() === element) {
+                return entry;
+            }
+        }
+        const created = {
+            stateElementRef: element === null ? null : new WeakRef(element),
+            count: 0,
+            zeroSubscriberCount: 0,
+        };
+        entries.push(created);
+        return created;
+    }
+    /**
+     * key の実測を element のツリーへスコープして集計する（照会用）。
+     * null 区分（ツリー識別の無い旧 payload）は常に合算に含める。GC 済みツリーの
+     * 区分は遅延剪定（wiring 台帳の WeakRef pruning と同じ）。実測ゼロは undefined
+     * （= 宣言だけあって一度も観測していない）に畳む。
+     */
+    _measuredFor(map, key, element) {
+        const entries = map.get(key);
+        if (entries === undefined) {
+            return undefined;
+        }
+        let count = 0;
+        let zeroSubscriberCount = 0;
+        for (let i = entries.length - 1; i >= 0; i--) {
+            const ref = entries[i].stateElementRef;
+            if (ref !== null && ref.deref() === undefined) {
+                entries.splice(i, 1);
+                continue;
+            }
+            if (ref === null || ref.deref() === element) {
+                count += entries[i].count;
+                zeroSubscriberCount += entries[i].zeroSubscriberCount;
+            }
+        }
+        if (entries.length === 0) {
+            map.delete(key);
+        }
+        return count === 0 ? undefined : { count, zeroSubscriberCount };
     }
     _collectAlive(set) {
         const alive = [];
@@ -726,20 +803,13 @@ class DevtoolsCore {
                 return;
             }
             case "state:token-emit": {
-                // カバレッジの実測面: emit 回数と空撃ち回数を台帳に積む（§4）。
-                const emitKey = tokenKeyOf(event.kind, event.tokenName);
-                const stat = this._tokenEmitCounts.get(emitKey);
-                if (stat === undefined) {
-                    this._tokenEmitCounts.set(emitKey, {
-                        count: 1,
-                        zeroSubscriberCount: event.subscriberCount === 0 ? 1 : 0,
-                    });
-                }
-                else {
-                    stat.count += 1;
-                    if (event.subscriberCount === 0) {
-                        stat.zeroSubscriberCount += 1;
-                    }
+                // カバレッジの実測面: emit 回数と空撃ち回数を、発火元ツリー
+                // （payload の stateElement — protocol v2 追補）別の区分に積む（§4）。
+                // 識別の無い旧 payload は null 区分 = 全ツリー合算面へ。
+                const stat = this._statFor(this._tokenEmitStats, tokenKeyOf(event.kind, event.tokenName), event.stateElement);
+                stat.count += 1;
+                if (event.subscriberCount === 0) {
+                    stat.zeroSubscriberCount += 1;
                 }
                 this._notify("coverage");
                 this._appendTimeline({
@@ -753,8 +823,8 @@ class DevtoolsCore {
             }
             case "state:watch-fired": {
                 // timeline 行にはしない（発火は高頻度になりうる活動でありカバレッジが受け皿）。
-                const firedKey = pathKeyOf(event.path);
-                this._watchFiredCounts.set(firedKey, (this._watchFiredCounts.get(firedKey) ?? 0) + 1);
+                // 発火元ツリー（payload の stateElement — protocol v2 追補）別に数える。
+                this._statFor(this._watchFiredStats, pathKeyOf(event.path), event.stateElement).count += 1;
                 this._notify("coverage");
                 return;
             }
@@ -1056,6 +1126,11 @@ header .spacer { flex: 1; }
 .notice { color: #efe3a0; padding: 2px 0 6px; }
 .notice button { font: inherit; margin-left: 6px; cursor: pointer; }
 .wiring-row .detail { color: #6f88a3; }
+.overlays-heading { margin-top: 10px; }
+.overlay-row { padding: 1px 0; white-space: nowrap; }
+.overlay-row .prop { color: #b7f0c0; }
+.overlay-row .path { color: #9fd0ff; }
+.overlay-row .detail { color: #6f88a3; }
 .wiring-tabs { padding: 0 0 4px; }
 .wiring-tabs button { font: inherit; cursor: pointer; margin-right: 4px; opacity: 0.6; }
 .wiring-tabs button.active { opacity: 1; font-weight: bold; }
@@ -1437,11 +1512,73 @@ class WcsDevtools extends HTMLElement {
         const keys = core.keysOf(selected);
         if (keys.length === 0) {
             body.append(this._emptyRow("no readable keys (runtime without keys() API?)"));
+            // keys が読めないランタイムでも overlays は独立に読める可能性があるため出す
+            this._renderOverlaysSection(body, selected);
             return;
         }
         for (const key of keys) {
             this._renderTreeNode(body, selected, { path: key, indexes: [] }, key, 0);
         }
+        this._renderOverlaysSection(body, selected);
+    }
+    /**
+     * 選択ツリーのマウント記録セクション（overlays — protocol v2・D20 の可視化）。
+     * マウントの私有キー・getter はオーバーレイ専用アドレス空間（マーカー `#m<id>`）に
+     * 住み、上の状態ツリー（keys/read）には現れないため、ここが唯一の可視面。
+     * overlays 未提供の旧ランタイム（null）ではセクションごと出さない（後方互換）。
+     * マウント無し（空配列）も見出しだけ残さない。pull は State ペインの再描画
+     * （roster / sources 変更・ツリー切替）にそのまま乗る — 専用 polling は足さない
+     * （観測者効果の排除、devtools-tag-design.md の rAF 合流と同じ姿勢）。
+     */
+    _renderOverlaysSection(body, entry) {
+        const overlays = this._core.overlaysOf(entry);
+        if (overlays === null || overlays.length === 0) {
+            return;
+        }
+        const heading = document.createElement("h3");
+        heading.className = "overlays-heading";
+        heading.textContent = `Overlays (${overlays.length} mount${overlays.length === 1 ? "" : "s"})`;
+        body.append(heading);
+        for (const overlay of overlays) {
+            body.append(this._overlayRow(overlay));
+        }
+    }
+    /** マウント記録 1 件の描画（マーカー・コンポーネント・マウント表・私有面）。 */
+    _overlayRow(overlay) {
+        const row = document.createElement("div");
+        row.className = "overlay-row";
+        const marker = document.createElement("span");
+        marker.className = "badge-tag";
+        marker.textContent = overlay.marker;
+        const tag = document.createElement("span");
+        tag.className = "prop";
+        tag.textContent = `<${overlay.componentTag}>`;
+        const prop = document.createElement("span");
+        prop.className = "path";
+        // stateProp はホスト側の `state[.sub]:` 宣言の書き手語彙
+        prop.textContent = overlay.stateProp;
+        row.append(marker, document.createTextNode(" "), tag, document.createTextNode(" "), prop);
+        const details = [];
+        for (const entry of overlay.mountTable) {
+            // 内側接頭辞が空 = ルートエントリ。外側パスへの対応で読ませる
+            details.push(`${entry.inner === "" ? "(root)" : entry.inner} → ${entry.outer}`);
+        }
+        if (overlay.delta > 0) {
+            details.push(`Δ${overlay.delta}`);
+        }
+        if (overlay.privateKeys.length > 0) {
+            details.push(`private: ${overlay.privateKeys.join(", ")}`);
+        }
+        if (overlay.getterKeys.length > 0) {
+            details.push(`getters: ${overlay.getterKeys.join(", ")}`);
+        }
+        if (details.length > 0) {
+            const detail = document.createElement("span");
+            detail.className = "detail";
+            detail.textContent = ` ${details.join(" · ")}`;
+            row.append(detail);
+        }
+        return row;
     }
     _renderTreeNode(container, entry, ref, label, depth) {
         const core = this._core;
@@ -1645,7 +1782,10 @@ class WcsDevtools extends HTMLElement {
             ? "not observing"
             : `observing since ${sinceLabel} (declared vs measured after this point)`;
         body.append(info);
-        const report = core.getCoverageReport();
+        // 選択中のツリーでスコープ（複数ツリーの同名 watch パス / token 名を混ぜない —
+        // wiring のパス文脈と同じ流儀。protocol v2 追補のツリー識別が実測面を分ける）
+        const selected = this._selectedRoster();
+        const report = core.getCoverageReport(selected?.summary.element);
         if (report.length === 0) {
             body.append(this._emptyRow("nothing declared to cover"));
             return;

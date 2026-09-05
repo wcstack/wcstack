@@ -1262,11 +1262,15 @@ async function parse(routerNode) {
  * - `announce="title"`: commit 時点の document.title のスナップショットを
  *   live region へ書き込む（D2）。<wcs-head> の静的 title は mutate() 内で同期に
  *   差し替わるため、ここでは必ず新ルートの値が読める。バインド title の遅延窓・
- *   ナビゲーション外の title 変化には追従しない（README の明記された制限）。
- * - `focus="heading"`: リーフ route が挿入した内容の最初の h1〜h6 に
- *   tabindex="-1" を付けて focus() する。見出し不在時は何もしない — 旧フォーカス
- *   要素が遷移で消えていればブラウザが body へ落とすため、結果は仕様既定の
- *   focusReset と同等に収束する（§3-4 の規定）。
+ *   ナビゲーション外の title 変化・同一 title 連続遷移の再読み上げには追従しない
+ *   （README の明記された制限）。
+ * - `focus="heading"`: リーフ route が挿入した内容の最初の可視 h1〜h6 に
+ *   tabindex="-1" を付けて focus() する。可視見出しが無ければ、仕様既定の
+ *   focusReset（after-transition）を自前で再現する — [autofocus] があればそこへ、
+ *   無ければ blur で body へ落とす（§3-4 の規定）。focus= オプトインは Navigation
+ *   API 経路で focusReset: "manual" を渡してブラウザ既定を止めているため、旧
+ *   フォーカス要素（永続ナビのリンク等）が遷移後も生き残るケースでは、ここで
+ *   落とさない限りフォーカスが前画面に取り残される。
  */
 function applyA11yPolicies(routerNode, matchResult) {
     if (routerNode.announcePolicy === "title") {
@@ -1285,13 +1289,28 @@ function applyA11yPolicies(routerNode, matchResult) {
             }
             heading.focus();
         }
+        else {
+            // 仕様既定の focusReset の再現（優先順も仕様と同じ: [autofocus] → body）。
+            // フォールバック経路（pushState）にはブラウザのリセットが元々無いため、
+            // ここで両経路の挙動が揃う（§3-2 の scroll と同じ構図）。
+            const autofocus = document.querySelector("[autofocus]");
+            if (autofocus !== null) {
+                autofocus.focus();
+            }
+            else if (document.activeElement instanceof HTMLElement) {
+                document.activeElement.blur();
+            }
+        }
     }
 }
 /**
- * リーフ route のトップレベルノード列を document order で走査し、最初の見出しを
- * 返す。祖先 route の内容へは遡らない — 読者が「新しい画面」と認識する単位は
- * リーフである（docs/a11y-design.md §3-4）。ルート内容は Comment placeholder の
- * 兄弟として挿入されるため安定した「箱」が無く、内容から探すのが唯一の現実解。
+ * リーフ route のトップレベルノード列を document order で走査し、最初の可視の
+ * 見出しを返す。祖先 route の内容へは遡らない — 読者が「新しい画面」と認識する
+ * 単位はリーフである（docs/a11y-design.md §3-4）。ルート内容は Comment placeholder
+ * の兄弟として挿入されるため安定した「箱」が無く、内容から探すのが唯一の現実解。
+ *
+ * 非表示（hidden / display:none 等）の見出しへの focus() は no-op になるため、
+ * checkVisibility でスキップする。未実装環境（happy-dom）では可視扱い。
  */
 function findFirstHeading(nodes) {
     for (const node of nodes) {
@@ -1299,14 +1318,21 @@ function findFirstHeading(nodes) {
             continue;
         const element = node;
         if (/^H[1-6]$/.test(element.tagName)) {
-            return element;
+            if (isVisible(element)) {
+                return element;
+            }
+            continue;
         }
-        const descendant = element.querySelector("h1,h2,h3,h4,h5,h6");
-        if (descendant !== null) {
-            return descendant;
+        for (const descendant of element.querySelectorAll("h1,h2,h3,h4,h5,h6")) {
+            if (isVisible(descendant)) {
+                return descendant;
+            }
         }
     }
     return null;
+}
+function isVisible(element) {
+    return element.checkVisibility?.() !== false;
 }
 
 function testPath(route, path, segments) {
@@ -2247,11 +2273,17 @@ class Router extends HTMLElement {
     get a11yRegion() {
         return this._a11yRegion;
     }
+    /**
+     * `focus=` / `announce=` は有効値の union へ正規化して露出する。空文字やタイポは
+     * 「ポリシーなし」= null — intercept の focusReset 決定（_onNavigateFunc）と
+     * applyA11yPolicies の適用判定が同じ値を見るため、「manual だけ渡して実フォーカス
+     * 移動が無い」不整合が構造的に起きない（docs/a11y-design.md §3-5）。
+     */
     get focusPolicy() {
-        return this.getAttribute('focus');
+        return this.getAttribute('focus') === 'heading' ? 'heading' : null;
     }
     get announcePolicy() {
-        return this.getAttribute('announce');
+        return this.getAttribute('announce') === 'title' ? 'title' : null;
     }
     /**
      * `announce=` 用 live region を <wcs-router> 直下に空のまま用意する
@@ -2614,8 +2646,10 @@ class Router extends HTMLElement {
             // 契約の変更にあたる（docs/a11y-design.md §3-1）。same-match の扱いは
             // docs/router-state-contract-design.md §4.4 / D6b。
             scroll: sameMatchScrollManual ? "manual" : "after-transition",
-            // focus= 指定時のみ manual。渡さないと router のフォーカス移動とブラウザの
-            // after-transition リセットが二重処理になる（docs/a11y-design.md §3-5）。
+            // focus= が有効値のときのみ manual。渡さないと router のフォーカス移動と
+            // ブラウザの after-transition リセットが二重処理になる（docs/a11y-design.md §3-5）。
+            // focusPolicy は正規化済み getter — 空文字・未知値は null になり仕様既定へ
+            // 委譲されるため、「manual だけ渡して何もしない」状態は構造的に生じない。
             // same-match は常に manual — 1 打鍵ごとにフォーカスが body へ飛ぶ事故の防止。
             focusReset: sameMatch || routesNode.focusPolicy !== null ? "manual" : "after-transition",
         });
@@ -3091,10 +3125,12 @@ class Router extends HTMLElement {
     }
 }
 
-// 生成 anchor へミラーする固定属性（docs/a11y-design.md §5）。`aria-*` は開集合なので
-// observedAttributes には載せられず、anchor 生成時の一括コピーのみ（接続後の動的
-// aria-* 変更 — data-wcs バインド経由を含む — には追従しない。README の明記された制限）。
-const MIRRORED_ATTRIBUTES = ['title', 'rel', 'target', 'download', 'hreflang'];
+// 生成 anchor へミラーする固定属性（docs/a11y-design.md §5）。`lang` / `dir` は SR の
+// 読み上げ言語・方向に直結するため含める（多言語ナビで anchor 側に届かないと
+// 読み上げが崩れる）。`aria-*` は開集合なので observedAttributes には載せられず、
+// anchor 生成時の一括コピーのみ（接続後の動的 aria-* 変更 — data-wcs バインド経由を
+// 含む — には追従しない。README の明記された制限）。
+const MIRRORED_ATTRIBUTES = ['title', 'rel', 'target', 'download', 'hreflang', 'lang', 'dir'];
 class Link extends HTMLElement {
     static get observedAttributes() {
         return ['to', ...MIRRORED_ATTRIBUTES];
@@ -3236,7 +3272,7 @@ class Link extends HTMLElement {
             const nextSibling = this.nextSibling;
             link = document.createElement('a');
             this._setAnchorHref(link, this._path);
-            // ホスト属性の転送: `aria-*` prefix + 固定 5 名の一括コピー。
+            // ホスト属性の転送: `aria-*` prefix + 固定 7 名の一括コピー。
             // to / style / class は除外 — ホストは display:none であり、class は active 契約を持つ。
             for (const attr of Array.from(this.attributes)) {
                 if (attr.name.startsWith('aria-') || MIRRORED_ATTRIBUTES.includes(attr.name)) {
@@ -3642,7 +3678,7 @@ function bootstrapRouter(config, registry) {
     registerComponents(registry);
 }
 
-var version = "2.0.0";
+var version = "2.1.0";
 var pkg = {
 	version: version};
 

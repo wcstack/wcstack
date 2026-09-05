@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/testing",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Headless test helpers for wcstack pages: mount HTML under happy-dom, await bindings, read/write state, settle updates - the README recipe as one import.",
   "type": "module",
   "main": "./dist/index.esm.js",
@@ -43,8 +43,8 @@
   },
   "license": "MIT",
   "peerDependencies": {
-    "@wcstack/server": "^2.0.0",
-    "@wcstack/state": "^2.0.0",
+    "@wcstack/server": "^2.1.0",
+    "@wcstack/state": "^2.1.0",
     "happy-dom": ">=20"
   },
   "peerDependenciesMeta": {

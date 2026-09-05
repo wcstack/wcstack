@@ -73,6 +73,29 @@ interface IStateElementSummaryLike {
     readonly keyedListPaths?: ReadonlySet<string> | null;
 }
 /**
+ * マウント記録 1 件の要約（overlays の要素 — protocol v2・D20 の可視化）。
+ * マウントの私有キー・getter はオーバーレイ専用アドレス空間（マーカー `#m<id>`）に
+ * 住み、状態ツリーの keys/read には現れないため、これが唯一の可視面になる。
+ */
+interface IMountOverlaySummaryLike {
+    /** D20 の予約セグメント（`#m<id>`） */
+    readonly marker: string;
+    /** マウントされたコンポーネントのタグ名（小文字） */
+    readonly componentTag: string;
+    readonly stateProp: string;
+    /** マウント表: 内側接頭辞（空 = ルートエントリ）→ 外側パス */
+    readonly mountTable: readonly {
+        readonly inner: string;
+        readonly outer: string;
+    }[];
+    /** `$n` 補正の Δ（ルート接頭辞のワイルドカード数） */
+    readonly delta: number;
+    /** 私有キー（オーバーレイ空間に住む own data key） */
+    readonly privateKeys: readonly string[];
+    /** マーカーパスに載る getter のキー */
+    readonly getterKeys: readonly string[];
+}
+/**
  * 宣言レベルのバインディング 1 件（getDeclaredBindings の要素・protocol v1 追補）。
  * ランタイム正本パーサの結果が構造的に流れる。宣言タプルで dedupe 済みの
  * 「宣言の集合」であり、レンダリング行数に比例したインスタンス列ではない。
@@ -128,6 +151,12 @@ type DevtoolsEventLike = {
     readonly tokenName: string;
     readonly args: readonly unknown[];
     readonly subscriberCount: number;
+    /**
+     * 発火元ツリーの state 要素（protocol v2 追補 2026-09-05・additive）。
+     * 旧ランタイム・registry 非経由の token の payload には無い（optional）—
+     * 無い emit の実測はツリー別に分けられないため、全ツリーの照会へ合算で残す。
+     */
+    readonly stateElement?: unknown;
 } | {
     readonly type: "state:watch-error";
     readonly phase: "prime" | "evaluate" | "handler";
@@ -140,6 +169,13 @@ type DevtoolsEventLike = {
 } | {
     readonly type: "state:watch-fired";
     readonly path: string;
+    /**
+     * 発火元ツリーの state 要素（protocol v2 追補 2026-09-05・additive）。
+     * 複数ツリーが同名 watch パスを宣言するページで実測台帳をツリー別に分ける。
+     * 旧ランタイムの payload には無い（optional）— 無い発火は全ツリーの照会へ
+     * 合算で残す。
+     */
+    readonly stateElement?: unknown;
 } | {
     readonly type: "state:path-unresolved";
     readonly source: "binding" | "watch";
@@ -190,6 +226,12 @@ interface IDevtoolsSourceLike {
     getStateElements(): IStateElementSummaryLike[];
     /** protocol v1 追補 API。古いランタイムには無い可能性があるため optional 扱いで呼ぶ */
     keys?(rootNode: Node): string[];
+    /**
+     * protocol v2 API（optional 扱いで呼ぶ）。rootNode のツリーに載っている
+     * マウント記録の列挙（D20 の可視化）。マウントが無ければ空配列。
+     * v2 より前のランタイムには無いため、無ければ UI はセクションごと出さない。
+     */
+    overlays?(rootNode: Node): IMountOverlaySummaryLike[];
     read(rootNode: Node, path: string, indexes?: number[]): unknown;
     write(rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
     /**
@@ -295,13 +337,14 @@ declare class DevtoolsCore {
     private _changeListeners;
     /** 観測開始時刻（connect 時の performance.now。未接続は null）。 */
     private _observingSince;
-    /** watch 発火回数（path → count）。カバレッジの実測面。
-     *  既知の限界: `state:watch-fired` / `state:token-emit` の payload はツリー識別を
-     *  持たないため、複数ツリーが同名の watch パス / token 名を宣言するページでは
-     *  実測が合算される（ツリー別に分けるにはプロトコル追補が要る — slice 29 記録）。 */
-    private _watchFiredCounts;
-    /** token emit 実測（kind + NUL + name → 回数と空撃ち回数）。上の限界注記と同じ。 */
-    private _tokenEmitCounts;
+    /** watch 発火実測（path → ツリー別区分列）。カバレッジの実測面。
+     *  protocol v2 追補で payload がツリー識別（stateElement）を持つようになり、
+     *  複数ツリーが同名 watch パスを宣言するページでもツリー別に数えられる。
+     *  識別の無い旧 payload は null 区分に積み、どのツリーの照会にも合算で残す
+     *  （slice 29 non-blocking 記録の解消）。 */
+    private _watchFiredStats;
+    /** token emit 実測（kind + NUL + name → ツリー別区分列）。上の追補注記と同じ。 */
+    private _tokenEmitStats;
     /** 観測開始以降に一度でも attach を観測した宣言キー（attachKeyOf）。
      *  live 配線台帳は WeakRef pruning / binding-removed で縮むため、binding
      *  カバレッジの attached 判定はこちらで行う（瞬間値で判定すると行の
@@ -345,14 +388,40 @@ declare class DevtoolsCore {
      * 配線カバレッジ（§4）: 宣言面（watchPaths / token 宣言 / canonical declared）と
      * 実測面（watch-fired・token-emit の台帳・live 配線台帳）の突合。
      * 「観測開始以降」の実測であることは observingSince を UI が常時表示して明示する。
+     *
+     * watch / token の実測は各行の属するツリー（roster entry の element）でスコープする
+     * （protocol v2 追補 — 複数ツリーの同名宣言を合算しない）。ツリー識別の無い
+     * 旧 payload 由来の実測はどの行にも合算で残す（欠測を欠落にしない）。
+     * stateElement を渡すとそのツリーの宣言行だけに絞る（getWiringForPath と同じ流儀）。
+     * binding 節（canonical declared × ever-attach）は宣言・実測ともツリー識別を
+     * 持たないため絞り込みの対象外。
      */
-    getCoverageReport(): ICoverageEntry[];
+    getCoverageReport(stateElement?: unknown): ICoverageEntry[];
     /** roster entry の state からトップレベルキーを列挙（keys 未実装ランタイムは空） */
     keysOf(entry: IRosterEntry): string[];
+    /**
+     * roster entry のツリーに載るマウント記録（overlays — protocol v2・D20 の可視化）。
+     * overlays を実装しないランタイム（v2 より前）では null — UI はセクションごと
+     * 出さない（後方互換）。マウントが無いツリーは空配列。
+     */
+    overlaysOf(entry: IRosterEntry): IMountOverlaySummaryLike[] | null;
     readValue(entry: IRosterEntry, path: string, indexes?: number[]): unknown;
     writeValue(entry: IRosterEntry, path: string, value: unknown, indexes?: number[]): void;
     private _notify;
     private _refreshRosterOf;
+    /**
+     * key の実測台帳から stateElement 区分の stat を探すか作る（ingest 用）。
+     * payload の stateElement がオブジェクトでない（旧 payload / 直接生成 token）
+     * ときは null 区分 = 全ツリー合算面に積む。
+     */
+    private _statFor;
+    /**
+     * key の実測を element のツリーへスコープして集計する（照会用）。
+     * null 区分（ツリー識別の無い旧 payload）は常に合算に含める。GC 済みツリーの
+     * 区分は遅延剪定（wiring 台帳の WeakRef pruning と同じ）。実測ゼロは undefined
+     * （= 宣言だけあって一度も観測していない）に畳む。
+     */
+    private _measuredFor;
     private _collectAlive;
     private _appendTimeline;
     private _labelOf;
@@ -415,6 +484,18 @@ declare class WcsDevtools extends HTMLElement {
     private _rosterKey;
     private _selectedRoster;
     private _renderStatePane;
+    /**
+     * 選択ツリーのマウント記録セクション（overlays — protocol v2・D20 の可視化）。
+     * マウントの私有キー・getter はオーバーレイ専用アドレス空間（マーカー `#m<id>`）に
+     * 住み、上の状態ツリー（keys/read）には現れないため、ここが唯一の可視面。
+     * overlays 未提供の旧ランタイム（null）ではセクションごと出さない（後方互換）。
+     * マウント無し（空配列）も見出しだけ残さない。pull は State ペインの再描画
+     * （roster / sources 変更・ツリー切替）にそのまま乗る — 専用 polling は足さない
+     * （観測者効果の排除、devtools-tag-design.md の rAF 合流と同じ姿勢）。
+     */
+    private _renderOverlaysSection;
+    /** マウント記録 1 件の描画（マーカー・コンポーネント・マウント表・私有面）。 */
+    private _overlayRow;
     private _renderTreeNode;
     private _beginEdit;
     private _renderWiringPane;

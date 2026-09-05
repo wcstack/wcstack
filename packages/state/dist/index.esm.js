@@ -3655,8 +3655,15 @@ class Token {
 // EventToken は共有 pub/sub プリミティブ Token の薄い特化（element→state 方向）。
 // instanceof による型判別を成立させるため独立クラスとして維持する。
 class EventToken extends Token {
-    constructor(name) {
+    /**
+     * 属する state 要素（devtools のツリー識別 — protocol v2 追補）。
+     * registry（getOrCreateEventToken）経由の生成でのみ渡る optional 参照。
+     * 寿命は registry 側の WeakMap が管理する（CommandToken と同じ位置づけ）。
+     */
+    _stateElement;
+    constructor(name, stateElement) {
         super(name);
+        this._stateElement = stateElement;
     }
     emit(...args) {
         if (devtoolsSink !== null) {
@@ -3666,6 +3673,7 @@ class EventToken extends Token {
                 tokenName: this.name,
                 args,
                 subscriberCount: this.size,
+                stateElement: this._stateElement,
             });
         }
         return super.emit(...args);
@@ -3681,7 +3689,8 @@ function getOrCreateEventToken(stateElement, name) {
     }
     let token = registry.get(name);
     if (typeof token === "undefined") {
-        token = new EventToken(name);
+        // stateElement を渡すのは devtools のツリー識別（protocol v2 追補）のため
+        token = new EventToken(name, stateElement);
         registry.set(name, token);
     }
     return token;
@@ -3806,8 +3815,16 @@ function detachEventTokenHandler(binding) {
 // instanceof による型判別を成立させるため独立クラスとして維持する。
 //
 class CommandToken extends Token {
-    constructor(name) {
+    /**
+     * 属する state 要素（devtools のツリー識別 — protocol v2 追補）。
+     * registry（getOrCreateCommandToken）経由の生成でのみ渡る optional 参照で、
+     * token の寿命は registry 側の WeakMap が state 要素に紐づけている（ここが
+     * 寿命を延ばす新しい経路にはならない）。emit の payload にだけ載せる。
+     */
+    _stateElement;
+    constructor(name, stateElement) {
         super(name);
+        this._stateElement = stateElement;
     }
     emit(...args) {
         if (devtoolsSink !== null) {
@@ -3819,6 +3836,7 @@ class CommandToken extends Token {
                 tokenName: this.name,
                 args,
                 subscriberCount: this.size,
+                stateElement: this._stateElement,
             });
         }
         return super.emit(...args);
@@ -9164,7 +9182,7 @@ async function buildBindings(root) {
     }
 }
 
-var version = "2.0.0";
+var version = "2.1.0";
 var pkg = {
 	version: version};
 
@@ -11186,7 +11204,8 @@ function getOrCreateCommandToken(stateElement, name) {
     }
     let token = registry.get(name);
     if (typeof token === "undefined") {
-        token = new CommandToken(name);
+        // stateElement を渡すのは devtools のツリー識別（protocol v2 追補）のため
+        token = new CommandToken(name, stateElement);
         registry.set(name, token);
     }
     return token;
@@ -12774,8 +12793,10 @@ function fireOne(hit) {
             }
             // 正常発火の観測（設計書 §11 の予約イベント・配線カバレッジの実測面）。
             // 値は載せない。イベント生成は sink 接続時のみ（ゼロコスト契約）。
+            // stateElement は発火元ツリーの識別（protocol v2 追補）— これが無いと
+            // 複数ツリーが同名 watch パスを宣言するページで実測が合算される。
             if (devtoolsSink !== null) {
-                devtoolsSink({ type: "state:watch-fired", path: entry.path });
+                devtoolsSink({ type: "state:watch-fired", path: entry.path, stateElement });
             }
             entry.handler.call(state, cur, prev, ...indexes);
         });
@@ -15317,6 +15338,14 @@ function updatedCallback(target, refs, receiver, handler) {
             }
             const pathInfo = ref.absolutePathInfo.pathInfo;
             const pathName = pathInfo.path;
+            // D20/D21: マーカーパス（`#m<id>` セグメント = マウント私有キーの内部アドレス）は
+            // マウントインスタンスの私有語彙。ルートの $updatedCallback へ素通しすると、
+            // 作者に解釈不能で再初期化のたびに変わる内部 id が漏れるため配送しない
+            // （`#` はパス文法で書けない文字 — ツリーパスとは構造的に衝突しない）。
+            // 私有キーの可視化は devtools の overlays() 経由（プロトコル v2）。
+            if (pathName.indexOf("#") !== -1) {
+                continue;
+            }
             paths.add(pathName);
             if (pathInfo.wildcardCount > 0) {
                 const indexes = getScopedIndexes(ref.listIndex, pathInfo.wildcardCount);
@@ -15347,6 +15376,10 @@ function updatedCallback(target, refs, receiver, handler) {
                 }
                 const path = ref.absolutePathInfo.pathInfo.path;
                 if (path !== volume.mountPath && !path.startsWith(prefix)) {
+                    continue;
+                }
+                // マーカーパス（マウント私有キー）はボリューム相対配送にも漏らさない（上と同じ D20/D21）
+                if (path.indexOf("#") !== -1) {
                     continue;
                 }
                 const relative = path === volume.mountPath ? "" : path.slice(prefix.length);
@@ -16386,6 +16419,15 @@ class State extends HTMLElementBase {
     static getBindingsReady(rootNode) {
         return getBindingsReady(rootNode);
     }
+    /**
+     * `mount` の動的変更は未サポート（再マウントは非目標 — 設計書 §4-7）。
+     * 初期化済み要素での変更は無言で捨てず warn で知らせる。初期化前の属性設定
+     * （パース時・接続前の setAttribute）は正規の使い方なので黙る。
+     * `name` は connectedCallback 冒頭で fail-fast 済みなので観測しない。
+     */
+    static get observedAttributes() {
+        return ["mount"];
+    }
     __state;
     _hasUpdatedCallback = false;
     /** enable-ssr のスナップショットから初期化された（D14: ボリュームはデータを採用する） */
@@ -16396,7 +16438,6 @@ class State extends HTMLElementBase {
     // $1 等のインデックスを読んだ getter パス（実行時検出）。位置のみ変わった行の
     // 静的子展開はこの集合の subtree に限定される。追加のみ・クリアしない（安全側）。
     _indexDependentGetterPaths = new Set();
-    _name = 'default';
     _initialized = false;
     _initializePromise;
     _resolveInitialize = null;
@@ -16530,8 +16571,14 @@ class State extends HTMLElementBase {
         }
         this._resolveLoading?.();
     }
-    get name() {
-        return this._name;
+    attributeChangedCallback(_name, oldValue, newValue) {
+        // observedAttributes は "mount" のみ。同値 set（oldValue === newValue）は変更ではない
+        if (!this._initialized || oldValue === newValue) {
+            return;
+        }
+        console.warn(`[@wcstack/state] Changing the "mount" attribute after initialization is not supported and is ignored ` +
+            `(was ${oldValue === null ? "absent" : `"${oldValue}"`}, now ${newValue === null ? "absent" : `"${newValue}"`}). ` +
+            `Remove this <${config.tagNames.state}> element and create a new one with the desired mount path instead.`);
     }
     _loadFromSsrElement() {
         if (!this.hasAttribute('enable-ssr'))
@@ -16571,7 +16618,9 @@ class State extends HTMLElementBase {
             else {
                 const script = this.querySelector('script[type="module"]');
                 if (script) {
-                    return await loadFromInnerScript(script, `${this._name}`);
+                    // sourceURL ラベル。v2 はルートに 1 ツリーなので名前次元は無く、要素の
+                    // タグ名（DCC 経路が host のタグ名を渡すのと同じ流儀）で特定十分
+                    return await loadFromInnerScript(script, config.tagNames.state);
                 }
                 else {
                     const timerId = setTimeout(() => {

@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/speech",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Declarative Web Speech components for Web Components. Framework-agnostic SpeechSynthesis (TTS) and SpeechRecognition (STT) primitives via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",

@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/view-transition",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Declarative View Transition arbiter for Web Components. Framework-agnostic policy tag that animates @wcstack/router route swaps and @wcstack/state list/branch updates via the transition-runner protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",

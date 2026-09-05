@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/intersection",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Declarative IntersectionObserver component for Web Components. Framework-agnostic visibility primitive via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",
