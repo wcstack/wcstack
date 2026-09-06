@@ -70,7 +70,7 @@ Claude Code reads [CLAUDE.md](./CLAUDE.md) (the more detailed, tool-specific gui
 
 ## Packages
 
-Forty-seven independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
+Forty-eight independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
 
 ### What if HTML had reactive data binding?
 
@@ -297,6 +297,7 @@ const html = await renderToString(`
 - [`@wcstack/speech`](packages/speech/) — Declarative speech with `<wcs-speak>` (text-to-speech as a command-token) and `<wcs-listen>` (recognition results as event-token state).
 - [`@wcstack/permission`](packages/permission/) — Declarative Permissions API monitor with `<wcs-permission>` exposing live `granted`/`denied`/`prompt` state. Read-only watcher (no commands); pairs with feature nodes like `<wcs-geo>`.
 - [`@wcstack/network`](packages/network/) — Declarative Network Information monitor with `<wcs-network>` exposing live `effectiveType`/`downlink`/`rtt`/`saveData` state for adaptive loading. Read-only watcher (no commands, no attributes); unsupported (Firefox/Safari) is the common case, not an edge case.
+- [`@wcstack/media-query`](packages/media-query/) — Declarative `matchMedia` monitor with `<wcs-media-query query="...">` exposing live `matched`/`media`/`supported` state for `prefers-color-scheme`, `prefers-reduced-motion` and viewport breakpoints. Read-only watcher (no commands); changing `query` re-subscribes, and the output is `matched` (not `matches`) so `Element.prototype.matches()` stays intact.
 - [`@wcstack/screen-orientation`](packages/screen-orientation/) — Declarative Screen Orientation monitor + `lock`/`unlock` commands with `<wcs-screen-orientation>` exposing `type`/`angle`/`portrait`/`landscape`. Monitoring needs no `_gen` guard (synchronous); `lock()` does (async, independent of monitoring).
 - [`@wcstack/fullscreen`](packages/fullscreen/) — Declarative Fullscreen API with `<wcs-fullscreen target="...">`, reusing `<wcs-intersect>`'s target-resolution pattern. `active` tracks whether the resolved target is the document's `fullscreenElement`.
 - [`@wcstack/picture-in-picture`](packages/picture-in-picture/) — Declarative Picture-in-Picture with `<wcs-pip target="...">` (target must be a `<video>` element). Same target-resolution pattern as `<wcs-fullscreen>`.
@@ -441,6 +442,7 @@ wcstack/
 │   ├── speech/        # @wcstack/speech
 │   ├── permission/    # @wcstack/permission
 │   ├── network/       # @wcstack/network
+│   ├── media-query/   # @wcstack/media-query
 │   ├── screen-orientation/     # @wcstack/screen-orientation
 │   ├── fullscreen/             # @wcstack/fullscreen
 │   ├── picture-in-picture/     # @wcstack/picture-in-picture

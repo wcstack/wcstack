@@ -11,6 +11,7 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 ### Added
 
 - `@wcstack/state`: `wcs/default-getter-mismatch` — a two-way binding on a `static wcBindable` property that omits `getter` now warns once per element and property when the event's `detail` cannot be what the property holds: `detail` is `undefined` while the element property has a value (a plain `Event`, or a forgotten `detail`), or `detail` is an object carrying a `<propName>` key while the property is not an object (a `{ value: … }` wrapper). The write is still applied as-is; occurrence properties (`semantics: "event"`) are exempt. Both #234 and #236 were diagnosed by staring at a page that had gone quiet — this makes the second class loud.
+- `@wcstack/media-query`: new package — `<wcs-media-query query="(prefers-color-scheme: dark)">` wraps `window.matchMedia` as an I/O node, publishing `matched` / `media` / `supported` through one `wcs-media-query:change` event with `:state(matched)` / `:state(supported)` reflection. Changing `query` while connected re-subscribes (generation-guarded so a stale list can never write), old-Safari `addListener` is handled, and the output is named `matched` because `Element.prototype.matches()` already exists on every element.
 
 ### Changed
 
