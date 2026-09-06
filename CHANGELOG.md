@@ -13,6 +13,7 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 - Root and `@wcstack/state` READMEs brought up to date with v2; CDN snippets pinned to 2.1.0 (#228).
 - VS Code extension: dedicated issue form and `bugs` / `qna` / `homepage` / `repository.directory` Marketplace metadata; `vsce package` passes base URLs so README links resolve inside the monorepo (#229).
 - Root `CHANGELOG.md` and `docs/migration-v2.md` added.
+- `@wcstack/state` README: documented what a two-way binding writes to state when a `static wcBindable` element fires its change event — `getter(event)`, defaulting to the wc-bindable protocol's `(e) => e.detail` (the whole `detail`, as-is), with the two conforming producer shapes and the `properties[].getter` override. No runtime change: the default is normative for every wc-bindable adapter (#236).
 
 ### Fixed
 
