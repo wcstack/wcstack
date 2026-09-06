@@ -56,7 +56,7 @@ app.manifest.json:1:3 error wcs/manifest-broken Broken manifest JSON: ...
 
 ## Declaring a state contract (`stateSchema`)
 
-Without a contract, a path the validator cannot resolve is only a **warning** (`wcs/binding-path-missing`): `count` may well exist at runtime even when the inline script cannot be read statically. Put an `application` sidecar next to (or above) the HTML and the same typo becomes an **error**:
+Without a contract, a path the validator cannot resolve is only a **warning** (`wcs/binding-path-missing`): `count` may well exist at runtime even when the inline script cannot be read statically. Note that a list starting as `[]` does not need a contract just to name its row fields — the analyzer reads them from the row literals in the assignments that add or replace rows (`this.items = this.items.concat({ id, kind: "general" })`, `.toSpliced(i, n, { … })`, `.with(i, { … })`, `[...this.items, { … }]`); only a row passed as a variable (`concat(row)`) is invisible to it. Put an `application` sidecar next to (or above) the HTML and the same typo becomes an **error**:
 
 ```json
 {

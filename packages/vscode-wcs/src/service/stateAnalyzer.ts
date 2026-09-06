@@ -103,6 +103,11 @@ export function analyzeStatePaths(scriptContent: string): PathCandidate[] {
     pushListKeyPaths(listKeyEntry, paths);
   }
 
+  // 行を足す / 置き換える代入式（`this.items = this.items.concat({ … })` 等）の行リテラルから
+  // リスト行の形を補う。初期値が `[]` のリストは行フィールドが読めない（Issue #239）。
+  // 明示宣言・$streams・$listKeys の候補が揃った後に走らせ、無いパスだけを足す。
+  collectRowShapesFromAssignments(scriptContent, paths);
+
   return paths;
 }
 
@@ -400,6 +405,158 @@ function extractStringLiteralValue(value: string | undefined): string | null {
   if (!value) return null;
   const match = value.trim().match(/^["']([^"'\\]*)["']$/);
   return match && match[1].length > 0 ? match[1] : null;
+}
+
+// ============================================================
+// 代入式の行リテラルから導出する行の形（Issue #239）
+// ============================================================
+
+/**
+ * 「行を足す / 置き換える」代入式を捕捉する。
+ *
+ * 左辺: `this.<ident>` または `this["<dotted path>"]` への単純代入（`=` のみ。`==` / `=>` と
+ * 複合代入は除外）。右辺は次のどちらか:
+ * - 配列リテラルで始まる（`[...this.items, { … }]` / `[{ … }, ...this.items]`）→ group 3 = `[`
+ * - `.concat(` / `.toSpliced(` / `.with(` の呼び出しを含む → group 4 = `(`
+ *   代入から呼び出しまでの区間は `;` `=` `{` `}` を跨がない（別の文・別のブロックへ
+ *   流れ込まない）。アロー `=>` だけは許容し `filter(r => r.ok).concat({ … })` を通す。
+ *
+ * マスク済み鏡像で走査するため引用符付きパス（group 2）は中身が空白 — 呼び出し側が
+ * `d` フラグの indices で原文から取り直す。
+ */
+const ROW_ASSIGN = new RegExp(
+  String.raw`\bthis\s*(?:\.\s*([$\w]+)|\[\s*["']([^"']+)["']\s*\])\s*=(?![=>])\s*(?:(\[)|(?:[^;={}]|=>)*?\.\s*(?:concat|toSpliced|with)\s*(\())`,
+  'gd',
+);
+
+/**
+ * メソッド本体などに現れる「行を足す / 置き換える」代入式の行リテラルから、リスト行の
+ * フィールド候補（`<list>.*.<field>` とその子）を導出する。
+ *
+ * `this.items = this.items.concat({ id: newId(), kind: "general" })` の形は、初期値と
+ * 同じ確度で行の形を宣言している。初期値が `[]` のリストではこれが唯一の手掛かりで、
+ * これが無いと `for` 行内の `.kind` が `wcs/binding-path-missing` になる（Issue #239）。
+ *
+ * 規則:
+ * - 対象は **既にリストと分かっているパス**（`<path>.*` が候補にある）だけ。宣言の無い
+ *   パスをここで新設しない。`$` ルート（API 名前空間）と `*` 入りパスは対象外。
+ * - 行リテラルは呼び出しの引数（`concat({ … })` / `toSpliced(i, n, { … })` / `with(i, { … })`）、
+ *   引数の配列リテラルの要素（`concat([{ … }])`）、右辺の配列リテラルの要素。識別子で渡された
+ *   行（`concat(row)`）は読めない（fold to unknown）。
+ * - 短縮プロパティ（`{ id, kind }`）も名前だけ拾う。スプレッド（`...r`）・算出キーは無視。
+ * - 既存候補は上書きしない（明示宣言 > `$streams` > `$listKeys` > ここ）。型ヒントは
+ *   リテラル値から推定するが、初期値ではないので `rawInitial` は付けない。
+ * - script 全体を走査する（getter / setter / `$connectedCallback` / `$watch` ハンドラ /
+ *   モジュール直下の関数も対象）。コメント・文字列の中は鏡像で潰れているので拾わない。
+ */
+function collectRowShapesFromAssignments(script: string, paths: PathCandidate[]): void {
+  const scan = maskCommentsAndStrings(script);
+  ROW_ASSIGN.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = ROW_ASSIGN.exec(scan)) !== null) {
+    const span = match.indices![1] ?? match.indices![2];
+    const listPath = script.slice(span[0], span[1]);
+    if (listPath.startsWith('$') || listPath.includes('*') || !hasPath(paths, `${listPath}.*`)) continue;
+
+    const openIndex = match.index + match[0].length - 1;
+    const isArrayLiteral = scan[openIndex] === '[';
+    const inner = extractDelimitedContent(script, scan, openIndex, scan[openIndex], isArrayLiteral ? ']' : ')');
+    // 右辺の配列リテラルは要素だけ（配列の配列は行ではない）。呼び出し引数は
+    // 配列リテラル 1 段の中も見る（`concat([{ … }])`）。
+    for (const literal of collectRowLiterals(inner, isArrayLiteral ? 0 : 1)) {
+      for (const field of extractRowLiteralFields(literal)) {
+        pushRowFieldPaths(`${listPath}.*.${field.name}`, field, paths, 1);
+      }
+    }
+  }
+}
+
+/** 要素列（引数列）からオブジェクトリテラルを集める。`arrayDepth` 段までは配列リテラルの中も見る。 */
+function collectRowLiterals(elementList: string, arrayDepth: number): string[] {
+  const out: string[] = [];
+  for (const element of splitTopLevelElements(elementList)) {
+    if (element.startsWith('{')) {
+      out.push(element);
+    } else if (element.startsWith('[') && arrayDepth > 0) {
+      const scan = maskCommentsAndStrings(element);
+      out.push(...collectRowLiterals(extractDelimitedContent(element, scan, 0, '[', ']'), arrayDepth - 1));
+    }
+  }
+  return out;
+}
+
+/**
+ * 行リテラル 1 個のデータフィールドを返す。`name: value` 形は parseTopLevelProperties、
+ * 短縮形（`{ id, kind }`）は要素分割で補う。メソッド / getter / スプレッド / 算出キーは対象外。
+ */
+function extractRowLiteralFields(literal: string): PropertyInfo[] {
+  const content = extractObjectContent(literal);
+  const fields = parseTopLevelProperties(content).filter(p => p.kind === 'data');
+  for (const element of splitTopLevelElements(content)) {
+    const shorthand = /^([$\w]+)$/.exec(element);
+    if (shorthand && !fields.some(f => f.name === shorthand[1])) {
+      fields.push({ name: shorthand[1], kind: 'data' });
+    }
+  }
+  return fields;
+}
+
+/**
+ * 行フィールド 1 個分の候補を、既存候補を上書きせずに追加する（pushDataPropertyPathsAt の
+ * 「無いものだけ足す・rawInitial なし」版）。値が配列 / オブジェクトリテラルなら子へ再帰。
+ */
+function pushRowFieldPaths(path: string, prop: PropertyInfo, paths: PathCandidate[], depth: number): void {
+  if (!hasPath(paths, path)) paths.push(withHint({ path, kind: 'data' }, prop.typeHint));
+  if (!prop.value) return;
+
+  if (isArrayLiteral(prop.value)) {
+    if (!hasPath(paths, `${path}.*`)) paths.push({ path: `${path}.*`, kind: 'list' });
+    if (!hasPath(paths, `${path}.length`)) {
+      paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number' });
+    }
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+    for (const child of extractArrayElementDataProperties(prop.value)) {
+      pushRowFieldPaths(`${path}.*.${child.name}`, child, paths, depth + 1);
+    }
+    return;
+  }
+
+  if (isObjectLiteral(prop.value)) {
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+    for (const child of parseTopLevelProperties(extractObjectContent(prop.value))) {
+      if (child.kind !== 'data') continue;
+      pushRowFieldPaths(`${path}.${child.name}`, child, paths, depth + 1);
+    }
+  }
+}
+
+/** 候補集合にパスが既にあるか。 */
+function hasPath(paths: PathCandidate[], path: string): boolean {
+  return paths.some(p => p.path === path);
+}
+
+/**
+ * 要素列（配列リテラルの中身 / 引数列 / オブジェクトリテラルの中身）を深さ 0 の `,` で
+ * 分割し、トリム済みの原文スライスを返す（空要素は除く）。括弧の数え上げは鏡像で行う。
+ */
+function splitTopLevelElements(text: string): string[] {
+  const scan = maskCommentsAndStrings(text);
+  const out: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === '{' || ch === '[' || ch === '(') {
+      depth++;
+    } else if (ch === '}' || ch === ']' || ch === ')') {
+      depth--;
+    } else if (ch === ',' && depth === 0) {
+      out.push(text.slice(start, i));
+      start = i + 1;
+    }
+  }
+  out.push(text.slice(start));
+  return out.map(e => e.trim()).filter(e => e.length > 0);
 }
 
 /**
@@ -800,10 +957,24 @@ function extractFullValue(content: string, scan: string, startIndex: number): st
  * @param scan - text のマスク済み鏡像（括弧の数え上げはこちらで行う）
  */
 function extractBracedContent(text: string, scan: string, openBraceIndex: number): string {
+  return extractDelimitedContent(text, scan, openBraceIndex, '{', '}');
+}
+
+/**
+ * `open` … `close` の中身（外側の括弧を除く）を抽出する。`{}` / `[]` / `()` 共通。
+ * 対応する閉じ括弧が無ければ末尾まで返す。
+ */
+function extractDelimitedContent(
+  text: string,
+  scan: string,
+  openIndex: number,
+  open: string,
+  close: string,
+): string {
   let depth = 0;
   let inString: string | null = null;
 
-  for (let i = openBraceIndex; i < scan.length; i++) {
+  for (let i = openIndex; i < scan.length; i++) {
     const ch = scan[i];
 
     if (inString) {
@@ -815,17 +986,17 @@ function extractBracedContent(text: string, scan: string, openBraceIndex: number
 
     if (ch === '"' || ch === "'" || ch === '`') {
       inString = ch;
-    } else if (ch === '{') {
+    } else if (ch === open) {
       depth++;
-    } else if (ch === '}') {
+    } else if (ch === close) {
       depth--;
       if (depth === 0) {
-        return text.slice(openBraceIndex + 1, i);
+        return text.slice(openIndex + 1, i);
       }
     }
   }
 
-  return text.slice(openBraceIndex + 1);
+  return text.slice(openIndex + 1);
 }
 
 /**

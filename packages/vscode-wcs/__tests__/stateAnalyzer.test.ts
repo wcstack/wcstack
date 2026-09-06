@@ -478,6 +478,180 @@ export default {
   });
 });
 
+describe('analyzeStatePaths — 代入式の行リテラルから読む行の形（Issue #239）', () => {
+  const find = (paths: PathCandidate[], path: string): PathCandidate | undefined =>
+    paths.find(p => p.path === path);
+
+  it('Issue #239 の再現: `[]` で始まるリストの行フィールドを concat({ … }) から拾う', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  dependents: [],
+  $listKeys: { dependents: "id" },
+  addDependent() {
+    this.dependents = this.dependents.concat({ id: newId(), kind: "general", income: 0, memo: note() });
+  },
+  get "dependents.*.deduction"() { return 0; },
+};`);
+    // 型ヒントはリテラル値から。rawInitial は初期値ではないので付けない
+    expect(find(paths, 'dependents.*.kind')).toEqual({ path: 'dependents.*.kind', kind: 'data', typeHint: 'string' });
+    expect(find(paths, 'dependents.*.income')).toEqual({ path: 'dependents.*.income', kind: 'data', typeHint: 'number' });
+    // 呼び出し値は型不明
+    expect(find(paths, 'dependents.*.memo')).toEqual({ path: 'dependents.*.memo', kind: 'data' });
+    // キーフィールドは $listKeys 由来の候補が既にあるので重複しない
+    expect(paths.filter(p => p.path === 'dependents.*.id')).toHaveLength(1);
+    expect(find(paths, 'dependents.*.deduction')?.kind).toBe('computed');
+  });
+
+  it('toSpliced / with の引数と、右辺の配列リテラル（スプレッド併記）からも拾う', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  a: [], b: [], c: [], d: [],
+  insert(i) { this.a = this.a.toSpliced(i, 0, { fromSpliced: 1 }); },
+  replace(i) { this.b = this.b.with(i, { fromWith: true }); },
+  append() { this.c = [...this.c, { fromTail: "x" }]; },
+  prepend() { this.d = [{ fromHead: "y" }, ...this.d]; },
+};`);
+    const names = paths.map(p => p.path);
+    expect(names).toContain('a.*.fromSpliced');
+    expect(names).toContain('b.*.fromWith');
+    expect(names).toContain('c.*.fromTail');
+    expect(names).toContain('d.*.fromHead');
+    // 数値引数・スプレッド要素からは何も生まれない
+    expect(names.filter(n => /\.\*\.\d/.test(n))).toHaveLength(0);
+  });
+
+  it('短縮プロパティ・配列引数・複数引数・ネストした値を拾い、スプレッドは無視する', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  items: [],
+  add(id, kind) {
+    this.items = this.items.concat([{ id, kind, address: { city: "Tokyo" }, tags: [] }, { extra: 1 }], { ...base, done: false });
+  },
+};`);
+    const names = paths.map(p => p.path);
+    expect(names).toContain('items.*.id');
+    expect(names).toContain('items.*.kind');
+    expect(names).toContain('items.*.address');
+    expect(names).toContain('items.*.address.city');
+    expect(names).toContain('items.*.tags.*');
+    expect(names).toContain('items.*.tags.length');
+    expect(names).toContain('items.*.extra');
+    expect(find(paths, 'items.*.done')?.typeHint).toBe('boolean');
+    expect(names.some(n => n.includes('base'))).toBe(false);
+    expect(names.some(n => n.includes('...'))).toBe(false);
+  });
+
+  it('引用符付きパス（this["form.rows"]）とチェーン途中のフィルタ、$connectedCallback 内も対象', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  form: { rows: [] },
+  items: [],
+  addRow() { this["form.rows"] = this["form.rows"].filter(r => r.ok).concat({ ok: true }); },
+  $connectedCallback() {
+    this.items = this.items
+      .concat({ fromCallback: 1 });
+  },
+};`);
+    const names = paths.map(p => p.path);
+    expect(names).toContain('form.rows.*.ok');
+    expect(names).toContain('items.*.fromCallback');
+  });
+
+  it('リストと分かっていないパスへの代入からは候補を作らない（新設しない）', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  title: "",
+  user: null,
+  save() {
+    this.title = this.title.concat("!");
+    this.user = { name: "x" };
+    this.rows = this.rows.concat({ ghost: 1 });
+    this.$state = this.$state.concat({ api: 1 });
+  },
+};`);
+    const names = paths.map(p => p.path);
+    expect(names.some(n => n.startsWith('title.'))).toBe(false);
+    expect(names.some(n => n.startsWith('user.'))).toBe(false);
+    expect(names.some(n => n.startsWith('rows'))).toBe(false);
+    expect(names.some(n => n.includes('api'))).toBe(false);
+  });
+
+  it('明示的な初期値・$listKeys の候補を上書きせず、無いパスだけ足す', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  items: [{ id: 1, name: "a" }],
+  $listKeys: { items: "id" },
+  add() { this.items = this.items.concat({ id: 2, name: 99, extra: true }); },
+};`);
+    expect(paths.filter(p => p.path === 'items.*.name')).toHaveLength(1);
+    expect(find(paths, 'items.*.name')?.typeHint).toBe('string');
+    expect(find(paths, 'items.*.name')?.rawInitial).toBe('"a"');
+    expect(paths.filter(p => p.path === 'items.*.id')).toHaveLength(1);
+    expect(find(paths, 'items.*.extra')).toEqual({ path: 'items.*.extra', kind: 'data', typeHint: 'boolean' });
+  });
+
+  it('コメント・文字列の中、比較・複合代入、別の文へ跨る形は拾わない', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  a: [], items: [],
+  note: "this.items = this.items.concat({ inString: 1 })",
+  check() {
+    // this.items = this.items.concat({ inComment: 1 })
+    /* this.items = this.items.concat({ inBlock: 1 }) */
+    if (this.items == this.items.concat({ compared: 1 })) return;
+    this.a += this.items.concat({ compound: 1 });
+    this.a = other
+    this.items = this.items.concat({ real: 1 });
+  },
+};`);
+    const names = paths.map(p => p.path);
+    expect(names).toContain('items.*.real');
+    for (const bad of ['inString', 'inComment', 'inBlock', 'compared', 'compound']) {
+      expect(names.some(n => n.endsWith(`.${bad}`))).toBe(false);
+    }
+    // セミコロン無しの前の文（`this.a = other`）に次の行の行リテラルを帰属させない
+    expect(names.some(n => n.startsWith('a.*.'))).toBe(false);
+  });
+
+  it('行の中の入れ子リスト・オブジェクトを辿り、$listKeys が先に実体化したパスは二重登録しない', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  items: [],
+  $listKeys: { "items.*.tags": "id" },
+  add() {
+    this.items = this.items.concat({
+      tags: [{ id: 1, label: "a" }],
+      meta: { v: 1, get computed() { return 1; }, fn() {} },
+      l1: { l2: { l3: { l4: { arr: [{ tooDeep: 1 }] } } } },
+    });
+  },
+};`);
+    const names = paths.map(p => p.path);
+    expect(paths.filter(p => p.path === 'items.*.tags.*')).toHaveLength(1);
+    expect(paths.filter(p => p.path === 'items.*.tags.length')).toHaveLength(1);
+    expect(paths.filter(p => p.path === 'items.*.tags.*.id')).toHaveLength(1);
+    expect(names).toContain('items.*.tags.*.label');
+    expect(names).toContain('items.*.meta.v');
+    expect(names).not.toContain('items.*.meta.computed');
+    expect(names).not.toContain('items.*.meta.fn');
+    // 深さ上限: 配列自体（.* / .length）までは出るが要素の子は辿らない
+    expect(names).toContain('items.*.l1.l2.l3.l4.arr.*');
+    expect(names).not.toContain('items.*.l1.l2.l3.l4.arr.*.tooDeep');
+  });
+
+  it('ネスト深度の上限（MAX_OBJECT_NEST_DEPTH）を初期値解析と揃える', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  items: [],
+  add() { this.items = this.items.concat({ l1: { l2: { l3: { l4: { l5: { l6: 1 } } } } } }); },
+};`);
+    const names = paths.map(p => p.path);
+    // 初期値 `items: [{ l1: … }]` と同じ到達範囲（行フィールドが深さ 1）
+    expect(names).toContain('items.*.l1.l2.l3.l4.l5');
+    expect(names).not.toContain('items.*.l1.l2.l3.l4.l5.l6');
+  });
+});
+
 describe('analyzeStatePaths — トップレベル走査のトークン境界', () => {
   it('行コメント内の `word:` をプロパティにせず、後続の宣言も見失わない', () => {
     const paths = analyzeStatePaths(`

@@ -74,6 +74,32 @@ export default { count: 0, increment() {} };
     expect(diags.some(d => d.message.includes('イベントハンドラ'))).toBe(true);
   });
 
+  it('`[]` で始まるリストの行フィールドは、行を足す代入の行リテラルから存在扱いになる（Issue #239）', () => {
+    const html = `
+<wcs-state>
+  <script type="module">
+export default {
+  dependents: [],
+  $listKeys: { dependents: "id" },
+  addDependent() {
+    this.dependents = this.dependents.concat({ id: newId(), kind: "general", income: 0 });
+  },
+  get "dependents.*.deduction"() { return 0; },
+};
+  </script>
+</wcs-state>
+<template data-wcs="for: dependents">
+  <select data-wcs="value: .kind"></select>
+  <yen-input data-wcs="value: .income"></yen-input>
+  <span data-wcs="textContent: .deduction|locale"></span>
+  <span data-wcs="textContent: .typo"></span>
+</template>`;
+    const diags = validateBindings(html, 'data-wcs');
+    const missing = diags.filter(d => d.code === WcsDiagnosticCode.BindingPathMissing);
+    expect(missing.map(d => html.slice(d.start, d.end))).toEqual(['.typo']);
+    expect(missing[0].message).toContain('dependents.*.typo');
+  });
+
   it('for: に非配列パスを指定すると error を出す', () => {
     const html = `
 <wcs-state>

@@ -48,7 +48,9 @@ Completions for property names, state paths, modifiers, and filter names in `dat
 - `data-wcs="command.play: ` → only `$command.<name>` (from the `$commandTokens` declaration)
 - `data-wcs="eventToken.value: ` → only token names from the `$eventTokens` declaration
 
-Path candidates are derived from the `<wcs-state>` script (and from JSON state): nested arrays are followed (`a.*.b.*.c`), `$streams` entries appear as values plus `$streamStatus.<name>` / `$streamError.<name>`, and `$listKeys` declarations materialize list paths whose initial value is an empty array.
+Path candidates are derived from the `<wcs-state>` script (and from JSON state): nested arrays are followed (`a.*.b.*.c`), `$streams` entries appear as values plus `$streamStatus.<name>` / `$streamError.<name>`, and `$listKeys` declarations materialize list paths whose initial value is an empty array (the list path, `.*`, `.length` and the key field — not the other row fields).
+
+The **row shape** of a list that starts as `[]` is read from the row literals in the assignments that add or replace rows — `this.items = this.items.concat({ id, kind: "general" })`, `.toSpliced(i, n, { … })`, `.with(i, { … })`, and `[...this.items, { … }]` / `[{ … }, ...this.items]` — anywhere in the script (methods, getters, `$connectedCallback`, `$watch` handlers). Only a path already known to be an array gains fields this way, an explicit initial value or `$listKeys` entry always wins, and a row passed as a variable (`concat(row)`) cannot be read — declare a `stateSchema` for that case.
 
 #### for-context Completions
 
