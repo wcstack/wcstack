@@ -73,12 +73,16 @@ function getInternalPolicy(): IWcsTrustedTypesPolicy | null {
         createScriptURL: (input: string) => input,
       });
     } catch (error) {
-      console.error(
-        `[@wcstack/worker] Could not create the Trusted Types policy "${POLICY_NAME}". `
-        + `Allow it in the CSP (\`trusted-types ${POLICY_NAME};\`), or inject your own policy `
-        + `at globalThis[Symbol.for("wcstack.trustedTypes.policy")]. See docs/csp.md section 7.`,
-        error,
-      );
+      // 利用側 policy に落ちられるなら、報告は初回使用時の 1 回の warn（trustAuthoredScriptURL）
+      // に任せる — docs/csp.md §7。落ちる先が無いときだけ、直し方付きで error にする
+      if (typeof getTrustedTypesPolicy()?.createScriptURL !== "function") {
+        console.error(
+          `[@wcstack/worker] Could not create the Trusted Types policy "${POLICY_NAME}". `
+          + `Allow it in the CSP (\`trusted-types ${POLICY_NAME};\`), or inject your own policy `
+          + `at globalThis[Symbol.for("wcstack.trustedTypes.policy")]. See docs/csp.md section 7.`,
+          error,
+        );
+      }
     }
   }
   holder[INTERNAL_POLICY_SLOT] = policy;

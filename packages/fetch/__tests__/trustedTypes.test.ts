@@ -147,12 +147,12 @@ describe("trustedTypes", () => {
       expect(el.innerHTML).toBe("<p>sanitized</p>");
     });
 
-    it("TT に弾かれたら直し方を 1 度だけ報告し、例外はそのまま投げ返すこと", () => {
+    it("TT に弾かれたら直し方を 1 度だけ報告し、例外は投げ返さないこと（never-throw — 自動 fetch 経路で未処理 rejection にしない）", () => {
       const spy = vi.spyOn(console, "error").mockImplementation(() => {});
       withTrustedTypesEnforced(() => {
         const el = document.createElement("div");
-        expect(() => writeTargetHTML(el, "<p>x</p>")).toThrow(TypeError);
-        expect(() => writeTargetHTML(el, "<p>x</p>")).toThrow(TypeError);
+        expect(() => writeTargetHTML(el, "<p>x</p>")).not.toThrow();
+        expect(() => writeTargetHTML(el, "<p>x</p>")).not.toThrow();
       });
       expect(spy).toHaveBeenCalledTimes(1);
       expect(spy.mock.calls[0][0]).toContain("blocked by Trusted Types");
@@ -164,7 +164,7 @@ describe("trustedTypes", () => {
       setTrustedTypesPolicy({ createHTML: (s: string) => s });
       withTrustedTypesEnforced(() => {
         const el = document.createElement("div");
-        expect(() => writeTargetHTML(el, "<p>x</p>")).toThrow(TypeError);
+        expect(() => writeTargetHTML(el, "<p>x</p>")).not.toThrow();
       });
       expect(spy.mock.calls[0][0]).toContain("did not return a TrustedHTML");
     });

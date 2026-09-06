@@ -223,7 +223,7 @@ Bundler users can call `setTrustedTypesPolicy()`, exported from `@wcstack/state`
 
 ### If you install none
 
-The two remote-data sinks keep failing — deliberately — but they now say so, once, with the fix:
+The two remote-data sinks keep failing — deliberately — but they now say so, once, with the fix. The report **replaces** the exception: neither sink throws (the I/O-node never-throw rule), so an automatic `<wcs-fetch target>` run on connect does not become an unhandled rejection, and the rest of the page keeps binding. When the `wcstack` identity policy cannot be created but an injected policy exists, the fallback `console.warn` is the whole report — no `console.error` telling you to inject a policy you already injected.
 
 ```
 [@wcstack/fetch] The "target" HTML replace mode was blocked by Trusted Types (require-trusted-types-for 'script'). ...
@@ -236,6 +236,7 @@ The state property-write path swallows setter exceptions by design (the element 
 
 - **The shared policy object is reachable from page scripts.** To create `wcstack` exactly once across packages, the created policy is kept in a global slot (`Symbol.for("wcstack.trustedTypes.internal")`). Any script running on the page can therefore read it and use its `createHTML` as a Trusted Types bypass gadget. This does not weaken the DOM-XSS case Trusted Types is aimed at — reaching the slot requires script execution, which is already game over — but it is the price of the single shared policy name, and it is stated here because a policy review will ask. Giving each package its own policy name would remove the global slot at the cost of one CSP entry per package.
 - Trusted Types ships in Chromium only. Elsewhere every path above is a pass-through.
+- All four sinks, both failure paths and the fallback are pinned against an enforcing Chromium in [e2e/tests/trusted-types.spec.ts](../e2e/tests/trusted-types.spec.ts) (fixtures `e2e/fixtures/trusted-types-*.html`); the unit suites can only stub the sinks because happy-dom has no Trusted Types.
 - Dynamic `import()` — state's inline `<script>`, router guard handlers, the autoloader — is **not** a Trusted Types sink. It is governed by `script-src` (§4, §5, §9).
 - The DCC switch to node cloning carries one behavior change: cloning a `script` element copies its already-started flag, so an inline `<script>` inside a DCC template no longer runs natively once per instance. The state definition inside `<wcs-state>` is unaffected — it evaluates `script.text` itself (§4).
 

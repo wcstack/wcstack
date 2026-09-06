@@ -222,7 +222,7 @@ sanitize する policy なら、**`TrustedHTML` を返すこと**を確認する
 
 ### 注入しない場合
 
-リモートデータ系の 2 つは意図どおり失敗し続けるが、直し方つきで 1 度だけ報告する:
+リモートデータ系の 2 つは意図どおり失敗し続けるが、直し方つきで 1 度だけ報告する。報告は例外の**代わり**であり、どちらの sink も throw しない（I/O ノードの never-throw 規範）— 接続時の自動 `<wcs-fetch target>` が未処理 rejection になることはなく、ページの残りのバインドは動き続ける。`wcstack` identity policy を作れないが注入 policy がある場合は、フォールバックの `console.warn` が報告の全てで、「注入せよ」と言う `console.error` は出さない（注入済みの利用者に言うことではない）:
 
 ```
 [@wcstack/fetch] The "target" HTML replace mode was blocked by Trusted Types (require-trusted-types-for 'script'). ...
@@ -235,6 +235,7 @@ state のプロパティ書き込み経路は setter の例外を意図的に握
 
 - **共有 policy オブジェクトはページのスクリプトから読める。** `wcstack` をパッケージ横断で 1 度だけ生成するために、生成結果をグローバルスロット（`Symbol.for("wcstack.trustedTypes.internal")`）に置いている。したがってページ上の任意のスクリプトがそれを読み、`createHTML` を Trusted Types のバイパスガジェットとして使える。Trusted Types が本来狙う DOM XSS の防御を弱めるものではない（スロットに到達するには既にスクリプト実行が要る＝その時点で勝負はついている）が、単一 policy 名を選んだ代償であり、ポリシーレビューで必ず訊かれるのでここに書いておく。パッケージごとに policy 名を分ければグローバルスロットは不要になるが、CSP の記載がパッケージ数だけ増える。
 - Trusted Types は Chromium のみ。他のエンジンでは上記の経路はすべて素通し。
+- 4 つの sink・両方の失敗経路・フォールバックは、強制モードの実 Chromium で [e2e/tests/trusted-types.spec.ts](../e2e/tests/trusted-types.spec.ts)（fixture は `e2e/fixtures/trusted-types-*.html`）が固定している。happy-dom に Trusted Types が無いため、単体テストは sink をスタブすることしかできない。
 - 動的 `import()`（state のインライン `<script>`、router のガードハンドラ、autoloader）は Trusted Types の sink **ではない**。こちらは `script-src` の管轄（§4・§5・§9）。
 - DCC のノードクローン化には挙動差が 1 つある: script 要素はクローン時に already-started フラグを引き継ぐため、DCC テンプレート内のインライン `<script>` がインスタンスごとにネイティブ実行されなくなる。`<wcs-state>` の状態定義は `script.text` を自前で評価する実装なので影響を受けない（§4）。
 

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: Trusted Types — state innerHTML binding</title>
+  <!-- docs/csp.md §7. Enforcing Trusted Types for every script sink. No
+       `trusted-types` allowlist: state creates no policy of its own, so it needs
+       no name; the page installs its own (sanitizing) policy below. -->
+  <meta http-equiv="Content-Security-Policy" content="require-trusted-types-for 'script'">
+  <script>
+    // Violation log the spec reads back. Trusted Types blocks surface here.
+    window.__violations = [];
+    document.addEventListener("securitypolicyviolation", (e) => {
+      window.__violations.push({ directive: e.violatedDirective, sample: e.sample });
+    });
+    // ?policy=none leaves the slot empty to prove the deliberate failure path.
+    if (!location.search.includes("policy=none") && window.trustedTypes) {
+      globalThis[Symbol.for("wcstack.trustedTypes.policy")] = trustedTypes.createPolicy("my-app", {
+        // A stand-in sanitizer: strips <script> so the spec can see the policy ran.
+        createHTML: (s) => s.replace(/<script[\s\S]*?<\/script>/gi, ""),
+      });
+    }
+  </script>
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+export default {
+  // "</scr" + "ipt>" keeps the HTML parser from ending this <script> element early.
+  html: "<b id=\"bold\">bold</b><script>window.__ran = true</scr" + "ipt>",
+  plain: "text only",
+};
+    </script>
+  </wcs-state>
+  <div id="out" data-wcs="innerHTML: html"></div>
+  <p id="plain" data-wcs="textContent: plain"></p>
+</body>
+</html>

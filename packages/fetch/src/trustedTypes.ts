@@ -82,9 +82,9 @@ export function isTrustedTypesEnforced(): boolean {
   return _enforced;
 }
 
+// 呼び出し元（writeTargetHTML）が isTrustedTypesEnforced() を確認してから呼ぶ。
 function reportTrustedTypesBlock(): void {
   if (_reported) return;
-  if (!isTrustedTypesEnforced()) return;
   _reported = true;
   const hasPolicy = typeof getTrustedTypesPolicy()?.createHTML === "function";
   const cause = hasPolicy
@@ -102,15 +102,22 @@ function reportTrustedTypesBlock(): void {
 }
 
 /**
- * HTML 置換モードの書き込み。失敗はそのまま呼び出し元へ投げ返す（黙って握り潰すと
- * 「fetch は成功しているのに DOM が変わらない」になる）が、TT が原因のときは
- * 直し方を 1 度だけ報告する。
+ * HTML 置換モードの書き込み。
+ *
+ * TT に弾かれたときは直し方を 1 度だけ報告して**投げ返さない**（never-throw §3.6）。
+ * 自動 fetch 経路（connect / url 変更 / trigger）は `fetch()` の rejection を受け取る先が
+ * 無く、投げ返すと未処理 rejection として page error になる — 実 Chromium の e2e で
+ * 確認した。報告が信号であり、黙って握り潰すのとは違う。TT 以外の失敗（innerHTML の
+ * setter が別の理由で throw した等）は従来どおり呼び出し元へ投げ返す。
  */
 export function writeTargetHTML(element: Element, html: unknown): void {
   try {
     element.innerHTML = trustHtmlValue(html) as string;
   } catch (error) {
-    reportTrustedTypesBlock();
+    if (isTrustedTypesEnforced()) {
+      reportTrustedTypesBlock();
+      return;
+    }
     throw error;
   }
 }

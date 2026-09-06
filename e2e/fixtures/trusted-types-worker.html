@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: Trusted Types — worker src</title>
+  <!-- docs/csp.md §7. `new Worker(src)` is a TrustedScriptURL sink; the `src` the
+       author wrote is signed by the shared "wcstack" identity policy. -->
+  <meta http-equiv="Content-Security-Policy" content="require-trusted-types-for 'script'; trusted-types wcstack">
+  <script>
+    window.__violations = [];
+    document.addEventListener("securitypolicyviolation", (e) => {
+      window.__violations.push({ directive: e.violatedDirective, sample: e.sample });
+    });
+  </script>
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+  <script type="module" src="/packages/worker/dist/auto.min.js"></script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+export default { result: null };
+    </script>
+  </wcs-state>
+  <wcs-worker id="job" src="/e2e/fixtures/trusted-types-worker.js" data-wcs="message: result"></wcs-worker>
+  <p id="result" data-wcs="textContent: result"></p>
+</body>
+</html>

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: Trusted Types — router layout expansion</title>
+  <!-- docs/csp.md §7. <wcs-layout> expands author-written markup through the
+       shared "wcstack" identity policy, so the CSP must allow that name.
+       ?allow=other swaps the allowlist for a name wcstack cannot create, which
+       forces the documented fallback to the injected policy (one console.warn). -->
+  <script>
+    const allow = new URLSearchParams(location.search).get("allow") === "other" ? "my-app" : "wcstack";
+    const meta = document.createElement("meta");
+    meta.httpEquiv = "Content-Security-Policy";
+    meta.content = `require-trusted-types-for 'script'; trusted-types ${allow}`;
+    document.head.appendChild(meta);
+    window.__violations = [];
+    document.addEventListener("securitypolicyviolation", (e) => {
+      window.__violations.push({ directive: e.violatedDirective, sample: e.sample });
+    });
+    if (allow === "my-app") {
+      globalThis[Symbol.for("wcstack.trustedTypes.policy")] = trustedTypes.createPolicy("my-app", {
+        createHTML: (s) => s,
+      });
+    }
+  </script>
+  <script type="module" src="/packages/router/dist/auto.min.js"></script>
+  <template id="main-layout">
+    <header id="layout-header"><slot name="header"></slot></header>
+    <section id="layout-body"><slot></slot></section>
+  </template>
+</head>
+<body>
+  <wcs-router basename="/e2e/fixtures">
+    <template>
+      <!-- The .html file name is dropped from the internal path (router README §2.1), so this is "/". -->
+      <wcs-route path="/">
+        <wcs-layout layout="main-layout" disable-shadow-root>
+          <h1 slot="header" id="title">Layout header</h1>
+          <p id="page">Home page inside the layout</p>
+        </wcs-layout>
+      </wcs-route>
+    </template>
+  </wcs-router>
+  <wcs-outlet></wcs-outlet>
+</body>
+</html>

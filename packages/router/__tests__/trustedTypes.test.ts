@@ -79,7 +79,8 @@ describe('trustedTypes', () => {
       expect(trustAuthoredHTML('<p>y</p>')).toBe('[adopted]<p>y</p>');
       expect(warnSpy).toHaveBeenCalledTimes(1);
       expect(warnSpy.mock.calls[0][0]).toContain('custom elements in the layout may be stripped');
-      expect(errorSpy).toHaveBeenCalledTimes(1);
+      // フォールバック先があるときの報告は warn 1 回だけ（error は「注入せよ」と言う文面なので出さない）
+      expect(errorSpy).not.toHaveBeenCalled();
     });
 
     it('policy 名 "wcstack" で 1 度だけ createPolicy すること（重複生成は例外になるため）', () => {
