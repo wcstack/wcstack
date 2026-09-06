@@ -7,6 +7,8 @@ import { IPropagationContext } from "../propagation/types";
 export interface IDeferredSelectBinding {
   readonly binding: IBindingInfo;
   readonly value: unknown;
+  /** 失敗時の $errorCallback 配送先。Phase 2 は createState の外で走るため binding から引き直さず持ち回る */
+  readonly stateElement?: IStateElement;
 }
 
 export interface IApplyContext {

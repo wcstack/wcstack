@@ -20,7 +20,7 @@ import { getRootNodeByFragment } from '../src/apply/rootNodeByFragment';
 import { setLastListValueByAbsoluteStateAddress } from '../src/list/lastListValueByAbsoluteStateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
 import { config } from '../src/config';
-import { updatedCallbackSymbol } from '../src/proxy/symbols';
+import { errorCallbackSymbol, updatedCallbackSymbol } from '../src/proxy/symbols';
 import type { IBindingInfo } from '../src/types';
 import { setDevtoolsSink } from '../src/devtools/sink';
 
@@ -443,5 +443,113 @@ describe('applyChangeFromBindings: バッチ内のエラー隔離', () => {
 
     expect(() => applyChangeFromBindings([binding])).not.toThrow();
     expect(error).toHaveBeenCalledTimes(1);
+  });
+
+  describe('$errorCallback', () => {
+    function mountWithErrorCallback(count: number) {
+      const state = createStateProxy({});
+      const errorCallback = vi.fn();
+      (state as any)[errorCallbackSymbol] = errorCallback;
+      const createStateMock = vi.fn((_mutability: string, callback: (state: any) => void) => callback(state));
+      const stateElement = { createState: createStateMock, hasErrorCallback: true } as any;
+      getStateElementByNameMock.mockReturnValue(stateElement);
+      const bindings: IBindingInfo[] = [];
+      for (let i = 0; i < count; i++) {
+        const node = document.createElement('div');
+        document.body.appendChild(node);
+        bindings.push(createBindingInfo('app', `p${i}`, node));
+      }
+      return { bindings, errorCallback, createStateMock, stateElement };
+    }
+
+    it('宣言があれば console.error の代わりに (error, info) で呼ばれること', () => {
+      const { bindings, errorCallback } = mountWithErrorCallback(1);
+      const cause = new Error('boom');
+      applyChangeMock.mockImplementation(() => { throw cause; });
+
+      applyChangeFromBindings(bindings);
+
+      expect(error).not.toHaveBeenCalled();
+      expect(errorCallback).toHaveBeenCalledTimes(1);
+      expect(errorCallback).toHaveBeenCalledWith(cause, {
+        path: 'p0',
+        bindingType: 'text',
+        node: bindings[0].node,
+      });
+    });
+
+    it('配送は batch の末尾にまとめ、失敗した本数ぶん呼ばれ、残りの binding は適用されること', () => {
+      const { bindings, errorCallback, createStateMock } = mountWithErrorCallback(3);
+      applyChangeMock.mockImplementation((binding: any) => {
+        if (binding.statePathName !== 'p1') throw new Error(binding.statePathName);
+      });
+
+      applyChangeFromBindings(bindings);
+
+      expect(applyChangeMock).toHaveBeenCalledTimes(3);
+      expect(errorCallback).toHaveBeenCalledTimes(2);
+      expect(errorCallback.mock.calls.map((c) => c[1].path)).toEqual(['p0', 'p2']);
+      // writable createState 1 回の中で全件配送する
+      const writableCalls = createStateMock.mock.calls.filter((c) => c[0] === 'writable');
+      expect(writableCalls).toHaveLength(1);
+    });
+
+    it('devtools sink へは宣言の有無に関わらず流すこと', () => {
+      const events: any[] = [];
+      setDevtoolsSink((event) => { events.push(event); });
+      const { bindings } = mountWithErrorCallback(1);
+      const cause = new Error('boom');
+      applyChangeMock.mockImplementation(() => { throw cause; });
+
+      applyChangeFromBindings(bindings);
+
+      expect(events).toEqual([{ type: 'state:binding-apply-error', path: 'p0', bindingType: 'text', error: cause }]);
+    });
+
+    it('$errorCallback 自身が throw しても隔離され、残りの失敗も配送されること', () => {
+      const { bindings, errorCallback } = mountWithErrorCallback(2);
+      applyChangeMock.mockImplementation(() => { throw new Error('boom'); });
+      errorCallback.mockImplementationOnce(() => { throw new Error('handler broke'); });
+
+      expect(() => applyChangeFromBindings(bindings)).not.toThrow();
+
+      expect(errorCallback).toHaveBeenCalledTimes(2);
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(String(error.mock.calls[0][0])).toContain('$errorCallback threw');
+    });
+
+    it('Phase2（遅延 select 適用）の失敗も $errorCallback に届くこと', () => {
+      const { bindings, errorCallback, stateElement } = mountWithErrorCallback(0);
+      const select = document.createElement('select');
+      document.body.appendChild(select);
+      const binding = createBindingInfo('app', 'selectedId', select);
+      applyChangeMock.mockImplementation((_binding: any, context: any) => {
+        context.deferredSelectBindings.push({
+          binding: { ..._binding, propSegments: [], propName: '' },
+          value: '2',
+          stateElement,
+        });
+      });
+
+      applyChangeFromBindings([...bindings, binding]);
+
+      expect(error).not.toHaveBeenCalled();
+      expect(errorCallback).toHaveBeenCalledTimes(1);
+      expect(errorCallback.mock.calls[0][1].path).toBe('selectedId');
+    });
+
+    it('hasErrorCallback が false の state は従来どおり console.error であること', () => {
+      const state = createStateProxy({});
+      const createStateMock = vi.fn((_mutability: string, callback: (state: any) => void) => callback(state));
+      getStateElementByNameMock.mockReturnValue({ createState: createStateMock, hasErrorCallback: false } as any);
+      const node = document.createElement('div');
+      document.body.appendChild(node);
+      applyChangeMock.mockImplementation(() => { throw new Error('boom'); });
+
+      applyChangeFromBindings([createBindingInfo('app', 'p0', node)]);
+
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(createStateMock.mock.calls.filter((c) => c[0] === 'writable')).toHaveLength(0);
+    });
   });
 });

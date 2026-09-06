@@ -72,6 +72,12 @@ export interface IStateElement {
    */
   readonly hasUpdatedCallback?: boolean;
   /**
+   * state が $errorCallback を定義しているか。true のとき drain は隔離したバインディング
+   * 適用失敗を console.error の代わりに $errorCallback へ配送する（devtools sink へは常に流す）。
+   * optional なのはテスト用モック互換のため（undefined は「未定義＝console.error」）。
+   */
+  readonly hasErrorCallback?: boolean;
+  /**
    * 他行を読む getter（隣接項目参照など）が検出されたリストパスの集合。
    * これらのリストは walkDependency の diff-filter 展開の対象外（全行展開）。
    * optional なのはテスト用モック互換のため（undefined は「検出なし」扱い）。

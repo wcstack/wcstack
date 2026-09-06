@@ -10,6 +10,7 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ### Added
 
+- `@wcstack/state`: `$errorCallback(error, info)` — an in-page error boundary for bindings. A binding whose application throws (a path getter or filter threw, a structural directive failed) was already isolated from the rest of the batch and reported with `console.error` and to DevTools; declaring this hook on the root state routes the report to the page instead. `info` is `{ path, bindingType, node }`, `this` is the writable state proxy (write the message into state and render it), the hook runs once per failed binding after `$updatedCallback`, is not awaited, and its own exceptions are isolated. DevTools keeps receiving `state:binding-apply-error` either way. Root-only. Exported type `IBindingErrorInfo`.
 - `@wcstack/state`: `wcs/default-getter-mismatch` — a two-way binding on a `static wcBindable` property that omits `getter` now warns once per element and property when the event's `detail` cannot be what the property holds: `detail` is `undefined` while the element property has a value (a plain `Event`, or a forgotten `detail`), or `detail` is an object carrying a `<propName>` key while the property is not an object (a `{ value: … }` wrapper). The write is still applied as-is; occurrence properties (`semantics: "event"`) are exempt. Both #234 and #236 were diagnosed by staring at a page that had gone quiet — this makes the second class loud.
 
 ### Changed
