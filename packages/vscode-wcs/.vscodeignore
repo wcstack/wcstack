@@ -1,5 +1,6 @@
 .vscode/
 __tests__/
+coverage/
 src/
 scripts/
 test-fixture/
