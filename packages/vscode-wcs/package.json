@@ -5,6 +5,11 @@
   "version": "1.11.0",
   "publisher": "wcstack",
   "license": "MIT",
+  "icon": "icon.png",
+  "galleryBanner": {
+    "color": "#000000",
+    "theme": "dark"
+  },
   "type": "module",
   "repository": {
     "type": "git",
