@@ -34,7 +34,7 @@ const canonicalSsrSnapshotPath = join(repoRoot, "protocol", "ssr-snapshot.ts");
 const TARGET_PACKAGES = [
   // 34 async-IO node packages
   "audio", "broadcast", "camera", "clipboard", "debounce", "defined", "fetch",
-  "geolocation", "intersection", "midi", "network", "notification", "permission", "resize",
+  "geolocation", "intersection", "media-query", "midi", "network", "notification", "permission", "resize",
   "speech", "sse", "storage", "timer", "upload", "wakelock", "websocket", "worker",
   // batch 1 (target-resolution) / batch 4 (minimal monitor)
   "screen-orientation", "fullscreen", "picture-in-picture", "pointer-lock",
