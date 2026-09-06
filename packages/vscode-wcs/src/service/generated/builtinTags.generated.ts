@@ -733,6 +733,22 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "stop"
     ]
   },
+  "wcs-media-query": {
+    "package": "media-query",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "query"
+    ],
+    "inputs": {
+      "query": "query"
+    },
+    "properties": [
+      "matched",
+      "media",
+      "supported"
+    ],
+    "commands": []
+  },
   "wcs-midi": {
     "package": "midi",
     "hasWcBindable": true,

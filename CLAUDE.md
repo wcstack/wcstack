@@ -50,6 +50,7 @@ Each package lives under `packages/` and is independently built, tested, version
 - **`@wcstack/screen-orientation`** (`<wcs-screen-orientation>`) — Screen Orientation monitor / lock
 - **`@wcstack/idle`** (`<wcs-idle>`) — Idle Detection API
 - **`@wcstack/network`** (`<wcs-network>`) — Network Information monitor
+- **`@wcstack/media-query`** (`<wcs-media-query>`) — `matchMedia` monitor (`query` attribute → `matched` / `media` / `supported`; the output is `matched`, not `matches`, because `Element.prototype.matches()` exists)
 - **`@wcstack/share`** (`<wcs-share>`) — Web Share API
 - **`@wcstack/contacts`** (`<wcs-contacts>`) — Contact Picker API
 - **`@wcstack/credential`** (`<wcs-credential>`) — Credential Management API

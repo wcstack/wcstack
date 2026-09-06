@@ -161,7 +161,8 @@ Define routes and layout slots inside a child template tag. A direct child templ
 
 ```html
 <wcs-router data-wcs="path: path; typedParams: routeParams; searchParams: query;
-                      routeName: routeName; navigateUrl: navigateUrl; replaceUrl: replaceUrl">
+                      routeName: routeName; data: routeData;
+                      navigateUrl: navigateUrl; replaceUrl: replaceUrl">
 ```
 
 | Member | Direction | Description |
@@ -171,6 +172,7 @@ Define routes and layout slots inside a child template tag. A direct child templ
 | `typedParams` | output only | The same params, type-converted (`:id(int)` → `number`). Shares `wcs-router:params-changed` with `params` (the event detail is `{ params, typedParams }`). |
 | `searchParams` | output only | Current URL query as `Record<string, string>`. Duplicate keys (`?tag=a&tag=b`) are **last-wins**; values are decoded by `URLSearchParams` (including `+` → space). `{}` when there is no query. Fires `wcs-router:search-changed`. |
 | `routeName` | output only | `name` attribute of the deepest matched route. On a fallback match, the fallback route's `name` (so a 404 view can key off `routeName` too). `""` when unnamed or before initialization. Fires `wcs-router:route-name-changed`. |
+| `data` | output only | Data the current navigation's guard functions loaded — a guard that returns an object instead of `true` (see [Loading data before a route commits](#loading-data-before-a-route-commits)). `null` when no guard returned data, including before initialization; a query-only (same-match) navigation keeps the previous value. Unlike the members above it is **not** frozen: it is the object your guard returned, passed through as-is. Fires `wcs-router:data-changed`. |
 | `navigateUrl` | write surface (null-idle transient) | Write a target to push-navigate. `null` means idle; writing a string starts `navigate()`, and the property resets itself to `null` when the navigation finishes. `null` / `""` writes are no-ops. |
 | `replaceUrl` | write surface (null-idle transient) | Identical contract to `navigateUrl`, but the navigation **replaces** the current history entry. |
 | `basename` | input | Mirrors the `basename` attribute. |
@@ -179,9 +181,9 @@ Commands `navigate(path)` and `replace(path)` (both async) are also declared, so
 
 Output-only members are **read** when a binding attaches and streamed through their change events afterwards — the value is read, not awaited, so a binding that attaches after the router already resolved its first route misses nothing.
 
-**Firing contract**: on a committed navigation the router commits *all* internal values first and only then fires events, in the order `params-changed` → `route-name-changed` → `search-changed` → `path-changed`, each only when its value actually changed. Any listener that reads the element's properties sees the consistent post-navigation snapshot; `path` fires last and doubles as the "navigation finished" signal. A guard-rejected navigation updates nothing and fires nothing.
+**Firing contract**: on a committed navigation the router commits *all* internal values first and only then fires events, in the order `data-changed` → `params-changed` → `route-name-changed` → `search-changed` → `path-changed`, each only when its value actually changed (`data` compares by identity — a guard returns a fresh object per navigation). Any listener that reads the element's properties sees the consistent post-navigation snapshot; `path` fires last and doubles as the "navigation finished" signal. A guard-rejected navigation updates nothing and fires nothing.
 
-The exposed objects are **frozen snapshots** owned by the router: a new object per navigation, never mutated in place. Mutating them throws — copy into your own state instead.
+The exposed objects are **frozen snapshots** owned by the router: a new object per navigation, never mutated in place. Mutating them throws — copy into your own state instead. `data` is the one exception — it is owned by the guard that returned it, and the router neither copies nor freezes it.
 
 **Choosing a write surface**:
 
@@ -225,7 +227,26 @@ Displays children when the route path matches. Match priority is static paths ov
 > **Where are `params` / `typedParams`?** On `<wcs-router>` — see "State binding (wc-bindable)". After parsing, the route elements are detached controllers: they are not part of the live DOM, so they cannot be found with `querySelector` and cannot be bound with `data-wcs`. The router element is the observation surface for match results.
 
 Guard decision function type:
-`(toPath: string, fromPath: string) => boolean | Promise<boolean>`
+
+```ts
+(toPath: string, fromPath: string, context: IGuardContext) => GuardResult | Promise<GuardResult>
+
+interface IGuardContext {          // frozen snapshot of the match being entered — the same
+  params: Record<string, string>;  // vocabulary <wcs-router> exposes after the commit,
+  typedParams: Record<string, any>;// readable *before* it
+  searchParams: Record<string, string>;
+  routeName: string;
+}
+```
+
+| Return value | Effect |
+|---|---|
+| `true` | Enter the route. |
+| an object | Enter the route **and** commit the object as `<wcs-router>.data` (a loader — see below). When several guards on the chain return objects they are shallow-merged parent → child. |
+| a non-empty string | Cancel and redirect to that absolute path — a **dynamic** redirect target. It wins over the `guard` attribute. |
+| `false` (or any other falsy value: `undefined`, `null`, `""`) | Cancel and redirect to the path in the `guard` attribute. |
+
+A cancelled navigation commits nothing and fires nothing, whichever way it was cancelled.
 
 #### GuardHandler (wcs-guard-handler)
 
@@ -245,12 +266,41 @@ Place as a child of `<wcs-route>` to declaratively define a guard decision funct
 ```
 
 - The `guard` attribute value is the redirect path when the guard cancels navigation
-- If the function returns `false`, navigation is cancelled and the user is redirected to the `guard` path
-- The function can return `Promise<boolean>` for async checks
+- If the function returns `false`, navigation is cancelled and the user is redirected to the `guard` path; a non-empty string redirects there instead (e.g. `` return `/login?next=${encodeURIComponent(toPath)}` ``)
+- The function can return a `Promise` for async checks — the route is not committed until it settles
+- The third argument carries the match being entered (`params` / `typedParams` / `searchParams` / `routeName`); `toPath` / `fromPath` are basename-sliced paths
 - `<wcs-guard-handler>` placed outside a `<wcs-route>` is ignored
 - If no `<script type="module">` is present, `guardHandler` is not set
 - **Under a Content-Security-Policy**, the guard script is evaluated through a `blob:` URL, so `script-src blob:` is required. Guards are inline-only — there is no `src=` escape hatch as there is for `<wcs-state>`. See [docs/csp.md](../../docs/csp.md)
 - **Under `require-trusted-types-for 'script'`**, `<wcs-layout>` expands its template through a Trusted Types policy named `wcstack`, so the CSP needs `trusted-types wcstack;` (or your own policy, injected as described in [docs/csp.md](../../docs/csp.md) section 7)
+
+#### Loading data before a route commits
+
+A guard is already the one asynchronous step that runs *before* the route content is swapped in. Return an **object** from it and the router commits that object as `<wcs-router>.data` together with the params — so the page never shows the new route with empty content, and a `<wcs-view-transition>` animates real content instead of a blank frame.
+
+```html
+<wcs-router data-wcs="data: routeData; typedParams: routeParams">
+  <wcs-route path="/users/:id(int)" name="user" guard="/users">
+    <wcs-guard-handler>
+      <script type="module">
+        export default async function (toPath, fromPath, { typedParams }) {
+          const res = await fetch(`/api/users/${typedParams.id}`);
+          if (res.status === 404) return "/users";          // dynamic redirect
+          if (!res.ok) return false;                          // → guard="/users"
+          return { user: await res.json() };                  // loaded: enter the route
+        }
+      </script>
+    </wcs-guard-handler>
+    <h1 data-wcs="textContent: routeData.user.name"></h1>
+  </wcs-route>
+</wcs-router>
+```
+
+- `data` is `null` on every navigation whose guards return no object, so a page can gate on it (`<template data-wcs="if: routeData">`).
+- Nested routes: each guard may return an object; they are shallow-merged parent → child into one `data`.
+- A query-only navigation (same-match) does not re-run guards and keeps `data`.
+- The router does not cache. Navigating to the same route with other params loads again; keep anything you want to reuse in your own state.
+- Under SSR the same rule as every guard applies: a route chain with a guard is not rendered on the server, so `data` is always produced on the client.
 
 #### Typed Parameters
 

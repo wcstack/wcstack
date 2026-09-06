@@ -68,7 +68,7 @@ Claude Code は [CLAUDE.md](./CLAUDE.md)（より詳細なツール別ガイド�
 
 ## パッケージ
 
-47個の独立したランタイムパッケージ + 1つのツール拡張パッケージ。ランタイム依存ゼロ（SSR用のhappy-domを除く）。ビルド不要。
+48個の独立したランタイムパッケージ + 1つのツール拡張パッケージ。ランタイム依存ゼロ（SSR用のhappy-domを除く）。ビルド不要。
 
 ### もしHTMLにリアクティブなデータバインディングがあったら？
 
@@ -295,6 +295,7 @@ const html = await renderToString(`
 - [`@wcstack/speech`](packages/speech/) — `<wcs-speak>`（text-to-speech を command-token として）と `<wcs-listen>`（認識結果を event-token 状態として）で音声を宣言的に。
 - [`@wcstack/permission`](packages/permission/) — `<wcs-permission>` で Permissions API を監視し、ライブな `granted`/`denied`/`prompt` 状態を公開。読み取り専用ウォッチャー（コマンドなし）で、`<wcs-geo>` などの機能ノードと組み合わせる。
 - [`@wcstack/network`](packages/network/) — `<wcs-network>` で Network Information を監視し、アダプティブ読み込み向けにライブな `effectiveType`/`downlink`/`rtt`/`saveData` 状態を公開。読み取り専用ウォッチャー（コマンド・属性なし）で、非対応（Firefox/Safari）がエッジケースではなく常態。
+- [`@wcstack/media-query`](packages/media-query/) — `<wcs-media-query query="...">` で `matchMedia` を監視し、`prefers-color-scheme` / `prefers-reduced-motion` / ビューポート幅の真偽をライブな `matched`/`media`/`supported` 状態として公開。読み取り専用ウォッチャー（コマンドなし）。`query` 変更で再購読し、出力名は `Element.prototype.matches()` を潰さないよう `matched`。
 - [`@wcstack/screen-orientation`](packages/screen-orientation/) — `<wcs-screen-orientation>` で画面の向きを監視し `lock`/`unlock` コマンドを提供、`type`/`angle`/`portrait`/`landscape` を公開。監視は同期のため `_gen` ガード不要、`lock()` は非同期のため必要（監視とは独立）。
 - [`@wcstack/fullscreen`](packages/fullscreen/) — `<wcs-fullscreen target="...">` で Fullscreen API を宣言的に。`<wcs-intersect>` の target 解決パターンを再利用し、`active` は解決した target が document の `fullscreenElement` かを追跡。
 - [`@wcstack/picture-in-picture`](packages/picture-in-picture/) — `<wcs-pip target="...">`（target は `<video>` 要素）で Picture-in-Picture を宣言的に。`<wcs-fullscreen>` と同じ target 解決パターン。
@@ -439,6 +440,7 @@ wcstack/
 │   ├── speech/        # @wcstack/speech
 │   ├── permission/    # @wcstack/permission
 │   ├── network/       # @wcstack/network
+│   ├── media-query/   # @wcstack/media-query
 │   ├── screen-orientation/     # @wcstack/screen-orientation
 │   ├── fullscreen/             # @wcstack/fullscreen
 │   ├── picture-in-picture/     # @wcstack/picture-in-picture

@@ -301,15 +301,94 @@ describe('RouteCore', () => {
     it('guardがない場合は何もしない', async () => {
       const core = new RouteCore();
       core.parsePath('/test');
-      await expect(core.guardCheck({ path: '/test', routes: [], params: {}, typedParams: {}, lastPath: '' })).resolves.toBeUndefined();
+      await expect(core.guardCheck({ path: '/test', routes: [], params: {}, typedParams: {}, lastPath: '' })).resolves.toBeNull();
     });
 
-    it('guardHandlerがtrueを返す場合は通過', async () => {
+    it('guardHandlerがtrueを返す場合は通過（データ無し = null）', async () => {
       const core = new RouteCore();
       core.parsePath('/protected', { hasGuard: true, guardFallback: '/login' });
       core.guardHandler = vi.fn().mockResolvedValue(true);
 
-      await expect(core.guardCheck({ path: '/protected', routes: [], params: {}, typedParams: {}, lastPath: '/' })).resolves.toBeUndefined();
+      await expect(core.guardCheck({ path: '/protected', routes: [], params: {}, typedParams: {}, lastPath: '/' })).resolves.toBeNull();
+    });
+
+    it('guardHandler が空でない文字列を返す場合は、そのパスを fallbackPath とする GuardCancel をスローすること（動的リダイレクト）', async () => {
+      const core = new RouteCore();
+      core.parsePath('/protected', { hasGuard: true, guardFallback: '/login' });
+      core.guardHandler = vi.fn().mockResolvedValue('/login?next=%2Fprotected');
+
+      await expect(core.guardCheck({ path: '/protected', routes: [], params: {}, typedParams: {}, lastPath: '/' }))
+        .rejects.toMatchObject({ fallbackPath: '/login?next=%2Fprotected' });
+    });
+
+    it('guardHandler が空文字を返す場合は guard 属性のパスへ（falsy 規範）', async () => {
+      const core = new RouteCore();
+      core.parsePath('/protected', { hasGuard: true, guardFallback: '/login' });
+      core.guardHandler = vi.fn().mockResolvedValue('');
+
+      await expect(core.guardCheck({ path: '/protected', routes: [], params: {}, typedParams: {}, lastPath: '/' }))
+        .rejects.toMatchObject({ fallbackPath: '/login' });
+    });
+
+    it('guardHandler が undefined / null を返す場合も guard 属性のパスへ（従来どおり falsy は拒否）', async () => {
+      for (const value of [undefined, null]) {
+        const core = new RouteCore();
+        core.parsePath('/protected', { hasGuard: true, guardFallback: '/login' });
+        core.guardHandler = vi.fn().mockResolvedValue(value);
+
+        await expect(core.guardCheck({ path: '/protected', routes: [], params: {}, typedParams: {}, lastPath: '/' }))
+          .rejects.toMatchObject({ fallbackPath: '/login' });
+      }
+    });
+
+    it('guardHandler がオブジェクトを返す場合は許可し、そのオブジェクトをロード済みデータとして返すこと', async () => {
+      const core = new RouteCore();
+      core.parsePath('/users/:id', { hasGuard: true, guardFallback: '/login' });
+      const user = { id: 5, name: 'Ada' };
+      core.guardHandler = vi.fn().mockResolvedValue({ user });
+
+      const data = await core.guardCheck({ path: '/users/5', routes: [], params: { id: '5' }, typedParams: { id: 5 }, lastPath: '/' });
+      expect(data).toEqual({ user });
+      expect((data as any).user).toBe(user);
+    });
+
+    it('guardHandler の第 3 引数に params / typedParams / searchParams / routeName の frozen スナップショットが渡ること', async () => {
+      const core = new RouteCore();
+      core.parsePath('/users/:id', { hasGuard: true, guardFallback: '/login' });
+      const handler = vi.fn().mockResolvedValue(true);
+      core.guardHandler = handler;
+      const params = { id: '5' };
+      const typedParams = { id: 5 };
+      const routes = [{ name: 'user-detail' }] as any;
+
+      await core.guardCheck({ path: '/users/5', routes, params, typedParams, lastPath: '/', search: '?tab=posts&tab=likes' });
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      const [toPath, fromPath, context] = handler.mock.calls[0];
+      expect(toPath).toBe('/users/5');
+      expect(fromPath).toBe('/');
+      expect(context.params).toEqual({ id: '5' });
+      expect(context.typedParams).toEqual({ id: 5 });
+      expect(context.searchParams).toEqual({ tab: 'likes' });
+      expect(context.routeName).toBe('user-detail');
+      // frozen スナップショット — 元の matchResult とは別オブジェクト
+      expect(Object.isFrozen(context)).toBe(true);
+      expect(Object.isFrozen(context.params)).toBe(true);
+      expect(context.params).not.toBe(params);
+      expect(() => { (context.params as any).id = '6'; }).toThrow();
+    });
+
+    it('第 3 引数は search 無し・無名ルートでも組み立てられること（searchParams = {} / routeName = ""）', async () => {
+      const core = new RouteCore();
+      core.parsePath('/about', { hasGuard: true, guardFallback: '/' });
+      const handler = vi.fn().mockResolvedValue(true);
+      core.guardHandler = handler;
+
+      await core.guardCheck({ path: '/about', routes: [], params: {}, typedParams: {}, lastPath: '/' });
+
+      const context = handler.mock.calls[0][2];
+      expect(context.searchParams).toEqual({});
+      expect(context.routeName).toBe('');
     });
 
     it('guardHandlerがfalseを返す場合はGuardCancelをスロー', async () => {

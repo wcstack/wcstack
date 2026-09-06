@@ -6,9 +6,42 @@ export interface IRouteMatchResult {
   typedParams: Record<string, any>;
   path: string;
   lastPath: string;
+  /** 現在 URL のクエリ（"?k=v" 形式または ""）。applyRoute が commit 用に供給する */
+  search?: string;
+  /** guard 相で guard 関数が返したロード済みデータ（runGuardPhase が書く）。無ければ null */
+  data?: GuardData | null;
 }
 
-export type GuardHandler = (toPath: string, fromPath: string) => boolean | Promise<boolean>;
+/**
+ * guard 判定関数の第 3 引数 — 進入先マッチのスナップショット。`<wcs-router>` が
+ * commit 後に露出する観測面と同じ語彙（params / typedParams / searchParams / routeName）を
+ * commit **前**に読める。frozen。
+ */
+export interface IGuardContext {
+  readonly params: Record<string, string>;
+  readonly typedParams: Record<string, any>;
+  readonly searchParams: Record<string, string>;
+  readonly routeName: string;
+}
+
+/** guard 関数がオブジェクトを返したときの「ロード済みデータ」。`<wcs-router>.data` に載る */
+export type GuardData = Record<string, unknown>;
+
+/**
+ * guard 判定関数の返り値:
+ * - `true` — 進入を許可
+ * - オブジェクト — 進入を許可し、そのオブジェクトを `<wcs-router>.data` として commit する
+ *   （ルートチェーンの複数 guard が返した場合は親→子の順で浅くマージ）
+ * - 空でない文字列 — 進入を拒否し、その絶対パスへリダイレクト（動的リダイレクト先）
+ * - `false` / それ以外の falsy — 進入を拒否し、`guard` 属性のパスへリダイレクト
+ */
+export type GuardResult = boolean | string | GuardData | null | undefined;
+
+export type GuardHandler = (
+  toPath: string,
+  fromPath: string,
+  context: IGuardContext,
+) => GuardResult | Promise<GuardResult>;
 
 export interface _ILayout {
   readonly uuid: string;
@@ -60,7 +93,8 @@ export interface IRoute extends IRouteChildContainer {
   readonly hasGuard: boolean;
   guardHandler: GuardHandler;
   shouldChange(newParams: Record<string, string>): boolean;
-  guardCheck(matchResult: IRouteMatchResult): Promise<void>;
+  /** guard 相。拒否は GuardCancel を throw。許可時は guard 関数が返したデータ（無ければ null） */
+  guardCheck(matchResult: IRouteMatchResult): Promise<GuardData | null>;
   initialize(routerNode: IRouter, parentRouteNode: IRoute | null): void;
   testAncestorNode(ancestorNode: IRoute): boolean;
   setParams(params: Record<string, string>, typedParams: Record<string, any>): void;
@@ -84,6 +118,8 @@ export interface IRouterCommit {
   search: string;
   /** basename スライス後の path */
   path: string;
+  /** guard 相で集めたロード済みデータ。省略・null は「このナビゲーションにデータ無し」= null に戻す */
+  data?: GuardData | null;
 }
 
 export interface IRouter extends IRouteChildContainer {
@@ -100,6 +136,11 @@ export interface IRouter extends IRouteChildContainer {
   readonly searchParams: Record<string, string>;
   /** 最深マッチルートの name 属性値。fallback 時は fallback ルートの name */
   readonly routeName: string;
+  /**
+   * 現在マッチの guard 関数が返したロード済みデータ。guard がオブジェクトを返さなかった
+   * ナビゲーションでは null。same-match（クエリのみの遷移）では前の値を保つ
+   */
+  readonly data: GuardData | null;
   navigate(path: string): Promise<void>;
   /** navigateUrl（push）の対になる replace 遷移（§4.2） */
   replace(path: string): Promise<void>;

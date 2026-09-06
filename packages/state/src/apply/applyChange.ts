@@ -95,7 +95,7 @@ function _applyChange(binding: IBindingInfo, context: IApplyContext): void {
   const filteredValue = getFilteredValue(value, binding.outFilters);
 
   if (deferredSelectBindingByBinding.get(binding) === true) {
-    context.deferredSelectBindings.push({ binding, value: filteredValue });
+    context.deferredSelectBindings.push({ binding, value: filteredValue, stateElement: context.stateElement });
     return;
   }
   let fn = fnByBinding.get(binding);
@@ -135,7 +135,7 @@ function _applyChange(binding: IBindingInfo, context: IApplyContext): void {
     if (element.tagName === 'SELECT') {
       const propName = binding.propSegments[0];
       if (propName === 'value' || propName === 'selectedIndex') {
-        context.deferredSelectBindings.push({ binding, value: filteredValue });
+        context.deferredSelectBindings.push({ binding, value: filteredValue, stateElement: context.stateElement });
         deferredSelectBindingByBinding.set(binding, true);
         return;
       }

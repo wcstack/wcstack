@@ -161,7 +161,8 @@
 
 ```html
 <wcs-router data-wcs="path: path; typedParams: routeParams; searchParams: query;
-                      routeName: routeName; navigateUrl: navigateUrl; replaceUrl: replaceUrl">
+                      routeName: routeName; data: routeData;
+                      navigateUrl: navigateUrl; replaceUrl: replaceUrl">
 ```
 
 | メンバー | 方向 | 説明 |
@@ -171,6 +172,7 @@
 | `typedParams` | output のみ | 同パラメータの型変換済み値（`:id(int)` → `number`）。イベントは `params` と共有（detail は `{ params, typedParams }`） |
 | `searchParams` | output のみ | 現在 URL のクエリ（`Record<string, string>`）。キー重複（`?tag=a&tag=b`）は **last-wins**、デコードは `URLSearchParams` に委ねる（`+` → 空白を含む）。クエリ無しは `{}`。`wcs-router:search-changed` を発火 |
 | `routeName` | output のみ | 最深マッチルートの `name` 属性値。fallback マッチ時は fallback ルートの `name`（404 画面も `routeName` 分岐で書ける）。無名・初期化前は `""`。`wcs-router:route-name-changed` を発火 |
+| `data` | output のみ | 現在のナビゲーションの guard 関数がロードしたデータ — `true` の代わりにオブジェクトを返した guard の返り値（[ルート commit 前のデータロード](#ルート-commit-前のデータロード) 参照）。どの guard もオブジェクトを返さなければ `null`（初期化前も `null`）。クエリのみの遷移（same-match）では前の値を保つ。上の各メンバーと違い **frozen にしない** — guard が返したオブジェクトをそのまま露出する。`wcs-router:data-changed` を発火 |
 | `navigateUrl` | 書き込み面（null-idle transient） | ターゲットを書くと push 遷移。null は待機、文字列の書き込みで `navigate()` が起動し、完了後に自分で null へ戻る。null / `""` の書き込みは no-op |
 | `replaceUrl` | 書き込み面（null-idle transient） | `navigateUrl` と完全同型の契約。ただし現在の履歴エントリを**置き換える** |
 | `basename` | input | `basename` 属性のミラー |
@@ -179,9 +181,9 @@
 
 output-only メンバーはバインド attach 時に**読まれ**、以後は変更イベントで流れる — 値は「読むもの」であり「待つもの」ではないので、router が最初のルートを解決した後に attach したバインドでも取りこぼしはない。
 
-**発火規範**: commit されたナビゲーションでは、router はまず**全内部値をコミット**し、その後で `params-changed` → `route-name-changed` → `search-changed` → `path-changed` の順に、値が実際に変化したものだけを発火する。どのイベントのリスナーから要素プロパティを読んでも遷移後スナップショットの一貫した値が見える。`path` は最後に発火し「ナビゲーション完了」の信号を兼ねる。guard 拒否されたナビゲーションでは何も更新せず何も発火しない。
+**発火規範**: commit されたナビゲーションでは、router はまず**全内部値をコミット**し、その後で `data-changed` → `params-changed` → `route-name-changed` → `search-changed` → `path-changed` の順に、値が実際に変化したものだけを発火する（`data` は同一性比較 — guard は遷移ごとに新しいオブジェクトを返す）。どのイベントのリスナーから要素プロパティを読んでも遷移後スナップショットの一貫した値が見える。`path` は最後に発火し「ナビゲーション完了」の信号を兼ねる。guard 拒否されたナビゲーションでは何も更新せず何も発火しない。
 
-露出オブジェクトは router が所有する **frozen スナップショット**（ナビゲーションごとに新しいオブジェクト、in-place 変異なし）。変異は throw する — 自分の state へコピーして使うこと。
+露出オブジェクトは router が所有する **frozen スナップショット**（ナビゲーションごとに新しいオブジェクト、in-place 変異なし）。変異は throw する — 自分の state へコピーして使うこと。唯一の例外が `data` — 所有者は返した guard であり、router はコピーも freeze もしない。
 
 **書き込み面の使い分け**:
 
@@ -225,7 +227,26 @@ basename 結合と pathname 正規化は pathname にのみ適用され、クエ
 > **`params` / `typedParams` はどこへ？** `<wcs-router>` にある — 「state バインディング（wc-bindable）」参照。パース後の route 要素は detached なコントローラであり live DOM に属さないため、`querySelector` では見つからず `data-wcs` でも結線できない。マッチ結果の観測面は router 要素である。
 
 ガード判定関数の型：
-`(toPath: string, fromPath: string) => boolean | Promise<boolean>`
+
+```ts
+(toPath: string, fromPath: string, context: IGuardContext) => GuardResult | Promise<GuardResult>
+
+interface IGuardContext {          // 進入先マッチの frozen スナップショット —
+  params: Record<string, string>;  // <wcs-router> が commit 後に露出するのと同じ語彙を
+  typedParams: Record<string, any>;// commit **前** に読める
+  searchParams: Record<string, string>;
+  routeName: string;
+}
+```
+
+| 返り値 | 効果 |
+|---|---|
+| `true` | 進入する |
+| オブジェクト | 進入し、**かつ**そのオブジェクトを `<wcs-router>.data` として commit する（loader — 下記）。チェーン上の複数 guard がオブジェクトを返したときは親→子の順で浅くマージ |
+| 空でない文字列 | キャンセルし、その絶対パスへリダイレクト — **動的**なリダイレクト先。`guard` 属性より優先 |
+| `false`（その他の falsy: `undefined` / `null` / `""` も同じ） | キャンセルし、`guard` 属性のパスへリダイレクト |
+
+どの形でキャンセルされても、そのナビゲーションは何も commit せず何も発火しない。
 
 #### GuardHandler(wcs-guard-handler)
 
@@ -245,12 +266,41 @@ basename 結合と pathname 正規化は pathname にのみ適用され、クエ
 ```
 
 - `guard` 属性の値はガードがキャンセルされた場合のリダイレクト先パス
-- 判定関数が `false` を返すとナビゲーションがキャンセルされ、`guard` 属性のパスへ遷移
-- 判定関数は `Promise<boolean>` を返すことも可能（非同期チェック対応）
+- 判定関数が `false` を返すとナビゲーションがキャンセルされ、`guard` 属性のパスへ遷移。空でない文字列を返すとそのパスへ遷移（例: `` return `/login?next=${encodeURIComponent(toPath)}` ``）
+- 判定関数は `Promise` を返すことも可能（非同期チェック対応）— 解決するまでルートは commit されない
+- 第 3 引数に進入先マッチ（`params` / `typedParams` / `searchParams` / `routeName`）が渡る。`toPath` / `fromPath` は basename スライス後のパス
 - `<wcs-route>` の外に配置された `<wcs-guard-handler>` は無視される
 - `<script type="module">` がない場合、`guardHandler` は設定されない
 - **Content-Security-Policy 下では**、ガードスクリプトは `blob:` URL 経由で評価されるため `script-src blob:` が必要。ガードはインライン専用で、`<wcs-state>` のような `src=` 退避経路は存在しない。詳細は [docs/csp.ja.md](../../docs/csp.ja.md)
 - **`require-trusted-types-for 'script'` 下では**、`<wcs-layout>` のテンプレート展開が `wcstack` という名前の Trusted Types policy を通るため、CSP に `trusted-types wcstack;` が必要（または自前の policy を注入する。詳細は [docs/csp.ja.md](../../docs/csp.ja.md) の §7）
+
+#### ルート commit 前のデータロード
+
+guard は、ルート本文が差し替わる**前**に走る唯一の非同期ステップである。guard から**オブジェクト**を返すと、router はそれを params と一緒に `<wcs-router>.data` として commit する — 新しいルートが空の本文で見えることがなくなり、`<wcs-view-transition>` も空フレームではなく実際の内容をアニメーションする。
+
+```html
+<wcs-router data-wcs="data: routeData; typedParams: routeParams">
+  <wcs-route path="/users/:id(int)" name="user" guard="/users">
+    <wcs-guard-handler>
+      <script type="module">
+        export default async function (toPath, fromPath, { typedParams }) {
+          const res = await fetch(`/api/users/${typedParams.id}`);
+          if (res.status === 404) return "/users";          // 動的リダイレクト
+          if (!res.ok) return false;                          // → guard="/users"
+          return { user: await res.json() };                  // ロード完了: 進入する
+        }
+      </script>
+    </wcs-guard-handler>
+    <h1 data-wcs="textContent: routeData.user.name"></h1>
+  </wcs-route>
+</wcs-router>
+```
+
+- guard がオブジェクトを返さないナビゲーションでは `data` は `null` になるので、ページ側で分岐できる（`<template data-wcs="if: routeData">`）
+- ネストルート: 各 guard がオブジェクトを返してよく、親→子の順で 1 つの `data` に浅くマージされる
+- クエリのみの遷移（same-match）では guard は再実行されず `data` は据え置き
+- router はキャッシュしない。同じルートに別 params で遷移すれば再ロードする。再利用したいものは自分の state に持つこと
+- SSR では guard 全般と同じ規則 — guard 付きルートチェーンはサーバーで描かないので、`data` は常にクライアントで作られる
 
 #### 型付きパラメータ
 
