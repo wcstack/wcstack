@@ -126,7 +126,7 @@ interface WcsBroadcastCommands {
     close(): void;
 }
 
-declare function bootstrapBroadcast(userConfig?: IWritableConfig): void;
+declare function bootstrapBroadcast(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -260,6 +260,12 @@ declare const WCS_BROADCAST_ERROR_CODE: {
     /** その他の post / channel 失敗(DataError / InvalidStateError / "Error" fallback など)。 */
     readonly BroadcastError: "broadcast-error";
 };
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-broadcast": WcsBroadcast;
+    }
+}
 
 export { BroadcastCore, WCS_BROADCAST_ERROR_CODE, WcsBroadcast, bootstrapBroadcast, getConfig };
 export type { IWritableConfig, IWritableTagNames, WcsBroadcastCommands, WcsBroadcastCoreCommands, WcsBroadcastCoreValues, WcsBroadcastErrorDetail, WcsBroadcastInputs, WcsBroadcastValues, WcsIoErrorInfo, WcsIoErrorPhase };

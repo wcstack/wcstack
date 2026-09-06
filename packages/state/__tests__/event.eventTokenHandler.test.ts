@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vite
 import { attachEventTokenHandler, detachEventTokenHandler } from '../src/event/eventTokenHandler';
 import { getOrCreateEventToken, clearEventTokenRegistry } from '../src/event/eventTokenRegistry';
 import { getPathInfo } from '../src/address/PathInfo';
-import { setStateElementByName } from '../src/stateElementByName';
+import { setStateElement } from '../src/stateElementByName';
 import { setLoopContextSymbol } from '../src/proxy/symbols';
 import type { IBindingInfo } from '../src/types';
 import type { IWcBindable } from '../src/event/types';
@@ -31,7 +31,6 @@ function createBinding(node: Element, propertyName: string, tokenName: string, m
     propModifiers: modifiers,
     statePathName: tokenName,
     statePathInfo: getPathInfo(tokenName),
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'event',
@@ -70,10 +69,10 @@ describe('eventTokenHandler', () => {
   });
 
   beforeEach(() => {
-    setStateElementByName(document, 'default', null);
+    setStateElement(document, null);
   });
   afterEach(() => {
-    setStateElementByName(document, 'default', null);
+    setStateElement(document, null);
     vi.unstubAllGlobals();
   });
 
@@ -118,14 +117,14 @@ describe('eventTokenHandler', () => {
     expect(attachEventTokenHandler(binding)).toBe(true);
     expect(addSpy).toHaveBeenCalledWith('my-error', expect.any(Function));
     const handler = addSpy.mock.calls[0][1] as (e: Event) => void;
-    expect(() => handler(new CustomEvent('my-error'))).toThrow(/not found/);
+    expect(() => handler(new CustomEvent('my-error'))).toThrow(/No state tree found/);
   });
 
   it('$eventTokensに宣言されていないtokenは発火時にエラーになること', () => {
     const el = document.createElement('evt-ok');
     const addSpy = vi.spyOn(el, 'addEventListener');
     const se = makeFakeStateElement([], makeState());
-    setStateElementByName(el, 'default', se);
+    setStateElement(el, se);
     const binding = createBinding(el, 'error', 'createFailed');
     expect(attachEventTokenHandler(binding)).toBe(true);
     const handler = addSpy.mock.calls[0][1] as (e: Event) => void;
@@ -138,7 +137,7 @@ describe('eventTokenHandler', () => {
     const addSpy = vi.spyOn(el, 'addEventListener');
     const state = makeState();
     const se = makeFakeStateElement(['createFailed'], state);
-    setStateElementByName(el, 'default', se);
+    setStateElement(el, se);
     const subscriber = vi.fn().mockReturnValue('r');
     getOrCreateEventToken(se, 'createFailed').subscribe(subscriber);
 
@@ -159,7 +158,7 @@ describe('eventTokenHandler', () => {
     const el = document.createElement('evt-ok');
     const addSpy = vi.spyOn(el, 'addEventListener');
     const se = makeFakeStateElement(['createFailed'], makeState());
-    setStateElementByName(el, 'default', se);
+    setStateElement(el, se);
     const binding = createBinding(el, 'error', 'createFailed');
     expect(attachEventTokenHandler(binding)).toBe(true);
     expect(attachEventTokenHandler(binding)).toBe(true);
@@ -171,7 +170,7 @@ describe('eventTokenHandler', () => {
     const el = document.createElement('evt-ok');
     const addSpy = vi.spyOn(el, 'addEventListener');
     const se = makeFakeStateElement(['createFailed'], makeState());
-    setStateElementByName(el, 'default', se);
+    setStateElement(el, se);
     const binding = createBinding(el, 'error', 'createFailed', ['prevent', 'stop']);
     attachEventTokenHandler(binding);
     const handler = addSpy.mock.calls[0][1] as (e: Event) => void;
@@ -189,13 +188,13 @@ describe('eventTokenHandler', () => {
     const el = document.createElement('evt-ok');
     const addSpy = vi.spyOn(el, 'addEventListener');
     const se = makeFakeStateElement(['createFailed'], makeState());
-    setStateElementByName(el, 'default', se);
+    setStateElement(el, se);
     const binding = createBinding(el, 'error', 'createFailed');
     attachEventTokenHandler(binding);
     const handler = addSpy.mock.calls[0][1] as (e: Event) => void;
 
-    setStateElementByName(el, 'default', null);
-    expect(() => handler(new CustomEvent('my-error'))).toThrow(/not found/);
+    setStateElement(el, null);
+    expect(() => handler(new CustomEvent('my-error'))).toThrow(/No state tree found/);
     clearEventTokenRegistry(se);
   });
 
@@ -204,7 +203,7 @@ describe('eventTokenHandler', () => {
     const addSpy = vi.spyOn(el, 'addEventListener');
     const removeSpy = vi.spyOn(el, 'removeEventListener');
     const se = makeFakeStateElement(['createFailed'], makeState());
-    setStateElementByName(el, 'default', se);
+    setStateElement(el, se);
     const binding = createBinding(el, 'error', 'createFailed');
     attachEventTokenHandler(binding);
     const handler = addSpy.mock.calls[0][1];
@@ -219,7 +218,7 @@ describe('eventTokenHandler', () => {
     const el = document.createElement('evt-deferred');
     const addSpy = vi.spyOn(el, 'addEventListener');
     const se = makeFakeStateElement(['createFailed'], makeState());
-    setStateElementByName(el, 'default', se);
+    setStateElement(el, se);
     const binding = createBinding(el, 'error', 'createFailed');
 
     expect(attachEventTokenHandler(binding)).toBe(true);

@@ -125,7 +125,7 @@ interface WcsWakeLockCommands {
     release(): void;
 }
 
-declare function bootstrapWakeLock(userConfig?: IWritableConfig): void;
+declare function bootstrapWakeLock(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -323,6 +323,12 @@ declare const WCS_WAKELOCK_ERROR_CODE: {
     /** その他の `request()` 失敗(非 Error reject の正規化など)。 */
     readonly WakeLockError: "wakelock-error";
 };
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-wakelock": WcsWakeLock;
+    }
+}
 
 export { WCS_WAKELOCK_ERROR_CODE, WakeLockCore, WcsWakeLock, bootstrapWakeLock, getConfig };
 export type { IWritableConfig, IWritableTagNames, WakeLockKind, WcsIoErrorInfo, WcsIoErrorPhase, WcsWakeLockCommands, WcsWakeLockCoreCommands, WcsWakeLockCoreValues, WcsWakeLockInputs, WcsWakeLockValues };

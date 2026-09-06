@@ -6,10 +6,11 @@ import type { IBindingInfo } from '../src/types';
 vi.mock('../src/stateElementByName', () => {
   const map = new Map();
   return {
-    getStateElementByName: (_rootNode: Node, name: string) => map.get(name) || null,
-    setStateElementByName: (_rootNode: Node, name: string, el: any) => {
-      if (el === null) map.delete(name);
-      else map.set(name, el);
+    // 検分対象が detached なサブツリーでも届くよう document を既定キーにフォールバック（テスト台だけの緩和）
+    getStateElement: (rootNode: Node) => map.get(rootNode) || map.get(document) || null,
+    setStateElement: (rootNode: Node, el: any) => {
+      if (el === null) map.delete(rootNode);
+      else map.set(rootNode, el);
     }
   };
 });
@@ -23,7 +24,6 @@ function createBindingInfo(node: Node, overrides: Partial<IBindingInfo> = {}): I
     propModifiers: [],
     statePathName: 'flag',
     statePathInfo: getPathInfo('flag'),
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'if',
@@ -41,8 +41,8 @@ afterEach(() => {
 describe('createContent (unmount branches)', () => {
   async function setup() {
     vi.resetModules();
-    const { setStateElementByName } = await import('../src/stateElementByName');
-    setStateElementByName(document, 'default', {
+    const { setStateElement } = await import('../src/stateElementByName');
+    setStateElement(document, {
       setPathInfo: vi.fn(),
     } as any);
 
@@ -61,7 +61,6 @@ describe('createContent (unmount branches)', () => {
       propModifiers: [],
       statePathName: 'flag',
       statePathInfo: getPathInfo('flag'),
-      stateName: 'default',
       outFilters: [],
     inFilters: [],
       filterTexts: [],
@@ -158,7 +157,6 @@ describe('createContent (unmount branches)', () => {
       propModifiers: [],
       statePathName: 'flag',
       statePathInfo: getPathInfo('flag'),
-      stateName: 'default',
       outFilters: [],
     inFilters: [],
       filterTexts: [],
@@ -233,7 +231,6 @@ describe('createContent (unmount branches)', () => {
       propModifiers: [],
       statePathName: 'flag',
       statePathInfo: getPathInfo('flag'),
-      stateName: 'default',
       outFilters: [],
     inFilters: [],
       filterTexts: [],

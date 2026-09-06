@@ -32,13 +32,16 @@
 | [async-execution-model.md](./async-execution-model.md) | [async-execution-model.ja.md](./async-execution-model.ja.md) |
 | [async-io-node-guidelines.md](./async-io-node-guidelines.md) | [async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md) |
 | [timing-and-firing-contract.md](./timing-and-firing-contract.md) | [timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) |
+| [a11y-sr-testing.md](./a11y-sr-testing.md) | [a11y-sr-testing.ja.md](./a11y-sr-testing.ja.md) |
 | [devtools-hook-protocol.md](./devtools-hook-protocol.md) | [devtools-hook-protocol.ja.md](./devtools-hook-protocol.ja.md) |
 | [custom-state-reflection-design.md](./custom-state-reflection-design.md) | [custom-state-reflection-design.ja.md](./custom-state-reflection-design.ja.md) |
 | [signals-definition-timing.md](./signals-definition-timing.md) | [signals-definition-timing.ja.md](./signals-definition-timing.ja.md) |
 | [signals-state-design.md](./signals-state-design.md) | [signals-state-design.ja.md](./signals-state-design.ja.md) |
 | [state-binding-init-races.md](./state-binding-init-races.md) | [state-binding-init-races.ja.md](./state-binding-init-races.ja.md) |
+| [scoped-custom-element-registries.md](./scoped-custom-element-registries.md) | [scoped-custom-element-registries.ja.md](./scoped-custom-element-registries.ja.md) |
 | [screen-orientation-tag-design.md](./screen-orientation-tag-design.md) | [screen-orientation-tag-design.ja.md](./screen-orientation-tag-design.ja.md) |
 | [audio-impl-plan.md](./audio-impl-plan.md) | [audio-impl-plan.ja.md](./audio-impl-plan.ja.md) |
+| [view-transition-design.md](./view-transition-design.md) | [view-transition-design.ja.md](./view-transition-design.ja.md) |
 | [architecture-hardening/README.md](./architecture-hardening/README.md) | [README.ja.md](./architecture-hardening/README.ja.md) |
 | [architecture-hardening/09-remediation-design.md](./architecture-hardening/09-remediation-design.md) | [09…ja.md](./architecture-hardening/09-remediation-design.ja.md) |
 | [architecture-hardening/10-defaulting-rollout-status.md](./architecture-hardening/10-defaulting-rollout-status.md) | [10…ja.md](./architecture-hardening/10-defaulting-rollout-status.ja.md) |
@@ -46,6 +49,7 @@
 | [architecture-hardening/13-framework-adapter-binding-constraints.md](./architecture-hardening/13-framework-adapter-binding-constraints.md) | [13…ja.md](./architecture-hardening/13-framework-adapter-binding-constraints.ja.md) |
 | [architecture-hardening/14-handle-graph-wiring.md](./architecture-hardening/14-handle-graph-wiring.md) | [14…ja.md](./architecture-hardening/14-handle-graph-wiring.ja.md) |
 | [architecture-hardening/15-state-component-mechanism-consistency.md](./architecture-hardening/15-state-component-mechanism-consistency.md) | [15…ja.md](./architecture-hardening/15-state-component-mechanism-consistency.ja.md) |
+| [migration-v2.md](./migration-v2.md) | [migration-v2.ja.md](./migration-v2.ja.md) |
 
 ここまでで優先分（コード・examples・README が参照している文書）は全て完了。残る未翻訳は内部の設計メモと実装計画（`*-tag-design.md` / `*-impl-plan.md` / `state-*.md` / `io-node-*.md` / `architecture-hardening/01`〜`08`・`11`）で、触るときに合わせて翻訳する。
 

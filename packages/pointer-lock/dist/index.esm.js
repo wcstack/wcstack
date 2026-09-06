@@ -592,17 +592,22 @@ class WcsPointerLock extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.pointerLock)) {
-        customElements.define(config.tagNames.pointerLock, WcsPointerLock);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.pointerLock)) {
+        registry.define(config.tagNames.pointerLock, WcsPointerLock);
     }
 }
 
-function bootstrapPointerLock(userConfig) {
+function bootstrapPointerLock(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { PointerLockCore, WCS_POINTER_LOCK_ERROR_CODE, WcsPointerLock, bootstrapPointerLock, getConfig };

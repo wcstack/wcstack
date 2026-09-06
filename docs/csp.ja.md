@@ -151,8 +151,13 @@ script-src 'self' 'sha384-{auto.min.js のダイジェスト}';
 
 ```html
 <!-- CSP 安全 -->
-<wcs-state name="app" src="./state.js"></wcs-state>
+<wcs-state src="./state.js"></wcs-state>
 ```
+
+知っておくべき相互作用が 1 つある: ページが `<base href>` を設定している場合
+— i18n のロケール basename パターンがまさにそれをする（[i18n-design.md §9-1-4](./i18n-design.md)）—
+**相対**の `src="./state.js"` はページではなく base 基準（`/ja/state.js`）で
+解決されて 404 になる。`<base>` の下ではルート絶対で書くこと: `src="/state.js"`。
 
 ## 5. router のガードは blob: 必須（回避策なし）
 

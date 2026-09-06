@@ -11,8 +11,10 @@
 import { WcsDiagnostic, WcsSeverity } from "../diagnostics.js";
 import { createPositionMapper } from "../offsetToPosition.js";
 import { validateDocument, ValidateDocumentOptions } from "../validateDocument.js";
-import { validateManifestSet } from "../sidecar/validate.js";
-import { LiveBindableDeclaration } from "../sidecar/types.js";
+import { validateManifestArtifact, validateManifestSet } from "../sidecar/validate.js";
+import { discoverApplicationManifest, joinRelativeSource } from "../sidecar/discover.js";
+import { JsonSchemaNode, LiveBindableDeclaration } from "../sidecar/types.js";
+import type { FileReader } from "../../service/statePathResolver.js";
 
 export type InputKind = "html" | "manifest";
 
@@ -20,17 +22,35 @@ export interface CliFileInput {
   readonly source: string;
   readonly text: string;
   readonly kind: InputKind;
+  /**
+   * この HTML の `<wcs-state src=...>` を解決する reader(HTML ファイルの
+   * ディレクトリ基準)。ファイルごとに基準ディレクトリが違うため options でなく
+   * 入力側に載せる。manifest 入力では無視。
+   */
+  readonly fileReader?: FileReader;
 }
 
-export interface RunValidationOptions extends ValidateDocumentOptions {
+/**
+ * fileReader は options でなく CliFileInput 側に載せる(HTML ファイルごとに基準
+ * ディレクトリが違うため)。Omit で型レベルでも options 経由の混入を防ぐ。
+ */
+export interface RunValidationOptions extends Omit<ValidateDocumentOptions, "fileReader"> {
   readonly liveDeclarations?: ReadonlyMap<string, LiveBindableDeclaration>;
   /**
    * true なら整形行(`lines`)に error severity の診断だけを載せる(warning / info は省く)。
    * `errorCount` / `warningCount` / `infoCount` と `exitCode` は全診断で不変。
-   * CI ゲートで大量の false-positive warning(外部 state で解決不能なパス等)を出力から
-   * 除き、build を落とす error だけを表示するために使う。
+   * CI ゲートで大量の false-positive warning(fileReader でも解決できない外部 state の
+   * パス等)を出力から除き、build を落とす error だけを表示するために使う。
    */
   readonly errorsOnly?: boolean;
+  /**
+   * true なら warning severity でも `exitCode` を 1 にする(`--strict`)。
+   * severity 自体は動かさない — 診断の {code, range, severity} は IDE と同じまま、
+   * exit code の判定閾値だけを error → warning に下げる別軸のスイッチ。
+   * `errorsOnly` とは独立(併用時: 表示は error のみ・exit は warning でも 1)。
+   * 主用途は「`wcs/binding-path-missing`(typo)で CI を落とす」。
+   */
+  readonly strict?: boolean;
 }
 
 export interface RunValidationResult {
@@ -39,7 +59,7 @@ export interface RunValidationResult {
   readonly errorCount: number;
   readonly warningCount: number;
   readonly infoCount: number;
-  /** exit code(error があれば 1、なければ 0)。 */
+  /** exit code(error があれば 1。`strict` なら warning でも 1。それ以外 0)。 */
   readonly exitCode: 0 | 1;
   /** file source → 診断(テスト用)。 */
   readonly diagnosticsBySource: ReadonlyMap<string, readonly WcsDiagnostic[]>;
@@ -49,16 +69,14 @@ const severityLabel: Record<WcsSeverity, string> = { error: "error", warning: "w
 
 export function runValidation(inputs: readonly CliFileInput[], options: RunValidationOptions = {}): RunValidationResult {
   const diagnosticsBySource = new Map<string, readonly WcsDiagnostic[]>();
+  const textBySource = new Map(inputs.map((i) => [i.source, i.text]));
 
-  // HTML: ファイルごとに validateDocument。
-  for (const input of inputs) {
-    if (input.kind === "html") {
-      diagnosticsBySource.set(input.source, validateDocument(input.text, options));
-    }
-  }
-
-  // manifest: 全 manifest をまとめて集合検証(衝突/override/drift は cross-artifact)。
+  // manifest(明示引数): 全 manifest をまとめて集合検証(衝突/override/drift は cross-artifact)。
+  // application artifact が含まれていれば、その解決済み stateSchema が HTML 検証の契約になり、
+  // 最近傍発見(D8)は行わない — 明示指定が発見結果を丸ごと置き換える。
   const manifestInputs = inputs.filter((i) => i.kind === "manifest");
+  let explicitSchema: JsonSchemaNode | undefined;
+  let haveExplicitApplication = false;
   if (manifestInputs.length > 0) {
     const result = validateManifestSet({
       artifacts: manifestInputs.map((m) => ({ text: m.text, source: m.source })),
@@ -67,9 +85,38 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
     for (const input of manifestInputs) {
       diagnosticsBySource.set(input.source, result.byArtifact.get(input.source) ?? []);
     }
+    if (result.hasApplicationArtifact) {
+      haveExplicitApplication = true;
+      explicitSchema = result.resolvedSchema;
+    }
   }
 
-  const textBySource = new Map(inputs.map((i) => [i.source, i.text]));
+  // HTML: ファイルごとに validateDocument。明示 application manifest が無ければ、HTML の
+  // 位置から最近傍の wcstack.manifest.json を発見して契約にする(IDE と同じ discover)。
+  // 発見した manifest 自身の診断(envelope / schema subset)は HTML の source に混ぜず、
+  // manifest の source(HTML 相対で表示)に載せる。同じ manifest を複数の HTML が発見しても
+  // 検証は 1 回。
+  for (const input of inputs) {
+    if (input.kind !== "html") continue;
+    let applicationSchema = explicitSchema;
+    if (!haveExplicitApplication && input.fileReader !== undefined) {
+      const discovered = discoverApplicationManifest(input.fileReader);
+      applicationSchema = discovered?.schema;
+      if (discovered !== undefined) {
+        const source = joinRelativeSource(input.source, discovered.relativePath);
+        if (!diagnosticsBySource.has(source)) {
+          textBySource.set(source, discovered.text);
+          diagnosticsBySource.set(source, validateManifestArtifact({ text: discovered.text, source }));
+        }
+      }
+    }
+    const docOptions: ValidateDocumentOptions = {
+      ...options,
+      ...(input.fileReader !== undefined ? { fileReader: input.fileReader } : {}),
+      ...(applicationSchema !== undefined ? { applicationSchema } : {}),
+    };
+    diagnosticsBySource.set(input.source, validateDocument(input.text, docOptions));
+  }
   const lines: string[] = [];
   let errorCount = 0;
   let warningCount = 0;
@@ -95,7 +142,7 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
     errorCount,
     warningCount,
     infoCount,
-    exitCode: errorCount > 0 ? 1 : 0,
+    exitCode: errorCount > 0 || (options.strict === true && warningCount > 0) ? 1 : 0,
     diagnosticsBySource,
   };
 }

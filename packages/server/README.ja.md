@@ -50,6 +50,8 @@ console.log(html);
 // ハイドレーションデータ付きのレンダリング済み HTML
 ```
 
+同じ呼び出しはページの**スナップショットテスト**にもなります。vitest で `expect(await renderToString(html)).toMatchSnapshot()` と書けば、ブラウザなしで描画結果を固定できます。書き込みやハンドラまで動かすヘッドレス DOM テストでは、後述の `installGlobals()` がそのまま再利用できるグローバル差し替えです — state README の[ページをテストする](../state/README.ja.md#ページをテストする)を参照してください。
+
 ### `RenderCore` — 監視可能なレンダリング（キャッシュ付き）
 
 ```javascript
@@ -75,9 +77,18 @@ console.log(renderer.html);
 
 ## API リファレンス
 
-### `renderToString(html: string): Promise<string>`
+### `renderToString(html: string, options?: RenderOptions): Promise<string>`
 
 `@wcstack/state` テンプレートを含む HTML 文字列をレンダリングします。`<wcs-state enable-ssr>` を持つ要素のハイドレーションデータ付きのレンダリング済み HTML を返します。
+
+**オプション:**
+
+| オプション | 説明 |
+|--------|-------------|
+| `url` | このリクエストの完全 URL（例 `"http://localhost:3000/products/1"`）。`window.location` / `document.baseURI` に反映される。URL でルーティングするコンポーネントのサーバーレンダリングに必要。 |
+| `baseHref` | `<head>` へ注入する `<base href>` の値。`url` 指定時の既定は `"/"`。サブパス配備では明示する。 |
+| `baseUrl` | 相対 fetch URL の解決に使うベース URL。既定は `url` の origin。 |
+| `bootstraps` | bootstrap 関数の配列（既定は `bootstrapState`）。非同期ローダーも渡せる — モジュールスコープで `HTMLElement` を継承するクラスを持つパッケージは純 Node でトップレベル import できないため、`async () => (await import('@wcstack/fetch')).bootstrapFetch()` のように渡す（ローダーは DOM グローバル設置後に実行される）。 |
 
 **レンダリングパイプライン:**
 1. happy-dom ウィンドウを作成し、ブラウザグローバルをインストール
@@ -126,7 +137,7 @@ static wcBindable = {
 | 関数 | 説明 |
 |----------|-------------|
 | `installGlobals(window)` | happy-dom のグローバルを `globalThis` にインストール。復元関数を返す |
-| `extractStateData(stateEl)` | `<wcs-state>` 要素からデータプロパティを抽出（`$` プレフィックスのキーと関数は除外） |
+| `waitForReady(root, { maxIterations? })` | `root`（`document` または `ShadowRoot`）配下で readiness プロトコルに従う全カスタム要素を待つ — `static hasConnectedCallbackPromise` を持つ要素の `connectedCallbackPromise`（待機中に増えた要素も再走査。`<wcs-router>` の初期ルートなど）、次に `static getBindingsReady(root)`（`<wcs-state>` のバインディング構築）。`renderToString` がシリアライズ前に行う待機そのもので、[`@wcstack/testing`](../testing/README.ja.md) の `mount()` が再利用する。バインディング初期化に失敗すると reject |
 
 ### 定数
 
@@ -141,7 +152,7 @@ static wcBindable = {
 
 ```html
 <!-- renderToString() が生成 -->
-<wcs-ssr name="default" version="0.1.0">
+<wcs-ssr version="0.1.0">
 
   <!-- 状態スナップショット -->
   <script type="application/json">{"items":["Apple","Banana","Cherry"]}</script>
@@ -284,6 +295,28 @@ createServer(async (req, res) => {
 
 - `static hasConnectedCallbackPromise = true` プロトコル準拠の全カスタム要素を自動待機
 - 安定化ループ: await 後に DOM を再走査し、`$connectedCallback` 中に動的追加されたカスタム要素も待機（最大 10 回）
+
+### Router SSR
+
+`<wcs-router>` に `enable-ssr` を付け、リクエストの `url` を渡します（設計: [docs/ssr-router-design.md](https://github.com/wcstack/wcstack/blob/main/docs/ssr-router-design.md)）:
+
+```javascript
+const body = await renderToString(template, {
+  url: `http://localhost:3000${req.url}`,
+  bootstraps: [
+    bootstrapState,
+    // HTMLElement を継承するクラスは純 Node でトップレベル import できないため
+    // 非同期ローダーで渡す（DOM グローバル設置後にモジュール評価される）
+    async () => (await import('@wcstack/router')).bootstrapRouter(),
+  ],
+});
+```
+
+- リクエスト URL の初期ルートがサーバーで描画される — 型付きパラメータ・ネストルート・ルート内容中の構造テンプレート（`for:` / `if:`）を含む。
+- クライアント側 router はサーバー描画済み DOM を再描画せずに**採用（adopt）**する。採用ノード上で state のバインディングは生きたまま。サーバー出力が検証に通らない場合（URL 不一致・template 変更等）は静かに通常のクライアント描画へフォールバックする。
+- `<wcs-ssr>` スナップショットはサーバー主導の最終パス（ssr-snapshot プロトコル）で生成され、読み込み順に関係なくルート内容がハイドレーションデータに載る。
+- `<wcs-link>` の anchor はサーバーで描画され（`active` / `aria-current` 付き）、クライアントが採用する。
+- サブパス配備は `baseHref` を渡し、クライアントにも同じ `<base href>` を配信する。
 
 ## SSR でできないこと
 

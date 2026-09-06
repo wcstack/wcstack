@@ -16,6 +16,7 @@
 import { DevtoolsCore, IRosterEntry, ITimelineEntry, IWiringEntry } from "../core/DevtoolsCore";
 import { formatValue } from "../core/formatValue";
 import { IDeclaredBinding, scanDeclaredBindings } from "../core/declaredScan";
+import { IDeclaredBindingLike, IMountOverlaySummaryLike } from "../protocol/types";
 
 const STYLE_TEXT = /* css */ `
 :host {
@@ -108,6 +109,15 @@ header .spacer { flex: 1; }
 .empty { color: #6f88a3; font-style: italic; padding: 4px 0; }
 .notice { color: #efe3a0; padding: 2px 0 6px; }
 .notice button { font: inherit; margin-left: 6px; cursor: pointer; }
+.wiring-row .detail { color: #6f88a3; }
+.overlays-heading { margin-top: 10px; }
+.overlay-row { padding: 1px 0; white-space: nowrap; }
+.overlay-row .prop { color: #b7f0c0; }
+.overlay-row .path { color: #9fd0ff; }
+.overlay-row .detail { color: #6f88a3; }
+.wiring-tabs { padding: 0 0 4px; }
+.wiring-tabs button { font: inherit; cursor: pointer; margin-right: 4px; opacity: 0.6; }
+.wiring-tabs button.active { opacity: 1; font-weight: bold; }
 .hl-box {
   position: fixed;
   pointer-events: none;
@@ -163,6 +173,8 @@ export class WcsDevtools extends HTMLElement {
   private _badge: HTMLButtonElement | null = null;
   private _stateSelect: HTMLSelectElement | null = null;
   private _paneElements: Partial<Record<PaneName, HTMLElement>> = {};
+  /** Wiring ペインの表示モード（配線一覧 / カバレッジ突合）。 */
+  private _wiringView: "wiring" | "coverage" = "wiring";
   private _highlightLayer: HTMLElement | null = null;
   private _dirtyPanes: Set<PaneName> = new Set();
   private _renderScheduled: boolean = false;
@@ -187,13 +199,8 @@ export class WcsDevtools extends HTMLElement {
       this._buildShadow();
     }
     const capacity = Number(this.getAttribute("buffer") ?? "");
-    const hidden = (this.getAttribute("hidden-states") ?? "")
-      .split(",")
-      .map((name) => name.trim())
-      .filter((name) => name.length > 0);
     this._core = new DevtoolsCore({
       timelineCapacity: Number.isFinite(capacity) && capacity > 0 ? capacity : undefined,
-      hiddenStateNames: hidden,
     });
     this._removeCoreListener = this._core.onChange((kind) => {
       if (kind === "roster" || kind === "sources") {
@@ -201,6 +208,11 @@ export class WcsDevtools extends HTMLElement {
         this._markDirty("wiring");
       } else if (kind === "wiring") {
         this._markDirty("wiring");
+      } else if (kind === "coverage") {
+        // カバレッジは Wiring ペインのタブとして描画される
+        if (this._wiringView === "coverage") {
+          this._markDirty("wiring");
+        }
       } else {
         this._markDirty("timeline");
       }
@@ -493,7 +505,7 @@ export class WcsDevtools extends HTMLElement {
   }
 
   private _rosterKey(entry: IRosterEntry): string {
-    return `${entry.sourceId}:${entry.name}`;
+    return `${entry.sourceId}:${entry.label}`;
   }
 
   private _selectedRoster(): IRosterEntry | null {
@@ -517,7 +529,7 @@ export class WcsDevtools extends HTMLElement {
       ...roster.map((entry) => {
         const option = document.createElement("option");
         option.value = this._rosterKey(entry);
-        option.textContent = `${entry.name} (${entry.sourceId.slice(0, 12)})`;
+        option.textContent = `${entry.label} (${entry.sourceId.slice(0, 12)})`;
         option.selected = selected !== null && this._rosterKey(entry) === this._rosterKey(selected);
         return option;
       })
@@ -532,11 +544,75 @@ export class WcsDevtools extends HTMLElement {
     const keys = core.keysOf(selected);
     if (keys.length === 0) {
       body.append(this._emptyRow("no readable keys (runtime without keys() API?)"));
+      // keys が読めないランタイムでも overlays は独立に読める可能性があるため出す
+      this._renderOverlaysSection(body, selected);
       return;
     }
     for (const key of keys) {
       this._renderTreeNode(body, selected, { path: key, indexes: [] }, key, 0);
     }
+    this._renderOverlaysSection(body, selected);
+  }
+
+  /**
+   * 選択ツリーのマウント記録セクション（overlays — protocol v2・D20 の可視化）。
+   * マウントの私有キー・getter はオーバーレイ専用アドレス空間（マーカー `#m<id>`）に
+   * 住み、上の状態ツリー（keys/read）には現れないため、ここが唯一の可視面。
+   * overlays 未提供の旧ランタイム（null）ではセクションごと出さない（後方互換）。
+   * マウント無し（空配列）も見出しだけ残さない。pull は State ペインの再描画
+   * （roster / sources 変更・ツリー切替）にそのまま乗る — 専用 polling は足さない
+   * （観測者効果の排除、devtools-tag-design.md の rAF 合流と同じ姿勢）。
+   */
+  private _renderOverlaysSection(body: HTMLElement, entry: IRosterEntry): void {
+    const overlays = this._core!.overlaysOf(entry);
+    if (overlays === null || overlays.length === 0) {
+      return;
+    }
+    const heading = document.createElement("h3");
+    heading.className = "overlays-heading";
+    heading.textContent = `Overlays (${overlays.length} mount${overlays.length === 1 ? "" : "s"})`;
+    body.append(heading);
+    for (const overlay of overlays) {
+      body.append(this._overlayRow(overlay));
+    }
+  }
+
+  /** マウント記録 1 件の描画（マーカー・コンポーネント・マウント表・私有面）。 */
+  private _overlayRow(overlay: IMountOverlaySummaryLike): HTMLElement {
+    const row = document.createElement("div");
+    row.className = "overlay-row";
+    const marker = document.createElement("span");
+    marker.className = "badge-tag";
+    marker.textContent = overlay.marker;
+    const tag = document.createElement("span");
+    tag.className = "prop";
+    tag.textContent = `<${overlay.componentTag}>`;
+    const prop = document.createElement("span");
+    prop.className = "path";
+    // stateProp はホスト側の `state[.sub]:` 宣言の書き手語彙
+    prop.textContent = overlay.stateProp;
+    row.append(marker, document.createTextNode(" "), tag, document.createTextNode(" "), prop);
+    const details: string[] = [];
+    for (const entry of overlay.mountTable) {
+      // 内側接頭辞が空 = ルートエントリ。外側パスへの対応で読ませる
+      details.push(`${entry.inner === "" ? "(root)" : entry.inner} → ${entry.outer}`);
+    }
+    if (overlay.delta > 0) {
+      details.push(`Δ${overlay.delta}`);
+    }
+    if (overlay.privateKeys.length > 0) {
+      details.push(`private: ${overlay.privateKeys.join(", ")}`);
+    }
+    if (overlay.getterKeys.length > 0) {
+      details.push(`getters: ${overlay.getterKeys.join(", ")}`);
+    }
+    if (details.length > 0) {
+      const detail = document.createElement("span");
+      detail.className = "detail";
+      detail.textContent = ` ${details.join(" · ")}`;
+      row.append(detail);
+    }
+    return row;
   }
 
   private _renderTreeNode(
@@ -669,6 +745,28 @@ export class WcsDevtools extends HTMLElement {
     const body = this._paneElements["wiring"]!;
     body.replaceChildren();
 
+    // 配線一覧 / カバレッジのビュートグル（devtools-tag-design.md §3.2 / 設計 §4）
+    const tabs = document.createElement("div");
+    tabs.className = "wiring-tabs";
+    for (const [view, label] of [["wiring", "wiring"], ["coverage", "coverage"]] as const) {
+      const button = document.createElement("button");
+      button.textContent = label;
+      if (this._wiringView === view) {
+        button.classList.add("active");
+      }
+      button.addEventListener("click", () => {
+        this._wiringView = view;
+        this._markDirty("wiring");
+      });
+      tabs.append(button);
+    }
+    body.append(tabs);
+
+    if (this._wiringView === "coverage") {
+      this._renderCoverageView(body);
+      return;
+    }
+
     let entries: IWiringEntry[];
     let contextLabel: string;
     if (this._pickedNode !== null) {
@@ -678,8 +776,9 @@ export class WcsDevtools extends HTMLElement {
         target instanceof Element ? `<${target.tagName.toLowerCase()}>` : target.nodeName;
     } else if (this._selectedPath !== null) {
       const selected = this._selectedRoster();
+      // 選択中のツリーでスコープ（複数ツリーの同名パスを混ぜない）
       entries =
-        selected !== null ? core.getWiringForPath(selected.name, this._selectedPath) : [];
+        selected !== null ? core.getWiringForPath(this._selectedPath, selected.summary.element) : [];
       contextLabel = this._selectedPath;
     } else {
       entries = core.getAllWiring();
@@ -697,11 +796,14 @@ export class WcsDevtools extends HTMLElement {
       return;
     }
 
-    // ライブ台帳が空 → declared ビューへフォールバック（protocol §6）
+    // ライブ台帳が空 → declared ビューへフォールバック（protocol §6）。
+    // ランタイムが getDeclaredBindings を実装していれば正本パーサの宣言集合を使い、
+    // 旧ランタイムだけ簡易パーサ（declaredScan — bindTextParser 非追随）に落ちる。
+    const canonical = core.getCanonicalDeclared();
     const selected = this._selectedRoster();
-    const declared =
-      selected !== null ? scanDeclaredBindings(this._scanRootOf(selected)) : [];
-    if (declared.length === 0) {
+    const legacy =
+      canonical === null && selected !== null ? scanDeclaredBindings(this._scanRootOf(selected)) : [];
+    if ((canonical?.length ?? 0) === 0 && legacy.length === 0) {
       body.append(this._emptyRow("no bindings observed"));
       return;
     }
@@ -709,7 +811,7 @@ export class WcsDevtools extends HTMLElement {
     notice.className = "notice";
     const tag = document.createElement("span");
     tag.className = "badge-tag declared";
-    tag.textContent = "declared";
+    tag.textContent = canonical !== null ? "declared (canonical)" : "declared";
     notice.append(tag, document.createTextNode(" attached late — reload to capture live bindings "));
     const reload = document.createElement("button");
     reload.textContent = "reload";
@@ -718,9 +820,99 @@ export class WcsDevtools extends HTMLElement {
     });
     notice.append(reload);
     body.append(notice);
-    for (const entry of declared) {
-      body.append(this._declaredRow(entry));
+    if (canonical !== null) {
+      for (const entry of canonical) {
+        body.append(this._canonicalDeclaredRow(entry));
+      }
+    } else {
+      for (const entry of legacy) {
+        body.append(this._declaredRow(entry));
+      }
     }
+  }
+
+  /**
+   * カバレッジビュー: 宣言（watchPaths / token 宣言 / canonical declared）×
+   * 実測（発火・emit・attach）の突合表。観測開始以降の実測であることを常時明示する
+   * （protocol §6 — 台帳の過去は再構成できない）。
+   */
+  private _renderCoverageView(body: HTMLElement): void {
+    const core = this._core!;
+    const since = core.observingSince;
+    const info = document.createElement("div");
+    // 壁時計表示（performance.now 原点からの換算）。「ページ内経過秒」だと
+    // devtools を後から開いたときに観測開始点として読めない。
+    const sinceLabel = since === null
+      ? null
+      : new Date(Date.now() - (performance.now() - since)).toLocaleTimeString();
+    info.textContent = sinceLabel === null
+      ? "not observing"
+      : `observing since ${sinceLabel} (declared vs measured after this point)`;
+    body.append(info);
+
+    // 選択中のツリーでスコープ（複数ツリーの同名 watch パス / token 名を混ぜない —
+    // wiring のパス文脈と同じ流儀。protocol v2 追補のツリー識別が実測面を分ける）
+    const selected = this._selectedRoster();
+    const report = core.getCoverageReport(selected?.summary.element);
+    if (report.length === 0) {
+      body.append(this._emptyRow("nothing declared to cover"));
+      return;
+    }
+    for (const entry of report) {
+      const row = document.createElement("div");
+      row.className = "wiring-row";
+      const kind = document.createElement("span");
+      kind.className = "badge-tag";
+      kind.textContent = entry.kind;
+      const status = document.createElement("span");
+      status.className = "badge-tag";
+      status.textContent = entry.count > 1 ? `${entry.status} ×${entry.count}` : entry.status;
+      if (entry.status === "never" || entry.status === "never-attached"
+        || entry.status === "emitted-unheard") {
+        // 「宣言したのに一度も効いていない」= このビューの主役。空撃ちも同列の warn
+        status.classList.add("warn");
+      } else if (entry.status === "prerequisite-missing") {
+        // 発火前提が未成立（未発火とは別問題）— declared 系の淡色で区別
+        status.classList.add("declared");
+      }
+      const label = document.createElement("span");
+      label.className = "path";
+      label.textContent = ` ${entry.name} `;
+      row.append(kind, document.createTextNode(" "), label, status);
+      if (entry.note !== null) {
+        // note はホバー頼み（title）にせず常時表示する — 前提未成立の理由は
+        // このビューの本文情報で、ツールチップだと存在に気づけない
+        const note = document.createElement("span");
+        note.className = "detail";
+        note.textContent = ` ${entry.note}`;
+        row.append(note);
+      }
+      body.append(row);
+    }
+  }
+
+  /** canonical declared（正本パーサ由来・宣言集合）の 1 行。 */
+  private _canonicalDeclaredRow(entry: IDeclaredBindingLike): HTMLElement {
+    const row = document.createElement("div");
+    row.className = "wiring-row";
+    const type = document.createElement("span");
+    type.className = "badge-tag declared";
+    type.textContent = entry.origin;
+    const prop = document.createElement("span");
+    prop.className = "prop";
+    prop.textContent = entry.propName;
+    const path = document.createElement("span");
+    path.className = "path";
+    const filters = entry.outFilters.map((f) => ` | ${f.filterName}(${f.args.join(",")})`).join("");
+    path.textContent = `${entry.statePathName}${filters}`;
+    row.append(type, document.createTextNode(" "), prop, document.createTextNode(" ← "), path);
+    if (entry.node !== null) {
+      const target = entry.node;
+      row.addEventListener("click", () => {
+        this._highlightNodes([target]);
+      });
+    }
+    return row;
   }
 
   private _scanRootOf(entry: IRosterEntry): ParentNode {
@@ -745,7 +937,7 @@ export class WcsDevtools extends HTMLElement {
     const arrow = document.createTextNode(" ← ");
     const path = document.createElement("span");
     path.className = "path";
-    path.textContent = `${entry.path}@${entry.stateName}`;
+    path.textContent = entry.path;
     const type = document.createElement("span");
     type.className = "badge-tag";
     type.textContent = entry.bindingType;
@@ -770,7 +962,7 @@ export class WcsDevtools extends HTMLElement {
     prop.textContent = entry.propName;
     const path = document.createElement("span");
     path.className = "path";
-    path.textContent = `${entry.path}@${entry.stateName}`;
+    path.textContent = entry.path;
     row.append(type, document.createTextNode(" "), prop, document.createTextNode(" ← "), path);
     row.addEventListener("click", () => {
       this._highlightNodes([entry.element]);
@@ -811,10 +1003,34 @@ export class WcsDevtools extends HTMLElement {
       kind.classList.add("warn");
       kind.title = "emitted with no subscribers";
     }
+    // `$watch` の失敗はランタイムが握って drain を守るため、ここが唯一の
+    // 「気づける場所」になる。空撃ちと同じ warn 表示に乗せる。
+    if (entry.kind === "watch-error" || entry.kind === "watch-chain-limit") {
+      kind.classList.add("warn");
+      kind.title = entry.kind === "watch-error"
+        ? "a $watch threw; the runtime isolated it (console.error only)"
+        : "a $watch write chain hit the depth limit and was cut off";
+    }
+    // 配線の死（解決しないパス）と隔離された適用失敗も、ランタイムが console に
+    // 出すだけで続行する ＝ 見ていなければ気づけない種類なので warn に乗せる。
+    if (entry.kind === "path-unresolved" || entry.kind === "binding-apply-error") {
+      kind.classList.add("warn");
+      kind.title = entry.kind === "path-unresolved"
+        ? "a wired path does not resolve on the state; its updates are dropped"
+        : "a binding threw while applying; the runtime isolated it (console.error only)";
+    }
+    // 伝播の打ち切りと契約 drift も「黙って起きる異常」なので warn に乗せる。
+    // suppressed / coalesced は定常動作（エコー抑止・合流）のため通常表示。
+    if (entry.kind === "propagation-hop-limit" || entry.kind === "contract-drift") {
+      kind.classList.add("warn");
+      kind.title = entry.kind === "propagation-hop-limit"
+        ? "a two-way propagation chain hit the hop limit and was cut off"
+        : "sidecar manifest drifted from the live wcBindable declaration (live wins)";
+    }
     const label = document.createElement("span");
     label.className = "label";
-    const stateName = entry.stateName !== null ? `@${entry.stateName}` : "";
-    label.textContent = ` ${entry.label}${stateName} `;
+
+    label.textContent = ` ${entry.label} `;
     const detail = document.createElement("span");
     detail.className = "detail";
     detail.textContent = entry.detail;
@@ -834,7 +1050,7 @@ export class WcsDevtools extends HTMLElement {
   private _highlightPath(entry: IRosterEntry, path: string): void {
     const core = this._core!;
     const nodes: Node[] = [];
-    for (const wiring of core.getWiringForPath(entry.name, path)) {
+    for (const wiring of core.getWiringForPath(path, entry.summary.element)) {
       const binding = wiring.bindingRef.deref();
       if (binding !== undefined) {
         nodes.push(binding.node, binding.replaceNode);

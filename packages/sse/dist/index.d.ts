@@ -129,7 +129,7 @@ interface WcsSseCommands {
     close(): void;
 }
 
-declare function bootstrapSse(userConfig?: IWritableConfig): void;
+declare function bootstrapSse(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -266,6 +266,12 @@ declare const WCS_SSE_ERROR_CODE: {
      */
     readonly ConnectionError: "connection-error";
 };
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-sse": WcsSse;
+    }
+}
 
 export { SseCore, WCS_SSE_ERROR_CODE, WcsSse, bootstrapSse, getConfig };
 export type { IWritableConfig, IWritableTagNames, SseConnectOptions, WcsIoErrorInfo, WcsIoErrorPhase, WcsSseCommands, WcsSseCoreCommands, WcsSseCoreValues, WcsSseInputs, WcsSseMessage, WcsSseValues };

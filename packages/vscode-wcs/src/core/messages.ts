@@ -26,21 +26,38 @@ export function resolveLocale(locale?: string): WcsLocale {
 /** 型期待の対象種別（BindingTypeExpectation 用）。 */
 export type ExpectedTypeKind = 'array' | 'boolean' | 'string';
 
+/** 添字本数の要求（`$resolve` は厳密一致・`$getAll` / `$setAll` は接頭辞なので上限）。 */
+export type IndexArityRequirement = 'exact' | 'atMost';
+
 export interface WcsMessageCatalog {
   // --- bindingValidator / templateSyntaxValidator ---
   spreadFilterNotAllowed(): string;
   spreadTargetRequired(): string;
+  /** 構造ディレクティブ（for/if/elseif/else）が他バインディングと併記されている。 */
+  structuralMustBeSingle(directive: string): string;
   eventTokenUndeclared(tokenName: string): string;
   commandRhsFormat(): string;
   commandTokenUndeclared(tokenPath: string): string;
   streamPathMissing(path: string): string;
   pathMissing(path: string): string;
+  /** stateSchema が宣言された state で、パスが schema 上に確定的に存在しない（error）。 */
+  pathNonexistent(path: string): string;
+  /** stateSchema 上の型が構造ディレクティブの要求（`for` = 配列）と食い違う（error）。 */
+  pathTypeMismatch(path: string, label: string, expected: ExpectedTypeKind, actualType: string): string;
   /** 省略パス展開の注記（pathMissing 等の末尾に連結）。 */
   expansionSuffix(expandedPath: string): string;
   patternPathOutsideFor(path: string): string;
   omittedPathOutsideFor(path: string): string;
   loopIndexOutsideFor(path: string): string;
   resolvedPathInUi(path: string): string;
+  /** `$getAll` / `$setAll` / `$resolve` の添字の本数がパスの `*` の本数と噛み合わない。 */
+  indexArity(api: string, path: string, requirement: IndexArityRequirement, wildcardCount: number, actual: number): string;
+  /** ワイルドカードの階数がスコープの段数を超える（`$N` を含む）。 */
+  wildcardRank(subject: string, needed: number, available: number): string;
+  /** パス getter どうしの循環参照。 */
+  getterCycle(cycle: string): string;
+  /** `$updatedCallback` が未バインドのパスを判定に使っている（その分岐は走らない）。 */
+  updatedCallbackUnbound(path: string): string;
   handlerFilterNotAllowed(property: string): string;
   typeExpectation(label: string, expected: ExpectedTypeKind, resultType: string): string;
   filterUnknown(name: string): string;
@@ -53,13 +70,24 @@ export interface WcsMessageCatalog {
   // --- nestedAssignValidator / stateTypeValidator ---
   nestedAssign(suggestedPath: string): string;
   typeAnnotationIncompatible(valueType: string, rawType: string): string;
+  // --- watchDeclarationValidator ---
+  /** `$watch` の値がオブジェクトでないと静的に断定できる（ランタイムは読み込み時に throw）。 */
+  watchNotObject(): string;
+  watchKeyCrossState(key: string): string;
+  watchKeyReserved(key: string): string;
+  watchKeyEmptySegment(key: string): string;
+  watchHandlerNotFunction(key: string): string;
+  watchPathMissing(key: string): string;
   // --- arrayMutationValidator ---
   arrayMutation(method: string, alternative: string): string;
   arrayIndexAssign(suggestedPath: string): string;
   // --- ioNodeValidator ---
   tagMemberUnknown(property: string, tag: string): string;
   tagCommandUnknown(name: string, tag: string, declared: string): string;
+  spreadNoBindable(tag: string): string;
   tagEventTokenKeyUnknown(name: string, tag: string, declared: string): string;
+  /** `attr.aria-*` の属性名が WAI-ARIA に存在しない（ariaValidator）。 */
+  ariaAttrUnknown(name: string): string;
   /** 最近傍候補の「もしかして」suffix。 */
   didYouMean(candidate: string): string;
   /** 宣言済みメンバーが空のときの placeholder。 */
@@ -70,7 +98,18 @@ export interface WcsMessageCatalog {
   devtoolsAfterState(): string;
   baseHrefMissing(): string;
   signalsDualEntry(): string;
+  // --- namedStateValidator（deprecation） ---
+  /** `<wcs-state name="x">` は v2 で `mount="x"` に置き換わる。 */
+  namedStateAttrDeprecated(name: string): string;
+  /** `path@name` は v2 で `name.path` に置き換わる（`@default` は単に外す）。 */
+  namedStatePathDeprecated(name: string): string;
+  // --- mountAttrValidator ---
+  /** `mount` 属性値が runtime の validateVolumeMountPath で raise する形（同条件・同文言）。 */
+  mountPathInvalid(problem: MountPathProblem, mountPath: string): string;
 }
+
+/** `mount` 属性値の不正の種類（runtime の validateVolumeMountPath の raise と 1:1）。 */
+export type MountPathProblem = 'empty' | 'emptySegment' | 'wildcard' | 'reserved';
 
 const JA_EXPECTED_LABEL: Record<ExpectedTypeKind, string> = {
   array: '配列型のパス',
@@ -81,16 +120,27 @@ const JA_EXPECTED_LABEL: Record<ExpectedTypeKind, string> = {
 const ja: WcsMessageCatalog = {
   spreadFilterNotAllowed: () => `スプレッドのターゲットにフィルタは使用できません`,
   spreadTargetRequired: () => `スプレッドにはターゲットパスが必要です`,
+  structuralMustBeSingle: (d) => `'${d}' バインディングは単独で指定する必要があります（';' で他のバインディングと併記できません。ランタイムは読み込み時に throw します）`,
   eventTokenUndeclared: (t) => `イベントトークン "${t}" は $eventTokens に宣言されていません`,
   commandRhsFormat: () => `command バインディングの右辺には $command.<name>（$commandTokens で宣言）を指定してください`,
   commandTokenUndeclared: (t) => `コマンドトークン "${t}" は $commandTokens に宣言されていません`,
   streamPathMissing: (p) => `パス "${p}" は $streams 宣言に存在しません`,
   pathMissing: (p) => `パス "${p}" は状態定義に存在しません`,
+  pathNonexistent: (p) => `パス "${p}" は宣言された stateSchema に存在しません`,
+  pathTypeMismatch: (p, label, expected, actual) =>
+    `パス "${p}" は stateSchema 上で ${actual} 型ですが、${label} には${JA_EXPECTED_LABEL[expected]}が必要です`,
   expansionSuffix: (x) => `（展開: ${x}）`,
   patternPathOutsideFor: (p) => `パターンパス "${p}" は <template for> の外側では使用できません`,
   omittedPathOutsideFor: (p) => `省略パス "${p}" は <template for> の外側では使用できません`,
   loopIndexOutsideFor: (p) => `ループインデックス "${p}" は <template for> の外側では使用できません`,
   resolvedPathInUi: (p) => `解決済みパス "${p}" は UI バインディングでは使用できません。パターンパスを使用してください`,
+  indexArity: (api, p, req, wc, actual) =>
+    `${api}("${p}") の添字は${req === "exact" ? `ちょうど ${wc} 個` : `${wc} 個以下`}である必要があります（パス中の "*" は ${wc} 個）。${actual} 個指定されています`,
+  wildcardRank: (subject, needed, available) =>
+    `${subject} は ${needed} 段のループが必要ですが、現在のスコープは ${available} 段です`,
+  getterCycle: (cycle) => `パス getter が循環参照しています: ${cycle}`,
+  updatedCallbackUnbound: (p) =>
+    `$updatedCallback は binding 駆動です。"${p}" はこのドキュメントのどのバインディングにも現れないため、この分岐は一度も実行されません。描画に依存せず反応するなら $watch を使ってください`,
   handlerFilterNotAllowed: (prop) => `イベントハンドラ "${prop}" にフィルタは使用できません`,
   typeExpectation: (label, expected, resultType) =>
     `"${label}" には${JA_EXPECTED_LABEL[expected]}が必要です（現在の型: ${resultType}）`,
@@ -103,6 +153,12 @@ const ja: WcsMessageCatalog = {
   moustacheFouc: (e) =>
     `<template> 外の {{ }} 構文は FOUC（初期表示時にテンプレート文字列が見える）の原因になります。<!--@@:${e}--> またはコメント構文の使用を検討してください。`,
   nestedAssign: (sp) => `ネストされたプロパティへの代入はリアクティブ更新をトリガーしません。this["${sp}"] を使用してください。`,
+  watchNotObject: () => `$watch は「パス → ハンドラ関数」のオブジェクトである必要があります（この形はランタイムが読み込み時に throw します）`,
+  watchKeyCrossState: (k) => `$watch のキー "${k}" は他の state を指しています。@ 付きの越境 watch は使えません（自 state のパスのみ）`,
+  watchKeyReserved: (k) => `$watch のキー "${k}" は "$" で始められません（予約名前空間）`,
+  watchKeyEmptySegment: (k) => `$watch のキー "${k}" に空のパスセグメントがあります`,
+  watchHandlerNotFunction: (k) => `$watch のエントリ "${k}" の値は関数である必要があります`,
+  watchPathMissing: (k) => `$watch のキー "${k}" は状態定義に存在しません（一度も発火しません）`,
   typeAnnotationIncompatible: (vt, rt) => `型 "${vt}" は @type {${rt}} と互換性がありません`,
   arrayMutation: (m, alt) =>
     `配列の破壊的メソッド "${m}" はリアクティブ更新をトリガーしません（同一参照の自己再代入でも要素の追加・削除は反映されません）。非破壊メソッドと再代入を使用してください（例: ${alt}）。`,
@@ -112,8 +168,12 @@ const ja: WcsMessageCatalog = {
     `"${prop}" は <${tag}> の wcBindable メンバーではありません（未知メンバーへのバインドは黙って無視されます）`,
   tagCommandUnknown: (name, tag, declared) =>
     `"${name}" は <${tag}> の command ではありません（宣言済み: ${declared}）`,
+  spreadNoBindable: (tag) =>
+    `'...'（spread）は <${tag}> に有効な wcBindable 宣言が必要です — このタグは宣言を持たないため、ランタイムはエラーを送出します`,
   tagEventTokenKeyUnknown: (name, tag, declared) =>
     `eventToken のキー "${name}" は <${tag}> の wcBindable プロパティではありません。生 DOM イベント名は発火しません — プロパティ名を指定してください（宣言済み: ${declared}）`,
+  ariaAttrUnknown: (name) =>
+    `"${name}" は WAI-ARIA の属性ではありません。setAttribute はそのまま書き込みますが、支援技術には黙って無視されます`,
   didYouMean: (c) => `。もしかして: "${c}"`,
   none: () => `なし`,
   triggerSeededTruthy: (path) =>
@@ -126,6 +186,20 @@ const ja: WcsMessageCatalog = {
     `@wcstack/router を使う SPA には <head> 内の <base href="/"> が必要です（無いとディープリンクで basename が誤導出されます）`,
   signalsDualEntry: () =>
     `@wcstack/signals と @wcstack/signals/dom が同一ページから import されています。CDN では各エントリが自己完結バンドルのためリアクティブコアが二重化し、境界で反応が壊れます — すべて /dom エントリから import してください`,
+  namedStateAttrDeprecated: (name) =>
+    `name 属性は v2 で撤去されました（1 root 1 ツリー）。ルートツリーへのマウント <wcs-state mount="${name}"> に置き換え、パスは "${name}.<path>" で参照してください（docs/state-mount-design.md §9）`,
+  namedStatePathDeprecated: (name) =>
+    name === 'default'
+      ? `"@default" セレクタは v2 で撤去されました。"@default" を外してください（docs/state-mount-design.md §9）`
+      : `"@name" セレクタは v2 で撤去されました（1 root 1 ツリー）。マウントしたツリーを "${name}.<path>" で参照してください（docs/state-mount-design.md §9）`,
+  mountPathInvalid: (problem, mountPath) => {
+    switch (problem) {
+      case 'empty': return `"mount" には空でないツリーパスが必要です（runtime: "mount" requires a non-empty tree path.）`;
+      case 'emptySegment': return `"mount" パス "${mountPath}" に空のセグメントがあります（runtime: has an empty segment.）`;
+      case 'wildcard': return `"mount" パス "${mountPath}" は静的でなければなりません — ワイルドカードは使えません（runtime: must be static.）`;
+      default: return `"mount" パス "${mountPath}" に予約文字（$, #, @）は使えません（runtime: must not use reserved characters.）`;
+    }
+  },
 };
 
 const EN_EXPECTED_LABEL: Record<ExpectedTypeKind, string> = {
@@ -137,16 +211,27 @@ const EN_EXPECTED_LABEL: Record<ExpectedTypeKind, string> = {
 const en: WcsMessageCatalog = {
   spreadFilterNotAllowed: () => `Filters cannot be applied to a spread target`,
   spreadTargetRequired: () => `Spread requires a target path`,
+  structuralMustBeSingle: (d) => `'${d}' must be the only binding in this attribute (it cannot be combined with ';'; the runtime throws at load time)`,
   eventTokenUndeclared: (t) => `Event token "${t}" is not declared in $eventTokens`,
   commandRhsFormat: () => `The right side of a command binding must be $command.<name> (declared in $commandTokens)`,
   commandTokenUndeclared: (t) => `Command token "${t}" is not declared in $commandTokens`,
   streamPathMissing: (p) => `Path "${p}" does not exist in the $streams declaration`,
   pathMissing: (p) => `Path "${p}" does not exist in the state definition`,
+  pathNonexistent: (p) => `Path "${p}" does not exist in the declared stateSchema`,
+  pathTypeMismatch: (p, label, expected, actual) =>
+    `Path "${p}" is ${actual} in the stateSchema, but ${label} requires ${expected === 'array' ? 'an array' : expected === 'boolean' ? 'a boolean' : 'a string'}`,
   expansionSuffix: (x) => ` (expanded: ${x})`,
   patternPathOutsideFor: (p) => `Pattern path "${p}" cannot be used outside a <template for>`,
   omittedPathOutsideFor: (p) => `Shorthand path "${p}" cannot be used outside a <template for>`,
   loopIndexOutsideFor: (p) => `Loop index "${p}" cannot be used outside a <template for>`,
   resolvedPathInUi: (p) => `Resolved path "${p}" cannot be used in a UI binding. Use a pattern path instead`,
+  indexArity: (api, p, req, wc, actual) =>
+    `${api}("${p}") requires ${req === "exact" ? "exactly" : "at most"} ${wc} index(es) ("*" appears ${wc} time(s) in the path) but got ${actual}`,
+  wildcardRank: (subject, needed, available) =>
+    `${subject} needs ${needed} enclosing loop level(s) but the current scope provides ${available}`,
+  getterCycle: (cycle) => `Path getters form a dependency cycle: ${cycle}`,
+  updatedCallbackUnbound: (p) =>
+    `$updatedCallback is binding-driven. "${p}" is not bound anywhere in this document, so this branch never runs. Use $watch to react without depending on what is rendered`,
   handlerFilterNotAllowed: (prop) => `Filters cannot be applied to event handler "${prop}"`,
   typeExpectation: (label, expected, resultType) =>
     `"${label}" requires ${EN_EXPECTED_LABEL[expected]} (current type: ${resultType})`,
@@ -159,6 +244,12 @@ const en: WcsMessageCatalog = {
   moustacheFouc: (e) =>
     `{{ }} outside a <template> causes FOUC (the raw template string is visible before binding). Consider the comment syntax <!--@@:${e}--> instead.`,
   nestedAssign: (sp) => `Assigning to a nested property does not trigger a reactive update. Use this["${sp}"] instead.`,
+  watchNotObject: () => `$watch must be an object mapping state paths to handler functions (the runtime throws on this shape at load time)`,
+  watchKeyCrossState: (k) => `$watch key "${k}" targets another state. Cross-state watching with @ is not supported (own paths only)`,
+  watchKeyReserved: (k) => `$watch key "${k}" must not start with "$" (reserved namespace)`,
+  watchKeyEmptySegment: (k) => `$watch key "${k}" has an empty path segment`,
+  watchHandlerNotFunction: (k) => `The value of $watch entry "${k}" must be a function`,
+  watchPathMissing: (k) => `$watch key "${k}" does not exist in the state definition (it will never fire)`,
   typeAnnotationIncompatible: (vt, rt) => `Type "${vt}" is not compatible with @type {${rt}}`,
   arrayMutation: (m, alt) =>
     `Destructive array method "${m}" does not trigger a reactive update (re-assigning the same reference does not reflect added/removed elements either). Use a non-destructive method with reassignment (e.g. ${alt}).`,
@@ -168,8 +259,12 @@ const en: WcsMessageCatalog = {
     `"${prop}" is not a wcBindable member of <${tag}> (bindings to unknown members are silently ignored)`,
   tagCommandUnknown: (name, tag, declared) =>
     `"${name}" is not a command of <${tag}> (declared: ${declared})`,
+  spreadNoBindable: (tag) =>
+    `'...' (spread) requires <${tag}> to expose a valid wcBindable declaration — this tag declares none, so the runtime raises an error`,
   tagEventTokenKeyUnknown: (name, tag, declared) =>
     `eventToken key "${name}" is not a wcBindable property of <${tag}>. Raw DOM event names never fire — use the property name (declared: ${declared})`,
+  ariaAttrUnknown: (name) =>
+    `"${name}" is not a WAI-ARIA attribute. setAttribute writes it anyway, and assistive technology silently ignores it`,
   didYouMean: (c) => `. Did you mean "${c}"?`,
   none: () => `none`,
   triggerSeededTruthy: (path) =>
@@ -182,6 +277,21 @@ const en: WcsMessageCatalog = {
     `An SPA using @wcstack/router needs <base href="/"> in <head> (without it, deep links misderive the basename)`,
   signalsDualEntry: () =>
     `Both @wcstack/signals and @wcstack/signals/dom are imported on this page. On a CDN each entry is a self-contained bundle, so the reactive core is duplicated and reactivity breaks at the seam — import everything from the single /dom entry`,
+  namedStateAttrDeprecated: (name) =>
+    `The "name" attribute was removed in v2 — there is a single state tree per root. Mount this state onto the tree instead: <wcs-state mount="${name}"> and read it as "${name}.<path>" (docs/state-mount-design.md §9)`,
+  namedStatePathDeprecated: (name) =>
+    name === 'default'
+      ? `The "@default" selector was removed in v2 — drop it (docs/state-mount-design.md §9)`
+      : `The "@name" selector was removed in v2 — there is a single state tree. Mount the named state onto the tree (<wcs-state mount="...">) and read it as "${name}.<path>" (docs/state-mount-design.md §9)`,
+  mountPathInvalid: (problem, mountPath) => {
+    // runtime（state/src/webComponent/volume.ts validateVolumeMountPath）と同文言
+    switch (problem) {
+      case 'empty': return `"mount" requires a non-empty tree path.`;
+      case 'emptySegment': return `"mount" path "${mountPath}" has an empty segment.`;
+      case 'wildcard': return `"mount" path "${mountPath}" must be static (wildcards are not allowed).`;
+      default: return `"mount" path "${mountPath}" must not use reserved characters ($, #, @).`;
+    }
+  },
 };
 
 const CATALOGS: Record<WcsLocale, WcsMessageCatalog> = { ja, en };

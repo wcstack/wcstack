@@ -829,17 +829,22 @@ class WcsEyedropper extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.eyedropper)) {
-        customElements.define(config.tagNames.eyedropper, WcsEyedropper);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.eyedropper)) {
+        registry.define(config.tagNames.eyedropper, WcsEyedropper);
     }
 }
 
-function bootstrapEyedropper(userConfig) {
+function bootstrapEyedropper(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { EyedropperCore, WCS_EYEDROPPER_ERROR_CODE, WcsEyedropper, bootstrapEyedropper, getConfig };

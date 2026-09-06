@@ -40,7 +40,7 @@ describe('validateArrayMutations: 破壊的メソッド呼び出し（wcs/array-
     const diags = validateArrayMutations(html);
     expect(diags).toHaveLength(1);
     expect(diags[0].code).toBe(WcsDiagnosticCode.ArrayMutation);
-    expect(diags[0].severity).toBe('warning');
+    expect(diags[0].severity).toBe('error');
     expect(diags[0].statePath).toBe('items');
     expect(diags[0].message).toContain(`"${method}"`);
     expect(diags[0].message).toContain(METHOD_ALTERNATIVES[method]);
@@ -224,7 +224,7 @@ describe('validateArrayMutations: インデックス代入（wcs/array-index-ass
     const diags = validateArrayMutations(html);
     expect(diags).toHaveLength(1);
     expect(diags[0].code).toBe(WcsDiagnosticCode.ArrayIndexAssign);
-    expect(diags[0].severity).toBe('warning');
+    expect(diags[0].severity).toBe('error');
     expect(diags[0].statePath).toBe('items.0');
     expect(diags[0].message).toContain('this["items.0"]');
   });

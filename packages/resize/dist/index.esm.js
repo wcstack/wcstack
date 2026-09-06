@@ -705,17 +705,22 @@ class WcsResize extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.resize)) {
-        customElements.define(config.tagNames.resize, WcsResize);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.resize)) {
+        registry.define(config.tagNames.resize, WcsResize);
     }
 }
 
-function bootstrapResize(userConfig) {
+function bootstrapResize(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { ResizeCore, WcsResize, bootstrapResize, getConfig };

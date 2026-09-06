@@ -12,6 +12,7 @@
 
 import { IStateElement } from "../components/types";
 import { STATE_ON_NAME } from "../define";
+import { didYouMean } from "../errorGuidance";
 import { raiseError } from "../raiseError";
 import { IState } from "../types";
 import { TokenSubscriber } from "../token/Token";
@@ -31,7 +32,7 @@ export function processOnDeclaration(
   }
   for (const [name, handler] of Object.entries(declared as Record<string, unknown>)) {
     if (!eventTokenNames.has(name)) {
-      raiseError(`${STATE_ON_NAME} entry "${name}" is not declared in $eventTokens.`);
+      raiseError(`${STATE_ON_NAME} entry "${name}" is not declared in $eventTokens.${didYouMean(name, eventTokenNames)}`);
     }
     if (typeof handler !== "function") {
       raiseError(`${STATE_ON_NAME} entry "${name}" must be a function.`);

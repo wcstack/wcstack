@@ -135,7 +135,7 @@ interface WcsEyedropperCoreValues {
  */
 type WcsEyedropperValues = WcsEyedropperCoreValues;
 
-declare function bootstrapEyedropper(userConfig?: IWritableConfig): void;
+declare function bootstrapEyedropper(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -254,6 +254,12 @@ declare const WCS_EYEDROPPER_ERROR_CODE: {
     readonly CapabilityMissing: "capability-missing";
     readonly PickFailed: "pick-failed";
 };
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-eyedropper": WcsEyedropper;
+    }
+}
 
 export { EyedropperCore, WCS_EYEDROPPER_ERROR_CODE, WcsEyedropper, bootstrapEyedropper, getConfig };
 export type { IWritableConfig, IWritableTagNames, WcsEyedropperCoreValues, WcsEyedropperData, WcsEyedropperValues, WcsIoErrorInfo, WcsIoErrorPhase };

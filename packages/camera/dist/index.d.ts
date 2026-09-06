@@ -210,7 +210,7 @@ interface WcsRecorderCommands {
     resume(): void;
 }
 
-declare function bootstrapCamera(userConfig?: IWritableConfig): void;
+declare function bootstrapCamera(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -575,6 +575,13 @@ declare const WCS_MEDIA_ERROR_CODE: {
     /** その他の実行時失敗(`RecorderError` / 想定外の MediaRecorder エラー等)。 */
     readonly MediaError: "media-error";
 };
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-camera": WcsCamera;
+        "wcs-recorder": WcsRecorder;
+    }
+}
 
 export { CameraCore, RecorderCore, WCS_MEDIA_ERROR_CODE, WcsCamera, WcsRecorder, bootstrapCamera, getConfig };
 export type { CameraConstraints, FacingMode, IWritableConfig, IWritableTagNames, MediaDeviceSnapshot, MediaPermissionState, RecorderOptions, WcsCameraCommands, WcsCameraCoreCommands, WcsCameraCoreValues, WcsCameraInputs, WcsCameraValues, WcsIoErrorInfo, WcsIoErrorPhase, WcsMediaErrorDetail, WcsRecordedDetail, WcsRecorderCommands, WcsRecorderCoreCommands, WcsRecorderCoreValues, WcsRecorderInputs, WcsRecorderValues };

@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { initializeBindings, initializeBindingsByFragment } from '../src/bindings/initializeBindings';
-import { setStateElementByName } from '../src/stateElementByName';
+import { setStateElement } from '../src/stateElementByName';
 import { attachEventHandler } from '../src/event/handler';
 import type { IStateElement } from '../src/components/types';
 import type { IBindingInfo } from '../src/types';
@@ -98,13 +98,13 @@ function createMockStateElement(): IStateElement {
 
 describe('initializeBindings', () => {
   afterEach(() => {
-    setStateElementByName(document, 'default', null);
+    setStateElement(document, null);
     vi.clearAllMocks();
   });
 
   it('コメントノードのtextバインディングを初期化できること', () => {
     const stateElement = createMockStateElement();
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
 
     const container = document.createElement('div');
     const comment = document.createComment('@@wcs-text: message');
@@ -129,18 +129,21 @@ describe('initializeBindings', () => {
   });
 
   it('stateElementが存在しない場合はエラーになること', () => {
-    const container = document.createElement('div');
+    // v2 では名前が無いので「default が未登録の rootNode」で構成する
+    const holder = document.createElement('div');
+    const shadow = holder.attachShadow({ mode: 'open' });
     const el = document.createElement('span');
-    el.setAttribute('data-wcs', 'textContent: message@missing');
-    container.appendChild(el);
-    document.body.appendChild(container);
+    el.setAttribute('data-wcs', 'textContent: message');
+    shadow.appendChild(el);
+    document.body.appendChild(holder);
 
-    expect(() => initializeBindings(container, null)).toThrow(/State element with name "missing" not found/);
+    expect(() => initializeBindings(shadow as unknown as DocumentFragment, null)).toThrow(/No state tree found on this root/);
+    holder.remove();
   });
 
   it('eventバインディングは登録処理をスキップすること', () => {
     const stateElement = createMockStateElement();
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
 
     const setBindingSpy = vi.spyOn(stateElement, 'setPathInfo');
 
@@ -157,7 +160,7 @@ describe('initializeBindings', () => {
 
   it('同じstateElementに複数バインディングがある場合も処理されること', () => {
     const stateElement = createMockStateElement();
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
 
     const container = document.createElement('div');
     const el1 = document.createElement('span');
@@ -177,7 +180,7 @@ describe('initializeBindings', () => {
 
   it('fragment初期化ではループコンテキストが設定されないこと', () => {
     const stateElement = createMockStateElement();
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
 
     const fragment = document.createDocumentFragment();
     const el = document.createElement('span');
@@ -193,7 +196,7 @@ describe('initializeBindings', () => {
 
   it('初期化途中でStateElementが削除された場合はエラーになること', () => {
     const stateElement = createMockStateElement();
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
 
     const container = document.createElement('div');
     const comment = document.createComment('@@wcs-text: message');
@@ -201,11 +204,11 @@ describe('initializeBindings', () => {
     document.body.appendChild(container);
 
     // addBindingInfoByAbsoluteStateAddress の呼び出しタイミングで StateElement を削除し、
-    // 直後の getStateElementByName チェックでエラーを発生させる
+    // 直後の getStateElement チェックでエラーを発生させる
     vi.mocked(addBindingByAbsoluteStateAddress).mockImplementationOnce(() => {
-      setStateElementByName(document, 'default', null);
+      setStateElement(document, null);
     });
 
-    expect(() => initializeBindings(container, null)).toThrow(/State element with name "default" not found for binding/);
+    expect(() => initializeBindings(container, null)).toThrow(/No state tree found on this root/);
   });
 });

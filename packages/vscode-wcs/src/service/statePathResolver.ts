@@ -56,31 +56,54 @@ function resolveElementPaths(
   html: string,
   fileReader?: FileReader,
 ): PathCandidate[] {
+  const raw = resolveElementPathsRaw(element, html, fileReader);
+  // v2: ボリューム（mount=）の候補はマウントパス接頭辞でツリーに載る。
+  // $ 名前空間（$command / $streamStatus 等）はマウント越しに表現できないので落とす
+  //（runtime もボリュームの $streams / メソッドを実行しない）
+  if (element.mountPath === null) return raw;
+  const prefix = element.mountPath + '.';
+  const out: PathCandidate[] = [];
+  for (const p of raw) {
+    if (p.path.startsWith('$')) continue;
+    // メソッドのツリー露出・イベントトークンもボリューム未対応（runtime はメソッドを
+    // 接ぎ木せず、$commandTokens / $eventTokens / $on 宣言は warn で捨てる）—
+    // 候補に載せると存在しないパスを補完・無警告通過させてしまう
+    if (p.kind === 'method' || p.kind === 'eventToken') continue;
+    out.push({ ...p, path: prefix + p.path });
+  }
+  return out;
+}
+
+function resolveElementPathsRaw(
+  element: WcsStateInfo,
+  html: string,
+  fileReader?: FileReader,
+): PathCandidate[] {
   // 1. state 属性: <script type="application/json" id="..."> を参照
   if (element.stateAttr) {
     const jsonContent = findScriptJsonById(html, element.stateAttr);
     if (jsonContent) {
-      const paths = analyzeJsonPaths(jsonContent, element.stateName);
+      const paths = analyzeJsonPaths(jsonContent);
       if (paths.length > 0) return paths;
     }
   }
 
   // 2. src 属性: 外部ファイル（.json / .js / .ts）
   if (element.srcAttr && fileReader) {
-    const paths = resolveSrcAttribute(element.srcAttr, element.stateName, fileReader);
+    const paths = resolveSrcAttribute(element.srcAttr, fileReader);
     if (paths.length > 0) return paths;
   }
 
   // 3. json 属性: インライン JSON
   if (element.jsonAttr) {
-    const paths = analyzeJsonPaths(element.jsonAttr, element.stateName);
+    const paths = analyzeJsonPaths(element.jsonAttr);
     if (paths.length > 0) return paths;
   }
 
   // 4. inner <script type="module">: 既存の解析
   if (element.scriptBlocks.length > 0) {
     return element.scriptBlocks.flatMap(block =>
-      analyzeStatePaths(block.content, block.stateName)
+      analyzeStatePaths(block.content)
     );
   }
 
@@ -96,13 +119,12 @@ function resolveElementPaths(
  */
 function resolveSrcAttribute(
   srcPath: string,
-  stateName: string,
   fileReader: FileReader,
 ): PathCandidate[] {
   if (srcPath.endsWith('.json')) {
     const content = fileReader(srcPath);
     if (content) {
-      return analyzeJsonPaths(content, stateName);
+      return analyzeJsonPaths(content);
     }
     return [];
   }
@@ -112,12 +134,12 @@ function resolveSrcAttribute(
     const tsPath = srcPath.replace(/\.js$/, '.ts');
     const tsContent = fileReader(tsPath);
     if (tsContent) {
-      return analyzeStatePaths(tsContent, stateName);
+      return analyzeStatePaths(tsContent);
     }
 
     const jsContent = fileReader(srcPath);
     if (jsContent) {
-      return analyzeStatePaths(jsContent, stateName);
+      return analyzeStatePaths(jsContent);
     }
     return [];
   }
@@ -125,7 +147,7 @@ function resolveSrcAttribute(
   if (srcPath.endsWith('.ts')) {
     const content = fileReader(srcPath);
     if (content) {
-      return analyzeStatePaths(content, stateName);
+      return analyzeStatePaths(content);
     }
     return [];
   }

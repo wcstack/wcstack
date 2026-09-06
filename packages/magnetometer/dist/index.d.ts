@@ -102,7 +102,7 @@ interface WcsMagnetometerCoreValues extends WcsMagnetometerReading {
  */
 type WcsMagnetometerValues = WcsMagnetometerCoreValues;
 
-declare function bootstrapMagnetometer(userConfig?: IWritableConfig): void;
+declare function bootstrapMagnetometer(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -290,6 +290,12 @@ declare const WCS_MAGNETOMETER_ERROR_CODE: {
     /** その他の SensorErrorEvent / 想定外の失敗。 */
     readonly SensorError: "sensor-error";
 };
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-magnetometer": WcsMagnetometer;
+    }
+}
 
 export { MagnetometerCore, WCS_MAGNETOMETER_ERROR_CODE, WcsMagnetometer, bootstrapMagnetometer, getConfig };
 export type { IWritableConfig, IWritableTagNames, WcsIoErrorInfo, WcsIoErrorPhase, WcsMagnetometerCoreValues, WcsMagnetometerErrorDetail, WcsMagnetometerReading, WcsMagnetometerValues };

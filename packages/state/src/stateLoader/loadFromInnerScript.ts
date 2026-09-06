@@ -27,9 +27,20 @@ function describeImportFailure(name: string, error: unknown, cspBlocked: boolean
     `If this page sets a Content-Security-Policy, see ${CSP_GUIDE}`;
 }
 
-export async function loadFromInnerScript(script: HTMLScriptElement, name: string): Promise<IState> {
+/**
+ * ロードごとに増える通し番号。`data:` URL フォールバック（createObjectURL の無い
+ * テスト / SSR 環境）では URL がスクリプト本文そのものなので、同じ本文を 2 度
+ * 読み込むと ESM ローダーのキャッシュに当たり **同じモジュール = 同じ default export
+ * オブジェクト** が返る — 2 つ目の `<wcs-state>` が 1 つ目の state を共有してしまう
+ * （テストでは前のテストの書き込みが次のテストに漏れ、SSR では同一テンプレートの
+ * 再描画で state が共有される）。blob: URL は生成のたびに一意なのでブラウザでは
+ * 起きない。sourceURL コメントに番号を混ぜて本文を毎回変え、両経路を揃える。
+ */
+let loadSequence = 0;
+
+export async function loadFromInnerScript(script: HTMLScriptElement, sourceLabel: string): Promise<IState> {
   let scriptModule: ScriptModule | null = null;
-  const uniq_comment = `\n//# sourceURL=${name}\n`;
+  const uniq_comment = `\n//# sourceURL=${sourceLabel}#${++loadSequence}\n`;
   // import() が失敗した理由が CSP かどうかを判別するために、評価の間だけ違反を購読する。
   let cspBlocked = false;
   const onViolation = (event: Event) => {
@@ -58,7 +69,7 @@ export async function loadFromInnerScript(script: HTMLScriptElement, name: strin
   } catch (e) {
     // 呼び出し元（State._initialize / _initializeDCC）が raiseError で
     // `[@wcstack/state]` を付けるため、ここでは prefix を重ねない。
-    throw new Error(describeImportFailure(name, e, cspBlocked), { cause: e });
+    throw new Error(describeImportFailure(sourceLabel, e, cspBlocked), { cause: e });
   } finally {
     document.removeEventListener("securitypolicyviolation", onViolation);
   }

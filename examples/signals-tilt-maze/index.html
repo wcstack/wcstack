@@ -25,6 +25,7 @@
 
     /* Board — fixed 320x320 logical px, same space as the physics */
     .board { position: relative; width: 320px; height: 320px; margin: 0 auto; background: #f8f9fa; border: 4px solid #3949ab; border-radius: 8px; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+    .board:focus-visible { outline: 3px solid #e65100; outline-offset: 2px; }
     .wall { position: absolute; background: #3949ab; border-radius: 3px; }
     .hole { position: absolute; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #37474f, #0d1117 70%); }
     .goal { position: absolute; border-radius: 6px; background: #e8f5e9; border: 2px dashed #2e7d32; }
@@ -87,7 +88,7 @@
   <li>Sensors need a secure context: localhost works; on a phone use HTTPS (or <code>adb reverse</code>).</li>
   <li>iOS grants tilt via the Start button's tap (gesture-gated permission, absorbed by <code>&lt;wcs-tilt&gt;</code>).</li>
   <li>Shake detection uses <code>&lt;wcs-accelerometer&gt;</code> (Chromium/Android); elsewhere the Retry button covers it.</li>
-  <li>Desktop: drag the board, or emulate orientation in DevTools &gt; Sensors.</li>
+  <li>Desktop: drag the board, use the arrow keys (focus the board first — it is in the Tab order), or emulate orientation in DevTools &gt; Sensors.</li>
   <li>Start waits only while the sensor packages load. Block <code>esm.run/@wcstack/tilt</code> in DevTools &gt; Network to watch it degrade: the <code>import()</code> rejects, Start unlocks anyway and the HUD reports drag-only control.</li>
 </ul>
 
@@ -122,6 +123,12 @@
   const V_MAX = 260;
   const BOUNCE = -0.25;
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+  // Keyboard alternative (WCAG 2.5.4 Motion Actuation): held arrows are plain
+  // hot-loop state, same as vx/simBeta — nothing reactive reads them.
+  const KEYS = new Set();
+  const ARROWS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
+  const KEY_RAMP = 160;               // degrees per second toward the held direction
 
   function hitsWall(cx, cy) {
     for (const w of WALLS) {
@@ -201,10 +208,10 @@
   });
   const timeText = computed(() => (timeMs.get() / 1000).toFixed(1) + " s");
   const controlText = computed(() => {
-    if (sensorActive.get()) return "control: device tilt";
-    if (sensorsFailed.get()) return "control: drag (sensor packages failed to load)";
-    if (tilt.get()?.signals.permissionState.get() === "denied") return "control: drag (tilt permission denied)";
-    return "control: drag the board";
+    if (sensorActive.get()) return "control: device tilt (or arrow keys)";
+    if (sensorsFailed.get()) return "control: drag or arrow keys (sensor packages failed to load)";
+    if (tilt.get()?.signals.permissionState.get() === "denied") return "control: drag or arrow keys (tilt permission denied)";
+    return "control: drag the board or use the arrow keys";
   });
   const wakeText = computed(() => (wake.get()?.signals.held.get() ? "screen: kept awake" : "screen: normal"));
 
@@ -235,14 +242,27 @@
     timeMs.set(timeMs.peek() + dtMs);
     const dt = Math.min(dtMs, 40) / 1000;
 
+    // keyboard input: held arrows ramp the simulated tilt toward its max —
+    // a third input on the existing sim channel (physics below untouched)
+    const keysHeld = KEYS.size > 0;
+    if (keysHeld) {
+      const rampStep = KEY_RAMP * dt;
+      const targetGamma = (KEYS.has("ArrowRight") ? TILT_MAX : 0) + (KEYS.has("ArrowLeft") ? -TILT_MAX : 0);
+      const targetBeta = (KEYS.has("ArrowDown") ? TILT_MAX : 0) + (KEYS.has("ArrowUp") ? -TILT_MAX : 0);
+      simGamma = clamp(simGamma + clamp(targetGamma - simGamma, -rampStep, rampStep), -TILT_MAX, TILT_MAX);
+      simBeta = clamp(simBeta + clamp(targetBeta - simBeta, -rampStep, rampStep), -TILT_MAX, TILT_MAX);
+    }
+
     const t = tilt.peek();
     const sensor = t !== null && t.signals.beta.peek() !== null;
-    if (!dragging && !sensor) {
+    if (!dragging && !keysHeld && !sensor) {
       simBeta *= 0.92;
       simGamma *= 0.92;
     }
-    const effBeta = clamp(dragging || !sensor ? simBeta : t.signals.beta.peek(), -TILT_MAX, TILT_MAX);
-    const effGamma = clamp(dragging || !sensor ? simGamma : t.signals.gamma.peek(), -TILT_MAX, TILT_MAX);
+    // keys-held ranks with dragging: an explicit input beats the sensor
+    const useSim = dragging || keysHeld || !sensor;
+    const effBeta = clamp(useSim ? simBeta : t.signals.beta.peek(), -TILT_MAX, TILT_MAX);
+    const effGamma = clamp(useSim ? simGamma : t.signals.gamma.peek(), -TILT_MAX, TILT_MAX);
 
     vx = clamp((vx + ACCEL * effGamma * dt) * Math.exp(-1.2 * dt), -V_MAX, V_MAX);
     vy = clamp((vy + ACCEL * effBeta * dt) * Math.exp(-1.2 * dt), -V_MAX, V_MAX);
@@ -309,6 +329,24 @@
     dragging = false;
   }
 
+  // --- keyboard alternative ----------------------------------------------------
+  // preventDefault only for the arrows, inside the handler — a blanket
+  // preventDefault would kill Tab (and every other key) too.
+  function keyDown(e) {
+    if (!ARROWS.has(e.key)) return;
+    e.preventDefault();
+    if (e.repeat) return;
+    KEYS.add(e.key);
+  }
+  function keyUp(e) {
+    if (!ARROWS.has(e.key)) return;
+    KEYS.delete(e.key);
+  }
+  // Stuck-key prevention: losing focus ends every held key.
+  function keyClear() {
+    KEYS.clear();
+  }
+
   // --- overlays (rebuilt per phase flip; each build is owned & disposed) ------
   const overlay = () => {
     const p = phase.get();
@@ -318,7 +356,7 @@
         h("h2", null, "Tilt Ball Maze"),
         h("p", null, "Tilt your phone to roll the ball to the flag ⚑.", h("br"),
           "Avoid the holes. Shake to restart.", h("br"),
-          "No sensors? Drag on the board instead."),
+          "No sensors? Drag on the board or use the arrow keys."),
         // Held while the sensor packages are in flight (see sensorsResolving),
         // so the tap can never land before the commands it fires exist — and
         // unlocked either way once they settle, failures included.
@@ -369,19 +407,28 @@
     });
 
     const view = h("div", null,
-      h("div", { class: "hud", role: "status" },
+      // No role="status" on the HUD: the timer updates every frame and a live
+      // region here floods a screen reader. Only the low-frequency control chip
+      // announces (it changes when the control mode changes).
+      h("div", { class: "hud" },
         h("span", { class: "time" }, timeText),
-        h("span", { class: "chip" }, controlText),
+        h("span", { class: "chip", role: "status" }, controlText),
         h("span", { class: "chip" }, wakeText),
         h("span", { class: "chip loop-chip" }, "game loop"),
         h("button", { type: "button", onClick: restart }, "Reset"),
       ),
       h("div", {
         class: "board",
+        tabindex: 0,
+        role: "application",
+        "aria-label": "Maze board. Use the arrow keys to tilt the board and roll the ball to the flag.",
         onPointerDown: dragStart,
         onPointerMove: dragMove,
         onPointerUp: dragEnd,
         onPointerCancel: dragEnd,
+        onKeyDown: keyDown,
+        onKeyUp: keyUp,
+        onBlur: keyClear,
       },
         WALLS.map((w) => h("div", { class: "wall", style: `left:${w.x}px;top:${w.y}px;width:${w.w}px;height:${w.h}px` })),
         HOLES.map((hl) => h("div", { class: "hole", style: `left:${hl.x - hl.r}px;top:${hl.y - hl.r}px;width:${hl.r * 2}px;height:${hl.r * 2}px` })),

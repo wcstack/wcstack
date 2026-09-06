@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./.tsc-out",
+    "rootDir": ".",
+    "types": ["node"],
+    "resolveJsonModule": true
+  },
+  "include": ["src/**/*", "package.json"],
+  "exclude": ["node_modules", "dist", ".tsc-out", "**/*.test.ts"]
+}

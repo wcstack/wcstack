@@ -70,6 +70,39 @@ describe('validateIoNodes: tag-member-unknown', () => {
   });
 });
 
+describe('validateIoNodes: spread-no-bindable', () => {
+  it('wcBindable 無宣言タグへの spread を error にすること（ランタイムは raiseError）', () => {
+    const html = `<wcs-fetch-header data-wcs="...: headers"></wcs-fetch-header>`;
+    const diagnostics = validateIoNodes(html);
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0].code).toBe(WcsDiagnosticCode.SpreadNoBindable);
+    expect(diagnostics[0].severity).toBe('error');
+    expect(diagnostics[0].tag).toBe('wcs-fetch-header');
+    // range は '...' トークンを指す
+    expect(html.slice(diagnostics[0].start, diagnostics[0].end)).toBe('...');
+  });
+
+  it('宣言のあるタグへの spread と、無宣言タグの通常バインドは対象外', () => {
+    // wcs-fetch は宣言あり → spread 合法。無宣言タグの value: 等は従来どおり沈黙
+    const html = `
+<wcs-fetch data-wcs="...: fetchX"></wcs-fetch>
+<wcs-fetch-header data-wcs="value: x"></wcs-fetch-header>`;
+    expect(validateIoNodes(html)).toHaveLength(0);
+  });
+
+  it('空の wcBindable（wcs-noise）への spread は合法な 0 展開として沈黙すること', () => {
+    const html = `<wcs-noise data-wcs="...: cfg"></wcs-noise>`;
+    expect(validateIoNodes(html)).toHaveLength(0);
+  });
+
+  it('複数式の中の spread だけを指し、他の式は巻き込まないこと', () => {
+    const html = `<wcs-fetch-body data-wcs="value: x; ...: body"></wcs-fetch-body>`;
+    const diagnostics = validateIoNodes(html);
+    expect(diagnostics).toHaveLength(1);
+    expect(html.slice(diagnostics[0].start, diagnostics[0].end)).toBe('...');
+  });
+});
+
 describe('validateIoNodes: trigger-seeded-truthy', () => {
   it('trigger バインド先が true シードなら警告する', () => {
     const html = STATE(`  reload: true,`) +

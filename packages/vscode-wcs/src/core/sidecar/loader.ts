@@ -12,6 +12,7 @@ import { WcsDiagnostic, WcsDiagnosticCode } from "../diagnostics.js";
 import { DiagnosticContext } from "./schemaSubset.js";
 import { JsonSpan, parseJsonWithSpans, pointer } from "./jsonSource.js";
 import {
+  JsonSchemaNode,
   SUPPORTED_NAMESPACE_VERSION,
   SUPPORTED_SCHEMA_VERSION,
   TypesComponent,
@@ -73,10 +74,13 @@ export function loadManifest(artifact: ManifestArtifact): LoadedManifest {
     return { artifact, manifest: null, ctx, spans: parsed.spans };
   }
   if (obj.schemaVersion !== SUPPORTED_SCHEMA_VERSION) {
+    const migration = obj.schemaVersion === 1
+      ? ` schemaVersion 1 (states[name]) predates v2's single state tree — regenerate with \`wcs-schema emit\`.`
+      : "";
     ctx.add(
       WcsDiagnosticCode.ManifestSchemaVersion,
       pointer("schemaVersion"),
-      `Unsupported schemaVersion ${obj.schemaVersion}; this reader supports ${SUPPORTED_SCHEMA_VERSION}.`,
+      `Unsupported schemaVersion ${obj.schemaVersion}; this reader supports ${SUPPORTED_SCHEMA_VERSION}.${migration}`,
       "error",
     );
     return { artifact, manifest: null, ctx, spans: parsed.spans };
@@ -124,6 +128,13 @@ export interface ResolvedTagContract {
 export interface ResolvedContracts {
   /** 衝突していない tag → 契約。衝突した tag は含めない(unknown 扱いにするため)。 */
   readonly tags: ReadonlyMap<string, ResolvedTagContract>;
+  /**
+   * application の stateSchema(D8 — v2: 単一ツリー)。複数の application artifact が
+   * 宣言していれば undefined(未宣言扱い = schema 検証は沈黙)。
+   */
+  readonly applicationSchema: JsonSchemaNode | undefined;
+  /** application artifact が 1 つでも渡されたか(明示指定が発見結果を置き換える判定用)。 */
+  readonly hasApplicationArtifact: boolean;
   /** 衝突/override 診断を、それを生んだ artifact の source ごとに束ねたもの。 */
   readonly diagnosticsBySource: ReadonlyMap<string, readonly WcsDiagnostic[]>;
 }
@@ -150,9 +161,13 @@ export function resolvePackageContracts(loaded: readonly LoadedManifest[]): Reso
   const collided = new Set<string>();
   const firstSource = new Map<string, string>();
   const filterOwner = new Map<string, string>();
+  let schemaOwner: string | undefined;
+  let schemaWinner: JsonSchemaNode | undefined;
+  let hasApplicationArtifact = false;
 
   for (const lm of loaded) {
     if (lm.manifest === null) continue;
+    if (lm.manifest.kind === "application") hasApplicationArtifact = true;
 
     // package: tag 契約の衝突/override。
     const types = lm.manifest.manifestExtensions?.["wcstack.types"];
@@ -208,6 +223,29 @@ export function resolvePackageContracts(loaded: readonly LoadedManifest[]): Reso
         );
       }
     }
+
+    // application: stateSchema の衝突(D8 — v2: 単一ツリーのスロットは 1 つ)。
+    // 後勝ちにせず、勝者なし。
+    if (lm.manifest.kind === "application" && application?.stateSchema !== undefined) {
+      const schema = application.stateSchema;
+      if (schema !== null && typeof schema === "object" && !Array.isArray(schema)) {
+        if (schemaOwner === undefined) {
+          schemaOwner = lm.artifact.source;
+          schemaWinner = schema as JsonSchemaNode;
+        } else {
+          // 衝突 = 勝者なし（読み手はこの undefined だけを見る）
+          schemaWinner = undefined;
+          ctxFor(lm).add(
+            WcsDiagnosticCode.ManifestStateCollision,
+            pointer("manifestExtensions", "wcstack.application", "stateSchema"),
+            `Multiple application artifacts declare a stateSchema (also in "${schemaOwner}"); neither is used.`,
+            "error",
+            undefined,
+            true,
+          );
+        }
+      }
+    }
   }
 
   // 撤回された tag の override info は陳腐化するため取り除く(#5)。
@@ -218,5 +256,5 @@ export function resolvePackageContracts(loaded: readonly LoadedManifest[]): Reso
     if (kept.length > 0) diagnosticsBySource.set(source, kept);
   }
 
-  return { tags: winners, diagnosticsBySource };
+  return { tags: winners, applicationSchema: schemaWinner, hasApplicationArtifact, diagnosticsBySource };
 }

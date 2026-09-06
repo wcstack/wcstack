@@ -5,7 +5,7 @@ import { applyChangeToIf } from '../src/apply/applyChangeToIf';
 import { getValue } from '../src/apply/getValue';
 import { getPathInfo } from '../src/address/PathInfo';
 import { getRootNodeByFragment } from '../src/apply/rootNodeByFragment';
-import { getStateElementByName } from '../src/stateElementByName';
+import { getStateElement } from '../src/stateElementByName';
 import type { IBindingInfo } from '../src/types';
 import type { IApplyContext } from '../src/apply/types';
 
@@ -22,7 +22,7 @@ vi.mock('../src/apply/rootNodeByFragment', () => ({
   getRootNodeByFragment: vi.fn()
 }));
 vi.mock('../src/stateElementByName', () => ({
-  getStateElementByName: vi.fn()
+  getStateElement: vi.fn()
 }));
 vi.mock('../src/binding/getAbsoluteStateAddressByBinding', () => ({
   getAbsoluteStateAddressByBinding: vi.fn(() => ({ absolutePathInfo: {}, listIndex: null }))
@@ -33,7 +33,6 @@ function createBaseBindingInfo(): Omit<IBindingInfo, 'bindingType' | 'node' | 'r
   return {
     statePathName: 'value',
     statePathInfo: pathInfo,
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     propModifiers: [],
@@ -50,13 +49,12 @@ describe('applyChange', () => {
   const applyChangeToForMock = vi.mocked(applyChangeToFor);
   const applyChangeToIfMock = vi.mocked(applyChangeToIf);
   const getRootNodeByFragmentMock = vi.mocked(getRootNodeByFragment);
-  const getStateElementByNameMock = vi.mocked(getStateElementByName);
+  const getStateElementByNameMock = vi.mocked(getStateElement);
 
   beforeEach(() => {
     vi.clearAllMocks();
     document.body.innerHTML = '';
     context = {
-      stateName: 'default',
       rootNode: document as any,
       stateElement: {} as any,
       state,
@@ -271,9 +269,12 @@ describe('applyChange', () => {
     expect(() => applyChange(bindingInfo, context)).toThrow(/Root node for fragment not found/);
   });
 
-  it('stateNameが異なる場合はcreateStateが呼ばれて別コンテキストで適用されること', () => {
+  it('別ルートの binding は createState で別コンテキストに切り替えて適用されること', () => {
+    const host = document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'open' });
     const div = document.createElement('div');
-    document.body.appendChild(div);
+    shadow.appendChild(div);
+    document.body.appendChild(host);
 
     const targetState = { value: 'cross' } as any;
     const mockCreateState = vi.fn((_mutability: string, callback: (state: any) => void) => callback(targetState));
@@ -282,7 +283,6 @@ describe('applyChange', () => {
 
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
-      stateName: 'other',
       bindingType: 'text',
       node: div,
       replaceNode: div,
@@ -292,19 +292,21 @@ describe('applyChange', () => {
 
     getValueMock.mockReturnValue('cross-state');
     applyChange(bindingInfo, context);
-    expect(getStateElementByNameMock).toHaveBeenCalledWith(document, 'other');
+    expect(getStateElementByNameMock).toHaveBeenCalledWith(shadow);
     expect(mockCreateState).toHaveBeenCalledWith('readonly', expect.any(Function));
     expect(getValueMock).toHaveBeenCalled();
   });
 
-  it('stateNameが異なりstateElementが見つからない場合はエラーになること', () => {
+  it('別ルートに state が無い場合はエラーになること', () => {
+    const host = document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'open' });
     const div = document.createElement('div');
-    document.body.appendChild(div);
+    shadow.appendChild(div);
+    document.body.appendChild(host);
     getStateElementByNameMock.mockReturnValue(null);
 
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
-      stateName: 'missing',
       bindingType: 'text',
       node: div,
       replaceNode: div,
@@ -313,11 +315,12 @@ describe('applyChange', () => {
     } as IBindingInfo;
 
     getValueMock.mockReturnValue('test');
-    expect(() => applyChange(bindingInfo, context)).toThrow(/State element with name "missing" not found/);
+    expect(() => applyChange(bindingInfo, context)).toThrow(/No state tree found on this root for binding/);
   });
 
   it('DocumentFragment内のノードでrootNodeが解決された場合に正常に処理されること', () => {
-    getRootNodeByFragmentMock.mockReturnValue(document);
+    const resolvedRoot = document.createElement('div');
+    getRootNodeByFragmentMock.mockReturnValue(resolvedRoot);
     getStateElementByNameMock.mockReturnValue(null);
 
     const fragment = document.createDocumentFragment();
@@ -326,7 +329,6 @@ describe('applyChange', () => {
 
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
-      stateName: 'other',
       bindingType: 'text',
       node: textNode,
       replaceNode: textNode,
@@ -335,9 +337,9 @@ describe('applyChange', () => {
     } as IBindingInfo;
 
     getValueMock.mockReturnValue('resolved');
-    // rootNode resolves to document via getRootNodeByFragment, 
-    // but stateName differs so it tries getStateElementByName → null → error
-    expect(() => applyChange(bindingInfo, context)).toThrow(/State element with name "other" not found/);
+    // rootNode は getRootNodeByFragment で context と別のルートに解決される
+    // → getStateElement → null → error
+    expect(() => applyChange(bindingInfo, context)).toThrow(/No state tree found on this root for binding/);
     expect(getRootNodeByFragmentMock).toHaveBeenCalled();
   });
 

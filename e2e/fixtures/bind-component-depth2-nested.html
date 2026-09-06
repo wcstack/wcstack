@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: bind-component boundaries stacked two deep, inside a parent loop</title>
+  <!-- Covers docs/architecture-hardening/15-state-component-mechanism-consistency.md §1.12.
+
+       §1.10's nested form with one more boundary: the pass-through panel itself sits inside the
+       host's `for`, so the leaf scope is two loops deep.
+
+       `getLoopContextByNode` walks parentNode only, and a ShadowRoot's parentNode is null, so
+       it stops dead at the first shadow boundary. With one boundary the outer scope is the
+       plain document scope and Δ=0 is right; with two, the intermediate scope's Δ was dropped
+       entirely and the leaf built its rows at a shallower arity than the scope that owns them.
+       Binding initialization raised "ListIndex not found: groups.*.children.*.name" from the
+       initial render, before any write, and because that escapes as an unhandled rejection
+       rather than through getBindingsReady the page just hangs with no rows.
+
+       The fix composes Δ across boundaries and compares the *real* arity on both sides of every
+       crossing (path wildcard count + that scope's Δ) instead of adding Δ to one side only --
+       adding it to one side double-counts the intermediate scope once two boundaries exist.
+
+       Kept on its own page precisely because the failure wedges the whole document; sharing a
+       page with the flat §1.11 fixture would destroy that one's independent signal. -->
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+  <style>
+:not(:defined) { display: none; }
+  </style>
+  <script type="module" src="/e2e/fixtures/bind-component-depth2-components.js"></script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+export default {
+  groups: [
+    { id: "g1", title: "G1", children: [{ id: "c", name: "Carol" }, { id: "d", name: "Dave" }] },
+    { id: "g2", title: "G2", children: [{ id: "e", name: "Erin" }] },
+  ],
+  // パス文字列で書く（`this.groups[0].children[1].name = ...` は set トラップを通らない）
+  renameNestedRow() { this["groups.0.children.1.name"] = "Davey"; },
+  replaceNestedRows() {
+    this["groups.0.children"] = [{ id: "p", name: "Peggy" }, { id: "q", name: "Quinn" }];
+  },
+  swapGroups() { this.groups = [this.groups[1], this.groups[0]]; },
+};
+    </script>
+  </wcs-state>
+
+  <!-- 中間コンポーネントが親の for の中にいる（Δ=1）。その中でさらに 1 枚境界がある。 -->
+  <div id="nested">
+    <template data-wcs="for: groups">
+      <section>
+        <h3 data-wcs="textContent: .title"></h3>
+        <!-- 親自身のバインディング。断線していても動くので判別子には使わない -->
+        <ul class="host-view">
+          <template data-wcs="for: groups.*.children">
+            <li data-wcs="textContent: .name"></li>
+          </template>
+        </ul>
+        <panel-eager data-wcs="state.items: groups.*.children"></panel-eager>
+        <panel-lazy data-wcs="state.items: groups.*.children"></panel-lazy>
+      </section>
+    </template>
+  </div>
+
+  <button id="rename-nested" data-wcs="onclick: renameNestedRow">rename nested row</button>
+  <button id="replace-nested" data-wcs="onclick: replaceNestedRows">replace nested rows</button>
+  <button id="swap-groups" data-wcs="onclick: swapGroups">swap groups</button>
+</body>
+</html>

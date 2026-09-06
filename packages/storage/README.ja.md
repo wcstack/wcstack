@@ -75,12 +75,53 @@ npm install @wcstack/storage
 - 任意で `loading`、`error` もバインド
 - `value` バインディングに `#init=element` を付けて保存値を初期同期の勝者にする — 理由は「5. load-before-bind」を参照
 
-### 2. オブジェクトの永続化と `$trackDependency`
+### 2. フォームを 1 つのオブジェクトとして永続化する
 
-オブジェクトのサブプロパティ（`settings.theme` 等）を変更しても、親パス `settings` へのバインディングは発火しません。
-`@wcstack/state` の依存走査は**親→子方向**のみだからです。
+いちばんありそうな形 —— 複数の入力欄を 1 つのキーにまとめて保存し、リロードで復元する。state に**アクセサペア**（オブジェクトを組み立てる getter と、受け取ってばらす setter）を置き、そこへ `value#init=element` をバインドします:
 
-この場合は `$trackDependency` で監視したいサブプロパティを明示し、`trigger` 経由で保存します:
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      form: { name: "", email: "" },
+
+      // 保存経路。各フィールドを *パスで* 読むので、どれが変わっても getter が
+      // 再評価され、新しいオブジェクトが <wcs-storage> の value へ流れて保存される
+      // （write-through）。
+      get formSnapshot() {
+        return { name: this["form.name"], email: this["form.email"] };
+      },
+      // 復元経路。ロード時に永続化済みオブジェクトがここに届く（空キーなら null）。
+      set formSnapshot(v) {
+        if (v) this.form = { ...this.form, ...v };
+      },
+    };
+  </script>
+</wcs-state>
+
+<wcs-storage key="signup-form" type="local"
+  data-wcs="value#init=element: formSnapshot"></wcs-storage>
+
+<input data-wcs="value: form.name" placeholder="名前">
+<input data-wcs="value: form.email" type="email" placeholder="メール">
+```
+
+**フロー:**
+
+1. 接続時に `<wcs-storage>` がキーをロード。`#init=element` によりロード済みオブジェクトが `formSnapshot` に書かれ → setter が `form` を埋め → 入力欄に復元値が出る
+2. 入力すると `form.name` が書かれ → `formSnapshot` が dirty に → バインディングが新しいオブジェクトを `value` に適用 → 保存
+3. 保存が発火する `value` イベントは同じオブジェクトを戻すだけ。ランタイムは書き込み確認として認識して止まり、setter が走るのはロード時の 1 回だけ
+
+間違えやすい点が 2 つ:
+
+- フィールドは `this["form.name"]` で読み、`this.form.name` で読ま**ない**こと。後者は `form` にしか依存を張らず（`.name` は返ってきたオブジェクトへの素のプロパティアクセス）、フィールドを編集しても getter は再評価されません —— [依存追跡の境界](../state/README.ja.md#依存追跡の境界) を参照
+- 空キーでは初回ロードで seed オブジェクトが 1 回書かれます。`null` が setter を通り、アクセサペアへの書き込みは常に getter を再評価するからです。永続化済みデータが上書きされることはありません —— 保存済みオブジェクトは復元され、同じ内容で再保存されます
+
+このパターンは `packages/storage/__tests__/integration.accessorPairForm.test.ts` が実 `@wcstack/state` に対して固定しています。
+
+#### 任意のタイミングで保存する（`manual` + `trigger`）
+
+変更のたびではなく自分で選んだ瞬間に保存したい場合は、`manual` を付けて `trigger:` を真偽値で駆動します。依存走査は**親→子方向**のみなので、`settings.theme` が変わっても `settings` へのバインディングは発火しません。`$trackDependency` で監視するフィールドを列挙し、`trigger` でオブジェクト全体をコミットします:
 
 ```html
 <wcs-state>

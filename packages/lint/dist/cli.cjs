@@ -16,17 +16,45 @@ var __copyProps = (to, from, except, desc) => {
   }
   return to;
 };
-var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+var __toCommonJS = (mod3) => __copyProps(__defProp({}, "__esModule", { value: true }), mod3);
 
 // src/cli.ts
 var cli_exports = {};
 __export(cli_exports, {
+  createFileReader: () => createFileReader,
   main: () => main,
   parseArgs: () => parseArgs,
   resolveCliLocale: () => resolveCliLocale
 });
 module.exports = __toCommonJS(cli_exports);
+var import_node_fs2 = require("node:fs");
+
+// src/fileReader.ts
 var import_node_fs = require("node:fs");
+var import_node_path = require("node:path");
+function createFileReader(htmlPath, read = (p) => (0, import_node_fs.readFileSync)(p, "utf8")) {
+  const base = (0, import_node_path.dirname)(htmlPath);
+  const cache = /* @__PURE__ */ new Map();
+  return (relativePath) => {
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(relativePath) || relativePath.startsWith("/")) {
+      return void 0;
+    }
+    if (cache.has(relativePath)) {
+      return cache.get(relativePath);
+    }
+    let content;
+    try {
+      content = read((0, import_node_path.resolve)(base, relativePath));
+      if (content.charCodeAt(0) === 65279) {
+        content = content.slice(1);
+      }
+    } catch {
+      content = void 0;
+    }
+    cache.set(relativePath, content);
+    return content;
+  };
+}
 
 // src/core/offsetToPosition.ts
 function createPositionMapper(text) {
@@ -68,6 +96,9 @@ var WcsDiagnosticCode = {
   // 同名 tag / filter の後勝ち禁止(§5-3)。override:true が無い再定義もこの collision で表す。
   ManifestTagCollision: "wcs/manifest-tag-collision",
   ManifestFilterCollision: "wcs/manifest-filter-collision",
+  // 同名 state の stateSchema が複数の application artifact に宣言されている(§5-3 の
+  // application 版・D8)。勝者なし: その state は未宣言扱い(schema 検証は沈黙)。
+  ManifestStateCollision: "wcs/manifest-state-collision",
   // 明示 override:true(§5-4)。衝突ではなく意図的な shadow の告知(info)。
   ManifestOverride: "wcs/manifest-override",
   // --- sidecar vs live declaration drift ---
@@ -89,6 +120,27 @@ var WcsDiagnosticCode = {
   TokenUndeclared: "wcs/token-undeclared",
   TokenMisconfigured: "wcs/token-misconfigured",
   NestedAssign: "wcs/nested-assign",
+  // --- 意味論（構文・存在検査では捕まらない取り違え。service/semanticValidator.ts） ---
+  // `$getAll` / `$setAll` / `$resolve` の添字の本数がパスの `*` の本数と噛み合わない。
+  // ランタイムは同じ code で raiseError する（超過は以前は黙って無視されていた）。
+  IndexArity: "wcs/index-arity",
+  // ワイルドカードの階数がスコープの段数を超える（`matrix.*.*` を 1 段の for で読む、
+  // `$2` を 1 段のループで読む）。既存の「for の外」検査の深さ方向の一般化。
+  WildcardRank: "wcs/wildcard-rank",
+  // パス getter どうしの循環参照。ランタイムはアドレススタック上限まで再帰してから落ちる。
+  GetterCycle: "wcs/getter-cycle",
+  // `$updatedCallback` が、どのバインディングにも現れないパスを判定に使っている。
+  // 同コールバックは **binding 駆動**（live binding が適用された path しか報告しない）
+  // なので、その分岐は一度も実行されない。表示要素が購読の実体になる事故
+  // （examples/state-intersect-scroll の README に記録）の静的検出。
+  UpdatedCallbackUnbound: "wcs/updated-callback-unbound",
+  // --- <wcs-state> script: $watch declaration ---
+  // ランタイム（watch/processWatchDeclaration.ts）が raiseError で落とす宣言。
+  // 越境 `@` / `$` 始まり / 空キー・空セグメント / 明らかな非関数ハンドラ。
+  WatchDeclarationInvalid: "wcs/watch-declaration-invalid",
+  // `$watch` のキーが状態定義に存在しない。バインディング側と違い黙って発火しない
+  // だけなので気づけない。severity は binding-path-missing に揃える（warning）。
+  WatchPathMissing: "wcs/watch-path-missing",
   TypeAnnotation: "wcs/type-annotation",
   TemplateSyntax: "wcs/template-syntax",
   // --- <wcs-state> script: array reactivity hazards ---
@@ -101,17 +153,33 @@ var WcsDiagnosticCode = {
   // --- built-in wcs-* tag contract (generated/builtinTags.generated.ts が正本) ---
   // 未知メンバーへのバインド(プロパティ / command. / eventToken. キー)。黙って無視される。
   TagMemberUnknown: "wcs/tag-member-unknown",
+  // wcBindable 無宣言タグ(wcs-fetch-header 等のヘルパー)への spread。
+  // ランタイム(expandSpread)は raiseError で落とす。
+  SpreadNoBindable: "wcs/spread-no-bindable",
   // trigger バインド先スロットの true シード(エッジ検出なし・manual バイパスで即発火)。
   TriggerSeededTruthy: "wcs/trigger-seeded-truthy",
   // 非 manual <wcs-storage> value バインド先の空値シード(初期書き戻しが保存値を上書き)。
   StorageSeedClobber: "wcs/storage-seed-clobber",
+  // --- accessibility (docs/a11y-design.md §8 / D9) ---
+  // `attr.aria-*` バインドの属性名が WAI-ARIA に存在しない(タイポ)。
+  // setAttribute はそのまま書き、支援技術は黙って無視する。severity は warning
+  // (error 昇格時は packages/lint/scripts/smoke-test.mjs の対ケース更新が必須)。
+  AriaAttrUnknown: "wcs/aria-attr-unknown",
   // --- document-level load configuration ---
   // @wcstack/state/auto より後に他 wcstack /auto が読まれている。
   ScriptOrder: "wcs/script-order",
   // router/auto があるのに <base href> がない(SPA の basename 誤導出)。
   BaseHrefMissing: "wcs/base-href-missing",
   // @wcstack/signals と /dom エントリの同一ページ混在(リアクティブコア二重化)。
-  SignalsDualEntry: "wcs/signals-dual-entry"
+  SignalsDualEntry: "wcs/signals-dual-entry",
+  // --- deprecations ---
+  // 名前付き State（`<wcs-state name>` / `path@name`）。v2 でマウント（`mount=` と接頭辞付きパス）に
+  // 置き換わる（docs/state-mount-design.md D16）。1.x では warning、v2 では parse error と同時に error。
+  NamedStateDeprecated: "wcs/named-state-deprecated",
+  // --- volume mount ---
+  // `<wcs-state mount="...">` の値が runtime の validateVolumeMountPath で raise する形
+  // （空・空セグメント・ワイルドカード・予約文字 $ # @）。runtime と同条件・同文言（v2）。
+  MountPathInvalid: "wcs/mount-path-invalid"
 };
 function sortDiagnostics(diagnostics) {
   const severityRank = { error: 0, warning: 1, info: 2 };
@@ -119,6 +187,545 @@ function sortDiagnostics(diagnostics) {
 }
 
 // ../state/dist/manifest.esm.js
+var _config = {
+  bindAttributeName: "data-wcs",
+  tagNames: {
+    state: "wcs-state"
+  },
+  locale: "en"
+};
+var config = _config;
+function raiseError(message) {
+  throw new Error(`[@wcstack/state] ${message}`);
+}
+function optionsRequired(fnName) {
+  raiseError(`filter ${fnName} requires at least one option`);
+}
+function optionMustBeNumber(fnName) {
+  raiseError(`filter ${fnName} requires a number as option`);
+}
+function valueMustBeNumber(fnName) {
+  raiseError(`filter ${fnName} requires a number value`);
+}
+function valueMustBeBoolean(fnName) {
+  raiseError(`filter ${fnName} requires a boolean value`);
+}
+function valueMustBeDate(fnName) {
+  raiseError(`filter ${fnName} requires a date value`);
+}
+function valueMustBeArray(fnName) {
+  raiseError(`filter ${fnName} requires an array value`);
+}
+function validateNumberString(value) {
+  if (!value || isNaN(Number(value))) {
+    return false;
+  }
+  return true;
+}
+var eq = (options) => {
+  const opt = options?.[0] ?? optionsRequired("eq");
+  return (value) => {
+    if (typeof value === "number") {
+      if (!validateNumberString(opt)) {
+        optionMustBeNumber("eq");
+      }
+      return value === Number(opt);
+    }
+    if (typeof value === "string") {
+      return value === opt;
+    }
+    return value === opt;
+  };
+};
+var ne = (options) => {
+  const opt = options?.[0] ?? optionsRequired("ne");
+  return (value) => {
+    if (typeof value === "number") {
+      if (!validateNumberString(opt)) {
+        optionMustBeNumber("ne");
+      }
+      return value !== Number(opt);
+    }
+    if (typeof value === "string") {
+      return value !== opt;
+    }
+    return value !== opt;
+  };
+};
+var not = (_options) => {
+  return (value) => {
+    if (typeof value !== "boolean") {
+      valueMustBeBoolean("not");
+    }
+    return !value;
+  };
+};
+var lt = (options) => {
+  const opt = options?.[0] ?? optionsRequired("lt");
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("lt");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("lt");
+    }
+    return value < Number(opt);
+  };
+};
+var le = (options) => {
+  const opt = options?.[0] ?? optionsRequired("le");
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("le");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("le");
+    }
+    return value <= Number(opt);
+  };
+};
+var gt = (options) => {
+  const opt = options?.[0] ?? optionsRequired("gt");
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("gt");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("gt");
+    }
+    return value > Number(opt);
+  };
+};
+var ge = (options) => {
+  const opt = options?.[0] ?? optionsRequired("ge");
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("ge");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("ge");
+    }
+    return value >= Number(opt);
+  };
+};
+var inc = (options) => {
+  const opt = options?.[0] ?? optionsRequired("inc");
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("inc");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("inc");
+    }
+    return value + Number(opt);
+  };
+};
+var dec = (options) => {
+  const opt = options?.[0] ?? optionsRequired("dec");
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("dec");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("dec");
+    }
+    return value - Number(opt);
+  };
+};
+var mul = (options) => {
+  const opt = options?.[0] ?? optionsRequired("mul");
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("mul");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("mul");
+    }
+    return value * Number(opt);
+  };
+};
+var div = (options) => {
+  const opt = options?.[0] ?? optionsRequired("div");
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("div");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("div");
+    }
+    return value / Number(opt);
+  };
+};
+var mod = (options) => {
+  const opt = options?.[0] ?? optionsRequired("mod");
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("mod");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("mod");
+    }
+    return value % Number(opt);
+  };
+};
+var abs = (_options) => {
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("abs");
+    }
+    return Math.abs(value);
+  };
+};
+var clamp = (options) => {
+  const opt1 = options?.[0] ?? optionsRequired("clamp");
+  if (!validateNumberString(opt1)) {
+    optionMustBeNumber("clamp");
+  }
+  const opt2 = options?.[1] ?? optionsRequired("clamp");
+  if (!validateNumberString(opt2)) {
+    optionMustBeNumber("clamp");
+  }
+  const min = Number(opt1);
+  const max = Number(opt2);
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("clamp");
+    }
+    return Math.min(Math.max(value, min), max);
+  };
+};
+var fix = (options) => {
+  const opt = options?.[0] ?? "0";
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("fix");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("fix");
+    }
+    return value.toFixed(Number(opt));
+  };
+};
+var locale = (options) => {
+  const explicit = options?.[0];
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("locale");
+    }
+    return value.toLocaleString(explicit ?? config.locale);
+  };
+};
+var uc = (_options) => {
+  return (value) => {
+    return String(value).toUpperCase();
+  };
+};
+var lc = (_options) => {
+  return (value) => {
+    return String(value).toLowerCase();
+  };
+};
+var cap = (_options) => {
+  return (value) => {
+    const v = String(value);
+    if (v.length === 0) {
+      return v;
+    }
+    if (v.length === 1) {
+      return v.toUpperCase();
+    }
+    return v.charAt(0).toUpperCase() + v.slice(1);
+  };
+};
+var trim = (_options) => {
+  return (value) => {
+    return String(value).trim();
+  };
+};
+var slice = (options) => {
+  const numberedOpts = [];
+  const opt1 = options?.[0] ?? optionsRequired("slice");
+  if (!validateNumberString(opt1)) {
+    optionMustBeNumber("slice");
+  }
+  numberedOpts.push(Number(opt1));
+  const opt2 = options?.[1];
+  if (typeof opt2 !== "undefined") {
+    if (!validateNumberString(opt2)) {
+      optionMustBeNumber("slice");
+    }
+    numberedOpts.push(Number(opt2));
+  }
+  return (value) => {
+    return String(value).slice(...numberedOpts);
+  };
+};
+var substr = (options) => {
+  const opt1 = options?.[0] ?? optionsRequired("substr");
+  if (!validateNumberString(opt1)) {
+    optionMustBeNumber("substr");
+  }
+  const opt2 = options?.[1] ?? optionsRequired("substr");
+  if (!validateNumberString(opt2)) {
+    optionMustBeNumber("substr");
+  }
+  return (value) => {
+    return String(value).substr(Number(opt1), Number(opt2));
+  };
+};
+var pad = (options) => {
+  const opt1 = options?.[0] ?? optionsRequired("pad");
+  if (!validateNumberString(opt1)) {
+    optionMustBeNumber("pad");
+  }
+  const opt2 = options?.[1] ?? "0";
+  return (value) => {
+    return String(value).padStart(Number(opt1), opt2);
+  };
+};
+var rep = (options) => {
+  const opt = options?.[0] ?? optionsRequired("rep");
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("rep");
+  }
+  return (value) => {
+    return String(value).repeat(Number(opt));
+  };
+};
+var rev = (_options) => {
+  return (value) => {
+    return String(value).split("").reverse().join("");
+  };
+};
+var int = (_options) => {
+  return (value) => {
+    return parseInt(String(value), 10);
+  };
+};
+var float = (_options) => {
+  return (value) => {
+    return parseFloat(String(value));
+  };
+};
+var round = (options) => {
+  const opt = options?.[0] ?? "0";
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("round");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("round");
+    }
+    const optValue = Math.pow(10, Number(opt));
+    return Math.round(value * optValue) / optValue;
+  };
+};
+var floor = (options) => {
+  const opt = options?.[0] ?? "0";
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("floor");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("floor");
+    }
+    const optValue = Math.pow(10, Number(opt));
+    return Math.floor(value * optValue) / optValue;
+  };
+};
+var ceil = (options) => {
+  const opt = options?.[0] ?? "0";
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("ceil");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("ceil");
+    }
+    const optValue = Math.pow(10, Number(opt));
+    return Math.ceil(value * optValue) / optValue;
+  };
+};
+var percent = (options) => {
+  const opt = options?.[0] ?? "0";
+  if (!validateNumberString(opt)) {
+    optionMustBeNumber("percent");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("percent");
+    }
+    return `${(value * 100).toFixed(Number(opt))}%`;
+  };
+};
+var unit = (options) => {
+  const opt = options?.[0] ?? optionsRequired("unit");
+  return (value) => {
+    if (value === null || typeof value === "undefined") {
+      return value;
+    }
+    return String(value) + opt;
+  };
+};
+var join = (options) => {
+  const opt = options?.[0] ?? ", ";
+  return (value) => {
+    if (!Array.isArray(value)) {
+      valueMustBeArray("join");
+    }
+    return value.join(opt);
+  };
+};
+var truncate = (options) => {
+  const opt1 = options?.[0] ?? optionsRequired("truncate");
+  if (!validateNumberString(opt1)) {
+    optionMustBeNumber("truncate");
+  }
+  const maxLength = Number(opt1);
+  const suffix = options?.[1] ?? "\u2026";
+  return (value) => {
+    const v = String(value);
+    if (v.length <= maxLength) {
+      return v;
+    }
+    return v.slice(0, maxLength) + suffix;
+  };
+};
+var date = (options) => {
+  const explicit = options?.[0];
+  return (value) => {
+    if (!(value instanceof Date)) {
+      valueMustBeDate("date");
+    }
+    return value.toLocaleDateString(explicit ?? config.locale);
+  };
+};
+var time = (options) => {
+  const explicit = options?.[0];
+  return (value) => {
+    if (!(value instanceof Date)) {
+      valueMustBeDate("time");
+    }
+    return value.toLocaleTimeString(explicit ?? config.locale);
+  };
+};
+var datetime = (options) => {
+  const explicit = options?.[0];
+  return (value) => {
+    if (!(value instanceof Date)) {
+      valueMustBeDate("datetime");
+    }
+    return value.toLocaleString(explicit ?? config.locale);
+  };
+};
+var ymd = (options) => {
+  const opt = options?.[0] ?? "-";
+  return (value) => {
+    if (!(value instanceof Date)) {
+      valueMustBeDate("ymd");
+    }
+    const year = value.getFullYear().toString();
+    const month = (value.getMonth() + 1).toString().padStart(2, "0");
+    const day = value.getDate().toString().padStart(2, "0");
+    return `${year}${opt}${month}${opt}${day}`;
+  };
+};
+var hms = (options) => {
+  const opt = options?.[0] ?? ":";
+  return (value) => {
+    if (!(value instanceof Date)) {
+      valueMustBeDate("hms");
+    }
+    const hours = value.getHours().toString().padStart(2, "0");
+    const minutes = value.getMinutes().toString().padStart(2, "0");
+    const seconds = value.getSeconds().toString().padStart(2, "0");
+    return `${hours}${opt}${minutes}${opt}${seconds}`;
+  };
+};
+var falsy = (_options) => {
+  return (value) => value === false || value === null || value === void 0 || value === 0 || value === "" || Number.isNaN(value);
+};
+var truthy = (_options) => {
+  return (value) => value !== false && value !== null && value !== void 0 && value !== 0 && value !== "" && !Number.isNaN(value);
+};
+var defaults = (options) => {
+  const opt = options?.[0] ?? optionsRequired("defaults");
+  return (value) => {
+    if (value === false || value === null || value === void 0 || value === 0 || value === "" || Number.isNaN(value)) {
+      return opt;
+    }
+    return value;
+  };
+};
+var boolean = (_options) => {
+  return (value) => {
+    return Boolean(value);
+  };
+};
+var number = (_options) => {
+  return (value) => {
+    return Number(value);
+  };
+};
+var string = (_options) => {
+  return (value) => {
+    return String(value);
+  };
+};
+var _null = (_options) => {
+  return (value) => {
+    return value === "" ? null : value;
+  };
+};
+var builtinFilters = {
+  "eq": eq,
+  "ne": ne,
+  "not": not,
+  "lt": lt,
+  "le": le,
+  "gt": gt,
+  "ge": ge,
+  "inc": inc,
+  "dec": dec,
+  "mul": mul,
+  "div": div,
+  "mod": mod,
+  "abs": abs,
+  "clamp": clamp,
+  "fix": fix,
+  "locale": locale,
+  "uc": uc,
+  "lc": lc,
+  "cap": cap,
+  "trim": trim,
+  "slice": slice,
+  "substr": substr,
+  "pad": pad,
+  "rep": rep,
+  "rev": rev,
+  "truncate": truncate,
+  "join": join,
+  "int": int,
+  "float": float,
+  "round": round,
+  "floor": floor,
+  "ceil": ceil,
+  "percent": percent,
+  "unit": unit,
+  "date": date,
+  "time": time,
+  "datetime": datetime,
+  "ymd": ymd,
+  "hms": hms,
+  "falsy": falsy,
+  "truthy": truthy,
+  "defaults": defaults,
+  "boolean": boolean,
+  "number": number,
+  "string": string,
+  "null": _null
+};
+var outputBuiltinFilters = builtinFilters;
 var builtinFilterMeta = {
   // 比較・論理
   eq: { description: "\u7B49\u3057\u3044\u304B\u6BD4\u8F03", hasArgs: true, resultType: "boolean", acceptTypes: "any", minArgs: 1, maxArgs: 1, argTypes: ["any"] },
@@ -134,6 +741,8 @@ var builtinFilterMeta = {
   mul: { description: "\u4E57\u7B97", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
   div: { description: "\u9664\u7B97", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
   mod: { description: "\u5270\u4F59", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+  abs: { description: "\u7D76\u5BFE\u5024", hasArgs: false, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 0 },
+  clamp: { description: "\u7BC4\u56F2\u5185\u306B\u4E38\u3081\u308B (min,max)", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 2, maxArgs: 2, argTypes: ["number", "number"] },
   // 数値フォーマット
   fix: { description: "\u56FA\u5B9A\u5C0F\u6570\u70B9\u8868\u8A18", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
   locale: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u3067\u6570\u5024\u30D5\u30A9\u30FC\u30DE\u30C3\u30C8", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["string"] },
@@ -147,6 +756,8 @@ var builtinFilterMeta = {
   pad: { description: "\u30D1\u30C7\u30A3\u30F3\u30B0 (length[,char])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
   rep: { description: "\u7E70\u308A\u8FD4\u3057 (count)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
   rev: { description: "\u6587\u5B57\u9806\u3092\u53CD\u8EE2", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+  truncate: { description: "\u5207\u308A\u8A70\u3081\u3066\u7701\u7565\u8A18\u53F7 (length[,suffix])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
+  join: { description: "\u914D\u5217\u3092\u9023\u7D50 ([separator])", hasArgs: true, resultType: "string", acceptTypes: ["array"], minArgs: 0, maxArgs: 1, argTypes: ["string"] },
   // 数値パース・丸め
   int: { description: "\u6574\u6570\u306B\u30D1\u30FC\u30B9", hasArgs: false, resultType: "number", acceptTypes: ["string", "number"], minArgs: 0, maxArgs: 0 },
   float: { description: "\u6D6E\u52D5\u5C0F\u6570\u70B9\u6570\u306B\u30D1\u30FC\u30B9", hasArgs: false, resultType: "number", acceptTypes: ["string", "number"], minArgs: 0, maxArgs: 0 },
@@ -154,11 +765,15 @@ var builtinFilterMeta = {
   floor: { description: "\u5207\u308A\u4E0B\u3052", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
   ceil: { description: "\u5207\u308A\u4E0A\u3052", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
   percent: { description: "\u30D1\u30FC\u30BB\u30F3\u30C6\u30FC\u30B8\u5F62\u5F0F", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
+  // number だけでなく string も受ける。実用チェーンは fix / percent の後ろに繋がり、
+  // それらは既に string を返すため（builtinFilters.ts の unit を参照）
+  unit: { description: "\u5358\u4F4D\uFF08\u63A5\u5C3E\u8F9E\uFF09\u3092\u4ED8\u52A0", hasArgs: true, resultType: "string", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["string"] },
   // 日付・時刻
   date: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u65E5\u4ED8", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
   time: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u6642\u523B", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
   datetime: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u65E5\u6642", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
   ymd: { description: "YYYY-MM-DD \u5F62\u5F0F", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+  hms: { description: "HH:MM:SS \u5F62\u5F0F", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
   // 真偽値・変換
   falsy: { description: "\u507D\u5024\u304B\u5224\u5B9A", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
   truthy: { description: "\u771F\u5024\u304B\u5224\u5B9A", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
@@ -174,12 +789,119 @@ var STRUCTURAL_BINDING_TYPE_SET = /* @__PURE__ */ new Set([
   "else",
   "for"
 ]);
+var DELIMITER = ".";
+var WILDCARD = "*";
 var MAX_WILDCARD_DEPTH = 128;
+var BINDING_SEPARATOR = ";";
+var PROP_VALUE_SEPARATOR = ":";
+var MODIFIER_SEPARATOR = "#";
+var FILTER_SEPARATOR = "|";
+var MODIFIER_PREVENT = "prevent";
+var MODIFIER_STOP = "stop";
+var MODIFIER_READONLY = "ro";
+var MODIFIER_FLAGS = Object.freeze([
+  MODIFIER_PREVENT,
+  MODIFIER_STOP,
+  MODIFIER_READONLY
+]);
+var MODIFIER_KEY_INIT = "init";
+var MODIFIER_KEY_SYNC = "sync";
+var MODIFIER_KEYS = Object.freeze([
+  MODIFIER_KEY_INIT,
+  MODIFIER_KEY_SYNC
+]);
+var ELSE_KEYWORD = "else";
+var SPREAD_PROP = "...";
+var EVENT_PROP_PREFIX = "on";
+var EVENT_TOKEN_NAMESPACE = "eventToken";
+var COMMAND_NAMESPACE = "command";
+var CLASS_NAMESPACE = "class";
+var ATTR_NAMESPACE = "attr";
+var STYLE_NAMESPACE = "style";
+var INDEX_PARAM_PREFIX = "$";
 var tmpIndexByIndexName = {};
 for (let i = 0; i < MAX_WILDCARD_DEPTH; i++) {
-  tmpIndexByIndexName[`$${i + 1}`] = i;
+  tmpIndexByIndexName[`${INDEX_PARAM_PREFIX}${i + 1}`] = i;
 }
 Object.freeze(tmpIndexByIndexName);
+var STATE_CONNECTED_CALLBACK_NAME = "$connectedCallback";
+var STATE_DISCONNECTED_CALLBACK_NAME = "$disconnectedCallback";
+var STATE_UPDATED_CALLBACK_NAME = "$updatedCallback";
+var WEBCOMPONENT_STATE_READY_CALLBACK_NAME = "$stateReadyCallback";
+var STATE_BINDABLES_NAME = "$bindables";
+var STATE_COMMANDS_NAME = "$commands";
+var STATE_COMMAND_TOKENS_NAME = "$commandTokens";
+var STATE_COMMAND_NAMESPACE_NAME = "$command";
+var STATE_EVENT_TOKENS_NAME = "$eventTokens";
+var STATE_ON_NAME = "$on";
+var STATE_STREAMS_NAME = "$streams";
+var STATE_WATCH_NAME = "$watch";
+var STATE_LIST_KEYS_NAME = "$listKeys";
+var STATE_STREAM_STATUS_NAMESPACE_NAME = "$streamStatus";
+var STATE_STREAM_ERROR_NAMESPACE_NAME = "$streamError";
+var WCS_MANIFEST_VERSION = 1;
+function getWcsManifest() {
+  return {
+    version: WCS_MANIFEST_VERSION,
+    syntax: {
+      bindAttribute: config.bindAttributeName,
+      tagName: config.tagNames.state,
+      pathDelimiter: DELIMITER,
+      wildcard: WILDCARD,
+      delimiters: {
+        binding: BINDING_SEPARATOR,
+        propValue: PROP_VALUE_SEPARATOR,
+        modifier: MODIFIER_SEPARATOR,
+        filter: FILTER_SEPARATOR
+      },
+      // 正本 STRUCTURAL_BINDING_TYPE_SET から導出（手書きの二重定義を排除）。
+      structuralDirectives: Array.from(STRUCTURAL_BINDING_TYPE_SET),
+      modifiers: {
+        flags: MODIFIER_FLAGS,
+        keyValue: MODIFIER_KEYS,
+        eventNamePrefix: EVENT_PROP_PREFIX
+      },
+      indexParam: {
+        prefix: INDEX_PARAM_PREFIX,
+        maxDepth: MAX_WILDCARD_DEPTH
+      },
+      bindingTypes: {
+        elseKeyword: ELSE_KEYWORD,
+        spread: SPREAD_PROP,
+        eventPropertyPrefix: EVENT_PROP_PREFIX,
+        propNamespaces: {
+          eventToken: EVENT_TOKEN_NAMESPACE,
+          command: COMMAND_NAMESPACE,
+          class: CLASS_NAMESPACE,
+          attr: ATTR_NAMESPACE,
+          style: STYLE_NAMESPACE
+        }
+      }
+    },
+    // 実装（Record のキー）から自動導出。手リストを持たない＝ドリフトの構造的排除。
+    filters: Object.keys(outputBuiltinFilters),
+    filterMeta: builtinFilterMeta,
+    reservedLifecycle: [
+      STATE_CONNECTED_CALLBACK_NAME,
+      STATE_DISCONNECTED_CALLBACK_NAME,
+      STATE_UPDATED_CALLBACK_NAME,
+      WEBCOMPONENT_STATE_READY_CALLBACK_NAME
+    ],
+    reservedStateApi: [
+      STATE_BINDABLES_NAME,
+      STATE_COMMANDS_NAME,
+      STATE_COMMAND_TOKENS_NAME,
+      STATE_COMMAND_NAMESPACE_NAME,
+      STATE_EVENT_TOKENS_NAME,
+      STATE_ON_NAME,
+      STATE_STREAMS_NAME,
+      STATE_WATCH_NAME,
+      STATE_LIST_KEYS_NAME,
+      STATE_STREAM_STATUS_NAMESPACE_NAME,
+      STATE_STREAM_ERROR_NAMESPACE_NAME
+    ]
+  };
+}
 
 // src/service/completionData.ts
 var BUILTIN_FILTERS = Object.entries(builtinFilterMeta).map(
@@ -196,230 +918,13 @@ var STRUCTURAL_DIRECTIVES = [...STRUCTURAL_BINDING_TYPE_SET].map((name) => ({
   ...STRUCTURAL_DIRECTIVE_INFO[name]
 }));
 
-// src/language/htmlParse.ts
-function parseWcsScriptBlocks(html, stateTagName = "wcs-state") {
-  const blocks = [];
-  let pos = 0;
-  const len = html.length;
-  while (pos < len) {
-    if (html.startsWith("<!--", pos)) {
-      const commentEnd = html.indexOf("-->", pos + 4);
-      if (commentEnd === -1) break;
-      pos = commentEnd + 3;
-      continue;
-    }
-    const wcsMatch = matchOpenTag(html, pos, stateTagName);
-    if (wcsMatch === null) {
-      pos++;
-      continue;
-    }
-    const stateName = extractAttribute(wcsMatch.tagContent, "name") ?? "default";
-    pos = wcsMatch.end;
-    const wcsCloseIdx = findCloseTag(html, pos, stateTagName);
-    const wcsEnd = wcsCloseIdx === -1 ? len : wcsCloseIdx;
-    while (pos < wcsEnd) {
-      if (html.startsWith("<!--", pos)) {
-        const commentEnd = html.indexOf("-->", pos + 4);
-        if (commentEnd === -1) break;
-        pos = commentEnd + 3;
-        continue;
-      }
-      const scriptMatch = matchOpenTag(html, pos, "script");
-      if (scriptMatch === null) {
-        pos++;
-        continue;
-      }
-      const typeAttr = extractAttribute(scriptMatch.tagContent, "type");
-      if (typeAttr?.toLowerCase() !== "module") {
-        pos = scriptMatch.end;
-        continue;
-      }
-      const contentStart = scriptMatch.end;
-      const scriptCloseIdx = findCloseTag(html, contentStart, "script");
-      if (scriptCloseIdx === -1) {
-        pos = contentStart;
-        break;
-      }
-      const contentEnd = scriptCloseIdx;
-      blocks.push({
-        contentStart,
-        contentEnd,
-        content: html.slice(contentStart, contentEnd),
-        stateName
-      });
-      pos = html.indexOf(">", scriptCloseIdx) + 1;
-      if (pos === 0) break;
-    }
-    pos = wcsEnd;
-    if (wcsCloseIdx !== -1) {
-      const closeEnd = html.indexOf(">", wcsCloseIdx);
-      if (closeEnd !== -1) pos = closeEnd + 1;
-    }
-  }
-  return blocks;
-}
-function parseWcsStateElements(html, stateTagName = "wcs-state") {
-  const elements = [];
-  let pos = 0;
-  const len = html.length;
-  while (pos < len) {
-    if (html.startsWith("<!--", pos)) {
-      const commentEnd = html.indexOf("-->", pos + 4);
-      if (commentEnd === -1) break;
-      pos = commentEnd + 3;
-      continue;
-    }
-    const wcsMatch = matchOpenTag(html, pos, stateTagName);
-    if (wcsMatch === null) {
-      pos++;
-      continue;
-    }
-    const stateName = extractAttribute(wcsMatch.tagContent, "name") ?? "default";
-    const jsonAttr = extractAttribute(wcsMatch.tagContent, "json") ?? void 0;
-    const stateAttr = extractAttribute(wcsMatch.tagContent, "state") ?? void 0;
-    const srcAttr = extractAttribute(wcsMatch.tagContent, "src") ?? void 0;
-    pos = wcsMatch.end;
-    const scriptBlocks = [];
-    const wcsCloseIdx = findCloseTag(html, pos, stateTagName);
-    const wcsEnd = wcsCloseIdx === -1 ? len : wcsCloseIdx;
-    while (pos < wcsEnd) {
-      if (html.startsWith("<!--", pos)) {
-        const commentEnd = html.indexOf("-->", pos + 4);
-        if (commentEnd === -1) break;
-        pos = commentEnd + 3;
-        continue;
-      }
-      const scriptMatch = matchOpenTag(html, pos, "script");
-      if (scriptMatch === null) {
-        pos++;
-        continue;
-      }
-      const typeAttr = extractAttribute(scriptMatch.tagContent, "type");
-      if (typeAttr?.toLowerCase() !== "module") {
-        pos = scriptMatch.end;
-        continue;
-      }
-      const contentStart = scriptMatch.end;
-      const scriptCloseIdx = findCloseTag(html, contentStart, "script");
-      if (scriptCloseIdx === -1) {
-        pos = contentStart;
-        break;
-      }
-      scriptBlocks.push({
-        contentStart,
-        contentEnd: scriptCloseIdx,
-        content: html.slice(contentStart, scriptCloseIdx),
-        stateName
-      });
-      pos = html.indexOf(">", scriptCloseIdx) + 1;
-      if (pos === 0) break;
-    }
-    elements.push({ stateName, jsonAttr, stateAttr, srcAttr, scriptBlocks });
-    pos = wcsEnd;
-    if (wcsCloseIdx !== -1) {
-      const closeEnd = html.indexOf(">", wcsCloseIdx);
-      if (closeEnd !== -1) pos = closeEnd + 1;
-    }
-  }
-  return elements;
-}
-function findScriptJsonById(html, id) {
-  let pos = 0;
-  const len = html.length;
-  while (pos < len) {
-    if (html.startsWith("<!--", pos)) {
-      const commentEnd = html.indexOf("-->", pos + 4);
-      if (commentEnd === -1) break;
-      pos = commentEnd + 3;
-      continue;
-    }
-    const scriptMatch = matchOpenTag(html, pos, "script");
-    if (scriptMatch === null) {
-      pos++;
-      continue;
-    }
-    const typeAttr = extractAttribute(scriptMatch.tagContent, "type");
-    const idAttr = extractAttribute(scriptMatch.tagContent, "id");
-    if (typeAttr?.toLowerCase() === "application/json" && idAttr === id) {
-      const contentStart = scriptMatch.end;
-      const scriptCloseIdx = findCloseTag(html, contentStart, "script");
-      if (scriptCloseIdx === -1) return null;
-      return html.slice(contentStart, scriptCloseIdx);
-    }
-    pos = scriptMatch.end;
-  }
-  return null;
-}
-function matchOpenTag(html, pos, tagName) {
-  if (html[pos] !== "<") return null;
-  const nameStart = pos + 1;
-  const nameEnd = nameStart + tagName.length;
-  if (nameEnd > html.length) return null;
-  const slice = html.slice(nameStart, nameEnd);
-  if (slice.toLowerCase() !== tagName.toLowerCase()) return null;
-  const charAfter = html[nameEnd];
-  if (charAfter !== ">" && charAfter !== " " && charAfter !== "	" && charAfter !== "\n" && charAfter !== "\r" && charAfter !== "/") {
-    return null;
-  }
-  let i = nameEnd;
-  let inSingleQuote = false;
-  let inDoubleQuote = false;
-  while (i < html.length) {
-    const ch = html[i];
-    if (inSingleQuote) {
-      if (ch === "'") inSingleQuote = false;
-    } else if (inDoubleQuote) {
-      if (ch === '"') inDoubleQuote = false;
-    } else if (ch === "'") {
-      inSingleQuote = true;
-    } else if (ch === '"') {
-      inDoubleQuote = true;
-    } else if (ch === ">") {
-      return {
-        start: pos,
-        end: i + 1,
-        tagContent: html.slice(nameEnd, i)
-      };
-    }
-    i++;
-  }
-  return null;
-}
-function findCloseTag(html, startPos, tagName) {
-  const pattern = "</" + tagName;
-  const patternLower = pattern.toLowerCase();
-  const htmlLower = html.toLowerCase();
-  let pos = startPos;
-  while (pos < html.length) {
-    const idx = htmlLower.indexOf(patternLower, pos);
-    if (idx === -1) return -1;
-    const afterIdx = idx + pattern.length;
-    if (afterIdx < html.length) {
-      const ch = html[afterIdx];
-      if (ch === ">" || ch === " " || ch === "	" || ch === "\n" || ch === "\r") {
-        return idx;
-      }
-    }
-    pos = idx + 1;
-  }
-  return -1;
-}
-function extractAttribute(tagContent, attrName) {
-  const regex = new RegExp(
-    `(?:^|\\s)${attrName}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|(\\S+))`,
-    "i"
-  );
-  const match = tagContent.match(regex);
-  if (!match) return null;
-  return match[1] ?? match[2] ?? match[3] ?? null;
-}
-
 // src/service/stateAnalyzer.ts
 var RESERVED_STREAMS_KEY = "$streams";
 var RESERVED_COMMAND_TOKENS_KEY = "$commandTokens";
 var RESERVED_EVENT_TOKENS_KEY = "$eventTokens";
 var RESERVED_LIST_KEYS_KEY = "$listKeys";
-function analyzeStatePaths(scriptContent, stateName = "default") {
+var RESERVED_WATCH_KEY = "$watch";
+function analyzeStatePaths(scriptContent) {
   const objectContent = extractDefaultExportObject(scriptContent);
   if (!objectContent) return [];
   const paths = [];
@@ -428,31 +933,115 @@ function analyzeStatePaths(scriptContent, stateName = "default") {
   const pendingListKeys = [];
   for (const prop of topLevelProps) {
     if (prop.name.startsWith("$")) {
-      collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys, stateName);
+      collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys);
       continue;
     }
     if (prop.kind === "method") {
-      paths.push({ path: prop.name, kind: "method", stateName });
+      paths.push({ path: prop.name, kind: "method" });
       continue;
     }
     if (prop.kind === "getter") {
-      if (!paths.some((p) => p.stateName === stateName && p.path === prop.name)) {
-        paths.push({ path: prop.name, kind: "computed", stateName });
+      if (!paths.some((p) => p.path === prop.name)) {
+        paths.push({ path: prop.name, kind: "computed" });
       }
       continue;
     }
-    pushDataPropertyPaths(prop, paths, stateName);
+    pushDataPropertyPaths(prop, paths);
   }
   for (const streamValue of pendingStreamValues) {
-    if (paths.some((p) => p.stateName === stateName && p.path === streamValue.name)) continue;
-    pushDataPropertyPaths(streamValue, paths, stateName);
+    if (paths.some((p) => p.path === streamValue.name)) continue;
+    pushDataPropertyPaths(streamValue, paths);
   }
   for (const listKeyEntry of pendingListKeys) {
-    pushListKeyPaths(listKeyEntry, paths, stateName);
+    pushListKeyPaths(listKeyEntry, paths);
   }
+  collectRowShapesFromAssignments(scriptContent, paths);
   return paths;
 }
-function collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys, stateName) {
+function analyzeWatchEntries(scriptContent) {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return [];
+  const watchProp = parseTopLevelProperties(root.content).find((p) => p.name === RESERVED_WATCH_KEY);
+  if (!watchProp || watchProp.kind !== "data" || !watchProp.value || !isObjectLiteral(watchProp.value) || watchProp.valueStart === void 0) {
+    return [];
+  }
+  const leading = watchProp.value.length - watchProp.value.trimStart().length;
+  const innerStart = root.start + watchProp.valueStart + leading + 1;
+  const entries = [];
+  for (const entry of parseTopLevelProperties(extractObjectContent(watchProp.value))) {
+    if (entry.nameStart === void 0 || entry.nameEnd === void 0) continue;
+    entries.push({
+      key: entry.name,
+      start: innerStart + entry.nameStart,
+      end: innerStart + entry.nameEnd,
+      // メソッド短縮記法は関数。data は値リテラルの形で判定し、識別子参照は疑わない。
+      definitelyNotFunction: entry.kind === "data" && isNonFunctionLiteral(entry.value)
+    });
+  }
+  return entries;
+}
+function analyzeDeclarationSpans(scriptContent) {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return [];
+  const out = [];
+  for (const prop of parseTopLevelProperties(root.content)) {
+    if (prop.nameStart === void 0 || prop.nameEnd === void 0) continue;
+    out.push({
+      name: prop.name,
+      kind: prop.kind,
+      start: root.start + prop.nameStart,
+      end: root.start + prop.nameEnd
+    });
+  }
+  return out;
+}
+function analyzeCallableBodies(scriptContent) {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return [];
+  const out = [];
+  for (const prop of parseTopLevelProperties(root.content)) {
+    if (prop.kind !== "getter" && prop.kind !== "method") continue;
+    if (prop.nameStart === void 0 || prop.nameEnd === void 0) continue;
+    out.push({
+      name: prop.name,
+      kind: prop.kind,
+      start: root.start + prop.nameStart,
+      end: root.start + prop.nameEnd,
+      body: prop.value ?? "",
+      bodyStart: root.start + (prop.valueStart ?? 0)
+    });
+  }
+  return out;
+}
+function isNonFunctionLiteral(value) {
+  if (value === void 0) return false;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return false;
+  const scan = maskCommentsAndStrings(trimmed);
+  if (/^(?:async\s+)?function\b/.test(trimmed) || scan.includes("=>")) return false;
+  return /^["'`]/.test(trimmed) || /^-?\d/.test(trimmed) || /^(?:true|false|null|undefined)\b/.test(trimmed) || trimmed.startsWith("[") || trimmed.startsWith("{");
+}
+function findNonObjectWatch(scriptContent) {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return null;
+  const watchProp = parseTopLevelProperties(root.content).find((p) => p.name === RESERVED_WATCH_KEY);
+  if (!watchProp || watchProp.nameStart === void 0 || watchProp.nameEnd === void 0) {
+    return null;
+  }
+  const span = { start: root.start + watchProp.nameStart, end: root.start + watchProp.nameEnd };
+  if (watchProp.kind === "method") {
+    return span;
+  }
+  if (watchProp.kind !== "data" || !watchProp.value) return null;
+  const trimmed = watchProp.value.trim();
+  if (trimmed.startsWith("{")) return null;
+  const scan = maskCommentsAndStrings(trimmed).trim();
+  const isArrowFunction = /^(?:async\s+)?\([^()]*\)\s*=>/.test(scan) || /^(?:async\s+)?[$\w]+\s*=>/.test(scan);
+  const isWholeLiteral = /^(["'`])[^"'`]*\1$/.test(scan) || /^-?\d[\w.]*$/.test(scan) || /^(?:true|false|null)$/.test(scan) || /^(?:async\s+)?function\b[\s\S]*\}$/.test(scan);
+  if (!isArrowFunction && !isWholeLiteral) return null;
+  return span;
+}
+function collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys) {
   if (prop.name === RESERVED_STREAMS_KEY && prop.kind === "data" && prop.value && isObjectLiteral(prop.value)) {
     const entries = parseTopLevelProperties(extractObjectContent(prop.value));
     for (const entry of entries) {
@@ -464,20 +1053,20 @@ function collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKe
         value: initial?.value,
         typeHint: initial?.typeHint
       });
-      paths.push({ path: `$streamStatus.${entry.name}`, kind: "data", typeHint: "string", stateName });
-      paths.push({ path: `$streamError.${entry.name}`, kind: "data", stateName });
+      paths.push({ path: `$streamStatus.${entry.name}`, kind: "data", typeHint: "string" });
+      paths.push({ path: `$streamError.${entry.name}`, kind: "data" });
     }
     return;
   }
   if (prop.name === RESERVED_COMMAND_TOKENS_KEY && prop.value) {
     for (const name of extractStringArrayItems(prop.value)) {
-      paths.push({ path: `$command.${name}`, kind: "command", stateName });
+      paths.push({ path: `$command.${name}`, kind: "command" });
     }
     return;
   }
   if (prop.name === RESERVED_EVENT_TOKENS_KEY && prop.value) {
     for (const name of extractStringArrayItems(prop.value)) {
-      paths.push({ path: name, kind: "eventToken", stateName });
+      paths.push({ path: name, kind: "eventToken" });
     }
     return;
   }
@@ -489,28 +1078,117 @@ function collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKe
     return;
   }
 }
-function pushListKeyPaths(entry, paths, stateName) {
+function pushListKeyPaths(entry, paths) {
   const listPath = entry.name;
   const segments = listPath.split(".");
   if (listPath.length === 0 || segments.some((s) => s.length === 0) || segments[segments.length - 1] === "*") {
     return;
   }
-  const has = (path) => paths.some((p) => p.stateName === stateName && p.path === path);
-  if (!has(listPath)) paths.push({ path: listPath, kind: "data", typeHint: "array", stateName });
-  if (!has(`${listPath}.*`)) paths.push({ path: `${listPath}.*`, kind: "list", stateName });
+  const has = (path) => paths.some((p) => p.path === path);
+  if (!has(listPath)) paths.push({ path: listPath, kind: "data", typeHint: "array" });
+  if (!has(`${listPath}.*`)) paths.push({ path: `${listPath}.*`, kind: "list" });
   if (!has(`${listPath}.length`)) {
-    paths.push({ path: `${listPath}.length`, kind: "data", typeHint: "number", stateName });
+    paths.push({ path: `${listPath}.length`, kind: "data", typeHint: "number" });
   }
   const keyField = extractStringLiteralValue(entry.value);
   if (keyField === null || keyField.includes(".") || keyField.includes("*")) return;
   if (!has(`${listPath}.*.${keyField}`)) {
-    paths.push({ path: `${listPath}.*.${keyField}`, kind: "data", stateName });
+    paths.push({ path: `${listPath}.*.${keyField}`, kind: "data" });
   }
 }
 function extractStringLiteralValue(value) {
   if (!value) return null;
   const match = value.trim().match(/^["']([^"'\\]*)["']$/);
   return match && match[1].length > 0 ? match[1] : null;
+}
+var ROW_ASSIGN = new RegExp(
+  String.raw`\bthis\s*(?:\.\s*([$\w]+)|\[\s*["']([^"']+)["']\s*\])\s*=(?![=>])\s*(?:(\[)|(?:[^;={}]|=>)*?\.\s*(?:concat|toSpliced|with)\s*(\())`,
+  "gd"
+);
+function collectRowShapesFromAssignments(script, paths) {
+  const scan = maskCommentsAndStrings(script);
+  ROW_ASSIGN.lastIndex = 0;
+  let match;
+  while ((match = ROW_ASSIGN.exec(scan)) !== null) {
+    const span = match.indices[1] ?? match.indices[2];
+    const listPath = script.slice(span[0], span[1]);
+    if (listPath.startsWith("$") || listPath.includes("*") || !hasPath(paths, `${listPath}.*`)) continue;
+    const openIndex = match.index + match[0].length - 1;
+    const isArrayLiteral2 = scan[openIndex] === "[";
+    const inner = extractDelimitedContent(script, scan, openIndex, scan[openIndex], isArrayLiteral2 ? "]" : ")");
+    for (const literal of collectRowLiterals(inner, isArrayLiteral2 ? 0 : 1)) {
+      for (const field of extractRowLiteralFields(literal)) {
+        pushRowFieldPaths(`${listPath}.*.${field.name}`, field, paths, 1);
+      }
+    }
+  }
+}
+function collectRowLiterals(elementList, arrayDepth) {
+  const out = [];
+  for (const element of splitTopLevelElements(elementList)) {
+    if (element.startsWith("{")) {
+      out.push(element);
+    } else if (element.startsWith("[") && arrayDepth > 0) {
+      const scan = maskCommentsAndStrings(element);
+      out.push(...collectRowLiterals(extractDelimitedContent(element, scan, 0, "[", "]"), arrayDepth - 1));
+    }
+  }
+  return out;
+}
+function extractRowLiteralFields(literal) {
+  const content = extractObjectContent(literal);
+  const fields = parseTopLevelProperties(content).filter((p) => p.kind === "data");
+  for (const element of splitTopLevelElements(content)) {
+    const shorthand = /^([$\w]+)$/.exec(element);
+    if (shorthand && !fields.some((f) => f.name === shorthand[1])) {
+      fields.push({ name: shorthand[1], kind: "data" });
+    }
+  }
+  return fields;
+}
+function pushRowFieldPaths(path, prop, paths, depth) {
+  if (!hasPath(paths, path)) paths.push(withHint({ path, kind: "data" }, prop.typeHint));
+  if (!prop.value) return;
+  if (isArrayLiteral(prop.value)) {
+    if (!hasPath(paths, `${path}.*`)) paths.push({ path: `${path}.*`, kind: "list" });
+    if (!hasPath(paths, `${path}.length`)) {
+      paths.push({ path: `${path}.length`, kind: "data", typeHint: "number" });
+    }
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+    for (const child of extractArrayElementDataProperties(prop.value)) {
+      pushRowFieldPaths(`${path}.*.${child.name}`, child, paths, depth + 1);
+    }
+    return;
+  }
+  if (isObjectLiteral(prop.value)) {
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+    for (const child of parseTopLevelProperties(extractObjectContent(prop.value))) {
+      if (child.kind !== "data") continue;
+      pushRowFieldPaths(`${path}.${child.name}`, child, paths, depth + 1);
+    }
+  }
+}
+function hasPath(paths, path) {
+  return paths.some((p) => p.path === path);
+}
+function splitTopLevelElements(text) {
+  const scan = maskCommentsAndStrings(text);
+  const out = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === "{" || ch === "[" || ch === "(") {
+      depth++;
+    } else if (ch === "}" || ch === "]" || ch === ")") {
+      depth--;
+    } else if (ch === "," && depth === 0) {
+      out.push(text.slice(start, i));
+      start = i + 1;
+    }
+  }
+  out.push(text.slice(start));
+  return out.map((e) => e.trim()).filter((e) => e.length > 0);
 }
 function findStreamInitialProperty(entryValue) {
   const defProps = parseTopLevelProperties(extractObjectContent(entryValue));
@@ -527,22 +1205,17 @@ function extractStringArrayItems(value) {
   return items;
 }
 var MAX_OBJECT_NEST_DEPTH = 5;
-function pushDataPropertyPaths(prop, paths, stateName) {
-  pushDataPropertyPathsAt(prop.name, prop, paths, stateName, 0);
+function pushDataPropertyPaths(prop, paths) {
+  pushDataPropertyPathsAt(prop.name, prop, paths, 0);
 }
-function pushDataPropertyPathsAt(path, prop, paths, stateName, depth) {
-  paths.push({ path, kind: "data", typeHint: prop.typeHint, rawInitial: prop.value?.trim(), stateName });
+function pushDataPropertyPathsAt(path, prop, paths, depth) {
+  paths.push({ path, kind: "data", typeHint: prop.typeHint, rawInitial: prop.value?.trim() });
   if (prop.value && isArrayLiteral(prop.value)) {
-    paths.push({ path: `${path}.*`, kind: "list", stateName });
-    paths.push({ path: `${path}.length`, kind: "data", typeHint: "number", stateName });
-    const elementProps = extractArrayElementProperties(prop.value);
-    for (const childProp of elementProps) {
-      paths.push({
-        path: `${path}.*.${childProp.name}`,
-        kind: "data",
-        typeHint: childProp.typeHint,
-        stateName
-      });
+    paths.push({ path: `${path}.*`, kind: "list" });
+    paths.push({ path: `${path}.length`, kind: "data", typeHint: "number" });
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+    for (const childProp of extractArrayElementDataProperties(prop.value)) {
+      pushDataPropertyPathsAt(`${path}.*.${childProp.name}`, childProp, paths, depth + 1);
     }
     return;
   }
@@ -551,11 +1224,11 @@ function pushDataPropertyPathsAt(path, prop, paths, stateName, depth) {
     const childProps = parseTopLevelProperties(extractObjectContent(prop.value));
     for (const childProp of childProps) {
       if (childProp.kind !== "data") continue;
-      pushDataPropertyPathsAt(`${path}.${childProp.name}`, childProp, paths, stateName, depth + 1);
+      pushDataPropertyPathsAt(`${path}.${childProp.name}`, childProp, paths, depth + 1);
     }
   }
 }
-function analyzeJsonPaths(jsonString, stateName = "default") {
+function analyzeJsonPaths(jsonString) {
   let data;
   try {
     data = JSON.parse(jsonString);
@@ -564,29 +1237,31 @@ function analyzeJsonPaths(jsonString, stateName = "default") {
   }
   if (typeof data !== "object" || data === null || Array.isArray(data)) return [];
   const paths = [];
-  collectJsonPaths(data, "", paths, stateName, 0);
+  collectJsonPaths(data, "", paths, 0);
   return paths;
 }
-function collectJsonPaths(obj, prefix, paths, stateName, depth) {
-  if (depth > 5) return;
+function collectJsonPaths(obj, prefix, paths, depth) {
+  if (depth >= MAX_OBJECT_NEST_DEPTH) return;
   for (const [key, value] of Object.entries(obj)) {
     if (prefix === "" && key.startsWith("$")) continue;
     const path = prefix ? `${prefix}.${key}` : key;
-    const typeHint = inferJsonTypeHint(value);
-    paths.push({ path, kind: "data", typeHint, stateName });
-    if (Array.isArray(value)) {
-      paths.push({ path: `${path}.*`, kind: "list", stateName });
-      paths.push({ path: `${path}.length`, kind: "data", typeHint: "number", stateName });
-      if (value.length > 0 && typeof value[0] === "object" && value[0] !== null && !Array.isArray(value[0])) {
-        const firstElement = value[0];
-        for (const [childKey, childValue] of Object.entries(firstElement)) {
-          const childPath = `${path}.*.${childKey}`;
-          paths.push({ path: childPath, kind: "data", typeHint: inferJsonTypeHint(childValue), stateName });
-        }
+    pushJsonValuePaths(path, value, paths, depth);
+  }
+}
+function pushJsonValuePaths(path, value, paths, depth) {
+  paths.push({ path, kind: "data", typeHint: inferJsonTypeHint(value) });
+  if (Array.isArray(value)) {
+    paths.push({ path: `${path}.*`, kind: "list" });
+    paths.push({ path: `${path}.length`, kind: "data", typeHint: "number" });
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+    if (value.length > 0 && typeof value[0] === "object" && value[0] !== null && !Array.isArray(value[0])) {
+      const firstElement = value[0];
+      for (const [childKey, childValue] of Object.entries(firstElement)) {
+        pushJsonValuePaths(`${path}.*.${childKey}`, childValue, paths, depth + 1);
       }
-    } else if (typeof value === "object" && value !== null) {
-      collectJsonPaths(value, path, paths, stateName, depth + 1);
     }
+  } else if (typeof value === "object" && value !== null) {
+    collectJsonPaths(value, path, paths, depth + 1);
   }
 }
 function inferJsonTypeHint(value) {
@@ -598,48 +1273,77 @@ function inferJsonTypeHint(value) {
   if (typeof value === "object") return "object";
   return void 0;
 }
-function extractDefaultExportObject(script) {
+function locateDefaultExportObject(script) {
   const scan = maskCommentsAndStrings(script);
   const match = scan.match(/export\s+default\s+(?:defineState\s*\(\s*)?(\{)/);
   if (!match) return null;
-  const startIndex = scan.indexOf(match[1], match.index);
-  return extractBracedContent(script, scan, startIndex);
+  const braceIndex = scan.indexOf(match[1], match.index);
+  return { content: extractBracedContent(script, scan, braceIndex), start: braceIndex + 1 };
+}
+function extractDefaultExportObject(script) {
+  return locateDefaultExportObject(script)?.content ?? null;
 }
 function parseTopLevelProperties(objectContent) {
   const props = [];
   const scan = maskCommentsAndStrings(objectContent);
-  const regex = /(?:(?:get|set)\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:async\s+)?([$\w]+)\s*\([^)]*\)\s*\{)|(?:(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*:\s*)/gd;
+  const regex = /(?:(?:get|set)\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:async\s+)?(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*:\s*)/gd;
   let match;
   while ((match = regex.exec(scan)) !== null) {
     const indices = match.indices;
+    let nameSpan;
     const nameAt = (group) => {
       const span = indices[group];
-      return span ? objectContent.slice(span[0], span[1]) : void 0;
+      if (!span) return void 0;
+      nameSpan = [span[0], span[1]];
+      return objectContent.slice(span[0], span[1]);
     };
     const skipBody = () => {
       const braceStart = match.index + match[0].length - 1;
       const body = extractBracedContent(objectContent, scan, braceStart);
       regex.lastIndex = braceStart + body.length + 2;
+      return { body, bodyStart: braceStart + 1 };
     };
     const accessorName = nameAt(1) ?? nameAt(2) ?? nameAt(3);
     if (accessorName) {
-      props.push({ name: accessorName, kind: "getter" });
-      skipBody();
+      const { body, bodyStart } = skipBody();
+      props.push({
+        name: accessorName,
+        kind: "getter",
+        value: body,
+        valueStart: bodyStart,
+        nameStart: nameSpan[0],
+        nameEnd: nameSpan[1]
+      });
       continue;
     }
-    const methodName = nameAt(4);
+    const methodName = nameAt(4) ?? nameAt(5) ?? nameAt(6);
     if (methodName) {
-      props.push({ name: methodName, kind: "method" });
-      skipBody();
+      const { body, bodyStart } = skipBody();
+      props.push({
+        name: methodName,
+        kind: "method",
+        value: body,
+        valueStart: bodyStart,
+        nameStart: nameSpan[0],
+        nameEnd: nameSpan[1]
+      });
       continue;
     }
-    const propName = nameAt(5) ?? nameAt(6) ?? nameAt(7);
+    const propName = nameAt(7) ?? nameAt(8) ?? nameAt(9);
     if (propName) {
       const valueStartIndex = match.index + match[0].length;
       const value = extractFullValue(objectContent, scan, valueStartIndex);
       const jsdocType = extractJsDocType(objectContent, match.index);
       const typeHint = jsdocType ?? inferTypeHint(value);
-      props.push({ name: propName, kind: "data", value, typeHint });
+      props.push({
+        name: propName,
+        kind: "data",
+        value,
+        typeHint,
+        nameStart: nameSpan[0],
+        nameEnd: nameSpan[1],
+        valueStart: valueStartIndex
+      });
       regex.lastIndex = valueStartIndex + value.length;
     }
   }
@@ -707,9 +1411,12 @@ function extractFullValue(content, scan, startIndex) {
   return content.slice(startIndex, i).trim();
 }
 function extractBracedContent(text, scan, openBraceIndex) {
+  return extractDelimitedContent(text, scan, openBraceIndex, "{", "}");
+}
+function extractDelimitedContent(text, scan, openIndex, open, close) {
   let depth = 0;
   let inString = null;
-  for (let i = openBraceIndex; i < scan.length; i++) {
+  for (let i = openIndex; i < scan.length; i++) {
     const ch = scan[i];
     if (inString) {
       if (ch === inString && !isEscaped(scan, i)) {
@@ -719,16 +1426,16 @@ function extractBracedContent(text, scan, openBraceIndex) {
     }
     if (ch === '"' || ch === "'" || ch === "`") {
       inString = ch;
-    } else if (ch === "{") {
+    } else if (ch === open) {
       depth++;
-    } else if (ch === "}") {
+    } else if (ch === close) {
       depth--;
       if (depth === 0) {
-        return text.slice(openBraceIndex + 1, i);
+        return text.slice(openIndex + 1, i);
       }
     }
   }
-  return text.slice(openBraceIndex + 1);
+  return text.slice(openIndex + 1);
 }
 function isArrayLiteral(value) {
   return value.trimStart().startsWith("[");
@@ -743,21 +1450,15 @@ function extractObjectContent(value) {
   if (start === -1) return "";
   return extractBracedContent(trimmed, scan, start);
 }
-function extractArrayElementProperties(value) {
+function extractArrayElementDataProperties(value) {
   const trimmed = value.trim();
   if (!trimmed.startsWith("[")) return [];
   const scan = maskCommentsAndStrings(trimmed);
-  const objectStart = scan.indexOf("{");
-  if (objectStart === -1) return [];
-  const objectContent = extractBracedContent(trimmed, scan, objectStart);
-  const props = [];
-  const allProps = parseTopLevelProperties(objectContent);
-  for (const prop of allProps) {
-    if (prop.kind === "data") {
-      props.push({ name: prop.name, typeHint: prop.typeHint });
-    }
-  }
-  return props;
+  let first = 1;
+  while (first < scan.length && /\s/.test(scan[first])) first++;
+  if (scan[first] !== "{") return [];
+  const objectContent = extractBracedContent(trimmed, scan, first);
+  return parseTopLevelProperties(objectContent).filter((prop) => prop.kind === "data");
 }
 function extractJsDocType(content, propIndex) {
   const before = content.slice(Math.max(0, propIndex - 200), propIndex);
@@ -803,6 +1504,333 @@ function inferTypeHint(valueStart) {
   if (v.startsWith("{")) return "object";
   return void 0;
 }
+function analyzeSchemaPaths(schema) {
+  const paths = [];
+  const defs = schema.$defs ?? {};
+  collectSchemaObjectPaths(schema, "", paths, defs, 0);
+  return paths;
+}
+function mergeSchemaCandidates(candidates, applicationSchema) {
+  if (applicationSchema === void 0) return candidates;
+  const schemaCandidates = [];
+  const schemaKeys = /* @__PURE__ */ new Set();
+  for (const p of analyzeSchemaPaths(applicationSchema)) {
+    schemaCandidates.push(p);
+    schemaKeys.add(p.path);
+  }
+  const kept = candidates.filter((p) => !schemaKeys.has(p.path));
+  return [...kept, ...schemaCandidates];
+}
+function derefSchemaNodes(node, defs) {
+  const out = [];
+  const stack = [{ node, chain: /* @__PURE__ */ new Set() }];
+  while (stack.length > 0) {
+    const { node: n, chain } = stack.pop();
+    if (n === null || typeof n !== "object") continue;
+    if (typeof n.$ref === "string") {
+      const match = /^#\/\$defs\/(.+)$/.exec(n.$ref);
+      if (match === null || chain.has(n.$ref)) continue;
+      const target = defs[match[1].replace(/~1/g, "/").replace(/~0/g, "~")];
+      if (target === void 0) continue;
+      stack.push({ node: target, chain: /* @__PURE__ */ new Set([...chain, n.$ref]) });
+      continue;
+    }
+    if (Array.isArray(n.anyOf)) {
+      for (let i = n.anyOf.length - 1; i >= 0; i--) stack.push({ node: n.anyOf[i], chain });
+      continue;
+    }
+    out.push(n);
+  }
+  return out;
+}
+function schemaTypeHint(nodes) {
+  const hints = /* @__PURE__ */ new Set();
+  for (const n of nodes) {
+    const types = typeof n.type === "string" ? [n.type] : Array.isArray(n.type) ? n.type : [];
+    if (types.length > 0) {
+      for (const t of types) {
+        if (t === "null") continue;
+        hints.add(t === "integer" ? "number" : t);
+      }
+      continue;
+    }
+    if (Array.isArray(n.enum)) {
+      for (const v of n.enum) {
+        const h = inferJsonTypeHint(v);
+        if (h !== void 0 && h !== "null") hints.add(h);
+      }
+    } else if (n.const !== void 0) {
+      const h = inferJsonTypeHint(n.const);
+      if (h !== void 0 && h !== "null") hints.add(h);
+    } else if (n.properties !== void 0) {
+      hints.add("object");
+    } else if (n.items !== void 0) {
+      hints.add("array");
+    }
+  }
+  return hints.size === 0 ? void 0 : [...hints].join("|");
+}
+function collectSchemaObjectPaths(node, prefix, paths, defs, depth) {
+  if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+  const seen = /* @__PURE__ */ new Set();
+  for (const n of derefSchemaNodes(node, defs)) {
+    for (const [key, child] of Object.entries(n.properties ?? {})) {
+      if (prefix === "" && key.startsWith("$")) continue;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const path = prefix ? `${prefix}.${key}` : key;
+      pushSchemaValuePaths(path, child, paths, defs, depth);
+    }
+  }
+}
+function pushSchemaValuePaths(path, node, paths, defs, depth) {
+  const nodes = derefSchemaNodes(node, defs);
+  const typeHint = schemaTypeHint(nodes);
+  paths.push(withHint({ path, kind: "data", fromSchema: true }, typeHint));
+  const items = nodes.map((n) => n.items).find((i) => i !== void 0 && i !== null && typeof i === "object");
+  const isArray = items !== void 0 || (typeHint?.split("|").includes("array") ?? false);
+  if (isArray) {
+    const itemNodes = items !== void 0 ? derefSchemaNodes(items, defs) : [];
+    paths.push(withHint({ path: `${path}.*`, kind: "list", fromSchema: true }, schemaTypeHint(itemNodes)));
+    paths.push({ path: `${path}.length`, kind: "data", typeHint: "number", fromSchema: true });
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+    const seen = /* @__PURE__ */ new Set();
+    for (const n of itemNodes) {
+      for (const [childKey, childNode] of Object.entries(n.properties ?? {})) {
+        if (seen.has(childKey)) continue;
+        seen.add(childKey);
+        pushSchemaValuePaths(`${path}.*.${childKey}`, childNode, paths, defs, depth + 1);
+      }
+    }
+    return;
+  }
+  if (nodes.some((n) => n.properties !== void 0)) {
+    collectSchemaObjectPaths(node, path, paths, defs, depth + 1);
+  }
+}
+function withHint(candidate, typeHint) {
+  return typeHint === void 0 ? candidate : { ...candidate, typeHint };
+}
+
+// src/language/htmlParse.ts
+function parseWcsScriptBlocks(html, stateTagName = "wcs-state") {
+  const blocks = [];
+  let pos = 0;
+  const len = html.length;
+  while (pos < len) {
+    if (html.startsWith("<!--", pos)) {
+      const commentEnd = html.indexOf("-->", pos + 4);
+      if (commentEnd === -1) break;
+      pos = commentEnd + 3;
+      continue;
+    }
+    const wcsMatch = matchOpenTag(html, pos, stateTagName);
+    if (wcsMatch === null) {
+      pos++;
+      continue;
+    }
+    const mountPath = extractAttribute(wcsMatch.tagContent, "mount");
+    pos = wcsMatch.end;
+    const wcsCloseIdx = findCloseTag(html, pos, stateTagName);
+    const wcsEnd = wcsCloseIdx === -1 ? len : wcsCloseIdx;
+    while (pos < wcsEnd) {
+      if (html.startsWith("<!--", pos)) {
+        const commentEnd = html.indexOf("-->", pos + 4);
+        if (commentEnd === -1) break;
+        pos = commentEnd + 3;
+        continue;
+      }
+      const scriptMatch = matchOpenTag(html, pos, "script");
+      if (scriptMatch === null) {
+        pos++;
+        continue;
+      }
+      const typeAttr = extractAttribute(scriptMatch.tagContent, "type");
+      if (typeAttr?.toLowerCase() !== "module") {
+        pos = scriptMatch.end;
+        continue;
+      }
+      const contentStart = scriptMatch.end;
+      const scriptCloseIdx = findCloseTag(html, contentStart, "script");
+      if (scriptCloseIdx === -1) {
+        pos = contentStart;
+        break;
+      }
+      const contentEnd = scriptCloseIdx;
+      blocks.push({
+        contentStart,
+        contentEnd,
+        content: html.slice(contentStart, contentEnd),
+        mountPath
+      });
+      pos = html.indexOf(">", scriptCloseIdx) + 1;
+      if (pos === 0) break;
+    }
+    pos = wcsEnd;
+    if (wcsCloseIdx !== -1) {
+      const closeEnd = html.indexOf(">", wcsCloseIdx);
+      if (closeEnd !== -1) pos = closeEnd + 1;
+    }
+  }
+  return blocks;
+}
+function parseWcsStateElements(html, stateTagName = "wcs-state") {
+  const elements = [];
+  let pos = 0;
+  const len = html.length;
+  while (pos < len) {
+    if (html.startsWith("<!--", pos)) {
+      const commentEnd = html.indexOf("-->", pos + 4);
+      if (commentEnd === -1) break;
+      pos = commentEnd + 3;
+      continue;
+    }
+    const wcsMatch = matchOpenTag(html, pos, stateTagName);
+    if (wcsMatch === null) {
+      pos++;
+      continue;
+    }
+    const mountPath = extractAttribute(wcsMatch.tagContent, "mount");
+    const jsonAttr = extractAttribute(wcsMatch.tagContent, "json") ?? void 0;
+    const stateAttr = extractAttribute(wcsMatch.tagContent, "state") ?? void 0;
+    const srcAttr = extractAttribute(wcsMatch.tagContent, "src") ?? void 0;
+    const tagStart = pos;
+    const tagEnd = wcsMatch.end;
+    pos = wcsMatch.end;
+    const scriptBlocks = [];
+    const wcsCloseIdx = findCloseTag(html, pos, stateTagName);
+    const wcsEnd = wcsCloseIdx === -1 ? len : wcsCloseIdx;
+    while (pos < wcsEnd) {
+      if (html.startsWith("<!--", pos)) {
+        const commentEnd = html.indexOf("-->", pos + 4);
+        if (commentEnd === -1) break;
+        pos = commentEnd + 3;
+        continue;
+      }
+      const scriptMatch = matchOpenTag(html, pos, "script");
+      if (scriptMatch === null) {
+        pos++;
+        continue;
+      }
+      const typeAttr = extractAttribute(scriptMatch.tagContent, "type");
+      if (typeAttr?.toLowerCase() !== "module") {
+        pos = scriptMatch.end;
+        continue;
+      }
+      const contentStart = scriptMatch.end;
+      const scriptCloseIdx = findCloseTag(html, contentStart, "script");
+      if (scriptCloseIdx === -1) {
+        pos = contentStart;
+        break;
+      }
+      scriptBlocks.push({
+        contentStart,
+        contentEnd: scriptCloseIdx,
+        content: html.slice(contentStart, scriptCloseIdx),
+        mountPath
+      });
+      pos = html.indexOf(">", scriptCloseIdx) + 1;
+      if (pos === 0) break;
+    }
+    elements.push({ mountPath, jsonAttr, stateAttr, srcAttr, scriptBlocks, tagStart, tagEnd });
+    pos = wcsEnd;
+    if (wcsCloseIdx !== -1) {
+      const closeEnd = html.indexOf(">", wcsCloseIdx);
+      if (closeEnd !== -1) pos = closeEnd + 1;
+    }
+  }
+  return elements;
+}
+function findScriptJsonById(html, id2) {
+  let pos = 0;
+  const len = html.length;
+  while (pos < len) {
+    if (html.startsWith("<!--", pos)) {
+      const commentEnd = html.indexOf("-->", pos + 4);
+      if (commentEnd === -1) break;
+      pos = commentEnd + 3;
+      continue;
+    }
+    const scriptMatch = matchOpenTag(html, pos, "script");
+    if (scriptMatch === null) {
+      pos++;
+      continue;
+    }
+    const typeAttr = extractAttribute(scriptMatch.tagContent, "type");
+    const idAttr = extractAttribute(scriptMatch.tagContent, "id");
+    if (typeAttr?.toLowerCase() === "application/json" && idAttr === id2) {
+      const contentStart = scriptMatch.end;
+      const scriptCloseIdx = findCloseTag(html, contentStart, "script");
+      if (scriptCloseIdx === -1) return null;
+      return html.slice(contentStart, scriptCloseIdx);
+    }
+    pos = scriptMatch.end;
+  }
+  return null;
+}
+function matchOpenTag(html, pos, tagName) {
+  if (html[pos] !== "<") return null;
+  const nameStart = pos + 1;
+  const nameEnd = nameStart + tagName.length;
+  if (nameEnd > html.length) return null;
+  const slice3 = html.slice(nameStart, nameEnd);
+  if (slice3.toLowerCase() !== tagName.toLowerCase()) return null;
+  const charAfter = html[nameEnd];
+  if (charAfter !== ">" && charAfter !== " " && charAfter !== "	" && charAfter !== "\n" && charAfter !== "\r" && charAfter !== "/") {
+    return null;
+  }
+  let i = nameEnd;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  while (i < html.length) {
+    const ch = html[i];
+    if (inSingleQuote) {
+      if (ch === "'") inSingleQuote = false;
+    } else if (inDoubleQuote) {
+      if (ch === '"') inDoubleQuote = false;
+    } else if (ch === "'") {
+      inSingleQuote = true;
+    } else if (ch === '"') {
+      inDoubleQuote = true;
+    } else if (ch === ">") {
+      return {
+        start: pos,
+        end: i + 1,
+        tagContent: html.slice(nameEnd, i)
+      };
+    }
+    i++;
+  }
+  return null;
+}
+function findCloseTag(html, startPos, tagName) {
+  const pattern = "</" + tagName;
+  const patternLower = pattern.toLowerCase();
+  const htmlLower = html.toLowerCase();
+  let pos = startPos;
+  while (pos < html.length) {
+    const idx = htmlLower.indexOf(patternLower, pos);
+    if (idx === -1) return -1;
+    const afterIdx = idx + pattern.length;
+    if (afterIdx < html.length) {
+      const ch = html[afterIdx];
+      if (ch === ">" || ch === " " || ch === "	" || ch === "\n" || ch === "\r") {
+        return idx;
+      }
+    }
+    pos = idx + 1;
+  }
+  return -1;
+}
+function extractAttribute(tagContent, attrName) {
+  const regex = new RegExp(
+    `(?:^|\\s)${attrName}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|(\\S+))`,
+    "i"
+  );
+  const match = tagContent.match(regex);
+  if (!match) return null;
+  return match[1] ?? match[2] ?? match[3] ?? null;
+}
 
 // src/service/statePathResolver.ts
 function getStatePathsFromHtml(html, stateTagName = "wcs-state", fileReader) {
@@ -815,33 +1843,45 @@ function getStatePathsFromHtml(html, stateTagName = "wcs-state", fileReader) {
   return allPaths;
 }
 function resolveElementPaths(element, html, fileReader) {
+  const raw = resolveElementPathsRaw(element, html, fileReader);
+  if (element.mountPath === null) return raw;
+  const prefix = element.mountPath + ".";
+  const out = [];
+  for (const p of raw) {
+    if (p.path.startsWith("$")) continue;
+    if (p.kind === "method" || p.kind === "eventToken") continue;
+    out.push({ ...p, path: prefix + p.path });
+  }
+  return out;
+}
+function resolveElementPathsRaw(element, html, fileReader) {
   if (element.stateAttr) {
     const jsonContent = findScriptJsonById(html, element.stateAttr);
     if (jsonContent) {
-      const paths = analyzeJsonPaths(jsonContent, element.stateName);
+      const paths = analyzeJsonPaths(jsonContent);
       if (paths.length > 0) return paths;
     }
   }
   if (element.srcAttr && fileReader) {
-    const paths = resolveSrcAttribute(element.srcAttr, element.stateName, fileReader);
+    const paths = resolveSrcAttribute(element.srcAttr, fileReader);
     if (paths.length > 0) return paths;
   }
   if (element.jsonAttr) {
-    const paths = analyzeJsonPaths(element.jsonAttr, element.stateName);
+    const paths = analyzeJsonPaths(element.jsonAttr);
     if (paths.length > 0) return paths;
   }
   if (element.scriptBlocks.length > 0) {
     return element.scriptBlocks.flatMap(
-      (block) => analyzeStatePaths(block.content, block.stateName)
+      (block) => analyzeStatePaths(block.content)
     );
   }
   return [];
 }
-function resolveSrcAttribute(srcPath, stateName, fileReader) {
+function resolveSrcAttribute(srcPath, fileReader) {
   if (srcPath.endsWith(".json")) {
     const content = fileReader(srcPath);
     if (content) {
-      return analyzeJsonPaths(content, stateName);
+      return analyzeJsonPaths(content);
     }
     return [];
   }
@@ -849,18 +1889,18 @@ function resolveSrcAttribute(srcPath, stateName, fileReader) {
     const tsPath = srcPath.replace(/\.js$/, ".ts");
     const tsContent = fileReader(tsPath);
     if (tsContent) {
-      return analyzeStatePaths(tsContent, stateName);
+      return analyzeStatePaths(tsContent);
     }
     const jsContent = fileReader(srcPath);
     if (jsContent) {
-      return analyzeStatePaths(jsContent, stateName);
+      return analyzeStatePaths(jsContent);
     }
     return [];
   }
   if (srcPath.endsWith(".ts")) {
     const content = fileReader(srcPath);
     if (content) {
-      return analyzeStatePaths(content, stateName);
+      return analyzeStatePaths(content);
     }
     return [];
   }
@@ -889,25 +1929,61 @@ function isInsideForTemplate(html, offset, bindAttrName = "data-wcs") {
   return false;
 }
 function getInnermostForPath(html, offset, bindAttrName = "data-wcs") {
+  const chain = getEnclosingForPaths(html, offset, bindAttrName);
+  return chain.length === 0 ? null : chain[chain.length - 1];
+}
+function getEnclosingForPaths(html, offset, bindAttrName = "data-wcs") {
+  return getEnclosingFors(html, offset, bindAttrName).map((entry) => entry.path);
+}
+function getEnclosingFors(html, offset, bindAttrName = "data-wcs") {
   const escaped = bindAttrName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const openRegex = new RegExp(
     `<template[^>]*${escaped}\\s*=\\s*["']\\s*for\\s*:\\s*([^"']+?)\\s*["']`,
     "gi"
   );
-  let bestMatch = null;
-  let bestPos = -1;
+  const enclosing = [];
   let match;
   while ((match = openRegex.exec(html)) !== null) {
     if (match.index >= offset) break;
     const tagEnd = html.indexOf(">", match.index);
     if (tagEnd === -1 || tagEnd >= offset) continue;
     const depth = getForTemplateDepthAt(html, match.index, offset, bindAttrName);
-    if (depth > 0 && match.index > bestPos) {
-      bestMatch = match[1].trim();
-      bestPos = match.index;
+    if (depth > 0) {
+      enclosing.push({ path: match[1].trim(), anchor: match.index });
     }
   }
-  return bestMatch;
+  return enclosing;
+}
+function countWildcardSegments(path) {
+  let count = 0;
+  for (const segment of path.split(".")) {
+    if (segment === "*") count++;
+  }
+  return count;
+}
+function forPathOf(raw) {
+  let path = raw.trim();
+  const pipe = path.indexOf("|");
+  if (pipe !== -1) path = path.slice(0, pipe).trim();
+  const at = path.indexOf("@");
+  if (at !== -1) path = path.slice(0, at).trim();
+  return path;
+}
+function getAvailableWildcardRank(html, offset, bindAttrName = "data-wcs") {
+  const chain = getEnclosingForPaths(html, offset, bindAttrName);
+  if (chain.length === 0) return 0;
+  let resolved = "";
+  for (const raw of chain) {
+    const path = forPathOf(raw);
+    if (path === ".") {
+      resolved = `${resolved}.*`;
+    } else if (path.startsWith(".")) {
+      resolved = `${resolved}.*.${path.slice(1)}`;
+    } else {
+      resolved = path;
+    }
+  }
+  return countWildcardSegments(resolved) + 1;
 }
 function getForTemplateDepthAt(html, openPos, offset, bindAttrName) {
   const tagEnd = html.indexOf(">", openPos);
@@ -939,8 +2015,8 @@ function getForTemplateDepthAt(html, openPos, offset, bindAttrName) {
 }
 
 // src/core/messages.ts
-function resolveLocale(locale) {
-  if (locale === void 0 || locale === "" || /^ja\b|^ja[-_]/i.test(locale) || locale.toLowerCase() === "ja") return "ja";
+function resolveLocale(locale3) {
+  if (locale3 === void 0 || locale3 === "" || /^ja\b|^ja[-_]/i.test(locale3) || locale3.toLowerCase() === "ja") return "ja";
   return "en";
 }
 var JA_EXPECTED_LABEL = {
@@ -951,16 +2027,23 @@ var JA_EXPECTED_LABEL = {
 var ja = {
   spreadFilterNotAllowed: () => `\u30B9\u30D7\u30EC\u30C3\u30C9\u306E\u30BF\u30FC\u30B2\u30C3\u30C8\u306B\u30D5\u30A3\u30EB\u30BF\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093`,
   spreadTargetRequired: () => `\u30B9\u30D7\u30EC\u30C3\u30C9\u306B\u306F\u30BF\u30FC\u30B2\u30C3\u30C8\u30D1\u30B9\u304C\u5FC5\u8981\u3067\u3059`,
+  structuralMustBeSingle: (d) => `'${d}' \u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u306F\u5358\u72EC\u3067\u6307\u5B9A\u3059\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08';' \u3067\u4ED6\u306E\u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u3068\u4F75\u8A18\u3067\u304D\u307E\u305B\u3093\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09`,
   eventTokenUndeclared: (t) => `\u30A4\u30D9\u30F3\u30C8\u30C8\u30FC\u30AF\u30F3 "${t}" \u306F $eventTokens \u306B\u5BA3\u8A00\u3055\u308C\u3066\u3044\u307E\u305B\u3093`,
   commandRhsFormat: () => `command \u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u306E\u53F3\u8FBA\u306B\u306F $command.<name>\uFF08$commandTokens \u3067\u5BA3\u8A00\uFF09\u3092\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044`,
   commandTokenUndeclared: (t) => `\u30B3\u30DE\u30F3\u30C9\u30C8\u30FC\u30AF\u30F3 "${t}" \u306F $commandTokens \u306B\u5BA3\u8A00\u3055\u308C\u3066\u3044\u307E\u305B\u3093`,
   streamPathMissing: (p) => `\u30D1\u30B9 "${p}" \u306F $streams \u5BA3\u8A00\u306B\u5B58\u5728\u3057\u307E\u305B\u3093`,
   pathMissing: (p) => `\u30D1\u30B9 "${p}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093`,
+  pathNonexistent: (p) => `\u30D1\u30B9 "${p}" \u306F\u5BA3\u8A00\u3055\u308C\u305F stateSchema \u306B\u5B58\u5728\u3057\u307E\u305B\u3093`,
+  pathTypeMismatch: (p, label, expected, actual) => `\u30D1\u30B9 "${p}" \u306F stateSchema \u4E0A\u3067 ${actual} \u578B\u3067\u3059\u304C\u3001${label} \u306B\u306F${JA_EXPECTED_LABEL[expected]}\u304C\u5FC5\u8981\u3067\u3059`,
   expansionSuffix: (x) => `\uFF08\u5C55\u958B: ${x}\uFF09`,
   patternPathOutsideFor: (p) => `\u30D1\u30BF\u30FC\u30F3\u30D1\u30B9 "${p}" \u306F <template for> \u306E\u5916\u5074\u3067\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093`,
   omittedPathOutsideFor: (p) => `\u7701\u7565\u30D1\u30B9 "${p}" \u306F <template for> \u306E\u5916\u5074\u3067\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093`,
   loopIndexOutsideFor: (p) => `\u30EB\u30FC\u30D7\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9 "${p}" \u306F <template for> \u306E\u5916\u5074\u3067\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093`,
   resolvedPathInUi: (p) => `\u89E3\u6C7A\u6E08\u307F\u30D1\u30B9 "${p}" \u306F UI \u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u3067\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093\u3002\u30D1\u30BF\u30FC\u30F3\u30D1\u30B9\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044`,
+  indexArity: (api, p, req, wc, actual) => `${api}("${p}") \u306E\u6DFB\u5B57\u306F${req === "exact" ? `\u3061\u3087\u3046\u3069 ${wc} \u500B` : `${wc} \u500B\u4EE5\u4E0B`}\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u30D1\u30B9\u4E2D\u306E "*" \u306F ${wc} \u500B\uFF09\u3002${actual} \u500B\u6307\u5B9A\u3055\u308C\u3066\u3044\u307E\u3059`,
+  wildcardRank: (subject, needed, available) => `${subject} \u306F ${needed} \u6BB5\u306E\u30EB\u30FC\u30D7\u304C\u5FC5\u8981\u3067\u3059\u304C\u3001\u73FE\u5728\u306E\u30B9\u30B3\u30FC\u30D7\u306F ${available} \u6BB5\u3067\u3059`,
+  getterCycle: (cycle) => `\u30D1\u30B9 getter \u304C\u5FAA\u74B0\u53C2\u7167\u3057\u3066\u3044\u307E\u3059: ${cycle}`,
+  updatedCallbackUnbound: (p) => `$updatedCallback \u306F binding \u99C6\u52D5\u3067\u3059\u3002"${p}" \u306F\u3053\u306E\u30C9\u30AD\u30E5\u30E1\u30F3\u30C8\u306E\u3069\u306E\u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u306B\u3082\u73FE\u308C\u306A\u3044\u305F\u3081\u3001\u3053\u306E\u5206\u5C90\u306F\u4E00\u5EA6\u3082\u5B9F\u884C\u3055\u308C\u307E\u305B\u3093\u3002\u63CF\u753B\u306B\u4F9D\u5B58\u305B\u305A\u53CD\u5FDC\u3059\u308B\u306A\u3089 $watch \u3092\u4F7F\u3063\u3066\u304F\u3060\u3055\u3044`,
   handlerFilterNotAllowed: (prop) => `\u30A4\u30D9\u30F3\u30C8\u30CF\u30F3\u30C9\u30E9 "${prop}" \u306B\u30D5\u30A3\u30EB\u30BF\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093`,
   typeExpectation: (label, expected, resultType) => `"${label}" \u306B\u306F${JA_EXPECTED_LABEL[expected]}\u304C\u5FC5\u8981\u3067\u3059\uFF08\u73FE\u5728\u306E\u578B: ${resultType}\uFF09`,
   filterUnknown: (n) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306F\u7D44\u307F\u8FBC\u307F\u30D5\u30A3\u30EB\u30BF\u306B\u5B58\u5728\u3057\u307E\u305B\u3093`,
@@ -971,19 +2054,41 @@ var ja = {
   wcsTextInfo: (e) => `wcs-text \u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0: ${e}`,
   moustacheFouc: (e) => `<template> \u5916\u306E {{ }} \u69CB\u6587\u306F FOUC\uFF08\u521D\u671F\u8868\u793A\u6642\u306B\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u6587\u5B57\u5217\u304C\u898B\u3048\u308B\uFF09\u306E\u539F\u56E0\u306B\u306A\u308A\u307E\u3059\u3002<!--@@:${e}--> \u307E\u305F\u306F\u30B3\u30E1\u30F3\u30C8\u69CB\u6587\u306E\u4F7F\u7528\u3092\u691C\u8A0E\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
   nestedAssign: (sp) => `\u30CD\u30B9\u30C8\u3055\u308C\u305F\u30D7\u30ED\u30D1\u30C6\u30A3\u3078\u306E\u4EE3\u5165\u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\u3002this["${sp}"] \u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
+  watchNotObject: () => `$watch \u306F\u300C\u30D1\u30B9 \u2192 \u30CF\u30F3\u30C9\u30E9\u95A2\u6570\u300D\u306E\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u3053\u306E\u5F62\u306F\u30E9\u30F3\u30BF\u30A4\u30E0\u304C\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09`,
+  watchKeyCrossState: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306F\u4ED6\u306E state \u3092\u6307\u3057\u3066\u3044\u307E\u3059\u3002@ \u4ED8\u304D\u306E\u8D8A\u5883 watch \u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08\u81EA state \u306E\u30D1\u30B9\u306E\u307F\uFF09`,
+  watchKeyReserved: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306F "$" \u3067\u59CB\u3081\u3089\u308C\u307E\u305B\u3093\uFF08\u4E88\u7D04\u540D\u524D\u7A7A\u9593\uFF09`,
+  watchKeyEmptySegment: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306B\u7A7A\u306E\u30D1\u30B9\u30BB\u30B0\u30E1\u30F3\u30C8\u304C\u3042\u308A\u307E\u3059`,
+  watchHandlerNotFunction: (k) => `$watch \u306E\u30A8\u30F3\u30C8\u30EA "${k}" \u306E\u5024\u306F\u95A2\u6570\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059`,
+  watchPathMissing: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093\uFF08\u4E00\u5EA6\u3082\u767A\u706B\u3057\u307E\u305B\u3093\uFF09`,
   typeAnnotationIncompatible: (vt, rt) => `\u578B "${vt}" \u306F @type {${rt}} \u3068\u4E92\u63DB\u6027\u304C\u3042\u308A\u307E\u305B\u3093`,
   arrayMutation: (m, alt) => `\u914D\u5217\u306E\u7834\u58CA\u7684\u30E1\u30BD\u30C3\u30C9 "${m}" \u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\uFF08\u540C\u4E00\u53C2\u7167\u306E\u81EA\u5DF1\u518D\u4EE3\u5165\u3067\u3082\u8981\u7D20\u306E\u8FFD\u52A0\u30FB\u524A\u9664\u306F\u53CD\u6620\u3055\u308C\u307E\u305B\u3093\uFF09\u3002\u975E\u7834\u58CA\u30E1\u30BD\u30C3\u30C9\u3068\u518D\u4EE3\u5165\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u4F8B: ${alt}\uFF09\u3002`,
   arrayIndexAssign: (sp) => `\u914D\u5217\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u3078\u306E\u76F4\u63A5\u4EE3\u5165\u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\u3002this["${sp}"] \u306E\u3088\u3046\u306A\u30C9\u30C3\u30C8\u30D1\u30B9\u4EE3\u5165\u3001\u307E\u305F\u306F with() \u3068\u518D\u4EE3\u5165\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
   tagMemberUnknown: (prop, tag) => `"${prop}" \u306F <${tag}> \u306E wcBindable \u30E1\u30F3\u30D0\u30FC\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u672A\u77E5\u30E1\u30F3\u30D0\u30FC\u3078\u306E\u30D0\u30A4\u30F3\u30C9\u306F\u9ED9\u3063\u3066\u7121\u8996\u3055\u308C\u307E\u3059\uFF09`,
   tagCommandUnknown: (name, tag, declared) => `"${name}" \u306F <${tag}> \u306E command \u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u5BA3\u8A00\u6E08\u307F: ${declared}\uFF09`,
+  spreadNoBindable: (tag) => `'...'\uFF08spread\uFF09\u306F <${tag}> \u306B\u6709\u52B9\u306A wcBindable \u5BA3\u8A00\u304C\u5FC5\u8981\u3067\u3059 \u2014 \u3053\u306E\u30BF\u30B0\u306F\u5BA3\u8A00\u3092\u6301\u305F\u306A\u3044\u305F\u3081\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30A8\u30E9\u30FC\u3092\u9001\u51FA\u3057\u307E\u3059`,
   tagEventTokenKeyUnknown: (name, tag, declared) => `eventToken \u306E\u30AD\u30FC "${name}" \u306F <${tag}> \u306E wcBindable \u30D7\u30ED\u30D1\u30C6\u30A3\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002\u751F DOM \u30A4\u30D9\u30F3\u30C8\u540D\u306F\u767A\u706B\u3057\u307E\u305B\u3093 \u2014 \u30D7\u30ED\u30D1\u30C6\u30A3\u540D\u3092\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u5BA3\u8A00\u6E08\u307F: ${declared}\uFF09`,
+  ariaAttrUnknown: (name) => `"${name}" \u306F WAI-ARIA \u306E\u5C5E\u6027\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002setAttribute \u306F\u305D\u306E\u307E\u307E\u66F8\u304D\u8FBC\u307F\u307E\u3059\u304C\u3001\u652F\u63F4\u6280\u8853\u306B\u306F\u9ED9\u3063\u3066\u7121\u8996\u3055\u308C\u307E\u3059`,
   didYouMean: (c) => `\u3002\u3082\u3057\u304B\u3057\u3066: "${c}"`,
   none: () => `\u306A\u3057`,
   triggerSeededTruthy: (path) => `trigger \u30D0\u30A4\u30F3\u30C9\u5148 "${path}" \u304C true \u3067\u30B7\u30FC\u30C9\u3055\u308C\u3066\u3044\u307E\u3059\u3002trigger \u306F\u30A8\u30C3\u30B8\u691C\u51FA\u306A\u3057\uFF08truthy \u66F8\u304D\u8FBC\u307F\u3067\u5373\u767A\u706B\u30FBmanual \u3082\u30D0\u30A4\u30D1\u30B9\uFF09\u306E\u305F\u3081\u3001\u30D0\u30A4\u30F3\u30C9\u6642\u306B\u5373\u767A\u706B\u3057\u307E\u3059\u3002false \u3067\u30B7\u30FC\u30C9\u3057\u3066\u304F\u3060\u3055\u3044`,
   storageSeedClobber: (path, raw) => `<wcs-storage> \u306E value \u30D0\u30A4\u30F3\u30C9\u5148 "${path}" \u304C ${raw} \u3067\u30B7\u30FC\u30C9\u3055\u308C\u3066\u3044\u307E\u3059\u3002\u521D\u671F\u66F8\u304D\u623B\u3057\u304C\u4FDD\u5B58\u5024\u3092\u4E0A\u66F8\u304D\u3057\u307E\u3059 \u2014 undefined \u3067\u30B7\u30FC\u30C9\uFF08\`${path}: undefined\`\uFF09\u3059\u308B\u304B manual \u3092\u4ED8\u3051\u3066\u304F\u3060\u3055\u3044`,
   devtoolsAfterState: () => `@wcstack/devtools/auto \u306F @wcstack/state/auto \u3088\u308A\u5148\u306B\u8AAD\u307F\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044\uFF08\u5F8C\u3060\u3068\u914D\u7DDA\u53F0\u5E33\u304C\u30E9\u30A4\u30D6\u3067 captured \u3055\u308C\u307E\u305B\u3093\uFF09`,
   baseHrefMissing: () => `@wcstack/router \u3092\u4F7F\u3046 SPA \u306B\u306F <head> \u5185\u306E <base href="/"> \u304C\u5FC5\u8981\u3067\u3059\uFF08\u7121\u3044\u3068\u30C7\u30A3\u30FC\u30D7\u30EA\u30F3\u30AF\u3067 basename \u304C\u8AA4\u5C0E\u51FA\u3055\u308C\u307E\u3059\uFF09`,
-  signalsDualEntry: () => `@wcstack/signals \u3068 @wcstack/signals/dom \u304C\u540C\u4E00\u30DA\u30FC\u30B8\u304B\u3089 import \u3055\u308C\u3066\u3044\u307E\u3059\u3002CDN \u3067\u306F\u5404\u30A8\u30F3\u30C8\u30EA\u304C\u81EA\u5DF1\u5B8C\u7D50\u30D0\u30F3\u30C9\u30EB\u306E\u305F\u3081\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u30B3\u30A2\u304C\u4E8C\u91CD\u5316\u3057\u3001\u5883\u754C\u3067\u53CD\u5FDC\u304C\u58CA\u308C\u307E\u3059 \u2014 \u3059\u3079\u3066 /dom \u30A8\u30F3\u30C8\u30EA\u304B\u3089 import \u3057\u3066\u304F\u3060\u3055\u3044`
+  signalsDualEntry: () => `@wcstack/signals \u3068 @wcstack/signals/dom \u304C\u540C\u4E00\u30DA\u30FC\u30B8\u304B\u3089 import \u3055\u308C\u3066\u3044\u307E\u3059\u3002CDN \u3067\u306F\u5404\u30A8\u30F3\u30C8\u30EA\u304C\u81EA\u5DF1\u5B8C\u7D50\u30D0\u30F3\u30C9\u30EB\u306E\u305F\u3081\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u30B3\u30A2\u304C\u4E8C\u91CD\u5316\u3057\u3001\u5883\u754C\u3067\u53CD\u5FDC\u304C\u58CA\u308C\u307E\u3059 \u2014 \u3059\u3079\u3066 /dom \u30A8\u30F3\u30C8\u30EA\u304B\u3089 import \u3057\u3066\u304F\u3060\u3055\u3044`,
+  namedStateAttrDeprecated: (name) => `name \u5C5E\u6027\u306F v2 \u3067\u64A4\u53BB\u3055\u308C\u307E\u3057\u305F\uFF081 root 1 \u30C4\u30EA\u30FC\uFF09\u3002\u30EB\u30FC\u30C8\u30C4\u30EA\u30FC\u3078\u306E\u30DE\u30A6\u30F3\u30C8 <wcs-state mount="${name}"> \u306B\u7F6E\u304D\u63DB\u3048\u3001\u30D1\u30B9\u306F "${name}.<path>" \u3067\u53C2\u7167\u3057\u3066\u304F\u3060\u3055\u3044\uFF08docs/state-mount-design.md \xA79\uFF09`,
+  namedStatePathDeprecated: (name) => name === "default" ? `"@default" \u30BB\u30EC\u30AF\u30BF\u306F v2 \u3067\u64A4\u53BB\u3055\u308C\u307E\u3057\u305F\u3002"@default" \u3092\u5916\u3057\u3066\u304F\u3060\u3055\u3044\uFF08docs/state-mount-design.md \xA79\uFF09` : `"@name" \u30BB\u30EC\u30AF\u30BF\u306F v2 \u3067\u64A4\u53BB\u3055\u308C\u307E\u3057\u305F\uFF081 root 1 \u30C4\u30EA\u30FC\uFF09\u3002\u30DE\u30A6\u30F3\u30C8\u3057\u305F\u30C4\u30EA\u30FC\u3092 "${name}.<path>" \u3067\u53C2\u7167\u3057\u3066\u304F\u3060\u3055\u3044\uFF08docs/state-mount-design.md \xA79\uFF09`,
+  mountPathInvalid: (problem, mountPath) => {
+    switch (problem) {
+      case "empty":
+        return `"mount" \u306B\u306F\u7A7A\u3067\u306A\u3044\u30C4\u30EA\u30FC\u30D1\u30B9\u304C\u5FC5\u8981\u3067\u3059\uFF08runtime: "mount" requires a non-empty tree path.\uFF09`;
+      case "emptySegment":
+        return `"mount" \u30D1\u30B9 "${mountPath}" \u306B\u7A7A\u306E\u30BB\u30B0\u30E1\u30F3\u30C8\u304C\u3042\u308A\u307E\u3059\uFF08runtime: has an empty segment.\uFF09`;
+      case "wildcard":
+        return `"mount" \u30D1\u30B9 "${mountPath}" \u306F\u9759\u7684\u3067\u306A\u3051\u308C\u3070\u306A\u308A\u307E\u305B\u3093 \u2014 \u30EF\u30A4\u30EB\u30C9\u30AB\u30FC\u30C9\u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08runtime: must be static.\uFF09`;
+      default:
+        return `"mount" \u30D1\u30B9 "${mountPath}" \u306B\u4E88\u7D04\u6587\u5B57\uFF08$, #, @\uFF09\u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08runtime: must not use reserved characters.\uFF09`;
+    }
+  }
 };
 var EN_EXPECTED_LABEL = {
   array: "an array-typed path",
@@ -993,16 +2098,23 @@ var EN_EXPECTED_LABEL = {
 var en = {
   spreadFilterNotAllowed: () => `Filters cannot be applied to a spread target`,
   spreadTargetRequired: () => `Spread requires a target path`,
+  structuralMustBeSingle: (d) => `'${d}' must be the only binding in this attribute (it cannot be combined with ';'; the runtime throws at load time)`,
   eventTokenUndeclared: (t) => `Event token "${t}" is not declared in $eventTokens`,
   commandRhsFormat: () => `The right side of a command binding must be $command.<name> (declared in $commandTokens)`,
   commandTokenUndeclared: (t) => `Command token "${t}" is not declared in $commandTokens`,
   streamPathMissing: (p) => `Path "${p}" does not exist in the $streams declaration`,
   pathMissing: (p) => `Path "${p}" does not exist in the state definition`,
+  pathNonexistent: (p) => `Path "${p}" does not exist in the declared stateSchema`,
+  pathTypeMismatch: (p, label, expected, actual) => `Path "${p}" is ${actual} in the stateSchema, but ${label} requires ${expected === "array" ? "an array" : expected === "boolean" ? "a boolean" : "a string"}`,
   expansionSuffix: (x) => ` (expanded: ${x})`,
   patternPathOutsideFor: (p) => `Pattern path "${p}" cannot be used outside a <template for>`,
   omittedPathOutsideFor: (p) => `Shorthand path "${p}" cannot be used outside a <template for>`,
   loopIndexOutsideFor: (p) => `Loop index "${p}" cannot be used outside a <template for>`,
   resolvedPathInUi: (p) => `Resolved path "${p}" cannot be used in a UI binding. Use a pattern path instead`,
+  indexArity: (api, p, req, wc, actual) => `${api}("${p}") requires ${req === "exact" ? "exactly" : "at most"} ${wc} index(es) ("*" appears ${wc} time(s) in the path) but got ${actual}`,
+  wildcardRank: (subject, needed, available) => `${subject} needs ${needed} enclosing loop level(s) but the current scope provides ${available}`,
+  getterCycle: (cycle) => `Path getters form a dependency cycle: ${cycle}`,
+  updatedCallbackUnbound: (p) => `$updatedCallback is binding-driven. "${p}" is not bound anywhere in this document, so this branch never runs. Use $watch to react without depending on what is rendered`,
   handlerFilterNotAllowed: (prop) => `Filters cannot be applied to event handler "${prop}"`,
   typeExpectation: (label, expected, resultType) => `"${label}" requires ${EN_EXPECTED_LABEL[expected]} (current type: ${resultType})`,
   filterUnknown: (n) => `Filter "${n}" is not a built-in filter`,
@@ -1013,37 +2125,245 @@ var en = {
   wcsTextInfo: (e) => `wcs-text binding: ${e}`,
   moustacheFouc: (e) => `{{ }} outside a <template> causes FOUC (the raw template string is visible before binding). Consider the comment syntax <!--@@:${e}--> instead.`,
   nestedAssign: (sp) => `Assigning to a nested property does not trigger a reactive update. Use this["${sp}"] instead.`,
+  watchNotObject: () => `$watch must be an object mapping state paths to handler functions (the runtime throws on this shape at load time)`,
+  watchKeyCrossState: (k) => `$watch key "${k}" targets another state. Cross-state watching with @ is not supported (own paths only)`,
+  watchKeyReserved: (k) => `$watch key "${k}" must not start with "$" (reserved namespace)`,
+  watchKeyEmptySegment: (k) => `$watch key "${k}" has an empty path segment`,
+  watchHandlerNotFunction: (k) => `The value of $watch entry "${k}" must be a function`,
+  watchPathMissing: (k) => `$watch key "${k}" does not exist in the state definition (it will never fire)`,
   typeAnnotationIncompatible: (vt, rt) => `Type "${vt}" is not compatible with @type {${rt}}`,
   arrayMutation: (m, alt) => `Destructive array method "${m}" does not trigger a reactive update (re-assigning the same reference does not reflect added/removed elements either). Use a non-destructive method with reassignment (e.g. ${alt}).`,
   arrayIndexAssign: (sp) => `Assigning directly to an array index does not trigger a reactive update. Use a dot-path assignment like this["${sp}"], or with() plus reassignment.`,
   tagMemberUnknown: (prop, tag) => `"${prop}" is not a wcBindable member of <${tag}> (bindings to unknown members are silently ignored)`,
   tagCommandUnknown: (name, tag, declared) => `"${name}" is not a command of <${tag}> (declared: ${declared})`,
+  spreadNoBindable: (tag) => `'...' (spread) requires <${tag}> to expose a valid wcBindable declaration \u2014 this tag declares none, so the runtime raises an error`,
   tagEventTokenKeyUnknown: (name, tag, declared) => `eventToken key "${name}" is not a wcBindable property of <${tag}>. Raw DOM event names never fire \u2014 use the property name (declared: ${declared})`,
+  ariaAttrUnknown: (name) => `"${name}" is not a WAI-ARIA attribute. setAttribute writes it anyway, and assistive technology silently ignores it`,
   didYouMean: (c) => `. Did you mean "${c}"?`,
   none: () => `none`,
   triggerSeededTruthy: (path) => `The trigger-bound slot "${path}" is seeded with true. trigger has no edge detection (any truthy write fires, and it bypasses manual), so it fires immediately at bind. Seed it with false`,
   storageSeedClobber: (path, raw) => `The <wcs-storage> value-bound slot "${path}" is seeded with ${raw}. The initial write-back overwrites the persisted value \u2014 seed it with undefined (\`${path}: undefined\`) or add manual`,
   devtoolsAfterState: () => `Load @wcstack/devtools/auto BEFORE @wcstack/state/auto (otherwise the wiring ledger is not captured live)`,
   baseHrefMissing: () => `An SPA using @wcstack/router needs <base href="/"> in <head> (without it, deep links misderive the basename)`,
-  signalsDualEntry: () => `Both @wcstack/signals and @wcstack/signals/dom are imported on this page. On a CDN each entry is a self-contained bundle, so the reactive core is duplicated and reactivity breaks at the seam \u2014 import everything from the single /dom entry`
+  signalsDualEntry: () => `Both @wcstack/signals and @wcstack/signals/dom are imported on this page. On a CDN each entry is a self-contained bundle, so the reactive core is duplicated and reactivity breaks at the seam \u2014 import everything from the single /dom entry`,
+  namedStateAttrDeprecated: (name) => `The "name" attribute was removed in v2 \u2014 there is a single state tree per root. Mount this state onto the tree instead: <wcs-state mount="${name}"> and read it as "${name}.<path>" (docs/state-mount-design.md \xA79)`,
+  namedStatePathDeprecated: (name) => name === "default" ? `The "@default" selector was removed in v2 \u2014 drop it (docs/state-mount-design.md \xA79)` : `The "@name" selector was removed in v2 \u2014 there is a single state tree. Mount the named state onto the tree (<wcs-state mount="...">) and read it as "${name}.<path>" (docs/state-mount-design.md \xA79)`,
+  mountPathInvalid: (problem, mountPath) => {
+    switch (problem) {
+      case "empty":
+        return `"mount" requires a non-empty tree path.`;
+      case "emptySegment":
+        return `"mount" path "${mountPath}" has an empty segment.`;
+      case "wildcard":
+        return `"mount" path "${mountPath}" must be static (wildcards are not allowed).`;
+      default:
+        return `"mount" path "${mountPath}" must not use reserved characters ($, #, @).`;
+    }
+  }
 };
 var CATALOGS = { ja, en };
-function getMessages(locale) {
-  return CATALOGS[resolveLocale(locale)];
+function getMessages(locale3) {
+  return CATALOGS[resolveLocale(locale3)];
+}
+
+// src/core/sidecar/schemaSubset.ts
+var ALLOWED_SCHEMA_KEYWORDS = /* @__PURE__ */ new Set([
+  "type",
+  "properties",
+  "required",
+  "items",
+  "enum",
+  "const",
+  "anyOf",
+  "$defs",
+  "$ref"
+]);
+var DiagnosticContext = class {
+  constructor(spans) {
+    this.spans = spans;
+  }
+  diagnostics = [];
+  add(code, pointer2, message, severity, extra = {}, useKeySpan = false) {
+    const span = this.spans.get(pointer2);
+    const start = span === void 0 ? 0 : useKeySpan ? span.keyStart ?? span.start : span.start;
+    const end = span === void 0 ? 0 : useKeySpan ? span.keyEnd ?? span.end : span.end;
+    this.diagnostics.push({ code, start, end, message, severity, ...extra });
+  }
+};
+function isSchemaObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function isSchemaMap(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function validateSchemaSubset(schema, pointerBase, ctx, rootDefs) {
+  walkKeywords(schema, pointerBase, ctx, rootDefs);
+  const safe = /* @__PURE__ */ new Set();
+  detectCycles(schema, pointerBase, ctx, rootDefs, /* @__PURE__ */ new Set(), safe);
+  for (const [name, def] of Object.entries(rootDefs)) {
+    detectCycles(def, `${pointerBase}/$defs/${escape(name)}`, ctx, rootDefs, /* @__PURE__ */ new Set(), safe);
+  }
+}
+function walkKeywords(node, ptr, ctx, rootDefs) {
+  if (!isSchemaObject(node)) return;
+  for (const keyword of Object.keys(node)) {
+    if (!ALLOWED_SCHEMA_KEYWORDS.has(keyword)) {
+      ctx.add(
+        WcsDiagnosticCode.ManifestUnknownKeyword,
+        `${ptr}/${escape(keyword)}`,
+        `Unsupported schema keyword "${keyword}". Allowed: ${[...ALLOWED_SCHEMA_KEYWORDS].join(", ")}.`,
+        "warning",
+        {},
+        true
+      );
+    }
+  }
+  if (typeof node.$ref === "string") {
+    if (!node.$ref.startsWith("#/")) {
+      ctx.add(
+        WcsDiagnosticCode.ManifestExternalRef,
+        `${ptr}/$ref`,
+        `External $ref "${node.$ref}" is forbidden; only local "#/$defs/..." references are allowed.`,
+        "error"
+      );
+    } else if (resolveLocalRef(node.$ref, rootDefs) === void 0) {
+      ctx.add(
+        WcsDiagnosticCode.ManifestRefUnresolved,
+        `${ptr}/$ref`,
+        `Unresolved local $ref "${node.$ref}".`,
+        "error"
+      );
+    }
+  }
+  if (isSchemaMap(node.properties)) {
+    for (const [name, child] of Object.entries(node.properties)) {
+      walkKeywords(child, `${ptr}/properties/${escape(name)}`, ctx, rootDefs);
+    }
+  }
+  if (node.items !== void 0 && isSchemaObject(node.items)) {
+    walkKeywords(node.items, `${ptr}/items`, ctx, rootDefs);
+  }
+  if (Array.isArray(node.anyOf)) {
+    node.anyOf.forEach((child, i) => walkKeywords(child, `${ptr}/anyOf/${i}`, ctx, rootDefs));
+  }
+  if (isSchemaMap(node.$defs)) {
+    for (const [name, child] of Object.entries(node.$defs)) {
+      walkKeywords(child, `${ptr}/$defs/${escape(name)}`, ctx, rootDefs);
+    }
+  }
+}
+function detectCycles(node, ptr, ctx, rootDefs, refStack, safe) {
+  if (!isSchemaObject(node)) return;
+  if (typeof node.$ref === "string") {
+    const ref = node.$ref;
+    if (!ref.startsWith("#/")) return;
+    if (refStack.has(ref)) {
+      ctx.add(WcsDiagnosticCode.ManifestRefCycle, `${ptr}/$ref`, `Cyclic $ref detected at "${ref}".`, "error");
+      return;
+    }
+    if (safe.has(ref)) return;
+    const target = resolveLocalRef(ref, rootDefs);
+    if (target === void 0) return;
+    refStack.add(ref);
+    detectCycles(target, ptr, ctx, rootDefs, refStack, safe);
+    refStack.delete(ref);
+    safe.add(ref);
+    return;
+  }
+  if (isSchemaMap(node.properties)) {
+    for (const child of Object.values(node.properties)) detectCycles(child, ptr, ctx, rootDefs, refStack, safe);
+  }
+  if (node.items !== void 0 && isSchemaObject(node.items)) {
+    detectCycles(node.items, ptr, ctx, rootDefs, refStack, safe);
+  }
+  if (Array.isArray(node.anyOf)) {
+    for (const child of node.anyOf) detectCycles(child, ptr, ctx, rootDefs, refStack, safe);
+  }
+}
+function resolveLocalRef(ref, rootDefs) {
+  const match = /^#\/\$defs\/(.+)$/.exec(ref);
+  if (match === null) return void 0;
+  const name = match[1].replace(/~1/g, "/").replace(/~0/g, "~");
+  return rootDefs[name];
+}
+function resolveSchemaPath(root, rootDefs, segments) {
+  let current = root;
+  for (let depth = 0; depth < segments.length; depth++) {
+    const segment = segments[depth];
+    const resolved = derefUnion(current, rootDefs);
+    if (resolved.kind === "ref-error") return resolved;
+    const candidates = resolved.nodes;
+    if (segment === "*") {
+      const items = firstDefined(candidates, (n) => isSchemaObject(n.items) ? n.items : void 0);
+      if (items === void 0) {
+        return { kind: "unknown" };
+      }
+      current = items;
+      continue;
+    }
+    if (segment === "length" && candidates.some((n) => hasType(n, "array"))) {
+      current = { type: "number" };
+      continue;
+    }
+    const child = firstDefined(candidates, (n) => isSchemaMap(n.properties) ? n.properties[segment] : void 0);
+    if (child !== void 0) {
+      current = child;
+      continue;
+    }
+    const anyObject = candidates.some((n) => hasType(n, "object") || isSchemaMap(n.properties));
+    if (anyObject) {
+      return { kind: "nonexistent", segment, depth };
+    }
+    return { kind: "unknown" };
+  }
+  const final = derefUnion(current, rootDefs);
+  if (final.kind === "ref-error") return final;
+  return { kind: "resolved", schema: final.nodes.length === 1 ? final.nodes[0] : current };
+}
+function derefUnion(node, rootDefs) {
+  const out = [];
+  const stack = [{ node, chain: /* @__PURE__ */ new Set() }];
+  while (stack.length > 0) {
+    const { node: n, chain } = stack.pop();
+    if (typeof n.$ref === "string") {
+      if (!n.$ref.startsWith("#/") || chain.has(n.$ref)) {
+        return { kind: "ref-error", ref: n.$ref };
+      }
+      const target = resolveLocalRef(n.$ref, rootDefs);
+      if (target === void 0) return { kind: "ref-error", ref: n.$ref };
+      stack.push({ node: target, chain: /* @__PURE__ */ new Set([...chain, n.$ref]) });
+      continue;
+    }
+    if (Array.isArray(n.anyOf)) {
+      for (const branch of n.anyOf) stack.push({ node: branch, chain });
+      continue;
+    }
+    out.push(n);
+  }
+  return { kind: "ok", nodes: out };
+}
+function firstDefined(nodes, pick) {
+  for (const n of nodes) {
+    const v = pick(n);
+    if (v !== void 0) return v;
+  }
+  return void 0;
+}
+function hasType(node, t) {
+  const type = node.type;
+  if (type === void 0) return false;
+  return Array.isArray(type) ? type.includes(t) : type === t;
+}
+function escape(key) {
+  return key.replace(/~/g, "~0").replace(/\//g, "~1");
 }
 
 // src/service/bindingValidator.ts
 var filterMap = new Map(BUILTIN_FILTERS.map((f) => [f.name, f]));
-function validateBindings(html, attrName, stateTagName = "wcs-state", locale) {
+function validateBindings(html, attrName, stateTagName = "wcs-state", locale3, fileReader, applicationSchema) {
   const diagnostics = [];
-  const msgs = getMessages(locale);
-  const statePaths = getStatePathsFromHtml(html, stateTagName);
-  const pathsByState = /* @__PURE__ */ new Map();
-  for (const p of statePaths) {
-    const list = pathsByState.get(p.stateName) ?? [];
-    list.push(p);
-    pathsByState.set(p.stateName, list);
-  }
+  const msgs = getMessages(locale3);
+  const statePaths = mergeSchemaCandidates(getStatePathsFromHtml(html, stateTagName, fileReader), applicationSchema);
   const attrs = findAllBindAttributes(html, attrName);
   let structuralTemplates = null;
   const getStructuralTemplates = () => {
@@ -1053,11 +2373,30 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale) {
   const filterNameSet = new Set(BUILTIN_FILTERS.map((f) => f.name));
   for (const attr of attrs) {
     const bindings = splitBindingExpressions(attr.value);
+    const nonEmptyCount = bindings.filter((b) => b.trim().length > 0).length;
+    if (nonEmptyCount > 1) {
+      let scanPos = 0;
+      for (const b of bindings) {
+        const colon = b.indexOf(":");
+        const prop = (colon === -1 ? b : b.slice(0, colon)).trim();
+        if (STRUCTURAL_BINDING_TYPE_SET.has(prop)) {
+          const leading = b.length - b.trimStart().length;
+          diagnostics.push({
+            code: WcsDiagnosticCode.TemplateSyntax,
+            start: attr.valueStart + scanPos + leading,
+            end: attr.valueStart + scanPos + b.trimEnd().length,
+            message: msgs.structuralMustBeSingle(prop),
+            severity: "error"
+          });
+        }
+        scanPos += b.length + 1;
+      }
+    }
     let pos = 0;
     for (const binding of bindings) {
       const bindingStart = attr.valueStart + pos;
       const parsed = parseBindingExpression(binding);
-      const scopedPaths = pathsByState.get(parsed.targetState) ?? [];
+      const scopedPaths = statePaths;
       const scopedPathSet = new Set(scopedPaths.map((p) => p.path));
       const propNoMod = parsed.property.replace(/#.*$/, "").trim();
       if (propNoMod === "...") {
@@ -1141,16 +2480,17 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale) {
             }
           }
           if (checkPath) {
-            const message = validatePathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, msgs);
-            if (message) {
+            const schema = applicationSchema;
+            const verdict = schema !== void 0 ? validateSchemaPathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, schema, msgs) : toMissingVerdict(validatePathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, msgs));
+            if (verdict) {
               const pathOffset = binding.indexOf(parsed.path);
               const pathStart = bindingStart + pathOffset;
               diagnostics.push({
-                code: WcsDiagnosticCode.BindingPathMissing,
+                code: verdict.code,
                 start: pathStart,
                 end: pathStart + pathTrimmed.length,
-                message: `${message}${pathTrimmed.startsWith(".") ? msgs.expansionSuffix(checkPath) : ""}`,
-                severity: "warning"
+                message: `${verdict.message}${pathTrimmed.startsWith(".") ? msgs.expansionSuffix(checkPath) : ""}`,
+                severity: verdict.severity
               });
             }
           }
@@ -1193,6 +2533,24 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale) {
               message: msgs.loopIndexOutsideFor(pathTrimmed),
               severity: "warning"
             });
+          }
+          if (insideFor && !pathTrimmed.startsWith(".") && !binding.includes("@")) {
+            const indexMatch = /^\$(\d+)$/.exec(pathTrimmed);
+            const needed = indexMatch !== null ? Number(indexMatch[1]) : pathTrimmed.includes("*") ? countWildcardSegments(pathTrimmed) : 0;
+            if (needed > 0) {
+              const available = getAvailableWildcardRank(html, attr.valueStart, attrName);
+              if (available > 0 && needed > available) {
+                const pathOffset = binding.indexOf(parsed.path);
+                const pathStart = bindingStart + pathOffset;
+                diagnostics.push({
+                  code: WcsDiagnosticCode.WildcardRank,
+                  start: pathStart,
+                  end: pathStart + pathTrimmed.length,
+                  message: msgs.wildcardRank(`"${pathTrimmed}"`, needed, available),
+                  severity: "warning"
+                });
+              }
+            }
           }
           if (/\.\d+\.|\.\d+$/.test(pathTrimmed)) {
             const pathOffset = binding.indexOf(parsed.path);
@@ -1251,12 +2609,13 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale) {
             if (typeReq && resultType !== typeReq.expected) {
               const pathOffset = binding.indexOf(parsed.path);
               const pathStart = bindingStart + pathOffset;
+              const schemaDefinite = typeReq.expected === "array" && parsed.filters.length === 0 && applicationSchema !== void 0 && scopedPaths.some((p) => p.path === pathTrimmed && p.fromSchema === true);
               diagnostics.push({
-                code: WcsDiagnosticCode.BindingTypeExpectation,
+                code: schemaDefinite ? WcsDiagnosticCode.PathTypeMismatch : WcsDiagnosticCode.BindingTypeExpectation,
                 start: pathStart,
                 end: pathStart + pathTrimmed.length,
-                message: msgs.typeExpectation(typeReq.label, typeReq.expected, resultType),
-                severity: typeReq.severity
+                message: schemaDefinite ? msgs.pathTypeMismatch(pathTrimmed, typeReq.label, typeReq.expected, resultType) : msgs.typeExpectation(typeReq.label, typeReq.expected, resultType),
+                severity: schemaDefinite ? "error" : typeReq.severity
               });
             }
           }
@@ -1304,7 +2663,7 @@ function splitBindingExpressions(value) {
 function parseBindingExpression(expr) {
   const colonIndex = expr.indexOf(":");
   if (colonIndex === -1) {
-    return { property: expr.trim(), path: null, targetState: "default", filters: [], inputFilters: [] };
+    return { property: expr.trim(), path: null, filters: [], inputFilters: [] };
   }
   const rawProp = expr.slice(0, colonIndex);
   const propSegments = splitByPipe(rawProp);
@@ -1316,9 +2675,8 @@ function parseBindingExpression(expr) {
   const filterSegments = segments.slice(1);
   const atIndex = pathSegment.indexOf("@");
   const path = atIndex !== -1 ? pathSegment.slice(0, atIndex) : pathSegment;
-  const targetState = atIndex !== -1 ? pathSegment.slice(atIndex + 1).trim() || "default" : "default";
   const filters = parseFilterSegments(expr, filterSegments, colonIndex + 1 + pathSegment.length + 1);
-  return { property, path: path.trim() || null, targetState, filters, inputFilters };
+  return { property, path: path.trim() || null, filters, inputFilters };
 }
 function parseFilterSegments(expr, segments, searchStart) {
   const filters = [];
@@ -1424,6 +2782,20 @@ function validatePathExistence(checkPath, displayPath, scopedPaths, scopedPathSe
   }
   if (!scopedPathSet.has(checkPath)) {
     return msgs.pathMissing(displayPath);
+  }
+  return null;
+}
+function toMissingVerdict(message) {
+  return message ? { code: WcsDiagnosticCode.BindingPathMissing, message, severity: "warning" } : null;
+}
+function validateSchemaPathExistence(checkPath, displayPath, scopedPaths, scopedPathSet, commandNames, schema, msgs) {
+  if (checkPath.startsWith("$")) {
+    return toMissingVerdict(validatePathExistence(checkPath, displayPath, scopedPaths, scopedPathSet, commandNames, msgs));
+  }
+  if (scopedPathSet.has(checkPath)) return null;
+  const resolution = resolveSchemaPath(schema, schema.$defs ?? {}, checkPath.split("."));
+  if (resolution.kind === "nonexistent") {
+    return { code: WcsDiagnosticCode.PathNonexistent, message: msgs.pathNonexistent(displayPath), severity: "error" };
   }
   return null;
 }
@@ -1537,8 +2909,8 @@ function isLiteral(value) {
 }
 
 // src/service/stateTypeValidator.ts
-function validateStateTypes(html, stateTagName = "wcs-state", locale) {
-  const msgs = getMessages(locale);
+function validateStateTypes(html, stateTagName = "wcs-state", locale3) {
+  const msgs = getMessages(locale3);
   const blocks = parseWcsScriptBlocks(html, stateTagName);
   const diagnostics = [];
   for (const block of blocks) {
@@ -1665,8 +3037,8 @@ function isApiRoot(root) {
 // src/service/nestedAssignValidator.ts
 var NESTED_ASSIGN = new RegExp(`${ROOT_DOT}(${CHAIN_ONE_PLUS})${ASSIGN_TAIL}`, "g");
 var PRE_NESTED_INCDEC = new RegExp(`${PRE_INCDEC}${ROOT_DOT}(${CHAIN_ONE_PLUS})`, "g");
-function validateNestedAssigns(html, stateTagName = "wcs-state", locale) {
-  const msgs = getMessages(locale);
+function validateNestedAssigns(html, stateTagName = "wcs-state", locale3) {
+  const msgs = getMessages(locale3);
   const blocks = parseWcsScriptBlocks(html, stateTagName);
   const diagnostics = [];
   for (const block of blocks) {
@@ -1688,7 +3060,7 @@ function findNestedAssigns(script, baseOffset, msgs, out) {
         start,
         end: start + full.length,
         message: msgs.nestedAssign(suggestedPath),
-        severity: "warning"
+        severity: "error"
       });
     }
   }
@@ -1717,8 +3089,8 @@ var PRE_BRACKET_INDEX = new RegExp(`${PRE_INCDEC}${ROOT_BRACKET}(${BRACKETS_ONLY
 function toAccessor(path) {
   return /^[A-Za-z_]\w*$/.test(path) ? `this.${path}` : `this["${path}"]`;
 }
-function validateArrayMutations(html, stateTagName = "wcs-state", locale) {
-  const msgs = getMessages(locale);
+function validateArrayMutations(html, stateTagName = "wcs-state", locale3) {
+  const msgs = getMessages(locale3);
   const blocks = parseWcsScriptBlocks(html, stateTagName);
   const diagnostics = [];
   for (const block of blocks) {
@@ -1741,7 +3113,7 @@ function findDestructiveCalls(script, baseOffset, msgs, out) {
         start,
         end: start + full.length,
         message: msgs.arrayMutation(method, ALTERNATIVES[method](toAccessor(statePath))),
-        severity: "warning",
+        severity: "error",
         statePath
       });
     }
@@ -1761,7 +3133,7 @@ function findIndexAssigns(script, baseOffset, msgs, out) {
         start,
         end: start + full.length,
         message: msgs.arrayIndexAssign(suggestedPath),
-        severity: "warning",
+        severity: "error",
         statePath: suggestedPath
       });
     }
@@ -1828,12 +3200,21 @@ function isInsideTag(html, offset, tagName) {
 }
 
 // src/service/templateSyntaxValidator.ts
-function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", locale) {
+function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", locale3, fileReader, applicationSchema) {
   const diagnostics = [];
-  const msgs = getMessages(locale);
-  const allPaths = getStatePathsFromHtml(html, stateTagName);
+  const msgs = getMessages(locale3);
+  const allPaths = mergeSchemaCandidates(getStatePathsFromHtml(html, stateTagName, fileReader), applicationSchema);
+  const defaultSchema = applicationSchema;
+  const missingVerdict = (path, displayPath, pathSet2, scoped) => {
+    if (isValidTemplatePath(path, pathSet2, scoped)) return null;
+    if (defaultSchema !== void 0 && !path.startsWith("$")) {
+      const resolution = resolveSchemaPath(defaultSchema, defaultSchema.$defs ?? {}, path.split("."));
+      return resolution.kind === "nonexistent" ? { code: WcsDiagnosticCode.PathNonexistent, severity: "error", message: msgs.pathNonexistent(displayPath) } : null;
+    }
+    return { code: WcsDiagnosticCode.BindingPathMissing, severity: "warning", message: msgs.pathMissing(displayPath) };
+  };
   if (allPaths.length === 0) return diagnostics;
-  const defaultPaths = allPaths.filter((p) => p.stateName === "default");
+  const defaultPaths = allPaths;
   const pathSet = new Set(defaultPaths.map((p) => p.path));
   const filterNameSet = new Set(BUILTIN_FILTERS.map((f) => f.name));
   const mustaches = findAllMustacheSyntax(html);
@@ -1859,9 +3240,8 @@ function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", l
     }
     if (!item.expression) continue;
     const parts = item.expression.split("|");
-    let pathPart = (parts[0] || "").trim();
-    const atIdx = pathPart.indexOf("@");
-    if (atIdx !== -1) pathPart = pathPart.slice(0, atIdx).trim();
+    const pathPart = (parts[0] || "").trim();
+    if (pathPart.includes("@")) continue;
     const insideFor = item.insideTemplate && isInsideForTemplate(html, item.matchStart, bindAttrName);
     if (pathPart && !/^-?\d|^["'`]|^true$|^false$|^null$/.test(pathPart)) {
       if (!insideFor && pathPart.includes("*")) {
@@ -1882,6 +3262,22 @@ function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", l
           severity: "warning"
         });
       }
+      if (insideFor && !pathPart.startsWith(".")) {
+        const indexMatch = /^\$(\d+)$/.exec(pathPart);
+        const needed = indexMatch !== null ? Number(indexMatch[1]) : pathPart.includes("*") ? countWildcardSegments(pathPart) : 0;
+        if (needed > 0) {
+          const available = getAvailableWildcardRank(html, item.matchStart, bindAttrName);
+          if (available > 0 && needed > available) {
+            diagnostics.push({
+              code: WcsDiagnosticCode.WildcardRank,
+              start: item.exprStart,
+              end: item.exprStart + pathPart.length,
+              message: msgs.wildcardRank(`"${pathPart}"`, needed, available),
+              severity: "warning"
+            });
+          }
+        }
+      }
       if (/\.\d+\.|\.\d+$/.test(pathPart)) {
         diagnostics.push({
           code: WcsDiagnosticCode.TemplateSyntax,
@@ -1895,24 +3291,28 @@ function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", l
         const forPath = insideFor ? getInnermostForPath(html, item.matchStart, bindAttrName) : null;
         if (forPath && !forPath.startsWith(".")) {
           const expandedPath = pathPart === "." ? `${forPath}.*` : `${forPath}.*.${pathPart.slice(1)}`;
-          if (!isValidTemplatePath(expandedPath, pathSet, defaultPaths)) {
+          const verdict = missingVerdict(expandedPath, pathPart, pathSet, defaultPaths);
+          if (verdict) {
             diagnostics.push({
-              code: WcsDiagnosticCode.BindingPathMissing,
+              code: verdict.code,
               start: item.exprStart,
               end: item.exprStart + pathPart.length,
-              message: msgs.pathMissing(pathPart) + msgs.expansionSuffix(expandedPath),
-              severity: "warning"
+              message: verdict.message + msgs.expansionSuffix(expandedPath),
+              severity: verdict.severity
             });
           }
         }
-      } else if (!isValidTemplatePath(pathPart, pathSet, defaultPaths)) {
-        diagnostics.push({
-          code: WcsDiagnosticCode.BindingPathMissing,
-          start: item.exprStart,
-          end: item.exprStart + pathPart.length,
-          message: msgs.pathMissing(pathPart),
-          severity: "warning"
-        });
+      } else {
+        const verdict = missingVerdict(pathPart, pathPart, pathSet, defaultPaths);
+        if (verdict) {
+          diagnostics.push({
+            code: verdict.code,
+            start: item.exprStart,
+            end: item.exprStart + pathPart.length,
+            message: verdict.message,
+            severity: verdict.severity
+          });
+        }
       }
     }
     for (let i = 1; i < parts.length; i++) {
@@ -1945,6 +3345,8 @@ function isValidTemplatePath(path, pathSet, scopedPaths) {
 var BUILTIN_TAGS = {
   "wcs-accelerometer": {
     "package": "accelerometer",
+    "hasWcBindable": true,
+    "observedAttributes": [],
     "inputs": {
       "frequency": null
     },
@@ -1962,6 +3364,8 @@ var BUILTIN_TAGS = {
   },
   "wcs-ambient-light-sensor": {
     "package": "ambient-light-sensor",
+    "hasWcBindable": true,
+    "observedAttributes": [],
     "inputs": {
       "frequency": null
     },
@@ -1975,8 +3379,252 @@ var BUILTIN_TAGS = {
       "stop"
     ]
   },
+  "wcs-audio": {
+    "package": "audio",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "volume",
+      "limiter",
+      "resume-on-gesture"
+    ],
+    "inputs": {
+      "volume": "volume",
+      "limiter": "limiter",
+      "resumeOnGesture": "resume-on-gesture"
+    },
+    "properties": [
+      "state",
+      "running",
+      "suspended",
+      "unsupported",
+      "voices",
+      "noteOn",
+      "noteOff",
+      "warnings",
+      "error",
+      "errorInfo"
+    ],
+    "commands": [
+      "resume",
+      "suspend",
+      "noteOn",
+      "noteOff",
+      "allNotesOff"
+    ]
+  },
+  "wcs-voice": {
+    "package": "audio",
+    "hasWcBindable": false,
+    "observedAttributes": [
+      "poly"
+    ],
+    "inputs": {},
+    "properties": [],
+    "commands": []
+  },
+  "wcs-osc": {
+    "package": "audio",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "frequency",
+      "detune",
+      "type",
+      "glide",
+      "transpose",
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {
+      "frequency": "frequency",
+      "detune": "detune",
+      "type": "type",
+      "glide": "glide",
+      "transpose": "transpose"
+    },
+    "properties": [],
+    "commands": []
+  },
+  "wcs-noise": {
+    "package": "audio",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {},
+    "properties": [],
+    "commands": []
+  },
+  "wcs-biquad": {
+    "package": "audio",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "frequency",
+      "q",
+      "gain",
+      "detune",
+      "type",
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {
+      "frequency": "frequency",
+      "q": "q",
+      "gain": "gain",
+      "detune": "detune",
+      "type": "type"
+    },
+    "properties": [],
+    "commands": []
+  },
+  "wcs-gain": {
+    "package": "audio",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "gain",
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {
+      "gain": "gain"
+    },
+    "properties": [],
+    "commands": []
+  },
+  "wcs-delay": {
+    "package": "audio",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "time",
+      "feedback",
+      "mix",
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {
+      "time": "time",
+      "feedback": "feedback",
+      "mix": "mix"
+    },
+    "properties": [],
+    "commands": []
+  },
+  "wcs-shaper": {
+    "package": "audio",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "amount",
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {
+      "amount": "amount"
+    },
+    "properties": [],
+    "commands": []
+  },
+  "wcs-env": {
+    "package": "audio",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "attack",
+      "decay",
+      "sustain",
+      "release",
+      "depth",
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {
+      "attack": "attack",
+      "decay": "decay",
+      "sustain": "sustain",
+      "release": "release",
+      "depth": "depth"
+    },
+    "properties": [],
+    "commands": []
+  },
+  "wcs-lfo": {
+    "package": "audio",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "rate",
+      "depth",
+      "type",
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {
+      "rate": "rate",
+      "depth": "depth",
+      "type": "type"
+    },
+    "properties": [],
+    "commands": []
+  },
+  "wcs-analyser": {
+    "package": "audio",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "fft",
+      "smoothing",
+      "id",
+      "out",
+      "param",
+      "note",
+      "master",
+      "poly"
+    ],
+    "inputs": {
+      "fft": "fft",
+      "smoothing": "smoothing"
+    },
+    "properties": [
+      "frame"
+    ],
+    "commands": [
+      "sample"
+    ]
+  },
   "wcs-broadcast": {
     "package": "broadcast",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "name"
+    ],
     "inputs": {
       "name": "name",
       "manual": "manual"
@@ -1994,6 +3642,14 @@ var BUILTIN_TAGS = {
   },
   "wcs-camera": {
     "package": "camera",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "facing-mode",
+      "device-id",
+      "audio",
+      "width",
+      "height"
+    ],
     "inputs": {
       "audio": "audio",
       "facingMode": "facing-mode",
@@ -2022,6 +3678,8 @@ var BUILTIN_TAGS = {
   },
   "wcs-recorder": {
     "package": "camera",
+    "hasWcBindable": true,
+    "observedAttributes": [],
     "inputs": {
       "mimeType": "mime-type",
       "timeslice": "timeslice",
@@ -2050,6 +3708,8 @@ var BUILTIN_TAGS = {
   },
   "wcs-clipboard": {
     "package": "clipboard",
+    "hasWcBindable": true,
+    "observedAttributes": [],
     "inputs": {
       "monitor": "monitor"
     },
@@ -2077,6 +3737,8 @@ var BUILTIN_TAGS = {
   },
   "wcs-contacts": {
     "package": "contacts",
+    "hasWcBindable": true,
+    "observedAttributes": [],
     "inputs": {},
     "properties": [
       "value",
@@ -2091,6 +3753,8 @@ var BUILTIN_TAGS = {
   },
   "wcs-credential": {
     "package": "credential",
+    "hasWcBindable": true,
+    "observedAttributes": [],
     "inputs": {},
     "properties": [
       "value",
@@ -2106,6 +3770,8 @@ var BUILTIN_TAGS = {
   },
   "wcs-debounce": {
     "package": "debounce",
+    "hasWcBindable": true,
+    "observedAttributes": [],
     "inputs": {
       "source": null,
       "wait": "wait",
@@ -2126,6 +3792,8 @@ var BUILTIN_TAGS = {
   },
   "wcs-throttle": {
     "package": "debounce",
+    "hasWcBindable": true,
+    "observedAttributes": [],
     "inputs": {
       "source": null,
       "wait": "wait",
@@ -2146,6 +3814,8 @@ var BUILTIN_TAGS = {
   },
   "wcs-defined": {
     "package": "defined",
+    "hasWcBindable": true,
+    "observedAttributes": [],
     "inputs": {
       "tags": "tags",
       "mode": "mode",
@@ -2163,6 +3833,8 @@ var BUILTIN_TAGS = {
   },
   "wcs-eyedropper": {
     "package": "eyedropper",
+    "hasWcBindable": true,
+    "observedAttributes": [],
     "inputs": {},
     "properties": [
       "value",
@@ -2178,6 +3850,10 @@ var BUILTIN_TAGS = {
   },
   "wcs-fetch": {
     "package": "fetch",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "url"
+    ],
     "inputs": {
       "url": null,
       "method": null,
@@ -2203,24 +3879,40 @@ var BUILTIN_TAGS = {
   },
   "wcs-fetch-header": {
     "package": "fetch",
+    "hasWcBindable": false,
+    "observedAttributes": [],
     "inputs": {},
     "properties": [],
     "commands": []
   },
   "wcs-fetch-body": {
     "package": "fetch",
+    "hasWcBindable": false,
+    "observedAttributes": [],
     "inputs": {},
     "properties": [],
     "commands": []
   },
   "wcs-infinite-scroll": {
     "package": "fetch",
+    "hasWcBindable": false,
+    "observedAttributes": [
+      "target",
+      "root",
+      "root-margin",
+      "threshold",
+      "disabled"
+    ],
     "inputs": {},
     "properties": [],
     "commands": []
   },
   "wcs-fullscreen": {
     "package": "fullscreen",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "target"
+    ],
     "inputs": {
       "target": "target"
     },
@@ -2236,6 +3928,8 @@ var BUILTIN_TAGS = {
   },
   "wcs-geo": {
     "package": "geolocation",
+    "hasWcBindable": true,
+    "observedAttributes": [],
     "inputs": {
       "highAccuracy": "high-accuracy",
       "timeout": "timeout",
@@ -2266,6 +3960,8 @@ var BUILTIN_TAGS = {
   },
   "wcs-gyroscope": {
     "package": "gyroscope",
+    "hasWcBindable": true,
+    "observedAttributes": [],
     "inputs": {
       "frequency": null
     },
@@ -2283,6 +3979,8 @@ var BUILTIN_TAGS = {
   },
   "wcs-idle": {
     "package": "idle",
+    "hasWcBindable": true,
+    "observedAttributes": [],
     "inputs": {
       "threshold": "threshold"
     },
@@ -2301,6 +3999,13 @@ var BUILTIN_TAGS = {
   },
   "wcs-intersect": {
     "package": "intersection",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "target",
+      "root",
+      "root-margin",
+      "threshold"
+    ],
     "inputs": {
       "target": "target",
       "root": "root",
@@ -2328,6 +4033,8 @@ var BUILTIN_TAGS = {
   },
   "wcs-magnetometer": {
     "package": "magnetometer",
+    "hasWcBindable": true,
+    "observedAttributes": [],
     "inputs": {
       "frequency": null
     },
@@ -2343,8 +4050,48 @@ var BUILTIN_TAGS = {
       "stop"
     ]
   },
+  "wcs-midi": {
+    "package": "midi",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "input",
+      "output",
+      "channel"
+    ],
+    "inputs": {
+      "input": "input",
+      "output": "output",
+      "channel": "channel",
+      "sysex": "sysex",
+      "auto": "auto"
+    },
+    "properties": [
+      "message",
+      "type",
+      "channel",
+      "note",
+      "velocity",
+      "control",
+      "value",
+      "devices",
+      "connected",
+      "permission",
+      "granted",
+      "denied",
+      "unsupported",
+      "error",
+      "errorInfo"
+    ],
+    "commands": [
+      "request",
+      "close",
+      "send"
+    ]
+  },
   "wcs-network": {
     "package": "network",
+    "hasWcBindable": true,
+    "observedAttributes": [],
     "inputs": {},
     "properties": [
       "effectiveType",
@@ -2357,6 +4104,8 @@ var BUILTIN_TAGS = {
   },
   "wcs-notify": {
     "package": "notification",
+    "hasWcBindable": true,
+    "observedAttributes": [],
     "inputs": {
       "notice": null,
       "mode": "mode",
@@ -2392,6 +4141,8 @@ var BUILTIN_TAGS = {
   },
   "wcs-permission": {
     "package": "permission",
+    "hasWcBindable": true,
+    "observedAttributes": [],
     "inputs": {
       "name": "name",
       "userVisibleOnly": "user-visible-only",
@@ -2408,6 +4159,10 @@ var BUILTIN_TAGS = {
   },
   "wcs-pip": {
     "package": "picture-in-picture",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "target"
+    ],
     "inputs": {
       "target": "target"
     },
@@ -2423,6 +4178,10 @@ var BUILTIN_TAGS = {
   },
   "wcs-pointer-lock": {
     "package": "pointer-lock",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "target"
+    ],
     "inputs": {
       "target": "target"
     },
@@ -2438,10 +4197,15 @@ var BUILTIN_TAGS = {
   },
   "wcs-raf": {
     "package": "raf",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "reduced-motion"
+    ],
     "inputs": {
       "once": "once",
       "repeat": "repeat",
       "manual": "manual",
+      "reducedMotion": "reduced-motion",
       "trigger": null
     },
     "properties": [
@@ -2462,6 +4226,12 @@ var BUILTIN_TAGS = {
   },
   "wcs-resize": {
     "package": "resize",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "target",
+      "box",
+      "round"
+    ],
     "inputs": {
       "target": "target",
       "box": "box",
@@ -2485,6 +4255,8 @@ var BUILTIN_TAGS = {
   },
   "wcs-screen-orientation": {
     "package": "screen-orientation",
+    "hasWcBindable": true,
+    "observedAttributes": [],
     "inputs": {},
     "properties": [
       "type",
@@ -2501,6 +4273,8 @@ var BUILTIN_TAGS = {
   },
   "wcs-share": {
     "package": "share",
+    "hasWcBindable": true,
+    "observedAttributes": [],
     "inputs": {},
     "properties": [
       "value",
@@ -2515,6 +4289,8 @@ var BUILTIN_TAGS = {
   },
   "wcs-speak": {
     "package": "speech",
+    "hasWcBindable": true,
+    "observedAttributes": [],
     "inputs": {
       "say": null,
       "rate": "rate",
@@ -2544,6 +4320,8 @@ var BUILTIN_TAGS = {
   },
   "wcs-listen": {
     "package": "speech",
+    "hasWcBindable": true,
+    "observedAttributes": [],
     "inputs": {
       "lang": "lang",
       "continuous": "continuous",
@@ -2571,6 +4349,10 @@ var BUILTIN_TAGS = {
   },
   "wcs-sse": {
     "package": "sse",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "url"
+    ],
     "inputs": {
       "url": "url",
       "withCredentials": "with-credentials",
@@ -2595,6 +4377,11 @@ var BUILTIN_TAGS = {
   },
   "wcs-storage": {
     "package": "storage",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "key",
+      "type"
+    ],
     "inputs": {
       "key": null,
       "type": null,
@@ -2617,6 +4404,8 @@ var BUILTIN_TAGS = {
   },
   "wcs-tilt": {
     "package": "tilt",
+    "hasWcBindable": true,
+    "observedAttributes": [],
     "inputs": {},
     "properties": [
       "alpha",
@@ -2635,6 +4424,10 @@ var BUILTIN_TAGS = {
   },
   "wcs-timer": {
     "package": "timer",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "interval"
+    ],
     "inputs": {
       "interval": "interval",
       "once": "once",
@@ -2659,6 +4452,10 @@ var BUILTIN_TAGS = {
   },
   "wcs-upload": {
     "package": "upload",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "url"
+    ],
     "inputs": {
       "url": null,
       "method": null,
@@ -2685,8 +4482,42 @@ var BUILTIN_TAGS = {
       "abort"
     ]
   },
+  "wcs-view-transition": {
+    "package": "view-transition",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "mode",
+      "naming",
+      "naming-limit",
+      "reduced-motion",
+      "types",
+      "disabled",
+      "for"
+    ],
+    "inputs": {
+      "disabled": "disabled",
+      "mode": "mode",
+      "naming": "naming",
+      "namingLimit": "naming-limit",
+      "reducedMotion": "reduced-motion",
+      "types": "types",
+      "participants": "for"
+    },
+    "properties": [
+      "active",
+      "error"
+    ],
+    "commands": [
+      "skip"
+    ]
+  },
   "wcs-wakelock": {
     "package": "wakelock",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "active",
+      "type"
+    ],
     "inputs": {
       "active": "active",
       "type": "type",
@@ -2704,6 +4535,10 @@ var BUILTIN_TAGS = {
   },
   "wcs-ws": {
     "package": "websocket",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "url"
+    ],
     "inputs": {
       "url": "url",
       "protocols": "protocols",
@@ -2733,6 +4568,10 @@ var BUILTIN_TAGS = {
   },
   "wcs-worker": {
     "package": "worker",
+    "hasWcBindable": true,
+    "observedAttributes": [
+      "src"
+    ],
     "inputs": {
       "src": "src",
       "type": "type",
@@ -2774,19 +4613,37 @@ var DOM_COMMON_PROPERTIES = /* @__PURE__ */ new Set([
 ]);
 var STRUCTURAL_DIRECTIVES2 = /* @__PURE__ */ new Set(["for", "if", "elseif", "else"]);
 var EMPTYISH_SEEDS = /* @__PURE__ */ new Set(["''", '""', "``", "null", "[]", "{}"]);
-function validateIoNodes(html, bindAttribute = "data-wcs", stateTagName = "wcs-state", locale) {
+function validateIoNodes(html, bindAttribute = "data-wcs", stateTagName = "wcs-state", locale3, fileReader) {
   const diagnostics = [];
-  const msgs = getMessages(locale);
+  const msgs = getMessages(locale3);
   const occurrences = findBuiltinTagOccurrences(html);
   if (occurrences.length === 0) return diagnostics;
   let statePaths = null;
-  const getPaths = () => statePaths ??= getStatePathsFromHtml(html, stateTagName);
+  const getPaths = () => statePaths ??= getStatePathsFromHtml(html, stateTagName, fileReader);
   for (const occ of occurrences) {
     const contract = BUILTIN_TAGS[occ.tagName];
-    if (contract.properties.length === 0 && contract.commands.length === 0 && Object.keys(contract.inputs).length === 0) continue;
     const bindAttr = extractAttributeValue(occ.attrsText, bindAttribute);
     if (!bindAttr) continue;
     const valueStart = occ.attrsStart + bindAttr.valueOffsetInAttrs;
+    if (!contract.hasWcBindable) {
+      let spreadExprOffset = 0;
+      for (const expr of splitBindingExpressions(bindAttr.value)) {
+        const exprStart = valueStart + spreadExprOffset;
+        spreadExprOffset += expr.length + 1;
+        if (parseBindingExpression(expr).property !== "...") continue;
+        const start = exprStart + expr.indexOf("...");
+        diagnostics.push({
+          code: WcsDiagnosticCode.SpreadNoBindable,
+          start,
+          end: start + 3,
+          severity: "error",
+          tag: occ.tagName,
+          message: msgs.spreadNoBindable(occ.tagName)
+        });
+      }
+      continue;
+    }
+    if (contract.properties.length === 0 && contract.commands.length === 0 && Object.keys(contract.inputs).length === 0) continue;
     const hasManual = hasBooleanAttribute(occ.attrsText, "manual");
     let exprOffset = 0;
     for (const expr of splitBindingExpressions(bindAttr.value)) {
@@ -2867,7 +4724,7 @@ function validateBindingAgainstContract(tagName, contract, parsed, property, sta
     return;
   }
   if (property === "trigger" && "trigger" in contract.inputs && parsed.path) {
-    const cand = findDataSlot(getPaths(), parsed.path, parsed.targetState);
+    const cand = findDataSlot(getPaths(), parsed.path);
     if (cand?.rawInitial === "true") {
       diagnostics.push({
         code: WcsDiagnosticCode.TriggerSeededTruthy,
@@ -2881,7 +4738,7 @@ function validateBindingAgainstContract(tagName, contract, parsed, property, sta
     }
   }
   if (tagName === "wcs-storage" && property === "value" && !hasManual && parsed.path && !/(?:^|,)init=(?:element|auto)\b/.test(modifiers)) {
-    const cand = findDataSlot(getPaths(), parsed.path, parsed.targetState);
+    const cand = findDataSlot(getPaths(), parsed.path);
     if (cand?.rawInitial !== void 0 && EMPTYISH_SEEDS.has(normalizeSeed(cand.rawInitial))) {
       diagnostics.push({
         code: WcsDiagnosticCode.StorageSeedClobber,
@@ -2895,8 +4752,8 @@ function validateBindingAgainstContract(tagName, contract, parsed, property, sta
     }
   }
 }
-function findDataSlot(paths, path, stateName) {
-  return paths.find((c) => c.kind === "data" && c.path === path && c.stateName === stateName);
+function findDataSlot(paths, path) {
+  return paths.find((c) => c.kind === "data" && c.path === path);
 }
 function normalizeSeed(raw) {
   const compact = raw.replace(/\s+/g, "");
@@ -2966,10 +4823,102 @@ function hasBooleanAttribute(attrsText, attrName) {
   return new RegExp(`(?:^|\\s)${attrName}(?:\\s|=|$)`, "i").test(attrsText);
 }
 
-// src/service/documentEnvValidator.ts
-function validateDocumentEnv(html, locale) {
+// src/service/ariaValidator.ts
+var ARIA_ATTRIBUTES = /* @__PURE__ */ new Set([
+  // widget attributes
+  "aria-autocomplete",
+  "aria-checked",
+  "aria-disabled",
+  "aria-errormessage",
+  "aria-expanded",
+  "aria-haspopup",
+  "aria-hidden",
+  "aria-invalid",
+  "aria-label",
+  "aria-level",
+  "aria-modal",
+  "aria-multiline",
+  "aria-multiselectable",
+  "aria-orientation",
+  "aria-placeholder",
+  "aria-pressed",
+  "aria-readonly",
+  "aria-required",
+  "aria-selected",
+  "aria-sort",
+  "aria-valuemax",
+  "aria-valuemin",
+  "aria-valuenow",
+  "aria-valuetext",
+  // live region attributes
+  "aria-busy",
+  "aria-live",
+  "aria-relevant",
+  "aria-atomic",
+  // drag-and-drop (deprecated in 1.1, still valid names)
+  "aria-dropeffect",
+  "aria-grabbed",
+  // relationship attributes
+  "aria-activedescendant",
+  "aria-colcount",
+  "aria-colindex",
+  "aria-colindextext",
+  "aria-colspan",
+  "aria-controls",
+  "aria-describedby",
+  "aria-details",
+  "aria-flowto",
+  "aria-labelledby",
+  "aria-owns",
+  "aria-posinset",
+  "aria-rowcount",
+  "aria-rowindex",
+  "aria-rowindextext",
+  "aria-rowspan",
+  "aria-setsize",
+  // global additions
+  "aria-current",
+  "aria-keyshortcuts",
+  "aria-roledescription",
+  // 1.3 additions with broad implementation
+  "aria-braillelabel",
+  "aria-brailleroledescription",
+  "aria-description"
+]);
+function validateAriaAttributes(html, bindAttribute = "data-wcs", locale3) {
   const diagnostics = [];
-  const msgs = getMessages(locale);
+  const msgs = getMessages(locale3);
+  for (const attr of findAllBindAttributes(html, bindAttribute)) {
+    let exprOffset = 0;
+    for (const expr of splitBindingExpressions(attr.value)) {
+      const exprStart = attr.valueStart + exprOffset;
+      exprOffset += expr.length + 1;
+      const property = parseBindingExpression(expr).property;
+      if (!property) continue;
+      const bare = property.split("#")[0];
+      if (!bare.toLowerCase().startsWith("attr.aria-")) continue;
+      const ariaName = bare.slice("attr.".length).toLowerCase();
+      if (ARIA_ATTRIBUTES.has(ariaName)) continue;
+      const propIndex = expr.indexOf(property);
+      const start = propIndex === -1 ? exprStart : exprStart + propIndex;
+      const end = propIndex === -1 ? exprStart + expr.length : start + property.length;
+      diagnostics.push({
+        code: WcsDiagnosticCode.AriaAttrUnknown,
+        start,
+        end,
+        severity: "warning",
+        member: ariaName,
+        message: msgs.ariaAttrUnknown(ariaName) + suggestion(ariaName, [...ARIA_ATTRIBUTES], msgs)
+      });
+    }
+  }
+  return diagnostics;
+}
+
+// src/service/documentEnvValidator.ts
+function validateDocumentEnv(html, locale3) {
+  const diagnostics = [];
+  const msgs = getMessages(locale3);
   const scanText = blankHtmlComments(html);
   const autos = findWcstackAutoScripts(scanText);
   const stateIndex = autos.findIndex((a) => a.pkg === "state");
@@ -3078,148 +5027,1603 @@ function blankJsComments(code) {
   return code.replace(/\/\*[\s\S]*?\*\//g, (m) => " ".repeat(m.length)).replace(/(^|[^:])\/\/[^\n]*/g, (m, pre) => pre + " ".repeat(m.length - pre.length));
 }
 
-// src/core/validateDocument.ts
-function validateDocument(text, options = {}) {
-  const bindAttribute = options.bindAttribute ?? "data-wcs";
-  const stateTagName = options.stateTagName ?? "wcs-state";
-  const locale = options.locale;
+// src/service/watchDeclarationValidator.ts
+var STATE_NAME_SEPARATOR = "@";
+function validateWatchDeclarations(html, stateTagName = "wcs-state", locale3) {
+  const msgs = getMessages(locale3);
   const out = [];
-  out.push(...validateBindings(text, bindAttribute, stateTagName, locale));
-  out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute, locale));
-  out.push(...validateIoNodes(text, bindAttribute, stateTagName, locale));
-  out.push(...validateDocumentEnv(text, locale));
-  out.push(...validateArrayMutations(text, stateTagName, locale));
-  for (const d of validateStateTypes(text, stateTagName, locale)) {
-    out.push({ code: WcsDiagnosticCode.TypeAnnotation, start: d.start, end: d.end, message: d.message, severity: d.severity });
+  for (const block of parseWcsScriptBlocks(html, stateTagName)) {
+    const nonObject = findNonObjectWatch(block.content);
+    if (nonObject !== null) {
+      out.push({
+        code: WcsDiagnosticCode.WatchDeclarationInvalid,
+        start: block.contentStart + nonObject.start,
+        end: block.contentStart + nonObject.end,
+        message: msgs.watchNotObject(),
+        severity: "error"
+      });
+    }
+    const entries = analyzeWatchEntries(block.content);
+    if (entries.length === 0) continue;
+    const paths = analyzeStatePaths(block.content);
+    const pathSet = new Set(paths.map((p) => p.path));
+    for (const entry of entries) {
+      const diagnostic = validateEntry(entry, pathSet, msgs);
+      if (diagnostic === null) continue;
+      out.push({
+        code: diagnostic.code,
+        start: block.contentStart + entry.start,
+        end: block.contentStart + entry.end,
+        message: diagnostic.message,
+        severity: diagnostic.severity
+      });
+    }
   }
-  for (const d of validateNestedAssigns(text, stateTagName, locale)) {
-    out.push({ code: WcsDiagnosticCode.NestedAssign, start: d.start, end: d.end, message: d.message, severity: d.severity });
+  return out;
+}
+function validateEntry(entry, pathSet, msgs) {
+  const { key } = entry;
+  const invalid = (message) => ({ code: WcsDiagnosticCode.WatchDeclarationInvalid, message, severity: "error" });
+  if (key.includes(STATE_NAME_SEPARATOR)) {
+    return invalid(msgs.watchKeyCrossState(key));
   }
-  return sortDiagnostics(out);
+  if (key.startsWith("$")) {
+    return invalid(msgs.watchKeyReserved(key));
+  }
+  if (key.split(".").some((segment) => segment.length === 0)) {
+    return invalid(msgs.watchKeyEmptySegment(key));
+  }
+  if (entry.definitelyNotFunction) {
+    return invalid(msgs.watchHandlerNotFunction(key));
+  }
+  if (pathSet.size > 0 && !pathSet.has(key)) {
+    return {
+      code: WcsDiagnosticCode.WatchPathMissing,
+      message: msgs.watchPathMissing(key),
+      severity: "warning"
+    };
+  }
+  return null;
 }
 
-// src/core/sidecar/schemaSubset.ts
-var ALLOWED_SCHEMA_KEYWORDS = /* @__PURE__ */ new Set([
-  "type",
-  "properties",
-  "required",
-  "items",
-  "enum",
-  "const",
-  "anyOf",
-  "$defs",
-  "$ref"
-]);
-var DiagnosticContext = class {
-  constructor(spans) {
-    this.spans = spans;
+// src/service/namedStateValidator.ts
+function findStateSelector(expr, embedded = false) {
+  const colon = embedded ? -1 : expr.indexOf(":");
+  const from = colon + 1;
+  let depth = 0;
+  let end = expr.length;
+  for (let i = from; i < expr.length; i++) {
+    const ch = expr[i];
+    if (ch === "(") depth++;
+    else if (ch === ")") depth = Math.max(0, depth - 1);
+    else if (ch === "|" && depth === 0) {
+      end = i;
+      break;
+    }
   }
-  diagnostics = [];
-  add(code, pointer2, message, severity, extra = {}, useKeySpan = false) {
-    const span = this.spans.get(pointer2);
-    const start = span === void 0 ? 0 : useKeySpan ? span.keyStart ?? span.start : span.start;
-    const end = span === void 0 ? 0 : useKeySpan ? span.keyEnd ?? span.end : span.end;
-    this.diagnostics.push({ code, start, end, message, severity, ...extra });
+  const at = expr.indexOf("@", from);
+  if (at === -1 || at >= end) return null;
+  const raw = expr.slice(at + 1, end);
+  const name = raw.trim();
+  const nameStart = at + 1 + (raw.length - raw.trimStart().length);
+  return { start: at, end: name.length === 0 ? at + 1 : nameStart + name.length, name: name.length === 0 ? "default" : name };
+}
+function validateNamedState(html, attrName, stateTagName = "wcs-state", locale3) {
+  const msgs = getMessages(locale3);
+  const diagnostics = [];
+  for (const element of parseWcsStateElements(html, stateTagName)) {
+    const tagText = html.slice(element.tagStart, element.tagEnd);
+    const match = /(?:^|\s)name\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(tagText);
+    if (match === null) continue;
+    const value = match[1] ?? match[2] ?? match[3] ?? "";
+    const quoted = match[1] !== void 0 || match[2] !== void 0;
+    const valueEnd = element.tagStart + match.index + match[0].length - (quoted ? 1 : 0);
+    diagnostics.push({
+      code: WcsDiagnosticCode.NamedStateDeprecated,
+      start: valueEnd - value.length,
+      end: valueEnd,
+      message: msgs.namedStateAttrDeprecated(value),
+      severity: "error"
+    });
+  }
+  for (const attr of findAllBindAttributes(html, attrName)) {
+    let pos = 0;
+    for (const expr of splitBindingExpressions(attr.value)) {
+      const selector = findStateSelector(expr);
+      if (selector !== null) {
+        diagnostics.push({
+          code: WcsDiagnosticCode.NamedStateDeprecated,
+          start: attr.valueStart + pos + selector.start,
+          end: attr.valueStart + pos + selector.end,
+          message: msgs.namedStatePathDeprecated(selector.name),
+          severity: "error"
+        });
+      }
+      pos += expr.length + 1;
+    }
+  }
+  for (const item of [...findAllMustacheSyntax(html), ...findAllCommentBindings(html)]) {
+    const selector = findStateSelector(item.expression, true);
+    if (selector !== null) {
+      diagnostics.push({
+        code: WcsDiagnosticCode.NamedStateDeprecated,
+        start: item.exprStart + selector.start,
+        end: item.exprStart + selector.end,
+        message: msgs.namedStatePathDeprecated(selector.name),
+        severity: "error"
+      });
+    }
+  }
+  return diagnostics;
+}
+
+// src/service/mountAttrValidator.ts
+function findMountPathProblem(mountPath) {
+  if (mountPath.length === 0) return "empty";
+  for (const segment of mountPath.split(".")) {
+    if (segment.length === 0) return "emptySegment";
+    if (segment === "*") return "wildcard";
+    if (segment.includes("$") || segment.includes("#") || segment.includes("@")) return "reserved";
+  }
+  return null;
+}
+function validateMountAttributes(html, stateTagName = "wcs-state", locale3) {
+  const msgs = getMessages(locale3);
+  const diagnostics = [];
+  for (const element of parseWcsStateElements(html, stateTagName)) {
+    if (element.mountPath === null) continue;
+    const problem = findMountPathProblem(element.mountPath);
+    if (problem === null) continue;
+    const tagText = html.slice(element.tagStart, element.tagEnd);
+    const match = /(?:^|\s)mount\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(tagText);
+    if (match === null) continue;
+    const value = match[1] ?? match[2] ?? match[3] ?? "";
+    const quoted = match[1] !== void 0 || match[2] !== void 0;
+    const valueEnd = element.tagStart + match.index + match[0].length - (quoted ? 1 : 0);
+    const attrStart = element.tagStart + match.index + (/^\s/.test(match[0]) ? 1 : 0);
+    diagnostics.push({
+      code: WcsDiagnosticCode.MountPathInvalid,
+      start: value.length === 0 ? attrStart : valueEnd - value.length,
+      end: valueEnd + (quoted && value.length === 0 ? 1 : 0),
+      message: msgs.mountPathInvalid(problem, element.mountPath),
+      severity: "error"
+    });
+  }
+  return diagnostics;
+}
+
+// ../state/dist/parser.esm.js
+var DELIMITER2 = ".";
+var WILDCARD2 = "*";
+var MAX_WILDCARD_DEPTH2 = 128;
+var BINDING_SEPARATOR2 = ";";
+var PROP_VALUE_SEPARATOR2 = ":";
+var MODIFIER_SEPARATOR2 = "#";
+var FILTER_SEPARATOR2 = "|";
+var ELSE_KEYWORD2 = "else";
+var SPREAD_PROP2 = "...";
+var EVENT_PROP_PREFIX2 = "on";
+var EVENT_TOKEN_NAMESPACE2 = "eventToken";
+var INDEX_PARAM_PREFIX2 = "$";
+var tmpIndexByIndexName2 = {};
+for (let i = 0; i < MAX_WILDCARD_DEPTH2; i++) {
+  tmpIndexByIndexName2[`${INDEX_PARAM_PREFIX2}${i + 1}`] = i;
+}
+Object.freeze(tmpIndexByIndexName2);
+var _cache = /* @__PURE__ */ new Map();
+function clearPathInfoCacheForTooling() {
+  _cache.clear();
+}
+var id = 0;
+function getPathInfo(path) {
+  let pathInfo = _cache.get(path);
+  if (typeof pathInfo !== "undefined") {
+    return pathInfo;
+  }
+  pathInfo = Object.freeze(new PathInfo(path));
+  _cache.set(path, pathInfo);
+  return pathInfo;
+}
+var PathInfo = class {
+  id = ++id;
+  path;
+  segments;
+  lastSegment;
+  cumulativePaths;
+  cumulativePathSet;
+  cumulativePathInfos;
+  cumulativePathInfoSet;
+  parentPath;
+  wildcardPaths;
+  wildcardPathSet;
+  indexByWildcardPath;
+  wildcardPathInfos;
+  wildcardPathInfoSet;
+  wildcardParentPaths;
+  wildcardParentPathSet;
+  wildcardParentPathInfos;
+  wildcardParentPathInfoSet;
+  wildcardPositions;
+  lastWildcardPath;
+  lastWildcardInfo;
+  wildcardCount;
+  parentPathInfo;
+  constructor(path) {
+    const getPattern = (_path) => {
+      return path === _path ? this : getPathInfo(_path);
+    };
+    const segments = path.split(".");
+    const cumulativePaths = [];
+    const cumulativePathInfos = [];
+    const wildcardPaths = [];
+    const indexByWildcardPath = {};
+    const wildcardPathInfos = [];
+    const wildcardParentPaths = [];
+    const wildcardParentPathInfos = [];
+    const wildcardPositions = [];
+    let currentPatternPath = "", prevPatternPath = "";
+    let wildcardCount = 0;
+    for (let i = 0; i < segments.length; i++) {
+      currentPatternPath += segments[i];
+      if (segments[i] === WILDCARD2) {
+        wildcardPaths.push(currentPatternPath);
+        indexByWildcardPath[currentPatternPath] = wildcardCount;
+        wildcardPathInfos.push(getPattern(currentPatternPath));
+        wildcardParentPaths.push(prevPatternPath);
+        wildcardParentPathInfos.push(getPattern(prevPatternPath));
+        wildcardPositions.push(i);
+        wildcardCount++;
+      }
+      cumulativePaths.push(currentPatternPath);
+      cumulativePathInfos.push(getPattern(currentPatternPath));
+      prevPatternPath = currentPatternPath;
+      currentPatternPath += ".";
+    }
+    const lastWildcardPath = wildcardPaths.length > 0 ? wildcardPaths[wildcardPaths.length - 1] : null;
+    const parentPath = cumulativePaths.length > 1 ? cumulativePaths[cumulativePaths.length - 2] : null;
+    this.path = path;
+    this.segments = segments;
+    this.lastSegment = segments[segments.length - 1];
+    this.cumulativePaths = cumulativePaths;
+    this.cumulativePathSet = new Set(cumulativePaths);
+    this.cumulativePathInfos = cumulativePathInfos;
+    this.cumulativePathInfoSet = new Set(cumulativePathInfos);
+    this.wildcardPaths = wildcardPaths;
+    this.wildcardPathSet = new Set(wildcardPaths);
+    this.indexByWildcardPath = indexByWildcardPath;
+    this.wildcardPathInfos = wildcardPathInfos;
+    this.wildcardPathInfoSet = new Set(wildcardPathInfos);
+    this.wildcardParentPaths = wildcardParentPaths;
+    this.wildcardParentPathSet = new Set(wildcardParentPaths);
+    this.wildcardParentPathInfos = wildcardParentPathInfos;
+    this.wildcardParentPathInfoSet = new Set(wildcardParentPathInfos);
+    this.wildcardPositions = wildcardPositions;
+    this.lastWildcardPath = lastWildcardPath;
+    this.lastWildcardInfo = lastWildcardPath ? getPattern(lastWildcardPath) : null;
+    this.parentPath = parentPath;
+    this.parentPathInfo = parentPath ? getPattern(parentPath) : null;
+    this.wildcardCount = wildcardCount;
   }
 };
-function isSchemaObject(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-function isSchemaMap(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-function validateSchemaSubset(schema, pointerBase, ctx, rootDefs) {
-  walkKeywords(schema, pointerBase, ctx, rootDefs);
-  const safe = /* @__PURE__ */ new Set();
-  detectCycles(schema, pointerBase, ctx, rootDefs, /* @__PURE__ */ new Set(), safe);
-  for (const [name, def] of Object.entries(rootDefs)) {
-    detectCycles(def, `${pointerBase}/$defs/${escape(name)}`, ctx, rootDefs, /* @__PURE__ */ new Set(), safe);
+function editDistance2(a, b, max) {
+  if (Math.abs(a.length - b.length) > max) {
+    return max + 1;
   }
-}
-function walkKeywords(node, ptr, ctx, rootDefs) {
-  if (!isSchemaObject(node)) return;
-  for (const keyword of Object.keys(node)) {
-    if (!ALLOWED_SCHEMA_KEYWORDS.has(keyword)) {
-      ctx.add(
-        WcsDiagnosticCode.ManifestUnknownKeyword,
-        `${ptr}/${escape(keyword)}`,
-        `Unsupported schema keyword "${keyword}". Allowed: ${[...ALLOWED_SCHEMA_KEYWORDS].join(", ")}.`,
-        "warning",
-        {},
-        true
-      );
+  const prev = new Array(b.length + 1);
+  const curr = new Array(b.length + 1);
+  for (let j = 0; j <= b.length; j++) {
+    prev[j] = j;
+  }
+  for (let i = 1; i <= a.length; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+    }
+    for (let j = 0; j <= b.length; j++) {
+      prev[j] = curr[j];
     }
   }
-  if (typeof node.$ref === "string") {
-    if (!node.$ref.startsWith("#/")) {
-      ctx.add(
-        WcsDiagnosticCode.ManifestExternalRef,
-        `${ptr}/$ref`,
-        `External $ref "${node.$ref}" is forbidden; only local "#/$defs/..." references are allowed.`,
-        "error"
-      );
-    } else if (resolveLocalRef(node.$ref, rootDefs) === void 0) {
-      ctx.add(
-        WcsDiagnosticCode.ManifestRefUnresolved,
-        `${ptr}/$ref`,
-        `Unresolved local $ref "${node.$ref}".`,
-        "error"
-      );
-    }
-  }
-  if (isSchemaMap(node.properties)) {
-    for (const [name, child] of Object.entries(node.properties)) {
-      walkKeywords(child, `${ptr}/properties/${escape(name)}`, ctx, rootDefs);
-    }
-  }
-  if (node.items !== void 0 && isSchemaObject(node.items)) {
-    walkKeywords(node.items, `${ptr}/items`, ctx, rootDefs);
-  }
-  if (Array.isArray(node.anyOf)) {
-    node.anyOf.forEach((child, i) => walkKeywords(child, `${ptr}/anyOf/${i}`, ctx, rootDefs));
-  }
-  if (isSchemaMap(node.$defs)) {
-    for (const [name, child] of Object.entries(node.$defs)) {
-      walkKeywords(child, `${ptr}/$defs/${escape(name)}`, ctx, rootDefs);
-    }
-  }
+  return prev[b.length];
 }
-function detectCycles(node, ptr, ctx, rootDefs, refStack, safe) {
-  if (!isSchemaObject(node)) return;
-  if (typeof node.$ref === "string") {
-    const ref = node.$ref;
-    if (!ref.startsWith("#/")) return;
-    if (refStack.has(ref)) {
-      ctx.add(WcsDiagnosticCode.ManifestRefCycle, `${ptr}/$ref`, `Cyclic $ref detected at "${ref}".`, "error");
+function didYouMean(input, candidates) {
+  if (input.length === 0) {
+    return "";
+  }
+  const folded = input.toLowerCase();
+  let best = null;
+  let bestDistance = 3;
+  for (const candidate of candidates) {
+    const distance = editDistance2(folded, candidate.toLowerCase(), 2);
+    if (distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  return best !== null ? ` Did you mean "${best}"?` : "";
+}
+var LINT_HINT = " Validate statically: npx @wcstack/lint <file>.";
+function raiseError2(message) {
+  throw new Error(`[@wcstack/state] ${message}`);
+}
+var STRUCTURAL_BINDING_TYPE_SET2 = /* @__PURE__ */ new Set([
+  "if",
+  "elseif",
+  "else",
+  "for"
+]);
+var _config2 = {
+  locale: "en"
+};
+var config2 = _config2;
+function optionsRequired2(fnName) {
+  raiseError2(`filter ${fnName} requires at least one option`);
+}
+function optionMustBeNumber2(fnName) {
+  raiseError2(`filter ${fnName} requires a number as option`);
+}
+function valueMustBeNumber2(fnName) {
+  raiseError2(`filter ${fnName} requires a number value`);
+}
+function valueMustBeBoolean2(fnName) {
+  raiseError2(`filter ${fnName} requires a boolean value`);
+}
+function valueMustBeDate2(fnName) {
+  raiseError2(`filter ${fnName} requires a date value`);
+}
+function valueMustBeArray2(fnName) {
+  raiseError2(`filter ${fnName} requires an array value`);
+}
+function validateNumberString2(value) {
+  if (!value || isNaN(Number(value))) {
+    return false;
+  }
+  return true;
+}
+var eq2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("eq");
+  return (value) => {
+    if (typeof value === "number") {
+      if (!validateNumberString2(opt)) {
+        optionMustBeNumber2("eq");
+      }
+      return value === Number(opt);
+    }
+    if (typeof value === "string") {
+      return value === opt;
+    }
+    return value === opt;
+  };
+};
+var ne2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("ne");
+  return (value) => {
+    if (typeof value === "number") {
+      if (!validateNumberString2(opt)) {
+        optionMustBeNumber2("ne");
+      }
+      return value !== Number(opt);
+    }
+    if (typeof value === "string") {
+      return value !== opt;
+    }
+    return value !== opt;
+  };
+};
+var not2 = (_options) => {
+  return (value) => {
+    if (typeof value !== "boolean") {
+      valueMustBeBoolean2("not");
+    }
+    return !value;
+  };
+};
+var lt2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("lt");
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("lt");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("lt");
+    }
+    return value < Number(opt);
+  };
+};
+var le2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("le");
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("le");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("le");
+    }
+    return value <= Number(opt);
+  };
+};
+var gt2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("gt");
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("gt");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("gt");
+    }
+    return value > Number(opt);
+  };
+};
+var ge2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("ge");
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("ge");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("ge");
+    }
+    return value >= Number(opt);
+  };
+};
+var inc2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("inc");
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("inc");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("inc");
+    }
+    return value + Number(opt);
+  };
+};
+var dec2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("dec");
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("dec");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("dec");
+    }
+    return value - Number(opt);
+  };
+};
+var mul2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("mul");
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("mul");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("mul");
+    }
+    return value * Number(opt);
+  };
+};
+var div2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("div");
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("div");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("div");
+    }
+    return value / Number(opt);
+  };
+};
+var mod2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("mod");
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("mod");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("mod");
+    }
+    return value % Number(opt);
+  };
+};
+var abs2 = (_options) => {
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("abs");
+    }
+    return Math.abs(value);
+  };
+};
+var clamp2 = (options) => {
+  const opt1 = options?.[0] ?? optionsRequired2("clamp");
+  if (!validateNumberString2(opt1)) {
+    optionMustBeNumber2("clamp");
+  }
+  const opt2 = options?.[1] ?? optionsRequired2("clamp");
+  if (!validateNumberString2(opt2)) {
+    optionMustBeNumber2("clamp");
+  }
+  const min = Number(opt1);
+  const max = Number(opt2);
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("clamp");
+    }
+    return Math.min(Math.max(value, min), max);
+  };
+};
+var fix2 = (options) => {
+  const opt = options?.[0] ?? "0";
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("fix");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("fix");
+    }
+    return value.toFixed(Number(opt));
+  };
+};
+var locale2 = (options) => {
+  const explicit = options?.[0];
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("locale");
+    }
+    return value.toLocaleString(explicit ?? config2.locale);
+  };
+};
+var uc2 = (_options) => {
+  return (value) => {
+    return String(value).toUpperCase();
+  };
+};
+var lc2 = (_options) => {
+  return (value) => {
+    return String(value).toLowerCase();
+  };
+};
+var cap2 = (_options) => {
+  return (value) => {
+    const v = String(value);
+    if (v.length === 0) {
+      return v;
+    }
+    if (v.length === 1) {
+      return v.toUpperCase();
+    }
+    return v.charAt(0).toUpperCase() + v.slice(1);
+  };
+};
+var trim2 = (_options) => {
+  return (value) => {
+    return String(value).trim();
+  };
+};
+var slice2 = (options) => {
+  const numberedOpts = [];
+  const opt1 = options?.[0] ?? optionsRequired2("slice");
+  if (!validateNumberString2(opt1)) {
+    optionMustBeNumber2("slice");
+  }
+  numberedOpts.push(Number(opt1));
+  const opt2 = options?.[1];
+  if (typeof opt2 !== "undefined") {
+    if (!validateNumberString2(opt2)) {
+      optionMustBeNumber2("slice");
+    }
+    numberedOpts.push(Number(opt2));
+  }
+  return (value) => {
+    return String(value).slice(...numberedOpts);
+  };
+};
+var substr2 = (options) => {
+  const opt1 = options?.[0] ?? optionsRequired2("substr");
+  if (!validateNumberString2(opt1)) {
+    optionMustBeNumber2("substr");
+  }
+  const opt2 = options?.[1] ?? optionsRequired2("substr");
+  if (!validateNumberString2(opt2)) {
+    optionMustBeNumber2("substr");
+  }
+  return (value) => {
+    return String(value).substr(Number(opt1), Number(opt2));
+  };
+};
+var pad2 = (options) => {
+  const opt1 = options?.[0] ?? optionsRequired2("pad");
+  if (!validateNumberString2(opt1)) {
+    optionMustBeNumber2("pad");
+  }
+  const opt2 = options?.[1] ?? "0";
+  return (value) => {
+    return String(value).padStart(Number(opt1), opt2);
+  };
+};
+var rep2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("rep");
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("rep");
+  }
+  return (value) => {
+    return String(value).repeat(Number(opt));
+  };
+};
+var rev2 = (_options) => {
+  return (value) => {
+    return String(value).split("").reverse().join("");
+  };
+};
+var int2 = (_options) => {
+  return (value) => {
+    return parseInt(String(value), 10);
+  };
+};
+var float2 = (_options) => {
+  return (value) => {
+    return parseFloat(String(value));
+  };
+};
+var round2 = (options) => {
+  const opt = options?.[0] ?? "0";
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("round");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("round");
+    }
+    const optValue = Math.pow(10, Number(opt));
+    return Math.round(value * optValue) / optValue;
+  };
+};
+var floor2 = (options) => {
+  const opt = options?.[0] ?? "0";
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("floor");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("floor");
+    }
+    const optValue = Math.pow(10, Number(opt));
+    return Math.floor(value * optValue) / optValue;
+  };
+};
+var ceil2 = (options) => {
+  const opt = options?.[0] ?? "0";
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("ceil");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("ceil");
+    }
+    const optValue = Math.pow(10, Number(opt));
+    return Math.ceil(value * optValue) / optValue;
+  };
+};
+var percent2 = (options) => {
+  const opt = options?.[0] ?? "0";
+  if (!validateNumberString2(opt)) {
+    optionMustBeNumber2("percent");
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber2("percent");
+    }
+    return `${(value * 100).toFixed(Number(opt))}%`;
+  };
+};
+var unit2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("unit");
+  return (value) => {
+    if (value === null || typeof value === "undefined") {
+      return value;
+    }
+    return String(value) + opt;
+  };
+};
+var join2 = (options) => {
+  const opt = options?.[0] ?? ", ";
+  return (value) => {
+    if (!Array.isArray(value)) {
+      valueMustBeArray2("join");
+    }
+    return value.join(opt);
+  };
+};
+var truncate2 = (options) => {
+  const opt1 = options?.[0] ?? optionsRequired2("truncate");
+  if (!validateNumberString2(opt1)) {
+    optionMustBeNumber2("truncate");
+  }
+  const maxLength = Number(opt1);
+  const suffix = options?.[1] ?? "\u2026";
+  return (value) => {
+    const v = String(value);
+    if (v.length <= maxLength) {
+      return v;
+    }
+    return v.slice(0, maxLength) + suffix;
+  };
+};
+var date2 = (options) => {
+  const explicit = options?.[0];
+  return (value) => {
+    if (!(value instanceof Date)) {
+      valueMustBeDate2("date");
+    }
+    return value.toLocaleDateString(explicit ?? config2.locale);
+  };
+};
+var time2 = (options) => {
+  const explicit = options?.[0];
+  return (value) => {
+    if (!(value instanceof Date)) {
+      valueMustBeDate2("time");
+    }
+    return value.toLocaleTimeString(explicit ?? config2.locale);
+  };
+};
+var datetime2 = (options) => {
+  const explicit = options?.[0];
+  return (value) => {
+    if (!(value instanceof Date)) {
+      valueMustBeDate2("datetime");
+    }
+    return value.toLocaleString(explicit ?? config2.locale);
+  };
+};
+var ymd2 = (options) => {
+  const opt = options?.[0] ?? "-";
+  return (value) => {
+    if (!(value instanceof Date)) {
+      valueMustBeDate2("ymd");
+    }
+    const year = value.getFullYear().toString();
+    const month = (value.getMonth() + 1).toString().padStart(2, "0");
+    const day = value.getDate().toString().padStart(2, "0");
+    return `${year}${opt}${month}${opt}${day}`;
+  };
+};
+var hms2 = (options) => {
+  const opt = options?.[0] ?? ":";
+  return (value) => {
+    if (!(value instanceof Date)) {
+      valueMustBeDate2("hms");
+    }
+    const hours = value.getHours().toString().padStart(2, "0");
+    const minutes = value.getMinutes().toString().padStart(2, "0");
+    const seconds = value.getSeconds().toString().padStart(2, "0");
+    return `${hours}${opt}${minutes}${opt}${seconds}`;
+  };
+};
+var falsy2 = (_options) => {
+  return (value) => value === false || value === null || value === void 0 || value === 0 || value === "" || Number.isNaN(value);
+};
+var truthy2 = (_options) => {
+  return (value) => value !== false && value !== null && value !== void 0 && value !== 0 && value !== "" && !Number.isNaN(value);
+};
+var defaults2 = (options) => {
+  const opt = options?.[0] ?? optionsRequired2("defaults");
+  return (value) => {
+    if (value === false || value === null || value === void 0 || value === 0 || value === "" || Number.isNaN(value)) {
+      return opt;
+    }
+    return value;
+  };
+};
+var boolean2 = (_options) => {
+  return (value) => {
+    return Boolean(value);
+  };
+};
+var number2 = (_options) => {
+  return (value) => {
+    return Number(value);
+  };
+};
+var string2 = (_options) => {
+  return (value) => {
+    return String(value);
+  };
+};
+var _null2 = (_options) => {
+  return (value) => {
+    return value === "" ? null : value;
+  };
+};
+var builtinFilters2 = {
+  "eq": eq2,
+  "ne": ne2,
+  "not": not2,
+  "lt": lt2,
+  "le": le2,
+  "gt": gt2,
+  "ge": ge2,
+  "inc": inc2,
+  "dec": dec2,
+  "mul": mul2,
+  "div": div2,
+  "mod": mod2,
+  "abs": abs2,
+  "clamp": clamp2,
+  "fix": fix2,
+  "locale": locale2,
+  "uc": uc2,
+  "lc": lc2,
+  "cap": cap2,
+  "trim": trim2,
+  "slice": slice2,
+  "substr": substr2,
+  "pad": pad2,
+  "rep": rep2,
+  "rev": rev2,
+  "truncate": truncate2,
+  "join": join2,
+  "int": int2,
+  "float": float2,
+  "round": round2,
+  "floor": floor2,
+  "ceil": ceil2,
+  "percent": percent2,
+  "unit": unit2,
+  "date": date2,
+  "time": time2,
+  "datetime": datetime2,
+  "ymd": ymd2,
+  "hms": hms2,
+  "falsy": falsy2,
+  "truthy": truthy2,
+  "defaults": defaults2,
+  "boolean": boolean2,
+  "number": number2,
+  "string": string2,
+  "null": _null2
+};
+var outputBuiltinFilters2 = builtinFilters2;
+var inputBuiltinFilters = builtinFilters2;
+var builtinFiltersByFilterIOType = {
+  "input": inputBuiltinFilters,
+  "output": outputBuiltinFilters2
+};
+var builtinFilterFn = (name, options) => (filters) => {
+  const filter = filters[name];
+  if (!filter) {
+    raiseError2(`[wcs/filter-unknown] filter not found: ${name}.${didYouMean(name, Object.keys(filters))}${LINT_HINT}`);
+  }
+  return filter(options);
+};
+function finalizeArg(text, firstQuoteStart, lastQuoteEnd) {
+  const startLimit = firstQuoteStart === -1 ? text.length : firstQuoteStart;
+  let start = 0;
+  while (start < startLimit && /\s/.test(text[start])) {
+    start++;
+  }
+  const endLimit = lastQuoteEnd === -1 ? 0 : lastQuoteEnd;
+  let end = text.length;
+  while (end > endLimit && /\s/.test(text[end - 1])) {
+    end--;
+  }
+  return text.slice(start, end);
+}
+function parseFilterArgs(argsText) {
+  const args = [];
+  let current = "";
+  let inQuote = null;
+  let hasQuote = false;
+  let firstQuoteStart = -1;
+  let lastQuoteEnd = -1;
+  const flush = () => {
+    args.push(finalizeArg(current, firstQuoteStart, lastQuoteEnd));
+    current = "";
+    hasQuote = false;
+    firstQuoteStart = -1;
+    lastQuoteEnd = -1;
+  };
+  for (let i = 0; i < argsText.length; i++) {
+    const char = argsText[i];
+    if (inQuote) {
+      if (char === inQuote) {
+        inQuote = null;
+      } else {
+        if (firstQuoteStart === -1) {
+          firstQuoteStart = current.length;
+        }
+        current += char;
+        lastQuoteEnd = current.length;
+      }
+    } else if (char === '"' || char === "'") {
+      inQuote = char;
+      hasQuote = true;
+    } else if (char === ",") {
+      flush();
+    } else {
+      current += char;
+    }
+  }
+  const last = finalizeArg(current, firstQuoteStart, lastQuoteEnd);
+  if (last || hasQuote) {
+    args.push(last);
+  }
+  return args;
+}
+var filterFnByKey = /* @__PURE__ */ new Map();
+function clearFilterFnCacheForTooling() {
+  filterFnByKey.clear();
+}
+function parseFilters(filterTextList, filterIOType) {
+  const builtinFilters3 = builtinFiltersByFilterIOType[filterIOType];
+  const filters = filterTextList.map((filterText) => {
+    const openParenIndex = filterText.indexOf("(");
+    const closeParenIndex = filterText.lastIndexOf(")");
+    if (openParenIndex !== -1 && closeParenIndex === -1) {
+      raiseError2(`Invalid filter format: missing closing parenthesis in "${filterText}"`);
+    }
+    if (closeParenIndex !== -1 && openParenIndex === -1) {
+      raiseError2(`Invalid filter format: missing opening parenthesis in "${filterText}"`);
+    }
+    if (openParenIndex === -1) {
+      const filterName = filterText.trim();
+      const filterKey = `${filterName}():${filterIOType}`;
+      let filterFn = filterFnByKey.get(filterKey);
+      if (typeof filterFn === "undefined") {
+        filterFn = builtinFilterFn(filterName, [])(builtinFilters3);
+        filterFnByKey.set(filterKey, filterFn);
+      }
+      return {
+        filterName,
+        args: [],
+        filterFn
+      };
+    } else {
+      const argsText = filterText.substring(openParenIndex + 1, closeParenIndex);
+      const filterName = filterText.substring(0, openParenIndex).trim();
+      const args = parseFilterArgs(argsText);
+      const filterKey = `${filterName}(${args.join(",")}):${filterIOType}`;
+      let filterFn = filterFnByKey.get(filterKey);
+      if (typeof filterFn === "undefined") {
+        filterFn = builtinFilterFn(filterName, args)(builtinFilters3);
+        filterFnByKey.set(filterKey, filterFn);
+      }
+      return {
+        filterName,
+        args,
+        filterFn
+      };
+    }
+  });
+  return filters;
+}
+var trimFn = (s) => s.trim();
+var cacheFilterInfos$1 = /* @__PURE__ */ new Map();
+function clearPropPartCacheForTooling() {
+  cacheFilterInfos$1.clear();
+}
+function parsePropPart(propPart) {
+  const pos = propPart.indexOf(FILTER_SEPARATOR2);
+  let propText = "";
+  let filterTexts = [];
+  let filtersText = "";
+  let filters = [];
+  if (pos !== -1) {
+    propText = propPart.slice(0, pos).trim();
+    filtersText = propPart.slice(pos + 1).trim();
+    if (cacheFilterInfos$1.has(filtersText)) {
+      filters = cacheFilterInfos$1.get(filtersText);
+    } else {
+      filterTexts = filtersText.split(FILTER_SEPARATOR2).map(trimFn);
+      filters = parseFilters(filterTexts, "input");
+      cacheFilterInfos$1.set(filtersText, filters);
+    }
+  } else {
+    propText = propPart.trim();
+  }
+  const [propName, propModifiersText] = propText.split(MODIFIER_SEPARATOR2).map(trimFn);
+  const propSegments = propName.split(DELIMITER2).map(trimFn);
+  const propModifiers = propModifiersText ? propModifiersText.split(",").map(trimFn) : [];
+  return {
+    propName,
+    propSegments,
+    propModifiers,
+    inFilters: filters
+  };
+}
+var cacheFilterInfos = /* @__PURE__ */ new Map();
+function clearStatePartCacheForTooling() {
+  cacheFilterInfos.clear();
+}
+function parseStatePart(statePart) {
+  const pos = statePart.indexOf(FILTER_SEPARATOR2);
+  let stateAndPath = "";
+  let filterTexts = [];
+  let filtersText = "";
+  let filters = [];
+  if (pos !== -1) {
+    stateAndPath = statePart.slice(0, pos).trim();
+    filtersText = statePart.slice(pos + 1).trim();
+    if (cacheFilterInfos.has(filtersText)) {
+      filters = cacheFilterInfos.get(filtersText);
+    } else {
+      filterTexts = filtersText.split(FILTER_SEPARATOR2).map(trimFn);
+      filters = parseFilters(filterTexts, "output");
+      cacheFilterInfos.set(filtersText, filters);
+    }
+  } else {
+    stateAndPath = statePart.trim();
+  }
+  if (stateAndPath.indexOf("@") !== -1) {
+    raiseError2(`"${stateAndPath}": the "@name" selector was removed in v2 \u2014 there is a single state tree. Mount the named state onto the tree (<wcs-state mount="...">) and read it by its path prefix instead.`);
+  }
+  const statePathName = stateAndPath;
+  const pathInfo = getPathInfo(statePathName);
+  return {
+    statePathName,
+    statePathInfo: pathInfo,
+    outFilters: filters
+  };
+}
+function parseBindTextsForElement(bindText) {
+  const [...bindTexts] = bindText.split(BINDING_SEPARATOR2).map(trimFn).filter((s) => s.length > 0);
+  const results = bindTexts.map((bindText2) => {
+    const separatorIndex = bindText2.indexOf(PROP_VALUE_SEPARATOR2);
+    if (separatorIndex === -1) {
+      raiseError2(`Invalid bindText: "${bindText2}". Missing ':' separator between propPart and statePart.`);
+    }
+    const propPart = bindText2.slice(0, separatorIndex).trim();
+    const statePart = bindText2.slice(separatorIndex + 1).trim();
+    if (propPart === ELSE_KEYWORD2) {
+      const pathInfo = getPathInfo("#else");
+      return {
+        propName: ELSE_KEYWORD2,
+        propSegments: [ELSE_KEYWORD2],
+        propModifiers: [],
+        statePathName: "#else",
+        statePathInfo: pathInfo,
+        inFilters: [],
+        outFilters: [],
+        bindingType: "else"
+      };
+    } else if (propPart === SPREAD_PROP2) {
+      const stateResult = parseStatePart(statePart);
+      if (stateResult.outFilters.length > 0) {
+        raiseError2(`Invalid spread binding "${bindText2}": filters are not allowed on spread targets.`);
+      }
+      if (stateResult.statePathName.length === 0) {
+        raiseError2(`Invalid spread binding "${bindText2}": spread target path is required.`);
+      }
+      return {
+        propName: SPREAD_PROP2,
+        propSegments: [SPREAD_PROP2],
+        propModifiers: [],
+        inFilters: [],
+        ...stateResult,
+        bindingType: "spread"
+      };
+    } else if (propPart === "if" || propPart === "elseif" || propPart === "for" || propPart === "radio" || propPart === "checkbox") {
+      const stateResult = parseStatePart(statePart);
+      return {
+        propName: propPart,
+        propSegments: [propPart],
+        propModifiers: [],
+        inFilters: [],
+        ...stateResult,
+        bindingType: propPart
+      };
+    } else {
+      const stateResult = parseStatePart(statePart);
+      const propResult = parsePropPart(propPart);
+      if (propResult.propSegments[0] === EVENT_TOKEN_NAMESPACE2) {
+        return {
+          ...propResult,
+          ...stateResult,
+          bindingType: "event"
+        };
+      }
+      if (propResult.propSegments[0].startsWith(EVENT_PROP_PREFIX2)) {
+        return {
+          ...propResult,
+          ...stateResult,
+          bindingType: "event"
+        };
+      } else {
+        return {
+          ...propResult,
+          ...stateResult,
+          bindingType: "prop"
+        };
+      }
+    }
+  });
+  if (results.length > 1) {
+    const isIncludeSingleBinding = results.some((r) => STRUCTURAL_BINDING_TYPE_SET2.has(r.bindingType));
+    if (isIncludeSingleBinding) {
+      raiseError2(`[wcs/template-syntax] Invalid bindText: "${bindText}". 'if', 'elseif', 'else', and 'for' bindings must be single binding. Put the structural binding alone in its own data-wcs (e.g. <template data-wcs="for: items">).${LINT_HINT}`);
+    }
+  }
+  return results;
+}
+function parseBindTextForEmbeddedNode(bindText) {
+  const stateResult = parseStatePart(bindText);
+  return {
+    propName: "textContent",
+    propSegments: ["textContent"],
+    propModifiers: [],
+    inFilters: [],
+    ...stateResult,
+    bindingType: "text"
+  };
+}
+function clearParserCaches() {
+  clearPathInfoCacheForTooling();
+  clearPropPartCacheForTooling();
+  clearStatePartCacheForTooling();
+  clearFilterFnCacheForTooling();
+}
+
+// src/core/parser/positionalParser.ts
+var { delimiters } = getWcsManifest().syntax;
+function locate(haystack, needle, from, to) {
+  if (needle.length === 0) return null;
+  const index = haystack.indexOf(needle, from);
+  if (index === -1 || index + needle.length > to) return null;
+  return { start: index, end: index + needle.length };
+}
+function parseEmbeddedTextWithPositions(expression) {
+  const exprRange = { start: 0, end: expression.length };
+  let parsed = null;
+  let error = null;
+  try {
+    parsed = parseBindTextForEmbeddedNode(expression);
+  } catch (e) {
+    error = e.message;
+  }
+  if (parsed === null) {
+    return { exprRange, exprText: expression, parsed, error, propRange: null, pathRange: null };
+  }
+  const firstPipe = expression.indexOf(delimiters.filter);
+  const pathScopeEnd = firstPipe === -1 ? expression.length : firstPipe;
+  const pathLocal = locate(expression, parsed.statePathName, 0, pathScopeEnd);
+  return {
+    exprRange,
+    exprText: expression,
+    parsed,
+    error,
+    propRange: null,
+    pathRange: pathLocal
+  };
+}
+function parseBindTextWithPositions(bindText) {
+  const results = [];
+  const segments = bindText.split(delimiters.binding);
+  let segmentStart = 0;
+  for (const segment of segments) {
+    const leading = segment.length - segment.trimStart().length;
+    const expr = segment.trim();
+    const exprStart = segmentStart + leading;
+    segmentStart += segment.length + delimiters.binding.length;
+    if (expr.length === 0) continue;
+    const exprRange = { start: exprStart, end: exprStart + expr.length };
+    let parsed = null;
+    let error = null;
+    try {
+      parsed = parseBindTextsForElement(expr)[0] ?? null;
+    } catch (e) {
+      error = e.message;
+    }
+    if (parsed === null) {
+      results.push({ exprRange, exprText: expr, parsed, error, propRange: null, pathRange: null });
+      continue;
+    }
+    const colon = expr.indexOf(delimiters.propValue);
+    const propEndLimit = colon === -1 ? expr.length : colon;
+    const propLocal = locate(expr, parsed.propName, 0, propEndLimit);
+    let pathLocal = null;
+    if (colon !== -1) {
+      const stateBase = colon + 1;
+      const firstPipe = expr.indexOf(delimiters.filter, stateBase);
+      const pathScopeEnd = firstPipe === -1 ? expr.length : firstPipe;
+      pathLocal = locate(expr, parsed.statePathName, stateBase, pathScopeEnd);
+    }
+    const lift = (range) => range === null ? null : { start: exprStart + range.start, end: exprStart + range.end };
+    results.push({
+      exprRange,
+      exprText: expr,
+      parsed,
+      error,
+      propRange: lift(propLocal),
+      pathRange: lift(pathLocal)
+    });
+  }
+  return results;
+}
+
+// src/core/index/referenceIndex.ts
+function buildReferenceIndex(html, options = {}) {
+  clearParserCaches();
+  const bindAttribute = options.bindAttribute ?? "data-wcs";
+  const stateTagName = options.stateTagName ?? "wcs-state";
+  const occurrences = [];
+  const problems = [];
+  for (const attr of findAllBindAttributes(html, bindAttribute)) {
+    for (const binding of parseBindTextWithPositions(attr.value)) {
+      const lift = (range) => ({ start: attr.valueStart + range.start, end: attr.valueStart + range.end });
+      if (binding.parsed === null) {
+        problems.push({ message: binding.error ?? "parse error", range: lift(binding.exprRange) });
+        continue;
+      }
+      if (binding.pathRange === null) continue;
+      occurrences.push({
+        source: "attribute",
+        kind: binding.parsed.propSegments[0] === "eventToken" ? "eventToken" : "path",
+        path: binding.parsed.statePathName,
+        pathRange: lift(binding.pathRange),
+        exprRange: lift(binding.exprRange),
+        propName: binding.parsed.propName,
+        propRange: binding.propRange === null ? null : lift(binding.propRange),
+        bindingType: binding.parsed.bindingType
+      });
+    }
+  }
+  const textMatches = [
+    ...findAllMustacheSyntax(html),
+    ...findAllCommentBindings(html)
+  ];
+  for (const match of textMatches) {
+    const binding = parseEmbeddedTextWithPositions(match.expression);
+    const shift = (range) => ({
+      start: match.exprStart + range.start,
+      end: match.exprStart + range.end
+    });
+    if (binding.parsed === null) {
+      problems.push({ message: binding.error ?? "parse error", range: shift(binding.exprRange) });
+      continue;
+    }
+    if (binding.pathRange === null) continue;
+    occurrences.push({
+      source: match.kind,
+      kind: "path",
+      path: binding.parsed.statePathName,
+      pathRange: shift(binding.pathRange),
+      exprRange: { start: match.exprStart, end: match.exprEnd },
+      propName: null,
+      propRange: null,
+      bindingType: "text"
+    });
+  }
+  const declarations = [];
+  for (const block of parseWcsScriptBlocks(html, stateTagName)) {
+    const prefix = block.mountPath === null ? "" : block.mountPath + ".";
+    for (const span of analyzeDeclarationSpans(block.content)) {
+      if (prefix !== "" && span.name.startsWith("$")) continue;
+      declarations.push({
+        name: prefix + span.name,
+        kind: span.kind,
+        range: { start: block.contentStart + span.start, end: block.contentStart + span.end }
+      });
+    }
+  }
+  const byPath = /* @__PURE__ */ new Map();
+  for (const occurrence of occurrences) {
+    if (occurrence.kind !== "path") continue;
+    const key = occurrence.path;
+    const list = byPath.get(key);
+    if (list === void 0) {
+      byPath.set(key, [occurrence]);
+    } else {
+      list.push(occurrence);
+    }
+  }
+  const declarationByName = /* @__PURE__ */ new Map();
+  for (const declaration of declarations) {
+    const key = declaration.name;
+    if (!declarationByName.has(key)) declarationByName.set(key, declaration);
+  }
+  return {
+    occurrences,
+    declarations,
+    problems,
+    referencesOf(path) {
+      return (byPath.get(path) ?? []).slice();
+    },
+    declarationOf(path) {
+      const exact = declarationByName.get(path);
+      if (exact !== void 0) return exact;
+      const firstSegment = path.split(".")[0];
+      if (firstSegment === path) return null;
+      return declarationByName.get(firstSegment) ?? null;
+    },
+    occurrenceAt(offset) {
+      for (const occurrence of occurrences) {
+        if (offset >= occurrence.pathRange.start && offset < occurrence.pathRange.end) {
+          return occurrence;
+        }
+      }
+      return null;
+    }
+  };
+}
+
+// src/service/semanticValidator.ts
+var STATE_UPDATED_CALLBACK = "$updatedCallback";
+var API_CALL = /\.\s*\$(getAll|setAll|resolve)\s*\(/g;
+var STRING_LITERAL = /^\s*(["'])((?:\\.|(?!\1)[^\\])*)\1\s*$/;
+function splitCallArgs(source, open) {
+  const args = [];
+  const starts = [];
+  let depth = 0;
+  let argStart = open;
+  let i = open;
+  while (i < source.length) {
+    const ch = source[i];
+    if (ch === '"' || ch === "'" || ch === "`") {
+      const quote = ch;
+      i++;
+      while (i < source.length) {
+        if (source[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (source[i] === quote) {
+          i++;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+    if (ch === "(" || ch === "[" || ch === "{") {
+      depth++;
+      i++;
+      continue;
+    }
+    if (ch === ")" && depth === 0) {
+      args.push(source.slice(argStart, i));
+      starts.push(argStart);
+      return { args, starts, end: i + 1 };
+    }
+    if (ch === ")" || ch === "]" || ch === "}") {
+      depth--;
+      i++;
+      continue;
+    }
+    if (ch === "," && depth === 0) {
+      args.push(source.slice(argStart, i));
+      starts.push(argStart);
+      argStart = i + 1;
+      i++;
+      continue;
+    }
+    i++;
+  }
+  return null;
+}
+function literalString(arg) {
+  const match = STRING_LITERAL.exec(arg);
+  return match === null ? null : match[2];
+}
+function literalArrayLength(arg) {
+  const trimmed = arg.trim();
+  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return null;
+  const inner = trimmed.slice(1, -1);
+  if (inner.trim().length === 0) return 0;
+  if (/(^|[^.])\.\.\./.test(inner)) return null;
+  const parts = splitCallArgs(`${inner})`, 0);
+  if (parts === null) return null;
+  return parts.args.filter((part) => part.trim().length > 0).length;
+}
+function validateIndexArity(script, scriptStart, locale3) {
+  const msgs = getMessages(locale3);
+  const out = [];
+  API_CALL.lastIndex = 0;
+  let match;
+  while ((match = API_CALL.exec(script)) !== null) {
+    const api = `$${match[1]}`;
+    const parsed = splitCallArgs(script, match.index + match[0].length);
+    if (parsed === null) continue;
+    API_CALL.lastIndex = parsed.end;
+    if (parsed.args.length < 2) continue;
+    const path = literalString(parsed.args[0]);
+    if (path === null) continue;
+    const actual = literalArrayLength(parsed.args[1]);
+    if (actual === null) continue;
+    const wildcardCount = countWildcardSegments(path);
+    const requirement = api === "$resolve" ? "exact" : "atMost";
+    const mismatched = requirement === "exact" ? actual !== wildcardCount : actual > wildcardCount;
+    if (!mismatched) continue;
+    const argText = parsed.args[1];
+    const leading = argText.length - argText.trimStart().length;
+    out.push({
+      code: WcsDiagnosticCode.IndexArity,
+      start: scriptStart + parsed.starts[1] + leading,
+      end: scriptStart + parsed.starts[1] + argText.trimEnd().length,
+      message: msgs.indexArity(api, path, requirement, wildcardCount, actual),
+      severity: "warning"
+    });
+  }
+  return out;
+}
+var READ_BRACKET = /\bthis\s*\??\.\s*\[\s*(["'])((?:\\.|(?!\1)[^\\])*)\1\s*\]|\bthis\s*\??\[\s*(["'])((?:\\.|(?!\3)[^\\])*)\3\s*\]/g;
+var READ_DOT = /\bthis\s*\??\.\s*([A-Za-z_]\w*)/g;
+var READ_API = /\bthis\s*\??\.\s*\$(?:getAll|resolve)\s*\(\s*(["'])((?:\\.|(?!\1)[^\\])*)\1/g;
+function collectReadPaths(body) {
+  const paths = /* @__PURE__ */ new Set();
+  for (const [regex, groups] of [
+    [READ_BRACKET, [2, 4]],
+    [READ_API, [2]],
+    [READ_DOT, [1]]
+  ]) {
+    regex.lastIndex = 0;
+    let match;
+    while ((match = regex.exec(body)) !== null) {
+      for (const group of groups) {
+        const value = match[group];
+        if (value !== void 0 && value.length > 0 && !value.startsWith("$")) {
+          paths.add(value);
+        }
+      }
+    }
+  }
+  return paths;
+}
+function validateGetterCycles(script, scriptStart, locale3) {
+  const msgs = getMessages(locale3);
+  const getters = analyzeCallableBodies(script).filter((entry) => entry.kind === "getter");
+  if (getters.length === 0) return [];
+  const declared = new Set(getters.map((getter) => getter.name));
+  const edges = /* @__PURE__ */ new Map();
+  for (const getter of getters) {
+    const targets = [];
+    for (const read of collectReadPaths(getter.body)) {
+      if (declared.has(read)) targets.push(read);
+    }
+    edges.set(getter.name, targets);
+  }
+  const gray = /* @__PURE__ */ new Set();
+  const black = /* @__PURE__ */ new Set();
+  const stack = [];
+  const cyclesByEntry = /* @__PURE__ */ new Map();
+  const visit = (name) => {
+    if (black.has(name)) return;
+    if (gray.has(name)) {
+      const from = stack.indexOf(name);
+      const cycle = stack.slice(from).concat(name).join(" -> ");
+      for (const member of stack.slice(from)) {
+        if (!cyclesByEntry.has(member)) cyclesByEntry.set(member, cycle);
+      }
       return;
     }
-    if (safe.has(ref)) return;
-    const target = resolveLocalRef(ref, rootDefs);
-    if (target === void 0) return;
-    refStack.add(ref);
-    detectCycles(target, ptr, ctx, rootDefs, refStack, safe);
-    refStack.delete(ref);
-    safe.add(ref);
-    return;
+    gray.add(name);
+    stack.push(name);
+    for (const next of edges.get(name) ?? []) {
+      visit(next);
+    }
+    stack.pop();
+    gray.delete(name);
+    black.add(name);
+  };
+  for (const getter of getters) {
+    visit(getter.name);
   }
-  if (isSchemaMap(node.properties)) {
-    for (const child of Object.values(node.properties)) detectCycles(child, ptr, ctx, rootDefs, refStack, safe);
+  if (cyclesByEntry.size === 0) return [];
+  const out = [];
+  for (const getter of getters) {
+    const cycle = cyclesByEntry.get(getter.name);
+    if (cycle === void 0) continue;
+    out.push({
+      code: WcsDiagnosticCode.GetterCycle,
+      start: scriptStart + getter.start,
+      end: scriptStart + getter.end,
+      message: msgs.getterCycle(cycle),
+      severity: "warning"
+    });
   }
-  if (node.items !== void 0 && isSchemaObject(node.items)) {
-    detectCycles(node.items, ptr, ctx, rootDefs, refStack, safe);
-  }
-  if (Array.isArray(node.anyOf)) {
-    for (const child of node.anyOf) detectCycles(child, ptr, ctx, rootDefs, refStack, safe);
-  }
+  return out;
 }
-function resolveLocalRef(ref, rootDefs) {
-  const match = /^#\/\$defs\/(.+)$/.exec(ref);
-  if (match === null) return void 0;
-  const name = match[1].replace(/~1/g, "/").replace(/~0/g, "~");
-  return rootDefs[name];
+function blankComments(source) {
+  const out = source.split("");
+  let i = 0;
+  while (i < source.length) {
+    const ch = source[i];
+    if (ch === '"' || ch === "'" || ch === "`") {
+      const quote = ch;
+      i++;
+      while (i < source.length) {
+        if (source[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (source[i] === quote) {
+          i++;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+    if (ch === "/" && source[i + 1] === "/") {
+      while (i < source.length && source[i] !== "\n") {
+        out[i] = " ";
+        i++;
+      }
+      continue;
+    }
+    if (ch === "/" && source[i + 1] === "*") {
+      while (i < source.length && !(source[i] === "*" && source[i + 1] === "/")) {
+        out[i] = " ";
+        i++;
+      }
+      if (i < source.length) {
+        out[i] = " ";
+        out[i + 1] = " ";
+        i += 2;
+      }
+      continue;
+    }
+    i++;
+  }
+  return out.join("");
 }
-function escape(key) {
-  return key.replace(/~/g, "~0").replace(/\//g, "~1");
+var PATH_TEST_LITERAL = /(?:\.\s*(?:includes|indexOf)\s*\(\s*|[!=]==\s*)(["'])((?:\\.|(?!\1)[^\\])*)\1/g;
+function validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale3) {
+  const blocks = parseWcsScriptBlocks(html, stateTagName);
+  if (blocks.length === 0) return [];
+  const hasCallback = blocks.some((block) => block.content.includes(STATE_UPDATED_CALLBACK));
+  if (!hasCallback) return [];
+  const msgs = getMessages(locale3);
+  const boundPaths = collectBoundPaths(html, stateTagName, bindAttrName);
+  const out = [];
+  for (const block of blocks) {
+    const callback = analyzeCallableBodies(block.content).find((entry) => entry.name === STATE_UPDATED_CALLBACK && entry.kind === "method");
+    if (callback === void 0) continue;
+    if (block.mountPath !== null) continue;
+    const declared = new Set(analyzeStatePaths(block.content).map((p) => p.path));
+    const bound = boundPaths;
+    const body = blankComments(callback.body);
+    PATH_TEST_LITERAL.lastIndex = 0;
+    let match;
+    const reported = /* @__PURE__ */ new Set();
+    while ((match = PATH_TEST_LITERAL.exec(body)) !== null) {
+      const path = match[2];
+      if (path.length === 0 || !declared.has(path) || bound.has(path)) continue;
+      if (reported.has(path)) continue;
+      reported.add(path);
+      const quoteAt = match.index + match[0].length - path.length - 1;
+      out.push({
+        code: WcsDiagnosticCode.UpdatedCallbackUnbound,
+        start: block.contentStart + callback.bodyStart + quoteAt,
+        end: block.contentStart + callback.bodyStart + quoteAt + path.length,
+        message: msgs.updatedCallbackUnbound(path),
+        severity: "warning"
+      });
+    }
+  }
+  return out;
+}
+function collectBoundPaths(html, stateTagName, bindAttrName) {
+  const bound = /* @__PURE__ */ new Set();
+  const index = buildReferenceIndex(html, { bindAttribute: bindAttrName, stateTagName });
+  for (const occurrence of index.occurrences) {
+    bound.add(occurrence.path);
+    if (!occurrence.path.startsWith(".")) continue;
+    const forPath = getInnermostForPath(html, occurrence.pathRange.start, bindAttrName);
+    if (forPath === null || forPath.startsWith(".")) continue;
+    bound.add(
+      occurrence.path === "." ? `${forPath}.*` : `${forPath}.*.${occurrence.path.slice(1)}`
+    );
+  }
+  return bound;
+}
+function validateSemantics(html, stateTagName = "wcs-state", locale3, bindAttrName = "data-wcs") {
+  const out = [];
+  for (const block of parseWcsScriptBlocks(html, stateTagName)) {
+    out.push(...validateIndexArity(block.content, block.contentStart, locale3));
+    out.push(...validateGetterCycles(block.content, block.contentStart, locale3));
+  }
+  out.push(...validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale3));
+  return out;
 }
 
 // src/core/sidecar/jsonSource.ts
@@ -3395,8 +6799,8 @@ function parseJsonWithSpans(text) {
 }
 
 // src/core/sidecar/types.ts
-var SUPPORTED_SCHEMA_VERSION = 1;
-var SUPPORTED_NAMESPACE_VERSION = 1;
+var SUPPORTED_SCHEMA_VERSION = 2;
+var SUPPORTED_NAMESPACE_VERSION = 2;
 
 // src/core/sidecar/loader.ts
 var NAMESPACE_KEYS = ["wcstack.types", "wcstack.async", "wcstack.platformCapabilities", "wcstack.application"];
@@ -3433,10 +6837,11 @@ function loadManifest(artifact) {
     return { artifact, manifest: null, ctx, spans: parsed.spans };
   }
   if (obj.schemaVersion !== SUPPORTED_SCHEMA_VERSION) {
+    const migration = obj.schemaVersion === 1 ? ` schemaVersion 1 (states[name]) predates v2's single state tree \u2014 regenerate with \`wcs-schema emit\`.` : "";
     ctx.add(
       WcsDiagnosticCode.ManifestSchemaVersion,
       pointer("schemaVersion"),
-      `Unsupported schemaVersion ${obj.schemaVersion}; this reader supports ${SUPPORTED_SCHEMA_VERSION}.`,
+      `Unsupported schemaVersion ${obj.schemaVersion}; this reader supports ${SUPPORTED_SCHEMA_VERSION}.${migration}`,
       "error"
     );
     return { artifact, manifest: null, ctx, spans: parsed.spans };
@@ -3485,8 +6890,12 @@ function resolvePackageContracts(loaded) {
   const collided = /* @__PURE__ */ new Set();
   const firstSource = /* @__PURE__ */ new Map();
   const filterOwner = /* @__PURE__ */ new Map();
+  let schemaOwner;
+  let schemaWinner;
+  let hasApplicationArtifact = false;
   for (const lm of loaded) {
     if (lm.manifest === null) continue;
+    if (lm.manifest.kind === "application") hasApplicationArtifact = true;
     const types = lm.manifest.manifestExtensions?.["wcstack.types"];
     if (lm.manifest.kind === "package" && types !== void 0) {
       for (const [tag, component] of Object.entries(types.components ?? {})) {
@@ -3538,13 +6947,97 @@ function resolvePackageContracts(loaded) {
         );
       }
     }
+    if (lm.manifest.kind === "application" && application?.stateSchema !== void 0) {
+      const schema = application.stateSchema;
+      if (schema !== null && typeof schema === "object" && !Array.isArray(schema)) {
+        if (schemaOwner === void 0) {
+          schemaOwner = lm.artifact.source;
+          schemaWinner = schema;
+        } else {
+          schemaWinner = void 0;
+          ctxFor(lm).add(
+            WcsDiagnosticCode.ManifestStateCollision,
+            pointer("manifestExtensions", "wcstack.application", "stateSchema"),
+            `Multiple application artifacts declare a stateSchema (also in "${schemaOwner}"); neither is used.`,
+            "error",
+            void 0,
+            true
+          );
+        }
+      }
+    }
   }
   const diagnosticsBySource = /* @__PURE__ */ new Map();
   for (const [source, diags] of perSource) {
     const kept = diags.filter((d) => !(d.code === WcsDiagnosticCode.ManifestOverride && d.tag !== void 0 && collided.has(d.tag)));
     if (kept.length > 0) diagnosticsBySource.set(source, kept);
   }
-  return { tags: winners, diagnosticsBySource };
+  return { tags: winners, applicationSchema: schemaWinner, hasApplicationArtifact, diagnosticsBySource };
+}
+
+// src/core/sidecar/discover.ts
+var APPLICATION_MANIFEST_FILENAME = "wcstack.manifest.json";
+var MAX_ASCEND = 16;
+function discoverApplicationManifest(fileReader) {
+  for (let up = 0; up <= MAX_ASCEND; up++) {
+    const relativePath = `${"../".repeat(up)}${APPLICATION_MANIFEST_FILENAME}`;
+    const text = fileReader(relativePath);
+    if (text === void 0) continue;
+    const loaded = loadManifest({ text, source: relativePath });
+    return { relativePath, text, loaded, schema: applicationSchemaOf(loaded) };
+  }
+  return void 0;
+}
+function applicationSchemaOf(loaded) {
+  const manifest = loaded.manifest;
+  if (manifest === null || manifest.kind !== "application") return void 0;
+  const application = manifest.manifestExtensions?.["wcstack.application"];
+  const schema = application?.stateSchema;
+  if (schema !== null && typeof schema === "object" && !Array.isArray(schema)) {
+    return schema;
+  }
+  return void 0;
+}
+function joinRelativeSource(htmlSource, relativePath) {
+  const sepIndex = Math.max(htmlSource.lastIndexOf("/"), htmlSource.lastIndexOf("\\"));
+  const dirSegments = sepIndex === -1 ? [] : htmlSource.slice(0, sepIndex).split(/[\\/]/);
+  for (const segment of relativePath.split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === "..") {
+      if (dirSegments.length > 0 && dirSegments[dirSegments.length - 1] !== "..") dirSegments.pop();
+      else dirSegments.push("..");
+      continue;
+    }
+    dirSegments.push(segment);
+  }
+  return dirSegments.join("/");
+}
+
+// src/core/validateDocument.ts
+function validateDocument(text, options = {}) {
+  const bindAttribute = options.bindAttribute ?? "data-wcs";
+  const stateTagName = options.stateTagName ?? "wcs-state";
+  const locale3 = options.locale;
+  const fileReader = options.fileReader;
+  const applicationSchema = options.applicationSchema ?? (fileReader !== void 0 ? discoverApplicationManifest(fileReader)?.schema : void 0);
+  const out = [];
+  out.push(...validateBindings(text, bindAttribute, stateTagName, locale3, fileReader, applicationSchema));
+  out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute, locale3, fileReader, applicationSchema));
+  out.push(...validateIoNodes(text, bindAttribute, stateTagName, locale3, fileReader));
+  out.push(...validateAriaAttributes(text, bindAttribute, locale3));
+  out.push(...validateDocumentEnv(text, locale3));
+  out.push(...validateSemantics(text, stateTagName, locale3, bindAttribute));
+  out.push(...validateArrayMutations(text, stateTagName, locale3));
+  out.push(...validateWatchDeclarations(text, stateTagName, locale3));
+  out.push(...validateNamedState(text, bindAttribute, stateTagName, locale3));
+  out.push(...validateMountAttributes(text, stateTagName, locale3));
+  for (const d of validateStateTypes(text, stateTagName, locale3)) {
+    out.push({ code: WcsDiagnosticCode.TypeAnnotation, start: d.start, end: d.end, message: d.message, severity: d.severity });
+  }
+  for (const d of validateNestedAssigns(text, stateTagName, locale3)) {
+    out.push({ code: WcsDiagnosticCode.NestedAssign, start: d.start, end: d.end, message: d.message, severity: d.severity });
+  }
+  return sortDiagnostics(out);
 }
 
 // src/core/sidecar/drift.ts
@@ -3603,12 +7096,22 @@ function checkDrift(tag, component, live, ctx) {
 }
 
 // src/core/sidecar/validate.ts
+function validateManifestArtifact(artifact) {
+  const loaded = loadManifest(artifact);
+  validateLoadedSchemas(loaded);
+  return sortDiagnostics(loaded.ctx.diagnostics);
+}
 function validateLoadedSchemas(loaded) {
   if (loaded.manifest === null) return;
   const types = loaded.manifest.manifestExtensions?.["wcstack.types"];
-  if (types === void 0) return;
-  for (const [tag, component] of Object.entries(types.components ?? {})) {
+  for (const [tag, component] of Object.entries(types?.components ?? {})) {
     validateComponentSchemas(tag, component, loaded.ctx);
+  }
+  const application = loaded.manifest.manifestExtensions?.["wcstack.application"];
+  const stateSchema = application?.stateSchema;
+  if (stateSchema !== void 0 && stateSchema !== null && typeof stateSchema === "object" && !Array.isArray(stateSchema)) {
+    const ptr = pointer("manifestExtensions", "wcstack.application", "stateSchema");
+    validateSchemaSubset(stateSchema, ptr, loaded.ctx, stateSchema.$defs ?? {});
   }
 }
 function validateComponentSchemas(tag, component, ctx) {
@@ -3659,7 +7162,9 @@ function validateManifestSet(input) {
   return {
     diagnostics: sortDiagnostics(all),
     byArtifact: sortedByArtifact,
-    resolvedTags
+    resolvedTags,
+    resolvedSchema: resolved.applicationSchema,
+    hasApplicationArtifact: resolved.hasApplicationArtifact
   };
 }
 function escapePtr(key) {
@@ -3670,12 +7175,10 @@ function escapePtr(key) {
 var severityLabel = { error: "error", warning: "warning", info: "info" };
 function runValidation(inputs, options = {}) {
   const diagnosticsBySource = /* @__PURE__ */ new Map();
-  for (const input of inputs) {
-    if (input.kind === "html") {
-      diagnosticsBySource.set(input.source, validateDocument(input.text, options));
-    }
-  }
+  const textBySource = new Map(inputs.map((i) => [i.source, i.text]));
   const manifestInputs = inputs.filter((i) => i.kind === "manifest");
+  let explicitSchema;
+  let haveExplicitApplication = false;
   if (manifestInputs.length > 0) {
     const result = validateManifestSet({
       artifacts: manifestInputs.map((m) => ({ text: m.text, source: m.source })),
@@ -3684,8 +7187,32 @@ function runValidation(inputs, options = {}) {
     for (const input of manifestInputs) {
       diagnosticsBySource.set(input.source, result.byArtifact.get(input.source) ?? []);
     }
+    if (result.hasApplicationArtifact) {
+      haveExplicitApplication = true;
+      explicitSchema = result.resolvedSchema;
+    }
   }
-  const textBySource = new Map(inputs.map((i) => [i.source, i.text]));
+  for (const input of inputs) {
+    if (input.kind !== "html") continue;
+    let applicationSchema = explicitSchema;
+    if (!haveExplicitApplication && input.fileReader !== void 0) {
+      const discovered = discoverApplicationManifest(input.fileReader);
+      applicationSchema = discovered?.schema;
+      if (discovered !== void 0) {
+        const source = joinRelativeSource(input.source, discovered.relativePath);
+        if (!diagnosticsBySource.has(source)) {
+          textBySource.set(source, discovered.text);
+          diagnosticsBySource.set(source, validateManifestArtifact({ text: discovered.text, source }));
+        }
+      }
+    }
+    const docOptions = {
+      ...options,
+      ...input.fileReader !== void 0 ? { fileReader: input.fileReader } : {},
+      ...applicationSchema !== void 0 ? { applicationSchema } : {}
+    };
+    diagnosticsBySource.set(input.source, validateDocument(input.text, docOptions));
+  }
   const lines = [];
   let errorCount = 0;
   let warningCount = 0;
@@ -3707,7 +7234,7 @@ function runValidation(inputs, options = {}) {
     errorCount,
     warningCount,
     infoCount,
-    exitCode: errorCount > 0 ? 1 : 0,
+    exitCode: errorCount > 0 || options.strict === true && warningCount > 0 ? 1 : 0,
     diagnosticsBySource
   };
 }
@@ -3724,6 +7251,7 @@ function parseArgs(argv) {
     else if (arg.startsWith("--state-tag=")) options.stateTagName = arg.slice("--state-tag=".length);
     else if (arg.startsWith("--lang=")) options.locale = arg.slice("--lang=".length);
     else if (arg === "--errors-only" || arg === "--quiet") options.errorsOnly = true;
+    else if (arg === "--strict") options.strict = true;
     else if (!arg.startsWith("-")) files.push(arg);
   }
   return { options, files };
@@ -3740,30 +7268,31 @@ function resolveCliLocale(explicit, env = process.env) {
 }
 function main(argv) {
   const { options, files } = parseArgs(argv);
-  const locale = resolveCliLocale(options.locale);
+  const locale3 = resolveCliLocale(options.locale);
   if (files.length === 0) {
-    process.stderr.write("usage: wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] <file> [<file> ...]\n");
+    process.stderr.write("usage: wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-only] [--strict] <file> [<file> ...]\n");
     return 2;
   }
   const inputs = [];
   for (const path of files) {
     let text;
     try {
-      text = (0, import_node_fs.readFileSync)(path, "utf8");
+      text = (0, import_node_fs2.readFileSync)(path, "utf8");
     } catch (e) {
       process.stderr.write(`cannot read ${path}: ${e.message}
 `);
       return 2;
     }
-    inputs.push({ source: path, text, kind: classify(path) });
+    const kind = classify(path);
+    inputs.push({ source: path, text, kind, fileReader: kind === "html" ? createFileReader(path) : void 0 });
   }
-  const result = runValidation(inputs, { ...options, locale });
+  const result = runValidation(inputs, { ...options, locale: locale3 });
   for (const line of result.lines) {
     process.stdout.write(line + "\n");
   }
   process.stdout.write(
     `
-${result.errorCount} error(s), ${result.warningCount} warning(s), ${result.infoCount} info
+${result.errorCount} error(s), ${result.warningCount} warning(s), ${result.infoCount} info${options.strict ? " (strict)" : ""}
 `
   );
   return result.exitCode;
@@ -3773,6 +7302,7 @@ if (typeof require !== "undefined" && typeof module !== "undefined" && require.m
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  createFileReader,
   main,
   parseArgs,
   resolveCliLocale

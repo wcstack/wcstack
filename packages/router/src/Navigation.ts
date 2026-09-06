@@ -10,8 +10,12 @@ export type NavigationResultLike = {
   finished?: Promise<unknown>;
 };
 
+export type NavigationNavigateOptions = {
+  history?: "auto" | "push" | "replace";
+};
+
 export type NavigationLike = {
-  navigate?: (url: string) => NavigationResultLike | void | undefined;
+  navigate?: (url: string, options?: NavigationNavigateOptions) => NavigationResultLike | void | undefined;
   addEventListener: (type: string, listener: EventListenerOrEventListenerObject) => void;
   removeEventListener: (type: string, listener: EventListenerOrEventListenerObject) => void;
 };

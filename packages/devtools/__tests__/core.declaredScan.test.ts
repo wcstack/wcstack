@@ -13,18 +13,17 @@ describe('scanDeclaredBindings', () => {
     const result = scanDeclaredBindings(root);
     expect(result).toHaveLength(2);
     expect(result[0]).toMatchObject({
-      propName: 'textContent', path: 'count', stateName: 'default', origin: 'attribute',
+      propName: 'textContent', path: 'count', origin: 'attribute',
     });
     expect(result[1]).toMatchObject({
       propName: 'class.plus', path: 'count', filters: ['gt(0)'],
     });
   });
 
-  it('@stateNameとフィルタ連鎖を分解すること', () => {
-    const root = build('<input data-wcs="value: user.name@app|uc|trim">');
+  it('フィルタ連鎖を分解すること（@name セレクタは v2 で撤去 — パスは素通し）', () => {
+    const root = build('<input data-wcs="value: user.name|uc|trim">');
     const [entry] = scanDeclaredBindings(root);
     expect(entry.path).toBe('user.name');
-    expect(entry.stateName).toBe('app');
     expect(entry.filters).toEqual(['uc', 'trim']);
   });
 
@@ -40,10 +39,10 @@ describe('scanDeclaredBindings', () => {
   });
 
   it('wcs-textコメントをtextContent宣言として拾うこと', () => {
-    const root = build('<p><!--wcs-text: message@main--></p>');
+    const root = build('<p><!--wcs-text: message--></p>');
     const [entry] = scanDeclaredBindings(root);
     expect(entry).toMatchObject({
-      propName: 'textContent', path: 'message', stateName: 'main', origin: 'comment',
+      propName: 'textContent', path: 'message', origin: 'comment',
     });
     expect(entry.element.tagName).toBe('P');
   });

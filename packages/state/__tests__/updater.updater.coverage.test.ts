@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { __private__ } from '../src/updater/updater';
-import { setStateElementByName } from '../src/stateElementByName';
+import { setStateElement } from '../src/stateElementByName';
 import { applyChangeFromBindings } from '../src/apply/applyChangeFromBindings';
 import { IAbsoluteStateAddress } from '../src/address/types';
 
@@ -17,14 +17,13 @@ describe('updater/updater coverage', () => {
   });
 
   afterEach(() => {
-    setStateElementByName(document, 'test', null);
+    setStateElement(document, null);
   });
 
   it('_applyChangeでbindingが無い場合は空配列でapplyChangeFromBindingsが呼ばれること', () => {
     const updater = new Updater();
 
     const mockAbsoluteAddress: IAbsoluteStateAddress = {
-      stateName: 'nonexistent',
       address: { pathInfo: { path: 'count' } } as any,
     };
 

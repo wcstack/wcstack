@@ -52,6 +52,9 @@ describe('getIndexValueByLoopContext', () => {
     const listIndex = createListIndex(null, 0);
     const loopContext = createStateAddress(getPathInfo('items.*'), listIndex) as ILoopContext;
 
-    expect(() => getIndexValueByLoopContext(loopContext, '$2')).toThrow(/Index not found at position/);
+    // 1 段のループの中で `$2` を読んだ ＝ 階数の取り違え。内部の言葉ではなく
+    // 「何段必要で何段あるか」を言う（pathDiagnostics.wildcardScopeMessage）
+    expect(() => getIndexValueByLoopContext(loopContext, '$2'))
+      .toThrow(/\[wcs\/wildcard-rank\] "\$2" needs 2 enclosing loop level\(s\) but the current scope provides 1/);
   });
 });

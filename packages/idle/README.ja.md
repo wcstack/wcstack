@@ -169,6 +169,10 @@ core.dispose();
 
 Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 
+## アクセシビリティ
+
+**WCAG 2.2.1 Timing Adjustable（調整可能な制限時間）**: アイドル閾値は制限時間である。入力・読解・移動がゆっくりなユーザーや、それ自体に時間のかかる支援技術のユーザーは、作業中でも「アイドル」判定を踏む。アイドルが重大な帰結（自動ログアウト・コンテンツの非表示・セッション終了）を引き起こすなら、事前の警告と簡単な延長手段、または閾値を延ばす／無効化する設定が要る。`threshold` は寛大な値を選び、`userState` は「ユーザーが離れた証拠」ではなくヒントとして扱うこと。
+
 ## ライセンス
 
 MIT

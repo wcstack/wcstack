@@ -39,10 +39,11 @@ function integrityOf(filePath) {
   return `${ALGORITHM}-${digest}`;
 }
 
-// Same discovery rule as .github/workflows/release.yml: packages/* scoped under
-// @wcstack/. Packages with no bootstrap (server, signals, lint) are reported as
-// skipped rather than silently dropped — a missing row must be a stated
-// decision, not something the reader has to notice on their own.
+// Discovery: packages/* scoped under @wcstack/, plus the unscoped `wcstack`
+// entry bundle (release.yml builds the same set, with `wcstack` forced last in
+// its build order). Packages with no bootstrap (server, signals, lint) are
+// reported as skipped rather than silently dropped — a missing row must be a
+// stated decision, not something the reader has to notice on their own.
 function collect(version) {
   const entries = [];
   const skipped = [];
@@ -52,7 +53,7 @@ function collect(version) {
     const pkgJsonPath = join(pkgsDir, entry.name, "package.json");
     if (!existsSync(pkgJsonPath)) continue;
     const name = JSON.parse(readFileSync(pkgJsonPath, "utf8")).name ?? "";
-    if (!name.startsWith("@wcstack/")) continue;
+    if (!(name.startsWith("@wcstack/") || name === "wcstack")) continue;
 
     const bootstrap = join(pkgsDir, entry.name, BOOTSTRAP);
     if (!existsSync(bootstrap)) {
@@ -101,6 +102,12 @@ function toNotes(version, entries, skipped) {
       "Use the versioned `cdn.jsdelivr.net` path above rather than `esm.run`: `esm.run` redirects to",
       "jsDelivr's `+esm` endpoint, which re-bundles the package, so its bytes are not the published",
       "bytes and no fixed digest can match them.",
+      "",
+      "Loading several packages? Use one pinned tag per package — each bootstrap is self-contained,",
+      "so the tags fetch in parallel and each keeps its own full-coverage digest. Do NOT use",
+      "jsDelivr's `/combine/` endpoint: concatenated minified ESM does not even parse (top-level",
+      "identifiers collide), and jsDelivr itself rules out SRI for combined responses. See",
+      "`docs/sri.md` §3.1.",
       "",
     );
   }

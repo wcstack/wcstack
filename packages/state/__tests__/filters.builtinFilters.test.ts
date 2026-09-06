@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { outputBuiltinFilters, builtinFilterFn } from '../src/filters/builtinFilters';
+import { getConfig, setConfig } from '../src/config';
 
 const getFilter = (name: string, options: string[] = []) =>
   builtinFilterFn(name, options)(outputBuiltinFilters);
@@ -384,5 +385,184 @@ describe('builtinFilters', () => {
       expect(getFilter('rep', ['2'])('x')).toBe('xx');
       expect(getFilter('pad', ['3', '_'])('a')).toBe('__a');
     });
+  });
+
+  describe('abs filter', () => {
+    it('絶対値を返すこと', () => {
+      const fn = getFilter('abs');
+      expect(fn(-3)).toBe(3);
+      expect(fn(3)).toBe(3);
+      expect(fn(0)).toBe(0);
+      expect(fn(-1.5)).toBe(1.5);
+    });
+
+    it('数値以外はエラーになること', () => {
+      expect(() => getFilter('abs')('x' as unknown as number)).toThrow(/requires a number value/);
+    });
+  });
+
+  describe('clamp filter', () => {
+    it('範囲内に丸めること', () => {
+      const fn = getFilter('clamp', ['0', '100']);
+      expect(fn(-10)).toBe(0);
+      expect(fn(50)).toBe(50);
+      expect(fn(120)).toBe(100);
+    });
+
+    it('境界値はそのまま返すこと', () => {
+      const fn = getFilter('clamp', ['0', '100']);
+      expect(fn(0)).toBe(0);
+      expect(fn(100)).toBe(100);
+    });
+
+    it('負の範囲や小数も扱えること', () => {
+      expect(getFilter('clamp', ['-1', '1'])(-5)).toBe(-1);
+      expect(getFilter('clamp', ['0', '1'])(0.5)).toBe(0.5);
+    });
+
+    it('オプションが不足しているとエラーになること', () => {
+      expect(() => getFilter('clamp')).toThrow(/requires at least one option/);
+      expect(() => getFilter('clamp', ['0'])).toThrow(/requires at least one option/);
+    });
+
+    it('オプションが数値でないとエラーになること', () => {
+      expect(() => getFilter('clamp', ['a', '1'])).toThrow(/requires a number as option/);
+      expect(() => getFilter('clamp', ['0', 'b'])).toThrow(/requires a number as option/);
+    });
+
+    it('数値以外はエラーになること', () => {
+      const fn = getFilter('clamp', ['0', '1']);
+      expect(() => fn('x' as unknown as number)).toThrow(/requires a number value/);
+    });
+  });
+
+  describe('unit filter', () => {
+    it('数値に単位を付けること', () => {
+      expect(getFilter('unit', ['px'])(10)).toBe('10px');
+      expect(getFilter('unit', ['%'])(50)).toBe('50%');
+      expect(getFilter('unit', ['rem'])(1.5)).toBe('1.5rem');
+    });
+
+    // fix / percent は string を返すため、実用チェーンは string 入力になる。
+    // ここで数値を要求すると「一番使いたい形」が通らなくなる
+    it('文字列を返すフィルターの後ろに繋げられること', () => {
+      const fix = getFilter('fix', ['1']);
+      const unit = getFilter('unit', ['px']);
+      expect(unit(fix(3.14159))).toBe('3.1px');
+    });
+
+    it('null / undefined は素通しすること', () => {
+      const fn = getFilter('unit', ['px']);
+      expect(fn(null)).toBe(null);
+      expect(fn(undefined)).toBe(undefined);
+    });
+
+    it('オプション未指定はエラーになること', () => {
+      expect(() => getFilter('unit')).toThrow(/requires at least one option/);
+    });
+  });
+
+  describe('join filter', () => {
+    it('既定の区切り文字で連結すること', () => {
+      expect(getFilter('join')(['a', 'b', 'c'])).toBe('a, b, c');
+    });
+
+    it('区切り文字を指定できること', () => {
+      expect(getFilter('join', [' / '])(['a', 'b'])).toBe('a / b');
+      expect(getFilter('join', [''])(['a', 'b'])).toBe('ab');
+    });
+
+    it('空配列は空文字になること', () => {
+      expect(getFilter('join')([])).toBe('');
+    });
+
+    it('配列以外はエラーになること', () => {
+      const fn = getFilter('join');
+      expect(() => fn('abc' as unknown as unknown[])).toThrow(/requires an array value/);
+    });
+  });
+
+  describe('truncate filter', () => {
+    it('上限を超える文字列を切り詰めて省略記号を付けること', () => {
+      expect(getFilter('truncate', ['3'])('abcdef')).toBe('abc…');
+    });
+
+    it('上限以下の文字列はそのまま返すこと', () => {
+      expect(getFilter('truncate', ['3'])('abc')).toBe('abc');
+      expect(getFilter('truncate', ['5'])('abc')).toBe('abc');
+    });
+
+    it('省略記号を指定できること', () => {
+      expect(getFilter('truncate', ['3', '...'])('abcdef')).toBe('abc...');
+      expect(getFilter('truncate', ['3', ''])('abcdef')).toBe('abc');
+    });
+
+    it('オプションが不足・非数値だとエラーになること', () => {
+      expect(() => getFilter('truncate')).toThrow(/requires at least one option/);
+      expect(() => getFilter('truncate', ['x'])).toThrow(/requires a number as option/);
+    });
+  });
+
+  describe('hms filter', () => {
+    it('時分秒フォーマットに変換できること', () => {
+      const fn = getFilter('hms', [':']);
+      expect(fn(new Date(2026, 0, 30, 9, 5, 6))).toBe('09:05:06');
+    });
+
+    it('既定の区切り文字を使えること', () => {
+      expect(getFilter('hms')(new Date(2026, 0, 30, 23, 59, 59))).toBe('23:59:59');
+    });
+
+    it('区切り文字を指定できること', () => {
+      expect(getFilter('hms', ['-'])(new Date(2026, 0, 30, 1, 2, 3))).toBe('01-02-03');
+    });
+
+    it('Date以外はエラーになること', () => {
+      expect(() => getFilter('hms')('09:05:06' as unknown as Date)).toThrow(/requires a date value/);
+    });
+  });
+});
+
+// ロケール依存フィルタ（locale / date / time / datetime）は、既定ロケールを
+// **適用のたびに** 読む。以前は返り値の関数の外で解決していたため、バインド構築
+// 時点の config.locale がクロージャに焼き込まれ、起動順序が少しでもずれると
+// 「同じページの中で日付だけ既定ロケール」が永続して回復しなかった。
+// 期待値は Intl そのものから作る（ICU の実装差に依存しないため）。
+describe('ロケール依存フィルタの既定ロケール解決', () => {
+  const original = getConfig().locale;
+  const NUM = 1234567.89;
+  const DATE = new Date(2026, 7, 26, 13, 5, 6);
+  const A = 'de-DE';
+  const B = 'en-US';
+
+  afterEach(() => {
+    setConfig({ locale: original });
+  });
+
+  const cases: ReadonlyArray<[string, unknown, (loc: string) => string]> = [
+    ['locale',   NUM,  (loc) => NUM.toLocaleString(loc)],
+    ['date',     DATE, (loc) => DATE.toLocaleDateString(loc)],
+    ['time',     DATE, (loc) => DATE.toLocaleTimeString(loc)],
+    ['datetime', DATE, (loc) => DATE.toLocaleString(loc)],
+  ];
+
+  it.each(cases)('%s: フィルタ生成後の config.locale 変更が次の適用に反映されること', (name, value, expected) => {
+    // 2 ロケールの書式が同じだと、この検査は焼き込みを見逃しても通ってしまう。
+    // ICU の実装が変わって差が消えたらここで落ちる。
+    expect(expected(A)).not.toBe(expected(B));
+
+    setConfig({ locale: A });
+    const fn = getFilter(name);                  // 生成 ＝ バインド構築に相当
+    expect(fn(value as never)).toBe(expected(A));
+
+    setConfig({ locale: B });                    // 生成より後にロケールが変わる
+    expect(fn(value as never)).toBe(expected(B));
+  });
+
+  it.each(cases)('%s: 明示引数は config.locale の変更に影響されないこと', (name, value, expected) => {
+    setConfig({ locale: A });
+    const fn = getFilter(name, [A]);             // 明示引数はバインド式の一部なので固定でよい
+    setConfig({ locale: B });
+    expect(fn(value as never)).toBe(expected(A));
   });
 });

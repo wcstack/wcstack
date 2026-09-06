@@ -715,17 +715,22 @@ class WcsWakeLock extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.wakelock)) {
-        customElements.define(config.tagNames.wakelock, WcsWakeLock);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.wakelock)) {
+        registry.define(config.tagNames.wakelock, WcsWakeLock);
     }
 }
 
-function bootstrapWakeLock(userConfig) {
+function bootstrapWakeLock(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { WCS_WAKELOCK_ERROR_CODE, WakeLockCore, WcsWakeLock, bootstrapWakeLock, getConfig };

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { getUpdater, registerUpdateBatchListener, unregisterUpdateBatchListener, type UpdateBatchListener } from '../src/updater/updater';
-import { setStateElementByName } from '../src/stateElementByName';
+import { setStateElement } from '../src/stateElementByName';
 import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
 import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
 import { createStateAddress } from '../src/address/StateAddress';
@@ -27,8 +27,9 @@ function createAbsAddress(stateElement: any, path: string) {
   return createAbsoluteStateAddress(absPathInfo, null);
 }
 
-function createStateElement(name: string = 'default') {
-  return { name } as IStateElement;
+// 引数は呼び出し側の可読ラベルのみ（v2: IStateElement に name は無く、同一性は参照）
+function createStateElement(_name: string = 'default') {
+  return {} as IStateElement;
 }
 
 describe('updater/updater', () => {
@@ -39,8 +40,8 @@ describe('updater/updater', () => {
   });
 
   afterEach(() => {
-    setStateElementByName(document, 'default', null);
-    setStateElementByName(document, 'missing', null);
+    setStateElement(document, null);
+    setStateElement(document, null);
     for (const addr of createdAbsAddresses) {
       clearBindingSetByAbsoluteStateAddress(addr);
     }
@@ -52,7 +53,6 @@ describe('updater/updater', () => {
     const missingStateElement = createStateElement('missing');
     const absoluteAddress = createAbsAddress(missingStateElement, 'count');
     expect(absoluteAddress).toBeDefined();
-    expect(absoluteAddress.absolutePathInfo.stateName).toBe('missing');
   });
 
   it('enqueueでapplyChangeFromBindingsが呼ばれること', async () => {
@@ -61,7 +61,7 @@ describe('updater/updater', () => {
     document.body.appendChild(replaceNode);
     const bindingInfo = { propName: 'value', stateName: 'default', node: document.createTextNode(''), replaceNode } as any;
     const stateElement = createStateElement('default');
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
 
     const updater = getUpdater();
     const absoluteAddress = createAbsAddress(stateElement, address.pathInfo.path);
@@ -80,7 +80,7 @@ describe('updater/updater', () => {
     document.body.appendChild(replaceNode);
     const bindingInfo = { propName: 'value', stateName: 'default', node: document.createTextNode(''), replaceNode } as any;
     const stateElement = createStateElement('default');
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
 
     const updater = getUpdater();
     const absoluteAddress = createAbsAddress(stateElement, address.pathInfo.path);
@@ -98,7 +98,7 @@ describe('updater/updater', () => {
   it('bindingInfosが無い場合は空配列でapplyChangeFromBindingsが呼ばれること', async () => {
     const address = createAddress('missing');
     const stateElement = createStateElement('default');
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
 
     const updater = getUpdater();
     const absoluteAddress = createAbsAddress(stateElement, address.pathInfo.path);
@@ -116,7 +116,7 @@ describe('updater/updater', () => {
     expect(updater1).toBe(updater2);
   });
 
-  it('複数のstateNameのアドレスを一括処理できること', async () => {
+  it('複数の state 要素（別ルート）のアドレスを一括処理できること', async () => {
     const address1 = createAddress('count');
     const address2 = createAddress('name');
     
@@ -130,8 +130,9 @@ describe('updater/updater', () => {
     const stateElement1 = createStateElement('state1');
     const stateElement2 = createStateElement('state2');
 
-    setStateElementByName(document, 'state1', stateElement1);
-    setStateElementByName(document, 'state2', stateElement2);
+    const root2 = document.createElement('div');
+    setStateElement(document, stateElement1);
+    setStateElement(root2, stateElement2);
 
     const updater = getUpdater();
     const absoluteAddress1 = createAbsAddress(stateElement1, address1.pathInfo.path);
@@ -147,8 +148,8 @@ describe('updater/updater', () => {
     expect(applyChangeFromBindingsMock).toHaveBeenCalledTimes(1);
     expect(applyChangeFromBindingsMock).toHaveBeenCalledWith([bindingInfo1, bindingInfo2]);
 
-    setStateElementByName(document, 'state1', null);
-    setStateElementByName(document, 'state2', null);
+    setStateElement(document, null);
+    setStateElement(root2, null);
   });
 
   it('testApplyChangeで同期的にapplyChangeFromBindingsが呼ばれること', () => {
@@ -157,7 +158,7 @@ describe('updater/updater', () => {
     document.body.appendChild(replaceNode);
     const bindingInfo = { propName: 'value', stateName: 'default', node: document.createTextNode(''), replaceNode } as any;
     const stateElement = createStateElement('default');
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
 
     const updater = getUpdater();
     const absoluteAddress = createAbsAddress(stateElement, address.pathInfo.path);
@@ -181,7 +182,7 @@ describe('updater/updater', () => {
     const bindingDisconnected = { propName: 'value', stateName: 'default', node: document.createTextNode(''), replaceNode: disconnectedNode } as any;
 
     const stateElement = createStateElement('default');
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
 
     const updater = getUpdater();
     const absoluteAddress = createAbsAddress(stateElement, address.pathInfo.path);
@@ -215,7 +216,7 @@ describe('updater/updater', () => {
 
     it('enqueue後のmicrotask drainでリスナーがdedup済みのSetを受け取ること', async () => {
       const stateElement = createStateElement('default');
-      setStateElementByName(document, 'default', stateElement);
+      setStateElement(document, stateElement);
 
       const updater = getUpdater();
       const absoluteAddress1 = createAbsAddress(stateElement, 'batchDep1');
@@ -236,9 +237,34 @@ describe('updater/updater', () => {
       expect(batch.has(absoluteAddress2)).toBe(true);
     });
 
+    /**
+     * 適用側が throw しても drain フックは落とさない（予測可能性）。
+     *
+     * README の「機構間の順序は固定（$updatedCallback → $watch → $streams restart）」は、
+     * 適用が throw した瞬間に $watch と stream restart が丸ごと消えていた。binding 1 本の
+     * 失敗は applyChangeFromBindings 側で隔離されるので、ここへ来るのは
+     * $updatedCallback の throw 等。例外は握らず（loud のまま）通知だけ保証する。
+     */
+    it('applyChangeFromBindingsがthrowしてもリスナーは発火し、例外は伝播すること', () => {
+      const stateElement = createStateElement('default');
+      setStateElement(document, stateElement);
+      const absoluteAddress = createAbsAddress(stateElement, 'drainThrow');
+      createdAbsAddresses.push(absoluteAddress);
+
+      const listener = vi.fn();
+      register(listener);
+      // Once: vi.clearAllMocks() は実装を戻さないので、後続テストへ漏らさない
+      applyChangeFromBindingsMock.mockImplementationOnce(() => { throw new Error('boom'); });
+
+      expect(() => getUpdater().testApplyChange([absoluteAddress])).toThrow('boom');
+
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect((listener.mock.calls[0][0] as ReadonlySet<IAbsoluteStateAddress>).has(absoluteAddress)).toBe(true);
+    });
+
     it('testApplyChangeで同期にリスナーが発火すること（applyChangeFromBindingsの後）', () => {
       const stateElement = createStateElement('default');
-      setStateElementByName(document, 'default', stateElement);
+      setStateElement(document, stateElement);
 
       const updater = getUpdater();
       const absoluteAddress = createAbsAddress(stateElement, 'batchSync');
@@ -259,7 +285,7 @@ describe('updater/updater', () => {
 
     it('unregister後のdrainではリスナーが呼ばれないこと', () => {
       const stateElement = createStateElement('default');
-      setStateElementByName(document, 'default', stateElement);
+      setStateElement(document, stateElement);
 
       const updater = getUpdater();
       const absoluteAddress = createAbsAddress(stateElement, 'batchUnregister');
@@ -275,7 +301,7 @@ describe('updater/updater', () => {
 
     it('リスナーが2つ登録されていれば両方が同じバッチで呼ばれること', () => {
       const stateElement = createStateElement('default');
-      setStateElementByName(document, 'default', stateElement);
+      setStateElement(document, stateElement);
 
       const updater = getUpdater();
       const absoluteAddress = createAbsAddress(stateElement, 'batchTwoListeners');
@@ -295,7 +321,7 @@ describe('updater/updater', () => {
 
     it('リスナーのthrowは握りつぶされず伝播すること（設計書§3-2: stream側リスナーがentryごとに自前でtry/catchする契約）', () => {
       const stateElement = createStateElement('default');
-      setStateElementByName(document, 'default', stateElement);
+      setStateElement(document, stateElement);
 
       const updater = getUpdater();
       const absoluteAddress = createAbsAddress(stateElement, 'batchThrow');

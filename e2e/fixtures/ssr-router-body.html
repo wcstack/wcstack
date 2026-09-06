@@ -1,0 +1,53 @@
+<!-- SSR input (body only): rendered per request by serve.mjs's /ssr-router
+     handler through @wcstack/server renderToString (docs/ssr-router-design.md
+     Phase 4). Structural templates INSIDE route content are deliberate — they
+     exercise the parse() template-preservation fix and the orchestrated
+     snapshot pass in a real browser. The #q output inside the "/" route proves
+     adopted bindings stay live across a same-match query navigation. -->
+<wcs-state enable-ssr>
+  <script type="module">
+    export default {
+      products: [
+        { id: 1, name: "Keyboard" },
+        { id: 2, name: "Mouse" },
+        { id: 3, name: "Monitor" }
+      ],
+      path: "",
+      routeParams: {},
+      query: {},
+      routeName: "",
+      navigateUrl: null,
+      get productId() {
+        return this.routeParams.productId ?? "";
+      },
+      get q() {
+        return this.query.q ?? "";
+      }
+    };
+  </script>
+</wcs-state>
+
+<nav>
+  <wcs-link to="/">list</wcs-link>
+  <wcs-link to="/products/2">product 2</wcs-link>
+  <wcs-link to="?q=hello">query</wcs-link>
+</nav>
+
+<wcs-router enable-ssr
+  data-wcs="path: path; typedParams: routeParams; searchParams: query; routeName: routeName; navigateUrl: navigateUrl">
+  <template>
+    <wcs-route path="/" name="list">
+      <h1 id="view">list</h1>
+      <ul id="product-list">
+        <template data-wcs="for: products">
+          <li data-wcs="textContent: .name"></li>
+        </template>
+      </ul>
+      <p>q: <output id="q" data-wcs="textContent: q"></output></p>
+    </wcs-route>
+    <wcs-route path="/products/:productId(int)" name="detail">
+      <h1 id="view">detail</h1>
+      <p>productId: <output id="product-id" data-wcs="textContent: productId"></output></p>
+    </wcs-route>
+  </template>
+</wcs-router>

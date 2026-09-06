@@ -97,7 +97,7 @@ http://localhost:3001 を開いてください。
 
 ```html
 <!-- ハイドレーション用 SSR メタデータ -->
-<wcs-ssr name="default" version="1.5.3">
+<wcs-ssr version="1.5.3">
   <script type="application/json">{"users":[...],"show":true,"counter":0}</script>
   <template id="u0" data-wcs="for: users">...</template>
   <template id="u1" data-wcs="if: show">...</template>

@@ -3,11 +3,10 @@ import { config } from "../config.js";
 import { raiseError } from "../raiseError.js";
 import { IRouteMatchResult, IRoute, IRouter, GuardHandler, ISegmentInfo } from "./types.js";
 import { RouteCore } from "../core/RouteCore.js";
-import { IWcBindable } from "../types.js";
 
+// NOTE: `static wcBindable` は宣言しない — RouteCore.ts 冒頭の NOTE を参照
+// （docs/router-state-contract-design.md §5.1 / D2）。
 export class Route extends HTMLElement implements IRoute {
-  static wcBindable: IWcBindable = RouteCore.wcBindable;
-
   private _core: RouteCore;
   private _routeParentNode: IRoute | null = null;
   private _routeChildNodes: IRoute[] = [];
@@ -54,6 +53,19 @@ export class Route extends HTMLElement implements IRoute {
       this._childNodeArray = Array.from(this.childNodes);
     }
     return this._childNodeArray;
+  }
+
+  /**
+   * SSR ハイドレーションの採用（docs/ssr-router-design.md §4）。
+   * サーバー描画済みの DOM ノード列をこのルートの内容として引き取る。
+   * 以後の hideRoute / showRoute は採用ノードに対して従来どおり動く。
+   * template 由来の fresh クローン（自身の childNodes）は不要になるため破棄する。
+   */
+  adoptChildNodes(nodes: Node[]): void {
+    this._childNodeArray = [...nodes];
+    while (this.firstChild) {
+      this.removeChild(this.firstChild);
+    }
   }
 
   get routes(): IRoute[] {
@@ -131,6 +143,10 @@ export class Route extends HTMLElement implements IRoute {
 
   get fullpath(): string {
     return this.absolutePath;
+  }
+
+  get hasGuard(): boolean {
+    return this._core.hasGuard;
   }
 
   get guardHandler(): GuardHandler {

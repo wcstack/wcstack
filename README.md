@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/wcstack-icon-black-512.png">
+    <img src="assets/logo/wcstack-icon-white-512.png" alt="wcstack" width="128" height="128">
+  </picture>
+</p>
+
 # wcstack
 
 > [!IMPORTANT]
@@ -38,12 +45,12 @@ In every existing framework, the **component** is where UI meets state. Even wit
 
 wcstack takes a different path. Literally.
 
-The **only** contract between UI and state is a **path string** — `user.name`, `cart.items.*.subtotal`, `@shared`. No hooks. No imports. No glue code. The component's JavaScript doesn't contain a single line that references state. The HTML alone describes every data dependency.
+The **only** contract between UI and state is a **path string** — `user.name`, `cart.items.*.subtotal`, or a mount point such as `state: user`. No hooks. No imports. No glue code. The component's JavaScript doesn't contain a single line that references state. The HTML alone describes every data dependency.
 
 ```
-State  ← "user.name" →  UI          Path binds the two layers
-Comp A ← "@app" →       Comp B      Named path crosses components
-Loop   ← "items.*" →    Template    Wildcard abstracts the index
+State  ← "user.name" →    UI          Path binds the two layers
+Host   ← "state: user" →  Component   A mount grafts a component onto the one tree
+Loop   ← "items.*" →      Template    Wildcard abstracts the index
 ```
 
 This means you can redesign the UI without touching state, refactor state without touching the DOM, and read the HTML to understand everything. It's the same idea as a REST URL — a simple string contract, no shared code.
@@ -63,7 +70,7 @@ Claude Code reads [CLAUDE.md](./CLAUDE.md) (the more detailed, tool-specific gui
 
 ## Packages
 
-Forty-four independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
+Forty-seven independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
 
 ### What if HTML had reactive data binding?
 
@@ -109,7 +116,7 @@ Forty-four independent runtime packages + one tooling extension package. Zero ru
 
 - **Path getters** — `get "users.*.fullName"()` computed properties at any depth
 - **Structural directives** — `for`, `if` / `elseif` / `else` via `<template>`
-- **40+ built-in filters** — comparison, arithmetic, string, date, formatting
+- **46 built-in filters** — comparison, arithmetic, string, date, formatting
 - **Two-way binding** — automatic for `<input>`, `<select>`, `<textarea>`
 - **Mustache syntax** — `{{ path|filter }}` in text nodes
 - **Web Component binding** — bidirectional state sync with Shadow DOM
@@ -306,9 +313,12 @@ const html = await renderToString(`
 - [`@wcstack/camera`](packages/camera/) — Declarative camera capture and recording with `<wcs-camera>` (getUserMedia + built-in preview) and `<wcs-recorder>` (MediaRecorder). The live `MediaStream` is bound straight to elements via a command-token argument and **never stored in serializable state** — only derived values (permission, recording flag, the recorded `Blob`/URL) flow through state.
 - [`@wcstack/audio`](packages/audio/) — Web Audio graphs written as markup with `<wcs-audio>` and ten node tags: nesting is the signal chain, `out=`/`param=` route by id, and `<wcs-voice poly="N">` gives polyphony. The patch that crosses the protocol boundary is a plain descriptor — live `AudioNode` handles never leave the Core.
 - [`@wcstack/midi`](packages/midi/) — Declarative Web MIDI with `<wcs-midi>`: one tag for both directions, messages decoded into `type`/`note`/`velocity`/`channel` (a velocity-0 note-on is normalized to `noteoff`), and live port state. Omit `input` and every input port is subscribed.
+- [`@wcstack/view-transition`](packages/view-transition/) — Declarative View Transition arbiter with `<wcs-view-transition>`: one policy tag that makes router route swaps and state list/branch updates animate. It coalesces every change requested in the same microtask into a single transition and arbitrates collisions (`latest`/`queue`/`exhaust`); a DOM change is applied exactly once whatever happens to its animation. Leave and move — the two things CSS alone cannot do for DOM a framework removes. Without the tag, nothing about the framework's timing changes.
 - [`@wcstack/signals`](packages/signals/) — A signals-based, fine-grained reactive **core** (the JS-first counterpart to `@wcstack/state`): `signal`/`computed`/`effect`, async `resource`/`streamResource`, keyed `For`/`Index`, and a `bindNode` adapter that drives the same wc-bindable IO nodes through signals. TC39-Signals-shaped, zero-dependency.
 - [`@wcstack/devtools`](packages/devtools/) — In-page DevTools overlay with `<wcs-devtools>`: inspect state trees (with inline editing through the normal reactive pipeline), see which DOM nodes each path is wired to, and watch a live timeline of writes, update batches, and command/event-token emissions — including zero-subscriber "empty emits". One script tag, connects via the DevTools Hook Protocol, zero-dependency.
 - [`@wcstack/lint`](packages/lint/) — Static-contract validator CLI (`npx @wcstack/lint`, command name `wcs-validate`): checks HTML `data-wcs` bindings and `wcstack.manifest.json` sidecars headlessly with the same validator core as the VS Code extension — identical diagnostic codes and ranges in IDE and CI, stable exit-code contract for generate–validate–fix loops. Zero-dependency.
+- [`@wcstack/typescript`](packages/typescript/) — TypeScript tooling for apps: `wcs-schema` compiles a typed state file and writes the sidecar `stateSchema` the validator consumes, so `data-wcs` paths are checked against real types in CI and every editor (typos become errors, false warnings disappear); `wcs-schema check` fails CI when the manifest drifts from the type; `wcs-tsc` type-checks the inline `<script type="module">` state inside an HTML file with the same compiler. `typescript` is a peer dependency; zero runtime dependencies. The full TypeScript story is in [docs/typescript.md](docs/typescript.md).
+- [`@wcstack/testing`](packages/testing/) — Headless test helpers: `mount(html)` registers the elements, inserts the page fragment under happy-dom and waits for every element and binding (router routes included, via `@wcstack/server`'s `waitForReady`); `state().read/write`, `settle()`, `fire()` drive it like a user or a handler would. The README recipe as one import — a convenience, never a requirement.
 - [`wcstack-intellisense`](packages/vscode-wcs/) — VS Code extension that provides language support for `<wcs-state>` inline scripts.
 
 ---
@@ -347,11 +357,21 @@ For production, pin the version and add an `integrity` attribute. `dist/auto.min
 
 ```html
 <script type="module"
-        src="https://cdn.jsdelivr.net/npm/@wcstack/state@1.26.0/dist/auto.min.js"
+        src="https://cdn.jsdelivr.net/npm/@wcstack/state@2.1.1/dist/auto.min.js"
         integrity="sha384-..."></script>
 ```
 
 Digests for every package ship in each GitHub Release (and as an attached `sri.json`), computed from the published tree rather than read back from the CDN. Details, and what the hash deliberately does not cover: [docs/sri.md](docs/sri.md).
+
+Using several packages? The **`wcstack` entry bundle** packs the SPA core — state, router, fetch, storage, autoloader — into a single self-contained tag: one request, and one hash covering the whole core (254 KB min / 71 KB gzip). Single packages stay the default for pages that need less; do not concatenate the files yourself via jsDelivr `/combine/` (minified ESM does not survive concatenation — [docs/sri.md §3.1](docs/sri.md)):
+
+```html
+<script type="module"
+        src="https://cdn.jsdelivr.net/npm/wcstack@2.1.1/dist/auto.min.js"
+        integrity="sha384-..."></script>
+```
+
+Testing the page? It is plain DOM — mount it under happy-dom, await the bindings, assert: [Testing Your Page](packages/state/README.md#testing-your-page).
 
 ---
 
@@ -440,9 +460,13 @@ wcstack/
 │   ├── camera/        # @wcstack/camera
 │   ├── audio/         # @wcstack/audio
 │   ├── midi/          # @wcstack/midi
+│   ├── view-transition/  # @wcstack/view-transition
 │   ├── signals/       # @wcstack/signals
 │   ├── devtools/      # @wcstack/devtools
 │   ├── lint/          # @wcstack/lint
+│   ├── typescript/    # @wcstack/typescript
+│   ├── testing/       # @wcstack/testing
+│   ├── wcstack/       # wcstack (entry package: the wcstack/auto SPA-core bundle)
 │   └── vscode-wcs/    # wcstack-intellisense (VS Code extension)
 ```
 
@@ -460,6 +484,27 @@ npm test                 # Run tests (Vitest)
 npm run test:coverage    # Coverage (100% statements/functions/lines, 97%+ branches)
 npm run lint             # ESLint
 ```
+
+## Versioning and breaking changes
+
+All published packages share one version and are released in lockstep — a release bumps every package, whether or not it changed.
+
+**Covered by semver** — changing any of these incompatibly means a major release:
+
+- The `data-wcs` binding syntax and its documented semantics (paths, filters, structural directives, spread).
+- Each package's documented element surface: tag names, attributes, and the `static wcBindable` declaration (`properties` / `event` / `getter`).
+- The interop protocols: wc-bindable, command-token, event-token, transition-runner, binder, ssr-snapshot.
+- Tooling contracts: the manifest schema (`schemaVersion`), the `wcs-schema` / `wcs-tsc` CLIs, and the `@wcstack/testing` API. The devtools hook protocol carries its own `version` field; a non-additive change bumps it and rides a major release.
+
+**Not covered** — may change in a minor or patch release:
+
+- Internal module layout and anything not re-exported from a package entry point.
+- Console message wording and performance characteristics.
+- Anything explicitly marked experimental or reserved in the docs.
+
+**Deprecation practice**: where feasible, a surface is flagged for at least one minor release (a lint rule and/or a runtime notice pointing at the replacement) before the next major removes it — v1.x flagged named state with `wcs/named-state-deprecated` before v2.0 removed `name=` / `@name`.
+
+Release history: [CHANGELOG.md](./CHANGELOG.md). Upgrading from 1.x: [docs/migration-v2.md](./docs/migration-v2.md).
 
 ## License
 

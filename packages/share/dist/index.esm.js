@@ -823,17 +823,22 @@ class WcsShare extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.share)) {
-        customElements.define(config.tagNames.share, WcsShare);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.share)) {
+        registry.define(config.tagNames.share, WcsShare);
     }
 }
 
-function bootstrapShare(userConfig) {
+function bootstrapShare(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { ShareCore, WCS_SHARE_ERROR_CODE, WcsShare, bootstrapShare, getConfig };

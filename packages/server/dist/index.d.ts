@@ -3,15 +3,57 @@ import { Window } from 'happy-dom';
 declare const GLOBALS_KEYS: string[];
 declare function installGlobals(window: Window): () => void;
 declare function installBaseUrl(baseUrl: string): () => void;
-/** @deprecated Use Ssr.extractStateData() from @wcstack/state instead */
-declare function extractStateData(stateEl: any): Record<string, any>;
-type BootstrapFunction = () => void;
+/**
+ * 同期の bootstrap 関数、または非同期ローダー。
+ * `HTMLElement` を継承するクラスはモジュール評価時にグローバルの `HTMLElement` を
+ * 参照するため、純 Node 環境ではトップレベル import できないパッケージがある。
+ * その場合は `async () => (await import('@wcstack/router')).bootstrapRouter()` の
+ * ように非同期ローダーを渡す — 呼び出しは installGlobals の後なので、モジュール
+ * 評価時にはグローバルが揃っている（docs/ssr-router-design.md §3.1）。
+ */
+type BootstrapFunction = () => void | Promise<void>;
 interface RenderOptions {
-    /** 相対 URL を解決するベース URL (例: "http://localhost:3001") */
+    /** 相対 URL を解決するベース URL (例: "http://localhost:3001")。省略時は `url` の origin */
     baseUrl?: string;
     /** bootstrap 関数の配列。省略時は @wcstack/state を自動ロード */
     bootstraps?: BootstrapFunction[];
+    /**
+     * このリクエストの完全 URL (例: "http://localhost:3000/products/1")。
+     * `window.location` / `document.baseURI` に反映される。ルーティングする
+     * コンポーネント（@wcstack/router 等）のサーバーレンダリングに必要
+     * （docs/ssr-router-design.md §3.1）。
+     */
+    url?: string;
+    /**
+     * `<head>` へ注入する `<base href>` の値。`url` 指定時の既定は "/"。
+     * ブラウザで `<base>` を置く SPA と同じ条件をサーバー内に再現する
+     * （深い URL での basename 誤認を防ぐ）。サブパス配備では明示する。
+     */
+    baseHref?: string;
 }
+interface WaitForReadyOptions {
+    /**
+     * 安定化ループの上限。`$connectedCallback` が動的に追加した要素を拾うため、
+     * 新しい要素が見つからなくなるまで走査を繰り返す（既定 10）。
+     */
+    maxIterations?: number;
+}
+/**
+ * `root`（document / ShadowRoot）配下のカスタム要素が readiness プロトコルに従って
+ * 初期化を終えるまで待つ。renderToString がシリアライズ前に行う待機と同じ手順で、
+ * `@wcstack/testing` の `mount()` もこれを呼ぶ（docs/app-testing-and-typescript-impl-plan.md D11）。
+ *
+ * 1. `static hasConnectedCallbackPromise = true` を持つ全要素の `connectedCallbackPromise`
+ *    を待つ。待っている間に追加された要素も拾う（安定化ループ）。
+ *    `<wcs-router>` の初期ルート適用・`<wcs-state>` の状態ロードはここで完了する。
+ * 2. `static getBindingsReady(root)` を持つクラス（`<wcs-state>`）の、この root に対する
+ *    バインディング構築完了を待つ。Promise の取得はループの後 — 実体は各要素の
+ *    connectedCallback 内・最初の await より後に登録されるため、先に掴むと「まだ
+ *    登録前」の即時解決 Promise を取り逃す。
+ *
+ * バインディング初期化の失敗は reject として伝わる（state v1.26+）。
+ */
+declare function waitForReady(root: ParentNode & Node, options?: WaitForReadyOptions): Promise<void>;
 /**
  * HTML 文字列を SSR レンダリングして返す。
  *
@@ -87,12 +129,20 @@ interface RenderOptions {
  * - `static hasConnectedCallbackPromise = true` プロトコル準拠の全カスタム要素を自動待機
  * - `$connectedCallback` 中に動的追加されたカスタム要素も安定化ループで検出・待機（最大 10 回）
  *
+ * ### router SSR
+ * - `<wcs-router enable-ssr>` + `url` オプションで初期ルートをサーバー描画。
+ *   クライアント側 router は描画済み DOM を採用（adopt）する。
+ *   詳細は README「Router SSR」/ docs/ssr-router-design.md
+ *
  * ## SSR でできないこと
  * - `<head>` 内の `<script src="...">` や `<link>` の自動実行
  * - ブラウザ固有 API（localStorage, sessionStorage, navigator 等）
  * - Shadow DOM のレンダリング（Declarative Shadow DOM 非対応）
  * - イベントハンドラの登録（クライアント側のハイドレーションで復元）
  * - `<wcs-autoloader>` による動的コンポーネント読み込み
+ * - guard 付きルートのサーバー描画（設計上・クライアントで guard 実行）、
+ *   `<wcs-layout>` ルートの採用（クライアント描画へフォールバック）、
+ *   `<wcs-head>` のサーバー反映（body のみの出力に head は載らない）
  *
  * ## HTML の分割パターン
  * ```
@@ -182,5 +232,5 @@ declare class RenderCore extends EventTarget {
     render(html: string): Promise<string | null>;
 }
 
-export { GLOBALS_KEYS, RenderCore, VERSION, extractStateData, installBaseUrl, installGlobals, renderToString };
-export type { BootstrapFunction, IWcBindable, IWcBindableProperty, RenderOptions, WcsRenderValues };
+export { GLOBALS_KEYS, RenderCore, VERSION, installBaseUrl, installGlobals, renderToString, waitForReady };
+export type { BootstrapFunction, IWcBindable, IWcBindableProperty, RenderOptions, WaitForReadyOptions, WcsRenderValues };

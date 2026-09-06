@@ -6,6 +6,11 @@ import { parseFilterArgs } from "./parseFilterArgs";
 
 const filterFnByKey: Map<string, FilterFn<unknown>> = new Map();
 
+/** tooling 専用（parser.ts の clearParserCaches からのみ呼ぶ）。 */
+export function clearFilterFnCacheForTooling(): void {
+  filterFnByKey.clear();
+}
+
 // format: filterName(arg1,arg2) or filterName
 
 export function parseFilters(filterTextList: string[], filterIOType: FilterIOType): IFilterInfo[] {

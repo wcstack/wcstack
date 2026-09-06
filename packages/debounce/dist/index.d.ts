@@ -112,7 +112,7 @@ interface WcsDebounceCoreCommands {
 }
 type WcsDebounceCommands = WcsDebounceCoreCommands;
 
-declare function bootstrapDebounce(userConfig?: IWritableConfig): void;
+declare function bootstrapDebounce(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -272,6 +272,13 @@ declare class Throttle extends Debounce {
     static wcBindable: IWcBindable;
     protected _resolveLeading(): boolean;
     protected _defaultMaxWait(): number | undefined;
+}
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-debounce": Debounce;
+        "wcs-throttle": Throttle;
+    }
 }
 
 export { DebounceCore, Debounce as WcsDebounce, Throttle as WcsThrottle, bootstrapDebounce, getConfig, makeDebounceProperties };

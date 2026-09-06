@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
-import { getStateElementByName } from "../src/stateElementByName";
+import { getStateElement } from "../src/stateElementByName";
 
 beforeAll(() => {
   bootstrapState();
@@ -26,7 +26,7 @@ async function mount(initial: any, innerHTML: string) {
   stateEl.setInitialState(initial);
   await stateEl.connectedCallbackPromise;
   await State.getBindingsReady(shadowRoot);
-  return { host, shadowRoot, stateElement: getStateElementByName(shadowRoot, "default")! };
+  return { host, shadowRoot, stateElement: getStateElement(shadowRoot)! };
 }
 
 const GRID = `<div><template data-wcs="for: weeks">` +

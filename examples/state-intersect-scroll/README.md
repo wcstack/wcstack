@@ -1,8 +1,9 @@
-# state + intersection + `$streams` demo (infinite scroll via `<wcs-intersect>`)
+# state + intersection + `$streams` + `$watch` demo (infinite scroll via `<wcs-intersect>`)
 
 This is the lower-level counterpart to [`infinite-scroll`](../../packages/fetch/examples/infinite-scroll).
-`<wcs-intersect>` reports visibility, while an `@wcstack/state` `$streams` entry owns page fetching,
-switchMap-style cancellation, and bounded retry.
+`<wcs-intersect>` reports visibility, an `@wcstack/state` `$streams` entry owns page fetching,
+switchMap-style cancellation, and bounded retry, and a `$watch` commits each successful page into the
+long-lived feed without depending on anything being rendered.
 
 The important part is not merely that the request lives in a stream. The requested page is derived from
 the number of **committed** items instead of being incremented blindly. Repeated intersection edges while
@@ -47,7 +48,7 @@ $streams.pageResult
   -> on failure: bounded delay/retry inside the producer
   -> yield { kind: "success", items }
        v
-$updatedCallback
+$watch on streamStatus (headless — no binding required)
   -> append the page to long-lived items
   -> command.reobserve
        v
@@ -85,9 +86,14 @@ settled error with existing items
   design would silently swallow the first round trip. The page stays unchanged, but the dependency
   write restarts an errored stream with a fresh retry budget.
 - **Page-local and feed-long lifetimes stay separate.** `$streams` resets its value on restart, so
-  `pageResult` contains only the current page operation. `$updatedCallback` commits a successful result
-  into the long-lived `items` array. `$updatedCallback` is binding-driven, so the visible stream-status
-  meter is the explicit observation point for this commit boundary. No hidden dummy subscriber is used.
+  `pageResult` contains only the current page operation. A `$watch` commits a successful result into the
+  long-lived `items` array. Watch is **headless**: unlike `$updatedCallback`, it does not need the value to
+  be bound anywhere. Earlier revisions of this demo did use `$updatedCallback`, which made the visible
+  stream-status meter load-bearing — delete that one `<b>` and the feed stopped committing. The meter is
+  now display only.
+- **A `$watch` key cannot start with `$`**, so `$streamStatus.pageResult` is mirrored through a one-line
+  `streamStatus` getter. Watching a getter makes it eager, which is exactly what is wanted here: it keeps
+  being evaluated whether or not anything renders it.
 - **Re-observation prevents short-page stalls.** A successful full page calls `reobserve()`. A new
   observer reports current visibility even if the sentinel never crossed the boundary, so a tall viewport
   can continue loading; a partial page sets `noMore` instead.
@@ -108,7 +114,7 @@ parts are real API boundaries:
   producer therefore owns the attempt loop and abort-aware delay.
 - `retryNonce` converts “run the same page again” from an occurrence into a changing dependency value.
   This is intentional, but it is still an encoding necessitated by the value-based restart API.
-- Commit-before-reobserve is expressed by statement order in `$updatedCallback`, not by a graph type.
+- Commit-before-reobserve is expressed by statement order in the `$watch` handler, not by a graph type.
   `reobserve()` only schedules a later observer task, and deriving `page` from committed length is
   idempotent, so correctness does not depend on a synchronous race between those two statements.
 - The scroll-retry qualification reads `window.scrollY` — an out-of-band viewport source the state

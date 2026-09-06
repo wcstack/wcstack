@@ -175,7 +175,7 @@ interface WcsNotifyInputs {
     manual: boolean;
 }
 
-declare function bootstrapNotification(userConfig?: IWritableConfig): void;
+declare function bootstrapNotification(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -408,6 +408,12 @@ declare const WCS_NOTIFY_ERROR_CODE: {
     /** その他 / 想定外の error code に対する防御的 fallback。 */
     readonly NotifyError: "notify-error";
 };
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-notify": WcsNotify;
+    }
+}
 
 export { NotificationCore, WCS_NOTIFY_ERROR_CODE, WcsNotify, bootstrapNotification, getConfig };
 export type { IWritableConfig, IWritableTagNames, NotificationPermissionRaw, NotifyBackend, NotifyOptions, PermissionStateOrUnsupported, WcsIoErrorInfo, WcsIoErrorPhase, WcsNotifyClickDetail, WcsNotifyCommands, WcsNotifyCoreCommands, WcsNotifyCoreValues, WcsNotifyErrorDetail, WcsNotifyInputs, WcsNotifySwMessage, WcsNotifyValues };

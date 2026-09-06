@@ -14,9 +14,8 @@ if (!customElements.get('wcs-devtools')) {
   customElements.define('wcs-devtools', WcsDevtools);
 }
 
-function summaryOf(name: string, rootNode: Node): IStateElementSummaryLike {
+function summaryOf(_name: string, rootNode: Node): IStateElementSummaryLike {
   return {
-    name,
     rootNode,
     element: {},
     paths: {
@@ -70,7 +69,7 @@ function createFakeSource(
     data,
     getStateElements: () => summaries,
     keys: options?.keys === null ? (undefined as never) : () => options?.keys ?? Object.keys(data),
-    read: vi.fn((name: string, rootNode: Node, path: string, indexes?: number[]) => {
+    read: vi.fn((_rootNode: Node, path: string, indexes?: number[]) => {
       if (options?.throwOn === path) {
         throw new Error('unreadable');
       }
@@ -88,14 +87,13 @@ function createFakeSource(
 }
 
 function addressOf(stateName: string, path: string): IAbsoluteAddressLike {
-  return { absolutePathInfo: { stateName, pathInfo: { path } }, listIndex: null };
+  return { absolutePathInfo: { stateElement: stateName, pathInfo: { path } }, listIndex: null };
 }
 
-function bindingOf(stateName: string, path: string, node: Node): IBindingLike {
+function bindingOf(_stateName: string, path: string, node: Node): IBindingLike {
   return {
     propName: 'textContent',
     statePathName: path,
-    stateName,
     bindingType: 'text',
     node,
     replaceNode: node,
@@ -324,7 +322,7 @@ describe('WcsDevtools shell', () => {
       let input = body.querySelector<HTMLInputElement>('input')!;
       input.value = '9';
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-      expect(source.write).toHaveBeenCalledWith('main', document, 'count', 9, []);
+      expect(source.write).toHaveBeenCalledWith(document, 'count', 9, []);
 
       // JSON にならない文字列はそのまま
       devtools.__flushRenderForTest();
@@ -332,7 +330,7 @@ describe('WcsDevtools shell', () => {
       input = body.querySelector<HTMLInputElement>('input')!;
       input.value = 'world';
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-      expect(source.write).toHaveBeenCalledWith('main', document, 'msg', 'world', []);
+      expect(source.write).toHaveBeenCalledWith(document, 'msg', 'world', []);
 
       // Escape は書き込まない
       devtools.__flushRenderForTest();
@@ -341,6 +339,79 @@ describe('WcsDevtools shell', () => {
       input = body.querySelector<HTMLInputElement>('input')!;
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
       expect((source.write as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callCount);
+    });
+
+    it('overlays対応ランタイムではマウント記録セクションを描画すること（protocol v2 — D20 の可視化）', () => {
+      mount();
+      // mount が source を作り直すため、v2 API は mount 後に付ける（canonical と同じ流儀）
+      (source as any).overlays = vi.fn(() => [{
+        marker: '#m1',
+        componentTag: 'user-card',
+        stateProp: 'user',
+        mountTable: [{ inner: '', outer: 'users.*' }, { inner: 'address', outer: 'addresses.*' }],
+        delta: 1,
+        privateKeys: ['draft'],
+        getterKeys: ['fullName'],
+      }]);
+      source.emit({ type: 'state:element-registered', rootNode: document, element: {} });
+      devtools.__flushRenderForTest();
+      const text = paneBody(devtools, 'state').textContent!;
+      expect(text).toContain('Overlays (1 mount)');
+      expect(text).toContain('#m1');
+      expect(text).toContain('<user-card>');
+      expect(text).toContain('user');
+      // マウント表はルートエントリを (root) と読ませ、私有面・getter・Δ も本文に出す
+      expect(text).toContain('(root) → users.*');
+      expect(text).toContain('address → addresses.*');
+      expect(text).toContain('Δ1');
+      expect(text).toContain('private: draft');
+      expect(text).toContain('getters: fullName');
+      expect((source as any).overlays).toHaveBeenCalledWith(document);
+    });
+
+    it('overlays未提供のランタイム（旧state）ではセクションごと出さないこと（後方互換）', () => {
+      mount(); // createFakeSource は overlays を持たない = v2 より前のランタイム相当
+      devtools.__flushRenderForTest();
+      expect(paneBody(devtools, 'state').textContent).not.toContain('Overlays');
+    });
+
+    it('マウントが無いツリー（空配列）でも見出しを残さないこと', () => {
+      mount();
+      (source as any).overlays = vi.fn(() => []);
+      source.emit({ type: 'state:element-registered', rootNode: document, element: {} });
+      devtools.__flushRenderForTest();
+      expect(paneBody(devtools, 'state').textContent).not.toContain('Overlays');
+    });
+
+    it('ツリー切替でoverlaysセクションが選択ツリーの記録に追随すること', () => {
+      const rootA = document.createElement('div');
+      const rootB = document.createElement('div');
+      mount({
+        summaries: [summaryOf('alpha', rootA), summaryOf('beta', rootB)],
+        data: { count: 1 },
+      });
+      const recordOf = (marker: string, tag: string) => ({
+        marker,
+        componentTag: tag,
+        stateProp: 'item',
+        mountTable: [],
+        delta: 0,
+        privateKeys: [],
+        getterKeys: [],
+      });
+      (source as any).overlays = vi.fn((rootNode: Node) =>
+        rootNode === rootA ? [recordOf('#mA', 'card-a')] : [recordOf('#mB', 'card-b')]);
+      source.emit({ type: 'state:element-registered', rootNode: rootA, element: {} });
+      devtools.__flushRenderForTest();
+      expect(paneBody(devtools, 'state').textContent).toContain('#mA');
+      expect(paneBody(devtools, 'state').textContent).not.toContain('#mB');
+
+      const select = shadowOf(devtools).querySelector<HTMLSelectElement>('select')!;
+      select.value = 'state:shelltest:div#2';
+      select.dispatchEvent(new Event('change'));
+      devtools.__flushRenderForTest();
+      expect(paneBody(devtools, 'state').textContent).toContain('#mB');
+      expect(paneBody(devtools, 'state').textContent).not.toContain('#mA');
     });
 
     it('state選択の切り替えができること', () => {
@@ -353,16 +424,16 @@ describe('WcsDevtools shell', () => {
       devtools.__flushRenderForTest();
       const select = shadowOf(devtools).querySelector<HTMLSelectElement>('select')!;
       expect(select.options.length).toBe(2);
-      select.value = 'state:shelltest:beta';
+      select.value = 'state:shelltest:div#2';
       select.dispatchEvent(new Event('change'));
       devtools.__flushRenderForTest();
-      expect(select.value).toBe('state:shelltest:beta');
+      expect(select.value).toBe('state:shelltest:div#2');
 
       // 空値の change は「未選択」扱いで先頭にフォールバックする
       select.value = '';
       select.dispatchEvent(new Event('change'));
       devtools.__flushRenderForTest();
-      expect(select.value).toBe('state:shelltest:alpha');
+      expect(select.value).toBe('state:shelltest:div');
     });
   });
 
@@ -373,7 +444,7 @@ describe('WcsDevtools shell', () => {
       devtools.__flushRenderForTest();
       const body = paneBody(devtools, 'wiring');
       expect(body.textContent).toContain('declared');
-      expect(body.textContent).toContain('count@default');
+      expect(body.textContent).toContain('count');
       // declared 行クリックでハイライト（要素は接続済み）
       const reloadSpy = vi.spyOn(window.location, 'reload').mockImplementation(() => {});
       body.querySelector<HTMLElement>('.notice button')!.click();
@@ -389,6 +460,169 @@ describe('WcsDevtools shell', () => {
       expect(paneBody(devtools, 'wiring').textContent).toContain('no bindings observed');
     });
 
+    it('runtimeがgetDeclaredBindingsを実装していれば正本の宣言集合を使うこと（canonicalバッジ + filters表示）', () => {
+      mount();
+      // mount が source を作り直すため、追補 API は mount 後に付ける
+      (source as any).getDeclaredBindings = vi.fn(() => [{
+        node: document.body,
+        propName: 'textContent',
+        statePathName: 'user.name',
+        bindingType: 'prop',
+        inFilters: [],
+        outFilters: [{ filterName: 'uc', args: [] }],
+        origin: 'attribute',
+        raw: 'textContent: user.name | uc',
+      }]);
+      // 追補 API を後付けしたので roster イベントで Wiring ペインの再描画を誘発する
+      source.emit({ type: 'state:element-registered', rootNode: document, element: {} });
+      devtools.__flushRenderForTest();
+      const body = paneBody(devtools, 'wiring');
+      expect(body.textContent).toContain('declared (canonical)');
+      expect(body.textContent).toContain('user.name | uc()');
+      expect((source as any).getDeclaredBindings).toHaveBeenCalled();
+      // node 付き行はクリックでハイライトされる
+      body.querySelector<HTMLElement>('.wiring-row')!.click();
+      expect(shadowOf(devtools).querySelectorAll('.hl-box').length).toBeGreaterThan(0);
+    });
+
+    it('canonical宣言でnodeがnullの行（fragment由来）はクリックハンドラを持たないこと', () => {
+      mount();
+      (source as any).getDeclaredBindings = vi.fn(() => [{
+        node: null,
+        propName: 'textContent',
+        statePathName: 'row.label',
+        bindingType: 'prop',
+        inFilters: [],
+        outFilters: [],
+        origin: 'fragment',
+        raw: '',
+      }]);
+      source.emit({ type: 'state:element-registered', rootNode: document, element: {} });
+      devtools.__flushRenderForTest();
+      const body = paneBody(devtools, 'wiring');
+      expect(body.textContent).toContain('row.label');
+      body.querySelector<HTMLElement>('.wiring-row')!.click();
+      expect(shadowOf(devtools).querySelectorAll('.hl-box').length).toBe(0);
+    });
+
+    it('coverageタブが宣言×実測の突合と観測開始時刻を描画すること', () => {
+      mount({
+        summaries: [{
+          ...summaryOf('main', document),
+          watchPaths: new Set(['count', 'items.*.price']),
+        } as never],
+      });
+      devtools.__flushRenderForTest();
+      const body = paneBody(devtools, 'wiring');
+      // タブ切り替え
+      const coverageTab = Array.from(body.querySelectorAll<HTMLElement>('.wiring-tabs button'))
+        .find((b) => b.textContent === 'coverage')!;
+      coverageTab.click();
+      source.emit({ type: 'state:watch-fired', path: 'count' });
+      devtools.__flushRenderForTest();
+      const after = paneBody(devtools, 'wiring');
+      expect(after.textContent).toContain('observing since');
+      expect(after.textContent).toContain('count');
+      expect(after.textContent).toContain('fired');
+      // 前提未成立（items が for 未バインド）は warn でなく declared 系の淡色。
+      // 理由 note はツールチップでなく本文に常時表示される
+      const badges = Array.from(after.querySelectorAll<HTMLElement>('.badge-tag'));
+      expect(badges.some((b) => b.textContent === 'prerequisite-missing' && b.classList.contains('declared'))).toBe(true);
+      expect(after.textContent).toContain('no for binding observed');
+
+      // 2 回目の発火で ×N 表示になる
+      source.emit({ type: 'state:watch-fired', path: 'count' });
+      devtools.__flushRenderForTest();
+      expect(paneBody(devtools, 'wiring').textContent).toContain('fired ×2');
+    });
+
+    it('coverageタブは選択ツリーでスコープされ、ツリー切替に追随すること（protocol v2 追補）', () => {
+      const rootA = document.createElement('div');
+      const rootB = document.createElement('div');
+      const elementA = {};
+      const elementB = {};
+      mount({
+        summaries: [
+          { ...summaryOf('alpha', rootA), element: elementA, watchPaths: new Set(['count']) } as never,
+          { ...summaryOf('beta', rootB), element: elementB, watchPaths: new Set(['count']) } as never,
+        ],
+        data: { count: 1 },
+      });
+      devtools.__flushRenderForTest();
+      Array.from(paneBody(devtools, 'wiring').querySelectorAll<HTMLElement>('.wiring-tabs button'))
+        .find((b) => b.textContent === 'coverage')!.click();
+      // ツリー A だけが発火（payload にツリー識別が載る）
+      source.emit({ type: 'state:watch-fired', path: 'count', stateElement: elementA });
+      devtools.__flushRenderForTest();
+      const bodyA = paneBody(devtools, 'wiring');
+      // 選択ツリー（既定 = 先頭 A）の行だけが出て、B の never 行は混ざらない
+      expect(bodyA.textContent).toContain('fired');
+      const watchRowsA = Array.from(bodyA.querySelectorAll<HTMLElement>('.badge-tag'))
+        .filter((b) => b.textContent === 'watch');
+      expect(watchRowsA).toHaveLength(1);
+
+      // ツリー B へ切替 → 同名パスでも B の実測（未発火）で描画される
+      const select = shadowOf(devtools).querySelector<HTMLSelectElement>('select')!;
+      select.value = 'state:shelltest:div#2';
+      select.dispatchEvent(new Event('change'));
+      devtools.__flushRenderForTest();
+      const bodyB = paneBody(devtools, 'wiring');
+      expect(bodyB.textContent).toContain('never');
+      expect(bodyB.textContent).not.toContain('fired');
+    });
+
+    it('coverageタブ: 全emitが空撃ちのtokenはemitted-unheardのwarn表示になること', () => {
+      mount({
+        summaries: [{
+          ...summaryOf('main', document),
+          commandTokenNames: new Set(['play']),
+        } as never],
+      });
+      devtools.__flushRenderForTest();
+      Array.from(paneBody(devtools, 'wiring').querySelectorAll<HTMLElement>('.wiring-tabs button'))
+        .find((b) => b.textContent === 'coverage')!.click();
+      source.emit({ type: 'state:token-emit', kind: 'command', tokenName: 'play', args: [], subscriberCount: 0 });
+      devtools.__flushRenderForTest();
+      const after = paneBody(devtools, 'wiring');
+      const badge = Array.from(after.querySelectorAll<HTMLElement>('.badge-tag'))
+        .find((b) => b.textContent === 'emitted-unheard')!;
+      expect(badge.classList.contains('warn')).toBe(true);
+      expect(after.textContent).toContain('all 1 emit(s) had 0 subscribers');
+    });
+
+    it('coverageタブ: bindingのnote（template interior）が表示されること', () => {
+      mount();
+      (source as any).getDeclaredBindings = vi.fn(() => [{
+        node: null,
+        propName: 'textContent',
+        statePathName: 'row.label',
+        bindingType: 'prop',
+        inFilters: [],
+        outFilters: [],
+        origin: 'fragment',
+        raw: '',
+      }]);
+      source.emit({ type: 'state:element-registered', rootNode: document, element: {} });
+      devtools.__flushRenderForTest();
+      const body = paneBody(devtools, 'wiring');
+      Array.from(body.querySelectorAll<HTMLElement>('.wiring-tabs button'))
+        .find((b) => b.textContent === 'coverage')!.click();
+      devtools.__flushRenderForTest();
+      const after = paneBody(devtools, 'wiring');
+      expect(after.textContent).toContain('never-attached');
+      expect(after.textContent).toContain('template interior');
+    });
+
+    it('coverageタブ: 宣言が何も無ければその旨を表示すること', () => {
+      mount({ summaries: [] });
+      devtools.__flushRenderForTest();
+      const body = paneBody(devtools, 'wiring');
+      Array.from(body.querySelectorAll<HTMLElement>('.wiring-tabs button'))
+        .find((b) => b.textContent === 'coverage')!.click();
+      devtools.__flushRenderForTest();
+      expect(paneBody(devtools, 'wiring').textContent).toContain('nothing declared to cover');
+    });
+
     it('ライブ配線を描画し、行クリックでハイライトされること', () => {
       const bound = document.createElement('span');
       document.body.append(bound);
@@ -397,7 +631,7 @@ describe('WcsDevtools shell', () => {
       devtools.__flushRenderForTest();
       const body = paneBody(devtools, 'wiring');
       expect(body.textContent).toContain('1 live binding');
-      expect(body.textContent).toContain('count@main');
+      expect(body.textContent).toContain('count');
       body.querySelector<HTMLElement>('.wiring-row')!.click();
       expect(shadowOf(devtools).querySelectorAll('.hl-box')).toHaveLength(1);
     });
@@ -495,15 +729,71 @@ describe('WcsDevtools shell', () => {
     it('イベント行を描画し、空撃ちtokenに警告を付けること', () => {
       mount();
       emitWrite('count');
-      source.emit({ type: 'state:token-emit', kind: 'command', stateName: 'main', tokenName: 'orphan', args: [1], subscriberCount: 0 });
-      // stateName なしの行（batch）も混ぜる
+      source.emit({ type: 'state:token-emit', kind: 'command', tokenName: 'orphan', args: [1], subscriberCount: 0 });
+      // batch 行（パスでなく件数が主語の行）も混ぜる
       source.emit({ type: 'state:update-batch', addresses: new Set([addressOf('main', 'count')]) });
       devtools.__flushRenderForTest();
       const body = paneBody(devtools, 'timeline');
-      expect(body.textContent).toContain('count@main');
+      expect(body.textContent).toContain('count');
       expect(body.textContent).toContain('orphan');
       expect(body.textContent).toContain('1 address');
       expect(body.querySelectorAll('.badge-tag.warn')).toHaveLength(1);
+    });
+
+    it('$watch の失敗行に警告を付けること（ランタイムが握るので唯一の気づける場所）', () => {
+      mount();
+      source.emit({ type: 'state:watch-error', phase: 'handler', path: 'total', error: new Error('boom') });
+      source.emit({ type: 'state:watch-chain-limit', maxDepth: 32, paths: ['a'] });
+      devtools.__flushRenderForTest();
+      const body = paneBody(devtools, 'timeline');
+      expect(body.textContent).toContain('handler: Error: boom');
+      expect(body.textContent).toContain('depth > 32');
+      const warned = Array.from(body.querySelectorAll('.badge-tag.warn')) as HTMLElement[];
+      expect(warned.map((el) => el.textContent)).toEqual(['watch-error', 'watch-chain-limit']);
+      expect(warned[0].title).toContain('$watch threw');
+      expect(warned[1].title).toContain('depth limit');
+    });
+
+    it('解決しないパスと隔離された適用失敗の行に警告を付けること（console を見ていないと気づけない種類）', () => {
+      mount();
+      source.emit({
+        type: 'state:path-unresolved',
+        source: 'binding',
+        path: 'user.nmae',
+        missingSegment: 'nmae',
+      });
+      source.emit({
+        type: 'state:binding-apply-error',
+        path: 'items.*.label',
+        bindingType: 'text',
+        error: new Error('boom'),
+      });
+      devtools.__flushRenderForTest();
+      const body = paneBody(devtools, 'timeline');
+      expect(body.textContent).toContain('binding: "nmae" is not declared');
+      expect(body.textContent).toContain('text: Error: boom');
+      const warned = Array.from(body.querySelectorAll('.badge-tag.warn')) as HTMLElement[];
+      expect(warned.map((el) => el.textContent)).toEqual(['path-unresolved', 'binding-apply-error']);
+      expect(warned[0].title).toContain('does not resolve');
+      expect(warned[1].title).toContain('isolated it');
+    });
+
+    it('propagation打ち切りとcontract driftの行に警告を付け、suppressed/coalescedは通常表示にすること', () => {
+      mount();
+      source.emit({ type: 'propagation:suppressed', reason: 'confirmation', transactionId: 1, edgeId: 2, node: document.createElement('input'), member: 'value' });
+      source.emit({ type: 'propagation:coalesced', absoluteAddress: addressOf('main', 'count'), droppedTransactionId: 1, winnerTransactionId: 2 });
+      source.emit({ type: 'propagation:hop-limit', absoluteAddress: addressOf('main', 'count'), transactionId: 3, hop: 16 });
+      source.emit({ type: 'contract:drift', reason: 'missing-member', tag: 'wcs-fetch', member: 'data' });
+      devtools.__flushRenderForTest();
+      const body = paneBody(devtools, 'timeline');
+      expect(body.textContent).toContain('confirmation (tx 1, edge 2)');
+      expect(body.textContent).toContain('tx 1 dropped (winner tx 2)');
+      expect(body.textContent).toContain('hop 16 (tx 3)');
+      expect(body.textContent).toContain('missing-member: data');
+      const warned = Array.from(body.querySelectorAll('.badge-tag.warn')) as HTMLElement[];
+      expect(warned.map((el) => el.textContent)).toEqual(['propagation-hop-limit', 'contract-drift']);
+      expect(warned[0].title).toContain('hop limit');
+      expect(warned[1].title).toContain('drifted');
     });
 
     it('切断後のpause/clearボタンは何もしないこと', () => {
@@ -546,13 +836,13 @@ describe('WcsDevtools shell', () => {
       expect(devtools.core!.getTimeline()).toHaveLength(0);
     });
 
-    it('buffer属性とhidden-states属性がCoreへ渡ること', () => {
+    it('buffer属性がCoreへ渡ること', () => {
       const rootNode = document.createElement('div');
       mount({
-        attrs: { buffer: '2', 'hidden-states': 'secret, ' },
-        summaries: [summaryOf('main', rootNode), summaryOf('secret', rootNode)],
+        attrs: { buffer: '2' },
+        summaries: [summaryOf('main', rootNode)],
       });
-      expect(devtools.core!.getRoster().map((entry) => entry.name)).toEqual(['main']);
+      expect(devtools.core!.getRoster()).toHaveLength(1);
       for (const path of ['a', 'b', 'c']) {
         emitWrite(path);
       }
@@ -583,7 +873,6 @@ describe('WcsDevtools shell', () => {
         const binding: IBindingLike = {
           propName: 'textContent',
           statePathName: 'count',
-          stateName: 'main',
           bindingType: 'text',
           node: textInConnected,
           replaceNode: connected,

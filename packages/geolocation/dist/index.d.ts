@@ -177,7 +177,7 @@ interface WcsGeoCommands {
     clearWatch(): void;
 }
 
-declare function bootstrapGeolocation(userConfig?: IWritableConfig): void;
+declare function bootstrapGeolocation(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -355,6 +355,12 @@ declare const WCS_GEO_ERROR_CODE: {
     readonly PositionUnavailable: "position-unavailable";
     readonly Timeout: "timeout";
 };
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-geo": WcsGeolocation;
+    }
+}
 
 export { GeolocationCore, WCS_GEO_ERROR_CODE, WcsGeolocation, bootstrapGeolocation, getConfig };
 export type { GeoOptions, GeoPermissionState, IWritableConfig, IWritableTagNames, WcsGeoCommands, WcsGeoCoords, WcsGeoCoreCommands, WcsGeoCoreValues, WcsGeoErrorDetail, WcsGeoInputs, WcsGeoPositionDetail, WcsGeoValues, WcsIoErrorInfo, WcsIoErrorPhase };

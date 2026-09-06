@@ -14,7 +14,7 @@
 
 - 変数を取り出す API
 - 要素ごとに状態を束縛するオブジェクト
-- hook
+- hook（`useState` / `useStore` 系。`$connectedCallback` などのライフサイクルコールバックはこれに当たりません）
 - selector
 - reactive primitive をコンポーネントへ引き込むための glue code
 
@@ -22,11 +22,11 @@
 
 なぜなら、このライブラリでは UI と状態の結合点を JavaScript の中に置かないからです。状態を「取り出して」コンポーネントへ渡すのではなく、HTML 側がパス文字列によって状態を参照します。要素は状態を所有せず、状態も要素を知りません。両者が共有するのはパスだけです。
 
-## 既存FWとは比較しません
+## 位置づけ — 選ぶとき・選ばないとき
 
-これは React / Vue / Solid と同じ問題を別の方法で解いているのではありません。**前提自体が違います。**
+これは React / Vue / Solid の別構文ではありません。あちらは UI と状態の結合点をコンポーネントの中に置き、こちらはパス文字列に置きます。**前提自体が違う**ので、比較は正しい軸で行ったときにだけ意味を持ちます。
 
-| 一般的なFWが前提にするもの | `@wcstack/state` が前提にするもの |
+| コンポーネント型 FW が前提にするもの | `@wcstack/state` が前提にするもの |
 |---|---|
 | コンポーネントが UI と状態の結合点 | パス文字列が UI と状態の結合点 |
 | JavaScript が描画の中心 | HTML と DOM が中心 |
@@ -34,7 +34,16 @@
 | hook / selector / signal で購読する | 属性とパスで束縛する |
 | フレームワークの実行モデルにアプリ全体を載せる | ブラウザ標準の上に薄い reactive layer を足す |
 
-比較表を作るより先に、この前提差を理解してください。同じ棚に置いても、解いている問題の切り取り方が違います。
+より近い親戚は **属性ディレクティブ型・ビルド不要のライブラリ** — Alpine.js や petite-vue の系統です。前提（素の HTML への属性・コンパイラ不要）は共有しつつ、選択を分ける違いが 2 つあります。
+
+- **式言語を持たない。** それらは属性に JavaScript 式を書き、実行時に評価します。`data-wcs` に載るのはパスとフィルタチェーンだけで、計算は state 側のパス getter に置きます。バインディングを静的に検査できる（`@wcstack/lint`・VS Code 拡張・`@wcstack/typescript`）のも、`unsafe-eval` なしの厳格な CSP で動く（[docs/csp.ja.md](../../docs/csp.ja.md)）のも、この選択の帰結です。
+- **Web Components 同士を配線する。** wc-bindable・command-token・event-token の各プロトコルと `bind-component` マウントが、互いを import しない要素同士を接続します。[I/O ノード群](../../README.ja.md#追加パッケージ)はその上に成り立っています。
+
+**選ぶとき**: HTML が主役のページ — サーバー描画や静的なマークアップにリアクティブな部分を足す、カスタム要素を組み合わせてページを作る、「HTML を読めばデータ依存が全部わかる」ことに価値があり、ビルド工程が前提ではなくコストであるとき。
+
+**選ばないとき**: チームが既にコンポーネント型 FW の中で暮らしている — I/O ノードは[フレームワークアダプタ](../../docs/framework-adapter-integration.ja.md)経由で使ってください。ホットパスが巨大な keyed リスト — [パフォーマンス](#パフォーマンス)節の計測では生成・追加が [`@wcstack/signals`](../signals/) の 2.5〜3.5 倍で、相互運用できる signals のほうが適任です。テンプレートに式を書きたい — 意図的に存在しません。テンプレートの型検査をツールではなくコンパイラに求める — パスは文字列で、`@wcstack/typescript` は差を縮めますが埋めはしません。
+
+この軸に乗せれば比較は具体的になります。下の[パフォーマンス](#パフォーマンス)節がその一例で、`e2e/bench/` のドライバで手元のハードウェアでも再現できます。
 
 ## 第一原理: パスが唯一の契約
 
@@ -46,13 +55,13 @@
 |----------|----------------|--------------|
 | **状態** (`<wcs-state>`) | データ構造とビジネスロジック | どのDOM要素がバインドされているか |
 | **UI** (`data-wcs`) | パス文字列と表示意図 | 状態がどう保存・算出されているか |
-| **コンポーネント** (`@name`) | 名前付き状態から必要なパス | 他コンポーネントの内部実装 |
+| **コンポーネント** (`state: path`) | ホストが書くマウント表 | 他コンポーネントの内部実装 |
 
 3つのレベルのパス契約が疎結合を実現しています:
 
 1. **UI ↔ 状態** — `data-wcs="textContent: user.name"` という属性がバインディングのすべてです。フックもセレクタもリアクティブプリミティブもありません。コンポーネントのJavaScriptには、状態を参照するコードが**一行も**必要ありません。
 
-2. **コンポーネント ↔ コンポーネント** — コンポーネント間の通信は、名前付き状態の参照（`@stateName`）で行われます。コンポーネント同士がお互いを直接インポートしたり参照したりすることはありません。共有するのはパスの命名規約だけです。
+2. **コンポーネント ↔ コンポーネント** — ホストが各コンポーネントへ部分木をマウントし（`<my-card data-wcs="state: user">`）、ボリュームが追加モジュールをツリーに接ぎ木します（`<wcs-state mount="i18n">`）。コンポーネント同士がお互いを直接インポートしたり参照したりすることはありません。すべての接続は単一ツリー上のパス接頭辞だけです。
 
 3. **ループコンテキスト** — `for` ループ内では `*` が抽象インデックスとして機能します。`items.*.price` のようなバインディングは自動的に現在の要素へと解決されます。テンプレートは自身の具体的な位置（インデックス）を知る必要がなく、ワイルドカードがその契約となります。
 
@@ -95,7 +104,10 @@
 - **宣言的データバインディング** — `data-wcs` 属性によるプロパティ / テキスト / イベント / 構造バインディング
 - **リアクティブ Proxy** — ES Proxy による依存追跡付き自動 DOM 更新
 - **構造ディレクティブ** — `<template>` 要素による `for`, `if` / `elseif` / `else`
-- **組み込みフィルタ** — フォーマット、比較、算術、日付など 40 種類
+- **ボリューム** — `<wcs-state mount="cart">` がモジュールを 1 本の state ツリーに接ぎ木し、バインディングは `cart.…` で読む
+- **行の同一性** — `$listKeys` が再取得した配列でも行の DOM と行オブジェクトを保つ
+- **ワイルドカード集計** — `$getAll` / `$setAll` が配列を作り直さずに `items.*.price` を横断して読み書きする
+- **組み込みフィルタ** — フォーマット、比較、算術、日付など 46 種類
 - **双方向バインディング** — `<input>`, `<select>`, `<textarea>` で自動有効
 - **Web Component バインディング** — Shadow DOM コンポーネントとの双方向状態バインディング
 - **command token** — pub/sub チャネル（`command.<method>: tokenName`）で state から wc-bindable カスタム要素のメソッドを起動
@@ -106,7 +118,9 @@
 - **複数の状態ソース** — JSON, JS モジュール, インラインスクリプト, API, 属性
 - **SVG サポート** — `<svg>` 要素内でのフルバインディング対応
 - **ライフサイクルフック** — `$connectedCallback` / `$disconnectedCallback` / `$updatedCallback`、Web Component 用 `$stateReadyCallback`
-- **TypeScript サポート** — `defineState()` によるドットパス自動補完付き型付き状態定義（[詳細](docs/define-state.ja.md)）
+- **headless な watch** — `$watch` はパスが描画されていてもいなくても state の変化で発火する
+- **診断** — 解決しないパス・添字の本数・getter の循環を `@wcstack/lint`・VS Code 拡張と同じ診断 code で報告する
+- **TypeScript サポート** — `defineState()` によるドットパス自動補完付き型付き状態定義（[詳細](docs/define-state.ja.md)）。`@wcstack/typescript` は同じ型を HTML の検証器へ運び（`wcs-schema`）、インライン state スクリプトを型検査する（`wcs-tsc`）— [docs/typescript.ja.md](../../docs/typescript.ja.md)
 - **サーバーサイドレンダリング** — `enable-ssr` 属性 + `@wcstack/server` でフル SSR と自動ハイドレーション
 - **依存ゼロ** — ランタイム依存なし
 
@@ -222,19 +236,20 @@
 
 > **Content-Security-Policy 下では:** 5 番（内包 `<script type="module">`）は `blob:` URL 経由で評価されるため `script-src blob:` が必要です。ページの nonce では救えません。厳格な CSP を敷く場合は 4 番（`src="./state.js"`）を使ってください。追加ディレクティブは不要です。詳細は [docs/csp.ja.md](../../docs/csp.ja.md)。
 
-### 名前付き状態
+### 追加の状態をマウントする（`mount=`）
 
-複数の状態要素を `name` 属性で共存できます。バインディングでは `@name` で参照します：
+状態のツリーは **1 つの root に 1 本**です。状態をモジュールに分けたい場合はボリュームをマウントします。データはマウントパスの位置でルートツリーに接ぎ木され、バインディングは接頭辞付きのパスで読みます。
 
 ```html
-<wcs-state name="cart">...</wcs-state>
-<wcs-state name="user">...</wcs-state>
+<wcs-state mount="cart" src="./cart.js"></wcs-state>
+<wcs-state src="./app.js"></wcs-state>
 
-<div data-wcs="textContent: total@cart"></div>
-<div data-wcs="textContent: name@user"></div>
+<div data-wcs="textContent: cart.total"></div>
 ```
 
-デフォルト名は `"default"`（`@` 不要）です。
+ボリュームは getter・`$watch`・`$listKeys`・`$updatedCallback`・`$connectedCallback`/`$disconnectedCallback` を宣言できます（すべてマウントパス相対）。読み込み順は自由です（ルートより先に接続されたボリュームは、ルートの登録時に接ぎ木されます）。マウントパスは静的パスのみです（`*`・`$`・`#`・`@` は不可）。初期化後に `mount` 属性を変更することはできません — 変更は console 警告付きで無視されます。要素を取り除き、望むパスで新しい要素を追加してください。
+
+> **v1 の名前付き状態からの移行:** `<wcs-state name="cart">` + `total@cart` は `<wcs-state mount="cart">` + `cart.total` になります。v2 では `name` 属性は fail-fast し、パス中の `@` は parse error です（どちらもこの誘導文付き）。移行の対応表: [docs/state-mount-design.md](../../docs/state-mount-design.md) §9。
 
 ## 状態の更新
 
@@ -287,7 +302,7 @@ this.items.sort((a, b) => a.id - b.id);
 ### `data-wcs` 属性
 
 ```
-property[#modifier]: path[@state][|filter[|filter(args)...]]
+property[#modifier]: path[|filter[|filter(args)...]]
 ```
 
 複数バインディングは `;` で区切ります：
@@ -301,7 +316,6 @@ property[#modifier]: path[@state][|filter[|filter(args)...]]
 | `property` | バインドする DOM プロパティ | `value`, `textContent`, `checked` |
 | `#modifier` | バインディング修飾子 | `#ro`, `#prevent`, `#stop`, `#onchange` |
 | `path` | 状態プロパティパス | `count`, `user.name`, `users.*.name` |
-| `@state` | 名前付き状態の参照 | `@cart`, `@user` |
 | `\|filter` | 変換フィルタチェーン | `\|gt(0)`, `\|round\|locale` |
 
 ### プロパティ種別
@@ -348,6 +362,8 @@ property[#modifier]: path[@state][|filter[|filter(args)...]]
 
 ### バインディング authority (`#init=` / `#sync=`)
 
+**これが解決する問題。** バインディングが attach する時点で既に値を持っている要素 —— 永続値をロード済みの `<wcs-storage>`、時計、自分のスナップショットを復元するウィジェット —— は state の初期値に上書きされます。双方向バインディングの初期同期が state→element に書くからです。そのバインディングにだけ `#init=element` を付けると、初期同期は*要素*が勝ちます。以後の変更は通常どおり両方向に流れます。このケース（load-before-bind）は下で具体的に説明します。この節の残りは、それを一例として含む一般規則です。
+
 `static wcBindable` を宣言したカスタム要素への prop バインディングは、**authority**（バインディング attach 時の**初期同期**をどちら側が勝つか）を解決します。定常時の方向は authority とは別に、メンバの宣言形状で決まります: output-only メンバは state からの書き込みを恒久的に受け付けず（契約）、双方向メンバは初期同期の勝者と無関係に以後は両方向に流れます。既定 authority はメンバの宣言位置から導出されます（`enableDirectionalInitialSync` で既定 ON）：
 
 | メンバの宣言位置 | 既定 authority | 効果 |
@@ -358,6 +374,34 @@ property[#modifier]: path[@state][|filter[|filter(args)...]]
 | —（`wcBindable` 非宣言・素の HTML 要素） | `state` | 従来と不変 |
 
 > **作法：** settable なメンバは **`properties` と `inputs` の両方**に宣言してください。`properties` にしか宣言されていないメンバは output-only 扱いになり、state→element 書き込みがバインディングの生存期間ずっと抑止され、要素側の初期値が state 側のシード値を上書きします（`@wcstack` の I/O ノード Shell と DCC の `$bindables` はこの作法に従っています）。
+
+#### 要素から state に何が書かれるか（`properties[].getter`）
+
+要素が `properties[].event` を dispatch したとき、state に書かれる値は **`getter(event)`** です。`getter` を省略するとプロトコル既定の [`(e) => e.detail`](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/main/SPEC.md#default-getter) が適用され、**`detail` 全体がそのまま**書かれます。このとき宣言したプロパティは要素から読まれ*ません*。イベントのペイロードが正です。`wcBindable` を持たない素の HTML 要素は逆で、`input`/`change` 時に `element[propName]` を読みます。
+
+したがって `getter` なしで `detail: { value: 7654321 }` を dispatch する要素は、数値ではなく**オブジェクト** `{ value: 7654321 }` を state に書きます。しかもこの失敗はほぼ無言です。書き戻し（`Number({ value: … })` → `NaN`）は例外を投げず、`@wcstack/lint` にも見えません（ペイロードの形は静的に分かりません）。ランタイムは、イベント時点で見分けられる 2 形についてだけ、要素 × プロパティごとに 1 回警告します（`wcs/default-getter-mismatch`）: 要素プロパティに値があるのに `detail` が `undefined`（素の `Event`、または `detail` の付け忘れ）、および要素プロパティがオブジェクトでないのに `detail` が `<propName>` キーを持つオブジェクト（上のラッパー）。それ以外の不整合は気づかれずに通り、どちらの場合も書き込み自体はそのまま行われます。次の 2 形のどちらかに揃えてください：
+
+```javascript
+class YenInput extends HTMLElement {
+  static wcBindable = {
+    protocol: "wc-bindable", version: 1,
+    properties: [
+      // (a) 値そのものを detail にする — プロトコルの推奨形。getter 不要
+      { name: "value", event: "yen-input:value-changed" },
+      // (b) detail がオブジェクト、または CustomEvent でないイベントを使う — 読み方を宣言する
+      // { name: "value", event: "yen-input:value-changed", getter: (e) => e.detail.value },
+      // { name: "value", event: "input",                  getter: (e) => e.target.value },
+    ],
+    inputs: [{ name: "value" }],
+  };
+  #onInput() {
+    // (a): ラッパーオブジェクトではなく値を dispatch する
+    this.dispatchEvent(new CustomEvent("yen-input:value-changed", { detail: this.value, bubbles: true }));
+  }
+}
+```
+
+どちらを選んでも、`element.value` とイベントから取り出す値は同じ論理状態を表していなければなりません（プロトコルの *Producer State Consistency Invariant*）。初期同期はプロパティを読み、以後の更新はイベントを読むからです。wcstack 内部でも両形が使われています —— `<wcs-fetch>` の `loading` は `getter` なしで真偽値を `detail` に載せ、`value` は `getter` で `detail.value` を読みます。DCC の `$bindables` が `getter: (e) => e.target[name]` を宣言するのは、サブパス書き込みには `detail` に載せる単一の値が無いからです。既定そのものを変える予定はありません。`e.detail` はすべての wc-bindable アダプタに対する規範（`@wc-bindable/core` の `bind()` とフレームワークアダプタも同じ既定）で、プロトコル上、既定の変更は新しいプロトコル識別子を要する破壊的変更に分類されています。
 
 authority はバインディング単位で `#init=` により上書きできます：
 
@@ -486,7 +530,7 @@ export default {
 
 - spread 右辺へのフィルタ（`...: target|filter`）はエラー
 - 右辺パスの途中に `*` を含めても OK（例：`...: stores.*.fetch`）
-- `@stateName` 修飾子は各展開エントリへ伝播（`...: fetchX@store`）
+- 右辺は素のツリーパス（`...: fetchX`、途中の `*` も可）
 - カスタム要素クラスが未登録の場合、`customElements.whenDefined(tag)` 解決時に遅延展開される（autoloader による遅延ロードに対応）
 - `wcBindable` 宣言**のない**要素はエラー（明示配線で書いてください）。spread は何を展開すべきかを契約から読み取るため
 
@@ -555,7 +599,6 @@ this.items = await (await fetch("/api/items")).json();
 | `.name` | `users.*.name` | 現在の要素のプロパティ |
 | `.` | `users.*` | 現在の要素そのもの |
 | `.name\|uc` | `users.*.name\|uc` | フィルタは保持される |
-| `.name@state` | `users.*.name@state` | 状態名は保持される |
 
 プリミティブ配列では、`.` が要素の値を直接参照します：
 
@@ -769,19 +812,20 @@ export default {
          + this["regions.*.prefectures.*.cities.*.name"];
   },
 
-  // 県レベル — 市からの集約
+  // 県レベル — 市からの集約。`indexes` 省略時はループ文脈（[$1, $2]）が
+  // 既定になるので、この県の市だけが合計される
   get "regions.*.prefectures.*.totalPopulation"() {
-    return this.$getAll("regions.*.prefectures.*.cities.*.population", [])
+    return this.$getAll("regions.*.prefectures.*.cities.*.population")
       .reduce((a, b) => a + b, 0);
   },
 
-  // 地方レベル — 県からの集約
+  // 地方レベル — 県からの集約（文脈 [$1] でこの地方に絞られる）
   get "regions.*.totalPopulation"() {
-    return this.$getAll("regions.*.prefectures.*.totalPopulation", [])
+    return this.$getAll("regions.*.prefectures.*.totalPopulation")
       .reduce((a, b) => a + b, 0);
   },
 
-  // トップレベル — 地方からの集約
+  // トップレベル — ループ文脈なし。[] は「マッチ全件」
   get totalPopulation() {
     return this.$getAll("regions.*.totalPopulation", [])
       .reduce((a, b) => a + b, 0);
@@ -872,6 +916,48 @@ export default {
 
 4. **直接インデックスアクセス** — 数値インデックスで特定の要素にアクセスすることもできます：`this["users.0.name"]` はループコンテキストなしで `users[0].name` に解決されます。
 
+### getter は state に対して純粋であること
+
+getter のキャッシュを無効化するのは**依存グラフだけ**で、依存グラフに載るのは getter が **`this` を通して読んだもの**だけです。それ以外の入力は無効化から見えないため、**最初に計算した値がそのまま残り続けます**：
+
+```javascript
+// ❌ 二度と再計算されない — 依存グラフ上の何も変化しないため
+get stamp() { return `${this.label} @ ${Date.now()}`; }   // Date.now() は追跡外
+get theme() { return document.body.dataset.theme; }        // DOM は追跡外
+get total() { return this.price * exchangeRate; }          // モジュール変数は追跡外
+```
+
+規則は「**`this` を通してのみ読む。getter から state を書かない・DOM を触らない**」です。追跡外の入力をどうしても使いたい場合は、その入力を state に持たせてパスに代入する（通常の契約に戻す）か、以下の逃げ道を使ってください：
+
+| API | 用途 |
+|---|---|
+| `this.$trackDependency(path)` | 依存を明示的に追加し、そのパスの変更でこの getter を dirty にする |
+| `this.$postUpdate(path)` | 追跡外の入力が変わったことを getter の外から通知する |
+| `this.$untrackDependency(fn)` | 依存として登録せずにパスを読む（上の対称） |
+
+```javascript
+// ✅ 時計を state 側で刻み、getter は純粋なまま
+export default {
+  now: Date.now(),
+  get stamp() { return `${this.label} @ ${this.now}`; },
+  $connectedCallback() { setInterval(() => { this.now = Date.now(); }, 1000); },
+};
+```
+
+getter の例外は握り潰されません。評価された場所（バインディングの適用・`$watch` の評価・自分での読み取り）でそのまま表面化します。
+
+#### 依存追跡の境界
+
+依存グラフに何が載るかは 3 つの規則で決まります。踏み越えるまで意識する必要はありませんが、踏み越えたときの症状は「値が更新されなくなる。エラーは出ない」なので、ここにまとめておきます：
+
+| 規則 | 踏み越えたときの見え方 |
+|---|---|
+| **追跡されるのは `this` を通した *パス* の読み取りだけ。** `this.form` は `form` を、`this["form.name"]` は `form.name` を追跡する。`this.form.name` が追跡するのは **`form` だけ** —— `.name` は返ってきたオブジェクトへの素のプロパティアクセスでしかない。`Date.now()`・DOM・モジュール変数・クロージャで掴んだオブジェクトは何も登録しない | その入力に対して getter は二度と再評価されず、最初の値が残り続ける（上の例）。`this.form.name` を読む getter は、`<input data-wcs="value: form.name">` を編集しても再実行されない —— `this["form.name"]` で読む |
+| **setter の中の読み取りは追跡しない。** setter は命令的な代入であって派生ではないので、その中で読んだものは何の依存にもならない | 何を書くかを `this.a` を読んで決める setter は、`a` が変わっても再実行されない。再実行されるのは getter だけ |
+| **同値ガードはプリミティブにだけ効く。** 現在値と `Object.is` で等しいプリミティブの書き込みはキューに入る前に落とされる。オブジェクト・配列の書き込みは同じ参照でも必ず通る | 同じ文字列を再代入しても何も起きない。同じオブジェクトを再代入するとバインディングと `$watch` が再発火する（`config.sameValueGuard`。`semantics: "event"` のプロパティはどちらにせよ対象外） |
+
+`$untrackDependency(fn)` は setter の規則を getter に意図的に適用するもので、`fn` の中の読み取りは追跡されません。`$trackDependency(path)` は最初の規則に対する逃げ道です。
+
 ### ループインデックス変数（`$1`, `$2`, ...）
 
 getter やイベントハンドラ内で、`this.$1`、`this.$2` などで現在のループイテレーションのインデックスを取得できます（0始まりの値、1始まりの命名）：
@@ -913,6 +999,7 @@ export default {
 | API | 説明 |
 |---|---|
 | `this.$getAll(path, indexes?)` | ワイルドカードパスにマッチする全ての値を取得 |
+| `this.$setAll(path, indexes, value, options?)` | ワイルドカードパスにマッチする全アドレスへ一括書き込み |
 | `this.$resolve(path, indexes, value?)` | ワイルドカードパスを特定のインデックスで解決 |
 | `this.$postUpdate(path)` | 指定パスの更新通知を手動で発行 |
 | `this.$trackDependency(path)` | キャッシュ無効化のための依存関係を手動で登録 |
@@ -936,6 +1023,66 @@ export default {
   }
 };
 ```
+
+`indexes` はパスの `*` に対する**前方一致の接頭辞**です。不足した階層は全展開され、`[]` は常に「マッチ全件」を意味します。**省略**した場合はループ文脈の添字（`[$1, $2, ...]`）が既定になり、パスが文脈と共有するワイルドカード階層に敷かれます：
+
+```javascript
+export default {
+  regions: [ /* { prefectures: [ { population: … }, … ] } */ ],
+  // ループ文脈 [$1] — 省略すると現在の地方に絞られる
+  get "regions.*.total"() {
+    return this.$getAll("regions.*.prefectures.*.population").reduce((a, b) => a + b, 0);
+  },
+  // ループ文脈なし — 省略は全展開（[] と同じ）
+  get grandTotal() {
+    return this.$getAll("regions.*.total").reduce((a, b) => a + b, 0);
+  }
+};
+```
+
+文脈がパスより深い分は切り詰められます（`[$1, $2]` の文脈は `*` 1 本のパスを `[$1]` で絞ります）。一方、文脈がループ添字を持っているのにパスと**ワイルドカード階層をまったく共有しない**場合 —— たとえば `regions.*` の getter 内での `$getAll("users.*.name")` —— は、黙って全 users を読む代わりに **throw** します。文脈の添字は別のリストのものであり、流用しても無視しても書き手の意図とは食い違うためです。この形では添字を明示してください（全件なら `[]`）。
+
+#### `$setAll` — 配列要素を作り直さずに一括更新
+
+`$setAll` は `$getAll` の書き側の対称形で、ワイルドカードパスにマッチする全アドレスへ書き込みます。狙いは記述の短さではなく、**配列そのものを保つ**ことです。`this.users = this.users.map(...)` のように作り直すと ListIndex・行 getter のキャッシュ・差分描画がまとめて捨てられますが、`$setAll` は行ごとの in-place な書き込みに分解するのでリストの同一性が保たれます。
+
+```javascript
+export default {
+  users: [{ selected: false }, { selected: false }],
+
+  toggleAll(e) {
+    this.$setAll("users.*.selected", [], e.target.checked);   // ブロードキャスト
+  },
+  invertAll() {
+    this.$setAll("users.*.selected", [], cur => !cur);        // mapper
+  },
+  rankTopThree() {
+    // undefined を返したアドレスはスキップされる（＝この行は変えない）
+    this.$setAll("users.*.score", [], (cur, i) => i < 3 ? cur * 2 : undefined);
+  }
+};
+```
+
+形は 3 つあり、3 番目だけは明示的に要求する必要があります。
+
+| 第 3 引数 | 意味 |
+|---|---|
+| 関数 | **mapper** — マッチしたアドレスごとに `(current, ...indexes)` で呼ばれる |
+| それ以外 | **ブロードキャスト** — 配列も含め、同じ値が全アドレスに書かれる |
+| 配列 ＋ `{ spread: true }` | **spread** — マッチ順に 1 件ずつ配る |
+
+配列が既定でブロードキャストされるのは、対象プロパティ自体が配列型でありうるためです。`$setAll("users.*.tags", [], ["admin"])` は「全員に `["admin"]`」なのか「1 人目に `"admin"`」なのか判別できません。`{ spread: true }` を明示すればこの推測が消え、長さがマッチ件数と噛み合わなければ黙って誤配せずに throw します。
+
+`indexes` の意味は `$getAll` と同じ**前方一致の接頭辞**（不足はその階層を全展開）ですが、**省略はできません**。書き込みには暗黙のループ文脈を与えないため、`for` テンプレートの中でも `this.$setAll("users.*.selected", [], true)` は現在行ではなく**全行**を意味します。
+
+```javascript
+this.$setAll("matrix.*.*", [0], 0);                    // 0 行目だけ全列
+this.$setAll("users.*", [], rows, { spread: true });   // 配列を保ったまま各行を差し替え
+```
+
+`undefined` はどの形でも書き込まれず「このアドレスはスキップ」を意味します。mapper が `return` を忘れて全行を潰す事故を防ぐためで、クリアしたい場合は `null` を使います。戻り値は実際に書き込んだ件数です。
+
+なお `$setAll` は依存解決を一括化する仕組みではありません。描画は 1 バッチに畳まれますが、書き込みは 1 件ずつ登録されるので、コストは置き換え対象の手書きループと同じです。得られるのはリストが保たれることであって、実行回数の削減ではありません。
 
 #### `$resolve` — 明示的なインデックスでのアクセス
 
@@ -985,7 +1132,7 @@ export default {
 
 ## フィルタ
 
-40 種類の組み込みフィルタが入力（DOM → 状態）と出力（状態 → DOM）の両方向で利用できます。
+46 種類の組み込みフィルタが入力（DOM → 状態）と出力（状態 → DOM）の両方向で利用できます。
 
 ### 比較
 
@@ -1008,6 +1155,8 @@ export default {
 | `mul(n)` | 乗算 | `price\|mul(1.1)` |
 | `div(n)` | 除算 | `total\|div(100)` |
 | `mod(n)` | 剰余 | `index\|mod(2)` |
+| `abs` | 絶対値 | `delta\|abs` |
+| `clamp(min, max)` | 範囲内に丸める | `ratio\|clamp(0,100)` |
 
 ### 数値フォーマット
 
@@ -1019,6 +1168,7 @@ export default {
 | `ceil(n?)` | 切り上げ | `value\|ceil` |
 | `locale(loc?)` | ロケール数値フォーマット | `count\|locale` / `count\|locale(ja-JP)` |
 | `percent(n?)` | パーセンテージフォーマット | `ratio\|percent(1)` |
+| `unit(u)` | 単位（任意の接尾辞）を付加 | `width\|unit(px)` → `"40px"` |
 
 ### 文字列
 
@@ -1033,6 +1183,8 @@ export default {
 | `pad(n, char?)` | 先頭パディング | `id\|pad(5,0)` → `"00001"` |
 | `rep(n)` | 繰り返し | `text\|rep(3)` |
 | `rev` | 反転 | `text\|rev` |
+| `truncate(n, suffix?)` | 切り詰めて省略記号を付加 | `title\|truncate(20)` → `"…"` 付き |
+| `join(sep?)` | 配列を連結（既定 `", "`） | `tags\|join` / `tags\|join(/)` |
 
 ### 型変換
 
@@ -1053,6 +1205,7 @@ export default {
 | `time(loc?)` | 時刻フォーマット | `timestamp\|time` |
 | `datetime(loc?)` | 日付 + 時刻 | `timestamp\|datetime(en-US)` |
 | `ymd(sep?)` | YYYY-MM-DD | `timestamp\|ymd` / `timestamp\|ymd(/)` |
+| `hms(sep?)` | HH:MM:SS | `timestamp\|hms` / `timestamp\|hms(-)` |
 
 ### 真偽値 / デフォルト
 
@@ -1104,7 +1257,7 @@ customElements.define("my-component", MyComponent);
 
 ### コンポーネント定義（Light DOM）
 
-Light DOM コンポーネントは Shadow DOM を使用しません。CSS と同様に state の名前空間も上位スコープと共有されるため、`name` 属性が必須です。
+Light DOM コンポーネントは Shadow DOM を使用しません。v2 では Shadow 形と同じ書き方になります —— コンポーネントのバインディングはマウント位置でホストのツリーへ変換されるため、**name も `@` セレクタも不要**で、同じコンポーネントをリストの行ごとに置けます:
 
 ```javascript
 class MyLightComponent extends HTMLElement {
@@ -1112,18 +1265,21 @@ class MyLightComponent extends HTMLElement {
 
   connectedCallback() {
     this.innerHTML = `
-      <wcs-state bind-component="state" name="my-light"></wcs-state>
-      <div data-wcs="text: message@my-light"></div>
-      <input type="text" data-wcs="value: message@my-light" />
+      <wcs-state bind-component="state"></wcs-state>
+      <div data-wcs="text: message"></div>
+      <input type="text" data-wcs="value: message" />
     `;
   }
 }
 customElements.define("my-light-component", MyLightComponent);
 ```
 
-- Light DOM コンポーネントでは `name` 属性が**必須**です（名前空間が上位スコープと共有されるため）
-- バインディングでは `@my-light` のように状態名を明示的に参照する必要があります
 - `<wcs-state>` はコンポーネント要素の直下に配置する必要があります
+- **ホストからの配線が必須**です（`<my-light-component data-wcs="state.message: user.name">` または `state: user`）。配線の無い plain な Light DOM `bind-component` は v2 では成立しません（親と root を共有したまま独立ツリーは持てない）—— 誘導文付きで loud に失敗します: shadow を付けるか、ホストから配線してマウントにしてください。
+
+> **注意**: `State.getBindingsReady(root)` はマウント記録の確定後、マウントスコープも待ちます。
+> コンポーネント内部の描画完了まで待ちたい場合は、コンポーネント側の `<wcs-state>` の初期化を
+> 待ってください。
 
 ### ホスト側の使用方法
 
@@ -1143,6 +1299,54 @@ customElements.define("my-light-component", MyLightComponent);
 - `bind-component="state"` でコンポーネントの `state` プロパティを `<wcs-state>` にマッピング
 - `data-wcs="state.message: user.name"` でホスト要素上の外部状態パスを内部コンポーネント状態プロパティにバインド
 - 変更はコンポーネントと外部状態間で双方向に伝播
+
+### 丸ごとマウント（`state: path`）
+
+プロパティ単位で配線する代わりに、ホストは自分の状態の**サブツリーを丸ごと**コンポーネントのルートとしてマウントできます。コンポーネントの中のパスは、すべてマウント先からの相対になります:
+
+```html
+<!-- ホスト側 -->
+<wcs-state json='{"user":{"name":"Alice","email":"alice@example.com"},"theme":{"mode":"light"}}'></wcs-state>
+<user-card data-wcs="state: user"></user-card>
+```
+
+```javascript
+// コンポーネント側（Shadow DOM）
+class UserCard extends HTMLElement {
+  state = {
+    // マウント先の上で計算する getter — `this.name` はツリーの `user.name`
+    get display() { return `${this.name} <${this.email}>`; },
+  };
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+  }
+  connectedCallback() {
+    this.shadowRoot.innerHTML = `
+      <wcs-state bind-component="state"></wcs-state>
+      <span data-wcs="textContent: name"></span>
+      <span data-wcs="textContent: display"></span>
+      <input data-wcs="value: name">
+    `;
+  }
+}
+customElements.define("user-card", UserCard);
+```
+
+- `state: user` はコンポーネントのルートをツリーのパス `user` に置きます。中の `name` は `user.name` **そのもの**です。読み・書き（`value: name`、`this.state.name = ...`）・getter・`for:` はすべてツリーに対して解決され、ホストの丸ごと差し替え（`this.user = {...}`）も部分書き込み（`this["user.name"] = ...`）もコンポーネントに届きます
+- 部分マウントを併用できます: `state: user; state.theme: theme` は `theme` を 2 つ目の入口としてマウントします（最長接頭辞が勝つので、中の `theme.mode` はツリーの `theme.mode` を読みます）
+- ループでは**行そのもの**をマウントします: `<template data-wcs="for: users"><user-row data-wcs="state: ."></user-row></template>`。行コンポーネントの中の `name` は `users.*.name`、中の `for: tags` は `users.*.tags.*` を回します
+- **自前のキーは私有**です（[docs/state-mount-design.md](../../docs/state-mount-design.md) §4-3 の R1）: コンポーネントが自分で宣言したデータキー（`state = { mode: "view" }`）はその要素のもので、ツリーには書かれません。マウント先に同名のキーがあってそれを隠す形（`user.name` の上に `state = { name: "" }`）では、ランタイムが 1 回だけ warn します（`wcs/mount-own-key-shadow`）— ツリーを読みたければ既定値を消し、私有のままにしたければ名前を変えてください
+- 配列そのものをルートにマウントする形（`state: rows` ＋ 中で `for`）は非対応です。行をマウントする（`state: .`）か、配列を持つオブジェクトをマウントして中で `for` を回してください（`state: group` ＋ `for: children`）。どちらも契約テストで固定されており、マウントがツリー拡張の唯一の手段です
+
+> プロパティ単位の形（`state.message: user.name`）はそのまま動きます — 同じ機構の上の部分マウントです。
+> R1 はすべてのマウント形で厳格です — マップされるキーに既定値を
+> 宣言しているコンポーネント（`state = { message: "" }` ＋ `state.message: ...`）は自前のキーが
+> **私有**になり、ホストの値を隠します（1 回だけ `wcs/mount-own-key-shadow` が指します）。ツリーを
+> 読むには既定値を消してください。Light DOM のマウントに `name` は不要で、
+> `element.state`（および getter / メソッド内の `this`）の `$getAll` / `$setAll` / `$resolve` /
+> `$postUpdate` はコンポーネント自身の語彙で書けます — パスはマウント先へ翻訳され、ホスト行の
+> 添字は自動で前置されます。
 
 ### 独立した Web Component への状態注入（`__e2e__/single-component`）
 
@@ -1182,14 +1386,18 @@ customElements.define("my-component", MyComponent);
 
 - `bind-component` 付きの `<wcs-state>` はコンポーネント要素の**直下**（トップレベル）に配置すること
 - 親要素は**カスタム要素**（ハイフンを含むタグ名）であること
-- Light DOM コンポーネントでは `name` 属性が**必須**（上位スコープとの名前空間衝突を回避するため）
-- Light DOM のバインディングでは状態名を明示的に参照すること（例: `@my-light`）
+- Light DOM コンポーネントはホストからの配線が必須（plain 形は v2 で廃止）
 
 ### ループ内でのコンポーネント使用
 
 ```html
 <template data-wcs="for: users">
   <my-component data-wcs="state.message: .name"></my-component>
+</template>
+
+<!-- または行そのものをマウントする: コンポーネントの中の `name` は `users.*.name` -->
+<template data-wcs="for: users">
+  <user-row data-wcs="state: ."></user-row>
 </template>
 ```
 
@@ -1218,8 +1426,20 @@ this.shadowRoot.innerHTML = `
 
 - ホストが `rows` を差し替えても、行フィールド（`rows.0.name`）だけを書いても、コンポーネント内の行に反映されます
 - コンポーネント側から `items.*.name` を書き戻すと、ホストの `rows` に届きます
-- **制限**: コンポーネント自身がホスト側の `for` の中にあり、さらにコンポーネント内でも `for` を回す
-  入れ子構成には対応していません（内外の行の対応付けが決まらないため）
+
+#### 入れ子とスコープの重ね方
+
+コンポーネント自身がホスト側の `for` の中にあり、**さらにコンポーネント内でも `for` を回す**入れ子構成にも対応しています。外側の行と内側の行の対応はフレームワークが保ちます：
+
+```html
+<template data-wcs="for: groups">
+  <my-list data-wcs="state.items: groups.*.children"></my-list>
+</template>
+```
+
+コンポーネントの中にさらにコンポーネントを置いて、**スコープを重ねる**こともできます。途中のコンポーネントが配列を素通しするだけで自分では `for` を回さなくても、正本スコープ起点の行フィールド書き込みは最下層の行まで届きます。
+
+コンポーネントの作者が自分の置かれる深さを意識する必要はありません。`$1` / イベントハンドラのインデックス / `$updatedCallback` / `$getAll` はいずれも**自分のスコープ内の位置**を報告します。
 
 ## Command Token（メソッドバインディング）
 
@@ -1520,7 +1740,7 @@ event token は command token と同じ `Token` pub/sub プリミティブを共
 
 command token / event token が運ぶのは離散的なやり取りです。**`$streams`** は残る形 —— 連続的なフローをカバーします。非同期 producer（async iterable / async generator / `ReadableStream`）を宣言すると、フレームワークがそれを **fold して単一の reactive プロパティに畳み込みます** —— 各チャンクは通常のパス代入を通るため、バインディング・パス getter・`$updatedCallback` は自分で値を代入した場合とまったく同じように反応します。`args` 関数が読んだ state パスが変化すると、実行中の producer は abort され、新しい引数で source が張り直されます（switchMap 型の依存駆動 restart）。stream は `$connectedCallback` 完了後に eager に起動し、要素の disconnect で abort されます。
 
-`$updatedCallback` は引き続き binding 駆動です。stream 宣言だけでは headless な購読にならず、その value/status/error の live DOM binding が実際に適用されたときだけ callback の path に現れます。現行 API に state-only な `$watch` / `$effects` 宣言はありません。観測契約は [stream リファレンス](docs/streams.md) を参照してください。
+`$updatedCallback` は引き続き binding 駆動です。stream 宣言だけでは headless な購読にならず、その value/status/error の live DOM binding が実際に適用されたときだけ callback の path に現れます。描画せずに stream の値へ反応したい場合は、そのパスに [`$watch`](#watch-watch) を宣言してください。観測契約は [stream リファレンス](docs/streams.md) を参照してください。
 
 ```html
 <wcs-state>
@@ -1596,6 +1816,112 @@ $streams: {
 - **SSR では起動しない** —— サーバーでは宣言のパースとプロパティの実体化（`initial`）のみ行い、source は実行されません。クライアント側は通常どおり起動します。
 
 完全な契約 —— ライフサイクルと所有権・restart セマンティクス・flush 粒度・スコープ外リスト —— は [docs/streams.ja.md](docs/streams.ja.md) を参照してください。
+
+## 評価のきっかけ（demand root）
+
+パス getter は **lazy** です。誰も読まなければ一度も評価されません。したがって「この getter は走るか」は getter 自身を読んでも決まりません —— **需要（demand）がどこから来るか**で決まります。
+
+需要の根は **3 つだけ**です：
+
+| 根 | 場所 | 描画に依存するか |
+|---|---|---|
+| **live DOM バインディング** | `data-wcs` / mustache / コメントバインディング | **する**（その要素が消えると需要も消える） |
+| **`$watch` の宣言** | state 側 | しない（headless） |
+| **`$streams` の `args`** | state 側 | しない（起動・restart のたびに評価される） |
+
+**`$updatedCallback` は根ではありません。** それは「バインディングが適用された結果」の報告であり、需要を作りません。
+
+### 描画がプログラムの意味論を変えうる
+
+この 3 つのうち 1 つ目が DOM にあることの帰結として、**表示専用のつもりの要素が購読の実体になり得ます**。実際に踏んだ例が [`examples/state-intersect-scroll`](../../examples/state-intersect-scroll) にあります：
+
+```html
+<!-- 表示のつもりだった要素。これが唯一の需要の根だった -->
+<b data-wcs="textContent: $streamStatus.pageResult"></b>
+```
+
+```javascript
+// $updatedCallback は binding 駆動 —— 上の <b> を消すと paths に現れなくなり、
+// フィードの commit が黙って止まる
+$updatedCallback(paths) {
+  if (!paths.includes("$streamStatus.pageResult")) return;
+  this.items = this.items.concat(this.pageResult.items);
+}
+```
+
+**規則:** 描画に依存させたくないロジックは、`$watch`（または `$streams` の `args`）に根を置いてください。`$updatedCallback` は「描かれたものに追随する」用途に限ります。
+
+上の例は `$watch` に置き換え済みで、`<b>` は表示専用に戻っています。この形（`$updatedCallback` が、どのバインディングにも現れないパスを判定に使っている）は **`wcs/updated-callback-unbound`** として静的に検出されます。
+
+### 残る制約
+
+需要の根が 3 か所に分かれること自体は変わりません。**ある getter が評価されるかを知るには、その 3 か所（ページの全バインディング・全 `$watch`・全 `$streams.args`）を見る必要があり、getter の定義だけを読んでも分かりません。** lint と DevTools の配線カバレッジはこの照合を機械にやらせるためのものです。
+
+なお `$watch` に宣言したスカラー getter は **eager** になります（接続時に 1 回、以後は依存に触れたバッチごとに評価）。ワイルドカード行の getter は eager 化しません（初回評価がリスト全体を舐めるため）。
+
+## Watch（`$watch`）
+
+`$updatedCallback` は **binding 駆動** です。その更新で live DOM binding が実際に適用された path だけを報告するため、**描画していない値の変化は見えません**。**`$watch`** はその headless 版で、ページ上でそのパスがバインドされているかどうかに関わらず、state の変化で発火します（**ワイルドカードの行パスだけは例外**で、headless に成立させるには `$listKeys` が要ります。後述）。
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      isLoading: false,
+      items: [],
+      startedAt: 0,
+
+      $watch: {
+        // 立ち上がり検出は cur/prev を自分で比較する
+        isLoading(cur, prev) {
+          if (cur === true && prev === false) { this.startedAt = Date.now(); }
+        },
+
+        // ワイルドカードパスは変化した行ごとに 1 回発火する
+        //（リストを `for` で描画しているか、`$listKeys` の宣言が要る。後述）
+        "items.*.price"(cur, prev, index) {
+          this.lastPriceChange = `#${index}: ${prev} → ${cur}`;
+        },
+      },
+    };
+  </script>
+</wcs-state>
+```
+
+ハンドラの `this` は **writable** な state proxy なので書き戻せます。その書き込みは次の更新バッチに乗ります。戻り値は無視され、await もされません。
+
+| 引数 | 契約 |
+|---|---|
+| `cur` | drain 時点の値（そのバッチの確定値） |
+| `prev` | **バッチ開始時点**の値（first-write-wins）。意味を持つのは**スカラのときだけ**（下記） |
+| `...indexes` | ワイルドカードパスのときのみ。そのスコープ自身のループ添字（`$1` / `$2` と同じ規約） |
+
+**`prev` はスカラ限定です。** same-value guard が既に読んでいる旧値を再利用するため watch のための追加読みは発生せず、その帰結として参照型（in-place 変異では同じ参照になるため）・`$postUpdate` 経由・`config.sameValueGuard` オフのときは `undefined` になります。
+
+**`$watch` は独自の発火条件を持ちません。** 更新バッチに載ったものをそのまま発火します。これはうまく噛み合っていて、同値の primitive 書き込みは enqueue 前に落ちている（＝実質的に変化時のみ発火）一方、occurrence（`semantics: "event"` の property）は**意図的に**落とされないので `cur === prev` で発火します。エッジ検出が要るならハンドラ内で `cur` と `prev` を比較してください。
+
+**getter を watch すると eager になります。** computed は本来 lazy で、依存は評価時にしか記録されません —— つまり描画していない getter は本来一度も発火しません。`$watch` に宣言すると接続時に 1 回評価され、以後は依存に触れたバッチの終端で毎回評価されます。`prev` は前回の評価値です。重い computed を watch すればその評価コストが毎バッチ乗り、getter 内の例外は watch 経由で表面化します。ワイルドカード getter（`items.*.tax`）は eager 化**しません**（初回評価がリスト全体を舐めることになるため）。この形は DOM にバインドされている場合にのみ発火し、`prev` は常に `undefined` です（行ごとの評価値を保持しないため）。
+
+発火順序は 3 層に分かれ、利用者が意思を持てるのは真ん中の層だけです。
+
+| 層 | 順序 | 制御 |
+|---|---|---|
+| 機構間 | `$updatedCallback` → `$watch` → `$streams` restart | 固定 |
+| ハンドラ間 | `$watch` の宣言順 | **宣言を並べ替える** |
+| 同一パスの行間 | `indexes` 昇順 | 固定 |
+
+**機構間の層を動かす唯一のもの**が、`state` 参加者を受け付ける `<wcs-view-transition>` です。バインディング適用 —— したがって `$updatedCallback` —— がフレームで着地する一方、`$watch` と `$streams` restart は state アドレスを消費し DOM を見ないので、drain がキューされた microtask に留まります。タグがある間の順序は `$watch` → `$streams` restart → `$updatedCallback` です。この層を並べ替えるものはページ上でこれ 1 つだけです。[docs/timing-and-firing-contract.ja.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.ja.md) §4.3 を参照してください。
+
+主なルール:
+
+- **ツリーのパスのみ** —— パスに `@`（v1 の名前セレクタ）は書けません。含む宣言は loud に拒否されます。
+- **中間値は観測できません** —— 1 バッチ内の `a → b → c` は `cur = c` / `prev = a` で 1 回だけ発火します（binding 更新と同じ契約）。
+- **行単位の差分を見たいなら `$listKeys`** —— 未宣言のまま配列全体を代入すると、行 watch は**全行**について `prev === undefined` で発火します（どの行もパス書き込みを通っていないため）。`$listKeys` を宣言すればキー突合が per-field 書き込みに分解するので、変化した行だけが発火し `prev` もスカラで取れます。
+- **headless な行 watch には `$listKeys` が必要** —— `$watch` が単独では headless にならない唯一の箇所です。`items` から `items.*.price` への展開はリストの `for` バインディングが駆動しており、watch を宣言してもそのパスをリストとしては登録しません（意図的）。したがって `for` バインドも `$listKeys` も無い状態で配列を代入すると、行 watch は**一度も**発火しません。`$listKeys` を宣言する（キー突合がフィールドごとにパス書き込みするので展開を経由しない）か、リストを描画してください。スカラーパスは `user.name` のようなネストしたものも含め、この条件なしに headless で発火します。
+- **ハンドラの例外は隔離されます** —— throw はコンソールに報告され、残りの watch（と stream の restart）は続行します。loud fail する `$connectedCallback` / `$updatedCallback` とは異なる扱いです。
+- **書き込みの連鎖には上限があります** —— ハンドラの書き込みは新しいバッチを作るため、相互に書き合う watch は無限ループになり得ます。32 段で打ち切り、コンソールに報告します（値と DOM は巻き戻しません）。
+- **マウントされた `bind-component` スコープでは実行されません** —— マウントされたコンポーネントは宣言面を実行せず、`$watch` の宣言があると 1 回だけ console.warn でルート state（またはボリューム —— `<wcs-state mount>` は `$watch` / `$listKeys` / `$updatedCallback` を持てます）へ誘導します（`$streams` も同様）。plain な（配線なし Shadow の）子は独立ツリーを持つので宣言できます。
+- **SSR では実行されません** —— ハンドラの副作用がサーバーとクライアントで二重に走るためです。
 
 ## Inputs と属性ミラー
 
@@ -1844,8 +2170,103 @@ export default {
 - フック内の `this` は読み書き可能な状態プロキシです。
 - `$connectedCallback` は要素が接続される**たびに**呼ばれます（一度削除された後の再接続も含みます）。再確立が必要なセットアップ処理に適しています。
 - `$disconnectedCallback` は同期的に呼び出されます。タイマーのクリア、イベントリスナーの削除、リソースの解放といったクリーンアップ処理に使用してください。
-- `$updatedCallback(paths, indexesListByPath)` は、その drain で live binding が適用された path の一覧を受け取ります。binding のない state 書き込みでは呼ばれず、`paths` にも現れません。ワイルドカードをもつパスが更新された場合は、`indexesListByPath` から対象のインデックス情報も取得可能です。`async` を使用できますが、戻り値は await されません。
+- `$updatedCallback(paths, indexesListByPath)` は、その drain で live binding が適用された path の一覧を受け取ります。binding のない state 書き込みでは呼ばれず、`paths` にも現れません。ワイルドカードをもつパスが更新された場合は、`indexesListByPath` から対象のインデックス情報も取得可能です。マウントされたコンポーネントのマーカーパス（`#m…`）は `paths` に現れません — コンポーネントの私有キーは私有のままです（DevTools の overlays 表示で見えます）。`async` を使用できますが、戻り値は await されません。
 - Web Component を使用している場合は、コンポーネント側に `async $stateReadyCallback(stateProp)` を定義おくことで、`bind-component` でバインドした状態が利用可能になった瞬間にフックとして呼び出されます。
+
+## 遷移アニメーション
+
+入場アニメーションにこのパッケージは要らない。新しい `for` 行も mount する `if` 分岐も「新しく挿入された要素」なので、素の CSS で足りる。
+
+```css
+li {
+  transition: opacity 0.2s, transform 0.2s;
+  @starting-style { opacity: 0; transform: translateY(-4px); }
+}
+```
+
+そこへ届かないのが**退場**と**移動**。削除された行は同期で detach され、並べ替えには中間状態が無い。[`@wcstack/view-transition`](https://github.com/wcstack/wcstack/tree/main/packages/view-transition) を足すと drain の DOM 変更が View Transition の中で行われ、変更前の状態はブラウザがスナップショットしてくれる。
+
+```html
+<script type="module" src="https://esm.run/@wcstack/view-transition/auto"></script>
+<wcs-view-transition naming="auto"></wcs-view-transition>
+```
+
+そのタグが `state` 参加者を受け付けている間、知っておくべき帰結が 2 つある。
+
+- drain は microtask ではなくフレームで着地する。state に書いてから `await Promise.resolve()` で DOM を読むコードは遷移を待つ必要がある。`$updatedCallback` はバインディング適用の直後という*位置*こそ変わらないが、その適用ごと 1 フレーム後ろへずれる。
+- `$watch` と `$streams` restart は元の microtask に留まるため、`$updatedCallback` の**前**に走るようになる。
+
+適用すべきバインディングが実際にあるバッチだけがタグへ渡されるので、headless なパスへの書き込みが遷移を起こすことはない。タグが無ければ drain は従来どおり。[docs/timing-and-firing-contract.ja.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.ja.md) §4.3 参照。
+
+## 診断と失敗の扱い
+
+### 存在しないパスへの配線は報告されます
+
+配線したパスが state 上で解決しないことが**確実**なとき、バインド確立時（`$watch` は宣言時）に 1 回だけ警告します。診断 code はコンソール・`@wcstack/lint`・VS Code 拡張で共通です：
+
+```
+[@wcstack/state] [wcs/binding-path-missing] Bound path "user.nmae" does not resolve on the state tree:
+"nmae" is not declared. Did you mean "name"? Updates to this path will be silently
+dropped. Validate statically: npx @wcstack/lint <file>.
+```
+
+| 状況 | 挙動 |
+|---|---|
+| ネストしたパスの打ち間違い（`user.nmae`） | `console.warn`（`wcs/binding-path-missing`）。更新は届かないままなので、直すのは書き手 |
+| トップレベルのパスの打ち間違い（`cout`） | 読み取り時に throw。文面は上と同じ語彙（did-you-mean 付き） |
+| `$watch` のキーの打ち間違い | `console.warn`（`wcs/watch-path-missing`）。単一セグメントでも報告する |
+
+判定は**過小近似**です。静的に決められない形では黙ります —— 誤検知でページを騒がせないことを優先しているためで、以下はすべて警告しません：
+
+- 親が `null` / `undefined`（初期値 `null` に後から代入する形）
+- 初期値が空配列のリストの行フィールド（行の形が分からない）
+- 途中の getter の戻り値のサブプロパティ
+- マウントされたコンポーネントのマーカーパス（`#m…` —— 私有キー・getter の実体はマウントのオーバーレイ側にあり raw state には無い）
+- `$` 始まりの予約名前空間（`$command.*` など）
+
+裏を返すと、**警告が出ない ＝ 正しい保証にはなりません**。網羅した検査は `npx @wcstack/lint <file>` 側で行ってください。
+
+### 添字の本数・階数・循環も検査されます
+
+パス文字列から機械的に決まる整合は、実行時にも lint にも同じ診断 code で現れます。
+
+| 診断 | 何を見るか | 直し方 |
+|---|---|---|
+| `wcs/index-arity` | `$resolve(path, indexes)` は `*` の本数と**厳密一致**、`$getAll(path, indexes)` / `$setAll(path, indexes, …)` は**上限**（不足は「残りの階層を全展開」という正当な接頭辞） | 本数を合わせる |
+| `wcs/wildcard-rank` | パスの `*` の本数（と `$N` の N）が、囲む `for` の段数を超えていないか | `for` を足すか、`$resolve(path, indexes)` で行を明示する |
+| `wcs/getter-cycle` | パス getter どうしが循環参照していないか | 循環を断つ |
+
+`$resolve` / `$getAll` の**添字の超過は以前は黙って捨てられ**、取り違えたまま「もっともらしい値」が返っていました。現在はどちらもエラーです：
+
+```javascript
+// ❌ "*" は 1 本しか無いのに 2 本渡している → 以前は items[0] の値が返っていた
+this.$resolve("items.*.price", [row, col]);
+
+// ✅ 2 次元なら 2 本
+this.$resolve("matrix.*.*", [row, col]);
+// ✅ $getAll の不足は「残りを全部」の意味なので正当
+this.$getAll("matrix.*.*", [row]);
+```
+
+### バインディング 1 本の失敗は 1 本に閉じ込められます
+
+バインディングの適用が throw しても、そのバッチの残り・`$updatedCallback`・`$watch`・`$streams` の restart はすべて続行します。失敗は握り潰されず、`console.error` と DevTools（`state:binding-apply-error`）に出ます。
+
+```
+[@wcstack/state] binding "text: items.*.label" failed to apply; the rest of this batch continues.
+```
+
+隔離しない場合、1 本の throw が「値は新しいのに DOM は途中まで」という半端な状態を作り、しかも `$watch` と stream の restart が丸ごと消えていました（README のこの下にある発火順の契約が黙って破れる）。
+
+### 値と DOM は巻き戻しません
+
+異常系はすべて「報告して続行」で、適用済みの値を戻すことはありません。これは以下で共通の姿勢です：
+
+| 機構 | 上限 | 超過時 |
+|---|---|---|
+| 因果伝播の hop | 32 | その transaction の未処理レコードのみ quarantine |
+| `$watch` の書き込み連鎖 | 32 | そのバッチの watch 発火をスキップ |
+| バインディングの適用失敗 | — | その 1 本のみスキップ |
 
 ## 設定
 
@@ -1868,12 +2289,42 @@ bootstrapState({
 |---|---|---|
 | `bindAttributeName` | `'data-wcs'` | バインディング属性名 |
 | `tagNames.state` | `'wcs-state'` | 状態要素のタグ名 |
-| `locale` | `'en'` | フィルタのデフォルトロケール |
+| `tagNames.ssr` | `'wcs-ssr'` | SSR ハイドレーションデータ要素のタグ名 |
+| `locale` | `<html lang>`、無ければ `'en'` | ロケール依存フィルタ（`locale` / `date` / `time` / `datetime`）のロケール — [ロケール](#ロケール)を参照 |
 | `debug` | `false` | デバッグモード |
 | `enableMustache` | `true` | `{{ }}` 構文の有効化 |
 | `enableDirectionalInitialSync` | `true` | 方向認識のバインディング authority（`#init=` / `#sync=` バインド modifier）— [バインディング authority](#バインディング-authority-init--sync) 参照。既定 on。`false` で opt-out |
 | `enablePropagationContext` | `true` | バインド間の因果伝播トラッキング（echo/diamond のループ防止）。既定 on。`false` で opt-out |
 | `enableContractAnalyzer` | `false` | opt-in の開発時 contract analyzer（`analyzeContract` を公開） |
+| `sameValueGuard` | `true` | 現在値と `Object.is` で同値なプリミティブ書き込みを enqueue 前に落とす — バインディングと `$watch` は実質「変化時のみ」発火する（参照型は常に通す）。`false` で同値書き込みを通し、`$watch` の `prev` は `undefined` になる |
+
+### ロケール
+
+ロケールで書式化するフィルタは 4 つある — `locale` / `date` / `time` / `datetime`。
+これらは `config.locale` を読み、その既定は **`<html lang>`** である。
+
+```html
+<html lang="ja-JP">
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+```
+
+他に何も要らない。`<html lang>` はページの言語を書く HTML 標準の場所であり、
+そこを既定にすればロケールの正本が 1 つで済む。同時に、**CDN 一発のページが
+ロケールを設定できるようになる** — `auto` は `bootstrapState()` を引数なしで呼ぶので、
+これが無いと渡す口が無かった。明示指定（`bootstrapState({ locale })`）は常に優先し、
+不正な BCP-47 タグは `Intl` の中で落ちる前に警告して無視する。
+
+**`config.locale` を後から変えても何も再描画されない。** これは state ではなく
+グローバル設定なので、依存グラフに載らない。フィルタ自体はバインド構築時に
+取り込むのではなく**適用のたびに読む**ので、別の理由で再描画されたバインドは新しい値を
+拾う — 起動順序の事故から復帰するには足りるが、ページの言語を切り替えるには足りない。
+言語はページが描画される前に決めること。マークアップに `<html lang>` を書くか、
+`<head>` の同期スクリプトで書けば構造的にそうなる。
+
+呼び出しごとの上書き（`price|locale(fr-FR)`）は従来どおり使え、こちらはバインド式の
+一部なのでバインド時に固定される。リロードなしで言語を切り替えたい場合は
+[docs/i18n-design.md](../../docs/i18n-design.md) を参照。短く言えば、翻訳はフィルタでは
+なくパスに置く。
 
 > この 3 つは **architecture-hardening** 機能で、規範は `docs/architecture-hardening/` に
 > あります。`enablePropagationContext` は**既定 on** — write-path コストは一方向バインドで
@@ -1886,6 +2337,122 @@ bootstrapState({
 > （既定 `false`・無効時ランタイムコストゼロ）で、有効な場合、公開 API `analyzeContract()`
 > が稼働中の `static wcBindable` サーフェスと sidecar manifest の drift を開発時診断として
 > 報告します。
+
+## ページをテストする
+
+`<wcs-state>` で組んだページは素の DOM なので、[happy-dom](https://github.com/capricorn86/happy-dom) でヘッドレスにテストできます — ブラウザ不要・ビルド不要・テスト専用 API 不要。レシピは 3 つ、いずれも書いてあるとおりに動きます（レシピ 1 は同じ行を実行する [`__tests__/readme.testingRecipe.test.ts`](__tests__/readme.testingRecipe.test.ts) で固定しています）。
+
+1 import で済ませたいなら [`@wcstack/testing`](../testing/README.ja.md) がレシピ 1 を `mount()` / `settle()` / `fire()` にまとめています（`<wcs-router>` も待ちます）。以下の素のレシピはそれ無しでも有効です。
+
+### 1. vitest + happy-dom
+
+`vitest.config.ts`:
+
+```ts
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: { environment: "happy-dom", setupFiles: ["./tests/setup.ts"] },
+});
+```
+
+`tests/setup.ts` — 要素の登録を 1 回だけ行い、インラインの `<script type="module">` state を `data:` URL ローダーに回します（Node は `blob:` URL を import できないため、この行が無いとインライン script の state は永久に読み込み中になります）:
+
+```ts
+import { bootstrapState } from "@wcstack/state";
+
+bootstrapState();
+URL.createObjectURL = undefined as any;
+```
+
+テスト:
+
+```ts
+import { expect, it } from "vitest";
+import { getBindingsReady } from "@wcstack/state";
+
+const settle = () => new Promise<void>((r) => setTimeout(r, 0));
+
+it("描画・再描画・ハンドラ実行", async () => {
+  // 1. テスト対象の断片をマウント
+  document.body.innerHTML = `
+    <wcs-state json='{"count": 1, "items": ["apple", "banana"]}'></wcs-state>
+    <p id="count" data-wcs="textContent: count"></p>
+    <ul id="items">
+      <template data-wcs="for: items">
+        <li data-wcs="textContent: items.*"></li>
+      </template>
+    </ul>
+  `;
+
+  // 2. state 要素を待ち、続けて `document` 配下の全バインドを待つ
+  const stateEl = document.querySelector("wcs-state") as any;
+  await stateEl.connectedCallbackPromise;
+  await getBindingsReady(document);
+
+  // 3. 初期描画を検証
+  expect(document.querySelector("#count")!.textContent).toBe("1");
+  expect(document.querySelectorAll("#items li").length).toBe(2);
+
+  // 4. writable プロキシ経由で書く — ハンドラがやっていることと同じ
+  await stateEl.createStateAsync("writable", async (state: any) => {
+    state.count = 42;
+    state.items = [...state.items, "cherry"];
+  });
+  await settle();
+
+  // 5. 再描画を検証
+  expect(document.querySelector("#count")!.textContent).toBe("42");
+  expect(document.querySelectorAll("#items li").length).toBe(3);
+});
+```
+
+ユーザー操作と同じ経路で動かすなら、state はインライン（メソッド込み）のまま DOM イベントを発火します。`data-wcs="onclick: up"` のハンドラは `button.click()` で走り、`settle()` 1 回の後に DOM へ反映されます。
+
+- `getBindingsReady(root)` は `root`（`document` か shadow root）配下の全バインド構築が終わると resolve し、バインド初期化に失敗すると reject します（v1.26+）。
+- 更新はマイクロタスク境界で収束します。書き込み後の `setTimeout(0)` 1 回で十分です。
+- `state.items = [...state.items, "cherry"]` がリアクティブな書き方です — `state.items.push()` は観測されません（ハンドラ内と同じ規則）。
+- happy-dom は `customElements.define` 時に既存ノードを**差し替えて**アップグレードします。「遅れて define された同一ノードに値が届く」はヘッドレスでは検証できません。happy-dom と実ブラウザのイベントタイミング差ももう 1 つの死角なので、そこは実ブラウザ e2e（Playwright）を 1 本残してください。
+- happy-dom の `textContent` setter は数値 `0` を空文字にします（ブラウザは `"0"`）。このレシピでは `textContent: count` のバインドが 0 のとき `""` に読めます。state の値で assert するか、setter をシムする `@wcstack/testing` の `mount()` を使ってください。
+
+### 2. 素の Node（vitest なし）
+
+`@wcstack/server` が SSR に使っているグローバル差し替えをそのまま export しているので再利用します。**`@wcstack/state` は `installGlobals` の後に動的 import** してください — 要素クラスはモジュール評価時に基底クラスを決めるので、ファイル先頭で静的 import すると happy-dom が構築できない要素が登録されます:
+
+```js
+import { Window } from "happy-dom";
+import { installGlobals } from "@wcstack/server";
+
+const window = new Window({ url: "http://localhost/" });
+const restore = installGlobals(window);   // document, customElements, HTMLElement, ...（GLOBALS_KEYS）
+try {
+  const { bootstrapState, getBindingsReady } = await import("@wcstack/state");
+  bootstrapState();
+  // ... 以降はレシピ 1 と同じ mount / await / assert
+} finally {
+  restore();
+  await window.happyDOM.close();
+}
+```
+
+`installGlobals` は `URL.createObjectURL` の無効化も行うので、インライン script の state はレシピ 1 と同じ経路で読み込まれます。
+
+### 3. 描画結果のスナップショット
+
+`@wcstack/server` の [`renderToString()`](../server/README.ja.md) は描画済みマークアップを文字列で返します。保存したスナップショットと比較してください:
+
+```ts
+import { expect, it } from "vitest";
+import { renderToString } from "@wcstack/server";
+
+it("描画結果がスナップショットと一致する", async () => {
+  const html = await renderToString(`
+    <wcs-state json='{"items": ["apple", "banana"]}' enable-ssr></wcs-state>
+    <ul><template data-wcs="for: items"><li data-wcs="textContent: items.*"></li></template></ul>
+  `);
+  expect(html).toMatchSnapshot();
+});
+```
 
 ## TypeScript サポート
 
@@ -1912,6 +2479,8 @@ export default defineState({
 
 ユーティリティ型 `WcsPaths<T>` と `WcsPathValue<T, P>` もエクスポートされます。詳細は [docs/define-state.ja.md](docs/define-state.ja.md) を参照してください。
 
+`defineState()` が型を付けるのは state ファイルです。その型を HTML まで運ぶのが [`@wcstack/typescript`](../typescript/README.ja.md) の 2 つの CLI で、`wcs-schema` は `@wcstack/lint` と VS Code 拡張が `data-wcs` パスの検証に使う `stateSchema` sidecar を書き出し、`wcs-tsc` はインラインの `<script type="module">` state に TypeScript コンパイラを掛けます。全体像は [docs/typescript.ja.md](../../docs/typescript.ja.md)。
+
 ## API リファレンス
 
 ### `bootstrapState()`
@@ -1923,29 +2492,44 @@ import { bootstrapState } from '@wcstack/state';
 bootstrapState();
 ```
 
+### その他のエクスポート
+
+| エクスポート | 説明 |
+|---|---|
+| `getBindingsReady(root)` | `root`（`document` または shadow root）配下の全バインディングが構築されたら解決。バインディング初期化が失敗すれば reject |
+| `buildBindings(root)` | `document` / `ShadowRoot` 配下のバインディングを明示的に構築する — その root に最初に登録された `<wcs-state>` がスケジュールするもの |
+| `getConfig()` | 現在の設定（読み取り専用ビュー） |
+| `defineState(obj)` | メソッドと getter 内の `this` に型を付けるアイデンティティ関数 — [TypeScript サポート](#typescript-サポート) 参照 |
+| `VERSION` | パッケージのバージョン。`<wcs-ssr>` に刻印され、ハイドレーション時に照合される |
+| `getWcsManifest()` / `WCS_MANIFEST_VERSION` | バインディング構文・組み込みフィルタ・予約名の機械可読 manifest — 実装から導出され、`@wcstack/lint` と VS Code 拡張が消費する |
+| `builtinFilterMeta` | 全組み込みフィルタの引数・戻り値メタデータ |
+| `analyzeContract()` | 開発時の contract analyzer。`enableContractAnalyzer` が off なら no-op |
+
+ツール向けのサブパスエントリ: `@wcstack/state/parser`（`data-wcs` パーサを DOM 非依存の純関数として公開）、`@wcstack/state/manifest`、`@wcstack/state/wcs-manifest.json`（manifest をビルド済み JSON として公開）。
+
 ### `<wcs-state>` 要素
 
 | 属性 | 説明 |
 |---|---|
-| `name` | 状態名（デフォルト: `"default"`） |
+| `mount` | この state をルートツリーへ**ボリューム**として接ぎ木する静的ツリーパス（v2 — 撤去された `name` 属性の後継。ツリーは 1 root に 1 本） |
 | `state` | `<script type="application/json">` 要素の ID |
 | `src` | `.json` または `.js` ファイルの URL |
 | `json` | インライン JSON 文字列 |
 | `bind-component` | Web Component バインディングのプロパティ名 |
+| `enable-ssr` | SSR を有効化: サーバーはこの state の `<wcs-ssr>` ハイドレーションデータを出力し、クライアントは再描画せずそこから復元する — [サーバーサイドレンダリング](#サーバーサイドレンダリング) 参照 |
 
 ### IStateElement
 
 | プロパティ / メソッド | 説明 |
 |---|---|
-| `name` | 状態名 |
 | `initializePromise` | 状態の完全な初期化時に解決される Promise |
+| `connectedCallbackPromise` | `connectedCallback` の完了（state のロードと `$connectedCallback` の実行）で解決される Promise — テストのレシピが await するもの |
 | `listPaths` | `for` ループで使用されるパスの Set |
 | `getterPaths` | getter として定義されたパスの Set |
 | `setterPaths` | setter として定義されたパスの Set |
 | `createState(mutability, callback)` | 状態プロキシを作成（`"readonly"` または `"writable"`） |
 | `createStateAsync(mutability, callback)` | `createState` の非同期版 |
 | `setInitialState(state)` | プログラムから状態を設定（初期化前） |
-| `bindProperty(prop, descriptor)` | 生の状態オブジェクトにプロパティを定義 |
 | `nextVersion()` | バージョン番号をインクリメントして返す |
 
 ## アーキテクチャ
@@ -1955,11 +2539,14 @@ bootstrapState()
   └── registerComponents()              // <wcs-state> カスタム要素を登録
 
 <wcs-state> connectedCallback
-  ├── _initializeBindWebComponent()     // bind-component: 親コンポーネントから状態を取得
-  ├── _initialize()                     // 状態をロード (state属性 / src / json / script / API)
-  │     └── setStateElementByName()     // WeakMap<Node, Map<name, element>> に登録
-  │           └── (rootNode への初回登録時)
-  │                 └── queueMicrotask → buildBindings()
+  ├── 置かれ方によりいずれか 1 つ:
+  │   ├── _initializeDCC()              // data-wc-definition ホスト配下: DCC クラスを定義
+  │   ├── _initializeVolume()           // mount=: このボリュームをルートツリーへ接ぎ木
+  │   ├── _initializeBindWebComponent() // bind-component: ホストのツリーをマウント点でエイリアス
+  │   └── _initialize()                 // ルート: 状態をロード (state属性 / src / json / script / API)
+  │         └── setStateElement()       // WeakMap<Node, IStateElement> に登録 — 1 root 1 ツリー
+  │               └── (rootNode への初回登録時)
+  │                     └── queueMicrotask → buildBindings()
   ├── _callStateConnectedCallback()     // $connectedCallback が定義されていれば呼び出し
 
 buildBindings(root)
@@ -1983,7 +2570,7 @@ buildBindings(root)
 - **PathInfo** — 静的パスメタデータ（セグメント、ワイルドカード数、親パス）
 - **ListIndex** — ランタイムループインデックスチェーン
 - **StateAddress** — PathInfo + ListIndex の組み合わせ
-- **AbsoluteStateAddress** — 状態名 + StateAddress（クロス状態参照用）
+- **AbsolutePathInfo / AbsoluteStateAddress** — ツリーを持つ state 要素に固定した PathInfo と、その ListIndex の組。マウントされたコンポーネントとボリュームは相対パスをこの層でホストのツリーへ翻訳する。v2 は 1 root 1 ツリーなので、アドレスに状態名はない
 
 ## パフォーマンス
 
@@ -2023,7 +2610,10 @@ buildBindings(root)
   し、残りのページは宣言的なまま保てます。
 - クリア後に残るヒープは、次のリスト生成を安くする有界の行プールです。
 
-絶対値は 1 台の開発機での計測です（v1.21.6 + PR#87 の clear リーク修正）。
+絶対値は 1 台の開発機で v1.21.6 + PR#87（clear リーク修正）時点に取ったものです。
+v2.0 のマウント作業は同じドライバの同一セッション A/B でゲートし、実行ごとの
+ノイズ内に収まった（[docs/state-mount-impl-plan.md](../../docs/state-mount-impl-plan.md)
+§2-2 と slice 27）ため、表は取り直していません。絶対値はマシン状態で ±20% 揺れます。
 `e2e/bench/` のドライバで手元のハードウェアでも再現できます。
 
 ## サーバーサイドレンダリング

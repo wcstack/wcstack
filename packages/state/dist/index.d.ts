@@ -42,6 +42,35 @@ interface ILoopContextStack {
     createLoopContext(elementStateAddress: IStateAddress, callback: (loopContext: ILoopContext) => void | Promise<void>): void | Promise<void>;
 }
 
+/**
+ * pathDiagnostics.ts — バインド / `$watch` 対象パスの存在検査（silent failure の可視化）。
+ *
+ * なぜ必要か:
+ * `getByAddress` は「親が null / undefined のパスの読み」を undefined で返し、
+ * undefined はプロパティ書き込みがスキップされる値なので、`user.nmae` のような
+ * 打ち間違いは**エラーも警告も出さずに DOM が更新されない**だけになる。一方で
+ * トップレベルの打ち間違い（`cout`）は parentAddress を辿れず raiseError で落ちる。
+ * 同じ「パスを打ち間違えた」という 1 つの失敗が、パスの深さで silent / loud に
+ * 割れており、書き手からは区別がつかない。ここはその silent 側を埋める。
+ *
+ * 精度方針（過小近似）:
+ * 「確実に存在しない」と言い切れる場合にだけ報告する。getter の戻り値の先・
+ * 空配列・null 親・mapped な `bind-component` など、静的に決められない形はすべて
+ * `"unknown"` に倒して黙る（偽陽性ゼロ優先。docs/static-wiring-dx-design.md D7 /
+ * [ADR-06](../../docs/architecture-hardening/06-path-type-safety.md) の精度哲学）。
+ *
+ * 診断 code はコンソール → lint → IDE の三面で共有する（errorGuidance.ts の規約）。
+ */
+
+/** `setPathInfo` の呼び出し元の種別。診断 code と適用範囲がこれで変わる */
+type PathInfoSource = 
+/** data-wcs / mustache / コメントバインディング */
+"binding"
+/** `$watch` の宣言キー */
+ | "watch"
+/** ランタイム内部のパス翻訳（mapped な bind-component の外向き伝播）。検査しない */
+ | "internal";
+
 declare const setLoopContextSymbol: unique symbol;
 declare const getByAddressSymbol: unique symbol;
 declare const hasByAddressSymbol: unique symbol;
@@ -62,21 +91,12 @@ interface IStateProxy extends IState {
 type Mutability = "readonly" | "writable";
 
 interface IStateElement {
-    readonly name: string;
     /**
      * state のロードが完了しているか。`initializePromise` の同期版で、
      * DCC のアクセサが「今すぐ読み書きしてよいか」を判断するのに使う。
      * optional なのはテスト用モック互換のため（undefined は「不明＝未初期化扱い」）。
      */
     readonly initialized?: boolean;
-    /**
-     * この state element が今使えるか（＝ 接続済みで rootNode を保持しているか）。
-     * `createState` は rootNode を要求するので、false のときに呼ぶと raiseError する。
-     * 台帳に載っていること（登録済み）と使えることは別で、要素をキーにした台帳には
-     * 切断済みの state element が残る窓がある（§1.9）。
-     * optional なのはテスト用モック互換のため（undefined は「不明＝使える扱い」）。
-     */
-    readonly hasRootNode?: boolean;
     readonly initializePromise: Promise<void>;
     readonly connectedCallbackPromise: Promise<void>;
     readonly listPaths: Set<string>;
@@ -93,15 +113,34 @@ interface IStateElement {
      * `bind-component` で束ねられているコンポーネント要素（親スコープ側のノード）。
      * マッピング規則の引き当てに使う。optional なのはテスト用モック互換のため。
      */
-    readonly boundComponent?: Element | null;
     /**
      * この state の実体が innerState proxy（＝ 値の正本が親スコープの state にある
      * mapped な `bind-component`）か。真のときだけ越境アドレスの受け渡しと
      * リストパスの外向き伝播が働く（§1.8）。
      * optional なのはテスト用モック互換のため（undefined は plain 扱い）。
      */
-    readonly hasMappedComponentState?: boolean;
-    markComponentStateMapped?(): void;
+    /**
+     * この state element にマウント（Phase 2 の単一ツリー — webComponent/mount.ts）が
+     * 1 つでも登録されているか。偽のとき getByAddress / isCacheable / `$n` 補正は
+     * boolean 判定 1 個でオーバーレイ経路を抜ける（設計書 D18）。
+     * optional なのはテスト用モック互換のため（undefined は「マウント無し」扱い）。
+     */
+    readonly hasMounts?: boolean;
+    markHasMounts?(): void;
+    /**
+     * この state element に接ぎ木済みのボリューム（`mount=` — webComponent/volume.ts）が
+     * 1 つでもあるか。偽のとき setByAddress の D22 後段ガード（マウントポイントを含む
+     * 親の丸ごと書き検査）は boolean 判定 1 個で抜ける（設計書 D18 と同じ形）。
+     * optional なのはテスト用モック互換のため（undefined は「ボリューム無し」扱い）。
+     */
+    readonly hasGraftedVolumes?: boolean;
+    markHasGraftedVolumes?(): void;
+    /**
+     * この state 要素に束ねられた（`setPathInfo` を通った）パスの集合。丸ごとマウント
+     * （ルート規則）の親→子通知が「登録済みパス全部を読み直せ」を組み立てるのに使う
+     * （webComponent/rootReloadPaths.ts）。
+     * optional なのはテスト用モック互換のため（undefined は「登録なし」扱い）。
+     */
     /**
      * DCC の `$bindables` から生成した「パス → 変更イベント名」表。
      * 唯一の書き手は defineDCC で、読み手は setByAddress。
@@ -140,13 +179,35 @@ interface IStateElement {
      * optional なのはテスト用モック互換のため（undefined は「宣言なし」扱い）。
      */
     readonly listKeys?: ListKeyMap | null;
-    setPathInfo(path: string, bindingType: BindingType): void;
+    /**
+     * `$watch` 宣言から生成した監視対象パスの集合。
+     * 宣言が無ければ null / undefined で、setByAddress の旧値キャプチャには一切入らない
+     * （docs/state-watch-hook-design.md §10 のゼロコスト契約）。
+     * optional なのはテスト用モック互換のため（undefined は「宣言なし」扱い）。
+     */
+    readonly watchPaths?: ReadonlySet<string> | null;
+    /**
+     * パスを依存グラフへ登録する。DOM バインディング登録（BindingSession）のほか、
+     * `$watch` 宣言（processWatchDeclaration）からも呼ばれる — 静的依存グラフに
+     * 載るのがバインド済みパスだけだと headless 購読が成立しないため（設計書 §8）。
+     *
+     * `source` は存在検査の診断 code と適用範囲を決める（pathDiagnostics.ts）。
+     * 省略時は `"binding"`（テスト用モック互換のため optional）。
+     */
+    /** ボリュームの宣言面の合流（webComponent/volume.ts 専用・実装は State のみ） */
+    addVolumeWatchPaths?(paths: ReadonlySet<string>): void;
+    mergeVolumeListKeys?(entries: ReadonlyMap<string, ListKeySpec>): void;
+    enableUpdatedCallback?(): void;
+    /** enable-ssr スナップショットから初期化されたか（D14）。 */
+    readonly hydratedFromSsr?: boolean;
+    /** ボリュームのアクセサ登録（webComponent/volume.ts 専用） */
+    defineTreeAccessor(path: string, descriptor: PropertyDescriptor): void;
+    setPathInfo(path: string, bindingType: BindingType, source?: PathInfoSource): void;
     addStaticDependency(parentPath: string, childPath: string): boolean;
     addDynamicDependency(fromPath: string, toPath: string): boolean;
     createStateAsync(mutability: Mutability, callback: (state: IStateProxy) => Promise<void>): Promise<void>;
     createState(mutability: Mutability, callback: (state: IStateProxy) => void): void;
     nextVersion(): number;
-    bindProperty(prop: string, desc: PropertyDescriptor): void;
     setInitialState(state: Record<string, any>): void;
 }
 
@@ -181,7 +242,6 @@ interface IStateAddress {
     readonly parentAddress: IStateAddress | null;
 }
 interface IAbsolutePathInfo {
-    readonly stateName: string;
     readonly stateElement: IStateElement;
     readonly pathInfo: IPathInfo;
     readonly parentAbsolutePathInfo: IAbsolutePathInfo | null;
@@ -214,19 +274,25 @@ interface IFilterInfo {
     readonly args: string[];
     readonly filterFn: FilterFn;
 }
-interface IBindingInfo {
+/**
+ * バインディング式のパース結果（DOM 非依存の部分）。`@wcstack/state/parser` の
+ * ParseBindTextResult がこれをそのまま公開するため、Node 等の DOM lib 型を
+ * ここに足してはならない（足すなら IBindingInfo 側へ）。
+ */
+interface IParsedBinding {
     readonly propName: string;
     readonly propSegments: string[];
     readonly propModifiers: string[];
     readonly statePathName: string;
     readonly statePathInfo: IPathInfo;
-    readonly stateName: string;
     readonly inFilters: IFilterInfo[];
     readonly outFilters: IFilterInfo[];
-    readonly node: Node;
-    readonly replaceNode: Node;
     readonly bindingType: BindingType;
     readonly uuid?: string | null;
+}
+interface IBindingInfo extends IParsedBinding {
+    readonly node: Node;
+    readonly replaceNode: Node;
 }
 
 interface IState {
@@ -296,7 +362,7 @@ interface IWritableConfig {
     sameValueGuard?: boolean;
 }
 
-declare function bootstrapState(config?: IWritableConfig): void;
+declare function bootstrapState(config?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -313,7 +379,6 @@ declare function getBindingsReady(rootNode: Node): Promise<void>;
 declare const HTMLElementBase: typeof HTMLElement;
 
 interface ISsrElement {
-    readonly name: string;
     readonly version: string;
     readonly stateData: IState;
     readonly templates: Map<string, HTMLTemplateElement>;
@@ -325,7 +390,6 @@ declare class Ssr extends HTMLElementBase implements ISsrElement {
     private _stateData;
     private _templates;
     private _hydrateProps;
-    get name(): string;
     get version(): string;
     get stateData(): IState;
     get templates(): Map<string, HTMLTemplateElement>;
@@ -342,7 +406,7 @@ declare class Ssr extends HTMLElementBase implements ISsrElement {
     private _loadStateData;
     private _loadTemplates;
     private _loadHydrateProps;
-    static findByName(root: Node, name: string): ISsrElement | null;
+    static find(root: Node): ISsrElement | null;
     /**
      * stateData と構造テンプレート・プロパティから <wcs-ssr> の中身を構築する。
      * server パッケージの renderToString から呼ばれる。
@@ -470,7 +534,10 @@ interface WcsStateApi {
      * ワイルドカードを含むパスにマッチする全要素を配列で取得する。
      *
      * @param path - ワイルドカードを含むパス
-     * @param indexes - 各ワイルドカード階層のインデックス（省略時はループコンテキストから解決）
+     * @param indexes - 各ワイルドカード階層のインデックス（前方一致の接頭辞。`[]` は全階層を展開）。
+     *   省略時はループ文脈の添字（`[$1..$n]` 相当）のうち path と共有するワイルドカード連鎖の
+     *   分が接頭辞として敷かれる（文脈が path より深い分は切り詰め）。共有が無いのに文脈が
+     *   添字を持つ場合は throw する — 異なる文脈の添字は流用しない。
      *
      * @example
      * ```ts
@@ -480,6 +547,34 @@ interface WcsStateApi {
      * ```
      */
     $getAll<V = any>(path: string, indexes?: number[]): V[];
+    /**
+     * ワイルドカードを含むパスにマッチする**全アドレスへ一括で書き込む**（`$getAll` の対称形）。
+     *
+     * 配列を作り直さずに一括更新するための API。`this.users = this.users.map(...)` は
+     * ListIndex・行 getter キャッシュ・差分描画をまとめて作り直すが、`$setAll` は
+     * in-place な個別書き込みに分解するのでリストの同一性が保たれる。
+     *
+     * - `indexes` は `$getAll` と同じ**前方一致の接頭辞**（`[]` で全階層を展開）。省略は不可。
+     * - 関数を渡すと **mapper**（`(current, ...indexes) => next`）として要素ごとに評価される。
+     * - 配列は既定でブロードキャストされる。1 件ずつ配るには `{ spread: true }` を明示する。
+     * - `undefined` を書こうとした要素はスキップされる（クリアは `null`）。
+     *
+     * @returns 実際に書き込んだ件数（`undefined` でスキップした分を含まない）
+     *
+     * @example
+     * ```ts
+     * toggleAll(e: Event) {
+     *   this.$setAll("users.*.selected", [], (e.target as HTMLInputElement).checked);
+     * }
+     * invertAll() {
+     *   this.$setAll("users.*.selected", [], cur => !cur);
+     * }
+     * ```
+     */
+    $setAll<V = any>(path: string, indexes: number[], value: V | ((current: V, ...indexes: number[]) => V | undefined)): number;
+    $setAll<V = any>(path: string, indexes: number[], values: readonly V[], options: {
+        spread: true;
+    }): number;
     /**
      * 指定パスの更新を手動でトリガーする。
      * Proxy の set トラップを経由せずに内部状態を変更した場合に使用。
@@ -669,16 +764,50 @@ interface IWcsManifest {
         pathDelimiter: string;
         /** ワイルドカード（`*`） */
         wildcard: string;
-        /** バインディング構文 `[prop][#mod]: [path][@state][|filter...]` の区切り文字 */
+        /** バインディング構文 `[prop][#mod]: [path][|filter...]` の区切り文字 */
         delimiters: {
             binding: string;
             propValue: string;
             modifier: string;
-            stateName: string;
             filter: string;
         };
         /** 構造ディレクティブ（`<template data-wcs="for: ...">` 等） */
         structuralDirectives: readonly string[];
+        /**
+         * 修飾子（`#` 後）の語彙。flags は値を取らない形（`#prevent`）、keyValue は
+         * `=` で値を取る形（`#init=element`）、eventNamePrefix は `on` + イベント名の形
+         * （`#onchange` — two-way / radio / checkbox のイベント名上書き。README「Modifiers」）。
+         * define.ts の定数が単一正本で、ランタイムの消費箇所も同じ定数に分岐する。
+         */
+        modifiers: {
+            flags: readonly string[];
+            keyValue: readonly string[];
+            eventNamePrefix: string;
+        };
+        /** リストインデックス参照名（`$1`..`$N`）。prefix + 1 始まり連番、maxDepth まで。 */
+        indexParam: {
+            prefix: string;
+            maxDepth: number;
+        };
+        /**
+         * bindingType 判別の語彙（parseBindTextsForElement の分岐と同一の定数から導出）。
+         * 判別順: else → spread → 構造ディレクティブ/radio/checkbox → eventToken・`on*`
+         * （event）→ prop。propNamespaces は左辺先頭セグメントの特殊 namespace で、
+         * apply 層のディスパッチキー集合との一致はテストが強制する。
+         * 既知の未収載: `radio` / `checkbox`（BindingType union のみが正本）。
+         */
+        bindingTypes: {
+            elseKeyword: string;
+            spread: string;
+            eventPropertyPrefix: string;
+            propNamespaces: {
+                eventToken: string;
+                command: string;
+                class: string;
+                attr: string;
+                style: string;
+            };
+        };
     };
     /** 組み込みフィルタ名（builtinFilters から自動導出＝実装が正本） */
     filters: string[];
@@ -704,12 +833,10 @@ declare function getWcsManifest(): IWcsManifest;
 
 type DevtoolsEvent = {
     readonly type: "state:element-registered";
-    readonly name: string;
     readonly rootNode: Node;
     readonly element: IStateElement;
 } | {
     readonly type: "state:element-unregistered";
-    readonly name: string;
     readonly rootNode: Node;
     readonly element: IStateElement;
 } | {
@@ -736,10 +863,53 @@ type DevtoolsEvent = {
 } | {
     readonly type: "state:token-emit";
     readonly kind: "command" | "event";
-    readonly stateName: string | null;
     readonly tokenName: string;
     readonly args: readonly unknown[];
     readonly subscriberCount: number;
+    /**
+     * 発火元ツリーの state 要素（protocol v2 追補 2026-09-05・additive）。
+     * registry（getOrCreate*Token）経由で作られた token だけが持つ — 直接生成された
+     * token や旧ランタイムの payload には無い（optional）。無い emit の実測は
+     * ツリー別に分けられないため、消費側は全ツリーの照会へ合算で残す。
+     */
+    readonly stateElement?: IStateElement;
+} | {
+    readonly type: "state:watch-error";
+    /** throw 元。cur の評価（getter）とハンドラ本体では原因も直し方も違う */
+    readonly phase: "prime" | "evaluate" | "handler";
+    /** `$watch` の宣言キー（ワイルドカードを含む生のパス） */
+    readonly path: string;
+    readonly error: unknown;
+} | {
+    readonly type: "state:watch-chain-limit";
+    readonly maxDepth: number;
+    /** 打ち切ったバッチに載っていたアドレスのパス（報告用） */
+    readonly paths: readonly string[];
+} | {
+    readonly type: "state:watch-fired";
+    /** `$watch` の宣言キー（ワイルドカードを含む生のパス） */
+    readonly path: string;
+    /**
+     * 発火元ツリーの state 要素（protocol v2 追補 2026-09-05・additive）。
+     * 複数ツリーが同名の watch パスを宣言するページで実測台帳をツリー別に
+     * 分けるための識別。旧ランタイムの payload には無い（optional）— 無い発火は
+     * 消費側が全ツリーの照会へ合算で残す。値を載せない契約（§4.3.1）は不変。
+     */
+    readonly stateElement?: IStateElement;
+} | {
+    readonly type: "state:path-unresolved";
+    /** 書き手が書いた面。診断 code が binding / watch で変わる */
+    readonly source: "binding" | "watch";
+    /** 宣言されたパス（ワイルドカードを含む生の文字列） */
+    readonly path: string;
+    /** 解決に失敗したセグメント */
+    readonly missingSegment: string;
+} | {
+    readonly type: "state:binding-apply-error";
+    /** バインディングの state パス（ワイルドカードを含む生の文字列） */
+    readonly path: string;
+    readonly bindingType: string;
+    readonly error: unknown;
 } | {
     readonly type: "propagation:suppressed";
     readonly reason: "confirmation" | "visited-edge";
@@ -827,6 +997,175 @@ interface IContractManifest {
  * sink が接続されていれば同時に流す。
  */
 declare function analyzeContract(manifest: IContractManifest): readonly ContractEvent[];
+
+declare class State extends HTMLElementBase implements IStateElement {
+    static hasConnectedCallbackPromise: boolean;
+    static getBindingsReady(rootNode: Node): Promise<void>;
+    /**
+     * `mount` の動的変更は未サポート（再マウントは非目標 — 設計書 §4-7）。
+     * 初期化済み要素での変更は無言で捨てず warn で知らせる。初期化前の属性設定
+     * （パース時・接続前の setAttribute）は正規の使い方なので黙る。
+     * `name` は connectedCallback 冒頭で fail-fast 済みなので観測しない。
+     */
+    static get observedAttributes(): string[];
+    private __state;
+    private _hasUpdatedCallback;
+    /** enable-ssr のスナップショットから初期化された（D14: ボリュームはデータを採用する） */
+    private _hydratedFromSsr;
+    private _crossRowListPaths;
+    private _indexDependentGetterPaths;
+    private _initialized;
+    private _initializePromise;
+    private _resolveInitialize;
+    private _connectedCallbackPromise;
+    private _resolveConnectedCallback;
+    private _rejectConnectedCallback;
+    private _loadingPromise;
+    private _resolveLoading;
+    private _setStatePromise;
+    private _resolveSetState;
+    private _listPaths;
+    private _listKeys;
+    private _elementPaths;
+    private _getterPaths;
+    private _setterPaths;
+    private _loopContextStack;
+    private _dynamicDependency;
+    private _staticDependency;
+    private _pathSet;
+    private _watchPaths;
+    private _version;
+    private _rootNode;
+    private _boundComponent;
+    private _boundComponentStateProp;
+    private _hasMounts;
+    private _hasGraftedVolumes;
+    /** ボリューム（mount=）: 接ぎ木済みの控え（$disconnectedCallback 用） */
+    private _volumeGraftInfo;
+    /** ボリューム: スロット予約済み・接ぎ木進行中（ロード完了前の再接続の再入ガード） */
+    private _volumeInitializing;
+    /** v2 マウント（Phase 2）: この bind-component 要素が構築したマウント記録 */
+    private _mountRecord;
+    private _bindableEventMap;
+    private _commandTokenNames;
+    private _eventTokenNames;
+    private _dcc;
+    private _connectGeneration;
+    private _streamsStartedGeneration;
+    constructor();
+    private get _state();
+    private set _state(value);
+    attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void;
+    private _loadFromSsrElement;
+    /** state / src / json / inner <script> / API set のソース解決（_initialize とボリュームで共用）。 */
+    private _loadStateFromSource;
+    /**
+     * ボリューム（`<wcs-state mount="path">`）: 独立ツリーを持たず、ロード完了で
+     * ルートに接ぎ木する（webComponent/volume.ts）。接続時にスロットを予約（D22）。
+     * ルートより先に接続されてもよい — ルート登録が保留分を引き取る（V5）。
+     */
+    private _initializeVolume;
+    private _initialize;
+    /**
+     * 設定エラーでの fail-fast。initializePromise 等を解決してから raise する —
+     * 未解決のまま投げると waitForStateInitialize（ホストの buildBindings）が
+     * この要素を待ち続け、**ページ全体が無言でウェッジする**（1 つの設定ミスが
+     * 無関係なバインディングまで道連れにする）。エラー自体は unhandled rejection
+     * として loud に残る。
+     */
+    private _failInitialization;
+    private _initializeBindWebComponent;
+    private _callStateConnectedCallback;
+    private _initializeDCC;
+    private _callStateDisconnectedCallback;
+    connectedCallback(): Promise<void>;
+    disconnectedCallback(): void;
+    get initialized(): boolean;
+    get initializePromise(): Promise<void>;
+    get connectedCallbackPromise(): Promise<void>;
+    get listPaths(): Set<string>;
+    get listKeys(): ListKeyMap | null;
+    get watchPaths(): ReadonlySet<string> | null;
+    get elementPaths(): Set<string>;
+    /**
+     * ボリューム（webComponent/volume.ts）のアクセサ登録: ツリーパスをキーにした
+     * quoted-path アクセサを state オブジェクトに定義し、getter / setter 台帳と
+     * 依存グラフに載せる。ルートのワイルドカード getter（`"children.*.label"`）と
+     * 同じ機構に乗るので、評価は pushAddress 下・依存はグラフに載る。
+     */
+    /** ボリュームの watch パスをホットパス用ゲート（watchPaths）へ合流させる。 */
+    addVolumeWatchPaths(paths: ReadonlySet<string>): void;
+    /** ボリュームの $listKeys（接頭辞翻訳済み）をルートの表へ合流させる。衝突は設定ミス。 */
+    mergeVolumeListKeys(entries: ReadonlyMap<string, ListKeySpec>): void;
+    /** ボリュームが $updatedCallback を持つとき、収集ゲートを開ける（apply/applyChange.ts）。 */
+    enableUpdatedCallback(): void;
+    /** enable-ssr スナップショットから初期化されたか（D14 — webComponent/volume.ts が読む）。 */
+    get hydratedFromSsr(): boolean;
+    defineTreeAccessor(path: string, descriptor: PropertyDescriptor): void;
+    get getterPaths(): Set<string>;
+    get setterPaths(): Set<string>;
+    get loopContextStack(): ILoopContextStack;
+    get dynamicDependency(): Map<string, string[]>;
+    get staticDependency(): Map<string, string[]>;
+    get version(): number;
+    get rootNode(): Node;
+    get boundComponentStateProp(): string | null;
+    get hasMounts(): boolean;
+    /** 唯一の呼び手は webComponent/mount.ts の registerMountRecord（Phase 2）。 */
+    markHasMounts(): void;
+    get hasGraftedVolumes(): boolean;
+    /** 唯一の呼び手は webComponent/volume.ts の graftVolume（D22 後段のガードが読む）。 */
+    markHasGraftedVolumes(): void;
+    get bindableEventMap(): Record<string, string>;
+    get commandTokenNames(): ReadonlySet<string>;
+    get eventTokenNames(): ReadonlySet<string>;
+    setBindableEventMap(map: Record<string, string>): void;
+    private _addDependency;
+    /**
+     * source,           target
+     *
+     * products.*.price => products.*.tax
+     * get "products.*.tax"() { return this["products.*.price"] * 0.1; }
+     *
+     * products.*.price => products.summary
+     * get "products.summary"() { return this.$getAll("products.*.price", []).reduce(sum); }
+     *
+     * categories.*.name => categories.*.products.*.categoryName
+     * get "categories.*.products.*.categoryName"() { return this["categories.*.name"]; }
+     *
+     * @param sourcePath
+     * @param targetPath
+     */
+    addDynamicDependency(sourcePath: string, targetPath: string): boolean;
+    /**
+     * source,      target
+     * products => products.*
+     * products.* => products.*.price
+     * products.* => products.*.name
+     *
+     * @param sourcePath
+     * @param targetPath
+     */
+    addStaticDependency(sourcePath: string, targetPath: string): boolean;
+    setPathInfo(path: string, bindingType: BindingType, source?: PathInfoSource): void;
+    private _createState;
+    createStateAsync(mutability: Mutability, callback: (state: IStateProxy) => Promise<void>): Promise<void>;
+    createState(mutability: Mutability, callback: (state: IStateProxy) => void): void;
+    nextVersion(): number;
+    get hasUpdatedCallback(): boolean;
+    get crossRowListPaths(): ReadonlySet<string>;
+    addCrossRowListPath(path: string): void;
+    get indexDependentGetterPaths(): ReadonlySet<string>;
+    addIndexDependentGetterPath(path: string): void;
+    setInitialState(state: Record<string, any>): void;
+}
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-state": State;
+        "wcs-ssr": Ssr;
+    }
+}
 
 export { Ssr, VERSION, WCS_MANIFEST_VERSION, analyzeContract, bootstrapState, buildBindings, builtinFilterMeta, defineState, getBindingsReady, getConfig, getWcsManifest };
 export type { ContractEvent, FilterArgType, FilterResultType, IContractManifest, IFilterMeta, ISsrElement, IWcsManifest, IWritableConfig, IWritableTagNames, WcsPathValue, WcsPaths, WcsStateApi, WcsThis };

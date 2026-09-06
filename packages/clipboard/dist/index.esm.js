@@ -888,17 +888,22 @@ class WcsClipboard extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.clipboard)) {
-        customElements.define(config.tagNames.clipboard, WcsClipboard);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.clipboard)) {
+        registry.define(config.tagNames.clipboard, WcsClipboard);
     }
 }
 
-function bootstrapClipboard(userConfig) {
+function bootstrapClipboard(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { ClipboardCore, WCS_CLIPBOARD_ERROR_CODE, WcsClipboard, bootstrapClipboard, getConfig };

@@ -112,7 +112,7 @@ interface WcsTimerCommands {
     resume(): void;
 }
 
-declare function bootstrapTimer(userConfig?: IWritableConfig): void;
+declare function bootstrapTimer(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -206,6 +206,12 @@ declare class Timer extends HTMLElement {
     attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void;
     connectedCallback(): void;
     disconnectedCallback(): void;
+}
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-timer": Timer;
+    }
 }
 
 export { TimerCore, Timer as WcsTimer, bootstrapTimer, getConfig };

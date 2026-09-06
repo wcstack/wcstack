@@ -1,5 +1,5 @@
-import { e as effect, o as onCleanup, b as bindNode, g as isDev, h as hasOwner, w as warnDev, s as signal, a as createRoot } from './core-Tyc87CCz.esm.js';
-export { D as DisposedError, c as computed, f as flushSync, i as isDisposedError, n as nodeSource, r as resource, d as streamResource } from './core-Tyc87CCz.esm.js';
+import { e as effect, o as onCleanup, b as bindNode, g as isDev, h as hasOwner, w as warnDev, s as signal, a as createRoot } from './core-Db6kZPd_.esm.js';
+export { D as DisposedError, c as computed, f as flushSync, i as isDisposedError, n as nodeSource, r as resource, d as streamResource } from './core-Db6kZPd_.esm.js';
 
 // Fine-grained hyperscript (v1 design notes). The "step before JSX" (docs §4-1).
 //

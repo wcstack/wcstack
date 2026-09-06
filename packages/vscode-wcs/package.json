@@ -2,14 +2,25 @@
   "name": "wcstack-intellisense",
   "displayName": "WcStack IntelliSense",
   "description": "TypeScript language features for <wcs-state> inline scripts in HTML",
-  "version": "1.10.0",
+  "version": "1.12.0",
   "publisher": "wcstack",
   "license": "MIT",
+  "icon": "icon.png",
+  "galleryBanner": {
+    "color": "#000000",
+    "theme": "dark"
+  },
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "https://github.com/wcstack/wcstack"
+    "url": "https://github.com/wcstack/wcstack",
+    "directory": "packages/vscode-wcs"
   },
+  "homepage": "https://github.com/wcstack/wcstack/tree/main/packages/vscode-wcs",
+  "bugs": {
+    "url": "https://github.com/wcstack/wcstack/issues/new?template=vscode-wcs.yml"
+  },
+  "qna": "https://github.com/wcstack/wcstack/issues/new?template=vscode-wcs.yml",
   "engines": {
     "vscode": "^1.110.0"
   },
@@ -36,11 +47,20 @@
         },
         "wcstack.messageLanguage": {
           "type": "string",
-          "enum": ["auto", "ja", "en"],
+          "enum": [
+            "auto",
+            "ja",
+            "en"
+          ],
           "default": "auto",
           "description": "Language of wcstack diagnostic messages. \"auto\" follows the VS Code display language (non-Japanese locales get English). Diagnostic codes and ranges are language-independent."
         }
       }
+    },
+    "html": {
+      "customData": [
+        "./wcs.html-data.json"
+      ]
     }
   },
   "scripts": {
@@ -50,7 +70,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "package": "npm run build && vsce package"
+    "package": "npm run build && npx --yes @vscode/vsce@3.9.2 package --baseContentUrl https://github.com/wcstack/wcstack/blob/main/packages/vscode-wcs --baseImagesUrl https://github.com/wcstack/wcstack/raw/main/packages/vscode-wcs"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

@@ -12,7 +12,7 @@ describe("ハイドレーション後のイベントハンドラ", () => {
       <wcs-ssr name="default">
         <script type="application/json">{"count":0}</script>
       </wcs-ssr>
-      <wcs-state enable-ssr name="default"></wcs-state>
+      <wcs-state enable-ssr></wcs-state>
       <button data-wcs="onclick: increment">Click</button>
       <span data-wcs="textContent: count">0</span>
     `;
@@ -51,7 +51,7 @@ describe("ハイドレーション後のイベントハンドラ", () => {
           </div>
         </template>
       </wcs-ssr>
-      <wcs-state enable-ssr name="default"></wcs-state>
+      <wcs-state enable-ssr></wcs-state>
       <!--@@wcs-for:u0-->
       <!--@@wcs-for-start:u0:items:0--><div><span data-wcs="textContent: items.*.name">Alice</span><button data-wcs="onclick: select">Select</button></div><!--@@wcs-for-end:u0:items:0-->
       <!--@@wcs-for-start:u0:items:1--><div><span data-wcs="textContent: items.*.name">Bob</span><button data-wcs="onclick: select">Select</button></div><!--@@wcs-for-end:u0:items:1-->
@@ -81,7 +81,7 @@ describe("ハイドレーション後のイベントハンドラ", () => {
           <span data-wcs="textContent: count">0</span>
         </template>
       </wcs-ssr>
-      <wcs-state enable-ssr name="default"></wcs-state>
+      <wcs-state enable-ssr></wcs-state>
       <!--@@wcs-if:u0-->
       <!--@@wcs-if-start:u0:show--><button data-wcs="onclick: increment">Click</button><span data-wcs="textContent: count">0</span><!--@@wcs-if-end:u0:show-->
     `;
@@ -127,7 +127,7 @@ describe("ハイドレーション後のイベントハンドラ", () => {
           <${rowTag} data-wcs="eventToken.failed: rowFailed"></${rowTag}>
         </template>
       </wcs-ssr>
-      <wcs-state enable-ssr name="default"></wcs-state>
+      <wcs-state enable-ssr></wcs-state>
       <!--@@wcs-for:u0-->
       <!--@@wcs-for-start:u0:items:0--><${rowTag} data-wcs="eventToken.failed: rowFailed"></${rowTag}><!--@@wcs-for-end:u0:items:0-->
       <!--@@wcs-for-start:u0:items:1--><${rowTag} data-wcs="eventToken.failed: rowFailed"></${rowTag}><!--@@wcs-for-end:u0:items:1-->

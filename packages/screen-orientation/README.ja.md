@@ -178,6 +178,10 @@ core.dispose();
 
 Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 
+## アクセシビリティ
+
+**WCAG 1.3.4 Orientation (AA)**: 表示の向きが*不可欠*（essential — 小切手スキャナ、ピアノ鍵盤など）でない限り、コンテンツを単一の向きに固定してはならない。車椅子にデバイスを固定しているユーザーは端末を回せない。この README は `lock()` が*失敗する*条件に詳しいが、同じ精密さは*呼んでよい*条件にも要る: lock するのはその向きがタスクに不可欠な場合だけにし、ユーザーには戻る手段（`unlock` コマンドを配線した可視のコントロール）を必ず残すこと。監視（`type` / `angle` / `portrait` / `landscape`）にこの義務はない — 報告された向きにレイアウトを適応させることこそ 1.3.4 が求める姿である。
+
 ## ライセンス
 
 MIT

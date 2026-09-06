@@ -1,4 +1,17 @@
 import { IConfig, IWritableConfig } from "./types.js";
+import { SSR_ORCHESTRATED_VALUE } from "./protocol/ssrSnapshot.js";
+
+/**
+ * サーバー主導スナップショット（orchestrated）の判定
+ * （docs/ssr-router-design.md §5）。renderToString が snapshot builder を
+ * 見つけたときだけ `data-wcs-server="orchestrated"` を宣言する — 値が他の
+ * もの（旧 server の "" を含む）なら inline 生成が従来どおり働く。
+ * inSsr と同じ理由でキャッシュしない。
+ */
+export function isOrchestratedSsr(): boolean {
+  const html = document.documentElement;
+  return html ? html.getAttribute('data-wcs-server') === SSR_ORCHESTRATED_VALUE : false;
+}
 
 export function inSsr(): boolean {
   // キャッシュしない: SSR モードはプロセスの属性ではなく「現在の document」の

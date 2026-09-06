@@ -1,4 +1,7 @@
 import { raiseError } from "../raiseError";
+import { config } from "../config";
+import { warnUnboundMarkup } from "../unboundMarkupWarning";
+import { bindSubtree } from "../protocol/binder";
 
 /**
  * グローバルHeadスタック
@@ -114,7 +117,12 @@ export class Head extends HTMLElement {
       const rel = el.getAttribute('rel') || '';
       const href = el.getAttribute('href') || '';
       const media = el.getAttribute('media') || '';
-      return `link:${rel}:${href}:${media}`;
+      // hreflang もキーに含める。含めないと、代表ロケールと `x-default` を同じ
+      // href で併記する `rel="alternate"` の組が同一キーになり、片方が落ちる。
+      // これは i18n の標準的な書き方（x-default は既定言語版を指す）なので、
+      // 「同じ href の link は 1 本」という仮定はここで破れる。
+      const hreflang = el.getAttribute('hreflang') || '';
+      return `link:${rel}:${href}:${media}:${hreflang}`;
     }
 
     if (tag === 'base') {
@@ -238,6 +246,19 @@ export class Head extends HTMLElement {
         }
         // map を新しい要素に更新（後続の同 key 処理に備える）
         headElementMap.set(key, targetElement);
+        // head へ入れたのは cloneNode なので、元ノードのバインドは引き継がれない。
+        // `<title data-wcs="…">` はページからタイトルを消すという、未翻訳より
+        // 悪い形で失敗する。クローンを binder に渡して、そこで初めて束ねる。
+        // 挿入後に呼ぶのは、`bind()` が初期値の適用まで同期で行うため。
+        if (!bindSubtree(targetElement)) {
+          warnUnboundMarkup(
+            targetElement,
+            `<${targetElement.tagName.toLowerCase()}> inside <${config.tagNames.head}>`,
+            `<${config.tagNames.head}> reflects its children into <head> with cloneNode, ` +
+            `so the clone is not the node that was bound. Load @wcstack/state on this ` +
+            `page, or write the value statically here.`,
+          );
+        }
       } else {
         // 初期値もスタックにもない場合は削除
         current?.remove();

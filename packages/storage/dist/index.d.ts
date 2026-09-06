@@ -94,7 +94,7 @@ interface WcsStorageValues<T = unknown> extends WcsStorageCoreValues<T> {
     trigger: boolean;
 }
 
-declare function bootstrapStorage(userConfig?: IWritableConfig): void;
+declare function bootstrapStorage(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -198,6 +198,12 @@ declare const WCS_STORAGE_ERROR_CODE: {
     /** その他の caught 例外。 */
     readonly StorageError: "storage-error";
 };
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-storage": Storage;
+    }
+}
 
 export { StorageCore, WCS_STORAGE_ERROR_CODE, Storage as WcsStorage, bootstrapStorage, getConfig };
 export type { IWritableConfig, IWritableTagNames, StorageType, WcsIoErrorInfo, WcsIoErrorPhase, WcsStorageCoreValues, WcsStorageError, WcsStorageValues };

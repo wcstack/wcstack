@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: the plain (unwired) Light DOM bind-component is removed in v2</title>
+  <!-- v2 (author decision, 2026-09-03): a plain Light DOM bind-component cannot exist —
+       an independent tree on a shared rootNode needs the name dimension, which the single
+       registry (P3-6) removes. The migration is one line: attach a shadow root (the plain
+       Shadow form keeps working, $ declarations included), or wire it from the host
+       (data-wcs="state: path") to make it a mount.
+
+       This page pins two things: the error is loud (with the guidance above), and the rest
+       of the page — a mapped Light DOM component next to it — is not wedged by it. -->
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+  <style>
+:not(:defined) { display: none; }
+  </style>
+  <script type="module">
+    // 廃止対象: 配線なしの Light DOM bind-component
+    class LightPlain extends HTMLElement {
+      state = { message: "injected" };
+      connectedCallback() {
+        if (this.childElementCount === 0) {
+          this.innerHTML =
+            `<wcs-state bind-component="state"></wcs-state>` +
+            `<span class="inner" data-wcs="textContent: message"></span>`;
+        }
+      }
+    }
+    customElements.define("light-plain", LightPlain);
+
+    // 対照: 配線ありの Light DOM（マウント）は無傷で動く
+    class LightView extends HTMLElement {
+      state = {};
+      connectedCallback() {
+        if (this.childElementCount === 0) {
+          this.innerHTML =
+            `<wcs-state bind-component="state"></wcs-state>` +
+            `<span class="inner" data-wcs="textContent: message"></span>`;
+        }
+      }
+    }
+    customElements.define("light-view-ok", LightView);
+  </script>
+</head>
+<body>
+  <wcs-state json='{"user":{"message":"Alice"}}'></wcs-state>
+
+  <div id="plain">
+    <light-plain></light-plain>
+  </div>
+  <div id="mapped">
+    <light-view-ok data-wcs="state.message: user.message"></light-view-ok>
+  </div>
+</body>
+</html>

@@ -118,6 +118,18 @@ Note that **this wait is not needed in order to read the initial snapshot of a m
 ### 4.2 Writing `undefined` is skipped (clear explicitly with `null`)
 The binder does not write `undefined` into properties/inputs (it skips the write itself). For details and the SPEC proposal see [spec-proposal-undefined-write-skip.md](./spec-proposal-undefined-write-skip.md) (ja).
 
+
+### 4.3 With `<wcs-view-transition>` on the page, the drain lands on a frame, not a microtask
+The drain (`Updater._applyChange`) normally applies its bindings synchronously inside the microtask it was queued on. When a `@wcstack/view-transition` arbiter is installed **and accepts the `state` participant** (`for=` includes `state`, the default), the binding application is handed to `document.startViewTransition`, which invokes it on a later frame.
+
+→ **Consequence 1**: code that writes state and then reads the DOM after `await Promise.resolve()` sees the old DOM. Wait for the transition, or use `$updatedCallback` — it still fires right after the bindings are applied, inside the update callback, so its *position* is unchanged even though it moves a frame later along with them.
+
+→ **Consequence 2 — the mechanism order inverts.** The drain-end batch listeners (`$watch` → `$streams` restart, §3) stay on the original microtask, because they consume state addresses and not the DOM. `$updatedCallback` does not. So the order §3 calls fixed — `$updatedCallback` → `$watch` → `$streams` restart — becomes `$watch` → `$streams` restart → `$updatedCallback` for as long as the arbiter accepts `state`. This is the only thing on a page that reorders that layer. A `$watch` handler that reads something `$updatedCallback` wrote cannot rely on the declared order while the tag is present.
+
+What does **not** change: initial rendering is never wrapped (only the drain is); `inSsr()` short-circuits to the synchronous path; and a batch with no bindings to apply is never handed to the arbiter, so a write to a headless path (`$watch`-only, `$streams` internal state) neither animates nor defers. With no arbiter installed — or with `for="router"` — the drain is byte-for-byte what it was.
+
+Normative description: [view-transition-design.md](./view-transition-design.md) §7.2.
+
 ---
 
 ## 5. example → the contracts it depends on (traceability)
@@ -437,3 +449,47 @@ Rebuilding the graph discards every sounding voice. That is not an implementatio
 ### 19.6 Voice reclamation is on the audio clock (not timer-dependent)
 
 A released voice is reclaimed only once `freeAt = noteOff + release * 3 + 0.3` (on the audio clock) has passed. **No wall-clock timer is used**: in a background tab `setTimeout` is throttled to about one-minute intervals while audio keeps playing, so a timer-based approach would leak a voice per key press.
+
+---
+
+## 20. @wcstack/router — post-commit focus and announcement (2026-08-28)
+
+Reference: [`packages/router/src/a11yPolicies.ts`](../packages/router/src/a11yPolicies.ts), [a11y-design.md](./a11y-design.md) §3-4
+
+### 20.1 The opt-in policies run after commit, outside the mutation
+
+`focus="heading"` and `announce="title"` are applied inside `applyRoute`, immediately after the committed judgment (guard passed, mutation applied, `router.path` updated). The announcement write is a plain DOM update outside `mutate()` — it is never part of a view transition. A guard-rejected navigation reaches neither policy (a11y-design D4).
+
+### 20.2 The first route application never focuses or announces
+
+`lastRoutes.length === 0` skips both policies — the same predicate, and the same reason, as view-transition's "never wrap the first application" (§4.3): page load belongs to the browser.
+
+### 20.3 The announcement is a commit-time snapshot of `document.title`
+
+`<wcs-head>`'s static title swap completes synchronously inside `mutate()`, so the snapshot always reads the new route's static title. A bound title (`<title data-wcs>`) may still be stale at commit (the binder-queue delay window), and a title change outside navigation (e.g. a locale switch) is never re-announced. Both are documented limitations, not bugs (a11y-design D2).
+
+### 20.4 Interaction with §4.3 (view-transition frame landing)
+
+The policies run when the transition promise awaited by `applyRoute` resolves — that is at **mutation application**, not animation completion (the transition-runner contract). Under an arbiter that accepts `router`, focus and announcement therefore land on the frame where the route content was swapped, possibly while the animation is still playing. "After the animation" is not expressible under the current protocol and is a non-goal (a11y-design D3 / §10).
+
+## 21. @wcstack/router — the observation-surface commit and firing contract (2026-08-28)
+
+Reference: [`packages/router/src/components/Router.ts`](../packages/router/src/components/Router.ts) `commitNavigation`, [router-state-contract-design.md](./router-state-contract-design.md) §3.4 / §4.4
+
+### 21.1 Commit first, fire after — and the firing order
+
+On a committed navigation, the router commits **all** internal values (`params`, `typedParams`, `searchParams`, `routeName`, `path`) synchronously, and only then fires the change events, in the fixed order `wcs-router:params-changed` → `wcs-router:route-name-changed` → `wcs-router:search-changed` → `wcs-router:path-changed` — each only when its value actually changed (params: shallow compare of string values; search: order-independent record compare; the rest: value compare). Any listener that reads the element's properties, from any of the four events, sees the consistent post-navigation snapshot; a half-committed state is not observable **on the element**. `path` fires last and doubles as the "navigation finished" signal.
+
+The guarantee's subject is the element properties. On the state side the four events write sequentially, so a handler wired to an early event can still observe mid-sequence *state* values; anything that depends on several surfaces should key off `path`.
+
+### 21.2 A guard-rejected navigation fires nothing
+
+`committed === false` updates no internal value and fires no event — the pre-existing "no `path-changed` on a rejected path" norm, extended to the whole surface.
+
+### 21.3 Same-match navigations skip the pipeline
+
+A navigation whose basename-sliced pathname equals the current committed `path` (never before the first successful commit) skips `matchRoutes`, the guard phase, `showRouteContent`, the transition-runner hand-off, and the a11y policies of §20. Only `search` is committed, so at most `search-changed` fires. In the Navigation API path, `scroll` stays at the spec default for traverse navigations (browser restoration) and is `"manual"` for push / replace; `focusReset` is always `"manual"` on a same-match.
+
+### 21.4 Late-attaching bindings miss nothing
+
+The observation members are read at binding attach, and the **first** commit's change detection compares against the internal initial values (`{}` / `""`), so a binding attached before the router's first route resolution is updated by the first commit's events, and one attached after reads the committed values directly. There is no seed and no await in either order.

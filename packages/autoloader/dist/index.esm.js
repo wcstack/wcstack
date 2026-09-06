@@ -177,7 +177,26 @@ function resolveLoader(path, loaderKey, loaders) {
 }
 
 const failedTags = new Set();
-const loadingTags = new Set();
+// The in-flight load per tag, so a second caller can await the load itself
+// rather than the definition. A load that fails never defines its tag, so
+// waiting on whenDefined() instead would wait forever.
+const loadingTags = new Map();
+// Scoped registries each need their own define() call for the same tag, so an
+// in-flight load in one registry must not make another registry skip its own.
+// The module import itself is shared by the loader's own cache. The global
+// registry keeps using the exported `loadingTags` so direct inspection works.
+let loadingTagsByRegistry = new WeakMap();
+function getLoadingTags(registry) {
+    if (registry === globalThis.customElements) {
+        return loadingTags;
+    }
+    let tags = loadingTagsByRegistry.get(registry);
+    if (tags === undefined) {
+        tags = new Map();
+        loadingTagsByRegistry.set(registry, tags);
+    }
+    return tags;
+}
 
 const EXTENDS_MAP = new Map();
 if (typeof window !== "undefined") {
@@ -299,6 +318,38 @@ async function eagerLoad(loadMap, loaders) {
     await Promise.all(promises);
 }
 
+function toAdapter(registry) {
+    if (typeof registry !== "object" || registry === null)
+        return null;
+    const candidate = registry;
+    if (typeof candidate.get !== "function"
+        || typeof candidate.whenDefined !== "function"
+        || typeof candidate.define !== "function") {
+        return null;
+    }
+    return candidate;
+}
+/**
+ * Resolve the registry that governs `root`.
+ *
+ * Scoped registries do not inherit from the global one, so defining a lazily
+ * loaded tag globally leaves a scoped subtree's elements un-upgraded forever --
+ * and the `whenDefined` used to chase their shadow content never resolves.
+ * Autoloading therefore has to define into the registry the scanned root itself
+ * resolves against. Roots on platforms without scoped registries report
+ * `undefined` and fall back to the global registry.
+ */
+function getCustomElementRegistry(root = null) {
+    if (root !== null && typeof root !== "undefined") {
+        const scoped = root.customElementRegistry;
+        if (scoped === null)
+            return null;
+        if (typeof scoped !== "undefined")
+            return toAdapter(scoped);
+    }
+    return toAdapter(globalThis.customElements);
+}
+
 const isCustomElement = (node) => {
     return (node instanceof Element && (node.tagName.includes("-") || node.getAttribute("is")?.includes("-"))) ?? false;
 };
@@ -324,6 +375,11 @@ function getCustomTagInfo(e) {
     return { name, extends: extendsName };
 }
 const observedCustomElements = new WeakSet();
+// Elements that already carry a whenDefined() follow-up. `lazyLoads` rescans
+// until nothing more loads, and the MutationObserver reruns it on every DOM
+// change, so without this an element whose tag never gets defined collects one
+// never-settling continuation per scan.
+const upgradeWatchedElements = new WeakSet();
 async function observeShadowRoot(element, config, prefixMap) {
     observedCustomElements.add(element);
     await handlerForLazyLoad(element.shadowRoot, config, prefixMap);
@@ -343,16 +399,33 @@ function matchNameSpace(tagName, prefixMap) {
     }
     return null;
 }
-async function tagLoad(tagInfo, config, prefixMap) {
+async function tagLoad(tagInfo, config, prefixMap, registry) {
     const info = matchNameSpace(tagInfo.name, prefixMap);
     if (info === null) {
         throw new Error("No matching namespace found for lazy loaded component: " + tagInfo.name);
     }
-    if (loadingTags.has(tagInfo.name)) {
-        await customElements.whenDefined(tagInfo.name);
+    const loadingTags = getLoadingTags(registry);
+    const inFlight = loadingTags.get(tagInfo.name);
+    if (inFlight !== undefined) {
+        // Wait on the load itself, never on the definition: a load that fails never
+        // defines the tag, so whenDefined() would stay pending forever and wedge
+        // every caller above — including the one that installs the MutationObserver,
+        // which stops all further lazy loading on the page.
+        await inFlight;
         return;
     }
-    loadingTags.add(tagInfo.name);
+    const load = performTagLoad(tagInfo, config, info, registry);
+    loadingTags.set(tagInfo.name, load);
+    try {
+        await load;
+    }
+    finally {
+        loadingTags.delete(tagInfo.name);
+    }
+}
+// Never rejects: a failure is reported and recorded in `failedTags`, which keeps
+// the tag out of later scans.
+async function performTagLoad(tagInfo, config, info, registry) {
     try {
         let loader;
         try {
@@ -366,21 +439,21 @@ async function tagLoad(tagInfo, config, prefixMap) {
             throw new Error("Invalid component name for lazy loaded component: " + tagInfo.name);
         }
         const path = info.key + file + loader.postfix;
-        if (customElements.get(tagInfo.name)) {
+        if (registry.get(tagInfo.name)) {
             // すでに定義済み
             return;
         }
         const componentConstructor = await loader.loader(path);
         if (componentConstructor !== null) {
-            if (customElements.get(tagInfo.name)) {
+            if (registry.get(tagInfo.name)) {
                 // すでに定義済み
                 return;
             }
             if (tagInfo.extends === null) {
-                customElements.define(tagInfo.name, componentConstructor);
+                registry.define(tagInfo.name, componentConstructor);
             }
             else {
-                customElements.define(tagInfo.name, componentConstructor, { extends: tagInfo.extends });
+                registry.define(tagInfo.name, componentConstructor, { extends: tagInfo.extends });
             }
         }
         else {
@@ -391,15 +464,12 @@ async function tagLoad(tagInfo, config, prefixMap) {
         console.error(`Failed to lazy load component '${tagInfo.name}':`, e);
         failedTags.add(tagInfo.name);
     }
-    finally {
-        loadingTags.delete(tagInfo.name);
-    }
 }
 //
-async function lazyLoad(root, config, prefixMap) {
+async function lazyLoad(root, config, prefixMap, registry) {
     const elements = [];
     // Create TreeWalker (target element and comment nodes)
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, (node) => {
+    const walker = (root.ownerDocument ?? root).createTreeWalker(root, NodeFilter.SHOW_ELEMENT, (node) => {
         return isCustomElement(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
     });
     // Move to next node with TreeWalker and add matching nodes to array
@@ -410,13 +480,16 @@ async function lazyLoad(root, config, prefixMap) {
     const tagNames = new Set();
     for (const element of elements) {
         const tagInfo = getCustomTagInfo(element);
-        const customClass = customElements.get(tagInfo.name);
+        const customClass = registry.get(tagInfo.name);
         if (customClass === undefined) {
             // undefined
-            customElements.whenDefined(tagInfo.name).then(async () => {
-                // upgraded
-                await checkObserveShadowRoot(element, config, prefixMap);
-            });
+            if (!upgradeWatchedElements.has(element)) {
+                upgradeWatchedElements.add(element);
+                registry.whenDefined(tagInfo.name).then(async () => {
+                    // upgraded
+                    await checkObserveShadowRoot(element, config, prefixMap);
+                });
+            }
             if (!tagNames.has(tagInfo.name) && !failedTags.has(tagInfo.name)) {
                 tagNames.add(tagInfo.name);
                 tagInfos.push(tagInfo);
@@ -429,13 +502,13 @@ async function lazyLoad(root, config, prefixMap) {
     }
     let tagCount = 0;
     for (const tagInfo of tagInfos) {
-        await tagLoad(tagInfo, config, prefixMap);
+        await tagLoad(tagInfo, config, prefixMap, registry);
         tagCount++;
     }
     return tagCount;
 }
-async function lazyLoads(root, config, prefixMap) {
-    while (await lazyLoad(root, config, prefixMap) > 0) {
+async function lazyLoads(root, config, prefixMap, registry) {
+    while (await lazyLoad(root, config, prefixMap, registry) > 0) {
         // Repeat until no more tags to load
     }
 }
@@ -443,8 +516,18 @@ async function handlerForLazyLoad(root, config, prefixMap) {
     if (Object.keys(prefixMap).length === 0) {
         return null;
     }
+    // Definitions must land in the registry this root resolves against: a scoped
+    // registry does not see global definitions, so defining globally would leave
+    // these elements un-upgraded and the whenDefined below pending forever.
+    const registry = getCustomElementRegistry(root);
+    if (registry === null) {
+        // A null-registry root cannot receive definitions at all until someone calls
+        // registry.initialize() on it, so there is nothing autoloading can do here.
+        console.error("Cannot autoload components: the root has a null custom element registry.");
+        return null;
+    }
     try {
-        await lazyLoads(root, config, prefixMap);
+        await lazyLoads(root, config, prefixMap, registry);
     }
     catch (e) {
         throw new Error("Failed to lazy load components: " + e);
@@ -454,7 +537,7 @@ async function handlerForLazyLoad(root, config, prefixMap) {
     }
     const mo = new MutationObserver(async () => {
         try {
-            await lazyLoads(root, config, prefixMap);
+            await lazyLoads(root, config, prefixMap, registry);
         }
         catch (e) {
             console.error("Failed to lazy load components: " + e);
@@ -506,17 +589,22 @@ class Autoloader extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.autoloader)) {
-        customElements.define(config.tagNames.autoloader, Autoloader);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.autoloader)) {
+        registry.define(config.tagNames.autoloader, Autoloader);
     }
 }
 
-function bootstrapAutoloader(config) {
+function bootstrapAutoloader(config, registry) {
     if (config) {
         setConfig(config);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { bootstrapAutoloader, getConfig };

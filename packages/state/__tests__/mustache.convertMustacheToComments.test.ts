@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { config } from '../src/config';
 import { SVG_NAMESPACE } from '../src/define';
 import { convertMustacheToComments } from '../src/mustache/convertMustacheToComments';
+import { getParseBindTextResults } from '../src/bindings/getParseBindTextResults';
 
 describe('convertMustacheToComments', () => {
   let originalEnableMustache: boolean;
@@ -126,14 +127,14 @@ describe('convertMustacheToComments', () => {
     expect(div.textContent).toBe('Hello World');
   });
 
-  it('フィルタ付き {{ count@cart|gt(0) }} が正しく変換されること', () => {
+  it('フィルタ付き {{ cart.count|gt(0) }} が正しく変換されること', () => {
     config.enableMustache = true;
     const div = document.createElement('div');
-    div.textContent = '{{ count@cart|gt(0) }}';
+    div.textContent = '{{ cart.count|gt(0) }}';
     convertMustacheToComments(div);
     expect(div.childNodes.length).toBe(1);
     expect(div.childNodes[0].nodeType).toBe(Node.COMMENT_NODE);
-    expect((div.childNodes[0] as Comment).data).toBe('@@: count@cart|gt(0)');
+    expect((div.childNodes[0] as Comment).data).toBe('@@: cart.count|gt(0)');
   });
 
   it('{{ }} 内の空白がトリムされること', () => {
@@ -208,5 +209,20 @@ describe('convertMustacheToComments', () => {
     expect((paragraphs[0].childNodes[0] as Comment).data).toBe('@@: first');
     expect(paragraphs[1].childNodes[0].nodeType).toBe(Node.COMMENT_NODE);
     expect((paragraphs[1].childNodes[0] as Comment).data).toBe('@@: second');
+  });
+
+  // N6: mustache チャネル経由の `@` — 変換は素通しし、コメントバインディングの
+  // パース（チャネルの出口）で移行ヒント付き parse error に落ちる
+  it('{{ x@y }} は v2 で parse error — 移行ヒント付き文言に落ちること', () => {
+    config.enableMustache = true;
+    const div = document.createElement('div');
+    div.textContent = '{{ count@cart }}';
+    convertMustacheToComments(div);
+    const comment = div.childNodes[0] as Comment;
+    expect(comment.nodeType).toBe(Node.COMMENT_NODE);
+    expect(comment.data).toBe('@@: count@cart');
+
+    expect(() => getParseBindTextResults(comment)).toThrow(/removed in v2/);
+    expect(() => getParseBindTextResults(comment)).toThrow(/mount/);
   });
 });

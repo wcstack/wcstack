@@ -30,6 +30,9 @@ export const WcsDiagnosticCode = {
   // 同名 tag / filter の後勝ち禁止(§5-3)。override:true が無い再定義もこの collision で表す。
   ManifestTagCollision: "wcs/manifest-tag-collision",
   ManifestFilterCollision: "wcs/manifest-filter-collision",
+  // 同名 state の stateSchema が複数の application artifact に宣言されている(§5-3 の
+  // application 版・D8)。勝者なし: その state は未宣言扱い(schema 検証は沈黙)。
+  ManifestStateCollision: "wcs/manifest-state-collision",
   // 明示 override:true(§5-4)。衝突ではなく意図的な shadow の告知(info)。
   ManifestOverride: "wcs/manifest-override",
   // --- sidecar vs live declaration drift ---
@@ -51,6 +54,27 @@ export const WcsDiagnosticCode = {
   TokenUndeclared: "wcs/token-undeclared",
   TokenMisconfigured: "wcs/token-misconfigured",
   NestedAssign: "wcs/nested-assign",
+  // --- 意味論（構文・存在検査では捕まらない取り違え。service/semanticValidator.ts） ---
+  // `$getAll` / `$setAll` / `$resolve` の添字の本数がパスの `*` の本数と噛み合わない。
+  // ランタイムは同じ code で raiseError する（超過は以前は黙って無視されていた）。
+  IndexArity: "wcs/index-arity",
+  // ワイルドカードの階数がスコープの段数を超える（`matrix.*.*` を 1 段の for で読む、
+  // `$2` を 1 段のループで読む）。既存の「for の外」検査の深さ方向の一般化。
+  WildcardRank: "wcs/wildcard-rank",
+  // パス getter どうしの循環参照。ランタイムはアドレススタック上限まで再帰してから落ちる。
+  GetterCycle: "wcs/getter-cycle",
+  // `$updatedCallback` が、どのバインディングにも現れないパスを判定に使っている。
+  // 同コールバックは **binding 駆動**（live binding が適用された path しか報告しない）
+  // なので、その分岐は一度も実行されない。表示要素が購読の実体になる事故
+  // （examples/state-intersect-scroll の README に記録）の静的検出。
+  UpdatedCallbackUnbound: "wcs/updated-callback-unbound",
+  // --- <wcs-state> script: $watch declaration ---
+  // ランタイム（watch/processWatchDeclaration.ts）が raiseError で落とす宣言。
+  // 越境 `@` / `$` 始まり / 空キー・空セグメント / 明らかな非関数ハンドラ。
+  WatchDeclarationInvalid: "wcs/watch-declaration-invalid",
+  // `$watch` のキーが状態定義に存在しない。バインディング側と違い黙って発火しない
+  // だけなので気づけない。severity は binding-path-missing に揃える（warning）。
+  WatchPathMissing: "wcs/watch-path-missing",
   TypeAnnotation: "wcs/type-annotation",
   TemplateSyntax: "wcs/template-syntax",
   // --- <wcs-state> script: array reactivity hazards ---
@@ -63,10 +87,18 @@ export const WcsDiagnosticCode = {
   // --- built-in wcs-* tag contract (generated/builtinTags.generated.ts が正本) ---
   // 未知メンバーへのバインド(プロパティ / command. / eventToken. キー)。黙って無視される。
   TagMemberUnknown: "wcs/tag-member-unknown",
+  // wcBindable 無宣言タグ(wcs-fetch-header 等のヘルパー)への spread。
+  // ランタイム(expandSpread)は raiseError で落とす。
+  SpreadNoBindable: "wcs/spread-no-bindable",
   // trigger バインド先スロットの true シード(エッジ検出なし・manual バイパスで即発火)。
   TriggerSeededTruthy: "wcs/trigger-seeded-truthy",
   // 非 manual <wcs-storage> value バインド先の空値シード(初期書き戻しが保存値を上書き)。
   StorageSeedClobber: "wcs/storage-seed-clobber",
+  // --- accessibility (docs/a11y-design.md §8 / D9) ---
+  // `attr.aria-*` バインドの属性名が WAI-ARIA に存在しない(タイポ)。
+  // setAttribute はそのまま書き、支援技術は黙って無視する。severity は warning
+  // (error 昇格時は packages/lint/scripts/smoke-test.mjs の対ケース更新が必須)。
+  AriaAttrUnknown: "wcs/aria-attr-unknown",
   // --- document-level load configuration ---
   // @wcstack/state/auto より後に他 wcstack /auto が読まれている。
   ScriptOrder: "wcs/script-order",
@@ -74,6 +106,14 @@ export const WcsDiagnosticCode = {
   BaseHrefMissing: "wcs/base-href-missing",
   // @wcstack/signals と /dom エントリの同一ページ混在(リアクティブコア二重化)。
   SignalsDualEntry: "wcs/signals-dual-entry",
+  // --- deprecations ---
+  // 名前付き State（`<wcs-state name>` / `path@name`）。v2 でマウント（`mount=` と接頭辞付きパス）に
+  // 置き換わる（docs/state-mount-design.md D16）。1.x では warning、v2 では parse error と同時に error。
+  NamedStateDeprecated: "wcs/named-state-deprecated",
+  // --- volume mount ---
+  // `<wcs-state mount="...">` の値が runtime の validateVolumeMountPath で raise する形
+  // （空・空セグメント・ワイルドカード・予約文字 $ # @）。runtime と同条件・同文言（v2）。
+  MountPathInvalid: "wcs/mount-path-invalid",
 } as const;
 
 export type WcsDiagnosticCodeValue = (typeof WcsDiagnosticCode)[keyof typeof WcsDiagnosticCode];

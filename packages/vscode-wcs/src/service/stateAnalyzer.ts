@@ -26,9 +26,14 @@ export interface PathCandidate {
    * 具体値を必要とするため typeHint とは別に公開する。JSON 由来のパスには付かない。
    */
   rawInitial?: string;
-  /** 所属する state 名（デフォルト: 'default'） */
-  stateName: string;
+  /**
+   * sidecar manifest の `stateSchema` から導出した候補（analyzeSchemaPaths）。
+   * 型は宣言された契約由来なので「確定」扱い — `for:` の非配列を error にする判定に使う。
+   */
+  fromSchema?: boolean;
 }
+
+import type { JsonSchemaNode } from '../core/sidecar/types.js';
 
 // ランタイム予約キー（@wcstack/state src/define.ts が正本）。
 // トップレベルの `$` プレフィックスキーは宣言・API 名前空間でありデータパスにならない。
@@ -36,6 +41,9 @@ const RESERVED_STREAMS_KEY = '$streams';
 const RESERVED_COMMAND_TOKENS_KEY = '$commandTokens';
 const RESERVED_EVENT_TOKENS_KEY = '$eventTokens';
 const RESERVED_LIST_KEYS_KEY = '$listKeys';
+// `$watch` はパスを新設しないので analyzeStatePaths では派生候補を作らない。
+// 宣言そのものの検証（キーがパスとして成立するか）は analyzeWatchEntries が担う。
+const RESERVED_WATCH_KEY = '$watch';
 
 /**
  * export default { ... } のオブジェクトリテラルからパス候補を生成する。
@@ -43,7 +51,7 @@ const RESERVED_LIST_KEYS_KEY = '$listKeys';
  * @param scriptContent - <script type="module"> の内容
  * @returns パス候補の配列
  */
-export function analyzeStatePaths(scriptContent: string, stateName: string = 'default'): PathCandidate[] {
+export function analyzeStatePaths(scriptContent: string): PathCandidate[] {
   const objectContent = extractDefaultExportObject(scriptContent);
   if (!objectContent) return [];
 
@@ -56,45 +64,247 @@ export function analyzeStatePaths(scriptContent: string, stateName: string = 'de
 
   for (const prop of topLevelProps) {
     // トップレベルの `$` プレフィックスキーは予約名（$streams/$commandTokens/$eventTokens/
-    // $listKeys/$on/$bindables/$connectedCallback 等）。データパスにせず宣言由来の候補だけを
-    // 導出する。
+    // $listKeys/$watch/$on/$bindables/$connectedCallback 等）。データパスにせず宣言由来の
+    // 候補だけを導出する。`$watch` は既存パスを購読するだけで新しいパスを作らないため、
+    // `$streams`（値プロパティを実体化する）と違い個別処理は要らない。
     if (prop.name.startsWith('$')) {
-      collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys, stateName);
+      collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys);
       continue;
     }
 
     if (prop.kind === 'method') {
       // メソッドはパス補完には含めないが、検証用に登録
-      paths.push({ path: prop.name, kind: 'method', stateName });
+      paths.push({ path: prop.name, kind: 'method' });
       continue;
     }
 
     if (prop.kind === 'getter') {
       // computed getter / setter: "users.*.ageCategory" のようなパス。
       // get/set のペアは同じパスを 2 度宣言するので候補は 1 つに畳む。
-      if (!paths.some(p => p.stateName === stateName && p.path === prop.name)) {
-        paths.push({ path: prop.name, kind: 'computed', stateName });
+      if (!paths.some(p => p.path === prop.name)) {
+        paths.push({ path: prop.name, kind: 'computed' });
       }
       continue;
     }
 
-    pushDataPropertyPaths(prop, paths, stateName);
+    pushDataPropertyPaths(prop, paths);
   }
 
   // $streams 宣言による値プロパティの実体化（processStreamsDeclaration §1-3 相当）。
   // ユーザーが同名プロパティを明示宣言している場合は上書きしない。
   for (const streamValue of pendingStreamValues) {
-    if (paths.some(p => p.stateName === stateName && p.path === streamValue.name)) continue;
-    pushDataPropertyPaths(streamValue, paths, stateName);
+    if (paths.some(p => p.path === streamValue.name)) continue;
+    pushDataPropertyPaths(streamValue, paths);
   }
 
   // $listKeys 宣言によるリストパスの実体化（processListKeysDeclaration §3 相当）。
   // $streams 実体化の後に走らせて、stream 由来のリストにキー宣言が付くケースも拾う。
   for (const listKeyEntry of pendingListKeys) {
-    pushListKeyPaths(listKeyEntry, paths, stateName);
+    pushListKeyPaths(listKeyEntry, paths);
   }
 
+  // 行を足す / 置き換える代入式（`this.items = this.items.concat({ … })` 等）の行リテラルから
+  // リスト行の形を補う。初期値が `[]` のリストは行フィールドが読めない（Issue #239）。
+  // 明示宣言・$streams・$listKeys の候補が揃った後に走らせ、無いパスだけを足す。
+  collectRowShapesFromAssignments(scriptContent, paths);
+
   return paths;
+}
+
+/** `$watch` の 1 エントリ（キー ＝ 監視対象パス）と、原文での位置。 */
+export interface WatchEntryInfo {
+  /** 宣言キー。引用符を外した生の文字列（`items.*.price` など） */
+  readonly key: string;
+  /** scriptContent 内でのキーの範囲（引用符は含まない） */
+  readonly start: number;
+  readonly end: number;
+  /**
+   * 値が「関数ではないことが確実」か。識別子参照（`isLoading: onChange`）は
+   * 静的には解決できないので false（＝疑わない）に倒す。
+   */
+  readonly definitelyNotFunction: boolean;
+}
+
+/**
+ * `$watch: { "<path>": handler }` のエントリを位置付きで抽出する。
+ *
+ * `analyzeStatePaths` が `$watch` を「パスを作らない予約キー」として素通りするのに対し、
+ * こちらは **宣言そのものの妥当性**（キーがパスとして成立するか）を見る validator 用。
+ * `$watch` の失敗モードは一貫して「黙って発火しない」なので、キーのタイプミスを
+ * 静的に拾えるかどうかが効く。
+ */
+export function analyzeWatchEntries(scriptContent: string): WatchEntryInfo[] {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return [];
+
+  const watchProp = parseTopLevelProperties(root.content).find(p => p.name === RESERVED_WATCH_KEY);
+  if (
+    !watchProp || watchProp.kind !== 'data' || !watchProp.value ||
+    !isObjectLiteral(watchProp.value) || watchProp.valueStart === undefined
+  ) {
+    return [];
+  }
+
+  // 値テキストの先頭空白ぶんだけ `{` がずれる。中身はその次から始まる。
+  const leading = watchProp.value.length - watchProp.value.trimStart().length;
+  const innerStart = root.start + watchProp.valueStart + leading + 1;
+
+  const entries: WatchEntryInfo[] = [];
+  for (const entry of parseTopLevelProperties(extractObjectContent(watchProp.value))) {
+    if (entry.nameStart === undefined || entry.nameEnd === undefined) continue;
+    entries.push({
+      key: entry.name,
+      start: innerStart + entry.nameStart,
+      end: innerStart + entry.nameEnd,
+      // メソッド短縮記法は関数。data は値リテラルの形で判定し、識別子参照は疑わない。
+      definitelyNotFunction: entry.kind === 'data' && isNonFunctionLiteral(entry.value),
+    });
+  }
+  return entries;
+}
+
+/** トップレベル宣言 1 件の名前スパン（scriptContent 相対・引用符は含まない）。 */
+export interface DeclarationSpan {
+  readonly name: string;
+  readonly kind: 'data' | 'getter' | 'method';
+  readonly start: number;
+  readonly end: number;
+}
+
+/**
+ * `export default { ... }` のトップレベル宣言名を位置付きで列挙する。
+ *
+ * 参照インデックス（core/index/referenceIndex）の「宣言側」の正本。パスの
+ * 第 1 セグメント（`user.name` → `user`）と、引用符付き getter のフルパス名
+ * （`"users.*.ageCategory"`）がここに現れる。ネストしたオブジェクトの内側
+ * （`user: { name: … }` の `name`）は列挙しない — go-to-definition はトップ
+ * レベル宣言へのフォールバックで運用する（v1 の割り切り）。
+ */
+export function analyzeDeclarationSpans(scriptContent: string): DeclarationSpan[] {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return [];
+  const out: DeclarationSpan[] = [];
+  for (const prop of parseTopLevelProperties(root.content)) {
+    if (prop.nameStart === undefined || prop.nameEnd === undefined) continue;
+    out.push({
+      name: prop.name,
+      kind: prop.kind,
+      start: root.start + prop.nameStart,
+      end: root.start + prop.nameEnd,
+    });
+  }
+  return out;
+}
+
+/** getter / メソッド宣言 1 個（名前スパン + 本体テキストと位置）。意味論検査が本体を読む。 */
+export interface CallableBody {
+  readonly name: string;
+  readonly kind: 'getter' | 'method';
+  /** 名前の範囲（script 内の絶対オフセット。診断のレンジに使う） */
+  readonly start: number;
+  readonly end: number;
+  /** 本体（`{ ... }` の中身）の生テキスト */
+  readonly body: string;
+  /** 本体の開始オフセット（script 内の絶対位置。本体内のトークンのレンジ計算に使う） */
+  readonly bodyStart: number;
+}
+
+/**
+ * `export default { ... }` のトップレベル getter / メソッドを、名前スパンと本体付きで返す。
+ *
+ * `analyzeDeclarationSpans` は名前しか返さないため、本体を読む検査
+ * （`wcs/getter-cycle` / `wcs/updated-callback-unbound`）はこちらを使う。
+ * set 側は `kind: 'getter'` に含まれる（本体の形が同じなので同列に扱ってよい）。
+ */
+export function analyzeCallableBodies(scriptContent: string): CallableBody[] {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return [];
+  const out: CallableBody[] = [];
+  for (const prop of parseTopLevelProperties(root.content)) {
+    if (prop.kind !== 'getter' && prop.kind !== 'method') continue;
+    if (prop.nameStart === undefined || prop.nameEnd === undefined) continue;
+    out.push({
+      name: prop.name,
+      kind: prop.kind,
+      start: root.start + prop.nameStart,
+      end: root.start + prop.nameEnd,
+      body: prop.value ?? '',
+      bodyStart: root.start + (prop.valueStart ?? 0),
+    });
+  }
+  return out;
+}
+
+/**
+ * 値が「関数ではない」と静的に断定できるリテラルか。
+ *
+ * 断定できる場合だけ true を返す（誤検出を出さないほうを優先する）。識別子参照・
+ * 呼び出し式・条件式などは「分からない」＝ false に倒す。
+ */
+function isNonFunctionLiteral(value: string | undefined): boolean {
+  if (value === undefined) return false;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return false;
+  // 関数の形（function 宣言 / アロー）が見えるなら明確に関数
+  const scan = maskCommentsAndStrings(trimmed);
+  if (/^(?:async\s+)?function\b/.test(trimmed) || scan.includes('=>')) return false;
+  // 明らかな非関数リテラルだけを拾う
+  return (
+    /^["'`]/.test(trimmed) ||
+    /^-?\d/.test(trimmed) ||
+    /^(?:true|false|null|undefined)\b/.test(trimmed) ||
+    trimmed.startsWith('[') ||
+    trimmed.startsWith('{')
+  );
+}
+
+/**
+ * `$watch` の宣言が「オブジェクトでない」とランタイム同様に**断定できる**場合に
+ * その名前スパンを返す（該当なしは null）。
+ *
+ * ランタイム（@wcstack/state watch/processWatchDeclaration.ts）は
+ * `typeof declared !== "object" || declared === null` で raiseError する。静的に
+ * 断定できるのは:
+ * - メソッド短縮記法 `$watch() {}`（値は関数 = 非オブジェクト）
+ * - 明白な非オブジェクトリテラル（文字列・数値・真偽値・null・関数/アロー式）
+ *
+ * 断定しないもの（誤検出回避）: 識別子参照・呼び出し式（実行時までオブジェクトか
+ * 不明）、配列リテラル（typeof は "object" なのでランタイムは通す）、
+ * `undefined`（ランタイムは宣言なし扱いで早期 return）、getter（評価結果は不明）。
+ */
+export function findNonObjectWatch(scriptContent: string): { start: number; end: number } | null {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return null;
+  const watchProp = parseTopLevelProperties(root.content).find(p => p.name === RESERVED_WATCH_KEY);
+  if (!watchProp || watchProp.nameStart === undefined || watchProp.nameEnd === undefined) {
+    return null;
+  }
+  const span = { start: root.start + watchProp.nameStart, end: root.start + watchProp.nameEnd };
+  if (watchProp.kind === 'method') {
+    return span;
+  }
+  if (watchProp.kind !== 'data' || !watchProp.value) return null;
+  const trimmed = watchProp.value.trim();
+  if (trimmed.startsWith('{')) return null;
+  const scan = maskCommentsAndStrings(trimmed).trim();
+  // 値そのものがアロー関数（`(a, b) => ...` / `a => ...`）。呼び出し式・IIFE
+  // （`make(() => 1)` / `(() => ({}))()` 等）は値の型を決めないため対象外 —
+  // パラメータリストに括弧を含まない素直な形だけを断定する（fold to unknown）。
+  // アロー本体は値の末尾まで届くため、こちらは prefix 判定でよい。
+  const isArrowFunction =
+    /^(?:async\s+)?\([^()]*\)\s*=>/.test(scan) ||
+    /^(?:async\s+)?[$\w]+\s*=>/.test(scan);
+  // リテラル断定は **値全体がそのリテラルである**ことを要求する。先頭トークンだけ
+  // 見ると `true && {…}` / `null ?? {…}` / `"x" ? a : b` のような、実行時には
+  // オブジェクトになりうる式を誤って断定する（fold to unknown）。文字列は
+  // マスク済み鏡像（引用符は残り中身が空白化される）上で単一リテラルのみ照合。
+  const isWholeLiteral =
+    /^(["'`])[^"'`]*\1$/.test(scan) ||
+    /^-?\d[\w.]*$/.test(scan) ||
+    /^(?:true|false|null)$/.test(scan) ||
+    /^(?:async\s+)?function\b[\s\S]*\}$/.test(scan);
+  if (!isArrowFunction && !isWholeLiteral) return null;
+  return span;
 }
 
 /**
@@ -113,7 +323,6 @@ function collectReservedKeyPaths(
   paths: PathCandidate[],
   pendingStreamValues: PropertyInfo[],
   pendingListKeys: PropertyInfo[],
-  stateName: string,
 ): void {
   if (prop.name === RESERVED_STREAMS_KEY && prop.kind === 'data' && prop.value && isObjectLiteral(prop.value)) {
     const entries = parseTopLevelProperties(extractObjectContent(prop.value));
@@ -129,22 +338,22 @@ function collectReservedKeyPaths(
         value: initial?.value,
         typeHint: initial?.typeHint,
       });
-      paths.push({ path: `$streamStatus.${entry.name}`, kind: 'data', typeHint: 'string', stateName });
-      paths.push({ path: `$streamError.${entry.name}`, kind: 'data', stateName });
+      paths.push({ path: `$streamStatus.${entry.name}`, kind: 'data', typeHint: 'string' });
+      paths.push({ path: `$streamError.${entry.name}`, kind: 'data' });
     }
     return;
   }
 
   if (prop.name === RESERVED_COMMAND_TOKENS_KEY && prop.value) {
     for (const name of extractStringArrayItems(prop.value)) {
-      paths.push({ path: `$command.${name}`, kind: 'command', stateName });
+      paths.push({ path: `$command.${name}`, kind: 'command' });
     }
     return;
   }
 
   if (prop.name === RESERVED_EVENT_TOKENS_KEY && prop.value) {
     for (const name of extractStringArrayItems(prop.value)) {
-      paths.push({ path: name, kind: 'eventToken', stateName });
+      paths.push({ path: name, kind: 'eventToken' });
     }
     return;
   }
@@ -170,24 +379,24 @@ function collectReservedKeyPaths(
  * raiseError で弾く形の宣言 — 空パス / 空セグメント / 末尾 `*` / `.` `*` を含むキー
  * フィールド名 — からは候補を作らない。壊れた宣言を静的側が追認しないため。
  */
-function pushListKeyPaths(entry: PropertyInfo, paths: PathCandidate[], stateName: string): void {
+function pushListKeyPaths(entry: PropertyInfo, paths: PathCandidate[]): void {
   const listPath = entry.name;
   const segments = listPath.split('.');
   if (listPath.length === 0 || segments.some(s => s.length === 0) || segments[segments.length - 1] === '*') {
     return;
   }
-  const has = (path: string): boolean => paths.some(p => p.stateName === stateName && p.path === path);
+  const has = (path: string): boolean => paths.some(p => p.path === path);
 
-  if (!has(listPath)) paths.push({ path: listPath, kind: 'data', typeHint: 'array', stateName });
-  if (!has(`${listPath}.*`)) paths.push({ path: `${listPath}.*`, kind: 'list', stateName });
+  if (!has(listPath)) paths.push({ path: listPath, kind: 'data', typeHint: 'array' });
+  if (!has(`${listPath}.*`)) paths.push({ path: `${listPath}.*`, kind: 'list' });
   if (!has(`${listPath}.length`)) {
-    paths.push({ path: `${listPath}.length`, kind: 'data', typeHint: 'number', stateName });
+    paths.push({ path: `${listPath}.length`, kind: 'data', typeHint: 'number' });
   }
 
   const keyField = extractStringLiteralValue(entry.value);
   if (keyField === null || keyField.includes('.') || keyField.includes('*')) return;
   if (!has(`${listPath}.*.${keyField}`)) {
-    paths.push({ path: `${listPath}.*.${keyField}`, kind: 'data', stateName });
+    paths.push({ path: `${listPath}.*.${keyField}`, kind: 'data' });
   }
 }
 
@@ -196,6 +405,158 @@ function extractStringLiteralValue(value: string | undefined): string | null {
   if (!value) return null;
   const match = value.trim().match(/^["']([^"'\\]*)["']$/);
   return match && match[1].length > 0 ? match[1] : null;
+}
+
+// ============================================================
+// 代入式の行リテラルから導出する行の形（Issue #239）
+// ============================================================
+
+/**
+ * 「行を足す / 置き換える」代入式を捕捉する。
+ *
+ * 左辺: `this.<ident>` または `this["<dotted path>"]` への単純代入（`=` のみ。`==` / `=>` と
+ * 複合代入は除外）。右辺は次のどちらか:
+ * - 配列リテラルで始まる（`[...this.items, { … }]` / `[{ … }, ...this.items]`）→ group 3 = `[`
+ * - `.concat(` / `.toSpliced(` / `.with(` の呼び出しを含む → group 4 = `(`
+ *   代入から呼び出しまでの区間は `;` `=` `{` `}` を跨がない（別の文・別のブロックへ
+ *   流れ込まない）。アロー `=>` だけは許容し `filter(r => r.ok).concat({ … })` を通す。
+ *
+ * マスク済み鏡像で走査するため引用符付きパス（group 2）は中身が空白 — 呼び出し側が
+ * `d` フラグの indices で原文から取り直す。
+ */
+const ROW_ASSIGN = new RegExp(
+  String.raw`\bthis\s*(?:\.\s*([$\w]+)|\[\s*["']([^"']+)["']\s*\])\s*=(?![=>])\s*(?:(\[)|(?:[^;={}]|=>)*?\.\s*(?:concat|toSpliced|with)\s*(\())`,
+  'gd',
+);
+
+/**
+ * メソッド本体などに現れる「行を足す / 置き換える」代入式の行リテラルから、リスト行の
+ * フィールド候補（`<list>.*.<field>` とその子）を導出する。
+ *
+ * `this.items = this.items.concat({ id: newId(), kind: "general" })` の形は、初期値と
+ * 同じ確度で行の形を宣言している。初期値が `[]` のリストではこれが唯一の手掛かりで、
+ * これが無いと `for` 行内の `.kind` が `wcs/binding-path-missing` になる（Issue #239）。
+ *
+ * 規則:
+ * - 対象は **既にリストと分かっているパス**（`<path>.*` が候補にある）だけ。宣言の無い
+ *   パスをここで新設しない。`$` ルート（API 名前空間）と `*` 入りパスは対象外。
+ * - 行リテラルは呼び出しの引数（`concat({ … })` / `toSpliced(i, n, { … })` / `with(i, { … })`）、
+ *   引数の配列リテラルの要素（`concat([{ … }])`）、右辺の配列リテラルの要素。識別子で渡された
+ *   行（`concat(row)`）は読めない（fold to unknown）。
+ * - 短縮プロパティ（`{ id, kind }`）も名前だけ拾う。スプレッド（`...r`）・算出キーは無視。
+ * - 既存候補は上書きしない（明示宣言 > `$streams` > `$listKeys` > ここ）。型ヒントは
+ *   リテラル値から推定するが、初期値ではないので `rawInitial` は付けない。
+ * - script 全体を走査する（getter / setter / `$connectedCallback` / `$watch` ハンドラ /
+ *   モジュール直下の関数も対象）。コメント・文字列の中は鏡像で潰れているので拾わない。
+ */
+function collectRowShapesFromAssignments(script: string, paths: PathCandidate[]): void {
+  const scan = maskCommentsAndStrings(script);
+  ROW_ASSIGN.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = ROW_ASSIGN.exec(scan)) !== null) {
+    const span = match.indices![1] ?? match.indices![2];
+    const listPath = script.slice(span[0], span[1]);
+    if (listPath.startsWith('$') || listPath.includes('*') || !hasPath(paths, `${listPath}.*`)) continue;
+
+    const openIndex = match.index + match[0].length - 1;
+    const isArrayLiteral = scan[openIndex] === '[';
+    const inner = extractDelimitedContent(script, scan, openIndex, scan[openIndex], isArrayLiteral ? ']' : ')');
+    // 右辺の配列リテラルは要素だけ（配列の配列は行ではない）。呼び出し引数は
+    // 配列リテラル 1 段の中も見る（`concat([{ … }])`）。
+    for (const literal of collectRowLiterals(inner, isArrayLiteral ? 0 : 1)) {
+      for (const field of extractRowLiteralFields(literal)) {
+        pushRowFieldPaths(`${listPath}.*.${field.name}`, field, paths, 1);
+      }
+    }
+  }
+}
+
+/** 要素列（引数列）からオブジェクトリテラルを集める。`arrayDepth` 段までは配列リテラルの中も見る。 */
+function collectRowLiterals(elementList: string, arrayDepth: number): string[] {
+  const out: string[] = [];
+  for (const element of splitTopLevelElements(elementList)) {
+    if (element.startsWith('{')) {
+      out.push(element);
+    } else if (element.startsWith('[') && arrayDepth > 0) {
+      const scan = maskCommentsAndStrings(element);
+      out.push(...collectRowLiterals(extractDelimitedContent(element, scan, 0, '[', ']'), arrayDepth - 1));
+    }
+  }
+  return out;
+}
+
+/**
+ * 行リテラル 1 個のデータフィールドを返す。`name: value` 形は parseTopLevelProperties、
+ * 短縮形（`{ id, kind }`）は要素分割で補う。メソッド / getter / スプレッド / 算出キーは対象外。
+ */
+function extractRowLiteralFields(literal: string): PropertyInfo[] {
+  const content = extractObjectContent(literal);
+  const fields = parseTopLevelProperties(content).filter(p => p.kind === 'data');
+  for (const element of splitTopLevelElements(content)) {
+    const shorthand = /^([$\w]+)$/.exec(element);
+    if (shorthand && !fields.some(f => f.name === shorthand[1])) {
+      fields.push({ name: shorthand[1], kind: 'data' });
+    }
+  }
+  return fields;
+}
+
+/**
+ * 行フィールド 1 個分の候補を、既存候補を上書きせずに追加する（pushDataPropertyPathsAt の
+ * 「無いものだけ足す・rawInitial なし」版）。値が配列 / オブジェクトリテラルなら子へ再帰。
+ */
+function pushRowFieldPaths(path: string, prop: PropertyInfo, paths: PathCandidate[], depth: number): void {
+  if (!hasPath(paths, path)) paths.push(withHint({ path, kind: 'data' }, prop.typeHint));
+  if (!prop.value) return;
+
+  if (isArrayLiteral(prop.value)) {
+    if (!hasPath(paths, `${path}.*`)) paths.push({ path: `${path}.*`, kind: 'list' });
+    if (!hasPath(paths, `${path}.length`)) {
+      paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number' });
+    }
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+    for (const child of extractArrayElementDataProperties(prop.value)) {
+      pushRowFieldPaths(`${path}.*.${child.name}`, child, paths, depth + 1);
+    }
+    return;
+  }
+
+  if (isObjectLiteral(prop.value)) {
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+    for (const child of parseTopLevelProperties(extractObjectContent(prop.value))) {
+      if (child.kind !== 'data') continue;
+      pushRowFieldPaths(`${path}.${child.name}`, child, paths, depth + 1);
+    }
+  }
+}
+
+/** 候補集合にパスが既にあるか。 */
+function hasPath(paths: PathCandidate[], path: string): boolean {
+  return paths.some(p => p.path === path);
+}
+
+/**
+ * 要素列（配列リテラルの中身 / 引数列 / オブジェクトリテラルの中身）を深さ 0 の `,` で
+ * 分割し、トリム済みの原文スライスを返す（空要素は除く）。括弧の数え上げは鏡像で行う。
+ */
+function splitTopLevelElements(text: string): string[] {
+  const scan = maskCommentsAndStrings(text);
+  const out: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === '{' || ch === '[' || ch === '(') {
+      depth++;
+    } else if (ch === '}' || ch === ']' || ch === ')') {
+      depth--;
+    } else if (ch === ',' && depth === 0) {
+      out.push(text.slice(start, i));
+      start = i + 1;
+    }
+  }
+  out.push(text.slice(start));
+  return out.map(e => e.trim()).filter(e => e.length > 0);
 }
 
 /**
@@ -230,8 +591,8 @@ const MAX_OBJECT_NEST_DEPTH = 5;
  * データプロパティ1つ分のパス候補を生成する
  * （配列ならワイルドカード・`.length`・要素子パス、オブジェクトなら子パスも展開）。
  */
-function pushDataPropertyPaths(prop: PropertyInfo, paths: PathCandidate[], stateName: string): void {
-  pushDataPropertyPathsAt(prop.name, prop, paths, stateName, 0);
+function pushDataPropertyPaths(prop: PropertyInfo, paths: PathCandidate[]): void {
+  pushDataPropertyPathsAt(prop.name, prop, paths, 0);
 }
 
 /**
@@ -242,24 +603,22 @@ function pushDataPropertyPathsAt(
   path: string,
   prop: PropertyInfo,
   paths: PathCandidate[],
-  stateName: string,
   depth: number,
 ): void {
   // データプロパティ
-  paths.push({ path, kind: 'data', typeHint: prop.typeHint, rawInitial: prop.value?.trim(), stateName });
+  paths.push({ path, kind: 'data', typeHint: prop.typeHint, rawInitial: prop.value?.trim() });
 
-  // 配列の場合、ワイルドカードパスと子パス、組み込みプロパティを生成
+  // 配列の場合、ワイルドカードパスと子パス、組み込みプロパティを生成。
+  // 先頭要素の子プロパティへは再帰する — 子が配列/オブジェクトなら
+  // `a.*.b.*` / `a.*.b.c` のような深いワイルドカード候補も導出される
+  // （ランタイムは任意深度のワイルドカードを解決するため、ここで打ち切ると
+  // 入れ子リストの正当なパスが「未知パス」扱いになる）。
   if (prop.value && isArrayLiteral(prop.value)) {
-    paths.push({ path: `${path}.*`, kind: 'list', stateName });
-    paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number', stateName });
-    const elementProps = extractArrayElementProperties(prop.value);
-    for (const childProp of elementProps) {
-      paths.push({
-        path: `${path}.*.${childProp.name}`,
-        kind: 'data',
-        typeHint: childProp.typeHint,
-        stateName,
-      });
+    paths.push({ path: `${path}.*`, kind: 'list' });
+    paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number' });
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+    for (const childProp of extractArrayElementDataProperties(prop.value)) {
+      pushDataPropertyPathsAt(`${path}.*.${childProp.name}`, childProp, paths, depth + 1);
     }
     return;
   }
@@ -270,7 +629,7 @@ function pushDataPropertyPathsAt(
     const childProps = parseTopLevelProperties(extractObjectContent(prop.value));
     for (const childProp of childProps) {
       if (childProp.kind !== 'data') continue;
-      pushDataPropertyPathsAt(`${path}.${childProp.name}`, childProp, paths, stateName, depth + 1);
+      pushDataPropertyPathsAt(`${path}.${childProp.name}`, childProp, paths, depth + 1);
     }
   }
 }
@@ -283,10 +642,9 @@ function pushDataPropertyPathsAt(
  * JSON にはメソッドや computed getter がないため、全て kind: 'data' となる。
  *
  * @param jsonString - JSON 文字列
- * @param stateName - 所属する state 名
  * @returns パス候補の配列（パース失敗時は空配列）
  */
-export function analyzeJsonPaths(jsonString: string, stateName: string = 'default'): PathCandidate[] {
+export function analyzeJsonPaths(jsonString: string): PathCandidate[] {
   let data: unknown;
   try {
     data = JSON.parse(jsonString);
@@ -297,7 +655,7 @@ export function analyzeJsonPaths(jsonString: string, stateName: string = 'defaul
   if (typeof data !== 'object' || data === null || Array.isArray(data)) return [];
 
   const paths: PathCandidate[] = [];
-  collectJsonPaths(data as Record<string, unknown>, '', paths, stateName, 0);
+  collectJsonPaths(data as Record<string, unknown>, '', paths, 0);
   return paths;
 }
 
@@ -309,34 +667,45 @@ function collectJsonPaths(
   obj: Record<string, unknown>,
   prefix: string,
   paths: PathCandidate[],
-  stateName: string,
   depth: number,
 ): void {
-  if (depth > 5) return; // 深すぎるネストは無視
+  if (depth >= MAX_OBJECT_NEST_DEPTH) return; // 深すぎるネストは無視
 
   for (const [key, value] of Object.entries(obj)) {
     // トップレベルの `$` キーは予約名（JSON state に書いてもデータパスにはならない）
     if (prefix === '' && key.startsWith('$')) continue;
     const path = prefix ? `${prefix}.${key}` : key;
-    const typeHint = inferJsonTypeHint(value);
+    pushJsonValuePaths(path, value, paths, depth);
+  }
+}
 
-    paths.push({ path, kind: 'data', typeHint, stateName });
+/**
+ * JSON 値 1 つ分のパス候補を生成する。配列は先頭要素の子へ再帰し、
+ * 入れ子リスト（`a.*.b.*` / `a.*.b.*.c`）の候補も導出する
+ * （script 側の pushDataPropertyPathsAt と同じ規則）。
+ */
+function pushJsonValuePaths(
+  path: string,
+  value: unknown,
+  paths: PathCandidate[],
+  depth: number,
+): void {
+  paths.push({ path, kind: 'data', typeHint: inferJsonTypeHint(value) });
 
-    if (Array.isArray(value)) {
-      paths.push({ path: `${path}.*`, kind: 'list', stateName });
-      paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number', stateName });
+  if (Array.isArray(value)) {
+    paths.push({ path: `${path}.*`, kind: 'list' });
+    paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number' });
 
-      // 最初の要素がオブジェクトなら子パスを生成
-      if (value.length > 0 && typeof value[0] === 'object' && value[0] !== null && !Array.isArray(value[0])) {
-        const firstElement = value[0] as Record<string, unknown>;
-        for (const [childKey, childValue] of Object.entries(firstElement)) {
-          const childPath = `${path}.*.${childKey}`;
-          paths.push({ path: childPath, kind: 'data', typeHint: inferJsonTypeHint(childValue), stateName });
-        }
+    // 最初の要素がオブジェクトなら子パスへ再帰
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+    if (value.length > 0 && typeof value[0] === 'object' && value[0] !== null && !Array.isArray(value[0])) {
+      const firstElement = value[0] as Record<string, unknown>;
+      for (const [childKey, childValue] of Object.entries(firstElement)) {
+        pushJsonValuePaths(`${path}.*.${childKey}`, childValue, paths, depth + 1);
       }
-    } else if (typeof value === 'object' && value !== null) {
-      collectJsonPaths(value as Record<string, unknown>, path, paths, stateName, depth + 1);
     }
+  } else if (typeof value === 'object' && value !== null) {
+    collectJsonPaths(value as Record<string, unknown>, path, paths, depth + 1);
   }
 }
 
@@ -363,6 +732,14 @@ interface PropertyInfo {
   kind: 'data' | 'getter' | 'method';
   value?: string;
   typeHint?: string;
+  /**
+   * 解析対象の objectContent 内での名前の範囲（引用符は含まない）と値の開始位置。
+   * 診断のレンジ計算にだけ使う。宣言から合成した派生プロパティ（`$streams` の値
+   * 実体化など）は原文に対応する位置を持たないため未設定。
+   */
+  nameStart?: number;
+  nameEnd?: number;
+  valueStart?: number;
 }
 
 interface SimpleProperty {
@@ -371,16 +748,26 @@ interface SimpleProperty {
 }
 
 /**
- * `export default { ... }` からオブジェクトリテラルの中身を抽出する。
+ * `export default { ... }` のオブジェクトリテラルを、中身と **script 内での開始
+ * オフセット**の両方で返す。オフセットが要るのは診断のレンジ計算のため
+ * （watchDeclarationValidator）。
  */
-function extractDefaultExportObject(script: string): string | null {
+function locateDefaultExportObject(script: string): { content: string; start: number } | null {
   const scan = maskCommentsAndStrings(script);
   // defineState({ ... }) または { ... } を検出
   const match = scan.match(/export\s+default\s+(?:defineState\s*\(\s*)?(\{)/);
   if (!match) return null;
 
-  const startIndex = scan.indexOf(match[1], match.index!);
-  return extractBracedContent(script, scan, startIndex);
+  const braceIndex = scan.indexOf(match[1], match.index!);
+  // extractBracedContent は `{` の中身を返すので、中身の開始は `{` の次
+  return { content: extractBracedContent(script, scan, braceIndex), start: braceIndex + 1 };
+}
+
+/**
+ * `export default { ... }` からオブジェクトリテラルの中身を抽出する。
+ */
+function extractDefaultExportObject(script: string): string | null {
+  return locateDefaultExportObject(script)?.content ?? null;
 }
 
 /**
@@ -397,48 +784,76 @@ function parseTopLevelProperties(objectContent: string): PropertyInfo[] {
   // `streams` 部分にマッチして偽のパスが生まれる）。
   // `d` フラグ必須 — 引用符付きキーは鏡像では中身が空白なので、名前は
   // match.indices が示す範囲を原文から取り直す。
-  const regex = /(?:(?:get|set)\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:async\s+)?([$\w]+)\s*\([^)]*\)\s*\{)|(?:(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*:\s*)/gd;
+  // メソッド短縮記法も **引用符付きの名前**を受ける: `"items.*.price"(cur, prev) {}`。
+  // ドットや `*` を含むキーは引用符でしか書けず、`$watch` のワイルドカード行
+  // ハンドラはまさにこの形（README の idiom）。bare 識別子だけを見ていると
+  // 宣言そのものが解析結果から丸ごと消える。
+  // グループ: 1-3 accessor / 4-6 method / 7-9 data（各 double / single / bare）
+  const regex = /(?:(?:get|set)\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:async\s+)?(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*:\s*)/gd;
 
   let match: RegExpExecArray | null;
   while ((match = regex.exec(scan)) !== null) {
     const indices = match.indices!;
+    let nameSpan: [number, number] | undefined;
     const nameAt = (group: number): string | undefined => {
       const span = indices[group];
-      return span ? objectContent.slice(span[0], span[1]) : undefined;
+      if (!span) return undefined;
+      nameSpan = [span[0], span[1]];
+      return objectContent.slice(span[0], span[1]);
     };
     // 本体 `{ ... }` を読み飛ばして走査位置をその直後へ送る（本体内の `word:` を
     // トップレベルのプロパティと誤認しないため）。
-    const skipBody = (): void => {
+    // 本体 `{ ... }` を読み飛ばしつつ、中身と開始位置を返す。
+    // 本体は捨てずに value / valueStart へ持つ — 意味論検査
+    // （wcs/getter-cycle・wcs/updated-callback-unbound）が「この関数が何を読んで
+    // いるか」を見るために要る。value を読む既存の消費者はすべて
+    // `kind === 'data'` で絞っているので影響しない。
+    const skipBody = (): { body: string; bodyStart: number } => {
       const braceStart = match!.index + match![0].length - 1;
       const body = extractBracedContent(objectContent, scan, braceStart);
       regex.lastIndex = braceStart + body.length + 2; // +2 for { and }
+      return { body, bodyStart: braceStart + 1 };
     };
 
     // accessor: get/set "path"() or get/set path()
     const accessorName = nameAt(1) ?? nameAt(2) ?? nameAt(3);
     if (accessorName) {
-      props.push({ name: accessorName, kind: 'getter' });
-      skipBody();
+      const { body, bodyStart } = skipBody();
+      props.push({
+        name: accessorName, kind: 'getter', value: body, valueStart: bodyStart,
+        nameStart: nameSpan![0], nameEnd: nameSpan![1],
+      });
       continue;
     }
 
-    // method: name(args) {
-    const methodName = nameAt(4);
+    // method: name(args) { / "path"(args) {
+    const methodName = nameAt(4) ?? nameAt(5) ?? nameAt(6);
     if (methodName) {
-      props.push({ name: methodName, kind: 'method' });
-      skipBody();
+      const { body, bodyStart } = skipBody();
+      props.push({
+        name: methodName, kind: 'method', value: body, valueStart: bodyStart,
+        nameStart: nameSpan![0], nameEnd: nameSpan![1],
+      });
       continue;
     }
 
     // data property: name: value
-    const propName = nameAt(5) ?? nameAt(6) ?? nameAt(7);
+    const propName = nameAt(7) ?? nameAt(8) ?? nameAt(9);
     if (propName) {
       const valueStartIndex = match.index + match[0].length;
       const value = extractFullValue(objectContent, scan, valueStartIndex);
       // JSDoc @type アノテーションがあれば優先、なければ値から推定
       const jsdocType = extractJsDocType(objectContent, match.index);
       const typeHint = jsdocType ?? inferTypeHint(value);
-      props.push({ name: propName, kind: 'data', value, typeHint });
+      props.push({
+        name: propName,
+        kind: 'data',
+        value,
+        typeHint,
+        nameStart: nameSpan![0],
+        nameEnd: nameSpan![1],
+        valueStart: valueStartIndex,
+      });
       // 値の末尾までスキップ
       regex.lastIndex = valueStartIndex + value.length;
     }
@@ -542,10 +957,24 @@ function extractFullValue(content: string, scan: string, startIndex: number): st
  * @param scan - text のマスク済み鏡像（括弧の数え上げはこちらで行う）
  */
 function extractBracedContent(text: string, scan: string, openBraceIndex: number): string {
+  return extractDelimitedContent(text, scan, openBraceIndex, '{', '}');
+}
+
+/**
+ * `open` … `close` の中身（外側の括弧を除く）を抽出する。`{}` / `[]` / `()` 共通。
+ * 対応する閉じ括弧が無ければ末尾まで返す。
+ */
+function extractDelimitedContent(
+  text: string,
+  scan: string,
+  openIndex: number,
+  open: string,
+  close: string,
+): string {
   let depth = 0;
   let inString: string | null = null;
 
-  for (let i = openBraceIndex; i < scan.length; i++) {
+  for (let i = openIndex; i < scan.length; i++) {
     const ch = scan[i];
 
     if (inString) {
@@ -557,17 +986,17 @@ function extractBracedContent(text: string, scan: string, openBraceIndex: number
 
     if (ch === '"' || ch === "'" || ch === '`') {
       inString = ch;
-    } else if (ch === '{') {
+    } else if (ch === open) {
       depth++;
-    } else if (ch === '}') {
+    } else if (ch === close) {
       depth--;
       if (depth === 0) {
-        return text.slice(openBraceIndex + 1, i);
+        return text.slice(openIndex + 1, i);
       }
     }
   }
 
-  return text.slice(openBraceIndex + 1);
+  return text.slice(openIndex + 1);
 }
 
 /**
@@ -596,29 +1025,23 @@ function extractObjectContent(value: string): string {
 }
 
 /**
- * 配列リテラルの最初の要素がオブジェクトの場合、そのプロパティを抽出する。
+ * 配列リテラルの最初の要素がオブジェクトの場合、そのデータプロパティを
+ * `value` 込みの PropertyInfo で抽出する（入れ子の配列/オブジェクト再帰用）。
  */
-function extractArrayElementProperties(value: string): SimpleProperty[] {
+function extractArrayElementDataProperties(value: string): PropertyInfo[] {
   const trimmed = value.trim();
   if (!trimmed.startsWith('[')) return [];
 
-  // 最初のオブジェクトリテラル { ... } を探す
+  // 先頭要素が**オブジェクトリテラル**の場合だけ子を導出する（JSON 側の
+  // !Array.isArray(value[0]) ガードと同じ）。`[[{ a: 1 }]]`（配列の配列）で
+  // 内側の `{` を拾うと `weird.*.a` のような実在しないパスを候補化してしまう。
   const scan = maskCommentsAndStrings(trimmed);
-  const objectStart = scan.indexOf('{');
-  if (objectStart === -1) return [];
+  let first = 1;
+  while (first < scan.length && /\s/.test(scan[first])) first++;
+  if (scan[first] !== '{') return [];
 
-  const objectContent = extractBracedContent(trimmed, scan, objectStart);
-
-  // オブジェクトの全プロパティを行単位で解析
-  const props: SimpleProperty[] = [];
-  const allProps = parseTopLevelProperties(objectContent);
-  for (const prop of allProps) {
-    if (prop.kind === 'data') {
-      props.push({ name: prop.name, typeHint: prop.typeHint });
-    }
-  }
-
-  return props;
+  const objectContent = extractBracedContent(trimmed, scan, first);
+  return parseTopLevelProperties(objectContent).filter((prop) => prop.kind === 'data');
 }
 
 /**
@@ -693,4 +1116,169 @@ function inferTypeHint(valueStart: string): string | undefined {
   if (v.startsWith('[')) return 'array';
   if (v.startsWith('{')) return 'object';
   return undefined;
+}
+
+// ============================================================
+// stateSchema（sidecar manifest）由来の候補
+// ============================================================
+
+/**
+ * `wcstack.application.states[name].stateSchema`（JSON-Schema subset・規範 §4）から
+ * パス候補を生成する。補完・hover・型期待（typeHint）に使う。**存在判定には使わない**
+ * — schema が宣言された state の存在判定は core/sidecar/schemaSubset.ts の
+ * `resolveSchemaPath` の三値（resolved / unknown / nonexistent）で行う。候補集合に
+ * 平坦化すると `{}`（unknown）の下のパスが「候補に無い = 不在」に化けて偽 error になる。
+ *
+ * 規則は collectJsonPaths と同じ: properties → data、配列（items）→ `<path>.*`（list）＋
+ * `<path>.length`（number）、items が object なら子へ再帰、深さ上限は MAX_OBJECT_NEST_DEPTH
+ * （生成器 wcs-schema も同じ深さで打ち切る）。`$ref` は root `$defs` で局所解決（循環・
+ * 未解決は捨てる）、`anyOf` は枝を合併し、型ヒントから null を除く。
+ */
+export function analyzeSchemaPaths(schema: JsonSchemaNode): PathCandidate[] {
+  const paths: PathCandidate[] = [];
+  const defs = schema.$defs ?? {};
+  collectSchemaObjectPaths(schema, '', paths, defs, 0);
+  return paths;
+}
+
+/**
+ * script / JSON 由来の候補に schema 由来の候補を合流させる。同じパスは schema が
+ * 勝つ（D12: 明示の契約が正規表現推定より優先）。schema が無ければそのまま返す。
+ */
+export function mergeSchemaCandidates(
+  candidates: PathCandidate[],
+  applicationSchema?: JsonSchemaNode,
+): PathCandidate[] {
+  if (applicationSchema === undefined) return candidates;
+  const schemaCandidates: PathCandidate[] = [];
+  const schemaKeys = new Set<string>();
+  for (const p of analyzeSchemaPaths(applicationSchema)) {
+    schemaCandidates.push(p);
+    schemaKeys.add(p.path);
+  }
+  const kept = candidates.filter(p => !schemaKeys.has(p.path));
+  return [...kept, ...schemaCandidates];
+}
+
+/** `$ref`（`#/$defs/<name>` のみ）と `anyOf` を展開して具体ノード列にする。循環・未解決は捨てる。 */
+function derefSchemaNodes(
+  node: JsonSchemaNode,
+  defs: Readonly<Record<string, JsonSchemaNode>>,
+): JsonSchemaNode[] {
+  const out: JsonSchemaNode[] = [];
+  const stack: { node: JsonSchemaNode; chain: ReadonlySet<string> }[] = [{ node, chain: new Set() }];
+  while (stack.length > 0) {
+    const { node: n, chain } = stack.pop()!;
+    if (n === null || typeof n !== 'object') continue;
+    if (typeof n.$ref === 'string') {
+      const match = /^#\/\$defs\/(.+)$/.exec(n.$ref);
+      if (match === null || chain.has(n.$ref)) continue;
+      const target = defs[match[1].replace(/~1/g, '/').replace(/~0/g, '~')];
+      if (target === undefined) continue;
+      stack.push({ node: target, chain: new Set([...chain, n.$ref]) });
+      continue;
+    }
+    if (Array.isArray(n.anyOf)) {
+      // LIFO なので逆順に積み、展開結果が宣言順（`a|b` の表記順）になるようにする
+      for (let i = n.anyOf.length - 1; i >= 0; i--) stack.push({ node: n.anyOf[i], chain });
+      continue;
+    }
+    out.push(n);
+  }
+  return out;
+}
+
+/**
+ * 展開済みノード列から型ヒントを決める。`integer` は number、null は除外、複数型は
+ * `a|b`（validateFilterChainTypes の union 表記）。`type` 無しは enum / const / properties /
+ * items から推定し、どれも無ければ undefined（= 型未確定・型期待検査は沈黙）。
+ */
+function schemaTypeHint(nodes: JsonSchemaNode[]): string | undefined {
+  const hints = new Set<string>();
+  for (const n of nodes) {
+    const types = typeof n.type === 'string' ? [n.type] : Array.isArray(n.type) ? n.type : [];
+    if (types.length > 0) {
+      for (const t of types) {
+        if (t === 'null') continue;
+        hints.add(t === 'integer' ? 'number' : t);
+      }
+      continue;
+    }
+    if (Array.isArray(n.enum)) {
+      for (const v of n.enum) {
+        const h = inferJsonTypeHint(v);
+        if (h !== undefined && h !== 'null') hints.add(h);
+      }
+    } else if (n.const !== undefined) {
+      const h = inferJsonTypeHint(n.const);
+      if (h !== undefined && h !== 'null') hints.add(h);
+    } else if (n.properties !== undefined) {
+      hints.add('object');
+    } else if (n.items !== undefined) {
+      hints.add('array');
+    }
+  }
+  return hints.size === 0 ? undefined : [...hints].join('|');
+}
+
+function collectSchemaObjectPaths(
+  node: JsonSchemaNode,
+  prefix: string,
+  paths: PathCandidate[],
+  defs: Readonly<Record<string, JsonSchemaNode>>,
+  depth: number,
+): void {
+  if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+  const seen = new Set<string>();
+  for (const n of derefSchemaNodes(node, defs)) {
+    for (const [key, child] of Object.entries(n.properties ?? {})) {
+      // トップレベルの `$` キーは予約名（schema に書いてもデータパスにはならない）
+      if (prefix === '' && key.startsWith('$')) continue;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const path = prefix ? `${prefix}.${key}` : key;
+      pushSchemaValuePaths(path, child, paths, defs, depth);
+    }
+  }
+}
+
+function pushSchemaValuePaths(
+  path: string,
+  node: JsonSchemaNode,
+  paths: PathCandidate[],
+  defs: Readonly<Record<string, JsonSchemaNode>>,
+  depth: number,
+): void {
+  const nodes = derefSchemaNodes(node, defs);
+  const typeHint = schemaTypeHint(nodes);
+  paths.push(withHint({ path, kind: 'data', fromSchema: true }, typeHint));
+
+  const items = nodes.map(n => n.items).find(i => i !== undefined && i !== null && typeof i === 'object');
+  const isArray = items !== undefined || (typeHint?.split('|').includes('array') ?? false);
+  if (isArray) {
+    const itemNodes = items !== undefined ? derefSchemaNodes(items, defs) : [];
+    paths.push(withHint({ path: `${path}.*`, kind: 'list', fromSchema: true }, schemaTypeHint(itemNodes)));
+    paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number', fromSchema: true });
+
+    // items がオブジェクトなら子パスへ再帰（JSON 側の「先頭要素の子」と同じ規則）
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+    const seen = new Set<string>();
+    for (const n of itemNodes) {
+      for (const [childKey, childNode] of Object.entries(n.properties ?? {})) {
+        if (seen.has(childKey)) continue;
+        seen.add(childKey);
+        pushSchemaValuePaths(`${path}.*.${childKey}`, childNode, paths, defs, depth + 1);
+      }
+    }
+    return;
+  }
+
+  if (nodes.some(n => n.properties !== undefined)) {
+    collectSchemaObjectPaths(node, path, paths, defs, depth + 1);
+  }
+}
+
+/** typeHint が undefined のときはキー自体を付けない（JSON 由来候補との toEqual 互換）。 */
+function withHint(candidate: PathCandidate, typeHint: string | undefined): PathCandidate {
+  return typeHint === undefined ? candidate : { ...candidate, typeHint };
 }

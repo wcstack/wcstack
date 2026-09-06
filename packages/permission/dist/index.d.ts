@@ -109,7 +109,7 @@ interface WcsPermissionInputs {
     sysex: boolean;
 }
 
-declare function bootstrapPermission(userConfig?: IWritableConfig): void;
+declare function bootstrapPermission(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -201,6 +201,12 @@ declare class WcsPermission extends HTMLElement {
     private _descriptor;
     connectedCallback(): void;
     disconnectedCallback(): void;
+}
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-permission": WcsPermission;
+    }
 }
 
 export { PermissionCore, WcsPermission, bootstrapPermission, getConfig };

@@ -113,6 +113,36 @@ That's what `<wcs-router>`, `<wcs-route>`, and friends explore. One CDN import, 
 * <main-header><main-body><main-dashboard><product-list><product-item><admin-header><admin-body><error-404> are custom components in your app.
 * The custom elements above must be defined separately (via an autoloader or manual registration).
 
+## Where route content lives
+
+Two shapes work since 1.32, and they are not interchangeable. Pick per page, not per project.
+
+**Default: put the content inside `<wcs-route>`.** The router stamps it on entry and removes it on exit. `data-wcs` bindings inside it are bound when it is stamped (the binder protocol), so state-rendered markup — `for:`, `if:`, text — works there like anywhere else. Everything the router offers is keyed to the route body: `<wcs-head>` per route, the `focus="heading"` / `announce=` policies (they look for the heading *in the stamped content*), and a view transition per route swap.
+
+```html
+<wcs-route path="/products/:productId(int)">
+  <wcs-head><title data-wcs="textContent: product.name"></title></wcs-head>
+  <h2 data-wcs="textContent: product.name"></h2>
+  <template data-wcs="for: product.variants"><li data-wcs="textContent: .name"></li></template>
+</wcs-route>
+```
+
+**Exception: switch it with state (`<template data-wcs="if: …">`) when the DOM must outlive the navigation.** Stamping is a teardown — a route body is rebuilt on every entry — so a `<video>` mid-playback, a half-filled form, a scrolled list, or a `<canvas>` you drew on does not survive leaving and coming back. Keep such content outside the router, bound to a state flag that the router's `routeName` / `typedParams` outputs set, and leave the route element empty (or holding only `<wcs-head>`).
+
+```html
+<wcs-router data-wcs="routeName: routeName">
+  <template>
+    <wcs-route path="/editor" name="editor"><wcs-head><title>Editor</title></wcs-head></wcs-route>
+    <wcs-route path="/help" name="help"><wcs-head><title>Help</title></wcs-head></wcs-route>
+  </template>
+</wcs-router>
+<template data-wcs="if: isEditor">
+  <my-editor></my-editor>   <!-- keeps its DOM across /editor → /help → /editor -->
+</template>
+```
+
+What the exception costs: `focus="heading"` finds no heading in an empty route body and falls back to the browser-default reset (`announce=` still works — it reads `document.title`), and a view transition, if `<wcs-view-transition>` is on the page, wraps the state branch update rather than the route swap. `examples/router-spa` shows both: its About page is the default shape, its product pages are the exception.
+
 ## Reference
 
 ### Router (wcs-router)
@@ -122,6 +152,58 @@ Define routes and layout slots inside a child template tag. A direct child templ
 | Attribute | Description |
 |------|------|
 | `basename` | When routing in a subfolder URL, specify the subfolder. Not required if you don’t run in a subfolder. |
+| `focus` | Opt-in focus policy applied after a committed navigation. `"heading"` focuses the first heading of the leaf route's content. See "Accessibility contract". |
+| `announce` | Opt-in route announcement. `"title"` writes the commit-time `document.title` snapshot into the router-owned live region. See "Accessibility contract". |
+
+#### State binding (wc-bindable)
+
+`<wcs-router>` is the live-DOM element that exposes the whole navigation state over the wc-bindable protocol, so `@wcstack/state` (or any binding core) wires it with a single `data-wcs`:
+
+```html
+<wcs-router data-wcs="path: path; typedParams: routeParams; searchParams: query;
+                      routeName: routeName; navigateUrl: navigateUrl; replaceUrl: replaceUrl">
+```
+
+| Member | Direction | Description |
+|------|------|------|
+| `path` | output only | Current route path (basename already sliced). Fires `wcs-router:path-changed`. |
+| `params` | output only | Merged params of the matched route chain, as strings (`Record<string, string>`). `{}` on a fallback match or before initialization. |
+| `typedParams` | output only | The same params, type-converted (`:id(int)` → `number`). Shares `wcs-router:params-changed` with `params` (the event detail is `{ params, typedParams }`). |
+| `searchParams` | output only | Current URL query as `Record<string, string>`. Duplicate keys (`?tag=a&tag=b`) are **last-wins**; values are decoded by `URLSearchParams` (including `+` → space). `{}` when there is no query. Fires `wcs-router:search-changed`. |
+| `routeName` | output only | `name` attribute of the deepest matched route. On a fallback match, the fallback route's `name` (so a 404 view can key off `routeName` too). `""` when unnamed or before initialization. Fires `wcs-router:route-name-changed`. |
+| `navigateUrl` | write surface (null-idle transient) | Write a target to push-navigate. `null` means idle; writing a string starts `navigate()`, and the property resets itself to `null` when the navigation finishes. `null` / `""` writes are no-ops. |
+| `replaceUrl` | write surface (null-idle transient) | Identical contract to `navigateUrl`, but the navigation **replaces** the current history entry. |
+| `basename` | input | Mirrors the `basename` attribute. |
+
+Commands `navigate(path)` and `replace(path)` (both async) are also declared, so they can be invoked through the command-token protocol.
+
+Output-only members are **read** when a binding attaches and streamed through their change events afterwards — the value is read, not awaited, so a binding that attaches after the router already resolved its first route misses nothing.
+
+**Firing contract**: on a committed navigation the router commits *all* internal values first and only then fires events, in the order `params-changed` → `route-name-changed` → `search-changed` → `path-changed`, each only when its value actually changed. Any listener that reads the element's properties sees the consistent post-navigation snapshot; `path` fires last and doubles as the "navigation finished" signal. A guard-rejected navigation updates nothing and fires nothing.
+
+The exposed objects are **frozen snapshots** owned by the router: a new object per navigation, never mutated in place. Mutating them throws — copy into your own state instead.
+
+**Choosing a write surface**:
+
+- Pagination, tabs — the back button should step through them: `navigateUrl = "?page=2"`.
+- Search boxes, filters — the history should not record every keystroke: `replaceUrl = "?q=" + …`, with `<wcs-debounce>` in front of high-frequency input.
+
+**Multiple routers**: `params` / `routeName` reflect each router's own match, but the page URL has a single query string — a query written through *any* router replaces the query for the whole page. Reads, however, are per-router: a router commits `searchParams` only when it processes a navigation under its own `basename`, so its value is "the query as of the last navigation this router processed".
+
+#### Query strings in navigation targets
+
+`navigate()` / `replace()` / `navigateUrl` / `replaceUrl` / `<wcs-link to>` accept:
+
+| Form | Meaning |
+|------|------|
+| `/path` | Path navigation. The current query is **not** carried over (assemble it from `searchParams` if you want to keep it). |
+| `/path?k=v` | Path navigation with a query. |
+| `?k=v` | Query-only navigation: the pathname keeps its current value. |
+| `?` | Clears the query (pathname stays). |
+
+`basename` joining and pathname normalization apply to the pathname only; query and hash are re-attached verbatim (the hash is passed through untouched — the router never routes on it). Queries never participate in route matching.
+
+A query-only navigation lands on the same matched route (**same-match**): route guards do not re-run (guards protect route *entry*, and a query change is not an entry), the route content is not restamped, no view transition is requested, no announcement is made, and focus / scroll stay where they are (browser scroll restoration still applies when traversing history). Only `searchParams` — and the URL — change.
 
 ### Route (wcs-route)
 
@@ -138,9 +220,9 @@ Displays children when the route path matches. Match priority is static paths ov
 
 | Property | Description |
 |------|------|
-| `params` | Matched parameters (strings). |
-| `typedParams` | Matched parameters (converted types). |
 | `guardHandler` | Sets the guard decision function. |
+
+> **Where are `params` / `typedParams`?** On `<wcs-router>` — see "State binding (wc-bindable)". After parsing, the route elements are detached controllers: they are not part of the live DOM, so they cannot be found with `querySelector` and cannot be bound with `data-wcs`. The router element is the observation surface for match results.
 
 Guard decision function type:
 `(toPath: string, fromPath: string) => boolean | Promise<boolean>`
@@ -202,15 +284,18 @@ By specifying types for path parameters, you can perform value validation and au
 
 **Retrieving Values**:
 
+The match result is exposed on the `<wcs-router>` element (the route elements themselves are detached controllers and cannot be queried from the live DOM):
+
+```html
+<!-- Declarative: bind the parsed result straight into state -->
+<wcs-router data-wcs="typedParams: routeParams"></wcs-router>
+```
+
 ```javascript
-// Get from the route element
-const route = document.querySelector('wcs-route[path="/users/:userId(int)"]');
-
-// Get as string
-console.log(route.params.userId);       // "123"
-
-// Get as typed value
-console.log(route.typedParams.userId);  // 123 (number)
+// Imperative: read from the router element
+const router = document.querySelector('wcs-router');
+console.log(router.params.userId);       // "123"
+console.log(router.typedParams.userId);  // 123 (number)
 ```
 
 **Behavior**:
@@ -293,16 +378,27 @@ Link. Converted to an `<a>`, and the route path in the `to` attribute is convert
 
 | Attribute | Description |
 |------|------|
-| `to` | Destination path or URL. Paths starting with `/` are treated as internal paths (basename is prepended). Other values are treated as external URLs. |
+| `to` | Destination path or URL. Paths starting with `/` are treated as internal paths (basename is prepended to the pathname; a `?query` / `#hash` suffix is kept as-is). A value starting with `?` is a **query-only** link: the href is assembled as "current pathname + that query" and tracks location changes. Other values are treated as external URLs. |
 
-**Active state**: The generated `<a>` receives the `active` class when its path matches the current location. Tracking is updated on navigation events (`currententrychange`, `wcs:navigate`, `popstate`).
+**Active state**: The generated `<a>` receives the `active` class when its path matches the current location, and `aria-current="page"` alongside it — the same fact, expressed in ARIA, so screen readers announce the current page in navigation. The comparison uses the **pathname only** — queries on either side never affect it (so `to="/products"` stays active on `/products?page=2`, and a query-only link is active whenever you are on its page). Tracking is updated on navigation events (`currententrychange`, `wcs:navigate`, `popstate`).
 
 ```css
 /* Style active links */
 a.active { font-weight: bold; color: blue; }
 ```
 
+**Attribute forwarding**: when the `<a>` is generated, all `aria-*` attributes plus seven fixed names (`title`, `rel`, `target`, `download`, `hreflang`, `lang`, `dir`) are copied from the host to the anchor (`lang` / `dir` matter to screen readers — they set the announcement language and direction of the link text). `to`, `style`, and `class` are never forwarded (the host is `display:none`, and `class` carries the `active` contract). After connection, only the seven fixed names keep tracking changes; **dynamic `aria-*` changes do not reach the anchor** — this includes `data-wcs` bindings such as `<wcs-link data-wcs="attr.aria-label: ...">`, which write to the host after the copy has happened. Write `aria-*` on `<wcs-link>` as static attributes.
+
+**Plain `<a>` note**: in browsers with the Navigation API, a plain `<a href="/about">` under the basename also becomes an SPA navigation (the router intercepts it). This does not hold in fallback browsers, where only `<wcs-link>`'s click handler provides SPA navigation — so `<wcs-link>` remains the recommendation.
+
 ## Auto-Binding (`data-bind`)
+
+Two mechanisms deliver route params, with different destinations:
+
+| You want params… | Use |
+|------|------|
+| …in state (reactive rendering, derived values) | Bind `typedParams` / `params` on `<wcs-router>` — see "State binding (wc-bindable)" |
+| …directly on elements inside the route (pages without state, generic components) | `data-bind` below |
 
 Elements with the `data-bind` attribute automatically receive matched route parameters. Four binding modes are available:
 
@@ -350,6 +446,53 @@ bootstrapRouter({
 });
 ```
 
+## Route transition animations
+
+Route swaps are a plain `removeChild` / `insertBefore` pair, so the outgoing view cannot animate out on its own. Adding [`@wcstack/view-transition`](https://github.com/wcstack/wcstack/tree/main/packages/view-transition) to the page makes the swap run inside a View Transition, which you then style in CSS:
+
+```html
+<script type="module" src="https://esm.run/@wcstack/view-transition/auto"></script>
+<wcs-view-transition for="router"></wcs-view-transition>
+
+<style>
+  ::view-transition-old(root) { animation: fade-out 0.2s both; }
+  ::view-transition-new(root) { animation: fade-in 0.2s both; }
+</style>
+```
+
+The router runs its guards first and hands only the hide/show pair to the transition, so a guard that awaits does not hold the transition open. The first route application — the one that paints the page on load — is always synchronous: there is no previous route to animate against, and an entrance is `@starting-style`'s job. Without the tag nothing changes at all; the swap stays synchronous. See [docs/view-transition-design.md](https://github.com/wcstack/wcstack/blob/main/docs/view-transition-design.md) §7.1.
+
+## Server-side rendering (SSR)
+
+`<wcs-router enable-ssr>` opts the router into [`@wcstack/server`](https://github.com/wcstack/wcstack/tree/main/packages/server)'s SSR: `renderToString({ url })` renders the initial route of the request URL on the server, and the client-side router **adopts** the server-rendered DOM on boot instead of re-rendering it — state bindings hydrated on those nodes stay live. Without the attribute the router never initializes on the server and the page renders client-side as usual (partial CSR).
+
+- If the server output does not verify against the current URL and route definitions, the client silently falls back to normal client-side rendering.
+- Guarded routes are never rendered on the server — a guard is an authorization point and runs client-side; the outlet is served empty.
+- Routes using `<wcs-layout>` fall back to client-side rendering on adoption.
+- `<wcs-link>` renders its anchor on the server (with `active` / `aria-current`) and adopts it on the client.
+
+See the `@wcstack/server` README for the server-side setup and [docs/ssr-router-design.md](https://github.com/wcstack/wcstack/blob/main/docs/ssr-router-design.md) (ja) for the design.
+
+## Accessibility contract
+
+The router delegates scroll and focus handling to the browser wherever the platform already does the right thing.
+
+**Navigation API path** (Chromium and other supporting browsers): the router calls `event.intercept()` with the spec defaults written out explicitly — `scroll: "after-transition"` and `focusReset: "after-transition"`:
+
+- a push navigation scrolls to the top; a traverse (back/forward) restores the previous scroll position;
+- after the transition, focus moves to the first `[autofocus]` element of the new content, or to `<body>` when there is none.
+
+These are the specification defaults; writing them out records the delegation as intent. Changing either to `"manual"` is a change to this contract, not a refactor.
+
+**Fallback path** (browsers without the Navigation API): navigation runs through `history.pushState` plus a `popstate` listener. After a committed push navigation the router scrolls to the top, matching the Navigation API default; a navigation rejected by a route guard does not scroll. Back/forward scroll restoration is the browser's `history.scrollRestoration` (default `auto`), so the router never scrolls on `popstate`.
+
+**Opt-in policies** — `<wcs-router focus="heading" announce="title">`. Both default to off; with no attribute, the browser behavior above is all there is. Both run right after a committed navigation, never on the first route application (page load belongs to the browser), and never on a guard-rejected navigation.
+
+- `focus="heading"`: moves focus to the first **visible** `h1`–`h6` of the **leaf** route's inserted content, adding `tabindex="-1"` when the heading has none (hidden headings — `hidden`, `display:none` — are skipped, since focusing them is a no-op). While set, the router passes `focusReset: "manual"` on the Navigation API path so the browser's reset does not double-handle. If the new content has no visible heading, the router reproduces the spec-default reset itself: focus moves to the first `[autofocus]` element, or to `<body>` when there is none — the previously focused element (say, a persistent nav link) would otherwise keep focus on the old screen. Still: give every route a heading when you opt in, and put it near the top of the route content — focusing a heading scrolls it into view, but the scroll-to-top that follows a push navigation wins, so a heading far down the page ends up focused off-screen. Only the exact value `"heading"` activates the policy; an empty or unknown value falls back to the browser default.
+- `announce="title"`: writes the commit-time `document.title` snapshot into a router-owned live region (`role="status"`, visually clipped, direct child of `<wcs-router>`, one per router). Known limits: a bound title (`<title data-wcs>`) may still be stale at commit, a title change outside navigation is not re-announced, and navigating between routes that share the same title may not be re-announced by some screen reader / browser combinations (the live region text does not change).
+
+See [docs/a11y-design.md](https://github.com/wcstack/wcstack/blob/main/docs/a11y-design.md) §3 for the design record.
+
 ## Path Specification (Router / Route / Link)
 
 ### Terminology
@@ -391,6 +534,43 @@ Examples:
 
 	* `"/app"` and `"/app/"` are **the same** (app root)
 	* `"/app"` matches only `"/app"` or `"/app/..."` (does not match `"/appX"`)
+
+### 1.4 basename as the locale segment (multilingual sites)
+
+For a site served at `/en/…` and `/ja/…`, put the locale **in the basename**,
+not in a route pattern. Write `<base href="/ja/">` from a synchronous `<head>`
+script once the locale is known, and the router picks it up through resolution
+order 1.2.
+
+This is not a stylistic preference — a `/:lang` route parameter breaks the
+language switch:
+
+> `<wcs-router>` hands **every** same-origin navigation under its basename to
+> `intercept()`, plain `<a>` clicks included. With the locale inside the
+> basename, a link to another language is handled client-side: the page never
+> reloads, so anything the app loaded per-locale (a dictionary module, `Intl`
+> formatters) is never re-evaluated and **the language silently does not
+> change** — no error, nothing visibly broken.
+
+With basename `/ja`, a link to `/en/orders` falls outside `_isOwnPath`, the
+router declines to intercept, and the browser performs a real navigation. The
+"just a link" language switch works *because* of the basename.
+
+Two consequences worth having:
+
+* **Route patterns carry no locale** — `path="/"`, `path="/about"`. In-app links
+  stay locale-free too (`<wcs-link to="/about">` prepends the basename).
+* **Every URL on the page must be absolute**, since `<base>` now changes what
+  relative URLs resolve against.
+
+Repairing a URL that carries no locale, or an unknown one, belongs in that same
+head script (`location.replace`) rather than a route guard: a guard's redirect
+target is the static `guard="…"` attribute, so it cannot preserve the rest of
+the path. Doing it before the DOM is parsed also wastes no render and no fetch.
+
+See [`examples/router-i18n`](../../examples/router-i18n/) for the whole shape,
+and [docs/i18n-design.md](../../docs/i18n-design.md) for why the dictionary is
+an ES module rather than reactive state.
 
 ---
 

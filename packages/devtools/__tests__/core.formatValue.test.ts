@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatValue, formatArgs } from '../src/core/formatValue';
+import { formatValue, formatArgs, formatError } from '../src/core/formatValue';
 
 describe('formatValue', () => {
   it('primitiveをそのまま文字列化すること', () => {
@@ -75,5 +75,34 @@ describe('formatArgs', () => {
     const result = formatArgs(['y'.repeat(200)]);
     expect(result.length).toBeLessThanOrEqual(81);
     expect(result.endsWith('…')).toBe(true);
+  });
+});
+
+describe('formatError', () => {
+  // formatValue は class インスタンスを [[ClassName]] に畳むため、Error に
+  // そのまま使うと最も知りたい message が消える。そこだけ開くのが formatError。
+  it('Error を "Name: message" に開くこと', () => {
+    expect(formatError(new TypeError('boom'))).toBe('TypeError: boom');
+  });
+
+  it('name を持たない Error 形はコンストラクタ名で補うこと', () => {
+    expect(formatError({ message: 'bare' })).toBe('Object: bare');
+  });
+
+  it('message が空なら名前だけを返すこと', () => {
+    expect(formatError(new Error(''))).toBe('Error');
+  });
+
+  it('長い message は80文字で切ること', () => {
+    const result = formatError(new Error('z'.repeat(200)));
+    expect(result.endsWith('…')).toBe(true);
+  });
+
+  it('非 Error の throw は通常の要約へ倒すこと', () => {
+    expect(formatError('plain')).toBe('"plain"');
+    expect(formatError(null)).toBe('null');
+    expect(formatError(42)).toBe('42');
+    // message を持たないオブジェクト（Error 形ではない）も要約側
+    expect(formatError({ code: 7 })).toBe('{code: 7}');
   });
 });

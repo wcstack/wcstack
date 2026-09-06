@@ -34,6 +34,22 @@ describe('customElementRegistry platform adapter', () => {
     expect(getCustomElementRegistry({ customElements: { get() {} } })).toBeNull();
   });
 
+  it('nodeのscoped registryをglobalより優先する', () => {
+    const scoped = { get: vi.fn(), whenDefined: vi.fn() };
+    expect(getCustomElementRegistry({ customElementRegistry: scoped })).toBe(scoped);
+  });
+
+  it('nullレジストリのnodeはglobalへfallbackせずnullを返す', () => {
+    // global に定義済みのタグを「使える」と誤報し、まだupgradeされていない要素へ
+    // 素のown propertyを書いてaccessorを潰すのを防ぐ。
+    expect(getCustomElementRegistry({ customElementRegistry: null })).toBeNull();
+  });
+
+  it('scoped registryを持たないplatformのnodeはglobalへfallbackする', () => {
+    const element = document.createElement('div');
+    expect(getCustomElementRegistry(element)?.get).toBeTypeOf('function');
+  });
+
   it('利用可能なupgradeだけを呼ぶ', () => {
     const root = document.createElement('div');
     const upgrade = vi.fn();

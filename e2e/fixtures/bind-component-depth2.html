@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: bind-component boundaries stacked two deep (flat)</title>
+  <!-- Covers docs/architecture-hardening/15-state-component-mechanism-consistency.md §1.11.
+
+       Everything §1.1-§1.10 verified sat at depth 1 -- host to component, one boundary.
+       What §1.10 nested was the `for`, not the boundary. This page stacks two: a pass-through
+       panel whose shadow holds the card that actually runs the `for`.
+
+       The row-ledger piggyback added in §1.8 walked exactly one boundary outward, so the leaf
+       row was listed only under the intermediate scope's `list.*.name`. The host that owns the
+       values writes `rows.*.name`, where nothing was subscribed -- and the pass-through panel
+       owns no row binding of its own, so it did not relay either. Initial render and list
+       replacement worked; a parent-origin row-field write never arrived.
+
+       The Δ>0 shape (§1.12) is deliberately on its own page. It fails from the initial render
+       by throwing out of binding initialization, which wedges the whole document -- on a shared
+       page it would take this section down with it and destroy the independent signal.
+
+       Both shadow-construction timings are on the page for the same reason as
+       bind-component-nested-for (§1.9): the constructor form reuses its <wcs-state> across
+       reconnects, the connectedCallback form gets a fresh one, and row pooling makes the
+       difference reachable. -->
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+  <style>
+:not(:defined) { display: none; }
+  </style>
+  <script type="module" src="/e2e/fixtures/bind-component-depth2-components.js"></script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+export default {
+  rows: [{ id: "a", name: "Alice" }, { id: "b", name: "Bob" }],
+  // パス文字列で書く（`this.rows[1].name = ...` は set トラップを通らない）
+  renameRow() { this["rows.1.name"] = "Bobby"; },
+  replaceRows() { this.rows = [{ id: "x", name: "Xavier" }, { id: "y", name: "Yolanda" }]; },
+  swapRows() { this.rows = [this.rows[1], this.rows[0]]; },
+};
+    </script>
+  </wcs-state>
+
+  <!-- host → panel（素通し・行バインディングを持たない）→ card（for を回す） -->
+  <div id="flat">
+    <panel-eager data-wcs="state.items: rows"></panel-eager>
+    <panel-lazy data-wcs="state.items: rows"></panel-lazy>
+  </div>
+
+  <button id="rename" data-wcs="onclick: renameRow">rename row</button>
+  <button id="replace" data-wcs="onclick: replaceRows">replace rows</button>
+  <button id="swap" data-wcs="onclick: swapRows">swap rows</button>
+</body>
+</html>

@@ -111,7 +111,7 @@ type WcsScreenOrientationCoreValues = WcsScreenOrientationSnapshot & {
  */
 type WcsScreenOrientationValues = WcsScreenOrientationCoreValues;
 
-declare function bootstrapScreenOrientation(userConfig?: IWritableConfig): void;
+declare function bootstrapScreenOrientation(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -254,6 +254,12 @@ declare const WCS_SCREEN_ORIENTATION_ERROR_CODE: {
     /** その他の `lock()`/`unlock()` 失敗。 */
     readonly OrientationError: "orientation-error";
 };
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-screen-orientation": WcsScreenOrientation;
+    }
+}
 
 export { ScreenOrientationCore, WCS_SCREEN_ORIENTATION_ERROR_CODE, WcsScreenOrientation, bootstrapScreenOrientation, getConfig };
 export type { IWritableConfig, IWritableTagNames, OrientationLockType, WcsIoErrorInfo, WcsIoErrorPhase, WcsScreenOrientationCoreValues, WcsScreenOrientationSnapshot, WcsScreenOrientationValues };

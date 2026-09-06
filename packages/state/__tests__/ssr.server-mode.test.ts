@@ -285,7 +285,6 @@ describe("SSR モードでのバインディング", () => {
 
     const ssrEl = document.querySelector("wcs-ssr");
     expect(ssrEl).not.toBeNull();
-    expect(ssrEl!.getAttribute("name")).toBe("default");
   });
 
   it("SSR モードで textarea の value がテキストコンテンツに反映される", async () => {

@@ -8,6 +8,7 @@ single-package demos live in that package's own `examples/` directory instead:
 - `packages/speech/examples/` — `speech-echo`, `speak-highlight`
 - `packages/defined/examples/` — `defined-loader`
 - `packages/midi/examples/` — `midi-fader`
+- `packages/view-transition/examples/` — `list-transitions`
 - `packages/state/examples/` — binding basics
 
 Every demo is buildless and loads packages straight from the CDN
@@ -44,6 +45,7 @@ See [`state-tilt-maze/`](state-tilt-maze/).
 |------|----------|-----|-----|
 | [`websocket-chat/`](websocket-chat/) | websocket × 5 stacks (vanilla / state / signals / React / Vue) | see its [README](websocket-chat/README.md) | :3300–:3302, :3304–:3305 |
 | [`router-spa/`](router-spa/) | router + fetch + state (SPA catalog: URL ⇄ state bridge) | `node examples/router-spa/server.js` | :3000 |
+| [`router-i18n/`](router-i18n/) | router + state (i18n: locale in the basename, dictionary as an ES module) | `node examples/router-i18n/server.js` | :3000 |
 | [`state-camera-record-upload/`](state-camera-record-upload/) | camera + permission + upload + state | any static server (secure context) | — |
 | [`state-color-palette/`](state-color-palette/) | eyedropper + clipboard + storage + state | any static server (EyeDropper is Chromium-only) | — |
 | [`state-cross-tab-todo/`](state-cross-tab-todo/) | storage + broadcast + state | `node examples/state-cross-tab-todo/server.js` (open 2 tabs) | :3000 |
@@ -55,6 +57,7 @@ See [`state-tilt-maze/`](state-tilt-maze/).
 | [`state-pomodoro/`](state-pomodoro/) | timer + wakelock + notification + state | any static server (secure context) | — |
 | [`state-search/`](state-search/) | fetch + debounce + state | `node examples/state-search/server.js` | :3000 |
 | [`state-sse-dashboard/`](state-sse-dashboard/) | sse + state (`$streams`) + network — one feed, two idioms | `node examples/state-sse-dashboard/server.js` | :3000 |
+| [`state-testing-todo/`](state-testing-todo/) | testing + state (a todo page and its headless vitest suite) | `cd examples/state-testing-todo && npm install && npm test` | — |
 | [`state-tilt-maze/`](state-tilt-maze/) | tilt + accelerometer + raf + wakelock + defined + state (sensor game) | any static server (secure context) | — |
 | [`signals-live-search/`](signals-live-search/) | signals + fetch | `node examples/signals-live-search/server.js` | :3000 |
 | [`signals-tilt-maze/`](signals-tilt-maze/) | signals × the same 4 sensor nodes as `state-tilt-maze` (core swap comparison) | any static server (secure context) | — |

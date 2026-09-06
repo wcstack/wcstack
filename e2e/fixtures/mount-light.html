@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: state mount — Light DOM without a name</title>
+  <!-- Target syntax for the v2 mount design (docs/state-mount-design.md §3-3, plan P0-5).
+
+       v1 requires `name` on a Light DOM bind-component and `@name` on every binding
+       inside it, because the registry is flat per rootNode; and because two instances
+       cannot share a name in one scope, a Light DOM component cannot sit on a list row.
+       v2 resolves the scope by DOM position (D7): no name, no `@`, and the same
+       component on every row of `for: rows`.
+
+       Acceptance ids: L1 L2 L3. -->
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+  <style>
+:not(:defined) { display: none; }
+  </style>
+  <script type="module">
+    function defineLight(tag, markup) {
+      class LightComponent extends HTMLElement {
+        state = {};
+        connectedCallback() {
+          if (this.childElementCount === 0) {
+            this.innerHTML = `<wcs-state bind-component="state"></wcs-state>` + markup;
+          }
+        }
+      }
+      customElements.define(tag, LightComponent);
+    }
+    defineLight("light-view", `<span class="inner" data-wcs="textContent: name"></span>`);
+    defineLight("light-item", `<span class="inner" data-wcs="textContent: name; attr.data-row-id: id"></span>`);
+  </script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+export default {
+  user: { name: "Alice" },
+  rows: [{ id: "a", name: "Anna" }, { id: "b", name: "Ben" }],
+  rename() { this["user.name"] = "Carol"; },
+  renameRow() { this["rows.1.name"] = "Bennett"; },
+};
+    </script>
+  </wcs-state>
+
+  <!-- L3: a host-scope binding on the same path name resolves to the host tree, not to a component -->
+  <p id="host-name" data-wcs="textContent: user.name"></p>
+
+  <div id="single">
+    <light-view data-wcs="state: user"></light-view>
+  </div>
+
+  <ul id="list">
+    <template data-wcs="for: rows">
+      <li><light-item data-wcs="state: ."></light-item></li>
+    </template>
+  </ul>
+
+  <button id="rename" data-wcs="onclick: rename">rename</button>
+  <button id="rename-row" data-wcs="onclick: renameRow">rename row 2</button>
+</body>
+</html>

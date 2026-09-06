@@ -18,6 +18,11 @@ export default defineConfig({
         'src/webc.ts',
         'src/types.ts',
         'package.json',
+        // Generated copy of the shared transition-runner protocol
+        // (/protocol/transition-runner.ts). The router exercises the lookup and
+        // the no-arbiter fallback (showRouteContent.transition.test.ts); the
+        // manifest validity branches are covered once, in @wcstack/view-transition.
+        'src/protocol/transitionRunner.ts',
       ],
       thresholds: {
         statements: 100,

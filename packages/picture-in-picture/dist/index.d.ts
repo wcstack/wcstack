@@ -89,7 +89,7 @@ interface WcsPipCoreValues {
  */
 type WcsPipValues = WcsPipCoreValues;
 
-declare function bootstrapPip(userConfig?: IWritableConfig): void;
+declare function bootstrapPip(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -258,6 +258,12 @@ declare const WCS_PICTURE_IN_PICTURE_ERROR_CODE: {
     /** その他の caught 例外。 */
     readonly PipError: "pip-error";
 };
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-pip": WcsPip;
+    }
+}
 
 export { PipCore, WCS_PICTURE_IN_PICTURE_ERROR_CODE, WcsPip, bootstrapPip, getConfig };
 export type { IWritableConfig, IWritableTagNames, WcsIoErrorInfo, WcsIoErrorPhase, WcsPipCoreValues, WcsPipValues };

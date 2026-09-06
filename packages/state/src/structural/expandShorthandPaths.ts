@@ -6,15 +6,11 @@ const COMMENT_REGEX = /^(\s*@@\s*(?:.*?)\s*:\s*)(.+?)(\s*)$/;
 function expandShorthandInStatePart(statePart: string, forPath: string): string {
   const prefix = forPath + DELIMITER + WILDCARD;
   const pipeIndex = statePart.indexOf('|');
-  const atIndex = statePart.indexOf('@');
   let pathPart: string;
   let suffix: string;
   if (pipeIndex !== -1) {
     pathPart = statePart.slice(0, pipeIndex).trim();
     suffix = statePart.slice(pipeIndex);
-  } else if (atIndex !== -1) {
-    pathPart = statePart.slice(0, atIndex).trim();
-    suffix = statePart.slice(atIndex);
   } else {
     pathPart = statePart.trim();
     suffix = '';

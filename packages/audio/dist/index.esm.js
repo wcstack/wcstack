@@ -1817,7 +1817,12 @@ class WcsAnalyser extends defineNode("analyser", {}, ["fft", "smoothing"]) {
     }
 }
 
-function registerComponents() {
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
     const definitions = [
         [config.tagNames.audio, WcsAudio],
         [config.tagNames.voice, WcsVoice],
@@ -1832,16 +1837,16 @@ function registerComponents() {
         [config.tagNames.analyser, WcsAnalyser],
     ];
     for (const [tag, ctor] of definitions) {
-        if (!customElements.get(tag))
-            customElements.define(tag, ctor);
+        if (!registry.get(tag))
+            registry.define(tag, ctor);
     }
 }
 
-function bootstrapAudio(userConfig) {
+function bootstrapAudio(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { AudioGraphCore, AudioNodeShell, STRUCTURAL_ATTRIBUTES, VoiceAllocator, WCS_AUDIO_ERROR_CODE, WcsAnalyser, WcsAudio, WcsBiquad, WcsDelay, WcsEnv, WcsGain, WcsLfo, WcsNoise, WcsOsc, WcsShaper, WcsVoice, bootstrapAudio, compilePatch, defaultCreateContext, deriveAudioErrorInfo, findAudioRoot, getConfig, graphChildren, releaseSharedContext, structureKey };

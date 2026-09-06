@@ -51,15 +51,47 @@ export function isInsideForTemplate(html: string, offset: number, bindAttrName: 
  * `<template data-wcs="for: .products">` 内（親 for: categories）なら `".products"` を返す。
  */
 export function getInnermostForPath(html: string, offset: number, bindAttrName: string = 'data-wcs'): string | null {
+  const chain = getEnclosingForPaths(html, offset, bindAttrName);
+  return chain.length === 0 ? null : chain[chain.length - 1];
+}
+
+/** offset を囲む for テンプレート 1 枚（生 for パス + テンプレート同一性のアンカー）。 */
+export interface IEnclosingFor {
+  /** for 属性値の生テキスト（`@state` / フィルタが付き得る）。 */
+  readonly path: string;
+  /** 開始タグ `<template` の開始オフセット。テンプレート実体の同一性キー
+   *  （`$1`〜`$9` のようにループ実体で参照先が決まる要素のスコープ判定に使う）。 */
+  readonly anchor: number;
+}
+
+/**
+ * 指定オフセットを囲む**全ての** for テンプレートの生 for パス文字列を、
+ * 外側 → 内側の順で返す。囲まれていなければ空配列。
+ *
+ * ランタイム（collectStructuralFragments）はネストした for を再帰的に合成する
+ * （内側テンプレート自身の for 属性を外側の for パスで先に展開してから降りる）
+ * ため、相対 for（`for: .products`）の静的解決には外側チェーン全体が要る。
+ * 値は属性値の生テキスト — `@state` やフィルタが付き得るので、パス部分が
+ * 必要な消費側は正本パーサ（statePathName）を通すこと。
+ */
+export function getEnclosingForPaths(html: string, offset: number, bindAttrName: string = 'data-wcs'): string[] {
+  return getEnclosingFors(html, offset, bindAttrName).map((entry) => entry.path);
+}
+
+/**
+ * getEnclosingForPaths のアンカー付き版。外側 → 内側の順。
+ * `$N` の参照先はチェーン N 枚目（外側から）のテンプレート**実体**で決まるため、
+ * パス文字列でなくアンカーで同一性を判定する消費者向け。
+ */
+export function getEnclosingFors(html: string, offset: number, bindAttrName: string = 'data-wcs'): IEnclosingFor[] {
   const escaped = bindAttrName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const openRegex = new RegExp(
     `<template[^>]*${escaped}\\s*=\\s*["']\\s*for\\s*:\\s*([^"']+?)\\s*["']`,
     'gi',
   );
 
-  let bestMatch: string | null = null;
-  let bestPos = -1;
-
+  // 開始位置の昇順で走査するので、囲んでいるものはそのまま外側 → 内側の順に並ぶ
+  const enclosing: IEnclosingFor[] = [];
   let match: RegExpExecArray | null;
   while ((match = openRegex.exec(html)) !== null) {
     if (match.index >= offset) break;
@@ -69,13 +101,58 @@ export function getInnermostForPath(html: string, offset: number, bindAttrName: 
     if (tagEnd === -1 || tagEnd >= offset) continue;
 
     const depth = getForTemplateDepthAt(html, match.index, offset, bindAttrName);
-    if (depth > 0 && match.index > bestPos) {
-      bestMatch = match[1].trim();
-      bestPos = match.index;
+    if (depth > 0) {
+      enclosing.push({ path: match[1].trim(), anchor: match.index });
     }
   }
 
-  return bestMatch;
+  return enclosing;
+}
+
+/** パスに含まれるワイルドカードセグメント（`*`）の本数。 */
+export function countWildcardSegments(path: string): number {
+  let count = 0;
+  for (const segment of path.split('.')) {
+    if (segment === '*') count++;
+  }
+  return count;
+}
+
+/** for 属性の生テキストから state パス部分だけを取り出す（`@state` / フィルタを落とす）。 */
+function forPathOf(raw: string): string {
+  let path = raw.trim();
+  const pipe = path.indexOf('|');
+  if (pipe !== -1) path = path.slice(0, pipe).trim();
+  const at = path.indexOf('@');
+  if (at !== -1) path = path.slice(0, at).trim();
+  return path;
+}
+
+/**
+ * 指定オフセットで**ワイルドカードを解決できる段数**（＝そのスコープの階数）。
+ * 囲む for が無ければ 0。
+ *
+ * 段数は「囲む for の枚数」ではない。for のパス自身が階数を持つ入れ子
+ * （`for: matrix` の中の `for: matrix.*`）があるため、ランタイム
+ * （structural/expandShorthandPaths.ts）と同じ合成を行ってから数える:
+ * 相対 for（`.products`）は外側の行パス `<prev>.*` に連結し、絶対 for はそのまま
+ * 置き換える。最後にそのパスの `*` の本数 + 1（ループ自身が 1 段増やす）が答え。
+ */
+export function getAvailableWildcardRank(html: string, offset: number, bindAttrName: string = 'data-wcs'): number {
+  const chain = getEnclosingForPaths(html, offset, bindAttrName);
+  if (chain.length === 0) return 0;
+  let resolved = '';
+  for (const raw of chain) {
+    const path = forPathOf(raw);
+    if (path === '.') {
+      resolved = `${resolved}.*`;
+    } else if (path.startsWith('.')) {
+      resolved = `${resolved}.*.${path.slice(1)}`;
+    } else {
+      resolved = path;
+    }
+  }
+  return countWildcardSegments(resolved) + 1;
 }
 
 /**

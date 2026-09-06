@@ -22,8 +22,8 @@ import { IOuterState } from "./types";
  */
 class OuterStateProxyHandler implements ProxyHandler<IOuterState> {
   private _innerStateElement: IStateElement;
-  constructor(webComponent: Element, stateName: string) {
-    this._innerStateElement = getStateElementByWebComponent(webComponent, stateName) ?? raiseError('State element not found for web component.');
+  constructor(webComponent: Element, stateProp: string) {
+    this._innerStateElement = getStateElementByWebComponent(webComponent, stateProp) ?? raiseError('State element not found for web component.');
   }
 
   get(target: IOuterState, prop: string | symbol, receiver: any): any {
@@ -50,7 +50,7 @@ class OuterStateProxyHandler implements ProxyHandler<IOuterState> {
   }
 }
 
-export function createOuterState(webComponent: Element, stateName: string): IOuterState {
-  const handler = new OuterStateProxyHandler(webComponent, stateName);
+export function createOuterState(webComponent: Element, stateProp: string): IOuterState {
+  const handler = new OuterStateProxyHandler(webComponent, stateProp);
   return new Proxy({}, handler);
 }

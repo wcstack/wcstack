@@ -159,7 +159,7 @@ interface WcsFetchValues<T = unknown> extends WcsFetchCoreValues<T> {
     trigger: boolean;
 }
 
-declare function bootstrapFetch(userConfig?: IWritableConfig): void;
+declare function bootstrapFetch(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -338,6 +338,27 @@ declare const WCS_FETCH_ERROR_CODE: {
     readonly Timeout: "timeout";
     readonly Aborted: "aborted";
 };
+
+declare class FetchHeader extends HTMLElement {
+    connectedCallback(): void;
+    get headerName(): string;
+    get headerValue(): string;
+}
+
+declare class FetchBody extends HTMLElement {
+    constructor();
+    get contentType(): string;
+    get bodyContent(): string;
+}
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-fetch": Fetch;
+        "wcs-fetch-header": FetchHeader;
+        "wcs-fetch-body": FetchBody;
+        "wcs-infinite-scroll": InfiniteScroll;
+    }
+}
 
 export { FetchCore, WCS_FETCH_ERROR_CODE, Fetch as WcsFetch, InfiniteScroll as WcsInfiniteScroll, bootstrapFetch, getConfig };
 export type { FetchRequestOptions, IWritableConfig, IWritableTagNames, WcsFetchCoreValues, WcsFetchHttpError, WcsFetchValues, WcsIoErrorInfo, WcsIoErrorPhase };

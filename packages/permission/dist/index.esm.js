@@ -432,17 +432,22 @@ class WcsPermission extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.permission)) {
-        customElements.define(config.tagNames.permission, WcsPermission);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.permission)) {
+        registry.define(config.tagNames.permission, WcsPermission);
     }
 }
 
-function bootstrapPermission(userConfig) {
+function bootstrapPermission(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { PermissionCore, WcsPermission, bootstrapPermission, getConfig };

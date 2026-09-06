@@ -113,6 +113,36 @@
 ※<main-header><main-body><main-dashboard><product-list><product-item><admin-header><admin-body><error-404>はアプリ側のカスタムコンポーネント
 ※上記カスタム要素は、オートローダーやコードによる定義が別途必要
 
+## ルートの本文はどこに置くか
+
+1.32 以降は 2 つの形がどちらも動きますが、交換可能ではありません。プロジェクト単位でなく、ページごとに選びます。
+
+**既定: 本文を `<wcs-route>` の中に置く。** router が入場時にスタンプし、退場時に取り除きます。中の `data-wcs` バインディングはスタンプ時に束ねられる（binder プロトコル）ので、state が描画するマークアップ —— `for:`・`if:`・テキスト —— も他の場所と同じように動きます。router が提供するものはすべてルート本文を基準にしています: ルートごとの `<wcs-head>`、`focus="heading"` / `announce=` ポリシー（*スタンプされた内容の中の*見出しを探す）、ルート切替ごとのビュートランジション。
+
+```html
+<wcs-route path="/products/:productId(int)">
+  <wcs-head><title data-wcs="textContent: product.name"></title></wcs-head>
+  <h2 data-wcs="textContent: product.name"></h2>
+  <template data-wcs="for: product.variants"><li data-wcs="textContent: .name"></li></template>
+</wcs-route>
+```
+
+**例外: DOM をナビゲーションより長生きさせたいときは state で切り替える（`<template data-wcs="if: …">`）。** スタンプは破棄を伴います —— ルート本文は入場のたびに作り直されます —— ので、再生中の `<video>`、入力途中のフォーム、スクロール済みのリスト、描画済みの `<canvas>` は、離れて戻ってくると生き残りません。そうした内容は router の外に置き、router の `routeName` / `typedParams` 出力が立てる state のフラグにバインドし、ルート要素は空（または `<wcs-head>` だけ）にします。
+
+```html
+<wcs-router data-wcs="routeName: routeName">
+  <template>
+    <wcs-route path="/editor" name="editor"><wcs-head><title>Editor</title></wcs-head></wcs-route>
+    <wcs-route path="/help" name="help"><wcs-head><title>Help</title></wcs-head></wcs-route>
+  </template>
+</wcs-router>
+<template data-wcs="if: isEditor">
+  <my-editor></my-editor>   <!-- /editor → /help → /editor をまたいで DOM を保つ -->
+</template>
+```
+
+例外の代償: `focus="heading"` は空のルート本文に見出しを見つけられず、ブラウザ既定のリセットにフォールバックします（`announce=` は `document.title` を読むので動きます）。ページに `<wcs-view-transition>` があれば、ビュートランジションはルート切替ではなく state の分岐更新を包みます。`examples/router-spa` は両方を示しています: About ページが既定の形、商品ページが例外の形です。
+
 ## リファレンス
 
 ### Router(wcs-router)
@@ -122,6 +152,58 @@
 | 属性 | 説明 |
 |------|------|
 | `basename` | サブフォルダのURLでルーティングする場合に、サブフォルダを指定。サブフォルダで動作させない場合は、指定不要 |
+| `focus` | commit したナビゲーション後に適用するオプトインのフォーカスポリシー。`"heading"` でリーフ route 内容の最初の見出しへフォーカス。「アクセシビリティ契約」参照 |
+| `announce` | オプトインのルート告知。`"title"` で commit 時点の `document.title` スナップショットを router 保有の live region へ書き込む。「アクセシビリティ契約」参照 |
+
+#### state バインディング（wc-bindable）
+
+`<wcs-router>` は live DOM に居る要素としてナビゲーション状態の全量を wc-bindable プロトコルで露出する。`@wcstack/state`（あるいは任意の binding core）は `data-wcs` 一つで配線できる：
+
+```html
+<wcs-router data-wcs="path: path; typedParams: routeParams; searchParams: query;
+                      routeName: routeName; navigateUrl: navigateUrl; replaceUrl: replaceUrl">
+```
+
+| メンバー | 方向 | 説明 |
+|------|------|------|
+| `path` | output のみ | 現在のルートパス（basename スライス後）。`wcs-router:path-changed` を発火 |
+| `params` | output のみ | マッチしたルートチェーンのマージ済みパラメータ（文字列、`Record<string, string>`）。fallback マッチ・初期化前は `{}` |
+| `typedParams` | output のみ | 同パラメータの型変換済み値（`:id(int)` → `number`）。イベントは `params` と共有（detail は `{ params, typedParams }`） |
+| `searchParams` | output のみ | 現在 URL のクエリ（`Record<string, string>`）。キー重複（`?tag=a&tag=b`）は **last-wins**、デコードは `URLSearchParams` に委ねる（`+` → 空白を含む）。クエリ無しは `{}`。`wcs-router:search-changed` を発火 |
+| `routeName` | output のみ | 最深マッチルートの `name` 属性値。fallback マッチ時は fallback ルートの `name`（404 画面も `routeName` 分岐で書ける）。無名・初期化前は `""`。`wcs-router:route-name-changed` を発火 |
+| `navigateUrl` | 書き込み面（null-idle transient） | ターゲットを書くと push 遷移。null は待機、文字列の書き込みで `navigate()` が起動し、完了後に自分で null へ戻る。null / `""` の書き込みは no-op |
+| `replaceUrl` | 書き込み面（null-idle transient） | `navigateUrl` と完全同型の契約。ただし現在の履歴エントリを**置き換える** |
+| `basename` | input | `basename` 属性のミラー |
+
+コマンド `navigate(path)` / `replace(path)`（いずれも async）も宣言され、command-token プロトコルから起動できる。
+
+output-only メンバーはバインド attach 時に**読まれ**、以後は変更イベントで流れる — 値は「読むもの」であり「待つもの」ではないので、router が最初のルートを解決した後に attach したバインドでも取りこぼしはない。
+
+**発火規範**: commit されたナビゲーションでは、router はまず**全内部値をコミット**し、その後で `params-changed` → `route-name-changed` → `search-changed` → `path-changed` の順に、値が実際に変化したものだけを発火する。どのイベントのリスナーから要素プロパティを読んでも遷移後スナップショットの一貫した値が見える。`path` は最後に発火し「ナビゲーション完了」の信号を兼ねる。guard 拒否されたナビゲーションでは何も更新せず何も発火しない。
+
+露出オブジェクトは router が所有する **frozen スナップショット**（ナビゲーションごとに新しいオブジェクト、in-place 変異なし）。変異は throw する — 自分の state へコピーして使うこと。
+
+**書き込み面の使い分け**:
+
+- ページネーション・タブ（戻るボタンで戻りたい）→ `navigateUrl = "?page=2"`
+- 検索ボックス・絞り込み（履歴を打鍵ごとに汚したくない）→ `replaceUrl = "?q=" + …`（高頻度入力には `<wcs-debounce>` を挟む）
+
+**マルチ Router**: `params` / `routeName` は各 Router 自身のマッチを反映するが、ページの URL にクエリは 1 つしかない — どの Router 経由で書いてもページ全体のクエリが置き換わる。一方**読み取り面は per-Router**: Router は自分の `basename` 配下のナビゲーションを処理したときだけ `searchParams` を commit するので、その値は「その Router が最後に処理したナビゲーション時点のクエリ」である。
+
+#### ナビゲーションターゲットのクエリ文字列
+
+`navigate()` / `replace()` / `navigateUrl` / `replaceUrl` / `<wcs-link to>` は次を受理する：
+
+| 形 | 意味 |
+|------|------|
+| `/path` | パス遷移。現在のクエリは**引き継がない**（引き継ぎたい場合は `searchParams` から組み立てる） |
+| `/path?k=v` | パス遷移＋クエリ指定 |
+| `?k=v` | クエリのみ遷移：pathname は現在値を維持 |
+| `?` | クエリの全消去（pathname 維持） |
+
+basename 結合と pathname 正規化は pathname にのみ適用され、クエリとハッシュはそのまま再結合される（ハッシュは素通し — router はハッシュではルーティングしない）。クエリはルートマッチングに一切関与しない。
+
+同一パスへのクエリのみ遷移は **same-match** ナビゲーションになる：ルートガードは再実行されず（ガードが守るのはルートへの**進入**であり、クエリ変化は進入ではない）、ルート内容は再スタンプされず、view transition も依頼されず、再アナウンスもされず、フォーカス・スクロールは動かない（履歴の traverse ではブラウザのスクロール復元が従来どおり働く）。変わるのは `searchParams` と URL だけである。
 
 ### Route(wcs-route)
 
@@ -138,9 +220,9 @@
 
 | プロパティ | 説明 |
 |------|------|
-| `params` | マッチしたパラメータ（文字列）を取得 |
-| `typedParams` | マッチしたパラメータ（型変換済み）を取得 |
 | `guardHandler` | ガード判定関数を設定 |
+
+> **`params` / `typedParams` はどこへ？** `<wcs-router>` にある — 「state バインディング（wc-bindable）」参照。パース後の route 要素は detached なコントローラであり live DOM に属さないため、`querySelector` では見つからず `data-wcs` でも結線できない。マッチ結果の観測面は router 要素である。
 
 ガード判定関数の型：
 `(toPath: string, fromPath: string) => boolean | Promise<boolean>`
@@ -202,15 +284,18 @@
 
 **値の取得**:
 
+マッチ結果は `<wcs-router>` 要素に露出される（route 要素自体は detached なコントローラで、live DOM からは取得できない）：
+
+```html
+<!-- 宣言的: 解析結果をそのまま state へバインド -->
+<wcs-router data-wcs="typedParams: routeParams"></wcs-router>
+```
+
 ```javascript
-// ルート要素から取得
-const route = document.querySelector('wcs-route[path="/users/:userId(int)"]');
-
-// 文字列として取得
-console.log(route.params.userId);       // "123"
-
-// 型変換済みの値として取得
-console.log(route.typedParams.userId);  // 123 (number)
+// 命令的: router 要素から読む
+const router = document.querySelector('wcs-router');
+console.log(router.params.userId);       // "123"
+console.log(router.typedParams.userId);  // 123 (number)
 ```
 
 **動作仕様**:
@@ -293,16 +378,27 @@ console.log(route.typedParams.userId);  // 123 (number)
 
 | 属性 | 説明 |
 |------|------|
-| `to` | 遷移先の絶対ルートパスもしくはURL。`/`で始まる場合はルートパス（basenameが付与される）。それ以外は外部URLとして扱われる |
+| `to` | 遷移先の絶対ルートパスもしくはURL。`/`で始まる場合はルートパス（basename は pathname にのみ付与され、`?クエリ` / `#ハッシュ` はそのまま温存される）。`?` で始まる場合は**クエリのみリンク**：href は「現在 pathname + 指定クエリ」で組み立てられ、ロケーション変更に追従する。それ以外は外部URLとして扱われる |
 
-**アクティブ状態**: 生成された `<a>` はパスが現在のロケーションと一致する場合に `active` クラスを受け取る。ナビゲーションイベント（`currententrychange`, `wcs:navigate`, `popstate`）で更新される。
+**アクティブ状態**: 生成された `<a>` はパスが現在のロケーションと一致する場合に `active` クラスと、同じ事実の ARIA 表現である `aria-current="page"` を受け取る（スクリーンリーダーがナビゲーション内の現在地を読み上げられる）。比較は **pathname のみ**で行われ、どちら側のクエリも影響しない（`to="/products"` は `/products?page=2` でも active のまま。クエリのみリンクはそのページに居る間つねに active）。ナビゲーションイベント（`currententrychange`, `wcs:navigate`, `popstate`）で更新される。
 
 ```css
 /* アクティブなリンクのスタイル */
 a.active { font-weight: bold; color: blue; }
 ```
 
+**属性の転送**: `<a>` の生成時に、すべての `aria-*` 属性と固定 7 名（`title` / `rel` / `target` / `download` / `hreflang` / `lang` / `dir`）をホストから anchor へコピーする（`lang` / `dir` はスクリーンリーダーの読み上げ言語・方向に直結する）。`to` / `style` / `class` は決して転送しない（ホストは `display:none` であり、`class` は `active` 契約を持つ）。接続後に追従するのは固定 7 名のみで、**動的な `aria-*` 変更は anchor に届かない** — `<wcs-link data-wcs="attr.aria-label: ...">` のような `data-wcs` バインドもコピー後にホストへ書くため届かない。`<wcs-link>` の `aria-*` は静的属性で書くこと。
+
+**素の `<a>` について**: Navigation API のあるブラウザでは、basename 配下の素の `<a href="/about">` も SPA 遷移になる（router が intercept する）。フォールバックブラウザでは成立しない（SPA 経路は `<wcs-link>` の click ハンドラのみ）ため、推奨は `<wcs-link>` のまま。
+
 ## 自動バインディング (`data-bind`)
+
+ルートパラメータの配送には行き先の異なる 2 つの機構がある：
+
+| パラメータの行き先 | 使うもの |
+|------|------|
+| state へ（リアクティブ描画・派生値） | `<wcs-router>` の `typedParams` / `params` バインド — 「state バインディング（wc-bindable）」参照 |
+| route 内の要素へ直接（state を使わないページ・汎用コンポーネント） | 下記の `data-bind` |
 
 `data-bind` 属性を持つ要素は、マッチしたルートパラメータを自動的に受け取る。4つのバインディングモードに対応：
 
@@ -350,6 +446,53 @@ bootstrapRouter({
 });
 ```
 
+## ルート遷移アニメーション
+
+ルートの差し替えは素の `removeChild` / `insertBefore` なので、去っていくビューは自力では退場できない。ページに [`@wcstack/view-transition`](https://github.com/wcstack/wcstack/tree/main/packages/view-transition) を足すと、差し替えが View Transition の中で行われ、見た目は CSS で書ける。
+
+```html
+<script type="module" src="https://esm.run/@wcstack/view-transition/auto"></script>
+<wcs-view-transition for="router"></wcs-view-transition>
+
+<style>
+  ::view-transition-old(root) { animation: fade-out 0.2s both; }
+  ::view-transition-new(root) { animation: fade-in 0.2s both; }
+</style>
+```
+
+ルータはガードを先に走らせ、hide/show の対だけを遷移へ渡す。await するガードが遷移を開きっぱなしにしないため。ページを最初に描く「最初のルート適用」は常に同期で行う —— 対比すべき旧ルートが無く、入場は @starting-style の担当だから。タグが無ければ何も変わらない（差し替えは同期のまま）。[docs/view-transition-design.ja.md](https://github.com/wcstack/wcstack/blob/main/docs/view-transition-design.ja.md) §7.1 参照。
+
+## サーバーサイドレンダリング（SSR）
+
+`<wcs-router enable-ssr>` を付けると [`@wcstack/server`](https://github.com/wcstack/wcstack/tree/main/packages/server) の SSR に参加する: `renderToString({ url })` がリクエスト URL の初期ルートをサーバーで描画し、クライアント側 router は起動時にサーバー描画済み DOM を再描画せずに**採用（adopt）**する — 採用ノード上で state のバインディングは生きたまま。属性が無ければ router はサーバーで一切初期化されず、従来どおりクライアントで描画される（部分 CSR）。
+
+- サーバー出力が現在の URL・ルート定義と検証で一致しない場合、クライアントは静かに通常のクライアント描画へフォールバックする。
+- guard 付きルートはサーバーで描画されない — guard は認可点でありクライアントで実行される。outlet は空のまま配信される。
+- `<wcs-layout>` を使うルートは採用時にクライアント描画へフォールバックする。
+- `<wcs-link>` の anchor はサーバーで描画され（`active` / `aria-current` 付き）、クライアントが採用する。
+
+サーバー側の設定は `@wcstack/server` の README、設計は [docs/ssr-router-design.md](https://github.com/wcstack/wcstack/blob/main/docs/ssr-router-design.md) を参照。
+
+## アクセシビリティ契約
+
+router は、プラットフォームが既に正しく行うことについては、スクロールとフォーカスの扱いをブラウザへ委譲する。
+
+**Navigation API 経路**（Chromium ほか対応ブラウザ）: router は `event.intercept()` に仕様既定を明示的に書いて渡す — `scroll: "after-transition"` と `focusReset: "after-transition"`。
+
+- push 遷移はページ先頭へスクロールし、traverse（戻る/進む）は以前のスクロール位置を復元する
+- 遷移後、フォーカスは新しい内容の最初の `[autofocus]` 要素へ、無ければ `<body>` へ移る
+
+これらは仕様の既定値であり、明示は委譲が意図であることの記録。どちらかを `"manual"` に変える変更はリファクタではなくこの契約の変更にあたる。
+
+**フォールバック経路**（Navigation API の無いブラウザ）: ナビゲーションは `history.pushState` + `popstate` リスナで動く。commit した push 遷移の後は router がページ先頭へスクロールし、Navigation API の既定と揃える。route guard に拒否された遷移ではスクロールしない。戻る/進むのスクロール復元はブラウザの `history.scrollRestoration`（既定 `auto`）の仕事なので、router は `popstate` では決してスクロールしない。
+
+**オプトインのポリシー** — `<wcs-router focus="heading" announce="title">`。どちらも既定はオフで、属性が無ければ上記のブラウザ挙動がすべて。どちらも commit したナビゲーションの直後にだけ走り、最初のルート適用（ページロードはブラウザの担当）と guard 拒否されたナビゲーションでは決して動かない。
+
+- `focus="heading"`: **リーフ** route が挿入した内容の最初の**可視の** `h1`〜`h6` へフォーカスを移す（見出しに tabindex が無ければ `tabindex="-1"` を付与。`hidden` / `display:none` の見出しは focus() が空振りするためスキップ）。指定中は Navigation API 経路で `focusReset: "manual"` を渡し、ブラウザ既定のリセットとの二重処理を防ぐ。可視の見出しが無ければ、router が仕様既定のリセットを自前で再現する — 最初の `[autofocus]` 要素へ、無ければ `<body>` へ落とす（永続ナビのリンク等、旧フォーカス要素が遷移後も生き残るケースでフォーカスが前画面に取り残されないため）。それでもオプトインするなら各ルートに見出しを置き、ルート内容の**冒頭**に置くこと — 見出しへの focus はスクロールインを起こすが、push 遷移直後の scroll-to-top が勝つため、ページ下方の見出しは画面外のままフォーカスされる。ポリシーが有効になるのは値がちょうど `"heading"` のときだけで、空文字・未知値はブラウザ既定に落ちる。
+- `announce="title"`: commit 時点の `document.title` のスナップショットを router 保有の live region（`role="status"`・視覚的にクリップ・`<wcs-router>` 直下・router ごとに 1 つ）へ書き込む。既知の制限: バインド title（`<title data-wcs>`）は commit 時点で古いことがあり、ナビゲーション外の title 変化は再読み上げされない。また同じ title を共有するルート間の遷移は live region のテキストが変化しないため、SR / ブラウザの組み合わせによっては再読み上げされないことがある。
+
+設計の記録は [docs/a11y-design.md](https://github.com/wcstack/wcstack/blob/main/docs/a11y-design.md) §3 を参照。
+
 ## パス仕様案（Router / Route / Link 共通）
 
 ### 用語
@@ -391,6 +534,37 @@ basename は **必ず次に正規化**する：
 
   * `"/app"` と `"/app/"` は **同じ意味**（アプリの root）
   * `"/app"` は `"/app"` または `"/app/..."` にのみ一致（`"/appX"` には一致しない）
+
+### 1.4 ロケールを basename に置く（多言語サイト）
+
+`/en/…` と `/ja/…` で配るサイトでは、ロケールを**ルートパターンではなく basename** に置く。
+ロケールが決まった時点で `<head>` の同期スクリプトから `<base href="/ja/">` を書けば、
+router は解決順 1.2 で拾う。
+
+これは好みの問題ではない。`/:lang` をルートパラメータにすると**言語切替が壊れる**。
+
+> `<wcs-router>` は basename 配下の同一オリジンナビゲーションを、素の `<a>` クリックも
+> 含めて**すべて** `intercept()` に渡す。ロケールが basename の内側にあると、他言語への
+> リンクはクライアント側で処理される —— ページが再読み込みされないので、ロケールごとに
+> 読み込んだもの（辞書モジュール・`Intl` のフォーマッタ）は再評価されず、**言語が
+> 変わらないまま何も壊れて見えない**。
+
+basename が `/ja` なら `/en/orders` へのリンクは `_isOwnPath` を外れ、router は intercept を
+辞退し、ブラウザが本物のナビゲーションを行う。「ただのリンクで切り替わる」のは basename の
+**おかげ**である。
+
+副産物が 2 つある。
+
+* **ルートパターンからロケールが消える** —— `path="/"`・`path="/about"`。アプリ内リンクも
+  ロケールを持たない（`<wcs-link to="/about">` が basename を前置する）
+* **ページ上の URL をすべて絶対にする**こと。`<base>` が相対 URL の基準を変えるため
+
+ロケールを持たない URL や未対応のロケールの修復も、同じ head スクリプトで `location.replace`
+する。ルートガードには置けない —— guard の redirect 先は静的な `guard="…"` 属性なので、
+残りのパスを保てない。DOM 解析前に済ませれば描画もフェッチも無駄にならない。
+
+全体像は [`examples/router-i18n`](../../examples/router-i18n/)、辞書をリアクティブな state では
+なく ES モジュールにした理由は [docs/i18n-design.md](../../docs/i18n-design.md) を参照。
 
 ---
 

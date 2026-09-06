@@ -186,6 +186,10 @@ core.dispose();                        // detach the fullscreenchange listener
 
 The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
 
+## Accessibility
+
+**WCAG 2.1.2 No Keyboard Trap / 2.4.3 Focus Order**: Esc always exits fullscreen (browser-guaranteed — do not repurpose it), but also offer a visible in-app exit wired to the `exitFullscreen` command; not every user knows the convention. Entering fullscreen changes what is on screen without a navigation: make sure focus lands somewhere sensible inside the fullscreen element (focus its first interactive control, or the element itself with `tabindex="-1"`), and check where focus returns when fullscreen ends — it should go back to the control that opened it.
+
 ## License
 
 MIT

@@ -1,0 +1,18 @@
+{
+  "$comment": "wcs-tsc over every example page (CI's experimental, non-gating job): node packages/typescript/dist/wcs-tsc.mjs -p examples/tsconfig.wcs-tsc.json",
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": [],
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": true,
+    "noImplicitThis": true,
+    "strict": false,
+    "skipLibCheck": true
+  },
+  "include": ["**/*.html"],
+  "exclude": ["**/node_modules/**", "**/dist/**"]
+}

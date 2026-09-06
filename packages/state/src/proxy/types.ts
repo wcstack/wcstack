@@ -5,7 +5,6 @@ import { IState } from "../types";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol, getByAddressSymbol, hasByAddressSymbol, setByAddressSymbol, setLoopContextSymbol, updatedCallbackSymbol } from "./symbols";
 
 export interface IStateHandler extends ProxyHandler<IState> {
-  readonly stateName: string;
   readonly stateElement: IStateElement;
   readonly addressStackLength: number;
   readonly lastAddressStack: IStateAddress | null;

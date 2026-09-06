@@ -175,7 +175,7 @@ describe("loader — envelope validation", () => {
     return loadManifest({ text, source: "m.json" }).ctx.diagnostics;
   }
   it("正しい envelope は診断なし", () => {
-    expect(load('{ "schemaVersion": 1, "kind": "package" }')).toEqual([]);
+    expect(load('{ "schemaVersion": 2, "kind": "package" }')).toEqual([]);
   });
   it("壊れた JSON は broken", () => {
     expect(codes(load('{ "schemaVersion": }'))).toEqual([WcsDiagnosticCode.ManifestBroken]);
@@ -189,11 +189,11 @@ describe("loader — envelope validation", () => {
     expect(codes(load('{ "schemaVersion": 99, "kind": "package" }'))).toEqual([WcsDiagnosticCode.ManifestSchemaVersion]);
   });
   it("kind 不正 / 欠落を診断する", () => {
-    expect(codes(load('{ "schemaVersion": 1, "kind": "widget" }'))).toEqual([WcsDiagnosticCode.ManifestKindInvalid]);
-    expect(codes(load('{ "schemaVersion": 1 }'))).toEqual([WcsDiagnosticCode.ManifestKindInvalid]);
+    expect(codes(load('{ "schemaVersion": 2, "kind": "widget" }'))).toEqual([WcsDiagnosticCode.ManifestKindInvalid]);
+    expect(codes(load('{ "schemaVersion": 2 }'))).toEqual([WcsDiagnosticCode.ManifestKindInvalid]);
   });
   it("namespace version 不一致は warning", () => {
-    const d = load('{ "schemaVersion": 1, "kind": "package", "manifestExtensions": { "wcstack.types": { "version": 9, "components": {} } } }');
+    const d = load('{ "schemaVersion": 2, "kind": "package", "manifestExtensions": { "wcstack.types": { "version": 9, "components": {} } } }');
     expect(codes(d)).toEqual([WcsDiagnosticCode.ManifestNamespaceVersion]);
     expect(d[0].severity).toBe("warning");
   });
@@ -205,9 +205,9 @@ describe("loader — collision & override", () => {
     return loadManifest({
       source,
       text: JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         kind: "package",
-        manifestExtensions: { "wcstack.types": { version: 1, components: { [tag]: component } } },
+        manifestExtensions: { "wcstack.types": { version: 2, components: { [tag]: component } } },
       }),
     });
   }
@@ -268,11 +268,11 @@ describe("drift — sidecar vs live declaration", () => {
 
 describe("validate — integrated artifact + set", () => {
   const pkgText = JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: 2,
     kind: "package",
     manifestExtensions: {
       "wcstack.types": {
-        version: 1,
+        version: 2,
         components: {
           "wcs-fetch": {
             observables: { response: { event: "wcs-fetch:response", schema: { type: ["object", "null"] } } },
@@ -293,9 +293,9 @@ describe("validate — integrated artifact + set", () => {
       ["wcs-fetch", { tag: "wcs-fetch", properties: [{ name: "response", event: "wcs-fetch:response" }], inputs: [] }],
     ]);
     const dupText = JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       kind: "package",
-      manifestExtensions: { "wcstack.types": { version: 1, components: { "wcs-fetch": { observables: {} } } } },
+      manifestExtensions: { "wcstack.types": { version: 2, components: { "wcs-fetch": { observables: {} } } } },
     });
     const result = validateManifestSet({
       artifacts: [

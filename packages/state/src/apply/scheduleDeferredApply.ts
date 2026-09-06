@@ -41,7 +41,7 @@ export function scheduleDeferredApply(binding: IBindingInfo, tagName: string): v
   }
 
   // Compatibility fallback for direct applyChange() callers outside a session.
-  const registry = getCustomElementRegistry();
+  const registry = getCustomElementRegistry(binding.replaceNode);
   if (registry === null) {
     scheduledBindings.delete(binding);
     reportFailure(tagName, new Error("CustomElementRegistry is unavailable."));

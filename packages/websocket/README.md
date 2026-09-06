@@ -678,6 +678,10 @@ bootstrapWebSocket({
 - Auto-reconnect only fires on abnormal close (code other than 1000)
 - **`errorInfo` taxonomy**: an **additive** bindable output (`wcs-ws:error-info-changed`) that classifies the same failure surfaced on `error` into a serializable `WcsIoErrorInfo` with a stable `code` / `phase` / `recoverable`, without changing the `error` shape. A `connect()` with no `url` is `invalid-argument` (phase `start`, not recoverable); a `send()` before the socket is open is `invalid-state` (phase `execute`, not recoverable — connect first); a `new WebSocket()` construction exception or the platform `error` Event is `connection-error` (phase `execute`, **`recoverable: true`** — connection errors are usually transient and a reconnect can recover). `errorInfo` transitions exactly when `error` does (cleared to `null` alongside it). The shared `WcsIoErrorInfo` type and the `WCS_WEBSOCKET_ERROR_CODE` constants are exported.
 
+## Accessibility
+
+**WCAG 2.2.2 Pause, Stop, Hide**: a live feed that keeps rewriting visible content needs a user-reachable pause. The parts are already on this tag — `close` stops the stream, `connect` resumes it — so the criterion costs one visible toggle wired to those commands. When pausing, stop the *updates* without wiping what the user paused to read. For an appending message log, `role="log"` on the container (as in [`examples/websocket-chat`](https://github.com/wcstack/wcstack/tree/main/examples/websocket-chat)) lets screen readers announce new messages politely.
+
 ## License
 
 MIT

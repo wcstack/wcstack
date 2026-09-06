@@ -254,7 +254,7 @@ interface WcsListenCommands {
     abort(): void;
 }
 
-declare function bootstrapSpeech(userConfig?: IWritableConfig): void;
+declare function bootstrapSpeech(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -642,6 +642,13 @@ declare const WCS_SPEAK_ERROR_CODE: {
     /** その他 / 想定外の error code に対する防御的 fallback。 */
     readonly SpeechError: "speech-error";
 };
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-speak": WcsSpeak;
+        "wcs-listen": WcsListen;
+    }
+}
 
 export { ListenCore, SpeakCore, WCS_LISTEN_ERROR_CODE, WCS_SPEAK_ERROR_CODE, WcsListen, WcsSpeak, bootstrapSpeech, getConfig };
 export type { IWritableConfig, IWritableTagNames, ListenOptions, ListenPermissionState, SpeakOptions, SpeechVoiceInfo, WcsIoErrorInfo, WcsIoErrorPhase, WcsListenAlternative, WcsListenCommands, WcsListenCoreCommands, WcsListenCoreValues, WcsListenErrorDetail, WcsListenInputs, WcsListenResultDetail, WcsListenValues, WcsSpeakCommands, WcsSpeakCoreCommands, WcsSpeakCoreValues, WcsSpeakErrorDetail, WcsSpeakInputs, WcsSpeakValues };

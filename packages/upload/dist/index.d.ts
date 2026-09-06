@@ -142,7 +142,7 @@ interface WcsUploadValues<T = unknown> extends WcsUploadCoreValues<T> {
     files: FileList | File[] | null;
 }
 
-declare function bootstrapUpload(userConfig?: IWritableConfig): void;
+declare function bootstrapUpload(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -267,6 +267,12 @@ declare const WCS_UPLOAD_ERROR_CODE: {
     readonly Network: "network";
     readonly HttpError: "http-error";
 };
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-upload": WcsUpload;
+    }
+}
 
 export { UploadCore, WCS_UPLOAD_ERROR_CODE, WcsUpload, bootstrapUpload, getConfig };
 export type { IWritableConfig, IWritableTagNames, UploadRequestOptions, WcsIoErrorInfo, WcsIoErrorPhase, WcsUploadCoreValues, WcsUploadError, WcsUploadValues };

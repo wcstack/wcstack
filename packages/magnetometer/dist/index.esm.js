@@ -535,17 +535,22 @@ class WcsMagnetometer extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.magnetometer)) {
-        customElements.define(config.tagNames.magnetometer, WcsMagnetometer);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.magnetometer)) {
+        registry.define(config.tagNames.magnetometer, WcsMagnetometer);
     }
 }
 
-function bootstrapMagnetometer(userConfig) {
+function bootstrapMagnetometer(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { MagnetometerCore, WCS_MAGNETOMETER_ERROR_CODE, WcsMagnetometer, bootstrapMagnetometer, getConfig };

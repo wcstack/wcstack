@@ -90,7 +90,7 @@ interface WcsFullscreenCoreValues {
  */
 type WcsFullscreenValues = WcsFullscreenCoreValues;
 
-declare function bootstrapFullscreen(userConfig?: IWritableConfig): void;
+declare function bootstrapFullscreen(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -245,6 +245,12 @@ declare const WCS_FULLSCREEN_ERROR_CODE: {
     /** その他の caught 例外。 */
     readonly FullscreenError: "fullscreen-error";
 };
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-fullscreen": WcsFullscreen;
+    }
+}
 
 export { FullscreenCore, WCS_FULLSCREEN_ERROR_CODE, WcsFullscreen, bootstrapFullscreen, getConfig };
 export type { IWritableConfig, IWritableTagNames, WcsFullscreenCoreValues, WcsFullscreenValues, WcsIoErrorInfo, WcsIoErrorPhase };

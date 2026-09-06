@@ -14,6 +14,14 @@
  *   wcs/array-mutation     — this.<path>.push(...) 等 9 メソッドの呼び出し
  *   wcs/array-index-assign — this.<path>[i] = / += / ++ 等（bracket-only チェーン）
  *
+ * severity は **error**。設計 doc は当初 warning としていたが（wcs/nested-assign と
+ * 同格に揃える意図）、根拠として挙げた「同格」は severity の水準ではなく族の一貫性で
+ * あり、族ごと error へ引き上げた（nested-assign も同時）。実測（設計 doc §3 の
+ * V1/V2/V4/V5/V8/V9）が示すとおりこれらは条件付きの疑わしさではなく**常に**
+ * リアクティブ更新を取りこぼす ＝ 実行すれば必ず壊れる書き方であり、
+ * 「気づかないまま出荷される」ことのほうが CI を落とすより高くつく。
+ * 検出漏れ（エイリアス経由の変異、§6）は残るが、それは偽陰性であって偽陽性ではない。
+ *
  * 境界: チェーンにドットアクセスを含む代入（this.items[0].name = x）は
  * wcs/nested-assign の担当であり、ここでは発火しない（相補・二重報告なし）。
  * quoted キー（this.obj["key"]）と添字内のネスト bracket は対象外（設計 doc §6）。
@@ -97,7 +105,7 @@ function findDestructiveCalls(script: string, baseOffset: number, msgs: WcsMessa
         start,
         end: start + full.length,
         message: msgs.arrayMutation(method, ALTERNATIVES[method](toAccessor(statePath))),
-        severity: 'warning',
+        severity: 'error',
         statePath,
       });
     }
@@ -119,7 +127,7 @@ function findIndexAssigns(script: string, baseOffset: number, msgs: WcsMessageCa
         start,
         end: start + full.length,
         message: msgs.arrayIndexAssign(suggestedPath),
-        severity: 'warning',
+        severity: 'error',
         statePath: suggestedPath,
       });
     }

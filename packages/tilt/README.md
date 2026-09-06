@@ -164,6 +164,10 @@ core.dispose();
 
 The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
 
+## Accessibility
+
+**WCAG 2.5.4 Motion Actuation (Level A)**: anything operated by moving the device **must** also be operable without moving it, and the user must be able to disable the motion input. Not everyone can tilt a phone — devices get mounted on wheelchairs, and tremors turn tilt input into noise. Concretely: every tilt-driven interaction needs a parallel input (keyboard, pointer, buttons) feeding the same code path, plus a way to stop reacting to the sensor (the `stop` command is exactly that). [`examples/state-tilt-maze`](https://github.com/wcstack/wcstack/tree/main/examples/state-tilt-maze) is the reference shape: arrow keys and pointer drag ride the same simulated-tilt channel as the sensor, so the game logic never knows which input is active.
+
 ## License
 
 MIT

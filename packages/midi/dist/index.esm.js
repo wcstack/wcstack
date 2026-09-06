@@ -740,17 +740,22 @@ class WcsMidi extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.midi)) {
-        customElements.define(config.tagNames.midi, WcsMidi);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.midi)) {
+        registry.define(config.tagNames.midi, WcsMidi);
     }
 }
 
-function bootstrapMidi(userConfig) {
+function bootstrapMidi(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { MIDI_MESSAGE_TYPES, MidiCore, WCS_MIDI_ERROR_CODE, WcsMidi, bootstrapMidi, deriveMidiErrorInfo, getConfig, parseMessage };

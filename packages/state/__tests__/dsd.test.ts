@@ -152,15 +152,19 @@ describe("Declarative Shadow DOM (未定義カスタム要素)", () => {
       host.remove();
     });
 
-    it("名前付きステートが DSD 内で動作すること", async () => {
-      const { host, shadowRoot } = await setupDSD("dsd-named-state", `
-        <div data-wcs="textContent: label@mystate"></div>
+    it("DSD 内でも name 属性は v2 で fail-fast すること（スコープ分離はシャドウ境界が担う）", async () => {
+      // 接続はせず直接 connectedCallback を呼ぶ（プラットフォーム経由だと未処理拒否になる）
+      const host = document.createElement("dsd-named-state");
+      const shadowRoot = simulateDSD(host);
+      shadowRoot.innerHTML = `
+        <div data-wcs="textContent: label"></div>
         <wcs-state name="mystate" json='{"label":"Named State"}'></wcs-state>
-      `);
+      `;
 
-      expect(shadowRoot.querySelector("div")?.textContent).toBe("Named State");
-
-      host.remove();
+      const stateEl = shadowRoot.querySelector("wcs-state") as State;
+      await expect(stateEl.connectedCallback()).rejects.toThrow(/"name" attribute was removed in v2/);
+      // fail-fast でも初期化待ちはウェッジしない
+      await stateEl.initializePromise;
     });
   });
 

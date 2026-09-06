@@ -4,8 +4,11 @@ import { IStateElement } from "./components/types";
 import { config, inSsr } from "./config";
 import { raiseError } from "./raiseError";
 import { devtoolsSink } from "./devtools/sink";
+import { drainPendingBinds } from "./bindings/binder";
+import { drainPendingVolumes } from "./webComponent/volumeShared";
 
-const stateElementByNameByNode: WeakMap<Node, Map<string, IStateElement>> = new WeakMap();
+// v2: 1 rootNode 1 ツリー（P3-6）。名前次元は無い — 追加の state はマウント（mount= / bind-component）で載る。
+const stateElementByNode: WeakMap<Node, IStateElement> = new WeakMap();
 const bindingsReadyByNode: WeakMap<Node, Promise<void>> = new WeakMap();
 
 // devtools 用の列挙可能な登録簿（protocol §4.1 — 唯一の常時 ON 台帳）。
@@ -17,12 +20,8 @@ export function getLiveStateElements(): ReadonlySet<IStateElement> {
   return liveStateElements;
 }
 
-export function getStateElementByName(rootNode:Node, name: string): IStateElement | null {
-  let stateElementByName = stateElementByNameByNode.get(rootNode);
-  if (!stateElementByName) {
-    return null;
-  }
-  return stateElementByName.get(name) || null;
+export function getStateElement(rootNode: Node): IStateElement | null {
+  return stateElementByNode.get(rootNode) ?? null;
 }
 
 /**
@@ -32,34 +31,81 @@ export function getBindingsReady(rootNode: Node): Promise<void> {
   return bindingsReadyByNode.get(rootNode) ?? Promise.resolve();
 }
 
-export function setStateElementByName(rootNode:Node, name: string, element: IStateElement | null): void {
+const bindingsBuiltRoots: WeakSet<Node> = new WeakSet();
 
-  let stateElementByName = stateElementByNameByNode.get(rootNode);
-
-  if (element === null) {
-    // 削除の場合、Mapが存在しない場合は何もしない
-    if (!stateElementByName) {
+/**
+ * マウントされたスコープ（コンポーネントの ShadowRoot）に、**親の** state element を
+ * 別名として載せる（Phase 2・impl-plan §3-0 の 2）。
+ *
+ * `getRootNode()` で state element を解決する全てのサイト
+ * （getAbsoluteStateAddressByBinding / applyChange / applyChangeFromBindings /
+ * fragmentInfoByUUID）が、この 1 エントリで無改造のまま親ツリーに到達する。
+ * `setStateElement` と違い、初回登録の副作用（buildBindings の起動・
+ * liveStateElements・devtools イベント）は持たない — マウントスコープの構築は
+ * webComponent/mountScope.ts が自前で行う。
+ */
+export function setStateElementAlias(rootNode: Node, element: IStateElement): void {
+  const existing = stateElementByNode.get(rootNode);
+  if (typeof existing !== "undefined") {
+    // 再初期化（connectedCallback で shadow を張り直すコンポーネントの再接続）は
+    // 同じ親を指し直すだけなので冪等。別要素への付け替えは設定ミス
+    if (existing === element) {
       return;
     }
-    const removed = stateElementByName.get(name);
-    stateElementByName.delete(name);
-    if (stateElementByName.size === 0) {
-      stateElementByNameByNode.delete(rootNode);
+    raiseError(`A state tree is already registered on this root.`);
+  }
+  stateElementByNode.set(rootNode, element);
+}
+
+/**
+ * マウントされたスコープの ready を登録する（`getBindingsReady(childShadow)` の互換面）。
+ * 完了で binder の `areBindingsBuilt` も真にする。
+ */
+export function setBindingsReadyForScope(rootNode: Node, ready: Promise<void>): void {
+  bindingsReadyByNode.set(rootNode, ready);
+  ready.then(() => markBindingsBuilt(rootNode), () => undefined);
+}
+
+/**
+ * この rootNode の初期バインド構築が完了しているか。
+ *
+ * binder プロトコル（`bind()`）が使う。router の `<wcs-head>` はクローンを
+ * `connectedCallback` の中で head へ入れるので、**state が最初の走査を終える前**に
+ * bind を求めてくる。そこで同期に束ねても state 要素の初期化が済んでおらず、
+ * 結果は空のままになる。完了までは binder 側で保留する。
+ *
+ * 「まだ登録も済んでいない」と「もう構築が終わった」を取り違えないよう、判定は
+ * 完了の側で持つ。<wcs-state> の登録は connectedCallback の await より後に起きるので、
+ * 「エントリの有無」で進行中かを測ると読み込み順によって逆の答えを返す。
+ */
+export function areBindingsBuilt(rootNode: Node): boolean {
+  return bindingsBuiltRoots.has(rootNode);
+}
+
+function markBindingsBuilt(rootNode: Node): void {
+  bindingsBuiltRoots.add(rootNode);
+}
+
+export function setStateElement(rootNode: Node, element: IStateElement | null): void {
+
+  const existing = stateElementByNode.get(rootNode);
+
+  if (element === null) {
+    // 削除の場合、登録が無ければ何もしない
+    if (existing === undefined) {
+      return;
     }
-    if (removed !== undefined) {
-      liveStateElements.delete(removed);
-      if (devtoolsSink !== null) {
-        devtoolsSink({ type: "state:element-unregistered", name, rootNode, element: removed });
-      }
+    stateElementByNode.delete(rootNode);
+    liveStateElements.delete(existing);
+    if (devtoolsSink !== null) {
+      devtoolsSink({ type: "state:element-unregistered", rootNode, element: existing });
     }
     if (config.debug) {
-      console.debug(`State element unregistered: name="${name}"`);
+      console.debug(`State element unregistered`);
     }
   } else {
     // 登録の場合
-    if (!stateElementByName) {
-      stateElementByName = new Map<string, IStateElement>();
-      stateElementByNameByNode.set(rootNode, stateElementByName);
+    if (existing === undefined) {
       // 初めてルートノードに登録する場合
       // enable-ssr 属性があり、サーバーサイドでない場合はハイドレーション
       const enableSsr = !inSsr() && (element as unknown as Element).hasAttribute?.('enable-ssr');
@@ -84,6 +130,11 @@ export function setStateElementByName(rootNode:Node, name: string, element: ISta
               } else {
                 await buildBindings(rootNode as Document);
               }
+              markBindingsBuilt(rootNode);
+              // binder が居ない時点で差し出されたサブツリーを引き取る。ここが
+              // 「state が確実に居る」最初の瞬間で、router の auto バンドルが
+              // state のそれより先に走る順序を吸収できる唯一の場所である。
+              drainPendingBinds();
               resolve();
             } catch (error) {
               reject(error);
@@ -96,6 +147,11 @@ export function setStateElementByName(rootNode:Node, name: string, element: ISta
           queueMicrotask(async () => {
             try {
               await buildBindings(rootNode as ShadowRoot);
+              markBindingsBuilt(rootNode);
+              // binder が居ない時点で差し出されたサブツリーを引き取る。ここが
+              // 「state が確実に居る」最初の瞬間で、router の auto バンドルが
+              // state のそれより先に走る順序を吸収できる唯一の場所である。
+              drainPendingBinds();
               resolve();
             } catch (error) {
               reject(error);
@@ -105,16 +161,24 @@ export function setStateElementByName(rootNode:Node, name: string, element: ISta
         bindingsReadyByNode.set(rootNode, ready);
       }
     }
-    if (stateElementByName.has(name)) {
-      raiseError(`State element with name "${name}" is already registered.`);
+    if (existing !== undefined) {
+      // v2 は 1 rootNode 1 ツリー。2 つ目の <wcs-state> は設定エラー — 追加の状態は
+      // マウント（mount= / ホスト配線の bind-component）でツリーに載せる
+      raiseError(
+        `A state tree is already registered on this root — one <wcs-state> per root in v2. ` +
+        `Mount additional states onto the tree instead: <wcs-state mount="...">.`,
+      );
     }
-    stateElementByName.set(name, element);
+    stateElementByNode.set(rootNode, element);
     liveStateElements.add(element);
+    // ルートの登録は、先に接続されて保留中のボリュームを引き取る
+    //（webComponent/volume.ts・ロード順に依存しない — V5）
+    drainPendingVolumes(rootNode, element);
     if (devtoolsSink !== null) {
-      devtoolsSink({ type: "state:element-registered", name, rootNode, element });
+      devtoolsSink({ type: "state:element-registered", rootNode, element });
     }
     if (config.debug) {
-      console.debug(`State element registered: name="${name}"`, element);
+      console.debug(`State element registered`, element);
     }
   }
 }

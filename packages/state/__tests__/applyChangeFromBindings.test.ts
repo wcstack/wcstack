@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../src/stateElementByName', () => ({
-  getStateElementByName: vi.fn()
+  getStateElement: vi.fn()
 }));
 vi.mock('../src/apply/applyChange', () => ({
   applyChange: vi.fn()
@@ -14,7 +14,7 @@ vi.mock('../src/list/lastListValueByAbsoluteStateAddress', () => ({
 }));
 
 import { applyChangeFromBindings } from '../src/apply/applyChangeFromBindings';
-import { getStateElementByName } from '../src/stateElementByName';
+import { getStateElement } from '../src/stateElementByName';
 import { applyChange } from '../src/apply/applyChange';
 import { getRootNodeByFragment } from '../src/apply/rootNodeByFragment';
 import { setLastListValueByAbsoluteStateAddress } from '../src/list/lastListValueByAbsoluteStateAddress';
@@ -22,8 +22,9 @@ import { getPathInfo } from '../src/address/PathInfo';
 import { config } from '../src/config';
 import { updatedCallbackSymbol } from '../src/proxy/symbols';
 import type { IBindingInfo } from '../src/types';
+import { setDevtoolsSink } from '../src/devtools/sink';
 
-const getStateElementByNameMock = vi.mocked(getStateElementByName);
+const getStateElementByNameMock = vi.mocked(getStateElement);
 const applyChangeMock = vi.mocked(applyChange);
 const getRootNodeByFragmentMock = vi.mocked(getRootNodeByFragment);
 const setLastListValueMock = vi.mocked(setLastListValueByAbsoluteStateAddress);
@@ -85,21 +86,18 @@ describe('applyChangeFromBindings', () => {
     expect(applyChangeMock).toHaveBeenCalledTimes(2);
   });
 
-  it('stateNameが変わる場合はcreateStateが分割されること', () => {
+  it('ルートが変わる場合はグループが分割されること', () => {
     const stateA = createStateProxy({ a: 1 });
-    const stateB = createStateProxy({ b: 2 });
-    const createStateMockA = vi.fn((_mutability: string, callback: (state: any) => void) => callback(stateA));
-    const createStateMockB = vi.fn((_mutability: string, callback: (state: any) => void) => callback(stateB));
+    const createStateMock = vi.fn((_mutability: string, callback: (state: any) => void) => callback(stateA));
 
-    getStateElementByNameMock.mockImplementation((_rootNode: Node, name: string) => {
-      if (name === 'app') return { createState: createStateMockA } as any;
-      if (name === 'app2') return { createState: createStateMockB } as any;
-      return null as any;
-    });
+    getStateElementByNameMock.mockReturnValue({ createState: createStateMock } as any);
     const node1 = document.createElement('div');
-    const node2 = document.createElement('span');
     document.body.appendChild(node1);
-    document.body.appendChild(node2);
+    const host = document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'open' });
+    const node2 = document.createElement('span');
+    shadow.appendChild(node2);
+    document.body.appendChild(host);
     const bindingInfos = [
       createBindingInfo('app', 'a', node1),
       createBindingInfo('app2', 'b', node2)
@@ -107,8 +105,8 @@ describe('applyChangeFromBindings', () => {
 
     applyChangeFromBindings(bindingInfos);
 
-    expect(createStateMockA).toHaveBeenCalledTimes(1);
-    expect(createStateMockB).toHaveBeenCalledTimes(1);
+    // ルート境界で createState は 2 回に割れる
+    expect(createStateMock).toHaveBeenCalledTimes(2);
     expect(applyChangeMock).toHaveBeenCalledTimes(2);
   });
 
@@ -119,7 +117,7 @@ describe('applyChangeFromBindings', () => {
     document.body.appendChild(node);
     const bindingInfos = [createBindingInfo('missing', 'a', node)];
 
-    expect(() => applyChangeFromBindings(bindingInfos)).toThrow(/State element with name "missing" not found for binding/);
+    expect(() => applyChangeFromBindings(bindingInfos)).toThrow(/No state tree found on this root for binding/);
     expect(applyChangeMock).not.toHaveBeenCalled();
   });
 
@@ -337,5 +335,113 @@ describe('applyChangeFromBindings', () => {
     applyChangeFromBindings(bindingInfos);
 
     expect(select.value).toBe('1');
+  });
+});
+
+/**
+ * バッチ内エラー隔離（予測可能性）。
+ *
+ * 隔離が無いと、1 本の binding の throw が「残りの binding・$updatedCallback・
+ * drain リスナー（$watch / $streams restart）」まで道連れにし、**値は新しいのに
+ * DOM は途中まで**という再現困難な半端状態を作っていた。握り潰しではなく、
+ * console.error + devtools sink で観測可能にしたうえで残りを進める。
+ */
+describe('applyChangeFromBindings: バッチ内のエラー隔離', () => {
+  let error: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    document.body.innerHTML = '';
+    error = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    error.mockRestore();
+    setDevtoolsSink(null);
+  });
+
+  function mountBindings(count: number) {
+    const state = createStateProxy({});
+    const createStateMock = vi.fn((_mutability: string, callback: (state: any) => void) => callback(state));
+    getStateElementByNameMock.mockReturnValue({ createState: createStateMock } as any);
+    const bindings: IBindingInfo[] = [];
+    for (let i = 0; i < count; i++) {
+      const node = document.createElement('div');
+      document.body.appendChild(node);
+      bindings.push(createBindingInfo('app', `p${i}`, node));
+    }
+    return bindings;
+  }
+
+  it('1 本が throw しても残りの binding は適用されること', () => {
+    const bindings = mountBindings(3);
+    applyChangeMock.mockImplementation((binding: any) => {
+      if (binding.statePathName === 'p1') throw new Error('boom');
+    });
+
+    expect(() => applyChangeFromBindings(bindings)).not.toThrow();
+
+    expect(applyChangeMock).toHaveBeenCalledTimes(3);
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(String(error.mock.calls[0][0])).toContain('binding "text: p1" failed to apply');
+  });
+
+  it('throw しても $updatedCallback まで到達すること', () => {
+    const state = createStateProxy({});
+    const updatedCallback = vi.fn();
+    (state as any)[updatedCallbackSymbol] = updatedCallback;
+    const createStateMock = vi.fn((_mutability: string, callback: (state: any) => void) => callback(state));
+    const stateElement = { createState: createStateMock, hasUpdatedCallback: true } as any;
+    getStateElementByNameMock.mockReturnValue(stateElement);
+
+    const node = document.createElement('div');
+    document.body.appendChild(node);
+    const binding = createBindingInfo('app', 'a', node);
+    applyChangeMock.mockImplementation((_binding: any, context: any) => {
+      // 失敗する前に更新アドレスを積んだ binding があった、という状況を作る
+      context.updatedAbsAddressSetByStateElement.set(stateElement, new Set());
+      throw new Error('boom');
+    });
+
+    applyChangeFromBindings([binding]);
+
+    expect(updatedCallback).toHaveBeenCalledTimes(1);
+  });
+
+  it('隔離した失敗を devtools sink にも流すこと', () => {
+    const events: any[] = [];
+    setDevtoolsSink((event) => { events.push(event); });
+    const bindings = mountBindings(1);
+    const cause = new Error('boom');
+    applyChangeMock.mockImplementation(() => { throw cause; });
+
+    applyChangeFromBindings(bindings);
+
+    expect(events).toEqual([{
+      type: 'state:binding-apply-error',
+      path: 'p0',
+      bindingType: 'text',
+      error: cause,
+    }]);
+  });
+
+  it('Phase2（遅延 select 適用）の throw も隔離されること', () => {
+    const state = createStateProxy({});
+    const createStateMock = vi.fn((_mutability: string, callback: (state: any) => void) => callback(state));
+    getStateElementByNameMock.mockReturnValue({ createState: createStateMock } as any);
+
+    const select = document.createElement('select');
+    document.body.appendChild(select);
+    const binding = createBindingInfo('app', 'selectedId', select);
+    applyChangeMock.mockImplementation((_binding: any, context: any) => {
+      context.deferredSelectBindings.push({
+        // propSegments が空 ＝ applyChangeToProperty が propName を解決できず throw する
+        binding: { ..._binding, propSegments: [], propName: '' },
+        value: '2',
+      });
+    });
+
+    expect(() => applyChangeFromBindings([binding])).not.toThrow();
+    expect(error).toHaveBeenCalledTimes(1);
   });
 });

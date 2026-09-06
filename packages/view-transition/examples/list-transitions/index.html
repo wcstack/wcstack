@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wcstack: leave and move animations with &lt;wcs-view-transition&gt;</title>
+
+  <!-- The arbiter must be defined before state renders its first rows: auto naming
+       happens as content mounts, and nothing revisits rows that mounted earlier. -->
+  <script type="module" src="https://esm.run/@wcstack/view-transition/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 0 auto; padding: 2rem; color: #1a1a2e; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .lead { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; }
+    section { padding: 1.5rem; border: 1px solid #e0e0e0; border-radius: 8px; }
+
+    .toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
+    button { font: inherit; font-size: 0.875rem; padding: 0.375rem 0.75rem; border: 1px solid #ddd; border-radius: 4px; background: #fff; cursor: pointer; }
+    button:hover { background: #f5f6ff; }
+    label { display: flex; align-items: center; gap: 0.375rem; font-size: 0.85rem; color: #555; margin-left: auto; }
+
+    ul { list-style: none; }
+    li { display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0.75rem; border-bottom: 1px solid #f0f0f0; }
+    li:last-child { border-bottom: none; }
+    .badge { font-size: 0.7rem; padding: 2px 8px; border-radius: 12px; background: #e8eaf6; color: #3949ab; }
+    .title { font-weight: 500; }
+    .drop { margin-left: auto; border-color: transparent; color: #b71c1c; }
+
+    /* ---------------------------------------------------------------
+       ENTER — needs nothing from this package. A new row is a newly
+       inserted element, so @starting-style covers it in plain CSS.
+       --------------------------------------------------------------- */
+    li {
+      transition: opacity 0.25s ease, transform 0.25s ease;
+      @starting-style { opacity: 0; transform: translateY(-6px); }
+    }
+
+    /* ---------------------------------------------------------------
+       LEAVE and MOVE — this is what <wcs-view-transition> adds. Every
+       auto-named row shares the wcs-row group class, so one rule styles
+       the whole list. Without the tag these two selectors match nothing
+       and the page still works, just without the animation.
+       --------------------------------------------------------------- */
+    ::view-transition-group(*.wcs-row) { animation-duration: 0.25s; }
+    ::view-transition-old(*.wcs-row) { animation: row-out 0.25s ease both; }
+    ::view-transition-new(*.wcs-row) { animation: row-in 0.25s ease both; }
+
+    @keyframes row-out { to { opacity: 0; transform: translateX(-16px); } }
+    @keyframes row-in { from { opacity: 0; transform: translateX(16px); } }
+
+    @media (prefers-reduced-motion: reduce) {
+      li { transition: none; }
+    }
+  </style>
+</head>
+<body>
+
+<h1>Leave and move, in CSS</h1>
+<p class="lead">
+  Rows fade in with <code>@starting-style</code> — no framework needed. Removing and
+  reordering them is what <code>&lt;wcs-view-transition&gt;</code> is for: the browser
+  snapshots the old state before the drain mutates the DOM, so a row that is already
+  detached can still animate out.
+</p>
+
+<!-- The policy tag. It renders nothing and binds no data; `disabled` is wired to a
+     checkbox so you can switch the whole thing off and compare. -->
+<wcs-view-transition naming="auto" data-wcs="disabled: animationsOff"></wcs-view-transition>
+
+<wcs-state>
+  <script type="module">
+    export default {
+      animationsOff: false,
+      nextId: 4,
+      items: [
+        { id: 1, title: "Write the design doc", tag: "docs" },
+        { id: 2, title: "Ship the arbiter", tag: "code" },
+        { id: 3, title: "Animate the list", tag: "css" },
+      ],
+      add() {
+        const id = this.nextId;
+        this.items = [{ id, title: "New item " + id, tag: "new" }, ...this.items];
+        this.nextId = id + 1;
+      },
+      shuffle() {
+        const next = [...this.items];
+        for (let i = next.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [next[i], next[j]] = [next[j], next[i]];
+        }
+        this.items = next;
+      },
+      // A row remove: the content is unmounted synchronously, exactly as before
+      // this package existed. The animation comes from the snapshot, not from
+      // keeping the row alive.
+      drop(e, $1) {
+        this.items = this.items.filter((_, index) => index !== $1);
+      },
+      reset() {
+        this.items = [
+          { id: 1, title: "Write the design doc", tag: "docs" },
+          { id: 2, title: "Ship the arbiter", tag: "code" },
+          { id: 3, title: "Animate the list", tag: "css" },
+        ];
+        this.nextId = 4;
+      },
+    };
+  </script>
+
+  <section>
+    <div class="toolbar">
+      <button data-wcs="onclick: add">Add to top</button>
+      <button data-wcs="onclick: shuffle">Shuffle</button>
+      <button data-wcs="onclick: reset">Reset</button>
+      <label>
+        <input type="checkbox" data-wcs="checked: animationsOff">
+        disable transitions
+      </label>
+    </div>
+
+    <ul>
+      <template data-wcs="for: items">
+        <li>
+          <span class="badge">{{ .tag }}</span>
+          <span class="title">{{ .title }}</span>
+          <button class="drop" data-wcs="onclick: drop">remove</button>
+        </li>
+      </template>
+    </ul>
+  </section>
+</wcs-state>
+
+</body>
+</html>

@@ -166,7 +166,7 @@ interface WcsContactsCoreValues {
  */
 type WcsContactsValues = WcsContactsCoreValues;
 
-declare function bootstrapContacts(userConfig?: IWritableConfig): void;
+declare function bootstrapContacts(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -282,6 +282,12 @@ declare const WCS_CONTACTS_ERROR_CODE: {
     readonly CapabilityMissing: "capability-missing";
     readonly SelectFailed: "select-failed";
 };
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-contacts": WcsContacts;
+    }
+}
 
 export { ContactsCore, WCS_CONTACTS_ERROR_CODE, WcsContacts, bootstrapContacts, getConfig };
 export type { ContactAddress, ContactInfo, ContactProperty, ContactsSelectOptions, IWritableConfig, IWritableTagNames, WcsContactsCoreValues, WcsContactsValues, WcsIoErrorInfo, WcsIoErrorPhase };

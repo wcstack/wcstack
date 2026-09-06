@@ -156,6 +156,13 @@
       get whoami() {
         return this.meEmoji + " " + this.meName;
       },
+      // Per-row accessible name for the delete button: the bare todo text does
+      // not say it DELETES, and a shared "Delete" would make every row's button
+      // identical to a screen reader. No prefixing filter exists — per the house
+      // rule the computation lives in state, as a wildcard getter.
+      get "list.*.deleteLabel"() {
+        return "Delete " + this["list.*.text"];
+      },
       get isSilent() {
         return !this.lastActivity;
       },
@@ -308,11 +315,13 @@
              the single writer (it also fires the broadcast announce). -->
         <!-- Per-row aria-labels: bind the todo's own text so each control is
              distinguishable to a screen reader (a shared "Toggle done" /
-             "Delete" gave every row the same label). The control's role still
-             conveys the action — checkbox = toggle, button = delete. -->
+             "Delete" gave every row the same label). The checkbox role already
+             conveys "toggle", so the todo text alone is its name; the delete
+             button's name is computed in state ("Delete " + text) because the
+             bare text would not say what the button does. -->
         <input type="checkbox" data-wcs="checked#ro: .done; onchange: toggleTodo; attr.aria-label: .text">
         <span class="text" data-wcs="textContent: .text"></span>
-        <button type="button" class="del" data-wcs="onclick: removeTodo; attr.aria-label: .text">✕</button>
+        <button type="button" class="del" data-wcs="onclick: removeTodo; attr.aria-label: .deleteLabel">✕</button>
       </li>
     </template>
   </ul>

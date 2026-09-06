@@ -12,3 +12,15 @@ export type {
 // remove don't compete). The generic `WcsIoErrorInfo` type comes from the shared io-core.
 export type { WcsIoErrorInfo, WcsIoErrorPhase } from "./core/platformCapability.js";
 export { WCS_STORAGE_ERROR_CODE } from "./core/storageCapabilities.js";
+
+// Typed element lookups (docs/typescript.md §3): `document.querySelector("wcs-storage")`
+// resolves to the element class. Default tag names only — a page that renames tags via
+// `IWritableTagNames` is outside this map. Declared here so the augmentation ships in
+// dist/index.d.ts; it applies once this package's types are in the consuming program
+// (`import "@wcstack/storage"` or a tsconfig `types` entry).
+import type { Storage } from "./components/Storage.js";
+declare global {
+  interface HTMLElementTagNameMap {
+    "wcs-storage": Storage;
+  }
+}

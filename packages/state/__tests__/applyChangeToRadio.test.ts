@@ -5,7 +5,6 @@ import type { IBindingInfo } from '../src/binding/types';
 import type { IApplyContext } from '../src/apply/types';
 
 const dummyContext: IApplyContext = {
-  stateName: 'default',
   stateElement: {} as any,
   state: {} as any,
   appliedBindingSet: new Set(),
@@ -22,7 +21,6 @@ function createRadioBinding(element: HTMLInputElement): IBindingInfo {
     propModifiers: [],
     statePathName: 'selected',
     statePathInfo: getPathInfo('selected'),
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'radio',

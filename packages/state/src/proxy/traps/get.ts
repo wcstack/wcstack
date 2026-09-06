@@ -4,7 +4,7 @@
  * StateClassのProxyトラップとして、プロパティアクセス時の値取得処理を担う関数（get）の実装です。
  *
  * 主な役割:
- * - 文字列プロパティの場合、特殊プロパティ（$1〜、$stateElement, $getAll, $postUpdate,
+ * - 文字列プロパティの場合、特殊プロパティ（$1〜、$stateElement, $getAll, $setAll, $postUpdate,
  *   $resolve, $trackDependency, $command, $streamStatus, $streamError）に応じた値やAPIを返却
  * - 通常のプロパティはgetResolvedPathInfoでパス情報を解決し、getListIndexでリストインデックスを取得
  * - getByRefで構造化パス・リストインデックスに対応した値を取得
@@ -24,6 +24,7 @@ import { IAbsoluteStateAddress, IStateAddress } from "../../address/types";
 import { getCommandNamespace } from "../../command/commandNamespace";
 import { DELIMITER, INDEX_BY_INDEX_NAME, STATE_COMMAND_NAMESPACE_NAME, STATE_STREAM_ERROR_NAMESPACE_NAME, STATE_STREAM_STATUS_NAMESPACE_NAME } from "../../define";
 import { listIndexAtWildcard } from "../../list/wildcardLevel";
+import { getIndexShiftForMarkerPath, getMountRecordByPath } from "../../webComponent/mount";
 import { raiseError } from "../../raiseError";
 import { getStreamErrorNamespace, getStreamStatusNamespace } from "../../stream/streamNamespace";
 import { connectedCallback } from "../apis/connectedCallback";
@@ -31,6 +32,7 @@ import { disconnectedCallback } from "../apis/disconnectedCallback";
 import { getAll } from "../apis/getAll";
 import { postUpdate } from "../apis/postUpdate";
 import { resolve } from "../apis/resolve";
+import { ISetAllOptions, setAll } from "../apis/setAll";
 import { trackDependency } from "../apis/trackDependency";
 import { untrackDependency } from "../apis/untrackDependency";
 import { updatedCallback } from "../apis/updatedCallback";
@@ -86,7 +88,18 @@ export function get(
     }
     // `$1` は「このスコープの」1 段目。base 深さ Δ を持つ子スコープでも
     // 番号がずれないよう末尾から数える（list/wildcardLevel.ts）
-    const indexListIndex = listIndexAtWildcard(listIndex, index, lastAddress!.pathInfo.wildcardCount);
+    let scopedIndex = index;
+    const lastPathInfo = lastAddress!.pathInfo;
+    // マウントのアクセサ評価中（マーカーパスが push されている）はスコープ相対の Δ を
+    // 足す（設計書 §4-4: `$n → listIndex.at(Δ + n - 1)`。テンプレート側の `$n` は
+    // 変換時に織り込み済み — webComponent/mount.ts の translateInnerPath）
+    if (handler.stateElement?.hasMounts === true && lastPathInfo.path.indexOf('#') !== -1) {
+      const mountRecord = getMountRecordByPath(handler.stateElement, lastPathInfo.path);
+      if (mountRecord !== null) {
+        scopedIndex = index + getIndexShiftForMarkerPath(mountRecord, lastPathInfo.path);
+      }
+    }
+    const indexListIndex = listIndexAtWildcard(listIndex, scopedIndex, lastPathInfo.wildcardCount);
     return indexListIndex?.index ?? raiseError(`ListIndex not found: ${prop.toString()}`);
   }
   if (typeof prop === "string") {
@@ -103,6 +116,16 @@ export function get(
               receiver,
               handler
             )(path, indexes);
+          }
+        }
+        case "$setAll": {
+          return (path: string, indexes: number[], value: any, options?: ISetAllOptions): number => {
+            return setAll(
+              target,
+              prop,
+              receiver,
+              handler
+            )(path, indexes, value, options);
           }
         }
         case "$postUpdate": {

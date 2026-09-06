@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: router opt-in focus / announce</title>
+  <!-- Phase 3 of docs/a11y-impl-plan.md (T3-5): the opt-in policies.
+       focus="heading" moves focus to the leaf route's first heading after
+       commit; announce="title" writes the commit-time document.title snapshot
+       into the router-owned live region. Both are attribute opt-ins — the
+       sibling fixture router-a11y.html pins that WITHOUT these attributes the
+       browser defaults stay in charge. -->
+  <script type="module" src="/packages/router/dist/auto.min.js"></script>
+</head>
+<body>
+  <nav>
+    <wcs-link to="/">home</wcs-link>
+    <wcs-link to="/about">about</wcs-link>
+    <wcs-link to="/plain">plain</wcs-link>
+  </nav>
+
+  <wcs-router basename="/e2e/fixtures" focus="heading" announce="title">
+    <template>
+      <wcs-route path="/">
+        <wcs-head>
+          <title>Home — a11y fixture</title>
+        </wcs-head>
+        <h1 id="home-h">Home</h1>
+        <p>home body</p>
+      </wcs-route>
+      <wcs-route path="/about">
+        <wcs-head>
+          <title>About — a11y fixture</title>
+        </wcs-head>
+        <h1 id="about-h">About</h1>
+        <p>about body</p>
+      </wcs-route>
+      <!-- 見出しの無いルート: focus="heading" は仕様既定の focusReset を自前で
+           再現する（[autofocus] 不在なので body へ）。永続ナビの wcs-link は遷移後も
+           生き残る = 「旧フォーカスが消えるからブラウザが落とす」は成り立たない
+           ケースを実ブラウザで踏む -->
+      <wcs-route path="/plain">
+        <wcs-head>
+          <title>Plain — a11y fixture</title>
+        </wcs-head>
+        <p id="plain-p">plain body, no heading</p>
+      </wcs-route>
+    </template>
+  </wcs-router>
+</body>
+</html>

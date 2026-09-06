@@ -13,14 +13,14 @@
 export const DEVTOOLS_HOOK_GLOBAL = "__WCSTACK_DEVTOOLS_HOOK__";
 
 /** プロトコル版。additive change では上げない（protocol §2） */
-export const DEVTOOLS_PROTOCOL_VERSION = 1;
+export const DEVTOOLS_PROTOCOL_VERSION = 2;
 
 export interface IPathInfoLike {
   readonly path: string;
 }
 
 export interface IAbsolutePathInfoLike {
-  readonly stateName: string;
+  readonly stateElement: unknown;
   readonly pathInfo: IPathInfoLike;
 }
 
@@ -37,14 +37,12 @@ export interface IAbsoluteAddressLike {
 export interface IBindingLike {
   readonly propName: string;
   readonly statePathName: string;
-  readonly stateName: string;
   readonly bindingType: string;
   readonly node: Node;
   readonly replaceNode: Node;
 }
 
 export interface IStateElementSummaryLike {
-  readonly name: string;
   readonly rootNode: Node;
   readonly element: unknown;
   readonly paths: {
@@ -57,18 +55,67 @@ export interface IStateElementSummaryLike {
   readonly eventTokenNames: ReadonlySet<string>;
   readonly staticDependency: ReadonlyMap<string, readonly string[]>;
   readonly dynamicDependency: ReadonlyMap<string, readonly string[]>;
+  /**
+   * `$watch` の宣言パス集合（protocol v1 追補・配線カバレッジの宣言面）。
+   * 旧ランタイムにはフィールド自体が無いため optional。宣言なしは null。
+   */
+  readonly watchPaths?: ReadonlySet<string> | null;
+  /**
+   * `$listKeys` で宣言されたリストパス集合（protocol v1 追補）。ワイルドカード行
+   * watch に**リスト書き込み**が届く前提は「for バインド（paths.list）or
+   * $listKeys 宣言」なので、前提判定の正確化に paths.list と対で使う
+   *（明示 index 書き込みは前提に依らず発火し得る）。旧ランタイムにはフィールド自体が
+   * 無いため optional（undefined = $listKeys 側が観測不能）。宣言なしは null。
+   */
+  readonly keyedListPaths?: ReadonlySet<string> | null;
+}
+
+/**
+ * マウント記録 1 件の要約（overlays の要素 — protocol v2・D20 の可視化）。
+ * マウントの私有キー・getter はオーバーレイ専用アドレス空間（マーカー `#m<id>`）に
+ * 住み、状態ツリーの keys/read には現れないため、これが唯一の可視面になる。
+ */
+export interface IMountOverlaySummaryLike {
+  /** D20 の予約セグメント（`#m<id>`） */
+  readonly marker: string;
+  /** マウントされたコンポーネントのタグ名（小文字） */
+  readonly componentTag: string;
+  readonly stateProp: string;
+  /** マウント表: 内側接頭辞（空 = ルートエントリ）→ 外側パス */
+  readonly mountTable: readonly { readonly inner: string; readonly outer: string }[];
+  /** `$n` 補正の Δ（ルート接頭辞のワイルドカード数） */
+  readonly delta: number;
+  /** 私有キー（オーバーレイ空間に住む own data key） */
+  readonly privateKeys: readonly string[];
+  /** マーカーパスに載る getter のキー */
+  readonly getterKeys: readonly string[];
+}
+
+/**
+ * 宣言レベルのバインディング 1 件（getDeclaredBindings の要素・protocol v1 追補）。
+ * ランタイム正本パーサの結果が構造的に流れる。宣言タプルで dedupe 済みの
+ * 「宣言の集合」であり、レンダリング行数に比例したインスタンス列ではない。
+ */
+export interface IDeclaredBindingLike {
+  /** 代表ノード（fragment 由来 = 構造テンプレート内部は null）。 */
+  readonly node: Node | null;
+  readonly propName: string;
+  readonly statePathName: string;
+  readonly bindingType: string;
+  readonly inFilters: readonly { readonly filterName: string; readonly args: readonly string[] }[];
+  readonly outFilters: readonly { readonly filterName: string; readonly args: readonly string[] }[];
+  readonly origin: "attribute" | "comment" | "fragment";
+  readonly raw: string;
 }
 
 export type DevtoolsEventLike =
   | {
       readonly type: "state:element-registered";
-      readonly name: string;
       readonly rootNode: Node;
       readonly element: unknown;
     }
   | {
       readonly type: "state:element-unregistered";
-      readonly name: string;
       readonly rootNode: Node;
       readonly element: unknown;
     }
@@ -100,10 +147,99 @@ export type DevtoolsEventLike =
   | {
       readonly type: "state:token-emit";
       readonly kind: "command" | "event";
-      readonly stateName: string | null;
       readonly tokenName: string;
       readonly args: readonly unknown[];
       readonly subscriberCount: number;
+      /**
+       * 発火元ツリーの state 要素（protocol v2 追補 2026-09-05・additive）。
+       * 旧ランタイム・registry 非経由の token の payload には無い（optional）—
+       * 無い emit の実測はツリー別に分けられないため、全ツリーの照会へ合算で残す。
+       */
+      readonly stateElement?: unknown;
+    }
+  | {
+      // `$watch` の実行中の throw。watch は例外を自分で閉じる（drain と他機能を
+      // 巻き添えにしないため）ので、これが無いと失敗が devtools から見えない。
+      readonly type: "state:watch-error";
+      readonly phase: "prime" | "evaluate" | "handler";
+      readonly path: string;
+      readonly error: unknown;
+    }
+  | {
+      // watch 起点の書き込み連鎖が深さ上限で打ち切られた。
+      readonly type: "state:watch-chain-limit";
+      readonly maxDepth: number;
+      readonly paths: readonly string[];
+    }
+  | {
+      // `$watch` ハンドラの正常発火（protocol v1 追補・配線カバレッジの実測面）。
+      // 値は載せない — 「宣言したのに一度も発火しない」の検出には発火の事実で足りる。
+      readonly type: "state:watch-fired";
+      readonly path: string;
+      /**
+       * 発火元ツリーの state 要素（protocol v2 追補 2026-09-05・additive）。
+       * 複数ツリーが同名 watch パスを宣言するページで実測台帳をツリー別に分ける。
+       * 旧ランタイムの payload には無い（optional）— 無い発火は全ツリーの照会へ
+       * 合算で残す。
+       */
+      readonly stateElement?: unknown;
+    }
+  | {
+      // バインド / `$watch` の対象パスが state 上で解決しないと確定した。
+      // ランタイムは console.warn で続行するので、これが無いと「配線したのに
+      // 黙って死んでいる」が devtools から見えない。
+      readonly type: "state:path-unresolved";
+      readonly source: "binding" | "watch";
+      readonly path: string;
+      readonly missingSegment: string;
+    }
+  | {
+      // binding 適用の throw。バッチの残りを守るためランタイムが隔離するので、
+      // watch-error と同じくこれが無いと失敗がどこにも現れない。
+      readonly type: "state:binding-apply-error";
+      readonly path: string;
+      readonly bindingType: string;
+      readonly error: unknown;
+    }
+  | {
+      // two-way エコーの辺単位抑止（enablePropagationContext 時のみ流れる）。
+      readonly type: "propagation:suppressed";
+      readonly reason: "confirmation" | "visited-edge";
+      readonly transactionId: number;
+      readonly edgeId: number;
+      readonly node: Node;
+      readonly member: string;
+    }
+  | {
+      readonly type: "propagation:coalesced";
+      readonly absoluteAddress: IAbsoluteAddressLike;
+      readonly droppedTransactionId: number;
+      readonly winnerTransactionId: number;
+    }
+  | {
+      readonly type: "propagation:hop-limit";
+      readonly absoluteAddress: IAbsoluteAddressLike;
+      readonly transactionId: number;
+      readonly hop: number;
+    }
+  | {
+      // sidecar manifest から 1 コンポーネント契約を読んだ（opt-in contract analyzer）。
+      readonly type: "contract:manifest-read";
+      readonly tag: string;
+      readonly loaded: boolean;
+    }
+  | {
+      readonly type: "contract:unsupported-extension";
+      readonly namespace: string;
+    }
+  | {
+      // sidecar と live wcBindable 宣言の drift。live 宣言が正本。
+      readonly type: "contract:drift";
+      readonly reason: "component-not-loaded" | "missing-member" | "event-mismatch";
+      readonly tag: string;
+      readonly member?: string;
+      readonly sidecarEvent?: string;
+      readonly liveEvent?: string;
     };
 
 export type DevtoolsSinkLike = (event: DevtoolsEventLike) => void;
@@ -114,9 +250,20 @@ export interface IDevtoolsSourceLike {
   readonly packageVersion: string;
   getStateElements(): IStateElementSummaryLike[];
   /** protocol v1 追補 API。古いランタイムには無い可能性があるため optional 扱いで呼ぶ */
-  keys?(name: string, rootNode: Node): string[];
-  read(name: string, rootNode: Node, path: string, indexes?: number[]): unknown;
-  write(name: string, rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
+  keys?(rootNode: Node): string[];
+  /**
+   * protocol v2 API（optional 扱いで呼ぶ）。rootNode のツリーに載っている
+   * マウント記録の列挙（D20 の可視化）。マウントが無ければ空配列。
+   * v2 より前のランタイムには無いため、無ければ UI はセクションごと出さない。
+   */
+  overlays?(rootNode: Node): IMountOverlaySummaryLike[];
+  read(rootNode: Node, path: string, indexes?: number[]): unknown;
+  write(rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
+  /**
+   * protocol v1 追補 API（optional 扱いで呼ぶ）。ランタイム正本パーサによる
+   * 宣言レベルバインディングの集合（declaredScan の簡易パーサを置き換える正本）。
+   */
+  getDeclaredBindings?(rootNode: Node): IDeclaredBindingLike[];
   _setSink(sink: DevtoolsSinkLike | null): void;
 }
 

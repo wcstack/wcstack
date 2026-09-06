@@ -1,6 +1,6 @@
 import { IInitialSyncPolicy, resolveInitialSyncPolicy } from "../bindings/initialSync";
 import { config } from "../config";
-import { INDEX_BY_INDEX_NAME } from "../define";
+import { COMMAND_NAMESPACE, EVENT_TOKEN_NAMESPACE, INDEX_BY_INDEX_NAME } from "../define";
 import { isPossibleTwoWay } from "../event/isPossibleTwoWay";
 import { getCustomElement } from "../getCustomElement";
 import { IBindingInfo } from "../types";
@@ -41,7 +41,7 @@ export function compileRowPlan(fragmentInfo: IFragmentInfo): IRowPlan | null {
       // command.<name>（prop 扱い）と eventToken.<prop>（event 扱い）は token 配線の
       // teardown / attach 分岐が要るため不適格
       const namespace = template.propSegments[0];
-      if (namespace === "command" || namespace === "eventToken") {
+      if (namespace === COMMAND_NAMESPACE || namespace === EVENT_TOKEN_NAMESPACE) {
         return null;
       }
       if (bindingType === "text") {

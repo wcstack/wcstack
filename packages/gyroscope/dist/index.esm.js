@@ -535,17 +535,22 @@ class WcsGyroscope extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.gyroscope)) {
-        customElements.define(config.tagNames.gyroscope, WcsGyroscope);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.gyroscope)) {
+        registry.define(config.tagNames.gyroscope, WcsGyroscope);
     }
 }
 
-function bootstrapGyroscope(userConfig) {
+function bootstrapGyroscope(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { GyroscopeCore, WCS_GYROSCOPE_ERROR_CODE, WcsGyroscope, bootstrapGyroscope, getConfig };

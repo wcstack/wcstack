@@ -498,6 +498,10 @@ bootstrapSse({
 - `wcs-sse:error` is a **property-change notification** (wc-bindable model), not just a failure signal: it fires with `detail` = the error on failure, and again with `detail = null` when a connection establishes/recovers and the `error` property clears. Treat `error == null` as "no current error", not "no error ever happened"
 - **`errorInfo` taxonomy**: an **additive** bindable output (`wcs-sse:error-info-changed`) that classifies the same failure surfaced on `error` into a serializable `WcsIoErrorInfo` with a stable `code` / `phase` / `recoverable`, without changing the `error` shape. A `connect()` with no `url` is `invalid-argument` (phase `start`, not recoverable). Every stream failure is `connection-error`, with `phase` / `recoverable` distinguishing the case: a `new EventSource()` construction failure is phase `start` / not recoverable (no `EventSource` exists, so the browser will not auto-reconnect); a transient drop while the browser is auto-reconnecting (`readyState` CONNECTING) is phase `execute` / **`recoverable: true` — the only recoverable path in SSE** (recovers without caller intervention); a permanent close (`readyState` CLOSED) is phase `execute` / not recoverable. `errorInfo` transitions exactly when `error` does (cleared to `null` when the stream recovers). The shared `WcsIoErrorInfo` type and the `WCS_SSE_ERROR_CODE` constants are exported.
 
+## Accessibility
+
+**WCAG 2.2.2 Pause, Stop, Hide**: a live feed that keeps rewriting visible content needs a user-reachable pause. The parts are already on this tag — `close` stops the stream, `connect` resumes it — so the criterion costs one visible toggle wired to those commands. [`examples/state-sse-dashboard`](https://github.com/wcstack/wcstack/tree/main/examples/state-sse-dashboard) shows the shape, including the part worth copying: pausing must stop the *updates* without wiping the data the user paused to read.
+
 ## License
 
 MIT

@@ -9,16 +9,16 @@
 export type BindingContext =
   | { kind: 'property'; partial: string }
   | { kind: 'modifier'; propName: string; partial: string }
-  | { kind: 'path'; propName: string; partial: string; targetState: string | null }
-  | { kind: 'filter'; propName: string; partial: string; targetState: string | null }
-  | { kind: 'stateName'; partial: string }
+  | { kind: 'path'; propName: string; partial: string }
+  | { kind: 'filter'; propName: string; partial: string }
   | { kind: 'none' };
 
 /**
  * data-wcs 属性値とカーソルのオフセットから補完コンテキストを解析する。
  *
- * バインディング構文: `[property][#modifier]: [path][@state][|filter|filter(args)...]`
- * 複数バインディングは `;` で区切る。
+ * バインディング構文: `[property][#modifier]: [path][|filter|filter(args)...]`
+ * 複数バインディングは `;` で区切る（v1 の `@state` セレクタは v2 で撤去 —
+ * `@` は検出だけして補完を止める。validator が parse error にする）。
  *
  * @param attrValue - data-wcs 属性の値全体
  * @param cursorOffset - 属性値内のカーソル位置（0始まり）
@@ -103,12 +103,10 @@ function parseBindingAtCursor(binding: string, offset: number): BindingContext {
   // `:` の後（パス + フィルタ部）
   const afterColon = textBeforeCursor.slice(colonIndex + 1).trimStart();
 
-  // `@` を検出して targetState を抽出
-  // afterColon のフィルタ前部分から @stateName を取得
+  // `@` は v2 の parse error（名前次元は撤去）— 検出だけして補完を止める
   const firstPipeIndex = afterColon.indexOf('|');
   const pathPart = firstPipeIndex !== -1 ? afterColon.slice(0, firstPipeIndex) : afterColon;
   const atIndex = pathPart.indexOf('@');
-  const targetState = atIndex !== -1 ? pathPart.slice(atIndex + 1).trim() || null : null;
 
   // `|` があればフィルタ部
   const lastPipeIndex = afterColon.lastIndexOf('|');
@@ -118,14 +116,13 @@ function parseBindingAtCursor(binding: string, offset: number): BindingContext {
     if (filterPart.includes('(') && !filterPart.includes(')')) {
       return { kind: 'none' };
     }
-    return { kind: 'filter', propName, partial: filterPart, targetState };
+    return { kind: 'filter', propName, partial: filterPart };
   }
 
-  // `@` の直後にカーソルがある場合は state 名補完
+  // `@` を含む式は壊れている（v2 parse error）— 補完しない
   if (atIndex !== -1) {
-    const afterAt = pathPart.slice(atIndex + 1);
-    return { kind: 'stateName', partial: afterAt.trim() };
+    return { kind: 'none' };
   }
 
-  return { kind: 'path', propName, partial: afterColon, targetState };
+  return { kind: 'path', propName, partial: afterColon };
 }

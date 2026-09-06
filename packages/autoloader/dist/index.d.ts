@@ -22,7 +22,7 @@ interface IWritableConfig {
     tagNames?: IWritableTagNames;
 }
 
-declare function bootstrapAutoloader(config?: IWritableConfig): void;
+declare function bootstrapAutoloader(config?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 

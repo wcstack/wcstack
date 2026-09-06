@@ -154,7 +154,7 @@ interface WcsWorkerCommands {
     terminate(): void;
 }
 
-declare function bootstrapWorker(userConfig?: IWritableConfig): void;
+declare function bootstrapWorker(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -321,6 +321,12 @@ declare const WCS_WORKER_ERROR_CODE: {
     /** worker スクリプトの uncaught error / messageerror / post 失敗 / 構築失敗など。 */
     readonly WorkerError: "worker-error";
 };
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-worker": WcsWorker;
+    }
+}
 
 export { WCS_WORKER_ERROR_CODE, WcsWorker, WorkerCore, bootstrapWorker, getConfig };
 export type { IWritableConfig, IWritableTagNames, WcsIoErrorInfo, WcsIoErrorPhase, WcsWorkerCommands, WcsWorkerCoreCommands, WcsWorkerCoreValues, WcsWorkerErrorDetail, WcsWorkerInputs, WcsWorkerStartOptions, WcsWorkerValues };

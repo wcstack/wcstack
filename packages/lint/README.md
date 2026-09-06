@@ -23,8 +23,10 @@ npx wcs-validate --errors-only src/**/*.html
 
 Files ending in `.manifest.json` are validated as sidecar manifests; everything else is validated as HTML with `data-wcs` bindings.
 
+External state referenced via `<wcs-state src="...">` (`.json` / `.js` / `.ts`) is resolved relative to the HTML file and included in path validation. URLs and absolute paths are never read, unreadable files are skipped, and unresolved paths stay warnings. Note that once external state *does* resolve, the full validation surface applies to those pages — error-severity findings (e.g. `for:` bound to a non-array) can fail a build that was previously silent because the paths could not be checked.
+
 ```
-wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-only] <file> [<file> ...]
+wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-only] [--strict] <file> [<file> ...]
 ```
 
 | Option | Description |
@@ -33,6 +35,7 @@ wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-
 | `--state-tag=<name>` | State custom-element tag name (default `wcs-state`) |
 | `--lang=ja\|en` | Diagnostic message language. Defaults to the environment locale (`LC_ALL` / `LC_MESSAGES` / `LANG`, then the OS locale); codes and ranges are language-independent |
 | `--errors-only` (alias `--quiet`) | Print only error-severity lines; warning/info counts and the exit code are unchanged |
+| `--strict` | Exit `1` on warning-severity diagnostics too. Severities are unchanged (the IDE shows the same thing); only the exit-code threshold moves from error to warning. The summary line ends with `(strict)`. Use it to fail CI on a path typo (`wcs/binding-path-missing` is a warning) — but resolve every `<wcs-state src>` first (an unresolvable external state leaves warnings that would now fail the build). Combines with `--errors-only`: output stays error-only, the exit code still reflects warnings |
 
 ## Output & exit codes
 
@@ -47,9 +50,36 @@ app.manifest.json:1:3 error wcs/manifest-broken Broken manifest JSON: ...
 
 | Exit code | Meaning |
 |---|---|
-| `0` | No error-severity diagnostics (warnings/info may exist) |
-| `1` | At least one error-severity diagnostic |
+| `0` | No error-severity diagnostics (warnings/info may exist); with `--strict`, no error or warning |
+| `1` | At least one error-severity diagnostic; with `--strict`, at least one error or warning |
 | `2` | Usage error or unreadable file |
+
+## Declaring a state contract (`stateSchema`)
+
+Without a contract, a path the validator cannot resolve is only a **warning** (`wcs/binding-path-missing`): `count` may well exist at runtime even when the inline script cannot be read statically. Note that a list starting as `[]` does not need a contract just to name its row fields — the analyzer reads them from the row literals in the assignments that add or replace rows (`this.items = this.items.concat({ id, kind: "general" })`, `.toSpliced(i, n, { … })`, `.with(i, { … })`, `[...this.items, { … }]`); only a row passed as a variable (`concat(row)`) is invisible to it. Put an `application` sidecar next to (or above) the HTML and the same typo becomes an **error**:
+
+```json
+{
+  "schemaVersion": 2,
+  "kind": "application",
+  "manifestExtensions": {
+    "wcstack.application": {
+      "version": 2,
+      "stateSchema": {
+        "type": "object",
+        "properties": {
+          "count": { "type": "number" },
+          "users": { "type": "array", "items": { "type": "object", "properties": { "name": { "type": "string" } } } }
+        }
+      }
+    }
+  }
+}
+```
+
+- **Discovery**: the nearest `wcstack.manifest.json` walking up from the HTML file is used automatically — nothing to pass on the command line. Passing `*.manifest.json` arguments that contain an `application` artifact replaces discovery for the whole run. The VS Code extension discovers the same file, so IDE and CLI agree.
+- **Effect**: when a `stateSchema` is declared, a bound path that the schema definitely lacks is `wcs/path-nonexistent` (**error**, exit `1`); `for:` on a non-array is `wcs/path-type-mismatch` (**error**). Paths the schema leaves open (a bare `{}`) stay silent, and methods / getters / `$listKeys` from the inline script still count as existing. Without a `stateSchema`, behavior is unchanged.
+- **Where the schema comes from**: write it by hand (only the JSON-Schema subset `type / properties / required / items / enum / const / anyOf / $defs / $ref` is accepted), or generate it from a TypeScript state file with `wcs-schema` (`@wcstack/typescript`). The manifest is a derived artifact — keep it in sync with `wcs-schema check` in CI.
 
 ## Use in generate–validate–fix loops
 

@@ -1,3 +1,4 @@
+import type { IStateElement } from "../components/types";
 import { devtoolsSink } from "../devtools/sink";
 import { Token } from "../token/Token";
 import { ICommandToken } from "./types";
@@ -5,15 +6,18 @@ import { ICommandToken } from "./types";
 // CommandToken は共有 pub/sub プリミティブ Token の薄い特化。
 // instanceof による型判別を成立させるため独立クラスとして維持する。
 //
-// ownerStateName は devtools 計装（protocol §4.5）のための内部 optional 引数。
-// command-token-protocol の外部仕様は不変更（registry が渡すだけで、
-// subscribe/emit の意味論には一切影響しない）。
 export class CommandToken extends Token implements ICommandToken {
-  private _ownerStateName: string | null;
+  /**
+   * 属する state 要素（devtools のツリー識別 — protocol v2 追補）。
+   * registry（getOrCreateCommandToken）経由の生成でのみ渡る optional 参照で、
+   * token の寿命は registry 側の WeakMap が state 要素に紐づけている（ここが
+   * 寿命を延ばす新しい経路にはならない）。emit の payload にだけ載せる。
+   */
+  private _stateElement: IStateElement | undefined;
 
-  constructor(name: string, ownerStateName?: string) {
+  constructor(name: string, stateElement?: IStateElement) {
     super(name);
-    this._ownerStateName = ownerStateName ?? null;
+    this._stateElement = stateElement;
   }
 
   emit(...args: unknown[]): unknown[] {
@@ -23,10 +27,10 @@ export class CommandToken extends Token implements ICommandToken {
       devtoolsSink({
         type: "state:token-emit",
         kind: "command",
-        stateName: this._ownerStateName,
         tokenName: this.name,
         args,
         subscriberCount: this.size,
+        stateElement: this._stateElement,
       });
     }
     return super.emit(...args);

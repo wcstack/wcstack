@@ -2,7 +2,9 @@
 //
 // Any async-IO node in wcstack speaks the wc-bindable protocol:
 //   - properties: outputs — the node dispatches `event` on change; the value is
-//                 read via `getter(event)` or the property `name`.
+//                 read via `getter(event)`, defaulting to `e.detail` (wc-bindable
+//                 SPEC § Default Getter). The property `name` is read only for the
+//                 initial seed, where no event exists yet (SPEC § Initial Sync).
 //   - inputs:     settable surface — write `node[name] = value`.
 //   - commands:   invocable methods — call `node[name](...args)`.
 // The node has NO idea whether the observer behind the binding is a proxy (state)
@@ -226,6 +228,13 @@ function readProperty(target: NodeTarget, name: string): unknown {
   return target[name];
 }
 
+// wc-bindable SPEC § Default Getter: when a property omits `getter`, an adapter MUST
+// read `e.detail`. This adapter used to read the property instead (#238), which
+// diverged from `@wcstack/state` and `@wc-bindable/core` — the same element could
+// bind correctly in one adapter and not the other. Only the initial seed reads the
+// property (SPEC § Initial Sync: there is no event to derive from at bind time).
+const DEFAULT_GETTER = (e: Event): unknown => (e as CustomEvent).detail;
+
 /**
  * Adapt a wc-bindable node into signals. The public `target` parameter is a plain
  * `EventTarget` (the internal `Record<string, any>` indexing is cast away here, not
@@ -276,8 +285,9 @@ export function bindNode<S extends NodeShape = DefaultNodeShape>(
     const cell = signal<unknown>(readProperty(node, prop.name));
     signals[prop.name] = cell;
 
+    const read = prop.getter ?? DEFAULT_GETTER;
     const handler = (event: Event): void => {
-      cell.set(prop.getter ? prop.getter(event) : readProperty(node, prop.name));
+      cell.set(read(event));
     };
     node.addEventListener(prop.event, handler);
     removers.push(() => node.removeEventListener(prop.event, handler));
@@ -285,7 +295,8 @@ export function bindNode<S extends NodeShape = DefaultNodeShape>(
     // the listener was attached, so a value change in that gap would be missed.
     // Reading the property once more now closes the race (the equality guard makes
     // it a no-op when nothing changed). Note this is the property snapshot, not a
-    // getter(event) — there is no event to derive from at bind time.
+    // getter(event) — there is no event to derive from at bind time, and the SPEC's
+    // default getter (`e.detail`) applies to events only.
     cell.set(readProperty(node, prop.name));
   }
 
@@ -305,8 +316,9 @@ export function bindNode<S extends NodeShape = DefaultNodeShape>(
       const fold = options.fold ?? ((_acc: T | undefined, chunk: C) => chunk as unknown as T);
       // equals: () => false — a stream notifies on EVERY emit, even an equal value.
       const cell = signal<T | undefined>(options.initial, () => false);
+      const read = propDesc.getter ?? DEFAULT_GETTER;
       const handler = (event: Event): void => {
-        const chunk = (propDesc.getter ? propDesc.getter(event) : readProperty(node, prop)) as C;
+        const chunk = read(event) as C;
         cell.set(fold(cell.peek(), chunk));
       };
       node.addEventListener(propDesc.event, handler);

@@ -31,7 +31,7 @@ function defineRowComponent(tag: string, buildIn: "constructor" | "connectedCall
     `<wcs-state bind-component="state"></wcs-state>` +
     `<span class="row-view" data-wcs="textContent: row.id"></span>`;
   class RowComponent extends HTMLElement {
-    state: Record<string, any> = { row: {} };
+    state: Record<string, any> = {}; // v2 R1: 既定値はマッピングを隠す（D19）
     constructor() {
       super();
       this.attachShadow({ mode: "open" });

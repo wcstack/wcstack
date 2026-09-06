@@ -183,6 +183,10 @@ core.dispose();                          // fullscreenchange リスナーを外�
 
 Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 
+## アクセシビリティ
+
+**WCAG 2.1.2 No Keyboard Trap / 2.4.3 Focus Order**: Esc で常に全画面を抜けられる（ブラウザ保証 — このキーを奪わない）が、アプリ内にも `exitFullscreen` コマンドを配線した可視の出口を用意すること（全員がこの慣習を知っているわけではない）。全画面化はナビゲーションなしで画面内容が変わる: フォーカスが全画面要素の中の妥当な場所（最初の操作可能なコントロール、または `tabindex="-1"` を付けた要素自身）へ移ることと、全画面終了時にフォーカスが開いたコントロールへ戻ることを確認する。
+
 ## ライセンス
 
 MIT

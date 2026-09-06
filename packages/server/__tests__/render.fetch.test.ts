@@ -3,10 +3,11 @@ import { createServer, type Server } from 'node:http';
 import { Window } from 'happy-dom';
 import { renderToString } from '../src/render';
 
-function getSsrData(html: string, name = 'default'): Record<string, any> {
+// v2: <wcs-ssr> は name 属性を持たない（1 rootNode 1 ツリー）
+function getSsrData(html: string): Record<string, any> {
   const window = new Window();
   window.document.body.innerHTML = html;
-  const ssrEl = window.document.querySelector(`wcs-ssr[name="${name}"]`);
+  const ssrEl = window.document.querySelector('wcs-ssr');
   const script = ssrEl?.querySelector('script[type="application/json"]');
   return JSON.parse(script?.textContent ?? '{}');
 }

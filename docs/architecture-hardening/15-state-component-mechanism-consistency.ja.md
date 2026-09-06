@@ -52,6 +52,9 @@
 | §1.8 | 子スコープが親のリストを `for` で回せない（越境で listIndex が落ち、初期描画から不成立） | ✅ 修正済み（2026-08-10・§1.7 の残件） |
 | §1.9 | 行にコンポーネントを持つリストの差し替えで `for` が死ぬ（README 記載の形・復帰不能） | ✅ 修正済み（2026-08-10・§1.8 の spike 中に発見） |
 | §1.10 | 親スコープの `for` の中のコンポーネントが子でも `for` を回せない（無言のハング） | ✅ 修正済み（2026-08-11・§1.8 の残件） |
+| §1.11 | 親起点の行フィールド書き込みが境界を 1 枚しか越えない（行台帳の相乗りが 1 段で止まる） | ✅ 修正済み（2026-08-13） |
+| §1.12 | 中間コンポーネントが親の `for` の中にいる（Δ>0）とリストが境界 2 枚を越えられない | ✅ 修正済み（2026-08-17・§1.11 の修正中に発見） |
+| §1.13 | mapped な Light DOM の `bind-component` が初期化でデッドロックする | ✅ 修正済み（2026-08-17） |
 | §2.1 | 変更イベントが完全一致パスでしか出ない | ✅ 修正済み（サブパス ＋ `$postUpdate` ＋ property getter） |
 | §2.2 | DCC アクセサの同期／非同期が非対称 | ✅ 修正済み（setter を同期化。`callFn` は意図的に Promise 維持） |
 | §2.3 | `$bindables` だけ宣言検証が無い | ✅ 修正済み（構造検証＋存在検査。`$streams` 名も解決） |
@@ -63,6 +66,14 @@
 | §3.3 | root 判定が 2 系統 | ❌ **本書の誤り**（SSR で必要。コメントを追加して訂正） |
 | §3.5 | 型・レイヤ（`IStateElement` に setter が無い） | ✅ 修正済み |
 | §3.6 | `src/` 配下の README が実装と食い違う | ✅ 修正済み |
+
+> **Superseded（2026-09-02・v2 ブランチ — state-mount Phase 2）**: 下の実装表に並ぶ
+> 機構（innerState / MappingRule / crossBoundaryAddress / outerListPath / baseListIndex /
+> 親→子通知チャネル / outer-pattern 相乗り）は Phase 2 slice 9（P2-7・−3,618 行）で
+> **削除**された。本書がピンした挙動（§1.1〜§1.13）は、単一ツリーのマウント機構
+> （親台帳へのバインディング変換）の上で形ごとの特例なしに成立している —
+> [state-mount-impl-plan.md §3-0](../state-mount-impl-plan.md) と同 §7-8 の対応表を参照。
+> 上の表は v1 橋渡し層が直さねばならなかったものの歴史記録として残す。
 
 修正の実装は以下。
 
@@ -528,6 +539,155 @@ base を親に渡す必要がある — `createListDiff` は既存台帳があ�
 （§1.9 の理由）。実ブラウザ側でだけ出た事象が 1 件あった — 範囲外の行への書き込みが
 `ListIndex not found: <親パス>` を投げる既存挙動で、メッセージが原因を誤って示す
 （本件とは無関係だが設計書 §8.4 に記録。2026-08-11 に index 付きメッセージへ修正済み）。
+
+### 1.11 親起点の行フィールド書き込みが境界を 1 枚しか越えない ✅ 修正済み（2026-08-13）
+
+§1.1〜§1.10 の検証はすべて**深さ 1**（ホスト → コンポーネント 1 枚）で行われていた。
+§1.10 で入れ子にしたのは `for` であって境界ではない。境界を 2 枚重ねた形
+——コンポーネントの shadow の中にさらに mapped な `bind-component` がある——は
+一度も測られていなかった。
+
+測ると、**スカラーのパスは深さ 4 まで全方向で成立**する。理由は解決が再帰的だから:
+`innerState` の get / set は `outerAbsPathInfo.stateElement` へ再入し、その外側自身が
+また innerState でありうる。多段は特別扱いなしに composeする。リストも初期描画・
+リスト置換・最下層からの書き戻しは深さ 3 まで通る。
+
+唯一通らなかったのが**親起点の行フィールド書き込み**で、深さ 2 以上で届かない。
+原因は §1.8 で入れた「行バインディングを親のパターン台帳へ相乗りさせる」機構が
+**明示的な 1 回登録**だったこと。`getOuterRowPathInfo` は境界を 1 枚遡って止まり、
+控えも `record.outerPatternPathInfo` の単数フィールド 1 つきりだった。結果、深さ 2 では
+最下層の行が中間スコープの `list.*.name` にしか載らず、正本を持つ host が
+`rows.*.name` へ書いても購読者が誰もいない（中間スコープは配列を素通しするだけで
+自分の行バインディングを持たないため、中継もされない）。
+
+> **再帰的に解決するものは深さに強く、明示的に登録するものは 1 段で止まる。**
+
+修正は外向き walk の多段化（`getOuterRowPathInfosBeyond`）と、控えの
+`outerPatternPathInfosRest` への昇格。1 段目は従来と同一のままで、2 段目以降が無ければ
+`null`（＝圧倒的多数である深さ 1 の行では配列を確保しない。`interestedSessionsByNode` と
+同じ「単数で持ち 2 つ目から昇格する」idiom）。各段は `Δ + innerW === outerW` を
+確かめてから登録するので、段数が合わない段では止まって従来の挙動に戻る。
+解除も全段を 1 つずつ守る（各段は互いに独立した資源）。
+
+回帰は [`integration.bindComponentDepthN.test.ts`](../../packages/state/__tests__/integration.bindComponentDepthN.test.ts)。
+**深さ 1 を同じテストに対照として含めている**のが要点で、深さ 1 が通り深さ 2 が落ちるなら
+テストの書き方ではなく機構の限界を指す。深さは 1〜4 を変数にし、shadow を constructor で
+組む形と connectedCallback で組む形の両方を並べている（§1.9 の理由）。
+
+### 1.12 中間コンポーネントが親の `for` の中にいるとリストが境界 2 枚を越えられない ✅ 修正済み（2026-08-17）
+
+§1.10 の入れ子形にもう 1 枚境界を足した形。中間コンポーネントが Δ=1 の位置にいる。
+
+```
+host { groups: [ { children: [...] }, ... ] }
+  └ <template for: groups>
+       └ <panel state.items: groups.*.children>   … Δ=1 の中間（素通し）
+            └ <card state.list: items>            … 最下層が回す
+```
+
+`ListIndex not found: groups.*.children.*.name` で**初期描画から**落ちていた。つまり
+行フィールドの購読（§1.11）より手前で、listIndex の越境そのものが成立していない。
+§1.11 の修正とは独立で、その前後で症状が同一であることを確認してから着手した。
+
+**原因は 2 つあり、両方直さないと通らない。**
+
+**(1) Δ が境界で切れる。** `getLoopContextByNode` は `parentNode` しか辿らず、ShadowRoot の
+`parentNode` は `null` なので**最初の shadow 境界で必ず止まる**。境界 1 枚なら外側は素の
+文書スコープで Δ=0 が正しいが、2 枚重なると中間スコープの Δ が丸ごと落ち、最下層が正本
+スコープより浅い arity で行を作る。`getBaseListIndex` を外向きの walk にして、自スコープに
+囲むループが無ければ 1 つ外のスコープから Δ を引き継ぐようにした。外側が mapped でない
+（＝値の正本がそこにある）なら次の周回の先頭ガードで止まる。
+
+「1 つ外のスコープ」へのリンクは `buildPrimaryMappingRule` が記録する
+（規則の outer 側が属する state 要素 ＝ 値の正本を持つスコープそのもの）。台帳を
+`MappingRule` でなく `stateElementByWebComponent` に置いたのは循環参照を避けるため
+（baseListIndex → MappingRule → BindingSession → outerListPath → baseListIndex）。
+
+**(2) 越境照合が Δ を二重計上する。** (1) だけ直すと今度は
+`ListIndex not found: items.*.name`（中間スコープのパス）に変わる。従来の照合は
+`Δ + innerW === outerW` と**内側にだけ Δ を足す**形で、外側が Δ=0 である前提に乗っていた。
+境界が 2 枚あると中間スコープ自身が Δ>0 なので、これでは合うはずの段が外れる。
+
+照合を**両側の実 arity**で行うようにした（`getScopeArity` = パスのワイルドカード段数 +
+そのスコープの Δ）。外側が Δ=0 のとき従来式と同値なので、§1.8 / §1.10 の既存形は不変。
+直した箇所は 2 つで、`outerListPath.stepOuterRowPathInfo`（相乗り登録の成立判定）と
+`innerState._outerLoopContext`（越境時のループ文脈の選定）。後者は**添字**（`wildcardPaths`）
+には Δ を含まない段数を使い続けることに注意 —— 照合とは別物。
+
+回帰は happy-dom
+（[`integration.bindComponentDepthN.test.ts`](../../packages/state/__tests__/integration.bindComponentDepthN.test.ts)）と
+実ブラウザ（[`e2e/tests/state-bind-component-depth2.spec.ts`](../../e2e/tests/state-bind-component-depth2.spec.ts)）の両方。
+**fixture は §1.11（平坦）と §1.12（Δ>0）で 2 枚に分けてある** —— §1.12 の失敗は初期描画で
+throw してドキュメント全体をウェッジするので、同居させると §1.11 側も道連れになって
+独立した信号にならない（1 枚だったときの制御実験で 6 件全滅を実測した）。分けたあとの
+制御実験では、§1.12 の修正を外すと §1.11 ページ 4/4 通過・§1.12 ページ 5/5 失敗になる。
+
+### 1.13 mapped な Light DOM の `bind-component` が初期化でデッドロックする ✅ 修正済み（2026-08-17）
+
+§1.1〜§1.12 の検証は**すべて Shadow DOM 形**で行われていた。Light DOM 形は README にだけ
+存在し、**repo 全体でテストも example も 1 件も無かった**。測ると 2 つに割れる。
+
+| Light DOM の形 | 結果 |
+|---|---|
+| **plain**（親からバインドしない state 注入） | ✅ 成立 |
+| **mapped**（ホストから `data-wcs="state.msg: user.name"`） | ❌ `initializePromise` も `getBindingsReady` も永久に未解決 |
+
+循環の実体（`data-wcs` を外すと全部解決することで切り分け済み）:
+
+1. ホスト root の `buildBindings` は `waitForStateInitialize(root)` を通る。これは
+   `root.querySelectorAll("wcs-state")` で **root 内の全 state 要素**の `initializePromise` を
+   待つ。Light DOM ではコンポーネントの内側の `<wcs-state>` も同じ root にいるので、
+   この集合に入ってしまう
+2. その内側の state は `_initializeBindWebComponent` で
+   `waitInitializeBinding(boundComponent)` を待つ（コンポーネント要素に `data-wcs` があるため）
+3. その binding を作るのはホスト root の `initializeBindings()` で、1 の
+   `waitForStateInitialize` の**後**に走る
+
+→ 1 が 2 を待ち、2 が 3 を待ち、3 は 1 の後。Shadow DOM 形では内側の state が別 rootNode に
+いるため 1 の集合に入らず、循環が成立しない。**rootNode による名前空間の分離が、実は
+初期化順序の分離も担っていた**というのがこの件の要点で、§1.11 / §1.12 で見た
+「Shadow DOM が暗黙に効かせていたもの」の 3 つ目にあたる。
+
+**修正の方針**＝Shadow DOM 形では rootNode の分離が**2 つのこと**を同時に成立させていた。
+
+1. ホスト root の `waitForStateInitialize` の走査集合に子 state が入らない
+2. 子スコープのバインディングがホストとは別の `buildBindings` パスで処理される
+
+Light DOM ではこの 2 つが両方失われている。**両方を明示的に復元する**のが直し方で、
+片方だけでは足りない。1 だけ直すと（`waitForStateInitialize` から除くだけ）循環は解けるが、
+子スコープの `@name` 参照が子 state の名前登録より先に評価されて解決に失敗する。
+
+実装は 3 箇所（判定は [`bindings/lightDomComponentScope.ts`](../../packages/state/src/bindings/lightDomComponentScope.ts) に集約）。
+
+| | 変更 |
+|---|---|
+| `waitForStateInitialize` | mapped な Light DOM state を待ち集合から除く（1 の復元） |
+| `getSubscriberNodes` / `collectStructuralFragments` | コンポーネントのサブツリーをホストのパスから prune（2 の復元）。コンポーネント要素**自身**は残す —— ホスト側の `data-wcs` はホストのスコープに属し、それが張られることで子の待ちが解ける |
+| `State.connectedCallback` | `_initialize()` の名前登録が済んだ直後に、自分のサブツリーぶんの `collectStructuralFragments` + `initializeBindings` を呼ぶ |
+
+**`collectStructuralFragments` も prune が要る**のが実装中に踏んだ点。fragment info は
+rootNode + state 名で登録されるため state 依存で、ホストのパスで子の `<template data-wcs="for:">`
+を拾うと `State element with name "..." not found for fragment info` になる。
+`convertMustacheToComments` は純粋なテキスト操作なので root 全体のままでよい。
+
+**plain 形を巻き込まないこと**が判定の要点。plain は `waitInitializeBinding` を通らないので
+循環せず、従来どおりホストと同じパスで初期化して問題ない。一律に切り出すと、成立している
+plain 形が「子 state の登録前に `@name` を解決する」形に退行する。判定を
+「`bind-component` を持ち、親が Element で、その親が `data-wcs` を持つ」に絞ってある。
+
+**契約の変更**＝`getBindingsReady(root)` はコンポーネントのスコープを含まなくなった。
+これは Shadow DOM 形（子が別 rootNode）と同じ扱いで、README にも明記した。
+
+回帰は happy-dom
+（[`integration.bindComponentLightDom.test.ts`](../../packages/state/__tests__/integration.bindComponentLightDom.test.ts)）と
+実ブラウザ（[`e2e/tests/state-bind-component-light-dom.spec.ts`](../../e2e/tests/state-bind-component-light-dom.spec.ts)）の
+両方。plain 形も同じファイルに残してあり、退行すれば落ちる。実ブラウザ側の制御実験では、
+修正を外すと **6/6 が失敗**する（mapped の throw がドキュメント全体をウェッジするため、
+無関係な plain 形まで道連れになる —— §1.12 で観測したのと同じ現象）。
+
+**残る制約（欠陥ではなく Light DOM の帰結）**＝名前空間を上位と共有するので、同じ `name` の
+インスタンスを同一スコープに複数置けない。リストの行ごとにコンポーネントを配置する形は
+Shadow DOM を使うこと。
 
 ---
 

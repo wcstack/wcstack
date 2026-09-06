@@ -102,7 +102,7 @@ interface WcsGyroscopeCoreValues extends WcsGyroscopeReading {
  */
 type WcsGyroscopeValues = WcsGyroscopeCoreValues;
 
-declare function bootstrapGyroscope(userConfig?: IWritableConfig): void;
+declare function bootstrapGyroscope(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -290,6 +290,12 @@ declare const WCS_GYROSCOPE_ERROR_CODE: {
     /** その他の SensorErrorEvent / 想定外の失敗。 */
     readonly SensorError: "sensor-error";
 };
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-gyroscope": WcsGyroscope;
+    }
+}
 
 export { GyroscopeCore, WCS_GYROSCOPE_ERROR_CODE, WcsGyroscope, bootstrapGyroscope, getConfig };
 export type { IWritableConfig, IWritableTagNames, WcsGyroscopeCoreValues, WcsGyroscopeErrorDetail, WcsGyroscopeReading, WcsGyroscopeValues, WcsIoErrorInfo, WcsIoErrorPhase };

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setDevtoolsSink, devtoolsSink } from '../src/devtools/sink';
 import { DevtoolsEvent } from '../src/devtools/types';
-import { setStateElementByName, getLiveStateElements } from '../src/stateElementByName';
+import { setStateElement, getLiveStateElements } from '../src/stateElementByName';
 import {
   addBindingByAbsoluteStateAddress,
   removeBindingByAbsoluteStateAddress,
@@ -56,38 +56,35 @@ describe('devtools 計装点', () => {
       const element = createMockStateElement('instr-a');
       const rootNode = element.rootNode;
 
-      setStateElementByName(rootNode, 'instr-a', element);
+      setStateElement(rootNode, element);
       expect(getLiveStateElements().has(element)).toBe(true);
       expect(events).toContainEqual(
-        expect.objectContaining({ type: 'state:element-registered', name: 'instr-a', element })
+        expect.objectContaining({ type: 'state:element-registered', element })
       );
 
-      setStateElementByName(rootNode, 'instr-a', null);
+      setStateElement(rootNode, null);
       expect(getLiveStateElements().has(element)).toBe(false);
       expect(events).toContainEqual(
-        expect.objectContaining({ type: 'state:element-unregistered', name: 'instr-a', element })
+        expect.objectContaining({ type: 'state:element-unregistered', element })
       );
     });
 
     it('sink未接続では登録簿だけ更新されイベントは出ないこと', () => {
       setDevtoolsSink(null);
       const element = createMockStateElement('instr-b');
-      setStateElementByName(element.rootNode, 'instr-b', element);
+      setStateElement(element.rootNode, element);
       expect(getLiveStateElements().has(element)).toBe(true);
-      setStateElementByName(element.rootNode, 'instr-b', null);
+      setStateElement(element.rootNode, null);
       expect(getLiveStateElements().has(element)).toBe(false);
       expect(events.length).toBe(0);
     });
 
-    it('未登録名の解除ではイベントを出さないこと', () => {
-      const element = createMockStateElement('instr-c');
-      const rootNode = element.rootNode;
-      setStateElementByName(rootNode, 'instr-c', element);
+    it('未登録ルートの解除ではイベントを出さないこと', () => {
+      const orphanRoot = document.createElement('div');
       events.length = 0;
-      // 同一rootNodeの別名を解除 → removed undefined の分岐
-      setStateElementByName(rootNode, 'no-such-name', null);
+      // 登録の無いルートの解除 → existing undefined の分岐
+      setStateElement(orphanRoot, null);
       expect(events.length).toBe(0);
-      setStateElementByName(rootNode, 'instr-c', null);
     });
   });
 
@@ -133,7 +130,7 @@ describe('devtools 計装点', () => {
 
   describe('token emit（protocol §4.5）', () => {
     it('CommandToken.emitがkind=commandのイベントを発し、結果はTokenと同一なこと', () => {
-      const token = new CommandToken('play', 'media');
+      const token = new CommandToken('play');
       const fn = vi.fn().mockReturnValue('ok');
       token.subscribe(fn);
       const results = token.emit('a', 1);
@@ -143,40 +140,59 @@ describe('devtools 計装点', () => {
         expect.objectContaining({
           type: 'state:token-emit',
           kind: 'command',
-          stateName: 'media',
           tokenName: 'play',
           args: ['a', 1],
           subscriberCount: 1,
         })
       );
+      // 直接生成（registry 非経由）の token はツリー識別を持たない（v2 追補は optional）
+      const emitted = events.find((e) => e.type === 'state:token-emit') as { stateElement?: unknown };
+      expect(emitted.stateElement).toBeUndefined();
     });
 
     it('subscriber 0の空撃ちもsubscriberCount=0で流れること', () => {
       const token = new CommandToken('orphan');
       token.emit();
       expect(events).toContainEqual(
-        expect.objectContaining({ type: 'state:token-emit', kind: 'command', stateName: null, subscriberCount: 0 })
+        expect.objectContaining({ type: 'state:token-emit', kind: 'command', subscriberCount: 0 })
       );
     });
 
     it('EventToken.emitがkind=eventのイベントを発すること', () => {
-      const token = new EventToken('changed', 'form');
+      const token = new EventToken('changed');
       token.emit({ value: 1 });
       expect(events).toContainEqual(
-        expect.objectContaining({ type: 'state:token-emit', kind: 'event', stateName: 'form', tokenName: 'changed' })
+        expect.objectContaining({ type: 'state:token-emit', kind: 'event', tokenName: 'changed' })
       );
     });
 
-    it('registryがstateElement.nameをownerとして渡すこと', () => {
+    it('registry 経由の emit も token-emit として流れること', () => {
       const stateElement = createMockStateElement('owner-state');
       getOrCreateCommandToken(stateElement, 'cmd').emit();
       getOrCreateEventToken(stateElement, 'evt').emit();
       expect(events).toContainEqual(
-        expect.objectContaining({ kind: 'command', tokenName: 'cmd', stateName: 'owner-state' })
+        expect.objectContaining({ kind: 'command', tokenName: 'cmd' })
       );
       expect(events).toContainEqual(
-        expect.objectContaining({ kind: 'event', tokenName: 'evt', stateName: 'owner-state' })
+        expect.objectContaining({ kind: 'event', tokenName: 'evt' })
       );
+    });
+
+    it('registry 経由の emit は payload に発火元 stateElement が載ること（protocol v2 追補・ツリー識別）', () => {
+      // 複数ツリーが同名 token を宣言するページで devtools の実測台帳が
+      // 合算にならないための識別。registry が生成時に owner を焼き込む。
+      const ownerA = createMockStateElement('owner-a');
+      const ownerB = createMockStateElement('owner-b');
+      getOrCreateCommandToken(ownerA, 'shared').emit();
+      getOrCreateCommandToken(ownerB, 'shared').emit();
+      getOrCreateEventToken(ownerA, 'sharedEvt').emit();
+      const emits = events.filter((e) => e.type === 'state:token-emit') as Array<{
+        kind: string; tokenName: string; stateElement?: unknown;
+      }>;
+      expect(emits).toHaveLength(3);
+      expect(emits[0]).toMatchObject({ kind: 'command', tokenName: 'shared', stateElement: ownerA });
+      expect(emits[1]).toMatchObject({ kind: 'command', tokenName: 'shared', stateElement: ownerB });
+      expect(emits[2]).toMatchObject({ kind: 'event', tokenName: 'sharedEvt', stateElement: ownerA });
     });
 
     it('sink未接続ではemitは素通りすること', () => {
@@ -194,7 +210,6 @@ describe('devtools 計装点', () => {
     function createHandler(stateElement: any) {
       return {
         stateElement,
-        stateName: stateElement.name,
         pushAddress: vi.fn(),
         popAddress: vi.fn(),
       };

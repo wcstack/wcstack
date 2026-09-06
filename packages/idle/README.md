@@ -173,6 +173,10 @@ core.dispose();
 
 The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
 
+## Accessibility
+
+**WCAG 2.2.1 Timing Adjustable**: an idle threshold is a time limit. Users who type, read, or move slowly — or who rely on assistive technology that itself takes time — trip "idle" while actively working. If idleness triggers anything consequential (auto-logout, hiding content, ending a session), the user needs to be warned before it happens, given a simple way to extend, or offered a setting to lengthen or disable the threshold. Prefer generous `threshold` values, and treat `userState` as a hint, never as proof the user left.
+
 ## License
 
 MIT

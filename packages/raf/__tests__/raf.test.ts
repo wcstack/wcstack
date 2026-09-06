@@ -233,15 +233,37 @@ describe("Raf: コマンドと trigger", () => {
   });
 });
 
+describe("Raf: reduced-motion 属性", () => {
+  it("属性値が正規化されて Core へ届く（未知値・属性削除は run）", () => {
+    const el = document.createElement("wcs-raf") as Raf;
+    el.setAttribute("reduced-motion", "pause");
+    expect(el.reducedMotion).toBe("pause");
+    el.setAttribute("reduced-motion", "bogus");
+    expect(el.reducedMotion).toBe("run");
+    el.setAttribute("reduced-motion", "pause");
+    el.removeAttribute("reduced-motion");
+    expect(el.reducedMotion).toBe("run");
+  });
+
+  it("プロパティ setter は属性へミラーし、正規化済みの値が読める", () => {
+    const el = document.createElement("wcs-raf") as Raf;
+    el.reducedMotion = "pause";
+    expect(el.getAttribute("reduced-motion")).toBe("pause");
+    expect(el.reducedMotion).toBe("pause");
+  });
+});
+
 describe("Raf: wcBindable 宣言面", () => {
   it("properties は Core の 5 面 + trigger", () => {
     const names = Raf.wcBindable.properties.map((p) => p.name);
     expect(names).toEqual(["tick", "elapsed", "dt", "running", "suspended", "trigger"]);
   });
 
-  it("inputs は once/repeat/manual/trigger（interval/immediate は存在しない）", () => {
+  it("inputs は once/repeat/manual/reducedMotion/trigger（interval/immediate は存在しない）", () => {
     const names = (Raf.wcBindable.inputs ?? []).map((i) => i.name);
-    expect(names).toEqual(["once", "repeat", "manual", "trigger"]);
+    expect(names).toEqual(["once", "repeat", "manual", "reducedMotion", "trigger"]);
+    const reduced = (Raf.wcBindable.inputs ?? []).find((i) => i.name === "reducedMotion");
+    expect(reduced?.attribute).toBe("reduced-motion");
   });
 
   it("commands は start/stop/reset/pause/resume", () => {

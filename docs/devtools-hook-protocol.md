@@ -47,7 +47,7 @@ identity (even where a CDN leaves several copies of state on the page, each copy
 ```ts
 // both sides acquire it create-if-missing (independent of load order)
 interface IDevtoolsHookRegistry {
-  readonly version: 1;                       // the protocol version. An additive change does not raise it
+  readonly version: 2;                       // the protocol version. v2 removes the name dimension (one state tree per root — docs/state-mount-design.md); an additive change does not raise it
   readonly sources: Map<string, IDevtoolsSource>;
   register(source: IDevtoolsSource): void;   // runtime → registry
   unregister(sourceId: string): void;
@@ -83,15 +83,46 @@ interface IDevtoolsSource {
   readonly packageVersion: string;
   // --- pull ---
   getStateElements(): IStateElementSummary[];   // the origin of the attach-time snapshot
-  keys(name: string, rootNode: Node): string[]; // enumerating top-level keys (the origin for drawing the state tree)
-  read(name: string, rootNode: Node, path: string, indexes?: number[]): unknown;
-  write(name: string, rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
+  keys(rootNode: Node): string[];            // enumerating top-level keys (the origin for drawing the state tree)
+  read(rootNode: Node, path: string, indexes?: number[]): unknown;
+  write(rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
+  overlays(rootNode: Node): IMountOverlaySummary[]; // v2: mount records on this tree (marker #m<id>, mount table, delta, private/getter keys — the D20 overlay address space made visible)
+  // NOTE: consumed by the @wcstack/devtools State pane since 2026-09-05 (an
+  // "Overlays" section under the selected tree's key list — the one visible
+  // surface for mount private keys and getters, which live in the overlay
+  // address space and never appear in keys()/read()). The UI calls it as
+  // optional: a runtime without overlays() (pre-v2 state) hides the whole
+  // section, and an empty array renders no heading either.
+  // v1 addendum (additive): the SET of declared-level bindings, enumerated by the
+  // runtime's own canonical parser. Sources: attributes + comment anchors in the
+  // live DOM (spread expanded from the live wcBindable; undefined elements stay
+  // "spread"), plus structural-template contents resolved as the transitive
+  // closure of fragment UUIDs reachable from anchors under rootNode — the area a
+  // DOM re-scan can never see, without leaking other roots' or torn-down views'
+  // fragments. Deduplicated by declaration tuple: rendered row clones do NOT
+  // multiply entries (instance granularity belongs to the binding ledger).
+  // Known blind spot: top-level text bindings vanish from the DOM once binding
+  // start swaps their comment anchor for a text node, so after activation they
+  // appear only in the binding ledger (and in neither, on late attach — §6).
+  // Old runtimes may lack this member; call it as optional.
+  getDeclaredBindings(rootNode: Node): IDeclaredBindingInfo[];
   // --- internal (registry only) ---
   _setSink(sink: ((e: DevtoolsEvent) => void) | null): void;
 }
 
+// v2: summary of one mount record (element of overlays() — D20 made visible).
+interface IMountOverlaySummary {
+  readonly marker: string;        // the reserved segment (`#m<id>`, D20)
+  readonly componentTag: string;  // mounted component tag name (lowercase)
+  readonly stateProp: string;
+  // the mount table: inner prefix ("" = the root entry) → outer path
+  readonly mountTable: readonly { readonly inner: string; readonly outer: string }[];
+  readonly delta: number;         // Δ for `$n` correction (wildcards in the root prefix)
+  readonly privateKeys: readonly string[]; // own data keys living in the overlay space
+  readonly getterKeys: readonly string[];  // getter keys carried on marker paths
+}
+
 interface IStateElementSummary {
-  readonly name: string;
   readonly rootNode: Node;
   readonly element: Element;          // a live reference to <wcs-state> (principle 4)
   readonly paths: {
@@ -102,6 +133,28 @@ interface IStateElementSummary {
   readonly eventTokenNames: ReadonlySet<string>;
   readonly staticDependency: ReadonlyMap<string, readonly string[]>;
   readonly dynamicDependency: ReadonlyMap<string, readonly string[]>;
+  // v1 addendum (additive): the `$watch` declaration keys (null when undeclared) —
+  // the declared side of wiring coverage. Old runtimes may not have the field.
+  readonly watchPaths: ReadonlySet<string> | null;
+  // v1 addendum (additive): list paths declared in `$listKeys` (null when undeclared) —
+  // paired with paths.list to judge the wildcard row watch list-write prerequisite.
+  readonly keyedListPaths: ReadonlySet<string> | null;
+}
+
+// v1 addendum: one declared-level binding (element of getDeclaredBindings). The
+// canonical parser's result flows through as-is — filters are readable as the
+// structural subset { filterName, args } of the runtime's IFilterInfo.
+interface IDeclaredBindingInfo {
+  readonly node: Node | null;   // null for origin "fragment" (no live-DOM node exists)
+  readonly propName: string;
+  readonly statePathName: string;
+  readonly bindingType: string;
+  readonly inFilters: readonly { filterName: string; args: readonly string[] }[];
+  readonly outFilters: readonly { filterName: string; args: readonly string[] }[];
+  readonly origin: "attribute" | "comment" | "fragment";
+  // The source text. Structural-directive anchors carry the registry UUID (the
+  // original text no longer exists in the DOM); fragment entries carry "".
+  readonly raw: string;
 }
 ```
 
@@ -138,8 +191,9 @@ The files changed and the firing points. All go through §2's `sink` and conform
 
 - Fires in [setByAddress.ts](../packages/state/src/proxy/methods/setByAddress.ts) **after** the same-value guard
   (actual writes only).
-- payload = `{ stateName, path, listIndexes: number[] | null, value, oldValue? }`.
-  `oldValue` is included only where the guard already obtained it (a primitive with the guard on).
+- payload = `{ absoluteAddress, value, oldValue, hasOldValue }` (the `absoluteAddress` carries the
+  stateElement, path and listIndex — in v2 the state-element reference is the identity).
+  `oldValue` is meaningful only where the guard already obtained it (a primitive with the guard on).
   It MUST NOT perform an extra get for reference types (protecting the hot path).
 - The swap path (`_setByAddressWithSwap`) goes through the same point, so it needs no separate handling.
 
@@ -150,6 +204,65 @@ The files changed and the firing points. All go through §2's `sink` and conform
 - The bridge registers on attach and unregisters on detach (hanging off it as a consumer of the same standing
   as the `$streams` listener).
 - Event: `state:update-batch`, payload = `{ addresses: ReadonlySet<IAbsoluteStateAddress> }`.
+- **Ordering**: drain listeners run in ascending priority, and devtools uses
+  `DEVTOOLS_LISTENER_PRIORITY` (0) — **ahead of** `$watch` (10) and the `$streams` restart (20).
+  `state:update-batch` observes *what landed in this batch*, so it should report the raw set before
+  watch handlers and restarts add their side effects. Omitting the priority would default to 0 and
+  give the same result, but that would be a coincidence; the constant in `define.ts` pins the intent.
+
+### 4.3.1 `$watch` failures
+
+`$watch` **swallows handler exceptions itself**, so that one user error cannot take down the drain and
+the `$streams` restarts along with it ([state-watch-hook-design.md](./state-watch-hook-design.md) §7-1).
+That means a failure never surfaces unless someone is watching the console. These events are the one
+place it becomes visible.
+
+- Event: `state:watch-error`,
+  payload = `{ phase: "prime" | "evaluate" | "handler", path, error }`.
+  `phase` says where it threw — `prime` is the evaluation at connect, `evaluate` is resolving `cur`
+  (forcing a watched getter), `handler` is the handler body. A getter failure and a handler failure
+  are fixed differently, so they are not collapsed into one.
+- Event: `state:watch-chain-limit`, payload = `{ maxDepth, paths }`, emitted once when a watch-rooted
+  write chain is cut off at the depth limit. Values and DOM are not rolled back (same stance as
+  `propagation:hop-limit`).
+- Event: `state:watch-fired` (v1 addendum, additive — the event reserved in
+  [state-watch-hook-design.md](./state-watch-hook-design.md) §11), payload = `{ path, stateElement? }`,
+  emitted immediately before each handler invocation. It deliberately carries **no values** —
+  detecting "declared but never fired" needs only the fact of firing, and values would put a
+  serialization cost on the hot firing path. Together with `IStateElementSummary.watchPaths`
+  (declared side) this is the measured side of wiring coverage.
+  `stateElement` (v2 addendum 2026-09-05, additive/optional) identifies the firing tree, so a
+  consumer can keep the measured ledger per tree on pages where several trees declare the same
+  watch path. Old payloads lack the field — a firing without it cannot be attributed to a tree,
+  and the consumer MUST keep it in the aggregate for every tree's query (a gap in the data must
+  not become a gap in the report; same stance as the wiring ledger's stateElement scoping).
+- Summary field: `IStateElementSummary.keyedListPaths` (v1 addendum, additive) — the set of list
+  paths declared in `$listKeys` (`null` when none). **List writes** reach a wildcard row watch only
+  when the list is either bound by a `for` (visible in `paths.list`) or declared in `$listKeys`
+  ([state-watch-hook-design.md](./state-watch-hook-design.md) §6-3); explicit-index writes
+  (`$resolve` / `items.0.price` assignments, once `$getAll` has materialized the listIndex ledger)
+  can fire it regardless, so the prerequisite governs the list-write path only. Consumers need both
+  sides to judge it exactly. Only the paths are exposed — key specs (strings/functions) never cross
+  the boundary.
+- All are constructed only inside `devtoolsSink !== null` (cost rule §1-1).
+
+### 4.3.2 Silent wiring failures
+
+Two failures used to be invisible to a consumer: a wired path that does not resolve at all, and a
+binding that throws while applying. Both are now reported and the runtime continues, which means the
+console is the only other place they appear.
+
+- Event: `state:path-unresolved` (v1 addendum, additive),
+  payload = `{ source: "binding" | "watch", path, missingSegment }`, emitted once per
+  (state element, path) when binding establishment (or a `$watch` declaration) proves the path cannot
+  resolve. The check **under-approximates** — a getter return value, an empty list, a `null` parent or
+  a mapped `bind-component` child all stay silent — so absence of this event is not proof of
+  correctness ([pathDiagnostics.ts](../packages/state/src/pathDiagnostics.ts)).
+- Event: `state:binding-apply-error` (v1 addendum, additive),
+  payload = `{ path, bindingType, error }`, emitted when applying one binding throws. The
+  runtime isolates the failure so the rest of the batch, `$updatedCallback` and the drain listeners
+  still run — same stance as `state:watch-error`, and same reason for existing: an isolated failure
+  that nobody can see is indistinguishable from no failure.
 
 ### 4.4 Growth and shrinkage of the binding ledger
 
@@ -165,13 +278,15 @@ The files changed and the firing points. All go through §2's `sink` and conform
 
 - Thinly override `emit` in [CommandToken.ts](../packages/state/src/command/CommandToken.ts) and
   [EventToken.ts](../packages/state/src/event/EventToken.ts) (`sink && sink(...)` → `super.emit(...)`).
-- A token does not know its own stateElement, so owner information `{ stateName }` is added to the constructor
-  as an **internal optional argument**, passed in by the registry (`getOrCreateCommandToken` and friends).
-  The external protocol specs (command-token-protocol / event-token-protocol) are unchanged.
+- The external protocol specs (command-token-protocol / event-token-protocol) are unchanged.
 - Event: `state:token-emit`,
-  payload = `{ kind: "command" | "event", stateName, tokenName, args: unknown[], subscriberCount }`.
+  payload = `{ kind: "command" | "event", tokenName, args: unknown[], subscriberCount, stateElement? }`.
   An emit with `subscriberCount === 0` flows through as-is, as a "blank shot" — the point being to make the
   pre-whenDefined blank-shot command race that raf ran into **visible on the timeline**.
+  `stateElement` (v2 addendum 2026-09-05, additive/optional) identifies the owning tree — the token
+  registries bake it in at creation, so tokens constructed outside a registry (and old runtimes) emit
+  without it. As with `state:watch-fired`, a consumer keeps unattributed emits in the aggregate for
+  every tree's query instead of dropping them.
 
 ### 4.6 Instrumentation v1 does not do
 

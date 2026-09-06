@@ -748,17 +748,22 @@ class WcsWebSocket extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.ws)) {
-        customElements.define(config.tagNames.ws, WcsWebSocket);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.ws)) {
+        registry.define(config.tagNames.ws, WcsWebSocket);
     }
 }
 
-function bootstrapWebSocket(userConfig) {
+function bootstrapWebSocket(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { WCS_WEBSOCKET_ERROR_CODE, WcsWebSocket, WebSocketCore, bootstrapWebSocket, getConfig };

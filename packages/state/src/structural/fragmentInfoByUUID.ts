@@ -1,5 +1,5 @@
 import { raiseError } from "../raiseError";
-import { getStateElementByName } from "../stateElementByName";
+import { getStateElement } from "../stateElementByName";
 import { IFragmentInfo } from "./types";
 
 const fragmentInfoByUUID = new Map<string, IFragmentInfo>();
@@ -9,19 +9,16 @@ export function setFragmentInfoByUUID(uuid: string, rootNode: Node, fragmentInfo
     fragmentInfoByUUID.delete(uuid);
   } else {
     fragmentInfoByUUID.set(uuid, fragmentInfo);
-    const bindingPartial = fragmentInfo.parseBindTextResult;
-    const stateElement = getStateElementByName(rootNode, bindingPartial.stateName);
+    // v2: ルートに 1 ツリーなので参照は 1 回でよい（名前ごとの再解決は名前次元と一緒に消えた）
+    const stateElement = getStateElement(rootNode);
     if (stateElement === null) {
-      raiseError(`State element with name "${bindingPartial.stateName}" not found for fragment info.`);
+      raiseError(`No state tree found on this root for fragment info.`);
     }
+    const bindingPartial = fragmentInfo.parseBindTextResult;
     stateElement.setPathInfo(bindingPartial.statePathName, bindingPartial.bindingType);
     for(const nodeInfo of fragmentInfo.nodeInfos) {
       for(const nodeBindingPartial of nodeInfo.parseBindTextResults) {
-        const nodeStateElement = getStateElementByName(rootNode, nodeBindingPartial.stateName);
-        if (nodeStateElement === null) {
-          raiseError(`State element with name "${nodeBindingPartial.stateName}" not found for fragment info node.`);
-        }
-        nodeStateElement.setPathInfo(nodeBindingPartial.statePathName, nodeBindingPartial.bindingType);
+        stateElement.setPathInfo(nodeBindingPartial.statePathName, nodeBindingPartial.bindingType);
       }
     }
   }

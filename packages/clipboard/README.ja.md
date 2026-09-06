@@ -138,7 +138,7 @@ DOM の autoTrigger は書き込み（`writeText`）のみを起動します。�
 
 > DOM トリガは**書き込み専用**です。クリックは常に `writeText` を起動し、読み取り（`readText` / `read`）を起動する経路はありません。読み取りは command-token または命令的呼び出しで起動してください。
 
-> DOM トリガによる `writeText` は fire-and-forget（`Promise` を await しません）ですが、決して reject しません。コピー失敗は他の書き込みと同様 `error` プロパティに現れます。autoTrigger の失敗を観測するには `error` をバインドしてください（例: `text: error.message@cb`）。
+> DOM トリガによる `writeText` は fire-and-forget（`Promise` を await しません）ですが、決して reject しません。コピー失敗は他の書き込みと同様 `error` プロパティに現れます。autoTrigger の失敗を観測するには `error` をバインドしてください（例: `<wcs-clipboard>` 側に `error: copyError`、表示側に `textContent: copyError.message`）。
 
 > **autoTrigger は既定で有効。** 最初に接続した `<wcs-clipboard>` が document レベルの `click` リスナーを 1 つ設置します（`data-clipboardtarget` 要素のクリックで `writeText` を起動）。DOM ショートカットを使わないなら bootstrap エントリで無効化してください:
 >

@@ -1,0 +1,74 @@
+name: "VS Code extension (WcStack IntelliSense)"
+description: "Report a bug or request a feature for the wcstack-intellisense VS Code extension (packages/vscode-wcs)."
+title: "[vscode-wcs] "
+labels:
+  - "@wcstack/vscode-wcs"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. This form is for the **WcStack IntelliSense** VS Code extension only.
+        For runtime packages (`@wcstack/state`, `@wcstack/router`, ...) please open a blank issue and pick the matching package label.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - Bug
+        - Feature request
+        - Question
+    validations:
+      required: true
+  - type: input
+    id: extension-version
+    attributes:
+      label: Extension version
+      description: "Extensions view > WcStack IntelliSense > version (e.g. 1.11.0)"
+      placeholder: "1.11.0"
+    validations:
+      required: true
+  - type: input
+    id: vscode-version
+    attributes:
+      label: VS Code version
+      description: "Help > About (e.g. 1.110.0)"
+      placeholder: "1.110.0"
+    validations:
+      required: true
+  - type: input
+    id: wcstack-version
+    attributes:
+      label: "@wcstack/state version used by the page (if relevant)"
+      placeholder: "2.1.0"
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: "What did you expect, and what did the extension do instead? Screenshots of diagnostics / hovers / completions help."
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal HTML to reproduce
+      description: "The smallest `<wcs-state>` + `data-wcs` snippet that shows the problem. Rendered as HTML automatically."
+      render: html
+      placeholder: |
+        <wcs-state>
+          <script type="module">
+            export default { count: 0 };
+          </script>
+        </wcs-state>
+        <span data-wcs="text: count"></span>
+  - type: textarea
+    id: settings
+    attributes:
+      label: Relevant settings
+      description: "Non-default `wcstack.*` settings (bindAttributeName, stateTagName, messageLanguage, ...)."
+      render: json
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output / logs
+      description: "Help > Toggle Developer Tools > Console, or the 'TypeScript' output channel, if there is an error."
+      render: shell

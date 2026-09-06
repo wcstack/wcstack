@@ -193,6 +193,10 @@ core.dispose();
 
 Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 
+## アクセシビリティ
+
+**WCAG 2.5.4 Motion Actuation（レベル A）**: デバイスの回転で操作するものは、動かさずにも操作できなければ**ならず**、モーション入力を無効化できなければならない — 全員が端末を回せるわけではなく、不随意運動は角速度入力をノイズに変える。モーション駆動の操作には同じコードパスへ流れる並行入力（キーボード・ポインタ・ボタン）を用意し、監視を止める手段（`stop` コマンド）を露出すること。形は兄弟センサーの [`examples/state-tilt-maze`](https://github.com/wcstack/wcstack/tree/main/examples/state-tilt-maze) が示している。
+
 ## ライセンス
 
 MIT

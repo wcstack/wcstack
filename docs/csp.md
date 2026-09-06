@@ -151,8 +151,14 @@ The browser never executes the contents of that inline `<script>` (it is a child
 
 ```html
 <!-- CSP-safe -->
-<wcs-state name="app" src="./state.js"></wcs-state>
+<wcs-state src="./state.js"></wcs-state>
 ```
+
+One interaction to know about: if the page sets a `<base href>` — the i18n
+locale-basename pattern does exactly that ([i18n-design.md §9-1-4](./i18n-design.md)) —
+a *relative* `src="./state.js"` resolves against the base (`/ja/state.js`),
+not against the page, and 404s. Under a `<base>`, write the URL root-absolute:
+`src="/state.js"`.
 
 ## 5. Router guards require blob: (no way around it)
 

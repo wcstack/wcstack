@@ -4,7 +4,7 @@ vi.mock('../src/buildBindings', () => ({
   buildBindings: vi.fn().mockResolvedValue(undefined)
 }));
 
-import { getStateElementByName, setStateElementByName, getBindingsReady } from '../src/stateElementByName';
+import { getStateElement, setStateElement, getBindingsReady } from '../src/stateElementByName';
 import { buildBindings } from '../src/buildBindings';
 import { config } from '../src/config';
 
@@ -16,38 +16,38 @@ describe('stateElementByName', () => {
 
   afterEach(() => {
     document.body.innerHTML = '';
-    setStateElementByName(document, 'default', null);
-    setStateElementByName(document, 'custom', null);
-    setStateElementByName(document, 'debug', null);
+    setStateElement(document, null);
+    setStateElement(document, null);
+    setStateElement(document, null);
   });
 
   it('set/getできること', () => {
     const fake = { name: 'custom' } as any;
-    setStateElementByName(document, 'custom', fake);
-    expect(getStateElementByName(document, 'custom')).toBe(fake);
+    setStateElement(document, fake);
+    expect(getStateElement(document)).toBe(fake);
 
-    setStateElementByName(document, 'custom', null);
-    expect(getStateElementByName(document, 'custom')).toBeNull();
+    setStateElement(document, null);
+    expect(getStateElement(document)).toBeNull();
   });
 
   it('同じ名前で二重登録するとエラーになること', () => {
     const fake1 = { name: 'custom' } as any;
     const fake2 = { name: 'custom' } as any;
-    setStateElementByName(document, 'custom', fake1);
-    expect(() => setStateElementByName(document, 'custom', fake2)).toThrow(/already registered/);
+    setStateElement(document, fake1);
+    expect(() => setStateElement(document, fake2)).toThrow(/already registered/);
   });
 
   it('解除後は再登録できること', () => {
     const fake1 = { name: 'custom' } as any;
     const fake2 = { name: 'custom' } as any;
-    setStateElementByName(document, 'custom', fake1);
-    setStateElementByName(document, 'custom', null);
-    setStateElementByName(document, 'custom', fake2);
-    expect(getStateElementByName(document, 'custom')).toBe(fake2);
+    setStateElement(document, fake1);
+    setStateElement(document, null);
+    setStateElement(document, fake2);
+    expect(getStateElement(document)).toBe(fake2);
   });
 
   it('未登録の名前はnullを返すこと', () => {
-    expect(getStateElementByName(document, 'nonexistent')).toBeNull();
+    expect(getStateElement(document)).toBeNull();
   });
 
   it('debugモードがfalseの場合でも動作すること', () => {
@@ -55,10 +55,10 @@ describe('stateElementByName', () => {
     config.debug = false;
     try {
       const fake = { name: 'debug' } as any;
-      setStateElementByName(document, 'debug', fake);
-      expect(getStateElementByName(document, 'debug')).toBe(fake);
-      setStateElementByName(document, 'debug', null);
-      expect(getStateElementByName(document, 'debug')).toBeNull();
+      setStateElement(document, fake);
+      expect(getStateElement(document)).toBe(fake);
+      setStateElement(document, null);
+      expect(getStateElement(document)).toBeNull();
     } finally {
       config.debug = originalDebug;
     }
@@ -66,7 +66,7 @@ describe('stateElementByName', () => {
 
   it('未登録のrootNodeに対してgetするとnullを返すこと', () => {
     const freshNode = document.createElement('div');
-    expect(getStateElementByName(freshNode, 'any')).toBeNull();
+    expect(getStateElement(freshNode)).toBeNull();
   });
 
   it('debugモードがtrueの場合、登録・解除でconsole.debugが呼ばれること', () => {
@@ -77,7 +77,7 @@ describe('stateElementByName', () => {
       const freshNode = document.createElement('div');
       const fake = { name: 'test' } as any;
 
-      setStateElementByName(freshNode, 'test', fake);
+      setStateElement(freshNode, fake);
       expect(debugSpy).toHaveBeenCalledWith(
         expect.stringContaining('registered'),
         fake
@@ -85,7 +85,7 @@ describe('stateElementByName', () => {
 
       debugSpy.mockClear();
 
-      setStateElementByName(freshNode, 'test', null);
+      setStateElement(freshNode, null);
       expect(debugSpy).toHaveBeenCalledWith(
         expect.stringContaining('unregistered')
       );
@@ -98,7 +98,7 @@ describe('stateElementByName', () => {
   describe('buildBindings自動呼び出し', () => {
     it('Documentに初めて登録する場合、buildBindingsが呼ばれること', async () => {
       const fake = { name: 'test' } as any;
-      setStateElementByName(document, 'test', fake);
+      setStateElement(document, fake);
 
       // queueMicrotaskで非同期実行されるため、次のマイクロタスクを待つ
       await new Promise(resolve => queueMicrotask(resolve));
@@ -111,7 +111,7 @@ describe('stateElementByName', () => {
       const shadowRoot = component.attachShadow({ mode: 'open' });
       const fake = { name: 'test' } as any;
 
-      setStateElementByName(shadowRoot, 'test', fake);
+      setStateElement(shadowRoot, fake);
 
       // queueMicrotaskで非同期実行されるため、次のマイクロタスクを待つ
       await new Promise(resolve => queueMicrotask(resolve));
@@ -119,16 +119,16 @@ describe('stateElementByName', () => {
       expect(buildBindings).toHaveBeenCalledWith(shadowRoot);
     });
 
-    it('同じrootNodeに2回目の登録をする場合、buildBindingsは呼ばれないこと', async () => {
+    it('同じrootNodeへの2回目の登録は v2 でエラーになり、buildBindingsも再実行されないこと', async () => {
       const fake1 = { name: 'test1' } as any;
       const fake2 = { name: 'test2' } as any;
 
-      setStateElementByName(document, 'test1', fake1);
+      setStateElement(document, fake1);
       await new Promise(resolve => queueMicrotask(resolve));
 
       vi.mocked(buildBindings).mockClear();
 
-      setStateElementByName(document, 'test2', fake2);
+      expect(() => setStateElement(document, fake2)).toThrow(/already registered on this root/);
       await new Promise(resolve => queueMicrotask(resolve));
 
       expect(buildBindings).not.toHaveBeenCalled();
@@ -138,7 +138,7 @@ describe('stateElementByName', () => {
       const normalNode = document.createElement('div');
       const fake = { name: 'test' } as any;
 
-      setStateElementByName(normalNode, 'test', fake);
+      setStateElement(normalNode, fake);
       await new Promise(resolve => queueMicrotask(resolve));
 
       expect(buildBindings).not.toHaveBeenCalled();
@@ -160,12 +160,12 @@ describe('stateElementByName', () => {
       vi.mocked(buildBindings).mockRejectedValueOnce(new Error('binding init failed'));
       const fake = { name: 'failing' } as any;
 
-      setStateElementByName(freshDocument, 'failing', fake);
+      setStateElement(freshDocument, fake);
       // queueMicrotask 実行前（同期）にハンドラを取り付ける
       const ready = getBindingsReady(freshDocument);
 
       await expect(ready).rejects.toThrow('binding init failed');
-      setStateElementByName(freshDocument, 'failing', null);
+      setStateElement(freshDocument, null);
     });
 
     it('ShadowRoot の buildBindings が throw した場合、ready promise が reject すること', async () => {
@@ -174,11 +174,11 @@ describe('stateElementByName', () => {
       vi.mocked(buildBindings).mockRejectedValueOnce(new Error('shadow binding init failed'));
       const fake = { name: 'failing' } as any;
 
-      setStateElementByName(shadowRoot, 'failing', fake);
+      setStateElement(shadowRoot, fake);
       const ready = getBindingsReady(shadowRoot);
 
       await expect(ready).rejects.toThrow('shadow binding init failed');
-      setStateElementByName(shadowRoot, 'failing', null);
+      setStateElement(shadowRoot, null);
     });
   });
 });

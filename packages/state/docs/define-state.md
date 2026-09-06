@@ -362,6 +362,17 @@ defineState({
 
 `WcsPaths<T>` limits recursion to 4 levels to avoid excessive compilation time. For extremely deep structures, paths beyond the 4th nesting level are not generated.
 
+## Reaching the HTML: `wcs-schema` → `wcs-validate`
+
+`defineState` types the state file. It says nothing about the HTML that binds to it — and the static validator (`wcs-validate`, the VS Code extension) reads the state with a regex analyzer, not the type checker, so `users: [] as { name: string }[]` leaves `users.*.name` unresolvable there. To carry the types across, generate the sidecar `stateSchema` from the same file with [`@wcstack/typescript`](../../typescript/README.md):
+
+```bash
+npx wcs-schema emit src/state.ts        # writes wcstack.manifest.json from the TS type
+npx wcs-validate --strict index.html    # paths the type lacks are now errors, false warnings are gone
+```
+
+`wcs-schema check src/state.ts` fails CI when the manifest drifts from the type. The whole TypeScript story for a wcstack app is collected in [docs/typescript.md](../../../docs/typescript.md).
+
 ## Exported Types
 
 | Type | Description |

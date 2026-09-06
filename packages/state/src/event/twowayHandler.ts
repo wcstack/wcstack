@@ -1,10 +1,11 @@
 import { isPossibleTwoWay } from "./isPossibleTwoWay";
+import { EVENT_PROP_PREFIX, MODIFIER_READONLY } from "../define";
 import { config } from "../config";
 import { devtoolsSink } from "../devtools/sink";
 import { getLoopContextByNode } from "../list/loopContextByNode";
 import { beginPropagationTransaction, extendPropagationContext, getCurrentPropagationContext, getEdgeId, getWireId, matchWriteReceipt, runWithPropagationContext } from "../propagation/propagation";
 import { raiseError } from "../raiseError";
-import { getStateElementByName } from "../stateElementByName";
+import { getStateElement } from "../stateElementByName";
 import { IBindingInfo, IFilterInfo } from "../types";
 import { setLoopContextSymbol } from "../proxy/symbols";
 import { getCustomElement } from "../getCustomElement";
@@ -20,9 +21,51 @@ const producerValueObserversByNode = new WeakMap<Node, Map<string, Set<(value: u
 
 const DEFAULT_GETTER = (e: Event) => (e as CustomEvent).detail;
 
+/**
+ * 既定 getter（`(e) => e.detail`）が要素の宣言と噛み合っていない典型 2 形を、
+ * 要素 × プロパティごとに 1 回だけ警告する（README「What the element writes back」）。
+ *
+ * (a) detail が undefined なのに `element[propName]` には値がある —
+ *     CustomEvent でない Event を dispatch している / `detail` を付け忘れている
+ * (b) detail が `{ <propName>: … }` の形のラッパーで、`element[propName]` はオブジェクトでない —
+ *     `getter: (e) => e.detail.<propName>` が要る
+ *
+ * どちらも state には黙って undefined / ラッパーが書かれ、例外も lint 診断も出ない
+ * （payload の形は静的に見えない）。挙動は変えない — 書き込みはそのまま行う。
+ * occurrence（`semantics: "event"`）は payload が任意なので対象外（呼び出し側で除外）。
+ */
+const warnedDefaultGetter = new WeakMap<Element, Set<string>>();
+function warnDefaultGetterMismatch(node: Element, propName: string, detail: unknown): void {
+  const propValue = (node as any)[propName];
+  let reason: string | null = null;
+  if (typeof detail === "undefined") {
+    if (typeof propValue !== "undefined") {
+      reason = `the event carried no detail (undefined) while element.${propName} is ${typeof propValue}`;
+    }
+  } else if (
+    detail !== null && typeof detail === "object" && Object.prototype.hasOwnProperty.call(detail, propName)
+    && (propValue === null || typeof propValue !== "object")
+  ) {
+    reason = `the event's detail is an object with a "${propName}" key while element.${propName} is ${typeof propValue}`;
+  }
+  if (reason === null) return;
+  let props = warnedDefaultGetter.get(node);
+  if (typeof props === "undefined") {
+    props = new Set();
+    warnedDefaultGetter.set(node, props);
+  }
+  if (props.has(propName)) return;
+  props.add(propName);
+  console.warn(
+    `[@wcstack/state] [wcs/default-getter-mismatch] <${node.tagName.toLowerCase()}> "${propName}": ${reason}. ` +
+    `With no getter, state receives e.detail as-is. Dispatch the value itself as detail, or declare ` +
+    `getter (e.g. (e) => e.detail.${propName}, or (e) => e.target.${propName}) on that wcBindable property.`
+  );
+}
+
 function getHandlerKey(binding: IBindingInfo, eventName: string, hasGetter: boolean, isOccurrence: boolean): string {
   const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
-  return `${binding.stateName}::${binding.propName}::${binding.statePathName}::${eventName}::${filterKey}::${hasGetter ? 'g' : 'n'}::${isOccurrence ? 'o' : 's'}`;
+  return `${binding.propName}::${binding.statePathName}::${eventName}::${filterKey}::${hasGetter ? 'g' : 'n'}::${isOccurrence ? 'o' : 's'}`;
 }
 
 function getEventName(binding: IBindingInfo): string {
@@ -32,7 +75,7 @@ function getEventName(binding: IBindingInfo): string {
   // 2.wcBindable protocol
   const customTagName = getCustomElement(binding.node as Element);
   if (customTagName !== null) {
-    const customClass = getCustomElementRegistry()?.get(customTagName);
+    const customClass = getCustomElementRegistry(binding.node)?.get(customTagName);
     if (typeof customClass === "undefined") {
       raiseError(`Custom element <${customTagName}> is not defined. Cannot determine event name for two-way binding.`);
     }
@@ -41,10 +84,10 @@ function getEventName(binding: IBindingInfo): string {
       eventName = propDesc.event;
     }
   }
-  // 3.modifier
+  // 3.modifier（`#onchange` 等 — `on` + イベント名の修飾子形。README「Modifiers」参照）
   for(const modifier of binding.propModifiers) {
-    if (modifier.startsWith('on')) {
-      eventName = modifier.slice(2);
+    if (modifier.startsWith(EVENT_PROP_PREFIX)) {
+      eventName = modifier.slice(EVENT_PROP_PREFIX.length);
     }
   }
   return eventName;
@@ -75,7 +118,6 @@ function isOccurrenceProperty(binding: IBindingInfo): boolean {
 }
 
 const twowayEventHandlerFunction = (
-  stateName: string,
   propName: string,
   statePathName: string,
   inFilters: IFilterInfo[],
@@ -90,6 +132,9 @@ const twowayEventHandlerFunction = (
   let newValue: any;
   if (valueGetter !== null) {
     newValue = valueGetter(event);
+    if (valueGetter === DEFAULT_GETTER && !isOccurrence) {
+      warnDefaultGetterMismatch(node, propName, newValue);
+    }
   } else {
     if (!(propName in node)) {
       console.warn(`[@wcstack/state] Property "${propName}" does not exist on target element.`);
@@ -109,7 +154,7 @@ const twowayEventHandlerFunction = (
   let propagationContext: ReturnType<typeof getCurrentPropagationContext> = null;
   if (config.enablePropagationContext) {
     // Phase 3: element → state edge の因果判定（設計書 §4）。
-    const wireId = getWireId(node, propName, stateName, statePathName);
+    const wireId = getWireId(node, propName, statePathName);
     const receipt = matchWriteReceipt(node, propName);
     if (receipt !== null && Object.is(receipt.writtenValue, newValue)) {
       // 規則 4: 同じ setter call stack 内で同じ member から Object.is 同値の
@@ -164,9 +209,9 @@ const twowayEventHandlerFunction = (
   }
 
   const rootNode = node.getRootNode() as Node;
-  const stateElement = getStateElementByName(rootNode, stateName);
+  const stateElement = getStateElement(rootNode);
   if (stateElement === null) {
-    raiseError(`State element with name "${stateName}" not found for two-way binding.`);
+    raiseError(`No state tree found on this root for two-way binding.`);
   }
 
   const loopContext = getLoopContextByNode(node);
@@ -217,7 +262,7 @@ export function addTwowayValueObserver(
 export function attachTwowayEventHandler(binding: IBindingInfo): void {
   const customTagName = getCustomElement(binding.node as Element);
   if (customTagName !== null) {
-    const registry = getCustomElementRegistry();
+    const registry = getCustomElementRegistry(binding.node);
     const customClass = registry?.get(customTagName);
     if (typeof customClass === "undefined") {
       if (registry === null) {
@@ -227,7 +272,7 @@ export function attachTwowayEventHandler(binding: IBindingInfo): void {
     }
   }
 
-  if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf('ro') === -1) {
+  if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf(MODIFIER_READONLY) === -1) {
     const eventName = getEventName(binding);
     const valueGetter = getValueGetter(binding);
     const isOccurrence = isOccurrenceProperty(binding);
@@ -235,7 +280,6 @@ export function attachTwowayEventHandler(binding: IBindingInfo): void {
     let twowayEventHandler = handlerByHandlerKey.get(key);
     if (typeof twowayEventHandler === "undefined") {
       twowayEventHandler = twowayEventHandlerFunction(
-        binding.stateName,
         binding.propName,
         binding.statePathName,
         binding.inFilters,
@@ -252,7 +296,7 @@ export function attachTwowayEventHandler(binding: IBindingInfo): void {
 export function detachTwowayEventHandler(binding: IBindingInfo): void {
   const customTagName = getCustomElement(binding.node as Element);
   if (customTagName !== null) {
-    const registry = getCustomElementRegistry();
+    const registry = getCustomElementRegistry(binding.node);
     const customClass = registry?.get(customTagName);
     if (typeof customClass === "undefined") {
       if (registry === null) {
@@ -262,7 +306,7 @@ export function detachTwowayEventHandler(binding: IBindingInfo): void {
     }
   }
 
-  if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf('ro') === -1) {
+  if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf(MODIFIER_READONLY) === -1) {
     const eventName = getEventName(binding);
     const valueGetter = getValueGetter(binding);
     const key = getHandlerKey(binding, eventName, valueGetter !== null, isOccurrenceProperty(binding));

@@ -1,6 +1,7 @@
 import { DefinedMode, IWcBindable } from "../types.js";
 import { DefinedCore } from "../core/DefinedCore.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { getCustomElementRegistry } from "../platform/customElementRegistry.js";
 
 // Named WcsDefined (not `Defined`) to match the <wcs-permission> / <wcs-geo>
 // convention (WcsPermission / WcsGeolocation) and avoid shadowing any global.
@@ -165,7 +166,15 @@ export class WcsDefined extends HTMLElement {
     // Begin the watch (or revive it after a reconnect). The returned promise is
     // held as connectedCallbackPromise for SSR. whenDefined failures surface as
     // `missing` / `error` state — never as a throw — so no .catch() is needed.
-    this._connectedCallbackPromise = this._core.observe(this._parseTags(), this.mode, this.timeout);
+    // Gate on the registry this element's own subtree resolves against: with a
+    // scoped registry the same tag name means a different definition per tree,
+    // so watching the global one would report readiness this tree cannot use.
+    this._connectedCallbackPromise = this._core.observe(
+      this._parseTags(),
+      this.mode,
+      this.timeout,
+      getCustomElementRegistry(this),
+    );
   }
 
   disconnectedCallback(): void {

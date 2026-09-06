@@ -39,7 +39,7 @@ vi.mock("../src/binding/getBindingSetByAbsoluteStateAddress", () => ({
   removeBindingByAbsoluteStateAddress: mocks.removeAddress,
 }));
 vi.mock("../src/binding/getStateAddressByBindingInfo", () => ({ clearStateAddressByBindingInfo: mocks.clearState }));
-vi.mock("../src/stateElementByName", () => ({ getStateElementByName: vi.fn(() => mocks.stateElement) }));
+vi.mock("../src/stateElementByName", () => ({ getStateElement: vi.fn(() => mocks.stateElement) }));
 vi.mock("../src/event/handler", () => ({ attachEventHandler: mocks.attachEvent, detachEventHandler: mocks.detachEvent }));
 vi.mock("../src/event/eventTokenHandler", () => ({ attachEventTokenHandler: mocks.attachToken, detachEventTokenHandler: mocks.detachToken }));
 vi.mock("../src/event/twowayHandler", () => ({ attachTwowayEventHandler: mocks.attachTwoway, detachTwowayEventHandler: mocks.detachTwoway, addTwowayValueObserver: vi.fn(() => vi.fn()) }));
@@ -55,7 +55,6 @@ function createBinding(node = document.createElement("input"), overrides: Partia
     propModifiers: [],
     statePathName: "value",
     statePathInfo: { path: "value", wildcardCount: 0 } as any,
-    stateName: "default",
     inFilters: [],
     outFilters: [],
     node,

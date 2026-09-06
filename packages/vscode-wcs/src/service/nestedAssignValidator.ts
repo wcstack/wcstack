@@ -13,6 +13,11 @@
  * wcs/array-index-assign（arrayMutationValidator）の担当であり、
  * ここではドットセグメントを含むチェーンのみ発火する（相補・二重報告なし）。
  * 正規表現部品は scriptPatterns.ts で共有する（規範: 設計 doc §5）。
+ *
+ * severity は **error**（array-mutation / array-index-assign と同格）。3 つは
+ * 同一の欠陥「代入がリアクティブ更新を通らない」を構文の形で分けているだけで、
+ * どれも条件付きではなく常に壊れる。README も `this.user.name = "Bob"` を
+ * ❌ と明記している。
  */
 
 import { parseWcsScriptBlocks } from '../language/htmlParse.js';
@@ -31,7 +36,7 @@ export interface NestedAssignDiagnostic {
   start: number;
   end: number;
   message: string;
-  severity: 'warning';
+  severity: 'error';
 }
 
 // 後置形: this.user.name = / += / ++ 等。前置形: ++this.user.count。
@@ -83,7 +88,7 @@ function findNestedAssigns(script: string, baseOffset: number, msgs: WcsMessageC
         start,
         end: start + full.length,
         message: msgs.nestedAssign(suggestedPath),
-        severity: 'warning',
+        severity: 'error',
       });
     }
   }

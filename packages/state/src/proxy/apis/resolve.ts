@@ -18,10 +18,10 @@
 
 import { getPathInfo } from "../../address/PathInfo";
 import { createStateAddress } from "../../address/StateAddress";
-import { getListIndexesByList } from "../../list/listIndexesByList";
-import { IListIndex } from "../../list/types";
+import { indexArityMessage } from "../../pathDiagnostics";
 import { raiseError } from "../../raiseError";
 import { getByAddress } from "../methods/getByAddress";
+import { getListIndexByIndexes } from "../methods/getListIndexByIndexes";
 import { setByAddress } from "../methods/setByAddress";
 import { IStateHandler } from "../types";
 
@@ -46,25 +46,15 @@ export function resolve(
       }
     }
 
-    if (pathInfo.wildcardParentPathInfos.length > indexes.length) {
-      raiseError(`indexes length is insufficient: ${path}`);
+    // 添字の本数はワイルドカードの本数と**厳密に一致**する必要がある。
+    // 不足は元から throw していたが、超過は黙って無視されていた（余分な要素を
+    // 誰も読まないため）＝ `$resolve("items.*.price", [row, col])` のような
+    // 「1 本しか無いのに 2 本渡す」取り違えが、間違った値を返したまま通っていた。
+    if (indexes.length !== pathInfo.wildcardParentPathInfos.length) {
+      raiseError(indexArityMessage("$resolve", path, pathInfo.wildcardParentPathInfos.length, indexes.length));
     }
-    // ワイルドカード階層ごとにListIndexを解決していく
-    let listIndex: IListIndex | null = null;
-    for(let i = 0; i < pathInfo.wildcardParentPathInfos.length; i++) {
-      const wildcardParentPathInfo = pathInfo.wildcardParentPathInfos[i];
-      const wildcardAddress = createStateAddress(wildcardParentPathInfo, listIndex);
-      const tmpValue = getByAddress(target, wildcardAddress, receiver, handler);
-      const listIndexes = getListIndexesByList(tmpValue);
-      if (listIndexes == null) {
-        raiseError(`ListIndexes not found: ${wildcardParentPathInfo.path}`);
-      }
-      const index = indexes[i];
-      // 範囲外 index はリスト自体の不在と別原因なので index を含める
-      // （docs/state-bind-component-nested-for-design.md §8.4）
-      listIndex = listIndexes[index] ??
-        raiseError(`ListIndex not found at index ${index} of ${wildcardParentPathInfo.path}`);
-    }
+    // ワイルドカード階層ごとにListIndexを解決していく（`$setAll` と共有）
+    const listIndex = getListIndexByIndexes(target, receiver, handler, pathInfo, indexes);
 
     // ToDo:WritableかReadonlyかを判定して適切なメソッドを呼び出す
     const address = createStateAddress(pathInfo, listIndex);

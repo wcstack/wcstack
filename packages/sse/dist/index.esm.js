@@ -749,17 +749,22 @@ class WcsSse extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.sse)) {
-        customElements.define(config.tagNames.sse, WcsSse);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.sse)) {
+        registry.define(config.tagNames.sse, WcsSse);
     }
 }
 
-function bootstrapSse(userConfig) {
+function bootstrapSse(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { SseCore, WCS_SSE_ERROR_CODE, WcsSse, bootstrapSse, getConfig };

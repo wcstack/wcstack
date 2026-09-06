@@ -1,5 +1,9 @@
 import { resolveLoader } from "./resolveLoader.js";
-import { failedTags, loadingTags } from "./tags.js";
+import { failedTags, getLoadingTags } from "./tags.js";
+import {
+  ICustomElementRegistryAdapter,
+  getCustomElementRegistry,
+} from "./platform/customElementRegistry.js";
 import { IConfig, ILoader, INameSpaceInfo, IPrefixMap, ITagInfo } from "./types.js";
 
 const isCustomElement = (node: Node): boolean => {
@@ -29,6 +33,12 @@ export function getCustomTagInfo(e: Element): ITagInfo {
 
 const observedCustomElements: WeakSet<Element> = new WeakSet<Element>();
 
+// Elements that already carry a whenDefined() follow-up. `lazyLoads` rescans
+// until nothing more loads, and the MutationObserver reruns it on every DOM
+// change, so without this an element whose tag never gets defined collects one
+// never-settling continuation per scan.
+const upgradeWatchedElements: WeakSet<Element> = new WeakSet<Element>();
+
 async function observeShadowRoot(element: Element, config: IConfig, prefixMap: IPrefixMap) {
   observedCustomElements.add(element);
   await handlerForLazyLoad(element.shadowRoot!, config, prefixMap);
@@ -51,17 +61,45 @@ function matchNameSpace(tagName: string, prefixMap: IPrefixMap): INameSpaceInfo 
   return null;
 }
 
-async function tagLoad(tagInfo: ITagInfo, config: IConfig, prefixMap: IPrefixMap): Promise<void> {
+async function tagLoad(
+  tagInfo: ITagInfo,
+  config: IConfig,
+  prefixMap: IPrefixMap,
+  registry: ICustomElementRegistryAdapter,
+): Promise<void> {
   const info: INameSpaceInfo | null = matchNameSpace(tagInfo.name, prefixMap);
   if (info === null) {
     throw new Error("No matching namespace found for lazy loaded component: " + tagInfo.name);
   }
-  
-  if (loadingTags.has(tagInfo.name)) {
-    await customElements.whenDefined(tagInfo.name);
+
+  const loadingTags = getLoadingTags(registry);
+  const inFlight = loadingTags.get(tagInfo.name);
+  if (inFlight !== undefined) {
+    // Wait on the load itself, never on the definition: a load that fails never
+    // defines the tag, so whenDefined() would stay pending forever and wedge
+    // every caller above — including the one that installs the MutationObserver,
+    // which stops all further lazy loading on the page.
+    await inFlight;
     return;
-  }  
-  loadingTags.add(tagInfo.name);
+  }
+
+  const load = performTagLoad(tagInfo, config, info, registry);
+  loadingTags.set(tagInfo.name, load);
+  try {
+    await load;
+  } finally {
+    loadingTags.delete(tagInfo.name);
+  }
+}
+
+// Never rejects: a failure is reported and recorded in `failedTags`, which keeps
+// the tag out of later scans.
+async function performTagLoad(
+  tagInfo: ITagInfo,
+  config: IConfig,
+  info: INameSpaceInfo,
+  registry: ICustomElementRegistryAdapter,
+): Promise<void> {
   try {
     let loader: ILoader;
     try {
@@ -76,20 +114,20 @@ async function tagLoad(tagInfo: ITagInfo, config: IConfig, prefixMap: IPrefixMap
     }
     const path = info.key + file + loader.postfix;
 
-    if (customElements.get(tagInfo.name)) {
+    if (registry.get(tagInfo.name)) {
       // すでに定義済み
       return;
     }
     const componentConstructor = await loader.loader(path);
     if (componentConstructor !== null) {
-      if (customElements.get(tagInfo.name)) {
+      if (registry.get(tagInfo.name)) {
         // すでに定義済み
         return;
       }
       if (tagInfo.extends === null) {
-        customElements.define(tagInfo.name, componentConstructor);
+        registry.define(tagInfo.name, componentConstructor);
       } else {
-        customElements.define(tagInfo.name, componentConstructor, { extends: tagInfo.extends });
+        registry.define(tagInfo.name, componentConstructor, { extends: tagInfo.extends });
       }
     } else {
       throw new Error("Loader returned null for component: " + tagInfo.name);
@@ -97,18 +135,21 @@ async function tagLoad(tagInfo: ITagInfo, config: IConfig, prefixMap: IPrefixMap
   } catch(e) {
     console.error(`Failed to lazy load component '${tagInfo.name}':`, e);
     failedTags.add(tagInfo.name);
-  } finally {
-    loadingTags.delete(tagInfo.name);
   }
 }
 
 //
-async function lazyLoad(root: Node, config: IConfig, prefixMap: IPrefixMap): Promise<number> {
+async function lazyLoad(
+  root: Node,
+  config: IConfig,
+  prefixMap: IPrefixMap,
+  registry: ICustomElementRegistryAdapter,
+): Promise<number> {
   const elements: Element[] = [];
 
   // Create TreeWalker (target element and comment nodes)
-  const walker = document.createTreeWalker(
-    root, 
+  const walker = (root.ownerDocument ?? (root as Document)).createTreeWalker(
+    root,
     NodeFilter.SHOW_ELEMENT,
     (node: Node): number => {
       return isCustomElement(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
@@ -124,13 +165,16 @@ async function lazyLoad(root: Node, config: IConfig, prefixMap: IPrefixMap): Pro
   const tagNames = new Set<string>();
   for(const element of elements) {
     const tagInfo = getCustomTagInfo(element);
-    const customClass = customElements.get(tagInfo.name);
+    const customClass = registry.get(tagInfo.name);
     if (customClass === undefined) {
       // undefined
-      customElements.whenDefined(tagInfo.name).then(async () => {
-        // upgraded
-        await checkObserveShadowRoot(element, config, prefixMap);
-      });
+      if (!upgradeWatchedElements.has(element)) {
+        upgradeWatchedElements.add(element);
+        registry.whenDefined(tagInfo.name).then(async () => {
+          // upgraded
+          await checkObserveShadowRoot(element, config, prefixMap);
+        });
+      }
       if (!tagNames.has(tagInfo.name) && !failedTags.has(tagInfo.name)) {
         tagNames.add(tagInfo.name);
         tagInfos.push(tagInfo);
@@ -142,7 +186,7 @@ async function lazyLoad(root: Node, config: IConfig, prefixMap: IPrefixMap): Pro
   }
   let tagCount = 0;
   for(const tagInfo of tagInfos) {
-    await tagLoad(tagInfo, config, prefixMap);
+    await tagLoad(tagInfo, config, prefixMap, registry);
     tagCount++;
   }
   return tagCount;
@@ -150,11 +194,12 @@ async function lazyLoad(root: Node, config: IConfig, prefixMap: IPrefixMap): Pro
 }
 
 async function lazyLoads(
-  root: Document | ShadowRoot, 
-  config: IConfig, 
-  prefixMap: IPrefixMap
+  root: Document | ShadowRoot,
+  config: IConfig,
+  prefixMap: IPrefixMap,
+  registry: ICustomElementRegistryAdapter,
 ): Promise<void> {
-  while(await lazyLoad(root, config, prefixMap) > 0) {
+  while(await lazyLoad(root, config, prefixMap, registry) > 0) {
     // Repeat until no more tags to load
   }
 }
@@ -167,8 +212,20 @@ export async function handlerForLazyLoad(
   if (Object.keys(prefixMap).length === 0) {
     return null;
   }
+  // Definitions must land in the registry this root resolves against: a scoped
+  // registry does not see global definitions, so defining globally would leave
+  // these elements un-upgraded and the whenDefined below pending forever.
+  const registry = getCustomElementRegistry(root);
+  if (registry === null) {
+    // A null-registry root cannot receive definitions at all until someone calls
+    // registry.initialize() on it, so there is nothing autoloading can do here.
+    console.error(
+      "Cannot autoload components: the root has a null custom element registry.",
+    );
+    return null;
+  }
   try {
-    await lazyLoads(root, config, prefixMap);
+    await lazyLoads(root, config, prefixMap, registry);
   } catch(e) {
     throw new Error("Failed to lazy load components: " + e);
   }
@@ -178,7 +235,7 @@ export async function handlerForLazyLoad(
   }
   const mo = new MutationObserver(async (): Promise<void> => {
     try {
-      await lazyLoads(root, config, prefixMap);
+      await lazyLoads(root, config, prefixMap, registry);
     } catch(e) {
       console.error("Failed to lazy load components: " + e);
     }

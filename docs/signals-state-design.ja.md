@@ -86,7 +86,7 @@ effect(() => {
 
 | 向き | protocol サーフェス | signal 側 |
 |---|---|---|
-| element → state | property（getter / 値スナップショット） | **読み取り signal**（property 変化を `state` cell に push） |
+| element → state | property（`getter(event)`・既定は `e.detail`・初期シードだけ property スナップショット） | **読み取り signal**（property 変化を `state` cell に push） |
 | element → state | event-token（繰り返し通知） | **event を fold した signal**（per-emit で更新・stream 系） |
 | state → element | command-token（start/cancel/abort 等） | signal の値変化 or 明示 `command()` 呼び出しで emit |
 | state → element | property（書き戻し / 入力） | signal → element property への effect |

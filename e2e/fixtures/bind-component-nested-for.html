@@ -39,7 +39,7 @@
 
     // shadow を constructor で組む形: <wcs-state> は再接続で使い回される
     class GroupEager extends HTMLElement {
-      state = { items: [] };
+      state = {}; // v2 R1（D19）
       constructor() {
         super();
         this.attachShadow({ mode: "open" });
@@ -50,7 +50,7 @@
 
     // shadow を connectedCallback で組む形: 再接続のたびに新しい <wcs-state> になる
     class GroupLazy extends HTMLElement {
-      state = { items: [] };
+      state = {}; // v2 R1（D19）
       constructor() {
         super();
         this.attachShadow({ mode: "open" });

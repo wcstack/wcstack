@@ -183,6 +183,10 @@ core.dispose();
 
 The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
 
+## Accessibility
+
+**WCAG 1.3.4 Orientation (AA)**: content must not restrict itself to a single display orientation unless that orientation is *essential* (a bank-check scanner, a piano keyboard). A user with the device mounted on a wheelchair cannot rotate it. This README is precise about when `lock()` *fails* — the same precision applies to when it should be *called*: lock only when the orientation is essential to the task, and give the user a visible way back (a control wired to the `unlock` command). Monitoring (`type` / `angle` / `portrait` / `landscape`) carries no such obligation — adapting your layout to the reported orientation is exactly what 1.3.4 wants.
+
 ## License
 
 MIT

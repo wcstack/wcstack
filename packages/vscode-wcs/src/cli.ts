@@ -8,31 +8,40 @@
  * このファイルは node I/O(fs / argv / stdout / exit)のみを担う薄い shell。
  * 検査ロジックは全て core/cli/runValidation.ts(pure・テスト対象)。
  *
- * 使い方: wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-only] <file> ...
+ * 使い方: wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-only] [--strict] <file> ...
  *   *.manifest.json → sidecar manifest として検査
  *   その他(.html 等)→ data-wcs バインディングとして検査
  *   --lang=ja|en → 診断メッセージの言語。決定則は「--lang > 環境(LC_ALL / LC_MESSAGES /
  *     LANG / Intl の OS ロケール — ja 系なら ja、それ以外は en) > フォールバック en」。
  *     code / range は言語に依らず不変。
  *   --errors-only(別名 --quiet)→ error severity の行だけ表示(warning は count のみ)
+ *   --strict → warning があっても exit 1(severity は不変・閾値だけ下げる)。typo
+ *     (`wcs/binding-path-missing` = warning)で CI を落としたいときに使う。
  */
 
 import { readFileSync } from "node:fs";
+import { createFileReader } from "./fileReader.js";
 import { runValidation, type CliFileInput, type RunValidationOptions } from "./core/cli/runValidation.js";
+import type { FileReader } from "./service/statePathResolver.js";
 
 function classify(path: string): CliFileInput["kind"] {
   return path.endsWith(".manifest.json") ? "manifest" : "html";
 }
 
+// 外部 state reader は node shell 層の単一正本（IDE の Language Server も同じものを使う）。
+// 既存の import 経路（テスト・将来の呼び出し）を壊さないよう再エクスポートする。
+export { createFileReader } from "./fileReader.js";
+
 /** argv を options とファイル一覧に分ける。IDE の設定に合わせるため attr / state-tag を受ける。 */
 export function parseArgs(argv: readonly string[]): { options: RunValidationOptions; files: string[] } {
-  const options: { bindAttribute?: string; stateTagName?: string; errorsOnly?: boolean; locale?: string } = {};
+  const options: { bindAttribute?: string; stateTagName?: string; errorsOnly?: boolean; strict?: boolean; locale?: string } = {};
   const files: string[] = [];
   for (const arg of argv) {
     if (arg.startsWith("--attr=")) options.bindAttribute = arg.slice("--attr=".length);
     else if (arg.startsWith("--state-tag=")) options.stateTagName = arg.slice("--state-tag=".length);
     else if (arg.startsWith("--lang=")) options.locale = arg.slice("--lang=".length);
     else if (arg === "--errors-only" || arg === "--quiet") options.errorsOnly = true;
+    else if (arg === "--strict") options.strict = true;
     else if (!arg.startsWith("-")) files.push(arg);
   }
   return { options, files };
@@ -63,7 +72,7 @@ export function main(argv: readonly string[]): number {
   const { options, files } = parseArgs(argv);
   const locale = resolveCliLocale(options.locale);
   if (files.length === 0) {
-    process.stderr.write("usage: wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] <file> [<file> ...]\n");
+    process.stderr.write("usage: wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-only] [--strict] <file> [<file> ...]\n");
     return 2;
   }
 
@@ -76,22 +85,25 @@ export function main(argv: readonly string[]): number {
       process.stderr.write(`cannot read ${path}: ${(e as Error).message}\n`);
       return 2;
     }
-    inputs.push({ source: path, text, kind: classify(path) });
+    const kind = classify(path);
+    inputs.push({ source: path, text, kind, fileReader: kind === "html" ? createFileReader(path) : undefined });
   }
 
   const result = runValidation(inputs, { ...options, locale });
   for (const line of result.lines) {
     process.stdout.write(line + "\n");
   }
+  // strict で落ちたときに「何で落ちたか」が summary 行だけで読めるよう印を付ける。
   process.stdout.write(
-    `\n${result.errorCount} error(s), ${result.warningCount} warning(s), ${result.infoCount} info\n`,
+    `\n${result.errorCount} error(s), ${result.warningCount} warning(s), ${result.infoCount} info${options.strict ? " (strict)" : ""}\n`,
   );
   return result.exitCode;
 }
 
 // エントリポイント実行。esbuild は CJS を出力するので require/module が使える。
 // `wcs-validate` bin(symlink)経由でも argv[1] 依存でなく確実に起動する。
-// テストは core/cli/runValidation を import するため、この分岐は踏まない。
+// テスト(vitest = ESM)からの import では typeof require が "undefined" になるため
+// この分岐は踏まない。
 declare const require: NodeRequire | undefined;
 declare const module: NodeModule | undefined;
 if (typeof require !== "undefined" && typeof module !== "undefined" && require.main === module) {

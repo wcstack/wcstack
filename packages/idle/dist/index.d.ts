@@ -83,7 +83,7 @@ interface WcsIdleCoreValues {
  */
 type WcsIdleValues = WcsIdleCoreValues;
 
-declare function bootstrapIdle(userConfig?: IWritableConfig): void;
+declare function bootstrapIdle(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -232,6 +232,12 @@ declare const WCS_IDLE_ERROR_CODE: {
     /** その他の requestPermission()/start() 失敗(生 throw / TypeError / nullish reject 等)。 */
     readonly IdleError: "idle-error";
 };
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-idle": WcsIdle;
+    }
+}
 
 export { IdleCore, WCS_IDLE_ERROR_CODE, WcsIdle, bootstrapIdle, getConfig };
 export type { IWritableConfig, IWritableTagNames, IdleScreenState, IdleUserState, WcsIdleCoreValues, WcsIdleValues, WcsIoErrorInfo, WcsIoErrorPhase };

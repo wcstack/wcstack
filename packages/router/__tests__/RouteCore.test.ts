@@ -9,11 +9,11 @@ describe('RouteCore', () => {
     expect(core).not.toBeInstanceOf(HTMLElement);
   });
 
-  it('wcBindableプロパティが正しく定義されている', () => {
-    expect(RouteCore.wcBindable.protocol).toBe('wc-bindable');
-    expect(RouteCore.wcBindable.version).toBe(1);
-    expect(RouteCore.wcBindable.properties).toHaveLength(3);
-    expect(RouteCore.wcBindable.properties.map(p => p.name)).toEqual(['params', 'typedParams', 'active']);
+  // docs/router-state-contract-design.md §5.1 / D2 — detached な Route の宣言は
+  // data-wcs から構造的に到達不能な「果たせない約束」なので宣言しない。
+  // 観測面は Router.wcBindable に集約された。再導入をここで防ぐ。
+  it('wcBindable 宣言を持たないこと（死接面の撤去）', () => {
+    expect((RouteCore as any).wcBindable).toBeUndefined();
   });
 
   it('初期状態が正しい', () => {
@@ -359,13 +359,4 @@ describe('RouteCore', () => {
     });
   });
 
-  describe('wcBindable getters', () => {
-    it('typedParamsのgetterがdetailからtypedParamsを抽出する', () => {
-      const getter = RouteCore.wcBindable.properties[1].getter!;
-      const event = new CustomEvent('wcs-route:params-changed', {
-        detail: { params: { id: '123' }, typedParams: { id: 123 } }
-      });
-      expect(getter(event)).toEqual({ id: 123 });
-    });
-  });
 });

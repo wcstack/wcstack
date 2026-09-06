@@ -176,7 +176,7 @@ interface WcsResizeCommands {
     disconnect(): void;
 }
 
-declare function bootstrapResize(userConfig?: IWritableConfig): void;
+declare function bootstrapResize(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -341,6 +341,12 @@ declare class WcsResize extends HTMLElement {
     connectedCallback(): void;
     disconnectedCallback(): void;
     attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void;
+}
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-resize": WcsResize;
+    }
 }
 
 export { ResizeCore, WcsResize, bootstrapResize, getConfig };

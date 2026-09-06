@@ -19,15 +19,18 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Discover release-target packages: any packages/* whose package.json
-          # is scoped under @wcstack/. This auto-includes new packages and
-          # excludes non-published ones (e.g. the vscode-wcs extension).
+          # Discover CI-target packages: any packages/* whose package.json is
+          # scoped under @wcstack/, plus the unscoped `wcstack` entry bundle
+          # (a buildable package since docs/distribution-robustness-impl-plan.md
+          # Phase 4). Auto-includes new scoped packages; still excludes
+          # non-published ones (e.g. the vscode-wcs extension).
           all=()
           for dir in packages/*/; do
             [ -f "${dir}package.json" ] || continue
             name=$(node -p "require('./${dir}package.json').name")
             case "$name" in
               @wcstack/*) all+=("$(basename "$dir")") ;;
+              wcstack)    all+=("$(basename "$dir")") ;;
             esac
           done
 
@@ -77,6 +80,10 @@ jobs:
       - run: node scripts/sync-io-core.mjs --check
       - run: node scripts/sync-package-configs.mjs --check
       - run: node scripts/sync-readme-agents-banner.mjs --check
+      # builtinTags カタログ + wcs.html-data.json が committed dist からの再生成と
+      # 一致するか(audio/midi 追加時に 12 タグ分 stale だった鮮度罠の恒久ゲート)。
+      # committed dist が入力なので npm ci 不要・src が dist より先行していても安定。
+      - run: node packages/vscode-wcs/scripts/emit-builtin-tags.mjs --check
 
   bindable-conformance:
     # settable wcBindable member ⇒ declared in inputs. A runtime check that
@@ -100,9 +107,16 @@ jobs:
   wcs-validate:
     # Phase 5a 静的契約の CI ゲート。vscode-wcs の validator core を wcs-validate CLI
     # 経由で repo の HTML / sidecar manifest に適用し、error severity の診断があれば
-    # build を落とす（spread 構文 / path / modifier / 壊れ manifest 等）。外部 state で
-    # 静的解決できないパスは warning に留まり build を落とさない（--errors-only で表示も抑制）。
+    # build を落とす（spread 構文 / path / modifier / 壊れ manifest 等）。
+    # <wcs-state src=...> の外部 state は CLI が HTML 相対で読み込んで解決する。
+    # それでも解決できないパスは warning に留まり build を落とさない（--errors-only で表示も抑制）。
     # vscode-wcs は @wcstack/* でなく detect-changes matrix 対象外なので独立 job にする。
+    #
+    # vscode-wcs / lint は @wcstack/state の dist を file:../state（symlink）経由で
+    # inline して消費する。コミット済み dist はリリース間で src に遅行するため、最初に
+    # state を src から再ビルドし、「新鮮な state × vscode-wcs / lint」を PR 時点で
+    # ゲートする（#183 の残り半分 — stale dist に対して緑のまま release で初めて落ちる
+    # 経路を塞ぐ。docs/distribution-robustness-impl-plan.md Phase 2）。
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -110,11 +124,71 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: packages/vscode-wcs/package-lock.json
+          cache-dependency-path: |
+            packages/vscode-wcs/package-lock.json
+            packages/state/package-lock.json
+      # node_modules/@wcstack/state は npm の file: 依存で symlink になるため、
+      # vscode-wcs の npm ci より先に走っても後から走っても新鮮な dist が見える。
+      # esbuild の inline（vscode-wcs の build）より前であることだけが要件。
+      - name: Build @wcstack/state from source (vscode-wcs and lint inline its dist)
+        run: |
+          npm ci
+          npm run build
+        working-directory: packages/state
       - run: npm ci
         working-directory: packages/vscode-wcs
       - run: npm run build
         working-directory: packages/vscode-wcs
+      # vscode-wcs は detect-changes matrix 対象外のため、ユニットテスト
+      # （コーパスパリティテスト含む — examples の HTML 追加が正本パーサ基盤を
+      # 壊していないかのゲート）はこの job で実行する。
+      - run: npm test
+        working-directory: packages/vscode-wcs
+      # @wcstack/lint はソースを持たず、vscode-wcs をビルドして cli.cjs をコピーする
+      # だけのラッパー。挙動の正本は vscode-wcs にあるのに CLI 契約テストは lint 側に
+      # あり、その ci matrix は「packages/lint/ が変更された PR」でしか動かない。
+      # vscode-wcs は @wcstack/* でないので matrix にそもそも載らず、vscode-wcs だけを
+      # 触る変更は lint の契約テストを一度も走らせないまま通る。実際 array-mutation の
+      # severity 変更がこの穴を抜け、release の「Build all packages」で初めて落ちた。
+      # vscode-wcs の変更で必ず動くこの job から走らせて塞ぐ。冒頭の state 再ビルドに
+      # より、この smoke も state の src 変更に対して新鮮な dist で走る。
+      - name: Smoke-test the packaged CLI against the freshly built dist
+        run: |
+          set -euo pipefail
+          npm run build
+          npm test
+        working-directory: packages/lint
+      # @wcstack/typescript は lint と同型: wcs-schema の自己検査と end-to-end テストが
+      # vscode-wcs から bundle した validator core（dist/schema-core.cjs）を使う。matrix の
+      # typescript job は state の committed dist しか見ないので、vscode-wcs の変更・state の
+      # src 変更に対しては「新鮮な state × vscode-wcs × typescript」をここでゲートする。
+      - name: Build and test @wcstack/typescript against the freshly built validator core
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          npm test
+        working-directory: packages/typescript
+      # @wcstack/testing links @wcstack/server (file:../server) and reuses its
+      # waitForReady; its build rebuilds server from source, so this step gates
+      # "fresh server × testing" on every run (a server-only PR does not trigger the
+      # testing matrix job).
+      - name: Build and test @wcstack/testing against the freshly built server
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          npm test
+        working-directory: packages/testing
+      # wcs-tsc over every example page. Experimental and NON-GATING for one
+      # release (docs/app-testing-and-typescript-impl-plan.md §7-6): the goal is
+      # zero false positives over examples/ before it becomes a gate. Remove
+      # continue-on-error once a release cycle shows a clean run.
+      - name: Type-check <wcs-state> inline scripts in examples with wcs-tsc (experimental, non-gating)
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          node packages/typescript/dist/wcs-tsc.mjs -p examples/tsconfig.wcs-tsc.json
       - name: Validate data-wcs bindings (error severity fails the build)
         run: |
           set -euo pipefail
@@ -142,6 +216,25 @@ jobs:
           cache: npm
           cache-dependency-path: packages/${{ matrix.package }}/package-lock.json
       - run: npm ci
+      # @wcstack/server renders with the state runtime it declares as a registry
+      # dependency, but the published state lags src between releases — after a
+      # state behavior change, server's v-next tests would run against the v-old
+      # registry install and fail (or worse, pass against stale behavior). Same
+      # #183-shaped gap wcs-validate closes for vscode-wcs/lint; local checkouts
+      # don't see it because node_modules/@wcstack/state is typically a symlink
+      # to the sibling package. Build the sibling from source and link it in.
+      - name: Build @wcstack/state from source (server consumes its dist; the registry install lags src)
+        if: ${{ matrix.package == 'server' }}
+        working-directory: packages/state
+        run: |
+          npm ci
+          npm run build
+      - name: Link the freshly built state into server's node_modules
+        if: ${{ matrix.package == 'server' }}
+        run: |
+          rm -rf node_modules/@wcstack/state
+          mkdir -p node_modules/@wcstack
+          ln -s ../../../state node_modules/@wcstack/state
       - run: npm run lint
       - run: npm run build
       - run: npm run typecheck --if-present

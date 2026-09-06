@@ -14,7 +14,6 @@ function createBindingInfo(node: Node, overrides?: Partial<IBindingInfo>): IBind
     propModifiers: [],
     statePathName: 'users.*.name',
     statePathInfo: getPathInfo('users.*.name'),
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'prop',

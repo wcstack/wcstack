@@ -131,6 +131,7 @@ private _setState(v: T): void {
 ```
 
 - Events always carry `bubbles: true`
+- `detail` carries the new value **itself**. The protocol's default getter is `(e) => e.detail`, so a property declared without `getter` is read straight from `detail` by every adapter; a property whose `detail` is an object (one event feeding several properties, §4.2) MUST declare a `getter`. Either way the public getter and the extracted value represent the same logical state (§3.3.1)
 - **Event-natured things (a click, a message — anything where each firing carries meaning) are not same-value guarded.** State-natured things (permission, loading, …) are. Which one it is has to be stated in the design document
 
 ### 3.3.1 The producer snapshot contract (MUST)

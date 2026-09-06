@@ -9,11 +9,14 @@
  */
 
 import { BUILTIN_FILTERS, type FilterInfo } from './completionData.js';
-import type { PathCandidate } from './stateAnalyzer.js';
-import { getStatePathsFromHtml } from './statePathResolver.js';
-import { isInsideForTemplate, getInnermostForPath } from './forContext.js';
+import { STRUCTURAL_BINDING_TYPE_SET } from './wcsManifest.js';
+import { mergeSchemaCandidates, type PathCandidate } from './stateAnalyzer.js';
+import { getStatePathsFromHtml, type FileReader } from './statePathResolver.js';
+import { isInsideForTemplate, getInnermostForPath, getAvailableWildcardRank, countWildcardSegments } from './forContext.js';
 import { WcsDiagnosticCode, type WcsDiagnosticCodeValue } from '../core/diagnostics.js';
 import { getMessages, type WcsMessageCatalog, type ExpectedTypeKind } from '../core/messages.js';
+import { resolveSchemaPath } from '../core/sidecar/schemaSubset.js';
+import type { JsonSchemaNode } from '../core/sidecar/types.js';
 
 /** フィルタ名 → FilterInfo のマップ */
 const filterMap = new Map<string, FilterInfo>(BUILTIN_FILTERS.map(f => [f.name, f]));
@@ -37,19 +40,24 @@ export interface BindingDiagnostic {
  *
  * @param html - HTML 全文
  * @param attrName - バインド属性名（例: "data-wcs"）
+ * @param applicationSchema - 単一ツリーの stateSchema（sidecar manifest — v2）。宣言されていれば
+ *   未存在パスが `wcs/path-nonexistent`（error）になり、`for:` の型不一致は
+ *   `wcs/path-type-mismatch`（error）になる。同じパスの typeHint は schema が勝つ（D12）。
  */
-export function validateBindings(html: string, attrName: string, stateTagName: string = 'wcs-state', locale?: string): BindingDiagnostic[] {
+export function validateBindings(
+  html: string,
+  attrName: string,
+  stateTagName: string = 'wcs-state',
+  locale?: string,
+  fileReader?: FileReader,
+  applicationSchema?: JsonSchemaNode,
+): BindingDiagnostic[] {
   const diagnostics: BindingDiagnostic[] = [];
   const msgs = getMessages(locale);
 
-  // 状態パスを収集（state 名ごとに分類）
-  const statePaths = getStatePathsFromHtml(html, stateTagName);
-  const pathsByState = new Map<string, PathCandidate[]>();
-  for (const p of statePaths) {
-    const list = pathsByState.get(p.stateName) ?? [];
-    list.push(p);
-    pathsByState.set(p.stateName, list);
-  }
+  // 状態パスを収集（state 名ごとに分類）。schema 由来の候補は補完・型期待用に合流させる
+  // （同一パスは schema 優先）。存在判定は候補集合ではなく resolveSchemaPath で行う（下記）。
+  const statePaths = mergeSchemaCandidates(getStatePathsFromHtml(html, stateTagName, fileReader), applicationSchema);
 
   // バインド属性を全て検出
   const attrs = findAllBindAttributes(html, attrName);
@@ -65,6 +73,32 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
 
   for (const attr of attrs) {
     const bindings = splitBindingExpressions(attr.value);
+
+    // 構造ディレクティブ（for/if/elseif/else）の単独バインディング検査。ランタイム
+    // （parseBindTextsForElement.ts）は違反を raiseError で落とす ＝ ページ初期化ごと
+    // 止まるため error。判定はランタイムと同値に保つ: 空要素の数え方（trim 後に
+    // 非空のみ）に加え、構造判定は **修飾子分離より前の完全一致**（`for#x` は
+    // ランタイムでは構造でなく通常 prop になるため、`#` を剥がしてはならない）。
+    const nonEmptyCount = bindings.filter(b => b.trim().length > 0).length;
+    if (nonEmptyCount > 1) {
+      let scanPos = 0;
+      for (const b of bindings) {
+        const colon = b.indexOf(':');
+        const prop = (colon === -1 ? b : b.slice(0, colon)).trim();
+        if ((STRUCTURAL_BINDING_TYPE_SET as ReadonlySet<string>).has(prop)) {
+          const leading = b.length - b.trimStart().length;
+          diagnostics.push({
+            code: WcsDiagnosticCode.TemplateSyntax,
+            start: attr.valueStart + scanPos + leading,
+            end: attr.valueStart + scanPos + b.trimEnd().length,
+            message: msgs.structuralMustBeSingle(prop),
+            severity: 'error',
+          });
+        }
+        scanPos += b.length + 1;
+      }
+    }
+
     let pos = 0;
 
     for (const binding of bindings) {
@@ -73,8 +107,8 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
       // パスとフィルタを抽出
       const parsed = parseBindingExpression(binding);
 
-      // パス検証（targetState でスコープ）
-      const scopedPaths = pathsByState.get(parsed.targetState) ?? [];
+      // パス検証（v2: 1 root 1 ツリー — スコープは無い）
+      const scopedPaths = statePaths;
       const scopedPathSet = new Set(scopedPaths.map(p => p.path));
       const propNoMod = parsed.property.replace(/#.*$/, '').trim();
 
@@ -173,16 +207,19 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
             }
           }
           if (checkPath) {
-            const message = validatePathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, msgs);
-            if (message) {
+            const schema = applicationSchema;
+            const verdict = schema !== undefined
+              ? validateSchemaPathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, schema, msgs)
+              : toMissingVerdict(validatePathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, msgs));
+            if (verdict) {
               const pathOffset = binding.indexOf(parsed.path);
               const pathStart = bindingStart + pathOffset;
               diagnostics.push({
-                code: WcsDiagnosticCode.BindingPathMissing,
+                code: verdict.code,
                 start: pathStart,
                 end: pathStart + pathTrimmed.length,
-                message: `${message}${pathTrimmed.startsWith('.') ? msgs.expansionSuffix(checkPath) : ''}`,
-                severity: 'warning',
+                message: `${verdict.message}${pathTrimmed.startsWith('.') ? msgs.expansionSuffix(checkPath) : ''}`,
+                severity: verdict.severity,
               });
             }
           }
@@ -233,6 +270,35 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
               message: msgs.loopIndexOutsideFor(pathTrimmed),
               severity: 'warning',
             });
+          }
+
+          // for の**段数**を超える階数を使用（`matrix.*.*` を 1 段の for で読む、
+          // `$2` を 1 段のループで読む）。上の 3 つは「for の外か否か」の二値しか
+          // 見ておらず、深さ方向は誰も検査していなかった。available === 0 は上の
+          // patternPathOutsideFor / loopIndexOutsideFor が担うので、ここは
+          // 「for の中に居るが段数が足りない」だけを見る（二重報告を避ける）。
+          // `@state` セレクタは v2 で撤去（runtime では parse error）— namedStateValidator が
+          // error を出すので、その式には段数検査を重ねない（binding 生テキストで見る
+          // ── parsed.path は `@state` を落としたあとの値なので、そこでは判別できない）
+          if (insideFor && !pathTrimmed.startsWith('.') && !binding.includes('@')) {
+            const indexMatch = /^\$(\d+)$/.exec(pathTrimmed);
+            const needed = indexMatch !== null
+              ? Number(indexMatch[1])
+              : (pathTrimmed.includes('*') ? countWildcardSegments(pathTrimmed) : 0);
+            if (needed > 0) {
+              const available = getAvailableWildcardRank(html, attr.valueStart, attrName);
+              if (available > 0 && needed > available) {
+                const pathOffset = binding.indexOf(parsed.path);
+                const pathStart = bindingStart + pathOffset;
+                diagnostics.push({
+                  code: WcsDiagnosticCode.WildcardRank,
+                  start: pathStart,
+                  end: pathStart + pathTrimmed.length,
+                  message: msgs.wildcardRank(`"${pathTrimmed}"`, needed, available),
+                  severity: 'warning',
+                });
+              }
+            }
           }
 
           // UI で解決済みパス（数値セグメントを含む）を使用
@@ -300,12 +366,21 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
             if (typeReq && resultType !== typeReq.expected) {
               const pathOffset = binding.indexOf(parsed.path);
               const pathStart = bindingStart + pathOffset;
+              // `for:` に対して stateSchema が非配列と**確定**している（schema 由来の候補・
+              // フィルタ無し）場合だけ、規範 §6「definite type mismatch → error」の code で
+              // 報告する。schema 無し / フィルタ経由の型は従来の期待違反のまま。
+              const schemaDefinite = typeReq.expected === 'array'
+                && parsed.filters.length === 0
+                && applicationSchema !== undefined
+                && scopedPaths.some(p => p.path === pathTrimmed && p.fromSchema === true);
               diagnostics.push({
-                code: WcsDiagnosticCode.BindingTypeExpectation,
+                code: schemaDefinite ? WcsDiagnosticCode.PathTypeMismatch : WcsDiagnosticCode.BindingTypeExpectation,
                 start: pathStart,
                 end: pathStart + pathTrimmed.length,
-                message: msgs.typeExpectation(typeReq.label, typeReq.expected, resultType),
-                severity: typeReq.severity,
+                message: schemaDefinite
+                  ? msgs.pathTypeMismatch(pathTrimmed, typeReq.label, typeReq.expected, resultType)
+                  : msgs.typeExpectation(typeReq.label, typeReq.expected, resultType),
+                severity: schemaDefinite ? 'error' : typeReq.severity,
               });
             }
           }
@@ -323,7 +398,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
 // Internal helpers
 // ============================================================
 
-interface BindAttrLocation {
+export interface BindAttrLocation {
   value: string;
   valueStart: number;
 }
@@ -338,7 +413,7 @@ interface ParsedFilter {
 export interface ParsedBinding {
   property: string;
   path: string | null;
-  targetState: string;
+
   filters: ParsedFilter[];
   /** prop 側の input フィルタ（`value|number: path` — 書き戻し方向に適用） */
   inputFilters: ParsedFilter[];
@@ -347,7 +422,12 @@ export interface ParsedBinding {
 /**
  * HTML から全てのバインド属性を検出する。
  */
-function findAllBindAttributes(html: string, attrName: string): BindAttrLocation[] {
+/**
+ * HTML 中の全バインド属性を値の開始オフセット付きで検出する。
+ * （core/index/referenceIndex が同一走査を共有するため export — 走査が
+ * 二重実装になると診断とインデックスで属性の解釈が割れる。）
+ */
+export function findAllBindAttributes(html: string, attrName: string): BindAttrLocation[] {
   const attrs: BindAttrLocation[] = [];
   const escaped = attrName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const regex = new RegExp(`${escaped}\\s*=\\s*(["'])`, 'gi');
@@ -401,7 +481,7 @@ export function parseBindingExpression(expr: string): ParsedBinding {
 
   if (colonIndex === -1) {
     // else ディレクティブなど（パスなし）
-    return { property: expr.trim(), path: null, targetState: 'default', filters: [], inputFilters: [] };
+    return { property: expr.trim(), path: null, filters: [], inputFilters: [] };
   }
 
   // prop 側の input フィルタを分離（`value|number: path` — parsePropPart.ts と対応）
@@ -417,15 +497,15 @@ export function parseBindingExpression(expr: string): ParsedBinding {
   const pathSegment = segments[0] || '';
   const filterSegments = segments.slice(1);
 
-  // @state 部分を分離
+  // '@' から後ろは v2 の parse error（namedStateValidator が error で報告する）—
+  // 寛容パースはパス部分だけを対象にする
   const atIndex = pathSegment.indexOf('@');
   const path = atIndex !== -1 ? pathSegment.slice(0, atIndex) : pathSegment;
-  const targetState = atIndex !== -1 ? pathSegment.slice(atIndex + 1).trim() || 'default' : 'default';
 
   // フィルタ名・引数・オフセットを抽出
   const filters = parseFilterSegments(expr, filterSegments, colonIndex + 1 + pathSegment.length + 1);
 
-  return { property, path: path.trim() || null, targetState, filters, inputFilters };
+  return { property, path: path.trim() || null, filters, inputFilters };
 }
 
 /**
@@ -578,6 +658,48 @@ function validatePathExistence(
 
   if (!scopedPathSet.has(checkPath)) {
     return msgs.pathMissing(displayPath);
+  }
+  return null;
+}
+
+/** 存在判定の結果（code / severity 込み）。null = 問題なし。 */
+interface PathVerdict {
+  code: WcsDiagnosticCodeValue;
+  message: string;
+  severity: 'error' | 'warning';
+}
+
+function toMissingVerdict(message: string | null): PathVerdict | null {
+  return message ? { code: WcsDiagnosticCode.BindingPathMissing, message, severity: 'warning' } : null;
+}
+
+/**
+ * stateSchema が宣言された state の存在判定（docs/app-testing-and-typescript-impl-plan.md D6）。
+ *
+ * - `$` 名前空間（ループ添字 / command / stream）は schema に載らないので従来規則のまま。
+ * - script / JSON / schema 由来の候補集合に当たれば存在（メソッド・getter・`$listKeys` 派生など
+ *   schema に載らない宣言を先に拾う）。
+ * - 残りは `resolveSchemaPath` の三値: `nonexistent`（object と確定しているのに member が無い）
+ *   だけを `wcs/path-nonexistent`（error）にし、`unknown`（素の `{}` の下・型未確定）と
+ *   `ref-error`（manifest 側の診断が担う）は沈黙する。候補集合だけで判定すると unknown が
+ *   「候補に無い = 不在」に化けて偽 error になる。
+ */
+function validateSchemaPathExistence(
+  checkPath: string,
+  displayPath: string,
+  scopedPaths: PathCandidate[],
+  scopedPathSet: Set<string>,
+  commandNames: Set<string>,
+  schema: JsonSchemaNode,
+  msgs: WcsMessageCatalog,
+): PathVerdict | null {
+  if (checkPath.startsWith('$')) {
+    return toMissingVerdict(validatePathExistence(checkPath, displayPath, scopedPaths, scopedPathSet, commandNames, msgs));
+  }
+  if (scopedPathSet.has(checkPath)) return null;
+  const resolution = resolveSchemaPath(schema, schema.$defs ?? {}, checkPath.split('.'));
+  if (resolution.kind === 'nonexistent') {
+    return { code: WcsDiagnosticCode.PathNonexistent, message: msgs.pathNonexistent(displayPath), severity: 'error' };
   }
   return null;
 }

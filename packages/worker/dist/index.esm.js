@@ -801,17 +801,22 @@ class WcsWorker extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.worker)) {
-        customElements.define(config.tagNames.worker, WcsWorker);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.worker)) {
+        registry.define(config.tagNames.worker, WcsWorker);
     }
 }
 
-function bootstrapWorker(userConfig) {
+function bootstrapWorker(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { WCS_WORKER_ERROR_CODE, WcsWorker, WorkerCore, bootstrapWorker, getConfig };

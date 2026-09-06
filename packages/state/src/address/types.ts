@@ -34,7 +34,6 @@ export interface IStateAddress {
 }
 
 export interface IAbsolutePathInfo {
-  readonly stateName: string;
   readonly stateElement: IStateElement;
   readonly pathInfo: IPathInfo;
   readonly parentAbsolutePathInfo: IAbsolutePathInfo | null;

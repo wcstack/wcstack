@@ -512,17 +512,22 @@ class WcsAmbientLightSensor extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.ambientLightSensor)) {
-        customElements.define(config.tagNames.ambientLightSensor, WcsAmbientLightSensor);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.ambientLightSensor)) {
+        registry.define(config.tagNames.ambientLightSensor, WcsAmbientLightSensor);
     }
 }
 
-function bootstrapAmbientLightSensor(userConfig) {
+function bootstrapAmbientLightSensor(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { AmbientLightSensorCore, WCS_AMBIENT_LIGHT_SENSOR_ERROR_CODE, WcsAmbientLightSensor, bootstrapAmbientLightSensor, getConfig };

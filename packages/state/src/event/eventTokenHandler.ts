@@ -24,11 +24,13 @@
  * 解決できないため。onclick / two-way ハンドラと同じく fire-time 解決に揃えている。
  */
 
+import { EVENT_TOKEN_NAMESPACE, MODIFIER_PREVENT, MODIFIER_STOP } from "../define";
 import { getLoopContextByNode } from "../list/loopContextByNode";
 import { setLoopContextSymbol } from "../proxy/symbols";
 import { getScopedIndexes } from "../list/wildcardLevel";
+import { didYouMean, LINT_HINT } from "../errorGuidance";
 import { raiseError } from "../raiseError";
-import { getStateElementByName } from "../stateElementByName";
+import { getStateElement } from "../stateElementByName";
 import { getCustomElement } from "../getCustomElement";
 import { getCustomElementRegistry } from "../platform/customElementRegistry";
 import { readBindableDeclaration, ReadBindableResult } from "../protocol/wcBindableReader";
@@ -53,14 +55,14 @@ function getWcBindable(element: Element): ReadBindableResult | null {
 }
 
 export function attachEventTokenHandler(binding: IBindingInfo): boolean {
-  if (binding.propSegments[0] !== "eventToken") {
+  if (binding.propSegments[0] !== EVENT_TOKEN_NAMESPACE) {
     return false;
   }
   const element = binding.node as Element;
 
   // カスタム要素が未定義なら定義後に再試行（wcBindable が必要なため）。
   const customTagName = getCustomElement(element);
-  const registry = getCustomElementRegistry();
+  const registry = getCustomElementRegistry(element);
   if (customTagName !== null && registry?.get(customTagName) === undefined) {
     if (registry === null) {
       raiseError(`CustomElementRegistry is unavailable for <${customTagName}>.`);
@@ -84,25 +86,25 @@ export function attachEventTokenHandler(binding: IBindingInfo): boolean {
   }
   const propDesc = bindable.knownProperties.get(propertyName);
   if (typeof propDesc === "undefined") {
-    raiseError(`Property "${propertyName}" is not declared in wcBindable.properties of <${element.tagName.toLowerCase()}>.`);
+    raiseError(`Property "${propertyName}" is not declared in wcBindable.properties of <${element.tagName.toLowerCase()}>.${didYouMean(propertyName, bindable.knownProperties.keys())}`);
   }
   const eventName = propDesc.event;
 
   const tokenName = binding.statePathName;
-  const stateName = binding.stateName;
   const modifiers = binding.propModifiers;
   const handler = (event: Event): void => {
-    if (modifiers.includes("prevent")) event.preventDefault();
-    if (modifiers.includes("stop")) event.stopPropagation();
+    if (modifiers.includes(MODIFIER_PREVENT)) event.preventDefault();
+    if (modifiers.includes(MODIFIER_STOP)) event.stopPropagation();
 
     // state は発火時の live root から解決する（attach 時は detached の可能性があるため）。
     const rootNode = element.getRootNode() as Node;
-    const stateElement = getStateElementByName(rootNode, stateName);
+    const stateElement = getStateElement(rootNode);
     if (stateElement === null) {
-      raiseError(`State element with name "${stateName}" not found for eventToken handler.`);
+      raiseError(`No state tree found on this root for eventToken handler.`);
     }
     if (!stateElement.eventTokenNames.has(tokenName)) {
-      raiseError(`eventToken "${tokenName}" is not declared in $eventTokens of state "${stateName}".`);
+      // lint も同じケースを wcs/token-undeclared で検出する（三面同語彙）。
+      raiseError(`[wcs/token-undeclared] eventToken "${tokenName}" is not declared in $eventTokens.${didYouMean(tokenName, stateElement.eventTokenNames)}${LINT_HINT}`);
     }
     const loopContext = getLoopContextByNode(element);
     stateElement.createStateAsync("writable", async (state) => {
@@ -114,7 +116,7 @@ export function attachEventTokenHandler(binding: IBindingInfo): boolean {
       });
       // この経路はハンドラの完了を待たない（emit の戻り値はここでしか見えない）。
       // async な $on ハンドラの reject を unhandled にせず報告へ落とす。
-      captureHandlerRejection(results, `$on."${tokenName}" of state "${stateName}"`);
+      captureHandlerRejection(results, `$on."${tokenName}"`);
     });
   };
 
@@ -124,7 +126,7 @@ export function attachEventTokenHandler(binding: IBindingInfo): boolean {
 }
 
 export function detachEventTokenHandler(binding: IBindingInfo): boolean {
-  if (binding.propSegments[0] !== "eventToken") {
+  if (binding.propSegments[0] !== EVENT_TOKEN_NAMESPACE) {
     return false;
   }
   const listener = listenerByBinding.get(binding);

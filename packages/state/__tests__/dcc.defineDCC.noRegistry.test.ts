@@ -1,12 +1,13 @@
 /**
- * `_ensureShadow` の upgrade は registry が引けない環境（browser globals が無い等）でも
- * 落ちてはならない。defineDCC 自身は global の customElements を直接使うため、
- * adapter だけを差し替えれば upgrade 経路だけを無効化できる。
+ * `_ensureShadow` の upgrade は registry が引けない場合でも落ちてはならない。
+ * 定義先（ホスト由来）は引けるが生成インスタンスの shadow が null レジストリ、
+ * という状況を作って upgrade 経路だけを無効化する。
  */
 import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('../src/platform/customElementRegistry', () => ({
-  getCustomElementRegistry: vi.fn(() => null),
+  getCustomElementRegistry: vi.fn((owner: unknown) =>
+    owner instanceof ShadowRoot ? null : customElements),
   upgradeCustomElement: vi.fn(),
 }));
 
@@ -30,5 +31,15 @@ describe('dcc/defineDCC (registry が引けない環境)', () => {
     expect(upgradeCustomElement).not.toHaveBeenCalled();
 
     instance.remove();
+  });
+
+  it('定義先レジストリが引けない場合は落ちること', () => {
+    vi.mocked(getCustomElementRegistry).mockReturnValueOnce(null as any);
+    const host = document.createElement('dcc-no-definition-registry');
+    const shadow = host.attachShadow({ mode: 'open' });
+
+    expect(() => defineDCC(host, shadow, { count: 0 })).toThrow(
+      /CustomElementRegistry is unavailable/
+    );
   });
 });

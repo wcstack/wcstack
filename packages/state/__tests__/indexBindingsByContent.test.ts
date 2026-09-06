@@ -23,7 +23,6 @@ function createBindingInfo(statePathName: string): IBindingInfo {
     propModifiers: [],
     statePathName,
     statePathInfo: getPathInfo(statePathName),
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     node,

@@ -19,16 +19,19 @@
  */
 
 import { getAbsolutePathInfo } from "../../address/AbsolutePathInfo";
+import { isPathUnderReservedVolume } from "../../webComponent/volumeShared";
 import { createAbsoluteStateAddress } from "../../address/AbsoluteStateAddress";
 import { IStateAddress } from "../../address/types";
 import { getCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
 import { getCommandNamespace } from "../../command/commandNamespace";
 import { IStateElement } from "../../components/types";
 import { STATE_COMMAND_NAMESPACE_NAME, STATE_STREAM_ERROR_NAMESPACE_NAME, STATE_STREAM_STATUS_NAMESPACE_NAME, WILDCARD } from "../../define";
+import { missingRootPathMessage, wildcardScopeMessage } from "../../pathDiagnostics";
 import { raiseError } from "../../raiseError";
 import { collectStreamDependency } from "../../stream/argsTrace";
 import { getStreamErrorNamespace, getStreamStatusNamespace } from "../../stream/streamNamespace";
-import { popCrossBoundaryAddress, pushCrossBoundaryAddress } from "../../webComponent/crossBoundaryAddress";
+import { getMountRecordByPath } from "../../webComponent/mount";
+import { createOverlayValue } from "../../webComponent/overlay";
 import { IStateHandler } from "../types";
 import { checkDependency } from "./checkDependency";
 import { isCacheable } from "./isCacheable";
@@ -77,6 +80,16 @@ function _getByAddress(
   if (firstSegment === STATE_STREAM_ERROR_NAMESPACE_NAME) {
     return walkNamespace(getStreamErrorNamespace(stateElement), address.pathInfo.segments);
   }
+  // マウントのオーバーレイ dispatch（Phase 2・D20）。掛かるのは「マーカーで終わる
+  // パス」だけで、その下（私有キー・getter・メソッド）の読み書きは通常の親ウォークが
+  // 返された proxy への素の Reflect.get / Reflect.set として続く（webComponent/overlay.ts）。
+  // マウントの無い state は boolean 判定 1 個で抜ける（D18）
+  if (stateElement.hasMounts === true && address.pathInfo.lastSegment.charCodeAt(0) === 35 /* '#' */) {
+    const mountRecord = getMountRecordByPath(stateElement, address.pathInfo.path);
+    if (mountRecord !== null) {
+      return createOverlayValue(mountRecord, address, receiver, handler);
+    }
+  }
   if (address.pathInfo.path in target) {
     // getterの中で参照の可能性があるので、addressをプッシュする
     if (stateElement.getterPaths.has(address.pathInfo.path)) {
@@ -86,20 +99,23 @@ function _getByAddress(
       } finally {
         handler.popAddress();
       }
-    } else if (stateElement.hasMappedComponentState === true) {
-      // target は innerState proxy。get トラップにはパス文字列しか渡らないので、
-      // 解決済みの listIndex を動的スコープで越境させる（§1.8）
-      pushCrossBoundaryAddress(stateElement, address);
-      try {
-        return Reflect.get(target, address.pathInfo.path);
-      } finally {
-        popCrossBoundaryAddress();
-      }
+
     } else {
       return Reflect.get(target, address.pathInfo.path);
     }
   } else {
-    const parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
+    // 親アドレスが無い ＝ 単一セグメントのパスが state に存在しない。ここは元から
+    // throw していたが、文面が内部実装の言葉だったので打ち間違いだと分からなかった。
+    // 深いパスの console.warn（pathDiagnostics.checkDeclaredPath）と語彙を揃える。
+    // 予約済みのボリュームスロット（D22）: ロード前の読みは undefined が正で、
+    // 深いパスの親歩きがここに落ちても騒がない
+    if (address.parentAddress === null
+      && isPathUnderReservedVolume(safeVolumeRootNode(stateElement), address.pathInfo.path)) {
+      return undefined;
+    }
+    const parentAddress = address.parentAddress ?? raiseError(
+      missingRootPathMessage(address.pathInfo.path, target, stateElement.getterPaths),
+    );
     const parentValue = getByAddress(target, parentAddress, receiver, handler);
     // 親が居ないパスの読みは undefined（＝「state に意見が無い」）。`Reflect.get` に
     // そのまま渡すと生の `TypeError: Reflect.get called on non-object` になり、
@@ -117,7 +133,17 @@ function _getByAddress(
     }
     const lastSegment = address.pathInfo.segments[address.pathInfo.segments.length - 1];
     if (lastSegment === WILDCARD) {
-      const index = address.listIndex?.index ?? raiseError(`address.listIndex?.index is undefined path: ${address.pathInfo.path}`);
+      // listIndex が無いまま末尾ワイルドカードに到達 ＝ そのパスの階数を満たす
+      // ループ文脈が無い（`matrix.*.*` を 1 段の `for` の中で読む等）。元の文面は
+      // 内部の言葉（address.listIndex?.index is undefined）で、何段必要なのかが
+      // 書かれていなかった（pathDiagnostics.ts）。
+      const index = address.listIndex?.index ?? raiseError(
+        wildcardScopeMessage(
+          `path "${address.pathInfo.path}"`,
+          address.pathInfo.wildcardCount,
+          address.listIndex?.length ?? 0,
+        ),
+      );
       return Reflect.get(parentValue, index);
     } else {
       return Reflect.get(parentValue, lastSegment);
@@ -162,4 +188,10 @@ export function getByAddress(
   } else {
     return _getByAddress(target, address, receiver, handler, stateElement);
   }
+}
+
+function safeVolumeRootNode(stateElement: { rootNode?: Node }): Node | null {
+  // 読みは createState セッション内でしか起きず、その間 rootNode は必ず有効
+  //（切断で null 化されるのは disconnectedCallback — セッション外）
+  return stateElement.rootNode ?? null;
 }

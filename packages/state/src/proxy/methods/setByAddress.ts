@@ -27,6 +27,7 @@ import { collectFieldWrites, IKeyedListMerge, mergeKeyedList } from "../../list/
 import { IListIndex } from "../../list/types";
 import { getPathInfo } from "../../address/PathInfo";
 import { createStateAddress } from "../../address/StateAddress";
+import { wildcardScopeMessage } from "../../pathDiagnostics";
 import { raiseError } from "../../raiseError";
 import { getUpdater } from "../../updater/updater";
 import { IStateHandler, IStateProxy } from "../types";
@@ -40,9 +41,31 @@ import { getAbsolutePathInfo } from "../../address/AbsolutePathInfo";
 import { config } from "../../config";
 import { devtoolsSink } from "../../devtools/sink";
 import { beginPropagationTransaction, getCurrentPropagationContext } from "../../propagation/propagation";
-import { getListParentListIndex } from "../../webComponent/baseListIndex";
-import { popCrossBoundaryAddress, pushCrossBoundaryAddress } from "../../webComponent/crossBoundaryAddress";
 import { consumeOccurrenceWrite } from "../occurrenceWrite";
+import { recordPrevValue } from "../../watch/prevValues";
+import { findGraftedSlotUnder } from "../../webComponent/volumeShared";
+
+/**
+ * `$watch` の `prev` 台帳へ旧値を記録する（docs/state-watch-hook-design.md §4-1）。
+ *
+ * same-value guard が既に読んだ旧値だけを使い、watch のための追加読みはしない。
+ * `$watch` 未宣言時のコストは `watchPaths` の null 判定 1 個に収める（§10）。
+ */
+function recordWatchPrevValue(
+  stateElement: IStateHandler["stateElement"],
+  path: string,
+  absAddress: IAbsoluteStateAddress,
+  oldValue: unknown,
+  hasOldValue: boolean,
+): void {
+  const watchPaths = stateElement.watchPaths;
+  if (watchPaths == null || !hasOldValue) {
+    return;
+  }
+  if (watchPaths.has(path)) {
+    recordPrevValue(absAddress, oldValue);
+  }
+}
 
 // Phase 3: 書き込み時点の因果 context を update record に付与する。
 // binding 経由の書き込みは呼び出し元の dynamic scope から context を引き継ぎ、
@@ -62,7 +85,6 @@ function notifyWrite(
   updater.enqueueAbsoluteAddress(absAddress, propagationContext);
   // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
   walkDependency(
-    handler.stateName,
     handler.stateElement,
     address,
     handler.stateElement.staticDependency,
@@ -83,6 +105,41 @@ function notifyWrite(
     // $postUpdate の手動リフレッシュは従来通り全行展開のまま）
     { listExpansion: "diff", keyedMergePath }
   )
+}
+
+/**
+ * 書き込み完了後のキャッシュ整合（Issue #234）。
+ *
+ * ワイルドカードのデータパス（リスト行）は代入値がそのまま格納値なので、
+ * 代入値を dirty:false で載せて次回の読みを省く。
+ *
+ * アクセサペア（getterPaths に載るパス）は getter が正本であり、setter は
+ * 命令的な代入に過ぎない。代入値を getter の評価結果として固定すると
+ * - setter が正規化・分配した結果と読みが食い違う
+ * - getter が一度も評価されず動的依存が張られない → 依存先を書いても
+ *   walkDependency がこのキャッシュを dirty にできず、永続的に stale になる
+ *   （プリミティブ代入は同値ガードの旧値読みで偶然 getter が走るが、
+ *   オブジェクト代入は同値ガードを素通りするため救済がない）
+ * ため、キャッシュを dirty にして次回の読みで getter を再評価させる。
+ */
+function commitWriteCache(
+  stateElement: IStateHandler["stateElement"],
+  path: string,
+  absAddress: IAbsoluteStateAddress,
+  value: unknown,
+  cacheable: boolean,
+): void {
+  if (!cacheable) {
+    return;
+  }
+  if (stateElement.getterPaths.has(path)) {
+    dirtyCacheEntryByAbsoluteStateAddress(absAddress);
+    return;
+  }
+  setCacheEntryByAbsoluteStateAddress(absAddress, {
+    value: value,
+    dirty: false
+  });
 }
 
 function _setByAddress(
@@ -110,15 +167,7 @@ function _setByAddress(
           handler.endUntrack();
           handler.popAddress();
         }
-      } else if (handler.stateElement.hasMappedComponentState === true) {
-        // target は innerState proxy。set トラップにはパス文字列しか渡らないので、
-        // 解決済みの listIndex を動的スコープで越境させる（§1.8）
-        pushCrossBoundaryAddress(handler.stateElement, address);
-        try {
-          return Reflect.set(target, address.pathInfo.path, value);
-        } finally {
-          popCrossBoundaryAddress();
-        }
+
       } else {
         return Reflect.set(target, address.pathInfo.path, value);
       }
@@ -130,7 +179,14 @@ function _setByAddress(
       const parentValue = getByAddress(target, parentAddress, receiver, handler);
       const lastSegment = address.pathInfo.segments[address.pathInfo.segments.length - 1];
       if (lastSegment === WILDCARD) {
-        const index = address.listIndex?.index ?? raiseError(`address.listIndex?.index is undefined path: ${address.pathInfo.path}`);
+        // 読み取り側（getByAddress）と同じ取り違え。書き込みでも何段必要かを言う。
+        const index = address.listIndex?.index ?? raiseError(
+          wildcardScopeMessage(
+            `path "${address.pathInfo.path}"`,
+            address.pathInfo.wildcardCount,
+            address.listIndex?.length ?? 0,
+          ),
+        );
         return Reflect.set(parentValue, index, value);
       } else {
         return Reflect.set(parentValue, lastSegment, value);
@@ -219,7 +275,7 @@ function setKeyedListByAddress(
   // 格納より前に引くのは、格納時の walkDependency（listExpansion: "diff"）が
   // 先にハイブリッド配列の台帳を作ってしまうと、後から上書きした台帳との間で
   // 同じ分裂が起きるため。先に確定させておけば以降は全経路がこれに合流する。
-  const listParentListIndex = getListParentListIndex(handler.stateElement, address.listIndex);
+  const listParentListIndex = address.listIndex;
   if (getListIndexesByList(oldList) === null) {
     // 一度も描画されていないリストは台帳自体が無い。先に生やしておかないと
     // isSameList 経路が空の oldIndexes をそのまま新台帳にしてしまう。
@@ -283,6 +339,20 @@ function setByAddressCore(
 ): any {
   const stateElement = handler.stateElement;
   const path = address.pathInfo.path;
+  // D22 後段: 接ぎ木済みボリュームのマウントポイントを**含む親**の丸ごと書きは throw
+  // （設計書 §4-2）。黙って通すと接ぎ木データが消え、quoted-path アクセサだけが
+  // 宙に浮いて原因の見えない undefined / TypeError になる。スロット自身への書き込みは
+  // 通常のデータ差し替えとして通す。ボリュームの無い state は boolean 判定 1 個で抜ける（D18）
+  if (stateElement.hasGraftedVolumes === true) {
+    const shadowedSlot = findGraftedSlotUnder(stateElement, path);
+    if (shadowedSlot !== null) {
+      raiseError(
+        `Cannot replace "${path}" wholesale: a volume is mounted at "${shadowedSlot}" under it (D22). ` +
+        `Replacing an ancestor of a mount point silently discards the grafted data while its accessors remain. ` +
+        `Write "${shadowedSlot}" itself, or individual fields inside "${path}", instead.`,
+      );
+    }
+  }
   // occurrence（wc-bindable の `semantics: "event"`）由来の書き込みは、同値でも
   // 「もう一度起きた」ことを落としてはならないため same-value guard を 1 回だけ飛ばす。
   // トークンはここで消費されるので、この write の内側で走る他の書き込みには波及しない。
@@ -326,19 +396,21 @@ function setByAddressCore(
           hasOldValue: devHasOldValue,
         });
       }
+      recordWatchPrevValue(stateElement, path, absAddress, devOldValue, devHasOldValue);
       try {
         if (key === undefined) {
-          raiseError(`address.listIndex?.index is undefined path: ${path}`);
+          // fast path 版の同じ取り違え（末尾ワイルドカードに listIndex が無い）。
+          // 通常経路と同じ語彙で「何段必要か」を言う（pathDiagnostics.ts）。
+          raiseError(wildcardScopeMessage(
+            `path "${path}"`,
+            address.pathInfo.wildcardCount,
+            address.listIndex?.length ?? 0,
+          ));
         }
         return Reflect.set(parentValue, key, value);
       } finally {
         notifyWrite(address, absAddress, receiver, handler, keyedMergePath);
-        if (cacheable) {
-          setCacheEntryByAbsoluteStateAddress(absAddress, {
-            value: value,
-            dirty: false
-          });
-        }
+        commitWriteCache(stateElement, path, absAddress, value, cacheable);
         // DCC bindable イベントディスパッチ（完全一致 ＋ サブパス → 先頭セグメント、§2.1）
         dispatchBindableEvent(stateElement, address.pathInfo, { value });
       }
@@ -376,6 +448,7 @@ function setByAddressCore(
       hasOldValue: devHasOldValue,
     });
   }
+  recordWatchPrevValue(stateElement, path, absAddress, devOldValue, devHasOldValue);
   try {
     if (isSwappable) {
       return _setByAddressWithSwap(target, address, absAddress, value, receiver, handler, keyedMergePath);
@@ -383,12 +456,7 @@ function setByAddressCore(
       return _setByAddress(target, address, absAddress, value, receiver, handler, keyedMergePath);
     }
   } finally {
-    if (cacheable) {
-      setCacheEntryByAbsoluteStateAddress(absAddress, {
-        value: value,
-        dirty: false
-      });
-    }
+    commitWriteCache(stateElement, path, absAddress, value, cacheable);
     // DCC bindable イベントディスパッチ（完全一致 ＋ サブパス → 先頭セグメント、§2.1）
     dispatchBindableEvent(stateElement, address.pathInfo, { value });
   }

@@ -558,17 +558,22 @@ class WcsScreenOrientation extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.screenOrientation)) {
-        customElements.define(config.tagNames.screenOrientation, WcsScreenOrientation);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.screenOrientation)) {
+        registry.define(config.tagNames.screenOrientation, WcsScreenOrientation);
     }
 }
 
-function bootstrapScreenOrientation(userConfig) {
+function bootstrapScreenOrientation(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { ScreenOrientationCore, WCS_SCREEN_ORIENTATION_ERROR_CODE, WcsScreenOrientation, bootstrapScreenOrientation, getConfig };

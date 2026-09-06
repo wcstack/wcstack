@@ -139,7 +139,7 @@ interface WcsCredentialCoreValues {
  */
 type WcsCredentialValues = WcsCredentialCoreValues;
 
-declare function bootstrapCredential(userConfig?: IWritableConfig): void;
+declare function bootstrapCredential(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -283,6 +283,12 @@ declare const WCS_CREDENTIAL_ERROR_CODE: {
     /** get()/store() の真のプラットフォーム失敗(NotAllowedError=cancelled は除く)。 */
     readonly CredentialFailed: "credential-failed";
 };
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-credential": WcsCredential;
+    }
+}
 
 export { CredentialCore, WCS_CREDENTIAL_ERROR_CODE, WcsCredential, bootstrapCredential, getConfig };
 export type { CredentialGetOptions, IWritableConfig, IWritableTagNames, StorableCredential, WcsCredentialCoreValues, WcsCredentialValues, WcsIoErrorInfo, WcsIoErrorPhase };

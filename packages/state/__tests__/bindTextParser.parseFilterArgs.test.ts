@@ -30,7 +30,24 @@ describe('parseFilterArgs', () => {
     });
 
     it('ダブルクォート内のスペースを保持できること', () => {
-      expect(parseFilterArgs('"  spaced  "')).toEqual(['spaced']);
+      expect(parseFilterArgs('"  spaced  "')).toEqual(['  spaced  ']);
+    });
+
+    // クォートは「ここは literal」の宣言。中身をトリムしていたため
+    // `pad(5, ' ')` が padStart(5, '') ＝ 無変化に化けていた
+    it('空白だけのクォート引数が空文字に潰れないこと', () => {
+      expect(parseFilterArgs("5, ' '")).toEqual(['5', ' ']);
+      expect(parseFilterArgs("' / '")).toEqual([' / ']);
+    });
+
+    it('クォートの外側の空白はトリムすること', () => {
+      expect(parseFilterArgs('  " x "  ')).toEqual([' x ']);
+      expect(parseFilterArgs('  a  ,  " b "  ')).toEqual(['a', ' b ']);
+    });
+
+    it('クォートと素のテキストが混在しても内側だけ残ること', () => {
+      expect(parseFilterArgs('a" b "c')).toEqual(['a b c']);
+      expect(parseFilterArgs('  a" b "c  ')).toEqual(['a b c']);
     });
 
     it('ダブルクォートと通常引数を混在できること', () => {

@@ -14,7 +14,7 @@
   <script type="module" src="/packages/state/dist/auto.min.js"></script>
   <script type="module">
     class MyEditor extends HTMLElement {
-      state = { name: "" };
+      state = {}; // v2 R1（D19）
       constructor() {
         super();
         this.attachShadow({ mode: "open" });

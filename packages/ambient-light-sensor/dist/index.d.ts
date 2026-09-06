@@ -101,7 +101,7 @@ interface WcsAmbientLightSensorCoreValues extends WcsAmbientLightSensorReading {
  */
 type WcsAmbientLightSensorValues = WcsAmbientLightSensorCoreValues;
 
-declare function bootstrapAmbientLightSensor(userConfig?: IWritableConfig): void;
+declare function bootstrapAmbientLightSensor(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -276,6 +276,12 @@ declare const WCS_AMBIENT_LIGHT_SENSOR_ERROR_CODE: {
     /** その他の SensorErrorEvent / 想定外の失敗。 */
     readonly SensorError: "sensor-error";
 };
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-ambient-light-sensor": WcsAmbientLightSensor;
+    }
+}
 
 export { AmbientLightSensorCore, WCS_AMBIENT_LIGHT_SENSOR_ERROR_CODE, WcsAmbientLightSensor, bootstrapAmbientLightSensor, getConfig };
 export type { IWritableConfig, IWritableTagNames, WcsAmbientLightSensorCoreValues, WcsAmbientLightSensorErrorDetail, WcsAmbientLightSensorReading, WcsAmbientLightSensorValues, WcsIoErrorInfo, WcsIoErrorPhase };

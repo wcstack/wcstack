@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: state mount — a volume (mount="i18n") grafted onto the root tree</title>
+  <!-- Target syntax for the v2 mount design (docs/state-mount-design.md §3-1 / §4-2, plan P0-5).
+
+       `<wcs-state mount="i18n" src>` replaces v1's `name="i18n"` + `@i18n`: the state file
+       is grafted at `i18n` of the root tree, templates read `i18n.t.title`, the volume's
+       own getter `t` reads `this.lang` relative to the mount (`i18n.lang`), and a root
+       getter can read `this["i18n.t.items"]` with a dependency edge — the cross-state read
+       that v1 could not express. The volume element is placed BEFORE the root on purpose:
+       load order must not matter (V5).
+
+       Acceptance ids: V1 V2 V3 V5 V7. -->
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+</head>
+<body>
+  <wcs-state mount="i18n" src="/e2e/fixtures/mount-volume-i18n.js"></wcs-state>
+
+  <wcs-state>
+    <script type="module">
+export default {
+  count: 1,
+  // V3: a root getter reading into the volume; must re-evaluate when i18n.lang changes.
+  get label() { return `${this.count} ${this["i18n.t.items"]}`; },
+  inc() { this.count++; },
+  toJa() { this["i18n.lang"] = "ja"; },
+};
+    </script>
+  </wcs-state>
+
+  <h1 id="title" data-wcs="textContent: i18n.t.title"></h1>
+  <p id="label" data-wcs="textContent: label"></p>
+  <p id="lang" data-wcs="textContent: i18n.lang"></p>
+
+  <button id="inc" data-wcs="onclick: inc">+1</button>
+  <button id="to-ja" data-wcs="onclick: toJa">日本語</button>
+</body>
+</html>

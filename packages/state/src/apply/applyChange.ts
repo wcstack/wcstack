@@ -1,11 +1,12 @@
 import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding.js";
+import { ATTR_NAMESPACE, CLASS_NAMESPACE, COMMAND_NAMESPACE, STYLE_NAMESPACE } from "../define.js";
 import { getBindingSession } from "../bindings/BindingSession.js";
 import { getCustomElement } from "../getCustomElement.js";
 import { getCustomElementRegistry } from "../platform/customElementRegistry.js";
 import { raiseError } from "../raiseError.js";
-import { getStateElementByName } from "../stateElementByName.js";
+import { getStateElement } from "../stateElementByName.js";
 import { IBindingInfo } from "../types.js";
-import { isWebComponentComplete } from "../webComponent/completeWebComponent.js";
+import { isWebComponentComplete, isWebComponentStatePropDeclared } from "../webComponent/completeWebComponent.js";
 import { applyChangeToAttribute } from "./applyChangeToAttribute.js";
 import { applyChangeToCheckbox } from "./applyChangeToCheckbox.js";
 import { applyChangeToClass } from "./applyChangeToClass.js";
@@ -23,12 +24,15 @@ import { getRootNodeByFragment } from "./rootNodeByFragment.js";
 import { scheduleDeferredApply } from "./scheduleDeferredApply.js";
 import { ApplyChangeFn, IApplyContext } from "./types.js";
 
-const applyChangeByFirstSegment: { [key: string]: ApplyChangeFn } = {
-  "class": applyChangeToClass,
-  "attr": applyChangeToAttribute,
-  "style": applyChangeToStyle,
-  "command": applyChangeToCommand,
-};
+// キーは define.ts の namespace 語彙定数（manifest.syntax.bindingTypes.propNamespaces と
+// 同一の正本）。集合の一致は __tests__/manifest.test.ts の drift テストが強制するため
+// export する（manifest エントリは DOM 非依存でこのファイルを import できない）。
+export const applyChangeByFirstSegment: { readonly [key: string]: ApplyChangeFn } = Object.freeze({
+  [CLASS_NAMESPACE]: applyChangeToClass,
+  [ATTR_NAMESPACE]: applyChangeToAttribute,
+  [STYLE_NAMESPACE]: applyChangeToStyle,
+  [COMMAND_NAMESPACE]: applyChangeToCommand,
+});
 
 const applyChangeByBindingType: { [key: string]: ApplyChangeFn } = {
   "text": applyChangeToText,
@@ -49,21 +53,41 @@ const deferredSelectBindingByBinding: WeakMap<IBindingInfo, boolean> = new WeakM
 const definedApplyVerifiedByBinding: WeakMap<IBindingInfo, boolean> = new WeakMap();
 
 /**
- * このバインディングを「値を運ばない親→子の再読込通知」（applyChangeToWebComponent）へ
- * 回してよいか。
- *
- * 長さ 1 の propSegments を除くのが要点。`data-wcs="state: user"` のように
- * bind-component の stateProp をそのままプロパティ名に書いた形は、完了台帳のキーが
- * stateProp 名になった以上ゲートを通ってしまうが、applyChangeToWebComponent は
- * 「先頭セグメント＝束ね先の state 要素、残り＝子側のパス」を前提にしており
- * 残余が空だと raiseError する。updater の drain は例外を捕まえないので、
- * 誤設定タグ 1 つが同じバッチの無関係な更新まで巻き添えにしてしまう。
- * ここで弾いておけば従来どおり applyChangeToProperty に落ち、挙動は変わらない
- * （getter だけの公開プロパティへの代入が握り潰される ＝ 無言の no-op）。
+ * 宣言済みマウントの完了前の初期適用は書かない。子が完了すればマウント経由で
+ * ライブに読むので、ここで親の値を書く意味は無い（書くと害がある —
+ * webComponent/completeWebComponent.ts の宣言台帳を参照）。v2 では部分規則
+ *（`state.name: user.name`）にも同じ原則を適用する: 積みの上書きが作者の既定値を
+ * 汚すと、厳格 R1（作者の own data key は私有・D19）の privateSnapshot が親の値で
+ * 汚染される。積みが要るのは**未宣言**（`<wcs-state bind-component>` がまだ来ていない
+ * 非同期定義や、そもそも bind-component の無い素のプロパティパス配線）だけ。
  */
-function isWebComponentCompleteForBinding(binding: IBindingInfo): boolean {
-  return binding.propSegments.length > 1
-    && isWebComponentComplete(binding.replaceNode as Element, binding.propSegments[0]);
+function skipPendingMountWrite(): void {}
+
+/**
+ * カスタム要素へのプロパティバインディングの適用関数を決める。
+ *
+ * - 完了済み（bindWebComponent が公開プロパティを差し替え終えた）→ 値を運ばない
+ *   再読込通知（applyChangeToWebComponent）。1 セグメント（`state: user`）も含む —
+ *   残余が空なら「子の登録済みパス全部を読み直せ」の意味（ルート規則。
+ *   docs/state-mount-design.md §3-2 / impl-plan P1-2）
+ * - 未完了だが `<wcs-state bind-component>` が宣言済み → 今回は
+ *   書かない（skipPendingMountWrite — 部分規則も含む、上記）
+ * - それ以外（未宣言）→ 素のプロパティ書き込み（積み）
+ *
+ * 以前は 1 セグメントを通知チャネルから除いていた（残余が空だと applyChangeToWebComponent
+ * が raiseError し、updater の drain が捕まえないので同じバッチの無関係な更新まで
+ * 巻き添えにした）。残余空がルート規則の意味を持った今、その除外は要らない。
+ */
+function resolveCustomElementApply(binding: IBindingInfo): ApplyChangeFn {
+  const element = binding.replaceNode as Element;
+  const stateProp = binding.propSegments[0];
+  if (isWebComponentComplete(element, stateProp)) {
+    return applyChangeToWebComponent;
+  }
+  if (isWebComponentStatePropDeclared(element, stateProp)) {
+    return skipPendingMountWrite;
+  }
+  return applyChangeToProperty;
 }
 
 function _applyChange(binding: IBindingInfo, context: IApplyContext): void {
@@ -80,11 +104,9 @@ function _applyChange(binding: IBindingInfo, context: IApplyContext): void {
     return;
   }
   if (fnByBinding.has(binding)) {
-    if (isWebComponentCompleteForBinding(binding)) {
-      fn = applyChangeToWebComponent;
+    fn = resolveCustomElementApply(binding);
+    if (fn === applyChangeToWebComponent) {
       fnByBinding.set(binding, fn); // 確定したのでキャッシュ
-    } else {
-      fn = applyChangeToProperty;
     }
     fn(binding, context, filteredValue);
     return;
@@ -98,11 +120,9 @@ function _applyChange(binding: IBindingInfo, context: IApplyContext): void {
     if (typeof fn === 'undefined') {
       const customTag = getCustomElement(binding.replaceNode);
       if (customTag) {
-        if (isWebComponentCompleteForBinding(binding)) {
-          fn = applyChangeToWebComponent;
+        fn = resolveCustomElementApply(binding);
+        if (fn === applyChangeToWebComponent) {
           fnByBinding.set(binding, fn); // 確定したのでキャッシュ
-        } else {
-          fn = applyChangeToProperty;
         }
       } else {
         fn = applyChangeToProperty;
@@ -153,7 +173,7 @@ export function applyChange(binding: IBindingInfo, context: IApplyContext): void
   if (definedApplyVerifiedByBinding.get(binding) !== true) {
     const customTag = getCustomElement(binding.replaceNode);
     if (customTag) {
-      if (getCustomElementRegistry()?.get(customTag) === undefined) {
+      if (getCustomElementRegistry(binding.replaceNode)?.get(customTag) === undefined) {
         // 未 define のカスタム要素へは今は適用できない（accessor 未確立の要素に
         // 素の own property を書くと upgrade 後に class accessor を隠してしまう）。
         // whenDefined 後に最新 state 値で再適用する（two-way attach / deferred
@@ -166,10 +186,10 @@ export function applyChange(binding: IBindingInfo, context: IApplyContext): void
     definedApplyVerifiedByBinding.set(binding, true);
   }
   // applyChangeFromBindings のグループ化ループが解決済みルートの一致を検証済みの
-  // 場合、stateName さえ一致すれば getRootNode の再解決（native 呼び出し）を省略
-  // できる。activateContent 経由（フラグメント内の新規 content）も、フラグメントは
-  // setRootNodeByFragment で context.rootNode に解決されるため同じ不変条件が成り立つ。
-  if (context.sameRootVerified === true && binding.stateName === context.stateName) {
+  // 場合、getRootNode の再解決（native 呼び出し）を省略できる。activateContent 経由
+  // （フラグメント内の新規 content）も、フラグメントは setRootNodeByFragment で
+  // context.rootNode に解決されるため同じ不変条件が成り立つ。
+  if (context.sameRootVerified === true) {
     _applyChange(binding, context);
     return;
   }
@@ -180,14 +200,13 @@ export function applyChange(binding: IBindingInfo, context: IApplyContext): void
       raiseError(`Root node for fragment not found for binding.`);
     }
   }
-  if (binding.stateName !== context.stateName || rootNode !== context.rootNode) {
-    const stateElement = getStateElementByName(rootNode, binding.stateName);
+  if (rootNode !== context.rootNode) {
+    const stateElement = getStateElement(rootNode);
     if (stateElement === null) {
-      raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+      raiseError(`No state tree found on this root for binding.`);
     }
     stateElement.createState("readonly", (targetState) => {
       const newContext = {
-        stateName: binding.stateName,
         rootNode: rootNode,
         stateElement: stateElement,
         state: targetState,

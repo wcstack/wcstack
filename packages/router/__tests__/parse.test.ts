@@ -41,6 +41,37 @@ describe('parse', () => {
     expect(result.querySelector('div')?.textContent).toBe('Hello World');
   });
 
+  it('ルート内の <template>（state の for/if）の content を破壊しないこと', async () => {
+    // <template> の子は childNodes ではなく .content に居る。汎用の再構築
+    // （innerHTML = "" → appendChild）に通すと content が空になり、state の
+    // 構造テンプレートを黙って破壊していた（SSR の orchestrated e2e が露出させた
+    // 既存バグ — docs/ssr-router-design.md §5）
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+
+    const template = document.createElement('template');
+    template.innerHTML = `
+      <wcs-route path="/">
+        <ul>
+          <template data-wcs="for: items">
+            <li data-wcs="textContent: .name"></li>
+          </template>
+        </ul>
+      </wcs-route>
+    `;
+    (router as any)._template = template;
+
+    await parse(router);
+    const route = router.routeChildNodes[0];
+    const ul = route.childNodeArray.find(
+      (node) => node.nodeType === 1 && (node as Element).tagName === 'UL'
+    ) as Element;
+    const inner = ul.querySelector('template') as HTMLTemplateElement;
+    expect(inner).not.toBeNull();
+    expect(inner.getAttribute('data-wcs')).toBe('for: items');
+    expect(inner.content.querySelector('li')?.getAttribute('data-wcs')).toBe('textContent: .name');
+  });
+
   it('テキストノードをパースできること', async () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);

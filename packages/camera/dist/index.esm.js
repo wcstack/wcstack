@@ -1439,20 +1439,25 @@ class WcsRecorder extends HTMLElement {
     }
 }
 
-function registerComponents() {
-    if (!customElements.get(config.tagNames.camera)) {
-        customElements.define(config.tagNames.camera, WcsCamera);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+function registerComponents(registry = customElements) {
+    if (!registry.get(config.tagNames.camera)) {
+        registry.define(config.tagNames.camera, WcsCamera);
     }
-    if (!customElements.get(config.tagNames.recorder)) {
-        customElements.define(config.tagNames.recorder, WcsRecorder);
+    if (!registry.get(config.tagNames.recorder)) {
+        registry.define(config.tagNames.recorder, WcsRecorder);
     }
 }
 
-function bootstrapCamera(userConfig) {
+function bootstrapCamera(userConfig, registry) {
     if (userConfig) {
         setConfig(userConfig);
     }
-    registerComponents();
+    registerComponents(registry);
 }
 
 export { CameraCore, RecorderCore, WCS_MEDIA_ERROR_CODE, WcsCamera, WcsRecorder, bootstrapCamera, getConfig };

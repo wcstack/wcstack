@@ -71,6 +71,15 @@ function valueMustBeBoolean(fnName) {
 function valueMustBeDate(fnName) {
     raiseError(`filter ${fnName} requires a date value`);
 }
+/**
+ * Throws error when filter requires array value but non-array provided.
+ *
+ * @param fnName - Name of the filter function
+ * @returns Never returns (always throws)
+ */
+function valueMustBeArray(fnName) {
+    raiseError(`filter ${fnName} requires an array value`);
+}
 
 /**
  * builtinFilters.ts
@@ -83,7 +92,7 @@ function valueMustBeDate(fnName) {
  * - Designed for common use as both input and output filters
  *
  * Design points:
- * - Comprehensive coverage of diverse filters: eq, ne, lt, gt, inc, fix, locale, uc, lc, cap, trim, slice, pad, int, float, round, date, time, ymd, falsy, truthy, defaults, boolean, number, string, null, etc.
+ * - Comprehensive coverage of diverse filters: eq, ne, lt, gt, inc, abs, clamp, fix, locale, uc, lc, cap, trim, slice, pad, truncate, join, int, float, round, percent, unit, date, time, ymd, hms, falsy, truthy, defaults, boolean, number, string, null, etc.
  * - Rich type checking and error handling for option values
  * - Centralized management of filter functions with FilterWithOptions type, easy to extend
  * - Dynamic retrieval of filter functions from filter names and options via builtinFilterFn
@@ -317,6 +326,48 @@ const mod = (options) => {
     };
 };
 /**
+ * Absolute value filter - returns the magnitude of a number.
+ *
+ * @param options - Unused
+ * @returns Filter function that returns the absolute value
+ */
+const abs = (_options) => {
+    return (value) => {
+        if (typeof value !== 'number') {
+            valueMustBeNumber('abs');
+        }
+        return Math.abs(value);
+    };
+};
+/**
+ * Clamp filter - constrains a number to the inclusive range [min, max].
+ *
+ * Saturating conversion in the same family as round/floor/ceil, so it stays on
+ * the wire rather than in state. Pairs with `unit` for style bindings:
+ * `style.width: ratio|clamp(0,1)|percent(0)`.
+ *
+ * @param options - Array with minimum as first element and maximum as second (both required)
+ * @returns Filter function that returns the clamped number
+ */
+const clamp = (options) => {
+    const opt1 = options?.[0] ?? optionsRequired('clamp');
+    if (!validateNumberString(opt1)) {
+        optionMustBeNumber('clamp');
+    }
+    const opt2 = options?.[1] ?? optionsRequired('clamp');
+    if (!validateNumberString(opt2)) {
+        optionMustBeNumber('clamp');
+    }
+    const min = Number(opt1);
+    const max = Number(opt2);
+    return (value) => {
+        if (typeof value !== 'number') {
+            valueMustBeNumber('clamp');
+        }
+        return Math.min(Math.max(value, min), max);
+    };
+};
+/**
  * Fixed decimal filter - formats number to fixed decimal places.
  *
  * @param options - Array with decimal places as first element (default: 0)
@@ -337,16 +388,33 @@ const fix = (options) => {
 /**
  * Locale number filter - formats number according to locale.
  *
+ * ロケール依存フィルタ（`locale` / `date` / `time` / `datetime`）は
+ * **明示引数だけを構築時に確定し、既定の `config.locale` は適用のたびに読む**。
+ *
+ * 以前は `options?.[0] ?? config.locale` を返り値の関数の**外**で解決していた。
+ * フィルタ関数はバインド構築時に一度だけ作られるので、これはロケールを
+ * クロージャに焼き込むことを意味する。`config.locale` の確定がバインド構築より
+ * 遅れると、それ以降どう直しても「同じページの中で日付だけ既定ロケール」が
+ * 永続し、しかも `config.locale` は依存グラフに載らないので再描画で回復もしない。
+ * 症状（日付だけ英語）は原因（起動順序）から遠く、追いにくい。
+ *
+ * 適用のたびに読めば、少なくとも**再適用されたバインドは回復する**。ロケールは
+ * 起動時に確定する前提（docs/i18n-design.md D1）なので通常この差は現れず、
+ * これは順序事故から復帰できるようにするための保険である。
+ *
+ * 明示引数（`|date(ja-JP)`）は構築時に固定でよい — バインド式の一部であり、
+ * 実行中に変わらない。
+ *
  * @param options - Array with locale string as first element (default: config.locale)
  * @returns Filter function that returns localized number string
  */
 const locale = (options) => {
-    const opt = options?.[0] ?? config.locale;
+    const explicit = options?.[0];
     return (value) => {
         if (typeof value !== 'number') {
             valueMustBeNumber('locale');
         }
-        return value.toLocaleString(opt);
+        return value.toLocaleString(explicit ?? config.locale);
     };
 };
 /**
@@ -583,18 +651,89 @@ const percent = (options) => {
     };
 };
 /**
+ * Unit filter - appends a CSS unit (or any suffix) to the value.
+ *
+ * A number alone does nothing in CSS, so without this the unit has to be built in
+ * state — which drags presentation into the source of truth, and in the worst case
+ * forces a whole derived array just to carry `"42%"` strings.
+ * `style.height: samples.*.cpu|clamp(0,100)|fix(0)|unit(%)` keeps it on the wire.
+ *
+ * Accepts strings as well as numbers **on purpose**: the useful chains run through
+ * `fix` / `percent`, which already return strings. Rejecting non-numbers here would
+ * break exactly the combination this filter exists for.
+ *
+ * `null` / `undefined` pass through untouched rather than becoming `"undefinedpx"`,
+ * so the binding layer's "undefined skips the write, null clears" semantics survive.
+ *
+ * @param options - Array with the unit/suffix as first element (required)
+ * @returns Filter function that returns the value with the unit appended
+ */
+const unit = (options) => {
+    const opt = options?.[0] ?? optionsRequired('unit');
+    return (value) => {
+        if (value === null || typeof value === 'undefined') {
+            return value;
+        }
+        return String(value) + opt;
+    };
+};
+/**
+ * Join filter - joins array elements into a string.
+ *
+ * The default separator is `", "` rather than `","`: a bare comma is what `String()`
+ * already produces without any filter, so defaulting to it would make `|join` a no-op.
+ *
+ * @param options - Array with separator as first element (default: ', ')
+ * @returns Filter function that returns the joined string
+ */
+const join = (options) => {
+    const opt = options?.[0] ?? ', ';
+    return (value) => {
+        if (!Array.isArray(value)) {
+            valueMustBeArray('join');
+        }
+        return value.join(opt);
+    };
+};
+/**
+ * Truncate filter - shortens a string and appends an ellipsis.
+ *
+ * The length option counts **kept characters**, not the total including the suffix,
+ * matching the existing `slice(0, n)` reading. A string at or below the limit is
+ * returned untouched (no suffix).
+ *
+ * @param options - Array with max kept length as first element and suffix as second (default: '…')
+ * @returns Filter function that returns the truncated string
+ */
+const truncate = (options) => {
+    const opt1 = options?.[0] ?? optionsRequired('truncate');
+    if (!validateNumberString(opt1)) {
+        optionMustBeNumber('truncate');
+    }
+    const maxLength = Number(opt1);
+    const suffix = options?.[1] ?? '…';
+    return (value) => {
+        const v = String(value);
+        if (v.length <= maxLength) {
+            return v;
+        }
+        return v.slice(0, maxLength) + suffix;
+    };
+};
+/**
  * Date filter - formats Date object as localized date string.
  *
  * @param options - Array with locale string as first element (default: config.locale)
  * @returns Filter function that returns date string
  */
 const date = (options) => {
-    const opt = options?.[0] ?? config.locale;
+    // 既定ロケールは適用のたびに読む（`locale` フィルタの注記を参照）
+    const explicit = options?.[0];
     return (value) => {
         if (!(value instanceof Date)) {
             valueMustBeDate('date');
         }
-        return value.toLocaleDateString(opt);
+        return value.toLocaleDateString(explicit ?? config.locale);
     };
 };
 /**
@@ -604,12 +743,13 @@ const date = (options) => {
  * @returns Filter function that returns time string
  */
 const time = (options) => {
-    const opt = options?.[0] ?? config.locale;
+    // 既定ロケールは適用のたびに読む（`locale` フィルタの注記を参照）
+    const explicit = options?.[0];
     return (value) => {
         if (!(value instanceof Date)) {
             valueMustBeDate('time');
         }
-        return value.toLocaleTimeString(opt);
+        return value.toLocaleTimeString(explicit ?? config.locale);
     };
 };
 /**
@@ -619,12 +759,13 @@ const time = (options) => {
  * @returns Filter function that returns datetime string
  */
 const datetime = (options) => {
-    const opt = options?.[0] ?? config.locale;
+    // 既定ロケールは適用のたびに読む（`locale` フィルタの注記を参照）
+    const explicit = options?.[0];
     return (value) => {
         if (!(value instanceof Date)) {
             valueMustBeDate('datetime');
         }
-        return value.toLocaleString(opt);
+        return value.toLocaleString(explicit ?? config.locale);
     };
 };
 /**
@@ -643,6 +784,27 @@ const ymd = (options) => {
         const month = (value.getMonth() + 1).toString().padStart(2, '0');
         const day = value.getDate().toString().padStart(2, '0');
         return `${year}${opt}${month}${opt}${day}`;
+    };
+};
+/**
+ * Hour-Minute-Second filter - formats Date object as HH:MM:SS string.
+ *
+ * The counterpart of `ymd`: a fixed, zero-padded, locale-independent rendering with a
+ * configurable separator, for when `time` (locale-formatted) is not stable enough.
+ *
+ * @param options - Array with separator string as first element (default: ':')
+ * @returns Filter function that returns formatted time string
+ */
+const hms = (options) => {
+    const opt = options?.[0] ?? ':';
+    return (value) => {
+        if (!(value instanceof Date)) {
+            valueMustBeDate('hms');
+        }
+        const hours = value.getHours().toString().padStart(2, '0');
+        const minutes = value.getMinutes().toString().padStart(2, '0');
+        const seconds = value.getSeconds().toString().padStart(2, '0');
+        return `${hours}${opt}${minutes}${opt}${seconds}`;
     };
 };
 /**
@@ -735,6 +897,8 @@ const builtinFilters = {
     "mul": mul,
     "div": div,
     "mod": mod,
+    "abs": abs,
+    "clamp": clamp,
     "fix": fix,
     "locale": locale,
     "uc": uc,
@@ -746,16 +910,20 @@ const builtinFilters = {
     "pad": pad,
     "rep": rep,
     "rev": rev,
+    "truncate": truncate,
+    "join": join,
     "int": int,
     "float": float,
     "round": round,
     "floor": floor,
     "ceil": ceil,
     "percent": percent,
+    "unit": unit,
     "date": date,
     "time": time,
     "datetime": datetime,
     "ymd": ymd,
+    "hms": hms,
     "falsy": falsy,
     "truthy": truthy,
     "defaults": defaults,
@@ -793,6 +961,8 @@ const builtinFilterMeta = {
     mul: { description: "乗算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
     div: { description: "除算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
     mod: { description: "剰余", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+    abs: { description: "絶対値", hasArgs: false, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 0 },
+    clamp: { description: "範囲内に丸める (min,max)", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 2, maxArgs: 2, argTypes: ["number", "number"] },
     // 数値フォーマット
     fix: { description: "固定小数点表記", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
     locale: { description: "ロケール形式で数値フォーマット", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["string"] },
@@ -806,6 +976,8 @@ const builtinFilterMeta = {
     pad: { description: "パディング (length[,char])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
     rep: { description: "繰り返し (count)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
     rev: { description: "文字順を反転", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+    truncate: { description: "切り詰めて省略記号 (length[,suffix])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
+    join: { description: "配列を連結 ([separator])", hasArgs: true, resultType: "string", acceptTypes: ["array"], minArgs: 0, maxArgs: 1, argTypes: ["string"] },
     // 数値パース・丸め
     int: { description: "整数にパース", hasArgs: false, resultType: "number", acceptTypes: ["string", "number"], minArgs: 0, maxArgs: 0 },
     float: { description: "浮動小数点数にパース", hasArgs: false, resultType: "number", acceptTypes: ["string", "number"], minArgs: 0, maxArgs: 0 },
@@ -813,11 +985,15 @@ const builtinFilterMeta = {
     floor: { description: "切り下げ", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
     ceil: { description: "切り上げ", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
     percent: { description: "パーセンテージ形式", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
+    // number だけでなく string も受ける。実用チェーンは fix / percent の後ろに繋がり、
+    // それらは既に string を返すため（builtinFilters.ts の unit を参照）
+    unit: { description: "単位（接尾辞）を付加", hasArgs: true, resultType: "string", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["string"] },
     // 日付・時刻
     date: { description: "ロケール形式の日付", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
     time: { description: "ロケール形式の時刻", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
     datetime: { description: "ロケール形式の日時", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
     ymd: { description: "YYYY-MM-DD 形式", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+    hms: { description: "HH:MM:SS 形式", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
     // 真偽値・変換
     falsy: { description: "偽値か判定", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
     truthy: { description: "真値か判定", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
@@ -838,13 +1014,44 @@ const STRUCTURAL_BINDING_TYPE_SET = new Set([
 const DELIMITER = '.';
 const WILDCARD = '*';
 const MAX_WILDCARD_DEPTH = 128;
-// data-wcs バインディング構文 `[prop][#mod]: [path][@state][|filter...]` の区切り文字（単一正本）。
+// data-wcs バインディング構文 `[prop][#mod]: [path][|filter...]` の区切り文字（単一正本・`@state` は v2 で撤去）。
 // これらは「死守の壁（構文契約）」であり値は不変。manifest.syntax.delimiters で公開される。
 const BINDING_SEPARATOR = ';'; // 複数バインディングの区切り
 const PROP_VALUE_SEPARATOR = ':'; // 左辺(prop)と右辺(path)の区切り
 const MODIFIER_SEPARATOR = '#'; // prop と修飾子の区切り
-const STATE_NAME_SEPARATOR = '@'; // path と @stateName の区切り
 const FILTER_SEPARATOR = '|'; // フィルタパイプの区切り
+// 修飾子（`#` 後）の語彙（単一正本）。manifest.syntax.modifiers で公開される。
+// フラグ形（`#prevent` — 値を取らない）とキー値形（`#init=element` — `=` で値を取る）。
+// 消費箇所（event/handler・BindingSession・twowayHandler・bindings/initialSync）は
+// この定数を参照する — 文字列リテラルの散在は tooling への収載漏れの温床だった
+// （docs/static-wiring-dx-design.md §2-2）。
+const MODIFIER_PREVENT = 'prevent';
+const MODIFIER_STOP = 'stop';
+const MODIFIER_READONLY = 'ro';
+const MODIFIER_FLAGS = Object.freeze([
+    MODIFIER_PREVENT, MODIFIER_STOP, MODIFIER_READONLY,
+]);
+const MODIFIER_KEY_INIT = 'init';
+const MODIFIER_KEY_SYNC = 'sync';
+const MODIFIER_KEYS = Object.freeze([
+    MODIFIER_KEY_INIT, MODIFIER_KEY_SYNC,
+]);
+// bindingType 判別と左辺 namespace の語彙（単一正本）。manifest.syntax.bindingTypes で
+// 公開される。パーサ（parseBindTextsForElement）とイベント層はこの定数に分岐する。
+// apply 層のディスパッチマップ（apply/applyChange.ts の applyChangeByFirstSegment）の
+// キー集合との一致は __tests__/manifest.test.ts の drift テストが強制する —
+// manifest エントリ（DOM 非依存）から apply 層を import しないための分離。
+const ELSE_KEYWORD = 'else';
+const SPREAD_PROP = '...';
+const EVENT_PROP_PREFIX = 'on';
+const EVENT_TOKEN_NAMESPACE = 'eventToken';
+const COMMAND_NAMESPACE = 'command';
+const CLASS_NAMESPACE = 'class';
+const ATTR_NAMESPACE = 'attr';
+const STYLE_NAMESPACE = 'style';
+// リストインデックス参照名（`$1`..`$N`）の接頭辞（単一正本）。
+// manifest.syntax.indexParam で公開される。
+const INDEX_PARAM_PREFIX = '$';
 /**
  * stackIndexByIndexName
  * インデックス名からスタックインデックスへのマッピング
@@ -856,7 +1063,7 @@ const FILTER_SEPARATOR = '|'; // フィルタパイプの区切り
  */
 const tmpIndexByIndexName = {};
 for (let i = 0; i < MAX_WILDCARD_DEPTH; i++) {
-    tmpIndexByIndexName[`$${i + 1}`] = i;
+    tmpIndexByIndexName[`${INDEX_PARAM_PREFIX}${i + 1}`] = i;
 }
 Object.freeze(tmpIndexByIndexName);
 const STATE_CONNECTED_CALLBACK_NAME = "$connectedCallback";
@@ -870,6 +1077,7 @@ const STATE_COMMAND_NAMESPACE_NAME = "$command";
 const STATE_EVENT_TOKENS_NAME = "$eventTokens";
 const STATE_ON_NAME = "$on";
 const STATE_STREAMS_NAME = "$streams";
+const STATE_WATCH_NAME = "$watch";
 const STATE_LIST_KEYS_NAME = "$listKeys";
 const STATE_STREAM_STATUS_NAMESPACE_NAME = "$streamStatus";
 const STATE_STREAM_ERROR_NAMESPACE_NAME = "$streamError";
@@ -902,11 +1110,31 @@ function getWcsManifest() {
                 binding: BINDING_SEPARATOR,
                 propValue: PROP_VALUE_SEPARATOR,
                 modifier: MODIFIER_SEPARATOR,
-                stateName: STATE_NAME_SEPARATOR,
                 filter: FILTER_SEPARATOR,
             },
             // 正本 STRUCTURAL_BINDING_TYPE_SET から導出（手書きの二重定義を排除）。
             structuralDirectives: Array.from(STRUCTURAL_BINDING_TYPE_SET),
+            modifiers: {
+                flags: MODIFIER_FLAGS,
+                keyValue: MODIFIER_KEYS,
+                eventNamePrefix: EVENT_PROP_PREFIX,
+            },
+            indexParam: {
+                prefix: INDEX_PARAM_PREFIX,
+                maxDepth: MAX_WILDCARD_DEPTH,
+            },
+            bindingTypes: {
+                elseKeyword: ELSE_KEYWORD,
+                spread: SPREAD_PROP,
+                eventPropertyPrefix: EVENT_PROP_PREFIX,
+                propNamespaces: {
+                    eventToken: EVENT_TOKEN_NAMESPACE,
+                    command: COMMAND_NAMESPACE,
+                    class: CLASS_NAMESPACE,
+                    attr: ATTR_NAMESPACE,
+                    style: STYLE_NAMESPACE,
+                },
+            },
         },
         // 実装（Record のキー）から自動導出。手リストを持たない＝ドリフトの構造的排除。
         filters: Object.keys(outputBuiltinFilters),
@@ -925,6 +1153,7 @@ function getWcsManifest() {
             STATE_EVENT_TOKENS_NAME,
             STATE_ON_NAME,
             STATE_STREAMS_NAME,
+            STATE_WATCH_NAME,
             STATE_LIST_KEYS_NAME,
             STATE_STREAM_STATUS_NAMESPACE_NAME,
             STATE_STREAM_ERROR_NAMESPACE_NAME,

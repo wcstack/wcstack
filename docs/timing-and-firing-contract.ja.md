@@ -131,6 +131,18 @@ async $connectedCallback() {
 ### 4.2 `undefined` 書き込みはスキップ（明示クリアは `null`）
 binder は `undefined` を properties/inputs に書かない（書き込み自体をスキップ）。詳細と SPEC 提案は [spec-proposal-undefined-write-skip.md](./spec-proposal-undefined-write-skip.md)。
 
+
+### 4.3 `<wcs-view-transition>` があると drain は microtask ではなくフレームで着地する
+drain（`Updater._applyChange`）は通常、キューされた microtask の中で同期的にバインディングを適用する。`@wcstack/view-transition` の arbiter が install され、かつ **`state` 参加者を受け付けている**とき（`for=` に `state` が含まれる。既定）、バインディング適用は `document.startViewTransition` へ預けられ、後のフレームで呼ばれる。
+
+→ **帰結 1**: state に書いてから `await Promise.resolve()` で DOM を読むコードは古い DOM を見る。遷移を待つか、`$updatedCallback` を使うこと —— こちらは更新コールバックの中、バインディング適用の直後に発火するので*位置*は変わらない（ただし適用ごと 1 フレーム後ろへずれる）。
+
+→ **帰結 2 —— 機構間の順序が反転する**。drain 終了リスナー（`$watch` → `$streams` restart、§3）は state アドレスを消費し DOM を見ないので元の microtask に留まる。`$updatedCallback` は留まらない。したがって §3 が「固定」と呼ぶ `$updatedCallback` → `$watch` → `$streams` restart は、arbiter が `state` を受け付けている間だけ `$watch` → `$streams` restart → `$updatedCallback` になる。この層を並べ替えるものはページ上でこれ 1 つだけ。`$updatedCallback` が書いたものを `$watch` ハンドラが読む組み方は、タグがある間は成立しない。
+
+**変わらない**もの: 初期レンダリングは決して包まれない（包むのは drain だけ）。`inSsr()` は同期パスへ短絡する。適用すべきバインディングが 0 本のバッチは arbiter へ渡さないので、headless なパス（`$watch` 専用・`$streams` の内部状態）への書き込みはアニメーションも遅延も起こさない。arbiter が居ない場合、あるいは `for="router"` の場合、drain は従来と完全に同一。
+
+規範記述: [view-transition-design.ja.md](./view-transition-design.ja.md) §7.2。
+
 ---
 
 ## 5. example → 依存している契約（トレーサビリティ）
@@ -450,3 +462,25 @@ Shell は constructor（= upgrade 時）で自分自身の `*-changed` / `:error
 ### 19.6 ボイス回収は audio クロック基準（タイマー非依存）
 
 解放済みボイスは `freeAt = noteOff + release * 3 + 0.3`（audio クロック）を過ぎたときにだけ回収する。**wall-clock タイマーは使わない**: バックグラウンドタブでは `setTimeout` が約1分間隔まで絞られる一方オーディオは鳴り続けるため、タイマー方式だと押鍵ごとにボイスが漏れる。
+
+---
+
+## 20. @wcstack/router — route commit 後のフォーカス・告知（2026-08-28）
+
+参照: [`packages/router/src/a11yPolicies.ts`](../packages/router/src/a11yPolicies.ts)、[a11y-design.md](./a11y-design.md) §3-4
+
+### 20.1 オプトインのポリシーは commit 後・mutation の外で走る
+
+`focus="heading"` と `announce="title"` は `applyRoute` の committed 判定直後（guard 通過・mutation 適用済み・`router.path` 更新後）に適用される。告知の書き込みは `mutate()` の外のプレーンな DOM 更新であり、view transition には決して含まれない。guard 拒否されたナビゲーションはどちらのポリシーにも到達しない（a11y-design D4）。
+
+### 20.2 最初のルート適用ではフォーカスも告知もしない
+
+`lastRoutes.length === 0` で両ポリシーをスキップする — view-transition の「初回は決して包まない」（§4.3）と同じ述語・同じ理由: ページロードはブラウザの担当。
+
+### 20.3 告知は commit 時点の `document.title` のスナップショット
+
+`<wcs-head>` の静的 title 差し替えは `mutate()` 内で同期に完了するため、スナップショットは必ず新ルートの静的 title を読む。バインド title（`<title data-wcs>`）は commit 時点で古いことがあり（binder キューの遅延窓）、ナビゲーション外の title 変化（ロケール切替など）は再読み上げされない。どちらもバグではなく明記された制限（a11y-design D2）。
+
+### 20.4 §4.3（view-transition のフレーム着地）との相互作用
+
+ポリシーが走るのは `applyRoute` が await する遷移 promise の解決時 — つまり **mutation 適用時**であり、アニメーション完了時ではない（transition-runner の契約）。`router` を受け入れる arbiter の下では、フォーカスと告知はルート内容が差し替わったフレームに着地し、アニメーションはまだ再生中でありうる。「アニメーション完了後」は現プロトコルでは表現できず、非目標である（a11y-design D3 / §10）。

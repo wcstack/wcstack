@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Runtime packages (@wcstack/state, router, ...)
+    url: https://github.com/wcstack/wcstack/issues/new
+    about: Open a blank issue for a runtime package and pick the matching package label.
+  - name: Documentation / AI authoring skill
+    url: https://github.com/wcstack/wcstack-skill/issues
+    about: Issues about the wcstack-app skill live in the wcstack-skill repository.

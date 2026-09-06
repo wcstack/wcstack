@@ -12,7 +12,7 @@ import { bindLoopContextToContent } from "./bindings/bindLoopContextToContent";
 import { config } from "./config";
 import { WILDCARD, INDEX_BY_INDEX_NAME } from "./define";
 import { Ssr, SSR_BLOCK_START } from "./components/Ssr";
-import { getStateElementByName } from "./stateElementByName";
+import { getStateElement } from "./stateElementByName";
 import { setLoopContextByNode } from "./list/loopContextByNode";
 import { applyChangeFromBindings } from "./apply/applyChangeFromBindings";
 import { hydrateSetContent, hydrateSetLastNode } from "./apply/applyChangeToFor";
@@ -230,9 +230,8 @@ function hydrateBlocks(root: Node, blocks: ISsrBlock[]): void {
     // structuralBindings はまだ登録前なので、getParseBindTextResults を直接使う
     const fragmentInfo = getFragmentInfoByUUID(uuid);
     if (!fragmentInfo) continue;
-    const stateName = fragmentInfo.parseBindTextResult.stateName;
     const statePathName = fragmentInfo.parseBindTextResult.statePathName;
-    const stateElement = getStateElementByName(rootNode, stateName);
+    const stateElement = getStateElement(rootNode);
     if (!stateElement) continue;
     stateElement.createState("readonly", (state) => {
       const list = state[statePathName];
@@ -277,18 +276,12 @@ function restoreFragments(root: Document, ssrEl: Ssr): void {
     let parseBindTextResult = parseBindTextResults[0];
     const bindingType = parseBindTextResult.bindingType;
 
-    // else: 直前の if 条件の not → 条件反転
-    // elseif: 独自条件を持つが stateName は if から引き継ぐ
+    // else: 直前の if 条件の not → 条件反転（elseif は独自条件のままでよい）
     if (bindingType === 'else' && lastIfParseResult) {
       parseBindTextResult = {
         ...lastIfParseResult,
         outFilters: [...lastIfParseResult.outFilters, createNotFilter()],
         bindingType: 'else',
-      };
-    } else if (bindingType === 'elseif' && lastIfParseResult) {
-      parseBindTextResult = {
-        ...parseBindTextResult,
-        stateName: lastIfParseResult.stateName,
       };
     }
 
@@ -408,7 +401,7 @@ export async function hydrateBindings(root: Document): Promise<boolean> {
     if (binding.bindingType === 'for') {
       const absAddr = getAbsoluteStateAddressByBinding(binding);
       const rootNode = binding.replaceNode.getRootNode() as Node;
-      const stateElement = getStateElementByName(rootNode, binding.stateName);
+      const stateElement = getStateElement(rootNode);
       if (stateElement) {
         stateElement.createState("readonly", (state) => {
           const value = state[binding.statePathName];

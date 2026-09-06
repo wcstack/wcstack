@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Watch — headless state subscription</title>
+    <link rel="stylesheet" href="../shared/theme.css"/>
+    <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+    <style>
+      table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; }
+      th, td { padding: 0.5rem; text-align: left; border-bottom: 1px solid #2a2a4a; }
+      td.num, th.num { text-align: right; }
+      .qty { display: inline-flex; align-items: center; gap: 0.5rem; }
+      .qty button { min-width: 2rem; }
+      .banner {
+        padding: 0.75rem 1rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+        background-color: #1f3a2a;
+        color: #7ac98f;
+      }
+      .banner.below { background-color: #2a2a4a; color: #a0a0c0; }
+      .log {
+        margin-top: 1rem;
+        padding: 0.75rem 1rem;
+        background-color: #1a1a2e;
+        border: 1px solid #2a2a4a;
+        border-radius: 8px;
+        min-height: 6rem;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.85rem;
+      }
+      .log .empty { color: #666; }
+      .log li { list-style: none; color: #b9b3ff; }
+      .notes { margin-top: 1.5rem; font-size: 0.8rem; color: #888; }
+      .notes li { margin-left: 1.25rem; margin-bottom: 0.25rem; }
+    </style>
+  </head>
+  <body>
+    <wcs-state>
+      <script type="module">
+const FREE_SHIPPING_THRESHOLD = 20000;
+
+export default {
+  items: [
+    { id: 1, name: "Mechanical keyboard", price: 12000, qty: 1 },
+    { id: 2, name: "USB-C cable",         price: 1200,  qty: 2 },
+    { id: 3, name: "Desk mat",            price: 3800,  qty: 1 },
+  ],
+  log: [],
+  banner: "",
+  qualified: false,
+
+  // Row identity by key. This is what lets a row-level watch see a real
+  // `prev`: without it, assigning the array would fire every row with
+  // `prev === undefined`.
+  $listKeys: { items: "id" },
+
+  get subtotal() {
+    return this.$getAll("items.*.lineTotal", []).reduce((a, v) => a + v, 0);
+  },
+  get "items.*.lineTotal"() {
+    return this["items.*.price"] * this["items.*.qty"];
+  },
+  get subtotalLabel() { return `¥${this.subtotal.toLocaleString()}`; },
+
+  // NOTE: this getter is bound NOWHERE — no data-wcs reads it, and no other
+  // displayed getter reads it either. `$updatedCallback` could never observe
+  // it, because that callback only reports paths whose live DOM bindings were
+  // applied. `$watch` sees it anyway; declaring it here also makes it eager
+  // (evaluated once at connect, then at the end of every batch that touches
+  // its dependencies).
+  get freeShipping() { return this.subtotal >= FREE_SHIPPING_THRESHOLD; },
+
+  $watch: {
+    // Handlers run in DECLARATION order, so this row log is written before
+    // the banner below. Reorder these two keys and the order swaps.
+    "items.*.qty"(cur, prev, index) {
+      const name = this.$resolve("items.*.name", [index]);
+      this.log = [`${name}: ${prev} → ${cur}`, ...this.log].slice(0, 8);
+    },
+
+    // Edge detection is yours to write: watch has no firing condition of its
+    // own, it fires for whatever landed in the batch.
+    freeShipping(cur, prev) {
+      this.qualified = cur;
+      if (cur === prev) return;
+      this.banner = cur
+        ? "🎉 Free shipping unlocked"
+        : "Free shipping lost — back under the threshold";
+    },
+  },
+
+  onInc(event, $1) {
+    this.$resolve("items.*.qty", [$1], this.$resolve("items.*.qty", [$1]) + 1);
+  },
+  onDec(event, $1) {
+    const qty = this.$resolve("items.*.qty", [$1]);
+    if (qty > 0) this.$resolve("items.*.qty", [$1], qty - 1);
+  },
+  // Whole-array replacement, the shape a fetch() result takes. With
+  // `$listKeys` declared, the key match decomposes it into per-field writes,
+  // so only the rows that actually changed fire the row watch.
+  onRestock() {
+    this.items = this.items.map((item) => ({ ...item, qty: item.id === 1 ? 2 : item.qty }));
+  },
+};
+      </script>
+    </wcs-state>
+
+    <div class="example-container wide">
+      <p class="example-title">@wcstack/state</p>
+      <h1>$watch — headless state subscription</h1>
+
+      <template data-wcs="if: banner">
+        <p class="banner" data-wcs="textContent: banner; class.below: qualified|not"></p>
+      </template>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th class="num">Price</th>
+            <th>Qty</th>
+            <th class="num">Line</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template data-wcs="for: items">
+            <tr>
+              <td>{{ items.*.name }}</td>
+              <td class="num">{{ items.*.price|locale }}</td>
+              <td>
+                <span class="qty">
+                  <button type="button" data-wcs="onclick: onDec">−</button>
+                  <span data-wcs="textContent: items.*.qty"></span>
+                  <button type="button" data-wcs="onclick: onInc">+</button>
+                </span>
+              </td>
+              <td class="num">{{ items.*.lineTotal|locale }}</td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+
+      <p><strong>Subtotal:</strong> {{ subtotalLabel }} <button type="button" data-wcs="onclick: onRestock">Restock keyboard</button></p>
+
+      <div class="log">
+        <template data-wcs="if: log.length|gt(0)">
+          <ul>
+            <template data-wcs="for: log"><li>{{ log.* }}</li></template>
+          </ul>
+        </template>
+        <template data-wcs="if: log.length|eq(0)">
+          <span class="empty">change a quantity — the row watch writes here</span>
+        </template>
+      </div>
+
+      <ul class="notes">
+        <li><strong>Nothing binds <code>freeShipping</code>.</strong> It is watched, not rendered — which is precisely what <code>$updatedCallback</code> cannot do, since that callback only reports paths whose DOM bindings were applied.</li>
+        <li>Watching a getter <strong>makes it eager</strong>: normally a computed nobody reads is never evaluated, so it would never fire at all.</li>
+        <li>The row watch receives <code>(cur, prev, index)</code>. <code>prev</code> is the value at the start of the update batch, and is meaningful for scalars only.</li>
+        <li><strong>Restock</strong> replaces the whole array. Because <code>$listKeys</code> is declared, only the row that actually changed fires — without it every row would fire with <code>prev === undefined</code>.</li>
+        <li>Handlers fire in declaration order; rows of one path fire in ascending index order.</li>
+      </ul>
+    </div>
+  </body>
+</html>

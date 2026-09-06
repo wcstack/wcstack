@@ -122,7 +122,10 @@
     <button data-wcs="onclick: ask; disabled: granted">🔔 Allow notifications</button>
     <button data-wcs="onclick: send; disabled: denied">💬 Simulate new message</button>
   </p>
-  <div class="status" data-wcs="textContent: statusText"></div>
+  <!-- role="log": the page's only in-page activity feed. Desktop notifications
+       are permission-gated and never a substitute for on-page announcement —
+       this line is what a screen reader hears when a notification click lands. -->
+  <div class="status" role="log" data-wcs="textContent: statusText"></div>
 </section>
 
 </body>

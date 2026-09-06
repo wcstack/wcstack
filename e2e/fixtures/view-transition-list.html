@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: view transitions for state list rows</title>
+  <!-- The whole point of @wcstack/view-transition is its interaction with a real
+       document.startViewTransition, which happy-dom does not implement — every
+       unit test in the package drives a hand-written fake. This fixture is where
+       the real API is exercised: that a drain actually starts one transition, that
+       auto naming produces names unique enough for the browser not to abort it,
+       and that a write with no bindings to apply starts none at all
+       (docs/view-transition-design.md §7.2). -->
+  <script>
+    // Instrumented before any bundle loads: the arbiter reads
+    // document.startViewTransition at call time, so this wrapper is what it finds.
+    // Counting is the only way to assert the negative — "no transition was started".
+    window.__vt = { started: 0, supported: typeof document.startViewTransition === "function" };
+    if (window.__vt.supported) {
+      const native = document.startViewTransition;
+      document.startViewTransition = function (arg) {
+        window.__vt.started += 1;
+        const transition = native.call(this, arg);
+        window.__vt.last = transition;
+        return transition;
+      };
+    }
+  </script>
+  <!-- The arbiter has to install before state renders its first rows: auto naming
+       happens as content mounts and nothing revisits rows that mounted earlier. -->
+  <script type="module" src="/packages/view-transition/dist/auto.min.js"></script>
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+  <style>
+    /* Keep the animations short so the suite is not paced by the UA default. */
+    ::view-transition-group(*.wcs-row) { animation-duration: 80ms; }
+    ::view-transition-group(root) { animation-duration: 80ms; }
+    ul { list-style: none; padding: 0; }
+  </style>
+</head>
+<body>
+  <wcs-view-transition naming="auto"></wcs-view-transition>
+
+  <wcs-state>
+    <script type="module">
+      export default {
+        items: [
+          { id: 1, label: "one" },
+          { id: 2, label: "two" },
+          { id: 3, label: "three" },
+        ],
+        nextId: 4,
+        // Deliberately wired to nothing: writing it drains with zero bindings to
+        // apply, which must not ask the arbiter for a transition.
+        headlessTicks: 0,
+        add() {
+          this.items = [...this.items, { id: this.nextId, label: "added-" + this.nextId }];
+          this.nextId = this.nextId + 1;
+        },
+        removeFirst() {
+          this.items = this.items.slice(1);
+        },
+        reverse() {
+          this.items = [...this.items].reverse();
+        },
+        bumpHeadless() {
+          this.headlessTicks = this.headlessTicks + 1;
+        },
+      };
+    </script>
+
+    <button id="add" data-wcs="onclick: add">add</button>
+    <button id="remove" data-wcs="onclick: removeFirst">remove first</button>
+    <button id="reverse" data-wcs="onclick: reverse">reverse</button>
+    <button id="headless" data-wcs="onclick: bumpHeadless">bump headless</button>
+
+    <ul id="list">
+      <template data-wcs="for: items">
+        <li data-wcs="attr.data-id: .id">{{ .label }}</li>
+      </template>
+    </ul>
+  </wcs-state>
+</body>
+</html>

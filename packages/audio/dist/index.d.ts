@@ -165,7 +165,7 @@ interface WcsAudioInputs {
     resumeOnGesture: boolean;
 }
 
-declare function bootstrapAudio(userConfig?: IWritableConfig): void;
+declare function bootstrapAudio(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -678,6 +678,22 @@ declare class WcsAnalyser extends WcsAnalyser_base {
      * that retains a frame is safe (producer snapshot contract).
      */
     sample(mode?: "wave" | "fft"): Uint8Array | null;
+}
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-audio": WcsAudio;
+        "wcs-voice": WcsVoice;
+        "wcs-osc": WcsOsc;
+        "wcs-noise": WcsNoise;
+        "wcs-biquad": WcsBiquad;
+        "wcs-gain": WcsGain;
+        "wcs-delay": WcsDelay;
+        "wcs-shaper": WcsShaper;
+        "wcs-env": WcsEnv;
+        "wcs-lfo": WcsLfo;
+        "wcs-analyser": WcsAnalyser;
+    }
 }
 
 export { AudioGraphCore, AudioNodeShell, STRUCTURAL_ATTRIBUTES, VoiceAllocator, WCS_AUDIO_ERROR_CODE, WcsAnalyser, WcsAudio, WcsBiquad, WcsDelay, WcsEnv, WcsGain, WcsLfo, WcsNoise, WcsOsc, WcsShaper, WcsVoice, bootstrapAudio, compilePatch, defaultCreateContext, deriveAudioErrorInfo, findAudioRoot, getConfig, graphChildren, releaseSharedContext, structureKey };

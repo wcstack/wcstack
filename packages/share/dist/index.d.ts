@@ -154,7 +154,7 @@ interface WcsShareCoreValues {
  */
 type WcsShareValues = WcsShareCoreValues;
 
-declare function bootstrapShare(userConfig?: IWritableConfig): void;
+declare function bootstrapShare(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -275,6 +275,12 @@ declare const WCS_SHARE_ERROR_CODE: {
     readonly CapabilityMissing: "capability-missing";
     readonly ShareFailed: "share-failed";
 };
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-share": WcsShare;
+    }
+}
 
 export { ShareCore, WCS_SHARE_ERROR_CODE, WcsShare, bootstrapShare, getConfig };
 export type { IWritableConfig, IWritableTagNames, WcsIoErrorInfo, WcsIoErrorPhase, WcsShareCoreValues, WcsShareData, WcsShareValues };

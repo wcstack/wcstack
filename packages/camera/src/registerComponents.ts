@@ -2,11 +2,16 @@ import { WcsCamera } from "./components/Camera.js";
 import { WcsRecorder } from "./components/Recorder.js";
 import { config } from "./config.js";
 
-export function registerComponents(): void {
-  if (!customElements.get(config.tagNames.camera)) {
-    customElements.define(config.tagNames.camera, WcsCamera);
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+export function registerComponents(registry: CustomElementRegistry = customElements): void {
+  if (!registry.get(config.tagNames.camera)) {
+    registry.define(config.tagNames.camera, WcsCamera);
   }
-  if (!customElements.get(config.tagNames.recorder)) {
-    customElements.define(config.tagNames.recorder, WcsRecorder);
+  if (!registry.get(config.tagNames.recorder)) {
+    registry.define(config.tagNames.recorder, WcsRecorder);
   }
 }

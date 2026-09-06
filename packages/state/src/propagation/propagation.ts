@@ -5,7 +5,7 @@
  * 依存は types のみの葉モジュールとし、twowayHandler / applyChangeToProperty /
  * setByAddress / updater の計装点から循環 import なしで参照できるようにする。
  *
- * wire 識別は (node × member × stateName × statePathName) で行う。設計書の
+ * wire 識別は (node × member × statePathName) で行う。設計書の
  * WriteReceipt は bindingId + generation を持つが、twoway handler は共有
  * handler（handlerByHandlerKey）で binding インスタンスに到達できないため、
  * runtime の edge / receipt 照合キーは wire 単位とする。BindingSession
@@ -21,11 +21,11 @@ let nextWireId = 1;
 let nextTransactionId = 1;
 let nextSynchronousScopeId = 1;
 
-// node を強参照しない wire 台帳。inner key = `${stateName}::${statePathName}::${member}`
+// node を強参照しない wire 台帳。inner key = `${statePathName}::${member}`
 const wireIdsByNode = new WeakMap<Node, Map<string, number>>();
 
-function wireKey(member: string, stateName: string, statePathName: string): string {
-  return `${stateName}::${statePathName}::${member}`;
+function wireKey(member: string, statePathName: string): string {
+  return `${statePathName}::${member}`;
 }
 
 /**
@@ -34,7 +34,6 @@ function wireKey(member: string, stateName: string, statePathName: string): stri
 export function getWireId(
   node: Node,
   member: string,
-  stateName: string,
   statePathName: string,
 ): number {
   let byKey = wireIdsByNode.get(node);
@@ -42,7 +41,7 @@ export function getWireId(
     byKey = new Map();
     wireIdsByNode.set(node, byKey);
   }
-  const key = wireKey(member, stateName, statePathName);
+  const key = wireKey(member, statePathName);
   let wireId = byKey.get(key);
   if (typeof wireId === "undefined") {
     wireId = nextWireId++;

@@ -103,7 +103,7 @@ interface WcsAccelerometerCoreValues extends WcsAccelerometerReading {
  */
 type WcsAccelerometerValues = WcsAccelerometerCoreValues;
 
-declare function bootstrapAccelerometer(userConfig?: IWritableConfig): void;
+declare function bootstrapAccelerometer(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -283,6 +283,12 @@ declare const WCS_ACCELEROMETER_ERROR_CODE: {
     /** その他の SensorErrorEvent / 想定外の失敗。 */
     readonly SensorError: "sensor-error";
 };
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-accelerometer": WcsAccelerometer;
+    }
+}
 
 export { AccelerometerCore, WCS_ACCELEROMETER_ERROR_CODE, WcsAccelerometer, bootstrapAccelerometer, getConfig };
 export type { IWritableConfig, IWritableTagNames, WcsAccelerometerCoreValues, WcsAccelerometerErrorDetail, WcsAccelerometerReading, WcsAccelerometerValues, WcsIoErrorInfo, WcsIoErrorPhase };

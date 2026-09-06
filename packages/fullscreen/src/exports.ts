@@ -12,3 +12,15 @@ export type {
 // comes from the shared io-core.
 export type { WcsIoErrorInfo, WcsIoErrorPhase } from "./core/platformCapability.js";
 export { WCS_FULLSCREEN_ERROR_CODE } from "./core/fullscreenCapabilities.js";
+
+// Typed element lookups (docs/typescript.md §3): `document.querySelector("wcs-fullscreen")`
+// resolves to the element class. Default tag names only — a page that renames tags via
+// `IWritableTagNames` is outside this map. Declared here so the augmentation ships in
+// dist/index.d.ts; it applies once this package's types are in the consuming program
+// (`import "@wcstack/fullscreen"` or a tsconfig `types` entry).
+import type { WcsFullscreen } from "./components/Fullscreen.js";
+declare global {
+  interface HTMLElementTagNameMap {
+    "wcs-fullscreen": WcsFullscreen;
+  }
+}

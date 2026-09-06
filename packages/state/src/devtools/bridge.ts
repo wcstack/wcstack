@@ -12,11 +12,14 @@
  */
 
 import { inSsr } from "../config";
-import { getStateElementByName, getLiveStateElements } from "../stateElementByName";
+import { DEVTOOLS_LISTENER_PRIORITY } from "../define";
+import { getStateElement, getLiveStateElements } from "../stateElementByName";
+import { getMountRecordsForStateElement } from "../webComponent/mount";
 import { registerUpdateBatchListener, unregisterUpdateBatchListener, UpdateBatchListener } from "../updater/updater";
 import { raiseError } from "../raiseError";
 import { VERSION } from "../version";
 import { IStateElement } from "../components/types";
+import { collectDeclaredBindings } from "./declaredBindings";
 import { devtoolsSink, setDevtoolsSink } from "./sink";
 import {
   DEVTOOLS_HOOK_GLOBAL,
@@ -26,6 +29,7 @@ import {
   IDevtoolsListener,
   IDevtoolsSource,
   IStateElementSummary,
+  IMountOverlaySummary,
 } from "./types";
 
 /**
@@ -125,7 +129,9 @@ function setSink(sink: DevtoolsSink | null): void {
   setDevtoolsSink(sink);
   const isActive = sink !== null;
   if (isActive && !wasActive) {
-    registerUpdateBatchListener(onUpdateBatch);
+    // `$watch` / `$streams` restart より先に流す（protocol §4.3）。優先度を省略しても
+    // 既定 0 で結果は同じだが、それは偶然なので定数で意図を固定する。
+    registerUpdateBatchListener(onUpdateBatch, DEVTOOLS_LISTENER_PRIORITY);
   } else if (!isActive && wasActive) {
     unregisterUpdateBatchListener(onUpdateBatch);
   }
@@ -133,7 +139,6 @@ function setSink(sink: DevtoolsSink | null): void {
 
 function createStateElementSummary(element: IStateElement): IStateElementSummary {
   return {
-    name: element.name,
     rootNode: element.rootNode,
     element,
     paths: {
@@ -146,12 +151,22 @@ function createStateElementSummary(element: IStateElement): IStateElementSummary
     eventTokenNames: element.eventTokenNames,
     staticDependency: element.staticDependency,
     dynamicDependency: element.dynamicDependency,
+    // protocol v1 追補（additive）— 配線カバレッジの宣言面（設計 §4）。
+    // 旧 IStateElement 実装（optional）では undefined になりうるため null に畳む。
+    watchPaths: element.watchPaths ?? null,
+    // ワイルドカード行 watch の発火前提「for バインド or $listKeys 宣言」の後者。
+    // ListKeyMap のキー（リストパス）だけを出す — キー指定（文字列/関数）は
+    // カバレッジ判定に不要で、関数はシリアライズ境界にも載せない。
+    keyedListPaths:
+      element.listKeys === undefined || element.listKeys === null
+        ? null
+        : new Set(element.listKeys.keys()),
   };
 }
 
-function requireStateElement(name: string, rootNode: Node): IStateElement {
-  return getStateElementByName(rootNode, name) ??
-    raiseError(`devtools: state element not found: name="${name}"`);
+function requireStateElement(rootNode: Node): IStateElement {
+  return getStateElement(rootNode) ??
+    raiseError(`devtools: no state tree on this root`);
 }
 
 function createSourceId(): string {
@@ -184,8 +199,23 @@ export function registerDevtoolsSource(): void {
       }
       return summaries;
     },
-    keys(name: string, rootNode: Node): string[] {
-      const element = requireStateElement(name, rootNode);
+    overlays(rootNode: Node): IMountOverlaySummary[] {
+      const element = requireStateElement(rootNode);
+      return getMountRecordsForStateElement(element).map((record) => ({
+        marker: record.marker,
+        componentTag: record.component.tagName.toLowerCase(),
+        stateProp: record.stateProp,
+        mountTable: record.entries.map((entry) => ({
+          inner: entry.innerSegments.join("."),
+          outer: entry.outerPathInfo.path,
+        })),
+        delta: record.delta,
+        privateKeys: Object.keys(record.privateSnapshot),
+        getterKeys: [...record.getterKeys],
+      }));
+    },
+    keys(rootNode: Node): string[] {
+      const element = requireStateElement(rootNode);
       const result: string[] = [];
       element.createState("readonly", (state) => {
         // Object.keys は Proxy の ownKeys 経由で target の own key を返す。
@@ -208,16 +238,16 @@ export function registerDevtoolsSource(): void {
       });
       return result;
     },
-    read(name: string, rootNode: Node, path: string, indexes?: number[]): unknown {
-      const element = requireStateElement(name, rootNode);
+    read(rootNode: Node, path: string, indexes?: number[]): unknown {
+      const element = requireStateElement(rootNode);
       let result: unknown;
       element.createState("readonly", (state) => {
         result = (state as unknown as Record<string, (p: string, i: number[]) => unknown>)["$resolve"](path, indexes ?? []);
       });
       return result;
     },
-    write(name: string, rootNode: Node, path: string, value: unknown, indexes?: number[]): void {
-      const element = requireStateElement(name, rootNode);
+    write(rootNode: Node, path: string, value: unknown, indexes?: number[]): void {
+      const element = requireStateElement(rootNode);
       element.createState("writable", (state) => {
         if (indexes !== undefined && indexes.length > 0) {
           // Note: $resolve は value===undefined を「取得」と解釈するため、
@@ -228,6 +258,9 @@ export function registerDevtoolsSource(): void {
           (state as unknown as Record<string, unknown>)[path] = value;
         }
       });
+    },
+    getDeclaredBindings(rootNode: Node) {
+      return collectDeclaredBindings(rootNode);
     },
     _setSink: setSink,
   };

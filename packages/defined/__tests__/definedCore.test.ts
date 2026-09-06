@@ -38,6 +38,37 @@ describe("DefinedCore", () => {
     });
   });
 
+  describe("scoped registry", () => {
+    it("渡した registry を global より優先して監視する", async () => {
+      const t = uniqueTag();
+      const scoped = {
+        get: vi.fn(() => undefined),
+        whenDefined: vi.fn(() => Promise.resolve(HTMLElement as CustomElementConstructor)),
+      };
+      const core = new DefinedCore([t], "all", 0, undefined, scoped);
+
+      expect(scoped.get).toHaveBeenCalledWith(t);
+      expect(scoped.whenDefined).toHaveBeenCalledWith(t);
+      await flush();
+      expect(core.defined).toBe(true);
+      expectInvariant(core);
+    });
+
+    it("registry が null なら pending で待たず missing で終端する", async () => {
+      // timeout 既定値 0 は「永久に待つ」なので、pending のまま置くと ready が
+      // 解決されずゲートが無言でウェッジする。即 missing にして終端させること。
+      const t = uniqueTag();
+      const core = new DefinedCore([t], "all", 0, undefined, null);
+
+      expect(core.defined).toBe(false);
+      expect(core.pending).toEqual([]);
+      expect(core.missing).toEqual([t]);
+      expect(core.error).toMatch(/registry unavailable/);
+      expectInvariant(core);
+      await expect(core.ready).resolves.toBeUndefined();
+    });
+  });
+
   describe("遅延定義", () => {
     it("pending→count へ遷移し再 publish、mode=all は全解決で defined になる", async () => {
       const a = uniqueTag();

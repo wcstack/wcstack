@@ -88,7 +88,7 @@ interface WcsTiltCoreValues {
  */
 type WcsTiltValues = WcsTiltCoreValues;
 
-declare function bootstrapTilt(userConfig?: IWritableConfig): void;
+declare function bootstrapTilt(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -232,6 +232,12 @@ declare const WCS_TILT_ERROR_CODE: {
     /** その他の `requestPermission()` reject(gesture 文脈外 / 想定外の失敗)。 */
     readonly TiltError: "tilt-error";
 };
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-tilt": WcsTilt;
+    }
+}
 
 export { TiltCore, WCS_TILT_ERROR_CODE, WcsTilt, bootstrapTilt, getConfig };
 export type { IWritableConfig, IWritableTagNames, TiltPermissionState, WcsIoErrorInfo, WcsIoErrorPhase, WcsTiltCoreValues, WcsTiltValues };

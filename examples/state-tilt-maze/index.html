@@ -24,6 +24,7 @@
 
     /* Board — fixed 320x320 logical px, same space as the physics */
     .board { position: relative; width: 320px; height: 320px; margin: 0 auto; background: #f8f9fa; border: 4px solid #3949ab; border-radius: 8px; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+    .board:focus-visible { outline: 3px solid #e65100; outline-offset: 2px; }
     .wall { position: absolute; background: #3949ab; border-radius: 3px; }
     .hole { position: absolute; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #37474f, #0d1117 70%); }
     .goal { position: absolute; border-radius: 6px; background: #e8f5e9; border: 2px dashed #2e7d32; }
@@ -86,6 +87,13 @@
     const BOUNCE = -0.25;
     const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
+    // Keyboard alternative (WCAG 2.5.4 Motion Actuation): held arrow keys live
+    // in a module-scope Set — the pressed-key roster is input infrastructure,
+    // not app state. Only the derived `keysHeld` flag is reactive.
+    const KEYS = new Set();
+    const ARROWS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
+    const KEY_RAMP = 160;               // degrees per second toward the held direction
+
     function hitsWall(cx, cy) {
       for (const w of WALLS) {
         const nx = clamp(cx, w.x, w.x + w.w);
@@ -110,6 +118,8 @@
 
       // pointer-drag fallback tilt (desktop / denied sensors)
       simBeta: 0, simGamma: 0, dragging: false,
+      // keyboard alternative: any arrow key held (rides the same sim channel)
+      keysHeld: false,
 
       // ball state (velocities are unbound working values, declared for clarity)
       ballX: START.x, ballY: START.y, vx: 0, vy: 0,
@@ -149,20 +159,21 @@
       // until then (desktop, denied permission) the drag values drive the game.
       get sensorActive() { return this.tiltBeta !== null; },
       get effBeta() {
-        const v = this.dragging || !this.sensorActive ? this.simBeta : this.tiltBeta;
+        // keys-held ranks with dragging: an explicit input beats the sensor
+        const v = this.dragging || this.keysHeld || !this.sensorActive ? this.simBeta : this.tiltBeta;
         return clamp(v, -TILT_MAX, TILT_MAX);
       },
       get effGamma() {
-        const v = this.dragging || !this.sensorActive ? this.simGamma : this.tiltGamma;
+        const v = this.dragging || this.keysHeld || !this.sensorActive ? this.simGamma : this.tiltGamma;
         return clamp(v, -TILT_MAX, TILT_MAX);
       },
       get ballTransform() { return `translate(${this.ballX}px, ${this.ballY}px)`; },
       get timeText() { return (this.timeMs / 1000).toFixed(1) + " s"; },
       get controlText() {
-        if (this.sensorActive) return "control: device tilt";
-        if (this.sensorsFailed) return "control: drag (sensor packages failed to load)";
-        if (this.tiltPermission === "denied") return "control: drag (tilt permission denied)";
-        return "control: drag the board";
+        if (this.sensorActive) return "control: device tilt (or arrow keys)";
+        if (this.sensorsFailed) return "control: drag or arrow keys (sensor packages failed to load)";
+        if (this.tiltPermission === "denied") return "control: drag or arrow keys (tilt permission denied)";
+        return "control: drag the board or use the arrow keys";
       },
 
       // --- sensor-package readiness (from <wcs-defined>) ------------------
@@ -199,8 +210,19 @@
         this.timeMs += dtMs;
         const dt = Math.min(dtMs, 40) / 1000;
 
-        // Let go of the pointer -> the simulated board levels back out.
-        if (!this.dragging && !this.sensorActive) {
+        // Keyboard input: held arrows ramp the simulated tilt toward its max —
+        // a third input on the existing sim channel. The physics below is
+        // untouched; keys are just another way to tilt the board.
+        if (this.keysHeld) {
+          const rampStep = KEY_RAMP * dt;
+          const targetGamma = (KEYS.has("ArrowRight") ? TILT_MAX : 0) + (KEYS.has("ArrowLeft") ? -TILT_MAX : 0);
+          const targetBeta = (KEYS.has("ArrowDown") ? TILT_MAX : 0) + (KEYS.has("ArrowUp") ? -TILT_MAX : 0);
+          this.simGamma = clamp(this.simGamma + clamp(targetGamma - this.simGamma, -rampStep, rampStep), -TILT_MAX, TILT_MAX);
+          this.simBeta = clamp(this.simBeta + clamp(targetBeta - this.simBeta, -rampStep, rampStep), -TILT_MAX, TILT_MAX);
+        }
+
+        // Let go of the pointer / keys -> the simulated board levels back out.
+        if (!this.dragging && !this.keysHeld && !this.sensorActive) {
           this.simBeta *= 0.92;
           this.simGamma *= 0.92;
         }
@@ -286,6 +308,27 @@
       dragEnd() {
         this.dragging = false;
       },
+
+      // --- keyboard alternative -------------------------------------------
+      // preventDefault only for the arrow keys, inside the handler —
+      // `onkeydown#prevent` would kill Tab (and every other key) too.
+      keyDown(e) {
+        if (!ARROWS.has(e.key)) return;
+        e.preventDefault();
+        if (e.repeat) return;
+        KEYS.add(e.key);
+        this.keysHeld = true;
+      },
+      keyUp(e) {
+        if (!ARROWS.has(e.key)) return;
+        KEYS.delete(e.key);
+        this.keysHeld = KEYS.size > 0;
+      },
+      // Stuck-key prevention: losing focus ends every held key.
+      keyClear() {
+        KEYS.clear();
+        this.keysHeld = false;
+      },
     };
   </script>
 </wcs-state>
@@ -324,9 +367,12 @@
 <!-- ============================================================
      HUD
      ============================================================ -->
-<div class="hud" role="status">
+<!-- No role="status" on the HUD itself: the timer inside updates every frame
+     and a live region here floods a screen reader. Only the low-frequency
+     control chip announces (it changes when the control mode changes). -->
+<div class="hud">
   <span class="time" data-wcs="textContent: timeText"></span>
-  <span class="chip" data-wcs="textContent: controlText"></span>
+  <span class="chip" role="status" data-wcs="textContent: controlText"></span>
   <span class="chip" data-wcs="textContent: wakeText"></span>
   <span class="chip loop-chip">game loop</span>
   <button type="button" data-wcs="onclick: restart">Reset</button>
@@ -335,7 +381,9 @@
 <!-- ============================================================
      Board — physics space and CSS space are the same 320x320 px
      ============================================================ -->
-<div class="board" data-wcs="onpointerdown: dragStart; onpointermove: dragMove; onpointerup: dragEnd; onpointercancel: dragEnd">
+<div class="board" tabindex="0" role="application"
+     aria-label="Maze board. Use the arrow keys to tilt the board and roll the ball to the flag."
+     data-wcs="onpointerdown: dragStart; onpointermove: dragMove; onpointerup: dragEnd; onpointercancel: dragEnd; onkeydown: keyDown; onkeyup: keyUp; onblur: keyClear">
   <template data-wcs="for: walls">
     <div class="wall" data-wcs="attr.style: .css"></div>
   </template>
@@ -351,7 +399,7 @@
       <h2>Tilt Ball Maze</h2>
       <p>Tilt your phone to roll the ball to the flag ⚑.<br>
         Avoid the holes. Shake to restart.<br>
-        No sensors? Drag on the board instead.</p>
+        No sensors? Drag on the board or use the arrow keys.</p>
       <!-- Held until <wcs-defined> settles, so the tap can never land before the
            sensor tags' command.* subscriptions exist. -->
       <button type="button" data-wcs="onclick: startGame; disabled: sensorsResolving; textContent: startLabel"></button>
@@ -379,7 +427,7 @@
   <li>Sensors need a secure context: localhost works; on a phone use HTTPS (or <code>adb reverse</code>).</li>
   <li>iOS grants tilt via the Start button's tap (gesture-gated permission, absorbed by <code>&lt;wcs-tilt&gt;</code>).</li>
   <li>Shake detection uses <code>&lt;wcs-accelerometer&gt;</code> (Chromium/Android); elsewhere the Retry button covers it.</li>
-  <li>Desktop: drag the board, or emulate orientation in DevTools &gt; Sensors.</li>
+  <li>Desktop: drag the board, use the arrow keys (focus the board first — it is in the Tab order), or emulate orientation in DevTools &gt; Sensors.</li>
   <li>Start is disabled until <code>&lt;wcs-defined&gt;</code> settles. Block <code>esm.run/@wcstack/tilt</code> in DevTools &gt; Network to watch the 5s timeout fire: Start unlocks anyway and the HUD reports drag-only control.</li>
 </ul>
 

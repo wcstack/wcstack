@@ -352,12 +352,12 @@ describe('dcc/defineDCC', () => {
 
     // §2.5: stateTagSelector は `:not([name])` なので name 付き <wcs-state> は一致しない。
     // 黙って壊れる代わりに warn を出す。
-    it('$bindablesがあるのに無名のwcs-stateが無い場合はconsole.warnで通知されること', () => {
+    it('$bindablesがあるのに wcs-state が無い場合はconsole.warnで通知されること', () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const tag = uniqueTag();
       const { host, shadow } = createHostWithShadowRoot(
         tag,
-        `<p>hello</p><${config.tagNames.state} name="scoped"></${config.tagNames.state}>`,
+        `<p>hello</p>`,
       );
       defineDCC(host, shadow, { count: 0, $bindables: ['count'] });
 

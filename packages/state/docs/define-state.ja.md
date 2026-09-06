@@ -362,6 +362,17 @@ defineState({
 
 `WcsPaths<T>` はコンパイル時間の増大を防ぐため、再帰を4レベルに制限しています。極端に深い構造では、第4ネストレベルを超えるパスは生成されません。
 
+## HTML に届ける: `wcs-schema` → `wcs-validate`
+
+`defineState` が型を付けるのは state ファイルです。それをバインドする HTML には何も伝わりません — 静的検証器（`wcs-validate`・VS Code 拡張）は state を型チェッカーでなく正規表現アナライザで読むので、`users: [] as { name: string }[]` の `users.*.name` はそこでは解決できません。型を向こう側へ渡すには、同じファイルから [`@wcstack/typescript`](../../typescript/README.ja.md) で sidecar の `stateSchema` を生成します:
+
+```bash
+npx wcs-schema emit src/state.ts        # TS の型から wcstack.manifest.json を書く
+npx wcs-validate --strict index.html    # 型に無いパスは error に、偽警告は消える
+```
+
+`wcs-schema check src/state.ts` は manifest が型から乖離すると CI を落とします。wcstack アプリの TypeScript の話全体は [docs/typescript.ja.md](../../../docs/typescript.ja.md) にまとめています。
+
 ## エクスポートされる型
 
 | 型 | 説明 |

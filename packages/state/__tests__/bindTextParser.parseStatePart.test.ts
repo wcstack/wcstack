@@ -4,21 +4,18 @@ import { parseStatePart } from '../src/bindTextParser/parseStatePart';
 describe('parseStatePart', () => {
   it('statePathのみをパースできること', () => {
     const result = parseStatePart('user.name');
-    expect(result.stateName).toBe('default');
     expect(result.statePathName).toBe('user.name');
     expect(result.statePathInfo?.path).toBe('user.name');
     expect(result.outFilters).toEqual([]);
   });
 
-  it('stateNameをパースできること', () => {
-    const result = parseStatePart('count@cart');
-    expect(result.stateName).toBe('cart');
-    expect(result.statePathName).toBe('count');
+  it('@name は v2 で撤去 — 移行ヒント付きの parse error になること', () => {
+    expect(() => parseStatePart('count@cart')).toThrow(/removed in v2/);
+    expect(() => parseStatePart('count@cart')).toThrow(/mount/);
   });
 
   it('フィルタをパースできること', () => {
-    const result = parseStatePart('count@cart|gt(0)|uc');
-    expect(result.stateName).toBe('cart');
+    const result = parseStatePart('count|gt(0)|uc');
     expect(result.statePathName).toBe('count');
     expect(result.outFilters.length).toBe(2);
     expect(result.outFilters[0].filterName).toBe('gt');
@@ -28,8 +25,7 @@ describe('parseStatePart', () => {
   });
 
   it('トリムが効くこと', () => {
-    const result = parseStatePart('  count  @  cart  |  gt(0)  ');
-    expect(result.stateName).toBe('cart');
+    const result = parseStatePart('  count  |  gt(0)  ');
     expect(result.statePathName).toBe('count');
     expect(result.outFilters.length).toBe(1);
     expect(result.outFilters[0].filterName).toBe('gt');

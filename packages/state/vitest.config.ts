@@ -17,6 +17,11 @@ export default defineConfig({
         'src/exports.ts',
         'src/types.ts',
         'package.json',
+        // Generated copy of the shared transition-runner protocol
+        // (/protocol/transition-runner.ts). state exercises the lookup and the
+        // no-arbiter fallback (integration.viewTransition.test.ts); the manifest
+        // validity branches are covered once, in @wcstack/view-transition.
+        'src/protocol/transitionRunner.ts',
       ],
       thresholds: {
         statements: 99.5,

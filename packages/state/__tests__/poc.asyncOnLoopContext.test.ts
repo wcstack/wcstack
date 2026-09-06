@@ -281,7 +281,7 @@ describe("PoC: async $on ハンドラとループコンテキスト（G1）", ()
 
       // reject は unhandled にならず、どのハンドラで落ちたかが分かる形で報告される。
       expect(errors).toHaveLength(1);
-      expect(String(errors[0][0])).toContain('$on."rowPicked" of state "default"');
+      expect(String(errors[0][0])).toContain('$on."rowPicked"');
       expect((errors[0][1] as Error).message).toBe("poc: handler rejected");
     } finally {
       console.error = originalConsoleError;

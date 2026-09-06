@@ -1,8 +1,9 @@
-# state + intersection + `$streams` デモ（`<wcs-intersect>` による無限スクロール）
+# state + intersection + `$streams` + `$watch` デモ（`<wcs-intersect>` による無限スクロール）
 
 [`infinite-scroll`](../../packages/fetch/examples/infinite-scroll) の低レベル版です。
 `<wcs-intersect>` は可視性だけを報告し、`@wcstack/state` の `$streams` がページ取得、
-switchMap 型キャンセル、有界リトライを所有します。
+switchMap 型キャンセル、有界リトライを所有します。成功したページを長寿命の feed へ commit するのは
+`$watch` で、**何かが描画されていることに依存しません**。
 
 重要なのは、単に fetch を stream 内へ移したことではありません。要求ページは `page++` ではなく、
 **commit 済み** item 数から導出します。page N の実行中または失敗後に交差 edge が繰り返されても、
@@ -46,7 +47,7 @@ $streams.pageResult
   -> 失敗時: producer 内で有界 delay/retry
   -> { kind: "success", items } を yield
        v
-$updatedCallback
+streamStatus の $watch（headless ＝ binding 不要）
   -> 長寿命の items へページを append
   -> command.reobserve
        v
@@ -83,9 +84,13 @@ $updatedCallback
   出ないため、arm だけを資格にすると最初の一往復が黙って無効化されます。page 番号は変えずに、error 状態の
   stream を新しい予算で restart します。
 - **ページ単位と feed 全体の寿命を分離します。** `$streams` の値は restart ごとに reset されるため、
-  `pageResult` は現在ページだけを保持します。成功値は `$updatedCallback` が長寿命の `items` へ commit します。
-  `$updatedCallback` は binding 駆動なので、表示中の stream status meter をこの commit 境界の明示的な
-  観測点にしています。hidden なダミー購読は使いません。
+  `pageResult` は現在ページだけを保持します。成功値は `$watch` が長寿命の `items` へ commit します。
+  watch は **headless** で、`$updatedCallback` と違い値がどこかにバインドされている必要がありません。
+  以前の版は `$updatedCallback` を使っており、表示中の stream status meter が commit の購読そのもの
+  ＝ load-bearing になっていました（あの `<b>` を 1 つ消すと feed が止まる）。現在の meter は表示専用です。
+- **`$watch` のキーは `$` 始まりにできない**ため、`$streamStatus.pageResult` を 1 行の `streamStatus`
+  getter へ写しています。watch した getter は eager になりますが、ここではそれがまさに欲しい性質です
+  ── 誰も描画していなくても評価され続けます。
 - **再観測で short-page stall を防ぎます。** full page の成功後に `reobserve()` を呼び、sentinel が境界を
   跨いでいなくても現在の可視性を再通知させます。partial page は `noMore` を立てて終了します。
 - **retry 予算は有限です。** `maxRetries: 3` なら恒久失敗時は正確に4 request で停止します。error 時に
@@ -104,7 +109,7 @@ $updatedCallback
   ありません。そのため attempt loop と abort 対応 delay は producer が所有します。
 - `retryNonce` は「同じ page をもう一度」を occurrence から変化する依存値へ変換します。これは意図的ですが、
   value ベースの restart API が必要とする符号化であることに変わりはありません。
-- commit-before-reobserve はグラフの型ではなく `$updatedCallback` の文順で表します。ただし `reobserve()` が
+- commit-before-reobserve はグラフの型ではなく `$watch` ハンドラの文順で表します。ただし `reobserve()` が
   発火するのは後続 observer task であり、page は commit 済み件数から冪等に導出されるため、2文間の同期 race に
   正しさを依存させてはいません。
 - scroll retry の資格判定は `window.scrollY` を読みます。これは state モジュールが他では一切触らない帯域外の

@@ -6,7 +6,12 @@ import {
   WcsShaper,
 } from "./components/nodes.js";
 
-export function registerComponents(): void {
+/**
+ * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
+ * them for a single shadow tree -- scoped registries do not inherit the global
+ * one, so a tree using one needs its own definitions.
+ */
+export function registerComponents(registry: CustomElementRegistry = customElements): void {
   const definitions: [string, CustomElementConstructor][] = [
     [config.tagNames.audio, WcsAudio],
     [config.tagNames.voice, WcsVoice],
@@ -21,6 +26,6 @@ export function registerComponents(): void {
     [config.tagNames.analyser, WcsAnalyser],
   ];
   for (const [tag, ctor] of definitions) {
-    if (!customElements.get(tag)) customElements.define(tag, ctor);
+    if (!registry.get(tag)) registry.define(tag, ctor);
   }
 }

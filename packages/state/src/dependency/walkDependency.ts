@@ -6,7 +6,7 @@ import { createStateAddress } from "../address/StateAddress";
 import { IPathInfo, IStateAddress } from "../address/types";
 import { IStateElement } from "../components/types";
 import { config } from "../config";
-import { WILDCARD } from "../define";
+import { DELIMITER, WILDCARD } from "../define";
 import { createListDiff } from "../list/createListDiff";
 import { getLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
 import { IListDiff, IListIndex } from "../list/types";
@@ -14,7 +14,6 @@ import { listIndexAtWildcard } from "../list/wildcardLevel";
 import { getByAddressSymbol } from "../proxy/symbols";
 import { IStateProxy } from "../proxy/types";
 import { raiseError } from "../raiseError";
-import { getListParentListIndex } from "../webComponent/baseListIndex";
 import { getTopologicalRanks } from "./topologicalRank";
 import { SearchType } from "./types";
 
@@ -41,7 +40,6 @@ function getIndexes(listDiff: IListDiff, searchType: SearchType): Iterable<IList
 }
 
 type ExpandContext = {
-  readonly stateName: string,
   readonly stateElement: IStateElement,
   readonly targetPathInfo: IPathInfo,
   readonly targetListIndexes: IListIndex[],
@@ -64,7 +62,7 @@ function _walkExpandWildcard(
   const lastValue = getLastListValueByAbsoluteStateAddress(parentAbsAddress);
   const newValue = context.stateProxy[getByAddressSymbol](parentAddress);
   const listDiff = createListDiff(
-    getListParentListIndex(context.stateElement, parentAddress.listIndex), lastValue, newValue);
+    parentAddress.listIndex, lastValue, newValue);
 
   const loopIndexes = getIndexes(listDiff, context.searchType);
   if (currentWildcardIndex === context.wildcardPaths.length - 1) {
@@ -92,7 +90,6 @@ function _walkExpandWildcard(
 export type ListExpansion = "full" | "diff";
 
 type Context = {
-  readonly stateName: string,
   readonly stateElement: IStateElement,
   readonly staticMap: Map<string, string[]>,
   readonly dynamicMap: Map<string, string[]>,
@@ -167,13 +164,22 @@ const EMPTY_PATH_INFOS: IPathInfo[] = [];
 
 /**
  * 位置だけが変わった行（movedRows）で展開すべきパス群を求める。
- * `${listPath}.*` の静的 subtree を辿り、$1 等を読んだ実績のある getter
+ * `${listPath}.*` 配下にある、$1 等を読んだ実績のある getter
  * （indexDependentGetterPaths）だけを返す。行の同一性・listIndex は保たれ
  * index 以外の入力が不変なので、index を読まない getter / 値パスは再評価不要。
  * 戻り値:
  * - IPathInfo[]（空可）: この各パスだけを行の listIndex で展開する
  * - null: ネストしたワイルドカード配下に index 依存 getter がある
  *   （listIndex の階数が合わず個別展開できない）→ 呼び出し側で行全体展開に倒す
+ *
+ * 配下判定は staticMap の subtree 走査ではなく indexDependentGetterPaths 側の
+ * プレフィックス照合で行う。静的依存グラフは `State.setPathInfo` が
+ * 「バインドされたパスから親方向へ」張るため、DOM にバインドされていない中間
+ * getter（`.label` だけを描画し `.rank` は `.label` からしか読まれない綴り）は
+ * subtree に現れない。そこを走査すると index 依存 getter を取りこぼし、
+ * 「index を読む getter が subtree に無い＝位置のみ変わった行の値は不変」という
+ * 呼び出し側の判断が偽になって、移動行の getter が古い値のまま残る。
+ * この集合は $1 を読んだ getter の数しか持たないので、走査コストも subtree より小さい。
  */
 function getMovedRowExpansionPaths(
   context: Context,
@@ -185,26 +191,16 @@ function getMovedRowExpansionPaths(
     return EMPTY_PATH_INFOS;
   }
   let result: IPathInfo[] | null = null;
-  const queue: string[] = [wildcardPath];
-  const seen = new Set<string>(queue);
-  for (let i = 0; i < queue.length; i++) {
-    const path = queue[i];
-    if (indexGetters.has(path)) {
-      const pathInfo = getPathInfo(path);
-      if (pathInfo.wildcardCount !== depPathInfo.wildcardCount) {
-        return null;
-      }
-      (result ??= []).push(pathInfo);
+  const prefix = wildcardPath + DELIMITER;
+  for (const path of indexGetters) {
+    if (path !== wildcardPath && !path.startsWith(prefix)) {
+      continue;
     }
-    const children = context.staticMap.get(path);
-    if (children) {
-      for (const child of children) {
-        if (!seen.has(child)) {
-          seen.add(child);
-          queue.push(child);
-        }
-      }
+    const pathInfo = getPathInfo(path);
+    if (pathInfo.wildcardCount !== depPathInfo.wildcardCount) {
+      return null;
     }
+    (result ??= []).push(pathInfo);
   }
   return result ?? EMPTY_PATH_INFOS;
 }
@@ -285,7 +281,7 @@ function _collectDependencies(
         const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
         const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);
         const listDiff = createListDiff(
-          getListParentListIndex(context.stateElement, address.listIndex), lastValue, newValue);
+          address.listIndex, lastValue, newValue);
         const selection = selectExpansionIndexes(context, sourcePath, lastValue, newValue, listDiff);
         for(const listIndex of selection.fullRows) {
           const depAddress = createStateAddress(depPathInfo, listIndex);
@@ -363,7 +359,6 @@ function _collectDependencies(
             listIndex = null;
           }
           const expandContext: ExpandContext = {
-            stateName: context.stateName,
             stateElement: context.stateElement,
             targetPathInfo: depPathInfo,
             targetListIndexes: [],
@@ -398,7 +393,6 @@ function _collectDependencies(
 }
 
 export function walkDependency(
-  stateName: string,
   stateElement: IStateElement,
   startAddress: IStateAddress,
   staticDependency: Map<string, string[]>,
@@ -423,7 +417,6 @@ export function walkDependency(
   const ranks = getTopologicalRanks(startPath, staticDependency, dynamicDependency, MAX_DEPENDENCY_DEPTH);
   const context: Context = {
     ranks: ranks,
-    stateName: stateName,
     stateElement: stateElement,
     staticMap: staticDependency,
     dynamicMap: dynamicDependency,

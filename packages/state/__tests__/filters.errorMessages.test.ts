@@ -5,7 +5,8 @@ import {
   valueMustBeNumber,
   valueMustBeString,
   valueMustBeBoolean,
-  valueMustBeDate
+  valueMustBeDate,
+  valueMustBeArray
 } from '../src/filters/errorMessages';
 
 describe('filter errorMessages', () => {
@@ -48,6 +49,13 @@ describe('filter errorMessages', () => {
     it('エラーメッセージにフィルター名が含まれること', () => {
       expect(() => valueMustBeDate('testFilter')).toThrow(/testFilter/);
       expect(() => valueMustBeDate('testFilter')).toThrow(/requires a date value/);
+    });
+  });
+
+  describe('valueMustBeArray', () => {
+    it('エラーメッセージにフィルター名が含まれること', () => {
+      expect(() => valueMustBeArray('testFilter')).toThrow(/testFilter/);
+      expect(() => valueMustBeArray('testFilter')).toThrow(/requires an array value/);
     });
   });
 });

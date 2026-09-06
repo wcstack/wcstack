@@ -1,0 +1,16 @@
+{
+  "name": "state-testing-todo",
+  "private": true,
+  "type": "module",
+  "description": "A todo page built on @wcstack/state and its headless vitest suite driven by @wcstack/testing.",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@wcstack/server": "file:../../packages/server",
+    "@wcstack/state": "file:../../packages/state",
+    "@wcstack/testing": "file:../../packages/testing",
+    "happy-dom": "^20.0.11",
+    "vitest": "^4.0.15"
+  }
+}

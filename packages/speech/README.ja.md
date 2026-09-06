@@ -265,6 +265,10 @@ core.speak("こんにちは。");
 
 Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 
+## アクセシビリティ
+
+**WCAG 1.4.2 Audio Control（レベル A）**: 合成音声も音声である — ユーザー操作なしに始まりうる・長く続きうるなら、システム音量と独立の可視の停止手段（`<wcs-speak>` の `pause` / `cancel` コマンド）を必ず用意する。合成音声はスクリーンリーダー自身の声とも正面衝突する: ユーザー自身のリーダーが読み上げるべき適切なマークアップの代わりに `<wcs-speak>` を使ってはならない（リーダーは*ユーザーが選んだ*声・速度・言語で話す）。認識側の `<wcs-listen>` は入力手段であり、モーションセンサーと同じ扱いを: 同じ操作への並行入力（タイピング）と、マイクを止める可視の手段（`stop` / `abort`）を常に用意する。
+
 ## ライセンス
 
 MIT

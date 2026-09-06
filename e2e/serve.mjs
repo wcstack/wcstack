@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 // Serves the repository root so example pages load the locally built bundles
 // (packages/*/dist) instead of the published CDN packages. Zero dependencies.
@@ -158,6 +158,74 @@ async function handleApi(req, res, url) {
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// SSR router demo (docs/ssr-router-design.md Phase 4). Renders the fixture body
+// through @wcstack/server's renderToString per request, so the real-browser
+// suite exercises SSR → client adoption end to end against the local dists
+// (the e2e workflow rebuilds any dist whose src outpaces it).
+//
+// The state / router bundles are imported through *async* bootstrap loaders,
+// not at module scope: their classes extend HTMLElement at module evaluation,
+// which only exists after renderToString installs the DOM globals. The server
+// bundle itself has no such dependency and can load eagerly.
+// ---------------------------------------------------------------------------
+const SSR_PREFIX = "/ssr-router";
+let ssrDeps = null;
+
+async function loadSsrDeps() {
+  if (!ssrDeps) {
+    const dist = (pkg) =>
+      pathToFileURL(join(ROOT, "packages", pkg, "dist", "index.esm.js")).href;
+    const [{ renderToString }, template] = await Promise.all([
+      import(dist("server")),
+      readFile(join(ROOT, "e2e", "fixtures", "ssr-router-body.html"), "utf-8"),
+    ]);
+    ssrDeps = {
+      renderToString,
+      template,
+      bootstraps: [
+        async () => (await import(dist("state"))).bootstrapState(),
+        async () => (await import(dist("router"))).bootstrapRouter(),
+      ],
+    };
+  }
+  return ssrDeps;
+}
+
+async function handleSsrRouter(req, res, url) {
+  if (!(url.pathname === SSR_PREFIX || url.pathname.startsWith(SSR_PREFIX + "/"))) {
+    return false;
+  }
+  if (url.pathname === SSR_PREFIX) {
+    res.writeHead(301, { Location: SSR_PREFIX + "/" + url.search });
+    res.end();
+    return true;
+  }
+  const { renderToString, template, bootstraps } = await loadSsrDeps();
+  const body = await renderToString(template, {
+    url: `http://127.0.0.1:${PORT}${url.pathname}${url.search}`,
+    baseHref: `${SSR_PREFIX}/`,
+    bootstraps,
+  });
+  const page = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: SSR router</title>
+  <base href="${SSR_PREFIX}/">
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+  <script type="module" src="/packages/router/dist/auto.min.js"></script>
+</head>
+<body>${body}</body>
+</html>`;
+  res.writeHead(200, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-store",
+  });
+  res.end(page);
+  return true;
+}
+
 async function serveStatic(res, url) {
   // Path traversal guard: the resolved path must stay inside the repo root.
   let filePath = resolve(join(ROOT, decodeURIComponent(url.pathname)));
@@ -212,6 +280,8 @@ const server = createServer(async (req, res) => {
     }
 
     if ((await handleApi(req, res, url)) !== false) return;
+
+    if ((await handleSsrRouter(req, res, url)) !== false) return;
 
     return await serveStatic(res, url);
   } catch {

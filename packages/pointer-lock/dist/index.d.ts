@@ -89,7 +89,7 @@ interface WcsPointerLockCoreValues {
  */
 type WcsPointerLockValues = WcsPointerLockCoreValues;
 
-declare function bootstrapPointerLock(userConfig?: IWritableConfig): void;
+declare function bootstrapPointerLock(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -267,6 +267,12 @@ declare const WCS_POINTER_LOCK_ERROR_CODE: {
     /** その他の caught 例外。 */
     readonly PointerLockError: "pointer-lock-error";
 };
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-pointer-lock": WcsPointerLock;
+    }
+}
 
 export { PointerLockCore, WCS_POINTER_LOCK_ERROR_CODE, WcsPointerLock, bootstrapPointerLock, getConfig };
 export type { IWritableConfig, IWritableTagNames, WcsIoErrorInfo, WcsIoErrorPhase, WcsPointerLockCoreValues, WcsPointerLockValues };

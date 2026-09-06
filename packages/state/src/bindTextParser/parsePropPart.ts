@@ -7,6 +7,11 @@ type PropPartParseResult = Pick<IBindingInfo, 'propName' | 'propSegments' | 'pro
 
 const cacheFilterInfos = new Map<string, IFilterInfo[]>();
 
+/** tooling 専用（parser.ts の clearParserCaches からのみ呼ぶ）。 */
+export function clearPropPartCacheForTooling(): void {
+  cacheFilterInfos.clear();
+}
+
 // format: propName#moodifier1,modifier2
 // propName-format: path.to.property (e.g., textContent, style.color, not include :)
 // special path: 

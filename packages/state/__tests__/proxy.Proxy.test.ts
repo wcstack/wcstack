@@ -7,7 +7,7 @@ import type { IStateElement } from '../src/components/types';
 import type { IStateAddress } from '../src/address/types';
 import type { ICacheEntry } from '../src/cache/types';
 import type { IVersionInfo } from '../src/version/types';
-import { setStateElementByName } from '../src/stateElementByName';
+import { setStateElement } from '../src/stateElementByName';
 import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
 import { setLoopContextSymbol } from '../src/proxy/symbols';
@@ -77,33 +77,33 @@ function createMockStateElement(options?: {
 
 describe('proxy/StateHandler', () => {
   beforeEach(() => {
-    setStateElementByName(document, 'default', null);
+    setStateElement(document, null);
   });
 
   afterEach(() => {
     vi.clearAllMocks();
-    setStateElementByName(document, 'default', null);
+    setStateElement(document, null);
   });
 
   it('存在しないプロパティはエラーになること', () => {
     const stateElement = createMockStateElement();
-    setStateElementByName(document, 'default', stateElement);
-    const proxy = createStateProxy(document, {}, 'default', 'readonly');
+    setStateElement(document, stateElement);
+    const proxy = createStateProxy(document, {}, 'readonly');
     expect(() => (proxy as any).unknown).toThrow();
   });
 
   it('ネストしたパスを取得できること', () => {
     const stateElement = createMockStateElement();
-    setStateElementByName(document, 'default', stateElement);
-    const proxy = createStateProxy(document, { user: { name: 'Alice' } }, 'default', 'readonly');
+    setStateElement(document, stateElement);
+    const proxy = createStateProxy(document, { user: { name: 'Alice' } }, 'readonly');
     expect((proxy as any)['user.name']).toBe('Alice');
   });
 
   it('$$setLoopContextでワイルドカードパスを解決できること', () => {
     const stateElement = createMockStateElement();
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
     const state = { users: [{ name: 'Bob' }, { name: 'Carol' }] };
-    const proxy = createStateProxy(document, state, 'default', 'readonly');
+    const proxy = createStateProxy(document, state, 'readonly');
     const listIndex = createListIndex(null, 1);
     const loopContext = createStateAddress(getPathInfo('users.*'), listIndex);
 
@@ -115,8 +115,8 @@ describe('proxy/StateHandler', () => {
     const list = [1, 2, 3];
     const listPaths = new Set<string>(['items']);
     const stateElement = createMockStateElement({ listPaths });
-    setStateElementByName(document, 'default', stateElement);
-    const proxy = createStateProxy(document, { items: list }, 'default', 'readonly');
+    setStateElement(document, stateElement);
+    const proxy = createStateProxy(document, { items: list }, 'readonly');
 
     expect(getListIndexesByList(list)).toBeNull();
     const value = (proxy as any).items;
@@ -127,8 +127,8 @@ describe('proxy/StateHandler', () => {
   it('listPathsに含まれる配列でもset時にlistIndexesは設定されないこと', () => {
     const listPaths = new Set<string>(['items']);
     const stateElement = createMockStateElement({ listPaths });
-    setStateElementByName(document, 'default', stateElement);
-    const proxy = createStateProxy(document, { items: [] }, 'default', 'writable');
+    setStateElement(document, stateElement);
+    const proxy = createStateProxy(document, { items: [] }, 'writable');
 
     const list = [10, 20];
     (proxy as any).items = list;
@@ -144,7 +144,6 @@ describe('proxy/StateHandler', () => {
       propModifiers: [],
       statePathName: 'count',
       statePathInfo: countPathInfo,
-      stateName: 'default',
       outFilters: [],
       inFilters: [],
       bindingType: 'prop',
@@ -156,10 +155,10 @@ describe('proxy/StateHandler', () => {
 
     const address = createStateAddress(bindingInfo.statePathInfo!, null);
     const stateElement = createMockStateElement();
-    setStateElementByName(document, 'default', stateElement);
+    setStateElement(document, stateElement);
     const absoluteAddress = createAbsoluteStateAddress(getAbsolutePathInfo(stateElement, address.pathInfo), address.listIndex);
     addBindingByAbsoluteStateAddress(absoluteAddress, bindingInfo);
-    const proxy = createStateProxy(document, { count: 0 }, 'default', 'writable');
+    const proxy = createStateProxy(document, { count: 0 }, 'writable');
 
     (proxy as any).count = 2;
     await new Promise<void>((resolve) => queueMicrotask(resolve));

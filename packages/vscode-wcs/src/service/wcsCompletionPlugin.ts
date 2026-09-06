@@ -17,8 +17,9 @@ import {
   EVENT_MODIFIERS,
 } from './completionData.js';
 import { getBindingContext } from './bindingContext.js';
-import { getStatePathsFromHtml } from './statePathResolver.js';
+import { getStatePathsFromHtml, type FileReader } from './statePathResolver.js';
 import { validateDocument } from '../core/validateDocument.js';
+import { createFileReaderForUri } from '../fileReader.js';
 import { severityToLsp } from '../core/diagnostics.js';
 import {
   findMustacheAtOffset,
@@ -69,17 +70,20 @@ export function createWcsCompletionPlugin(): LanguageServicePlugin {
 
           const text = document.getText();
           const offset = document.offsetAt(position);
+          // 外部 state（`<wcs-state src=...>`）のパスも補完候補に含める。診断だけ
+          // 読んで補完が読まないと「警告は出るが候補は出ない」になるため両方に渡す。
+          const fileReader = createFileReaderForUri(document.uri);
 
           // Mustache {{ }} 内のカーソルチェック
           const mustache = findMustacheAtOffset(text, offset);
           if (mustache) {
-            return buildPathAndFilterCompletions(text, offset, mustache.expression, mustache.exprStart, stateTagName, null);
+            return buildPathAndFilterCompletions(text, offset, mustache.expression, mustache.exprStart, stateTagName, fileReader);
           }
 
           // コメントバインディング <!--@@:expr--> 内のカーソルチェック
           const comment = findCommentBindingAtOffset(text, offset);
           if (comment) {
-            return buildPathAndFilterCompletions(text, offset, comment.expression, comment.exprStart, stateTagName, null);
+            return buildPathAndFilterCompletions(text, offset, comment.expression, comment.exprStart, stateTagName, fileReader);
           }
 
           // 属性値内にカーソルがあるか判定
@@ -169,14 +173,13 @@ export function createWcsCompletionPlugin(): LanguageServicePlugin {
               };
 
             case 'path': {
-              const allPaths = getStatePathsFromHtml(text, stateTagName);
-              const targetStateName = context.targetState || 'default';
+              const allPaths = getStatePathsFromHtml(text, stateTagName, fileReader);
               const isEvent = context.propName.startsWith('on');
               const isForValue = context.propName === 'for';
               const isCommandProp = context.propName.startsWith('command.');
               const isEventTokenProp = context.propName.startsWith('eventToken.');
 
-              let pathCandidates = allPaths.filter(p => p.stateName === targetStateName);
+              let pathCandidates = allPaths.slice();
 
               if (isCommandProp) {
                 // command.<method>: の右辺は $command.<name> のみ
@@ -219,7 +222,6 @@ export function createWcsCompletionPlugin(): LanguageServicePlugin {
                     const replaceStart = document.positionAt(dotOffset);
 
                     const shorthandCandidates = allPaths
-                      .filter(p => p.stateName === targetStateName)
                       .filter(p => p.kind !== 'method' && p.kind !== 'list')
                       .filter(p => p.path.startsWith(expandedPrefix));
 
@@ -273,22 +275,6 @@ export function createWcsCompletionPlugin(): LanguageServicePlugin {
               };
             }
 
-            case 'stateName': {
-              // 定義済み state 名の補完
-              const allPaths = getStatePathsFromHtml(text, stateTagName);
-              const stateNames = [...new Set(allPaths.map(p => p.stateName))];
-              if (stateNames.length === 0) return undefined;
-
-              return {
-                isIncomplete: false,
-                items: stateNames.map(name => ({
-                  label: name,
-                  kind: 9 as const, // Module
-                  detail: 'state name',
-                })),
-              };
-            }
-
             default:
               return undefined;
           }
@@ -300,7 +286,15 @@ export function createWcsCompletionPlugin(): LanguageServicePlugin {
           // CI CLI と同じ validator core を呼ぶ(§7.1)。両者は同一 {code, range, severity}
           // を生成する。LSP Diagnostic の code 欄に stable code を転送する。
           const text = document.getText();
-          return validateDocument(text, { bindAttribute: bindAttrName, stateTagName, locale: messageLocale }).map(d => ({
+          // 外部 state（`<wcs-state src=...>`）も CLI と同じ reader で読む。
+          // 渡さないと候補ゼロ → パス検証が丸ごと沈黙し、「IDE は無警告なのに
+          // wcs-validate は落ちる」というパリティ破れになる（§7.1 の完了条件）。
+          // file: 以外（untitled / 仮想 FS）は undefined ＝ 従来どおり沈黙。
+          const fileReader = createFileReaderForUri(document.uri);
+          const options = fileReader === undefined
+            ? { bindAttribute: bindAttrName, stateTagName, locale: messageLocale }
+            : { bindAttribute: bindAttrName, stateTagName, locale: messageLocale, fileReader };
+          return validateDocument(text, options).map(d => ({
             range: {
               start: document.positionAt(d.start),
               end: document.positionAt(d.end),
@@ -369,7 +363,7 @@ function buildPathAndFilterCompletions(
   expression: string,
   exprStart: number,
   stateTagName: string,
-  targetState: string | null,
+  fileReader?: FileReader,
 ) {
   const cursorInExpr = offset - exprStart;
   const textBeforeCursor = expression.slice(0, cursorInExpr);
@@ -394,27 +388,13 @@ function buildPathAndFilterCompletions(
     };
   }
 
-  // `@` の後なら state 名補完
-  const atIndex = textBeforeCursor.indexOf('@');
-  if (atIndex !== -1) {
-    const allPaths = getStatePathsFromHtml(html, stateTagName);
-    const stateNames = [...new Set(allPaths.map(p => p.stateName))];
-    return {
-      isIncomplete: false,
-      items: stateNames.map(name => ({
-        label: name,
-        kind: 9 as const,
-        detail: 'state name',
-      })),
-    };
-  }
+  // `@` は v2 の parse error（名前次元は撤去）— 補完は出さない
+  if (textBeforeCursor.indexOf('@') !== -1) return undefined;
 
   // パス補完（テキストバインディングなのでメソッド・トークン系は除外）
-  const allPaths = getStatePathsFromHtml(html, stateTagName);
-  const targetStateName = targetState || 'default';
+  const allPaths = getStatePathsFromHtml(html, stateTagName, fileReader);
   const pathCandidates = allPaths
-    .filter(p => p.kind !== 'method' && p.kind !== 'command' && p.kind !== 'eventToken')
-    .filter(p => p.stateName === targetStateName);
+    .filter(p => p.kind !== 'method' && p.kind !== 'command' && p.kind !== 'eventToken');
   if (pathCandidates.length === 0) return undefined;
 
   return {

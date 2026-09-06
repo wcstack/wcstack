@@ -48,6 +48,8 @@ The result is 210 `state`, 20 `event`, 1 `handle` — 231 in total.
 > **Addendum (2026-08-03, when @wcstack/audio was added)**: the new `@wcstack/audio` has 11 tags and adds **not one** `handle`. While holding a live graph of `AudioNode`s internally, it exposes only `state` (context status, voice count, warnings, error) and `event` (noteOn / noteOff / analyser frame); Core owns and destroys the handles. It is the same shape as worker / websocket / broadcast, and introduces none of the per-adapter failure modes of §5.6 (signals' same-value dedupe, resource retention through RxJS replay, Qwik serialization). The reasoning is [ADR-14](14-handle-graph-wiring.md) G2.
 This is not a decision to adopt the Phase 2 metadata schema; its placement, fallback, and public API are settled at the subsequent decision gates.
 
+> **Addendum (2026-08-28, router × state path contract)**: `wcs-route`'s declaration (`params`, `typedParams`, `active`) was **removed** — after parsing, route elements are detached controllers, so the declaration was structurally unreachable from `data-wcs` (a promise that could not be kept; see `docs/router-state-contract-design.md` §1.2 / §5). The observation surface moved to `wcs-router`, which now declares `navigateUrl`, `replaceUrl`, `path`, `params`, `typedParams`, `searchParams`, `routeName` — all `state`, no `event` / `handle`. The survey-time counts above are kept as the historical record, per the audio addendum's precedent.
+
 ## 3. The classification of every surface
 
 | package / surface | state | event | handle | Main caveats |
@@ -90,8 +92,7 @@ This is not a decision to adopt the Phase 2 metadata schema; its placement, fall
 | wakelock / `wcs-wakelock` | `held`, `error`, `errorInfo` | — | — | the `WakeLockSentinel` itself is not exposed. |
 | websocket / `wcs-ws` | `connected`, `loading`, `error`, `errorInfo`, `readyState`, `trigger`, `send` | `message` | — | `message` is a separate occurrence even for an identical payload. The `WebSocket` itself is not exposed. |
 | worker / `wcs-worker` | `error`, `errorInfo`, `running` | `message` | — | `message` is a separate occurrence even for an identical payload. The `Worker` itself is not exposed. |
-| router / `wcs-route` | `params`, `typedParams`, `active` | — | — | a fresh params object is assigned on each match. |
-| router / `wcs-router` | `navigateUrl`, `path` | — | — | the current navigation state. |
+| router / `wcs-router` | `navigateUrl`, `replaceUrl`, `path`, `params`, `typedParams`, `searchParams`, `routeName` | — | — | the current navigation state. `params` / `typedParams` / `searchParams` are frozen snapshots, a fresh object per navigation. |
 | server / `RenderCore` | `html`, `loading`, `error` | — | — | a headless server surface. Not a custom element tag. |
 
 ### Dynamic DCC

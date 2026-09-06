@@ -11,6 +11,7 @@ import { createTypeScriptProject } from '@volar/language-server/lib/project/type
 import { create as createTypeScriptServicePlugins } from 'volar-service-typescript';
 import { createWcsLanguagePlugin } from './language/plugin.js';
 import { createWcsCompletionPlugin } from './service/wcsCompletionPlugin.js';
+import { createWcsNavigationPlugin } from './service/wcsNavigationPlugin.js';
 import * as ts from 'typescript';
 
 const connection = createConnection();
@@ -53,6 +54,7 @@ connection.onInitialize(params => {
   const servicePlugins = [
     ...createTypeScriptServicePlugins(ts),
     createWcsCompletionPlugin(),
+    createWcsNavigationPlugin(),
   ];
   return server.initialize(params, tsProject, servicePlugins);
 });

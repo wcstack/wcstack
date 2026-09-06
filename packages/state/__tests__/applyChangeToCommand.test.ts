@@ -7,7 +7,6 @@ import type { IApplyContext } from '../src/apply/types';
 import type { IWcBindable } from '../src/event/types';
 
 const dummyContext: IApplyContext = {
-  stateName: 'default',
   stateElement: {} as any,
   state: {} as any,
   appliedBindingSet: new Set(),
@@ -31,7 +30,6 @@ function createBinding(element: Element, methodName: string): IBindingInfo {
     propModifiers: [],
     statePathName: 'fetchUsers',
     statePathInfo: getPathInfo('fetchUsers'),
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'prop',

@@ -11,3 +11,15 @@ export type {
 export type {
   TimerStartOptions
 } from "./core/TimerCore.js";
+
+// Typed element lookups (docs/typescript.md §3): `document.querySelector("wcs-timer")`
+// resolves to the element class. Default tag names only — a page that renames tags via
+// `IWritableTagNames` is outside this map. Declared here so the augmentation ships in
+// dist/index.d.ts; it applies once this package's types are in the consuming program
+// (`import "@wcstack/timer"` or a tsconfig `types` entry).
+import type { Timer } from "./components/Timer.js";
+declare global {
+  interface HTMLElementTagNameMap {
+    "wcs-timer": Timer;
+  }
+}

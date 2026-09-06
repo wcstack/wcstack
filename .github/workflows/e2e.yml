@@ -8,6 +8,8 @@ on:
       - "packages/**/dist/**"
       - "packages/**/src/**"
       - "e2e/**"
+      # A change to this workflow must run it, or the change lands untested.
+      - ".github/workflows/e2e.yml"
   workflow_dispatch:
 
 jobs:
@@ -70,6 +72,32 @@ jobs:
             built=$((built + 1))
           done
           echo "rebuilt ${built} package(s)"
+      # serve.mjs renders /ssr-router/* through packages/server/dist at request
+      # time, and that bundle imports `happy-dom` from packages/server/node_modules.
+      # The loop above only runs `npm ci` inside a package it rebuilds, so on a
+      # tree where every dist is fresh — right after a release commits them —
+      # nothing is installed, renderToString throws, and every ssr-router spec
+      # fails with "Bad Request" (PRs #214–#219 right after v1.32.0, with
+      # `rebuilt 0 package(s)`). Install the runtime dependencies of every
+      # published package that declares some whenever the loop left them out.
+      - name: Install the runtime dependencies the committed dists import at request time
+        working-directory: .
+        run: |
+          set -euo pipefail
+          for dir in packages/*/; do
+            [ -f "${dir}package.json" ] || continue
+            name=$(node -p "require('./${dir}package.json').name")
+            case "$name" in
+              @wcstack/*) ;;
+              *) continue ;;
+            esac
+            deps=$(node -p "Object.keys(require('./${dir}package.json').dependencies || {}).length")
+            [ "$deps" -gt 0 ] || continue
+            [ -d "${dir}node_modules" ] && continue
+            echo "::group::install runtime dependencies of $(basename "$dir")"
+            (cd "$dir" && npm ci --omit=dev)
+            echo "::endgroup::"
+          done
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm test

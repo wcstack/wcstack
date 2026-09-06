@@ -64,6 +64,31 @@ export default {
 
 パターンパス（`items.*.name`）や省略パス（`.name`）は `<template for>` の外側では補完候補に含まれません。
 
+パス候補は `<wcs-state>` スクリプト（と JSON state）から導出します。入れ子の配列も辿り（`a.*.b.*.c`）、`$streams` のエントリは値プロパティと `$streamStatus.<name>` / `$streamError.<name>` に、`$listKeys` の宣言は初期値が `[]` のリストパス（リスト自体・`.*`・`.length`・キーフィールド。それ以外の行フィールドは含まない）になります。
+
+初期値が `[]` のリストの**行の形**は、行を足す / 置き換える代入式の行リテラルから読みます — `this.items = this.items.concat({ id, kind: "general" })`、`.toSpliced(i, n, { … })`、`.with(i, { … })`、`[...this.items, { … }]` / `[{ … }, ...this.items]` — スクリプト内のどこにあっても（メソッド・getter・`$connectedCallback`・`$watch` ハンドラ）対象です。既に配列と分かっているパスにだけフィールドを足し、明示的な初期値を上書きしません。`$listKeys` の宣言は「これはリストである」と伝えるもう一つの手段で、`$listKeys: { items: "id" }` だけで解析器は `items`・`items.*`・`items.length` とキーフィールド `items.*.id` を知ります —— 行についてそれ以上は知りません。変数で渡した行（`concat(row)`）は読めないので、その場合は `stateSchema` を宣言してください。
+
+### wcs-* タグ補完（HTML Custom Data）
+
+拡張は [`wcs.html-data.json`](./wcs.html-data.json) を同梱します — 各 I/O パッケージの
+`static wcBindable` サーフェスと `observedAttributes` から生成される
+[VS Code HTML custom data](https://github.com/microsoft/vscode-custom-data) です
+（`npm run emit:builtin-tags` で再生成。コミット済みバンドルとの鮮度は CI がゲートします）。
+`<wcs-state>` の無い HTML ファイルでも次が効きます:
+
+- 全 `wcs-*` 要素のタグ名補完（`<wcs-f` → `<wcs-fetch>`）
+- タグ hover で契約面を表示 — バインド可能プロパティ・input・`command.*` 名 —
+  パッケージ README へのリンク付き
+- 属性補完（observedAttributes と input のミラー属性）
+- `data-wcs` をグローバル属性として宣言（バインディング構文の要約付き）
+
+標準の HTML 言語サービスを使う他エディタ（およびこの拡張を入れていない VS Code）でも、
+ファイルをプロジェクトにコピーして `html.customData` 設定から参照すれば同じ補完が得られます:
+
+```json
+{ "html.customData": ["./wcs.html-data.json"] }
+```
+
 #### ステート名補完
 
 `@` の後にステート名の補完が動作します。`data-wcs`、`{{ }}`、`<!--@@:-->` のすべての構文で利用可能です。
@@ -85,6 +110,17 @@ Mustache 構文 `{{ }}` とコメントバインディング構文 `<!--@@:-->` 
 <p><!--@@:count|gt(0)--></p>
 <p><!--@@wcs-text:count--></p>
 ```
+
+### Hover・定義へ移動・参照の検索・インレイヒント
+
+バインディングパスは HTML に直接書かれた実行時識別子なので、ソースマップ無しでナビゲーションが成立します。4 機能とも診断と同じ位置付き参照インデックスへのクエリです。
+
+- **Hover**: バインディングパスに種別（data / computed / list / メソッド / command トークン / event トークン）・推定型・所属 state・宣言行を表示。`for` 短縮パスは展開後（`` `.name` → `users.*.name` ``）を表示。フィルタ名にはシグネチャ・説明・型変換（`number → string`）、修飾子（`#prevent` / `#ro` / `#init=` / `#sync=` / `#on<event>`）には意味説明。解決できないパスには何も出しません（誤ヒントゼロ）— ただし `src` 外部 state は「外部定義」と明示します。
+- **定義へ移動**（F12）: `data-wcs` / `{{ }}` / `<!--@@:-->` のパスからインライン `<wcs-state>` スクリプト内の宣言へジャンプ。ドットパスは第 1 セグメントへフォールバック。`$command.<name>` は `$commandTokens` へ、event-token 配線は `$eventTokens` へ。`src` 外部 state のパスは `<wcs-state src=…>` タグへジャンプします。
+- **参照の検索**（Shift+F12）: 双方向。バインディングパスから全チャネルの出現へ（短縮形は展開後パスと統合）、state スクリプト内の宣言名からそれを読む全バインディングへ（配下パス含む）。
+- **インレイヒント**: `for` 短縮パスの後ろに展開後パス（`.name` `= users.*.name` — ランタイムが実際に行う属性書き換えと同一）、フィルタ鎖の末尾に結果型（`→ string`）、spread（`...: target`）に展開規模（`→ 13 props` — 組み込み wcs-* タグ限定。ユーザー定義タグは静的展開不能）。型が静的に決まらない場合はヒントを出しません。
+
+Hover 本文の言語は `wcstack.messageLanguage` に従います（既定: VS Code の表示言語）。
 
 ### Binding Diagnostics
 
@@ -142,8 +178,10 @@ this["user.name"] = "Bob";
 同名 tag/filter 衝突、衝突後 override の禁止、稼働中の `static wcBindable` サーフェスとの
 drift。診断には安定コード（例 `manifest-schema-version` / `manifest-kind-invalid`）が付きます。
 
-単一の `validateDocument` 入口が IDE 診断と CLI の両方を駆動するため、エディタと CI で
-結果が一致します。同梱の **`wcs-validate`** CLI は同じ検査を—— `wcstack.manifest.json`
+単一の `validateDocument` 入口が IDE 診断と CLI の両方を駆動するため、同じ入力に対して
+エディタと CI で結果が一致します。意図的な非対称が 1 つ: `<wcs-state src="...">` の
+外部 state は CLI だけが（HTML ファイル相対で）解決します——IDE は単一 HTML ファイルを
+解析対象とし `src` はスキップします。同梱の **`wcs-validate`** CLI は同じ検査を—— `wcstack.manifest.json`
 sidecar および／または HTML の `data-wcs` バインディングに対して——ヘッドレスに CI 実行します。
 CLI は npm では [**`@wcstack/lint`**](https://www.npmjs.com/package/@wcstack/lint)
 として配布されています（同一の CLI バンドルを同梱する依存ゼロのラッパー）:

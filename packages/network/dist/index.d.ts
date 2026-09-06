@@ -83,7 +83,7 @@ type WcsNetworkCoreValues = WcsNetworkSnapshot;
  */
 type WcsNetworkValues = WcsNetworkCoreValues;
 
-declare function bootstrapNetwork(userConfig?: IWritableConfig): void;
+declare function bootstrapNetwork(userConfig?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
 
@@ -148,6 +148,12 @@ declare class WcsNetwork extends HTMLElement {
     get connectedCallbackPromise(): Promise<void>;
     connectedCallback(): void;
     disconnectedCallback(): void;
+}
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "wcs-network": WcsNetwork;
+    }
 }
 
 export { NetworkCore, WcsNetwork, bootstrapNetwork, getConfig };

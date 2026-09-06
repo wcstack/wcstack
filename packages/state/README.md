@@ -14,7 +14,7 @@ The following are not missing features. **They do not exist by design.**
 
 - APIs for pulling variables out of state into components
 - Per-element binding objects that mediate state access
-- hooks
+- hooks (`useState` / `useStore`-style — the `$connectedCallback` lifecycle callbacks are not that)
 - selectors
 - glue code that imports reactive primitives into component code
 
@@ -22,11 +22,11 @@ None of these exist by design.
 
 Why: this library does not put the UI-state coupling point inside JavaScript. State is not pulled into components. HTML refers to state through path strings. Elements do not own state, and state does not know elements. The only shared contract is the path.
 
-## Do Not Compare This to Existing Frameworks
+## Where It Sits — and When Not to Choose It
 
-This is not solving the same problem as React / Vue / Solid with a different syntax. **The premises are different.**
+This is not React / Vue / Solid with a different syntax. Those put the coupling point between UI and state inside a component; this puts it in a path string. **The premises are different**, and a comparison only says something when it is made along the right axis.
 
-| What mainstream frameworks assume | What `@wcstack/state` assumes |
+| What component frameworks assume | What `@wcstack/state` assumes |
 |---|---|
 | Components are the coupling point between UI and state | Path strings are the coupling point between UI and state |
 | JavaScript is the center of rendering | HTML and the DOM are the center |
@@ -34,7 +34,16 @@ This is not solving the same problem as React / Vue / Solid with a different syn
 | hooks / selectors / signals express subscriptions | Attributes and paths express bindings |
 | The whole app runs inside a framework execution model | A thin reactive layer is added on top of web standards |
 
-Before making a comparison chart, understand this difference in premises. These tools may live in the same ecosystem, but they cut the problem space very differently.
+The nearer relatives are the **attribute-directive, no-build libraries** — Alpine.js, petite-vue and their kind. They share the premise (attributes on plain HTML, no compiler) and differ on two points that decide the choice:
+
+- **No expression language.** Those libraries put JavaScript expressions in attributes and evaluate them at runtime. `data-wcs` carries a path and a filter chain, nothing else; computation lives in path getters on the state. That is what lets a binding be checked statically (`@wcstack/lint`, the VS Code extension, `@wcstack/typescript`) and lets a page run under a strict CSP with no `unsafe-eval` ([docs/csp.md](../../docs/csp.md)).
+- **It wires Web Components to each other.** The wc-bindable, command-token and event-token protocols and `bind-component` mounts connect elements that never import one another. The [I/O node packages](../../README.md#additional-packages) are what that buys.
+
+**Choose it** for HTML-first pages: server-rendered or static markup with reactive parts, a page composed from custom elements, anywhere "read the HTML and know every data dependency" matters and a build step is a cost rather than a given.
+
+**Do not choose it** when the team already lives inside a component framework — use the I/O nodes through the [framework adapters](../../docs/framework-adapter-integration.md) instead; when the hot path is a very large keyed list — [Performance](#performance) measures create / append at 2.5–3.5× [`@wcstack/signals`](../signals/), which interoperates with this package and is the better fit there; when templates need inline expressions — deliberately absent; or when the template must be type-checked by the compiler rather than by tooling — paths are strings, and `@wcstack/typescript` narrows that gap without closing it.
+
+On those axes the comparison is concrete: the [Performance](#performance) section below is one, and the drivers under `e2e/bench/` regenerate it on your own hardware.
 
 ## First Principle: Path as the Universal Contract
 
@@ -46,13 +55,13 @@ In every existing framework, the **component** is the coupling point between UI 
 |-------|---------------|----------------------|
 | **State** (`<wcs-state>`) | Data structure and business logic | Which DOM nodes are bound |
 | **UI** (`data-wcs`) | Path strings and display intent | How state is stored or computed |
-| **Components** (`@name`) | The path they need from a named state | The other component's internals |
+| **Components** (`state: path`) | The mount table the host writes | The other component's internals |
 
 Three levels of path contracts keep everything loosely coupled:
 
 1. **UI ↔ State** — A `data-wcs="textContent: user.name"` attribute is the entire binding. No hooks, no selectors, no reactive primitives. The component's JavaScript doesn't contain a single line that references state.
 
-2. **Component ↔ Component** — Cross-component communication happens through named state references (`@stateName`). Components never import or depend on each other; they share a naming convention, nothing more.
+2. **Component ↔ Component** — The host mounts a subtree onto each component (`<my-card data-wcs="state: user">`), and volumes graft extra modules onto the tree (`<wcs-state mount="i18n">`). Components never import or depend on each other; every connection is a path prefix on the single tree, nothing more.
 
 3. **Loop context** — Inside a `for` loop, `*` acts as an abstract index. Bindings like `items.*.price` resolve to the current element automatically. The template doesn't know its concrete position — the wildcard is the contract.
 
@@ -95,7 +104,10 @@ That's it. No build, no bootstrap code, no framework.
 - **Declarative data binding** — `data-wcs` attribute for property / text / event / structural binding
 - **Reactive Proxy** — ES Proxy-based automatic DOM updates with dependency tracking
 - **Structural directives** — `for`, `if` / `elseif` / `else` via `<template>` elements
-- **Built-in filters** — 40 filters for formatting, comparison, arithmetic, date, and more
+- **Volumes** — `<wcs-state mount="cart">` grafts a module onto the single state tree; bindings read it as `cart.…`
+- **Row identity** — `$listKeys` keeps row DOM and row objects across refetched arrays
+- **Wildcard aggregation** — `$getAll` / `$setAll` read and write across `items.*.price` without rebuilding the array
+- **Built-in filters** — 46 filters for formatting, comparison, arithmetic, date, and more
 - **Two-way binding** — automatic for `<input>`, `<select>`, `<textarea>`
 - **Web Component binding** — bidirectional state binding with Shadow DOM components
 - **Command tokens** — invoke methods on wc-bindable custom elements from state via a pub/sub channel (`command.<method>: tokenName`)
@@ -106,7 +118,9 @@ That's it. No build, no bootstrap code, no framework.
 - **Multiple state sources** — JSON, JS module, inline script, API, attribute
 - **SVG support** — full binding support inside `<svg>` elements
 - **Lifecycle hooks** — `$connectedCallback` / `$disconnectedCallback` / `$updatedCallback`, plus `$stateReadyCallback` for Web Components
-- **TypeScript support** — `defineState()` for typed state definitions with dot-path autocompletion ([details](docs/define-state.md))
+- **Headless watch** — `$watch` fires on state changes whether or not the path is rendered
+- **Diagnostics** — unresolved paths, index arity and getter cycles are reported with the same codes as `@wcstack/lint` and the VS Code extension
+- **TypeScript support** — `defineState()` for typed state definitions with dot-path autocompletion ([details](docs/define-state.md)); `@wcstack/typescript` carries the same types into the HTML validator (`wcs-schema`) and type-checks inline state scripts (`wcs-tsc`) — see [docs/typescript.md](../../docs/typescript.md)
 - **Server-Side Rendering** — `enable-ssr` attribute + `@wcstack/server` for full SSR with automatic hydration
 - **Zero dependencies** — no runtime dependencies
 
@@ -222,19 +236,20 @@ Resolution order: `state` → `src` (.json / .js) → `json` → inner `<script>
 
 > **Under a Content-Security-Policy:** form 5 (inline `<script type="module">`) is evaluated through a `blob:` URL and therefore requires `script-src blob:`. A page nonce does not cover it. If you enforce a strict CSP, use form 4 (`src="./state.js"`) instead — it needs no extra directive. See [docs/csp.md](../../docs/csp.md).
 
-### Named State
+### Mounting Additional State (`mount=`)
 
-Multiple state elements can coexist with the `name` attribute. Bindings reference them with `@name`:
+There is **one state tree per root**. To split state across modules, mount a volume: its data grafts onto the root tree at the mount path, and bindings read it by prefix.
 
 ```html
-<wcs-state name="cart">...</wcs-state>
-<wcs-state name="user">...</wcs-state>
+<wcs-state mount="cart" src="./cart.js"></wcs-state>
+<wcs-state src="./app.js"></wcs-state>
 
-<div data-wcs="textContent: total@cart"></div>
-<div data-wcs="textContent: name@user"></div>
+<div data-wcs="textContent: cart.total"></div>
 ```
 
-Default name is `"default"` (no `@` needed).
+A volume may declare getters, `$watch`, `$listKeys`, `$updatedCallback`, and `$connectedCallback`/`$disconnectedCallback` — all relative to its mount path. Load order does not matter (a volume connected before the root is grafted when the root registers). Mount paths must be static (`*`, `$`, `#`, `@` are rejected). Changing `mount` after the element has initialized is not supported: the change is ignored with a console warning — remove the element and add a new one with the desired path.
+
+> **Migrating from v1's named states:** `<wcs-state name="cart">` + `total@cart` becomes `<wcs-state mount="cart">` + `cart.total`. In v2 the `name` attribute fails fast and `@` in a path is a parse error, each with this exact guidance. Migration table: [docs/state-mount-design.md](../../docs/state-mount-design.md) §9.
 
 ## Updating State
 
@@ -287,7 +302,7 @@ this.items.sort((a, b) => a.id - b.id);
 ### `data-wcs` Attribute
 
 ```
-property[#modifier]: path[@state][|filter[|filter(args)...]]
+property[#modifier]: path[|filter[|filter(args)...]]
 ```
 
 Multiple bindings separated by `;`:
@@ -301,7 +316,6 @@ Multiple bindings separated by `;`:
 | `property` | DOM property to bind | `value`, `textContent`, `checked` |
 | `#modifier` | Binding modifier | `#ro`, `#prevent`, `#stop`, `#onchange` |
 | `path` | State property path | `count`, `user.name`, `users.*.name` |
-| `@state` | Named state reference | `@cart`, `@user` |
 | `\|filter` | Transform filter chain | `\|gt(0)`, `\|round\|locale` |
 
 ### Property Types
@@ -348,6 +362,8 @@ Automatically enabled for:
 
 ### Binding Authority (`#init=` / `#sync=`)
 
+**The problem this solves.** An element that already holds a value when its binding attaches — `<wcs-storage>` after loading a persisted value, a clock, a widget restoring its own snapshot — is overwritten by the state seed, because the initial sync of a two-way binding writes state→element. Adding `#init=element` to that one binding makes the *element* win the initial sync instead; later changes flow both ways as usual. That case (load-before-bind) is spelled out below; the rest of this section is the general rule it is an instance of.
+
 For custom elements that declare `static wcBindable`, every prop binding resolves an **authority** — which side wins the **initial sync** when the binding attaches. The steady-state direction is decided separately, by the member's declared shape: an output-only member never accepts state writes (a permanent contract), while a two-way member flows both ways after the initial sync regardless of which side won it. The default authority is derived from where the member is declared (on by default via `enableDirectionalInitialSync`):
 
 | Member declared in | Default authority | Effect |
@@ -358,6 +374,34 @@ For custom elements that declare `static wcBindable`, every prop binding resolve
 | — (no `wcBindable`; plain HTML elements) | `state` | Unchanged behavior |
 
 > **Authoring rule:** declare every settable member in **both** `properties` and `inputs`. A member declared only in `properties` is output-only — state→element writes are suppressed for the life of the binding, and the element's own initial value overwrites whatever the state seeded. (`@wcstack` I/O node Shells and DCC `$bindables` follow this rule.)
+
+#### What the element writes back (`properties[].getter`)
+
+When the element dispatches `properties[].event`, the value written to state is **`getter(event)`**. With no `getter`, the protocol default applies — [`(e) => e.detail`](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/main/SPEC.md#default-getter): the **whole `detail`, as-is**. The declared property is *not* read off the element at that point; the event payload is authoritative. A plain HTML element (no `wcBindable`) is the other way round: `element[propName]` is read on `input`/`change`.
+
+So an element that dispatches `detail: { value: 7654321 }` without a `getter` writes the **object** `{ value: 7654321 }` to state, not the number — and the failure is mostly silent: the write-back (`Number({ value: … })` → `NaN`) throws nothing, and `@wcstack/lint` cannot see it (the payload shape is not static). The runtime warns once per element and property (`wcs/default-getter-mismatch`) for the two shapes it can tell apart at the event: a `detail` that is `undefined` while the element property has a value (a plain `Event`, or a forgotten `detail`), and a `detail` object carrying a `<propName>` key while the property is not an object (the wrapper above). Any other mismatch goes through unnoticed, and the write is applied as-is either way. Use one of the two conforming shapes:
+
+```javascript
+class YenInput extends HTMLElement {
+  static wcBindable = {
+    protocol: "wc-bindable", version: 1,
+    properties: [
+      // (a) the value itself is the detail — the protocol's recommendation; no getter needed
+      { name: "value", event: "yen-input:value-changed" },
+      // (b) the detail is an object, or the event is not a CustomEvent — say how to read it
+      // { name: "value", event: "yen-input:value-changed", getter: (e) => e.detail.value },
+      // { name: "value", event: "input",                  getter: (e) => e.target.value },
+    ],
+    inputs: [{ name: "value" }],
+  };
+  #onInput() {
+    // (a): dispatch the value, not a wrapper object
+    this.dispatchEvent(new CustomEvent("yen-input:value-changed", { detail: this.value, bubbles: true }));
+  }
+}
+```
+
+Whichever you pick, `element.value` and the value extracted from the event must be the same logical state (the protocol's *Producer State Consistency Invariant*): the initial sync reads the property, every later update reads the event. Both shapes are in use inside wcstack — `<wcs-fetch>`'s `loading` dispatches the boolean as `detail` with no `getter`, its `value` reads `detail.value` through one — and DCC `$bindables` declare `getter: (e) => e.target[name]` because a sub-path write has no single value to put in `detail`. The default itself is not going to change: it is normative for every wc-bindable adapter (`@wc-bindable/core`'s `bind()` and the framework adapters implement the same `e.detail`), and the protocol classes a different default as a breaking change requiring a new protocol identifier.
 
 Override the authority per binding with `#init=`:
 
@@ -486,7 +530,7 @@ Runtime reads `customClass.wcBindable.properties + inputs` and expands each name
 
 - Filters on the spread target (`...: target|filter`) are rejected.
 - The right-hand path may contain `*` anywhere (e.g. `...: stores.*.fetch`).
-- `@stateName` propagates to every expanded entry (`...: fetchX@store`).
+- The right-hand side is a plain tree path (`...: fetchX` or `...: stores.*.fetch`).
 - If the custom element class is not yet registered, expansion is deferred until `customElements.whenDefined(tag)` resolves — autoloader-style late registration is supported.
 - Elements **without** a `wcBindable` declaration are rejected (write bindings explicitly). Spread requires the contract to know what to expand.
 
@@ -555,7 +599,6 @@ Inside a `for` loop, paths starting with `.` are expanded relative to the loop's
 | `.name` | `users.*.name` | Property of the current element |
 | `.` | `users.*` | The current element itself |
 | `.name\|uc` | `users.*.name\|uc` | Filters are preserved |
-| `.name@state` | `users.*.name@state` | State name is preserved |
 
 For primitive arrays, `.` refers to the element value directly:
 
@@ -769,19 +812,20 @@ export default {
          + this["regions.*.prefectures.*.cities.*.name"];
   },
 
-  // Prefecture level — aggregate from cities
+  // Prefecture level — aggregate from cities. `indexes` omitted: it defaults to
+  // the loop context ([$1, $2]), so only this prefecture's cities are summed
   get "regions.*.prefectures.*.totalPopulation"() {
-    return this.$getAll("regions.*.prefectures.*.cities.*.population", [])
+    return this.$getAll("regions.*.prefectures.*.cities.*.population")
       .reduce((a, b) => a + b, 0);
   },
 
-  // Region level — aggregate from prefectures
+  // Region level — aggregate from prefectures (context [$1] narrows to this region)
   get "regions.*.totalPopulation"() {
-    return this.$getAll("regions.*.prefectures.*.totalPopulation", [])
+    return this.$getAll("regions.*.prefectures.*.totalPopulation")
       .reduce((a, b) => a + b, 0);
   },
 
-  // Top level — aggregate from regions
+  // Top level — no loop context; [] means "every match"
   get totalPopulation() {
     return this.$getAll("regions.*.totalPopulation", [])
       .reduce((a, b) => a + b, 0);
@@ -872,6 +916,48 @@ Two-way binding works with path setters — editing the input calls the setter, 
 
 4. **Direct index access** — You can also access specific elements by numeric index: `this["users.0.name"]` resolves as `users[0].name` without needing loop context.
 
+### Getters must be pure with respect to state
+
+A getter's cache is invalidated **only** through the dependency graph, and the graph only records what the getter read **through `this`**. Anything else a getter reads is invisible to invalidation, so the first value computed is the value you keep:
+
+```javascript
+// ❌ Never recomputes — nothing in the dependency graph ever changes
+get stamp() { return `${this.label} @ ${Date.now()}`; }   // Date.now() is untracked
+get theme() { return document.body.dataset.theme; }        // the DOM is untracked
+get total() { return this.price * exchangeRate; }          // a module variable is untracked
+```
+
+The rule: **read only through `this`, and don't write state or touch the DOM from a getter.** For the cases where an untracked input genuinely has to participate, put the input into state and assign to it (the normal path-assignment contract), or use the escape hatches:
+
+| API | Use it for |
+|---|---|
+| `this.$trackDependency(path)` | Register an extra dependency so this getter is dirtied when that path changes |
+| `this.$postUpdate(path)` | Announce that an untracked input changed, from outside the getter |
+| `this.$untrackDependency(fn)` | Read a path *without* registering it as a dependency (the inverse) |
+
+```javascript
+// ✅ The clock ticks in state; the getter stays pure
+export default {
+  now: Date.now(),
+  get stamp() { return `${this.label} @ ${this.now}`; },
+  $connectedCallback() { setInterval(() => { this.now = Date.now(); }, 1000); },
+};
+```
+
+Getters that throw are not swallowed: the exception surfaces where the getter was evaluated (a binding apply, a `$watch` evaluation, or your own read).
+
+#### Dependency tracking boundaries
+
+Three rules decide what the dependency graph sees. None of them matters until you cross one, and when you do the symptom is a value that stops updating with no error — so they are collected here:
+
+| Rule | What it looks like when crossed |
+|---|---|
+| **Only path reads through `this` are tracked.** `this.form` tracks `form`; `this["form.name"]` tracks `form.name`; `this.form.name` tracks **`form` only** — the `.name` is a plain property access on the object that came back. `Date.now()`, the DOM, a module variable, a closed-over object register nothing | The getter is never re-evaluated for that input; the first value sticks (the examples above). A getter that reads `this.form.name` does not re-run when a bound `<input data-wcs="value: form.name">` changes — read `this["form.name"]` |
+| **Reads inside a setter are not tracked.** A setter is an imperative assignment, not a derivation, so nothing it reads becomes a dependency of anything | A setter that reads `this.a` to decide what to write does not run again when `a` changes — only a getter re-runs |
+| **The same-value guard applies to primitives only.** A primitive write `Object.is`-equal to the current value is dropped before anything is enqueued; an object or array write always passes, even the same reference | Assigning the same string again fires nothing; assigning the same object again re-fires its bindings and `$watch` (`config.sameValueGuard`; a `semantics: "event"` property is exempt either way) |
+
+`$untrackDependency(fn)` applies the setter rule to a getter on purpose: reads inside `fn` are not tracked. `$trackDependency(path)` is the escape hatch for the first rule.
+
 ### Loop Index Variables (`$1`, `$2`, ...)
 
 Inside getters and event handlers, `this.$1`, `this.$2`, etc. provide the current loop iteration index (0-based value, 1-based naming):
@@ -913,6 +999,7 @@ Inside state objects (getters / methods), the following APIs are available via `
 | API | Description |
 |---|---|
 | `this.$getAll(path, indexes?)` | Get all values matching a wildcard path |
+| `this.$setAll(path, indexes, value, options?)` | Write to every address matching a wildcard path |
 | `this.$resolve(path, indexes, value?)` | Resolve a wildcard path with specific indexes |
 | `this.$postUpdate(path)` | Manually trigger update notification for a path |
 | `this.$trackDependency(path)` | Manually register a dependency for cache invalidation |
@@ -937,6 +1024,66 @@ export default {
   }
 };
 ```
+
+`indexes` is a **prefix** over the path's wildcards: missing levels expand fully, and `[]` always means "every match". When `indexes` is **omitted**, it defaults to the enclosing loop context (`[$1, $2, ...]`), applied to the wildcard levels the path shares with that context:
+
+```javascript
+export default {
+  regions: [ /* { prefectures: [ { population: … }, … ] } */ ],
+  // Loop context [$1] — omission narrows to the current region
+  get "regions.*.total"() {
+    return this.$getAll("regions.*.prefectures.*.population").reduce((a, b) => a + b, 0);
+  },
+  // No loop context — omission expands everything (same as [])
+  get grandTotal() {
+    return this.$getAll("regions.*.total").reduce((a, b) => a + b, 0);
+  }
+};
+```
+
+Context levels deeper than the path needs are dropped (a `[$1, $2]` context narrows a one-wildcard path by `[$1]`). But if the path shares **no** wildcard level with a context that does hold loop indexes — say `$getAll("users.*.name")` inside a `regions.*` getter — `$getAll` **throws** instead of silently reading every user: the context indexes belong to a different list, and neither reusing nor ignoring them is what the author meant. Pass indexes explicitly there (`[]` for every match).
+
+#### `$setAll` — Update Every Array Element In Place
+
+`$setAll` is the write-side counterpart of `$getAll`: it writes to every address a wildcard path matches. The point is not brevity but **keeping the array itself**. Rebuilding it (`this.users = this.users.map(...)`) throws away the list indexes, the per-row getter caches, and the render diff; `$setAll` decomposes into in-place per-row writes instead, so the list identity survives.
+
+```javascript
+export default {
+  users: [{ selected: false }, { selected: false }],
+
+  toggleAll(e) {
+    this.$setAll("users.*.selected", [], e.target.checked);   // broadcast
+  },
+  invertAll() {
+    this.$setAll("users.*.selected", [], cur => !cur);        // mapper
+  },
+  rankTopThree() {
+    // `undefined` skips that address — "leave this row alone"
+    this.$setAll("users.*.score", [], (cur, i) => i < 3 ? cur * 2 : undefined);
+  }
+};
+```
+
+Three forms, and the third one has to be asked for explicitly:
+
+| Third argument | Meaning |
+|---|---|
+| a function | **mapper** — called as `(current, ...indexes)` per matched address |
+| anything else | **broadcast** — the same value is written everywhere, arrays included |
+| an array **plus** `{ spread: true }` | **spread** — one entry handed to each matched address, in match order |
+
+Arrays broadcast by default because the target property may itself be array-valued — `$setAll("users.*.tags", [], ["admin"])` would otherwise be ambiguous. Opting into `{ spread: true }` removes the guesswork, and a length that does not equal the match count throws rather than silently misaligning.
+
+`indexes` works exactly as in `$getAll` — a **prefix**, where missing levels mean "expand all of them" — but it is **required**. Writes get no implicit loop context, so inside a `for` template `this.$setAll("users.*.selected", [], true)` still means *every* user, never the current row.
+
+```javascript
+this.$setAll("matrix.*.*", [0], 0);        // row 0 only, every column
+this.$setAll("users.*", [], rows, { spread: true });   // replace each row, keep the array
+```
+
+`undefined` is never written — it means "skip this address" in all three forms, which keeps a mapper that forgets to `return` from wiping every row. Use `null` to clear. The return value is the number of addresses actually written.
+
+One thing `$setAll` is not: a shortcut for the dependency walk. Rendering still coalesces into a single batch, but each write is enqueued individually, so the cost matches the hand-written loop it replaces. What it buys you is the preserved list, not fewer cycles.
 
 #### `$resolve` — Access by Explicit Index
 
@@ -986,7 +1133,7 @@ export default {
 
 ## Filters
 
-40 built-in filters are available for both input (DOM → state) and output (state → DOM) directions.
+46 built-in filters are available for both input (DOM → state) and output (state → DOM) directions.
 
 ### Comparison
 
@@ -1009,6 +1156,8 @@ export default {
 | `mul(n)` | Multiply | `price\|mul(1.1)` |
 | `div(n)` | Divide | `total\|div(100)` |
 | `mod(n)` | Modulo | `index\|mod(2)` |
+| `abs` | Absolute value | `delta\|abs` |
+| `clamp(min, max)` | Constrain to a range | `ratio\|clamp(0,100)` |
 
 ### Number Formatting
 
@@ -1020,6 +1169,7 @@ export default {
 | `ceil(n?)` | Ceiling | `value\|ceil` |
 | `locale(loc?)` | Locale number format | `count\|locale` / `count\|locale(ja-JP)` |
 | `percent(n?)` | Percentage format | `ratio\|percent(1)` |
+| `unit(u)` | Append a unit (any suffix) | `width\|unit(px)` → `"40px"` |
 
 ### String
 
@@ -1034,6 +1184,8 @@ export default {
 | `pad(n, char?)` | Pad start | `id\|pad(5,0)` → `"00001"` |
 | `rep(n)` | Repeat | `text\|rep(3)` |
 | `rev` | Reverse | `text\|rev` |
+| `truncate(n, suffix?)` | Shorten and append an ellipsis | `title\|truncate(20)` |
+| `join(sep?)` | Join an array (default `", "`) | `tags\|join` / `tags\|join(/)` |
 
 ### Type Conversion
 
@@ -1054,6 +1206,7 @@ export default {
 | `time(loc?)` | Time format | `timestamp\|time` |
 | `datetime(loc?)` | Date + Time | `timestamp\|datetime(en-US)` |
 | `ymd(sep?)` | YYYY-MM-DD | `timestamp\|ymd` / `timestamp\|ymd(/)` |
+| `hms(sep?)` | HH:MM:SS | `timestamp\|hms` / `timestamp\|hms(-)` |
 
 ### Boolean / Default
 
@@ -1105,7 +1258,7 @@ customElements.define("my-component", MyComponent);
 
 ### Component Definition (Light DOM)
 
-Light DOM components do not use Shadow DOM. The state namespace is shared with the parent scope (just like CSS), so a `name` attribute is required.
+Light DOM components do not use Shadow DOM. In v2 the form is identical to the Shadow form — the component's bindings are translated onto the host's tree at its mount point, so **no name and no `@` selectors are needed**, and the same component can sit on every row of a list:
 
 ```javascript
 class MyLightComponent extends HTMLElement {
@@ -1113,18 +1266,20 @@ class MyLightComponent extends HTMLElement {
 
   connectedCallback() {
     this.innerHTML = `
-      <wcs-state bind-component="state" name="my-light"></wcs-state>
-      <div data-wcs="text: message@my-light"></div>
-      <input type="text" data-wcs="value: message@my-light" />
+      <wcs-state bind-component="state"></wcs-state>
+      <div data-wcs="text: message"></div>
+      <input type="text" data-wcs="value: message" />
     `;
   }
 }
 customElements.define("my-light-component", MyLightComponent);
 ```
 
-- `name` attribute is **required** for Light DOM components (namespace is shared with the parent scope)
-- Bindings must explicitly reference the state name with `@my-light`
 - `<wcs-state>` must be a direct child of the component element
+- The host **must wire it** (`<my-light-component data-wcs="state.message: user.name">` or `state: user`) — a plain, unwired Light DOM `bind-component` cannot exist in v2 (an independent tree cannot share the parent's root). It fails loudly with the migration guidance: attach a shadow root, or mount it from the host.
+
+> **Note**: `State.getBindingsReady(root)` covers mounted scopes once the mount record resolves; await
+> the component's own `<wcs-state>` initialization when you need its contents rendered.
 
 ### Host Usage
 
@@ -1144,6 +1299,54 @@ customElements.define("my-light-component", MyLightComponent);
 - `bind-component="state"` maps the component's `state` property to `<wcs-state>`
 - `data-wcs="state.message: user.name"` on the host element binds outer state paths to inner component state properties
 - Changes propagate bidirectionally between the component and the outer state
+
+### Whole-object Mount (`state: path`)
+
+Instead of wiring the component's state property by property, the host can mount a **whole subtree** of its state as the component's root. Inside the component every path is then relative to the mount point:
+
+```html
+<!-- Host -->
+<wcs-state json='{"user":{"name":"Alice","email":"alice@example.com"},"theme":{"mode":"light"}}'></wcs-state>
+<user-card data-wcs="state: user"></user-card>
+```
+
+```javascript
+// Component (Shadow DOM)
+class UserCard extends HTMLElement {
+  state = {
+    // a getter computed over the mount — `this.name` is the tree's `user.name`
+    get display() { return `${this.name} <${this.email}>`; },
+  };
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+  }
+  connectedCallback() {
+    this.shadowRoot.innerHTML = `
+      <wcs-state bind-component="state"></wcs-state>
+      <span data-wcs="textContent: name"></span>
+      <span data-wcs="textContent: display"></span>
+      <input data-wcs="value: name">
+    `;
+  }
+}
+customElements.define("user-card", UserCard);
+```
+
+- `state: user` mounts the component's root at the tree path `user`: `name` inside the component **is** `user.name`. Reads, writes (`value: name`, `this.state.name = ...`), getters and `for:` all resolve against the tree; the host's `this.user = {...}` replacement and `this["user.name"] = ...` writes both reach the component.
+- A partial mount can sit next to it: `state: user; state.theme: theme` mounts `theme` as a second entry point (longest prefix wins, so `theme.mode` inside the component reads the tree's `theme.mode`).
+- In a loop, mount **the row itself**: `<template data-wcs="for: users"><user-row data-wcs="state: ."></user-row></template>`. Inside the row component `name` is `users.*.name`, and its own `for: tags` runs over `users.*.tags.*`.
+- **Own keys are private** (rule R1 in [docs/state-mount-design.md](../../docs/state-mount-design.md) §4-3): a data key the component declares itself (`state = { mode: "view" }`) belongs to that element and is never written to the tree. If it hides a key that exists at the mount point (`state = { name: "" }` mounted over `user.name`), the runtime warns once (`wcs/mount-own-key-shadow`) — remove the default to read the tree, or rename it to keep it private.
+- Mounting an array as the root (`state: rows` with `for` over it inside) is not supported; mount the row (`state: .`) or the object that holds the array (`state: group` with `for: children` inside). Both forms are contract-tested; mounts are the only way to extend the tree.
+
+> The per-property form (`state.message: user.name`) keeps working — it is a partial mount on
+> the same machinery. R1 is strict for every mount form — a component that declares a default
+> for a mapped key (`state = { message: "" }` together with `state.message: ...`) keeps its
+> own key **private**, hiding the host value (a one-time `wcs/mount-own-key-shadow` warning
+> points at it). Drop the default to read the tree. The mounted `<wcs-state>` needs no `name`
+> in Light DOM, and `$getAll` / `$setAll` / `$resolve` / `$postUpdate` on `element.state`
+> (and on `this` inside getters/methods) speak the component's own vocabulary — paths are
+> translated onto the mount and the host row's indexes are prepended automatically.
 
 ### Standalone Web Component Injection (`__e2e__/single-component`)
 
@@ -1183,14 +1386,18 @@ customElements.define("my-component", MyComponent);
 
 - `<wcs-state>` with `bind-component` must be a **direct child** of the component element (top-level)
 - The parent element must be a **custom element** (tag name containing a hyphen)
-- Light DOM components **require** a `name` attribute to avoid namespace conflicts with the parent scope
-- Light DOM bindings must reference the state name explicitly (e.g., `@my-light`)
+- Light DOM components must be wired from the host (the plain, unwired form was removed in v2)
 
 ### Loop with Components
 
 ```html
 <template data-wcs="for: users">
   <my-component data-wcs="state.message: .name"></my-component>
+</template>
+
+<!-- or mount the row itself: inside the component, `name` is `users.*.name` -->
+<template data-wcs="for: users">
+  <user-row data-wcs="state: ."></user-row>
 </template>
 ```
 
@@ -1219,8 +1426,24 @@ this.shadowRoot.innerHTML = `
 
 - Replacing `rows` or writing a single row field (`rows.0.name`) both reach the rows inside the component
 - Writing `items.*.name` from inside the component reaches the host's `rows`
-- **Limitation**: nesting is not supported — a component that sits inside a host `for:` *and* runs its own
-  `for:` over a mapped array has no way to relate the outer row to the inner one
+
+#### Nesting and stacking scopes
+
+A component that sits inside a host `for:` *and* runs its own `for:` over the array it was handed
+is supported. The framework keeps the outer row and the inner row related:
+
+```html
+<template data-wcs="for: groups">
+  <my-list data-wcs="state.items: groups.*.children"></my-list>
+</template>
+```
+
+Components can also be placed inside components, **stacking scopes**. An intermediate component
+that only passes the array through — running no `for:` of its own — still lets a row-field write
+from the owning scope reach the rows at the bottom.
+
+A component's author never has to know how deeply it is placed. `$1`, event-handler indexes,
+`$updatedCallback` and `$getAll` all report positions **within the component's own scope**.
 
 ## Command Token (Method Binding)
 
@@ -1521,7 +1744,7 @@ Event tokens share the same `Token` pub/sub primitive as command tokens — `nam
 
 Command tokens and event tokens carry discrete interactions. **`$streams`** covers the remaining shape: a continuous flow. Declare an async producer (async iterable / async generator / `ReadableStream`) and the framework **folds it into a single reactive property** — each chunk goes through normal path assignment, so bindings, path getters, and `$updatedCallback` react exactly as if you had assigned the value yourself. When a state path read by the `args` function changes, the running producer is aborted and the source is restarted with the new arguments (switchMap-style dependency-driven restart). Streams start eagerly after `$connectedCallback` completes and are aborted when the element disconnects.
 
-`$updatedCallback` remains binding-driven: a stream declaration alone is not a headless subscription. Its path appears in the callback only when a live DOM binding for that value/status/error is actually applied. There is currently no state-only `$watch` / `$effects` declaration; see the [stream reference](docs/streams.md) for the observation contract.
+`$updatedCallback` remains binding-driven: a stream declaration alone is not a headless subscription. Its path appears in the callback only when a live DOM binding for that value/status/error is actually applied. To react to a stream's value without rendering it, declare [`$watch`](#watch-watch) on that path; see the [stream reference](docs/streams.md) for the observation contract.
 
 ```html
 <wcs-state>
@@ -1597,6 +1820,112 @@ Key rules:
 - **SSR does not start streams** — on the server the declaration is parsed and the property is materialized with `initial`, but no source runs; the client starts streams as usual.
 
 See [docs/streams.md](docs/streams.md) for the full contract — lifecycle and ownership, restart semantics, flush granularity, and the out-of-scope list.
+
+## Demand roots — what makes a getter run
+
+Path getters are **lazy**. One that nobody reads is never evaluated. So "does this getter run?" is not answerable from the getter itself — it depends on **where the demand comes from**.
+
+There are exactly **three** demand roots:
+
+| Root | Lives in | Depends on rendering |
+|---|---|---|
+| **A live DOM binding** | `data-wcs` / mustache / comment bindings | **Yes** — remove the element and the demand goes with it |
+| **A `$watch` declaration** | the state | No (headless) |
+| **A `$streams` `args` function** | the state | No (evaluated on start and on every restart) |
+
+**`$updatedCallback` is not a root.** It reports what the bindings did; it does not create demand.
+
+### Rendering can change program semantics
+
+Because the first root lives in the DOM, **an element you think of as display-only can be the actual subscription**. This one was hit for real, in [`examples/state-intersect-scroll`](../../examples/state-intersect-scroll):
+
+```html
+<!-- Meant as display. It was the only demand root. -->
+<b data-wcs="textContent: $streamStatus.pageResult"></b>
+```
+
+```javascript
+// $updatedCallback is binding-driven — delete that <b> and the path stops
+// appearing in `paths`, so the feed silently stops committing.
+$updatedCallback(paths) {
+  if (!paths.includes("$streamStatus.pageResult")) return;
+  this.items = this.items.concat(this.pageResult.items);
+}
+```
+
+**The rule:** logic that must not depend on what is rendered belongs on a `$watch` (or a `$streams` `args`). Keep `$updatedCallback` for "follow what was drawn".
+
+That example now uses `$watch`, and the `<b>` is display-only again. This shape — `$updatedCallback` testing a path that is not bound anywhere — is detected statically as **`wcs/updated-callback-unbound`**.
+
+### The limitation that remains
+
+Demand still comes from three separate places. **To know whether a getter is evaluated you have to inspect all three — every binding on the page, every `$watch`, and every `$streams` `args` — and reading the getter's definition will not tell you.** The linter and the DevTools wiring-coverage view exist to make a machine do that cross-check.
+
+Note that a scalar getter named in `$watch` becomes **eager** (evaluated once at connect, then at the end of every batch touching its dependencies). Wildcard row getters do not become eager, because the first evaluation would walk the whole list.
+
+## Watch (`$watch`)
+
+`$updatedCallback` is **binding-driven**: it reports the paths whose live DOM bindings were actually applied in that update, so a value you never render is invisible to it. **`$watch`** is the headless counterpart — it fires on state changes whether or not anything on the page is bound to the path. (One exception, spelled out below: a *wildcard* row path needs `$listKeys` to work headlessly.)
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      isLoading: false,
+      items: [],
+      startedAt: 0,
+
+      $watch: {
+        // rising-edge detection: you compare cur/prev yourself
+        isLoading(cur, prev) {
+          if (cur === true && prev === false) { this.startedAt = Date.now(); }
+        },
+
+        // wildcard paths fire once per changed row
+        // (needs the list rendered with `for`, or `$listKeys` declared — see below)
+        "items.*.price"(cur, prev, index) {
+          this.lastPriceChange = `#${index}: ${prev} → ${cur}`;
+        },
+      },
+    };
+  </script>
+</wcs-state>
+```
+
+The handler runs with `this` bound to a **writable** state proxy, so it can write back; those writes land in the next update batch. The return value is ignored and never awaited.
+
+| Argument | Contract |
+|---|---|
+| `cur` | The value at drain time (the settled value for the batch) |
+| `prev` | The value at the **start of the batch** (first-write-wins). Meaningful **for scalars only** — see below |
+| `...indexes` | Only for wildcard paths: this scope's own loop indexes, same convention as `$1`, `$2` |
+
+**`prev` is scalar-only.** It reuses the old value the same-value guard already reads, so watch costs no extra read — and it is `undefined` for reference types (an in-place mutation would give you the same reference anyway), for `$postUpdate`, and when `config.sameValueGuard` is off.
+
+**Watch adds no firing condition of its own.** It fires for whatever landed in the update batch. That falls out well: an equal primitive write is already dropped before it is enqueued (so you effectively get change-only firing), while an occurrence write — a `semantics: "event"` property — is deliberately *not* dropped, and still fires with `cur === prev`. If you need edge detection, compare `cur` and `prev` in the handler.
+
+**Watching a getter makes it eager.** A computed getter is normally lazy, and its dependencies are only recorded when it is evaluated — so an unrendered getter would never fire at all. Declaring one in `$watch` evaluates it once at connect and again at the end of every batch that touches its dependencies. Its `prev` is the previous evaluation. Watch a heavy computed and you pay that evaluation on every batch; exceptions inside it surface through the watch instead of staying dormant. Wildcard getters (`items.*.tax`) are **not** made eager — priming one would sweep the whole list — so that form fires only when it is also bound to the DOM, and its `prev` is always `undefined` (no per-row evaluation is remembered).
+
+Firing order is defined in three layers, and only the middle one is yours to steer:
+
+| Layer | Order | Your control |
+|---|---|---|
+| Mechanisms | `$updatedCallback` → `$watch` → `$streams` restart | fixed |
+| Between handlers | declaration order in `$watch` | **reorder the declarations** |
+| Between rows of one path | ascending `indexes` | fixed |
+
+**The one thing that moves the mechanism layer** is a `<wcs-view-transition>` that accepts the `state` participant. Binding application — and with it `$updatedCallback` — then lands on a frame, while `$watch` and the `$streams` restart stay on the microtask the drain was queued on, because they consume state addresses and not the DOM. For as long as the tag is present the order is `$watch` → `$streams` restart → `$updatedCallback`. Nothing else on the page reorders this layer; see [docs/timing-and-firing-contract.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.md) §4.3.
+
+Key rules:
+
+- **Paths of the tree only** — a path may not contain `@` (the v1 name selector); such a declaration is rejected loudly.
+- **Intermediate values are not observable** — a batch that goes `a → b → c` fires once with `cur = c`, `prev = a`, the same contract as binding updates.
+- **Row-level diffs want `$listKeys`** — without it, assigning a whole array fires the row watch for *every* row with `prev === undefined`, because no row went through a path write. With `$listKeys` declared, the key match decomposes the assignment into per-field writes, so only changed rows fire and `prev` is a real scalar.
+- **A headless row watch requires `$listKeys`** — this is the one place `$watch` is *not* headless on its own. Expanding `items` into `items.*.price` is driven by the list's `for` binding, and declaring a watch deliberately does not register the path as a list. So with neither a `for` binding nor `$listKeys`, assigning the array fires the row watch **zero** times. Add `$listKeys` (the key match writes each field by path, bypassing the expansion) or render the list. Scalar paths — including nested ones like `user.name` — are headless with no such condition.
+- **Handler exceptions are isolated** — a throw is reported to the console and the remaining watches (and stream restarts) still run. This differs from `$connectedCallback` / `$updatedCallback`, which fail loudly.
+- **Write chains are bounded** — a handler's writes form a new batch, so mutually-writing watches would loop forever; the chain is cut off after 32 links with a console error. Values and DOM are not rolled back.
+- **Not run on a mounted `bind-component` scope** — mounted components do not execute declaration surfaces: the `$watch` declaration is ignored with a one-time console warning that points to the root state (or a volume — `<wcs-state mount>` hosts `$watch` / `$listKeys` / `$updatedCallback`). This applies to `$streams` too. A plain (unwired Shadow) child owns an independent tree and can declare it.
+- **SSR does not run watches** — handler side effects would otherwise execute on both server and client.
 
 ## Inputs and Attribute Mirror
 
@@ -1845,8 +2174,103 @@ All hooks except `$disconnectedCallback` support `async` — you can use `async/
 - `this` inside hooks is the state proxy with full read/write access
 - `$connectedCallback` is called **every time** the element is connected (including re-insertion after removal), making it suitable for setup that should be re-established
 - `$disconnectedCallback` is called synchronously — use it for cleanup such as clearing timers, removing event listeners, or releasing resources
-- `$updatedCallback(paths, indexesListByPath)` receives the paths whose live bindings were applied in that drain. Unbound state writes do not invoke it or appear in `paths`. For wildcard updates, `indexesListByPath` contains the updated index sets. Can be `async`, but the return value is not awaited
+- `$updatedCallback(paths, indexesListByPath)` receives the paths whose live bindings were applied in that drain. Unbound state writes do not invoke it or appear in `paths`. For wildcard updates, `indexesListByPath` contains the updated index sets. Marker paths of mounted components (`#m…`) never appear in `paths` — a component's private keys stay private (DevTools shows them in its overlays view). Can be `async`, but the return value is not awaited
 - In Web Components, define `async $stateReadyCallback(stateProp)` to receive a hook when the bound state becomes available via `bind-component`
+
+## Transition animations
+
+Enter animations need nothing from this package — a new `for` row and a mounting `if` branch are newly inserted elements, so plain CSS covers them:
+
+```css
+li {
+  transition: opacity 0.2s, transform 0.2s;
+  @starting-style { opacity: 0; transform: translateY(-4px); }
+}
+```
+
+**Leaving** and **moving** cannot be reached that way: removed rows are detached synchronously, and a reorder has no intermediate state. Adding [`@wcstack/view-transition`](https://github.com/wcstack/wcstack/tree/main/packages/view-transition) makes the drain apply its DOM changes inside a View Transition, where the browser snapshots the old state for you:
+
+```html
+<script type="module" src="https://esm.run/@wcstack/view-transition/auto"></script>
+<wcs-view-transition naming="auto"></wcs-view-transition>
+```
+
+Two consequences to know while that tag accepts the `state` participant:
+
+- The drain lands on a frame instead of a microtask, so code that writes state and then reads the DOM after `await Promise.resolve()` must wait for the transition. `$updatedCallback` still fires immediately after the bindings are applied — its *position* is unchanged, but it moves a frame later along with them.
+- Because `$watch` and the `$streams` restart stay on the original microtask, they now run **before** `$updatedCallback` instead of after it.
+
+Only a batch that actually has bindings to apply is handed to the tag, so a write to a headless path never starts a transition. Without the tag the drain is exactly what it was. See [docs/timing-and-firing-contract.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.md) §4.3.
+
+## Diagnostics and failure handling
+
+### Wiring to a path that does not exist is reported
+
+When a wired path provably does not resolve against the state, you get one warning at binding time (at declaration time for `$watch`). The diagnostic codes are shared by the console, `@wcstack/lint`, and the VS Code extension:
+
+```
+[@wcstack/state] [wcs/binding-path-missing] Bound path "user.nmae" does not resolve on the state tree:
+"nmae" is not declared. Did you mean "name"? Updates to this path will be silently
+dropped. Validate statically: npx @wcstack/lint <file>.
+```
+
+| Situation | Behavior |
+|---|---|
+| Typo in a nested path (`user.nmae`) | `console.warn` (`wcs/binding-path-missing`). Updates still never arrive — you fix it |
+| Typo in a top-level path (`cout`) | Throws on read, with the same wording and did-you-mean |
+| Typo in a `$watch` key | `console.warn` (`wcs/watch-path-missing`), reported even for a single segment |
+
+The check **under-approximates**: it stays silent for anything it cannot decide statically, because a false alarm costs more than a missed one. None of these warn:
+
+- A `null` / `undefined` parent (the "seed as `null`, assign later" shape)
+- Row fields of a list that starts empty (the row shape is unknown)
+- Sub-properties of an intermediate getter's return value
+- Marker paths of mounted components (`#m…` — private keys and getters live on the mount overlay, not the raw state)
+- Reserved `$` namespaces (`$command.*` and friends)
+
+So **no warning is not a proof of correctness.** For exhaustive checking, run `npx @wcstack/lint <file>`.
+
+### Index arity, wildcard rank, and getter cycles are checked too
+
+Anything that follows mechanically from the path string is reported at runtime and by the linter under the same diagnostic code.
+
+| Diagnostic | What it checks | Fix |
+|---|---|---|
+| `wcs/index-arity` | `$resolve(path, indexes)` must match the `*` count **exactly**; `$getAll(path, indexes)` / `$setAll(path, indexes, …)` have it as an **upper bound** (fewer is a legitimate prefix meaning "expand the rest") | Match the count |
+| `wcs/wildcard-rank` | The path's `*` count (and the N in `$N`) must not exceed the enclosing `for` nesting | Add a `for`, or name the row with `$resolve(path, indexes)` |
+| `wcs/getter-cycle` | Path getters must not form a dependency cycle | Break the cycle |
+
+Previously **extra indexes were silently discarded** by both APIs, so a mixed-up call returned a plausible-looking wrong value. Both now throw:
+
+```javascript
+// ❌ Only one "*" in the path, two indexes given — used to return items[0]'s value
+this.$resolve("items.*.price", [row, col]);
+
+// ✅ Two levels, two indexes
+this.$resolve("matrix.*.*", [row, col]);
+// ✅ Fewer is fine for $getAll — it means "expand the remaining levels"
+this.$getAll("matrix.*.*", [row]);
+```
+
+### One failing binding is confined to that binding
+
+If applying a binding throws, the rest of that batch, `$updatedCallback`, `$watch`, and `$streams` restarts all still run. The failure is not swallowed — it goes to `console.error` and to DevTools (`state:binding-apply-error`):
+
+```
+[@wcstack/state] binding "text: items.*.label" failed to apply; the rest of this batch continues.
+```
+
+Without that confinement, a single throw left "new values, half-updated DOM" behind, and silently dropped every `$watch` handler and stream restart for the batch — quietly breaking the firing-order contract documented above.
+
+### Values and the DOM are never rolled back
+
+Every failure mode reports and continues; nothing already applied is reverted:
+
+| Mechanism | Limit | On exceeding |
+|---|---|---|
+| Propagation hops | 32 | Quarantine the transaction's remaining records |
+| `$watch` write chain | 32 | Skip watch firing for that batch |
+| Binding apply failure | — | Skip that one binding |
 
 ## Configuration
 
@@ -1869,12 +2293,44 @@ All options with defaults:
 |---|---|---|
 | `bindAttributeName` | `'data-wcs'` | Binding attribute name |
 | `tagNames.state` | `'wcs-state'` | State element tag name |
-| `locale` | `'en'` | Default locale for filters |
+| `tagNames.ssr` | `'wcs-ssr'` | Tag name of the SSR hydration-data element |
+| `locale` | `<html lang>`, else `'en'` | Locale for the locale-dependent filters (`locale` / `date` / `time` / `datetime`) — see [Locale](#locale) |
 | `debug` | `false` | Debug mode |
 | `enableMustache` | `true` | Enable `{{ }}` syntax |
 | `enableDirectionalInitialSync` | `true` | Direction-aware binding authority (`#init=` / `#sync=` binding modifiers) — see [Binding Authority](#binding-authority-init--sync). Default on; set `false` to opt out |
 | `enablePropagationContext` | `true` | Causal propagation tracking across bindings (echo/diamond loop prevention). Default on; set `false` to opt out |
 | `enableContractAnalyzer` | `false` | Opt-in dev-time contract analyzer (exposes `analyzeContract`) |
+| `sameValueGuard` | `true` | Drop a primitive write whose value is `Object.is`-equal to the current one before anything is enqueued — bindings and `$watch` effectively fire on change only; reference types always pass. `false` lets equal writes through and makes `$watch`'s `prev` `undefined` |
+
+### Locale
+
+Four filters format by locale — `locale`, `date`, `time`, `datetime`. They read
+`config.locale`, which **defaults to `<html lang>`**:
+
+```html
+<html lang="ja-JP">
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+```
+
+Nothing else is needed; `<html lang>` is the standard place to record a page's
+language, and making it the default keeps one source of truth. It also means the
+CDN one-liner can set the locale at all — `auto` calls `bootstrapState()` with no
+arguments, so before this there was no way in. An explicit
+`bootstrapState({ locale })` still wins, and an invalid BCP-47 tag is reported
+and ignored rather than left to throw inside `Intl`.
+
+**Changing `config.locale` later does not re-render anything.** It is a global
+setting, not state, so it is not part of the dependency graph. The filters do
+read it on every application rather than capturing it when the binding is built,
+which means a binding that re-renders for its own reasons will pick up the new
+value — enough to recover from a mis-ordered startup, not enough to switch a
+page's language. Set the language before the page renders: writing `<html lang>`
+in the markup, or from a synchronous `<head>` script, does that structurally.
+
+Per-call overrides stay available and are fixed at bind time, since they are part
+of the binding expression: `price|locale(fr-FR)`. For a page that switches
+language without reloading, see [docs/i18n-design.md](../../docs/i18n-design.md) —
+the short answer is that translations belong on a path, not in a filter.
 
 > These three are **architecture-hardening** features; their normative reference is
 > `docs/architecture-hardening/`. `enablePropagationContext` defaults **on** — its
@@ -1888,6 +2344,122 @@ All options with defaults:
 > is opt-in (default `false`, zero runtime cost when off); when on, the exported
 > `analyzeContract()` API reports drift between a live `static wcBindable` surface and
 > a sidecar manifest for dev-time diagnostics.
+
+## Testing Your Page
+
+A page built on `<wcs-state>` is plain DOM, so it can be tested headlessly with [happy-dom](https://github.com/capricorn86/happy-dom) — no browser, no build step, no test-only API. Three recipes follow; every one of them runs as written (recipe 1 is pinned by [`__tests__/readme.testingRecipe.test.ts`](__tests__/readme.testingRecipe.test.ts), which executes the same lines).
+
+Want it as one import? [`@wcstack/testing`](../testing/README.md) packages recipe 1 as `mount()` / `settle()` / `fire()` (and waits for `<wcs-router>` too). The bare recipes below stay valid without it.
+
+### 1. vitest + happy-dom
+
+`vitest.config.ts`:
+
+```ts
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: { environment: "happy-dom", setupFiles: ["./tests/setup.ts"] },
+});
+```
+
+`tests/setup.ts` — register the elements once, and route inline `<script type="module">` state through the `data:` URL loader (Node cannot import `blob:` URLs; without this line an inline-script state never finishes loading):
+
+```ts
+import { bootstrapState } from "@wcstack/state";
+
+bootstrapState();
+URL.createObjectURL = undefined as any;
+```
+
+A test:
+
+```ts
+import { expect, it } from "vitest";
+import { getBindingsReady } from "@wcstack/state";
+
+const settle = () => new Promise<void>((r) => setTimeout(r, 0));
+
+it("renders, re-renders, and runs handlers", async () => {
+  // 1. Mount the fragment under test
+  document.body.innerHTML = `
+    <wcs-state json='{"count": 1, "items": ["apple", "banana"]}'></wcs-state>
+    <p id="count" data-wcs="textContent: count"></p>
+    <ul id="items">
+      <template data-wcs="for: items">
+        <li data-wcs="textContent: items.*"></li>
+      </template>
+    </ul>
+  `;
+
+  // 2. Wait for the state element, then for every binding under `document`
+  const stateEl = document.querySelector("wcs-state") as any;
+  await stateEl.connectedCallbackPromise;
+  await getBindingsReady(document);
+
+  // 3. Assert the initial render
+  expect(document.querySelector("#count")!.textContent).toBe("1");
+  expect(document.querySelectorAll("#items li").length).toBe(2);
+
+  // 4. Write through a writable proxy — exactly what a handler does
+  await stateEl.createStateAsync("writable", async (state: any) => {
+    state.count = 42;
+    state.items = [...state.items, "cherry"];
+  });
+  await settle();
+
+  // 5. Assert the re-render
+  expect(document.querySelector("#count")!.textContent).toBe("42");
+  expect(document.querySelectorAll("#items li").length).toBe(3);
+});
+```
+
+To drive the page the way a user does, keep the state inline (methods included) and dispatch DOM events; a `data-wcs="onclick: up"` handler runs on `button.click()`, and the DOM reflects the write after one `settle()`.
+
+- `getBindingsReady(root)` resolves once every binding under `root` (a `document` or a shadow root) is built, and rejects if binding initialization fails (v1.26+).
+- Updates settle on the microtask queue; a single `setTimeout(0)` after a write is enough.
+- `state.items = [...state.items, "cherry"]` is the reactive form — `state.items.push()` is not observed (same rule as in handlers).
+- Under happy-dom, `customElements.define` upgrades existing nodes by **replacing** them; "a value reaches the same node after a late define" cannot be asserted headlessly. Event timing differences between happy-dom and real browsers are the other blind spot — keep one browser e2e (Playwright) for those.
+- happy-dom's `textContent` setter turns a numeric `0` into an empty string (browsers render `"0"`), so a `textContent: count` binding reads `""` at zero in this recipe. Assert on the state value, or use `@wcstack/testing`, whose `mount()` shims the setter.
+
+### 2. Bare Node (no vitest)
+
+`@wcstack/server` already exports the globals swap it uses for SSR; reuse it. **Import `@wcstack/state` dynamically after `installGlobals`** — the element classes pick their base class when the module is evaluated, so a static import at the top of the file registers elements that happy-dom cannot construct:
+
+```js
+import { Window } from "happy-dom";
+import { installGlobals } from "@wcstack/server";
+
+const window = new Window({ url: "http://localhost/" });
+const restore = installGlobals(window);   // document, customElements, HTMLElement, ... (GLOBALS_KEYS)
+try {
+  const { bootstrapState, getBindingsReady } = await import("@wcstack/state");
+  bootstrapState();
+  // ... the same mount / await / assert steps as recipe 1
+} finally {
+  restore();
+  await window.happyDOM.close();
+}
+```
+
+`installGlobals` also disables `URL.createObjectURL` for you, so inline-script state loads the same way as in recipe 1.
+
+### 3. Snapshot the rendered HTML
+
+[`renderToString()`](../server/README.md) from `@wcstack/server` returns the fully rendered markup as a string; compare it against a stored snapshot:
+
+```ts
+import { expect, it } from "vitest";
+import { renderToString } from "@wcstack/server";
+
+it("matches the rendered snapshot", async () => {
+  const html = await renderToString(`
+    <wcs-state json='{"items": ["apple", "banana"]}' enable-ssr></wcs-state>
+    <ul><template data-wcs="for: items"><li data-wcs="textContent: items.*"></li></template></ul>
+  `);
+  expect(html).toMatchSnapshot();
+});
+```
 
 ## TypeScript Support
 
@@ -1914,6 +2486,8 @@ export default defineState({
 
 Utility types `WcsPaths<T>` and `WcsPathValue<T, P>` are also exported for advanced use cases. See [docs/define-state.md](docs/define-state.md) for full documentation.
 
+`defineState()` types the state file. To carry those types into the HTML, [`@wcstack/typescript`](../typescript/README.md) adds two CLIs: `wcs-schema` writes the `stateSchema` sidecar that `@wcstack/lint` and the VS Code extension validate `data-wcs` paths against, and `wcs-tsc` runs the TypeScript compiler over inline `<script type="module">` state. The whole story is in [docs/typescript.md](../../docs/typescript.md).
+
 ## API Reference
 
 ### `bootstrapState()`
@@ -1925,29 +2499,44 @@ import { bootstrapState } from '@wcstack/state';
 bootstrapState();
 ```
 
+### Other exports
+
+| Export | Description |
+|---|---|
+| `getBindingsReady(root)` | Resolves once every binding under `root` (a `document` or a shadow root) is built; rejects if binding initialization fails |
+| `buildBindings(root)` | Build the bindings under a `document` or `ShadowRoot` explicitly — what the first `<wcs-state>` registered on a root schedules for it |
+| `getConfig()` | The current configuration (read-only view) |
+| `defineState(obj)` | Identity function that types `this` inside methods and getters — see [TypeScript Support](#typescript-support) |
+| `VERSION` | The package version; stamped into `<wcs-ssr>` and compared on hydration |
+| `getWcsManifest()` / `WCS_MANIFEST_VERSION` | Machine-readable manifest of the binding syntax, built-in filters and reserved names — derived from the implementation, consumed by `@wcstack/lint` and the VS Code extension |
+| `builtinFilterMeta` | Argument and result metadata for every built-in filter |
+| `analyzeContract()` | Dev-time contract analyzer; a no-op unless `enableContractAnalyzer` is on |
+
+Subpath entries for tooling: `@wcstack/state/parser` (the `data-wcs` parser as a DOM-free pure function), `@wcstack/state/manifest`, and `@wcstack/state/wcs-manifest.json` (the manifest as a prebuilt JSON file).
+
 ### `<wcs-state>` Element
 
 | Attribute | Description |
 |---|---|
-| `name` | State name (default: `"default"`) |
+| `mount` | Static tree path to graft this state onto the root tree as a **volume** (v2 — replaces the removed `name` attribute; one state tree per root) |
 | `state` | ID of a `<script type="application/json">` element |
 | `src` | URL to `.json` or `.js` file |
 | `json` | Inline JSON string |
 | `bind-component` | Property name for web component binding |
+| `enable-ssr` | Opt into SSR: the server emits `<wcs-ssr>` hydration data for this state and the client hydrates from it instead of re-rendering — see [Server-Side Rendering](#server-side-rendering) |
 
 ### IStateElement
 
 | Property / Method | Description |
 |---|---|
-| `name` | State name |
 | `initializePromise` | Resolves when state is fully initialized |
+| `connectedCallbackPromise` | Resolves once `connectedCallback` has completed (state loaded, `$connectedCallback` run) — what the testing recipes await |
 | `listPaths` | Set of paths used in `for` loops |
 | `getterPaths` | Set of paths defined as getters |
 | `setterPaths` | Set of paths defined as setters |
 | `createState(mutability, callback)` | Create a state proxy (`"readonly"` or `"writable"`) |
 | `createStateAsync(mutability, callback)` | Async version of `createState` |
 | `setInitialState(state)` | Set state programmatically (before initialization) |
-| `bindProperty(prop, descriptor)` | Define a property on the raw state object |
 | `nextVersion()` | Increment and return version number |
 
 ## Architecture
@@ -1957,11 +2546,14 @@ bootstrapState()
   └── registerComponents()              // Register <wcs-state> custom element
 
 <wcs-state> connectedCallback
-  ├── _initializeBindWebComponent()     // bind-component: get state from parent component
-  ├── _initialize()                     // Load state (state attr / src / json / script / API)
-  │     └── setStateElementByName()     // Register to WeakMap<Node, Map<name, element>>
-  │           └── (first registration per rootNode)
-  │                 └── queueMicrotask → buildBindings()
+  ├── one of, by placement:
+  │   ├── _initializeDCC()              // under a data-wc-definition host: define the DCC class
+  │   ├── _initializeVolume()           // mount=: graft this volume onto the root tree
+  │   ├── _initializeBindWebComponent() // bind-component: alias the host's tree at the mount point
+  │   └── _initialize()                 // root: load state (state attr / src / json / script / API)
+  │         └── setStateElement()       // Register to WeakMap<Node, IStateElement> — one tree per root
+  │               └── (first registration per rootNode)
+  │                     └── queueMicrotask → buildBindings()
   ├── _callStateConnectedCallback()     // Call $connectedCallback if defined
 
 buildBindings(root)
@@ -1985,7 +2577,7 @@ Paths like `users.*.name` are decomposed into:
 - **PathInfo** — static path metadata (segments, wildcard count, parent path)
 - **ListIndex** — runtime loop index chain
 - **StateAddress** — combination of PathInfo + ListIndex
-- **AbsoluteStateAddress** — state name + StateAddress (for cross-state references)
+- **AbsolutePathInfo / AbsoluteStateAddress** — a PathInfo pinned to the state element that owns the tree, plus its ListIndex. Mounted components and volumes translate their relative paths onto the host tree at this level; v2 has one tree per root, so an address carries no state name
 
 ## Performance
 
@@ -2027,9 +2619,13 @@ How to read this, honestly:
 - The heap retained after a clear is the bounded row pool that makes the next
   list population cheap.
 
-Absolute numbers are from one development machine (v1.21.6 + the clear-leak fix
-in PR#87); the drivers in `e2e/bench/` reproduce the comparison on your own
-hardware.
+Absolute numbers are from one development machine, taken at v1.21.6 + the
+clear-leak fix in PR#87. The v2.0 mount work was gated on the same drivers by
+same-session A/B runs and stayed within run-to-run noise
+([docs/state-mount-impl-plan.md](../../docs/state-mount-impl-plan.md) §2-2 and
+slice 27), so the table has not been re-taken; absolute values swing by ±20%
+with machine state, and the drivers in `e2e/bench/` reproduce the comparison on
+your own hardware.
 
 ## Server-Side Rendering
 

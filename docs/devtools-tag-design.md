@@ -110,7 +110,12 @@ UI は `@wcstack/state` 自身でレンダリングする（ドッグフーデ�
 
 - ring buffer の時系列表示。行種別: `write`（path, value, oldValue?）/
   `batch`（アドレス数・展開でアドレス列挙）/ `command` / `event`（token 名, args 要約,
-  subscriberCount）/ `element-(un)registered`。
+  subscriberCount）/ `element-(un)registered` / `watch-error`・`watch-chain-limit`（warn）/
+  `propagation-suppressed`・`propagation-coalesced`（定常動作・通常表示）/
+  `propagation-hop-limit`・`contract-drift`（warn）。
+  `contract:manifest-read`・`contract:unsupported-extension` は情報イベントであり
+  timeline 行にしない（contract analyzer の戻り値 API から取得できる。
+  [static-wiring-dx-design.md](./static-wiring-dx-design.md) §6-1）。
 - フィルタ: 種別チェックボックス + state 名。⏸ で購読一時停止（buffer は破棄しない）、
   🗑 でクリア。
 - 行クリックで関連ペインへ（write → ① の該当パス、token → ② の該当配線）。

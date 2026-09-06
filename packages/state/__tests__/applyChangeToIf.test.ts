@@ -46,7 +46,6 @@ function createBindingInfo(node: Node, uuid: string): IBindingInfo {
     propModifiers: [],
     statePathName: 'flag',
     statePathInfo: getPathInfo('flag'),
-    stateName: 'default',
     outFilters: [{ filterName: 'not', args: [], filterFn: (v: any) => !v }],
     inFilters: [],
     bindingType: 'if',
@@ -59,7 +58,6 @@ function createBindingInfo(node: Node, uuid: string): IBindingInfo {
 describe('applyChangeToIf', () => {
   const state = { [getByAddressSymbol]: () => undefined } as any;
   const context: IApplyContext = {
-    stateName: 'default',
     stateElement: {} as any,
     state,
     appliedBindingSet: new Set(),

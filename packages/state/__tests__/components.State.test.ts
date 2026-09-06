@@ -23,7 +23,7 @@ vi.mock('../src/bindings/initializeBindingPromiseByNode', () => ({
 }));
 
 import { State } from '../src/components/State';
-import { getStateElementByName, setStateElementByName } from '../src/stateElementByName';
+import { getStateElement, setStateElement } from '../src/stateElementByName';
 import { loadFromInnerScript } from '../src/stateLoader/loadFromInnerScript';
 import { loadFromJsonFile } from '../src/stateLoader/loadFromJsonFile';
 import { loadFromScriptFile } from '../src/stateLoader/loadFromScriptFile';
@@ -84,7 +84,6 @@ const createBindingInfo = (overrides?: Partial<IBindingInfo>): IBindingInfo => (
   propModifiers: [],
   statePathName: 'count',
   statePathInfo: getPathInfo('count'),
-  stateName: 'default',
   outFilters: [],
   inFilters: [],
   bindingType: 'prop',
@@ -97,8 +96,8 @@ const createBindingInfo = (overrides?: Partial<IBindingInfo>): IBindingInfo => (
 describe('State component', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
-    setStateElementByName(document, 'default', null);
-    setStateElementByName(document, 'foo', null);
+    setStateElement(document, null);
+    setStateElement(document, null);
     createStateProxyMock.mockImplementation((_rootNode: any, state: any) => state);
     loadFromInnerScriptMock.mockResolvedValue({ fromInner: true });
     loadFromJsonFileMock.mockResolvedValue({ fromJson: true });
@@ -107,8 +106,8 @@ describe('State component', () => {
   });
 
   afterEach(() => {
-    setStateElementByName(document, 'default', null);
-    setStateElementByName(document, 'foo', null);
+    setStateElement(document, null);
+    setStateElement(document, null);
     vi.clearAllMocks();
   });
 
@@ -186,21 +185,13 @@ describe('State component', () => {
     expect(value).toEqual({ fromInner: true });
   });
 
-  it('name属性で登録されること', async () => {
+  it('name 属性は v2 で撤去 — mount への誘導付きで fail-fast すること', async () => {
     const stateEl = createStateElement({ name: 'foo' });
     stateEl.setInitialState({});
-    await stateEl.connectedCallback();
+    await expect(stateEl.connectedCallback()).rejects.toThrow(/"name" attribute was removed in v2/);
+    await expect(stateEl.connectedCallback()).rejects.toThrow(/mount="foo"/);
+    // fail-fast でも初期化待ちはウェッジしない
     await stateEl.initializePromise;
-
-    expect(getStateElementByName(stateEl.rootNode, 'foo')).toBe(stateEl);
-    expect(getStateElementByName(stateEl.rootNode, 'default')).toBeNull();
-  });
-
-  it('name getterで現在の名前を取得できること', async () => {
-    const stateEl = createStateElement();
-    stateEl.setInitialState({});
-    await stateEl.connectedCallback();
-    expect(stateEl.name).toBe('default');
   });
 
   it('state属性でスクリプトJSONを読み込めること', async () => {
@@ -397,9 +388,9 @@ describe('State component', () => {
     await stateEl.connectedCallback();
     await stateEl.initializePromise;
     const rootNode = stateEl.rootNode;
-    expect(getStateElementByName(rootNode, 'default')).toBe(stateEl);
+    expect(getStateElement(rootNode)).toBe(stateEl);
     stateEl.disconnectedCallback();
-    expect(getStateElementByName(rootNode, 'default')).toBeNull();
+    expect(getStateElement(rootNode)).toBeNull();
   });
 
   it('disconnectedCallbackを2回呼んでもエラーにならないこと', async () => {
@@ -481,24 +472,6 @@ describe('State component', () => {
     expect(value).toEqual({ key: 'value' });
   });
 
-  it('bindPropertyでstateにプロパティを定義できること', async () => {
-    const stateEl = createStateElement();
-    stateEl.setInitialState({ count: 0 });
-    await stateEl.connectedCallback();
-    await stateEl.initializePromise;
-
-    stateEl.bindProperty('computed', {
-      get() { return 42; },
-      enumerable: true,
-      configurable: true,
-    });
-
-    let computedValue: any;
-    await stateEl.createState('readonly', (state: any) => {
-      computedValue = state.computed;
-    });
-    expect(computedValue).toBe(42);
-  });
 
   it('setInitialStateが呼ばれない場合にタイムアウト警告が出ること', async () => {
     vi.useFakeTimers();
@@ -538,7 +511,7 @@ describe('State component', () => {
     );
   });
 
-  it('LightDOMでbind-componentにname属性がない場合はエラーになること', async () => {
+  it('plain（配線なし）の Light DOM bind-component は廃止エラーになること', async () => {
     const stateEl = createStateElement({ 'bind-component': 'outer' });
     // LightDOMの親コンポーネントをシミュレート
     if (!customElements.get('x-light-host')) {
@@ -549,7 +522,7 @@ describe('State component', () => {
     (stateEl as any)._rootNode = document; // LightDOM: rootNodeはdocument
 
     await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
-      /"bind-component" in Light DOM requires a "name" attribute/
+      /plain \(unwired\) Light DOM "bind-component" is not supported/
     );
   });
 
@@ -587,6 +560,19 @@ describe('State component', () => {
 
     await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
       /does not have property "outer"/
+    );
+  });
+
+  it('bind-componentのホストがnullレジストリの場合はエラーになること', async () => {
+    // null レジストリのサブツリーではホストが永久に upgrade されないため、
+    // whenDefined を待つと無言でウェッジする。待たずに落とすこと。
+    const stateEl = createStateElement({ 'bind-component': 'outer' });
+    const host = createHostWithState(stateEl);
+    (stateEl as any)._rootNode = stateEl.getRootNode();
+    Object.defineProperty(host, 'customElementRegistry', { value: null });
+
+    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
+      /CustomElementRegistry is unavailable/
     );
   });
 
@@ -673,5 +659,132 @@ describe('State component', () => {
     await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
       /bind failed/
     );
+  });
+});
+
+describe('plain Light DOM の廃止（v2 のゲート後）', () => {
+  it('マウント先の state 要素が見つからなければ throw すること', async () => {
+    const { setBindingsByNode } = await import('../src/bindings/getBindingsByNode');
+    const { getPathInfo } = await import('../src/address/PathInfo');
+    const stateEl = createStateElement({ 'bind-component': 'state' });
+    if (!customElements.get('x-light-orphan')) {
+      customElements.define('x-light-orphan', class extends HTMLElement {
+        state: Record<string, any> = {};
+      });
+    }
+    const host = document.createElement('x-light-orphan');
+    host.setAttribute('data-wcs', 'state: user');
+    setBindingsByNode(host, [{
+      propName: 'state',
+      propSegments: ['state'],
+      propModifiers: [],
+      statePathName: 'user',
+      statePathInfo: getPathInfo('user'),
+      inFilters: [],
+      outFilters: [],
+      bindingType: 'prop',
+      uuid: null,
+      node: host,
+      replaceNode: host,
+    } as any]);
+    host.appendChild(stateEl);
+    (stateEl as any)._rootNode = document;
+
+    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
+      /No state tree found on this root/
+    );
+  });
+
+  it('data-wcs はあるが state バインディングが無い Light DOM も plain として廃止エラーになること', async () => {
+    const { setBindingsByNode } = await import('../src/bindings/getBindingsByNode');
+    const { getPathInfo } = await import('../src/address/PathInfo');
+    const stateEl = createStateElement({ 'bind-component': 'state' });
+    if (!customElements.get('x-light-classonly')) {
+      customElements.define('x-light-classonly', class extends HTMLElement {
+        state: Record<string, any> = {};
+      });
+    }
+    const host = document.createElement('x-light-classonly');
+    host.setAttribute('data-wcs', 'class.on: flag');
+    // state 以外のバインディングだけを持つ（ゲートの some が走って false になる形）
+    setBindingsByNode(host, [{
+      propName: 'class.on',
+      propSegments: ['class', 'on'],
+      propModifiers: [],
+      statePathName: 'flag',
+      statePathInfo: getPathInfo('flag'),
+      inFilters: [],
+      outFilters: [],
+      bindingType: 'prop',
+      uuid: null,
+      node: host,
+      replaceNode: host,
+    } as any]);
+    host.appendChild(stateEl);
+    (stateEl as any)._rootNode = document;
+
+    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
+      /plain \(unwired\) Light DOM "bind-component" is not supported/
+    );
+  });
+});
+
+describe('plain Light DOM の廃止（台帳が空の形）', () => {
+  it('data-wcs はあるが台帳に何も無い Light DOM も plain として廃止エラーになること', async () => {
+    const stateEl = createStateElement({ 'bind-component': 'state' });
+    if (!customElements.get('x-light-noledger')) {
+      customElements.define('x-light-noledger', class extends HTMLElement {
+        state: Record<string, any> = {};
+      });
+    }
+    const host = document.createElement('x-light-noledger');
+    host.setAttribute('data-wcs', 'class.on: flag'); // 属性はあるが台帳未構築
+    host.appendChild(stateEl);
+    (stateEl as any)._rootNode = document;
+
+    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
+      /plain \(unwired\) Light DOM "bind-component" is not supported/
+    );
+  });
+});
+
+// 設計 §4-7「mount 属性の実行時変更 | 無視＋warn（再マウントは非目標）」。
+// 初期化前の属性設定（パース時・接続前の setAttribute）は正規の使い方なので黙る。
+describe('mount 属性の動的変更（設計 §4-7: 無視＋warn）', () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
+  it('初期化前の mount 属性設定（正規の使い方）では warn しないこと', () => {
+    const stateEl = createStateElement();
+    stateEl.setAttribute('mount', 'settings');
+    stateEl.setAttribute('mount', 'settings2');
+    stateEl.removeAttribute('mount');
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('初期化後の mount 属性変更は未サポートとして warn で知らせること', async () => {
+    const stateEl = createStateElement();
+    stateEl.setInitialState({ count: 0 });
+    await stateEl.connectedCallback();
+    await stateEl.initializePromise;
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    stateEl.setAttribute('mount', 'settings');
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const message = String(warnSpy.mock.calls[0][0]);
+    expect(message).toContain('[@wcstack/state]');
+    expect(message).toMatch(/mount/);
+    expect(message).toMatch(/not supported/);
+
+    // 同値 set は変更ではないので warn を重ねない
+    stateEl.setAttribute('mount', 'settings');
+    expect(warnSpy).toHaveBeenCalledTimes(1);
   });
 });

@@ -3,6 +3,7 @@
 // into consuming packages as generated, do-not-edit copies:
 //   packages/<pkg>/src/protocol/wcBindable.ts
 //   packages/state/src/protocol/wcBindableReader.ts
+//   packages/<pkg>/src/protocol/transitionRunner.ts
 //
 // Each package's own types file re-exports from that copy, so the package stays
 // independently buildable/publishable with zero runtime dependency (the types erase
@@ -15,8 +16,8 @@
 // signals is intentionally excluded: it maintains its own structural-subset
 // WcBindableDescriptor (design decision G2, guarded by bindNode.compat.test.ts).
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { dirname, join, resolve, sep } from "node:path";
+import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -25,6 +26,9 @@ const canonicalPath = join(repoRoot, "protocol", "wc-bindable.ts");
 const canonicalReaderPath = join(repoRoot, "protocol", "wc-bindable-reader.ts");
 const canonicalUpgradePath = join(repoRoot, "protocol", "upgrade-properties.ts");
 const canonicalUpgradeTestPath = join(repoRoot, "protocol", "upgrade-properties.test.ts");
+const canonicalTransitionRunnerPath = join(repoRoot, "protocol", "transition-runner.ts");
+const canonicalBinderPath = join(repoRoot, "protocol", "binder.ts");
+const canonicalSsrSnapshotPath = join(repoRoot, "protocol", "ssr-snapshot.ts");
 
 // Packages that declare the strict wc-bindable manifest contract and must stay in sync.
 const TARGET_PACKAGES = [
@@ -44,15 +48,96 @@ const TARGET_PACKAGES = [
   "raf",
   // flagship packages that also expose the protocol
   "router", "server",
+  // view-transition policy node (docs/view-transition-design.md)
+  "view-transition",
   // reactive engine / consumer
   "state",
 ];
 
 const READER_TARGET_PACKAGES = ["state"];
 
+// transition-runner protocol (docs/view-transition-design.md §4): the two packages
+// that mutate the DOM on the page's behalf, plus the arbiter that installs itself.
+const TRANSITION_RUNNER_TARGET_PACKAGES = ["router", "state", "view-transition"];
+
+// binder protocol (docs/binder-protocol-design.md): the package that inserts DOM on
+// the page's behalf, plus the one that owns bindings and installs itself.
+const BINDER_TARGET_PACKAGES = ["router", "state"];
+
+// ssr-snapshot protocol (docs/ssr-router-design.md §5): the SSR renderer that
+// orchestrates the final snapshot pass, plus the state owner that provides it.
+const SSR_SNAPSHOT_TARGET_PACKAGES = ["server", "state"];
+
 // custom element の Shell を持つパッケージ（= connectedCallback で property upgrade が要る）。
 // state / server は Shell が wcBindable.inputs を宣言しないため対象外。
 const UPGRADE_TARGET_PACKAGES = TARGET_PACKAGES.filter((pkg) => pkg !== "state" && pkg !== "server");
+
+// --- Completeness guards ---------------------------------------------------
+// Two failure modes the stale-compare below cannot see:
+//   (1) a new canonical file lands in /protocol/ without being registered here
+//       — it would silently never be distributed;
+//   (2) a copy carrying this script's banner exists outside the registered
+//       targets (hand-copied into a new package, or left behind after
+//       de-registration) — it would silently drift from its canonical.
+// Both fail in write mode too: a sync run must never "succeed" while either
+// class of drift exists.
+
+const CANONICAL_SOURCES = new Set([
+  "wc-bindable.ts",
+  "wc-bindable-reader.ts",
+  "upgrade-properties.ts",
+  "upgrade-properties.test.ts",
+  "transition-runner.ts",
+  "binder.ts",
+  "ssr-snapshot.ts",
+]);
+
+function assertCanonicalDirComplete() {
+  const unregistered = readdirSync(join(repoRoot, "protocol"), { withFileTypes: true })
+    .filter((e) => e.isFile() && !CANONICAL_SOURCES.has(e.name))
+    .map((e) => e.name);
+  if (unregistered.length === 0) return;
+  console.error(
+    `Unregistered file(s) in /protocol/: ${unregistered.join(", ")}\n` +
+    "Every file in the canonical dir must be copy-distributed by this script.\n" +
+    "Register each one in scripts/sync-protocol-types.mjs (a canonical*Path constant,\n" +
+    "CANONICAL_SOURCES, a *_TARGET_PACKAGES list and a targets entry in main()),\n" +
+    "or move it out of /protocol/.",
+  );
+  process.exit(1);
+}
+
+// The banner names its canonical source, so a copy is identified by matching the
+// full banner line — loose mentions of the script name in comments do not match.
+const BANNER_PATTERN = /Generated from \/protocol\/\S+ by scripts\/sync-protocol-types\.mjs/;
+const SCAN_EXCLUDED_DIRS = new Set(["dist", ".tsc-out", "node_modules", "coverage"]);
+const SCAN_EXTENSIONS = new Set([".ts", ".js", ".mjs", ".cjs"]);
+
+function* scannableFiles(dir) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (!SCAN_EXCLUDED_DIRS.has(entry.name)) yield* scannableFiles(full);
+    } else if (SCAN_EXTENSIONS.has(extname(entry.name))) {
+      yield full;
+    }
+  }
+}
+
+function assertNoOrphanCopies(expectedDests) {
+  const orphans = [];
+  for (const file of scannableFiles(join(repoRoot, "packages"))) {
+    if (!BANNER_PATTERN.test(readFileSync(file, "utf8").slice(0, 400))) continue;
+    if (!expectedDests.has(file)) orphans.push(file.slice(repoRoot.length + 1).split(sep).join("/"));
+  }
+  if (orphans.length === 0) return;
+  console.error(
+    `Orphan generated copies (carry this script's banner but are not registered targets):\n  ${orphans.join("\n  ")}\n` +
+    "Add the package to the matching *_TARGET_PACKAGES list in scripts/sync-protocol-types.mjs,\n" +
+    "or delete the copy.",
+  );
+  process.exit(1);
+}
 
 const banner = (sourceName) =>
   "// ===========================================================================\n" +
@@ -82,6 +167,9 @@ function main() {
     .replace('from "./wc-bindable.js"', 'from "./wcBindable.js"');
   const upgradeTestContent = expectedContent(canonicalUpgradeTestPath, "upgrade-properties.test.ts")
     .replace('from "./upgrade-properties.js"', 'from "../src/protocol/upgradeProperties.js"');
+  const transitionRunnerContent = expectedContent(canonicalTransitionRunnerPath, "transition-runner.ts");
+  const binderContent = expectedContent(canonicalBinderPath, "binder.ts");
+  const ssrSnapshotContent = expectedContent(canonicalSsrSnapshotPath, "ssr-snapshot.ts");
   const targets = [
     ...TARGET_PACKAGES.map((pkg) => ({ pkg, fileName: "wcBindable.ts", content: typeContent })),
     ...READER_TARGET_PACKAGES.map((pkg) => ({ pkg, fileName: "wcBindableReader.ts", content: readerContent })),
@@ -92,7 +180,26 @@ function main() {
       content: upgradeTestContent,
       dir: ["__tests__"],
     })),
+    ...TRANSITION_RUNNER_TARGET_PACKAGES.map((pkg) => ({
+      pkg,
+      fileName: "transitionRunner.ts",
+      content: transitionRunnerContent,
+    })),
+    ...BINDER_TARGET_PACKAGES.map((pkg) => ({
+      pkg,
+      fileName: "binder.ts",
+      content: binderContent,
+    })),
+    ...SSR_SNAPSHOT_TARGET_PACKAGES.map((pkg) => ({
+      pkg,
+      fileName: "ssrSnapshot.ts",
+      content: ssrSnapshotContent,
+    })),
   ];
+
+  assertCanonicalDirComplete();
+  assertNoOrphanCopies(new Set(targets.map(({ pkg, fileName, dir }) => destFor(pkg, fileName, dir))));
+
   const stale = [];
 
   for (const { pkg, fileName, content, dir } of targets) {

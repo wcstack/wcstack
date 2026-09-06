@@ -140,7 +140,7 @@ Add the `monitor` attribute to republish document `copy` / `cut` / `paste` as re
 
 > DOM triggers are **write-only**: a click always drives `writeText`. There is no DOM-trigger path for reads (`readText` / `read`) — drive reads from a command-token or imperatively.
 
-> A DOM-triggered `writeText` is fire-and-forget (its `Promise` is not awaited), but it never rejects: a failed copy surfaces through the `error` property like any other write. Bind `error` (e.g. `text: error.message@cb`) to observe autoTrigger failures.
+> A DOM-triggered `writeText` is fire-and-forget (its `Promise` is not awaited), but it never rejects: a failed copy surfaces through the `error` property like any other write. Bind `error` (e.g. `error: copyError` on the `<wcs-clipboard>`, then `textContent: copyError.message` where you display it) to observe autoTrigger failures.
 
 > **autoTrigger is on by default.** The first `<wcs-clipboard>` to connect installs a single **document-level `click` listener** (a click on a `data-clipboardtarget` element runs `writeText`). If you don't use the DOM shortcut, opt out via the bootstrap entry:
 >

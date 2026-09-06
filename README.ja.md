@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/wcstack-icon-black-512.png">
+    <img src="assets/logo/wcstack-icon-white-512.png" alt="wcstack" width="128" height="128">
+  </picture>
+</p>
+
 # wcstack
 
 > 🤖 **AIコーディングエージェントへ**: まず [AGENTS.md](./AGENTS.md) を参照してください。
@@ -36,12 +43,12 @@ HTMLのセマンティクスを崩さないためには、仕様のどこが拡�
 
 wcstack は、文字通り別の **パス** を選んだ。
 
-UIと状態を結びつけている**唯一の契約（コントラクト）**は**パス文字列**です。 — `user.name`、`cart.items.*.subtotal`、`@shared`。フックもインポートも結合のためのコードもありません。コンポーネントのJavaScriptには状態を参照するコードが一切含まれていません。HTMLだけが、すべてのデータ依存関係を宣言的に記述します。
+UIと状態を結びつけている**唯一の契約（コントラクト）**は**パス文字列**です。 — `user.name`、`cart.items.*.subtotal`、そして `state: user` のようなマウントポイント。フックもインポートも結合のためのコードもありません。コンポーネントのJavaScriptには状態を参照するコードが一切含まれていません。HTMLだけが、すべてのデータ依存関係を宣言的に記述します。
 
 ```
-State  ← "user.name" →  UI          パスが2つのレイヤーを結ぶ
-Comp A ← "@app" →       Comp B      名前付きパスがコンポーネントを横断する
-Loop   ← "items.*" →    Template    ワイルドカードがインデックスを抽象化する
+State  ← "user.name" →    UI          パスが2つのレイヤーを結ぶ
+Host   ← "state: user" →  Component   マウントがコンポーネントを 1 本のツリーに接ぎ木する
+Loop   ← "items.*" →      Template    ワイルドカードがインデックスを抽象化する
 ```
 
 つまり、UIを作り直しても状態に触れなくていい。状態をリファクタリングしてもDOMに触れなくていい。HTMLを読めばすべてが分かる。REST APIのURLと同じ発想 — シンプルな文字列契約、共有コードなし。
@@ -61,7 +68,7 @@ Claude Code は [CLAUDE.md](./CLAUDE.md)（より詳細なツール別ガイド�
 
 ## パッケージ
 
-44個の独立したランタイムパッケージ + 1つのツール拡張パッケージ。ランタイム依存ゼロ（SSR用のhappy-domを除く）。ビルド不要。
+47個の独立したランタイムパッケージ + 1つのツール拡張パッケージ。ランタイム依存ゼロ（SSR用のhappy-domを除く）。ビルド不要。
 
 ### もしHTMLにリアクティブなデータバインディングがあったら？
 
@@ -107,7 +114,7 @@ Claude Code は [CLAUDE.md](./CLAUDE.md)（より詳細なツール別ガイド�
 
 - **パスgetter** — `get "users.*.fullName"()` あらゆる深さの算出プロパティ
 - **構造ディレクティブ** — `<template>` による `for`、`if` / `elseif` / `else`
-- **40以上のフィルタ** — 比較、算術、文字列、日付、フォーマット
+- **46種類のフィルタ** — 比較、算術、文字列、日付、フォーマット
 - **双方向バインディング** — `<input>`、`<select>`、`<textarea>` で自動
 - **Mustache構文** — テキストノード内の `{{ path|filter }}`
 - **Web Componentバインディング** — Shadow DOMとの双方向状態同期
@@ -304,9 +311,12 @@ const html = await renderToString(`
 - [`@wcstack/camera`](packages/camera/) — `<wcs-camera>`（getUserMedia + 組み込みプレビュー）と `<wcs-recorder>`（MediaRecorder）でカメラ撮影・録画を宣言的に。ライブな `MediaStream` は command-token 引数で要素へ直接バインドし、**シリアライズ可能な状態には決して格納しない** — 派生値（権限、録画フラグ、録画した `Blob`/URL）だけが状態を流れる。
 - [`@wcstack/audio`](packages/audio/) — `<wcs-audio>` と 10 個のノードタグで、Web Audio のグラフをマークアップとして書く。入れ子が信号チェーン、`out=`/`param=` の id 参照がそれ以外の結線、`<wcs-voice poly="N">` でポリフォニー。プロトコル境界を越えるのは素の descriptor であり、ライブな `AudioNode` ハンドルは Core の外に出ない。
 - [`@wcstack/midi`](packages/midi/) — `<wcs-midi>` で Web MIDI を宣言的に。入力と出力を 1 つのタグで扱い、メッセージは `type`/`note`/`velocity`/`channel` にデコード（velocity 0 の note-on は `noteoff` に正規化）、ポートの状態もライブに公開。`input` を省略すると全入力ポートを購読する。
+- [`@wcstack/view-transition`](packages/view-transition/) — `<wcs-view-transition>` で View Transition を宣言的に調停する。ルータのルート差し替えと state のリスト／分岐更新をアニメーションさせ、同一 microtask の変更を 1 つの遷移へ合流させ、衝突を `latest`/`queue`/`exhaust` で裁く。DOM 変更はアニメーションの成否に関わらずちょうど 1 回適用される。担当は退場と移動 — フレームワークが消した DOM に CSS だけでは届かない 2 つ。タグが無いページのタイミングは一切変わらない。
 - [`@wcstack/signals`](packages/signals/) — シグナルベースのきめ細かいリアクティブ**コア**（`@wcstack/state` の JS ファースト版）。`signal`/`computed`/`effect`、非同期の `resource`/`streamResource`、keyed な `For`/`Index`、同じ wc-bindable IO ノードをシグナル経由で駆動する `bindNode` アダプタ。TC39-Signals 準拠、依存ゼロ。
 - [`@wcstack/devtools`](packages/devtools/) — `<wcs-devtools>` によるページ内 DevTools オーバーレイ。state ツリーの検査（通常のリアクティブパイプラインを通るインライン編集付き）、各パスがどの DOM ノードに配線されているかの表示、write / 更新バッチ / command・event トークン発火のライブタイムライン — 購読者ゼロの「空撃ち」警告付き。`<script>` 一行、DevTools Hook Protocol で接続、依存ゼロ。
 - [`@wcstack/lint`](packages/lint/) — 静的契約検査 CLI（`npx @wcstack/lint`・コマンド名 `wcs-validate`）。HTML の `data-wcs` バインディングと `wcstack.manifest.json` sidecar を、VS Code 拡張と同一の validator core でヘッドレスに検査 — IDE と CI で diagnostic code / range が完全一致し、安定した exit code 契約で生成→検証→修正ループに組み込める。依存ゼロ。
+- [`@wcstack/typescript`](packages/typescript/) — アプリ向け TypeScript ツール。`wcs-schema` が型付き state ファイルをコンパイルして検証器が消費する sidecar `stateSchema` を書き出し、`data-wcs` パスを CI でも全エディタでも本当の型で検査できるようにする（typo は error に、偽警告は消える）。`wcs-schema check` は manifest が型から乖離すると CI を落とし、`wcs-tsc` は HTML 内のインライン `<script type="module">` state を同じコンパイラで型検査する。`typescript` は peer dependency・ランタイム依存ゼロ。TypeScript の話全体は [docs/typescript.ja.md](docs/typescript.ja.md)。
+- [`@wcstack/testing`](packages/testing/) — ヘッドレステストヘルパー。`mount(html)` が要素を登録し、ページ断片を happy-dom 上に挿入して全要素と全バインドを待つ（`@wcstack/server` の `waitForReady` 経由で router のルートも）。`state().read/write`・`settle()`・`fire()` でユーザーやハンドラと同じ経路から動かす。README のレシピを 1 import にしたもの — 便利であって必須ではない。
 - [`wcstack-intellisense`](packages/vscode-wcs/) — `<wcs-state>` インラインスクリプト向けの VS Code 言語サポート拡張。
 
 ---
@@ -345,11 +355,21 @@ const html = await renderToString(`
 
 ```html
 <script type="module"
-        src="https://cdn.jsdelivr.net/npm/@wcstack/state@1.26.0/dist/auto.min.js"
+        src="https://cdn.jsdelivr.net/npm/@wcstack/state@2.1.1/dist/auto.min.js"
         integrity="sha384-..."></script>
 ```
 
 全パッケージのダイジェストは各 GitHub Release の本文（と添付の `sri.json`）に載ります。CDN から取得したものではなく、公開する tree から算出しています。詳細と「意図的にカバーしない範囲」は [docs/sri.ja.md](docs/sri.ja.md)。
+
+複数パッケージを使うページには **`wcstack` エントリバンドル**があります。SPA コア（state / router / fetch / storage / autoloader）を自己完結の 1 タグに束ねたもので、1 リクエスト・ハッシュ 1 個がコア全体をカバーします（254 KB min / 71 KB gzip）。少なくて済むページでは従来どおり個別パッケージが既定です。jsDelivr の `/combine/` で自分で連結してはいけません（minify 済み ESM は連結に耐えません — [docs/sri.ja.md §3.1](docs/sri.ja.md)）:
+
+```html
+<script type="module"
+        src="https://cdn.jsdelivr.net/npm/wcstack@2.1.1/dist/auto.min.js"
+        integrity="sha384-..."></script>
+```
+
+ページをテストするには？ 素の DOM なので、happy-dom 上にマウントしてバインドを待ち、assert するだけです: [ページをテストする](packages/state/README.ja.md#ページをテストする)。
 
 ---
 
@@ -438,9 +458,13 @@ wcstack/
 │   ├── camera/        # @wcstack/camera
 │   ├── audio/         # @wcstack/audio
 │   ├── midi/          # @wcstack/midi
+│   ├── view-transition/  # @wcstack/view-transition
 │   ├── signals/       # @wcstack/signals
 │   ├── devtools/      # @wcstack/devtools
 │   ├── lint/          # @wcstack/lint
+│   ├── typescript/    # @wcstack/typescript
+│   ├── testing/       # @wcstack/testing
+│   ├── wcstack/       # wcstack（エントリパッケージ: wcstack/auto の SPA コアバンドル）
 │   └── vscode-wcs/    # wcstack-intellisense (VS Code拡張)
 ```
 
@@ -458,6 +482,27 @@ npm test                 # テスト実行 (Vitest)
 npm run test:coverage    # カバレッジ（statements/functions/lines は100%、branches は97%以上）
 npm run lint             # ESLint
 ```
+
+## バージョニングと破壊的変更
+
+公開パッケージは全て同一バージョンで、リリースは一斉に行います（変更の有無に関わらず全パッケージが揃って上がります）。
+
+**semver の対象** — 以下を非互換に変えるときはメジャーリリースです:
+
+- `data-wcs` バインディング構文と、ドキュメントに記載されたその意味論（パス・フィルタ・構造ディレクティブ・spread）
+- 各パッケージのドキュメント化された要素サーフェス: タグ名・属性・`static wcBindable` 宣言（`properties` / `event` / `getter`）
+- 相互運用プロトコル: wc-bindable / command-token / event-token / transition-runner / binder / ssr-snapshot
+- ツールの契約: manifest スキーマ（`schemaVersion`）、`wcs-schema` / `wcs-tsc` CLI、`@wcstack/testing` API。devtools hook protocol は自身の `version` フィールドを持ち、非可換な変更はそれを上げてメジャーに同乗します
+
+**対象外** — minor / patch で変わり得ます:
+
+- 内部モジュール構成と、パッケージのエントリポイントから再エクスポートされていないもの
+- コンソールメッセージの文言・性能特性
+- ドキュメントで experimental / 予約と明示されているもの
+
+**deprecation の運用**: 可能な限り、削除の前に最低 1 つの minor リリースで予告します（移行先を指す lint ルールおよび/または実行時の告知）— v1.x は `wcs/named-state-deprecated` で名前付き State を予告し、v2.0 が `name=` / `@name` を削除しました。
+
+リリース履歴: [CHANGELOG.md](./CHANGELOG.md)（英語）。1.x からの移行: [docs/migration-v2.ja.md](./docs/migration-v2.ja.md)。
 
 ## License
 

@@ -33,8 +33,7 @@ state をロードして `defineDCC()` を呼ぶ。定義用の `<wcs-state>` �
 - **変更イベントの発火**は `proxy/methods/setByAddress.ts` が担う。`bindableEventMap` に
   完全一致するパスへの書き込みで、shadow の host に `CustomEvent` を dispatch する
   （`bubbles: true` / `composed` なし。host 自身が起点なので shadow 境界は越えない）。
-- **inner `<wcs-state>` は無名であること。** セレクタが `:not([name])` のため、
-  `name` を付けると `stateElement` が解決できない。`$bindables` 宣言時は警告を出す。
+- **inner `<wcs-state>` を 1 つ持つこと。** v2 では name 次元そのものが無い（name 属性は fail-fast）。`$bindables` 宣言時に inner state が無ければ警告を出す。
 
 ## bind-component との排他
 

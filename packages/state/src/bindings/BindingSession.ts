@@ -1,10 +1,12 @@
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
+import { EVENT_TOKEN_NAMESPACE, MODIFIER_READONLY } from "../define";
 import { IAbsoluteStateAddress } from "../address/types";
 import { getAbsolutePathInfo } from "../address/AbsolutePathInfo";
 import { IAbsolutePathInfo } from "../address/types";
 import { clearAbsoluteStateAddressByBinding, getAbsoluteStateAddressByBinding, resolveBindingRootNode } from "../binding/getAbsoluteStateAddressByBinding";
 import { addBindingByAbsoluteStateAddress, addBindingByPattern, removeBindingByAbsoluteStateAddress, removeBindingByPattern } from "../binding/getBindingSetByAbsoluteStateAddress";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
+import { getLastListValueByAbsoluteStateAddress, hasLastListValueByAbsoluteStateAddress, setLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
 import { IListIndex } from "../list/types";
 import { clearStateAddressByBindingInfo } from "../binding/getStateAddressByBindingInfo";
 import { config } from "../config";
@@ -17,9 +19,8 @@ import { isPossibleTwoWay } from "../event/isPossibleTwoWay";
 import { getCustomElement } from "../getCustomElement";
 import { getCustomElementRegistry, upgradeCustomElement } from "../platform/customElementRegistry";
 import { raiseError } from "../raiseError";
-import { getStateElementByName } from "../stateElementByName";
+import { getStateElement } from "../stateElementByName";
 import { IBindingInfo } from "../types";
-import { getOuterRowPathInfo } from "../webComponent/outerListPath";
 import { consumeObserverSkipOnAdd, consumeObserverSkipOnRemove, decrementPendingObservation, hasPendingObservation, incrementPendingObservation } from "./observerSkip";
 import { DefinitionCoordinator, getDefinitionCoordinator } from "./DefinitionCoordinator";
 import { commitProducerValue, hasInitialSyncModifier, IInitialSyncPolicy, ResolvedInitialAuthority, resolveInitialAuthority, resolveInitialSyncPolicy } from "./initialSync";
@@ -72,12 +73,6 @@ interface IInternalBindingRecord extends IBindingRecord {
    */
   patternPathInfo: IAbsolutePathInfo | null;
   patternListIndex: IListIndex | null;
-  /**
-   * mapped な `bind-component` の行バインディングを、値の正本を持つ親スコープの
-   * 絶対パス情報にも登録したときの控え（listIndex は patternListIndex と同一）。
-   * plain な state では常に null（§1.8）。
-   */
-  outerPatternPathInfo: IAbsolutePathInfo | null;
   pendingDefinitions: number;
   initialPolicy: IInitialSyncPolicy | null;
   resolvedAuthority: ResolvedInitialAuthority | null;
@@ -143,6 +138,17 @@ function addInterestedSession(node: Node, session: BindingSession): void {
     return;
   }
   interestedSessionsByNode.set(node, new Set([current, session]));
+}
+
+/**
+ * このノードに既にバインドが張られているか。
+ *
+ * binder プロトコル（`bind()`）の冪等判定に使う。`remember` が binding ごとに
+ * `addInterestedSession(binding.replaceNode, …)` を呼ぶので、バインド済みノードは
+ * 必ずこの台帳に載っている。新しい台帳を足さずに済むぶん、二重管理の齟齬が無い。
+ */
+export function hasInterestedSession(node: Node): boolean {
+  return interestedSessionsByNode.has(node);
 }
 
 function forEachInterestedSession(node: Node, callback: (session: BindingSession) => void): void {
@@ -244,7 +250,6 @@ function bindingKey(binding: IBindingInfo): string {
     binding.bindingType,
     binding.propName,
     binding.propModifiers.join(","),
-    binding.stateName,
     binding.statePathName,
     inFilters,
     outFilters,
@@ -404,7 +409,7 @@ export class BindingSession {
     callback: () => void,
     reject: (error: unknown) => void = () => undefined,
   ): () => void {
-    const registry = getCustomElementRegistry();
+    const registry = getCustomElementRegistry(node);
     if (registry === null) {
       raiseError(`CustomElementRegistry is unavailable for <${tagName}>.`);
     }
@@ -499,6 +504,62 @@ export class BindingSession {
       record.teardowns = null;
     }
     this.records.clear();
+  }
+
+  /**
+   * マウントスコープ専用（Phase 2・webComponent/mountScope.ts）: 全 record の台帳登録を
+   * **現在のループ文脈の listIndex** で張り直す。行 content のプール再利用でコンポーネント
+   * 要素が別の行に付け替わると、スコープの binding は旧行の listIndex で台帳に載ったままに
+   * なる — その 1 点だけを直す（listener・record・依存グラフは張り直し不要）。
+   *
+   * `for` binding は lastListValue（差分の基準）を旧アドレスから新アドレスへ引き継ぐ。
+   * 引き継がないと再適用が全行 add と誤認し、旧行の DOM が残ったまま新行を重ねて
+   * マウントする。戻り値は再適用すべき binding（呼び出し側が applyChangeFromBindings する）。
+   */
+  /**
+   * マウントスコープ再接続専用: アクティブな record の binding ノード（text は差し替え前の
+   * comment — ループ文脈の直接エントリはこのノードに載る）を列挙する。
+   * remountScopeBindings が現在の行の文脈へ張り替えるために使う。
+   */
+  forEachActiveBindingNode(callback: (node: Node) => void): void {
+    for (const record of this.records) {
+      if (record.phase !== "active") continue;
+      callback(record.info.node);
+    }
+  }
+
+  rebindAddresses(): IBindingInfo[] {
+    const rebound: IBindingInfo[] = [];
+    for (const record of this.records) {
+      if (record.phase !== "active") continue;
+      const binding = record.info;
+      if (record.address === null && record.patternListIndex === null) continue;
+      const oldAbs = binding.bindingType === "for" ? getAbsoluteStateAddressByBinding(binding) : null;
+      if (record.address !== null) {
+        removeBindingByAbsoluteStateAddress(record.address, binding);
+        record.address = null;
+      } else {
+        removeBindingByPattern(record.patternPathInfo!, record.patternListIndex!, binding);
+        record.patternPathInfo = null;
+        record.patternListIndex = null;
+      }
+      clearStateAddressByBindingInfo(binding);
+      clearAbsoluteStateAddressByBinding(binding);
+      this.registerAddress(record);
+      if (oldAbs !== null) {
+        const newAbs = getAbsoluteStateAddressByBinding(binding);
+        // 記録の有無は has で見る（get は未記録でも `[]` を返すため、!= null 判定は
+        // 常に真 — 未記録の旧アドレスから空配列を持ち込んで、新アドレスに残っていた
+        // 正当な記録を潰しうる）
+        if (newAbs !== oldAbs && hasLastListValueByAbsoluteStateAddress(oldAbs)) {
+          setLastListValueByAbsoluteStateAddress(newAbs, getLastListValueByAbsoluteStateAddress(oldAbs));
+        }
+      }
+      if (this.shouldApplyState(binding)) {
+        rebound.push(binding);
+      }
+    }
+    return rebound;
   }
 
   observe(node: Node): void {
@@ -648,7 +709,6 @@ export class BindingSession {
         address: null,
         patternPathInfo: null,
         patternListIndex: null,
-        outerPatternPathInfo: null,
         pendingDefinitions: 0,
         initialPolicy: slot.policy,
         resolvedAuthority: slot.authority,
@@ -765,7 +825,6 @@ export class BindingSession {
       address: null,
       patternPathInfo: null,
       patternListIndex: null,
-      outerPatternPathInfo: null,
       pendingDefinitions: 0,
       initialPolicy: null,
       resolvedAuthority: null,
@@ -805,7 +864,7 @@ export class BindingSession {
       return;
     }
 
-    if (binding.propSegments[0] === "eventToken") {
+    if (binding.propSegments[0] === EVENT_TOKEN_NAMESPACE) {
       this.attachAfterDefinition(record, () => {
         if (attachEventTokenHandler(binding)) {
           addRecordTeardown(record, () => detachEventTokenHandler(binding));
@@ -833,7 +892,7 @@ export class BindingSession {
       if (
         config.enableDirectionalInitialSync
         && isPossibleTwoWay(binding.node, binding.propName)
-        && binding.propModifiers.indexOf("ro") === -1
+        && binding.propModifiers.indexOf(MODIFIER_READONLY) === -1
       ) {
         const removeObserver = addTwowayValueObserver(binding.node, binding.propName, (value) => {
           if (!this.isAlive(record, record.generation)) return;
@@ -854,7 +913,7 @@ export class BindingSession {
       attach();
       return;
     }
-    const registry = getCustomElementRegistry();
+    const registry = getCustomElementRegistry(record.info.node);
     if (registry === null) {
       raiseError(`CustomElementRegistry is unavailable for <${tagName}>.`);
     }
@@ -965,23 +1024,14 @@ export class BindingSession {
       // リスト行: (absolutePathInfo, listIndex) のパターン台帳に登録し、
       // AbsoluteStateAddress の intern（アドレス割当 + intern 用 WeakMap）を省略する
       const rootNode = resolveBindingRootNode(binding, knownRoot);
-      const stateElement = getStateElementByName(rootNode, binding.stateName);
+      const stateElement = getStateElement(rootNode);
       if (stateElement === null) {
-        raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+        raiseError(`No state tree found on this root for binding.`);
       }
       const absolutePathInfo = getAbsolutePathInfo(stateElement, binding.statePathInfo);
       addBindingByPattern(absolutePathInfo, listIndex, binding);
       record.patternPathInfo = absolutePathInfo;
       record.patternListIndex = listIndex;
-      // mapped な bind-component の子スコープが回している行は、値の正本が親 state に
-      // ある。親が行へ書いたときの enqueue は親の絶対パス情報で起きるので、同じ
-      // listIndex（親子で共有されている）で親側のパターン台帳にも購読者として載せる。
-      // これが無いと親起点の行フィールド書き込みが子に一切届かない（§1.8）。
-      const outerPathInfo = getOuterRowPathInfo(stateElement, binding.statePathInfo);
-      if (outerPathInfo !== null) {
-        addBindingByPattern(outerPathInfo, listIndex, binding);
-        record.outerPatternPathInfo = outerPathInfo;
-      }
     } else {
       const address = getAbsoluteStateAddressByBinding(binding, knownRoot);
       addBindingByAbsoluteStateAddress(address, binding);
@@ -991,9 +1041,9 @@ export class BindingSession {
     // データ駆動で行う（クロージャ不要）
     if (!record.options.registerPathInfo) return;
     const rootNode = binding.replaceNode.getRootNode() as Node;
-    const stateElement = getStateElementByName(rootNode, binding.stateName);
+    const stateElement = getStateElement(rootNode);
     if (stateElement === null) {
-      raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+      raiseError(`No state tree found on this root for binding.`);
     }
     if (binding.bindingType !== "event") {
       stateElement.setPathInfo(binding.statePathName, binding.bindingType);
@@ -1036,15 +1086,6 @@ export class BindingSession {
         // Cleanup is best-effort; one faulty resource must not retain the rest.
       }
     } else if (record.patternListIndex !== null) {
-      // 親スコープへの相乗り分は独立した資源なので、子側の解除が失敗しても取り残さない
-      if (record.outerPatternPathInfo !== null) {
-        try {
-          removeBindingByPattern(record.outerPatternPathInfo, record.patternListIndex, binding);
-        } catch {
-          // Cleanup is best-effort.
-        }
-        record.outerPatternPathInfo = null;
-      }
       try {
         removeBindingByPattern(record.patternPathInfo!, record.patternListIndex, binding);
         record.patternPathInfo = null;

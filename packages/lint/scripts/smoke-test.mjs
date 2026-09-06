@@ -9,7 +9,7 @@
 // 意図的に壊した fixture を拾って build を落とすため、コミットしてはならない。
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,6 +26,31 @@ const workDir = mkdtempSync(join(tmpdir(), "wcstack-lint-smoke-"));
 const cleanHtml = join(workDir, "clean.html");
 const brokenManifest = join(workDir, "broken.manifest.json");
 const mutationHtml = join(workDir, "mutation.html");
+const namedStateHtml = join(workDir, "named-state.html");
+const missingPathHtml = join(workDir, "missing-path.html");
+// stateSchema 発見（D8）: HTML と同じディレクトリの wcstack.manifest.json を自動で読み、
+// 宣言済み state の未存在パスは error に上がる（D6）。tmp 下なので repo の CI gate は走査しない。
+const schemaDir = join(workDir, "schema");
+mkdirSync(schemaDir);
+const schemaHtml = join(schemaDir, "index.html");
+writeFileSync(join(schemaDir, "wcstack.manifest.json"), JSON.stringify({
+  schemaVersion: 2,
+  kind: "application",
+  manifestExtensions: {
+    "wcstack.application": {
+      version: 2,
+      stateSchema: { type: "object", properties: { message: { type: "string" } } },
+    },
+  },
+}));
+writeFileSync(schemaHtml, `<!doctype html>
+<wcs-state json='{"message": "hi"}'></wcs-state>
+<div data-wcs="textContent: message"></div>
+<div data-wcs="textContent: mesage"></div>
+`);
+writeFileSync(namedStateHtml, `<!doctype html>
+<html><body><wcs-state name="cart" json='{"total":1}'></wcs-state><p data-wcs="textContent: x@cart"></p></body></html>
+`);
 writeFileSync(cleanHtml, "<!doctype html>\n<html><body><p>hello</p></body></html>\n");
 writeFileSync(brokenManifest, "{ this is not json\n");
 writeFileSync(mutationHtml, `<!doctype html>
@@ -35,6 +60,12 @@ export default {
   add(item) { this.items.push(item); },
 };
 </script></wcs-state>
+`);
+writeFileSync(missingPathHtml, `<!doctype html>
+<wcs-state><script type="module">
+export default { message: "hi" };
+</script></wcs-state>
+<div data-wcs="textContent: missingPath"></div>
 `);
 
 const failures = [];
@@ -96,10 +127,56 @@ check("unreadable file → exit 2", ["--lang=en", join(workDir, "no-such-file.ht
   stderr: ["cannot read"],
 });
 
-// warning severity は exit code を変えない(CLI 契約)ことも同時に検査する。
-check("destructive array mutation → warning wcs/array-mutation, exit 0", ["--lang=en", mutationHtml], {
+// error severity は exit code を 1 にする(CLI 契約)。この family は非リアクティブ
+// 代入 = DOM が黙って更新されない欠陥なので error（docs/array-mutation-diagnostic-design.md）。
+check("destructive array mutation → error wcs/array-mutation, exit 1", ["--lang=en", mutationHtml], {
+  exit: 1,
+  stdout: [/error wcs\/array-mutation /, "1 error(s), 0 warning(s)"],
+});
+
+// v2: 名前次元は撤去 — name 属性 / @name は runtime の fail-fast と同じ文言の error。
+// severity を warning に戻すと release スモークが契約ドリフトとして落ちる（#183 の教訓）。
+check("named state (name= / @name) → error wcs/named-state-deprecated, exit 1", ["--lang=en", namedStateHtml], {
+  exit: 1,
+  stdout: [/error wcs\/named-state-deprecated /],
+});
+
+// 対になる検査: warning severity は exit code を変えない(CLI 契約)。上のケースが
+// error に上がった際、この契約の検査が道連れで消えかけた。severity を動かすときは
+// error/warning 両側のケースが残っているかを確かめること。
+check("unresolvable path → warning wcs/binding-path-missing, exit 0", ["--lang=en", missingPathHtml], {
   exit: 0,
-  stdout: [/warning wcs\/array-mutation /, "0 error(s), 1 warning(s)"],
+  stdout: [/warning wcs\/binding-path-missing /, "0 error(s), 1 warning(s)"],
+});
+
+// --strict は exit code の閾値だけを warning に下げる(severity は不変)。error 側 /
+// warning 側 / clean の三点で固定する: severity を動かす変更が strict の契約を道連れに
+// しないよう、上の error/warning ペアと同じ対称性をここでも保つ。
+check("--strict: warning → exit 1, severity label unchanged, summary marked (strict)", ["--lang=en", "--strict", missingPathHtml], {
+  exit: 1,
+  stdout: [/warning wcs\/binding-path-missing /, "0 error(s), 1 warning(s), 0 info (strict)"],
+});
+
+check("--strict: error → exit 1 as before", ["--lang=en", "--strict", brokenManifest], {
+  exit: 1,
+  stdout: [/error wcs\/manifest-broken /, "(strict)"],
+});
+
+check("--strict: clean HTML → still exit 0", ["--lang=en", "--strict", cleanHtml], {
+  exit: 0,
+  stdout: ["0 error(s), 0 warning(s), 0 info (strict)"],
+});
+
+check("--strict + --errors-only: warning hidden from output but still fails", ["--lang=en", "--strict", "--errors-only", missingPathHtml], {
+  exit: 1,
+  stdout: ["0 error(s), 1 warning(s), 0 info (strict)"],
+});
+
+// stateSchema が宣言された state（同ディレクトリの wcstack.manifest.json を自動発見）では、
+// 同じ typo が warning でなく error になり exit 1（D6 / D8）。manifest は引数に渡していない。
+check("nearest wcstack.manifest.json declares stateSchema → typo is error wcs/path-nonexistent, exit 1", ["--lang=en", schemaHtml], {
+  exit: 1,
+  stdout: [/index\.html:\d+:\d+ error wcs\/path-nonexistent .*"mesage"/, "1 error(s), 0 warning(s)"],
 });
 
 rmSync(workDir, { recursive: true, force: true });

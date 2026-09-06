@@ -118,8 +118,9 @@ stream は値だけでなく pending / active / error / complete のライフサ
 ### 4-6. $watch との双対（境界整理）
 
 - 本案は「**stream → state（inward）**」。外部フローを state に取り込む。
-- 逆向き「**state path → stream（outward）**」（state 変化を ReadableStream / async iterable として外へ出す）は [[watch-hook-design]] の領域。
+- 逆向き「**state path → stream（outward）**」（state 変化を ReadableStream / async iterable として外へ出す）は `$watch` の領域 — 設計は [state-watch-hook-design.md](./state-watch-hook-design.md)（2026-08-19 決定済み・実装前）。
 - 両者を別物として整理し、将来「reactive adapter（双方向）」として統一する余地を残す。混ぜると濁る（event-token と $watch を分離した判断と同型）。
+- なお `$watch` 側の存在理由は、§4-5 までで残った観測の穴そのものである: `$updatedCallback` は binding 駆動なので、`$streams` の値を画面に出していない場合その完了を state 側で捕まえられない（`packages/state/docs/streams.md` に明記した制約）。`$watch` はこれを headless 購読で埋める。
 
 ### 4-7. source として受ける型
 

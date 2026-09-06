@@ -25,6 +25,17 @@ describe('waitForStateInitialize', () => {
     await expect(waitForStateInitialize(document)).resolves.toBeUndefined();
   });
 
+  it('nullレジストリのrootではエラーになること', async () => {
+    // <wcs-state> が upgrade されず initializePromise が生えないので、
+    // 待っても永久に初期化されない。即時解決に見せかけず落とすこと。
+    const root = document.createElement('div');
+    Object.defineProperty(root, 'customElementRegistry', { value: null });
+
+    await expect(waitForStateInitialize(root)).rejects.toThrow(
+      /CustomElementRegistry is unavailable/
+    );
+  });
+
   it('全てのstate要素のinitializePromiseを待つこと', async () => {
     const deferred1 = createDeferred();
     const deferred2 = createDeferred();

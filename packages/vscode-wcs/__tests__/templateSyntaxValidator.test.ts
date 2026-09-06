@@ -29,6 +29,18 @@ describe('validateTemplateSyntax — 省略パス `.` の展開', () => {
   });
 });
 
+describe('validateTemplateSyntax — `path@name`（v2 撤去構文）は検証しない', () => {
+  it('`@` 入りの式は strip 受理せず、パス存在の誤報も出さない（error は namedStateValidator が担う）', () => {
+    // 旧挙動: `@` 前を strip して受理していた（`missing@cart` → `missing` の
+    // BindingPathMissing 誤報・`total@cart` は無診断で沈黙）
+    const html = `${STATE}
+<template data-wcs="for: tags"><li><!--@@: missing@cart--></li></template>
+<p>{{ total@cart }}</p>`;
+    const diags = validateTemplateSyntax(html, 'wcs-state');
+    expect(diags.filter(d => d.code === WcsDiagnosticCode.BindingPathMissing)).toHaveLength(0);
+  });
+});
+
 describe('validateTemplateSyntax — 入れ子 <template>', () => {
   const NESTED = `${STATE}
 <template data-wcs="for: regions">

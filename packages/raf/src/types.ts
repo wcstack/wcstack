@@ -63,6 +63,8 @@ export interface WcsRafInputs {
   once: boolean;
   repeat: number;
   manual: boolean;
+  /** "pause" でだけ prefers-reduced-motion ゲートが効く。未知値は "run" 扱い */
+  reducedMotion: string;
   trigger: boolean;
 }
 

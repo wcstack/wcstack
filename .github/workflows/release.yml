@@ -42,44 +42,43 @@ jobs:
       - name: Upgrade npm CLI (trusted publishing needs >= 11.5.1)
         run: npm install -g npm@11
 
-      # Discover release-target packages, in two sets.
+      # Discover release-target packages, as one ordered set used for both
+      # build and publish.
       #
-      # `list` — buildable packages: any packages/* scoped under @wcstack/.
-      # These have src, tests, a package-lock.json and a dist, so they go
-      # through install / build / test / rebuild / artifact-commit. Auto-includes
-      # new packages; excludes the vscode-wcs extension (published separately to
-      # the VS Code Marketplace).
+      # Members: any packages/* scoped under @wcstack/, sorted. These have src,
+      # tests, a package-lock.json and a dist. Auto-includes new packages;
+      # excludes the vscode-wcs extension (published separately to the VS Code
+      # Marketplace).
       #
-      # `publish_list` — the above plus the unscoped `wcstack` entry package.
-      # That one is documentation only: no dependencies, no build, no tests, no
-      # dist. It must not enter the build/test loops (they would fail on the
-      # missing lockfile and scripts), but it does have to stay on the shared
-      # version line, so it takes part in bump / verify / publish.
+      # The unscoped `wcstack` entry bundle is appended LAST, never sorted in:
+      # its build inlines the member packages' dist/auto.min.js files
+      # (state / router / fetch / storage / autoloader), so it must build after
+      # every member has been (re)built — in BOTH passes, so "Test all
+      # packages" tests a coherent bundle and the rebuild embeds the bumped
+      # VERSION constants. Plain sorted order happens to satisfy that today,
+      # but would break silently the moment a member sorting after "wcstack"
+      # (websocket, worker, ...) joins the bundle profile, so the ordering is
+      # explicit (docs/distribution-robustness-impl-plan.md D7). The entry
+      # package builds and tests like any other package since plan Phase 4;
+      # `list` and `publish_list` are now the same set, kept as two outputs so
+      # the consuming steps stay unchanged.
       - name: Discover packages
         id: discover
         run: |
           set -euo pipefail
-          # The entry package is selected by a flag, not by folding it into the
-          # case pattern: a pattern passed through a variable is not re-parsed,
-          # so `@wcstack/*|wcstack` would match nothing at all (the `|` stops
-          # being an alternation separator) and every list would come back empty.
-          collect() {
-            include_entry="$1"
+          members() {
             for dir in packages/*/; do
               [ -f "${dir}package.json" ] || continue
               name=$(node -p "require('./${dir}package.json').name")
               case "$name" in
                 @wcstack/*) basename "$dir" ;;
-                wcstack)    if [ "$include_entry" = "yes" ]; then basename "$dir"; fi ;;
               esac
             done | sort | tr '\n' ' '
           }
-          pkgs=$(collect no)
-          publish_pkgs=$(collect yes)
-          echo "Buildable packages: $pkgs"
-          echo "Publish targets:    $publish_pkgs"
+          pkgs="$(members)wcstack "
+          echo "Build/publish order: $pkgs"
           echo "list=$pkgs" >> "$GITHUB_OUTPUT"
-          echo "publish_list=$publish_pkgs" >> "$GITHUB_OUTPUT"
+          echo "publish_list=$pkgs" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
         run: |
@@ -96,6 +95,17 @@ jobs:
             (cd "packages/$pkg" && npm run build)
             echo "::endgroup::"
           done
+
+      # @wcstack/server's npm ci installs @wcstack/state from the registry, which
+      # lags src until this very release is published — its tests would gate the
+      # release against the previous release's state behavior. Link the sibling
+      # build (fresh from "Build all packages" above) so the test loop sees
+      # "fresh state × server", same as ci.yml's server matrix job.
+      - name: Link sibling @wcstack/state into server (registry lags until publish)
+        run: |
+          rm -rf packages/server/node_modules/@wcstack/state
+          mkdir -p packages/server/node_modules/@wcstack
+          ln -s ../../../state packages/server/node_modules/@wcstack/state
 
       - name: Test all packages
         run: |
@@ -130,6 +140,19 @@ jobs:
           for pkg in ${{ steps.discover.outputs.publish_list }}; do
             (cd "packages/$pkg" && npm version "$target" --no-git-tag-version --allow-same-version)
           done
+          # `npm version` rewrites only its own "version" field. Internal
+          # @wcstack/* dependency ranges (server ships @wcstack/state as a
+          # runtime dependency; testing declares state/server peers) keep their
+          # old ranges and, across a major, would hand consumers a mismatched
+          # pair at install time (e.g. server 2.0.0 + state 1.x, or an
+          # unsatisfiable peer). Align them to the unified target. Lockfiles
+          # cannot follow yet — the target versions reach the registry only at
+          # the publish step below — so the lock sync runs right after publish
+          # and amends the release commit before tagging.
+          rewritten=$(node scripts/align-internal-dep-ranges.mjs "$target" \
+            $(for pkg in ${{ steps.discover.outputs.publish_list }}; do printf 'packages/%s ' "$pkg"; done))
+          echo "Internal @wcstack/* ranges aligned in: ${rewritten:-<none>}"
+          echo "range_rewritten=$(echo $rewritten)" >> "$GITHUB_OUTPUT"
           echo "version=$target" >> "$GITHUB_OUTPUT"
 
       # Verify all packages now share the unified version.
@@ -163,6 +186,24 @@ jobs:
       - name: Bindable settable-surface conformance (rebuilt dist)
         run: node scripts/conformance-bindable-inputs.mjs
 
+      # The rebuilt wcstack bundle is excluded from both post-rebuild gates by
+      # design: it has no dist/index.esm.js for the conformance script above
+      # (plan D5) and is SKIPped by emit-builtin-tags below (plan D8). Re-run
+      # its smoke tests against the freshly rebuilt dist — the tag census and
+      # the zero-static-imports check are the only execution gates the
+      # published bundle gets.
+      - name: Smoke-test the rebuilt wcstack bundle
+        run: npm test
+        working-directory: packages/wcstack
+
+      # Regenerate the builtinTags catalog + wcs.html-data.json from the freshly
+      # rebuilt bundles and include them in the release commit. Without this, a
+      # release that changed any wcBindable / observedAttributes surface would
+      # commit new dist with a stale catalog, and the protocol-types-sync job's
+      # emit-builtin-tags --check would fail on the next unrelated PR.
+      - name: Regenerate builtin-tags catalog (rebuilt dist)
+        run: node packages/vscode-wcs/scripts/emit-builtin-tags.mjs
+
       # Subresource Integrity digests for every package's single-tag bootstrap.
       #
       # Computed here, from the freshly rebuilt tree that is about to be
@@ -193,6 +234,10 @@ jobs:
           for pkg in ${{ steps.discover.outputs.list }}; do
             git add "packages/$pkg/package-lock.json" "packages/$pkg/dist"
           done
+          # Generated from the rebuilt bundles above; committed together so the
+          # emit-builtin-tags --check gate stays green after the release lands.
+          git add packages/vscode-wcs/src/service/generated/builtinTags.generated.ts \
+                  packages/vscode-wcs/wcs.html-data.json
           git commit -m "chore: bump all packages to v${{ steps.bump.outputs.version }}"
 
       # Publish to npm — idempotent: skip any package whose target version is
@@ -232,6 +277,33 @@ jobs:
             fi
             echo "::endgroup::"
           done
+
+      # The bump step aligned internal @wcstack/* dependency ranges, but the
+      # lockfiles could not follow at that point: the target versions reached
+      # the registry only in the publish above. Sync them now and fold the
+      # result into the release commit (amended before tagging) so the tagged
+      # tree ships a consistent package.json + lock — otherwise the next
+      # npm ci in each rewritten package fails on the mismatch. Retries cover
+      # registry propagation lag right after publish.
+      - name: Sync lockfiles for the aligned internal ranges
+        if: ${{ steps.bump.outputs.range_rewritten != '' }}
+        run: |
+          set -euo pipefail
+          for dir in ${{ steps.bump.outputs.range_rewritten }}; do
+            for attempt in 1 2 3 4 5; do
+              if (cd "$dir" && npm install --package-lock-only --no-audit --no-fund); then
+                break
+              elif [ "$attempt" = 5 ]; then
+                echo "::error::lock sync failed in $dir after 5 attempts"
+                exit 1
+              else
+                echo "registry not caught up for $dir (attempt $attempt); retrying in 15s"
+                sleep 15
+              fi
+            done
+            git add "$dir/package-lock.json"
+          done
+          git commit --amend --no-edit
 
       # Push only after all npm publishes succeed so git history and tags reflect a completed release.
       - name: Tag and push release

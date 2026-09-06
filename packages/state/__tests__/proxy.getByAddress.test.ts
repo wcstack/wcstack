@@ -3,7 +3,7 @@ import { getByAddress } from '../src/proxy/methods/getByAddress';
 import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
 import { createListIndex } from '../src/list/createListIndex';
-import { setStateElementByName } from '../src/stateElementByName';
+import { setStateElement } from '../src/stateElementByName';
 import { setCacheEntryByAbsoluteStateAddress } from '../src/cache/cacheEntryByAbsoluteStateAddress';
 import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
 import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
@@ -35,11 +35,11 @@ describe('getByAddress', () => {
 
   beforeEach(() => {
     mockStateElement = createStateElement();
-    setStateElementByName(document, 'default', mockStateElement);
+    setStateElement(document, mockStateElement);
   });
 
   afterEach(() => {
-    setStateElementByName(document, 'default', null);
+    setStateElement(document, null);
   });
 
   it('getterPathsに含まれる場合はpush/popしつつgetter経由で取得すること', () => {
@@ -86,15 +86,27 @@ describe('getByAddress', () => {
     const address = createStateAddress(getPathInfo('users.*'), null);
     const handler = createHandler(mockStateElement);
 
-    expect(() => getByAddress(target, address, target, handler as any)).toThrow(/listIndex.*undefined/);
+    expect(() => getByAddress(target, address, target, handler as any)).toThrow(/\[wcs\/wildcard-rank\].*needs 1 enclosing loop level/);
   });
 
-  it('親が存在しないパスでtargetに無い場合はエラーになること', () => {
+  it('親が存在しないパスでtargetに無い場合は打ち間違いとして報告するエラーになること', () => {
     const target = {};
     const address = createStateAddress(getPathInfo('missing'), null);
     const handler = createHandler(mockStateElement);
 
-    expect(() => getByAddress(target, address, target, handler as any)).toThrow(/address.parentAddress is undefined/);
+    // 内部実装の言葉（address.parentAddress is undefined）ではなく、lint と同じ
+    // 診断 code で「そのパスは state に無い」と言う（pathDiagnostics.ts）
+    expect(() => getByAddress(target, address, target, handler as any))
+      .toThrow(/\[wcs\/binding-path-missing\] Path "missing" does not exist on the state tree/);
+  });
+
+  it('近いトップレベルのキーがあれば did-you-mean を添えること', () => {
+    const target = { count: 0 };
+    const address = createStateAddress(getPathInfo('cout'), null);
+    const handler = createHandler(mockStateElement);
+
+    expect(() => getByAddress(target, address, target, handler as any))
+      .toThrow(/Did you mean "count"\?/);
   });
 
   it('キャッシュがある場合はキャッシュを返すこと', () => {

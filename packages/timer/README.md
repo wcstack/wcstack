@@ -241,6 +241,10 @@ timer.start({ interval: 1000, repeat: 10 });
 
 The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
 
+## Accessibility
+
+**WCAG 2.2.2 Pause, Stop, Hide**: content that updates automatically alongside other content needs a user-reachable pause. The parts are already on this tag — `pause` / `resume` / `stop` are first-class commands — so meeting the criterion is one visible control wired to them (`command.pause: $command.…`, or a click handler calling the element's methods). If a `<wcs-timer>` drives a ticker, carousel, or countdown the user can see, give the user that control.
+
 ## License
 
 MIT

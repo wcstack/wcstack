@@ -19,7 +19,7 @@
 import { WcsDiagnostic, WcsDiagnosticCode } from '../core/diagnostics.js';
 import { getMessages, type WcsMessageCatalog } from '../core/messages.js';
 import { BUILTIN_TAGS } from './generated/builtinTags.generated.js';
-import { getStatePathsFromHtml } from './statePathResolver.js';
+import { getStatePathsFromHtml, type FileReader } from './statePathResolver.js';
 import type { PathCandidate } from './stateAnalyzer.js';
 import { splitBindingExpressions, parseBindingExpression } from './bindingValidator.js';
 
@@ -38,7 +38,8 @@ const STRUCTURAL_DIRECTIVES = new Set(['for', 'if', 'elseif', 'else']);
 /** `''` / `null` / `[]` / `{}` — storage の保存値を初期書き戻しで上書きする空値シード。 */
 const EMPTYISH_SEEDS = new Set(["''", '""', '``', 'null', '[]', '{}']);
 
-interface IoTagOccurrence {
+/** 組み込み wcs-* タグ 1 出現（core/navigation の spread ヒントが所属タグ特定に共有。走査が二重実装になると検査とヒントでタグ解釈が割れる）。 */
+export interface IoTagOccurrence {
   tagName: string;
   /** タグ全体の開始オフセット。 */
   tagStart: number;
@@ -56,6 +57,7 @@ export function validateIoNodes(
   bindAttribute: string = 'data-wcs',
   stateTagName: string = 'wcs-state',
   locale?: string,
+  fileReader?: FileReader,
 ): WcsDiagnostic[] {
   const diagnostics: WcsDiagnostic[] = [];
   const msgs = getMessages(locale);
@@ -65,17 +67,41 @@ export function validateIoNodes(
   // state スロットのシード値検査（trigger / storage）にだけ状態パスが要る。遅延解決。
   let statePaths: PathCandidate[] | null = null;
   const getPaths = (): PathCandidate[] =>
-    (statePaths ??= getStatePathsFromHtml(html, stateTagName));
+    (statePaths ??= getStatePathsFromHtml(html, stateTagName, fileReader));
 
   for (const occ of occurrences) {
     const contract = BUILTIN_TAGS[occ.tagName];
-    // ヘルパータグ（契約メンバーなし）は検査対象外 — バインド面が定義されていない。
-    if (contract.properties.length === 0 && contract.commands.length === 0
-      && Object.keys(contract.inputs).length === 0) continue;
-
     const bindAttr = extractAttributeValue(occ.attrsText, bindAttribute);
     if (!bindAttr) continue;
     const valueStart = occ.attrsStart + bindAttr.valueOffsetInAttrs;
+
+    // wcBindable 無宣言タグ（wcs-fetch-header 等のヘルパー）への spread は
+    // ランタイム（expandSpread）が raiseError で落とす — メンバー検査の
+    // 手前で error にする。空の契約（wcs-noise = 宣言はあるがメンバー 0）は
+    // 合法な 0 展開なので対象外。spread 以外のバインドは従来どおり検査しない
+    // （バインド面が定義されていない）。
+    if (!contract.hasWcBindable) {
+      let spreadExprOffset = 0;
+      for (const expr of splitBindingExpressions(bindAttr.value)) {
+        const exprStart = valueStart + spreadExprOffset;
+        spreadExprOffset += expr.length + 1; // ';' の分
+        if (parseBindingExpression(expr).property !== '...') continue;
+        // property が '...' なら expr 中に必ず '...' が現れる（スライス由来）
+        const start = exprStart + expr.indexOf('...');
+        diagnostics.push({
+          code: WcsDiagnosticCode.SpreadNoBindable,
+          start, end: start + 3,
+          severity: 'error', tag: occ.tagName,
+          message: msgs.spreadNoBindable(occ.tagName),
+        });
+      }
+      continue;
+    }
+
+    // 契約メンバーが 1 つも無いタグは検査対象外 — 突き合わせる面が無い。
+    if (contract.properties.length === 0 && contract.commands.length === 0
+      && Object.keys(contract.inputs).length === 0) continue;
+
     const hasManual = hasBooleanAttribute(occ.attrsText, 'manual');
 
     let exprOffset = 0;
@@ -165,7 +191,7 @@ function validateBindingAgainstContract(
 
   // trigger の true シード: エッジ検出なし・manual バイパスのためバインド時に即発火する。
   if (property === 'trigger' && 'trigger' in contract.inputs && parsed.path) {
-    const cand = findDataSlot(getPaths(), parsed.path, parsed.targetState);
+    const cand = findDataSlot(getPaths(), parsed.path);
     if (cand?.rawInitial === 'true') {
       diagnostics.push({
         code: WcsDiagnosticCode.TriggerSeededTruthy,
@@ -180,7 +206,7 @@ function validateBindingAgainstContract(
   // `#init=element` / `#init=auto` は load-before-bind の宣言的な解なので対象外。
   if (tagName === 'wcs-storage' && property === 'value' && !hasManual && parsed.path
     && !/(?:^|,)init=(?:element|auto)\b/.test(modifiers)) {
-    const cand = findDataSlot(getPaths(), parsed.path, parsed.targetState);
+    const cand = findDataSlot(getPaths(), parsed.path);
     if (cand?.rawInitial !== undefined && EMPTYISH_SEEDS.has(normalizeSeed(cand.rawInitial))) {
       diagnostics.push({
         code: WcsDiagnosticCode.StorageSeedClobber,
@@ -191,8 +217,8 @@ function validateBindingAgainstContract(
   }
 }
 
-function findDataSlot(paths: PathCandidate[], path: string, stateName: string): PathCandidate | undefined {
-  return paths.find(c => c.kind === 'data' && c.path === path && c.stateName === stateName);
+function findDataSlot(paths: PathCandidate[], path: string): PathCandidate | undefined {
+  return paths.find(c => c.kind === 'data' && c.path === path);
 }
 
 /** `[ ]` / `{ }` の内部空白を潰して EMPTYISH_SEEDS と比較できる形にする。 */
@@ -201,8 +227,12 @@ function normalizeSeed(raw: string): string {
   return compact === '' ? raw : compact;
 }
 
-/** 編集距離 2 以内の最近傍メンバーを「もしかして」として提示する。 */
-function suggestion(input: string, candidates: readonly string[], msgs: WcsMessageCatalog): string {
+/**
+ * 編集距離 2 以内の最近傍メンバーを「もしかして」として提示する。
+ * （ariaValidator が同一ヘルパを共有するため export — 独自実装すると
+ * 「もしかして」の距離基準が validator ごとに割れる。）
+ */
+export function suggestion(input: string, candidates: readonly string[], msgs: WcsMessageCatalog): string {
   let best: string | null = null;
   let bestDistance = 3;
   for (const c of candidates) {
@@ -240,7 +270,7 @@ function editDistance(a: string, b: string, bound: number): number {
 // ============================================================
 
 /** カタログ掲載タグの開きタグを全て検出する。 */
-function findBuiltinTagOccurrences(html: string): IoTagOccurrence[] {
+export function findBuiltinTagOccurrences(html: string): IoTagOccurrence[] {
   const out: IoTagOccurrence[] = [];
   // 属性値中の ">" を誤検出しないため、引用符内はまとめて読み飛ばす。
   const regex = /<(wcs-[a-z0-9-]+)((?:"[^"]*"|'[^']*'|[^>"'])*)>/gi;

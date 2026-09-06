@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { IBindingInfo } from '../src/types';
 
 vi.mock('../src/stateElementByName', () => ({
-  getStateElementByName: vi.fn(),
+  getStateElement: vi.fn(),
 }));
 
 vi.mock('../src/list/loopContextByNode', () => ({
@@ -15,12 +15,12 @@ vi.mock('../src/raiseError', () => ({
 
 import { attachRadioEventHandler, detachRadioEventHandler, __private__ } from '../src/event/radioHandler';
 import { getPathInfo } from '../src/address/PathInfo';
-import { getStateElementByName } from '../src/stateElementByName';
+import { getStateElement } from '../src/stateElementByName';
 import { getLoopContextByNode } from '../src/list/loopContextByNode';
 import { raiseError } from '../src/raiseError';
 import { setLoopContextSymbol } from '../src/proxy/symbols';
 
-const getStateElementByNameMock = vi.mocked(getStateElementByName);
+const getStateElementByNameMock = vi.mocked(getStateElement);
 const getLoopContextByNodeMock = vi.mocked(getLoopContextByNode);
 const raiseErrorMock = vi.mocked(raiseError);
 
@@ -31,7 +31,6 @@ function createRadioBinding(node: Element, overrides?: Partial<IBindingInfo>): I
     propModifiers: [],
     statePathName: 'selectedValue',
     statePathInfo: getPathInfo('selectedValue'),
-    stateName: 'default',
     outFilters: [],
     inFilters: [],
     bindingType: 'radio',
@@ -244,7 +243,7 @@ describe('event/radioHandler', () => {
 
     it('event.targetがnullの場合はconsole.warnが出ること', () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      const handler = __private__.radioEventHandlerFunction('default', 'selectedValue', []);
+      const handler = __private__.radioEventHandlerFunction('selectedValue', []);
 
       handler({ target: null } as any);
 
@@ -255,7 +254,7 @@ describe('event/radioHandler', () => {
 
     it('event.targetがradioでない場合はconsole.warnが出ること', () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      const handler = __private__.radioEventHandlerFunction('default', 'selectedValue', []);
+      const handler = __private__.radioEventHandlerFunction('selectedValue', []);
 
       const input = document.createElement('input');
       input.type = 'text';
@@ -269,7 +268,7 @@ describe('event/radioHandler', () => {
     it('stateElementが見つからない場合はraiseErrorが呼ばれること', () => {
       getStateElementByNameMock.mockReturnValue(null);
       raiseErrorMock.mockImplementation((msg: string) => { throw new Error(msg); });
-      const handler = __private__.radioEventHandlerFunction('default', 'selectedValue', []);
+      const handler = __private__.radioEventHandlerFunction('selectedValue', []);
 
       const input = document.createElement('input');
       input.type = 'radio';
@@ -277,8 +276,8 @@ describe('event/radioHandler', () => {
       input.checked = true;
       document.body.appendChild(input);
 
-      expect(() => handler({ target: input } as any)).toThrow('not found');
-      expect(raiseErrorMock).toHaveBeenCalledWith(expect.stringContaining('not found'));
+      expect(() => handler({ target: input } as any)).toThrow('No state tree found');
+      expect(raiseErrorMock).toHaveBeenCalledWith(expect.stringContaining('No state tree found'));
       document.body.removeChild(input);
     });
 
@@ -340,7 +339,7 @@ describe('event/radioHandler', () => {
       const input = document.createElement('input');
       const binding = createRadioBinding(input);
       const key = __private__.getHandlerKey(binding, 'input');
-      expect(key).toBe('default::selectedValue::input::');
+      expect(key).toBe('selectedValue::input::');
     });
 
     it('フィルター情報がキーに含まれること', () => {
@@ -348,7 +347,7 @@ describe('event/radioHandler', () => {
       const inFilters = [{ filterName: 'num', args: [], filterFn: (v: any) => Number(v) }];
       const binding = createRadioBinding(input, { inFilters });
       const key = __private__.getHandlerKey(binding, 'input');
-      expect(key).toBe('default::selectedValue::input::num()');
+      expect(key).toBe('selectedValue::input::num()');
     });
   });
 });
