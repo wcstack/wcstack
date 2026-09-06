@@ -2346,6 +2346,22 @@ of the binding expression: `price|locale(fr-FR)`. For a page that switches
 language without reloading, see [docs/i18n-design.md](../../docs/i18n-design.md) —
 the short answer is that translations belong on a path, not in a filter.
 
+**Where i18n sits, and what was decided.** There is no i18n package and no live
+language switch, on purpose. A dictionary is an ES module chosen per locale and mounted as a
+volume (`<wcs-state mount="i18n" src="/i18n/state.js">`), then read as ordinary
+paths (`i18n.checkout.title`); the locale is decided **before** the page renders — from
+`<html lang>` for the filters, and from the URL for the router, where the locale
+lives in the `basename` (`/ja/…`) rather than in a route parameter. Switching
+language is therefore a real navigation to another basename, not a state write:
+the router intercepts links under its own basename only, so a `/:lang` parameter
+would silently keep the old language, and a live switch would need every locale-
+dependent module to re-evaluate. The `<base href>` that carries the basename has a
+real cost (page-fragment anchors, SVG fragment references, relative `src` under
+CSP all resolve against it), and two alternatives were weighed — the router reading
+`<html lang>` itself, and a per-link opt-out of interception — and left recorded.
+Read [docs/i18n-design.md](../../docs/i18n-design.md) §9-1 before choosing a
+different shape; `examples/router-i18n` is the reference layout.
+
 > These three are **architecture-hardening** features; their normative reference is
 > `docs/architecture-hardening/`. `enablePropagationContext` defaults **on** — its
 > write-path cost is near-zero for one-way bindings (only echo-capable two-way

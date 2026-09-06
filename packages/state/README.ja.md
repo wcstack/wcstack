@@ -2340,6 +2340,21 @@ bootstrapState({
 [docs/i18n-design.md](../../docs/i18n-design.md) を参照。短く言えば、翻訳はフィルタでは
 なくパスに置く。
 
+**i18n の位置づけと、決めたこと。** i18n パッケージもライブな言語切替も、意図して
+持たない。辞書はロケールごとに選ばれる ES モジュールで、ボリューム
+（`<wcs-state mount="i18n" src="/i18n/state.js">`）としてマウントし、普通のパス
+（`i18n.checkout.title`）で読む。
+ロケールはページが描画される**前**に決める — フィルタは `<html lang>` から、router は
+URL から。router 側のロケールはルートパラメータではなく **basename**（`/ja/…`）に置く。
+したがって言語切替は state への書き込みではなく、別の basename への実ナビゲーションで
+ある: router は自分の basename 配下のリンクだけを intercept するので、`/:lang` パラメータ
+にすると言語が変わらないまま静かに壊れ、ライブ切替はロケール依存の全モジュールの
+再評価を要求する。basename を運ぶ `<base href>` には実コストがある（ページ内アンカー・
+SVG フラグメント参照・CSP 下の相対 `src` が全てそこを基準に解決される）。代替 2 案 —
+router 自身が `<html lang>` を読む案と、リンク単位の intercept オプトアウト — も検討し、
+記録として残した。別の形を選ぶ前に [docs/i18n-design.md](../../docs/i18n-design.md)
+§9-1 を読むこと。`examples/router-i18n` が参照レイアウト。
+
 > この 3 つは **architecture-hardening** 機能で、規範は `docs/architecture-hardening/` に
 > あります。`enablePropagationContext` は**既定 on** — write-path コストは一方向バインドで
 > ほぼゼロ（echo しうる双方向 wire のみ因果 bookkeeping を行う）で、フラグは恒久的な

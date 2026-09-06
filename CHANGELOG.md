@@ -8,6 +8,12 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Docs
+
+- Scoped Custom Element Registries: the gating decision is now stated where adopters look. Phases 0 and 1 shipped in 1.31.0; **phase 2 (per-component local definitions) is deliberately not started until Firefox ships scoped registries** ([bugzilla 1874414](https://bugzilla.mozilla.org/show_bug.cgi?id=1874414)). Its whole value is "the same tag name means different components in different scopes", and a browser without the API degrades not gracefully but by silently binding the wrong component — a buildless, CDN-first stack cannot ship that. Phase 3 is not Firefox-gated. See [docs/scoped-custom-element-registries.md](./docs/scoped-custom-element-registries.md) §2.
+- `@wcstack/state` README: an "i18n positioning" paragraph in the Locale section — why there is no i18n package and no live language switch, where the dictionary and the locale live (ES module volume; `<html lang>` and the router `basename`), the cost of `<base href>`, and the two alternatives that were weighed. Until now this lived only in `docs/i18n-design.md` §9.
+- `docs/form-tag-design.md`: design note for a `<wcs-form>` I/O node (Constraint Validation API, `FormData` as a state projection, dirty / touched) — the reviewer-identified gap behind hand-written CRUD handlers. Not implemented; the note fixes the shape (rules stay in HTML attributes, results become state, `data-wcs` stays wiring) and lists the six decisions to make first.
+
 ### Added
 
 - `@wcstack/router`: route guards can now **load data and redirect dynamically**. A guard function receives a third argument — a frozen `{ params, typedParams, searchParams, routeName }` snapshot of the match being entered — and may return, besides `true` / `false`: a **non-empty string** to cancel and redirect to that path (it wins over the static `guard=` attribute), or an **object** to enter the route and commit the object as the new output-only `<wcs-router>.data` member (`wcs-router:data-changed`, fired first in the commit order, `null` on navigations whose guards return no object; guards on a nested chain are shallow-merged parent → child). This gives routes a loader without a new phase: the guard was already the one asynchronous step before the route content swaps, so a page no longer shows the new route with empty content and a `<wcs-view-transition>` animates real content. Every falsy return still cancels, so existing guards are unaffected.
