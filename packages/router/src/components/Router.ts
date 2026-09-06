@@ -2,7 +2,7 @@ import { parse } from "../parse.js";
 import { createOutlet } from "./Outlet.js";
 import { config } from "../config.js";
 import { raiseError } from "../raiseError.js";
-import { ILink, IOutlet, IRoute, IRouteChildContainer, IRouteMatchResult, IRouter, IRouterCommit } from "./types.js";
+import { GuardData, ILink, IOutlet, IRoute, IRouteChildContainer, IRouteMatchResult, IRouter, IRouterCommit } from "./types.js";
 import { IWcBindable } from "../types.js";
 import { applyRoute } from "../applyRoute.js";
 import { getNavigation } from "../Navigation.js";
@@ -69,6 +69,9 @@ export class Router extends HTMLElement implements IRouter {
         getter: (e: Event) => (e as CustomEvent).detail.typedParams },
       { name: "searchParams", event: "wcs-router:search-changed", semantics: "state" },
       { name: "routeName", event: "wcs-router:route-name-changed", semantics: "state" },
+      // guard 関数がオブジェクトを返したナビゲーションのロード済みデータ（loader）。
+      // output-only。データ無しのナビゲーションでは null に戻る
+      { name: "data", event: "wcs-router:data-changed", semantics: "state" },
     ],
     // `navigateUrl` は observable output であると同時に settable な書き込み面でもある
     // （setter が navigate() を起動し、完了後に自分で null へ戻す）。properties にだけ
@@ -107,6 +110,9 @@ export class Router extends HTMLElement implements IRouter {
   private _typedParams: Record<string, any> = EMPTY_RECORD;
   private _searchParams: Record<string, string> = EMPTY_RECORD;
   private _routeName: string = '';
+  // guard 相のロード済みデータ。frozen にしない — 作者が返したオブジェクトをそのまま
+  // 露出する（state 側で保持・変異されうる作者所有の値。params とは所有者が違う）
+  private _data: GuardData | null = null;
   /** 最初の成功 commit を通過したか（§4.4 の初回ガード） */
   private _hasCommitted: boolean = false;
   private _connectedCallbackPromise: Promise<void>;
@@ -292,6 +298,10 @@ export class Router extends HTMLElement implements IRouter {
     return this._routeName;
   }
 
+  get data(): GuardData | null {
+    return this._data;
+  }
+
   /**
    * same-match 判定（docs/router-state-contract-design.md §4.4）。
    *
@@ -313,14 +323,19 @@ export class Router extends HTMLElement implements IRouter {
    *
    * 全内部値を先にコミットし、その後で初めてイベントを発火する — どのイベントの
    * リスナーから要素プロパティを読んでも、遷移後スナップショットの一貫した値が
-   * 見える。発火順序は params → route-name → search → path。`path` を最後に
-   * 置くのは、既存例で `path` が「ナビゲーション完了」の信号として使われている
-   * ため。各イベントは変化した commit のみ発火する。
+   * 見える。発火順序は data → params → route-name → search → path。`data` を
+   * 先頭に置くのは、params のリスナーがロード済みデータを読めるようにするため。
+   * `path` を最後に置くのは、既存例で `path` が「ナビゲーション完了」の信号として
+   * 使われているため。各イベントは変化した commit のみ発火する。
    */
   commitNavigation(commit: IRouterCommit): void {
     const nextParams = Object.freeze({ ...commit.params });
     const nextTypedParams = Object.freeze({ ...commit.typedParams });
     const nextSearchParams = parseSearchParams(commit.search);
+    // data は同一性で比較する（guard は遷移ごとに新しいオブジェクトを返す。
+    // same-match は前の参照をそのまま渡すので発火しない）
+    const nextData = commit.data ?? null;
+    const dataChanged = this._data !== nextData;
     const paramsChanged = !shallowEqualRecords(this._params, nextParams);
     const routeNameChanged = this._routeName !== commit.routeName;
     const searchChanged = !shallowEqualRecords(this._searchParams, nextSearchParams);
@@ -328,6 +343,9 @@ export class Router extends HTMLElement implements IRouter {
     // --- 先に全内部値をコミット ---
     // 変化した面だけ差し替える（ナビゲーションごとに新しいオブジェクトになるので
     // state の same-value guard を正しく通過する。不変の面は同一性を保つ）。
+    if (dataChanged) {
+      this._data = nextData;
+    }
     if (paramsChanged) {
       this._params = nextParams;
       this._typedParams = nextTypedParams;
@@ -340,7 +358,13 @@ export class Router extends HTMLElement implements IRouter {
     }
     this._path = commit.path;
     this._hasCommitted = true;
-    // --- その後で発火（順序規範: params → route-name → search → path） ---
+    // --- その後で発火（順序規範: data → params → route-name → search → path） ---
+    if (dataChanged) {
+      this.dispatchEvent(new CustomEvent("wcs-router:data-changed", {
+        detail: this._data,
+        bubbles: true,
+      }));
+    }
     if (paramsChanged) {
       this.dispatchEvent(new CustomEvent("wcs-router:params-changed", {
         detail: { params: this._params, typedParams: this._typedParams },
@@ -841,6 +865,7 @@ export class Router extends HTMLElement implements IRouter {
       params: matchResult.params,
       typedParams: matchResult.typedParams,
       routeName: matchResult.routes[matchResult.routes.length - 1].name,
+      data: matchResult.data ?? null,
       search: window.location.search || "",
       path,
     });

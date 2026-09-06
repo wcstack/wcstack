@@ -40,7 +40,7 @@
 
 #### 訂正 1（反映済み）: 未対応ロケールの redirect は router guard では書けない
 
-設計書 §9-1 は当初「未対応ロケールの URL は guard で fallback ロケールへ redirect する」としていたが、**router の guard は redirect 先を動的に決められない**。
+設計書 §9-1 は当初「未対応ロケールの URL は guard で fallback ロケールへ redirect する」としていたが、**router の guard は redirect 先を動的に決められない**（当時。2026-09-06 に guard の文字列返却＝動的リダイレクトが入った — `router-state-contract-design.md` §3.7。D9 の basename 化は別理由で成立しているので判断は変えない）。
 
 - redirect 先は `<wcs-route guard="/login">` の**属性値（静的）**で、`GuardCancel` の `fallbackPath` にはその値がそのまま渡る（[RouteCore.ts:364](../packages/router/src/core/RouteCore.ts#L364)、[showRouteContent.ts:37-40](../packages/router/src/showRouteContent.ts#L37)）
 - guard ハンドラの戻り値は真偽値だけで、fallback パスを返す口が無い

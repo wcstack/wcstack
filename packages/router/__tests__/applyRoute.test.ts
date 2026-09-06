@@ -438,6 +438,64 @@ describe('applyRoute', () => {
       expect(router.path).toBe('/products/5');
     });
 
+    it('guard 相へ渡す matchResult に search を供給すること（IGuardContext.searchParams の材料）', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+      const outlet = document.createElement('wcs-outlet') as Outlet;
+      const matchResult = { path: '/products/5', routes: [{ name: 'detail' } as unknown as Route], params: {}, typedParams: {}, lastPath: '' };
+      vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
+      const showSpy = vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+
+      await applyRoute(router, outlet, '/products/5', '', '?tab=specs');
+
+      expect(showSpy.mock.calls[0][1].search).toBe('?tab=specs');
+    });
+
+    it('guard 相が集めたデータ（matchResult.data）を commit し、data-changed が params-changed より先に発火すること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+      const outlet = document.createElement('wcs-outlet') as Outlet;
+      const loaded = { product: { id: 5, name: 'Widget' } };
+      const matchResult = { path: '/products/5', routes: [{ name: 'detail' } as unknown as Route], params: { productId: '5' }, typedParams: { productId: 5 }, lastPath: '' };
+      vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
+      vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(async (_router, result) => {
+        result.data = loaded;
+        return true;
+      });
+      const order: string[] = [];
+      let dataSeenAtParams: unknown = undefined;
+      router.addEventListener('wcs-router:data-changed', (e) => { order.push('data'); expect((e as CustomEvent).detail).toBe(loaded); });
+      router.addEventListener('wcs-router:params-changed', () => { order.push('params'); dataSeenAtParams = router.data; });
+
+      await applyRoute(router, outlet, '/products/5', '', '');
+
+      expect(router.data).toBe(loaded);
+      expect(order).toEqual(['data', 'params']);
+      expect(dataSeenAtParams).toBe(loaded);
+    });
+
+    it('guard がデータを返さないナビゲーションでは data が null に戻ること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+      const outlet = document.createElement('wcs-outlet') as Outlet;
+      router.commitNavigation({ params: {}, typedParams: {}, routeName: 'detail', search: '', path: '/products/5', data: { stale: true } });
+      expect(router.data).toEqual({ stale: true });
+      const matchResult = { path: '/about', routes: [{ name: 'about' } as unknown as Route], params: {}, typedParams: {}, lastPath: '/products/5' };
+      vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
+      vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(async (_router, result) => {
+        result.data = null;
+        return true;
+      });
+      const dataListener = vi.fn();
+      router.addEventListener('wcs-router:data-changed', dataListener);
+
+      await applyRoute(router, outlet, '/about', '/products/5', '');
+
+      expect(router.data).toBeNull();
+      expect(dataListener).toHaveBeenCalledTimes(1);
+      expect(dataListener.mock.calls[0][0].detail).toBeNull();
+    });
+
     it('露出オブジェクトは frozen スナップショットであること', async () => {
       const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
@@ -552,6 +610,20 @@ describe('applyRoute', () => {
       expect(router.searchParams).toEqual({ page: '2' });
       expect(searchListener).toHaveBeenCalledTimes(1);
       expect(pathListener).not.toHaveBeenCalled();
+    });
+
+    it('same-match では guard 相を通らないので data を据え置き、data-changed も発火しないこと', async () => {
+      const router = committedRouter('/products');
+      const loaded = { list: [1, 2, 3] };
+      router.commitNavigation({ params: {}, typedParams: {}, routeName: 'list', search: '', path: '/products', data: loaded });
+      const outlet = document.createElement('wcs-outlet') as Outlet;
+      const dataListener = vi.fn();
+      router.addEventListener('wcs-router:data-changed', dataListener);
+
+      await applyRoute(router, outlet, '/products', '/products', '?page=2');
+
+      expect(router.data).toBe(loaded);
+      expect(dataListener).not.toHaveBeenCalled();
     });
 
     it('same-match で search が不変ならイベントは発火しないこと', async () => {

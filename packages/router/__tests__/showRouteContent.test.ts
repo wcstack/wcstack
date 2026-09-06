@@ -95,6 +95,75 @@ describe('showRouteContent', () => {
     expect(route2.guardCheck).toHaveBeenCalledWith(matchResult);
   });
 
+  it('guard が返したデータを親→子の順で浅くマージし matchResult.data に載せること', async () => {
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+
+    const parent = createMockRoute({
+      shouldChange: vi.fn().mockReturnValue(true),
+      guardCheck: vi.fn().mockResolvedValue({ site: 'wcstack', title: 'parent' }),
+    });
+    const middle = createMockRoute({
+      shouldChange: vi.fn().mockReturnValue(true),
+      guardCheck: vi.fn().mockResolvedValue(null),
+    });
+    const leaf = createMockRoute({
+      shouldChange: vi.fn().mockReturnValue(true),
+      guardCheck: vi.fn().mockResolvedValue({ title: 'leaf', user: { id: 5 } }),
+    });
+    const matchResult = createMatchResult([parent, middle, leaf]);
+
+    await showRouteContent(router, matchResult, []);
+
+    expect(matchResult.data).toEqual({ site: 'wcstack', title: 'leaf', user: { id: 5 } });
+  });
+
+  it('guard を 1 つだけがデータを返した場合はそのオブジェクトを同一性を保って載せること', async () => {
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+    const loaded = { user: { id: 5 } };
+    const route = createMockRoute({
+      shouldChange: vi.fn().mockReturnValue(true),
+      guardCheck: vi.fn().mockResolvedValue(loaded),
+    });
+    const matchResult = createMatchResult([route]);
+
+    await showRouteContent(router, matchResult, []);
+
+    expect(matchResult.data).toBe(loaded);
+  });
+
+  it('どの guard もデータを返さなければ matchResult.data は null であること', async () => {
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+    const route1 = createMockRoute({ shouldChange: vi.fn().mockReturnValue(true) });
+    const route2 = createMockRoute({ shouldChange: vi.fn().mockReturnValue(true), guardCheck: vi.fn().mockResolvedValue(null) });
+    const matchResult = createMatchResult([route1, route2]);
+
+    await showRouteContent(router, matchResult, []);
+
+    expect(matchResult.data).toBeNull();
+  });
+
+  it('guard 拒否では matchResult.data を書かないこと', async () => {
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+    vi.spyOn(router, 'navigate').mockResolvedValue(undefined);
+    const route1 = createMockRoute({ shouldChange: vi.fn().mockReturnValue(true), guardCheck: vi.fn().mockResolvedValue({ a: 1 }) });
+    const route2 = createMockRoute({
+      shouldChange: vi.fn().mockReturnValue(true),
+      guardCheck: vi.fn().mockRejectedValue(new GuardCancel('Navigation cancelled by guard.', '/login')),
+    });
+    const matchResult = createMatchResult([route1, route2]);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const committed = await showRouteContent(router, matchResult, []);
+
+    expect(committed).toBe(false);
+    expect(matchResult.data).toBeUndefined();
+    warnSpy.mockRestore();
+  });
+
   it('ガードキャンセル後のフォールバックnavigateが失敗した場合、エラーをログ出力すること', async () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);

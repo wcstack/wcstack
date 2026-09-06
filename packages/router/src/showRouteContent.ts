@@ -1,4 +1,4 @@
-import { IRoute, IRouteMatchResult, IRouter } from "./components/types";
+import { GuardData, IRoute, IRouteMatchResult, IRouter } from "./components/types";
 import { hideRoute } from "./hideRoute";
 import { showRoute } from "./showRoute";
 import { GuardCancel } from "./GuardCancel";
@@ -44,9 +44,17 @@ export async function runGuardPhase(
   matchResult: IRouteMatchResult,
 ): Promise<boolean> {
   try {
+    // guard がオブジェクトを返したルートのデータを親→子の順で浅くマージし、
+    // matchResult.data に載せる（applyRoute / SSR 採用が commit へ運ぶ）。
+    // 何も返らなければ null — 「このナビゲーションにデータ無し」を明示する
+    let data: GuardData | null = null;
     for (const route of matchResult.routes) {
-      await route.guardCheck(matchResult);
+      const routeData = await route.guardCheck(matchResult);
+      if (routeData) {
+        data = data === null ? routeData : Object.assign({}, data, routeData);
+      }
     }
+    matchResult.data = data;
   } catch (e) {
     if (e instanceof GuardCancel) {
       console.warn(`Navigation cancelled: ${e.message}. Redirecting to ${e.fallbackPath}`);
