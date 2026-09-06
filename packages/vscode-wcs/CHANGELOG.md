@@ -2,6 +2,12 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+### 補完・検証
+
+- 初期値が `[]` のリストの**行の形**を、行を足す / 置き換える代入式の行リテラルから読むようになった（[#239](https://github.com/wcstack/wcstack/issues/239)）。`this.items = this.items.concat({ id, kind: "general" })` / `.toSpliced(i, n, { … })` / `.with(i, { … })` / `[...this.items, { … }]` の行リテラルにあるフィールドが `items.*.<field>` の候補になり、`for` 行内の `.kind` が `wcs/binding-path-missing` にならない。対象は既に配列と分かっているパスだけで、明示的な初期値・`$listKeys` の候補は上書きしない。変数で渡した行（`concat(row)`）は読めないので、その場合は従来どおり `stateSchema` を使う。
+
 ## 1.11.0 — Initial Marketplace release
 
 `@wcstack/state` **v2** 対応の初公開版。以下は本版に含まれる機能の全量。見出しと診断コードの並びは README と同じ順（README とこの節を突き合わせれば差分が見える）。
