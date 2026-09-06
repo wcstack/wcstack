@@ -29,6 +29,11 @@ See [Stability](./README.md#stability) for which APIs are stable vs. evolving / 
 - **`isSettableProperty` is memoized** by `(prototype, key)` (a `WeakMap` keyed by prototype), avoiding a repeated prototype-chain walk on every `bindProp` / `setProp`.
 - **`flushEffects` uses double buffering** for the effect queue.
 
+### Fixed
+
+- **`bindNode` now applies the wc-bindable default getter (`e => e.detail`) to a property that omits `getter`** — for both `signals[name]` and `on(name)` (#238). It used to read the element property (`node[name]`) on each event, which diverged from the SPEC's § Default Getter MUST, from `@wcstack/state`'s two-way bindings, and from `@wc-bindable/core`: the same element could bind correctly under one adapter and not the other. The initial seed still reads the property (SPEC § Initial Sync — there is no event at bind time).
+  - **Who is affected:** none of the wcstack I/O nodes — every getter-less property dispatches its value as `detail`, so the two reads agree (`<wcs-audio>`'s `noteOn` / `noteOff` are *fixed* by this: reading the property returned the same-named command method). A third-party element whose getter-less property dispatches a `detail` that is not the property value (or no `detail` at all) now receives that `detail`; declare an explicit `getter` (e.g. `getter: (e) => e.target.value`) to keep reading the property.
+
 ### BREAKING
 
 - **`bindNode(target)` — `target` type narrowed from `EventTarget & Record<string, any>` to `EventTarget`.** Untyped member pass-through is no longer available on the public signature (the indexing surface is cast internally), so it no longer erases your element's type.

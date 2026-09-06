@@ -245,6 +245,8 @@ bound.dispose();                         // 全リスナ/effect を detach
 
 `descriptor` を省略すると `target.constructor.wcBindable` から読みます。アダプタは wc-bindable の4マッピングを担います: `signals[name]` は property の**状態ビュー**(等価ガードあり — 同値なら更新なし)、`on(name)` は同じイベントの**発生ビュー**(ストリーム — 同値でも*毎回*更新)で既定 latest fold。`bindInput` は signal を input に反映し、same-value ガード(`node[name] !== v`)で「書き込み→イベント再発火→書き込み」のループを断ちます。`bindCommand` は trigger が**変化**したとき command を起動(初期値では発火しない)、`mapArgs` で引数を整形。`set`/`bindInput` は未宣言 input を、`command`/`bindCommand` は未宣言(または非関数)command を拒否。`error` signal の初期値は `null` です。`dispose` 後はアダプタが**不活性(inert)**(signal/ストリーム停止・メソッドは例外)で、`dispose` は冪等。`bindInput`/`bindCommand` は binding ごとの disposer も返します。
 
+**property signal が受け取る値。** `event` のたびに `signals[name]` / `on(name)` は `getter(event)` を採ります。descriptor が `getter` を省略していれば wc-bindable の既定 `(e) => e.detail` が適用されます — `@wcstack/state` の双方向バインドや `@wc-bindable/core` と同じ規則なので、同じ要素はどのアダプタでも同じに束縛されます。**初期シード**だけはプロパティ(`node[name]`)を読みます: bind 時点には由来となるイベントが無いためです(SPEC § Initial Sync)。wcstack の I/O ノードは全てプロパティ値をそのまま `detail` に載せるので両者は一致します。`detail` がプロパティと食い違う(`detail: { value }` 形・`detail` 無し)サードパーティ要素には明示の `getter`(例: `getter: (e) => e.target.value`)が必要です。
+
 #### 型付きサーフェス — `bindNode<NodeShape>`
 
 `target` はプレーンな `EventTarget` です(indexing 用の内部キャストは公開シグネチャに**出さない** — 利用側の要素型を消さない)。オプションの `NodeShape` 型引数を渡すと結果全体が型付きになります。省略時は従来どおり全 `unknown` の後方互換形です。

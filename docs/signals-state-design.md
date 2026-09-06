@@ -86,7 +86,7 @@ The biggest tailwind for this proposal. The existing async I/O nodes (wcs-fetch 
 
 | Direction | The protocol surface | The signals side |
 |---|---|---|
-| element → state | a property (getter / value snapshot) | **a read signal** (pushing property changes into a `state` cell) |
+| element → state | a property (`getter(event)`, default `e.detail`; the initial seed is a property snapshot) | **a read signal** (pushing property changes into a `state` cell) |
 | element → state | event-token (repeated notification) | **a signal folding the events** (updated per emit; the stream family) |
 | state → element | command-token (start/cancel/abort, …) | emitted on a signal's value change, or by an explicit `command()` call |
 | state → element | a property (write-back / input) | an effect from signal → element property |

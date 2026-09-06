@@ -2,9 +2,9 @@ import { describe, it, expect, expectTypeOf } from "vitest";
 import { bindNode, nodeSource, WcBindableDescriptor, NodeShape } from "../src/bindNode.js";
 import { signal, computed, effect, flushSync, ReadSignal } from "../src/reactive.js";
 
-// A minimal wc-bindable-shaped node: EventTarget + properties (one with a custom
-// getter reading event.detail, one read straight off the instance), one input,
-// one command. Mirrors the shape of any wcstack async-IO node.
+// A minimal wc-bindable-shaped node: EventTarget + properties (one with an explicit
+// getter reading event.detail, one relying on the SPEC default getter — also
+// `e.detail`), one input, one command. Mirrors the shape of any wcstack async-IO node.
 class FakeNode extends EventTarget {
   static wcBindable: WcBindableDescriptor = {
     properties: [
@@ -23,11 +23,11 @@ class FakeNode extends EventTarget {
   run(): void {
     this.ran.push(this.url);
     this.loading = true;
-    this.dispatchEvent(new CustomEvent("fake:loading-changed"));
+    this.dispatchEvent(new CustomEvent("fake:loading-changed", { detail: this.loading }));
     this.value = `result:${this.url}`;
     this.dispatchEvent(new CustomEvent("fake:response", { detail: this.value }));
     this.loading = false;
-    this.dispatchEvent(new CustomEvent("fake:loading-changed"));
+    this.dispatchEvent(new CustomEvent("fake:loading-changed", { detail: this.loading }));
   }
 }
 
@@ -40,12 +40,31 @@ describe("bindNode", () => {
     expect(bound.signals.value.peek()).toBe("hello");
   });
 
-  it("getter の無い property はインスタンスから直接読む", () => {
+  it("getter の無い property は e.detail を読む（wc-bindable SPEC の既定 getter）", () => {
+    const node = new FakeNode();
+    const bound = bindNode(node, FakeNode.wcBindable);
+    expect(bound.signals.loading.peek()).toBe(false); // 初期シードはプロパティ読み（SPEC § Initial Sync）
+    node.loading = true;
+    node.dispatchEvent(new CustomEvent("fake:loading-changed", { detail: true }));
+    expect(bound.signals.loading.peek()).toBe(true);
+  });
+
+  it("getter の無い property は detail とプロパティが食い違っても detail を採る（#238）", () => {
+    // state / @wc-bindable/core と同じ既定。プロパティを読むとアダプタ間で挙動が割れる。
+    const node = new FakeNode();
+    const bound = bindNode(node, FakeNode.wcBindable);
+    node.loading = false;
+    node.dispatchEvent(new CustomEvent("fake:loading-changed", { detail: "from-detail" }));
+    expect(bound.signals.loading.peek()).toBe("from-detail");
+    expect(node.loading).toBe(false); // プロパティは読まれも書かれもしない
+  });
+
+  it("getter の無い property に素の Event が来たら undefined（detail 不在＝SPEC どおり）", () => {
     const node = new FakeNode();
     const bound = bindNode(node, FakeNode.wcBindable);
     node.loading = true;
-    node.dispatchEvent(new CustomEvent("fake:loading-changed"));
-    expect(bound.signals.loading.peek()).toBe(true);
+    node.dispatchEvent(new Event("fake:loading-changed"));
+    expect(bound.signals.loading.peek()).toBeUndefined();
   });
 
   it("set で input を書き込める", () => {
@@ -224,13 +243,15 @@ describe("bindNode.on（event-token stream）", () => {
     expect(count.peek()).toBe(3);
   });
 
-  it("getter の無い property は値スナップショットを畳む", () => {
+  it("getter の無い property は e.detail を畳む（プロパティ読みではない・#238）", () => {
     const node = new FakeNode();
     const bound = bindNode(node, FakeNode.wcBindable);
     const s = bound.on("loading");
     node.loading = true;
-    node.dispatchEvent(new CustomEvent("fake:loading-changed"));
+    node.dispatchEvent(new CustomEvent("fake:loading-changed", { detail: true }));
     expect(s.peek()).toBe(true);
+    node.dispatchEvent(new CustomEvent("fake:loading-changed", { detail: "from-detail" }));
+    expect(s.peek()).toBe("from-detail"); // プロパティ（true）ではなく detail
   });
 
   it("未宣言 property の on は例外", () => {
