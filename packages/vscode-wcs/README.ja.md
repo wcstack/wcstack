@@ -66,7 +66,7 @@ export default {
 
 パス候補は `<wcs-state>` スクリプト（と JSON state）から導出します。入れ子の配列も辿り（`a.*.b.*.c`）、`$streams` のエントリは値プロパティと `$streamStatus.<name>` / `$streamError.<name>` に、`$listKeys` の宣言は初期値が `[]` のリストパス（リスト自体・`.*`・`.length`・キーフィールド。それ以外の行フィールドは含まない）になります。
 
-初期値が `[]` のリストの**行の形**は、行を足す / 置き換える代入式の行リテラルから読みます — `this.items = this.items.concat({ id, kind: "general" })`、`.toSpliced(i, n, { … })`、`.with(i, { … })`、`[...this.items, { … }]` / `[{ … }, ...this.items]` — スクリプト内のどこにあっても（メソッド・getter・`$connectedCallback`・`$watch` ハンドラ）対象です。既に配列と分かっているパスにだけフィールドを足し、明示的な初期値と `$listKeys` の候補を上書きしません。変数で渡した行（`concat(row)`）は読めないので、その場合は `stateSchema` を宣言してください。
+初期値が `[]` のリストの**行の形**は、行を足す / 置き換える代入式の行リテラルから読みます — `this.items = this.items.concat({ id, kind: "general" })`、`.toSpliced(i, n, { … })`、`.with(i, { … })`、`[...this.items, { … }]` / `[{ … }, ...this.items]` — スクリプト内のどこにあっても（メソッド・getter・`$connectedCallback`・`$watch` ハンドラ）対象です。既に配列と分かっているパスにだけフィールドを足し、明示的な初期値を上書きしません。`$listKeys` の宣言は「これはリストである」と伝えるもう一つの手段で、`$listKeys: { items: "id" }` だけで解析器は `items`・`items.*`・`items.length` とキーフィールド `items.*.id` を知ります —— 行についてそれ以上は知りません。変数で渡した行（`concat(row)`）は読めないので、その場合は `stateSchema` を宣言してください。
 
 ### wcs-* タグ補完（HTML Custom Data）
 

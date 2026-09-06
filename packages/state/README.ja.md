@@ -362,6 +362,8 @@ property[#modifier]: path[|filter[|filter(args)...]]
 
 ### バインディング authority (`#init=` / `#sync=`)
 
+**これが解決する問題。** バインディングが attach する時点で既に値を持っている要素 —— 永続値をロード済みの `<wcs-storage>`、時計、自分のスナップショットを復元するウィジェット —— は state の初期値に上書きされます。双方向バインディングの初期同期が state→element に書くからです。そのバインディングにだけ `#init=element` を付けると、初期同期は*要素*が勝ちます。以後の変更は通常どおり両方向に流れます。このケース（load-before-bind）は下で具体的に説明します。この節の残りは、それを一例として含む一般規則です。
+
 `static wcBindable` を宣言したカスタム要素への prop バインディングは、**authority**（バインディング attach 時の**初期同期**をどちら側が勝つか）を解決します。定常時の方向は authority とは別に、メンバの宣言形状で決まります: output-only メンバは state からの書き込みを恒久的に受け付けず（契約）、双方向メンバは初期同期の勝者と無関係に以後は両方向に流れます。既定 authority はメンバの宣言位置から導出されます（`enableDirectionalInitialSync` で既定 ON）：
 
 | メンバの宣言位置 | 既定 authority | 効果 |
@@ -377,7 +379,7 @@ property[#modifier]: path[|filter[|filter(args)...]]
 
 要素が `properties[].event` を dispatch したとき、state に書かれる値は **`getter(event)`** です。`getter` を省略するとプロトコル既定の [`(e) => e.detail`](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/main/SPEC.md#default-getter) が適用され、**`detail` 全体がそのまま**書かれます。このとき宣言したプロパティは要素から読まれ*ません*。イベントのペイロードが正です。`wcBindable` を持たない素の HTML 要素は逆で、`input`/`change` 時に `element[propName]` を読みます。
 
-したがって `getter` なしで `detail: { value: 7654321 }` を dispatch する要素は、数値ではなく**オブジェクト** `{ value: 7654321 }` を state に書きます。しかもこの失敗は無言です。書き戻し（`Number({ value: … })` → `NaN`）は警告を出さず、`@wcstack/lint` にも見えません（ペイロードの形は静的に分かりません）。次の 2 形のどちらかに揃えてください：
+したがって `getter` なしで `detail: { value: 7654321 }` を dispatch する要素は、数値ではなく**オブジェクト** `{ value: 7654321 }` を state に書きます。しかもこの失敗はほぼ無言です。書き戻し（`Number({ value: … })` → `NaN`）は例外を投げず、`@wcstack/lint` にも見えません（ペイロードの形は静的に分かりません）。ランタイムは、イベント時点で見分けられる 2 形についてだけ、要素 × プロパティごとに 1 回警告します（`wcs/default-getter-mismatch`）: 要素プロパティに値があるのに `detail` が `undefined`（素の `Event`、または `detail` の付け忘れ）、および要素プロパティがオブジェクトでないのに `detail` が `<propName>` キーを持つオブジェクト（上のラッパー）。それ以外の不整合は気づかれずに通り、どちらの場合も書き込み自体はそのまま行われます。次の 2 形のどちらかに揃えてください：
 
 ```javascript
 class YenInput extends HTMLElement {
@@ -943,6 +945,18 @@ export default {
 ```
 
 getter の例外は握り潰されません。評価された場所（バインディングの適用・`$watch` の評価・自分での読み取り）でそのまま表面化します。
+
+#### 依存追跡の境界
+
+依存グラフに何が載るかは 3 つの規則で決まります。踏み越えるまで意識する必要はありませんが、踏み越えたときの症状は「値が更新されなくなる。エラーは出ない」なので、ここにまとめておきます：
+
+| 規則 | 踏み越えたときの見え方 |
+|---|---|
+| **追跡されるのは `this` を通した *パス* の読み取りだけ。** `this.form` は `form` を、`this["form.name"]` は `form.name` を追跡する。`this.form.name` が追跡するのは **`form` だけ** —— `.name` は返ってきたオブジェクトへの素のプロパティアクセスでしかない。`Date.now()`・DOM・モジュール変数・クロージャで掴んだオブジェクトは何も登録しない | その入力に対して getter は二度と再評価されず、最初の値が残り続ける（上の例）。`this.form.name` を読む getter は、`<input data-wcs="value: form.name">` を編集しても再実行されない —— `this["form.name"]` で読む |
+| **setter の中の読み取りは追跡しない。** setter は命令的な代入であって派生ではないので、その中で読んだものは何の依存にもならない | 何を書くかを `this.a` を読んで決める setter は、`a` が変わっても再実行されない。再実行されるのは getter だけ |
+| **同値ガードはプリミティブにだけ効く。** 現在値と `Object.is` で等しいプリミティブの書き込みはキューに入る前に落とされる。オブジェクト・配列の書き込みは同じ参照でも必ず通る | 同じ文字列を再代入しても何も起きない。同じオブジェクトを再代入するとバインディングと `$watch` が再発火する（`config.sameValueGuard`。`semantics: "event"` のプロパティはどちらにせよ対象外） |
+
+`$untrackDependency(fn)` は setter の規則を getter に意図的に適用するもので、`fn` の中の読み取りは追跡されません。`$trackDependency(path)` は最初の規則に対する逃げ道です。
 
 ### ループインデックス変数（`$1`, `$2`, ...）
 

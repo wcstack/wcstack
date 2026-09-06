@@ -113,6 +113,36 @@ That's what `<wcs-router>`, `<wcs-route>`, and friends explore. One CDN import, 
 * <main-header><main-body><main-dashboard><product-list><product-item><admin-header><admin-body><error-404> are custom components in your app.
 * The custom elements above must be defined separately (via an autoloader or manual registration).
 
+## Where route content lives
+
+Two shapes work since 1.32, and they are not interchangeable. Pick per page, not per project.
+
+**Default: put the content inside `<wcs-route>`.** The router stamps it on entry and removes it on exit. `data-wcs` bindings inside it are bound when it is stamped (the binder protocol), so state-rendered markup — `for:`, `if:`, text — works there like anywhere else. Everything the router offers is keyed to the route body: `<wcs-head>` per route, the `focus="heading"` / `announce=` policies (they look for the heading *in the stamped content*), and a view transition per route swap.
+
+```html
+<wcs-route path="/products/:productId(int)">
+  <wcs-head><title data-wcs="textContent: product.name"></title></wcs-head>
+  <h2 data-wcs="textContent: product.name"></h2>
+  <template data-wcs="for: product.variants"><li data-wcs="textContent: .name"></li></template>
+</wcs-route>
+```
+
+**Exception: switch it with state (`<template data-wcs="if: …">`) when the DOM must outlive the navigation.** Stamping is a teardown — a route body is rebuilt on every entry — so a `<video>` mid-playback, a half-filled form, a scrolled list, or a `<canvas>` you drew on does not survive leaving and coming back. Keep such content outside the router, bound to a state flag that the router's `routeName` / `typedParams` outputs set, and leave the route element empty (or holding only `<wcs-head>`).
+
+```html
+<wcs-router data-wcs="routeName: routeName">
+  <template>
+    <wcs-route path="/editor" name="editor"><wcs-head><title>Editor</title></wcs-head></wcs-route>
+    <wcs-route path="/help" name="help"><wcs-head><title>Help</title></wcs-head></wcs-route>
+  </template>
+</wcs-router>
+<template data-wcs="if: isEditor">
+  <my-editor></my-editor>   <!-- keeps its DOM across /editor → /help → /editor -->
+</template>
+```
+
+What the exception costs: `focus="heading"` finds no heading in an empty route body and falls back to the browser-default reset (`announce=` still works — it reads `document.title`), and a view transition, if `<wcs-view-transition>` is on the page, wraps the state branch update rather than the route swap. `examples/router-spa` shows both: its About page is the default shape, its product pages are the exception.
+
 ## Reference
 
 ### Router (wcs-router)

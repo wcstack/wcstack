@@ -74,12 +74,53 @@ This is the default mode:
 - Optionally bind `loading` and `error` as well
 - Add `#init=element` to the `value` binding so the stored value wins the initial sync — see [5. Load-before-bind](#5-load-before-bind-initelement) for why
 
-### 2. Persisting objects with `$trackDependency`
+### 2. Persisting a form as one object
 
-When sub-properties of an object (e.g. `settings.theme`) change, the parent path `settings` binding does **not** fire.
-This is because `@wcstack/state`'s dependency walk is **parent → child only**.
+The most common shape: several inputs, one storage key, restored on reload. Give the state an **accessor pair** — a getter that assembles the object and a setter that takes it apart — and bind `value#init=element` to it:
 
-In this case, use `$trackDependency` to explicitly list the sub-properties to watch, and save via `trigger`:
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      form: { name: "", email: "" },
+
+      // Save path. Reading each field *by path* makes the getter re-evaluate
+      // whenever any of them changes; the new object flows into <wcs-storage>'s
+      // value, which saves it (write-through).
+      get formSnapshot() {
+        return { name: this["form.name"], email: this["form.email"] };
+      },
+      // Restore path. The persisted object arrives here on load (null for an empty key).
+      set formSnapshot(v) {
+        if (v) this.form = { ...this.form, ...v };
+      },
+    };
+  </script>
+</wcs-state>
+
+<wcs-storage key="signup-form" type="local"
+  data-wcs="value#init=element: formSnapshot"></wcs-storage>
+
+<input data-wcs="value: form.name" placeholder="Name">
+<input data-wcs="value: form.email" type="email" placeholder="Email">
+```
+
+**Flow:**
+
+1. On connection `<wcs-storage>` loads the key; `#init=element` writes the loaded object to `formSnapshot` → the setter fills `form` → the inputs show the restored values
+2. Typing writes `form.name` → `formSnapshot` is dirty → its binding applies the new object to `value` → saved
+3. The save's own `value` event carries the same object back; the runtime recognizes the write confirmation and stops — the setter runs once, on load
+
+Two details that are easy to get wrong:
+
+- Read fields as `this["form.name"]`, **not** `this.form.name`. The second form registers a dependency on `form` only (`.name` is a plain property access on the returned object), so editing a field never re-evaluates the getter — see [Dependency tracking boundaries](../state/README.md#dependency-tracking-boundaries).
+- With an empty key the first load writes the seed object once: `null` goes through the setter, and a write to an accessor pair always re-evaluates the getter. Nothing persisted is ever overwritten — a stored object is restored, then re-saved unchanged.
+
+This pattern is fixed by `packages/storage/__tests__/integration.accessorPairForm.test.ts` against the real `@wcstack/state`.
+
+#### Saving on demand (`manual` + `trigger`)
+
+To save at a moment of your choosing instead of on every change, add `manual` and drive `trigger:` from a boolean. The dependency walk is **parent → child only**, so a `settings` binding does not fire when `settings.theme` changes; `$trackDependency` lists the fields to watch and `trigger` commits the whole object:
 
 ```html
 <wcs-state>
