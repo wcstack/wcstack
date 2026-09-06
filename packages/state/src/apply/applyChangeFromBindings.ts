@@ -3,15 +3,21 @@ import { IStateElement } from "../components/types";
 import { config } from "../config";
 import { devtoolsSink } from "../devtools/sink";
 import { setLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
-import { updatedCallbackSymbol } from "../proxy/symbols";
+import { errorCallbackSymbol, updatedCallbackSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
 import { getStateElement } from "../stateElementByName";
 import { IPropagationContext } from "../propagation/types";
-import { IBindingInfo } from "../types";
+import { IBindingErrorInfo, IBindingInfo } from "../types";
 import { applyChange } from "./applyChange";
 import { applyChangeToProperty } from "./applyChangeToProperty";
 import { getRootNodeByFragment } from "./rootNodeByFragment";
 import { IApplyContext, IDeferredSelectBinding } from "./types";
+
+/** $errorCallback へ配送する失敗 1 件（drain 末尾でまとめて配送する） */
+interface IBindingFailure {
+  readonly error: unknown;
+  readonly info: IBindingErrorInfo;
+}
 
 /**
  * バインディング 1 本の適用失敗を報告する（握り潰しではない）。
@@ -19,13 +25,37 @@ import { IApplyContext, IDeferredSelectBinding } from "./types";
  * `console.error` だけだと devtools からは「静かに握られた失敗」が見えないため、
  * 同じ地点から sink にも流す（`state:watch-error` と同じ位置づけ）。
  * 値と DOM は巻き戻さない — 伝播 hop 上限超過・watch 連鎖打ち切りと同じ姿勢。
+ *
+ * state が `$errorCallback` を宣言していれば、console.error の代わりにそこへ配送する
+ * （作者が報告を引き取った。ページ内で受けるための口）。配送は batch の末尾 —
+ * $updatedCallback と同じ位置 — にまとめる。devtools sink へは宣言の有無に関わらず流す。
  */
-function reportBindingApplyError(binding: IBindingInfo, error: unknown): void {
-  console.error(
-    `[@wcstack/state] binding "${binding.bindingType}: ${binding.statePathName}" failed to apply; ` +
-    `the rest of this batch continues.`,
-    { node: binding.node, error },
-  );
+function reportBindingApplyError(
+  binding: IBindingInfo,
+  error: unknown,
+  stateElement: IStateElement | null,
+  failuresByStateElement: Map<IStateElement, IBindingFailure[]>,
+): void {
+  const handled = stateElement !== null && stateElement.hasErrorCallback === true;
+  if (handled) {
+    const info: IBindingErrorInfo = {
+      path: binding.statePathName,
+      bindingType: binding.bindingType,
+      node: binding.node,
+    };
+    const failures = failuresByStateElement.get(stateElement);
+    if (failures === undefined) {
+      failuresByStateElement.set(stateElement, [{ error, info }]);
+    } else {
+      failures.push({ error, info });
+    }
+  } else {
+    console.error(
+      `[@wcstack/state] binding "${binding.bindingType}: ${binding.statePathName}" failed to apply; ` +
+      `the rest of this batch continues.`,
+      { node: binding.node, error },
+    );
+  }
   if (devtoolsSink !== null) {
     devtoolsSink({
       type: "state:binding-apply-error",
@@ -55,6 +85,7 @@ export function applyChangeFromBindings(
   const newListValueByAbsAddress: Map<IAbsoluteStateAddress, readonly unknown[]> = new Map();
   const updatedAbsAddressSetByStateElement: Map<IStateElement, Set<IAbsoluteStateAddress>> = new Map();
   const deferredSelectBindings: IDeferredSelectBinding[] = [];
+  const failuresByStateElement: Map<IStateElement, IBindingFailure[]> = new Map();
 
   // Phase 1: 構造的更新 + 値更新（select.value/selectedIndex は遅延）
   while(bindingIndex < bindings.length) {
@@ -102,7 +133,7 @@ export function applyChangeFromBindings(
         try {
           applyChange(binding, context);
         } catch (error) {
-          reportBindingApplyError(binding, error);
+          reportBindingApplyError(binding, error, stateElement, failuresByStateElement);
         }
         bindingIndex++;
 
@@ -117,11 +148,11 @@ export function applyChangeFromBindings(
   // Phase 2: 遅延されたselect.value/selectedIndex を適用
   // applyChangeToProperty は propagationContextByBinding 以外の context を
   // 参照しないため、遅延分は最小 context を渡す
-  for (const { binding, value } of deferredSelectBindings) {
+  for (const { binding, value, stateElement } of deferredSelectBindings) {
     try {
       applyChangeToProperty(binding, { propagationContextByBinding } as unknown as IApplyContext, value);
     } catch (error) {
-      reportBindingApplyError(binding, error);
+      reportBindingApplyError(binding, error, stateElement ?? null, failuresByStateElement);
     }
   }
 
@@ -131,6 +162,22 @@ export function applyChangeFromBindings(
   for(const [ stateElement, absAddressSet ] of updatedAbsAddressSetByStateElement.entries()) {
     stateElement.createState("writable", (state) => {
       state[updatedCallbackSymbol](Array.from(absAddressSet));
+    });
+  }
+  // $errorCallback の配送。$updatedCallback の後・失敗した本数ぶん・this は writable proxy。
+  // callback 自身の throw は隔離する — 1 件の報告失敗が残りの報告と drain を道連れにしない
+  for (const [ stateElement, failures ] of failuresByStateElement.entries()) {
+    stateElement.createState("writable", (state) => {
+      for (const { error, info } of failures) {
+        try {
+          state[errorCallbackSymbol](error, info);
+        } catch (callbackError) {
+          console.error(
+            `[@wcstack/state] $errorCallback threw while handling the failure of binding "${info.bindingType}: ${info.path}".`,
+            { error: callbackError, original: error, node: info.node },
+          );
+        }
+      }
     });
   }
 }

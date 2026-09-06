@@ -124,6 +124,7 @@ static wcBindable: IWcBindable = {
       getter: (e) => (e as CustomEvent).detail.typedParams },
     { name: "searchParams", event: "wcs-router:search-changed",       semantics: "state" },
     { name: "routeName",    event: "wcs-router:route-name-changed",   semantics: "state" },
+    { name: "data",         event: "wcs-router:data-changed",         semantics: "state" }, // §3.7 追補
   ],
   inputs: [
     { name: "basename", attribute: "basename" },
@@ -152,6 +153,7 @@ element（attach 時に要素の現在値を読む）となり、state→element
 | `typedParams` | `Record<string, any>` | 同上の型変換済み値。`:id(int)` なら number |
 | `searchParams` | `Record<string, string>` | 現在 URL のクエリ。キー重複は **last-wins**（§3.5）。クエリ無しは `{}` |
 | `routeName` | `string` | 最深マッチルートの `name` 属性値。fallback 時は **fallback ルートの `name`**（state 側で 404 UI も `routeName` 分岐で書けるようにする。§3.6 の実装規則 `routes.at(-1)!.name` と一致）。無名・初期化前は `""` |
+| `data` | `Record<string, unknown> \| null` | 現在のナビゲーションの guard 関数が返したロード済みデータ（§3.7 追補）。どの guard もオブジェクトを返さなければ `null`。**freeze しない**（所有者は返した guard） |
 
 露出するオブジェクトは **`Object.freeze` したスナップショット**とする。params は
 router の所有物であり、消費側の変異は silent corruption ではなく loud failure に
@@ -170,6 +172,7 @@ state の same-value guard を正しく通過する）。
 | `wcs-router:search-changed` | 新しい `searchParams` | 正規化比較（§3.5）で変化した commit のみ |
 | `wcs-router:route-name-changed` | 新しい `routeName` | 値が変化した commit のみ |
 | `wcs-router:path-changed` | 新しい `path` | 従来どおり |
+| `wcs-router:data-changed` | 新しい `data`（オブジェクトまたは `null`） | 同一性比較で変化した commit のみ（§3.7 追補） |
 
 detail 形状 `{ params, typedParams }` と typedParams の getter 分派は、削除される
 RouteCore 宣言（§5）と同型 — 既存の設計語彙を場所だけ移す。ただし **`params` 側にも
@@ -186,11 +189,35 @@ commit（applyRoute がガード通過を確認した後）における規範:
    `_path`）を先にコミットし、その後で初めてイベントを発火する。**
    どのイベントのリスナーから要素プロパティを読んでも、遷移後スナップショットの
    一貫した値が見える。半端な状態は観測できない。
-2. 発火順序は **params → route-name → search → path**。`path` を最後に置くのは、
-   既存例で `path` が「ナビゲーション完了」の信号として使われているため —
-   `path` 発火時点で他の全観測面は確定済みであることを保証する。
+2. 発火順序は **data → params → route-name → search → path**（`data` は §3.7 追補で
+   先頭に加わった — params のリスナーがロード済みデータを読めるようにするため）。
+   `path` を最後に置くのは、既存例で `path` が「ナビゲーション完了」の信号として
+   使われているため — `path` 発火時点で他の全観測面は確定済みであることを保証する。
 3. guard 拒否（committed = false）では何も更新せず何も発火しない
    （既存の path 非発火規範を全面に拡張）。
+
+### 3.7 追補（2026-09-06）— guard の第 3 引数・動的リダイレクト・ロード済みデータ `data`
+
+外部レビュー（2026-09-06）の「ルート単位のデータ待ちが無い・リダイレクト先が静的」
+への対応。新しい相は増やさず、既に commit 前の唯一の非同期スロットである guard 相を
+拡張する（`docs/i18n-design.md` の「guard は redirect 先を動的に決められない」も解消）。
+
+- **第 3 引数 `IGuardContext`**: `{ params, typedParams, searchParams, routeName }` の
+  frozen スナップショット。§3.1 の観測面と同じ語彙・同じ正規化（`parseSearchParams`）を
+  commit **前**に読める。`search` は applyRoute が `matchResult.search` として供給する。
+- **返り値の拡張** `GuardResult = boolean | string | object | null | undefined`:
+  空でない文字列＝その絶対パスへ動的リダイレクト（`guard` 属性より優先）／
+  オブジェクト＝許可し `data` として commit／それ以外の falsy＝従来どおり `guard` 属性へ。
+  `undefined` を許可に変えると既存の「返し忘れ＝拒否」を壊すため、falsy は全て拒否のまま。
+- **`data`**: `runGuardPhase` がチェーン上の guard の返したオブジェクトを親→子の順で浅く
+  マージし `matchResult.data` に載せ、applyRoute / SSR 採用（`_adoptSsr`）が commit へ運ぶ。
+  データ無しのナビゲーションは `null` に戻す（前ルートのデータが残らない）。same-match は
+  guard 相を通らないので据え置き（同一参照を commit し無発火）。
+- **freeze しない唯一の観測面**: params と違い所有者が作者（guard）であり、state 側で
+  保持・変異されうる。router はコピーも freeze もしない。
+- **state へ書く公開 API は存在しない**ため、loader の結果は wc-bindable の output
+  property として router から state へ流すのが唯一の筋。これが `data` を router の
+  観測面に置く理由。
 
 保証範囲の明確化: 規範 1 の一貫性保証の主語は**要素プロパティ**である。
 state 側では 4 イベントが逐次 state へ書き込まれるため、event-token（`$on`）

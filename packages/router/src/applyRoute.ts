@@ -35,6 +35,8 @@ export async function applyRoute(
       params: routerNode.params,
       typedParams: routerNode.typedParams,
       routeName: routerNode.routeName,
+      // guard 相を通らないので data も据え置き（同一性を保ち data-changed を発火させない）
+      data: routerNode.data,
       search,
       path,
     });
@@ -56,6 +58,8 @@ export async function applyRoute(
     }
   }
   matchResult.lastPath = lastPath;
+  // guard 相の第 3 引数（IGuardContext.searchParams）が commit と同じクエリを読めるように供給する
+  matchResult.search = search;
   const lastRoutes = outlet.lastRoutes;
   const committed = await showRouteContent(routerNode, matchResult, lastRoutes);
   // GuardCancel により中断された場合は state を更新しない
@@ -67,6 +71,8 @@ export async function applyRoute(
     params: matchResult.params,
     typedParams: matchResult.typedParams,
     routeName: matchResult.routes[matchResult.routes.length - 1]?.name ?? "",
+    // guard 相（runGuardPhase）が集めたロード済みデータ。無ければ null に戻る
+    data: matchResult.data ?? null,
     search,
     path,
   });

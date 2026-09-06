@@ -36,12 +36,14 @@ import { ISetAllOptions, setAll } from "../apis/setAll";
 import { trackDependency } from "../apis/trackDependency";
 import { untrackDependency } from "../apis/untrackDependency";
 import { updatedCallback } from "../apis/updatedCallback";
+import { errorCallback } from "../apis/errorCallback";
 import { getByAddress } from "../methods/getByAddress";
 import { hasByAddress } from "../methods/hasByAddress";
 import { getListIndex } from "../methods/getListIndex";
 import { setByAddress } from "../methods/setByAddress";
 import { setLoopContext } from "../methods/setLoopContext";
-import { connectedCallbackSymbol, disconnectedCallbackSymbol, getByAddressSymbol, hasByAddressSymbol, setByAddressSymbol, setLoopContextSymbol, updatedCallbackSymbol } from "../symbols";
+import { connectedCallbackSymbol, disconnectedCallbackSymbol, errorCallbackSymbol, getByAddressSymbol, hasByAddressSymbol, setByAddressSymbol, setLoopContextSymbol, updatedCallbackSymbol } from "../symbols";
+import type { IBindingErrorInfo } from "../../types";
 import { IStateHandler } from "../types";
 
 // `$streamStatus.<name>` / `$streamError.<name>` の dotted パス判定用プレフィックス
@@ -274,6 +276,18 @@ export function get(
           return updatedCallback(
             target,
             refs,
+            receiver,
+            handler
+          );
+        }
+        break;
+      }
+      case errorCallbackSymbol: {
+        api = (error: unknown, info: IBindingErrorInfo): void => {
+          return errorCallback(
+            target,
+            error,
+            info,
             receiver,
             handler
           );

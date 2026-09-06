@@ -567,4 +567,28 @@ describe('SSR ハイドレーション（guard 防衛経路）', () => {
     expect(document.querySelector('h2')?.textContent).toBe('Home');
     expect(router.path).toBe('/');
   });
+
+  it('採用後の guard がオブジェクトを返せば、そのデータが data として commit されること', async () => {
+    const html = `
+      <wcs-router enable-ssr>
+        <template>
+          <wcs-route path="/secret" name="secret" guard="/"><h1>Secret</h1></wcs-route>
+          <wcs-guard-handler><script type="module">export default (to, from, ctx) => ({ loaded: to, name: ctx.routeName });</script></wcs-guard-handler>
+          <wcs-route path="/"><h2>Home</h2></wcs-route>
+        </template>
+      </wcs-router>
+      <wcs-outlet data-wcs-ssr="">
+        <!--@@wcs-route-ph:/secret--><!--@@wcs-route-start:/secret--><h1>Secret</h1><!--@@wcs-route-end:/secret-->
+        <!--@@wcs-route-ph:/-->
+      </wcs-outlet>
+    `;
+    addBase('/');
+    setUrl('/secret');
+    const router = await clientBoot(html);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // 採用内容はそのまま、観測面の commit に data が載る
+    expect(document.querySelector('h1')?.textContent).toBe('Secret');
+    expect(router.path).toBe('/secret');
+    expect(router.data).toEqual({ loaded: '/secret', name: 'secret' });
+  });
 });
