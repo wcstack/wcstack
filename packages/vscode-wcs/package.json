@@ -8,11 +8,14 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "https://github.com/wcstack/wcstack"
+    "url": "https://github.com/wcstack/wcstack",
+    "directory": "packages/vscode-wcs"
   },
+  "homepage": "https://github.com/wcstack/wcstack/tree/main/packages/vscode-wcs",
   "bugs": {
     "url": "https://github.com/wcstack/wcstack/issues/new?template=vscode-wcs.yml"
   },
+  "qna": "https://github.com/wcstack/wcstack/issues/new?template=vscode-wcs.yml",
   "engines": {
     "vscode": "^1.110.0"
   },
@@ -62,7 +65,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "package": "npm run build && vsce package"
+    "package": "npm run build && vsce package --baseContentUrl https://github.com/wcstack/wcstack/blob/main/packages/vscode-wcs --baseImagesUrl https://github.com/wcstack/wcstack/raw/main/packages/vscode-wcs"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
