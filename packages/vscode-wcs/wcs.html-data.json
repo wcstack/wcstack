@@ -1092,6 +1092,28 @@
       ]
     },
     {
+      "name": "wcs-media-query",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/media-query` custom element (wc-bindable).\n\n**Bindable properties**: `matched`, `media`, `supported`\n\n**Inputs**: `query`"
+      },
+      "attributes": [
+        {
+          "name": "query",
+          "description": {
+            "kind": "markdown",
+            "value": "Attribute mirror of the `query` input."
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/media-query#readme"
+        }
+      ]
+    },
+    {
       "name": "wcs-midi",
       "description": {
         "kind": "markdown",
