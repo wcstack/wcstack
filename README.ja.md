@@ -355,7 +355,7 @@ const html = await renderToString(`
 
 ```html
 <script type="module"
-        src="https://cdn.jsdelivr.net/npm/@wcstack/state@2.1.0/dist/auto.min.js"
+        src="https://cdn.jsdelivr.net/npm/@wcstack/state@2.1.1/dist/auto.min.js"
         integrity="sha384-..."></script>
 ```
 
@@ -365,7 +365,7 @@ const html = await renderToString(`
 
 ```html
 <script type="module"
-        src="https://cdn.jsdelivr.net/npm/wcstack@2.1.0/dist/auto.min.js"
+        src="https://cdn.jsdelivr.net/npm/wcstack@2.1.1/dist/auto.min.js"
         integrity="sha384-..."></script>
 ```
 
