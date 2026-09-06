@@ -117,7 +117,7 @@ That's it. No build, no bootstrap code, no framework.
 - **Mustache syntax** — `{{ path|filter }}` in text nodes
 - **Multiple state sources** — JSON, JS module, inline script, API, attribute
 - **SVG support** — full binding support inside `<svg>` elements
-- **Lifecycle hooks** — `$connectedCallback` / `$disconnectedCallback` / `$updatedCallback`, plus `$stateReadyCallback` for Web Components
+- **Lifecycle hooks** — `$connectedCallback` / `$disconnectedCallback` / `$updatedCallback` / `$errorCallback`, plus `$stateReadyCallback` for Web Components
 - **Headless watch** — `$watch` fires on state changes whether or not the path is rendered
 - **Diagnostics** — unresolved paths, index arity and getter cycles are reported with the same codes as `@wcstack/lint` and the VS Code extension
 - **TypeScript support** — `defineState()` for typed state definitions with dot-path autocompletion ([details](docs/define-state.md)); `@wcstack/typescript` carries the same types into the HTML validator (`wcs-schema`) and type-checks inline state scripts (`wcs-tsc`) — see [docs/typescript.md](../../docs/typescript.md)
@@ -247,7 +247,7 @@ There is **one state tree per root**. To split state across modules, mount a vol
 <div data-wcs="textContent: cart.total"></div>
 ```
 
-A volume may declare getters, `$watch`, `$listKeys`, `$updatedCallback`, and `$connectedCallback`/`$disconnectedCallback` — all relative to its mount path. Load order does not matter (a volume connected before the root is grafted when the root registers). Mount paths must be static (`*`, `$`, `#`, `@` are rejected). Changing `mount` after the element has initialized is not supported: the change is ignored with a console warning — remove the element and add a new one with the desired path.
+A volume may declare getters, `$watch`, `$listKeys`, `$updatedCallback`, and `$connectedCallback`/`$disconnectedCallback` — all relative to its mount path. `$errorCallback` is root-only (a binding failure is reported once, to the tree's owner). Load order does not matter (a volume connected before the root is grafted when the root registers). Mount paths must be static (`*`, `$`, `#`, `@` are rejected). Changing `mount` after the element has initialized is not supported: the change is ignored with a console warning — remove the element and add a new one with the desired path.
 
 > **Migrating from v1's named states:** `<wcs-state name="cart">` + `total@cart` becomes `<wcs-state mount="cart">` + `cart.total`. In v2 the `name` attribute fails fast and `@` in a path is a parse error, each with this exact guidance. Migration table: [docs/state-mount-design.md](../../docs/state-mount-design.md) §9.
 
@@ -2138,7 +2138,7 @@ All bindings work inside `<svg>` elements. Use `attr.*` for SVG attributes:
 
 ## Lifecycle Hooks
 
-State objects can define `$connectedCallback`, `$disconnectedCallback`, and `$updatedCallback` for initialization, cleanup, and update lifecycle handling.
+State objects can define `$connectedCallback`, `$disconnectedCallback`, `$updatedCallback`, and `$errorCallback` for initialization, cleanup, update, and binding-failure handling.
 
 ```html
 <wcs-state>
@@ -2168,6 +2168,7 @@ State objects can define `$connectedCallback`, `$disconnectedCallback`, and `$up
 | `$connectedCallback` | After state initialization on first connect; on every reconnect thereafter | Yes (awaited) |
 | `$disconnectedCallback` | When the element is removed from the DOM | No (sync only) |
 | `$updatedCallback(paths, indexesListByPath)` | After updates are applied to live bindings | Yes (not awaited) |
+| `$errorCallback(error, info)` | After a drain in which a binding failed to apply — once per failed binding, after `$updatedCallback` | Yes (not awaited) |
 
 All hooks except `$disconnectedCallback` support `async` — you can use `async/await` in any of them. Since the reactive proxy detects every property assignment as a change, standard `async/await` with direct property updates is sufficient for asynchronous operations — loading flags, fetched data, and error messages are all just property assignments, without requiring additional abstractions for async state management.
 
@@ -2175,6 +2176,19 @@ All hooks except `$disconnectedCallback` support `async` — you can use `async/
 - `$connectedCallback` is called **every time** the element is connected (including re-insertion after removal), making it suitable for setup that should be re-established
 - `$disconnectedCallback` is called synchronously — use it for cleanup such as clearing timers, removing event listeners, or releasing resources
 - `$updatedCallback(paths, indexesListByPath)` receives the paths whose live bindings were applied in that drain. Unbound state writes do not invoke it or appear in `paths`. For wildcard updates, `indexesListByPath` contains the updated index sets. Marker paths of mounted components (`#m…`) never appear in `paths` — a component's private keys stay private (DevTools shows them in its overlays view). Can be `async`, but the return value is not awaited
+- `$errorCallback(error, info)` is the in-page **error boundary** for bindings. When applying a binding throws — a path getter or filter threw, a structural directive failed — the failure is isolated (the rest of the batch still applies, and neither the value nor the DOM is rolled back) and, without this hook, reported with `console.error`. Declare the hook and the report comes to you instead: `error` is what was thrown, `info` is `{ path, bindingType, node }` identifying the binding (`path` as written in `data-wcs`, wildcards intact). `this` is the writable state proxy, so the usual shape is to write the message into state and render it like anything else:
+
+  ```js
+  export default {
+    user: null, loadError: "",
+    get title() { return this.user.profile.name; },   // throws while user is null
+    $errorCallback(error, { path }) {
+      this.loadError = `${path}: ${error.message}`;   // <p data-wcs="textContent: loadError">
+    },
+  };
+  ```
+
+  The hook runs after the batch (after `$updatedCallback`), is not awaited, and an exception thrown inside it is reported to the console without breaking the drain. DevTools still receives every failure as `state:binding-apply-error` whether or not the hook exists. Root-only: a volume (`<wcs-state mount>`) declaring it is ignored. It does not cover `$watch` handlers (isolated and reported separately) or errors thrown by `$connectedCallback` / `$updatedCallback` (those fail loudly).
 - In Web Components, define `async $stateReadyCallback(stateProp)` to receive a hook when the bound state becomes available via `bind-component`
 
 ## Transition animations

@@ -6,3 +6,4 @@ export const setByAddressSymbol: unique symbol = Symbol("$$setByAddress");
 export const connectedCallbackSymbol: unique symbol = Symbol("$$connectedCallback");
 export const disconnectedCallbackSymbol: unique symbol = Symbol("$$disconnectedCallback");
 export const updatedCallbackSymbol: unique symbol = Symbol("$$updatedCallback");
+export const errorCallbackSymbol: unique symbol = Symbol("$$errorCallback");
