@@ -48,6 +48,10 @@
 - **単独の省略パス `.` の展開** — `<forPath>.*.` と末尾区切り付きに展開していたため、`{{ . }}` / `textContent: .` が要素の実在にかかわらず常に「パスが存在しない」warning になっていた。ランタイム（`@wcstack/state` の `structural/expandShorthandPaths.ts`）と同じく `<forPath>.*` に展開する
 - **入れ子 `<template>` の内外判定** — 直近の開始位置と終了位置の比較で判定していたため、内側の `</template>` より後ろが外側 `<template>` の中でも「テンプレート外」と誤判定され、FOUC info と `<template for>` 外の省略パス warning が同時に誤発火していた。`forContext.ts` と同じ深度カウントに統一
 
+### Other
+
+- **Issue 導線と Marketplace メタデータ** — `package.json` に `bugs.url` を追加し、Marketplace の「Report Issue」と VS Code の Help > Report Issue が、拡張専用の Issue Form（`.github/ISSUE_TEMPLATE/vscode-wcs.yml`・ラベル `@wcstack/vscode-wcs` 自動付与・拡張 / VS Code 版数と再現 HTML が必須）へ直接着地するようにした。`qna` も同じ Form へ向け（Marketplace 内 Q&A は通知が publisher ポータルにしか届かない）、`homepage` と `repository.directory` で monorepo 内の位置を明示。`vsce package` に `--baseContentUrl` / `--baseImagesUrl` を渡し、README の相対リンク（`./wcs.html-data.json`）がリポジトリルートへ書き換えられて 404 になっていた問題を修正（vsce は `repository.directory` を読まず、`repository.url` の owner/repo だけで `blob/HEAD/` を組む）
+
 ## 1.10.0
 
 `@wcstack/state` の現行実装（command-token / event-token / spread / `$streams`）への追従。
