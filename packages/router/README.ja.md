@@ -113,6 +113,36 @@
 ※<main-header><main-body><main-dashboard><product-list><product-item><admin-header><admin-body><error-404>はアプリ側のカスタムコンポーネント
 ※上記カスタム要素は、オートローダーやコードによる定義が別途必要
 
+## ルートの本文はどこに置くか
+
+1.32 以降は 2 つの形がどちらも動きますが、交換可能ではありません。プロジェクト単位でなく、ページごとに選びます。
+
+**既定: 本文を `<wcs-route>` の中に置く。** router が入場時にスタンプし、退場時に取り除きます。中の `data-wcs` バインディングはスタンプ時に束ねられる（binder プロトコル）ので、state が描画するマークアップ —— `for:`・`if:`・テキスト —— も他の場所と同じように動きます。router が提供するものはすべてルート本文を基準にしています: ルートごとの `<wcs-head>`、`focus="heading"` / `announce=` ポリシー（*スタンプされた内容の中の*見出しを探す）、ルート切替ごとのビュートランジション。
+
+```html
+<wcs-route path="/products/:productId(int)">
+  <wcs-head><title data-wcs="textContent: product.name"></title></wcs-head>
+  <h2 data-wcs="textContent: product.name"></h2>
+  <template data-wcs="for: product.variants"><li data-wcs="textContent: .name"></li></template>
+</wcs-route>
+```
+
+**例外: DOM をナビゲーションより長生きさせたいときは state で切り替える（`<template data-wcs="if: …">`）。** スタンプは破棄を伴います —— ルート本文は入場のたびに作り直されます —— ので、再生中の `<video>`、入力途中のフォーム、スクロール済みのリスト、描画済みの `<canvas>` は、離れて戻ってくると生き残りません。そうした内容は router の外に置き、router の `routeName` / `typedParams` 出力が立てる state のフラグにバインドし、ルート要素は空（または `<wcs-head>` だけ）にします。
+
+```html
+<wcs-router data-wcs="routeName: routeName">
+  <template>
+    <wcs-route path="/editor" name="editor"><wcs-head><title>Editor</title></wcs-head></wcs-route>
+    <wcs-route path="/help" name="help"><wcs-head><title>Help</title></wcs-head></wcs-route>
+  </template>
+</wcs-router>
+<template data-wcs="if: isEditor">
+  <my-editor></my-editor>   <!-- /editor → /help → /editor をまたいで DOM を保つ -->
+</template>
+```
+
+例外の代償: `focus="heading"` は空のルート本文に見出しを見つけられず、ブラウザ既定のリセットにフォールバックします（`announce=` は `document.title` を読むので動きます）。ページに `<wcs-view-transition>` があれば、ビュートランジションはルート切替ではなく state の分岐更新を包みます。`examples/router-spa` は両方を示しています: About ページが既定の形、商品ページが例外の形です。
+
 ## リファレンス
 
 ### Router(wcs-router)

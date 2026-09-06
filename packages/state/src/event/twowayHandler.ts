@@ -21,6 +21,48 @@ const producerValueObserversByNode = new WeakMap<Node, Map<string, Set<(value: u
 
 const DEFAULT_GETTER = (e: Event) => (e as CustomEvent).detail;
 
+/**
+ * 既定 getter（`(e) => e.detail`）が要素の宣言と噛み合っていない典型 2 形を、
+ * 要素 × プロパティごとに 1 回だけ警告する（README「What the element writes back」）。
+ *
+ * (a) detail が undefined なのに `element[propName]` には値がある —
+ *     CustomEvent でない Event を dispatch している / `detail` を付け忘れている
+ * (b) detail が `{ <propName>: … }` の形のラッパーで、`element[propName]` はオブジェクトでない —
+ *     `getter: (e) => e.detail.<propName>` が要る
+ *
+ * どちらも state には黙って undefined / ラッパーが書かれ、例外も lint 診断も出ない
+ * （payload の形は静的に見えない）。挙動は変えない — 書き込みはそのまま行う。
+ * occurrence（`semantics: "event"`）は payload が任意なので対象外（呼び出し側で除外）。
+ */
+const warnedDefaultGetter = new WeakMap<Element, Set<string>>();
+function warnDefaultGetterMismatch(node: Element, propName: string, detail: unknown): void {
+  const propValue = (node as any)[propName];
+  let reason: string | null = null;
+  if (typeof detail === "undefined") {
+    if (typeof propValue !== "undefined") {
+      reason = `the event carried no detail (undefined) while element.${propName} is ${typeof propValue}`;
+    }
+  } else if (
+    detail !== null && typeof detail === "object" && Object.prototype.hasOwnProperty.call(detail, propName)
+    && (propValue === null || typeof propValue !== "object")
+  ) {
+    reason = `the event's detail is an object with a "${propName}" key while element.${propName} is ${typeof propValue}`;
+  }
+  if (reason === null) return;
+  let props = warnedDefaultGetter.get(node);
+  if (typeof props === "undefined") {
+    props = new Set();
+    warnedDefaultGetter.set(node, props);
+  }
+  if (props.has(propName)) return;
+  props.add(propName);
+  console.warn(
+    `[@wcstack/state] [wcs/default-getter-mismatch] <${node.tagName.toLowerCase()}> "${propName}": ${reason}. ` +
+    `With no getter, state receives e.detail as-is. Dispatch the value itself as detail, or declare ` +
+    `getter (e.g. (e) => e.detail.${propName}, or (e) => e.target.${propName}) on that wcBindable property.`
+  );
+}
+
 function getHandlerKey(binding: IBindingInfo, eventName: string, hasGetter: boolean, isOccurrence: boolean): string {
   const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
   return `${binding.propName}::${binding.statePathName}::${eventName}::${filterKey}::${hasGetter ? 'g' : 'n'}::${isOccurrence ? 'o' : 's'}`;
@@ -90,6 +132,9 @@ const twowayEventHandlerFunction = (
   let newValue: any;
   if (valueGetter !== null) {
     newValue = valueGetter(event);
+    if (valueGetter === DEFAULT_GETTER && !isOccurrence) {
+      warnDefaultGetterMismatch(node, propName, newValue);
+    }
   } else {
     if (!(propName in node)) {
       console.warn(`[@wcstack/state] Property "${propName}" does not exist on target element.`);

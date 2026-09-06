@@ -724,3 +724,109 @@ describe('未定義のカスタム要素', () => {
     expect(() => detachTwowayEventHandler(binding)).not.toThrow();
   });
 });
+
+describe('wcs/default-getter-mismatch（既定 getter と要素宣言の不整合警告）', () => {
+  const MSG = 'wcs/default-getter-mismatch';
+
+  function setup(tag: string, init: (el: any) => void, semantics?: 'event' | 'state') {
+    class El extends HTMLElement {
+      static wcBindable = {
+        protocol: "wc-bindable" as const,
+        version: 1,
+        properties: [
+          { name: 'value', event: 'x-change', ...(semantics ? { semantics } : {}) },
+          { name: 'other', event: 'y-change' },
+        ],
+      };
+    }
+    customElements.define(tag, El);
+    const el = document.createElement(tag) as any;
+    init(el);
+    const addSpy = vi.spyOn(el, 'addEventListener');
+    const state: any = { [setLoopContextSymbol]: vi.fn((_ctx: any, fn: any) => fn()) };
+    const createState = vi.fn((_mutability: any, fn: any) => fn(state));
+    vi.mocked(getStateElement).mockReturnValue({ createState } as any);
+    vi.mocked(getLoopContextByNode).mockReturnValue(null as any);
+    attachTwowayEventHandler(createBindingInfo(el, { statePathName: 'p' }));
+    const handler = addSpy.mock.calls[0]?.[1] as (event: Event) => void;
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const fire = (detail?: unknown, plainEvent = false) => {
+      const ev = plainEvent ? new Event('x-change') : new CustomEvent('x-change', { detail });
+      Object.defineProperty(ev, 'target', { value: el });
+      return handler(ev);
+    };
+    const warnings = () => warnSpy.mock.calls.filter(c => String(c[0]).includes(MSG)).map(c => String(c[0]));
+    return { el, state, fire, warnings, warnSpy, addSpy };
+  }
+
+  it('detail が undefined で要素プロパティに値がある → 1 回だけ警告し、書き込み自体は変えない', async () => {
+    const t = setup('dg-undefined-tw', (el) => { el.value = 'abc'; });
+    await t.fire(undefined, true);
+    await t.fire(undefined, true);
+    expect(t.warnings()).toHaveLength(1);
+    expect(t.warnings()[0]).toContain('<dg-undefined-tw> "value": the event carried no detail (undefined) while element.value is string');
+    expect(t.warnings()[0]).toContain('(e) => e.detail.value, or (e) => e.target.value');
+    expect(t.state['p']).toBeUndefined();
+    t.warnSpy.mockRestore();
+  });
+
+  it('detail も要素プロパティも undefined なら警告しない', async () => {
+    const t = setup('dg-both-undefined-tw', () => {});
+    await t.fire(undefined, true);
+    expect(t.warnings()).toHaveLength(0);
+    t.warnSpy.mockRestore();
+  });
+
+  it('detail が { value: … } のラッパーで要素プロパティがプリミティブ → 警告', async () => {
+    const t = setup('dg-wrapper-tw', (el) => { el.value = 7; });
+    await t.fire({ value: 7 });
+    expect(t.warnings()).toHaveLength(1);
+    expect(t.warnings()[0]).toContain('detail is an object with a "value" key while element.value is number');
+    expect(t.state['p']).toEqual({ value: 7 });
+    t.warnSpy.mockRestore();
+  });
+
+  it('ラッパーで要素プロパティが null でも警告する（null はオブジェクト値ではない）', async () => {
+    const t = setup('dg-wrapper-null-tw', (el) => { el.value = null; });
+    await t.fire({ value: 1 });
+    expect(t.warnings()).toHaveLength(1);
+    t.warnSpy.mockRestore();
+  });
+
+  it('要素プロパティ自体がオブジェクトなら、同じキーを持つ detail でも警告しない', async () => {
+    const t = setup('dg-object-prop-tw', (el) => { el.value = { value: 1 }; });
+    await t.fire({ value: 1 });
+    expect(t.warnings()).toHaveLength(0);
+    t.warnSpy.mockRestore();
+  });
+
+  it('プロパティ名のキーを持たないオブジェクト detail・null detail・プリミティブ detail は警告しない', async () => {
+    const t = setup('dg-benign-tw', (el) => { el.value = 1; });
+    await t.fire({ nested: 1 });
+    await t.fire(null);
+    await t.fire('ok');
+    expect(t.warnings()).toHaveLength(0);
+    t.warnSpy.mockRestore();
+  });
+
+  it('occurrence（semantics: "event"）は payload が任意なので対象外', async () => {
+    const t = setup('dg-occurrence-tw', (el) => { el.value = 'abc'; }, 'event');
+    await t.fire(undefined, true);
+    expect(t.warnings()).toHaveLength(0);
+    t.warnSpy.mockRestore();
+  });
+
+  it('同じ要素でもプロパティが違えば別に 1 回ずつ警告する', async () => {
+    const t = setup('dg-two-props-tw', (el) => { el.value = 'abc'; el.other = 1; });
+    await t.fire(undefined, true);
+    attachTwowayEventHandler(createBindingInfo(t.el, { propName: 'other', propSegments: ['other'], statePathName: 'q' }));
+    const otherHandler = t.addSpy.mock.calls[1]?.[1] as (event: Event) => void;
+    const ev = new Event('y-change');
+    Object.defineProperty(ev, 'target', { value: t.el });
+    await otherHandler(ev);
+    await otherHandler(ev);
+    expect(t.warnings()).toHaveLength(2);
+    expect(t.warnings()[1]).toContain('"other"');
+    t.warnSpy.mockRestore();
+  });
+});

@@ -362,6 +362,8 @@ Automatically enabled for:
 
 ### Binding Authority (`#init=` / `#sync=`)
 
+**The problem this solves.** An element that already holds a value when its binding attaches — `<wcs-storage>` after loading a persisted value, a clock, a widget restoring its own snapshot — is overwritten by the state seed, because the initial sync of a two-way binding writes state→element. Adding `#init=element` to that one binding makes the *element* win the initial sync instead; later changes flow both ways as usual. That case (load-before-bind) is spelled out below; the rest of this section is the general rule it is an instance of.
+
 For custom elements that declare `static wcBindable`, every prop binding resolves an **authority** — which side wins the **initial sync** when the binding attaches. The steady-state direction is decided separately, by the member's declared shape: an output-only member never accepts state writes (a permanent contract), while a two-way member flows both ways after the initial sync regardless of which side won it. The default authority is derived from where the member is declared (on by default via `enableDirectionalInitialSync`):
 
 | Member declared in | Default authority | Effect |
@@ -377,7 +379,7 @@ For custom elements that declare `static wcBindable`, every prop binding resolve
 
 When the element dispatches `properties[].event`, the value written to state is **`getter(event)`**. With no `getter`, the protocol default applies — [`(e) => e.detail`](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/main/SPEC.md#default-getter): the **whole `detail`, as-is**. The declared property is *not* read off the element at that point; the event payload is authoritative. A plain HTML element (no `wcBindable`) is the other way round: `element[propName]` is read on `input`/`change`.
 
-So an element that dispatches `detail: { value: 7654321 }` without a `getter` writes the **object** `{ value: 7654321 }` to state, not the number — and the failure is silent: the write-back (`Number({ value: … })` → `NaN`) produces no warning, and `@wcstack/lint` cannot see it (the payload shape is not static). Use one of the two conforming shapes:
+So an element that dispatches `detail: { value: 7654321 }` without a `getter` writes the **object** `{ value: 7654321 }` to state, not the number — and the failure is mostly silent: the write-back (`Number({ value: … })` → `NaN`) throws nothing, and `@wcstack/lint` cannot see it (the payload shape is not static). The runtime warns once per element and property (`wcs/default-getter-mismatch`) for the two shapes it can tell apart at the event: a `detail` that is `undefined` while the element property has a value (a plain `Event`, or a forgotten `detail`), and a `detail` object carrying a `<propName>` key while the property is not an object (the wrapper above). Any other mismatch goes through unnoticed, and the write is applied as-is either way. Use one of the two conforming shapes:
 
 ```javascript
 class YenInput extends HTMLElement {
@@ -943,6 +945,18 @@ export default {
 ```
 
 Getters that throw are not swallowed: the exception surfaces where the getter was evaluated (a binding apply, a `$watch` evaluation, or your own read).
+
+#### Dependency tracking boundaries
+
+Three rules decide what the dependency graph sees. None of them matters until you cross one, and when you do the symptom is a value that stops updating with no error — so they are collected here:
+
+| Rule | What it looks like when crossed |
+|---|---|
+| **Only path reads through `this` are tracked.** `this.form` tracks `form`; `this["form.name"]` tracks `form.name`; `this.form.name` tracks **`form` only** — the `.name` is a plain property access on the object that came back. `Date.now()`, the DOM, a module variable, a closed-over object register nothing | The getter is never re-evaluated for that input; the first value sticks (the examples above). A getter that reads `this.form.name` does not re-run when a bound `<input data-wcs="value: form.name">` changes — read `this["form.name"]` |
+| **Reads inside a setter are not tracked.** A setter is an imperative assignment, not a derivation, so nothing it reads becomes a dependency of anything | A setter that reads `this.a` to decide what to write does not run again when `a` changes — only a getter re-runs |
+| **The same-value guard applies to primitives only.** A primitive write `Object.is`-equal to the current value is dropped before anything is enqueued; an object or array write always passes, even the same reference | Assigning the same string again fires nothing; assigning the same object again re-fires its bindings and `$watch` (`config.sameValueGuard`; a `semantics: "event"` property is exempt either way) |
+
+`$untrackDependency(fn)` applies the setter rule to a getter on purpose: reads inside `fn` are not tracked. `$trackDependency(path)` is the escape hatch for the first rule.
 
 ### Loop Index Variables (`$1`, `$2`, ...)
 

@@ -8,6 +8,17 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Added
+
+- `@wcstack/state`: `wcs/default-getter-mismatch` — a two-way binding on a `static wcBindable` property that omits `getter` now warns once per element and property when the event's `detail` cannot be what the property holds: `detail` is `undefined` while the element property has a value (a plain `Event`, or a forgotten `detail`), or `detail` is an object carrying a `<propName>` key while the property is not an object (a `{ value: … }` wrapper). The write is still applied as-is; occurrence properties (`semantics: "event"`) are exempt. Both #234 and #236 were diagnosed by staring at a page that had gone quiet — this makes the second class loud.
+
+### Changed
+
+- `@wcstack/storage` README: the "persist several inputs as one object" case now has a canonical pattern — an accessor pair (`get formSnapshot()` reading fields by path, `set formSnapshot(v)` restoring them) bound with `value#init=element` — fixed by an integration test against the real `@wcstack/state`. The `$trackDependency` + `trigger` shape is kept as the on-demand variant.
+- `@wcstack/state` README: a "Dependency tracking boundaries" table collects the three rules that only show up when crossed (path reads through `this` — `this.form.name` tracks `form` only; reads inside a setter are untracked; the same-value guard is primitive-only), and the binding-authority section opens with the problem `#init=element` solves.
+- `@wcstack/router` README: "Where route content lives" — route body by default, `<template data-wcs="if: …">` switching when the DOM must outlive the navigation, with what each costs.
+- VS Code extension README: what the analyzer derives from a `$listKeys` entry, spelled out.
+
 ## [2.1.1] — 2026-09-06
 
 ### Changed
