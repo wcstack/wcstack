@@ -117,7 +117,7 @@
 - **Mustache 構文** — テキストノードでの `{{ path|filter }}`
 - **複数の状態ソース** — JSON, JS モジュール, インラインスクリプト, API, 属性
 - **SVG サポート** — `<svg>` 要素内でのフルバインディング対応
-- **ライフサイクルフック** — `$connectedCallback` / `$disconnectedCallback` / `$updatedCallback`、Web Component 用 `$stateReadyCallback`
+- **ライフサイクルフック** — `$connectedCallback` / `$disconnectedCallback` / `$updatedCallback` / `$errorCallback`、Web Component 用 `$stateReadyCallback`
 - **headless な watch** — `$watch` はパスが描画されていてもいなくても state の変化で発火する
 - **診断** — 解決しないパス・添字の本数・getter の循環を `@wcstack/lint`・VS Code 拡張と同じ診断 code で報告する
 - **TypeScript サポート** — `defineState()` によるドットパス自動補完付き型付き状態定義（[詳細](docs/define-state.ja.md)）。`@wcstack/typescript` は同じ型を HTML の検証器へ運び（`wcs-schema`）、インライン state スクリプトを型検査する（`wcs-tsc`）— [docs/typescript.ja.md](../../docs/typescript.ja.md)
@@ -247,7 +247,7 @@
 <div data-wcs="textContent: cart.total"></div>
 ```
 
-ボリュームは getter・`$watch`・`$listKeys`・`$updatedCallback`・`$connectedCallback`/`$disconnectedCallback` を宣言できます（すべてマウントパス相対）。読み込み順は自由です（ルートより先に接続されたボリュームは、ルートの登録時に接ぎ木されます）。マウントパスは静的パスのみです（`*`・`$`・`#`・`@` は不可）。初期化後に `mount` 属性を変更することはできません — 変更は console 警告付きで無視されます。要素を取り除き、望むパスで新しい要素を追加してください。
+ボリュームは getter・`$watch`・`$listKeys`・`$updatedCallback`・`$connectedCallback`/`$disconnectedCallback` を宣言できます（すべてマウントパス相対）。`$errorCallback` はルート専用です（バインディングの失敗はツリーの所有者へ 1 回だけ報告されます）。読み込み順は自由です（ルートより先に接続されたボリュームは、ルートの登録時に接ぎ木されます）。マウントパスは静的パスのみです（`*`・`$`・`#`・`@` は不可）。初期化後に `mount` 属性を変更することはできません — 変更は console 警告付きで無視されます。要素を取り除き、望むパスで新しい要素を追加してください。
 
 > **v1 の名前付き状態からの移行:** `<wcs-state name="cart">` + `total@cart` は `<wcs-state mount="cart">` + `cart.total` になります。v2 では `name` 属性は fail-fast し、パス中の `@` は parse error です（どちらもこの誘導文付き）。移行の対応表: [docs/state-mount-design.md](../../docs/state-mount-design.md) §9。
 
@@ -2134,7 +2134,7 @@ export default {
 
 ## ライフサイクルフック
 
-状態オブジェクトに `$connectedCallback` / `$disconnectedCallback` / `$updatedCallback` を定義すると、初期化・クリーンアップ・更新時のフックとして利用できます。
+状態オブジェクトに `$connectedCallback` / `$disconnectedCallback` / `$updatedCallback` / `$errorCallback` を定義すると、初期化・クリーンアップ・更新時・バインディング失敗時のフックとして利用できます。
 
 ```html
 <wcs-state>
@@ -2164,6 +2164,7 @@ export default {
 | `$connectedCallback` | 初回接続時は状態初期化後、再接続時は毎回呼び出し | 可（await される） |
 | `$disconnectedCallback` | 要素が DOM から削除された時 | 不可（同期のみ） |
 | `$updatedCallback(paths, indexesListByPath)` | live binding に更新が適用された後に呼び出し | 可（await されない） |
+| `$errorCallback(error, info)` | バインディングの適用に失敗した drain の後 — 失敗した本数ぶん、`$updatedCallback` の後に呼び出し | 可（await されない） |
 
 `$disconnectedCallback` を除くすべてのフックで `async` を使用できます。リアクティブ Proxy はすべてのプロパティへの代入を変更として検知します。そのため、標準の `async/await` による処理とプロパティへの直接代入だけで非同期ロジックが完結します。ローディングフラグの切り替え、取得したデータの格納、エラーメッセージの更新といった処理もすべて単なるプロパティ代入で行えるため、非同期状態を管理するための複雑な抽象化機能は必要ありません。
 
@@ -2171,6 +2172,19 @@ export default {
 - `$connectedCallback` は要素が接続される**たびに**呼ばれます（一度削除された後の再接続も含みます）。再確立が必要なセットアップ処理に適しています。
 - `$disconnectedCallback` は同期的に呼び出されます。タイマーのクリア、イベントリスナーの削除、リソースの解放といったクリーンアップ処理に使用してください。
 - `$updatedCallback(paths, indexesListByPath)` は、その drain で live binding が適用された path の一覧を受け取ります。binding のない state 書き込みでは呼ばれず、`paths` にも現れません。ワイルドカードをもつパスが更新された場合は、`indexesListByPath` から対象のインデックス情報も取得可能です。マウントされたコンポーネントのマーカーパス（`#m…`）は `paths` に現れません — コンポーネントの私有キーは私有のままです（DevTools の overlays 表示で見えます）。`async` を使用できますが、戻り値は await されません。
+- `$errorCallback(error, info)` はバインディングの**ページ内エラー境界**です。バインディングの適用が throw したとき（パス getter やフィルタが throw した、構造ディレクティブが失敗した）、その失敗は隔離され（同じバッチの残りは適用され、値も DOM も巻き戻されません）、このフックが無ければ `console.error` で報告されます。フックを宣言すると報告はそこへ届きます: `error` は throw された値、`info` はバインディングを識別する `{ path, bindingType, node }`（`path` は `data-wcs` に書いた形のまま。ワイルドカードもそのまま）。`this` は書き込み可能な state proxy なので、メッセージを state に書いて普通に描画するのが基本形です:
+
+  ```js
+  export default {
+    user: null, loadError: "",
+    get title() { return this.user.profile.name; },   // user が null の間は throw する
+    $errorCallback(error, { path }) {
+      this.loadError = `${path}: ${error.message}`;   // <p data-wcs="textContent: loadError">
+    },
+  };
+  ```
+
+  フックはバッチの後（`$updatedCallback` の後）に走り、await されず、フック内で throw しても console に報告されるだけで drain は壊れません。DevTools にはフックの有無に関わらず全失敗が `state:binding-apply-error` として届きます。ルート専用で、ボリューム（`<wcs-state mount>`）に宣言しても無視されます。`$watch` ハンドラの失敗（別途隔離・報告）や、`$connectedCallback` / `$updatedCallback` が投げた例外（loud に失敗する）は対象外です。
 - Web Component を使用している場合は、コンポーネント側に `async $stateReadyCallback(stateProp)` を定義おくことで、`bind-component` でバインドした状態が利用可能になった瞬間にフックとして呼び出されます。
 
 ## 遷移アニメーション

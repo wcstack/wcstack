@@ -684,7 +684,7 @@ describe('Route', () => {
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
 
-      await expect(route.guardCheck({ path: '/test', routes: [], params: {}, typedParams: {}, lastPath: '' })).resolves.toBeUndefined();
+      await expect(route.guardCheck({ path: '/test', routes: [], params: {}, typedParams: {}, lastPath: '' })).resolves.toBeNull();
     });
 
     it('guardがある場合、guardHandlerを呼び出してからチェックすること', async () => {
@@ -697,7 +697,10 @@ describe('Route', () => {
 
       await route.guardCheck({ path: '/protected', routes: [], params: {}, typedParams: {}, lastPath: '/' });
 
-      expect(guardHandler).toHaveBeenCalledWith('/protected', '/');
+      // 第 3 引数は進入先マッチのスナップショット（IGuardContext）
+      expect(guardHandler).toHaveBeenCalledWith('/protected', '/', expect.objectContaining({
+        params: {}, typedParams: {}, searchParams: {}, routeName: '',
+      }));
     });
 
     it('guardHandlerがfalseを返す場合、GuardCancelをthrowすること', async () => {

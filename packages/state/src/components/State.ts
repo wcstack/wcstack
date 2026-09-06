@@ -9,7 +9,7 @@ import { IStateElement } from "./types";
 import { setStateElement, getStateElement, getBindingsReady } from "../stateElementByName";
 import { ILoopContextStack } from "../list/types";
 import { createLoopContextStack } from "../list/loopContext";
-import { DCC_DEFINITION_ATTRIBUTE, NO_SET_TIMEOUT, STATE_CONNECTED_CALLBACK_NAME, STATE_DISCONNECTED_CALLBACK_NAME, STATE_UPDATED_CALLBACK_NAME, WILDCARD } from "../define";
+import { DCC_DEFINITION_ATTRIBUTE, NO_SET_TIMEOUT, STATE_CONNECTED_CALLBACK_NAME, STATE_DISCONNECTED_CALLBACK_NAME, STATE_ERROR_CALLBACK_NAME, STATE_UPDATED_CALLBACK_NAME, WILDCARD } from "../define";
 import { processCommandTokensDeclaration } from "../command/processCommandTokensDeclaration";
 import { clearCommandTokenRegistry } from "../command/commandTokenRegistry";
 import { clearCommandNamespace } from "../command/commandNamespace";
@@ -90,6 +90,8 @@ export class State extends HTMLElementBase implements IStateElement {
 
   private __state: IState | undefined;
   private _hasUpdatedCallback: boolean = false;
+  /** $errorCallback の有無（_hasUpdatedCallback と同じく state セット時に確定。ルートのみ） */
+  private _hasErrorCallback: boolean = false;
   /** enable-ssr のスナップショットから初期化された（D14: ボリュームはデータを採用する） */
   private _hydratedFromSsr: boolean = false;
   // 他行を読む getter が検出されたリストパス（diff-filter 展開の全行フォールバック対象）。
@@ -182,6 +184,7 @@ export class State extends HTMLElementBase implements IStateElement {
     // パターンは検知できない（bindProperty / _state 再セットは検知する）。
     // ライフサイクルフックは宣言時に定義するのが規約。
     this._hasUpdatedCallback = STATE_UPDATED_CALLBACK_NAME in value;
+    this._hasErrorCallback = STATE_ERROR_CALLBACK_NAME in value;
     // 再 set 時に二重 subscribe しないよう registry をクリアしてから $on を配線し直す。
     clearEventTokenRegistry(this);
     processOnDeclaration(this, value, this._eventTokenNames);
@@ -1090,6 +1093,10 @@ export class State extends HTMLElementBase implements IStateElement {
 
   get hasUpdatedCallback(): boolean {
     return this._hasUpdatedCallback;
+  }
+
+  get hasErrorCallback(): boolean {
+    return this._hasErrorCallback;
   }
 
   get crossRowListPaths(): ReadonlySet<string> {

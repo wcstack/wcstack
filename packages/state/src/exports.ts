@@ -16,7 +16,7 @@ export type {
 } from "./defineState.js";
 
 export type {
-  IWritableConfig, IWritableTagNames
+  IWritableConfig, IWritableTagNames, IBindingErrorInfo
 } from "./types.js";
 
 export { VERSION } from "./version.js";

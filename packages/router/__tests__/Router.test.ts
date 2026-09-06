@@ -897,7 +897,7 @@ describe('Router', () => {
     it('wcBindableが正しく定義されていること', () => {
       expect(Router.wcBindable.protocol).toBe('wc-bindable');
       expect(Router.wcBindable.version).toBe(1);
-      expect(Router.wcBindable.properties).toHaveLength(7);
+      expect(Router.wcBindable.properties).toHaveLength(8);
       expect(Router.wcBindable.properties[0].name).toBe('navigateUrl');
       expect(Router.wcBindable.properties[0].event).toBe('wcs-router:navigate-url-changed');
       expect(Router.wcBindable.properties[1].name).toBe('replaceUrl');
@@ -929,9 +929,17 @@ describe('Router', () => {
 
       // 観測面は inputs に無い（output-only）
       const inputNames = (Router.wcBindable.inputs ?? []).map(i => i.name);
-      for (const name of ['params', 'typedParams', 'searchParams', 'routeName']) {
+      for (const name of ['params', 'typedParams', 'searchParams', 'routeName', 'data']) {
         expect(inputNames).not.toContain(name);
       }
+    });
+
+    it('ロード済みデータ data が output-only の properties に宣言されていること', () => {
+      const prop = Router.wcBindable.properties.find(p => p.name === 'data')!;
+      expect(prop.event).toBe('wcs-router:data-changed');
+      expect(prop.semantics).toBe('state');
+      // getter 省略 = detail がデータそのもの
+      expect(prop.getter).toBeUndefined();
     });
   });
 
@@ -997,6 +1005,44 @@ describe('Router', () => {
         expect(snapshot.searchParams).toEqual({ q: 'x' });
         expect(snapshot.path).toBe('/products/5');
       }
+    });
+
+    it('data は commit 省略で null、オブジェクトを渡すと data-changed が params-changed より先に発火し detail はそのオブジェクトであること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      expect(router.data).toBeNull();
+      const loaded = { user: { id: 5 } };
+      const order: string[] = [];
+      let detail: unknown = undefined;
+      router.addEventListener('wcs-router:data-changed', (e) => { order.push('data'); detail = (e as CustomEvent).detail; });
+      router.addEventListener('wcs-router:params-changed', () => order.push('params'));
+      router.addEventListener('wcs-router:path-changed', () => order.push('path'));
+
+      router.commitNavigation({ ...COMMIT, data: loaded });
+
+      expect(order).toEqual(['data', 'params', 'path']);
+      expect(detail).toBe(loaded);
+      expect(router.data).toBe(loaded);
+      // params と違い frozen にしない（作者所有のオブジェクトをそのまま露出する）
+      expect(Object.isFrozen(router.data)).toBe(false);
+    });
+
+    it('data は同一性で比較する — 同じ参照なら無発火、data 省略は null へ戻して発火する', () => {
+      const router = document.createElement('wcs-router') as Router;
+      const loaded = { user: { id: 5 } };
+      router.commitNavigation({ ...COMMIT, data: loaded });
+      const listener = vi.fn();
+      router.addEventListener('wcs-router:data-changed', listener);
+
+      router.commitNavigation({ ...COMMIT, data: loaded });
+      expect(listener).not.toHaveBeenCalled();
+
+      router.commitNavigation({ ...COMMIT, data: { user: { id: 5 } } });
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      router.commitNavigation({ ...COMMIT });
+      expect(listener).toHaveBeenCalledTimes(2);
+      expect(router.data).toBeNull();
+      expect(listener.mock.calls[1][0].detail).toBeNull();
     });
 
     it('params-changed の detail は { params, typedParams } であること', () => {

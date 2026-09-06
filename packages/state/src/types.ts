@@ -1,4 +1,5 @@
 export { IFilterInfo, IBindingInfo, BindingType } from './binding/types.js';
+import type { BindingType as _BindingType } from './binding/types.js';
 
 export interface IState {
   [key: string]: any;
@@ -52,6 +53,20 @@ export interface IConfig {
    * 同値 set に副作用（同値時の $updatedCallback 等）を期待する場合は false にする。
    */
   readonly sameValueGuard: boolean;
+}
+
+/**
+ * `$errorCallback(error, info)` の第 2 引数 — 適用に失敗したバインディングの識別情報。
+ * 値と DOM は巻き戻されない（隔離規範）。作者はここで「どのバインディングが」を知り、
+ * 自分の state にエラーを書いてページ内で受ける。
+ */
+export interface IBindingErrorInfo {
+  /** バインドされた state パス（`data-wcs` に書かれた形。`items.*.name` などワイルドカードのまま） */
+  readonly path: string;
+  /** バインディング種別（text / property / attribute / class / style / for / if …） */
+  readonly bindingType: _BindingType;
+  /** バインディングが付いたノード（テキストバインドでは Text ノード） */
+  readonly node: Node;
 }
 
 export interface IWritableConfig {

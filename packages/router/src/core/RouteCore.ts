@@ -2,7 +2,8 @@ import { GuardCancel } from "../GuardCancel.js";
 import { builtinParamTypes } from "../builtinParamTypes.js";
 import { raiseError } from "../raiseError.js";
 import { config } from "../config.js";
-import { ISegmentInfo, SegmentType, IRouteMatchResult, GuardHandler } from "../components/types.js";
+import { ISegmentInfo, SegmentType, IRouteMatchResult, GuardHandler, GuardData } from "../components/types.js";
+import { createGuardContext } from "../guardContext.js";
 import { BuiltinParamTypes } from "../types.js";
 
 const weights: Record<SegmentType, number> = {
@@ -365,20 +366,32 @@ export class RouteCore extends EventTarget {
     this._resolveSetGuardHandler?.();
   }
 
-  async guardCheck(matchResult: IRouteMatchResult): Promise<void> {
+  /**
+   * guard 相（components/types.ts の GuardResult を参照）。
+   * - 空でない文字列 → その絶対パスへ動的リダイレクト（`guard` 属性より優先）
+   * - falsy（false / undefined / null / ""）→ `guard` 属性のパスへ
+   * - オブジェクト → 許可し、ロード済みデータとして返す（runGuardPhase が集約）
+   * - true → 許可（データ無し = null）
+   */
+  async guardCheck(matchResult: IRouteMatchResult): Promise<GuardData | null> {
     if (this._hasGuard && this._waitForSetGuardHandler) {
       await this._waitForSetGuardHandler;
     }
     if (this._guardHandler) {
       const toPath = matchResult.path;
       const fromPath = matchResult.lastPath;
-      const allowed = await this._guardHandler(toPath, fromPath);
-      if (!allowed) {
+      const result = await this._guardHandler(toPath, fromPath, createGuardContext(matchResult));
+      if (typeof result === 'string' && result !== '') {
+        throw new GuardCancel('Navigation cancelled by guard.', result);
+      }
+      if (!result) {
         throw new GuardCancel('Navigation cancelled by guard.', this._guardFallbackPath);
       }
+      return typeof result === 'object' ? result : null;
     } else if (this._hasGuard && this._guardHandlerLoadFailed) {
       // guardHandler のロードに失敗した場合は fallback パスへ
       throw new GuardCancel('Navigation cancelled: guard handler failed to load.', this._guardFallbackPath);
     }
+    return null;
   }
 }
