@@ -955,6 +955,7 @@ function analyzeStatePaths(scriptContent) {
   for (const listKeyEntry of pendingListKeys) {
     pushListKeyPaths(listKeyEntry, paths);
   }
+  collectRowShapesFromAssignments(scriptContent, paths);
   return paths;
 }
 function analyzeWatchEntries(scriptContent) {
@@ -1099,6 +1100,95 @@ function extractStringLiteralValue(value) {
   if (!value) return null;
   const match = value.trim().match(/^["']([^"'\\]*)["']$/);
   return match && match[1].length > 0 ? match[1] : null;
+}
+var ROW_ASSIGN = new RegExp(
+  String.raw`\bthis\s*(?:\.\s*([$\w]+)|\[\s*["']([^"']+)["']\s*\])\s*=(?![=>])\s*(?:(\[)|(?:[^;={}]|=>)*?\.\s*(?:concat|toSpliced|with)\s*(\())`,
+  "gd"
+);
+function collectRowShapesFromAssignments(script, paths) {
+  const scan = maskCommentsAndStrings(script);
+  ROW_ASSIGN.lastIndex = 0;
+  let match;
+  while ((match = ROW_ASSIGN.exec(scan)) !== null) {
+    const span = match.indices[1] ?? match.indices[2];
+    const listPath = script.slice(span[0], span[1]);
+    if (listPath.startsWith("$") || listPath.includes("*") || !hasPath(paths, `${listPath}.*`)) continue;
+    const openIndex = match.index + match[0].length - 1;
+    const isArrayLiteral2 = scan[openIndex] === "[";
+    const inner = extractDelimitedContent(script, scan, openIndex, scan[openIndex], isArrayLiteral2 ? "]" : ")");
+    for (const literal of collectRowLiterals(inner, isArrayLiteral2 ? 0 : 1)) {
+      for (const field of extractRowLiteralFields(literal)) {
+        pushRowFieldPaths(`${listPath}.*.${field.name}`, field, paths, 1);
+      }
+    }
+  }
+}
+function collectRowLiterals(elementList, arrayDepth) {
+  const out = [];
+  for (const element of splitTopLevelElements(elementList)) {
+    if (element.startsWith("{")) {
+      out.push(element);
+    } else if (element.startsWith("[") && arrayDepth > 0) {
+      const scan = maskCommentsAndStrings(element);
+      out.push(...collectRowLiterals(extractDelimitedContent(element, scan, 0, "[", "]"), arrayDepth - 1));
+    }
+  }
+  return out;
+}
+function extractRowLiteralFields(literal) {
+  const content = extractObjectContent(literal);
+  const fields = parseTopLevelProperties(content).filter((p) => p.kind === "data");
+  for (const element of splitTopLevelElements(content)) {
+    const shorthand = /^([$\w]+)$/.exec(element);
+    if (shorthand && !fields.some((f) => f.name === shorthand[1])) {
+      fields.push({ name: shorthand[1], kind: "data" });
+    }
+  }
+  return fields;
+}
+function pushRowFieldPaths(path, prop, paths, depth) {
+  if (!hasPath(paths, path)) paths.push(withHint({ path, kind: "data" }, prop.typeHint));
+  if (!prop.value) return;
+  if (isArrayLiteral(prop.value)) {
+    if (!hasPath(paths, `${path}.*`)) paths.push({ path: `${path}.*`, kind: "list" });
+    if (!hasPath(paths, `${path}.length`)) {
+      paths.push({ path: `${path}.length`, kind: "data", typeHint: "number" });
+    }
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+    for (const child of extractArrayElementDataProperties(prop.value)) {
+      pushRowFieldPaths(`${path}.*.${child.name}`, child, paths, depth + 1);
+    }
+    return;
+  }
+  if (isObjectLiteral(prop.value)) {
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+    for (const child of parseTopLevelProperties(extractObjectContent(prop.value))) {
+      if (child.kind !== "data") continue;
+      pushRowFieldPaths(`${path}.${child.name}`, child, paths, depth + 1);
+    }
+  }
+}
+function hasPath(paths, path) {
+  return paths.some((p) => p.path === path);
+}
+function splitTopLevelElements(text) {
+  const scan = maskCommentsAndStrings(text);
+  const out = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === "{" || ch === "[" || ch === "(") {
+      depth++;
+    } else if (ch === "}" || ch === "]" || ch === ")") {
+      depth--;
+    } else if (ch === "," && depth === 0) {
+      out.push(text.slice(start, i));
+      start = i + 1;
+    }
+  }
+  out.push(text.slice(start));
+  return out.map((e) => e.trim()).filter((e) => e.length > 0);
 }
 function findStreamInitialProperty(entryValue) {
   const defProps = parseTopLevelProperties(extractObjectContent(entryValue));
@@ -1321,9 +1411,12 @@ function extractFullValue(content, scan, startIndex) {
   return content.slice(startIndex, i).trim();
 }
 function extractBracedContent(text, scan, openBraceIndex) {
+  return extractDelimitedContent(text, scan, openBraceIndex, "{", "}");
+}
+function extractDelimitedContent(text, scan, openIndex, open, close) {
   let depth = 0;
   let inString = null;
-  for (let i = openBraceIndex; i < scan.length; i++) {
+  for (let i = openIndex; i < scan.length; i++) {
     const ch = scan[i];
     if (inString) {
       if (ch === inString && !isEscaped(scan, i)) {
@@ -1333,16 +1426,16 @@ function extractBracedContent(text, scan, openBraceIndex) {
     }
     if (ch === '"' || ch === "'" || ch === "`") {
       inString = ch;
-    } else if (ch === "{") {
+    } else if (ch === open) {
       depth++;
-    } else if (ch === "}") {
+    } else if (ch === close) {
       depth--;
       if (depth === 0) {
-        return text.slice(openBraceIndex + 1, i);
+        return text.slice(openIndex + 1, i);
       }
     }
   }
-  return text.slice(openBraceIndex + 1);
+  return text.slice(openIndex + 1);
 }
 function isArrayLiteral(value) {
   return value.trimStart().startsWith("[");

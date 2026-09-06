@@ -9182,7 +9182,7 @@ async function buildBindings(root) {
     }
 }
 
-var version = "2.1.0";
+var version = "2.1.1";
 var pkg = {
 	version: version};
 
@@ -14675,6 +14675,34 @@ function notifyWrite(address, absAddress, receiver, handler, keyedMergePath) {
     // $postUpdate の手動リフレッシュは従来通り全行展開のまま）
     { listExpansion: "diff", keyedMergePath });
 }
+/**
+ * 書き込み完了後のキャッシュ整合（Issue #234）。
+ *
+ * ワイルドカードのデータパス（リスト行）は代入値がそのまま格納値なので、
+ * 代入値を dirty:false で載せて次回の読みを省く。
+ *
+ * アクセサペア（getterPaths に載るパス）は getter が正本であり、setter は
+ * 命令的な代入に過ぎない。代入値を getter の評価結果として固定すると
+ * - setter が正規化・分配した結果と読みが食い違う
+ * - getter が一度も評価されず動的依存が張られない → 依存先を書いても
+ *   walkDependency がこのキャッシュを dirty にできず、永続的に stale になる
+ *   （プリミティブ代入は同値ガードの旧値読みで偶然 getter が走るが、
+ *   オブジェクト代入は同値ガードを素通りするため救済がない）
+ * ため、キャッシュを dirty にして次回の読みで getter を再評価させる。
+ */
+function commitWriteCache(stateElement, path, absAddress, value, cacheable) {
+    if (!cacheable) {
+        return;
+    }
+    if (stateElement.getterPaths.has(path)) {
+        dirtyCacheEntryByAbsoluteStateAddress(absAddress);
+        return;
+    }
+    setCacheEntryByAbsoluteStateAddress(absAddress, {
+        value: value,
+        dirty: false
+    });
+}
 function _setByAddress(target, address, absAddress, value, receiver, handler, keyedMergePath) {
     try {
         if (address.pathInfo.path in target) {
@@ -14896,12 +14924,7 @@ function setByAddressCore(target, address, value, receiver, handler, keyedMergeP
             }
             finally {
                 notifyWrite(address, absAddress, receiver, handler, keyedMergePath);
-                if (cacheable) {
-                    setCacheEntryByAbsoluteStateAddress(absAddress, {
-                        value: value,
-                        dirty: false
-                    });
-                }
+                commitWriteCache(stateElement, path, absAddress, value, cacheable);
                 // DCC bindable イベントディスパッチ（完全一致 ＋ サブパス → 先頭セグメント、§2.1）
                 dispatchBindableEvent(stateElement, address.pathInfo, { value });
             }
@@ -14948,12 +14971,7 @@ function setByAddressCore(target, address, value, receiver, handler, keyedMergeP
         }
     }
     finally {
-        if (cacheable) {
-            setCacheEntryByAbsoluteStateAddress(absAddress, {
-                value: value,
-                dirty: false
-            });
-        }
+        commitWriteCache(stateElement, path, absAddress, value, cacheable);
         // DCC bindable イベントディスパッチ（完全一致 ＋ サブパス → 先頭セグメント、§2.1）
         dispatchBindableEvent(stateElement, address.pathInfo, { value });
     }
