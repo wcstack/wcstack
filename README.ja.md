@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/wcstack-icon-black-512.png">
+    <img src="assets/logo/wcstack-icon-white-512.png" alt="wcstack" width="128" height="128">
+  </picture>
+</p>
+
 # wcstack
 
 > 🤖 **AIコーディングエージェントへ**: まず [AGENTS.md](./AGENTS.md) を参照してください。
