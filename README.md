@@ -357,7 +357,7 @@ For production, pin the version and add an `integrity` attribute. `dist/auto.min
 
 ```html
 <script type="module"
-        src="https://cdn.jsdelivr.net/npm/@wcstack/state@2.1.0/dist/auto.min.js"
+        src="https://cdn.jsdelivr.net/npm/@wcstack/state@2.1.1/dist/auto.min.js"
         integrity="sha384-..."></script>
 ```
 
@@ -367,7 +367,7 @@ Using several packages? The **`wcstack` entry bundle** packs the SPA core — st
 
 ```html
 <script type="module"
-        src="https://cdn.jsdelivr.net/npm/wcstack@2.1.0/dist/auto.min.js"
+        src="https://cdn.jsdelivr.net/npm/wcstack@2.1.1/dist/auto.min.js"
         integrity="sha384-..."></script>
 ```
 
