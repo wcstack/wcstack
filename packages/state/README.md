@@ -373,6 +373,34 @@ For custom elements that declare `static wcBindable`, every prop binding resolve
 
 > **Authoring rule:** declare every settable member in **both** `properties` and `inputs`. A member declared only in `properties` is output-only — state→element writes are suppressed for the life of the binding, and the element's own initial value overwrites whatever the state seeded. (`@wcstack` I/O node Shells and DCC `$bindables` follow this rule.)
 
+#### What the element writes back (`properties[].getter`)
+
+When the element dispatches `properties[].event`, the value written to state is **`getter(event)`**. With no `getter`, the protocol default applies — [`(e) => e.detail`](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/main/SPEC.md#default-getter): the **whole `detail`, as-is**. The declared property is *not* read off the element at that point; the event payload is authoritative. A plain HTML element (no `wcBindable`) is the other way round: `element[propName]` is read on `input`/`change`.
+
+So an element that dispatches `detail: { value: 7654321 }` without a `getter` writes the **object** `{ value: 7654321 }` to state, not the number — and the failure is silent: the write-back (`Number({ value: … })` → `NaN`) produces no warning, and `@wcstack/lint` cannot see it (the payload shape is not static). Use one of the two conforming shapes:
+
+```javascript
+class YenInput extends HTMLElement {
+  static wcBindable = {
+    protocol: "wc-bindable", version: 1,
+    properties: [
+      // (a) the value itself is the detail — the protocol's recommendation; no getter needed
+      { name: "value", event: "yen-input:value-changed" },
+      // (b) the detail is an object, or the event is not a CustomEvent — say how to read it
+      // { name: "value", event: "yen-input:value-changed", getter: (e) => e.detail.value },
+      // { name: "value", event: "input",                  getter: (e) => e.target.value },
+    ],
+    inputs: [{ name: "value" }],
+  };
+  #onInput() {
+    // (a): dispatch the value, not a wrapper object
+    this.dispatchEvent(new CustomEvent("yen-input:value-changed", { detail: this.value, bubbles: true }));
+  }
+}
+```
+
+Whichever you pick, `element.value` and the value extracted from the event must be the same logical state (the protocol's *Producer State Consistency Invariant*): the initial sync reads the property, every later update reads the event. Both shapes are in use inside wcstack — `<wcs-fetch>`'s `loading` dispatches the boolean as `detail` with no `getter`, its `value` reads `detail.value` through one — and DCC `$bindables` declare `getter: (e) => e.target[name]` because a sub-path write has no single value to put in `detail`. The default itself is not going to change: it is normative for every wc-bindable adapter (`@wc-bindable/core`'s `bind()` and the framework adapters implement the same `e.detail`), and the protocol classes a different default as a breaking change requiring a new protocol identifier.
+
 Override the authority per binding with `#init=`:
 
 | Value | Initial sync | Allowed on |

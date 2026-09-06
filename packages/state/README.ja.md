@@ -373,6 +373,34 @@ property[#modifier]: path[|filter[|filter(args)...]]
 
 > **作法：** settable なメンバは **`properties` と `inputs` の両方**に宣言してください。`properties` にしか宣言されていないメンバは output-only 扱いになり、state→element 書き込みがバインディングの生存期間ずっと抑止され、要素側の初期値が state 側のシード値を上書きします（`@wcstack` の I/O ノード Shell と DCC の `$bindables` はこの作法に従っています）。
 
+#### 要素から state に何が書かれるか（`properties[].getter`）
+
+要素が `properties[].event` を dispatch したとき、state に書かれる値は **`getter(event)`** です。`getter` を省略するとプロトコル既定の [`(e) => e.detail`](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/main/SPEC.md#default-getter) が適用され、**`detail` 全体がそのまま**書かれます。このとき宣言したプロパティは要素から読まれ*ません*。イベントのペイロードが正です。`wcBindable` を持たない素の HTML 要素は逆で、`input`/`change` 時に `element[propName]` を読みます。
+
+したがって `getter` なしで `detail: { value: 7654321 }` を dispatch する要素は、数値ではなく**オブジェクト** `{ value: 7654321 }` を state に書きます。しかもこの失敗は無言です。書き戻し（`Number({ value: … })` → `NaN`）は警告を出さず、`@wcstack/lint` にも見えません（ペイロードの形は静的に分かりません）。次の 2 形のどちらかに揃えてください：
+
+```javascript
+class YenInput extends HTMLElement {
+  static wcBindable = {
+    protocol: "wc-bindable", version: 1,
+    properties: [
+      // (a) 値そのものを detail にする — プロトコルの推奨形。getter 不要
+      { name: "value", event: "yen-input:value-changed" },
+      // (b) detail がオブジェクト、または CustomEvent でないイベントを使う — 読み方を宣言する
+      // { name: "value", event: "yen-input:value-changed", getter: (e) => e.detail.value },
+      // { name: "value", event: "input",                  getter: (e) => e.target.value },
+    ],
+    inputs: [{ name: "value" }],
+  };
+  #onInput() {
+    // (a): ラッパーオブジェクトではなく値を dispatch する
+    this.dispatchEvent(new CustomEvent("yen-input:value-changed", { detail: this.value, bubbles: true }));
+  }
+}
+```
+
+どちらを選んでも、`element.value` とイベントから取り出す値は同じ論理状態を表していなければなりません（プロトコルの *Producer State Consistency Invariant*）。初期同期はプロパティを読み、以後の更新はイベントを読むからです。wcstack 内部でも両形が使われています —— `<wcs-fetch>` の `loading` は `getter` なしで真偽値を `detail` に載せ、`value` は `getter` で `detail.value` を読みます。DCC の `$bindables` が `getter: (e) => e.target[name]` を宣言するのは、サブパス書き込みには `detail` に載せる単一の値が無いからです。既定そのものを変える予定はありません。`e.detail` はすべての wc-bindable アダプタに対する規範（`@wc-bindable/core` の `bind()` とフレームワークアダプタも同じ既定）で、プロトコル上、既定の変更は新しいプロトコル識別子を要する破壊的変更に分類されています。
+
 authority はバインディング単位で `#init=` により上書きできます：
 
 | 値 | 初期同期 | 使える宣言 |

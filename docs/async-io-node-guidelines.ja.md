@@ -131,6 +131,7 @@ private _setState(v: T): void {
 ```
 
 - イベントは必ず `bubbles: true`
+- `detail` には新しい値**そのもの**を載せる。プロトコル既定の getter は `(e) => e.detail` なので、`getter` なしで宣言した property はどのアダプタでも `detail` がそのまま読まれる。`detail` がオブジェクトになる property（1 イベントから複数 property を派生させる形、§4.2）は `getter` を宣言しなければならない（MUST）。いずれの形でも public getter と取り出される値は同じ論理状態を表すこと（§3.3.1）
 - **イベント性のもの（クリック・メッセージ等、毎回発火が意味を持つ）は同値ガードしない**。状態性のもの（permission・loading 等）はガードする。どちらかを設計ドキュメントで明示する
 
 ### 3.3.1 producer snapshot contract（MUST）
