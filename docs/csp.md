@@ -178,13 +178,67 @@ This asymmetry is known; external-file support is not implemented. To keep a str
 
 Paths that bind a Blob (a `@wcstack/fetch` Blob turned into an object URL, a `@wcstack/camera` recording) need `img-src blob:` or `media-src blob:` depending on where the value is assigned.
 
-## 7. Trusted Types are not supported (known limitation)
+## 7. Trusted Types
 
-Under `require-trusted-types-for 'script'` the following throw. There is no current plan to introduce `trustedTypes.createPolicy`.
+`require-trusted-types-for 'script'` is supported. What matters is **which sinks wcstack signs and which it refuses to sign**:
 
-- the `html` binding in `@wcstack/fetch` ([Fetch.ts](../packages/fetch/src/components/Fetch.ts))
-- `<wcs-layout>` template expansion in `@wcstack/router` ([Layout.ts](../packages/router/src/components/Layout.ts))
-- DCC definition in `@wcstack/state` ([defineDCC.ts](../packages/state/src/dcc/defineDCC.ts))
+| Sink | Input | Handling |
+|---|---|---|
+| `<wcs-layout>` template expansion ([Layout.ts](../packages/router/src/components/Layout.ts)) | markup the author wrote (an in-document `<template>`, or an app asset fetched with `src`) | signed by the shared `wcstack` identity policy |
+| `new Worker(src)` ([WorkerCore.ts](../packages/worker/src/core/WorkerCore.ts)) | the `src` attribute the author wrote | signed by the shared `wcstack` identity policy |
+| `<wcs-fetch target>` HTML replace mode ([Fetch.ts](../packages/fetch/src/components/Fetch.ts)) | the response body | **an adopter-supplied sanitizing policy is required**; wcstack never signs it |
+| `innerHTML:` / `outerHTML:` / `srcdoc:` property bindings ([applyChangeToProperty.ts](../packages/state/src/apply/applyChangeToProperty.ts)) | a state value | **an adopter-supplied sanitizing policy is required**; wcstack never signs it |
+
+The split is the whole point. The first two carry strings the page author wrote, which is the same ground Lit stands on when it signs its template literals. The last two carry remote data and user-influenced state — signing those with an identity policy would not be "Trusted Types support", it would be turning the policy off, and a security review is right to reject it.
+
+**DCC definition no longer has a sink at all.** [defineDCC.ts](../packages/state/src/dcc/defineDCC.ts) clones the definition's shadow tree node by node instead of round-tripping it through `innerHTML`, so `@wcstack/state` needs no `trusted-types` allowlist entry on its own.
+
+### The policy to allow
+
+```
+Content-Security-Policy:
+  require-trusted-types-for 'script';
+  trusted-types wcstack;
+```
+
+The `trusted-types` line is needed **only if the page uses `<wcs-layout>` or `<wcs-worker>`**; everything else runs under `require-trusted-types-for 'script'` alone. One name covers every package: the policy object is created once and shared through a global slot, so two packages never call `createPolicy("wcstack")` twice — a duplicate name throws unless the directive carries `'allow-duplicates'`.
+
+### Injecting your own policy
+
+```html
+<script nonce="{RANDOM}">
+  globalThis[Symbol.for("wcstack.trustedTypes.policy")] =
+    trustedTypes.createPolicy("my-app", {
+      createHTML: (s) => DOMPurify.sanitize(s),
+      createScriptURL: (s) => s,
+    });
+</script>
+```
+
+If the policy sanitizes, make sure it returns a `TrustedHTML` — DOMPurify needs `RETURN_TRUSTED_TYPE: true`; a policy that returns a bare string is rejected under enforcement.
+
+Bundler users can call `setTrustedTypesPolicy()`, exported from `@wcstack/state`, `@wcstack/router`, `@wcstack/fetch` and `@wcstack/worker` (they all address the same slot). Install it before the first layout expansion / worker spawn / fetch.
+
+**An injected policy is used on the two remote-data sinks only**, and there it applies **even on engines without Trusted Types**, so a sanitizer never silently degrades to a pass-through outside Chromium. It is deliberately **not** applied to author-written markup (`<wcs-layout>`, `new Worker(src)`): an injected policy is normally a sanitizer, and DOMPurify strips custom elements by default — routing a layout through it would silently remove `<wcs-link>` and friends. Author-written strings are signed by the `wcstack` identity policy instead. If that policy cannot be created (the CSP does not allow the name), the injected policy is used as a fallback and a one-time `console.warn` says what may be stripped.
+
+### If you install none
+
+The two remote-data sinks keep failing — deliberately — but they now say so, once, with the fix. The report **replaces** the exception: neither sink throws (the I/O-node never-throw rule), so an automatic `<wcs-fetch target>` run on connect does not become an unhandled rejection, and the rest of the page keeps binding. When the `wcstack` identity policy cannot be created but an injected policy exists, the fallback `console.warn` is the whole report — no `console.error` telling you to inject a policy you already injected.
+
+```
+[@wcstack/fetch] The "target" HTML replace mode was blocked by Trusted Types (require-trusted-types-for 'script'). ...
+[@wcstack/state] Writing to "innerHTML" was blocked by Trusted Types (require-trusted-types-for 'script'). ...
+```
+
+The state property-write path swallows setter exceptions by design (the element is allowed to reject a value), so before this it broke *silently*. Enforcement is confirmed by probing a throwaway element rather than by matching the wording of an error, so a page that installs a `default` policy is correctly read as "not blocked".
+
+### Notes
+
+- **The shared policy object is reachable from page scripts.** To create `wcstack` exactly once across packages, the created policy is kept in a global slot (`Symbol.for("wcstack.trustedTypes.internal")`). Any script running on the page can therefore read it and use its `createHTML` as a Trusted Types bypass gadget. This does not weaken the DOM-XSS case Trusted Types is aimed at — reaching the slot requires script execution, which is already game over — but it is the price of the single shared policy name, and it is stated here because a policy review will ask. Giving each package its own policy name would remove the global slot at the cost of one CSP entry per package.
+- Trusted Types ships in Chromium only. Elsewhere every path above is a pass-through.
+- All four sinks, both failure paths and the fallback are pinned against an enforcing Chromium in [e2e/tests/trusted-types.spec.ts](../e2e/tests/trusted-types.spec.ts) (fixtures `e2e/fixtures/trusted-types-*.html`); the unit suites can only stub the sinks because happy-dom has no Trusted Types.
+- Dynamic `import()` — state's inline `<script>`, router guard handlers, the autoloader — is **not** a Trusted Types sink. It is governed by `script-src` (§4, §5, §9).
+- The DCC switch to node cloning carries one behavior change: cloning a `script` element copies its already-started flag, so an inline `<script>` inside a DCC template no longer runs natively once per instance. The state definition inside `<wcs-state>` is unaffected — it evaluates `script.text` itself (§4).
 
 ## 8. What does not touch CSP (easily misread)
 

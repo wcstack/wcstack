@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: Trusted Types — fetch target HTML replace mode</title>
+  <!-- docs/csp.md §7. `target=` injects a response body as HTML; wcstack never
+       signs it, so the page must install a sanitizing policy. ?policy=none proves
+       the deliberate failure path (one console.error naming the fix). -->
+  <meta http-equiv="Content-Security-Policy" content="require-trusted-types-for 'script'">
+  <script>
+    window.__violations = [];
+    document.addEventListener("securitypolicyviolation", (e) => {
+      window.__violations.push({ directive: e.violatedDirective, sample: e.sample });
+    });
+    if (!location.search.includes("policy=none") && window.trustedTypes) {
+      globalThis[Symbol.for("wcstack.trustedTypes.policy")] = trustedTypes.createPolicy("my-app", {
+        createHTML: (s) => s.replace(/<script[\s\S]*?<\/script>/gi, ""),
+      });
+    }
+  </script>
+  <script type="module" src="/packages/fetch/dist/auto.min.js"></script>
+</head>
+<body>
+  <wcs-fetch id="frag" url="/e2e/fixtures/trusted-types-fragment.html" response-type="text" target="out"></wcs-fetch>
+  <div id="out"></div>
+</body>
+</html>

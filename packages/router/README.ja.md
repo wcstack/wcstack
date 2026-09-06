@@ -272,6 +272,7 @@ interface IGuardContext {          // 進入先マッチの frozen スナップ�
 - `<wcs-route>` の外に配置された `<wcs-guard-handler>` は無視される
 - `<script type="module">` がない場合、`guardHandler` は設定されない
 - **Content-Security-Policy 下では**、ガードスクリプトは `blob:` URL 経由で評価されるため `script-src blob:` が必要。ガードはインライン専用で、`<wcs-state>` のような `src=` 退避経路は存在しない。詳細は [docs/csp.ja.md](../../docs/csp.ja.md)
+- **`require-trusted-types-for 'script'` 下では**、`<wcs-layout>` のテンプレート展開が `wcstack` という名前の Trusted Types policy を通るため、CSP に `trusted-types wcstack;` が必要（または自前の policy を注入する。詳細は [docs/csp.ja.md](../../docs/csp.ja.md) の §7）
 
 #### ルート commit 前のデータロード
 

@@ -8,6 +8,7 @@ import { IBindingInfo } from "../types";
 import { recordInjectedKey, rememberOverwrittenObject, rememberOverwrittenValue } from "../webComponent/preCompletionWrites";
 import { IApplyContext } from "./types";
 import { addSsrProperty, trackSsrPropertyNode } from "./ssrPropertyStore";
+import { isHtmlSinkProp, reportTrustedTypesBlock, trustHtmlValue } from "../trustedTypes";
 
 // SSR 時に HTML 属性で代替可能なプロパティ
 // これら以外のプロパティは ssrPropertyStore に蓄積してハイドレーション時に復元
@@ -61,6 +62,7 @@ export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyCon
   const propSegments = binding.propSegments;
   if (propSegments.length === 1) {
     const firstSegment = propSegments[0];
+
     const current = (element as any)[firstSegment];
     if (current !== newValue) {
       // 完了前の丸ごとマウント（`state: user`）は、作者の state オブジェクトを親の
@@ -72,12 +74,23 @@ export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyCon
         && getCustomElement(element) !== null) {
         rememberOverwrittenObject(element, firstSegment, current);
       }
+      // Trusted Types: HTML sink (`innerHTML` 等) への書き込みだけ、利用側が注入した
+      // sanitizer 付き policy を通す。state が identity policy を作って素通しさせるのは
+      // TT の無効化と同義なので採らない（docs/csp.md §7）。sink 以外は文字列比較 3 回で
+      // 抜けるので、ホットパスの実コストはほぼ無い。
+      const isHtmlSink = isHtmlSinkProp(firstSegment);
+
       const performWrite = (): void => {
         let propertyWriteSucceeded = false;
         try {
-          (element as any)[firstSegment] = newValue;
+          (element as any)[firstSegment] = isHtmlSink ? trustHtmlValue(newValue) : newValue;
           propertyWriteSucceeded = true;
         } catch (error) {
+          // TT が原因のときは config.debug に関係なく報告する。ここを黙って握り潰すと
+          // 「バインドを書いたのに何も起きない」という最悪の壊れ方をする。
+          if (isHtmlSink) {
+            reportTrustedTypesBlock(element, firstSegment);
+          }
           if (config.debug) {
             console.warn(`Failed to set property '${firstSegment}' on element.`, {
               element,

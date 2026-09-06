@@ -1,6 +1,7 @@
 import { getUUID } from "../getUUID.js";
 import { config } from "../config.js";
 import { raiseError } from "../raiseError.js";
+import { trustAuthoredHTML } from "../trustedTypes.js";
 import { ILayout } from "./types.js";
 
 const cache = new Map<string, string>();
@@ -54,17 +55,20 @@ export class Layout extends HTMLElement implements ILayout {
       console.warn(`${config.tagNames.layout} have both "src" and "layout" attributes.`);
     }
     const template = document.createElement('template');
+    // Trusted Types: ここに流れるのは作者が書いたレイアウトのマークアップなので、
+    // 共有 identity policy で署名してよい層（docs/csp.md §7）。利用側が独自 policy を
+    // 注入していればそちらが優先される。
     if (source) {
       if (cache.has(source)) {
-        template.innerHTML = cache.get(source) || '';
+        template.innerHTML = trustAuthoredHTML(cache.get(source) || '');
       } else {
         // _loadTemplateFromSource は内部で cache.set を実行する
-        template.innerHTML = await this._loadTemplateFromSource(source) || '';
+        template.innerHTML = trustAuthoredHTML(await this._loadTemplateFromSource(source) || '');
       }
     } else if (layoutId) {
       const templateContent = this._loadTemplateFromDocument(layoutId);
       if (templateContent) {
-        template.innerHTML = templateContent;
+        template.innerHTML = trustAuthoredHTML(templateContent);
       } else {
         console.warn(`${config.tagNames.layout} could not find template with id "${layoutId}".`);
       }

@@ -6,6 +6,7 @@ import { FetchHeader } from "./FetchHeader.js";
 import { FetchBody } from "./FetchBody.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { writeTargetHTML } from "../trustedTypes.js";
 
 export class Fetch extends HTMLElement {
   static hasConnectedCallbackPromise = true;
@@ -379,10 +380,14 @@ export class Fetch extends HTMLElement {
     // This is an opt-in convenience for trusted fragments only; the primary,
     // recommended path is state-driven binding via @wcstack/state. Do not point
     // `target` at an untrusted endpoint (XSS risk). See README "HTML Replace Mode".
+    //
+    // Under Trusted Types this is the one sink in wcstack whose input is remote
+    // data, so it is routed through an *adopter-supplied* sanitizing policy only —
+    // fetch never signs the response with an identity policy (docs/csp.md §7).
     if (this.target && result !== null) {
       const targetElement = document.getElementById(this.target);
       if (targetElement) {
-        targetElement.innerHTML = result;
+        writeTargetHTML(targetElement, result);
       }
     }
 

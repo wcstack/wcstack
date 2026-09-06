@@ -32,9 +32,32 @@ export function defineDCC(hostElement: Element, shadowRoot: ShadowRoot, state: I
     raiseError(`DCC: "${tagName}" is already registered. A custom element name can only be defined once.`);
   }
 
-  // ShadowRoot は cloneNode 不可のため、template 経由で内容をクローン
+  // ShadowRoot 自体は cloneNode 不可なので、子ノードを 1 つずつ template へ取り込む。
+  //
+  // かつては `template.innerHTML = shadowRoot.innerHTML` と serialize → parse で
+  // 往復していた。これをやめたのは 3 点の理由による（docs/csp.md §7）:
+  //   (1) `require-trusted-types-for 'script'` 下では innerHTML sink が弾かれる。
+  //       ここはテンプレート＝作者が書いた DOM の複製でしかないので、policy を作って
+  //       署名するより sink 自体を無くすほうが筋が良い（state が CSP の
+  //       `trusted-types` allowlist を要求しなくなる）。
+  //   (2) 往復のたびに HTML パーサの再解釈が挟まり、元の DOM と一致しない結果に
+  //       なり得る（mXSS と同じ機序）。
+  //   (3) 単純に serialize + parse のぶん遅い。
+  //
+  // importNode は **取り込み先 document** で要素を作るため、template の inert な
+  // contents document 側から呼べば従来どおり「未 upgrade の複製」になる。live
+  // document 側で cloneNode すると upgrade reaction が走り、_ensureShadow の明示
+  // upgrade と二重になる。
+  //
+  // 挙動差が 1 つある: script 要素の already-started フラグは複製時に引き継がれる
+  // ため、テンプレート内のインライン `<script>` はインスタンス生成のたびにネイティブ
+  // 実行されなくなる。`<wcs-state>` の状態定義スクリプトは text を読んで評価する実装
+  // （loadFromInnerScript）なので影響を受けない。
   const template = document.createElement("template");
-  template.innerHTML = shadowRoot.innerHTML;
+  const inertDocument = template.content.ownerDocument;
+  for (const childNode of Array.from(shadowRoot.childNodes)) {
+    template.content.appendChild(inertDocument.importNode(childNode, true));
+  }
   const shadowRootMode = shadowRoot.mode as ShadowRootMode;
 
   // $bindables / $commands から wcBindable + bindableEventMap を生成

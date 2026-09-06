@@ -1,6 +1,8 @@
 
 export { bootstrapState } from "./bootstrapState.js";
 export { getConfig } from "./config.js";
+export { getTrustedTypesPolicy, setTrustedTypesPolicy, TRUSTED_TYPES_POLICY_SLOT } from "./trustedTypes.js";
+export type { IWcsTrustedTypesPolicy } from "./trustedTypes.js";
 export { getBindingsReady } from "./stateElementByName.js";
 
 export { Ssr } from "./components/Ssr.js";
