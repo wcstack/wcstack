@@ -9,9 +9,29 @@ See [Stability](./README.md#stability) for which APIs are stable vs. evolving / 
 
 ## [Unreleased]
 
+## [2.1.1] — 2026-09-06
+
+### Fixed
+
+- **`bindNode` now applies the wc-bindable default getter (`e => e.detail`) to a property that omits `getter`** — for both `signals[name]` and `on(name)` (#238). It used to read the element property (`node[name]`) on each event, which diverged from the SPEC's § Default Getter MUST, from `@wcstack/state`'s two-way bindings, and from `@wc-bindable/core`: the same element could bind correctly under one adapter and not the other. The initial seed still reads the property (SPEC § Initial Sync — there is no event at bind time).
+  - **Who is affected:** none of the wcstack I/O nodes — every getter-less property dispatches its value as `detail`, so the two reads agree (`<wcs-audio>`'s `noteOn` / `noteOff` are *fixed* by this: reading the property returned the same-named command method). A third-party element whose getter-less property dispatches a `detail` that is not the property value (or no `detail` at all) now receives that `detail`; declare an explicit `getter` (e.g. `getter: (e) => e.target.value`) to keep reading the property.
+
+### Docs
+
+- README: "What a property signal receives" — `getter(event)`, the `e.detail` default, the initial-seed property read, and the explicit-`getter` escape hatch for third-party elements.
+
+This file was not maintained between 1.14.0 and 2.1.1 apart from the 1.23.0 entry below. Changes in that range — e.g. the wholesale DOM detach for zero-reuse `For` / `Index` runs (1.21.x) and routing `getReader`-bearing `streamResource` sources through `reader.cancel()` (1.22.0) — are in the merged pull requests and, from 1.30.0, in the root `CHANGELOG.md`.
+
+## [1.23.0] — 2026-07-28
+
 ### Added
 
 - **`mountNode(tagName, { attrs?, parent?, descriptor? }?)`** (`/dom` entry) — create a **defined** custom element, set attributes, `bindNode` it, then connect it (default parent `document.body`). Returns the full `BoundNode` plus `el` and an idempotent `unmount()` (adapter teardown + element removal; `dispose()` on the returned object is aliased to it, so the generic teardown verb cannot leave a connected element with live IO behind). Tag names are lowercased (so `mountNode(el.tagName)` works). Attributes and the adapter's subscriptions are both in place **before** `connectedCallback`, so a connect-time event is never missed. An undefined tag throws a descriptive error immediately (instead of `whenDefined`'s silent forever-pending); an explicit `descriptor` skips the check. Pairs with a side-effect import of the defining package (`import "@wcstack/<pkg>/auto"`) — see `docs/signals-definition-timing.md`.
+
+## [1.14.0] — 2026-06-17
+
+### Added
+
 - **`DisposedError` / `isDisposedError`** are now public. Every mutating `BoundNode` method throws a `DisposedError` after `dispose()`; prefer the brand-based `isDisposedError(err)` over `instanceof` (it survives a bundler duplicating the class across realms).
 - **`ListView` and `NodeShape` (plus `DefaultNodeShape`)** are now exported, so `For` / `Index` return types and `bindNode` shapes can be referenced in user code.
 - **Generic typing for `bindNode<S extends NodeShape>`.** Pass a `NodeShape` type argument (`signals` / `inputs` / `commands`) to type the whole result — `bound.signals.*`, `set`, `command`, etc. become checked. Omit it for the back-compat all-`unknown` shape.
@@ -29,11 +49,6 @@ See [Stability](./README.md#stability) for which APIs are stable vs. evolving / 
 - **`isSettableProperty` is memoized** by `(prototype, key)` (a `WeakMap` keyed by prototype), avoiding a repeated prototype-chain walk on every `bindProp` / `setProp`.
 - **`flushEffects` uses double buffering** for the effect queue.
 
-### Fixed
-
-- **`bindNode` now applies the wc-bindable default getter (`e => e.detail`) to a property that omits `getter`** — for both `signals[name]` and `on(name)` (#238). It used to read the element property (`node[name]`) on each event, which diverged from the SPEC's § Default Getter MUST, from `@wcstack/state`'s two-way bindings, and from `@wc-bindable/core`: the same element could bind correctly under one adapter and not the other. The initial seed still reads the property (SPEC § Initial Sync — there is no event at bind time).
-  - **Who is affected:** none of the wcstack I/O nodes — every getter-less property dispatches its value as `detail`, so the two reads agree (`<wcs-audio>`'s `noteOn` / `noteOff` are *fixed* by this: reading the property returned the same-named command method). A third-party element whose getter-less property dispatches a `detail` that is not the property value (or no `detail` at all) now receives that `detail`; declare an explicit `getter` (e.g. `getter: (e) => e.target.value`) to keep reading the property.
-
 ### BREAKING
 
 - **`bindNode(target)` — `target` type narrowed from `EventTarget & Record<string, any>` to `EventTarget`.** Untyped member pass-through is no longer available on the public signature (the indexing surface is cast internally), so it no longer erases your element's type.
@@ -46,4 +61,7 @@ See [Stability](./README.md#stability) for which APIs are stable vs. evolving / 
 - README gained sections for **browser & runtime support** (ES2022; Chrome / Edge 94+, Firefox 90+, Safari 16.4+), **bundle size** (core ≈ 2.5 KB, dom ≈ 2.1 KB gzipped), the **error-handling contract**, **development mode**, and a **Stability** matrix + deprecation policy.
 - Documented the `streamResource` `AsyncIterable` cooperative-cancellation contract ("the `source` MUST honor its `AbortSignal`").
 
-[Unreleased]: https://github.com/wcstack/wcstack/compare/v1.13.1...HEAD
+[Unreleased]: https://github.com/wcstack/wcstack/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/wcstack/wcstack/compare/v2.1.0...v2.1.1
+[1.23.0]: https://github.com/wcstack/wcstack/compare/v1.22.6...v1.23.0
+[1.14.0]: https://github.com/wcstack/wcstack/compare/v1.13.1...v1.14.0

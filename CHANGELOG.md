@@ -8,16 +8,21 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+## [2.1.1] — 2026-09-06
+
 ### Changed
 
 - Root and `@wcstack/state` READMEs brought up to date with v2; CDN snippets pinned to 2.1.0 (#228).
 - VS Code extension: dedicated issue form and `bugs` / `qna` / `homepage` / `repository.directory` Marketplace metadata; `vsce package` passes base URLs so README links resolve inside the monorepo (#229).
 - Root `CHANGELOG.md` and `docs/migration-v2.md` added.
 - `@wcstack/state` README: documented what a two-way binding writes to state when a `static wcBindable` element fires its change event — `getter(event)`, defaulting to the wc-bindable protocol's `(e) => e.detail` (the whole `detail`, as-is), with the two conforming producer shapes and the `properties[].getter` override. No runtime change: the default is normative for every wc-bindable adapter (#236).
+- `@wcstack/signals` README: documented what a property signal receives (`getter(event)`, defaulting to `e.detail`; the initial seed is the one property read) alongside the fix below (#240).
+- VS Code extension (ships with the next extension release): the row shape of a list whose initial value is `[]` is now read from row-adding assignments (`concat({ … })`, `toSpliced`, `with`, spread), so `for`-row bindings on those fields no longer report `wcs/binding-path-missing` (#239, #241).
 
 ### Fixed
 
 - `@wcstack/state`: assigning to a path that has both a getter and a setter no longer pins the assigned value in the getter cache. Reads after the write re-evaluate the getter, so a normalizing setter is reflected immediately and the getter's dependencies get registered even when the first write is an object (which bypasses the same-value guard). Before, an object assigned through e.g. `<wcs-storage data-wcs="value#init=element: snapshot">` left `snapshot` stale forever (#234).
+- `@wcstack/signals`: `bindNode` now applies the wc-bindable default getter (`(e) => e.detail`) to a property that omits `getter`, for both `signals[name]` and `on(name)`. It used to read the element property on each event, diverging from the protocol's MUST, from `@wcstack/state`'s two-way bindings and from `@wc-bindable/core`, so the same element could bind correctly under one adapter and not the other. The initial seed still reads the property. No wcstack I/O node changes behaviour (every getter-less property dispatches its value as `detail`; `<wcs-audio>`'s `noteOn` / `noteOff`, which previously received the same-named command method, are fixed). A third-party element whose getter-less property dispatches a `detail` that is not the property value — or no `detail` at all — now receives that `detail`; declare an explicit `getter` to keep reading the property (#238, #240).
 
 ## [2.1.0] — 2026-09-05
 
@@ -165,7 +170,8 @@ Repairs from the pre-release quality loop, all with tests: `setInitialState` on 
 
 1.29.0 and earlier predate this file. Their contents are in the merged pull requests (`gh pr list --state merged`) and the git history; each GitHub Release page carries the SRI digests for that version.
 
-[Unreleased]: https://github.com/wcstack/wcstack/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/wcstack/wcstack/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/wcstack/wcstack/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/wcstack/wcstack/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/wcstack/wcstack/compare/v1.33.0...v2.0.0
 [1.33.0]: https://github.com/wcstack/wcstack/compare/v1.32.0...v1.33.0
