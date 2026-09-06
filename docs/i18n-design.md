@@ -350,7 +350,9 @@ basename が `/ja` なら `/en/products` は `_isOwnPath` を外れ、router は
 
 初稿は「未対応ロケールの URL は guard で fallback ロケールへ redirect する」としていた。**これは書けない。**
 
-router の guard は **redirect 先を動的に決められない**。`GuardCancel` に載る `fallbackPath` は `<wcs-route guard="...">` の**静的な属性値**がそのまま渡るだけで（[RouteCore.ts:364](../packages/router/src/core/RouteCore.ts#L364)、[showRouteContent.ts:37-40](../packages/router/src/showRouteContent.ts#L37)）、guard ハンドラの戻り値は真偽値のみでパスを返す口が無い。したがって `/xx/products` → `/en/products` のように**残りのパスを保ったままロケールだけ差し替える**ことは表現できない。`guard="/en"` と書けば `products` は失われる。
+> **2026-09-06 追記**: この制約は解消された — guard 関数が**空でない文字列を返すとそのパスへリダイレクト**する（`docs/router-state-contract-design.md` §3.7）。以下は当時の判断根拠として残す。D9 の basename 化は §9-1-1 の別理由（intercept で言語が変わらない）で成立しているため、判断自体は変わらない。
+
+router の guard は **redirect 先を動的に決められない**（当時）。`GuardCancel` に載る `fallbackPath` は `<wcs-route guard="...">` の**静的な属性値**がそのまま渡るだけで（[RouteCore.ts:364](../packages/router/src/core/RouteCore.ts#L364)、[showRouteContent.ts:37-40](../packages/router/src/showRouteContent.ts#L37)）、guard ハンドラの戻り値は真偽値のみでパスを返す口が無い。したがって `/xx/products` → `/en/products` のように**残りのパスを保ったままロケールだけ差し替える**ことは表現できない。`guard="/en"` と書けば `products` は失われる。
 
 **解決: redirect は head スニペットが `location.replace` で行う**（§8 の 4 番）。これは代替案ではなく上位互換である。
 

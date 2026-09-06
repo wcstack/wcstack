@@ -1,7 +1,7 @@
 import { getUUID } from "../getUUID.js";
 import { config } from "../config.js";
 import { raiseError } from "../raiseError.js";
-import { IRouteMatchResult, IRoute, IRouter, GuardHandler, ISegmentInfo } from "./types.js";
+import { IRouteMatchResult, IRoute, IRouter, GuardHandler, GuardData, ISegmentInfo } from "./types.js";
 import { RouteCore } from "../core/RouteCore.js";
 
 // NOTE: `static wcBindable` は宣言しない — RouteCore.ts 冒頭の NOTE を参照
@@ -169,7 +169,7 @@ export class Route extends HTMLElement implements IRoute {
     return this._core.shouldChange(newParams);
   }
 
-  async guardCheck(matchResult: IRouteMatchResult): Promise<void> {
+  async guardCheck(matchResult: IRouteMatchResult): Promise<GuardData | null> {
     return this._core.guardCheck(matchResult);
   }
 
