@@ -20,13 +20,13 @@ Zero runtime dependencies. `typescript` is a peer dependency — the project's o
 
 ### `wcs-schema emit <state.ts|state.js> [options]`
 
-Generates `states[<name>].stateSchema` from the file's `export default` (a `defineState(...)` call is unwrapped syntactically, so the package does not even need to resolve `@wcstack/state`). The result is run through the validator core's own manifest check before anything is written.
+Generates the manifest's single `stateSchema` (`schemaVersion` 2) from the file's `export default` (a `defineState(...)` call is unwrapped syntactically, so the package does not even need to resolve `@wcstack/state`). The result is run through the validator core's own manifest check before anything is written.
 
 | Option | Description |
 |---|---|
-| `--state=<name>` | State name (default `default`) |
+| `--mount=<path>` | Emit only the subtree at this mount path — the type file of a `<wcs-state mount="…">` volume merges as a subtree of the single tree. Omit for the root state file |
 | `--out=<path>` | Output manifest, relative to the working directory (default `wcstack.manifest.json`). `--out=-` prints to stdout |
-| `--merge` | Keep everything else in an existing manifest (other states, `filters`, `listContexts`) and replace only this state's `stateSchema`. A hand-written schema for the same state is replaced, not merged |
+| `--merge` | Keep everything else in an existing manifest (`filters`, `listContexts`, other subtrees) and replace only the slot being written — the whole `stateSchema`, or the subtree at `--mount`. A hand-written schema in that slot is replaced, not merged |
 | `--tsconfig=<path>` | `tsconfig.json` to compile with (default: the nearest one above the state file, else built-in defaults) |
 | `--max-depth=<n>` | Object nesting depth at which the schema stops with a bare `{}` (default `5`, the validator's own budget) |
 

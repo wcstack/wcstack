@@ -50,6 +50,7 @@ Four rules go with it:
 | [architecture-hardening/13-framework-adapter-binding-constraints.md](./architecture-hardening/13-framework-adapter-binding-constraints.md) | [13…ja.md](./architecture-hardening/13-framework-adapter-binding-constraints.ja.md) |
 | [architecture-hardening/14-handle-graph-wiring.md](./architecture-hardening/14-handle-graph-wiring.md) | [14…ja.md](./architecture-hardening/14-handle-graph-wiring.ja.md) |
 | [architecture-hardening/15-state-component-mechanism-consistency.md](./architecture-hardening/15-state-component-mechanism-consistency.md) | [15…ja.md](./architecture-hardening/15-state-component-mechanism-consistency.ja.md) |
+| [migration-v2.md](./migration-v2.md) | [migration-v2.ja.md](./migration-v2.ja.md) |
 
 That is the whole priority set — every document code, an example, or a README points at. What remains untranslated is the internal design notes and implementation plans (`*-tag-design.md`, `*-impl-plan.md`, `state-*.md`, `io-node-*.md`, `architecture-hardening/01`-`08`, `11`), translated on demand as they are touched.
 
