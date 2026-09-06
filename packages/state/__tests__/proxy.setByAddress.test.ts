@@ -106,7 +106,7 @@ describe('setByAddress', () => {
     expect(mockEnqueueAbsoluteAddress).toHaveBeenCalled();
   });
 
-  it('既存キャッシュがある場合は更新されること', () => {
+  it('getter パスの既存キャッシュは代入値で固定せず dirty にすること（Issue #234）', () => {
     const target = { count: 1 };
     const address = createStateAddress(getPathInfo('count'), null);
     const stateElement = createStateElement({ getterPaths: new Set(['count']) });
@@ -117,9 +117,45 @@ describe('setByAddress', () => {
 
     setByAddress(target, address, 9, target, handler as any);
 
+    // getter が正本: 代入値を評価結果として載せず、次回の読みで再評価させる
     const cacheEntry = getCacheEntryByAbsoluteStateAddress(absAddress);
     expect(cacheEntry).not.toBeNull();
+    expect(cacheEntry!.dirty).toBe(true);
+    expect(cacheEntry!.value).toBe(1);
+
+    setCacheEntryByAbsoluteStateAddress(absAddress, null);
+  });
+
+  it('getter パスにキャッシュが無い場合は代入値を載せないこと（Issue #234）', () => {
+    const target = { count: 1 };
+    const address = createStateAddress(getPathInfo('count'), null);
+    const stateElement = createStateElement({ getterPaths: new Set(['count']) });
+    const handler = createHandler(stateElement);
+    const absAddress = createAbsoluteStateAddress({ stateName: stateElement.name, pathInfo: address.pathInfo }, address.listIndex);
+
+    setByAddress(target, address, 9, target, handler as any);
+
+    expect(getCacheEntryByAbsoluteStateAddress(absAddress)).toBeNull();
+  });
+
+  it('ワイルドカードのデータパスへの書き込みは代入値を dirty:false でキャッシュすること', () => {
+    const target = { items: [1, 2] };
+    const listIndex = createListIndex(null, 0);
+    const address = createStateAddress(getPathInfo('items.*'), listIndex);
+    const stateElement = createStateElement();
+    const handler = createHandler(stateElement);
+    const absAddress = createAbsoluteStateAddress({ stateName: stateElement.name, pathInfo: address.pathInfo }, address.listIndex);
+    vi.mocked(getByAddress).mockImplementation((_target, addr) => {
+      return addr.pathInfo.path === 'items' ? target.items : null;
+    });
+
+    setByAddress(target, address, 9, target, handler as any);
+
+    const cacheEntry = getCacheEntryByAbsoluteStateAddress(absAddress);
+    expect(cacheEntry).not.toBeNull();
+    expect(cacheEntry!.dirty).toBe(false);
     expect(cacheEntry!.value).toBe(9);
+    expect(target.items[0]).toBe(9);
 
     setCacheEntryByAbsoluteStateAddress(absAddress, null);
   });

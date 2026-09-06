@@ -14,6 +14,10 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 - VS Code extension: dedicated issue form and `bugs` / `qna` / `homepage` / `repository.directory` Marketplace metadata; `vsce package` passes base URLs so README links resolve inside the monorepo (#229).
 - Root `CHANGELOG.md` and `docs/migration-v2.md` added.
 
+### Fixed
+
+- `@wcstack/state`: assigning to a path that has both a getter and a setter no longer pins the assigned value in the getter cache. Reads after the write re-evaluate the getter, so a normalizing setter is reflected immediately and the getter's dependencies get registered even when the first write is an object (which bypasses the same-value guard). Before, an object assigned through e.g. `<wcs-storage data-wcs="value#init=element: snapshot">` left `snapshot` stale forever (#234).
+
 ## [2.1.0] — 2026-09-05
 
 ### Changed
