@@ -469,7 +469,7 @@ a.active { font-weight: bold; color: blue; }
 </wcs-route>
 ```
 
-パラメータは `connectedCallback` の発火前に割り当てられる。未定義のカスタム要素の場合、`customElements.whenDefined()` の解決後に割り当てが遅延される。
+定義済みの要素（組み込み要素、およびルート描画前に定義されたカスタム要素）では、パラメータは `connectedCallback` の発火前に割り当てられる。未定義のカスタム要素の場合、割り当ては `customElements.whenDefined()` の解決後まで遅延される。この解決はアップグレードの*後*に起こるため、アップグレード時に走る `connectedCallback` ではパラメータはまだ見えない。`props` / `states` / 属性の setter（または `attributeChangedCallback`）で受け取るか、ルート描画前に要素を定義しておく（例: `@wcstack/router` より先にスクリプトを読み込む）こと。
 
 ## 設定
 

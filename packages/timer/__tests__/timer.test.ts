@@ -93,6 +93,16 @@ describe("Timer (Shell)", () => {
     expect(el.tick).toBe(3);
   });
 
+  it("repeat=\"0\"（既定・無制限）は once を打ち消さず 1 回で停止する", () => {
+    const el = createTimer({ interval: "1000", once: "", repeat: "0", manual: "" });
+    document.body.appendChild(el);
+    el.start();
+
+    vi.advanceTimersByTime(5000);
+    expect(el.tick).toBe(1);
+    expect(el.running).toBe(false);
+  });
+
   it("immediate 属性で start 直後に発火する", () => {
     const el = createTimer({ interval: "1000", immediate: "", manual: "" });
     document.body.appendChild(el);

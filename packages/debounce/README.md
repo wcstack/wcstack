@@ -74,7 +74,13 @@ npm install @wcstack/debounce
     export default {
       $commandTokens: ["search"],
       $eventTokens: ["searchSettled"],
-      query: "",
+      results: [],
+      onSearchInput(e) {
+        // Emit the query string, not the event: a command emitted from an
+        // `oninput:` binding receives the Event as its first argument, and
+        // `<wcs-debounce>` keeps the args verbatim.
+        this.$command.search.emit(e.target.value);
+      },
       $on: {
         searchSettled: (state, event) => {
           // fires once, 300ms after the last keystroke
@@ -86,7 +92,7 @@ npm install @wcstack/debounce
   </script>
 </wcs-state>
 
-<input data-wcs="oninput: $command.search">
+<input data-wcs="oninput: onSearchInput">
 <wcs-debounce
   wait="300"
   data-wcs="command.trigger: $command.search; eventToken.fired: searchSettled">
@@ -145,8 +151,8 @@ so you can style them directly from CSS with the `:state()` pseudo-class — no
 the event namespace — and therefore the wiring — tracks its own `eventPrefix`).
 
 ```css
-wcs-debounce:state(pending) ~ .spinner { display: block; }
-wcs-debounce:state(pending) ~ .spinner { display: none; } /* default */
+.spinner { display: none; }                                /* default */
+wcs-debounce:state(pending) ~ .spinner { display: block; } /* while debouncing */
 
 wcs-throttle:state(pending) ~ .indicator { opacity: 1; }
 ```

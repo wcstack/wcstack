@@ -71,7 +71,12 @@ npm install @wcstack/debounce
     export default {
       $commandTokens: ["search"],
       $eventTokens: ["searchSettled"],
-      query: "",
+      results: [],
+      onSearchInput(e) {
+        // Event ではなく検索文字列を載せる。`oninput:` から直接 command を発火すると
+        // 第1引数は Event になり、`<wcs-debounce>` は args をそのまま保持する。
+        this.$command.search.emit(e.target.value);
+      },
       $on: {
         searchSettled: (state, event) => {
           const [q] = event.detail.args; // 最後のキー入力から 300ms 後に1回だけ
@@ -82,7 +87,7 @@ npm install @wcstack/debounce
   </script>
 </wcs-state>
 
-<input data-wcs="oninput: $command.search">
+<input data-wcs="oninput: onSearchInput">
 <wcs-debounce
   wait="300"
   data-wcs="command.trigger: $command.search; eventToken.fired: searchSettled">
@@ -141,8 +146,8 @@ npm install @wcstack/debounce
 ひいては配線先 — はインスタンス自身の `eventPrefix` を追跡します）。
 
 ```css
-wcs-debounce:state(pending) ~ .spinner { display: block; }
-wcs-debounce:state(pending) ~ .spinner { display: none; } /* デフォルト */
+.spinner { display: none; }                                /* デフォルト */
+wcs-debounce:state(pending) ~ .spinner { display: block; } /* デバウンス中 */
 
 wcs-throttle:state(pending) ~ .indicator { opacity: 1; }
 ```
