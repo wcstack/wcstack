@@ -8,11 +8,14 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+## [2.2.0] — 2026-09-08
+
 ### Docs
 
 - Scoped Custom Element Registries: the gating decision is now stated where adopters look. Phases 0 and 1 shipped in 1.31.0; **phase 2 (per-component local definitions) is deliberately not started until Firefox ships scoped registries** ([bugzilla 1874414](https://bugzilla.mozilla.org/show_bug.cgi?id=1874414)). Its whole value is "the same tag name means different components in different scopes", and a browser without the API degrades not gracefully but by silently binding the wrong component — a buildless, CDN-first stack cannot ship that. Phase 3 is not Firefox-gated. See [docs/scoped-custom-element-registries.md](./docs/scoped-custom-element-registries.md) §2.
 - `@wcstack/state` README: an "i18n positioning" paragraph in the Locale section — why there is no i18n package and no live language switch, where the dictionary and the locale live (ES module volume; `<html lang>` and the router `basename`), the cost of `<base href>`, and the two alternatives that were weighed. Until now this lived only in `docs/i18n-design.md` §9.
 - `docs/form-tag-design.md`: design note for a `<wcs-form>` I/O node (Constraint Validation API, `FormData` as a state projection, dirty / touched) — the reviewer-identified gap behind hand-written CRUD handlers. Not implemented; the note fixes the shape (rules stay in HTML attributes, results become state, `data-wcs` stays wiring) and lists the six decisions to make first.
+- Four README claims corrected against the implementation: route parameters land before `connectedCallback` only for elements that are **already defined** (an undefined one is assigned after `customElements.whenDefined()` resolves, which is after the upgrade, so the upgrade-time `connectedCallback` does not see them); `repeat` overrides `once` only when **positive**, so `<wcs-timer once repeat="0">` stops after one tick; the `<wcs-debounce>` search sample passed the `InputEvent` to `doSearch(q)` because an `oninput:` command emit puts the event first, and now emits `e.target.value` from a state method; the `:state(pending)` CSS sample declared `display: block` and `display: none` on the same selector, so the spinner never appeared (#253).
 
 ### Added
 
@@ -21,6 +24,7 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 - Trusted Types: pages that enforce `require-trusted-types-for 'script'` now work with `@wcstack/state` (`innerHTML:` bindings), `@wcstack/router` (layout templates), `@wcstack/fetch` (`target=` HTML responses through an adopter-installed sanitizing policy) and `@wcstack/worker` (`new Worker(src)`). wcstack signs only strings the page author wrote and never signs remote data; see [docs/csp.md](./docs/csp.md) §7 for the policy names to allow. Verified against an enforcing Chromium (`e2e/tests/trusted-types.spec.ts`), which found and fixed two things: a blocked `target=` injection now reports instead of throwing (an automatic fetch had nobody to catch the rejection), and a refused `wcstack` policy with an injected fallback warns once instead of also logging an error.
 - `@wcstack/state`: `wcs/default-getter-mismatch` — a two-way binding on a `static wcBindable` property that omits `getter` now warns once per element and property when the event's `detail` cannot be what the property holds: `detail` is `undefined` while the element property has a value (a plain `Event`, or a forgotten `detail`), or `detail` is an object carrying a `<propName>` key while the property is not an object (a `{ value: … }` wrapper). The write is still applied as-is; occurrence properties (`semantics: "event"`) are exempt. Both #234 and #236 were diagnosed by staring at a page that had gone quiet — this makes the second class loud.
 - `@wcstack/media-query`: new package — `<wcs-media-query query="(prefers-color-scheme: dark)">` wraps `window.matchMedia` as an I/O node, publishing `matched` / `media` / `supported` through one `wcs-media-query:change` event with `:state(matched)` / `:state(supported)` reflection. Changing `query` while connected re-subscribes (generation-guarded so a stale list can never write), old-Safari `addListener` is handled, and the output is named `matched` because `Element.prototype.matches()` already exists on every element.
+- `@wcstack/state`: **a mounted component's getters are exported at its mount point**. A read of a key the tree does not have is answered by the getter of the component mounted there; a key the tree does have wins and warns once (`wcs/mount-export-shadowed`); private keys and methods are never visible. Row mounts export per row, so `$getAll("users.*.display")` and `text: .display` inside the same `for` read each row component's getter, and dependencies flow through — when `user.name` changes, everything that read `user.display` re-renders. Writing to an exported key runs the accessor's setter, or throws when it only has a getter, so the tree never grows a key that would hide the getter. Accessors whose component-local path contains a wildcard (`get "children.*.label"()`) are not exported; mount a component on each row instead. The parent evaluates before the child registers, so the first read may see `undefined` and converges once the component mounts — write derived expressions defensively. This makes **self-recursive components** expressible: the recursion lives in the DOM and the paths are its unrolled form. See [docs/state-overlay-export-design.md](./docs/state-overlay-export-design.md) (#251).
 
 ### Changed
 
@@ -191,7 +195,8 @@ Repairs from the pre-release quality loop, all with tests: `setInitialState` on 
 
 1.29.0 and earlier predate this file. Their contents are in the merged pull requests (`gh pr list --state merged`) and the git history; each GitHub Release page carries the SRI digests for that version.
 
-[Unreleased]: https://github.com/wcstack/wcstack/compare/v2.1.1...HEAD
+[Unreleased]: https://github.com/wcstack/wcstack/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/wcstack/wcstack/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/wcstack/wcstack/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/wcstack/wcstack/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/wcstack/wcstack/compare/v1.33.0...v2.0.0
