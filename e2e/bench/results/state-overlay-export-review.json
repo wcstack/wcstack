@@ -9,6 +9,8 @@
     "artifact": "npm run build with local dependencies"
   },
   "note": "One sequential local run per artifact. Browser timings include JIT and host noise; these runs do not establish a +/-2% gate. Getter evaluation counts are tested separately in happy-dom.",
+  "replace1kSupersededBy": ["replace1k-source-comparison.json", "replace1k-source-confirmation.json"],
+  "replace1kCorrection": "Do not use the 17.90 vs 39.85 ms figures to infer a source regression. The replacement measurements rebuild both source revisions with the same installed dependencies and use isolated, counterbalanced browser sessions.",
   "jsfb": {
     "before": {
       "label": "before-overlay-export",
