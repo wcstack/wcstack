@@ -7,7 +7,7 @@
 ### 検証
 
 - **`wcs/getter-untracked-read`（warning・新設）** — getter の中の `this.form.name` を報告する。追跡されるのは `form` だけなので、`form.name` が書き換わってもその getter は再評価されない（`@wcstack/state` README「依存追跡の境界」規則 1。症状は「値が更新されない・エラーは出ない」で、ランタイムは素のプロパティアクセスと区別できない）。提案は `this["form.name"]`。報告するのは、ルートがオブジェクトリテラル初期値の宣言済みパスで、かつドキュメントのどこかに `form.name` への**入れ子書き込みの証拠**（`value:` / `checked:` / `radio:` / `checkbox:` バインド、spread、組み込み wcs-* タグの出力プロパティ、スクリプトの `this["form.name"] = …` / `$setAll` / 値付き `$resolve`、`mount=` ボリューム）があるときだけ。router の `typedParams: params` や `$streams` の fold のようにルートが丸ごと置換されるだけの設計では黙る。配列ルート（`this.items[0].name`）は `items` の依存で足りるので対象外。`this.form.validate()` のようなルートのメソッド呼び出し、setter・メソッド・`$watch` ハンドラの中、`$untrackDependency` の中、入れ子 `function` の中、代入の左辺（`wcs/nested-assign` の担当）も報告しない
-- **`wcs/getter-cycle` の読み取り収集を正規表現から AST（acorn）に置き換えた。** 分割代入（`const { b } = this`）・`this` エイリアス（`const self = this`）・`$trackDependency("b")` 経由の循環を検出するようになり、`$untrackDependency` の中・入れ子 `function` の中・代入の左辺・setter の中の読みは辺にしなくなった（ランタイムが依存に登録しない読み）。get/set ペアは get 側の名前にだけ報告する。診断コード・severity・文言は不変
+- **`wcs/getter-cycle` の読み取り収集を正規表現から AST（acorn）に置き換えた。** 分割代入（`const { b } = this`）・`this` エイリアス（`const self = this`）・`$trackDependency("b")` 経由の循環を検出するようになり、`$untrackDependency` の中・入れ子 `function` の `this`・単純代入の左辺・setter の中の読みは辺にしなくなった（ランタイムが依存に登録しない読み）。複合代入・増減（`++this.a`）は get → set の順に動くので読みとして辺になる。エイリアスは関数スコープ単位で解き（引数や再代入が影にする・クロージャ越しの通常 `function` でも生きる）、曖昧なら辺にしない。get/set ペアは get 側の名前にだけ報告する。診断コード・severity・文言は不変
 - getter 本体は 1 本ずつパースするので、編集中に壊れている getter があっても他の getter の診断は出続ける。パースできない本体は「断定できない」として黙る（構文エラー自体は TypeScript 側が報告する）
 
 ### 内部

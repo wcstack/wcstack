@@ -30,12 +30,13 @@
 | `this.$getAll("p", …)` / `this.$resolve("p", …)` | path `p` | 第 1 引数が文字列リテラルのときだけ |
 | `this.$trackDependency("p")` | path `p` | **現行の正規表現は未対応**。明示登録なので依存に数える |
 | `const { a, b } = this` / `const { a: x } = this` | path `a`, `b` | 1 段のみ。ネスト分割（`{ a: { b } }`）は `a` まで |
-| `const self = this; self.a` | path `a` | 同一関数スコープ内の `const`/`let` エイリアス 1 段 |
+| `const self = this; self.a` | path `a` | 関数スコープ単位で解く。連鎖（`const b = a`）は不動点で追う。引数・非 this 初期化・再代入・catch 引数・関数宣言名で束縛された名前は影（`self => self.a` の `self` は state ではない）。エイリアスはクロージャ越しに通常の `function` の中でも生きる（レビュー P1 / P3） |
 | `this.form.name` / `this["form"].name` / `this["a.b"].c` | **chain** `form.name` / `a.b.c`（path は `form` / `a.b`） | 依存は root のみ。chain は `wcs/getter-untracked-read` の材料 |
 | `this[key]` / `this.$getAll(path)`（非リテラル） | 収集しない | 断定できない（現行方針） |
 | `this.$untrackDependency(fn)` の `fn` 内 | 収集しない | 意図的な追跡抑止 |
-| 入れ子の `function` / クラス本体の中の `this` | 収集しない | `this` が別物。アロー関数は透過 |
-| 代入・更新の左辺（`this.a.b = x` / `this.a.b++`） | 収集しない | 読みではない。`wcs/nested-assign` の担当（二重報告なし） |
+| 入れ子の `function` / クラス本体の中の `this` | 収集しない | `this` が別物。アロー関数は透過。外側のエイリアス（`self.a`）は集める |
+| 単純代入の左辺（`this.a.b = x`） | 収集しない | 読みではない。`wcs/nested-assign` の担当（二重報告なし） |
+| 複合代入・増減の対象（`this.a += 1` / `this.a.b++` / `??=`） | path `a`（`written: true`） | ランタイムは get → set の順に動くので読み（`get a() { return ++this.a }` は自己再帰。レビュー P2）。`getter-untracked-read` は `written` を除外する（書き側は `nested-assign` が error にする） |
 | `this.$1` … / `this.$stateElement` / `this.$command.*` | 収集しない | `$` ルートは API 名前空間（`isApiRoot`） |
 
 `form` の判定に使う「宣言側」は `analyzeStatePaths` の `PathCandidate`（`kind: 'data'` と `rawInitial`）。オブジェクトリテラルかどうかは `stateAnalyzer.ts` の `isObjectLiteral` をそのまま使う。

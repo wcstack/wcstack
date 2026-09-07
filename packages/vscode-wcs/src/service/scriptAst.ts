@@ -16,14 +16,25 @@
  *   - 静的に集まる読み取りは runtime が登録する依存の**超集合**（分岐で実行されない
  *     読み取りも拾う）。超集合で安全な規則だけがこれを使う。
  *
+ * スコープ（関数境界で「`this` が state か」と「有効なエイリアス集合」を別々に持つ）:
+ *   - 通常の `function` / class の中では `this` は state ではない。だが外側で
+ *     `const self = this` と束縛した名前はクロージャ越しに state を指し続けるので、
+ *     エイリアスは関数境界を越えて生きる。アロー関数は `this` も透過する。
+ *   - エイリアスは関数スコープ単位で決める: その名前の束縛が**すべて** `= this`（または
+ *     既存エイリアス）で、引数・非 this 初期化・再代入・関数宣言名・catch 引数として
+ *     束縛されていないときだけ有効。`self => self.a` の引数 `self` は外側の
+ *     `const self = this` を影にする。曖昧なら「エイリアスではない」に倒す（黙る側）。
+ *   - ブロックスコープは見ない（関数単位の超集合。影は強めに効き、黙る側に倒れる）。
+ *
  * 収集規則の対応表は計画書 §1。要点:
  *   - `this.a` / `this["a.b"]` / `this?.a` / 式なしテンプレートリテラル添字 → path
  *   - `this.$getAll("p")` / `this.$resolve("p")` / `this.$trackDependency("p")` → path（文字列リテラルのみ）
  *   - `const { a } = this` / `const self = this; self.a` → path
  *   - `this.form.name` → path は `form`、chain は `["form", "name"]`（untracked-read の材料）
+ *   - `this.a += 1` / `this.a++` / `this.a ??= x` → path（ランタイムは get → set の順に動く。`written: true`）
  *   - `this[key]` / 非リテラル引数 → 集めない（断定できない）
- *   - `this.$untrackDependency(fn)` の中 / 入れ子の function・class の中 → 集めない（`this` が別物 or 意図的な抑止）
- *   - 代入・更新の左辺 → 集めない（読みではない。`wcs/nested-assign` の担当）
+ *   - `this.$untrackDependency(fn)` の中 → 集めない（意図的な抑止）
+ *   - 単純代入 `this.a = x` の左辺 → 集めない（読みではない。`wcs/nested-assign` の担当）
  *   - `$` 始まりのルート → 集めない（API 名前空間）
  */
 
@@ -43,6 +54,8 @@ export interface GetterRead {
   readonly form: 'member' | 'api' | 'track' | 'destructure';
   /** チェーンが呼び出しの callee だったか（`this.form.validate()` の `validate` が末尾） */
   readonly callee: boolean;
+  /** 複合代入・増減の対象として読まれたか（`this.a += 1` / `this.a++`）。読み兼書き。 */
+  readonly written: boolean;
   readonly start: number;
   readonly end: number;
 }
@@ -68,25 +81,30 @@ export function collectGetterReads(body: string): GetterRead[] | null {
   }
   const fn = unwrapWrapper(program);
   if (fn === null) return null;
-  const ctx: Context = { aliases: collectAliases(fn), out: [] };
-  visit(fn, ctx);
-  return ctx.out;
+  const out: GetterRead[] = [];
+  const root: Scope = { thisIsState: true, aliases: new Set() };
+  visit(fn.body, enterFunction(fn, root, true), out);
+  return out;
 }
 
-interface Context {
-  /** `const self = this` で束縛された識別子（本体直下と透過するアロー関数の中） */
-  readonly aliases: Set<string>;
-  readonly out: GetterRead[];
+/** 関数スコープ 1 段。 */
+interface Scope {
+  /** このスコープの `this` が state proxy か（通常の function / class の中では false） */
+  readonly thisIsState: boolean;
+  /** state を指すと断定できる識別子（外側から継承し、このスコープの束縛で上書き・影付け） */
+  readonly aliases: ReadonlySet<string>;
 }
 
-/** ラッパー `(async function* () { … })` の BlockStatement を取り出す。 */
-function unwrapWrapper(program: AnyNode): AnyNode | null {
+type FunctionNode = AnyNode & { type: 'FunctionExpression' | 'FunctionDeclaration' | 'ArrowFunctionExpression' };
+
+/** ラッパー `(async function* () { … })` の関数ノードを取り出す。 */
+function unwrapWrapper(program: AnyNode): (AnyNode & { type: 'FunctionExpression' }) | null {
   if (program.type !== 'Program' || program.body.length !== 1) return null;
   const statement = program.body[0];
   if (statement.type !== 'ExpressionStatement') return null;
   const expression = statement.expression;
   if (expression.type !== 'FunctionExpression') return null;
-  return expression.body;
+  return expression;
 }
 
 function isNode(value: unknown): value is AnyNode {
@@ -105,27 +123,94 @@ function forEachChild(node: AnyNode, fn: (child: AnyNode) => void): void {
   }
 }
 
-/** `this` が別物になる境界（アロー関数は透過するので含めない）。 */
-function isThisBoundary(node: AnyNode): boolean {
-  return node.type === 'FunctionExpression' || node.type === 'FunctionDeclaration'
-    || node.type === 'ClassExpression' || node.type === 'ClassDeclaration';
+function isFunctionNode(node: AnyNode): node is FunctionNode {
+  return node.type === 'FunctionExpression' || node.type === 'FunctionDeclaration' || node.type === 'ArrowFunctionExpression';
 }
 
-function collectAliases(root: AnyNode): Set<string> {
-  const aliases = new Set<string>();
+function isClassNode(node: AnyNode): boolean {
+  return node.type === 'ClassExpression' || node.type === 'ClassDeclaration';
+}
+
+/** パターン（引数・宣言の左辺）が束縛する識別子名を全部集める。 */
+function bindingNames(pattern: AnyNode, out: Set<string>): void {
+  switch (pattern.type) {
+    case 'Identifier': out.add(pattern.name); return;
+    case 'ObjectPattern':
+      for (const p of pattern.properties) bindingNames(p.type === 'RestElement' ? p.argument : p.value, out);
+      return;
+    case 'ArrayPattern':
+      for (const e of pattern.elements) if (e !== null) bindingNames(e, out);
+      return;
+    case 'RestElement': bindingNames(pattern.argument, out); return;
+    case 'AssignmentPattern': bindingNames(pattern.left, out); return;
+    default: return;
+  }
+}
+
+/**
+ * 関数に入るときのスコープを作る。本体を（入れ子の関数・class には降りずに）走査し、
+ * 「`= this`（または既存エイリアス）でだけ束縛された名前」を有効エイリアスに足し、
+ * それ以外の束縛（引数・非 this 初期化・再代入・関数/class 宣言名・catch 引数・for-in/of の左辺）
+ * を持つ名前を影として外す。`= this` は `thisIsState` のスコープでだけエイリアスになる。
+ */
+function enterFunction(fn: FunctionNode, outer: Scope, thisIsState: boolean): Scope {
+  const shadowed = new Set<string>();
+  /** `= this` は from: null、`= ident` は from: ident */
+  const aliasInits: { name: string; from: string | null }[] = [];
+  for (const param of fn.params) bindingNames(param, shadowed);
+
   const scan = (node: AnyNode): void => {
-    if (isThisBoundary(node)) return;
-    if (node.type === 'VariableDeclarator' && node.init?.type === 'ThisExpression' && node.id.type === 'Identifier') {
-      aliases.add(node.id.name);
+    if (isFunctionNode(node)) {
+      if (node.type === 'FunctionDeclaration' && node.id !== null) shadowed.add(node.id.name);
+      return;
+    }
+    if (isClassNode(node)) {
+      if (node.type === 'ClassDeclaration' && node.id !== null) shadowed.add(node.id.name);
+      return;
+    }
+    if (node.type === 'VariableDeclarator') {
+      if (node.id.type === 'Identifier' && node.init !== null && node.init !== undefined && isStateRootCandidate(node.init)) {
+        aliasInits.push({ name: node.id.name, from: node.init.type === 'Identifier' ? node.init.name : null });
+      } else {
+        bindingNames(node.id, shadowed);
+      }
+    } else if (node.type === 'AssignmentExpression' && node.left.type === 'Identifier') {
+      if (node.operator === '=' && isStateRootCandidate(node.right)) aliasInits.push({ name: node.left.name, from: node.right.type === 'Identifier' ? node.right.name : null });
+      else shadowed.add(node.left.name);
+    } else if (node.type === 'CatchClause' && node.param !== null && node.param !== undefined) {
+      bindingNames(node.param, shadowed);
     }
     forEachChild(node, scan);
   };
-  scan(root);
-  return aliases;
+  // 走査中は「this か識別子なら候補」として集め、名前解決は後段で不動点まで回す
+  const isStateRootCandidate = (node: AnyNode): boolean =>
+    node.type === 'ThisExpression' || node.type === 'Identifier';
+  scan(fn.body);
+  for (const param of fn.params) if (param.type === 'AssignmentPattern') scan(param.right);
+
+  // 有効エイリアス = (外側 ∪ 自スコープの this 束縛) − 影。`const b = a` の連鎖は不動点で解く
+  const aliases = new Set<string>();
+  for (const name of outer.aliases) if (!shadowed.has(name)) aliases.add(name);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const { name, from } of aliasInits) {
+      if (shadowed.has(name) || aliases.has(name)) continue;
+      const ok = from === null ? thisIsState : aliases.has(from);
+      if (ok) { aliases.add(name); changed = true; }
+    }
+  }
+  // `const self = other` と `const self = this` が同居する名前は曖昧 → 影に倒す
+  for (const { name, from } of aliasInits) {
+    const ok = from === null ? thisIsState : aliases.has(from);
+    if (!ok) aliases.delete(name);
+  }
+  return { thisIsState, aliases };
 }
 
-function isThisRoot(node: AnyNode, ctx: Context): boolean {
-  return node.type === 'ThisExpression' || (node.type === 'Identifier' && ctx.aliases.has(node.name));
+function isThisRoot(node: AnyNode, scope: Scope): boolean {
+  return (node.type === 'ThisExpression' && scope.thisIsState)
+    || (node.type === 'Identifier' && scope.aliases.has(node.name));
 }
 
 interface Segment {
@@ -173,7 +258,13 @@ function resolveChain(node: AnyNode): { segments: Segment[]; base: AnyNode } {
   return { segments, base: current };
 }
 
-function emit(ctx: Context, segments: readonly Segment[], form: GetterRead['form'], callee: boolean, start: number, end: number): void {
+interface EmitOptions {
+  readonly form: GetterRead['form'];
+  readonly callee: boolean;
+  readonly written: boolean;
+}
+
+function emit(out: GetterRead[], segments: readonly Segment[], options: EmitOptions, start: number, end: number): void {
   if (segments.length === 0) return;
   const root = segments[0].text;
   // 動的ルート（`this[key]`）は断定できない。`$` ルートは API 名前空間
@@ -185,54 +276,71 @@ function emit(ctx: Context, segments: readonly Segment[], form: GetterRead['form
     if (text === null || (i > 0 && text.includes('.'))) { chain = null; break; }
     chain.push(text);
   }
-  ctx.out.push({ path: root, chain, form, callee, start: start - PREFIX.length, end: end - PREFIX.length });
+  out.push({
+    path: root, chain, form: options.form, callee: options.callee, written: options.written,
+    start: start - PREFIX.length, end: end - PREFIX.length,
+  });
 }
 
-function visit(node: AnyNode, ctx: Context): void {
-  if (isThisBoundary(node)) return;
+function visit(node: AnyNode, scope: Scope, out: GetterRead[]): void {
+  if (isFunctionNode(node)) {
+    // アローは this 透過、通常の function は this が別物。エイリアスはどちらも閉包で生きる
+    const inner = enterFunction(node, scope, node.type === 'ArrowFunctionExpression' ? scope.thisIsState : false);
+    for (const param of node.params) if (param.type === 'AssignmentPattern') visit(param.right, inner, out);
+    visit(node.body, inner, out);
+    return;
+  }
+  if (isClassNode(node)) {
+    // class の中の this はインスタンス。閉包のエイリアスは生きる（extends / 算出キーの
+    // 外側 this は取りこぼす — 超集合の黙る側）
+    const inner: Scope = { thisIsState: false, aliases: scope.aliases };
+    forEachChild(node, (child) => visit(child, inner, out));
+    return;
+  }
   switch (node.type) {
     case 'ChainExpression':
-      visit(node.expression, ctx);
+      visit(node.expression, scope, out);
       return;
     case 'MemberExpression':
-      visitMember(node, ctx, false);
+      visitMember(node, scope, out, { form: 'member', callee: false, written: false });
       return;
     case 'CallExpression':
-      visitCall(node, ctx);
+      visitCall(node, scope, out);
       return;
     case 'AssignmentExpression':
-      visitWriteTarget(node.left, ctx);
-      visit(node.right, ctx);
+      if (node.operator === '=') visitWriteTarget(node.left, scope, out);
+      else visitReadWriteTarget(node.left, scope, out);
+      visit(node.right, scope, out);
       return;
     case 'UpdateExpression':
-      visitWriteTarget(node.argument, ctx);
+      visitReadWriteTarget(node.argument, scope, out);
       return;
     case 'VariableDeclarator':
-      visitDeclarator(node, ctx);
+      visitDeclarator(node, scope, out);
       return;
     default:
-      forEachChild(node, (child) => visit(child, ctx));
+      forEachChild(node, (child) => visit(child, scope, out));
   }
 }
 
 /** チェーン全体を 1 件として扱い、基底が `this` でなければ基底を通常走査する。動的添字の式は常に走査する。 */
-function visitMember(node: AnyNode, ctx: Context, callee: boolean): void {
+function visitMember(node: AnyNode, scope: Scope, out: GetterRead[], options: EmitOptions): void {
   const { segments, base } = resolveChain(node);
-  if (isThisRoot(base, ctx)) {
-    emit(ctx, segments, 'member', callee, node.start, node.end);
+  if (isThisRoot(base, scope)) {
+    emit(out, segments, options, node.start, node.end);
   } else {
-    visit(base, ctx);
+    visit(base, scope, out);
   }
   for (const segment of segments) {
-    if (segment.dynamic !== null) visit(segment.dynamic, ctx);
+    if (segment.dynamic !== null) visit(segment.dynamic, scope, out);
   }
 }
 
-function visitCall(node: AnyNode & { type: 'CallExpression' }, ctx: Context): void {
+function visitCall(node: AnyNode & { type: 'CallExpression' }, scope: Scope, out: GetterRead[]): void {
   const callee = unwrapChain(node.callee);
   if (callee.type === 'MemberExpression') {
     const { segments, base } = resolveChain(callee);
-    if (isThisRoot(base, ctx) && segments.length === 1 && segments[0].text !== null) {
+    if (isThisRoot(base, scope) && segments.length === 1 && segments[0].text !== null) {
       const api = segments[0].text;
       // `$untrackDependency(fn)` の中は依存追跡が抑止される — 引数ごと読まない
       if (api === UNTRACK_API) return;
@@ -240,59 +348,69 @@ function visitCall(node: AnyNode & { type: 'CallExpression' }, ctx: Context): vo
         const first = node.arguments[0];
         const path = first !== undefined && first.type !== 'SpreadElement' ? literalString(first) : null;
         if (path !== null && path.length > 0 && !path.startsWith('$')) {
-          ctx.out.push({
-            path, chain: null, form: api === '$trackDependency' ? 'track' : 'api', callee: false,
+          out.push({
+            path, chain: null, form: api === '$trackDependency' ? 'track' : 'api', callee: false, written: false,
             start: node.start - PREFIX.length, end: node.end - PREFIX.length,
           });
         }
-        for (const argument of node.arguments) visit(argument, ctx);
+        for (const argument of node.arguments) visit(argument, scope, out);
         return;
       }
     }
-    visitMember(callee, ctx, true);
+    visitMember(callee, scope, out, { form: 'member', callee: true, written: false });
   } else {
-    visit(callee, ctx);
+    visit(callee, scope, out);
   }
-  for (const argument of node.arguments) visit(argument, ctx);
+  for (const argument of node.arguments) visit(argument, scope, out);
 }
 
-/** 代入・更新の左辺。`this` ルートのチェーンは読みではないので集めない（動的添字の式だけ走査）。 */
-function visitWriteTarget(target: Pattern | Expression, ctx: Context): void {
+/** 単純代入の左辺。`this` ルートのチェーンは読みではないので集めない（動的添字の式だけ走査）。 */
+function visitWriteTarget(target: Pattern | Expression, scope: Scope, out: GetterRead[]): void {
   const unwrapped = unwrapChain(target);
   if (unwrapped.type !== 'MemberExpression') {
-    visit(unwrapped, ctx);
+    visit(unwrapped, scope, out);
     return;
   }
   const { segments, base } = resolveChain(unwrapped);
-  if (!isThisRoot(base, ctx)) visit(base, ctx);
+  if (!isThisRoot(base, scope)) visit(base, scope, out);
   for (const segment of segments) {
-    if (segment.dynamic !== null) visit(segment.dynamic, ctx);
+    if (segment.dynamic !== null) visit(segment.dynamic, scope, out);
   }
 }
 
-function visitDeclarator(node: AnyNode & { type: 'VariableDeclarator' }, ctx: Context): void {
+/** 複合代入・増減の対象。ランタイムは get → set の順に動くので読みとして集める（`written: true`）。 */
+function visitReadWriteTarget(target: Pattern | Expression, scope: Scope, out: GetterRead[]): void {
+  const unwrapped = unwrapChain(target);
+  if (unwrapped.type !== 'MemberExpression') {
+    visit(unwrapped, scope, out);
+    return;
+  }
+  visitMember(unwrapped, scope, out, { form: 'member', callee: false, written: true });
+}
+
+function visitDeclarator(node: AnyNode & { type: 'VariableDeclarator' }, scope: Scope, out: GetterRead[]): void {
   const init = node.init;
-  if (init !== null && init !== undefined && isThisRoot(init, ctx)) {
-    // `const self = this` は collectAliases 済み。`const { a } = this` は分割代入の読み
-    if (node.id.type === 'ObjectPattern') visitDestructure(node.id, [], ctx);
+  if (init !== null && init !== undefined && isThisRoot(init, scope)) {
+    // `const self = this` は enterFunction が解決済み。`const { a } = this` は分割代入の読み
+    if (node.id.type === 'ObjectPattern') visitDestructure(node.id, [], scope, out);
     return;
   }
   if (init !== null && init !== undefined && node.id.type === 'ObjectPattern') {
     // `const { name } = this.form` — `this.form.name` と同じ形の素のプロパティ読み
     const { segments, base } = resolveChain(init);
-    if (segments.length > 0 && isThisRoot(base, ctx)) {
-      visitDestructure(node.id, segments, ctx);
+    if (segments.length > 0 && isThisRoot(base, scope)) {
+      visitDestructure(node.id, segments, scope, out);
       for (const segment of segments) {
-        if (segment.dynamic !== null) visit(segment.dynamic, ctx);
+        if (segment.dynamic !== null) visit(segment.dynamic, scope, out);
       }
       return;
     }
   }
-  visit(node.id, ctx);
-  if (init !== null && init !== undefined) visit(init, ctx);
+  visit(node.id, scope, out);
+  if (init !== null && init !== undefined) visit(init, scope, out);
 }
 
-function visitDestructure(pattern: ObjectPattern, prefix: readonly Segment[], ctx: Context): void {
+function visitDestructure(pattern: ObjectPattern, prefix: readonly Segment[], scope: Scope, out: GetterRead[]): void {
   for (const property of pattern.properties) {
     if (property.type === 'RestElement') continue;
     let key: string | null = null;
@@ -301,14 +419,14 @@ function visitDestructure(pattern: ObjectPattern, prefix: readonly Segment[], ct
     let value: AnyNode = property.value;
     if (value.type === 'AssignmentPattern') {
       // 既定値の式は通常走査（`const { a = this.b } = this` の `this.b`）
-      visit(value.right, ctx);
+      visit(value.right, scope, out);
       value = value.left;
     }
     const segments = [...prefix, { text: key, dynamic: null }];
     if (value.type === 'ObjectPattern' && value.properties.length > 0) {
-      visitDestructure(value, segments, ctx);
+      visitDestructure(value, segments, scope, out);
       continue;
     }
-    emit(ctx, segments, 'destructure', false, property.start, property.end);
+    emit(out, segments, { form: 'destructure', callee: false, written: false }, property.start, property.end);
   }
 }

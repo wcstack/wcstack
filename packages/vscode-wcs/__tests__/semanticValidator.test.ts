@@ -169,8 +169,23 @@ describe("wcs/getter-cycle — getter の循環参照", () => {
     expect(codes(validateSemantics(cyc, "wcs-state", "en"), WcsDiagnosticCode.GetterCycle)).toHaveLength(2);
   });
 
-  it("代入の左辺は辺にしないこと", () => {
+  it("単純代入の左辺は辺にしないこと", () => {
     const html = script(`{ get a() { this.b = 1; return 0; }, get b() { return this.a; } }`);
+    expect(codes(validateSemantics(html, "wcs-state", "en"), WcsDiagnosticCode.GetterCycle)).toHaveLength(0);
+  });
+
+  it("複合代入・増減の対象は読みなので自己循環を検出すること（++this.a は get → set）", () => {
+    expect(codes(validateSemantics(script(`{ get a() { return ++this.a; } }`), "wcs-state", "en"), WcsDiagnosticCode.GetterCycle)).toHaveLength(1);
+    expect(codes(validateSemantics(script(`{ get a() { this.b += 1; return 0; }, get b() { return this.a; } }`), "wcs-state", "en"), WcsDiagnosticCode.GetterCycle)).toHaveLength(2);
+  });
+
+  it("通常の function の中のクロージャエイリアス経由の自己循環を検出すること", () => {
+    const html = script(`{ get a() { const self = this; function read() { return self.a; } return read(); } }`);
+    expect(codes(validateSemantics(html, "wcs-state", "en"), WcsDiagnosticCode.GetterCycle)).toHaveLength(1);
+  });
+
+  it("アロー引数に影にされたエイリアスは辺にしないこと（存在しない自己循環を作らない）", () => {
+    const html = script(`{ get a() { const self = this; return [{ a: 1 }].map(self => self.a)[0]; } }`);
     expect(codes(validateSemantics(html, "wcs-state", "en"), WcsDiagnosticCode.GetterCycle)).toHaveLength(0);
   });
 
@@ -303,8 +318,9 @@ describe("wcs/getter-untracked-read — パス読み取りの先の素のプロ�
     expect(found(`get g() { function f() { return this.form.name; } return this.$untrackDependency(() => this.form.name) + f(); }`)).toHaveLength(0);
   });
 
-  it("代入左辺（this.form.name = x）は報告しないこと（wcs/nested-assign の担当）", () => {
+  it("代入左辺（this.form.name = x）と複合代入・増減（this.form.age++）は報告しないこと（wcs/nested-assign の担当）", () => {
     expect(found(`get g() { this.form.name = "x"; return 0; }`)).toHaveLength(0);
+    expect(found(`get g() { this.form.age++; this.form.age += 1; return 0; }`, `<input data-wcs="value: form.age">`)).toHaveLength(0);
   });
 
   it("式添字を含むチェーン（this.form[key].x）は報告しないこと", () => {

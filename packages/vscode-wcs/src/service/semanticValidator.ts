@@ -242,6 +242,7 @@ function validateGetterCycles(script: string, scriptStart: number, locale?: stri
  * 報告条件（すべて満たすとき。docs/getter-dependency-ast-impl-plan.md Phase 2 / D8）:
  *   - get アクセサ本体の member / destructure 読みで、chain が断定できる（動的添字なし）
  *   - ルートが宣言済みデータパスで、初期値がオブジェクトリテラル（配列は対象外 — D7）
+ *   - 複合代入・増減の対象（`this.form.age++`）ではない — それは `wcs/nested-assign` の担当（二重報告なし）
  *   - 呼び出しの callee なら末尾 1 段を落とし、残りがルートだけなら黙る
  *     （`this.form.validate()` は報告しない・`this.form.name.trim()` は `form.name` を報告する）
  *   - そのルートへの**入れ子書き込みの証拠**がドキュメントにある（collectNestedWriteRoots）。
@@ -269,6 +270,8 @@ function validateGetterUntrackedReads(
   for (const getter of getters) {
     for (const read of collectGetterReads(getter.body) ?? []) {
       if ((read.form !== 'member' && read.form !== 'destructure') || read.chain === null) continue;
+      // `this.form.age++` は読み兼書き — 書き込み側として wcs/nested-assign（error）が既に止める
+      if (read.written) continue;
       const segments = read.callee ? read.chain.slice(0, -1) : read.chain;
       if (segments.length < 2 || !objectRoots.has(segments[0])) continue;
       if (!nestedWriteRoots().has(segments[0])) continue;

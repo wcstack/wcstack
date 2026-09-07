@@ -156,8 +156,14 @@ describe("collectGetterReads — 集めない形（偽陽性ゼロの根拠）",
     expect(paths(body)).toEqual(["e"]);
   });
 
-  it("代入・複合代入・インクリメントの左辺は集めないこと（wcs/nested-assign の担当）", () => {
-    expect(paths(`this.a.b = 1; this.c += 2; this.d.e++; ++this.f; return this.g;`)).toEqual(["g"]);
+  it("単純代入の左辺は集めないこと（wcs/nested-assign の担当）", () => {
+    expect(paths(`this.a.b = 1; this.c = this.x; return this.g;`)).toEqual(["g", "x"]);
+  });
+
+  it("複合代入・増減・論理代入の対象は読みとして集めること（ランタイムは get → set の順・written: true）", () => {
+    const found = reads(`this.c += 2; this.d.e++; ++this.f; this.h ??= 1; return this.g;`);
+    expect(found.map((r) => [r.path, r.written])).toEqual([["c", true], ["d", true], ["f", true], ["h", true], ["g", false]]);
+    expect(found[1].chain).toEqual(["d", "e"]);
   });
 
   it("代入左辺の動的添字の中と右辺は集めること", () => {
@@ -176,8 +182,35 @@ describe("collectGetterReads — 集めない形（偽陽性ゼロの根拠）",
     expect(paths(`fn(this); return this === that;`)).toEqual([]);
   });
 
-  it("エイリアスを入れ子の function の中で使っても集めないこと（function 境界で切る）", () => {
-    expect(paths(`const self = this; function f() { return self.a; } return f();`)).toEqual([]);
+  it("通常の function の中でも、外側のエイリアスはクロージャ越しに state を指すので集めること", () => {
+    expect(paths(`const self = this; function f() { return self.a + this.b; } return f();`)).toEqual(["a"]);
+    expect(paths(`const self = this; class K { m() { return self.c + this.d; } } return new K().m();`)).toEqual(["c"]);
+  });
+
+  it("通常の function の中の const self = this は state のエイリアスではないこと", () => {
+    expect(paths(`function f() { const self = this; return self.a; } return f();`)).toEqual([]);
+  });
+
+  it("アロー引数がエイリアスを影にすること（self => self.a の self は state ではない）", () => {
+    expect(paths(`const self = this; return [{ a: 1 }].map(self => self.a)[0];`)).toEqual([]);
+    expect(paths(`const self = this; return [{ a: 1 }].map(({ a }, i, self) => self.b)[0];`)).toEqual([]);
+  });
+
+  it("再代入・非 this 初期化・宣言のみ・catch 引数・関数宣言名がエイリアスを影にすること", () => {
+    expect(paths(`let self = this; self = other; return self.a;`)).toEqual([]);
+    expect(paths(`const self = this; { const self = other; } return self.a;`)).toEqual([]);
+    expect(paths(`let self; self = this; return self.a;`)).toEqual([]);
+    expect(paths(`const self = this; try {} catch (self) {} return self.a;`)).toEqual([]);
+    expect(paths(`const self = this; { function self() {} } return self.a;`)).toEqual([]);
+  });
+
+  it("エイリアスの連鎖（const b = a）と代入によるエイリアス（self = this）を解くこと", () => {
+    expect(paths(`const a = this; const b = a; return b.x;`)).toEqual(["x"]);
+    expect(paths(`const c = this, d = c; return d.y;`)).toEqual(["y"]);
+  });
+
+  it("入れ子アローの中で作ったエイリアスは外側に漏れないこと", () => {
+    expect(paths(`const f = () => { const self = this; return self.a; }; return self.b;`)).toEqual(["a"]);
   });
 
   it("private 名や空文字添字は集めないこと", () => {
