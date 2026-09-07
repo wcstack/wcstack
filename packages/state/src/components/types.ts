@@ -5,6 +5,8 @@ import { IStateProxy, Mutability } from "../proxy/types";
 import { BindingType } from "../types";
 
 export interface IStateElement {
+  /** DOM connection state; optional for non-DOM state implementations. */
+  readonly isConnected?: boolean;
   /**
    * state のロードが完了しているか。`initializePromise` の同期版で、
    * DCC のアクセサが「今すぐ読み書きしてよいか」を判断するのに使う。

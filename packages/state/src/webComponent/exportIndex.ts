@@ -23,7 +23,9 @@ import { IExportEntry, IMountRecord, translateInnerPath } from "./mount";
  *   bind mount の曖昧。設定ミスとして loud）
  * - エイリアス辺（X5）: 登録時に `P.#m<id>.k → P.k` を dynamicDependency に張る。
  *   子 getter の dirty が `P.k` の同 listIndex に流れ、`P.k` を読んだ親 getter /
- *   バインディングへ届く。`P.k` は getterPaths に**載せない**（キャッシュはマーカー側）
+ *   バインディングへ届く。
+ *   `P.k` is absent from getterPaths but wildcard exports use the row cache;
+ *   alias edges and dirtying after exported writes keep that cache consistent.
  * - 遅延登録・切断（X6）: 登録・再接続・切断で `P.k` へ `$postUpdate` を打つ。親 getter は
  *   子の登録前に評価されるので、初回は途中値 → 収束する（ボリュームの D22 と同じ性質）
  */
@@ -116,6 +118,11 @@ export function registerExports(record: IMountRecord): void {
     const suffix = markerPath.slice(markerTerminalPath.length + 1);
     const exportedPath = markerPath.slice(0, markerIndex) + DELIMITER + suffix;
     const exportedInfo = getPathInfo(exportedPath);
+    // Internal wildcard accessors need their own row resolution and lifecycle
+    // notifications. Only publish accessors at the mount instance's depth.
+    if (exportedInfo.wildcardCount !== record.delta) {
+      continue;
+    }
     const entry: IExportEntry = { markerTerminalPath, suffix, markerPath, exportedPath };
     record.exports.set(exportedPath, entry);
     slotFor(record.parentStateElement, exportedInfo.parentPath!, exportedInfo.lastSegment, true)!
@@ -210,31 +217,21 @@ export function resolveExport(
   return { record: foundRecord, entry: found.entry };
 }
 
-/** インスタンスの添字で打てる公開パス ＝ マウント接頭辞と同じ階数のもの。ワイルドカード getter の公開（`group.children.*.label`）は行を列挙しないと打てないので依存辺（X5）に任せる */
-function instanceLevelExports(record: IMountRecord): IExportEntry[] {
-  const result: IExportEntry[] = [];
-  for (const entry of record.exports.values()) {
-    if (getPathInfo(entry.exportedPath).wildcardCount === record.delta) {
-      result.push(entry);
-    }
-  }
-  return result;
-}
-
 /** 公開パスの `$postUpdate` を、記録のホスト要素のループ文脈で打つ（X6）。 */
 export function notifyExports(record: IMountRecord): void {
-  const loopContext = getLoopContextByNode(record.component);
   const parent = record.parentStateElement;
-  for (const entry of instanceLevelExports(record)) {
-    try {
-      parent.createState("readonly", (state) => {
-        (state as any)[setLoopContextSymbol](loopContext, () => {
-          (state as any).$postUpdate(entry.exportedPath);
-        });
+  const loopContext = getLoopContextByNode(record.component);
+  if (parent.isConnected === false || (record.delta > 0 && loopContext === null)) {
+    // A removed tree needs no notification. A removed row is handled by its
+    // parent's list update. Other notification failures must remain visible.
+    return;
+  }
+  for (const entry of record.exports.values()) {
+    parent.createState("readonly", (state) => {
+      (state as any)[setLoopContextSymbol](loopContext, () => {
+        (state as any).$postUpdate(entry.exportedPath);
       });
-    } catch {
-      // 行ごと消えた後の切断（listIndex が無い）— 親は `for` の更新で再評価済み
-    }
+    });
   }
 }
 
@@ -249,7 +246,7 @@ export function warnShadowedExports(record: IMountRecord): void {
     return;
   }
   const tag = record.component.tagName.toLowerCase();
-  for (const entry of instanceLevelExports(record)) {
+  for (const entry of record.exports.values()) {
     const reportKey = `${tag}|${entry.exportedPath}`;
     if (reportedShadows.has(reportKey)) {
       continue;
@@ -261,8 +258,8 @@ export function warnShadowedExports(record: IMountRecord): void {
         parentValue = (state as Record<string, unknown>)[exportedInfo.parentPath!];
       });
     });
-    if (typeof parentValue !== "object" || parentValue === null
-      || !Object.prototype.hasOwnProperty.call(parentValue, exportedInfo.lastSegment)) {
+    if (parentValue === null || typeof parentValue === "undefined"
+      || !(exportedInfo.lastSegment in Object(parentValue))) {
       continue;
     }
     reportedShadows.add(reportKey);

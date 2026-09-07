@@ -129,19 +129,19 @@ function _getByAddress(
     // 順序が保証されない（docs/state-bind-component-nested-for-design.md）。
     // undefined はプロパティ書き込みがスキップされる値なので DOM は触られず、
     // 直後に `for` が行ごと外して整合する。
+    if (parentValue === null || typeof parentValue === "undefined") {
+      return undefined;
+    }
     const lastSegment = address.pathInfo.segments[address.pathInfo.segments.length - 1];
     // 公開 getter の dispatch（docs/state-overlay-export-design.md §2-1）: 掛かるのは
     // 「ツリーの未存在キー」の分岐だけ（X1 — 命中する読みは無改造）。マウントの無い
     // state は boolean 1 個で抜ける（D18）
     if (stateElement.hasMounts === true && lastSegment !== WILDCARD
-      && (parentValue === null || typeof parentValue === "undefined" || !(lastSegment in Object(parentValue)))) {
+      && !(lastSegment in Object(parentValue))) {
       const exported = resolveExport(stateElement, parentAddress.pathInfo.path, lastSegment, address.listIndex);
       if (exported !== null) {
         return readExportedAccessor(exported.record, exported.entry, address.listIndex, receiver, handler);
       }
-    }
-    if (parentValue === null || typeof parentValue === "undefined") {
-      return undefined;
     }
     if (lastSegment === WILDCARD) {
       // listIndex が無いまま末尾ワイルドカードに到達 ＝ そのパスの階数を満たす

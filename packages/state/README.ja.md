@@ -1358,8 +1358,10 @@ customElements.define("user-card", UserCard);
 ```
 
 - 行マウントは行ごとに公開されます: `$getAll("users.*.display")` や同じ `for` 内の `text: .display` は各行のコンポーネントの getter を読みます。依存も流れます — `user.name` が変われば `user.display` を読んだものはすべて再描画されます
+- `get "children.*.label"()` のようにコンポーネント内のパスにワイルドカードを含む accessor は、内部では使えますが**公開されません**。各子行にマウントしたコンポーネントの `get label()` として定義してください。公開対象は、公開パスのワイルドカード数がマウント先のワイルドカード数と一致する accessor だけです
 - 親は子コンポーネントの登録より先に評価されるので、初回の読みは `undefined` になりえます。コンポーネントがマウントされ次第、値は収束します。派生式は `(x ?? 0)` のように防御的に書いてください
-- ツリーに同名のキーがある場合（`user.display` がデータとして存在する）はツリーが勝ち、ランタイムが 1 回だけ warn します（`wcs/mount-export-shadowed`）。同一インスタンスに同名キーを公開するコンポーネントが 2 つある形は設定ミスで、読みで throw します（`wcs/mount-export-ambiguous`）
+- 未存在パスの警告は `getBindingsReady` とは独立に 1 マクロタスク（`setTimeout(0)`）だけ遅延します。autoloader や遅延したカスタム要素定義を使う場合、最終的にバインドが解決しても、登録前の初回警告が出ることがあります
+- ツリーに同名のキーがある場合（継承したプロパティも含む）はツリーが勝ち、ランタイムが 1 回だけ warn します（`wcs/mount-export-shadowed`）。同一インスタンスに同名キーを公開するコンポーネントが 2 つある形は設定ミスで、候補走査時に検出して throw します（`wcs/mount-export-ambiguous`）。検証付きキャッシュに命中すると他の候補は再走査しないため、初回解決後に追加した競合コンポーネントは検出されない場合があります
 - 公開キーへの外からの書き込みは accessor の setter を実行し、getter しか無ければ throw します（getter を隠すキーをツリーに作ることはありません）。`in` は公開キーを見ません
 - **自己再帰コンポーネント**（深さが有界でない木）が書けるようになります: 自分自身を `<template data-wcs="for: children"><tree-node data-wcs="state: ."></tree-node></template>` で入れ子にするコンポーネントは、`get total() { return this.value + this.$getAll("children.*.total").reduce((a, b) => a + (b ?? 0), 0); }` と各段 1 段の式で書け、再帰は台帳が解きます。パス自体は再帰を表現できない（ワイルドカードの個数が固定）ので、再帰は DOM に置き、パスはその展開形になります。設計: [docs/state-overlay-export-design.md](../../docs/state-overlay-export-design.md)
 

@@ -117,6 +117,8 @@ interface IMountOverlaySummary {
   readonly mountTable: readonly { readonly inner: string; readonly outer: string }[];
   readonly delta: number;         // `$n` 補正の Δ（ルート接頭辞のワイルドカード数）
   readonly privateKeys: readonly string[]; // 私有キー（オーバーレイ空間に住む own data key）
+  // 公開 accessor 機能で追加。旧 v2 runtime も読む場合は summary.exports ?? [] を使う。
+  readonly exports: readonly string[];    // マウントのインスタンス階数で公開する accessor パス（例: users.*.display）
   readonly getterKeys: readonly string[];  // マーカーパスに載る getter のキー
 }
 

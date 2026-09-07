@@ -23,6 +23,7 @@ function fakeParent(readValue: (path: string) => unknown = () => undefined) {
   const dynamic = new Map<string, string[]>();
   const posted: string[] = [];
   const parent = {
+    isConnected: true,
     getterPaths: new Set<string>(),
     setterPaths: new Set<string>(),
     dynamicDependency: dynamic,
@@ -100,6 +101,19 @@ describe("registerExports", () => {
     registerExports(r);
     expect([...r.exports.keys()]).toEqual(["user.ok"]);
   });
+
+  it.each(["user", "users.*"])("%s へのマウントでは内部ワイルドカード accessor の索引・辺・診断抑止を登録しないこと", (outer) => {
+    const parent = fakeParent();
+    const r = record(parent, {
+      get display() { return 1; },
+      get "items.*.label"() { return 2; },
+      set "items.*.value"(_v: unknown) {},
+    }, outer);
+    registerExports(r);
+    expect([...r.exports.keys()]).toEqual([`${outer}.display`]);
+    expect([...parent.dynamicDependency.values()]).toEqual([[`${outer}.display`]]);
+    expect(resolveExport(parent as any, `${outer}.items.*`, "label", createListIndex(null, 0))).toBeNull();
+  });
 });
 
 describe("resolveExport", () => {
@@ -165,7 +179,7 @@ describe("resolveExport", () => {
 });
 
 describe("notifyExports / warnShadowedExports", () => {
-  it("インスタンス階数の公開パスだけ $postUpdate し、createState の例外は隔離すること", () => {
+  it("公開パスだけ $postUpdate し、行の文脈が消えた場合だけ通知を省略して他の例外は伝播すること", () => {
     const parent = fakeParent();
     const r = record(parent, { get display() { return 1; }, get "items.*.label"() { return 1; } });
     registerExports(r);
@@ -174,8 +188,28 @@ describe("notifyExports / warnShadowedExports", () => {
     const throwing = fakeParent();
     const t = record(throwing, { get display() { return 1; } });
     registerExports(t);
-    throwing.createState = () => { throw new Error("no list index"); };
+    throwing.createState = () => { throw new Error("notification failed"); };
+    expect(() => notifyExports(t)).toThrow("notification failed");
+    throwing.isConnected = false;
     expect(() => notifyExports(t)).not.toThrow();
+    const row = record(parent, { get display() { return 1; } }, "users.*");
+    registerExports(row);
+    notifyExports(row);
+    expect(parent.posted).toEqual(["user.display"]);
+    setLoopContextByNode(row.component, { pathInfo: getPathInfo("users.*"), listIndex: createListIndex(null, 0) } as any);
+    notifyExports(row);
+    expect(parent.posted).toEqual(["user.display", "users.*.display"]);
+  });
+
+  it("prototype のキーもツリーの衝突として警告し、getter 自体は評価しないこと", () => {
+    const getter = vi.fn(() => "tree");
+    const prototype = Object.defineProperty({}, "display", { get: getter });
+    const parent = fakeParent(() => Object.create(prototype));
+    const r = record(parent, { get display() { return "overlay"; } });
+    registerExports(r);
+    warnShadowedExports(r);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("[wcs/mount-export-shadowed]"));
+    expect(getter).not.toHaveBeenCalled();
   });
 
   it("ツリーに同名キーがあるときだけ warn し、同じ (タグ, パス) は 1 回、行マウントで文脈が無ければ黙ること", () => {

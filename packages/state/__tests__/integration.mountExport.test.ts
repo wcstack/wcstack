@@ -197,9 +197,84 @@ describe("mountExport: 静的マウント（E1 / E6 / E7 / E8 / E10）", () => {
     expect(value).toBeUndefined();
     host.remove();
   });
+
+  it("親オブジェクトが消えた後は公開 getter を評価せず undefined を返すこと", async () => {
+    const tag = uniqueTag("me-missing-parent");
+    const getter = vi.fn(() => "available");
+    defineComponent(tag, () => ({ get display() { return getter(); } }), "");
+    const { host, shadowRoot, rootState } = await mountHost('{"user":{}}', `<${tag} data-wcs="state: user"></${tag}>`);
+    try {
+      await readyScope((shadowRoot.querySelector(tag) as HTMLElement).shadowRoot!);
+      await rootState.createState("readonly", (s: any) => { expect(s["user.display"]).toBe("available"); });
+      getter.mockClear();
+      for (const value of [null, undefined]) {
+        await write(rootState, (s) => { s.user = value; });
+        await rootState.createState("readonly", (s: any) => { expect(s["user.display"]).toBeUndefined(); });
+      }
+      expect(getter).not.toHaveBeenCalled();
+    } finally {
+      host.remove();
+    }
+  });
 });
 
 describe("mountExport: 行マウントと自己再帰（E2 / E3 / E4 / E5）", () => {
+  it("E10: 行の公開 setter が正規化した値を親・子・行バインドが読み、getter のみへの失敗した書き込みもキャッシュを固定しないこと", async () => {
+    const tag = uniqueTag("me-row-write");
+    defineComponent(tag, () => ({
+      get upper() { return `${this.name}!`; },
+      set upper(v: string) { this.name = v.toLowerCase(); },
+      get display() { return `${this.name}?`; },
+    }), `<span class="inner" data-wcs="textContent: upper"></span>`);
+    const { host, shadowRoot, rootState } = await mountHost(
+      '{"users":[{"name":"a"},{"name":"b"}]}',
+      `<template data-wcs="for: users"><${tag} data-wcs="state: ."></${tag}>` +
+      `<span class="outer" data-wcs="textContent: .upper"></span></template>`);
+    try {
+      const comps = Array.from(shadowRoot.querySelectorAll(tag)) as HTMLElement[];
+      for (const comp of comps) await readyScope(comp.shadowRoot!);
+      await write(rootState, (s) => {
+        s["users.0.upper"] = "ZED";
+        expect(s["users.0.upper"]).toBe("zed!");
+        expect(() => { s["users.0.display"] = "bad"; }).toThrow(/no setter/);
+        expect(s["users.0.display"]).toBe("zed?");
+      });
+      await rootState.createState("readonly", (s: any) => {
+        expect(s.$getAll("users.*.upper")).toEqual(["zed!", "b!"]);
+        expect(s["users.0.display"]).toBe("zed?");
+      });
+      expect(comps.map((c) => textOf(c.shadowRoot!, ".inner"))).toEqual(["zed!", "b!"]);
+      expect(Array.from(shadowRoot.querySelectorAll(".outer"), (e) => e.textContent)).toEqual(["zed!", "b!"]);
+    } finally {
+      host.remove();
+    }
+  });
+
+  it("内部ワイルドカード getter は親へ公開せず、未解決の行バインドの警告を抑止しないこと", async () => {
+    const tag = uniqueTag("me-wildcard");
+    defineComponent(tag, () => ({
+      get "children.*.label"() { return "local"; },
+    }), `<template data-wcs="for: children"><span class="inner" data-wcs="textContent: .label"></span></template>`);
+    const { host, shadowRoot, rootState } = await mountHost(
+      '{"root":{"children":[{},{}]}}',
+      `<${tag} data-wcs="state: root"></${tag}>` +
+      `<template data-wcs="for: root.children"><span class="outer" data-wcs="textContent: .label"></span></template>`);
+    try {
+      const comp = shadowRoot.querySelector(tag) as HTMLElement;
+      await readyScope(comp.shadowRoot!);
+      await flush();
+      expect(Array.from(comp.shadowRoot!.querySelectorAll(".inner"), (e) => e.textContent)).toEqual(["local", "local"]);
+      await rootState.createState("readonly", (s: any) => {
+        expect(s.$getAll("root.children.*.label")).toEqual([undefined, undefined]);
+      });
+      const missing = warnSpy.mock.calls.map((c) => String(c[0])).filter((m) =>
+        m.includes("[wcs/binding-path-missing]") && m.includes('"root.children.*.label"'));
+      expect(missing).toHaveLength(1);
+    } finally {
+      host.remove();
+    }
+  });
+
   it("E2: 行マウント `state: .` の getter を親の `$getAll(\"users.*.display\")` と行バインドで読めること", async () => {
     const tag = uniqueTag("me-row");
     defineComponent(tag, () => ({
@@ -224,12 +299,13 @@ describe("mountExport: 行マウントと自己再帰（E2 / E3 / E4 / E5）", (
     host.remove();
   });
 
-  async function mountTree(json: string) {
+  async function mountTree(json: string, onEvaluate?: (label: string) => void) {
     const tag = uniqueTag("me-tree");
     defineComponent(tag, () => ({
       open: false,
       get total(): number {
         const self = this as any;
+        onEvaluate?.(self.label);
         const kids: unknown[] = self.$getAll("children.*.total") ?? [];
         return (Number(self.value) || 0) + kids.reduce<number>((a, b) => a + (Number(b) || 0), 0);
       },
@@ -288,6 +364,31 @@ describe("mountExport: 行マウントと自己再帰（E2 / E3 / E4 / E5）", (
     expect([totalOf(a), totalOf(root)]).toEqual(["10", "31"]);
     host.remove();
   });
+
+  it.each([2, 3, 5])("P2-5: 深さ %i・分岐 3 の木で葉を 100 回更新しても再評価は祖先経路に限定されること", async (depth) => {
+    const evaluations: string[] = [];
+    const tree = (level: number, label: string): object => ({
+      label, value: 1,
+      children: level === depth ? [] : Array.from({ length: 3 }, (_, i) => tree(level + 1, `${label}.${i}`)),
+    });
+    const { host, rootState, root, totalOf } = await mountTree(JSON.stringify({ root: tree(0, "r") }), (label) => evaluations.push(label));
+    try {
+      const nodes = (3 ** (depth + 1) - 1) / 2;
+      expect(totalOf(root)).toBe(String(nodes));
+      evaluations.length = 0;
+      const ancestorPath = new Set(Array.from({ length: depth + 1 }, (_, level) => `r${".0".repeat(level)}`));
+      for (let update = 1; update <= 100; update++) {
+        evaluations.length = 0;
+        await write(rootState, (s) => { s[`root${".children.0".repeat(depth)}.value`] = update + 1; });
+        expect(totalOf(root)).toBe(String(nodes + update));
+        expect(new Set(evaluations)).toEqual(ancestorPath);
+        // Allow a second evaluation during propagation, bounded by path length.
+        expect(evaluations.length).toBeLessThanOrEqual(2 * (depth + 1));
+      }
+    } finally {
+      host.remove();
+    }
+  }, 30000);
 });
 
 describe("mountExport: 遅延診断と devtools（E9 / X7）", () => {

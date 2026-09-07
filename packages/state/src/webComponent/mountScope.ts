@@ -63,9 +63,8 @@ export function initializeMountScope(record: IMountRecord, scopeRoot: ShadowRoot
     setStateElementAlias(scopeRoot, record.parentStateElement);
   }
   buildMountScopeBindings(record, scopeRoot);
-  // 公開 getter（docs/state-overlay-export-design.md）: 索引・エイリアス辺は初回登録で
-  // 1 回（冪等）。親 getter は子の登録前に評価されているので、公開パスへ postUpdate を
-  // 打って収束させる（再初期化でも打つ — 値が変わっていうる）
+  // Register exports and alias edges once. Notify parents that evaluated before
+  // registration, including on reinitialization when values may have changed.
   registerExports(record);
   warnShadowedExports(record);
   notifyExports(record);

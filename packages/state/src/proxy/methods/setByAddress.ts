@@ -401,6 +401,7 @@ function setByAddressCore(
         });
       }
       recordWatchPrevValue(stateElement, path, absAddress, devOldValue, devHasOldValue);
+      let dispatchedExport = false;
       try {
         if (key === undefined) {
           // fast path 版の同じ取り違え（末尾ワイルドカードに listIndex が無い）。
@@ -417,13 +418,20 @@ function setByAddressCore(
         if (stateElement.hasMounts === true && lastSegment !== WILDCARD && !(key in parentValue)) {
           const exported = resolveExport(stateElement, address.parentAddress.pathInfo.path, lastSegment, address.listIndex);
           if (exported !== null) {
+            dispatchedExport = true;
             return writeExportedAccessor(exported.record, exported.entry, address.listIndex, value, receiver, handler);
           }
         }
         return Reflect.set(parentValue, key, value);
       } finally {
         notifyWrite(address, absAddress, receiver, handler, keyedMergePath);
-        commitWriteCache(stateElement, path, absAddress, value, cacheable);
+        if (dispatchedExport) {
+          // Exported row paths are cacheable but absent from getterPaths. The
+          // accessor may normalize or reject the input; never pin that input.
+          dirtyCacheEntryByAbsoluteStateAddress(absAddress);
+        } else {
+          commitWriteCache(stateElement, path, absAddress, value, cacheable);
+        }
         // DCC bindable イベントディスパッチ（完全一致 ＋ サブパス → 先頭セグメント、§2.1）
         dispatchBindableEvent(stateElement, address.pathInfo, { value });
       }
