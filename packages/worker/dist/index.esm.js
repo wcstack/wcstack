@@ -98,6 +98,99 @@ function deriveWorkerErrorInfo(error) {
 }
 
 /**
+ * Trusted Types (`require-trusted-types-for 'script'`) 対応。正本は docs/csp.md §7。
+ *
+ * `new Worker(url)` は TrustedScriptURL sink なので、TT 強制下では素の文字列を渡すと
+ * 落ちる。ただしここに来る URL は `<wcs-worker src="...">`＝**作者が書いた属性値**で
+ * あって、ユーザー入力でもレスポンスでもない。加えて worker のスクリプト取得元は
+ * `worker-src` で別途縛られている。よってここは identity policy で署名してよい層。
+ *
+ * policy 名は全 @wcstack パッケージで単一の `wcstack` に固定し、生成結果をグローバル
+ * スロットで共有する（`trusted-types` ディレクティブがある場合、`'allow-duplicates'`
+ * 無しの重複生成は例外になるため）。
+ *
+ * **利用側が注入した policy はここでは優先しない。** 注入口は「信頼できない値に対する
+ * sanitizer」として使われる想定なので、作者が書いた `src` をそこに通す理由が無い。
+ * identity policy を作れなかったときだけフォールバックし、その場合は 1 度警告する。
+ */
+/** 利用側が policy を差し込むグローバルスロット（全 @wcstack パッケージ共通）。 */
+const TRUSTED_TYPES_POLICY_SLOT = Symbol.for("wcstack.trustedTypes.policy");
+/** wcstack が生成した identity policy を共有するスロット（内部用）。 */
+const INTERNAL_POLICY_SLOT = Symbol.for("wcstack.trustedTypes.internal");
+const POLICY_NAME = "wcstack";
+/** 利用側が注入した policy。 */
+function getTrustedTypesPolicy() {
+    const value = globalThis[TRUSTED_TYPES_POLICY_SLOT];
+    if (value === null || typeof value !== "object")
+        return null;
+    return value;
+}
+/** 利用側 policy を設定する（`null` で解除）。 */
+function setTrustedTypesPolicy(policy) {
+    globalThis[TRUSTED_TYPES_POLICY_SLOT] = policy;
+}
+/**
+ * 作者制御の文字列に署名するための共有 identity policy。TT 非対応ブラウザでは
+ * null（呼び出し側は生文字列のまま進む）。生成失敗も null をキャッシュして、
+ * 診断は 1 度だけ出す。
+ */
+function getInternalPolicy() {
+    const holder = globalThis;
+    const cached = holder[INTERNAL_POLICY_SLOT];
+    if (cached !== undefined)
+        return cached;
+    const factory = globalThis.trustedTypes;
+    let policy = null;
+    if (factory && typeof factory.createPolicy === "function") {
+        try {
+            policy = factory.createPolicy(POLICY_NAME, {
+                createHTML: (input) => input,
+                createScriptURL: (input) => input,
+            });
+        }
+        catch (error) {
+            // 利用側 policy に落ちられるなら、報告は初回使用時の 1 回の warn（trustAuthoredScriptURL）
+            // に任せる — docs/csp.md §7。落ちる先が無いときだけ、直し方付きで error にする
+            if (typeof getTrustedTypesPolicy()?.createScriptURL !== "function") {
+                console.error(`[@wcstack/worker] Could not create the Trusted Types policy "${POLICY_NAME}". `
+                    + `Allow it in the CSP (\`trusted-types ${POLICY_NAME};\`), or inject your own policy `
+                    + `at globalThis[Symbol.for("wcstack.trustedTypes.policy")]. See docs/csp.md section 7.`, error);
+            }
+        }
+    }
+    holder[INTERNAL_POLICY_SLOT] = policy;
+    return policy;
+}
+let _fallbackWarned = false;
+/**
+ * 作者が書いたスクリプト URL を TrustedScriptURL に変換する。
+ *
+ * 解決順は 共有 identity policy > （TT はあるが identity policy を作れなかった場合のみ）
+ * 利用側 policy > 生文字列。TT 非対応ブラウザでは署名自体が不要なので素通しする。
+ */
+function trustAuthoredScriptURL(url) {
+    const internal = getInternalPolicy();
+    const internalCreate = internal?.createScriptURL;
+    if (typeof internalCreate === "function") {
+        return internalCreate.call(internal, url);
+    }
+    if (!("trustedTypes" in globalThis))
+        return url;
+    const adopted = getTrustedTypesPolicy();
+    const adoptedCreate = adopted?.createScriptURL;
+    if (typeof adoptedCreate === "function") {
+        if (!_fallbackWarned) {
+            _fallbackWarned = true;
+            console.warn(`[@wcstack/worker] Falling back to the injected Trusted Types policy to sign the worker `
+                + `URL, because the "${POLICY_NAME}" policy could not be created. `
+                + `Allow \`trusted-types ${POLICY_NAME};\` in the CSP to avoid this. See docs/csp.md section 7.`);
+        }
+        return adoptedCreate.call(adopted, url);
+    }
+    return url;
+}
+
+/**
  * Headless Dedicated Worker primitive. A thin, framework-agnostic wrapper around
  * the `Worker` API exposed through the wc-bindable protocol.
  *
@@ -343,7 +436,11 @@ class WorkerCore extends EventTarget {
     // --- Internal ---
     _spawn() {
         try {
-            this._worker = new Worker(this._src, { type: this._type, name: this._name || undefined });
+            // `new Worker(url)` は TrustedScriptURL sink。src は作者が書いた属性値なので
+            // 共有 identity policy で署名してよい層（docs/csp.md §7）。TT 非対応ブラウザでは
+            // 生文字列がそのまま返る。policy 生成に失敗した場合もここは従来どおり進み、
+            // 実際の失敗は既存の catch が error / errorInfo に落とす。
+            this._worker = new Worker(trustAuthoredScriptURL(this._src), { type: this._type, name: this._name || undefined });
         }
         catch (err) {
             this._setError(this._normalizeError(err));
@@ -819,5 +916,5 @@ function bootstrapWorker(userConfig, registry) {
     registerComponents(registry);
 }
 
-export { WCS_WORKER_ERROR_CODE, WcsWorker, WorkerCore, bootstrapWorker, getConfig };
+export { TRUSTED_TYPES_POLICY_SLOT, WCS_WORKER_ERROR_CODE, WcsWorker, WorkerCore, bootstrapWorker, getConfig, getTrustedTypesPolicy, setTrustedTypesPolicy };
 //# sourceMappingURL=index.esm.js.map

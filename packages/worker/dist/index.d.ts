@@ -159,6 +159,33 @@ declare function bootstrapWorker(userConfig?: IWritableConfig, registry?: Custom
 declare function getConfig(): IConfig;
 
 /**
+ * Trusted Types (`require-trusted-types-for 'script'`) 対応。正本は docs/csp.md §7。
+ *
+ * `new Worker(url)` は TrustedScriptURL sink なので、TT 強制下では素の文字列を渡すと
+ * 落ちる。ただしここに来る URL は `<wcs-worker src="...">`＝**作者が書いた属性値**で
+ * あって、ユーザー入力でもレスポンスでもない。加えて worker のスクリプト取得元は
+ * `worker-src` で別途縛られている。よってここは identity policy で署名してよい層。
+ *
+ * policy 名は全 @wcstack パッケージで単一の `wcstack` に固定し、生成結果をグローバル
+ * スロットで共有する（`trusted-types` ディレクティブがある場合、`'allow-duplicates'`
+ * 無しの重複生成は例外になるため）。
+ *
+ * **利用側が注入した policy はここでは優先しない。** 注入口は「信頼できない値に対する
+ * sanitizer」として使われる想定なので、作者が書いた `src` をそこに通す理由が無い。
+ * identity policy を作れなかったときだけフォールバックし、その場合は 1 度警告する。
+ */
+interface IWcsTrustedTypesPolicy {
+    createHTML?(input: string): unknown;
+    createScriptURL?(input: string): unknown;
+}
+/** 利用側が policy を差し込むグローバルスロット（全 @wcstack パッケージ共通）。 */
+declare const TRUSTED_TYPES_POLICY_SLOT: unique symbol;
+/** 利用側が注入した policy。 */
+declare function getTrustedTypesPolicy(): IWcsTrustedTypesPolicy | null;
+/** 利用側 policy を設定する（`null` で解除）。 */
+declare function setTrustedTypesPolicy(policy: IWcsTrustedTypesPolicy | null): void;
+
+/**
  * Headless Dedicated Worker primitive. A thin, framework-agnostic wrapper around
  * the `Worker` API exposed through the wc-bindable protocol.
  *
@@ -328,5 +355,5 @@ declare global {
     }
 }
 
-export { WCS_WORKER_ERROR_CODE, WcsWorker, WorkerCore, bootstrapWorker, getConfig };
-export type { IWritableConfig, IWritableTagNames, WcsIoErrorInfo, WcsIoErrorPhase, WcsWorkerCommands, WcsWorkerCoreCommands, WcsWorkerCoreValues, WcsWorkerErrorDetail, WcsWorkerInputs, WcsWorkerStartOptions, WcsWorkerValues };
+export { TRUSTED_TYPES_POLICY_SLOT, WCS_WORKER_ERROR_CODE, WcsWorker, WorkerCore, bootstrapWorker, getConfig, getTrustedTypesPolicy, setTrustedTypesPolicy };
+export type { IWcsTrustedTypesPolicy, IWritableConfig, IWritableTagNames, WcsIoErrorInfo, WcsIoErrorPhase, WcsWorkerCommands, WcsWorkerCoreCommands, WcsWorkerCoreValues, WcsWorkerErrorDetail, WcsWorkerInputs, WcsWorkerStartOptions, WcsWorkerValues };

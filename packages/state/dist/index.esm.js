@@ -220,6 +220,7 @@ const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 const STATE_CONNECTED_CALLBACK_NAME = "$connectedCallback";
 const STATE_DISCONNECTED_CALLBACK_NAME = "$disconnectedCallback";
 const STATE_UPDATED_CALLBACK_NAME = "$updatedCallback";
+const STATE_ERROR_CALLBACK_NAME = "$errorCallback";
 const WEBCOMPONENT_STATE_READY_CALLBACK_NAME = "$stateReadyCallback";
 const STATE_BINDABLES_NAME = "$bindables";
 const STATE_COMMANDS_NAME = "$commands";
@@ -2508,6 +2509,7 @@ function buildMountRecord(component, stateProp, bindings, parentStateElement, st
         accessorBySuffixByMarkerParent: new Map(),
         indexShiftByLoopElementPath: new Map(),
         addedGetterPaths: new Set(),
+        exports: new Map(),
     };
 }
 function firstSegmentOf(path) {
@@ -2973,6 +2975,7 @@ const setByAddressSymbol = Symbol("$$setByAddress");
 const connectedCallbackSymbol = Symbol("$$connectedCallback");
 const disconnectedCallbackSymbol = Symbol("$$disconnectedCallback");
 const updatedCallbackSymbol = Symbol("$$updatedCallback");
+const errorCallbackSymbol = Symbol("$$errorCallback");
 
 const _cache$3 = new WeakMap();
 function getAbsolutePathInfo(stateElement, pathInfo) {
@@ -4225,6 +4228,46 @@ const handlerByHandlerKey = new Map();
 const bindingRegistry = createHandlerBindingRegistry();
 const producerValueObserversByNode = new WeakMap();
 const DEFAULT_GETTER = (e) => e.detail;
+/**
+ * 既定 getter（`(e) => e.detail`）が要素の宣言と噛み合っていない典型 2 形を、
+ * 要素 × プロパティごとに 1 回だけ警告する（README「What the element writes back」）。
+ *
+ * (a) detail が undefined なのに `element[propName]` には値がある —
+ *     CustomEvent でない Event を dispatch している / `detail` を付け忘れている
+ * (b) detail が `{ <propName>: … }` の形のラッパーで、`element[propName]` はオブジェクトでない —
+ *     `getter: (e) => e.detail.<propName>` が要る
+ *
+ * どちらも state には黙って undefined / ラッパーが書かれ、例外も lint 診断も出ない
+ * （payload の形は静的に見えない）。挙動は変えない — 書き込みはそのまま行う。
+ * occurrence（`semantics: "event"`）は payload が任意なので対象外（呼び出し側で除外）。
+ */
+const warnedDefaultGetter = new WeakMap();
+function warnDefaultGetterMismatch(node, propName, detail) {
+    const propValue = node[propName];
+    let reason = null;
+    if (typeof detail === "undefined") {
+        if (typeof propValue !== "undefined") {
+            reason = `the event carried no detail (undefined) while element.${propName} is ${typeof propValue}`;
+        }
+    }
+    else if (detail !== null && typeof detail === "object" && Object.prototype.hasOwnProperty.call(detail, propName)
+        && (propValue === null || typeof propValue !== "object")) {
+        reason = `the event's detail is an object with a "${propName}" key while element.${propName} is ${typeof propValue}`;
+    }
+    if (reason === null)
+        return;
+    let props = warnedDefaultGetter.get(node);
+    if (typeof props === "undefined") {
+        props = new Set();
+        warnedDefaultGetter.set(node, props);
+    }
+    if (props.has(propName))
+        return;
+    props.add(propName);
+    console.warn(`[@wcstack/state] [wcs/default-getter-mismatch] <${node.tagName.toLowerCase()}> "${propName}": ${reason}. ` +
+        `With no getter, state receives e.detail as-is. Dispatch the value itself as detail, or declare ` +
+        `getter (e.g. (e) => e.detail.${propName}, or (e) => e.target.${propName}) on that wcBindable property.`);
+}
 function getHandlerKey(binding, eventName, hasGetter, isOccurrence) {
     const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
     return `${binding.propName}::${binding.statePathName}::${eventName}::${filterKey}::${hasGetter ? 'g' : 'n'}::${isOccurrence ? 'o' : 's'}`;
@@ -4285,6 +4328,9 @@ const twowayEventHandlerFunction = (propName, statePathName, inFilters, valueGet
     let newValue;
     if (valueGetter !== null) {
         newValue = valueGetter(event);
+        if (valueGetter === DEFAULT_GETTER && !isOccurrence) {
+            warnDefaultGetterMismatch(node, propName, newValue);
+        }
     }
     else {
         if (!(propName in node)) {
@@ -7581,6 +7627,113 @@ function clearSsrPropertyStore() {
     trackedNodes.clear();
 }
 
+/**
+ * Trusted Types (`require-trusted-types-for 'script'`) 対応。正本は docs/csp.md §7。
+ *
+ * state が HTML sink に流すのは **状態の値**（`innerHTML: path` などのプロパティ
+ * バインド）で、ユーザー入力が混ざり得る文字列そのもの。ここに identity policy を
+ * 噛ませて通すのは TT の無効化と同義なので、state は自前の policy を作らない。
+ * 利用側が sanitizer を持つ policy を注入したときだけ通し、無ければ従来どおり
+ * ブラウザに弾かせる（ただし何を設定すれば直るかは必ず言う）。
+ *
+ * 注入口は全 @wcstack パッケージ共通のグローバルスロット。buildless（CDN 一発）でも
+ * inline script 1 本で差し込める:
+ *
+ * ```js
+ * globalThis[Symbol.for("wcstack.trustedTypes.policy")] =
+ *   trustedTypes.createPolicy("my-app", { createHTML: (s) => DOMPurify.sanitize(s) });
+ * ```
+ *
+ * バンドラ経由なら `setTrustedTypesPolicy()` を使う。値は毎回スロットから読むので
+ * 後から差し替えても効く（identity policy を作る router / worker 側だけは
+ * `createPolicy` の重複を避けるため生成結果をシングルトンで保持する）。
+ */
+/** 利用側が policy を差し込むグローバルスロット（全 @wcstack パッケージ共通）。 */
+const TRUSTED_TYPES_POLICY_SLOT = Symbol.for("wcstack.trustedTypes.policy");
+/**
+ * 利用側が注入した policy を返す。state はここに identity policy をフォールバック
+ * させない（それをやると TT を無効化することになる）。
+ */
+function getTrustedTypesPolicy() {
+    const value = globalThis[TRUSTED_TYPES_POLICY_SLOT];
+    if (value === null || typeof value !== "object")
+        return null;
+    return value;
+}
+/** 利用側 policy を設定する（`null` で解除）。最初のバインド適用前に呼ぶこと。 */
+function setTrustedTypesPolicy(policy) {
+    globalThis[TRUSTED_TYPES_POLICY_SLOT] = policy;
+}
+/**
+ * TrustedHTML が要求されるプロパティか。`textContent` などの安全な sink は含めない。
+ * ホットパス（全プロパティ書き込み）から呼ばれるので文字列比較だけで済ませる。
+ */
+function isHtmlSinkProp(prop) {
+    return prop === "innerHTML" || prop === "outerHTML" || prop === "srcdoc";
+}
+/**
+ * HTML sink へ書く値を利用側 policy に通す。policy が無ければ値をそのまま返す
+ * ＝ TT 有効下ではブラウザが弾く（意図どおり）。policy がある場合は TT 非対応
+ * ブラウザでも通す: sanitizer は Chromium だけで効いても意味がないため。
+ */
+function trustHtmlValue(value) {
+    if (typeof value !== "string")
+        return value;
+    const policy = getTrustedTypesPolicy();
+    const createHTML = policy?.createHTML;
+    if (typeof createHTML !== "function")
+        return value;
+    return createHTML.call(policy, value);
+}
+let _enforced = undefined;
+/**
+ * TT が実際に強制されているかを実測する。エラーメッセージの文言に依存しないよう、
+ * 使い捨ての要素へ実際に書いて確かめる。`default` policy がある場合は書き込みが
+ * 通る＝我々の書き込みも通るので、正しく false になる。
+ *
+ * cold path（書き込みが失敗した後）でしか呼ばれない。
+ */
+function isTrustedTypesEnforced() {
+    if (_enforced !== undefined)
+        return _enforced;
+    if (!("trustedTypes" in globalThis)) {
+        _enforced = false;
+        return _enforced;
+    }
+    try {
+        document.createElement("div").innerHTML = "<i></i>";
+        _enforced = false;
+    }
+    catch {
+        _enforced = true;
+    }
+    return _enforced;
+}
+let _reported = false;
+/**
+ * HTML sink への書き込み失敗を診断する。applyChangeToProperty の catch は
+ * `config.debug` 時しか warn しないため、TT が原因のときは黙って壊れていた。
+ * 原因と直し方が分かる形で一度だけ報告する。
+ */
+function reportTrustedTypesBlock(element, prop) {
+    if (_reported)
+        return;
+    if (!isTrustedTypesEnforced())
+        return;
+    _reported = true;
+    const hasPolicy = typeof getTrustedTypesPolicy()?.createHTML === "function";
+    const cause = hasPolicy
+        ? "The injected policy's createHTML() did not return a TrustedHTML."
+        : "No sanitizing policy is installed, and @wcstack/state deliberately does not "
+            + "pass state values through an identity policy — that would defeat the CSP.";
+    console.error(`[@wcstack/state] Writing to "${prop}" was blocked by Trusted Types `
+        + `(require-trusted-types-for 'script'). ${cause}\n`
+        + `Install a sanitizing policy before the first binding is applied:\n`
+        + `  globalThis[Symbol.for("wcstack.trustedTypes.policy")] =\n`
+        + `    trustedTypes.createPolicy("my-app", { createHTML: (s) => DOMPurify.sanitize(s) });\n`
+        + `Or bind the value as text instead of HTML. See docs/csp.md section 7.`, { element, property: prop });
+}
+
 // SSR 時に HTML 属性で代替可能なプロパティ
 // これら以外のプロパティは ssrPropertyStore に蓄積してハイドレーション時に復元
 const SSR_ATTR_PROPS = {
@@ -7652,13 +7805,23 @@ function applyChangeToProperty(binding, _context, newValue) {
                 && getCustomElement(element) !== null) {
                 rememberOverwrittenObject(element, firstSegment, current);
             }
+            // Trusted Types: HTML sink (`innerHTML` 等) への書き込みだけ、利用側が注入した
+            // sanitizer 付き policy を通す。state が identity policy を作って素通しさせるのは
+            // TT の無効化と同義なので採らない（docs/csp.md §7）。sink 以外は文字列比較 3 回で
+            // 抜けるので、ホットパスの実コストはほぼ無い。
+            const isHtmlSink = isHtmlSinkProp(firstSegment);
             const performWrite = () => {
                 let propertyWriteSucceeded = false;
                 try {
-                    element[firstSegment] = newValue;
+                    element[firstSegment] = isHtmlSink ? trustHtmlValue(newValue) : newValue;
                     propertyWriteSucceeded = true;
                 }
                 catch (error) {
+                    // TT が原因のときは config.debug に関係なく報告する。ここを黙って握り潰すと
+                    // 「バインドを書いたのに何も起きない」という最悪の壊れ方をする。
+                    if (isHtmlSink) {
+                        reportTrustedTypesBlock(element, firstSegment);
+                    }
                     if (config.debug) {
                         console.warn(`Failed to set property '${firstSegment}' on element.`, {
                             element,
@@ -8275,6 +8438,61 @@ function checkDeclaredPath(stateElement, state, path, source) {
     if (result.existence !== "missing") {
         return;
     }
+    if (isExportedPath(stateElement, path)) {
+        return;
+    }
+    if (source === "binding") {
+        // 遅延報告（docs/state-overlay-export-design.md X7）: バインド確立時点では、その位置に
+        // マウントされるコンポーネントの getter（公開 getter）がまだ登録されていない。
+        // 1 マクロタスク待って、登録で解消しなかったものだけを報告する
+        deferReport(stateElement, path, result);
+        return;
+    }
+    reportMissing(stateElement, path, source, result);
+}
+const deferredReportsByStateElement = new WeakMap();
+const flushScheduled = new WeakSet();
+const exportedPathsByStateElement = new WeakMap();
+/** 公開 getter の登録（webComponent/exportIndex.ts）— このパスは「存在しない」ではない */
+function markExportedPath(stateElement, path) {
+    let paths = exportedPathsByStateElement.get(stateElement);
+    if (typeof paths === "undefined") {
+        paths = new Set();
+        exportedPathsByStateElement.set(stateElement, paths);
+    }
+    paths.add(path);
+    deferredReportsByStateElement.get(stateElement)?.delete(path);
+}
+function isExportedPath(stateElement, path) {
+    return exportedPathsByStateElement.get(stateElement)?.has(path) === true;
+}
+function deferReport(stateElement, path, result) {
+    let pending = deferredReportsByStateElement.get(stateElement);
+    if (typeof pending === "undefined") {
+        pending = new Map();
+        deferredReportsByStateElement.set(stateElement, pending);
+    }
+    pending.set(path, result);
+    if (flushScheduled.has(stateElement)) {
+        return;
+    }
+    flushScheduled.add(stateElement);
+    setTimeout(() => flushDeferredPathReports(stateElement), 0);
+}
+/** 遅延中の報告を今すぐ流す（タイマー到達時・テスト用） */
+function flushDeferredPathReports(stateElement) {
+    flushScheduled.delete(stateElement);
+    const pending = deferredReportsByStateElement.get(stateElement);
+    if (typeof pending === "undefined") {
+        return;
+    }
+    deferredReportsByStateElement.delete(stateElement);
+    // 登録で解消したものは markExportedPath が pending から消している
+    for (const [path, result] of pending) {
+        reportMissing(stateElement, path, "binding", result);
+    }
+}
+function reportMissing(stateElement, path, source, result) {
     // 接頭辞は raiseError と同じ `[@wcstack/state] [wcs/...]` の並び（コンソールの
     // grep 単位をパッケージで揃える）
     console.warn(`[@wcstack/state] [${DIAGNOSTIC_CODE[source]}] ${SUBJECT[source]} "${path}" does not resolve on the state tree: ` +
@@ -8435,7 +8653,7 @@ function _applyChange(binding, context) {
     const value = getValue(context.state, binding);
     const filteredValue = getFilteredValue(value, binding.outFilters);
     if (deferredSelectBindingByBinding.get(binding) === true) {
-        context.deferredSelectBindings.push({ binding, value: filteredValue });
+        context.deferredSelectBindings.push({ binding, value: filteredValue, stateElement: context.stateElement });
         return;
     }
     let fn = fnByBinding.get(binding);
@@ -8475,7 +8693,7 @@ function _applyChange(binding, context) {
         if (element.tagName === 'SELECT') {
             const propName = binding.propSegments[0];
             if (propName === 'value' || propName === 'selectedIndex') {
-                context.deferredSelectBindings.push({ binding, value: filteredValue });
+                context.deferredSelectBindings.push({ binding, value: filteredValue, stateElement: context.stateElement });
                 deferredSelectBindingByBinding.set(binding, true);
                 return;
             }
@@ -8569,10 +8787,31 @@ function applyChange(binding, context) {
  * `console.error` だけだと devtools からは「静かに握られた失敗」が見えないため、
  * 同じ地点から sink にも流す（`state:watch-error` と同じ位置づけ）。
  * 値と DOM は巻き戻さない — 伝播 hop 上限超過・watch 連鎖打ち切りと同じ姿勢。
+ *
+ * state が `$errorCallback` を宣言していれば、console.error の代わりにそこへ配送する
+ * （作者が報告を引き取った。ページ内で受けるための口）。配送は batch の末尾 —
+ * $updatedCallback と同じ位置 — にまとめる。devtools sink へは宣言の有無に関わらず流す。
  */
-function reportBindingApplyError(binding, error) {
-    console.error(`[@wcstack/state] binding "${binding.bindingType}: ${binding.statePathName}" failed to apply; ` +
-        `the rest of this batch continues.`, { node: binding.node, error });
+function reportBindingApplyError(binding, error, stateElement, failuresByStateElement) {
+    const handled = stateElement !== null && stateElement.hasErrorCallback === true;
+    if (handled) {
+        const info = {
+            path: binding.statePathName,
+            bindingType: binding.bindingType,
+            node: binding.node,
+        };
+        const failures = failuresByStateElement.get(stateElement);
+        if (failures === undefined) {
+            failuresByStateElement.set(stateElement, [{ error, info }]);
+        }
+        else {
+            failures.push({ error, info });
+        }
+    }
+    else {
+        console.error(`[@wcstack/state] binding "${binding.bindingType}: ${binding.statePathName}" failed to apply; ` +
+            `the rest of this batch continues.`, { node: binding.node, error });
+    }
     if (devtoolsSink !== null) {
         devtoolsSink({
             type: "state:binding-apply-error",
@@ -8598,6 +8837,7 @@ function applyChangeFromBindings(bindings, propagationContextByBinding) {
     const newListValueByAbsAddress = new Map();
     const updatedAbsAddressSetByStateElement = new Map();
     const deferredSelectBindings = [];
+    const failuresByStateElement = new Map();
     // Phase 1: 構造的更新 + 値更新（select.value/selectedIndex は遅延）
     while (bindingIndex < bindings.length) {
         let binding = bindings[bindingIndex];
@@ -8643,7 +8883,7 @@ function applyChangeFromBindings(bindings, propagationContextByBinding) {
                     applyChange(binding, context);
                 }
                 catch (error) {
-                    reportBindingApplyError(binding, error);
+                    reportBindingApplyError(binding, error, stateElement, failuresByStateElement);
                 }
                 bindingIndex++;
                 const nextBindingInfo = bindings[bindingIndex];
@@ -8659,12 +8899,12 @@ function applyChangeFromBindings(bindings, propagationContextByBinding) {
     // Phase 2: 遅延されたselect.value/selectedIndex を適用
     // applyChangeToProperty は propagationContextByBinding 以外の context を
     // 参照しないため、遅延分は最小 context を渡す
-    for (const { binding, value } of deferredSelectBindings) {
+    for (const { binding, value, stateElement } of deferredSelectBindings) {
         try {
             applyChangeToProperty(binding, { propagationContextByBinding }, value);
         }
         catch (error) {
-            reportBindingApplyError(binding, error);
+            reportBindingApplyError(binding, error, stateElement ?? null, failuresByStateElement);
         }
     }
     for (const [absAddress, newListValue] of newListValueByAbsAddress.entries()) {
@@ -8673,6 +8913,20 @@ function applyChangeFromBindings(bindings, propagationContextByBinding) {
     for (const [stateElement, absAddressSet] of updatedAbsAddressSetByStateElement.entries()) {
         stateElement.createState("writable", (state) => {
             state[updatedCallbackSymbol](Array.from(absAddressSet));
+        });
+    }
+    // $errorCallback の配送。$updatedCallback の後・失敗した本数ぶん・this は writable proxy。
+    // callback 自身の throw は隔離する — 1 件の報告失敗が残りの報告と drain を道連れにしない
+    for (const [stateElement, failures] of failuresByStateElement.entries()) {
+        stateElement.createState("writable", (state) => {
+            for (const { error, info } of failures) {
+                try {
+                    state[errorCallbackSymbol](error, info);
+                }
+                catch (callbackError) {
+                    console.error(`[@wcstack/state] $errorCallback threw while handling the failure of binding "${info.bindingType}: ${info.path}".`, { error: callbackError, original: error, node: info.node });
+                }
+            }
         });
     }
 }
@@ -9182,7 +9436,7 @@ async function buildBindings(root) {
     }
 }
 
-var version = "2.1.1";
+var version = "2.2.0";
 var pkg = {
 	version: version};
 
@@ -10856,6 +11110,7 @@ function registerDevtoolsSource() {
                 delta: record.delta,
                 privateKeys: Object.keys(record.privateSnapshot),
                 getterKeys: [...record.getterKeys],
+                exports: [...record.exports.keys()],
             }));
         },
         keys(rootNode) {
@@ -13073,9 +13328,32 @@ function defineDCC(hostElement, shadowRoot, state) {
         // 一意性はレジストリ単位なので、別スコープの同名 DCC は衝突しない。
         raiseError(`DCC: "${tagName}" is already registered. A custom element name can only be defined once.`);
     }
-    // ShadowRoot は cloneNode 不可のため、template 経由で内容をクローン
+    // ShadowRoot 自体は cloneNode 不可なので、子ノードを 1 つずつ template へ取り込む。
+    //
+    // かつては `template.innerHTML = shadowRoot.innerHTML` と serialize → parse で
+    // 往復していた。これをやめたのは 3 点の理由による（docs/csp.md §7）:
+    //   (1) `require-trusted-types-for 'script'` 下では innerHTML sink が弾かれる。
+    //       ここはテンプレート＝作者が書いた DOM の複製でしかないので、policy を作って
+    //       署名するより sink 自体を無くすほうが筋が良い（state が CSP の
+    //       `trusted-types` allowlist を要求しなくなる）。
+    //   (2) 往復のたびに HTML パーサの再解釈が挟まり、元の DOM と一致しない結果に
+    //       なり得る（mXSS と同じ機序）。
+    //   (3) 単純に serialize + parse のぶん遅い。
+    //
+    // importNode は **取り込み先 document** で要素を作るため、template の inert な
+    // contents document 側から呼べば従来どおり「未 upgrade の複製」になる。live
+    // document 側で cloneNode すると upgrade reaction が走り、_ensureShadow の明示
+    // upgrade と二重になる。
+    //
+    // 挙動差が 1 つある: script 要素の already-started フラグは複製時に引き継がれる
+    // ため、テンプレート内のインライン `<script>` はインスタンス生成のたびにネイティブ
+    // 実行されなくなる。`<wcs-state>` の状態定義スクリプトは text を読んで評価する実装
+    // （loadFromInnerScript）なので影響を受けない。
     const template = document.createElement("template");
-    template.innerHTML = shadowRoot.innerHTML;
+    const inertDocument = template.content.ownerDocument;
+    for (const childNode of Array.from(shadowRoot.childNodes)) {
+        template.content.appendChild(inertDocument.importNode(childNode, true));
+    }
     const shadowRootMode = shadowRoot.mode;
     // $bindables / $commands から wcBindable + bindableEventMap を生成
     const { bindables, commands, streamBackedBindables } = processDccDeclarations(state);
@@ -13621,6 +13899,22 @@ function createOverlayValue(record, address, receiver, handler) {
     return new Proxy(privateData, new OverlayValueHandler(record, markerParentPath, address.listIndex, isBase, receiver, handler));
 }
 /**
+ * 公開 getter の読み（docs/state-overlay-export-design.md §2-1 の 4）。
+ * `P.#m<id>` のオーバーレイ値に対する `Reflect.get(proxy, k)` と等価 — 作者の getter は
+ * マーカーアドレスを push して評価されるので、依存辺・キャッシュはマーカー側に載る。
+ */
+function readExportedAccessor(record, entry, listIndex, receiver, handler) {
+    const address = createStateAddress(getPathInfo(entry.markerTerminalPath), listIndex);
+    const proxy = createOverlayValue(record, address, receiver, handler);
+    return Reflect.get(proxy, entry.suffix);
+}
+/** 公開 getter への書き込み（X9）: setter があれば評価、無ければ overlay の set が raise する。 */
+function writeExportedAccessor(record, entry, listIndex, value, receiver, handler) {
+    const address = createStateAddress(getPathInfo(entry.markerTerminalPath), listIndex);
+    const proxy = createOverlayValue(record, address, receiver, handler);
+    return Reflect.set(proxy, entry.suffix, value);
+}
+/**
  * `element.state` の公開面（chroot・M13）。相対キーを変換して親の proxy を通すだけの
  * 薄い翻訳で、値の解決（私有・getter・ツリー）は全て親ウォーク＋オーバーレイが担う。
  * ホスト要素のループ文脈で包む（行マウント `state: .` の `users.*.…` を解決するため —
@@ -13703,6 +13997,203 @@ function createPublicMountState(record) {
             }
         },
     });
+}
+
+const exportIndexByStateElement = new WeakMap();
+const reportedShadows = new Set();
+function slotFor(stateElement, parentPath, key, create) {
+    let byParent = exportIndexByStateElement.get(stateElement);
+    if (typeof byParent === "undefined") {
+        if (!create)
+            return null;
+        byParent = new Map();
+        exportIndexByStateElement.set(stateElement, byParent);
+    }
+    let byKey = byParent.get(parentPath);
+    if (typeof byKey === "undefined") {
+        if (!create)
+            return null;
+        byKey = new Map();
+        byParent.set(parentPath, byKey);
+    }
+    let slot = byKey.get(key);
+    if (typeof slot === "undefined") {
+        if (!create)
+            return null;
+        slot = { holders: new Set(), byListIndex: new WeakMap(), noIndex: null };
+        byKey.set(key, slot);
+    }
+    return slot;
+}
+/**
+ * 記録の getter / setter を公開索引に載せる（初回登録で 1 回・冪等）。
+ * translateInnerPath のマーカー化を通すので accessorBySuffixByMarkerParent も同時に埋まる。
+ * 翻訳できないアクセサ（ワイルドカード終端・部分マウントのみで接頭辞不一致）と、
+ * `$` 名前空間のアクセサ（翻訳されずマーカーが付かない）は公開しない。
+ * ルートエントリの無い部分マウントは公開位置（ツリー上のパス）を持たないので対象外。
+ */
+function registerExports(record) {
+    if (record.exports.size > 0 || record.rootEntry === null) {
+        return;
+    }
+    const keys = new Set([...record.getterKeys, ...record.setterKeys]);
+    for (const key of keys) {
+        let markerPath;
+        try {
+            markerPath = translateInnerPath(record, key);
+        }
+        catch {
+            continue;
+        }
+        const markerIndex = markerPath.indexOf(DELIMITER + record.marker);
+        if (markerIndex === -1) {
+            continue;
+        }
+        // `users.*.#m7.display` → 末端マーカーパス `users.*.#m7`・接尾 `display`・公開 `users.*.display`
+        // （接尾は常に非空 — markerizeAccessorPath が空を raise 済み。公開パスはルート
+        // エントリの外側パス＋接尾なので常に 2 セグメント以上 ＝ 親パスを持つ）
+        const markerTerminalPath = markerPath.slice(0, markerIndex + 1 + record.marker.length);
+        const suffix = markerPath.slice(markerTerminalPath.length + 1);
+        const exportedPath = markerPath.slice(0, markerIndex) + DELIMITER + suffix;
+        const exportedInfo = getPathInfo(exportedPath);
+        // Internal wildcard accessors need their own row resolution and lifecycle
+        // notifications. Only publish accessors at the mount instance's depth.
+        if (exportedInfo.wildcardCount !== record.delta) {
+            continue;
+        }
+        const entry = { markerTerminalPath, suffix, markerPath, exportedPath };
+        record.exports.set(exportedPath, entry);
+        slotFor(record.parentStateElement, exportedInfo.parentPath, exportedInfo.lastSegment, true)
+            .holders.add({ ref: new WeakRef(record), entry });
+        // エイリアス辺（X5）: 子 getter のアドレス → 公開パス
+        record.parentStateElement.addDynamicDependency(markerPath, exportedPath);
+        // 未存在パスの遅延診断（X7）: この公開パスへのバインドは「存在しない」ではない
+        markExportedPath(record.parentStateElement, exportedPath);
+    }
+    record.parentStateElement.markHasMounts?.();
+}
+/** 読みの listIndex がホスト要素のループ文脈と一致するか（配下の深い文脈も一致とみなす） */
+function isInstanceOf(record, listIndex) {
+    if (!record.component.isConnected) {
+        return false;
+    }
+    const own = getLoopContextByNode(record.component)?.listIndex ?? null;
+    if (listIndex === null) {
+        return own === null;
+    }
+    let current = own;
+    while (current !== null) {
+        if (current === listIndex) {
+            return true;
+        }
+        current = current.parentListIndex;
+    }
+    return false;
+}
+/** ホルダーが生きていて、この listIndex のインスタンスなら記録を返す */
+function liveInstance(holder, listIndex) {
+    const record = holder.ref.deref();
+    if (typeof record === "undefined" || !isInstanceOf(record, listIndex)) {
+        return null;
+    }
+    return record;
+}
+/**
+ * `P.k`（listIndex）に答える記録を引く。索引に無ければ null（今日どおり undefined 解決）。
+ * 複数一致は raise。
+ */
+function resolveExport(stateElement, parentPath, key, listIndex) {
+    const slot = slotFor(stateElement, parentPath, key, false);
+    if (slot === null) {
+        return null;
+    }
+    const cached = listIndex === null ? slot.noIndex : (slot.byListIndex.get(listIndex) ?? null);
+    if (cached !== null) {
+        const record = liveInstance(cached, listIndex);
+        if (record !== null) {
+            return { record, entry: cached.entry };
+        }
+    }
+    let found = null;
+    let foundRecord = null;
+    for (const holder of slot.holders) {
+        const record = holder.ref.deref();
+        if (typeof record === "undefined") {
+            // 記録は回収済み（finalizer 発火前の窓）— 遅延 prune
+            slot.holders.delete(holder);
+            continue;
+        }
+        if (!isInstanceOf(record, listIndex)) {
+            continue;
+        }
+        if (foundRecord !== null) {
+            raiseError(`[wcs/mount-export-ambiguous] "${parentPath}${DELIMITER}${key}" is exported by two mounted components on the same instance: ` +
+                `<${foundRecord.component.tagName.toLowerCase()}> and <${record.component.tagName.toLowerCase()}>. ` +
+                `Mount only one of them there, or rename one accessor. See docs/state-overlay-export-design.md X4.`);
+        }
+        found = holder;
+        foundRecord = record;
+    }
+    if (found === null || foundRecord === null) {
+        return null;
+    }
+    if (listIndex === null) {
+        slot.noIndex = found;
+    }
+    else {
+        slot.byListIndex.set(listIndex, found);
+    }
+    return { record: foundRecord, entry: found.entry };
+}
+/** 公開パスの `$postUpdate` を、記録のホスト要素のループ文脈で打つ（X6）。 */
+function notifyExports(record) {
+    const parent = record.parentStateElement;
+    const loopContext = getLoopContextByNode(record.component);
+    if (parent.isConnected === false || (record.delta > 0 && loopContext === null)) {
+        // A removed tree needs no notification. A removed row is handled by its
+        // parent's list update. Other notification failures must remain visible.
+        return;
+    }
+    for (const entry of record.exports.values()) {
+        parent.createState("readonly", (state) => {
+            state[setLoopContextSymbol](loopContext, () => {
+                state.$postUpdate(entry.exportedPath);
+            });
+        });
+    }
+}
+/**
+ * X1: ツリーに同名キーがある公開 getter は親から読まれない（ツリーが勝つ）。
+ * 登録時に 1 回 warn（タグ × 公開パス）。行マウントはホスト要素のループ文脈で読む。
+ */
+function warnShadowedExports(record) {
+    const loopContext = getLoopContextByNode(record.component);
+    if (record.delta > 0 && loopContext === null) {
+        // 行マウントでループ文脈が無い（行の実体化前）— 読めないので黙る
+        return;
+    }
+    const tag = record.component.tagName.toLowerCase();
+    for (const entry of record.exports.values()) {
+        const reportKey = `${tag}|${entry.exportedPath}`;
+        if (reportedShadows.has(reportKey)) {
+            continue;
+        }
+        const exportedInfo = getPathInfo(entry.exportedPath);
+        let parentValue = undefined;
+        record.parentStateElement.createState("readonly", (state) => {
+            state[setLoopContextSymbol](loopContext, () => {
+                parentValue = state[exportedInfo.parentPath];
+            });
+        });
+        if (parentValue === null || typeof parentValue === "undefined"
+            || !(exportedInfo.lastSegment in Object(parentValue))) {
+            continue;
+        }
+        reportedShadows.add(reportKey);
+        console.warn(`[@wcstack/state] [wcs/mount-export-shadowed] <${tag}>.${record.stateProp}.${entry.suffix} is exported at ` +
+            `"${entry.exportedPath}" but the tree already has that key, so readers outside the component get the tree value. ` +
+            `Remove the tree key or rename the accessor. See docs/state-overlay-export-design.md X1.`);
+    }
 }
 
 /**
@@ -13839,6 +14330,16 @@ function _getByAddress(target, address, receiver, handler, stateElement) {
             return undefined;
         }
         const lastSegment = address.pathInfo.segments[address.pathInfo.segments.length - 1];
+        // 公開 getter の dispatch（docs/state-overlay-export-design.md §2-1）: 掛かるのは
+        // 「ツリーの未存在キー」の分岐だけ（X1 — 命中する読みは無改造）。マウントの無い
+        // state は boolean 1 個で抜ける（D18）
+        if (stateElement.hasMounts === true && lastSegment !== WILDCARD
+            && !(lastSegment in Object(parentValue))) {
+            const exported = resolveExport(stateElement, parentAddress.pathInfo.path, lastSegment, address.listIndex);
+            if (exported !== null) {
+                return readExportedAccessor(exported.record, exported.entry, address.listIndex, receiver, handler);
+            }
+        }
         if (lastSegment === WILDCARD) {
             // listIndex が無いまま末尾ワイルドカードに到達 ＝ そのパスの階数を満たす
             // ループ文脈が無い（`matrix.*.*` を 1 段の `for` の中で読む等）。元の文面は
@@ -14739,6 +15240,8 @@ function _setByAddress(target, address, absAddress, value, receiver, handler, ke
                 return Reflect.set(parentValue, index, value);
             }
             else {
+                // 公開 getter への書き込み（X9）は setByAddressCore の fast path（親がオブジェクトの
+                // 未存在キー）で dispatch 済み。ここに来るのは親が非オブジェクトの形だけ
                 return Reflect.set(parentValue, lastSegment, value);
             }
         }
@@ -14914,17 +15417,35 @@ function setByAddressCore(target, address, value, receiver, handler, keyedMergeP
                 });
             }
             recordWatchPrevValue(stateElement, path, absAddress, devOldValue, devHasOldValue);
+            let dispatchedExport = false;
             try {
                 if (key === undefined) {
                     // fast path 版の同じ取り違え（末尾ワイルドカードに listIndex が無い）。
                     // 通常経路と同じ語彙で「何段必要か」を言う（pathDiagnostics.ts）。
                     raiseError(wildcardScopeMessage(`path "${path}"`, address.pathInfo.wildcardCount, address.listIndex?.length ?? 0));
                 }
+                // 公開 getter への書き込み（docs/state-overlay-export-design.md X9）: 未存在キーへの
+                // 書き込みは今日「ツリーに作る」が、その位置に公開 getter があると以後ツリーが勝ち
+                // （X1）getter を無言で隠す。setter があれば setter、無ければ raise（overlay の set）
+                if (stateElement.hasMounts === true && lastSegment !== WILDCARD && !(key in parentValue)) {
+                    const exported = resolveExport(stateElement, address.parentAddress.pathInfo.path, lastSegment, address.listIndex);
+                    if (exported !== null) {
+                        dispatchedExport = true;
+                        return writeExportedAccessor(exported.record, exported.entry, address.listIndex, value, receiver, handler);
+                    }
+                }
                 return Reflect.set(parentValue, key, value);
             }
             finally {
                 notifyWrite(address, absAddress, receiver, handler, keyedMergePath);
-                commitWriteCache(stateElement, path, absAddress, value, cacheable);
+                if (dispatchedExport) {
+                    // Exported row paths are cacheable but absent from getterPaths. The
+                    // accessor may normalize or reject the input; never pin that input.
+                    dirtyCacheEntryByAbsoluteStateAddress(absAddress);
+                }
+                else {
+                    commitWriteCache(stateElement, path, absAddress, value, cacheable);
+                }
                 // DCC bindable イベントディスパッチ（完全一致 ＋ サブパス → 先頭セグメント、§2.1）
                 dispatchBindableEvent(stateElement, address.pathInfo, { value });
             }
@@ -15425,6 +15946,27 @@ function updatedCallback(target, refs, receiver, handler) {
 }
 
 /**
+ * errorCallback.ts
+ *
+ * StateClass のライフサイクルフック「$errorCallback」を呼び出すユーティリティ関数。
+ *
+ * 主な役割:
+ * - target に $errorCallback メソッドが定義されていれば、(error, info) で呼び出す
+ * - this は writable な state proxy（receiver）— 作者はここで自分の state にエラーを書ける
+ *
+ * 設計ポイント:
+ * - Reflect.get で安全に取得し、無ければ何もしない（disconnectedCallback と同型）
+ * - 呼び出し元（apply/applyChangeFromBindings.ts）が drain 末尾でまとめて呼び、
+ *   callback 自身の throw もそこで隔離する。ここでは await しない
+ */
+function errorCallback(target, error, info, receiver, _handler) {
+    const callback = Reflect.get(target, STATE_ERROR_CALLBACK_NAME);
+    if (typeof callback === "function") {
+        callback.call(receiver, error, info);
+    }
+}
+
+/**
  * setLoopContext.ts
  *
  * StateClassの内部APIとして、ループコンテキスト（ILoopContext）を一時的に設定し、
@@ -15654,6 +16196,12 @@ function get(target, prop, receiver, handler) {
             case updatedCallbackSymbol: {
                 api = (refs) => {
                     return updatedCallback(target, refs, receiver, handler);
+                };
+                break;
+            }
+            case errorCallbackSymbol: {
+                api = (error, info) => {
+                    return errorCallback(target, error, info, receiver);
                 };
                 break;
             }
@@ -15975,6 +16523,11 @@ function initializeMountScope(record, scopeRoot) {
         setStateElementAlias(scopeRoot, record.parentStateElement);
     }
     buildMountScopeBindings(record, scopeRoot);
+    // Register exports and alias edges once. Notify parents that evaluated before
+    // registration, including on reinitialization when values may have changed.
+    registerExports(record);
+    warnShadowedExports(record);
+    notifyExports(record);
     setBindingsReadyForScope(scopeRoot, Promise.resolve());
 }
 function buildMountScopeBindings(record, walkRoot) {
@@ -16008,6 +16561,8 @@ function remountScopeBindings(record, scopeRoot) {
     const rebound = session.rebindAddresses();
     // 空でも呼んで良い（ループが回らないだけ）— 分岐を持たない
     applyChangeFromBindings(rebound);
+    // 別の行に付け替わった ＝ その行の公開パスの答えが変わった（X6）
+    notifyExports(record);
 }
 
 /**
@@ -16448,6 +17003,8 @@ class State extends HTMLElementBase {
     }
     __state;
     _hasUpdatedCallback = false;
+    /** $errorCallback の有無（_hasUpdatedCallback と同じく state セット時に確定。ルートのみ） */
+    _hasErrorCallback = false;
     /** enable-ssr のスナップショットから初期化された（D14: ボリュームはデータを採用する） */
     _hydratedFromSsr = false;
     // 他行を読む getter が検出されたリストパス（diff-filter 展開の全行フォールバック対象）。
@@ -16537,6 +17094,7 @@ class State extends HTMLElementBase {
         // パターンは検知できない（bindProperty / _state 再セットは検知する）。
         // ライフサイクルフックは宣言時に定義するのが規約。
         this._hasUpdatedCallback = STATE_UPDATED_CALLBACK_NAME in value;
+        this._hasErrorCallback = STATE_ERROR_CALLBACK_NAME in value;
         // 再 set 時に二重 subscribe しないよう registry をクリアしてから $on を配線し直す。
         clearEventTokenRegistry(this);
         processOnDeclaration(this, value, this._eventTokenNames);
@@ -17136,6 +17694,9 @@ class State extends HTMLElementBase {
             // 台帳エイリアスは消さない（プール再利用の再接続が同じスコープに戻る）。
             // $disconnectedCallback だけは要素のライフサイクルとして呼ぶ（例外は隔離）
             callMountLifecycleCallback(this._mountRecord, "$disconnectedCallback");
+            // 公開 getter の答えが消えた（X6）— 親の依存者を再評価させる。プール返却も
+            // 恒久破棄もここを通る（行ごと消えた形は $postUpdate が届かず無視される）
+            notifyExports(this._mountRecord);
             this._rootNode = null;
             return;
         }
@@ -17383,6 +17944,9 @@ class State extends HTMLElementBase {
     }
     get hasUpdatedCallback() {
         return this._hasUpdatedCallback;
+    }
+    get hasErrorCallback() {
+        return this._hasErrorCallback;
     }
     get crossRowListPaths() {
         return this._crossRowListPaths;
@@ -17743,6 +18307,7 @@ function getWcsManifest() {
             STATE_CONNECTED_CALLBACK_NAME,
             STATE_DISCONNECTED_CALLBACK_NAME,
             STATE_UPDATED_CALLBACK_NAME,
+            STATE_ERROR_CALLBACK_NAME,
             WEBCOMPONENT_STATE_READY_CALLBACK_NAME,
         ],
         reservedStateApi: [
@@ -17889,5 +18454,5 @@ function resolveLiveDeclaration(tag) {
     return { propertyEvents, inputs, commands };
 }
 
-export { Ssr, VERSION, WCS_MANIFEST_VERSION, analyzeContract, bootstrapState, buildBindings, builtinFilterMeta, defineState, getBindingsReady, getConfig, getWcsManifest };
+export { Ssr, TRUSTED_TYPES_POLICY_SLOT, VERSION, WCS_MANIFEST_VERSION, analyzeContract, bootstrapState, buildBindings, builtinFilterMeta, defineState, getBindingsReady, getConfig, getTrustedTypesPolicy, getWcsManifest, setTrustedTypesPolicy };
 //# sourceMappingURL=index.esm.js.map

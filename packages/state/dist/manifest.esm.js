@@ -1069,6 +1069,7 @@ Object.freeze(tmpIndexByIndexName);
 const STATE_CONNECTED_CALLBACK_NAME = "$connectedCallback";
 const STATE_DISCONNECTED_CALLBACK_NAME = "$disconnectedCallback";
 const STATE_UPDATED_CALLBACK_NAME = "$updatedCallback";
+const STATE_ERROR_CALLBACK_NAME = "$errorCallback";
 const WEBCOMPONENT_STATE_READY_CALLBACK_NAME = "$stateReadyCallback";
 const STATE_BINDABLES_NAME = "$bindables";
 const STATE_COMMANDS_NAME = "$commands";
@@ -1143,6 +1144,7 @@ function getWcsManifest() {
             STATE_CONNECTED_CALLBACK_NAME,
             STATE_DISCONNECTED_CALLBACK_NAME,
             STATE_UPDATED_CALLBACK_NAME,
+            STATE_ERROR_CALLBACK_NAME,
             WEBCOMPONENT_STATE_READY_CALLBACK_NAME,
         ],
         reservedStateApi: [

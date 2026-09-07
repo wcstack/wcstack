@@ -163,6 +163,37 @@ declare function bootstrapFetch(userConfig?: IWritableConfig, registry?: CustomE
 
 declare function getConfig(): IConfig;
 
+/**
+ * Trusted Types (`require-trusted-types-for 'script'`) 対応。正本は docs/csp.md §7。
+ *
+ * `<wcs-fetch target="...">` の HTML 置換モードが innerHTML に流すのは **レスポンス**
+ * ＝ TT がまさに止めたい値そのもの。ここに identity policy を噛ませて通すのは
+ * 「TT 対応」ではなく「TT の無効化」なので、fetch は自前の policy を作らない。
+ * Angular が DomSanitizer を必須にしているのと同じ立て付けで、利用側が sanitizer を
+ * 持つ policy を注入したときだけ通す。
+ *
+ * 注入口は全 @wcstack パッケージ共通のグローバルスロット。buildless（CDN 一発）でも
+ * inline script 1 本で差し込める:
+ *
+ * ```js
+ * globalThis[Symbol.for("wcstack.trustedTypes.policy")] =
+ *   trustedTypes.createPolicy("my-app", { createHTML: (s) => DOMPurify.sanitize(s) });
+ * ```
+ *
+ * policy があるときは TT 非対応ブラウザでも通す。sanitizer が Chromium でだけ効いて
+ * Firefox では素通し、という差が出るほうが危ないため。
+ */
+interface IWcsTrustedTypesPolicy {
+    createHTML?(input: string): unknown;
+    createScriptURL?(input: string): unknown;
+}
+/** 利用側が policy を差し込むグローバルスロット（全 @wcstack パッケージ共通）。 */
+declare const TRUSTED_TYPES_POLICY_SLOT: unique symbol;
+/** 利用側が注入した policy。fetch は identity policy にフォールバックしない。 */
+declare function getTrustedTypesPolicy(): IWcsTrustedTypesPolicy | null;
+/** 利用側 policy を設定する（`null` で解除）。 */
+declare function setTrustedTypesPolicy(policy: IWcsTrustedTypesPolicy | null): void;
+
 type FetchResponseType = "auto" | "json" | "text" | "blob" | "arrayBuffer";
 interface FetchRequestOptions {
     method?: string;
@@ -360,5 +391,5 @@ declare global {
     }
 }
 
-export { FetchCore, WCS_FETCH_ERROR_CODE, Fetch as WcsFetch, InfiniteScroll as WcsInfiniteScroll, bootstrapFetch, getConfig };
-export type { FetchRequestOptions, IWritableConfig, IWritableTagNames, WcsFetchCoreValues, WcsFetchHttpError, WcsFetchValues, WcsIoErrorInfo, WcsIoErrorPhase };
+export { FetchCore, TRUSTED_TYPES_POLICY_SLOT, WCS_FETCH_ERROR_CODE, Fetch as WcsFetch, InfiniteScroll as WcsInfiniteScroll, bootstrapFetch, getConfig, getTrustedTypesPolicy, setTrustedTypesPolicy };
+export type { FetchRequestOptions, IWcsTrustedTypesPolicy, IWritableConfig, IWritableTagNames, WcsFetchCoreValues, WcsFetchHttpError, WcsFetchValues, WcsIoErrorInfo, WcsIoErrorPhase };

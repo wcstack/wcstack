@@ -630,6 +630,7 @@
     "$connectedCallback",
     "$disconnectedCallback",
     "$updatedCallback",
+    "$errorCallback",
     "$stateReadyCallback"
   ],
   "reservedStateApi": [

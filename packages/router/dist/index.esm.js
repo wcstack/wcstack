@@ -157,6 +157,61 @@ const builtinParamTypes = {
     },
 };
 
+/**
+ * searchParams の正規化（docs/router-state-contract-design.md §3.5）。
+ *
+ * - 読み取り形状は `Record<string, string>`。`URLSearchParams` の生ハンドルは
+ *   露出しない（生ハンドルを state に入れない規範）。
+ * - キー重複（`?tag=a&tag=b`）は **last-wins**。
+ * - 値のデコードは `URLSearchParams` に委ねる（`+` → space を含む）。
+ * - 露出オブジェクトは freeze したスナップショット（消費側の変異は loud failure）。
+ */
+function parseSearchParams(search) {
+    const result = {};
+    for (const [key, value] of new URLSearchParams(search)) {
+        result[key] = value;
+    }
+    return Object.freeze(result);
+}
+/**
+ * Record の shallow 比較。params の変化判定（§3.3: 文字列値の shallow 比較）と
+ * searchParams の変化判定（§3.5: キーをソートした pair 列の比較 = 順序非依存）に
+ * 共通で使う。
+ */
+function shallowEqualRecords(a, b) {
+    const aKeys = Object.keys(a);
+    const bKeys = Object.keys(b);
+    if (aKeys.length !== bKeys.length)
+        return false;
+    for (const key of aKeys) {
+        if (!Object.prototype.hasOwnProperty.call(b, key))
+            return false;
+        if (a[key] !== b[key])
+            return false;
+    }
+    return true;
+}
+
+/**
+ * guard 判定関数に渡す第 3 引数を組み立てる。
+ *
+ * `<wcs-router>` が commit 後に露出する観測面（params / typedParams / searchParams /
+ * routeName）と同じ語彙・同じ正規化を、commit **前**の guard 相で読めるようにする。
+ * guard がデータをロードしてから進入を許可する（loader）とき、ロードに要る
+ * パラメータをここから取る。
+ *
+ * frozen スナップショット — 消費側の変異は loud failure（router 観測面と同じ規範）。
+ * routeName は最深マッチルートの name（fallback 時は fallback の name、無名は ""）。
+ */
+function createGuardContext(matchResult) {
+    return Object.freeze({
+        params: Object.freeze({ ...matchResult.params }),
+        typedParams: Object.freeze({ ...matchResult.typedParams }),
+        searchParams: parseSearchParams(matchResult.search ?? ""),
+        routeName: matchResult.routes[matchResult.routes.length - 1]?.name ?? "",
+    });
+}
+
 const weights = {
     'static': 2,
     'param': 1,
@@ -475,6 +530,13 @@ class RouteCore extends EventTarget {
         this._guardHandlerLoadFailed = true;
         this._resolveSetGuardHandler?.();
     }
+    /**
+     * guard 相（components/types.ts の GuardResult を参照）。
+     * - 空でない文字列 → その絶対パスへ動的リダイレクト（`guard` 属性より優先）
+     * - falsy（false / undefined / null / ""）→ `guard` 属性のパスへ
+     * - オブジェクト → 許可し、ロード済みデータとして返す（runGuardPhase が集約）
+     * - true → 許可（データ無し = null）
+     */
     async guardCheck(matchResult) {
         if (this._hasGuard && this._waitForSetGuardHandler) {
             await this._waitForSetGuardHandler;
@@ -482,15 +544,20 @@ class RouteCore extends EventTarget {
         if (this._guardHandler) {
             const toPath = matchResult.path;
             const fromPath = matchResult.lastPath;
-            const allowed = await this._guardHandler(toPath, fromPath);
-            if (!allowed) {
+            const result = await this._guardHandler(toPath, fromPath, createGuardContext(matchResult));
+            if (typeof result === 'string' && result !== '') {
+                throw new GuardCancel('Navigation cancelled by guard.', result);
+            }
+            if (!result) {
                 throw new GuardCancel('Navigation cancelled by guard.', this._guardFallbackPath);
             }
+            return typeof result === 'object' ? result : null;
         }
         else if (this._hasGuard && this._guardHandlerLoadFailed) {
             // guardHandler のロードに失敗した場合は fallback パスへ
             throw new GuardCancel('Navigation cancelled: guard handler failed to load.', this._guardFallbackPath);
         }
+        return null;
     }
 }
 
@@ -704,6 +771,109 @@ class Route extends HTMLElement {
     }
 }
 
+/**
+ * Trusted Types (`require-trusted-types-for 'script'`) 対応。正本は docs/csp.md §7。
+ *
+ * router が HTML sink に流すのは `<wcs-layout>` のテンプレート、つまり **作者が書いた
+ * マークアップ**（同一文書の `<template>` か `src` で取りに行くアプリの資産）であって、
+ * ユーザー入力ではない。Lit がテンプレートリテラルにだけ policy を当てているのと同じ
+ * 立て付けで、ここは identity policy で署名してよい層に当たる。
+ *
+ * policy 名は全 @wcstack パッケージで単一の `wcstack` に固定する。利用側の CSP に
+ * 書く行を 1 本に固定できるほうが、パッケージごとに名前を分けて最小権限にするより
+ * 導入摩擦が小さいため（署名対象がどれも作者制御の値なので、分割しても守るものが
+ * 増えない）。生成結果はグローバルスロットで共有し、複数パッケージが同居しても
+ * `createPolicy` は 1 回だけ走らせる — `trusted-types` ディレクティブがある場合、
+ * `'allow-duplicates'` 無しの重複生成は例外になるため。
+ *
+ * **利用側が注入した policy はここでは優先しない。** 注入口は「信頼できない値に対する
+ * sanitizer」として使われる想定で（fetch のレスポンス、state の値）、実際に案内している
+ * 設定も DOMPurify である。作者が書いたレイアウトを sanitizer に通すと、既定でカスタム
+ * 要素が除去されて `<wcs-link>` などがレイアウトから消える——例外も警告も無しに。
+ * よってここは identity policy を優先し、**それを作れなかったときだけ**利用側 policy に
+ * 落ちる（その場合は 1 度警告する）。
+ */
+/** 利用側が policy を差し込むグローバルスロット（全 @wcstack パッケージ共通）。 */
+const TRUSTED_TYPES_POLICY_SLOT = Symbol.for("wcstack.trustedTypes.policy");
+/** wcstack が生成した identity policy を共有するスロット（内部用）。 */
+const INTERNAL_POLICY_SLOT = Symbol.for("wcstack.trustedTypes.internal");
+const POLICY_NAME = "wcstack";
+/** 利用側が注入した policy。 */
+function getTrustedTypesPolicy() {
+    const value = globalThis[TRUSTED_TYPES_POLICY_SLOT];
+    if (value === null || typeof value !== "object")
+        return null;
+    return value;
+}
+/** 利用側 policy を設定する（`null` で解除）。 */
+function setTrustedTypesPolicy(policy) {
+    globalThis[TRUSTED_TYPES_POLICY_SLOT] = policy;
+}
+/**
+ * 作者制御の文字列に署名するための共有 identity policy。TT 非対応ブラウザでは
+ * null（呼び出し側は生文字列のまま進む）。生成失敗も null をキャッシュして、
+ * 診断は 1 度だけ出す。
+ */
+function getInternalPolicy() {
+    const holder = globalThis;
+    const cached = holder[INTERNAL_POLICY_SLOT];
+    if (cached !== undefined)
+        return cached;
+    const factory = globalThis.trustedTypes;
+    let policy = null;
+    if (factory && typeof factory.createPolicy === "function") {
+        try {
+            policy = factory.createPolicy(POLICY_NAME, {
+                createHTML: (input) => input,
+                createScriptURL: (input) => input,
+            });
+        }
+        catch (error) {
+            // 利用側 policy に落ちられるなら、報告は初回使用時の 1 回の warn（trustAuthoredHTML）
+            // に任せる — docs/csp.md §7 の「フォールバックと一度きりの warn」。error まで
+            // 出すと、既に policy を注入した利用者へ「注入せよ」と言うことになる（実 Chromium の
+            // e2e で確認）。落ちる先が無いときだけ、直し方付きで error にする
+            if (typeof getTrustedTypesPolicy()?.createHTML !== "function") {
+                console.error(`[@wcstack/router] Could not create the Trusted Types policy "${POLICY_NAME}". `
+                    + `Allow it in the CSP (\`trusted-types ${POLICY_NAME};\`), or inject your own policy `
+                    + `at globalThis[Symbol.for("wcstack.trustedTypes.policy")]. See docs/csp.md section 7.`, error);
+            }
+        }
+    }
+    holder[INTERNAL_POLICY_SLOT] = policy;
+    return policy;
+}
+let _fallbackWarned = false;
+/**
+ * 作者が書いたマークアップを TrustedHTML に変換する。
+ *
+ * 解決順は 共有 identity policy > （TT はあるが identity policy を作れなかった場合のみ）
+ * 利用側 policy > 生文字列。TT 非対応ブラウザでは署名自体が不要なので、利用側 policy が
+ * 入っていても素通しする——作者のレイアウトを sanitizer に通す理由はどこにも無い。
+ */
+function trustAuthoredHTML(html) {
+    const internal = getInternalPolicy();
+    const internalCreateHTML = internal?.createHTML;
+    if (typeof internalCreateHTML === "function") {
+        return internalCreateHTML.call(internal, html);
+    }
+    if (!("trustedTypes" in globalThis))
+        return html;
+    const adopted = getTrustedTypesPolicy();
+    const adoptedCreateHTML = adopted?.createHTML;
+    if (typeof adoptedCreateHTML === "function") {
+        if (!_fallbackWarned) {
+            _fallbackWarned = true;
+            console.warn(`[@wcstack/router] Falling back to the injected Trusted Types policy to expand a layout `
+                + `template, because the "${POLICY_NAME}" policy could not be created. If that policy `
+                + `sanitizes (e.g. DOMPurify), custom elements in the layout may be stripped. `
+                + `Allow \`trusted-types ${POLICY_NAME};\` in the CSP to avoid this. See docs/csp.md section 7.`);
+        }
+        return adoptedCreateHTML.call(adopted, html);
+    }
+    return html;
+}
+
 const cache = new Map();
 class Layout extends HTMLElement {
     _uuid = getUUID();
@@ -741,19 +911,22 @@ class Layout extends HTMLElement {
             console.warn(`${config.tagNames.layout} have both "src" and "layout" attributes.`);
         }
         const template = document.createElement('template');
+        // Trusted Types: ここに流れるのは作者が書いたレイアウトのマークアップなので、
+        // 共有 identity policy で署名してよい層（docs/csp.md §7）。利用側が独自 policy を
+        // 注入していればそちらが優先される。
         if (source) {
             if (cache.has(source)) {
-                template.innerHTML = cache.get(source) || '';
+                template.innerHTML = trustAuthoredHTML(cache.get(source) || '');
             }
             else {
                 // _loadTemplateFromSource は内部で cache.set を実行する
-                template.innerHTML = await this._loadTemplateFromSource(source) || '';
+                template.innerHTML = trustAuthoredHTML(await this._loadTemplateFromSource(source) || '');
             }
         }
         else if (layoutId) {
             const templateContent = this._loadTemplateFromDocument(layoutId);
             if (templateContent) {
-                template.innerHTML = templateContent;
+                template.innerHTML = trustAuthoredHTML(templateContent);
             }
             else {
                 console.warn(`${config.tagNames.layout} could not find template with id "${layoutId}".`);
@@ -1237,7 +1410,10 @@ async function _parseNode(routerNode, node, routes, routesByPath) {
                 element = cloneElement;
             }
             const children = await _parseNode(routerNode, element, routes, routesByPath);
-            element.innerHTML = "";
+            // 空文字の innerHTML 代入は Trusted Types 下でも通る実装が多いが、その細目に
+            // 寄りかからずノード操作で書く（docs/csp.md §7）。意図としても「子を全消しして
+            // 差し替える」のほうが直接的。
+            element.replaceChildren();
             element.appendChild(children);
             fragment.appendChild(appendNode);
         }
@@ -1875,9 +2051,17 @@ function bindRouteContent(route) {
  */
 async function runGuardPhase(routerNode, matchResult) {
     try {
+        // guard がオブジェクトを返したルートのデータを親→子の順で浅くマージし、
+        // matchResult.data に載せる（applyRoute / SSR 採用が commit へ運ぶ）。
+        // 何も返らなければ null — 「このナビゲーションにデータ無し」を明示する
+        let data = null;
         for (const route of matchResult.routes) {
-            await route.guardCheck(matchResult);
+            const routeData = await route.guardCheck(matchResult);
+            if (routeData) {
+                data = data === null ? routeData : Object.assign({}, data, routeData);
+            }
         }
+        matchResult.data = data;
     }
     catch (e) {
         if (e instanceof GuardCancel) {
@@ -1989,6 +2173,8 @@ async function applyRoute(routerNode, outlet, fullPath, lastPath, search = "") {
             params: routerNode.params,
             typedParams: routerNode.typedParams,
             routeName: routerNode.routeName,
+            // guard 相を通らないので data も据え置き（同一性を保ち data-changed を発火させない）
+            data: routerNode.data,
             search,
             path,
         });
@@ -2010,6 +2196,8 @@ async function applyRoute(routerNode, outlet, fullPath, lastPath, search = "") {
         }
     }
     matchResult.lastPath = lastPath;
+    // guard 相の第 3 引数（IGuardContext.searchParams）が commit と同じクエリを読めるように供給する
+    matchResult.search = search;
     const lastRoutes = outlet.lastRoutes;
     const committed = await showRouteContent(routerNode, matchResult, lastRoutes);
     // GuardCancel により中断された場合は state を更新しない
@@ -2022,6 +2210,8 @@ async function applyRoute(routerNode, outlet, fullPath, lastPath, search = "") {
         params: matchResult.params,
         typedParams: matchResult.typedParams,
         routeName: matchResult.routes[matchResult.routes.length - 1]?.name ?? "",
+        // guard 相（runGuardPhase）が集めたロード済みデータ。無ければ null に戻る
+        data: matchResult.data ?? null,
         search,
         path,
     });
@@ -2045,41 +2235,6 @@ function getNavigation() {
         return null;
     }
     return nav;
-}
-
-/**
- * searchParams の正規化（docs/router-state-contract-design.md §3.5）。
- *
- * - 読み取り形状は `Record<string, string>`。`URLSearchParams` の生ハンドルは
- *   露出しない（生ハンドルを state に入れない規範）。
- * - キー重複（`?tag=a&tag=b`）は **last-wins**。
- * - 値のデコードは `URLSearchParams` に委ねる（`+` → space を含む）。
- * - 露出オブジェクトは freeze したスナップショット（消費側の変異は loud failure）。
- */
-function parseSearchParams(search) {
-    const result = {};
-    for (const [key, value] of new URLSearchParams(search)) {
-        result[key] = value;
-    }
-    return Object.freeze(result);
-}
-/**
- * Record の shallow 比較。params の変化判定（§3.3: 文字列値の shallow 比較）と
- * searchParams の変化判定（§3.5: キーをソートした pair 列の比較 = 順序非依存）に
- * 共通で使う。
- */
-function shallowEqualRecords(a, b) {
-    const aKeys = Object.keys(a);
-    const bKeys = Object.keys(b);
-    if (aKeys.length !== bKeys.length)
-        return false;
-    for (const key of aKeys) {
-        if (!Object.prototype.hasOwnProperty.call(b, key))
-            return false;
-        if (a[key] !== b[key])
-            return false;
-    }
-    return true;
 }
 
 function splitUrlTarget(to) {
@@ -2212,6 +2367,9 @@ class Router extends HTMLElement {
                 getter: (e) => e.detail.typedParams },
             { name: "searchParams", event: "wcs-router:search-changed", semantics: "state" },
             { name: "routeName", event: "wcs-router:route-name-changed", semantics: "state" },
+            // guard 関数がオブジェクトを返したナビゲーションのロード済みデータ（loader）。
+            // output-only。データ無しのナビゲーションでは null に戻る
+            { name: "data", event: "wcs-router:data-changed", semantics: "state" },
         ],
         // `navigateUrl` は observable output であると同時に settable な書き込み面でもある
         // （setter が navigate() を起動し、完了後に自分で null へ戻す）。properties にだけ
@@ -2249,6 +2407,9 @@ class Router extends HTMLElement {
     _typedParams = EMPTY_RECORD;
     _searchParams = EMPTY_RECORD;
     _routeName = '';
+    // guard 相のロード済みデータ。frozen にしない — 作者が返したオブジェクトをそのまま
+    // 露出する（state 側で保持・変異されうる作者所有の値。params とは所有者が違う）
+    _data = null;
     /** 最初の成功 commit を通過したか（§4.4 の初回ガード） */
     _hasCommitted = false;
     _connectedCallbackPromise;
@@ -2414,6 +2575,9 @@ class Router extends HTMLElement {
     get routeName() {
         return this._routeName;
     }
+    get data() {
+        return this._data;
+    }
     /**
      * same-match 判定（docs/router-state-contract-design.md §4.4）。
      *
@@ -2435,14 +2599,19 @@ class Router extends HTMLElement {
      *
      * 全内部値を先にコミットし、その後で初めてイベントを発火する — どのイベントの
      * リスナーから要素プロパティを読んでも、遷移後スナップショットの一貫した値が
-     * 見える。発火順序は params → route-name → search → path。`path` を最後に
-     * 置くのは、既存例で `path` が「ナビゲーション完了」の信号として使われている
-     * ため。各イベントは変化した commit のみ発火する。
+     * 見える。発火順序は data → params → route-name → search → path。`data` を
+     * 先頭に置くのは、params のリスナーがロード済みデータを読めるようにするため。
+     * `path` を最後に置くのは、既存例で `path` が「ナビゲーション完了」の信号として
+     * 使われているため。各イベントは変化した commit のみ発火する。
      */
     commitNavigation(commit) {
         const nextParams = Object.freeze({ ...commit.params });
         const nextTypedParams = Object.freeze({ ...commit.typedParams });
         const nextSearchParams = parseSearchParams(commit.search);
+        // data は同一性で比較する（guard は遷移ごとに新しいオブジェクトを返す。
+        // same-match は前の参照をそのまま渡すので発火しない）
+        const nextData = commit.data ?? null;
+        const dataChanged = this._data !== nextData;
         const paramsChanged = !shallowEqualRecords(this._params, nextParams);
         const routeNameChanged = this._routeName !== commit.routeName;
         const searchChanged = !shallowEqualRecords(this._searchParams, nextSearchParams);
@@ -2450,6 +2619,9 @@ class Router extends HTMLElement {
         // --- 先に全内部値をコミット ---
         // 変化した面だけ差し替える（ナビゲーションごとに新しいオブジェクトになるので
         // state の same-value guard を正しく通過する。不変の面は同一性を保つ）。
+        if (dataChanged) {
+            this._data = nextData;
+        }
         if (paramsChanged) {
             this._params = nextParams;
             this._typedParams = nextTypedParams;
@@ -2462,7 +2634,13 @@ class Router extends HTMLElement {
         }
         this._path = commit.path;
         this._hasCommitted = true;
-        // --- その後で発火（順序規範: params → route-name → search → path） ---
+        // --- その後で発火（順序規範: data → params → route-name → search → path） ---
+        if (dataChanged) {
+            this.dispatchEvent(new CustomEvent("wcs-router:data-changed", {
+                detail: this._data,
+                bubbles: true,
+            }));
+        }
         if (paramsChanged) {
             this.dispatchEvent(new CustomEvent("wcs-router:params-changed", {
                 detail: { params: this._params, typedParams: this._typedParams },
@@ -2955,6 +3133,7 @@ class Router extends HTMLElement {
             params: matchResult.params,
             typedParams: matchResult.typedParams,
             routeName: matchResult.routes[matchResult.routes.length - 1].name,
+            data: matchResult.data ?? null,
             search: window.location.search || "",
             path,
         });
@@ -3678,11 +3857,11 @@ function bootstrapRouter(config, registry) {
     registerComponents(registry);
 }
 
-var version = "2.1.1";
+var version = "2.2.0";
 var pkg = {
 	version: version};
 
 const VERSION = pkg.version;
 
-export { Route, RouteCore, Router, VERSION, bootstrapRouter, getConfig };
+export { Route, RouteCore, Router, TRUSTED_TYPES_POLICY_SLOT, VERSION, bootstrapRouter, getConfig, getTrustedTypesPolicy, setTrustedTypesPolicy };
 //# sourceMappingURL=index.esm.js.map

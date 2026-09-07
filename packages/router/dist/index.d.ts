@@ -78,14 +78,73 @@ declare function bootstrapRouter(config?: Partial<IWritableConfig>, registry?: C
 
 declare function getConfig(): IConfig;
 
+/**
+ * Trusted Types (`require-trusted-types-for 'script'`) 対応。正本は docs/csp.md §7。
+ *
+ * router が HTML sink に流すのは `<wcs-layout>` のテンプレート、つまり **作者が書いた
+ * マークアップ**（同一文書の `<template>` か `src` で取りに行くアプリの資産）であって、
+ * ユーザー入力ではない。Lit がテンプレートリテラルにだけ policy を当てているのと同じ
+ * 立て付けで、ここは identity policy で署名してよい層に当たる。
+ *
+ * policy 名は全 @wcstack パッケージで単一の `wcstack` に固定する。利用側の CSP に
+ * 書く行を 1 本に固定できるほうが、パッケージごとに名前を分けて最小権限にするより
+ * 導入摩擦が小さいため（署名対象がどれも作者制御の値なので、分割しても守るものが
+ * 増えない）。生成結果はグローバルスロットで共有し、複数パッケージが同居しても
+ * `createPolicy` は 1 回だけ走らせる — `trusted-types` ディレクティブがある場合、
+ * `'allow-duplicates'` 無しの重複生成は例外になるため。
+ *
+ * **利用側が注入した policy はここでは優先しない。** 注入口は「信頼できない値に対する
+ * sanitizer」として使われる想定で（fetch のレスポンス、state の値）、実際に案内している
+ * 設定も DOMPurify である。作者が書いたレイアウトを sanitizer に通すと、既定でカスタム
+ * 要素が除去されて `<wcs-link>` などがレイアウトから消える——例外も警告も無しに。
+ * よってここは identity policy を優先し、**それを作れなかったときだけ**利用側 policy に
+ * 落ちる（その場合は 1 度警告する）。
+ */
+interface IWcsTrustedTypesPolicy {
+    createHTML?(input: string): unknown;
+    createScriptURL?(input: string): unknown;
+}
+/** 利用側が policy を差し込むグローバルスロット（全 @wcstack パッケージ共通）。 */
+declare const TRUSTED_TYPES_POLICY_SLOT: unique symbol;
+/** 利用側が注入した policy。 */
+declare function getTrustedTypesPolicy(): IWcsTrustedTypesPolicy | null;
+/** 利用側 policy を設定する（`null` で解除）。 */
+declare function setTrustedTypesPolicy(policy: IWcsTrustedTypesPolicy | null): void;
+
 interface IRouteMatchResult {
     routes: IRoute[];
     params: Record<string, string>;
     typedParams: Record<string, any>;
     path: string;
     lastPath: string;
+    /** 現在 URL のクエリ（"?k=v" 形式または ""）。applyRoute が commit 用に供給する */
+    search?: string;
+    /** guard 相で guard 関数が返したロード済みデータ（runGuardPhase が書く）。無ければ null */
+    data?: GuardData | null;
 }
-type GuardHandler = (toPath: string, fromPath: string) => boolean | Promise<boolean>;
+/**
+ * guard 判定関数の第 3 引数 — 進入先マッチのスナップショット。`<wcs-router>` が
+ * commit 後に露出する観測面と同じ語彙（params / typedParams / searchParams / routeName）を
+ * commit **前**に読める。frozen。
+ */
+interface IGuardContext {
+    readonly params: Record<string, string>;
+    readonly typedParams: Record<string, any>;
+    readonly searchParams: Record<string, string>;
+    readonly routeName: string;
+}
+/** guard 関数がオブジェクトを返したときの「ロード済みデータ」。`<wcs-router>.data` に載る */
+type GuardData = Record<string, unknown>;
+/**
+ * guard 判定関数の返り値:
+ * - `true` — 進入を許可
+ * - オブジェクト — 進入を許可し、そのオブジェクトを `<wcs-router>.data` として commit する
+ *   （ルートチェーンの複数 guard が返した場合は親→子の順で浅くマージ）
+ * - 空でない文字列 — 進入を拒否し、その絶対パスへリダイレクト（動的リダイレクト先）
+ * - `false` / それ以外の falsy — 進入を拒否し、`guard` 属性のパスへリダイレクト
+ */
+type GuardResult = boolean | string | GuardData | null | undefined;
+type GuardHandler = (toPath: string, fromPath: string, context: IGuardContext) => GuardResult | Promise<GuardResult>;
 interface _ILayout {
     readonly uuid: string;
     readonly enableShadowRoot: boolean;
@@ -132,7 +191,8 @@ interface IRoute extends IRouteChildContainer {
     readonly hasGuard: boolean;
     guardHandler: GuardHandler;
     shouldChange(newParams: Record<string, string>): boolean;
-    guardCheck(matchResult: IRouteMatchResult): Promise<void>;
+    /** guard 相。拒否は GuardCancel を throw。許可時は guard 関数が返したデータ（無ければ null） */
+    guardCheck(matchResult: IRouteMatchResult): Promise<GuardData | null>;
     initialize(routerNode: IRouter, parentRouteNode: IRoute | null): void;
     testAncestorNode(ancestorNode: IRoute): boolean;
     setParams(params: Record<string, string>, typedParams: Record<string, any>): void;
@@ -155,6 +215,8 @@ interface IRouterCommit {
     search: string;
     /** basename スライス後の path */
     path: string;
+    /** guard 相で集めたロード済みデータ。省略・null は「このナビゲーションにデータ無し」= null に戻す */
+    data?: GuardData | null;
 }
 interface IRouter extends IRouteChildContainer {
     readonly basename: string;
@@ -170,6 +232,11 @@ interface IRouter extends IRouteChildContainer {
     readonly searchParams: Record<string, string>;
     /** 最深マッチルートの name 属性値。fallback 時は fallback ルートの name */
     readonly routeName: string;
+    /**
+     * 現在マッチの guard 関数が返したロード済みデータ。guard がオブジェクトを返さなかった
+     * ナビゲーションでは null。same-match（クエリのみの遷移）では前の値を保つ
+     */
+    readonly data: GuardData | null;
     navigate(path: string): Promise<void>;
     /** navigateUrl（push）の対になる replace 遷移（§4.2） */
     replace(path: string): Promise<void>;
@@ -241,6 +308,7 @@ declare class Router extends HTMLElement implements IRouter {
     private _typedParams;
     private _searchParams;
     private _routeName;
+    private _data;
     /** 最初の成功 commit を通過したか（§4.4 の初回ガード） */
     private _hasCommitted;
     private _connectedCallbackPromise;
@@ -296,6 +364,7 @@ declare class Router extends HTMLElement implements IRouter {
     get typedParams(): Record<string, any>;
     get searchParams(): Record<string, string>;
     get routeName(): string;
+    get data(): GuardData | null;
     /**
      * same-match 判定（docs/router-state-contract-design.md §4.4）。
      *
@@ -313,9 +382,10 @@ declare class Router extends HTMLElement implements IRouter {
      *
      * 全内部値を先にコミットし、その後で初めてイベントを発火する — どのイベントの
      * リスナーから要素プロパティを読んでも、遷移後スナップショットの一貫した値が
-     * 見える。発火順序は params → route-name → search → path。`path` を最後に
-     * 置くのは、既存例で `path` が「ナビゲーション完了」の信号として使われている
-     * ため。各イベントは変化した commit のみ発火する。
+     * 見える。発火順序は data → params → route-name → search → path。`data` を
+     * 先頭に置くのは、params のリスナーがロード済みデータを読めるようにするため。
+     * `path` を最後に置くのは、既存例で `path` が「ナビゲーション完了」の信号として
+     * 使われているため。各イベントは変化した commit のみ発火する。
      */
     commitNavigation(commit: IRouterCommit): void;
     get fallbackRoute(): IRoute | null;
@@ -428,7 +498,7 @@ declare class Route extends HTMLElement implements IRoute {
     setParams(params: Record<string, string>, typedParams: Record<string, any>): void;
     clearParams(): void;
     shouldChange(newParams: Record<string, string>): boolean;
-    guardCheck(matchResult: IRouteMatchResult): Promise<void>;
+    guardCheck(matchResult: IRouteMatchResult): Promise<GuardData | null>;
     notifyGuardHandlerLoadFailed(): void;
     /**
      * Shell（Route）の routeParentNode を辿って祖先関係を判定する。
@@ -522,7 +592,14 @@ declare class RouteCore extends EventTarget {
      * 解除後の guardCheck は guardHandler が未設定のため fallback パスへリダイレクトする。
      */
     notifyGuardHandlerLoadFailed(): void;
-    guardCheck(matchResult: IRouteMatchResult): Promise<void>;
+    /**
+     * guard 相（components/types.ts の GuardResult を参照）。
+     * - 空でない文字列 → その絶対パスへ動的リダイレクト（`guard` 属性より優先）
+     * - falsy（false / undefined / null / ""）→ `guard` 属性のパスへ
+     * - オブジェクト → 許可し、ロード済みデータとして返す（runGuardPhase が集約）
+     * - true → 許可（データ無し = null）
+     */
+    guardCheck(matchResult: IRouteMatchResult): Promise<GuardData | null>;
 }
 
 declare const VERSION: string;
@@ -685,5 +762,5 @@ declare global {
     }
 }
 
-export { Route, RouteCore, Router, VERSION, bootstrapRouter, getConfig };
-export type { IWritableConfig, IWritableTagNames, RouteParseOptions };
+export { Route, RouteCore, Router, TRUSTED_TYPES_POLICY_SLOT, VERSION, bootstrapRouter, getConfig, getTrustedTypesPolicy, setTrustedTypesPolicy };
+export type { IWcsTrustedTypesPolicy, IWritableConfig, IWritableTagNames, RouteParseOptions };

@@ -78,6 +78,7 @@ declare const setByAddressSymbol: unique symbol;
 declare const connectedCallbackSymbol: unique symbol;
 declare const disconnectedCallbackSymbol: unique symbol;
 declare const updatedCallbackSymbol: unique symbol;
+declare const errorCallbackSymbol: unique symbol;
 
 interface IStateProxy extends IState {
     [setLoopContextSymbol](loopContext: ILoopContext | null, callback: () => any): any;
@@ -87,10 +88,13 @@ interface IStateProxy extends IState {
     [connectedCallbackSymbol](): Promise<void>;
     [disconnectedCallbackSymbol](): void;
     [updatedCallbackSymbol](updatedAbsAddressList: IAbsoluteStateAddress[]): void;
+    [errorCallbackSymbol](error: unknown, info: IBindingErrorInfo): void;
 }
 type Mutability = "readonly" | "writable";
 
 interface IStateElement {
+    /** DOM connection state; optional for non-DOM state implementations. */
+    readonly isConnected?: boolean;
     /**
      * state のロードが完了しているか。`initializePromise` の同期版で、
      * DCC のアクセサが「今すぐ読み書きしてよいか」を判断するのに使う。
@@ -157,6 +161,12 @@ interface IStateElement {
      * optional なのはテスト用モック互換のため（undefined は「不明＝集計する」）。
      */
     readonly hasUpdatedCallback?: boolean;
+    /**
+     * state が $errorCallback を定義しているか。true のとき drain は隔離したバインディング
+     * 適用失敗を console.error の代わりに $errorCallback へ配送する（devtools sink へは常に流す）。
+     * optional なのはテスト用モック互換のため（undefined は「未定義＝console.error」）。
+     */
+    readonly hasErrorCallback?: boolean;
     /**
      * 他行を読む getter（隣接項目参照など）が検出されたリストパスの集合。
      * これらのリストは walkDependency の diff-filter 展開の対象外（全行展開）。
@@ -345,6 +355,19 @@ interface IConfig {
      */
     readonly sameValueGuard: boolean;
 }
+/**
+ * `$errorCallback(error, info)` の第 2 引数 — 適用に失敗したバインディングの識別情報。
+ * 値と DOM は巻き戻されない（隔離規範）。作者はここで「どのバインディングが」を知り、
+ * 自分の state にエラーを書いてページ内で受ける。
+ */
+interface IBindingErrorInfo {
+    /** バインドされた state パス（`data-wcs` に書かれた形。`items.*.name` などワイルドカードのまま） */
+    readonly path: string;
+    /** バインディング種別（text / property / attribute / class / style / for / if …） */
+    readonly bindingType: BindingType;
+    /** バインディングが付いたノード（テキストバインドでは Text ノード） */
+    readonly node: Node;
+}
 interface IWritableConfig {
     bindAttributeName?: string;
     commentTextPrefix?: string;
@@ -365,6 +388,41 @@ interface IWritableConfig {
 declare function bootstrapState(config?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
+
+/**
+ * Trusted Types (`require-trusted-types-for 'script'`) 対応。正本は docs/csp.md §7。
+ *
+ * state が HTML sink に流すのは **状態の値**（`innerHTML: path` などのプロパティ
+ * バインド）で、ユーザー入力が混ざり得る文字列そのもの。ここに identity policy を
+ * 噛ませて通すのは TT の無効化と同義なので、state は自前の policy を作らない。
+ * 利用側が sanitizer を持つ policy を注入したときだけ通し、無ければ従来どおり
+ * ブラウザに弾かせる（ただし何を設定すれば直るかは必ず言う）。
+ *
+ * 注入口は全 @wcstack パッケージ共通のグローバルスロット。buildless（CDN 一発）でも
+ * inline script 1 本で差し込める:
+ *
+ * ```js
+ * globalThis[Symbol.for("wcstack.trustedTypes.policy")] =
+ *   trustedTypes.createPolicy("my-app", { createHTML: (s) => DOMPurify.sanitize(s) });
+ * ```
+ *
+ * バンドラ経由なら `setTrustedTypesPolicy()` を使う。値は毎回スロットから読むので
+ * 後から差し替えても効く（identity policy を作る router / worker 側だけは
+ * `createPolicy` の重複を避けるため生成結果をシングルトンで保持する）。
+ */
+interface IWcsTrustedTypesPolicy {
+    createHTML?(input: string): unknown;
+    createScriptURL?(input: string): unknown;
+}
+/** 利用側が policy を差し込むグローバルスロット（全 @wcstack パッケージ共通）。 */
+declare const TRUSTED_TYPES_POLICY_SLOT: unique symbol;
+/**
+ * 利用側が注入した policy を返す。state はここに identity policy をフォールバック
+ * させない（それをやると TT を無効化することになる）。
+ */
+declare function getTrustedTypesPolicy(): IWcsTrustedTypesPolicy | null;
+/** 利用側 policy を設定する（`null` で解除）。最初のバインド適用前に呼ぶこと。 */
+declare function setTrustedTypesPolicy(policy: IWcsTrustedTypesPolicy | null): void;
 
 /**
  * 指定された rootNode のバインディング初期化が完了するまで待機する Promise を返す。
@@ -1010,6 +1068,8 @@ declare class State extends HTMLElementBase implements IStateElement {
     static get observedAttributes(): string[];
     private __state;
     private _hasUpdatedCallback;
+    /** $errorCallback の有無（_hasUpdatedCallback と同じく state セット時に確定。ルートのみ） */
+    private _hasErrorCallback;
     /** enable-ssr のスナップショットから初期化された（D14: ボリュームはデータを採用する） */
     private _hydratedFromSsr;
     private _crossRowListPaths;
@@ -1153,6 +1213,7 @@ declare class State extends HTMLElementBase implements IStateElement {
     createState(mutability: Mutability, callback: (state: IStateProxy) => void): void;
     nextVersion(): number;
     get hasUpdatedCallback(): boolean;
+    get hasErrorCallback(): boolean;
     get crossRowListPaths(): ReadonlySet<string>;
     addCrossRowListPath(path: string): void;
     get indexDependentGetterPaths(): ReadonlySet<string>;
@@ -1167,5 +1228,5 @@ declare global {
     }
 }
 
-export { Ssr, VERSION, WCS_MANIFEST_VERSION, analyzeContract, bootstrapState, buildBindings, builtinFilterMeta, defineState, getBindingsReady, getConfig, getWcsManifest };
-export type { ContractEvent, FilterArgType, FilterResultType, IContractManifest, IFilterMeta, ISsrElement, IWcsManifest, IWritableConfig, IWritableTagNames, WcsPathValue, WcsPaths, WcsStateApi, WcsThis };
+export { Ssr, TRUSTED_TYPES_POLICY_SLOT, VERSION, WCS_MANIFEST_VERSION, analyzeContract, bootstrapState, buildBindings, builtinFilterMeta, defineState, getBindingsReady, getConfig, getTrustedTypesPolicy, getWcsManifest, setTrustedTypesPolicy };
+export type { ContractEvent, FilterArgType, FilterResultType, IBindingErrorInfo, IContractManifest, IFilterMeta, ISsrElement, IWcsManifest, IWcsTrustedTypesPolicy, IWritableConfig, IWritableTagNames, WcsPathValue, WcsPaths, WcsStateApi, WcsThis };
