@@ -1348,6 +1348,23 @@ customElements.define("user-card", UserCard);
 > (and on `this` inside getters/methods) speak the component's own vocabulary — paths are
 > translated onto the mount and the host row's indexes are prepended automatically.
 
+#### Exported getters (reading a component's getter from outside)
+
+A mounted component's getters are **exported** at the mount point: **a read of a key the tree does not have is answered by the getter of the component mounted there. A key the tree does have wins. Private keys and methods are never visible.** With the `user-card` above, the host can bind `session`-level markup to the component's derived value:
+
+```html
+<user-card data-wcs="state: user"></user-card>
+<span data-wcs="textContent: user.display"></span>   <!-- "Alice <alice@example.com>" — the component's getter -->
+```
+
+- Row mounts export per row: `$getAll("users.*.display")` and `text: .display` inside the same `for` read each row component's getter. Dependencies flow through: when `user.name` changes, everything that read `user.display` re-renders.
+- Accessors whose component-local path contains a wildcard, such as `get "children.*.label"()`, work inside the component but are **not exported**. Define `get label()` on a component mounted on each child row instead. Only accessors whose exported path has the mount point's wildcard count are exported.
+- The parent evaluates before the child component registers, so the first read may see `undefined`; the value converges as soon as the component mounts. Write derived expressions defensively (`(x ?? 0)`).
+- Missing-path warnings are deferred by one macrotask (`setTimeout(0)`), independently of `getBindingsReady`. With an autoloader or delayed custom-element definition, an initial warning may appear before the component registers, even when the binding eventually resolves.
+- If the tree already has the key (including an inherited property), the tree wins and the runtime warns once (`wcs/mount-export-shadowed`). Two components exporting the same key on the same instance is a configuration error detected during candidate scans (`wcs/mount-export-ambiguous`). A validated cache hit does not rescan other candidates, so adding a conflicting component after the first resolution may escape detection.
+- Writing to an exported key from outside runs the accessor's setter, or throws if it only has a getter (the tree never grows a key that would hide the getter). `in` does not see exported keys.
+- **Self-recursive components** (trees of unbounded depth) become expressible: a component that renders `<template data-wcs="for: children"><tree-node data-wcs="state: ."></tree-node></template>` inside itself can define `get total() { return this.value + this.$getAll("children.*.total").reduce((a, b) => a + (b ?? 0), 0); }` — each level's formula closes over one level, and the ledger resolves the recursion. Paths cannot express recursion themselves (their wildcard count is fixed), so the recursion lives in the DOM and the paths are its unrolled form. Design: [docs/state-overlay-export-design.md](../../docs/state-overlay-export-design.md).
+
 ### Standalone Web Component Injection (`__e2e__/single-component`)
 
 Even when a component is independent from outer host state, you can inject reactive state with `bind-component`.

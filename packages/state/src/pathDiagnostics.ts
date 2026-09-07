@@ -337,6 +337,77 @@ export function checkDeclaredPath(
   if (result.existence !== "missing") {
     return;
   }
+  if (isExportedPath(stateElement, path)) {
+    return;
+  }
+  if (source === "binding") {
+    // 遅延報告（docs/state-overlay-export-design.md X7）: バインド確立時点では、その位置に
+    // マウントされるコンポーネントの getter（公開 getter）がまだ登録されていない。
+    // 1 マクロタスク待って、登録で解消しなかったものだけを報告する
+    deferReport(stateElement, path, result);
+    return;
+  }
+  reportMissing(stateElement, path, source, result);
+}
+
+interface IMissingResult {
+  readonly missingSegment: string;
+  readonly candidates: readonly string[];
+}
+
+const deferredReportsByStateElement = new WeakMap<IStateElement, Map<string, IMissingResult>>();
+const flushScheduled = new WeakSet<IStateElement>();
+const exportedPathsByStateElement = new WeakMap<IStateElement, Set<string>>();
+
+/** 公開 getter の登録（webComponent/exportIndex.ts）— このパスは「存在しない」ではない */
+export function markExportedPath(stateElement: IStateElement, path: string): void {
+  let paths = exportedPathsByStateElement.get(stateElement);
+  if (typeof paths === "undefined") {
+    paths = new Set<string>();
+    exportedPathsByStateElement.set(stateElement, paths);
+  }
+  paths.add(path);
+  deferredReportsByStateElement.get(stateElement)?.delete(path);
+}
+
+function isExportedPath(stateElement: IStateElement, path: string): boolean {
+  return exportedPathsByStateElement.get(stateElement)?.has(path) === true;
+}
+
+function deferReport(stateElement: IStateElement, path: string, result: IMissingResult): void {
+  let pending = deferredReportsByStateElement.get(stateElement);
+  if (typeof pending === "undefined") {
+    pending = new Map();
+    deferredReportsByStateElement.set(stateElement, pending);
+  }
+  pending.set(path, result);
+  if (flushScheduled.has(stateElement)) {
+    return;
+  }
+  flushScheduled.add(stateElement);
+  setTimeout(() => flushDeferredPathReports(stateElement), 0);
+}
+
+/** 遅延中の報告を今すぐ流す（タイマー到達時・テスト用） */
+export function flushDeferredPathReports(stateElement: IStateElement): void {
+  flushScheduled.delete(stateElement);
+  const pending = deferredReportsByStateElement.get(stateElement);
+  if (typeof pending === "undefined") {
+    return;
+  }
+  deferredReportsByStateElement.delete(stateElement);
+  // 登録で解消したものは markExportedPath が pending から消している
+  for (const [path, result] of pending) {
+    reportMissing(stateElement, path, "binding", result);
+  }
+}
+
+function reportMissing(
+  stateElement: IStateElement,
+  path: string,
+  source: PathInfoSource & ("binding" | "watch"),
+  result: IMissingResult,
+): void {
   // 接頭辞は raiseError と同じ `[@wcstack/state] [wcs/...]` の並び（コンソールの
   // grep 単位をパッケージで揃える）
   console.warn(

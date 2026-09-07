@@ -212,6 +212,7 @@ export function registerDevtoolsSource(): void {
         delta: record.delta,
         privateKeys: Object.keys(record.privateSnapshot),
         getterKeys: [...record.getterKeys],
+        exports: [...record.exports.keys()],
       }));
     },
     keys(rootNode: Node): string[] {

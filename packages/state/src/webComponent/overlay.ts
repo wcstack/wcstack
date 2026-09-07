@@ -8,7 +8,7 @@ import { checkDependency } from "../proxy/methods/checkDependency";
 import { setLoopContextSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
 import { IStateHandler, IStateProxy } from "../proxy/types";
-import { composeMountIndexes, IMountRecord, translateInnerPath } from "./mount";
+import { composeMountIndexes, IExportEntry, IMountRecord, translateInnerPath } from "./mount";
 
 /**
  * webComponent/overlay.ts — マウントのオーバーレイ（D20 / D21・impl-plan §3-0 の 4）。
@@ -231,6 +231,37 @@ export function createOverlayValue(
     receiver,
     handler,
   ));
+}
+
+/**
+ * 公開 getter の読み（docs/state-overlay-export-design.md §2-1 の 4）。
+ * `P.#m<id>` のオーバーレイ値に対する `Reflect.get(proxy, k)` と等価 — 作者の getter は
+ * マーカーアドレスを push して評価されるので、依存辺・キャッシュはマーカー側に載る。
+ */
+export function readExportedAccessor(
+  record: IMountRecord,
+  entry: IExportEntry,
+  listIndex: IListIndex | null,
+  receiver: any,
+  handler: IStateHandler,
+): unknown {
+  const address = createStateAddress(getPathInfo(entry.markerTerminalPath), listIndex);
+  const proxy = createOverlayValue(record, address, receiver, handler);
+  return Reflect.get(proxy, entry.suffix);
+}
+
+/** 公開 getter への書き込み（X9）: setter があれば評価、無ければ overlay の set が raise する。 */
+export function writeExportedAccessor(
+  record: IMountRecord,
+  entry: IExportEntry,
+  listIndex: IListIndex | null,
+  value: unknown,
+  receiver: any,
+  handler: IStateHandler,
+): boolean {
+  const address = createStateAddress(getPathInfo(entry.markerTerminalPath), listIndex);
+  const proxy = createOverlayValue(record, address, receiver, handler);
+  return Reflect.set(proxy, entry.suffix, value);
 }
 
 /**

@@ -8,6 +8,7 @@ import { collectStructuralFragments } from "../structural/collectStructuralFragm
 import { raiseError } from "../raiseError";
 import { ParseBindTextResult } from "../bindTextParser/types";
 import { getMountRecordByScopeRoot, IMountRecord, registerMountRecord, translateParsedForMount } from "./mount";
+import { notifyExports, registerExports, warnShadowedExports } from "./exportIndex";
 
 /**
  * webComponent/mountScope.ts — マウントされたスコープの構築（Phase 2・impl-plan §3-0）。
@@ -62,6 +63,11 @@ export function initializeMountScope(record: IMountRecord, scopeRoot: ShadowRoot
     setStateElementAlias(scopeRoot, record.parentStateElement);
   }
   buildMountScopeBindings(record, scopeRoot);
+  // Register exports and alias edges once. Notify parents that evaluated before
+  // registration, including on reinitialization when values may have changed.
+  registerExports(record);
+  warnShadowedExports(record);
+  notifyExports(record);
   setBindingsReadyForScope(scopeRoot, Promise.resolve());
 }
 
@@ -98,4 +104,6 @@ export function remountScopeBindings(record: IMountRecord, scopeRoot: ShadowRoot
   const rebound = session.rebindAddresses();
   // 空でも呼んで良い（ループが回らないだけ）— 分岐を持たない
   applyChangeFromBindings(rebound);
+  // 別の行に付け替わった ＝ その行の公開パスの答えが変わった（X6）
+  notifyExports(record);
 }

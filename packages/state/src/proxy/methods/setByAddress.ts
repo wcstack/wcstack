@@ -44,6 +44,8 @@ import { beginPropagationTransaction, getCurrentPropagationContext } from "../..
 import { consumeOccurrenceWrite } from "../occurrenceWrite";
 import { recordPrevValue } from "../../watch/prevValues";
 import { findGraftedSlotUnder } from "../../webComponent/volumeShared";
+import { resolveExport } from "../../webComponent/exportIndex";
+import { writeExportedAccessor } from "../../webComponent/overlay";
 
 /**
  * `$watch` の `prev` 台帳へ旧値を記録する（docs/state-watch-hook-design.md §4-1）。
@@ -189,6 +191,8 @@ function _setByAddress(
         );
         return Reflect.set(parentValue, index, value);
       } else {
+        // 公開 getter への書き込み（X9）は setByAddressCore の fast path（親がオブジェクトの
+        // 未存在キー）で dispatch 済み。ここに来るのは親が非オブジェクトの形だけ
         return Reflect.set(parentValue, lastSegment, value);
       }
     }
@@ -397,6 +401,7 @@ function setByAddressCore(
         });
       }
       recordWatchPrevValue(stateElement, path, absAddress, devOldValue, devHasOldValue);
+      let dispatchedExport = false;
       try {
         if (key === undefined) {
           // fast path 版の同じ取り違え（末尾ワイルドカードに listIndex が無い）。
@@ -407,10 +412,26 @@ function setByAddressCore(
             address.listIndex?.length ?? 0,
           ));
         }
+        // 公開 getter への書き込み（docs/state-overlay-export-design.md X9）: 未存在キーへの
+        // 書き込みは今日「ツリーに作る」が、その位置に公開 getter があると以後ツリーが勝ち
+        // （X1）getter を無言で隠す。setter があれば setter、無ければ raise（overlay の set）
+        if (stateElement.hasMounts === true && lastSegment !== WILDCARD && !(key in parentValue)) {
+          const exported = resolveExport(stateElement, address.parentAddress.pathInfo.path, lastSegment, address.listIndex);
+          if (exported !== null) {
+            dispatchedExport = true;
+            return writeExportedAccessor(exported.record, exported.entry, address.listIndex, value, receiver, handler);
+          }
+        }
         return Reflect.set(parentValue, key, value);
       } finally {
         notifyWrite(address, absAddress, receiver, handler, keyedMergePath);
-        commitWriteCache(stateElement, path, absAddress, value, cacheable);
+        if (dispatchedExport) {
+          // Exported row paths are cacheable but absent from getterPaths. The
+          // accessor may normalize or reject the input; never pin that input.
+          dirtyCacheEntryByAbsoluteStateAddress(absAddress);
+        } else {
+          commitWriteCache(stateElement, path, absAddress, value, cacheable);
+        }
         // DCC bindable イベントディスパッチ（完全一致 ＋ サブパス → 先頭セグメント、§2.1）
         dispatchBindableEvent(stateElement, address.pathInfo, { value });
       }

@@ -119,6 +119,8 @@ interface IMountOverlaySummary {
   readonly mountTable: readonly { readonly inner: string; readonly outer: string }[];
   readonly delta: number;         // Δ for `$n` correction (wildcards in the root prefix)
   readonly privateKeys: readonly string[]; // own data keys living in the overlay space
+  // Added with overlay exports. Use summary.exports ?? [] with older v2 runtimes.
+  readonly exports: readonly string[];    // public accessor paths at the mount instance's wildcard depth (e.g. users.*.display)
   readonly getterKeys: readonly string[];  // getter keys carried on marker paths
 }
 

@@ -89,6 +89,20 @@ export interface IMountRecord {
    * record 本体が回収された後も held 経由で読める独立オブジェクトにしてある。
    */
   readonly addedGetterPaths: Set<string>;
+  /**
+   * 公開 getter（docs/state-overlay-export-design.md X2 / X3）: 公開パス（マーカー無し・
+   * `users.*.display`）→ マーカー親パス・接尾キー・マーカーパス。registerExports が
+   * 初回登録で getter / setter キーから作る（翻訳できないアクセサは載らない）。
+   */
+  readonly exports: Map<string, IExportEntry>;
+}
+
+export interface IExportEntry {
+  /** マーカーで終わるパス（`users.*.#m7` — overlay.ts の「マーカー親」。accessorBySuffixByMarkerParent の鍵） */
+  readonly markerTerminalPath: string;
+  readonly suffix: string;
+  readonly markerPath: string;
+  readonly exportedPath: string;
 }
 
 export interface IAccessorEntry {
@@ -240,6 +254,7 @@ export function buildMountRecord(
     accessorBySuffixByMarkerParent: new Map(),
     indexShiftByLoopElementPath: new Map(),
     addedGetterPaths: new Set(),
+    exports: new Map(),
   };
 }
 
