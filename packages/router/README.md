@@ -469,7 +469,7 @@ Elements with the `data-bind` attribute automatically receive matched route para
 </wcs-route>
 ```
 
-Parameters are assigned before `connectedCallback` fires. For custom elements that are not yet defined, assignment is deferred until `customElements.whenDefined()` resolves.
+For elements that are already defined (built-in elements and custom elements defined before the route renders), parameters are assigned before `connectedCallback` fires. For custom elements that are not yet defined, assignment is deferred until `customElements.whenDefined()` resolves — that happens *after* the upgrade, so the `connectedCallback` run by the upgrade does not see the parameters yet. Read them in the `props` / `states` / attribute setter (or in `attributeChangedCallback`) instead, or make sure the element is defined before the route is rendered (e.g. load its script before `@wcstack/router`).
 
 ## Configuration
 

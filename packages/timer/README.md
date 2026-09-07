@@ -103,7 +103,7 @@ When `<wcs-timer>` is connected to the DOM, it automatically starts an interval 
 | ----------- | ------- | ------- | ------------------------------------------------------------------ |
 | `interval`  | number  | `1000`  | Tick period in milliseconds. Must be a finite value `> 0`; invalid values (`0`, negative, non-numeric) fall back to `1000`. |
 | `once`      | boolean | `false` | Fire a single tick, then stop. Sugar for `repeat="1"`.             |
-| `repeat`    | number  | `0`     | Stop after N ticks (`0` = unlimited). Takes precedence over `once`. |
+| `repeat`    | number  | `0`     | Stop after N ticks. A positive value takes precedence over `once`; `0` (the default, unlimited) does not override it, so `once repeat="0"` still stops after one tick. |
 | `immediate` | boolean | `false` | Fire one tick at start instead of waiting the first interval.      |
 | `manual`    | boolean | `false` | Do not auto-start on connect; start via command / trigger.        |
 
