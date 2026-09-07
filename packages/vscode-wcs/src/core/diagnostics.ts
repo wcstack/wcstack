@@ -68,6 +68,12 @@ export const WcsDiagnosticCode = {
   // なので、その分岐は一度も実行されない。表示要素が購読の実体になる事故
   // （examples/state-intersect-scroll の README に記録）の静的検出。
   UpdatedCallbackUnbound: "wcs/updated-callback-unbound",
+  // getter の中で `this.form.name` のように、パス読み取りの先で素のプロパティアクセスを
+  // 続けている。追跡されるのは `form` だけで、`form.name` の変更では再評価されない
+  // （state README「依存追跡の境界」規則 1）。ランタイムは素のアクセスと区別できないので
+  // 静的にしか検出できない。対象はオブジェクトリテラル初期値のルートだけ（配列は `items`
+  // の依存で足りる — 行の置換は `items` 自体を書き換え、in-place 変異は array-mutation が止める）。
+  GetterUntrackedRead: "wcs/getter-untracked-read",
   // --- <wcs-state> script: $watch declaration ---
   // ランタイム（watch/processWatchDeclaration.ts）が raiseError で落とす宣言。
   // 越境 `@` / `$` 始まり / 空キー・空セグメント / 明らかな非関数ハンドラ。

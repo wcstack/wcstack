@@ -956,6 +956,8 @@ Three rules decide what the dependency graph sees. None of them matters until yo
 | **Reads inside a setter are not tracked.** A setter is an imperative assignment, not a derivation, so nothing it reads becomes a dependency of anything | A setter that reads `this.a` to decide what to write does not run again when `a` changes — only a getter re-runs |
 | **The same-value guard applies to primitives only.** A primitive write `Object.is`-equal to the current value is dropped before anything is enqueued; an object or array write always passes, even the same reference | Assigning the same string again fires nothing; assigning the same object again re-fires its bindings and `$watch` (`config.sameValueGuard`; a `semantics: "event"` property is exempt either way) |
 
+The first rule is the one static analysis can catch: `wcs-validate` and the VS Code extension report `wcs/getter-untracked-read` when a getter reads `this.form.name` and the document writes `form.name` somewhere (a `value:` binding, a spread, `this["form.name"] = …`). A root that is only ever replaced wholesale — router params, a `$streams` fold — is left alone.
+
 `$untrackDependency(fn)` applies the setter rule to a getter on purpose: reads inside `fn` are not tracked. `$trackDependency(path)` is the escape hatch for the first rule.
 
 ### Loop Index Variables (`$1`, `$2`, ...)

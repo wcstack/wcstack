@@ -132,6 +132,204 @@ describe("wcs/getter-cycle — getter の循環参照", () => {
     );
     expect(codes(validateSemantics(html, "wcs-state", "en"), WcsDiagnosticCode.GetterCycle)).toHaveLength(2);
   });
+
+  // --- AST 化で拾えるようになった形（正規表現では取りこぼしていた） ---
+
+  it("分割代入経由の循環を検出すること", () => {
+    const html = script(`{ get a() { const { b } = this; return b; }, get b() { return this.a; } }`);
+    expect(codes(validateSemantics(html, "wcs-state", "en"), WcsDiagnosticCode.GetterCycle)).toHaveLength(2);
+  });
+
+  it("this エイリアス経由の循環を検出すること", () => {
+    const html = script(`{ get a() { const self = this; return [1].map(() => self.b)[0]; }, get b() { return this.a; } }`);
+    expect(codes(validateSemantics(html, "wcs-state", "en"), WcsDiagnosticCode.GetterCycle)).toHaveLength(2);
+  });
+
+  it("$trackDependency で明示登録した依存も辺として数えること", () => {
+    const html = script(`{ get a() { this.$trackDependency("b"); return 0; }, get b() { return this.a; } }`);
+    expect(codes(validateSemantics(html, "wcs-state", "en"), WcsDiagnosticCode.GetterCycle)).toHaveLength(2);
+  });
+
+  // --- AST 化で黙るようになった形（ランタイムが依存に登録しない読み） ---
+
+  it("$untrackDependency の中の読みは辺にしないこと", () => {
+    const html = script(`{ get a() { return this.$untrackDependency(() => this.b); }, get b() { return this.a; } }`);
+    expect(codes(validateSemantics(html, "wcs-state", "en"), WcsDiagnosticCode.GetterCycle)).toHaveLength(0);
+  });
+
+  it("入れ子の function の中の this は辺にしないこと", () => {
+    const html = script(`{ get a() { function f() { return this.b; } return f(); }, get b() { return this.a; } }`);
+    expect(codes(validateSemantics(html, "wcs-state", "en"), WcsDiagnosticCode.GetterCycle)).toHaveLength(0);
+  });
+
+  it("setter の中の読みは辺にしないこと（get/set ペアでも get 側だけ報告すること）", () => {
+    const html = script(`{ get a() { return 1; }, set a(v) { this.b; }, get b() { return this.a; } }`);
+    expect(codes(validateSemantics(html, "wcs-state", "en"), WcsDiagnosticCode.GetterCycle)).toHaveLength(0);
+    const cyc = script(`{ get a() { return this.b; }, set a(v) {}, get b() { return this.a; } }`);
+    expect(codes(validateSemantics(cyc, "wcs-state", "en"), WcsDiagnosticCode.GetterCycle)).toHaveLength(2);
+  });
+
+  it("単純代入の左辺は辺にしないこと", () => {
+    const html = script(`{ get a() { this.b = 1; return 0; }, get b() { return this.a; } }`);
+    expect(codes(validateSemantics(html, "wcs-state", "en"), WcsDiagnosticCode.GetterCycle)).toHaveLength(0);
+  });
+
+  it("複合代入・増減の対象は読みなので自己循環を検出すること（++this.a は get → set）", () => {
+    expect(codes(validateSemantics(script(`{ get a() { return ++this.a; } }`), "wcs-state", "en"), WcsDiagnosticCode.GetterCycle)).toHaveLength(1);
+    expect(codes(validateSemantics(script(`{ get a() { this.b += 1; return 0; }, get b() { return this.a; } }`), "wcs-state", "en"), WcsDiagnosticCode.GetterCycle)).toHaveLength(2);
+  });
+
+  it("通常の function の中のクロージャエイリアス経由の自己循環を検出すること", () => {
+    const html = script(`{ get a() { const self = this; function read() { return self.a; } return read(); } }`);
+    expect(codes(validateSemantics(html, "wcs-state", "en"), WcsDiagnosticCode.GetterCycle)).toHaveLength(1);
+  });
+
+  it("アロー引数に影にされたエイリアスは辺にしないこと（存在しない自己循環を作らない）", () => {
+    const html = script(`{ get a() { const self = this; return [{ a: 1 }].map(self => self.a)[0]; } }`);
+    expect(codes(validateSemantics(html, "wcs-state", "en"), WcsDiagnosticCode.GetterCycle)).toHaveLength(0);
+  });
+
+  it("片方の getter が壊れていても他の循環は報告すること（本体単位のパース）", () => {
+    const html = script(`{ get broken() { return this.a +; }, get a() { return this.b; }, get b() { return this.a; } }`);
+    expect(codes(validateSemantics(html, "wcs-state", "en"), WcsDiagnosticCode.GetterCycle)).toHaveLength(2);
+  });
+});
+
+describe("wcs/getter-untracked-read — パス読み取りの先の素のプロパティアクセス", () => {
+  const FORM = `form: { name: "", age: 0, addr: { city: "" } }, items: [{ name: "" }], get "form.label"() { return ""; }`;
+  const EVIDENCE = `<input data-wcs="value: form.name">`;
+
+  /** 既定の証拠は `value: form.name`（PR#245 で実際に踏まれた形）。 */
+  function page(body: string, evidence: string = EVIDENCE): string {
+    return script(`{ ${FORM}, ${body} }`) + evidence;
+  }
+  function found(body: string, evidence?: string) {
+    return codes(validateSemantics(page(body, evidence), "wcs-state", "en"), WcsDiagnosticCode.GetterUntrackedRead);
+  }
+
+  it("this.form.name を報告し、this[\"form.name\"] を提案すること", () => {
+    const out = found(`get g() { return this.form.name; }`);
+    expect(out).toHaveLength(1);
+    expect(out[0].message).toContain('Only "form" is tracked here');
+    expect(out[0].message).toContain('Read this["form.name"] instead');
+  });
+
+  it("ブラケットルート this[\"form\"].name と optional chain this?.form?.age も報告すること", () => {
+    expect(found(`get g() { return this["form"].name + this?.form?.age; }`)).toHaveLength(2);
+  });
+
+  it("メソッド呼び出しの手前までを報告すること（this.form.name.trim() → form.name）", () => {
+    const out = found(`get g() { return this.form.name.trim(); }`);
+    expect(out).toHaveLength(1);
+    expect(out[0].message).toContain('this["form.name"]');
+  });
+
+  it("分割代入 const { name } = this.form も報告すること", () => {
+    const out = found(`get g() { const { name } = this.form; return name; }`);
+    expect(out).toHaveLength(1);
+    expect(out[0].message).toContain('this["form.name"]');
+  });
+
+  it("診断のレンジが読み取り式そのものを指すこと", () => {
+    const html = page(`get g() { return 1 + this.form.name; }`);
+    const [d] = codes(validateSemantics(html, "wcs-state", "en"), WcsDiagnosticCode.GetterUntrackedRead) as unknown as { start: number; end: number }[];
+    expect(html.slice(d.start, d.end)).toBe("this.form.name");
+  });
+
+  it("日本語メッセージを出すこと", () => {
+    const out = codes(validateSemantics(page(`get g() { return this.form.name; }`), "wcs-state", "ja"), WcsDiagnosticCode.GetterUntrackedRead);
+    expect(out[0].message).toContain('this["form.name"] で読んでください');
+  });
+
+  // --- 証拠の形（入れ子書き込みが静的に断定できるもの） ---
+
+  it("checked / radio / checkbox バインドを証拠にすること", () => {
+    expect(found(`get g() { return this.form.age; }`, `<input data-wcs="checked: form.age">`)).toHaveLength(1);
+    expect(found(`get g() { return this.form.age; }`, `<input data-wcs="radio: form.age">`)).toHaveLength(1);
+    expect(found(`get g() { return this.form.age; }`, `<input data-wcs="checkbox: form.age">`)).toHaveLength(1);
+  });
+
+  it("spread（...: form）を証拠にすること", () => {
+    expect(found(`get g() { return this.form.name; }`, `<wcs-fetch data-wcs="...: form"></wcs-fetch>`)).toHaveLength(1);
+  });
+
+  it("組み込み I/O タグの出力プロパティへのバインドを証拠にし、入力プロパティは証拠にしないこと", () => {
+    expect(found(`get g() { return this.form.name; }`, `<wcs-fetch data-wcs="value: form.name"></wcs-fetch>`)).toHaveLength(1);
+    expect(found(`get g() { return this.form.name; }`, `<wcs-fetch data-wcs="url: form.name"></wcs-fetch>`)).toHaveLength(0);
+  });
+
+  it("スクリプトの this[\"form.name\"] = / += / ++ を証拠にすること", () => {
+    expect(found(`get g() { return this.form.name; }, m() { this["form.name"] = "x"; }`, "")).toHaveLength(1);
+    expect(found(`get g() { return this.form.age; }, m() { this["form.age"] += 1; }`, "")).toHaveLength(1);
+    expect(found(`get g() { return this.form.age; }, m() { ++this["form.age"]; }`, "")).toHaveLength(1);
+  });
+
+  it("$setAll と値付き $resolve を証拠にし、$getAll と値なし $resolve は証拠にしないこと", () => {
+    expect(found(`get g() { return this.form.name; }, m() { this.$setAll("form.name", ["x"]); }`, "")).toHaveLength(1);
+    expect(found(`get g() { return this.form.name; }, m() { this.$resolve("form.name", [], "x"); }`, "")).toHaveLength(1);
+    expect(found(`get g() { return this.form.name; }, m() { this.$getAll("form.name", []); this.$resolve("form.name", []); }`, "")).toHaveLength(0);
+  });
+
+  it("mount= ボリュームをその接頭辞への証拠にすること", () => {
+    const evidence = `<wcs-state mount="form"><script type="module">export default { name: "" };</script></wcs-state>`;
+    expect(found(`get g() { return this.form.name; }`, evidence)).toHaveLength(1);
+  });
+
+  it("深い書き込み（form.addr.city）は中間の form.addr にも証拠を付けること", () => {
+    const out = found(`get g() { return this["form.addr"].city; }`, `<input data-wcs="value: form.addr.city">`);
+    expect(out).toHaveLength(1);
+    expect(out[0].message).toContain('this["form.addr.city"]');
+  });
+
+  // --- 黙る形 ---
+
+  it("入れ子書き込みの証拠がなければ報告しないこと（読みバインドと mustache は証拠ではない）", () => {
+    expect(found(`get g() { return this.form.name; }`, "")).toHaveLength(0);
+    expect(found(`get g() { return this.form.name; }`, `<p data-wcs="textContent: form.name"></p>{{ form.name }}`)).toHaveLength(0);
+  });
+
+  it("ルート自身への出力バインド（丸ごと置換）は証拠にしないこと — router の typedParams / searchParams", () => {
+    const evidence = `<wcs-router data-wcs="typedParams: form"></wcs-router>`;
+    expect(found(`get g() { return this.form.name; }`, evidence)).toHaveLength(0);
+  });
+
+  it("素のプロパティ書き込み this.form.name = x は証拠にしないこと（wcs/nested-assign の担当）", () => {
+    expect(found(`get g() { return this.form.name; }, m() { this.form.name = "x"; }`, "")).toHaveLength(0);
+  });
+
+  it("配列ルート（this.items[0].name / this.items.length）は報告しないこと", () => {
+    expect(found(`get g() { return this.items[0].name + this.items.length; }`, `<input data-wcs="value: items.*.name">`)).toHaveLength(0);
+  });
+
+  it("未宣言ルート・getter ルート・プリミティブルートは報告しないこと", () => {
+    const evidence = `<input data-wcs="value: unknown.x"><input data-wcs="value: form.label.x"><input data-wcs="value: count.x">`;
+    expect(found(`count: 0, get g() { return this.unknown.x + this["form.label"].x + this.count.x; }`, evidence)).toHaveLength(0);
+  });
+
+  it("ルートのメソッド呼び出し this.form.hasOwnProperty() は報告しないこと", () => {
+    expect(found(`get g() { return this.form.hasOwnProperty("name"); }`)).toHaveLength(0);
+  });
+
+  it("setter・メソッド・$watch ハンドラの中は報告しないこと", () => {
+    expect(found(`set g(v) { this.x = this.form.name; }, m() { return this.form.name; }, $watch: { form() { return this.form.name; } }`)).toHaveLength(0);
+  });
+
+  it("$untrackDependency の中と入れ子 function の中は報告しないこと", () => {
+    expect(found(`get g() { function f() { return this.form.name; } return this.$untrackDependency(() => this.form.name) + f(); }`)).toHaveLength(0);
+  });
+
+  it("代入左辺（this.form.name = x）と複合代入・増減（this.form.age++）は報告しないこと（wcs/nested-assign の担当）", () => {
+    expect(found(`get g() { this.form.name = "x"; return 0; }`)).toHaveLength(0);
+    expect(found(`get g() { this.form.age++; this.form.age += 1; return 0; }`, `<input data-wcs="value: form.age">`)).toHaveLength(0);
+  });
+
+  it("式添字を含むチェーン（this.form[key].x）は報告しないこと", () => {
+    expect(found(`get g() { const key = "name"; return this.form[key].length; }`)).toHaveLength(0);
+  });
+
+  it("正しい形 this[\"form.name\"] は報告しないこと", () => {
+    expect(found(`get g() { return this["form.name"] + this["form.name"].trim(); }`)).toHaveLength(0);
+  });
 });
 
 describe("wcs/wildcard-rank — 階数 vs for の段数", () => {
