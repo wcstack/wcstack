@@ -3,7 +3,7 @@
 - **状態**: 2026-09-01 起草。同日、著者が **D4（R1）/ D8（絶対参照なし）/ D11（ルート必須）/ 属性名 `mount`** を決定し、Phase 0 のベースライン計測と目標構文の e2e（fixme）を着地させた（[state-mount-impl-plan.md](./state-mount-impl-plan.md) §1）。**同日のアーキテクチャレビュー**（致命 2・重要 8）を受けて **D19〜D22 を追加し、D7 / D10 / D14 / D15 / D16 / D18 を改稿**した（状態列に「レビュー」と付した決定はレビューの推奨案を採用したもので、著者が差し戻せる）。残る要確認は **D12**（実装で確認）だけ。**Phase 1 実装済み（2026-09-01・R1 込み）**。**2026-09-02〜03 に Phase 2〜5 の実装をすべて `v2` ブランチで完了**（[impl-plan §3-0-1](./state-mount-impl-plan.md) に全スライス記録・§7 に実測）。D12 も実装で確認済み。残るは著者レビュー・リリース作業（P5-3〜P5-5）と wcstack-skill 追随のみ。**次期メジャー（v2.0.0）の目玉機能**。
 - **対象**: `@wcstack/state` の core（`address/` / `binding/` / `bindings/` / `webComponent/` / `proxy/` / `bindTextParser/`）。追随が要るのは `@wcstack/server`（SSR スナップショットのキー）、`@wcstack/testing`（`state(name)`）、`@wcstack/typescript`（manifest の `states[name]`）、`vscode-wcs` / `@wcstack/lint`（`@name` の構文）、devtools hook protocol（`keys(name, rootNode)`）、wcstack-skill の references。
 - **一言で**: 「**State は 1 つの rootNode に 1 本のツリー。拡張はマウントで行い、名前では行わない**」。`<wcs-state name="x">` と `path@x` を廃止し、`<wcs-state mount="x">` と `x.path`、および `<my-c data-wcs="state: path">`（丸ごとマウント）に置き換える。
-- **不変条件（この設計の一文）**: **マウントされたコンポーネントのバインディングは、その位置にテンプレートを展開してパスに接頭辞を付けたものと区別できない。** 台帳は 1 本、アドレスは絶対、橋渡しは存在しない。**唯一の例外は私有キーと getter**（展開したテンプレートには存在しないもの）で、それらはオーバーレイ専用のアドレス空間に載り、スコープの外からは見えない（D20）。
+- **不変条件（この設計の一文）**: **マウントされたコンポーネントのバインディングは、その位置にテンプレートを展開してパスに接頭辞を付けたものと区別できない。** 台帳は 1 本、アドレスは絶対、橋渡しは存在しない。**唯一の例外は私有キーと getter**（展開したテンプレートには存在しないもの）で、それらはオーバーレイ専用のアドレス空間に載る（D20）。私有キーはスコープの外からは見えない。getter は**公開**され、ツリーに無いキーの読みに答える（ツリーにあるキーはツリーが勝つ — [state-overlay-export-design.md](./state-overlay-export-design.md)・2026-09-07 に D10 を開放）。
 - **動機**: 著者の提示した 4 点 — かっこいい／コードの単純化／メモリ消費の削減／高速化。§7 で 4 点を検証可能な仮説に落とし、**成立する範囲を正直に限定する**（コンポーネントの無いページでは後 2 つはほぼ不変）。
 - **関係する既存設計**: [state-cross-state-read-design.md](./state-cross-state-read-design.md)（名前付きを前提に越境を増やす案 — **本設計と両立しないので閉じる**）、[architecture-hardening/15](./architecture-hardening/15-state-component-mechanism-consistency.ja.md)（bind-component の欠陥史 §1.1〜§1.13 — 本設計はその機構ごと置き換える）、[state-bind-component-nested-for-design.md](./state-bind-component-nested-for-design.md)（Δ / base listIndex — 絶対アドレス化で不要になる）、[i18n-design.md](./i18n-design.md) D4（`@i18n` 参照 — `i18n.` 接頭辞へ移行）。
 
@@ -38,7 +38,7 @@
 | **D7** | スコープ解決 | バインディングの state は **DOM の位置**で決まる（document / ShadowRoot / コンポーネントスコープ）。名前では決めない。**スコープ根は親側の静的マークアップで決まる**: `data-wcs` に `state` / `state.*` エントリ（マウント表）を持つ要素がスコープ根。子の `<wcs-state bind-component>` が現れるタイミングには依存しない（§5-1）。Light DOM コンポーネントの `name` 必須は消える（§3-3） | 決定（2026-09-01・レビューで精密化） |
 | **D8** | コンポーネント内からの絶対パス | **v2.0 では不可**（chroot は厳格）。コンポーネントが要るものはホストがマウントする。`/` 接頭辞による絶対参照は **2.x の候補**として構文上の余地だけ残す（§2-3） | 決定（2026-09-01・著者） |
 | **D9** | `$1` / `$updatedCallback` / `$getAll` / `$setAll` / `$resolve` / `$watch` / `$streams` / `$listKeys` | **スコープ相対**。コンポーネントの作者は自分がリストの中に置かれるかを知らずに書く（§4-6）。代替「絶対（Δ 込み）」は、同じコンポーネントを `for` の内外どちらにも置けなくなるので棄却 | 決定 |
-| **D10** | コンポーネント getter / 私有キーの可視性 | **スコープ内のみ**。D20 のアドレス空間の帰結（親スコープの `items.*.upper` は予約セグメントを含まないのでツリーの未存在パス）。親から子の getter を読む形は v2.0 では**しない**（§8） | 決定（非目標・レビューで D20 の帰結に） |
+| **D10** | コンポーネント getter / 私有キーの可視性 | 私有キーは**スコープ内のみ**。getter は **2.x で公開**: ツリーに無いキーの読み（`items.*.upper`）はその位置にマウントされたコンポーネントの getter で答え、ツリーにあるキーはツリーが勝つ。正本は [state-overlay-export-design.md](./state-overlay-export-design.md)（X1〜X14） | v2.0 は非目標 → **2026-09-07 に開放（実装済み）** |
 | **D11** | ルートの存在 | **ルート `<wcs-state>` は必須**（空でよい）。ボリュームだけのページは暗黙ルートを作らず **throw** する（§4-8） | 決定（2026-09-01・著者） |
 | **D12** | ready | `State.getBindingsReady(root)` は **マウント配下（コンポーネントスコープ）まで待つ**。今日の「コンポーネントのスコープは対象外」を解消する（§4-8） | **要確認**（実装で確認） |
 | **D13** | DCC | **不変**。`defineDCC` の `:not([name])` セレクタを落とすだけ。DCC はマウントではなく wc-bindable の producer のまま（§6） | 決定 |
@@ -297,7 +297,8 @@ R1 を採る理由: 一文で言える（「**自分で書いたキーは自分�
 | 予約済み（ロード前）のボリュームスロット配下を読む | `undefined`・warn 無し（D22） |
 | ルート側から接ぎ木済みマウントポイントを**含む親**を丸ごと書く（`mount="a.b"` で `this.a = {...}`） | throw（D22 後段 — 接ぎ木データが無言で消えアクセサだけ宙に浮くため。スロット自身への書き込みはデータ差し替えとして通る） |
 | `mount` 属性の実行時変更 | 無視＋warn（再マウントは非目標） |
-| 親スコープから `items.*.upper`（子の getter / 私有キー）を読む | ツリーの未存在パスとして `undefined`＋pathDiagnostics の warn（D10 / D20） |
+| 親スコープから `items.*.upper`（子の getter）を読む | **公開 getter が答える**（2026-09-07・[state-overlay-export-design.md](./state-overlay-export-design.md)）。ツリーに同名キーがあればツリー＋登録時 warn 1 回（`wcs/mount-export-shadowed`）。同一インスタンスに 2 記録 → raise（`wcs/mount-export-ambiguous`） |
+| 親スコープから `items.*.editing`（子の私有キー）を読む | ツリーの未存在パスとして `undefined`＋pathDiagnostics の warn（D20。warn は 1 マクロタスク遅延 — X7） |
 | `@` を含むパス | v1.x: lint warning（実行時は `config.debug` 下で warn 1 回） → v2: **parse error**（移行ヒント付き） |
 | 同一コンポーネントに 2 本目の `<wcs-state bind-component>`（別 prop） | throw（**1 コンポーネント 1 マウントスコープ** — 2 本目を受けると 1 本目の収集済みスコープが無言で死ぬため。実装注記 2026-09-04） |
 | 接ぎ木済みボリューム / マウント記録の居るツリーへの `setInitialState()` 再 set | throw（D22 同型 — 丸ごと再 set は接ぎ木データ・quoted-path アクセサ・マーカー台帳・合流済み宣言面を無言で捨てるため。変更したいパスを個別に書く。実装注記 2026-09-04） |
@@ -332,7 +333,7 @@ scopeRoot(Node: Document | ShadowRoot | mount host) → IStateElement | MountRec
 
 - **chroot proxy**: `get(prop)` → §4-1 の規則。ツリー行きは `root.createState` の中で絶対アドレスを読む。getter 評価の receiver として使うので、依存追跡はルートの `pushAddress` に絶対アドレスで載る
 - **オーバーレイのアドレス空間（D20）**: マウント記録は id を持ち（`m3`）、私有キーと getter は `<mountPath>.#m3.<key>` の絶対アドレスで台帳に載る（行コンポーネントなら `users.*.#m3.editing`、listIndex はマウント接頭辞のワイルドカードぶん）。`#` はパス文法で書けない文字なのでツリーのアドレスと衝突しない。chroot proxy は §4-1 の規則 1 / 2 に当たったキーをこのアドレスに翻訳し、規則 3 のキーをツリーの絶対アドレスに翻訳する。私有配列を `for` で回せば `users.*.#m3.drafts.*`（ワイルドカードが増えるだけ）
-- **オーバーレイ表**: `(mountPathInfo, listIndex) → { component, privateObject, chrootProxy }`。ルート handler は `hasMounts` が真で、かつ読み書きのパスが予約セグメントを含むときだけオーバーレイへ委譲する（getter は chroot proxy を `this` に評価・私有キーは privateObject を読み書き）。予約セグメントを含まない読みは今日と同じ経路。**親スコープの `users.*.editing` は予約セグメントを含まないので、ツリーの未存在パスとして `undefined`**（D10 はこの帰結）
+- **オーバーレイ表**: `(mountPathInfo, listIndex) → { component, privateObject, chrootProxy }`。ルート handler は `hasMounts` が真で、かつ読み書きのパスが予約セグメントを含むときだけオーバーレイへ委譲する（getter は chroot proxy を `this` に評価・私有キーは privateObject を読み書き）。予約セグメントを含まない読みは今日と同じ経路。**親スコープの `users.*.editing`（私有キー）は予約セグメントを含まないので、ツリーの未存在パスとして `undefined`**。getter は例外で、ツリーの未存在キー経路に公開索引（`webComponent/exportIndex.ts`）を 1 回引き、その位置にマウントされた記録の getter を `users.*.#m3.display` のアドレスで評価する（[state-overlay-export-design.md](./state-overlay-export-design.md) — 2026-09-07）
 - **私有キーの更新経路**: chroot proxy の set → ルートの `setByAddress(users.*.#m3.editing, [i])` → オーバーレイへ委譲 → updater が同アドレスを enqueue → そのアドレスのバインディングと、それを読んだ getter（`users.*.#m3.label`）のキャッシュが無効化される。ツリーのキャッシュ機構をそのまま使う
 - **オーバーレイ表の寿命（D21）**: エントリは行の listIndex と同寿命。`for` の差分で listIndex が消えれば捨て、新しい listIndex には初期スナップショットから privateObject を作る。要素の付け替え（プール再利用）は `element → 現在のマウントインスタンス` の対応を更新するだけ
 
@@ -398,7 +399,7 @@ scopeRoot(Node: Document | ShadowRoot | mount host) → IStateElement | MountRec
 
 ## 8. 非目標（v2.0）
 
-- 親スコープからコンポーネント getter を読む（`items.*.upper`）— D20 のアドレス空間では予約セグメントを含まない読みなのでツリーの未存在パス。2.x で入れるなら「予約セグメント無しの読みでもオーバーレイ表を引く」規則を足す（D10）。表は `(mountPathInfo, listIndex)` キーなので後から足せる
+- ~~親スコープからコンポーネント getter を読む（`items.*.upper`）~~ — **2026-09-07 に実装**（[state-overlay-export-design.md](./state-overlay-export-design.md)）。「予約セグメント無しの読みでもオーバーレイ表を引く」規則を、ツリーの未存在キー経路に限って足した形
 - コンポーネント内からの絶対参照 `/path`（D8）
 - ボリュームのワイルドカードマウント・動的な再マウント（`mount` 属性の実行時変更は無視＋warn）
 - DCC のマウント化（ADR-15 §2.5 / §3 の命名規約統一）— DCC は wc-bindable のまま

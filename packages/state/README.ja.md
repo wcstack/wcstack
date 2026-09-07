@@ -1348,6 +1348,21 @@ customElements.define("user-card", UserCard);
 > `$postUpdate` はコンポーネント自身の語彙で書けます — パスはマウント先へ翻訳され、ホスト行の
 > 添字は自動で前置されます。
 
+#### 公開 getter（コンポーネントの getter を外から読む）
+
+マウントされたコンポーネントの getter はマウント先に**公開**されます: **ツリーに無いキーの読みは、その位置にマウントされたコンポーネントの getter で答える。ツリーにあるキーはツリーが勝つ。私有キーとメソッドは見せない。** 上の `user-card` なら、ホスト側のマークアップからコンポーネントの派生値をそのまま読めます:
+
+```html
+<user-card data-wcs="state: user"></user-card>
+<span data-wcs="textContent: user.display"></span>   <!-- "Alice <alice@example.com>" — コンポーネントの getter -->
+```
+
+- 行マウントは行ごとに公開されます: `$getAll("users.*.display")` や同じ `for` 内の `text: .display` は各行のコンポーネントの getter を読みます。依存も流れます — `user.name` が変われば `user.display` を読んだものはすべて再描画されます
+- 親は子コンポーネントの登録より先に評価されるので、初回の読みは `undefined` になりえます。コンポーネントがマウントされ次第、値は収束します。派生式は `(x ?? 0)` のように防御的に書いてください
+- ツリーに同名のキーがある場合（`user.display` がデータとして存在する）はツリーが勝ち、ランタイムが 1 回だけ warn します（`wcs/mount-export-shadowed`）。同一インスタンスに同名キーを公開するコンポーネントが 2 つある形は設定ミスで、読みで throw します（`wcs/mount-export-ambiguous`）
+- 公開キーへの外からの書き込みは accessor の setter を実行し、getter しか無ければ throw します（getter を隠すキーをツリーに作ることはありません）。`in` は公開キーを見ません
+- **自己再帰コンポーネント**（深さが有界でない木）が書けるようになります: 自分自身を `<template data-wcs="for: children"><tree-node data-wcs="state: ."></tree-node></template>` で入れ子にするコンポーネントは、`get total() { return this.value + this.$getAll("children.*.total").reduce((a, b) => a + (b ?? 0), 0); }` と各段 1 段の式で書け、再帰は台帳が解きます。パス自体は再帰を表現できない（ワイルドカードの個数が固定）ので、再帰は DOM に置き、パスはその展開形になります。設計: [docs/state-overlay-export-design.md](../../docs/state-overlay-export-design.md)
+
 ### 独立した Web Component への状態注入（`__e2e__/single-component`）
 
 ホストの外部状態に依存しないコンポーネントでも、`bind-component` で `state` を注入してリアクティブにできます。

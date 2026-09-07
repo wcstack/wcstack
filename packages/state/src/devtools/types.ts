@@ -190,6 +190,8 @@ export interface IMountOverlaySummary {
   readonly delta: number;
   /** 私有キー（作者の own data key — オーバーレイ空間に住む） */
   readonly privateKeys: readonly string[];
+  /** 公開 getter の公開パス（親スコープから読める・docs/state-overlay-export-design.md） */
+  readonly exports: readonly string[];
   /** マーカーパスに載る getter のキー */
   readonly getterKeys: readonly string[];
 }

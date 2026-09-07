@@ -10,7 +10,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
-  checkDeclaredPath,
+  checkDeclaredPath, flushDeferredPathReports,
   clearReportedPaths,
   missingRootPathMessage,
   resolvePathExistence,
@@ -149,6 +149,7 @@ describe("checkDeclaredPath", () => {
   it("ネストした miss を lint と同じ診断 code で報告すること", () => {
     const element = createStateElement();
     checkDeclaredPath(element, { user: { name: "Ann" } }, "user.nmae", "binding");
+    flushDeferredPathReports(element);
     expect(warn).toHaveBeenCalledTimes(1);
     const message = warn.mock.calls[0][0] as string;
     expect(message).toContain("[wcs/binding-path-missing]");
@@ -161,10 +162,13 @@ describe("checkDeclaredPath", () => {
     const element = createStateElement();
     const state = { user: { name: "Ann" } };
     checkDeclaredPath(element, state, "user.nmae", "binding");
+    flushDeferredPathReports(element);
     checkDeclaredPath(element, state, "user.nmae", "binding");
+    flushDeferredPathReports(element);
     expect(warn).toHaveBeenCalledTimes(1);
     clearReportedPaths(element);
     checkDeclaredPath(element, state, "user.nmae", "binding");
+    flushDeferredPathReports(element);
     expect(warn).toHaveBeenCalledTimes(2);
   });
 
@@ -205,7 +209,9 @@ describe("checkDeclaredPath", () => {
   it("報告を devtools sink にも流すこと", () => {
     const events: DevtoolsEvent[] = [];
     setDevtoolsSink((event) => { events.push(event); });
-    checkDeclaredPath(createStateElement(), { user: { name: "Ann" } }, "user.nmae", "binding");
+    const element = createStateElement();
+    checkDeclaredPath(element, { user: { name: "Ann" } }, "user.nmae", "binding");
+    flushDeferredPathReports(element);
     expect(events).toEqual([{
       type: "state:path-unresolved",
       source: "binding",

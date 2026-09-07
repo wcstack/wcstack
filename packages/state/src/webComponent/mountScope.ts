@@ -8,6 +8,7 @@ import { collectStructuralFragments } from "../structural/collectStructuralFragm
 import { raiseError } from "../raiseError";
 import { ParseBindTextResult } from "../bindTextParser/types";
 import { getMountRecordByScopeRoot, IMountRecord, registerMountRecord, translateParsedForMount } from "./mount";
+import { notifyExports, registerExports, warnShadowedExports } from "./exportIndex";
 
 /**
  * webComponent/mountScope.ts — マウントされたスコープの構築（Phase 2・impl-plan §3-0）。
@@ -62,6 +63,12 @@ export function initializeMountScope(record: IMountRecord, scopeRoot: ShadowRoot
     setStateElementAlias(scopeRoot, record.parentStateElement);
   }
   buildMountScopeBindings(record, scopeRoot);
+  // 公開 getter（docs/state-overlay-export-design.md）: 索引・エイリアス辺は初回登録で
+  // 1 回（冪等）。親 getter は子の登録前に評価されているので、公開パスへ postUpdate を
+  // 打って収束させる（再初期化でも打つ — 値が変わっていうる）
+  registerExports(record);
+  warnShadowedExports(record);
+  notifyExports(record);
   setBindingsReadyForScope(scopeRoot, Promise.resolve());
 }
 
@@ -98,4 +105,6 @@ export function remountScopeBindings(record: IMountRecord, scopeRoot: ShadowRoot
   const rebound = session.rebindAddresses();
   // 空でも呼んで良い（ループが回らないだけ）— 分岐を持たない
   applyChangeFromBindings(rebound);
+  // 別の行に付け替わった ＝ その行の公開パスの答えが変わった（X6）
+  notifyExports(record);
 }

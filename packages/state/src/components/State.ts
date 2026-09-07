@@ -48,6 +48,7 @@ import { VERSION } from "../version";
 import { HTMLElementBase } from "../platform/HTMLElementBase";
 import { getAllPropertyDescriptors } from "../getAllPropertyDescriptors";
 import { checkDeclaredPath, PathInfoSource } from "../pathDiagnostics";
+import { notifyExports } from "../webComponent/exportIndex";
 
 function getStateInfo(
   state: IState
@@ -806,6 +807,9 @@ export class State extends HTMLElementBase implements IStateElement {
       // 台帳エイリアスは消さない（プール再利用の再接続が同じスコープに戻る）。
       // $disconnectedCallback だけは要素のライフサイクルとして呼ぶ（例外は隔離）
       callMountLifecycleCallback(this._mountRecord, "$disconnectedCallback");
+      // 公開 getter の答えが消えた（X6）— 親の依存者を再評価させる。プール返却も
+      // 恒久破棄もここを通る（行ごと消えた形は $postUpdate が届かず無視される）
+      notifyExports(this._mountRecord);
       this._rootNode = null;
       return;
     }

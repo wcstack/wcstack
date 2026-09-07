@@ -31,7 +31,8 @@ import { raiseError } from "../../raiseError";
 import { collectStreamDependency } from "../../stream/argsTrace";
 import { getStreamErrorNamespace, getStreamStatusNamespace } from "../../stream/streamNamespace";
 import { getMountRecordByPath } from "../../webComponent/mount";
-import { createOverlayValue } from "../../webComponent/overlay";
+import { createOverlayValue, readExportedAccessor } from "../../webComponent/overlay";
+import { resolveExport } from "../../webComponent/exportIndex";
 import { IStateHandler } from "../types";
 import { checkDependency } from "./checkDependency";
 import { isCacheable } from "./isCacheable";
@@ -128,10 +129,20 @@ function _getByAddress(
     // 順序が保証されない（docs/state-bind-component-nested-for-design.md）。
     // undefined はプロパティ書き込みがスキップされる値なので DOM は触られず、
     // 直後に `for` が行ごと外して整合する。
+    const lastSegment = address.pathInfo.segments[address.pathInfo.segments.length - 1];
+    // 公開 getter の dispatch（docs/state-overlay-export-design.md §2-1）: 掛かるのは
+    // 「ツリーの未存在キー」の分岐だけ（X1 — 命中する読みは無改造）。マウントの無い
+    // state は boolean 1 個で抜ける（D18）
+    if (stateElement.hasMounts === true && lastSegment !== WILDCARD
+      && (parentValue === null || typeof parentValue === "undefined" || !(lastSegment in Object(parentValue)))) {
+      const exported = resolveExport(stateElement, parentAddress.pathInfo.path, lastSegment, address.listIndex);
+      if (exported !== null) {
+        return readExportedAccessor(exported.record, exported.entry, address.listIndex, receiver, handler);
+      }
+    }
     if (parentValue === null || typeof parentValue === "undefined") {
       return undefined;
     }
-    const lastSegment = address.pathInfo.segments[address.pathInfo.segments.length - 1];
     if (lastSegment === WILDCARD) {
       // listIndex が無いまま末尾ワイルドカードに到達 ＝ そのパスの階数を満たす
       // ループ文脈が無い（`matrix.*.*` を 1 段の `for` の中で読む等）。元の文面は
