@@ -58,6 +58,8 @@ export interface WcsMessageCatalog {
   getterCycle(cycle: string): string;
   /** `$updatedCallback` が未バインドのパスを判定に使っている（その分岐は走らない）。 */
   updatedCallbackUnbound(path: string): string;
+  /** getter の中でパス読み取りの先の素のプロパティアクセス（追跡されるのは root だけ）。 */
+  getterUntrackedRead(root: string, suggestedPath: string): string;
   handlerFilterNotAllowed(property: string): string;
   typeExpectation(label: string, expected: ExpectedTypeKind, resultType: string): string;
   filterUnknown(name: string): string;
@@ -141,6 +143,8 @@ const ja: WcsMessageCatalog = {
   getterCycle: (cycle) => `パス getter が循環参照しています: ${cycle}`,
   updatedCallbackUnbound: (p) =>
     `$updatedCallback は binding 駆動です。"${p}" はこのドキュメントのどのバインディングにも現れないため、この分岐は一度も実行されません。描画に依存せず反応するなら $watch を使ってください`,
+  getterUntrackedRead: (root, sp) =>
+    `ここで追跡されるのは "${root}" だけです。"${sp}" が変わってもこの getter は再評価されません（パス読み取りの先の素のプロパティアクセスは追跡されない）。this["${sp}"] で読んでください`,
   handlerFilterNotAllowed: (prop) => `イベントハンドラ "${prop}" にフィルタは使用できません`,
   typeExpectation: (label, expected, resultType) =>
     `"${label}" には${JA_EXPECTED_LABEL[expected]}が必要です（現在の型: ${resultType}）`,
@@ -232,6 +236,8 @@ const en: WcsMessageCatalog = {
   getterCycle: (cycle) => `Path getters form a dependency cycle: ${cycle}`,
   updatedCallbackUnbound: (p) =>
     `$updatedCallback is binding-driven. "${p}" is not bound anywhere in this document, so this branch never runs. Use $watch to react without depending on what is rendered`,
+  getterUntrackedRead: (root, sp) =>
+    `Only "${root}" is tracked here: the getter is not re-evaluated when "${sp}" changes (plain property access after a path read is not tracked). Read this["${sp}"] instead`,
   handlerFilterNotAllowed: (prop) => `Filters cannot be applied to event handler "${prop}"`,
   typeExpectation: (label, expected, resultType) =>
     `"${label}" requires ${EN_EXPECTED_LABEL[expected]} (current type: ${resultType})`,

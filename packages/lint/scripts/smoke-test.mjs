@@ -28,6 +28,7 @@ const brokenManifest = join(workDir, "broken.manifest.json");
 const mutationHtml = join(workDir, "mutation.html");
 const namedStateHtml = join(workDir, "named-state.html");
 const missingPathHtml = join(workDir, "missing-path.html");
+const untrackedReadHtml = join(workDir, "untracked-read.html");
 // stateSchema 発見（D8）: HTML と同じディレクトリの wcstack.manifest.json を自動で読み、
 // 宣言済み state の未存在パスは error に上がる（D6）。tmp 下なので repo の CI gate は走査しない。
 const schemaDir = join(workDir, "schema");
@@ -52,6 +53,14 @@ writeFileSync(namedStateHtml, `<!doctype html>
 <html><body><wcs-state name="cart" json='{"total":1}'></wcs-state><p data-wcs="textContent: x@cart"></p></body></html>
 `);
 writeFileSync(cleanHtml, "<!doctype html>\n<html><body><p>hello</p></body></html>\n");
+writeFileSync(untrackedReadHtml, `<!doctype html>
+<html><body>
+<wcs-state><script type="module">
+export default { form: { name: "" }, get label() { return this.form.name; } };
+</script></wcs-state>
+<input data-wcs="value: form.name">
+</body></html>
+`);
 writeFileSync(brokenManifest, "{ this is not json\n");
 writeFileSync(mutationHtml, `<!doctype html>
 <wcs-state><script type="module">
@@ -147,6 +156,14 @@ check("named state (name= / @name) → error wcs/named-state-deprecated, exit 1"
 check("unresolvable path → warning wcs/binding-path-missing, exit 0", ["--lang=en", missingPathHtml], {
   exit: 0,
   stdout: [/warning wcs\/binding-path-missing /, "0 error(s), 1 warning(s)"],
+});
+
+// getter 本体の AST 解析に依存する唯一の診断。acorn が cli.cjs に同梱されていなければ
+// この warning は出ない(typescript と違い external ではなく inline — esbuild.config.js)。
+// severity は warning: ルートを丸ごと置換する設計なら壊れない条件付きの欠陥。
+check("nested read inside a getter → warning wcs/getter-untracked-read, exit 0", ["--lang=en", untrackedReadHtml], {
+  exit: 0,
+  stdout: [/warning wcs\/getter-untracked-read /, "0 error(s), 1 warning(s)"],
 });
 
 // --strict は exit code の閾値だけを warning に下げる(severity は不変)。error 側 /

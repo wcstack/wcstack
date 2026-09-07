@@ -7,6 +7,7 @@
  *
  *   wcs/index-arity              — `$getAll` / `$setAll` / `$resolve` の添字の本数 vs パス中の `*` の本数
  *   wcs/getter-cycle             — パス getter どうしの循環参照
+ *   wcs/getter-untracked-read    — getter の中の `this.form.name`（追跡されるのは `form` だけ）
  *   wcs/updated-callback-unbound — `$updatedCallback` が未バインドのパスを判定に使っている
  *
  * （もう 1 つの意味論検査 `wcs/wildcard-rank` は HTML 側の for スコープが要るため
@@ -25,9 +26,13 @@
 import { parseWcsScriptBlocks } from '../language/htmlParse.js';
 import { getMessages } from '../core/messages.js';
 import { WcsDiagnostic, WcsDiagnosticCode } from '../core/diagnostics.js';
-import { analyzeCallableBodies, analyzeStatePaths } from './stateAnalyzer.js';
+import { analyzeCallableBodies, analyzeStatePaths, isObjectLiteral } from './stateAnalyzer.js';
+import { collectGetterReads } from './scriptAst.js';
 import { countWildcardSegments, getInnermostForPath } from './forContext.js';
 import { buildReferenceIndex } from '../core/index/referenceIndex.js';
+import { findBuiltinTagOccurrences } from './ioNodeValidator.js';
+import { BUILTIN_TAGS } from './generated/builtinTags.generated.js';
+import { ASSIGN_TAIL, PRE_INCDEC, ROOT_BRACKET } from './scriptPatterns.js';
 
 /** ランタイム予約キー（@wcstack/state の define.ts が正本）。 */
 const STATE_UPDATED_CALLBACK = '$updatedCallback';
@@ -149,33 +154,6 @@ function validateIndexArity(script: string, scriptStart: number, locale?: string
   return out;
 }
 
-/** getter 本体から読んでいる state パスを拾う（`this["a.b"]` / `this.a` / API の第1引数）。 */
-const READ_BRACKET = /\bthis\s*\??\.\s*\[\s*(["'])((?:\\.|(?!\1)[^\\])*)\1\s*\]|\bthis\s*\??\[\s*(["'])((?:\\.|(?!\3)[^\\])*)\3\s*\]/g;
-const READ_DOT = /\bthis\s*\??\.\s*([A-Za-z_]\w*)/g;
-const READ_API = /\bthis\s*\??\.\s*\$(?:getAll|resolve)\s*\(\s*(["'])((?:\\.|(?!\1)[^\\])*)\1/g;
-
-function collectReadPaths(body: string): Set<string> {
-  const paths = new Set<string>();
-  for (const [regex, groups] of [
-    [READ_BRACKET, [2, 4]],
-    [READ_API, [2]],
-    [READ_DOT, [1]],
-  ] as const) {
-    regex.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = regex.exec(body)) !== null) {
-      for (const group of groups) {
-        const value = match[group];
-        // `$` 始まりは API 名前空間（`$getAll` 等）なので読みパスではない
-        if (value !== undefined && value.length > 0 && !value.startsWith('$')) {
-          paths.add(value);
-        }
-      }
-    }
-  }
-  return paths;
-}
-
 /**
  * パス getter の循環参照を検出する。
  *
@@ -183,6 +161,11 @@ function collectReadPaths(body: string): Set<string> {
  * いるもの**」に限る。データパスへの読みは循環し得ないので辺にしない — これで
  * 「親パスを読む getter」（`get "cart.total"() { return this.cart… }`）のような
  * 正常形を巻き込まない。
+ *
+ * 読み取りの収集は AST（scriptAst.ts）。分割代入・`this` エイリアス・`$trackDependency`
+ * を辺にし、`$untrackDependency` の中・入れ子 function の中・代入左辺は辺にしない。
+ * setter は辺の起点にしない（ランタイムは setter 内の読み取りを依存に登録しない —
+ * 依存追跡の境界 規則 2）。パースできない本体は辺なし（断定できないときは黙る）。
  */
 function validateGetterCycles(script: string, scriptStart: number, locale?: string): WcsDiagnostic[] {
   const msgs = getMessages(locale);
@@ -191,11 +174,12 @@ function validateGetterCycles(script: string, scriptStart: number, locale?: stri
   const declared = new Set(getters.map((getter) => getter.name));
   const edges = new Map<string, string[]>();
   for (const getter of getters) {
-    const targets: string[] = [];
-    for (const read of collectReadPaths(getter.body)) {
-      if (declared.has(read)) targets.push(read);
+    if (getter.accessor === 'set') continue;
+    const targets = new Set<string>();
+    for (const read of collectGetterReads(getter.body) ?? []) {
+      if (declared.has(read.path)) targets.add(read.path);
     }
-    edges.set(getter.name, targets);
+    edges.set(getter.name, [...targets]);
   }
 
   // DFS（gray = 現在の経路、black = 循環なしと確定）。sidecar の $ref 検出と同型。
@@ -232,6 +216,8 @@ function validateGetterCycles(script: string, scriptStart: number, locale?: stri
 
   const out: WcsDiagnostic[] = [];
   for (const getter of getters) {
+    // 報告は get 側の名前スパンだけ（set 側は辺を持たないので同じ循環を二重に出さない）
+    if (getter.accessor === 'set') continue;
     const cycle = cyclesByEntry.get(getter.name);
     if (cycle === undefined) continue;
     out.push({
@@ -243,6 +229,136 @@ function validateGetterCycles(script: string, scriptStart: number, locale?: stri
     });
   }
   return out;
+}
+
+/**
+ * getter の中で `this.form.name` のように、`this` を通したパス読み取りの先で素の
+ * プロパティアクセスを続けている形を検出する（依存追跡の境界 規則 1 の静的検出）。
+ *
+ * 追跡されるのは `form` だけなので、`form.name` への書き込み（`this["form.name"] = x` や
+ * `<input data-wcs="value: form.name">`）ではこの getter は再評価されない。症状は
+ * 「値が更新されない・エラーは出ない」で、ランタイムは素のアクセスと区別できない。
+ *
+ * 報告条件（すべて満たすとき。docs/getter-dependency-ast-impl-plan.md Phase 2 / D8）:
+ *   - get アクセサ本体の member / destructure 読みで、chain が断定できる（動的添字なし）
+ *   - ルートが宣言済みデータパスで、初期値がオブジェクトリテラル（配列は対象外 — D7）
+ *   - 呼び出しの callee なら末尾 1 段を落とし、残りがルートだけなら黙る
+ *     （`this.form.validate()` は報告しない・`this.form.name.trim()` は `form.name` を報告する）
+ *   - そのルートへの**入れ子書き込みの証拠**がドキュメントにある（collectNestedWriteRoots）。
+ *     ルートが丸ごと置換されるだけの設計（router の `typedParams: routeParams` 出力・
+ *     `$streams` の fold 値）では getter は壊れないので、証拠なしでは黙る（偽陽性ゼロ優先）
+ * severity は warning: 証拠があっても、そのルートを別経路で丸ごと置換していれば壊れない。
+ */
+function validateGetterUntrackedReads(
+  script: string,
+  scriptStart: number,
+  nestedWriteRoots: () => ReadonlySet<string>,
+  locale?: string,
+): WcsDiagnostic[] {
+  const getters = analyzeCallableBodies(script).filter((entry) => entry.kind === 'getter' && entry.accessor === 'get');
+  if (getters.length === 0) return [];
+  const objectRoots = new Set<string>();
+  for (const candidate of analyzeStatePaths(script)) {
+    if (candidate.kind === 'data' && candidate.rawInitial !== undefined && isObjectLiteral(candidate.rawInitial)) {
+      objectRoots.add(candidate.path);
+    }
+  }
+  if (objectRoots.size === 0) return [];
+  const msgs = getMessages(locale);
+  const out: WcsDiagnostic[] = [];
+  for (const getter of getters) {
+    for (const read of collectGetterReads(getter.body) ?? []) {
+      if ((read.form !== 'member' && read.form !== 'destructure') || read.chain === null) continue;
+      const segments = read.callee ? read.chain.slice(0, -1) : read.chain;
+      if (segments.length < 2 || !objectRoots.has(segments[0])) continue;
+      if (!nestedWriteRoots().has(segments[0])) continue;
+      out.push({
+        code: WcsDiagnosticCode.GetterUntrackedRead,
+        start: scriptStart + getter.bodyStart + read.start,
+        end: scriptStart + getter.bodyStart + read.end,
+        message: msgs.getterUntrackedRead(segments[0], segments.join('.')),
+        severity: 'warning',
+      });
+    }
+  }
+  return out;
+}
+
+/** ランタイムの既定 two-way DOM プロパティ（書き戻しあり）。 */
+const TWO_WAY_PROPS = new Set(['value', 'checked']);
+/** `this["a.b"] = …` / `+=` / `++`（後置）と `++this["a.b"]`（前置）。ドットパス経由の入れ子書き込み。 */
+const BRACKET_WRITE = new RegExp(`${ROOT_BRACKET}${ASSIGN_TAIL}`, 'g');
+const PRE_BRACKET_INCDEC = new RegExp(`${PRE_INCDEC}${ROOT_BRACKET}`, 'g');
+
+/**
+ * 入れ子書き込みの証拠があるルート（およびその全接頭辞）を集める。
+ * `wcs/getter-untracked-read` のゲート: `form.name` が書かれるなら `form` に証拠が付く。
+ *
+ * 証拠として数える形（どれも `root.<sub>` への書き込みだと静的に断定できるもの）:
+ *   - HTML: `value:` / `checked:` の prop バインド、`radio:` / `checkbox:`、spread `...: root`
+ *     （spread は展開先のメンバーへ書く — `...: fetch` は `fetch.value` 等）
+ *   - HTML: 組み込み wcs-* タグの出力プロパティへのバインド（`latitude: geo.lat`）
+ *   - script: `this["a.b"] = …`（複合代入・増減含む）、`$setAll("a.…")`、値付き `$resolve("a.…", [...], v)`
+ *   - `<wcs-state mount="a.b">` ボリューム（そのサブツリーは `a.b.*` への書き込み）
+ * 数えない形: `textContent:` / mustache（読み）、ルート自身へのバインド（`typedParams: params` は
+ * 丸ごと置換）、`this.a.b = …`（素のプロパティ書き込み — 反応しないので wcs/nested-assign が error にする）。
+ * 精度の割り切り: `value#ro:` の `#ro` は索引に載らないので value と同じに数える（丸ごと置換と
+ * `#ro` が同居するときだけ余計に出る）。
+ */
+function collectNestedWriteRoots(
+  html: string,
+  stateTagName: string,
+  bindAttrName: string,
+  blocks: readonly { content: string; mountPath: string | null }[],
+): Set<string> {
+  const roots = new Set<string>();
+  const addPrefixes = (path: string, inclusive: boolean): void => {
+    const segments = path.split('.');
+    const last = inclusive ? segments.length : segments.length - 1;
+    for (let i = 1; i <= last; i++) roots.add(segments.slice(0, i).join('.'));
+  };
+
+  // HTML 側。組み込みタグの範囲を先に取り、出現のオフセットで所属タグを引く
+  const tags = findBuiltinTagOccurrences(html).map((occ) => ({
+    contract: BUILTIN_TAGS[occ.tagName],
+    start: occ.tagStart,
+    end: occ.attrsStart + occ.attrsText.length,
+  }));
+  const index = buildReferenceIndex(html, { bindAttribute: bindAttrName, stateTagName });
+  for (const occ of index.occurrences) {
+    if (occ.kind !== 'path' || occ.path.startsWith('.') || occ.source !== 'attribute') continue;
+    if (occ.bindingType === 'spread') { addPrefixes(occ.path, true); continue; }
+    if (occ.bindingType === 'radio' || occ.bindingType === 'checkbox') { addPrefixes(occ.path, false); continue; }
+    if (occ.bindingType !== 'prop' || occ.propName === null) continue;
+    if (TWO_WAY_PROPS.has(occ.propName)) { addPrefixes(occ.path, false); continue; }
+    const at = occ.exprRange.start;
+    const tag = tags.find((t) => t.start <= at && at <= t.end);
+    if (tag?.contract?.hasWcBindable && tag.contract.properties.includes(occ.propName)) addPrefixes(occ.path, false);
+  }
+
+  // script 側
+  for (const block of blocks) {
+    if (block.mountPath !== null) addPrefixes(block.mountPath, true);
+    const scan = blankComments(block.content);
+    for (const regex of [BRACKET_WRITE, PRE_BRACKET_INCDEC]) {
+      regex.lastIndex = 0;
+      let match: RegExpExecArray | null;
+      while ((match = regex.exec(scan)) !== null) addPrefixes(match[1], false);
+    }
+    API_CALL.lastIndex = 0;
+    let call: RegExpExecArray | null;
+    while ((call = API_CALL.exec(scan)) !== null) {
+      const api = call[1];
+      if (api === 'getAll') continue;
+      const parsed = splitCallArgs(scan, call.index + call[0].length);
+      if (parsed === null) continue;
+      API_CALL.lastIndex = parsed.end;
+      const path = parsed.args.length > 0 ? literalString(parsed.args[0]) : null;
+      if (path === null) continue;
+      if (api === 'setAll' || parsed.args.length >= 3) addPrefixes(path, false);
+    }
+  }
+  return roots;
 }
 
 /**
@@ -384,9 +500,15 @@ export function validateSemantics(
   bindAttrName: string = 'data-wcs',
 ): WcsDiagnostic[] {
   const out: WcsDiagnostic[] = [];
-  for (const block of parseWcsScriptBlocks(html, stateTagName)) {
+  const blocks = parseWcsScriptBlocks(html, stateTagName);
+  // 入れ子書き込みの証拠はドキュメント単位で 1 回だけ集める（必要になるまで作らない）
+  let nestedWriteRoots: Set<string> | null = null;
+  const getNestedWriteRoots = (): ReadonlySet<string> =>
+    (nestedWriteRoots ??= collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks));
+  for (const block of blocks) {
     out.push(...validateIndexArity(block.content, block.contentStart, locale));
     out.push(...validateGetterCycles(block.content, block.contentStart, locale));
+    out.push(...validateGetterUntrackedReads(block.content, block.contentStart, getNestedWriteRoots, locale));
   }
   out.push(...validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale));
   return out;

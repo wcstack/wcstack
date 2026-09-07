@@ -77,15 +77,16 @@
     "@types/vscode": "^1.110.0",
     "@vitest/coverage-v8": "^4.1.1",
     "@wcstack/state": "file:../state",
+    "acorn": "^8.18.0",
     "esbuild": "^0.25.12",
     "vitest": "^4.1.1"
   },
   "dependencies": {
-    "typescript": "^5.9.3",
     "@volar/language-core": "~2.4.0",
     "@volar/language-server": "~2.4.0",
     "@volar/language-service": "~2.4.0",
     "@volar/typescript": "~2.4.0",
+    "typescript": "^5.9.3",
     "volar-service-typescript": "^0.0.62",
     "vscode-languageclient": "^9.0.1",
     "vscode-languageserver-protocol": "^3.17.5"

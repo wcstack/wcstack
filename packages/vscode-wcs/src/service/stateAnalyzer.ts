@@ -207,6 +207,8 @@ export interface CallableBody {
   readonly body: string;
   /** 本体の開始オフセット（script 内の絶対位置。本体内のトークンのレンジ計算に使う） */
   readonly bodyStart: number;
+  /** `kind: 'getter'` の get / set 種別（メソッドでは未設定）。 */
+  readonly accessor?: 'get' | 'set';
 }
 
 /**
@@ -230,6 +232,7 @@ export function analyzeCallableBodies(scriptContent: string): CallableBody[] {
       end: root.start + prop.nameEnd,
       body: prop.value ?? '',
       bodyStart: root.start + (prop.valueStart ?? 0),
+      accessor: prop.accessor,
     });
   }
   return out;
@@ -730,6 +733,12 @@ interface PropertyInfo {
   name: string;
   /** `getter` は get / set 双方（どちらも計算パスの宣言なので区別しない）。 */
   kind: 'data' | 'getter' | 'method';
+  /**
+   * `kind: 'getter'` のときの accessor 種別。依存意味論を持つのは get 側だけ
+   * （setter 内の読み取りはランタイムが依存に登録しない）なので、本体を読む検査が
+   * get / set を区別するために持つ。パス候補の畳み込み（get/set ペアで 1 候補）は変えない。
+   */
+  accessor?: 'get' | 'set';
   value?: string;
   typeHint?: string;
   /**
@@ -819,8 +828,11 @@ function parseTopLevelProperties(objectContent: string): PropertyInfo[] {
     const accessorName = nameAt(1) ?? nameAt(2) ?? nameAt(3);
     if (accessorName) {
       const { body, bodyStart } = skipBody();
+      // 正規表現は `(?:get|set)` を非捕捉で畳んでいる（群番号を動かさないため）。
+      // マッチは必ず `get` / `set` のどちらかで始まるので先頭 3 文字で判別する。
+      const accessor: 'get' | 'set' = match[0].startsWith('set') ? 'set' : 'get';
       props.push({
-        name: accessorName, kind: 'getter', value: body, valueStart: bodyStart,
+        name: accessorName, kind: 'getter', accessor, value: body, valueStart: bodyStart,
         nameStart: nameSpan![0], nameEnd: nameSpan![1],
       });
       continue;
@@ -1009,7 +1021,7 @@ function isArrayLiteral(value: string): boolean {
 /**
  * 値がオブジェクトリテラルかどうかを判定する。
  */
-function isObjectLiteral(value: string): boolean {
+export function isObjectLiteral(value: string): boolean {
   return value.trimStart().startsWith('{');
 }
 

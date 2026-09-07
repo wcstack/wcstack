@@ -161,6 +161,7 @@ Severity policy: **error** = the runtime raises or the binding can never work; *
 | `wcs/array-mutation` | `push` / `splice` / `sort` … (9 destructive methods) — not reactive; the message names the non-destructive alternative (`concat`, `toSpliced`, `toSorted` …) | ❌ error |
 | `wcs/array-index-assign` | `this.items[0] = x` (bracket-only chain, all compound forms) — use `this["items.0"] = x` or `with()` | ❌ error |
 | `wcs/getter-cycle` | Path getters that reference each other in a cycle | ⚠ warning |
+| `wcs/getter-untracked-read` | `this.form.name` inside a getter — only `form` is tracked, so the getter never re-runs when `form.name` changes; reported only when the document writes `form.name` somewhere (`value:` / `checked:` / spread / an I/O node output / `this["form.name"] = …`), so a root that is only ever replaced wholesale (router params, `$streams` folds) stays quiet. Read `this["form.name"]` instead | ⚠ warning |
 | `wcs/updated-callback-unbound` | `$updatedCallback` tests a path that no binding reads — the branch never runs (the callback is binding-driven) | ⚠ warning |
 | `wcs/watch-declaration-invalid` | `$watch` key the runtime rejects: `$`-prefixed, empty segment, non-function handler literal | ❌ error |
 | `wcs/watch-path-missing` | `$watch` key that does not exist in the state — the handler silently never fires | ⚠ warning |
