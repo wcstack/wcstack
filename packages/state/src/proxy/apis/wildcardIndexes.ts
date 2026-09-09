@@ -16,8 +16,11 @@
  * Throws: LIST-201（インデックス未解決）、BIND-201（ワイルドカード情報不整合）
  */
 
+import { getAbsolutePathInfo } from "../../address/AbsolutePathInfo";
+import { createAbsoluteStateAddress } from "../../address/AbsoluteStateAddress";
 import { createStateAddress } from "../../address/StateAddress";
-import { IPathInfo, IStateAddress } from "../../address/types";
+import { IAbsoluteStateAddress, IPathInfo } from "../../address/types";
+import { getStateListBaseline, setStateListBaseline } from "../../list/stateListBaseline";
 import { createListDiff } from "../../list/createListDiff";
 import { IListIndex } from "../../list/types";
 import { raiseError } from "../../raiseError";
@@ -25,14 +28,14 @@ import { getByAddress } from "../methods/getByAddress";
 import { IStateHandler } from "../types";
 
 /**
- * 各ワイルドカード階層で最後に観測したリスト値。**次の読みの差分基準**であり、
- * ListIndex の同一性を跨いで保つために使う。
+ * 各ワイルドカード階層で最後に観測したリスト値は、state 側の共有基準
+ * （[stateListBaseline](../../list/stateListBaseline.ts)）に置く。ListIndex の同一性を
+ * 跨いで保つための差分基準であり、読み・描画・依存ウォークが同じ「前回見た形」を見る
+ * ことでリスト置換のたびに ListIndex を鋳造し直す事故を防ぐ。
  *
- * 所有権は読み（`$getAll`）側にある。書き（`$setAll`）はこの走査を借りるだけで
- * 記録を更新しない（`commitDiffBaseline: false`。設計 §6-2）。
+ * 書き（`$setAll`）はこの走査を借りるだけで記録を更新しない
+ * （`commitDiffBaseline: false`。設計 §6-2）。
  */
-// ToDo: IAbsoluteStateAddressに変更する
-const lastValueByListAddress = new WeakMap<IStateAddress, unknown[]>();
 
 export interface ICollectWildcardIndexesOptions {
   /**
@@ -56,7 +59,7 @@ export function collectWildcardIndexes(
   indexes : number[],
   options : ICollectWildcardIndexesOptions,
 ): number[][] {
-  const newValueByAddress: Map<IStateAddress, any> = new Map();
+  const newValueByAddress: Map<IAbsoluteStateAddress, any> = new Map();
 
   const walkWildcardPattern = (
     wildcardParentPathInfos: IPathInfo[],
@@ -73,13 +76,15 @@ export function collectWildcardIndexes(
       return;
     }
     const wildcardAddress = createStateAddress(wildcardParentPathInfo, listIndex);
-    const oldValue = lastValueByListAddress.get(wildcardAddress);
+    const wildcardAbsAddress = createAbsoluteStateAddress(
+      getAbsolutePathInfo(handler.stateElement, wildcardParentPathInfo), listIndex);
+    const oldValue = getStateListBaseline(wildcardAbsAddress);
     const newValue = getByAddress(target, wildcardAddress, receiver, handler);
     const listDiff = createListDiff(
       listIndex, oldValue, newValue);
     const listIndexes = listDiff.newIndexes;
     const index = indexes[indexPos] ?? null;
-    newValueByAddress.set(wildcardAddress, newValue);
+    newValueByAddress.set(wildcardAbsAddress, newValue);
     if (index === null) {
       for(let i = 0; i < listIndexes.length; i++) {
         const listIndex = listIndexes[i];
@@ -126,7 +131,7 @@ export function collectWildcardIndexes(
   );
   if (options.commitDiffBaseline) {
     for(const [address, newValue] of newValueByAddress.entries()) {
-      lastValueByListAddress.set(address, newValue);
+      setStateListBaseline(address, Array.isArray(newValue) ? newValue : []);
     }
   }
   return resultIndexes;

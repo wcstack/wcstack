@@ -1,29 +1,44 @@
 /**
  * integration.recursionKnownDefects.test.ts — 再帰パス（docs/state-recursive-path-design.md）
- * の Phase A 実測で見つかった「今日は間違っているが、まだ直していない挙動」を
- * 現状のまま固定する characterization テスト。
+ * の Phase A 実測で見つかった欠陥の台帳。
  *
- * このファイルの assert はすべて **誤った現状の値** を期待している。修正が入ったら
- * ここが赤くなるのが正常で、各 it の直前の `DEFECT:` コメントが「本来どうあるべきか」と
- * 「どの修正で反転するか」を書いてある。緑を保つために期待値を緩めてはならない。
+ * このファイルには **2 種類の it** が混ざっている。混同しないこと。
+ *  - **修理済み（契約）**: Phase A' の E1〜E3 で挙動が正しくなったもの。assert は
+ *    正しい値を期待し、`// Fixed by E<n> … — was: <元の誤った値>` の英語コメントで
+ *    元の誤った値を残してある。将来の回帰で「何に戻ったか」が読めるようにするため。
+ *  - **現状固定（characterization）**: まだ直していないもの。assert は **誤った現状の値**
+ *    を期待しており、直前の `DEFECT:` コメントが「本来どうあるべきか」を書いてある。
+ *    修正が入ったらここが赤くなるのが正常で、緑を保つために期待値を緩めてはならない。
  *
- * 固定している欠陥は 6 つ。
- *  1. 描画なし（for が 1 本も無い）ルートリストへの構造書き込みで ListIndex 台帳の
- *     世代が分裂し、集計が恒久 stale になるか恒久 throw する。
- *     真因は差分基準 lastListValueByAbsoluteStateAddress が apply（描画）経路からしか
- *     書かれないこと（src/list/lastListValueByAbsoluteStateAddress.ts の呼び手は
- *     applyChangeFromBindings / BindingSession / hydrateBindings の 3 箇所のみ）。
+ * 修理済み（Phase A' / コミット時点）:
+ *  1. **E1 — 描画なしのルートリストの世代分裂**。差分基準 `lastListValueByAbsoluteStateAddress`
+ *     が apply（描画）経路からしか書かれず、`for` の無いルートリストへの構造書き込みで
+ *     ListIndex 台帳の世代が分裂して集計が恒久 stale／恒久 throw になっていた。state 側の
+ *     基準（src/list/stateListBaseline.ts）を新設し、読み・描画・依存ウォークで共有する。
+ *  3a. **E2 — 深さ超過の誤告発**。MAX_LOOP_DEPTH=128 超過が、循環の無い直線の木でも
+ *     「Possible circular dependency」になっていた。末尾 8 段の重複有無で分岐し、
+ *     重複が無ければ `[wcs/getter-depth-exceeded]` にする。**本物の循環では従来どおり
+ *     循環を名指しする**ことを別の it で固定してある（分岐が片側へ退化していない担保）。
+ *  3b. **E3 — `$129` の無言 undefined**。`$` + 数字の表引き失敗を `[wcs/index-param-range]`
+ *     で raiseError する。
+ *
+ * 現状固定のまま残っている欠陥:
+ *  1'. 欠陥1 の describe に 3 箇所残る（いずれも `DEFECT:` コメント付き）。
+ *      (i) in-place push 後の `[...arr]` 再代入（in-place 変異規範の側）、
+ *      (ii) ネストしたリストへの構造書き込み直後の cold な `$resolve`、
+ *      (iii) describe 末尾の it に **埋め込まれた** `(1')`＝走査を一度も経ていない
+ *      cold な `$resolve`（it 全体は緑なので、独立した it を数えると見落とす）。
+ *      (ii)(iii) はどちらも「$resolve だけが走査の第 1 相を持たない」（Phase A の A1）で、
+ *      E1 とは別の契約。
  *  2. 同じ配列インスタンスが 2 つ以上の親から到達可能（DAG・循環・同一リスト内の
  *     重複）だと、台帳（src/list/listIndexesByList.ts）が配列インスタンスだけを
- *     キーにしているため ListIndex が先着の親に別名化し、無言で誤る。
- *  3. 深さ超過（MAX_LOOP_DEPTH=128）の診断が、循環の無い直線の木でも
- *     「Possible circular dependency」という誤告発になる。
+ *     キーにしているため ListIndex が先着の親に別名化し、無言で誤る（E6 で修理予定）。
  *  4. createState("readonly") の中で $setAll / $resolve(set) が readonly ガードを
- *     素通りして実データを書き換える（ガードは StateHandler の set トラップにしかない）。
+ *     素通りして実データを書き換える（ガードは StateHandler の set トラップにしかない。X1）。
  *  5. 遅延実体化（defineTreeAccessor）で、そのパスを読んだ後に getter を生やしても
  *     undefined が dirty:false でキャッシュに固定されたまま直らない。加えて、
  *     リストを実体化するアクセサを生の defineProperty で入れると（getterPaths 外＝
- *     非キャッシュになり）cold 走査そのものが落ちる。
+ *     非キャッシュになり）cold 走査そのものが落ちる（E4/E5 で修理予定）。
  *  6. 描画ありでも 1 クラスだけ取りこぼす。in-place の深い変異を構造変化と同じ代入に
  *     混ぜると、集計 getter は再評価されるのに葉の値パスのキャッシュだけが dirty 化
  *     されず、縮約エッジでルート集計まで古い値が伝播する。in-place の arr.reverse()
@@ -31,10 +46,11 @@
  *
  * 【偶然の救済に注意】Phase A で実際に結論が反転した罠が 4 つあり、このファイルでは
  * それぞれ意図的に「露出する側」の書き方を選んでいる。書き換えるときは崩さないこと。
- *  (a) 構造変更と書き込みの間に集計を読むかどうかで結果が反転する（読まないと正しくなる）。
+ *  (a) 構造変更と書き込みの間に集計を読むかどうかで結果が変わっていた（E1 の修理で
+ *      読みの有無に関わらず正しくなった。両方の綴りを別の it として残してある）。
  *  (b) $setAll の定数ブロードキャストは同値ガードで二重適用を隠す（mapper で書くと露出）。
- *  (c) getter を通さない平パスの $getAll / $resolve は描画なしでも正しい（欠陥は
- *      getter に渡る文脈 ListIndex の側にある）。対照として明示的に固定している。
+ *  (c) getter を通さない平パスの $getAll / $resolve は描画なしでも正しかった（欠陥は
+ *      getter に渡る文脈 ListIndex の側にあった）。E1 の修理後は両者が一致することを固定する。
  *  (d) 木が浅すぎる（孫が無い）と、反転後に行 getter がキャッシュヒットして一度も
  *      評価されず、$1 の証拠テストが「空の seen」で無言に緑になる。深さ 3 が要る。
  */
@@ -114,7 +130,9 @@ const FOR_ROOT =
 
 // ---------------------------------------------------------------------------
 
-describe("欠陥1: 描画なしのルートリストで ListIndex 台帳の世代が分裂する（現状の挙動を固定する / 修正時に反転させる）", () => {
+// E1 で修理済みの describe。ただし末尾 2 本（in-place push の再代入 / cold な $resolve）
+// だけは別原因なので現状固定のまま残してある（`DEFECT:` コメントが付いている方）。
+describe("欠陥1（E1 修理済み）: 描画なしのルートリストでも構造書き込みが集計に追従する", () => {
   /** 2 行 × 子 1 個。行 total は [11, 22] */
   const twoRoots = () =>
     unrollTotals({ nodes: [NODE(1, [NODE(10)]), NODE(2, [NODE(20)])] }, 2);
@@ -132,38 +150,40 @@ describe("欠陥1: 描画なしのルートリストで ListIndex 台帳の世�
       ],
     }, 2);
 
-  // DEFECT: 並べ替え後の子への書き込みは行の集計に届くべき（d0 は [22,2001] / grandTotal
-  //         は 2023 になるべき）。walkDependency の差分基準を apply 経路から切り離す修理
-  //         （B-struct engineChangeDetail 1）が入ったら反転する。
-  it("ルートリストを並べ替えたあと、子への書き込みが行の集計に届かない（無言 stale）", async () => {
+  // 【偶然の救済(a)】並べ替えた世代で集計キャッシュを確定させる中間の読みが、修理前は
+  // 破損の必要条件だった（この 1 行を省くと結果が正しくなってしまっていた）。修理後は
+  // 読みの有無で結果が変わらないことが契約なので、この読みを消してはならない
+  // ── 次の it が「読まない綴り」を担当し、2 本で一致を固定している。
+  it("ルートリストを並べ替えたあと、子への書き込みが行の集計に届く", async () => {
     const { stateEl } = await mount(twoRoots());
     expect(totalsAt(stateEl, 0)).toEqual([11, 22]);
 
     write(stateEl, (s: any) => { const a = s.nodes; s.nodes = [a[1], a[0]]; });
     await flush();
-    // 【偶然の救済(a)】この読みを省くと結果が正しくなってしまう。並べ替えた世代で
-    // キャッシュを確定させることが破損の必要条件なので、この 1 行を消してはならない。
     expect(totalsAt(stateEl, 0)).toEqual([22, 11]);
 
     write(stateEl, (s: any) => { s.$resolve("nodes.*.children.*.value", [1, 0], 2000); });
     await flush();
 
-    expect(totalsAt(stateEl, 1)).toEqual([20, 2000]); // 深さ 1 は正しく追従する
-    expect(totalsAt(stateEl, 0)).toEqual([22, 11]);   // should be: [22, 2001]
-    expect(read(stateEl, (s: any) => s.grandTotal)).toBe(33); // should be: 2023
+    expect(totalsAt(stateEl, 1)).toEqual([20, 2000]); // 深さ 1 は修理前から正しかった
+    // Fixed by E1 (state-side list baseline) — was: [22, 11]（恒久 stale）
+    expect(totalsAt(stateEl, 0)).toEqual([22, 2001]);
+    // Fixed by E1 — was: 33
+    expect(read(stateEl, (s: any) => s.grandTotal)).toBe(2023);
 
-    // 2 回目の書き込みでも回復しない（恒久 stale）
+    // 2 回目の書き込みも同じように届く（1 回目だけの偶然ではない）
     write(stateEl, (s: any) => { s.$resolve("nodes.*.children.*.value", [1, 0], 3000); });
     await flush();
     expect(totalsAt(stateEl, 1)).toEqual([20, 3000]);
-    expect(totalsAt(stateEl, 0)).toEqual([22, 11]);   // should be: [22, 3001]
+    // Fixed by E1 — was: [22, 11]（恒久 stale）
+    expect(totalsAt(stateEl, 0)).toEqual([22, 3001]);
   });
 
-  // 【偶然の救済(a) の直接証明】上の it から中間の読みを 1 行抜くだけで、同じ書き込みが
-  // 正しい値になる。破損の必要条件は「並べ替えた世代で集計キャッシュを確定させること」で
-  // あって書き込みそのものではない。修理後は読みの有無に関わらず [22,2001] になるべき
-  // ＝この it は修理後も緑のまま（上の it だけが反転する）。
-  it("対照: 並べ替えと書き込みの間に集計を読まなければ、同じ書き込みが正しく届く", async () => {
+  // 【偶然の救済(a) の対照】上の it から中間の読みを 1 行抜いた綴り。修理前はこちらだけが
+  // 正しい値になっていた（破損の必要条件は「並べ替えた世代で集計キャッシュを確定させる
+  // こと」であって書き込みそのものではなかった）。いまは 2 本とも [22, 2001] で、
+  // 読みの有無が結果を変えないことをこの対で固定する。
+  it("対照: 並べ替えと書き込みの間に集計を読まなくても、同じ書き込みが正しく届く", async () => {
     const { stateEl } = await mount(twoRoots());
     expect(totalsAt(stateEl, 0)).toEqual([11, 22]);
 
@@ -176,9 +196,8 @@ describe("欠陥1: 描画なしのルートリストで ListIndex 台帳の世�
     expect(totalsAt(stateEl, 0)).toEqual([22, 2001]);
   });
 
-  // DEFECT: 末尾追加は既存行に影響しないので、行 0 の子を 111 にしたら d0 は
-  //         [112,22,44,88] になるべき。欠陥1 の修理で反転する。
-  it("ルートリストへ 1 件追加したあと、既存行の子への書き込みが集計に届かない（無言 stale）", async () => {
+  // 末尾追加は既存行に影響しない。行 0 の子を 111 にしたら d0 は [112,22,44,88] になる。
+  it("ルートリストへ 1 件追加したあと、既存行の子への書き込みが集計に届く", async () => {
     const { stateEl } = await mount(threeRoots());
     expect(totalsAt(stateEl, 0)).toEqual([11, 22, 44]);
 
@@ -188,31 +207,31 @@ describe("欠陥1: 描画なしのルートリストで ListIndex 台帳の世�
 
     write(stateEl, (s: any) => { s.$resolve("nodes.*.children.*.value", [0, 0], 111); });
     await flush();
-    expect(totalsAt(stateEl, 1)).toEqual([111, 20, 40, 80]); // 深さ 1 は正しい
-    expect(totalsAt(stateEl, 0)).toEqual([11, 22, 44, 88]);  // should be: [112, 22, 44, 88]
+    expect(totalsAt(stateEl, 1)).toEqual([111, 20, 40, 80]); // 深さ 1 は修理前から正しかった
+    // Fixed by E1 (state-side list baseline) — was: [11, 22, 44, 88]（行 0 が恒久 stale）
+    expect(totalsAt(stateEl, 0)).toEqual([112, 22, 44, 88]);
   });
 
-  // DEFECT: 削除後の集計読みは [11,44] を返すべきで、throw してはならない。
-  //         孤児化した親 ListIndex の .index が新しいリスト長を超えるために
-  //         collectWildcardIndexes の `listIndexes[index] ?? raiseError` に落ちている。
-  //         欠陥1 の修理で反転する。文面も内部語彙なので、修理時に診断語彙へ揃える。
-  it("ルートリストから末尾以外を削除すると、以後の集計読みが恒久的に throw する", async () => {
+  // 修理前は孤児化した親 ListIndex の .index が新しいリスト長を超え、
+  // collectWildcardIndexes の `listIndexes[index] ?? raiseError` に落ちていた。
+  it("ルートリストから末尾以外を削除しても、以後の集計読みが残った行を正しく返す", async () => {
     const { stateEl } = await mount(threeRoots());
     expect(totalsAt(stateEl, 0)).toEqual([11, 22, 44]);
 
     write(stateEl, (s: any) => { const a = s.nodes; s.nodes = [a[0], a[2]]; }); // 中央を削除
     await flush();
 
-    const MSG = "[@wcstack/state] ListIndex not found at index 2 of nodes";
-    expect(() => totalsAt(stateEl, 0)).toThrow(MSG);
-    // 読み直しても直らない（一度きりの事故ではなく恒久的な状態）
-    expect(() => totalsAt(stateEl, 0)).toThrow(MSG);
+    // Fixed by E1 (state-side list baseline)
+    //   — was: throw "[@wcstack/state] ListIndex not found at index 2 of nodes"（恒久）
+    expect(totalsAt(stateEl, 0)).toEqual([11, 44]);
+    // 読み直しても同じ（一度きりの偶然ではない）
+    expect(totalsAt(stateEl, 0)).toEqual([11, 44]);
   });
 
-  // これは欠陥ではない対照。同じ削除でも末尾なら孤児の .index が範囲内に残るので
-  // throw しない。「削除だから壊れる」ではなく「孤児の .index が範囲外になると壊れる」
-  // という真の条件を固定する。
-  it("対照: 末尾削除（pop 相当）は同じ手順でも throw しない", async () => {
+  // 対照。修理前は「末尾削除だけが throw しない」という非対称があった（孤児の .index が
+  // 範囲内に残るため）。いまは削除位置に関わらず throw しないので、上の it との対で
+  // 「位置に依存しない」ことを固定する。
+  it("対照: 末尾削除（pop 相当）も同じ手順で正しく追従する", async () => {
     const { stateEl } = await mount(threeRoots());
     expect(totalsAt(stateEl, 0)).toEqual([11, 22, 44]);
 
@@ -221,15 +240,15 @@ describe("欠陥1: 描画なしのルートリストで ListIndex 台帳の世�
     expect(totalsAt(stateEl, 0)).toEqual([11, 22]);
   });
 
-  // これは欠陥ではない対照。修理が「描画に依存しない」形になったことの確認に使う。
-  // 上の 3 ケースが for 無しでも同じ結果になれば、欠陥1 は解消している。
-  it("対照: ルートリストに for が 1 本あるだけで、同じ操作がすべて正しくなる", async () => {
+  // 対照。for を 1 本置いた同じ操作。修理前はこちら（描画あり）だけが正しく、描画なしは
+  // throw していた。いまは上の 2 本と値が一致する ── 集計が描画に依存しないことの固定。
+  it("対照: ルートリストに for を 1 本置いても、描画なしとまったく同じ結果になる", async () => {
     const { stateEl } = await mount(threeRoots(), FOR_ROOT);
     expect(totalsAt(stateEl, 0)).toEqual([11, 22, 44]);
 
     write(stateEl, (s: any) => { const a = s.nodes; s.nodes = [a[0], a[2]]; });
     await flush();
-    expect(totalsAt(stateEl, 0)).toEqual([11, 44]); // 描画なしでは throw していた
+    expect(totalsAt(stateEl, 0)).toEqual([11, 44]); // 描画なしの同じ操作（上の it）と同値
 
     write(stateEl, (s: any) => { s.$resolve("nodes.*.children.*.value", [1, 0], 444); });
     await flush();
@@ -270,56 +289,61 @@ describe("欠陥1: 描画なしのルートリストで ListIndex 台帳の世�
     expect(totalsAt(stateEl, 0)).toEqual([11, 2]);
   });
 
-  // DEFECT: 反転後の行 total は [222,111] になるべき。行自身の value は正しく追従して
-  //         いるのに、子サブツリーの集計だけが反転前の位置に残る（122 = 2 + 120、
-  //         211 = 1 + 210）。欠陥1 の修理で反転する。
-  it("ルートリストの反転で、行の集計が別サブツリーの値に入れ替わる", async () => {
+  // 修理前は行自身の value だけが追従し、子サブツリーの集計が反転前の位置に残っていた
+  // （122 = 2 + 120、211 = 1 + 210）。
+  it("ルートリストの反転で、行の集計も子サブツリーごと入れ替わる", async () => {
     const { stateEl } = await mount(symmetricTree());
     expect(totalsAt(stateEl, 0)).toEqual([111, 222]);
 
     write(stateEl, (s: any) => { s.nodes = [...s.nodes].reverse(); });
     await flush();
-    expect(totalsAt(stateEl, 0)).toEqual([122, 211]); // should be: [222, 111]
+    // Fixed by E1 (state-side list baseline) — was: [122, 211]（子サブツリーだけ旧世代）
+    expect(totalsAt(stateEl, 0)).toEqual([222, 111]);
   });
 
-  // 【偶然の救済(c)】欠陥は「getter に渡る文脈 ListIndex」の側にあり、走査そのものは
-  // 健全。破損状態でも生データと平パスの $getAll は全段正しい。ここを「値も壊れている」
-  // と誤読すると、修理の対象を取り違える。
-  it("対照: 上の破損状態でも、生データと getter を通さない $getAll は正しい", async () => {
+  // 【偶然の救済(c)】欠陥があったのは「getter に渡る文脈 ListIndex」の側だけで、走査
+  // そのもの（生データ・平パスの $getAll）は破損状態でも全段正しかった。ここを見て
+  // 「値も壊れている」と誤読すると修理の対象を取り違えるし、逆にここだけ見て「値は
+  // 正しい」と結論しても取り違える。契約は **両者が一致すること** なので、getter 経由と
+  // 非経由を同じ it で突き合わせて固定する。
+  it("反転後、getter 経由の集計と getter を通さない値の読みが一致する", async () => {
     const initial = symmetricTree();
     const { stateEl } = await mount(initial);
     expect(totalsAt(stateEl, 0)).toEqual([111, 222]);
 
     write(stateEl, (s: any) => { s.nodes = [...s.nodes].reverse(); });
     await flush();
-    expect(totalsAt(stateEl, 0)).toEqual([122, 211]); // 集計は壊れている
 
-    // 生データは正しい
+    // 生データと平パスの読みは修理前から正しく、いまも同じ
     expect(initial.nodes.map((n: any) => n.value)).toEqual([2, 1]);
-    // getter を経由しない値の読みは全段正しい
     expect(valuesAt(stateEl, 0)).toEqual([2, 1]);
     expect(valuesAt(stateEl, 1)).toEqual([20, 10]);
     expect(valuesAt(stateEl, 2)).toEqual([200, 100]);
+
+    // Fixed by E1 (state-side list baseline) — was: [122, 211]（値と食い違っていた）
+    // 各段の集計が、上の平パスの値から手で畳んだ結果と一致する
+    expect(totalsAt(stateEl, 2)).toEqual([200, 100]);
+    expect(totalsAt(stateEl, 1)).toEqual([20 + 200, 10 + 100]);
+    expect(totalsAt(stateEl, 0)).toEqual([2 + 20 + 200, 1 + 10 + 100]);
   });
 
-  // 【偶然の救済(c) の裏】warm の仕方で結論が反転する。getter で warm すると壊れ、
-  // 同じ全段を平パスで warm すると壊れない（平パス warm は動的依存エッジを 1 本も
-  // 登録しないので walkDependency が新配列を鋳造しない）。「$getAll は描画なしで動く」
-  // という先行結論は、getter を挟まない条件でしか成立していなかった。
-  it("対照: 平パスで warm してから反転すると集計は正しい（壊すのは getter 経由の warm だけ）", async () => {
+  // 【偶然の救済(c) の裏】修理前は warm の仕方で結論が変わっていた ── getter で warm
+  // すると壊れ、同じ全段を平パスで warm すると壊れなかった（平パス warm は動的依存
+  // エッジを 1 本も登録しないので walkDependency が新配列を鋳造しなかった）。いまは
+  // どちらの warm でも同じ値になるので、上の it との対で warm 経路非依存を固定する。
+  it("対照: 平パスで warm してから反転しても、getter で warm した場合と同じ集計になる", async () => {
     const { stateEl } = await mount(symmetricTree());
     // getter を一度も評価せずに全段の台帳を作る
     expect(valuesAt(stateEl, 2)).toEqual([100, 200]);
 
     write(stateEl, (s: any) => { s.nodes = [...s.nodes].reverse(); });
     await flush();
-    expect(totalsAt(stateEl, 0)).toEqual([222, 111]); // 正しい
+    expect(totalsAt(stateEl, 0)).toEqual([222, 111]); // getter warm（上の it）と同値
   });
 
-  // DEFECT: 添字タプルが「最初に getter で読んだときの世代」に固定されているため、
-  //         反転のたびに正誤が入れ替わる。修理後は 4 回とも正しい値
-  //         （[222,111] / [111,222] / [222,111] / [111,222]）になるべき。
-  it("反転を繰り返すと集計が正誤の間で決定的に振動する", async () => {
+  // 修理前は添字タプルが「最初に getter で読んだときの世代」に固定され、反転のたびに
+  // 正誤が入れ替わっていた。
+  it("反転を繰り返しても集計が振動せず、毎回その世代の正しい値を返す", async () => {
     const { stateEl } = await mount(symmetricTree());
     const seen: number[][] = [totalsAt(stateEl, 0)];
     for (let i = 0; i < 4; i++) {
@@ -327,9 +351,10 @@ describe("欠陥1: 描画なしのルートリストで ListIndex 台帳の世�
       await flush();
       seen.push(totalsAt(stateEl, 0));
     }
-    // should be: [[111,222],[222,111],[111,222],[222,111],[111,222]]
+    // Fixed by E1 (state-side list baseline)
+    //   — was: [[111,222],[122,211],[111,222],[122,211],[111,222]]（1 回おきに誤る）
     expect(seen).toEqual([
-      [111, 222], [122, 211], [111, 222], [122, 211], [111, 222],
+      [111, 222], [222, 111], [111, 222], [222, 111], [111, 222],
     ]);
   });
 
@@ -385,14 +410,13 @@ describe("欠陥1: 描画なしのルートリストで ListIndex 台帳の世�
     await flush();
     expect(totalsAt(stateEl, 0)).toEqual([9231]);
   });
-  // DEFECT: 壊れているのは値ではなく「文脈から導かれる添字タプル」であることの直接証拠。
-  //         反転後、value 10 の子（＝反転後は行 1 に属する）を評価している getter が
-  //         $1 = 0 と報告する。should be: {$1: 1, value: 10}。
-  //         集計値（[122,211]）は偶然一致しうるので、受け入れ試験としてはこちらが鋭い。
-  //         【偶然の救済】木を 2 段（nodes.*.children まで）にすると、反転後に深さ 1 の
-  //         getter がキャッシュヒットして一度も評価されず seen が空になる＝何も測れない。
-  //         3 段目（孫）を必ず持たせること。
-  it("深さ 1 の getter の $1 が、反転後も旧世代の行位置を報告する", async () => {
+  // 壊れていたのは値ではなく「文脈から導かれる添字タプル」だったので、受け入れ試験と
+  // しては集計値より $1 の方が鋭い（集計値は偶然一致しうる）。反転後、value 10 の子は
+  // 行 1 に属するので、それを評価している getter は $1 = 1 を報告する。
+  // 【偶然の救済(d)】木を 2 段（nodes.*.children まで）にすると、反転後に深さ 1 の
+  // getter がキャッシュヒットして一度も評価されず seen が空になる＝何も測れない。
+  // 3 段目（孫）を必ず持たせること。
+  it("深さ 1 の getter の $1 が、反転後の行位置を報告する", async () => {
     const seen: { $1: number; value: number }[] = [];
     const state: any = {
       nodes: [NODE(1, [NODE(10, [NODE(100)])]), NODE(2, [NODE(20, [NODE(200)])])],
@@ -428,45 +452,106 @@ describe("欠陥1: 描画なしのルートリストで ListIndex 台帳の世�
     await flush();
     read(stateEl, (s: any) => s.$getAll("nodes.*.total", []));
 
-    // 反転後、value 10 の子は index 1 の行に属するのに $1 は 0 のまま
+    // 反転後、value 10 の子は index 1 の行に属し、$1 もそう報告する
     expect(seen.length, "getter が再評価されていること（seen が空だと何も測れていない）")
       .toBeGreaterThan(0);
-    expect(seen).toContainEqual({ $1: 0, value: 10 });   // should be: { $1: 1, value: 10 }
-    expect(seen).not.toContainEqual({ $1: 1, value: 10 });
+    // Fixed by E1 (state-side list baseline) — was: { $1: 0, value: 10 }（旧世代の行位置）
+    expect(seen).toContainEqual({ $1: 1, value: 10 });
+    expect(seen).not.toContainEqual({ $1: 0, value: 10 });
+    // もう一方の子（value 20）も反転後の行 0 を報告する
+    expect(seen).toContainEqual({ $1: 0, value: 20 });
   });
 
-  // DEFECT: prerequisites 側の「ルートリストに for が 1 本あれば深さ 3 の木の 3 種の構造
-  //         変更が全段追従する」の裏。その `for` を外すと同じ 3 ケースのうち 2 つが
-  //         throw する（＝あの 1 本の for は飾りではない）。
-  //         欠陥1 の修理で、for の有無に関わらず 3 ケースとも通るようになるべき。
-  it("同じ 3 ケースは for を外すと 2 つが throw する（prerequisites の「for 1 本」対照の裏）", async () => {
+  // prerequisites 側の「ルートリストに for が 1 本あれば深さ 3 の木の 3 種の構造変更が
+  // 全段追従する」（integration.recursionPrerequisites.test.ts）の裏。修理前は、その
+  // `for` を外すと同じ 3 ケースのうち 2 つが throw していた（＝あの 1 本の for は
+  // 飾りではなかった）。いまは 3 ケースとも「for 1 本」と同じ値になる。
+  // 唯一残る差は (1') の cold な `$resolve` で、これは E1 ではなく「$resolve だけが
+  // 走査の第 1 相を持たない」（Phase A の A1）という別の契約 ── for があるときは初回描画が
+  // その走査を代行していただけなので、走査を 1 回挟めば for 無しでも通る。
+  it("同じ 3 ケースは for を外しても「for 1 本」と同じ結果になる（cold な $resolve だけが走査を 1 回要る）", async () => {
     const forest = () => unrollTotals({
       nodes: [NODE(1, [NODE(10, [NODE(100)]), NODE(20)]), NODE(2)],
     }, 2);
     const DEEP = "nodes.*.children.*.children.*.value";
 
-    // (1) 深い葉の更新: 台帳が無いので cold な $resolve が落ちる
+    // (1) 深い葉の更新。走査を 1 回挟めば for 無しでも「for 1 本」と同じ 533 になる
     const a = await mount(forest());
-    let e1: string | null = null;
-    write(a.stateEl, (s: any) => {
-      try { s.$resolve(DEEP, [0, 0, 0], 500); } catch (e: any) { e1 = String(e && e.message); }
-    });
-    expect(e1).toBe("[@wcstack/state] ListIndexes not found: nodes");
+    expect(read(a.stateEl, (s: any) => s.grandTotal)).toBe(133); // 走査して台帳を作る
+    write(a.stateEl, (s: any) => { s.$resolve(DEEP, [0, 0, 0], 500); });
+    await flush();
+    expect(read(a.stateEl, (s: any) => s.grandTotal), "深い葉の更新").toBe(533);
+    expect(totalsAt(a.stateEl, 0), "深い葉の更新").toEqual([531, 2]);
 
-    // (2) 行の移動: 一度読んで温めてから反転すると、以後の集計読みが恒久 throw する
+    // (1') DEFECT（E1 とは別原因・現状固定）: 走査を一度も経ていない cold な $resolve
+    //      だけは、いまも for 無しで落ちる。should be: 走査を挟まなくても書ける。
+    const cold = await mount(forest());
+    let coldErr: string | null = null;
+    write(cold.stateEl, (s: any) => {
+      try { s.$resolve(DEEP, [0, 0, 0], 500); } catch (e: any) { coldErr = String(e && e.message); }
+    });
+    expect(coldErr).toBe("[@wcstack/state] ListIndexes not found: nodes");
+
+    // (2) 行の移動
     const b = await mount(forest());
     expect(read(b.stateEl, (s: any) => s.grandTotal)).toBe(133);
     write(b.stateEl, (s: any) => { s.nodes = [...s.nodes].reverse(); });
     await flush();
-    expect(() => totalsAt(b.stateEl, 0))
-      .toThrow("[@wcstack/state] ListIndex not found at index 0 of nodes.*.children");
+    // Fixed by E1 (state-side list baseline)
+    //   — was: throw "[@wcstack/state] ListIndex not found at index 0 of nodes.*.children"（恒久）
+    expect(totalsAt(b.stateEl, 0), "行の移動").toEqual([2, 131]);
+    expect(read(b.stateEl, (s: any) => s.grandTotal), "行の移動").toBe(133);
 
-    // (3) 中間 children の差し替えだけは for 無しでも通る（3 つが 3 つとも壊れるわけではない）
+    // (3) 中間 children の差し替え（修理前から for 無しで通っていた 1 つ）
     const c = await mount(forest());
     expect(read(c.stateEl, (s: any) => s.grandTotal)).toBe(133);
     write(c.stateEl, (s: any) => { s["nodes.0.children"] = [NODE(33)]; });
     await flush();
-    expect(read(c.stateEl, (s: any) => s.grandTotal)).toBe(36);
+    expect(read(c.stateEl, (s: any) => s.grandTotal), "中間 children の差し替え").toBe(36);
+    expect(totalsAt(c.stateEl, 0), "中間 children の差し替え").toEqual([34, 2]);
+  });
+
+  // 同一バッチ内で同じリストへ 2 回構造書き込みすると、2 回目のウォークは
+  // 「一度も描画されず直後に上書きされる中間値」を基準に diff を取っていた。中間値が
+  // 落とした行の ListIndex が鋳造し直され、その行の子リスト台帳が恒久的に切れる。
+  // 描画があれば applyChangeToFor が描画基準で引き直すので救われるが、描画なしの
+  // ツリー（＝ E1 が対象にしている集団そのもの）では救いが無かった。
+  // Fixed by E1 batching — was: 2 回目の $setAll が [1001,1002] のまま届かない
+  it("中間値を挟むリスト再構築のあとでも、子への 2 回目の書き込みが集計に届く", async () => {
+    const b = await mount(twoRoots());
+    expect(totalsAt(b.stateEl, 0)).toEqual([11, 22]);
+
+    write(b.stateEl, (s: any) => {
+      const rows = s.nodes;
+      s.nodes = [];                       // intermediate value: drops every row
+      s.nodes = [rows[0], rows[1]];       // same row objects, new array
+    });
+    await flush();
+
+    write(b.stateEl, (s: any) => { s.$setAll("nodes.*.children.*.value", [], 1000); });
+    await flush();
+    expect(totalsAt(b.stateEl, 0)).toEqual([1001, 1002]);
+
+    write(b.stateEl, (s: any) => { s.$setAll("nodes.*.children.*.value", [], 2000); });
+    await flush();
+    expect(totalsAt(b.stateEl, 0)).toEqual([2001, 2002]);
+  });
+
+  // Fixed by E1 batching — was: [2001, 102]（行 0 だけ追従し行 1 が止まる半 stale）
+  it("中間値が一部の行だけ残す形でも、行ごとに追従が分かれない", async () => {
+    const b = await mount(twoRoots());
+    expect(totalsAt(b.stateEl, 0)).toEqual([11, 22]);
+
+    write(b.stateEl, (s: any) => {
+      const rows = s.nodes;
+      s.nodes = [rows[0]];                // intermediate value: drops row 1 only
+      s.nodes = [rows[0], rows[1]];
+    });
+    await flush();
+
+    write(b.stateEl, (s: any) => { s.$setAll("nodes.*.children.*.value", [], 2000); });
+    await flush();
+    expect(totalsAt(b.stateEl, 0)).toEqual([2001, 2002]);
   });
 });
 
@@ -810,7 +895,7 @@ describe("欠陥2: 同じ配列インスタンスの共有（DAG・循環）が�
 
 // ---------------------------------------------------------------------------
 
-describe("欠陥3: 深さ超過の診断が循環の誤告発になる（現状の挙動を固定する / 修正時に反転させる）", () => {
+describe("欠陥3（E2/E3 修理済み）: 深さ超過と循環が別の診断になり、$129 が範囲外として throw する", () => {
   /** 1 本鎖の木（depth 個のノード、全 value=1、最深の children は []） */
   function chain(depth: number): any[] {
     let node: any = NODE(1);
@@ -838,39 +923,104 @@ describe("欠陥3: 深さ超過の診断が循環の誤告発になる（現状�
     expect(totalsAt(stateEl, 0)).toEqual([128]);
   });
 
-  // DEFECT: 循環が 1 つも無い直線の木なので、診断は「再帰の深さが上限 128 を超えた」
-  //         （アンカー・深さ・対象パスを名指しする wcs/recursion-depth-exceeded 相当）
-  //         であるべき。StateHandler の _describeAddressCycle は末尾 8 段を並べるだけで
-  //         重複の有無を見ていないため、深さ超過と循環を区別できていない。
-  it("循環の無い直線の木でも、深さ 129 が「循環の可能性」と誤告発される", { timeout: 60000 }, async () => {
+  // 修理前は StateHandler の _describeAddressCycle が末尾 8 段を並べるだけで重複の有無を
+  // 見ておらず、循環が 1 つも無い直線の木でも「相互参照を直せ」と読める文面が出ていた。
+  it("循環の無い直線の木の深さ 129 は、循環ではなく深さ超過として診断される", { timeout: 60000 }, async () => {
     const { stateEl } = await mount(aggregateChain(129));
     let msg = "NO THROW";
     try { totalsAt(stateEl, 0); } catch (e: any) { msg = String(e && e.message); }
 
     expect(msg).toContain("Exceeded maximum address stack depth of 128");
-    // should NOT be: 循環を名指しする文面（この木には循環が一切ない）
-    expect(msg).toContain("Possible circular dependency between path getters:");
+    // Fixed by E2 (深さ超過と循環の分岐)
+    //   — was: "Possible circular dependency between path getters:"（この木に循環は無い）
+    expect(msg).toContain("[wcs/getter-depth-exceeded]");
+    expect(msg).not.toContain("Possible circular dependency between path getters:");
   });
 
-  // DEFECT: $129 は「ワイルドカード深さの上限 128 を超えた」と throw するべき
-  //         （MAX_WILDCARD_DEPTH は manifest.syntax.indexParam.maxDepth として公開
-  //         されているのに、超過の挙動が定義されていない）。traps/get.ts の
-  //         「未知の $ プロパティは undefined」ガードに握り潰されている。
-  it("129 本目のワイルドカードで $129 が診断ゼロで undefined になる（$128 は解決する）",
+  // E2 の分岐が「常に深さ超過扱い」へ退化していないことの担保。本物の循環（getter どうしが
+  // 呼び合う）では、従来どおり循環を名指しする文面でなければならない。この it が無いと、
+  // 上の it は「循環の文面を消しただけ」でも緑になってしまう。
+  it("getter の相互参照（本物の循環）は循環として診断される", async () => {
+    const state: any = { title: "cycle" };
+    Object.defineProperty(state, "a", {
+      get(this: any) { return this.b; }, enumerable: true, configurable: true,
+    });
+    Object.defineProperty(state, "b", {
+      get(this: any) { return this.a; }, enumerable: true, configurable: true,
+    });
+    const { stateEl } = await mount(state);
+
+    let msg = "NO THROW";
+    try { read(stateEl, (s: any) => s.a); } catch (e: any) { msg = String(e && e.message); }
+
+    expect(msg).toContain("Exceeded maximum address stack depth of 128");
+    expect(msg).toContain("Possible circular dependency between path getters:");
+    // 循環の当事者（a / b）だけを名指しする（並び順は末尾からの収集順に依存するので問わない）
+    expect(msg).toMatch(/Possible circular dependency between path getters: (a -> b|b -> a) -> \.\.\./);
+    expect(msg).not.toContain("[wcs/getter-depth-exceeded]");
+  });
+
+  // 修理前は traps/get.ts の「未知の $ プロパティは undefined」ガードに握り潰され、
+  // 境界のすぐ外側（$129）だけが診断ゼロで壊れていた。MAX_WILDCARD_DEPTH は
+  // manifest.syntax.indexParam.maxDepth として公開されている値。
+  it("129 本目のワイルドカードで $129 が範囲外として throw する（$128 は解決する）",
     { timeout: 60000 }, async () => {
     const depth = 129;                     // 最深 base のワイルドカードはちょうど 129 本
     const base = baseAt(depth - 1);
     const state: any = { nodes: chain(depth) };
     Object.defineProperty(state, base + ".idx", {
-      get(this: any) { return [this.$1, this.$128, this.$129]; },
+      get(this: any) { return [this.$1, this.$128]; },
+      enumerable: true, configurable: true,
+    });
+    Object.defineProperty(state, base + ".tooDeep", {
+      get(this: any) { return this.$129; },
       enumerable: true, configurable: true,
     });
     const { stateEl } = await mount(state);
 
     const got = read(stateEl, (s: any) => s.$getAll(base + ".idx", []));
-    expect(got[0][0]).toBe(0);            // $1
-    expect(got[0][1]).toBe(0);            // $128 は解決する
-    expect(got[0][2]).toBeUndefined();    // should be: throw（境界のすぐ外側だけが無言）
+    expect(got[0]).toEqual([0, 0]);        // $1 / $128 は境界の内側なので解決する
+
+    // Fixed by E3 — was: undefined（診断ゼロ。$128 は 0 を返すのに $129 だけ無言で壊れる）
+    expect(() => read(stateEl, (s: any) => s.$getAll(base + ".tooDeep", [])))
+      .toThrow("[wcs/index-param-range]");
+  });
+
+  // 「末尾 8 段のパスに重複があれば循環」という判定は、周期が 8 より長い輪を取り逃がし、
+  // しかも「重複が無い＝ただ深いだけ」と積極的に誤った断定をしていた。判定はスタック
+  // 全体×アドレス同一性（IStateAddress は (pathInfo, listIndex) で intern 済み）で行う。
+  it("周期が 8 段を超える getter の輪も循環として診断される", async () => {
+    const st: any = { label: "x" };
+    const N = 9;
+    for (let i = 0; i < N; i++) {
+      Object.defineProperty(st, `g${i}`, {
+        get(this: any) { return this[`g${(i + 1) % N}`]; },
+        enumerable: true, configurable: true,
+      });
+    }
+    const b = await mount(st);
+    let message = "";
+    read(b.stateEl, (s: any) => { try { void s.g0; } catch (e: any) { message = e.message; } });
+    expect(message).toContain("[wcs/getter-cycle]");
+    expect(message).toContain("Possible circular dependency between path getters");
+    expect(message).not.toContain("[wcs/getter-depth-exceeded]");
+  });
+
+  // 対照: 循環の無い直線の getter 連鎖（ワイルドカードを含まない）は深さ超過側に落ちる。
+  // 上の輪と同じく「同じパスが末尾に並ぶか」では判別できない形。
+  it("ワイルドカードを含まない直線の getter 連鎖は深さ超過として診断される", async () => {
+    const st: any = { label: "x", leaf: 1 };
+    for (let i = 0; i < 200; i++) {
+      const prev = i === 0 ? "leaf" : `c${i - 1}`;
+      Object.defineProperty(st, `c${i}`, {
+        get(this: any) { return this[prev]; }, enumerable: true, configurable: true,
+      });
+    }
+    const b = await mount(st);
+    let message = "";
+    read(b.stateEl, (s: any) => { try { void s.c199; } catch (e: any) { message = e.message; } });
+    expect(message).toContain("[wcs/getter-depth-exceeded]");
+    expect(message).not.toContain("[wcs/getter-cycle]");
   });
 });
 

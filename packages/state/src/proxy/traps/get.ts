@@ -22,7 +22,7 @@ import { getResolvedAddress } from "../../address/ResolvedAddress";
 import { createStateAddress } from "../../address/StateAddress";
 import { IAbsoluteStateAddress, IStateAddress } from "../../address/types";
 import { getCommandNamespace } from "../../command/commandNamespace";
-import { DELIMITER, INDEX_BY_INDEX_NAME, STATE_COMMAND_NAMESPACE_NAME, STATE_STREAM_ERROR_NAMESPACE_NAME, STATE_STREAM_STATUS_NAMESPACE_NAME } from "../../define";
+import { DELIMITER, INDEX_BY_INDEX_NAME, INDEX_PARAM_PREFIX, MAX_WILDCARD_DEPTH, STATE_COMMAND_NAMESPACE_NAME, STATE_STREAM_ERROR_NAMESPACE_NAME, STATE_STREAM_STATUS_NAMESPACE_NAME } from "../../define";
 import { listIndexAtWildcard } from "../../list/wildcardLevel";
 import { getIndexShiftForMarkerPath, getMountRecordByPath } from "../../webComponent/mount";
 import { raiseError } from "../../raiseError";
@@ -45,6 +45,9 @@ import { setLoopContext } from "../methods/setLoopContext";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol, errorCallbackSymbol, getByAddressSymbol, hasByAddressSymbol, setByAddressSymbol, setLoopContextSymbol, updatedCallbackSymbol } from "../symbols";
 import type { IBindingErrorInfo } from "../../types";
 import { IStateHandler } from "../types";
+
+/** `$` + 数字だけの prop（`$1` / `$129`）。範囲外を無言で通さないための判別。 */
+const INDEX_PARAM_RE = /^\$\d+$/;
 
 // `$streamStatus.<name>` / `$streamError.<name>` の dotted パス判定用プレフィックス
 const STREAM_STATUS_PATH_PREFIX = `${STATE_STREAM_STATUS_NAMESPACE_NAME}${DELIMITER}`;
@@ -71,6 +74,21 @@ export function get(
   handler : IStateHandler
 ): any {
   const index = INDEX_BY_INDEX_NAME[prop];
+  // `$` で始まらない読み（＝通常のパス読みのほぼ全部）は charCode 1 個で抜ける。
+  // 表引き失敗だけを条件にすると `$1`..`$N` 以外の**全プロパティ読み**が正規表現に
+  // 触れることになり、行数×バインド数ぶん get トラップを回すリスト描画で効いてくる。
+  if (typeof index === "undefined" && typeof prop === "string"
+    && prop.charCodeAt(0) === 36 /* '$' */ && INDEX_PARAM_RE.test(prop)) {
+    // `$1`..`$N` の表は MAX_WILDCARD_DEPTH ぶんしか無い。表引きに失敗した `$<数字>` は
+    // これまで通常のプロパティ解決へ落ちて診断ゼロで undefined になっていた（`$128` は
+    // 0 を返すのに `$129` だけが無言で壊れる）。境界のすぐ外側こそ名指しする
+    // （docs/state-recursive-path-impl-plan.md §3-2 の E3）。綴り不正（`$0` / `$01`）も
+    // 同じ入口で落ちるので、範囲だけでなく綴りも文面に含める。
+    raiseError(
+      `[wcs/index-param-range] "${prop}" is not a valid list index parameter: they run from ` +
+      `${INDEX_PARAM_PREFIX}1 to ${INDEX_PARAM_PREFIX}${MAX_WILDCARD_DEPTH}, with no leading zeros.`,
+    );
+  }
   if (typeof index !== "undefined") {
     if (handler.addressStackLength === 0) {
       raiseError(`No active state reference to get list index for "${prop.toString()}".`);

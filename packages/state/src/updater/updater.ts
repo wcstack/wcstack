@@ -1,4 +1,5 @@
 import { IAbsoluteStateAddress } from "../address/types";
+import { beginStateListBaselineBatch, endStateListBaselineBatch } from "../list/stateListBaseline";
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
 import { peekBindingsForAddress } from "../binding/getBindingSetByAbsoluteStateAddress";
 import { inSsr } from "../config";
@@ -98,6 +99,9 @@ class Updater {
     const requireStartProcess = this._queueUpdateRecords.length === 0;
     this._queueUpdateRecords.push({ absoluteAddress, context });
     if (requireStartProcess) {
+      // このバッチのあいだ、依存ウォークと読みが観測したリスト値は保留にする。
+      // 確定は drain の finally（list/stateListBaseline.ts の頭のコメント）。
+      beginStateListBaselineBatch();
       queueMicrotask(() => {
         const updateRecords = this._queueUpdateRecords;
         this._queueUpdateRecords = [];
@@ -228,6 +232,10 @@ class Updater {
         }
       }
     } finally {
+      // バッチ中に溜めたリスト差分基準を確定する。notifyUpdateBatchListeners より先に
+      // 置くのは、リスナー（$watch / $streams restart）の中で走る書き込みが
+      // 「このバッチの結果」を基準として見るべきだから。
+      endStateListBaselineBatch();
       notifyUpdateBatchListeners(new Set(contextByAbsoluteAddress.keys()));
     }
   }

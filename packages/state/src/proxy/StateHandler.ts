@@ -65,9 +65,21 @@ class StateHandler implements IStateHandler {
     // getter の相互参照（`get a(){return this.b}` / `get b(){return this.a}`）は
     // 実際にこれを踏み、原因と無関係な文面だけが残っていた。
     if (this._addressStackIndex + 1 >= MAX_LOOP_DEPTH) {
+      // 深さ超過と循環は別の原因で、助言も違う。末尾に同じパスが再登場していれば
+      // getter どうしが呼び合っている（循環）、全部別パスなら単に深すぎる（正当に
+      // 深いツリーの集計など）。両方を「循環の可能性」と告発していたため、循環の無い
+      // 直線の木でも「相互参照を直せ」と読める文面が出ていた
+      // （docs/state-recursive-path-impl-plan.md §3-2 の E2）。
+      if (this._hasRepeatedAddress()) {
+        raiseError(
+          `[wcs/getter-cycle] Exceeded maximum address stack depth of ${MAX_LOOP_DEPTH}. ` +
+          `Possible circular dependency between path getters: ${this._describeAddressCycle()}`,
+        );
+      }
       raiseError(
-        `Exceeded maximum address stack depth of ${MAX_LOOP_DEPTH}. ` +
-        `Possible circular dependency between path getters: ${this._describeAddressCycle()}`,
+        `[wcs/getter-depth-exceeded] Exceeded maximum address stack depth of ${MAX_LOOP_DEPTH} ` +
+        `with no address visited twice — the data is simply nested deeper than the engine evaluates ` +
+        `in one pass. Deepest path first: ${this._describeAddressCycle()}`,
       );
     }
     this._addressStackIndex++;
@@ -78,7 +90,36 @@ class StateHandler implements IStateHandler {
    * スタック末尾の繰り返し区間をパス名で示す（循環の当事者だけを見せる）。
    * 上限に達したときのみ呼ばれるので、コストは異常系に閉じている。
    */
-  private _describeAddressCycle(): string {
+  /**
+   * スタック全体（最大 MAX_LOOP_DEPTH 段）に**同じアドレスが再登場する**か。
+   *
+   * 循環と深さ超過を分ける述語。パス文字列ではなくアドレスの同一性で見るのは、
+   * どちらの側にも文字列では判別できない形があるため:
+   * - 末尾 N 段のパス重複だけを見ると、周期が N より長い getter の輪を取り逃がす
+   *   （そして「重複が無い＝ただ深いだけ」と**積極的に誤った断定**をしてしまう）
+   * - 逆に「同じパスを別の行で読む」正当な再帰（隣接項目参照・累積 getter）は
+   *   パス文字列が全段同じなので、文字列で見ると循環に誤告発される
+   *
+   * IStateAddress は (pathInfo, listIndex) で intern されているので、真の輪だけが
+   * 同じインスタンスに戻る。コストは異常系に閉じた O(MAX_LOOP_DEPTH) の Set 構築 1 回。
+   */
+  private _hasRepeatedAddress(): boolean {
+    const seen: Set<IStateAddress> = new Set();
+    for (let i = 0; i <= this._addressStackIndex; i++) {
+      const entry = this._addressStack[i];
+      if (!entry) {
+        continue;
+      }
+      if (seen.has(entry)) {
+        return true;
+      }
+      seen.add(entry);
+    }
+    return false;
+  }
+
+  /** スタック末尾の CYCLE_REPORT_DEPTH 段のパス（深い順）。診断の表示に使う。 */
+  private _tailAddressPaths(): string[] {
     const paths: string[] = [];
     for (let i = this._addressStackIndex; i >= 0 && paths.length < CYCLE_REPORT_DEPTH; i--) {
       const entry = this._addressStack[i];
@@ -86,6 +127,11 @@ class StateHandler implements IStateHandler {
         paths.push(entry.pathInfo.path);
       }
     }
+    return paths;
+  }
+
+  private _describeAddressCycle(): string {
+    const paths: string[] = this._tailAddressPaths();
     const unique = Array.from(new Set(paths));
     return `${unique.reverse().join(" -> ")} -> ...`;
   }

@@ -2271,7 +2271,9 @@ Anything that follows mechanically from the path string is reported at runtime a
 |---|---|---|
 | `wcs/index-arity` | `$resolve(path, indexes)` must match the `*` count **exactly**; `$getAll(path, indexes)` / `$setAll(path, indexes, …)` have it as an **upper bound** (fewer is a legitimate prefix meaning "expand the rest") | Match the count |
 | `wcs/wildcard-rank` | The path's `*` count (and the N in `$N`) must not exceed the enclosing `for` nesting | Add a `for`, or name the row with `$resolve(path, indexes)` |
-| `wcs/getter-cycle` | Path getters must not form a dependency cycle | Break the cycle |
+| `wcs/getter-cycle` | Path getters must not form a dependency cycle. At runtime this is the address stack revisiting an address it already holds | Break the cycle |
+| `wcs/getter-depth-exceeded` | Getter evaluation nests deeper than the engine evaluates in one pass (128 frames), with no address visited twice — the data is simply that deep | Aggregate in fewer levels, or flatten the tree |
+| `wcs/index-param-range` | `$N` must name an existing wildcard level: `$1` through `$128`, no leading zeros | Use a level that exists |
 
 Previously **extra indexes were silently discarded** by both APIs, so a mixed-up call returned a plausible-looking wrong value. Both now throw:
 

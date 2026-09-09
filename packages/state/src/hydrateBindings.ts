@@ -1,5 +1,6 @@
 import { getAbsoluteStateAddressByBinding } from "./binding/getAbsoluteStateAddressByBinding";
 import { setLastListValueByAbsoluteStateAddress } from "./list/lastListValueByAbsoluteStateAddress";
+import { setStateListBaseline } from "./list/stateListBaseline";
 import { parseBindTextsForElement } from "./bindTextParser/parseBindTextsForElement";
 import { ParseBindTextResult } from "./bindTextParser/types";
 import { BindingSession, getOrCreateBindingSession } from "./bindings/BindingSession";
@@ -407,6 +408,8 @@ export async function hydrateBindings(root: Document): Promise<boolean> {
           const value = state[binding.statePathName];
           if (Array.isArray(value)) {
             setLastListValueByAbsoluteStateAddress(absAddr, value);
+            // 描画の基準と同時に state 側の基準も進める（E1。applyChangeFromBindings と対称）
+            setStateListBaseline(absAddr, value);
           }
         });
       }

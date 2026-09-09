@@ -119,16 +119,24 @@ class TreeState {
 **E1（ブロッカー・Phase B より前）— 差分基準を描画経路から切り離す。**
 `walkDependency` が読む基準 `lastListValueByAbsoluteStateAddress` を書くのは `applyChangeFromBindings` / `BindingSession` / `hydrateBindings` の 3 箇所だけで、すべて描画経路。`for` が無いと基準が永久に空のまま `createListDiff` の `oldList.length === 0` 分岐に落ち、新しい配列に新しい ListIndex を鋳造する。子の台帳は旧親を指したまま残り、連鎖が切れる。
 
-**採る案は「統合」ではなく「分離」**とする。apply の基準は「最後に**描画した**値」、walk の基準は「最後に**dirty 化した**値」で、別の問いに答えている。統合すると walk が基準を進めた後の apply が空 diff になり描画が落ちる。したがって `walkDependency` に自分の基準ストアを持たせ、`_walkExpandWildcard` と `_collectDependencies` の静的展開が `createListDiff` を撃つ地点で読み、walk 完了時に commit する。ListIndex の同一性は台帳（`listIndexesByList`）が持つので、先に走った側が値照合で再利用すれば、後から走る側は `calcDiffIndexes`（identity join）で正しく合流する。
+**採った形（実装済み）**: 描画側の基準はそのまま残し、**state 側の基準**を新設して読み・描画・依存ウォークの 3 者で共有する（`src/list/stateListBaseline.ts`）。apply の基準は「最後に**描画した**値」で、`applyChangeToFor` が「画面に対して何を足し引きするか」を決めるために使う。統合すると walk が基準を進めた後の apply が空 diff になり描画が落ちるので、統合はできない。
 
-`$setAll` の `commitDiffBaseline: false`（読みの基準を書きから動かさない、`docs/state-set-all-design.md` §6-2）は**読み側 `wildcardIndexes.ts` の基準の話**なので、walk 側の基準を新設してもこの契約には触れない。
+計画時は「walk だけが自分の基準を持てばよい」と書いていたが、それでは足りなかった。**読みが作った台帳を、最初の構造書き込みが鋳造し直してしまう**ため、読み（`collectWildcardIndexes`）の基準も同じストアに載せる必要がある。結果として `docs/state-set-all-design.md` §6-2 の「基準の所有権は `$getAll` 側」は事実として成立しなくなり、同節を更新した。`$setAll` が commit しない（`commitDiffBaseline: false`）という不変条件は変わらない。
+
+**確定はウォーク末尾ではなくバッチ末尾で行う。** ウォークごとに確定すると、同一バッチ内で同じリストへ 2 回構造書き込みしたとき、2 回目のウォークが「一度も描画されず直後に上書きされる中間値」を基準に diff を取る。中間値が落とした行の ListIndex が鋳造し直され、その行の子リスト台帳が恒久的に切れる（描画があれば `applyChangeToFor` が救うが、描画なしのツリーでは救いが無い）。バッチ中の観測は保留し、updater の drain の `finally` でまとめて確定する。こうするとバッチ内のどのウォークも「バッチ開始時の値」と diff を取り、描画側が取る diff と一致する。
+
+ListIndex の同一性は台帳（`listIndexesByList`）が持つので、先に走った側が値照合で再利用すれば、後から走る側は `calcDiffIndexes`（identity join）で正しく合流する。
 
 - 受け入れ: headless（`for` ゼロ）で並べ替え・先頭追加・先頭削除・親リスト再代入が集計に追従する。
 - 回帰: 描画側の差分（add/change/delete）が変わらないこと。`$listKeys` のキー突合と SSR hydration の基準確定と競合しないこと。
 
-**E2 — 深さ超過の診断を循環の誤告発から分ける。** `StateHandler.pushAddress` の 129 段目 throw を、末尾 `CYCLE_REPORT_DEPTH` 段に重複パスがあるかで分岐する。重複が無ければ深さ超過用の文面（アンカー・深さ・対象パスを名指しする `wcs/recursion-depth-exceeded` 相当）にする。**展開器の上限を 128 未満に置かない限り、`src/recursion/` だけでは §1-3 の要求を満たせない**（先に `StateHandler` がこの文面で落ちる）。
+**E2 — 深さ超過の診断を循環の誤告発から分ける（実装済み）。** `StateHandler.pushAddress` の 129 段目 throw を、**スタック全体に同じアドレスが再登場するか**で分岐する。文面は `[wcs/getter-cycle]`（循環）と `[wcs/getter-depth-exceeded]`（ただ深い）の 2 つ。
 
-**E3 — `$129` の無言 `undefined` を診断にする。** `traps/get.ts` の `INDEX_BY_INDEX_NAME` 表引き失敗時に、`$` + 数字だけの prop なら `MAX_WILDCARD_DEPTH` を名指しして `raiseError` する。
+判定を「末尾 8 段のパス文字列の重複」にしてはならない。①周期が 8 より長い getter の輪を取り逃がし、しかも「重複が無い＝ただ深いだけ」と**積極的に誤った断定**をする（実測: 周期 9 の輪が深さ超過と報告された）②逆に「同じパスを別の行で読む」正当な再帰（隣接項目参照・累積 getter）はパス文字列が全段同じなので循環に誤告発される。`IStateAddress` は (pathInfo, listIndex) で intern されているので、アドレス同一性で見れば 3 つの形が正しく分岐する。
+
+**展開器の上限を 128 未満に置かない限り、`src/recursion/` だけでは §1-3 の要求を満たせない**（先に `StateHandler` がこの文面で落ちる）。
+
+**E3 — `$129` の無言 `undefined` を診断にする（実装済み）。** `traps/get.ts` の `INDEX_BY_INDEX_NAME` 表引き失敗時に、ドル記号 + 数字だけの prop なら `[wcs/index-param-range]` で `raiseError` する。判定は `prop.charCodeAt(0) === 36` で先にゲートする — 表引き失敗だけを条件にすると `$1`..`$N` 以外の**全プロパティ読み**が正規表現に触れ、行数×バインド数ぶん get トラップを回すリスト描画で効いてくる（実測 +9ns/読み）。
 
 **E4 — `listPaths` にだけ載せる専用入口を新設する。** `defineTreeAccessor` に「この total パス + その経路上のリストパス群」を渡す形へ拡張するか、recursion registry 側から `_listPaths` にだけ追加する口を作る。`setPathInfo(path, "for")` の流用は禁止（`_elementPaths` にも入り `setByAddress` の `isSwappable` を変える）。
 
@@ -232,11 +240,12 @@ Phase A は完了した（§3）。その結果、**Phase A' を新設する** �
 
 ### Phase A'（新設・Phase B の前提）
 
-- [ ] **E1 — 差分基準を描画経路から切り離す**（ブロッカー）。`walkDependency` に自前の差分基準ストアを持たせ、`_walkExpandWildcard` と `_collectDependencies` の静的展開が読み・walk 完了時に commit する。apply の基準（`lastListValueByAbsoluteStateAddress`）とは統合しない — 別の問いに答えているため。
-- [ ] **E2 — 深さ超過の診断を循環の誤告発から分ける**。`StateHandler.pushAddress` で末尾の重複有無により文面を分岐する。
-- [ ] **E3 — `$129` の無言 `undefined` を診断にする**。`traps/get.ts` の表引き失敗分岐。
-- [ ] `integration.recursionKnownDefects.test.ts` の該当ケースを**反転**させる（現状固定 → 正しい挙動の assert へ書き換える）。反転しないケースが残るなら、その理由を本計画に書く。
-- [ ] `packages/state` で `npm run build` / `npm run lint` / `npm run test:coverage` を実行し、閾値を下げずに緑にする。E1 は依存ウォークの中心なので、全件回帰が必須。
+- [x] **E1 — 差分基準を描画経路から切り離す**（ブロッカー）。state 側の共有基準 `src/list/stateListBaseline.ts` を新設し、読み・描画・依存ウォークで共有する。確定はバッチ末尾（updater の drain の `finally`）。
+- [x] **E2 — 深さ超過の診断を循環の誤告発から分ける**。`StateHandler.pushAddress` でスタック全体のアドレス同一性により `[wcs/getter-cycle]` と `[wcs/getter-depth-exceeded]` に分岐する。
+- [x] **E3 — `$129` の無言 `undefined` を診断にする**。`traps/get.ts` で `[wcs/index-param-range]`（ドル記号の charCode ゲート付き）。
+- [x] `integration.recursionKnownDefects.test.ts` の該当ケースを**反転**させた（E1 で 8 件・E2/E3 で 2 件）。反転できなかった 1 件は cold な `$resolve` の throw で、これは E1 ではなく A1（`$resolve` だけが走査の第 1 相を持たない）なので現状固定のまま残した。
+- [x] 反証レビューで見つかった 2 つの穴（同一バッチ二度書き・周期 8 超の循環）を修理し、それぞれ回帰テストを追加した（同一バッチ 2 件・周期 9 の輪 1 件・直線連鎖の対照 1 件）。診断コード 2 件は README の診断表にも追加した。
+- [x] `packages/state` で `npm run lint`（新規の指摘 0 件）/ 全件テスト 2853 件緑 / `npm run test:coverage` を実行し、閾値を下げていない。
 
 **完了条件**: headless（`for` ゼロ）で並べ替え・先頭追加・先頭削除・親リスト再代入が集計に追従し、深さ超過と `$129` が名指しの診断になる。既存の描画差分（add/change/delete）・`$listKeys` のキー突合・SSR hydration に回帰が無い。
 

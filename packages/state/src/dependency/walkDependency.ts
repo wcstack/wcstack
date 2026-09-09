@@ -3,12 +3,12 @@ import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
 import { calcWildcardLen } from "../address/calcWildcardLen";
 import { getPathInfo } from "../address/PathInfo";
 import { createStateAddress } from "../address/StateAddress";
-import { IPathInfo, IStateAddress } from "../address/types";
+import { IAbsoluteStateAddress, IPathInfo, IStateAddress } from "../address/types";
 import { IStateElement } from "../components/types";
 import { config } from "../config";
 import { DELIMITER, WILDCARD } from "../define";
 import { createListDiff } from "../list/createListDiff";
-import { getLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
+import { getStateListBaseline, setStateListBaseline } from "../list/stateListBaseline";
 import { IListDiff, IListIndex } from "../list/types";
 import { listIndexAtWildcard } from "../list/wildcardLevel";
 import { getByAddressSymbol } from "../proxy/symbols";
@@ -41,6 +41,8 @@ function getIndexes(listDiff: IListDiff, searchType: SearchType): Iterable<IList
 
 type ExpandContext = {
   readonly stateElement: IStateElement,
+  /** ウォーク中に観測したリスト値。ウォーク完了後にまとめて基準へ確定する（E1）。 */
+  readonly observedListValueByAbsAddress: Map<IAbsoluteStateAddress, readonly unknown[]>,
   readonly targetPathInfo: IPathInfo,
   readonly targetListIndexes: IListIndex[],
   readonly wildcardPaths: string[],
@@ -59,10 +61,11 @@ function _walkExpandWildcard(
   const parentAbsPathInfo = getAbsolutePathInfo(context.stateElement, parentPathInfo);
   const parentAddress = createStateAddress(parentPathInfo, parentListIndex);
   const parentAbsAddress = createAbsoluteStateAddress(parentAbsPathInfo, parentListIndex);
-  const lastValue = getLastListValueByAbsoluteStateAddress(parentAbsAddress);
+  const lastValue = getStateListBaseline(parentAbsAddress);
   const newValue = context.stateProxy[getByAddressSymbol](parentAddress);
   const listDiff = createListDiff(
     parentAddress.listIndex, lastValue, newValue);
+  context.observedListValueByAbsAddress.set(parentAbsAddress, Array.isArray(newValue) ? newValue : []);
 
   const loopIndexes = getIndexes(listDiff, context.searchType);
   if (currentWildcardIndex === context.wildcardPaths.length - 1) {
@@ -91,6 +94,8 @@ export type ListExpansion = "full" | "diff";
 
 type Context = {
   readonly stateElement: IStateElement,
+  /** ウォーク中に観測したリスト値。ウォーク完了後にまとめて基準へ確定する（E1）。 */
+  readonly observedListValueByAbsAddress: Map<IAbsoluteStateAddress, readonly unknown[]>,
   readonly staticMap: Map<string, string[]>,
   readonly dynamicMap: Map<string, string[]>,
   readonly result: Set<IStateAddress>,
@@ -279,9 +284,10 @@ function _collectDependencies(
         const newValue = context.stateProxy[getByAddressSymbol](address);
         const absPathInfo = getAbsolutePathInfo(context.stateElement, address.pathInfo);
         const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
-        const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);
+        const lastValue = getStateListBaseline(absAddress);
         const listDiff = createListDiff(
           address.listIndex, lastValue, newValue);
+        context.observedListValueByAbsAddress.set(absAddress, Array.isArray(newValue) ? newValue : []);
         const selection = selectExpansionIndexes(context, sourcePath, lastValue, newValue, listDiff);
         for(const listIndex of selection.fullRows) {
           const depAddress = createStateAddress(depPathInfo, listIndex);
@@ -360,6 +366,7 @@ function _collectDependencies(
           }
           const expandContext: ExpandContext = {
             stateElement: context.stateElement,
+            observedListValueByAbsAddress: context.observedListValueByAbsAddress,
             targetPathInfo: depPathInfo,
             targetListIndexes: [],
             wildcardPaths: depPathInfo.wildcardPaths,
@@ -418,6 +425,7 @@ export function walkDependency(
   const context: Context = {
     ranks: ranks,
     stateElement: stateElement,
+    observedListValueByAbsAddress: new Map<IAbsoluteStateAddress, readonly unknown[]>(),
     staticMap: staticDependency,
     dynamicMap: dynamicDependency,
     result: new Set<IStateAddress>(),
@@ -429,5 +437,11 @@ export function walkDependency(
     keyedMergePath: options?.keyedMergePath ?? null,
   };
   _walkDependency(context, startAddress, callback);
+  // 観測したリスト値を state 側の基準として確定する（E1）。ウォークの最中に進めると
+  // 同じウォーク内の 2 度目の観測が「変化なし」になるため、走査を終えてからまとめて書く
+  // （`collectWildcardIndexes` の commitDiffBaseline と同じ形）。
+  for (const [absAddress, value] of context.observedListValueByAbsAddress) {
+    setStateListBaseline(absAddress, value);
+  }
   return Array.from(context.result);
 }

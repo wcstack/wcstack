@@ -224,7 +224,7 @@ nodes.**.total    各深さの同名 getter
 （余談だが実測で分かったこと: 最深から浅い順に温める bottom-up 評価は 128 の壁を越える — キャッシュヒットが `pushAddress` を通らないため深さ 400 まで通った。ただし葉を 1 つ書き換えると次の読みで再び 128 で落ちるので、逃げ道にはならない。）
 
 
-超過時の扱いは **throw** が妥当。集計を途中で打ち切ると**誤った合計を黙って返す**ことになり、§4 の 2 つのワナと同じ失敗の形になる。既存の作法とも一致していて、依存グラフ側の上限 `MAX_DEPENDENCY_DEPTH = 1000` は [`topologicalRank.ts`](../packages/state/src/dependency/topologicalRank.ts) で超過時に「循環参照の可能性」として throw する。展開器の上限もこれに倣い、**アンカーと深さを名指しする診断**（`wcs/recursion-depth-exceeded` 相当）にする。
+超過時の扱いは **throw** が妥当。集計を途中で打ち切ると**誤った合計を黙って返す**ことになり、§4 の 2 つのワナと同じ失敗の形になる。既存の作法とも一致していて、依存グラフ側の上限 `MAX_DEPENDENCY_DEPTH = 1000` は [`topologicalRank.ts`](../packages/state/src/dependency/topologicalRank.ts) で超過時に「循環参照の可能性」として throw する。展開器の上限もこれに倣い、**アンカーと深さを名指しする診断**にする。実装で使うコードは `wcs/getter-depth-exceeded`（Phase A' で新設）— 再帰専用ではなく「深い getter 連鎖」一般に出る診断なので、`recursion-` を冠さない。循環側は `wcs/getter-cycle` で、判定はスタック全体のアドレス同一性による（末尾のパス文字列の重複では、周期の長い輪を取り逃がし、同じパスを別の行で読む正当な再帰を誤告発する）。
 
 ---
 

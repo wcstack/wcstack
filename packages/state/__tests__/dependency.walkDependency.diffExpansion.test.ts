@@ -9,6 +9,7 @@ import {
   setLastListValueByAbsoluteStateAddress,
   clearLastListValueByAbsoluteStateAddress,
 } from '../src/list/lastListValueByAbsoluteStateAddress';
+import { clearStateListBaseline, setStateListBaseline } from '../src/list/stateListBaseline';
 import { getByAddressSymbol } from '../src/proxy/symbols';
 import type { IStateElement } from '../src/components/types';
 
@@ -32,9 +33,13 @@ function runWalkRaw(
 ) {
   const stateProxy = createStateProxy({ users: newList });
   if (oldList !== null) {
-    // 旧リストの listIndexes を確定させ、lastValue 台帳に登録する
+    // 旧リストの listIndexes を確定させ、差分基準に登録する。
+    // walkDependency が読むのは state 側の基準（stateListBaseline）で、描画側の基準
+    // （lastListValue）とは別の台帳になった（E1）。本番では applyChangeFromBindings が
+    // 両方を同時に書くので、テストでも両方に同じ値を置く。
     createListDiff(null, [], oldList);
     setLastListValueByAbsoluteStateAddress(usersAbsAddress(stateElement), oldList);
+    setStateListBaseline(usersAbsAddress(stateElement), oldList);
   }
   return walkDependency(    stateElement,
     createStateAddress(getPathInfo('users'), null),
@@ -68,7 +73,10 @@ describe('walkDependency の diff-filter 展開', () => {
   const stateElement = {} as IStateElement;
 
   afterEach(() => {
+    // 差分基準は描画側と state 側の 2 つある。片方だけ掃除すると、oldList を渡さない
+    // it を 1 本足した瞬間に前のテストの基準を無言で引き継ぐ（実行順で結果が変わる）。
     clearLastListValueByAbsoluteStateAddress(usersAbsAddress(stateElement));
+    clearStateListBaseline(usersAbsAddress(stateElement));
   });
 
   it('diff: 末尾追加では追加行のみ展開すること', () => {

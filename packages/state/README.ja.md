@@ -2267,7 +2267,9 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 |---|---|---|
 | `wcs/index-arity` | `$resolve(path, indexes)` は `*` の本数と**厳密一致**、`$getAll(path, indexes)` / `$setAll(path, indexes, …)` は**上限**（不足は「残りの階層を全展開」という正当な接頭辞） | 本数を合わせる |
 | `wcs/wildcard-rank` | パスの `*` の本数（と `$N` の N）が、囲む `for` の段数を超えていないか | `for` を足すか、`$resolve(path, indexes)` で行を明示する |
-| `wcs/getter-cycle` | パス getter どうしが循環参照していないか | 循環を断つ |
+| `wcs/getter-cycle` | パス getter どうしが循環参照していないか。実行時は「アドレススタックが既に積んでいるアドレスへ戻る」ことで判定する | 循環を断つ |
+| `wcs/getter-depth-exceeded` | getter の評価が 1 パスで評価できる深さ（128 段）を超え、かつ同じアドレスを 2 度通っていない ＝ データが単に深い | 集計の段数を減らすか、木を平らにする |
+| `wcs/index-param-range` | `$N` は実在するワイルドカード段を指すこと（`$1`〜`$128`・先頭ゼロ不可） | 実在する段を使う |
 
 `$resolve` / `$getAll` の**添字の超過は以前は黙って捨てられ**、取り違えたまま「もっともらしい値」が返っていました。現在はどちらもエラーです：
 
