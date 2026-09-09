@@ -678,19 +678,28 @@ describe("`**` の診断: 再帰文脈の外", () => {
   });
 });
 
-describe("`**` の診断: Phase C / Phase D 待ちの API 形", () => {
-  it("$getAll(path, []) に `**` を渡すと [wcs/recursion-getall-form] になること", async () => {
-    // 全深さ合併は Phase C。今は「まだ無い」ことを名指しで言う。
+describe("`**` の合併形と、定義できない形の診断", () => {
+  it("$getAll(path, []) は全深さを深さ優先・行きがけ・添字昇順で合併すること", async () => {
+    // Fixed by Phase C — was: [wcs/recursion-getall-form]（全深さ合併が未実装だった）。
+    // forest() は [1[10[100], 20], 2]。行きがけ順は 1 → 10 → 100 → 20 → 2。
     const { host, stateEl } = await mount(recursionState(forest()), NO_RENDER_HTML);
 
-    expect(() => read(stateEl, (s: any) => s.$getAll("nodes.**.total", [])))
-      .toThrow(/\[wcs\/recursion-getall-form\]/);
-    // Fixed by Phase B review — was: "is not supported yet. Omit the indexes to read
-    // the current depth"（「いつか対応する」のか「この形が誤り」なのかが読めなかった）。
-    expect(() => read(stateEl, (s: any) => s.$getAll("nodes.**.total", [])))
-      .toThrow(/is not implemented yet — the all-depths union arrives with the empty-array form/);
-    expect(() => read(stateEl, (s: any) => s.$getAll("nodes.**.total", [])))
-      .toThrow(/For now omit the indexes, which reads the depth of the recursive getter being evaluated/);
+    expect(read(stateEl, (s: any) => s.$getAll("nodes.**.value", [])))
+      .toEqual([1, 10, 100, 20, 2]);
+    // 各ノードの total（自分＋子孫）も同じ順序で並ぶ
+    expect(read(stateEl, (s: any) => s.$getAll("nodes.**.total", [])))
+      .toEqual([131, 110, 100, 20, 2]);
+    host.remove();
+  });
+
+  it("合併形は値の配列だけを返し、添字タプルの往復は保証しないこと", async () => {
+    // 深さごとにワイルドカードの本数が変わるので、返るタプルの長さが揃わない。
+    // これが `$resolve` への往復を保証しない理由（設計書 §7-2）。
+    const { host, stateEl } = await mount(recursionState(forest()), NO_RENDER_HTML);
+
+    const values = read(stateEl, (s: any) => s.$getAll("nodes.**.value", []));
+    expect(values).toHaveLength(5);
+    expect(values.every((v: unknown) => typeof v === "number")).toBe(true);
     host.remove();
   });
 

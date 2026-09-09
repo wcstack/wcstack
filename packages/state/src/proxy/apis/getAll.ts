@@ -22,6 +22,7 @@ import { collectWildcardIndexes } from "./wildcardIndexes";
 import { resolve } from "./resolve";
 import { bindRecursivePath } from "../../recursion/bind";
 import { hasRecursionWildcard } from "../../recursion/expand";
+import { getAllRecursive } from "../../recursion/getAllRecursive";
 
 type GetAllFunction = (path: string, indexes?: number[]) => any[];
 
@@ -33,17 +34,21 @@ export function getAll(
 ): GetAllFunction {
     const resolveFn = resolve(target, prop, receiver, handler);
     return (path: string, indexes?: number[]): any[] => {
-      // オーサリング層の `**`。省略形は「いま評価している深さ」に束縛する（設計書 §6-2）。
-      // 全深さの合併（`[]` 明示）は Phase C。宣言の無い state は boolean 判定 1 個で抜ける。
+      // オーサリング層の `**`。省略形は「いま評価している深さ」に束縛し、`[]` 明示は
+      // 全深さの合併になる（設計書 §6-2）。部分接頭辞は `**` に対して定義できない。
       if (handler.stateElement.hasRecursion === true && hasRecursionWildcard(path)) {
-        if (typeof indexes !== "undefined") {
-          raiseError(
-            `[wcs/recursion-getall-form] $getAll("${path}", indexes) with "**" is not implemented yet — ` +
-            `the all-depths union arrives with the empty-array form. For now omit the indexes, which ` +
-            `reads the depth of the recursive getter being evaluated.`
-          );
+        if (typeof indexes === "undefined") {
+          path = bindRecursivePath(handler.stateElement, handler, path);
+        } else {
+          if (indexes.length > 0) {
+            raiseError(
+              `[wcs/recursion-getall-form] $getAll("${path}", indexes) with "**" takes no partial ` +
+              `prefix: a prefix cannot say which depth it applies to. Omit the indexes to read the ` +
+              `depth of the recursive getter being evaluated, or pass [] to walk every depth.`
+            );
+          }
+          return getAllRecursive(target, receiver, handler, path);
         }
-        path = bindRecursivePath(handler.stateElement, handler, path);
       }
       const pathInfo = getPathInfo(path);
       if (handler.addressStackLength > 0) {
