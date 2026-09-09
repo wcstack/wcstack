@@ -722,11 +722,25 @@ describe("`**` の合併形と、定義できない形の診断", () => {
     host.remove();
   });
 
-  it("$setAll に `**` を渡すと [wcs/recursion-unsupported] になること", async () => {
+  it("$setAll(path, [], value) は全深さへブロードキャストすること", async () => {
+    // Fixed by Phase D — was: [wcs/recursion-unsupported]（書き側が未実装だった）。
+    // forest() は [1[10[100], 20], 2] の 5 ノード。
     const { host, stateEl } = await mount(recursionState(forest()), NO_RENDER_HTML);
 
-    expect(() => write(stateEl, (s: any) => { s.$setAll("nodes.**.value", [], 5); }))
-      .toThrow(/\[wcs\/recursion-unsupported\]/);
+    let written = -1;
+    write(stateEl, (s: any) => { written = s.$setAll("nodes.**.value", [], 7); });
+    expect(written).toBe(5);
+    expect(read(stateEl, (s: any) => s.$getAll("nodes.**.value", []))).toEqual([7, 7, 7, 7, 7]);
+    host.remove();
+  });
+
+  it("$setAll の非空接頭辞は [wcs/recursion-setall-form] になること", async () => {
+    const { host, stateEl } = await mount(recursionState(forest()), NO_RENDER_HTML);
+
+    expect(() => write(stateEl, (s: any) => { s.$setAll("nodes.**.value", [0], 5); }))
+      .toThrow(/\[wcs\/recursion-setall-form\]/);
+    // 形の検査は列挙より前なので 1 件も書かれていない
+    expect(read(stateEl, (s: any) => s.$getAll("nodes.**.value", []))).toEqual([1, 10, 100, 20, 2]);
     host.remove();
   });
 });

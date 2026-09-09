@@ -33,6 +33,18 @@ async function mount(initial: any) {
 }
 const read = (el: State, fn: (s: any) => any) => { let r: any; el.createState("readonly", (s: any) => { r = fn(s); }); return r; };
 const write = (el: State, fn: (s: any) => void) => el.createState("writable", fn);
+/** 再帰 getter つきの state を組む。spread では accessor が値化されるので defineProperty で足す。 */
+const mountShape = async (partial: any) => {
+  const st: any = { label: "x", $recursion: { "nodes.*": "children.*" }, ...partial };
+  Object.defineProperty(st, "nodes.**.total", {
+    get(this: any) {
+      return this["nodes.**.value"] +
+        this.$getAll("nodes.**.children.*.total").reduce((a: number, b: number) => a + b, 0);
+    },
+    enumerable: true, configurable: true,
+  });
+  return mount(st);
+};
 const base = () => ({
   label: "x", $recursion: { "nodes.*": "children.*" },
   nodes: [{ value: 1, children: [{ value: 10, children: [] }, { value: 20, children: [] }] }, { value: 2, children: [] }],
@@ -105,5 +117,49 @@ describe("再帰が受け付ける木の形（共有・循環・イミュータ�
     const values = read(el, (s) => s.$getAll("nodes.**.value", []));
     console.log("depth-128 count:", values.length);
     expect(values).toHaveLength(128);
+  });
+});
+
+describe("cold な合併書き込みが差分基準を残すこと（Phase D の反証レビュー）", () => {
+  // Fixed by Phase D review — was: 書き側の列挙が commitDiffBaseline: false で走り、
+  // 全深さぶんの ListIndex 世代を鋳造したまま基準を残さなかった。次の構造変更で
+  // その世代を見られない diff が行を鋳造し直し、生き残った深い children の台帳だけが
+  // 死んだ世代の親を指す。以後、再帰 getter の読みが恒久的に落ちていた
+  // （値の合併は動き続けるので、getter を読むまで無症状）。
+  // 孫が要る。壊れるのは「生き残った深い children の台帳が死んだ世代の親を指す」形なので、
+  // 削除される兄弟の隣に**子を持つノード**が居ないと再現しない。
+  const kid = (v: number, grand: number[] = []) =>
+    ({ value: v, children: grand.map((g) => ({ value: g, children: [] })) });
+  const forest = () => [
+    { value: 1, children: [kid(10, [100]), kid(11, [110]), kid(12, [120])] },
+    { value: 2, children: [] },
+  ];
+
+  it("cold の $setAll → 中間の子を削除 → 再帰 getter を読む、が通ること", async () => {
+    const el = await mountShape({ nodes: forest() });
+    // 走査も描画も一度も経ていない状態で、最初の操作が合併形の書き込み
+    write(el, (s: any) => { s.$setAll("nodes.**.value", [], 5); });
+    await flush();
+    // 真ん中の子を落とす（生き残る行の index がずれる形）
+    write(el, (s: any) => {
+      const kids = s.$resolve("nodes.*.children", [0]);
+      s.$resolve("nodes.*.children", [0], [kids[0], kids[2]]);
+    });
+    await flush();
+    expect(read(el, (s: any) => s.$getAll("nodes.**.total", []))).toEqual([25, 10, 5, 10, 5, 5]);
+  });
+
+  it("1 件も書かない undefined のブロードキャストでも同じく壊れないこと", async () => {
+    const el = await mountShape({ nodes: forest() });
+    let written = -1;
+    write(el, (s: any) => { written = s.$setAll("nodes.**.value", [], undefined); });
+    expect(written).toBe(0);
+    await flush();
+    write(el, (s: any) => {
+      const kids = s.$resolve("nodes.*.children", [0]);
+      s.$resolve("nodes.*.children", [0], [kids[1], kids[2]]);
+    });
+    await flush();
+    expect(read(el, (s: any) => s.$getAll("nodes.**.total", []))).toEqual([254, 121, 110, 132, 120, 2]);
   });
 });

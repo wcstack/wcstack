@@ -100,31 +100,10 @@ export class RecursionRegistry {
    * 最初に一致した方が無言で勝つ。
    */
   private _assertNoColliding(): void {
-    const unit = DELIMITER + this.spec.repeat;
     const definitions = Array.from(this._definitions.values());
     for (let i = 0; i < definitions.length; i++) {
       for (let j = i + 1; j < definitions.length; j++) {
-        const a = definitions[i].suffix;
-        const b = definitions[j].suffix;
-        const shorter = a.length <= b.length ? a : b;
-        const longer = a.length <= b.length ? b : a;
-        if (!longer.endsWith(shorter)) {
-          continue;
-        }
-        const gap = longer.slice(0, longer.length - shorter.length);
-        if (gap.length === 0 || gap.length % unit.length !== 0) {
-          continue;
-        }
-        let cursor = 0;
-        let onlyRepeats = true;
-        while (cursor < gap.length) {
-          if (!gap.startsWith(unit, cursor)) {
-            onlyRepeats = false;
-            break;
-          }
-          cursor += unit.length;
-        }
-        if (onlyRepeats) {
+        if (this._sameFamily(definitions[i].suffix, definitions[j].suffix)) {
           raiseError(
             `"${definitions[i].recursivePath}" and "${definitions[j].recursivePath}" expand to the same ` +
             `concrete path at different depths (they differ by whole repetitions of ` +
@@ -137,6 +116,52 @@ export class RecursionRegistry {
 
   get hasDefinitions(): boolean {
     return this._definitions.size > 0;
+  }
+  /**
+   * 2 つの接尾辞が**同じ具体パス族**を指すか。片方がもう片方の末尾で、差分が反復語の
+   * 整数倍（0 回を含む）のとき真。`nodes.**.total` と `nodes.**.children.*.total` は
+   * 深さ k と k+1 で同じ `nodes.*.children.*.total` になる、という関係を捉える。
+   */
+  private _sameFamily(a: string, b: string): boolean {
+    const unit = DELIMITER + this.spec.repeat;
+    const shorter = a.length <= b.length ? a : b;
+    const longer = a.length <= b.length ? b : a;
+    if (!longer.endsWith(shorter)) {
+      return false;
+    }
+    const gap = longer.slice(0, longer.length - shorter.length);
+    if (gap.length === 0) {
+      return true;
+    }
+    if (gap.length % unit.length !== 0) {
+      return false;
+    }
+    for (let cursor = 0; cursor < gap.length; cursor += unit.length) {
+      if (!gap.startsWith(unit, cursor)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * その接尾辞が宣言済みの `**` getter と衝突するなら、その getter のパスを返す。
+   *
+   * 完全一致だけでは足りない。①反復語の整数倍だけ違う接尾辞は同じ族を指す
+   * （`_assertNoColliding` が宣言どうしについて既に見ている条件）②getter の**下**を
+   * 指す形（`nodes.**.total.x`）は、getter が返したオブジェクトへ書いてキャッシュを
+   * 汚し、次の無効化で無言に戻る。どちらも書き込みの入口で止める。
+   */
+  conflictingRecursiveGetter(suffix: string): string | null {
+    for (const definition of this._definitions.values()) {
+      if (this._sameFamily(definition.suffix, suffix)) {
+        return definition.recursivePath;
+      }
+      if (suffix.startsWith(definition.suffix + DELIMITER)) {
+        return definition.recursivePath;
+      }
+    }
+    return null;
   }
 
   /** 既にこの深さのアクセサを生やしてあるか（読みの早期 return 用）。 */

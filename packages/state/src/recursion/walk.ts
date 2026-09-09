@@ -78,7 +78,11 @@ export function collectRecursiveAddresses(
   const ancestors: Set<readonly unknown[]> = new Set();
   const visited: Set<readonly unknown[]> = new Set();
 
-  const guardShape = (listPath: string, value: unknown): readonly unknown[] | null => {
+  const guardShape = (
+    listPath: string,
+    value: unknown,
+    seen: Set<readonly unknown[]>,
+  ): readonly unknown[] | null => {
     if (!Array.isArray(value) || value.length === 0) {
       return null;
     }
@@ -90,7 +94,7 @@ export function collectRecursiveAddresses(
         `The data contains a cycle, which this version does not support.`
       );
     }
-    if (visited.has(list)) {
+    if (seen.has(list)) {
       raiseError(
         `[wcs/recursion-shared-list] "${listPath}" is the same array instance as a list reached ` +
         `from another node. The recursion on "${spec.anchor}" needs a tree: give each node its own ` +
@@ -124,6 +128,15 @@ export function collectRecursiveAddresses(
       results.push(createStateAddress(concretePathInfo, listIndex));
       return;
     }
+    // 接尾辞側のリストは検査しない。接尾辞が反復語を含む形（`nodes.**.children.*.value`）
+    // では、接尾辞の展開と深さ方向の降下が**同じ配列**を通る — 同じ族を 2 通りに綴れる
+    // ことの帰結で、共有ではない。次元をまたいでも、同じ次元の中でも（深さ 0 の接尾辞
+    // 展開と深さ 1 の接尾辞展開が同じ配列に当たる）自己衝突するので、共有の判定は
+    // 深さ方向にだけ掛ける。
+    //
+    // 結果として `$setAll("nodes.**.tags", [], arr)` のように**ブロードキャストが作った**
+    // 配列共有は、ここでは捕まらない（`[wcs/wildcard-rank]` という無関係な文面で落ちる）。
+    // 既知の制限として設計書に記録してある。
     const rows = readRows(parents[level], listIndex, null).rows;
     for (let i = 0; i < rows.length; i++) {
       expandSuffix(concretePathInfo, level + 1, rows[i]);
@@ -139,24 +152,24 @@ export function collectRecursiveAddresses(
   function readRows(
     listPathInfo: IPathInfo,
     parentListIndex: IListIndex | null,
-    guardPath: string | null,
+    seen: Set<readonly unknown[]> | null,
   ): { rows: IListIndex[], tracked: readonly unknown[] | null } {
     const listAddress = createStateAddress(listPathInfo, parentListIndex);
     const absAddress = createAbsoluteStateAddress(
       getAbsolutePathInfo(handler.stateElement, listPathInfo), parentListIndex);
     const value = getByAddress(target, listAddress, receiver, handler);
-    const tracked = guardPath === null ? null : guardShape(guardPath, value);
+    const tracked = seen === null ? null : guardShape(listPathInfo.path, value, seen);
     const listDiff = createListDiff(
       parentListIndex, getStateListBaseline(absAddress), value);
     observed.set(absAddress, Array.isArray(value) ? value : []);
-    if (tracked !== null) {
-      visited.add(tracked);
+    if (tracked !== null && seen !== null) {
+      seen.add(tracked);
     }
     return { rows: listDiff.newIndexes, tracked };
   }
 
   const descend = (depth: number, listPathInfo: IPathInfo, parentListIndex: IListIndex | null): void => {
-    const { rows, tracked } = readRows(listPathInfo, parentListIndex, listPathInfo.path);
+    const { rows, tracked } = readRows(listPathInfo, parentListIndex, visited);
     if (rows.length === 0) {
       return;
     }
