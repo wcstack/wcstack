@@ -292,6 +292,49 @@ export class RecursionRegistry {
     }
   }
 
+  /**
+   * この世代が生やした具体パスを依存表から外す（state の再セット時に呼ぶ）。
+   *
+   * `_state` のセッタは `_listPaths` / `_getterPaths` / `_pathSet` をクリアするが、
+   * 依存表（`_staticDependency` / `_dynamicDependency`）は state の寿命を越えて残る。
+   * 通常のパスはそれで正しい — 同じ綴りのパスは新しい state でも同じ意味を持つ。
+   * だが**生成アクセサは違う**。新しい世代ではまだ実体化されておらず、それを指す辺だけが
+   * 残ると、次の構造書き込みで依存ウォークが「アクセサの無い具体パス」へ降りて落ちる。
+   * 依存表そのものをクリアしてはならない（既存バインディングの辺まで消えて、再セット後の
+   * 集計が更新されなくなる — 実測済み）。この世代が作った辺だけを外す。
+   */
+  forgetGeneratedDependencies(
+    staticMap: Map<string, string[]>,
+    dynamicMap: Map<string, string[]>,
+  ): void {
+    if (this._accessors.size === 0) {
+      return;
+    }
+    const generated = new Set(this._accessors.keys());
+    for (const map of [staticMap, dynamicMap]) {
+      for (const path of generated) {
+        map.delete(path);
+      }
+      for (const [source, targets] of map) {
+        let kept: string[] | null = null;
+        for (let i = 0; i < targets.length; i++) {
+          if (generated.has(targets[i])) {
+            kept ??= targets.slice(0, i);
+            continue;
+          }
+          kept?.push(targets[i]);
+        }
+        if (kept !== null) {
+          if (kept.length === 0) {
+            map.delete(source);
+          } else {
+            map.set(source, kept);
+          }
+        }
+      }
+    }
+  }
+
   /** 展開済みアクセサのメタデータ（深さ解決・診断・テスト用）。 */
   accessorFor(concretePath: string): IRecursionAccessor | null {
     return this._accessors.get(concretePath) ?? null;

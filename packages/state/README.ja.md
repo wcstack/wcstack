@@ -1102,6 +1102,195 @@ export default {
 };
 ```
 
+## 再帰パス（`$recursion`）
+
+パスは深さを文字列に焼き付けます。`nodes.*.children.*.total` はワイルドカードちょうど 2 段のパスであり、木が 1 段深くなっても 3 段には伸びません。しかし木の深さはコードではなく**データの性質**です。`$recursion` はこの隔たりを埋めます。形が繰り返す場所を宣言し、あとは「いま何段目であれ」を `**` と書きます。
+
+```javascript
+export default {
+  $recursion: { "nodes.*": "children.*" },   // アンカー → 反復サブパス
+
+  nodes: [
+    { value: 1, selected: false, children: [
+      { value: 10, selected: false, children: [
+        { value: 100, selected: false, children: [] }
+      ]},
+      { value: 20, selected: false, children: [] }
+    ]},
+    { value: 2, selected: false, children: [] }
+  ],
+
+  // getter は 1 本で全深さぶん。`**` は評価されている深さに束縛される
+  get "nodes.**.total"() {
+    return this["nodes.**.value"]
+         + this.$getAll("nodes.**.children.*.total").reduce((a, b) => a + b, 0);
+  },
+
+  // 木全体の集計。`[]` は全深さの合併
+  get treeTotal() {
+    return this.$getAll("nodes.**.value", []).reduce((a, b) => a + b, 0);
+  },
+
+  clearSelection() {
+    this.$setAll("nodes.**.selected", [], false);
+  }
+};
+```
+
+この森の total は `131 / 110 / 100 / 20 / 2`、`treeTotal` は `133` になります。
+
+**`**` はオーサリング層だけの記号で、エンジンには決して降りません。** 具体パス（`nodes.*.children.*.total`）を読んだ時点で、その深さの getter が遅延実体化されます（実際に触れた深さのぶんだけアクセサが生えます）。その先 —— `PathInfo`、依存グラフ、`$1`…`$n`、`$resolve`、リスト差分 —— が見るのは、いつもどおりワイルドカード本数が固定された普通のパスです。リアクティブの中核は新しい形を覚えていません。
+
+### 再帰点を宣言する
+
+`$recursion` は 1 つの**アンカー**を、1 段深くする**反復サブパス**へ対応づけます。どちらも「固定プロパティ列 + 末尾の `.*`」の形で、リストそのものではなくリストの**要素**を名指します：
+
+```javascript
+$recursion: { "nodes.*": "children.*" }     // nodes[i].children[j].children[k]…
+$recursion: { "data.tree.*": "kids.*" }     // 深い位置のアンカーも可
+$recursion: { "nodes.*": "nodes.*" }        // 自己相似な綴りも可
+```
+
+`**` に意味を与えるのはこの宣言だけです。`$recursion` の無い state では `**` はパスの文字ですらなく（`wcs/recursion-unsupported`）、この記法が子孫検索へ黙って滑り落ちることはありません。このバージョンが受け付けるのは **state ごとに単一の自己再帰アンカー**です。アンカーの途中のワイルドカード、2 つ目のエントリ、2 つのアンカー間の相互再帰、1 本のパスに 2 つ目の `**`、`get "nodes.**"`（これはノード自身であって、ノード配下の計算パスではありません）、同じ具体パスへ展開される 2 本の `**` getter、そして再帰 **setter** は、宣言を読んだ時点で拒否します —— 別の意味に解釈することはありません。
+
+宣言が定義する族は無限ですが、state に生えるのは実際に要求された深さだけです：
+
+```
+k=0   nodes.*
+k=1   nodes.*.children.*
+k=2   nodes.*.children.*.children.*
+```
+
+### `**` はどこで何を意味するか
+
+`**` は深さを表す変数で、**束縛**されるか**合併**されるかは文脈が決めます。これは新しい規則ではなく、`*` が既に持っている「現在行」と「全行」の書き分けをそのまま継いだものです：
+
+| `**` が現れる場所 | 意味 |
+|---|---|
+| getter のキー（`get "nodes.**.total"()`） | 評価されている深さに束縛 |
+| その getter 本体でのパス読み（`this["nodes.**.value"]`） | 同じ深さに束縛 |
+| `$getAll(path)`（添字**省略**） | その深さに束縛。展開されるのは `**` より**後ろ**のワイルドカードだけ |
+| `$getAll(path, [])`（**明示**） | **全深さの合併** —— 深さ優先・行きがけ・添字昇順 |
+| `$getAll(path, [i, …])` | 拒否。接頭辞ではどの深さの話か言えない（`wcs/recursion-getall-form`） |
+| `$setAll(path, [], value)` | 全深さへのブロードキャスト（合併と同じ走査・同じ順序） |
+| `$resolve` / `$watch` のキー / markup の `data-wcs` / 直接代入 | 拒否（`wcs/recursion-unsupported`） |
+
+束縛形は束縛先の深さを必要とするので、**再帰 getter の中**でしか解決できません（アンカー配下の普通の行 getter や、その行に紐づくイベントハンドラも同じく実体の `ListIndex` を持つので使えます）。トップレベルで `this["nodes.**.value"]` を読むと `wcs/recursion-context` になります —— どのノードのつもりだったかを黙って推測することはありません。合併形は深さを要求しないので、トップレベルの getter でも普通の行 getter でもメソッドでも読めます。
+
+```javascript
+this.$getAll("nodes.**.value", []);   // [1, 10, 100, 20, 2] —— 深さ優先・行きがけ
+```
+
+### 孫を二重に数えない集計
+
+木を畳むのは再帰 getter なので、この書き分けが集計の成否そのものになります：
+
+```javascript
+// ✅ 省略 —— この深さに束縛されるので、直下の子だけを合計する
+get "nodes.**.total"() {
+  return this["nodes.**.value"]
+       + this.$getAll("nodes.**.children.*.total").reduce((a, b) => a + b, 0);
+}
+
+// ❌ `[]` —— 全深さの子 total。各ノードの total が自分の子孫の total を再び含み、
+//    getter が自分自身を要求することになる。実際には誤った値ではなく
+//    `wcs/getter-cycle` になる。
+get "nodes.**.total"() {
+  return this["nodes.**.value"]
+       + this.$getAll("nodes.**.children.*.total", []).reduce((a, b) => a + b, 0);
+}
+```
+
+同じ間違いを再帰の**外側**でやると、こちらは静かです。踏む循環が無く、もっともらしい大きすぎる値が返るだけになります。集計値の合併は、孫を「親の total の内訳」として 1 回、「合併の要素」としてもう 1 回数えます：
+
+```javascript
+// ❌ 363 —— 全ノードの total を合併しているが、total は既に部分木を含んでいる
+get treeTotalWrong() {
+  return this.$getAll("nodes.**.total", []).reduce((a, b) => a + b, 0);
+}
+// ✅ 133 —— 生の値を合併する
+get treeTotal() {
+  return this.$getAll("nodes.**.value", []).reduce((a, b) => a + b, 0);
+}
+// ✅ 133 —— あるいはルートだけを足す（各ルートの total が既に部分木を畳んでいる）
+get treeTotalFromRoots() {
+  return this.$getAll("nodes.*.total", []).reduce((a, b) => a + b, 0);
+}
+```
+
+**合併するのは生の値か、さもなくばルートだけを足すこと。自分の部分木を既に集計している値を合併してはいけません。** 二重計上かどうかはパス文字列からは決定できないので、これを捕まえると約束する診断はありません。
+
+### 書き込みはブロードキャストのみ
+
+再帰 `$setAll` が受け付けるのは `[]` ＋ 素の値という 1 つの形だけで、戻り値は書き込んだアドレスの件数です（上の森なら 5）：
+
+```javascript
+this.$setAll("nodes.**.selected", [], false);   // 全深さの全ノード
+```
+
+それ以外の形は、走査が 1 件でも書く**前に**拒否します。拒否された呼び出しは木を一切変更しません：
+
+| 形 | 拒否する理由 |
+|---|---|
+| 非空の接頭辞 | 接頭辞ではどの深さに適用されるのか言えない（`wcs/recursion-setall-form`） |
+| 添字の省略 | 書き込み API は文脈を取らないので束縛する深さが無い —— `[]` を渡す |
+| mapper 関数 | `(current, ...indexes)` の添字の本数が深さごとに変わる |
+| `{ spread: true }` | 1 次元配列を木へ配るには作者が走査順を知っている必要があり、契約として使えない |
+| `nodes.**` / `nodes.**.children` / `nodes.**.children.*` | 構造そのものへの書き込みは、その書き込み自身が確定済みの子アドレスを壊す（`wcs/recursion-structural-write`） |
+| `nodes.**.total`、およびその値の内側を指すパス | 再帰 getter に setter は無い。導出元を書く（`wcs/recursion-readonly`） |
+
+### 入力は木でなければならない
+
+走査は深さ方向に降りながら、必要な形をその場で検査します。**同じ配列インスタンス**に 2 度到達したら拒否します。その配列が現在のノードの祖先のものなら循環（`wcs/recursion-cycle`）、そうでなければ 2 つのノードが 1 本の子リストを共有しています（`wcs/recursion-shared-list`）。各ノードに自分の `children` 配列を持たせてください —— **空**配列の使い回しは行を持たず別名化のしようがないので、追跡もせず正当です。
+
+上限は展開後のパスの**ワイルドカード 128 段**です。上の集計 getter は評価中のノードより 1 段下を読むので、127 段の鎖までは畳めて、128 段で `wcs/recursion-depth-exceeded` になります（アンカー・到達した深さ・組み立てようとしたパス・上限を名指しします）。この検査は getter 評価スタック自身の 128 段の上限（`wcs/getter-depth-exceeded`）より先に効くので、深い木は「深い」と報告され、循環の疑いを掛けられることはありません。途中で打ち切ることもしません —— 部分的な集計は、誤った値を正しい値として返すことだからです。
+
+### 木を描画する
+
+`**` は markup には書けず、再帰 `<template>` もありません。木は**自己参照コンポーネント**で描画します —— 子ごとに自分自身を shadow の中でマウントするカスタム要素 1 つです。各スコープの中で使うパスは常に 1 段だけ（`node.children.*`）なので markup が深さに依存せず、`node.total` はマウントを通ってルート state の再帰 getter に解決されるので、各ノードが自分の部分木の集計を表示できます。
+
+```html
+<!-- ホスト側 -->
+<template data-wcs="for: nodes">
+  <tree-node data-wcs="state.node: nodes.*"></tree-node>
+</template>
+```
+
+```javascript
+const markup = `
+  <wcs-state bind-component="state"></wcs-state>
+  <span data-wcs="textContent: node.label"></span>
+  <span data-wcs="textContent: node.total"></span>
+  <template data-wcs="for: node.children">
+    <tree-node data-wcs="state.node: node.children.*"></tree-node>
+  </template>`;
+
+customElements.define("tree-node", class extends HTMLElement {
+  state = {};                            // ← `node` を自分で持たない（マウントから届く）
+  constructor() { super(); this.attachShadow({ mode: "open" }); }
+  connectedCallback() {                  // ← shadow は constructor ではなくここで組む
+    if (this.shadowRoot.childNodes.length === 0) this.shadowRoot.innerHTML = markup;
+  }
+});
+```
+
+ここには 2 つの罠があり、どちらも実際に踏んだものです：
+
+- **コンポーネントの `state` に、マウント先と同名のキーを置かないこと。** 無関係なメソッドや私有キーは構いませんが、自分の `node` を持つとマウントを隠し、子は自分の既定値を表示したまま一段も降りません（実行時に `wcs/mount-own-key-shadow` で名指されます）。
+- **shadow は constructor ではなく `connectedCallback` で組むこと。** constructor で `innerHTML` を入れると、`<template>` の中身を inert に保たない実装ではその中の要素まで upgrade され、自己参照コンポーネントは自分の constructor の中で無限再帰します。実ブラウザは通ってしまうので、素直なクラッシュではなく環境依存の地雷になります。
+
+深さが固定なら、ここまでは要りません。展開後のパスは普通のパスなので、入れ子の `for` テンプレートから `nodes.*.total` や `nodes.*.children.*.total` を他と同じようにバインドできます。
+
+### このバージョンに含まれないもの
+
+以下はいずれも診断になります。黙って別の意味に解釈されることはありません。
+
+- 複数アンカー、相互再帰、アンカー途中のワイルドカード、1 本のパスに 2 つ目の `**`
+- 再帰 setter と、代入による `**` 経由の書き込み（`this["nodes.**.x"] = v`）
+- 再帰 `$setAll` の mapper・`{ spread: true }`・添字省略・非空の接頭辞
+- `data-wcs` / `$watch` のキー / `$resolve` への `**`
+- 再帰 `<template>`、`$depth` 変数、公開の `maxDepth` オプション（3 つとも存在しません）
+
 ## イベントハンドリング
 
 `on*` プロパティでイベントハンドラをバインドします：
@@ -2261,7 +2450,7 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 
 ### 添字の本数・階数・循環も検査されます
 
-パス文字列から機械的に決まる整合は、実行時にも lint にも同じ診断 code で現れます。
+パス文字列から機械的に決まる整合は、実行時にも lint にも同じ診断 code で現れます。ただし下表の 6 つ —— `wcs/getter-depth-exceeded` / `wcs/index-param-range` / `wcs/recursion-context` / `wcs/recursion-shared-list` / `wcs/recursion-cycle` / `wcs/recursion-depth-exceeded` —— はこのリリースでは**実行時専用**で、lint は出しません。
 
 | 診断 | 何を見るか | 直し方 |
 |---|---|---|
@@ -2270,6 +2459,16 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 | `wcs/getter-cycle` | パス getter どうしが循環参照していないか。実行時は「アドレススタックが既に積んでいるアドレスへ戻る」ことで判定する | 循環を断つ |
 | `wcs/getter-depth-exceeded` | getter の評価が 1 パスで評価できる深さ（128 段）を超え、かつ同じアドレスを 2 度通っていない ＝ データが単に深い | 集計の段数を減らすか、木を平らにする |
 | `wcs/index-param-range` | `$N` は実在するワイルドカード段を指すこと（`$1`〜`$128`・先頭ゼロ不可） | 実在する段を使う |
+| `wcs/recursion-unsupported` | `**` を解釈しない場所へ `**` が渡った —— markup・`$watch` のキー・`$resolve`・代入、あるいは state が `$recursion` を宣言していない | 具体パスを使うか、アンカーを宣言する |
+| `wcs/recursion-anchor` | 宣言済みのアンカーと合致しない `**` パス（このバージョンは state ごとに単一の自己再帰アンカー） | 宣言どおりに綴る |
+| `wcs/recursion-context` | **束縛**形の `**` を、束縛先の深さが無い場所で読んだ —— トップレベル、またはアンカー外の getter | 再帰 getter か行 getter の中から読むか、`[]` で全深さを合併する |
+| `wcs/recursion-getall-form` / `wcs/recursion-setall-form` | `**` に対して定義できない `indexes` の形。コードが付くのは非空の接頭辞（両 API）。`$setAll` の省略・mapper・`{ spread: true }` も同じ誤りで、lint は同じコードで報告するが、実行時は形を名指しした文面で throw するだけでコードは付かない | 現在の深さなら省略、全深さなら `[]` |
+| `wcs/recursion-structural-write` | 再帰 `$setAll` が構造そのもの（ノード・子リスト・子ノード）を指している | 葉のプロパティへブロードキャストする |
+| `wcs/recursion-readonly` | 再帰 `$setAll` が再帰 getter、またはその導出値の内側を指している | getter の導出元を書く |
+| `wcs/recursion-shared-list` / `wcs/recursion-cycle` | 走査が同じ配列インスタンスに 2 度到達した —— 2 つのノードが 1 本の子リストを共有、または自分の祖先から到達可能 | 各ノードに自分の子配列を持たせる |
+| `wcs/recursion-depth-exceeded` | 展開後のパスがワイルドカード 128 段を超える —— 木がエンジンのアドレス可能な深さより深いか、循環している | 木を平らにするか、循環を探す |
+
+`wcs/recursion-*` の各行がどの形を拒否していて、代わりに何を書けばよいのかは、上の**再帰パス**の節に書いてあります。
 
 `$resolve` / `$getAll` の**添字の超過は以前は黙って捨てられ**、取り違えたまま「もっともらしい値」が返っていました。現在はどちらもエラーです：
 

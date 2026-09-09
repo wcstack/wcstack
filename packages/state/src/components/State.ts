@@ -9,7 +9,7 @@ import { IStateElement } from "./types";
 import { setStateElement, getStateElement, getBindingsReady } from "../stateElementByName";
 import { ILoopContextStack } from "../list/types";
 import { createLoopContextStack } from "../list/loopContext";
-import { DCC_DEFINITION_ATTRIBUTE, NO_SET_TIMEOUT, STATE_CONNECTED_CALLBACK_NAME, STATE_DISCONNECTED_CALLBACK_NAME, STATE_ERROR_CALLBACK_NAME, STATE_UPDATED_CALLBACK_NAME, WILDCARD } from "../define";
+import { DELIMITER, DCC_DEFINITION_ATTRIBUTE, NO_SET_TIMEOUT, STATE_CONNECTED_CALLBACK_NAME, STATE_DISCONNECTED_CALLBACK_NAME, STATE_ERROR_CALLBACK_NAME, STATE_UPDATED_CALLBACK_NAME, WILDCARD } from "../define";
 import { processCommandTokensDeclaration } from "../command/processCommandTokensDeclaration";
 import { clearCommandTokenRegistry } from "../command/commandTokenRegistry";
 import { clearCommandNamespace } from "../command/commandNamespace";
@@ -220,8 +220,23 @@ export class State extends HTMLElementBase implements IStateElement {
     // getterPaths / setterPaths の収集後であること（`**` getter の descriptor を
     // 走査して定義を集めるため）。再セットでは毎回作り直す — 展開済みアクセサは
     // 旧 state オブジェクトのものなので持ち越さない（§1-3）。
+    // 旧世代の生成アクセサを指す依存辺を外してから作り直す（下の registry.ts 参照）。
+    this._recursionRegistry?.forgetGeneratedDependencies(this._staticDependency, this._dynamicDependency);
     const recursionSpec = processRecursionDeclaration(value);
     this._recursionRegistry = recursionSpec === null ? null : new RecursionRegistry(recursionSpec, value);
+    if (recursionSpec !== null) {
+      // アンカーのリストパス（`nodes.*` なら `nodes`）は**宣言から静的に分かる**ので、
+      // 展開を待たずに今すぐ登録する。
+      //
+      // これが無いと、再帰パスを一度読んだ後の再セットで構造書き込みが恒久的に落ちる。
+      // 生成アクセサの `setPathInfo` が張った静的辺（`nodes` → `nodes.*`）は依存グラフに
+      // 残るのに、`_listPaths` はこのセッタでクリアされ、次に再帰パスを読むまで
+      // 張り直されない。その隙間に構造書き込みが来ると `walkDependency` が
+      // 「リストではないパス」として `nodes.*` に到達し、listIndex を持たないアドレスで
+      // `Cannot expand dynamic dependency…` になる（値は書かれるので、データと表示が
+      // 乖離したまま自己回復しない）。
+      this._listPaths.add(recursionSpec.anchor.slice(0, recursionSpec.anchor.lastIndexOf(DELIMITER)));
+    }
     // $watch: 旧宣言のハンドラが残らないよう registry を落としてから新宣言を解析する。
     // _pathSet.clear() の後であること（依存グラフ登録をやり直す必要がある、
     // docs/state-watch-hook-design.md §8）。宣言が無ければ watchPaths は null で、

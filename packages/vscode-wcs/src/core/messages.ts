@@ -108,10 +108,48 @@ export interface WcsMessageCatalog {
   // --- mountAttrValidator ---
   /** `mount` 属性値が runtime の validateVolumeMountPath で raise する形（同条件・同文言）。 */
   mountPathInvalid(problem: MountPathProblem, mountPath: string): string;
+  // --- recursionValidator（$recursion / `**`） ---
+  /** `**` を解釈しない場所に `**` がある、または `$recursion` 宣言が無い。 */
+  recursionUnsupported(path: string, where: RecursionWildcardSite): string;
+  /** 宣言済みアンカーと合致しない `**`（綴り違い・2 つ目の `**`）。 */
+  recursionAnchorMismatch(path: string, recursiveAnchor: string): string;
+  /** `$getAll("…**…", [i])` — `**` に非空の接頭辞は定義できない。 */
+  recursionGetAllForm(path: string): string;
+  /** `$setAll("…**…", …)` の添字・値の形が `**` に対して定義できない。 */
+  recursionSetAllForm(path: string, problem: RecursionSetAllProblem): string;
+  /** ノード自身 / 子リストへの一括書き込み。 */
+  recursionStructuralWrite(path: string, target: 'node' | 'list', repeatList: string): string;
+  /** 再帰 getter（またはその派生値の中）への書き込み。 */
+  recursionReadonly(path: string, getterPath: string): string;
+  /** `$recursion` の値がオブジェクトでない。 */
+  recursionNotObject(): string;
+  /** アンカーの本数が 1 でない（0 / 2 以上）。 */
+  recursionAnchorCount(count: number): string;
+  /** アンカー / 反復サブパスの形が不正。 */
+  recursionNodePathInvalid(kind: RecursionNodePathKind, path: string, problem: RecursionNodePathProblem): string;
+  /** 反復サブパスが文字列リテラルでない。 */
+  recursionRepeatNotString(anchor: string): string;
+  /** `**` を含むキーの宣言の形が不正（setter / getter でない / ノード自身）。 */
+  recursionGetterInvalid(key: string, problem: RecursionGetterProblem, recursiveAnchor: string): string;
+  /** 2 本の `**` getter が同じ具体パスへ展開する。 */
+  recursionGetterCollision(a: string, b: string, repeat: string): string;
 }
 
 /** `mount` 属性値の不正の種類（runtime の validateVolumeMountPath の raise と 1:1）。 */
 export type MountPathProblem = 'empty' | 'emptySegment' | 'wildcard' | 'reserved';
+
+/** `**` が現れた場所（`**` を解釈しない消費者）。 */
+export type RecursionWildcardSite = 'binding' | 'watch' | 'resolve' | 'undeclared';
+/** `$setAll` が `**` に対して拒否する形。 */
+export type RecursionSetAllProblem = 'prefix' | 'noIndexes' | 'mapper' | 'spread';
+/** アンカー / 反復サブパスの種別（service/recursionPaths.ts の NodePathKind と同値）。 */
+export type RecursionNodePathKind = 'anchor' | 'repeat';
+/** アンカー / 反復サブパスの形の不正（service/recursionPaths.ts の NodePathProblem と同値）。 */
+export type RecursionNodePathProblem =
+  | 'empty' | 'emptySegment' | 'notElement'
+  | 'reservedRoot' | 'reservedMount' | 'midWildcard' | 'nestedRecursion';
+/** `**` を含む宣言キーの不正。 */
+export type RecursionGetterProblem = 'setter' | 'notGetter' | 'nodeItself';
 
 const JA_EXPECTED_LABEL: Record<ExpectedTypeKind, string> = {
   array: '配列型のパス',
@@ -204,6 +242,69 @@ const ja: WcsMessageCatalog = {
       default: return `"mount" パス "${mountPath}" に予約文字（$, #, @）は使えません（runtime: must not use reserved characters.）`;
     }
   },
+  recursionUnsupported: (p, where) => {
+    switch (where) {
+      case 'binding':
+        return `"${p}" の "**" は data-wcs では使えません。"**" は $recursion 宣言・再帰 getter のキー・$getAll / $setAll のパス引数だけの記号です（ランタイムはバインド確立時に throw します）。HTML では展開後の具体パスを書いてください`;
+      case 'watch':
+        return `$watch のキー "${p}" に "**" は使えません。監視は具体パス（固定本数の "*"）に対してのみ成立します`;
+      case 'resolve':
+        return `$resolve("${p}") に "**" は渡せません。$resolve は展開後の具体パスと添字タプルの厳密一致だけを受け付けます`;
+      default:
+        return `"${p}" は "**" を含みますが、この state には $recursion 宣言がありません。$recursion = { "<anchor>": "<repeat>" }（例: { "nodes.*": "children.*" }）を宣言してください（宣言が無いと "**" のキーは黙って無視されます）`;
+    }
+  },
+  recursionAnchorMismatch: (p, anchor) =>
+    `"${p}" は宣言済みの再帰アンカー "${anchor}" と合致しません（初版は state ごとに 1 つの自己再帰のみ・同じパスに 2 つ目の "**" は置けません）`,
+  recursionGetAllForm: (p) =>
+    `$getAll("${p}", indexes) の "**" に非空の接頭辞は渡せません（接頭辞はどの深さに適用されるかを言えません）。添字を省略すると評価中の再帰 getter の深さ、[] を渡すと全深さになります`,
+  recursionSetAllForm: (p, problem) => {
+    switch (problem) {
+      case 'prefix':
+        return `$setAll("${p}", indexes, …) の "**" に非空の接頭辞は渡せません（接頭辞はどの深さに適用されるかを言えません）。[] を渡して全深さへブロードキャストしてください`;
+      case 'noIndexes':
+        return `$setAll("${p}", …) の "**" には明示的な空の添字配列 [] が必要です（書き込み API は文脈を取りません）`;
+      case 'mapper':
+        return `$setAll("${p}", …) の "**" は mapper を取れません（添字タプルの本数が深さごとに変わるため）。定数値を渡してください`;
+      default:
+        return `$setAll("${p}", …) の "**" は { spread: true } を取れません（平坦な配列を木に配るには作者が走査順を知る必要があり、契約になりません）`;
+    }
+  },
+  recursionStructuralWrite: (p, target, repeatList) =>
+    target === 'node'
+      ? `$setAll("${p}") は再帰の構造そのもの（ノード）を書き換えます。初版は葉のプロパティへのブロードキャストのみです — ノードを置き換えるとこの書き込みのために確定済みの子アドレスが無効になります`
+      : `$setAll("${p}") は再帰の構造そのもの（"${repeatList}" リスト）を書き換えます。初版は葉のプロパティへのブロードキャストのみです`,
+  recursionReadonly: (p, getterPath) =>
+    `$setAll("${p}") は再帰 getter "${getterPath}" に書き込みます（setter は初版では持てません）。この getter が導出元にしている値の側を書いてください`,
+  recursionNotObject: () =>
+    `$recursion は「アンカー → 反復サブパス」のオブジェクトである必要があります（例: { "nodes.*": "children.*" }。この形はランタイムが読み込み時に throw します）`,
+  recursionAnchorCount: (count) =>
+    count === 0
+      ? `$recursion にはアンカーがちょうど 1 つ必要です（空の宣言です）`
+      : `$recursion が ${count} 個のアンカーを宣言しています。初版は state ごとにちょうど 1 つの自己再帰のみ対応します`,
+  recursionNodePathInvalid: (kind, path, problem) => {
+    const subject = kind === 'anchor' ? '$recursion のアンカー' : '$recursion の反復サブパス';
+    switch (problem) {
+      case 'empty': return `${subject}は空でない文字列である必要があります`;
+      case 'emptySegment': return `${subject} "${path}" に空のパスセグメントがあります`;
+      case 'notElement': return `${subject} "${path}" はリストの要素を指す必要があります — 末尾が ".*" のプロパティパス（例: "nodes.*"）にしてください`;
+      case 'reservedRoot': return `${subject} "${path}" は "$" で始められません（予約名前空間）`;
+      case 'reservedMount': return `${subject} "${path}" に "#" は使えません（マウント用の予約セグメント）`;
+      case 'midWildcard': return `${subject} "${path}" の "*" は末尾にちょうど 1 つだけ置けます（途中のワイルドカードは初版では未対応）`;
+      default: return `${subject} "${path}" に "**" は含められません（"**" に意味を与えるのがこの宣言そのものです）`;
+    }
+  },
+  recursionRepeatNotString: (anchor) =>
+    `$recursion のエントリ "${anchor}" の値は反復サブパスの文字列である必要があります（例: "children.*"）`,
+  recursionGetterInvalid: (key, problem, anchor) => {
+    switch (problem) {
+      case 'setter': return `再帰 setter は初版では未対応です: "${key}"。通常のパス setter を宣言するか、具体パス経由で書き込んでください`;
+      case 'notGetter': return `"${key}" は "**" を含みますが getter ではありません。"**" は計算パスの族を名指す記号です`;
+      default: return `"${key}" は再帰ノード自身を名指しています。"**" はノードの下の計算パス（例: "${anchor}.total"）を名指す記号で、ノードそのものではありません`;
+    }
+  },
+  recursionGetterCollision: (a, b, repeat) =>
+    `"${a}" と "${b}" は異なる深さで同じ具体パスへ展開します（差が "${repeat}" の整数回ぶんです）。どちらかの名前を変えてください`,
 };
 
 const EN_EXPECTED_LABEL: Record<ExpectedTypeKind, string> = {
@@ -298,6 +399,69 @@ const en: WcsMessageCatalog = {
       default: return `"mount" path "${mountPath}" must not use reserved characters ($, #, @).`;
     }
   },
+  recursionUnsupported: (p, where) => {
+    switch (where) {
+      case 'binding':
+        return `"**" in "${p}" cannot be used in data-wcs. "**" is only meaningful in a $recursion declaration, in a recursive getter key, and in the path argument of $getAll / $setAll (the runtime throws when the binding is established). Write the expanded concrete path in HTML instead`;
+      case 'watch':
+        return `$watch key "${p}" cannot contain "**" — watching is defined against a concrete path (a fixed number of "*")`;
+      case 'resolve':
+        return `$resolve("${p}") cannot take "**" — it accepts only an expanded concrete path with an exactly matching index tuple`;
+      default:
+        return `"${p}" contains "**" but this state declares no $recursion anchor. Declare $recursion = { "<anchor>": "<repeat>" } (for example { "nodes.*": "children.*" }) — without it a "**" key is silently ignored`;
+    }
+  },
+  recursionAnchorMismatch: (p, anchor) =>
+    `"${p}" does not match the declared recursion anchor "${anchor}" (this version supports exactly one self-recursive anchor per state, and no second "**" in the same path)`,
+  recursionGetAllForm: (p) =>
+    `$getAll("${p}", indexes) with "**" takes no partial prefix: a prefix cannot say which depth it applies to. Omit the indexes to read the depth of the recursive getter being evaluated, or pass [] to walk every depth`,
+  recursionSetAllForm: (p, problem) => {
+    switch (problem) {
+      case 'prefix':
+        return `$setAll("${p}", indexes, …) with "**" takes no partial prefix: a prefix cannot say which depth it applies to. Pass [] to broadcast to every depth`;
+      case 'noIndexes':
+        return `$setAll("${p}", …) with "**" requires an explicit empty indexes array ([]) — the write API takes no context`;
+      case 'mapper':
+        return `$setAll("${p}", …) with "**" does not take a mapper — the index tuple has a different length at each depth. Pass a constant value`;
+      default:
+        return `$setAll("${p}", …) with "**" does not take { spread: true } — handing a flat array to a tree needs the author to know the walk order, which is not a usable contract`;
+    }
+  },
+  recursionStructuralWrite: (p, target, repeatList) =>
+    target === 'node'
+      ? `$setAll("${p}") writes the recursion structure itself (a node). This version broadcasts to leaf properties only — replacing a node would invalidate the child addresses already resolved for this write`
+      : `$setAll("${p}") writes the recursion structure itself (the "${repeatList}" list). This version broadcasts to leaf properties only`,
+  recursionReadonly: (p, getterPath) =>
+    `$setAll("${p}") writes into the recursive getter "${getterPath}", which has no setter in this version. Write the values it derives from instead`,
+  recursionNotObject: () =>
+    `$recursion must be an object mapping one anchor path to its repeating sub-path (for example { "nodes.*": "children.*" }; the runtime throws at load time for this shape)`,
+  recursionAnchorCount: (count) =>
+    count === 0
+      ? `$recursion must declare exactly one anchor; it is empty`
+      : `$recursion declares ${count} anchors. This version supports exactly one self-recursive anchor per state`,
+  recursionNodePathInvalid: (kind, path, problem) => {
+    const subject = kind === 'anchor' ? '$recursion anchor' : '$recursion repeating sub-path';
+    switch (problem) {
+      case 'empty': return `${subject} must be a non-empty string`;
+      case 'emptySegment': return `${subject} "${path}" must not contain empty path segments`;
+      case 'notElement': return `${subject} "${path}" must name a list element: a property path ending with ".*" (for example "nodes.*")`;
+      case 'reservedRoot': return `${subject} "${path}" must not start with "$" — that namespace is reserved`;
+      case 'reservedMount': return `${subject} "${path}" must not contain "#" — that segment is reserved for mounts`;
+      case 'midWildcard': return `${subject} "${path}" must have exactly one "*", at the end (wildcards in the middle are not supported in this version)`;
+      default: return `${subject} "${path}" must not contain "**" — the declaration is what gives "**" its meaning`;
+    }
+  },
+  recursionRepeatNotString: (anchor) =>
+    `$recursion entry "${anchor}" must map to the repeating sub-path as a string (for example "children.*")`,
+  recursionGetterInvalid: (key, problem, anchor) => {
+    switch (problem) {
+      case 'setter': return `Recursive setters are not supported in this version: "${key}". Declare a plain path setter, or write through the concrete path`;
+      case 'notGetter': return `"${key}" contains "**" but is not a getter. The recursion wildcard only names a family of computed paths`;
+      default: return `"${key}" names the recursive node itself. "**" names a computed path under a node (for example "${anchor}.total"), not the node`;
+    }
+  },
+  recursionGetterCollision: (a, b, repeat) =>
+    `"${a}" and "${b}" expand to the same concrete path at different depths (they differ by whole repetitions of "${repeat}"). Rename one of them`,
 };
 
 const CATALOGS: Record<WcsLocale, WcsMessageCatalog> = { ja, en };

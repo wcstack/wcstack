@@ -29,6 +29,8 @@ const mutationHtml = join(workDir, "mutation.html");
 const namedStateHtml = join(workDir, "named-state.html");
 const missingPathHtml = join(workDir, "missing-path.html");
 const untrackedReadHtml = join(workDir, "untracked-read.html");
+const recursionOkHtml = join(workDir, "recursion-ok.html");
+const recursionBadHtml = join(workDir, "recursion-bad.html");
 // stateSchema 発見（D8）: HTML と同じディレクトリの wcstack.manifest.json を自動で読み、
 // 宣言済み state の未存在パスは error に上がる（D6）。tmp 下なので repo の CI gate は走査しない。
 const schemaDir = join(workDir, "schema");
@@ -59,6 +61,39 @@ writeFileSync(untrackedReadHtml, `<!doctype html>
 export default { form: { name: "" }, get label() { return this.form.name; } };
 </script></wcs-state>
 <input data-wcs="value: form.name">
+</body></html>
+`);
+// $recursion（再帰パス）。`**` はオーサリング層だけの記号なので、
+// 「展開形の具体パスは何段でも通る」と「data-wcs の `**` は error」を対で固定する。
+writeFileSync(recursionOkHtml, `<!doctype html>
+<html><body>
+<wcs-state><script type="module">
+export default {
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [{ value: 1, children: [] }],
+  get "nodes.**.total"() {
+    return this["nodes.**.value"] + this.$getAll("nodes.**.children.*.total").reduce((a, b) => a + b, 0);
+  },
+};
+</script></wcs-state>
+<template data-wcs="for: nodes">
+  <b data-wcs="textContent: nodes.*.total"></b>
+  <template data-wcs="for: nodes.*.children">
+    <b data-wcs="textContent: nodes.*.children.*.total"></b>
+  </template>
+</template>
+</body></html>
+`);
+writeFileSync(recursionBadHtml, `<!doctype html>
+<html><body>
+<wcs-state><script type="module">
+export default {
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  get "nodes.**.total"() { return 0; },
+};
+</script></wcs-state>
+<b data-wcs="textContent: nodes.**.total"></b>
 </body></html>
 `);
 writeFileSync(brokenManifest, "{ this is not json\n");
@@ -164,6 +199,20 @@ check("unresolvable path → warning wcs/binding-path-missing, exit 0", ["--lang
 check("nested read inside a getter → warning wcs/getter-untracked-read, exit 0", ["--lang=en", untrackedReadHtml], {
   exit: 0,
   stdout: [/warning wcs\/getter-untracked-read /, "0 error(s), 1 warning(s)"],
+});
+
+// $recursion の展開形は何段でも「存在する」— 深さを畳んで候補に当てる規則が
+// バンドルに載っていないと、深い具体パスが binding-path-missing で warning に化ける。
+check("recursive tree: expanded concrete paths are clean, exit 0", ["--lang=en", recursionOkHtml], {
+  exit: 0,
+  stdout: ["0 error(s), 0 warning(s)"],
+});
+
+// `**` はオーサリング層だけの記号。data-wcs に書くと runtime は PathInfo の不変条件で
+// throw する ＝ ページごと止まるので error(exit 1)。
+check("`**` in data-wcs → error wcs/recursion-unsupported, exit 1", ["--lang=en", recursionBadHtml], {
+  exit: 1,
+  stdout: [/error wcs\/recursion-unsupported /, "1 error(s), 0 warning(s)"],
 });
 
 // --strict は exit code の閾値だけを warning に下げる(severity は不変)。error 側 /

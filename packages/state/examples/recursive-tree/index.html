@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Recursive Tree</title>
+    <link rel="stylesheet" href="../shared/theme.css"/>
+    <script type="module">
+      // <tree-node> — the self-referencing component that draws the tree.
+      //
+      // A path bakes its depth in (`nodes.*.children.*.value` is depth 2 and
+      // nothing else), so no single template can render a tree of unknown
+      // depth. The component solves that by using ITSELF for each child: every
+      // level only ever writes the one-level-deep path `children`, and the
+      // depth lives in the DOM instead of in the path.
+      //
+      // Two conditions have to hold, and breaking either fails silently:
+      //   1. The component's initial `state` must not declare the data keys it
+      //      is mounted over — an own key is private and would hide the tree
+      //      (rule R1 of docs/state-mount-design.md). Methods are fine.
+      //   2. Build the shadow root in connectedCallback, not in the
+      //      constructor. Filling `innerHTML` in the constructor upgrades the
+      //      elements inside <template> on implementations that do not keep
+      //      template content inert, and the constructor recurses forever.
+      const TEMPLATE = `
+        <style>
+          :host { display: block; }
+          .node {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.2rem 0.4rem;
+            border-radius: 6px;
+          }
+          .node:hover { background-color: #1f2947; }
+          .label {
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            color: #e0e0e0;
+            min-width: 9rem;
+          }
+          .total {
+            color: #7ac98f;
+            font-variant-numeric: tabular-nums;
+            min-width: 4rem;
+          }
+          .depth { color: #6a6a8c; font-size: 0.75rem; }
+          input[type="number"] {
+            width: 4.5rem;
+            text-align: right;
+            appearance: none;
+            border: 1px solid #3a3a5c;
+            background-color: #2a2a4a;
+            color: #e0e0e0;
+            padding: 0.15rem 0.4rem;
+            font-size: 0.85rem;
+            border-radius: 6px;
+            outline: none;
+          }
+          input[type="number"]:focus { border-color: #6c63ff; }
+          button {
+            appearance: none;
+            border: 1px solid #3a3a5c;
+            background-color: #2a2a4a;
+            color: #e0e0e0;
+            padding: 0.1rem 0.5rem;
+            font-size: 0.8rem;
+            border-radius: 6px;
+            cursor: pointer;
+          }
+          button:hover:not(:disabled) { background-color: #3a3a5c; border-color: #5a5a8c; }
+          button:disabled { opacity: 0.35; cursor: default; }
+          .children {
+            margin-left: 1.1rem;
+            padding-left: 0.6rem;
+            border-left: 1px solid #2a2a4a;
+          }
+        </style>
+        <wcs-state bind-component="state"></wcs-state>
+        <div class="node">
+          <input type="checkbox" data-wcs="checked: selected; attr.aria-label: label"/>
+          <span class="label">{{ label }}</span>
+          <input type="number" step="1" aria-label="value" data-wcs="valueAsNumber: value"/>
+          <span class="total">&Sigma; {{ total }}</span>
+          <span class="depth" title="height of this subtree">h{{ depth }}</span>
+          <button type="button" data-wcs="onclick: addChild">+ child</button>
+          <button type="button" aria-label="Remove the last child" data-wcs="onclick: dropChild; disabled: children.length|eq(0)">&minus;</button>
+        </div>
+        <div class="children">
+          <template data-wcs="for: children">
+            <tree-node data-wcs="state: ."></tree-node>
+          </template>
+        </div>
+      `;
+
+      class TreeNode extends HTMLElement {
+        // No data keys here — `label` / `value` / `selected` / `children` all
+        // belong to the node this element is mounted on (`state: .`).
+        state = {
+          // Structural writes stay ordinary writes: this level only knows the
+          // word `children`, never how deep it sits.
+          addChild() {
+            this.children = [...this.children, {
+              label: `${this.label}.${this.children.length + 1}`,
+              value: 5,
+              selected: false,
+              children: [],
+            }];
+          },
+          dropChild() {
+            this.children = this.children.slice(0, -1);
+          },
+        };
+
+        constructor() {
+          super();
+          this.attachShadow({ mode: "open" });
+        }
+
+        connectedCallback() {
+          if (this.shadowRoot.childNodes.length === 0) {
+            this.shadowRoot.innerHTML = TEMPLATE;
+          }
+        }
+      }
+      customElements.define("tree-node", TreeNode);
+    </script>
+    <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+    <style>
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+      }
+      .stat {
+        background-color: #1a1a2e;
+        border: 1px solid #2a2a4a;
+        border-radius: 8px;
+        padding: 0.6rem 0.8rem;
+      }
+      .stat .k {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #a0a0c0;
+      }
+      .stat .v {
+        font-size: 1.3rem;
+        font-variant-numeric: tabular-nums;
+        color: #ffffff;
+      }
+      .stat.sum .v { color: #7ac98f; }
+      .tree {
+        margin-top: 1rem;
+        padding: 0.5rem;
+        background-color: #1a1a2e;
+        border: 1px solid #2a2a4a;
+        border-radius: 8px;
+        overflow-x: auto;
+      }
+      .notes { margin-top: 1.5rem; font-size: 0.8rem; color: #888; }
+      .notes li { margin-left: 1.25rem; margin-bottom: 0.35rem; }
+      .notes code { color: #b9b3ff; }
+    </style>
+  </head>
+  <body>
+    <wcs-state>
+      <script type="module">
+// The seed tree. Depth is data, not markup — every operation below works the
+// same at depth 2 and at depth 20.
+const seed = () => ([
+  { label: "src", value: 4, selected: false, children: [
+    { label: "src.state", value: 12, selected: false, children: [
+      { label: "src.state.proxy", value: 30, selected: false, children: [] },
+      { label: "src.state.list", value: 18, selected: false, children: [] },
+    ] },
+    { label: "src.router", value: 9, selected: false, children: [] },
+  ] },
+  { label: "docs", value: 6, selected: false, children: [
+    { label: "docs.adr", value: 7, selected: false, children: [] },
+  ] },
+]);
+
+export default {
+  // The recursion point is declared, never inferred: anchor → the self-similar
+  // relative subpath. `nodes.*` repeats through `children.*`, forever.
+  $recursion: { "nodes.*": "children.*" },
+
+  nodes: seed(),
+
+  // A recursive getter. `**` stands for "however deep this evaluation is", so
+  // ONE definition covers `nodes.*.total`, `nodes.*.children.*.total`, … and
+  // each depth is materialized the first time something reads it.
+  //
+  // The index-omitted `$getAll` inside is bound to the same depth: it reads
+  // exactly the direct children of the node being evaluated.
+  get "nodes.**.total"() {
+    return this["nodes.**.value"]
+      + this.$getAll("nodes.**.children.*.total").reduce((a, b) => a + b, 0);
+  },
+
+  // Aggregation is not only summing: the height of a subtree is the same
+  // shape with `max` instead of `+`.
+  get "nodes.**.depth"() {
+    return 1 + Math.max(0, ...this.$getAll("nodes.**.children.*.depth"));
+  },
+
+  // `[]` = every depth, merged (depth-first, pre-order, ascending index).
+  // These read the whole forest without knowing its shape.
+  get treeTotal() {
+    return this.$getAll("nodes.**.value", []).reduce((a, b) => a + b, 0);
+  },
+  get nodeCount() {
+    return this.$getAll("nodes.**.value", []).length;
+  },
+  get selectedCount() {
+    return this.$getAll("nodes.**.selected", []).filter(Boolean).length;
+  },
+  get treeDepth() {
+    return Math.max(0, ...this.$getAll("nodes.**.depth", []));
+  },
+
+  // `$setAll(path, [], value)` broadcasts one value to every depth. The empty
+  // index tuple is the only form a recursive write takes — a mapper cannot be
+  // written when the number of indexes changes with depth.
+  selectAll() { this.$setAll("nodes.**.selected", [], true); },
+  clearSelection() { this.$setAll("nodes.**.selected", [], false); },
+
+  reset() { this.nodes = seed(); },
+};
+      </script>
+    </wcs-state>
+
+    <div class="example-container wide">
+      <p class="example-title">@wcstack/state — recursive paths</p>
+      <h1>Recursive Tree</h1>
+
+      <div class="stats">
+        <div class="stat sum">
+          <div class="k">Total</div>
+          <div class="v">{{ treeTotal }}</div>
+        </div>
+        <div class="stat">
+          <div class="k">Nodes</div>
+          <div class="v">{{ nodeCount }}</div>
+        </div>
+        <div class="stat">
+          <div class="k">Height</div>
+          <div class="v">{{ treeDepth }}</div>
+        </div>
+        <div class="stat">
+          <div class="k">Selected</div>
+          <div class="v">{{ selectedCount }}</div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="button" data-wcs="onclick: selectAll">Select all</button>
+        <button type="button" data-wcs="onclick: clearSelection">Clear selection</button>
+        <button type="button" data-wcs="onclick: reset">Reset tree</button>
+      </div>
+
+      <div class="tree">
+        <template data-wcs="for: nodes">
+          <tree-node data-wcs="state: ."></tree-node>
+        </template>
+      </div>
+
+      <ul class="notes">
+        <li><strong>The markup never says <code>**</code>.</strong> Inside <code>&lt;tree-node&gt;</code> every path is one level deep — <code>label</code>, <code>value</code>, <code>total</code>, <code>children</code>. <code>**</code> is an authoring symbol for the state definition only, and never reaches a bound path.</li>
+        <li><strong>The &Sigma; on a row is <code>nodes.**.total</code></strong>, read through the mount. The node four levels down reads <code>nodes.*.children.*.children.*.children.*.total</code>; that accessor is grown the first time something reads it, so only the depths you actually visit exist.</li>
+        <li><strong>+ child</strong> appends a node at that level. The subtree becomes deeper than anything the page had rendered before, and every &Sigma; above it — plus Total and Height — follows with no extra wiring.</li>
+        <li><strong>Clear selection</strong> is <code>$setAll("nodes.**.selected", [], false)</code>: one broadcast to every depth. The <code>[]</code> is mandatory — leaving the indexes out would bind the write to the calling context's depth, and a headless action has none.</li>
+        <li><strong>Total</strong> is <code>$getAll("nodes.**.value", []).reduce(…)</code>, the merged reading of all depths (depth-first, pre-order, ascending index). It agrees with the sum of the top-level &Sigma; values because the recursive getter counts each level exactly once.</li>
+        <li><strong>Height</strong> shows that aggregation is not only addition: <code>get "nodes.**.depth"()</code> is the same shape with <code>max</code>, and each row prints its own subtree height as <code>h<em>n</em></code>.</li>
+        <li>The input contract is a <strong>tree</strong>. Reaching the same array instance from two parents is refused (<code>wcs/recursion-shared-list</code>, <code>wcs/recursion-cycle</code>) rather than silently double-counted.</li>
+      </ul>
+    </div>
+  </body>
+</html>

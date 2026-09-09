@@ -69,6 +69,11 @@ interface WcsStateApi {
   readonly $1: number; readonly $2: number; readonly $3: number;
   readonly $4: number; readonly $5: number; readonly $6: number;
   readonly $7: number; readonly $8: number; readonly $9: number;
+  // $recursion 宣言済みの再帰パス（\`nodes.**.total\`）。深さの族なので \`_WcsPaths\` の
+  // 有限展開には現れず、getter のキーに書いた 1 本しか T に現れない。パターン索引で
+  // 「\`**\` を含むキーは読める」とだけ言う（型は any — 深さを型で表せない以上、値の型も
+  // 辿れない）。パターンは \`**\` を必ず含むので、通常のドットパスの型付けは損なわない。
+  readonly [key: \`\${string}.**.\${string}\`]: any;
 }
 type _WcsThis<T> = T & WcsStateApi & _WcsPathAccessor<T>;
 // $listKeys: { "<listPath>": "<field>" | (row) => key }（list/listKeys.ts）。
@@ -78,8 +83,12 @@ type _WcsListKeys = Record<string, string | ((row: any) => unknown)>;
 // ハンドラ引数に文脈型を与えるためだけの宣言（$listKeys と同じ理由）。
 // this は ThisType<_WcsThis<T>> により state 型になる。
 type _WcsWatch = Record<string, (cur: any, prev: any, ...indexes: number[]) => void>;
+// $recursion: { "<anchor>": "<repeat>" }（recursion/declaration.ts）。初版は単一の自己再帰
+// のみで、アンカーも反復サブパスも「固定プロパティ列 + 末尾の .*」に限る。形の検証は
+// service/recursionValidator.ts（wcs/recursion-declaration-invalid）が担う。
+type _WcsRecursion = Record<string, string>;
 function defineState<T extends Record<string, any>>(
-  def: T & { $listKeys?: _WcsListKeys; $watch?: _WcsWatch } & ThisType<_WcsThis<T>>
+  def: T & { $listKeys?: _WcsListKeys; $watch?: _WcsWatch; $recursion?: _WcsRecursion } & ThisType<_WcsThis<T>>
 ): T { return def; }
 // --- end preamble ---
 `;

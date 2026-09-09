@@ -303,7 +303,9 @@ describe("再帰 getter: 遅延実体化であること", () => {
 
     expect(totalGetterPaths(stateEl)).toEqual(["nodes.**.total"]);
     expect(materialized(stateEl)).toEqual([]);
-    expect(listPathsOf(stateEl), "リストパスも未登録").toEqual([]);
+    // Fixed by Phase E — was: [] （何も読むまで 1 本も登録されなかった）。アンカーの
+    // リストパスは宣言から静的に分かるので、宣言の時点で登録する。深い段は遅延のまま。
+    expect(listPathsOf(stateEl), "アンカーのリストパスだけが宣言時に登録される").toEqual(["nodes"]);
     host.remove();
   });
 

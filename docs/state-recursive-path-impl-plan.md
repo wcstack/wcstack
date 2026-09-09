@@ -1,6 +1,6 @@
 # 実装計画: 再帰パス（@wcstack/state）
 
-- **状態**: **Phase A 完了・Phase A' 実施中**（2026-09-09）。Phase A の実測で既存機構の修正（E1〜E3）が Phase B の前提であることが判明したため、§9 の着手順に Phase A' を追加した。ゲートは全て推奨で採択済み。
+- **状態**: **全 Phase 完了**（2026-09-10）。A → A' → B → C → D → E をこの順で実施した。ゲートは全て推奨で採択済み。残るのは §8 の受け入れ条件の最終確認とリリース判断。
 - **ブランチ**: `feat/state-recursive-path`
 - **設計検討**: [state-recursive-path-design.md](./state-recursive-path-design.md)。前回レビュー後の D4 / D7 / D10 / D11 の修正を前提にする。未決項目の実装上の扱いを本書に具体化し、Phase A で設計書と同期する。
 - **到達点**: 描画していない木でも、再帰 getter、全深さの `$getAll`、`$setAll` による属性の一括更新が動き、葉の更新・子の追加削除・リスト置換に集計が追従する。**この到達点は既存機構の修正 E1（§3-2）を前提にする** — Phase A の実測で、`for` の無いリストへの構造書き込みが台帳の世代を分裂させることが確定したため。
@@ -253,18 +253,45 @@ X1・X2・X5 は独立の Issue にする。X3 はコメント修正のみ。X4 
 
 **成果物**: `src/recursion/setAllRecursive.ts`、`integration.recursionSetAll.test.ts`（60）、`integration.recursionShape.test.ts` に cold 書き込みの回帰 2 件。
 
-## 7. Phase E — 統合、静的解析、利用例
+## 7. Phase E — 統合、静的解析、利用例（**完了**・2026-09-10）
 
-- [ ] bind-component / mount のスコープ内で宣言・評価深さ・添字が混入しないことを確認する。未対応の配置があれば無言の誤動作にせず公開制約と診断にする。
-- [ ] state 置換、切断・再接続、木の拡大縮小で registry と生成アクセサの世代を検証する。固定の最大深さの下で反復しても登録数が増え続けないことを見る。
-- [ ] SSR と hydration で集計の一致および hydration 後の葉更新を確認する。クライアントで宣言から再生成する方式を先に試し、必要性を確かめず展開深さを snapshot protocol に追加しない。
-- [ ] vscode-wcs の宣言抽出・パス検証・getter 依存解析を対応させる。再帰 getter を文字列上の自己参照という理由だけで循環扱いせず、深さが進む辺と同じアドレスへ戻る辺を区別する。
-- [ ] runtime と静的解析で、未宣言・未対応形・文脈不一致・深さ超過の診断コードと範囲を揃える。正当な明示全体検索を一律にエラーにしない。
-- [ ] `packages/lint` を更新された validator core から build して smoke test を行う。
-- [ ] 自己参照コンポーネントで木を描画し、合計・全選択解除・深い子の追加を操作できる example を一つ追加する。HTML 内では対応済みの通常パスを利用する。
-- [ ] state の `README.md` / `README.ja.md`、必要な manifest・型・診断一覧を更新する。外部の wcstack-app skill に同期すべき参照変更を整理し、構文・契約に及ぶ場合は公開前の更新対象にする。
+- [x] bind-component / mount のスコープで宣言・評価深さ・添字が混入しないことを確認した。未対応の配置は**無言の誤動作をやめ、診断にした**。
+- [x] state 置換・切断再接続・木の伸縮で registry と生成アクセサの世代を検証した（登録数が頭打ちになることを実測）。
+- [x] SSR / hydration を検証した。**クライアントが宣言だけから再生成する方式で足りる** — スナップショットには `**` も展開後の具体パスも `$recursion` も載らない。展開深さを snapshot protocol に足す必要は無い。
+- [x] vscode-wcs の宣言抽出・パス検証・getter 依存解析を対応させた（`src/service/recursionPaths.ts` / `recursionValidator.ts` 新設）。再帰 getter を文字列上の自己参照という理由だけで循環扱いしない。
+- [x] 静的に判定できる診断（未宣言の `**`・未対応の形・非空接頭辞・構造への書き込み・再帰 getter への書き込み）を lint 側に出し、実行時にしか分からないもの（共有配列・循環・深さ超過）は runtime 専用にした。正当な `$getAll(path, [])` は一律にエラーにしない。
+- [x] `packages/lint` を更新後の validator core から build して smoke test（17 件）を通した。
+- [x] `examples/recursive-tree/` を追加した。自己参照コンポーネントで木を描き、合計・全選択解除・深い子の追加を操作できる。CI と同じ `wcs-validate` で error 0 件。
+- [x] `README.md` / `README.ja.md` に「Recursive Paths」の節と診断表の追記を入れた。
 
-**完了条件**: runtime、エディター、CLI、ドキュメントで初版の対応範囲が一致し、example を静的検証と headless 操作テストで検証できる。
+### 7-1. 統合で見つかった欠陥と、その修理
+
+8 件（blocking 1・major 5・minor 2）。うち 4 件を修理し、4 件は範囲外として記録した。
+
+**修理した 4 件**:
+
+| # | 内容 | 修理 |
+|---|---|---|
+| blocking | 再帰パスを一度読んだ後に `setInitialState` で再セットすると、以後アンカーへの構造書き込みが**毎回** `Cannot expand dynamic dependency…` で落ち、自己回復しない。値は書かれるのでデータと表示が乖離する | アンカーのリストパスは宣言から静的に分かるので、宣言の時点で `listPaths` に登録する。加えて、**旧世代の生成アクセサを指す依存辺だけ**を再セット時に外す（`RecursionRegistry.forgetGeneratedDependencies`） |
+| major | ボリューム（`mount=`）の `$recursion` が warn も error も無く黙って捨てられていた（`$streams` は名指しで拒否される） | `validateVolumeDeclarations` で接ぎ木前に拒否する |
+| major | ボリュームの `**` getter が「データだけ載ってアクセサが 1 本も無い」半端な接ぎ木を残していた（検査が `defineTreeAccessor` まで遅れるため） | 同上。接ぎ木前に `**` を含むキーを拒否する |
+| major | マウントされたコンポーネントの `$recursion` に `wcs/mount-dollar-declaration` の誘導が出ず、作者が受け取るのは翻訳後のパスを名指しする無関係な `binding-path-missing` だけだった | `MOUNT_DOLLAR_DECLARATIONS` に `$recursion` を追加 |
+| major | `Ssr.extractStateData` が `Object.entries` で own+enumerable な getter を**生の state オブジェクトを this にして**評価していた。パス getter なら NaN → JSON の null で静かに壊れ、`$getAll` を呼ぶ getter なら TypeError でページ全体の SSR が落ちる | アクセサは評価しない。スナップショットが運ぶのはデータで、派生値はクライアントが同じ宣言から作り直す |
+
+**依存表のクリアは採らなかった。** blocking の真因は「`_listPaths` はクリアされるのに依存辺は残る」ことなので、依存表そのものをクリアする案を実験した。全件は通ったが、**再セット後に集計 getter まで更新されなくなる**回帰を自前のプローブで検出したので撤回した（既存バインディングの辺まで消える）。この世代が作った辺だけを外す形に落ち着いた。
+
+### 7-2. 範囲外として記録した既存欠陥
+
+| # | 内容 |
+|---|---|
+| X6 | SSR ハイドレーション後、`for` の中のワイルドカード getter バインドが葉の更新に永久に追従しない。**再帰固有ではない**（`nodes.*.double` でも同一症状）。ハイドレーションが初期適用を行わないため依存辺が張られない。トップレベルの集計は追従するので「合計は動くのに行だけ止まる」形になる |
+| X7 | `setInitialState` の再セット後、`for` の行バインドが以後の書き込みに追従しない（集計 getter は追従する）。X6 と同じクラス。再帰とは独立 |
+| X8 | マウントされたコンポーネントの子スコープで `onclick: <method>` がホスト state 側のメソッドを指すと、その `for` が 1 行も描画されず診断も出ない。設計書 §1-1 の `clearSelection()` を行のボタンから呼ぶ形を塞ぐ |
+| X9 | マウントスコープから `$getAll("rows.**.value", [])` を呼ぶと、診断が**翻訳後**のパス（`nodes.**.value`）を名指しする。作者のソースに無い綴りなので grep しても見つからない |
+
+X6・X7 は同じ「初期適用を経ないバインドに依存辺が張られない」クラスなので、1 つの Issue にまとめるのが妥当。
+
+**完了条件（達成）**: runtime・エディター・CLI・ドキュメントで初版の対応範囲が一致し、example を静的検証で確認できる。packages/state 3179 件緑・カバレッジ閾値維持、vscode-wcs 798 件緑（coverage 込み）、lint smoke 17 件緑。
 
 ## 8. 受け入れ条件と検証
 

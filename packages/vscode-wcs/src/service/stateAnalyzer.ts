@@ -16,10 +16,18 @@ export interface PathCandidate {
    * パスの種別（method は検証専用、補完候補には出さない）。
    * - command: `$commandTokens` 宣言から導出した `$command.<name>` パス
    * - eventToken: `$eventTokens` 宣言から導出したトークン名（`eventToken.<prop>:` の右辺）
+   * - recursive: `**` を含む再帰 getter のキー（`nodes.**.total`）。オーサリング層専用の
+   *   記号なので `data-wcs` には書けない（runtime は `wcs/recursion-unsupported` で throw）。
+   *   検証だけが使う — 補完候補には出さない。
+   * - recursionAnchor: `$recursion` 宣言そのもののマーカー。path はアンカーの `**` 形
+   *   （`nodes.**`）、`repeat` に反復サブパスが入る。候補集合に載せることで、マウント
+   *   接頭辞の付与・外部 state ファイルの解決といった既存の配管をそのまま通す。
    */
-  kind: 'data' | 'computed' | 'method' | 'list' | 'command' | 'eventToken';
+  kind: 'data' | 'computed' | 'method' | 'list' | 'command' | 'eventToken' | 'recursive' | 'recursionAnchor';
   /** 値の型ヒント（推定） */
   typeHint?: string;
+  /** kind: 'recursionAnchor' のときだけ設定。反復サブパス（`children.*`）。 */
+  repeat?: string;
   /**
    * 初期値リテラルの生テキスト（kind: 'data' のみ、トリム済み。例: "true"、"''"、"null"）。
    * シード値検査（trigger スロットの true シード / storage スロットの空文字シード等）が
@@ -34,8 +42,16 @@ export interface PathCandidate {
 }
 
 import type { JsonSchemaNode } from '../core/sidecar/types.js';
+import {
+  RECURSION_KEY,
+  checkNodePath,
+  hasRecursionWildcard,
+  impliedStructurePaths,
+  makeRecursionSpec,
+  type RecursionSpec,
+} from './recursionPaths.js';
 
-// ランタイム予約キー（@wcstack/state src/define.ts が正本）。
+// ランタイム予約キー（@wcstack/state src/define.ts の reservedStateApi が正本）。
 // トップレベルの `$` プレフィックスキーは宣言・API 名前空間でありデータパスにならない。
 const RESERVED_STREAMS_KEY = '$streams';
 const RESERVED_COMMAND_TOKENS_KEY = '$commandTokens';
@@ -44,6 +60,10 @@ const RESERVED_LIST_KEYS_KEY = '$listKeys';
 // `$watch` はパスを新設しないので analyzeStatePaths では派生候補を作らない。
 // 宣言そのものの検証（キーがパスとして成立するか）は analyzeWatchEntries が担う。
 const RESERVED_WATCH_KEY = '$watch';
+// `$recursion: { "<anchor>": "<repeat>" }`。`$listKeys` と同じく**構造を実体化する**宣言
+// （宣言だけで `nodes` / `nodes.*.children` の存在が確定する）ので後処理で候補を足す。
+// 宣言そのものの検証は analyzeRecursionDeclaration + recursionValidator が担う。
+const RESERVED_RECURSION_KEY = RECURSION_KEY;
 
 /**
  * export default { ... } のオブジェクトリテラルからパス候補を生成する。
@@ -61,6 +81,8 @@ export function analyzeStatePaths(scriptContent: string): PathCandidate[] {
   const pendingStreamValues: PropertyInfo[] = [];
   // `$listKeys` のリストパス実体化も同様に後処理（明示宣言・$streams 実体化が優先）
   const pendingListKeys: PropertyInfo[] = [];
+  // `$recursion` が含意する構造パスも後処理（明示宣言が優先）
+  const recursionSpec = specFromRecursionValue(topLevelProps.find(p => p.name === RESERVED_RECURSION_KEY));
 
   for (const prop of topLevelProps) {
     // トップレベルの `$` プレフィックスキーは予約名（$streams/$commandTokens/$eventTokens/
@@ -81,8 +103,10 @@ export function analyzeStatePaths(scriptContent: string): PathCandidate[] {
     if (prop.kind === 'getter') {
       // computed getter / setter: "users.*.ageCategory" のようなパス。
       // get/set のペアは同じパスを 2 度宣言するので候補は 1 つに畳む。
+      // `**` を含むキーは**深さの族**を表す再帰 getter（`nodes.**.total`）。具体パスの
+      // 存在判定に要るので候補には載せるが、補完（＝ data-wcs へ書く候補）には出さない。
       if (!paths.some(p => p.path === prop.name)) {
-        paths.push({ path: prop.name, kind: 'computed' });
+        paths.push({ path: prop.name, kind: hasRecursionWildcard(prop.name) ? 'recursive' : 'computed' });
       }
       continue;
     }
@@ -103,12 +127,132 @@ export function analyzeStatePaths(scriptContent: string): PathCandidate[] {
     pushListKeyPaths(listKeyEntry, paths);
   }
 
+  // $recursion 宣言による構造パスの実体化。宣言は「そのパスは再帰する木である」という
+  // 作者の明示なので、初期値が `[]` で行の形が読めなくても `nodes` / `nodes.*` /
+  // `nodes.*.children` / `nodes.*.children.*` は確定する（runtime の listPathsUpTo と同じ集合）。
+  // アンカーのマーカーも候補に載せる — 深さを畳む照合（recursionPaths.matchesRecursion）が
+  // 消費し、マウント接頭辞の付与も既存の配管に乗る。
+  if (recursionSpec !== null) {
+    if (!paths.some(p => p.path === recursionSpec.recursiveAnchor && p.kind === 'recursionAnchor')) {
+      paths.push({ path: recursionSpec.recursiveAnchor, kind: 'recursionAnchor', repeat: recursionSpec.repeat });
+    }
+    for (const implied of impliedStructurePaths(recursionSpec)) {
+      if (paths.some(p => p.path === implied.path)) continue;
+      paths.push({ path: implied.path, kind: implied.kind, typeHint: implied.typeHint });
+    }
+  }
+
   // 行を足す / 置き換える代入式（`this.items = this.items.concat({ … })` 等）の行リテラルから
   // リスト行の形を補う。初期値が `[]` のリストは行フィールドが読めない（Issue #239）。
   // 明示宣言・$streams・$listKeys の候補が揃った後に走らせ、無いパスだけを足す。
   collectRowShapesFromAssignments(scriptContent, paths);
 
   return paths;
+}
+
+/**
+ * `$recursion` の値から仕様を組み立てる（形が完全に正しいときだけ返す）。
+ *
+ * ランタイム（recursion/declaration.ts `processRecursionDeclaration`）は「単一の自己再帰」
+ * だけを受け付け、それ以外は raiseError で落とす。ここは**候補の実体化**用なので、
+ * 落ちる形からは何も導出しない（壊れた宣言を静的側が追認しないため — `$listKeys` と同じ規約）。
+ * 宣言の誤りそのものは recursionValidator が位置付きで報告する。
+ */
+function specFromRecursionValue(prop: PropertyInfo | undefined): RecursionSpec | null {
+  if (!prop || prop.kind !== 'data' || !prop.value || !isObjectLiteral(prop.value)) return null;
+  const entries = parseTopLevelProperties(extractObjectContent(prop.value)).filter(e => e.kind === 'data');
+  if (entries.length !== 1) return null;
+  const anchor = entries[0].name;
+  const repeat = extractStringLiteralValue(entries[0].value);
+  if (repeat === null) return null;
+  if (checkNodePath(anchor) !== null || checkNodePath(repeat) !== null) return null;
+  return makeRecursionSpec(anchor, repeat);
+}
+
+/** `$recursion` の 1 エントリ（キー ＝ アンカー・値 ＝ 反復サブパス）と、原文での位置。 */
+export interface RecursionEntryInfo {
+  /** アンカー（引用符を外した生の文字列。`nodes.*`）。 */
+  readonly anchor: string;
+  /** 反復サブパス。値が単純な文字列リテラルでなければ null（＝断定しない）。 */
+  readonly repeat: string | null;
+  /** scriptContent 内でのキーの範囲（引用符は含まない）。 */
+  readonly start: number;
+  readonly end: number;
+  /** 値の範囲（引用符を含む生テキストの範囲。値が無ければ start と同じ）。 */
+  readonly valueStart: number;
+  readonly valueEnd: number;
+}
+
+/** `$recursion` 宣言 1 個ぶんの静的な素性。 */
+export interface RecursionDeclarationInfo {
+  /** 宣言そのものの名前スパン（`$recursion` の位置）。 */
+  readonly start: number;
+  readonly end: number;
+  /** 値がオブジェクトでないと断定できる（ランタイムは読み込み時に raiseError）。 */
+  readonly notObject: boolean;
+  /**
+   * 値がオブジェクトリテラルだったか。`entries` が 0 件になる 2 つの原因
+   * （`{}` と書かれた / 識別子参照で中身が読めない）を分ける。
+   */
+  readonly objectLiteral: boolean;
+  readonly entries: readonly RecursionEntryInfo[];
+  /** 形が完全に正しいときだけ設定される仕様。 */
+  readonly spec: RecursionSpec | null;
+}
+
+/**
+ * `$recursion: { "<anchor>": "<repeat>" }` を位置付きで抽出する。
+ *
+ * `analyzeWatchEntries` と同型（宣言そのものの妥当性を見る validator 用）。ランタイムは
+ * この宣言を**初回マウントで**処理して raiseError するため、誤りはページごと止まる。
+ * 静的に決まる形（アンカーの綴り・複数宣言・空宣言）はここで拾う。
+ */
+export function analyzeRecursionDeclaration(scriptContent: string): RecursionDeclarationInfo | null {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return null;
+  const prop = parseTopLevelProperties(root.content).find(p => p.name === RESERVED_RECURSION_KEY);
+  if (!prop || prop.nameStart === undefined || prop.nameEnd === undefined) return null;
+
+  const span = { start: root.start + prop.nameStart, end: root.start + prop.nameEnd };
+  // メソッド短縮記法（`$recursion() {}`）と明白な非オブジェクトリテラルだけを断定する。
+  // 識別子参照・呼び出し式は実行時までオブジェクトか分からないので疑わない。
+  if (prop.kind === 'method') {
+    return { ...span, notObject: true, objectLiteral: false, entries: [], spec: null };
+  }
+  if (prop.kind !== 'data' || !prop.value || prop.valueStart === undefined) {
+    return { ...span, notObject: false, objectLiteral: false, entries: [], spec: null };
+  }
+  if (!isObjectLiteral(prop.value)) {
+    const scan = maskCommentsAndStrings(prop.value).trim();
+    const definite =
+      /^(["'`])[^"'`]*\1$/.test(scan) ||
+      /^-?\d[\w.]*$/.test(scan) ||
+      /^(?:true|false|null)$/.test(scan) ||
+      /^(?:async\s+)?function\b[\s\S]*\}$/.test(scan) ||
+      /^(?:async\s+)?\([^()]*\)\s*=>/.test(scan) ||
+      /^(?:async\s+)?[$\w]+\s*=>/.test(scan);
+    return { ...span, notObject: definite, objectLiteral: false, entries: [], spec: null };
+  }
+
+  // 値テキストの先頭空白ぶんだけ `{` がずれる。中身はその次から始まる。
+  const leading = prop.value.length - prop.value.trimStart().length;
+  const innerStart = root.start + prop.valueStart + leading + 1;
+  const entries: RecursionEntryInfo[] = [];
+  for (const entry of parseTopLevelProperties(extractObjectContent(prop.value))) {
+    if (entry.nameStart === undefined || entry.nameEnd === undefined) continue;
+    const valueStart = entry.valueStart === undefined
+      ? innerStart + entry.nameEnd
+      : innerStart + entry.valueStart + (entry.value ? entry.value.length - entry.value.trimStart().length : 0);
+    entries.push({
+      anchor: entry.name,
+      repeat: entry.kind === 'data' ? extractStringLiteralValue(entry.value) : null,
+      start: innerStart + entry.nameStart,
+      end: innerStart + entry.nameEnd,
+      valueStart,
+      valueEnd: valueStart + (entry.value?.trim().length ?? 0),
+    });
+  }
+  return { ...span, notObject: false, objectLiteral: true, entries, spec: specFromRecursionValue(prop) };
 }
 
 /** `$watch` の 1 エントリ（キー ＝ 監視対象パス）と、原文での位置。 */
@@ -386,6 +530,11 @@ function pushListKeyPaths(entry: PropertyInfo, paths: PathCandidate[]): void {
   const listPath = entry.name;
   const segments = listPath.split('.');
   if (listPath.length === 0 || segments.some(s => s.length === 0) || segments[segments.length - 1] === '*') {
+    return;
+  }
+  // `**` は `$listKeys` の消費者ではない（ランタイムは getPathInfo の不変条件で throw する）。
+  // 候補を作ると `**` 入りのパスがデータパスとして候補集合に紛れるので、ここでは何もしない。
+  if (hasRecursionWildcard(listPath)) {
     return;
   }
   const has = (path: string): boolean => paths.some(p => p.path === path);

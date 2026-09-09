@@ -45,7 +45,8 @@ import { assertValidWatchPath } from "../watch/processWatchDeclaration";
 import { addVolumeWatchEntries } from "../watch/watchRegistry";
 import { startWatch } from "../watch/watchRuntime";
 import { ListKeySpec } from "../list/listKeys";
-import { STATE_LIST_KEYS_NAME, STATE_UPDATED_CALLBACK_NAME, STATE_WATCH_NAME } from "../define";
+import { RECURSION_WILDCARD, STATE_LIST_KEYS_NAME, STATE_RECURSION_NAME, STATE_UPDATED_CALLBACK_NAME, STATE_WATCH_NAME } from "../define";
+import { getAllPropertyDescriptors } from "../getAllPropertyDescriptors";
 import type { IWatchEntry } from "../watch/types";
 
 
@@ -159,6 +160,24 @@ function validateVolumeDeclarations(
   // $streams は未対応（無言に捨てない）
   if (typeof (volumeState as Record<string, unknown>)["$streams"] !== "undefined") {
     raiseError(`Volume "${mountPath}" declares $streams, which volumes do not support yet. Declare the stream on the root state.`);
+  }
+  // $recursion も同じく未対応。宣言だけ受理されたように見えて、どの深さも解決しない
+  // 状態を作らない（docs/state-recursive-path-impl-plan.md §7）。
+  if (typeof (volumeState as Record<string, unknown>)[STATE_RECURSION_NAME] !== "undefined") {
+    raiseError(
+      `Volume "${mountPath}" declares ${STATE_RECURSION_NAME}, which volumes do not support yet. ` +
+      `Declare the recursion anchor on the root state — the anchor path is resolved against the root tree.`
+    );
+  }
+  // `**` getter は接ぎ木の**途中で**落ちる（アクセサ登録が getPathInfo の不変条件ガードに
+  // 当たる）ので、データだけ載ってアクセサが無い半端な状態が残る。接ぎ木の前に弾く。
+  for (const key of Object.keys(getAllPropertyDescriptors(volumeState as object))) {
+    if (key.indexOf(RECURSION_WILDCARD) !== -1) {
+      raiseError(
+        `Volume "${mountPath}" declares "${key}", which uses "${RECURSION_WILDCARD}". ` +
+        `Volumes do not support recursive getters yet — declare them on the root state.`
+      );
+    }
   }
 }
 

@@ -81,6 +81,31 @@ export const WcsDiagnosticCode = {
   // `$watch` のキーが状態定義に存在しない。バインディング側と違い黙って発火しない
   // だけなので気づけない。severity は binding-path-missing に揃える（warning）。
   WatchPathMissing: "wcs/watch-path-missing",
+  // --- <wcs-state> script: $recursion declaration / `**` paths ---
+  // ランタイムと同じ code 語彙(@wcstack/state src/recursion/ が正本。
+  // docs/state-recursive-path-impl-plan.md §7)。静的に出すのは**パス文字列と宣言だけで
+  // 決まる**ものに限る。データを見ないと決まらない wcs/recursion-shared-list /
+  // wcs/recursion-cycle / wcs/recursion-depth-exceeded、および評価時の呼び出し文脈に
+  // 依存する wcs/recursion-context は runtime 専用(静的側は出さない)。
+  //
+  // `**` を解釈しない場所へ `**` が渡った(data-wcs / $watch / $resolve)、または
+  // `$recursion` 宣言が無いのに `**` を使った。runtime は PathInfo の不変条件として
+  // raiseError するか(API 経由)、getter を黙って無視する(宣言なしの `**` getter)。
+  RecursionUnsupported: "wcs/recursion-unsupported",
+  // 宣言済みアンカーと合致しない `**`(綴り違い・2 つ目の `**`)。
+  RecursionAnchor: "wcs/recursion-anchor",
+  // `$getAll` の添字の形が `**` に対して定義できない(非空の接頭辞)。
+  RecursionGetAllForm: "wcs/recursion-getall-form",
+  // `$setAll` の添字・値の形が `**` に対して定義できない
+  //(非空の接頭辞 / 添字省略 / mapper / spread)。
+  RecursionSetAllForm: "wcs/recursion-setall-form",
+  // ノード自身・子リスト・子ノードへの一括書き込み(確定済みの子アドレスを壊す)。
+  RecursionStructuralWrite: "wcs/recursion-structural-write",
+  // 再帰 getter(およびその派生値の中)への書き込み。setter は初版では持てない。
+  RecursionReadonly: "wcs/recursion-readonly",
+  // `$recursion` 宣言そのもの、または `**` getter の宣言の形が不正
+  //(ランタイムは初期化時に raiseError)。wcs/watch-declaration-invalid の再帰版。
+  RecursionDeclarationInvalid: "wcs/recursion-declaration-invalid",
   TypeAnnotation: "wcs/type-annotation",
   TemplateSyntax: "wcs/template-syntax",
   // --- <wcs-state> script: array reactivity hazards ---
