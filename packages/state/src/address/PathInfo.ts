@@ -1,4 +1,5 @@
-import { WILDCARD } from "../define.js";
+import { RECURSION_WILDCARD, WILDCARD } from "../define.js";
+import { raiseError } from "../raiseError.js";
 import { IPathInfo } from "./types.js";
 
 const _cache: Map<string, IPathInfo> = new Map();
@@ -19,6 +20,18 @@ export function getPathInfo(path: string): IPathInfo {
   let pathInfo = _cache.get(path);
   if (typeof pathInfo !== "undefined") {
     return pathInfo;
+  }
+  // 再帰ワイルドカードはオーサリング層の記号で、ここへ降りてきてはならない
+  // （降ろすと wildcardCount が不定になり ListIndex 連鎖長・$1..$n・$resolve の
+  //  厳密一致・走査の段数が同時に壊れる。設計書 D2）。到達したということは、
+  // `**` を解釈しない消費者に `**` パスが渡ったということ。通常のパスはこの検査を
+  // 初回 intern のときにしか払わない（`**` パスは intern されないので読むたびに落ちる）。
+  if (path.indexOf(RECURSION_WILDCARD) !== -1) {
+    raiseError(
+      `[wcs/recursion-unsupported] "${path}" uses "${RECURSION_WILDCARD}", which is not accepted here. ` +
+      `It is only meaningful in a $recursion declaration, in a recursive getter key, and in the path ` +
+      `argument of $getAll — and only when the state declares a $recursion anchor.`
+    );
   }
   pathInfo = Object.freeze(new PathInfo(path));
   _cache.set(path, pathInfo);

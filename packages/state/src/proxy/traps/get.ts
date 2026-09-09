@@ -44,6 +44,8 @@ import { setByAddress } from "../methods/setByAddress";
 import { setLoopContext } from "../methods/setLoopContext";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol, errorCallbackSymbol, getByAddressSymbol, hasByAddressSymbol, setByAddressSymbol, setLoopContextSymbol, updatedCallbackSymbol } from "../symbols";
 import type { IBindingErrorInfo } from "../../types";
+import { bindRecursivePath } from "../../recursion/bind";
+import { hasRecursionWildcard } from "../../recursion/expand";
 import { IStateHandler } from "../types";
 
 /** `$` + 数字だけの prop（`$1` / `$129`）。範囲外を無言で通さないための判別。 */
@@ -208,7 +210,12 @@ export function get(
         return undefined;
       }
     }
-    const resolvedAddress = getResolvedAddress(prop);
+    // オーサリング層の `**` を、いま評価している再帰 getter の深さへ束縛する。
+    // 宣言の無い state は boolean 判定 1 個で抜ける（D18 の形）。
+    const path = (handler.stateElement?.hasRecursion === true && hasRecursionWildcard(prop))
+      ? bindRecursivePath(handler.stateElement, handler, prop)
+      : prop;
+    const resolvedAddress = getResolvedAddress(path);
     const listIndex = getListIndex(target, resolvedAddress, receiver, handler);
     const stateAddress = createStateAddress(resolvedAddress.pathInfo, listIndex);
     return getByAddress(

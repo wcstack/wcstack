@@ -101,6 +101,15 @@ export const STATE_EVENT_TOKENS_NAME = "$eventTokens";
 export const STATE_ON_NAME = "$on";
 export const STATE_STREAMS_NAME = "$streams";
 export const STATE_WATCH_NAME = "$watch";
+export const STATE_RECURSION_NAME = "$recursion";
+
+/**
+ * 再帰ワイルドカード。オーサリング層（$recursion 宣言・getter キー・API 引数）にだけ
+ * 現れ、PathInfo には決して降ろさない — wildcardCount が不定になると ListIndex 連鎖長・
+ * $1..$n・$resolve の厳密一致・走査の段数が同時に壊れる
+ * （docs/state-recursive-path-design.md §2-1）。
+ */
+export const RECURSION_WILDCARD = "**";
 export const STATE_LIST_KEYS_NAME = "$listKeys";
 export const STATE_STREAM_STATUS_NAMESPACE_NAME = "$streamStatus";
 export const STATE_STREAM_ERROR_NAMESPACE_NAME = "$streamError";

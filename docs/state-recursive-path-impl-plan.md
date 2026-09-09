@@ -153,7 +153,7 @@ ListIndex の同一性は台帳（`listIndexesByList`）が持つので、先に
 | X3 | `walkDependency` のコメントが「依存グラフは epoch でメモ化される」と書いているが、`topologicalRank.ts` はメモ化していない（ヘッダにそう書いてある）。コメントの誤り |
 | X4 | 描画なしの世代分裂（A3）は再帰専用ではなく、`for` を持たないリストを `$getAll` するアプリ一般に当たる既存欠陥である可能性が高い。いつ入ったかは未確認 |
 
-X1・X2 は独立の Issue にする。X3 はコメント修正のみ。X4 は E1 の修理でまとめて解消される見込み。
+X1・X2・X5 は独立の Issue にする。X3 はコメント修正のみ。X4 は E1 の修理でまとめて解消される見込み。
 
 **成果物（完了）**:
 - `__tests__/integration.recursionPrerequisites.test.ts` — 再帰が依存している「今日すでに正しく動く挙動」の回帰テスト
@@ -161,19 +161,29 @@ X1・X2 は独立の Issue にする。X3 はコメント修正のみ。X4 は E
 - 設計書への訂正（§7-2 cold start・台帳の世代分裂・共有配列 D12・停止の実効上限 §6-3）
 
 **完了条件（達成）**: 集計が構造変更に追従するための登録経路（E1 / E4 / E5）と、停止保証に必要なガード（E2 / E6）が特定されている。既存機構の修正が必要であることが判明したため、**Phase B の前に E1〜E3 を実施する Phase A' を追加する**（§9 の着手順を更新）。
-## 4. Phase B — 宣言・パス展開・生成 getter
+## 4. Phase B — 宣言・パス展開・生成 getter（**完了**・2026-09-09）
 
-- [ ] `$recursion` の読み取りと宣言検証を実装する。prototype 上の getter descriptor を含め、getter 本体を実行せずに再帰 getter の定義を収集する。
-- [ ] 宣言なしの `**`、不正なアンカー・反復部分、複数宣言、未対応の setter、既存の具体アクセサとの衝突を診断する。自動生成でユーザーのプロパティを上書きしない。
-- [ ] 再帰パターンから深さごとの具体パスを作る純粋な関数を実装する。生成前に上限を検査する。
-- [ ] state の初期化順に registry を組み込む。初期バインドや初回 getter 評価までに利用可能にする。再設定時の旧 registry の廃棄、切断・再接続時の扱いを分ける。
-- [ ] 具体パスの読み取り直前に生成 getter を実体化する。生成 getter のメタデータから評価深さと宣言を得る。
-- [ ] 直接読みの `**` を具体化し、既存のアドレス解決・依存登録・キャッシュに流す。ネスト呼び出しと例外後に文脈が漏れないようにする。
-- [ ] 未対応の `**` 利用に対する入口の診断を追加する。通常のパス処理に再帰の状態を不要に割り当てない。
+- [x] `$recursion` の読み取りと宣言検証（`src/recursion/declaration.ts`）。`getAllPropertyDescriptors` で descriptor だけを見るので getter 本体は実行しない。
+- [x] 診断: 宣言なしの `**`／不正なアンカー・反復部分／複数宣言／再帰 setter／`**` が getter でない／接尾辞が空の `**`／**展開先が重なる 2 本の `**` getter**（宣言だけから静的に検出）／既存の具体アクセサとの衝突（生成物と作者定義は WeakSet で見分ける）。
+- [x] 深さごとの具体パスを作る純関数（`src/recursion/expand.ts`）。生成前に上限を検査する。
+- [x] state の初期化順に registry を組み込む（`_state` セッタ、`$listKeys` の直後）。再セットで作り直す。
+- [x] 具体パスの読み取り直前に生成 getter を実体化する（`getByAddress` の `checkDependency` 後・キャッシュ参照前）。深さは生成アクセサのアドレスから復元する。
+- [x] 直接読みの `**` を具体化する（get トラップ・`$getAll` の path 引数）。アンカー照合を深さ解決より先に行う。
+- [x] 未対応の `**` に対する入口の診断。`getPathInfo` の intern miss 分岐で `**` を拒否し、**設計不変条件（D2）そのものを機構で強制**する。
 
-**成果物**: `src/recursion/*`、State・proxy・manifest の接続、`recursion.*.test.ts`。
+**実装で決めたこと（計画時に未定だったもの）**:
 
-**完了条件**: 具体パスでアクセスした再帰 getter が正しい深さの値を返す。`PathInfo` / 依存グラフに `**` が入らず、同一 state・同一深さの登録が重複しない。
+| 論点 | 決定 |
+|---|---|
+| 反復サブパスがアンカーと同じ語で始まる形（`{ "nodes.*": "nodes.*" }`） | **受理する**。`{ nodes: [{ nodes: [...] }] }` は自己相似な木の最も自然な綴りで、相対か絶対かは名前の形では判定できない |
+| `listPaths` への登録口 | `IStateElement.addListPath` を新設（E4）。`setPathInfo(path, "for")` は `elementPaths` にも入れて swap 経路を変えるので流用しない |
+| 遅延実体化の早期 return | `registry.isMaterialized(path)`。`getterPaths.has` で見ると、前世代の生成物が残る再セット後に `listPaths` の登録だけが抜ける |
+| バインド確立時のパス存在検査 | `checkDeclaredPath` が `matchesRecursivePath` を先に見る（実体化はしない）。見ないと、正しく描画・更新されているのに「更新は黙って捨てられる」と警告が出る |
+| 接頭辞と接尾辞の重なり | 一致とみなさない。`nodes.**.*` の接尾辞 `.*` がアンカーの末尾と重なると slice が空文字に畳まれ、アンカー自身（実データの行）が深さ 0 の展開形に化ける |
+
+**成果物**: `src/recursion/{types,declaration,expand,registry,materialize,bind}.ts`、State / proxy / manifest / pathDiagnostics の接続、`recursion.declaration.test.ts`（27）/ `recursion.expand.test.ts`（38）/ `integration.recursionGetter.test.ts`（81）。
+
+**完了条件（達成）**: 具体パスでアクセスした再帰 getter が正しい深さの値を返す。`PathInfo` / 依存グラフに `**` が入らない（機構で強制）。同一 state・同一深さの登録が重複しない。全件 3001 件緑・カバレッジ閾値を下げていない。
 
 ## 5. Phase C — `$getAll` と再帰集計
 
@@ -252,3 +262,4 @@ Phase A は完了した（§3）。その結果、**Phase A' を新設する** �
 E4（`listPaths` 専用入口）・E5（実体化フックの位置）・E6（共有配列ガード）は再帰の新規コードと不可分なので Phase B 以降で実施する。
 
 R1–R12 と公開資料の整合が揃った時点で初版の実装完了とする。再帰テンプレートや相互再帰の実装は別計画とし、この計画の完了条件には含めない。
+| X5 | 宣言の検証が **初回マウント**で throw すると、`_resolveLoading()` に届かず `connectedCallbackPromise` が永久 pending になる（作者が受け取るのは診断ではなく無言のハング）。再セット経路なら同じ宣言が正しい文面で同期 throw する。`$listKeys` / `$watch` / `$streams` も同じ性質なので Phase B の回帰ではないが、`$recursion` は新しい宣言面なので**出荷前に決着させたい**。宣言検証全般を `_failInitialization` と同じ「resolve してから raise」経路に載せる独立の Issue にする |
