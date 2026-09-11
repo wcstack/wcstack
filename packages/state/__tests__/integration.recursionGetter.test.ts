@@ -43,6 +43,7 @@
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
+import { flush, forest, makeMount, node, read, recursionState, write, type TNode } from "./helpers/recursionTestUtils";
 import { setLoopContextSymbol } from "../src/proxy/symbols";
 import { __private__ as stateHandlerPrivate } from "../src/proxy/StateHandler";
 import { processRecursionDeclaration } from "../src/recursion/declaration";
@@ -55,76 +56,11 @@ beforeAll(() => {
 });
 
 let seq = 0;
-const flush = () => new Promise((r) => setTimeout(r));
-
-async function mount(initial: any, innerHTML: string) {
-  const host = document.createElement(`recursion-getter-host-${seq++}`);
-  const shadowRoot = host.attachShadow({ mode: "open" });
-  shadowRoot.innerHTML = innerHTML + `<wcs-state></wcs-state>`;
-  document.body.appendChild(host);
-  const stateEl = shadowRoot.querySelector("wcs-state") as State;
-  stateEl.setInitialState(initial);
-  await stateEl.connectedCallbackPromise;
-  await State.getBindingsReady(shadowRoot);
-  return { host, shadowRoot, stateEl };
-}
-
-function read<T>(stateEl: State, fn: (s: any) => T): T {
-  let out: any;
-  stateEl.createState("readonly", (s: any) => { out = fn(s); });
-  return out as T;
-}
-
-function write(stateEl: State, fn: (s: any) => void): void {
-  stateEl.createState("writable", fn);
-}
+const mount = makeMount("recursion-getter-host");
 
 // ---------------------------------------------------------------------------
-// 木と再帰 state
+// 木と再帰 state（helpers/recursionTestUtils の forest / recursionState を使う）
 // ---------------------------------------------------------------------------
-
-type TNode = { value: number; children: TNode[] };
-const node = (value: number, children: TNode[] = []): TNode => ({ value, children });
-
-/**
- * 深さ 3 の木。
- *   nodes[0] = 1 ─┬─ 10 ── 100
- *                 └─ 20
- *   nodes[1] = 2
- * 手で畳んだ total: 100 / 110 / 20 / 131 / 2、全 value の合計 = 133。
- */
-const forest = (): TNode[] => [node(1, [node(10, [node(100)]), node(20)]), node(2)];
-
-/**
- * 標準の再帰 state。`get "nodes.**.total"()` は
- *   自分の value（`**` は自分の深さに束縛される）
- *   ＋ 直下の子の total（添字省略の `$getAll` ＝ 文脈の接頭辞に整合する分だけ）
- * を返す。`extra` で「作者が手で書いた具体パス getter」等を足せる。
- */
-function recursionState(
-  nodes: TNode[],
-  extra: Record<string, PropertyDescriptor> = {},
-  recursion: unknown = { "nodes.*": "children.*" },
-): any {
-  const state: any = { nodes };
-  if (typeof recursion !== "undefined") {
-    state.$recursion = recursion;
-  }
-  // オブジェクトリテラルの getter として書くと、この関数の外で spread された時に
-  // 本体が評価されてしまう。descriptor で足して事故を防ぐ。
-  Object.defineProperty(state, "nodes.**.total", {
-    get(this: any) {
-      return this["nodes.**.value"] +
-        this.$getAll("nodes.**.children.*.total").reduce((a: number, b: number) => a + b, 0);
-    },
-    enumerable: true,
-    configurable: true,
-  });
-  for (const [key, descriptor] of Object.entries(extra)) {
-    Object.defineProperty(state, key, descriptor);
-  }
-  return state;
-}
 
 /**
  * 一度正しくマウントしてから壊れた state を再セットする。**レジストリ構築時に落ちる
@@ -877,7 +813,8 @@ describe("宣言と再帰 getter の定義を検証する", () => {
     const { host, run } = await withReset(recursionState(forest(), {
       "nodes.**.children.**.x": { get() { return 1; }, configurable: true },
     }));
-    expect(run).toThrow(/supports exactly one anchor, and no second "\*\*" in the same path/);
+    expect(run).toThrow(/\[wcs\/recursion-anchor\] "nodes\.\*\*\.children\.\*\*\.x" does not match the declared recursion anchor/);
+    expect(run).toThrow(/exactly one anchor per state, and "\*\*" must be followed by a well-formed suffix \(no second "\*\*"/);
     host.remove();
   });
 
@@ -904,6 +841,50 @@ describe("宣言と再帰 getter の定義を検証する", () => {
     expect(run).toThrow(/"nodes\.\*\.children\.\*\.total" is already defined on the state/);
     expect(run).toThrow(/the recursive getter "nodes\.\*\*\.total" cannot expand to it\. Rename one of them/);
     host.remove();
+  });
+
+  it("宣言時（構築時）の診断はすべて [wcs/recursion-declaration-invalid] を冠すること（getter キーのアンカー不一致は [wcs/recursion-anchor]）", async () => {
+    // Fixed by cycle-4 review — was: lint は `wcs/recursion-declaration-invalid` / `wcs/recursion-anchor` で
+    // 報告するのに、ランタイムの宣言時 raise にはコードが無く、アンカー不一致は 4 本目の手書き文面だった。
+    const cases: [string, PropertyDescriptor, RegExp][] = [
+      ["nodes.**.total", { get() { return 0; }, set(_v: unknown) { /* */ }, configurable: true }, /\[wcs\/recursion-declaration-invalid\] Recursive setters are not supported/],
+      ["nodes.**.data", { value: 1, writable: true, configurable: true }, /\[wcs\/recursion-declaration-invalid\] "nodes\.\*\*\.data" contains "\*\*" but is not a getter/],
+      ["nodes.**", { get() { return 0; }, configurable: true }, /\[wcs\/recursion-declaration-invalid\] "nodes\.\*\*" names the recursive node itself/],
+      ["nodes.**.children", { get() { return []; }, configurable: true }, /\[wcs\/recursion-declaration-invalid\] "nodes\.\*\*\.children" names the recursion structure itself/],
+      ["nodes.**.children.*.total", { get() { return 0; }, configurable: true }, /\[wcs\/recursion-declaration-invalid\] "nodes\.\*\*\.total" and "nodes\.\*\*\.children\.\*\.total" expand to the same/],
+      ["nodes.*.children.*.total", { get() { return 7; }, configurable: true }, /\[wcs\/recursion-declaration-invalid\] "nodes\.\*\.children\.\*\.total" is already defined on the state/],
+      ["tree.**.total", { get() { return 0; }, configurable: true }, /\[wcs\/recursion-anchor\] "tree\.\*\*\.total" does not match the declared recursion anchor "nodes\.\*\*"/],
+    ];
+    for (const [key, descriptor, expected] of cases) {
+      const state = recursionState(forest());
+      Object.defineProperty(state, key, descriptor);
+      const { host, run } = await withReset(state);
+      expect(run, key).toThrow(expected);
+      host.remove();
+    }
+    // 宣言そのものの不正も同じコード（recursion/declaration.ts）
+    const { host, run } = await withReset(recursionState(forest(), {}, { "nodes.*": "children.*", "rows.*": "kids.*" }));
+    expect(run).toThrow(/\[wcs\/recursion-declaration-invalid\] \$recursion declares 2 anchors/);
+    host.remove();
+  });
+
+  it("接尾辞が整形されていない `**` getter キー（`nodes.**.` / `nodes.**..x` / `nodes.**.*`）は構築時に拒否されること", async () => {
+    // Fixed by cycle-4 review — was: 受理されて `nodes.*.*`（アンカー行そのもの）や空セグメントの
+    // 具体パスに展開されていた（`assertNodePath` / `$watch` が同じ形を拒否するのと非対称）。
+    for (const key of ["nodes.**.", "nodes.**..x", "nodes.**.*", "nodes.**.*.x", "nodes.**.a..b"]) {
+      const { host, run } = await withReset(recursionState(forest(), {
+        [key]: { get() { return 0; }, enumerable: true, configurable: true },
+      }));
+      expect(run, key).toThrow(/\[wcs\/recursion-anchor\]/);
+      expect(run, key).toThrow(/well-formed suffix/);
+      host.remove();
+    }
+    // 対照: `nodes.**.tags.*.up`（接尾辞の途中・末尾の `*`）は正当
+    const ok = await withReset(recursionState(forest(), {
+      "nodes.**.tags.*.up": { get() { return "x"; }, enumerable: true, configurable: true },
+    }));
+    expect(ok.run).not.toThrow();
+    ok.host.remove();
   });
 
   it("`**` getter の展開形と同名の具体 getter は、読む前の**構築時**に拒否されること", async () => {
@@ -1102,6 +1083,47 @@ describe("state の再セットでレジストリが作り直されること", (
     host.remove();
   });
 
+  it("同じ state オブジェクトを `$recursion` 無しで再セットすると、前世代の own 生成アクセサが消えること", async () => {
+    // Fixed by cycle-4 review — was: own の生成アクセサ（configurable）が残り、`getStateInfo` が
+    // `getterPaths` に拾い直して、読むと作者が書いていない `nodes.**.value` を名指す
+    // `[wcs/recursion-unsupported]` になっていた。`forgetGenerated` が own の生成物を delete し、
+    // `getStateInfo` の再収集より前に呼ぶ。
+    const state = recursionState(forest());
+    const { host, stateEl } = await mount(state, NO_RENDER_HTML);
+    read(stateEl, (s: any) => s.$getAll("nodes.**.total", []));
+    expect(Object.getOwnPropertyDescriptor(state, totalAt(0)), "生成アクセサは own に生えている").toBeDefined();
+
+    delete state.$recursion;
+    delete state["nodes.**.total"];
+    stateEl.setInitialState(state);
+
+    expect((stateEl as any).hasRecursion).toBe(false);
+    expect(totalGetterPaths(stateEl), "getterPaths に生成パスが無い").toEqual([]);
+    expect(Object.getOwnPropertyDescriptor(state, totalAt(0)), "own の生成アクセサは消えている").toBeUndefined();
+    expect(Object.getOwnPropertyDescriptor(state, totalAt(1))).toBeUndefined();
+    // 読んでも throw しない（普通の未定義キー）
+    expect(read(stateEl, (s: any) => s.$getAll(totalAt(0), []))).toEqual([undefined, undefined]);
+    host.remove();
+  });
+
+  it("作者が生の state で同名キーを上書きしていた場合、再セットの後始末はそれを消さないこと", async () => {
+    // 消すのは**この機構が生やした** own の getter だけ（generation.ts の WeakSet で見分ける）。
+    // マウント後に作者が生オブジェクトへ同名の getter を定義し直した作為でも、作者のものは残す。
+    const state = recursionState(forest());
+    const { host, stateEl } = await mount(state, NO_RENDER_HTML);
+    read(stateEl, (s: any) => s.$getAll(totalAt(0), []));
+    Object.defineProperty(state, totalAt(0), { get() { return 7; }, enumerable: true, configurable: true });
+
+    delete state.$recursion;
+    delete state["nodes.**.total"];
+    stateEl.setInitialState(state);
+
+    expect(Object.getOwnPropertyDescriptor(state, totalAt(0)), "作者の getter は残る").toBeDefined();
+    expect(totalGetterPaths(stateEl)).toEqual([totalAt(0)]);
+    expect(Object.getOwnPropertyDescriptor(state, totalAt(1)), "生成物は消える").toBeUndefined();
+    host.remove();
+  });
+
   it("同じ `nodes` 配列を新しいオブジェクトで再セットしても同じこと（台帳は配列の identity）", async () => {
     const nodes = forest();
     const { host, stateEl } = await mount(recursionState(nodes), NO_RENDER_HTML);
@@ -1163,6 +1185,33 @@ describe("state の再セットでレジストリが作り直されること", (
     host.remove();
   });
 
+  it("再セットの $recursion は正当でも別の宣言（$commandTokens）が不正なら、後始末より前に落ちて旧世代に留まること", async () => {
+    // Fixed by cycle-4 re-verification — was: 順序整理でトークンの検証が `forgetGenerated` と
+    // レジストリ差し替えの後に回り、別アンカー＋不正な `$commandTokens` の再セットで
+    // 「レジストリは items.*・own 生成アクセサと辺は消えた・`__state` は旧」の半端な状態になり、
+    // 旧世代の `$getAll("nodes.*.total", [])` が `[undefined, undefined]` に無言で消えていた。
+    const state = recursionState(forest());
+    const { host, stateEl } = await mount(state, NO_RENDER_HTML);
+    expect(read(stateEl, (s: any) => s.$getAll(totalAt(0), []))).toEqual([131, 2]);
+    const registry = (stateEl as any).recursionRegistry;
+    const spy = vi.spyOn(registry, "forgetGenerated");
+
+    const other: any = { items: [{ v: 1, kids: [] }], $recursion: { "items.*": "kids.*" }, $commandTokens: [""] };
+    Object.defineProperty(other, "items.**.sum", { get(this: any) { return this["items.**.v"]; }, enumerable: true, configurable: true });
+    expect(() => stateEl.setInitialState(other)).toThrow();
+    expect(spy, "後始末より前に落ちる").not.toHaveBeenCalled();
+    expect((stateEl as any).recursionRegistry, "レジストリは旧世代のまま").toBe(registry);
+    expect((stateEl as any).__state).toBe(state);
+    expect(Object.getOwnPropertyDescriptor(state, totalAt(0)), "own の生成アクセサも残る").toBeDefined();
+    expect(read(stateEl, (s: any) => s.$getAll(totalAt(0), [])), "旧世代の集計がそのまま読める").toEqual([131, 2]);
+    // 同じアンカーでも同じ
+    expect(() => stateEl.setInitialState(Object.assign(recursionState(forest()), { $commandTokens: [""] })))
+      .toThrow();
+    expect(spy).not.toHaveBeenCalled();
+    expect(read(stateEl, (s: any) => s.$getAll(totalAt(0), []))).toEqual([131, 2]);
+    host.remove();
+  });
+
   it("再セットの宣言が不正で throw するときは、旧世代の生成物を忘れないこと", async () => {
     // Fixed by cycle-2 review — was: `forgetGenerated` を新宣言の検証より先に実行していたので、
     // 不正な `$recursion` での再セットが throw すると、旧レジストリは残るのに辺とキャッシュだけが
@@ -1173,10 +1222,13 @@ describe("state の再セットでレジストリが作り直されること", (
     const spy = vi.spyOn(registry, "forgetGenerated");
 
     const previous = (stateEl as any).__state;
-    expect(() => stateEl.setInitialState({ nodes: [node(5)], $recursion: { nodes: "children.*" } }))
+    const previousTokens = (stateEl as any)._commandTokenNames;
+    expect(() => stateEl.setInitialState({ nodes: [node(5)], $recursion: { nodes: "children.*" }, $commandTokens: ["ping"] }))
       .toThrow(/\$recursion anchor "nodes" must name a list element/);
     expect(spy, "検証に落ちた再セットでは忘れない").not.toHaveBeenCalled();
     expect((stateEl as any).recursionRegistry, "レジストリも差し替えない").toBe(registry);
+    // 宣言検証はセッタの**先頭**なので、トークン名の差し替えより前に落ちる
+    expect((stateEl as any)._commandTokenNames, "コマンドトークン名も差し替えない").toBe(previousTokens);
     // 宣言の検証とレジストリの構築は `__state` の差し替えより前なので、要素は丸ごと旧世代に留まる
     expect((stateEl as any).__state, "state も差し替えない").toBe(previous);
     expect(read(stateEl, (s: any) => s.$getAll(totalAt(0), [])), "旧世代の集計がそのまま読める").toEqual([131, 2]);
@@ -1586,19 +1638,25 @@ describe("生成先の衝突と展開不一致（読みの経路では見えな�
     host.remove();
   });
 
-  it("接尾辞が `.*` だけの `**` getter でも、アンカー自身の読みは壊れないこと", async () => {
+  it("接尾辞が `.*` だけの `**` getter は宣言時に拒否され、アンカー自身の読みは壊れないこと", async () => {
     // Fixed by Phase B review — was: materialized === ["nodes.*"] and reading the
     // anchor threw a raw "Reflect.get called on non-object" (the generated getter
     // had replaced the data row, because the anchor and the ".*" suffix overlapped
     // and made depthOfConcretePath report depth 0 for the anchor itself).
-    const { host, stateEl } = await mount(recursionState(forest(), {
+    // Fixed by cycle-4 review — the key itself is now refused when the declaration is read
+    // (`**` followed by a bare `*` expands to the anchor row), so it never reaches the ledger.
+    const { host, run } = await withReset(recursionState(forest(), {
       "nodes.**.*": { get() { return 1; }, enumerable: true, configurable: true },
-    }), NO_RENDER_HTML);
-    // The anchor still reads the real rows.
-    expect(read(stateEl, (s: any) => s.$getAll(valueAt(0), []))).toEqual([1, 2]);
-    expect(materialized(stateEl), "アンカー自身は生成 getter に置き換わらない")
-      .not.toContain("nodes.*");
+    }));
+    expect(run).toThrow(/\[wcs\/recursion-anchor\] "nodes\.\*\*\.\*"/);
     host.remove();
+
+    // 対照: 正当な state ではアンカー自身は実データの行のまま
+    const ok = await mount(recursionState(forest()), NO_RENDER_HTML);
+    read(ok.stateEl, (s: any) => s.$getAll(totalAt(0), []));
+    expect(read(ok.stateEl, (s: any) => s.$getAll(valueAt(0), []))).toEqual([1, 2]);
+    expect(materialized(ok.stateEl)).not.toContain("nodes.*");
+    ok.host.remove();
   });
 });
 

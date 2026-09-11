@@ -49,7 +49,7 @@ export function getAllRecursive(
   }
   // 走査は観測したリスト値を差分基準へ確定する（再帰の `$setAll` も同じ。
   // 固定 arity の `$setAll` だけが確定しない — setAllRecursive.ts 第 1 相の注記）。
-  const addresses = collectRecursiveAddresses(target, receiver, handler, registry.spec, suffix);
+  const addresses = collectRecursiveAddresses(target, receiver, handler, registry, suffix);
   const values: any[] = [];
   for (let i = 0; i < addresses.length; i++) {
     // `**` は依存グラフに載らない（D2）。呼び出し元の getter は「触れた深さの

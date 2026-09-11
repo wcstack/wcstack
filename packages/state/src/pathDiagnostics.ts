@@ -225,7 +225,8 @@ export function indexArityMessage(
  */
 export function recursionAnchorMismatchMessage(path: string, recursiveAnchor: string): string {
   return `[wcs/recursion-anchor] "${path}" does not match the declared recursion anchor ` +
-    `"${recursiveAnchor}". This version supports exactly one anchor per state.`;
+    `"${recursiveAnchor}". This version supports exactly one anchor per state, and "**" must be followed ` +
+    `by a well-formed suffix (no second "**", no empty segment, no bare "*" right after "**").`;
 }
 
 /**

@@ -34,7 +34,6 @@ import { getMountRecordByPath } from "../../webComponent/mount";
 import { createOverlayValue, readExportedAccessor } from "../../webComponent/overlay";
 import { resolveExport } from "../../webComponent/exportIndex";
 import { IStateHandler } from "../types";
-import { materializeRecursionAccessor } from "../../recursion/materialize";
 import { checkDependency } from "./checkDependency";
 import { isCacheable } from "./isCacheable";
 
@@ -196,7 +195,7 @@ export function getByAddress(
   // 直らない（Phase A の A7）。宣言の無い state は boolean 判定 1 個で抜ける。
   checkDependency(handler, address);
   if (handler.stateElement.hasRecursion === true) {
-    materializeRecursionAccessor(handler.stateElement, address.pathInfo.path);
+    handler.stateElement.recursionRegistry!.materializeFor(handler.stateElement, address.pathInfo.path);
   }
   // $streams の args トレース中のみ絶対アドレスを捕捉（collector 非活性なら即 return）
   collectStreamDependency(handler.stateElement, address);

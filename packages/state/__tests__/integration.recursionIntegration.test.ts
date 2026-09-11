@@ -25,13 +25,14 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
+import { flush, read, write } from "./helpers/recursionTestUtils";
 import { buildSsrDocument } from "../src/buildSsrDocument";
 
 beforeAll(() => {
   bootstrapState();
 });
 
-const flush = () => new Promise((r) => setTimeout(r));
+// flush / read / write は helpers/recursionTestUtils
 let seq = 0;
 const uniqueTag = (prefix: string): string => `${prefix}-${++seq}`;
 
@@ -99,12 +100,6 @@ function treeState(nodes: TNode[] = forest()): any {
   return state;
 }
 
-const read = <T>(el: State, fn: (s: any) => T): T => {
-  let out: any;
-  el.createState("readonly", (s: any) => { out = fn(s); });
-  return out as T;
-};
-const write = (el: State, fn: (s: any) => void): void => el.createState("writable", fn);
 
 /** shadow ホストにルート state を 1 本置く。 */
 async function mountHost(initial: any, innerHTML = "") {

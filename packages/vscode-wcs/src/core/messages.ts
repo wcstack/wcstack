@@ -276,7 +276,7 @@ const ja: WcsMessageCatalog = {
     }
   },
   recursionAnchorMismatch: (p, anchor) =>
-    `"${p}" は宣言済みの再帰アンカー "${anchor}" と合致しません（初版は state ごとに 1 つの自己再帰のみ・同じパスに 2 つ目の "**" は置けません）`,
+    `"${p}" は宣言済みの再帰アンカー "${anchor}" と合致しません（初版は state ごとに 1 つの自己再帰のみ。"**" の後ろは整形された接尾辞 — 2 つ目の "**"・空セグメント・"**" 直後の素の "*" は置けません）`,
   recursionGetAllForm: (p, problem) =>
     problem === 'notArray'
       ? `$getAll("${p}", indexes) の "**" の添字は、省略（評価中の再帰 getter の深さ）か [] （全深さ）のどちらかです。null や配列でない値は渡せません`
@@ -458,7 +458,7 @@ const en: WcsMessageCatalog = {
     }
   },
   recursionAnchorMismatch: (p, anchor) =>
-    `"${p}" does not match the declared recursion anchor "${anchor}" (this version supports exactly one self-recursive anchor per state, and no second "**" in the same path)`,
+    `"${p}" does not match the declared recursion anchor "${anchor}" (this version supports exactly one self-recursive anchor per state, and "**" must be followed by a well-formed suffix: no second "**", no empty segment, no bare "*" right after "**")`,
   recursionGetAllForm: (p, problem) =>
     problem === 'notArray'
       ? `$getAll("${p}", indexes) with "**" takes either no indexes (to read the depth of the recursive getter being evaluated) or [] (to walk every depth) — not null or a non-array value`

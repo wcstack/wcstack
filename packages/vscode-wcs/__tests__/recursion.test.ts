@@ -10,7 +10,9 @@ import {
   checkNodePath,
   collectRecursionSpecs,
   concreteExpansionSuffix,
+  coversSuffix,
   foldRecursion,
+  foldSuffixIndexes,
   indexSegmentsToWildcard,
   makeRecursionSpec,
   matchesRecursion,
@@ -1357,5 +1359,66 @@ describe('増減演算子（++ / --）での `**` 代入と再帰 getter への�
 
   it('葉の増減・比較は黙る', () => {
     expect(only('this["nodes.*.value"]++; --this["nodes.1.value"]; return this["nodes.*.value"] >= 1;')).toEqual([]);
+  });
+});
+
+// ============================================================
+// 第 4 サイクル
+// ============================================================
+
+describe('反復語ぶんずれた展開形の値の内側への再帰 $setAll', () => {
+  // Fixed by cycle-4 review — `conflictingGetterSuffix` が `sameFamily`（全体）と `startsWith` しか見ず、
+  // `nodes.**.children.*.total.x` に沈黙していた（runtime は走査後の第 2 相で初めて落ちていた）
+  const only = (body: string) => validateRecursion(makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  get "nodes.**.total"() { return 0; },
+  probe() { ${body} }`), 'wcs-state', 'en');
+
+  it('`.` 境界の各接頭辞で族を照合し recursion-readonly にする', () => {
+    expect(codes(only('this.$setAll("nodes.**.children.*.total.x", [], 1);')))
+      .toEqual([WcsDiagnosticCode.RecursionReadonly]);
+    expect(codes(only('this.$setAll("nodes.**.children.*.children.*.total.x.y", [], 1);')))
+      .toEqual([WcsDiagnosticCode.RecursionReadonly]);
+    // 葉は通る
+    expect(only('this.$setAll("nodes.**.children.*.totals.x", [], 1);')).toEqual([]);
+  });
+
+  it('coversSuffix は族そのもの・値の内側・反復語ぶんのずれを認め、別名は認めない', () => {
+    const spec = makeRecursionSpec('nodes.*', 'children.*');
+    expect(coversSuffix(spec, '.total', '.total')).toBe(true);
+    expect(coversSuffix(spec, '.total', '.total.x')).toBe(true);
+    expect(coversSuffix(spec, '.total', '.children.*.total')).toBe(true);
+    expect(coversSuffix(spec, '.total', '.children.*.total.x')).toBe(true);
+    expect(coversSuffix(spec, '.total', '.totals')).toBe(false);
+    expect(coversSuffix(spec, '.total', '.children.*.value')).toBe(false);
+  });
+});
+
+describe('接尾辞が整形されていない `**` パス（空セグメント・`**` 直後の `*`）', () => {
+  // Fixed by cycle-4 review — runtime と同じく `splitRecursivePath` で拒否する（recursion-anchor）
+  it('getter キーも API のパスも recursion-anchor', () => {
+    for (const path of ['nodes.**.', 'nodes.**..x', 'nodes.**.*', 'nodes.**.*.x']) {
+      const getter = validateRecursion(makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  get "${path}"() { return 0; }`), 'wcs-state', 'en');
+      expect(codes(getter), path).toEqual([WcsDiagnosticCode.RecursionAnchor]);
+      expect(getter[0].message, path).toContain('well-formed suffix');
+      const call = validateRecursion(makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  probe() { return this.$getAll("${path}", []); }`));
+      expect(codes(call), path).toEqual([WcsDiagnosticCode.RecursionAnchor]);
+    }
+    // 対照: 接尾辞の途中・末尾の `*`（`nodes.**.tags.*`）は正当
+    expect(validateRecursion(makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  get "nodes.**.tags.*.up"() { return 0; },
+  probe() { return this.$getAll("nodes.**.tags.*", []); }`))).toEqual([]);
+    expect(splitRecursivePath(makeRecursionSpec('nodes.*', 'children.*'), 'nodes.**.a..b')).toBeNull();
+    expect(foldSuffixIndexes('.children.0.total')).toBe('.children.*.total');
+    expect(foldSuffixIndexes('')).toBe('');
   });
 });

@@ -57,6 +57,7 @@
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
+import { flush, makeMount, node, read, write } from "./helpers/recursionTestUtils";
 import { getListIndexesByList } from "../src/list/listIndexesByList";
 
 beforeAll(() => {
@@ -64,21 +65,9 @@ beforeAll(() => {
 });
 
 let seq = 0;
-const flush = () => new Promise((r) => setTimeout(r));
+const mount = makeMount("recdefect-host");
 
-async function mount(initial: any, innerHTML = "") {
-  const host = document.createElement(`recdefect-host-${seq++}`);
-  const shadowRoot = host.attachShadow({ mode: "open" });
-  shadowRoot.innerHTML = innerHTML + `<wcs-state></wcs-state>`;
-  document.body.appendChild(host);
-  const stateEl = shadowRoot.querySelector("wcs-state") as State;
-  stateEl.setInitialState(initial);
-  await stateEl.connectedCallbackPromise;
-  await State.getBindingsReady(shadowRoot);
-  return { host, shadowRoot, stateEl };
-}
-
-const NODE = (value: number, children: any[] = []) => ({ value, children });
+const NODE = node;
 const baseAt = (d: number) => "nodes.*" + ".children.*".repeat(d);
 
 /**
@@ -108,14 +97,6 @@ function unrollTotals(state: any, depth: number): any {
   return state;
 }
 
-const read = (stateEl: State, fn: (s: any) => any) => {
-  let out: any;
-  stateEl.createState("readonly", (s: any) => { out = fn(s); });
-  return out;
-};
-const write = (stateEl: State, fn: (s: any) => void) => {
-  stateEl.createState("writable", (s: any) => { fn(s); });
-};
 /** 深さ d の行 total を全件読む（getter を経由する読み） */
 const totalsAt = (stateEl: State, d: number) =>
   read(stateEl, (s: any) => s.$getAll(baseAt(d) + ".total", []));

@@ -92,7 +92,20 @@ export function splitRecursivePath(spec: RecursionSpec, path: string): string | 
   if (!path.startsWith(spec.recursiveAnchor + '.')) return null;
   const suffix = path.slice(spec.recursiveAnchor.length);
   // 2 つ目の `**`（複数の再帰点）は初版では未対応
-  return hasRecursionWildcard(suffix) ? null : suffix;
+  if (hasRecursionWildcard(suffix)) return null;
+  // 接尾辞は整形されたパス: 空セグメント（`nodes.**.` / `nodes.**..x`）と `**` 直後の素の `*`
+  // （`nodes.**.*` — 展開するとアンカー行そのもの）は受理しない（runtime の splitRecursivePath と同じ）
+  const segments = suffix.slice(1).split('.');
+  if (segments[0] === '*' || segments.some(segment => segment.length === 0)) return null;
+  return suffix;
+}
+
+/**
+ * 接尾辞（`.` で始まる）の添字セグメントだけを `*` に畳む。先頭の空セグメントは区切りの都合なので
+ * 畳まない（runtime `expand.foldSuffixIndexes` の写し）。
+ */
+export function foldSuffixIndexes(suffix: string): string {
+  return suffix.length === 0 ? suffix : '.' + indexSegmentsToWildcard(suffix.slice(1));
 }
 
 /** 具体パスを「反復の段数」と「残り」に畳んだ結果。 */
@@ -342,8 +355,20 @@ export function conflictingGetterSuffix(
   suffix: string,
 ): string | null {
   for (const declared of getterSuffixes) {
-    if (sameFamily(spec, declared, suffix)) return declared;
-    if (suffix.startsWith(declared + '.')) return declared;
+    if (coversSuffix(spec, declared, suffix)) return declared;
   }
   return null;
+}
+
+/**
+ * 接尾辞 `suffix` が `**` getter の接尾辞 `familySuffix` の族そのもの、またはその値の内側を
+ * 指しているか。`.` 境界で切った各接頭辞（全体を含む）について `sameFamily` を見る —
+ * `startsWith(familySuffix + '.')` だけでは反復語ぶんずれた展開形の値の内側
+ * （`nodes.**.children.*.total.x` で `nodes.**.total`）を取りこぼす（runtime `expand.coversSuffix` の写し）。
+ */
+export function coversSuffix(spec: RecursionSpec, familySuffix: string, suffix: string): boolean {
+  for (let end = suffix.length; end > 0; end = suffix.lastIndexOf('.', end - 1)) {
+    if (sameFamily(spec, familySuffix, suffix.slice(0, end))) return true;
+  }
+  return false;
 }

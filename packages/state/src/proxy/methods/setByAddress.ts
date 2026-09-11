@@ -365,7 +365,7 @@ function setByAddressCore(
   // 読み側の遅延実体化（getByAddress の E5）と対称に、書き側はここで止める。
   // 宣言の無い state は boolean 判定 1 個で抜ける（D18）
   if (stateElement.hasRecursion === true) {
-    const owner = stateElement.recursionRegistry!.recursiveGetterOwning(path);
+    const owner = stateElement.recursionRegistry!.recursiveGetterOwningPath(address.pathInfo);
     if (owner !== null) {
       raiseError(
         `[wcs/recursion-readonly] "${path}" writes into the recursive getter "${owner}" ` +

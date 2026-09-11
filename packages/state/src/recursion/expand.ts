@@ -35,7 +35,67 @@ export function splitRecursivePath(spec: IRecursionSpec, path: string): string |
   if (hasRecursionWildcard(suffix)) {
     return null;
   }
+  // 接尾辞は整形されたパスでなければならない: 空セグメント（`nodes.**.` / `nodes.**..x`）と
+  // `**` 直後の素の `*`（`nodes.**.*` — 展開すると `nodes.*.*` でアンカー行そのもの）は
+  // 受理しない。`assertNodePath` / `$watch` が同じ形を拒否するのと対称（第 4 サイクルで実測:
+  // 受理すると `[undefined×n]` や生の `Reflect.set called on non-object` になっていた）。
+  const segments = suffix.slice(DELIMITER.length).split(DELIMITER);
+  if (segments[0] === WILDCARD || segments.some((segment) => segment.length === 0)) {
+    return null;
+  }
   return suffix;
+}
+
+/**
+ * 接尾辞（`.` で始まる）の添字セグメントだけを `*` に畳む。先頭の空セグメントは区切りの
+ * 都合なので畳まない（`indexSegmentsToWildcard` に丸ごと渡すと `Number("") === 0` で `*` になる）。
+ * `**` パスの検査（構造・読み取り専用）と `**` getter キーの検査が共有する。
+ */
+export function foldSuffixIndexes(suffix: string): string {
+  return suffix.length === 0 ? suffix : DELIMITER + indexSegmentsToWildcard(suffix.slice(DELIMITER.length));
+}
+
+/**
+ * 2 つの接尾辞が**同じ具体パス族**を指すか。片方がもう片方の末尾で、差分が反復語の
+ * 整数倍（0 回を含む）のとき真。`nodes.**.total` と `nodes.**.children.*.total` は
+ * 深さ k と k+1 で同じ `nodes.*.children.*.total` になる、という関係を捉える。
+ * 静的側の `recursionPaths.sameFamily` と同じ純関数。
+ */
+export function sameFamily(spec: IRecursionSpec, a: string, b: string): boolean {
+  const unit = DELIMITER + spec.repeat;
+  const shorter = a.length <= b.length ? a : b;
+  const longer = a.length <= b.length ? b : a;
+  if (!longer.endsWith(shorter)) {
+    return false;
+  }
+  const gap = longer.slice(0, longer.length - shorter.length);
+  if (gap.length === 0) {
+    return true;
+  }
+  if (gap.length % unit.length !== 0) {
+    return false;
+  }
+  for (let cursor = 0; cursor < gap.length; cursor += unit.length) {
+    if (!gap.startsWith(unit, cursor)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * 接尾辞 `suffix` が、`**` getter の接尾辞 `familySuffix` の族そのもの、またはその値の内側を
+ * 指しているか。`.` 境界で切った各接頭辞 `p`（全体を含む）について `sameFamily(familySuffix, p)`
+ * を見る — `startsWith(familySuffix + ".")` だけでは、反復語ぶんずれた展開形の値の内側
+ * （`nodes.**.children.*.total.x` で `nodes.**.total`）を取りこぼす（第 4 サイクルで実測）。
+ */
+export function coversSuffix(spec: IRecursionSpec, familySuffix: string, suffix: string): boolean {
+  for (let end = suffix.length; end > 0; end = suffix.lastIndexOf(DELIMITER, end - 1)) {
+    if (sameFamily(spec, familySuffix, suffix.slice(0, end))) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**

@@ -46,62 +46,19 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
+import {
+  flush, makeMount, node, read, recursionState as baseRecursionState, UNION_TOTAL, write, writeCount, writeError, type TNode,
+} from "./helpers/recursionTestUtils";
 
 beforeAll(() => {
   bootstrapState();
 });
 
-let seq = 0;
-const flush = () => new Promise((r) => setTimeout(r));
-
-async function mount(initial: any, innerHTML: string) {
-  const host = document.createElement(`recursion-setall-host-${seq++}`);
-  const shadowRoot = host.attachShadow({ mode: "open" });
-  shadowRoot.innerHTML = innerHTML + `<wcs-state></wcs-state>`;
-  document.body.appendChild(host);
-  const stateEl = shadowRoot.querySelector("wcs-state") as State;
-  stateEl.setInitialState(initial);
-  await stateEl.connectedCallbackPromise;
-  await State.getBindingsReady(shadowRoot);
-  return { host, shadowRoot, stateEl };
-}
-
-function read<T>(stateEl: State, fn: (s: any) => T): T {
-  let out: any;
-  stateEl.createState("readonly", (s: any) => { out = fn(s); });
-  return out as T;
-}
-
-function write(stateEl: State, fn: (s: any) => void): void {
-  stateEl.createState("writable", fn);
-}
-
-/**
- * `$setAll` の戻り値（書いた件数）を取り出す。
- * `createState("writable", cb)` は **cb の戻り値を返さない**ので、外の変数へ逃がす。
- */
-function writeCount(stateEl: State, fn: (s: any) => number): number {
-  let count = -1;
-  stateEl.createState("writable", (s: any) => { count = fn(s); });
-  return count;
-}
-
-/** throw した場合はそのメッセージ、しなかった場合は空文字。 */
-function writeError(stateEl: State, fn: (s: any) => void): string {
-  try {
-    stateEl.createState("writable", fn);
-  } catch (e: any) {
-    return String(e && e.message);
-  }
-  return "";
-}
+const mount = makeMount("recursion-setall-host");
 
 // ---------------------------------------------------------------------------
-// 木と再帰 state
+// 木と再帰 state（helpers/recursionTestUtils の node / recursionState を使う）
 // ---------------------------------------------------------------------------
-
-type TNode = { value: number; children: TNode[]; [key: string]: any };
-const node = (value: number, children: TNode[] = []): TNode => ({ value, children });
 
 /**
  * 枝の数も深さも揃っていない木（Phase C の順序テストと同じ形）。
@@ -132,26 +89,7 @@ const LEVEL_ORDER = [10, 20, 30, 11, 13, 31, 12, 32, 33];
  * 本体が評価されてしまう。descriptor で足して事故を防ぐ。
  */
 function recursionState(nodes: any, extra: Record<string, PropertyDescriptor> = {}): any {
-  const state: any = { nodes, $recursion: { "nodes.*": "children.*" } };
-  Object.defineProperty(state, "nodes.**.total", {
-    get(this: any) {
-      return this["nodes.**.value"] +
-        this.$getAll("nodes.**.children.*.total").reduce((a: number, b: number) => a + b, 0);
-    },
-    enumerable: true,
-    configurable: true,
-  });
-  Object.defineProperty(state, "treeTotal", {
-    get(this: any) {
-      return this.$getAll("nodes.**.value", []).reduce((a: number, b: number) => a + b, 0);
-    },
-    enumerable: true,
-    configurable: true,
-  });
-  for (const [key, descriptor] of Object.entries(extra)) {
-    Object.defineProperty(state, key, descriptor);
-  }
-  return state;
+  return baseRecursionState(nodes, { treeTotal: UNION_TOTAL, ...extra });
 }
 
 /**
@@ -752,6 +690,31 @@ describe("ブロードキャストが受け付けない形", () => {
     expect(writeError(stateEl, (s: any) => { s.$setAll("nodes.**.children.0.total", [], 5); }))
       .toContain("[wcs/recursion-readonly]");
     host.remove();
+  });
+
+  it("反復語ぶんずれた展開形の値の内側（nodes.**.children.*.total.x）も列挙より前に [wcs/recursion-readonly] になること", async () => {
+    // Fixed by cycle-4 review — was: `conflictingRecursiveGetter` が `sameFamily`（全体）と
+    // `startsWith(def + ".")` しか見ず、反復語ぶんずれた展開形の値の内側をすり抜けて走査を実行し
+    // （基準 commit 済み）、第 2 相の `setByAddressCore` で初めて具体パスを名指す readonly になっていた。
+    // §7-3「形の拒否はすべて列挙より前」に揃え、`.` 境界の各接頭辞に `sameFamily` を掛ける。
+    for (const path of ["nodes.**.children.*.total.x", "nodes.**.children.*.children.*.total.x.y"]) {
+      const { message, unchanged, host } = await rejects((s) => s.$setAll(path, [], 1));
+      expect(message, path).toContain(`[wcs/recursion-readonly] "${path}" writes into the recursive getter "nodes.**.total"`);
+      expect(unchanged, path).toBe(true);
+      host.remove();
+    }
+  });
+
+  it("接尾辞が整形されていない `**` パス（空セグメント・`**` 直後の `*`）は [wcs/recursion-anchor] で拒否されること", async () => {
+    // Fixed by cycle-4 review — was: `$setAll("nodes.**..x", [], 1)` が生の
+    // `Reflect.set called on non-object`、`$getAll("nodes.**.", [])` が `[undefined×5]` になっていた。
+    for (const path of ["nodes.**.", "nodes.**..x", "nodes.**.*", "nodes.**.*.x", "nodes.**.a..b"]) {
+      const { message, unchanged, host } = await rejects((s) => s.$setAll(path, [], 1));
+      expect(message, path).toContain("[wcs/recursion-anchor]");
+      expect(message, path).toContain("well-formed suffix");
+      expect(unchanged, path).toBe(true);
+      host.remove();
+    }
   });
 
   it("再帰 getter を名指す接尾辞は [wcs/recursion-readonly] になること", async () => {

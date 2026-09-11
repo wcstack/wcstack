@@ -29,8 +29,8 @@ import { IListIndex } from "../list/types";
 import { getByAddress } from "../proxy/methods/getByAddress";
 import { IStateHandler } from "../proxy/types";
 import { raiseError } from "../raiseError";
-import { concretePathAt, nodePathAt } from "./expand";
-import { IRecursionSpec } from "./types";
+import type { RecursionRegistry } from "./registry";
+
 
 /** 深さごとに 1 回だけ決まるもの。ノードごとに作り直さない。 */
 interface IDepthPaths {
@@ -49,9 +49,10 @@ export function collectRecursiveAddresses(
   target: object,
   receiver: any,
   handler: IStateHandler,
-  spec: IRecursionSpec,
+  registry: RecursionRegistry,
   suffix: string,
 ): IStateAddress[] {
+  const spec = registry.spec;
   const results: IStateAddress[] = [];
   const observed: Map<IAbsoluteStateAddress, readonly unknown[]> = new Map();
   const pathsByDepth: IDepthPaths[] = [];
@@ -103,9 +104,10 @@ export function collectRecursiveAddresses(
     if (typeof known !== "undefined") {
       return known;
     }
-    // 上限検査はここ（＝その深さに実際にノードが居ると分かってから）。
-    const concretePath = concretePathAt(spec, suffix, depth);
-    const nodePath = suffix.length === 0 ? concretePath : nodePathAt(spec, depth);
+    // 上限検査はここ（＝その深さに実際にノードが居ると分かってから）。具体パスはレジストリの
+    // 記憶（接尾辞 × 深さ）から引き、走査ごとに文字列連結をやり直さない。
+    const concretePath = registry.concretePathAt(suffix, depth);
+    const nodePath = suffix.length === 0 ? concretePath : registry.concretePathAt("", depth);
     const paths: IDepthPaths = {
       nodePath,
       concretePathInfo: getPathInfo(concretePath),

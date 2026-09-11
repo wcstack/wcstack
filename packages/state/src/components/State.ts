@@ -180,14 +180,26 @@ export class State extends HTMLElementBase implements IStateElement {
   private set _state(value: IState) {
     // 旧世代のデータ。再帰の生成物（辺・キャッシュ）を忘れるとき、台帳を辿る起点になる
     const previousState = this.__state;
-    this._commandTokenNames = processCommandTokensDeclaration(value);
-    this._eventTokenNames = processEventTokensDeclaration(value);
-    // $recursion: 宣言の検証とレジストリの構築は `value` しか読まないので、`__state` を
-    // 差し替える**前**に済ませる。ここで throw すれば要素は丸ごと旧世代に留まる（旧 state・
-    // 旧レジストリ・旧世代の辺とキャッシュがそのまま — 再セットの宣言不正で「state は新・
-    // レジストリは旧」という半端な状態にならない）。差し替え自体は下（listPaths のクリア後）。
+    // 順序: **純検証をすべて** → 旧世代の後始末 → 差し替え → 再収集。
+    // `value` しか読まない検証（$recursion の宣言とレジストリの構築・$commandTokens・$eventTokens）は
+    // 何かを書き換える前に全部済ませる。どれかが throw すれば要素は丸ごと旧世代に留まる
+    // （旧 state・旧レジストリ・旧世代の辺とキャッシュ・トークン名がそのまま）。後始末を先に
+    // すると「レジストリは新・own 生成アクセサと辺は消えた・`__state` は旧」という半端な状態で
+    // throw する（第 4 サイクルの再検証で実測 — 別アンカー＋不正な $commandTokens で旧世代の
+    // 集計が無言で消えた）。
     const recursionSpec = processRecursionDeclaration(value);
     const recursionRegistry = recursionSpec === null ? null : new RecursionRegistry(recursionSpec, value);
+    const commandTokenNames = processCommandTokensDeclaration(value);
+    const eventTokenNames = processEventTokensDeclaration(value);
+    // 旧世代の生成アクセサ（own）・それを指す依存辺・評価結果のキャッシュを忘れてから
+    // 差し替える（recursion/generation.ts）。own の生成アクセサは、同じオブジェクトを再セットする
+    // ときに下の `getStateInfo` が `getterPaths` へ拾い直す前に消えていなければならない。
+    if (this._recursionRegistry !== null) {
+      this._recursionRegistry.forgetGenerated(this, previousState as IState);
+    }
+    this._recursionRegistry = recursionRegistry;
+    this._commandTokenNames = commandTokenNames;
+    this._eventTokenNames = eventTokenNames;
     this.__state = value;
     // $updatedCallback の有無を state セット時に確定しておく（in はプロトタイプ
     // チェーンも見る・getter を評価しない）。drain 側はこのフラグで更新アドレスの
@@ -225,16 +237,8 @@ export class State extends HTMLElementBase implements IStateElement {
     // 一切入らない（docs/state-list-key-design.md §7-1）。再 set で必ず置き換える。
     this._listKeys = processListKeysDeclaration(value);
     // $recursion: 宣言が無ければ null のままで、読みのホットパスには一切入らない。
-    // getterPaths / setterPaths の収集後であること（`**` getter の descriptor を
-    // 走査して定義を集めるため）。再セットでは毎回作り直す — 展開済みアクセサは
-    // 旧 state オブジェクトのものなので持ち越さない（§1-3）。
-    // 新しい宣言とレジストリはセッタの先頭で組み立て済み（`__state` の差し替え前）。
-    // 旧世代の生成アクセサを指す依存辺と、その評価結果のキャッシュを外してから差し替える
-    // （registry.ts の forgetGenerated 参照）。レジストリがあるなら旧世代の state は必ずある。
-    if (this._recursionRegistry !== null) {
-      this._recursionRegistry.forgetGenerated(this, previousState as IState);
-    }
-    this._recursionRegistry = recursionRegistry;
+    // レジストリの構築・旧世代の後始末・差し替えはセッタの先頭で済んでいる（`__state` の
+    // 差し替え前）。ここに残るのはリストパスの登録だけ（`_listPaths.clear()` の後であること）。
     if (recursionSpec !== null) {
       // アンカーのリストパス（`nodes.*` なら `nodes`）は**宣言から静的に分かる**ので、
       // 展開を待たずに今すぐ登録する。

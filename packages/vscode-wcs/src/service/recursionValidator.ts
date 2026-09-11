@@ -46,7 +46,7 @@ import {
   concreteExpansionSuffix,
   conflictingGetterSuffix,
   hasRecursionWildcard,
-  indexSegmentsToWildcard,
+  foldSuffixIndexes,
   makeRecursionSpec,
   owningGetterSuffix,
   sameFamily,
@@ -287,7 +287,7 @@ function validateRecursiveGetters(
     // 多段なら `.branch`）なら、生成 getter が実データの子リストを全深さで影にする。
     // 書き側が同じ形を `recursion-structural-write` で拒否するのと対称（runtime は構築時に raise）。
     // 添字綴り（`get "nodes.**.children.0"()`）も畳んでから掛ける（書き側・runtime と同じ）
-    if (structuralWriteTarget(spec, '.' + indexSegmentsToWildcard(suffix.slice(1))) !== null) {
+    if (structuralWriteTarget(spec, foldSuffixIndexes(suffix)) !== null) {
       push(out, WcsDiagnosticCode.RecursionDeclarationInvalid, start, end,
         msgs.recursionGetterInvalid(span.name, 'structural', spec.recursiveAnchor));
       continue;
@@ -482,7 +482,7 @@ function validateSetAllForm(
   // 接尾辞の添字綴り（`nodes.**.children.0` / `.children.0.children` / `.children.0.total`）は
   // 畳んでから構造・読み取り専用の検査に掛ける（runtime の setAllRecursive と同じ）。
   // 接尾辞は `.` で始まる（先頭の空セグメントは区切りの都合）ので、区切りの後ろだけを畳む
-  const checkedSuffix = suffix.length === 0 ? suffix : '.' + indexSegmentsToWildcard(suffix.slice(1));
+  const checkedSuffix = foldSuffixIndexes(suffix);
   const structural = structuralWriteTarget(spec, checkedSuffix);
   if (structural !== null) {
     push(out, WcsDiagnosticCode.RecursionStructuralWrite, start, end,

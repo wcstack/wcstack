@@ -2471,7 +2471,8 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 | `wcs/getter-depth-exceeded` | getter の評価が 1 パスで評価できる深さ（128 段）を超え、かつ同じアドレスを 2 度通っていない ＝ データが単に深い | 集計の段数を減らすか、木を平らにする |
 | `wcs/index-param-range` | `$N` は実在するワイルドカード段を指すこと（`$1`〜`$128`・先頭ゼロ不可） | 実在する段を使う |
 | `wcs/recursion-unsupported` | `**` を解釈しない場所へ `**` が渡った —— markup・`$watch` / `$listKeys` のキー・`$resolve` / `$postUpdate` / `$trackDependency`・代入、あるいは state が `$recursion` を宣言していない | 具体パスを使うか、アンカーを宣言する |
-| `wcs/recursion-anchor` | 宣言済みのアンカーと合致しない `**` パス（このバージョンは state ごとに単一の自己再帰アンカー） | 宣言どおりに綴る |
+| `wcs/recursion-declaration-invalid` | `$recursion` 宣言か `**` getter のキーが、このバージョンが受け付けない形 —— 要素を指さないアンカー / 反復サブパス、複数アンカー、getter でない・setter を持つ `**` キー、`get "nodes.**"`、構造を名指す getter、同じ具体パスへ展開する 2 本の getter、展開形と同名の具体 getter。lint が先に出し、実行時は宣言を読んだ時点で throw する | 文面のとおり宣言を直す |
+| `wcs/recursion-anchor` | 宣言済みのアンカーと合致しない `**` パス（このバージョンは state ごとに単一の自己再帰アンカー）、または `**` の後ろが整形されていない —— 空セグメント（`nodes.**.` / `nodes.**..x`）や `**` 直後の素の `*`（`nodes.**.*`） | 宣言どおりに綴り、その後ろに実在するパスを書く |
 | `wcs/recursion-context` | **束縛**形の `**` を、束縛先の深さが無い場所で読んだ —— トップレベル、またはアンカー外の getter | 再帰 getter か行 getter の中から読むか、`[]` で全深さを合併する |
 | `wcs/recursion-getall-form` / `wcs/recursion-setall-form` | `**` に対して定義できない `indexes` の形。コードが付くのは非空の接頭辞（両 API）と、`$getAll` の配列でない `indexes`（`null`・文字列など）。`$setAll` の省略・mapper・`{ spread: true }` も同じ誤りで、lint は同じコードで報告するが、実行時は形を名指しした文面で throw するだけでコードは付かない | 現在の深さなら省略、全深さなら `[]` |
 | `wcs/recursion-structural-write` | 再帰 `$setAll` が構造そのもの（ノード・子リスト・その `length`・子ノード・反復サブパスが多段なら子リストへ至る途中のオブジェクト）を指している | 葉のプロパティへブロードキャストする |

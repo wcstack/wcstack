@@ -17,6 +17,8 @@
 - **書き込み側の拒否** — 再帰 getter の展開形（`nodes.*.children.*.total`・添字綴り `nodes.1.total` / `nodes.*.children.0.total`）とその値の内側への `$setAll` / 値付き `$resolve` / `this["…"] = …`（複合代入・`++` / `--` 含む）を `wcs/recursion-readonly`。再帰 `$setAll` の接尾辞は添字を畳んでから見るので、`nodes.**.children.0` は子ノード・`nodes.**.children.0.children` と `nodes.**.children.length` はリスト（とその length）として `wcs/recursion-structural-write`、`nodes.**.children.0.total` は `wcs/recursion-readonly`。`$getAll("…**…", null)` と配列でないリテラルの添字は `wcs/recursion-getall-form`（`undefined` は束縛形なので黙る）
 - **`**` を解釈しない消費者を広げた** — `this["…**…"] = …`（複合代入・`++` / `--` 含む）・`$postUpdate` / `$trackDependency` の `**`・`$listKeys` のキーの `**` も `wcs/recursion-unsupported`（error）。代入の走査は文字列・テンプレートリテラルの中身を見ない
 - **パスの存在検査をランタイムに揃えた** — 接尾辞に反復語を含む `**` getter（`get "nodes.**.children.*.total"()`）の展開形と、オブジェクトを返す `**` getter の値の内側（`nodes.*.stats.count`）は存在扱い（畳む深さを 0 まで降りて候補に当て、`**` getter の下は「評価しないと分からない」として黙る）
+- `wcs/recursion-anchor` は、`**` の後ろが整形されていない `**` パス（空セグメント `nodes.**.` / `nodes.**..x`、`**` 直後の素の `*` `nodes.**.*`）も報告する — getter キーと `$getAll` / `$setAll` のパス引数の両方（ランタイムの `splitRecursivePath` と同じ判定）
+- `wcs/recursion-readonly` は、反復語ぶんずれた展開形の値の内側への再帰 `$setAll`（`nodes.**.children.*.total.x` で `get "nodes.**.total"()`）も報告する（接尾辞の `.` 境界の各接頭辞で族を照合 — ランタイムも列挙より前に同じ判定で落とす）
 
 ## 1.13.0 — 2026-09-08
 

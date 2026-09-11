@@ -286,7 +286,7 @@ describe("listPathsUpTo: 依存ウォークに載せるリストパスの列挙"
     }
   });
 
-  it("ネストしたアンカー・反復サブパスでも綴りが正しいこと", () => {
+  it("listPathsUpTo: ネストしたアンカー・反復サブパスでも綴りが正しいこと", () => {
     expect(listPathsUpTo(nested, 2)).toEqual([
       "data.tree",
       "data.tree.*.branch.children",

@@ -17,9 +17,9 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
+import { flush, read, write } from "./helpers/recursionTestUtils";
 beforeAll(() => { bootstrapState(); });
 let seq = 0;
-const flush = () => new Promise((r) => setTimeout(r));
 async function mount(initial: any) {
   const host = document.createElement(`shape-host-${seq++}`);
   const sr = host.attachShadow({ mode: "open" });
@@ -31,8 +31,7 @@ async function mount(initial: any) {
   await State.getBindingsReady(sr);
   return el;
 }
-const read = (el: State, fn: (s: any) => any) => { let r: any; el.createState("readonly", (s: any) => { r = fn(s); }); return r; };
-const write = (el: State, fn: (s: any) => void) => el.createState("writable", fn);
+// read / write / flush は helpers/recursionTestUtils
 /** 再帰 getter つきの state を組む。spread では accessor が値化されるので defineProperty で足す。 */
 const mountShape = async (partial: any) => {
   const st: any = { label: "x", $recursion: { "nodes.*": "children.*" }, ...partial };

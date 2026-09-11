@@ -400,7 +400,27 @@ X6・X7・X10 は同じ「再セット・ハイドレーション後に一部の
 | 11（低） | README「Not in this version」の抜け、デモ README の構造書き込みの範囲、接尾辞ワイルドカードの合併形の順序 | 3 点とも en/ja 対で追記（`nodes.**.tags.*.v` → `[3, 4, 5, 7]` の例） |
 | 12（低） | CHANGELOG [Unreleased] の Fixed が 1 段落・Added と重複 | 未リリース機能なので Fixed を Added に吸収し、利用者に見える最終契約だけを残した。vscode-wcs 側も同じ粒度に整理 |
 
-**再検証後の追記（低 3 件）**: 行 7 の修理欄を実装どおり（集計 127 / 128、合併形 128 / 129）に訂正。マウント／ボリュームのブロックでも宣言に依存しない検査（`**` の代入・`$resolve` / `$postUpdate` / `$trackDependency`・`$listKeys` キー）を走らせる（`spec = null`・`undeclared = false` で呼び、宣言依存の `$getAll` / `$setAll` の形は黙る — §7-4 #12 の判断と矛盾しない）。Fixed の撤去で落ちていた「固定 arity の `$getAll` に配列でない `indexes` を渡すと生の TypeError ではなく診断」（既リリース API の挙動変更）を `### Changed` に戻した。
+### 7-9. 第 4 サイクル（2026-09-12）
+
+4 体目の指摘者（先入観なし）による再点検。11 件（中 4・低 7）をすべて修理した。
+
+| # | 内容 | 修理 |
+|---|---|---|
+| 1（中） | 反復語ぶんずれた展開形の値の内側（`$setAll("nodes.**.children.*.total.x", [], v)`）を `conflictingRecursiveGetter` / `conflictingGetterSuffix` が拾えず、静的側は沈黙、ランタイムは走査（基準 commit）の後の第 2 相で初めて readonly | `expand.coversSuffix` / `recursionPaths.coversSuffix`（接尾辞の `.` 境界の各接頭辞に `sameFamily`）を両側の述語にし、列挙より前に `wcs/recursion-readonly` |
+| 2（中） | `$recursion` を宣言した state では全書き込み（アンカー外も）が `recursiveGetterOwning` の畳み（split + `Number()` + join）を毎回払う（+101ns / +180〜252ns） | intern 済み `PathInfo` をキーにした `WeakMap` 記憶（`recursiveGetterOwningPath`）を前段に置き、畳みは miss 時だけ。**修正後の計測**（50,000 回・5 ラウンド最良値・2 回実行）: `s.counter = i` +7ns / +19ns（1.02× / 1.07×）、`s["form.a"] = i` +4ns / +26ns（1.01× / 1.09×） |
+| 3（中） | 宣言時（構築時）の診断にランタイム側のコードが無い。getter キーのアンカー不一致は 4 本目の手書き文面。README 診断表に `wcs/recursion-declaration-invalid` が無い | `declaration.ts` / `registry.ts` の宣言時 raise に `[wcs/recursion-declaration-invalid]` を付け、アンカー不一致は `recursionAnchorMismatchMessage`。README 診断表に行を追加（lint が先に出す旨）。CHANGELOG に一言 |
+| 4（中） | `mount` / `read` / `write` / `TNode` / `node` / `forest` / `recursionState` が 7 ファイルにほぼ同文でコピー | `__tests__/helpers/recursionTestUtils.ts`（`makeMount(prefix)` / `read` / `write` / `writeCount` / `writeError` / `node` / `forest` / `recursionState` 基本形 / `UNION_TOTAL` / `UNION_VALUES`）に抽出し、5 ファイルの mount と 7 ファイルの read / write を差し替え（挙動不変の機械的抽出）。合併形 getter を足す getAll / setAll は基本形を包む局所ラッパーで同じ state を組む。返り値の形が違う Shape の `mount` と Integration の `mountHost` は据え置き |
+| 5（低） | registry.ts の責務混在 | `_sameFamily` → `expand.sameFamily`、「区切り後ろだけ畳む」イディオム → `foldSuffixIndexes`（両側・4 箇所）、`materialize.ts` は削除して `getByAddress` が `registry.materializeFor` を直接呼ぶ（空レジストリのガードは `materializeFor` 内）。世代の後始末（own 生成アクセサの削除・辺・キャッシュ）は `generation.ts` に分離（`forgetGeneration` / `isGeneratedGetter` / `markGeneratedGetter`） |
+| 6（低） | `**` の接尾辞に空セグメント・末尾区切り・素の `*` があっても受理 | `splitRecursivePath`（両側）で拒否 → `wcs/recursion-anchor`（文面に「整形された接尾辞」を追記） |
+| 7（低） | 同じ state を `$recursion` 無しで再セットしても own の生成アクセサが残り、`getterPaths` に拾い直されて `recursion-unsupported` になる | `forgetGeneration` が own の生成 getter を `delete`。セッタの順序を「宣言検証 → 旧世代の後始末 → 差し替え → 再収集」に整理し、`getStateInfo` より前に呼ぶ。テストで再セット後の `getterPaths` に生成パスが無いことを固定 |
+| 8（低） | 再セットで `$recursion` が不正なとき `_commandTokenNames` / `_eventTokenNames` は throw より前に差し替わる | `value` しか読まない**純検証をすべて先に**（`$recursion` の宣言とレジストリ構築・`$commandTokens`・`$eventTokens`）済ませ、その後で後始末（`forgetGenerated`）→ 差し替え → 再収集。§7-7「要素が丸ごと旧世代に留まる」はこれで正確になった（テストでトークン名の据え置きも固定）。**再検証で回帰を検出**: 最初の整理ではトークン検証が後始末の後に回っており、`$recursion` は正当で `$commandTokens` が不正な再セットが「レジストリは新・own 生成アクセサと辺は消えた・`__state` は旧」で throw していた（別アンカーなら旧世代の集計が無言で消える）。トークン検証もレジストリ構築の直後に移し、別アンカー＋不正トークンで旧世代の `[131, 2]` が読めることを固定 |
+| 9（低） | 陳腐化した記述 4 点 | `setAll.ts` のコメント／set-all-design §6-2／design §10（決着済みの注記）と §6-3（`$129` 修理済み）／デモ README のコード付与の説明を現行実装に合わせた |
+| 10（低） | 合併形の走査ごとに `concretePathAt` をやり直す | `collectRecursiveAddresses` に `registry` を渡し、`pathsAt` が `registry.concretePathAt` の記憶を使う |
+| 11（低） | `recursion.expand.test.ts` の同名 `it` | 後者を `listPathsUpTo:` 付きの題名に |
+
+**再検証後の追記（低 2 件・第 4 サイクル）**: #8 の回帰（上の行に記載）を修理。lint の挙動が増えた 2 点（`wcs/recursion-anchor` の不整形接尾辞・`wcs/recursion-readonly` の反復語ぶんずれた値の内側）を vscode-wcs CHANGELOG に追記し、README 診断表の `wcs/recursion-anchor` 行にも不整形接尾辞を添えた（en/ja）。
+
+**再検証後の追記（低 3 件・第 3 サイクル）**: 行 7 の修理欄を実装どおり（集計 127 / 128、合併形 128 / 129）に訂正。マウント／ボリュームのブロックでも宣言に依存しない検査（`**` の代入・`$resolve` / `$postUpdate` / `$trackDependency`・`$listKeys` キー）を走らせる（`spec = null`・`undeclared = false` で呼び、宣言依存の `$getAll` / `$setAll` の形は黙る — §7-4 #12 の判断と矛盾しない）。Fixed の撤去で落ちていた「固定 arity の `$getAll` に配列でない `indexes` を渡すと生の TypeError ではなく診断」（既リリース API の挙動変更）を `### Changed` に戻した。
 
 ## 8. 受け入れ条件と検証
 

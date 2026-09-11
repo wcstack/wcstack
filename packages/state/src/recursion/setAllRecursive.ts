@@ -22,7 +22,7 @@ import { recursionAnchorMismatchMessage, setAllValueKindMessage } from "../pathD
 import { setByAddress } from "../proxy/methods/setByAddress";
 import { IStateHandler } from "../proxy/types";
 import { raiseError } from "../raiseError";
-import { indexSegmentsToWildcard, isStructuralSuffix, splitRecursivePath } from "./expand";
+import { foldSuffixIndexes, isStructuralSuffix, splitRecursivePath } from "./expand";
 import { IRecursionSpec } from "./types";
 import { collectRecursiveAddresses } from "./walk";
 
@@ -65,10 +65,7 @@ export function setAllRecursive(
   // 添字綴りのままだと素の文字列一致をすり抜け、構造を置き換えたり部分書き込みの途中で
   // 生の TypeError になったりしていた（第 2 サイクルのレビューで実測）。列挙は綴りのまま
   // 行う — 接尾辞の添字は「その子だけ」を指す意味を持つ。
-  // 接尾辞は `.` で始まる（先頭の空セグメントは区切りの都合）ので、区切りの後ろだけを畳む。
-  const checkedSuffix = suffix.length === 0
-    ? suffix
-    : DELIMITER + indexSegmentsToWildcard(suffix.slice(DELIMITER.length));
+  const checkedSuffix = foldSuffixIndexes(suffix);
 
   // --- 形の検査は列挙より前（1 件も書かないことを保証する。設計 §7-3） ---
   if (!Array.isArray(indexes)) {
@@ -112,7 +109,7 @@ export function setAllRecursive(
   // 再帰 getter の読みが恒久的に落ちる（値の合併は動き続けるので無症状のまま進む）。
   // 1 件も書かない `undefined` のブロードキャストでも同じなので、「書き込み 0 件」は
   // 「状態が動いていない」を意味しない。
-  const addresses = collectRecursiveAddresses(target, receiver, handler, registry.spec, suffix);
+  const addresses = collectRecursiveAddresses(target, receiver, handler, registry, suffix);
 
   // --- 第 2 相: 確定したアドレスにだけ書く ---
   let written = 0;
