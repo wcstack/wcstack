@@ -20,7 +20,6 @@ import {
   depthOfConcretePath,
   hasRecursionWildcard,
   listPathsUpTo,
-  nodePathAt,
   splitRecursivePath,
 } from "../src/recursion/expand";
 import { MAX_WILDCARD_DEPTH } from "../src/define";
@@ -65,7 +64,7 @@ describe("hasRecursionWildcard: `**` を含むかの判別", () => {
   });
 });
 
-describe("concretePathAt / nodePathAt: 深さ k の具体パスを作る", () => {
+describe("concretePathAt: 深さ k の具体パスを作る", () => {
   it("接尾辞ありの具体パスが深さごとに 1 段ずつ伸びること", () => {
     expect(concretePathAt(spec, ".total", 0)).toBe("nodes.*.total");
     expect(concretePathAt(spec, ".total", 1)).toBe("nodes.*.children.*.total");
@@ -76,12 +75,6 @@ describe("concretePathAt / nodePathAt: 深さ k の具体パスを作る", () =>
     expect(concretePathAt(spec, "", 0)).toBe("nodes.*");
     expect(concretePathAt(spec, "", 1)).toBe("nodes.*.children.*");
     expect(concretePathAt(spec, "", 2)).toBe("nodes.*.children.*.children.*");
-  });
-
-  it("nodePathAt が接尾辞なしの concretePathAt と一致すること", () => {
-    for (const depth of [0, 1, 2, 7]) {
-      expect(nodePathAt(spec, depth)).toBe(concretePathAt(spec, "", depth));
-    }
   });
 
   it("接尾辞がワイルドカードを含んでいても、反復部分だけが伸びること", () => {

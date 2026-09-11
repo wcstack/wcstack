@@ -1078,8 +1078,8 @@ describe("cold な state でも合併形の $setAll が成立すること", () =
     write(stateEl, (s: any) => { s.$setAll("nodes.**.mark", [], "*"); });
     await flush();
 
-    // 書き込みは読みの差分基準を動かさない（commitDiffBaseline: false）。その後の
-    // 構造変更も、読みから見れば普通に検出できる。
+    // 再帰の `$setAll` は観測したリスト値を基準へ確定する（固定 arity の `$setAll` だけが
+    // `commitDiffBaseline: false` で確定しない）。その後の構造変更も普通に検出できる。
     expect(union(stateEl)).toEqual(PREORDER);
     write(stateEl, (s: any) => { s.nodes = [s.nodes[2], s.nodes[0], s.nodes[1]]; });
     await flush();

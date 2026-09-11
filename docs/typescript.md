@@ -31,6 +31,8 @@ export default defineState({
 
 `WcsPaths<T>` and `WcsPathValue<T, P>` are exported for tools. Reference: [packages/state/docs/define-state.md](../packages/state/docs/define-state.md).
 
+Recursive paths (`**`, declared with `$recursion`) are typed `any` through a pattern index signature — a depth family cannot be enumerated as a union — while ordinary dot paths keep their resolved types. The VS Code extension's preamble declares the same signature, so the editor and `tsc` report the same thing.
+
 This is the whole extent of what `tsc` alone can check: the state file. It knows nothing about the HTML.
 
 ## 2. Reaching the HTML: `wcs-schema` and the sidecar `stateSchema`

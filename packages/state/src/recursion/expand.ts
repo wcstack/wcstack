@@ -129,13 +129,12 @@ export function indexSegmentsToWildcard(path: string): string {
  */
 export function isStructuralSuffix(spec: IRecursionSpec, suffix: string): boolean {
   const repeatSegments = spec.repeat.split(DELIMITER);
-  const repeatList = repeatSegments.slice(0, -1).join(DELIMITER);
   const unit = DELIMITER + spec.repeat;
   let rest = suffix;
   while (rest.startsWith(unit)) {
     rest = rest.slice(unit.length);
   }
-  if (rest.length === 0 || rest === DELIMITER + repeatList + DELIMITER + "length") {
+  if (rest.length === 0 || rest === DELIMITER + spec.repeatList + DELIMITER + "length") {
     return true;
   }
   for (let i = 1; i < repeatSegments.length; i++) {
@@ -175,8 +174,8 @@ export function concretePathAt(spec: IRecursionSpec, suffix: string, depth: numb
   return full;
 }
 
-/** 深さ k のノードパス（接尾辞なし）。リストパスの登録に使う。 */
-export function nodePathAt(spec: IRecursionSpec, depth: number): string {
+/** 深さ k のノードパス（接尾辞なし）。リストパスの登録に使う（このモジュール内だけ）。 */
+function nodePathAt(spec: IRecursionSpec, depth: number): string {
   return concretePathAt(spec, "", depth);
 }
 
@@ -187,10 +186,9 @@ export function nodePathAt(spec: IRecursionSpec, depth: number): string {
 export function listPathsUpTo(spec: IRecursionSpec, depth: number): string[] {
   const paths: string[] = [];
   // アンカー自身のリスト（末尾の `.*` を落とした形）
-  paths.push(spec.anchor.slice(0, spec.anchor.lastIndexOf(DELIMITER)));
-  const repeatList = spec.repeat.slice(0, spec.repeat.lastIndexOf(DELIMITER));
+  paths.push(spec.anchorList);
   for (let k = 0; k < depth; k++) {
-    paths.push(nodePathAt(spec, k) + DELIMITER + repeatList);
+    paths.push(nodePathAt(spec, k) + DELIMITER + spec.repeatList);
   }
   return paths;
 }

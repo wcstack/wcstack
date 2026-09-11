@@ -1067,7 +1067,8 @@ describe("state の再セットでレジストリが作り直されること", (
   it("同じ state オブジェクトを再セットしても、読む前の構造書き込みが集計に届くこと", async () => {
     // Fixed by post-landing review (P2) — was: 同じオブジェクトなので `nodes` 配列も同じ
     // instance ＝ ListIndex も絶対アドレスも世代を跨いで同一のまま。再セットで生成アクセサ向けの
-    // 依存辺だけが外れ（`forgetGeneratedDependencies`）、旧世代の `dirty:false` のキャッシュは
+    // 依存辺だけが外れ（当時の `forgetGeneratedDependencies` — 現 `recursion/generation.ts` の
+    // `forgetGeneration`）、旧世代の `dirty:false` のキャッシュは
     // 残っていた。次に再帰 getter を読むまでの間の構造書き込みは辺が無いので dirty にできず、
     // `$getAll("nodes.**.total", [])` が `[131, 7, 8, 2]`（正しくは `[16, 7, 8, 2]`）を返した。
     // いまは辺と一緒にキャッシュも落とす（registry.forgetGenerated）。
@@ -1886,6 +1887,60 @@ describe("再帰 getter: 反復サブパスがアンカーと同じ語の木", (
     await flush();
 
     expect(read(stateEl, (s: any) => s.$getAll("nodes.*.total", []))).toEqual([511, 2]);
+    host.remove();
+  });
+});
+
+// ===========================================================================
+// 読みのホットパスの記憶（PathInfo キー・第 5 サイクル）
+// ===========================================================================
+
+describe("読みのゲートを PathInfo で記憶しても判定が変わらないこと", () => {
+  it("「展開形でない」と決めたパスの記憶が、後から生える深さの実体化を隠さないこと", async () => {
+    // 宣言のある state では**全読み**（アンカー外・親ウォークの各段を含む）が
+    // `materializeForPathInfo` を通る。否定を記憶するので、記憶が実体化を隠したら
+    // 深い深さの getter が永久に生えない（値は `undefined` のまま dirty:false で固定される）。
+    const { host, stateEl } = await mount(
+      recursionState(forest(), { label: { value: "root", enumerable: true, configurable: true } }),
+      NO_RENDER_HTML);
+
+    // 否定の経路を先に温める（アンカー外・アンカー下の非展開形・子リスト）
+    for (let i = 0; i < 3; i++) {
+      expect(read(stateEl, (s: any) => s.label)).toBe("root");
+      expect(read(stateEl, (s: any) => s.$getAll(valueAt(0), []))).toEqual([1, 2]);
+      expect(read(stateEl, (s: any) => s.$getAll("nodes.*.children", []).length)).toBe(2);
+    }
+    expect(materialized(stateEl), "否定の読みでは 1 本も生えない").toEqual([]);
+
+    // 同じ PathInfo を何度読んでも、展開形は普通に生える
+    expect(read(stateEl, (s: any) => s.$getAll(totalAt(0), []))).toEqual([131, 2]);
+    expect(materialized(stateEl)).toEqual([totalAt(0), totalAt(1), totalAt(2)].sort());
+
+    // 木を深くしてから読むと、その深さも生える（記憶は世代内の判定だけを覚える）
+    write(stateEl, (s: any) => { s.$setAll("nodes.*.children.*.children.*.children", [], [node(7)]); });
+    await flush();
+    expect(read(stateEl, (s: any) => s.$getAll(totalAt(0), []))).toEqual([138, 2]);
+    expect(materialized(stateEl)).toContain(totalAt(3));
+    host.remove();
+  });
+
+  it("再セットで世代が変わると、前の世代の記憶が持ち越されないこと", async () => {
+    // 記憶はレジストリ（＝ state の世代）が持つ。intern 済みの `PathInfo` は世代を跨いで
+    // 同一なので、レジストリ側に持たないと「前の世代で否定と決めたパス」が新しい宣言でも
+    // 否定のままになる。
+    const first = recursionState(forest(), {}, { "nodes.*": "children.*" });
+    const { host, stateEl } = await mount(first, NO_RENDER_HTML);
+    expect(read(stateEl, (s: any) => s.$getAll(valueAt(0), []))).toEqual([1, 2]);
+    expect(materialized(stateEl)).toEqual([]);
+
+    // 同じパス（`nodes.*.value`）が、次の世代では `**` getter の展開形になる
+    const second: any = { label: "root", nodes: forest(), $recursion: { "nodes.*": "children.*" } };
+    Object.defineProperty(second, "nodes.**.value", {
+      get(this: any) { return 9; }, enumerable: true, configurable: true,
+    });
+    stateEl.setInitialState(second);
+    expect(read(stateEl, (s: any) => s.$getAll(valueAt(0), []))).toEqual([9, 9]);
+    expect(materialized(stateEl)).toContain(valueAt(0));
     host.remove();
   });
 });

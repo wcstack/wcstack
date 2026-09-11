@@ -524,6 +524,64 @@ describe('$recursion 宣言の検証', () => {
   $recursion: { "nodes.*"() { return "children.*"; } },
   nodes: []`))).toEqual([WcsDiagnosticCode.RecursionDeclarationInvalid]);
   });
+
+  it('宣言そのものが配列リテラルでも「オブジェクトでない」と断定して拒否する', () => {
+    // Fixed by cycle-5 review — was: 配列リテラルだけ断定の候補から漏れ、ランタイムが
+    // `recursion-declaration-invalid` で落ちる宣言を静的側が黙って通していた
+    //（反復サブパスの値側は既に配列を断定していたので、判定が片側だけずれていた）。
+    expect(codes(only(`
+  $recursion: ["nodes.*"],
+  nodes: []`))).toEqual([WcsDiagnosticCode.RecursionDeclarationInvalid]);
+    expect(codes(only(`
+  $recursion: [],
+  nodes: []`))).toEqual([WcsDiagnosticCode.RecursionDeclarationInvalid]);
+  });
+
+  it('アンカー / 反復サブパスの途中の添字セグメントを拒否する', () => {
+    // Fixed by cycle-5 review — was: 両側とも受理していた。エンジンは具体パスの添字を
+    // `*` に畳むので、宣言の途中の添字は意味を持たない奇形になる。
+    const anchor = only(`
+  $recursion: { "nodes.0.items.*": "children.*" },
+  nodes: []`);
+    expect(codes(anchor)).toEqual([WcsDiagnosticCode.RecursionDeclarationInvalid]);
+    expect(anchor[0].message).toContain('nodes.0.items.*');
+    expect(codes(only(`
+  $recursion: { "nodes.*": "children.0.*" },
+  nodes: []`))).toEqual([WcsDiagnosticCode.RecursionDeclarationInvalid]);
+    // 添字に見えるだけの綴りも同じ（畳みの述語と同じ範囲）
+    expect(codes(only(`
+  $recursion: { "nodes.*": "children.-1.*" },
+  nodes: []`))).toEqual([WcsDiagnosticCode.RecursionDeclarationInvalid]);
+    expect(checkNodePath('nodes.0.items.*')).toBe('indexSegment');
+    expect(checkNodePath('nodes.items.*')).toBeNull();
+  });
+});
+
+describe('`${}` の無いテンプレートリテラルは API のパス引数でも文字列として読む', () => {
+  // Fixed by cycle-5 review — was: 宣言側はバッククォートを受理するのに、API 側の
+  // パス引数だけが対象外で `$setAll(\`nodes.**.children\`, [], [])` が無報告だった。
+  it('$setAll / $getAll / $resolve のパス引数', () => {
+    expect(codes(validateRecursion(makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  poke() { this.$setAll(\`nodes.**.children\`, [], []); }`))))
+      .toEqual([WcsDiagnosticCode.RecursionStructuralWrite]);
+    expect(codes(validateRecursion(makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  read() { return this.$getAll(\`nodes.**.value\`, [0]); }`))))
+      .toEqual([WcsDiagnosticCode.RecursionGetAllForm]);
+    expect(codes(validateRecursion(makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  read() { return this.$resolve(\`nodes.**.value\`, [0]); }`))))
+      .toEqual([WcsDiagnosticCode.RecursionUnsupported]);
+    // `${}` 付きは綴りが確定しないので、従来どおり黙る
+    expect(validateRecursion(makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  poke(k) { this.$setAll(\`nodes.**.\${k}\`, [], []); }`))).toEqual([]);
+  });
 });
 
 // ============================================================

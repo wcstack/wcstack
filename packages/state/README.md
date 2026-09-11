@@ -114,6 +114,7 @@ That's it. No build, no bootstrap code, no framework.
 - **Event tokens** — the dual of command tokens: receive a wc-bindable element's dispatched events in state via `eventToken.<prop>: tokenName` + the `$on` map
 - **Streams** — fold continuous async flows (async iterables / `ReadableStream`) into reactive properties via the `$streams` declaration, with switchMap-style dependency-driven restart
 - **Path getters** — dot-path key getters (`get "users.*.fullName"()`) for virtual properties at any depth in a data tree, all defined flat in one place with automatic dependency tracking and caching
+- **Recursive paths** — `$recursion: { "nodes.*": "children.*" }` declares where a tree's shape repeats, and one `**` getter (`get "nodes.**.total"()`) covers every depth; `$getAll(path, [])` unions all depths and `$setAll(path, [], value)` broadcasts to all of them
 - **Mustache syntax** — `{{ path|filter }}` in text nodes
 - **Multiple state sources** — JSON, JS module, inline script, API, attribute
 - **SVG support** — full binding support inside `<svg>` elements
@@ -1298,7 +1299,8 @@ Each of these is a diagnostic, never a silent reinterpretation:
 
 - More than one anchor, mutual recursion, a wildcard in the middle of an anchor, a second `**` in one path
 - Recursive setters, a `**` getter whose suffix names the structure (`get "nodes.**.children"()`), a concrete getter with the same name as a `**` getter's expansion, and writing through `**` by assignment (`this["nodes.**.x"] = v`, `++` included)
-- A mapper, `{ spread: true }`, omitted indexes, a non-empty prefix, or a non-array `indexes` in a recursive `$setAll` / `$getAll`
+- In a recursive `$setAll`: a mapper, `{ spread: true }`, omitted indexes, a non-empty prefix, or a non-array `indexes`. The write API has no evaluation context to bind a depth to, so `[]` is mandatory
+- In a recursive `$getAll`: a non-empty prefix, or a non-array `indexes`. **Omitting the indexes is valid** — inside a recursive getter it is the bound form, and it reads the depth being evaluated
 - `**` in `data-wcs`, in `$watch` or `$listKeys` keys, or in `$resolve` / `$postUpdate` / `$trackDependency`
 - `$recursion` and `**` getters in a volume (`mount=`) or a mounted component (`bind-component`) — declare them on the root state
 - A recursive `<template>`, a `$depth` variable, and a public `maxDepth` option — none of the three exist
@@ -2475,7 +2477,7 @@ Anything that follows mechanically from the path string is reported at runtime a
 | `wcs/getter-depth-exceeded` | Getter evaluation nests deeper than the engine evaluates in one pass (128 frames), with no address visited twice — the data is simply that deep | Aggregate in fewer levels, or flatten the tree |
 | `wcs/index-param-range` | `$N` must name an existing wildcard level: `$1` through `$128`, no leading zeros | Use a level that exists |
 | `wcs/recursion-unsupported` | `**` reached something that does not interpret it — markup, a `$watch` or `$listKeys` key, `$resolve` / `$postUpdate` / `$trackDependency`, an assignment — or the state declares no `$recursion` at all | Use a concrete path, or declare the anchor |
-| `wcs/recursion-declaration-invalid` | The `$recursion` declaration or a `**` getter key has a shape this version refuses: an anchor or repeat that is not a list element, more than one anchor, a `**` key that is not a getter or has a setter, `get "nodes.**"`, a getter that names the structure, two getters expanding to one concrete path, a concrete getter with the same name as an expansion. The linter reports it first; at runtime it throws when the declaration is read | Fix the declaration as the message says |
+| `wcs/recursion-declaration-invalid` | The `$recursion` declaration or a `**` getter key has a shape this version refuses: an anchor or repeat that is not a list element or carries an index segment (`"nodes.0.items.*"`), more than one anchor, a `**` key that is not a getter or has a setter, `get "nodes.**"`, a getter that names the structure, two getters expanding to one concrete path, a concrete getter with the same name as an expansion. The linter reports it first; at runtime it throws when the declaration is read | Fix the declaration as the message says |
 | `wcs/recursion-anchor` | A `**` path that does not match the one declared anchor (this version takes exactly one self-recursive anchor per state), or whose suffix after `**` is not well-formed — an empty segment (`nodes.**.`, `nodes.**..x`) or a bare `*` right after `**` (`nodes.**.*`) | Spell the anchor as declared, and a real path after it |
 | `wcs/recursion-context` | A **bound** `**` was read where there is no depth to bind to — the top level, or a getter outside the anchor | Read it from a recursive or row getter, or pass `[]` to union every depth |
 | `wcs/recursion-getall-form` / `wcs/recursion-setall-form` | An `indexes` argument `**` cannot define. The code is carried by the non-empty prefix (both APIs) and by a non-array `indexes` on `$getAll` (`null`, a string…); omission, a mapper and `{ spread: true }` in a `$setAll` are the same mistake and the linter reports them under the same code, but at runtime they throw with the form named in the message and no code | Omit for the current depth, `[]` for every depth |

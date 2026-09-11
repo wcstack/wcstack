@@ -56,8 +56,8 @@ export function collectRecursiveAddresses(
   const results: IStateAddress[] = [];
   const observed: Map<IAbsoluteStateAddress, readonly unknown[]> = new Map();
   const pathsByDepth: IDepthPaths[] = [];
-  const repeatList = spec.repeat.slice(0, spec.repeat.lastIndexOf(DELIMITER));
-  const anchorList = spec.anchor.slice(0, spec.anchor.lastIndexOf(DELIMITER));
+  const repeatList = spec.repeatList;
+  const anchorList = spec.anchorList;
 
   /**
    * 「同じ配列インスタンスが 2 つ以上の親から到達可能」を**走査そのもの**で判定する

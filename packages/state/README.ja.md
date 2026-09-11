@@ -114,6 +114,7 @@
 - **event token** — command token の双対。wc-bindable 要素が dispatch するイベントを `eventToken.<prop>: tokenName` + `$on` マップで state が受信
 - **stream** — `$streams` 宣言で連続的な非同期フロー（async iterable / `ReadableStream`）を fold して reactive プロパティ化。switchMap 型の依存駆動 restart 付き
 - **パス getter** — ドットパスキー getter（`get "users.*.fullName"()`）によるデータツリーの任意の深さへのフラットな仮想プロパティ定義、自動依存追跡・キャッシュ
+- **再帰パス** — `$recursion: { "nodes.*": "children.*" }` で木の形が繰り返す場所を宣言し、1 本の `**` getter（`get "nodes.**.total"()`）が全深さを覆う。`$getAll(path, [])` は全深さを合併し、`$setAll(path, [], value)` は全深さへブロードキャストする
 - **Mustache 構文** — テキストノードでの `{{ path|filter }}`
 - **複数の状態ソース** — JSON, JS モジュール, インラインスクリプト, API, 属性
 - **SVG サポート** — `<svg>` 要素内でのフルバインディング対応
@@ -1297,7 +1298,8 @@ customElements.define("tree-node", class extends HTMLElement {
 
 - 複数アンカー、相互再帰、アンカー途中のワイルドカード、1 本のパスに 2 つ目の `**`
 - 再帰 setter、接尾辞が構造そのものを名指す `**` getter（`get "nodes.**.children"()`）、`**` getter の展開形と同名の具体 getter、そして代入による `**` 経由の書き込み（`this["nodes.**.x"] = v`、`++` も含む）
-- 再帰 `$setAll` / `$getAll` の mapper・`{ spread: true }`・添字省略・非空の接頭辞・配列でない `indexes`
+- 再帰 `$setAll` の mapper・`{ spread: true }`・添字省略・非空の接頭辞・配列でない `indexes`。書き込み API には深さを束縛する評価文脈が無いので、`[]` は必須です
+- 再帰 `$getAll` の非空の接頭辞・配列でない `indexes`。**添字省略は正当です** —— 再帰 getter の中では束縛形で、評価中の深さを読みます
 - `data-wcs` / `$watch` や `$listKeys` のキー / `$resolve` / `$postUpdate` / `$trackDependency` への `**`
 - ボリューム（`mount=`）やマウントされたコンポーネント（`bind-component`）の `$recursion` と `**` getter —— ルートの state に置きます
 - 再帰 `<template>`、`$depth` 変数、公開の `maxDepth` オプション（3 つとも存在しません）
@@ -2471,7 +2473,7 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 | `wcs/getter-depth-exceeded` | getter の評価が 1 パスで評価できる深さ（128 段）を超え、かつ同じアドレスを 2 度通っていない ＝ データが単に深い | 集計の段数を減らすか、木を平らにする |
 | `wcs/index-param-range` | `$N` は実在するワイルドカード段を指すこと（`$1`〜`$128`・先頭ゼロ不可） | 実在する段を使う |
 | `wcs/recursion-unsupported` | `**` を解釈しない場所へ `**` が渡った —— markup・`$watch` / `$listKeys` のキー・`$resolve` / `$postUpdate` / `$trackDependency`・代入、あるいは state が `$recursion` を宣言していない | 具体パスを使うか、アンカーを宣言する |
-| `wcs/recursion-declaration-invalid` | `$recursion` 宣言か `**` getter のキーが、このバージョンが受け付けない形 —— 要素を指さないアンカー / 反復サブパス、複数アンカー、getter でない・setter を持つ `**` キー、`get "nodes.**"`、構造を名指す getter、同じ具体パスへ展開する 2 本の getter、展開形と同名の具体 getter。lint が先に出し、実行時は宣言を読んだ時点で throw する | 文面のとおり宣言を直す |
+| `wcs/recursion-declaration-invalid` | `$recursion` 宣言か `**` getter のキーが、このバージョンが受け付けない形 —— 要素を指さない・途中に添字セグメントを持つ（`"nodes.0.items.*"`）アンカー / 反復サブパス、複数アンカー、getter でない・setter を持つ `**` キー、`get "nodes.**"`、構造を名指す getter、同じ具体パスへ展開する 2 本の getter、展開形と同名の具体 getter。lint が先に出し、実行時は宣言を読んだ時点で throw する | 文面のとおり宣言を直す |
 | `wcs/recursion-anchor` | 宣言済みのアンカーと合致しない `**` パス（このバージョンは state ごとに単一の自己再帰アンカー）、または `**` の後ろが整形されていない —— 空セグメント（`nodes.**.` / `nodes.**..x`）や `**` 直後の素の `*`（`nodes.**.*`） | 宣言どおりに綴り、その後ろに実在するパスを書く |
 | `wcs/recursion-context` | **束縛**形の `**` を、束縛先の深さが無い場所で読んだ —— トップレベル、またはアンカー外の getter | 再帰 getter か行 getter の中から読むか、`[]` で全深さを合併する |
 | `wcs/recursion-getall-form` / `wcs/recursion-setall-form` | `**` に対して定義できない `indexes` の形。コードが付くのは非空の接頭辞（両 API）と、`$getAll` の配列でない `indexes`（`null`・文字列など）。`$setAll` の省略・mapper・`{ spread: true }` も同じ誤りで、lint は同じコードで報告するが、実行時は形を名指しした文面で throw するだけでコードは付かない | 現在の深さなら省略、全深さなら `[]` |

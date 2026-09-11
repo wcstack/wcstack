@@ -9,7 +9,7 @@ import { IStateElement } from "./types";
 import { setStateElement, getStateElement, getBindingsReady } from "../stateElementByName";
 import { ILoopContextStack } from "../list/types";
 import { createLoopContextStack } from "../list/loopContext";
-import { DELIMITER, DCC_DEFINITION_ATTRIBUTE, NO_SET_TIMEOUT, STATE_CONNECTED_CALLBACK_NAME, STATE_DISCONNECTED_CALLBACK_NAME, STATE_ERROR_CALLBACK_NAME, STATE_UPDATED_CALLBACK_NAME, WILDCARD } from "../define";
+import { DCC_DEFINITION_ATTRIBUTE, NO_SET_TIMEOUT, STATE_CONNECTED_CALLBACK_NAME, STATE_DISCONNECTED_CALLBACK_NAME, STATE_ERROR_CALLBACK_NAME, STATE_UPDATED_CALLBACK_NAME, WILDCARD } from "../define";
 import { processCommandTokensDeclaration } from "../command/processCommandTokensDeclaration";
 import { clearCommandTokenRegistry } from "../command/commandTokenRegistry";
 import { clearCommandNamespace } from "../command/commandNamespace";
@@ -49,7 +49,7 @@ import { Ssr } from "./Ssr";
 import { VERSION } from "../version";
 import { HTMLElementBase } from "../platform/HTMLElementBase";
 import { getAllPropertyDescriptors } from "../getAllPropertyDescriptors";
-import { checkDeclaredPath, PathInfoSource } from "../pathDiagnostics";
+import { checkDeclaredPath, findDescriptor, PathInfoSource } from "../pathDiagnostics";
 import { notifyExports } from "../webComponent/exportIndex";
 
 function getStateInfo(
@@ -250,7 +250,7 @@ export class State extends HTMLElementBase implements IStateElement {
       // 「リストではないパス」として `nodes.*` に到達し、listIndex を持たないアドレスで
       // `Cannot expand dynamic dependency…` になる（値は書かれるので、データと表示が
       // 乖離したまま自己回復しない）。
-      this._listPaths.add(recursionSpec.anchor.slice(0, recursionSpec.anchor.lastIndexOf(DELIMITER)));
+      this._listPaths.add(recursionSpec.anchorList);
     }
     // $watch: 旧宣言のハンドラが残らないよう registry を落としてから新宣言を解析する。
     // _pathSet.clear() の後であること（依存グラフ登録をやり直す必要がある、
@@ -972,16 +972,9 @@ export class State extends HTMLElementBase implements IStateElement {
 
   findStateDescriptor(path: string): PropertyDescriptor | undefined {
     // own → プロトタイプチェーン（Object.prototype 手前まで）。打ち切り位置は
-    // getAllPropertyDescriptors / getStateInfo と同じ ＝ 「state が宣言したもの」の範囲
-    let proto: object | null = this._state;
-    while (proto !== null && proto !== Object.prototype) {
-      const descriptor = Object.getOwnPropertyDescriptor(proto, path);
-      if (typeof descriptor !== "undefined") {
-        return descriptor;
-      }
-      proto = Object.getPrototypeOf(proto);
-    }
-    return undefined;
+    // getAllPropertyDescriptors / getStateInfo と同じ ＝ 「state が宣言したもの」の範囲。
+    // 走査そのものは pathDiagnostics と共有する（2 本に分かれると打ち切り位置がずれる）。
+    return findDescriptor(this._state, path);
   }
 
   defineTreeAccessor(path: string, descriptor: PropertyDescriptor): void {

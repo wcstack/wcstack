@@ -76,7 +76,6 @@ describe("再帰が受け付ける木の形（共有・循環・イミュータ�
     const el = await mount({ label: "x", $recursion: { "nodes.*": "children.*" }, nodes: roots });
     let msg = "";
     try { read(el, (s) => s.$getAll("nodes.**.value", [])); } catch (e: any) { msg = e.message; }
-    console.log("root-cycle:", msg.slice(0, 90));
     expect(msg).toContain("[wcs/recursion-cycle]");
   });
 
@@ -89,7 +88,6 @@ describe("再帰が受け付ける木の形（共有・循環・イミュータ�
     const el = await mount({ label: "x", $recursion: { "nodes.*": "children.*" }, nodes: [top] });
     let msg = "";
     try { read(el, (s) => s.$getAll("nodes.**.value", [])); } catch (e: any) { msg = e.message; }
-    console.log("deep-cycle:", msg.slice(0, 90));
     expect(msg).toContain("[wcs/recursion-cycle]");
   });
 
@@ -99,7 +97,6 @@ describe("再帰が受け付ける木の形（共有・循環・イミュータ�
       nodes: [{ value: 1, children: shared }, { value: 2, children: shared }] });
     let msg = "";
     try { read(el, (s) => s.$getAll("nodes.**.value", [])); } catch (e: any) { msg = e.message; }
-    console.log("shared:", msg.slice(0, 90));
     expect(msg).toContain("[wcs/recursion-shared-list]");
   });
 
@@ -114,7 +111,6 @@ describe("再帰が受け付ける木の形（共有・循環・イミュータ�
     const build = (n: number): any => n === 0 ? { value: 0, children: [] } : { value: n, children: [build(n - 1)] };
     const el = await mount({ label: "x", $recursion: { "nodes.*": "children.*" }, nodes: [build(127)] });
     const values = read(el, (s) => s.$getAll("nodes.**.value", []));
-    console.log("depth-128 count:", values.length);
     expect(values).toHaveLength(128);
   });
 });

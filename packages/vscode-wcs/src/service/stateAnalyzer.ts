@@ -234,6 +234,7 @@ export function analyzeRecursionDeclaration(scriptContent: string): RecursionDec
       /^(["'`])[^"'`]*\1$/.test(scan) ||
       /^-?\d[\w.]*$/.test(scan) ||
       /^(?:true|false|null)$/.test(scan) ||
+      /^\[/.test(scan) ||
       /^(?:async\s+)?function\b[\s\S]*\}$/.test(scan) ||
       /^(?:async\s+)?\([^()]*\)\s*=>/.test(scan) ||
       /^(?:async\s+)?[$\w]+\s*=>/.test(scan);

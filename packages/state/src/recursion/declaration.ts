@@ -15,8 +15,8 @@ import { raiseError } from "../raiseError";
 import type { IState } from "../types";
 import { IRecursionSpec } from "./types";
 
-/** `a.b.*` の形（末尾だけがワイルドカード・空セグメント無し・`**` 無し）か。 */
-function assertNodePath(kind: string, path: string): string[] {
+/** `a.b.*` の形（末尾だけがワイルドカード・空セグメント無し・`**` 無し・添字無し）か。 */
+function assertNodePath(kind: string, path: string): void {
   if (typeof path !== "string" || path.length === 0) {
     raiseError(`[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} ${kind} must be a non-empty string.`);
   }
@@ -62,8 +62,16 @@ function assertNodePath(kind: string, path: string): string[] {
         `the declaration is what gives "${RECURSION_WILDCARD}" its meaning.`
       );
     }
+    // 添字セグメント（`children.0.*`）。エンジンは具体パスの添字を `*` に畳むので
+    // （`indexSegmentsToWildcard` — ResolvedAddress と同じ規則）、宣言の途中に書かれた
+    // 添字は意味を持たない奇形になる。黙って `*` と同じに読み替えず、ここで落とす。
+    if (!isNaN(Number(segments[i]))) {
+      raiseError(
+        `[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} ${kind} "${path}" must not contain an index segment ` +
+        `("${segments[i]}") — the recursion is declared over the shape of the tree, not over one row.`
+      );
+    }
   }
-  return segments;
 }
 
 /**
@@ -102,7 +110,8 @@ export function processRecursionDeclaration(state: IState): IRecursionSpec | nul
   // 反復サブパスが相対か絶対かは**名前の形では判定できない**。`{ "nodes.*": "nodes.*" }`
   // は `{ nodes: [{ nodes: [...] }] }` という自己相似な木の最も自然な綴りなので、
   // 「アンカーと同じ語で始まる」ことを理由に拒否してはならない。
-  const anchorSegments = anchor.split(DELIMITER);
-  const recursiveAnchor = anchorSegments.slice(0, -1).join(DELIMITER) + DELIMITER + RECURSION_WILDCARD;
-  return Object.freeze({ anchor, repeat, recursiveAnchor });
+  const anchorList = anchor.slice(0, anchor.lastIndexOf(DELIMITER));
+  const repeatList = repeat.slice(0, repeat.lastIndexOf(DELIMITER));
+  const recursiveAnchor = anchorList + DELIMITER + RECURSION_WILDCARD;
+  return Object.freeze({ anchor, repeat, recursiveAnchor, anchorList, repeatList });
 }

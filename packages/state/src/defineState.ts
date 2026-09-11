@@ -277,6 +277,17 @@ export interface WcsStateApi {
   readonly $7: number;
   readonly $8: number;
   readonly $9: number;
+
+  // `$recursion` 宣言済みの再帰パス（`this["nodes.**.total"]`）。深さの族なので
+  // `WcsPaths<T>` の有限展開には現れず、getter のキーに書いた 1 本しか T に現れない。
+  // パターン索引で「`**` を含むキーは読める」とだけ言う（型は any — 深さを型で表せない
+  // 以上、値の型も辿れない）。パターンは `**` を必ず含むので、通常のドットパスの型付けは
+  // 損なわない。VS Code 拡張の preamble（vscode-wcs src/language/preamble.ts）と同じ形 —
+  // 公開型面とエディタの型面は対で保つ。
+  // 素の `nodes.**`（再帰 getter の中でノード自身に束縛される読み）は `.**.` を含まないので、
+  // 末尾が `.**` のキーにも同じ索引を置く。
+  readonly [key: `${string}.**.${string}`]: any;
+  readonly [key: `${string}.**`]: any;
 }
 
 // ============================================================

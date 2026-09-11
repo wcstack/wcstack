@@ -17,7 +17,6 @@
  * 省略形（文脈束縛）の対応物を書き側には置かない。
  */
 
-import { DELIMITER } from "../define";
 import { recursionAnchorMismatchMessage, setAllValueKindMessage } from "../pathDiagnostics";
 import { setByAddress } from "../proxy/methods/setByAddress";
 import { IStateHandler } from "../proxy/types";
@@ -35,10 +34,9 @@ import { collectRecursiveAddresses } from "./walk";
  */
 function assertNotStructural(spec: IRecursionSpec, path: string, suffix: string): void {
   if (isStructuralSuffix(spec, suffix)) {
-    const repeatList = spec.repeat.slice(0, spec.repeat.lastIndexOf(DELIMITER));
     raiseError(
       `[wcs/recursion-structural-write] "${path}" writes the recursion structure itself ` +
-      `(a node, its "${repeatList}" list or that list's length, or an object on the way to that list). ` +
+      `(a node, its "${spec.repeatList}" list or that list's length, or an object on the way to that list). ` +
       `This version broadcasts to leaf properties only — ` +
       `replacing a node would invalidate the child addresses already resolved for this write.`
     );

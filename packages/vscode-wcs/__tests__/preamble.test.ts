@@ -138,6 +138,22 @@ defineState({
     expect(messages(diags)).toEqual([]);
   });
 
+  it('$recursion の再帰パス（`nodes.**.value` と素の `nodes.**`）の読みが型エラーにならない', () => {
+    // Fixed by cycle-5 re-verification — was: 索引が `${string}.**.${string}` だけで、
+    // 再帰 getter の中でノード自身に束縛される `this["nodes.**"]`（ランタイムでは読める）が
+    // TS2551 になっていた（@wcstack/state の defineState と対で直した）。
+    const diags = typecheck(`
+defineState({
+  nodes: [] as { value: number; children: any[] }[],
+  $recursion: { "nodes.*": "children.*" },
+  get "nodes.**.selfValue"(): number {
+    return (this["nodes.**"] as { value: number }).value + (this["nodes.**.value"] as number);
+  },
+});
+`);
+    expect(messages(diags)).toEqual([]);
+  });
+
   it('$ 予約キーはドットパスアクセサに含まれない（$streams.metrics は型エラー）', () => {
     const diags = typecheck(`
 defineState({

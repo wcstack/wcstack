@@ -74,6 +74,9 @@ interface WcsStateApi {
   // 「\`**\` を含むキーは読める」とだけ言う（型は any — 深さを型で表せない以上、値の型も
   // 辿れない）。パターンは \`**\` を必ず含むので、通常のドットパスの型付けは損なわない。
   readonly [key: \`\${string}.**.\${string}\`]: any;
+  // 素の \`nodes.**\`（再帰 getter の中でノード自身に束縛される読み）は \`.**.\` を含まないので
+  // 末尾が \`.**\` のキーにも同じ索引を置く（@wcstack/state の defineState と対）。
+  readonly [key: \`\${string}.**\`]: any;
 }
 type _WcsThis<T> = T & WcsStateApi & _WcsPathAccessor<T>;
 // $listKeys: { "<listPath>": "<field>" | (row) => key }（list/listKeys.ts）。

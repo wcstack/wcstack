@@ -31,6 +31,8 @@ export default defineState({
 
 ツール向けに `WcsPaths<T>` と `WcsPathValue<T, P>` も export されている。リファレンス: [packages/state/docs/define-state.ja.md](../packages/state/docs/define-state.ja.md)。
 
+再帰パス（`$recursion` で宣言する `**`）はパターン索引シグネチャで `any` になる — 深さの族はユニオンとして列挙できないため — 一方、通常のドットパスは解決された型を保つ。VS Code 拡張の preamble も同じシグネチャを宣言しているので、エディタと `tsc` の報告は一致する。
+
 `tsc` 単体で検査できるのはここまで — state ファイルだけ。HTML のことは何も知らない。
 
 ## 2. HTML に届ける: `wcs-schema` と sidecar の `stateSchema`

@@ -3,14 +3,24 @@
  * `.*` がひとつ」の形に限定する（docs/state-recursive-path-impl-plan.md §1-1）。
  *
  * 例: `$recursion = { "nodes.*": "children.*" }`
- * - `anchor`      … `"nodes.*"`（深さ 0 のノードパス）
- * - `repeat`      … `"children.*"`（1 段深くする相対サブパス）
+ * - `anchor`         … `"nodes.*"`（深さ 0 のノードパス）
+ * - `repeat`         … `"children.*"`（1 段深くする相対サブパス）
+ * - `recursiveAnchor` … `"nodes.**"`
+ * - `anchorList`     … `"nodes"`
+ * - `repeatList`     … `"children"`
+ *
+ * リスト側の 2 つは宣言時に確定させる（静的側の `RecursionSpec` と同じ構成）。
+ * 各所で `lastIndexOf(DELIMITER)` の slice を繰り返すと、綴りの取り違えが分散する。
  */
 export interface IRecursionSpec {
   readonly anchor: string;
   readonly repeat: string;
   /** `anchor` の `**` 形（`"nodes.**"`）。オーサリング層のパス解析で使う。 */
   readonly recursiveAnchor: string;
+  /** `anchor` のリスト側（`"nodes"` — 末尾の `.*` を落とした形）。 */
+  readonly anchorList: string;
+  /** `repeat` のリスト側（`"children"`）。 */
+  readonly repeatList: string;
 }
 
 /**

@@ -109,15 +109,19 @@ export interface WcsMessageCatalog {
   /** `mount` 属性値が runtime の validateVolumeMountPath で raise する形（同条件・同文言）。 */
   mountPathInvalid(problem: MountPathProblem, mountPath: string): string;
   // --- recursionValidator（$recursion / `**`） ---
-  /** `**` を解釈しない場所に `**` がある、または `$recursion` 宣言が無い。 */
+  /**
+   * `**` を解釈しない場所に `**` がある（`data-wcs` / mustache / `$watch` キー /
+   * `$listKeys` キー / `$resolve` / `$postUpdate` / `$trackDependency` / 代入）、
+   * または `$recursion` 宣言が無い。場所は `RecursionWildcardSite`。
+   */
   recursionUnsupported(path: string, where: RecursionWildcardSite): string;
-  /** 宣言済みアンカーと合致しない `**`（綴り違い・2 つ目の `**`）。 */
+  /** 宣言済みアンカーと合致しない `**`（綴り違い・2 つ目の `**`・`**` の後ろが整形されていない）。 */
   recursionAnchorMismatch(path: string, recursiveAnchor: string): string;
   /** `$getAll("…**…", indexes)` の添字の形 — 非空の接頭辞（prefix）か、配列でない値（notArray）。 */
   recursionGetAllForm(path: string, problem: RecursionGetAllProblem): string;
-  /** `$setAll("…**…", …)` の添字・値の形が `**` に対して定義できない。 */
+  /** `$setAll("…**…", …)` の添字・値の形 — 非空の接頭辞 / 添字省略 / mapper / spread。 */
   recursionSetAllForm(path: string, problem: RecursionSetAllProblem): string;
-  /** ノード自身 / 子リストへの一括書き込み。 */
+  /** ノード自身 / 子リスト / 子ノード / その length / 子リストへ至る途中のオブジェクトへの一括書き込み。 */
   recursionStructuralWrite(path: string, target: 'node' | 'list' | 'branch' | 'length', repeatList: string): string;
   /**
    * 再帰 getter（またはその派生値の中）への書き込み。`subject` は書いた形そのもの
@@ -134,7 +138,7 @@ export interface WcsMessageCatalog {
   recursionNodePathInvalid(kind: RecursionNodePathKind, path: string, problem: RecursionNodePathProblem): string;
   /** 反復サブパスが文字列リテラルでない。 */
   recursionRepeatNotString(anchor: string): string;
-  /** `**` を含むキーの宣言の形が不正（setter / getter でない / ノード自身）。 */
+  /** `**` を含むキーの宣言の形が不正（setter / getter でない / ノード自身 / 構造を名指す接尾辞）。 */
   recursionGetterInvalid(key: string, problem: RecursionGetterProblem, recursiveAnchor: string): string;
   /** 2 本の `**` getter が同じ具体パスへ展開する。 */
   recursionGetterCollision(a: string, b: string, repeat: string): string;
@@ -160,7 +164,7 @@ export type RecursionNodePathKind = 'anchor' | 'repeat';
 /** アンカー / 反復サブパスの形の不正（service/recursionPaths.ts の NodePathProblem と同値）。 */
 export type RecursionNodePathProblem =
   | 'empty' | 'emptySegment' | 'notElement'
-  | 'reservedRoot' | 'reservedMount' | 'midWildcard' | 'nestedRecursion';
+  | 'reservedRoot' | 'reservedMount' | 'midWildcard' | 'nestedRecursion' | 'indexSegment';
 /** `**` を含む宣言キーの不正。 */
 export type RecursionGetterProblem = 'setter' | 'notGetter' | 'nodeItself' | 'structural';
 
@@ -324,6 +328,7 @@ const ja: WcsMessageCatalog = {
       case 'reservedRoot': return `${subject} "${path}" は "$" で始められません（予約名前空間）`;
       case 'reservedMount': return `${subject} "${path}" に "#" は使えません（マウント用の予約セグメント）`;
       case 'midWildcard': return `${subject} "${path}" の "*" は末尾にちょうど 1 つだけ置けます（途中のワイルドカードは初版では未対応）`;
+      case 'indexSegment': return `${subject} "${path}" に添字セグメントは含められません（再帰は木の形に対する宣言であって、1 行に対する宣言ではありません）`;
       default: return `${subject} "${path}" に "**" は含められません（"**" に意味を与えるのがこの宣言そのものです）`;
     }
   },
@@ -506,6 +511,7 @@ const en: WcsMessageCatalog = {
       case 'reservedRoot': return `${subject} "${path}" must not start with "$" — that namespace is reserved`;
       case 'reservedMount': return `${subject} "${path}" must not contain "#" — that segment is reserved for mounts`;
       case 'midWildcard': return `${subject} "${path}" must have exactly one "*", at the end (wildcards in the middle are not supported in this version)`;
+      case 'indexSegment': return `${subject} "${path}" must not contain an index segment — the recursion is declared over the shape of the tree, not over one row`;
       default: return `${subject} "${path}" must not contain "**" — the declaration is what gives "**" its meaning`;
     }
   },

@@ -45,19 +45,14 @@ export class RecursionRegistry {
   private readonly _definitions: Map<string, IRecursiveGetterDefinition> = new Map();
   private readonly _accessors: Map<string, IRecursionAccessor> = new Map();
   /**
-   * 「再帰 getter の展開形ではない」と分かったパス。読みのホットパスの否定判定を記憶する。
-   *
-   * 有界である: キーは `getByAddress` に来た `address.pathInfo.path`、つまり添字を含まない
-   * ワイルドカード形のパス文字列で、`PathInfo` が intern する集合（バインディング・getter・
-   * API 引数に綴られたパスと、その展開形）の部分集合にしかならない。intern 済みパスの
-   * 集合が有界であることは D10 で受け入れ済みなので、ここも同じ上限に収まる。
-   * 文字列は WeakSet に入らないので、寿命はレジストリ（＝ state の世代）と共にする。
-   */
-  private readonly _nonAccessors: Set<string> = new Set();
-  /**
    * `recursiveGetterOwning` の記憶。キーは添字を `*` に畳んだ形（`nodes.1.total` と `nodes.2.total`
    * は 1 つ）、値は「その具体パスを展開形（またはその値の内側）として持つ `**` getter」、
-   * 無ければ null。有界であることの根拠は `_nonAccessors` と同じ。
+   * 無ければ null。
+   *
+   * 有界である: キーは添字を畳んだワイルドカード形のパス文字列で、`PathInfo` が intern する集合
+   * （バインディング・getter・API 引数に綴られたパスと、その展開形）の部分集合にしかならない。
+   * intern 済みパスの集合が有界であることは D10 で受け入れ済みなので、ここも同じ上限に収まる。
+   * 文字列は WeakSet に入らないので、寿命はレジストリ（＝ state の世代）と共にする。
    */
   private readonly _ownerByPath: Map<string, string | null> = new Map();
   /**
@@ -67,6 +62,21 @@ export class RecursionRegistry {
    * （第 4 サイクルで実測: 畳みを毎回払うと `s.counter = i` で +100ns/書き込み）。
    */
   private readonly _ownerByPathInfo: WeakMap<IPathInfo, string | null> = new WeakMap();
+  /**
+   * 読みのホットパス（`getByAddress`）向けの記憶。`_ownerByPathInfo` と対称で、キーは
+   * intern 済みの `PathInfo`、値は「そのパスの展開アクセサ」、展開形でなければ null。
+   * 宣言のある state では**アンカー外を含む全読み**（親ウォークの各段を含む）がここを
+   * 通るので、文字列キーの `Map.get` + `Set.has` + `startsWith` を毎回払わせない
+   * （第 5 サイクルで実測）。
+   *
+   * 読みの否定判定の記憶は**ここ 1 つ**（第 5 サイクル再検証で文字列キーの `_nonAccessors` を撤去 —
+   * 前段にこの記憶を置いた後は、PathInfo とパス文字列が 1:1 なので二重に持つだけだった）。
+   * 否定を記憶してよい根拠は、定義集合が state の世代内で不変であること — 
+   * 同じ `PathInfo` は同じパス文字列なので、いちど「展開形でない」と決まった PathInfo が
+   * 後から実体化されることはない。実体化した側は `materializeForPathInfo` が
+   * `_define` の戻り値でそのまま記憶を更新する（否定が実体化を隠さない）。
+   */
+  private readonly _accessorByPathInfo: WeakMap<IPathInfo, IRecursionAccessor | null> = new WeakMap();
   /** `concretePathAt` の記憶（接尾辞 → 深さ順の具体パス）。 */
   private readonly _concreteBySuffix: Map<string, string[]> = new Map();
   private readonly _registeredListPaths: Set<string> = new Set();
@@ -112,7 +122,7 @@ export class RecursionRegistry {
         // が `[1, 2]` に縮んだ）。書き側が同じ形を `recursion-structural-write` で拒否するのと対称。
         raiseError(
           `${DECLARATION_INVALID} "${key}" names the recursion structure itself (a node, its ` +
-          `"${spec.repeat.slice(0, spec.repeat.lastIndexOf(DELIMITER))}" list or that list's length, or an ` +
+          `"${spec.repeatList}" list or that list's length, or an ` +
           `object on the way to that list). A recursive getter would hide the real child list at every ` +
           `depth — "**" names a computed leaf under a node (for example "${spec.recursiveAnchor}${DELIMITER}total").`
         );
@@ -173,6 +183,10 @@ export class RecursionRegistry {
     }
   }
 
+  /**
+   * `**` getter を 1 本でも宣言しているか。
+   * **テスト・診断専用**（ランタイムの経路は `_definitions.size` を直接見る）。
+   */
   get hasDefinitions(): boolean {
     return this._definitions.size > 0;
   }
@@ -270,20 +284,37 @@ export class RecursionRegistry {
   }
 
   /**
-   * 具体パスが再帰 getter の展開形なら、そのアクセサを（未登録なら生やして）返す。
-   * 該当しなければ null。**読みのホットパスから呼ばれる**ので、接頭辞 1 回と
-   * 否定の記憶で抜ける。
+   * `materializeFor` の `PathInfo` 版。**読みのホットパス（`getByAddress`）専用**で、
+   * 判定そのものは `materializeFor` に委ね、結果（否定を含む）を PathInfo に記憶する。
+   * 書き側の `recursiveGetterOwningPath` と対称。
    */
-  materializeFor(stateElement: IStateElement, concretePath: string): IRecursionAccessor | null {
-    // `**` getter の無い宣言（レジストリは空）は、否定を記憶せずに抜ける
+  materializeForPathInfo(stateElement: IStateElement, pathInfo: IPathInfo): IRecursionAccessor | null {
+    // `**` getter の無い宣言（レジストリは空）は、記憶を作らずに抜ける
     if (this._definitions.size === 0) {
       return null;
     }
+    const known = this._accessorByPathInfo.get(pathInfo);
+    if (typeof known !== "undefined") {
+      return known;
+    }
+    const accessor = this.materializeFor(stateElement, pathInfo.path);
+    this._accessorByPathInfo.set(pathInfo, accessor);
+    return accessor;
+  }
+
+  /**
+   * 具体パスが再帰 getter の展開形なら、そのアクセサを（未登録なら生やして）返す。
+   * 該当しなければ null。読みは `materializeForPathInfo` を通るので、ここへ来るのは
+   * 記憶が外れたときだけ — 判定は接頭辞 1 回で抜け、ここでは否定を記憶しない（記憶は
+   * `materializeForPathInfo` の PathInfo キーの 1 か所）。
+   * （`**` getter の無い空レジストリを弾くのは呼び出し側の役目。）
+   */
+  materializeFor(stateElement: IStateElement, concretePath: string): IRecursionAccessor | null {
     const known = this._accessors.get(concretePath);
     if (typeof known !== "undefined") {
       return known;
     }
-    if (this._nonAccessors.has(concretePath) || !concretePath.startsWith(this.spec.anchor)) {
+    if (!concretePath.startsWith(this.spec.anchor)) {
       return null;
     }
     let matched: IRecursiveGetterDefinition | null = null;
@@ -303,8 +334,6 @@ export class RecursionRegistry {
       matchedDepth = depth;
     }
     if (matched === null) {
-      // 定義集合は state の世代内で不変なので、否定の判定は記憶してよい。
-      this._nonAccessors.add(concretePath);
       return null;
     }
     return this._define(stateElement, matched, matchedDepth, concretePath);
@@ -398,6 +427,10 @@ export class RecursionRegistry {
     return this._accessors.get(concretePath) ?? null;
   }
 
+  /**
+   * これまでに実体化した具体パスの一覧。**テスト専用**（「読んだ深さだけが生える」という
+   * 遅延実体化の不変条件を外から確かめる口。ランタイムはどの経路からも呼ばない）。
+   */
   get materializedPaths(): ReadonlySet<string> {
     return new Set(this._accessors.keys());
   }

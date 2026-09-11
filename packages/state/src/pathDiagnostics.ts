@@ -60,8 +60,11 @@ const EXISTS: IPathExistenceResult = Object.freeze({
  * `obj` 自身＋プロトタイプチェーン（Object.prototype 手前まで）から descriptor を引く。
  * 打ち切り位置は getAllPropertyDescriptors と同じ — 「state が宣言したもの」だけを
  * 存在とみなし、`toString` 等の Object.prototype 由来を存在扱いしない。
+ *
+ * `State.findStateDescriptor`（再帰アクセサの衝突検査）も同じ走査を使う。打ち切り位置が
+ * 2 本に分かれると、片方だけが `Object.prototype` を存在扱いするようなずれ方をする。
  */
-function findDescriptor(obj: object, key: string): PropertyDescriptor | undefined {
+export function findDescriptor(obj: object, key: string): PropertyDescriptor | undefined {
   let proto: object | null = obj;
   while (proto !== null && proto !== Object.prototype) {
     const descriptor = Object.getOwnPropertyDescriptor(proto, key);

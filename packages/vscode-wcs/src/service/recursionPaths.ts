@@ -44,7 +44,8 @@ export type NodePathProblem =
   | 'reservedRoot'
   | 'reservedMount'
   | 'midWildcard'
-  | 'nestedRecursion';
+  | 'nestedRecursion'
+  | 'indexSegment';
 
 /** アンカー / 反復サブパスの種別（メッセージの主語）。 */
 export type NodePathKind = 'anchor' | 'repeat';
@@ -68,6 +69,9 @@ export function checkNodePath(path: string): NodePathProblem | null {
   for (let i = 0; i < segments.length - 1; i++) {
     if (segments[i] === '*') return 'midWildcard';
     if (segments[i] === RECURSION_WILDCARD) return 'nestedRecursion';
+    // 添字セグメント（`children.0.*`）。エンジンは具体パスの添字を `*` に畳むので、
+    // 宣言の途中の添字は意味を持たない奇形になる（ランタイムも同じ述語で落とす）。
+    if (!isNaN(Number(segments[i]))) return 'indexSegment';
   }
   return null;
 }
@@ -304,8 +308,9 @@ export function impliedStructurePaths(spec: RecursionSpec): ImpliedPath[] {
 export type StructuralWriteTarget = 'node' | 'list' | 'branch' | 'length';
 
 /**
- * `$setAll` の接尾辞が構造を名指しているか（ランタイム
- * `recursion/setAllRecursive.ts` の `assertNotStructural` の写し）。
+ * `$setAll` の接尾辞が構造を名指しているか（ランタイム `recursion/expand.ts` の
+ * `isStructuralSuffix` の写し。書き側 `setAllRecursive.ts` と宣言側 `registry.ts` が
+ * 同じ述語を共有しているのと同じ範囲）。
  *
  * ノード自身（`nodes.**`）・子リスト（`nodes.**.children`）・子ノード
  * （`nodes.**.children.*`）は、書き換えると確定済みの子アドレスを壊す。反復サブパスが
@@ -328,7 +333,8 @@ export function structuralWriteTarget(spec: RecursionSpec, suffix: string): Stru
 }
 
 /**
- * 2 つの接尾辞が**同じ具体パス族**を指すか（`RecursionRegistry._sameFamily` の写し）。
+ * 2 つの接尾辞が**同じ具体パス族**を指すか（ランタイム `recursion/expand.ts` の
+ * `sameFamily` の写し）。
  * 片方がもう片方の末尾で、差分が反復語の整数倍（0 回を含む）のとき真。
  */
 export function sameFamily(spec: RecursionSpec, a: string, b: string): boolean {

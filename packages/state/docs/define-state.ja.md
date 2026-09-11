@@ -152,6 +152,29 @@ type Paths = WcsPaths<State>;
 type V = WcsPathValue<State, "categories.*.products.*.name">; // string
 ```
 
+### 再帰パス（`**`）
+
+`$recursion` を宣言した state では、`this` 経由で再帰パスを読めます。`**` は深さの族そのものを
+表し、有限のパスのユニオンでは列挙できないので、これらのパスはパターン索引シグネチャで
+`any` になります:
+
+```typescript
+export default defineState({
+  nodes: [] as { value: number; children: any[] }[],
+  $recursion: { "nodes.*": "children.*" },
+  get "nodes.**.total"(): number {
+    return (this["nodes.**.value"] as number)
+      + (this.$getAll("nodes.**.children.*.total") as number[]).reduce((a, b) => a + b, 0);
+  },
+});
+```
+
+`any` になるのは実際に `**` を含むキーだけです（再帰 getter の中でノード自身に束縛される素の
+`this["nodes.**"]` も含みます）。通常のドットパスは解決された値の型を保ち、綴り間違いは従来どおり
+型エラーになります。VS Code 拡張の preamble も同じシグネチャを宣言しているので、エディタと `tsc` の
+判定は一致します。
+[state-recursive-path-design.md](../../../docs/state-recursive-path-design.md) も参照してください。
+
 ## State Proxy API (`WcsStateApi`)
 
 `defineState()` 内の `this` で利用できるプロパティとメソッド:
