@@ -149,12 +149,12 @@ ListIndex の同一性は台帳（`listIndexesByList`）が持つので、先に
 | # | 内容 |
 |---|---|
 | X1 | `createState("readonly", …)` の中で `$setAll` と `$resolve(path, indexes, value)` が readonly ガードを素通りして実データを書き換える。ガードは `StateHandler` の `set` トラップにしかなく、両 API は `setByAddress` を直接呼ぶ |
-| X2 | 配列を行から行へ付け替えると描画と `$getAll` が食い違う。修理案は「新親と一致しない `parentListIndex` を持つ ListIndex は再利用せず作り直す」だが、`applyChangeToFor` と `walkDependency` が ListIndex 同一性でジョインしているため独立の設計判断が要る |
+| X2 | 配列を行から行へ付け替えると描画と `$getAll` が食い違う。修理案は「新親と一致しない `parentListIndex` を持つ ListIndex は再利用せず作り直す」だが、`applyChangeToFor` と `walkDependency` が ListIndex 同一性でジョインしているため独立の設計判断が要る。→ [#256](https://github.com/wcstack/wcstack/issues/256) |
 | X3 | `walkDependency` のコメントが「依存グラフは epoch でメモ化される」と書いているが、`topologicalRank.ts` はメモ化していない（ヘッダにそう書いてある）。コメントの誤り |
 | X4 | 描画なしの世代分裂（A3）は再帰専用ではなく、`for` を持たないリストを `$getAll` するアプリ一般に当たる既存欠陥である可能性が高い。いつ入ったかは未確認 |
-| X5 | 宣言の検証が **初回マウント**で throw すると、`_resolveLoading()` に届かず `connectedCallbackPromise` が永久 pending になる（作者が受け取るのは診断ではなく無言のハング）。再セット経路なら同じ宣言が正しい文面で同期 throw する。`$listKeys` / `$watch` / `$streams` も同じ性質なので Phase B の回帰ではないが、`$recursion` は新しい宣言面なので**出荷前に決着させたい**。宣言検証全般を `_failInitialization` と同じ「resolve してから raise」経路に載せる独立の Issue にする。**着地後レビュー（§7-3）で実測確認**: `$recursion: { "nodes": "children.*" }` は同期 throw 無し・`console.error` 0 件・promise 永久 pending |
+| X5 | 宣言の検証が **初回マウント**で throw すると、`_resolveLoading()` に届かず `connectedCallbackPromise` が永久 pending になる（作者が受け取るのは診断ではなく無言のハング）。再セット経路なら同じ宣言が正しい文面で同期 throw する。`$listKeys` / `$watch` / `$streams` も同じ性質なので Phase B の回帰ではないが、`$recursion` は新しい宣言面なので**出荷前に決着させたい**。宣言検証全般を `_failInitialization` と同じ「resolve してから raise」経路に載せる独立の Issue にする。**着地後レビュー（§7-3）で実測確認**: `$recursion: { "nodes": "children.*" }` は同期 throw 無し・`console.error` 0 件・promise 永久 pending。→ [#257](https://github.com/wcstack/wcstack/issues/257) |
 
-X1・X2・X5 は独立の Issue にする（X10 は X6・X7 と同じ Issue — §7-2）。X3 はコメント修正のみ。X4 は E1 の修理でまとめて解消される見込み。
+X2 は #256、X5 は #257 として Issue 化した（X1 は未作成）。X10 は X6・X7 と同じ #258（§7-2）。X3 はコメント修正のみ。X4 は E1 の修理でまとめて解消される見込み。
 
 **成果物（完了）**:
 - `__tests__/integration.recursionPrerequisites.test.ts` — 再帰が依存している「今日すでに正しく動く挙動」の回帰テスト
@@ -291,7 +291,7 @@ X1・X2・X5 は独立の Issue にする（X10 は X6・X7 と同じ Issue — 
 | X9 | マウントスコープから `$getAll("rows.**.value", [])` を呼ぶと、診断が**翻訳後**のパス（`nodes.**.value`）を名指しする。作者のソースに無い綴りなので grep しても見つからない |
 | X10 | `setInitialState` の再セット後、**wildcard 無しの getter** が旧世代のキャッシュ値を返す（`{ items: [1,2], get sum }` を `{ items: [5,6] }` に再セットしても `sum` は 3 のまま。§7-3 で発見）。`_state` セッタは listPaths / getterPaths / pathSet と再帰の生成辺は整理するが getter キャッシュには触らず、wildcard 無しの絶対アドレスは世代をまたいで同一。再帰の合併形 getter も同じで、再セット前に読んだものだけが旧値を返す。X7 と同じ「再セット後」クラス。`integration.recursionKnownDefects.test.ts` 欠陥8 で現状固定 |
 
-X6・X7・X10 は同じ「再セット・ハイドレーション後に一部の機構だけ世代を跨ぐ」クラスなので、1 つの Issue にまとめるのが妥当。
+X6・X7・X10 は同じ「再セット・ハイドレーション後に一部の機構だけ世代を跨ぐ」クラスなので、1 つの Issue にまとめた → [#258](https://github.com/wcstack/wcstack/issues/258)。
 
 ### 7-3. 着地後レビュー（2026-09-11）
 
