@@ -12,8 +12,8 @@
 import { IStateElement } from "../components/types";
 import { IStateHandler } from "../proxy/types";
 import { raiseError } from "../raiseError";
-import { splitRecursivePath } from "./expand";
-import { RecursionRegistry } from "./registry";
+import { concretePathAt, splitRecursivePath } from "./expand";
+import type { RecursionRegistry } from "./registry";
 
 /**
  * 具体パスの**接頭辞**として最深のノードパスを見つけ、その深さを返す。
@@ -69,11 +69,13 @@ export function bindRecursivePath(
   path: string,
 ): string {
   // 呼び出し元は 2 つとも `hasRecursion === true` をゲートにしているので、
-  // ここに来た時点でレジストリは必ずある。
-  const registry = stateElement.recursionRegistry as RecursionRegistry;
+  // ここに来た時点でレジストリは必ずある（無ければ呼び出し側のゲート漏れ）。
+  const registry = stateElement.recursionRegistry
+    ?? raiseError(`Recursion registry is missing while binding "${path}"; hasRecursion must gate this call.`);
   // アンカー照合を先に行う。深さ解決を先にすると、綴り違いのアンカーが
   // 「文脈が無い」と報告されて原因に辿り着けない。
-  if (splitRecursivePath(registry.spec, path) === null) {
+  const parts = splitRecursivePath(registry.spec, path);
+  if (parts === null) {
     raiseError(
       `[wcs/recursion-anchor] "${path}" does not match the declared recursion anchor ` +
       `"${registry.spec.recursiveAnchor}". This version supports exactly one anchor per state.`
@@ -88,5 +90,6 @@ export function bindRecursivePath(
       `(for example "${registry.spec.anchor}${path.slice(registry.spec.recursiveAnchor.length)}").`
     );
   }
-  return registry.concretePath(path, depth);
+  // 照合済みの parts をそのまま使う（registry.concretePath は同じ照合をもう一度行う）。
+  return concretePathAt(registry.spec, parts.suffix, depth);
 }

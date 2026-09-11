@@ -205,22 +205,30 @@ export function impliedStructurePaths(spec: RecursionSpec): ImpliedPath[] {
   return out;
 }
 
-/** 一括書き込みが「再帰の構造そのもの」を名指しているときの種別。 */
-export type StructuralWriteTarget = 'node' | 'list';
+/**
+ * 一括書き込みが「再帰の構造そのもの」を名指しているときの種別。
+ * `branch` は多段の反復サブパス（`branch.children.*`）で子リストへ至る途中のオブジェクト。
+ */
+export type StructuralWriteTarget = 'node' | 'list' | 'branch';
 
 /**
  * `$setAll` の接尾辞が構造を名指しているか（ランタイム
  * `recursion/setAllRecursive.ts` の `assertNotStructural` の写し）。
  *
  * ノード自身（`nodes.**`）・子リスト（`nodes.**.children`）・子ノード
- * （`nodes.**.children.*`）は、書き換えると確定済みの子アドレスを壊す。
+ * （`nodes.**.children.*`）は、書き換えると確定済みの子アドレスを壊す。反復サブパスが
+ * 多段なら、その**途中のオブジェクト**（`nodes.**.branch`）も同じ理由で構造である —
+ * `"." + repeatList` との完全一致だけを見ると素通りする（着地後レビューで実測）。
  */
 export function structuralWriteTarget(spec: RecursionSpec, suffix: string): StructuralWriteTarget | null {
   const unit = '.' + spec.repeat;
   let rest = suffix;
   while (rest.startsWith(unit)) rest = rest.slice(unit.length);
   if (rest.length === 0) return 'node';
-  if (rest === '.' + spec.repeatList) return 'list';
+  const segments = spec.repeatList.split('.');
+  for (let i = 1; i <= segments.length; i++) {
+    if (rest === '.' + segments.slice(0, i).join('.')) return i === segments.length ? 'list' : 'branch';
+  }
   return null;
 }
 

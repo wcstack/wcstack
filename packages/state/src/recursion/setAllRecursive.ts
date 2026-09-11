@@ -24,7 +24,6 @@ import { IStateHandler } from "../proxy/types";
 import { raiseError } from "../raiseError";
 import { splitRecursivePath } from "./expand";
 import { resolveRecursiveAddresses } from "./getAllRecursive";
-import { RecursionRegistry } from "./registry";
 
 /**
  * 接尾辞が「再帰の構造そのもの」を名指していないか。
@@ -34,16 +33,27 @@ import { RecursionRegistry } from "./registry";
  * 葉の属性の更新に限る（実装計画 §1-3）。判定対象は宣言から導出する。
  */
 function assertNotStructural(spec: { anchor: string, repeat: string }, path: string, suffix: string): void {
-  const repeatList = spec.repeat.slice(0, spec.repeat.lastIndexOf(DELIMITER));
+  const repeatSegments = spec.repeat.split(DELIMITER);
+  const repeatList = repeatSegments.slice(0, -1).join(DELIMITER);
   const unit = DELIMITER + spec.repeat;
   let rest = suffix;
   while (rest.startsWith(unit)) {
     rest = rest.slice(unit.length);
   }
-  if (rest.length === 0 || rest === DELIMITER + repeatList) {
+  // 反復サブパスを**途中まで**名指す形はすべて構造。`children.*` なら "" と ".children"、
+  // `branch.children.*` なら "" / ".branch" / ".branch.children"。`"." + repeatList` との
+  // 完全一致だけを見ると、多段の repeat で途中のオブジェクト（`nodes.**.branch`）が素通りし、
+  // 深さ 0 の `branch` を置き換えた瞬間に、この書き込みが確定済みの深さ 1 のアドレス
+  // （`nodes.*.branch.children.*.…`）が宙に浮く（着地後レビューで実測。実装計画 §7-3）。
+  let structural = rest.length === 0;
+  for (let i = 1; !structural && i < repeatSegments.length; i++) {
+    structural = rest === DELIMITER + repeatSegments.slice(0, i).join(DELIMITER);
+  }
+  if (structural) {
     raiseError(
       `[wcs/recursion-structural-write] "${path}" writes the recursion structure itself ` +
-      `(a node or its "${repeatList}" list). This version broadcasts to leaf properties only — ` +
+      `(a node, its "${repeatList}" list, or an object on the way to that list). ` +
+      `This version broadcasts to leaf properties only — ` +
       `replacing a node would invalidate the child addresses already resolved for this write.`
     );
   }
@@ -58,7 +68,9 @@ export function setAllRecursive(
   value: any,
   options: { readonly spread?: boolean } | undefined,
 ): number {
-  const registry = handler.stateElement.recursionRegistry as RecursionRegistry;
+  // 呼び出し元（setAll.ts）は `hasRecursion === true` をゲートにしているので必ずある。
+  const registry = handler.stateElement.recursionRegistry
+    ?? raiseError(`Recursion registry is missing while writing "${path}"; hasRecursion must gate this call.`);
   const parts = splitRecursivePath(registry.spec, path);
   if (parts === null) {
     raiseError(

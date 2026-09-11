@@ -9,8 +9,7 @@
  * エンジンが見るのは常にそのうちの 1 本だけ（設計書 D2）。
  */
 
-import { DELIMITER, MAX_WILDCARD_DEPTH, RECURSION_WILDCARD } from "../define";
-import { getPathInfo } from "../address/PathInfo";
+import { DELIMITER, MAX_WILDCARD_DEPTH, RECURSION_WILDCARD, WILDCARD } from "../define";
 import { raiseError } from "../raiseError";
 import { IRecursionSpec, IRecursivePathParts } from "./types";
 
@@ -50,7 +49,14 @@ export function concretePathAt(spec: IRecursionSpec, suffix: string, depth: numb
   }
   const full = path + suffix;
   // ワイルドカード段数は展開後のパス全体で数える（アンカー・反復・接尾辞をすべて含む）。
-  const wildcardCount = getPathInfo(full).wildcardCount;
+  // intern（getPathInfo）より**前**に文字列から数える — 上限超過のパスを永続キャッシュ
+  // （PathInfo の `_cache`）に残さない（設計書 D10「毎ノードの固有パスを intern しない」）。
+  let wildcardCount = 0;
+  for (const segment of full.split(DELIMITER)) {
+    if (segment === WILDCARD) {
+      wildcardCount++;
+    }
+  }
   if (wildcardCount > MAX_WILDCARD_DEPTH) {
     raiseError(
       `[wcs/recursion-depth-exceeded] Recursion on "${spec.anchor}" reached depth ${depth} ` +

@@ -7,14 +7,13 @@
  */
 
 import { IStateElement } from "../components/types";
-import { RecursionRegistry } from "./registry";
 
 /**
  * `path` がこの state の再帰 getter の展開形なら、未登録の深さを実体化する。
  * 該当しないパス（＝大多数）は接頭辞比較 1 回で戻る。
  */
 export function materializeRecursionAccessor(stateElement: IStateElement, path: string): void {
-  const registry = stateElement.recursionRegistry as RecursionRegistry | null | undefined;
+  const registry = stateElement.recursionRegistry;
   if (registry === null || typeof registry === "undefined" || !registry.hasDefinitions) {
     return;
   }

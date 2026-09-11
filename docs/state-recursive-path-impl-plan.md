@@ -42,7 +42,7 @@ class TreeState {
 | 再帰 getter 内の `this["nodes.**.value"]` | 評価中の再帰宣言・深さ・行に束縛する |
 | 同 getter 内の `$getAll("nodes.**.children.*.total")` | `**` を現在深さの具体パスへ置換し、既存の省略時の接頭辞規則で直下の子を列挙する |
 | `$getAll("nodes.**.value", [])` | 呼び出し元の行に関係なく、宣言アンカー全体の全深さを列挙する |
-| 再帰文脈のないトップレベルでの `$getAll("nodes.**.value")` | 既存のトップレベル省略形に合わせ、全深さを列挙する |
+| 再帰文脈のないトップレベルでの `$getAll("nodes.**.value")`（添字省略） | `[wcs/recursion-context]` で throw する。束縛する深さが無いのに黙って全深さへ読み替えない（全体は `[]` を明示する）。計画時は「トップレベル省略形に合わせて全深さを列挙」だったが、Phase B で束縛形と合併形を別経路にした時点でこちらに倒した（README・テストとも throw が正本） |
 | 無関係な行文脈での省略形 | 文脈不一致として throw。全体を読む場合は `[]` を明示する |
 | `$getAll` の非空 `indexes` | 再帰パスでは throw。通常の `*` パスの接頭辞規則は維持する |
 | `$setAll("nodes.**.selected", [], false)` | 全深さへのブロードキャスト。戻り値・`undefined` スキップ・`null` の扱いは既存規則を継ぐ |
@@ -152,8 +152,9 @@ ListIndex の同一性は台帳（`listIndexesByList`）が持つので、先に
 | X2 | 配列を行から行へ付け替えると描画と `$getAll` が食い違う。修理案は「新親と一致しない `parentListIndex` を持つ ListIndex は再利用せず作り直す」だが、`applyChangeToFor` と `walkDependency` が ListIndex 同一性でジョインしているため独立の設計判断が要る |
 | X3 | `walkDependency` のコメントが「依存グラフは epoch でメモ化される」と書いているが、`topologicalRank.ts` はメモ化していない（ヘッダにそう書いてある）。コメントの誤り |
 | X4 | 描画なしの世代分裂（A3）は再帰専用ではなく、`for` を持たないリストを `$getAll` するアプリ一般に当たる既存欠陥である可能性が高い。いつ入ったかは未確認 |
+| X5 | 宣言の検証が **初回マウント**で throw すると、`_resolveLoading()` に届かず `connectedCallbackPromise` が永久 pending になる（作者が受け取るのは診断ではなく無言のハング）。再セット経路なら同じ宣言が正しい文面で同期 throw する。`$listKeys` / `$watch` / `$streams` も同じ性質なので Phase B の回帰ではないが、`$recursion` は新しい宣言面なので**出荷前に決着させたい**。宣言検証全般を `_failInitialization` と同じ「resolve してから raise」経路に載せる独立の Issue にする。**着地後レビュー（§7-3）で実測確認**: `$recursion: { "nodes": "children.*" }` は同期 throw 無し・`console.error` 0 件・promise 永久 pending |
 
-X1・X2・X5 は独立の Issue にする。X3 はコメント修正のみ。X4 は E1 の修理でまとめて解消される見込み。
+X1・X2・X5 は独立の Issue にする（X10 は X6・X7 と同じ Issue — §7-2）。X3 はコメント修正のみ。X4 は E1 の修理でまとめて解消される見込み。
 
 **成果物（完了）**:
 - `__tests__/integration.recursionPrerequisites.test.ts` — 再帰が依存している「今日すでに正しく動く挙動」の回帰テスト
@@ -288,8 +289,21 @@ X1・X2・X5 は独立の Issue にする。X3 はコメント修正のみ。X4 
 | X7 | `setInitialState` の再セット後、`for` の行バインドが以後の書き込みに追従しない（集計 getter は追従する）。X6 と同じクラス。再帰とは独立 |
 | X8 | マウントされたコンポーネントの子スコープで `onclick: <method>` がホスト state 側のメソッドを指すと、その `for` が 1 行も描画されず診断も出ない。設計書 §1-1 の `clearSelection()` を行のボタンから呼ぶ形を塞ぐ |
 | X9 | マウントスコープから `$getAll("rows.**.value", [])` を呼ぶと、診断が**翻訳後**のパス（`nodes.**.value`）を名指しする。作者のソースに無い綴りなので grep しても見つからない |
+| X10 | `setInitialState` の再セット後、**wildcard 無しの getter** が旧世代のキャッシュ値を返す（`{ items: [1,2], get sum }` を `{ items: [5,6] }` に再セットしても `sum` は 3 のまま。§7-3 で発見）。`_state` セッタは listPaths / getterPaths / pathSet と再帰の生成辺は整理するが getter キャッシュには触らず、wildcard 無しの絶対アドレスは世代をまたいで同一。再帰の合併形 getter も同じで、再セット前に読んだものだけが旧値を返す。X7 と同じ「再セット後」クラス。`integration.recursionKnownDefects.test.ts` 欠陥8 で現状固定 |
 
-X6・X7 は同じ「初期適用を経ないバインドに依存辺が張られない」クラスなので、1 つの Issue にまとめるのが妥当。
+X6・X7・X10 は同じ「再セット・ハイドレーション後に一部の機構だけ世代を跨ぐ」クラスなので、1 つの Issue にまとめるのが妥当。
+
+### 7-3. 着地後レビュー（2026-09-11）
+
+全 Phase 完了後のコードレビュー（プローブ 9 本で実測）。blocking 1 件を修理し、既存欠陥 3 件を記録した。
+
+**修理した blocking — 多段の反復サブパスで途中のオブジェクトへの一括書き込みが素通りしていた。** `{ "nodes.*": "branch.children.*" }` で `$setAll("nodes.**.branch", [], { children: [] })` が `wcs/recursion-structural-write` にならなかった。`assertNotStructural`（runtime）と `structuralWriteTarget`（vscode-wcs）が、反復単位を剥がした残りを `"." + repeatList` との**完全一致**でしか見ていなかったため。実測では 2 件書いて深さ 1 のノードを消し、`treeTotal` は古いまま残った（この書き込み自身が確定した深さ 1 のアドレスが宙に浮く、拒否の理由そのもの）。判定を「反復サブパスのセグメント接頭辞」（`""` / `.branch` / `.branch.children`）に直し、両側に回帰テストを足した。
+
+**問題なしを実測で確認したもの**: `$updatedCallback` からの再置換（ネストしたバッチ・基準はバッチ開始時の値で一致する）／再セット後・読みより前の入れ子リストへの構造書き込み／行イベントハンドラからの束縛形（`setLoopContext` がループのアドレスを積むので深さが取れる。`integration.recursionGetAll.test.ts` に固定）／固定 arity の cold `$setAll` → swap → 読み。
+
+**既存欠陥（再帰固有でない）**: X2 は「行オブジェクトを作り直して children 配列を引き継ぐ置換（`nodes.map(n => ({...n}))`）」のあと、その行の集計だけが葉の更新に追従しない形で再現する。手書きの 3 段 getter でも同じ。Phase C レビューでこの形を正当な木として通したが、通した先で黙って誤るので、README の既知の制限に載せる（`integration.recursionKnownDefects.test.ts` 欠陥7 で現状固定）。X5 の無言ハングを実測で確認した。X10 を新規発見した（上の表）。
+
+**あわせて直したもの**: `bindRecursivePath` の二重照合／`concretePathAt` が上限超過のパスを intern してから throw していた点（文字列から数えて先に検査）／`IStateElement.recursionRegistry` の `unknown` 型とキャスト（`import type` で型付け）／「`$setAll` は基準を commit しない」という記述 3 箇所（set-all-design §6-2・`walk.ts`・`stateListBaseline.ts`）が再帰 `$setAll` と矛盾していた点／§1-2 の「トップレベル省略形は全深さ列挙」（実装は throw）。
 
 **完了条件（達成）**: runtime・エディター・CLI・ドキュメントで初版の対応範囲が一致し、example を静的検証で確認できる。packages/state 3179 件緑・カバレッジ閾値維持、vscode-wcs 798 件緑（coverage 込み）、lint smoke 17 件緑。
 
@@ -336,4 +350,3 @@ Phase A は完了した（§3）。その結果、**Phase A' を新設する** �
 E4（`listPaths` 専用入口）・E5（実体化フックの位置）・E6（共有配列ガード）は再帰の新規コードと不可分なので Phase B 以降で実施する。
 
 R1–R12 と公開資料の整合が揃った時点で初版の実装完了とする。再帰テンプレートや相互再帰の実装は別計画とし、この計画の完了条件には含めない。
-| X5 | 宣言の検証が **初回マウント**で throw すると、`_resolveLoading()` に届かず `connectedCallbackPromise` が永久 pending になる（作者が受け取るのは診断ではなく無言のハング）。再セット経路なら同じ宣言が正しい文面で同期 throw する。`$listKeys` / `$watch` / `$streams` も同じ性質なので Phase B の回帰ではないが、`$recursion` は新しい宣言面なので**出荷前に決着させたい**。宣言検証全般を `_failInitialization` と同じ「resolve してから raise」経路に載せる独立の Issue にする |

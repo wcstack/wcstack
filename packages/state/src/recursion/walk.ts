@@ -33,7 +33,11 @@ import { concretePathAt, nodePathAt } from "./expand";
 import { IRecursionSpec } from "./types";
 
 export interface IRecursionWalkOptions {
-  /** 観測したリスト値を差分基準として確定するか（読みだけが true。`$setAll` は false）。 */
+  /**
+   * 観測したリスト値を差分基準として確定するか。合併形の `$getAll` も再帰の `$setAll` も
+   * true を渡す（実装計画 §6 — cold な書き込みが ListIndex 世代を鋳造したまま基準を残さないと、
+   * 次の構造変更で深い子台帳が孤児になる）。false は走査だけを借りたい将来の呼び手のために残す。
+   */
   readonly commitDiffBaseline: boolean;
 }
 

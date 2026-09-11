@@ -15,9 +15,12 @@
  * 親子の連鎖が切れ、集計が恒久的に stale になるか `ListIndexes not found` で恒久的に
  * throw する（docs/state-recursive-path-impl-plan.md §3-2 の E1）。
  *
- * 書き手は 3 系統ある。いずれも「観測した」という同じ意味を持つ。
- * - 読み: `collectWildcardIndexes`（`commitDiffBaseline: true` のときだけ。`$setAll` は
- *   読みの基準を動かさないという契約を保つ — docs/state-set-all-design.md §6-2）
+ * 書き手は 4 系統ある。いずれも「観測した」という同じ意味を持つ。
+ * - 読み: `collectWildcardIndexes`（`commitDiffBaseline: true` のときだけ。固定 arity の
+ *   `$setAll` は走査を借りるだけで動かさない — docs/state-set-all-design.md §6-2）
+ * - 再帰の走査: `recursion/walk.ts`（合併形の `$getAll` と**再帰の `$setAll` の両方**が確定する。
+ *   cold な書き込みが ListIndex 世代を鋳造したまま基準を残すと、次の構造変更で深い子台帳が
+ *   孤児になるため — docs/state-recursive-path-impl-plan.md §6）
  * - 描画: `applyChangeFromBindings` / `hydrateBindings`（描画側の基準と同時に書く）
  * - 依存ウォーク: `walkDependency`（ウォーク完了後にまとめて確定する）
  *

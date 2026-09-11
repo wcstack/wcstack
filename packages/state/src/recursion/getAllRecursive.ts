@@ -12,7 +12,6 @@
 import { IStateAddress } from "../address/types";
 import { getByAddress } from "../proxy/methods/getByAddress";
 import { IStateHandler } from "../proxy/types";
-import { RecursionRegistry } from "./registry";
 import { splitRecursivePath } from "./expand";
 import { collectRecursiveAddresses } from "./walk";
 import { raiseError } from "../raiseError";
@@ -25,7 +24,9 @@ export function resolveRecursiveAddresses(
   path: string,
   commitDiffBaseline: boolean,
 ): IStateAddress[] {
-  const registry = handler.stateElement.recursionRegistry as RecursionRegistry;
+  // 呼び出し元（getAll.ts / setAllRecursive.ts）は `hasRecursion === true` をゲートにしている。
+  const registry = handler.stateElement.recursionRegistry
+    ?? raiseError(`Recursion registry is missing while walking "${path}"; hasRecursion must gate this call.`);
   const parts = splitRecursivePath(registry.spec, path);
   if (parts === null) {
     raiseError(

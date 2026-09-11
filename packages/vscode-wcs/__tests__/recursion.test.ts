@@ -150,6 +150,16 @@ describe('recursionPaths', () => {
       expect(structuralWriteTarget(spec, '.selected')).toBeNull();
       expect(structuralWriteTarget(spec, '.children.*.selected')).toBeNull();
     });
+    it('多段の反復サブパスでは、子リストへ至る途中のオブジェクトも構造（branch）', () => {
+      // runtime assertNotStructural と同じ穴を塞いだ形（実装計画 §7-3）
+      const nested = makeRecursionSpec('nodes.*', 'branch.children.*');
+      expect(structuralWriteTarget(nested, '.branch')).toBe('branch');
+      expect(structuralWriteTarget(nested, '.branch.children.*.branch')).toBe('branch');
+      expect(structuralWriteTarget(nested, '.branch.children')).toBe('list');
+      expect(structuralWriteTarget(nested, '.branch.children.*')).toBe('node');
+      expect(structuralWriteTarget(nested, '.branchX')).toBeNull();
+      expect(structuralWriteTarget(nested, '.branch.note')).toBeNull();
+    });
   });
 
   it('多段の反復サブパスでは途中のオブジェクトも含意される', () => {
@@ -527,6 +537,23 @@ describe('$getAll / $setAll の形', () => {
       .toEqual([WcsDiagnosticCode.RecursionStructuralWrite]);
     expect(codes(only('this.$setAll("nodes.**.children.*", [], null);')))
       .toEqual([WcsDiagnosticCode.RecursionStructuralWrite]);
+  });
+
+  it('多段の反復サブパスでは、子リストへ至る途中のオブジェクトへの一括書き込みも拒否する', () => {
+    const nested = (call: string) => validateRecursion(makeState(`
+  $recursion: { "nodes.*": "branch.children.*" },
+  nodes: [],
+  wipe() { ${call} }`), 'wcs-state', 'en');
+    const branch = nested('this.$setAll("nodes.**.branch", [], { children: [] });');
+    expect(codes(branch)).toEqual([WcsDiagnosticCode.RecursionStructuralWrite]);
+    expect(branch[0].message).toContain('an object on the way to the "branch.children" list');
+    expect(codes(nested('this.$setAll("nodes.**.branch.children.*.branch", [], null);')))
+      .toEqual([WcsDiagnosticCode.RecursionStructuralWrite]);
+    expect(codes(nested('this.$setAll("nodes.**.branch.children", [], []);')))
+      .toEqual([WcsDiagnosticCode.RecursionStructuralWrite]);
+    // 葉は通る
+    expect(codes(nested('this.$setAll("nodes.**.branch.note", [], "x");'))).toEqual([]);
+    expect(codes(nested('this.$setAll("nodes.**.branchX", [], 1);'))).toEqual([]);
   });
 
   it('再帰 getter への書き込みを拒否する', () => {

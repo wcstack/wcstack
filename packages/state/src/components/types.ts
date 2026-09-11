@@ -1,6 +1,7 @@
 import { ListKeyMap } from "../list/listKeys";
 import { ILoopContextStack } from "../list/types";
 import type { PathInfoSource } from "../pathDiagnostics";
+import type { RecursionRegistry } from "../recursion/registry";
 import { IStateProxy, Mutability } from "../proxy/types";
 import { BindingType } from "../types";
 
@@ -139,8 +140,11 @@ export interface IStateElement {
    * optional なのはテスト用モック互換のため（undefined は「再帰なし」扱い）。
    */
   readonly hasRecursion?: boolean;
-  /** 再帰レジストリ（宣言が無ければ null）。型は循環 import を避けるため unknown 扱い。 */
-  readonly recursionRegistry?: unknown;
+  /**
+   * 再帰レジストリ（宣言が無ければ null）。registry.ts はこのファイルの IStateElement を
+   * 参照するが、`import type` どうしなので実行時の循環にはならない。
+   */
+  readonly recursionRegistry?: RecursionRegistry | null;
   setPathInfo(path: string, bindingType: BindingType, source?: PathInfoSource): void;
   addStaticDependency(parentPath: string, childPath: string): boolean;
   addDynamicDependency(fromPath: string, toPath: string): boolean;

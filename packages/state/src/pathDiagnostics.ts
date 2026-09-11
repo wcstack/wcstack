@@ -337,8 +337,7 @@ export function checkDeclaredPath(
   // 遅延実体化する — recursion/registry.ts）。素の存在検査では必ず「解決できない」に
   // なるので、宣言済みの `**` getter に合致するかを先に見る。実体化はしない。
   if (stateElement.hasRecursion === true) {
-    const registry = stateElement.recursionRegistry as
-      { matchesRecursivePath(path: string): boolean } | null | undefined;
+    const registry = stateElement.recursionRegistry;
     if (registry !== null && typeof registry !== "undefined" && registry.matchesRecursivePath(path)) {
       return;
     }

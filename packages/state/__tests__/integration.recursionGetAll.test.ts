@@ -1352,3 +1352,59 @@ describe("イベントハンドラから合併形を読む", () => {
     host.remove();
   });
 });
+
+// ===========================================================================
+// イベントハンドラから**束縛形**を読む（README「an event handler bound to such a row」の根拠）
+//
+// `setLoopContext` がループのリストパス（`nodes.*.children.*`）のアドレスをスタックへ積むので、
+// `currentRecursionDepth` の `depthOfConcretePathPrefix` がそこから深さ 1 を取り出せる。
+// 合併形（上の describe）は深さを要求しないが、束縛形はここで初めて「行のハンドラ」が
+// 再帰文脈になることを固定する。
+// ===========================================================================
+
+describe("イベントハンドラから束縛形を読む", () => {
+  it("入れ子の `for` の行ハンドラでは、ループのアドレスから深さが束縛されること", async () => {
+    const seen: { idx: number[]; kids: number[]; own: number }[] = [];
+    const state = handlerState(forest(), {
+      pickKid(this: any, _e: Event, ...idx: number[]) {
+        seen.push({
+          idx,
+          // 省略形＝この行（node 10・深さ 1）の直下の子だけ
+          kids: this.$getAll("nodes.**.children.*.value"),
+          // `**` の直接読みも同じ深さに束縛される
+          own: this["nodes.**.value"],
+        });
+      },
+    });
+    const { host, shadowRoot } = await mount(state,
+      `<template data-wcs="for: nodes"><div>` +
+      `<template data-wcs="for: nodes.*.children">` +
+      `<button class="k" data-wcs="onclick: pickKid"></button>` +
+      `</template></div></template>`);
+
+    const buttons = shadowRoot.querySelectorAll("button.k");
+    (buttons[0] as HTMLElement).dispatchEvent(new Event("click"));
+    await flush();
+
+    expect(seen).toEqual([{ idx: [0, 0], kids: [100], own: 10 }]);
+    host.remove();
+  });
+
+  it("`for` の外のハンドラでは束縛形は [wcs/recursion-context] になること（束縛する深さが無い）", async () => {
+    const seen: string[] = [];
+    const state = handlerState(forest(), {
+      pickTop(this: any) {
+        try { this.$getAll("nodes.**.children.*.value"); seen.push("ok"); }
+        catch (e: any) { seen.push(String(e.message)); }
+      },
+    });
+    const { host, shadowRoot } = await mount(state, `<button id="b" data-wcs="onclick: pickTop"></button>`);
+
+    (shadowRoot.getElementById("b") as HTMLElement).dispatchEvent(new Event("click"));
+    await flush();
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toContain("[wcs/recursion-context]");
+    host.remove();
+  });
+});

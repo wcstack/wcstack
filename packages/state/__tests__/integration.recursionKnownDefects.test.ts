@@ -1521,3 +1521,141 @@ describe("欠陥6: 描画ありでも、in-place の深い変異を構造変化�
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// 着地後レビュー（2026-09-11・実装計画 §7-3）で見つかった既存欠陥。どちらも再帰固有ではなく、
+// 手書きの多段 getter・wildcard 無しの getter で同じ形になる。現状固定 / 修正時に反転させる。
+// ---------------------------------------------------------------------------
+
+describe("欠陥7: 行オブジェクトを作り直す置換（children 配列は引き継ぐ）のあと、その行の集計だけが葉の更新に追従しない（X2 と同根・現状固定）", () => {
+  const forest = () => [NODE(1, [NODE(10, [NODE(100)]), NODE(20)]), NODE(2)];
+  const leafWrite = (stateEl: State) =>
+    write(stateEl, (s: any) => { s.$resolve("nodes.*.children.*.children.*.value", [0, 0, 0], 500); });
+
+  // DEFECT: 子台帳（listIndexesByList）は配列 identity だけをキーにしているので、行オブジェクトが
+  //         新しくなっても createListDiff の `oldList.length === 0` 分岐が既存の子 ListIndex
+  //         （parentListIndex ＝ **旧行**）をそのまま再利用する。葉の書き込みは縮約エッジ
+  //         （listIndexAtWildcard）で旧行のアドレスを dirty にするため、新行の `nodes.*.total`
+  //         キャッシュだけが古いまま残る。深さ 1 と全深さ合併は追従する。
+  //         should be: depth-0 が [531, 2]。
+  //         露出条件＝置換と葉更新の**間に集計を読む**こと（新行のアドレスにキャッシュが載る）。
+  //         読まなければ新行は未評価のまま次の読みで正しく評価される（ヘッダの罠 (a) と同型）。
+  //         このファイルの it は全部「間に読む」側で書いてある。
+  it("手書きの 3 段 getter: depth-1 と葉の合併は追従するのに depth-0 だけ古い", async () => {
+    const { stateEl } = await mount(unrollTotals({ nodes: forest() }, 2));
+    expect(totalsAt(stateEl, 0)).toEqual([131, 2]);
+
+    write(stateEl, (s: any) => { s.nodes = s.nodes.map((n: any) => ({ ...n })); });
+    await flush();
+    expect(totalsAt(stateEl, 0)).toEqual([131, 2]);
+
+    leafWrite(stateEl);
+    await flush();
+    expect(valuesAt(stateEl, 2)).toEqual([500]);
+    expect(totalsAt(stateEl, 1)).toEqual([510, 20]);
+    expect(totalsAt(stateEl, 0)).toEqual([131, 2]); // should be: [531, 2]
+  });
+
+  it("再帰 getter でも同じ（`**` は縮約エッジの向きを変えない）", async () => {
+    const state: any = { nodes: forest(), $recursion: { "nodes.*": "children.*" } };
+    Object.defineProperty(state, "nodes.**.total", {
+      get(this: any) {
+        return this["nodes.**.value"] +
+          this.$getAll("nodes.**.children.*.total").reduce((a: number, b: number) => a + b, 0);
+      },
+      enumerable: true, configurable: true,
+    });
+    const { stateEl } = await mount(state);
+    expect(totalsAt(stateEl, 0)).toEqual([131, 2]);
+
+    write(stateEl, (s: any) => { s.nodes = s.nodes.map((n: any) => ({ ...n })); });
+    await flush();
+    expect(totalsAt(stateEl, 0)).toEqual([131, 2]);   // 間に読む（露出条件）
+
+    leafWrite(stateEl);
+    await flush();
+    expect(read(stateEl, (s: any) => s.$getAll("nodes.**.value", []))).toEqual([1, 10, 500, 20, 2]);
+    expect(totalsAt(stateEl, 1)).toEqual([510, 20]);
+    expect(totalsAt(stateEl, 0)).toEqual([131, 2]); // should be: [531, 2]
+  });
+
+  it("対照: 行オブジェクトを引き継ぐ置換（[...nodes]）なら depth-0 も追従する", async () => {
+    const { stateEl } = await mount(unrollTotals({ nodes: forest() }, 2));
+    expect(totalsAt(stateEl, 0)).toEqual([131, 2]);
+    write(stateEl, (s: any) => { s.nodes = [...s.nodes]; });
+    await flush();
+    expect(totalsAt(stateEl, 0)).toEqual([131, 2]);   // 間に読んでも
+    leafWrite(stateEl);
+    await flush();
+    expect(totalsAt(stateEl, 0)).toEqual([531, 2]);
+  });
+
+  it("対照: children 配列も作り直す深いクローンなら depth-0 も追従する", async () => {
+    const clone = (nodes: any[]): any[] => nodes.map((n) => ({ ...n, children: clone(n.children) }));
+    const { stateEl } = await mount(unrollTotals({ nodes: forest() }, 2));
+    expect(totalsAt(stateEl, 0)).toEqual([131, 2]);
+    write(stateEl, (s: any) => { s.nodes = clone(s.nodes); });
+    await flush();
+    expect(totalsAt(stateEl, 0)).toEqual([131, 2]);   // 間に読んでも
+    leafWrite(stateEl);
+    await flush();
+    expect(totalsAt(stateEl, 0)).toEqual([531, 2]);
+  });
+});
+
+describe("欠陥8（X10）: setInitialState の再セット後、wildcard 無しの getter が旧世代のキャッシュ値を返す（現状固定）", () => {
+  // DEFECT: `_state` セッタは listPaths / getterPaths / pathSet と再帰の生成辺は整理するが、
+  //         getter キャッシュ（cacheEntryByAbsoluteStateAddress）には触らない。wildcard 無しの
+  //         getter の絶対アドレスは世代をまたいで同一なので、旧世代の値が dirty:false のまま返る。
+  //         should be: 11。
+  it("{ items, get sum } を再セットしても sum が旧世代の 3 のまま", async () => {
+    const make = (items: number[]) => {
+      const s: any = { items };
+      Object.defineProperty(s, "sum", {
+        get(this: any) { return this.items.reduce((a: number, b: number) => a + b, 0); },
+        enumerable: true, configurable: true,
+      });
+      return s;
+    };
+    const { stateEl } = await mount(make([1, 2]));
+    expect(read(stateEl, (s: any) => s.sum)).toBe(3);
+
+    stateEl.setInitialState(make([5, 6]));
+    await flush();
+    expect(read(stateEl, (s: any) => s.items)).toEqual([5, 6]);
+    expect(read(stateEl, (s: any) => s.sum)).toBe(3); // should be: 11
+  });
+
+  it("再帰の合併形も同じ: 再セット前に読んだ getter だけが旧値を返す", async () => {
+    const make = (nodes: any[]) => {
+      const s: any = { nodes, $recursion: { "nodes.*": "children.*" } };
+      Object.defineProperty(s, "nodes.**.total", {
+        get(this: any) {
+          return this["nodes.**.value"] +
+            this.$getAll("nodes.**.children.*.total").reduce((a: number, b: number) => a + b, 0);
+        },
+        enumerable: true, configurable: true,
+      });
+      Object.defineProperty(s, "rootTotals", {
+        get(this: any) { return this.$getAll("nodes.*.total", []); },
+        enumerable: true, configurable: true,
+      });
+      Object.defineProperty(s, "treeTotal", {
+        get(this: any) { return this.$getAll("nodes.**.value", []).reduce((a: number, b: number) => a + b, 0); },
+        enumerable: true, configurable: true,
+      });
+      return s;
+    };
+    const { stateEl } = await mount(make([NODE(1, [NODE(10, [NODE(100)])])]));
+    expect(read(stateEl, (s: any) => s.rootTotals)).toEqual([111]);   // 再セット前に読む
+    //（treeTotal は読まない）
+
+    stateEl.setInitialState(make([NODE(5, [NODE(50, [NODE(500)])])]));
+    await flush();
+    expect(read(stateEl, (s: any) => s.$getAll("nodes.*.value", []))).toEqual([5]);
+    expect(read(stateEl, (s: any) => s.treeTotal)).toBe(555);          // 初めて読むので正しい
+    expect(read(stateEl, (s: any) => s.rootTotals)).toEqual([111]);   // should be: [555]
+    // 生成アクセサ経由の直接読みは正しい（キャッシュの主は rootTotals の側）
+    expect(totalsAt(stateEl, 0)).toEqual([555]);
+  });
+});

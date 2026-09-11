@@ -625,7 +625,7 @@ describe("ブロードキャストが受け付けない形", () => {
       (s) => s.$setAll("nodes.**", [], node(0)));
 
     expect(message).toContain("[wcs/recursion-structural-write]");
-    expect(message).toContain('"nodes.**" writes the recursion structure itself (a node or its "children" list)');
+    expect(message).toContain('"nodes.**" writes the recursion structure itself (a node, its "children" list, or an object on the way to that list)');
     expect(message).toContain("This version broadcasts to leaf properties only");
     expect(message).toContain("replacing a node would invalidate the child addresses already resolved for this write");
     expect(unchanged, "1 件も書かれていない").toBe(true);
@@ -662,6 +662,33 @@ describe("ブロードキャストが受け付けない形", () => {
     expect(deepest.message).toContain("[wcs/recursion-structural-write]");
     expect(deepest.unchanged).toBe(true);
     deepest.host.remove();
+  });
+
+  it("多段の反復サブパス（branch.children.*）では、子リストへ至る途中のオブジェクトへの書き込みも構造として拒否されること", async () => {
+    // 着地後レビューで実測した穴（実装計画 §7-3）: 反復単位を剥がした残りが `.branch` のとき、
+    // `"." + repeatList`（`.branch.children`）との完全一致だけを見ていたので素通りし、深さ 0 の
+    // `branch` を置き換えた瞬間に、この書き込みが確定済みの深さ 1 のアドレス
+    // （`nodes.*.branch.children.*.branch`）が宙に浮いていた（2 件書いて深さ 1 のノードが消えた）。
+    const nodes: any[] = [{ value: 1, branch: { children: [{ value: 10, branch: { children: [] } }] } }];
+    const { host, stateEl } = await mount({ nodes, $recursion: { "nodes.*": "branch.children.*" } }, NO_RENDER_HTML);
+    const before = JSON.stringify(nodes);
+
+    for (const path of ["nodes.**.branch", "nodes.**.branch.children.*.branch", "nodes.**.branch.children"]) {
+      const message = writeError(stateEl, (s: any) => { s.$setAll(path, [], { children: [] }); });
+      expect(message, path).toContain("[wcs/recursion-structural-write]");
+      expect(message, path).toContain(`"${path}" writes the recursion structure itself`);
+      expect(message, path).toContain('(a node, its "branch.children" list, or an object on the way to that list)');
+      expect(JSON.stringify(nodes), `${path}: 1 件も書かれていない`).toBe(before);
+    }
+
+    // 対照: 葉は通る（綴りが接頭辞に似ていても、セグメント境界で一致しなければ構造ではない）
+    expect(writeError(stateEl, (s: any) => { s.$setAll("nodes.**.value", [], 7); })).toBe("");
+    expect(nodes[0].value).toBe(7);
+    expect(nodes[0].branch.children[0].value).toBe(7);
+    expect(writeError(stateEl, (s: any) => { s.$setAll("nodes.**.branchX", [], 1); })).toBe("");
+    expect(writeError(stateEl, (s: any) => { s.$setAll("nodes.**.branch.note", [], "x"); })).toBe("");
+    expect(nodes[0].branch.note).toBe("x");
+    host.remove();
   });
 
   it("再帰 getter を名指す接尾辞は [wcs/recursion-readonly] になること", async () => {

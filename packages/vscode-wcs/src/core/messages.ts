@@ -118,7 +118,7 @@ export interface WcsMessageCatalog {
   /** `$setAll("…**…", …)` の添字・値の形が `**` に対して定義できない。 */
   recursionSetAllForm(path: string, problem: RecursionSetAllProblem): string;
   /** ノード自身 / 子リストへの一括書き込み。 */
-  recursionStructuralWrite(path: string, target: 'node' | 'list', repeatList: string): string;
+  recursionStructuralWrite(path: string, target: 'node' | 'list' | 'branch', repeatList: string): string;
   /** 再帰 getter（またはその派生値の中）への書き込み。 */
   recursionReadonly(path: string, getterPath: string): string;
   /** `$recursion` の値がオブジェクトでない。 */
@@ -273,7 +273,9 @@ const ja: WcsMessageCatalog = {
   recursionStructuralWrite: (p, target, repeatList) =>
     target === 'node'
       ? `$setAll("${p}") は再帰の構造そのもの（ノード）を書き換えます。初版は葉のプロパティへのブロードキャストのみです — ノードを置き換えるとこの書き込みのために確定済みの子アドレスが無効になります`
-      : `$setAll("${p}") は再帰の構造そのもの（"${repeatList}" リスト）を書き換えます。初版は葉のプロパティへのブロードキャストのみです`,
+      : target === 'branch'
+        ? `$setAll("${p}") は再帰の構造そのもの（"${repeatList}" リストへ至る途中のオブジェクト）を書き換えます。初版は葉のプロパティへのブロードキャストのみです — 置き換えるとその下の確定済みの子アドレスが無効になります`
+        : `$setAll("${p}") は再帰の構造そのもの（"${repeatList}" リスト）を書き換えます。初版は葉のプロパティへのブロードキャストのみです`,
   recursionReadonly: (p, getterPath) =>
     `$setAll("${p}") は再帰 getter "${getterPath}" に書き込みます（setter は初版では持てません）。この getter が導出元にしている値の側を書いてください`,
   recursionNotObject: () =>
@@ -430,7 +432,9 @@ const en: WcsMessageCatalog = {
   recursionStructuralWrite: (p, target, repeatList) =>
     target === 'node'
       ? `$setAll("${p}") writes the recursion structure itself (a node). This version broadcasts to leaf properties only — replacing a node would invalidate the child addresses already resolved for this write`
-      : `$setAll("${p}") writes the recursion structure itself (the "${repeatList}" list). This version broadcasts to leaf properties only`,
+      : target === 'branch'
+        ? `$setAll("${p}") writes the recursion structure itself (an object on the way to the "${repeatList}" list). This version broadcasts to leaf properties only — replacing it would invalidate the child addresses already resolved below it`
+        : `$setAll("${p}") writes the recursion structure itself (the "${repeatList}" list). This version broadcasts to leaf properties only`,
   recursionReadonly: (p, getterPath) =>
     `$setAll("${p}") writes into the recursive getter "${getterPath}", which has no setter in this version. Write the values it derives from instead`,
   recursionNotObject: () =>
