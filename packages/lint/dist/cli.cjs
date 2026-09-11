@@ -147,6 +147,31 @@ var WcsDiagnosticCode = {
   // `$watch` のキーが状態定義に存在しない。バインディング側と違い黙って発火しない
   // だけなので気づけない。severity は binding-path-missing に揃える（warning）。
   WatchPathMissing: "wcs/watch-path-missing",
+  // --- <wcs-state> script: $recursion declaration / `**` paths ---
+  // ランタイムと同じ code 語彙(@wcstack/state src/recursion/ が正本。
+  // docs/state-recursive-path-impl-plan.md §7)。静的に出すのは**パス文字列と宣言だけで
+  // 決まる**ものに限る。データを見ないと決まらない wcs/recursion-shared-list /
+  // wcs/recursion-cycle / wcs/recursion-depth-exceeded、および評価時の呼び出し文脈に
+  // 依存する wcs/recursion-context は runtime 専用(静的側は出さない)。
+  //
+  // `**` を解釈しない場所へ `**` が渡った(data-wcs / $watch / $resolve)、または
+  // `$recursion` 宣言が無いのに `**` を使った。runtime は PathInfo の不変条件として
+  // raiseError するか(API 経由)、getter を黙って無視する(宣言なしの `**` getter)。
+  RecursionUnsupported: "wcs/recursion-unsupported",
+  // 宣言済みアンカーと合致しない `**`(綴り違い・2 つ目の `**`)。
+  RecursionAnchor: "wcs/recursion-anchor",
+  // `$getAll` の添字の形が `**` に対して定義できない(非空の接頭辞)。
+  RecursionGetAllForm: "wcs/recursion-getall-form",
+  // `$setAll` の添字・値の形が `**` に対して定義できない
+  //(非空の接頭辞 / 添字省略 / mapper / spread)。
+  RecursionSetAllForm: "wcs/recursion-setall-form",
+  // ノード自身・子リスト・子ノードへの一括書き込み(確定済みの子アドレスを壊す)。
+  RecursionStructuralWrite: "wcs/recursion-structural-write",
+  // 再帰 getter(およびその派生値の中)への書き込み。setter は初版では持てない。
+  RecursionReadonly: "wcs/recursion-readonly",
+  // `$recursion` 宣言そのもの、または `**` getter の宣言の形が不正
+  //(ランタイムは初期化時に raiseError)。wcs/watch-declaration-invalid の再帰版。
+  RecursionDeclarationInvalid: "wcs/recursion-declaration-invalid",
   TypeAnnotation: "wcs/type-annotation",
   TemplateSyntax: "wcs/template-syntax",
   // --- <wcs-state> script: array reactivity hazards ---
@@ -926,12 +951,126 @@ var STRUCTURAL_DIRECTIVES = [...STRUCTURAL_BINDING_TYPE_SET].map((name) => ({
   ...STRUCTURAL_DIRECTIVE_INFO[name]
 }));
 
+// src/service/recursionPaths.ts
+var RECURSION_WILDCARD = "**";
+var RECURSION_KEY = "$recursion";
+function hasRecursionWildcard(path) {
+  return path.indexOf(RECURSION_WILDCARD) !== -1;
+}
+function checkNodePath(path) {
+  if (typeof path !== "string" || path.length === 0) return "empty";
+  const segments = path.split(".");
+  if (segments.some((segment) => segment.length === 0)) return "emptySegment";
+  if (segments.length < 2 || segments[segments.length - 1] !== "*") return "notElement";
+  if (segments[0].startsWith("$")) return "reservedRoot";
+  if (path.indexOf("#") !== -1) return "reservedMount";
+  for (let i = 0; i < segments.length - 1; i++) {
+    if (segments[i] === "*") return "midWildcard";
+    if (segments[i] === RECURSION_WILDCARD) return "nestedRecursion";
+  }
+  return null;
+}
+function makeRecursionSpec(anchor, repeat) {
+  return Object.freeze({
+    anchor,
+    repeat,
+    recursiveAnchor: anchor.slice(0, anchor.lastIndexOf(".")) + "." + RECURSION_WILDCARD,
+    anchorList: anchor.slice(0, anchor.lastIndexOf(".")),
+    repeatList: repeat.slice(0, repeat.lastIndexOf("."))
+  });
+}
+function splitRecursivePath(spec, path) {
+  if (path === spec.recursiveAnchor) return "";
+  if (!path.startsWith(spec.recursiveAnchor + ".")) return null;
+  const suffix = path.slice(spec.recursiveAnchor.length);
+  return hasRecursionWildcard(suffix) ? null : suffix;
+}
+function foldRecursion(spec, path) {
+  if (!path.startsWith(spec.anchor)) return null;
+  const unit3 = "." + spec.repeat;
+  let cursor = spec.anchor.length;
+  let depth = 0;
+  while (path.startsWith(unit3, cursor)) {
+    cursor += unit3.length;
+    depth++;
+  }
+  if (cursor !== path.length && path.charCodeAt(cursor) !== 46) return null;
+  return { depth, rest: path.slice(cursor) };
+}
+function matchesRecursion(specs, path, has) {
+  for (const spec of specs) {
+    const folded = foldRecursion(spec, path);
+    if (folded === null) continue;
+    if (has(spec.anchor + folded.rest)) return true;
+    if (has(spec.recursiveAnchor + folded.rest)) return true;
+  }
+  return false;
+}
+function collectRecursionSpecs(candidates) {
+  const out = [];
+  for (const candidate of candidates) {
+    if (candidate.kind !== "recursionAnchor" || typeof candidate.repeat !== "string") continue;
+    if (!candidate.path.endsWith("." + RECURSION_WILDCARD)) continue;
+    const anchor = candidate.path.slice(0, candidate.path.length - RECURSION_WILDCARD.length) + "*";
+    if (out.some((spec) => spec.anchor === anchor && spec.repeat === candidate.repeat)) continue;
+    out.push(makeRecursionSpec(anchor, candidate.repeat));
+  }
+  return out;
+}
+function impliedStructurePaths(spec) {
+  const out = [
+    { path: spec.anchorList, kind: "data", typeHint: "array" },
+    { path: spec.anchor, kind: "list" },
+    { path: `${spec.anchorList}.length`, kind: "data", typeHint: "number" }
+  ];
+  const repeatSegments = spec.repeatList.split(".");
+  for (let i = 1; i < repeatSegments.length; i++) {
+    out.push({ path: `${spec.anchor}.${repeatSegments.slice(0, i).join(".")}`, kind: "data" });
+  }
+  out.push({ path: `${spec.anchor}.${spec.repeatList}`, kind: "data", typeHint: "array" });
+  out.push({ path: `${spec.anchor}.${spec.repeat}`, kind: "list" });
+  out.push({ path: `${spec.anchor}.${spec.repeatList}.length`, kind: "data", typeHint: "number" });
+  return out;
+}
+function structuralWriteTarget(spec, suffix) {
+  const unit3 = "." + spec.repeat;
+  let rest = suffix;
+  while (rest.startsWith(unit3)) rest = rest.slice(unit3.length);
+  if (rest.length === 0) return "node";
+  const segments = spec.repeatList.split(".");
+  for (let i = 1; i <= segments.length; i++) {
+    if (rest === "." + segments.slice(0, i).join(".")) return i === segments.length ? "list" : "branch";
+  }
+  return null;
+}
+function sameFamily(spec, a, b) {
+  const unit3 = "." + spec.repeat;
+  const shorter = a.length <= b.length ? a : b;
+  const longer = a.length <= b.length ? b : a;
+  if (!longer.endsWith(shorter)) return false;
+  const gap = longer.slice(0, longer.length - shorter.length);
+  if (gap.length === 0) return true;
+  if (gap.length % unit3.length !== 0) return false;
+  for (let cursor = 0; cursor < gap.length; cursor += unit3.length) {
+    if (!gap.startsWith(unit3, cursor)) return false;
+  }
+  return true;
+}
+function conflictingGetterSuffix(spec, getterSuffixes, suffix) {
+  for (const declared of getterSuffixes) {
+    if (sameFamily(spec, declared, suffix)) return declared;
+    if (suffix.startsWith(declared + ".")) return declared;
+  }
+  return null;
+}
+
 // src/service/stateAnalyzer.ts
 var RESERVED_STREAMS_KEY = "$streams";
 var RESERVED_COMMAND_TOKENS_KEY = "$commandTokens";
 var RESERVED_EVENT_TOKENS_KEY = "$eventTokens";
 var RESERVED_LIST_KEYS_KEY = "$listKeys";
 var RESERVED_WATCH_KEY = "$watch";
+var RESERVED_RECURSION_KEY = RECURSION_KEY;
 function analyzeStatePaths(scriptContent) {
   const objectContent = extractDefaultExportObject(scriptContent);
   if (!objectContent) return [];
@@ -939,6 +1078,7 @@ function analyzeStatePaths(scriptContent) {
   const topLevelProps = parseTopLevelProperties(objectContent);
   const pendingStreamValues = [];
   const pendingListKeys = [];
+  const recursionSpec = specFromRecursionValue(topLevelProps.find((p) => p.name === RESERVED_RECURSION_KEY));
   for (const prop of topLevelProps) {
     if (prop.name.startsWith("$")) {
       collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys);
@@ -950,7 +1090,7 @@ function analyzeStatePaths(scriptContent) {
     }
     if (prop.kind === "getter") {
       if (!paths.some((p) => p.path === prop.name)) {
-        paths.push({ path: prop.name, kind: "computed" });
+        paths.push({ path: prop.name, kind: hasRecursionWildcard(prop.name) ? "recursive" : "computed" });
       }
       continue;
     }
@@ -963,8 +1103,61 @@ function analyzeStatePaths(scriptContent) {
   for (const listKeyEntry of pendingListKeys) {
     pushListKeyPaths(listKeyEntry, paths);
   }
+  if (recursionSpec !== null) {
+    if (!paths.some((p) => p.path === recursionSpec.recursiveAnchor && p.kind === "recursionAnchor")) {
+      paths.push({ path: recursionSpec.recursiveAnchor, kind: "recursionAnchor", repeat: recursionSpec.repeat });
+    }
+    for (const implied of impliedStructurePaths(recursionSpec)) {
+      if (paths.some((p) => p.path === implied.path)) continue;
+      paths.push({ path: implied.path, kind: implied.kind, typeHint: implied.typeHint });
+    }
+  }
   collectRowShapesFromAssignments(scriptContent, paths);
   return paths;
+}
+function specFromRecursionValue(prop) {
+  if (!prop || prop.kind !== "data" || !prop.value || !isObjectLiteral(prop.value)) return null;
+  const entries = parseTopLevelProperties(extractObjectContent(prop.value)).filter((e) => e.kind === "data");
+  if (entries.length !== 1) return null;
+  const anchor = entries[0].name;
+  const repeat = extractStringLiteralValue(entries[0].value);
+  if (repeat === null) return null;
+  if (checkNodePath(anchor) !== null || checkNodePath(repeat) !== null) return null;
+  return makeRecursionSpec(anchor, repeat);
+}
+function analyzeRecursionDeclaration(scriptContent) {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return null;
+  const prop = parseTopLevelProperties(root.content).find((p) => p.name === RESERVED_RECURSION_KEY);
+  if (!prop || prop.nameStart === void 0 || prop.nameEnd === void 0) return null;
+  const span = { start: root.start + prop.nameStart, end: root.start + prop.nameEnd };
+  if (prop.kind === "method") {
+    return { ...span, notObject: true, objectLiteral: false, entries: [], spec: null };
+  }
+  if (prop.kind !== "data" || !prop.value || prop.valueStart === void 0) {
+    return { ...span, notObject: false, objectLiteral: false, entries: [], spec: null };
+  }
+  if (!isObjectLiteral(prop.value)) {
+    const scan = maskCommentsAndStrings(prop.value).trim();
+    const definite = /^(["'`])[^"'`]*\1$/.test(scan) || /^-?\d[\w.]*$/.test(scan) || /^(?:true|false|null)$/.test(scan) || /^(?:async\s+)?function\b[\s\S]*\}$/.test(scan) || /^(?:async\s+)?\([^()]*\)\s*=>/.test(scan) || /^(?:async\s+)?[$\w]+\s*=>/.test(scan);
+    return { ...span, notObject: definite, objectLiteral: false, entries: [], spec: null };
+  }
+  const leading = prop.value.length - prop.value.trimStart().length;
+  const innerStart = root.start + prop.valueStart + leading + 1;
+  const entries = [];
+  for (const entry of parseTopLevelProperties(extractObjectContent(prop.value))) {
+    if (entry.nameStart === void 0 || entry.nameEnd === void 0) continue;
+    const valueStart = entry.valueStart === void 0 ? innerStart + entry.nameEnd : innerStart + entry.valueStart + (entry.value ? entry.value.length - entry.value.trimStart().length : 0);
+    entries.push({
+      anchor: entry.name,
+      repeat: entry.kind === "data" ? extractStringLiteralValue(entry.value) : null,
+      start: innerStart + entry.nameStart,
+      end: innerStart + entry.nameEnd,
+      valueStart,
+      valueEnd: valueStart + (entry.value?.trim().length ?? 0)
+    });
+  }
+  return { ...span, notObject: false, objectLiteral: true, entries, spec: specFromRecursionValue(prop) };
 }
 function analyzeWatchEntries(scriptContent) {
   const root = locateDefaultExportObject(scriptContent);
@@ -1091,6 +1284,9 @@ function pushListKeyPaths(entry, paths) {
   const listPath = entry.name;
   const segments = listPath.split(".");
   if (listPath.length === 0 || segments.some((s) => s.length === 0) || segments[segments.length - 1] === "*") {
+    return;
+  }
+  if (hasRecursionWildcard(listPath)) {
     return;
   }
   const has = (path) => paths.some((p) => p.path === path);
@@ -2100,7 +2296,68 @@ var ja = {
       default:
         return `"mount" \u30D1\u30B9 "${mountPath}" \u306B\u4E88\u7D04\u6587\u5B57\uFF08$, #, @\uFF09\u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08runtime: must not use reserved characters.\uFF09`;
     }
-  }
+  },
+  recursionUnsupported: (p, where) => {
+    switch (where) {
+      case "binding":
+        return `"${p}" \u306E "**" \u306F data-wcs \u3067\u306F\u4F7F\u3048\u307E\u305B\u3093\u3002"**" \u306F $recursion \u5BA3\u8A00\u30FB\u518D\u5E30 getter \u306E\u30AD\u30FC\u30FB$getAll / $setAll \u306E\u30D1\u30B9\u5F15\u6570\u3060\u3051\u306E\u8A18\u53F7\u3067\u3059\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30D0\u30A4\u30F3\u30C9\u78BA\u7ACB\u6642\u306B throw \u3057\u307E\u3059\uFF09\u3002HTML \u3067\u306F\u5C55\u958B\u5F8C\u306E\u5177\u4F53\u30D1\u30B9\u3092\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`;
+      case "watch":
+        return `$watch \u306E\u30AD\u30FC "${p}" \u306B "**" \u306F\u4F7F\u3048\u307E\u305B\u3093\u3002\u76E3\u8996\u306F\u5177\u4F53\u30D1\u30B9\uFF08\u56FA\u5B9A\u672C\u6570\u306E "*"\uFF09\u306B\u5BFE\u3057\u3066\u306E\u307F\u6210\u7ACB\u3057\u307E\u3059`;
+      case "resolve":
+        return `$resolve("${p}") \u306B "**" \u306F\u6E21\u305B\u307E\u305B\u3093\u3002$resolve \u306F\u5C55\u958B\u5F8C\u306E\u5177\u4F53\u30D1\u30B9\u3068\u6DFB\u5B57\u30BF\u30D7\u30EB\u306E\u53B3\u5BC6\u4E00\u81F4\u3060\u3051\u3092\u53D7\u3051\u4ED8\u3051\u307E\u3059`;
+      default:
+        return `"${p}" \u306F "**" \u3092\u542B\u307F\u307E\u3059\u304C\u3001\u3053\u306E state \u306B\u306F $recursion \u5BA3\u8A00\u304C\u3042\u308A\u307E\u305B\u3093\u3002$recursion = { "<anchor>": "<repeat>" }\uFF08\u4F8B: { "nodes.*": "children.*" }\uFF09\u3092\u5BA3\u8A00\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u5BA3\u8A00\u304C\u7121\u3044\u3068 "**" \u306E\u30AD\u30FC\u306F\u9ED9\u3063\u3066\u7121\u8996\u3055\u308C\u307E\u3059\uFF09`;
+    }
+  },
+  recursionAnchorMismatch: (p, anchor) => `"${p}" \u306F\u5BA3\u8A00\u6E08\u307F\u306E\u518D\u5E30\u30A2\u30F3\u30AB\u30FC "${anchor}" \u3068\u5408\u81F4\u3057\u307E\u305B\u3093\uFF08\u521D\u7248\u306F state \u3054\u3068\u306B 1 \u3064\u306E\u81EA\u5DF1\u518D\u5E30\u306E\u307F\u30FB\u540C\u3058\u30D1\u30B9\u306B 2 \u3064\u76EE\u306E "**" \u306F\u7F6E\u3051\u307E\u305B\u3093\uFF09`,
+  recursionGetAllForm: (p) => `$getAll("${p}", indexes) \u306E "**" \u306B\u975E\u7A7A\u306E\u63A5\u982D\u8F9E\u306F\u6E21\u305B\u307E\u305B\u3093\uFF08\u63A5\u982D\u8F9E\u306F\u3069\u306E\u6DF1\u3055\u306B\u9069\u7528\u3055\u308C\u308B\u304B\u3092\u8A00\u3048\u307E\u305B\u3093\uFF09\u3002\u6DFB\u5B57\u3092\u7701\u7565\u3059\u308B\u3068\u8A55\u4FA1\u4E2D\u306E\u518D\u5E30 getter \u306E\u6DF1\u3055\u3001[] \u3092\u6E21\u3059\u3068\u5168\u6DF1\u3055\u306B\u306A\u308A\u307E\u3059`,
+  recursionSetAllForm: (p, problem) => {
+    switch (problem) {
+      case "prefix":
+        return `$setAll("${p}", indexes, \u2026) \u306E "**" \u306B\u975E\u7A7A\u306E\u63A5\u982D\u8F9E\u306F\u6E21\u305B\u307E\u305B\u3093\uFF08\u63A5\u982D\u8F9E\u306F\u3069\u306E\u6DF1\u3055\u306B\u9069\u7528\u3055\u308C\u308B\u304B\u3092\u8A00\u3048\u307E\u305B\u3093\uFF09\u3002[] \u3092\u6E21\u3057\u3066\u5168\u6DF1\u3055\u3078\u30D6\u30ED\u30FC\u30C9\u30AD\u30E3\u30B9\u30C8\u3057\u3066\u304F\u3060\u3055\u3044`;
+      case "noIndexes":
+        return `$setAll("${p}", \u2026) \u306E "**" \u306B\u306F\u660E\u793A\u7684\u306A\u7A7A\u306E\u6DFB\u5B57\u914D\u5217 [] \u304C\u5FC5\u8981\u3067\u3059\uFF08\u66F8\u304D\u8FBC\u307F API \u306F\u6587\u8108\u3092\u53D6\u308A\u307E\u305B\u3093\uFF09`;
+      case "mapper":
+        return `$setAll("${p}", \u2026) \u306E "**" \u306F mapper \u3092\u53D6\u308C\u307E\u305B\u3093\uFF08\u6DFB\u5B57\u30BF\u30D7\u30EB\u306E\u672C\u6570\u304C\u6DF1\u3055\u3054\u3068\u306B\u5909\u308F\u308B\u305F\u3081\uFF09\u3002\u5B9A\u6570\u5024\u3092\u6E21\u3057\u3066\u304F\u3060\u3055\u3044`;
+      default:
+        return `$setAll("${p}", \u2026) \u306E "**" \u306F { spread: true } \u3092\u53D6\u308C\u307E\u305B\u3093\uFF08\u5E73\u5766\u306A\u914D\u5217\u3092\u6728\u306B\u914D\u308B\u306B\u306F\u4F5C\u8005\u304C\u8D70\u67FB\u9806\u3092\u77E5\u308B\u5FC5\u8981\u304C\u3042\u308A\u3001\u5951\u7D04\u306B\u306A\u308A\u307E\u305B\u3093\uFF09`;
+    }
+  },
+  recursionStructuralWrite: (p, target, repeatList) => target === "node" ? `$setAll("${p}") \u306F\u518D\u5E30\u306E\u69CB\u9020\u305D\u306E\u3082\u306E\uFF08\u30CE\u30FC\u30C9\uFF09\u3092\u66F8\u304D\u63DB\u3048\u307E\u3059\u3002\u521D\u7248\u306F\u8449\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u3078\u306E\u30D6\u30ED\u30FC\u30C9\u30AD\u30E3\u30B9\u30C8\u306E\u307F\u3067\u3059 \u2014 \u30CE\u30FC\u30C9\u3092\u7F6E\u304D\u63DB\u3048\u308B\u3068\u3053\u306E\u66F8\u304D\u8FBC\u307F\u306E\u305F\u3081\u306B\u78BA\u5B9A\u6E08\u307F\u306E\u5B50\u30A2\u30C9\u30EC\u30B9\u304C\u7121\u52B9\u306B\u306A\u308A\u307E\u3059` : target === "branch" ? `$setAll("${p}") \u306F\u518D\u5E30\u306E\u69CB\u9020\u305D\u306E\u3082\u306E\uFF08"${repeatList}" \u30EA\u30B9\u30C8\u3078\u81F3\u308B\u9014\u4E2D\u306E\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\uFF09\u3092\u66F8\u304D\u63DB\u3048\u307E\u3059\u3002\u521D\u7248\u306F\u8449\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u3078\u306E\u30D6\u30ED\u30FC\u30C9\u30AD\u30E3\u30B9\u30C8\u306E\u307F\u3067\u3059 \u2014 \u7F6E\u304D\u63DB\u3048\u308B\u3068\u305D\u306E\u4E0B\u306E\u78BA\u5B9A\u6E08\u307F\u306E\u5B50\u30A2\u30C9\u30EC\u30B9\u304C\u7121\u52B9\u306B\u306A\u308A\u307E\u3059` : `$setAll("${p}") \u306F\u518D\u5E30\u306E\u69CB\u9020\u305D\u306E\u3082\u306E\uFF08"${repeatList}" \u30EA\u30B9\u30C8\uFF09\u3092\u66F8\u304D\u63DB\u3048\u307E\u3059\u3002\u521D\u7248\u306F\u8449\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u3078\u306E\u30D6\u30ED\u30FC\u30C9\u30AD\u30E3\u30B9\u30C8\u306E\u307F\u3067\u3059`,
+  recursionReadonly: (p, getterPath) => `$setAll("${p}") \u306F\u518D\u5E30 getter "${getterPath}" \u306B\u66F8\u304D\u8FBC\u307F\u307E\u3059\uFF08setter \u306F\u521D\u7248\u3067\u306F\u6301\u3066\u307E\u305B\u3093\uFF09\u3002\u3053\u306E getter \u304C\u5C0E\u51FA\u5143\u306B\u3057\u3066\u3044\u308B\u5024\u306E\u5074\u3092\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
+  recursionNotObject: () => `$recursion \u306F\u300C\u30A2\u30F3\u30AB\u30FC \u2192 \u53CD\u5FA9\u30B5\u30D6\u30D1\u30B9\u300D\u306E\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u4F8B: { "nodes.*": "children.*" }\u3002\u3053\u306E\u5F62\u306F\u30E9\u30F3\u30BF\u30A4\u30E0\u304C\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09`,
+  recursionAnchorCount: (count) => count === 0 ? `$recursion \u306B\u306F\u30A2\u30F3\u30AB\u30FC\u304C\u3061\u3087\u3046\u3069 1 \u3064\u5FC5\u8981\u3067\u3059\uFF08\u7A7A\u306E\u5BA3\u8A00\u3067\u3059\uFF09` : `$recursion \u304C ${count} \u500B\u306E\u30A2\u30F3\u30AB\u30FC\u3092\u5BA3\u8A00\u3057\u3066\u3044\u307E\u3059\u3002\u521D\u7248\u306F state \u3054\u3068\u306B\u3061\u3087\u3046\u3069 1 \u3064\u306E\u81EA\u5DF1\u518D\u5E30\u306E\u307F\u5BFE\u5FDC\u3057\u307E\u3059`,
+  recursionNodePathInvalid: (kind, path, problem) => {
+    const subject = kind === "anchor" ? "$recursion \u306E\u30A2\u30F3\u30AB\u30FC" : "$recursion \u306E\u53CD\u5FA9\u30B5\u30D6\u30D1\u30B9";
+    switch (problem) {
+      case "empty":
+        return `${subject}\u306F\u7A7A\u3067\u306A\u3044\u6587\u5B57\u5217\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059`;
+      case "emptySegment":
+        return `${subject} "${path}" \u306B\u7A7A\u306E\u30D1\u30B9\u30BB\u30B0\u30E1\u30F3\u30C8\u304C\u3042\u308A\u307E\u3059`;
+      case "notElement":
+        return `${subject} "${path}" \u306F\u30EA\u30B9\u30C8\u306E\u8981\u7D20\u3092\u6307\u3059\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059 \u2014 \u672B\u5C3E\u304C ".*" \u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u30D1\u30B9\uFF08\u4F8B: "nodes.*"\uFF09\u306B\u3057\u3066\u304F\u3060\u3055\u3044`;
+      case "reservedRoot":
+        return `${subject} "${path}" \u306F "$" \u3067\u59CB\u3081\u3089\u308C\u307E\u305B\u3093\uFF08\u4E88\u7D04\u540D\u524D\u7A7A\u9593\uFF09`;
+      case "reservedMount":
+        return `${subject} "${path}" \u306B "#" \u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08\u30DE\u30A6\u30F3\u30C8\u7528\u306E\u4E88\u7D04\u30BB\u30B0\u30E1\u30F3\u30C8\uFF09`;
+      case "midWildcard":
+        return `${subject} "${path}" \u306E "*" \u306F\u672B\u5C3E\u306B\u3061\u3087\u3046\u3069 1 \u3064\u3060\u3051\u7F6E\u3051\u307E\u3059\uFF08\u9014\u4E2D\u306E\u30EF\u30A4\u30EB\u30C9\u30AB\u30FC\u30C9\u306F\u521D\u7248\u3067\u306F\u672A\u5BFE\u5FDC\uFF09`;
+      default:
+        return `${subject} "${path}" \u306B "**" \u306F\u542B\u3081\u3089\u308C\u307E\u305B\u3093\uFF08"**" \u306B\u610F\u5473\u3092\u4E0E\u3048\u308B\u306E\u304C\u3053\u306E\u5BA3\u8A00\u305D\u306E\u3082\u306E\u3067\u3059\uFF09`;
+    }
+  },
+  recursionRepeatNotString: (anchor) => `$recursion \u306E\u30A8\u30F3\u30C8\u30EA "${anchor}" \u306E\u5024\u306F\u53CD\u5FA9\u30B5\u30D6\u30D1\u30B9\u306E\u6587\u5B57\u5217\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u4F8B: "children.*"\uFF09`,
+  recursionGetterInvalid: (key, problem, anchor) => {
+    switch (problem) {
+      case "setter":
+        return `\u518D\u5E30 setter \u306F\u521D\u7248\u3067\u306F\u672A\u5BFE\u5FDC\u3067\u3059: "${key}"\u3002\u901A\u5E38\u306E\u30D1\u30B9 setter \u3092\u5BA3\u8A00\u3059\u308B\u304B\u3001\u5177\u4F53\u30D1\u30B9\u7D4C\u7531\u3067\u66F8\u304D\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044`;
+      case "notGetter":
+        return `"${key}" \u306F "**" \u3092\u542B\u307F\u307E\u3059\u304C getter \u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002"**" \u306F\u8A08\u7B97\u30D1\u30B9\u306E\u65CF\u3092\u540D\u6307\u3059\u8A18\u53F7\u3067\u3059`;
+      default:
+        return `"${key}" \u306F\u518D\u5E30\u30CE\u30FC\u30C9\u81EA\u8EAB\u3092\u540D\u6307\u3057\u3066\u3044\u307E\u3059\u3002"**" \u306F\u30CE\u30FC\u30C9\u306E\u4E0B\u306E\u8A08\u7B97\u30D1\u30B9\uFF08\u4F8B: "${anchor}.total"\uFF09\u3092\u540D\u6307\u3059\u8A18\u53F7\u3067\u3001\u30CE\u30FC\u30C9\u305D\u306E\u3082\u306E\u3067\u306F\u3042\u308A\u307E\u305B\u3093`;
+    }
+  },
+  recursionGetterCollision: (a, b, repeat) => `"${a}" \u3068 "${b}" \u306F\u7570\u306A\u308B\u6DF1\u3055\u3067\u540C\u3058\u5177\u4F53\u30D1\u30B9\u3078\u5C55\u958B\u3057\u307E\u3059\uFF08\u5DEE\u304C "${repeat}" \u306E\u6574\u6570\u56DE\u3076\u3093\u3067\u3059\uFF09\u3002\u3069\u3061\u3089\u304B\u306E\u540D\u524D\u3092\u5909\u3048\u3066\u304F\u3060\u3055\u3044`
 };
 var EN_EXPECTED_LABEL = {
   array: "an array-typed path",
@@ -2172,7 +2429,68 @@ var en = {
       default:
         return `"mount" path "${mountPath}" must not use reserved characters ($, #, @).`;
     }
-  }
+  },
+  recursionUnsupported: (p, where) => {
+    switch (where) {
+      case "binding":
+        return `"**" in "${p}" cannot be used in data-wcs. "**" is only meaningful in a $recursion declaration, in a recursive getter key, and in the path argument of $getAll / $setAll (the runtime throws when the binding is established). Write the expanded concrete path in HTML instead`;
+      case "watch":
+        return `$watch key "${p}" cannot contain "**" \u2014 watching is defined against a concrete path (a fixed number of "*")`;
+      case "resolve":
+        return `$resolve("${p}") cannot take "**" \u2014 it accepts only an expanded concrete path with an exactly matching index tuple`;
+      default:
+        return `"${p}" contains "**" but this state declares no $recursion anchor. Declare $recursion = { "<anchor>": "<repeat>" } (for example { "nodes.*": "children.*" }) \u2014 without it a "**" key is silently ignored`;
+    }
+  },
+  recursionAnchorMismatch: (p, anchor) => `"${p}" does not match the declared recursion anchor "${anchor}" (this version supports exactly one self-recursive anchor per state, and no second "**" in the same path)`,
+  recursionGetAllForm: (p) => `$getAll("${p}", indexes) with "**" takes no partial prefix: a prefix cannot say which depth it applies to. Omit the indexes to read the depth of the recursive getter being evaluated, or pass [] to walk every depth`,
+  recursionSetAllForm: (p, problem) => {
+    switch (problem) {
+      case "prefix":
+        return `$setAll("${p}", indexes, \u2026) with "**" takes no partial prefix: a prefix cannot say which depth it applies to. Pass [] to broadcast to every depth`;
+      case "noIndexes":
+        return `$setAll("${p}", \u2026) with "**" requires an explicit empty indexes array ([]) \u2014 the write API takes no context`;
+      case "mapper":
+        return `$setAll("${p}", \u2026) with "**" does not take a mapper \u2014 the index tuple has a different length at each depth. Pass a constant value`;
+      default:
+        return `$setAll("${p}", \u2026) with "**" does not take { spread: true } \u2014 handing a flat array to a tree needs the author to know the walk order, which is not a usable contract`;
+    }
+  },
+  recursionStructuralWrite: (p, target, repeatList) => target === "node" ? `$setAll("${p}") writes the recursion structure itself (a node). This version broadcasts to leaf properties only \u2014 replacing a node would invalidate the child addresses already resolved for this write` : target === "branch" ? `$setAll("${p}") writes the recursion structure itself (an object on the way to the "${repeatList}" list). This version broadcasts to leaf properties only \u2014 replacing it would invalidate the child addresses already resolved below it` : `$setAll("${p}") writes the recursion structure itself (the "${repeatList}" list). This version broadcasts to leaf properties only`,
+  recursionReadonly: (p, getterPath) => `$setAll("${p}") writes into the recursive getter "${getterPath}", which has no setter in this version. Write the values it derives from instead`,
+  recursionNotObject: () => `$recursion must be an object mapping one anchor path to its repeating sub-path (for example { "nodes.*": "children.*" }; the runtime throws at load time for this shape)`,
+  recursionAnchorCount: (count) => count === 0 ? `$recursion must declare exactly one anchor; it is empty` : `$recursion declares ${count} anchors. This version supports exactly one self-recursive anchor per state`,
+  recursionNodePathInvalid: (kind, path, problem) => {
+    const subject = kind === "anchor" ? "$recursion anchor" : "$recursion repeating sub-path";
+    switch (problem) {
+      case "empty":
+        return `${subject} must be a non-empty string`;
+      case "emptySegment":
+        return `${subject} "${path}" must not contain empty path segments`;
+      case "notElement":
+        return `${subject} "${path}" must name a list element: a property path ending with ".*" (for example "nodes.*")`;
+      case "reservedRoot":
+        return `${subject} "${path}" must not start with "$" \u2014 that namespace is reserved`;
+      case "reservedMount":
+        return `${subject} "${path}" must not contain "#" \u2014 that segment is reserved for mounts`;
+      case "midWildcard":
+        return `${subject} "${path}" must have exactly one "*", at the end (wildcards in the middle are not supported in this version)`;
+      default:
+        return `${subject} "${path}" must not contain "**" \u2014 the declaration is what gives "**" its meaning`;
+    }
+  },
+  recursionRepeatNotString: (anchor) => `$recursion entry "${anchor}" must map to the repeating sub-path as a string (for example "children.*")`,
+  recursionGetterInvalid: (key, problem, anchor) => {
+    switch (problem) {
+      case "setter":
+        return `Recursive setters are not supported in this version: "${key}". Declare a plain path setter, or write through the concrete path`;
+      case "notGetter":
+        return `"${key}" contains "**" but is not a getter. The recursion wildcard only names a family of computed paths`;
+      default:
+        return `"${key}" names the recursive node itself. "**" names a computed path under a node (for example "${anchor}.total"), not the node`;
+    }
+  },
+  recursionGetterCollision: (a, b, repeat) => `"${a}" and "${b}" expand to the same concrete path at different depths (they differ by whole repetitions of "${repeat}"). Rename one of them`
 };
 var CATALOGS = { ja, en };
 function getMessages(locale3) {
@@ -2494,7 +2812,11 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale3, f
           }
           if (checkPath) {
             const schema = applicationSchema;
-            const verdict = schema !== void 0 ? validateSchemaPathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, schema, msgs) : toMissingVerdict(validatePathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, msgs));
+            const verdict = hasRecursionWildcard(checkPath) ? {
+              code: WcsDiagnosticCode.RecursionUnsupported,
+              message: msgs.recursionUnsupported(checkPath, "binding"),
+              severity: "error"
+            } : schema !== void 0 ? validateSchemaPathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, schema, msgs) : toMissingVerdict(validatePathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, msgs));
             if (verdict) {
               const pathOffset = binding.indexOf(parsed.path);
               const pathStart = bindingStart + pathOffset;
@@ -2513,7 +2835,7 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale3, f
         const pathTrimmed = parsed.path.trim();
         const prop = parsed.property.replace(/#.*$/, "");
         const insideFor = isInsideForTemplate(html, attr.valueStart, attrName);
-        if (pathTrimmed && !prop.startsWith("on")) {
+        if (pathTrimmed && !prop.startsWith("on") && !hasRecursionWildcard(pathTrimmed)) {
           if (!insideFor && pathTrimmed.includes("*")) {
             const pathOffset = binding.indexOf(parsed.path);
             const pathStart = bindingStart + pathOffset;
@@ -2793,10 +3115,15 @@ function validatePathExistence(checkPath, displayPath, scopedPaths, scopedPathSe
     }
     return null;
   }
-  if (!scopedPathSet.has(checkPath)) {
+  if (!scopedPathSet.has(checkPath) && !matchesRecursionCandidates(scopedPaths, checkPath, scopedPathSet)) {
     return msgs.pathMissing(displayPath);
   }
   return null;
+}
+function matchesRecursionCandidates(scopedPaths, checkPath, scopedPathSet) {
+  const specs = collectRecursionSpecs(scopedPaths);
+  if (specs.length === 0) return false;
+  return matchesRecursion(specs, checkPath, (candidate) => scopedPathSet.has(candidate));
 }
 function toMissingVerdict(message) {
   return message ? { code: WcsDiagnosticCode.BindingPathMissing, message, severity: "warning" } : null;
@@ -2806,6 +3133,7 @@ function validateSchemaPathExistence(checkPath, displayPath, scopedPaths, scoped
     return toMissingVerdict(validatePathExistence(checkPath, displayPath, scopedPaths, scopedPathSet, commandNames, msgs));
   }
   if (scopedPathSet.has(checkPath)) return null;
+  if (matchesRecursionCandidates(scopedPaths, checkPath, scopedPathSet)) return null;
   const resolution = resolveSchemaPath(schema, schema.$defs ?? {}, checkPath.split("."));
   if (resolution.kind === "nonexistent") {
     return { code: WcsDiagnosticCode.PathNonexistent, message: msgs.pathNonexistent(displayPath), severity: "error" };
@@ -3219,6 +3547,13 @@ function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", l
   const allPaths = mergeSchemaCandidates(getStatePathsFromHtml(html, stateTagName, fileReader), applicationSchema);
   const defaultSchema = applicationSchema;
   const missingVerdict = (path, displayPath, pathSet2, scoped) => {
+    if (hasRecursionWildcard(path)) {
+      return {
+        code: WcsDiagnosticCode.RecursionUnsupported,
+        severity: "error",
+        message: msgs.recursionUnsupported(path, "binding")
+      };
+    }
     if (isValidTemplatePath(path, pathSet2, scoped)) return null;
     if (defaultSchema !== void 0 && !path.startsWith("$")) {
       const resolution = resolveSchemaPath(defaultSchema, defaultSchema.$defs ?? {}, path.split("."));
@@ -3351,7 +3686,7 @@ function isValidTemplatePath(path, pathSet, scopedPaths) {
     const hasNamespace = scopedPaths.some((p) => p.path.startsWith(prefix));
     return !hasNamespace || pathSet.has(path);
   }
-  return pathSet.has(path);
+  return pathSet.has(path) || matchesRecursionCandidates(scopedPaths, path, pathSet);
 }
 
 // src/service/generated/builtinTags.generated.ts
@@ -5077,7 +5412,7 @@ function validateWatchDeclarations(html, stateTagName = "wcs-state", locale3) {
     const paths = analyzeStatePaths(block.content);
     const pathSet = new Set(paths.map((p) => p.path));
     for (const entry of entries) {
-      const diagnostic = validateEntry(entry, pathSet, msgs);
+      const diagnostic = validateEntry(entry, pathSet, paths, msgs);
       if (diagnostic === null) continue;
       out.push({
         code: diagnostic.code,
@@ -5090,7 +5425,7 @@ function validateWatchDeclarations(html, stateTagName = "wcs-state", locale3) {
   }
   return out;
 }
-function validateEntry(entry, pathSet, msgs) {
+function validateEntry(entry, pathSet, paths, msgs) {
   const { key } = entry;
   const invalid = (message) => ({ code: WcsDiagnosticCode.WatchDeclarationInvalid, message, severity: "error" });
   if (key.includes(STATE_NAME_SEPARATOR)) {
@@ -5102,10 +5437,17 @@ function validateEntry(entry, pathSet, msgs) {
   if (key.split(".").some((segment) => segment.length === 0)) {
     return invalid(msgs.watchKeyEmptySegment(key));
   }
+  if (hasRecursionWildcard(key)) {
+    return {
+      code: WcsDiagnosticCode.RecursionUnsupported,
+      message: msgs.recursionUnsupported(key, "watch"),
+      severity: "error"
+    };
+  }
   if (entry.definitelyNotFunction) {
     return invalid(msgs.watchHandlerNotFunction(key));
   }
-  if (pathSet.size > 0 && !pathSet.has(key)) {
+  if (pathSet.size > 0 && !pathSet.has(key) && !matchesRecursion(collectRecursionSpecs(paths), key, (p) => pathSet.has(p))) {
     return {
       code: WcsDiagnosticCode.WatchPathMissing,
       message: msgs.watchPathMissing(key),
@@ -5113,6 +5455,359 @@ function validateEntry(entry, pathSet, msgs) {
     };
   }
   return null;
+}
+
+// src/service/scriptCallArgs.ts
+var STRING_LITERAL = /^\s*(["'])((?:\\.|(?!\1)[^\\])*)\1\s*$/;
+function splitCallArgs(source, open) {
+  const args = [];
+  const starts = [];
+  let depth = 0;
+  let argStart = open;
+  let i = open;
+  while (i < source.length) {
+    const ch = source[i];
+    if (ch === '"' || ch === "'" || ch === "`") {
+      const quote = ch;
+      i++;
+      while (i < source.length) {
+        if (source[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (source[i] === quote) {
+          i++;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+    if (ch === "(" || ch === "[" || ch === "{") {
+      depth++;
+      i++;
+      continue;
+    }
+    if (ch === ")" && depth === 0) {
+      args.push(source.slice(argStart, i));
+      starts.push(argStart);
+      return { args, starts, end: i + 1 };
+    }
+    if (ch === ")" || ch === "]" || ch === "}") {
+      depth--;
+      i++;
+      continue;
+    }
+    if (ch === "," && depth === 0) {
+      args.push(source.slice(argStart, i));
+      starts.push(argStart);
+      argStart = i + 1;
+      i++;
+      continue;
+    }
+    i++;
+  }
+  return null;
+}
+function literalString(arg) {
+  const match = STRING_LITERAL.exec(arg);
+  return match === null ? null : match[2];
+}
+function literalArrayLength(arg) {
+  const trimmed = arg.trim();
+  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return null;
+  const inner = trimmed.slice(1, -1);
+  if (inner.trim().length === 0) return 0;
+  if (/(^|[^.])\.\.\./.test(inner)) return null;
+  const parts = splitCallArgs(`${inner})`, 0);
+  if (parts === null) return null;
+  return parts.args.filter((part) => part.trim().length > 0).length;
+}
+function blankComments(source) {
+  const out = source.split("");
+  let i = 0;
+  while (i < source.length) {
+    const ch = source[i];
+    if (ch === '"' || ch === "'" || ch === "`") {
+      const quote = ch;
+      i++;
+      while (i < source.length) {
+        if (source[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (source[i] === quote) {
+          i++;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+    if (ch === "/" && source[i + 1] === "/") {
+      while (i < source.length && source[i] !== "\n") {
+        out[i] = " ";
+        i++;
+      }
+      continue;
+    }
+    if (ch === "/" && source[i + 1] === "*") {
+      while (i < source.length && !(source[i] === "*" && source[i + 1] === "/")) {
+        out[i] = " ";
+        i++;
+      }
+      if (i < source.length) {
+        out[i] = " ";
+        out[i + 1] = " ";
+        i += 2;
+      }
+      continue;
+    }
+    i++;
+  }
+  return out.join("");
+}
+function createApiCallRegex(apis) {
+  return new RegExp(`\\.\\s*\\$(${apis.join("|")})\\s*\\(`, "g");
+}
+
+// src/service/recursionValidator.ts
+var RECURSION_APIS = ["getAll", "setAll", "resolve"];
+function validateRecursion(html, stateTagName = "wcs-state", locale3) {
+  const msgs = getMessages(locale3);
+  const out = [];
+  for (const block of parseWcsScriptBlocks(html, stateTagName)) {
+    if (!hasRecursionWildcard(block.content) && block.content.indexOf("$recursion") === -1) continue;
+    const declaration = analyzeRecursionDeclaration(block.content);
+    const spec = validateDeclaration(declaration, block.contentStart, msgs, out);
+    const getterSuffixes = validateRecursiveGetters(block.content, block.contentStart, spec, declaration, msgs, out);
+    validateApiCalls(block.content, block.contentStart, spec, getterSuffixes, msgs, out);
+  }
+  return out;
+}
+function push(out, code, start, end, message, severity = "error") {
+  out.push({ code, start, end, message, severity });
+}
+function validateDeclaration(declaration, offset2, msgs, out) {
+  if (declaration === null) return null;
+  const code = WcsDiagnosticCode.RecursionDeclarationInvalid;
+  if (declaration.notObject) {
+    push(out, code, offset2 + declaration.start, offset2 + declaration.end, msgs.recursionNotObject());
+    return null;
+  }
+  if (declaration.entries.length !== 1) {
+    if (!declaration.objectLiteral) return null;
+    push(
+      out,
+      code,
+      offset2 + declaration.start,
+      offset2 + declaration.end,
+      msgs.recursionAnchorCount(declaration.entries.length)
+    );
+    return null;
+  }
+  const entry = declaration.entries[0];
+  const anchorProblem = checkNodePath(entry.anchor);
+  if (anchorProblem !== null) {
+    push(
+      out,
+      code,
+      offset2 + entry.start,
+      offset2 + entry.end,
+      msgs.recursionNodePathInvalid("anchor", entry.anchor, anchorProblem)
+    );
+    return null;
+  }
+  if (entry.repeat === null) {
+    push(
+      out,
+      code,
+      offset2 + entry.valueStart,
+      offset2 + entry.valueEnd,
+      msgs.recursionRepeatNotString(entry.anchor)
+    );
+    return null;
+  }
+  const repeatProblem = checkNodePath(entry.repeat);
+  if (repeatProblem !== null) {
+    push(
+      out,
+      code,
+      offset2 + entry.valueStart,
+      offset2 + entry.valueEnd,
+      msgs.recursionNodePathInvalid("repeat", entry.repeat, repeatProblem)
+    );
+    return null;
+  }
+  return makeRecursionSpec(entry.anchor, entry.repeat);
+}
+function validateRecursiveGetters(script, offset2, spec, declaration, msgs, out) {
+  const seen = /* @__PURE__ */ new Set();
+  const spans = analyzeDeclarationSpans(script).filter((s) => hasRecursionWildcard(s.name)).filter((s) => seen.has(s.name) ? false : (seen.add(s.name), true));
+  if (spans.length === 0) return [];
+  const setterNames = new Set(
+    analyzeCallableBodies(script).filter((c) => c.accessor === "set").map((c) => c.name)
+  );
+  const suffixes = [];
+  const accepted = [];
+  for (const span of spans) {
+    const start = offset2 + span.start;
+    const end = offset2 + span.end;
+    if (spec === null) {
+      if (declaration === null) {
+        push(
+          out,
+          WcsDiagnosticCode.RecursionUnsupported,
+          start,
+          end,
+          msgs.recursionUnsupported(span.name, "undeclared"),
+          "warning"
+        );
+      }
+      continue;
+    }
+    if (span.kind !== "getter") {
+      push(
+        out,
+        WcsDiagnosticCode.RecursionDeclarationInvalid,
+        start,
+        end,
+        msgs.recursionGetterInvalid(span.name, "notGetter", spec.recursiveAnchor)
+      );
+      continue;
+    }
+    if (setterNames.has(span.name)) {
+      push(
+        out,
+        WcsDiagnosticCode.RecursionDeclarationInvalid,
+        start,
+        end,
+        msgs.recursionGetterInvalid(span.name, "setter", spec.recursiveAnchor)
+      );
+      continue;
+    }
+    const suffix = splitRecursivePath(spec, span.name);
+    if (suffix === null) {
+      push(
+        out,
+        WcsDiagnosticCode.RecursionAnchor,
+        start,
+        end,
+        msgs.recursionAnchorMismatch(span.name, spec.recursiveAnchor)
+      );
+      continue;
+    }
+    if (suffix.length === 0) {
+      push(
+        out,
+        WcsDiagnosticCode.RecursionDeclarationInvalid,
+        start,
+        end,
+        msgs.recursionGetterInvalid(span.name, "nodeItself", spec.recursiveAnchor)
+      );
+      continue;
+    }
+    const collision = accepted.find((other) => sameFamily(spec, other.suffix, suffix));
+    if (collision !== void 0) {
+      push(
+        out,
+        WcsDiagnosticCode.RecursionDeclarationInvalid,
+        start,
+        end,
+        msgs.recursionGetterCollision(collision.name, span.name, spec.repeat)
+      );
+      continue;
+    }
+    accepted.push({ name: span.name, suffix, start, end });
+    suffixes.push(suffix);
+  }
+  return suffixes;
+}
+function validateApiCalls(script, offset2, spec, getterSuffixes, msgs, out) {
+  const scan = blankComments(script);
+  const regex = createApiCallRegex(RECURSION_APIS);
+  let match;
+  while ((match = regex.exec(scan)) !== null) {
+    const api = `$${match[1]}`;
+    const parsed = splitCallArgs(scan, match.index + match[0].length);
+    if (parsed === null) continue;
+    regex.lastIndex = parsed.end;
+    if (parsed.args.length === 0) continue;
+    const pathArg = parsed.args[0];
+    const path = literalString(pathArg);
+    if (path === null || !hasRecursionWildcard(path)) continue;
+    const leading = pathArg.length - pathArg.trimStart().length;
+    const start = offset2 + parsed.starts[0] + leading;
+    const end = offset2 + parsed.starts[0] + pathArg.trimEnd().length;
+    if (api === "$resolve") {
+      push(out, WcsDiagnosticCode.RecursionUnsupported, start, end, msgs.recursionUnsupported(path, "resolve"));
+      continue;
+    }
+    if (spec === null) {
+      push(out, WcsDiagnosticCode.RecursionUnsupported, start, end, msgs.recursionUnsupported(path, "undeclared"));
+      continue;
+    }
+    const suffix = splitRecursivePath(spec, path);
+    if (suffix === null) {
+      push(out, WcsDiagnosticCode.RecursionAnchor, start, end, msgs.recursionAnchorMismatch(path, spec.recursiveAnchor));
+      continue;
+    }
+    if (api === "$getAll") {
+      const indexes = parsed.args.length > 1 ? literalArrayLength(parsed.args[1]) : null;
+      if (indexes !== null && indexes > 0) {
+        push(out, WcsDiagnosticCode.RecursionGetAllForm, start, end, msgs.recursionGetAllForm(path));
+      }
+      continue;
+    }
+    validateSetAllForm(path, suffix, parsed.args, spec, getterSuffixes, start, end, msgs, out);
+  }
+}
+function validateSetAllForm(path, suffix, args, spec, getterSuffixes, start, end, msgs, out) {
+  const formCode = WcsDiagnosticCode.RecursionSetAllForm;
+  const indexesArg = args.length > 1 ? args[1].trim() : "";
+  if (args.length < 2 || indexesArg === "undefined" || indexesArg === "null") {
+    push(out, formCode, start, end, msgs.recursionSetAllForm(path, "noIndexes"));
+    return;
+  }
+  const indexes = literalArrayLength(args[1]);
+  if (indexes !== null && indexes > 0) {
+    push(out, formCode, start, end, msgs.recursionSetAllForm(path, "prefix"));
+    return;
+  }
+  if (args.length > 2 && isFunctionLiteral(args[2])) {
+    push(out, formCode, start, end, msgs.recursionSetAllForm(path, "mapper"));
+    return;
+  }
+  if (args.length > 3 && /\bspread\s*:\s*true\b/.test(args[3])) {
+    push(out, formCode, start, end, msgs.recursionSetAllForm(path, "spread"));
+    return;
+  }
+  const structural = structuralWriteTarget(spec, suffix);
+  if (structural !== null) {
+    push(
+      out,
+      WcsDiagnosticCode.RecursionStructuralWrite,
+      start,
+      end,
+      msgs.recursionStructuralWrite(path, structural, spec.repeatList)
+    );
+    return;
+  }
+  const conflicting = conflictingGetterSuffix(spec, getterSuffixes, suffix);
+  if (conflicting !== null) {
+    push(
+      out,
+      WcsDiagnosticCode.RecursionReadonly,
+      start,
+      end,
+      msgs.recursionReadonly(path, spec.recursiveAnchor + conflicting)
+    );
+  }
+}
+function isFunctionLiteral(arg) {
+  const trimmed = arg.trim();
+  if (trimmed.length === 0) return false;
+  return /^(?:async\s+)?function\b/.test(trimmed) || /^(?:async\s+)?\([^()]*\)\s*=>/.test(trimmed) || /^(?:async\s+)?[$\w]+\s*=>/.test(trimmed);
 }
 
 // src/service/namedStateValidator.ts
@@ -11039,7 +11734,7 @@ function enterFunction(fn, outer, thisIsState) {
 function isThisRoot(node, scope) {
   return node.type === "ThisExpression" && scope.thisIsState || node.type === "Identifier" && scope.aliases.has(node.name);
 }
-function literalString(node) {
+function literalString2(node) {
   if (node.type === "Literal" && typeof node.value === "string") return node.value;
   if (node.type === "TemplateLiteral" && node.expressions.length === 0 && node.quasis.length === 1) {
     return node.quasis[0].value.cooked ?? null;
@@ -11054,7 +11749,7 @@ function segmentOf(member) {
   if (property.type === "Literal" && typeof property.value === "number") {
     return { text: String(property.value), dynamic: null };
   }
-  const text = literalString(property);
+  const text = literalString2(property);
   if (text !== null) return { text, dynamic: null };
   return property.type === "PrivateIdentifier" ? { text: null, dynamic: null } : { text: null, dynamic: property };
 }
@@ -11150,7 +11845,7 @@ function visitCall(node, scope, out) {
       if (api === UNTRACK_API) return;
       if (PATH_ARG_APIS.has(api)) {
         const first = node.arguments[0];
-        const path = first !== void 0 && first.type !== "SpreadElement" ? literalString(first) : null;
+        const path = first !== void 0 && first.type !== "SpreadElement" ? literalString2(first) : null;
         if (path !== null && path.length > 0 && !path.startsWith("$")) {
           out.push({
             path,
@@ -11216,7 +11911,7 @@ function visitDestructure(pattern, prefix, scope, out) {
     if (property.type === "RestElement") continue;
     let key = null;
     if (!property.computed && property.key.type === "Identifier") key = property.key.name;
-    else key = literalString(property.key);
+    else key = literalString2(property.key);
     let value = property.value;
     if (value.type === "AssignmentPattern") {
       visit(value.right, scope, out);
@@ -12388,71 +13083,6 @@ function buildReferenceIndex(html, options = {}) {
 // src/service/semanticValidator.ts
 var STATE_UPDATED_CALLBACK = "$updatedCallback";
 var API_CALL = /\.\s*\$(getAll|setAll|resolve)\s*\(/g;
-var STRING_LITERAL = /^\s*(["'])((?:\\.|(?!\1)[^\\])*)\1\s*$/;
-function splitCallArgs(source, open) {
-  const args = [];
-  const starts = [];
-  let depth = 0;
-  let argStart = open;
-  let i = open;
-  while (i < source.length) {
-    const ch = source[i];
-    if (ch === '"' || ch === "'" || ch === "`") {
-      const quote = ch;
-      i++;
-      while (i < source.length) {
-        if (source[i] === "\\") {
-          i += 2;
-          continue;
-        }
-        if (source[i] === quote) {
-          i++;
-          break;
-        }
-        i++;
-      }
-      continue;
-    }
-    if (ch === "(" || ch === "[" || ch === "{") {
-      depth++;
-      i++;
-      continue;
-    }
-    if (ch === ")" && depth === 0) {
-      args.push(source.slice(argStart, i));
-      starts.push(argStart);
-      return { args, starts, end: i + 1 };
-    }
-    if (ch === ")" || ch === "]" || ch === "}") {
-      depth--;
-      i++;
-      continue;
-    }
-    if (ch === "," && depth === 0) {
-      args.push(source.slice(argStart, i));
-      starts.push(argStart);
-      argStart = i + 1;
-      i++;
-      continue;
-    }
-    i++;
-  }
-  return null;
-}
-function literalString2(arg) {
-  const match = STRING_LITERAL.exec(arg);
-  return match === null ? null : match[2];
-}
-function literalArrayLength(arg) {
-  const trimmed = arg.trim();
-  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return null;
-  const inner = trimmed.slice(1, -1);
-  if (inner.trim().length === 0) return 0;
-  if (/(^|[^.])\.\.\./.test(inner)) return null;
-  const parts = splitCallArgs(`${inner})`, 0);
-  if (parts === null) return null;
-  return parts.args.filter((part) => part.trim().length > 0).length;
-}
 function validateIndexArity(script, scriptStart, locale3) {
   const msgs = getMessages(locale3);
   const out = [];
@@ -12464,8 +13094,9 @@ function validateIndexArity(script, scriptStart, locale3) {
     if (parsed === null) continue;
     API_CALL.lastIndex = parsed.end;
     if (parsed.args.length < 2) continue;
-    const path = literalString2(parsed.args[0]);
+    const path = literalString(parsed.args[0]);
     if (path === null) continue;
+    if (hasRecursionWildcard(path)) continue;
     const actual = literalArrayLength(parsed.args[1]);
     if (actual === null) continue;
     const wildcardCount = countWildcardSegments(path);
@@ -12621,56 +13252,12 @@ function collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks) {
       const parsed = splitCallArgs(scan, call.index + call[0].length);
       if (parsed === null) continue;
       API_CALL.lastIndex = parsed.end;
-      const path = parsed.args.length > 0 ? literalString2(parsed.args[0]) : null;
+      const path = parsed.args.length > 0 ? literalString(parsed.args[0]) : null;
       if (path === null) continue;
       if (api === "setAll" || parsed.args.length >= 3) addPrefixes(path, false);
     }
   }
   return roots;
-}
-function blankComments(source) {
-  const out = source.split("");
-  let i = 0;
-  while (i < source.length) {
-    const ch = source[i];
-    if (ch === '"' || ch === "'" || ch === "`") {
-      const quote = ch;
-      i++;
-      while (i < source.length) {
-        if (source[i] === "\\") {
-          i += 2;
-          continue;
-        }
-        if (source[i] === quote) {
-          i++;
-          break;
-        }
-        i++;
-      }
-      continue;
-    }
-    if (ch === "/" && source[i + 1] === "/") {
-      while (i < source.length && source[i] !== "\n") {
-        out[i] = " ";
-        i++;
-      }
-      continue;
-    }
-    if (ch === "/" && source[i + 1] === "*") {
-      while (i < source.length && !(source[i] === "*" && source[i + 1] === "/")) {
-        out[i] = " ";
-        i++;
-      }
-      if (i < source.length) {
-        out[i] = " ";
-        out[i + 1] = " ";
-        i += 2;
-      }
-      continue;
-    }
-    i++;
-  }
-  return out.join("");
 }
 var PATH_TEST_LITERAL = /(?:\.\s*(?:includes|indexOf)\s*\(\s*|[!=]==\s*)(["'])((?:\\.|(?!\1)[^\\])*)\1/g;
 function validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale3) {
@@ -13139,6 +13726,7 @@ function validateDocument(text, options = {}) {
   out.push(...validateSemantics(text, stateTagName, locale3, bindAttribute));
   out.push(...validateArrayMutations(text, stateTagName, locale3));
   out.push(...validateWatchDeclarations(text, stateTagName, locale3));
+  out.push(...validateRecursion(text, stateTagName, locale3));
   out.push(...validateNamedState(text, bindAttribute, stateTagName, locale3));
   out.push(...validateMountAttributes(text, stateTagName, locale3));
   for (const d of validateStateTypes(text, stateTagName, locale3)) {

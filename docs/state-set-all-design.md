@@ -184,7 +184,13 @@ state に関数を保持するケースは実質無いため、配列と違っ�
 
 ### 6-2. 読みの差分基準は書きからは更新しない
 
-走査は各ワイルドカード階層で `createListDiff` を使い、その結果を `lastValueByListAddress` に記録する。これは**次の読みの差分基準**なので、所有権は `$getAll` 側に残す。`$setAll` は走査を借りるだけで、この記録は commit しない。
+走査は各ワイルドカード階層で `createListDiff` を使い、その結果を差分基準に記録する。
+
+> **更新（2026-09-09・再帰パスの Phase A'）**: この基準は `$getAll` の専有ではなくなった。`state` 側の共有正本（`src/list/stateListBaseline.ts`）に移り、**読み・描画・依存ウォークの 3 者が同じ「前回見た形」を見る**。描画経路からしか書かれていなかった頃は、`for` バインドの無いリストへ構造書き込みするとウォークが空の基準で ListIndex を鋳造し直し、子リストの台帳が恒久的に切れていた（docs/state-recursive-path-impl-plan.md §3-2 の E1）。
+>
+> 固定 arity の `$setAll` の側の契約は変わらない — **走査を借りるだけで、この記録は commit しない**（`commitDiffBaseline: false`）。変わったのは「誰が所有するか」であって「`$setAll` が書かない」ことではない。
+>
+> **例外は再帰の `$setAll`**（`src/recursion/setAllRecursive.ts`・再帰パスの Phase D）。こちらは**確定する**（`commitDiffBaseline: true`）。cold（読みも描画も経ていない）状態のブロードキャストが全深さぶんの ListIndex 世代を鋳造したまま基準を残さないと、次の構造変更でその世代を見られない diff が行を鋳造し直し、生き残った深い子台帳だけが死んだ世代の親を指して再帰 getter の読みが恒久的に落ちる（docs/state-recursive-path-impl-plan.md §6）。固定 arity 側を据え置くのは互換のためで、同じ事故が固定 arity で起きるかは未確認（レビューのプローブ「cold `$setAll` → swap → 読み」では再現しなかった）。
 
 なお ListIndex の正本レジストリ（`listIndexesByList`）への登録は `createListDiff` の中で行われるため、`$setAll` の走査経由でも一貫する。実際の値アクセスは添字タプルから正本レジストリを引き直して行うので、走査中に生成された ListIndex がそのまま書き込み先になることはない。
 

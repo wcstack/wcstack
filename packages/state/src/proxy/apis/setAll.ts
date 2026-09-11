@@ -25,6 +25,8 @@ import { getListIndexByIndexes } from "../methods/getListIndexByIndexes";
 import { setByAddress } from "../methods/setByAddress";
 import { IStateHandler } from "../types";
 import { collectWildcardIndexes } from "./wildcardIndexes";
+import { hasRecursionWildcard } from "../../recursion/expand";
+import { setAllRecursive } from "../../recursion/setAllRecursive";
 
 export interface ISetAllOptions {
   /**
@@ -49,6 +51,12 @@ export function setAll(
   handler : IStateHandler
 ): SetAllFunction {
   return (path: string, indexes: number[], value: any, options?: ISetAllOptions): number => {
+    // オーサリング層の `**`。書き側は `[]` のブロードキャストだけを受け付ける
+    // （形の検査は列挙より前に行い、1 件も書かないことを保証する。設計 §7-3）。
+    // 宣言の無い state は boolean 判定 1 個で抜ける。
+    if (handler.stateElement.hasRecursion === true && hasRecursionWildcard(path)) {
+      return setAllRecursive(target, receiver, handler, path, indexes, value, options);
+    }
     const pathInfo = getPathInfo(path);
 
     // 書き込み API に暗黙の文脈依存は持たせない。`for` の中で `[]` と書けば

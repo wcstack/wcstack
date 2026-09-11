@@ -7,6 +7,7 @@ import { clearAbsoluteStateAddressByBinding, getAbsoluteStateAddressByBinding, r
 import { addBindingByAbsoluteStateAddress, addBindingByPattern, removeBindingByAbsoluteStateAddress, removeBindingByPattern } from "../binding/getBindingSetByAbsoluteStateAddress";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
 import { getLastListValueByAbsoluteStateAddress, hasLastListValueByAbsoluteStateAddress, setLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
+import { getStateListBaseline, hasStateListBaseline, setStateListBaseline } from "../list/stateListBaseline";
 import { IListIndex } from "../list/types";
 import { clearStateAddressByBindingInfo } from "../binding/getStateAddressByBindingInfo";
 import { config } from "../config";
@@ -553,6 +554,10 @@ export class BindingSession {
         // 正当な記録を潰しうる）
         if (newAbs !== oldAbs && hasLastListValueByAbsoluteStateAddress(oldAbs)) {
           setLastListValueByAbsoluteStateAddress(newAbs, getLastListValueByAbsoluteStateAddress(oldAbs));
+        }
+        // state 側の基準（E1）も同じ理由で引き継ぐ。記録の有無は has で見る（同上）
+        if (newAbs !== oldAbs && hasStateListBaseline(oldAbs)) {
+          setStateListBaseline(newAbs, getStateListBaseline(oldAbs));
         }
       }
       if (this.shouldApplyState(binding)) {

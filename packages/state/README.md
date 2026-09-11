@@ -1103,6 +1103,195 @@ export default {
 };
 ```
 
+## Recursive Paths (`$recursion`)
+
+A path burns its depth into the string. `nodes.*.children.*.total` has exactly two wildcard levels, and nothing about it stretches to three when the tree grows a level — but a tree's depth belongs to the data, not to the code. `$recursion` closes that gap: declare where the shape repeats, then write `**` for "however deep this is".
+
+```javascript
+export default {
+  $recursion: { "nodes.*": "children.*" },   // anchor → repeating sub-path
+
+  nodes: [
+    { value: 1, selected: false, children: [
+      { value: 10, selected: false, children: [
+        { value: 100, selected: false, children: [] }
+      ]},
+      { value: 20, selected: false, children: [] }
+    ]},
+    { value: 2, selected: false, children: [] }
+  ],
+
+  // One getter, every depth: `**` is bound to the depth being evaluated
+  get "nodes.**.total"() {
+    return this["nodes.**.value"]
+         + this.$getAll("nodes.**.children.*.total").reduce((a, b) => a + b, 0);
+  },
+
+  // Whole-tree aggregate: `[]` unions every depth
+  get treeTotal() {
+    return this.$getAll("nodes.**.value", []).reduce((a, b) => a + b, 0);
+  },
+
+  clearSelection() {
+    this.$setAll("nodes.**.selected", [], false);
+  }
+};
+```
+
+For that forest the totals are `131 / 110 / 100 / 20 / 2` and `treeTotal` is `133`.
+
+**`**` is authoring notation only — it never reaches the engine.** Reading a concrete path (`nodes.*.children.*.total`) materializes the getter for *that* depth on demand, one accessor per depth you actually touch, and everything downstream — `PathInfo`, the dependency graph, `$1`…`$n`, `$resolve`, the list diff — still sees an ordinary fixed-arity path. The reactive core did not learn a new shape.
+
+### Declaring the recursion point
+
+`$recursion` maps one **anchor** to the **repeating sub-path** that descends one level. Both name the *element* of a list — a fixed property chain ending in `.*`, never the list itself:
+
+```javascript
+$recursion: { "nodes.*": "children.*" }     // nodes[i].children[j].children[k]…
+$recursion: { "data.tree.*": "kids.*" }     // a deeper anchor is fine
+$recursion: { "nodes.*": "nodes.*" }        // self-similar spelling is fine too
+```
+
+The declaration is what gives `**` a meaning at all: with no `$recursion` on the state, `**` is not a path character (`wcs/recursion-unsupported`), so the notation can never quietly slide into a descendant search. This version accepts **exactly one self-recursive anchor per state**. A wildcard in the middle of an anchor, a second entry, mutual recursion between two anchors, a second `**` in one path, `get "nodes.**"` (that names the node itself, not a computed path under it), two `**` getters that expand to the same concrete path, and recursive *setters* are all rejected when the declaration is read — never reinterpreted.
+
+The family a declaration defines is infinite, and the state only ever grows the depths it is asked for:
+
+```
+k=0   nodes.*
+k=1   nodes.*.children.*
+k=2   nodes.*.children.*.children.*
+```
+
+### What `**` means where
+
+`**` is a variable over depth, and whether it is *bound* or *unioned* is decided by context — the same split `*` already has between "the current row" and "every row":
+
+| Where `**` appears | What it means |
+|---|---|
+| A getter key — `get "nodes.**.total"()` | Bound to the depth being evaluated |
+| A path read inside that getter — `this["nodes.**.value"]` | Bound to the same depth |
+| `$getAll(path)`, indexes **omitted** | Bound to that depth; only the wildcards *after* `**` expand |
+| `$getAll(path, [])`, **explicit** | **Union of every depth** — depth-first, pre-order, ascending index |
+| `$getAll(path, [i, …])` | Rejected: a prefix cannot say which depth it applies to (`wcs/recursion-getall-form`) |
+| `$setAll(path, [], value)` | Broadcast to every depth, in that same order |
+| `$resolve`, `$watch` keys, `data-wcs` in markup, direct assignment | Rejected (`wcs/recursion-unsupported`) |
+
+The bound forms need a depth to bind to, so they only resolve **inside** a recursive getter — or inside an ordinary row getter under the anchor, or an event handler bound to such a row — each of those carries a real `ListIndex` to read the depth from. Read `this["nodes.**.value"]` from the top level and you get `wcs/recursion-context`, not a silent guess at which node you meant. The union form needs no depth, so it can be read from anywhere: a top-level getter, a plain row getter, a method.
+
+```javascript
+this.$getAll("nodes.**.value", []);   // [1, 10, 100, 20, 2] — depth-first, pre-order
+```
+
+### Aggregating without counting grandchildren twice
+
+That split is the whole game for aggregation, because the recursive getter is what folds the tree:
+
+```javascript
+// ✅ Omitted — bound to this depth, so the sum walks only the direct children
+get "nodes.**.total"() {
+  return this["nodes.**.value"]
+       + this.$getAll("nodes.**.children.*.total").reduce((a, b) => a + b, 0);
+}
+
+// ❌ `[]` — every child total at every depth. Each node's total would contain its
+//    own descendants' totals again, and the getter ends up asking for itself: in
+//    practice you do not get a wrong number, you get `wcs/getter-cycle`.
+get "nodes.**.total"() {
+  return this["nodes.**.value"]
+       + this.$getAll("nodes.**.children.*.total", []).reduce((a, b) => a + b, 0);
+}
+```
+
+The same mistake made from *outside* the recursion is the quiet one — there is no cycle to trip over, just a plausible number that is too big. A union of an aggregate counts every grandchild once inside its parent's total, and once more as an element of the union:
+
+```javascript
+// ❌ 363 — every node's total, and every total already contains its subtree
+get treeTotalWrong() {
+  return this.$getAll("nodes.**.total", []).reduce((a, b) => a + b, 0);
+}
+// ✅ 133 — union the raw leaf values
+get treeTotal() {
+  return this.$getAll("nodes.**.value", []).reduce((a, b) => a + b, 0);
+}
+// ✅ 133 — or add up the roots, since each root total already folds its subtree
+get treeTotalFromRoots() {
+  return this.$getAll("nodes.*.total", []).reduce((a, b) => a + b, 0);
+}
+```
+
+**Union raw values, or sum the roots — never union something that already aggregates its own subtree.** Whether an aggregate double-counts is not decidable from the path string, so no diagnostic claims to catch this one.
+
+### Writing: broadcast only
+
+`$setAll` accepts `**` in exactly one form — `[]` plus a plain value — and returns the number of addresses written (5 for the forest above):
+
+```javascript
+this.$setAll("nodes.**.selected", [], false);   // every node, at every depth
+```
+
+Every other form is refused *before* the walk writes anything, so a rejected call leaves the tree untouched:
+
+| Form | Why it is refused |
+|---|---|
+| a non-empty prefix | A prefix cannot say which depth it applies to (`wcs/recursion-setall-form`) |
+| omitted indexes | The write API takes no context, so there is no depth to bind to — pass `[]` |
+| a mapper function | `(current, ...indexes)` has a different arity at every depth |
+| `{ spread: true }` | Handing a flat array to a tree needs the author to know the walk order |
+| `nodes.**`, `nodes.**.children`, `nodes.**.children.*` | Writing the structure itself invalidates the child addresses this very write already resolved (`wcs/recursion-structural-write`) |
+| `nodes.**.total`, or a path inside its value | A recursive getter has no setter — write what it derives from (`wcs/recursion-readonly`) |
+
+### The input has to be a tree
+
+The walk descends by depth and checks the shape it needs as it goes: reaching the **same array instance** twice is refused. If that array belongs to one of the current node's ancestors it is a cycle (`wcs/recursion-cycle`); otherwise two nodes share one child list (`wcs/recursion-shared-list`). Give every node its own `children` array — sharing an *empty* one is fine and untracked, because it has no rows to alias.
+
+The ceiling is **128 wildcard levels** on the expanded path. The aggregate above reads one level below the node it is evaluating, so it folds a chain 127 deep and stops at 128 with `wcs/recursion-depth-exceeded`, naming the anchor, the depth reached, the path it was building, and the limit. That check trips before the getter stack's own 128-frame limit (`wcs/getter-depth-exceeded`), so a deep tree is reported as deep instead of being accused of a cycle. Nothing is truncated on the way: a partial aggregate would be a wrong number reported as a right one.
+
+### Rendering the tree
+
+`**` cannot appear in markup and there is no recursive `<template>`. A tree is rendered by a **self-referential component** — one custom element whose shadow mounts itself for each child. Inside every scope only one level of path is ever used (`node.children.*`), so the markup does not depend on the depth, and `node.total` resolves through the mount onto the root state's recursive getter, so each node shows its own subtree's aggregate.
+
+```html
+<!-- host -->
+<template data-wcs="for: nodes">
+  <tree-node data-wcs="state.node: nodes.*"></tree-node>
+</template>
+```
+
+```javascript
+const markup = `
+  <wcs-state bind-component="state"></wcs-state>
+  <span data-wcs="textContent: node.label"></span>
+  <span data-wcs="textContent: node.total"></span>
+  <template data-wcs="for: node.children">
+    <tree-node data-wcs="state.node: node.children.*"></tree-node>
+  </template>`;
+
+customElements.define("tree-node", class extends HTMLElement {
+  state = {};                            // ← no own `node` key — it arrives from the mount
+  constructor() { super(); this.attachShadow({ mode: "open" }); }
+  connectedCallback() {                  // ← build the shadow here, not in the constructor
+    if (this.shadowRoot.childNodes.length === 0) this.shadowRoot.innerHTML = markup;
+  }
+});
+```
+
+Two things bite here, and both were hit for real:
+
+- **The component's `state` must not declare the key it is mounted over.** Unrelated methods and private keys are fine — a `node` of its own is not: it hides the mount, so the child shows its own default and never descends. The runtime names that one (`wcs/mount-own-key-shadow`).
+- **Build the shadow in `connectedCallback`, not in the constructor.** Assigning `innerHTML` in the constructor upgrades the elements inside `<template>` on implementations that do not keep template content inert, and a self-referential element then recurses forever in its own constructor. Real browsers survive it, which makes it an environment-dependent trap rather than an honest crash.
+
+Fixed depths need none of this: the expanded paths are ordinary paths, so nested `for` templates bind `nodes.*.total` and `nodes.*.children.*.total` like anything else.
+
+### Not in this version
+
+Each of these is a diagnostic, never a silent reinterpretation:
+
+- More than one anchor, mutual recursion, a wildcard in the middle of an anchor, a second `**` in one path
+- Recursive setters, and writing through `**` by assignment (`this["nodes.**.x"] = v`)
+- A mapper, `{ spread: true }`, omitted indexes, or a non-empty prefix in a recursive `$setAll`
+- `**` in `data-wcs`, in `$watch` keys, or in `$resolve`
+- A recursive `<template>`, a `$depth` variable, and a public `maxDepth` option — none of the three exist
+
 ## Event Handling
 
 Bind event handlers with `on*` properties:
@@ -2265,13 +2454,25 @@ So **no warning is not a proof of correctness.** For exhaustive checking, run `n
 
 ### Index arity, wildcard rank, and getter cycles are checked too
 
-Anything that follows mechanically from the path string is reported at runtime and by the linter under the same diagnostic code.
+Anything that follows mechanically from the path string is reported at runtime and by the linter under the same diagnostic code. Six of the codes below are **runtime-only** in this release — the linter does not emit them: `wcs/getter-depth-exceeded`, `wcs/index-param-range`, `wcs/recursion-context`, `wcs/recursion-shared-list`, `wcs/recursion-cycle` and `wcs/recursion-depth-exceeded`.
 
 | Diagnostic | What it checks | Fix |
 |---|---|---|
 | `wcs/index-arity` | `$resolve(path, indexes)` must match the `*` count **exactly**; `$getAll(path, indexes)` / `$setAll(path, indexes, …)` have it as an **upper bound** (fewer is a legitimate prefix meaning "expand the rest") | Match the count |
 | `wcs/wildcard-rank` | The path's `*` count (and the N in `$N`) must not exceed the enclosing `for` nesting | Add a `for`, or name the row with `$resolve(path, indexes)` |
-| `wcs/getter-cycle` | Path getters must not form a dependency cycle | Break the cycle |
+| `wcs/getter-cycle` | Path getters must not form a dependency cycle. At runtime this is the address stack revisiting an address it already holds | Break the cycle |
+| `wcs/getter-depth-exceeded` | Getter evaluation nests deeper than the engine evaluates in one pass (128 frames), with no address visited twice — the data is simply that deep | Aggregate in fewer levels, or flatten the tree |
+| `wcs/index-param-range` | `$N` must name an existing wildcard level: `$1` through `$128`, no leading zeros | Use a level that exists |
+| `wcs/recursion-unsupported` | `**` reached something that does not interpret it — markup, a `$watch` key, `$resolve`, an assignment — or the state declares no `$recursion` at all | Use a concrete path, or declare the anchor |
+| `wcs/recursion-anchor` | A `**` path that does not match the one declared anchor (this version takes exactly one self-recursive anchor per state) | Spell the anchor as declared |
+| `wcs/recursion-context` | A **bound** `**` was read where there is no depth to bind to — the top level, or a getter outside the anchor | Read it from a recursive or row getter, or pass `[]` to union every depth |
+| `wcs/recursion-getall-form` / `wcs/recursion-setall-form` | An `indexes` argument `**` cannot define. The code is carried by the non-empty prefix (both APIs); omission, a mapper and `{ spread: true }` in a `$setAll` are the same mistake and the linter reports them under the same code, but at runtime they throw with the form named in the message and no code | Omit for the current depth, `[]` for every depth |
+| `wcs/recursion-structural-write` | A recursive `$setAll` targets the structure itself — a node, its child list, or a child node | Broadcast to a leaf property instead |
+| `wcs/recursion-readonly` | A recursive `$setAll` targets a recursive getter, or a path inside the value it derives | Write what the getter derives from |
+| `wcs/recursion-shared-list` / `wcs/recursion-cycle` | The walk reached the same array instance twice: two nodes sharing one child list, or a list reachable from its own ancestor | Give every node its own child array |
+| `wcs/recursion-depth-exceeded` | The expanded path needs more than 128 wildcard levels — the tree nests deeper than the engine can address, or it contains a cycle | Flatten the tree, or find the cycle |
+
+The form each `wcs/recursion-*` row is refusing — and the form to write instead — is spelled out under [Recursive Paths](#recursive-paths-recursion).
 
 Previously **extra indexes were silently discarded** by both APIs, so a mixed-up call returned a plausible-looking wrong value. Both now throw:
 

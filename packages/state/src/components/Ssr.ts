@@ -156,8 +156,19 @@ export class Ssr extends HTMLElementBase implements ISsrElement {
     const raw = (stateEl as any).__state;
     if (!raw || typeof raw !== 'object') return {};
     const data: Record<string, any> = {};
-    for (const [key, value] of Object.entries(raw)) {
-      if (!key.startsWith('$') && typeof value !== 'function') {
+    for (const key of Object.keys(raw)) {
+      if (key.startsWith('$')) continue;
+      // **アクセサは評価しない。** スナップショットが運ぶのはデータで、派生値は
+      // クライアントが同じ宣言から作り直す。ここは Object.entries で舐めていたので、
+      // own かつ enumerable な getter を**生の state オブジェクト**を this にして
+      // 評価していた — proxy の上でしか意味を持たない本体（`this["items.*.n"]` や
+      // `this.$getAll(...)`）が、パス getter なら NaN → JSON の null で静かに壊れ、
+      // `$getAll` を呼ぶ getter なら TypeError でページ全体の SSR を落としていた
+      // （docs/state-recursive-path-impl-plan.md §7）。
+      const descriptor = Object.getOwnPropertyDescriptor(raw, key);
+      if (descriptor !== undefined && typeof descriptor.get === 'function') continue;
+      const value = (raw as Record<string, unknown>)[key];
+      if (typeof value !== 'function') {
         data[key] = value;
       }
     }

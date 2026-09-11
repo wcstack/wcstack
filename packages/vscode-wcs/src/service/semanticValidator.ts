@@ -33,88 +33,14 @@ import { buildReferenceIndex } from '../core/index/referenceIndex.js';
 import { findBuiltinTagOccurrences } from './ioNodeValidator.js';
 import { BUILTIN_TAGS } from './generated/builtinTags.generated.js';
 import { ASSIGN_TAIL, PRE_INCDEC, ROOT_BRACKET } from './scriptPatterns.js';
+import { blankComments, literalArrayLength, literalString, splitCallArgs } from './scriptCallArgs.js';
+import { hasRecursionWildcard } from './recursionPaths.js';
 
 /** ランタイム予約キー（@wcstack/state の define.ts が正本）。 */
 const STATE_UPDATED_CALLBACK = '$updatedCallback';
 
 /** `this.$getAll(` / `this.$setAll(` / `this.$resolve(` の呼び出し開始。`?.` 経由も拾う。 */
 const API_CALL = /\.\s*\$(getAll|setAll|resolve)\s*\(/g;
-
-/** 文字列リテラル 1 個ぶん（エスケープ対応）。テンプレートリテラルは対象外。 */
-const STRING_LITERAL = /^\s*(["'])((?:\\.|(?!\1)[^\\])*)\1\s*$/;
-
-interface ICallArgs {
-  /** 実引数の生テキスト（トップレベルのカンマで分割済み） */
-  readonly args: readonly string[];
-  /** 各実引数の開始オフセット（source 内の絶対位置） */
-  readonly starts: readonly number[];
-  /** 閉じ括弧の次の位置。走査継続に使う */
-  readonly end: number;
-}
-
-/**
- * `open`（`(` の次の位置）から実引数をトップレベルのカンマで切り出す。
- * 括弧・角括弧・波括弧の入れ子と、文字列・テンプレート・正規表現もどきを飛ばす。
- * 閉じ括弧が見つからなければ null（不完全な編集中テキスト）。
- */
-function splitCallArgs(source: string, open: number): ICallArgs | null {
-  const args: string[] = [];
-  const starts: number[] = [];
-  let depth = 0;
-  let argStart = open;
-  let i = open;
-  while (i < source.length) {
-    const ch = source[i];
-    if (ch === '"' || ch === "'" || ch === '`') {
-      const quote = ch;
-      i++;
-      while (i < source.length) {
-        if (source[i] === '\\') { i += 2; continue; }
-        if (source[i] === quote) { i++; break; }
-        i++;
-      }
-      continue;
-    }
-    if (ch === '(' || ch === '[' || ch === '{') { depth++; i++; continue; }
-    if (ch === ')' && depth === 0) {
-      args.push(source.slice(argStart, i));
-      starts.push(argStart);
-      return { args, starts, end: i + 1 };
-    }
-    if (ch === ')' || ch === ']' || ch === '}') { depth--; i++; continue; }
-    if (ch === ',' && depth === 0) {
-      args.push(source.slice(argStart, i));
-      starts.push(argStart);
-      argStart = i + 1;
-      i++;
-      continue;
-    }
-    i++;
-  }
-  return null;
-}
-
-/** 実引数が単純な文字列リテラルならその中身を返す（それ以外は null＝判定しない）。 */
-function literalString(arg: string): string | null {
-  const match = STRING_LITERAL.exec(arg);
-  return match === null ? null : match[2];
-}
-
-/**
- * 実引数が配列リテラルなら要素数を返す（それ以外・スプレッド混じりは null＝判定しない）。
- * `[]` は 0、末尾カンマは数えない。
- */
-function literalArrayLength(arg: string): number | null {
-  const trimmed = arg.trim();
-  if (!trimmed.startsWith('[') || !trimmed.endsWith(']')) return null;
-  const inner = trimmed.slice(1, -1);
-  if (inner.trim().length === 0) return 0;
-  // スプレッドは長さが静的に決まらない
-  if (/(^|[^.])\.\.\./.test(inner)) return null;
-  const parts = splitCallArgs(`${inner})`, 0);
-  if (parts === null) return null;
-  return parts.args.filter((part) => part.trim().length > 0).length;
-}
 
 /**
  * `$getAll` / `$setAll` / `$resolve` の添字の本数を検査する。
@@ -135,6 +61,10 @@ function validateIndexArity(script: string, scriptStart: number, locale?: string
     if (parsed.args.length < 2) continue;
     const path = literalString(parsed.args[0]);
     if (path === null) continue;
+    // `**` は固定本数の `*` ではない（深さの族を表す）。添字の本数はここでは決まらず、
+    // 形の判定は recursionValidator が `wcs/recursion-getall-form` /
+    // `wcs/recursion-setall-form` として担う（ランタイムも `**` を先に分岐する）。
+    if (hasRecursionWildcard(path)) continue;
     const actual = literalArrayLength(parsed.args[1]);
     if (actual === null) continue;
     const wildcardCount = countWildcardSegments(path);
@@ -166,6 +96,22 @@ function validateIndexArity(script: string, scriptStart: number, locale?: string
  * を辺にし、`$untrackDependency` の中・入れ子 function の中・代入左辺は辺にしない。
  * setter は辺の起点にしない（ランタイムは setter 内の読み取りを依存に登録しない —
  * 依存追跡の境界 規則 2）。パースできない本体は辺なし（断定できないときは黙る）。
+ *
+ * **再帰 getter（`**`）の扱い**（docs/state-recursive-path-impl-plan.md §7）:
+ * 辺は「宣言名との**完全一致**」だけなので、深さが進む読み
+ * （`get "nodes.**.total"` の中の `$getAll("nodes.**.children.*.total")`）は辺にならず、
+ * 「文字列上の自己参照」を理由に循環扱いすることはない。これは偶然ではなく、
+ * 再帰の**深さ差**を辺の重みと見たときに正しい:
+ *
+ *   - 深さ差 0 の辺（`nodes.**.total` → `nodes.**.total` / `nodes.**.a` ↔ `nodes.**.b`）
+ *     だけが同じアドレスへ戻る ＝ 本物の循環。宣言名が一致するのでいまの規則で辺になる。
+ *   - 深さ差 > 0 の辺（`… → nodes.**.children.*.x`）は必ず木を下る。葉で止まるので
+ *     どんな閉路にも参加しない。宣言名と一致しないのでいまの規則で辺にならない。
+ *
+ * したがって `**` の展開形（`nodes.*.children.*.total` → `nodes.**.total`）へ**畳んでから**
+ * 辺を張ってはならない。畳むと深さ差 > 0 の辺が自己ループに化け、正常な再帰集計が
+ * すべて `wcs/getter-cycle` になる。パス存在判定（recursionPaths.matchesRecursion）は
+ * 畳むが、依存グラフはここで畳まない — この非対称が要点。
  */
 function validateGetterCycles(script: string, scriptStart: number, locale?: string): WcsDiagnostic[] {
   const msgs = getMessages(locale);
@@ -362,39 +308,6 @@ function collectNestedWriteRoots(
     }
   }
   return roots;
-}
-
-/**
- * 行コメント / ブロックコメントを同じ長さの空白へ潰す（文字列リテラルは残す）。
- * 文字列の中の `//` をコメント開始と誤認しないよう、文字列も同時に追跡する。
- */
-function blankComments(source: string): string {
-  const out = source.split('');
-  let i = 0;
-  while (i < source.length) {
-    const ch = source[i];
-    if (ch === '"' || ch === "'" || ch === '`') {
-      const quote = ch;
-      i++;
-      while (i < source.length) {
-        if (source[i] === '\\') { i += 2; continue; }
-        if (source[i] === quote) { i++; break; }
-        i++;
-      }
-      continue;
-    }
-    if (ch === '/' && source[i + 1] === '/') {
-      while (i < source.length && source[i] !== '\n') { out[i] = ' '; i++; }
-      continue;
-    }
-    if (ch === '/' && source[i + 1] === '*') {
-      while (i < source.length && !(source[i] === '*' && source[i + 1] === '/')) { out[i] = ' '; i++; }
-      if (i < source.length) { out[i] = ' '; out[i + 1] = ' '; i += 2; }
-      continue;
-    }
-    i++;
-  }
-  return out.join('');
 }
 
 /**

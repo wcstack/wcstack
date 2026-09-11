@@ -196,7 +196,9 @@ export function createWcsCompletionPlugin(): LanguageServicePlugin {
               } else {
                 // データバインディング: メソッド・トークン系を除外
                 pathCandidates = pathCandidates.filter(
-                  p => p.kind !== 'method' && p.kind !== 'command' && p.kind !== 'eventToken',
+                  p => p.kind !== 'method' && p.kind !== 'command' && p.kind !== 'eventToken'
+                    // `**` はオーサリング層だけの記号（data-wcs には書けない）
+                    && p.kind !== 'recursive' && p.kind !== 'recursionAnchor',
                 );
                 if (!insideFor) {
                   // for 外: パターンパス（* 含む）を除外
@@ -222,7 +224,7 @@ export function createWcsCompletionPlugin(): LanguageServicePlugin {
                     const replaceStart = document.positionAt(dotOffset);
 
                     const shorthandCandidates = allPaths
-                      .filter(p => p.kind !== 'method' && p.kind !== 'list')
+                      .filter(p => p.kind !== 'method' && p.kind !== 'list' && p.kind !== 'recursive' && p.kind !== 'recursionAnchor')
                       .filter(p => p.path.startsWith(expandedPrefix));
 
                     for (const p of shorthandCandidates) {
@@ -394,7 +396,8 @@ function buildPathAndFilterCompletions(
   // パス補完（テキストバインディングなのでメソッド・トークン系は除外）
   const allPaths = getStatePathsFromHtml(html, stateTagName, fileReader);
   const pathCandidates = allPaths
-    .filter(p => p.kind !== 'method' && p.kind !== 'command' && p.kind !== 'eventToken');
+    .filter(p => p.kind !== 'method' && p.kind !== 'command' && p.kind !== 'eventToken')
+    .filter(p => p.kind !== 'recursive' && p.kind !== 'recursionAnchor');
   if (pathCandidates.length === 0) return undefined;
 
   return {

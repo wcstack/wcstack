@@ -24,7 +24,8 @@
 import { parseWcsScriptBlocks } from '../language/htmlParse.js';
 import { getMessages, type WcsMessageCatalog } from '../core/messages.js';
 import { WcsDiagnostic, WcsDiagnosticCode, type WcsDiagnosticCodeValue } from '../core/diagnostics.js';
-import { analyzeStatePaths, analyzeWatchEntries, findNonObjectWatch, type WatchEntryInfo } from './stateAnalyzer.js';
+import { analyzeStatePaths, analyzeWatchEntries, findNonObjectWatch, type PathCandidate, type WatchEntryInfo } from './stateAnalyzer.js';
+import { collectRecursionSpecs, hasRecursionWildcard, matchesRecursion } from './recursionPaths.js';
 
 /** 他 state を指す区切り（@wcstack/state define.ts の STATE_NAME_SEPARATOR）。 */
 const STATE_NAME_SEPARATOR = '@';
@@ -64,7 +65,7 @@ export function validateWatchDeclarations(
     const pathSet = new Set(paths.map(p => p.path));
 
     for (const entry of entries) {
-      const diagnostic = validateEntry(entry, pathSet, msgs);
+      const diagnostic = validateEntry(entry, pathSet, paths, msgs);
       if (diagnostic === null) continue;
       out.push({
         code: diagnostic.code,
@@ -92,6 +93,7 @@ interface EntryDiagnostic {
 function validateEntry(
   entry: WatchEntryInfo,
   pathSet: ReadonlySet<string>,
+  paths: readonly PathCandidate[],
   msgs: WcsMessageCatalog,
 ): EntryDiagnostic | null {
   const { key } = entry;
@@ -113,10 +115,19 @@ function validateEntry(
     // "a..b" / 先頭・末尾の "." — 解決不能なアドレスになる
     return invalid(msgs.watchKeyEmptySegment(key));
   }
+  if (hasRecursionWildcard(key)) {
+    // `**` は $recursion 宣言・再帰 getter のキー・$getAll / $setAll のパス引数だけの記号。
+    // `$watch` に渡すと PathInfo の不変条件（wcs/recursion-unsupported）で throw する。
+    return {
+      code: WcsDiagnosticCode.RecursionUnsupported,
+      message: msgs.recursionUnsupported(key, 'watch'),
+      severity: 'error',
+    };
+  }
   if (entry.definitelyNotFunction) {
     return invalid(msgs.watchHandlerNotFunction(key));
   }
-  if (pathSet.size > 0 && !pathSet.has(key)) {
+  if (pathSet.size > 0 && !pathSet.has(key) && !matchesRecursion(collectRecursionSpecs(paths), key, p => pathSet.has(p))) {
     return {
       code: WcsDiagnosticCode.WatchPathMissing,
       message: msgs.watchPathMissing(key),

@@ -11,14 +11,15 @@
 
 import { BUILTIN_FILTERS } from "./completionData.js";
 import { getStatePathsFromHtml, type FileReader } from "./statePathResolver.js";
-import { mergeSchemaCandidates } from "./stateAnalyzer.js";
+import { mergeSchemaCandidates, type PathCandidate } from "./stateAnalyzer.js";
 import { findAllCommentBindings, findAllMustacheSyntax } from "./templateSyntax.js";
 import { isInsideForTemplate, getInnermostForPath, getAvailableWildcardRank, countWildcardSegments } from "./forContext.js";
 import { WcsDiagnosticCode, type WcsDiagnosticCodeValue } from "../core/diagnostics.js";
 import { getMessages } from "../core/messages.js";
 import { resolveSchemaPath } from "../core/sidecar/schemaSubset.js";
 import type { JsonSchemaNode } from "../core/sidecar/types.js";
-import type { BindingDiagnostic } from "./bindingValidator.js";
+import { matchesRecursionCandidates, type BindingDiagnostic } from "./bindingValidator.js";
+import { hasRecursionWildcard } from "./recursionPaths.js";
 
 export function validateTemplateSyntax(
   html: string,
@@ -40,8 +41,17 @@ export function validateTemplateSyntax(
     path: string,
     displayPath: string,
     pathSet: Set<string>,
-    scoped: { path: string }[],
+    scoped: readonly PathCandidate[],
   ): { code: WcsDiagnosticCodeValue; severity: "error" | "warning"; message: string } | null => {
+    // `**` はオーサリング層だけの記号。mustache / コメントバインディングでも
+    // ランタイムは PathInfo の不変条件として throw する（bindingValidator と同条件）。
+    if (hasRecursionWildcard(path)) {
+      return {
+        code: WcsDiagnosticCode.RecursionUnsupported,
+        severity: "error",
+        message: msgs.recursionUnsupported(path, "binding"),
+      };
+    }
     if (isValidTemplatePath(path, pathSet, scoped)) return null;
     if (defaultSchema !== undefined && !path.startsWith("$")) {
       const resolution = resolveSchemaPath(defaultSchema, defaultSchema.$defs ?? {}, path.split("."));
@@ -198,7 +208,7 @@ export function validateTemplateSyntax(
 function isValidTemplatePath(
   path: string,
   pathSet: Set<string>,
-  scopedPaths: { path: string }[],
+  scopedPaths: readonly PathCandidate[],
 ): boolean {
   if (/^\$\d+$/.test(path)) return true;
   if (path.startsWith("$streamStatus.") || path.startsWith("$streamError.")) {
@@ -206,5 +216,7 @@ function isValidTemplatePath(
     const hasNamespace = scopedPaths.some((p) => p.path.startsWith(prefix));
     return !hasNamespace || pathSet.has(path);
   }
-  return pathSet.has(path);
+  // `$recursion` 宣言済みの木の展開形（深さを畳んでから候補集合に当てる）。
+  // bindingValidator の validatePathExistence と同じ規則。
+  return pathSet.has(path) || matchesRecursionCandidates(scopedPaths, path, pathSet);
 }

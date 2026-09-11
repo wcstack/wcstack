@@ -20,6 +20,9 @@ import { getContextListIndex } from "../methods/getContextListIndex";
 import { IStateHandler } from "../types";
 import { collectWildcardIndexes } from "./wildcardIndexes";
 import { resolve } from "./resolve";
+import { bindRecursivePath } from "../../recursion/bind";
+import { hasRecursionWildcard } from "../../recursion/expand";
+import { getAllRecursive } from "../../recursion/getAllRecursive";
 
 type GetAllFunction = (path: string, indexes?: number[]) => any[];
 
@@ -31,6 +34,22 @@ export function getAll(
 ): GetAllFunction {
     const resolveFn = resolve(target, prop, receiver, handler);
     return (path: string, indexes?: number[]): any[] => {
+      // オーサリング層の `**`。省略形は「いま評価している深さ」に束縛し、`[]` 明示は
+      // 全深さの合併になる（設計書 §6-2）。部分接頭辞は `**` に対して定義できない。
+      if (handler.stateElement.hasRecursion === true && hasRecursionWildcard(path)) {
+        if (typeof indexes === "undefined") {
+          path = bindRecursivePath(handler.stateElement, handler, path);
+        } else {
+          if (indexes.length > 0) {
+            raiseError(
+              `[wcs/recursion-getall-form] $getAll("${path}", indexes) with "**" takes no partial ` +
+              `prefix: a prefix cannot say which depth it applies to. Omit the indexes to read the ` +
+              `depth of the recursive getter being evaluated, or pass [] to walk every depth.`
+            );
+          }
+          return getAllRecursive(target, receiver, handler, path);
+        }
+      }
       const pathInfo = getPathInfo(path);
       if (handler.addressStackLength > 0) {
         const lastInfo = handler.lastAddressStack?.pathInfo ?? null;

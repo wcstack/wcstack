@@ -114,6 +114,7 @@ let nextMountId = 0;
 
 const MOUNT_DOLLAR_DECLARATIONS = [
   "$watch", "$streams", "$listKeys", "$updatedCallback", "$commandTokens", "$eventTokens", "$on",
+  "$recursion",
 ] as const;
 const dollarDeclarationWarned = new Set<string>();
 

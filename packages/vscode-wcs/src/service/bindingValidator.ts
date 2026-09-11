@@ -17,6 +17,7 @@ import { WcsDiagnosticCode, type WcsDiagnosticCodeValue } from '../core/diagnost
 import { getMessages, type WcsMessageCatalog, type ExpectedTypeKind } from '../core/messages.js';
 import { resolveSchemaPath } from '../core/sidecar/schemaSubset.js';
 import type { JsonSchemaNode } from '../core/sidecar/types.js';
+import { collectRecursionSpecs, hasRecursionWildcard, matchesRecursion } from './recursionPaths.js';
 
 /** フィルタ名 → FilterInfo のマップ */
 const filterMap = new Map<string, FilterInfo>(BUILTIN_FILTERS.map(f => [f.name, f]));
@@ -208,7 +209,17 @@ export function validateBindings(
           }
           if (checkPath) {
             const schema = applicationSchema;
-            const verdict = schema !== undefined
+            // `**` はオーサリング層だけの記号（$recursion 宣言・再帰 getter のキー・
+            // $getAll / $setAll のパス引数）。data-wcs に書くとランタイムは PathInfo の
+            // 不変条件として throw する（`**` を持つ再帰 getter のキーは候補集合に
+            // 載っているので、存在検査の**前**に弾かないと素通りしてしまう）。
+            const verdict = hasRecursionWildcard(checkPath)
+              ? {
+                code: WcsDiagnosticCode.RecursionUnsupported,
+                message: msgs.recursionUnsupported(checkPath, 'binding'),
+                severity: 'error' as const,
+              }
+              : schema !== undefined
               ? validateSchemaPathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, schema, msgs)
               : toMissingVerdict(validatePathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, msgs));
             if (verdict) {
@@ -232,7 +243,9 @@ export function validateBindings(
         const prop = parsed.property.replace(/#.*$/, '');
         const insideFor = isInsideForTemplate(html, attr.valueStart, attrName);
 
-        if (pathTrimmed && !prop.startsWith('on')) {
+        // `**` は既に `wcs/recursion-unsupported`（error）で報告済み。`*` を含むので
+        // 下のパターンパス検査・階数検査に二重で掛かるが、直す場所は 1 つなので重ねない。
+        if (pathTrimmed && !prop.startsWith('on') && !hasRecursionWildcard(pathTrimmed)) {
           // for 外でパターンパス（* を含む）を使用
           if (!insideFor && pathTrimmed.includes('*')) {
             const pathOffset = binding.indexOf(parsed.path);
@@ -627,7 +640,7 @@ function splitByPipe(value: string): string[] {
  * - `$1`〜`$128`: ループインデックス。状態定義に依存しないためスキップ。
  * - `$command.<name>`: $commandTokens 宣言と照合（宣言が解析できている場合のみ）。
  * - `$streamStatus.<name>` / `$streamError.<name>`: $streams 宣言と照合（同上）。
- * - それ以外は状態パスセットとの完全一致。
+ * - それ以外は状態パスセットとの完全一致 ＋ `$recursion` の深さ畳み込み。
  */
 function validatePathExistence(
   checkPath: string,
@@ -656,10 +669,27 @@ function validatePathExistence(
     return null;
   }
 
-  if (!scopedPathSet.has(checkPath)) {
+  if (!scopedPathSet.has(checkPath) && !matchesRecursionCandidates(scopedPaths, checkPath, scopedPathSet)) {
     return msgs.pathMissing(displayPath);
   }
   return null;
+}
+
+/**
+ * `$recursion` 宣言済みの木の**展開形**なら存在扱いにする。
+ *
+ * ランタイムは `checkDeclaredPath` が `recursionRegistry.matchesRecursivePath` を先に見て
+ * 同じことをしている（再帰 getter の具体パスはバインド確立の時点ではまだ生えていない）。
+ * 静的側は候補集合しか持たないので、反復語を剥がして深さ 0 の形へ畳んでから照合する。
+ */
+export function matchesRecursionCandidates(
+  scopedPaths: readonly PathCandidate[],
+  checkPath: string,
+  scopedPathSet: ReadonlySet<string>,
+): boolean {
+  const specs = collectRecursionSpecs(scopedPaths);
+  if (specs.length === 0) return false;
+  return matchesRecursion(specs, checkPath, candidate => scopedPathSet.has(candidate));
 }
 
 /** 存在判定の結果（code / severity 込み）。null = 問題なし。 */
@@ -697,6 +727,10 @@ function validateSchemaPathExistence(
     return toMissingVerdict(validatePathExistence(checkPath, displayPath, scopedPaths, scopedPathSet, commandNames, msgs));
   }
   if (scopedPathSet.has(checkPath)) return null;
+  // 再帰の展開形は schema にも「深さの族」としては現れない（`$ref` の再帰は
+  // resolveSchemaPath が辿れるが、`$recursion` は script 側の宣言なので schema を
+  // 持たない state でも成立する）。候補側の宣言で説明が付くなら error にしない。
+  if (matchesRecursionCandidates(scopedPaths, checkPath, scopedPathSet)) return null;
   const resolution = resolveSchemaPath(schema, schema.$defs ?? {}, checkPath.split('.'));
   if (resolution.kind === 'nonexistent') {
     return { code: WcsDiagnosticCode.PathNonexistent, message: msgs.pathNonexistent(displayPath), severity: 'error' };

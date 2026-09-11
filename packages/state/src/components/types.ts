@@ -1,6 +1,7 @@
 import { ListKeyMap } from "../list/listKeys";
 import { ILoopContextStack } from "../list/types";
 import type { PathInfoSource } from "../pathDiagnostics";
+import type { RecursionRegistry } from "../recursion/registry";
 import { IStateProxy, Mutability } from "../proxy/types";
 import { BindingType } from "../types";
 
@@ -124,6 +125,26 @@ export interface IStateElement {
   readonly hydratedFromSsr?: boolean;
   /** ボリュームのアクセサ登録（webComponent/volume.ts 専用） */
   defineTreeAccessor(path: string, descriptor: PropertyDescriptor): void;
+  /**
+   * リストパスとしてだけ登録する（`listPaths` に足す）。`setPathInfo(path, "for")` は
+   * `elementPaths` にも入れて `setByAddress` の swap 経路（`isSwappable`）を変えるので、
+   * 「依存ウォークがこのパスをリストとして展開する」ことだけが要る用途には使えない
+   * （docs/state-recursive-path-impl-plan.md §3-2 の E4）。
+   */
+  addListPath(path: string): void;
+  /** state オブジェクト自身の own descriptor（生成物と作者定義の見分けに使う）。 */
+  getOwnStateDescriptor(path: string): PropertyDescriptor | undefined;
+  /**
+   * この state に `$recursion` 宣言があるか。偽のとき getByAddress の遅延実体化と
+   * get トラップの `**` 解決は boolean 判定 1 個で抜ける（hasMounts と同じ D18 の形）。
+   * optional なのはテスト用モック互換のため（undefined は「再帰なし」扱い）。
+   */
+  readonly hasRecursion?: boolean;
+  /**
+   * 再帰レジストリ（宣言が無ければ null）。registry.ts はこのファイルの IStateElement を
+   * 参照するが、`import type` どうしなので実行時の循環にはならない。
+   */
+  readonly recursionRegistry?: RecursionRegistry | null;
   setPathInfo(path: string, bindingType: BindingType, source?: PathInfoSource): void;
   addStaticDependency(parentPath: string, childPath: string): boolean;
   addDynamicDependency(fromPath: string, toPath: string): boolean;

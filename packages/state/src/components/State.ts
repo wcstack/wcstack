@@ -9,7 +9,7 @@ import { IStateElement } from "./types";
 import { setStateElement, getStateElement, getBindingsReady } from "../stateElementByName";
 import { ILoopContextStack } from "../list/types";
 import { createLoopContextStack } from "../list/loopContext";
-import { DCC_DEFINITION_ATTRIBUTE, NO_SET_TIMEOUT, STATE_CONNECTED_CALLBACK_NAME, STATE_DISCONNECTED_CALLBACK_NAME, STATE_ERROR_CALLBACK_NAME, STATE_UPDATED_CALLBACK_NAME, WILDCARD } from "../define";
+import { DELIMITER, DCC_DEFINITION_ATTRIBUTE, NO_SET_TIMEOUT, STATE_CONNECTED_CALLBACK_NAME, STATE_DISCONNECTED_CALLBACK_NAME, STATE_ERROR_CALLBACK_NAME, STATE_UPDATED_CALLBACK_NAME, WILDCARD } from "../define";
 import { processCommandTokensDeclaration } from "../command/processCommandTokensDeclaration";
 import { clearCommandTokenRegistry } from "../command/commandTokenRegistry";
 import { clearCommandNamespace } from "../command/commandNamespace";
@@ -18,6 +18,8 @@ import { clearEventTokenRegistry } from "../event/eventTokenRegistry";
 import { processOnDeclaration } from "../event/processOnDeclaration";
 import { processStreamsDeclaration } from "../stream/processStreamsDeclaration";
 import { ListKeyMap, ListKeySpec, processListKeysDeclaration } from "../list/listKeys";
+import { processRecursionDeclaration } from "../recursion/declaration";
+import { RecursionRegistry } from "../recursion/registry";
 import { clearStreamNamespace } from "../stream/streamNamespace";
 import { abortAllStreams, clearStreamRegistry } from "../stream/streamRegistry";
 import { startStreams } from "../stream/streamRuntime";
@@ -113,6 +115,7 @@ export class State extends HTMLElementBase implements IStateElement {
   private _resolveSetState: ((value: Record<string, any>) => void) | null = null;
   private _listPaths: Set<string> = new Set<string>();
   private _listKeys: ListKeyMap | null = null;
+  private _recursionRegistry: RecursionRegistry | null = null;
   private _elementPaths: Set<string> = new Set<string>();
   private _getterPaths: Set<string> = new Set<string>();
   private _setterPaths: Set<string> = new Set<string>();
@@ -213,6 +216,27 @@ export class State extends HTMLElementBase implements IStateElement {
     // $listKeys: 宣言が無ければ null のままで、setByAddress のキー突合経路には
     // 一切入らない（docs/state-list-key-design.md §7-1）。再 set で必ず置き換える。
     this._listKeys = processListKeysDeclaration(value);
+    // $recursion: 宣言が無ければ null のままで、読みのホットパスには一切入らない。
+    // getterPaths / setterPaths の収集後であること（`**` getter の descriptor を
+    // 走査して定義を集めるため）。再セットでは毎回作り直す — 展開済みアクセサは
+    // 旧 state オブジェクトのものなので持ち越さない（§1-3）。
+    // 旧世代の生成アクセサを指す依存辺を外してから作り直す（下の registry.ts 参照）。
+    this._recursionRegistry?.forgetGeneratedDependencies(this._staticDependency, this._dynamicDependency);
+    const recursionSpec = processRecursionDeclaration(value);
+    this._recursionRegistry = recursionSpec === null ? null : new RecursionRegistry(recursionSpec, value);
+    if (recursionSpec !== null) {
+      // アンカーのリストパス（`nodes.*` なら `nodes`）は**宣言から静的に分かる**ので、
+      // 展開を待たずに今すぐ登録する。
+      //
+      // これが無いと、再帰パスを一度読んだ後の再セットで構造書き込みが恒久的に落ちる。
+      // 生成アクセサの `setPathInfo` が張った静的辺（`nodes` → `nodes.*`）は依存グラフに
+      // 残るのに、`_listPaths` はこのセッタでクリアされ、次に再帰パスを読むまで
+      // 張り直されない。その隙間に構造書き込みが来ると `walkDependency` が
+      // 「リストではないパス」として `nodes.*` に到達し、listIndex を持たないアドレスで
+      // `Cannot expand dynamic dependency…` になる（値は書かれるので、データと表示が
+      // 乖離したまま自己回復しない）。
+      this._listPaths.add(recursionSpec.anchor.slice(0, recursionSpec.anchor.lastIndexOf(DELIMITER)));
+    }
     // $watch: 旧宣言のハンドラが残らないよう registry を落としてから新宣言を解析する。
     // _pathSet.clear() の後であること（依存グラフ登録をやり直す必要がある、
     // docs/state-watch-hook-design.md §8）。宣言が無ければ watchPaths は null で、
@@ -868,6 +892,14 @@ export class State extends HTMLElementBase implements IStateElement {
     return this._listKeys;
   }
 
+  get hasRecursion(): boolean {
+    return this._recursionRegistry !== null;
+  }
+
+  get recursionRegistry(): RecursionRegistry | null {
+    return this._recursionRegistry;
+  }
+
   get watchPaths(): ReadonlySet<string> | null {
     return this._watchPaths;
   }
@@ -917,6 +949,14 @@ export class State extends HTMLElementBase implements IStateElement {
   /** enable-ssr スナップショットから初期化されたか（D14 — webComponent/volume.ts が読む）。 */
   get hydratedFromSsr(): boolean {
     return this._hydratedFromSsr;
+  }
+
+  addListPath(path: string): void {
+    this._listPaths.add(path);
+  }
+
+  getOwnStateDescriptor(path: string): PropertyDescriptor | undefined {
+    return Object.getOwnPropertyDescriptor(this._state, path);
   }
 
   defineTreeAccessor(path: string, descriptor: PropertyDescriptor): void {

@@ -3,6 +3,7 @@ import { IStateElement } from "../components/types";
 import { config } from "../config";
 import { devtoolsSink } from "../devtools/sink";
 import { setLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
+import { setStateListBaseline } from "../list/stateListBaseline";
 import { errorCallbackSymbol, updatedCallbackSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
 import { getStateElement } from "../stateElementByName";
@@ -158,6 +159,10 @@ export function applyChangeFromBindings(
 
   for(const [ absAddress, newListValue ] of newListValueByAbsAddress.entries()) {
     setLastListValueByAbsoluteStateAddress(absAddress, newListValue);
+    // 描画の基準とは別に、state 側の基準（読み・依存ウォークの共有正本）も進める。
+    // 初回描画はどの書き込みも経ていないので、ここで観測しておかないと最初の構造
+    // 書き込みで基準が空のまま ListIndex を鋳造してしまう（E1）。
+    setStateListBaseline(absAddress, newListValue);
   }
   for(const [ stateElement, absAddressSet ] of updatedAbsAddressSetByStateElement.entries()) {
     stateElement.createState("writable", (state) => {

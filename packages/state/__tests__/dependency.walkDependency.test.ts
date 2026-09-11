@@ -170,8 +170,15 @@ describe('walkDependency', () => {
       () => {}
     );
 
-    // createListDiff now caches results, so the spy count stays the same
-    expect(spy.mock.calls.length).toBe(afterFirst);
+    // The walk commits its own list baseline (E1), so the second walk diffs
+    // (A, A) instead of replaying the cached ([], A) result. That is a fresh
+    // (oldList, newList) key, so createListDiff recomputes and reaches the
+    // getListIndexesByList lastValue branch this test is named for — twice,
+    // once for each side. The isSameList branch then returns the existing ledger
+    // without minting new ListIndexes. It does not mean the repeat walk is free:
+    // this call passes no options, so listExpansion defaults to "full" and every
+    // row is still enqueued.
+    expect(spy.mock.calls.length).toBe(afterFirst + 2);
     spy.mockRestore();
   });
 
@@ -342,8 +349,9 @@ describe('walkDependency', () => {
       () => {}
     );
 
-    // createListDiff now caches results, so the spy count stays the same
-    expect(spy.mock.calls.length).toBe(afterFirst);
+    // Same reason as the static case above: the walk advances its own baseline,
+    // so the repeat walk recomputes the diff against the committed value.
+    expect(spy.mock.calls.length).toBe(afterFirst + 2);
     spy.mockRestore();
   });
 
