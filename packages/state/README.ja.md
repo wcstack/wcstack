@@ -1181,6 +1181,12 @@ k=2   nodes.*.children.*.children.*
 this.$getAll("nodes.**.value", []);   // [1, 10, 100, 20, 2] —— 深さ優先・行きがけ
 ```
 
+`**` より**後ろ**の `*` は、各ノードで固定本数のパスと同じ順に展開し、そのノードの分を出し切ってから子へ降ります。上の木のノードに `tags` があるとき（`1` → `[3, 4]`、`10` → `[5]`、`20` → `[7]`、他は空）：
+
+```javascript
+this.$getAll("nodes.**.tags.*.v", []);   // [3, 4, 5, 7] —— ノード 1 の tags、次にノード 10 の、次にノード 20 の
+```
+
 ### 孫を二重に数えない集計
 
 木を畳むのは再帰 getter なので、この書き分けが集計の成否そのものになります：
@@ -1290,9 +1296,10 @@ customElements.define("tree-node", class extends HTMLElement {
 以下はいずれも診断になります。黙って別の意味に解釈されることはありません。
 
 - 複数アンカー、相互再帰、アンカー途中のワイルドカード、1 本のパスに 2 つ目の `**`
-- 再帰 setter と、代入による `**` 経由の書き込み（`this["nodes.**.x"] = v`）
-- 再帰 `$setAll` の mapper・`{ spread: true }`・添字省略・非空の接頭辞
-- `data-wcs` / `$watch` のキー / `$resolve` への `**`
+- 再帰 setter、接尾辞が構造そのものを名指す `**` getter（`get "nodes.**.children"()`）、`**` getter の展開形と同名の具体 getter、そして代入による `**` 経由の書き込み（`this["nodes.**.x"] = v`、`++` も含む）
+- 再帰 `$setAll` / `$getAll` の mapper・`{ spread: true }`・添字省略・非空の接頭辞・配列でない `indexes`
+- `data-wcs` / `$watch` や `$listKeys` のキー / `$resolve` / `$postUpdate` / `$trackDependency` への `**`
+- ボリューム（`mount=`）やマウントされたコンポーネント（`bind-component`）の `$recursion` と `**` getter —— ルートの state に置きます
 - 再帰 `<template>`、`$depth` 変数、公開の `maxDepth` オプション（3 つとも存在しません）
 
 ## イベントハンドリング

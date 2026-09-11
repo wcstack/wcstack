@@ -210,6 +210,27 @@ export function indexSegmentsToWildcard(path: string): string {
 }
 
 /**
+ * `**` を含まない宣言キー（`get "nodes.*.children.*.total"()` / データプロパティ）が、宣言済み
+ * `**` getter の展開形**そのもの**なら、その getter の接尾辞を返す（値の内側は含めない —
+ * ランタイム `RecursionRegistry._assertNoConcreteCollision` の写し）。
+ */
+export function concreteExpansionSuffix(
+  spec: RecursionSpec,
+  getterSuffixes: readonly string[],
+  key: string,
+): string | null {
+  const folded = foldRecursion(spec, key);
+  if (folded === null) return null;
+  const unit = '.' + spec.repeat;
+  for (const suffix of getterSuffixes) {
+    for (let depth = folded.depth; depth >= 0; depth--) {
+      if (key === spec.anchor + unit.repeat(depth) + suffix) return suffix;
+    }
+  }
+  return null;
+}
+
+/**
  * 候補集合に載っている `$recursion` のマーカー（`kind: 'recursionAnchor'`）から仕様を復元する。
  *
  * 宣言を候補集合に載せて運ぶのは、マウント接頭辞の付与・外部 state ファイルの解決

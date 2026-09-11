@@ -140,9 +140,10 @@ export interface IStateElement {
   /**
    * この state に `$recursion` 宣言があるか。偽のとき getByAddress の遅延実体化と
    * get トラップの `**` 解決は boolean 判定 1 個で抜ける（hasMounts と同じ D18 の形）。
-   * 読み手は必ずこのゲートを先に見て、真なら `recursionRegistry` を `!` で読む
-   * （テスト用モックはフィールドを持たなくてよい — `undefined === true` は偽なので
-   * 再帰の経路に入らない）。
+   * 読み手は必ずこのゲートを先に見て、真なら `recursionRegistry` を `!` で読む。
+   * 必須メンバー（実装は `State` のみ）。`any` 型のテスト用モックがフィールドを持たなくても
+   * 通るのは vitest が型検査をしないからで、その場合 `undefined === true` は偽なので再帰の
+   * 経路に入らないだけ — 型としては必須。
    */
   readonly hasRecursion: boolean;
   /**

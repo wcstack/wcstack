@@ -13,6 +13,7 @@ import { getByAddress } from "../proxy/methods/getByAddress";
 import { IStateHandler } from "../proxy/types";
 import { splitRecursivePath } from "./expand";
 import { collectRecursiveAddresses } from "./walk";
+import { recursionAnchorMismatchMessage } from "../pathDiagnostics";
 import { raiseError } from "../raiseError";
 
 export function getAllRecursive(
@@ -29,10 +30,7 @@ export function getAllRecursive(
   // `recursion-anchor`、もう片側では `recursion-getall-form` になる。
   const suffix = splitRecursivePath(registry.spec, path);
   if (suffix === null) {
-    raiseError(
-      `[wcs/recursion-anchor] "${path}" does not match the declared recursion anchor ` +
-      `"${registry.spec.recursiveAnchor}". This version supports exactly one anchor per state.`
-    );
+    raiseError(recursionAnchorMismatchMessage(path, registry.spec.recursiveAnchor));
   }
   // 合併形の添字は `[]` だけ。`null` 等の非配列は素の TypeError にせず、形の診断にする。
   if (!Array.isArray(indexes)) {

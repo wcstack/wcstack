@@ -18,7 +18,7 @@
  */
 
 import { DELIMITER } from "../define";
-import { setAllValueKindMessage } from "../pathDiagnostics";
+import { recursionAnchorMismatchMessage, setAllValueKindMessage } from "../pathDiagnostics";
 import { setByAddress } from "../proxy/methods/setByAddress";
 import { IStateHandler } from "../proxy/types";
 import { raiseError } from "../raiseError";
@@ -50,7 +50,7 @@ export function setAllRecursive(
   receiver: any,
   handler: IStateHandler,
   path: string,
-  indexes: number[] | undefined,
+  indexes: unknown,
   value: any,
   options: { readonly spread?: boolean } | undefined,
 ): number {
@@ -58,10 +58,7 @@ export function setAllRecursive(
   const registry = handler.stateElement.recursionRegistry!;
   const suffix = splitRecursivePath(registry.spec, path);
   if (suffix === null) {
-    raiseError(
-      `[wcs/recursion-anchor] "${path}" does not match the declared recursion anchor ` +
-      `"${registry.spec.recursiveAnchor}". This version supports exactly one anchor per state.`
-    );
+    raiseError(recursionAnchorMismatchMessage(path, registry.spec.recursiveAnchor));
   }
   // 検査には添字を `*` に畳んだ接尾辞を掛ける。`nodes.**.children.0`（子ノード）・
   // `nodes.**.children.0.children`（孫リスト）・`nodes.**.children.0.total`（getter の展開形）は

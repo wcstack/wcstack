@@ -1182,6 +1182,12 @@ The bound forms need a depth to bind to, so they only resolve **inside** a recur
 this.$getAll("nodes.**.value", []);   // [1, 10, 100, 20, 2] — depth-first, pre-order
 ```
 
+Wildcards *after* `**` expand at each node in the ordinary fixed-arity order, and the walk finishes them before descending to that node's children. With `tags` on the nodes above (`1` → `[3, 4]`, `10` → `[5]`, `20` → `[7]`, the rest empty):
+
+```javascript
+this.$getAll("nodes.**.tags.*.v", []);   // [3, 4, 5, 7] — node 1's tags, then node 10's, then node 20's
+```
+
 ### Aggregating without counting grandchildren twice
 
 That split is the whole game for aggregation, because the recursive getter is what folds the tree:
@@ -1291,9 +1297,10 @@ Fixed depths need none of this: the expanded paths are ordinary paths, so nested
 Each of these is a diagnostic, never a silent reinterpretation:
 
 - More than one anchor, mutual recursion, a wildcard in the middle of an anchor, a second `**` in one path
-- Recursive setters, and writing through `**` by assignment (`this["nodes.**.x"] = v`)
-- A mapper, `{ spread: true }`, omitted indexes, or a non-empty prefix in a recursive `$setAll`
-- `**` in `data-wcs`, in `$watch` keys, or in `$resolve`
+- Recursive setters, a `**` getter whose suffix names the structure (`get "nodes.**.children"()`), a concrete getter with the same name as a `**` getter's expansion, and writing through `**` by assignment (`this["nodes.**.x"] = v`, `++` included)
+- A mapper, `{ spread: true }`, omitted indexes, a non-empty prefix, or a non-array `indexes` in a recursive `$setAll` / `$getAll`
+- `**` in `data-wcs`, in `$watch` or `$listKeys` keys, or in `$resolve` / `$postUpdate` / `$trackDependency`
+- `$recursion` and `**` getters in a volume (`mount=`) or a mounted component (`bind-component`) — declare them on the root state
 - A recursive `<template>`, a `$depth` variable, and a public `maxDepth` option — none of the three exist
 
 ## Event Handling

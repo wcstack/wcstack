@@ -895,17 +895,41 @@ describe("宣言と再帰 getter の定義を検証する", () => {
     // Fixed by Phase B review — was: 診断されず、深さ 1 だけ作者の getter（常に 7）が
     // 黙って使われていた（`$getAll(totalAt(0), [])` が `[15, 2]`）。原因は
     // `materializeRecursionAccessor` の早期 return が `getterPaths.has(path)` だったこと。
-    // いまは `materializeFor` の台帳（`_accessors`）で見るので `_define` の衝突検査に到達する
-    // （生成物と作者定義は WeakSet で見分ける）。
-    const { host, stateEl } = await mount(recursionState(forest(), {
+    // Fixed by cycle-3 review — 検査は読みの時点ではなく**構築時**（宣言の形だけで決まる）。
+    // 構築時に落ちる契約は再セットの経路で測る（初回マウントは #257 の無言ハングになる）。
+    const { host, run } = await withReset(recursionState(forest(), {
       "nodes.*.children.*.total": { get() { return 7; }, enumerable: true, configurable: true },
-    }), NO_RENDER_HTML);
+    }));
 
-    expect(() => read(stateEl, (s: any) => s.$getAll(totalAt(0), [])))
-      .toThrow(/"nodes\.\*\.children\.\*\.total" is already defined on the state/);
-    expect(() => read(stateEl, (s: any) => s.$getAll(totalAt(0), [])))
-      .toThrow(/the recursive getter "nodes\.\*\*\.total" cannot expand to it\. Rename one of them/);
+    expect(run).toThrow(/"nodes\.\*\.children\.\*\.total" is already defined on the state/);
+    expect(run).toThrow(/the recursive getter "nodes\.\*\*\.total" cannot expand to it\. Rename one of them/);
     host.remove();
+  });
+
+  it("`**` getter の展開形と同名の具体 getter は、読む前の**構築時**に拒否されること", async () => {
+    // Fixed by cycle-3 review — was: `_define` の衝突検査は「その深さを最初に読んだとき」にしか
+    // 走らないので、データが浅い間はマウントが通り、木が 1 段深くなった瞬間にバインディングが
+    // 落ちていた（`get "nodes.**.total"` ＋ `"nodes.*.children.*.total"` でマウント成功 →
+    // `$getAll("nodes.*.total", [])` で初めて throw）。宣言の形だけで決まるので構築時に落とす。
+    for (const key of ["nodes.*.total", "nodes.*.children.*.total", "nodes.*.children.*.children.*.total"]) {
+      const { host, run } = await withReset(recursionState(forest(), {
+        [key]: { get() { return 7; }, enumerable: true, configurable: true },
+      }));
+      expect(run, key).toThrow(new RegExp(`"${key.replace(/[*.]/g, "\\$&")}" is already defined on the state, so the recursive getter "nodes\\.\\*\\*\\.total" cannot expand to it`));
+      host.remove();
+    }
+    // データプロパティも同じ。getter の値の内側（`nodes.*.total.x`）や葉（`nodes.*.value`）は通る
+    const data = await withReset(recursionState(forest(), {
+      "nodes.*.total": { value: 7, writable: true, enumerable: true, configurable: true },
+    }));
+    expect(data.run).toThrow(/is already defined on the state/);
+    data.host.remove();
+    const ok = await withReset(recursionState(forest(), {
+      "nodes.*.total.x": { get() { return 1; }, enumerable: true, configurable: true },
+      "nodes.*.label": { get() { return "x"; }, enumerable: true, configurable: true },
+    }));
+    expect(ok.run).not.toThrow();
+    ok.host.remove();
   });
 
   it("class 構文（prototype の getter）で書いた同名の具体パスも、衝突として拒否されること", async () => {
@@ -923,25 +947,38 @@ describe("宣言と再帰 getter の定義を検証する", () => {
           (this as any).$getAll("nodes.**.children.*.total").reduce((a: number, b: number) => a + b, 0);
       }
     }
-    const { host, stateEl } = await mount(new TreeState(), NO_RENDER_HTML);
+    // 構築時に落ちる契約は再セットの経路で測る（初回マウントは #257 の無言ハングになる）
+    const instance = new TreeState();
+    const { host, run } = await withReset(instance);
 
-    expect(() => read(stateEl, (s: any) => s.$getAll("nodes.*.total", [])))
+    expect(run)
       .toThrow(/"nodes\.\*\.total" is already defined on the state, so the recursive getter "nodes\.\*\*\.total" cannot expand to it/);
     // 拒否したので、作者の getter（prototype）が own の生成物で影にされていない
-    const raw = (stateEl as any).__state;
-    expect(Object.getOwnPropertyDescriptor(raw, "nodes.*.total")).toBe(undefined);
-    expect(Object.getPrototypeOf(raw)).toBe(TreeState.prototype);
-    expect(raw["nodes.*.total"], "作者の getter がそのまま見える").toBe(-1);
+    expect(Object.getOwnPropertyDescriptor(instance, "nodes.*.total")).toBe(undefined);
+    expect(Object.getPrototypeOf(instance)).toBe(TreeState.prototype);
+    expect((instance as any)["nodes.*.total"], "作者の getter がそのまま見える").toBe(-1);
     host.remove();
   });
 
   it("同名の具体パスがデータプロパティでも衝突として拒否されること（作者のデータを上書きしない）", async () => {
-    const { host, stateEl } = await mount(recursionState(forest(), {
+    const { host, run } = await withReset(recursionState(forest(), {
       "nodes.*.total": { value: 7, writable: true, enumerable: true, configurable: true },
-    }), NO_RENDER_HTML);
+    }));
+
+    expect(run).toThrow(/"nodes\.\*\.total" is already defined on the state/);
+    host.remove();
+  });
+
+  it("構築後に生の state へ足された同名の具体パスは、実体化の時点でも拒否されること（_define の保険）", async () => {
+    // 構築時の検査（上）が宣言の形で落とす。それをすり抜ける唯一の形は、マウント後に
+    // 生オブジェクトへ `Object.defineProperty` で足す作為で、実体化の直前の検査が最後の防衛線。
+    const { host, stateEl } = await mount(recursionState(forest()), NO_RENDER_HTML);
+    Object.defineProperty((stateEl as any).__state, "nodes.*.children.*.total", {
+      get() { return 7; }, enumerable: true, configurable: true,
+    });
 
     expect(() => read(stateEl, (s: any) => s.$getAll(totalAt(0), [])))
-      .toThrow(/"nodes\.\*\.total" is already defined on the state/);
+      .toThrow(/"nodes\.\*\.children\.\*\.total" is already defined on the state/);
     host.remove();
   });
 
@@ -1369,6 +1406,31 @@ describe("再帰 getter: 深さ上限に届く木", () => {
     host.remove();
   });
 
+  it("境界: 集計は 127 段の鎖を畳み 128 段で落ち、合併形は 128 段を返し 129 段で落ちること", async () => {
+    // README「it folds a chain 127 deep and stops at 128」。集計 getter は自分の 1 段下を読むので、
+    // 128 段の鎖では深さ 127 の葉が `nodes.**.children.*.total`（ワイルドカード 129 段）を要求して
+    // 上限に当たる。合併形は葉の 1 段先を投機的に見ないので、鎖そのものが 128 段まで通る。
+    const fold = await mount(recursionState(chain(127)), NO_RENDER_HTML);
+    expect(read(fold.stateEl, (s: any) => s.$getAll(totalAt(0), []))).toEqual([127]);
+    expect(materialized(fold.stateEl).length).toBe(127);
+    fold.host.remove();
+
+    const foldOver = await mount(recursionState(chain(128)), NO_RENDER_HTML);
+    let message = "";
+    try { read(foldOver.stateEl, (s: any) => s.$getAll(totalAt(0), [])); } catch (e: any) { message = e.message; }
+    expect(message).toContain("[wcs/recursion-depth-exceeded]");
+    expect(message).toContain('reached depth 127');
+    expect(message).toContain("which needs 129 wildcard levels");
+    // 合併形は同じ 128 段の鎖を最後まで返す
+    expect(read(foldOver.stateEl, (s: any) => s.$getAll("nodes.**.value", [])).length).toBe(128);
+    foldOver.host.remove();
+
+    const unionOver = await mount(recursionState(chain(129)), NO_RENDER_HTML);
+    expect(() => read(unionOver.stateEl, (s: any) => s.$getAll("nodes.**.value", [])), "合併形は 129 段目で落ちる")
+      .toThrow(/\[wcs\/recursion-depth-exceeded\]/);
+    unionOver.host.remove();
+  });
+
   it("上限を超える鎖では [wcs/recursion-depth-exceeded] で止まること", async () => {
     // ここが Phase B の上限で、Phase A のアドレススタック上限
     // （`[wcs/getter-depth-exceeded]`）より先に効く。エンジンが黙って
@@ -1459,6 +1521,13 @@ describe("RecursionRegistry の直接 API", () => {
     expect(registry.recursiveGetterOwning("nodes.*.children.0.total"), "混在綴りの展開形").toBe("nodes.**.total");
     expect(registry.recursiveGetterOwning("nodes.0.children.*.total.x"), "混在綴りの値の内側").toBe("nodes.**.total");
     expect(registry.recursiveGetterOwning("nodes.*.children.0.value"), "混在綴りの葉").toBe(null);
+    // 記憶のキーは畳んだ形 — 添字綴りの数だけ増えない
+    const before = registry._ownerByPath.size;
+    for (let i = 2; i < 12; i++) {
+      expect(registry.recursiveGetterOwning(`nodes.${i}.total`)).toBe("nodes.**.total");
+      expect(registry.recursiveGetterOwning(`nodes.${i}.value`)).toBe(null);
+    }
+    expect(registry._ownerByPath.size, "10 通りの添字綴りで記憶は増えない").toBe(before);
 
     // 実体化した後は台帳の即答経路（同じ答えが二度出ること）
     registry.materializeFor(stateEl, totalAt(1));
@@ -1489,9 +1558,11 @@ describe("生成先の衝突と展開不一致（読みの経路では見えな�
   it("作者が定義済みの具体パスへ直接 materializeFor すると、名指しで拒否されること", async () => {
     // 読みの経路からも同じガードに来る（section 7 の対のテスト）。ここで固定するのは
     // レジストリ API 単体としての契約 — 深さを名指しして呼んでも同じ診断になること。
-    const { host, stateEl } = await mount(recursionState(forest(), {
-      "nodes.*.children.*.total": { get() { return 7; }, enumerable: true, configurable: true },
-    }), NO_RENDER_HTML);
+    // 衝突は構築時に落ちるようになったので、構築後に生の state へ足す形で `_define` の検査に届かせる。
+    const { host, stateEl } = await mount(recursionState(forest()), NO_RENDER_HTML);
+    Object.defineProperty((stateEl as any).__state, "nodes.*.children.*.total", {
+      get() { return 7; }, enumerable: true, configurable: true,
+    });
 
     expect(() => registryOf(stateEl).materializeFor(stateEl, totalAt(1)))
       .toThrow(/"nodes\.\*\.children\.\*\.total" is already defined on the state/);

@@ -219,6 +219,16 @@ export function indexArityMessage(
 }
 
 /**
+ * `**` を含むパスが宣言済みの再帰アンカーと合致しない（綴り違い・2 つ目の `**`）。
+ * 束縛形（bind.ts）・合併形（getAllRecursive.ts）・ブロードキャスト（setAllRecursive.ts）の
+ * 3 入口が同じ文面で報告する。
+ */
+export function recursionAnchorMismatchMessage(path: string, recursiveAnchor: string): string {
+  return `[wcs/recursion-anchor] "${path}" does not match the declared recursion anchor ` +
+    `"${recursiveAnchor}". This version supports exactly one anchor per state.`;
+}
+
+/**
  * `$getAll(path)`（添字省略）の既定値はループ文脈の添字 `[$1..$n]` だが、それを
  * 敷けるのは path と文脈がワイルドカード連鎖を共有している場合だけ。共有ゼロなのに
  * 文脈が添字を持っている場合、黙って全展開に倒すと「文脈で絞られている」という

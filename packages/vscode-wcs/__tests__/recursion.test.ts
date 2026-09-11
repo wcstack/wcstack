@@ -9,6 +9,7 @@ import { analyzeListKeyEntries, analyzeRecursionDeclaration, analyzeStatePaths, 
 import {
   checkNodePath,
   collectRecursionSpecs,
+  concreteExpansionSuffix,
   foldRecursion,
   indexSegmentsToWildcard,
   makeRecursionSpec,
@@ -1189,5 +1190,172 @@ describe('添字綴り（nodes.1.total）での再帰 getter への書き込み'
     // 葉は通る（ノード自身 `nodes.**` の空接尾辞も従来どおり構造）
     expect(only('this.$setAll("nodes.**.children.0.value", [], 5);')).toEqual([]);
     expect(codes(only('this.$setAll("nodes.**", [], null);'))).toEqual([WcsDiagnosticCode.RecursionStructuralWrite]);
+  });
+});
+
+// ============================================================
+// 第 3 サイクル
+// ============================================================
+
+describe('`**` getter の展開形と同名の具体 getter（構築時の衝突）', () => {
+  // Fixed by cycle-3 review — runtime は「その深さを最初に読んだとき」にしか落ちず、静的側は
+  // `**` どうし（sameFamily）しか見ていなかった。runtime は構築時に落とすようになり、静的側も同じ形を報告する。
+  it('展開形そのものと同名の getter / データプロパティを recursion-declaration-invalid（error）にする', () => {
+    const html = makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  get "nodes.**.total"() { return 0; },
+  get "nodes.*.children.*.total"() { return 7; },
+  "nodes.*.total": 0,
+  get "nodes.*.label"() { return "x"; }`);
+    const diags = validateRecursion(html, 'wcs-state', 'en');
+    expect(codes(diags)).toEqual([WcsDiagnosticCode.RecursionDeclarationInvalid, WcsDiagnosticCode.RecursionDeclarationInvalid]);
+    expect(diags.every(d => d.severity === 'error')).toBe(true);
+    expect(html.slice(diags[0].start, diags[0].end)).toBe('nodes.*.children.*.total');
+    expect(diags[0].message).toContain('"nodes.*.children.*.total" is already defined on the state, so the recursive getter "nodes.**.total" cannot expand to it');
+    expect(html.slice(diags[1].start, diags[1].end)).toBe('nodes.*.total');
+  });
+
+  it('値の内側（nodes.*.total.x）・葉・`**` getter の無い state は黙る', () => {
+    expect(validateRecursion(makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  get "nodes.**.total"() { return 0; },
+  get "nodes.*.total.x"() { return 1; },
+  get "nodes.*.value"() { return 1; }`))).toEqual([]);
+    expect(validateRecursion(makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  get "nodes.*.total"() { return 1; }`))).toEqual([]);
+  });
+
+  it('concreteExpansionSuffix は展開形そのものだけに一致する', () => {
+    const spec = makeRecursionSpec('nodes.*', 'children.*');
+    expect(concreteExpansionSuffix(spec, ['.total'], 'nodes.*.children.*.total')).toBe('.total');
+    expect(concreteExpansionSuffix(spec, ['.total'], 'nodes.*.total.x')).toBeNull();
+    expect(concreteExpansionSuffix(spec, ['.total'], 'other.*.total')).toBeNull();
+  });
+});
+
+describe('$recursion の値に計算キー・spread があれば「空」と断定しない', () => {
+  // Fixed by cycle-3 review — `parseTopLevelProperties` が `[expr]:` と `...` を拾えずエントリ 0 件になり、
+  // `objectLiteral === true` だけで「it is empty」と偽陽性を出していた（runtime は受理する）。
+  it('計算キー・spread は黙る（宣言は組めないので以降の検証も黙る）', () => {
+    expect(validateRecursion(makeState(`
+  $recursion: { ["nodes.*"]: "children.*" },
+  nodes: [],
+  get "nodes.**.total"() { return 0; },
+  sum() { return this.$getAll("nodes.**.value", []); }`))).toEqual([]);
+    expect(validateRecursion(makeState(`
+  $recursion: { ...REC },
+  nodes: [],
+  sum() { return this.$getAll("nodes.**.value", []); }`))).toEqual([]);
+    expect(validateRecursion(makeState(`
+  $recursion: { "nodes.*": "children.*", ...more },
+  nodes: []`))).toEqual([]);
+  });
+
+  it('本当に空の `{}` と、静的に読める 1 件は従来どおり', () => {
+    expect(codes(validateRecursion(makeState(`
+  $recursion: {},
+  nodes: []`)))).toEqual([WcsDiagnosticCode.RecursionDeclarationInvalid]);
+    expect(validateRecursion(makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: []`))).toEqual([]);
+  });
+});
+
+describe('マウントされたコンポーネント（bind-component）の $recursion と `**` getter', () => {
+  // Fixed by cycle-3 review — runtime は `wcs/mount-dollar-declaration` で warn して捨てる。静的側は沈黙していた。
+  const component = `<wcs-state bind-component="state"><script type="module">
+export default {
+  $recursion: { "node.*": "children.*" },
+  get "node.**.total"() { return 0; },
+  get "node.**.total"() { return 1; },
+};
+</script></wcs-state>`;
+
+  it('宣言と `**` getter を recursion-declaration-invalid（warning）で報告する', () => {
+    const diags = validateRecursion(component, 'wcs-state', 'en');
+    expect(codes(diags)).toEqual([WcsDiagnosticCode.RecursionDeclarationInvalid, WcsDiagnosticCode.RecursionDeclarationInvalid]);
+    expect(diags.every(d => d.severity === 'warning')).toBe(true);
+    expect(component.slice(diags[0].start, diags[0].end)).toBe('$recursion');
+    expect(component.slice(diags[1].start, diags[1].end)).toBe('node.**.total');
+    expect(diags[0].message).toContain('wcs/mount-dollar-declaration');
+  });
+
+  it('`**` を含まないコンポーネント state は従来どおり素通り', () => {
+    expect(validateRecursion(`<wcs-state bind-component="state"><script type="module">
+export default { node: {}, get label() { return this.node.value; } };
+</script></wcs-state>`)).toEqual([]);
+  });
+
+  it('宣言に依存しない検査（`**` の代入・$resolve / $postUpdate・$listKeys キー）はマウント／ボリュームのブロックでも走る', () => {
+    // Fixed by cycle-3 re-verification — warning の後に `continue` していたので、runtime が宣言の
+    // 有無に関わらず throw する形まで沈黙していた。宣言に依存する `$getAll` / `$setAll` の形は
+    // spec が組めないので黙る（ルートに置いたときだけ報告される）。
+    const body = `
+export default {
+  $listKeys: { "node.**.children": "id" },
+  get "node.**.total"() { return 0; },
+  poke() {
+    this["node.**.x"] = 1;
+    this.$resolve("node.**.value", [0]);
+    this.$postUpdate("node.**.value");
+    return this.$getAll("node.**.value", [1]);
+  },
+};`;
+    const mountedDiags = validateRecursion(`<wcs-state bind-component="state"><script type="module">${body}</script></wcs-state>`);
+    expect(codes(mountedDiags)).toEqual([
+      WcsDiagnosticCode.RecursionDeclarationInvalid,   // `**` getter（warning）
+      WcsDiagnosticCode.RecursionUnsupported,          // $listKeys キー
+      WcsDiagnosticCode.RecursionUnsupported,          // $resolve
+      WcsDiagnosticCode.RecursionUnsupported,          // $postUpdate
+      WcsDiagnosticCode.RecursionUnsupported,          // 代入
+    ]);
+    expect(mountedDiags.map(d => d.severity)).toEqual(['warning', 'error', 'error', 'error', 'error']);
+    expect(mountedDiags.some(d => d.code === WcsDiagnosticCode.RecursionGetAllForm)).toBe(false);
+
+    const volumeDiags = validateRecursion(`<wcs-state mount="tree"><script type="module">${body}</script></wcs-state>`);
+    expect(codes(volumeDiags)).toEqual([
+      WcsDiagnosticCode.RecursionDeclarationInvalid,
+      WcsDiagnosticCode.RecursionUnsupported,
+      WcsDiagnosticCode.RecursionUnsupported,
+      WcsDiagnosticCode.RecursionUnsupported,
+      WcsDiagnosticCode.RecursionUnsupported,
+    ]);
+    expect(volumeDiags[0].severity).toBe('error');
+  });
+});
+
+describe('増減演算子（++ / --）での `**` 代入と再帰 getter への書き込み', () => {
+  // Fixed by cycle-3 review — 代入走査が `=` 系だけを拾っていた。semanticValidator と同じ部品（scriptPatterns）を共有する。
+  const only = (body: string) => validateRecursion(makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  get "nodes.**.total"() { return 0; },
+  probe() { ${body} }`), 'wcs-state', 'en');
+
+  it('後置・前置の ++ / -- を代入として拾う', () => {
+    const diags = only(`
+    this["nodes.**.count"]++;
+    ++this["nodes.**.count"];
+    this["nodes.*.total"]--;
+    --this["nodes.0.children.0.total"];`);
+    expect(codes(diags)).toEqual([
+      WcsDiagnosticCode.RecursionUnsupported, WcsDiagnosticCode.RecursionUnsupported,
+      WcsDiagnosticCode.RecursionReadonly, WcsDiagnosticCode.RecursionReadonly,
+    ]);
+    // 範囲は引用符の中身（前置でも）
+    const html = makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  poke() { ++this["nodes.**.count"]; }`);
+    const one = validateRecursion(html);
+    expect(html.slice(one[0].start, one[0].end)).toBe('nodes.**.count');
+  });
+
+  it('葉の増減・比較は黙る', () => {
+    expect(only('this["nodes.*.value"]++; --this["nodes.1.value"]; return this["nodes.*.value"] >= 1;')).toEqual([]);
   });
 });

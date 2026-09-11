@@ -59,8 +59,9 @@ export class RecursionRegistry {
    */
   private readonly _nonAccessors: Set<string> = new Set();
   /**
-   * `recursiveGetterOwning` の記憶。値は「その具体パスを展開形（またはその値の内側）として
-   * 持つ `**` getter」、無ければ null。有界であることの根拠は `_nonAccessors` と同じ。
+   * `recursiveGetterOwning` の記憶。キーは添字を `*` に畳んだ形（`nodes.1.total` と `nodes.2.total`
+   * は 1 つ）、値は「その具体パスを展開形（またはその値の内側）として持つ `**` getter」、
+   * 無ければ null。有界であることの根拠は `_nonAccessors` と同じ。
    */
   private readonly _ownerByPath: Map<string, string | null> = new Map();
   /** `concretePathAt` の記憶（接尾辞 → 深さ順の具体パス）。 */
@@ -123,6 +124,30 @@ export class RecursionRegistry {
       });
     }
     this._assertNoColliding();
+    this._assertNoConcreteCollision(descriptors);
+  }
+
+  /**
+   * 作者が手で書いた具体パス（`get "nodes.*.children.*.total"()` / データプロパティ）が、宣言済み
+   * `**` getter の展開形と同名でないことを**構築時に**確かめる。
+   *
+   * `_define` の衝突検査は「その深さを最初に読んだとき」にしか走らないので、データが浅い間は
+   * 通り、木が 1 段深くなった瞬間にバインディングが落ちていた（第 3 サイクルのレビューで実測）。
+   * 前世代の生成物（own に残った生成 getter）は衝突ではない — 同じ state の再セットで必ず居る。
+   */
+  private _assertNoConcreteCollision(descriptors: Record<string, PropertyDescriptor>): void {
+    for (const [key, descriptor] of Object.entries(descriptors)) {
+      if (hasRecursionWildcard(key) || isGeneratedGetter(descriptor)) {
+        continue;
+      }
+      const owner = this._matchExpansion(key);
+      if (owner !== null) {
+        raiseError(
+          `"${key}" is already defined on the state, so the recursive getter "${owner}" cannot expand to it. ` +
+          `Rename one of them.`
+        );
+      }
+    }
   }
 
   /**
@@ -221,17 +246,18 @@ export class RecursionRegistry {
     if (typeof accessor !== "undefined") {
       return accessor.recursivePath;
     }
-    const known = this._ownerByPath.get(concretePath);
-    if (typeof known !== "undefined") {
-      return known;
-    }
     // 添字綴り（`$setAll("nodes.1.total", [], v)` — API のパス引数は set トラップと違って
     // getResolvedAddress の正規化を経ない）は、添字を `*` に畳んでから照合する。畳まないと
     // `nodes[1].total` へ素の値が書かれる（第 3 回レビューで実測）。**無条件に**畳む —
     // 「アンカーで始まらないときだけ」にすると、ワイルドカードと添字の混在綴り
     // （`nodes.*.children.0.total`）がアンカーで始まるせいで畳まれず、`depthOfConcretePath` が
-    // `.children.0` を反復単位と認めずに素通りする（第 4 回レビューで実測）。パスごとに初回 1 回。
+    // `.children.0` を反復単位と認めずに素通りする（第 4 回レビューで実測）。
+    // 記憶のキーは畳んだ形 — 添字綴りのまま記憶すると綴りの数だけ単調に増える。
     const pattern = indexSegmentsToWildcard(concretePath);
+    const known = this._ownerByPath.get(pattern);
+    if (typeof known !== "undefined") {
+      return known;
+    }
     let owner: string | null = null;
     if (pattern.startsWith(this.spec.anchor)) {
       // 展開形そのもの → その値の内側（`.` 境界で切った接頭辞を長い方から）の順に照合する。
@@ -244,7 +270,7 @@ export class RecursionRegistry {
       }
     }
     // 定義集合は state の世代内で不変なので、判定は記憶してよい（アンカー外の否定も含む）。
-    this._ownerByPath.set(concretePath, owner);
+    this._ownerByPath.set(pattern, owner);
     return owner;
   }
 

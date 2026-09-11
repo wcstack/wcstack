@@ -1696,6 +1696,16 @@ describe("欠陥9（X5 / #257）: 宣言の検証が初回マウントで throw 
     host.remove();
   });
 
+  it("`**` getter の展開形と同名の具体 getter（第 3 サイクルで新設した構築時 raise も同じ表面）", async () => {
+    const state: any = { nodes: [NODE(1)], $recursion: { "nodes.*": "children.*" } };
+    Object.defineProperty(state, "nodes.**.total", { get() { return 0; }, enumerable: true, configurable: true });
+    Object.defineProperty(state, "nodes.*.children.*.total", { get() { return 7; }, enumerable: true, configurable: true });
+    const { outcome, errors, host } = await mountBroken(state);
+    expect(outcome).toBe("pending");   // should be: "rejected"（診断付き）
+    expect(errors).toBe(0);
+    host.remove();
+  });
+
   it("構造を名指す `**` getter（第 2 サイクルで新設した構築時 raise も同じ表面）", async () => {
     const state: any = { nodes: [NODE(1)], $recursion: { "nodes.*": "children.*" } };
     Object.defineProperty(state, "nodes.**.children", { get() { return []; }, enumerable: true, configurable: true });

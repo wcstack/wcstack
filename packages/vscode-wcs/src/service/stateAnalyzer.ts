@@ -240,11 +240,17 @@ export function analyzeRecursionDeclaration(scriptContent: string): RecursionDec
     return { ...span, notObject: definite, objectLiteral: false, entries: [], spec: null };
   }
 
+  // 計算キー（`{ ["nodes.*"]: … }`）や spread（`{ ...REC }`）を持つオブジェクトリテラルは、
+  // エントリが静的に読めない ＝ 「空」とも「1 件」とも断定しない（識別子参照と同じ側）
+  const objectContent = extractObjectContent(prop.value);
+  if (hasUndecidableEntries(objectContent)) {
+    return { ...span, notObject: false, objectLiteral: false, entries: [], spec: null };
+  }
   // 値テキストの先頭空白ぶんだけ `{` がずれる。中身はその次から始まる。
   const leading = prop.value.length - prop.value.trimStart().length;
   const innerStart = root.start + prop.valueStart + leading + 1;
   const entries: RecursionEntryInfo[] = [];
-  for (const entry of parseTopLevelProperties(extractObjectContent(prop.value))) {
+  for (const entry of parseTopLevelProperties(objectContent)) {
     if (entry.nameStart === undefined || entry.nameEnd === undefined) continue;
     const valueStart = entry.valueStart === undefined
       ? innerStart + entry.nameEnd
@@ -634,6 +640,33 @@ function extractStringLiteralValue(value: string | undefined): string | null {
   const match = value.trim().match(/^(?:["']([^"'\\]*)["']|`([^`\\$]*)`)$/);
   const literal = match ? (match[1] ?? match[2]) : null;
   return literal !== null && literal !== undefined && literal.length > 0 ? literal : null;
+}
+
+/**
+ * オブジェクトリテラルの中身に、トップレベルの計算キー（`[expr]:`）か spread（`...expr`）が
+ * あるか。どちらも `parseTopLevelProperties` が拾えない（エントリが 0 件に見える）ので、
+ * 「空」と断定する前にここで見る。文字列の中身は見ない。
+ */
+function hasUndecidableEntries(objectContent: string): boolean {
+  const scan = maskCommentsAndStrings(objectContent);
+  let depth = 0;
+  let atKey = true;
+  for (let i = 0; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === '(' || ch === '[' || ch === '{') {
+      if (depth === 0 && atKey && (ch === '[' || scan.startsWith('...', i))) return true;
+      depth++;
+      atKey = false;
+      continue;
+    }
+    if (ch === ')' || ch === ']' || ch === '}') { depth--; continue; }
+    if (depth !== 0) continue;
+    if (ch === ',') { atKey = true; continue; }
+    if (/\s/.test(ch)) continue;
+    if (atKey && scan.startsWith('...', i)) return true;
+    atKey = false;
+  }
+  return false;
 }
 
 /**

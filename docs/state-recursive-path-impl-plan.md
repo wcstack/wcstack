@@ -381,6 +381,27 @@ X6・X7・X10 は同じ「再セット・ハイドレーション後に一部の
 - **添字綴りの getter キー**: `get "nodes.**.children.0"()` も両側で区切り後ろを畳んでから構造の述語に掛ける（指摘 1 と同じ扱い）。
 - 据え置き: `$recursion: { get "nodes.*"() {…} }`（ランタイム受理・静的 error）は作為的な形なので対応しない。
 
+### 7-8. 第 3 サイクル（2026-09-12）
+
+3 体目の指摘者（先入観なし）による再点検。12 件（高 1・中 3・低 8）のうち 11 件を修理し、1 件（4: `packages/lint/dist/cli.cjs` の再生成）は統括者が最後に行う（smoke-test の 1 件追加だけ先に入れた）。
+
+| # | 内容 | 修理 |
+|---|---|---|
+| 1（高） | `**` getter の展開形と同名の具体 getter（`get "nodes.*.children.*.total"()`）を、ランタイムは「その深さを最初に読んだとき」にしか拒否せず、静的側は `**` どうししか見ていなかった。データが浅い間は通り、木が 1 段深くなった瞬間にバインディングが落ちる | `RecursionRegistry._assertNoConcreteCollision`（構築時・前世代の生成物は除外）と、静的 `validateRecursiveGetters` の非 `**` 宣言への `concreteExpansionSuffix` 照合（`recursionConcreteCollision`）。既存の「読みの時点で落ちる」テストは再セット経路に書き換え、`_define` の保険は「構築後に生の state へ足す」形で残した。初回マウントでは #257 の無言ハングになる — 欠陥9 に 1 件追加 |
+| 2（中） | `$recursion: { ["nodes.*"]: … }` / `{ ...REC }` を静的側が「it is empty」と偽陽性で拒否 | `analyzeRecursionDeclaration` が計算キー・spread を含むオブジェクトを `objectLiteral: false`（断定しない）に倒す（`hasUndecidableEntries`） |
+| 3（中） | マウントされたコンポーネントの `**` getter が warn も error も無く黙って捨てられる | `warnMountedDollarDeclarations` が `**` を含む getter キーも `wcs/mount-dollar-declaration` に載せる。静的側は `bind-component` の `<wcs-state>` の `$recursion` / `**` getter を `recursion-declaration-invalid`（warning）で報告 |
+| 4（中） | `packages/lint/dist/cli.cjs` が古い | **統括者が再生成**。smoke-test に「spread で宣言を持ち込む state が exit 0」を追加（再生成まで赤） |
+| 5（低） | 代入走査が `++` / `--` を見ない | `scriptPatterns` の `ROOT_BRACKET` / `ASSIGN_TAIL` / `PRE_INCDEC` を共有（semanticValidator と同じ部品） |
+| 6（低） | `_ownerByPath` が添字綴りの数だけ単調に増える | 記憶のキーを畳んだ形（`pattern`）に。`_accessors.get(concretePath)` の先頭命中はそのまま |
+| 7（低） | 上限の境界値（127 通る / 128 落ちる）がテストに無い | 集計は 127 段の鎖で `[127]`（実体化 127）、128 段の鎖で深さ 127 の葉が 129 段を要求して `recursion-depth-exceeded`。合併形は 128 段の鎖で 128 件、129 段で落ちる（README「folds a chain 127 deep and stops at 128」どおり） |
+| 8（低） | `walkDependency.ts` の陳腐化したコメント | 「キャッシュ無し・再セットで辺が外れることがある」に改めた |
+| 9（低） | `[wcs/recursion-anchor]` の文面が 3 箇所に逐語コピー | `pathDiagnostics.recursionAnchorMismatchMessage` に集約 |
+| 10（低） | `hasRecursion` / `recursionRegistry` の doc と `setAllRecursive` の `indexes` 型 | doc を実態（必須。モックが通るのは vitest が型検査しないから）に、`indexes: unknown` に統一 |
+| 11（低） | README「Not in this version」の抜け、デモ README の構造書き込みの範囲、接尾辞ワイルドカードの合併形の順序 | 3 点とも en/ja 対で追記（`nodes.**.tags.*.v` → `[3, 4, 5, 7]` の例） |
+| 12（低） | CHANGELOG [Unreleased] の Fixed が 1 段落・Added と重複 | 未リリース機能なので Fixed を Added に吸収し、利用者に見える最終契約だけを残した。vscode-wcs 側も同じ粒度に整理 |
+
+**再検証後の追記（低 3 件）**: 行 7 の修理欄を実装どおり（集計 127 / 128、合併形 128 / 129）に訂正。マウント／ボリュームのブロックでも宣言に依存しない検査（`**` の代入・`$resolve` / `$postUpdate` / `$trackDependency`・`$listKeys` キー）を走らせる（`spec = null`・`undeclared = false` で呼び、宣言依存の `$getAll` / `$setAll` の形は黙る — §7-4 #12 の判断と矛盾しない）。Fixed の撤去で落ちていた「固定 arity の `$getAll` に配列でない `indexes` を渡すと生の TypeError ではなく診断」（既リリース API の挙動変更）を `### Changed` に戻した。
+
 ## 8. 受け入れ条件と検証
 
 | ID | 条件 | 主な Phase |

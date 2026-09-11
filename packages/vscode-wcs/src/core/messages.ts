@@ -138,6 +138,10 @@ export interface WcsMessageCatalog {
   recursionGetterInvalid(key: string, problem: RecursionGetterProblem, recursiveAnchor: string): string;
   /** 2 本の `**` getter が同じ具体パスへ展開する。 */
   recursionGetterCollision(a: string, b: string, repeat: string): string;
+  /** 作者が手で書いた具体パス（`get "nodes.*.total"()`）が `**` getter の展開形と同名。 */
+  recursionConcreteCollision(concreteKey: string, recursiveKey: string): string;
+  /** マウントされたコンポーネント（`bind-component`）の `$recursion` / `**` getter（runtime は warn して実行しない）。 */
+  recursionInMountedComponent(subject: string): string;
 }
 
 /** `mount` 属性値の不正の種類（runtime の validateVolumeMountPath の raise と 1:1）。 */
@@ -335,6 +339,10 @@ const ja: WcsMessageCatalog = {
   },
   recursionGetterCollision: (a, b, repeat) =>
     `"${a}" と "${b}" は異なる深さで同じ具体パスへ展開します（差が "${repeat}" の整数回ぶんです）。どちらかの名前を変えてください`,
+  recursionConcreteCollision: (concreteKey, recursiveKey) =>
+    `"${concreteKey}" は state に定義済みなので、再帰 getter "${recursiveKey}" はそこへ展開できません（ランタイムは宣言を読んだ時点で throw します）。どちらかの名前を変えてください`,
+  recursionInMountedComponent: (subject) =>
+    `${subject} はマウントされたコンポーネント（bind-component）では実行されません（ランタイムは wcs/mount-dollar-declaration で警告し、黙って捨てます）。$recursion と "**" getter はルートの state に置いてください — アンカーのパスはルートの木に対して解決されます`,
 };
 
 const EN_EXPECTED_LABEL: Record<ExpectedTypeKind, string> = {
@@ -513,6 +521,10 @@ const en: WcsMessageCatalog = {
   },
   recursionGetterCollision: (a, b, repeat) =>
     `"${a}" and "${b}" expand to the same concrete path at different depths (they differ by whole repetitions of "${repeat}"). Rename one of them`,
+  recursionConcreteCollision: (concreteKey, recursiveKey) =>
+    `"${concreteKey}" is already defined on the state, so the recursive getter "${recursiveKey}" cannot expand to it (the runtime throws when the declaration is read). Rename one of them`,
+  recursionInMountedComponent: (subject) =>
+    `${subject} is not run by a mounted component (bind-component); the runtime warns with wcs/mount-dollar-declaration and drops it. Declare $recursion and "**" getters on the root state — the anchor path is resolved against the root tree`,
 };
 
 const CATALOGS: Record<WcsLocale, WcsMessageCatalog> = { ja, en };

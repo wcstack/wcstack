@@ -26,7 +26,8 @@
  * ここを無条件に「未宣言」にすると、正当なコードで `wcs-validate` が exit 1 になる。
  */
 
-import { parseWcsScriptBlocks } from '../language/htmlParse.js';
+import { parseWcsStateElements } from '../language/htmlParse.js';
+import { ASSIGN_TAIL, PRE_INCDEC, ROOT_BRACKET } from './scriptPatterns.js';
 import { getMessages, type WcsMessageCatalog } from '../core/messages.js';
 import { WcsDiagnostic, WcsDiagnosticCode } from '../core/diagnostics.js';
 import {
@@ -42,6 +43,7 @@ import {
 import { blankComments, createApiCallRegex, literalArrayLength, literalString, splitCallArgs } from './scriptCallArgs.js';
 import {
   checkNodePath,
+  concreteExpansionSuffix,
   conflictingGetterSuffix,
   hasRecursionWildcard,
   indexSegmentsToWildcard,
@@ -72,8 +74,9 @@ const UNSUPPORTED_API_SITE = {
  * 代入は `**` を解釈しない（再帰 setter は初版に無く、set トラップは `getPathInfo` の不変条件で
  * throw する）。具体パス綴りの代入は `**` getter の展開形への書き込み検査（readonly）に使う。
  */
-const BRACKET_ASSIGNMENT =
-  /\bthis\s*\[\s*(["'])((?:\\.|(?!\1)[^\\])*)\1\s*\]\s*(?:[-+*/%&|^]{1,2}|<<|>>>?|\?\?)?=(?!=)/g;
+const BRACKET_ASSIGNMENT = new RegExp(`${ROOT_BRACKET}${ASSIGN_TAIL}`, 'g');
+/** `++this["<path>"]` / `--this["<path>"]`（前置）。後置は `ASSIGN_TAIL` が持つ。 */
+const PRE_BRACKET_INCDEC = new RegExp(`${PRE_INCDEC}${ROOT_BRACKET}`, 'g');
 
 /**
  * HTML 内の全 `<wcs-state>` について `$recursion` 宣言と `**` の使い方を検証する。
@@ -86,25 +89,39 @@ export function validateRecursion(
   const msgs = getMessages(locale);
   const out: WcsDiagnostic[] = [];
 
-  for (const block of parseWcsScriptBlocks(html, stateTagName)) {
+  for (const element of parseWcsStateElements(html, stateTagName)) {
+    // マウントされたコンポーネントの state（`bind-component`）は `$recursion` / `**` getter を実行しない
+    const mounted = /\sbind-component\b/i.test(html.slice(element.tagStart, element.tagEnd));
+    for (const block of element.scriptBlocks) {
     // `**` も `$recursion` も無いスクリプトは 1 回の indexOf で抜ける（ゼロコスト規約）
     if (!hasRecursionWildcard(block.content) && block.content.indexOf('$recursion') === -1) continue;
     const declaration = analyzeRecursionDeclaration(block.content);
+    // ボリューム（`mount=`）とマウントされたコンポーネント（`bind-component`）は `$recursion` も
+    // `**` getter も持てない（runtime は接ぎ木前に raise / warn して捨てる）。宣言に依存する
+    // 検査（getter の形・`$getAll` / `$setAll` の形）はそこで終わるが、宣言に依存しない検査
+    // — `**` を解釈しない消費者（代入・`$resolve` / `$postUpdate` / `$trackDependency`・
+    // `$listKeys` キー）— は runtime が必ず throw するので、そのまま掛ける
+    // （`spec = null`・`undeclared = false` で呼べば宣言依存の分岐は自然に黙る）。
+    let spec: RecursionSpec | null = null;
+    let undeclared = false;
+    let getterSuffixes: readonly string[] = [];
     if (block.mountPath !== null) {
-      // ボリューム（`mount=`）は `$recursion` も `**` getter も持てない（runtime は接ぎ木前に raise）。
       validateVolumeBlock(block.content, block.contentStart, block.mountPath, declaration, msgs, out);
-      continue;
+    } else if (mounted) {
+      validateMountedComponentBlock(block.content, block.contentStart, declaration, msgs, out);
+    } else {
+      spec = validateDeclaration(declaration, block.contentStart, msgs, out);
+      // 「宣言が無い」と断定できるのは、オブジェクトリテラルが読めて、spread（`...tree` — 宣言を
+      // 持ち込みうるが中身は読めない）が無く、そこに `$recursion` が無いときだけ
+      undeclared = declaration === null
+        && hasDefaultExportObject(block.content)
+        && !hasTopLevelSpread(block.content);
+      getterSuffixes = validateRecursiveGetters(block.content, block.contentStart, spec, undeclared, msgs, out);
     }
-    const spec = validateDeclaration(declaration, block.contentStart, msgs, out);
-    // 「宣言が無い」と断定できるのは、オブジェクトリテラルが読めて、spread（`...tree` — 宣言を
-    // 持ち込みうるが中身は読めない）が無く、そこに `$recursion` が無いときだけ
-    const undeclared = declaration === null
-      && hasDefaultExportObject(block.content)
-      && !hasTopLevelSpread(block.content);
-    const getterSuffixes = validateRecursiveGetters(block.content, block.contentStart, spec, undeclared, msgs, out);
     validateListKeys(block.content, block.contentStart, msgs, out);
     validateApiCalls(block.content, block.contentStart, spec, getterSuffixes, undeclared, msgs, out);
     validateAssignments(block.content, block.contentStart, spec, getterSuffixes, msgs, out);
+    }
   }
 
   return out;
@@ -285,7 +302,47 @@ function validateRecursiveGetters(
     accepted.push({ name: span.name, suffix, start, end });
     suffixes.push(suffix);
   }
+  // 作者が手で書いた具体パス（`get "nodes.*.children.*.total"()` / `"nodes.*.total": 0`）が
+  // 受理した `**` getter の展開形と同名でないか（runtime は構築時に raise する — 以前は
+  // その深さを最初に読んだときにしか落ちず、木が 1 段深くなった瞬間にバインディングが落ちていた）
+  if (spec !== null && suffixes.length > 0) {
+    const reported = new Set<string>();
+    for (const span of analyzeDeclarationSpans(script)) {
+      if (hasRecursionWildcard(span.name) || reported.has(span.name)) continue;
+      const suffix = concreteExpansionSuffix(spec, suffixes, span.name);
+      if (suffix === null) continue;
+      reported.add(span.name);
+      push(out, WcsDiagnosticCode.RecursionDeclarationInvalid, offset + span.start, offset + span.end,
+        msgs.recursionConcreteCollision(span.name, spec.recursiveAnchor + suffix));
+    }
+  }
   return suffixes;
+}
+
+/**
+ * マウントされたコンポーネント（`<wcs-state bind-component>`）の state は `$recursion` も
+ * `**` getter も実行しない（runtime は `wcs/mount-dollar-declaration` で warn して捨てる —
+ * `markerizeAccessorPath` は `*` しか探さないので `**` キーは登録されない）。黙って効かない
+ * 形なので warning。
+ */
+function validateMountedComponentBlock(
+  script: string,
+  offset: number,
+  declaration: RecursionDeclarationInfo | null,
+  msgs: WcsMessageCatalog,
+  out: WcsDiagnostic[],
+): void {
+  if (declaration !== null) {
+    push(out, WcsDiagnosticCode.RecursionDeclarationInvalid, offset + declaration.start, offset + declaration.end,
+      msgs.recursionInMountedComponent('$recursion'), 'warning');
+  }
+  const seen = new Set<string>();
+  for (const span of analyzeDeclarationSpans(script)) {
+    if (!hasRecursionWildcard(span.name) || seen.has(span.name)) continue;
+    seen.add(span.name);
+    push(out, WcsDiagnosticCode.RecursionDeclarationInvalid, offset + span.start, offset + span.end,
+      msgs.recursionInMountedComponent(`"${span.name}"`), 'warning');
+  }
 }
 
 /**
@@ -454,14 +511,25 @@ function validateAssignments(
 ): void {
   // 文字列・テンプレートリテラルの**中身**まで潰した鏡像で探す（`'this["…"] = 1'` という
   // 文字列を代入と誤認しない）。鏡像は長さを保つので、パスは同じ位置を原文から切り出す
-  // （キーの引用符は残るのでパターンは鏡像でも噛み合う）。
+  // （キーの引用符は残るのでパターンは鏡像でも噛み合う — 中身は空白なので `[^"']+` に一致する）。
+  // 形は semanticValidator と同じ部品（scriptPatterns）: `=` / 複合代入 / 後置 `++` `--` と前置 `++` `--`。
   const masked = maskCommentsAndStrings(script);
-  const regex = new RegExp(BRACKET_ASSIGNMENT.source, 'g');
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(masked)) !== null) {
-    // 引用符の中身の位置（`this[` と `"` を飛ばす）
-    const pathStart = match.index + match[0].indexOf(match[1]) + 1;
-    const path = script.slice(pathStart, pathStart + match[2].length);
+  const found: { pathStart: number; length: number }[] = [];
+  for (const source of [BRACKET_ASSIGNMENT, PRE_BRACKET_INCDEC]) {
+    const regex = new RegExp(source.source, 'g');
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(masked)) !== null) {
+      // 引用符の中身の位置（開き引用符の次）
+      const pathStart = match.index + match[0].search(/["']/) + 1;
+      found.push({ pathStart, length: match[1].length });
+    }
+  }
+  found.sort((a, b) => a.pathStart - b.pathStart);
+  let last = -1;
+  for (const { pathStart, length } of found) {
+    if (pathStart === last) continue;   // 同じ位置を 2 つの形が拾った（`++this["x"]++` は無いが保険）
+    last = pathStart;
+    const path = script.slice(pathStart, pathStart + length);
     const start = offset + pathStart;
     const end = start + path.length;
     if (hasRecursionWildcard(path)) {

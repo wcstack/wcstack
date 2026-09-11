@@ -31,6 +31,7 @@ const missingPathHtml = join(workDir, "missing-path.html");
 const untrackedReadHtml = join(workDir, "untracked-read.html");
 const recursionOkHtml = join(workDir, "recursion-ok.html");
 const recursionBadHtml = join(workDir, "recursion-bad.html");
+const recursionSpreadHtml = join(workDir, "recursion-spread.html");
 // stateSchema 発見（D8）: HTML と同じディレクトリの wcstack.manifest.json を自動で読み、
 // 宣言済み state の未存在パスは error に上がる（D6）。tmp 下なので repo の CI gate は走査しない。
 const schemaDir = join(workDir, "schema");
@@ -94,6 +95,21 @@ export default {
 };
 </script></wcs-state>
 <b data-wcs="textContent: nodes.**.total"></b>
+</body></html>
+`);
+// spread で宣言を持ち込む state（`...tree` の中身は静的に読めない）。「未宣言」と断定して
+// error（exit 1）にしてはならない — 正当なコードで CI が赤になる形（第 2 サイクルで実測）。
+writeFileSync(recursionSpreadHtml, `<!doctype html>
+<html><body>
+<wcs-state><script type="module">
+const tree = { $recursion: { "nodes.*": "children.*" } };
+export default {
+  ...tree,
+  nodes: [],
+  get "nodes.**.total"() { return 0; },
+  get treeTotal() { return this.$getAll("nodes.**.value", []).reduce((a, b) => a + b, 0); },
+};
+</script></wcs-state>
 </body></html>
 `);
 writeFileSync(brokenManifest, "{ this is not json\n");
@@ -213,6 +229,10 @@ check("recursive tree: expanded concrete paths are clean, exit 0", ["--lang=en",
 check("`**` in data-wcs → error wcs/recursion-unsupported, exit 1", ["--lang=en", recursionBadHtml], {
   exit: 1,
   stdout: [/error wcs\/recursion-unsupported /, "1 error(s), 0 warning(s)"],
+});
+check("$recursion brought in by a spread is not reported as undeclared, exit 0", ["--lang=en", recursionSpreadHtml], {
+  exit: 0,
+  stdout: ["0 error(s), 0 warning(s)"],
 });
 
 // --strict は exit code の閾値だけを warning に下げる(severity は不変)。error 側 /

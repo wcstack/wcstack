@@ -20,6 +20,7 @@
 import { IStateElement } from "../components/types";
 import { DELIMITER } from "../define";
 import { IStateHandler } from "../proxy/types";
+import { recursionAnchorMismatchMessage } from "../pathDiagnostics";
 import { raiseError } from "../raiseError";
 import { splitRecursivePath } from "./expand";
 import type { RecursionRegistry } from "./registry";
@@ -85,10 +86,7 @@ export function bindRecursivePath(
   // 「文脈が無い」と報告されて原因に辿り着けない。
   const suffix = splitRecursivePath(registry.spec, path);
   if (suffix === null) {
-    raiseError(
-      `[wcs/recursion-anchor] "${path}" does not match the declared recursion anchor ` +
-      `"${registry.spec.recursiveAnchor}". This version supports exactly one anchor per state.`
-    );
+    raiseError(recursionAnchorMismatchMessage(path, registry.spec.recursiveAnchor));
   }
   const depth = currentRecursionDepth(handler, registry);
   if (depth === null) {
