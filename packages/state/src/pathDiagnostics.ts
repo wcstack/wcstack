@@ -60,8 +60,11 @@ const EXISTS: IPathExistenceResult = Object.freeze({
  * `obj` 自身＋プロトタイプチェーン（Object.prototype 手前まで）から descriptor を引く。
  * 打ち切り位置は getAllPropertyDescriptors と同じ — 「state が宣言したもの」だけを
  * 存在とみなし、`toString` 等の Object.prototype 由来を存在扱いしない。
+ *
+ * `State.findStateDescriptor`（再帰アクセサの衝突検査）も同じ走査を使う。打ち切り位置が
+ * 2 本に分かれると、片方だけが `Object.prototype` を存在扱いするようなずれ方をする。
  */
-function findDescriptor(obj: object, key: string): PropertyDescriptor | undefined {
+export function findDescriptor(obj: object, key: string): PropertyDescriptor | undefined {
   let proto: object | null = obj;
   while (proto !== null && proto !== Object.prototype) {
     const descriptor = Object.getOwnPropertyDescriptor(proto, key);
@@ -219,6 +222,17 @@ export function indexArityMessage(
 }
 
 /**
+ * `**` を含むパスが宣言済みの再帰アンカーと合致しない（綴り違い・2 つ目の `**`）。
+ * 束縛形（bind.ts）・合併形（getAllRecursive.ts）・ブロードキャスト（setAllRecursive.ts）の
+ * 3 入口が同じ文面で報告する。
+ */
+export function recursionAnchorMismatchMessage(path: string, recursiveAnchor: string): string {
+  return `[wcs/recursion-anchor] "${path}" does not match the declared recursion anchor ` +
+    `"${recursiveAnchor}". This version supports exactly one anchor per state, and "**" must be followed ` +
+    `by a well-formed suffix (no second "**", no empty segment, no bare "*" right after "**").`;
+}
+
+/**
  * `$getAll(path)`（添字省略）の既定値はループ文脈の添字 `[$1..$n]` だが、それを
  * 敷けるのは path と文脈がワイルドカード連鎖を共有している場合だけ。共有ゼロなのに
  * 文脈が添字を持っている場合、黙って全展開に倒すと「文脈で絞られている」という
@@ -336,11 +350,11 @@ export function checkDeclaredPath(
   // 再帰 getter の展開形は、バインド確立の時点ではまだ生えていない（読む直前に
   // 遅延実体化する — recursion/registry.ts）。素の存在検査では必ず「解決できない」に
   // なるので、宣言済みの `**` getter に合致するかを先に見る。実体化はしない。
-  if (stateElement.hasRecursion === true) {
-    const registry = stateElement.recursionRegistry;
-    if (registry !== null && typeof registry !== "undefined" && registry.matchesRecursivePath(path)) {
-      return;
-    }
+  // 展開形の**値の内側**（`nodes.*.stats.count` で `get "nodes.**.stats"()` がオブジェクトを
+  // 返す形）も同じ — 通常の getter なら下の「途中のプレフィックスがフラット宣言」で
+  // UNKNOWN に倒れるところ、未実体化のアクセサは findDescriptor に見えないのでここで畳む。
+  if (stateElement.hasRecursion === true && stateElement.recursionRegistry!.recursiveGetterOwning(path) !== null) {
+    return;
   }
   const result = resolvePathExistence(state, path, stateElement.getterPaths);
   if (result.existence !== "missing") {

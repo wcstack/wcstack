@@ -80,7 +80,8 @@ export function setAll(
 
     // --- 第 1 相: 書き込み先を全部確定する（設計 §6） ---
     // 走査しながら書くと書き込みが ListIndex 集合を動かしうる。
-    // 差分基準（lastValueByListAddress）は読みの持ち物なので commit しない（§6-2）。
+    // 差分基準（state 側の共有正本 stateListBaseline）は、固定 arity の `$setAll` は走査を
+    // 借りるだけで確定しない（§6-2。再帰の `$setAll` は確定する — recursion/walk.ts）。
     const resultIndexes = collectWildcardIndexes(
       target, receiver, handler, pathInfo, indexes, { commitDiffBaseline: false });
 

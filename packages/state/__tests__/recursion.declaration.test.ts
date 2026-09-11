@@ -173,6 +173,16 @@ describe("processRecursionDeclaration: アンカーの形を拒否する", () =>
       .toThrow(/\$recursion repeating sub-path "children\.#m1\.\*" must not contain "#"/);
   });
 
+  it("途中に添字セグメントを持つアンカーを「木の形の宣言であって 1 行の宣言ではない」と拒否すること", () => {
+    // Fixed by 第 5 サイクル — was: 両側とも受理していた。エンジンは具体パスの添字を
+    // `*` に畳む（`indexSegmentsToWildcard`）ので、宣言の途中の添字は意味を持たない
+    // 奇形のまま残り、`nodes.0.*` と `nodes.*.*` が同じものとして動く。
+    expect(() => processRecursionDeclaration(decl({ "nodes.0.items.*": "children.*" })))
+      .toThrow(/\$recursion anchor "nodes\.0\.items\.\*" must not contain an index segment \("0"\)/);
+    expect(() => processRecursionDeclaration(decl({ "nodes.0.items.*": "children.*" })))
+      .toThrow(/the recursion is declared over the shape of the tree, not over one row/);
+  });
+
   it("** を含むアンカーを「宣言こそが ** に意味を与える」と拒否すること", () => {
     const rec = { "nodes.**.children.*": "children.*" };
     expect(() => processRecursionDeclaration(decl(rec)))
@@ -220,5 +230,33 @@ describe("processRecursionDeclaration: 反復サブパスの形を拒否する",
   it("** を含む反復サブパスを拒否すること", () => {
     expect(() => processRecursionDeclaration(decl({ "nodes.*": "children.**.*" })))
       .toThrow(/\$recursion repeating sub-path "children\.\*\*\.\*" must not contain "\*\*"/);
+  });
+
+  it("途中に添字セグメントを持つ反復サブパスを拒否すること", () => {
+    expect(() => processRecursionDeclaration(decl({ "nodes.*": "children.0.*" })))
+      .toThrow(/\$recursion repeating sub-path "children\.0\.\*" must not contain an index segment \("0"\)/);
+  });
+
+  it("添字に見えるだけの綴り（先頭 0 付き・負数・小数）も添字として拒否すること", () => {
+    // 畳みの述語（`!isNaN(Number(segment))`）と同じ範囲で落とす — 片方だけが
+    // 添字とみなす綴りがあると、宣言は通るのに展開形が別物になる。
+    expect(() => processRecursionDeclaration(decl({ "nodes.*": "children.01.*" })))
+      .toThrow(/must not contain an index segment \("01"\)/);
+    expect(() => processRecursionDeclaration(decl({ "nodes.*": "children.-1.*" })))
+      .toThrow(/must not contain an index segment \("-1"\)/);
+  });
+});
+
+describe("processRecursionDeclaration: リスト側の綴りを仕様に載せる", () => {
+  it("anchorList / repeatList が末尾の .* を落とした形になること", () => {
+    const spec = processRecursionDeclaration(decl({ "nodes.*": "children.*" }))!;
+    expect(spec.anchorList).toBe("nodes");
+    expect(spec.repeatList).toBe("children");
+  });
+
+  it("ネストした宣言でもリスト側が最後のセグメントだけを落とすこと", () => {
+    const spec = processRecursionDeclaration(decl({ "data.tree.*": "branch.children.*" }))!;
+    expect(spec.anchorList).toBe("data.tree");
+    expect(spec.repeatList).toBe("branch.children");
   });
 });

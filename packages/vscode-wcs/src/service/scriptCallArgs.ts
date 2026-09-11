@@ -19,12 +19,20 @@ export interface ICallArgs {
   readonly end: number;
 }
 
-/** 文字列リテラル 1 個ぶん（エスケープ対応）。テンプレートリテラルは対象外。 */
+/** 文字列リテラル 1 個ぶん（エスケープ対応）。 */
 const STRING_LITERAL = /^\s*(["'])((?:\\.|(?!\1)[^\\])*)\1\s*$/;
 
 /**
+ * 置換（`${…}`）を持たないテンプレートリテラル。綴りが確定しているので
+ * 素の文字列リテラルと同じに扱える（宣言側の `isDefiniteNonStringLiteral` /
+ * `analyzeRecursionDeclaration` がバッククォートを文字列として受理するのと対称 —
+ * `$setAll(\`nodes.**.children\`, [], [])` が片側だけ無報告になっていた）。
+ */
+const TEMPLATE_NO_SUBST = /^\s*`((?:\\.|[^\\`$]|\$(?!\{))*)`\s*$/;
+
+/**
  * `open`（`(` の次の位置）から実引数をトップレベルのカンマで切り出す。
- * 括弧・角括弧・波括弧の入れ子と、文字列・テンプレート・正規表現もどきを飛ばす。
+ * 括弧・角括弧・波括弧の入れ子と、文字列・テンプレートリテラルを飛ばす（正規表現リテラルは追跡しない）。
  * 閉じ括弧が見つからなければ null（不完全な編集中テキスト）。
  */
 export function splitCallArgs(source: string, open: number): ICallArgs | null {
@@ -64,10 +72,15 @@ export function splitCallArgs(source: string, open: number): ICallArgs | null {
   return null;
 }
 
-/** 実引数が単純な文字列リテラルならその中身を返す（それ以外は null＝判定しない）。 */
+/**
+ * 実引数が単純な文字列リテラル、または置換の無いテンプレートリテラルならその中身を返す
+ * （それ以外は null＝判定しない）。
+ */
 export function literalString(arg: string): string | null {
   const match = STRING_LITERAL.exec(arg);
-  return match === null ? null : match[2];
+  if (match !== null) return match[2];
+  const template = TEMPLATE_NO_SUBST.exec(arg);
+  return template === null ? null : template[1];
 }
 
 /**

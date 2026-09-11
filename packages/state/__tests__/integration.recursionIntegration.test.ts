@@ -25,13 +25,14 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
+import { flush, read, write } from "./helpers/recursionTestUtils";
 import { buildSsrDocument } from "../src/buildSsrDocument";
 
 beforeAll(() => {
   bootstrapState();
 });
 
-const flush = () => new Promise((r) => setTimeout(r));
+// flush / read / write は helpers/recursionTestUtils
 let seq = 0;
 const uniqueTag = (prefix: string): string => `${prefix}-${++seq}`;
 
@@ -99,12 +100,6 @@ function treeState(nodes: TNode[] = forest()): any {
   return state;
 }
 
-const read = <T>(el: State, fn: (s: any) => T): T => {
-  let out: any;
-  el.createState("readonly", (s: any) => { out = fn(s); });
-  return out as T;
-};
-const write = (el: State, fn: (s: any) => void): void => el.createState("writable", fn);
 
 /** shadow ホストにルート state を 1 本置く。 */
 async function mountHost(initial: any, innerHTML = "") {
@@ -422,6 +417,52 @@ describe("再帰 × bind-component: ホストが宣言し、子スコープが�
     expect(warns.some((w) => w.includes("[wcs/mount-dollar-declaration]"))).toBe(true);
     // 値は空のまま（診断が出るだけで、宣言が効くようになるわけではない）
     expect(collectText(component.shadowRoot!, "tot")).toEqual(["", ""]);
+    warnSpy.mockRestore();
+    errorSpy.mockRestore();
+    host.remove();
+  });
+
+  it("マウントされた子の `**` getter（$recursion 無し）にも mount-dollar-declaration の誘導が出ること", async () => {
+    // Fixed by cycle-3 review — was: `markerizeAccessorPath` が `*` セグメントしか探さないので
+    // `**` を含むキーは私有アンカーに落ち、参照されないまま永久に登録されず、warn も error も
+    // 無く黙って捨てられていた（ボリュームは接ぎ木前に拒否、`$recursion` は誘導が出るのに）。
+    const { clearMountDollarWarnsForTesting } = await import("../src/webComponent/mount");
+    clearMountDollarWarnsForTesting();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const tag = uniqueTag("rint-childstar");
+    class Comp extends HTMLElement {
+      state: Record<string, any>;
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" });
+        const inner: any = {};
+        Object.defineProperty(inner, "node.**.total", {
+          get(this: any) { return 0; }, enumerable: false, configurable: true,
+        });
+        this.state = inner;
+      }
+      connectedCallback() {
+        if (this.shadowRoot!.childNodes.length > 0) return;
+        this.shadowRoot!.innerHTML =
+          `<wcs-state bind-component="state"></wcs-state><span class="v" data-wcs="textContent: node.value"></span>`;
+      }
+    }
+    customElements.define(tag, Comp);
+    const { host, shadowRoot } = await mountHost(
+      { title: "x", nodes: [node(1), node(2)] },
+      `<template data-wcs="for: nodes"><${tag} data-wcs="state.node: nodes.*"></${tag}></template>`,
+    );
+    const component = shadowRoot.querySelector(tag) as HTMLElement;
+    await (component.shadowRoot!.querySelector("wcs-state") as State).connectedCallbackPromise;
+    await State.getBindingsReady(component.shadowRoot!);
+    await flush();
+    const warns = warnSpy.mock.calls.map((call) => String(call[0]));
+    const guidance = warns.filter((w) => w.includes("[wcs/mount-dollar-declaration]"));
+    expect(guidance).toHaveLength(1);   // (tag, prop) につき 1 回
+    expect(guidance[0]).toContain(`"node.**.total"`);
+    expect(guidance[0]).toContain('"**" getters expand against the root tree');
+    expect(errorSpy).not.toHaveBeenCalled();
     warnSpy.mockRestore();
     errorSpy.mockRestore();
     host.remove();

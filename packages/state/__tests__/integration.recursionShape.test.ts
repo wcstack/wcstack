@@ -17,9 +17,9 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
+import { flush, read, write } from "./helpers/recursionTestUtils";
 beforeAll(() => { bootstrapState(); });
 let seq = 0;
-const flush = () => new Promise((r) => setTimeout(r));
 async function mount(initial: any) {
   const host = document.createElement(`shape-host-${seq++}`);
   const sr = host.attachShadow({ mode: "open" });
@@ -31,8 +31,7 @@ async function mount(initial: any) {
   await State.getBindingsReady(sr);
   return el;
 }
-const read = (el: State, fn: (s: any) => any) => { let r: any; el.createState("readonly", (s: any) => { r = fn(s); }); return r; };
-const write = (el: State, fn: (s: any) => void) => el.createState("writable", fn);
+// read / write / flush は helpers/recursionTestUtils
 /** 再帰 getter つきの state を組む。spread では accessor が値化されるので defineProperty で足す。 */
 const mountShape = async (partial: any) => {
   const st: any = { label: "x", $recursion: { "nodes.*": "children.*" }, ...partial };
@@ -77,7 +76,6 @@ describe("再帰が受け付ける木の形（共有・循環・イミュータ�
     const el = await mount({ label: "x", $recursion: { "nodes.*": "children.*" }, nodes: roots });
     let msg = "";
     try { read(el, (s) => s.$getAll("nodes.**.value", [])); } catch (e: any) { msg = e.message; }
-    console.log("root-cycle:", msg.slice(0, 90));
     expect(msg).toContain("[wcs/recursion-cycle]");
   });
 
@@ -90,7 +88,6 @@ describe("再帰が受け付ける木の形（共有・循環・イミュータ�
     const el = await mount({ label: "x", $recursion: { "nodes.*": "children.*" }, nodes: [top] });
     let msg = "";
     try { read(el, (s) => s.$getAll("nodes.**.value", [])); } catch (e: any) { msg = e.message; }
-    console.log("deep-cycle:", msg.slice(0, 90));
     expect(msg).toContain("[wcs/recursion-cycle]");
   });
 
@@ -100,7 +97,6 @@ describe("再帰が受け付ける木の形（共有・循環・イミュータ�
       nodes: [{ value: 1, children: shared }, { value: 2, children: shared }] });
     let msg = "";
     try { read(el, (s) => s.$getAll("nodes.**.value", [])); } catch (e: any) { msg = e.message; }
-    console.log("shared:", msg.slice(0, 90));
     expect(msg).toContain("[wcs/recursion-shared-list]");
   });
 
@@ -115,7 +111,6 @@ describe("再帰が受け付ける木の形（共有・循環・イミュータ�
     const build = (n: number): any => n === 0 ? { value: 0, children: [] } : { value: n, children: [build(n - 1)] };
     const el = await mount({ label: "x", $recursion: { "nodes.*": "children.*" }, nodes: [build(127)] });
     const values = read(el, (s) => s.$getAll("nodes.**.value", []));
-    console.log("depth-128 count:", values.length);
     expect(values).toHaveLength(128);
   });
 });

@@ -30,7 +30,7 @@ export function getPathInfo(path: string): IPathInfo {
     raiseError(
       `[wcs/recursion-unsupported] "${path}" uses "${RECURSION_WILDCARD}", which is not accepted here. ` +
       `It is only meaningful in a $recursion declaration, in a recursive getter key, and in the path ` +
-      `argument of $getAll — and only when the state declares a $recursion anchor.`
+      `argument of $getAll / $setAll — and only when the state declares a $recursion anchor.`
     );
   }
   pathInfo = Object.freeze(new PathInfo(path));

@@ -57,6 +57,7 @@
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
+import { flush, makeMount, node, read, write } from "./helpers/recursionTestUtils";
 import { getListIndexesByList } from "../src/list/listIndexesByList";
 
 beforeAll(() => {
@@ -64,21 +65,9 @@ beforeAll(() => {
 });
 
 let seq = 0;
-const flush = () => new Promise((r) => setTimeout(r));
+const mount = makeMount("recdefect-host");
 
-async function mount(initial: any, innerHTML = "") {
-  const host = document.createElement(`recdefect-host-${seq++}`);
-  const shadowRoot = host.attachShadow({ mode: "open" });
-  shadowRoot.innerHTML = innerHTML + `<wcs-state></wcs-state>`;
-  document.body.appendChild(host);
-  const stateEl = shadowRoot.querySelector("wcs-state") as State;
-  stateEl.setInitialState(initial);
-  await stateEl.connectedCallbackPromise;
-  await State.getBindingsReady(shadowRoot);
-  return { host, shadowRoot, stateEl };
-}
-
-const NODE = (value: number, children: any[] = []) => ({ value, children });
+const NODE = node;
 const baseAt = (d: number) => "nodes.*" + ".children.*".repeat(d);
 
 /**
@@ -108,14 +97,6 @@ function unrollTotals(state: any, depth: number): any {
   return state;
 }
 
-const read = (stateEl: State, fn: (s: any) => any) => {
-  let out: any;
-  stateEl.createState("readonly", (s: any) => { out = fn(s); });
-  return out;
-};
-const write = (stateEl: State, fn: (s: any) => void) => {
-  stateEl.createState("writable", (s: any) => { fn(s); });
-};
 /** 深さ d の行 total を全件読む（getter を経由する読み） */
 const totalsAt = (stateEl: State, d: number) =>
   read(stateEl, (s: any) => s.$getAll(baseAt(d) + ".total", []));
@@ -1657,5 +1638,61 @@ describe("欠陥8（X10）: setInitialState の再セット後、wildcard 無し
     expect(read(stateEl, (s: any) => s.rootTotals)).toEqual([111]);   // should be: [555]
     // 生成アクセサ経由の直接読みは正しい（キャッシュの主は rootTotals の側）
     expect(totalsAt(stateEl, 0)).toEqual([555]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe("欠陥9（X5 / #257）: 宣言の検証が初回マウントで throw すると無言のハングになる（現状固定）", () => {
+  // DEFECT: `_state` セッタの throw が `_resolveLoading()` に届かず `connectedCallbackPromise` が
+  //         永久 pending・`console.error` 0 件。再セット経路なら同じ宣言が同期 throw する
+  //         （integration.recursionGetter.test.ts の withReset がその側を固定）。
+  //         should be: 「resolve してから raise」（`_failInitialization` と同じ経路）で診断が届く。
+  //         第 2 サイクルで新設した「構造を名指す `**` getter」の構築時 raise も同じ表面に載る —
+  //         #257 の修理時に、この raise も同じ経路へ載せること。
+  const settle = (stateEl: State) => Promise.race([
+    stateEl.connectedCallbackPromise.then(() => "resolved", () => "rejected"),
+    flush().then(() => flush()).then(() => "pending"),
+  ]);
+
+  async function mountBroken(initial: any): Promise<{ outcome: string; errors: number; host: HTMLElement }> {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const host = document.createElement(`recdefect-host-${seq++}`);
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML = `<wcs-state></wcs-state>`;
+    document.body.appendChild(host);
+    const stateEl = shadowRoot.querySelector("wcs-state") as State;
+    try {
+      stateEl.setInitialState(initial);
+      return { outcome: await settle(stateEl), errors: spy.mock.calls.length, host };
+    } finally {
+      spy.mockRestore();
+    }
+  }
+
+  it("不正な $recursion 宣言（アンカーが要素を指さない）", async () => {
+    const { outcome, errors, host } = await mountBroken({ nodes: [NODE(1)], $recursion: { nodes: "children.*" } });
+    expect(outcome).toBe("pending");   // should be: "rejected"（診断付き）
+    expect(errors).toBe(0);
+    host.remove();
+  });
+
+  it("`**` getter の展開形と同名の具体 getter（第 3 サイクルで新設した構築時 raise も同じ表面）", async () => {
+    const state: any = { nodes: [NODE(1)], $recursion: { "nodes.*": "children.*" } };
+    Object.defineProperty(state, "nodes.**.total", { get() { return 0; }, enumerable: true, configurable: true });
+    Object.defineProperty(state, "nodes.*.children.*.total", { get() { return 7; }, enumerable: true, configurable: true });
+    const { outcome, errors, host } = await mountBroken(state);
+    expect(outcome).toBe("pending");   // should be: "rejected"（診断付き）
+    expect(errors).toBe(0);
+    host.remove();
+  });
+
+  it("構造を名指す `**` getter（第 2 サイクルで新設した構築時 raise も同じ表面）", async () => {
+    const state: any = { nodes: [NODE(1)], $recursion: { "nodes.*": "children.*" } };
+    Object.defineProperty(state, "nodes.**.children", { get() { return []; }, enumerable: true, configurable: true });
+    const { outcome, errors, host } = await mountBroken(state);
+    expect(outcome).toBe("pending");   // should be: "rejected"（診断付き）
+    expect(errors).toBe(0);
+    host.remove();
   });
 });

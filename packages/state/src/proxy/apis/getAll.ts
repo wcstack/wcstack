@@ -40,17 +40,20 @@ export function getAll(
         if (typeof indexes === "undefined") {
           path = bindRecursivePath(handler.stateElement, handler, path);
         } else {
-          if (indexes.length > 0) {
-            raiseError(
-              `[wcs/recursion-getall-form] $getAll("${path}", indexes) with "**" takes no partial ` +
-              `prefix: a prefix cannot say which depth it applies to. Omit the indexes to read the ` +
-              `depth of the recursive getter being evaluated, or pass [] to walk every depth.`
-            );
-          }
-          return getAllRecursive(target, receiver, handler, path);
+          // アンカー照合と添字の形の検査は合併形の側で行う（判定順を静的側と揃えるため）
+          return getAllRecursive(target, receiver, handler, path, indexes);
         }
       }
       const pathInfo = getPathInfo(path);
+      // 渡された添字が配列でない（`null` 等）のは素の TypeError にせず、形の診断にする。
+      // 省略（undefined）だけが「文脈の添字」を意味する。
+      if (typeof indexes !== "undefined" && !Array.isArray(indexes)) {
+        raiseError(
+          `$getAll("${path}") requires the indexes to be an array when given ` +
+          `(omit them for the loop context, or pass [] to expand every level) — got ` +
+          `${indexes === null ? "null" : typeof indexes}.`
+        );
+      }
       if (handler.addressStackLength > 0) {
         const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
         const stateElement = handler.stateElement;
@@ -98,7 +101,7 @@ export function getAll(
           indexes = [];
         }
       }
-      // 読みなので差分基準を更新する（`$setAll` は更新しない。設計 §6-2）
+      // 読みなので差分基準を更新する（固定 arity の `$setAll` は更新しない。設計 §6-2）
       const resultIndexes = collectWildcardIndexes(
         target, receiver, handler, pathInfo, indexes, { commitDiffBaseline: true });
       const resultValues: any[] = [];

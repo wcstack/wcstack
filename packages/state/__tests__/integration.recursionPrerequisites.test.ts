@@ -35,6 +35,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
+import { flush, makeMount, node, read, write, type TNode } from "./helpers/recursionTestUtils";
 import { getListIndexesByList } from "../src/list/listIndexesByList";
 import { getPathInfo } from "../src/address/PathInfo";
 
@@ -42,37 +43,12 @@ beforeAll(() => {
   bootstrapState();
 });
 
-let seq = 0;
-const flush = () => new Promise((r) => setTimeout(r));
-
-async function mount(initial: any, innerHTML: string) {
-  const host = document.createElement(`recursion-prereq-host-${seq++}`);
-  const shadowRoot = host.attachShadow({ mode: "open" });
-  shadowRoot.innerHTML = innerHTML + `<wcs-state></wcs-state>`;
-  document.body.appendChild(host);
-  const stateEl = shadowRoot.querySelector("wcs-state") as State;
-  stateEl.setInitialState(initial);
-  await stateEl.connectedCallbackPromise;
-  await State.getBindingsReady(shadowRoot);
-  return { host, shadowRoot, stateEl };
-}
-
-function read<T>(stateEl: State, fn: (s: any) => T): T {
-  let out: any;
-  stateEl.createState("readonly", (s: any) => { out = fn(s); });
-  return out as T;
-}
-
-function write(stateEl: State, fn: (s: any) => void): void {
-  stateEl.createState("writable", fn);
-}
+let seq = 0;   // mountSelfExpanding（自前のホスト組み立て）が使う
+const mount = makeMount("recursion-prereq-host");
 
 // ---------------------------------------------------------------------------
-// 木と、手動アンロールした再帰集計
+// 木と、手動アンロールした再帰集計（node / read / write は helpers/recursionTestUtils）
 // ---------------------------------------------------------------------------
-
-type TNode = { value: number; children: TNode[] };
-const node = (value: number, children: TNode[] = []): TNode => ({ value, children });
 
 const baseAt = (d: number) => "nodes.*" + ".children.*".repeat(d);
 const totalAt = (d: number) => baseAt(d) + ".total";

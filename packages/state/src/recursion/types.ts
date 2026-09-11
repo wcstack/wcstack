@@ -1,35 +1,37 @@
-import { IPathInfo } from "../address/types";
-
 /**
  * 単一の自己再帰宣言。初版はアンカーと反復サブパスとも「固定プロパティ列の末尾に
  * `.*` がひとつ」の形に限定する（docs/state-recursive-path-impl-plan.md §1-1）。
  *
  * 例: `$recursion = { "nodes.*": "children.*" }`
- * - `anchor`      … `"nodes.*"`（深さ 0 のノードパス）
- * - `repeat`      … `"children.*"`（1 段深くする相対サブパス）
+ * - `anchor`         … `"nodes.*"`（深さ 0 のノードパス）
+ * - `repeat`         … `"children.*"`（1 段深くする相対サブパス）
+ * - `recursiveAnchor` … `"nodes.**"`
+ * - `anchorList`     … `"nodes"`
+ * - `repeatList`     … `"children"`
+ *
+ * リスト側の 2 つは宣言時に確定させる（静的側の `RecursionSpec` と同じ構成）。
+ * 各所で `lastIndexOf(DELIMITER)` の slice を繰り返すと、綴りの取り違えが分散する。
  */
 export interface IRecursionSpec {
   readonly anchor: string;
   readonly repeat: string;
   /** `anchor` の `**` 形（`"nodes.**"`）。オーサリング層のパス解析で使う。 */
   readonly recursiveAnchor: string;
+  /** `anchor` のリスト側（`"nodes"` — 末尾の `.*` を落とした形）。 */
+  readonly anchorList: string;
+  /** `repeat` のリスト側（`"children"`）。 */
+  readonly repeatList: string;
 }
 
-/** 展開済みの再帰 getter 1 本ぶんの素性。生成アクセサに紐づくメタデータ。 */
+/**
+ * 展開済みの再帰 getter 1 本ぶんの素性。生成アクセサに紐づくメタデータで、
+ * ランタイムが読むのは深さ（`**` の束縛）と元の宣言（診断の名指し）の 2 つだけ。
+ * 具体パスは台帳のキー、`PathInfo` は読む側が intern 済みのものを持つので、ここには
+ * 重ねて持たない。
+ */
 export interface IRecursionAccessor {
   /** 元の宣言（`"nodes.**.total"`） */
   readonly recursivePath: string;
-  /** 展開後の具体パス（`"nodes.*.children.*.total"`） */
-  readonly concretePath: string;
   /** 反復の段数（0 origin） */
   readonly depth: number;
-  readonly spec: IRecursionSpec;
-  readonly pathInfo: IPathInfo;
-}
-
-/** `**` を含むパスを (接頭辞, 接尾辞) に割ったもの。 */
-export interface IRecursivePathParts {
-  readonly spec: IRecursionSpec;
-  /** `**` より後ろ（`".total"`。無ければ空文字） */
-  readonly suffix: string;
 }

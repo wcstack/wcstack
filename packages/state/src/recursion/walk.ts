@@ -29,17 +29,8 @@ import { IListIndex } from "../list/types";
 import { getByAddress } from "../proxy/methods/getByAddress";
 import { IStateHandler } from "../proxy/types";
 import { raiseError } from "../raiseError";
-import { concretePathAt, nodePathAt } from "./expand";
-import { IRecursionSpec } from "./types";
+import type { RecursionRegistry } from "./registry";
 
-export interface IRecursionWalkOptions {
-  /**
-   * 観測したリスト値を差分基準として確定するか。合併形の `$getAll` も再帰の `$setAll` も
-   * true を渡す（実装計画 §6 — cold な書き込みが ListIndex 世代を鋳造したまま基準を残さないと、
-   * 次の構造変更で深い子台帳が孤児になる）。false は走査だけを借りたい将来の呼び手のために残す。
-   */
-  readonly commitDiffBaseline: boolean;
-}
 
 /** 深さごとに 1 回だけ決まるもの。ノードごとに作り直さない。 */
 interface IDepthPaths {
@@ -58,15 +49,15 @@ export function collectRecursiveAddresses(
   target: object,
   receiver: any,
   handler: IStateHandler,
-  spec: IRecursionSpec,
+  registry: RecursionRegistry,
   suffix: string,
-  options: IRecursionWalkOptions,
 ): IStateAddress[] {
+  const spec = registry.spec;
   const results: IStateAddress[] = [];
   const observed: Map<IAbsoluteStateAddress, readonly unknown[]> = new Map();
   const pathsByDepth: IDepthPaths[] = [];
-  const repeatList = spec.repeat.slice(0, spec.repeat.lastIndexOf(DELIMITER));
-  const anchorList = spec.anchor.slice(0, spec.anchor.lastIndexOf(DELIMITER));
+  const repeatList = spec.repeatList;
+  const anchorList = spec.anchorList;
 
   /**
    * 「同じ配列インスタンスが 2 つ以上の親から到達可能」を**走査そのもの**で判定する
@@ -113,9 +104,10 @@ export function collectRecursiveAddresses(
     if (typeof known !== "undefined") {
       return known;
     }
-    // 上限検査はここ（＝その深さに実際にノードが居ると分かってから）。
-    const concretePath = concretePathAt(spec, suffix, depth);
-    const nodePath = suffix.length === 0 ? concretePath : nodePathAt(spec, depth);
+    // 上限検査はここ（＝その深さに実際にノードが居ると分かってから）。具体パスはレジストリの
+    // 記憶（接尾辞 × 深さ）から引き、走査ごとに文字列連結をやり直さない。
+    const concretePath = registry.concretePathAt(suffix, depth);
+    const nodePath = suffix.length === 0 ? concretePath : registry.concretePathAt("", depth);
     const paths: IDepthPaths = {
       nodePath,
       concretePathInfo: getPathInfo(concretePath),
@@ -201,10 +193,11 @@ export function collectRecursiveAddresses(
 
   descend(0, getPathInfo(anchorList), null);
 
-  if (options.commitDiffBaseline) {
-    for (const [address, value] of observed) {
-      setStateListBaseline(address, value);
-    }
+  // 観測したリスト値を差分基準へ確定する。合併形の `$getAll` も再帰の `$setAll` も必ず確定する
+  // （実装計画 §6 — cold な書き込みが ListIndex 世代を鋳造したまま基準を残さないと、次の
+  // 構造変更で深い子台帳が孤児になる）。走査が throw したときは上の raise でここに来ない。
+  for (const [address, value] of observed) {
+    setStateListBaseline(address, value);
   }
   return results;
 }

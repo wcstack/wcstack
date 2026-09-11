@@ -44,7 +44,8 @@ export type NodePathProblem =
   | 'reservedRoot'
   | 'reservedMount'
   | 'midWildcard'
-  | 'nestedRecursion';
+  | 'nestedRecursion'
+  | 'indexSegment';
 
 /** アンカー / 反復サブパスの種別（メッセージの主語）。 */
 export type NodePathKind = 'anchor' | 'repeat';
@@ -68,6 +69,9 @@ export function checkNodePath(path: string): NodePathProblem | null {
   for (let i = 0; i < segments.length - 1; i++) {
     if (segments[i] === '*') return 'midWildcard';
     if (segments[i] === RECURSION_WILDCARD) return 'nestedRecursion';
+    // 添字セグメント（`children.0.*`）。エンジンは具体パスの添字を `*` に畳むので、
+    // 宣言の途中の添字は意味を持たない奇形になる（ランタイムも同じ述語で落とす）。
+    if (!isNaN(Number(segments[i]))) return 'indexSegment';
   }
   return null;
 }
@@ -92,7 +96,20 @@ export function splitRecursivePath(spec: RecursionSpec, path: string): string | 
   if (!path.startsWith(spec.recursiveAnchor + '.')) return null;
   const suffix = path.slice(spec.recursiveAnchor.length);
   // 2 つ目の `**`（複数の再帰点）は初版では未対応
-  return hasRecursionWildcard(suffix) ? null : suffix;
+  if (hasRecursionWildcard(suffix)) return null;
+  // 接尾辞は整形されたパス: 空セグメント（`nodes.**.` / `nodes.**..x`）と `**` 直後の素の `*`
+  // （`nodes.**.*` — 展開するとアンカー行そのもの）は受理しない（runtime の splitRecursivePath と同じ）
+  const segments = suffix.slice(1).split('.');
+  if (segments[0] === '*' || segments.some(segment => segment.length === 0)) return null;
+  return suffix;
+}
+
+/**
+ * 接尾辞（`.` で始まる）の添字セグメントだけを `*` に畳む。先頭の空セグメントは区切りの都合なので
+ * 畳まない（runtime `expand.foldSuffixIndexes` の写し）。
+ */
+export function foldSuffixIndexes(suffix: string): string {
+  return suffix.length === 0 ? suffix : '.' + indexSegmentsToWildcard(suffix.slice(1));
 }
 
 /** 具体パスを「反復の段数」と「残り」に畳んだ結果。 */
@@ -128,13 +145,24 @@ export function foldRecursion(spec: RecursionSpec, path: string): FoldedPath | n
  * 具体パスが「宣言済みの再帰の展開形」として説明できるか。
  *
  * ランタイムが `pathDiagnostics.checkDeclaredPath` で
- * `recursionRegistry.matchesRecursivePath` を先に見るのと同じ役割。あちらは
- * 「`**` getter の展開形か」だけを見るが、静的側は候補集合しか持たないので
- * **深さを畳んでから候補集合に当てる**:
+ * `recursionRegistry.recursiveGetterOwning` を先に見るのと同じ役割。あちらは
+ * 「`**` getter の展開形（またはその値の内側）か」を見るが、静的側は候補集合しか
+ * 持たないので**深さを畳んでから候補集合に当てる**:
  *
  *   - `nodes.*.children.*.total` → 深さ 1・残り `.total` → `nodes.**.total`（`**` getter）
  *   - `nodes.*.children.*.value` → 深さ 1・残り `.value` → `nodes.*.value`（行の形は
  *     深さによらず同じ、というのが `$recursion` 宣言の意味）
+ *
+ * 畳む深さは最大から 0 まで**降りて全部試す**。反復語を貪欲に剥がした形だけを当てると、
+ * 接尾辞に反復語を含む `**` getter（`get "nodes.**.children.*.total"()`）の展開形
+ * `nodes.*.children.*.total` が `nodes.**.total` に化けて候補に当たらない（ランタイムの
+ * `depthOfConcretePath` は接尾辞側から照合するので受理する — パリティ欠陥だった）。
+ *
+ * `**` getter の**値の内側**（`nodes.*.stats.count` で `get "nodes.**.stats"()` がオブジェクトを
+ * 返す形）も存在扱いにする。ランタイムは未実体化のアクセサを findDescriptor で見つけられず、
+ * 通常の getter の下と同じく「評価しないと分からない」側に倒すので、静的側も揃える。
+ * 接頭辞の照会は `**` 形（`recursiveAnchor + …`）にだけ掛ける — 候補集合でその綴りを
+ * 持てるのは `**` getter だけなので、データ候補の免除が広がることはない。
  *
  * `has` は候補集合の照会。存在を**足す**方向にしか効かないので、誤検出は増えない。
  */
@@ -146,10 +174,77 @@ export function matchesRecursion(
   for (const spec of specs) {
     const folded = foldRecursion(spec, path);
     if (folded === null) continue;
-    if (has(spec.anchor + folded.rest)) return true;
-    if (has(spec.recursiveAnchor + folded.rest)) return true;
+    const unit = '.' + spec.repeat;
+    for (let depth = folded.depth; depth >= 0; depth--) {
+      const rest = unit.repeat(folded.depth - depth) + folded.rest;
+      if (has(spec.anchor + rest)) return true;
+      if (has(spec.recursiveAnchor + rest)) return true;
+      for (let dot = rest.lastIndexOf('.'); dot > 0; dot = rest.lastIndexOf('.', dot - 1)) {
+        if (has(spec.recursiveAnchor + rest.slice(0, dot))) return true;
+      }
+    }
   }
   return false;
+}
+
+/**
+ * `**` を含まない具体パスが、宣言済み `**` getter の展開形（またはその値の内側）なら、
+ * その getter の接尾辞を返す（ランタイム `RecursionRegistry.recursiveGetterOwning` の写し）。
+ *
+ * `$setAll("nodes.*.children.*.total", [], v)` / `this["nodes.*.total"] = v` のように `**` を
+ * 経ない綴りで再帰 getter へ書く形を `wcs/recursion-readonly` にするために使う。深さは
+ * 畳んだ最大から 0 まで降りて試す（`matchesRecursion` と同じ理由）。
+ */
+export function owningGetterSuffix(
+  spec: RecursionSpec,
+  getterSuffixes: readonly string[],
+  path: string,
+): string | null {
+  // 添字綴り（`this["nodes.1.total"]` / `$setAll("nodes.1.total", …)`）はランタイムが `*` に畳んで
+  // 読み取り専用検査に掛けるので、静的側も畳んでから照合する
+  const pattern = indexSegmentsToWildcard(path);
+  const folded = foldRecursion(spec, pattern);
+  if (folded === null) return null;
+  const unit = '.' + spec.repeat;
+  for (const suffix of getterSuffixes) {
+    for (let depth = folded.depth; depth >= 0; depth--) {
+      const expansion = spec.anchor + unit.repeat(depth) + suffix;
+      if (pattern === expansion || pattern.startsWith(expansion + '.')) return suffix;
+    }
+  }
+  return null;
+}
+
+/**
+ * 添字セグメント（`nodes.1.total` の `1`）を `*` に畳む。述語はランタイム
+ * （`address/ResolvedAddress.ts` / `RecursionRegistry.recursiveGetterOwning`）と同じ
+ * 「`*` でなく、`Number()` が NaN でない区切り」— 空セグメント・`1e3`・`-1`・`0x1` も添字になる。
+ */
+export function indexSegmentsToWildcard(path: string): string {
+  return path.split('.')
+    .map(segment => (segment !== '*' && !Number.isNaN(Number(segment)) ? '*' : segment))
+    .join('.');
+}
+
+/**
+ * `**` を含まない宣言キー（`get "nodes.*.children.*.total"()` / データプロパティ）が、宣言済み
+ * `**` getter の展開形**そのもの**なら、その getter の接尾辞を返す（値の内側は含めない —
+ * ランタイム `RecursionRegistry._assertNoConcreteCollision` の写し）。
+ */
+export function concreteExpansionSuffix(
+  spec: RecursionSpec,
+  getterSuffixes: readonly string[],
+  key: string,
+): string | null {
+  const folded = foldRecursion(spec, key);
+  if (folded === null) return null;
+  const unit = '.' + spec.repeat;
+  for (const suffix of getterSuffixes) {
+    for (let depth = folded.depth; depth >= 0; depth--) {
+      if (key === spec.anchor + unit.repeat(depth) + suffix) return suffix;
+    }
+  }
+  return null;
 }
 
 /**
@@ -208,23 +303,28 @@ export function impliedStructurePaths(spec: RecursionSpec): ImpliedPath[] {
 /**
  * 一括書き込みが「再帰の構造そのもの」を名指しているときの種別。
  * `branch` は多段の反復サブパス（`branch.children.*`）で子リストへ至る途中のオブジェクト。
+ * `length` は子リストの `length`（`arr.length = 0` は配列を切り詰める ＝ リストの置換と同じ）。
  */
-export type StructuralWriteTarget = 'node' | 'list' | 'branch';
+export type StructuralWriteTarget = 'node' | 'list' | 'branch' | 'length';
 
 /**
- * `$setAll` の接尾辞が構造を名指しているか（ランタイム
- * `recursion/setAllRecursive.ts` の `assertNotStructural` の写し）。
+ * `$setAll` の接尾辞が構造を名指しているか（ランタイム `recursion/expand.ts` の
+ * `isStructuralSuffix` の写し。書き側 `setAllRecursive.ts` と宣言側 `registry.ts` が
+ * 同じ述語を共有しているのと同じ範囲）。
  *
  * ノード自身（`nodes.**`）・子リスト（`nodes.**.children`）・子ノード
  * （`nodes.**.children.*`）は、書き換えると確定済みの子アドレスを壊す。反復サブパスが
  * 多段なら、その**途中のオブジェクト**（`nodes.**.branch`）も同じ理由で構造である —
  * `"." + repeatList` との完全一致だけを見ると素通りする（着地後レビューで実測）。
+ * 子リストの `length`（`nodes.**.children.length`）も同じ — 両側とも素通りしていて、
+ * 実際に全深さの children を切り詰め集計を stale のまま残した（第 2 回レビューで実測）。
  */
 export function structuralWriteTarget(spec: RecursionSpec, suffix: string): StructuralWriteTarget | null {
   const unit = '.' + spec.repeat;
   let rest = suffix;
   while (rest.startsWith(unit)) rest = rest.slice(unit.length);
   if (rest.length === 0) return 'node';
+  if (rest === '.' + spec.repeatList + '.length') return 'length';
   const segments = spec.repeatList.split('.');
   for (let i = 1; i <= segments.length; i++) {
     if (rest === '.' + segments.slice(0, i).join('.')) return i === segments.length ? 'list' : 'branch';
@@ -233,7 +333,8 @@ export function structuralWriteTarget(spec: RecursionSpec, suffix: string): Stru
 }
 
 /**
- * 2 つの接尾辞が**同じ具体パス族**を指すか（`RecursionRegistry._sameFamily` の写し）。
+ * 2 つの接尾辞が**同じ具体パス族**を指すか（ランタイム `recursion/expand.ts` の
+ * `sameFamily` の写し）。
  * 片方がもう片方の末尾で、差分が反復語の整数倍（0 回を含む）のとき真。
  */
 export function sameFamily(spec: RecursionSpec, a: string, b: string): boolean {
@@ -260,8 +361,20 @@ export function conflictingGetterSuffix(
   suffix: string,
 ): string | null {
   for (const declared of getterSuffixes) {
-    if (sameFamily(spec, declared, suffix)) return declared;
-    if (suffix.startsWith(declared + '.')) return declared;
+    if (coversSuffix(spec, declared, suffix)) return declared;
   }
   return null;
+}
+
+/**
+ * 接尾辞 `suffix` が `**` getter の接尾辞 `familySuffix` の族そのもの、またはその値の内側を
+ * 指しているか。`.` 境界で切った各接頭辞（全体を含む）について `sameFamily` を見る —
+ * `startsWith(familySuffix + '.')` だけでは反復語ぶんずれた展開形の値の内側
+ * （`nodes.**.children.*.total.x` で `nodes.**.total`）を取りこぼす（runtime `expand.coversSuffix` の写し）。
+ */
+export function coversSuffix(spec: RecursionSpec, familySuffix: string, suffix: string): boolean {
+  for (let end = suffix.length; end > 0; end = suffix.lastIndexOf('.', end - 1)) {
+    if (sameFamily(spec, familySuffix, suffix.slice(0, end))) return true;
+  }
+  return false;
 }

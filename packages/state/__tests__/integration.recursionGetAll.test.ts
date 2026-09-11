@@ -44,92 +44,26 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
+import {
+  flush, forest, makeMount, node, read, recursionState as baseRecursionState, UNION_TOTAL, UNION_VALUES, write, type TNode,
+} from "./helpers/recursionTestUtils";
 
 beforeAll(() => {
   bootstrapState();
 });
 
-let seq = 0;
-const flush = () => new Promise((r) => setTimeout(r));
-
-async function mount(initial: any, innerHTML: string) {
-  const host = document.createElement(`recursion-getall-host-${seq++}`);
-  const shadowRoot = host.attachShadow({ mode: "open" });
-  shadowRoot.innerHTML = innerHTML + `<wcs-state></wcs-state>`;
-  document.body.appendChild(host);
-  const stateEl = shadowRoot.querySelector("wcs-state") as State;
-  stateEl.setInitialState(initial);
-  await stateEl.connectedCallbackPromise;
-  await State.getBindingsReady(shadowRoot);
-  return { host, shadowRoot, stateEl };
-}
-
-function read<T>(stateEl: State, fn: (s: any) => T): T {
-  let out: any;
-  stateEl.createState("readonly", (s: any) => { out = fn(s); });
-  return out as T;
-}
-
-function write(stateEl: State, fn: (s: any) => void): void {
-  stateEl.createState("writable", fn);
-}
-
-// ---------------------------------------------------------------------------
-// 木と再帰 state
-// ---------------------------------------------------------------------------
-
-type TNode = { value: number; children: TNode[] };
-const node = (value: number, children: TNode[] = []): TNode => ({ value, children });
+const mount = makeMount("recursion-getall-host");
 
 /**
- * 深さ 3 の木（既存の Phase B テストと同じ形）。
- *   nodes[0] = 1 ─┬─ 10 ── 100
- *                 └─ 20
- *   nodes[1] = 2
- * 手で畳んだ total: 100 / 110 / 20 / 131 / 2、全 value の合計 = 133。
- */
-const forest = (): TNode[] => [node(1, [node(10, [node(100)]), node(20)]), node(2)];
-
-/**
- * 標準の再帰 state。`nodes.**.total` は**省略形**で子を畳む（正しい形）。
- * `treeTotal` / `treeValues` はルートに置いた**合併形**。
- * `extra` で「合併形を集計に使ってしまった getter」などを足せる。
+ * 標準の再帰 state（helpers/recursionTestUtils の基本形）に、ルートの**合併形**
+ * `treeTotal` / `treeValues` を足したもの。`extra` で「合併形を集計に使ってしまった getter」などを足せる。
  */
 function recursionState(
   nodes: TNode[],
   extra: Record<string, PropertyDescriptor> = {},
-  recursion: unknown = { "nodes.*": "children.*" },
+  recursion?: unknown,
 ): any {
-  const state: any = { nodes };
-  if (typeof recursion !== "undefined") {
-    state.$recursion = recursion;
-  }
-  // オブジェクトリテラルの getter として書くと、この関数の外で spread された時に
-  // 本体が評価されてしまう。descriptor で足して事故を防ぐ。
-  Object.defineProperty(state, "nodes.**.total", {
-    get(this: any) {
-      return this["nodes.**.value"] +
-        this.$getAll("nodes.**.children.*.total").reduce((a: number, b: number) => a + b, 0);
-    },
-    enumerable: true,
-    configurable: true,
-  });
-  Object.defineProperty(state, "treeValues", {
-    get(this: any) { return this.$getAll("nodes.**.value", []); },
-    enumerable: true,
-    configurable: true,
-  });
-  Object.defineProperty(state, "treeTotal", {
-    get(this: any) {
-      return this.$getAll("nodes.**.value", []).reduce((a: number, b: number) => a + b, 0);
-    },
-    enumerable: true,
-    configurable: true,
-  });
-  for (const [key, descriptor] of Object.entries(extra)) {
-    Object.defineProperty(state, key, descriptor);
-  }
-  return state;
+  return baseRecursionState(nodes, { treeValues: UNION_VALUES, treeTotal: UNION_TOTAL, ...extra }, recursion);
 }
 
 /** 深さ d の value / total パス */
@@ -1159,6 +1093,47 @@ describe("合併形の境界", () => {
 // ===========================================================================
 
 describe("合併形の形", () => {
+  it("添字が配列でない（null 等）のは生の TypeError ではなく [wcs/recursion-getall-form] になること", async () => {
+    // Fixed by post-landing review — was: `indexes.length` を null ガード無しで触り、
+    // `Cannot read properties of null (reading 'length')` になっていた。
+    const { host, stateEl } = await mount(recursionState(forest()), NO_RENDER_HTML);
+
+    let message = "";
+    try { read(stateEl, (s: any) => s.$getAll("nodes.**.value", null)); }
+    catch (e: any) { message = e.message; }
+    expect(message).toContain("[wcs/recursion-getall-form]");
+    expect(message).toContain("takes either no indexes");
+    expect(message).toContain("or [] (to walk every depth) — got null");
+    expect(() => read(stateEl, (s: any) => s.$getAll("nodes.**.value", 0)))
+      .toThrow(/\[wcs\/recursion-getall-form\].*got number/);
+    host.remove();
+  });
+
+  it("接尾辞が整形されていない `**` パス（`nodes.**.` / `nodes.**..x` / `nodes.**.*`）は [wcs/recursion-anchor] になること", async () => {
+    // Fixed by cycle-4 review — was: `$getAll("nodes.**.", [])` が `[undefined×5]` を返していた
+    const { host, stateEl } = await mount(recursionState(forest()), NO_RENDER_HTML);
+    for (const path of ["nodes.**.", "nodes.**..value", "nodes.**.*", "nodes.**.*.value"]) {
+      expect(() => read(stateEl, (s: any) => s.$getAll(path, [])), path).toThrow(/\[wcs\/recursion-anchor\]/);
+      expect(() => read(stateEl, (s: any) => s.$getAll(path)), `${path}（省略形）`).toThrow(/\[wcs\/recursion-anchor\]/);
+    }
+    // 対照: 接尾辞側で `*` が後ろに来る形（`nodes.**.tags.*`）は正当
+    expect(read(stateEl, (s: any) => s.$getAll("nodes.**.tags.*", []))).toEqual([]);
+    host.remove();
+  });
+
+  it("アンカー照合が添字の形の検査より先であること（静的側と同じ判定順）", async () => {
+    // Fixed by post-landing review — was: `$getAll("bogus.**.x", [0])` が runtime では
+    // `recursion-getall-form`、静的側では `recursion-anchor` と別コードになっていた。
+    const { host, stateEl } = await mount(recursionState(forest()), NO_RENDER_HTML);
+
+    let message = "";
+    try { read(stateEl, (s: any) => s.$getAll("bogus.**.x", [0])); }
+    catch (e: any) { message = e.message; }
+    expect(message).toContain("[wcs/recursion-anchor]");
+    expect(message).not.toContain("[wcs/recursion-getall-form]");
+    host.remove();
+  });
+
   it("非空の接頭辞は [wcs/recursion-getall-form] で拒否されること", async () => {
     // `**` のどの深さの何段目を指すのか言えないので、部分接頭辞は定義できない（設計書 §7-2）。
     const { host, stateEl } = await mount(recursionState(forest()), NO_RENDER_HTML);

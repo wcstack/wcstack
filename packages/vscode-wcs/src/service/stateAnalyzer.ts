@@ -173,8 +173,14 @@ function specFromRecursionValue(prop: PropertyInfo | undefined): RecursionSpec |
 export interface RecursionEntryInfo {
   /** アンカー（引用符を外した生の文字列。`nodes.*`）。 */
   readonly anchor: string;
-  /** 反復サブパス。値が単純な文字列リテラルでなければ null（＝断定しない）。 */
+  /** 反復サブパス。値が文字列リテラル（`${}` の無いテンプレートを含む）でなければ null（＝断定しない）。 */
   readonly repeat: string | null;
+  /**
+   * 値が「文字列ではない」と静的に断定できるか（数値・真偽値・null・オブジェクト / 配列 /
+   * 関数リテラル・メソッド短縮記法）。識別子参照・呼び出し・`${}` 付きテンプレートは
+   * 実行時まで分からないので false（validator は `repeat === null` でもこれが偽なら黙る）。
+   */
+  readonly repeatDefinitelyNotString: boolean;
   /** scriptContent 内でのキーの範囲（引用符は含まない）。 */
   readonly start: number;
   readonly end: number;
@@ -228,17 +234,24 @@ export function analyzeRecursionDeclaration(scriptContent: string): RecursionDec
       /^(["'`])[^"'`]*\1$/.test(scan) ||
       /^-?\d[\w.]*$/.test(scan) ||
       /^(?:true|false|null)$/.test(scan) ||
+      /^\[/.test(scan) ||
       /^(?:async\s+)?function\b[\s\S]*\}$/.test(scan) ||
       /^(?:async\s+)?\([^()]*\)\s*=>/.test(scan) ||
       /^(?:async\s+)?[$\w]+\s*=>/.test(scan);
     return { ...span, notObject: definite, objectLiteral: false, entries: [], spec: null };
   }
 
+  // 計算キー（`{ ["nodes.*"]: … }`）や spread（`{ ...REC }`）を持つオブジェクトリテラルは、
+  // エントリが静的に読めない ＝ 「空」とも「1 件」とも断定しない（識別子参照と同じ側）
+  const objectContent = extractObjectContent(prop.value);
+  if (hasUndecidableEntries(objectContent)) {
+    return { ...span, notObject: false, objectLiteral: false, entries: [], spec: null };
+  }
   // 値テキストの先頭空白ぶんだけ `{` がずれる。中身はその次から始まる。
   const leading = prop.value.length - prop.value.trimStart().length;
   const innerStart = root.start + prop.valueStart + leading + 1;
   const entries: RecursionEntryInfo[] = [];
-  for (const entry of parseTopLevelProperties(extractObjectContent(prop.value))) {
+  for (const entry of parseTopLevelProperties(objectContent)) {
     if (entry.nameStart === undefined || entry.nameEnd === undefined) continue;
     const valueStart = entry.valueStart === undefined
       ? innerStart + entry.nameEnd
@@ -246,6 +259,7 @@ export function analyzeRecursionDeclaration(scriptContent: string): RecursionDec
     entries.push({
       anchor: entry.name,
       repeat: entry.kind === 'data' ? extractStringLiteralValue(entry.value) : null,
+      repeatDefinitelyNotString: entry.kind !== 'data' || isDefiniteNonStringLiteral(entry.value),
       start: innerStart + entry.nameStart,
       end: innerStart + entry.nameEnd,
       valueStart,
@@ -278,30 +292,98 @@ export interface WatchEntryInfo {
  * 静的に拾えるかどうかが効く。
  */
 export function analyzeWatchEntries(scriptContent: string): WatchEntryInfo[] {
+  return analyzeObjectEntries(scriptContent, RESERVED_WATCH_KEY).map(entry => ({
+    key: entry.key,
+    start: entry.start,
+    end: entry.end,
+    // メソッド短縮記法は関数。data は値リテラルの形で判定し、識別子参照は疑わない。
+    definitelyNotFunction: entry.kind === 'data' && isNonFunctionLiteral(entry.value),
+  }));
+}
+
+/** `$listKeys` の 1 エントリ（キー ＝ リストパス）と、原文での位置。 */
+export interface ListKeyEntryInfo {
+  /** 宣言キー。引用符を外した生の文字列（`items` / `nodes.*.children` など） */
+  readonly key: string;
+  /** scriptContent 内でのキーの範囲（引用符は含まない） */
+  readonly start: number;
+  readonly end: number;
+}
+
+/**
+ * `$listKeys: { "<listPath>": key }` のエントリを位置付きで抽出する。
+ *
+ * `analyzeStatePaths` はこの宣言から候補を**作る**側（pushListKeyPaths）で、ランタイムが
+ * raise する形からは候補を作らない。こちらは宣言そのものの妥当性を報告する validator 用。
+ */
+export function analyzeListKeyEntries(scriptContent: string): ListKeyEntryInfo[] {
+  return analyzeObjectEntries(scriptContent, RESERVED_LIST_KEYS_KEY)
+    .map(entry => ({ key: entry.key, start: entry.start, end: entry.end }));
+}
+
+/** `export default { ... }` のオブジェクトリテラルが見つかるか（診断のゲート用）。 */
+export function hasDefaultExportObject(scriptContent: string): boolean {
+  return locateDefaultExportObject(scriptContent) !== null;
+}
+
+/**
+ * `export default { ... }` の**トップレベル**に spread（`...expr`）があるか。
+ *
+ * spread は宣言を持ち込みうる（`...tree` の中に `$recursion` があるかもしれない）が、中身は
+ * 静的に読めない。「そのオブジェクトリテラルに宣言が無い」と断定するゲートはこれを見て
+ * 黙る側に倒す。入れ子（`nodes: [...rows]`）は数えない。
+ */
+export function hasTopLevelSpread(scriptContent: string): boolean {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return false;
+  const scan = maskCommentsAndStrings(root.content);
+  let depth = 0;
+  for (let i = 0; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === '(' || ch === '[' || ch === '{') depth++;
+    else if (ch === ')' || ch === ']' || ch === '}') depth--;
+    else if (depth === 0 && ch === '.' && scan.startsWith('...', i)) return true;
+  }
+  return false;
+}
+
+interface ObjectEntry {
+  readonly key: string;
+  readonly start: number;
+  readonly end: number;
+  readonly kind: PropertyInfo['kind'];
+  readonly value?: string;
+}
+
+/**
+ * トップレベルの `<key>: { ... }` 宣言のエントリを位置付きで列挙する（`$watch` / `$listKeys`
+ * が共有する形）。値がオブジェクトリテラルでない（識別子参照など）ときは空 ＝ 断定しない。
+ */
+function analyzeObjectEntries(scriptContent: string, key: string): ObjectEntry[] {
   const root = locateDefaultExportObject(scriptContent);
   if (!root) return [];
 
-  const watchProp = parseTopLevelProperties(root.content).find(p => p.name === RESERVED_WATCH_KEY);
+  const prop = parseTopLevelProperties(root.content).find(p => p.name === key);
   if (
-    !watchProp || watchProp.kind !== 'data' || !watchProp.value ||
-    !isObjectLiteral(watchProp.value) || watchProp.valueStart === undefined
+    !prop || prop.kind !== 'data' || !prop.value ||
+    !isObjectLiteral(prop.value) || prop.valueStart === undefined
   ) {
     return [];
   }
 
   // 値テキストの先頭空白ぶんだけ `{` がずれる。中身はその次から始まる。
-  const leading = watchProp.value.length - watchProp.value.trimStart().length;
-  const innerStart = root.start + watchProp.valueStart + leading + 1;
+  const leading = prop.value.length - prop.value.trimStart().length;
+  const innerStart = root.start + prop.valueStart + leading + 1;
 
-  const entries: WatchEntryInfo[] = [];
-  for (const entry of parseTopLevelProperties(extractObjectContent(watchProp.value))) {
+  const entries: ObjectEntry[] = [];
+  for (const entry of parseTopLevelProperties(extractObjectContent(prop.value))) {
     if (entry.nameStart === undefined || entry.nameEnd === undefined) continue;
     entries.push({
       key: entry.name,
       start: innerStart + entry.nameStart,
       end: innerStart + entry.nameEnd,
-      // メソッド短縮記法は関数。data は値リテラルの形で判定し、識別子参照は疑わない。
-      definitelyNotFunction: entry.kind === 'data' && isNonFunctionLiteral(entry.value),
+      kind: entry.kind,
+      value: entry.value,
     });
   }
   return entries;
@@ -555,8 +637,55 @@ function pushListKeyPaths(entry: PropertyInfo, paths: PathCandidate[]): void {
 /** 値が単一の文字列リテラルならその中身を返す（`$listKeys` のキーフィールド名用）。 */
 function extractStringLiteralValue(value: string | undefined): string | null {
   if (!value) return null;
-  const match = value.trim().match(/^["']([^"'\\]*)["']$/);
-  return match && match[1].length > 0 ? match[1] : null;
+  // `${}` の無いテンプレートリテラルも文字列（ランタイムはただの string として受け取る）
+  const match = value.trim().match(/^(?:["']([^"'\\]*)["']|`([^`\\$]*)`)$/);
+  const literal = match ? (match[1] ?? match[2]) : null;
+  return literal !== null && literal !== undefined && literal.length > 0 ? literal : null;
+}
+
+/**
+ * オブジェクトリテラルの中身に、トップレベルの計算キー（`[expr]:`）か spread（`...expr`）が
+ * あるか。どちらも `parseTopLevelProperties` が拾えない（エントリが 0 件に見える）ので、
+ * 「空」と断定する前にここで見る。文字列の中身は見ない。
+ */
+function hasUndecidableEntries(objectContent: string): boolean {
+  const scan = maskCommentsAndStrings(objectContent);
+  let depth = 0;
+  let atKey = true;
+  for (let i = 0; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === '(' || ch === '[' || ch === '{') {
+      if (depth === 0 && atKey && (ch === '[' || scan.startsWith('...', i))) return true;
+      depth++;
+      atKey = false;
+      continue;
+    }
+    if (ch === ')' || ch === ']' || ch === '}') { depth--; continue; }
+    if (depth !== 0) continue;
+    if (ch === ',') { atKey = true; continue; }
+    if (/\s/.test(ch)) continue;
+    if (atKey && scan.startsWith('...', i)) return true;
+    atKey = false;
+  }
+  return false;
+}
+
+/**
+ * 値が「文字列ではない」と静的に断定できるリテラルか（数値・真偽値・null・オブジェクト /
+ * 配列 / 関数 / アロー）。識別子参照・呼び出し・`${}` 付きテンプレートは false。
+ */
+function isDefiniteNonStringLiteral(value: string | undefined): boolean {
+  if (!value) return false;
+  const scan = maskCommentsAndStrings(value).trim();
+  if (scan.length === 0) return false;
+  return (
+    /^-?\d[\w.]*$/.test(scan) ||
+    /^(?:true|false|null)$/.test(scan) ||
+    /^[[{]/.test(scan) ||
+    /^(?:async\s+)?function\b/.test(scan) ||
+    /^(?:async\s+)?\([^()]*\)\s*=>/.test(scan) ||
+    /^(?:async\s+)?[$\w]+\s*=>/.test(scan)
+  );
 }
 
 // ============================================================
@@ -1031,7 +1160,7 @@ function parseTopLevelProperties(objectContent: string): PropertyInfo[] {
  *
  * 正規表現リテラルは解釈しない（`/["']/` のような値は文字列の開始とみなされる）。
  */
-function maskCommentsAndStrings(source: string): string {
+export function maskCommentsAndStrings(source: string): string {
   const out = source.split('');
   const len = source.length;
   const blank = (i: number): void => {

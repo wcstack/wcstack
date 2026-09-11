@@ -1,7 +1,7 @@
 import { getPathInfo } from "../address/PathInfo";
 import { IPathInfo } from "../address/types";
 import { IStateElement } from "../components/types";
-import { DELIMITER, WILDCARD } from "../define";
+import { DELIMITER, RECURSION_WILDCARD, WILDCARD } from "../define";
 import { raiseError } from "../raiseError";
 import { IBindingInfo } from "../types";
 
@@ -134,9 +134,18 @@ export function clearMountDollarWarnsForTesting(): void {
  * ライフサイクルとしてスコープごとに残る（設計書 §4-6）。
  */
 export function warnMountedDollarDeclarations(record: IMountRecord): void {
-  const declared = MOUNT_DOLLAR_DECLARATIONS.filter(
+  const declared: string[] = MOUNT_DOLLAR_DECLARATIONS.filter(
     (name) => typeof (record.stateObject as Record<string, unknown>)[name] !== "undefined",
   );
+  // `**` getter（`get "node.**.total"()`）も同じ扱い。`markerizeAccessorPath` は `*` セグメントしか
+  // 探さないので `**` を含むキーは私有アンカーに落ち、参照されないまま永久に登録されない
+  // （ボリュームは接ぎ木前に拒否し、`$recursion` はこの誘導が出るのに、`**` getter だけが
+  // 無言だった — 第 3 サイクルのレビューで実測）。
+  for (const accessor of record.getterKeys) {
+    if (accessor.indexOf(RECURSION_WILDCARD) !== -1) {
+      declared.push(`"${accessor}"`);
+    }
+  }
   if (declared.length === 0) {
     return;
   }
@@ -148,8 +157,8 @@ export function warnMountedDollarDeclarations(record: IMountRecord): void {
   console.warn(
     `[@wcstack/state] [wcs/mount-dollar-declaration] <${key.split("|")[0]}>.${record.stateProp} declares ` +
     `${declared.join(", ")}, which mounted components do not run. Declare them on the root state instead ` +
-    `(a volume <wcs-state mount="..."> can host $watch / $listKeys / $updatedCallback). ` +
-    `See docs/state-mount-design.md §4-6.`,
+    `(a volume <wcs-state mount="..."> can host $watch / $listKeys / $updatedCallback; $recursion and ` +
+    `"**" getters expand against the root tree). See docs/state-mount-design.md §4-6.`,
   );
 }
 

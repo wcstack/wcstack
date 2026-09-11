@@ -11,7 +11,7 @@
 
 import { DELIMITER, MAX_WILDCARD_DEPTH, RECURSION_WILDCARD, WILDCARD } from "../define";
 import { raiseError } from "../raiseError";
-import { IRecursionSpec, IRecursivePathParts } from "./types";
+import { IRecursionSpec } from "./types";
 
 /** `**` を含むか（含まない大多数のパスを 1 回の indexOf で抜ける）。 */
 export function hasRecursionWildcard(path: string): boolean {
@@ -19,12 +19,12 @@ export function hasRecursionWildcard(path: string): boolean {
 }
 
 /**
- * `**` を含むパスを宣言と突き合わせ、接尾辞を取り出す。
+ * `**` を含むパスを宣言と突き合わせ、接尾辞（`**` より後ろ。無ければ空文字）を返す。
  * 宣言に合致しない `**` は「宣言なしの `**`」として呼び出し側が診断する（null を返す）。
  */
-export function splitRecursivePath(spec: IRecursionSpec, path: string): IRecursivePathParts | null {
+export function splitRecursivePath(spec: IRecursionSpec, path: string): string | null {
   if (path === spec.recursiveAnchor) {
-    return { spec, suffix: "" };
+    return "";
   }
   const prefix = spec.recursiveAnchor + DELIMITER;
   if (!path.startsWith(prefix)) {
@@ -35,7 +35,114 @@ export function splitRecursivePath(spec: IRecursionSpec, path: string): IRecursi
   if (hasRecursionWildcard(suffix)) {
     return null;
   }
-  return { spec, suffix };
+  // 接尾辞は整形されたパスでなければならない: 空セグメント（`nodes.**.` / `nodes.**..x`）と
+  // `**` 直後の素の `*`（`nodes.**.*` — 展開すると `nodes.*.*` でアンカー行そのもの）は
+  // 受理しない。`assertNodePath` / `$watch` が同じ形を拒否するのと対称（第 4 サイクルで実測:
+  // 受理すると `[undefined×n]` や生の `Reflect.set called on non-object` になっていた）。
+  const segments = suffix.slice(DELIMITER.length).split(DELIMITER);
+  if (segments[0] === WILDCARD || segments.some((segment) => segment.length === 0)) {
+    return null;
+  }
+  return suffix;
+}
+
+/**
+ * 接尾辞（`.` で始まる）の添字セグメントだけを `*` に畳む。先頭の空セグメントは区切りの
+ * 都合なので畳まない（`indexSegmentsToWildcard` に丸ごと渡すと `Number("") === 0` で `*` になる）。
+ * `**` パスの検査（構造・読み取り専用）と `**` getter キーの検査が共有する。
+ */
+export function foldSuffixIndexes(suffix: string): string {
+  return suffix.length === 0 ? suffix : DELIMITER + indexSegmentsToWildcard(suffix.slice(DELIMITER.length));
+}
+
+/**
+ * 2 つの接尾辞が**同じ具体パス族**を指すか。片方がもう片方の末尾で、差分が反復語の
+ * 整数倍（0 回を含む）のとき真。`nodes.**.total` と `nodes.**.children.*.total` は
+ * 深さ k と k+1 で同じ `nodes.*.children.*.total` になる、という関係を捉える。
+ * 静的側の `recursionPaths.sameFamily` と同じ純関数。
+ */
+export function sameFamily(spec: IRecursionSpec, a: string, b: string): boolean {
+  const unit = DELIMITER + spec.repeat;
+  const shorter = a.length <= b.length ? a : b;
+  const longer = a.length <= b.length ? b : a;
+  if (!longer.endsWith(shorter)) {
+    return false;
+  }
+  const gap = longer.slice(0, longer.length - shorter.length);
+  if (gap.length === 0) {
+    return true;
+  }
+  if (gap.length % unit.length !== 0) {
+    return false;
+  }
+  for (let cursor = 0; cursor < gap.length; cursor += unit.length) {
+    if (!gap.startsWith(unit, cursor)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * 接尾辞 `suffix` が、`**` getter の接尾辞 `familySuffix` の族そのもの、またはその値の内側を
+ * 指しているか。`.` 境界で切った各接頭辞 `p`（全体を含む）について `sameFamily(familySuffix, p)`
+ * を見る — `startsWith(familySuffix + ".")` だけでは、反復語ぶんずれた展開形の値の内側
+ * （`nodes.**.children.*.total.x` で `nodes.**.total`）を取りこぼす（第 4 サイクルで実測）。
+ */
+export function coversSuffix(spec: IRecursionSpec, familySuffix: string, suffix: string): boolean {
+  for (let end = suffix.length; end > 0; end = suffix.lastIndexOf(DELIMITER, end - 1)) {
+    if (sameFamily(spec, familySuffix, suffix.slice(0, end))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 添字セグメント（`nodes.1.total` の `1`）を `*` に畳む。判定は `address/ResolvedAddress.ts`
+ * と同じ「`Number()` が NaN でない区切り」。API のパス引数（`$getAll` / `$setAll` / `$resolve`）と
+ * `**` パスの接尾辞は set トラップと違って `getResolvedAddress` の正規化を経ないので、
+ * 再帰の検査（読み取り専用・構造）に掛ける前にここで畳む。
+ */
+export function indexSegmentsToWildcard(path: string): string {
+  const segments = path.split(DELIMITER);
+  for (let i = 0; i < segments.length; i++) {
+    if (segments[i] !== WILDCARD && !Number.isNaN(Number(segments[i]))) {
+      segments[i] = WILDCARD;
+    }
+  }
+  return segments.join(DELIMITER);
+}
+
+/**
+ * `**` パスの接尾辞が「再帰の構造そのもの」を名指しているか。
+ *
+ * ノード自身（`nodes.**` / `nodes.**.children.*`）・子リスト（`nodes.**.children`）・その
+ * `length`（`arr.length = 0` は配列を切り詰める）・多段の反復サブパスなら子リストへ至る
+ * 途中のオブジェクト（`nodes.**.branch`）。書き側（`setAllRecursive`）は確定済みの
+ * 子アドレスを壊すので拒否し、宣言側（`**` getter のキー）は生成 getter が実データの
+ * 子リストを影にするので拒否する — 同じ述語を両方が使う。
+ *
+ * 反復サブパスを**途中まで**名指す形もすべて構造。`"." + repeatList` との完全一致だけを
+ * 見ると、多段の repeat で途中のオブジェクトが素通りし、深さ 0 の `branch` を置き換えた
+ * 瞬間に確定済みの深さ 1 のアドレスが宙に浮く（着地後レビューで実測。実装計画 §7-3）。
+ */
+export function isStructuralSuffix(spec: IRecursionSpec, suffix: string): boolean {
+  const repeatSegments = spec.repeat.split(DELIMITER);
+  const unit = DELIMITER + spec.repeat;
+  let rest = suffix;
+  while (rest.startsWith(unit)) {
+    rest = rest.slice(unit.length);
+  }
+  if (rest.length === 0 || rest === DELIMITER + spec.repeatList + DELIMITER + "length") {
+    return true;
+  }
+  for (let i = 1; i < repeatSegments.length; i++) {
+    if (rest === DELIMITER + repeatSegments.slice(0, i).join(DELIMITER)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** 深さ k の具体パスを作る。上限超過は生成前に throw する（設計書 D11）。 */
@@ -67,8 +174,8 @@ export function concretePathAt(spec: IRecursionSpec, suffix: string, depth: numb
   return full;
 }
 
-/** 深さ k のノードパス（接尾辞なし）。リストパスの登録に使う。 */
-export function nodePathAt(spec: IRecursionSpec, depth: number): string {
+/** 深さ k のノードパス（接尾辞なし）。リストパスの登録に使う（このモジュール内だけ）。 */
+function nodePathAt(spec: IRecursionSpec, depth: number): string {
   return concretePathAt(spec, "", depth);
 }
 
@@ -79,10 +186,9 @@ export function nodePathAt(spec: IRecursionSpec, depth: number): string {
 export function listPathsUpTo(spec: IRecursionSpec, depth: number): string[] {
   const paths: string[] = [];
   // アンカー自身のリスト（末尾の `.*` を落とした形）
-  paths.push(spec.anchor.slice(0, spec.anchor.lastIndexOf(DELIMITER)));
-  const repeatList = spec.repeat.slice(0, spec.repeat.lastIndexOf(DELIMITER));
+  paths.push(spec.anchorList);
   for (let k = 0; k < depth; k++) {
-    paths.push(nodePathAt(spec, k) + DELIMITER + repeatList);
+    paths.push(nodePathAt(spec, k) + DELIMITER + spec.repeatList);
   }
   return paths;
 }

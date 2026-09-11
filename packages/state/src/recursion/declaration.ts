@@ -15,24 +15,24 @@ import { raiseError } from "../raiseError";
 import type { IState } from "../types";
 import { IRecursionSpec } from "./types";
 
-/** `a.b.*` の形（末尾だけがワイルドカード・空セグメント無し・`**` 無し）か。 */
-function assertNodePath(kind: string, path: string): string[] {
+/** `a.b.*` の形（末尾だけがワイルドカード・空セグメント無し・`**` 無し・添字無し）か。 */
+function assertNodePath(kind: string, path: string): void {
   if (typeof path !== "string" || path.length === 0) {
-    raiseError(`${STATE_RECURSION_NAME} ${kind} must be a non-empty string.`);
+    raiseError(`[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} ${kind} must be a non-empty string.`);
   }
   const segments = path.split(DELIMITER);
   if (segments.some((segment) => segment.length === 0)) {
-    raiseError(`${STATE_RECURSION_NAME} ${kind} "${path}" must not contain empty path segments.`);
+    raiseError(`[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} ${kind} "${path}" must not contain empty path segments.`);
   }
   if (segments.length < 2) {
     raiseError(
-      `${STATE_RECURSION_NAME} ${kind} "${path}" must name a list element: ` +
+      `[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} ${kind} "${path}" must name a list element: ` +
       `a property path ending with "${DELIMITER}${WILDCARD}" (for example "nodes${DELIMITER}${WILDCARD}").`
     );
   }
   if (segments[segments.length - 1] !== WILDCARD) {
     raiseError(
-      `${STATE_RECURSION_NAME} ${kind} "${path}" must end with "${DELIMITER}${WILDCARD}" ` +
+      `[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} ${kind} "${path}" must end with "${DELIMITER}${WILDCARD}" ` +
       `— it names the element of the list, not the list itself.`
     );
   }
@@ -41,29 +41,37 @@ function assertNodePath(kind: string, path: string): string[] {
   // 早期 return しているのと対称）。
   if (segments[0].charCodeAt(0) === 36 /* '$' */) {
     raiseError(
-      `${STATE_RECURSION_NAME} ${kind} "${path}" must not start with "$" — that namespace is reserved.`
+      `[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} ${kind} "${path}" must not start with "$" — that namespace is reserved.`
     );
   }
   if (path.indexOf("#") !== -1) {
     raiseError(
-      `${STATE_RECURSION_NAME} ${kind} "${path}" must not contain "#" — that segment is reserved for mounts.`
+      `[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} ${kind} "${path}" must not contain "#" — that segment is reserved for mounts.`
     );
   }
   for (let i = 0; i < segments.length - 1; i++) {
     if (segments[i] === WILDCARD) {
       raiseError(
-        `${STATE_RECURSION_NAME} ${kind} "${path}" must have exactly one "${WILDCARD}", at the end. ` +
+        `[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} ${kind} "${path}" must have exactly one "${WILDCARD}", at the end. ` +
         `Wildcards in the middle are not supported in this version.`
       );
     }
     if (segments[i] === RECURSION_WILDCARD) {
       raiseError(
-        `${STATE_RECURSION_NAME} ${kind} "${path}" must not contain "${RECURSION_WILDCARD}" — ` +
+        `[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} ${kind} "${path}" must not contain "${RECURSION_WILDCARD}" — ` +
         `the declaration is what gives "${RECURSION_WILDCARD}" its meaning.`
       );
     }
+    // 添字セグメント（`children.0.*`）。エンジンは具体パスの添字を `*` に畳むので
+    // （`indexSegmentsToWildcard` — ResolvedAddress と同じ規則）、宣言の途中に書かれた
+    // 添字は意味を持たない奇形になる。黙って `*` と同じに読み替えず、ここで落とす。
+    if (!isNaN(Number(segments[i]))) {
+      raiseError(
+        `[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} ${kind} "${path}" must not contain an index segment ` +
+        `("${segments[i]}") — the recursion is declared over the shape of the tree, not over one row.`
+      );
+    }
   }
-  return segments;
 }
 
 /**
@@ -76,17 +84,17 @@ export function processRecursionDeclaration(state: IState): IRecursionSpec | nul
   }
   if (typeof declared !== "object" || declared === null) {
     raiseError(
-      `${STATE_RECURSION_NAME} must be an object mapping one anchor path to its repeating sub-path ` +
+      `[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} must be an object mapping one anchor path to its repeating sub-path ` +
       `(for example { "nodes.*": "children.*" }).`
     );
   }
   const entries = Object.entries(declared as Record<string, unknown>);
   if (entries.length === 0) {
-    raiseError(`${STATE_RECURSION_NAME} must declare exactly one anchor; it is empty.`);
+    raiseError(`[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} must declare exactly one anchor; it is empty.`);
   }
   if (entries.length > 1) {
     raiseError(
-      `${STATE_RECURSION_NAME} declares ${entries.length} anchors (${entries.map(([k]) => `"${k}"`).join(", ")}). ` +
+      `[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} declares ${entries.length} anchors (${entries.map(([k]) => `"${k}"`).join(", ")}). ` +
       `This version supports exactly one self-recursive anchor per state.`
     );
   }
@@ -94,7 +102,7 @@ export function processRecursionDeclaration(state: IState): IRecursionSpec | nul
   assertNodePath("anchor", anchor);
   if (typeof repeat !== "string") {
     raiseError(
-      `${STATE_RECURSION_NAME} entry "${anchor}" must map to the repeating sub-path as a string ` +
+      `[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} entry "${anchor}" must map to the repeating sub-path as a string ` +
       `(for example "children${DELIMITER}${WILDCARD}").`
     );
   }
@@ -102,7 +110,8 @@ export function processRecursionDeclaration(state: IState): IRecursionSpec | nul
   // 反復サブパスが相対か絶対かは**名前の形では判定できない**。`{ "nodes.*": "nodes.*" }`
   // は `{ nodes: [{ nodes: [...] }] }` という自己相似な木の最も自然な綴りなので、
   // 「アンカーと同じ語で始まる」ことを理由に拒否してはならない。
-  const anchorSegments = anchor.split(DELIMITER);
-  const recursiveAnchor = anchorSegments.slice(0, -1).join(DELIMITER) + DELIMITER + RECURSION_WILDCARD;
-  return Object.freeze({ anchor, repeat, recursiveAnchor });
+  const anchorList = anchor.slice(0, anchor.lastIndexOf(DELIMITER));
+  const repeatList = repeat.slice(0, repeat.lastIndexOf(DELIMITER));
+  const recursiveAnchor = anchorList + DELIMITER + RECURSION_WILDCARD;
+  return Object.freeze({ anchor, repeat, recursiveAnchor, anchorList, repeatList });
 }

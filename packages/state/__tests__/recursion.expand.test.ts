@@ -20,7 +20,6 @@ import {
   depthOfConcretePath,
   hasRecursionWildcard,
   listPathsUpTo,
-  nodePathAt,
   splitRecursivePath,
 } from "../src/recursion/expand";
 import { MAX_WILDCARD_DEPTH } from "../src/define";
@@ -65,7 +64,7 @@ describe("hasRecursionWildcard: `**` を含むかの判別", () => {
   });
 });
 
-describe("concretePathAt / nodePathAt: 深さ k の具体パスを作る", () => {
+describe("concretePathAt: 深さ k の具体パスを作る", () => {
   it("接尾辞ありの具体パスが深さごとに 1 段ずつ伸びること", () => {
     expect(concretePathAt(spec, ".total", 0)).toBe("nodes.*.total");
     expect(concretePathAt(spec, ".total", 1)).toBe("nodes.*.children.*.total");
@@ -76,12 +75,6 @@ describe("concretePathAt / nodePathAt: 深さ k の具体パスを作る", () =>
     expect(concretePathAt(spec, "", 0)).toBe("nodes.*");
     expect(concretePathAt(spec, "", 1)).toBe("nodes.*.children.*");
     expect(concretePathAt(spec, "", 2)).toBe("nodes.*.children.*.children.*");
-  });
-
-  it("nodePathAt が接尾辞なしの concretePathAt と一致すること", () => {
-    for (const depth of [0, 1, 2, 7]) {
-      expect(nodePathAt(spec, depth)).toBe(concretePathAt(spec, "", depth));
-    }
   });
 
   it("接尾辞がワイルドカードを含んでいても、反復部分だけが伸びること", () => {
@@ -146,16 +139,16 @@ describe("concretePathAt: 深さ上限（MAX_WILDCARD_DEPTH）の境界", () => 
 
 describe("splitRecursivePath: `**` パスを (アンカー, 接尾辞) に割る", () => {
   it("アンカーそのものは空の接尾辞になること", () => {
-    expect(splitRecursivePath(spec, "nodes.**")).toEqual({ spec, suffix: "" });
+    expect(splitRecursivePath(spec, "nodes.**")).toBe("");
   });
 
   it("アンカーに続く部分を接尾辞として返すこと", () => {
-    expect(splitRecursivePath(spec, "nodes.**.total")!.suffix).toBe(".total");
-    expect(splitRecursivePath(spec, "nodes.**.children.*.total")!.suffix).toBe(".children.*.total");
+    expect(splitRecursivePath(spec, "nodes.**.total")).toBe(".total");
+    expect(splitRecursivePath(spec, "nodes.**.children.*.total")).toBe(".children.*.total");
   });
 
-  it("返す spec が宣言の仕様そのもの（同一参照）であること", () => {
-    expect(splitRecursivePath(spec, "nodes.**.total")!.spec).toBe(spec);
+  it("返すのは接尾辞の文字列だけであること（静的側の splitRecursivePath と同じ形）", () => {
+    expect(typeof splitRecursivePath(spec, "nodes.**.total")).toBe("string");
   });
 
   it("宣言と別のアンカーは null（呼び出し側が診断する）", () => {
@@ -180,8 +173,8 @@ describe("splitRecursivePath: `**` パスを (アンカー, 接尾辞) に割る
   });
 
   it("ネストしたアンカーでも同じ規則で割れること", () => {
-    expect(splitRecursivePath(nested, "data.tree.**")!.suffix).toBe("");
-    expect(splitRecursivePath(nested, "data.tree.**.total")!.suffix).toBe(".total");
+    expect(splitRecursivePath(nested, "data.tree.**")).toBe("");
+    expect(splitRecursivePath(nested, "data.tree.**.total")).toBe(".total");
     expect(splitRecursivePath(nested, "data.**.total")).toBe(null);
   });
 });
@@ -286,7 +279,7 @@ describe("listPathsUpTo: 依存ウォークに載せるリストパスの列挙"
     }
   });
 
-  it("ネストしたアンカー・反復サブパスでも綴りが正しいこと", () => {
+  it("listPathsUpTo: ネストしたアンカー・反復サブパスでも綴りが正しいこと", () => {
     expect(listPathsUpTo(nested, 2)).toEqual([
       "data.tree",
       "data.tree.*.branch.children",

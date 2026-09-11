@@ -152,6 +152,29 @@ type Paths = WcsPaths<State>;
 type V = WcsPathValue<State, "categories.*.products.*.name">; // string
 ```
 
+### Recursive Paths (`**`)
+
+A state that declares `$recursion` may read recursive paths through `this`. `**` stands for a
+whole family of depths, which no finite path union can enumerate, so these paths are typed
+`any` through a pattern index signature:
+
+```typescript
+export default defineState({
+  nodes: [] as { value: number; children: any[] }[],
+  $recursion: { "nodes.*": "children.*" },
+  get "nodes.**.total"(): number {
+    return (this["nodes.**.value"] as number)
+      + (this.$getAll("nodes.**.children.*.total") as number[]).reduce((a, b) => a + b, 0);
+  },
+});
+```
+
+Only keys that actually contain `**` take the `any` type (the bare `this["nodes.**"]`, which
+binds to the node itself inside a recursive getter, included) — ordinary dot paths keep their
+resolved value type, and a typo in one is still an error. The VS Code extension's preamble
+declares the same signature, so the editor and `tsc` agree. See
+[state-recursive-path-design.md](../../../docs/state-recursive-path-design.md).
+
 ## State Proxy API (`WcsStateApi`)
 
 The following properties and methods are available on `this` inside `defineState()`:

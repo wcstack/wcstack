@@ -1,7 +1,7 @@
 # 実装計画: 再帰パス（@wcstack/state）
 
-- **状態**: **全 Phase 完了**（2026-09-10）。A → A' → B → C → D → E をこの順で実施した。ゲートは全て推奨で採択済み。残るのは §8 の受け入れ条件の最終確認とリリース判断。
-- **ブランチ**: `feat/state-recursive-path`
+- **状態**: **全 Phase 完了**（2026-09-10）・**main マージ済み**（PR#259 / #260・2026-09-11）・**未リリース**。A → A' → B → C → D → E をこの順で実施し、着地後は品質改善のレビューサイクルを重ねている（§7-3 以降）。ゲートは全て推奨で採択済み。残るのは §8 の受け入れ条件の最終確認とリリース判断。
+- **ブランチ**: `feat/state-recursive-path`（main へマージ済み）。品質改善は `improve/recursive-path-quality` で §7-7 〜 §7-10 を実施
 - **設計検討**: [state-recursive-path-design.md](./state-recursive-path-design.md)。前回レビュー後の D4 / D7 / D10 / D11 の修正を前提にする。未決項目の実装上の扱いを本書に具体化し、Phase A で設計書と同期する。
 - **到達点**: 描画していない木でも、再帰 getter、全深さの `$getAll`、`$setAll` による属性の一括更新が動き、葉の更新・子の追加削除・リスト置換に集計が追従する。**この到達点は既存機構の修正 E1（§3-2）を前提にする** — Phase A の実測で、`for` の無いリストへの構造書き込みが台帳の世代を分裂させることが確定したため。
 
@@ -178,11 +178,11 @@ X2 は #256、X5 は #257 として Issue 化した（X1 は未作成）。X10 �
 |---|---|
 | 反復サブパスがアンカーと同じ語で始まる形（`{ "nodes.*": "nodes.*" }`） | **受理する**。`{ nodes: [{ nodes: [...] }] }` は自己相似な木の最も自然な綴りで、相対か絶対かは名前の形では判定できない |
 | `listPaths` への登録口 | `IStateElement.addListPath` を新設（E4）。`setPathInfo(path, "for")` は `elementPaths` にも入れて swap 経路を変えるので流用しない |
-| 遅延実体化の早期 return | `registry.isMaterialized(path)`。`getterPaths.has` で見ると、前世代の生成物が残る再セット後に `listPaths` の登録だけが抜ける |
-| バインド確立時のパス存在検査 | `checkDeclaredPath` が `matchesRecursivePath` を先に見る（実体化はしない）。見ないと、正しく描画・更新されているのに「更新は黙って捨てられる」と警告が出る |
+| 遅延実体化の早期 return | `registry.isMaterialized(path)`。`getterPaths.has` で見ると、前世代の生成物が残る再セット後に `listPaths` の登録だけが抜ける（**→ §7-4 で撤去**。判定は `materializeFor` の台帳 `_accessors` 参照に一本化し、§7-10 で `PathInfo` キーの記憶を前段に置いた） |
+| バインド確立時のパス存在検査 | `checkDeclaredPath` が `matchesRecursivePath` を先に見る（実体化はしない）。見ないと、正しく描画・更新されているのに「更新は黙って捨てられる」と警告が出る（**→ §7-4 で撤去**。現在は `expand.ts` の `depthOfConcretePath` / `isStructuralSuffix` を使う畳み込みで判定する） |
 | 接頭辞と接尾辞の重なり | 一致とみなさない。`nodes.**.*` の接尾辞 `.*` がアンカーの末尾と重なると slice が空文字に畳まれ、アンカー自身（実データの行）が深さ 0 の展開形に化ける |
 
-**成果物**: `src/recursion/{types,declaration,expand,registry,materialize,bind}.ts`、State / proxy / manifest / pathDiagnostics の接続、`recursion.declaration.test.ts`（27）/ `recursion.expand.test.ts`（38）/ `integration.recursionGetter.test.ts`（81）。
+**成果物**: `src/recursion/{types,declaration,expand,registry,materialize,bind}.ts`（`materialize.ts` は §7-9 で `registry.ts` / `generation.ts` へ吸収して撤去）、State / proxy / manifest / pathDiagnostics の接続、`recursion.declaration.test.ts`（27）/ `recursion.expand.test.ts`（38）/ `integration.recursionGetter.test.ts`（81）。
 
 **完了条件（達成）**: 具体パスでアクセスした再帰 getter が正しい深さの値を返す。`PathInfo` / 依存グラフに `**` が入らない（機構で強制）。同一 state・同一深さの登録が重複しない。全件 3001 件緑・カバレッジ閾値を下げていない。
 
@@ -289,7 +289,7 @@ X2 は #256、X5 は #257 として Issue 化した（X1 は未作成）。X10 �
 | X7 | `setInitialState` の再セット後、`for` の行バインドが以後の書き込みに追従しない（集計 getter は追従する）。X6 と同じクラス。再帰とは独立 |
 | X8 | マウントされたコンポーネントの子スコープで `onclick: <method>` がホスト state 側のメソッドを指すと、その `for` が 1 行も描画されず診断も出ない。設計書 §1-1 の `clearSelection()` を行のボタンから呼ぶ形を塞ぐ |
 | X9 | マウントスコープから `$getAll("rows.**.value", [])` を呼ぶと、診断が**翻訳後**のパス（`nodes.**.value`）を名指しする。作者のソースに無い綴りなので grep しても見つからない |
-| X10 | `setInitialState` の再セット後、**wildcard 無しの getter** が旧世代のキャッシュ値を返す（`{ items: [1,2], get sum }` を `{ items: [5,6] }` に再セットしても `sum` は 3 のまま。§7-3 で発見）。`_state` セッタは listPaths / getterPaths / pathSet と再帰の生成辺は整理するが getter キャッシュには触らず、wildcard 無しの絶対アドレスは世代をまたいで同一。再帰の合併形 getter も同じで、再セット前に読んだものだけが旧値を返す。X7 と同じ「再セット後」クラス。`integration.recursionKnownDefects.test.ts` 欠陥8 で現状固定 |
+| X10 | `setInitialState` の再セット後、**wildcard 無しの getter** が旧世代のキャッシュ値を返す（`{ items: [1,2], get sum }` を `{ items: [5,6] }` に再セットしても `sum` は 3 のまま。§7-3 で発見）。`_state` セッタは listPaths / getterPaths / pathSet と再帰の生成辺は整理するが getter キャッシュには触らず、wildcard 無しの絶対アドレスは世代をまたいで同一。再帰の合併形 getter も同じで、再セット前に読んだものだけが旧値を返す。X7 と同じ「再セット後」クラス。`integration.recursionKnownDefects.test.ts` 欠陥8 で現状固定。**追記（§7-4）**: wildcard 無しに限らない。listIndex 付きの絶対アドレスも、再セットで**同じ配列インスタンス**が引き継がれれば台帳（配列 identity がキー）ごと世代を跨ぐ。再帰の生成アクセサについては §7-4 で辺と一緒にキャッシュも落とすようにしたが、作者が手で書いた行 getter のキャッシュは同じ形で残る（辺が残るので構造書き込みで dirty にはなる）。proxy を経ず生配列を `splice` してから同じオブジェクトを再セットした場合は、データパス（`nodes.*.value` 等）のキャッシュも旧値のまま残る — 生データの直接変更は契約外だが、#258 の修正計画で「再セット時に世代を跨ぐキャッシュ」を扱うならこの形も対象に含める |
 
 X6・X7・X10 は同じ「再セット・ハイドレーション後に一部の機構だけ世代を跨ぐ」クラスなので、1 つの Issue にまとめた → [#258](https://github.com/wcstack/wcstack/issues/258)。
 
@@ -306,6 +306,149 @@ X6・X7・X10 は同じ「再セット・ハイドレーション後に一部の
 **あわせて直したもの**: `bindRecursivePath` の二重照合／`concretePathAt` が上限超過のパスを intern してから throw していた点（文字列から数えて先に検査）／`IStateElement.recursionRegistry` の `unknown` 型とキャスト（`import type` で型付け）／「`$setAll` は基準を commit しない」という記述 3 箇所（set-all-design §6-2・`walk.ts`・`stateListBaseline.ts`）が再帰 `$setAll` と矛盾していた点／§1-2 の「トップレベル省略形は全深さ列挙」（実装は throw）。
 
 **完了条件（達成）**: runtime・エディター・CLI・ドキュメントで初版の対応範囲が一致し、example を静的検証で確認できる。packages/state 3179 件緑・カバレッジ閾値維持、vscode-wcs 798 件緑（coverage 込み）、lint smoke 17 件緑。
+
+### 7-4. 着地後レビュー・第 2 回（2026-09-11）
+
+指摘 16 件（高 3・中 6・低 7）。15 件を修理し、1 件（15）を理由付きで却下した。ランタイムとエディタ診断の判定パリティを原則に、片側を直したものは対になる側も直した。
+
+**修理（ランタイム）**:
+
+| # | 内容 | 修理 |
+|---|---|---|
+| 1（高） | 未実体化の生成 getter の**具体パス**（`nodes.*.children.*.total`）への書き込みが `**` を経ないので読み取り専用検査を通らず、`setByAddress` の fast path が行オブジェクトへ素の値を書き、代入値を `dirty:false` で固定して集計を壊す。実体化後は `Reflect.set` false の無言 no-op | `RecursionRegistry.recursiveGetterOwning`（展開形とその値の内側を、実体化せずに `**` getter に帰属させる・記憶付き）を新設し、`setByAddressCore` の入口で `hasRecursion` ゲート付きで `wcs/recursion-readonly` にする。固定 arity `$setAll`・値付き `$resolve`・直接代入・値の内側をすべて塞ぐ |
+| 2（高） | class 構文（prototype）の同名具体 getter を `_define` の own-only 検査が素通りし、生成アクセサが無言で影にする | `IStateElement.getOwnStateDescriptor` を `findStateDescriptor`（プロトタイプチェーン走査）に置き換え。データプロパティも衝突として拒否 |
+| 5（中） | `$setAll("nodes.**.children.length", [], 0)` が通過し全深さの children を切り詰める | `assertNotStructural` に `"." + repeatList + ".length"` を追加 |
+| 6（中） | `currentRecursionDepth` がスタックを外側へ走査して深さだけを拾い、添字は先頭からしか取れないので、`**` getter → 素の getter → `**` の形が `ListIndex not found` か「深さ × 全行」の無言誤値になる | 深さも**先頭フレームだけ**から取る（README「each of those carries a real ListIndex」の通り）。`addressStackAt` は撤去。設計上の後退ではない — 外側走査が「支える」と主張していた形は実際には一度も成立していなかった |
+| 7（中） | 同じ state オブジェクト（同じ配列）の再セットで、生成アクセサの辺だけ外れてキャッシュが残り、読む前の構造書き込みが集計に届かない | `forgetGenerated` で辺と一緒にキャッシュも落とす。旧 state のデータを台帳（配列 identity）に沿って辿り、各深さの行 × その深さのアクセサの絶対アドレスを列挙する |
+| 8（中） | オブジェクトを返す `**` getter の値の内側へのバインドが偽の `binding-path-missing` | `checkDeclaredPath` が `recursiveGetterOwning` で「値の内側」まで黙る |
+| 10（低） | `$listKeys` の `**` キーを無言で受理 | `processListKeysDeclaration` で `wcs/recursion-unsupported` |
+| 11（低） | `$getAll("…**…", null)` が生の TypeError。アンカー照合が添字検査より後で静的側と別コード | 形の検査を `getAllRecursive` へ移し、アンカー照合 → 添字の形の順にした。固定 arity の `$getAll` の非配列 `indexes` も診断にした |
+| 13（低） | 未使用フィールド・重複照合 | `IRecursionAccessor` を `{ recursivePath, depth }` に、`IRecursivePathParts.spec` / `registry.concretePath()` / `isMaterialized` / `resolveRecursiveAddresses` を削除、`assertNotStructural` は `IRecursionSpec` |
+| 14（低） | コメント・文言の齟齬 | `getAllRecursive.ts` / `getAll.ts` の「`$setAll` は更新しない」を固定 arity 限定に、`PathInfo.ts` の文面に `$setAll` を追加、`scriptCallArgs.ts` の「正規表現もどき」を削除 |
+| 16（低） | `_nonAccessors` の有界性 | コメントで根拠（キーは intern 済みのワイルドカード形パスの部分集合 ＝ D10 と同じ上限）を残した |
+
+**修理（vscode-wcs）**: 3（宣言が静的に読めない形で「未宣言」と断定しない）・4（`matchesRecursion` が畳む深さを 0 まで降りる）・5（`.length`）・8（`**` getter の値の内側は存在扱い）・9（代入 / `$postUpdate` / `$trackDependency` / `$listKeys` の `**` を `recursion-unsupported`）・1（具体パス綴りの `$setAll` / 値付き `$resolve` / 代入を `recursion-readonly`）・12（ボリュームの `$recursion` / `**` getter を `recursion-declaration-invalid`）。
+
+**却下（理由付き）**: 15（`walk.ts` の二重走査 — 2 度目の `getByAddress` はキャッシュ命中、`createListDiff` は台帳既存で `isSameList` の O(n) 比較のみ。合併形かつ接尾辞に反復語を含む稀な形の定数倍で、`descend` と `expandSuffix` の読みを共有すると形の検査（`guardShape`）の掛け方が絡んで走査が複雑になる）。**採らなかった案**: 9 の「README の表を実装に合わせる」（表が正しく、実装を表に合わせた）／6 の「外側走査を残して診断だけ足す」（残すと定義にない値を返す経路が残る）。
+
+**残課題**: 静的側は通常（非再帰）の getter の値の内側（`total.count`）にも `binding-path-missing` を出す（ランタイムは UNKNOWN で黙る）。本 PR 固有ではないので手を付けていない。
+
+### 7-5. 着地後レビュー・第 3 回（2026-09-11）
+
+第 2 回の修理はすべて解決を確認（副作用も無し）。新規 5 件（中 1・低 4）をすべて修理した。
+
+| # | 内容 | 修理 |
+|---|---|---|
+| 1（中） | `...tree` で `$recursion` を持ち込むオブジェクトリテラルは「読める」ので `undeclared` になり、正当なコードに `recursion-unsupported`（error）が出て `wcs-validate` が exit 1 | `stateAnalyzer.hasTopLevelSpread` を新設し、「オブジェクトリテラルが読めて、トップレベルに spread が無く、`$recursion` が無い」ときだけ断定する |
+| 2（低） | 新設の代入走査が `blankComments` で、文字列・テンプレートの中の `this["…"] = 1` を代入と誤認 | `maskCommentsAndStrings`（export 化）の鏡像で探し、パスは同じ位置を原文から切り出す。`validateApiCalls` は既存 validator 家系と同じ `blankComments` のまま（テンプレート補間の中の呼び出しを見失わないため） |
+| 3（低） | 添字綴り（`this["nodes.1.total"] = 9`）はランタイムが `nodes.*.total` に畳んで拒否するが静的側は沈黙。加えて**ランタイム側**も API のパス引数（`$setAll("nodes.1.total", [], 9)` / 値付き `$resolve`）は getResolvedAddress を経ないので素通りし、`nodes[1].total` を生の行に書いていた（getter が勝ち続けるので集計は無事だが `$getAll("nodes.1.total", [])` は汚れた値を返す） | 両側で添字セグメントを `*` に畳んでから照合する（runtime `recursiveGetterOwning` / static `owningGetterSuffix`）。バインディングの添字綴りは静的側が元から `template-syntax` で拒否するので `matchesRecursion` には掛けない |
+| 4（低） | class 構文テストの「影にされていない」assert が `{}` を検査していて空振り | `__state` を対象にし、prototype と作者 getter の値（-1）まで見る |
+| 5（低） | §7-4 の件数、`bindingValidator.ts` の撤去済み API 名 | 文言修正 |
+
+**参考（非指摘・記録のみ）**: 同一オブジェクトの再セット直前に proxy を経ず生配列を `splice` した場合は、生成アクセサだけでなくデータパスのキャッシュも旧値のまま残る。生データの直接変更は契約外（§7-2 X10 の追記を参照）。
+
+### 7-6. 着地後レビュー・第 4 回（2026-09-11）
+
+第 3 回の修理 5 件はすべて解決を確認（添字畳みの述語がランタイムの `ResolvedAddress` と一致することも突合済み）。新規 2 件を修理した。
+
+| # | 内容 | 修理 |
+|---|---|---|
+| 1（中） | ランタイムの添字畳みを「アンカーで始まらないとき」にしか掛けていなかったので、ワイルドカードと添字の**混在綴り**（`nodes.*.children.0.total`）が畳まれず素通り。`$setAll` は行 0 に書いた後に children が空の行 1 で生の `Reflect.set called on non-object`（部分書き込み）、`$resolve` は無言で汚染。静的側は無条件に畳むので捕まえていた（パリティ欠陥） | `recursiveGetterOwning` で無条件に畳む（パスごとに初回 1 回・記憶済み）。混在綴りの `$setAll` / `$resolve` / 値の内側と、葉の対照を両側のテストに追加 |
+| 2（低） | 静的側の添字述語が整数綴り（`^\d+$`）だけで、ランタイムが添字と読む空セグメント・`1e3`・`-1`・`0x1` に沈黙 | 述語をランタイムと同じ「`*` でなく `Number()` が NaN でない区切り」に揃えた |
+
+### 7-7. 第 2 サイクル・第 1 回レビュー（2026-09-12）
+
+先入観の無い指摘者による実装全体の再点検。9 件（高 2・中 3・低 4）をすべて修理した。
+
+| # | 内容 | 修理 |
+|---|---|---|
+| 1（高） | `**` パスの**接尾辞側**の添字綴り（`nodes.**.children.0` / `.children.0.children` / `.children.0.total`）が構造・読み取り専用の検査をすり抜け、子を置換して集計が stale、または部分書き込みの途中で生の `Reflect.set called on non-object` | `indexSegmentsToWildcard` を `expand.ts` へ移して両呼び手で共有し、`setAllRecursive` は接尾辞（先頭の区切りの後ろ）を畳んでから `assertNotStructural` / `conflictingRecursiveGetter` に掛ける。列挙は綴りのまま（接尾辞の添字は「その子だけ」の意味）。静的側 `validateSetAllForm` も同じ。README の構造行に「添字綴りも同じ形」を追記 |
+| 2（中） | 同一オブジェクト再セットのキャッシュ落としが、接尾辞にワイルドカードを持つ `**` getter（`get "nodes.**.tags.*.up"()`）に届かない（タグ行の ListIndex に載るキャッシュを、ノード行の ListIndex で引いていた） | `_forgetCacheEntries` を生成パスごとに `wildcardParentPathInfos` を台帳に沿って末端まで降りる形に書き直した |
+| 3（高） | `$trackDependency("nodes.**.value")` が生文字列のまま依存表に載って無言に受理され、getter が stale（`$postUpdate` / `$resolve` / `$watch` は `getPathInfo` の不変条件で落ちる — この 1 入口だけの穴） | `trackDependency.ts` の先頭で `**` を `wcs/recursion-unsupported` に。宣言の有無に関わらず拒否 |
+| 4（中） | 反復サブパスが単純な文字列リテラルでないと静的側が `recursion-declaration-invalid`（error）を出す偽陽性（識別子参照 `REPEAT` はランタイムでは正当）。テストがその偽陽性を固定していた | `RecursionEntryInfo.repeatDefinitelyNotString` を足し、数値・真偽値・null・配列・オブジェクト・関数・メソッド短縮記法と断定できるときだけ error。`${}` の無いテンプレートは文字列として受理。テストの期待を反転 |
+| 5（中） | `**` getter の接尾辞が構造そのもの（`nodes.**.children` / `.children.*` / `.children.length` / 多段なら `.branch`）でも宣言時に拒否されず、生成 getter が実データの子リストを全深さで影にする（`$getAll("nodes.**.value", [])` が `[1, 2]` に縮む） | 述語を `expand.ts` の `isStructuralSuffix` に統合し、`RecursionRegistry` の構築時と `validateRecursiveGetters` の両方で拒否（`recursionGetterInvalid(…, 'structural')`）。README の拒否一覧に追記 |
+| 6（低） | `$getAll("…**…", null)` と配列でないリテラルに静的側が沈黙（`validateSetAllForm` は拾っていた） | `$getAll` 分岐で `null` / 文字列・数値・真偽値・オブジェクトリテラルを `recursionGetAllForm(…, 'notArray')` に。`undefined` は束縛形なので黙る。README の getall-form 行を更新（runtime-only の 6 コード表は不変） |
+| 7（低） | `_state` セッタが `forgetGenerated` を新宣言の検証より先に実行し、不正な `$recursion` での再セットが throw すると旧レジストリだけが残る半端な状態に | 新しい宣言とレジストリを先に組み立て、通ってから旧世代を忘れて差し替える順に変更。#257 の修理には踏み込まない |
+| 8（低） | 束縛形の読みが評価ごとに `concretePathAt` で文字列連結＋ワイルドカード数えをやり直す | `RecursionRegistry.concretePathAt(suffix, depth)`（接尾辞 → 深さ順の記憶。上限超過は throw するので載らない） |
+| 9（低） | `IRecursionWalkOptions.commitDiffBaseline` が両呼び手 true 固定／`IRecursivePathParts` が `suffix` 1 フィールド／`hasRecursion` / `recursionRegistry` が optional で読み方が 2 系統／`bind.ts` の `"."` | オプションと引数を撤去し走査は常に確定／`splitRecursivePath` は静的側と同じ `string \| null`／2 フィールドを必須にし、読み手は `hasRecursion === true` ゲート ＋ `!` に統一（テストのモックはフィールドを持たなくてよい — ゲートが偽になるだけ）／`DELIMITER` |
+
+**記録**: 接尾辞に添字を含む `**` パスの葉（`$setAll("nodes.**.children.0.value", [], v)`）は、children が空の行で「親の無いパスへの書き込み」として生の TypeError になる。固定 arity の `$setAll("nodes.*.children.0.value", [], v)` と同じ既存の性質で、再帰固有ではないので手を付けていない（README の「a rejected call leaves the tree untouched」の直後に、形の検査に限る旨を添えた）。
+
+**再検証後の追記（指摘 7 の残り＋記録事項）**:
+
+- **指摘 7（完了）**: 順序変更だけでは `this.__state = value` と `getterPaths` の再収集が検証より先に走り、throw 後も「state は新・レジストリは旧」のままだった。`processRecursionDeclaration(value)` と `new RecursionRegistry(spec, value)` は `value` しか読まない（コンストラクタは `getAllPropertyDescriptors(state)` と純関数だけ）ので、`processCommandTokensDeclaration` と同じく **`__state` の差し替え前**に持ち上げた。再セットの宣言不正時は要素が丸ごと旧世代に留まる（テストで `__state` 据え置き・旧世代の `[131, 2]` が読めることまで固定）。
+- **#257 の表面**: 指摘 5 で新設した「構造を名指す `**` getter」の構築時 raise は、初回マウントでは他の宣言検証と同じく無言ハング（`connectedCallbackPromise` 未解決・`console.error` 0 件）になる。`integration.recursionKnownDefects.test.ts` 欠陥9 で現状固定。**#257 の修理時に、この raise も「resolve してから raise」の経路に載せること。**
+- **添字綴りの getter キー**: `get "nodes.**.children.0"()` も両側で区切り後ろを畳んでから構造の述語に掛ける（指摘 1 と同じ扱い）。
+- 据え置き: `$recursion: { get "nodes.*"() {…} }`（ランタイム受理・静的 error）は作為的な形なので対応しない。
+
+### 7-8. 第 3 サイクル（2026-09-12）
+
+3 体目の指摘者（先入観なし）による再点検。12 件（高 1・中 3・低 8）のうち 11 件を修理し、1 件（4: `packages/lint/dist/cli.cjs` の再生成）は統括者が最後に行う（smoke-test の 1 件追加だけ先に入れた）。
+
+| # | 内容 | 修理 |
+|---|---|---|
+| 1（高） | `**` getter の展開形と同名の具体 getter（`get "nodes.*.children.*.total"()`）を、ランタイムは「その深さを最初に読んだとき」にしか拒否せず、静的側は `**` どうししか見ていなかった。データが浅い間は通り、木が 1 段深くなった瞬間にバインディングが落ちる | `RecursionRegistry._assertNoConcreteCollision`（構築時・前世代の生成物は除外）と、静的 `validateRecursiveGetters` の非 `**` 宣言への `concreteExpansionSuffix` 照合（`recursionConcreteCollision`）。既存の「読みの時点で落ちる」テストは再セット経路に書き換え、`_define` の保険は「構築後に生の state へ足す」形で残した。初回マウントでは #257 の無言ハングになる — 欠陥9 に 1 件追加 |
+| 2（中） | `$recursion: { ["nodes.*"]: … }` / `{ ...REC }` を静的側が「it is empty」と偽陽性で拒否 | `analyzeRecursionDeclaration` が計算キー・spread を含むオブジェクトを `objectLiteral: false`（断定しない）に倒す（`hasUndecidableEntries`） |
+| 3（中） | マウントされたコンポーネントの `**` getter が warn も error も無く黙って捨てられる | `warnMountedDollarDeclarations` が `**` を含む getter キーも `wcs/mount-dollar-declaration` に載せる。静的側は `bind-component` の `<wcs-state>` の `$recursion` / `**` getter を `recursion-declaration-invalid`（warning）で報告 |
+| 4（中） | `packages/lint/dist/cli.cjs` が古い | **統括者が再生成**。smoke-test に「spread で宣言を持ち込む state が exit 0」を追加（再生成まで赤） |
+| 5（低） | 代入走査が `++` / `--` を見ない | `scriptPatterns` の `ROOT_BRACKET` / `ASSIGN_TAIL` / `PRE_INCDEC` を共有（semanticValidator と同じ部品） |
+| 6（低） | `_ownerByPath` が添字綴りの数だけ単調に増える | 記憶のキーを畳んだ形（`pattern`）に。`_accessors.get(concretePath)` の先頭命中はそのまま |
+| 7（低） | 上限の境界値（127 通る / 128 落ちる）がテストに無い | 集計は 127 段の鎖で `[127]`（実体化 127）、128 段の鎖で深さ 127 の葉が 129 段を要求して `recursion-depth-exceeded`。合併形は 128 段の鎖で 128 件、129 段で落ちる（README「folds a chain 127 deep and stops at 128」どおり） |
+| 8（低） | `walkDependency.ts` の陳腐化したコメント | 「キャッシュ無し・再セットで辺が外れることがある」に改めた |
+| 9（低） | `[wcs/recursion-anchor]` の文面が 3 箇所に逐語コピー | `pathDiagnostics.recursionAnchorMismatchMessage` に集約 |
+| 10（低） | `hasRecursion` / `recursionRegistry` の doc と `setAllRecursive` の `indexes` 型 | doc を実態（必須。モックが通るのは vitest が型検査しないから）に、`indexes: unknown` に統一 |
+| 11（低） | README「Not in this version」の抜け、デモ README の構造書き込みの範囲、接尾辞ワイルドカードの合併形の順序 | 3 点とも en/ja 対で追記（`nodes.**.tags.*.v` → `[3, 4, 5, 7]` の例） |
+| 12（低） | CHANGELOG [Unreleased] の Fixed が 1 段落・Added と重複 | 未リリース機能なので Fixed を Added に吸収し、利用者に見える最終契約だけを残した。vscode-wcs 側も同じ粒度に整理 |
+
+### 7-9. 第 4 サイクル（2026-09-12）
+
+4 体目の指摘者（先入観なし）による再点検。11 件（中 4・低 7）をすべて修理した。
+
+| # | 内容 | 修理 |
+|---|---|---|
+| 1（中） | 反復語ぶんずれた展開形の値の内側（`$setAll("nodes.**.children.*.total.x", [], v)`）を `conflictingRecursiveGetter` / `conflictingGetterSuffix` が拾えず、静的側は沈黙、ランタイムは走査（基準 commit）の後の第 2 相で初めて readonly | `expand.coversSuffix` / `recursionPaths.coversSuffix`（接尾辞の `.` 境界の各接頭辞に `sameFamily`）を両側の述語にし、列挙より前に `wcs/recursion-readonly` |
+| 2（中） | `$recursion` を宣言した state では全書き込み（アンカー外も）が `recursiveGetterOwning` の畳み（split + `Number()` + join）を毎回払う（+101ns / +180〜252ns） | intern 済み `PathInfo` をキーにした `WeakMap` 記憶（`recursiveGetterOwningPath`）を前段に置き、畳みは miss 時だけ。**修正後の計測**（50,000 回・5 ラウンド最良値・2 回実行）: `s.counter = i` +7ns / +19ns（1.02× / 1.07×）、`s["form.a"] = i` +4ns / +26ns（1.01× / 1.09×） |
+| 3（中） | 宣言時（構築時）の診断にランタイム側のコードが無い。getter キーのアンカー不一致は 4 本目の手書き文面。README 診断表に `wcs/recursion-declaration-invalid` が無い | `declaration.ts` / `registry.ts` の宣言時 raise に `[wcs/recursion-declaration-invalid]` を付け、アンカー不一致は `recursionAnchorMismatchMessage`。README 診断表に行を追加（lint が先に出す旨）。CHANGELOG に一言 |
+| 4（中） | `mount` / `read` / `write` / `TNode` / `node` / `forest` / `recursionState` が 7 ファイルにほぼ同文でコピー | `__tests__/helpers/recursionTestUtils.ts`（`makeMount(prefix)` / `read` / `write` / `writeCount` / `writeError` / `node` / `forest` / `recursionState` 基本形 / `UNION_TOTAL` / `UNION_VALUES`）に抽出し、5 ファイルの mount と 7 ファイルの read / write を差し替え（挙動不変の機械的抽出）。合併形 getter を足す getAll / setAll は基本形を包む局所ラッパーで同じ state を組む。返り値の形が違う Shape の `mount` と Integration の `mountHost` は据え置き |
+| 5（低） | registry.ts の責務混在 | `_sameFamily` → `expand.sameFamily`、「区切り後ろだけ畳む」イディオム → `foldSuffixIndexes`（両側・4 箇所）、`materialize.ts` は削除して `getByAddress` が `registry.materializeFor` を直接呼ぶ（空レジストリのガードは `materializeFor` 内 → §7-10 で `materializeForPathInfo` へ移設）。世代の後始末（own 生成アクセサの削除・辺・キャッシュ）は `generation.ts` に分離（`forgetGeneration` / `isGeneratedGetter` / `markGeneratedGetter`） |
+| 6（低） | `**` の接尾辞に空セグメント・末尾区切り・素の `*` があっても受理 | `splitRecursivePath`（両側）で拒否 → `wcs/recursion-anchor`（文面に「整形された接尾辞」を追記） |
+| 7（低） | 同じ state を `$recursion` 無しで再セットしても own の生成アクセサが残り、`getterPaths` に拾い直されて `recursion-unsupported` になる | `forgetGeneration` が own の生成 getter を `delete`。セッタの順序を「宣言検証 → 旧世代の後始末 → 差し替え → 再収集」に整理し、`getStateInfo` より前に呼ぶ。テストで再セット後の `getterPaths` に生成パスが無いことを固定 |
+| 8（低） | 再セットで `$recursion` が不正なとき `_commandTokenNames` / `_eventTokenNames` は throw より前に差し替わる | `value` しか読まない**純検証をすべて先に**（`$recursion` の宣言とレジストリ構築・`$commandTokens`・`$eventTokens`）済ませ、その後で後始末（`forgetGenerated`）→ 差し替え → 再収集。§7-7「要素が丸ごと旧世代に留まる」はこれで正確になった（テストでトークン名の据え置きも固定）。**再検証で回帰を検出**: 最初の整理ではトークン検証が後始末の後に回っており、`$recursion` は正当で `$commandTokens` が不正な再セットが「レジストリは新・own 生成アクセサと辺は消えた・`__state` は旧」で throw していた（別アンカーなら旧世代の集計が無言で消える）。トークン検証もレジストリ構築の直後に移し、別アンカー＋不正トークンで旧世代の `[131, 2]` が読めることを固定 |
+| 9（低） | 陳腐化した記述 4 点 | `setAll.ts` のコメント／set-all-design §6-2／design §10（決着済みの注記）と §6-3（`$129` 修理済み）／デモ README のコード付与の説明を現行実装に合わせた |
+| 10（低） | 合併形の走査ごとに `concretePathAt` をやり直す | `collectRecursiveAddresses` に `registry` を渡し、`pathsAt` が `registry.concretePathAt` の記憶を使う |
+| 11（低） | `recursion.expand.test.ts` の同名 `it` | 後者を `listPathsUpTo:` 付きの題名に |
+
+**再検証後の追記（低 2 件・第 4 サイクル）**: #8 の回帰（上の行に記載）を修理。lint の挙動が増えた 2 点（`wcs/recursion-anchor` の不整形接尾辞・`wcs/recursion-readonly` の反復語ぶんずれた値の内側）を vscode-wcs CHANGELOG に追記し、README 診断表の `wcs/recursion-anchor` 行にも不整形接尾辞を添えた（en/ja）。
+
+**再検証後の追記（低 3 件・第 3 サイクル）**: 行 7 の修理欄を実装どおり（集計 127 / 128、合併形 128 / 129）に訂正。マウント／ボリュームのブロックでも宣言に依存しない検査（`**` の代入・`$resolve` / `$postUpdate` / `$trackDependency`・`$listKeys` キー）を走らせる（`spec = null`・`undeclared = false` で呼び、宣言依存の `$getAll` / `$setAll` の形は黙る — §7-4 #12 の判断と矛盾しない）。Fixed の撤去で落ちていた「固定 arity の `$getAll` に配列でない `indexes` を渡すと生の TypeError ではなく診断」（既リリース API の挙動変更）を `### Changed` に戻した。
+
+### 7-10. 第 5 サイクル（2026-09-12・最終点検）
+
+5 体目の指摘者（先入観なし）による最終点検。19 件（中 7・低 12）をすべて修理した。
+
+| # | 内容 | 修理 |
+|---|---|---|
+| 1（中） | `defineState()` の公開型面に `**` の索引シグネチャが無く、`this["nodes.**.value"]` が TS2551。VS Code 拡張の preamble だけが対応していて型面のパリティが割れていた | `WcsStateApi` に preamble と同じ `` readonly [key: `${string}.**.${string}`]: any `` を追加（再検証で、素の `nodes.**` に合致しないと指摘され `` readonly [key: `${string}.**`]: any `` も両側に追加）。`docs/define-state.md` に「再帰パスは `any`・通常のドットパスは損なわない」節、`docs/typescript.md` §1 に 1 行。`__tests__/defineState.test.ts` に**実際に tsc へ通す型テスト**を 3 件（`**` の読みが通る／通常パスの綴り間違いは従来どおり error／通常パスの値型は保たれる） |
+| 2（中） | 宣言のある state では全読みが `materializeFor` の文字列キー `Map.get` + `Set.has` + `startsWith` を親ウォークの段数ぶん払う | 書き側 `recursiveGetterOwningPath` と対称に `WeakMap<IPathInfo, IRecursionAccessor \| null>` の記憶（`materializeForPathInfo`）を前段に置き、`getByAddress` が `address.pathInfo` を渡す。否定も記憶する（定義集合は世代内で不変・記憶はレジストリが持つので世代を跨がない）。**計測**（同一プロセス内 A/B・50 万回・9 ラウンド最良値）: ゲート 1 回あたり `counter` 9.3 → 6.3ns、`nodes.*.value` 13.3 → 5.4ns、`nodes.*.total`（展開形）6.2 → 4.1ns。読み全体（10 万回・9 ラウンド）は plain 比の差がプロセス間ノイズ（±40ns）に埋もれる水準。空レジストリのガードは `materializeFor` から `materializeForPathInfo` へ移設した（二重になり到達不能化したため）。**再検証**: 指摘者の計測で plain 比 +123ns → +42ns を確認。前段の記憶を置いた後は文字列キーの `_nonAccessors` が PathInfo 記憶と同じ否定判定を二重に持つだけ（PathInfo は intern されパス文字列と 1:1）だったので撤去し、否定の記憶は `_accessorByPathInfo` の 1 か所にした |
+| 3（中） | README「このバージョンに含まれないもの」が `$setAll` と `$getAll` を 1 文に束ね、`$getAll` の添字省略（束縛形＝正当）まで拒否されると読めた | 2 つの箇条に分け、`$getAll` は「**添字省略は正当**（再帰 getter の中では束縛形）」と明記（en/ja 対） |
+| 4（中） | デモの注記「添字を省くと呼び出し文脈の深さに束縛される」が誤り（再帰 `$setAll` の省略は常に拒否） | 「書き込み API はどこから呼んでも文脈を取らないので拒否される」に修正 |
+| 5（中） | ルート CHANGELOG が `$setAll` の 4 形すべてに `wcs/recursion-setall-form` を付けていた（ランタイムでコードが付くのは非空接頭辞だけ） | README 診断表と同じ切り分けに修正（mapper / spread / 添字省略は文面で形を名指し、lint は同じコードで報告する旨） |
+| 6（中） | vscode-wcs CHANGELOG の未リリース節が積み上げ履歴のままで、後の箇条が前を上書きしていた | code ごとに最終的な判定範囲を 1 回だけ書く形へ統合（root と同じ「最終契約だけ」） |
+| 7（中） | `integration.recursionSetAll.test.ts` のコメントが現在の契約の逆（`commitDiffBaseline: false`） | 「再帰の `$setAll` は観測したリスト値を基準へ確定する（固定 arity だけが確定しない）」に書き換え |
+| 8（低） | 設計書 D12 / §7-2 が共有配列の検出を旧案（`createListDiff` 戻り値の参照比較）のまま掲げていた | D12 の決定欄を「走査そのもの」に直し、§7-2 に訂正注記（Phase A 訂正と同じ書式）を追加 |
+| 9（低） | `$recursion: ["nodes.*"]` を静的側が黙る（ランタイムは `recursion-declaration-invalid`）。配列リテラルだけ断定の候補から漏れていた | `analyzeRecursionDeclaration` の `definite` に `/^\[/` を追加。テストで固定 |
+| 10（低） | `${}` の無いテンプレートリテラルのパス引数（`` $setAll(`nodes.**.children`, [], []) ``）を静的側が黙る（宣言の値側は受理していた） | `scriptCallArgs.literalString` が置換の無いテンプレートも読む。`wcs/index-arity` ほか API 引数を見る検査すべてに効く |
+| 11（低） | アンカー / 反復サブパスの途中の添字セグメント（`{ "nodes.*": "children.0.*" }`）を両側とも受理。エンジンは添字を `*` に畳むので意味を持たない奇形 | `assertNodePath` / `checkNodePath` の両方で `wcs/recursion-declaration-invalid`（畳みと同じ述語 `!isNaN(Number(segment))`）。README 診断表と CHANGELOG にも追記 |
+| 12（低） | 撤去済み API 名がコメントに残る 4 箇所 | `recursionPaths.ts` の 2 箇所（`_sameFamily` / `assertNotStructural` → `expand.ts` の `sameFamily` / `isStructuralSuffix`）、getter テストの `forgetGeneratedDependencies`（現 `forgetGeneration`）、Phase B 表の `isMaterialized` / `matchesRecursivePath` に「→ §7-4 で撤去」 |
+| 13（低） | `diagnostics.ts` / `messages.ts` の code の doc コメントが初版の部分集合のまま | 現在の型ユニオン（`RecursionWildcardSite` の 8 種・`StructuralWriteTarget` の 4 種・不整形接尾辞・宣言形の全列挙）に更新 |
+| 14（低） | `anchorList` / `repeatList` をランタイムが 7 箇所で再計算（静的側 `RecursionSpec` は持っている） | `processRecursionDeclaration` で確定して `IRecursionSpec` に載せ、`expand` / `walk` / `setAllRecursive` / `registry` / `State.ts`（`_listPaths.add` のアンカーリスト — 再検証で漏れを指摘され修理、未使用になった `DELIMITER` import も削除）の再計算を差し替え。名前は静的側と同じ |
+| 15（低） | `State.findStateDescriptor` と `pathDiagnostics.findDescriptor` が同じ走査の 2 本立て | `findDescriptor` を export して共有（打ち切り位置が 2 本に分かれない） |
+| 16（低） | 使われない戻り値・export | `assertNodePath` は `void`、`nodePathAt` は非 export（テストの同語反復 1 件を削除）、`hasDefinitions` / `materializedPaths` は「テスト専用」と doc に明記 |
+| 17（低） | `integration.recursionShape.test.ts` に `console.log` が 4 箇所 | 削除 |
+| 18（低） | impl-plan ヘッダの状態・ブランチが §7-7〜§7-9 と食い違う | 「main マージ済み（PR#259 / #260）・品質改善は `improve/recursive-path-quality` で §7-7 〜 §7-10」に更新 |
+| 19（低） | README の Features 一覧に「再帰パス」が無い | 1 行追加（en/ja 対） |
+
+**再検証後の追記（部分解決 1 件・低 6 件・第 5 サイクル）**: #14 の漏れ（`State.ts` のアンカーリスト再計算）を修理。`**` の索引シグネチャが素の `nodes.**`（再帰 getter の中でノード自身に束縛される読み）に合致しなかったので、`` `${string}.**` `` を `defineState` と preamble の両方に足し、型テストを両側に 1 件ずつ追加。#1 の en 文書に対応する ja（`define-state.ja.md` の「再帰パス」節・`typescript.ja.md` §1 の段落）を追加。vscode-wcs CHANGELOG の `wcs/recursion-unsupported` に「宣言の無い `**` getter のキーだけは warning」を添え、入れ子のバッククォートを二重バッククォートに直した。#10 の拡張が `wcs-validate` の既存検査（`wcs/index-arity`・`wcs/getter-untracked-read` の入れ子書き込みの証拠）にも効くので、ルート CHANGELOG の `### Changed` に `@wcstack/lint` の 1 行を追加。#2 の前段記憶と二重になっていた `_nonAccessors` を撤去（上の #2 の行に記載）。
 
 ## 8. 受け入れ条件と検証
 

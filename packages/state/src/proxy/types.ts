@@ -8,14 +8,13 @@ import type { IBindingErrorInfo } from "../types";
 export interface IStateHandler extends ProxyHandler<IState> {
   readonly stateElement: IStateElement;
   readonly addressStackLength: number;
-  readonly lastAddressStack: IStateAddress | null;
   /**
-   * アドレススタックの position 段目（0 が最も外側）。範囲外は null。
-   * 再帰の深さ解決が「最も内側の再帰アクセサ」を探すために外へ向かって走査する
-   * （recursion/bind.ts）。lastAddressStack だけでは、再帰 getter の本体が
-   * さらに別の getter を経由して `**` を読む形を取りこぼす。
+   * アドレススタックの先頭（いま評価しているアドレス）。ループ文脈の無いスコープでは null。
+   * 再帰の深さ解決（recursion/bind.ts）もここだけを見る — 添字の供給元
+   * （getContextListIndex / `$getAll` の省略形）が先頭しか見ないので、深さだけを外側の
+   * フレームから拾うと「深さはあるが行が無い」定義にない状態になる。
    */
-  addressStackAt(position: number): IStateAddress | null;
+  readonly lastAddressStack: IStateAddress | null;
   readonly loopContext: ILoopContext | null | undefined;
   /**
    * 依存追跡の抑止中か。$untrackDependency のスコープ内、および setter 実行中

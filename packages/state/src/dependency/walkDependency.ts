@@ -419,8 +419,9 @@ export function walkDependency(
     callback(startAddress);
     return [];
   }
-  // パス単位のトポロジカル順位。値を一切読まずに求まり、依存グラフは追記のみで
-  // 成長するため epoch でメモ化される（topologicalRank.ts）。
+  // パス単位のトポロジカル順位。値を一切読まないグラフ走査で毎回求める（キャッシュは
+  // 持たない — topologicalRank.ts）。依存グラフは追記が基本だが、再帰の再セットでは
+  // 旧世代の生成アクセサを指す辺が外れることがある（recursion/registry.ts の forgetGenerated）。
   const ranks = getTopologicalRanks(startPath, staticDependency, dynamicDependency, MAX_DEPENDENCY_DEPTH);
   const context: Context = {
     ranks: ranks,

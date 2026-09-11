@@ -41,7 +41,7 @@ npx serve .          # 任意の静的サーバーで可
 - **入力契約は木です。** 同じ配列インスタンスが 2 つ以上の親から到達可能だと、走査は黙って二重計上せずに拒否します（`wcs/recursion-shared-list` / `wcs/recursion-cycle`）。循環はその特殊ケースです。
 - **`**` はオーサリング層だけの記号。** `PathInfo` には決して渡らないので `$resolve` は受け取らず、`data-wcs` に書くのも未対応です（`wcs/recursion-unsupported`）。再帰評価の外で `this["nodes.**.value"]` を読むと束縛先の深さが無く、`wcs/recursion-context` になります。
 - **添字の形は API ごとに違います。** 再帰 getter の中の添字省略 `$getAll` は評価中の深さに束縛、`$getAll(path, [])` は全深さの合併、非空の接頭辞は定義できないので拒否です（`wcs/recursion-getall-form`）。
-- **再帰の書き込みはブロードキャストだけ**（`wcs/recursion-setall-form`）。mapper と `spread` は深さで添字の本数が変わるため不可、添字省略も不可、構造への書き込み（ノード自身・子リスト・子ノード）も不可です（`wcs/recursion-structural-write`）。構造変更は普通の書き込みのままで、**+ child** と **−** がまさにそれを 1 段のスコープの中でやっています。
+- **再帰の書き込みはブロードキャストだけ**。非空の接頭辞は `wcs/recursion-setall-form`、mapper と `spread` は深さで添字の本数が変わるため不可、添字省略も不可（ランタイムは形を名指した文面で拒否し、lint は同じコードで報告します）、構造への書き込み（ノード自身・子リストとその `length`・子ノード・反復サブパスが `branch.children.*` のように多段なら子リストへ至る途中のオブジェクト）も不可です（`wcs/recursion-structural-write`）。構造変更は普通の書き込みのままで、**+ child** と **−** がまさにそれを 1 段のスコープの中でやっています。
 - **深さには上限があります。** 展開後のパスのワイルドカード段数は `MAX_WILDCARD_DEPTH`（128）以下で、超えるとループせずアンカーと深さを名指しした `wcs/recursion-depth-exceeded` になります。
 
 > 設計判断はリポジトリルートの `docs/state-recursive-path-design.md`、実装は `packages/state/src/recursion/` を参照してください。

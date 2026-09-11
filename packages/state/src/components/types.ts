@@ -132,19 +132,25 @@ export interface IStateElement {
    * （docs/state-recursive-path-impl-plan.md §3-2 の E4）。
    */
   addListPath(path: string): void;
-  /** state オブジェクト自身の own descriptor（生成物と作者定義の見分けに使う）。 */
-  getOwnStateDescriptor(path: string): PropertyDescriptor | undefined;
+  /**
+   * state オブジェクト自身＋プロトタイプチェーンから descriptor を引く（生成物と作者定義の
+   * 見分けに使う）。class 構文の getter は prototype に載るので own だけでは足りない。
+   */
+  findStateDescriptor(path: string): PropertyDescriptor | undefined;
   /**
    * この state に `$recursion` 宣言があるか。偽のとき getByAddress の遅延実体化と
    * get トラップの `**` 解決は boolean 判定 1 個で抜ける（hasMounts と同じ D18 の形）。
-   * optional なのはテスト用モック互換のため（undefined は「再帰なし」扱い）。
+   * 読み手は必ずこのゲートを先に見て、真なら `recursionRegistry` を `!` で読む。
+   * 必須メンバー（実装は `State` のみ）。`any` 型のテスト用モックがフィールドを持たなくても
+   * 通るのは vitest が型検査をしないからで、その場合 `undefined === true` は偽なので再帰の
+   * 経路に入らないだけ — 型としては必須。
    */
-  readonly hasRecursion?: boolean;
+  readonly hasRecursion: boolean;
   /**
-   * 再帰レジストリ（宣言が無ければ null）。registry.ts はこのファイルの IStateElement を
-   * 参照するが、`import type` どうしなので実行時の循環にはならない。
+   * 再帰レジストリ（宣言が無ければ null。`hasRecursion === true` なら非 null）。registry.ts は
+   * このファイルの IStateElement を参照するが、`import type` どうしなので実行時の循環にはならない。
    */
-  readonly recursionRegistry?: RecursionRegistry | null;
+  readonly recursionRegistry: RecursionRegistry | null;
   setPathInfo(path: string, bindingType: BindingType, source?: PathInfoSource): void;
   addStaticDependency(parentPath: string, childPath: string): boolean;
   addDynamicDependency(fromPath: string, toPath: string): boolean;

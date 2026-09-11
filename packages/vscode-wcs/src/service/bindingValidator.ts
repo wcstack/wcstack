@@ -678,7 +678,7 @@ function validatePathExistence(
 /**
  * `$recursion` 宣言済みの木の**展開形**なら存在扱いにする。
  *
- * ランタイムは `checkDeclaredPath` が `recursionRegistry.matchesRecursivePath` を先に見て
+ * ランタイムは `checkDeclaredPath` が `recursionRegistry.recursiveGetterOwning` を先に見て
  * 同じことをしている（再帰 getter の具体パスはバインド確立の時点ではまだ生えていない）。
  * 静的側は候補集合しか持たないので、反復語を剥がして深さ 0 の形へ畳んでから照合する。
  */

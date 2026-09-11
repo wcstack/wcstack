@@ -34,7 +34,6 @@ import { getMountRecordByPath } from "../../webComponent/mount";
 import { createOverlayValue, readExportedAccessor } from "../../webComponent/overlay";
 import { resolveExport } from "../../webComponent/exportIndex";
 import { IStateHandler } from "../types";
-import { materializeRecursionAccessor } from "../../recursion/materialize";
 import { checkDependency } from "./checkDependency";
 import { isCacheable } from "./isCacheable";
 
@@ -193,10 +192,11 @@ export function getByAddress(
   // 再帰 getter の遅延実体化（Phase B）。**キャッシュ参照より前**でなければならない。
   // 未定義のまま一度読まれると isCacheable が wildcardCount > 0 だけでキャッシュ可を
   // 返すので undefined が dirty:false で固定され、後からアクセサを生やしても恒久的に
-  // 直らない（Phase A の A7）。宣言の無い state は boolean 判定 1 個で抜ける。
+  // 直らない（Phase A の A7）。宣言の無い state は boolean 判定 1 個で抜け、宣言のある
+  // state も 2 回目からは PathInfo キーの記憶 1 回で抜ける（書き側と対称・第 5 サイクル）。
   checkDependency(handler, address);
   if (handler.stateElement.hasRecursion === true) {
-    materializeRecursionAccessor(handler.stateElement, address.pathInfo.path);
+    handler.stateElement.recursionRegistry!.materializeForPathInfo(handler.stateElement, address.pathInfo);
   }
   // $streams の args トレース中のみ絶対アドレスを捕捉（collector 非活性なら即 return）
   collectStreamDependency(handler.stateElement, address);
