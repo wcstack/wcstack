@@ -71,6 +71,205 @@ type PathInfoSource =
 /** ランタイム内部のパス翻訳（mapped な bind-component の外向き伝播）。検査しない */
  | "internal";
 
+/**
+ * 単一の自己再帰宣言。初版はアンカーと反復サブパスとも「固定プロパティ列の末尾に
+ * `.*` がひとつ」の形に限定する（docs/state-recursive-path-impl-plan.md §1-1）。
+ *
+ * 例: `$recursion = { "nodes.*": "children.*" }`
+ * - `anchor`         … `"nodes.*"`（深さ 0 のノードパス）
+ * - `repeat`         … `"children.*"`（1 段深くする相対サブパス）
+ * - `recursiveAnchor` … `"nodes.**"`
+ * - `anchorList`     … `"nodes"`
+ * - `repeatList`     … `"children"`
+ *
+ * リスト側の 2 つは宣言時に確定させる（静的側の `RecursionSpec` と同じ構成）。
+ * 各所で `lastIndexOf(DELIMITER)` の slice を繰り返すと、綴りの取り違えが分散する。
+ */
+interface IRecursionSpec {
+    readonly anchor: string;
+    readonly repeat: string;
+    /** `anchor` の `**` 形（`"nodes.**"`）。オーサリング層のパス解析で使う。 */
+    readonly recursiveAnchor: string;
+    /** `anchor` のリスト側（`"nodes"` — 末尾の `.*` を落とした形）。 */
+    readonly anchorList: string;
+    /** `repeat` のリスト側（`"children"`）。 */
+    readonly repeatList: string;
+}
+/**
+ * 展開済みの再帰 getter 1 本ぶんの素性。生成アクセサに紐づくメタデータで、
+ * ランタイムが読むのは深さ（`**` の束縛）と元の宣言（診断の名指し）の 2 つだけ。
+ * 具体パスは台帳のキー、`PathInfo` は読む側が intern 済みのものを持つので、ここには
+ * 重ねて持たない。
+ */
+interface IRecursionAccessor {
+    /** 元の宣言（`"nodes.**.total"`） */
+    readonly recursivePath: string;
+    /** 反復の段数（0 origin） */
+    readonly depth: number;
+}
+
+/**
+ * recursion/registry.ts
+ *
+ * state 1 つぶんの再帰レジストリ。宣言・`**` getter の定義・展開済みアクセサの台帳を
+ * 持ち、「具体パスを読む直前に、その深さのアクセサを生やす」遅延実体化を担う。
+ *
+ * 遅延であることは実装の**不変条件**である（Phase A の A6/A7）。そのパスを一度でも
+ * 読んでから生やしても、`isCacheable` が `wildcardCount > 0` だけでキャッシュ可を返す
+ * ため `undefined` が `dirty:false` で固定され、以後どう書いても回復しない。
+ * したがって実体化は `getByAddress` のキャッシュ参照**前**に置く（E5）。
+ *
+ * 寿命は state の世代と共にする。`_state` の再セットで `getterPaths` / `listPaths` は
+ * クリアされるので、レジストリも作り直す（§1-3）。ただし**生やしたアクセサは state
+ * オブジェクトの側に残る**ので、同じ state を再セットすると `getStateInfo` がそれを
+ * `getterPaths` に復元する。そのとき「もう生えているから何もしない」と早期 return して
+ * しまうと `listPaths` の登録だけが抜け落ちるため、生成物は WeakSet で見分けて
+ * 登録だけをやり直す。
+ */
+
+declare class RecursionRegistry {
+    readonly spec: IRecursionSpec;
+    private readonly _definitions;
+    private readonly _accessors;
+    /**
+     * `recursiveGetterOwning` の記憶。キーは添字を `*` に畳んだ形（`nodes.1.total` と `nodes.2.total`
+     * は 1 つ）、値は「その具体パスを展開形（またはその値の内側）として持つ `**` getter」、
+     * 無ければ null。
+     *
+     * 有界である: キーは添字を畳んだワイルドカード形のパス文字列で、`PathInfo` が intern する集合
+     * （バインディング・getter・API 引数に綴られたパスと、その展開形）の部分集合にしかならない。
+     * intern 済みパスの集合が有界であることは D10 で受け入れ済みなので、ここも同じ上限に収まる。
+     * 文字列は WeakSet に入らないので、寿命はレジストリ（＝ state の世代）と共にする。
+     */
+    private readonly _ownerByPath;
+    /**
+     * 書き込みのホットパス（`setByAddress`）向けの記憶。キーは intern 済みの `PathInfo` なので
+     * 寿命と上限は PathInfo の intern 集合と同じ（WeakMap）。畳み（split + Number + join）は
+     * miss のときだけ払う — 宣言のある state では**アンカー外を含む全書き込み**がここを通る
+     * （第 4 サイクルで実測: 畳みを毎回払うと `s.counter = i` で +100ns/書き込み）。
+     */
+    private readonly _ownerByPathInfo;
+    /**
+     * 読みのホットパス（`getByAddress`）向けの記憶。`_ownerByPathInfo` と対称で、キーは
+     * intern 済みの `PathInfo`、値は「そのパスの展開アクセサ」、展開形でなければ null。
+     * 宣言のある state では**アンカー外を含む全読み**（親ウォークの各段を含む）がここを
+     * 通るので、文字列キーの `Map.get` + `Set.has` + `startsWith` を毎回払わせない
+     * （第 5 サイクルで実測）。
+     *
+     * 読みの否定判定の記憶は**ここ 1 つ**（第 5 サイクル再検証で文字列キーの `_nonAccessors` を撤去 —
+     * 前段にこの記憶を置いた後は、PathInfo とパス文字列が 1:1 なので二重に持つだけだった）。
+     * 否定を記憶してよい根拠は、定義集合が state の世代内で不変であること —
+     * 同じ `PathInfo` は同じパス文字列なので、いちど「展開形でない」と決まった PathInfo が
+     * 後から実体化されることはない。実体化した側は `materializeForPathInfo` が
+     * `_define` の戻り値でそのまま記憶を更新する（否定が実体化を隠さない）。
+     */
+    private readonly _accessorByPathInfo;
+    /** `concretePathAt` の記憶（接尾辞 → 深さ順の具体パス）。 */
+    private readonly _concreteBySuffix;
+    private readonly _registeredListPaths;
+    constructor(spec: IRecursionSpec, state: object);
+    /**
+     * 作者が手で書いた具体パス（`get "nodes.*.children.*.total"()` / データプロパティ）が、宣言済み
+     * `**` getter の展開形と同名でないことを**構築時に**確かめる。
+     *
+     * `_define` の衝突検査は「その深さを最初に読んだとき」にしか走らないので、データが浅い間は
+     * 通り、木が 1 段深くなった瞬間にバインディングが落ちていた（第 3 サイクルのレビューで実測）。
+     * 前世代の生成物（own に残った生成 getter）は衝突ではない — 同じ state の再セットで必ず居る。
+     */
+    private _assertNoConcreteCollision;
+    /**
+     * 2 本の `**` getter が同じ具体パスへ展開しないことを、宣言だけから静的に確かめる。
+     *
+     * 衝突するのは「片方の接尾辞がもう片方の接尾辞の末尾で、差分が反復語の整数倍」の
+     * ときだけ（`nodes.**.total` と `nodes.**.children.*.total` は深さ k と k+1 で
+     * 同じ `nodes.*.children.*.total` になる）。検出しないと `_definitions` の挿入順で
+     * 最初に一致した方が無言で勝つ。
+     */
+    private _assertNoColliding;
+    /**
+     * `**` getter を 1 本でも宣言しているか。
+     * **テスト・診断専用**（ランタイムの経路は `_definitions.size` を直接見る）。
+     */
+    get hasDefinitions(): boolean;
+    /**
+     * その接尾辞が宣言済みの `**` getter と衝突するなら、その getter のパスを返す。
+     *
+     * 完全一致だけでは足りない。①反復語の整数倍だけ違う接尾辞は同じ族を指す
+     * （`_assertNoColliding` が宣言どうしについて既に見ている条件）②getter の**下**を
+     * 指す形（`nodes.**.total.x` / 反復語ぶんずれた `nodes.**.children.*.total.x`）は、
+     * getter が返したオブジェクトへ書いてキャッシュを汚し、次の無効化で無言に戻る。
+     * どちらも書き込みの入口（列挙より前）で止める — 述語は expand.ts の `coversSuffix`。
+     */
+    conflictingRecursiveGetter(suffix: string): string | null;
+    /**
+     * `recursiveGetterOwning` の intern 済み `PathInfo` 版（書き込みのホットパス用）。
+     * WeakMap の hit なら畳みも照合も払わない。
+     */
+    recursiveGetterOwningPath(pathInfo: IPathInfo): string | null;
+    /**
+     * 具体パスを展開形（またはその値の内側）として持つ `**` getter のパス。無ければ null。
+     * **実体化はしない。**
+     *
+     * `conflictingRecursiveGetter` の**具体パス版**で、`**` を経ない 2 つの入口が使う:
+     *
+     *  - バインド確立時のパス存在検査（`checkDeclaredPath`）。あの時点ではまだ生えて
+     *    いないので、素の存在検査では必ず「解決できない」になる。展開形そのもの
+     *    （`nodes.*.total`）だけでなく、その値の中を指す形（`nodes.*.stats.count` で
+     *    `get "nodes.**.stats"()` がオブジェクトを返す）も、通常の getter の下と同じく
+     *    評価しないと分からないので黙る側に倒す。
+     *  - 書き込みの入口（`setByAddress`）。`$setAll("nodes.*.children.*.total", [], v)` や
+     *    `this["nodes.1.total"] = v` は `**` を含まないので `setAllRecursive` の
+     *    読み取り専用検査を通らず、未実体化なら fast path が行オブジェクトへ素の
+     *    プロパティとして書いてしまう（ノードを汚し、代入値が `dirty:false` で載って
+     *    以後 getter が評価されない）。展開形への書き込みは、実体化の前後に関わらず
+     *    `wcs/recursion-readonly` で止める。
+     */
+    recursiveGetterOwning(concretePath: string): string | null;
+    /** 具体パスが宣言済み `**` getter の展開形そのものなら、その getter のパス。 */
+    private _matchExpansion;
+    /**
+     * `materializeFor` の `PathInfo` 版。**読みのホットパス（`getByAddress`）専用**で、
+     * 判定そのものは `materializeFor` に委ね、結果（否定を含む）を PathInfo に記憶する。
+     * 書き側の `recursiveGetterOwningPath` と対称。
+     */
+    materializeForPathInfo(stateElement: IStateElement, pathInfo: IPathInfo): IRecursionAccessor | null;
+    /**
+     * 具体パスが再帰 getter の展開形なら、そのアクセサを（未登録なら生やして）返す。
+     * 該当しなければ null。読みは `materializeForPathInfo` を通るので、ここへ来るのは
+     * 記憶が外れたときだけ — 判定は接頭辞 1 回で抜け、ここでは否定を記憶しない（記憶は
+     * `materializeForPathInfo` の PathInfo キーの 1 か所）。
+     * （`**` getter の無い空レジストリを弾くのは呼び出し側の役目。）
+     */
+    materializeFor(stateElement: IStateElement, concretePath: string): IRecursionAccessor | null;
+    private _define;
+    /**
+     * 経路上のリストパスを `listPaths` に載せる（E4）。`setPathInfo(path, "for")` は
+     * 使えない — あちらは `elementPaths` にも入れて `setByAddress` の swap 経路
+     * （`isSwappable`）を変えてしまう。ここで要るのは「依存ウォークがこのパスを
+     * リストとして展開する」ことだけ。
+     */
+    private _registerListPaths;
+    /**
+     * この世代が生やしたもの（own の生成アクセサ・依存辺・キャッシュ）を忘れる（state の
+     * 再セット時、`getStateInfo` の再収集より**前**に呼ぶ）。実体は generation.ts。
+     */
+    forgetGenerated(stateElement: IStateElement, previousState: object): void;
+    /**
+     * `**` 接尾辞の深さ `depth` の具体パス（`concretePathAt` の記憶付き版）。
+     * 束縛形の読み（`this["nodes.**.value"]` / 省略形 `$getAll`）は再帰 getter の評価ごとに
+     * ここを通るので、深さぶんの文字列連結とワイルドカード数えを毎回やり直さない。
+     * 上限は「接尾辞の種類 × 128」で有界（上限超過は `concretePathAt` が throw するので載らない）。
+     */
+    concretePathAt(suffix: string, depth: number): string;
+    /** 展開済みアクセサのメタデータ（深さ解決・診断・テスト用）。 */
+    accessorFor(concretePath: string): IRecursionAccessor | null;
+    /**
+     * これまでに実体化した具体パスの一覧。**テスト専用**（「読んだ深さだけが生える」という
+     * 遅延実体化の不変条件を外から確かめる口。ランタイムはどの経路からも呼ばない）。
+     */
+    get materializedPaths(): ReadonlySet<string>;
+}
+
 declare const setLoopContextSymbol: unique symbol;
 declare const getByAddressSymbol: unique symbol;
 declare const hasByAddressSymbol: unique symbol;
@@ -212,6 +411,32 @@ interface IStateElement {
     readonly hydratedFromSsr?: boolean;
     /** ボリュームのアクセサ登録（webComponent/volume.ts 専用） */
     defineTreeAccessor(path: string, descriptor: PropertyDescriptor): void;
+    /**
+     * リストパスとしてだけ登録する（`listPaths` に足す）。`setPathInfo(path, "for")` は
+     * `elementPaths` にも入れて `setByAddress` の swap 経路（`isSwappable`）を変えるので、
+     * 「依存ウォークがこのパスをリストとして展開する」ことだけが要る用途には使えない
+     * （docs/state-recursive-path-impl-plan.md §3-2 の E4）。
+     */
+    addListPath(path: string): void;
+    /**
+     * state オブジェクト自身＋プロトタイプチェーンから descriptor を引く（生成物と作者定義の
+     * 見分けに使う）。class 構文の getter は prototype に載るので own だけでは足りない。
+     */
+    findStateDescriptor(path: string): PropertyDescriptor | undefined;
+    /**
+     * この state に `$recursion` 宣言があるか。偽のとき getByAddress の遅延実体化と
+     * get トラップの `**` 解決は boolean 判定 1 個で抜ける（hasMounts と同じ D18 の形）。
+     * 読み手は必ずこのゲートを先に見て、真なら `recursionRegistry` を `!` で読む。
+     * 必須メンバー（実装は `State` のみ）。`any` 型のテスト用モックがフィールドを持たなくても
+     * 通るのは vitest が型検査をしないからで、その場合 `undefined === true` は偽なので再帰の
+     * 経路に入らないだけ — 型としては必須。
+     */
+    readonly hasRecursion: boolean;
+    /**
+     * 再帰レジストリ（宣言が無ければ null。`hasRecursion === true` なら非 null）。registry.ts は
+     * このファイルの IStateElement を参照するが、`import type` どうしなので実行時の循環にはならない。
+     */
+    readonly recursionRegistry: RecursionRegistry | null;
     setPathInfo(path: string, bindingType: BindingType, source?: PathInfoSource): void;
     addStaticDependency(parentPath: string, childPath: string): boolean;
     addDynamicDependency(fromPath: string, toPath: string): boolean;
@@ -683,6 +908,8 @@ interface WcsStateApi {
     readonly $7: number;
     readonly $8: number;
     readonly $9: number;
+    readonly [key: `${string}.**.${string}`]: any;
+    readonly [key: `${string}.**`]: any;
 }
 /**
  * state定義オブジェクト内の `this` の型。
@@ -1086,6 +1313,7 @@ declare class State extends HTMLElementBase implements IStateElement {
     private _resolveSetState;
     private _listPaths;
     private _listKeys;
+    private _recursionRegistry;
     private _elementPaths;
     private _getterPaths;
     private _setterPaths;
@@ -1145,6 +1373,8 @@ declare class State extends HTMLElementBase implements IStateElement {
     get connectedCallbackPromise(): Promise<void>;
     get listPaths(): Set<string>;
     get listKeys(): ListKeyMap | null;
+    get hasRecursion(): boolean;
+    get recursionRegistry(): RecursionRegistry | null;
     get watchPaths(): ReadonlySet<string> | null;
     get elementPaths(): Set<string>;
     /**
@@ -1161,6 +1391,8 @@ declare class State extends HTMLElementBase implements IStateElement {
     enableUpdatedCallback(): void;
     /** enable-ssr スナップショットから初期化されたか（D14 — webComponent/volume.ts が読む）。 */
     get hydratedFromSsr(): boolean;
+    addListPath(path: string): void;
+    findStateDescriptor(path: string): PropertyDescriptor | undefined;
     defineTreeAccessor(path: string, descriptor: PropertyDescriptor): void;
     get getterPaths(): Set<string>;
     get setterPaths(): Set<string>;

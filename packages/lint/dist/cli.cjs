@@ -873,6 +873,7 @@ var STATE_EVENT_TOKENS_NAME = "$eventTokens";
 var STATE_ON_NAME = "$on";
 var STATE_STREAMS_NAME = "$streams";
 var STATE_WATCH_NAME = "$watch";
+var STATE_RECURSION_NAME = "$recursion";
 var STATE_LIST_KEYS_NAME = "$listKeys";
 var STATE_STREAM_STATUS_NAMESPACE_NAME = "$streamStatus";
 var STATE_STREAM_ERROR_NAMESPACE_NAME = "$streamError";
@@ -935,6 +936,7 @@ function getWcsManifest() {
       STATE_STREAMS_NAME,
       STATE_WATCH_NAME,
       STATE_LIST_KEYS_NAME,
+      STATE_RECURSION_NAME,
       STATE_STREAM_STATUS_NAMESPACE_NAME,
       STATE_STREAM_ERROR_NAMESPACE_NAME
     ]
@@ -12298,6 +12300,10 @@ for (let i = 0; i < MAX_WILDCARD_DEPTH2; i++) {
   tmpIndexByIndexName2[`${INDEX_PARAM_PREFIX2}${i + 1}`] = i;
 }
 Object.freeze(tmpIndexByIndexName2);
+var RECURSION_WILDCARD2 = "**";
+function raiseError2(message) {
+  throw new Error(`[@wcstack/state] ${message}`);
+}
 var _cache = /* @__PURE__ */ new Map();
 function clearPathInfoCacheForTooling() {
   _cache.clear();
@@ -12307,6 +12313,9 @@ function getPathInfo(path) {
   let pathInfo = _cache.get(path);
   if (typeof pathInfo !== "undefined") {
     return pathInfo;
+  }
+  if (path.indexOf(RECURSION_WILDCARD2) !== -1) {
+    raiseError2(`[wcs/recursion-unsupported] "${path}" uses "${RECURSION_WILDCARD2}", which is not accepted here. It is only meaningful in a $recursion declaration, in a recursive getter key, and in the path argument of $getAll / $setAll \u2014 and only when the state declares a $recursion anchor.`);
   }
   pathInfo = Object.freeze(new PathInfo(path));
   _cache.set(path, pathInfo);
@@ -12431,9 +12440,6 @@ function didYouMean(input, candidates) {
   return best !== null ? ` Did you mean "${best}"?` : "";
 }
 var LINT_HINT = " Validate statically: npx @wcstack/lint <file>.";
-function raiseError2(message) {
-  throw new Error(`[@wcstack/state] ${message}`);
-}
 var STRUCTURAL_BINDING_TYPE_SET2 = /* @__PURE__ */ new Set([
   "if",
   "elseif",

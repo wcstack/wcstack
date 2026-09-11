@@ -230,6 +230,14 @@ const STATE_EVENT_TOKENS_NAME = "$eventTokens";
 const STATE_ON_NAME = "$on";
 const STATE_STREAMS_NAME = "$streams";
 const STATE_WATCH_NAME = "$watch";
+const STATE_RECURSION_NAME = "$recursion";
+/**
+ * 再帰ワイルドカード。オーサリング層（$recursion 宣言・getter キー・API 引数）にだけ
+ * 現れ、PathInfo には決して降ろさない — wildcardCount が不定になると ListIndex 連鎖長・
+ * $1..$n・$resolve の厳密一致・走査の段数が同時に壊れる
+ * （docs/state-recursive-path-design.md §2-1）。
+ */
+const RECURSION_WILDCARD = "**";
 const STATE_LIST_KEYS_NAME = "$listKeys";
 const STATE_STREAM_STATUS_NAMESPACE_NAME = "$streamStatus";
 const STATE_STREAM_ERROR_NAMESPACE_NAME = "$streamError";
@@ -276,12 +284,26 @@ function resolveInitializedBinding(node) {
     resolvedNodes.add(node);
 }
 
+function raiseError(message) {
+    throw new Error(`[@wcstack/state] ${message}`);
+}
+
 const _cache$4 = new Map();
 let id = 0;
 function getPathInfo(path) {
     let pathInfo = _cache$4.get(path);
     if (typeof pathInfo !== "undefined") {
         return pathInfo;
+    }
+    // 再帰ワイルドカードはオーサリング層の記号で、ここへ降りてきてはならない
+    // （降ろすと wildcardCount が不定になり ListIndex 連鎖長・$1..$n・$resolve の
+    //  厳密一致・走査の段数が同時に壊れる。設計書 D2）。到達したということは、
+    // `**` を解釈しない消費者に `**` パスが渡ったということ。通常のパスはこの検査を
+    // 初回 intern のときにしか払わない（`**` パスは intern されないので読むたびに落ちる）。
+    if (path.indexOf(RECURSION_WILDCARD) !== -1) {
+        raiseError(`[wcs/recursion-unsupported] "${path}" uses "${RECURSION_WILDCARD}", which is not accepted here. ` +
+            `It is only meaningful in a $recursion declaration, in a recursive getter key, and in the path ` +
+            `argument of $getAll / $setAll — and only when the state declares a $recursion anchor.`);
     }
     pathInfo = Object.freeze(new PathInfo(path));
     _cache$4.set(path, pathInfo);
@@ -540,10 +562,6 @@ function readNamedList(value, isValidEntry) {
         entries.set(entry.name, entry);
     }
     return entries;
-}
-
-function raiseError(message) {
-    throw new Error(`[@wcstack/state] ${message}`);
 }
 
 function makeExpandedEntry(name, base) {
@@ -2387,6 +2405,7 @@ function processDeferredNode(entry) {
 let nextMountId = 0;
 const MOUNT_DOLLAR_DECLARATIONS = [
     "$watch", "$streams", "$listKeys", "$updatedCallback", "$commandTokens", "$eventTokens", "$on",
+    "$recursion",
 ];
 const dollarDeclarationWarned = new Set();
 /**
@@ -2401,6 +2420,15 @@ const dollarDeclarationWarned = new Set();
  */
 function warnMountedDollarDeclarations(record) {
     const declared = MOUNT_DOLLAR_DECLARATIONS.filter((name) => typeof record.stateObject[name] !== "undefined");
+    // `**` getter（`get "node.**.total"()`）も同じ扱い。`markerizeAccessorPath` は `*` セグメントしか
+    // 探さないので `**` を含むキーは私有アンカーに落ち、参照されないまま永久に登録されない
+    // （ボリュームは接ぎ木前に拒否し、`$recursion` はこの誘導が出るのに、`**` getter だけが
+    // 無言だった — 第 3 サイクルのレビューで実測）。
+    for (const accessor of record.getterKeys) {
+        if (accessor.indexOf(RECURSION_WILDCARD) !== -1) {
+            declared.push(`"${accessor}"`);
+        }
+    }
     if (declared.length === 0) {
         return;
     }
@@ -2411,8 +2439,8 @@ function warnMountedDollarDeclarations(record) {
     dollarDeclarationWarned.add(key);
     console.warn(`[@wcstack/state] [wcs/mount-dollar-declaration] <${key.split("|")[0]}>.${record.stateProp} declares ` +
         `${declared.join(", ")}, which mounted components do not run. Declare them on the root state instead ` +
-        `(a volume <wcs-state mount="..."> can host $watch / $listKeys / $updatedCallback). ` +
-        `See docs/state-mount-design.md §4-6.`);
+        `(a volume <wcs-state mount="..."> can host $watch / $listKeys / $updatedCallback; $recursion and ` +
+        `"**" getters expand against the root tree). See docs/state-mount-design.md §4-6.`);
 }
 /**
  * マウントされたコンポーネントのライフサイクル呼び出し（`$connectedCallback` /
@@ -2966,6 +2994,59 @@ function setLastListValueByAbsoluteStateAddress(address, value) {
 }
 function hasLastListValueByAbsoluteStateAddress(address) {
     return lastListValueByAbsoluteStateAddress.has(address);
+}
+
+const stateListBaselineByAbsoluteStateAddress = new WeakMap();
+/**
+ * 更新バッチ中の観測は**即座に確定しない**。バッチ内で同じリストへ 2 回構造書き込みすると、
+ * 2 回目のウォークが「一度も描画されず直後に上書きされる中間値」を基準に diff を取り、
+ * 中間値が落とした行の ListIndex が鋳造し直されて子リストの台帳が恒久的に切れるため。
+ *
+ * バッチが開いている間の観測はここに溜め、バッチ末尾（updater の drain 終了）でまとめて
+ * 確定する。こうするとバッチ内のどのウォークも「バッチ開始時の値」と diff を取り、
+ * これは描画側（applyChangeToFor が描画基準で取る diff）と一致する。
+ *
+ * 深さで数えるのは、drain の最中に $updatedCallback などが書いて新しいバッチが
+ * 始まる形があるため。0 に戻ったバッチだけが確定する。
+ */
+let pendingBaselines = null;
+let batchDepth = 0;
+function getStateListBaseline(address) {
+    // pending は意図的に見ない。バッチ中の読み手には「バッチ開始時の値」を返す。
+    return stateListBaselineByAbsoluteStateAddress.get(address) ?? [];
+}
+function setStateListBaseline(address, value) {
+    if (pendingBaselines !== null) {
+        pendingBaselines.set(address, value);
+        return;
+    }
+    stateListBaselineByAbsoluteStateAddress.set(address, value);
+}
+/** 更新バッチの開始（updater が最初の enqueue で呼ぶ）。 */
+function beginStateListBaselineBatch() {
+    batchDepth++;
+    if (pendingBaselines === null) {
+        pendingBaselines = new Map();
+    }
+}
+/** 更新バッチの終了（updater が drain の finally で呼ぶ）。入れ子が全部閉じたら確定する。 */
+function endStateListBaselineBatch() {
+    if (batchDepth === 0) {
+        // enqueue を経ない直接 drain（testApplyChange）。開いていないバッチは閉じない。
+        return;
+    }
+    batchDepth--;
+    if (batchDepth > 0 || pendingBaselines === null) {
+        return;
+    }
+    for (const [address, value] of pendingBaselines) {
+        stateListBaselineByAbsoluteStateAddress.set(address, value);
+    }
+    pendingBaselines = null;
+}
+function hasStateListBaseline(address) {
+    return (pendingBaselines?.has(address) ?? false)
+        || stateListBaselineByAbsoluteStateAddress.has(address);
 }
 
 const setLoopContextSymbol = Symbol("$$setLoopContext");
@@ -5209,6 +5290,10 @@ class BindingSession {
                 // 正当な記録を潰しうる）
                 if (newAbs !== oldAbs && hasLastListValueByAbsoluteStateAddress(oldAbs)) {
                     setLastListValueByAbsoluteStateAddress(newAbs, getLastListValueByAbsoluteStateAddress(oldAbs));
+                }
+                // state 側の基準（E1）も同じ理由で引き継ぐ。記録の有無は has で見る（同上）
+                if (newAbs !== oldAbs && hasStateListBaseline(oldAbs)) {
+                    setStateListBaseline(newAbs, getStateListBaseline(oldAbs));
                 }
             }
             if (this.shouldApplyState(binding)) {
@@ -8207,6 +8292,9 @@ const EXISTS = Object.freeze({
  * `obj` 自身＋プロトタイプチェーン（Object.prototype 手前まで）から descriptor を引く。
  * 打ち切り位置は getAllPropertyDescriptors と同じ — 「state が宣言したもの」だけを
  * 存在とみなし、`toString` 等の Object.prototype 由来を存在扱いしない。
+ *
+ * `State.findStateDescriptor`（再帰アクセサの衝突検査）も同じ走査を使う。打ち切り位置が
+ * 2 本に分かれると、片方だけが `Object.prototype` を存在扱いするようなずれ方をする。
  */
 function findDescriptor(obj, key) {
     let proto = obj;
@@ -8341,6 +8429,16 @@ function indexArityMessage(api, path, wildcardCount, actual) {
         `("*" appears ${wildcardCount} time(s) in the path) but got ${actual}.${LINT_HINT}`;
 }
 /**
+ * `**` を含むパスが宣言済みの再帰アンカーと合致しない（綴り違い・2 つ目の `**`）。
+ * 束縛形（bind.ts）・合併形（getAllRecursive.ts）・ブロードキャスト（setAllRecursive.ts）の
+ * 3 入口が同じ文面で報告する。
+ */
+function recursionAnchorMismatchMessage(path, recursiveAnchor) {
+    return `[wcs/recursion-anchor] "${path}" does not match the declared recursion anchor ` +
+        `"${recursiveAnchor}". This version supports exactly one anchor per state, and "**" must be followed ` +
+        `by a well-formed suffix (no second "**", no empty segment, no bare "*" right after "**").`;
+}
+/**
  * `$getAll(path)`（添字省略）の既定値はループ文脈の添字 `[$1..$n]` だが、それを
  * 敷けるのは path と文脈がワイルドカード連鎖を共有している場合だけ。共有ゼロなのに
  * 文脈が添字を持っている場合、黙って全展開に倒すと「文脈で絞られている」という
@@ -8432,6 +8530,15 @@ function checkDeclaredPath(stateElement, state, path, source) {
         return;
     }
     if (alreadyReported(stateElement, path)) {
+        return;
+    }
+    // 再帰 getter の展開形は、バインド確立の時点ではまだ生えていない（読む直前に
+    // 遅延実体化する — recursion/registry.ts）。素の存在検査では必ず「解決できない」に
+    // なるので、宣言済みの `**` getter に合致するかを先に見る。実体化はしない。
+    // 展開形の**値の内側**（`nodes.*.stats.count` で `get "nodes.**.stats"()` がオブジェクトを
+    // 返す形）も同じ — 通常の getter なら下の「途中のプレフィックスがフラット宣言」で
+    // UNKNOWN に倒れるところ、未実体化のアクセサは findDescriptor に見えないのでここで畳む。
+    if (stateElement.hasRecursion === true && stateElement.recursionRegistry.recursiveGetterOwning(path) !== null) {
         return;
     }
     const result = resolvePathExistence(state, path, stateElement.getterPaths);
@@ -8909,6 +9016,10 @@ function applyChangeFromBindings(bindings, propagationContextByBinding) {
     }
     for (const [absAddress, newListValue] of newListValueByAbsAddress.entries()) {
         setLastListValueByAbsoluteStateAddress(absAddress, newListValue);
+        // 描画の基準とは別に、state 側の基準（読み・依存ウォークの共有正本）も進める。
+        // 初回描画はどの書き込みも経ていないので、ここで観測しておかないと最初の構造
+        // 書き込みで基準が空のまま ListIndex を鋳造してしまう（E1）。
+        setStateListBaseline(absAddress, newListValue);
     }
     for (const [stateElement, absAddressSet] of updatedAbsAddressSetByStateElement.entries()) {
         stateElement.createState("writable", (state) => {
@@ -9436,7 +9547,7 @@ async function buildBindings(root) {
     }
 }
 
-var version = "2.2.0";
+var version = "2.3.0";
 var pkg = {
 	version: version};
 
@@ -9575,8 +9686,21 @@ class Ssr extends HTMLElementBase {
         if (!raw || typeof raw !== 'object')
             return {};
         const data = {};
-        for (const [key, value] of Object.entries(raw)) {
-            if (!key.startsWith('$') && typeof value !== 'function') {
+        for (const key of Object.keys(raw)) {
+            if (key.startsWith('$'))
+                continue;
+            // **アクセサは評価しない。** スナップショットが運ぶのはデータで、派生値は
+            // クライアントが同じ宣言から作り直す。ここは Object.entries で舐めていたので、
+            // own かつ enumerable な getter を**生の state オブジェクト**を this にして
+            // 評価していた — proxy の上でしか意味を持たない本体（`this["items.*.n"]` や
+            // `this.$getAll(...)`）が、パス getter なら NaN → JSON の null で静かに壊れ、
+            // `$getAll` を呼ぶ getter なら TypeError でページ全体の SSR を落としていた
+            // （docs/state-recursive-path-impl-plan.md §7）。
+            const descriptor = Object.getOwnPropertyDescriptor(raw, key);
+            if (descriptor !== undefined && typeof descriptor.get === 'function')
+                continue;
+            const value = raw[key];
+            if (typeof value !== 'function') {
                 data[key] = value;
             }
         }
@@ -10115,6 +10239,8 @@ async function hydrateBindings(root) {
                     const value = state[binding.statePathName];
                     if (Array.isArray(value)) {
                         setLastListValueByAbsoluteStateAddress(absAddr, value);
+                        // 描画の基準と同時に state 側の基準も進める（E1。applyChangeFromBindings と対称）
+                        setStateListBaseline(absAddr, value);
                     }
                 });
             }
@@ -10637,6 +10763,9 @@ class Updater {
         const requireStartProcess = this._queueUpdateRecords.length === 0;
         this._queueUpdateRecords.push({ absoluteAddress, context });
         if (requireStartProcess) {
+            // このバッチのあいだ、依存ウォークと読みが観測したリスト値は保留にする。
+            // 確定は drain の finally（list/stateListBaseline.ts の頭のコメント）。
+            beginStateListBaselineBatch();
             queueMicrotask(() => {
                 const updateRecords = this._queueUpdateRecords;
                 this._queueUpdateRecords = [];
@@ -10764,6 +10893,10 @@ class Updater {
             }
         }
         finally {
+            // バッチ中に溜めたリスト差分基準を確定する。notifyUpdateBatchListeners より先に
+            // 置くのは、リスナー（$watch / $streams restart）の中で走る書き込みが
+            // 「このバッチの結果」を基準として見るべきだから。
+            endStateListBaselineBatch();
             notifyUpdateBatchListeners(new Set(contextByAbsoluteAddress.keys()));
         }
     }
@@ -11941,6 +12074,13 @@ function processListKeysDeclaration(state) {
             raiseError(`${STATE_LIST_KEYS_NAME} entry "${path}" must be the list path itself, not the element path ` +
                 `(drop the trailing "${DELIMITER}${WILDCARD}").`);
         }
+        // `**` は `$listKeys` の消費者ではない。受理すると宣言は永久に効かず（キー突合は
+        // 具体パスで引く）、他の壊れた形は raise するのと非対称になる。深さごとに具体パスで宣言する。
+        if (path.indexOf(RECURSION_WILDCARD) !== -1) {
+            raiseError(`[wcs/recursion-unsupported] ${STATE_LIST_KEYS_NAME} entry "${path}" uses "${RECURSION_WILDCARD}", ` +
+                `which ${STATE_LIST_KEYS_NAME} does not interpret — a keyed list is one concrete list path. ` +
+                `Declare the key per depth instead (for example "nodes${DELIMITER}${WILDCARD}${DELIMITER}children").`);
+        }
         if (typeof spec === "function") {
             entries.set(path, spec);
             continue;
@@ -11964,6 +12104,845 @@ function processListKeysDeclaration(state) {
         entries.set(path, spec);
     }
     return entries.size > 0 ? entries : null;
+}
+
+/**
+ * recursion/declaration.ts
+ *
+ * `$recursion: { <anchor>: <repeat> }` 宣言を検証して仕様に落とす
+ * （docs/state-recursive-path-impl-plan.md §1-1）。宣言が無ければ null で、
+ * その state は再帰の経路にまったく入らない（`$listKeys` と同じゼロコスト規約）。
+ *
+ * 初版が受け付けるのは **単一の自己再帰** だけ。アンカーも反復サブパスも
+ * 「固定プロパティ列 + 末尾の `.*` ひとつ」に限る。途中のワイルドカード・複数宣言・
+ * 相互再帰は、黙って別の意味に解釈せず明示的に拒否する。
+ */
+/** `a.b.*` の形（末尾だけがワイルドカード・空セグメント無し・`**` 無し・添字無し）か。 */
+function assertNodePath(kind, path) {
+    if (typeof path !== "string" || path.length === 0) {
+        raiseError(`[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} ${kind} must be a non-empty string.`);
+    }
+    const segments = path.split(DELIMITER);
+    if (segments.some((segment) => segment.length === 0)) {
+        raiseError(`[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} ${kind} "${path}" must not contain empty path segments.`);
+    }
+    if (segments.length < 2) {
+        raiseError(`[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} ${kind} "${path}" must name a list element: ` +
+            `a property path ending with "${DELIMITER}${WILDCARD}" (for example "nodes${DELIMITER}${WILDCARD}").`);
+    }
+    if (segments[segments.length - 1] !== WILDCARD) {
+        raiseError(`[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} ${kind} "${path}" must end with "${DELIMITER}${WILDCARD}" ` +
+            `— it names the element of the list, not the list itself.`);
+    }
+    // 予約セグメント。マウントのマーカー（`#m1`）と `$` 名前空間は raw state に実体を
+    // 持たないので、再帰のアンカーにはなり得ない（checkDeclaredPath が同じ 2 つで
+    // 早期 return しているのと対称）。
+    if (segments[0].charCodeAt(0) === 36 /* '$' */) {
+        raiseError(`[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} ${kind} "${path}" must not start with "$" — that namespace is reserved.`);
+    }
+    if (path.indexOf("#") !== -1) {
+        raiseError(`[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} ${kind} "${path}" must not contain "#" — that segment is reserved for mounts.`);
+    }
+    for (let i = 0; i < segments.length - 1; i++) {
+        if (segments[i] === WILDCARD) {
+            raiseError(`[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} ${kind} "${path}" must have exactly one "${WILDCARD}", at the end. ` +
+                `Wildcards in the middle are not supported in this version.`);
+        }
+        if (segments[i] === RECURSION_WILDCARD) {
+            raiseError(`[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} ${kind} "${path}" must not contain "${RECURSION_WILDCARD}" — ` +
+                `the declaration is what gives "${RECURSION_WILDCARD}" its meaning.`);
+        }
+        // 添字セグメント（`children.0.*`）。エンジンは具体パスの添字を `*` に畳むので
+        // （`indexSegmentsToWildcard` — ResolvedAddress と同じ規則）、宣言の途中に書かれた
+        // 添字は意味を持たない奇形になる。黙って `*` と同じに読み替えず、ここで落とす。
+        if (!isNaN(Number(segments[i]))) {
+            raiseError(`[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} ${kind} "${path}" must not contain an index segment ` +
+                `("${segments[i]}") — the recursion is declared over the shape of the tree, not over one row.`);
+        }
+    }
+}
+/**
+ * `$recursion` 宣言を検証して仕様にする。宣言が無ければ null（＝ゼロコスト経路）。
+ */
+function processRecursionDeclaration(state) {
+    const declared = state[STATE_RECURSION_NAME];
+    if (typeof declared === "undefined") {
+        return null;
+    }
+    if (typeof declared !== "object" || declared === null) {
+        raiseError(`[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} must be an object mapping one anchor path to its repeating sub-path ` +
+            `(for example { "nodes.*": "children.*" }).`);
+    }
+    const entries = Object.entries(declared);
+    if (entries.length === 0) {
+        raiseError(`[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} must declare exactly one anchor; it is empty.`);
+    }
+    if (entries.length > 1) {
+        raiseError(`[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} declares ${entries.length} anchors (${entries.map(([k]) => `"${k}"`).join(", ")}). ` +
+            `This version supports exactly one self-recursive anchor per state.`);
+    }
+    const [anchor, repeat] = entries[0];
+    assertNodePath("anchor", anchor);
+    if (typeof repeat !== "string") {
+        raiseError(`[wcs/recursion-declaration-invalid] ${STATE_RECURSION_NAME} entry "${anchor}" must map to the repeating sub-path as a string ` +
+            `(for example "children${DELIMITER}${WILDCARD}").`);
+    }
+    assertNodePath("repeating sub-path", repeat);
+    // 反復サブパスが相対か絶対かは**名前の形では判定できない**。`{ "nodes.*": "nodes.*" }`
+    // は `{ nodes: [{ nodes: [...] }] }` という自己相似な木の最も自然な綴りなので、
+    // 「アンカーと同じ語で始まる」ことを理由に拒否してはならない。
+    const anchorList = anchor.slice(0, anchor.lastIndexOf(DELIMITER));
+    const repeatList = repeat.slice(0, repeat.lastIndexOf(DELIMITER));
+    const recursiveAnchor = anchorList + DELIMITER + RECURSION_WILDCARD;
+    return Object.freeze({ anchor, repeat, recursiveAnchor, anchorList, repeatList });
+}
+
+function getAllPropertyDescriptors(obj) {
+    const chain = [];
+    let proto = obj;
+    while (proto && proto !== Object.prototype) {
+        chain.push(proto);
+        proto = Object.getPrototypeOf(proto);
+    }
+    const descriptors = {};
+    for (let i = chain.length - 1; i >= 0; i--) {
+        Object.assign(descriptors, Object.getOwnPropertyDescriptors(chain[i]));
+    }
+    return descriptors;
+}
+
+/**
+ * recursion/expand.ts
+ *
+ * `**` を含むオーサリング層のパスと、エンジンが扱う具体パスの相互変換。
+ * **純関数だけ**を置く（state も proxy も触らない）。
+ *
+ * 変換は 1 対 1 ではなく 1 対多である。`nodes.**.total` は深さごとに
+ * `nodes.*.total` / `nodes.*.children.*.total` / … という無限の族を表し、
+ * エンジンが見るのは常にそのうちの 1 本だけ（設計書 D2）。
+ */
+/** `**` を含むか（含まない大多数のパスを 1 回の indexOf で抜ける）。 */
+function hasRecursionWildcard(path) {
+    return path.indexOf(RECURSION_WILDCARD) !== -1;
+}
+/**
+ * `**` を含むパスを宣言と突き合わせ、接尾辞（`**` より後ろ。無ければ空文字）を返す。
+ * 宣言に合致しない `**` は「宣言なしの `**`」として呼び出し側が診断する（null を返す）。
+ */
+function splitRecursivePath(spec, path) {
+    if (path === spec.recursiveAnchor) {
+        return "";
+    }
+    const prefix = spec.recursiveAnchor + DELIMITER;
+    if (!path.startsWith(prefix)) {
+        return null;
+    }
+    const suffix = path.slice(spec.recursiveAnchor.length);
+    // 接尾辞に 2 つ目の `**` があるのは初版では未対応（複数の再帰点）。
+    if (hasRecursionWildcard(suffix)) {
+        return null;
+    }
+    // 接尾辞は整形されたパスでなければならない: 空セグメント（`nodes.**.` / `nodes.**..x`）と
+    // `**` 直後の素の `*`（`nodes.**.*` — 展開すると `nodes.*.*` でアンカー行そのもの）は
+    // 受理しない。`assertNodePath` / `$watch` が同じ形を拒否するのと対称（第 4 サイクルで実測:
+    // 受理すると `[undefined×n]` や生の `Reflect.set called on non-object` になっていた）。
+    const segments = suffix.slice(DELIMITER.length).split(DELIMITER);
+    if (segments[0] === WILDCARD || segments.some((segment) => segment.length === 0)) {
+        return null;
+    }
+    return suffix;
+}
+/**
+ * 接尾辞（`.` で始まる）の添字セグメントだけを `*` に畳む。先頭の空セグメントは区切りの
+ * 都合なので畳まない（`indexSegmentsToWildcard` に丸ごと渡すと `Number("") === 0` で `*` になる）。
+ * `**` パスの検査（構造・読み取り専用）と `**` getter キーの検査が共有する。
+ */
+function foldSuffixIndexes(suffix) {
+    return suffix.length === 0 ? suffix : DELIMITER + indexSegmentsToWildcard(suffix.slice(DELIMITER.length));
+}
+/**
+ * 2 つの接尾辞が**同じ具体パス族**を指すか。片方がもう片方の末尾で、差分が反復語の
+ * 整数倍（0 回を含む）のとき真。`nodes.**.total` と `nodes.**.children.*.total` は
+ * 深さ k と k+1 で同じ `nodes.*.children.*.total` になる、という関係を捉える。
+ * 静的側の `recursionPaths.sameFamily` と同じ純関数。
+ */
+function sameFamily(spec, a, b) {
+    const unit = DELIMITER + spec.repeat;
+    const shorter = a.length <= b.length ? a : b;
+    const longer = a.length <= b.length ? b : a;
+    if (!longer.endsWith(shorter)) {
+        return false;
+    }
+    const gap = longer.slice(0, longer.length - shorter.length);
+    if (gap.length === 0) {
+        return true;
+    }
+    if (gap.length % unit.length !== 0) {
+        return false;
+    }
+    for (let cursor = 0; cursor < gap.length; cursor += unit.length) {
+        if (!gap.startsWith(unit, cursor)) {
+            return false;
+        }
+    }
+    return true;
+}
+/**
+ * 接尾辞 `suffix` が、`**` getter の接尾辞 `familySuffix` の族そのもの、またはその値の内側を
+ * 指しているか。`.` 境界で切った各接頭辞 `p`（全体を含む）について `sameFamily(familySuffix, p)`
+ * を見る — `startsWith(familySuffix + ".")` だけでは、反復語ぶんずれた展開形の値の内側
+ * （`nodes.**.children.*.total.x` で `nodes.**.total`）を取りこぼす（第 4 サイクルで実測）。
+ */
+function coversSuffix(spec, familySuffix, suffix) {
+    for (let end = suffix.length; end > 0; end = suffix.lastIndexOf(DELIMITER, end - 1)) {
+        if (sameFamily(spec, familySuffix, suffix.slice(0, end))) {
+            return true;
+        }
+    }
+    return false;
+}
+/**
+ * 添字セグメント（`nodes.1.total` の `1`）を `*` に畳む。判定は `address/ResolvedAddress.ts`
+ * と同じ「`Number()` が NaN でない区切り」。API のパス引数（`$getAll` / `$setAll` / `$resolve`）と
+ * `**` パスの接尾辞は set トラップと違って `getResolvedAddress` の正規化を経ないので、
+ * 再帰の検査（読み取り専用・構造）に掛ける前にここで畳む。
+ */
+function indexSegmentsToWildcard(path) {
+    const segments = path.split(DELIMITER);
+    for (let i = 0; i < segments.length; i++) {
+        if (segments[i] !== WILDCARD && !Number.isNaN(Number(segments[i]))) {
+            segments[i] = WILDCARD;
+        }
+    }
+    return segments.join(DELIMITER);
+}
+/**
+ * `**` パスの接尾辞が「再帰の構造そのもの」を名指しているか。
+ *
+ * ノード自身（`nodes.**` / `nodes.**.children.*`）・子リスト（`nodes.**.children`）・その
+ * `length`（`arr.length = 0` は配列を切り詰める）・多段の反復サブパスなら子リストへ至る
+ * 途中のオブジェクト（`nodes.**.branch`）。書き側（`setAllRecursive`）は確定済みの
+ * 子アドレスを壊すので拒否し、宣言側（`**` getter のキー）は生成 getter が実データの
+ * 子リストを影にするので拒否する — 同じ述語を両方が使う。
+ *
+ * 反復サブパスを**途中まで**名指す形もすべて構造。`"." + repeatList` との完全一致だけを
+ * 見ると、多段の repeat で途中のオブジェクトが素通りし、深さ 0 の `branch` を置き換えた
+ * 瞬間に確定済みの深さ 1 のアドレスが宙に浮く（着地後レビューで実測。実装計画 §7-3）。
+ */
+function isStructuralSuffix(spec, suffix) {
+    const repeatSegments = spec.repeat.split(DELIMITER);
+    const unit = DELIMITER + spec.repeat;
+    let rest = suffix;
+    while (rest.startsWith(unit)) {
+        rest = rest.slice(unit.length);
+    }
+    if (rest.length === 0 || rest === DELIMITER + spec.repeatList + DELIMITER + "length") {
+        return true;
+    }
+    for (let i = 1; i < repeatSegments.length; i++) {
+        if (rest === DELIMITER + repeatSegments.slice(0, i).join(DELIMITER)) {
+            return true;
+        }
+    }
+    return false;
+}
+/** 深さ k の具体パスを作る。上限超過は生成前に throw する（設計書 D11）。 */
+function concretePathAt(spec, suffix, depth) {
+    if (depth < 0) {
+        raiseError(`Recursion depth must not be negative (got ${depth}).`);
+    }
+    let path = spec.anchor;
+    for (let i = 0; i < depth; i++) {
+        path += DELIMITER + spec.repeat;
+    }
+    const full = path + suffix;
+    // ワイルドカード段数は展開後のパス全体で数える（アンカー・反復・接尾辞をすべて含む）。
+    // intern（getPathInfo）より**前**に文字列から数える — 上限超過のパスを永続キャッシュ
+    // （PathInfo の `_cache`）に残さない（設計書 D10「毎ノードの固有パスを intern しない」）。
+    let wildcardCount = 0;
+    for (const segment of full.split(DELIMITER)) {
+        if (segment === WILDCARD) {
+            wildcardCount++;
+        }
+    }
+    if (wildcardCount > MAX_WILDCARD_DEPTH) {
+        raiseError(`[wcs/recursion-depth-exceeded] Recursion on "${spec.anchor}" reached depth ${depth} ` +
+            `("${full}"), which needs ${wildcardCount} wildcard levels — the limit is ${MAX_WILDCARD_DEPTH}. ` +
+            `Either the data nests deeper than the engine can address, or the tree contains a cycle.`);
+    }
+    return full;
+}
+/** 深さ k のノードパス（接尾辞なし）。リストパスの登録に使う（このモジュール内だけ）。 */
+function nodePathAt(spec, depth) {
+    return concretePathAt(spec, "", depth);
+}
+/**
+ * 深さ k のノードが持つ子リストのパス（`nodes.*.children` / `nodes.*.children.*.children` …）。
+ * `listPaths` へ登録する対象（E4）。深さ 0 のアンカー自身のリスト（`nodes`）も含める。
+ */
+function listPathsUpTo(spec, depth) {
+    const paths = [];
+    // アンカー自身のリスト（末尾の `.*` を落とした形）
+    paths.push(spec.anchorList);
+    for (let k = 0; k < depth; k++) {
+        paths.push(nodePathAt(spec, k) + DELIMITER + spec.repeatList);
+    }
+    return paths;
+}
+/**
+ * 具体パスが「その再帰 getter の深さ k の展開形」なら深さを返す。違えば null。
+ *
+ * 文字列中の反復語の出現数で数えない — 接尾辞が反復語と同じ綴りを含む場合に
+ * 取り違える。前から `anchor`、後ろから `suffix` を確かめ、間が `repeat` の
+ * 反復ちょうどであることを見る。
+ */
+function depthOfConcretePath(spec, suffix, path) {
+    if (!path.startsWith(spec.anchor)) {
+        return null;
+    }
+    if (suffix.length > 0 && !path.endsWith(suffix)) {
+        return null;
+    }
+    // 接頭辞と接尾辞が**重なって**はならない。重なると slice が空文字に畳まれて
+    // 「深さ 0 で一致」に見え、アンカーそのもの（`nodes.*` — 実データの行）が
+    // 生成 getter に隠される。接尾辞が `.*` の `nodes.**.*` で実際に踏んだ。
+    if (path.length < spec.anchor.length + suffix.length) {
+        return null;
+    }
+    const middle = path.slice(spec.anchor.length, path.length - suffix.length);
+    if (middle.length === 0) {
+        return 0;
+    }
+    const unit = DELIMITER + spec.repeat;
+    let depth = 0;
+    let cursor = 0;
+    while (cursor < middle.length) {
+        if (!middle.startsWith(unit, cursor)) {
+            return null;
+        }
+        cursor += unit.length;
+        depth++;
+    }
+    return depth;
+}
+
+const cacheEntryByAbsoluteStateAddress = new WeakMap();
+function getCacheEntryByAbsoluteStateAddress(address) {
+    return cacheEntryByAbsoluteStateAddress.get(address) ?? null;
+}
+function setCacheEntryByAbsoluteStateAddress(address, cacheEntry) {
+    if (cacheEntry === null) {
+        cacheEntryByAbsoluteStateAddress.delete(address);
+    }
+    else {
+        cacheEntryByAbsoluteStateAddress.set(address, cacheEntry);
+    }
+}
+function dirtyCacheEntryByAbsoluteStateAddress(address) {
+    const cacheEntry = cacheEntryByAbsoluteStateAddress.get(address);
+    if (cacheEntry) {
+        cacheEntry.dirty = true;
+    }
+}
+
+/**
+ * recursion/generation.ts
+ *
+ * 再帰レジストリの**世代の後始末**。state の再セットで前世代のレジストリが捨てられるとき、
+ * その世代が生やしたもの — own の生成アクセサ・依存表の辺・評価結果のキャッシュ — を忘れる。
+ * レジストリ本体（宣言の検証・パス族の代数・遅延実体化）から切り出してある: ここだけが
+ * 依存表・キャッシュ・台帳という state 全体の構造に触る。
+ */
+/**
+ * この機構が生やした getter。作者が手で書いた同名 getter と見分けるために使う
+ * （前者は忘れてよい・後者は衝突として拒否する）。
+ */
+const generatedGetters = new WeakSet();
+function markGeneratedGetter(getter) {
+    generatedGetters.add(getter);
+}
+/** この機構の生成物か（own に残った生成 getter）。 */
+function isGeneratedGetter(descriptor) {
+    return typeof descriptor.get === "function" && generatedGetters.has(descriptor.get);
+}
+/**
+ * 前世代が生やしたものを忘れる（state の再セット時に呼ぶ）。忘れるのは 3 つ。
+ *
+ * **own の生成アクセサ。** 生成 getter は state オブジェクトの own プロパティとして残る。
+ * 同じオブジェクトを `$recursion` 無し（または別アンカー）で再セットしたとき、残したままだと
+ * `getStateInfo` が `getterPaths` に拾い直し、読むと作者が書いていない `nodes.**.value` を
+ * 名指す `wcs/recursion-unsupported` になる（第 4 サイクルで実測）。`getStateInfo` の
+ * **前**に消す。
+ *
+ * **依存辺。** `_state` のセッタは `_listPaths` / `_getterPaths` / `_pathSet` をクリアするが、
+ * 依存表（`_staticDependency` / `_dynamicDependency`）は state の寿命を越えて残る。
+ * 通常のパスはそれで正しい — 同じ綴りのパスは新しい state でも同じ意味を持つ。
+ * だが**生成アクセサは違う**。新しい世代ではまだ実体化されておらず、それを指す辺だけが
+ * 残ると、次の構造書き込みで依存ウォークが「アクセサの無い具体パス」へ降りて落ちる。
+ * 依存表そのものをクリアしてはならない（既存バインディングの辺まで消えて、再セット後の
+ * 集計が更新されなくなる — 実測済み）。この世代が作った辺だけを外す。
+ *
+ * **キャッシュ。** 辺を外した以上、生成アクセサの評価結果も一緒に落とさなければ
+ * ならない。同じ state オブジェクト（または同じ配列）を再セットすると、台帳は配列の
+ * identity をキーにしているので ListIndex も絶対アドレスも世代を跨いで同一のまま残り、
+ * 旧世代の `dirty:false` の値がそのまま次の読みに返る。辺が無いので、次に再帰 getter を
+ * 読むまでの間の構造書き込み（`nodes.0.children = […]`）はそれを dirty にできない。
+ * 別のオブジェクト・別の配列なら ListIndex が新しく鋳造されるので何も残らない。
+ */
+function forgetGeneration(stateElement, previousState, generatedPaths) {
+    if (generatedPaths.size === 0) {
+        return;
+    }
+    for (const path of generatedPaths) {
+        const descriptor = Object.getOwnPropertyDescriptor(previousState, path);
+        if (typeof descriptor !== "undefined" && isGeneratedGetter(descriptor)) {
+            delete previousState[path];
+        }
+    }
+    for (const map of [stateElement.staticDependency, stateElement.dynamicDependency]) {
+        for (const path of generatedPaths) {
+            map.delete(path);
+        }
+        for (const [source, targets] of map) {
+            let kept = null;
+            for (let i = 0; i < targets.length; i++) {
+                if (generatedPaths.has(targets[i])) {
+                    kept ??= targets.slice(0, i);
+                    continue;
+                }
+                kept?.push(targets[i]);
+            }
+            if (kept !== null) {
+                if (kept.length === 0) {
+                    map.delete(source);
+                }
+                else {
+                    map.set(source, kept);
+                }
+            }
+        }
+    }
+    forgetCacheEntries(stateElement, previousState, generatedPaths);
+}
+/**
+ * 生成アクセサの評価結果のキャッシュを落とす。生成パスごとに、その `wildcardParentPathInfos`
+ * （`nodes` / `nodes.*.children` / … に加えて、接尾辞側のリスト `nodes.*.tags` 等）を旧 state の
+ * データと台帳に沿って降り、末端の行 ListIndex で絶対アドレスを引く。
+ *
+ * 深さ方向だけを降りて「ノード行の ListIndex × その深さのパス」で引くのでは足りない —
+ * 接尾辞にワイルドカードを持つ getter（`get "nodes.**.tags.*.up"()`）のキャッシュは
+ * タグ行の ListIndex（連鎖長 depth+2）に載っていて、ノード行の ListIndex では届かない
+ * （第 2 サイクルのレビューで実測: 再セット後の読みが旧値のまま残った）。
+ */
+function forgetCacheEntries(stateElement, previousState, generatedPaths) {
+    for (const concretePath of generatedPaths) {
+        const pathInfo = getPathInfo(concretePath);
+        const absPathInfo = getAbsolutePathInfo(stateElement, pathInfo);
+        const lists = pathInfo.wildcardParentPathInfos;
+        const forget = (owner, ownerListIndex, level) => {
+            if (level === lists.length) {
+                setCacheEntryByAbsoluteStateAddress(createAbsoluteStateAddress(absPathInfo, ownerListIndex), null);
+                return;
+            }
+            // 直前のリストの行（または state のルート）から、次のリストまでの相対セグメントを辿る
+            const from = level === 0 ? 0 : lists[level - 1].segments.length + 1;
+            let list = owner;
+            for (const segment of lists[level].segments.slice(from)) {
+                list = list?.[segment];
+            }
+            if (!Array.isArray(list)) {
+                return;
+            }
+            // 台帳が無い ＝ 走査を一度も経ていないリスト。その行に絶対アドレスは作られていない。
+            const rows = getListIndexesByList(list);
+            if (rows === null) {
+                return;
+            }
+            const count = Math.min(rows.length, list.length);
+            for (let i = 0; i < count; i++) {
+                forget(list[i], rows[i], level + 1);
+            }
+        };
+        forget(previousState, null, 0);
+    }
+}
+
+/**
+ * recursion/registry.ts
+ *
+ * state 1 つぶんの再帰レジストリ。宣言・`**` getter の定義・展開済みアクセサの台帳を
+ * 持ち、「具体パスを読む直前に、その深さのアクセサを生やす」遅延実体化を担う。
+ *
+ * 遅延であることは実装の**不変条件**である（Phase A の A6/A7）。そのパスを一度でも
+ * 読んでから生やしても、`isCacheable` が `wildcardCount > 0` だけでキャッシュ可を返す
+ * ため `undefined` が `dirty:false` で固定され、以後どう書いても回復しない。
+ * したがって実体化は `getByAddress` のキャッシュ参照**前**に置く（E5）。
+ *
+ * 寿命は state の世代と共にする。`_state` の再セットで `getterPaths` / `listPaths` は
+ * クリアされるので、レジストリも作り直す（§1-3）。ただし**生やしたアクセサは state
+ * オブジェクトの側に残る**ので、同じ state を再セットすると `getStateInfo` がそれを
+ * `getterPaths` に復元する。そのとき「もう生えているから何もしない」と早期 return して
+ * しまうと `listPaths` の登録だけが抜け落ちるため、生成物は WeakSet で見分けて
+ * 登録だけをやり直す。
+ */
+/** 宣言時（構築時）の診断コード。lint（vscode-wcs）が同じコードで先に出す。 */
+const DECLARATION_INVALID = "[wcs/recursion-declaration-invalid]";
+class RecursionRegistry {
+    spec;
+    _definitions = new Map();
+    _accessors = new Map();
+    /**
+     * `recursiveGetterOwning` の記憶。キーは添字を `*` に畳んだ形（`nodes.1.total` と `nodes.2.total`
+     * は 1 つ）、値は「その具体パスを展開形（またはその値の内側）として持つ `**` getter」、
+     * 無ければ null。
+     *
+     * 有界である: キーは添字を畳んだワイルドカード形のパス文字列で、`PathInfo` が intern する集合
+     * （バインディング・getter・API 引数に綴られたパスと、その展開形）の部分集合にしかならない。
+     * intern 済みパスの集合が有界であることは D10 で受け入れ済みなので、ここも同じ上限に収まる。
+     * 文字列は WeakSet に入らないので、寿命はレジストリ（＝ state の世代）と共にする。
+     */
+    _ownerByPath = new Map();
+    /**
+     * 書き込みのホットパス（`setByAddress`）向けの記憶。キーは intern 済みの `PathInfo` なので
+     * 寿命と上限は PathInfo の intern 集合と同じ（WeakMap）。畳み（split + Number + join）は
+     * miss のときだけ払う — 宣言のある state では**アンカー外を含む全書き込み**がここを通る
+     * （第 4 サイクルで実測: 畳みを毎回払うと `s.counter = i` で +100ns/書き込み）。
+     */
+    _ownerByPathInfo = new WeakMap();
+    /**
+     * 読みのホットパス（`getByAddress`）向けの記憶。`_ownerByPathInfo` と対称で、キーは
+     * intern 済みの `PathInfo`、値は「そのパスの展開アクセサ」、展開形でなければ null。
+     * 宣言のある state では**アンカー外を含む全読み**（親ウォークの各段を含む）がここを
+     * 通るので、文字列キーの `Map.get` + `Set.has` + `startsWith` を毎回払わせない
+     * （第 5 サイクルで実測）。
+     *
+     * 読みの否定判定の記憶は**ここ 1 つ**（第 5 サイクル再検証で文字列キーの `_nonAccessors` を撤去 —
+     * 前段にこの記憶を置いた後は、PathInfo とパス文字列が 1:1 なので二重に持つだけだった）。
+     * 否定を記憶してよい根拠は、定義集合が state の世代内で不変であること —
+     * 同じ `PathInfo` は同じパス文字列なので、いちど「展開形でない」と決まった PathInfo が
+     * 後から実体化されることはない。実体化した側は `materializeForPathInfo` が
+     * `_define` の戻り値でそのまま記憶を更新する（否定が実体化を隠さない）。
+     */
+    _accessorByPathInfo = new WeakMap();
+    /** `concretePathAt` の記憶（接尾辞 → 深さ順の具体パス）。 */
+    _concreteBySuffix = new Map();
+    _registeredListPaths = new Set();
+    constructor(spec, state) {
+        this.spec = spec;
+        // getter 本体は実行しない。descriptor だけを見て `**` を含むキーを拾う。
+        const descriptors = getAllPropertyDescriptors(state);
+        for (const [key, descriptor] of Object.entries(descriptors)) {
+            if (!hasRecursionWildcard(key)) {
+                continue;
+            }
+            if (typeof descriptor.set === "function") {
+                raiseError(`${DECLARATION_INVALID} Recursive setters are not supported in this version: "${key}". ` +
+                    `Declare a plain path setter, or write through the concrete path.`);
+            }
+            if (typeof descriptor.get !== "function") {
+                raiseError(`${DECLARATION_INVALID} "${key}" contains "**" but is not a getter. ` +
+                    `The recursion wildcard only names a family of computed paths.`);
+            }
+            const suffix = splitRecursivePath(spec, key);
+            if (suffix === null) {
+                raiseError(recursionAnchorMismatchMessage(key, spec.recursiveAnchor));
+            }
+            if (suffix.length === 0) {
+                // `get "nodes.**"` は展開すると `nodes.*` そのもの。`getByAddress` は
+                // 「パスが target にあるか」を先に見るので、実データの行が丸ごと隠れる。
+                raiseError(`${DECLARATION_INVALID} "${key}" names the recursive node itself. "**" names a computed path ` +
+                    `under a node (for example "${spec.recursiveAnchor}${DELIMITER}total"), not the node.`);
+            }
+            // 構造の判定は添字綴り（`get "nodes.**.children.0"()`）も畳んでから掛ける（書き側と同じ）
+            if (isStructuralSuffix(spec, foldSuffixIndexes(suffix))) {
+                // `get "nodes.**.children"` / `.children.*` / `.children.length` / 多段なら `.branch` は
+                // 展開すると実データの子リスト（子ノード・その length・途中のオブジェクト）そのもの。
+                // 生成 getter が `getByAddress` の「パスが target にあるか」で勝ち、実データの木を
+                // 深さ 1 以下ごと無言で影にする（第 2 サイクルのレビューで実測: `$getAll("nodes.**.value", [])`
+                // が `[1, 2]` に縮んだ）。書き側が同じ形を `recursion-structural-write` で拒否するのと対称。
+                raiseError(`${DECLARATION_INVALID} "${key}" names the recursion structure itself (a node, its ` +
+                    `"${spec.repeatList}" list or that list's length, or an ` +
+                    `object on the way to that list). A recursive getter would hide the real child list at every ` +
+                    `depth — "**" names a computed leaf under a node (for example "${spec.recursiveAnchor}${DELIMITER}total").`);
+            }
+            this._definitions.set(key, {
+                recursivePath: key,
+                suffix,
+                get: descriptor.get,
+            });
+        }
+        this._assertNoColliding();
+        this._assertNoConcreteCollision(descriptors);
+    }
+    /**
+     * 作者が手で書いた具体パス（`get "nodes.*.children.*.total"()` / データプロパティ）が、宣言済み
+     * `**` getter の展開形と同名でないことを**構築時に**確かめる。
+     *
+     * `_define` の衝突検査は「その深さを最初に読んだとき」にしか走らないので、データが浅い間は
+     * 通り、木が 1 段深くなった瞬間にバインディングが落ちていた（第 3 サイクルのレビューで実測）。
+     * 前世代の生成物（own に残った生成 getter）は衝突ではない — 同じ state の再セットで必ず居る。
+     */
+    _assertNoConcreteCollision(descriptors) {
+        for (const [key, descriptor] of Object.entries(descriptors)) {
+            if (hasRecursionWildcard(key) || isGeneratedGetter(descriptor)) {
+                continue;
+            }
+            const owner = this._matchExpansion(key);
+            if (owner !== null) {
+                raiseError(`${DECLARATION_INVALID} "${key}" is already defined on the state, so the recursive getter ` +
+                    `"${owner}" cannot expand to it. Rename one of them.`);
+            }
+        }
+    }
+    /**
+     * 2 本の `**` getter が同じ具体パスへ展開しないことを、宣言だけから静的に確かめる。
+     *
+     * 衝突するのは「片方の接尾辞がもう片方の接尾辞の末尾で、差分が反復語の整数倍」の
+     * ときだけ（`nodes.**.total` と `nodes.**.children.*.total` は深さ k と k+1 で
+     * 同じ `nodes.*.children.*.total` になる）。検出しないと `_definitions` の挿入順で
+     * 最初に一致した方が無言で勝つ。
+     */
+    _assertNoColliding() {
+        const definitions = Array.from(this._definitions.values());
+        for (let i = 0; i < definitions.length; i++) {
+            for (let j = i + 1; j < definitions.length; j++) {
+                if (sameFamily(this.spec, definitions[i].suffix, definitions[j].suffix)) {
+                    raiseError(`${DECLARATION_INVALID} "${definitions[i].recursivePath}" and "${definitions[j].recursivePath}" ` +
+                        `expand to the same concrete path at different depths (they differ by whole repetitions of ` +
+                        `"${this.spec.repeat}"). Rename one of them.`);
+                }
+            }
+        }
+    }
+    /**
+     * `**` getter を 1 本でも宣言しているか。
+     * **テスト・診断専用**（ランタイムの経路は `_definitions.size` を直接見る）。
+     */
+    get hasDefinitions() {
+        return this._definitions.size > 0;
+    }
+    /**
+     * その接尾辞が宣言済みの `**` getter と衝突するなら、その getter のパスを返す。
+     *
+     * 完全一致だけでは足りない。①反復語の整数倍だけ違う接尾辞は同じ族を指す
+     * （`_assertNoColliding` が宣言どうしについて既に見ている条件）②getter の**下**を
+     * 指す形（`nodes.**.total.x` / 反復語ぶんずれた `nodes.**.children.*.total.x`）は、
+     * getter が返したオブジェクトへ書いてキャッシュを汚し、次の無効化で無言に戻る。
+     * どちらも書き込みの入口（列挙より前）で止める — 述語は expand.ts の `coversSuffix`。
+     */
+    conflictingRecursiveGetter(suffix) {
+        for (const definition of this._definitions.values()) {
+            if (coversSuffix(this.spec, definition.suffix, suffix)) {
+                return definition.recursivePath;
+            }
+        }
+        return null;
+    }
+    /**
+     * `recursiveGetterOwning` の intern 済み `PathInfo` 版（書き込みのホットパス用）。
+     * WeakMap の hit なら畳みも照合も払わない。
+     */
+    recursiveGetterOwningPath(pathInfo) {
+        const known = this._ownerByPathInfo.get(pathInfo);
+        if (typeof known !== "undefined") {
+            return known;
+        }
+        const owner = this.recursiveGetterOwning(pathInfo.path);
+        this._ownerByPathInfo.set(pathInfo, owner);
+        return owner;
+    }
+    /**
+     * 具体パスを展開形（またはその値の内側）として持つ `**` getter のパス。無ければ null。
+     * **実体化はしない。**
+     *
+     * `conflictingRecursiveGetter` の**具体パス版**で、`**` を経ない 2 つの入口が使う:
+     *
+     *  - バインド確立時のパス存在検査（`checkDeclaredPath`）。あの時点ではまだ生えて
+     *    いないので、素の存在検査では必ず「解決できない」になる。展開形そのもの
+     *    （`nodes.*.total`）だけでなく、その値の中を指す形（`nodes.*.stats.count` で
+     *    `get "nodes.**.stats"()` がオブジェクトを返す）も、通常の getter の下と同じく
+     *    評価しないと分からないので黙る側に倒す。
+     *  - 書き込みの入口（`setByAddress`）。`$setAll("nodes.*.children.*.total", [], v)` や
+     *    `this["nodes.1.total"] = v` は `**` を含まないので `setAllRecursive` の
+     *    読み取り専用検査を通らず、未実体化なら fast path が行オブジェクトへ素の
+     *    プロパティとして書いてしまう（ノードを汚し、代入値が `dirty:false` で載って
+     *    以後 getter が評価されない）。展開形への書き込みは、実体化の前後に関わらず
+     *    `wcs/recursion-readonly` で止める。
+     */
+    recursiveGetterOwning(concretePath) {
+        const accessor = this._accessors.get(concretePath);
+        if (typeof accessor !== "undefined") {
+            return accessor.recursivePath;
+        }
+        // 添字綴り（`$setAll("nodes.1.total", [], v)` — API のパス引数は set トラップと違って
+        // getResolvedAddress の正規化を経ない）は、添字を `*` に畳んでから照合する。畳まないと
+        // `nodes[1].total` へ素の値が書かれる（第 3 回レビューで実測）。**無条件に**畳む —
+        // 「アンカーで始まらないときだけ」にすると、ワイルドカードと添字の混在綴り
+        // （`nodes.*.children.0.total`）がアンカーで始まるせいで畳まれず、`depthOfConcretePath` が
+        // `.children.0` を反復単位と認めずに素通りする（第 4 回レビューで実測）。
+        // 記憶のキーは畳んだ形 — 添字綴りのまま記憶すると綴りの数だけ単調に増える。
+        const pattern = indexSegmentsToWildcard(concretePath);
+        const known = this._ownerByPath.get(pattern);
+        if (typeof known !== "undefined") {
+            return known;
+        }
+        let owner = null;
+        if (pattern.startsWith(this.spec.anchor)) {
+            // 展開形そのもの → その値の内側（`.` 境界で切った接頭辞を長い方から）の順に照合する。
+            // 接頭辞はアンカーより長いものだけ — アンカー自身は接尾辞が空なので getter になり得ない。
+            owner = this._matchExpansion(pattern);
+            for (let end = pattern.lastIndexOf(DELIMITER); owner === null && end > this.spec.anchor.length; end = pattern.lastIndexOf(DELIMITER, end - 1)) {
+                owner = this._matchExpansion(pattern.slice(0, end));
+            }
+        }
+        // 定義集合は state の世代内で不変なので、判定は記憶してよい（アンカー外の否定も含む）。
+        this._ownerByPath.set(pattern, owner);
+        return owner;
+    }
+    /** 具体パスが宣言済み `**` getter の展開形そのものなら、その getter のパス。 */
+    _matchExpansion(concretePath) {
+        for (const definition of this._definitions.values()) {
+            if (depthOfConcretePath(this.spec, definition.suffix, concretePath) !== null) {
+                return definition.recursivePath;
+            }
+        }
+        return null;
+    }
+    /**
+     * `materializeFor` の `PathInfo` 版。**読みのホットパス（`getByAddress`）専用**で、
+     * 判定そのものは `materializeFor` に委ね、結果（否定を含む）を PathInfo に記憶する。
+     * 書き側の `recursiveGetterOwningPath` と対称。
+     */
+    materializeForPathInfo(stateElement, pathInfo) {
+        // `**` getter の無い宣言（レジストリは空）は、記憶を作らずに抜ける
+        if (this._definitions.size === 0) {
+            return null;
+        }
+        const known = this._accessorByPathInfo.get(pathInfo);
+        if (typeof known !== "undefined") {
+            return known;
+        }
+        const accessor = this.materializeFor(stateElement, pathInfo.path);
+        this._accessorByPathInfo.set(pathInfo, accessor);
+        return accessor;
+    }
+    /**
+     * 具体パスが再帰 getter の展開形なら、そのアクセサを（未登録なら生やして）返す。
+     * 該当しなければ null。読みは `materializeForPathInfo` を通るので、ここへ来るのは
+     * 記憶が外れたときだけ — 判定は接頭辞 1 回で抜け、ここでは否定を記憶しない（記憶は
+     * `materializeForPathInfo` の PathInfo キーの 1 か所）。
+     * （`**` getter の無い空レジストリを弾くのは呼び出し側の役目。）
+     */
+    materializeFor(stateElement, concretePath) {
+        const known = this._accessors.get(concretePath);
+        if (typeof known !== "undefined") {
+            return known;
+        }
+        if (!concretePath.startsWith(this.spec.anchor)) {
+            return null;
+        }
+        let matched = null;
+        let matchedDepth = 0;
+        for (const definition of this._definitions.values()) {
+            const depth = depthOfConcretePath(this.spec, definition.suffix, concretePath);
+            if (depth === null) {
+                continue;
+            }
+            if (matched !== null) {
+                // コンストラクタの静的検査で弾いているはずの形。保険として先着を無言で採らない。
+                raiseError(`"${concretePath}" matches both "${matched.recursivePath}" and "${definition.recursivePath}".`);
+            }
+            matched = definition;
+            matchedDepth = depth;
+        }
+        if (matched === null) {
+            return null;
+        }
+        return this._define(stateElement, matched, matchedDepth, concretePath);
+    }
+    _define(stateElement, definition, depth, concretePath) {
+        // 作者が同じ具体パスを手で定義していないか。**プロトタイプチェーンまで**見る —
+        // class 構文の getter は own ではなく prototype に載る（`getStateInfo` が
+        // `getterPaths` に拾うのと同じ範囲）。own しか見ないと、生成アクセサが own に
+        // 定義されて作者の getter を無言で影にする。前世代の生成物（own・WeakSet に載る
+        // get）だけは上書きしてよい。
+        const existing = stateElement.findStateDescriptor(concretePath);
+        if (typeof existing !== "undefined" && !isGeneratedGetter(existing)) {
+            raiseError(`"${concretePath}" is already defined on the state, so the recursive getter ` +
+                `"${definition.recursivePath}" cannot expand to it. Rename one of them.`);
+        }
+        const accessor = Object.freeze({
+            recursivePath: definition.recursivePath,
+            depth,
+        });
+        const body = definition.get;
+        const generated = function () {
+            return body.call(this);
+        };
+        markGeneratedGetter(generated);
+        // 前世代の生成物が残っていても、登録（getterPaths / setPathInfo / listPaths）は
+        // この世代でやり直す必要があるので、descriptor ごと定義し直す。
+        stateElement.defineTreeAccessor(concretePath, {
+            get: generated,
+            enumerable: false,
+            configurable: true,
+        });
+        this._registerListPaths(stateElement, depth);
+        this._accessors.set(concretePath, accessor);
+        return accessor;
+    }
+    /**
+     * 経路上のリストパスを `listPaths` に載せる（E4）。`setPathInfo(path, "for")` は
+     * 使えない — あちらは `elementPaths` にも入れて `setByAddress` の swap 経路
+     * （`isSwappable`）を変えてしまう。ここで要るのは「依存ウォークがこのパスを
+     * リストとして展開する」ことだけ。
+     */
+    _registerListPaths(stateElement, depth) {
+        for (const listPath of listPathsUpTo(this.spec, depth)) {
+            if (this._registeredListPaths.has(listPath)) {
+                continue;
+            }
+            this._registeredListPaths.add(listPath);
+            stateElement.addListPath(listPath);
+        }
+    }
+    /**
+     * この世代が生やしたもの（own の生成アクセサ・依存辺・キャッシュ）を忘れる（state の
+     * 再セット時、`getStateInfo` の再収集より**前**に呼ぶ）。実体は generation.ts。
+     */
+    forgetGenerated(stateElement, previousState) {
+        forgetGeneration(stateElement, previousState, new Set(this._accessors.keys()));
+    }
+    /**
+     * `**` 接尾辞の深さ `depth` の具体パス（`concretePathAt` の記憶付き版）。
+     * 束縛形の読み（`this["nodes.**.value"]` / 省略形 `$getAll`）は再帰 getter の評価ごとに
+     * ここを通るので、深さぶんの文字列連結とワイルドカード数えを毎回やり直さない。
+     * 上限は「接尾辞の種類 × 128」で有界（上限超過は `concretePathAt` が throw するので載らない）。
+     */
+    concretePathAt(suffix, depth) {
+        let byDepth = this._concreteBySuffix.get(suffix);
+        if (typeof byDepth === "undefined") {
+            byDepth = [];
+            this._concreteBySuffix.set(suffix, byDepth);
+        }
+        let path = byDepth[depth];
+        if (typeof path === "undefined") {
+            path = concretePathAt(this.spec, suffix, depth);
+            byDepth[depth] = path;
+        }
+        return path;
+    }
+    /** 展開済みアクセサのメタデータ（深さ解決・診断・テスト用）。 */
+    accessorFor(concretePath) {
+        return this._accessors.get(concretePath) ?? null;
+    }
+    /**
+     * これまでに実体化した具体パスの一覧。**テスト専用**（「読んだ深さだけが生える」という
+     * 遅延実体化の不変条件を外から確かめる口。ランタイムはどの経路からも呼ばない）。
+     */
+    get materializedPaths() {
+        return new Set(this._accessors.keys());
+    }
 }
 
 /**
@@ -13149,20 +14128,6 @@ function isInternalProperty(name) {
     return name.startsWith("$");
 }
 
-function getAllPropertyDescriptors(obj) {
-    const chain = [];
-    let proto = obj;
-    while (proto && proto !== Object.prototype) {
-        chain.push(proto);
-        proto = Object.getPrototypeOf(proto);
-    }
-    const descriptors = {};
-    for (let i = chain.length - 1; i >= 0; i--) {
-        Object.assign(descriptors, Object.getOwnPropertyDescriptors(chain[i]));
-    }
-    return descriptors;
-}
-
 /**
  * DCC の `$bindables` / `$commands` 宣言を解析・検証する。
  *
@@ -13649,25 +14614,6 @@ function getContextListIndex(handler, structuredPath) {
         return null;
     }
     return listIndexAtWildcard(address.listIndex, index, address.pathInfo.wildcardCount);
-}
-
-const cacheEntryByAbsoluteStateAddress = new WeakMap();
-function getCacheEntryByAbsoluteStateAddress(address) {
-    return cacheEntryByAbsoluteStateAddress.get(address) ?? null;
-}
-function setCacheEntryByAbsoluteStateAddress(address, cacheEntry) {
-    if (cacheEntry === null) {
-        cacheEntryByAbsoluteStateAddress.delete(address);
-    }
-    else {
-        cacheEntryByAbsoluteStateAddress.set(address, cacheEntry);
-    }
-}
-function dirtyCacheEntryByAbsoluteStateAddress(address) {
-    const cacheEntry = cacheEntryByAbsoluteStateAddress.get(address);
-    if (cacheEntry) {
-        cacheEntry.dirty = true;
-    }
 }
 
 function checkDependency(handler, address) {
@@ -14368,7 +15314,15 @@ function _getByAddressWithCache(target, address, receiver, handler, stateElement
     return value;
 }
 function getByAddress(target, address, receiver, handler) {
+    // 再帰 getter の遅延実体化（Phase B）。**キャッシュ参照より前**でなければならない。
+    // 未定義のまま一度読まれると isCacheable が wildcardCount > 0 だけでキャッシュ可を
+    // 返すので undefined が dirty:false で固定され、後からアクセサを生やしても恒久的に
+    // 直らない（Phase A の A7）。宣言の無い state は boolean 判定 1 個で抜け、宣言のある
+    // state も 2 回目からは PathInfo キーの記憶 1 回で抜ける（書き側と対称・第 5 サイクル）。
     checkDependency(handler, address);
+    if (handler.stateElement.hasRecursion === true) {
+        handler.stateElement.recursionRegistry.materializeForPathInfo(handler.stateElement, address.pathInfo);
+    }
     // $streams の args トレース中のみ絶対アドレスを捕捉（collector 非活性なら即 return）
     collectStreamDependency(handler.stateElement, address);
     const stateElement = handler.stateElement;
@@ -14404,15 +15358,6 @@ function safeVolumeRootNode(stateElement) {
  * Throws: LIST-201（インデックス未解決）、BIND-201（ワイルドカード情報不整合）
  */
 /**
- * 各ワイルドカード階層で最後に観測したリスト値。**次の読みの差分基準**であり、
- * ListIndex の同一性を跨いで保つために使う。
- *
- * 所有権は読み（`$getAll`）側にある。書き（`$setAll`）はこの走査を借りるだけで
- * 記録を更新しない（`commitDiffBaseline: false`。設計 §6-2）。
- */
-// ToDo: IAbsoluteStateAddressに変更する
-const lastValueByListAddress = new WeakMap();
-/**
  * `pathInfo` のワイルドカードを `indexes`（前方一致の接頭辞）で絞り込みつつ展開し、
  * マッチする添字タプルを列挙する。
  *
@@ -14427,12 +15372,13 @@ function collectWildcardIndexes(target, receiver, handler, pathInfo, indexes, op
             return;
         }
         const wildcardAddress = createStateAddress(wildcardParentPathInfo, listIndex);
-        const oldValue = lastValueByListAddress.get(wildcardAddress);
+        const wildcardAbsAddress = createAbsoluteStateAddress(getAbsolutePathInfo(handler.stateElement, wildcardParentPathInfo), listIndex);
+        const oldValue = getStateListBaseline(wildcardAbsAddress);
         const newValue = getByAddress(target, wildcardAddress, receiver, handler);
         const listDiff = createListDiff(listIndex, oldValue, newValue);
         const listIndexes = listDiff.newIndexes;
         const index = indexes[indexPos] ?? null;
-        newValueByAddress.set(wildcardAddress, newValue);
+        newValueByAddress.set(wildcardAbsAddress, newValue);
         if (index === null) {
             for (let i = 0; i < listIndexes.length; i++) {
                 const listIndex = listIndexes[i];
@@ -14457,7 +15403,7 @@ function collectWildcardIndexes(target, receiver, handler, pathInfo, indexes, op
     walkWildcardPattern(pathInfo.wildcardParentPathInfos, 0, null, indexes, 0, [], resultIndexes);
     if (options.commitDiffBaseline) {
         for (const [address, newValue] of newValueByAddress.entries()) {
-            lastValueByListAddress.set(address, newValue);
+            setStateListBaseline(address, Array.isArray(newValue) ? newValue : []);
         }
     }
     return resultIndexes;
@@ -14830,9 +15776,10 @@ function _walkExpandWildcard(context, currentWildcardIndex, parentListIndex) {
     const parentAbsPathInfo = getAbsolutePathInfo(context.stateElement, parentPathInfo);
     const parentAddress = createStateAddress(parentPathInfo, parentListIndex);
     const parentAbsAddress = createAbsoluteStateAddress(parentAbsPathInfo, parentListIndex);
-    const lastValue = getLastListValueByAbsoluteStateAddress(parentAbsAddress);
+    const lastValue = getStateListBaseline(parentAbsAddress);
     const newValue = context.stateProxy[getByAddressSymbol](parentAddress);
     const listDiff = createListDiff(parentAddress.listIndex, lastValue, newValue);
+    context.observedListValueByAbsAddress.set(parentAbsAddress, Array.isArray(newValue) ? newValue : []);
     const loopIndexes = getIndexes(listDiff, context.searchType);
     if (currentWildcardIndex === context.wildcardPaths.length - 1) {
         context.targetListIndexes.push(...loopIndexes);
@@ -14974,8 +15921,9 @@ function _collectDependencies(context, address, nextEntries) {
                 const newValue = context.stateProxy[getByAddressSymbol](address);
                 const absPathInfo = getAbsolutePathInfo(context.stateElement, address.pathInfo);
                 const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
-                const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);
+                const lastValue = getStateListBaseline(absAddress);
                 const listDiff = createListDiff(address.listIndex, lastValue, newValue);
+                context.observedListValueByAbsAddress.set(absAddress, Array.isArray(newValue) ? newValue : []);
                 const selection = selectExpansionIndexes(context, sourcePath, lastValue, newValue, listDiff);
                 for (const listIndex of selection.fullRows) {
                     const depAddress = createStateAddress(depPathInfo, listIndex);
@@ -15057,6 +16005,7 @@ function _collectDependencies(context, address, nextEntries) {
                     }
                     const expandContext = {
                         stateElement: context.stateElement,
+                        observedListValueByAbsAddress: context.observedListValueByAbsAddress,
                         targetListIndexes: [],
                         wildcardPaths: depPathInfo.wildcardPaths,
                         wildcardParentPaths: depPathInfo.wildcardParentPaths,
@@ -15099,12 +16048,14 @@ function walkDependency(stateElement, startAddress, staticDependency, dynamicDep
         callback(startAddress);
         return [];
     }
-    // パス単位のトポロジカル順位。値を一切読まずに求まり、依存グラフは追記のみで
-    // 成長するため epoch でメモ化される（topologicalRank.ts）。
+    // パス単位のトポロジカル順位。値を一切読まないグラフ走査で毎回求める（キャッシュは
+    // 持たない — topologicalRank.ts）。依存グラフは追記が基本だが、再帰の再セットでは
+    // 旧世代の生成アクセサを指す辺が外れることがある（recursion/registry.ts の forgetGenerated）。
     const ranks = getTopologicalRanks(startPath, staticDependency, dynamicDependency, MAX_DEPENDENCY_DEPTH);
     const context = {
         ranks: ranks,
         stateElement: stateElement,
+        observedListValueByAbsAddress: new Map(),
         staticMap: staticDependency,
         dynamicMap: dynamicDependency,
         result: new Set(),
@@ -15116,6 +16067,12 @@ function walkDependency(stateElement, startAddress, staticDependency, dynamicDep
         keyedMergePath: options?.keyedMergePath ?? null,
     };
     _walkDependency(context, startAddress, callback);
+    // 観測したリスト値を state 側の基準として確定する（E1）。ウォークの最中に進めると
+    // 同じウォーク内の 2 度目の観測が「変化なし」になるため、走査を終えてからまとめて書く
+    // （`collectWildcardIndexes` の commitDiffBaseline と同じ形）。
+    for (const [absAddress, value] of context.observedListValueByAbsAddress) {
+        setStateListBaseline(absAddress, value);
+    }
     return Array.from(context.result);
 }
 
@@ -15374,6 +16331,21 @@ function setByAddressCore(target, address, value, receiver, handler, keyedMergeP
                 `Write "${shadowedSlot}" itself, or individual fields inside "${path}", instead.`);
         }
     }
+    // 再帰 getter の展開形（`nodes.*.children.*.total`）とその値の内側への書き込みは、`**` を
+    // 含まないので `setAllRecursive` の読み取り専用検査を通らない。未実体化なら下の fast path が
+    // 「親オブジェクトの未存在キー」として行オブジェクトへ素の値を書き、代入値を `dirty:false` で
+    // キャッシュに載せる — ノードが汚れ、実体化後も getter が評価されず、深さ 0 の集計まで
+    // 巻き込む（レビュー P18 で実測）。実体化後は `Reflect.set` が false を返すだけの無言 no-op。
+    // 読み側の遅延実体化（getByAddress の E5）と対称に、書き側はここで止める。
+    // 宣言の無い state は boolean 判定 1 個で抜ける（D18）
+    if (stateElement.hasRecursion === true) {
+        const owner = stateElement.recursionRegistry.recursiveGetterOwningPath(address.pathInfo);
+        if (owner !== null) {
+            raiseError(`[wcs/recursion-readonly] "${path}" writes into the recursive getter "${owner}" ` +
+                `(this path is that getter at one depth, or a path inside the value it derives), which has ` +
+                `no setter. Write the values it derives from instead.`);
+        }
+    }
     // occurrence（wc-bindable の `semantics: "event"`）由来の書き込みは、同値でも
     // 「もう一度起きた」ことを落としてはならないため same-value guard を 1 回だけ飛ばす。
     // トークンはここで消費されるので、この write の内側で走る他の書き込みには波及しない。
@@ -15550,6 +16522,292 @@ function resolve(target, _prop, receiver, handler) {
 }
 
 /**
+ * recursion/bind.ts
+ *
+ * オーサリング層の `**` を「いま評価している深さ」へ束縛する。
+ *
+ * 深さの根拠は**生成アクセサのアドレス**であって、文字列中の反復語の出現数ではない。
+ * `getByAddress` は getterPaths に載るパスを読むときアドレスをスタックへ積むので、
+ * 深さ k の再帰 getter の本体を評価している最中は、スタック先頭がその具体パスの
+ * アドレスになっている。そこから深さを復元する（実装計画 §1-2）。
+ *
+ * 見るのは**スタック先頭だけ**である。添字（ListIndex）を供給する `getContextListIndex` /
+ * `$getAll` の省略形も先頭しか見ないので、深さだけを外側のフレームから拾うと「深さは
+ * 束縛されたが行は無い」という定義にない状態になる — `**` getter が別の素の getter を
+ * 経由して `**` を読む形（`get "nodes.**.x"() { return this.helper }` /
+ * `get helper() { return this["nodes.**.value"] }`）がそれで、直接読みは生の
+ * `ListIndex not found`、`$getAll` の省略形は「束縛した深さ × 全行」という値を無言で
+ * 返していた。深さと行は同じフレームから取る。
+ */
+/**
+ * 具体パスの**接頭辞**として最深のノードパスを見つけ、その深さを返す。
+ * `nodes.*.children.*.label` のような行 getter の文脈から深さ 1 を取り出す用。
+ */
+function depthOfConcretePathPrefix(registry, path) {
+    const spec = registry.spec;
+    if (!path.startsWith(spec.anchor)) {
+        return null;
+    }
+    const unit = DELIMITER + spec.repeat;
+    let depth = 0;
+    let cursor = spec.anchor.length;
+    while (path.startsWith(unit, cursor)) {
+        cursor += unit.length;
+        depth++;
+    }
+    // 接頭辞の直後はパス境界（末尾、または `.`）でなければならない。
+    if (cursor !== path.length && path.charCodeAt(cursor) !== 46 /* '.' */) {
+        return null;
+    }
+    return depth;
+}
+/**
+ * 評価中のアドレス（スタック先頭）から再帰の深さを求める。再帰文脈でなければ null。
+ * 先頭が null（ループ文脈の無いイベントハンドラ・初期同期）も再帰文脈ではない。
+ */
+function currentRecursionDepth(handler, registry) {
+    if (handler.addressStackLength === 0) {
+        return null;
+    }
+    const address = handler.lastAddressStack;
+    if (address === null) {
+        return null;
+    }
+    const accessor = registry.accessorFor(address.pathInfo.path);
+    if (accessor !== null) {
+        return accessor.depth;
+    }
+    // 生成アクセサでなくても、宣言に合致する具体パス（行 getter・行のイベントハンドラが
+    // 積むループのアドレス）ならそこから深さを取れる。
+    return depthOfConcretePathPrefix(registry, address.pathInfo.path);
+}
+/**
+ * `**` を含むパスを、いま評価している深さの具体パスへ書き換える。
+ * 再帰文脈が無いところで `**` を直接読むのは、深さが決まらないので診断する。
+ */
+function bindRecursivePath(stateElement, handler, path) {
+    // 呼び出し元は 2 つとも `hasRecursion === true` をゲートにしているので、
+    // ここに来た時点でレジストリは必ずある。到達不能な `??` 分岐は置かない
+    // （カバレッジ閾値に効く — walkDependency の `address.listIndex!` と同じ綴り）。
+    const registry = stateElement.recursionRegistry;
+    // アンカー照合を先に行う。深さ解決を先にすると、綴り違いのアンカーが
+    // 「文脈が無い」と報告されて原因に辿り着けない。
+    const suffix = splitRecursivePath(registry.spec, path);
+    if (suffix === null) {
+        raiseError(recursionAnchorMismatchMessage(path, registry.spec.recursiveAnchor));
+    }
+    const depth = currentRecursionDepth(handler, registry);
+    if (depth === null) {
+        raiseError(`[wcs/recursion-context] "${path}" uses "**", which is bound to the depth of the recursive getter ` +
+            `being evaluated, and there is no recursion context here. Read it from inside a recursive getter ` +
+            `or a row getter under "${registry.spec.anchor}", or name a concrete depth ` +
+            `(for example "${registry.spec.anchor}${path.slice(registry.spec.recursiveAnchor.length)}"). ` +
+            `The depth comes from the innermost frame only: a plain getter reached from a recursive getter ` +
+            `has no row of its own, so read "**" in the recursive getter and pass the value on.`);
+    }
+    // 照合済みの接尾辞をそのまま使う。具体パスは記憶付き（再帰 getter の評価ごとに通る経路）。
+    return registry.concretePathAt(suffix, depth);
+}
+
+/**
+ * recursion/walk.ts
+ *
+ * 再帰アンカー配下を**全深さ**にわたって走査し、マッチする具体アドレスを列挙する。
+ * `$getAll(path, [])` の合併形（設計書 §6-2）と `$setAll` のブロードキャストが共有する。
+ *
+ * 固定 arity の走査（`proxy/apis/wildcardIndexes.ts`）は「ワイルドカードの本数が
+ * 静的に決まっている」ことに立脚しているので、そのままでは深さが動的な族を扱えない。
+ * ここは深さ方向だけを自前で降り、**各深さの具体パスは固定 arity のまま**扱う
+ * — つまりエンジンが見るパスは常に `**` を含まない普通のパスである（設計書 D2）。
+ *
+ * 順序は**深さ優先・行きがけ・添字昇順**（§1-2）。ノードを 1 つ出したら、その子へ
+ * 降りきってから次の兄弟へ移る。読みと書きが同じ順序を使うことが `$setAll` の
+ * 契約の前提になる。
+ *
+ * 走査が throw したとき、その走査が観測したリスト値は差分基準へ確定**しない**
+ * （途中まで進めた基準を残すと、次の読みが「変化なし」と誤認しうる）。
+ */
+/**
+ * アンカー配下の全深さを列挙する。深さ優先・行きがけ・添字昇順。
+ *
+ * 終端は「その深さの子リストが空」。上限超過は `concretePathAt` が**その深さに実際に
+ * ノードが居るときだけ**検査する（葉の 1 段先を投機的に見て落ちないように）。
+ */
+function collectRecursiveAddresses(target, receiver, handler, registry, suffix) {
+    const spec = registry.spec;
+    const results = [];
+    const observed = new Map();
+    const pathsByDepth = [];
+    const repeatList = spec.repeatList;
+    const anchorList = spec.anchorList;
+    /**
+     * 「同じ配列インスタンスが 2 つ以上の親から到達可能」を**走査そのもの**で判定する
+     * （設計書 D12・E6）。台帳の親（`newIndexes[0].parentListIndex`）で見てはならない
+     * — 台帳はリスト配列の identity だけをキーにしていて、行オブジェクトを作り直す
+     * ふつうのイミュータブル更新（`nodes.map(n => ({...n}))` は children を参照ごと
+     * 引き継ぐ）でも親 ListIndex が別物になるため、正当な木を恒久的に拒否してしまう。
+     *
+     * 走査で見た配列を覚えておけば、共有も循環も「同じ配列に 2 度到達したか」で決まる。
+     * 祖先の集合に居れば循環（自分より上へ戻る）、そうでなければ兄弟共有。
+     * 空配列は行を持たないので別名化のしようがなく、追跡しない（`[]` の使い回しは正当）。
+     */
+    const ancestors = new Set();
+    const visited = new Set();
+    const guardShape = (listPath, value, seen) => {
+        if (!Array.isArray(value) || value.length === 0) {
+            return null;
+        }
+        const list = value;
+        if (ancestors.has(list)) {
+            raiseError(`[wcs/recursion-cycle] "${listPath}" is reachable from itself: the recursion on ` +
+                `"${spec.anchor}" walked into a list that one of its own ancestors already owns. ` +
+                `The data contains a cycle, which this version does not support.`);
+        }
+        if (seen.has(list)) {
+            raiseError(`[wcs/recursion-shared-list] "${listPath}" is the same array instance as a list reached ` +
+                `from another node. The recursion on "${spec.anchor}" needs a tree: give each node its own ` +
+                `"${repeatList}" array.`);
+        }
+        return list;
+    };
+    const pathsAt = (depth) => {
+        const known = pathsByDepth[depth];
+        if (typeof known !== "undefined") {
+            return known;
+        }
+        // 上限検査はここ（＝その深さに実際にノードが居ると分かってから）。具体パスはレジストリの
+        // 記憶（接尾辞 × 深さ）から引き、走査ごとに文字列連結をやり直さない。
+        const concretePath = registry.concretePathAt(suffix, depth);
+        const nodePath = suffix.length === 0 ? concretePath : registry.concretePathAt("", depth);
+        const paths = {
+            nodePath,
+            concretePathInfo: getPathInfo(concretePath),
+            childListPathInfo: getPathInfo(nodePath + DELIMITER + repeatList),
+        };
+        pathsByDepth[depth] = paths;
+        return paths;
+    };
+    /** 接尾辞側に残ったワイルドカード段だけを、行の ListIndex を起点に展開する。 */
+    const expandSuffix = (concretePathInfo, level, listIndex) => {
+        const parents = concretePathInfo.wildcardParentPathInfos;
+        if (level >= parents.length) {
+            results.push(createStateAddress(concretePathInfo, listIndex));
+            return;
+        }
+        // 接尾辞側のリストは検査しない。接尾辞が反復語を含む形（`nodes.**.children.*.value`）
+        // では、接尾辞の展開と深さ方向の降下が**同じ配列**を通る — 同じ族を 2 通りに綴れる
+        // ことの帰結で、共有ではない。次元をまたいでも、同じ次元の中でも（深さ 0 の接尾辞
+        // 展開と深さ 1 の接尾辞展開が同じ配列に当たる）自己衝突するので、共有の判定は
+        // 深さ方向にだけ掛ける。
+        //
+        // 結果として `$setAll("nodes.**.tags", [], arr)` のように**ブロードキャストが作った**
+        // 配列共有は、ここでは捕まらない（`[wcs/wildcard-rank]` という無関係な文面で落ちる）。
+        // 既知の制限として設計書に記録してある。
+        const rows = readRows(parents[level], listIndex, null).rows;
+        for (let i = 0; i < rows.length; i++) {
+            expandSuffix(concretePathInfo, level + 1, rows[i]);
+        }
+    };
+    /**
+     * リストを 1 本読んで行と、追跡対象のリスト配列を返す。差分基準は state 側の
+     * 共有正本（E1）から取り、観測値は走査の最後にまとめて確定する。`guardPath` が
+     * 非 null のときだけ共有・循環の検査を掛ける（接尾辞側の普通のリストは再帰の
+     * 対象ではない）。
+     */
+    function readRows(listPathInfo, parentListIndex, seen) {
+        const listAddress = createStateAddress(listPathInfo, parentListIndex);
+        const absAddress = createAbsoluteStateAddress(getAbsolutePathInfo(handler.stateElement, listPathInfo), parentListIndex);
+        const value = getByAddress(target, listAddress, receiver, handler);
+        const tracked = seen === null ? null : guardShape(listPathInfo.path, value, seen);
+        const listDiff = createListDiff(parentListIndex, getStateListBaseline(absAddress), value);
+        observed.set(absAddress, Array.isArray(value) ? value : []);
+        if (tracked !== null && seen !== null) {
+            seen.add(tracked);
+        }
+        return { rows: listDiff.newIndexes, tracked };
+    }
+    const descend = (depth, listPathInfo, parentListIndex) => {
+        const { rows, tracked } = readRows(listPathInfo, parentListIndex, visited);
+        if (rows.length === 0) {
+            return;
+        }
+        const paths = pathsAt(depth);
+        // 行が 1 つでもある ⟹ そのリストは非空配列だった ⟹ guardShape が追跡対象を返している
+        // （非配列も空配列も createListDiff が空の行に畳むので、上の早期 return で抜ける）。
+        // このリストは、いま降りている枝の祖先になる。子で同じ配列に当たれば循環。
+        const branch = tracked;
+        ancestors.add(branch);
+        const flat = paths.concretePathInfo.wildcardCount === depth + 1;
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            if (flat) {
+                // 接尾辞にワイルドカードが無い（大多数）。行の ListIndex がそのまま具体パスの
+                // 連鎖長を満たすので、追加の走査は要らない。この行 ListIndex は createListDiff が
+                // 台帳へ登録した正本そのものなので、`getListIndexByIndexes` で引き直す必要も無い。
+                results.push(createStateAddress(paths.concretePathInfo, row));
+            }
+            else {
+                expandSuffix(paths.concretePathInfo, depth + 1, row);
+            }
+            descend(depth + 1, paths.childListPathInfo, row);
+        }
+        ancestors.delete(branch);
+    };
+    descend(0, getPathInfo(anchorList), null);
+    // 観測したリスト値を差分基準へ確定する。合併形の `$getAll` も再帰の `$setAll` も必ず確定する
+    // （実装計画 §6 — cold な書き込みが ListIndex 世代を鋳造したまま基準を残さないと、次の
+    // 構造変更で深い子台帳が孤児になる）。走査が throw したときは上の raise でここに来ない。
+    for (const [address, value] of observed) {
+        setStateListBaseline(address, value);
+    }
+    return results;
+}
+
+/**
+ * recursion/getAllRecursive.ts
+ *
+ * `$getAll("<anchor>.**.<suffix>", [])` — **全深さの合併**（設計書 D7 / §6-2）。
+ *
+ * 省略形（文脈束縛）とは別経路にする。省略形は「いま評価している深さの 1 本」を
+ * 具体パスに直して既存の固定 arity 走査へ渡すだけだが、合併形は深さそのものを
+ * 走査対象にするので、返る添字タプルの長さが結果ごとに変わる。だから合併形は
+ * **値の配列しか返さない**（`$resolve` への往復は保証しない。設計書 §7-2）。
+ */
+function getAllRecursive(target, receiver, handler, path, indexes) {
+    // 呼び出し元（getAll.ts）は `hasRecursion === true` をゲートにしている。
+    const registry = handler.stateElement.recursionRegistry;
+    // 判定順はアンカー照合 → 添字の形。静的側（vscode-wcs recursionValidator）と同じ順に
+    // しておかないと、綴り違いのアンカーに `[0]` を渡した呼び出しが片側では
+    // `recursion-anchor`、もう片側では `recursion-getall-form` になる。
+    const suffix = splitRecursivePath(registry.spec, path);
+    if (suffix === null) {
+        raiseError(recursionAnchorMismatchMessage(path, registry.spec.recursiveAnchor));
+    }
+    // 合併形の添字は `[]` だけ。`null` 等の非配列は素の TypeError にせず、形の診断にする。
+    if (!Array.isArray(indexes)) {
+        raiseError(`[wcs/recursion-getall-form] $getAll("${path}", indexes) with "**" takes either no indexes ` +
+            `(to read the depth of the recursive getter being evaluated) or [] (to walk every depth) — ` +
+            `got ${indexes === null ? "null" : typeof indexes}.`);
+    }
+    if (indexes.length > 0) {
+        raiseError(`[wcs/recursion-getall-form] $getAll("${path}", indexes) with "**" takes no partial ` +
+            `prefix: a prefix cannot say which depth it applies to. Omit the indexes to read the ` +
+            `depth of the recursive getter being evaluated, or pass [] to walk every depth.`);
+    }
+    // 走査は観測したリスト値を差分基準へ確定する（再帰の `$setAll` も同じ。
+    // 固定 arity の `$setAll` だけが確定しない — setAllRecursive.ts 第 1 相の注記）。
+    const addresses = collectRecursiveAddresses(target, receiver, handler, registry, suffix);
+    const values = [];
+    for (let i = 0; i < addresses.length; i++) {
+        // `**` は依存グラフに載らない（D2）。呼び出し元の getter は「触れた深さの
+        // 具体パス」に依存する — その登録は getByAddress の checkDependency が行う
+        // （他行読み取りの検出も含む）。ここで書き写すと untrack を見ない劣化版になる。
+        values.push(getByAddress(target, addresses[i], receiver, handler));
+    }
+    return values;
+}
+
+/**
  * getAllReadonly
  *
  * ワイルドカードを含む State パスから、対象となる全要素を配列で取得する。
@@ -15565,7 +16823,25 @@ function resolve(target, _prop, receiver, handler) {
 function getAll(target, prop, receiver, handler) {
     const resolveFn = resolve(target, prop, receiver, handler);
     return (path, indexes) => {
+        // オーサリング層の `**`。省略形は「いま評価している深さ」に束縛し、`[]` 明示は
+        // 全深さの合併になる（設計書 §6-2）。部分接頭辞は `**` に対して定義できない。
+        if (handler.stateElement.hasRecursion === true && hasRecursionWildcard(path)) {
+            if (typeof indexes === "undefined") {
+                path = bindRecursivePath(handler.stateElement, handler, path);
+            }
+            else {
+                // アンカー照合と添字の形の検査は合併形の側で行う（判定順を静的側と揃えるため）
+                return getAllRecursive(target, receiver, handler, path, indexes);
+            }
+        }
         const pathInfo = getPathInfo(path);
+        // 渡された添字が配列でない（`null` 等）のは素の TypeError にせず、形の診断にする。
+        // 省略（undefined）だけが「文脈の添字」を意味する。
+        if (typeof indexes !== "undefined" && !Array.isArray(indexes)) {
+            raiseError(`$getAll("${path}") requires the indexes to be an array when given ` +
+                `(omit them for the loop context, or pass [] to expand every level) — got ` +
+                `${indexes === null ? "null" : typeof indexes}.`);
+        }
         if (handler.addressStackLength > 0) {
             const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
             const stateElement = handler.stateElement;
@@ -15612,7 +16888,7 @@ function getAll(target, prop, receiver, handler) {
                 indexes = [];
             }
         }
-        // 読みなので差分基準を更新する（`$setAll` は更新しない。設計 §6-2）
+        // 読みなので差分基準を更新する（固定 arity の `$setAll` は更新しない。設計 §6-2）
         const resultIndexes = collectWildcardIndexes(target, receiver, handler, pathInfo, indexes, { commitDiffBaseline: true });
         const resultValues = [];
         for (let i = 0; i < resultIndexes.length; i++) {
@@ -15702,6 +16978,100 @@ function postUpdate(target, _prop, receiver, handler) {
 }
 
 /**
+ * recursion/setAllRecursive.ts
+ *
+ * `$setAll("<anchor>.**.<suffix>", [], value)` — **全深さへのブロードキャスト**
+ * （設計書 D8 / §7-3）。
+ *
+ * 読み（`$getAll` の合併形）と同じ列挙を使い、同じ順序で書く。許すのは `[]` の
+ * ブロードキャストだけで、mapper と `{ spread: true }` は受け付けない:
+ *
+ * - **mapper** の `(current, ...indexes)` は、深さごとに添字の本数が変わるので
+ *   そのままでは渡せない。深さを渡す別のシグネチャを決めてから入れる。
+ * - **`{ spread: true }`** は「マッチ順に 1 件ずつ配る」形。順序は決定的に定義できるが、
+ *   木に 1 次元配列を配るのは作者が走査順を知らないと使えず、実用にならない。
+ *
+ * 添字の省略も受け付けない。`$setAll` は「書き込み API に暗黙の文脈依存を持たせない」
+ * という既存の決定（docs/state-set-all-design.md の D4）を継ぐので、読み側にある
+ * 省略形（文脈束縛）の対応物を書き側には置かない。
+ */
+/**
+ * 接尾辞が「再帰の構造そのもの」を名指していないか（述語は expand.ts の `isStructuralSuffix`）。
+ *
+ * ノード自身（`nodes.**`）と子リスト（`nodes.**.children`）と子ノード
+ * （`nodes.**.children.*`）と子リストの `length` は、書き換えると確定済みの子アドレスを壊す。
+ * 初版は葉の属性の更新に限る（実装計画 §1-3）。判定対象は宣言から導出する。
+ */
+function assertNotStructural(spec, path, suffix) {
+    if (isStructuralSuffix(spec, suffix)) {
+        raiseError(`[wcs/recursion-structural-write] "${path}" writes the recursion structure itself ` +
+            `(a node, its "${spec.repeatList}" list or that list's length, or an object on the way to that list). ` +
+            `This version broadcasts to leaf properties only — ` +
+            `replacing a node would invalidate the child addresses already resolved for this write.`);
+    }
+}
+function setAllRecursive(target, receiver, handler, path, indexes, value, options) {
+    // 呼び出し元（setAll.ts）は `hasRecursion === true` をゲートにしているので必ずある。
+    const registry = handler.stateElement.recursionRegistry;
+    const suffix = splitRecursivePath(registry.spec, path);
+    if (suffix === null) {
+        raiseError(recursionAnchorMismatchMessage(path, registry.spec.recursiveAnchor));
+    }
+    // 検査には添字を `*` に畳んだ接尾辞を掛ける。`nodes.**.children.0`（子ノード）・
+    // `nodes.**.children.0.children`（孫リスト）・`nodes.**.children.0.total`（getter の展開形）は
+    // 添字綴りのままだと素の文字列一致をすり抜け、構造を置き換えたり部分書き込みの途中で
+    // 生の TypeError になったりしていた（第 2 サイクルのレビューで実測）。列挙は綴りのまま
+    // 行う — 接尾辞の添字は「その子だけ」を指す意味を持つ。
+    const checkedSuffix = foldSuffixIndexes(suffix);
+    // --- 形の検査は列挙より前（1 件も書かないことを保証する。設計 §7-3） ---
+    if (!Array.isArray(indexes)) {
+        raiseError(setAllValueKindMessage(path, `with "**" requires an explicit empty indexes array ([]) — the write API takes no context.`));
+    }
+    if (indexes.length > 0) {
+        raiseError(`[wcs/recursion-setall-form] $setAll("${path}", indexes, …) with "**" takes no partial prefix: ` +
+            `a prefix cannot say which depth it applies to. Pass [] to broadcast to every depth.`);
+    }
+    if (typeof value === "function") {
+        raiseError(setAllValueKindMessage(path, `with "**" does not take a mapper yet — the index tuple has a different length at each depth.`));
+    }
+    if (options?.spread === true) {
+        raiseError(setAllValueKindMessage(path, `with "**" does not take { spread: true } — handing a flat array to a tree needs the author ` +
+            `to know the walk order, which is not a usable contract.`));
+    }
+    assertNotStructural(registry.spec, path, checkedSuffix);
+    const conflicting = registry.conflictingRecursiveGetter(checkedSuffix);
+    if (conflicting !== null) {
+        raiseError(`[wcs/recursion-readonly] "${path}" writes into the recursive getter "${conflicting}", which has ` +
+            `no setter — the two name the same family of concrete paths (or this path points inside the value ` +
+            `that getter derives). Write the values it derives from instead.`);
+    }
+    // --- 第 1 相: 書き込み先を全部確定する ---
+    // **観測したリスト値は基準へ確定する**（走査が必ず行う — walk.ts）。固定 arity の
+    // `$setAll` は `commitDiffBaseline: false` で走るが、あれは「読みの私有基準を書きから
+    // 動かさない」という E1 以前の所有権モデルの話で、いまの基準は読み・描画・依存ウォークが
+    // 共有する state 側の正本である（実装計画 §3-2 の E1）。
+    //
+    // 確定しないと cold（読みも描画も一度も走っていない）状態の `$setAll` が全深さぶんの
+    // ListIndex 世代を鋳造したまま基準を残さず、次の構造変更でその世代が見えない diff が
+    // 行を鋳造し直す。生き残った深い children の台帳だけが死んだ世代の親を指し、以後
+    // 再帰 getter の読みが恒久的に落ちる（値の合併は動き続けるので無症状のまま進む）。
+    // 1 件も書かない `undefined` のブロードキャストでも同じなので、「書き込み 0 件」は
+    // 「状態が動いていない」を意味しない。
+    const addresses = collectRecursiveAddresses(target, receiver, handler, registry, suffix);
+    // --- 第 2 相: 確定したアドレスにだけ書く ---
+    let written = 0;
+    for (let i = 0; i < addresses.length; i++) {
+        // undefined は常にスキップ（設計 §5）。クリアは null。
+        if (typeof value === "undefined") {
+            continue;
+        }
+        setByAddress(target, addresses[i], value, receiver, handler);
+        written++;
+    }
+    return written;
+}
+
+/**
  * setAll.ts
  *
  * ワイルドカードを含む State パスにマッチする**全アドレスへ一括で書き込む**。
@@ -15719,6 +17089,12 @@ function postUpdate(target, _prop, receiver, handler) {
  */
 function setAll(target, _prop, receiver, handler) {
     return (path, indexes, value, options) => {
+        // オーサリング層の `**`。書き側は `[]` のブロードキャストだけを受け付ける
+        // （形の検査は列挙より前に行い、1 件も書かないことを保証する。設計 §7-3）。
+        // 宣言の無い state は boolean 判定 1 個で抜ける。
+        if (handler.stateElement.hasRecursion === true && hasRecursionWildcard(path)) {
+            return setAllRecursive(target, receiver, handler, path, indexes, value, options);
+        }
         const pathInfo = getPathInfo(path);
         // 書き込み API に暗黙の文脈依存は持たせない。`for` の中で `[]` と書けば
         // 「現在行」ではなく「全行」を意味する（設計 §4-1）。
@@ -15739,7 +17115,8 @@ function setAll(target, _prop, receiver, handler) {
         }
         // --- 第 1 相: 書き込み先を全部確定する（設計 §6） ---
         // 走査しながら書くと書き込みが ListIndex 集合を動かしうる。
-        // 差分基準（lastValueByListAddress）は読みの持ち物なので commit しない（§6-2）。
+        // 差分基準（state 側の共有正本 stateListBaseline）は、固定 arity の `$setAll` は走査を
+        // 借りるだけで確定しない（§6-2。再帰の `$setAll` は確定する — recursion/walk.ts）。
         const resultIndexes = collectWildcardIndexes(target, receiver, handler, pathInfo, indexes, { commitDiffBaseline: false });
         if (spread && value.length !== resultIndexes.length) {
             raiseError(setAllSpreadArityMessage(path, resultIndexes.length, value.length));
@@ -15796,6 +17173,15 @@ function setAll(target, _prop, receiver, handler) {
  */
 function trackDependency(_target, _prop, _receiver, handler) {
     return (path) => {
+        // `**` はここでは解釈しない（依存辺は展開後の具体パスにしか張れない）。`$postUpdate` /
+        // `$resolve` は `getPathInfo` の不変条件で落ちるが、この API は生の文字列を依存表へ
+        // そのまま載せるので、ゲートを置かないと無言で受理されて getter が stale になる
+        // （第 2 サイクルのレビューで実測）。宣言の有無に関わらず拒否する。
+        if (hasRecursionWildcard(path)) {
+            raiseError(`[wcs/recursion-unsupported] $trackDependency("${path}") cannot take "**" — a dependency is ` +
+                `registered against a concrete path (a fixed number of "*"). Track the concrete depth, or read ` +
+                `the path through this[...] / $getAll inside the getter so the dependency is recorded automatically.`);
+        }
         if (handler.addressStackLength === 0) {
             raiseError(`No active state reference to track dependency for path "${path}".`);
         }
@@ -16038,6 +17424,8 @@ function setLoopContext(handler, loopContext, callback) {
  * - 通常のプロパティアクセスもバインディングや多重ループに対応
  * - シンボルAPIやReflect.getで拡張性・互換性も確保
  */
+/** `$` + 数字だけの prop（`$1` / `$129`）。範囲外を無言で通さないための判別。 */
+const INDEX_PARAM_RE = /^\$\d+$/;
 // `$streamStatus.<name>` / `$streamError.<name>` の dotted パス判定用プレフィックス
 const STREAM_STATUS_PATH_PREFIX = `${STATE_STREAM_STATUS_NAMESPACE_NAME}${DELIMITER}`;
 const STREAM_ERROR_PATH_PREFIX = `${STATE_STREAM_ERROR_NAMESPACE_NAME}${DELIMITER}`;
@@ -16055,6 +17443,19 @@ function getSymbolApiCache(handler) {
 }
 function get(target, prop, receiver, handler) {
     const index = INDEX_BY_INDEX_NAME[prop];
+    // `$` で始まらない読み（＝通常のパス読みのほぼ全部）は charCode 1 個で抜ける。
+    // 表引き失敗だけを条件にすると `$1`..`$N` 以外の**全プロパティ読み**が正規表現に
+    // 触れることになり、行数×バインド数ぶん get トラップを回すリスト描画で効いてくる。
+    if (typeof index === "undefined" && typeof prop === "string"
+        && prop.charCodeAt(0) === 36 /* '$' */ && INDEX_PARAM_RE.test(prop)) {
+        // `$1`..`$N` の表は MAX_WILDCARD_DEPTH ぶんしか無い。表引きに失敗した `$<数字>` は
+        // これまで通常のプロパティ解決へ落ちて診断ゼロで undefined になっていた（`$128` は
+        // 0 を返すのに `$129` だけが無言で壊れる）。境界のすぐ外側こそ名指しする
+        // （docs/state-recursive-path-impl-plan.md §3-2 の E3）。綴り不正（`$0` / `$01`）も
+        // 同じ入口で落ちるので、範囲だけでなく綴りも文面に含める。
+        raiseError(`[wcs/index-param-range] "${prop}" is not a valid list index parameter: they run from ` +
+            `${INDEX_PARAM_PREFIX}1 to ${INDEX_PARAM_PREFIX}${MAX_WILDCARD_DEPTH}, with no leading zeros.`);
+    }
     if (typeof index !== "undefined") {
         if (handler.addressStackLength === 0) {
             raiseError(`No active state reference to get list index for "${prop.toString()}".`);
@@ -16144,7 +17545,12 @@ function get(target, prop, receiver, handler) {
                 return undefined;
             }
         }
-        const resolvedAddress = getResolvedAddress(prop);
+        // オーサリング層の `**` を、いま評価している再帰 getter の深さへ束縛する。
+        // 宣言の無い state は boolean 判定 1 個で抜ける（D18 の形）。
+        const path = (handler.stateElement?.hasRecursion === true && hasRecursionWildcard(prop))
+            ? bindRecursivePath(handler.stateElement, handler, prop)
+            : prop;
+        const resolvedAddress = getResolvedAddress(path);
         const listIndex = getListIndex(target, resolvedAddress, receiver, handler);
         const stateAddress = createStateAddress(resolvedAddress.pathInfo, listIndex);
         return getByAddress(target, stateAddress, receiver, handler);
@@ -16287,8 +17693,18 @@ class StateHandler {
         // getter の相互参照（`get a(){return this.b}` / `get b(){return this.a}`）は
         // 実際にこれを踏み、原因と無関係な文面だけが残っていた。
         if (this._addressStackIndex + 1 >= MAX_LOOP_DEPTH) {
-            raiseError(`Exceeded maximum address stack depth of ${MAX_LOOP_DEPTH}. ` +
-                `Possible circular dependency between path getters: ${this._describeAddressCycle()}`);
+            // 深さ超過と循環は別の原因で、助言も違う。末尾に同じパスが再登場していれば
+            // getter どうしが呼び合っている（循環）、全部別パスなら単に深すぎる（正当に
+            // 深いツリーの集計など）。両方を「循環の可能性」と告発していたため、循環の無い
+            // 直線の木でも「相互参照を直せ」と読める文面が出ていた
+            // （docs/state-recursive-path-impl-plan.md §3-2 の E2）。
+            if (this._hasRepeatedAddress()) {
+                raiseError(`[wcs/getter-cycle] Exceeded maximum address stack depth of ${MAX_LOOP_DEPTH}. ` +
+                    `Possible circular dependency between path getters: ${this._describeAddressCycle()}`);
+            }
+            raiseError(`[wcs/getter-depth-exceeded] Exceeded maximum address stack depth of ${MAX_LOOP_DEPTH} ` +
+                `with no address visited twice — the data is simply nested deeper than the engine evaluates ` +
+                `in one pass. Deepest path first: ${this._describeAddressCycle()}`);
         }
         this._addressStackIndex++;
         this._addressStack[this._addressStackIndex] = address;
@@ -16297,7 +17713,35 @@ class StateHandler {
      * スタック末尾の繰り返し区間をパス名で示す（循環の当事者だけを見せる）。
      * 上限に達したときのみ呼ばれるので、コストは異常系に閉じている。
      */
-    _describeAddressCycle() {
+    /**
+     * スタック全体（最大 MAX_LOOP_DEPTH 段）に**同じアドレスが再登場する**か。
+     *
+     * 循環と深さ超過を分ける述語。パス文字列ではなくアドレスの同一性で見るのは、
+     * どちらの側にも文字列では判別できない形があるため:
+     * - 末尾 N 段のパス重複だけを見ると、周期が N より長い getter の輪を取り逃がす
+     *   （そして「重複が無い＝ただ深いだけ」と**積極的に誤った断定**をしてしまう）
+     * - 逆に「同じパスを別の行で読む」正当な再帰（隣接項目参照・累積 getter）は
+     *   パス文字列が全段同じなので、文字列で見ると循環に誤告発される
+     *
+     * IStateAddress は (pathInfo, listIndex) で intern されているので、真の輪だけが
+     * 同じインスタンスに戻る。コストは異常系に閉じた O(MAX_LOOP_DEPTH) の Set 構築 1 回。
+     */
+    _hasRepeatedAddress() {
+        const seen = new Set();
+        for (let i = 0; i <= this._addressStackIndex; i++) {
+            const entry = this._addressStack[i];
+            if (!entry) {
+                continue;
+            }
+            if (seen.has(entry)) {
+                return true;
+            }
+            seen.add(entry);
+        }
+        return false;
+    }
+    /** スタック末尾の CYCLE_REPORT_DEPTH 段のパス（深い順）。診断の表示に使う。 */
+    _tailAddressPaths() {
         const paths = [];
         for (let i = this._addressStackIndex; i >= 0 && paths.length < CYCLE_REPORT_DEPTH; i--) {
             const entry = this._addressStack[i];
@@ -16305,6 +17749,10 @@ class StateHandler {
                 paths.push(entry.pathInfo.path);
             }
         }
+        return paths;
+    }
+    _describeAddressCycle() {
+        const paths = this._tailAddressPaths();
         const unique = Array.from(new Set(paths));
         return `${unique.reverse().join(" -> ")} -> ...`;
     }
@@ -16772,6 +18220,20 @@ function validateVolumeDeclarations(rootStateElement, mountPath, volumeState) {
     if (typeof volumeState["$streams"] !== "undefined") {
         raiseError(`Volume "${mountPath}" declares $streams, which volumes do not support yet. Declare the stream on the root state.`);
     }
+    // $recursion も同じく未対応。宣言だけ受理されたように見えて、どの深さも解決しない
+    // 状態を作らない（docs/state-recursive-path-impl-plan.md §7）。
+    if (typeof volumeState[STATE_RECURSION_NAME] !== "undefined") {
+        raiseError(`Volume "${mountPath}" declares ${STATE_RECURSION_NAME}, which volumes do not support yet. ` +
+            `Declare the recursion anchor on the root state — the anchor path is resolved against the root tree.`);
+    }
+    // `**` getter は接ぎ木の**途中で**落ちる（アクセサ登録が getPathInfo の不変条件ガードに
+    // 当たる）ので、データだけ載ってアクセサが無い半端な状態が残る。接ぎ木の前に弾く。
+    for (const key of Object.keys(getAllPropertyDescriptors(volumeState))) {
+        if (key.indexOf(RECURSION_WILDCARD) !== -1) {
+            raiseError(`Volume "${mountPath}" declares "${key}", which uses "${RECURSION_WILDCARD}". ` +
+                `Volumes do not support recursive getters yet — declare them on the root state.`);
+        }
+    }
 }
 /**
  * 宣言面の接頭辞登録（$watch / $listKeys / $updatedCallback — ヘッダ参照）。
@@ -17025,6 +18487,7 @@ class State extends HTMLElementBase {
     _resolveSetState = null;
     _listPaths = new Set();
     _listKeys = null;
+    _recursionRegistry = null;
     _elementPaths = new Set();
     _getterPaths = new Set();
     _setterPaths = new Set();
@@ -17084,8 +18547,28 @@ class State extends HTMLElementBase {
         return this.__state;
     }
     set _state(value) {
-        this._commandTokenNames = processCommandTokensDeclaration(value);
-        this._eventTokenNames = processEventTokensDeclaration(value);
+        // 旧世代のデータ。再帰の生成物（辺・キャッシュ）を忘れるとき、台帳を辿る起点になる
+        const previousState = this.__state;
+        // 順序: **純検証をすべて** → 旧世代の後始末 → 差し替え → 再収集。
+        // `value` しか読まない検証（$recursion の宣言とレジストリの構築・$commandTokens・$eventTokens）は
+        // 何かを書き換える前に全部済ませる。どれかが throw すれば要素は丸ごと旧世代に留まる
+        // （旧 state・旧レジストリ・旧世代の辺とキャッシュ・トークン名がそのまま）。後始末を先に
+        // すると「レジストリは新・own 生成アクセサと辺は消えた・`__state` は旧」という半端な状態で
+        // throw する（第 4 サイクルの再検証で実測 — 別アンカー＋不正な $commandTokens で旧世代の
+        // 集計が無言で消えた）。
+        const recursionSpec = processRecursionDeclaration(value);
+        const recursionRegistry = recursionSpec === null ? null : new RecursionRegistry(recursionSpec, value);
+        const commandTokenNames = processCommandTokensDeclaration(value);
+        const eventTokenNames = processEventTokensDeclaration(value);
+        // 旧世代の生成アクセサ（own）・それを指す依存辺・評価結果のキャッシュを忘れてから
+        // 差し替える（recursion/generation.ts）。own の生成アクセサは、同じオブジェクトを再セットする
+        // ときに下の `getStateInfo` が `getterPaths` へ拾い直す前に消えていなければならない。
+        if (this._recursionRegistry !== null) {
+            this._recursionRegistry.forgetGenerated(this, previousState);
+        }
+        this._recursionRegistry = recursionRegistry;
+        this._commandTokenNames = commandTokenNames;
+        this._eventTokenNames = eventTokenNames;
         this.__state = value;
         // $updatedCallback の有無を state セット時に確定しておく（in はプロトタイプ
         // チェーンも見る・getter を評価しない）。drain 側はこのフラグで更新アドレスの
@@ -17122,6 +18605,22 @@ class State extends HTMLElementBase {
         // $listKeys: 宣言が無ければ null のままで、setByAddress のキー突合経路には
         // 一切入らない（docs/state-list-key-design.md §7-1）。再 set で必ず置き換える。
         this._listKeys = processListKeysDeclaration(value);
+        // $recursion: 宣言が無ければ null のままで、読みのホットパスには一切入らない。
+        // レジストリの構築・旧世代の後始末・差し替えはセッタの先頭で済んでいる（`__state` の
+        // 差し替え前）。ここに残るのはリストパスの登録だけ（`_listPaths.clear()` の後であること）。
+        if (recursionSpec !== null) {
+            // アンカーのリストパス（`nodes.*` なら `nodes`）は**宣言から静的に分かる**ので、
+            // 展開を待たずに今すぐ登録する。
+            //
+            // これが無いと、再帰パスを一度読んだ後の再セットで構造書き込みが恒久的に落ちる。
+            // 生成アクセサの `setPathInfo` が張った静的辺（`nodes` → `nodes.*`）は依存グラフに
+            // 残るのに、`_listPaths` はこのセッタでクリアされ、次に再帰パスを読むまで
+            // 張り直されない。その隙間に構造書き込みが来ると `walkDependency` が
+            // 「リストではないパス」として `nodes.*` に到達し、listIndex を持たないアドレスで
+            // `Cannot expand dynamic dependency…` になる（値は書かれるので、データと表示が
+            // 乖離したまま自己回復しない）。
+            this._listPaths.add(recursionSpec.anchorList);
+        }
         // $watch: 旧宣言のハンドラが残らないよう registry を落としてから新宣言を解析する。
         // _pathSet.clear() の後であること（依存グラフ登録をやり直す必要がある、
         // docs/state-watch-hook-design.md §8）。宣言が無ければ watchPaths は null で、
@@ -17750,6 +19249,12 @@ class State extends HTMLElementBase {
     get listKeys() {
         return this._listKeys;
     }
+    get hasRecursion() {
+        return this._recursionRegistry !== null;
+    }
+    get recursionRegistry() {
+        return this._recursionRegistry;
+    }
     get watchPaths() {
         return this._watchPaths;
     }
@@ -17794,6 +19299,15 @@ class State extends HTMLElementBase {
     /** enable-ssr スナップショットから初期化されたか（D14 — webComponent/volume.ts が読む）。 */
     get hydratedFromSsr() {
         return this._hydratedFromSsr;
+    }
+    addListPath(path) {
+        this._listPaths.add(path);
+    }
+    findStateDescriptor(path) {
+        // own → プロトタイプチェーン（Object.prototype 手前まで）。打ち切り位置は
+        // getAllPropertyDescriptors / getStateInfo と同じ ＝ 「state が宣言したもの」の範囲。
+        // 走査そのものは pathDiagnostics と共有する（2 本に分かれると打ち切り位置がずれる）。
+        return findDescriptor(this._state, path);
     }
     defineTreeAccessor(path, descriptor) {
         Object.defineProperty(this._state, path, descriptor);
@@ -18320,6 +19834,7 @@ function getWcsManifest() {
             STATE_STREAMS_NAME,
             STATE_WATCH_NAME,
             STATE_LIST_KEYS_NAME,
+            STATE_RECURSION_NAME,
             STATE_STREAM_STATUS_NAMESPACE_NAME,
             STATE_STREAM_ERROR_NAMESPACE_NAME,
         ],

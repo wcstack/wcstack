@@ -215,6 +215,14 @@ interface WcsStateApi {
   readonly $1: number; readonly $2: number; readonly $3: number;
   readonly $4: number; readonly $5: number; readonly $6: number;
   readonly $7: number; readonly $8: number; readonly $9: number;
+  // $recursion \u5BA3\u8A00\u6E08\u307F\u306E\u518D\u5E30\u30D1\u30B9\uFF08\`nodes.**.total\`\uFF09\u3002\u6DF1\u3055\u306E\u65CF\u306A\u306E\u3067 \`_WcsPaths\` \u306E
+  // \u6709\u9650\u5C55\u958B\u306B\u306F\u73FE\u308C\u305A\u3001getter \u306E\u30AD\u30FC\u306B\u66F8\u3044\u305F 1 \u672C\u3057\u304B T \u306B\u73FE\u308C\u306A\u3044\u3002\u30D1\u30BF\u30FC\u30F3\u7D22\u5F15\u3067
+  // \u300C\`**\` \u3092\u542B\u3080\u30AD\u30FC\u306F\u8AAD\u3081\u308B\u300D\u3068\u3060\u3051\u8A00\u3046\uFF08\u578B\u306F any \u2014 \u6DF1\u3055\u3092\u578B\u3067\u8868\u305B\u306A\u3044\u4EE5\u4E0A\u3001\u5024\u306E\u578B\u3082
+  // \u8FBF\u308C\u306A\u3044\uFF09\u3002\u30D1\u30BF\u30FC\u30F3\u306F \`**\` \u3092\u5FC5\u305A\u542B\u3080\u306E\u3067\u3001\u901A\u5E38\u306E\u30C9\u30C3\u30C8\u30D1\u30B9\u306E\u578B\u4ED8\u3051\u306F\u640D\u306A\u308F\u306A\u3044\u3002
+  readonly [key: \`\${string}.**.\${string}\`]: any;
+  // \u7D20\u306E \`nodes.**\`\uFF08\u518D\u5E30 getter \u306E\u4E2D\u3067\u30CE\u30FC\u30C9\u81EA\u8EAB\u306B\u675F\u7E1B\u3055\u308C\u308B\u8AAD\u307F\uFF09\u306F \`.**.\` \u3092\u542B\u307E\u306A\u3044\u306E\u3067
+  // \u672B\u5C3E\u304C \`.**\` \u306E\u30AD\u30FC\u306B\u3082\u540C\u3058\u7D22\u5F15\u3092\u7F6E\u304F\uFF08@wcstack/state \u306E defineState \u3068\u5BFE\uFF09\u3002
+  readonly [key: \`\${string}.**\`]: any;
 }
 type _WcsThis<T> = T & WcsStateApi & _WcsPathAccessor<T>;
 // $listKeys: { "<listPath>": "<field>" | (row) => key }\uFF08list/listKeys.ts\uFF09\u3002
@@ -224,8 +232,12 @@ type _WcsListKeys = Record<string, string | ((row: any) => unknown)>;
 // \u30CF\u30F3\u30C9\u30E9\u5F15\u6570\u306B\u6587\u8108\u578B\u3092\u4E0E\u3048\u308B\u305F\u3081\u3060\u3051\u306E\u5BA3\u8A00\uFF08$listKeys \u3068\u540C\u3058\u7406\u7531\uFF09\u3002
 // this \u306F ThisType<_WcsThis<T>> \u306B\u3088\u308A state \u578B\u306B\u306A\u308B\u3002
 type _WcsWatch = Record<string, (cur: any, prev: any, ...indexes: number[]) => void>;
+// $recursion: { "<anchor>": "<repeat>" }\uFF08recursion/declaration.ts\uFF09\u3002\u521D\u7248\u306F\u5358\u4E00\u306E\u81EA\u5DF1\u518D\u5E30
+// \u306E\u307F\u3067\u3001\u30A2\u30F3\u30AB\u30FC\u3082\u53CD\u5FA9\u30B5\u30D6\u30D1\u30B9\u3082\u300C\u56FA\u5B9A\u30D7\u30ED\u30D1\u30C6\u30A3\u5217 + \u672B\u5C3E\u306E .*\u300D\u306B\u9650\u308B\u3002\u5F62\u306E\u691C\u8A3C\u306F
+// service/recursionValidator.ts\uFF08wcs/recursion-declaration-invalid\uFF09\u304C\u62C5\u3046\u3002
+type _WcsRecursion = Record<string, string>;
 function defineState<T extends Record<string, any>>(
-  def: T & { $listKeys?: _WcsListKeys; $watch?: _WcsWatch } & ThisType<_WcsThis<T>>
+  def: T & { $listKeys?: _WcsListKeys; $watch?: _WcsWatch; $recursion?: _WcsRecursion } & ThisType<_WcsThis<T>>
 ): T { return def; }
 // --- end preamble ---
 `;

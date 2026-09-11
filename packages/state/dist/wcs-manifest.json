@@ -643,6 +643,7 @@
     "$streams",
     "$watch",
     "$listKeys",
+    "$recursion",
     "$streamStatus",
     "$streamError"
   ]

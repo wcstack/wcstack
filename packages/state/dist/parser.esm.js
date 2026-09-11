@@ -33,6 +33,17 @@ for (let i = 0; i < MAX_WILDCARD_DEPTH; i++) {
     tmpIndexByIndexName[`${INDEX_PARAM_PREFIX}${i + 1}`] = i;
 }
 Object.freeze(tmpIndexByIndexName);
+/**
+ * 再帰ワイルドカード。オーサリング層（$recursion 宣言・getter キー・API 引数）にだけ
+ * 現れ、PathInfo には決して降ろさない — wildcardCount が不定になると ListIndex 連鎖長・
+ * $1..$n・$resolve の厳密一致・走査の段数が同時に壊れる
+ * （docs/state-recursive-path-design.md §2-1）。
+ */
+const RECURSION_WILDCARD = "**";
+
+function raiseError(message) {
+    throw new Error(`[@wcstack/state] ${message}`);
+}
 
 const _cache = new Map();
 /**
@@ -50,6 +61,16 @@ function getPathInfo(path) {
     let pathInfo = _cache.get(path);
     if (typeof pathInfo !== "undefined") {
         return pathInfo;
+    }
+    // 再帰ワイルドカードはオーサリング層の記号で、ここへ降りてきてはならない
+    // （降ろすと wildcardCount が不定になり ListIndex 連鎖長・$1..$n・$resolve の
+    //  厳密一致・走査の段数が同時に壊れる。設計書 D2）。到達したということは、
+    // `**` を解釈しない消費者に `**` パスが渡ったということ。通常のパスはこの検査を
+    // 初回 intern のときにしか払わない（`**` パスは intern されないので読むたびに落ちる）。
+    if (path.indexOf(RECURSION_WILDCARD) !== -1) {
+        raiseError(`[wcs/recursion-unsupported] "${path}" uses "${RECURSION_WILDCARD}", which is not accepted here. ` +
+            `It is only meaningful in a $recursion declaration, in a recursive getter key, and in the path ` +
+            `argument of $getAll / $setAll — and only when the state declares a $recursion anchor.`);
     }
     pathInfo = Object.freeze(new PathInfo(path));
     _cache.set(path, pathInfo);
@@ -218,10 +239,6 @@ function didYouMean(input, candidates) {
  * から断定できず沈黙する）。サイト粒度の hint ではこの残余は構造的に避けられない。
  */
 const LINT_HINT = " Validate statically: npx @wcstack/lint <file>.";
-
-function raiseError(message) {
-    throw new Error(`[@wcstack/state] ${message}`);
-}
 
 const STRUCTURAL_BINDING_TYPE_SET = new Set([
     "if",
