@@ -357,6 +357,23 @@ function setByAddressCore(
       );
     }
   }
+  // 再帰 getter の展開形（`nodes.*.children.*.total`）とその値の内側への書き込みは、`**` を
+  // 含まないので `setAllRecursive` の読み取り専用検査を通らない。未実体化なら下の fast path が
+  // 「親オブジェクトの未存在キー」として行オブジェクトへ素の値を書き、代入値を `dirty:false` で
+  // キャッシュに載せる — ノードが汚れ、実体化後も getter が評価されず、深さ 0 の集計まで
+  // 巻き込む（レビュー P18 で実測）。実体化後は `Reflect.set` が false を返すだけの無言 no-op。
+  // 読み側の遅延実体化（getByAddress の E5）と対称に、書き側はここで止める。
+  // 宣言の無い state は boolean 判定 1 個で抜ける（D18）
+  if (stateElement.hasRecursion === true) {
+    const owner = stateElement.recursionRegistry!.recursiveGetterOwning(path);
+    if (owner !== null) {
+      raiseError(
+        `[wcs/recursion-readonly] "${path}" writes into the recursive getter "${owner}" ` +
+        `(this path is that getter at one depth, or a path inside the value it derives), which has ` +
+        `no setter. Write the values it derives from instead.`
+      );
+    }
+  }
   // occurrence（wc-bindable の `semantics: "event"`）由来の書き込みは、同値でも
   // 「もう一度起きた」ことを落としてはならないため same-value guard を 1 回だけ飛ばす。
   // トークンはここで消費されるので、この write の内側で走る他の書き込みには波及しない。

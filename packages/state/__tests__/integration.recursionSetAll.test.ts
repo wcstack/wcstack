@@ -625,7 +625,7 @@ describe("ブロードキャストが受け付けない形", () => {
       (s) => s.$setAll("nodes.**", [], node(0)));
 
     expect(message).toContain("[wcs/recursion-structural-write]");
-    expect(message).toContain('"nodes.**" writes the recursion structure itself (a node, its "children" list, or an object on the way to that list)');
+    expect(message).toContain('"nodes.**" writes the recursion structure itself (a node, its "children" list or that list\'s length, or an object on the way to that list)');
     expect(message).toContain("This version broadcasts to leaf properties only");
     expect(message).toContain("replacing a node would invalidate the child addresses already resolved for this write");
     expect(unchanged, "1 件も書かれていない").toBe(true);
@@ -677,7 +677,7 @@ describe("ブロードキャストが受け付けない形", () => {
       const message = writeError(stateEl, (s: any) => { s.$setAll(path, [], { children: [] }); });
       expect(message, path).toContain("[wcs/recursion-structural-write]");
       expect(message, path).toContain(`"${path}" writes the recursion structure itself`);
-      expect(message, path).toContain('(a node, its "branch.children" list, or an object on the way to that list)');
+      expect(message, path).toContain('(a node, its "branch.children" list or that list\'s length, or an object on the way to that list)');
       expect(JSON.stringify(nodes), `${path}: 1 件も書かれていない`).toBe(before);
     }
 
@@ -689,6 +689,36 @@ describe("ブロードキャストが受け付けない形", () => {
     expect(writeError(stateEl, (s: any) => { s.$setAll("nodes.**.branch.note", [], "x"); })).toBe("");
     expect(nodes[0].branch.note).toBe("x");
     host.remove();
+  });
+
+  it("子リストの length（nodes.**.children.length）への書き込みも構造として拒否されること", async () => {
+    // Fixed by post-landing review (P4) — was: `.length` を見ておらず `written=5` で通過し、
+    // 全深さの `children` が `[]` に切り詰められ、集計は `[131, 2]` のまま stale に残った
+    // （リストを置き換えるのと同じく、この書き込みが確定した深い側のアドレスを消す）。
+    const { message, unchanged, host } = await rejects(
+      (s) => s.$setAll("nodes.**.children.length", [], 0));
+
+    expect(message).toContain("[wcs/recursion-structural-write]");
+    expect(message).toContain('"nodes.**.children.length" writes the recursion structure itself');
+    expect(message).toContain("or that list's length");
+    expect(unchanged, "1 件も書かれていない").toBe(true);
+    host.remove();
+
+    // 反復語が重なっても同じ。多段の反復サブパスではリスト側の length だけが構造
+    // （途中のオブジェクトの `length` は素のプロパティ）。
+    const deeper = await rejects((s) => s.$setAll("nodes.**.children.*.children.length", [], 0));
+    expect(deeper.message).toContain("[wcs/recursion-structural-write]");
+    expect(deeper.unchanged).toBe(true);
+    deeper.host.remove();
+
+    const nodes: any[] = [{ value: 1, branch: { children: [{ value: 10, branch: { children: [] } }] } }];
+    const nested = await mount({ nodes, $recursion: { "nodes.*": "branch.children.*" } }, NO_RENDER_HTML);
+    expect(writeError(nested.stateEl, (s: any) => { s.$setAll("nodes.**.branch.children.length", [], 0); }))
+      .toContain("[wcs/recursion-structural-write]");
+    expect(nodes[0].branch.children).toHaveLength(1);
+    expect(writeError(nested.stateEl, (s: any) => { s.$setAll("nodes.**.branch.length", [], 3); })).toBe("");
+    expect(nodes[0].branch.length).toBe(3);
+    nested.host.remove();
   });
 
   it("再帰 getter を名指す接尾辞は [wcs/recursion-readonly] になること", async () => {
@@ -1236,6 +1266,80 @@ describe("回帰: 再帰宣言のある state でも ** を含まないパスは
 // ===========================================================================
 // 10. readonly セッション — 現状の記録（Phase A の X1）
 // ===========================================================================
+
+// ---------------------------------------------------------------------------
+// 9'. `**` を経ない入口からの、再帰 getter の展開形への書き込み
+// ---------------------------------------------------------------------------
+
+describe("具体パス綴りでの再帰 getter への書き込み（`**` を経ない入口）", () => {
+  // Fixed by post-landing review (P18) — was: `$setAll("nodes.*.children.*.total", [], 5)` は
+  // `**` を含まないので `setAllRecursive` の読み取り専用検査を通らず、未実体化なら
+  // `setByAddress` の fast path が「親オブジェクトの未存在キー」として行オブジェクトへ
+  // `total: 5` を書き（`written=2`・例外なし）、代入値を `dirty:false` でキャッシュに載せて
+  // 以後 getter が評価されなかった（`$getAll("nodes.**.total", [])` が `[11, 5, 100, 5, 2]`）。
+  // 実体化後は `Reflect.set` が false を返すだけの無言 no-op。読み側の遅延実体化（E5）と
+  // 対称に、書き側は `setByAddress` の入口で `wcs/recursion-readonly` にする。
+  const concrete = (s: any) => s.$setAll("nodes.*.children.*.total", [], 5);
+  /** 深さ 3 の木（total は 131 / 110 / 100 / 20 / 2） */
+  const forest = (): TNode[] => [node(1, [node(10, [node(100)]), node(20)]), node(2)];
+
+  it("未実体化（cold）の展開形への $setAll が [wcs/recursion-readonly] で拒否され、ノードが汚れないこと", async () => {
+    const nodes = forest();
+    const { host, stateEl } = await mount(recursionState(nodes), NO_RENDER_HTML);
+    const before = snap(nodes);
+
+    const message = writeError(stateEl, concrete);
+    expect(message).toContain("[wcs/recursion-readonly]");
+    expect(message).toContain('"nodes.*.children.*.total" writes into the recursive getter "nodes.**.total"');
+    expect(message).toContain("Write the values it derives from instead");
+    expect(snap(nodes), "行オブジェクトに total が生えていない").toEqual(before);
+    // 集計は汚れていない（代入値がキャッシュに固定されていない）
+    expect(read(stateEl, (s: any) => s.$getAll("nodes.**.total", []))).toEqual([131, 110, 100, 20, 2]);
+    host.remove();
+  });
+
+  it("実体化後（warm）も同じ診断になること（無言の no-op にしない）", async () => {
+    const { host, stateEl } = await mount(recursionState(forest()), NO_RENDER_HTML);
+    read(stateEl, (s: any) => s.$getAll("nodes.**.total", []));
+
+    expect(writeError(stateEl, concrete)).toContain("[wcs/recursion-readonly]");
+    host.remove();
+  });
+
+  it("直接代入・値付き $resolve・展開形の値の内側も同じ入口で止まること", async () => {
+    const { host, stateEl } = await mount(recursionState(forest()), NO_RENDER_HTML);
+    read(stateEl, (s: any) => s.$getAll("nodes.**.total", []));
+
+    expect(writeError(stateEl, (s: any) => { s["nodes.1.total"] = 9; }))
+      .toContain('[wcs/recursion-readonly] "nodes.*.total" writes into the recursive getter "nodes.**.total"');
+    expect(writeError(stateEl, (s: any) => { s.$resolve("nodes.*.total", [1], 9); }))
+      .toContain("[wcs/recursion-readonly]");
+    expect(writeError(stateEl, (s: any) => { s.$setAll("nodes.*.total.x", [], 9); }))
+      .toContain('[wcs/recursion-readonly] "nodes.*.total.x" writes into the recursive getter "nodes.**.total"');
+    host.remove();
+  });
+
+  it("対照: 葉の具体パス・アンカー外・宣言の無い state は従来どおり書けること", async () => {
+    const nodes = forest();
+    const { host, stateEl } = await mount(recursionState(nodes, {
+      title: { value: "t", writable: true, enumerable: true, configurable: true },
+    }), NO_RENDER_HTML);
+
+    expect(writeCount(stateEl, (s: any) => s.$setAll("nodes.*.children.*.value", [], 3))).toBe(2);
+    expect(nodes[0].children.map((n) => n.value)).toEqual([3, 3]);
+    expect(writeError(stateEl, (s: any) => { s["nodes.1.total2"] = 9; })).toBe("");
+    expect(writeError(stateEl, (s: any) => { s.title = "u"; })).toBe("");
+    // 107 = 1 + (3 + 100) + 3
+    expect(read(stateEl, (s: any) => s.$getAll("nodes.**.total", []))).toEqual([107, 103, 100, 3, 2]);
+    host.remove();
+
+    const plain = forest();
+    const control = await mount({ nodes: plain }, NO_RENDER_HTML);
+    expect(writeCount(control.stateEl, (s: any) => s.$setAll("nodes.*.children.*.total", [], 5))).toBe(2);
+    expect(plain[0].children[0].total).toBe(5);
+    control.host.remove();
+  });
+});
 
 describe("readonly セッションの中のブロードキャスト（現状の記録）", () => {
   // DEFECT: readonly セッションの中では合併形の $setAll も拒否されるべき

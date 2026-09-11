@@ -17,12 +17,16 @@
  * 登録だけをやり直す。
  */
 
+import { getAbsolutePathInfo } from "../address/AbsolutePathInfo";
+import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
 import { getPathInfo } from "../address/PathInfo";
+import { setCacheEntryByAbsoluteStateAddress } from "../cache/cacheEntryByAbsoluteStateAddress";
 import { IStateElement } from "../components/types";
 import { DELIMITER } from "../define";
 import { getAllPropertyDescriptors } from "../getAllPropertyDescriptors";
+import { getListIndexesByList } from "../list/listIndexesByList";
 import { raiseError } from "../raiseError";
-import { concretePathAt, depthOfConcretePath, hasRecursionWildcard, listPathsUpTo, splitRecursivePath } from "./expand";
+import { depthOfConcretePath, hasRecursionWildcard, listPathsUpTo, splitRecursivePath } from "./expand";
 import { IRecursionAccessor, IRecursionSpec } from "./types";
 
 /**
@@ -43,8 +47,21 @@ export class RecursionRegistry {
   readonly spec: IRecursionSpec;
   private readonly _definitions: Map<string, IRecursiveGetterDefinition> = new Map();
   private readonly _accessors: Map<string, IRecursionAccessor> = new Map();
-  /** 「再帰 getter の展開形ではない」と分かったパス。読みのホットパスの否定判定を記憶する。 */
+  /**
+   * 「再帰 getter の展開形ではない」と分かったパス。読みのホットパスの否定判定を記憶する。
+   *
+   * 有界である: キーは `getByAddress` に来た `address.pathInfo.path`、つまり添字を含まない
+   * ワイルドカード形のパス文字列で、`PathInfo` が intern する集合（バインディング・getter・
+   * API 引数に綴られたパスと、その展開形）の部分集合にしかならない。intern 済みパスの
+   * 集合が有界であることは D10 で受け入れ済みなので、ここも同じ上限に収まる。
+   * 文字列は WeakSet に入らないので、寿命はレジストリ（＝ state の世代）と共にする。
+   */
   private readonly _nonAccessors: Set<string> = new Set();
+  /**
+   * `recursiveGetterOwning` の記憶。値は「その具体パスを展開形（またはその値の内側）として
+   * 持つ `**` getter」、無ければ null。有界であることの根拠は `_nonAccessors` と同じ。
+   */
+  private readonly _ownerByPath: Map<string, string | null> = new Map();
   private readonly _registeredListPaths: Set<string> = new Set();
 
   constructor(spec: IRecursionSpec, state: object) {
@@ -164,40 +181,57 @@ export class RecursionRegistry {
     return null;
   }
 
-  /** 既にこの深さのアクセサを生やしてあるか（読みの早期 return 用）。 */
-  isMaterialized(concretePath: string): boolean {
-    return this._accessors.has(concretePath);
-  }
-
   /**
-   * 実体化せずに「宣言済み `**` getter の展開形か」だけを答える。
-   * バインド確立時のパス存在検査（`checkDeclaredPath`）が使う — あの時点では
-   * まだ生えていないので、素の存在検査では必ず「解決できない」になってしまう。
+   * 具体パスを展開形（またはその値の内側）として持つ `**` getter のパス。無ければ null。
+   * **実体化はしない。**
+   *
+   * `conflictingRecursiveGetter` の**具体パス版**で、`**` を経ない 2 つの入口が使う:
+   *
+   *  - バインド確立時のパス存在検査（`checkDeclaredPath`）。あの時点ではまだ生えて
+   *    いないので、素の存在検査では必ず「解決できない」になる。展開形そのもの
+   *    （`nodes.*.total`）だけでなく、その値の中を指す形（`nodes.*.stats.count` で
+   *    `get "nodes.**.stats"()` がオブジェクトを返す）も、通常の getter の下と同じく
+   *    評価しないと分からないので黙る側に倒す。
+   *  - 書き込みの入口（`setByAddress`）。`$setAll("nodes.*.children.*.total", [], v)` や
+   *    `this["nodes.1.total"] = v` は `**` を含まないので `setAllRecursive` の
+   *    読み取り専用検査を通らず、未実体化なら fast path が行オブジェクトへ素の
+   *    プロパティとして書いてしまう（ノードを汚し、代入値が `dirty:false` で載って
+   *    以後 getter が評価されない）。展開形への書き込みは、実体化の前後に関わらず
+   *    `wcs/recursion-readonly` で止める。
    */
-  matchesRecursivePath(concretePath: string): boolean {
-    if (this._accessors.has(concretePath)) {
-      return true;
+  recursiveGetterOwning(concretePath: string): string | null {
+    const accessor = this._accessors.get(concretePath);
+    if (typeof accessor !== "undefined") {
+      return accessor.recursivePath;
+    }
+    const known = this._ownerByPath.get(concretePath);
+    if (typeof known !== "undefined") {
+      return known;
     }
     if (!concretePath.startsWith(this.spec.anchor)) {
-      return false;
+      return null;
     }
-    for (const definition of this._definitions.values()) {
-      if (depthOfConcretePath(this.spec, definition.suffix, concretePath) !== null) {
-        return true;
-      }
+    // 展開形そのもの → その値の内側（`.` 境界で切った接頭辞を長い方から）の順に照合する。
+    // 接頭辞はアンカーより長いものだけ — アンカー自身は接尾辞が空なので getter になり得ない。
+    let owner: string | null = this._matchExpansion(concretePath);
+    for (let end = concretePath.lastIndexOf(DELIMITER);
+         owner === null && end > this.spec.anchor.length;
+         end = concretePath.lastIndexOf(DELIMITER, end - 1)) {
+      owner = this._matchExpansion(concretePath.slice(0, end));
     }
-    return false;
+    // 定義集合は state の世代内で不変なので、判定は記憶してよい。
+    this._ownerByPath.set(concretePath, owner);
+    return owner;
   }
 
-  /** `**` を含むパスを深さ `depth` の具体パスにする。宣言外なら raise。 */
-  concretePath(recursivePath: string, depth: number): string {
-    const parts = splitRecursivePath(this.spec, recursivePath);
-    if (parts === null) {
-      raiseError(
-        `"${recursivePath}" does not match the declared recursion anchor "${this.spec.recursiveAnchor}".`
-      );
+  /** 具体パスが宣言済み `**` getter の展開形そのものなら、その getter のパス。 */
+  private _matchExpansion(concretePath: string): string | null {
+    for (const definition of this._definitions.values()) {
+      if (depthOfConcretePath(this.spec, definition.suffix, concretePath) !== null) {
+        return definition.recursivePath;
+      }
     }
-    return concretePathAt(this.spec, parts.suffix, depth);
+    return null;
   }
 
   /**
@@ -243,10 +277,13 @@ export class RecursionRegistry {
     depth: number,
     concretePath: string,
   ): IRecursionAccessor {
-    const existing = stateElement.getOwnStateDescriptor(concretePath);
-    const existingGet = existing?.get;
-    if (typeof existingGet === "function" && !generatedGetters.has(existingGet)) {
-      // 作者が同じ具体パスの getter を手で書いている。自動生成で上書きしない。
+    // 作者が同じ具体パスを手で定義していないか。**プロトタイプチェーンまで**見る —
+    // class 構文の getter は own ではなく prototype に載る（`getStateInfo` が
+    // `getterPaths` に拾うのと同じ範囲）。own しか見ないと、生成アクセサが own に
+    // 定義されて作者の getter を無言で影にする。前世代の生成物（own・WeakSet に載る
+    // get）だけは上書きしてよい。
+    const existing = stateElement.findStateDescriptor(concretePath);
+    if (typeof existing !== "undefined" && !isGeneratedGetter(existing)) {
       raiseError(
         `"${concretePath}" is already defined on the state, so the recursive getter ` +
         `"${definition.recursivePath}" cannot expand to it. Rename one of them.`
@@ -254,10 +291,7 @@ export class RecursionRegistry {
     }
     const accessor: IRecursionAccessor = Object.freeze({
       recursivePath: definition.recursivePath,
-      concretePath,
       depth,
-      spec: this.spec,
-      pathInfo: getPathInfo(concretePath),
     });
     const body = definition.get;
     const generated = function (this: unknown): unknown {
@@ -293,25 +327,31 @@ export class RecursionRegistry {
   }
 
   /**
-   * この世代が生やした具体パスを依存表から外す（state の再セット時に呼ぶ）。
+   * この世代が生やしたものを忘れる（state の再セット時に呼ぶ）。忘れるのは 2 つ。
    *
-   * `_state` のセッタは `_listPaths` / `_getterPaths` / `_pathSet` をクリアするが、
+   * **依存辺。** `_state` のセッタは `_listPaths` / `_getterPaths` / `_pathSet` をクリアするが、
    * 依存表（`_staticDependency` / `_dynamicDependency`）は state の寿命を越えて残る。
    * 通常のパスはそれで正しい — 同じ綴りのパスは新しい state でも同じ意味を持つ。
    * だが**生成アクセサは違う**。新しい世代ではまだ実体化されておらず、それを指す辺だけが
    * 残ると、次の構造書き込みで依存ウォークが「アクセサの無い具体パス」へ降りて落ちる。
    * 依存表そのものをクリアしてはならない（既存バインディングの辺まで消えて、再セット後の
    * 集計が更新されなくなる — 実測済み）。この世代が作った辺だけを外す。
+   *
+   * **キャッシュ。** 辺を外した以上、生成アクセサの評価結果も一緒に落とさなければ
+   * ならない。同じ state オブジェクト（または同じ配列）を再セットすると、台帳は配列の
+   * identity をキーにしているので ListIndex も絶対アドレスも世代を跨いで同一のまま残り、
+   * 旧世代の `dirty:false` の値がそのまま次の読みに返る。辺が無いので、次に再帰 getter を
+   * 読むまでの間の構造書き込み（`nodes.0.children = […]`）はそれを dirty にできない。
+   * 別のオブジェクト・別の配列なら ListIndex が新しく鋳造されるので何も残らない。
+   * 落とす対象は旧 state のデータを台帳に沿って辿れば列挙できる（アンカー配下の各深さの
+   * 行 × その深さのアクセサ）。
    */
-  forgetGeneratedDependencies(
-    staticMap: Map<string, string[]>,
-    dynamicMap: Map<string, string[]>,
-  ): void {
+  forgetGenerated(stateElement: IStateElement, previousState: object): void {
     if (this._accessors.size === 0) {
       return;
     }
     const generated = new Set(this._accessors.keys());
-    for (const map of [staticMap, dynamicMap]) {
+    for (const map of [stateElement.staticDependency, stateElement.dynamicDependency]) {
       for (const path of generated) {
         map.delete(path);
       }
@@ -333,6 +373,46 @@ export class RecursionRegistry {
         }
       }
     }
+    this._forgetCacheEntries(stateElement, previousState);
+  }
+
+  private _forgetCacheEntries(stateElement: IStateElement, previousState: object): void {
+    // 深さごとの生成パス（疎な深さは空配列で埋め、走査中に undefined を作らない）
+    const pathsByDepth: string[][] = [];
+    for (const [concretePath, accessor] of this._accessors) {
+      while (pathsByDepth.length <= accessor.depth) {
+        pathsByDepth.push([]);
+      }
+      pathsByDepth[accessor.depth].push(concretePath);
+    }
+    const anchorSegments = this.spec.anchor.split(DELIMITER).slice(0, -1);
+    const repeatSegments = this.spec.repeat.split(DELIMITER).slice(0, -1);
+    const listAt = (owner: unknown, segments: string[]): unknown => {
+      let value: any = owner;
+      for (const segment of segments) {
+        value = value?.[segment];
+      }
+      return value;
+    };
+    const forget = (list: unknown, depth: number): void => {
+      if (depth >= pathsByDepth.length || !Array.isArray(list)) {
+        return;
+      }
+      // 台帳が無い ＝ 走査を一度も経ていないリスト。その行に絶対アドレスは作られていない。
+      const rows = getListIndexesByList(list);
+      if (rows === null) {
+        return;
+      }
+      const count = Math.min(rows.length, list.length);
+      for (let i = 0; i < count; i++) {
+        for (const concretePath of pathsByDepth[depth]) {
+          const absPathInfo = getAbsolutePathInfo(stateElement, getPathInfo(concretePath));
+          setCacheEntryByAbsoluteStateAddress(createAbsoluteStateAddress(absPathInfo, rows[i]), null);
+        }
+        forget(listAt(list[i], repeatSegments), depth + 1);
+      }
+    };
+    forget(listAt(previousState, anchorSegments), 0);
   }
 
   /** 展開済みアクセサのメタデータ（深さ解決・診断・テスト用）。 */
@@ -343,4 +423,9 @@ export class RecursionRegistry {
   get materializedPaths(): ReadonlySet<string> {
     return new Set(this._accessors.keys());
   }
+}
+
+/** 前世代の生成物か（own に残った生成 getter だけが上書きしてよい）。 */
+function isGeneratedGetter(descriptor: PropertyDescriptor): boolean {
+  return typeof descriptor.get === "function" && generatedGetters.has(descriptor.get);
 }

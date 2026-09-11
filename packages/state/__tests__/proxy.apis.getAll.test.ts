@@ -417,6 +417,18 @@ describe('getAll', () => {
     expect(result).toEqual(['hello']);
   });
 
+  it('indexes が配列でない（null 等）場合は生の TypeError ではなく形の診断になること', () => {
+    mockStateElement = createStateElement();
+    setStateElement(document, mockStateElement);
+    const handler = createHandler(mockStateElement);
+    const target = { items: [1, 2] };
+
+    const getAllFn = getAll(target, '$getAll', target, handler as any);
+    expect(() => getAllFn('items.*', null as any))
+      .toThrow(/\$getAll\("items\.\*"\) requires the indexes to be an array when given .* got null/);
+    expect(() => getAllFn('items.*', 0 as any)).toThrow(/got number/);
+  });
+
   it('indexes 省略時、path と共有の無いループ文脈が添字を持つ場合はエラーになること', () => {
     mockStateElement = createStateElement();
     setStateElement(document, mockStateElement);

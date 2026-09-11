@@ -23,7 +23,8 @@ import { setByAddress } from "../proxy/methods/setByAddress";
 import { IStateHandler } from "../proxy/types";
 import { raiseError } from "../raiseError";
 import { splitRecursivePath } from "./expand";
-import { resolveRecursiveAddresses } from "./getAllRecursive";
+import { IRecursionSpec } from "./types";
+import { collectRecursiveAddresses } from "./walk";
 
 /**
  * 接尾辞が「再帰の構造そのもの」を名指していないか。
@@ -32,7 +33,7 @@ import { resolveRecursiveAddresses } from "./getAllRecursive";
  * （`nodes.**.children.*`）は、書き換えると確定済みの子アドレスを壊す。初版は
  * 葉の属性の更新に限る（実装計画 §1-3）。判定対象は宣言から導出する。
  */
-function assertNotStructural(spec: { anchor: string, repeat: string }, path: string, suffix: string): void {
+function assertNotStructural(spec: IRecursionSpec, path: string, suffix: string): void {
   const repeatSegments = spec.repeat.split(DELIMITER);
   const repeatList = repeatSegments.slice(0, -1).join(DELIMITER);
   const unit = DELIMITER + spec.repeat;
@@ -45,14 +46,18 @@ function assertNotStructural(spec: { anchor: string, repeat: string }, path: str
   // 完全一致だけを見ると、多段の repeat で途中のオブジェクト（`nodes.**.branch`）が素通りし、
   // 深さ 0 の `branch` を置き換えた瞬間に、この書き込みが確定済みの深さ 1 のアドレス
   // （`nodes.*.branch.children.*.…`）が宙に浮く（着地後レビューで実測。実装計画 §7-3）。
-  let structural = rest.length === 0;
+  //
+  // 子リストの `length`（`nodes.**.children.length`）も構造。`arr.length = 0` は配列を
+  // 切り詰めるので、リストそのものを置き換えるのと同じく、この書き込みが確定した
+  // 深い側のアドレスを消す（実測: 全深さの children が空になり、集計は旧値のまま残った）。
+  let structural = rest.length === 0 || rest === DELIMITER + repeatList + DELIMITER + "length";
   for (let i = 1; !structural && i < repeatSegments.length; i++) {
     structural = rest === DELIMITER + repeatSegments.slice(0, i).join(DELIMITER);
   }
   if (structural) {
     raiseError(
       `[wcs/recursion-structural-write] "${path}" writes the recursion structure itself ` +
-      `(a node, its "${repeatList}" list, or an object on the way to that list). ` +
+      `(a node, its "${repeatList}" list or that list's length, or an object on the way to that list). ` +
       `This version broadcasts to leaf properties only — ` +
       `replacing a node would invalidate the child addresses already resolved for this write.`
     );
@@ -120,7 +125,8 @@ export function setAllRecursive(
   // 再帰 getter の読みが恒久的に落ちる（値の合併は動き続けるので無症状のまま進む）。
   // 1 件も書かない `undefined` のブロードキャストでも同じなので、「書き込み 0 件」は
   // 「状態が動いていない」を意味しない。
-  const addresses = resolveRecursiveAddresses(target, receiver, handler, path, true);
+  const addresses = collectRecursiveAddresses(
+    target, receiver, handler, registry.spec, parts.suffix, { commitDiffBaseline: true });
 
   // --- 第 2 相: 確定したアドレスにだけ書く ---
   let written = 0;

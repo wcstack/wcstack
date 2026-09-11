@@ -336,9 +336,12 @@ export function checkDeclaredPath(
   // 再帰 getter の展開形は、バインド確立の時点ではまだ生えていない（読む直前に
   // 遅延実体化する — recursion/registry.ts）。素の存在検査では必ず「解決できない」に
   // なるので、宣言済みの `**` getter に合致するかを先に見る。実体化はしない。
+  // 展開形の**値の内側**（`nodes.*.stats.count` で `get "nodes.**.stats"()` がオブジェクトを
+  // 返す形）も同じ — 通常の getter なら下の「途中のプレフィックスがフラット宣言」で
+  // UNKNOWN に倒れるところ、未実体化のアクセサは findDescriptor に見えないのでここで畳む。
   if (stateElement.hasRecursion === true) {
     const registry = stateElement.recursionRegistry;
-    if (registry !== null && typeof registry !== "undefined" && registry.matchesRecursivePath(path)) {
+    if (registry !== null && typeof registry !== "undefined" && registry.recursiveGetterOwning(path) !== null) {
       return;
     }
   }

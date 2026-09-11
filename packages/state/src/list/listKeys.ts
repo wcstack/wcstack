@@ -13,7 +13,7 @@
  * 宣言自体はエラーにしない。
  */
 
-import { DELIMITER, STATE_LIST_KEYS_NAME, WILDCARD } from "../define";
+import { DELIMITER, RECURSION_WILDCARD, STATE_LIST_KEYS_NAME, WILDCARD } from "../define";
 import { raiseError } from "../raiseError";
 import type { IState } from "../types";
 
@@ -54,6 +54,15 @@ export function processListKeysDeclaration(state: IState): ListKeyMap | null {
       raiseError(
         `${STATE_LIST_KEYS_NAME} entry "${path}" must be the list path itself, not the element path ` +
         `(drop the trailing "${DELIMITER}${WILDCARD}").`
+      );
+    }
+    // `**` は `$listKeys` の消費者ではない。受理すると宣言は永久に効かず（キー突合は
+    // 具体パスで引く）、他の壊れた形は raise するのと非対称になる。深さごとに具体パスで宣言する。
+    if (path.indexOf(RECURSION_WILDCARD) !== -1) {
+      raiseError(
+        `[wcs/recursion-unsupported] ${STATE_LIST_KEYS_NAME} entry "${path}" uses "${RECURSION_WILDCARD}", ` +
+        `which ${STATE_LIST_KEYS_NAME} does not interpret — a keyed list is one concrete list path. ` +
+        `Declare the key per depth instead (for example "nodes${DELIMITER}${WILDCARD}${DELIMITER}children").`
       );
     }
     if (typeof spec === "function") {

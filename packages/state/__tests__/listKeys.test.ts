@@ -39,6 +39,17 @@ describe("processListKeysDeclaration: 宣言のバリデーション", () => {
     expect(() => processListKeysDeclaration(decl({ "items.*": "id" }))).toThrow(/list path itself/);
   });
 
+  it("`**` を含むパスを [wcs/recursion-unsupported] で拒否すること（無言で効かない宣言にしない）", () => {
+    // `$listKeys` は `**` の消費者ではない。受理すると宣言は永久に効かず、他の壊れた形は
+    // raise するのと非対称だった。深さごとに具体パスで宣言する。
+    expect(() => processListKeysDeclaration(decl({ "nodes.**.children": "id" })))
+      .toThrow(/\[wcs\/recursion-unsupported\] \$listKeys entry "nodes\.\*\*\.children" uses "\*\*"/);
+    expect(() => processListKeysDeclaration(decl({ "nodes.**.children": "id" })))
+      .toThrow(/Declare the key per depth instead/);
+    // 対照: 深さごとの具体パスは受理される
+    expect(processListKeysDeclaration(decl({ "nodes": "id", "nodes.*.children": "id" }))?.size).toBe(2);
+  });
+
   it("キー指定の型・形を検査すること", () => {
     expect(() => processListKeysDeclaration(decl({ items: 1 }))).toThrow(/must be a field name/);
     expect(() => processListKeysDeclaration(decl({ items: "" }))).toThrow(/non-empty string/);

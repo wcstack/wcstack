@@ -19,6 +19,11 @@
  *
  * 正当な明示全体検索（`$getAll("nodes.**.value", [])`）は**一律に通す**。二重計上の
  * 一般的な静的判定は約束しない（設計書 §1-2）。
+ *
+ * 「宣言が無い」と断定するのは、`export default { … }` のオブジェクトリテラルが読めて、
+ * かつそこに `$recursion` が無いときだけ。識別子参照（`$recursion: REC`）や class 構文は
+ * 宣言の中身が静的に読めないので黙る（`validateDeclaration` の「断定しない」と同じ側）。
+ * ここを無条件に「未宣言」にすると、正当なコードで `wcs-validate` が exit 1 になる。
  */
 
 import { parseWcsScriptBlocks } from '../language/htmlParse.js';
@@ -27,7 +32,9 @@ import { WcsDiagnostic, WcsDiagnosticCode } from '../core/diagnostics.js';
 import {
   analyzeCallableBodies,
   analyzeDeclarationSpans,
+  analyzeListKeyEntries,
   analyzeRecursionDeclaration,
+  hasDefaultExportObject,
   type RecursionDeclarationInfo,
 } from './stateAnalyzer.js';
 import { blankComments, createApiCallRegex, literalArrayLength, literalString, splitCallArgs } from './scriptCallArgs.js';
@@ -36,14 +43,34 @@ import {
   conflictingGetterSuffix,
   hasRecursionWildcard,
   makeRecursionSpec,
+  owningGetterSuffix,
   sameFamily,
   splitRecursivePath,
   structuralWriteTarget,
   type RecursionSpec,
 } from './recursionPaths.js';
 
-/** `**` を受け付ける API（`$resolve` は受け付けない ＝ 受け付けないことを報告する）。 */
-const RECURSION_APIS = ['getAll', 'setAll', 'resolve'] as const;
+/**
+ * パスを第 1 引数に取る API。`$getAll` / `$setAll` だけが `**` を解釈する。
+ * `$resolve` / `$postUpdate` / `$trackDependency` は受け付けない ＝ 受け付けないことを報告する
+ * （ランタイムは `getPathInfo` の不変条件で `wcs/recursion-unsupported`）。
+ */
+const RECURSION_APIS = ['getAll', 'setAll', 'resolve', 'postUpdate', 'trackDependency'] as const;
+
+/** `**` を解釈しない API（`$getAll` / `$setAll` 以外）→ `recursionUnsupported` の site。 */
+const UNSUPPORTED_API_SITE = {
+  $resolve: 'resolve',
+  $postUpdate: 'postUpdate',
+  $trackDependency: 'trackDependency',
+} as const;
+
+/**
+ * `this["<path>"] = …`（複合代入・`??=` 等を含む。`==` / `===` は除く）。
+ * 代入は `**` を解釈しない（再帰 setter は初版に無く、set トラップは `getPathInfo` の不変条件で
+ * throw する）。具体パス綴りの代入は `**` getter の展開形への書き込み検査（readonly）に使う。
+ */
+const BRACKET_ASSIGNMENT =
+  /\bthis\s*\[\s*(["'])((?:\\.|(?!\1)[^\\])*)\1\s*\]\s*(?:[-+*/%&|^]{1,2}|<<|>>>?|\?\?)?=(?!=)/g;
 
 /**
  * HTML 内の全 `<wcs-state>` について `$recursion` 宣言と `**` の使い方を検証する。
@@ -60,9 +87,18 @@ export function validateRecursion(
     // `**` も `$recursion` も無いスクリプトは 1 回の indexOf で抜ける（ゼロコスト規約）
     if (!hasRecursionWildcard(block.content) && block.content.indexOf('$recursion') === -1) continue;
     const declaration = analyzeRecursionDeclaration(block.content);
+    if (block.mountPath !== null) {
+      // ボリューム（`mount=`）は `$recursion` も `**` getter も持てない（runtime は接ぎ木前に raise）。
+      validateVolumeBlock(block.content, block.contentStart, block.mountPath, declaration, msgs, out);
+      continue;
+    }
     const spec = validateDeclaration(declaration, block.contentStart, msgs, out);
-    const getterSuffixes = validateRecursiveGetters(block.content, block.contentStart, spec, declaration, msgs, out);
-    validateApiCalls(block.content, block.contentStart, spec, getterSuffixes, msgs, out);
+    // 「宣言が無い」と断定できるのは、オブジェクトリテラルが読めてそこに無いときだけ
+    const undeclared = declaration === null && hasDefaultExportObject(block.content);
+    const getterSuffixes = validateRecursiveGetters(block.content, block.contentStart, spec, undeclared, msgs, out);
+    validateListKeys(block.content, block.contentStart, msgs, out);
+    validateApiCalls(block.content, block.contentStart, spec, getterSuffixes, undeclared, msgs, out);
+    validateAssignments(block.content, block.contentStart, spec, getterSuffixes, msgs, out);
   }
 
   return out;
@@ -84,6 +120,31 @@ function push(
   severity: 'error' | 'warning' = 'error',
 ): void {
   out.push({ code, start, end, message, severity });
+}
+
+/**
+ * ボリューム（`mount=`）の state。`$recursion` 宣言と `**` getter を接ぎ木前の raise と
+ * 同じ条件で error にする（runtime: webComponent/volume.ts validateVolumeDeclarations）。
+ */
+function validateVolumeBlock(
+  script: string,
+  offset: number,
+  mountPath: string,
+  declaration: RecursionDeclarationInfo | null,
+  msgs: WcsMessageCatalog,
+  out: WcsDiagnostic[],
+): void {
+  if (declaration !== null) {
+    push(out, WcsDiagnosticCode.RecursionDeclarationInvalid, offset + declaration.start, offset + declaration.end,
+      msgs.recursionInVolume('$recursion', mountPath));
+  }
+  const seen = new Set<string>();
+  for (const span of analyzeDeclarationSpans(script)) {
+    if (!hasRecursionWildcard(span.name) || seen.has(span.name)) continue;
+    seen.add(span.name);
+    push(out, WcsDiagnosticCode.RecursionDeclarationInvalid, offset + span.start, offset + span.end,
+      msgs.recursionInVolume(`"${span.name}"`, mountPath));
+  }
 }
 
 /**
@@ -142,7 +203,7 @@ function validateRecursiveGetters(
   script: string,
   offset: number,
   spec: RecursionSpec | null,
-  declaration: RecursionDeclarationInfo | null,
+  undeclared: boolean,
   msgs: WcsMessageCatalog,
   out: WcsDiagnostic[],
 ): string[] {
@@ -165,10 +226,10 @@ function validateRecursiveGetters(
     const start = offset + span.start;
     const end = offset + span.end;
     if (spec === null) {
-      // 宣言が無い（または宣言そのものが壊れている）。ランタイムはこの getter を
+      // 宣言が無い（または宣言そのものが壊れている・読めない）。ランタイムはこの getter を
       // レジストリに載せないので、具体パスを読んでも**黙って** undefined になる ＝
-      // 落ちないので warning（宣言が壊れている場合は上で error を出し済み）。
-      if (declaration === null) {
+      // 落ちないので warning。壊れている場合は上で error を出し済み、読めない場合は断定しない。
+      if (undeclared) {
         push(out, WcsDiagnosticCode.RecursionUnsupported, start, end,
           msgs.recursionUnsupported(span.name, 'undeclared'), 'warning');
       }
@@ -209,17 +270,39 @@ function validateRecursiveGetters(
 }
 
 /**
- * `$getAll` / `$setAll` / `$resolve` の第 1 引数が `**` を含む呼び出しを検証する。
+ * `$listKeys` のキーに `**` があれば error（runtime は宣言の処理で `wcs/recursion-unsupported`）。
+ * 宣言の有無に関わらず落ちる形なので、`$recursion` のゲートは掛けない。
+ */
+function validateListKeys(
+  script: string,
+  offset: number,
+  msgs: WcsMessageCatalog,
+  out: WcsDiagnostic[],
+): void {
+  for (const entry of analyzeListKeyEntries(script)) {
+    if (!hasRecursionWildcard(entry.key)) continue;
+    push(out, WcsDiagnosticCode.RecursionUnsupported, offset + entry.start, offset + entry.end,
+      msgs.recursionUnsupported(entry.key, 'listKeys'));
+  }
+}
+
+/**
+ * パスを第 1 引数に取る API 呼び出しを検証する。
  *
  * 報告は 1 呼び出しにつき**最初の 1 件**だけ（同じ呼び出しに複数の理由を並べても
  * 直す順番が増えるだけ）。判定順はランタイムに合わせる — アンカー照合 → 添字の形 →
  * 値の形 → 構造への書き込み → 読み取り専用。
+ *
+ * `**` を含まない具体パスも、`$setAll` / 値付き `$resolve` なら見る — 宣言済み `**` getter の
+ * 展開形（`nodes.*.children.*.total`）やその値の内側への書き込みは、`**` を経なくても
+ * ランタイムが `setByAddress` の入口で `wcs/recursion-readonly` にする。
  */
 function validateApiCalls(
   script: string,
   offset: number,
   spec: RecursionSpec | null,
   getterSuffixes: readonly string[],
+  undeclared: boolean,
   msgs: WcsMessageCatalog,
   out: WcsDiagnostic[],
 ): void {
@@ -234,18 +317,34 @@ function validateApiCalls(
     if (parsed.args.length === 0) continue;
     const pathArg = parsed.args[0];
     const path = literalString(pathArg);
-    if (path === null || !hasRecursionWildcard(path)) continue;
+    if (path === null) continue;
 
     const leading = pathArg.length - pathArg.trimStart().length;
     const start = offset + parsed.starts[0] + leading;
     const end = offset + parsed.starts[0] + pathArg.trimEnd().length;
 
-    if (api === '$resolve') {
-      push(out, WcsDiagnosticCode.RecursionUnsupported, start, end, msgs.recursionUnsupported(path, 'resolve'));
+    if (!hasRecursionWildcard(path)) {
+      // 具体パス綴りでの再帰 getter への書き込み（`$setAll(path, …)` / `$resolve(path, idx, value)`）
+      const writes = api === '$setAll' || (api === '$resolve' && parsed.args.length >= 3);
+      if (writes && spec !== null) {
+        const owning = owningGetterSuffix(spec, getterSuffixes, path);
+        if (owning !== null) {
+          push(out, WcsDiagnosticCode.RecursionReadonly, start, end,
+            msgs.recursionReadonly(`${api}("${path}")`, spec.recursiveAnchor + owning));
+        }
+      }
+      continue;
+    }
+
+    if (api in UNSUPPORTED_API_SITE) {
+      push(out, WcsDiagnosticCode.RecursionUnsupported, start, end,
+        msgs.recursionUnsupported(path, UNSUPPORTED_API_SITE[api as keyof typeof UNSUPPORTED_API_SITE]));
       continue;
     }
     if (spec === null) {
-      push(out, WcsDiagnosticCode.RecursionUnsupported, start, end, msgs.recursionUnsupported(path, 'undeclared'));
+      if (undeclared) {
+        push(out, WcsDiagnosticCode.RecursionUnsupported, start, end, msgs.recursionUnsupported(path, 'undeclared'));
+      }
       continue;
     }
     const suffix = splitRecursivePath(spec, path);
@@ -306,7 +405,41 @@ function validateSetAllForm(
   const conflicting = conflictingGetterSuffix(spec, getterSuffixes, suffix);
   if (conflicting !== null) {
     push(out, WcsDiagnosticCode.RecursionReadonly, start, end,
-      msgs.recursionReadonly(path, spec.recursiveAnchor + conflicting));
+      msgs.recursionReadonly(`$setAll("${path}")`, spec.recursiveAnchor + conflicting));
+  }
+}
+
+/**
+ * `this["<path>"] = …` の代入。`**` を含めば `wcs/recursion-unsupported`（宣言の有無に関わらず
+ * runtime が throw する）。具体パス綴りで宣言済み `**` getter の展開形（またはその値の内側）へ
+ * 書けば `wcs/recursion-readonly`。
+ */
+function validateAssignments(
+  script: string,
+  offset: number,
+  spec: RecursionSpec | null,
+  getterSuffixes: readonly string[],
+  msgs: WcsMessageCatalog,
+  out: WcsDiagnostic[],
+): void {
+  const scan = blankComments(script);
+  const regex = new RegExp(BRACKET_ASSIGNMENT.source, 'g');
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(scan)) !== null) {
+    const path = match[2];
+    // 引用符の中身の位置（`this[` と `"` を飛ばす）
+    const start = offset + match.index + match[0].indexOf(match[1]) + 1;
+    const end = start + path.length;
+    if (hasRecursionWildcard(path)) {
+      push(out, WcsDiagnosticCode.RecursionUnsupported, start, end, msgs.recursionUnsupported(path, 'assignment'));
+      continue;
+    }
+    if (spec === null) continue;
+    const owning = owningGetterSuffix(spec, getterSuffixes, path);
+    if (owning !== null) {
+      push(out, WcsDiagnosticCode.RecursionReadonly, start, end,
+        msgs.recursionReadonly(`this["${path}"] = …`, spec.recursiveAnchor + owning));
+    }
   }
 }
 

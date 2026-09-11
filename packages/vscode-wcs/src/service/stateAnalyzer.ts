@@ -278,30 +278,77 @@ export interface WatchEntryInfo {
  * 静的に拾えるかどうかが効く。
  */
 export function analyzeWatchEntries(scriptContent: string): WatchEntryInfo[] {
+  return analyzeObjectEntries(scriptContent, RESERVED_WATCH_KEY).map(entry => ({
+    key: entry.key,
+    start: entry.start,
+    end: entry.end,
+    // メソッド短縮記法は関数。data は値リテラルの形で判定し、識別子参照は疑わない。
+    definitelyNotFunction: entry.kind === 'data' && isNonFunctionLiteral(entry.value),
+  }));
+}
+
+/** `$listKeys` の 1 エントリ（キー ＝ リストパス）と、原文での位置。 */
+export interface ListKeyEntryInfo {
+  /** 宣言キー。引用符を外した生の文字列（`items` / `nodes.*.children` など） */
+  readonly key: string;
+  /** scriptContent 内でのキーの範囲（引用符は含まない） */
+  readonly start: number;
+  readonly end: number;
+}
+
+/**
+ * `$listKeys: { "<listPath>": key }` のエントリを位置付きで抽出する。
+ *
+ * `analyzeStatePaths` はこの宣言から候補を**作る**側（pushListKeyPaths）で、ランタイムが
+ * raise する形からは候補を作らない。こちらは宣言そのものの妥当性を報告する validator 用。
+ */
+export function analyzeListKeyEntries(scriptContent: string): ListKeyEntryInfo[] {
+  return analyzeObjectEntries(scriptContent, RESERVED_LIST_KEYS_KEY)
+    .map(entry => ({ key: entry.key, start: entry.start, end: entry.end }));
+}
+
+/** `export default { ... }` のオブジェクトリテラルが見つかるか（診断のゲート用）。 */
+export function hasDefaultExportObject(scriptContent: string): boolean {
+  return locateDefaultExportObject(scriptContent) !== null;
+}
+
+interface ObjectEntry {
+  readonly key: string;
+  readonly start: number;
+  readonly end: number;
+  readonly kind: PropertyInfo['kind'];
+  readonly value?: string;
+}
+
+/**
+ * トップレベルの `<key>: { ... }` 宣言のエントリを位置付きで列挙する（`$watch` / `$listKeys`
+ * が共有する形）。値がオブジェクトリテラルでない（識別子参照など）ときは空 ＝ 断定しない。
+ */
+function analyzeObjectEntries(scriptContent: string, key: string): ObjectEntry[] {
   const root = locateDefaultExportObject(scriptContent);
   if (!root) return [];
 
-  const watchProp = parseTopLevelProperties(root.content).find(p => p.name === RESERVED_WATCH_KEY);
+  const prop = parseTopLevelProperties(root.content).find(p => p.name === key);
   if (
-    !watchProp || watchProp.kind !== 'data' || !watchProp.value ||
-    !isObjectLiteral(watchProp.value) || watchProp.valueStart === undefined
+    !prop || prop.kind !== 'data' || !prop.value ||
+    !isObjectLiteral(prop.value) || prop.valueStart === undefined
   ) {
     return [];
   }
 
   // 値テキストの先頭空白ぶんだけ `{` がずれる。中身はその次から始まる。
-  const leading = watchProp.value.length - watchProp.value.trimStart().length;
-  const innerStart = root.start + watchProp.valueStart + leading + 1;
+  const leading = prop.value.length - prop.value.trimStart().length;
+  const innerStart = root.start + prop.valueStart + leading + 1;
 
-  const entries: WatchEntryInfo[] = [];
-  for (const entry of parseTopLevelProperties(extractObjectContent(watchProp.value))) {
+  const entries: ObjectEntry[] = [];
+  for (const entry of parseTopLevelProperties(extractObjectContent(prop.value))) {
     if (entry.nameStart === undefined || entry.nameEnd === undefined) continue;
     entries.push({
       key: entry.name,
       start: innerStart + entry.nameStart,
       end: innerStart + entry.nameEnd,
-      // メソッド短縮記法は関数。data は値リテラルの形で判定し、識別子参照は疑わない。
-      definitelyNotFunction: entry.kind === 'data' && isNonFunctionLiteral(entry.value),
+      kind: entry.kind,
+      value: entry.value,
     });
   }
   return entries;

@@ -55,11 +55,6 @@ class StateHandler implements IStateHandler {
     return this._loopContext;
   }
 
-  addressStackAt(position: number): IStateAddress | null {
-    // 範囲外は配列読みが undefined を返すので、そのまま null に畳む。
-    return this._addressStack[position] ?? null;
-  }
-
   pushAddress(address: IStateAddress | null): void {
     // 上限判定は **increment より前**に行う。後にすると、深さ超過で throw した時点で
     // `_addressStackIndex` だけが進み `_addressStack[index]` は未代入のまま残る。

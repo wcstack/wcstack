@@ -178,6 +178,8 @@ export class State extends HTMLElementBase implements IStateElement {
   }
 
   private set _state(value: IState) {
+    // 旧世代のデータ。再帰の生成物（辺・キャッシュ）を忘れるとき、台帳を辿る起点になる
+    const previousState = this.__state;
     this._commandTokenNames = processCommandTokensDeclaration(value);
     this._eventTokenNames = processEventTokensDeclaration(value);
     this.__state = value;
@@ -220,8 +222,11 @@ export class State extends HTMLElementBase implements IStateElement {
     // getterPaths / setterPaths の収集後であること（`**` getter の descriptor を
     // 走査して定義を集めるため）。再セットでは毎回作り直す — 展開済みアクセサは
     // 旧 state オブジェクトのものなので持ち越さない（§1-3）。
-    // 旧世代の生成アクセサを指す依存辺を外してから作り直す（下の registry.ts 参照）。
-    this._recursionRegistry?.forgetGeneratedDependencies(this._staticDependency, this._dynamicDependency);
+    // 旧世代の生成アクセサを指す依存辺と、その評価結果のキャッシュを外してから作り直す
+    // （registry.ts の forgetGenerated 参照）。レジストリがあるなら旧世代の state は必ずある。
+    if (this._recursionRegistry !== null) {
+      this._recursionRegistry.forgetGenerated(this, previousState as IState);
+    }
     const recursionSpec = processRecursionDeclaration(value);
     this._recursionRegistry = recursionSpec === null ? null : new RecursionRegistry(recursionSpec, value);
     if (recursionSpec !== null) {
@@ -955,8 +960,18 @@ export class State extends HTMLElementBase implements IStateElement {
     this._listPaths.add(path);
   }
 
-  getOwnStateDescriptor(path: string): PropertyDescriptor | undefined {
-    return Object.getOwnPropertyDescriptor(this._state, path);
+  findStateDescriptor(path: string): PropertyDescriptor | undefined {
+    // own → プロトタイプチェーン（Object.prototype 手前まで）。打ち切り位置は
+    // getAllPropertyDescriptors / getStateInfo と同じ ＝ 「state が宣言したもの」の範囲
+    let proto: object | null = this._state;
+    while (proto !== null && proto !== Object.prototype) {
+      const descriptor = Object.getOwnPropertyDescriptor(proto, path);
+      if (typeof descriptor !== "undefined") {
+        return descriptor;
+      }
+      proto = Object.getPrototypeOf(proto);
+    }
+    return undefined;
   }
 
   defineTreeAccessor(path: string, descriptor: PropertyDescriptor): void {

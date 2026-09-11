@@ -24,7 +24,7 @@ export function hasRecursionWildcard(path: string): boolean {
  */
 export function splitRecursivePath(spec: IRecursionSpec, path: string): IRecursivePathParts | null {
   if (path === spec.recursiveAnchor) {
-    return { spec, suffix: "" };
+    return { suffix: "" };
   }
   const prefix = spec.recursiveAnchor + DELIMITER;
   if (!path.startsWith(prefix)) {
@@ -35,7 +35,7 @@ export function splitRecursivePath(spec: IRecursionSpec, path: string): IRecursi
   if (hasRecursionWildcard(suffix)) {
     return null;
   }
-  return { spec, suffix };
+  return { suffix };
 }
 
 /** 深さ k の具体パスを作る。上限超過は生成前に throw する（設計書 D11）。 */

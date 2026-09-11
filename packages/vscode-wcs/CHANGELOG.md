@@ -12,6 +12,12 @@
 - **パスの存在検査が `$recursion` の展開形を認める** — `nodes.*.children.*.children.*.total` のような具体パスは、反復語を剥がして深さ 0 の形へ畳んでから候補集合に当てる（ランタイムの `checkDeclaredPath` と同じ規則）。宣言だけから確定する構造パス（`nodes` / `nodes.*.children` / …）も候補になる。`**` を含む getter のキーは候補に載るが補完には出さない
 - `wcs/index-arity` は `**` を含むパスを判定しない（固定本数の `*` ではないため。形の判定は上の 2 code が担う）。`wcs/getter-cycle` は再帰 getter を「文字列上の自己参照」という理由では循環扱いしない — 深さが進む読み（`nodes.**.total` の中の `nodes.**.children.*.total`）は辺にならず、深さ差 0 の辺だけが循環になる
 - preamble: `$recursion?: Record<string, string>` と、`**` を含むキーの読みを許す索引シグネチャ
+- **`$recursion` 宣言が静的に読めない形では「未宣言」と断定しない** — 識別子参照（`$recursion: REC`）や class 構文（`export default class TreeState { $recursion = { … } }`）の state で、`$getAll` / `$setAll` の `**` に偽の `wcs/recursion-unsupported`（error）を出していた。`wcs-validate` が正当なコードで exit 1 になる形。「未宣言」と報告するのは `export default { … }` のオブジェクトリテラルが読めてそこに `$recursion` が無いときだけ
+- **パスの存在検査の照合をランタイムに揃えた** — 接尾辞に反復語を含む `**` getter（`get "nodes.**.children.*.total"()`）の展開形と、オブジェクトを返す `**` getter の値の内側（`nodes.*.stats.count`）に偽の `wcs/binding-path-missing` を出さない（畳む深さを 0 まで降りて候補に当て、`**` getter の下は「評価しないと分からない」として黙る）
+- **`**` を解釈しない消費者を広げた** — `this["…**…"] = …`（複合代入含む）・`$postUpdate` / `$trackDependency` の `**`・`$listKeys` のキーの `**` を `wcs/recursion-unsupported`（error）で報告する。README の診断表どおり、ランタイムが必ず throw する形
+- **具体パス綴りでの再帰 getter への書き込み** — `$setAll("nodes.*.children.*.total", [], v)` / 値付き `$resolve` / `this["nodes.*.total"] = …` のように `**` を経ずに宣言済み `**` getter の展開形（またはその値の内側）へ書く形を `wcs/recursion-readonly` にする（ランタイムは `setByAddress` の入口で同じ判定をする）
+- `wcs/recursion-structural-write` が子リストの `length`（`$setAll("nodes.**.children.length", [], 0)`）も構造として報告する
+- ボリューム（`mount=`）の state が `$recursion` / `**` getter を宣言していれば `wcs/recursion-declaration-invalid`（error）で報告する（ランタイムは接ぎ木前に throw する形。静的側は沈黙していた）
 
 ## 1.13.0 — 2026-09-08
 

@@ -128,13 +128,24 @@ export function foldRecursion(spec: RecursionSpec, path: string): FoldedPath | n
  * 具体パスが「宣言済みの再帰の展開形」として説明できるか。
  *
  * ランタイムが `pathDiagnostics.checkDeclaredPath` で
- * `recursionRegistry.matchesRecursivePath` を先に見るのと同じ役割。あちらは
- * 「`**` getter の展開形か」だけを見るが、静的側は候補集合しか持たないので
- * **深さを畳んでから候補集合に当てる**:
+ * `recursionRegistry.recursiveGetterOwning` を先に見るのと同じ役割。あちらは
+ * 「`**` getter の展開形（またはその値の内側）か」を見るが、静的側は候補集合しか
+ * 持たないので**深さを畳んでから候補集合に当てる**:
  *
  *   - `nodes.*.children.*.total` → 深さ 1・残り `.total` → `nodes.**.total`（`**` getter）
  *   - `nodes.*.children.*.value` → 深さ 1・残り `.value` → `nodes.*.value`（行の形は
  *     深さによらず同じ、というのが `$recursion` 宣言の意味）
+ *
+ * 畳む深さは最大から 0 まで**降りて全部試す**。反復語を貪欲に剥がした形だけを当てると、
+ * 接尾辞に反復語を含む `**` getter（`get "nodes.**.children.*.total"()`）の展開形
+ * `nodes.*.children.*.total` が `nodes.**.total` に化けて候補に当たらない（ランタイムの
+ * `depthOfConcretePath` は接尾辞側から照合するので受理する — パリティ欠陥だった）。
+ *
+ * `**` getter の**値の内側**（`nodes.*.stats.count` で `get "nodes.**.stats"()` がオブジェクトを
+ * 返す形）も存在扱いにする。ランタイムは未実体化のアクセサを findDescriptor で見つけられず、
+ * 通常の getter の下と同じく「評価しないと分からない」側に倒すので、静的側も揃える。
+ * 接頭辞の照会は `**` 形（`recursiveAnchor + …`）にだけ掛ける — 候補集合でその綴りを
+ * 持てるのは `**` getter だけなので、データ候補の免除が広がることはない。
  *
  * `has` は候補集合の照会。存在を**足す**方向にしか効かないので、誤検出は増えない。
  */
@@ -146,10 +157,42 @@ export function matchesRecursion(
   for (const spec of specs) {
     const folded = foldRecursion(spec, path);
     if (folded === null) continue;
-    if (has(spec.anchor + folded.rest)) return true;
-    if (has(spec.recursiveAnchor + folded.rest)) return true;
+    const unit = '.' + spec.repeat;
+    for (let depth = folded.depth; depth >= 0; depth--) {
+      const rest = unit.repeat(folded.depth - depth) + folded.rest;
+      if (has(spec.anchor + rest)) return true;
+      if (has(spec.recursiveAnchor + rest)) return true;
+      for (let dot = rest.lastIndexOf('.'); dot > 0; dot = rest.lastIndexOf('.', dot - 1)) {
+        if (has(spec.recursiveAnchor + rest.slice(0, dot))) return true;
+      }
+    }
   }
   return false;
+}
+
+/**
+ * `**` を含まない具体パスが、宣言済み `**` getter の展開形（またはその値の内側）なら、
+ * その getter の接尾辞を返す（ランタイム `RecursionRegistry.recursiveGetterOwning` の写し）。
+ *
+ * `$setAll("nodes.*.children.*.total", [], v)` / `this["nodes.*.total"] = v` のように `**` を
+ * 経ない綴りで再帰 getter へ書く形を `wcs/recursion-readonly` にするために使う。深さは
+ * 畳んだ最大から 0 まで降りて試す（`matchesRecursion` と同じ理由）。
+ */
+export function owningGetterSuffix(
+  spec: RecursionSpec,
+  getterSuffixes: readonly string[],
+  path: string,
+): string | null {
+  const folded = foldRecursion(spec, path);
+  if (folded === null) return null;
+  const unit = '.' + spec.repeat;
+  for (const suffix of getterSuffixes) {
+    for (let depth = folded.depth; depth >= 0; depth--) {
+      const expansion = spec.anchor + unit.repeat(depth) + suffix;
+      if (path === expansion || path.startsWith(expansion + '.')) return suffix;
+    }
+  }
+  return null;
 }
 
 /**
@@ -208,8 +251,9 @@ export function impliedStructurePaths(spec: RecursionSpec): ImpliedPath[] {
 /**
  * 一括書き込みが「再帰の構造そのもの」を名指しているときの種別。
  * `branch` は多段の反復サブパス（`branch.children.*`）で子リストへ至る途中のオブジェクト。
+ * `length` は子リストの `length`（`arr.length = 0` は配列を切り詰める ＝ リストの置換と同じ）。
  */
-export type StructuralWriteTarget = 'node' | 'list' | 'branch';
+export type StructuralWriteTarget = 'node' | 'list' | 'branch' | 'length';
 
 /**
  * `$setAll` の接尾辞が構造を名指しているか（ランタイム
@@ -219,12 +263,15 @@ export type StructuralWriteTarget = 'node' | 'list' | 'branch';
  * （`nodes.**.children.*`）は、書き換えると確定済みの子アドレスを壊す。反復サブパスが
  * 多段なら、その**途中のオブジェクト**（`nodes.**.branch`）も同じ理由で構造である —
  * `"." + repeatList` との完全一致だけを見ると素通りする（着地後レビューで実測）。
+ * 子リストの `length`（`nodes.**.children.length`）も同じ — 両側とも素通りしていて、
+ * 実際に全深さの children を切り詰め集計を stale のまま残した（第 2 回レビューで実測）。
  */
 export function structuralWriteTarget(spec: RecursionSpec, suffix: string): StructuralWriteTarget | null {
   const unit = '.' + spec.repeat;
   let rest = suffix;
   while (rest.startsWith(unit)) rest = rest.slice(unit.length);
   if (rest.length === 0) return 'node';
+  if (rest === '.' + spec.repeatList + '.length') return 'length';
   const segments = spec.repeatList.split('.');
   for (let i = 1; i <= segments.length; i++) {
     if (rest === '.' + segments.slice(0, i).join('.')) return i === segments.length ? 'list' : 'branch';

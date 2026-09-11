@@ -7,6 +7,14 @@
  * `getByAddress` は getterPaths に載るパスを読むときアドレスをスタックへ積むので、
  * 深さ k の再帰 getter の本体を評価している最中は、スタック先頭がその具体パスの
  * アドレスになっている。そこから深さを復元する（実装計画 §1-2）。
+ *
+ * 見るのは**スタック先頭だけ**である。添字（ListIndex）を供給する `getContextListIndex` /
+ * `$getAll` の省略形も先頭しか見ないので、深さだけを外側のフレームから拾うと「深さは
+ * 束縛されたが行は無い」という定義にない状態になる — `**` getter が別の素の getter を
+ * 経由して `**` を読む形（`get "nodes.**.x"() { return this.helper }` /
+ * `get helper() { return this["nodes.**.value"] }`）がそれで、直接読みは生の
+ * `ListIndex not found`、`$getAll` の省略形は「束縛した深さ × 全行」という値を無言で
+ * 返していた。深さと行は同じフレームから取る。
  */
 
 import { IStateElement } from "../components/types";
@@ -38,25 +46,25 @@ function depthOfConcretePathPrefix(registry: RecursionRegistry, path: string): n
   return depth;
 }
 
-/** 評価中のアドレスから再帰の深さを求める。再帰文脈でなければ null。 */
+/**
+ * 評価中のアドレス（スタック先頭）から再帰の深さを求める。再帰文脈でなければ null。
+ * 先頭が null（ループ文脈の無いイベントハンドラ・初期同期）も再帰文脈ではない。
+ */
 export function currentRecursionDepth(handler: IStateHandler, registry: RecursionRegistry): number | null {
-  for (let i = handler.addressStackLength - 1; i >= 0; i--) {
-    const address = handler.addressStackAt(i);
-    if (address === null) {
-      continue;
-    }
-    const accessor = registry.accessorFor(address.pathInfo.path);
-    if (accessor !== null) {
-      return accessor.depth;
-    }
-    // 生成アクセサでなくても、宣言に合致する具体パス（行 getter・イベント経由）なら
-    // そこから深さを取れる。最深のノード接頭辞を採るため、内側から外側へ探す。
-    const depth = depthOfConcretePathPrefix(registry, address.pathInfo.path);
-    if (depth !== null) {
-      return depth;
-    }
+  if (handler.addressStackLength === 0) {
+    return null;
   }
-  return null;
+  const address = handler.lastAddressStack;
+  if (address === null) {
+    return null;
+  }
+  const accessor = registry.accessorFor(address.pathInfo.path);
+  if (accessor !== null) {
+    return accessor.depth;
+  }
+  // 生成アクセサでなくても、宣言に合致する具体パス（行 getter・行のイベントハンドラが
+  // 積むループのアドレス）ならそこから深さを取れる。
+  return depthOfConcretePathPrefix(registry, address.pathInfo.path);
 }
 
 /**
@@ -87,7 +95,9 @@ export function bindRecursivePath(
       `[wcs/recursion-context] "${path}" uses "**", which is bound to the depth of the recursive getter ` +
       `being evaluated, and there is no recursion context here. Read it from inside a recursive getter ` +
       `or a row getter under "${registry.spec.anchor}", or name a concrete depth ` +
-      `(for example "${registry.spec.anchor}${path.slice(registry.spec.recursiveAnchor.length)}").`
+      `(for example "${registry.spec.anchor}${path.slice(registry.spec.recursiveAnchor.length)}"). ` +
+      `The depth comes from the innermost frame only: a plain getter reached from a recursive getter ` +
+      `has no row of its own, so read "**" in the recursive getter and pass the value on.`
     );
   }
   // 照合済みの parts をそのまま使う（registry.concretePath は同じ照合をもう一度行う）。

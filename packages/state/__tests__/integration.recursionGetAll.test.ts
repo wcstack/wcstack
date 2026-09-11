@@ -1159,6 +1159,35 @@ describe("合併形の境界", () => {
 // ===========================================================================
 
 describe("合併形の形", () => {
+  it("添字が配列でない（null 等）のは生の TypeError ではなく [wcs/recursion-getall-form] になること", async () => {
+    // Fixed by post-landing review — was: `indexes.length` を null ガード無しで触り、
+    // `Cannot read properties of null (reading 'length')` になっていた。
+    const { host, stateEl } = await mount(recursionState(forest()), NO_RENDER_HTML);
+
+    let message = "";
+    try { read(stateEl, (s: any) => s.$getAll("nodes.**.value", null)); }
+    catch (e: any) { message = e.message; }
+    expect(message).toContain("[wcs/recursion-getall-form]");
+    expect(message).toContain("takes either no indexes");
+    expect(message).toContain("or [] (to walk every depth) — got null");
+    expect(() => read(stateEl, (s: any) => s.$getAll("nodes.**.value", 0)))
+      .toThrow(/\[wcs\/recursion-getall-form\].*got number/);
+    host.remove();
+  });
+
+  it("アンカー照合が添字の形の検査より先であること（静的側と同じ判定順）", async () => {
+    // Fixed by post-landing review — was: `$getAll("bogus.**.x", [0])` が runtime では
+    // `recursion-getall-form`、静的側では `recursion-anchor` と別コードになっていた。
+    const { host, stateEl } = await mount(recursionState(forest()), NO_RENDER_HTML);
+
+    let message = "";
+    try { read(stateEl, (s: any) => s.$getAll("bogus.**.x", [0])); }
+    catch (e: any) { message = e.message; }
+    expect(message).toContain("[wcs/recursion-anchor]");
+    expect(message).not.toContain("[wcs/recursion-getall-form]");
+    host.remove();
+  });
+
   it("非空の接頭辞は [wcs/recursion-getall-form] で拒否されること", async () => {
     // `**` のどの深さの何段目を指すのか言えないので、部分接頭辞は定義できない（設計書 §7-2）。
     const { host, stateEl } = await mount(recursionState(forest()), NO_RENDER_HTML);

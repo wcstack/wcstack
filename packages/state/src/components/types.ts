@@ -132,8 +132,11 @@ export interface IStateElement {
    * （docs/state-recursive-path-impl-plan.md §3-2 の E4）。
    */
   addListPath(path: string): void;
-  /** state オブジェクト自身の own descriptor（生成物と作者定義の見分けに使う）。 */
-  getOwnStateDescriptor(path: string): PropertyDescriptor | undefined;
+  /**
+   * state オブジェクト自身＋プロトタイプチェーンから descriptor を引く（生成物と作者定義の
+   * 見分けに使う）。class 構文の getter は prototype に載るので own だけでは足りない。
+   */
+  findStateDescriptor(path: string): PropertyDescriptor | undefined;
   /**
    * この state に `$recursion` 宣言があるか。偽のとき getByAddress の遅延実体化と
    * get トラップの `**` 解決は boolean 判定 1 個で抜ける（hasMounts と同じ D18 の形）。

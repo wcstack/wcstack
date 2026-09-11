@@ -118,9 +118,14 @@ export interface WcsMessageCatalog {
   /** `$setAll("…**…", …)` の添字・値の形が `**` に対して定義できない。 */
   recursionSetAllForm(path: string, problem: RecursionSetAllProblem): string;
   /** ノード自身 / 子リストへの一括書き込み。 */
-  recursionStructuralWrite(path: string, target: 'node' | 'list' | 'branch', repeatList: string): string;
-  /** 再帰 getter（またはその派生値の中）への書き込み。 */
-  recursionReadonly(path: string, getterPath: string): string;
+  recursionStructuralWrite(path: string, target: 'node' | 'list' | 'branch' | 'length', repeatList: string): string;
+  /**
+   * 再帰 getter（またはその派生値の中）への書き込み。`subject` は書いた形そのもの
+   * （`$setAll("nodes.**.total")` / `this["nodes.*.total"] = …` / `$resolve("nodes.*.total")`）。
+   */
+  recursionReadonly(subject: string, getterPath: string): string;
+  /** ボリューム（`mount=`）の state が `$recursion` / `**` getter を宣言している（runtime は接ぎ木前に raise）。 */
+  recursionInVolume(subject: string, mountPath: string): string;
   /** `$recursion` の値がオブジェクトでない。 */
   recursionNotObject(): string;
   /** アンカーの本数が 1 でない（0 / 2 以上）。 */
@@ -139,7 +144,9 @@ export interface WcsMessageCatalog {
 export type MountPathProblem = 'empty' | 'emptySegment' | 'wildcard' | 'reserved';
 
 /** `**` が現れた場所（`**` を解釈しない消費者）。 */
-export type RecursionWildcardSite = 'binding' | 'watch' | 'resolve' | 'undeclared';
+export type RecursionWildcardSite =
+  | 'binding' | 'watch' | 'resolve' | 'undeclared'
+  | 'assignment' | 'postUpdate' | 'trackDependency' | 'listKeys';
 /** `$setAll` が `**` に対して拒否する形。 */
 export type RecursionSetAllProblem = 'prefix' | 'noIndexes' | 'mapper' | 'spread';
 /** アンカー / 反復サブパスの種別（service/recursionPaths.ts の NodePathKind と同値）。 */
@@ -250,6 +257,14 @@ const ja: WcsMessageCatalog = {
         return `$watch のキー "${p}" に "**" は使えません。監視は具体パス（固定本数の "*"）に対してのみ成立します`;
       case 'resolve':
         return `$resolve("${p}") に "**" は渡せません。$resolve は展開後の具体パスと添字タプルの厳密一致だけを受け付けます`;
+      case 'assignment':
+        return `this["${p}"] への代入に "**" は使えません（再帰 setter は初版では持てず、代入は展開後の具体パスにしか成立しません）。$setAll("${p}", [], value) で全深さへブロードキャストするか、具体パスへ書いてください`;
+      case 'postUpdate':
+        return `$postUpdate("${p}") に "**" は渡せません。通知は展開後の具体パス（固定本数の "*"）に対してのみ成立します`;
+      case 'trackDependency':
+        return `$trackDependency("${p}") に "**" は渡せません。依存の登録は展開後の具体パス（固定本数の "*"）に対してのみ成立します`;
+      case 'listKeys':
+        return `$listKeys のキー "${p}" に "**" は使えません。キー付きリストは 1 本の具体リストパスです — 深さごとに宣言してください（例: "nodes.*.children"）`;
       default:
         return `"${p}" は "**" を含みますが、この state には $recursion 宣言がありません。$recursion = { "<anchor>": "<repeat>" }（例: { "nodes.*": "children.*" }）を宣言してください（宣言が無いと "**" のキーは黙って無視されます）`;
     }
@@ -270,14 +285,22 @@ const ja: WcsMessageCatalog = {
         return `$setAll("${p}", …) の "**" は { spread: true } を取れません（平坦な配列を木に配るには作者が走査順を知る必要があり、契約になりません）`;
     }
   },
-  recursionStructuralWrite: (p, target, repeatList) =>
-    target === 'node'
-      ? `$setAll("${p}") は再帰の構造そのもの（ノード）を書き換えます。初版は葉のプロパティへのブロードキャストのみです — ノードを置き換えるとこの書き込みのために確定済みの子アドレスが無効になります`
-      : target === 'branch'
-        ? `$setAll("${p}") は再帰の構造そのもの（"${repeatList}" リストへ至る途中のオブジェクト）を書き換えます。初版は葉のプロパティへのブロードキャストのみです — 置き換えるとその下の確定済みの子アドレスが無効になります`
-        : `$setAll("${p}") は再帰の構造そのもの（"${repeatList}" リスト）を書き換えます。初版は葉のプロパティへのブロードキャストのみです`,
-  recursionReadonly: (p, getterPath) =>
-    `$setAll("${p}") は再帰 getter "${getterPath}" に書き込みます（setter は初版では持てません）。この getter が導出元にしている値の側を書いてください`,
+  recursionStructuralWrite: (p, target, repeatList) => {
+    switch (target) {
+      case 'node':
+        return `$setAll("${p}") は再帰の構造そのもの（ノード）を書き換えます。初版は葉のプロパティへのブロードキャストのみです — ノードを置き換えるとこの書き込みのために確定済みの子アドレスが無効になります`;
+      case 'branch':
+        return `$setAll("${p}") は再帰の構造そのもの（"${repeatList}" リストへ至る途中のオブジェクト）を書き換えます。初版は葉のプロパティへのブロードキャストのみです — 置き換えるとその下の確定済みの子アドレスが無効になります`;
+      case 'length':
+        return `$setAll("${p}") は再帰の構造そのもの（"${repeatList}" リストの length）を書き換えます。length への代入は配列を切り詰めるので、リストの置換と同じくその下の確定済みの子アドレスが無効になります`;
+      default:
+        return `$setAll("${p}") は再帰の構造そのもの（"${repeatList}" リスト）を書き換えます。初版は葉のプロパティへのブロードキャストのみです`;
+    }
+  },
+  recursionReadonly: (subject, getterPath) =>
+    `${subject} は再帰 getter "${getterPath}" に書き込みます（setter は初版では持てません。この綴りはその getter のある深さの展開形か、導出値の内側です）。この getter が導出元にしている値の側を書いてください`,
+  recursionInVolume: (subject, mountPath) =>
+    `${subject} はボリューム（mount="${mountPath}"）では宣言できません（ランタイムは接ぎ木の前に throw します）。再帰の宣言と "**" getter はルートの state に置いてください — アンカーのパスはルートの木に対して解決されます`,
   recursionNotObject: () =>
     `$recursion は「アンカー → 反復サブパス」のオブジェクトである必要があります（例: { "nodes.*": "children.*" }。この形はランタイムが読み込み時に throw します）`,
   recursionAnchorCount: (count) =>
@@ -409,6 +432,14 @@ const en: WcsMessageCatalog = {
         return `$watch key "${p}" cannot contain "**" — watching is defined against a concrete path (a fixed number of "*")`;
       case 'resolve':
         return `$resolve("${p}") cannot take "**" — it accepts only an expanded concrete path with an exactly matching index tuple`;
+      case 'assignment':
+        return `this["${p}"] = … cannot use "**" (there are no recursive setters in this version; an assignment only resolves against an expanded concrete path). Broadcast with $setAll("${p}", [], value), or write a concrete path`;
+      case 'postUpdate':
+        return `$postUpdate("${p}") cannot take "**" — a notification is defined against a concrete path (a fixed number of "*")`;
+      case 'trackDependency':
+        return `$trackDependency("${p}") cannot take "**" — a dependency is registered against a concrete path (a fixed number of "*")`;
+      case 'listKeys':
+        return `$listKeys key "${p}" cannot contain "**" — a keyed list is one concrete list path. Declare the key per depth instead (for example "nodes.*.children")`;
       default:
         return `"${p}" contains "**" but this state declares no $recursion anchor. Declare $recursion = { "<anchor>": "<repeat>" } (for example { "nodes.*": "children.*" }) — without it a "**" key is silently ignored`;
     }
@@ -429,14 +460,22 @@ const en: WcsMessageCatalog = {
         return `$setAll("${p}", …) with "**" does not take { spread: true } — handing a flat array to a tree needs the author to know the walk order, which is not a usable contract`;
     }
   },
-  recursionStructuralWrite: (p, target, repeatList) =>
-    target === 'node'
-      ? `$setAll("${p}") writes the recursion structure itself (a node). This version broadcasts to leaf properties only — replacing a node would invalidate the child addresses already resolved for this write`
-      : target === 'branch'
-        ? `$setAll("${p}") writes the recursion structure itself (an object on the way to the "${repeatList}" list). This version broadcasts to leaf properties only — replacing it would invalidate the child addresses already resolved below it`
-        : `$setAll("${p}") writes the recursion structure itself (the "${repeatList}" list). This version broadcasts to leaf properties only`,
-  recursionReadonly: (p, getterPath) =>
-    `$setAll("${p}") writes into the recursive getter "${getterPath}", which has no setter in this version. Write the values it derives from instead`,
+  recursionStructuralWrite: (p, target, repeatList) => {
+    switch (target) {
+      case 'node':
+        return `$setAll("${p}") writes the recursion structure itself (a node). This version broadcasts to leaf properties only — replacing a node would invalidate the child addresses already resolved for this write`;
+      case 'branch':
+        return `$setAll("${p}") writes the recursion structure itself (an object on the way to the "${repeatList}" list). This version broadcasts to leaf properties only — replacing it would invalidate the child addresses already resolved below it`;
+      case 'length':
+        return `$setAll("${p}") writes the recursion structure itself (the length of the "${repeatList}" list). Assigning length truncates the array, which invalidates the child addresses already resolved below it just like replacing the list`;
+      default:
+        return `$setAll("${p}") writes the recursion structure itself (the "${repeatList}" list). This version broadcasts to leaf properties only`;
+    }
+  },
+  recursionReadonly: (subject, getterPath) =>
+    `${subject} writes into the recursive getter "${getterPath}", which has no setter in this version (this spelling is that getter at one depth, or a path inside the value it derives). Write the values it derives from instead`,
+  recursionInVolume: (subject, mountPath) =>
+    `${subject} cannot be declared in a volume (mount="${mountPath}"); the runtime throws before grafting. Declare the recursion and its "**" getters on the root state — the anchor path is resolved against the root tree`,
   recursionNotObject: () =>
     `$recursion must be an object mapping one anchor path to its repeating sub-path (for example { "nodes.*": "children.*" }; the runtime throws at load time for this shape)`,
   recursionAnchorCount: (count) =>
