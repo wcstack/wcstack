@@ -8,7 +8,12 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Fixed
+
+- `@wcstack/state`: an element that fails to initialize no longer hangs the page silently. `connectedCallback` had one unguarded `await`, so a throw from anywhere inside initialization skipped every promise settlement: `connectedCallbackPromise` and `initializePromise` stayed pending forever with no diagnostic — a page that simply never rendered, and a `renderToString()` / `mount()` that never returned. Such a failure is now reported once with `console.error` and rejects `connectedCallbackPromise` with the original error (the declaration's own message, not a wrapper), while `initializePromise` still resolves so one element's mistake does not drag the rest of the page's bindings down with it. This covers everything initialization can throw: every `$` declaration validator (`$recursion`, `$commandTokens`, `$eventTokens`, `$on`, `$streams`, `$listKeys`, `$watch`), all four state sources (an unsupported `src` extension, a broken `json` attribute, an inner `<script type="module">` that fails, an external module that fails), the `enable-ssr` data merge, and the v2 "one `<wcs-state>` per root" rule — where a second root element used to kill the whole page, the first element's page now renders and only the duplicate is refused. Three consequences come with it: `getBindingsReady(root)` rejects for a root whose state element failed instead of reporting "ready" for a page with no bindings; a `<wcs-state mount="…">` volume waiting for that root settles with its own report instead of waiting forever; and `setInitialState()` on an element that already failed throws a diagnostic telling you to replace the element, instead of silently doing nothing. Configuration errors that keep the rest of the page working (`name=`, an unwired Light DOM `bind-component`) still resolve `connectedCallbackPromise` as before. ([#257](https://github.com/wcstack/wcstack/issues/257))
+
 ## [2.3.0] — 2026-09-12
+
 
 ### Added
 

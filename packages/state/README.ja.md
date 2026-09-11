@@ -2672,7 +2672,7 @@ it("描画・再描画・ハンドラ実行", async () => {
 
 ユーザー操作と同じ経路で動かすなら、state はインライン（メソッド込み）のまま DOM イベントを発火します。`data-wcs="onclick: up"` のハンドラは `button.click()` で走り、`settle()` 1 回の後に DOM へ反映されます。
 
-- `getBindingsReady(root)` は `root`（`document` か shadow root）配下の全バインド構築が終わると resolve し、バインド初期化に失敗すると reject します（v1.26+）。
+- `getBindingsReady(root)` は `root`（`document` か shadow root）配下の全バインド構築が終わると resolve し、バインド初期化に失敗すると reject します（v1.26+）。その root のルート `<wcs-state>` が初期化に失敗した場合も reject します —— ロードされなかったルートを「ready」と報告しません。
 - 更新はマイクロタスク境界で収束します。書き込み後の `setTimeout(0)` 1 回で十分です。
 - `state.items = [...state.items, "cherry"]` がリアクティブな書き方です — `state.items.push()` は観測されません（ハンドラ内と同じ規則）。
 - happy-dom は `customElements.define` 時に既存ノードを**差し替えて**アップグレードします。「遅れて define された同一ノードに値が届く」はヘッドレスでは検証できません。happy-dom と実ブラウザのイベントタイミング差ももう 1 つの死角なので、そこは実ブラウザ e2e（Playwright）を 1 本残してください。
@@ -2759,7 +2759,7 @@ bootstrapState();
 
 | エクスポート | 説明 |
 |---|---|
-| `getBindingsReady(root)` | `root`（`document` または shadow root）配下の全バインディングが構築されたら解決。バインディング初期化が失敗すれば reject |
+| `getBindingsReady(root)` | `root`（`document` または shadow root）配下の全バインディングが構築されたら解決。バインディング初期化が失敗した場合、およびその root のルート state 要素が初期化に失敗した場合は reject |
 | `buildBindings(root)` | `document` / `ShadowRoot` 配下のバインディングを明示的に構築する — その root に最初に登録された `<wcs-state>` がスケジュールするもの |
 | `getConfig()` | 現在の設定（読み取り専用ビュー） |
 | `defineState(obj)` | メソッドと getter 内の `this` に型を付けるアイデンティティ関数 — [TypeScript サポート](#typescript-サポート) 参照 |
@@ -2785,14 +2785,14 @@ bootstrapState();
 
 | プロパティ / メソッド | 説明 |
 |---|---|
-| `initializePromise` | 状態の完全な初期化時に解決される Promise |
-| `connectedCallbackPromise` | `connectedCallback` の完了（state のロードと `$connectedCallback` の実行）で解決される Promise — テストのレシピが await するもの |
+| `initializePromise` | 状態の完全な初期化時に解決される Promise —— **初期化に失敗したときも解決**します（1 要素の失敗がページの他のバインディングを止めないため）。エラーは `connectedCallbackPromise` に届きます |
+| `connectedCallbackPromise` | `connectedCallback` の完了（state のロードと `$connectedCallback` の実行）で解決される Promise — テストのレシピが await するもの。初期化に失敗した場合（`$` 宣言の不正・ソースのロード失敗・SSR データの merge 失敗・同じ root node に 2 本目のルート `<wcs-state>`）は**元のエラーのまま reject** し、`console.error` にも 1 件報告されます |
 | `listPaths` | `for` ループで使用されるパスの Set |
 | `getterPaths` | getter として定義されたパスの Set |
 | `setterPaths` | setter として定義されたパスの Set |
 | `createState(mutability, callback)` | 状態プロキシを作成（`"readonly"` または `"writable"`） |
 | `createStateAsync(mutability, callback)` | `createState` の非同期版 |
-| `setInitialState(state)` | プログラムから状態を設定（初期化前） |
+| `setInitialState(state)` | プログラムから状態を設定（初期化前）。初期化に失敗した要素では throw します — 再武装はできないので、要素を取り除いて作り直してください |
 | `nextVersion()` | バージョン番号をインクリメントして返す |
 
 ## アーキテクチャ

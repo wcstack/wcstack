@@ -1643,13 +1643,18 @@ describe("欠陥8（X10）: setInitialState の再セット後、wildcard 無し
 
 // ---------------------------------------------------------------------------
 
-describe("欠陥9（X5 / #257）: 宣言の検証が初回マウントで throw すると無言のハングになる（現状固定）", () => {
-  // DEFECT: `_state` セッタの throw が `_resolveLoading()` に届かず `connectedCallbackPromise` が
-  //         永久 pending・`console.error` 0 件。再セット経路なら同じ宣言が同期 throw する
-  //         （integration.recursionGetter.test.ts の withReset がその側を固定）。
-  //         should be: 「resolve してから raise」（`_failInitialization` と同じ経路）で診断が届く。
-  //         第 2 サイクルで新設した「構造を名指す `**` getter」の構築時 raise も同じ表面に載る —
-  //         #257 の修理時に、この raise も同じ経路へ載せること。
+describe("欠陥9（X5 / #257）: 宣言の検証が初回マウントで throw したときの着地（修理済み）", () => {
+  // 契約（#257 で修理済み）: 初回マウントで宣言の検証が throw したら、
+  //         `connectedCallbackPromise` は**その宣言自身の文面で reject** し、`console.error` が
+  //         1 件出る。`initializePromise` は解決したままにする（`waitForStateInitialize` は
+  //         同じ root の全 <wcs-state> を Promise.all で待つので、reject にすると 1 要素の
+  //         設定ミスが無関係なバインディングまで道連れにする）。旧挙動は「両 promise が
+  //         永久 pending・`console.error` 0 件」の無言のハングだった。
+  //         再セット経路の同期 throw は不変（integration.recursionGetter.test.ts の
+  //         withReset がその側を固定）。第 2 / 第 3 サイクルで新設した `**` getter の
+  //         構築時 raise も同じ経路に載っている。着地そのものの全面（ソースのロード失敗・
+  //         2 本目のルート・同居ボリューム・復旧不能）は
+  //         integration.initFailureDiagnostics.test.ts。
   const settle = (stateEl: State) => Promise.race([
     stateEl.connectedCallbackPromise.then(() => "resolved", () => "rejected"),
     flush().then(() => flush()).then(() => "pending"),
@@ -1672,8 +1677,8 @@ describe("欠陥9（X5 / #257）: 宣言の検証が初回マウントで throw 
 
   it("不正な $recursion 宣言（アンカーが要素を指さない）", async () => {
     const { outcome, errors, host } = await mountBroken({ nodes: [NODE(1)], $recursion: { nodes: "children.*" } });
-    expect(outcome).toBe("pending");   // should be: "rejected"（診断付き）
-    expect(errors).toBe(0);
+    expect(outcome).toBe("rejected"); // Fixed by #257 — was: "pending"（無言のハング）
+    expect(errors).toBe(1);           // Fixed by #257 — was: 0
     host.remove();
   });
 
@@ -1682,8 +1687,8 @@ describe("欠陥9（X5 / #257）: 宣言の検証が初回マウントで throw 
     Object.defineProperty(state, "nodes.**.total", { get() { return 0; }, enumerable: true, configurable: true });
     Object.defineProperty(state, "nodes.*.children.*.total", { get() { return 7; }, enumerable: true, configurable: true });
     const { outcome, errors, host } = await mountBroken(state);
-    expect(outcome).toBe("pending");   // should be: "rejected"（診断付き）
-    expect(errors).toBe(0);
+    expect(outcome).toBe("rejected"); // Fixed by #257 — was: "pending"（無言のハング）
+    expect(errors).toBe(1);           // Fixed by #257 — was: 0
     host.remove();
   });
 
@@ -1691,8 +1696,8 @@ describe("欠陥9（X5 / #257）: 宣言の検証が初回マウントで throw 
     const state: any = { nodes: [NODE(1)], $recursion: { "nodes.*": "children.*" } };
     Object.defineProperty(state, "nodes.**.children", { get() { return []; }, enumerable: true, configurable: true });
     const { outcome, errors, host } = await mountBroken(state);
-    expect(outcome).toBe("pending");   // should be: "rejected"（診断付き）
-    expect(errors).toBe(0);
+    expect(outcome).toBe("rejected"); // Fixed by #257 — was: "pending"（無言のハング）
+    expect(errors).toBe(1);           // Fixed by #257 — was: 0
     host.remove();
   });
 });

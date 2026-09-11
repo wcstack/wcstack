@@ -31,6 +31,27 @@ export function getBindingsReady(rootNode: Node): Promise<void> {
   return bindingsReadyByNode.get(rootNode) ?? Promise.resolve();
 }
 
+/**
+ * この rootNode ではバインド構築が起きない、と確定する（#257）。
+ *
+ * ルートの state 要素が初期化に失敗すると `setStateElement` に到達しないので、
+ * 台帳はエントリが無いまま残る。上の既定（未登録 ＝ 即時解決）は「まだ登録されて
+ * いない」と「バインドを張り終えた」を区別しないため、@wcstack/server の
+ * `waitForReady` は**バインディングが 1 本も無いページ**を ready と報告してしまう。
+ * 失敗した rootNode には reject 済みの ready を置き、待ち手へ同じ診断を届ける。
+ *
+ * 呼び手は State の `_failInitializeLoudly` ただ 1 つで、そちらが「この rootNode に
+ * 生きたルートが居ない」ことを確かめてから呼ぶ（2 本目の `<wcs-state>` が落ちても
+ * 1 本目の ready は壊さない）。
+ */
+export function markBindingsUnavailable(rootNode: Node, error: unknown): void {
+  const failed = Promise.reject(error);
+  // reject と同じティックで handled を立てる（getBindingsReady を誰も呼ばない
+  // ページで unhandled rejection にしないため）。await した側は従来どおり受け取る
+  failed.catch(() => undefined);
+  bindingsReadyByNode.set(rootNode, failed);
+}
+
 const bindingsBuiltRoots: WeakSet<Node> = new WeakSet();
 
 /**

@@ -2680,7 +2680,7 @@ it("renders, re-renders, and runs handlers", async () => {
 
 To drive the page the way a user does, keep the state inline (methods included) and dispatch DOM events; a `data-wcs="onclick: up"` handler runs on `button.click()`, and the DOM reflects the write after one `settle()`.
 
-- `getBindingsReady(root)` resolves once every binding under `root` (a `document` or a shadow root) is built, and rejects if binding initialization fails (v1.26+).
+- `getBindingsReady(root)` resolves once every binding under `root` (a `document` or a shadow root) is built, and rejects if binding initialization fails (v1.26+) or if the root's `<wcs-state>` failed to initialize — a root that never loaded reports the failure instead of "ready".
 - Updates settle on the microtask queue; a single `setTimeout(0)` after a write is enough.
 - `state.items = [...state.items, "cherry"]` is the reactive form — `state.items.push()` is not observed (same rule as in handlers).
 - Under happy-dom, `customElements.define` upgrades existing nodes by **replacing** them; "a value reaches the same node after a late define" cannot be asserted headlessly. Event timing differences between happy-dom and real browsers are the other blind spot — keep one browser e2e (Playwright) for those.
@@ -2767,7 +2767,7 @@ bootstrapState();
 
 | Export | Description |
 |---|---|
-| `getBindingsReady(root)` | Resolves once every binding under `root` (a `document` or a shadow root) is built; rejects if binding initialization fails |
+| `getBindingsReady(root)` | Resolves once every binding under `root` (a `document` or a shadow root) is built; rejects if binding initialization fails, or if the root's state element failed to initialize |
 | `buildBindings(root)` | Build the bindings under a `document` or `ShadowRoot` explicitly — what the first `<wcs-state>` registered on a root schedules for it |
 | `getConfig()` | The current configuration (read-only view) |
 | `defineState(obj)` | Identity function that types `this` inside methods and getters — see [TypeScript Support](#typescript-support) |
@@ -2793,14 +2793,14 @@ Subpath entries for tooling: `@wcstack/state/parser` (the `data-wcs` parser as a
 
 | Property / Method | Description |
 |---|---|
-| `initializePromise` | Resolves when state is fully initialized |
-| `connectedCallbackPromise` | Resolves once `connectedCallback` has completed (state loaded, `$connectedCallback` run) — what the testing recipes await |
+| `initializePromise` | Resolves when state is fully initialized — and also **when initialization fails**, so one element's failure never blocks the rest of the page's bindings; the error is delivered on `connectedCallbackPromise` |
+| `connectedCallbackPromise` | Resolves once `connectedCallback` has completed (state loaded, `$connectedCallback` run) — what the testing recipes await. **Rejects** (with the original error, unwrapped) if the element fails to initialize: an invalid `$` declaration, an unloadable source, the SSR data merge, or a second root `<wcs-state>` on the same root node. The failure is also reported once with `console.error` |
 | `listPaths` | Set of paths used in `for` loops |
 | `getterPaths` | Set of paths defined as getters |
 | `setterPaths` | Set of paths defined as setters |
 | `createState(mutability, callback)` | Create a state proxy (`"readonly"` or `"writable"`) |
 | `createStateAsync(mutability, callback)` | Async version of `createState` |
-| `setInitialState(state)` | Set state programmatically (before initialization) |
+| `setInitialState(state)` | Set state programmatically (before initialization). Throws if the element already failed to initialize — such an element cannot be re-armed; remove it and create a new one |
 | `nextVersion()` | Increment and return version number |
 
 ## Architecture

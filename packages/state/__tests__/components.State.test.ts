@@ -232,8 +232,16 @@ describe('State component', () => {
   });
 
   it('src属性の拡張子が不正な場合はエラーになること', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const stateEl = createStateElement({ src: 'data.txt' });
     await expect(stateEl.connectedCallback()).rejects.toThrow(/Unsupported src file type/);
+    // #257: ロードの失敗も connectedCallbackPromise へ届く（元のエラーのまま — 包み直さない）。
+    // initializePromise は解決したままで、ページ全体の初期化待ちを道連れにしない
+    await expect(stateEl.connectedCallbackPromise).rejects.toThrow(/Unsupported src file type/);
+    await expect(stateEl.initializePromise).resolves.toBeUndefined();
+    expect(stateEl.initialized).toBe(false);
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    errorSpy.mockRestore();
   });
 
   it('createState呼び出しごとにproxyが作成されること', async () => {
@@ -430,6 +438,7 @@ describe('State component', () => {
   });
 
   it('内包スクリプト読み込み失敗時はエラーになること', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const stateEl = createStateElement();
     const script = document.createElement('script');
     script.type = 'module';
@@ -438,6 +447,25 @@ describe('State component', () => {
 
     loadFromInnerScriptMock.mockRejectedValueOnce(new Error('load failed'));
     await expect(stateEl.connectedCallback()).rejects.toThrow(/Failed to initialize state/);
+    // #257: 同上（無言のハングではなく reject ＋ 診断 1 件）
+    await expect(stateEl.connectedCallbackPromise).rejects.toThrow(/load failed/);
+    await expect(stateEl.initializePromise).resolves.toBeUndefined();
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    errorSpy.mockRestore();
+  });
+
+  it('外部モジュール（src属性の .js）の読み込み失敗も同じ着地になること', async () => {
+    // #257: ソースの 4 経路（src の拡張子・json のパース・内包スクリプト・外部モジュール）は
+    // どれも _loadStateFromSource の中で落ちるので、着地は 1 つ
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const stateEl = createStateElement({ src: 'data.js' });
+    loadFromScriptFileMock.mockRejectedValueOnce(new Error('import failed'));
+    await expect(stateEl.connectedCallback()).rejects.toThrow(/Failed to initialize state/);
+    await expect(stateEl.connectedCallbackPromise).rejects.toThrow(/import failed/);
+    await expect(stateEl.initializePromise).resolves.toBeUndefined();
+    expect(stateEl.initialized).toBe(false);
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    errorSpy.mockRestore();
   });
 
   it('setInitialStateで状態を注入できること', async () => {

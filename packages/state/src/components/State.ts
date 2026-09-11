@@ -6,7 +6,7 @@ import { loadFromScriptJson } from "../stateLoader/loadFromScriptJson";
 import { raiseError } from "../raiseError";
 import { BindingType, IState } from "../types";
 import { IStateElement } from "./types";
-import { setStateElement, getStateElement, getBindingsReady } from "../stateElementByName";
+import { setStateElement, getStateElement, getBindingsReady, markBindingsUnavailable } from "../stateElementByName";
 import { ILoopContextStack } from "../list/types";
 import { createLoopContextStack } from "../list/loopContext";
 import { DCC_DEFINITION_ATTRIBUTE, NO_SET_TIMEOUT, STATE_CONNECTED_CALLBACK_NAME, STATE_DISCONNECTED_CALLBACK_NAME, STATE_ERROR_CALLBACK_NAME, STATE_UPDATED_CALLBACK_NAME, WILDCARD } from "../define";
@@ -40,7 +40,7 @@ import { createPublicMountState } from "../webComponent/overlay";
 import { warnOwnKeyShadowsForMount } from "../webComponent/ownKeyShadow";
 import { markWebComponentAsComplete, markWebComponentStatePropDeclared } from "../webComponent/completeWebComponent";
 import { getInjectedKeys, restoreOverwrittenValues, takeOverwrittenObject } from "../webComponent/preCompletionWrites";
-import { callVolumeLifecycle, graftOrQueueVolume, IVolumeGraftInfo, reserveVolumeSlot, validateVolumeMountPath } from "../webComponent/volume";
+import { callVolumeLifecycle, failPendingVolumes, graftOrQueueVolume, IVolumeGraftInfo, reserveVolumeSlot, validateVolumeMountPath } from "../webComponent/volume";
 import { hasRootMountBinding } from "../webComponent/rootMountBinding";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/symbols";
 import { waitInitializeBinding } from "../bindings/initializeBindingPromiseByNode";
@@ -104,6 +104,13 @@ export class State extends HTMLElementBase implements IStateElement {
   // 静的子展開はこの集合の subtree に限定される。追加のみ・クリアしない（安全側）。
   private _indexDependentGetterPaths: Set<string> = new Set<string>();
   private _initialized: boolean = false;
+  /**
+   * 初期化（`_initialize`）が失敗した（#257）。`_initialized` の裏返しではない —
+   * 「まだ初期化していない」と「もう初期化できない」を取り違えると、復旧不能の
+   * 要素に `setInitialState` が効いたように見える。真にするのは
+   * `_failInitializeLoudly` だけ。
+   */
+  private _initializeFailed: boolean = false;
   private _initializePromise: Promise<void>;
   private _resolveInitialize: (() => void) | null = null;
   private _connectedCallbackPromise: Promise<void>;
@@ -452,6 +459,58 @@ export class State extends HTMLElementBase implements IStateElement {
     raiseError(message);
   }
 
+  /**
+   * `_initialize` の失敗の着地（#257）。旧挙動は「throw が connectedCallback の外へ
+   * 出るだけ」で、`_initializePromise` も `_connectedCallbackPromise` も永久に未解決の
+   * まま残り、作者が受け取るのは診断ではなく無言のハングだった。載るのは
+   * `_initialize` が投げうるもの全部 — `_state` セッタの宣言検証（$recursion /
+   * $commandTokens / $eventTokens / $on / $streams / $listKeys / $watch）、
+   * `_loadStateFromSource` のロード失敗（src の拡張子・json のパース・内包スクリプト・
+   * 外部モジュール）、SSR データの merge、そして `setStateElement` の
+   * 「1 rootNode 1 ツリー」違反。
+   *
+   * `_failInitialization`（設定エラーの fail-fast）との違いは 1 つ:
+   * **connectedCallbackPromise を reject する**。ここまで来た要素は state を 1 つも
+   * 持たない ＝ このツリーは存在しない。resolve すると、それを待つ消費者
+   * （@wcstack/server の renderToString・@wcstack/testing の mount・README の
+   * テストレシピ）に「準備完了」と嘘をつく。下の SSR 経路（_rejectConnectedCallback）と
+   * 同じ規範で、そちらと同じく**元のエラーをそのまま**投げ直す。
+   *
+   * `initializePromise` は従来どおり**解決**する（reject しない）。
+   * `waitForStateInitialize` はページ中の全 `<wcs-state>` の initializePromise を
+   * `Promise.all` で待つので、reject にすると 1 要素の設定ミスが無関係な
+   * バインディングまで道連れになる（_failInitialization の注記と同じ理由）。
+   *
+   * 後始末はしない: `_initialized` を立てないので `disconnectedCallback` は初期化前
+   * ガードで抜ける。`$listKeys` / `$watch` のようにセッタの後半で落ちた形では
+   * `$on` の購読と stream registry が残るが、この要素は復旧不能（setInitialState が
+   * throw する）なので、残骸は要素ごと捨てる前提で放置する。
+   */
+  private _failInitializeLoudly(error: unknown): never {
+    this._initializeFailed = true;
+    // 診断は必ず 1 件出す。カスタム要素リアクションは connectedCallback の戻り
+    // Promise を捨てるので、ブラウザの "Uncaught (in promise)" 以外に受け手が居ない
+    console.error(`[@wcstack/state] <${config.tagNames.state}> failed to initialize.`, error);
+    this._resolveInitialize?.();
+    this._resolveLoading?.();
+    // reject より先に handled を立てる。DOM 駆動のマウントでは
+    // connectedCallbackPromise を誰も await しないため、印が無いと
+    // unhandled rejection になる（Node ではプロセスごと落ちる）
+    this._connectedCallbackPromise.catch(() => undefined);
+    this._rejectConnectedCallback?.(error);
+    // このツリーは存在しない。ready を即時解決のまま残すと waitForReady
+    // （@wcstack/server）が「バインド構築済み」と報告し、保留中のボリュームは
+    // ルート登録が来ないので永久に未解決のまま残る。
+    // 生きたルートが既にこの rootNode に居る形（2 本目の <wcs-state> ＝ v2 の
+    // 「1 rootNode 1 ツリー」違反）では、ページは 1 本目で成立している —
+    // ready も保留ボリュームも 1 本目のものなので触らない
+    if (this._rootNode !== null && getStateElement(this._rootNode) === null) {
+      markBindingsUnavailable(this._rootNode, error);
+      failPendingVolumes(this._rootNode);
+    }
+    throw error;
+  }
+
   private async _initializeBindWebComponent() {
     if (this.hasAttribute("bind-component")) {
       // wcs-stateはコンポーネントのトップレベル要素であること
@@ -714,7 +773,13 @@ export class State extends HTMLElementBase implements IStateElement {
         this._resolveConnectedCallback?.();
         return;
       }
-      await this._initialize();
+      try {
+        await this._initialize();
+      } catch (error) {
+        // ここが唯一の無防備な await だった（#257）。throw は下の 2 行と
+        // 末尾の _resolveConnectedCallback を飛ばし、両 promise を永久未解決にする
+        this._failInitializeLoudly(error);
+      }
       this._initialized = true;
 
       this._resolveInitialize?.();
@@ -1180,6 +1245,16 @@ export class State extends HTMLElementBase implements IStateElement {
 
   setInitialState(state: Record<string, any>): void {
     if (!this._initialized) {
+      if (this._initializeFailed) {
+        // 初期化に失敗した要素は再武装しない（#257）。_setStatePromise は解決済みで、
+        // ここで渡し直しても読み手が居ないため、旧挙動は無言の no-op だった。
+        // 再武装は「落ちた宣言の残骸（$on の購読・stream registry）をどう畳むか」を
+        // 決める別の設計判断なので、ここでは唯一有効な復旧手段を伝えるに留める
+        raiseError(
+          `<${config.tagNames.state}> failed to initialize (the diagnostic was reported when it connected), ` +
+          `so its state cannot be replaced. Remove this element and create a new one with the corrected state.`,
+        );
+      }
       this._resolveSetState?.(state);
       return;
     }
