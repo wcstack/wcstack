@@ -25,8 +25,7 @@ export function resolveRecursiveAddresses(
   commitDiffBaseline: boolean,
 ): IStateAddress[] {
   // 呼び出し元（getAll.ts / setAllRecursive.ts）は `hasRecursion === true` をゲートにしている。
-  const registry = handler.stateElement.recursionRegistry
-    ?? raiseError(`Recursion registry is missing while walking "${path}"; hasRecursion must gate this call.`);
+  const registry = handler.stateElement.recursionRegistry!;
   const parts = splitRecursivePath(registry.spec, path);
   if (parts === null) {
     raiseError(

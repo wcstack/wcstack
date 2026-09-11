@@ -69,8 +69,7 @@ export function setAllRecursive(
   options: { readonly spread?: boolean } | undefined,
 ): number {
   // 呼び出し元（setAll.ts）は `hasRecursion === true` をゲートにしているので必ずある。
-  const registry = handler.stateElement.recursionRegistry
-    ?? raiseError(`Recursion registry is missing while writing "${path}"; hasRecursion must gate this call.`);
+  const registry = handler.stateElement.recursionRegistry!;
   const parts = splitRecursivePath(registry.spec, path);
   if (parts === null) {
     raiseError(

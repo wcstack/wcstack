@@ -69,9 +69,9 @@ export function bindRecursivePath(
   path: string,
 ): string {
   // 呼び出し元は 2 つとも `hasRecursion === true` をゲートにしているので、
-  // ここに来た時点でレジストリは必ずある（無ければ呼び出し側のゲート漏れ）。
-  const registry = stateElement.recursionRegistry
-    ?? raiseError(`Recursion registry is missing while binding "${path}"; hasRecursion must gate this call.`);
+  // ここに来た時点でレジストリは必ずある。到達不能な `??` 分岐は置かない
+  // （カバレッジ閾値に効く — walkDependency の `address.listIndex!` と同じ綴り）。
+  const registry = stateElement.recursionRegistry!;
   // アンカー照合を先に行う。深さ解決を先にすると、綴り違いのアンカーが
   // 「文脈が無い」と報告されて原因に辿り着けない。
   const parts = splitRecursivePath(registry.spec, path);
