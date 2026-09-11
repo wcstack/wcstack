@@ -21,6 +21,10 @@
 - 「未宣言」の断定を、オブジェクトリテラルの**トップレベルに spread が無い**ときに限る — `export default { ...tree, … }` の `tree` が `$recursion` を持ち込む形は静的に読めないので黙る（正当なコードで `wcs-validate` が exit 1 になっていた）
 - `this["…"] = …` の代入走査は文字列・テンプレートリテラルの中身を見ない（`'this["nodes.**.value"] = 1'` という文字列を代入と誤認して error にしていた）
 - 添字綴り（`this["nodes.1.total"] = 9` / `$setAll("nodes.1.total", [], 9)` / 値付き `$resolve`）での再帰 getter への書き込みも `wcs/recursion-readonly` にする（ランタイムは添字を `*` に畳んで同じ判定をする）
+- 再帰 `$setAll` の `**` パスの接尾辞の添字綴りも畳む — `nodes.**.children.0` は子ノード・`nodes.**.children.0.children` は子リストとして `wcs/recursion-structural-write`、`nodes.**.children.0.total` は `wcs/recursion-readonly`
+- `$recursion` の反復サブパスが識別子参照・`${}` 付きテンプレート・呼び出しなら断定せず黙る（数値・真偽値・null・配列・オブジェクト・関数と断定できるときだけ `wcs/recursion-declaration-invalid`）。`${}` の無いテンプレートは文字列として受理する。正当な `$recursion: { "nodes.*": REPEAT }` で `wcs-validate` が exit 1 になっていた
+- 接尾辞が再帰の構造そのもの（`get "nodes.**.children"()` / `.children.*` / `.children.length` / 多段なら `.branch`）の `**` getter を `wcs/recursion-declaration-invalid` で報告する（ランタイムは構築時に throw する形）
+- `$getAll("…**…", null)` と配列でないリテラル（文字列・数値・真偽値・オブジェクト）の添字を `wcs/recursion-getall-form` にする（`undefined` は束縛形なので黙る）
 
 ## 1.13.0 — 2026-09-08
 

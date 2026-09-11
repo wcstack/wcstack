@@ -182,6 +182,12 @@ export class State extends HTMLElementBase implements IStateElement {
     const previousState = this.__state;
     this._commandTokenNames = processCommandTokensDeclaration(value);
     this._eventTokenNames = processEventTokensDeclaration(value);
+    // $recursion: 宣言の検証とレジストリの構築は `value` しか読まないので、`__state` を
+    // 差し替える**前**に済ませる。ここで throw すれば要素は丸ごと旧世代に留まる（旧 state・
+    // 旧レジストリ・旧世代の辺とキャッシュがそのまま — 再セットの宣言不正で「state は新・
+    // レジストリは旧」という半端な状態にならない）。差し替え自体は下（listPaths のクリア後）。
+    const recursionSpec = processRecursionDeclaration(value);
+    const recursionRegistry = recursionSpec === null ? null : new RecursionRegistry(recursionSpec, value);
     this.__state = value;
     // $updatedCallback の有無を state セット時に確定しておく（in はプロトタイプ
     // チェーンも見る・getter を評価しない）。drain 側はこのフラグで更新アドレスの
@@ -222,13 +228,13 @@ export class State extends HTMLElementBase implements IStateElement {
     // getterPaths / setterPaths の収集後であること（`**` getter の descriptor を
     // 走査して定義を集めるため）。再セットでは毎回作り直す — 展開済みアクセサは
     // 旧 state オブジェクトのものなので持ち越さない（§1-3）。
-    // 旧世代の生成アクセサを指す依存辺と、その評価結果のキャッシュを外してから作り直す
+    // 新しい宣言とレジストリはセッタの先頭で組み立て済み（`__state` の差し替え前）。
+    // 旧世代の生成アクセサを指す依存辺と、その評価結果のキャッシュを外してから差し替える
     // （registry.ts の forgetGenerated 参照）。レジストリがあるなら旧世代の state は必ずある。
     if (this._recursionRegistry !== null) {
       this._recursionRegistry.forgetGenerated(this, previousState as IState);
     }
-    const recursionSpec = processRecursionDeclaration(value);
-    this._recursionRegistry = recursionSpec === null ? null : new RecursionRegistry(recursionSpec, value);
+    this._recursionRegistry = recursionRegistry;
     if (recursionSpec !== null) {
       // アンカーのリストパス（`nodes.*` なら `nodes`）は**宣言から静的に分かる**ので、
       // 展開を待たずに今すぐ登録する。

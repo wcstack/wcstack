@@ -3,7 +3,8 @@
  *
  * 「具体パスを読む直前に、その深さの再帰 getter を生やす」入口。
  * 呼び手は `getByAddress`（キャッシュ参照前）だけで、宣言の無い state は
- * 呼び出し元の boolean 判定で弾かれるのでここまで来ない。
+ * 呼び出し元の `hasRecursion === true` ゲートで弾かれるのでここまで来ない
+ * （＝ レジストリは必ずある）。
  */
 
 import { IStateElement } from "../components/types";
@@ -18,8 +19,8 @@ import { IStateElement } from "../components/types";
  * getterPaths へ復元するため）。
  */
 export function materializeRecursionAccessor(stateElement: IStateElement, path: string): void {
-  const registry = stateElement.recursionRegistry;
-  if (registry === null || typeof registry === "undefined" || !registry.hasDefinitions) {
+  const registry = stateElement.recursionRegistry!;
+  if (!registry.hasDefinitions) {
     return;
   }
   registry.materializeFor(stateElement, path);

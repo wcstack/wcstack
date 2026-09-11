@@ -356,6 +356,31 @@ X6・X7・X10 は同じ「再セット・ハイドレーション後に一部の
 | 1（中） | ランタイムの添字畳みを「アンカーで始まらないとき」にしか掛けていなかったので、ワイルドカードと添字の**混在綴り**（`nodes.*.children.0.total`）が畳まれず素通り。`$setAll` は行 0 に書いた後に children が空の行 1 で生の `Reflect.set called on non-object`（部分書き込み）、`$resolve` は無言で汚染。静的側は無条件に畳むので捕まえていた（パリティ欠陥） | `recursiveGetterOwning` で無条件に畳む（パスごとに初回 1 回・記憶済み）。混在綴りの `$setAll` / `$resolve` / 値の内側と、葉の対照を両側のテストに追加 |
 | 2（低） | 静的側の添字述語が整数綴り（`^\d+$`）だけで、ランタイムが添字と読む空セグメント・`1e3`・`-1`・`0x1` に沈黙 | 述語をランタイムと同じ「`*` でなく `Number()` が NaN でない区切り」に揃えた |
 
+### 7-7. 第 2 サイクル・第 1 回レビュー（2026-09-12）
+
+先入観の無い指摘者による実装全体の再点検。9 件（高 2・中 3・低 4）をすべて修理した。
+
+| # | 内容 | 修理 |
+|---|---|---|
+| 1（高） | `**` パスの**接尾辞側**の添字綴り（`nodes.**.children.0` / `.children.0.children` / `.children.0.total`）が構造・読み取り専用の検査をすり抜け、子を置換して集計が stale、または部分書き込みの途中で生の `Reflect.set called on non-object` | `indexSegmentsToWildcard` を `expand.ts` へ移して両呼び手で共有し、`setAllRecursive` は接尾辞（先頭の区切りの後ろ）を畳んでから `assertNotStructural` / `conflictingRecursiveGetter` に掛ける。列挙は綴りのまま（接尾辞の添字は「その子だけ」の意味）。静的側 `validateSetAllForm` も同じ。README の構造行に「添字綴りも同じ形」を追記 |
+| 2（中） | 同一オブジェクト再セットのキャッシュ落としが、接尾辞にワイルドカードを持つ `**` getter（`get "nodes.**.tags.*.up"()`）に届かない（タグ行の ListIndex に載るキャッシュを、ノード行の ListIndex で引いていた） | `_forgetCacheEntries` を生成パスごとに `wildcardParentPathInfos` を台帳に沿って末端まで降りる形に書き直した |
+| 3（高） | `$trackDependency("nodes.**.value")` が生文字列のまま依存表に載って無言に受理され、getter が stale（`$postUpdate` / `$resolve` / `$watch` は `getPathInfo` の不変条件で落ちる — この 1 入口だけの穴） | `trackDependency.ts` の先頭で `**` を `wcs/recursion-unsupported` に。宣言の有無に関わらず拒否 |
+| 4（中） | 反復サブパスが単純な文字列リテラルでないと静的側が `recursion-declaration-invalid`（error）を出す偽陽性（識別子参照 `REPEAT` はランタイムでは正当）。テストがその偽陽性を固定していた | `RecursionEntryInfo.repeatDefinitelyNotString` を足し、数値・真偽値・null・配列・オブジェクト・関数・メソッド短縮記法と断定できるときだけ error。`${}` の無いテンプレートは文字列として受理。テストの期待を反転 |
+| 5（中） | `**` getter の接尾辞が構造そのもの（`nodes.**.children` / `.children.*` / `.children.length` / 多段なら `.branch`）でも宣言時に拒否されず、生成 getter が実データの子リストを全深さで影にする（`$getAll("nodes.**.value", [])` が `[1, 2]` に縮む） | 述語を `expand.ts` の `isStructuralSuffix` に統合し、`RecursionRegistry` の構築時と `validateRecursiveGetters` の両方で拒否（`recursionGetterInvalid(…, 'structural')`）。README の拒否一覧に追記 |
+| 6（低） | `$getAll("…**…", null)` と配列でないリテラルに静的側が沈黙（`validateSetAllForm` は拾っていた） | `$getAll` 分岐で `null` / 文字列・数値・真偽値・オブジェクトリテラルを `recursionGetAllForm(…, 'notArray')` に。`undefined` は束縛形なので黙る。README の getall-form 行を更新（runtime-only の 6 コード表は不変） |
+| 7（低） | `_state` セッタが `forgetGenerated` を新宣言の検証より先に実行し、不正な `$recursion` での再セットが throw すると旧レジストリだけが残る半端な状態に | 新しい宣言とレジストリを先に組み立て、通ってから旧世代を忘れて差し替える順に変更。#257 の修理には踏み込まない |
+| 8（低） | 束縛形の読みが評価ごとに `concretePathAt` で文字列連結＋ワイルドカード数えをやり直す | `RecursionRegistry.concretePathAt(suffix, depth)`（接尾辞 → 深さ順の記憶。上限超過は throw するので載らない） |
+| 9（低） | `IRecursionWalkOptions.commitDiffBaseline` が両呼び手 true 固定／`IRecursivePathParts` が `suffix` 1 フィールド／`hasRecursion` / `recursionRegistry` が optional で読み方が 2 系統／`bind.ts` の `"."` | オプションと引数を撤去し走査は常に確定／`splitRecursivePath` は静的側と同じ `string \| null`／2 フィールドを必須にし、読み手は `hasRecursion === true` ゲート ＋ `!` に統一（テストのモックはフィールドを持たなくてよい — ゲートが偽になるだけ）／`DELIMITER` |
+
+**記録**: 接尾辞に添字を含む `**` パスの葉（`$setAll("nodes.**.children.0.value", [], v)`）は、children が空の行で「親の無いパスへの書き込み」として生の TypeError になる。固定 arity の `$setAll("nodes.*.children.0.value", [], v)` と同じ既存の性質で、再帰固有ではないので手を付けていない（README の「a rejected call leaves the tree untouched」の直後に、形の検査に限る旨を添えた）。
+
+**再検証後の追記（指摘 7 の残り＋記録事項）**:
+
+- **指摘 7（完了）**: 順序変更だけでは `this.__state = value` と `getterPaths` の再収集が検証より先に走り、throw 後も「state は新・レジストリは旧」のままだった。`processRecursionDeclaration(value)` と `new RecursionRegistry(spec, value)` は `value` しか読まない（コンストラクタは `getAllPropertyDescriptors(state)` と純関数だけ）ので、`processCommandTokensDeclaration` と同じく **`__state` の差し替え前**に持ち上げた。再セットの宣言不正時は要素が丸ごと旧世代に留まる（テストで `__state` 据え置き・旧世代の `[131, 2]` が読めることまで固定）。
+- **#257 の表面**: 指摘 5 で新設した「構造を名指す `**` getter」の構築時 raise は、初回マウントでは他の宣言検証と同じく無言ハング（`connectedCallbackPromise` 未解決・`console.error` 0 件）になる。`integration.recursionKnownDefects.test.ts` 欠陥9 で現状固定。**#257 の修理時に、この raise も「resolve してから raise」の経路に載せること。**
+- **添字綴りの getter キー**: `get "nodes.**.children.0"()` も両側で区切り後ろを畳んでから構造の述語に掛ける（指摘 1 と同じ扱い）。
+- 据え置き: `$recursion: { get "nodes.*"() {…} }`（ランタイム受理・静的 error）は作為的な形なので対応しない。
+
 ## 8. 受け入れ条件と検証
 
 | ID | 条件 | 主な Phase |

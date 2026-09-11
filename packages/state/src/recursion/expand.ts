@@ -11,7 +11,7 @@
 
 import { DELIMITER, MAX_WILDCARD_DEPTH, RECURSION_WILDCARD, WILDCARD } from "../define";
 import { raiseError } from "../raiseError";
-import { IRecursionSpec, IRecursivePathParts } from "./types";
+import { IRecursionSpec } from "./types";
 
 /** `**` を含むか（含まない大多数のパスを 1 回の indexOf で抜ける）。 */
 export function hasRecursionWildcard(path: string): boolean {
@@ -19,12 +19,12 @@ export function hasRecursionWildcard(path: string): boolean {
 }
 
 /**
- * `**` を含むパスを宣言と突き合わせ、接尾辞を取り出す。
+ * `**` を含むパスを宣言と突き合わせ、接尾辞（`**` より後ろ。無ければ空文字）を返す。
  * 宣言に合致しない `**` は「宣言なしの `**`」として呼び出し側が診断する（null を返す）。
  */
-export function splitRecursivePath(spec: IRecursionSpec, path: string): IRecursivePathParts | null {
+export function splitRecursivePath(spec: IRecursionSpec, path: string): string | null {
   if (path === spec.recursiveAnchor) {
-    return { suffix: "" };
+    return "";
   }
   const prefix = spec.recursiveAnchor + DELIMITER;
   if (!path.startsWith(prefix)) {
@@ -35,7 +35,55 @@ export function splitRecursivePath(spec: IRecursionSpec, path: string): IRecursi
   if (hasRecursionWildcard(suffix)) {
     return null;
   }
-  return { suffix };
+  return suffix;
+}
+
+/**
+ * 添字セグメント（`nodes.1.total` の `1`）を `*` に畳む。判定は `address/ResolvedAddress.ts`
+ * と同じ「`Number()` が NaN でない区切り」。API のパス引数（`$getAll` / `$setAll` / `$resolve`）と
+ * `**` パスの接尾辞は set トラップと違って `getResolvedAddress` の正規化を経ないので、
+ * 再帰の検査（読み取り専用・構造）に掛ける前にここで畳む。
+ */
+export function indexSegmentsToWildcard(path: string): string {
+  const segments = path.split(DELIMITER);
+  for (let i = 0; i < segments.length; i++) {
+    if (segments[i] !== WILDCARD && !Number.isNaN(Number(segments[i]))) {
+      segments[i] = WILDCARD;
+    }
+  }
+  return segments.join(DELIMITER);
+}
+
+/**
+ * `**` パスの接尾辞が「再帰の構造そのもの」を名指しているか。
+ *
+ * ノード自身（`nodes.**` / `nodes.**.children.*`）・子リスト（`nodes.**.children`）・その
+ * `length`（`arr.length = 0` は配列を切り詰める）・多段の反復サブパスなら子リストへ至る
+ * 途中のオブジェクト（`nodes.**.branch`）。書き側（`setAllRecursive`）は確定済みの
+ * 子アドレスを壊すので拒否し、宣言側（`**` getter のキー）は生成 getter が実データの
+ * 子リストを影にするので拒否する — 同じ述語を両方が使う。
+ *
+ * 反復サブパスを**途中まで**名指す形もすべて構造。`"." + repeatList` との完全一致だけを
+ * 見ると、多段の repeat で途中のオブジェクトが素通りし、深さ 0 の `branch` を置き換えた
+ * 瞬間に確定済みの深さ 1 のアドレスが宙に浮く（着地後レビューで実測。実装計画 §7-3）。
+ */
+export function isStructuralSuffix(spec: IRecursionSpec, suffix: string): boolean {
+  const repeatSegments = spec.repeat.split(DELIMITER);
+  const repeatList = repeatSegments.slice(0, -1).join(DELIMITER);
+  const unit = DELIMITER + spec.repeat;
+  let rest = suffix;
+  while (rest.startsWith(unit)) {
+    rest = rest.slice(unit.length);
+  }
+  if (rest.length === 0 || rest === DELIMITER + repeatList + DELIMITER + "length") {
+    return true;
+  }
+  for (let i = 1; i < repeatSegments.length; i++) {
+    if (rest === DELIMITER + repeatSegments.slice(0, i).join(DELIMITER)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** 深さ k の具体パスを作る。上限超過は生成前に throw する（設計書 D11）。 */

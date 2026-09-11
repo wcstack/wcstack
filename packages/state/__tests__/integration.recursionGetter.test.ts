@@ -944,6 +944,35 @@ describe("宣言と再帰 getter の定義を検証する", () => {
       .toThrow(/"nodes\.\*\.total" is already defined on the state/);
     host.remove();
   });
+
+  it("接尾辞が再帰の構造そのもの（子リスト・子ノード・length・途中のオブジェクト）の `**` getter を構築時に拒否すること", async () => {
+    // Fixed by cycle-2 review — was: `get "nodes.**.children"() { return [] }` が宣言時に拒否されず、
+    // 生成 getter が実データの子リストを全深さで影にして `$getAll("nodes.**.value", [])` が
+    // `[1, 2]` に縮んでいた（`.children.length` なら全行 42）。書き側が同じ形を
+    // `recursion-structural-write` で拒否するのと対称に、宣言側も同じ述語で拒否する。
+    // 添字綴り（`nodes.**.children.0`）も畳んで同じ判定（書き側の structural-write と揃える）
+    for (const key of ["nodes.**.children", "nodes.**.children.*", "nodes.**.children.length",
+      "nodes.**.children.*.children", "nodes.**.children.0", "nodes.**.children.0.children.length"]) {
+      const { host, run } = await withReset(recursionState(forest(), {
+        [key]: { get() { return 42; }, enumerable: true, configurable: true },
+      }));
+      expect(run, key).toThrow(new RegExp(`"${key.replace(/[*.]/g, "\\$&")}" names the recursion structure itself`));
+      expect(run, key).toThrow(/A recursive getter would hide the real child list at every depth/);
+      host.remove();
+    }
+    // 多段の反復サブパスでは、子リストへ至る途中のオブジェクトも構造
+    const nested: any = { $recursion: { "nodes.*": "branch.children.*" }, nodes: [] };
+    Object.defineProperty(nested, "nodes.**.branch", { get() { return {}; }, enumerable: true, configurable: true });
+    const { host, run } = await withReset(nested);
+    expect(run).toThrow(/"nodes\.\*\*\.branch" names the recursion structure itself/);
+    host.remove();
+    // 対照: 葉の計算パスは通る（`.children.*` の下の葉も含む）
+    const ok = await withReset(recursionState(forest(), {
+      "nodes.**.children.*.label": { get() { return "x"; }, enumerable: true, configurable: true },
+    }));
+    expect(ok.run).not.toThrow();
+    ok.host.remove();
+  });
 });
 
 // ===========================================================================
@@ -1071,6 +1100,60 @@ describe("state の再セットでレジストリが作り直されること", (
     // アンカーの親を消す
     write(stateEl, (s: any) => { s.data = null; });
     expect(() => stateEl.setInitialState(state)).not.toThrow();
+    host.remove();
+  });
+
+  it("接尾辞にワイルドカードを持つ `**` getter のキャッシュも、同じオブジェクトの再セットで落ちること", async () => {
+    // Fixed by cycle-2 review — was: `_forgetCacheEntries` が「ノード行の ListIndex × その深さの
+    // 生成パス」で絶対アドレスを引いていたので、`get "nodes.**.tags.*.up"()` のキャッシュ
+    // （タグ行の ListIndex に載る）に届かず、再セット後の読みが旧値 `["A","B","C","D"]` のまま
+    // 残っていた。いまは生成パスの wildcardParentPathInfos を台帳に沿って末端まで降りる。
+    const tagged = (value: number, tags: string[], children: any[] = []) =>
+      ({ value, children, tags: tags.map((name) => ({ name })) });
+    const state = recursionState([tagged(1, ["a", "b"], [tagged(10, ["c"])]), tagged(2, ["d"])], {
+      "nodes.**.tags.*.up": {
+        get(this: any) { return String(this["nodes.**.tags.*.name"]).toUpperCase(); },
+        enumerable: true, configurable: true,
+      },
+    });
+    const { host, stateEl } = await mount(state, NO_RENDER_HTML);
+    expect(read(stateEl, (s: any) => s.$getAll("nodes.**.tags.*.up", []))).toEqual(["A", "B", "C", "D"]);
+
+    stateEl.setInitialState(state);
+    write(stateEl, (s: any) => { s["nodes.0.tags.0.name"] = "zz"; });
+
+    expect(read(stateEl, (s: any) => s.$getAll("nodes.**.tags.*.up", []))).toEqual(["ZZ", "B", "C", "D"]);
+    host.remove();
+  });
+
+  it("再セットの宣言が不正で throw するときは、旧世代の生成物を忘れないこと", async () => {
+    // Fixed by cycle-2 review — was: `forgetGenerated` を新宣言の検証より先に実行していたので、
+    // 不正な `$recursion` での再セットが throw すると、旧レジストリは残るのに辺とキャッシュだけが
+    // 消えた半端な状態になっていた。新しい宣言とレジストリを先に組み立て、通ってから忘れる。
+    const { host, stateEl } = await mount(recursionState(forest()), NO_RENDER_HTML);
+    read(stateEl, (s: any) => s.$getAll(totalAt(0), []));
+    const registry = (stateEl as any).recursionRegistry;
+    const spy = vi.spyOn(registry, "forgetGenerated");
+
+    const previous = (stateEl as any).__state;
+    expect(() => stateEl.setInitialState({ nodes: [node(5)], $recursion: { nodes: "children.*" } }))
+      .toThrow(/\$recursion anchor "nodes" must name a list element/);
+    expect(spy, "検証に落ちた再セットでは忘れない").not.toHaveBeenCalled();
+    expect((stateEl as any).recursionRegistry, "レジストリも差し替えない").toBe(registry);
+    // 宣言の検証とレジストリの構築は `__state` の差し替えより前なので、要素は丸ごと旧世代に留まる
+    expect((stateEl as any).__state, "state も差し替えない").toBe(previous);
+    expect(read(stateEl, (s: any) => s.$getAll(totalAt(0), [])), "旧世代の集計がそのまま読める").toEqual([131, 2]);
+    // 構造を名指す `**` getter の再セットも同じ（宣言不正の別の入口）
+    expect(() => stateEl.setInitialState(recursionState(forest(), {
+      "nodes.**.children": { get() { return []; }, enumerable: true, configurable: true },
+    }))).toThrow(/names the recursion structure itself/);
+    expect((stateEl as any).__state).toBe(previous);
+    expect(spy).not.toHaveBeenCalled();
+
+    stateEl.setInitialState(recursionState([node(5, [node(50)])]));
+    expect(spy, "通った再セットで忘れる").toHaveBeenCalledTimes(1);
+    expect((stateEl as any).recursionRegistry).not.toBe(registry);
+    expect(read(stateEl, (s: any) => s.$getAll(totalAt(0), []))).toEqual([55]);
     host.remove();
   });
 });
@@ -1382,6 +1465,22 @@ describe("RecursionRegistry の直接 API", () => {
     expect(registry.recursiveGetterOwning(totalAt(1))).toBe("nodes.**.total");
     host.remove();
   });
+
+  it("concretePathAt が接尾辞と深さの組ごとに記憶し、上限超過は記憶せず throw すること", async () => {
+    // 束縛形の読み（`this["nodes.**.value"]` / 省略形 `$getAll`）は再帰 getter の評価ごとに
+    // 通る経路。深さぶんの文字列連結とワイルドカード数えを毎回やり直さない。
+    const { host, stateEl } = await mount(recursionState(forest()), NO_RENDER_HTML);
+    const registry = registryOf(stateEl);
+
+    expect(registry.concretePathAt(".total", 1)).toBe(totalAt(1));
+    expect(registry.concretePathAt(".total", 1), "二度目は同じ文字列").toBe(totalAt(1));
+    expect(registry.concretePathAt(".total", 0)).toBe(totalAt(0));
+    expect(registry.concretePathAt(".value", 2)).toBe(valueAt(2));
+    expect(() => registry.concretePathAt(".total", 128)).toThrow(/\[wcs\/recursion-depth-exceeded\]/);
+    expect(() => registry.concretePathAt(".total", 128), "二度目も throw（記憶しない）")
+      .toThrow(/\[wcs\/recursion-depth-exceeded\]/);
+    host.remove();
+  });
 });
 
 describe("生成先の衝突と展開不一致（読みの経路では見えないガード）", () => {
@@ -1455,6 +1554,34 @@ describe("`**` の外縁", () => {
       host.remove();
     }
   }
+
+  it("$trackDependency に `**` を渡すと [wcs/recursion-unsupported] になること（無言で受理しない）", async () => {
+    // Fixed by cycle-2 review — was: `$trackDependency("nodes.**.value")` は getPathInfo を経ず生の
+    // 文字列を依存表へ載せるので無言に受理され、作者は依存が登録されたつもりで getter が
+    // stale になっていた（`$postUpdate` / `$resolve` / `$watch` は不変条件で落ちる — この 1 入口だけの穴）。
+    const state = recursionState(forest(), {
+      summary: {
+        get(this: any) { this.$trackDependency("nodes.**.value"); return 0; },
+        enumerable: true, configurable: true,
+      },
+    });
+    const { host, stateEl } = await mount(state, NO_RENDER_HTML);
+
+    let message = "";
+    try { read(stateEl, (s: any) => s.summary); } catch (e: any) { message = e.message; }
+    expect(message).toContain('[wcs/recursion-unsupported] $trackDependency("nodes.**.value") cannot take "**"');
+    expect((stateEl as any).dynamicDependency.has("nodes.**.value"), "依存表に載らない").toBe(false);
+    host.remove();
+
+    // 宣言の無い state でも同じ（`**` はどこでも解釈されない）
+    const plain: any = { nodes: forest() };
+    Object.defineProperty(plain, "summary", {
+      get(this: any) { this.$trackDependency("nodes.**.value"); return 0; }, enumerable: true, configurable: true,
+    });
+    const control = await mount(plain, NO_RENDER_HTML);
+    expect(() => read(control.stateEl, (s: any) => s.summary)).toThrow(/\[wcs\/recursion-unsupported\]/);
+    control.host.remove();
+  });
 
   it("markup（data-wcs）に `**` を書くと [wcs/recursion-unsupported] でマウントが失敗すること", async () => {
     // バインドのパスは PathInfo に降りる。`**` はそこへ降ろさない、が Phase B の

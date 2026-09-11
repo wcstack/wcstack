@@ -18,9 +18,10 @@
  */
 
 import { IStateElement } from "../components/types";
+import { DELIMITER } from "../define";
 import { IStateHandler } from "../proxy/types";
 import { raiseError } from "../raiseError";
-import { concretePathAt, splitRecursivePath } from "./expand";
+import { splitRecursivePath } from "./expand";
 import type { RecursionRegistry } from "./registry";
 
 /**
@@ -32,7 +33,7 @@ function depthOfConcretePathPrefix(registry: RecursionRegistry, path: string): n
   if (!path.startsWith(spec.anchor)) {
     return null;
   }
-  const unit = "." + spec.repeat;
+  const unit = DELIMITER + spec.repeat;
   let depth = 0;
   let cursor = spec.anchor.length;
   while (path.startsWith(unit, cursor)) {
@@ -82,8 +83,8 @@ export function bindRecursivePath(
   const registry = stateElement.recursionRegistry!;
   // アンカー照合を先に行う。深さ解決を先にすると、綴り違いのアンカーが
   // 「文脈が無い」と報告されて原因に辿り着けない。
-  const parts = splitRecursivePath(registry.spec, path);
-  if (parts === null) {
+  const suffix = splitRecursivePath(registry.spec, path);
+  if (suffix === null) {
     raiseError(
       `[wcs/recursion-anchor] "${path}" does not match the declared recursion anchor ` +
       `"${registry.spec.recursiveAnchor}". This version supports exactly one anchor per state.`
@@ -100,6 +101,6 @@ export function bindRecursivePath(
       `has no row of its own, so read "**" in the recursive getter and pass the value on.`
     );
   }
-  // 照合済みの parts をそのまま使う（registry.concretePath は同じ照合をもう一度行う）。
-  return concretePathAt(registry.spec, parts.suffix, depth);
+  // 照合済みの接尾辞をそのまま使う。具体パスは記憶付き（再帰 getter の評価ごとに通る経路）。
+  return registry.concretePathAt(suffix, depth);
 }

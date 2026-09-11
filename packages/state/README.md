@@ -1152,7 +1152,7 @@ $recursion: { "data.tree.*": "kids.*" }     // a deeper anchor is fine
 $recursion: { "nodes.*": "nodes.*" }        // self-similar spelling is fine too
 ```
 
-The declaration is what gives `**` a meaning at all: with no `$recursion` on the state, `**` is not a path character (`wcs/recursion-unsupported`), so the notation can never quietly slide into a descendant search. This version accepts **exactly one self-recursive anchor per state**. A wildcard in the middle of an anchor, a second entry, mutual recursion between two anchors, a second `**` in one path, `get "nodes.**"` (that names the node itself, not a computed path under it), two `**` getters that expand to the same concrete path, and recursive *setters* are all rejected when the declaration is read — never reinterpreted.
+The declaration is what gives `**` a meaning at all: with no `$recursion` on the state, `**` is not a path character (`wcs/recursion-unsupported`), so the notation can never quietly slide into a descendant search. This version accepts **exactly one self-recursive anchor per state**. A wildcard in the middle of an anchor, a second entry, mutual recursion between two anchors, a second `**` in one path, `get "nodes.**"` (that names the node itself, not a computed path under it), a `**` getter whose suffix names the structure (`get "nodes.**.children"()`, `.children.*`, `.children.length` — it would hide the real child list at every depth), two `**` getters that expand to the same concrete path, and recursive *setters* are all rejected when the declaration is read — never reinterpreted.
 
 The family a declaration defines is infinite, and the state only ever grows the depths it is asked for:
 
@@ -1229,7 +1229,7 @@ get treeTotalFromRoots() {
 this.$setAll("nodes.**.selected", [], false);   // every node, at every depth
 ```
 
-Every other form is refused *before* the walk writes anything, so a rejected call leaves the tree untouched:
+Every other form is refused *before* the walk writes anything, so a rejected call leaves the tree untouched. That guarantee covers the checks on the *form*; a leaf under an index spelling (`nodes.**.children.0.value`) can still stop part-way on the *data* — a node whose `children` is empty has no child `0` to write into — exactly as the fixed-arity `$setAll("nodes.*.children.0.value", [], v)` does.
 
 | Form | Why it is refused |
 |---|---|
@@ -1237,7 +1237,7 @@ Every other form is refused *before* the walk writes anything, so a rejected cal
 | omitted indexes | The write API takes no context, so there is no depth to bind to — pass `[]` |
 | a mapper function | `(current, ...indexes)` has a different arity at every depth |
 | `{ spread: true }` | Handing a flat array to a tree needs the author to know the walk order |
-| `nodes.**`, `nodes.**.children`, `nodes.**.children.*`, `nodes.**.children.length` — and, for a multi-segment repeat such as `branch.children.*`, the `nodes.**.branch` on the way to the list | Writing the structure itself (assigning `length` truncates the list) invalidates the child addresses this very write already resolved (`wcs/recursion-structural-write`) |
+| `nodes.**`, `nodes.**.children`, `nodes.**.children.*`, `nodes.**.children.length` — and, for a multi-segment repeat such as `branch.children.*`, the `nodes.**.branch` on the way to the list. Index spellings fold to the same forms: `nodes.**.children.0` is a child node, `nodes.**.children.0.total` is the getter | Writing the structure itself (assigning `length` truncates the list) invalidates the child addresses this very write already resolved (`wcs/recursion-structural-write`) |
 | `nodes.**.total`, or a path inside its value | A recursive getter has no setter — write what it derives from (`wcs/recursion-readonly`) |
 
 The read-only rule does not depend on spelling `**`. A recursive getter's concrete expansions — `nodes.*.total`, `nodes.*.children.*.total`, … — are refused at the write entry as well, whether the write is a fixed-arity `$setAll`, a `$resolve(path, indexes, value)` or a direct assignment, and whether or not that depth has been materialized yet. Before this check, an unmaterialized expansion looked like a plain missing key and the write landed on the node object, pinning the assigned value as the getter's cached result.
@@ -2470,7 +2470,7 @@ Anything that follows mechanically from the path string is reported at runtime a
 | `wcs/recursion-unsupported` | `**` reached something that does not interpret it — markup, a `$watch` or `$listKeys` key, `$resolve` / `$postUpdate` / `$trackDependency`, an assignment — or the state declares no `$recursion` at all | Use a concrete path, or declare the anchor |
 | `wcs/recursion-anchor` | A `**` path that does not match the one declared anchor (this version takes exactly one self-recursive anchor per state) | Spell the anchor as declared |
 | `wcs/recursion-context` | A **bound** `**` was read where there is no depth to bind to — the top level, or a getter outside the anchor | Read it from a recursive or row getter, or pass `[]` to union every depth |
-| `wcs/recursion-getall-form` / `wcs/recursion-setall-form` | An `indexes` argument `**` cannot define. The code is carried by the non-empty prefix (both APIs); omission, a mapper and `{ spread: true }` in a `$setAll` are the same mistake and the linter reports them under the same code, but at runtime they throw with the form named in the message and no code | Omit for the current depth, `[]` for every depth |
+| `wcs/recursion-getall-form` / `wcs/recursion-setall-form` | An `indexes` argument `**` cannot define. The code is carried by the non-empty prefix (both APIs) and by a non-array `indexes` on `$getAll` (`null`, a string…); omission, a mapper and `{ spread: true }` in a `$setAll` are the same mistake and the linter reports them under the same code, but at runtime they throw with the form named in the message and no code | Omit for the current depth, `[]` for every depth |
 | `wcs/recursion-structural-write` | A recursive `$setAll` targets the structure itself — a node, its child list, that list's `length`, a child node, or an object on the way to the child list when the repeating sub-path has several segments | Broadcast to a leaf property instead |
 | `wcs/recursion-readonly` | A write targets a recursive getter, or a path inside the value it derives — a recursive `$setAll` on `nodes.**.total`, or any write to a concrete expansion such as `nodes.*.children.*.total` (fixed-arity `$setAll`, `$resolve` with a value, direct assignment) | Write what the getter derives from |
 | `wcs/recursion-shared-list` / `wcs/recursion-cycle` | The walk reached the same array instance twice: two nodes sharing one child list, or a list reachable from its own ancestor | Give every node its own child array |

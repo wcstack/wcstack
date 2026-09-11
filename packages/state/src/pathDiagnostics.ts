@@ -339,11 +339,8 @@ export function checkDeclaredPath(
   // 展開形の**値の内側**（`nodes.*.stats.count` で `get "nodes.**.stats"()` がオブジェクトを
   // 返す形）も同じ — 通常の getter なら下の「途中のプレフィックスがフラット宣言」で
   // UNKNOWN に倒れるところ、未実体化のアクセサは findDescriptor に見えないのでここで畳む。
-  if (stateElement.hasRecursion === true) {
-    const registry = stateElement.recursionRegistry;
-    if (registry !== null && typeof registry !== "undefined" && registry.recursiveGetterOwning(path) !== null) {
-      return;
-    }
+  if (stateElement.hasRecursion === true && stateElement.recursionRegistry!.recursiveGetterOwning(path) !== null) {
+    return;
   }
   const result = resolvePathExistence(state, path, stateElement.getterPaths);
   if (result.existence !== "missing") {

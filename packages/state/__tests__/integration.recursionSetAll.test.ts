@@ -721,6 +721,39 @@ describe("ブロードキャストが受け付けない形", () => {
     nested.host.remove();
   });
 
+  it("接尾辞の添字綴り（nodes.**.children.0 など）も畳んで構造・読み取り専用として拒否されること", async () => {
+    // Fixed by cycle-2 review — was: 添字畳みは `**` を経ない綴り（recursiveGetterOwning）にしか
+    // 掛かっておらず、`**` パス自身の接尾辞は素の文字列一致のままだった。
+    // `nodes.**.children.0` は `written=5` で子 0 を置換したうえ空 children の行に子 0 を生やし
+    // 集計は stale、`nodes.**.children.0.children` は行 0 の孫を消してから空 children の行で生の
+    // `Reflect.set called on non-object`（部分書き込み＋診断でない例外）になっていた。
+    const child = await rejects((s) => s.$setAll("nodes.**.children.0", [], { value: 999, children: [] }));
+    expect(child.message).toContain("[wcs/recursion-structural-write]");
+    expect(child.message).toContain('"nodes.**.children.0" writes the recursion structure itself');
+    expect(child.unchanged, "1 件も書かれていない").toBe(true);
+    child.host.remove();
+
+    const grandList = await rejects((s) => s.$setAll("nodes.**.children.0.children", [], []));
+    expect(grandList.message).toContain("[wcs/recursion-structural-write]");
+    expect(grandList.unchanged, "部分書き込みも無い").toBe(true);
+    grandList.host.remove();
+
+    const length = await rejects((s) => s.$setAll("nodes.**.children.0.children.length", [], 0));
+    expect(length.message).toContain("[wcs/recursion-structural-write]");
+    expect(length.unchanged).toBe(true);
+    length.host.remove();
+
+    // getter の展開形（空の木でも第 1 相の前に落ちる）
+    const total = await rejects((s) => s.$setAll("nodes.**.children.0.total", [], 5));
+    expect(total.message).toContain('[wcs/recursion-readonly] "nodes.**.children.0.total" writes into the recursive getter "nodes.**.total"');
+    expect(total.unchanged).toBe(true);
+    total.host.remove();
+    const { host, stateEl } = await mount(recursionState([]), NO_RENDER_HTML);
+    expect(writeError(stateEl, (s: any) => { s.$setAll("nodes.**.children.0.total", [], 5); }))
+      .toContain("[wcs/recursion-readonly]");
+    host.remove();
+  });
+
   it("再帰 getter を名指す接尾辞は [wcs/recursion-readonly] になること", async () => {
     const { message, unchanged, host } = await rejects(
       (s) => s.$setAll("nodes.**.total", [], 0));

@@ -113,8 +113,8 @@ export interface WcsMessageCatalog {
   recursionUnsupported(path: string, where: RecursionWildcardSite): string;
   /** 宣言済みアンカーと合致しない `**`（綴り違い・2 つ目の `**`）。 */
   recursionAnchorMismatch(path: string, recursiveAnchor: string): string;
-  /** `$getAll("…**…", [i])` — `**` に非空の接頭辞は定義できない。 */
-  recursionGetAllForm(path: string): string;
+  /** `$getAll("…**…", indexes)` の添字の形 — 非空の接頭辞（prefix）か、配列でない値（notArray）。 */
+  recursionGetAllForm(path: string, problem: RecursionGetAllProblem): string;
   /** `$setAll("…**…", …)` の添字・値の形が `**` に対して定義できない。 */
   recursionSetAllForm(path: string, problem: RecursionSetAllProblem): string;
   /** ノード自身 / 子リストへの一括書き込み。 */
@@ -147,6 +147,8 @@ export type MountPathProblem = 'empty' | 'emptySegment' | 'wildcard' | 'reserved
 export type RecursionWildcardSite =
   | 'binding' | 'watch' | 'resolve' | 'undeclared'
   | 'assignment' | 'postUpdate' | 'trackDependency' | 'listKeys';
+/** `$getAll` が `**` に対して拒否する添字の形。 */
+export type RecursionGetAllProblem = 'prefix' | 'notArray';
 /** `$setAll` が `**` に対して拒否する形。 */
 export type RecursionSetAllProblem = 'prefix' | 'noIndexes' | 'mapper' | 'spread';
 /** アンカー / 反復サブパスの種別（service/recursionPaths.ts の NodePathKind と同値）。 */
@@ -156,7 +158,7 @@ export type RecursionNodePathProblem =
   | 'empty' | 'emptySegment' | 'notElement'
   | 'reservedRoot' | 'reservedMount' | 'midWildcard' | 'nestedRecursion';
 /** `**` を含む宣言キーの不正。 */
-export type RecursionGetterProblem = 'setter' | 'notGetter' | 'nodeItself';
+export type RecursionGetterProblem = 'setter' | 'notGetter' | 'nodeItself' | 'structural';
 
 const JA_EXPECTED_LABEL: Record<ExpectedTypeKind, string> = {
   array: '配列型のパス',
@@ -271,8 +273,10 @@ const ja: WcsMessageCatalog = {
   },
   recursionAnchorMismatch: (p, anchor) =>
     `"${p}" は宣言済みの再帰アンカー "${anchor}" と合致しません（初版は state ごとに 1 つの自己再帰のみ・同じパスに 2 つ目の "**" は置けません）`,
-  recursionGetAllForm: (p) =>
-    `$getAll("${p}", indexes) の "**" に非空の接頭辞は渡せません（接頭辞はどの深さに適用されるかを言えません）。添字を省略すると評価中の再帰 getter の深さ、[] を渡すと全深さになります`,
+  recursionGetAllForm: (p, problem) =>
+    problem === 'notArray'
+      ? `$getAll("${p}", indexes) の "**" の添字は、省略（評価中の再帰 getter の深さ）か [] （全深さ）のどちらかです。null や配列でない値は渡せません`
+      : `$getAll("${p}", indexes) の "**" に非空の接頭辞は渡せません（接頭辞はどの深さに適用されるかを言えません）。添字を省略すると評価中の再帰 getter の深さ、[] を渡すと全深さになります`,
   recursionSetAllForm: (p, problem) => {
     switch (problem) {
       case 'prefix':
@@ -325,6 +329,7 @@ const ja: WcsMessageCatalog = {
     switch (problem) {
       case 'setter': return `再帰 setter は初版では未対応です: "${key}"。通常のパス setter を宣言するか、具体パス経由で書き込んでください`;
       case 'notGetter': return `"${key}" は "**" を含みますが getter ではありません。"**" は計算パスの族を名指す記号です`;
+      case 'structural': return `"${key}" は再帰の構造そのもの（ノード・子リスト・その length・子リストへ至る途中のオブジェクト）を名指しています。再帰 getter は全深さで実データの子リストを影にしてしまいます。"**" はノードの下の計算パス（例: "${anchor}.total"）を名指す記号です`;
       default: return `"${key}" は再帰ノード自身を名指しています。"**" はノードの下の計算パス（例: "${anchor}.total"）を名指す記号で、ノードそのものではありません`;
     }
   },
@@ -446,8 +451,10 @@ const en: WcsMessageCatalog = {
   },
   recursionAnchorMismatch: (p, anchor) =>
     `"${p}" does not match the declared recursion anchor "${anchor}" (this version supports exactly one self-recursive anchor per state, and no second "**" in the same path)`,
-  recursionGetAllForm: (p) =>
-    `$getAll("${p}", indexes) with "**" takes no partial prefix: a prefix cannot say which depth it applies to. Omit the indexes to read the depth of the recursive getter being evaluated, or pass [] to walk every depth`,
+  recursionGetAllForm: (p, problem) =>
+    problem === 'notArray'
+      ? `$getAll("${p}", indexes) with "**" takes either no indexes (to read the depth of the recursive getter being evaluated) or [] (to walk every depth) — not null or a non-array value`
+      : `$getAll("${p}", indexes) with "**" takes no partial prefix: a prefix cannot say which depth it applies to. Omit the indexes to read the depth of the recursive getter being evaluated, or pass [] to walk every depth`,
   recursionSetAllForm: (p, problem) => {
     switch (problem) {
       case 'prefix':
@@ -500,6 +507,7 @@ const en: WcsMessageCatalog = {
     switch (problem) {
       case 'setter': return `Recursive setters are not supported in this version: "${key}". Declare a plain path setter, or write through the concrete path`;
       case 'notGetter': return `"${key}" contains "**" but is not a getter. The recursion wildcard only names a family of computed paths`;
+      case 'structural': return `"${key}" names the recursion structure itself (a node, its child list, that list's length, or an object on the way to the list). A recursive getter would hide the real child list at every depth — "**" names a computed leaf under a node (for example "${anchor}.total")`;
       default: return `"${key}" names the recursive node itself. "**" names a computed path under a node (for example "${anchor}.total"), not the node`;
     }
   },

@@ -140,14 +140,16 @@ export interface IStateElement {
   /**
    * この state に `$recursion` 宣言があるか。偽のとき getByAddress の遅延実体化と
    * get トラップの `**` 解決は boolean 判定 1 個で抜ける（hasMounts と同じ D18 の形）。
-   * optional なのはテスト用モック互換のため（undefined は「再帰なし」扱い）。
+   * 読み手は必ずこのゲートを先に見て、真なら `recursionRegistry` を `!` で読む
+   * （テスト用モックはフィールドを持たなくてよい — `undefined === true` は偽なので
+   * 再帰の経路に入らない）。
    */
-  readonly hasRecursion?: boolean;
+  readonly hasRecursion: boolean;
   /**
-   * 再帰レジストリ（宣言が無ければ null）。registry.ts はこのファイルの IStateElement を
-   * 参照するが、`import type` どうしなので実行時の循環にはならない。
+   * 再帰レジストリ（宣言が無ければ null。`hasRecursion === true` なら非 null）。registry.ts は
+   * このファイルの IStateElement を参照するが、`import type` どうしなので実行時の循環にはならない。
    */
-  readonly recursionRegistry?: RecursionRegistry | null;
+  readonly recursionRegistry: RecursionRegistry | null;
   setPathInfo(path: string, bindingType: BindingType, source?: PathInfoSource): void;
   addStaticDependency(parentPath: string, childPath: string): boolean;
   addDynamicDependency(fromPath: string, toPath: string): boolean;

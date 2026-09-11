@@ -22,39 +22,20 @@ import { setAllValueKindMessage } from "../pathDiagnostics";
 import { setByAddress } from "../proxy/methods/setByAddress";
 import { IStateHandler } from "../proxy/types";
 import { raiseError } from "../raiseError";
-import { splitRecursivePath } from "./expand";
+import { indexSegmentsToWildcard, isStructuralSuffix, splitRecursivePath } from "./expand";
 import { IRecursionSpec } from "./types";
 import { collectRecursiveAddresses } from "./walk";
 
 /**
- * 接尾辞が「再帰の構造そのもの」を名指していないか。
+ * 接尾辞が「再帰の構造そのもの」を名指していないか（述語は expand.ts の `isStructuralSuffix`）。
  *
  * ノード自身（`nodes.**`）と子リスト（`nodes.**.children`）と子ノード
- * （`nodes.**.children.*`）は、書き換えると確定済みの子アドレスを壊す。初版は
- * 葉の属性の更新に限る（実装計画 §1-3）。判定対象は宣言から導出する。
+ * （`nodes.**.children.*`）と子リストの `length` は、書き換えると確定済みの子アドレスを壊す。
+ * 初版は葉の属性の更新に限る（実装計画 §1-3）。判定対象は宣言から導出する。
  */
 function assertNotStructural(spec: IRecursionSpec, path: string, suffix: string): void {
-  const repeatSegments = spec.repeat.split(DELIMITER);
-  const repeatList = repeatSegments.slice(0, -1).join(DELIMITER);
-  const unit = DELIMITER + spec.repeat;
-  let rest = suffix;
-  while (rest.startsWith(unit)) {
-    rest = rest.slice(unit.length);
-  }
-  // 反復サブパスを**途中まで**名指す形はすべて構造。`children.*` なら "" と ".children"、
-  // `branch.children.*` なら "" / ".branch" / ".branch.children"。`"." + repeatList` との
-  // 完全一致だけを見ると、多段の repeat で途中のオブジェクト（`nodes.**.branch`）が素通りし、
-  // 深さ 0 の `branch` を置き換えた瞬間に、この書き込みが確定済みの深さ 1 のアドレス
-  // （`nodes.*.branch.children.*.…`）が宙に浮く（着地後レビューで実測。実装計画 §7-3）。
-  //
-  // 子リストの `length`（`nodes.**.children.length`）も構造。`arr.length = 0` は配列を
-  // 切り詰めるので、リストそのものを置き換えるのと同じく、この書き込みが確定した
-  // 深い側のアドレスを消す（実測: 全深さの children が空になり、集計は旧値のまま残った）。
-  let structural = rest.length === 0 || rest === DELIMITER + repeatList + DELIMITER + "length";
-  for (let i = 1; !structural && i < repeatSegments.length; i++) {
-    structural = rest === DELIMITER + repeatSegments.slice(0, i).join(DELIMITER);
-  }
-  if (structural) {
+  if (isStructuralSuffix(spec, suffix)) {
+    const repeatList = spec.repeat.slice(0, spec.repeat.lastIndexOf(DELIMITER));
     raiseError(
       `[wcs/recursion-structural-write] "${path}" writes the recursion structure itself ` +
       `(a node, its "${repeatList}" list or that list's length, or an object on the way to that list). ` +
@@ -75,13 +56,22 @@ export function setAllRecursive(
 ): number {
   // 呼び出し元（setAll.ts）は `hasRecursion === true` をゲートにしているので必ずある。
   const registry = handler.stateElement.recursionRegistry!;
-  const parts = splitRecursivePath(registry.spec, path);
-  if (parts === null) {
+  const suffix = splitRecursivePath(registry.spec, path);
+  if (suffix === null) {
     raiseError(
       `[wcs/recursion-anchor] "${path}" does not match the declared recursion anchor ` +
       `"${registry.spec.recursiveAnchor}". This version supports exactly one anchor per state.`
     );
   }
+  // 検査には添字を `*` に畳んだ接尾辞を掛ける。`nodes.**.children.0`（子ノード）・
+  // `nodes.**.children.0.children`（孫リスト）・`nodes.**.children.0.total`（getter の展開形）は
+  // 添字綴りのままだと素の文字列一致をすり抜け、構造を置き換えたり部分書き込みの途中で
+  // 生の TypeError になったりしていた（第 2 サイクルのレビューで実測）。列挙は綴りのまま
+  // 行う — 接尾辞の添字は「その子だけ」を指す意味を持つ。
+  // 接尾辞は `.` で始まる（先頭の空セグメントは区切りの都合）ので、区切りの後ろだけを畳む。
+  const checkedSuffix = suffix.length === 0
+    ? suffix
+    : DELIMITER + indexSegmentsToWildcard(suffix.slice(DELIMITER.length));
 
   // --- 形の検査は列挙より前（1 件も書かないことを保証する。設計 §7-3） ---
   if (!Array.isArray(indexes)) {
@@ -103,8 +93,8 @@ export function setAllRecursive(
       path, `with "**" does not take { spread: true } — handing a flat array to a tree needs the author ` +
       `to know the walk order, which is not a usable contract.`));
   }
-  assertNotStructural(registry.spec, path, parts.suffix);
-  const conflicting = registry.conflictingRecursiveGetter(parts.suffix);
+  assertNotStructural(registry.spec, path, checkedSuffix);
+  const conflicting = registry.conflictingRecursiveGetter(checkedSuffix);
   if (conflicting !== null) {
     raiseError(
       `[wcs/recursion-readonly] "${path}" writes into the recursive getter "${conflicting}", which has ` +
@@ -114,10 +104,10 @@ export function setAllRecursive(
   }
 
   // --- 第 1 相: 書き込み先を全部確定する ---
-  // **観測したリスト値は基準へ確定する。** 固定 arity の `$setAll` は
-  // `commitDiffBaseline: false` で走るが、あれは「読みの私有基準を書きから動かさない」
-  // という E1 以前の所有権モデルの話で、いまの基準は読み・描画・依存ウォークが共有する
-  // state 側の正本である（実装計画 §3-2 の E1）。
+  // **観測したリスト値は基準へ確定する**（走査が必ず行う — walk.ts）。固定 arity の
+  // `$setAll` は `commitDiffBaseline: false` で走るが、あれは「読みの私有基準を書きから
+  // 動かさない」という E1 以前の所有権モデルの話で、いまの基準は読み・描画・依存ウォークが
+  // 共有する state 側の正本である（実装計画 §3-2 の E1）。
   //
   // 確定しないと cold（読みも描画も一度も走っていない）状態の `$setAll` が全深さぶんの
   // ListIndex 世代を鋳造したまま基準を残さず、次の構造変更でその世代が見えない diff が
@@ -125,8 +115,7 @@ export function setAllRecursive(
   // 再帰 getter の読みが恒久的に落ちる（値の合併は動き続けるので無症状のまま進む）。
   // 1 件も書かない `undefined` のブロードキャストでも同じなので、「書き込み 0 件」は
   // 「状態が動いていない」を意味しない。
-  const addresses = collectRecursiveAddresses(
-    target, receiver, handler, registry.spec, parts.suffix, { commitDiffBaseline: true });
+  const addresses = collectRecursiveAddresses(target, receiver, handler, registry.spec, suffix);
 
   // --- 第 2 相: 確定したアドレスにだけ書く ---
   let written = 0;

@@ -44,6 +44,7 @@ import {
   checkNodePath,
   conflictingGetterSuffix,
   hasRecursionWildcard,
+  indexSegmentsToWildcard,
   makeRecursionSpec,
   owningGetterSuffix,
   sameFamily,
@@ -187,8 +188,12 @@ function validateDeclaration(
     return null;
   }
   if (entry.repeat === null) {
-    push(out, code, offset + entry.valueStart, offset + entry.valueEnd,
-      msgs.recursionRepeatNotString(entry.anchor));
+    // 値が文字列でないと**断定できる**ときだけ error。識別子参照（`REPEAT`）や `${}` 付きの
+    // テンプレートはランタイムでは正当なので黙る（spec は組めないので以降の検証も黙る）。
+    if (entry.repeatDefinitelyNotString) {
+      push(out, code, offset + entry.valueStart, offset + entry.valueEnd,
+        msgs.recursionRepeatNotString(entry.anchor));
+    }
     return null;
   }
   const repeatProblem = checkNodePath(entry.repeat);
@@ -259,6 +264,15 @@ function validateRecursiveGetters(
     if (suffix.length === 0) {
       push(out, WcsDiagnosticCode.RecursionDeclarationInvalid, start, end,
         msgs.recursionGetterInvalid(span.name, 'nodeItself', spec.recursiveAnchor));
+      continue;
+    }
+    // 接尾辞が再帰の構造そのもの（`nodes.**.children` / `.children.*` / `.children.length` /
+    // 多段なら `.branch`）なら、生成 getter が実データの子リストを全深さで影にする。
+    // 書き側が同じ形を `recursion-structural-write` で拒否するのと対称（runtime は構築時に raise）。
+    // 添字綴り（`get "nodes.**.children.0"()`）も畳んでから掛ける（書き側・runtime と同じ）
+    if (structuralWriteTarget(spec, '.' + indexSegmentsToWildcard(suffix.slice(1))) !== null) {
+      push(out, WcsDiagnosticCode.RecursionDeclarationInvalid, start, end,
+        msgs.recursionGetterInvalid(span.name, 'structural', spec.recursiveAnchor));
       continue;
     }
     // 既に受理した getter と同じ具体パス族へ展開しないか（RecursionRegistry の静的検査）
@@ -358,10 +372,17 @@ function validateApiCalls(
       continue;
     }
     if (api === '$getAll') {
-      // 添字省略（＝評価深さへの束縛）と `[]`（＝全深さ）は正当。非空の接頭辞だけが不正。
-      const indexes = parsed.args.length > 1 ? literalArrayLength(parsed.args[1]) : null;
-      if (indexes !== null && indexes > 0) {
-        push(out, WcsDiagnosticCode.RecursionGetAllForm, start, end, msgs.recursionGetAllForm(path));
+      // 添字省略（＝評価深さへの束縛。`undefined` リテラルも同じ）と `[]`（＝全深さ）は正当。
+      // 非空の接頭辞と、配列でないと断定できる値（`null` / 文字列・数値・真偽値・オブジェクト
+      // リテラル）が不正 — runtime はどちらも `wcs/recursion-getall-form` で throw する。
+      if (parsed.args.length > 1) {
+        const indexesArg = parsed.args[1];
+        const indexes = literalArrayLength(indexesArg);
+        if (indexes !== null && indexes > 0) {
+          push(out, WcsDiagnosticCode.RecursionGetAllForm, start, end, msgs.recursionGetAllForm(path, 'prefix'));
+        } else if (indexes === null && isDefiniteNonArrayLiteral(indexesArg)) {
+          push(out, WcsDiagnosticCode.RecursionGetAllForm, start, end, msgs.recursionGetAllForm(path, 'notArray'));
+        }
       }
       continue;
     }
@@ -401,13 +422,17 @@ function validateSetAllForm(
     push(out, formCode, start, end, msgs.recursionSetAllForm(path, 'spread'));
     return;
   }
-  const structural = structuralWriteTarget(spec, suffix);
+  // 接尾辞の添字綴り（`nodes.**.children.0` / `.children.0.children` / `.children.0.total`）は
+  // 畳んでから構造・読み取り専用の検査に掛ける（runtime の setAllRecursive と同じ）。
+  // 接尾辞は `.` で始まる（先頭の空セグメントは区切りの都合）ので、区切りの後ろだけを畳む
+  const checkedSuffix = suffix.length === 0 ? suffix : '.' + indexSegmentsToWildcard(suffix.slice(1));
+  const structural = structuralWriteTarget(spec, checkedSuffix);
   if (structural !== null) {
     push(out, WcsDiagnosticCode.RecursionStructuralWrite, start, end,
       msgs.recursionStructuralWrite(path, structural, spec.repeatList));
     return;
   }
-  const conflicting = conflictingGetterSuffix(spec, getterSuffixes, suffix);
+  const conflicting = conflictingGetterSuffix(spec, getterSuffixes, checkedSuffix);
   if (conflicting !== null) {
     push(out, WcsDiagnosticCode.RecursionReadonly, start, end,
       msgs.recursionReadonly(`$setAll("${path}")`, spec.recursiveAnchor + conflicting));
@@ -450,6 +475,22 @@ function validateAssignments(
         msgs.recursionReadonly(`this["${path}"] = …`, spec.recursiveAnchor + owning));
     }
   }
+}
+
+/**
+ * `$getAll` の添字が「配列ではない」と静的に断定できる形か（`null` / 文字列・数値・真偽値・
+ * オブジェクトリテラル）。`undefined` は添字省略と同じ束縛形なので正当、識別子参照・
+ * 呼び出し式は断定しない（黙る側に倒す）。
+ */
+function isDefiniteNonArrayLiteral(arg: string): boolean {
+  const trimmed = arg.trim();
+  return (
+    trimmed === 'null' ||
+    /^["'`]/.test(trimmed) ||
+    /^-?\d/.test(trimmed) ||
+    /^(?:true|false)$/.test(trimmed) ||
+    trimmed.startsWith('{')
+  );
 }
 
 /**

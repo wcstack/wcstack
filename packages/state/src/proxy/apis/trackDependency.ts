@@ -16,6 +16,7 @@
  */
 
 import { raiseError } from "../../raiseError";
+import { hasRecursionWildcard } from "../../recursion/expand";
 import { IStateHandler } from "../types";
 
 /**
@@ -41,6 +42,17 @@ export function trackDependency(
   handler: IStateHandler
 ): TrackDependencyFunction {
   return (path: string): void => {
+    // `**` はここでは解釈しない（依存辺は展開後の具体パスにしか張れない）。`$postUpdate` /
+    // `$resolve` は `getPathInfo` の不変条件で落ちるが、この API は生の文字列を依存表へ
+    // そのまま載せるので、ゲートを置かないと無言で受理されて getter が stale になる
+    // （第 2 サイクルのレビューで実測）。宣言の有無に関わらず拒否する。
+    if (hasRecursionWildcard(path)) {
+      raiseError(
+        `[wcs/recursion-unsupported] $trackDependency("${path}") cannot take "**" — a dependency is ` +
+        `registered against a concrete path (a fixed number of "*"). Track the concrete depth, or read ` +
+        `the path through this[...] / $getAll inside the getter so the dependency is recorded automatically.`
+      );
+    }
     if (handler.addressStackLength === 0) {
       raiseError(`No active state reference to track dependency for path "${path}".`);
     }

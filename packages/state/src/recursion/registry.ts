@@ -22,11 +22,12 @@ import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
 import { getPathInfo } from "../address/PathInfo";
 import { setCacheEntryByAbsoluteStateAddress } from "../cache/cacheEntryByAbsoluteStateAddress";
 import { IStateElement } from "../components/types";
-import { DELIMITER, WILDCARD } from "../define";
+import { DELIMITER } from "../define";
 import { getAllPropertyDescriptors } from "../getAllPropertyDescriptors";
 import { getListIndexesByList } from "../list/listIndexesByList";
+import { IListIndex } from "../list/types";
 import { raiseError } from "../raiseError";
-import { depthOfConcretePath, hasRecursionWildcard, listPathsUpTo, splitRecursivePath } from "./expand";
+import { concretePathAt, depthOfConcretePath, hasRecursionWildcard, indexSegmentsToWildcard, isStructuralSuffix, listPathsUpTo, splitRecursivePath } from "./expand";
 import { IRecursionAccessor, IRecursionSpec } from "./types";
 
 /**
@@ -62,6 +63,8 @@ export class RecursionRegistry {
    * 持つ `**` getter」、無ければ null。有界であることの根拠は `_nonAccessors` と同じ。
    */
   private readonly _ownerByPath: Map<string, string | null> = new Map();
+  /** `concretePathAt` の記憶（接尾辞 → 深さ順の具体パス）。 */
+  private readonly _concreteBySuffix: Map<string, string[]> = new Map();
   private readonly _registeredListPaths: Set<string> = new Set();
 
   constructor(spec: IRecursionSpec, state: object) {
@@ -84,14 +87,14 @@ export class RecursionRegistry {
           `The recursion wildcard only names a family of computed paths.`
         );
       }
-      const parts = splitRecursivePath(spec, key);
-      if (parts === null) {
+      const suffix = splitRecursivePath(spec, key);
+      if (suffix === null) {
         raiseError(
           `"${key}" does not match the declared recursion anchor "${spec.recursiveAnchor}". ` +
           `This version supports exactly one anchor, and no second "**" in the same path.`
         );
       }
-      if (parts.suffix.length === 0) {
+      if (suffix.length === 0) {
         // `get "nodes.**"` は展開すると `nodes.*` そのもの。`getByAddress` は
         // 「パスが target にあるか」を先に見るので、実データの行が丸ごと隠れる。
         raiseError(
@@ -99,9 +102,23 @@ export class RecursionRegistry {
           `(for example "${spec.recursiveAnchor}${DELIMITER}total"), not the node.`
         );
       }
+      // 構造の判定は添字綴り（`get "nodes.**.children.0"()`）も畳んでから掛ける（書き側と同じ）
+      if (isStructuralSuffix(spec, DELIMITER + indexSegmentsToWildcard(suffix.slice(DELIMITER.length)))) {
+        // `get "nodes.**.children"` / `.children.*` / `.children.length` / 多段なら `.branch` は
+        // 展開すると実データの子リスト（子ノード・その length・途中のオブジェクト）そのもの。
+        // 生成 getter が `getByAddress` の「パスが target にあるか」で勝ち、実データの木を
+        // 深さ 1 以下ごと無言で影にする（第 2 サイクルのレビューで実測: `$getAll("nodes.**.value", [])`
+        // が `[1, 2]` に縮んだ）。書き側が同じ形を `recursion-structural-write` で拒否するのと対称。
+        raiseError(
+          `"${key}" names the recursion structure itself (a node, its "${spec.repeat.slice(0, spec.repeat.lastIndexOf(DELIMITER))}" list ` +
+          `or that list's length, or an object on the way to that list). A recursive getter would hide the ` +
+          `real child list at every depth — "**" names a computed leaf under a node ` +
+          `(for example "${spec.recursiveAnchor}${DELIMITER}total").`
+        );
+      }
       this._definitions.set(key, {
         recursivePath: key,
-        suffix: parts.suffix,
+        suffix,
         get: descriptor.get as () => unknown,
       });
     }
@@ -383,43 +400,67 @@ export class RecursionRegistry {
     this._forgetCacheEntries(stateElement, previousState);
   }
 
+  /**
+   * 生成アクセサの評価結果のキャッシュを落とす。生成パスごとに、その `wildcardParentPathInfos`
+   * （`nodes` / `nodes.*.children` / … に加えて、接尾辞側のリスト `nodes.*.tags` 等）を旧 state の
+   * データと台帳に沿って降り、末端の行 ListIndex で絶対アドレスを引く。
+   *
+   * 深さ方向だけを降りて「ノード行の ListIndex × その深さのパス」で引くのでは足りない —
+   * 接尾辞にワイルドカードを持つ getter（`get "nodes.**.tags.*.up"()`）のキャッシュは
+   * タグ行の ListIndex（連鎖長 depth+2）に載っていて、ノード行の ListIndex では届かない
+   * （第 2 サイクルのレビューで実測: 再セット後の読みが旧値のまま残った）。
+   */
   private _forgetCacheEntries(stateElement: IStateElement, previousState: object): void {
-    // 深さごとの生成パス（疎な深さは空配列で埋め、走査中に undefined を作らない）
-    const pathsByDepth: string[][] = [];
-    for (const [concretePath, accessor] of this._accessors) {
-      while (pathsByDepth.length <= accessor.depth) {
-        pathsByDepth.push([]);
-      }
-      pathsByDepth[accessor.depth].push(concretePath);
-    }
-    const anchorSegments = this.spec.anchor.split(DELIMITER).slice(0, -1);
-    const repeatSegments = this.spec.repeat.split(DELIMITER).slice(0, -1);
-    const listAt = (owner: unknown, segments: string[]): unknown => {
-      let value: any = owner;
-      for (const segment of segments) {
-        value = value?.[segment];
-      }
-      return value;
-    };
-    const forget = (list: unknown, depth: number): void => {
-      if (depth >= pathsByDepth.length || !Array.isArray(list)) {
-        return;
-      }
-      // 台帳が無い ＝ 走査を一度も経ていないリスト。その行に絶対アドレスは作られていない。
-      const rows = getListIndexesByList(list);
-      if (rows === null) {
-        return;
-      }
-      const count = Math.min(rows.length, list.length);
-      for (let i = 0; i < count; i++) {
-        for (const concretePath of pathsByDepth[depth]) {
-          const absPathInfo = getAbsolutePathInfo(stateElement, getPathInfo(concretePath));
-          setCacheEntryByAbsoluteStateAddress(createAbsoluteStateAddress(absPathInfo, rows[i]), null);
+    for (const concretePath of this._accessors.keys()) {
+      const pathInfo = getPathInfo(concretePath);
+      const absPathInfo = getAbsolutePathInfo(stateElement, pathInfo);
+      const lists = pathInfo.wildcardParentPathInfos;
+      const forget = (owner: unknown, ownerListIndex: IListIndex | null, level: number): void => {
+        if (level === lists.length) {
+          setCacheEntryByAbsoluteStateAddress(createAbsoluteStateAddress(absPathInfo, ownerListIndex), null);
+          return;
         }
-        forget(listAt(list[i], repeatSegments), depth + 1);
-      }
-    };
-    forget(listAt(previousState, anchorSegments), 0);
+        // 直前のリストの行（または state のルート）から、次のリストまでの相対セグメントを辿る
+        const from = level === 0 ? 0 : lists[level - 1].segments.length + 1;
+        let list: any = owner;
+        for (const segment of lists[level].segments.slice(from)) {
+          list = list?.[segment];
+        }
+        if (!Array.isArray(list)) {
+          return;
+        }
+        // 台帳が無い ＝ 走査を一度も経ていないリスト。その行に絶対アドレスは作られていない。
+        const rows = getListIndexesByList(list);
+        if (rows === null) {
+          return;
+        }
+        const count = Math.min(rows.length, list.length);
+        for (let i = 0; i < count; i++) {
+          forget(list[i], rows[i], level + 1);
+        }
+      };
+      forget(previousState, null, 0);
+    }
+  }
+
+  /**
+   * `**` 接尾辞の深さ `depth` の具体パス（`concretePathAt` の記憶付き版）。
+   * 束縛形の読み（`this["nodes.**.value"]` / 省略形 `$getAll`）は再帰 getter の評価ごとに
+   * ここを通るので、深さぶんの文字列連結とワイルドカード数えを毎回やり直さない。
+   * 上限は「接尾辞の種類 × 128」で有界（上限超過は `concretePathAt` が throw するので載らない）。
+   */
+  concretePathAt(suffix: string, depth: number): string {
+    let byDepth = this._concreteBySuffix.get(suffix);
+    if (typeof byDepth === "undefined") {
+      byDepth = [];
+      this._concreteBySuffix.set(suffix, byDepth);
+    }
+    let path = byDepth[depth];
+    if (typeof path === "undefined") {
+      path = concretePathAt(this.spec, suffix, depth);
+      byDepth[depth] = path;
+    }
+    return path;
   }
 
   /** 展開済みアクセサのメタデータ（深さ解決・診断・テスト用）。 */
@@ -437,16 +478,3 @@ function isGeneratedGetter(descriptor: PropertyDescriptor): boolean {
   return typeof descriptor.get === "function" && generatedGetters.has(descriptor.get);
 }
 
-/**
- * 添字セグメント（`nodes.1.total` の `1`）を `*` に畳む。判定は `address/ResolvedAddress.ts`
- * と同じ「`Number()` が NaN でない区切り」。
- */
-function indexSegmentsToWildcard(path: string): string {
-  const segments = path.split(DELIMITER);
-  for (let i = 0; i < segments.length; i++) {
-    if (segments[i] !== WILDCARD && !Number.isNaN(Number(segments[i]))) {
-      segments[i] = WILDCARD;
-    }
-  }
-  return segments.join(DELIMITER);
-}

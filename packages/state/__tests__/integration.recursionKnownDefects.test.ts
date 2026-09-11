@@ -1659,3 +1659,49 @@ describe("欠陥8（X10）: setInitialState の再セット後、wildcard 無し
     expect(totalsAt(stateEl, 0)).toEqual([555]);
   });
 });
+
+// ---------------------------------------------------------------------------
+
+describe("欠陥9（X5 / #257）: 宣言の検証が初回マウントで throw すると無言のハングになる（現状固定）", () => {
+  // DEFECT: `_state` セッタの throw が `_resolveLoading()` に届かず `connectedCallbackPromise` が
+  //         永久 pending・`console.error` 0 件。再セット経路なら同じ宣言が同期 throw する
+  //         （integration.recursionGetter.test.ts の withReset がその側を固定）。
+  //         should be: 「resolve してから raise」（`_failInitialization` と同じ経路）で診断が届く。
+  //         第 2 サイクルで新設した「構造を名指す `**` getter」の構築時 raise も同じ表面に載る —
+  //         #257 の修理時に、この raise も同じ経路へ載せること。
+  const settle = (stateEl: State) => Promise.race([
+    stateEl.connectedCallbackPromise.then(() => "resolved", () => "rejected"),
+    flush().then(() => flush()).then(() => "pending"),
+  ]);
+
+  async function mountBroken(initial: any): Promise<{ outcome: string; errors: number; host: HTMLElement }> {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const host = document.createElement(`recdefect-host-${seq++}`);
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML = `<wcs-state></wcs-state>`;
+    document.body.appendChild(host);
+    const stateEl = shadowRoot.querySelector("wcs-state") as State;
+    try {
+      stateEl.setInitialState(initial);
+      return { outcome: await settle(stateEl), errors: spy.mock.calls.length, host };
+    } finally {
+      spy.mockRestore();
+    }
+  }
+
+  it("不正な $recursion 宣言（アンカーが要素を指さない）", async () => {
+    const { outcome, errors, host } = await mountBroken({ nodes: [NODE(1)], $recursion: { nodes: "children.*" } });
+    expect(outcome).toBe("pending");   // should be: "rejected"（診断付き）
+    expect(errors).toBe(0);
+    host.remove();
+  });
+
+  it("構造を名指す `**` getter（第 2 サイクルで新設した構築時 raise も同じ表面）", async () => {
+    const state: any = { nodes: [NODE(1)], $recursion: { "nodes.*": "children.*" } };
+    Object.defineProperty(state, "nodes.**.children", { get() { return []; }, enumerable: true, configurable: true });
+    const { outcome, errors, host } = await mountBroken(state);
+    expect(outcome).toBe("pending");   // should be: "rejected"（診断付き）
+    expect(errors).toBe(0);
+    host.remove();
+  });
+});

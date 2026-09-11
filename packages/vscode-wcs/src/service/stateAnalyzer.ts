@@ -173,8 +173,14 @@ function specFromRecursionValue(prop: PropertyInfo | undefined): RecursionSpec |
 export interface RecursionEntryInfo {
   /** アンカー（引用符を外した生の文字列。`nodes.*`）。 */
   readonly anchor: string;
-  /** 反復サブパス。値が単純な文字列リテラルでなければ null（＝断定しない）。 */
+  /** 反復サブパス。値が文字列リテラル（`${}` の無いテンプレートを含む）でなければ null（＝断定しない）。 */
   readonly repeat: string | null;
+  /**
+   * 値が「文字列ではない」と静的に断定できるか（数値・真偽値・null・オブジェクト / 配列 /
+   * 関数リテラル・メソッド短縮記法）。識別子参照・呼び出し・`${}` 付きテンプレートは
+   * 実行時まで分からないので false（validator は `repeat === null` でもこれが偽なら黙る）。
+   */
+  readonly repeatDefinitelyNotString: boolean;
   /** scriptContent 内でのキーの範囲（引用符は含まない）。 */
   readonly start: number;
   readonly end: number;
@@ -246,6 +252,7 @@ export function analyzeRecursionDeclaration(scriptContent: string): RecursionDec
     entries.push({
       anchor: entry.name,
       repeat: entry.kind === 'data' ? extractStringLiteralValue(entry.value) : null,
+      repeatDefinitelyNotString: entry.kind !== 'data' || isDefiniteNonStringLiteral(entry.value),
       start: innerStart + entry.nameStart,
       end: innerStart + entry.nameEnd,
       valueStart,
@@ -623,8 +630,28 @@ function pushListKeyPaths(entry: PropertyInfo, paths: PathCandidate[]): void {
 /** 値が単一の文字列リテラルならその中身を返す（`$listKeys` のキーフィールド名用）。 */
 function extractStringLiteralValue(value: string | undefined): string | null {
   if (!value) return null;
-  const match = value.trim().match(/^["']([^"'\\]*)["']$/);
-  return match && match[1].length > 0 ? match[1] : null;
+  // `${}` の無いテンプレートリテラルも文字列（ランタイムはただの string として受け取る）
+  const match = value.trim().match(/^(?:["']([^"'\\]*)["']|`([^`\\$]*)`)$/);
+  const literal = match ? (match[1] ?? match[2]) : null;
+  return literal !== null && literal !== undefined && literal.length > 0 ? literal : null;
+}
+
+/**
+ * 値が「文字列ではない」と静的に断定できるリテラルか（数値・真偽値・null・オブジェクト /
+ * 配列 / 関数 / アロー）。識別子参照・呼び出し・`${}` 付きテンプレートは false。
+ */
+function isDefiniteNonStringLiteral(value: string | undefined): boolean {
+  if (!value) return false;
+  const scan = maskCommentsAndStrings(value).trim();
+  if (scan.length === 0) return false;
+  return (
+    /^-?\d[\w.]*$/.test(scan) ||
+    /^(?:true|false|null)$/.test(scan) ||
+    /^[[{]/.test(scan) ||
+    /^(?:async\s+)?function\b/.test(scan) ||
+    /^(?:async\s+)?\([^()]*\)\s*=>/.test(scan) ||
+    /^(?:async\s+)?[$\w]+\s*=>/.test(scan)
+  );
 }
 
 // ============================================================

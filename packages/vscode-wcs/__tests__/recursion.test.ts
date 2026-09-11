@@ -483,12 +483,43 @@ describe('$recursion 宣言の検証', () => {
   nodes: []`)).toEqual([]);
   });
 
-  it('値が文字列リテラルでなければ断定しない…が、形が決まらないので宣言は成立しない', () => {
-    const diags = only(`
+  it('反復サブパスが識別子参照・`${}` 付きテンプレートなら断定せず黙る（形が決まらないので以降の検証も黙る）', () => {
+    // Fixed by cycle-2 review — was: 文字列リテラルでない値を無条件に
+    // `recursion-declaration-invalid`（error）にしていて、ランタイムでは正当な識別子参照で
+    // `wcs-validate` が exit 1 になっていた（このテスト自身がその偽陽性を固定していた）。
+    expect(only(`
   $recursion: { "nodes.*": REPEAT },
+  nodes: [],
+  get "nodes.**.total"() { return 0; },
+  sum() { return this.$getAll("nodes.**.value", []); }`)).toEqual([]);
+    expect(only(`
+  $recursion: { "nodes.*": \`\${list}.*\` },
+  nodes: []`)).toEqual([]);
+    expect(only(`
+  $recursion: { "nodes.*": repeatOf("children") },
+  nodes: []`)).toEqual([]);
+  });
+
+  it('`${}` の無いテンプレートリテラルは文字列として受理して spec を組む', () => {
+    expect(only(`
+  $recursion: { "nodes.*": \`children.*\` },
+  nodes: [],
+  get "nodes.**.total"() { return 0; },
+  poke() { this.$setAll("nodes.**.total", [], 0); }`).map(d => d.code)).toEqual([WcsDiagnosticCode.RecursionReadonly]);
+  });
+
+  it('反復サブパスが文字列でないと断定できる値（数値・真偽値・null・配列・オブジェクト・関数）は error', () => {
+    for (const value of ['1', 'true', 'null', '["children.*"]', '{ path: "children.*" }', '() => "children.*"', 'function () {}']) {
+      const diags = only(`
+  $recursion: { "nodes.*": ${value} },
   nodes: []`);
-    expect(diags).toHaveLength(1);
-    expect(diags[0].code).toBe(WcsDiagnosticCode.RecursionDeclarationInvalid);
+      expect(codes(diags), value).toEqual([WcsDiagnosticCode.RecursionDeclarationInvalid]);
+      expect(diags[0].message, value).toContain('nodes.*');
+    }
+    // メソッド短縮記法も関数
+    expect(codes(only(`
+  $recursion: { "nodes.*"() { return "children.*"; } },
+  nodes: []`))).toEqual([WcsDiagnosticCode.RecursionDeclarationInvalid]);
   });
 });
 
@@ -514,6 +545,31 @@ describe('`**` getter の宣言', () => {
   get "nodes.**"() { return 0; }`);
     expect(codes(diags)).toEqual([WcsDiagnosticCode.RecursionDeclarationInvalid]);
     expect(diags[0].message).toContain('nodes.**');
+  });
+
+  it('接尾辞が再帰の構造そのもの（子リスト・子ノード・length・途中のオブジェクト）の `**` getter は error', () => {
+    // Fixed by cycle-2 review — runtime は構築時に raise するようになった（生成 getter が実データの
+    // 子リストを全深さで影にする）。書き側の structural-write と同じ述語で宣言側も拒否する。
+    // 添字綴り（`nodes.**.children.0`）も畳んで同じ判定（書き側・runtime と揃える）
+    for (const key of ['nodes.**.children', 'nodes.**.children.*', 'nodes.**.children.length', 'nodes.**.children.*.children',
+      'nodes.**.children.0', 'nodes.**.children.0.children.length']) {
+      const diags = validateRecursion(makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  get "${key}"() { return 42; }`), 'wcs-state', 'en');
+      expect(codes(diags), key).toEqual([WcsDiagnosticCode.RecursionDeclarationInvalid]);
+      expect(diags[0].message, key).toContain(`"${key}" names the recursion structure itself`);
+    }
+    const nested = validateRecursion(makeState(`
+  $recursion: { "nodes.*": "branch.children.*" },
+  nodes: [],
+  get "nodes.**.branch"() { return {}; }`));
+    expect(codes(nested)).toEqual([WcsDiagnosticCode.RecursionDeclarationInvalid]);
+    // 対照: `.children.*` の下の葉は通る
+    expect(only(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  get "nodes.**.children.*.label"() { return "x"; }`)).toEqual([]);
   });
 
   it('再帰 setter は未対応', () => {
@@ -565,6 +621,20 @@ describe('$getAll / $setAll の形', () => {
   it('非空の接頭辞は $getAll では定義できない', () => {
     const diags = only('return this.$getAll("nodes.**.value", [0]);');
     expect(codes(diags)).toEqual([WcsDiagnosticCode.RecursionGetAllForm]);
+  });
+
+  it('$getAll の添字が null・配列でないリテラルなら recursion-getall-form（runtime と同じ）、undefined は束縛形なので黙る', () => {
+    // Fixed by cycle-2 review — `validateSetAllForm` は null を拾っていたのに `$getAll` 側だけ沈黙していた
+    for (const arg of ['null', '"x"', '0', 'true', '{ depth: 1 }']) {
+      const diags = validateRecursion(makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  probe() { return this.$getAll("nodes.**.value", ${arg}); }`), 'wcs-state', 'en');
+      expect(codes(diags), arg).toEqual([WcsDiagnosticCode.RecursionGetAllForm]);
+      expect(diags[0].message, arg).toContain('not null or a non-array value');
+    }
+    expect(only('return this.$getAll("nodes.**.value", undefined);')).toEqual([]);
+    expect(only('return this.$getAll("nodes.**.value", indexes);')).toEqual([]);
   });
 
   it('$setAll の [] ブロードキャストは正当', () => {
@@ -1103,5 +1173,21 @@ describe('添字綴り（nodes.1.total）での再帰 getter への書き込み'
     expect(indexSegmentsToWildcard('nodes.0x1.total')).toBe('nodes.*.total');
     expect(indexSegmentsToWildcard('nodes..total')).toBe('nodes.*.total');
     expect(indexSegmentsToWildcard('nodes.*.children.0.total')).toBe('nodes.*.children.*.total');
+  });
+
+  it('`**` パスの接尾辞の添字綴りも畳んで構造・読み取り専用にする（runtime の setAllRecursive と同じ）', () => {
+    // Fixed by cycle-2 review — 添字畳みが `**` を経ない綴りにしか掛かっておらず、
+    // `nodes.**.children.0` / `.children.0.children` / `.children.0.total` は静的側も沈黙していた
+    expect(codes(only('this.$setAll("nodes.**.children.0", [], { value: 999, children: [] });')))
+      .toEqual([WcsDiagnosticCode.RecursionStructuralWrite]);
+    expect(codes(only('this.$setAll("nodes.**.children.0.children", [], []);')))
+      .toEqual([WcsDiagnosticCode.RecursionStructuralWrite]);
+    expect(codes(only('this.$setAll("nodes.**.children.0.children.length", [], 0);')))
+      .toEqual([WcsDiagnosticCode.RecursionStructuralWrite]);
+    expect(codes(only('this.$setAll("nodes.**.children.0.total", [], 5);')))
+      .toEqual([WcsDiagnosticCode.RecursionReadonly]);
+    // 葉は通る（ノード自身 `nodes.**` の空接尾辞も従来どおり構造）
+    expect(only('this.$setAll("nodes.**.children.0.value", [], 5);')).toEqual([]);
+    expect(codes(only('this.$setAll("nodes.**", [], null);'))).toEqual([WcsDiagnosticCode.RecursionStructuralWrite]);
   });
 });

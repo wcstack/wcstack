@@ -25,9 +25,3 @@ export interface IRecursionAccessor {
   /** 反復の段数（0 origin） */
   readonly depth: number;
 }
-
-/** `**` を含むパスを (接頭辞, 接尾辞) に割ったもの。 */
-export interface IRecursivePathParts {
-  /** `**` より後ろ（`".total"`。無ければ空文字） */
-  readonly suffix: string;
-}
