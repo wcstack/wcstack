@@ -2,6 +2,17 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## 未リリース
+
+再帰パス（`@wcstack/state` の `$recursion` / `**`）を入れた次の state リリースの dist を同梱する。
+
+### 検証
+
+- **`$recursion` 宣言と `**` の静的検証（新設）** — ランタイムと同じ code 語彙で、パス文字列と宣言だけで決まるものを先に出す。`wcs/recursion-declaration-invalid`（アンカー / 反復サブパスの形・複数宣言・`**` キーが getter でない・setter・ノード自身を名指す `get "nodes.**"`・同じ具体パス族へ展開する 2 本の getter）、`wcs/recursion-unsupported`（`data-wcs` / mustache / `$watch` キー / `$resolve` の `**`、宣言の無い `**`）、`wcs/recursion-anchor`（宣言と合わない `**`）、`wcs/recursion-getall-form` / `wcs/recursion-setall-form`（`**` に対して定義できない添字・値の形）、`wcs/recursion-structural-write`（ノード・子リスト・子ノード・多段の反復サブパスなら子リストへ至る途中のオブジェクトへの一括書き込み）、`wcs/recursion-readonly`（再帰 getter への書き込み）。データを見ないと決まらない共有配列・循環・深さ超過と、評価時の呼び出し文脈で決まる `wcs/recursion-context` は runtime 専用で、静的側は出さない
+- **パスの存在検査が `$recursion` の展開形を認める** — `nodes.*.children.*.children.*.total` のような具体パスは、反復語を剥がして深さ 0 の形へ畳んでから候補集合に当てる（ランタイムの `checkDeclaredPath` と同じ規則）。宣言だけから確定する構造パス（`nodes` / `nodes.*.children` / …）も候補になる。`**` を含む getter のキーは候補に載るが補完には出さない
+- `wcs/index-arity` は `**` を含むパスを判定しない（固定本数の `*` ではないため。形の判定は上の 2 code が担う）。`wcs/getter-cycle` は再帰 getter を「文字列上の自己参照」という理由では循環扱いしない — 深さが進む読み（`nodes.**.total` の中の `nodes.**.children.*.total`）は辺にならず、深さ差 0 の辺だけが循環になる
+- preamble: `$recursion?: Record<string, string>` と、`**` を含むキーの読みを許す索引シグネチャ
+
 ## 1.13.0 — 2026-09-08
 
 `@wcstack/state` 2.2.0 の dist を同梱。

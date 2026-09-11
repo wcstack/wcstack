@@ -1236,12 +1236,14 @@ this.$setAll("nodes.**.selected", [], false);   // 全深さの全ノード
 | 添字の省略 | 書き込み API は文脈を取らないので束縛する深さが無い —— `[]` を渡す |
 | mapper 関数 | `(current, ...indexes)` の添字の本数が深さごとに変わる |
 | `{ spread: true }` | 1 次元配列を木へ配るには作者が走査順を知っている必要があり、契約として使えない |
-| `nodes.**` / `nodes.**.children` / `nodes.**.children.*` | 構造そのものへの書き込みは、その書き込み自身が確定済みの子アドレスを壊す（`wcs/recursion-structural-write`） |
+| `nodes.**` / `nodes.**.children` / `nodes.**.children.*` —— 反復サブパスが多段（`branch.children.*`）なら、子リストへ至る途中の `nodes.**.branch` も | 構造そのものへの書き込みは、その書き込み自身が確定済みの子アドレスを壊す（`wcs/recursion-structural-write`） |
 | `nodes.**.total`、およびその値の内側を指すパス | 再帰 getter に setter は無い。導出元を書く（`wcs/recursion-readonly`） |
 
 ### 入力は木でなければならない
 
 走査は深さ方向に降りながら、必要な形をその場で検査します。**同じ配列インスタンス**に 2 度到達したら拒否します。その配列が現在のノードの祖先のものなら循環（`wcs/recursion-cycle`）、そうでなければ 2 つのノードが 1 本の子リストを共有しています（`wcs/recursion-shared-list`）。各ノードに自分の `children` 配列を持たせてください —— **空**配列の使い回しは行を持たず別名化のしようがないので、追跡もせず正当です。
+
+**走査は受け付けるのにエンジンがまだ追えない形が 1 つあります —— 行オブジェクトを作り直して `children` 配列を引き継ぐ置換です。** `this.nodes = this.nodes.map(n => ({ ...n }))` の後も子リストの台帳は配列をキーにしたままなので、その行は**旧**行オブジェクトに結び付いたままになります。その行の集計を一度読んだあとに、その下の葉を更新すると、その行の `nodes.*.total` だけが古いまま残ります —— 葉・より深い集計・すべての `[]` 合併は正しいので、何も警告は出ません。行は path 経由で in-place に書く（`$resolve` / `$setAll`）、行オブジェクトを引き継ぐ（`[...this.nodes]`）、部分木ごと置き換える（深いクローン）のいずれかにすると集計が追従します。これは `**` ではなくリストの同一性の制限で、手書きの `nodes.*.total` / `nodes.*.children.*.total` getter でも同じ挙動になります（[実装計画](../../docs/state-recursive-path-impl-plan.md)の既知の欠陥 X2）。
 
 上限は展開後のパスの**ワイルドカード 128 段**です。上の集計 getter は評価中のノードより 1 段下を読むので、127 段の鎖までは畳めて、128 段で `wcs/recursion-depth-exceeded` になります（アンカー・到達した深さ・組み立てようとしたパス・上限を名指しします）。この検査は getter 評価スタック自身の 128 段の上限（`wcs/getter-depth-exceeded`）より先に効くので、深い木は「深い」と報告され、循環の疑いを掛けられることはありません。途中で打ち切ることもしません —— 部分的な集計は、誤った値を正しい値として返すことだからです。
 
@@ -2463,7 +2465,7 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 | `wcs/recursion-anchor` | 宣言済みのアンカーと合致しない `**` パス（このバージョンは state ごとに単一の自己再帰アンカー） | 宣言どおりに綴る |
 | `wcs/recursion-context` | **束縛**形の `**` を、束縛先の深さが無い場所で読んだ —— トップレベル、またはアンカー外の getter | 再帰 getter か行 getter の中から読むか、`[]` で全深さを合併する |
 | `wcs/recursion-getall-form` / `wcs/recursion-setall-form` | `**` に対して定義できない `indexes` の形。コードが付くのは非空の接頭辞（両 API）。`$setAll` の省略・mapper・`{ spread: true }` も同じ誤りで、lint は同じコードで報告するが、実行時は形を名指しした文面で throw するだけでコードは付かない | 現在の深さなら省略、全深さなら `[]` |
-| `wcs/recursion-structural-write` | 再帰 `$setAll` が構造そのもの（ノード・子リスト・子ノード）を指している | 葉のプロパティへブロードキャストする |
+| `wcs/recursion-structural-write` | 再帰 `$setAll` が構造そのもの（ノード・子リスト・子ノード・反復サブパスが多段なら子リストへ至る途中のオブジェクト）を指している | 葉のプロパティへブロードキャストする |
 | `wcs/recursion-readonly` | 再帰 `$setAll` が再帰 getter、またはその導出値の内側を指している | getter の導出元を書く |
 | `wcs/recursion-shared-list` / `wcs/recursion-cycle` | 走査が同じ配列インスタンスに 2 度到達した —— 2 つのノードが 1 本の子リストを共有、または自分の祖先から到達可能 | 各ノードに自分の子配列を持たせる |
 | `wcs/recursion-depth-exceeded` | 展開後のパスがワイルドカード 128 段を超える —— 木がエンジンのアドレス可能な深さより深いか、循環している | 木を平らにするか、循環を探す |

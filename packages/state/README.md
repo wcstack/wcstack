@@ -1237,12 +1237,14 @@ Every other form is refused *before* the walk writes anything, so a rejected cal
 | omitted indexes | The write API takes no context, so there is no depth to bind to — pass `[]` |
 | a mapper function | `(current, ...indexes)` has a different arity at every depth |
 | `{ spread: true }` | Handing a flat array to a tree needs the author to know the walk order |
-| `nodes.**`, `nodes.**.children`, `nodes.**.children.*` | Writing the structure itself invalidates the child addresses this very write already resolved (`wcs/recursion-structural-write`) |
+| `nodes.**`, `nodes.**.children`, `nodes.**.children.*` — and, for a multi-segment repeat such as `branch.children.*`, the `nodes.**.branch` on the way to the list | Writing the structure itself invalidates the child addresses this very write already resolved (`wcs/recursion-structural-write`) |
 | `nodes.**.total`, or a path inside its value | A recursive getter has no setter — write what it derives from (`wcs/recursion-readonly`) |
 
 ### The input has to be a tree
 
 The walk descends by depth and checks the shape it needs as it goes: reaching the **same array instance** twice is refused. If that array belongs to one of the current node's ancestors it is a cycle (`wcs/recursion-cycle`); otherwise two nodes share one child list (`wcs/recursion-shared-list`). Give every node its own `children` array — sharing an *empty* one is fine and untracked, because it has no rows to alias.
+
+**One shape the walk accepts but the engine cannot follow yet: replacing a row object while keeping its `children` array.** After `this.nodes = this.nodes.map(n => ({ ...n }))` the child list's ledger is still keyed by the array, so its rows stay attached to the *old* row object. Once that row's aggregate has been read, the next leaf update below it leaves that row's `nodes.*.total` stale — the leaf, the deeper totals and every `[]` union are still right, so nothing complains. Write rows in place through paths (`$resolve`, `$setAll`), keep the row objects (`[...this.nodes]`), or replace the whole subtree (a deep clone), and the aggregates follow. This is a limit of list identity, not of `**`: hand-written `nodes.*.total` / `nodes.*.children.*.total` getters behave the same way (known defect X2 in [the implementation plan](../../docs/state-recursive-path-impl-plan.md)).
 
 The ceiling is **128 wildcard levels** on the expanded path. The aggregate above reads one level below the node it is evaluating, so it folds a chain 127 deep and stops at 128 with `wcs/recursion-depth-exceeded`, naming the anchor, the depth reached, the path it was building, and the limit. That check trips before the getter stack's own 128-frame limit (`wcs/getter-depth-exceeded`), so a deep tree is reported as deep instead of being accused of a cycle. Nothing is truncated on the way: a partial aggregate would be a wrong number reported as a right one.
 
@@ -2467,7 +2469,7 @@ Anything that follows mechanically from the path string is reported at runtime a
 | `wcs/recursion-anchor` | A `**` path that does not match the one declared anchor (this version takes exactly one self-recursive anchor per state) | Spell the anchor as declared |
 | `wcs/recursion-context` | A **bound** `**` was read where there is no depth to bind to — the top level, or a getter outside the anchor | Read it from a recursive or row getter, or pass `[]` to union every depth |
 | `wcs/recursion-getall-form` / `wcs/recursion-setall-form` | An `indexes` argument `**` cannot define. The code is carried by the non-empty prefix (both APIs); omission, a mapper and `{ spread: true }` in a `$setAll` are the same mistake and the linter reports them under the same code, but at runtime they throw with the form named in the message and no code | Omit for the current depth, `[]` for every depth |
-| `wcs/recursion-structural-write` | A recursive `$setAll` targets the structure itself — a node, its child list, or a child node | Broadcast to a leaf property instead |
+| `wcs/recursion-structural-write` | A recursive `$setAll` targets the structure itself — a node, its child list, a child node, or an object on the way to the child list when the repeating sub-path has several segments | Broadcast to a leaf property instead |
 | `wcs/recursion-readonly` | A recursive `$setAll` targets a recursive getter, or a path inside the value it derives | Write what the getter derives from |
 | `wcs/recursion-shared-list` / `wcs/recursion-cycle` | The walk reached the same array instance twice: two nodes sharing one child list, or a list reachable from its own ancestor | Give every node its own child array |
 | `wcs/recursion-depth-exceeded` | The expanded path needs more than 128 wildcard levels — the tree nests deeper than the engine can address, or it contains a cycle | Flatten the tree, or find the cycle |
