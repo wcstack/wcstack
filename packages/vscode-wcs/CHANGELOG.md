@@ -18,6 +18,9 @@
 - **具体パス綴りでの再帰 getter への書き込み** — `$setAll("nodes.*.children.*.total", [], v)` / 値付き `$resolve` / `this["nodes.*.total"] = …` のように `**` を経ずに宣言済み `**` getter の展開形（またはその値の内側）へ書く形を `wcs/recursion-readonly` にする（ランタイムは `setByAddress` の入口で同じ判定をする）
 - `wcs/recursion-structural-write` が子リストの `length`（`$setAll("nodes.**.children.length", [], 0)`）も構造として報告する
 - ボリューム（`mount=`）の state が `$recursion` / `**` getter を宣言していれば `wcs/recursion-declaration-invalid`（error）で報告する（ランタイムは接ぎ木前に throw する形。静的側は沈黙していた）
+- 「未宣言」の断定を、オブジェクトリテラルの**トップレベルに spread が無い**ときに限る — `export default { ...tree, … }` の `tree` が `$recursion` を持ち込む形は静的に読めないので黙る（正当なコードで `wcs-validate` が exit 1 になっていた）
+- `this["…"] = …` の代入走査は文字列・テンプレートリテラルの中身を見ない（`'this["nodes.**.value"] = 1'` という文字列を代入と誤認して error にしていた）
+- 添字綴り（`this["nodes.1.total"] = 9` / `$setAll("nodes.1.total", [], 9)` / 値付き `$resolve`）での再帰 getter への書き込みも `wcs/recursion-readonly` にする（ランタイムは添字を `*` に畳んで同じ判定をする）
 
 ## 1.13.0 — 2026-09-08
 

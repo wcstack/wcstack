@@ -312,6 +312,27 @@ export function hasDefaultExportObject(scriptContent: string): boolean {
   return locateDefaultExportObject(scriptContent) !== null;
 }
 
+/**
+ * `export default { ... }` の**トップレベル**に spread（`...expr`）があるか。
+ *
+ * spread は宣言を持ち込みうる（`...tree` の中に `$recursion` があるかもしれない）が、中身は
+ * 静的に読めない。「そのオブジェクトリテラルに宣言が無い」と断定するゲートはこれを見て
+ * 黙る側に倒す。入れ子（`nodes: [...rows]`）は数えない。
+ */
+export function hasTopLevelSpread(scriptContent: string): boolean {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return false;
+  const scan = maskCommentsAndStrings(root.content);
+  let depth = 0;
+  for (let i = 0; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === '(' || ch === '[' || ch === '{') depth++;
+    else if (ch === ')' || ch === ']' || ch === '}') depth--;
+    else if (depth === 0 && ch === '.' && scan.startsWith('...', i)) return true;
+  }
+  return false;
+}
+
 interface ObjectEntry {
   readonly key: string;
   readonly start: number;
@@ -1078,7 +1099,7 @@ function parseTopLevelProperties(objectContent: string): PropertyInfo[] {
  *
  * 正規表現リテラルは解釈しない（`/["']/` のような値は文字列の開始とみなされる）。
  */
-function maskCommentsAndStrings(source: string): string {
+export function maskCommentsAndStrings(source: string): string {
   const out = source.split('');
   const len = source.length;
   const blank = (i: number): void => {

@@ -183,16 +183,30 @@ export function owningGetterSuffix(
   getterSuffixes: readonly string[],
   path: string,
 ): string | null {
-  const folded = foldRecursion(spec, path);
+  // 添字綴り（`this["nodes.1.total"]` / `$setAll("nodes.1.total", …)`）はランタイムが `*` に畳んで
+  // 読み取り専用検査に掛けるので、静的側も畳んでから照合する
+  const pattern = indexSegmentsToWildcard(path);
+  const folded = foldRecursion(spec, pattern);
   if (folded === null) return null;
   const unit = '.' + spec.repeat;
   for (const suffix of getterSuffixes) {
     for (let depth = folded.depth; depth >= 0; depth--) {
       const expansion = spec.anchor + unit.repeat(depth) + suffix;
-      if (path === expansion || path.startsWith(expansion + '.')) return suffix;
+      if (pattern === expansion || pattern.startsWith(expansion + '.')) return suffix;
     }
   }
   return null;
+}
+
+/**
+ * 添字セグメント（`nodes.1.total` の `1`）を `*` に畳む。述語はランタイム
+ * （`address/ResolvedAddress.ts` / `RecursionRegistry.recursiveGetterOwning`）と同じ
+ * 「`*` でなく、`Number()` が NaN でない区切り」— 空セグメント・`1e3`・`-1`・`0x1` も添字になる。
+ */
+export function indexSegmentsToWildcard(path: string): string {
+  return path.split('.')
+    .map(segment => (segment !== '*' && !Number.isNaN(Number(segment)) ? '*' : segment))
+    .join('.');
 }
 
 /**

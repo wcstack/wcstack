@@ -5,11 +5,12 @@ import { validateTemplateSyntax } from '../src/service/templateSyntaxValidator';
 import { validateWatchDeclarations } from '../src/service/watchDeclarationValidator';
 import { validateSemantics } from '../src/service/semanticValidator';
 import { validateDocument } from '../src/core/validateDocument';
-import { analyzeListKeyEntries, analyzeRecursionDeclaration, analyzeStatePaths, hasDefaultExportObject } from '../src/service/stateAnalyzer';
+import { analyzeListKeyEntries, analyzeRecursionDeclaration, analyzeStatePaths, hasDefaultExportObject, hasTopLevelSpread } from '../src/service/stateAnalyzer';
 import {
   checkNodePath,
   collectRecursionSpecs,
   foldRecursion,
+  indexSegmentsToWildcard,
   makeRecursionSpec,
   matchesRecursion,
   owningGetterSuffix,
@@ -992,5 +993,115 @@ export default {
   it('validateDocument に集約される', () => {
     expect(validateDocument(html, { locale: 'en' }).filter(d => d.code === WcsDiagnosticCode.RecursionDeclarationInvalid))
       .toHaveLength(2);
+  });
+});
+
+// ============================================================
+// 着地後レビュー（第 3 回）
+// ============================================================
+
+describe('spread で宣言を持ち込むオブジェクトリテラルでは「未宣言」と断定しない', () => {
+  // Fixed by post-landing review (round 3, S9) — was: `...tree` で `$recursion` を持ち込む形は
+  // オブジェクトリテラル自体は読めるので `undeclared` になり、`**` getter に warning・`$getAll` に
+  // error を出して `wcs-validate` が exit 1 になっていた（ランタイムは正常に動く）。
+  const spread = `<wcs-state><script type="module">
+const tree = { $recursion: { "nodes.*": "children.*" } };
+export default {
+  ...tree,
+  nodes: [],
+  get "nodes.**.total"() { return 0; },
+  get treeTotal() { return this.$getAll("nodes.**.value", []).reduce((a, b) => a + b, 0); },
+};
+</script></wcs-state>`;
+
+  it('トップレベルの spread があれば $getAll / `**` getter に黙る', () => {
+    expect(validateRecursion(spread)).toEqual([]);
+  });
+
+  it('入れ子の spread（`nodes: [...rows]`）は宣言を持ち込めないので従来どおり報告する', () => {
+    const diags = validateRecursion(makeState(`
+  nodes: [...rows],
+  get "nodes.**.total"() { return 0; },
+  sum() { return this.$getAll("nodes.**.value", []); }`));
+    expect(codes(diags)).toEqual([WcsDiagnosticCode.RecursionUnsupported, WcsDiagnosticCode.RecursionUnsupported]);
+  });
+
+  it('hasTopLevelSpread はトップレベルの `...` だけを数える（文字列の中は見ない）', () => {
+    expect(hasTopLevelSpread('export default { ...base, a: 1 };')).toBe(true);
+    expect(hasTopLevelSpread('export default { a: 1, ...base };')).toBe(true);
+    expect(hasTopLevelSpread('export default { a: [...xs], b: { ...ys }, c: f(...zs) };')).toBe(false);
+    expect(hasTopLevelSpread('export default { a: "...", b: 1 };')).toBe(false);
+    expect(hasTopLevelSpread('export default class S {}')).toBe(false);
+  });
+});
+
+describe('文字列・テンプレートリテラルの中の `this["…"] = …` は代入ではない', () => {
+  // Fixed by post-landing review (round 3, S7) — 代入の走査が blankComments（文字列の中身が
+  // 残る）だったため、`'this["nodes.**.value"] = 1'` という文字列を代入と誤認して error にしていた。
+  it('文字列の中身は代入として拾わない', () => {
+    expect(validateRecursion(makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  x: 'this["nodes.**.value"] = 1',
+  y: \`this["nodes.**.value"] = 1\`,
+  z: "this['nodes.**.value'] += 1"`))).toEqual([]);
+  });
+
+  it('同じ行に文字列と本物の代入があれば、本物だけを原文の位置で報告する', () => {
+    const html = makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  poke() { const s = 'this["nodes.**.value"] = 1'; this["nodes.**.value"] = 2; return s; }`);
+    const diags = validateRecursion(html);
+    expect(codes(diags)).toEqual([WcsDiagnosticCode.RecursionUnsupported]);
+    expect(html.slice(diags[0].start, diags[0].end)).toBe('nodes.**.value');
+    expect(diags[0].start).toBeGreaterThan(html.indexOf("'this["));
+  });
+});
+
+describe('添字綴り（nodes.1.total）での再帰 getter への書き込み', () => {
+  // Fixed by post-landing review (round 3, S1) — ランタイムは `this["nodes.1.total"]` を
+  // `nodes.*.total` に畳んで `recursion-readonly` にするが、静的側は `nodes.*` で始まらない
+  // ので黙っていた（パリティ欠陥）。API のパス引数（`$setAll("nodes.1.total", …)`）も同じ。
+  const only = (body: string) => validateRecursion(makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  get "nodes.**.total"() { return 0; },
+  probe() { ${body} }`), 'wcs-state', 'en');
+
+  it('代入・$setAll・値付き $resolve の添字綴りを recursion-readonly にする', () => {
+    const diags = only(`
+    this.$setAll("nodes.1.total", [], 9);
+    this.$resolve("nodes.0.children.0.total", [], 1);
+    this["nodes.1.total"] = 9;
+    this["nodes.0.children.0.total.x"] = 1;`);
+    expect(codes(diags)).toEqual(Array(4).fill(WcsDiagnosticCode.RecursionReadonly));
+    expect(diags[0].message).toContain('$setAll("nodes.1.total") writes into the recursive getter "nodes.**.total"');
+    expect(diags[2].message).toContain('this["nodes.1.total"] = …');
+  });
+
+  it('添字綴りの葉は黙る', () => {
+    expect(only('this["nodes.1.value"] = 1; this.$setAll("nodes.0.children.1.value", [], 2);')).toEqual([]);
+  });
+
+  it('ワイルドカードと添字の混在綴り（nodes.*.children.0.total）も recursion-readonly（ランタイムと同じ）', () => {
+    const diags = only(`
+    this.$setAll("nodes.*.children.0.total", [], 5);
+    this.$resolve("nodes.*.children.0.total", [0], 6);
+    this["nodes.0.children.*.total.x"] = 1;`);
+    expect(codes(diags)).toEqual(Array(3).fill(WcsDiagnosticCode.RecursionReadonly));
+    expect(only('this.$resolve("nodes.*.children.0.value", [0], 5);')).toEqual([]);
+  });
+
+  it('indexSegmentsToWildcard はランタイムと同じ述語（`Number()` が NaN でないセグメント）を `*` に畳む', () => {
+    expect(indexSegmentsToWildcard('nodes.1.children.0.total')).toBe('nodes.*.children.*.total');
+    expect(indexSegmentsToWildcard('nodes.*.total')).toBe('nodes.*.total');
+    expect(indexSegmentsToWildcard('nodes.v1.total10')).toBe('nodes.v1.total10');
+    // 述語はランタイム（ResolvedAddress）と同じ「Number() が NaN でない区切り」
+    expect(indexSegmentsToWildcard('nodes.1e3.total')).toBe('nodes.*.total');
+    expect(indexSegmentsToWildcard('nodes.-1.total')).toBe('nodes.*.total');
+    expect(indexSegmentsToWildcard('nodes.0x1.total')).toBe('nodes.*.total');
+    expect(indexSegmentsToWildcard('nodes..total')).toBe('nodes.*.total');
+    expect(indexSegmentsToWildcard('nodes.*.children.0.total')).toBe('nodes.*.children.*.total');
   });
 });

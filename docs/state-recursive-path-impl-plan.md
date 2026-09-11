@@ -289,7 +289,7 @@ X2 は #256、X5 は #257 として Issue 化した（X1 は未作成）。X10 �
 | X7 | `setInitialState` の再セット後、`for` の行バインドが以後の書き込みに追従しない（集計 getter は追従する）。X6 と同じクラス。再帰とは独立 |
 | X8 | マウントされたコンポーネントの子スコープで `onclick: <method>` がホスト state 側のメソッドを指すと、その `for` が 1 行も描画されず診断も出ない。設計書 §1-1 の `clearSelection()` を行のボタンから呼ぶ形を塞ぐ |
 | X9 | マウントスコープから `$getAll("rows.**.value", [])` を呼ぶと、診断が**翻訳後**のパス（`nodes.**.value`）を名指しする。作者のソースに無い綴りなので grep しても見つからない |
-| X10 | `setInitialState` の再セット後、**wildcard 無しの getter** が旧世代のキャッシュ値を返す（`{ items: [1,2], get sum }` を `{ items: [5,6] }` に再セットしても `sum` は 3 のまま。§7-3 で発見）。`_state` セッタは listPaths / getterPaths / pathSet と再帰の生成辺は整理するが getter キャッシュには触らず、wildcard 無しの絶対アドレスは世代をまたいで同一。再帰の合併形 getter も同じで、再セット前に読んだものだけが旧値を返す。X7 と同じ「再セット後」クラス。`integration.recursionKnownDefects.test.ts` 欠陥8 で現状固定。**追記（§7-4）**: wildcard 無しに限らない。listIndex 付きの絶対アドレスも、再セットで**同じ配列インスタンス**が引き継がれれば台帳（配列 identity がキー）ごと世代を跨ぐ。再帰の生成アクセサについては §7-4 で辺と一緒にキャッシュも落とすようにしたが、作者が手で書いた行 getter のキャッシュは同じ形で残る（辺が残るので構造書き込みで dirty にはなる） |
+| X10 | `setInitialState` の再セット後、**wildcard 無しの getter** が旧世代のキャッシュ値を返す（`{ items: [1,2], get sum }` を `{ items: [5,6] }` に再セットしても `sum` は 3 のまま。§7-3 で発見）。`_state` セッタは listPaths / getterPaths / pathSet と再帰の生成辺は整理するが getter キャッシュには触らず、wildcard 無しの絶対アドレスは世代をまたいで同一。再帰の合併形 getter も同じで、再セット前に読んだものだけが旧値を返す。X7 と同じ「再セット後」クラス。`integration.recursionKnownDefects.test.ts` 欠陥8 で現状固定。**追記（§7-4）**: wildcard 無しに限らない。listIndex 付きの絶対アドレスも、再セットで**同じ配列インスタンス**が引き継がれれば台帳（配列 identity がキー）ごと世代を跨ぐ。再帰の生成アクセサについては §7-4 で辺と一緒にキャッシュも落とすようにしたが、作者が手で書いた行 getter のキャッシュは同じ形で残る（辺が残るので構造書き込みで dirty にはなる）。proxy を経ず生配列を `splice` してから同じオブジェクトを再セットした場合は、データパス（`nodes.*.value` 等）のキャッシュも旧値のまま残る — 生データの直接変更は契約外だが、#258 の修正計画で「再セット時に世代を跨ぐキャッシュ」を扱うならこの形も対象に含める |
 
 X6・X7・X10 は同じ「再セット・ハイドレーション後に一部の機構だけ世代を跨ぐ」クラスなので、1 つの Issue にまとめた → [#258](https://github.com/wcstack/wcstack/issues/258)。
 
@@ -309,7 +309,7 @@ X6・X7・X10 は同じ「再セット・ハイドレーション後に一部の
 
 ### 7-4. 着地後レビュー・第 2 回（2026-09-11）
 
-指摘 16 件（高 3・中 6・低 7）。13 件を修理し、3 件を理由付きで却下した。ランタイムとエディタ診断の判定パリティを原則に、片側を直したものは対になる側も直した。
+指摘 16 件（高 3・中 6・低 7）。15 件を修理し、1 件（15）を理由付きで却下した。ランタイムとエディタ診断の判定パリティを原則に、片側を直したものは対になる側も直した。
 
 **修理（ランタイム）**:
 
@@ -329,9 +329,32 @@ X6・X7・X10 は同じ「再セット・ハイドレーション後に一部の
 
 **修理（vscode-wcs）**: 3（宣言が静的に読めない形で「未宣言」と断定しない）・4（`matchesRecursion` が畳む深さを 0 まで降りる）・5（`.length`）・8（`**` getter の値の内側は存在扱い）・9（代入 / `$postUpdate` / `$trackDependency` / `$listKeys` の `**` を `recursion-unsupported`）・1（具体パス綴りの `$setAll` / 値付き `$resolve` / 代入を `recursion-readonly`）・12（ボリュームの `$recursion` / `**` getter を `recursion-declaration-invalid`）。
 
-**却下（理由付き）**: 15（`walk.ts` の二重走査 — 2 度目の `getByAddress` はキャッシュ命中、`createListDiff` は台帳既存で `isSameList` の O(n) 比較のみ。合併形かつ接尾辞に反復語を含む稀な形の定数倍で、`descend` と `expandSuffix` の読みを共有すると形の検査（`guardShape`）の掛け方が絡んで走査が複雑になる）／9 の README 側（表は正しかった — 実装を表に合わせた）／6 の「外側走査を残す」案（残すと定義にない値を返す経路が残る）。
+**却下（理由付き）**: 15（`walk.ts` の二重走査 — 2 度目の `getByAddress` はキャッシュ命中、`createListDiff` は台帳既存で `isSameList` の O(n) 比較のみ。合併形かつ接尾辞に反復語を含む稀な形の定数倍で、`descend` と `expandSuffix` の読みを共有すると形の検査（`guardShape`）の掛け方が絡んで走査が複雑になる）。**採らなかった案**: 9 の「README の表を実装に合わせる」（表が正しく、実装を表に合わせた）／6 の「外側走査を残して診断だけ足す」（残すと定義にない値を返す経路が残る）。
 
 **残課題**: 静的側は通常（非再帰）の getter の値の内側（`total.count`）にも `binding-path-missing` を出す（ランタイムは UNKNOWN で黙る）。本 PR 固有ではないので手を付けていない。
+
+### 7-5. 着地後レビュー・第 3 回（2026-09-11）
+
+第 2 回の修理はすべて解決を確認（副作用も無し）。新規 5 件（中 1・低 4）をすべて修理した。
+
+| # | 内容 | 修理 |
+|---|---|---|
+| 1（中） | `...tree` で `$recursion` を持ち込むオブジェクトリテラルは「読める」ので `undeclared` になり、正当なコードに `recursion-unsupported`（error）が出て `wcs-validate` が exit 1 | `stateAnalyzer.hasTopLevelSpread` を新設し、「オブジェクトリテラルが読めて、トップレベルに spread が無く、`$recursion` が無い」ときだけ断定する |
+| 2（低） | 新設の代入走査が `blankComments` で、文字列・テンプレートの中の `this["…"] = 1` を代入と誤認 | `maskCommentsAndStrings`（export 化）の鏡像で探し、パスは同じ位置を原文から切り出す。`validateApiCalls` は既存 validator 家系と同じ `blankComments` のまま（テンプレート補間の中の呼び出しを見失わないため） |
+| 3（低） | 添字綴り（`this["nodes.1.total"] = 9`）はランタイムが `nodes.*.total` に畳んで拒否するが静的側は沈黙。加えて**ランタイム側**も API のパス引数（`$setAll("nodes.1.total", [], 9)` / 値付き `$resolve`）は getResolvedAddress を経ないので素通りし、`nodes[1].total` を生の行に書いていた（getter が勝ち続けるので集計は無事だが `$getAll("nodes.1.total", [])` は汚れた値を返す） | 両側で添字セグメントを `*` に畳んでから照合する（runtime `recursiveGetterOwning` / static `owningGetterSuffix`）。バインディングの添字綴りは静的側が元から `template-syntax` で拒否するので `matchesRecursion` には掛けない |
+| 4（低） | class 構文テストの「影にされていない」assert が `{}` を検査していて空振り | `__state` を対象にし、prototype と作者 getter の値（-1）まで見る |
+| 5（低） | §7-4 の件数、`bindingValidator.ts` の撤去済み API 名 | 文言修正 |
+
+**参考（非指摘・記録のみ）**: 同一オブジェクトの再セット直前に proxy を経ず生配列を `splice` した場合は、生成アクセサだけでなくデータパスのキャッシュも旧値のまま残る。生データの直接変更は契約外（§7-2 X10 の追記を参照）。
+
+### 7-6. 着地後レビュー・第 4 回（2026-09-11）
+
+第 3 回の修理 5 件はすべて解決を確認（添字畳みの述語がランタイムの `ResolvedAddress` と一致することも突合済み）。新規 2 件を修理した。
+
+| # | 内容 | 修理 |
+|---|---|---|
+| 1（中） | ランタイムの添字畳みを「アンカーで始まらないとき」にしか掛けていなかったので、ワイルドカードと添字の**混在綴り**（`nodes.*.children.0.total`）が畳まれず素通り。`$setAll` は行 0 に書いた後に children が空の行 1 で生の `Reflect.set called on non-object`（部分書き込み）、`$resolve` は無言で汚染。静的側は無条件に畳むので捕まえていた（パリティ欠陥） | `recursiveGetterOwning` で無条件に畳む（パスごとに初回 1 回・記憶済み）。混在綴りの `$setAll` / `$resolve` / 値の内側と、葉の対照を両側のテストに追加 |
+| 2（低） | 静的側の添字述語が整数綴り（`^\d+$`）だけで、ランタイムが添字と読む空セグメント・`1e3`・`-1`・`0x1` に沈黙 | 述語をランタイムと同じ「`*` でなく `Number()` が NaN でない区切り」に揃えた |
 
 ## 8. 受け入れ条件と検証
 

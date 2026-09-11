@@ -35,6 +35,8 @@ import {
   analyzeListKeyEntries,
   analyzeRecursionDeclaration,
   hasDefaultExportObject,
+  hasTopLevelSpread,
+  maskCommentsAndStrings,
   type RecursionDeclarationInfo,
 } from './stateAnalyzer.js';
 import { blankComments, createApiCallRegex, literalArrayLength, literalString, splitCallArgs } from './scriptCallArgs.js';
@@ -93,8 +95,11 @@ export function validateRecursion(
       continue;
     }
     const spec = validateDeclaration(declaration, block.contentStart, msgs, out);
-    // 「宣言が無い」と断定できるのは、オブジェクトリテラルが読めてそこに無いときだけ
-    const undeclared = declaration === null && hasDefaultExportObject(block.content);
+    // 「宣言が無い」と断定できるのは、オブジェクトリテラルが読めて、spread（`...tree` — 宣言を
+    // 持ち込みうるが中身は読めない）が無く、そこに `$recursion` が無いときだけ
+    const undeclared = declaration === null
+      && hasDefaultExportObject(block.content)
+      && !hasTopLevelSpread(block.content);
     const getterSuffixes = validateRecursiveGetters(block.content, block.contentStart, spec, undeclared, msgs, out);
     validateListKeys(block.content, block.contentStart, msgs, out);
     validateApiCalls(block.content, block.contentStart, spec, getterSuffixes, undeclared, msgs, out);
@@ -422,13 +427,17 @@ function validateAssignments(
   msgs: WcsMessageCatalog,
   out: WcsDiagnostic[],
 ): void {
-  const scan = blankComments(script);
+  // 文字列・テンプレートリテラルの**中身**まで潰した鏡像で探す（`'this["…"] = 1'` という
+  // 文字列を代入と誤認しない）。鏡像は長さを保つので、パスは同じ位置を原文から切り出す
+  // （キーの引用符は残るのでパターンは鏡像でも噛み合う）。
+  const masked = maskCommentsAndStrings(script);
   const regex = new RegExp(BRACKET_ASSIGNMENT.source, 'g');
   let match: RegExpExecArray | null;
-  while ((match = regex.exec(scan)) !== null) {
-    const path = match[2];
+  while ((match = regex.exec(masked)) !== null) {
     // 引用符の中身の位置（`this[` と `"` を飛ばす）
-    const start = offset + match.index + match[0].indexOf(match[1]) + 1;
+    const pathStart = match.index + match[0].indexOf(match[1]) + 1;
+    const path = script.slice(pathStart, pathStart + match[2].length);
+    const start = offset + pathStart;
     const end = start + path.length;
     if (hasRecursionWildcard(path)) {
       push(out, WcsDiagnosticCode.RecursionUnsupported, start, end, msgs.recursionUnsupported(path, 'assignment'));

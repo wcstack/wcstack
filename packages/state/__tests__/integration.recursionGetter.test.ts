@@ -927,8 +927,11 @@ describe("宣言と再帰 getter の定義を検証する", () => {
 
     expect(() => read(stateEl, (s: any) => s.$getAll("nodes.*.total", [])))
       .toThrow(/"nodes\.\*\.total" is already defined on the state, so the recursive getter "nodes\.\*\*\.total" cannot expand to it/);
-    // 拒否したので、作者の getter が own の生成物で影にされていない
-    expect(Object.getOwnPropertyDescriptor(stateEl["state" as keyof State] ?? {}, "nodes.*.total")).toBe(undefined);
+    // 拒否したので、作者の getter（prototype）が own の生成物で影にされていない
+    const raw = (stateEl as any).__state;
+    expect(Object.getOwnPropertyDescriptor(raw, "nodes.*.total")).toBe(undefined);
+    expect(Object.getPrototypeOf(raw)).toBe(TreeState.prototype);
+    expect(raw["nodes.*.total"], "作者の getter がそのまま見える").toBe(-1);
     host.remove();
   });
 
@@ -1364,6 +1367,15 @@ describe("RecursionRegistry の直接 API", () => {
     // 判定は記憶される（二度目も同じ答え）
     expect(registry.recursiveGetterOwning(totalAt(0) + ".x")).toBe("nodes.**.total");
     expect(registry.recursiveGetterOwning("nodes.*.totl")).toBe(null);
+    // 添字綴り（API のパス引数は getResolvedAddress を経ない）は `*` に畳んで照合する
+    expect(registry.recursiveGetterOwning("nodes.1.total"), "添字綴りの展開形").toBe("nodes.**.total");
+    expect(registry.recursiveGetterOwning("nodes.0.children.0.total.x"), "添字綴りの値の内側").toBe("nodes.**.total");
+    expect(registry.recursiveGetterOwning("nodes.1.value"), "添字綴りの葉").toBe(null);
+    expect(registry.recursiveGetterOwning("title"), "アンカー外は記憶後も null").toBe(null);
+    // ワイルドカードと添字の混在綴り（アンカーで始まる）も畳んでから照合する
+    expect(registry.recursiveGetterOwning("nodes.*.children.0.total"), "混在綴りの展開形").toBe("nodes.**.total");
+    expect(registry.recursiveGetterOwning("nodes.0.children.*.total.x"), "混在綴りの値の内側").toBe("nodes.**.total");
+    expect(registry.recursiveGetterOwning("nodes.*.children.0.value"), "混在綴りの葉").toBe(null);
 
     // 実体化した後は台帳の即答経路（同じ答えが二度出ること）
     registry.materializeFor(stateEl, totalAt(1));

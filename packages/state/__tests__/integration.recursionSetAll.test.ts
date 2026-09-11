@@ -1319,6 +1319,52 @@ describe("具体パス綴りでの再帰 getter への書き込み（`**` を経
     host.remove();
   });
 
+  it("API のパス引数の添字綴り（nodes.1.total）も同じ入口で止まり、行オブジェクトが汚れないこと", async () => {
+    // Fixed by post-landing review (round 3) — was: `$setAll("nodes.1.total", [], 9)` /
+    // `$resolve("nodes.0.children.0.total", [], 1)` は set トラップと違って getResolvedAddress の
+    // 正規化を経ないので `nodes.*` で始まらず、読み取り専用検査を素通りして `nodes[1].total = 9`
+    // が生の行オブジェクトへ書かれていた（getter は勝ち続けるので集計は壊れないが、
+    // `$getAll("nodes.1.total", [])` がその汚れた値を返す）。
+    const nodes = forest();
+    const { host, stateEl } = await mount(recursionState(nodes), NO_RENDER_HTML);
+    const before = snap(nodes);
+
+    expect(writeError(stateEl, (s: any) => { s.$setAll("nodes.1.total", [], 9); }))
+      .toContain('[wcs/recursion-readonly] "nodes.1.total" writes into the recursive getter "nodes.**.total"');
+    expect(writeError(stateEl, (s: any) => { s.$resolve("nodes.0.children.0.total", [], 1); }))
+      .toContain("[wcs/recursion-readonly]");
+    expect(writeError(stateEl, (s: any) => { s.$setAll("nodes.0.total.x", [], 1); }))
+      .toContain("[wcs/recursion-readonly]");
+    expect(snap(nodes), "行オブジェクトに total が生えていない").toEqual(before);
+    // 対照: 添字綴りの葉は書ける
+    expect(writeError(stateEl, (s: any) => { s.$setAll("nodes.1.value", [], 5); })).toBe("");
+    expect(nodes[1].value).toBe(5);
+    host.remove();
+  });
+
+  it("ワイルドカードと添字の混在綴り（nodes.*.children.0.total）も畳んで止まること", async () => {
+    // Fixed by post-landing review (round 4) — was: 添字畳みを「アンカーで始まらないとき」にしか
+    // 掛けていなかったので、アンカーで始まる混在綴りは畳まれず素通りした。`$setAll` は行 0 の
+    // `children[0]` に `total: 5` を書いた**後**、children が空の行 1 で生の
+    // `Reflect.set called on non-object` になり（部分書き込み＋診断でない例外）、`$resolve` は
+    // 例外なしで汚染していた。静的側（`owningGetterSuffix`）は無条件に畳むので捕まえていた。
+    const nodes = forest();
+    const { host, stateEl } = await mount(recursionState(nodes), NO_RENDER_HTML);
+    const before = snap(nodes);
+
+    expect(writeError(stateEl, (s: any) => { s.$setAll("nodes.*.children.0.total", [], 5); }))
+      .toContain('[wcs/recursion-readonly] "nodes.*.children.0.total" writes into the recursive getter "nodes.**.total"');
+    expect(writeError(stateEl, (s: any) => { s.$resolve("nodes.*.children.0.total", [0], 6); }))
+      .toContain("[wcs/recursion-readonly]");
+    expect(writeError(stateEl, (s: any) => { s.$setAll("nodes.0.children.*.total.x", [], 1); }))
+      .toContain("[wcs/recursion-readonly]");
+    expect(snap(nodes), "1 件も書かれていない（部分書き込みも無い）").toEqual(before);
+    // 対照: 混在綴りの葉は書ける
+    expect(writeError(stateEl, (s: any) => { s.$resolve("nodes.*.children.0.value", [0], 5); })).toBe("");
+    expect(nodes[0].children[0].value).toBe(5);
+    host.remove();
+  });
+
   it("対照: 葉の具体パス・アンカー外・宣言の無い state は従来どおり書けること", async () => {
     const nodes = forest();
     const { host, stateEl } = await mount(recursionState(nodes, {

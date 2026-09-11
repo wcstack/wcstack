@@ -22,7 +22,7 @@ import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
 import { getPathInfo } from "../address/PathInfo";
 import { setCacheEntryByAbsoluteStateAddress } from "../cache/cacheEntryByAbsoluteStateAddress";
 import { IStateElement } from "../components/types";
-import { DELIMITER } from "../define";
+import { DELIMITER, WILDCARD } from "../define";
 import { getAllPropertyDescriptors } from "../getAllPropertyDescriptors";
 import { getListIndexesByList } from "../list/listIndexesByList";
 import { raiseError } from "../raiseError";
@@ -208,18 +208,25 @@ export class RecursionRegistry {
     if (typeof known !== "undefined") {
       return known;
     }
-    if (!concretePath.startsWith(this.spec.anchor)) {
-      return null;
+    // 添字綴り（`$setAll("nodes.1.total", [], v)` — API のパス引数は set トラップと違って
+    // getResolvedAddress の正規化を経ない）は、添字を `*` に畳んでから照合する。畳まないと
+    // `nodes[1].total` へ素の値が書かれる（第 3 回レビューで実測）。**無条件に**畳む —
+    // 「アンカーで始まらないときだけ」にすると、ワイルドカードと添字の混在綴り
+    // （`nodes.*.children.0.total`）がアンカーで始まるせいで畳まれず、`depthOfConcretePath` が
+    // `.children.0` を反復単位と認めずに素通りする（第 4 回レビューで実測）。パスごとに初回 1 回。
+    const pattern = indexSegmentsToWildcard(concretePath);
+    let owner: string | null = null;
+    if (pattern.startsWith(this.spec.anchor)) {
+      // 展開形そのもの → その値の内側（`.` 境界で切った接頭辞を長い方から）の順に照合する。
+      // 接頭辞はアンカーより長いものだけ — アンカー自身は接尾辞が空なので getter になり得ない。
+      owner = this._matchExpansion(pattern);
+      for (let end = pattern.lastIndexOf(DELIMITER);
+           owner === null && end > this.spec.anchor.length;
+           end = pattern.lastIndexOf(DELIMITER, end - 1)) {
+        owner = this._matchExpansion(pattern.slice(0, end));
+      }
     }
-    // 展開形そのもの → その値の内側（`.` 境界で切った接頭辞を長い方から）の順に照合する。
-    // 接頭辞はアンカーより長いものだけ — アンカー自身は接尾辞が空なので getter になり得ない。
-    let owner: string | null = this._matchExpansion(concretePath);
-    for (let end = concretePath.lastIndexOf(DELIMITER);
-         owner === null && end > this.spec.anchor.length;
-         end = concretePath.lastIndexOf(DELIMITER, end - 1)) {
-      owner = this._matchExpansion(concretePath.slice(0, end));
-    }
-    // 定義集合は state の世代内で不変なので、判定は記憶してよい。
+    // 定義集合は state の世代内で不変なので、判定は記憶してよい（アンカー外の否定も含む）。
     this._ownerByPath.set(concretePath, owner);
     return owner;
   }
@@ -428,4 +435,18 @@ export class RecursionRegistry {
 /** 前世代の生成物か（own に残った生成 getter だけが上書きしてよい）。 */
 function isGeneratedGetter(descriptor: PropertyDescriptor): boolean {
   return typeof descriptor.get === "function" && generatedGetters.has(descriptor.get);
+}
+
+/**
+ * 添字セグメント（`nodes.1.total` の `1`）を `*` に畳む。判定は `address/ResolvedAddress.ts`
+ * と同じ「`Number()` が NaN でない区切り」。
+ */
+function indexSegmentsToWildcard(path: string): string {
+  const segments = path.split(DELIMITER);
+  for (let i = 0; i < segments.length; i++) {
+    if (segments[i] !== WILDCARD && !Number.isNaN(Number(segments[i]))) {
+      segments[i] = WILDCARD;
+    }
+  }
+  return segments.join(DELIMITER);
 }
