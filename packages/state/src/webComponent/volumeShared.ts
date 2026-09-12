@@ -27,26 +27,6 @@ export function reserveVolumeSlot(rootNode: Node, mountPath: string): void {
 }
 
 /**
- * 枠の予約を解放する（#257 第 3 ラウンド）。
- *
- * D22 の「予約下の読みは undefined が正」は**接ぎ木を待つ間**の約束であって、
- * 引き取り手が来ないと確定した後まで続ける理由は無い。解放しないと、同じマウント
- * パスの差し替え要素が `reserveVolumeSlot` の "already mounted" に弾かれ（しかも
- * その raise は fail-fast でボリュームの promise を解決済みにしてから投げるので
- * **診断がどこにも出ない**）、ボリュームの復旧手段が丸ごと塞がる。
- *
- * 呼び手は 2 つだけ: 接ぎ木先を失った保留分の着地（下の `orphanPendingVolume`）と、
- * 接ぎ木せずに決着した要素の切断（State の `disconnectedCallback`）。接ぎ木が
- * 成立した枠は解放しない — スロットはツリー上で実際に埋まっている。
- *
- * `rootNode` が null（切断済み要素の再切断）でも安全: WeakMap の get は
- * オブジェクトでないキーに対して undefined を返すだけで throw しない。
- */
-export function releaseVolumeSlot(rootNode: Node | null, mountPath: string): void {
-  reservedSlotsByRootNode.get(rootNode as Node)?.delete(mountPath);
-}
-
-/**
  * パスが予約済みスロットの配下（または祖先）か。pathDiagnostics と getByAddress の
  * ルート欠落 raise が「予約下の読みは undefined が正」（D22）のために引く。
  */
@@ -190,10 +170,7 @@ const pendingVolumesByRootNode = new WeakMap<Node, IPendingVolumeRequest[]>();
 const failedRootNodes = new WeakSet<Node>();
 
 /** 接ぎ木先を失ったボリュームの着地（graftIsolated の失敗と同じ形 — 1 件 1 報告 ＋ finish(null)）。 */
-function orphanPendingVolume(rootNode: Node, request: IPendingVolumeRequest): void {
-  // 枠も解放する: このボリュームは二度と接ぎ木しないので、握ったままだと修正版の
-  // ルートを接続しても同じパスの新しい要素が予約に弾かれて採用されない（#257 第 3 ラウンド）
-  releaseVolumeSlot(rootNode, request.mountPath);
+function orphanPendingVolume(request: IPendingVolumeRequest): void {
   console.error(
     `[@wcstack/state] volume "${request.mountPath}" was not grafted — the root state element ` +
     `on this root node failed to initialize (its own diagnostic is reported separately). ` +
@@ -227,7 +204,7 @@ export function failPendingVolumes(rootNode: Node): void {
   }
   pendingVolumesByRootNode.delete(rootNode);
   for (const request of pending) {
-    orphanPendingVolume(rootNode, request);
+    orphanPendingVolume(request);
   }
 }
 
@@ -241,7 +218,7 @@ export function queuePendingVolume(rootNode: Node, request: IPendingVolumeReques
   if (failedRootNodes.has(rootNode)) {
     // ルートが落ちた後に届いた保留要求（ボリュームのロードのほうが遅い形）。
     // 積んでも引き取り手は永久に来ない
-    orphanPendingVolume(rootNode, request);
+    orphanPendingVolume(request);
     return;
   }
   let pending = pendingVolumesByRootNode.get(rootNode);

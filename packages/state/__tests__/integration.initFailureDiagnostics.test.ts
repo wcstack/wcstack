@@ -17,11 +17,13 @@
  *  - `initialized` は false のまま（切断時の後始末が未ロードの state を触らないため）。
  *  - 失敗した rootNode の `getBindingsReady` は reject する（即時解決のままだと
  *    @wcstack/server の `waitForReady` が空のページを ready と報告する）。
- *  - **失敗の時点で待機していた**同じ rootNode のボリュームは孤児として着地し、枠の
- *    予約も解放される（ルート登録が来ない ＝ `drainPendingVolumes` が呼ばれないので、
- *    放置すると永久未解決になる）。「ルートは来ない」の印は**落ちた要素が居る間だけ**
- *    有効。復旧は「落ちたルートを外す → 修正版を接続 → 新しい `<wcs-state mount="…">`
- *    を足す」で、報告済みのボリューム要素は自分で接ぎ木し直さない。
+ *  - **失敗の時点で待機していた**同じ rootNode のボリュームは孤児として着地する
+ *    （ルート登録が来ない ＝ `drainPendingVolumes` が呼ばれないので、放置すると永久
+ *    未解決になる）。「ルートは来ない」の印は**落ちた要素が居る間だけ**有効。
+ *    ただし孤児として報告されたボリュームはそこが終点で、後から修正版のルートを
+ *    接続しても自分で接ぎ木し直さない（マウントの枠も予約されたまま — 枠の解放には
+ *    所有者の確認が要る別の設計問題なので、この PR では扱わない）。復旧はページの
+ *    読み直し。
  *  - 失敗した要素は復旧不能。`setInitialState` は無言の no-op ではなく throw する。
  *
  * 載る throw 元は「`_initialize` が投げうるもの全部」— コードから導いてある:
@@ -35,6 +37,12 @@
  * 載**らない**もの: ロード中に剥がされた要素。作者のミスが 1 つも無いので初期化失敗では
  * なく**中断**として扱う（診断も reject も毒化も無し）。第 2 ラウンドはこれを失敗として
  * 列挙していたが、第 3 ラウンドで撤回した — 下の「#257 中断」2 つの describe が新しい契約。
+ *
+ * 同じく載らないのがボリューム（`mount=`）の設定エラー — 不正な mount パス・`mount` と
+ * `bind-component` の併記・同じルートで既に埋まっているマウントパスの二重予約。
+ * `_initializeVolume` の catch が 3 つの promise を自分で解決してから raise し、
+ * `connectedCallback` のボリューム分岐はそれを包まないので、**診断 0 件・reject 0 件の
+ * 完全な無音**になる（挙動はこの PR では変えない — 別 Issue）。
  *
  * `connectedCallback` が `_initialize` より前に await する 2 つ（`_initializeDCC` /
  * `_initializeBindWebComponent`）の raise も同じ着地に載る。自分で promise を解決してから
@@ -426,104 +434,6 @@ describe("#257 初期化失敗: 同居するボリューム", () => {
       expect(lang).toBe("en");
       // 孤児の報告も D11 の「ルート無し」報告も出ない（出たルートの診断 1 件のまま）
       expect(errorSpy.mock.calls.length).toBe(1);
-    } finally {
-      errorSpy.mockRestore();
-      host.remove();
-    }
-  });
-
-  it("孤児になったボリュームの枠は解放され、修正版のルート ＋ 新しいボリューム要素で復旧が通ること", async () => {
-    // 第 2 ラウンドはここが通らなかった（実測）: 枠の予約に解放経路が無く、ルートを
-    // 直しても新しい <wcs-state mount="i18n"> が `reserveVolumeSlot` の "already mounted" に
-    // 弾かれた。しかもその raise は fail-fast（promise を解決してから投げる）なので
-    // **診断はどこにも出ず**、`i18n.lang` は undefined・描画は空のままだった。
-    // 復旧の連鎖を通しで固定する: 値・描画テキスト・getBindingsReady の 3 つ。
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const host = document.createElement(uniqueTag("initfail-vol-recover"));
-    const shadowRoot = host.attachShadow({ mode: "open" });
-    shadowRoot.innerHTML =
-      `<wcs-state mount="i18n"></wcs-state>` +
-      `<wcs-state></wcs-state>` +
-      `<p id="lang" data-wcs="textContent: i18n.lang"></p>`;
-    document.body.appendChild(host);
-    const orphanedVolume = shadowRoot.querySelector("wcs-state[mount]") as State;
-    const brokenRoot = shadowRoot.querySelector("wcs-state:not([mount])") as State;
-    try {
-      orphanedVolume.setInitialState({ lang: "en" });
-      await flush();
-      await flush();
-      brokenRoot.setInitialState({ items: [], $listKeys: { "items.*": "id" } });
-      await expect(brokenRoot.connectedCallbackPromise).rejects.toThrow(/must be the list path itself/);
-      await expect(orphanedVolume.connectedCallbackPromise).resolves.toBeUndefined();
-      expect(errorSpy.mock.calls.length).toBe(2);
-      errorSpy.mockClear();
-
-      // 作者の復旧: 落ちたルートを外し、修正版を接続し、新しいボリューム要素を足す
-      brokenRoot.remove();
-      await flush();
-      const fixedRoot = document.createElement("wcs-state") as State;
-      fixedRoot.setAttribute("json", '{"count":1}');
-      shadowRoot.insertBefore(fixedRoot, shadowRoot.firstChild);
-      const newVolume = document.createElement("wcs-state") as State;
-      newVolume.setAttribute("mount", "i18n");
-      shadowRoot.appendChild(newVolume);
-      newVolume.setInitialState({ lang: "ja" });
-      await expect(fixedRoot.connectedCallbackPromise).resolves.toBeUndefined();
-      await expect(newVolume.connectedCallbackPromise).resolves.toBeUndefined();
-      // (3) ready: 失敗したルートが置いた reject 済みの ready を、修正版の登録が置き換える
-      await expect(State.getBindingsReady(shadowRoot)).resolves.toBeUndefined();
-      await flush();
-      await flush();
-      // (1) 値
-      let lang: unknown = "unread";
-      fixedRoot.createState("readonly", (state: any) => { lang = state["i18n.lang"]; });
-      expect(lang).toBe("ja");
-      // (2) 描画テキスト
-      expect((shadowRoot.querySelector("#lang") as HTMLElement).textContent).toBe("ja");
-      // 復旧の過程で新しい診断は出ない
-      expect(errorSpy.mock.calls.length).toBe(0);
-    } finally {
-      errorSpy.mockRestore();
-      host.remove();
-    }
-  });
-
-  it("接ぎ木せずに決着したボリュームを取り除くと、同じパスの差し替え要素が接ぎ木できること", async () => {
-    // 切断での解放（#257 第 3 ラウンド）。ロード失敗のボリュームは「1 ボリュームに
-    // 閉じる」隔離で決着し、予約は残る（読みは undefined のまま騒がない — D22）。
-    // その要素が DOM から消えたら予約も解放する: 二度と接ぎ木しない要素が枠を握り
-    // 続けると、差し替えが "already mounted" に弾かれる（しかも無言）。
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const host = document.createElement(uniqueTag("initfail-vol-replace"));
-    const shadowRoot = host.attachShadow({ mode: "open" });
-    shadowRoot.innerHTML =
-      `<wcs-state mount="cfg" json="{invalid"></wcs-state>` +
-      `<wcs-state json='{"count":1}'></wcs-state>` +
-      `<p id="cfg" data-wcs="textContent: cfg.label"></p>`;
-    document.body.appendChild(host);
-    const failedVolume = shadowRoot.querySelector("wcs-state[mount]") as State;
-    const rootElement = shadowRoot.querySelector("wcs-state:not([mount])") as State;
-    try {
-      await expect(rootElement.connectedCallbackPromise).resolves.toBeUndefined();
-      await expect(failedVolume.connectedCallbackPromise).resolves.toBeUndefined();
-      expect(errorSpy.mock.calls.length).toBe(1);
-      expect(String(errorSpy.mock.calls[0][0])).toContain('volume "cfg" failed to load');
-      errorSpy.mockClear();
-
-      failedVolume.remove();
-      await flush();
-      const replacement = document.createElement("wcs-state") as State;
-      replacement.setAttribute("mount", "cfg");
-      shadowRoot.appendChild(replacement);
-      replacement.setInitialState({ label: "ok" });
-      await expect(replacement.connectedCallbackPromise).resolves.toBeUndefined();
-      await flush();
-      await flush();
-      let label: unknown = "unread";
-      rootElement.createState("readonly", (state: any) => { label = state["cfg.label"]; });
-      expect(label).toBe("ok");
-      expect((shadowRoot.querySelector("#cfg") as HTMLElement).textContent).toBe("ok");
-      expect(errorSpy.mock.calls.length).toBe(0);
     } finally {
       errorSpy.mockRestore();
       host.remove();

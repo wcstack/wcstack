@@ -40,7 +40,7 @@ import { createPublicMountState } from "../webComponent/overlay";
 import { warnOwnKeyShadowsForMount } from "../webComponent/ownKeyShadow";
 import { markWebComponentAsComplete, markWebComponentStatePropDeclared } from "../webComponent/completeWebComponent";
 import { getInjectedKeys, restoreOverwrittenValues, takeOverwrittenObject } from "../webComponent/preCompletionWrites";
-import { callVolumeLifecycle, clearFailedRootNode, failPendingVolumes, graftOrQueueVolume, IVolumeGraftInfo, releaseVolumeSlot, reserveVolumeSlot, validateVolumeMountPath } from "../webComponent/volume";
+import { callVolumeLifecycle, clearFailedRootNode, failPendingVolumes, graftOrQueueVolume, IVolumeGraftInfo, reserveVolumeSlot, validateVolumeMountPath } from "../webComponent/volume";
 import { hasRootMountBinding } from "../webComponent/rootMountBinding";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/symbols";
 import { waitInitializeBinding } from "../bindings/initializeBindingPromiseByNode";
@@ -504,6 +504,15 @@ export class State extends HTMLElementBase implements IStateElement {
    *
    * 載**らない**もの: ロード中に要素が剥がされた形。作者のミスが 1 つも無いので
    * 初期化失敗ではなく中断として扱う（`_initialize` が `false` を返す）。
+   *
+   * もう 1 つ載らないのがボリューム（`mount=`）の設定エラー — 不正な mount パス・
+   * `mount` と `bind-component` の併記・同じルートで既に埋まっているマウントパスの
+   * 二重予約。`_initializeVolume` の catch が 3 つの promise（initialize / loading /
+   * connectedCallback）を自分で解決してから raise し、`connectedCallback` の
+   * ボリューム分岐はそれを包まないので、throw はカスタム要素リアクションが捨てる
+   * 戻り Promise へ出ていく ＝ **診断 0 件・reject 0 件の完全な無音**。作者に届くのは
+   * 「ボリュームのデータがいつまでも現れない」ことだけ。無音をやめるかどうかは別の
+   * 設計判断で、この PR では挙動を変えない。
    *
    * `connectedCallback` が `_initialize` より前に await する 2 つ
    * （`_initializeDCC` / `_initializeBindWebComponent`）の raise も同じ着地に載る。
@@ -976,19 +985,10 @@ export class State extends HTMLElementBase implements IStateElement {
   disconnectedCallback() {
     if (this.hasAttribute("mount")) {
       // ボリューム: 接ぎ木したデータ・アクセサ・宣言はツリーに残る（アンマウントは
-      // 未対応 — 揮発させると依存グラフに残った getter 登録が宙に浮く）。接ぎ木済みの
-      // 予約も維持する（スロットはツリー上で埋まっている）。
+      // 未対応 — 揮発させると依存グラフに残った getter 登録が宙に浮く）。予約も維持。
       // $disconnectedCallback だけは要素のライフサイクルとして chroot で呼ぶ
       if (this._volumeGraftInfo !== null) {
         callVolumeLifecycle(this._volumeGraftInfo, "$disconnectedCallback");
-      }
-      if (this._initialized && this._volumeGraftInfo === null) {
-        // 接ぎ木**せずに**決着した要素（ロード失敗・接ぎ木失敗・ルート不在の孤児）が
-        // DOM から消えた。この要素は二度と接ぎ木しないので、予約を握ったままだと
-        // 同じマウントパスの差し替え要素が "already mounted" で弾かれ、復旧手段が
-        // 塞がる（#257 第 3 ラウンド）。ロード中（_initialized === false）は進行中の
-        // 呼び出しが予約の持ち主なので触らない — 付け直せばそのまま接ぎ木が完了する
-        releaseVolumeSlot(this._rootNode, this.getAttribute("mount")!);
       }
       this._rootNode = null;
       return;

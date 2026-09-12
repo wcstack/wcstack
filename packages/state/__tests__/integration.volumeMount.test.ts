@@ -301,7 +301,7 @@ describe("volume: 検査と chroot の面（カバレッジ確定）", () => {
   });
 
   it("同じスロットの二重予約と、空パス・空セグメントは throw すること", async () => {
-    const { reserveVolumeSlot, releaseVolumeSlot, validateVolumeMountPath, isPathUnderReservedVolume } = await import("../src/webComponent/volume");
+    const { reserveVolumeSlot, validateVolumeMountPath, isPathUnderReservedVolume } = await import("../src/webComponent/volume");
     const rootNode = document.createDocumentFragment();
     reserveVolumeSlot(rootNode, "dup");
     expect(() => reserveVolumeSlot(rootNode, "dup")).toThrow(/already mounted/);
@@ -313,14 +313,6 @@ describe("volume: 検査と chroot の面（カバレッジ確定）", () => {
     expect(isPathUnderReservedVolume(rootNode, "other")).toBe(false);
     expect(isPathUnderReservedVolume(null, "dup")).toBe(false);
     expect(isPathUnderReservedVolume(document.createDocumentFragment(), "dup")).toBe(false);
-    // 解放（#257 第 3 ラウンド）: 予約の無い rootNode でも null でも安全（切断済み要素の
-    // 再切断がここに来る）。解放後は同じ枠を取り直せる
-    releaseVolumeSlot(document.createDocumentFragment(), "dup");
-    releaseVolumeSlot(null, "dup");
-    expect(isPathUnderReservedVolume(rootNode, "dup.deep.key")).toBe(true);
-    releaseVolumeSlot(rootNode, "dup");
-    expect(isPathUnderReservedVolume(rootNode, "dup.deep.key")).toBe(false);
-    expect(() => reserveVolumeSlot(rootNode, "dup")).not.toThrow();
   });
 
   it("予約下（ロード前）の読みは 1 セグメントも深いパスも undefined で騒がないこと", async () => {
