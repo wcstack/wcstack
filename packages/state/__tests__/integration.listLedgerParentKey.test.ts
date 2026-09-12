@@ -1,17 +1,21 @@
 /**
- * integration.listLedgerParentKey.test.ts — 行の台帳（src/list/listIndexesByList.ts）の
- * キーを **(親, 配列)** の組にした変更（#256）の、親が `null` になる経路の固定。
+ * integration.listLedgerParentKey.test.ts — 行の台帳（src/list/listIndexesByList.ts）が
+ * 「生きた共有」と「陳腐化」を分けることの、親が特殊になる経路での固定（#256）。
  *
- * 組キーにしたことで「この親のもとに行が無い」が意味を持つようになった。無いときに
- * 他の親の行を借りると #256 の別名化に戻るので、借りずに鋳造する。そのぶん、
- * **親を null で鋳造する経路**が本当に null を親にしているかが効くようになった。
- * ハイドレーションは `createListIndex(null, block.index)` で行を無条件に鋳造する
- * （src/hydrateBindings.ts）。ルート直下のリストなら親は null で正しく、台帳も
- * ルート番兵のもとに入る ── それをここで固定する。
+ * 台帳は 1 本の配列につき行集合 1 組。行がぶら下がる親が**退役している**ときだけ、
+ * 行の identity を保ったまま生きた親へ付け替える。付け替えの可否は親の深さ
+ * （`position`）で決まるので、**行を鋳造するときの親**が何になるかが効く ──
+ * ハイドレーションは `createListIndex(null, block.index)` で常に親 null で鋳造し、
+ * `$listKeys` の書き込みはハイブリッド配列を格納する前に台帳を確定させる。
+ * どちらも方針書が名指しで求めた特殊例なので、実測して固定する。
+ *
+ * **行 DOM が据え置かれることは `toBe`（identity）で書く。** `toEqual` は構造比較なので、
+ * 行ノードが全部作り直されていても同じ文字列なら通ってしまう。
  */
 import { describe, it, expect, beforeAll } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
-import { getListIndexesByList, getLastRegisteredListIndexes } from "../src/list/listIndexesByList";
+import { State } from "../src/components/State";
+import { getListIndexesByList } from "../src/list/listIndexesByList";
 
 beforeAll(() => {
   bootstrapState();
@@ -20,7 +24,7 @@ beforeAll(() => {
 const flush = () => new Promise((r) => setTimeout(r));
 
 describe("ハイドレーションが鋳造する行（親は null）", () => {
-  it("SSR 済みの for ブロックの行が、ルート番兵（親 null）のもとに登録されること", async () => {
+  it("SSR 済みの for ブロックの行が、親 null で登録されること", async () => {
     document.body.innerHTML = `
       <wcs-ssr name="default">
         <script type="application/json">{"items":[{"name":"Alice"},{"name":"Bob"}]}</script>
@@ -41,14 +45,11 @@ describe("ハイドレーションが鋳造する行（親は null）", () => {
 
     const items = stateEl.__state.items;
     expect(items).toHaveLength(2);
-    // 親 null のもとに 2 行。組キーでも「ルート直下のリスト」は番兵側に入る
     const rows = getListIndexesByList(items, null);
     expect(rows).not.toBeNull();
     expect(rows).toHaveLength(2);
     expect(rows!.map((r) => r.parentListIndex)).toEqual([null, null]);
     expect(rows!.map((r) => r.index)).toEqual([0, 1]);
-    // 親を問わない最後の登録も同じ集合（別の親のもとに二重登録されていない）
-    expect(getLastRegisteredListIndexes(items)).toBe(rows);
   });
 
   it("ハイドレートした行がそのまま更新に使われること（行を作り直していない）", async () => {
@@ -78,17 +79,16 @@ describe("ハイドレーションが鋳造する行（親は null）", () => {
 
     const after = Array.from(document.querySelectorAll("li"));
     expect(after.map((li) => li.textContent)).toEqual(["Alicia", "Bob"]);
-    // 行 DOM は作り直されていない（ハイドレートした行 ListIndex がそのまま生きている）
-    expect(after[0]).toBe(before[0]);
+    expect(after[0], "行 DOM は同じノード").toBe(before[0]);
+    expect(after[1], "行 DOM は同じノード").toBe(before[1]);
     expect(getListIndexesByList(stateEl.__state.items, null)).toBe(rowsBefore);
   });
 });
 
 /**
- * `$listKeys` の書き込み（src/proxy/methods/setByAddress.ts の setKeyedListByAddress）は、
- * ハイブリッド配列を格納する **前** に台帳を確定させて「以降は全経路がこれに合流する」
- * ようにしている。組キーにすると、その確定がどの親のもとに入るかが効く ——
- * ルート直下のリストなら親 null、行の下のリストならその行。両方を固定する。
+ * `$listKeys` の書き込み（setKeyedListByAddress）は、ハイブリッド配列を格納する**前**に
+ * 台帳を確定させて「以降は全経路がこれに合流する」ようにしている。単一スロットの台帳でも
+ * 「どの親のもとで確定するか」は効く（付け替えの可否が親の深さで決まるため）。
  */
 let seq = 0;
 async function mountKeyed(initial: any, innerHTML: string) {
@@ -124,10 +124,13 @@ describe("$listKeys が先に確定させる台帳", () => {
 
     const after = Array.from(shadowRoot.querySelectorAll("li"));
     expect(after.map((li) => li.textContent)).toEqual(["a2", "b2"]);
-    expect(after).toEqual(before); // キー一致行は行 DOM が据え置かれる
-    // 新しい配列の台帳も親 null のもとにあり、行は同じオブジェクト
+    // 行 DOM が据え置かれること ＝ **同じノード**であること（toEqual では全部作り直しても通る）
+    expect(after[0]).toBe(before[0]);
+    expect(after[1]).toBe(before[1]);
+    // 新しい配列の台帳も親 null のもとにあり、行オブジェクトも同じ
     const rowsAfter = getListIndexesByList(stateEl.__state.items, null)!;
-    expect(rowsAfter).toEqual(rowsBefore);
+    expect(rowsAfter[0]).toBe(rowsBefore[0]);
+    expect(rowsAfter[1]).toBe(rowsBefore[1]);
     host.remove();
   });
 
@@ -150,9 +153,11 @@ describe("$listKeys が先に確定させる台帳", () => {
     const childRows = getListIndexesByList(stateEl.__state.items[0].children, rows[0])!;
     expect(childRows).toHaveLength(2);
     expect(childRows.map((r) => r.parentListIndex)).toEqual([rows[0], rows[0]]);
-    // 行 1 の children は行 1 のもとにある（行 0 のもとには無い）
-    expect(getListIndexesByList(stateEl.__state.items[1].children, rows[0])).toBeNull();
-    expect(getListIndexesByList(stateEl.__state.items[1].children, rows[1])).toHaveLength(1);
+    // 行 1 の children は別の配列なので別の行集合
+    const otherRows = getListIndexesByList(stateEl.__state.items[1].children, rows[1])!;
+    expect(otherRows).toHaveLength(1);
+    expect(otherRows).not.toBe(childRows);
+    expect(otherRows.map((r) => r.parentListIndex)).toEqual([rows[1]]);
 
     // 子リストだけを同じキー・別オブジェクトで差し替える
     stateEl.createState("writable", (s: any) => {
@@ -162,9 +167,133 @@ describe("$listKeys が先に確定させる台帳", () => {
 
     const kidsAfter = Array.from(shadowRoot.querySelectorAll("i"));
     expect(kidsAfter.map((i) => i.textContent)).toEqual(["x2", "y2", "z"]);
-    expect(kidsAfter).toEqual(kidsBefore); // 行 DOM は据え置き
+    // 行 DOM は据え置き ＝ 同じノード
+    expect(kidsAfter[0]).toBe(kidsBefore[0]);
+    expect(kidsAfter[1]).toBe(kidsBefore[1]);
+    expect(kidsAfter[2]).toBe(kidsBefore[2]);
     const childRowsAfter = getListIndexesByList(stateEl.__state.items[0].children, rows[0])!;
-    expect(childRowsAfter).toEqual(childRows);
+    expect(childRowsAfter[0]).toBe(childRows[0]);
+    expect(childRowsAfter[1]).toBe(childRows[1]);
+    host.remove();
+  });
+});
+
+/**
+ * 方針書が名指しで求めた特殊例その 1: **ホストの `for` の中の子スコープをハイドレートする形**。
+ * `hydrateBindings` は for ブロックの行を `createListIndex(null, block.index)` で **常に親 null**
+ * で鋳造する。実測すると、内側の for ブロックはそもそも台帳に載らない —— 内側スコープへの
+ * `$resolve` は `ListIndexes not found` で落ち、SSR が出した DOM がそのまま残る。
+ *
+ * **これは #256 より前からの制限で、main でも同じ**（同じ fixture を main の src に対して
+ * 走らせて確認: 初期 DOM ['x','y'] / `.group` 1 個 / 同じ throw / 書き込み後も ['x','y']）。
+ * ここで固定するのは「#256 の修理がこの形を変えていない」ことで、`ListIndexes not found` を
+ * 望ましい着地として認めるものではない（入れ子ハイドレーションを直すなら別の Issue）。
+ */
+describe("ハイドレーション: ホストの for の中の子スコープ（#256 前からの制限・main と同じ）", () => {
+  it("内側の for は台帳に載らず、子スコープへの $resolve が ListIndexes not found で落ちること", async () => {
+    document.body.innerHTML = `
+      <wcs-ssr name="default">
+        <script type="application/json">{"groups":[{"title":"G1","items":[{"name":"x"},{"name":"y"}]}]}</script>
+        <template id="lk2" data-wcs="for: groups">
+          <div class="group"><h3 data-wcs="textContent: groups.*.title"></h3>
+            <template id="lk3" data-wcs="for: groups.*.items">
+              <i data-wcs="textContent: groups.*.items.*.name"></i>
+            </template>
+          </div>
+        </template>
+      </wcs-ssr>
+      <wcs-state enable-ssr json='{"groups":[]}'></wcs-state>
+      <div id="outer">
+        <!--@@wcs-for:lk2-->
+        <!--@@wcs-for-start:lk2:groups:0--><div class="group"><h3 data-wcs="textContent: groups.*.title">G1</h3>
+          <!--@@wcs-for:lk3-->
+          <!--@@wcs-for-start:lk3:groups.*.items:0--><i data-wcs="textContent: groups.*.items.*.name">x</i><!--@@wcs-for-end:lk3:groups.*.items:0-->
+          <!--@@wcs-for-start:lk3:groups.*.items:1--><i data-wcs="textContent: groups.*.items.*.name">y</i><!--@@wcs-for-end:lk3:groups.*.items:1-->
+        </div><!--@@wcs-for-end:lk2:groups:0-->
+      </div>
+    `;
+    const stateEl = document.querySelector("wcs-state") as any;
+    await stateEl.connectedCallbackPromise;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    const txt = () => Array.from(document.querySelectorAll("i")).map((i) => i.textContent);
+    expect(txt(), "SSR が出した子スコープの DOM").toEqual(["x", "y"]);
+    expect(document.querySelectorAll(".group")).toHaveLength(1);
+    // 外側の行は親 null で台帳に載る
+    expect(getListIndexesByList(stateEl.__state.groups, null)).toHaveLength(1);
+    // 内側の配列はどの親のもとにも載っていない
+    expect(getListIndexesByList(stateEl.__state.groups[0].items, null)).toBeNull();
+
+    let message = "NO THROW";
+    try {
+      stateEl.createState("writable", (s: any) => {
+        s.$resolve("groups.*.items.*.name", [0, 0], "x2");
+      });
+    } catch (e: any) { message = String(e && e.message); }
+    await flush();
+
+    expect(message, "main でも同じ throw").toContain("ListIndexes not found: groups.*.items");
+    expect(txt(), "DOM は SSR のまま").toEqual(["x", "y"]);
+  });
+});
+
+/**
+ * 方針書が名指しで求めた特殊例その 2: **bind-component のスコープ下のキー付きリスト**。
+ * ホストが `$listKeys` を宣言し、子コンポーネントがその配列を自分の `for` で描く。
+ * キー一致の差し替えで行 DOM が据え置かれること（＝台帳が合流していること）を
+ * identity で固定する。
+ */
+describe("$listKeys: bind-component のスコープ下", () => {
+  it("ホストのキー付き子リストを差し替えても、子スコープの行 DOM が同じノードであること", async () => {
+    const tag = `lkpk-kid-${seq++}`;
+    class Kid extends HTMLElement {
+      state: Record<string, any> = {};
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" });
+        this.shadowRoot!.innerHTML =
+          `<wcs-state bind-component="state"></wcs-state>` +
+          `<ul id="kid-view"><template data-wcs="for: items">` +
+          `<li data-wcs="textContent: items.*.name"></li></template></ul>`;
+      }
+    }
+    customElements.define(tag, Kid);
+
+    const host = document.createElement(`lkpk-khost-${seq++}`);
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML =
+      `<wcs-state></wcs-state>` +
+      `<div id="outer"><template data-wcs="for: groups">` +
+      `<${tag} data-wcs="state.items: groups.*.children"></${tag}>` +
+      `</template></div>`;
+    document.body.appendChild(host);
+    const stateEl = shadowRoot.querySelector("wcs-state") as any;
+    stateEl.setInitialState({
+      $listKeys: { "groups.*.children": "id" },
+      groups: [{ children: [{ id: 1, name: "a" }, { id: 2, name: "b" }] }],
+    });
+    await stateEl.connectedCallbackPromise;
+    await State.getBindingsReady(shadowRoot);
+    await flush();
+    const kid = shadowRoot.querySelector(tag) as HTMLElement;
+    await (kid.shadowRoot!.querySelector("wcs-state") as State).connectedCallbackPromise;
+    await State.getBindingsReady(kid.shadowRoot!);
+    await flush();
+
+    const rowsOf = () => Array.from(kid.shadowRoot!.querySelectorAll("#kid-view li"));
+    const before = rowsOf();
+    expect(before.map((li) => li.textContent)).toEqual(["a", "b"]);
+
+    // 同じキー・別オブジェクト（fetch 相当）
+    stateEl.createState("writable", (s: any) => {
+      s.$resolve("groups.*.children", [0], [{ id: 1, name: "a2" }, { id: 2, name: "b2" }]);
+    });
+    await flush();
+
+    const after = rowsOf();
+    expect(after.map((li) => li.textContent)).toEqual(["a2", "b2"]);
+    expect(after[0], "キー一致行は同じノード").toBe(before[0]);
+    expect(after[1], "キー一致行は同じノード").toBe(before[1]);
     host.remove();
   });
 });

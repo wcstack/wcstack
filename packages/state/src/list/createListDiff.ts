@@ -1,56 +1,28 @@
 import "../polyfills";
 import { createListIndex } from "./createListIndex";
-import { getLastRegisteredListIndexes, getListIndexesByList, setListIndexesByList } from "./listIndexesByList";
+import { getListIndexesByList, retireListIndexes, setListIndexesByList } from "./listIndexesByList";
 import { IListDiff, IListIndex } from "./types";
 
-/** 親が null（ルート直下のリスト）の diff を入れるための番兵。 */
-const ROOT_PARENT: object = Object.freeze({});
-
-/**
- * (親, 旧リスト, 新リスト) → diff のメモ。**親をキーに含める**のが要点。同じ
- * (旧, 新) の組でも親が違えば別の diff になる ── 1 本の配列を 2 つの行が子として
- * 持つ形では、どちらの親から見ても基準が空なので (旧, 新) が完全に一致し、親を
- * 落とすと後から来た親が先着の親の行をそのまま受け取ってしまう（#256）。
- */
-const listDiffByOldListByNewListByParent =
-  new WeakMap<object, WeakMap<readonly unknown[], WeakMap<readonly unknown[], IListDiff>>>();
+const listDiffByOldListByNewList = new WeakMap<readonly unknown[], WeakMap<readonly unknown[], IListDiff>>();
 
 const EMPTY_LIST = Object.freeze([]);
 const EMPTY_SET = new Set<IListIndex>();
 
-function getListDiff(
-  parentKey: object,
-  rawOldList: readonly unknown[],
-  rawNewList: readonly unknown[],
-): IListDiff | null {
-  const diffByOldList = listDiffByOldListByNewListByParent.get(parentKey);
-  if (!diffByOldList) {
-    return null;
-  }
+function getListDiff(rawOldList: readonly unknown[], rawNewList: readonly unknown[]): IListDiff | null {
   const oldList = (Array.isArray(rawOldList) && rawOldList.length > 0) ? rawOldList : EMPTY_LIST;
   const newList = (Array.isArray(rawNewList) && rawNewList.length > 0) ? rawNewList : EMPTY_LIST;
-  const diffByNewList = diffByOldList.get(oldList);
+  let diffByNewList = listDiffByOldListByNewList.get(oldList);
   if (!diffByNewList) {
     return null;
   }
   return diffByNewList.get(newList) || null;
 }
 
-function setListDiff(
-  parentKey: object,
-  oldList: readonly unknown[],
-  newList: readonly unknown[],
-  diff: IListDiff,
-): void {
-  let diffByOldList = listDiffByOldListByNewListByParent.get(parentKey);
-  if (!diffByOldList) {
-    diffByOldList = new WeakMap<readonly unknown[], WeakMap<readonly unknown[], IListDiff>>();
-    listDiffByOldListByNewListByParent.set(parentKey, diffByOldList);
-  }
-  let diffByNewList = diffByOldList.get(oldList);
+function setListDiff(oldList: readonly unknown[], newList: readonly unknown[], diff: IListDiff): void {
+  let diffByNewList = listDiffByOldListByNewList.get(oldList);
   if (!diffByNewList) {
     diffByNewList = new WeakMap<readonly unknown[], IListDiff>();
-    diffByOldList.set(oldList, diffByNewList);
+    listDiffByOldListByNewList.set(oldList, diffByNewList);
   }
   diffByNewList.set(newList, diff);
 }
@@ -105,6 +77,8 @@ export function createListDiff(
 ): IListDiff {
   const diff = computeListDiff(parentListIndex, rawOldList, rawNewList);
   syncListIndexes(diff.newIndexes);
+  // 捨てた行を退役として記録する。台帳はこれを見て「共有」と「陳腐化」を分ける（#256）。
+  retireListIndexes(diff.deleteIndexSet);
   return diff;
 }
 
@@ -116,17 +90,13 @@ function computeListDiff(
   // Normalize inputs to arrays (handles null/undefined)
   const oldList: readonly unknown[] = (Array.isArray(rawOldList) && rawOldList.length > 0) ? rawOldList : EMPTY_LIST;
   const newList: readonly unknown[] = (Array.isArray(rawNewList) && rawNewList.length > 0) ? rawNewList : EMPTY_LIST;
-  const parentKey: object = parentListIndex ?? ROOT_PARENT;
-  const cachedDiff = getListDiff(parentKey, oldList, newList);
+  const cachedDiff = getListDiff(oldList, newList);
   if (cachedDiff) {
     return cachedDiff;
   }
-  // 台帳は (親, 配列) の組ごとに私有（listIndexesByList.ts）。この親のもとに行が
-  // 無い（null）ということは、この親がこのリストを一度も展開していないということ。
-  // 他の親の行を引き継ぐことはできない（それが #256 の別名化）ので、旧側は空として
-  // 扱い、下の全行 add 分岐＝既存の鋳造経路へ落とす。
-  const ownedOldIndexes = getListIndexesByList(oldList, parentListIndex);
-  const oldIndexes = ownedOldIndexes ?? [];
+  // 台帳は 1 本の配列につき行集合 1 組（listIndexesByList.ts）。親は「行がぶら下がる親が
+  // 退役していたら、この親へ付け替える」ための差し替え先として渡す（#256）。
+  const oldIndexes = getListIndexesByList(oldList, parentListIndex) || [];
   let retValue: IListDiff | undefined;
   try {
     // Early return for empty list
@@ -141,14 +111,7 @@ function computeListDiff(
     }
     // If old list was empty, create all new indexes
     let newIndexes: IListIndex[] | null = getListIndexesByList(newList, parentListIndex);
-    // この親には前世代の行が無い ── 旧リストが空（初回・別名化した 2 人目の親）か、
-    // この親がこのリストを一度も展開していないか（親の付け替え）。どちらも全行 add で、
-    // 位置変更は記録しない。違うのは**退役**の有無だけ:
-    //  - 旧リストが空 ＝ 消すものが無い。ここで他の親の生きた行を delete 扱いにすると、
-    //    別名化した親の描画済み content を消してしまう。
-    //  - 親の付け替え ＝ 消費者は前世代の行を identity で握ったままなので、名指して
-    //    消さないと content が画面に残る（単一スロット時代と同じ削除の帳簿に戻す）。
-    if (oldList.length === 0 || ownedOldIndexes === null) {
+    if (oldList.length === 0) {
       if (newIndexes === null) {
         newIndexes = [];
         for(let i = 0; i < newList.length; i++) {
@@ -156,18 +119,12 @@ function computeListDiff(
           newIndexes.push(newListIndex);
         }
       }
-      const retired = ownedOldIndexes === null
-        ? (getLastRegisteredListIndexes(oldList) ?? [])
-        : oldIndexes;
-      const addIndexSet = new Set<IListIndex>(newIndexes);
       return retValue = {
-        oldIndexes: retired,
+        oldIndexes: oldIndexes,
         newIndexes: newIndexes,
         changeIndexSet: EMPTY_SET,
-        deleteIndexSet: retired.length === 0
-          ? EMPTY_SET
-          : (new Set<IListIndex>(retired)).difference(addIndexSet),
-        addIndexSet: addIndexSet,
+        deleteIndexSet: EMPTY_SET,
+        addIndexSet: new Set<IListIndex>(newIndexes),
       };
     }
     // If lists are identical, return existing indexes unchanged (optimization)
@@ -235,7 +192,7 @@ function computeListDiff(
     };
   } finally {
     if (typeof retValue !== "undefined") {
-      setListDiff(parentKey, oldList, newList, retValue);
+      setListDiff(oldList, newList, retValue);
       setListIndexesByList(newList, retValue.newIndexes);
     }
   }

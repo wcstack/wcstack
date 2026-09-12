@@ -2,10 +2,16 @@ import { getUUID } from "../getUUID";
 import { IListIndex } from "./types";
 
 let version = 0;
+/**
+ * 親の付け替え（#256 の修理）の世代。`listIndexes` の WeakRef 連鎖は一度組んだら
+ * 作り直されないので、祖先が付け替わったら子孫のキャッシュも無効にする必要がある。
+ * `dirty`（version 比較）は `indexes` の再構築が消費してしまうため、連鎖専用の世代を持つ。
+ */
+let chainGeneration = 0;
 
 class ListIndex implements IListIndex {
   readonly uuid = getUUID();
-  readonly parentListIndex: IListIndex | null;
+  parentListIndex: IListIndex | null;
   readonly position: number;
   readonly length: number;
 
@@ -13,6 +19,7 @@ class ListIndex implements IListIndex {
   private _version: number;
   private _indexes: number[] | undefined;
   private _listIndexes: WeakRef<IListIndex>[] | undefined;
+  private _chainGeneration: number;
 
   /**
    * Creates a new ListIndex instance.
@@ -26,6 +33,7 @@ class ListIndex implements IListIndex {
     this.length = this.position + 1;
     this._index = index;
     this._version = version;
+    this._chainGeneration = chainGeneration;
   }
 
   /**
@@ -101,8 +109,9 @@ class ListIndex implements IListIndex {
         this._listIndexes = [new WeakRef(this)];
       }
     } else {
-      if (typeof this._listIndexes === "undefined") {
+      if (typeof this._listIndexes === "undefined" || this._chainGeneration !== chainGeneration) {
         this._listIndexes = [...this.parentListIndex.listIndexes, new WeakRef(this)];
+        this._chainGeneration = chainGeneration;
       }
     }
     return this._listIndexes;
@@ -124,6 +133,20 @@ class ListIndex implements IListIndex {
    * @param pos - Position index (0-based, negative for from end)
    * @returns ListIndex at position or null if not found/garbage collected
    */
+  /**
+   * 退役した親を、同じ深さの生きた親へ差し替える（#256）。**行の identity は保つ**ので、
+   * 描画済み content も、その行に紐づくバインドしていない DOM の状態も残る。
+   * 添字の値は親が変われば変わりうる（並べ替えを伴う置換）ため、`indexes` と WeakRef 連鎖を
+   * 捨て、version を進めて子孫の `dirty` を立てる。
+   */
+  reparent(parentListIndex: IListIndex | null): void {
+    this.parentListIndex = parentListIndex;
+    this._indexes = undefined;
+    this._listIndexes = undefined;
+    this._version = ++version;
+    chainGeneration++;
+  }
+
   at(pos: number): IListIndex | null {
     if (pos >= 0) {
       return this.listIndexes[pos]?.deref() || null;
@@ -142,4 +165,12 @@ class ListIndex implements IListIndex {
  */
 export function createListIndex(parentListIndex: IListIndex | null, index: number): IListIndex {
   return new ListIndex(parentListIndex, index);
+}
+
+/**
+ * 台帳（`listIndexesByList`）専用の入口。行は必ずこのモジュールが鋳造した実体なので、
+ * 到達不能な防御分岐を置かずに直接呼ぶ。
+ */
+export function reparentListIndex(listIndex: IListIndex, parentListIndex: IListIndex | null): void {
+  (listIndex as ListIndex).reparent(parentListIndex);
 }

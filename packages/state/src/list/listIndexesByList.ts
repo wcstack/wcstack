@@ -1,80 +1,95 @@
 /**
  * list/listIndexesByList.ts
  *
- * 行（`IListIndex`）の正本台帳。キーは **(親, 配列)** の組。
+ * 行（`IListIndex`）の正本台帳。1 本の配列につき行集合は **1 組**。
  *
- * 行は「どの親の下の何番目か」でしか意味を持たない（`IListIndex.parentListIndex`）。
- * 台帳が配列インスタンスだけをキーにしていた頃は、1 本の配列につき行集合が 1 組しか
- * 持てず、`p.*` を親 P のもとで展開したのに別の親（しばしば置換で退役した行）の下で
- * 鋳造された行が返ってきた。読み手はそれを受け取って降り、書き手は行の親ポインタを
- * 遡って縮約するので、葉への書き込みが **旧行の絶対アドレス** を dirty にし、読み手は
- * **新行の絶対アドレス** のキャッシュを見る、という食い違いが起きる（#256）。
- * 組ごとに私有の行集合を持たせると、各消費者が自分の前世代と自分の新世代を突き合わせる
- * ことになり、`deleteIndexSet` が意味を保つ。
+ * #256 が扱うのは「共有」ではなく「陳腐化」である。台帳はこの 2 つを分ける:
  *
- * **取り出しは親を明示する。** 見つからないのは「この親はこのリストを一度も展開して
- * いない」という意味で、呼び出し側は既存の鋳造経路（`createListDiff` の全行 add 分岐）へ
- * 落ちる。新しい例外面は増えない。
+ * - **生きた共有** ── 1 本の配列が 2 つの生きた親から到達できる形。行集合は 1 組のまま
+ *   全員で共有する（どの親から読んでも同じ値が見える）。親ごとに私有の行集合を持たせると
+ *   同じスロットに 2 本の絶対アドレスができ、片方へ書いた値がもう片方から**永久に**
+ *   見えなくなる。共有そのものの帰結（親を読む getter が最後に展開した親の文脈で
+ *   評価される・1 スロットへ到達経路の数だけ書かれる）は残るが、それはデータが実際に
+ *   共有されていることの帰結であって、**もう存在しない古い値**ではない。
+ * - **陳腐化** ── 行オブジェクトだけを作り直す置換（`nodes.map(n => ({...n}))` は
+ *   `children` を参照ごと引き継ぐ）で、台帳の行がぶら下がる親が**退役した**形。読み手は
+ *   新しい行の絶対アドレスを見るのに、書き手は行の親ポインタを遡って旧行の絶対アドレスを
+ *   dirty にするので、葉への書き込みが集計へ届かない（#256）。
  *
- * **格納は親を渡さない。** 行集合が属する親は行自身が知っている（`listIndexes[0]` の
- * 親）ので、そこから引く。空の行集合はルート番兵の側に置く（空リストの台帳は
- * `createListDiff` の空リスト分岐でしか作られず、誰も行として読まない）。
+ * 判別は「台帳の行が持つ親が、生きた親集合に属するか」。属さないときだけ、**行の identity を
+ * 保ったまま**新しい親へ付け替える（`reparentListIndex`）。作り直さないのは、消費者が
+ * 描画済み content を行 ListIndex の identity で持っているため ── 作り直すと、著者が何も
+ * 間違えていないページで行の DOM が丸ごと失われる（`<details>` の開閉のような、バインド
+ * していない状態ごと）。
+ *
+ * 退役の signal は差分の `deleteIndexSet`（＝エンジン自身が「この行はもう無い」と決めた
+ * 集合）。この印は**安全な向きにしか誤らない**: 生き返った行に印が残っていても、起きるのは
+ * 「1 組しかない行集合が生きた親のどちらにぶら下がるか」が変わることだけで、それは main が
+ * ずっとしてきた別名化と同じ。行集合が 2 組に割れることは無いので、親ごとに違う値が見える
+ * 形にはならない。
  */
+import { reparentListIndex } from "./createListIndex";
 import { IListIndex } from "./types";
 
-/** 親が null（ルート直下のリスト）の行集合を入れるための番兵。 */
-const ROOT_PARENT: object = Object.freeze({});
-
-const listIndexesByParentByList =
-  new WeakMap<readonly unknown[], WeakMap<object, IListIndex[]>>();
+const listIndexesByList = new WeakMap<readonly unknown[], IListIndex[]>();
 
 /**
- * 直近に登録された行集合（親を問わない）＝ 単一スロットだった頃の台帳が返していたもの。
- * **退役専用**。ここから行を取り出して `newIndexes` に載せてはならない — それが #256 の
- * 別名化そのものである。
- *
- * 要る理由は消費者の側にある。`applyChangeToFor` は描画済み content を**行 ListIndex の
- * identity** で持っているので、親が付け替わっても（再接続で `for` のアドレスだけが
- * 張り替わる形。BindingSession.rebindAddresses が差分基準だけを旧→新へ引き継ぐ）
- * 前世代の行を `deleteIndexSet` で名指さないと、その content が画面に残ったまま
- * 新しい行が足される。削除の帳簿を修正前と一致させるための参照。
+ * 差分で `newIndexes` から外れた行 ＝ 消費者が画面から外した行。
+ * 「生きた親集合に属さない」の判定材料。
  */
-const lastListIndexesByList = new WeakMap<readonly unknown[], IListIndex[]>();
+const retiredListIndexes = new WeakSet<IListIndex>();
 
-/** 退役専用（上の WeakMap のコメント）。行の再利用に使ってはならない。 */
-export function getLastRegisteredListIndexes(list: readonly unknown[]): IListIndex[] | null {
-  return lastListIndexesByList.get(list) ?? null;
+/** 差分が捨てた行を退役として記録する（`createListDiff` が呼ぶ）。 */
+export function retireListIndexes(listIndexes: Iterable<IListIndex>): void {
+  for (const listIndex of listIndexes) {
+    retiredListIndexes.add(listIndex);
+  }
+}
+
+/**
+ * 台帳の行がぶら下がる親（`oldParent`）を、いま要求している親（`newParent`）へ
+ * 付け替えてよいか。**退役した親のときだけ**真 ── 生きているなら共有であって
+ * 陳腐化ではないので、main と同じく 1 組の行集合に合流させる。
+ * 深さ（`position`）が変わる付け替えはしない。行の `position` / `length` は鋳造時に
+ * 確定していて、そこがずれると絶対アドレスの段数が壊れる（bind-component が 1 本の
+ * 配列を 2 つの深さから展開する形が実際にある）。
+ */
+function canReparent(oldParent: IListIndex | null, newParent: IListIndex | null): boolean {
+  if (oldParent === null || newParent === null) {
+    return false;
+  }
+  if (oldParent.position !== newParent.position) {
+    return false;
+  }
+  return retiredListIndexes.has(oldParent) && !retiredListIndexes.has(newParent);
 }
 
 export function getListIndexesByList(
   list: readonly unknown[],
   parentListIndex: IListIndex | null,
 ): IListIndex[] | null {
-  const byParent = listIndexesByParentByList.get(list);
-  if (typeof byParent === "undefined") {
+  const listIndexes = listIndexesByList.get(list);
+  if (typeof listIndexes === "undefined") {
     return null;
   }
-  return byParent.get(parentListIndex ?? ROOT_PARENT) ?? null;
+  // 速い道: 自分が展開した行集合ならそのまま（ここが圧倒的多数）。
+  const first = listIndexes[0];
+  if (typeof first !== "undefined"
+    && first.parentListIndex !== parentListIndex
+    && canReparent(first.parentListIndex, parentListIndex)) {
+    // 1 組の行集合は 1 つの親のもとにある、を保つ（差分が別の親の行を混ぜて
+    // 作った集合も、ここで要求元の親へ揃える）。
+    for (const listIndex of listIndexes) {
+      reparentListIndex(listIndex, parentListIndex);
+    }
+  }
+  return listIndexes;
 }
 
-/**
- * `listIndexes` を、その行が鋳造された親のもとへ登録する。
- * `null` は「この配列の台帳をすべての親ぶん忘れる」（テストの後始末が使う）。
- */
-export function setListIndexesByList(
-  list: readonly unknown[],
-  listIndexes: IListIndex[] | null,
-): void {
+export function setListIndexesByList(list: readonly unknown[], listIndexes: IListIndex[] | null): void {
   if (listIndexes === null) {
-    listIndexesByParentByList.delete(list);
-    lastListIndexesByList.delete(list);
+    listIndexesByList.delete(list);
     return;
   }
-  lastListIndexesByList.set(list, listIndexes);
-  let byParent = listIndexesByParentByList.get(list);
-  if (typeof byParent === "undefined") {
-    byParent = new WeakMap<object, IListIndex[]>();
-    listIndexesByParentByList.set(list, byParent);
-  }
-  byParent.set(listIndexes[0]?.parentListIndex ?? ROOT_PARENT, listIndexes);
+  listIndexesByList.set(list, listIndexes);
 }

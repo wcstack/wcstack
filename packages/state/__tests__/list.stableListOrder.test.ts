@@ -524,7 +524,7 @@ describe('applyChangeToFor の並べ替え（LIS リオーダー）', () => {
     spans(container).forEach((span, i) => spanByItem.set(list[i], span));
 
     // 要素書き込みスワップ相当: 状態配列と登録済み listIndexes を DOM を動かさず入れ替える
-    const indexes = getListIndexesByList(list)!;
+    const indexes = getListIndexesByList(list, null)!;
     [indexes[0], indexes[2]] = [indexes[2], indexes[0]];
     indexes[0].index = 0;
     indexes[2].index = 2;

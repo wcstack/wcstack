@@ -6,10 +6,8 @@
  *
  * §1.8 が成立させたのは「コンポーネントが親の `for` の外にいる」1 段だけの形で、
  * 入れ子形は「1 つの配列オブジェクトに 2 つの深さが要求される」ため対象外だった
- * （親から見た行は arity 2・子から見た行は arity 1 なのに、当時の listIndex 台帳
- * `listIndexesByList` は配列同一性の WeakMap で 1 組しか持てなかった。#256 で
- * **(親, 配列)** の組がキーになったが、下の設計 — 子の行を base listIndex に親付けする —
- * はそのまま。親のリスト差し替えで行が退役することはこのファイルが固定している）。
+ * （親から見た行は arity 2・子から見た行は arity 1 なのに、listIndex 台帳
+ * `listIndexesByList` は配列同一性の WeakMap なので 1 組しか持てない）。
  *
  * 子が作る listIndex を base listIndex（＝ホストの親スコープ行）に親付けし、
  * スコープ内の「ワイルドカード位置 → チェーン段」変換を末尾起点にすることで成立させた
@@ -445,6 +443,57 @@ describe("bind-component 入れ子形: スコープの独立性", () => {
 
     expect(textsOf("#loose")).toEqual(["L1"]);
     expect(textsOf(".nested")).toEqual(["a"]);
+
+    host.remove();
+  });
+});
+
+/**
+ * #256 の回帰テスト。親のリストを**不変更新するだけ**（著者は何も間違えていない）で、
+ * 子スコープの行 DOM が丸ごと作り直されてはならない。行 ListIndex の identity が
+ * 消費者（applyChangeToFor の content 台帳）のキーなので、行を作り直すと、
+ * バインドしていない DOM の状態（`<details>` の開閉・フォーカス・JS の目印）が
+ * すべて失われる。**構造比較（toEqual）では捕まらない** —— 同じ文字列の別ノードでも
+ * 通ってしまうため、ノードの identity（toBe）で固定する。
+ */
+describe("bind-component 入れ子形: 親の不変更新で子行の DOM が生き残る（#256）", () => {
+  it("s.groups = s.groups.map(g => ({...g})) のあとも、行ノードが同じオブジェクトであること", async () => {
+    // 行数が群ごとに違うと、content プールの再利用が群をまたいだ時に行の過不足が出て
+    // 1 行だけ新規になる（行数の違いによるもので、台帳とは別の話）。ここで見たいのは
+    // 「台帳が行を作り直さないこと」なので、群ごとの行数を揃えた fixture を使う。
+    const SYMMETRIC = JSON.stringify({
+      groups: [
+        { title: "G1", children: [{ name: "a" }, { name: "b" }] },
+        { title: "G2", children: [{ name: "c" }, { name: "d" }] },
+      ],
+    });
+    const { host, parentStateElement, components, rendered, settle } =
+      await mountNested(SYMMETRIC, "constructor");
+    expect(rendered()).toEqual([["a", "b"], ["c", "d"]]);
+
+    const rowsOf = () => components().flatMap((component) =>
+      Array.from(component.shadowRoot!.querySelectorAll("#inner-view li")));
+    const before = rowsOf();
+    expect(before).toHaveLength(4);
+    // バインドしていない状態を各行に置く（DOM の再生成で必ず失われるもの）
+    before.forEach((li, i) => { (li as any).__mark = "m" + i; });
+
+    parentStateElement.createState("writable", (s: any) => {
+      s.groups = s.groups.map((g: any) => ({ ...g }));
+    });
+    await flush();
+    await settle();
+
+    const after = rowsOf();
+    expect(rendered(), "描画内容は変わらない").toEqual([["a", "b"], ["c", "d"]]);
+    expect(after, "行数も変わらない").toHaveLength(4);
+    // 行ノードは作り直されていない（プール再利用で順番は入れ替わりうるので集合で見る）。
+    // toEqual は構造比較なので、全ノードが別物でも通ってしまう —— identity で確かめる。
+    for (const li of after) {
+      expect(before.some((b) => b === li), "行ノードが前の集合に居ること").toBe(true);
+    }
+    expect(after.filter((li) => typeof (li as any).__mark === "string"),
+      "バインドしていない行の状態が残っていること").toHaveLength(4);
 
     host.remove();
   });

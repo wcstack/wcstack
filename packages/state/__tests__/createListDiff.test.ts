@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createListDiff } from '../src/list/createListDiff';
-import { getListIndexesByList, setListIndexesByList } from '../src/list/listIndexesByList';
+import { getListIndexesByList, retireListIndexes, setListIndexesByList } from '../src/list/listIndexesByList';
 import { createListIndex } from '../src/list/createListIndex';
 
 describe('createListDiff', () => {
@@ -141,8 +141,8 @@ describe('createListDiff', () => {
     });
   });
 
-  describe('台帳のキーが (親, 配列) の組であること（#256）', () => {
-    it('別の親が登録した行を再利用せず、自分の行を鋳造すること', () => {
+  describe('退役した親の付け替え（#256）', () => {
+    it('生きた親どうしは 1 組の行集合を共有すること（親ごとに割れない）', () => {
       const list = [{ v: 1 }, { v: 2 }];
       const p0 = createListIndex(null, 0);
       const p1 = createListIndex(null, 1);
@@ -150,52 +150,49 @@ describe('createListDiff', () => {
       const d0 = createListDiff(p0, [], list);
       const d1 = createListDiff(p1, [], list);
 
-      expect(d1.newIndexes).not.toBe(d0.newIndexes);
+      // 1 本の配列につき行集合は 1 組。2 人目の親は先着の行を受け取る（＝ main の挙動）。
+      // 親ごとに私有の行集合を持たせると、同じスロットに 2 本の絶対アドレスができ、
+      // 片方へ書いた値がもう片方から永久に見えなくなる。
+      expect(d1.newIndexes).toBe(d0.newIndexes);
+      expect(getListIndexesByList(list, p1)).toBe(d0.newIndexes);
+      // 先着の親は生きているので親ポインタは動かない
       expect(d0.newIndexes.map((r) => r.parentListIndex)).toEqual([p0, p0]);
-      expect(d1.newIndexes.map((r) => r.parentListIndex)).toEqual([p1, p1]);
-      // 2 人目の親は「全行 add」。先着の親が描画している行を delete 扱いにしてはならない
       expect(d1.deleteIndexSet.size).toBe(0);
-      expect(d1.addIndexSet.size).toBe(2);
-      // 先着の親の台帳はそのまま残っている
-      expect(getListIndexesByList(list, p0)).toBe(d0.newIndexes);
 
       setListIndexesByList(list, null);
     });
 
-    it('同じ (旧, 新) の組でも、親が違えば diff のメモが混ざらないこと', () => {
-      const oldList = [{ v: 1 }];
-      const newList = [{ v: 2 }];
-      const p0 = createListIndex(null, 0);
-      const p1 = createListIndex(null, 1);
-      createListDiff(p0, [], oldList);
-      createListDiff(p1, [], oldList);
+    it('親が退役していたら、同じ行オブジェクトのまま新しい親のもとで使われること', () => {
+      const list = [{ v: 1 }, { v: 2 }];
+      const oldParent = createListIndex(null, 0);
+      const rows = createListDiff(oldParent, [], list).newIndexes;
 
-      const a = createListDiff(p0, oldList, newList);
-      const b = createListDiff(p1, oldList, newList);
+      // 行オブジェクトだけを作り直す置換（map-spread）で旧行が退役する形。
+      // 実際の経路では nodes の diff が deleteIndexSet に載せる（統合テストが固定）。
+      const newParent = createListIndex(null, 0);
+      retireListIndexes([oldParent]);
+      const again = createListDiff(newParent, list, list);
 
-      expect(b).not.toBe(a);
-      expect(a.newIndexes[0].parentListIndex).toBe(p0);
-      expect(b.newIndexes[0].parentListIndex).toBe(p1);
+      // 行は作り直されない（消費者が握っている content が生き残る）
+      expect(again.newIndexes).toBe(rows);
+      expect(again.newIndexes[0]).toBe(rows[0]);
+      expect(again.addIndexSet.size).toBe(0);
+      expect(again.deleteIndexSet.size).toBe(0);
+      // 親ポインタだけが生きた行へ張り替わる（#256 の核心）
+      expect(rows.map((r) => r.parentListIndex)).toEqual([newParent, newParent]);
 
-      setListIndexesByList(oldList, null);
-      setListIndexesByList(newList, null);
+      setListIndexesByList(list, null);
     });
 
     it('前世代を持たない親の diff は、消費者が握っている前世代の行を退役させること', () => {
-      // 再接続で `for` のアドレスだけが張り替わる形（BindingSession.rebindAddresses は
-      // 差分基準だけを旧アドレスから引き継ぐ）。旧リストの行は別の親のもとにあるが、
-      // 消費者（applyChangeToFor）は行 identity で content を握ったままなので、
-      // delete で名指さないと画面に残る。
       const oldList = [{ v: 1 }];
       const newList = [{ v: 2 }];
       const oldParent = createListIndex(null, 0);
-      const newParent = createListIndex(null, 0); // 同じ位置・別オブジェクト
       const before = createListDiff(oldParent, [], oldList).newIndexes;
 
-      const diff = createListDiff(newParent, oldList, newList);
+      const diff = createListDiff(oldParent, oldList, newList);
 
       expect([...diff.deleteIndexSet]).toEqual(before);
-      expect(diff.newIndexes.map((r) => r.parentListIndex)).toEqual([newParent]);
       expect(diff.addIndexSet.size).toBe(1);
       expect(diff.changeIndexSet.size).toBe(0);
 

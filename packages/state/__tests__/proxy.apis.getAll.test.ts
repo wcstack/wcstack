@@ -378,7 +378,7 @@ describe('getAll', () => {
     expect(result1).toEqual(['a']);
 
     // 2回目の呼び出し前に list1 の listIndexes をクリア
-    // getListIndexesByList(oldValue) ぁEnull ↁE|| [] 刁E��を通る
+    // getListIndexesByList(oldValue, parent) ぁEnull ↁE|| [] 刁E��を通る
     setListIndexesByList(list1, null);
 
     const list2 = ['b'];

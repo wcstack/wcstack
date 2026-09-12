@@ -149,7 +149,7 @@ ListIndex の同一性は台帳（`listIndexesByList`）が持つので、先に
 | # | 内容 |
 |---|---|
 | X1 | `createState("readonly", …)` の中で `$setAll` と `$resolve(path, indexes, value)` が readonly ガードを素通りして実データを書き換える。ガードは `StateHandler` の `set` トラップにしかなく、両 API は `setByAddress` を直接呼ぶ |
-| X2 | 配列を行から行へ付け替えると描画と `$getAll` が食い違う。→ [#256](https://github.com/wcstack/wcstack/issues/256)（**修理済み**: 台帳 `listIndexesByList` のキーを配列だけから **(親, 配列)** の組に変えた。差分境界で行を作り直す案は、消費者が握っている行を退役させられず描画行を重複させるため却下。同じ根の欠陥2（別名化）も一緒に解消し、README の既知の制限は削除した） |
+| X2 | 配列を行から行へ付け替えると描画と `$getAll` が食い違う。→ [#256](https://github.com/wcstack/wcstack/issues/256)（**修理済み**: 台帳は 1 本の配列につき行集合 1 組のまま。行がぶら下がる親が**退役している**ときだけ、行の identity を保って新しい親へ付け替える（`reparentListIndex`）。退役の signal は差分の `deleteIndexSet`。「新親と一致しない `parentListIndex` の行は作り直す」案も「台帳を (親, 配列) の組でキーする」案も実測で却下 —— 前者は描画行を重複させ、後者は**生きた共有**（1 本の配列を 2 つの生きた親が指す形）で親ごとに別々の絶対アドレスを作り、片方へ書いた値がもう片方から永久に見えなくなる。生きた共有の意味論は main のまま） |
 | X3 | `walkDependency` のコメントが「依存グラフは epoch でメモ化される」と書いているが、`topologicalRank.ts` はメモ化していない（ヘッダにそう書いてある）。コメントの誤り |
 | X4 | 描画なしの世代分裂（A3）は再帰専用ではなく、`for` を持たないリストを `$getAll` するアプリ一般に当たる既存欠陥である可能性が高い。いつ入ったかは未確認 |
 | X5 | 宣言の検証が **初回マウント**で throw すると、`_resolveLoading()` に届かず `connectedCallbackPromise` が永久 pending になる（作者が受け取るのは診断ではなく無言のハング）。再セット経路なら同じ宣言が正しい文面で同期 throw する。`$listKeys` / `$watch` / `$streams` も同じ性質なので Phase B の回帰ではないが、`$recursion` は新しい宣言面なので**出荷前に決着させたい**。宣言検証全般を `_failInitialization` と同じ「resolve してから raise」経路に載せる独立の Issue にする。**着地後レビュー（§7-3）で実測確認**: `$recursion: { "nodes": "children.*" }` は同期 throw 無し・`console.error` 0 件・promise 永久 pending。→ [#257](https://github.com/wcstack/wcstack/issues/257)（**修理済み**: 着地は `connectedCallback` の `await this._initialize()` を包む catch（`State._failInitializeLoudly`）1 箇所。`connectedCallbackPromise` を元のエラーで reject ＋ `console.error` 1 件、`initializePromise` は解決のまま。`__tests__/integration.initFailureDiagnostics.test.ts` と欠陥9 で固定） |
@@ -199,7 +199,7 @@ X2 は #256、X5 は #257 として Issue 化した（X1 は未作成）。X10 �
 
 **E6 の述語（反証レビューで作り直した）**:
 
-当初は「台帳の親が、いま降りてきた親か」（`newIndexes[0].parentListIndex !== parentListIndex`）で判定していたが、**これは共有と同値ではない**。当時の台帳はリスト配列の identity だけをキーにしていたので、行オブジェクトを作り直すふつうのイミュータブル更新（`nodes.map(n => ({...n}))` は children を参照ごと引き継ぐ）でも親 ListIndex が別物になり、正当な木が恒久的に拒否された（#256 で台帳が **(親, 配列)** の組キーになったいまは、行の親が常にいまの親と一致するので判定材料そのものが無い）。しかも診断文は「各ノードに自分の children 配列を与えよ」と、作者が既にやっていることを要求していた。
+当初は「台帳の親が、いま降りてきた親か」（`newIndexes[0].parentListIndex !== parentListIndex`）で判定していたが、**これは共有と同値ではない**。台帳はリスト配列の identity だけをキーにしているので、行オブジェクトを作り直すふつうのイミュータブル更新（`nodes.map(n => ({...n}))` は children を参照ごと引き継ぐ）でも親 ListIndex が別物になり、正当な木が恒久的に拒否された。しかも診断文は「各ノードに自分の children 配列を与えよ」と、作者が既にやっていることを要求していた。
 
 正しい述語は**走査そのもの**が持つ。訪れた配列の集合と、いま降りている枝の祖先の集合を持ち、同じ配列に 2 度到達したかで決める。祖先に居れば循環、そうでなければ兄弟共有。空配列は行を持たず別名化のしようがないので追跡しない（`[]` の使い回しは正当）。コストは配列 1 本あたり Set 操作 2 回。
 
@@ -245,7 +245,7 @@ X2 は #256、X5 は #257 として Issue 化した（X1 は未作成）。X10 �
 
 **既知の制限として残したもの**:
 
-- ブロードキャストは同一参照を全ノードへ配るので、値が配列だと共有が生まれる。`$setAll("nodes.**.tags", [], arr)` の後に `$getAll("nodes.**.tags.*", [])` を読むと、#256 より前は再帰の診断ではなく `wcs/wildcard-rank` で落ちていた（別名化の副作用で ListIndex の連鎖が 1 段足りなくなるため）。組キーにしたいまは throw せずノードごとに読めるが、**共有はデータの側に残る** —— 同じ値がノード数ぶん並び、書けば到達経路の数だけ適用される。共有の検査を接尾辞側にも掛けると、接尾辞が反復語を含む形（`nodes.**.children.*.value`）で**同じ族を 2 通りに綴れる**ことによる自己衝突を起こすため、検査は深さ方向にだけ掛けている。
+- ブロードキャストは同一参照を全ノードへ配るので、値が配列だと共有が生まれる。`$setAll("nodes.**.tags", [], arr)` の後に `$getAll("nodes.**.tags.*", [])` を読むと、再帰の診断ではなく `wcs/wildcard-rank` で落ちる。共有の検査を接尾辞側にも掛けると、接尾辞が反復語を含む形（`nodes.**.children.*.value`）で**同じ族を 2 通りに綴れる**ことによる自己衝突を起こすため、検査は深さ方向にだけ掛けている。
 - 戻り値は「書き込みを試みたアドレス数」であって「値が変わった数」ではない（同値ガードで setter が呼ばれなくても数える）。既存 `$setAll` と同じ規約。
 - 第 2 相でユーザー setter が throw してもロールバックしない（§1-3 の記述どおり）。
 - `createState("readonly", …)` の中でも書ける（X1。再帰固有ではなく、X1 の修理でそのまま反転する）。
@@ -289,7 +289,7 @@ X2 は #256、X5 は #257 として Issue 化した（X1 は未作成）。X10 �
 | X7 | `setInitialState` の再セット後、`for` の行バインドが以後の書き込みに追従しない（集計 getter は追従する）。X6 と同じクラス。再帰とは独立 |
 | X8 | マウントされたコンポーネントの子スコープで `onclick: <method>` がホスト state 側のメソッドを指すと、その `for` が 1 行も描画されず診断も出ない。設計書 §1-1 の `clearSelection()` を行のボタンから呼ぶ形を塞ぐ |
 | X9 | マウントスコープから `$getAll("rows.**.value", [])` を呼ぶと、診断が**翻訳後**のパス（`nodes.**.value`）を名指しする。作者のソースに無い綴りなので grep しても見つからない |
-| X10 | `setInitialState` の再セット後、**wildcard 無しの getter** が旧世代のキャッシュ値を返す（`{ items: [1,2], get sum }` を `{ items: [5,6] }` に再セットしても `sum` は 3 のまま。§7-3 で発見）。`_state` セッタは listPaths / getterPaths / pathSet と再帰の生成辺は整理するが getter キャッシュには触らず、wildcard 無しの絶対アドレスは世代をまたいで同一。再帰の合併形 getter も同じで、再セット前に読んだものだけが旧値を返す。X7 と同じ「再セット後」クラス。`integration.recursionKnownDefects.test.ts` 欠陥8 で現状固定。**追記（§7-4）**: wildcard 無しに限らない。listIndex 付きの絶対アドレスも、再セットで**同じ配列インスタンス**が引き継がれれば台帳（#256 以後は **(親, 配列)** の組がキー）ごと世代を跨ぐ。再帰の生成アクセサについては §7-4 で辺と一緒にキャッシュも落とすようにしたが、作者が手で書いた行 getter のキャッシュは同じ形で残る（辺が残るので構造書き込みで dirty にはなる）。proxy を経ず生配列を `splice` してから同じオブジェクトを再セットした場合は、データパス（`nodes.*.value` 等）のキャッシュも旧値のまま残る — 生データの直接変更は契約外だが、#258 の修正計画で「再セット時に世代を跨ぐキャッシュ」を扱うならこの形も対象に含める |
+| X10 | `setInitialState` の再セット後、**wildcard 無しの getter** が旧世代のキャッシュ値を返す（`{ items: [1,2], get sum }` を `{ items: [5,6] }` に再セットしても `sum` は 3 のまま。§7-3 で発見）。`_state` セッタは listPaths / getterPaths / pathSet と再帰の生成辺は整理するが getter キャッシュには触らず、wildcard 無しの絶対アドレスは世代をまたいで同一。再帰の合併形 getter も同じで、再セット前に読んだものだけが旧値を返す。X7 と同じ「再セット後」クラス。`integration.recursionKnownDefects.test.ts` 欠陥8 で現状固定。**追記（§7-4）**: wildcard 無しに限らない。listIndex 付きの絶対アドレスも、再セットで**同じ配列インスタンス**が引き継がれれば台帳（配列 identity がキー）ごと世代を跨ぐ。再帰の生成アクセサについては §7-4 で辺と一緒にキャッシュも落とすようにしたが、作者が手で書いた行 getter のキャッシュは同じ形で残る（辺が残るので構造書き込みで dirty にはなる）。proxy を経ず生配列を `splice` してから同じオブジェクトを再セットした場合は、データパス（`nodes.*.value` 等）のキャッシュも旧値のまま残る — 生データの直接変更は契約外だが、#258 の修正計画で「再セット時に世代を跨ぐキャッシュ」を扱うならこの形も対象に含める |
 
 X6・X7・X10 は同じ「再セット・ハイドレーション後に一部の機構だけ世代を跨ぐ」クラスなので、1 つの Issue にまとめた → [#258](https://github.com/wcstack/wcstack/issues/258)。
 

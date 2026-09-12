@@ -36,7 +36,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
 import { flush, makeMount, node, read, write, type TNode } from "./helpers/recursionTestUtils";
-import { getLastRegisteredListIndexes, getListIndexesByList } from "../src/list/listIndexesByList";
+import { getListIndexesByList } from "../src/list/listIndexesByList";
 import { getPathInfo } from "../src/address/PathInfo";
 
 beforeAll(() => {
@@ -158,12 +158,9 @@ const shapeOf = (raw: any) => raw.nodes.map((n: any) => n.children.map((c: any) 
  * 「cold でも通る」という主張が偶然の産物になる。
  */
 function expectColdLedger(raw: any): void {
-  // 台帳のキーは (親, 配列) の組なので、「どの親のもとにも行が無い」を親を 1 つ選んで
-  // 言うことはできない（#256）。親を問わない最後の登録（getLastRegisteredListIndexes）が
-  // 無いことが、そのまま「どこにも無い」になる ── この関数が言いたかったことそのもの。
-  expect(getLastRegisteredListIndexes(raw.nodes), "nodes の台帳").toBe(null);
+  expect(getListIndexesByList(raw.nodes, null), "nodes の台帳").toBe(null);
   for (const n of raw.nodes) {
-    expect(getLastRegisteredListIndexes(n.children), "children の台帳").toBe(null);
+    expect(getListIndexesByList(n.children, null), "children の台帳").toBe(null);
   }
 }
 
@@ -188,7 +185,7 @@ describe("cold start（for バインドが 1 つも無い state）の非対称�
 
     const rows = getListIndexesByList(raw.nodes, null)!;
     expect(rows, "$getAll の後").toHaveLength(2);
-    // 子の台帳はその行（親）のもとにある
+    // 子の行はその行（親）のもとにある
     expect(getListIndexesByList(raw.nodes[0].children, rows[0]), "$getAll の後（子）").toHaveLength(2);
     host.remove();
   });

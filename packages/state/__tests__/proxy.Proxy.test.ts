@@ -118,10 +118,10 @@ describe('proxy/StateHandler', () => {
     setStateElement(document, stateElement);
     const proxy = createStateProxy(document, { items: list }, 'readonly');
 
-    expect(getListIndexesByList(list)).toBeNull();
+    expect(getListIndexesByList(list, null)).toBeNull();
     const value = (proxy as any).items;
     expect(value).toBe(list);
-    expect(getListIndexesByList(list)).toBeNull();
+    expect(getListIndexesByList(list, null)).toBeNull();
   });
 
   it('listPathsに含まれる配列でもset時にlistIndexesは設定されないこと', () => {
@@ -133,7 +133,7 @@ describe('proxy/StateHandler', () => {
     const list = [10, 20];
     (proxy as any).items = list;
 
-    expect(getListIndexesByList(list)).toBeNull();
+    expect(getListIndexesByList(list, null)).toBeNull();
   });
 
   it('setでバインディングがあればapplyChangeが呼ばれること', async () => {
