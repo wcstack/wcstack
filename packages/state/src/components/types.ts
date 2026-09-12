@@ -24,6 +24,14 @@ export interface IStateElement {
   readonly dynamicDependency: Map<string, string[]>;
   readonly staticDependency: Map<string, string[]>;
   readonly version: number;
+  /**
+   * state の世代。`_state` の差し替えごとに 1 つ進み、キャッシュ項目の印になる
+   * （cache/types.ts の `generation`）。`version`（更新サイクルの番号）とは別のカウンタ。
+   * optional なのはテスト用モック互換のため（undefined のモックが載せた項目は
+   * undefined 同士で一致し、従来どおりヒットする — `__tests__/proxy.getByAddress.test.ts`
+   * の「キャッシュがある場合はキャッシュを返すこと」が固定する）。
+   */
+  readonly stateGeneration?: number;
   readonly rootNode: Node;
   readonly boundComponentStateProp: string | null;
   /**

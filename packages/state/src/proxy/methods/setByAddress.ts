@@ -140,7 +140,10 @@ function commitWriteCache(
   }
   setCacheEntryByAbsoluteStateAddress(absAddress, {
     value: value,
-    dirty: false
+    dirty: false,
+    // 読み側（getByAddress）と同じ世代印を付ける — ヒットになるのは世代が一致する項目だけ
+    // （cache/types.ts の `generation`）。
+    generation: stateElement.stateGeneration
   });
 }
 

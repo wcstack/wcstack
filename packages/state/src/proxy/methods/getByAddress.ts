@@ -172,13 +172,18 @@ function _getByAddressWithCache(
   const absPathInfo = getAbsolutePathInfo(stateElement, address.pathInfo);
   const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
   const cacheEntry = getCacheEntryByAbsoluteStateAddress(absAddress);
-  if (cacheEntry !== null && cacheEntry.dirty === false) {
+  // 世代印（issue #258 の X10）。絶対アドレスは再セットを跨いで同一なので、dirty だけでは
+  // 旧世代の値と新世代の値を見分けられない。世代の違う項目は単に miss として再評価し、
+  // 下で新しい印を付けて上書きする（列挙も掃き出しも要らず、どのアドレス形状でも自己修復する）。
+  const generation = stateElement.stateGeneration;
+  if (cacheEntry !== null && cacheEntry.dirty === false && cacheEntry.generation === generation) {
     return cacheEntry.value;
   }
   const value = _getByAddress(target, address, receiver, handler, stateElement);
   setCacheEntryByAbsoluteStateAddress(absAddress, {
     value: value,
-    dirty: false
+    dirty: false,
+    generation: generation
   });
   return value;
 }
