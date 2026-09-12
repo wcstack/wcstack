@@ -248,7 +248,7 @@
 <div data-wcs="textContent: cart.total"></div>
 ```
 
-ボリュームは getter・`$watch`・`$listKeys`・`$updatedCallback`・`$connectedCallback`/`$disconnectedCallback` を宣言できます（すべてマウントパス相対）。`$errorCallback` はルート専用です（バインディングの失敗はツリーの所有者へ 1 回だけ報告されます）。読み込み順は自由です（ルートより先に接続されたボリュームは、ルートの登録時に接ぎ木されます）。マウントパスは静的パスのみです（`*`・`$`・`#`・`@` は不可）。初期化後に `mount` 属性を変更することはできません — 変更は console 警告付きで無視されます。要素を取り除き、望むパスで新しい要素を追加してください。
+ボリュームは getter・`$watch`・`$listKeys`・`$updatedCallback`・`$connectedCallback`/`$disconnectedCallback` を宣言できます（すべてマウントパス相対）。`$errorCallback` はルート専用です（バインディングの失敗はツリーの所有者へ 1 回だけ報告されます）。読み込み順は自由です（ルートより先に接続されたボリュームは、ルートの登録時に接ぎ木されます）。ルートの `<wcs-state>` が初期化に失敗した場合、その時点で待機していたボリュームは永久に待たずに自分の報告を出して決着します。その報告が終点です —— 孤児として報告されたボリュームは後から自分で接ぎ木し直さず、マウントの枠もその rootNode が生きている限り予約されたままなので（枠の台帳は rootNode をキーにした `WeakMap` で、枠が解放されることはありません）、あとから修正版のルートを接続しても復帰しません。ルートの `<wcs-state>` を直してページを読み直してください。マウントパスは静的パスのみです（`*`・`$`・`#`・`@` は不可）。初期化後に `mount` 属性を変更することはできません — 変更は console 警告付きで無視されます。要素を取り除き、望むパスで新しい要素を追加してください。
 
 > **v1 の名前付き状態からの移行:** `<wcs-state name="cart">` + `total@cart` は `<wcs-state mount="cart">` + `cart.total` になります。v2 では `name` 属性は fail-fast し、パス中の `@` は parse error です（どちらもこの誘導文付き）。移行の対応表: [docs/state-mount-design.md](../../docs/state-mount-design.md) §9。
 
@@ -2672,7 +2672,7 @@ it("描画・再描画・ハンドラ実行", async () => {
 
 ユーザー操作と同じ経路で動かすなら、state はインライン（メソッド込み）のまま DOM イベントを発火します。`data-wcs="onclick: up"` のハンドラは `button.click()` で走り、`settle()` 1 回の後に DOM へ反映されます。
 
-- `getBindingsReady(root)` は `root`（`document` か shadow root）配下の全バインド構築が終わると resolve し、バインド初期化に失敗すると reject します（v1.26+）。
+- `getBindingsReady(root)` は `root`（`document` か shadow root）配下の全バインド構築が終わると resolve し、バインド初期化に失敗すると reject します（v1.26+）。その root のルート `<wcs-state>` が初期化に失敗した場合も reject します —— ロードされなかったルートを「ready」と報告しません。
 - 更新はマイクロタスク境界で収束します。書き込み後の `setTimeout(0)` 1 回で十分です。
 - `state.items = [...state.items, "cherry"]` がリアクティブな書き方です — `state.items.push()` は観測されません（ハンドラ内と同じ規則）。
 - happy-dom は `customElements.define` 時に既存ノードを**差し替えて**アップグレードします。「遅れて define された同一ノードに値が届く」はヘッドレスでは検証できません。happy-dom と実ブラウザのイベントタイミング差ももう 1 つの死角なので、そこは実ブラウザ e2e（Playwright）を 1 本残してください。
@@ -2759,7 +2759,7 @@ bootstrapState();
 
 | エクスポート | 説明 |
 |---|---|
-| `getBindingsReady(root)` | `root`（`document` または shadow root）配下の全バインディングが構築されたら解決。バインディング初期化が失敗すれば reject |
+| `getBindingsReady(root)` | `root`（`document` または shadow root）配下の全バインディングが構築されたら解決。バインディング初期化が失敗した場合、およびその root のルート state 要素が初期化に失敗した場合は reject |
 | `buildBindings(root)` | `document` / `ShadowRoot` 配下のバインディングを明示的に構築する — その root に最初に登録された `<wcs-state>` がスケジュールするもの |
 | `getConfig()` | 現在の設定（読み取り専用ビュー） |
 | `defineState(obj)` | メソッドと getter 内の `this` に型を付けるアイデンティティ関数 — [TypeScript サポート](#typescript-サポート) 参照 |
@@ -2785,14 +2785,14 @@ bootstrapState();
 
 | プロパティ / メソッド | 説明 |
 |---|---|
-| `initializePromise` | 状態の完全な初期化時に解決される Promise |
-| `connectedCallbackPromise` | `connectedCallback` の完了（state のロードと `$connectedCallback` の実行）で解決される Promise — テストのレシピが await するもの |
+| `initializePromise` | 状態の完全な初期化時に解決される Promise —— **初期化に失敗したときも解決**します（1 要素の失敗がページの他のバインディングを止めないため）。エラーは `connectedCallbackPromise` に届きます |
+| `connectedCallbackPromise` | `connectedCallback` の完了（state のロードと `$connectedCallback` の実行）で解決される Promise — テストのレシピが await するもの。**ルート**要素が初期化に失敗すると、**元のエラーのまま reject** し、`console.error` にも 1 件報告します（`$` 宣言の不正・ソースのロード失敗・SSR データの merge 失敗・DCC や `bind-component` の設定エラー・同じ root node に 2 本目のルート `<wcs-state>`。2 本目は登録されないまま読み込んだ state を保持するので取り除いてください。健全な要素の DOM 移動は二重登録ではなく、拒否しません）。**ボリューム**（`<wcs-state mount="…">`）はこの Promise を**拒否しません** —— ボリュームの失敗は解決し、種類によっては自分では何も報告しません。その場合エラーはカスタム要素リアクションが捨てる `connectedCallback` の戻り Promise として出ていき、ブラウザのコンソールには "Uncaught (in promise)" と出ますが、promise を待つ側（テストのレシピや `renderToString()`）には届きません。ロード中に切断された要素は reject しません —— その接続が黙って終わるだけで、付け直せば（行プール）通常どおり初期化して解決します。個々の失敗箇所の正確な挙動は `__tests__/integration.initFailureDiagnostics.test.ts` が固定しています |
 | `listPaths` | `for` ループで使用されるパスの Set |
 | `getterPaths` | getter として定義されたパスの Set |
 | `setterPaths` | setter として定義されたパスの Set |
 | `createState(mutability, callback)` | 状態プロキシを作成（`"readonly"` または `"writable"`） |
 | `createStateAsync(mutability, callback)` | `createState` の非同期版 |
-| `setInitialState(state)` | プログラムから状態を設定（初期化前） |
+| `setInitialState(state)` | プログラムから状態を設定（初期化前）。初期化に失敗した要素では throw します — 再武装はできないので、要素を取り除いて作り直してください |
 | `nextVersion()` | バージョン番号をインクリメントして返す |
 
 ## アーキテクチャ

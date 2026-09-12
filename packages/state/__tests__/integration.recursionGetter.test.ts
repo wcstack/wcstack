@@ -29,11 +29,11 @@
  * 【現状の記録】は残っていない（接尾辞が `.*` の `**` getter も、接頭辞と接尾辞の重なりガードで解決済み）。
  * 空接尾辞と違って構築時のガードに掛からず、いまもアンカー行を隠す。
  *
- * 壊れた宣言を**初回マウント**で渡すと、`_state` セッターの throw が
- * `_resolveLoading()` まで届かず `connectedCallbackPromise` が永久 pending になる
- * （`$listKeys` と同じ性質）。`await` したテストは 5 秒で timeout するので、
- * **構築時に落ちる契約は再セットの経路（`withReset`）で測る** — こちらは同期的に
- * throw し、作者が実際に受け取る診断をそのまま観測できる。`new RecursionRegistry`
+ * **構築時に落ちる契約は再セットの経路（`withReset`）で測る** — 再セットの `_state`
+ * セッターは同期的に throw するので、作者が実際に受け取る診断をそのまま観測できる。
+ * 初回マウントで壊れた宣言を渡した側も #257 で修理済みで、同じ文面が
+ * `connectedCallbackPromise` の reject と `console.error` で届く（その着地の契約は
+ * integration.initFailureDiagnostics.test.ts が固定する）。`new RecursionRegistry`
  * を直接組む `buildRegistry` は、定義の並び順に依らないこと・正当な 2 本を巻き添えに
  * しないことという**検査そのものの性質**だけに使う。
  *
@@ -65,12 +65,11 @@ const mount = makeMount("recursion-getter-host");
 /**
  * 一度正しくマウントしてから壊れた state を再セットする。**レジストリ構築時に落ちる
  * 契約はこの形で測る** — 再セットの `_state` セッターは同期的に throw するので、
- * 作者が実際に受け取る診断をそのまま観測できる。
+ * `expect(run).toThrow(...)` で作者が実際に受け取る診断をそのまま観測できる。
  *
- * 初回マウントで壊れた宣言を渡すと、セッターの throw が `_resolveLoading()` まで
- * 届かず `connectedCallbackPromise` が永久 pending になる（`$listKeys` と同じ性質）
- * ため、`await` したテストは 5 秒で timeout する。だから「壊れた宣言」は必ず
- * 再セットの経路で測る。
+ * 初回マウントの側は #257 で修理済み（同じ文面が `connectedCallbackPromise` の reject と
+ * `console.error` で届く）。この形を残すのは、非同期の着地を経由せずに**文面そのもの**を
+ * 読めるからで、着地の契約は integration.initFailureDiagnostics.test.ts が固定する。
  */
 async function withReset(broken: any): Promise<{ host: HTMLElement; run: () => void }> {
   const { host, stateEl } = await mount(recursionState(forest()), NO_RENDER_HTML);
@@ -833,7 +832,7 @@ describe("宣言と再帰 getter の定義を検証する", () => {
     // 黙って使われていた（`$getAll(totalAt(0), [])` が `[15, 2]`）。原因は
     // `materializeRecursionAccessor` の早期 return が `getterPaths.has(path)` だったこと。
     // Fixed by cycle-3 review — 検査は読みの時点ではなく**構築時**（宣言の形だけで決まる）。
-    // 構築時に落ちる契約は再セットの経路で測る（初回マウントは #257 の無言ハングになる）。
+    // 構築時に落ちる契約は再セットの経路で測る（同期 throw なので文面をそのまま読める）。
     const { host, run } = await withReset(recursionState(forest(), {
       "nodes.*.children.*.total": { get() { return 7; }, enumerable: true, configurable: true },
     }));
@@ -928,7 +927,7 @@ describe("宣言と再帰 getter の定義を検証する", () => {
           (this as any).$getAll("nodes.**.children.*.total").reduce((a: number, b: number) => a + b, 0);
       }
     }
-    // 構築時に落ちる契約は再セットの経路で測る（初回マウントは #257 の無言ハングになる）
+    // 構築時に落ちる契約は再セットの経路で測る（同期 throw なので文面をそのまま読める）
     const instance = new TreeState();
     const { host, run } = await withReset(instance);
 
@@ -1384,8 +1383,9 @@ describe("再帰 getter: `**` getter が複数ある", () => {
     // Fixed by Phase B review — was: 診断されず、定義（descriptor）の順で先勝ちして
     // いた。`nodes.**.children.*.tag` の深さ k と `nodes.**.tag` の深さ k+1 は
     // どちらも同じ具体パスに展開される（接尾辞の差が反復語の整数倍）。
-    // 作者が受け取る経路（state のセット）で測る。初回マウントではセッターの throw が
-    // 握り潰されて永久 pending になるので、再セットの形で読む（withReset の docblock）。
+    // 作者が受け取る経路（state のセット）で測る。再セットは同期 throw なので文面を
+    // そのまま読める（withReset の docblock — 初回マウントの着地は #257 で修理済み）。
+
     const broken: any = { $recursion: { "nodes.*": "children.*" }, nodes: forest() };
     Object.defineProperty(broken, "nodes.**.children.*.tag",
       { get() { return "A"; }, enumerable: true, configurable: true });

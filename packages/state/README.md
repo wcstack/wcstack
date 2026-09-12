@@ -248,7 +248,7 @@ There is **one state tree per root**. To split state across modules, mount a vol
 <div data-wcs="textContent: cart.total"></div>
 ```
 
-A volume may declare getters, `$watch`, `$listKeys`, `$updatedCallback`, and `$connectedCallback`/`$disconnectedCallback` — all relative to its mount path. `$errorCallback` is root-only (a binding failure is reported once, to the tree's owner). Load order does not matter (a volume connected before the root is grafted when the root registers). Mount paths must be static (`*`, `$`, `#`, `@` are rejected). Changing `mount` after the element has initialized is not supported: the change is ignored with a console warning — remove the element and add a new one with the desired path.
+A volume may declare getters, `$watch`, `$listKeys`, `$updatedCallback`, and `$connectedCallback`/`$disconnectedCallback` — all relative to its mount path. `$errorCallback` is root-only (a binding failure is reported once, to the tree's owner). Load order does not matter (a volume connected before the root is grafted when the root registers). If the root `<wcs-state>` fails to initialize, the volumes already waiting for it settle with a report of their own instead of waiting forever. That report is the end of the line for those volumes: a volume reported as an orphan does not graft itself later, and its mount slot stays reserved for as long as that root node is alive — the slot ledger is a `WeakMap` keyed by the root node and a slot is never released — so connecting a corrected root afterwards does not bring it back. Fix the root `<wcs-state>` and reload the page. Mount paths must be static (`*`, `$`, `#`, `@` are rejected). Changing `mount` after the element has initialized is not supported: the change is ignored with a console warning — remove the element and add a new one with the desired path.
 
 > **Migrating from v1's named states:** `<wcs-state name="cart">` + `total@cart` becomes `<wcs-state mount="cart">` + `cart.total`. In v2 the `name` attribute fails fast and `@` in a path is a parse error, each with this exact guidance. Migration table: [docs/state-mount-design.md](../../docs/state-mount-design.md) §9.
 
@@ -2680,7 +2680,7 @@ it("renders, re-renders, and runs handlers", async () => {
 
 To drive the page the way a user does, keep the state inline (methods included) and dispatch DOM events; a `data-wcs="onclick: up"` handler runs on `button.click()`, and the DOM reflects the write after one `settle()`.
 
-- `getBindingsReady(root)` resolves once every binding under `root` (a `document` or a shadow root) is built, and rejects if binding initialization fails (v1.26+).
+- `getBindingsReady(root)` resolves once every binding under `root` (a `document` or a shadow root) is built, and rejects if binding initialization fails (v1.26+) or if the root's `<wcs-state>` failed to initialize — a root that never loaded reports the failure instead of "ready".
 - Updates settle on the microtask queue; a single `setTimeout(0)` after a write is enough.
 - `state.items = [...state.items, "cherry"]` is the reactive form — `state.items.push()` is not observed (same rule as in handlers).
 - Under happy-dom, `customElements.define` upgrades existing nodes by **replacing** them; "a value reaches the same node after a late define" cannot be asserted headlessly. Event timing differences between happy-dom and real browsers are the other blind spot — keep one browser e2e (Playwright) for those.
@@ -2767,7 +2767,7 @@ bootstrapState();
 
 | Export | Description |
 |---|---|
-| `getBindingsReady(root)` | Resolves once every binding under `root` (a `document` or a shadow root) is built; rejects if binding initialization fails |
+| `getBindingsReady(root)` | Resolves once every binding under `root` (a `document` or a shadow root) is built; rejects if binding initialization fails, or if the root's state element failed to initialize |
 | `buildBindings(root)` | Build the bindings under a `document` or `ShadowRoot` explicitly — what the first `<wcs-state>` registered on a root schedules for it |
 | `getConfig()` | The current configuration (read-only view) |
 | `defineState(obj)` | Identity function that types `this` inside methods and getters — see [TypeScript Support](#typescript-support) |
@@ -2793,14 +2793,14 @@ Subpath entries for tooling: `@wcstack/state/parser` (the `data-wcs` parser as a
 
 | Property / Method | Description |
 |---|---|
-| `initializePromise` | Resolves when state is fully initialized |
-| `connectedCallbackPromise` | Resolves once `connectedCallback` has completed (state loaded, `$connectedCallback` run) — what the testing recipes await |
+| `initializePromise` | Resolves when state is fully initialized — and also **when initialization fails**, so one element's failure never blocks the rest of the page's bindings; the error is delivered on `connectedCallbackPromise` |
+| `connectedCallbackPromise` | Resolves once `connectedCallback` has completed (state loaded, `$connectedCallback` run) — what the testing recipes await. A **root** element that fails to initialize **rejects** it with the original error, unwrapped, and reports the failure once with `console.error`: an invalid `$` declaration, a source it cannot load, the SSR data merge, a DCC or `bind-component` setup error, or a second root `<wcs-state>` on the same root node (that second element stays unregistered but keeps the state it loaded, so remove it; moving a healthy element in the DOM is not a duplicate and is never refused). A **volume** (`<wcs-state mount="…">`) never rejects it — a volume failure resolves it instead, and some volume failures report nothing of their own: the error leaves as the `connectedCallback` promise that custom-element reactions discard, which a browser console shows as "Uncaught (in promise)" but nothing awaiting these promises (a test recipe, `renderToString()`) ever sees. Detaching an element while its source is still loading rejects nothing — that connection just ends, and re-appending the element (row pooling) initializes it and resolves normally. For the exact behaviour of any single failure site, read `__tests__/integration.initFailureDiagnostics.test.ts`: it pins every case |
 | `listPaths` | Set of paths used in `for` loops |
 | `getterPaths` | Set of paths defined as getters |
 | `setterPaths` | Set of paths defined as setters |
 | `createState(mutability, callback)` | Create a state proxy (`"readonly"` or `"writable"`) |
 | `createStateAsync(mutability, callback)` | Async version of `createState` |
-| `setInitialState(state)` | Set state programmatically (before initialization) |
+| `setInitialState(state)` | Set state programmatically (before initialization). Throws if the element already failed to initialize — such an element cannot be re-armed; remove it and create a new one |
 | `nextVersion()` | Increment and return version number |
 
 ## Architecture

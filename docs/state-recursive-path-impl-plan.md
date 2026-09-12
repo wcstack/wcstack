@@ -152,7 +152,7 @@ ListIndex の同一性は台帳（`listIndexesByList`）が持つので、先に
 | X2 | 配列を行から行へ付け替えると描画と `$getAll` が食い違う。修理案は「新親と一致しない `parentListIndex` を持つ ListIndex は再利用せず作り直す」だが、`applyChangeToFor` と `walkDependency` が ListIndex 同一性でジョインしているため独立の設計判断が要る。→ [#256](https://github.com/wcstack/wcstack/issues/256) |
 | X3 | `walkDependency` のコメントが「依存グラフは epoch でメモ化される」と書いているが、`topologicalRank.ts` はメモ化していない（ヘッダにそう書いてある）。コメントの誤り |
 | X4 | 描画なしの世代分裂（A3）は再帰専用ではなく、`for` を持たないリストを `$getAll` するアプリ一般に当たる既存欠陥である可能性が高い。いつ入ったかは未確認 |
-| X5 | 宣言の検証が **初回マウント**で throw すると、`_resolveLoading()` に届かず `connectedCallbackPromise` が永久 pending になる（作者が受け取るのは診断ではなく無言のハング）。再セット経路なら同じ宣言が正しい文面で同期 throw する。`$listKeys` / `$watch` / `$streams` も同じ性質なので Phase B の回帰ではないが、`$recursion` は新しい宣言面なので**出荷前に決着させたい**。宣言検証全般を `_failInitialization` と同じ「resolve してから raise」経路に載せる独立の Issue にする。**着地後レビュー（§7-3）で実測確認**: `$recursion: { "nodes": "children.*" }` は同期 throw 無し・`console.error` 0 件・promise 永久 pending。→ [#257](https://github.com/wcstack/wcstack/issues/257) |
+| X5 | 宣言の検証が **初回マウント**で throw すると、`_resolveLoading()` に届かず `connectedCallbackPromise` が永久 pending になる（作者が受け取るのは診断ではなく無言のハング）。再セット経路なら同じ宣言が正しい文面で同期 throw する。`$listKeys` / `$watch` / `$streams` も同じ性質なので Phase B の回帰ではないが、`$recursion` は新しい宣言面なので**出荷前に決着させたい**。宣言検証全般を `_failInitialization` と同じ「resolve してから raise」経路に載せる独立の Issue にする。**着地後レビュー（§7-3）で実測確認**: `$recursion: { "nodes": "children.*" }` は同期 throw 無し・`console.error` 0 件・promise 永久 pending。→ [#257](https://github.com/wcstack/wcstack/issues/257)（**修理済み**: 着地は `connectedCallback` の `await this._initialize()` を包む catch（`State._failInitializeLoudly`）1 箇所。`connectedCallbackPromise` を元のエラーで reject ＋ `console.error` 1 件、`initializePromise` は解決のまま。`__tests__/integration.initFailureDiagnostics.test.ts` と欠陥9 で固定） |
 
 X2 は #256、X5 は #257 として Issue 化した（X1 は未作成）。X10 は X6・X7 と同じ #258（§7-2）。X3 はコメント修正のみ。X4 は E1 の修理でまとめて解消される見込み。
 
@@ -377,7 +377,7 @@ X6・X7・X10 は同じ「再セット・ハイドレーション後に一部の
 **再検証後の追記（指摘 7 の残り＋記録事項）**:
 
 - **指摘 7（完了）**: 順序変更だけでは `this.__state = value` と `getterPaths` の再収集が検証より先に走り、throw 後も「state は新・レジストリは旧」のままだった。`processRecursionDeclaration(value)` と `new RecursionRegistry(spec, value)` は `value` しか読まない（コンストラクタは `getAllPropertyDescriptors(state)` と純関数だけ）ので、`processCommandTokensDeclaration` と同じく **`__state` の差し替え前**に持ち上げた。再セットの宣言不正時は要素が丸ごと旧世代に留まる（テストで `__state` 据え置き・旧世代の `[131, 2]` が読めることまで固定）。
-- **#257 の表面**: 指摘 5 で新設した「構造を名指す `**` getter」の構築時 raise は、初回マウントでは他の宣言検証と同じく無言ハング（`connectedCallbackPromise` 未解決・`console.error` 0 件）になる。`integration.recursionKnownDefects.test.ts` 欠陥9 で現状固定。**#257 の修理時に、この raise も「resolve してから raise」の経路に載せること。**
+- **#257 の表面（修理済み）**: 指摘 5 で新設した「構造を名指す `**` getter」の構築時 raise も、初回マウントで他の宣言検証と同じ着地に載る —— `connectedCallbackPromise` が**元のエラーのまま** reject し、`console.error` が 1 件出る（`initializePromise` は従来どおり解決）。着地は `connectedCallback` の `await this._initialize()` を包む catch 1 箇所に置いたので、`_initialize` が投げうるもの（宣言検証 7 種・ソースのロード 4 経路・SSR データの merge・`setStateElement` の「1 rootNode 1 ツリー」違反）が全部載る。`integration.recursionKnownDefects.test.ts` 欠陥9 は現状固定から**契約の固定**へ反転し、着地の全面は `integration.initFailureDiagnostics.test.ts`。
 - **添字綴りの getter キー**: `get "nodes.**.children.0"()` も両側で区切り後ろを畳んでから構造の述語に掛ける（指摘 1 と同じ扱い）。
 - 据え置き: `$recursion: { get "nodes.*"() {…} }`（ランタイム受理・静的 error）は作為的な形なので対応しない。
 

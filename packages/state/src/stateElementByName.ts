@@ -31,6 +31,27 @@ export function getBindingsReady(rootNode: Node): Promise<void> {
   return bindingsReadyByNode.get(rootNode) ?? Promise.resolve();
 }
 
+/**
+ * この rootNode ではバインド構築が起きない、と確定する（#257）。
+ *
+ * ルートの state 要素が初期化に失敗すると `setStateElement` に到達しないので、
+ * 台帳はエントリが無いまま残る。上の既定（未登録 ＝ 即時解決）は「まだ登録されて
+ * いない」と「バインドを張り終えた」を区別しないため、@wcstack/server の
+ * `waitForReady` は**バインディングが 1 本も無いページ**を ready と報告してしまう。
+ * 失敗した rootNode には reject 済みの ready を置き、待ち手へ同じ診断を届ける。
+ *
+ * 呼び手は State の `_failInitializeLoudly` ただ 1 つで、そちらが「この rootNode に
+ * 生きたルートが居ない」ことを確かめてから呼ぶ（2 本目の `<wcs-state>` が落ちても
+ * 1 本目の ready は壊さない）。
+ */
+export function markBindingsUnavailable(rootNode: Node, error: unknown): void {
+  const failed = Promise.reject(error);
+  // reject と同じティックで handled を立てる（getBindingsReady を誰も呼ばない
+  // ページで unhandled rejection にしないため）。await した側は従来どおり受け取る
+  failed.catch(() => undefined);
+  bindingsReadyByNode.set(rootNode, failed);
+}
+
 const bindingsBuiltRoots: WeakSet<Node> = new WeakSet();
 
 /**
@@ -105,6 +126,16 @@ export function setStateElement(rootNode: Node, element: IStateElement | null): 
     }
   } else {
     // 登録の場合
+    if (existing === element) {
+      // 同じ要素の再登録は冪等（setStateElementAlias と同じ規範）。ロード完了前の
+      // remove → append（DOM の移動・行プールの張り直し・shadow の組み直し）は
+      // `_initialize` を 2 本同時に走らせるので、後から登録に来たほうが**自分自身**を
+      // 「2 本目の <wcs-state>」と誤診する。DOM の移動は正常な操作であり、拒否すると
+      // 健全なページの connectedCallbackPromise が reject される（#257）。
+      // 切断時に登録を解除する案では直らない — 実測で、切断の時点ではまだ何も
+      // 登録されていない（登録は進行中の `_initialize` の続きで起きる）。
+      return;
+    }
     if (existing === undefined) {
       // 初めてルートノードに登録する場合
       // enable-ssr 属性があり、サーバーサイドでない場合はハイドレーション
@@ -164,9 +195,15 @@ export function setStateElement(rootNode: Node, element: IStateElement | null): 
     if (existing !== undefined) {
       // v2 は 1 rootNode 1 ツリー。2 つ目の <wcs-state> は設定エラー — 追加の状態は
       // マウント（mount= / ホスト配線の bind-component）でツリーに載せる
+      // 文言は実測のゾンビの姿に合わせる（#257 第 3 ラウンド）: 2 本目は state を
+      // 組み上げたまま**登録されない**。データもトークンも $on の購読も生きているのに
+      // 誰もバインドしておらず、_initialized が false なので切断時の後始末も走らない
       raiseError(
         `A state tree is already registered on this root — one <wcs-state> per root in v2. ` +
-        `Mount additional states onto the tree instead: <wcs-state mount="...">.`,
+        `This second element stays unregistered: it keeps the state it loaded and its ` +
+        `declarations stay live, but nothing binds to it and disconnecting it runs no ` +
+        `cleanup — remove it. Mount additional states onto the tree instead: ` +
+        `<wcs-state mount="...">.`,
       );
     }
     stateElementByNode.set(rootNode, element);

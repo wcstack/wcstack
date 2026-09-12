@@ -154,6 +154,60 @@ export interface IPendingVolumeRequest {
 }
 const pendingVolumesByRootNode = new WeakMap<Node, IPendingVolumeRequest[]>();
 
+/**
+ * ルートの state 要素が初期化に失敗した rootNode（#257）。ルート登録（setStateElement）は
+ * 二度と起きないので `drainPendingVolumes` も呼ばれず、保留中のボリュームの
+ * `onGrafted` が走らないまま initializePromise / connectedCallbackPromise が永久に
+ * 未解決になる（ルートの診断だけが出て、同じページのボリュームは無言で消える）。
+ * 「ルートは来ない」と確定した時点で保留分を孤児として着地させ、以後に届く保留要求も
+ * 同じ着地へ合流させる。D11 の「ルート無し」報告はここには出ない — 検査（State.ts の
+ * reportVolumeWithoutRoot）は**要素の存在**で見るので、落ちたルート要素が居る限り黙る。
+ *
+ * 印は**落ちた要素がこの rootNode に居る間だけ**有効（`clearFailedRootNode`）。持続させると、
+ * この PR が案内する復旧（壊れた要素を取り除いて作り直す）と矛盾する: 外してから修正版を
+ * 接続するまでの窓で接続したボリュームが即座に孤児化し、正しいルートが来ても採用されない。
+ */
+const failedRootNodes = new WeakSet<Node>();
+
+/** 接ぎ木先を失ったボリュームの着地（graftIsolated の失敗と同じ形 — 1 件 1 報告 ＋ finish(null)）。 */
+function orphanPendingVolume(request: IPendingVolumeRequest): void {
+  console.error(
+    `[@wcstack/state] volume "${request.mountPath}" was not grafted — the root state element ` +
+    `on this root node failed to initialize (its own diagnostic is reported separately). ` +
+    `The volume is not at fault: fix the root <wcs-state>.`,
+  );
+  request.onGrafted(null);
+}
+
+/**
+ * 失敗の印を落とす（#257）。呼び手は State の `disconnectedCallback` ただ 1 つで、
+ * **初期化に失敗した当の要素**が剥がされたときだけ呼ぶ — 落ちたルートが DOM から
+ * 消えた時点で「このルートノードにルートは来ない」は成り立たなくなる（作者は
+ * 取り除いて作り直す）。
+ *
+ * 呼び手を本人に限るのは第 3 ラウンドの修正: 「初期化前に剥がされた要素」全部で
+ * 落としていたため、同じ rootNode の別要素（登録されなかった 2 本目・行プールの
+ * 張り直し・ロード中の DOM 移動）の切断で印が消え、以後のボリュームが孤児報告を
+ * 受けられず永久保留へ戻っていた。
+ */
+export function clearFailedRootNode(rootNode: Node): void {
+  failedRootNodes.delete(rootNode);
+}
+
+/** ルートの初期化失敗を確定し、保留中のボリュームを孤児として着地させる（State の _failInitializeLoudly が唯一の呼び手）。 */
+export function failPendingVolumes(rootNode: Node): void {
+  failedRootNodes.add(rootNode);
+  const pending = pendingVolumesByRootNode.get(rootNode);
+  if (typeof pending === "undefined") {
+    // 保留はまだ無い（ボリュームのロードのほうが遅い形）— 下の queuePendingVolume が拾う
+    return;
+  }
+  pendingVolumesByRootNode.delete(rootNode);
+  for (const request of pending) {
+    orphanPendingVolume(request);
+  }
+}
+
 let graftHandler: ((rootStateElement: IStateElement, request: IPendingVolumeRequest) => void) | null = null;
 
 export function setVolumeGraftHandler(handler: (rootStateElement: IStateElement, request: IPendingVolumeRequest) => void): void {
@@ -161,6 +215,12 @@ export function setVolumeGraftHandler(handler: (rootStateElement: IStateElement,
 }
 
 export function queuePendingVolume(rootNode: Node, request: IPendingVolumeRequest): void {
+  if (failedRootNodes.has(rootNode)) {
+    // ルートが落ちた後に届いた保留要求（ボリュームのロードのほうが遅い形）。
+    // 積んでも引き取り手は永久に来ない
+    orphanPendingVolume(request);
+    return;
+  }
   let pending = pendingVolumesByRootNode.get(rootNode);
   if (typeof pending === "undefined") {
     pending = [];
@@ -171,6 +231,9 @@ export function queuePendingVolume(rootNode: Node, request: IPendingVolumeReques
 
 /** ルート登録時に保留中のボリュームを接ぎ木する（stateElementByName から呼ばれる）。 */
 export function drainPendingVolumes(rootNode: Node, rootStateElement: IStateElement): void {
+  // ルートが成立した ＝ 失敗の印は無効（落ちたルートを外して正しいルートを接続し直した
+  // 形。WeakSet.delete は未登録でも安全なので分岐は要らない）
+  failedRootNodes.delete(rootNode);
   const pending = pendingVolumesByRootNode.get(rootNode);
   if (typeof pending === "undefined" || pending.length === 0 || graftHandler === null) {
     return;
