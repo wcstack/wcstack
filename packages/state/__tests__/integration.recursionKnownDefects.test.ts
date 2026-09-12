@@ -30,9 +30,12 @@
  *      cold な `$resolve`（it 全体は緑なので、独立した it を数えると見落とす）。
  *      (ii)(iii) はどちらも「$resolve だけが走査の第 1 相を持たない」（Phase A の A1）で、
  *      E1 とは別の契約。
- *  2. 同じ配列インスタンスが 2 つ以上の親から到達可能（DAG・循環・同一リスト内の
- *     重複）だと、台帳（src/list/listIndexesByList.ts）が配列インスタンスだけを
- *     キーにしているため ListIndex が先着の親に別名化し、無言で誤る（E6 で修理予定）。
+ *  （欠陥2 は #256 で修理済み。台帳（src/list/listIndexesByList.ts）のキーを配列だけから
+ *     **(親, 配列)** の組に変え、行を親ごとに私有にした。DAG・循環・同一リスト内の重複で
+ *     ListIndex が先着の親に別名化することはなくなり、欠陥2 の describe は契約に反転させて
+ *     ある。**データの共有そのものは残る** —— 1 本の配列を 2 経路から書けば 2 回書かれる。
+ *     以前この別名化の副作用で出ていた `wcs/wildcard-rank` の throw は無くなった
+ *     （循環を名指しするのは `**` の走査ガード `wcs/recursion-cycle` の仕事）。）
  *  4. createState("readonly") の中で $setAll / $resolve(set) が readonly ガードを
  *     素通りして実データを書き換える（ガードは StateHandler の set トラップにしかない。X1）。
  *  5. 遅延実体化（defineTreeAccessor）で、そのパスを読んだ後に getter を生やしても
@@ -41,8 +44,7 @@
  *     非キャッシュになり）cold 走査そのものが落ちる（E4/E5 で修理予定）。
  *  6. 描画ありでも 1 クラスだけ取りこぼす。in-place の深い変異を構造変化と同じ代入に
  *     混ぜると、集計 getter は再評価されるのに葉の値パスのキャッシュだけが dirty 化
- *     されず、縮約エッジでルート集計まで古い値が伝播する。in-place の arr.reverse()
- *     も描画ありで行と子サブツリーを分離させる。
+ *     されず、縮約エッジでルート集計まで古い値が伝播する。
  *
  * 【偶然の救済に注意】Phase A で実際に結論が反転した罠が 4 つあり、このファイルでは
  * それぞれ意図的に「露出する側」の書き方を選んでいる。書き換えるときは崩さないこと。
@@ -236,12 +238,13 @@ describe("欠陥1（E1 修理済み）: 描画なしのルートリストでも�
     expect(totalsAt(stateEl, 0)).toEqual([11, 448]);
   });
 
-  // DEFECT: in-place push は既知の非対応（in-place 変異規範）だが、公式に推奨される
-  //         リフレッシュイディオム `s.items = [...arr]` が「唯一効かない形」になっている。
-  //         差分基準が push で変異した *同じ配列* なので createListDiff の isSameList が
-  //         真になり、空だった頃の台帳がそのまま新配列へ引き継がれる。
-  //         should be: [...arr] 再代入の後は [11, 2]。
-  it("空 children に in-place push したあと [...arr] で再代入しても回復しない", async () => {
+  // #256 で修理済み（was: [...arr] 再代入の後も [1, 2] のまま）。in-place push そのものは
+  // 今も観測されない（in-place 変異規範）が、公式のリフレッシュイディオム
+  // `s.items = [...arr]` は効くようになった。理由は台帳のキー: 差分基準は push で変異した
+  // *同じ配列* なので `isSameList` は真のままだが、空だった頃の行集合は「その親のもとに
+  // 登録された行」として引かれるようになり、行数が合わない古い台帳をそのまま新配列へ
+  // 引き継ぐことがなくなった。
+  it("空 children に in-place push したあと [...arr] で再代入すれば回復する", async () => {
     const { stateEl } = await mount(unrollTotals({ nodes: [NODE(1), NODE(2)] }, 2));
     expect(totalsAt(stateEl, 0)).toEqual([1, 2]);
 
@@ -254,7 +257,7 @@ describe("欠陥1（E1 修理済み）: 描画なしのルートリストでも�
       s.$resolve("nodes.*.children", [0], [...arr]);
     });
     await flush();
-    expect(totalsAt(stateEl, 0)).toEqual([1, 2]); // should be: [11, 2]
+    expect(totalsAt(stateEl, 0)).toEqual([11, 2]); // Fixed by #256 — was: [1, 2]
   });
 
   // 対照: 最初から新しい配列を代入すれば追従する。上のイディオムだけが効かないことの証明。
@@ -538,7 +541,7 @@ describe("欠陥1（E1 修理済み）: 描画なしのルートリストでも�
 
 // ---------------------------------------------------------------------------
 
-describe("欠陥2: 同じ配列インスタンスの共有（DAG・循環）が無言で誤る（現状の挙動を固定する / 修正時に反転させる）", () => {
+describe("欠陥2（#256 で修理済み）: 同じ配列インスタンスの共有（DAG・循環）でも行の文脈は正しい。残るのはデータ共有そのものの帰結", () => {
   /** 2 親が同一の children 配列インスタンスを共有する木 */
   function sharedChildren() {
     const shared: any[] = [NODE(10), NODE(20)];
@@ -552,11 +555,11 @@ describe("欠陥2: 同じ配列インスタンスの共有（DAG・循環）が�
     return { shared, state };
   }
 
-  // DEFECT: rootValue は行ごとに [1,1,2,2] になるべき。台帳が配列インスタンスだけを
-  //         キーにしていて親の同一性を表せないため、共有配列の ListIndex が
-  //         「最初に走査した親」に別名化する。台帳キーを (配列, 親アドレス) に拡張するか、
-  //         再帰走査に共有ガード（wcs/recursion-shared-list 相当）を新設したら反転する。
-  it("共有した children 配列では、子スコープから親を読む getter が先着の親に別名化する", async () => {
+  // #256 で修理済み（was: rootValue が [1,1,1,1]）。台帳のキーを配列だけから
+  // **(親, 配列)** の組に変えたので、共有配列でも行は親ごとに私有になり、子スコープから
+  // 親を読む getter が自分の親を読む。**データの共有そのものは残る** —— 下の
+  // `$setAll` の it が示すとおり、1 本の配列を 2 経路から書けば 2 回適用される。
+  it("共有した children 配列でも、子スコープから親を読む getter は自分の親を読む", async () => {
     const { shared, state } = sharedChildren();
     const { stateEl } = await mount(state);
 
@@ -573,13 +576,16 @@ describe("欠陥2: 同じ配列インスタンスの共有（DAG・循環）が�
     // 救われて正しく見える。この [31,32] を「集計は無事」の根拠に使ってはならない
     // ── 次の it が、親を読む集計は実際に誤ることを示す。
     expect(out.totals).toEqual([31, 32]);
-    expect(out.rootValue).toEqual([1, 1, 1, 1]); // should be: [1, 1, 2, 2]
+    expect(out.rootValue).toEqual([1, 1, 2, 2]); // Fixed by #256 — was: [1, 1, 1, 1]
 
-    // 台帳の親ポインタが nodes[0] の行に固定されている（nodes[1] にはならない）
-    const nodeLedger = getListIndexesByList(state.nodes)!;
-    const sharedLedger = getListIndexesByList(shared)!;
-    expect(sharedLedger[0].parentListIndex).toBe(nodeLedger[0]);
-    expect(sharedLedger[1].parentListIndex).toBe(nodeLedger[0]);
+    // 台帳は (親, 配列) の組ごとに私有。同じ配列でも親が違えば別の行集合で、
+    // それぞれの行の親ポインタは自分の親を指す（修理前は 4 行とも nodes[0] を指していた）。
+    const nodeLedger = getListIndexesByList(state.nodes, null)!;
+    const underRow0 = getListIndexesByList(shared, nodeLedger[0])!;
+    const underRow1 = getListIndexesByList(shared, nodeLedger[1])!;
+    expect(underRow0).not.toBe(underRow1);
+    expect(underRow0.map((r) => r.parentListIndex)).toEqual([nodeLedger[0], nodeLedger[0]]);
+    expect(underRow1.map((r) => r.parentListIndex)).toEqual([nodeLedger[1], nodeLedger[1]]);
   });
 
   /** 親の value を掛ける行 getter と、その合計（＝親依存の集計）を持つ木 */
@@ -608,15 +614,14 @@ describe("欠陥2: 同じ配列インスタンスの共有（DAG・循環）が�
     weightedTotal: s.$getAll("nodes.*.weightedTotal", []),
   }));
 
-  // DEFECT: 親を読む集計は集計値そのものが誤る。行 1 は親 value=2 なので
-  //         weighted=[20,40] / weightedTotal=60 になるべきなのに、行 0 の文脈で
-  //         評価されて 30 になる。上の it の [31,32] が「無事」に見えるのは
-  //         集計の形が親を読まないからにすぎない、ということの直接証明。
-  it("共有した children 配列では、親を読む集計そのものが誤る", async () => {
+  // #256 で修理済み（was: weighted=[10,20,10,20] / weightedTotal=[30,30]）。行 1 は
+  // 親 value=2 の文脈で評価される。次の it（共有していない同形の木）とまったく同じ値に
+  // なることが、別名化が消えたことの表明そのもの。
+  it("共有した children 配列でも、親を読む集計が行ごとに正しい", async () => {
     const { stateEl } = await mount(weightedFixture(true));
     const out = readWeighted(stateEl);
-    expect(out.weighted).toEqual([10, 20, 10, 20]);   // should be: [10, 20, 20, 40]
-    expect(out.weightedTotal).toEqual([30, 30]);      // should be: [30, 60]
+    expect(out.weighted).toEqual([10, 20, 20, 40]);
+    expect(out.weightedTotal).toEqual([30, 60]);
   });
 
   it("対照: 共有していない同形の木では親を読む集計が正しい", async () => {
@@ -626,11 +631,10 @@ describe("欠陥2: 同じ配列インスタンスの共有（DAG・循環）が�
     expect(out.weightedTotal).toEqual([30, 60]);
   });
 
-  // DEFECT: 描画は throw も警告もせず、黙って誤った値を表示する。
-  //         「壊れるのは値解決であって DOM 生成ではない」は誤りで、親依存の行 getter を
-  //         バインドすると DOM にそのまま漏れる。共有ガードを入れたら描画時点で
-  //         診断が出るべき。
-  it("共有した children 配列は、入れ子 for の描画にも誤った値が黙って出る", async () => {
+  // #256 で修理済み（was: 共有側が ["1:10,20","2:10,20"]）。描画は値解決と同じ台帳を
+  // 使うので、別名化が消えたことがそのまま DOM に出る。共有・非共有の 2 つの fixture が
+  // 同じ文字列になることが表明の核。
+  it("共有した children 配列でも、入れ子 for の描画が行ごとに正しい", async () => {
     const NESTED_FOR =
       `<div><template data-wcs="for: nodes"><div class="n">` +
       `<b class="nv">{{ .value }}</b>` +
@@ -641,10 +645,17 @@ describe("欠陥2: 同じ配列インスタンスの共有（DAG・循環）が�
       Array.from(n.querySelectorAll(".c")).map((c) => c.textContent).join(","));
 
     const shared = await mount(weightedFixture(true), NESTED_FOR);
-    expect(rows(shared.shadowRoot)).toEqual(["1:10,20", "2:10,20"]); // should be: ["1:10,20","2:20,40"]
+    expect(rows(shared.shadowRoot)).toEqual(["1:10,20", "2:20,40"]); // Fixed by #256 — was: ["1:10,20","2:10,20"]
+    // 行数の固定（#256 の受け入れ条件）。行 2 本 / 子セル 4 個。本文だけを見ていると、
+    // 台帳の修正が旧行を退役させられずに行を重複させても緑のまま通ってしまうため、
+    // 個数を別に固定する（却下した修正案はここを 10 セルにしていた）。
+    expect(shared.shadowRoot.querySelectorAll(".n").length, "行数").toBe(2);
+    expect(shared.shadowRoot.querySelectorAll(".c").length, "子セルの総数").toBe(4);
 
     const control = await mount(weightedFixture(false), NESTED_FOR);
     expect(rows(control.shadowRoot)).toEqual(["1:10,20", "2:20,40"]);
+    expect(control.shadowRoot.querySelectorAll(".n").length, "行数").toBe(2);
+    expect(control.shadowRoot.querySelectorAll(".c").length, "子セルの総数").toBe(4);
   });
 
   // DEFECT: 共有スロットへの $setAll は 1 スロットにつき 1 回だけ適用されるべき
@@ -696,12 +707,14 @@ describe("欠陥2: 同じ配列インスタンスの共有（DAG・循環）が�
     expect(shared.map((c) => c.value)).toEqual([99, 99]); // 値は正しく見える（同値ガード）
   });
 
-  // DEFECT: 循環データ（node.children が自分自身を含む）は「循環」を名指しする診断で
-  //         止まるべき。実際には台帳の別名化で ListIndex 連鎖の長さが足りなくなり、
-  //         まったく無関係な wcs/wildcard-rank（「for テンプレートで囲め」）が出る。
-  //         この助言を信じたユーザーは絶対に原因に辿り着けない。
-  //         専用診断（wcs/recursion-cycle 相当）を入れたらこの期待文字列を書き換える。
-  it("循環データが「循環検出」ではなく wcs/wildcard-rank という無関係な文面で throw する", async () => {
+  // 記録付きの変更（#256）: **以前はここが throw していた**（`wcs/wildcard-rank`）。
+  // あの throw は循環の診断ではなく別名化の副作用で、ListIndex の連鎖が 1 段足りなく
+  // なった所から出ていた無関係な文面だった（「for テンプレートで囲め」）。台帳を
+  // (親, 配列) でキーしたいま連鎖は足りるので、**固定 arity の読みは頼んだ深さちょうどを
+  // 読んで返す**。循環を名指しするのは再帰 API（`**`）の走査ガードの仕事で、そちらは
+  // 今も `[wcs/recursion-cycle]` を出す（integration.recursionShape.test.ts が固定）。
+  // 失ったのは「誤った診断」であって「循環の診断」ではない。
+  it("循環データでも、固定 arity の読みは頼んだ深さちょうどを読む", async () => {
     const n: any = NODE(1);
     n.children.push(n); // 自己循環
     const { stateEl } = await mount({ nodes: [n] });
@@ -712,18 +725,17 @@ describe("欠陥2: 同じ配列インスタンスの共有（DAG・循環）が�
         d1: s.$getAll("nodes.*.children.*.value", []),
       };
       try {
-        s.$getAll("nodes.*.children.*.children.*.value", []);
-        r.d2 = "NO THROW";
-      } catch (e: any) { r.d2 = String(e && e.message); }
+        r.d2 = { ok: s.$getAll("nodes.*.children.*.children.*.value", []) };
+      } catch (e: any) { r.d2 = { err: String(e && e.message) }; }
       return r;
     });
 
-    // 深さ 1 までは静かに通る。無限ループでもスタックオーバーフローでもない
+    // 無限ループでもスタックオーバーフローでもない
     expect(out.d0).toEqual([1]);
     expect(out.d1).toEqual([1]);
-    expect(out.d2).toContain("wcs/wildcard-rank");
-    expect(out.d2).toContain('path "nodes.*"');
-    expect(out.d2).not.toContain("circular"); // 循環を一言も名指ししない
+    // 深さ 2 も自己循環をもう 1 段たどって同じノードを読む
+    // （Fixed by #256 — was: throw "[wcs/wildcard-rank] path \"nodes.*\" …"）
+    expect(out.d2).toEqual({ ok: [1] });
   });
 
   // これは欠陥ではない対照。台帳のキーは配列であってオブジェクトではないので、
@@ -747,15 +759,19 @@ describe("欠陥2: 同じ配列インスタンスの共有（DAG・循環）が�
     expect(out.leaf).toEqual([10, 10]);
     expect(out.totals).toEqual([11, 12]);
     expect(out.rootValue).toEqual([1, 2]); // 文脈は正しい
-    // 親配列が別インスタンスなので台帳も別
-    expect(getListIndexesByList(state.nodes[0].children))
-      .not.toBe(getListIndexesByList(state.nodes[1].children));
+    // 親配列が別インスタンスなので台帳も別。台帳は (親, 配列) の組で引く
+    const nodeLedger = getListIndexesByList(state.nodes, null)!;
+    const c0 = getListIndexesByList(state.nodes[0].children, nodeLedger[0]);
+    const c1 = getListIndexesByList(state.nodes[1].children, nodeLedger[1]);
+    expect(c0).not.toBeNull();
+    expect(c1).not.toBeNull();
+    expect(c0).not.toBe(c1);
   });
 
-  // DEFECT: 共有ノードが children を持つと、親配列が別でも孫配列が必然的に共有になる。
-  //         深さ 2 の rootValue は [1,2] になるべき。上の「葉なら安全」の裏返しで、
-  //         入力契約を「葉ノードの共有だけ許す」と書く根拠になる。
-  it("children を持つ同一ノードの共有は、孫配列が共有になって深さ 2 の文脈が壊れる", async () => {
+  // #256 で修理済み（was: 深さ 2 の rootValue が [1,1]）。共有ノードが children を持つと
+  // 孫配列は必然的に共有になるが、行は (親, 配列) の組ごとに私有なので、深さ 2 でも
+  // 自分の親を読む。「共有してよいのは葉ノードだけ」という以前の入力契約は要らなくなった。
+  it("children を持つ同一ノードを共有しても、深さ 2 の文脈が正しい", async () => {
     const gc: any = NODE(100);
     const shared: any = NODE(10, [gc]);
     const state: any = { nodes: [NODE(1, [shared]), NODE(2, [shared])] };
@@ -772,15 +788,15 @@ describe("欠陥2: 同じ配列インスタンスの共有（DAG・循環）が�
       d1: s.$getAll(baseAt(1) + ".rootValue", []),
       d2: s.$getAll(baseAt(2) + ".rootValue", []),
     }));
-    expect(out.d1).toEqual([1, 2]); // 深さ 1（children 配列は別）は正しい
-    expect(out.d2).toEqual([1, 1]); // should be: [1, 2]
+    expect(out.d1).toEqual([1, 2]); // 深さ 1（children 配列は別）
+    expect(out.d2).toEqual([1, 2]); // Fixed by #256 — was: [1, 1]
   });
 
-  // DEFECT: 循環の輪が 2 段（root -> kid -> root）でも、自己循環と同じく無限ループにも
-  //         スタックオーバーフローにも MAX_LOOP_DEPTH 到達にもならず、無関係な
-  //         wcs/wildcard-rank で止まる。「循環は深さ上限で検出される」ではないことの固定。
-  //         専用診断（wcs/recursion-cycle 相当）を入れたらこの期待文字列を書き換える。
-  it("2 段の輪も、深さ上限ではなく wcs/wildcard-rank で止まる", async () => {
+  // 記録付きの変更（#256）: 上と同じく **以前は throw していた**（`wcs/wildcard-rank`）。
+  // いまは throw せず `[NaN]` を返す —— 手で 4 段まで展開した getter が、輪の先で
+  // 足せない値を足した結果。無限ループでもスタックオーバーフローでも MAX_LOOP_DEPTH 到達でもない
+  // ことは変わらない。循環を名指しするのは `**` の走査ガード（`[wcs/recursion-cycle]`）。
+  it("2 段の輪でも、深さ上限に当たらず throw もしない", async () => {
     const root: any = NODE(1);
     const kid: any = NODE(2, [root]);
     root.children.push(kid);            // root -> kid -> root
@@ -789,20 +805,20 @@ describe("欠陥2: 同じ配列インスタンスの共有（DAG・循環）が�
     const { stateEl } = await mount(state);
 
     let msg = "NO THROW";
+    let value: unknown[] = [];
     read(stateEl, (s: any) => {
-      try { s.$getAll("nodes.*.total", []); } catch (e: any) { msg = String(e && e.message); }
+      try { value = s.$getAll("nodes.*.total", []); } catch (e: any) { msg = String(e && e.message); }
     });
-    expect(msg).toContain("wcs/wildcard-rank");
-    expect(msg).not.toContain("circular");
-    expect(msg).not.toContain("Exceeded maximum address stack depth");
+    // Fixed by #256 — was: throw "[wcs/wildcard-rank] …"
+    expect(msg).toBe("NO THROW");
+    expect(value).toEqual([NaN]); // 実測値。null ではない（JSON 経由だと見分けが付かない）
   });
 
-  // DEFECT: 同じ配列が深さ 1 と深さ 2 の両方から到達できる（異深度共有）と、深い側の
-  //         走査が両方 throw する。理由は台帳の別名化で ListIndex 連鎖の段数が足りなく
-  //         なることで、やはり wcs/wildcard-rank という無関係な文面になる。
-  //         唯一の救いは $setAll が 1 件も書かないこと（部分適用は起きない）。
-  //         共有ガードを入れたら「共有を名指しする診断」に変わるべき。
-  it("異深度共有（同じ配列が深さ 1 と深さ 2 から到達可能）では深い側の走査が throw し、$setAll は 1 件も書かない", async () => {
+  // 記録付きの変更（#256）: **以前は深い側の読みも書きも throw していた**
+  // （`wcs/wildcard-rank`。連鎖の段数が別名化で足りなくなっただけの無関係な文面）。
+  // 組キーで連鎖が足りるようになったので、読みは通り、`$setAll` は実スロット 1 つに 1 件書く。
+  // **共有そのものは残る** —— 深さ 2 から書いた値は深さ 1 からも見える（同じ配列だから）。
+  it("異深度共有（同じ配列が深さ 1 と深さ 2 から到達可能）でも、深い側の読み書きが通ること", async () => {
     const build = () => {
       const deep: any[] = [NODE(7)];
       // nodes[0].children（深さ 1）と nodes[1].children[0].children（深さ 2）が同一配列
@@ -822,33 +838,39 @@ describe("欠陥2: 同じ配列インスタンスの共有（DAG・循環）が�
       try { return { ok: s.$getAll("nodes.*.children.*.children.*.value", []) }; }
       catch (e: any) { return { err: String(e && e.message) }; }
     });
-    expect(readFirst.err).toContain("wcs/wildcard-rank");
-    let writeErr: string | null = null;
+    // Fixed by #256 — was: throw "[wcs/wildcard-rank] …"（readFirst.err）
+    expect(readFirst).toEqual({ ok: [7] });
+    let writeErr = "NO THROW";
+    let count = -1;
     write(rw.stateEl, (s: any) => {
-      try { s.$setAll("nodes.*.children.*.children.*.value", [], 42); }
+      try { count = s.$setAll("nodes.*.children.*.children.*.value", [], 42); }
       catch (e: any) { writeErr = String(e && e.message); }
     });
-    expect(writeErr).toContain("wcs/wildcard-rank");
-    expect(b.deep[0].value).toBe(7);   // 書き込み 0 件（部分適用は無い）
+    expect(writeErr).toBe("NO THROW");  // was: throw
+    expect(count).toBe(1);              // was: 書き込み 0 件
+    expect(b.deep[0].value).toBe(42);   // was: 7 のまま
 
     // 書き → 読みの順でも同じ（順序に依存しない）
     const c = build();
     const wr = await mount(c.state);
-    let writeErr2: string | null = null;
+    let writeErr2 = "NO THROW";
+    let count2 = -1;
     write(wr.stateEl, (s: any) => {
-      try { s.$setAll("nodes.*.children.*.children.*.value", [], 42); }
+      try { count2 = s.$setAll("nodes.*.children.*.children.*.value", [], 42); }
       catch (e: any) { writeErr2 = String(e && e.message); }
     });
-    expect(writeErr2).toContain("wcs/wildcard-rank");
-    expect(c.deep[0].value).toBe(7);
+    expect(writeErr2).toBe("NO THROW");
+    expect(count2).toBe(1);
+    expect(c.deep[0].value).toBe(42);
+    // 書いた値は深い側の読みからも見える（共有はデータの側に残っている）
+    expect(read(wr.stateEl, (s: any) => s.$getAll("nodes.*.children.*.children.*.value", [])))
+      .toEqual([42]);
   });
 
-  // DEFECT: 共有は「別の親どうし」だけでなく「同じ親のリスト内の重複」でも起きる。
-  //         nodes=[n,n] は値も親文脈も正しく見えるのに、mapper の $setAll だけが
-  //         written=2 と正しい件数を返しながら実スロットへ 2 回適用される。
-  //         件数が正しいぶん、共有配列の written=4 より見つけにくい形。
-  //         should be: n.children[0].value = 51（+1 が 1 回）。
-  it("同一リスト内のノード重複（nodes=[n,n]）でも $setAll(mapper) が二重適用される", async () => {
+  // #256 で修理済み（was: n.children[0].value が 52 ＝ +1 の二重適用）。
+  // nodes=[n,n] は同じノードを 2 回並べた形で、`n.children` は 1 本の配列に 2 つの親から
+  // 到達する。行が親ごとに私有になったので、mapper は実スロットに 1 回だけ効く。
+  it("同一リスト内のノード重複（nodes=[n,n]）でも $setAll(mapper) は 1 回だけ適用される", async () => {
     const n: any = NODE(5, [NODE(50)]);
     const state: any = { nodes: [n, n] };
     unrollTotals(state, 2);
@@ -869,8 +891,46 @@ describe("欠陥2: 同じ配列インスタンスの共有（DAG・循環）が�
     write(stateEl, (s: any) => {
       written = s.$setAll("nodes.*.children.*.value", [], (cur: number) => cur + 1);
     });
-    expect(written).toBe(2);                   // 件数は正しい
-    expect(n.children[0].value).toBe(52);      // should be: 51
+    expect(written).toBe(2);                   // 「書いたアドレスの数」（実スロットは 1 つ）
+    expect(n.children[0].value).toBe(51);      // Fixed by #256 — was: 52
+  });
+
+  // #256 の受け入れ条件「置換・書き込みのあとも生き続けること（MUST STAY LIVE）」。
+  // 別名化した **値** が誤っていることは上の it が固定済み。ここで別に固定するのは
+  // 「共有した部分木が書き込みのたびに再描画され続ける（凍らない）」という性質で、
+  // 台帳まわりの修正がこの生存性を落としても、値だけを見る固定テストは緑のまま通る。
+  it("別名化した共有部分木も、書き込みのたびに再描画され続ける（行数も増えない）", async () => {
+    const NESTED_FOR =
+      `<div><template data-wcs="for: nodes"><div class="n">` +
+      `<b class="nv">{{ .value }}</b>` +
+      `<template data-wcs="for: nodes.*.children"><i class="c">{{ .weighted }}</i></template>` +
+      `</div></template></div>`;
+    const rows = (sr: ShadowRoot) => Array.from(sr.querySelectorAll(".n")).map((n) =>
+      n.querySelector(".nv")!.textContent + ":" +
+      Array.from(n.querySelectorAll(".c")).map((c) => c.textContent).join(","));
+
+    const { shadowRoot, stateEl } = await mount(weightedFixture(true), NESTED_FOR);
+    expect(rows(shadowRoot)).toEqual(["1:10,20", "2:20,40"]); // was: ["1:10,20","2:10,20"]
+
+    // 行 0 の value だけを 3 回書く。
+    const seen: string[][] = [];
+    for (const v of [2, 3, 4]) {
+      write(stateEl, (s: any) => { s.$resolve("nodes.*.value", [0], v); });
+      await flush();
+      seen.push(rows(shadowRoot));
+      expect(shadowRoot.querySelectorAll(".n").length, "行数").toBe(2);
+      expect(shadowRoot.querySelectorAll(".c").length, "子セルの総数").toBe(4);
+    }
+
+    // 行 1 の子セルは親の value が 2 のままなので常に [20,40]。
+    // was（別名化）: 行 1 が行 0 の value で計算されて ["2:30,60"] / ["2:40,80"] になっていた。
+    expect(seen).toEqual([
+      ["2:20,40", "2:20,40"],
+      ["3:30,60", "2:20,40"],
+      ["4:40,80", "2:20,40"],
+    ]);
+    // 生存性の核。3 回とも描画が変化している ＝ 途中で凍っていない。
+    expect(new Set(seen.map((r) => r.join("|"))).size, "毎回の書き込みが描画に届いている").toBe(3);
   });
 });
 
@@ -1463,21 +1523,10 @@ describe("欠陥6: 描画ありでも、in-place の深い変異を構造変化�
     expect(read(stateEl, (s: any) => s.grandTotal)).toBe(133); // should be: 533
   });
 
-  // DEFECT: in-place の `arr.reverse()` は描画ありでも「混ざった行」を作る。
-  //         行の value は元の位置のまま・子サブツリーだけが移動して、
-  //         t0=[221,112]（= 1+220 と 2+110）になる。should be: ["222","111"]。
-  //         描画ありの並べ替えが正しいのは `[...s.nodes].reverse()`（元配列を触らない形）
-  //         だけで、in-place 並べ替えは保証外であることの明文化。
-  // DEFECT: in-place の `arr.reverse()` は、描画ありでも「行と子サブツリーが別々に動く」
-  //         混ざった行を作る。行の value は正しく反転するのに children はその場に残るので、
-  //         行 0（value 2）が value 1 の子（10 → total 110）を抱えて 112 になる。
-  //         should be: t0=[222,111] / v1=["20","10"]。
-  //         描画ありの並べ替えが正しいのは `[...s.nodes].reverse()`（元配列に触れない形）
-  //         だけで、in-place の並べ替えは同一参照でもコピーでも保証外であることの明文化。
-  //         なお混ざり *方* は固定契約ではない: C-replace のプローブは同じ操作で鏡像の
-  //         t0=[221,112]（value が残り children が動く形）を観測している。ここで
-  //         固定するのは「行と子サブツリーが分離する」ことで、下の実測値はその現れ。
-  it("in-place の arr.reverse() は、描画ありでも行の value と子サブツリーがずれる", async () => {
+  // #256 で修理済み（was: v1=["10","20"] / t0=["112","221"] ＝ 行の value だけが反転し、
+  // 子サブツリーがその場に残る「混ざった行」）。子リストの行は親（＝行 ListIndex）ごとに
+  // 私有なので、行が動けば子サブツリーも一緒に動く。同一参照・コピーのどちらの綴りでも同じ。
+  it("in-place の arr.reverse() でも、描画ありなら行と子サブツリーが揃って動く", async () => {
     for (const [label, assign] of [
       ["同一参照", (s: any, arr: any[]) => { s.nodes = arr; }],
       ["コピー", (s: any, arr: any[]) => { s.nodes = [...arr]; }],
@@ -1495,35 +1544,39 @@ describe("欠陥6: 描画ありでも、in-place の深い変異を構造変化�
       // 行の value は正しく反転している（生データも [2,1]）
       expect(txt(shadowRoot, ".v0"), label).toEqual(["2", "1"]);
       expect(valuesAt(stateEl, 0), label).toEqual([2, 1]);
-      // ところが子は動いていない。行 0（value 2）の子が value 10 のまま
-      expect(txt(shadowRoot, ".v1"), label).toEqual(["10", "20"]); // should be: ["20","10"]
-      expect(txt(shadowRoot, ".t0"), label).toEqual(["112", "221"]); // should be: ["222","111"]
-      expect(totalsAt(stateEl, 0), label).toEqual([112, 221]);
+      // 子も一緒に動く（行 0 は value 2 なので子は 20・total 220）
+      expect(txt(shadowRoot, ".v1"), label).toEqual(["20", "10"]); // was: ["10","20"]
+      expect(txt(shadowRoot, ".t0"), label).toEqual(["222", "111"]); // was: ["112","221"]
+      expect(totalsAt(stateEl, 0), label).toEqual([222, 111]);
+      // 行数の固定（#256 の受け入れ条件）。行が増えたり消えたりしていないこと。
+      // 各行に 1 個ずつ置いた span の個数がそのまま各深さの行数（深さ 0/1/2 とも 2 行）。
+      for (const sel of [".t0", ".v0", ".t1", ".v1", ".t2", ".v2"]) {
+        expect(txt(shadowRoot, sel).length, label + " " + sel).toBe(2);
+      }
     }
   });
 });
 
 // ---------------------------------------------------------------------------
 // 着地後レビュー（2026-09-11・実装計画 §7-3）で見つかった既存欠陥。どちらも再帰固有ではなく、
-// 手書きの多段 getter・wildcard 無しの getter で同じ形になる。欠陥7 は現状固定のまま
-// （X2 / #256 の担当）、欠陥8 は #258 で修理済みなので反転させてある。
+// 手書きの多段 getter・wildcard 無しの getter で同じ形になる。欠陥7 は #256、欠陥8 は #258 で
+// 修理済みなので、どちらも契約に反転させてある。
 // ---------------------------------------------------------------------------
 
-describe("欠陥7: 行オブジェクトを作り直す置換（children 配列は引き継ぐ）のあと、その行の集計だけが葉の更新に追従しない（X2 と同根・現状固定）", () => {
+describe("欠陥7（X2 / #256 で修理済み）: 行オブジェクトを作り直す置換（children 配列は引き継ぐ）でも、その行の集計が葉の更新に追従する", () => {
   const forest = () => [NODE(1, [NODE(10, [NODE(100)]), NODE(20)]), NODE(2)];
   const leafWrite = (stateEl: State) =>
     write(stateEl, (s: any) => { s.$resolve("nodes.*.children.*.children.*.value", [0, 0, 0], 500); });
 
-  // DEFECT: 子台帳（listIndexesByList）は配列 identity だけをキーにしているので、行オブジェクトが
-  //         新しくなっても createListDiff の `oldList.length === 0` 分岐が既存の子 ListIndex
-  //         （parentListIndex ＝ **旧行**）をそのまま再利用する。葉の書き込みは縮約エッジ
-  //         （listIndexAtWildcard）で旧行のアドレスを dirty にするため、新行の `nodes.*.total`
-  //         キャッシュだけが古いまま残る。深さ 1 と全深さ合併は追従する。
-  //         should be: depth-0 が [531, 2]。
-  //         露出条件＝置換と葉更新の**間に集計を読む**こと（新行のアドレスにキャッシュが載る）。
-  //         読まなければ新行は未評価のまま次の読みで正しく評価される（ヘッダの罠 (a) と同型）。
-  //         このファイルの it は全部「間に読む」側で書いてある。
-  it("手書きの 3 段 getter: depth-1 と葉の合併は追従するのに depth-0 だけ古い", async () => {
+  // #256 で修理済み（was: depth-0 だけが [131, 2] のまま）。子台帳（listIndexesByList）が
+  // 配列 identity だけをキーにしていたので、行オブジェクトが新しくなっても既存の子
+  // ListIndex（parentListIndex ＝ **旧行**）がそのまま再利用されていた。葉の書き込みは
+  // 縮約エッジ（listIndexAtWildcard）で旧行のアドレスを dirty にするので、新行の
+  // `nodes.*.total` キャッシュだけが古いまま残っていた（深さ 1 と全深さ合併は追従していた）。
+  // 台帳のキーを (親, 配列) の組にして、新行のもとでは新行の子を鋳造するようにした。
+  // 露出条件は「置換と葉更新の**間に集計を読む**こと」（新行のアドレスにキャッシュが載る）
+  // で、このファイルの it は全部その綴り。修理後も同じ綴りのまま固定する。
+  it("手書きの 3 段 getter: depth-0 も depth-1 も葉も追従する", async () => {
     const { stateEl } = await mount(unrollTotals({ nodes: forest() }, 2));
     expect(totalsAt(stateEl, 0)).toEqual([131, 2]);
 
@@ -1535,7 +1588,7 @@ describe("欠陥7: 行オブジェクトを作り直す置換（children 配列�
     await flush();
     expect(valuesAt(stateEl, 2)).toEqual([500]);
     expect(totalsAt(stateEl, 1)).toEqual([510, 20]);
-    expect(totalsAt(stateEl, 0)).toEqual([131, 2]); // should be: [531, 2]
+    expect(totalsAt(stateEl, 0)).toEqual([531, 2]); // Fixed by #256 — was: [131, 2]
   });
 
   it("再帰 getter でも同じ（`**` は縮約エッジの向きを変えない）", async () => {
@@ -1558,7 +1611,7 @@ describe("欠陥7: 行オブジェクトを作り直す置換（children 配列�
     await flush();
     expect(read(stateEl, (s: any) => s.$getAll("nodes.**.value", []))).toEqual([1, 10, 500, 20, 2]);
     expect(totalsAt(stateEl, 1)).toEqual([510, 20]);
-    expect(totalsAt(stateEl, 0)).toEqual([131, 2]); // should be: [531, 2]
+    expect(totalsAt(stateEl, 0)).toEqual([531, 2]); // Fixed by #256 — was: [131, 2]
   });
 
   it("対照: 行オブジェクトを引き継ぐ置換（[...nodes]）なら depth-0 も追従する", async () => {
@@ -1582,6 +1635,74 @@ describe("欠陥7: 行オブジェクトを作り直す置換（children 配列�
     leafWrite(stateEl);
     await flush();
     expect(totalsAt(stateEl, 0)).toEqual([531, 2]);
+  });
+
+  // #256 の受け入れ条件「描画行の数（MUST KEEP ROW COUNT）」。X2 は $getAll を 1 つも
+  // 書いていないページでも露出していた ── 描画そのものが「置換と葉更新の間の読み」に
+  // なる。ここでは値に加えて **行数** を固定する: 旧行を退役させられない修正は行を
+  // 重複させることがあり、本文だけの表明では見えない。
+  it("描画あり（3 段の入れ子 for）でも depth-0 が追従し、行数は増減しない", async () => {
+    const TREE_FOR =
+      `<div><template data-wcs="for: nodes">` +
+      `<div class="r0"><span class="t0">{{ .total }}</span><span class="v0">{{ .value }}</span>` +
+      `<template data-wcs="for: nodes.*.children">` +
+      `<div class="r1"><span class="t1">{{ .total }}</span><span class="v1">{{ .value }}</span>` +
+      `<template data-wcs="for: nodes.*.children.*.children">` +
+      `<div class="r2"><span class="t2">{{ .total }}</span></div>` +
+      `</template></div></template></div></template></div>` +
+      `<span class="gt" data-wcs="textContent: grandTotal"></span>`;
+    const { shadowRoot, stateEl } = await mount(unrollTotals({ nodes: forest() }, 2), TREE_FOR);
+    const rowCounts = () => [".r0", ".r1", ".r2"].map((sel) => shadowRoot.querySelectorAll(sel).length);
+    const t = (sel: string) =>
+      Array.from(shadowRoot.querySelectorAll(sel)).map((e) => e.textContent!.trim());
+
+    expect(rowCounts(), "初期描画").toEqual([2, 2, 1]);
+    expect(t(".t0")).toEqual(["131", "2"]);
+
+    write(stateEl, (s: any) => { s.nodes = s.nodes.map((row: any) => ({ ...row })); });
+    await flush();
+    expect(rowCounts(), "置換で行は増減しない").toEqual([2, 2, 1]);
+    expect(t(".t0")).toEqual(["131", "2"]);
+
+    write(stateEl, (s: any) => { s.$resolve("nodes.*.children.*.children.*.value", [0, 0, 0], 500); });
+    await flush();
+    expect(rowCounts(), "葉の書き込みでも行は増減しない").toEqual([2, 2, 1]);
+    expect(t(".t2"), "葉は追従する").toEqual(["500"]);
+    expect(t(".t1"), "深さ 1 も追従する").toEqual(["510", "20"]);
+    // Fixed by #256 — was: t0=["131","2"] / gt=["133"]。$getAll を 1 つも書いていない
+    // ページでも露出する形だったので、描画そのものが回帰の門になっている。
+    expect(t(".t0")).toEqual(["531", "2"]);
+    expect(t(".gt")).toEqual(["533"]);
+  });
+
+  // #256 の受け入れ条件「置換のあとも生き続けること（MUST STAY LIVE）」。1 回追従して
+  // 終わりではなく、3 回とも・2 回目の置換をまたいでも追従することを固定する。
+  // was: depth-1 と葉だけが毎回追従し、depth-0 は置換の時点の値に凍って、次の置換が
+  // その時点の正しい値で撮り直してはまた凍る、という周期になっていた。
+  it("置換のあと 3 回書いても、depth-0・depth-1・葉が毎回追従する", async () => {
+    const { stateEl } = await mount(unrollTotals({ nodes: forest() }, 2));
+    expect(totalsAt(stateEl, 0)).toEqual([131, 2]);
+    write(stateEl, (s: any) => { s.nodes = s.nodes.map((row: any) => ({ ...row })); });
+    await flush();
+    expect(totalsAt(stateEl, 0)).toEqual([131, 2]);   // 間に読む（露出条件）
+
+    for (const [v, d1] of [[500, 510], [600, 610], [700, 710]] as [number, number][]) {
+      write(stateEl, (s: any) => { s.$resolve("nodes.*.children.*.children.*.value", [0, 0, 0], v); });
+      await flush();
+      expect(valuesAt(stateEl, 2), String(v)).toEqual([v]);
+      expect(totalsAt(stateEl, 1), String(v)).toEqual([d1, 20]);
+      // Fixed by #256 — was: 毎回 [131, 2]（置換の時点で凍り、自己修復しなかった）。
+      expect(totalsAt(stateEl, 0), String(v)).toEqual([v + 31, 2]);
+    }
+
+    // 2 回目の置換のあとも追従し続ける（修理前はここで撮り直してまた凍っていた）。
+    write(stateEl, (s: any) => { s.nodes = s.nodes.map((row: any) => ({ ...row })); });
+    await flush();
+    expect(totalsAt(stateEl, 0)).toEqual([731, 2]);
+    write(stateEl, (s: any) => { s.$resolve("nodes.*.children.*.children.*.value", [0, 0, 0], 800); });
+    await flush();
+    expect(totalsAt(stateEl, 1)).toEqual([810, 20]);
+    expect(totalsAt(stateEl, 0)).toEqual([831, 2]); // Fixed by #256 — was: [731, 2]
   });
 });
 

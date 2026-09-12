@@ -48,7 +48,7 @@ export function getListIndex(
           raiseError(`wildcardParentPathInfo is null: ${resolvedAddress.pathInfo.path}`);
         const wildcardParentAddress = createStateAddress(wildcardParentPathInfo, parentListIndex);
         const wildcardParentValue = getByAddress(target, wildcardParentAddress, receiver, handler);
-        const wildcardParentListIndexes: IListIndex[] = getListIndexesByList(wildcardParentValue) ?? 
+        const wildcardParentListIndexes: IListIndex[] = getListIndexesByList(wildcardParentValue, parentListIndex) ?? 
           raiseError( `ListIndex not found: ${wildcardParentPathInfo.path}`);
         const wildcardIndex = resolvedAddress.wildcardIndexes[i] ?? 
           raiseError(`wildcardIndex is null: ${resolvedAddress.pathInfo.path}`);

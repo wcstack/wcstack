@@ -36,7 +36,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
 import { flush, makeMount, node, read, write, type TNode } from "./helpers/recursionTestUtils";
-import { getListIndexesByList } from "../src/list/listIndexesByList";
+import { getLastRegisteredListIndexes, getListIndexesByList } from "../src/list/listIndexesByList";
 import { getPathInfo } from "../src/address/PathInfo";
 
 beforeAll(() => {
@@ -158,9 +158,12 @@ const shapeOf = (raw: any) => raw.nodes.map((n: any) => n.children.map((c: any) 
  * 「cold でも通る」という主張が偶然の産物になる。
  */
 function expectColdLedger(raw: any): void {
-  expect(getListIndexesByList(raw.nodes), "nodes の台帳").toBe(null);
+  // 台帳のキーは (親, 配列) の組なので、「どの親のもとにも行が無い」を親を 1 つ選んで
+  // 言うことはできない（#256）。親を問わない最後の登録（getLastRegisteredListIndexes）が
+  // 無いことが、そのまま「どこにも無い」になる ── この関数が言いたかったことそのもの。
+  expect(getLastRegisteredListIndexes(raw.nodes), "nodes の台帳").toBe(null);
   for (const n of raw.nodes) {
-    expect(getListIndexesByList(n.children), "children の台帳").toBe(null);
+    expect(getLastRegisteredListIndexes(n.children), "children の台帳").toBe(null);
   }
 }
 
@@ -183,8 +186,10 @@ describe("cold start（for バインドが 1 つも無い state）の非対称�
 
     read(stateEl, (s: any) => s.$getAll(COLD_LEAF, []));
 
-    expect(getListIndexesByList(raw.nodes), "$getAll の後").toHaveLength(2);
-    expect(getListIndexesByList(raw.nodes[0].children), "$getAll の後（子）").toHaveLength(2);
+    const rows = getListIndexesByList(raw.nodes, null)!;
+    expect(rows, "$getAll の後").toHaveLength(2);
+    // 子の台帳はその行（親）のもとにある
+    expect(getListIndexesByList(raw.nodes[0].children, rows[0]), "$getAll の後（子）").toHaveLength(2);
     host.remove();
   });
 
@@ -367,9 +372,10 @@ describe("cold start（for バインドが 1 つも無い state）の非対称�
     expect(read(stateEl, (s: any) => s.$getAll("nodes.*.subtotal", []))).toEqual([22, 22]);
 
     // 1 回の読みで全ワイルドカード段の台帳が温まる（内側の省略 $getAll が自分で降りる）
-    expect(getListIndexesByList(raw.nodes)).toHaveLength(2);
-    expect(getListIndexesByList(raw.nodes[0].children)).toHaveLength(2);
-    expect(getListIndexesByList(raw.nodes[1].children)).toHaveLength(1);
+    const rows = getListIndexesByList(raw.nodes, null)!;
+    expect(rows).toHaveLength(2);
+    expect(getListIndexesByList(raw.nodes[0].children, rows[0])).toHaveLength(2);
+    expect(getListIndexesByList(raw.nodes[1].children, rows[1])).toHaveLength(1);
     host.remove();
   });
 

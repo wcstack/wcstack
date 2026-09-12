@@ -127,7 +127,7 @@ function forgetCacheEntries(
         return;
       }
       // 台帳が無い ＝ 走査を一度も経ていないリスト。その行に絶対アドレスは作られていない。
-      const rows = getListIndexesByList(list);
+      const rows = getListIndexesByList(list, ownerListIndex);
       if (rows === null) {
         return;
       }

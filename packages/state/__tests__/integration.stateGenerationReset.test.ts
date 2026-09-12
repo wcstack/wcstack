@@ -126,7 +126,8 @@ describe("再セットの世代スタンプ: 旧世代のキャッシュ値を�
 
   it("同じ配列インスタンスを渡す再セットでも、行のキャッシュが世代で無効になる", async () => {
     // 別の配列なら ListIndex が鋳造し直されるので何も残らない。同じ配列を渡す形
-    // （listIndexesByList は配列 identity がキー）だけが行のキャッシュを跨がせる。
+    // （listIndexesByList のキーは (親, 配列) の組。ここはルート直下なので親は
+    // 両世代とも null で、同じ行が引き継がれる）だけが行のキャッシュを跨がせる。
     const rows = [{ n: 1 }, { n: 2 }];
     const make = (): any => {
       const state: any = { items: rows };

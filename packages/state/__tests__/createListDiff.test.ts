@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createListDiff } from '../src/list/createListDiff';
-import { setListIndexesByList } from '../src/list/listIndexesByList';
+import { getListIndexesByList, setListIndexesByList } from '../src/list/listIndexesByList';
+import { createListIndex } from '../src/list/createListIndex';
 
 describe('createListDiff', () => {
   it('calcDiffIndexesで位置が変わった既存要素がchangeIndexSetに含まれること', () => {
@@ -137,6 +138,83 @@ describe('createListDiff', () => {
 
       setListIndexesByList(listA, null);
       setListIndexesByList(listB, null);
+    });
+  });
+
+  describe('台帳のキーが (親, 配列) の組であること（#256）', () => {
+    it('別の親が登録した行を再利用せず、自分の行を鋳造すること', () => {
+      const list = [{ v: 1 }, { v: 2 }];
+      const p0 = createListIndex(null, 0);
+      const p1 = createListIndex(null, 1);
+
+      const d0 = createListDiff(p0, [], list);
+      const d1 = createListDiff(p1, [], list);
+
+      expect(d1.newIndexes).not.toBe(d0.newIndexes);
+      expect(d0.newIndexes.map((r) => r.parentListIndex)).toEqual([p0, p0]);
+      expect(d1.newIndexes.map((r) => r.parentListIndex)).toEqual([p1, p1]);
+      // 2 人目の親は「全行 add」。先着の親が描画している行を delete 扱いにしてはならない
+      expect(d1.deleteIndexSet.size).toBe(0);
+      expect(d1.addIndexSet.size).toBe(2);
+      // 先着の親の台帳はそのまま残っている
+      expect(getListIndexesByList(list, p0)).toBe(d0.newIndexes);
+
+      setListIndexesByList(list, null);
+    });
+
+    it('同じ (旧, 新) の組でも、親が違えば diff のメモが混ざらないこと', () => {
+      const oldList = [{ v: 1 }];
+      const newList = [{ v: 2 }];
+      const p0 = createListIndex(null, 0);
+      const p1 = createListIndex(null, 1);
+      createListDiff(p0, [], oldList);
+      createListDiff(p1, [], oldList);
+
+      const a = createListDiff(p0, oldList, newList);
+      const b = createListDiff(p1, oldList, newList);
+
+      expect(b).not.toBe(a);
+      expect(a.newIndexes[0].parentListIndex).toBe(p0);
+      expect(b.newIndexes[0].parentListIndex).toBe(p1);
+
+      setListIndexesByList(oldList, null);
+      setListIndexesByList(newList, null);
+    });
+
+    it('前世代を持たない親の diff は、消費者が握っている前世代の行を退役させること', () => {
+      // 再接続で `for` のアドレスだけが張り替わる形（BindingSession.rebindAddresses は
+      // 差分基準だけを旧アドレスから引き継ぐ）。旧リストの行は別の親のもとにあるが、
+      // 消費者（applyChangeToFor）は行 identity で content を握ったままなので、
+      // delete で名指さないと画面に残る。
+      const oldList = [{ v: 1 }];
+      const newList = [{ v: 2 }];
+      const oldParent = createListIndex(null, 0);
+      const newParent = createListIndex(null, 0); // 同じ位置・別オブジェクト
+      const before = createListDiff(oldParent, [], oldList).newIndexes;
+
+      const diff = createListDiff(newParent, oldList, newList);
+
+      expect([...diff.deleteIndexSet]).toEqual(before);
+      expect(diff.newIndexes.map((r) => r.parentListIndex)).toEqual([newParent]);
+      expect(diff.addIndexSet.size).toBe(1);
+      expect(diff.changeIndexSet.size).toBe(0);
+
+      setListIndexesByList(oldList, null);
+      setListIndexesByList(newList, null);
+    });
+
+    it('同じ親・同じ配列なら台帳をそのまま返し、行を作り直さないこと', () => {
+      const list = [{ v: 1 }, { v: 2 }];
+      const p0 = createListIndex(null, 0);
+      const rows = createListDiff(p0, [], list).newIndexes;
+
+      const again = createListDiff(p0, list, list);
+
+      expect(again.newIndexes).toBe(rows);
+      expect(again.addIndexSet.size).toBe(0);
+      expect(again.deleteIndexSet.size).toBe(0);
+
+      setListIndexesByList(list, null);
     });
   });
 });

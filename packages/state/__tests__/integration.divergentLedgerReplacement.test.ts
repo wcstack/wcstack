@@ -9,6 +9,12 @@
  * 作っていたため、newIndexes に存在しない「孤児マーカー」が混入し、
  * walkDependency の diff 展開が破棄予定の旧行を余計に dirty 化していた
  * （applyChangeToFor の has() には一致しないため描画自体は add+delete で正しい）。
+ *
+ * 2 つ目の describe は #256（X2）の受け入れ条件だったもの。行オブジェクトだけを作り直す
+ * 置換（`nodes.map(n => ({...n}))`）は、修理前は子配列を引き継ぐために **退役した旧行の
+ * アドレス** を drain バッチへ載せていた。台帳を (親, 配列) でキーしたいま、2 つの綴り
+ * （map-spread と [...nodes]）は件数・添字・再評価回数・表示のすべてで一致する。
+ * 「厳密に何件か」を固定しているので、重複を増やす修正はここで落ちる。
  */
 import { describe, it, expect, beforeAll } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
@@ -16,6 +22,7 @@ import { State } from "../src/components/State";
 import { getStateElement } from "../src/stateElementByName";
 import { registerUpdateBatchListener, unregisterUpdateBatchListener } from "../src/updater/updater";
 import type { IAbsoluteStateAddress } from "../src/address/types";
+import { getListIndexesByList } from "../src/list/listIndexesByList";
 
 beforeAll(() => {
   bootstrapState();
@@ -108,5 +115,112 @@ describe("台帳が分岐した配列へのリスト置換（calcDiffIndexes）"
     expect(texts("ul li")).toEqual(["a", "b", "c"]);
     expect(texts("ol li")).toEqual(["b", "a"]);
     host.remove();
+  });
+});
+
+describe("行オブジェクトだけを作り直す置換（#256 / X2）の汚れアドレス", () => {
+  /** 2 行・子配列つき。行 total ＝ 自分の value ＋ 直下の子の value の総和 */
+  const fixture = () => {
+    const counter = { evals: 0 };
+    const initial: any = {
+      nodes: [
+        { value: 1, children: [{ value: 10 }, { value: 20 }] },
+        { value: 2, children: [] },
+      ],
+      get "nodes.*.total"(this: any) {
+        counter.evals++;
+        return this["nodes.*.value"] +
+          this.$getAll("nodes.*.children.*.value").reduce((a: number, b: number) => a + b, 0);
+      },
+    };
+    return { initial, counter };
+  };
+  const NESTED_FOR =
+    `<ul><template data-wcs="for: nodes"><li class="row">` +
+    `<b class="total" data-wcs="textContent: .total"></b>` +
+    `<template data-wcs="for: nodes.*.children"><i class="kid">{{ .value }}</i></template>` +
+    `</li></template></ul>`;
+
+  /** 1 回の書き込みで drain バッチに載った `nodes.*.total` のアドレスだけを集める */
+  async function capture(stateElement: any, fn: (s: any) => void) {
+    const seen: IAbsoluteStateAddress[] = [];
+    const listener = (batch: ReadonlySet<IAbsoluteStateAddress>) => { seen.push(...batch); };
+    registerUpdateBatchListener(listener);
+    try {
+      stateElement.createState("writable", fn);
+      await flush();
+    } finally {
+      unregisterUpdateBatchListener(listener);
+    }
+    return seen.filter((a) => a.absolutePathInfo.pathInfo.path === "nodes.*.total");
+  }
+  const texts = (sr: ShadowRoot, sel: string) =>
+    Array.from(sr.querySelectorAll(sel)).map((e) => e.textContent);
+
+  // Fixed by #256 — was: 3 件（3 件目は置換後の台帳に載っていない **退役した旧行** の
+  // アドレスだった）。行は 2 本なので 2 件が正。
+  it("map-spread の置換で dirty になるのは、生きている 2 行だけ", async () => {
+    const { initial, counter } = fixture();
+    const { host, shadowRoot, stateElement } = await mount(initial, NESTED_FOR);
+    expect(texts(shadowRoot, ".total")).toEqual(["31", "2"]);
+    const before = counter.evals;
+
+    const dirty = await capture(stateElement, (s: any) => {
+      s.nodes = s.nodes.map((n: any) => ({ ...n }));
+    });
+    const ledger = getListIndexesByList(initial.nodes)!;
+    expect(ledger, "置換後の生きている行").toHaveLength(2);
+
+    expect(dirty).toHaveLength(2);
+    expect(new Set(dirty).size, "2 件は別々のアドレス（同一オブジェクトの重複ではない）").toBe(2);
+    expect(dirty.map((a) => a.listIndex!.indexes)).toEqual([[0], [1]]);
+    expect(dirty.map((a) => ledger.includes(a.listIndex!)), "どちらも生きている台帳の行")
+      .toEqual([true, true]);
+    expect(counter.evals - before, "再評価は生きている 2 行ぶん").toBe(2);
+    expect(texts(shadowRoot, ".total"), "置換だけでは表示は変わらない").toEqual(["31", "2"]);
+    host.remove();
+  });
+
+  it("対照: 行オブジェクトを引き継ぐ置換（[...nodes]）では、生きている 2 行だけが dirty になる", async () => {
+    const { initial, counter } = fixture();
+    const { host, stateElement } = await mount(initial, NESTED_FOR);
+    const before = counter.evals;
+
+    const dirty = await capture(stateElement, (s: any) => { s.nodes = [...s.nodes]; });
+    const ledger = getListIndexesByList(initial.nodes)!;
+
+    expect(dirty).toHaveLength(2);
+    expect(dirty.map((a) => a.listIndex!.indexes)).toEqual([[0], [1]]);
+    expect(dirty.every((a) => ledger.includes(a.listIndex!)), "全部が生きている行").toBe(true);
+    expect(counter.evals - before).toBe(2);
+    host.remove();
+  });
+  // Fixed by #256 — was: map-spread 側だけが **退役した旧行** のアドレスを dirty にし、
+  // 生きている行 0 の getter は 1 度も再評価されず（inLedger=false / 再評価 0 回）、
+  // 表示が "31" のまま止まっていた。いまは 2 つの綴りが 1 行も違わない。
+  it("置換のあとの葉の書き込みは、どちらの綴りでも生きている行を dirty にする", async () => {
+    const cases: [string, (s: any) => void, boolean, number, string][] = [
+      ["map-spread", (s: any) => { s.nodes = s.nodes.map((n: any) => ({ ...n })); }, true, 1, "120"],
+      ["[...nodes]", (s: any) => { s.nodes = [...s.nodes]; }, true, 1, "120"],
+    ];
+    for (const [label, replace, inLedger, evals, total] of cases) {
+      const { initial, counter } = fixture();
+      const { host, shadowRoot, stateElement } = await mount(initial, NESTED_FOR);
+      await capture(stateElement, replace);
+      const before = counter.evals;
+
+      const dirty = await capture(stateElement, (s: any) => {
+        s.$resolve("nodes.*.children.*.value", [0, 0], 99);
+      });
+      const ledger = getListIndexesByList(initial.nodes)!;
+
+      expect(dirty, label).toHaveLength(1);
+      expect(dirty[0].listIndex!.indexes, label).toEqual([0]);
+      expect(ledger.includes(dirty[0].listIndex!), label).toBe(inLedger);
+      expect(counter.evals - before, label).toBe(evals);
+      expect(texts(shadowRoot, ".total"), label).toEqual([total, "2"]);
+      expect(texts(shadowRoot, ".kid"), label + " 葉の描画はどちらも追従する").toEqual(["99", "20"]);
+      host.remove();
+    }
   });
 });

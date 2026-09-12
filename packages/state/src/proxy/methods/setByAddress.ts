@@ -218,7 +218,7 @@ function _setByAddressWithSwap(
   let swapInfo = getSwapInfoByAddress(parentAddress);
   if (swapInfo === null) {
     const parentValue = getByAddress(target, parentAddress, receiver, handler) ?? [];
-    const listIndexes = getListIndexesByList(parentValue) ?? [];
+    const listIndexes = getListIndexesByList(parentValue, parentAddress.listIndex) ?? [];
     swapInfo = {
       value: [...parentValue], listIndexes: [...listIndexes]
     }
@@ -229,7 +229,7 @@ function _setByAddressWithSwap(
   } finally {
     const index = swapInfo.value.indexOf(value);
     const currentParentValue = getByAddress(target, parentAddress, receiver, handler) ?? [];
-    const currentListIndexes = Array.isArray(currentParentValue) ? (getListIndexesByList(currentParentValue) ?? []) : [];
+    const currentListIndexes = Array.isArray(currentParentValue) ? (getListIndexesByList(currentParentValue, parentAddress.listIndex) ?? []) : [];
     const curIndex = address.listIndex!.index;
     const listIndex = (index !== -1) ? 
       swapInfo!.listIndexes[index] : 
@@ -283,7 +283,7 @@ function setKeyedListByAddress(
   // 先にハイブリッド配列の台帳を作ってしまうと、後から上書きした台帳との間で
   // 同じ分裂が起きるため。先に確定させておけば以降は全経路がこれに合流する。
   const listParentListIndex = address.listIndex;
-  if (getListIndexesByList(oldList) === null) {
+  if (getListIndexesByList(oldList, listParentListIndex) === null) {
     // 一度も描画されていないリストは台帳自体が無い。先に生やしておかないと
     // isSameList 経路が空の oldIndexes をそのまま新台帳にしてしまう。
     createListDiff(listParentListIndex, null, oldList);

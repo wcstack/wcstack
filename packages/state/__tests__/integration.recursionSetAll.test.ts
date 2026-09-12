@@ -455,12 +455,18 @@ describe("ブロードキャストが生む共有の帰結（現状の記録）"
     host.remove();
   });
 
-  it("配列をブロードキャストしたあと nodes.**.tags.* を読むと [wcs/wildcard-rank] で落ちること", async () => {
-    // should be: 共有を作った時点か、遅くとも読みの時点で、共有だと分かる診断
-    //            （[wcs/recursion-shared-list] の系統）になるべき。
-    // いまは台帳（listIndexesByList）が配列インスタンスだけをキーにしているため、
-    // 2 つ目のノードの行 ListIndex が先着の親に別名化し、親の解決に失敗した所で
-    // 「ループが 1 段足りない」という無関係な診断が出る。
+  // 記録付きの変更（#256）: **以前はここが throw していた**（`[wcs/wildcard-rank]`）。
+  // 原因は診断ではなく別名化だった —— 台帳が配列インスタンスだけをキーにしていたので、
+  // 2 つ目以降のノードの `tags` 行が先着の親に別名化し、ListIndex の連鎖が 1 段足りなく
+  // なった所で「ループが 1 段足りない」という無関係な文面が出ていた。台帳を (親, 配列) の
+  // 組でキーしたいま、各ノードが自分の行を持つので読みは素直に通る。
+  //
+  // **失った診断**: ブロードキャストが配列共有を作ったことは、読みでは分からなくなった
+  // （以前の throw も共有を名指してはいなかったので、誤った診断が無診断になった形）。
+  // 深さ方向の共有は走査自身のガード（`[wcs/recursion-shared-list]` / D12）が今も拒否する
+  // —— integration.recursionShape.test.ts と integration.recursionGetAll.test.ts が固定。
+  // 接尾辞側（`tags.*`）に同じガードを掛けない理由は walk.ts の expandSuffix にある。
+  it("ブロードキャストが作った共有配列は、ノードごとの行として読めること", async () => {
     const arr = ["a", "b"];
     const { host, stateEl } = await mount(
       recursionState([node(1, [node(10)]), node(2)]), NO_RENDER_HTML);
@@ -468,20 +474,23 @@ describe("ブロードキャストが生む共有の帰結（現状の記録）"
     await flush();
 
     let message = "";
-    try { union(stateEl, "nodes.**.tags.*"); } catch (e: any) { message = e.message; }
+    let value: unknown[] = [];
+    try { value = union(stateEl, "nodes.**.tags.*"); } catch (e: any) { message = e.message; }
 
-    expect(message).toContain("[wcs/wildcard-rank]");
-    expect(message).toContain('path "nodes.*" needs 1 enclosing loop level(s)');
-    expect(message, "共有だとは言わない").not.toContain("[wcs/recursion-shared-list]");
+    expect(message, "もう throw しない").toBe("");
+    // 3 ノード × 2 スロット。**実体は 1 本の配列**なので同じ 2 値が 3 回出る ——
+    // 件数が 6 であること自体が「共有はデータの側に残っている」ことの現れ。
+    expect(value).toEqual(["a", "b", "a", "b", "a", "b"]);
     expect(arr, "読みは値を変えない").toEqual(["a", "b"]);
     // 深さ方向の走査（子リストを降りる経路）は変わらず通る
     expect(union(stateEl)).toEqual([1, 10, 2]);
     host.remove();
   });
 
-  it("同じ形への書き込みは、落ちる前に共有配列を書き換えてしまうこと", async () => {
-    // should be: 落ちるなら第 1 相（列挙）で落ちて 0 件。いまは列挙を通過してしまうので、
-    //            第 2 相の途中で落ちる ＝ 部分書き込みが残る。
+  // 記録付きの変更（#256）: 以前はここも `[wcs/wildcard-rank]` で落ちていた（ただし
+  // **落ちる前に共有配列を書き換えていた**）。別名化が直ったので列挙が最後まで通り、
+  // 書き込みは到達経路の数だけ適用される。値の見え方（`["z","z"]`）は修正の前後で同じ。
+  it("ブロードキャストが作った共有配列への書き込みは、到達経路の数だけ適用されること", async () => {
     const arr = ["a", "b"];
     const { host, stateEl } = await mount(
       recursionState([node(1, [node(10)]), node(2)]), NO_RENDER_HTML);
@@ -489,9 +498,13 @@ describe("ブロードキャストが生む共有の帰結（現状の記録）"
     await flush();
 
     const message = writeError(stateEl, (s: any) => { s.$setAll("nodes.**.tags.*", [], "z"); });
+    expect(message, "もう throw しない").toBe("");
 
-    expect(message).toContain("[wcs/wildcard-rank]");
-    expect(arr, "throw したのに書き換わっている").toEqual(["z", "z"]);
+    const count = writeCount(stateEl, (s: any) => s.$setAll("nodes.**.tags.*", [], "z"));
+    // 3 ノード × 2 スロット ＝ 6 アドレス。**実スロットは 2 つ**なので、件数は
+    // 「書いたスロット数」ではなく「到達経路の数」。共有はデータの側に残っている。
+    expect(count).toBe(6);
+    expect(arr, "実体は 1 本なので 2 スロットだけが変わる").toEqual(["z", "z"]);
     host.remove();
   });
 });

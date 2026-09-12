@@ -246,7 +246,7 @@ context か handler から引ける。
 
 ### 変更しないもの
 
-- `listIndexesByList` の構造（配列同一性の WeakMap のまま）
+- `listIndexesByList` の構造（当時は配列同一性の WeakMap のまま。#256 で **(親, 配列)** の組キーになったが、子の行が base listIndex を親に持つというこの設計は変わらない）
 - `crossBoundaryAddress.ts`（既に必要な情報を運んでいる）
 - `propagateListPathToOuterState`（Δ に依存しない）
 - `IListIndex` の `position` / `varName` / `indexes`（内部表現は真の深さのまま。

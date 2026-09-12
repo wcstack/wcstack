@@ -32,7 +32,7 @@ export function getListIndexByIndexes(
     const wildcardParentPathInfo = pathInfo.wildcardParentPathInfos[i];
     const wildcardAddress = createStateAddress(wildcardParentPathInfo, listIndex);
     const tmpValue = getByAddress(target, wildcardAddress, receiver, handler);
-    const listIndexes = getListIndexesByList(tmpValue);
+    const listIndexes = getListIndexesByList(tmpValue, listIndex);
     if (listIndexes == null) {
       raiseError(`ListIndexes not found: ${wildcardParentPathInfo.path}`);
     }
