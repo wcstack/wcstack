@@ -134,14 +134,14 @@ describe('walkDependency', () => {
     ]);
   });
 
-  it('静的依存はgetListIndexesByListのlastValue分岐に到達すること', () => {
+  it('静的依存はresolveListIndexesByListのlastValue分岐に到達すること', () => {
     const stateProxy = createStateProxy({
       users: [{ id: 1 }, { id: 2 }],
     });
     const startAddress = createStateAddress(getPathInfo('users'), null);
     const staticDependency = new Map<string, string[]>([['users', ['users.*']]]);
     const listPathSet = new Set<string>(['users']);
-    const spy = vi.spyOn(listIndexesByList, 'getListIndexesByList');
+    const spy = vi.spyOn(listIndexesByList, 'resolveListIndexesByList');
 
     const beforeFirst = spy.mock.calls.length;
     walkDependency(      defaultStateElement,
@@ -316,7 +316,7 @@ describe('walkDependency', () => {
     ]);
   });
 
-  it('動的依存はgetListIndexesByListのlastValue分岐に到達すること', () => {
+  it('動的依存はresolveListIndexesByListのlastValue分岐に到達すること', () => {
     const stateProxy = createStateProxy({
       'users.*.orders': [1, 2],
     });
@@ -325,7 +325,7 @@ describe('walkDependency', () => {
     const dynamicDependency = new Map<string, string[]>([
       ['users.*.name', ['users.*.orders.*.id']],
     ]);
-    const spy = vi.spyOn(listIndexesByList, 'getListIndexesByList');
+    const spy = vi.spyOn(listIndexesByList, 'resolveListIndexesByList');
 
     const beforeFirst = spy.mock.calls.length;
     walkDependency(      defaultStateElement,

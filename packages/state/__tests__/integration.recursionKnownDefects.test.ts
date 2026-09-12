@@ -554,8 +554,10 @@ describe("欠陥2: 同じ配列インスタンスの共有（DAG・循環）が�
 
   // DEFECT: rootValue は行ごとに [1,1,2,2] になるべき。台帳が配列インスタンスだけを
   //         キーにしていて親の同一性を表せないため、共有配列の ListIndex が
-  //         「最初に走査した親」に別名化する。台帳キーを (配列, 親アドレス) に拡張するか、
-  //         再帰走査に共有ガード（wcs/recursion-shared-list 相当）を新設したら反転する。
+  //         「最初に走査した親」に別名化する。台帳キーを (配列, 親アドレス) に拡張する案は
+  //         #256 で実測して却下した（1 スロットに絶対アドレスが 2 本でき、片方へ書いた値が
+  //         もう片方から永久に見えなくなる）。再帰走査に共有ガード（wcs/recursion-shared-list
+  //         相当）を新設したら反転する。
   it("共有した children 配列では、子スコープから親を読む getter が先着の親に別名化する", async () => {
     const { shared, state } = sharedChildren();
     const { stateEl } = await mount(state);
@@ -576,8 +578,8 @@ describe("欠陥2: 同じ配列インスタンスの共有（DAG・循環）が�
     expect(out.rootValue).toEqual([1, 1, 1, 1]); // should be: [1, 1, 2, 2]
 
     // 台帳の親ポインタが nodes[0] の行に固定されている（nodes[1] にはならない）
-    const nodeLedger = getListIndexesByList(state.nodes, null)!;
-    const sharedLedger = getListIndexesByList(shared, nodeLedger[0])!;
+    const nodeLedger = getListIndexesByList(state.nodes)!;
+    const sharedLedger = getListIndexesByList(shared)!;
     expect(sharedLedger[0].parentListIndex).toBe(nodeLedger[0]);
     expect(sharedLedger[1].parentListIndex).toBe(nodeLedger[0]);
   });
@@ -748,9 +750,9 @@ describe("欠陥2: 同じ配列インスタンスの共有（DAG・循環）が�
     expect(out.totals).toEqual([11, 12]);
     expect(out.rootValue).toEqual([1, 2]); // 文脈は正しい
     // 親配列が別インスタンスなので台帳も別
-    const nodeLedger = getListIndexesByList(state.nodes, null)!;
-    expect(getListIndexesByList(state.nodes[0].children, nodeLedger[0]))
-      .not.toBe(getListIndexesByList(state.nodes[1].children, nodeLedger[1]));
+    const nodeLedger = getListIndexesByList(state.nodes)!;
+    expect(getListIndexesByList(state.nodes[0].children))
+      .not.toBe(getListIndexesByList(state.nodes[1].children));
   });
 
   // DEFECT: 共有ノードが children を持つと、親配列が別でも孫配列が必然的に共有になる。

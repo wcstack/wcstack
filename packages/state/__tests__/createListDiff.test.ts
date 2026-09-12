@@ -154,7 +154,7 @@ describe('createListDiff', () => {
       // 親ごとに私有の行集合を持たせると、同じスロットに 2 本の絶対アドレスができ、
       // 片方へ書いた値がもう片方から永久に見えなくなる。
       expect(d1.newIndexes).toBe(d0.newIndexes);
-      expect(getListIndexesByList(list, p1)).toBe(d0.newIndexes);
+      expect(getListIndexesByList(list)).toBe(d0.newIndexes);
       // 先着の親は生きているので親ポインタは動かない
       expect(d0.newIndexes.map((r) => r.parentListIndex)).toEqual([p0, p0]);
       expect(d1.deleteIndexSet.size).toBe(0);

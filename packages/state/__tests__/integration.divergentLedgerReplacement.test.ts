@@ -11,9 +11,15 @@
  * （applyChangeToFor の has() には一致しないため描画自体は add+delete で正しい）。
  *
  * 2 つ目の describe は #256（X2）の受け入れ条件だったもの。行オブジェクトだけを作り直す
- * 置換（`nodes.map(n => ({...n}))`）は、修理前は子配列を引き継ぐために **退役した旧行の
- * アドレス** を drain バッチへ載せていた。台帳を (親, 配列) でキーしたいま、2 つの綴り
- * （map-spread と [...nodes]）は件数・添字・再評価回数・表示のすべてで一致する。
+ * 置換（`nodes.map(n => ({...n}))`）は `children` 配列を参照ごと引き継ぐので、子リストの行は
+ * **退役した旧行**にぶら下がったまま残り、葉への書き込みが生きている行の集計へ届かなかった。
+ * 台帳は 1 本の配列につき行集合 1 組のままで（ラウンド 1 の「(親, 配列) でキーする」案は
+ * 実測で却下済み）、陳腐化した親を生きた行へ**付け替える**ことで直してある。
+ *
+ * そのため 2 つの綴りは**すべてでは一致しない**。置換そのものが drain バッチへ載せる
+ * アドレスは map-spread が 3 件（生きた 2 行 ＋ 退役した旧行 1 件）、[...nodes] が 2 件で、
+ * **これは main でも同じ**（このファイルを main の src に対して走らせて実測）。一致するのは
+ * **置換のあとの葉の書き込み**で、そこが #256 の門。
  * 「厳密に何件か」を固定しているので、重複を増やす修正はここで落ちる。
  */
 import { describe, it, expect, beforeAll } from "vitest";
@@ -163,6 +169,12 @@ describe("行オブジェクトだけを作り直す置換（#256 / X2）の汚�
   // 新しい親で引かれた時に起きる）。退役した行のアドレスには生きたバインディングが
   // 無いので描画には効かず、**生きている 2 行はどちらも dirty になり再評価される** ——
   // #256 が直したのはそこで、下の「置換のあとの葉の書き込み」の it がその門。
+  //
+  // 受け入れ条件 10 の『should be: 2 件』には**届いていない**。実測は 3 件（うち 1 件は
+  // 退役した行）で、**main でも同じ 3 件**（このファイルを main の src に対して走らせて確認）。
+  // 回帰ではないので、条件を「生きている 2 行が必ず dirty になること ＋ 重複が無いこと」へ
+  // 明示的に改める。3 件を 2 件にするには修理を依存ウォークの内側へ前倒しする必要があり、
+  // 行 identity の保存と「生きた共有は 1 スロット 1 アドレス」を崩しかねないので触らない。
   it("map-spread の置換では、生きている 2 行と退役した旧行 1 件が dirty になる", async () => {
     const { initial, counter } = fixture();
     const { host, shadowRoot, stateElement } = await mount(initial, NESTED_FOR);
@@ -172,7 +184,7 @@ describe("行オブジェクトだけを作り直す置換（#256 / X2）の汚�
     const dirty = await capture(stateElement, (s: any) => {
       s.nodes = s.nodes.map((n: any) => ({ ...n }));
     });
-    const ledger = getListIndexesByList(initial.nodes, null)!;
+    const ledger = getListIndexesByList(initial.nodes)!;
     expect(ledger, "置換後の生きている行").toHaveLength(2);
 
     expect(dirty).toHaveLength(3);
@@ -191,7 +203,7 @@ describe("行オブジェクトだけを作り直す置換（#256 / X2）の汚�
     const before = counter.evals;
 
     const dirty = await capture(stateElement, (s: any) => { s.nodes = [...s.nodes]; });
-    const ledger = getListIndexesByList(initial.nodes, null)!;
+    const ledger = getListIndexesByList(initial.nodes)!;
 
     expect(dirty).toHaveLength(2);
     expect(dirty.map((a) => a.listIndex!.indexes)).toEqual([[0], [1]]);
@@ -199,9 +211,12 @@ describe("行オブジェクトだけを作り直す置換（#256 / X2）の汚�
     expect(counter.evals - before).toBe(2);
     host.remove();
   });
-  // Fixed by #256 — was: map-spread 側だけが **退役した旧行** のアドレスを dirty にし、
-  // 生きている行 0 の getter は 1 度も再評価されず（inLedger=false / 再評価 0 回）、
-  // 表示が "31" のまま止まっていた。いまは 2 つの綴りが 1 行も違わない。
+  // Fixed by #256 — was: map-spread 側だけが **退役した旧行** のアドレスを dirty にしていた。
+  // main の src に対してこのファイルを走らせると、**最初の表明（inLedger）**で
+  // `expected false to be true` になって止まる（実測）。その後ろの再評価回数・表示までは
+  // 到達しないので、main について言えるのは inLedger=false までで、"31" で止まることは
+  // このテストの証拠ではない（それは integration.recursionKnownDefects の欠陥 7 が持つ）。
+  // いまは 2 つの綴りとも、生きている行 1 件だけを dirty にして表示が追従する。
   it("置換のあとの葉の書き込みは、どちらの綴りでも生きている行を dirty にする", async () => {
     const cases: [string, (s: any) => void, boolean, number, string][] = [
       ["map-spread", (s: any) => { s.nodes = s.nodes.map((n: any) => ({ ...n })); }, true, 1, "120"],
@@ -216,7 +231,7 @@ describe("行オブジェクトだけを作り直す置換（#256 / X2）の汚�
       const dirty = await capture(stateElement, (s: any) => {
         s.$resolve("nodes.*.children.*.value", [0, 0], 99);
       });
-      const ledger = getListIndexesByList(initial.nodes, null)!;
+      const ledger = getListIndexesByList(initial.nodes)!;
 
       expect(dirty, label).toHaveLength(1);
       expect(dirty[0].listIndex!.indexes, label).toEqual([0]);

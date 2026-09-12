@@ -1,6 +1,6 @@
 import "../polyfills";
 import { createListIndex } from "./createListIndex";
-import { getListIndexesByList, retireListIndexes, setListIndexesByList } from "./listIndexesByList";
+import { resolveListIndexesByList, retireListIndexes, reviveListIndexes, setListIndexesByList } from "./listIndexesByList";
 import { IListDiff, IListIndex } from "./types";
 
 const listDiffByOldListByNewList = new WeakMap<readonly unknown[], WeakMap<readonly unknown[], IListDiff>>();
@@ -77,8 +77,11 @@ export function createListDiff(
 ): IListDiff {
   const diff = computeListDiff(parentListIndex, rawOldList, rawNewList);
   syncListIndexes(diff.newIndexes);
-  // 捨てた行を退役として記録する。台帳はこれを見て「共有」と「陳腐化」を分ける（#256）。
+  // 捨てた行を退役、返した行を復活として記録する。台帳はこれを見て「共有」と「陳腐化」を
+  // 分ける（#256）。両方を毎回の差分で付け直すので、消えない印は残らない。
+  // deleteIndexSet と newIndexes は構造上交わらない。
   retireListIndexes(diff.deleteIndexSet);
+  reviveListIndexes(diff.newIndexes);
   return diff;
 }
 
@@ -96,7 +99,7 @@ function computeListDiff(
   }
   // 台帳は 1 本の配列につき行集合 1 組（listIndexesByList.ts）。親は「行がぶら下がる親が
   // 退役していたら、この親へ付け替える」ための差し替え先として渡す（#256）。
-  const oldIndexes = getListIndexesByList(oldList, parentListIndex) || [];
+  const oldIndexes = resolveListIndexesByList(oldList, parentListIndex) || [];
   let retValue: IListDiff | undefined;
   try {
     // Early return for empty list
@@ -110,7 +113,7 @@ function computeListDiff(
       };
     }
     // If old list was empty, create all new indexes
-    let newIndexes: IListIndex[] | null = getListIndexesByList(newList, parentListIndex);
+    let newIndexes: IListIndex[] | null = resolveListIndexesByList(newList, parentListIndex);
     if (oldList.length === 0) {
       if (newIndexes === null) {
         newIndexes = [];

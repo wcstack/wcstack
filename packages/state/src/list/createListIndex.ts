@@ -20,10 +20,16 @@ class ListIndex implements IListIndex {
   private _indexes: number[] | undefined;
   private _listIndexes: WeakRef<IListIndex>[] | undefined;
   private _chainGeneration: number;
+  /**
+   * 鋳造したときの親（#256）。付け替えても変わらない。退役した親から付け替えたあと、
+   * その親が生き返ったら戻す先になる ── main では「最初にその配列を展開した親」が
+   * 持ち主のままなので、home が main と一致するための基準点でもある。
+   */
+  private readonly _homeParentListIndex: IListIndex | null;
 
   /**
    * Creates a new ListIndex instance.
-   * 
+   *
    * @param parentListIndex - Parent list index for nested loops, or null for top-level
    * @param index - Current index value in the loop
    */
@@ -31,6 +37,7 @@ class ListIndex implements IListIndex {
     this.parentListIndex = parentListIndex;
     this.position = parentListIndex ? parentListIndex.position + 1 : 0;
     this.length = this.position + 1;
+    this._homeParentListIndex = parentListIndex;
     this._index = index;
     this._version = version;
     this._chainGeneration = chainGeneration;
@@ -38,16 +45,16 @@ class ListIndex implements IListIndex {
 
   /**
    * Gets current index value.
-   * 
+   *
    * @returns Current index number
    */
   get index() {
     return this._index;
   }
-  
+
   /**
    * Sets index value and updates version.
-   * 
+   *
    * @param value - New index value
    */
   set index(value: number) {
@@ -58,16 +65,21 @@ class ListIndex implements IListIndex {
 
   /**
    * Gets current version number for change detection.
-   * 
+   *
    * @returns Version number
    */
   get version(): number {
     return this._version;
   }
 
+  /** 鋳造したときの親（付け替えても変わらない）。 */
+  get homeParentListIndex(): IListIndex | null {
+    return this._homeParentListIndex;
+  }
+
   /**
    * Checks if parent indexes have changed since last access.
-   * 
+   *
    * @returns true if parent has newer version, false otherwise
    */
   get dirty(): boolean {
@@ -81,7 +93,7 @@ class ListIndex implements IListIndex {
   /**
    * Gets array of all index values from root to current level.
    * Rebuilds array if parent indexes have changed (dirty).
-   * 
+   *
    * @returns Array of index values
    */
   get indexes(): number[] {
@@ -100,7 +112,7 @@ class ListIndex implements IListIndex {
 
   /**
    * Gets array of WeakRef to all ListIndex instances from root to current level.
-   * 
+   *
    * @returns Array of WeakRef<IListIndex>
    */
   get listIndexes(): WeakRef<IListIndex>[] {
@@ -119,7 +131,7 @@ class ListIndex implements IListIndex {
 
   /**
    * Gets variable name for this loop index ($1, $2, etc.).
-   * 
+   *
    * @returns Variable name string
    */
   get varName(): string {
@@ -129,7 +141,7 @@ class ListIndex implements IListIndex {
   /**
    * Gets ListIndex at specified position in hierarchy.
    * Supports negative indexing from end.
-   * 
+   *
    * @param pos - Position index (0-based, negative for from end)
    * @returns ListIndex at position or null if not found/garbage collected
    */
@@ -137,7 +149,8 @@ class ListIndex implements IListIndex {
    * 退役した親を、同じ深さの生きた親へ差し替える（#256）。**行の identity は保つ**ので、
    * 描画済み content も、その行に紐づくバインドしていない DOM の状態も残る。
    * 添字の値は親が変われば変わりうる（並べ替えを伴う置換）ため、`indexes` と WeakRef 連鎖を
-   * 捨て、version を進めて子孫の `dirty` を立てる。
+   * 捨て、version を進めて子孫の `dirty` を立てる。`_homeParentListIndex` は動かさない
+   * ── 元の親が生き返ったときに戻す先だから。
    */
   reparent(parentListIndex: IListIndex | null): void {
     this.parentListIndex = parentListIndex;
@@ -158,7 +171,7 @@ class ListIndex implements IListIndex {
 
 /**
  * Factory function to create ListIndex instance.
- * 
+ *
  * @param parentListIndex - Parent list index for nested loops, or null for top-level
  * @param index - Current index value in the loop
  * @returns New IListIndex instance
@@ -173,4 +186,12 @@ export function createListIndex(parentListIndex: IListIndex | null, index: numbe
  */
 export function reparentListIndex(listIndex: IListIndex, parentListIndex: IListIndex | null): void {
   (listIndex as ListIndex).reparent(parentListIndex);
+}
+
+/**
+ * 台帳専用の入口その 2。鋳造時の親を読む（`IListIndex` を広げないための cast ──
+ * この型は dist/index.d.ts に出るので、内部だけの都合で公開面を増やさない）。
+ */
+export function getHomeParentListIndex(listIndex: IListIndex): IListIndex | null {
+  return (listIndex as ListIndex).homeParentListIndex;
 }

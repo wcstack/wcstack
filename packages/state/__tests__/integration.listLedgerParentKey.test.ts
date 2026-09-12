@@ -45,7 +45,7 @@ describe("ハイドレーションが鋳造する行（親は null）", () => {
 
     const items = stateEl.__state.items;
     expect(items).toHaveLength(2);
-    const rows = getListIndexesByList(items, null);
+    const rows = getListIndexesByList(items);
     expect(rows).not.toBeNull();
     expect(rows).toHaveLength(2);
     expect(rows!.map((r) => r.parentListIndex)).toEqual([null, null]);
@@ -72,7 +72,7 @@ describe("ハイドレーションが鋳造する行（親は null）", () => {
     await new Promise((resolve) => setTimeout(resolve, 200));
 
     const before = Array.from(document.querySelectorAll("li"));
-    const rowsBefore = getListIndexesByList(stateEl.__state.items, null);
+    const rowsBefore = getListIndexesByList(stateEl.__state.items);
 
     stateEl.createState("writable", (s: any) => { s["items.0.name"] = "Alicia"; });
     await flush();
@@ -81,7 +81,7 @@ describe("ハイドレーションが鋳造する行（親は null）", () => {
     expect(after.map((li) => li.textContent)).toEqual(["Alicia", "Bob"]);
     expect(after[0], "行 DOM は同じノード").toBe(before[0]);
     expect(after[1], "行 DOM は同じノード").toBe(before[1]);
-    expect(getListIndexesByList(stateEl.__state.items, null)).toBe(rowsBefore);
+    expect(getListIndexesByList(stateEl.__state.items)).toBe(rowsBefore);
   });
 });
 
@@ -113,7 +113,7 @@ describe("$listKeys が先に確定させる台帳", () => {
       `<ul><template data-wcs="for: items"><li>{{ .name }}</li></template></ul>`);
     const before = Array.from(shadowRoot.querySelectorAll("li"));
     expect(before.map((li) => li.textContent)).toEqual(["a", "b"]);
-    const rowsBefore = getListIndexesByList(stateEl.__state.items, null)!;
+    const rowsBefore = getListIndexesByList(stateEl.__state.items)!;
     expect(rowsBefore).toHaveLength(2);
 
     // fetch 相当: 同じキー・別オブジェクト
@@ -128,7 +128,7 @@ describe("$listKeys が先に確定させる台帳", () => {
     expect(after[0]).toBe(before[0]);
     expect(after[1]).toBe(before[1]);
     // 新しい配列の台帳も親 null のもとにあり、行オブジェクトも同じ
-    const rowsAfter = getListIndexesByList(stateEl.__state.items, null)!;
+    const rowsAfter = getListIndexesByList(stateEl.__state.items)!;
     expect(rowsAfter[0]).toBe(rowsBefore[0]);
     expect(rowsAfter[1]).toBe(rowsBefore[1]);
     host.remove();
@@ -149,12 +149,12 @@ describe("$listKeys が先に確定させる台帳", () => {
     const kidsBefore = Array.from(shadowRoot.querySelectorAll("i"));
     expect(kidsBefore.map((i) => i.textContent)).toEqual(["x", "y", "z"]);
 
-    const rows = getListIndexesByList(stateEl.__state.items, null)!;
-    const childRows = getListIndexesByList(stateEl.__state.items[0].children, rows[0])!;
+    const rows = getListIndexesByList(stateEl.__state.items)!;
+    const childRows = getListIndexesByList(stateEl.__state.items[0].children)!;
     expect(childRows).toHaveLength(2);
     expect(childRows.map((r) => r.parentListIndex)).toEqual([rows[0], rows[0]]);
     // 行 1 の children は別の配列なので別の行集合
-    const otherRows = getListIndexesByList(stateEl.__state.items[1].children, rows[1])!;
+    const otherRows = getListIndexesByList(stateEl.__state.items[1].children)!;
     expect(otherRows).toHaveLength(1);
     expect(otherRows).not.toBe(childRows);
     expect(otherRows.map((r) => r.parentListIndex)).toEqual([rows[1]]);
@@ -171,7 +171,7 @@ describe("$listKeys が先に確定させる台帳", () => {
     expect(kidsAfter[0]).toBe(kidsBefore[0]);
     expect(kidsAfter[1]).toBe(kidsBefore[1]);
     expect(kidsAfter[2]).toBe(kidsBefore[2]);
-    const childRowsAfter = getListIndexesByList(stateEl.__state.items[0].children, rows[0])!;
+    const childRowsAfter = getListIndexesByList(stateEl.__state.items[0].children)!;
     expect(childRowsAfter[0]).toBe(childRows[0]);
     expect(childRowsAfter[1]).toBe(childRows[1]);
     host.remove();
@@ -220,9 +220,9 @@ describe("ハイドレーション: ホストの for の中の子スコープ（
     expect(txt(), "SSR が出した子スコープの DOM").toEqual(["x", "y"]);
     expect(document.querySelectorAll(".group")).toHaveLength(1);
     // 外側の行は親 null で台帳に載る
-    expect(getListIndexesByList(stateEl.__state.groups, null)).toHaveLength(1);
+    expect(getListIndexesByList(stateEl.__state.groups)).toHaveLength(1);
     // 内側の配列はどの親のもとにも載っていない
-    expect(getListIndexesByList(stateEl.__state.groups[0].items, null)).toBeNull();
+    expect(getListIndexesByList(stateEl.__state.groups[0].items)).toBeNull();
 
     let message = "NO THROW";
     try {

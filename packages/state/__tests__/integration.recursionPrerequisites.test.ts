@@ -158,9 +158,9 @@ const shapeOf = (raw: any) => raw.nodes.map((n: any) => n.children.map((c: any) 
  * 「cold でも通る」という主張が偶然の産物になる。
  */
 function expectColdLedger(raw: any): void {
-  expect(getListIndexesByList(raw.nodes, null), "nodes の台帳").toBe(null);
+  expect(getListIndexesByList(raw.nodes), "nodes の台帳").toBe(null);
   for (const n of raw.nodes) {
-    expect(getListIndexesByList(n.children, null), "children の台帳").toBe(null);
+    expect(getListIndexesByList(n.children), "children の台帳").toBe(null);
   }
 }
 
@@ -183,10 +183,10 @@ describe("cold start（for バインドが 1 つも無い state）の非対称�
 
     read(stateEl, (s: any) => s.$getAll(COLD_LEAF, []));
 
-    const rows = getListIndexesByList(raw.nodes, null)!;
+    const rows = getListIndexesByList(raw.nodes)!;
     expect(rows, "$getAll の後").toHaveLength(2);
     // 子の行はその行（親）のもとにある
-    expect(getListIndexesByList(raw.nodes[0].children, rows[0]), "$getAll の後（子）").toHaveLength(2);
+    expect(getListIndexesByList(raw.nodes[0].children), "$getAll の後（子）").toHaveLength(2);
     host.remove();
   });
 
@@ -369,10 +369,10 @@ describe("cold start（for バインドが 1 つも無い state）の非対称�
     expect(read(stateEl, (s: any) => s.$getAll("nodes.*.subtotal", []))).toEqual([22, 22]);
 
     // 1 回の読みで全ワイルドカード段の台帳が温まる（内側の省略 $getAll が自分で降りる）
-    const rows = getListIndexesByList(raw.nodes, null)!;
+    const rows = getListIndexesByList(raw.nodes)!;
     expect(rows).toHaveLength(2);
-    expect(getListIndexesByList(raw.nodes[0].children, rows[0])).toHaveLength(2);
-    expect(getListIndexesByList(raw.nodes[1].children, rows[1])).toHaveLength(1);
+    expect(getListIndexesByList(raw.nodes[0].children)).toHaveLength(2);
+    expect(getListIndexesByList(raw.nodes[1].children)).toHaveLength(1);
     host.remove();
   });
 

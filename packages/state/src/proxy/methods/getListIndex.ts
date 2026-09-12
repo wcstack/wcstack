@@ -12,13 +12,13 @@
  *
  * 設計ポイント:
  * - ワイルドカードや多重ループ、ネストした配列バインディングに柔軟に対応
- * - getListIndexesByListで各階層のリストインデックス集合を取得
+ * - resolveListIndexesByListで各階層のリストインデックス集合を取得
  * - エラー時はraiseErrorで例外を投げる
  */
 
 import { createStateAddress } from "../../address/StateAddress";
 import { IResolvedAddress } from "../../address/types";
-import { getListIndexesByList } from "../../list/listIndexesByList";
+import { resolveListIndexesByList } from "../../list/listIndexesByList";
 import { IListIndex } from "../../list/types";
 import { raiseError } from "../../raiseError";
 import { IStateHandler } from "../types";
@@ -48,7 +48,7 @@ export function getListIndex(
           raiseError(`wildcardParentPathInfo is null: ${resolvedAddress.pathInfo.path}`);
         const wildcardParentAddress = createStateAddress(wildcardParentPathInfo, parentListIndex);
         const wildcardParentValue = getByAddress(target, wildcardParentAddress, receiver, handler);
-        const wildcardParentListIndexes: IListIndex[] = getListIndexesByList(wildcardParentValue, parentListIndex) ?? 
+        const wildcardParentListIndexes: IListIndex[] = resolveListIndexesByList(wildcardParentValue, parentListIndex) ?? 
           raiseError( `ListIndex not found: ${wildcardParentPathInfo.path}`);
         const wildcardIndex = resolvedAddress.wildcardIndexes[i] ?? 
           raiseError(`wildcardIndex is null: ${resolvedAddress.pathInfo.path}`);

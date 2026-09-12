@@ -233,7 +233,7 @@ describe('setByAddress', () => {
     setByAddress(target, address, 'a', target, handler as any);
 
     expect(getSwapInfoByAddress(parentAddress)).toBeNull();
-    const currentIndexes = getListIndexesByList(target.items, parentListIndex)!;
+    const currentIndexes = getListIndexesByList(target.items)!;
     expect(currentIndexes[0].index).toBe(0);
 
     setListIndexesByList(target.items, null);
@@ -288,7 +288,7 @@ describe('setByAddress', () => {
 
     setByAddress(target, address, 'c', target, handler as any);
 
-    const currentIndexes = getListIndexesByList(target.items, parentListIndex)!;
+    const currentIndexes = getListIndexesByList(target.items)!;
     expect(currentIndexes[0]).toBeDefined();
 
     // swapInfo should be cleared after successful swap
