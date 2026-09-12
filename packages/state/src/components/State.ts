@@ -40,7 +40,7 @@ import { createPublicMountState } from "../webComponent/overlay";
 import { warnOwnKeyShadowsForMount } from "../webComponent/ownKeyShadow";
 import { markWebComponentAsComplete, markWebComponentStatePropDeclared } from "../webComponent/completeWebComponent";
 import { getInjectedKeys, restoreOverwrittenValues, takeOverwrittenObject } from "../webComponent/preCompletionWrites";
-import { callVolumeLifecycle, failPendingVolumes, graftOrQueueVolume, IVolumeGraftInfo, reserveVolumeSlot, validateVolumeMountPath } from "../webComponent/volume";
+import { callVolumeLifecycle, clearFailedRootNode, failPendingVolumes, graftOrQueueVolume, IVolumeGraftInfo, reserveVolumeSlot, validateVolumeMountPath } from "../webComponent/volume";
 import { hasRootMountBinding } from "../webComponent/rootMountBinding";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/symbols";
 import { waitInitializeBinding } from "../bindings/initializeBindingPromiseByNode";
@@ -111,6 +111,13 @@ export class State extends HTMLElementBase implements IStateElement {
    * `_failInitializeLoudly` だけ。
    */
   private _initializeFailed: boolean = false;
+  /**
+   * この接続サイクルの失敗は**もう着地した**（#257）。設定エラーの fail-fast
+   * （`_failInitialization` と `initializeMountScope` の catch）は自分で promise を
+   * 解決してから raise する — connectedCallbackPromise を**解決**する側のクラスなので、
+   * 下の loud な着地（reject ＋ 診断）に載せ替えると意味論が変わる。接続ごとに畳む。
+   */
+  private _initializationLanded: boolean = false;
   private _initializePromise: Promise<void>;
   private _resolveInitialize: (() => void) | null = null;
   private _connectedCallbackPromise: Promise<void>;
@@ -451,6 +458,8 @@ export class State extends HTMLElementBase implements IStateElement {
    * として loud に残る。
    */
   private _failInitialization(message: string): never {
+    // 着地はここで完了（connectedCallback の catch が二重に着地させない — #257）
+    this._initializationLanded = true;
     // _initialized は立てない — 切断時の後始末（createState を要する）が
     // 未ロードの state を触らないよう、初期化前ガードに掛かるままにする
     this._resolveInitialize?.();
@@ -466,8 +475,15 @@ export class State extends HTMLElementBase implements IStateElement {
    * `_initialize` が投げうるもの全部 — `_state` セッタの宣言検証（$recursion /
    * $commandTokens / $eventTokens / $on / $streams / $listKeys / $watch）、
    * `_loadStateFromSource` のロード失敗（src の拡張子・json のパース・内包スクリプト・
-   * 外部モジュール）、SSR データの merge、そして `setStateElement` の
-   * 「1 rootNode 1 ツリー」違反。
+   * 外部モジュール）、SSR データの merge、ロード中に剥がされた要素の `rootNode` getter
+   * （"State rootNode is not available."）、そして `setStateElement` の
+   * 「1 rootNode 1 ツリー」違反（**別の**要素が 2 本目に来た形 — 同じ要素の再登録は
+   * 冪等なので、ロード中の remove → append はここへ来ない）。
+   *
+   * `connectedCallback` が `_initialize` より前に await する 2 つ
+   * （`_initializeDCC` / `_initializeBindWebComponent`）の raise も同じ着地に載る。
+   * 特に「初期化に失敗した要素の再接続」は `bindWebComponent` → `setInitialState` の
+   * 復旧不能 raise でそこへ来るので、包まないと診断ゼロで素通りする。
    *
    * `_failInitialization`（設定エラーの fail-fast）との違いは 1 つ:
    * **connectedCallbackPromise を reject する**。ここまで来た要素は state を 1 つも
@@ -487,6 +503,12 @@ export class State extends HTMLElementBase implements IStateElement {
    * throw する）なので、残骸は要素ごと捨てる前提で放置する。
    */
   private _failInitializeLoudly(error: unknown): never {
+    if (this._initializationLanded) {
+      // 設定エラーの fail-fast が自分で着地済み（promise は解決済み）。ここで
+      // reject に載せ替えると「ページの残りは生きている設定ミス」と「state を 1 つも
+      // 持たない要素」を混ぜることになるので、伝播だけさせる
+      throw error;
+    }
     this._initializeFailed = true;
     // 診断は必ず 1 件出す。カスタム要素リアクションは connectedCallback の戻り
     // Promise を捨てるので、ブラウザの "Uncaught (in promise)" 以外に受け手が居ない
@@ -643,6 +665,8 @@ export class State extends HTMLElementBase implements IStateElement {
           try {
             initializeMountScope(record, parentNode instanceof ShadowRoot ? parentNode : boundComponent);
           } catch (error) {
+            // 着地はここで完了（_failInitialization と同じクラス — #257）
+            this._initializationLanded = true;
             this._resolveInitialize?.();
             this._resolveLoading?.();
             this._resolveConnectedCallback?.();
@@ -724,6 +748,8 @@ export class State extends HTMLElementBase implements IStateElement {
     // 再開からの起動を防ぐ）。前回接続中の再 set（S13）で立った
     // _streamsStartedGeneration も世代不一致となり自然に無効化される。
     const connectGeneration = ++this._connectGeneration;
+    // 着地の印は接続ごとに畳む（前の接続の fail-fast をこの接続へ持ち越さない — #257）
+    this._initializationLanded = false;
     if (!this._initialized) {
       // 名前次元は v2 で撤去（D16 / §9）。名前付き State はボリュームへ移行する。
       // mount 併記（移行途中で name を残した形）は専用文言で誘導する
@@ -740,14 +766,20 @@ export class State extends HTMLElementBase implements IStateElement {
       const parentNode = this.parentNode;
       if (parentNode instanceof ShadowRoot &&
           parentNode.host.hasAttribute(DCC_DEFINITION_ATTRIBUTE)) {
-        // DCC と bind-component は排他。DCC の state はテンプレートに属し、
-        // インスタンスごとにロードされるので、定義時点のホストのプロパティを
-        // ソースにする bind-component とは両立しない。従来はこの return で
-        // 無言に無視していた（docs/architecture-hardening/15 §3.1）。
-        if (this.hasAttribute("bind-component")) {
-          raiseError(`"bind-component" cannot be used inside a [${DCC_DEFINITION_ATTRIBUTE}] host. DCC state comes from the template, not from a component property.`);
+        try {
+          // DCC と bind-component は排他。DCC の state はテンプレートに属し、
+          // インスタンスごとにロードされるので、定義時点のホストのプロパティを
+          // ソースにする bind-component とは両立しない。従来はこの return で
+          // 無言に無視していた（docs/architecture-hardening/15 §3.1）。
+          if (this.hasAttribute("bind-component")) {
+            raiseError(`"bind-component" cannot be used inside a [${DCC_DEFINITION_ATTRIBUTE}] host. DCC state comes from the template, not from a component property.`);
+          }
+          await this._initializeDCC(parentNode.host, parentNode);
+        } catch (error) {
+          // _initialize と同じ着地（#257）。DCC のロード失敗もここまでは
+          // 「throw が connectedCallback の外へ出るだけ」＝ 無言のハングだった
+          this._failInitializeLoudly(error);
         }
-        await this._initializeDCC(parentNode.host, parentNode);
         return;
       }
       // ボリューム（`mount="path"` — 接ぎ木・docs/state-mount-design.md §4-2）
@@ -762,7 +794,16 @@ export class State extends HTMLElementBase implements IStateElement {
         await this._initializeVolume();
         return;
       }
-      await this._initializeBindWebComponent();
+      try {
+        await this._initializeBindWebComponent();
+      } catch (error) {
+        // bind-component の raise も同じ着地に載せる（#257）。とりわけ「初期化に
+        // 失敗した要素の再接続」は bindWebComponent → setInitialState の復旧不能
+        // raise でここへ来る — _initialize の外なので、包まないと素通りする。
+        // 自分で着地済みの fail-fast（_failInitialization / initializeMountScope）は
+        // _failInitializeLoudly の先頭で弾かれ、従来どおり伝播するだけ
+        this._failInitializeLoudly(error);
+      }
       if (this._mountRecord !== null) {
         // v2 マウント: この要素は独立ツリーを持たない（台帳エイリアスが親を指す）。
         // 名前登録・state ロード・$connectedCallback / $watch / $streams は行わない
@@ -922,6 +963,10 @@ export class State extends HTMLElementBase implements IStateElement {
         // 初期化前に剥がされた（bind-component の await 中に shadow が張り直された等）。
         // 名前登録も token も stream もまだ無く、state も作れないので後始末は不要。
         // ここで createState すると "_state is not initialized" で CE リアクションが落ちる
+        // 初期化に失敗したルートなら「このルートノードにルートは来ない」の印も落とす
+        //（#257）。印が持続すると、取り除いて作り直す復旧の窓で接続したボリュームが
+        // 即座に孤児化する。未登録でも安全な delete なので分岐は要らない
+        clearFailedRootNode(this._rootNode);
         this._rootNode = null;
         return;
       }

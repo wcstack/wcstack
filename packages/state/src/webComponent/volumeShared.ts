@@ -162,6 +162,10 @@ const pendingVolumesByRootNode = new WeakMap<Node, IPendingVolumeRequest[]>();
  * 「ルートは来ない」と確定した時点で保留分を孤児として着地させ、以後に届く保留要求も
  * 同じ着地へ合流させる。D11 の「ルート無し」報告はここには出ない — 検査（State.ts の
  * reportVolumeWithoutRoot）は**要素の存在**で見るので、落ちたルート要素が居る限り黙る。
+ *
+ * 印は**落ちた要素がこの rootNode に居る間だけ**有効（`clearFailedRootNode`）。持続させると、
+ * この PR が案内する復旧（壊れた要素を取り除いて作り直す）と矛盾する: 外してから修正版を
+ * 接続するまでの窓で接続したボリュームが即座に孤児化し、正しいルートが来ても採用されない。
  */
 const failedRootNodes = new WeakSet<Node>();
 
@@ -173,6 +177,16 @@ function orphanPendingVolume(request: IPendingVolumeRequest): void {
     `The volume is not at fault: fix the root <wcs-state>.`,
   );
   request.onGrafted(null);
+}
+
+/**
+ * 失敗の印を落とす（#257）。呼び手は State の `disconnectedCallback` ただ 1 つで、
+ * 初期化前に剥がされた要素について呼ぶ — 落ちたルートが DOM から消えた時点で
+ * 「このルートノードにルートは来ない」は成り立たなくなる（作者は取り除いて作り直す）。
+ * 未登録の rootNode でも安全なので、呼び手は「失敗したか」を判定しない。
+ */
+export function clearFailedRootNode(rootNode: Node): void {
+  failedRootNodes.delete(rootNode);
 }
 
 /** ルートの初期化失敗を確定し、保留中のボリュームを孤児として着地させる（State の _failInitializeLoudly が唯一の呼び手）。 */

@@ -39,7 +39,7 @@ import { raiseError } from "../raiseError";
 import { IStateProxy } from "../proxy/types";
 import { addVolumeUpdatedCallback, createVolumeChroot, IPendingVolumeRequest, IVolumeUpdatedCallback, queuePendingVolume, recordGraftedSlot, setVolumeGraftHandler } from "./volumeShared";
 
-export { createVolumeChroot, drainPendingVolumes, failPendingVolumes, getVolumeUpdatedCallbacks, isPathUnderReservedVolume, reserveVolumeSlot } from "./volumeShared";
+export { clearFailedRootNode, createVolumeChroot, drainPendingVolumes, failPendingVolumes, getVolumeUpdatedCallbacks, isPathUnderReservedVolume, reserveVolumeSlot } from "./volumeShared";
 export type { IVolumeUpdatedCallback } from "./volumeShared";
 import { assertValidWatchPath } from "../watch/processWatchDeclaration";
 import { addVolumeWatchEntries } from "../watch/watchRegistry";

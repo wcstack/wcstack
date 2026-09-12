@@ -248,7 +248,7 @@ There is **one state tree per root**. To split state across modules, mount a vol
 <div data-wcs="textContent: cart.total"></div>
 ```
 
-A volume may declare getters, `$watch`, `$listKeys`, `$updatedCallback`, and `$connectedCallback`/`$disconnectedCallback` — all relative to its mount path. `$errorCallback` is root-only (a binding failure is reported once, to the tree's owner). Load order does not matter (a volume connected before the root is grafted when the root registers). Mount paths must be static (`*`, `$`, `#`, `@` are rejected). Changing `mount` after the element has initialized is not supported: the change is ignored with a console warning — remove the element and add a new one with the desired path.
+A volume may declare getters, `$watch`, `$listKeys`, `$updatedCallback`, and `$connectedCallback`/`$disconnectedCallback` — all relative to its mount path. `$errorCallback` is root-only (a binding failure is reported once, to the tree's owner). Load order does not matter (a volume connected before the root is grafted when the root registers). If the root `<wcs-state>` fails to initialize, the volumes already waiting for it settle with a report of their own instead of waiting forever — remove the failed root element, and a corrected one adopts the volumes as usual. Mount paths must be static (`*`, `$`, `#`, `@` are rejected). Changing `mount` after the element has initialized is not supported: the change is ignored with a console warning — remove the element and add a new one with the desired path.
 
 > **Migrating from v1's named states:** `<wcs-state name="cart">` + `total@cart` becomes `<wcs-state mount="cart">` + `cart.total`. In v2 the `name` attribute fails fast and `@` in a path is a parse error, each with this exact guidance. Migration table: [docs/state-mount-design.md](../../docs/state-mount-design.md) §9.
 
@@ -2794,7 +2794,7 @@ Subpath entries for tooling: `@wcstack/state/parser` (the `data-wcs` parser as a
 | Property / Method | Description |
 |---|---|
 | `initializePromise` | Resolves when state is fully initialized — and also **when initialization fails**, so one element's failure never blocks the rest of the page's bindings; the error is delivered on `connectedCallbackPromise` |
-| `connectedCallbackPromise` | Resolves once `connectedCallback` has completed (state loaded, `$connectedCallback` run) — what the testing recipes await. **Rejects** (with the original error, unwrapped) if the element fails to initialize: an invalid `$` declaration, an unloadable source, the SSR data merge, or a second root `<wcs-state>` on the same root node. The failure is also reported once with `console.error` |
+| `connectedCallbackPromise` | Resolves once `connectedCallback` has completed (state loaded, `$connectedCallback` run) — what the testing recipes await. **Rejects** (with the original error, unwrapped) if the element fails to initialize: an invalid `$` declaration, an unloadable source, the SSR data merge, a `bind-component` or DCC setup failure, an element detached while its source was still loading, or a second root `<wcs-state>` on the same root node. The failure is also reported once with `console.error` |
 | `listPaths` | Set of paths used in `for` loops |
 | `getterPaths` | Set of paths defined as getters |
 | `setterPaths` | Set of paths defined as setters |

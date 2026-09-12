@@ -17,15 +17,24 @@
  *  - `initialized` は false のまま（切断時の後始末が未ロードの state を触らないため）。
  *  - 失敗した rootNode の `getBindingsReady` は reject する（即時解決のままだと
  *    @wcstack/server の `waitForReady` が空のページを ready と報告する）。
- *  - 同じ rootNode の保留中ボリュームは孤児として着地する（ルート登録が来ない ＝
- *    `drainPendingVolumes` が呼ばれないので、放置すると永久未解決になる）。
+ *  - **失敗の時点で待機していた**同じ rootNode のボリュームは孤児として着地する
+ *    （ルート登録が来ない ＝ `drainPendingVolumes` が呼ばれないので、放置すると永久
+ *    未解決になる）。「ルートは来ない」の印は**落ちた要素が居る間だけ**有効で、要素を
+ *    取り除けば修正版のルートが通常どおりボリュームを採用する。
  *  - 失敗した要素は復旧不能。`setInitialState` は無言の no-op ではなく throw する。
  *
  * 載る throw 元は「`_initialize` が投げうるもの全部」— コードから導いてある:
  * `_state` セッタの宣言検証 7 種（$recursion / $commandTokens / $eventTokens / $on /
  * $streams / $listKeys / $watch）、`_loadStateFromSource` の 4 種（src の拡張子・json の
  * パース・内包スクリプト・外部モジュール — 後ろ 3 つは components.State.test.ts 側）、
- * SSR データの merge、`setStateElement` の「1 rootNode 1 ツリー」違反。
+ * SSR データの merge、ロード中に剥がされた要素の `rootNode` getter、`setStateElement` の
+ * 「1 rootNode 1 ツリー」違反（**別の**要素が 2 本目に来た形 — 同じ要素の再登録は冪等で、
+ * ロード中の remove → append は拒否しない）。
+ *
+ * `connectedCallback` が `_initialize` より前に await する 2 つ（`_initializeDCC` /
+ * `_initializeBindWebComponent`）の raise も同じ着地に載る。自分で promise を解決してから
+ * raise する fail-fast（`_failInitialization` / `initializeMountScope` の catch）だけは
+ * 従来どおり素通しで、こちらは connectedCallbackPromise を**解決**する側のクラスに留まる。
  *
  * 対照として、`_failInitialization`（`name=` などの設定エラー）は従来どおり
  * connectedCallbackPromise を**解決**することも固定する。両者は別クラスの失敗で、
@@ -199,6 +208,10 @@ describe("#257 初期化失敗: 2 本目のルート <wcs-state>", () => {
       expect(second.initialized).toBe(false);
       // ゾンビの実体（この it が「何を残しているか」の記録）
       expect(typeof (second as unknown as { __state: unknown }).__state).toBe("object");
+      // 文言は「2 本目は登録されないまま残る・取り除け」まで伝えること（作者の次の一手。
+      // 「1 root 1 ツリー」だけでは、生きているように見える 2 本目をどうすべきか分からない）
+      expect(String(errorSpy.mock.calls[0][1])).toMatch(/stays unregistered/);
+      expect(String(errorSpy.mock.calls[0][1])).toMatch(/remove it/);
       expect(errorSpy.mock.calls.length).toBe(1);
     } finally {
       errorSpy.mockRestore();
@@ -363,6 +376,47 @@ describe("#257 初期化失敗: 同居するボリューム", () => {
       host.remove();
     }
   });
+  it("ルートを外してから接続したボリュームは、修正版のルートが採用すること（復旧の窓）", async () => {
+    // この PR が案内する復旧は「壊れた要素を取り除いて作り直す」。失敗の印を rootNode に
+    // **持続**させると、外してから修正版を接続するまでの窓で接続したボリュームが即座に
+    // 孤児化し、正しいルートが来ても二度と採用されない（第 1 ラウンドの実測: 接ぎ木は
+    // 起きず `i18n.lang` は undefined のまま）。印は「落ちたルート要素がまだ居る間」だけ
+    // 有効で、その要素が切断された時点で消える。
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const host = document.createElement(uniqueTag("initfail-vol-c"));
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML = `<wcs-state json='{invalid'></wcs-state>`;
+    document.body.appendChild(host);
+    const brokenRoot = shadowRoot.querySelector("wcs-state") as State;
+    try {
+      await expect(brokenRoot.connectedCallbackPromise).rejects.toThrow(/Failed to initialize state/);
+      expect(errorSpy.mock.calls.length).toBe(1);
+      // 作者の復旧操作: 壊れたルートを取り除く
+      brokenRoot.remove();
+      await flush();
+      // 窓の中で接続したボリューム（旧: ここで孤児化した）
+      const volumeElement = document.createElement("wcs-state") as State;
+      volumeElement.setAttribute("mount", "i18n");
+      shadowRoot.appendChild(volumeElement);
+      volumeElement.setInitialState({ lang: "en" });
+      // 修正版のルート
+      const fixedRoot = document.createElement("wcs-state") as State;
+      fixedRoot.setAttribute("json", '{"count":1}');
+      shadowRoot.insertBefore(fixedRoot, shadowRoot.firstChild);
+      await expect(fixedRoot.connectedCallbackPromise).resolves.toBeUndefined();
+      await expect(volumeElement.connectedCallbackPromise).resolves.toBeUndefined();
+      await flush();
+      let lang: unknown = undefined;
+      fixedRoot.createState("readonly", (state: any) => { lang = state["i18n.lang"]; });
+      expect(lang).toBe("en");
+      // 孤児の報告も D11 の「ルート無し」報告も出ない（出たルートの診断 1 件のまま）
+      expect(errorSpy.mock.calls.length).toBe(1);
+    } finally {
+      errorSpy.mockRestore();
+      host.remove();
+    }
+  });
+
 });
 
 describe("#257 対照: _failInitialization は従来どおり解決する", () => {
@@ -387,6 +441,185 @@ describe("#257 対照: _failInitialization は従来どおり解決する", () =
     } finally {
       errorSpy.mockRestore();
       host.remove();
+    }
+  });
+});
+
+describe("#257 回帰防止: 健全な要素の DOM 移動は拒否しないこと", () => {
+  /**
+   * 着地は `setStateElement` の「1 rootNode 1 ツリー」raise も拾う。第 1 ラウンドは
+   * それが**同じ要素の再登録**にも当たっていた: ロード完了前の remove → append
+   * （DOM の移動・行プールの張り直し・shadow の組み直し）は `_initialize` を 2 本
+   * 同時に走らせ、後から登録に来たほうが**自分自身**に対して raise していた。
+   * 実測（修理前）: 健全な `<wcs-state json='{"count":1}'>` の remove → append で
+   * `connectedCallbackPromise` が rejected ＋ `console.error` 1 件（描画は "1" で
+   * 成立しているのに、待ち手だけが失敗を受け取る）。
+   *
+   * 直したのは `setStateElement` 側（同一インスタンスの再登録は冪等 —
+   * `setStateElementAlias` と同じ規範）。「切断時に登録を解除する」案は効かない —
+   * 実測で remove の時点ではまだ**何も登録されていない**（登録は進行中の
+   * `_initialize` の続きで起きる）ので、解除しても後から来る 2 本目は同じ raise に当たる。
+   * 別インスタンスの 2 本目に対する raise は従来どおり（上の describe が固定）。
+   */
+  it("ロード中の remove → append（markup ソース）は resolve のまま・診断 0 件であること", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const host = document.createElement(uniqueTag("initfail-move"));
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML =
+      `<wcs-state json='{"count":1}'></wcs-state>` +
+      `<p id="count" data-wcs="textContent: count"></p>`;
+    document.body.appendChild(host);
+    const stateEl = shadowRoot.querySelector("wcs-state") as State;
+    try {
+      stateEl.remove();
+      shadowRoot.insertBefore(stateEl, shadowRoot.firstChild);
+      await expect(stateEl.connectedCallbackPromise).resolves.toBeUndefined();
+      await flush();
+      expect(errorSpy.mock.calls.length).toBe(0);
+      expect(stateEl.initialized).toBe(true);
+      expect((shadowRoot.querySelector("#count") as HTMLElement).textContent).toBe("1");
+    } finally {
+      errorSpy.mockRestore();
+      host.remove();
+    }
+  });
+
+  it("ロード中の remove → append（API セット）も同じであること", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const host = document.createElement(uniqueTag("initfail-move-api"));
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML =
+      `<wcs-state></wcs-state>` +
+      `<p id="count" data-wcs="textContent: count"></p>`;
+    document.body.appendChild(host);
+    const stateEl = shadowRoot.querySelector("wcs-state") as State;
+    try {
+      stateEl.setInitialState({ count: 1 });
+      stateEl.remove();
+      shadowRoot.insertBefore(stateEl, shadowRoot.firstChild);
+      await expect(stateEl.connectedCallbackPromise).resolves.toBeUndefined();
+      await flush();
+      expect(errorSpy.mock.calls.length).toBe(0);
+      expect(stateEl.initialized).toBe(true);
+      expect((shadowRoot.querySelector("#count") as HTMLElement).textContent).toBe("1");
+    } finally {
+      errorSpy.mockRestore();
+      host.remove();
+    }
+  });
+});
+
+describe("#257 初期化失敗: ロード中に切断された要素", () => {
+  it("rootNode が解決できない失敗（宣言もソースも正しい形）も同じ着地に載ること", async () => {
+    // `_initialize` の最後の行 `setStateElement(this.rootNode!, this)` — 切断済みなら
+    // rootNode getter が raise する。宣言もソースも正しいのに `_initialize` が投げる
+    // 唯一の形で、着地の列挙に入れ忘れやすい（第 1 ラウンドの列挙漏れ）
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const host = document.createElement(uniqueTag("initfail-rootnode"));
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML = `<wcs-state></wcs-state>`;
+    document.body.appendChild(host);
+    const stateEl = shadowRoot.querySelector("wcs-state") as State;
+    try {
+      stateEl.remove();
+      await flush();
+      stateEl.setInitialState({ a: 1 });
+      await expect(stateEl.connectedCallbackPromise).rejects.toThrow(/State rootNode is not available/);
+      await expect(stateEl.initializePromise).resolves.toBeUndefined();
+      expect(stateEl.initialized).toBe(false);
+      expect(errorSpy.mock.calls.length).toBe(1);
+    } finally {
+      errorSpy.mockRestore();
+      host.remove();
+    }
+  });
+});
+
+describe("#257 初期化失敗: _initialize より前の raise（bind-component / DCC）", () => {
+  /**
+   * `_initialize` を包む catch だけでは足りない。`connectedCallback` はその前に
+   * `_initializeDCC` と `_initializeBindWebComponent` も await していて、そこからの
+   * raise は**着地を経ずに** connectedCallback の外へ出ていた（カスタム要素リアクションは
+   * 戻り値の Promise を捨てるので、受け手はどこにも居ない ＝ 無言）。
+   *
+   * 一番効くのはこの PR 自身が作った形: 初期化に失敗した `bind-component` 要素を
+   * 付け直すと、`bindWebComponent` → `setInitialState` の「復旧不能」raise に当たる。
+   * この呼び出しは `_initialize` の外なので、第 1 ラウンドでは診断 0 件だった（実測）。
+   *
+   * 一方、**自分で着地を済ませた** fail-fast（`_failInitialization` と
+   * `initializeMountScope` の catch）はそのまま伝播させる。あちらは
+   * 「ページの残りは生きている設定ミス」で connectedCallbackPromise を解決する側の
+   * クラスであり、ここで loud な着地に載せ替えると意味論が変わる（最後の it が固定）。
+   */
+  it("失敗済みの bind-component 要素の再接続は、例外の素通しではなく着地になること", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const tag = uniqueTag("initfail-bc");
+    customElements.define(tag, class extends HTMLElement {
+      state: Record<string, any> = { $watch: { a: 1 } };
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" });
+        this.shadowRoot!.innerHTML = `<wcs-state bind-component="state"></wcs-state>`;
+      }
+    });
+    const component = document.createElement(tag);
+    document.body.appendChild(component);
+    const stateEl = component.shadowRoot!.querySelector("wcs-state") as State;
+    try {
+      await expect(stateEl.connectedCallbackPromise).rejects.toThrow(/must be a function/);
+      expect(errorSpy.mock.calls.length).toBe(1);
+      errorSpy.mockClear();
+      stateEl.remove();
+      await flush();
+      component.shadowRoot!.appendChild(stateEl);
+      await flush();
+      await flush();
+      // 旧（第 1 ラウンド）: 0 件（throw が connectedCallback の外へ素通り）
+      expect(errorSpy.mock.calls.length).toBe(1);
+      expect(String(errorSpy.mock.calls[0][1])).toMatch(/failed to initialize/);
+    } finally {
+      errorSpy.mockRestore();
+      component.remove();
+    }
+  });
+
+  it("DCC のロード失敗も診断付きで reject すること", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const host = document.createElement(uniqueTag("initfail-dcc"));
+    host.setAttribute("data-wc-definition", "x-dcc-broken");
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML = `<wcs-state></wcs-state>`;
+    document.body.appendChild(host);
+    const stateEl = shadowRoot.querySelector("wcs-state") as State;
+    try {
+      await expect(stateEl.connectedCallbackPromise).rejects.toThrow(/DCC: No state source found/);
+      await expect(stateEl.initializePromise).resolves.toBeUndefined();
+      expect(errorSpy.mock.calls.length).toBe(1);
+    } finally {
+      errorSpy.mockRestore();
+      host.remove();
+    }
+  });
+
+  it("対照: 自分で着地する fail-fast（配線なし Light DOM の bind-component）は解決のまま・診断 0 件であること", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const tag = uniqueTag("initfail-plain");
+    customElements.define(tag, class extends HTMLElement {
+      state: Record<string, any> = { message: "hi" };
+    });
+    const component = document.createElement(tag);
+    component.innerHTML = `<wcs-state bind-component="state"></wcs-state>`;
+    document.body.appendChild(component);
+    const stateEl = component.querySelector("wcs-state") as State;
+    try {
+      // _failInitialization は connectedCallbackPromise を解決してから raise する。
+      // 二重着地させないための印（_initializationLanded）が効いていることの固定でもある
+      await expect(stateEl.connectedCallbackPromise).resolves.toBeUndefined();
+      await expect(stateEl.initializePromise).resolves.toBeUndefined();
+      expect(errorSpy.mock.calls.length).toBe(0);
+    } finally {
+      errorSpy.mockRestore();
+      component.remove();
     }
   });
 });

@@ -37,6 +37,21 @@ describe('stateElementByName', () => {
     expect(() => setStateElement(document, fake2)).toThrow(/already registered/);
   });
 
+  it('同じ要素の再登録は冪等で、エラーにも buildBindings の再実行にもならないこと', async () => {
+    // #257: ロード完了前の remove → append は `_initialize` を 2 本同時に走らせるので、
+    // 後から登録に来たほうが**自分自身**に対して「2 本目の <wcs-state>」と raise していた。
+    // DOM の移動は正常な操作であり、拒否してはいけない（別インスタンスの raise は上の it）
+    const fake = { name: 'custom' } as any;
+    setStateElement(document, fake);
+    await new Promise(resolve => queueMicrotask(resolve));
+    vi.mocked(buildBindings).mockClear();
+
+    expect(() => setStateElement(document, fake)).not.toThrow();
+    expect(getStateElement(document)).toBe(fake);
+    await new Promise(resolve => queueMicrotask(resolve));
+    expect(buildBindings).not.toHaveBeenCalled();
+  });
+
   it('解除後は再登録できること', () => {
     const fake1 = { name: 'custom' } as any;
     const fake2 = { name: 'custom' } as any;

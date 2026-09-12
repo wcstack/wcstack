@@ -248,7 +248,7 @@
 <div data-wcs="textContent: cart.total"></div>
 ```
 
-ボリュームは getter・`$watch`・`$listKeys`・`$updatedCallback`・`$connectedCallback`/`$disconnectedCallback` を宣言できます（すべてマウントパス相対）。`$errorCallback` はルート専用です（バインディングの失敗はツリーの所有者へ 1 回だけ報告されます）。読み込み順は自由です（ルートより先に接続されたボリュームは、ルートの登録時に接ぎ木されます）。マウントパスは静的パスのみです（`*`・`$`・`#`・`@` は不可）。初期化後に `mount` 属性を変更することはできません — 変更は console 警告付きで無視されます。要素を取り除き、望むパスで新しい要素を追加してください。
+ボリュームは getter・`$watch`・`$listKeys`・`$updatedCallback`・`$connectedCallback`/`$disconnectedCallback` を宣言できます（すべてマウントパス相対）。`$errorCallback` はルート専用です（バインディングの失敗はツリーの所有者へ 1 回だけ報告されます）。読み込み順は自由です（ルートより先に接続されたボリュームは、ルートの登録時に接ぎ木されます）。ルートの `<wcs-state>` が初期化に失敗した場合、その時点で待機していたボリュームは永久に待たずに自分の報告を出して決着します —— 失敗したルート要素を取り除けば、修正版のルートが通常どおりボリュームを採用します。マウントパスは静的パスのみです（`*`・`$`・`#`・`@` は不可）。初期化後に `mount` 属性を変更することはできません — 変更は console 警告付きで無視されます。要素を取り除き、望むパスで新しい要素を追加してください。
 
 > **v1 の名前付き状態からの移行:** `<wcs-state name="cart">` + `total@cart` は `<wcs-state mount="cart">` + `cart.total` になります。v2 では `name` 属性は fail-fast し、パス中の `@` は parse error です（どちらもこの誘導文付き）。移行の対応表: [docs/state-mount-design.md](../../docs/state-mount-design.md) §9。
 
@@ -2786,7 +2786,7 @@ bootstrapState();
 | プロパティ / メソッド | 説明 |
 |---|---|
 | `initializePromise` | 状態の完全な初期化時に解決される Promise —— **初期化に失敗したときも解決**します（1 要素の失敗がページの他のバインディングを止めないため）。エラーは `connectedCallbackPromise` に届きます |
-| `connectedCallbackPromise` | `connectedCallback` の完了（state のロードと `$connectedCallback` の実行）で解決される Promise — テストのレシピが await するもの。初期化に失敗した場合（`$` 宣言の不正・ソースのロード失敗・SSR データの merge 失敗・同じ root node に 2 本目のルート `<wcs-state>`）は**元のエラーのまま reject** し、`console.error` にも 1 件報告されます |
+| `connectedCallbackPromise` | `connectedCallback` の完了（state のロードと `$connectedCallback` の実行）で解決される Promise — テストのレシピが await するもの。初期化に失敗した場合（`$` 宣言の不正・ソースのロード失敗・SSR データの merge 失敗・`bind-component` / DCC の設定失敗・ロード中に切断された要素・同じ root node に 2 本目のルート `<wcs-state>`）は**元のエラーのまま reject** し、`console.error` にも 1 件報告されます |
 | `listPaths` | `for` ループで使用されるパスの Set |
 | `getterPaths` | getter として定義されたパスの Set |
 | `setterPaths` | setter として定義されたパスの Set |

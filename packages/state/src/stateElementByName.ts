@@ -126,6 +126,16 @@ export function setStateElement(rootNode: Node, element: IStateElement | null): 
     }
   } else {
     // 登録の場合
+    if (existing === element) {
+      // 同じ要素の再登録は冪等（setStateElementAlias と同じ規範）。ロード完了前の
+      // remove → append（DOM の移動・行プールの張り直し・shadow の組み直し）は
+      // `_initialize` を 2 本同時に走らせるので、後から登録に来たほうが**自分自身**を
+      // 「2 本目の <wcs-state>」と誤診する。DOM の移動は正常な操作であり、拒否すると
+      // 健全なページの connectedCallbackPromise が reject される（#257）。
+      // 切断時に登録を解除する案では直らない — 実測で、切断の時点ではまだ何も
+      // 登録されていない（登録は進行中の `_initialize` の続きで起きる）。
+      return;
+    }
     if (existing === undefined) {
       // 初めてルートノードに登録する場合
       // enable-ssr 属性があり、サーバーサイドでない場合はハイドレーション
@@ -187,7 +197,9 @@ export function setStateElement(rootNode: Node, element: IStateElement | null): 
       // マウント（mount= / ホスト配線の bind-component）でツリーに載せる
       raiseError(
         `A state tree is already registered on this root — one <wcs-state> per root in v2. ` +
-        `Mount additional states onto the tree instead: <wcs-state mount="...">.`,
+        `This second element stays unregistered: it holds no tree, renders nothing, and is never ` +
+        `cleaned up — remove it. Mount additional states onto the tree instead: ` +
+        `<wcs-state mount="...">.`,
       );
     }
     stateElementByNode.set(rootNode, element);
