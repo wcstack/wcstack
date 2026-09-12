@@ -8,18 +8,20 @@
  *    （cache/types.ts の `generation` / State の `stateGeneration`）。
  *  - **経路情報の作り直し（X7 の内部半分）**: セッタは `_listPaths` / `_elementPaths` / `_pathSet` を
  *    クリアするが、それらを登録したバインドは生き残る（再セットは DOM を作り直さない）。
- *    クリアのあと、生きているバインドぶんの `setPathInfo` をやり直して作り直す。
+ *    クリアのあと、生きているバインドぶんの `setPathInfo` をやり直して作り直す。前世代の再帰が
+ *    生やした具体パスだけは除く — その除外は**世代を跨いで累積する**（State の `_generatedPaths`）。
  *
  * クリア自体はやめられない。あれは `forgetGeneration` が外した静的辺を「行が作り直された
  * ときに登録し直させる」自己修復になっていて、残すと行まるごと置換で DOM と state が
  * 乖離する（下の「行まるごと置換」の it がその側）。
  *
- * **この修理が触っていない半分**（別課題として切り出し・末尾の describe が現状を固定する）:
+ * **この修理が触っていない半分**（別課題として切り出し・末尾の 3 つの describe が現状を固定する）:
  *  - 再セットはバインドを再適用しないので、画面は第 1 世代のテキストのまま（読みだけが新しい）。
  *  - `<wcs-state mount="…">` への再セットはセッタまで届くが、接ぎ木がルートの木へ複製している
  *    ため、ページ全体が第 1 世代のまま（どちらの要素に世代印を入れても直らない）。
+ *  - 第 2 世代で消えたバインド先パスは診断されない（パスごとに 1 回だけ検査する台帳のため）。
  */
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import type { State } from "../src/components/State";
 import { flush, makeMount, node, read, write, writeError } from "./helpers/recursionTestUtils";
@@ -46,6 +48,34 @@ const absOf = (stateEl: State, path: string): any =>
 /** 静的依存グラフの辺（source → targets）。 */
 const edgesOf = (stateEl: State): [string, string[]][] =>
   Array.from((stateEl as any).staticDependency.entries()) as [string, string[]][];
+
+/** 再帰レジストリが実体化済みの具体パス（遅延実体化の外からの覗き口）。 */
+const materialized = (stateEl: State): string[] =>
+  Array.from(((stateEl as any).recursionRegistry?.materializedPaths ?? []) as Iterable<string>).sort();
+
+/** 合計の再帰 getter を持つ state。 */
+const recursiveTotals = (nodes: any): any => {
+  const state: any = { nodes, $recursion: { "nodes.*": "children.*" } };
+  Object.defineProperty(state, "nodes.**.total", {
+    get(this: any) {
+      return this["nodes.**.value"] +
+        this.$getAll("nodes.**.children.*.total").reduce((a: number, b: number) => a + b, 0);
+    },
+    enumerable: true, configurable: true,
+  });
+  return state;
+};
+
+/** 深さ 2 の木（total は 77 / 70 / 8）。 */
+const tree = (): any[] => [node(7, [node(70)]), node(8)];
+
+/** 親行と子行の両方が生成パスを名指すページ（深い行バインドを含む）。 */
+const DEEP_ROW_HTML =
+  `<div><template data-wcs="for: nodes">` +
+  `<span class="t" data-wcs="textContent: nodes.*.total"></span>` +
+  `<template data-wcs="for: nodes.*.children">` +
+  `<b class="c" data-wcs="textContent: nodes.*.children.*.total"></b></template>` +
+  `</template></div>`;
 
 // ---------------------------------------------------------------------------
 // A: 世代スタンプ（X10）
@@ -144,26 +174,63 @@ describe("再セットの世代スタンプ: 旧世代のキャッシュ値を�
     host.remove();
   });
 
-  it("宣言の検証で throw する再セットは世代を進めない（要素は丸ごと旧世代に留まる）", async () => {
-    // 世代を進める位置は「旧世代の後始末の後・`__state` 差し替えの前」。純検証はその前なので、
-    // 落ちた再セットでは世代もキャッシュも据え置きになり、旧世代の読みがそのまま生きる。
-    const { host, stateEl } = await mount(summing("items", [1, 2], []));
-    expect(read(stateEl, (s: any) => s.sum)).toBe(3);
-    const generation = stateEl.stateGeneration;
+  // 宣言の検証は 2 群に割れる（実測）。`value` しか読まない 4 つは世代を進める**前**に走るので、
+  // そこで throw した再セットは要素を丸ごと旧世代に残す。`$streams` / `$watch` は前へ出せず
+  // （前者は新しい value から集め直した getterPaths を、後者はクリア後の依存グラフを要る —
+  // 理由は `_state` セッタのコメント）、throw したときには既に世代が進んでいる。
+  // 6 つの宣言ぜんぶに 1 本ずつ置く。どれか 1 本で一般命題を書かない。
 
-    expect(() => stateEl.setInitialState(
-      Object.assign(summing("items", [5, 6], []), { $commandTokens: [""] }),
-    )).toThrow();
-    expect(stateEl.stateGeneration, "世代は進まない").toBe(generation);
-    expect(read(stateEl, (s: any) => s.sum), "旧世代の値がそのまま読める").toBe(3);
+  /** 世代更新より前に走る検証と、その「確実に落ちる形」。 */
+  const beforeGeneration: Array<[string, Record<string, unknown>]> = [
+    ["$recursion（アンカーを 2 つ宣言）", { $recursion: { "a.*": "b.*", "c.*": "d.*" } }],
+    ["$commandTokens（空文字の名前）", { $commandTokens: [""] }],
+    ["$eventTokens（空文字の名前）", { $eventTokens: [""] }],
+    ["$listKeys（要素パスの綴り）", { $listKeys: { "items.*": "id" } }],
+  ];
+  for (const [label, declaration] of beforeGeneration) {
+    it(`${label} で throw する再セットは世代を進めない（要素は丸ごと旧世代に留まる）`, async () => {
+      const { host, stateEl } = await mount(summing("items", [1, 2], []));
+      expect(read(stateEl, (s: any) => s.sum)).toBe(3);
+      const generation = stateEl.stateGeneration;
 
-    // 正当な再セットは従来どおり進む
-    stateEl.setInitialState(summing("items", [5, 6], []));
-    await flush();
-    expect(stateEl.stateGeneration).toBe(generation + 1);
-    expect(read(stateEl, (s: any) => s.sum)).toBe(11);
-    host.remove();
-  });
+      expect(() => stateEl.setInitialState(
+        Object.assign(summing("items", [5, 6], []), declaration),
+      )).toThrow();
+      expect(stateEl.stateGeneration, "世代は進まない").toBe(generation);
+      expect(read(stateEl, (s: any) => s.items), "旧世代の state のまま").toEqual([1, 2]);
+      expect(read(stateEl, (s: any) => s.sum), "旧世代の値がそのまま読める").toBe(3);
+
+      // 正当な再セットは従来どおり進む
+      stateEl.setInitialState(summing("items", [5, 6], []));
+      await flush();
+      expect(stateEl.stateGeneration).toBe(generation + 1);
+      expect(read(stateEl, (s: any) => s.sum)).toBe(11);
+      host.remove();
+    });
+  }
+
+  /** 世代更新より後でしか検証できないものと、その「確実に落ちる形」。 */
+  const afterGeneration: Array<[string, Record<string, unknown>]> = [
+    ["$streams（source が関数でない）", { $streams: { s: { source: 1 } } }],
+    ["$watch（ハンドラが関数でない）", { $watch: { items: 1 } }],
+  ];
+  for (const [label, declaration] of afterGeneration) {
+    it(`${label} で throw する再セットは、世代が進んだ後に落ちる（新しい state が入ったまま）`, async () => {
+      // 「直っていない」ではなく、実際の着地を書き留めるテスト。この 2 つを世代更新より前へ
+      // 動かせない理由は `_state` セッタのコメント（実測つき）。
+      const { host, stateEl } = await mount(summing("items", [1, 2], []));
+      expect(read(stateEl, (s: any) => s.sum)).toBe(3);
+      const generation = stateEl.stateGeneration;
+
+      expect(() => stateEl.setInitialState(
+        Object.assign(summing("items", [5, 6], []), declaration),
+      )).toThrow();
+      expect(stateEl.stateGeneration, "世代は進んでいる").toBe(generation + 1);
+      expect(read(stateEl, (s: any) => s.items), "新しい state が入っている").toEqual([5, 6]);
+      expect(read(stateEl, (s: any) => s.sum), "読みも新しい世代で評価される").toBe(11);
+      host.remove();
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -258,6 +325,48 @@ describe("再セット後の経路情報: 生きているバインドぶんを�
     const afterWrite = new Map(edgesOf(stateEl));
     expect(afterWrite.get("nodes.*"), "行が作り直されて辺が戻る").toContain("nodes.*.total");
     expect(afterWrite.get("nodes.*.children.*")).toContain("nodes.*.children.*.total");
+    host.remove();
+  });
+
+  it("生成パスの除外は世代を跨いで持続する: 読みを挟まない 3 連続の再セットで静的辺が戻らない", async () => {
+    // 除外を「直前の世代が実体化したぶん」にすると、2 回目の再セットでは直前の世代が何も実体化
+    // していない ＝ 除外が空になり、第 1 世代の行バインドの登録から `nodes.*` → `nodes.*.total`
+    // （と深い行の `nodes.*.children.*` → `…children.*.total`）だけが復活していた。アクセサは
+    // 生えていないので、辺だけが実体の無い具体パスを指す。main はこの辺を持たない。
+    const { host, shadowRoot, stateEl } = await mount(recursiveTotals(tree()), DEEP_ROW_HTML);
+    expect(txt(shadowRoot, ".t")).toEqual(["77", "8"]);
+    expect(txt(shadowRoot, ".c")).toEqual(["70"]);
+
+    for (let i = 1; i <= 3; i++) {
+      stateEl.setInitialState(recursiveTotals(tree()));
+      await flush();
+      const edges = new Map(edgesOf(stateEl));
+      expect(materialized(stateEl), `${i} 回目: まだ何も実体化していない`).toEqual([]);
+      expect(edges.get("nodes.*") ?? [], `${i} 回目`).not.toContain("nodes.*.total");
+      expect(edges.get("nodes.*.children.*") ?? [], `${i} 回目（深い行）`).not.toContain("nodes.*.children.*.total");
+      expect(edges.get("nodes") ?? [], `${i} 回目: アンカーのリスト辺は残る`).toContain("nodes.*");
+    }
+
+    // 除外したままでも自己修復する: 行が作り直されれば辺は戻り、表示も集計も追従する
+    expect(writeError(stateEl, (s: any) => { s.nodes = [node(11, [node(110)]), node(12)]; })).toBe("");
+    await flush();
+    expect(txt(shadowRoot, ".t")).toEqual(["121", "12"]);
+    expect(txt(shadowRoot, ".c")).toEqual(["110"]);
+    expect(new Map(edgesOf(stateEl)).get("nodes.*")).toContain("nodes.*.total");
+    host.remove();
+  });
+
+  it("読みを挟む 3 連続の再セットでは、実体化のたびに辺が戻る（除外は実体化を邪魔しない）", async () => {
+    const { host, stateEl } = await mount(recursiveTotals(tree()), DEEP_ROW_HTML);
+    for (let i = 1; i <= 3; i++) {
+      stateEl.setInitialState(recursiveTotals(tree()));
+      await flush();
+      expect(read(stateEl, (s: any) => s.$getAll("nodes.*.total", [])), `${i} 回目`).toEqual([77, 8]);
+      const edges = new Map(edgesOf(stateEl));
+      expect(edges.get("nodes.*"), `${i} 回目`).toContain("nodes.*.total");
+      expect(edges.get("nodes.*.children.*"), `${i} 回目（深い行）`).toContain("nodes.*.children.*.total");
+      expect(materialized(stateEl), `${i} 回目`).toEqual(["nodes.*.children.*.total", "nodes.*.total"]);
+    }
     host.remove();
   });
 
@@ -409,6 +518,81 @@ describe("既知の穴（#258 から切り出し）: 再セットはバインド
     // 読みは新しい世代（`upper` は #258 の世代スタンプで直った側 — 旧挙動は "A"）
     expect(read(stateEl, (s: any) => [s.title, s.upper, s.$getAll("items.*.n", [])]))
       .toEqual(["b", "B", [9, 8]]);
+    host.remove();
+  });
+});
+
+
+describe("既知の穴（#258 から切り出し）: ボリュームへの再セットは無言で効かない", () => {
+  // DEFECT: `<wcs-state mount="i18n">` への `setInitialState` はボリューム要素のセッタまで届く
+  //         （その要素自身の読みは新しい state を返す）が、接ぎ木はロード完了時の一度きりなので、
+  //         ルートの木は第 1 世代のデータのまま・DOM も第 1 世代のまま・例外も警告も出ない。
+  //         世代印はどちらの要素に入れても効かない（ルートの世代は動いておらず、ルートの
+  //         キャッシュは正しく第 1 世代を返している）。
+  //         should be: 再接ぎ木するか、明確に拒否する（#258 の E — 今回は実装しない）。
+  let volumeSeq = 0;
+  const volumeState = (lang: string, title: string): any => ({
+    lang,
+    dict: { en: { title }, ja: { title } },
+    get t() { return (this as any).dict[(this as any).lang]; },
+  });
+
+  it("ボリューム要素の読みだけが新しくなり、ルートの木と DOM は第 1 世代のまま", async () => {
+    const host = document.createElement(`genreset-vol-${volumeSeq++}`);
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML =
+      `<wcs-state mount="i18n"></wcs-state>` +
+      `<wcs-state json='{"count":1}'></wcs-state>` +
+      `<h1 id="title" data-wcs="textContent: i18n.t.title"></h1>` +
+      `<p id="lang" data-wcs="textContent: i18n.lang"></p>`;
+    document.body.appendChild(host);
+    const volumeEl = shadowRoot.querySelector("wcs-state[mount]") as State;
+    const rootEl = shadowRoot.querySelector("wcs-state:not([mount])") as State;
+    volumeEl.setInitialState(volumeState("en", "Hello"));
+    await rootEl.connectedCallbackPromise;
+    await volumeEl.connectedCallbackPromise;
+    await (rootEl.constructor as typeof State).getBindingsReady(shadowRoot);
+    await flush();
+    await flush();
+    expect(shadowRoot.querySelector("#title")!.textContent).toBe("Hello");
+    expect(shadowRoot.querySelector("#lang")!.textContent).toBe("en");
+
+    // 例外も警告も出ない（無言）
+    volumeEl.setInitialState(volumeState("ja", "第二世代"));
+    await flush();
+    await flush();
+
+    expect(shadowRoot.querySelector("#title")!.textContent).toBe("Hello"); // should be: "第二世代"
+    expect(shadowRoot.querySelector("#lang")!.textContent).toBe("en");     // should be: "ja"
+    expect(read(rootEl, (s: any) => s.i18n.lang), "ルートの木は第 1 世代のまま").toBe("en");
+    expect(read(rootEl, (s: any) => s.i18n.dict.en.title)).toBe("Hello");
+    // 届いていないのではない — ボリューム要素自身の読みは新しい世代になっている
+    expect(read(volumeEl, (s: any) => s.lang), "ボリューム要素の読みだけが新しい").toBe("ja");
+    host.remove();
+  });
+});
+
+describe("既知の穴（#258 から切り出し）: 再セットで消えたバインド先パスは診断されない", () => {
+  // DEFECT: `checkDeclaredPath` は要素ごと・パスごとに 1 回しか走らない（pathDiagnostics.ts の
+  //         `alreadyReported`）。第 1 世代で検査済みのパスは、第 2 世代の state から消えても
+  //         報告されない。経路情報の作り直し（`_rebuildPathInfo`）が `setPathInfo` をやり直しても
+  //         同じで、main と同じ挙動になる（作り直しは診断を増やしも減らしもしない）。
+  //         should be: 世代ごとに検査し直す（別課題）。
+  it("第 2 世代で消えた user.name のバインドが無言のまま（wcs/binding-path-missing が出ない）", async () => {
+    const { host, stateEl } = await mount(
+      { user: { name: "a" } },
+      `<div><span id="n" data-wcs="textContent: user.name"></span></div>`,
+    );
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      stateEl.setInitialState({ user: { nmae: "b" } } as any);
+      await flush();
+      await flush();
+      expect(warn.mock.calls.map((args) => String(args[0])).join(" | "))
+        .not.toContain("wcs/binding-path-missing"); // should be: 第 2 世代でも報告する
+    } finally {
+      warn.mockRestore();
+    }
     host.remove();
   });
 });

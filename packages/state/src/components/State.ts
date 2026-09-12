@@ -158,6 +158,16 @@ export class State extends HTMLElementBase implements IStateElement {
    */
   private _pathRegistrations: Map<string, { bindingType: BindingType; source: PathInfoSource }> =
     new Map<string, { bindingType: BindingType; source: PathInfoSource }>();
+  /**
+   * これまでのどの世代かで再帰レジストリが実体化した具体パス（`nodes.*.total` 等）の累積。
+   * 再セットのたびに `forgetGenerated` の戻り値を足し、`_rebuildPathInfo` の除外に使う。
+   *
+   * **直前の 1 世代ぶんでは足りない**（issue #258・第 2 ラウンドで実測）。除外を「直前の世代が
+   * 実体化したぶん」にすると、間に読みを挟まない 2 回目の再セットでは直前の世代が何も実体化して
+   * いないので除外が空になり、第 1 世代の行バインドの登録から静的辺（`nodes.*` → `nodes.*.total`）
+   * だけが復活する — アクセサは生えていないので、辺が実体の無い具体パスを指したままになる。
+   */
+  private _generatedPaths: Set<string> = new Set<string>();
   // `$watch` 宣言の監視対象パス。宣言が無ければ null（setByAddress のゼロコスト契約）
   private _watchPaths: ReadonlySet<string> | null = null;
   private _version = 0;
@@ -214,26 +224,41 @@ export class State extends HTMLElementBase implements IStateElement {
   private set _state(value: IState) {
     // 旧世代のデータ。再帰の生成物（辺・キャッシュ）を忘れるとき、台帳を辿る起点になる
     const previousState = this.__state;
-    // 順序: **純検証をすべて** → 旧世代の後始末 → 差し替え → 再収集。
-    // `value` しか読まない検証（$recursion の宣言とレジストリの構築・$commandTokens・$eventTokens）は
-    // 何かを書き換える前に全部済ませる。どれかが throw すれば要素は丸ごと旧世代に留まる
-    // （旧 state・旧レジストリ・旧世代の辺とキャッシュ・トークン名がそのまま）。後始末を先に
-    // すると「レジストリは新・own 生成アクセサと辺は消えた・`__state` は旧」という半端な状態で
-    // throw する（第 4 サイクルの再検証で実測 — 別アンカー＋不正な $commandTokens で旧世代の
-    // 集計が無言で消えた）。
+    // 順序: **`value` しか読まない検証** → 旧世代の後始末 → 世代を進める → 差し替え → 再収集。
+    // ここに置けるのは 4 つ（$recursion の宣言とレジストリの構築・$commandTokens・$eventTokens・
+    // $listKeys）。この 4 つのどれかが throw すれば要素は丸ごと旧世代に留まる（旧 state・旧レジストリ・
+    // 旧世代の辺とキャッシュ・トークン名・世代がそのまま）。後始末を先にすると「レジストリは新・
+    // own 生成アクセサと辺は消えた・`__state` は旧」という半端な状態で throw する（第 4 サイクルの
+    // 再検証で実測 — 別アンカー＋不正な $commandTokens で旧世代の集計が無言で消えた）。
+    //
+    // **残る 2 つはここへ出せない**（issue #258・第 2 ラウンドで実測）:
+    //  - `$streams` は `getterPaths` / `setterPaths` との衝突を検査する。その 2 つは下で**新しい
+    //    value から集め直す**ので、ここで走らせると旧世代の集合に対して判定する（実測: 旧 state だけが
+    //    持つ getter `foo` と新 state の `$streams.foo` が衝突と報告された — 正しい答えは衝突なし）。
+    //  - `$watch` は宣言ごとに `setPathInfo` で依存グラフへ登録する。`_pathSet.clear()` より前に
+    //    呼べば登録は消され、`checkDeclaredPath` は旧 `__state` を見る（実測: 新 state にだけある
+    //    `b` が `wcs/watch-path-missing` と報告された）。
+    // したがってこの 2 つで throw する再セットは**世代が進んだ後**に落ちる（`__state` は新しく、
+    // watch / stream の起動だけが未了）。6 つそれぞれの着地は
+    // `__tests__/integration.stateGenerationReset.test.ts` が 1 本ずつ固定している。
     const recursionSpec = processRecursionDeclaration(value);
     const recursionRegistry = recursionSpec === null ? null : new RecursionRegistry(recursionSpec, value);
     const commandTokenNames = processCommandTokensDeclaration(value);
     const eventTokenNames = processEventTokensDeclaration(value);
+    // $listKeys の検証は `value` しか読まない（要素にも旧世代にも触れない）ので、ここで済ませる。
+    // 反映は下の所定位置のまま（クリアと再収集の並びは変えない）。
+    const listKeys = processListKeysDeclaration(value);
     // 旧世代の生成アクセサ（own）・それを指す依存辺・評価結果のキャッシュを忘れてから
     // 差し替える（recursion/generation.ts）。own の生成アクセサは、同じオブジェクトを再セットする
     // ときに下の `getStateInfo` が `getterPaths` へ拾い直す前に消えていなければならない。
-    // 前世代の再帰レジストリが生やした具体パス。経路情報の作り直し（`_rebuildPathInfo`）から
-    // 除くために受け取る — この世代ではまだ実体化されていないので、辺だけ張り直すと
-    // 次の構造書き込みが「アクセサの無い具体パス」へ降りて落ちる。
-    let forgottenPaths: ReadonlySet<string> = new Set<string>();
+    // 前世代の再帰レジストリが生やした具体パスは `_generatedPaths` に積む。経路情報の作り直し
+    // （`_rebuildPathInfo`）はそこを除く — 新しい世代ではまだ実体化されていないので、辺だけ
+    // 張り直すと次の構造書き込みが「アクセサの無い具体パス」へ降りて落ちる。累積である理由は
+    // フィールドの注記（直前の 1 世代ぶんでは 2 回目の再セットで除外が空になる）。
     if (this._recursionRegistry !== null) {
-      forgottenPaths = this._recursionRegistry.forgetGenerated(this, previousState as IState);
+      for (const path of this._recursionRegistry.forgetGenerated(this, previousState as IState)) {
+        this._generatedPaths.add(path);
+      }
     }
     this._recursionRegistry = recursionRegistry;
     this._commandTokenNames = commandTokenNames;
@@ -278,7 +303,7 @@ export class State extends HTMLElementBase implements IStateElement {
     processStreamsDeclaration(this, value);
     // $listKeys: 宣言が無ければ null のままで、setByAddress のキー突合経路には
     // 一切入らない（docs/state-list-key-design.md §7-1）。再 set で必ず置き換える。
-    this._listKeys = processListKeysDeclaration(value);
+    this._listKeys = listKeys;
     // $recursion: 宣言が無ければ null のままで、読みのホットパスには一切入らない。
     // レジストリの構築・旧世代の後始末・差し替えはセッタの先頭で済んでいる（`__state` の
     // 差し替え前）。ここに残るのはリストパスの登録だけ（`_listPaths.clear()` の後であること）。
@@ -295,11 +320,13 @@ export class State extends HTMLElementBase implements IStateElement {
       // 乖離したまま自己回復しない）。
       this._listPaths.add(recursionSpec.anchorList);
     }
-    // 生きているバインドの経路情報を作り直す（issue #258 の X7）。置き場所の条件は 3 つ:
-    // `_pathSet` / `_listPaths` / `_elementPaths` のクリアより後、`getterPaths` の再収集と
-    // `__state` の差し替えより後（`checkDeclaredPath` が新しい state と getter 集合を見る）、
-    // そして startWatch / startStreams より前（起動時の書き込みが依存ウォークでリストパスを要る）。
-    this._rebuildPathInfo(forgottenPaths);
+    // 生きているバインドの経路情報を作り直す（issue #258 の X7）。置き場所の条件は 2 つ:
+    // `_pathSet` / `_listPaths` / `_elementPaths` のクリアより後、そして startWatch / startStreams
+    // より前（起動時の書き込みが依存ウォークでリストパスを要る）。
+    // 作り直しは診断を連れてこない — `checkDeclaredPath` は要素ごと・パスごとに 1 回で、台帳に
+    // 載っているパスは第 1 世代で検査済みだから（pathDiagnostics.ts の `alreadyReported`）。
+    // 第 2 世代で消えたバインド先が無言になる形は、上と同じテストファイルの末尾が固定している。
+    this._rebuildPathInfo();
     // $watch: 旧宣言のハンドラが残らないよう registry を落としてから新宣言を解析する。
     // _pathSet.clear() の後であること（依存グラフ登録をやり直す必要がある、
     // docs/state-watch-hook-design.md §8）。宣言が無ければ watchPaths は null で、
@@ -1352,16 +1379,16 @@ export class State extends HTMLElementBase implements IStateElement {
    * いるバインドぶんだけ `setPathInfo` をやり直す — `$recursion` のアンカーで既に同じことを
    * している手口を、バインド全体へ広げたもの。
    *
-   * `forgottenPaths`（前世代の生成アクセサの具体パス）は張り直さない。行バインドが名指して
-   * いても、新しい世代ではまだ実体化されていないため（recursion/generation.ts）。読みが
+   * `_generatedPaths`（これまでの世代の生成アクセサの具体パス）は張り直さない。行バインドが
+   * 名指していても、新しい世代ではまだ実体化されていないため（recursion/generation.ts）。読みが
    * 実体化したときに `defineTreeAccessor` が登録し直す。
    *
    * 反復中に `setPathInfo` が台帳へ書き戻す（既存キーの上書きのみで新キーは増えない）ので、
    * 誤解を避けるためスナップショットを取ってから回す。
    */
-  private _rebuildPathInfo(forgottenPaths: ReadonlySet<string>): void {
+  private _rebuildPathInfo(): void {
     for (const [path, registration] of Array.from(this._pathRegistrations)) {
-      if (forgottenPaths.has(path)) {
+      if (this._generatedPaths.has(path)) {
         continue;
       }
       this.setPathInfo(path, registration.bindingType, registration.source);

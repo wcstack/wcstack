@@ -1589,8 +1589,11 @@ describe("欠陥8（X10 / #258）: setInitialState の再セットで getter キ
   // 契約（#258 で修理済み）: キャッシュ項目は「載せた世代」の番号を持ち（cache/types.ts の
   //         `generation`）、`_state` の差し替えごとに世代が 1 つ進む。世代の違う項目はヒット
   //         扱いにせず読みが getter を評価し直すので、値だけでなく**新しい世代の依存辺**も張られる。
-  //         世代を進める位置は「旧世代の後始末（forgetGenerated）の後・`__state` 差し替えの前」で、
-  //         宣言の検証で throw する再セットは世代を進めない（要素は丸ごと旧世代に留まる）。
+  //         世代を進める位置は「旧世代の後始末（forgetGenerated）の後・`__state` 差し替えの前」。
+  //         `value` しか読まない 4 つの宣言検証（`$recursion` / `$commandTokens` / `$eventTokens` /
+  //         `$listKeys`）はその前に走るので、そこで throw した再セットは世代を進めない。`$streams` と
+  //         `$watch` はこの位置より後でしか検証できないため、throw しても世代は進む（6 つの着地は
+  //         integration.stateGenerationReset.test.ts が 1 本ずつ固定している）。
   //         旧挙動: 絶対アドレスは (stateElement, pathInfo, listIndex) で intern され世代を跨いで
   //         同一なので、再セット前に一度でも読んだ getter は旧世代の値を dirty:false のまま
   //         恒久的に返していた。依存集合が変わる再セットでは「新しい依存を書いても動かず、
