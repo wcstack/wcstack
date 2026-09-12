@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createListDiff } from '../src/list/createListDiff';
 import { getListIndexesByList, retireListIndexes, setListIndexesByList } from '../src/list/listIndexesByList';
-import { createListIndex } from '../src/list/createListIndex';
+import { createListIndex, getHomeParentListIndex } from '../src/list/createListIndex';
 
 describe('createListDiff', () => {
   it('calcDiffIndexesで位置が変わった既存要素がchangeIndexSetに含まれること', () => {
@@ -182,6 +182,36 @@ describe('createListDiff', () => {
       expect(rows.map((r) => r.parentListIndex)).toEqual([newParent, newParent]);
 
       setListIndexesByList(list, null);
+    });
+
+    /**
+     * #256: 差分が作る行集合の home は 1 つ。前の行集合を引き継ぐ差分（値照合の経路）で
+     * 新しく鋳造される行は、鋳造時の親ではなくその行集合の home を継ぐ。
+     * 行ごとに home が違う集合ができると、「持ち主が戻ってきたか」の判定が
+     * `listIndexes[0]` に当たった行で変わってしまう。
+     */
+    it('引き継いだ行集合に足した行も、行集合の home を継ぐこと', () => {
+      const listA = [{ v: 1 }, { v: 2 }];
+      const home = createListIndex(null, 0);
+      const rows = createListDiff(home, [], listA).newIndexes;
+      for (const row of rows) {
+        expect(getHomeParentListIndex(row)).toBe(home);
+      }
+
+      // 別の生きた親がその行集合を引き継ぎ、先頭に 1 行足す（値照合の経路）
+      const other = createListIndex(null, 1);
+      const listB = [{ v: 0 }, ...listA];
+      const grown = createListDiff(other, listA, listB).newIndexes;
+
+      expect(grown).toHaveLength(3);
+      expect(grown[1], '引き継いだ行は作り直さない').toBe(rows[0]);
+      expect(grown[2]).toBe(rows[1]);
+      for (const row of grown) {
+        expect(getHomeParentListIndex(row), '足した行の home も元の行集合のもの').toBe(home);
+      }
+
+      setListIndexesByList(listA, null);
+      setListIndexesByList(listB, null);
     });
 
     it('前世代を持たない親の diff は、消費者が握っている前世代の行を退役させること', () => {

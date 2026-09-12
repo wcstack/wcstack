@@ -6,7 +6,7 @@ import {
   reviveListIndexes,
   setListIndexesByList,
 } from '../src/list/listIndexesByList';
-import { createListIndex } from '../src/list/createListIndex';
+import { createListIndex, setListIndexValue } from '../src/list/createListIndex';
 import { createListDiff } from '../src/list/createListDiff';
 
 const createListIndexes = (
@@ -38,7 +38,9 @@ describe('listIndexesByList', () => {
   /**
    * #256: 「生きた共有」と「陳腐化」を分ける。行集合は 1 本の配列につき 1 組のままで、
    * 陳腐化したときだけ**行の identity を保ったまま**新しい親へ付け替える。
-   * 付け替えは一方通行ではない ── 鋳造時の親（home）が生き返ったら home へ戻す。
+   * 付け替えは一方通行ではない ── 行集合を最初に展開した親（home）が戻ってきたら持ち主を返す。
+   * 「戻ってきた」は ListIndex の identity（同じ配列インスタンスを戻した場合）だけでなく、
+   * 行が表しているリスト要素の identity でも判定する（新しい配列で戻した場合）。
    */
   describe('退役した親の付け替え（#256）', () => {
     it('親が生きているなら付け替えない ── 2 つの親が 1 組の行集合を共有すること', () => {
@@ -117,6 +119,116 @@ describe('listIndexesByList', () => {
       // home は退役したまま。生きた first からは動かさない（＝生きた共有の合流）
       expect(resolveListIndexesByList(list, second)).toBe(rows);
       expect(rows[0].parentListIndex).toBe(first);
+
+      setListIndexesByList(list, null);
+    });
+
+    /**
+     * 行を戻す普通のやり方（新しい配列に同じ要素を並べ直す）では、差分が行の ListIndex を
+     * **作り直す**ので home の ListIndex は二度と生き返らない。戻ってきたかどうかは
+     * 行が表しているリスト要素で見る ── 同じ要素を同じ深さで表している生きた行が現れたら、
+     * それが戻ってきた home。
+     */
+    it('home が別の ListIndex として戻ってきたら、同じ要素を表している行へ返すこと', () => {
+      const rowValue = { id: 'row0' };
+      const list = [1];
+      const home = createListIndex(null, 0);
+      const borrower = createListIndex(null, 0);
+      const restored = createListIndex(null, 0); // home と同じ要素・別オブジェクト
+      setListIndexValue(home, rowValue);
+      setListIndexValue(borrower, { id: 'row1' });
+      setListIndexValue(restored, rowValue);
+      const rows = [createListIndex(home, 0)];
+      setListIndexesByList(list, rows);
+      retireListIndexes([home]);
+
+      // 別の要素を表す行は借り手にしかならない
+      expect(resolveListIndexesByList(list, borrower)).toBe(rows);
+      expect(rows[0].parentListIndex).toBe(borrower);
+
+      // 同じ要素を表す行が現れたら、そちらへ返す（行オブジェクトは作り直さない）
+      const got = resolveListIndexesByList(list, restored)!;
+      expect(got).toBe(rows);
+      expect(got[0]).toBe(rows[0]);
+      expect(rows[0].parentListIndex).toBe(restored);
+      expect(rows[0].at(0), 'WeakRef 連鎖も戻ってきた行を指す').toBe(restored);
+
+      // 同じ親からもう一度引いても付け替えない（version を進めない）
+      const version = rows[0].version;
+      expect(resolveListIndexesByList(list, restored)).toBe(rows);
+      expect(rows[0].version).toBe(version);
+
+      // 借り手が引き直しても持ち主は戻らない
+      expect(resolveListIndexesByList(list, borrower)).toBe(rows);
+      expect(rows[0].parentListIndex).toBe(restored);
+
+      setListIndexesByList(list, null);
+    });
+
+    it('要素そのものを作り直した行は別の行なので、持ち主は戻らないこと', () => {
+      const list = [1];
+      const home = createListIndex(null, 0);
+      const borrower = createListIndex(null, 1);
+      const rebuilt = createListIndex(null, 0);
+      setListIndexValue(home, { id: 'row0' });
+      setListIndexValue(borrower, { id: 'row1' });
+      setListIndexValue(rebuilt, { id: 'row0' }); // 同じ中身・別オブジェクト
+      const rows = [createListIndex(home, 0)];
+      setListIndexesByList(list, rows);
+      retireListIndexes([home]);
+      resolveListIndexesByList(list, borrower);
+      expect(rows[0].parentListIndex).toBe(borrower);
+
+      expect(resolveListIndexesByList(list, rebuilt)).toBe(rows);
+      expect(rows[0].parentListIndex, '別の行なので借り手に留まる').toBe(borrower);
+
+      setListIndexesByList(list, null);
+    });
+
+    it('同じ要素を表していても、深さが違えば持ち主にはならないこと', () => {
+      const rowValue = { id: 'row0' };
+      const list = [1];
+      const grandParent = createListIndex(null, 0);
+      const home = createListIndex(grandParent, 0);  // position 1
+      const borrower = createListIndex(grandParent, 1);
+      const shallow = createListIndex(null, 0);      // position 0
+      setListIndexValue(home, rowValue);
+      setListIndexValue(borrower, { id: 'row1' });
+      setListIndexValue(shallow, rowValue);
+      const rows = [createListIndex(home, 0)];
+      setListIndexesByList(list, rows);
+      retireListIndexes([home]);
+      resolveListIndexesByList(list, borrower);
+      expect(rows[0].parentListIndex).toBe(borrower);
+
+      expect(resolveListIndexesByList(list, shallow)).toBe(rows);
+      expect(rows[0].parentListIndex).toBe(borrower);
+
+      setListIndexesByList(list, null);
+    });
+
+    it('退役している要求元は、同じ要素を表していても持ち主にならないこと', () => {
+      const rowValue = { id: 'row0' };
+      const list = [1];
+      const home = createListIndex(null, 0);
+      const borrower = createListIndex(null, 1);
+      const restored = createListIndex(null, 0);
+      setListIndexValue(home, rowValue);
+      setListIndexValue(borrower, { id: 'row1' });
+      setListIndexValue(restored, rowValue);
+      const rows = [createListIndex(home, 0)];
+      setListIndexesByList(list, rows);
+      retireListIndexes([home]);
+      resolveListIndexesByList(list, borrower);
+      retireListIndexes([restored]);
+
+      expect(resolveListIndexesByList(list, restored)).toBe(rows);
+      expect(rows[0].parentListIndex).toBe(borrower);
+
+      // 生き返れば持ち主は戻る
+      reviveListIndexes([restored]);
+      expect(resolveListIndexesByList(list, restored)).toBe(rows);
+      expect(rows[0].parentListIndex).toBe(restored);
 
       setListIndexesByList(list, null);
     });

@@ -27,13 +27,19 @@
  * 消えない印は残らない（`retireListIndexes` / `reviveListIndexes` を `createListDiff` が
  * 対で呼ぶ）。
  *
- * 付け替えは**一方通行ではない**。行は鋳造時の親（`home`）を憶えていて、いったん別の親へ
- * 付け替えたあとでも、その home が生き返ったら home へ戻す。これが無いと「行を削除して
- * 元の配列を戻す」ページで持ち主が隣の行に移ったまま固定され、削除の履歴によって集計が
- * 凍る行が変わってしまう（main は「最初にその配列を展開した行」が持ち主のままなので、
- * home へ戻すことが main と一致する条件そのもの）。
+ * 付け替えは**一方通行ではない**。行は自分の行集合を最初に展開した親（`home`）を憶えていて、
+ * その home が**リストに戻ってきたら**持ち主を返す。これが無いと「行を削除して戻す」ページで
+ * 持ち主が隣の行に移ったまま固定され、削除の履歴によって集計が凍る行が変わってしまう。
+ *
+ * 戻ってきたかどうかは **行オブジェクト（ListIndex）の identity ではなく、行が表している
+ * リスト要素の identity** で判定する。同じ配列インスタンスを戻す綴りなら home そのものが
+ * 生き返るが、行を戻す普通のやり方（新しい配列に同じ要素を並べ直す）では差分が ListIndex を
+ * 作り直すので、ListIndex の identity で見ると home は永久に退役したままになる。
+ * 要素そのものを作り直した行は**別の行**なので home には一致しない。生き残った行が
+ * 1 つでもあればそちらへ戻るが、**全ての行を作り直す**綴り（`map(n => ({...n}))`）では
+ * どの要素も一致せず、退役した親からの付け替えが位置に対して働く。
  */
-import { getHomeParentListIndex, reparentListIndex } from "./createListIndex";
+import { getHomeParentListIndex, isSameListIndexValue, reparentListIndex } from "./createListIndex";
 import { IListIndex } from "./types";
 
 const listIndexesByList = new WeakMap<readonly unknown[], IListIndex[]>();
@@ -84,15 +90,47 @@ function canReparent(oldParent: IListIndex | null, newParent: IListIndex | null)
 }
 
 /**
+ * 要求している親（`newParent`）が、退役した `home` の**行そのもの**か。
+ * 行を戻す普通のやり方（新しい配列に同じ要素を並べ直す）では差分が ListIndex を作り直すので、
+ * home の ListIndex は二度と生き返らない。同じリスト要素を同じ深さで表している生きた行が
+ * 現れたら、それが戻ってきた home である。
+ */
+function isRestoredHome(
+  home: IListIndex | null,
+  oldParent: IListIndex | null,
+  newParent: IListIndex | null,
+): boolean {
+  if (home === null || newParent === null) {
+    return false;
+  }
+  if (newParent === oldParent) {
+    // すでにそこにある（＝毎回 reparent して version を進めない）。
+    return false;
+  }
+  if (!retiredListIndexes.has(home)) {
+    // home が生きているなら「生き返った home」の分岐が扱う。
+    return false;
+  }
+  if (retiredListIndexes.has(newParent) || newParent.position !== home.position) {
+    return false;
+  }
+  return isSameListIndexValue(newParent, home);
+}
+
+/**
  * 行集合の親をどこへ向けるか。`null` なら何もしない。
- * 優先順位は **「生き返った home」＞「陳腐化した親の付け替え」**。
+ * 優先順位は **「生き返った home」＞「戻ってきた home の行」＞「陳腐化した親の付け替え」**。
  */
 function getRepairTarget(first: IListIndex, parentListIndex: IListIndex | null): IListIndex | null {
   const home = getHomeParentListIndex(first);
-  if (home !== null && home !== first.parentListIndex && !retiredListIndexes.has(home)) {
+  const oldParent = first.parentListIndex;
+  if (home !== null && home !== oldParent && !retiredListIndexes.has(home)) {
     return home;
   }
-  return canReparent(first.parentListIndex, parentListIndex) ? parentListIndex : null;
+  if (isRestoredHome(home, oldParent, parentListIndex)) {
+    return parentListIndex;
+  }
+  return canReparent(oldParent, parentListIndex) ? parentListIndex : null;
 }
 
 /**

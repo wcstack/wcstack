@@ -9,6 +9,9 @@ let version = 0;
  */
 let chainGeneration = 0;
 
+/** 値が一度も記録されていない行の印（`undefined` を持つ行と区別するため）。 */
+const NO_VALUE = Symbol("wcs.listIndex.noValue");
+
 class ListIndex implements IListIndex {
   readonly uuid = getUUID();
   parentListIndex: IListIndex | null;
@@ -21,23 +24,33 @@ class ListIndex implements IListIndex {
   private _listIndexes: WeakRef<IListIndex>[] | undefined;
   private _chainGeneration: number;
   /**
-   * 鋳造したときの親（#256）。付け替えても変わらない。退役した親から付け替えたあと、
-   * その親が生き返ったら戻す先になる ── main では「最初にその配列を展開した親」が
-   * 持ち主のままなので、home が main と一致するための基準点でもある。
+   * この行集合を最初に展開した親（`home`・#256）。付け替えても変わらない。退役した親から
+   * 付け替えたあと、その親が戻ってきたら戻す先になる。既存の行集合を引き継ぐ行は、鋳造時の
+   * 親ではなくその行集合の home を継ぐ（`createListDiff`）── 1 組の行集合に home は 1 つ。
    */
   private readonly _homeParentListIndex: IListIndex | null;
+
+  /**
+   * この行が表しているリスト要素（#256）。差分が返すたびに付け直す。
+   * 「同じ行が戻ってきた」を配列インスタンスをまたいで言えるのはこの値だけ ──
+   * 行を戻す普通のやり方（新しい配列に同じ要素を並べ直す）は ListIndex を作り直すので、
+   * 行オブジェクトの identity では判定できない。
+   */
+  private _value: unknown;
 
   /**
    * Creates a new ListIndex instance.
    *
    * @param parentListIndex - Parent list index for nested loops, or null for top-level
    * @param index - Current index value in the loop
+   * @param homeParentListIndex - Parent this row's set belongs to (#256)
    */
-  constructor(parentListIndex: IListIndex | null, index: number) {
+  constructor(parentListIndex: IListIndex | null, index: number, homeParentListIndex: IListIndex | null) {
     this.parentListIndex = parentListIndex;
     this.position = parentListIndex ? parentListIndex.position + 1 : 0;
     this.length = this.position + 1;
-    this._homeParentListIndex = parentListIndex;
+    this._homeParentListIndex = homeParentListIndex;
+    this._value = NO_VALUE;
     this._index = index;
     this._version = version;
     this._chainGeneration = chainGeneration;
@@ -72,9 +85,18 @@ class ListIndex implements IListIndex {
     return this._version;
   }
 
-  /** 鋳造したときの親（付け替えても変わらない）。 */
+  /** 行集合を最初に展開した親（付け替えても変わらない）。 */
   get homeParentListIndex(): IListIndex | null {
     return this._homeParentListIndex;
+  }
+
+  /** この行が表しているリスト要素（未記録なら `NO_VALUE`）。 */
+  get value(): unknown {
+    return this._value;
+  }
+
+  set value(value: unknown) {
+    this._value = value;
   }
 
   /**
@@ -150,7 +172,7 @@ class ListIndex implements IListIndex {
    * 描画済み content も、その行に紐づくバインドしていない DOM の状態も残る。
    * 添字の値は親が変われば変わりうる（並べ替えを伴う置換）ため、`indexes` と WeakRef 連鎖を
    * 捨て、version を進めて子孫の `dirty` を立てる。`_homeParentListIndex` は動かさない
-   * ── 元の親が生き返ったときに戻す先だから。
+   * ── 外した行が戻ってきたときに持ち主を返す先だから。
    */
   reparent(parentListIndex: IListIndex | null): void {
     this.parentListIndex = parentListIndex;
@@ -174,10 +196,15 @@ class ListIndex implements IListIndex {
  *
  * @param parentListIndex - Parent list index for nested loops, or null for top-level
  * @param index - Current index value in the loop
+ * @param homeParentListIndex - Row set this row joins (#256); defaults to the minting parent
  * @returns New IListIndex instance
  */
-export function createListIndex(parentListIndex: IListIndex | null, index: number): IListIndex {
-  return new ListIndex(parentListIndex, index);
+export function createListIndex(
+  parentListIndex: IListIndex | null,
+  index: number,
+  homeParentListIndex: IListIndex | null = parentListIndex,
+): IListIndex {
+  return new ListIndex(parentListIndex, index, homeParentListIndex);
 }
 
 /**
@@ -189,9 +216,24 @@ export function reparentListIndex(listIndex: IListIndex, parentListIndex: IListI
 }
 
 /**
- * 台帳専用の入口その 2。鋳造時の親を読む（`IListIndex` を広げないための cast ──
+ * 台帳専用の入口その 2。行集合の home を読む（`IListIndex` を広げないための cast ──
  * この型は dist/index.d.ts に出るので、内部だけの都合で公開面を増やさない）。
  */
 export function getHomeParentListIndex(listIndex: IListIndex): IListIndex | null {
   return (listIndex as ListIndex).homeParentListIndex;
+}
+
+/** 台帳専用の入口その 3。差分が返した行に、その行が表している要素を憶えさせる（#256）。 */
+export function setListIndexValue(listIndex: IListIndex, value: unknown): void {
+  (listIndex as ListIndex).value = value;
+}
+
+/**
+ * 2 つの行が**同じリスト要素**を表しているか（#256）。
+ * 差分を通っていない行（`hydrateBindings` / `setByAddress` が鋳造する行）は値を持たないので、
+ * 未記録どうしは「同じ」と見なさない ── 値の無い行を取り違えて付け替えないため。
+ */
+export function isSameListIndexValue(listIndex: IListIndex, other: IListIndex): boolean {
+  const value = (listIndex as ListIndex).value;
+  return value !== NO_VALUE && value === (other as ListIndex).value;
 }
