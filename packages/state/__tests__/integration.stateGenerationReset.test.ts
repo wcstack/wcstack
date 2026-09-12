@@ -11,14 +11,14 @@
  *    クリアのあと、生きているバインドぶんの `setPathInfo` をやり直して作り直す。前世代の再帰が
  *    生やした具体パスだけは除く — その除外は**世代を跨いで累積する**（State の `_generatedPaths`）。
  *
- * クリア自体はやめられない。あれは `forgetGeneration` が外した静的辺を「行が作り直された
- * ときに登録し直させる」自己修復になっていて、残すと行まるごと置換で DOM と state が
- * 乖離する（下の「行まるごと置換」の it がその側）。
+ * クリア自体は残す。あれには `forgetGeneration` が外した静的辺を「行が作り直されたときに
+ * 登録し直させる」自己修復が乗っている（「静的な辺 nodes.* → nodes.*.total が戻る」と
+ * 「行まるごと置換」の 2 本がその側）。
  *
  * **この修理が触っていない半分**（別課題として切り出し・末尾の 3 つの describe が現状を固定する）:
  *  - 再セットはバインドを再適用しないので、画面は第 1 世代のテキストのまま（読みだけが新しい）。
  *  - `<wcs-state mount="…">` への再セットはセッタまで届くが、接ぎ木がルートの木へ複製している
- *    ため、ページ全体が第 1 世代のまま（どちらの要素に世代印を入れても直らない）。
+ *    ため、ページ全体が第 1 世代のまま。
  *  - 第 2 世代で消えたバインド先パスは診断されない（パスごとに 1 回だけ検査する台帳のため）。
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
@@ -174,11 +174,11 @@ describe("再セットの世代スタンプ: 旧世代のキャッシュ値を�
     host.remove();
   });
 
-  // 宣言の検証は 2 群に割れる（実測）。`value` しか読まない 4 つは世代を進める**前**に走るので、
-  // そこで throw した再セットは要素を丸ごと旧世代に残す。`$streams` / `$watch` は前へ出せず
-  // （前者は新しい value から集め直した getterPaths を、後者はクリア後の依存グラフを要る —
-  // 理由は `_state` セッタのコメント）、throw したときには既に世代が進んでいる。
-  // 6 つの宣言ぜんぶに 1 本ずつ置く。どれか 1 本で一般命題を書かない。
+  // 宣言の検証は世代更新を挟んで 2 群に割れる（実測）。`value` しか読まない 4 つは世代を進める
+  // **前**に走り、`$on` / `$streams` / `$watch` は後に走る（位置の理由は `_state` セッタのコメント）。
+  // 7 つの宣言ぜんぶを置く（`$on` は raise する 3 つの形ぜんぶ）。どれか 1 本で一般命題を書かない。
+  // 群で共通なのは「世代が進んだか」と「どちらの `__state` が入っているか」だけ。throw の後に
+  // 何が残るかは検証ごとに違うので、B 節の「throw した再セットが残す台帳」3 本が個別に固定する。
 
   /** 世代更新より前に走る検証と、その「確実に落ちる形」。 */
   const beforeGeneration: Array<[string, Record<string, unknown>]> = [
@@ -209,15 +209,18 @@ describe("再セットの世代スタンプ: 旧世代のキャッシュ値を�
     });
   }
 
-  /** 世代更新より後でしか検証できないものと、その「確実に落ちる形」。 */
+  /** 世代更新より後に走る検証と、その「確実に落ちる形」。 */
   const afterGeneration: Array<[string, Record<string, unknown>]> = [
+    ["$on（オブジェクトでない）", { $on: 1 }],
+    ["$on（$eventTokens に無い名前）", { $on: { nope: () => {} } }],
+    ["$on（ハンドラが関数でない）", { $eventTokens: ["tok"], $on: { tok: 1 } }],
     ["$streams（source が関数でない）", { $streams: { s: { source: 1 } } }],
     ["$watch（ハンドラが関数でない）", { $watch: { items: 1 } }],
   ];
   for (const [label, declaration] of afterGeneration) {
     it(`${label} で throw する再セットは、世代が進んだ後に落ちる（新しい state が入ったまま）`, async () => {
-      // 「直っていない」ではなく、実際の着地を書き留めるテスト。この 2 つを世代更新より前へ
-      // 動かせない理由は `_state` セッタのコメント（実測つき）。
+      // 「直っていない」ではなく、実際の着地を書き留めるテスト。この 3 つが世代更新より後に
+      // 走る理由は `_state` セッタのコメント。
       const { host, stateEl } = await mount(summing("items", [1, 2], []));
       expect(read(stateEl, (s: any) => s.sum)).toBe(3);
       const generation = stateEl.stateGeneration;
@@ -231,6 +234,54 @@ describe("再セットの世代スタンプ: 旧世代のキャッシュ値を�
       host.remove();
     });
   }
+
+  it("再セットは世代だけを進め、version は動かさない", async () => {
+    // 世代は `version`（更新サイクルの番号）の流用ではない。増える条件が違うことを固定する。
+    const { host, stateEl } = await mount(summing("items", [1, 2], []));
+    const version = stateEl.version;
+    const generation = stateEl.stateGeneration;
+
+    stateEl.setInitialState(summing("items", [5, 6], []));
+    await flush();
+    expect(stateEl.stateGeneration, "世代は進む").toBe(generation + 1);
+    expect(stateEl.version, "更新サイクルの番号は動かない").toBe(version);
+    host.remove();
+  });
+
+  // 後の 2 つ（`$streams` / `$watch`）が世代更新より後に要る理由。どちらも「新しい value /
+  // 新しい `__state` を見る」という形で観測できる（`_state` セッタのコメントの対応物）。
+
+  it("$streams の衝突検査は新しい value の getter を見る（旧 state だけの getter とは衝突しない）", async () => {
+    const withGetter = (): any => {
+      const state: any = { items: [{ name: "a" }] };
+      Object.defineProperty(state, "foo", { get() { return 1; }, enumerable: true, configurable: true });
+      return state;
+    };
+    const withStream = (): any => ({
+      items: [{ name: "b" }],
+      $streams: { foo: { source: async function* () { yield 1; } } },
+    });
+    const { host, stateEl } = await mount(withGetter());
+
+    expect(() => stateEl.setInitialState(withStream())).not.toThrow();
+    await flush();
+    host.remove();
+  });
+
+  it("$watch の存在検査は新しい __state を見る（新 state にだけあるパスは missing にならない）", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { host, stateEl } = await mount({ a: { deep: 1 } });
+      stateEl.setInitialState({ a: { deep: 1 }, b: { deep: 2 }, $watch: { "b.deep": () => {} } } as any);
+      await flush();
+      await flush();
+      expect(warn.mock.calls.map((args) => String(args[0])).join(" | "))
+        .not.toContain("wcs/watch-path-missing");
+      host.remove();
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -291,6 +342,111 @@ describe("再セット後の経路情報: 生きているバインドぶんを�
     host.remove();
   });
 
+  // 宣言の検証が throw したとき、台帳に何が残るかは検証ごとに違う（A 節の 2 群で共通なのは
+  // 世代と `__state` だけ）。3 つの位置 — クリアより前・クリアと作り直しの間・作り直しより後 —
+  // から 1 本ずつ取って固定する。
+
+  it("throw した再セットが残す台帳（1）$listKeys: 世代更新の前に落ちるので、第 1 世代の台帳がそのまま残る", async () => {
+    const { host, stateEl } = await mount(rowGetterState(["a", "b"]), ROW_HTML);
+
+    expect(() => stateEl.setInitialState(
+      Object.assign(rowGetterState(["x", "y"]), { $listKeys: { "items.*": "id" } }),
+    )).toThrow();
+    expect(Array.from((stateEl as any).listPaths), "クリアまで届いていない").toEqual(["items"]);
+    expect(read(stateEl, (s: any) => s.$getAll("items.*.name", [])), "旧世代の state のまま")
+      .toEqual(["a", "b"]);
+    // main は新しい state を入れた後に落ちるので、ここは ["x", "y"] で台帳は空だった
+    expect(writeError(stateEl, (s: any) => { s.items = [{ name: "p" }, { name: "q" }]; })).toBe("");
+    await flush();
+    expect(read(stateEl, (s: any) => s.$getAll("items.*.upper", []))).toEqual(["P", "Q"]);
+    host.remove();
+  });
+
+  it("throw した再セットが残す台帳（2）$streams: クリアと作り直しの間に落ちるので、台帳は空のまま残る", async () => {
+    const { host, stateEl } = await mount(rowGetterState(["a", "b"]), ROW_HTML);
+
+    expect(() => stateEl.setInitialState(
+      Object.assign(rowGetterState(["x", "y"]), { $streams: { s: { source: 1 } } }),
+    )).toThrow();
+    expect(Array.from((stateEl as any).listPaths), "クリアされたまま").toEqual([]);
+    expect(Array.from((stateEl as any).elementPaths)).toEqual([]);
+    expect(Array.from((stateEl as any)._pathSet)).toEqual([]);
+    expect(read(stateEl, (s: any) => s.$getAll("items.*.name", [])), "新しい state は入っている")
+      .toEqual(["x", "y"]);
+    // 台帳が空なので、その後の全リスト書き込みは依存ウォークで落ちる（main と同じ着地）
+    expect(writeError(stateEl, (s: any) => { s.items = [{ name: "p" }, { name: "q" }]; }))
+      .toContain("Cannot expand dynamic dependency with wildcard for non-list address: items.*");
+    host.remove();
+  });
+
+  it("throw した再セットが残す台帳（3）$watch: 作り直しより後に落ちるので、台帳は作り直されている", async () => {
+    const { host, stateEl } = await mount(rowGetterState(["a", "b"]), ROW_HTML);
+
+    expect(() => stateEl.setInitialState(
+      Object.assign(rowGetterState(["x", "y"]), { $watch: { items: 1 } }),
+    )).toThrow();
+    expect(Array.from((stateEl as any).listPaths), "作り直し済み").toEqual(["items"]);
+    expect(Array.from((stateEl as any).elementPaths)).toEqual(["items.*"]);
+    expect(read(stateEl, (s: any) => s.$getAll("items.*.name", [])), "新しい state が入っている")
+      .toEqual(["x", "y"]);
+    // main では台帳が空のままなので、この書き込みは（2）と同じ形で throw していた
+    expect(writeError(stateEl, (s: any) => { s.items = [{ name: "p" }, { name: "q" }]; })).toBe("");
+    await flush();
+    expect(read(stateEl, (s: any) => s.$getAll("items.*.upper", []))).toEqual(["P", "Q"]);
+    host.remove();
+  });
+
+  it("再セット後の全リスト書き込みが $watch のハンドラまで届く（1 行に 1 回）", async () => {
+    // 作り直しが連れてくる挙動変化。main では台帳が空で、この書き込みが依存ウォークで throw する
+    // ＝ ハンドラは 0 回だった（実測）。ここでは 2 行ぶん 2 回発火する。
+    const calls: Array<[unknown, unknown, number[]]> = [];
+    const watched = (names: string[]): any => {
+      const state = rowGetterState(names);
+      state.$watch = {
+        "items.*.name": (cur: unknown, prev: unknown, ...indexes: number[]) => {
+          calls.push([cur, prev, indexes]);
+        },
+      };
+      return state;
+    };
+    const { host, stateEl } = await mount(watched(["a", "b"]), ROW_HTML);
+    await flush();
+    calls.length = 0;
+
+    stateEl.setInitialState(watched(["x", "y"]));
+    await flush();
+    expect(calls, "再セットそのものでは発火しない").toEqual([]);
+
+    expect(writeError(stateEl, (s: any) => { s.items = [{ name: "p" }, { name: "q" }]; })).toBe("");
+    await flush();
+    expect(calls).toStrictEqual([["p", undefined, [0]], ["q", undefined, [1]]]);
+    host.remove();
+  });
+
+  it("`for` で登録したリストパスは `$watch` の prop 登録に上書きされない（2 回目の再セットでも）", async () => {
+    // 台帳は「いちど `for` で登録されたパスを `for` のまま保つ」（State.setPathInfo）。`$watch` の
+    // 登録（`setPathInfo(path, "prop", "watch")`）は作り直しより後に走るので、保たなければ
+    // 2 回目の再セットで `items` が prop として作り直され、listPaths が空になる。
+    const watchedList = (names: string[]): any => {
+      const state = rowGetterState(names);
+      state.$watch = { items: () => {} };
+      return state;
+    };
+    const { host, stateEl } = await mount(watchedList(["a", "b"]), ROW_HTML);
+
+    stateEl.setInitialState(watchedList(["x", "y"]));
+    await flush();
+    stateEl.setInitialState(watchedList(["v", "w"]));
+    await flush();
+    expect(Array.from((stateEl as any).listPaths)).toEqual(["items"]);
+    expect(Array.from((stateEl as any).elementPaths)).toEqual(["items.*"]);
+
+    expect(writeError(stateEl, (s: any) => { s.items = [{ name: "p" }, { name: "q" }]; })).toBe("");
+    await flush();
+    expect(read(stateEl, (s: any) => s.$getAll("items.*.upper", []))).toEqual(["P", "Q"]);
+    host.remove();
+  });
+
   it("再帰: 再セット＋全リスト書き込みのあと、静的な辺 nodes.* → nodes.*.total が戻る", async () => {
     // 前世代の生成アクセサ（`nodes.*.total`）を指す辺は `forgetGeneration` が外す。行バインドが
     // 名指していても作り直しの対象から外す — 新しい世代ではまだ実体化されていないため。
@@ -329,10 +485,9 @@ describe("再セット後の経路情報: 生きているバインドぶんを�
   });
 
   it("生成パスの除外は世代を跨いで持続する: 読みを挟まない 3 連続の再セットで静的辺が戻らない", async () => {
-    // 除外を「直前の世代が実体化したぶん」にすると、2 回目の再セットでは直前の世代が何も実体化
-    // していない ＝ 除外が空になり、第 1 世代の行バインドの登録から `nodes.*` → `nodes.*.total`
-    // （と深い行の `nodes.*.children.*` → `…children.*.total`）だけが復活していた。アクセサは
-    // 生えていないので、辺だけが実体の無い具体パスを指す。main はこの辺を持たない。
+    // 除外は世代を跨いで累積する（State の `_generatedPaths`）。読みを挟まない 2 回目・3 回目の
+    // 再セットでも、生成アクセサの具体パスを指す静的辺（`nodes.*` → `nodes.*.total` と深い行の
+    // `nodes.*.children.*` → `…children.*.total`）は戻らない。
     const { host, shadowRoot, stateEl } = await mount(recursiveTotals(tree()), DEEP_ROW_HTML);
     expect(txt(shadowRoot, ".t")).toEqual(["77", "8"]);
     expect(txt(shadowRoot, ".c")).toEqual(["70"]);
@@ -371,8 +526,8 @@ describe("再セット後の経路情報: 生きているバインドぶんを�
   });
 
   it("対照: 再セット後の行まるごと置換でも DOM と state が食い違わない", async () => {
-    // 経路情報を「クリアせず持ち越す」案が壊す形。走査を経ていない cold な $resolve は
-    // 別の既知欠陥で拒否されるが、拒否されたぶん DOM も動かないので乖離しない。
+    // 走査を経ていない cold な $resolve は別の既知欠陥で拒否されるが、拒否されたぶん DOM も
+    // 動かないので乖離しない。
     const recursive = (nodes: any): any => {
       const state: any = { nodes, $recursion: { "nodes.*": "children.*" } };
       Object.defineProperty(state, "nodes.**.total", {
@@ -433,7 +588,7 @@ describe("再セットとリスト差分の基準: 第 1 世代の配列が残�
   });
 
   it("入れ子リスト: 再セット後の構造書き込みと集計が DOM まで一致する", async () => {
-    // 基準がずれると壊れるのは親子の連鎖（stateListBaseline.ts のヘッダ）。2 段のリストと
+    // 基準の台帳そのものの説明は stateListBaseline.ts のヘッダ。2 段のリストと
     // 2 段の集計で、再セット後の全置換・葉の書き込み・子リスト差し替えを順に通す。
     const nested = (rows: number[][]): any => {
       const state: any = { groups: rows.map((ns) => ({ items: ns.map((n) => ({ n })) })) };
@@ -527,8 +682,6 @@ describe("既知の穴（#258 から切り出し）: ボリュームへの再セ
   // DEFECT: `<wcs-state mount="i18n">` への `setInitialState` はボリューム要素のセッタまで届く
   //         （その要素自身の読みは新しい state を返す）が、接ぎ木はロード完了時の一度きりなので、
   //         ルートの木は第 1 世代のデータのまま・DOM も第 1 世代のまま・例外も警告も出ない。
-  //         世代印はどちらの要素に入れても効かない（ルートの世代は動いておらず、ルートの
-  //         キャッシュは正しく第 1 世代を返している）。
   //         should be: 再接ぎ木するか、明確に拒否する（#258 の E — 今回は実装しない）。
   let volumeSeq = 0;
   const volumeState = (lang: string, title: string): any => ({
@@ -557,10 +710,16 @@ describe("既知の穴（#258 から切り出し）: ボリュームへの再セ
     expect(shadowRoot.querySelector("#title")!.textContent).toBe("Hello");
     expect(shadowRoot.querySelector("#lang")!.textContent).toBe("en");
 
-    // 例外も警告も出ない（無言）
-    volumeEl.setInitialState(volumeState("ja", "第二世代"));
-    await flush();
-    await flush();
+    // 例外も警告も出ない（無言）。警告が出ないことは spy で固定する（例外はこの it が落ちる）
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      volumeEl.setInitialState(volumeState("ja", "第二世代"));
+      await flush();
+      await flush();
+      expect(warn.mock.calls, "警告は 1 件も出ない").toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
 
     expect(shadowRoot.querySelector("#title")!.textContent).toBe("Hello"); // should be: "第二世代"
     expect(shadowRoot.querySelector("#lang")!.textContent).toBe("en");     // should be: "ja"

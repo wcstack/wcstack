@@ -26,10 +26,10 @@ export interface IStateElement {
   readonly version: number;
   /**
    * state の世代。`_state` の差し替えごとに 1 つ進み、キャッシュ項目の印になる
-   * （cache/types.ts の `generation`）。`version` とは別物 — あちらは更新サイクルの
-   * 番号で、無効化の意味を持たせると無関係な理由で全キャッシュを捨てることになる。
+   * （cache/types.ts の `generation`）。`version`（更新サイクルの番号）とは別のカウンタ。
    * optional なのはテスト用モック互換のため（undefined のモックが載せた項目は
-   * undefined 同士で一致し、従来どおりヒットする）。
+   * undefined 同士で一致し、従来どおりヒットする — `__tests__/proxy.getByAddress.test.ts`
+   * の「キャッシュがある場合はキャッシュを返すこと」が固定する）。
    */
   readonly stateGeneration?: number;
   readonly rootNode: Node;

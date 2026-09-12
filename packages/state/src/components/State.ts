@@ -140,8 +140,10 @@ export class State extends HTMLElementBase implements IStateElement {
   private _pathSet: Set<string> = new Set<string>();
   /**
    * state の世代（issue #258 の X10）。`_state` の差し替えごとに 1 つ進み、キャッシュ項目の
-   * 印になる（cache/types.ts の `generation`）。`_version` を流用しない — あちらは更新
-   * サイクルの番号で、無関係な理由で進んだときに全キャッシュを捨ててしまう。
+   * 印になる（cache/types.ts の `generation`）。`_version`（更新サイクルの番号）とは別の
+   * カウンタで、増える条件が違う — 再セットは世代だけを進める
+   * （`__tests__/integration.stateGenerationReset.test.ts` の
+   * 「再セットは世代だけを進め、version は動かさない」が固定する）。
    */
   private _stateGeneration: number = 0;
   /**
@@ -150,8 +152,8 @@ export class State extends HTMLElementBase implements IStateElement {
    * `_pathSet` / `_listPaths` / `_elementPaths` は再セットでクリアされるが、それらを登録した
    * バインドは生き残る（再セットは DOM を作り直さない）。台帳が空のままだと依存ウォークが
    * `items` をリストとして展開できず、全リスト書き込みが「非リストのアドレスにワイルドカードを
-   * 展開できない」で恒久的に throw する — しかも値は書かれるので、データと表示が乖離したまま
-   * 自己回復しない。クリアのあと、この台帳から作り直す（`_rebuildPathInfo`）。
+   * 展開できない」で恒久的に throw する（値と DOM は追従するが、書き込みのたびに投げ続ける）。
+   * クリアのあと、この台帳から作り直す（`_rebuildPathInfo`）。
    *
    * `source === "internal"`（再帰の生成アクセサ・ボリュームのツリーアクセサ）は載せない。
    * あれらは生やした機構が新しい世代で登録し直す（recursion/registry.ts の `_define`）。
@@ -162,10 +164,10 @@ export class State extends HTMLElementBase implements IStateElement {
    * これまでのどの世代かで再帰レジストリが実体化した具体パス（`nodes.*.total` 等）の累積。
    * 再セットのたびに `forgetGenerated` の戻り値を足し、`_rebuildPathInfo` の除外に使う。
    *
-   * **直前の 1 世代ぶんでは足りない**（issue #258・第 2 ラウンドで実測）。除外を「直前の世代が
-   * 実体化したぶん」にすると、間に読みを挟まない 2 回目の再セットでは直前の世代が何も実体化して
-   * いないので除外が空になり、第 1 世代の行バインドの登録から静的辺（`nodes.*` → `nodes.*.total`）
-   * だけが復活する — アクセサは生えていないので、辺が実体の無い具体パスを指したままになる。
+   * 除外は**世代を跨いで累積する**。読みを挟まない連続した再セットでも、生成アクセサの具体パスを
+   * 指す静的辺（`nodes.*` → `nodes.*.total`）が戻らないことは、
+   * `__tests__/integration.stateGenerationReset.test.ts` の
+   * 「読みを挟まない 3 連続の再セットで静的辺が戻らない」が固定する。
    */
   private _generatedPaths: Set<string> = new Set<string>();
   // `$watch` 宣言の監視対象パス。宣言が無ければ null（setByAddress のゼロコスト契約）
@@ -225,22 +227,22 @@ export class State extends HTMLElementBase implements IStateElement {
     // 旧世代のデータ。再帰の生成物（辺・キャッシュ）を忘れるとき、台帳を辿る起点になる
     const previousState = this.__state;
     // 順序: **`value` しか読まない検証** → 旧世代の後始末 → 世代を進める → 差し替え → 再収集。
-    // ここに置けるのは 4 つ（$recursion の宣言とレジストリの構築・$commandTokens・$eventTokens・
-    // $listKeys）。この 4 つのどれかが throw すれば要素は丸ごと旧世代に留まる（旧 state・旧レジストリ・
-    // 旧世代の辺とキャッシュ・トークン名・世代がそのまま）。後始末を先にすると「レジストリは新・
-    // own 生成アクセサと辺は消えた・`__state` は旧」という半端な状態で throw する（第 4 サイクルの
-    // 再検証で実測 — 別アンカー＋不正な $commandTokens で旧世代の集計が無言で消えた）。
     //
-    // **残る 2 つはここへ出せない**（issue #258・第 2 ラウンドで実測）:
-    //  - `$streams` は `getterPaths` / `setterPaths` との衝突を検査する。その 2 つは下で**新しい
-    //    value から集め直す**ので、ここで走らせると旧世代の集合に対して判定する（実測: 旧 state だけが
-    //    持つ getter `foo` と新 state の `$streams.foo` が衝突と報告された — 正しい答えは衝突なし）。
-    //  - `$watch` は宣言ごとに `setPathInfo` で依存グラフへ登録する。`_pathSet.clear()` より前に
-    //    呼べば登録は消され、`checkDeclaredPath` は旧 `__state` を見る（実測: 新 state にだけある
-    //    `b` が `wcs/watch-path-missing` と報告された）。
-    // したがってこの 2 つで throw する再セットは**世代が進んだ後**に落ちる（`__state` は新しく、
-    // watch / stream の起動だけが未了）。6 つそれぞれの着地は
-    // `__tests__/integration.stateGenerationReset.test.ts` が 1 本ずつ固定している。
+    // 宣言の検証は世代更新を挟んで 2 群に割れる。
+    //  - 世代を進める**前**に走る 4 つ: `$recursion`（宣言とレジストリの構築）・`$commandTokens`・
+    //    `$eventTokens`・`$listKeys`。どれも `value` しか読まないのでここへ置ける。この 4 つで
+    //    throw した再セットは世代を進めず、`__state` も旧世代の読みもそのまま残る。
+    //  - 世代を進めた**後**に走る 3 つ: `$on`（下・`_eventTokenNames` と token registry を要る）・
+    //    `$streams`・`$watch`。この 3 つで throw した再セットは、世代が進んで `__state` も
+    //    新しくなった後に落ちる。
+    // throw の後に何が残るかは検証ごとに違う。散文で言い直さない —
+    // `__tests__/integration.stateGenerationReset.test.ts` が 1 つずつ固定する。
+    //
+    // 後の 2 つがこの位置に要る理由（同じファイルが 1 本ずつ固定する）:
+    //  - `$streams` の衝突検査は**新しい** value から集め直した `getterPaths` / `setterPaths` を
+    //    見る（旧 state だけが持つ getter は、新 state の同名 `$streams` と衝突しない）。
+    //  - `$watch` の存在検査は**新しい** `__state` を見る（新 state にだけあるパスの watch は
+    //    `wcs/watch-path-missing` にならない）。
     const recursionSpec = processRecursionDeclaration(value);
     const recursionRegistry = recursionSpec === null ? null : new RecursionRegistry(recursionSpec, value);
     const commandTokenNames = processCommandTokensDeclaration(value);
@@ -252,9 +254,8 @@ export class State extends HTMLElementBase implements IStateElement {
     // 差し替える（recursion/generation.ts）。own の生成アクセサは、同じオブジェクトを再セットする
     // ときに下の `getStateInfo` が `getterPaths` へ拾い直す前に消えていなければならない。
     // 前世代の再帰レジストリが生やした具体パスは `_generatedPaths` に積む。経路情報の作り直し
-    // （`_rebuildPathInfo`）はそこを除く — 新しい世代ではまだ実体化されていないので、辺だけ
-    // 張り直すと次の構造書き込みが「アクセサの無い具体パス」へ降りて落ちる。累積である理由は
-    // フィールドの注記（直前の 1 世代ぶんでは 2 回目の再セットで除外が空になる）。
+    // （`_rebuildPathInfo`）はそこを除く — 新しい世代ではまだ実体化されていないため。除外が
+    // 世代を跨いで累積することは `_generatedPaths` の注記（と、そこが挙げるテスト）。
     if (this._recursionRegistry !== null) {
       for (const path of this._recursionRegistry.forgetGenerated(this, previousState as IState)) {
         this._generatedPaths.add(path);
@@ -263,10 +264,10 @@ export class State extends HTMLElementBase implements IStateElement {
     this._recursionRegistry = recursionRegistry;
     this._commandTokenNames = commandTokenNames;
     this._eventTokenNames = eventTokenNames;
-    // 世代を進める（issue #258 の X10）。位置は厳密に「旧世代の後始末（forgetGenerated）の
-    // **後**・`__state` の差し替えの**前**」。後始末は旧 state と旧台帳を辿るので、先に進めると
-    // その最中に作られた項目が「新世代の印 × 旧世代のデータ」になる。宣言の検証で throw する
-    // 再セットはここへ到達しないので、要素は丸ごと旧世代に留まる（世代もキャッシュも据え置き）。
+    // 世代を進める（issue #258 の X10）。位置は「旧世代の後始末（forgetGenerated）の**後**・
+    // `__state` の差し替えの**前**」。上の 4 つ（`value` しか読まない検証）で throw した再セットは
+    // ここへ到達しないので、要素は丸ごと旧世代に留まる — 世代も、旧世代のキャッシュが返す読みも
+    // 据え置き（同ファイルの「throw する再セットは世代を進めない」4 本が固定する）。
     this._stateGeneration++;
     this.__state = value;
     // $updatedCallback の有無を state セット時に確定しておく（in はプロトタイプ
@@ -320,12 +321,10 @@ export class State extends HTMLElementBase implements IStateElement {
       // 乖離したまま自己回復しない）。
       this._listPaths.add(recursionSpec.anchorList);
     }
-    // 生きているバインドの経路情報を作り直す（issue #258 の X7）。置き場所の条件は 2 つ:
-    // `_pathSet` / `_listPaths` / `_elementPaths` のクリアより後、そして startWatch / startStreams
-    // より前（起動時の書き込みが依存ウォークでリストパスを要る）。
-    // 作り直しは診断を連れてこない — `checkDeclaredPath` は要素ごと・パスごとに 1 回で、台帳に
-    // 載っているパスは第 1 世代で検査済みだから（pathDiagnostics.ts の `alreadyReported`）。
-    // 第 2 世代で消えたバインド先が無言になる形は、上と同じテストファイルの末尾が固定している。
+    // 生きているバインドの経路情報を作り直す（issue #258 の X7）。置き場所は
+    // `_pathSet` / `_listPaths` / `_elementPaths` のクリアより後、startWatch / startStreams より前。
+    // `setPathInfo` をやり直しても新しい診断は出ない — 第 2 世代で消えたバインド先が無言のまま
+    // であることを `__tests__/integration.stateGenerationReset.test.ts` の末尾が固定する。
     this._rebuildPathInfo();
     // $watch: 旧宣言のハンドラが残らないよう registry を落としてから新宣言を解析する。
     // _pathSet.clear() の後であること（依存グラフ登録をやり直す必要がある、
@@ -1338,9 +1337,11 @@ export class State extends HTMLElementBase implements IStateElement {
   }
 
   setPathInfo(path: string, bindingType: BindingType, source: PathInfoSource = "binding"): void {
-    // 再セットで作り直すための台帳（issue #258 の X7）。同じパスは複数のバインドから何度も
-    // 登録されるので、いちど `for` で登録されたパスは `for` のまま保つ（`for` だけが
-    // `listPaths` / `elementPaths` を決め、依存ウォークの展開と swap 経路を変える）。
+    // 再セットで作り直すための台帳（issue #258 の X7）。同じパスは複数の呼び出し元から登録
+    // されうる（バインド・`$watch` の宣言）ので、いちど `for` で登録されたパスは `for` のまま
+    // 保つ — `listPaths` / `elementPaths` を決めるのは下のとおり `for` だけ。保たない場合に
+    // 何が壊れるかは `__tests__/integration.stateGenerationReset.test.ts` の
+    // 「`for` で登録したリストパスは `$watch` の prop 登録に上書きされない」が固定する。
     if (source !== "internal") {
       const previous = this._pathRegistrations.get(path);
       if (typeof previous === "undefined" || previous.bindingType !== "for") {
@@ -1373,11 +1374,12 @@ export class State extends HTMLElementBase implements IStateElement {
   /**
    * 再セットで消した経路情報を、生き残ったバインドの登録から作り直す（issue #258 の X7）。
    *
-   * `_pathSet.clear()` はやめられない。あのクリアは、`forgetGeneration` が外した静的辺を
-   * 「行が作り直されたときに登録し直させる」自己修復になっている（残すと、再セット後の
-   * 行まるごと置換で DOM と state が食い違ったまま自己回復しない）。消したうえで、生きて
-   * いるバインドぶんだけ `setPathInfo` をやり直す — `$recursion` のアンカーで既に同じことを
-   * している手口を、バインド全体へ広げたもの。
+   * `_pathSet.clear()` は残す。あのクリアには、`forgetGeneration` が外した静的辺を「行が
+   * 作り直されたときに登録し直させる」自己修復が乗っている（辺が戻ることは
+   * `__tests__/integration.stateGenerationReset.test.ts` の
+   * 「静的な辺 nodes.* → nodes.*.total が戻る」が固定する）。消したうえで、生きているバインド
+   * ぶんだけ `setPathInfo` をやり直す — `$recursion` のアンカーで既に同じことをしている手口を、
+   * バインド全体へ広げたもの。
    *
    * `_generatedPaths`（これまでの世代の生成アクセサの具体パス）は張り直さない。行バインドが
    * 名指していても、新しい世代ではまだ実体化されていないため（recursion/generation.ts）。読みが

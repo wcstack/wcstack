@@ -10,7 +10,9 @@ export interface ICacheEntry {
    * 張り直されない（issue #258 の X10）。読みは現世代と一致する項目だけをヒットとする。
    *
    * optional なのはテスト用モック互換のため。世代を持たない state 要素が載せた項目は
-   * `undefined === undefined` でヒットし続ける（既定値は**書かない** — 到達不能な分岐を作らない）。
+   * `undefined === undefined` でヒットし続ける（`__tests__/proxy.getByAddress.test.ts` の
+   * 「キャッシュがある場合はキャッシュを返すこと」が固定する）。既定値は**書かない** —
+   * 到達不能な分岐を作らない。
    */
   readonly generation?: number;
 }
