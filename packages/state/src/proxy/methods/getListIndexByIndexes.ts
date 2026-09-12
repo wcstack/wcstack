@@ -13,7 +13,7 @@
 
 import { createStateAddress } from "../../address/StateAddress";
 import { IPathInfo } from "../../address/types";
-import { getListIndexesByList } from "../../list/listIndexesByList";
+import { resolveListIndexesByList } from "../../list/listIndexesByList";
 import { IListIndex } from "../../list/types";
 import { raiseError } from "../../raiseError";
 import { IStateHandler } from "../types";
@@ -32,7 +32,7 @@ export function getListIndexByIndexes(
     const wildcardParentPathInfo = pathInfo.wildcardParentPathInfos[i];
     const wildcardAddress = createStateAddress(wildcardParentPathInfo, listIndex);
     const tmpValue = getByAddress(target, wildcardAddress, receiver, handler);
-    const listIndexes = getListIndexesByList(tmpValue);
+    const listIndexes = resolveListIndexesByList(tmpValue, listIndex);
     if (listIndexes == null) {
       raiseError(`ListIndexes not found: ${wildcardParentPathInfo.path}`);
     }

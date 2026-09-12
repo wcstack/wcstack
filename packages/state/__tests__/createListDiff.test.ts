@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createListDiff } from '../src/list/createListDiff';
-import { setListIndexesByList } from '../src/list/listIndexesByList';
+import { getListIndexesByList, retireListIndexes, setListIndexesByList } from '../src/list/listIndexesByList';
+import { createListIndex, getHomeParentListIndex } from '../src/list/createListIndex';
 
 describe('createListDiff', () => {
   it('calcDiffIndexesで位置が変わった既存要素がchangeIndexSetに含まれること', () => {
@@ -137,6 +138,110 @@ describe('createListDiff', () => {
 
       setListIndexesByList(listA, null);
       setListIndexesByList(listB, null);
+    });
+  });
+
+  describe('退役した親の付け替え（#256）', () => {
+    it('生きた親どうしは 1 組の行集合を共有すること（親ごとに割れない）', () => {
+      const list = [{ v: 1 }, { v: 2 }];
+      const p0 = createListIndex(null, 0);
+      const p1 = createListIndex(null, 1);
+
+      const d0 = createListDiff(p0, [], list);
+      const d1 = createListDiff(p1, [], list);
+
+      // 1 本の配列につき行集合は 1 組。2 人目の親は先着の行を受け取る（＝ main の挙動）。
+      // 親ごとに私有の行集合を持たせると、同じスロットに 2 本の絶対アドレスができ、
+      // 片方へ書いた値がもう片方から永久に見えなくなる。
+      expect(d1.newIndexes).toBe(d0.newIndexes);
+      expect(getListIndexesByList(list)).toBe(d0.newIndexes);
+      // 先着の親は生きているので親ポインタは動かない
+      expect(d0.newIndexes.map((r) => r.parentListIndex)).toEqual([p0, p0]);
+      expect(d1.deleteIndexSet.size).toBe(0);
+
+      setListIndexesByList(list, null);
+    });
+
+    it('親が退役していたら、同じ行オブジェクトのまま新しい親のもとで使われること', () => {
+      const list = [{ v: 1 }, { v: 2 }];
+      const oldParent = createListIndex(null, 0);
+      const rows = createListDiff(oldParent, [], list).newIndexes;
+
+      // 行オブジェクトだけを作り直す置換（map-spread）で旧行が退役する形。
+      // 実際の経路では nodes の diff が deleteIndexSet に載せる（統合テストが固定）。
+      const newParent = createListIndex(null, 0);
+      retireListIndexes([oldParent]);
+      const again = createListDiff(newParent, list, list);
+
+      // 行は作り直されない（消費者が握っている content が生き残る）
+      expect(again.newIndexes).toBe(rows);
+      expect(again.newIndexes[0]).toBe(rows[0]);
+      expect(again.addIndexSet.size).toBe(0);
+      expect(again.deleteIndexSet.size).toBe(0);
+      // 親ポインタだけが生きた行へ張り替わる（#256 の核心）
+      expect(rows.map((r) => r.parentListIndex)).toEqual([newParent, newParent]);
+
+      setListIndexesByList(list, null);
+    });
+
+    /**
+     * #256: 差分が作る行集合の home は 1 つ。前の行集合を引き継ぐ差分（値照合の経路）で
+     * 新しく鋳造される行は、鋳造時の親ではなくその行集合の home を継ぐ。
+     * 行ごとに home が違う集合ができると、「持ち主が戻ってきたか」の判定が
+     * `listIndexes[0]` に当たった行で変わってしまう。
+     */
+    it('引き継いだ行集合に足した行も、行集合の home を継ぐこと', () => {
+      const listA = [{ v: 1 }, { v: 2 }];
+      const home = createListIndex(null, 0);
+      const rows = createListDiff(home, [], listA).newIndexes;
+      for (const row of rows) {
+        expect(getHomeParentListIndex(row)).toBe(home);
+      }
+
+      // 別の生きた親がその行集合を引き継ぎ、先頭に 1 行足す（値照合の経路）
+      const other = createListIndex(null, 1);
+      const listB = [{ v: 0 }, ...listA];
+      const grown = createListDiff(other, listA, listB).newIndexes;
+
+      expect(grown).toHaveLength(3);
+      expect(grown[1], '引き継いだ行は作り直さない').toBe(rows[0]);
+      expect(grown[2]).toBe(rows[1]);
+      for (const row of grown) {
+        expect(getHomeParentListIndex(row), '足した行の home も元の行集合のもの').toBe(home);
+      }
+
+      setListIndexesByList(listA, null);
+      setListIndexesByList(listB, null);
+    });
+
+    it('前世代を持たない親の diff は、消費者が握っている前世代の行を退役させること', () => {
+      const oldList = [{ v: 1 }];
+      const newList = [{ v: 2 }];
+      const oldParent = createListIndex(null, 0);
+      const before = createListDiff(oldParent, [], oldList).newIndexes;
+
+      const diff = createListDiff(oldParent, oldList, newList);
+
+      expect([...diff.deleteIndexSet]).toEqual(before);
+      expect(diff.addIndexSet.size).toBe(1);
+      expect(diff.changeIndexSet.size).toBe(0);
+
+      setListIndexesByList(oldList, null);
+      setListIndexesByList(newList, null);
+    });
+
+    it('同じ親・同じ配列なら台帳をそのまま返し、行を作り直さないこと', () => {
+      const list = [{ v: 1 }, { v: 2 }];
+      const p0 = createListIndex(null, 0);
+      const rows = createListDiff(p0, [], list).newIndexes;
+
+      const again = createListDiff(p0, list, list);
+
+      expect(again.newIndexes).toBe(rows);
+      expect(again.addIndexSet.size).toBe(0);
+      expect(again.deleteIndexSet.size).toBe(0);
+
+      setListIndexesByList(list, null);
     });
   });
 });

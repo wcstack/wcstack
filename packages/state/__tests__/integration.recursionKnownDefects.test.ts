@@ -554,8 +554,10 @@ describe("欠陥2: 同じ配列インスタンスの共有（DAG・循環）が�
 
   // DEFECT: rootValue は行ごとに [1,1,2,2] になるべき。台帳が配列インスタンスだけを
   //         キーにしていて親の同一性を表せないため、共有配列の ListIndex が
-  //         「最初に走査した親」に別名化する。台帳キーを (配列, 親アドレス) に拡張するか、
-  //         再帰走査に共有ガード（wcs/recursion-shared-list 相当）を新設したら反転する。
+  //         「最初に走査した親」に別名化する。台帳キーを (配列, 親アドレス) に拡張する案は
+  //         #256 で実測して却下した（1 スロットに絶対アドレスが 2 本でき、片方へ書いた値が
+  //         もう片方から永久に見えなくなる）。再帰走査に共有ガード（wcs/recursion-shared-list
+  //         相当）を新設したら反転する。
   it("共有した children 配列では、子スコープから親を読む getter が先着の親に別名化する", async () => {
     const { shared, state } = sharedChildren();
     const { stateEl } = await mount(state);
@@ -748,6 +750,7 @@ describe("欠陥2: 同じ配列インスタンスの共有（DAG・循環）が�
     expect(out.totals).toEqual([11, 12]);
     expect(out.rootValue).toEqual([1, 2]); // 文脈は正しい
     // 親配列が別インスタンスなので台帳も別
+    const nodeLedger = getListIndexesByList(state.nodes)!;
     expect(getListIndexesByList(state.nodes[0].children))
       .not.toBe(getListIndexesByList(state.nodes[1].children));
   });
@@ -1509,21 +1512,19 @@ describe("欠陥6: 描画ありでも、in-place の深い変異を構造変化�
 // （X2 / #256 の担当）、欠陥8 は #258 で修理済みなので反転させてある。
 // ---------------------------------------------------------------------------
 
-describe("欠陥7: 行オブジェクトを作り直す置換（children 配列は引き継ぐ）のあと、その行の集計だけが葉の更新に追従しない（X2 と同根・現状固定）", () => {
+describe("欠陥7（X2 / #256 で修理済み）: 行オブジェクトを作り直す置換（children 配列は引き継ぐ）でも、その行の集計が葉の更新に追従する", () => {
   const forest = () => [NODE(1, [NODE(10, [NODE(100)]), NODE(20)]), NODE(2)];
   const leafWrite = (stateEl: State) =>
     write(stateEl, (s: any) => { s.$resolve("nodes.*.children.*.children.*.value", [0, 0, 0], 500); });
 
-  // DEFECT: 子台帳（listIndexesByList）は配列 identity だけをキーにしているので、行オブジェクトが
-  //         新しくなっても createListDiff の `oldList.length === 0` 分岐が既存の子 ListIndex
-  //         （parentListIndex ＝ **旧行**）をそのまま再利用する。葉の書き込みは縮約エッジ
-  //         （listIndexAtWildcard）で旧行のアドレスを dirty にするため、新行の `nodes.*.total`
-  //         キャッシュだけが古いまま残る。深さ 1 と全深さ合併は追従する。
-  //         should be: depth-0 が [531, 2]。
-  //         露出条件＝置換と葉更新の**間に集計を読む**こと（新行のアドレスにキャッシュが載る）。
-  //         読まなければ新行は未評価のまま次の読みで正しく評価される（ヘッダの罠 (a) と同型）。
-  //         このファイルの it は全部「間に読む」側で書いてある。
-  it("手書きの 3 段 getter: depth-1 と葉の合併は追従するのに depth-0 だけ古い", async () => {
+  // #256 で修理済み（was: depth-0 だけが [131, 2] のまま）。台帳は 1 本の配列につき
+  // 行集合 1 組のままだが、行がぶら下がる親が**退役している**ときだけ、行の identity を
+  // 保ったまま新しい親へ付け替えるようにした。葉の書き込みは縮約エッジ
+  // （listIndexAtWildcard）で親を遡るので、付け替え後は**生きている行**のアドレスが
+  // dirty になり、新行の nodes.*.total キャッシュが落ちる。
+  // 露出条件は「置換と葉更新の**間に集計を読む**こと」（新行のアドレスにキャッシュが載る）
+  // で、このファイルの it は全部その綴り。修理後も同じ綴りのまま固定する。
+  it("手書きの 3 段 getter: depth-0 も depth-1 も葉も追従する", async () => {
     const { stateEl } = await mount(unrollTotals({ nodes: forest() }, 2));
     expect(totalsAt(stateEl, 0)).toEqual([131, 2]);
 
@@ -1535,7 +1536,7 @@ describe("欠陥7: 行オブジェクトを作り直す置換（children 配列�
     await flush();
     expect(valuesAt(stateEl, 2)).toEqual([500]);
     expect(totalsAt(stateEl, 1)).toEqual([510, 20]);
-    expect(totalsAt(stateEl, 0)).toEqual([131, 2]); // should be: [531, 2]
+    expect(totalsAt(stateEl, 0)).toEqual([531, 2]); // Fixed by #256 — was: [131, 2]
   });
 
   it("再帰 getter でも同じ（`**` は縮約エッジの向きを変えない）", async () => {
@@ -1558,7 +1559,7 @@ describe("欠陥7: 行オブジェクトを作り直す置換（children 配列�
     await flush();
     expect(read(stateEl, (s: any) => s.$getAll("nodes.**.value", []))).toEqual([1, 10, 500, 20, 2]);
     expect(totalsAt(stateEl, 1)).toEqual([510, 20]);
-    expect(totalsAt(stateEl, 0)).toEqual([131, 2]); // should be: [531, 2]
+    expect(totalsAt(stateEl, 0)).toEqual([531, 2]); // Fixed by #256 — was: [131, 2]
   });
 
   it("対照: 行オブジェクトを引き継ぐ置換（[...nodes]）なら depth-0 も追従する", async () => {
@@ -1582,6 +1583,73 @@ describe("欠陥7: 行オブジェクトを作り直す置換（children 配列�
     leafWrite(stateEl);
     await flush();
     expect(totalsAt(stateEl, 0)).toEqual([531, 2]);
+  });
+  // #256 の受け入れ条件「描画行の数（MUST KEEP ROW COUNT）」。X2 は $getAll を 1 つも
+  // 書いていないページでも露出していた ── 描画そのものが「置換と葉更新の間の読み」に
+  // なる。ここでは値に加えて **行数** を固定する: 旧行を退役させられない修正は行を
+  // 重複させることがあり、本文だけの表明では見えない。
+  it("描画あり（3 段の入れ子 for）でも depth-0 が追従し、行数は増減しない", async () => {
+    const TREE_FOR =
+      `<div><template data-wcs="for: nodes">` +
+      `<div class="r0"><span class="t0">{{ .total }}</span><span class="v0">{{ .value }}</span>` +
+      `<template data-wcs="for: nodes.*.children">` +
+      `<div class="r1"><span class="t1">{{ .total }}</span><span class="v1">{{ .value }}</span>` +
+      `<template data-wcs="for: nodes.*.children.*.children">` +
+      `<div class="r2"><span class="t2">{{ .total }}</span></div>` +
+      `</template></div></template></div></template></div>` +
+      `<span class="gt" data-wcs="textContent: grandTotal"></span>`;
+    const { shadowRoot, stateEl } = await mount(unrollTotals({ nodes: forest() }, 2), TREE_FOR);
+    const rowCounts = () => [".r0", ".r1", ".r2"].map((sel) => shadowRoot.querySelectorAll(sel).length);
+    const t = (sel: string) =>
+      Array.from(shadowRoot.querySelectorAll(sel)).map((e) => e.textContent!.trim());
+
+    expect(rowCounts(), "初期描画").toEqual([2, 2, 1]);
+    expect(t(".t0")).toEqual(["131", "2"]);
+
+    write(stateEl, (s: any) => { s.nodes = s.nodes.map((row: any) => ({ ...row })); });
+    await flush();
+    expect(rowCounts(), "置換で行は増減しない").toEqual([2, 2, 1]);
+    expect(t(".t0")).toEqual(["131", "2"]);
+
+    write(stateEl, (s: any) => { s.$resolve("nodes.*.children.*.children.*.value", [0, 0, 0], 500); });
+    await flush();
+    expect(rowCounts(), "葉の書き込みでも行は増減しない").toEqual([2, 2, 1]);
+    expect(t(".t2"), "葉は追従する").toEqual(["500"]);
+    expect(t(".t1"), "深さ 1 も追従する").toEqual(["510", "20"]);
+    // Fixed by #256 — was: t0=["131","2"] / gt=["133"]。$getAll を 1 つも書いていない
+    // ページでも露出する形だったので、描画そのものが回帰の門になっている。
+    expect(t(".t0")).toEqual(["531", "2"]);
+    expect(t(".gt")).toEqual(["533"]);
+  });
+
+  // #256 の受け入れ条件「置換のあとも生き続けること（MUST STAY LIVE）」。1 回追従して
+  // 終わりではなく、3 回とも・2 回目の置換をまたいでも追従することを固定する。
+  // was: depth-1 と葉だけが毎回追従し、depth-0 は置換の時点の値に凍って、次の置換が
+  // その時点の正しい値で撮り直してはまた凍る、という周期になっていた。
+  it("置換のあと 3 回書いても、depth-0・depth-1・葉が毎回追従する", async () => {
+    const { stateEl } = await mount(unrollTotals({ nodes: forest() }, 2));
+    expect(totalsAt(stateEl, 0)).toEqual([131, 2]);
+    write(stateEl, (s: any) => { s.nodes = s.nodes.map((row: any) => ({ ...row })); });
+    await flush();
+    expect(totalsAt(stateEl, 0)).toEqual([131, 2]);   // 間に読む（露出条件）
+
+    for (const [v, d1] of [[500, 510], [600, 610], [700, 710]] as [number, number][]) {
+      write(stateEl, (s: any) => { s.$resolve("nodes.*.children.*.children.*.value", [0, 0, 0], v); });
+      await flush();
+      expect(valuesAt(stateEl, 2), String(v)).toEqual([v]);
+      expect(totalsAt(stateEl, 1), String(v)).toEqual([d1, 20]);
+      // Fixed by #256 — was: 毎回 [131, 2]（置換の時点で凍り、自己修復しなかった）。
+      expect(totalsAt(stateEl, 0), String(v)).toEqual([v + 31, 2]);
+    }
+
+    // 2 回目の置換のあとも追従し続ける（修理前はここで撮り直してまた凍っていた）。
+    write(stateEl, (s: any) => { s.nodes = s.nodes.map((row: any) => ({ ...row })); });
+    await flush();
+    expect(totalsAt(stateEl, 0)).toEqual([731, 2]);
+    write(stateEl, (s: any) => { s.$resolve("nodes.*.children.*.children.*.value", [0, 0, 0], 800); });
+    await flush();
+    expect(totalsAt(stateEl, 1)).toEqual([810, 20]);
+    expect(totalsAt(stateEl, 0)).toEqual([831, 2]); // Fixed by #256 — was: [731, 2]
   });
 });
 

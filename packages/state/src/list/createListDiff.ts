@@ -1,6 +1,6 @@
 import "../polyfills";
-import { createListIndex } from "./createListIndex";
-import { getListIndexesByList, setListIndexesByList } from "./listIndexesByList";
+import { createListIndex, getHomeParentListIndex, setListIndexValue } from "./createListIndex";
+import { resolveListIndexesByList, retireListIndexes, reviveListIndexes, setListIndexesByList } from "./listIndexesByList";
 import { IListDiff, IListIndex } from "./types";
 
 const listDiffByOldListByNewList = new WeakMap<readonly unknown[], WeakMap<readonly unknown[], IListDiff>>();
@@ -52,12 +52,16 @@ function isSameList(oldList: readonly unknown[], newList: readonly unknown[]): b
  * earlier diff in the same batch (two replacements in one microtask) may have
  * moved shared indexes toward a list that never got applied, and a cache hit
  * skips recomputation entirely — so every createListDiff return re-aligns.
+ * 同じ走査で、行が表している要素も憶えさせる（#256）。行を戻す普通のやり方は
+ * 配列を作り直すので ListIndex も作り直される ── 「同じ行が戻ってきた」と言えるのは
+ * 行オブジェクトの identity ではなく、この値だけ。
  */
-function syncListIndexes(newIndexes: IListIndex[]): void {
+function syncListIndexes(newIndexes: IListIndex[], newList: readonly unknown[]): void {
   for (let i = 0; i < newIndexes.length; i++) {
     if (newIndexes[i].index !== i) {
       newIndexes[i].index = i;
     }
+    setListIndexValue(newIndexes[i], newList[i]);
   }
 }
 
@@ -76,7 +80,15 @@ export function createListDiff(
   rawNewList: unknown,
 ): IListDiff {
   const diff = computeListDiff(parentListIndex, rawOldList, rawNewList);
-  syncListIndexes(diff.newIndexes);
+  syncListIndexes(
+    diff.newIndexes,
+    (Array.isArray(rawNewList) && rawNewList.length > 0) ? rawNewList : EMPTY_LIST,
+  );
+  // 捨てた行を退役、返した行を復活として記録する。台帳はこれを見て「共有」と「陳腐化」を
+  // 分ける（#256）。両方を毎回の差分で付け直すので、消えない印は残らない。
+  // deleteIndexSet と newIndexes は構造上交わらない。
+  retireListIndexes(diff.deleteIndexSet);
+  reviveListIndexes(diff.newIndexes);
   return diff;
 }
 
@@ -92,7 +104,14 @@ function computeListDiff(
   if (cachedDiff) {
     return cachedDiff;
   }
-  const oldIndexes = getListIndexesByList(oldList) || [];
+  // 台帳は 1 本の配列につき行集合 1 組（listIndexesByList.ts）。親は「行がぶら下がる親が
+  // 退役していたら、この親へ付け替える」ための差し替え先として渡す（#256）。
+  const oldIndexes = resolveListIndexesByList(oldList, parentListIndex) || [];
+  // 1 組の行集合の home は 1 つ（#256）。前の行集合を引き継ぐ差分で新しく鋳造する行は、
+  // 鋳造時の親ではなくその行集合の home を継ぐ ── 行ごとに home が違う集合ができると、
+  // 「持ち主が戻ってきたか」の判定が行の並び順で変わる。
+  const homeParentListIndex = oldIndexes.length > 0 ?
+    getHomeParentListIndex(oldIndexes[0]) : parentListIndex;
   let retValue: IListDiff | undefined;
   try {
     // Early return for empty list
@@ -106,12 +125,12 @@ function computeListDiff(
       };
     }
     // If old list was empty, create all new indexes
-    let newIndexes: IListIndex[] | null = getListIndexesByList(newList);
+    let newIndexes: IListIndex[] | null = resolveListIndexesByList(newList, parentListIndex);
     if (oldList.length === 0) {
       if (newIndexes === null) {
         newIndexes = [];
         for(let i = 0; i < newList.length; i++) {
-          const newListIndex = createListIndex(parentListIndex, i);
+          const newListIndex = createListIndex(parentListIndex, i, homeParentListIndex);
           newIndexes.push(newListIndex);
         }
       }
@@ -161,7 +180,7 @@ function computeListDiff(
       
       if (typeof oldIndex === "undefined") {
         // New element
-        const newListIndex = createListIndex(parentListIndex, i);
+        const newListIndex = createListIndex(parentListIndex, i, homeParentListIndex);
         newIndexes.push(newListIndex);
         addIndexSet.add(newListIndex);
       } else {
