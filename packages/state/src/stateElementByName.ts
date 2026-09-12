@@ -195,10 +195,14 @@ export function setStateElement(rootNode: Node, element: IStateElement | null): 
     if (existing !== undefined) {
       // v2 は 1 rootNode 1 ツリー。2 つ目の <wcs-state> は設定エラー — 追加の状態は
       // マウント（mount= / ホスト配線の bind-component）でツリーに載せる
+      // 文言は実測のゾンビの姿に合わせる（#257 第 3 ラウンド）: 2 本目は state を
+      // 組み上げたまま**登録されない**。データもトークンも $on の購読も生きているのに
+      // 誰もバインドしておらず、_initialized が false なので切断時の後始末も走らない
       raiseError(
         `A state tree is already registered on this root — one <wcs-state> per root in v2. ` +
-        `This second element stays unregistered: it holds no tree, renders nothing, and is never ` +
-        `cleaned up — remove it. Mount additional states onto the tree instead: ` +
+        `This second element stays unregistered: it keeps the state it loaded and its ` +
+        `declarations stay live, but nothing binds to it and disconnecting it runs no ` +
+        `cleanup — remove it. Mount additional states onto the tree instead: ` +
         `<wcs-state mount="...">.`,
       );
     }

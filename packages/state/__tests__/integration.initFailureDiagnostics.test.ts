@@ -17,19 +17,24 @@
  *  - `initialized` は false のまま（切断時の後始末が未ロードの state を触らないため）。
  *  - 失敗した rootNode の `getBindingsReady` は reject する（即時解決のままだと
  *    @wcstack/server の `waitForReady` が空のページを ready と報告する）。
- *  - **失敗の時点で待機していた**同じ rootNode のボリュームは孤児として着地する
- *    （ルート登録が来ない ＝ `drainPendingVolumes` が呼ばれないので、放置すると永久
- *    未解決になる）。「ルートは来ない」の印は**落ちた要素が居る間だけ**有効で、要素を
- *    取り除けば修正版のルートが通常どおりボリュームを採用する。
+ *  - **失敗の時点で待機していた**同じ rootNode のボリュームは孤児として着地し、枠の
+ *    予約も解放される（ルート登録が来ない ＝ `drainPendingVolumes` が呼ばれないので、
+ *    放置すると永久未解決になる）。「ルートは来ない」の印は**落ちた要素が居る間だけ**
+ *    有効。復旧は「落ちたルートを外す → 修正版を接続 → 新しい `<wcs-state mount="…">`
+ *    を足す」で、報告済みのボリューム要素は自分で接ぎ木し直さない。
  *  - 失敗した要素は復旧不能。`setInitialState` は無言の no-op ではなく throw する。
  *
  * 載る throw 元は「`_initialize` が投げうるもの全部」— コードから導いてある:
  * `_state` セッタの宣言検証 7 種（$recursion / $commandTokens / $eventTokens / $on /
  * $streams / $listKeys / $watch）、`_loadStateFromSource` の 4 種（src の拡張子・json の
  * パース・内包スクリプト・外部モジュール — 後ろ 3 つは components.State.test.ts 側）、
- * SSR データの merge、ロード中に剥がされた要素の `rootNode` getter、`setStateElement` の
+ * SSR データの merge、`setStateElement` の
  * 「1 rootNode 1 ツリー」違反（**別の**要素が 2 本目に来た形 — 同じ要素の再登録は冪等で、
  * ロード中の remove → append は拒否しない）。
+ *
+ * 載**らない**もの: ロード中に剥がされた要素。作者のミスが 1 つも無いので初期化失敗では
+ * なく**中断**として扱う（診断も reject も毒化も無し）。第 2 ラウンドはこれを失敗として
+ * 列挙していたが、第 3 ラウンドで撤回した — 下の「#257 中断」2 つの describe が新しい契約。
  *
  * `connectedCallback` が `_initialize` より前に await する 2 つ（`_initializeDCC` /
  * `_initializeBindWebComponent`）の raise も同じ着地に載る。自分で promise を解決してから
@@ -50,6 +55,12 @@ beforeAll(() => {
 });
 
 const flush = (): Promise<void> => new Promise<void>((r) => setTimeout(r));
+
+/** promise の決着を「解決 / 拒否 / 未決着」の 3 値で測る（await でハングしないため）。 */
+const settle = (promise: Promise<unknown>): Promise<string> => Promise.race([
+  promise.then(() => "resolved", () => "rejected"),
+  flush().then(() => flush()).then(() => flush()).then(() => "pending"),
+]);
 
 let seq = 0;
 const uniqueTag = (prefix: string): string => `${prefix}-${++seq}`;
@@ -268,7 +279,11 @@ describe("#257 初期化失敗: getBindingsReady と復旧", () => {
     }
   });
 
-  it("初期化中に切断された要素でも診断は出ること（rootNode が解決不能でも着地が落ちない）", async () => {
+  it("切断された要素でも宣言のエラーは診断されること（中断と失敗の切り分け）", async () => {
+    // 切断**そのもの**（宣言もソースも健全な形）は中断として黙って終わる — 下の
+    //「#257 中断」の 2 つの describe。ここは作者のエラーが実在する形で、要素が DOM に
+    // 居なくても着地は落ちない（_rootNode が null なので ready 台帳と保留ボリュームには
+    // 触らず、診断と reject だけが届く）
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const host = document.createElement(uniqueTag("initfail-detach"));
     const shadowRoot = host.attachShadow({ mode: "open" });
@@ -417,6 +432,104 @@ describe("#257 初期化失敗: 同居するボリューム", () => {
     }
   });
 
+  it("孤児になったボリュームの枠は解放され、修正版のルート ＋ 新しいボリューム要素で復旧が通ること", async () => {
+    // 第 2 ラウンドはここが通らなかった（実測）: 枠の予約に解放経路が無く、ルートを
+    // 直しても新しい <wcs-state mount="i18n"> が `reserveVolumeSlot` の "already mounted" に
+    // 弾かれた。しかもその raise は fail-fast（promise を解決してから投げる）なので
+    // **診断はどこにも出ず**、`i18n.lang` は undefined・描画は空のままだった。
+    // 復旧の連鎖を通しで固定する: 値・描画テキスト・getBindingsReady の 3 つ。
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const host = document.createElement(uniqueTag("initfail-vol-recover"));
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML =
+      `<wcs-state mount="i18n"></wcs-state>` +
+      `<wcs-state></wcs-state>` +
+      `<p id="lang" data-wcs="textContent: i18n.lang"></p>`;
+    document.body.appendChild(host);
+    const orphanedVolume = shadowRoot.querySelector("wcs-state[mount]") as State;
+    const brokenRoot = shadowRoot.querySelector("wcs-state:not([mount])") as State;
+    try {
+      orphanedVolume.setInitialState({ lang: "en" });
+      await flush();
+      await flush();
+      brokenRoot.setInitialState({ items: [], $listKeys: { "items.*": "id" } });
+      await expect(brokenRoot.connectedCallbackPromise).rejects.toThrow(/must be the list path itself/);
+      await expect(orphanedVolume.connectedCallbackPromise).resolves.toBeUndefined();
+      expect(errorSpy.mock.calls.length).toBe(2);
+      errorSpy.mockClear();
+
+      // 作者の復旧: 落ちたルートを外し、修正版を接続し、新しいボリューム要素を足す
+      brokenRoot.remove();
+      await flush();
+      const fixedRoot = document.createElement("wcs-state") as State;
+      fixedRoot.setAttribute("json", '{"count":1}');
+      shadowRoot.insertBefore(fixedRoot, shadowRoot.firstChild);
+      const newVolume = document.createElement("wcs-state") as State;
+      newVolume.setAttribute("mount", "i18n");
+      shadowRoot.appendChild(newVolume);
+      newVolume.setInitialState({ lang: "ja" });
+      await expect(fixedRoot.connectedCallbackPromise).resolves.toBeUndefined();
+      await expect(newVolume.connectedCallbackPromise).resolves.toBeUndefined();
+      // (3) ready: 失敗したルートが置いた reject 済みの ready を、修正版の登録が置き換える
+      await expect(State.getBindingsReady(shadowRoot)).resolves.toBeUndefined();
+      await flush();
+      await flush();
+      // (1) 値
+      let lang: unknown = "unread";
+      fixedRoot.createState("readonly", (state: any) => { lang = state["i18n.lang"]; });
+      expect(lang).toBe("ja");
+      // (2) 描画テキスト
+      expect((shadowRoot.querySelector("#lang") as HTMLElement).textContent).toBe("ja");
+      // 復旧の過程で新しい診断は出ない
+      expect(errorSpy.mock.calls.length).toBe(0);
+    } finally {
+      errorSpy.mockRestore();
+      host.remove();
+    }
+  });
+
+  it("接ぎ木せずに決着したボリュームを取り除くと、同じパスの差し替え要素が接ぎ木できること", async () => {
+    // 切断での解放（#257 第 3 ラウンド）。ロード失敗のボリュームは「1 ボリュームに
+    // 閉じる」隔離で決着し、予約は残る（読みは undefined のまま騒がない — D22）。
+    // その要素が DOM から消えたら予約も解放する: 二度と接ぎ木しない要素が枠を握り
+    // 続けると、差し替えが "already mounted" に弾かれる（しかも無言）。
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const host = document.createElement(uniqueTag("initfail-vol-replace"));
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML =
+      `<wcs-state mount="cfg" json="{invalid"></wcs-state>` +
+      `<wcs-state json='{"count":1}'></wcs-state>` +
+      `<p id="cfg" data-wcs="textContent: cfg.label"></p>`;
+    document.body.appendChild(host);
+    const failedVolume = shadowRoot.querySelector("wcs-state[mount]") as State;
+    const rootElement = shadowRoot.querySelector("wcs-state:not([mount])") as State;
+    try {
+      await expect(rootElement.connectedCallbackPromise).resolves.toBeUndefined();
+      await expect(failedVolume.connectedCallbackPromise).resolves.toBeUndefined();
+      expect(errorSpy.mock.calls.length).toBe(1);
+      expect(String(errorSpy.mock.calls[0][0])).toContain('volume "cfg" failed to load');
+      errorSpy.mockClear();
+
+      failedVolume.remove();
+      await flush();
+      const replacement = document.createElement("wcs-state") as State;
+      replacement.setAttribute("mount", "cfg");
+      shadowRoot.appendChild(replacement);
+      replacement.setInitialState({ label: "ok" });
+      await expect(replacement.connectedCallbackPromise).resolves.toBeUndefined();
+      await flush();
+      await flush();
+      let label: unknown = "unread";
+      rootElement.createState("readonly", (state: any) => { label = state["cfg.label"]; });
+      expect(label).toBe("ok");
+      expect((shadowRoot.querySelector("#cfg") as HTMLElement).textContent).toBe("ok");
+      expect(errorSpy.mock.calls.length).toBe(0);
+    } finally {
+      errorSpy.mockRestore();
+      host.remove();
+    }
+  });
+
 });
 
 describe("#257 対照: _failInitialization は従来どおり解決する", () => {
@@ -509,30 +622,121 @@ describe("#257 回帰防止: 健全な要素の DOM 移動は拒否しないこ�
   });
 });
 
-describe("#257 初期化失敗: ロード中に切断された要素", () => {
-  it("rootNode が解決できない失敗（宣言もソースも正しい形）も同じ着地に載ること", async () => {
-    // `_initialize` の最後の行 `setStateElement(this.rootNode!, this)` — 切断済みなら
-    // rootNode getter が raise する。宣言もソースも正しいのに `_initialize` が投げる
-    // 唯一の形で、着地の列挙に入れ忘れやすい（第 1 ラウンドの列挙漏れ）
+describe("#257 中断: ロード中に剥がされた要素は初期化失敗ではないこと", () => {
+  /**
+   * 第 2 ラウンドは `_initialize` の最後の行（`setStateElement(this.rootNode!, this)`）が
+   * 切断済みの要素で raise する形を「初期化失敗」として列挙し、診断 ＋ reject ＋
+   * 毒化（`_initializeFailed`）に載せた。**これは誤りで、第 3 ラウンドで撤回した**。
+   * 作者のミスは 1 つも無く（state も宣言もソースも健全）、起きたのは DOM 操作による
+   * 中断だけ。付け直せばそのまま初期化できる要素を「失敗」と呼んではいけない。
+   *
+   * 実測（`setInitialState` 直後に remove して戻さない形）:
+   *   main         : { connected: "pending",  errors: 0, reSetThrew: null }
+   *   第 2 ラウンド : { connected: "rejected", errors: 1, reSetThrew: "…so its state cannot be replaced" }
+   *   修正後       : main と同じ（この it が固定する）
+   *
+   * とりわけ効くのが行プール（下の describe）。`connectedCallbackPromise` は
+   * コンストラクタで 1 度だけ作られるので、中断で reject すると**完全に初期化されて
+   * 描画も登録も成立した要素**が永久に失敗を報告し続け、その promise を待つ
+   * @wcstack/server の `renderToString` と @wcstack/testing の `mount` が健全なページで
+   * throw する。直し方は promise の再武装ではなく「この場合は拒否しない」
+   *（`_initialize` が `false` を返し、`connectedCallback` はその接続だけを黙って終える）。
+   */
+  it("戻さない形: 診断 0 件・要素は毒化されず・promise は未解決のまま残ること", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const host = document.createElement(uniqueTag("initfail-rootnode"));
+    const host = document.createElement(uniqueTag("interrupt-gone"));
     const shadowRoot = host.attachShadow({ mode: "open" });
     shadowRoot.innerHTML = `<wcs-state></wcs-state>`;
     document.body.appendChild(host);
     const stateEl = shadowRoot.querySelector("wcs-state") as State;
     try {
+      stateEl.setInitialState({ count: 1 });
       stateEl.remove();
-      await flush();
-      stateEl.setInitialState({ a: 1 });
-      await expect(stateEl.connectedCallbackPromise).rejects.toThrow(/State rootNode is not available/);
-      await expect(stateEl.initializePromise).resolves.toBeUndefined();
+      expect(await settle(stateEl.connectedCallbackPromise)).toBe("pending");
+      expect(errorSpy.mock.calls.length).toBe(0);
       expect(stateEl.initialized).toBe(false);
-      expect(errorSpy.mock.calls.length).toBe(1);
+      // 毒化されていない ＝ 失敗した要素向けの復旧不能 raise に載っていない
+      expect(() => stateEl.setInitialState({ count: 2 })).not.toThrow();
     } finally {
       errorSpy.mockRestore();
       host.remove();
     }
   });
+});
+
+describe("#257 中断: 行プール（ロード中の remove → append）", () => {
+  /**
+   * 3 形とも「付け直した要素は ready を報告し、作者の `$connectedCallback` と
+   * `$streams` の起動は **1 接続につき 1 回**」で固定する。
+   *
+   * 実測（main → 第 2 ラウンド → 修正後）:
+   *  - 素のマウント        : resolved / cc 1 / streams 1  →  同左  →  同左
+   *  - remove の前にソース : resolved / cc 1 / streams 1  →  **rejected** ＋ 診断 1 件  →  resolved / cc 1 / streams 1
+   *  - append の後にソース : resolved / cc 1 / streams 0  →  resolved / **cc 2** / streams 1  →  resolved / cc 1 / streams 1
+   *
+   * 2 回走ったのは、負けた `_initialize` も tail まで到達するから（登録が冪等に弾かれる
+   * だけで、その後の `$connectedCallback` は止まらない）。`startWatch` / `startStreams` に
+   * だけ掛かっていた世代ガードを `$connectedCallback` の呼び出しにも掛け、起動点を
+   * 最新の connect に一本化した。3 形目の `$streams` が main で 0 なのは、2 本目の
+   * `_initialize` が "already registered" で落ちて tail に到達しなかったため — 登録の
+   * 冪等化で到達するようになったのは改善なので、世代ガードで 0 へ戻さないことも固定する。
+   */
+  type Shape = "plain" | "source-before-remove" | "source-after-append";
+
+  async function pooled(shape: Shape) {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const counts = { connected: 0, source: 0 };
+    const makeState = (): Record<string, any> => ({
+      count: 1,
+      $connectedCallback() { counts.connected++; },
+      $streams: {
+        ticker: {
+          source: () => { counts.source++; return (async function* () { /* 即完了 */ })(); },
+        },
+      },
+    });
+    const host = document.createElement(uniqueTag(`pool-${shape}`));
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML = `<wcs-state></wcs-state><p id="count" data-wcs="textContent: count"></p>`;
+    document.body.appendChild(host);
+    const stateEl = shadowRoot.querySelector("wcs-state") as State;
+    if (shape === "plain") {
+      stateEl.setInitialState(makeState());
+    } else if (shape === "source-before-remove") {
+      stateEl.setInitialState(makeState());
+      stateEl.remove();
+      await flush();
+      await flush();
+      shadowRoot.insertBefore(stateEl, shadowRoot.firstChild);
+    } else {
+      stateEl.remove();
+      await flush();
+      await flush();
+      shadowRoot.insertBefore(stateEl, shadowRoot.firstChild);
+      stateEl.setInitialState(makeState());
+    }
+    return { host, shadowRoot, stateEl, counts, errorSpy };
+  }
+
+  const shapes: Shape[] = ["plain", "source-before-remove", "source-after-append"];
+  for (const shape of shapes) {
+    it(`${shape}: ready を報告し、$connectedCallback も $streams も 1 回であること`, async () => {
+      const { host, shadowRoot, stateEl, counts, errorSpy } = await pooled(shape);
+      try {
+        await expect(stateEl.connectedCallbackPromise).resolves.toBeUndefined();
+        await flush();
+        await flush();
+        expect(stateEl.initialized).toBe(true);
+        expect((shadowRoot.querySelector("#count") as HTMLElement).textContent).toBe("1");
+        expect(counts.connected).toBe(1);
+        expect(counts.source).toBe(1);
+        expect(errorSpy.mock.calls.length).toBe(0);
+      } finally {
+        errorSpy.mockRestore();
+        host.remove();
+      }
+    });
+  }
 });
 
 describe("#257 初期化失敗: _initialize より前の raise（bind-component / DCC）", () => {

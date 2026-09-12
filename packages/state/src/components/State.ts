@@ -40,7 +40,7 @@ import { createPublicMountState } from "../webComponent/overlay";
 import { warnOwnKeyShadowsForMount } from "../webComponent/ownKeyShadow";
 import { markWebComponentAsComplete, markWebComponentStatePropDeclared } from "../webComponent/completeWebComponent";
 import { getInjectedKeys, restoreOverwrittenValues, takeOverwrittenObject } from "../webComponent/preCompletionWrites";
-import { callVolumeLifecycle, clearFailedRootNode, failPendingVolumes, graftOrQueueVolume, IVolumeGraftInfo, reserveVolumeSlot, validateVolumeMountPath } from "../webComponent/volume";
+import { callVolumeLifecycle, clearFailedRootNode, failPendingVolumes, graftOrQueueVolume, IVolumeGraftInfo, releaseVolumeSlot, reserveVolumeSlot, validateVolumeMountPath } from "../webComponent/volume";
 import { hasRootMountBinding } from "../webComponent/rootMountBinding";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/symbols";
 import { waitInitializeBinding } from "../bindings/initializeBindingPromiseByNode";
@@ -376,7 +376,12 @@ export class State extends HTMLElementBase implements IStateElement {
       reserveVolumeSlot(rootNode, mountPath);
     } catch (error) {
       // 設定エラーでも初期化待ちをウェッジさせない（_failInitialization と同じ規範 —
-      // 未解決のまま投げると waitForStateInitialize がページ全体を無言で止める）
+      // 未解決のまま投げると waitForStateInitialize がページ全体を無言で止める）。
+      // ここを `_failInitializeLoudly` に載せないのは意図（#257 第 3 ラウンド）:
+      // この要素はルートではないので、あちらの「この rootNode にルートは来ない」着地
+      //（markBindingsUnavailable / failPendingVolumes）が**無関係なルートと兄弟
+      // ボリュームを巻き添えにする**。promise を解決してから raise する点は
+      // `name=` と同じクラスで、reject 側へ動かすのは別の設計判断
       this._resolveInitialize?.();
       this._resolveLoading?.();
       this._resolveConnectedCallback?.();
@@ -425,7 +430,11 @@ export class State extends HTMLElementBase implements IStateElement {
     );
   }
 
-  private async _initialize() {
+  /**
+   * 初回マウントのロードと登録。戻り値は「この接続で初期化を**完了**したか」で、
+   * `false` は失敗ではなく**中断**（ロード中に要素が剥がされた — 下の注記）。
+   */
+  private async _initialize(): Promise<boolean> {
     // enable-ssr (クライアント側のみ): <wcs-ssr> から初期データを取得
     const ssrState = !inSsr() ? this._loadFromSsrElement() : null;
     if (ssrState !== null) {
@@ -447,7 +456,21 @@ export class State extends HTMLElementBase implements IStateElement {
       }
     }
     await this._loadingPromise;
-    setStateElement(this.rootNode!, this);
+    if (this._rootNode === null) {
+      // ロード中に剥がされた（行プールの張り直し・DOM の移動・shadow の組み直し）。
+      // これは初期化の**失敗ではなく中断**である: 作者のミスは 1 つも無く、state も
+      // 健全。診断を出さず、要素を毒化せず（_initializeFailed を立てず）、
+      // connectedCallbackPromise も拒否せずに、この接続だけを黙って終わらせる。
+      //
+      // 拒否してはいけない理由は取り返しのつかなさ: promise はコンストラクタで
+      // 1 度だけ作られるので、一度拒否すると**付け直して正常に初期化できた要素**まで
+      // 永久に「失敗」を報告し続け、それを待つ @wcstack/server の renderToString と
+      // @wcstack/testing の mount が健全なページで throw する。
+      // 付け直した接続が改めてここへ来て、通常どおり登録と解決を行う。
+      return false;
+    }
+    setStateElement(this._rootNode, this);
+    return true;
   }
 
   /**
@@ -475,10 +498,12 @@ export class State extends HTMLElementBase implements IStateElement {
    * `_initialize` が投げうるもの全部 — `_state` セッタの宣言検証（$recursion /
    * $commandTokens / $eventTokens / $on / $streams / $listKeys / $watch）、
    * `_loadStateFromSource` のロード失敗（src の拡張子・json のパース・内包スクリプト・
-   * 外部モジュール）、SSR データの merge、ロード中に剥がされた要素の `rootNode` getter
-   * （"State rootNode is not available."）、そして `setStateElement` の
+   * 外部モジュール）、SSR データの merge、そして `setStateElement` の
    * 「1 rootNode 1 ツリー」違反（**別の**要素が 2 本目に来た形 — 同じ要素の再登録は
    * 冪等なので、ロード中の remove → append はここへ来ない）。
+   *
+   * 載**らない**もの: ロード中に要素が剥がされた形。作者のミスが 1 つも無いので
+   * 初期化失敗ではなく中断として扱う（`_initialize` が `false` を返す）。
    *
    * `connectedCallback` が `_initialize` より前に await する 2 つ
    * （`_initializeDCC` / `_initializeBindWebComponent`）の raise も同じ着地に載る。
@@ -814,12 +839,18 @@ export class State extends HTMLElementBase implements IStateElement {
         this._resolveConnectedCallback?.();
         return;
       }
+      let completed = false;
       try {
-        await this._initialize();
+        completed = await this._initialize();
       } catch (error) {
         // ここが唯一の無防備な await だった（#257）。throw は下の 2 行と
         // 末尾の _resolveConnectedCallback を飛ばし、両 promise を永久未解決にする
         this._failInitializeLoudly(error);
+      }
+      if (!completed) {
+        // ロード中に剥がされた ＝ 失敗ではなく中断（_initialize の注記）。promise は
+        // 未解決のまま残し、付け直した接続にそのまま解決させる
+        return;
       }
       this._initialized = true;
 
@@ -864,7 +895,13 @@ export class State extends HTMLElementBase implements IStateElement {
     }
     // enable-ssr (クライアント側): SSR で $connectedCallback 済みなのでスキップ
     // inSsr() (サーバー側): レンダリング中なので実行する
-    if (!this.hasAttribute('enable-ssr') || inSsr()) {
+    // 世代ガード（connectGeneration 照合）: ロード完了前の remove → append では
+    // _initialize が 2 本同時に走り、**負けたほうもここまで到達する**（登録は冪等に
+    // 弾かれるだけで tail は止まらない）。ガードが無いと作者の $connectedCallback が
+    // 1 接続につき 2 回走り、副作用も 2 回出る。下の startWatch / startStreams と
+    // 同じ規範で、起動点を最新の connect に一本化する
+    if ((!this.hasAttribute('enable-ssr') || inSsr())
+      && connectGeneration === this._connectGeneration) {
       await this._callStateConnectedCallback();
     }
 
@@ -939,10 +976,19 @@ export class State extends HTMLElementBase implements IStateElement {
   disconnectedCallback() {
     if (this.hasAttribute("mount")) {
       // ボリューム: 接ぎ木したデータ・アクセサ・宣言はツリーに残る（アンマウントは
-      // 未対応 — 揮発させると依存グラフに残った getter 登録が宙に浮く）。予約も維持。
+      // 未対応 — 揮発させると依存グラフに残った getter 登録が宙に浮く）。接ぎ木済みの
+      // 予約も維持する（スロットはツリー上で埋まっている）。
       // $disconnectedCallback だけは要素のライフサイクルとして chroot で呼ぶ
       if (this._volumeGraftInfo !== null) {
         callVolumeLifecycle(this._volumeGraftInfo, "$disconnectedCallback");
+      }
+      if (this._initialized && this._volumeGraftInfo === null) {
+        // 接ぎ木**せずに**決着した要素（ロード失敗・接ぎ木失敗・ルート不在の孤児）が
+        // DOM から消えた。この要素は二度と接ぎ木しないので、予約を握ったままだと
+        // 同じマウントパスの差し替え要素が "already mounted" で弾かれ、復旧手段が
+        // 塞がる（#257 第 3 ラウンド）。ロード中（_initialized === false）は進行中の
+        // 呼び出しが予約の持ち主なので触らない — 付け直せばそのまま接ぎ木が完了する
+        releaseVolumeSlot(this._rootNode, this.getAttribute("mount")!);
       }
       this._rootNode = null;
       return;
@@ -963,10 +1009,16 @@ export class State extends HTMLElementBase implements IStateElement {
         // 初期化前に剥がされた（bind-component の await 中に shadow が張り直された等）。
         // 名前登録も token も stream もまだ無く、state も作れないので後始末は不要。
         // ここで createState すると "_state is not initialized" で CE リアクションが落ちる
-        // 初期化に失敗したルートなら「このルートノードにルートは来ない」の印も落とす
-        //（#257）。印が持続すると、取り除いて作り直す復旧の窓で接続したボリュームが
-        // 即座に孤児化する。未登録でも安全な delete なので分岐は要らない
-        clearFailedRootNode(this._rootNode);
+        if (this._initializeFailed) {
+          // 落ちたルート要素**本人**が DOM から消えた ＝「このルートノードにルートは
+          // 来ない」はもう成り立たない（作者の復旧は取り除いて作り直す）。印が残ると、
+          // 外してから修正版を接続するまでの窓で接続したボリュームが即座に孤児化する。
+          // 条件は本人に限る（#257 第 3 ラウンド）: 「初期化前に剥がされた要素」全部で
+          // 落とすと、同じ rootNode の別要素（ゾンビの 2 本目・行プールの張り直し・
+          // ロード中の DOM 移動）の切断で印が消え、以後のボリュームが孤児報告を
+          // 受けられず永久保留へ戻る
+          clearFailedRootNode(this._rootNode);
+        }
         this._rootNode = null;
         return;
       }
