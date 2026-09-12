@@ -248,7 +248,7 @@
 <div data-wcs="textContent: cart.total"></div>
 ```
 
-ボリュームは getter・`$watch`・`$listKeys`・`$updatedCallback`・`$connectedCallback`/`$disconnectedCallback` を宣言できます（すべてマウントパス相対）。`$errorCallback` はルート専用です（バインディングの失敗はツリーの所有者へ 1 回だけ報告されます）。読み込み順は自由です（ルートより先に接続されたボリュームは、ルートの登録時に接ぎ木されます）。ルートの `<wcs-state>` が初期化に失敗した場合、その時点で待機していたボリュームは永久に待たずに自分の報告を出して決着します。その報告が終点です —— 孤児として報告されたボリュームは後から自分で接ぎ木し直さず、マウントの枠もページを読み込んでいる間はずっと予約されたままなので、あとから修正版のルートを接続しても復帰しません。ルートの `<wcs-state>` を直してページを読み直してください。マウントパスは静的パスのみです（`*`・`$`・`#`・`@` は不可）。初期化後に `mount` 属性を変更することはできません — 変更は console 警告付きで無視されます。要素を取り除き、望むパスで新しい要素を追加してください。
+ボリュームは getter・`$watch`・`$listKeys`・`$updatedCallback`・`$connectedCallback`/`$disconnectedCallback` を宣言できます（すべてマウントパス相対）。`$errorCallback` はルート専用です（バインディングの失敗はツリーの所有者へ 1 回だけ報告されます）。読み込み順は自由です（ルートより先に接続されたボリュームは、ルートの登録時に接ぎ木されます）。ルートの `<wcs-state>` が初期化に失敗した場合、その時点で待機していたボリュームは永久に待たずに自分の報告を出して決着します。その報告が終点です —— 孤児として報告されたボリュームは後から自分で接ぎ木し直さず、マウントの枠もその rootNode が生きている限り予約されたままなので（枠の台帳は rootNode をキーにした `WeakMap` で、枠が解放されることはありません）、あとから修正版のルートを接続しても復帰しません。ルートの `<wcs-state>` を直してページを読み直してください。マウントパスは静的パスのみです（`*`・`$`・`#`・`@` は不可）。初期化後に `mount` 属性を変更することはできません — 変更は console 警告付きで無視されます。要素を取り除き、望むパスで新しい要素を追加してください。
 
 > **v1 の名前付き状態からの移行:** `<wcs-state name="cart">` + `total@cart` は `<wcs-state mount="cart">` + `cart.total` になります。v2 では `name` 属性は fail-fast し、パス中の `@` は parse error です（どちらもこの誘導文付き）。移行の対応表: [docs/state-mount-design.md](../../docs/state-mount-design.md) §9。
 
@@ -2786,7 +2786,7 @@ bootstrapState();
 | プロパティ / メソッド | 説明 |
 |---|---|
 | `initializePromise` | 状態の完全な初期化時に解決される Promise —— **初期化に失敗したときも解決**します（1 要素の失敗がページの他のバインディングを止めないため）。エラーは `connectedCallbackPromise` に届きます |
-| `connectedCallbackPromise` | `connectedCallback` の完了（state のロードと `$connectedCallback` の実行）で解決される Promise — テストのレシピが await するもの。初期化に失敗した場合（`$` 宣言の不正・ソースのロード失敗・SSR データの merge 失敗・DCC の設定失敗・`bind-component` の配線エラー（カスタム要素の直下でない・`state`/`src`/`json` との併記・ホストの `CustomElementRegistry` が引けない・ホストのプロパティが無い・ホストのプロパティがオブジェクトでない）・同じ root node に 2 本目のルート `<wcs-state>`）は**元のエラーのまま reject** し、`console.error` にも 1 件報告されます。fail-fast する設定エラー（`name=`・配線なし Light DOM の `bind-component`・マウント先ホストの root に state ツリーが無い・マウントスコープの設定エラー）は従来どおり**解決**します。ボリューム（`<wcs-state mount="…">`）が枠の予約より前で落ちる設定エラー（不正な mount パス・`mount` と `bind-component` の併記・そのルートで既に予約済みのマウントパス）も**解決**し、しかも**どこにも報告されません** —— reject も `console.error` も無いので、唯一の兆候は「ボリュームのデータがいつまでも現れない」ことです。ロード中に切断された要素は reject しません —— その接続が黙って終わるだけで、付け直せば（行プール）通常どおり初期化して解決します |
+| `connectedCallbackPromise` | `connectedCallback` の完了（state のロードと `$connectedCallback` の実行）で解決される Promise — テストのレシピが await するもの。**ルート**要素が初期化に失敗すると、**元のエラーのまま reject** し、`console.error` にも 1 件報告します（`$` 宣言の不正・ソースのロード失敗・SSR データの merge 失敗・DCC や `bind-component` の設定エラー・同じ root node に 2 本目のルート `<wcs-state>`。2 本目は登録されないまま読み込んだ state を保持するので取り除いてください。健全な要素の DOM 移動は二重登録ではなく、拒否しません）。**ボリューム**（`<wcs-state mount="…">`）はこの Promise を**拒否しません** —— ボリュームの失敗は解決し、種類によっては自分では何も報告しません。その場合エラーはカスタム要素リアクションが捨てる `connectedCallback` の戻り Promise として出ていき、ブラウザのコンソールには "Uncaught (in promise)" と出ますが、promise を待つ側（テストのレシピや `renderToString()`）には届きません。ロード中に切断された要素は reject しません —— その接続が黙って終わるだけで、付け直せば（行プール）通常どおり初期化して解決します。個々の失敗箇所の正確な挙動は `__tests__/integration.initFailureDiagnostics.test.ts` が固定しています |
 | `listPaths` | `for` ループで使用されるパスの Set |
 | `getterPaths` | getter として定義されたパスの Set |
 | `setterPaths` | setter として定義されたパスの Set |

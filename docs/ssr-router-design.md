@@ -111,7 +111,7 @@ interface RenderOptions {
 `connectedCallbackPromise` を実装する。plumbing は State と同型 — コンストラクタで
 作り、`connectedCallback` 完了で resolve、初期化例外で reject して再 throw
 （reject を配管しないと renderToString が mutex を握ったまま無言ハングする。
-`packages/state/src/components/State.ts:886-891` と同じ理由）。
+`packages/state/src/components/State.ts` の SSR 分岐（`getBindingsReady` の catch）と同じ理由）。
 
 **`connectedCallback` の SSR 分岐**:
 

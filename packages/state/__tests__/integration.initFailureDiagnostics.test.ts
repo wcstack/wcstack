@@ -38,11 +38,12 @@
  * なく**中断**として扱う（診断も reject も毒化も無し）。第 2 ラウンドはこれを失敗として
  * 列挙していたが、第 3 ラウンドで撤回した — 下の「#257 中断」2 つの describe が新しい契約。
  *
- * 同じく載らないのがボリューム（`mount=`）の設定エラー — 不正な mount パス・`mount` と
- * `bind-component` の併記・同じルートで既に埋まっているマウントパスの二重予約。
- * `_initializeVolume` の catch が 3 つの promise を自分で解決してから raise し、
- * `connectedCallback` のボリューム分岐はそれを包まないので、**診断 0 件・reject 0 件の
- * 完全な無音**になる（挙動はこの PR では変えない — 別 Issue）。
+ * 同じく載らないのがボリューム（`mount=`）の失敗。`_initializeVolume` の catch が 3 つの
+ * promise を自分で解決してから raise し、`connectedCallback` のボリューム分岐はそれを
+ * 包まないので、ボリュームは connectedCallbackPromise を**拒否しない** —— `name=` と
+ * 同じ逃げ方で、エラーはカスタム要素リアクションが捨てる戻り Promise（ブラウザの
+ * "Uncaught (in promise)"）として残り、promise を待つ側には届かない。自前の報告が出るか
+ * どうかは失敗の種類による。挙動はこの PR では変えない（枠の寿命は別 Issue）。
  *
  * `connectedCallback` が `_initialize` より前に await する 2 つ（`_initializeDCC` /
  * `_initializeBindWebComponent`）の raise も同じ着地に載る。自分で promise を解決してから

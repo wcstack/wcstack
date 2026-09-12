@@ -505,14 +505,16 @@ export class State extends HTMLElementBase implements IStateElement {
    * 載**らない**もの: ロード中に要素が剥がされた形。作者のミスが 1 つも無いので
    * 初期化失敗ではなく中断として扱う（`_initialize` が `false` を返す）。
    *
-   * もう 1 つ載らないのがボリューム（`mount=`）の設定エラー — 不正な mount パス・
-   * `mount` と `bind-component` の併記・同じルートで既に埋まっているマウントパスの
-   * 二重予約。`_initializeVolume` の catch が 3 つの promise（initialize / loading /
-   * connectedCallback）を自分で解決してから raise し、`connectedCallback` の
-   * ボリューム分岐はそれを包まないので、throw はカスタム要素リアクションが捨てる
-   * 戻り Promise へ出ていく ＝ **診断 0 件・reject 0 件の完全な無音**。作者に届くのは
-   * 「ボリュームのデータがいつまでも現れない」ことだけ。無音をやめるかどうかは別の
-   * 設計判断で、この PR では挙動を変えない。
+   * もう 1 つ載らないのがボリューム（`mount=`）の失敗。`_initializeVolume` の catch が
+   * 3 つの promise（initialize / loading / connectedCallback）を自分で解決してから raise し、
+   * `connectedCallback` のボリューム分岐はそれを包まないので、ボリュームはこの着地に
+   * 載らず connectedCallbackPromise を**拒否しない**。自前の報告が出るかどうかは失敗の
+   * 種類による。報告が無い形では、逃げ方は `name=`（`_failInitialization` の注記）と
+   * 同じで、throw はカスタム要素リアクションが捨てる戻り Promise へ出ていく
+   * （ブラウザのコンソールには "Uncaught (in promise)" として残るが、promise を待つ側
+   * ＝ renderToString・mount・テストレシピには届かない）。失敗箇所ごとの正確な挙動は
+   * `__tests__/integration.initFailureDiagnostics.test.ts` が固定している。挙動はこの
+   * PR では変えない（枠の寿命は別 Issue）。
    *
    * `connectedCallback` が `_initialize` より前に await する 2 つ
    * （`_initializeDCC` / `_initializeBindWebComponent`）の raise も同じ着地に載る。
