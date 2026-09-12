@@ -1,0 +1,414 @@
+/**
+ * integration.stateGenerationReset.test.ts — 再セット（`setInitialState`）で「前の世代」が
+ * 残る 2 つの機構を固定する（issue #258）。
+ *
+ *  - **世代スタンプ（X10）**: 絶対アドレスは (stateElement, pathInfo, listIndex) で intern され、
+ *    state を差し替えても同一のままなので、getter のキャッシュ項目が世代を跨いで生き残っていた。
+ *    キャッシュ項目に「載せた世代」を持たせ、世代の違う項目をヒット扱いにしないことで直す
+ *    （cache/types.ts の `generation` / State の `stateGeneration`）。
+ *  - **経路情報の作り直し（X7 の内部半分）**: セッタは `_listPaths` / `_elementPaths` / `_pathSet` を
+ *    クリアするが、それらを登録したバインドは生き残る（再セットは DOM を作り直さない）。
+ *    クリアのあと、生きているバインドぶんの `setPathInfo` をやり直して作り直す。
+ *
+ * クリア自体はやめられない。あれは `forgetGeneration` が外した静的辺を「行が作り直された
+ * ときに登録し直させる」自己修復になっていて、残すと行まるごと置換で DOM と state が
+ * 乖離する（下の「行まるごと置換」の it がその側）。
+ *
+ * **この修理が触っていない半分**（別課題として切り出し・末尾の describe が現状を固定する）:
+ *  - 再セットはバインドを再適用しないので、画面は第 1 世代のテキストのまま（読みだけが新しい）。
+ *  - `<wcs-state mount="…">` への再セットはセッタまで届くが、接ぎ木がルートの木へ複製している
+ *    ため、ページ全体が第 1 世代のまま（どちらの要素に世代印を入れても直らない）。
+ */
+import { describe, it, expect, beforeAll } from "vitest";
+import { bootstrapState } from "../src/bootstrapState";
+import type { State } from "../src/components/State";
+import { flush, makeMount, node, read, write, writeError } from "./helpers/recursionTestUtils";
+import { getPathInfo } from "../src/address/PathInfo";
+import { getAbsolutePathInfo } from "../src/address/AbsolutePathInfo";
+import { createAbsoluteStateAddress } from "../src/address/AbsoluteStateAddress";
+import { getStateListBaseline } from "../src/list/stateListBaseline";
+import { getLastListValueByAbsoluteStateAddress } from "../src/list/lastListValueByAbsoluteStateAddress";
+
+beforeAll(() => {
+  bootstrapState();
+});
+
+const mount = makeMount("genreset-host");
+
+/** 描画結果（テキスト）を並び順で読む。 */
+const txt = (root: ParentNode, selector: string): (string | null)[] =>
+  Array.from(root.querySelectorAll(selector)).map((element) => element.textContent);
+
+/** ルートリストの絶対アドレス（差分基準の台帳を直接のぞくため）。 */
+const absOf = (stateEl: State, path: string): any =>
+  createAbsoluteStateAddress(getAbsolutePathInfo(stateEl as any, getPathInfo(path)), null);
+
+/** 静的依存グラフの辺（source → targets）。 */
+const edgesOf = (stateEl: State): [string, string[]][] =>
+  Array.from((stateEl as any).staticDependency.entries()) as [string, string[]][];
+
+// ---------------------------------------------------------------------------
+// A: 世代スタンプ（X10）
+// ---------------------------------------------------------------------------
+
+describe("再セットの世代スタンプ: 旧世代のキャッシュ値をヒットさせない", () => {
+  /** `sum` は `dep` で名指したリストだけを読む（世代で依存集合を変えられる形）。 */
+  const summing = (dep: string, items: number[], values: number[]): any => {
+    const state: any = { items, values };
+    Object.defineProperty(state, "sum", {
+      get(this: any) { return this[dep].reduce((a: number, b: number) => a + b, 0); },
+      enumerable: true, configurable: true,
+    });
+    return state;
+  };
+
+  it("再セット前に読んだ wildcard 無しの getter が、新しい世代で評価し直される", async () => {
+    const { host, stateEl } = await mount(summing("items", [1, 2], []));
+    expect(read(stateEl, (s: any) => s.sum)).toBe(3);
+
+    stateEl.setInitialState(summing("items", [5, 6], []));
+    await flush();
+    expect(read(stateEl, (s: any) => s.items)).toEqual([5, 6]);
+    expect(read(stateEl, (s: any) => s.sum)).toBe(11); // 旧: 3（旧世代の dirty:false が返っていた）
+    host.remove();
+  });
+
+  it("依存集合が変わる再セットでも、新しい getter の依存だけが効く", async () => {
+    // 旧挙動の最悪形: キャッシュがヒットし続ける ＝ 新しい getter が一度も評価されないので、
+    // 新世代の依存辺（`values` → `sum`）が張られず、旧世代の辺（`items` → `sum`）だけが残る。
+    // 「本当の依存を書いても動かず、新 getter が読みもしないパスを書くと動く」誤った反応グラフ。
+    const { host, stateEl } = await mount(summing("items", [1, 2], [100, 200]));
+    expect(read(stateEl, (s: any) => s.sum)).toBe(3);
+
+    stateEl.setInitialState(summing("values", [1, 2], [100, 200]));
+    await flush();
+    expect(read(stateEl, (s: any) => s.sum)).toBe(300); // 旧: 3
+
+    write(stateEl, (s: any) => { s.values = [1, 1]; });
+    await flush();
+    expect(read(stateEl, (s: any) => s.sum), "本当の依存を書けば追従する").toBe(2); // 旧: 3
+
+    write(stateEl, (s: any) => { s.items = [1000, 2000]; });
+    await flush();
+    expect(read(stateEl, (s: any) => s.sum), "新 getter が読まないパスを書いても壊れない").toBe(2);
+    host.remove();
+  });
+
+  it("同じ配列インスタンスを渡す再セットでも、行のキャッシュが世代で無効になる", async () => {
+    // 別の配列なら ListIndex が鋳造し直されるので何も残らない。同じ配列を渡す形
+    // （listIndexesByList は配列 identity がキー）だけが行のキャッシュを跨がせる。
+    const rows = [{ n: 1 }, { n: 2 }];
+    const make = (): any => {
+      const state: any = { items: rows };
+      Object.defineProperty(state, "items.*.double", {
+        get(this: any) { return this["items.*.n"] * 2; },
+        enumerable: true, configurable: true,
+      });
+      return state;
+    };
+    const { host, stateEl } = await mount(make());
+    expect(read(stateEl, (s: any) => s.$getAll("items.*.n", []))).toEqual([1, 2]);
+    expect(read(stateEl, (s: any) => s.$getAll("items.*.double", []))).toEqual([2, 4]);
+
+    rows[0].n = 91;
+    rows[1].n = 92;
+    stateEl.setInitialState(make());
+    await flush();
+    expect(read(stateEl, (s: any) => s.$getAll("items.*.n", []))).toEqual([91, 92]);       // 旧: [1, 2]
+    expect(read(stateEl, (s: any) => s.$getAll("items.*.double", []))).toEqual([182, 184]); // 旧: [2, 4]
+    host.remove();
+  });
+
+  it("連鎖した getter は再セット直後から正しい（書き込みを待たない）", async () => {
+    const chained = (base: number): any => {
+      const state: any = { base };
+      Object.defineProperty(state, "a", { get(this: any) { return this.base * 2; }, enumerable: true, configurable: true });
+      Object.defineProperty(state, "b", { get(this: any) { return this.a + 1; }, enumerable: true, configurable: true });
+      return state;
+    };
+    const { host, stateEl } = await mount(chained(5));
+    expect(read(stateEl, (s: any) => [s.base, s.a, s.b])).toEqual([5, 10, 11]);
+
+    stateEl.setInitialState(chained(25));
+    await flush();
+    expect(read(stateEl, (s: any) => [s.base, s.a, s.b])).toEqual([25, 50, 51]); // 旧: [25, 10, 11]
+    host.remove();
+  });
+
+  it("対照: 再セット前に一度も読んでいない getter は従来どおり正しい", async () => {
+    // 欠陥は「項目が存在すること」そのものだった（読んでいなければ項目が無いので正しかった）。
+    const { host, stateEl } = await mount(summing("items", [1, 2], []));
+    stateEl.setInitialState(summing("items", [5, 6], []));
+    await flush();
+    expect(read(stateEl, (s: any) => s.sum)).toBe(11);
+    host.remove();
+  });
+
+  it("宣言の検証で throw する再セットは世代を進めない（要素は丸ごと旧世代に留まる）", async () => {
+    // 世代を進める位置は「旧世代の後始末の後・`__state` 差し替えの前」。純検証はその前なので、
+    // 落ちた再セットでは世代もキャッシュも据え置きになり、旧世代の読みがそのまま生きる。
+    const { host, stateEl } = await mount(summing("items", [1, 2], []));
+    expect(read(stateEl, (s: any) => s.sum)).toBe(3);
+    const generation = stateEl.stateGeneration;
+
+    expect(() => stateEl.setInitialState(
+      Object.assign(summing("items", [5, 6], []), { $commandTokens: [""] }),
+    )).toThrow();
+    expect(stateEl.stateGeneration, "世代は進まない").toBe(generation);
+    expect(read(stateEl, (s: any) => s.sum), "旧世代の値がそのまま読める").toBe(3);
+
+    // 正当な再セットは従来どおり進む
+    stateEl.setInitialState(summing("items", [5, 6], []));
+    await flush();
+    expect(stateEl.stateGeneration).toBe(generation + 1);
+    expect(read(stateEl, (s: any) => s.sum)).toBe(11);
+    host.remove();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// B: 経路情報の作り直し（X7 の内部半分）
+// ---------------------------------------------------------------------------
+
+const ROW_HTML =
+  `<div><template data-wcs="for: items">` +
+  `<span class="u" data-wcs="textContent: items.*.upper"></span></template></div>`;
+
+/** 行 getter を持つリスト state（`items.*.upper` は行の派生値）。 */
+const rowGetterState = (names: string[]): any => {
+  const state: any = { items: names.map((name) => ({ name })) };
+  Object.defineProperty(state, "items.*.upper", {
+    get(this: any) { return String(this["items.*.name"]).toUpperCase(); },
+    enumerable: true, configurable: true,
+  });
+  return state;
+};
+
+describe("再セット後の経路情報: 生きているバインドぶんを登録し直す", () => {
+  it("行 getter のページで、再セット後の全リスト書き込みが throw せず行が追従する（2 回目も）", async () => {
+    // 旧挙動: `_listPaths` が空のまま残るので依存ウォークが `items.*` を「リストではない
+    // パス」として辿り、`Cannot expand dynamic dependency…` で恒久的に落ちる。しかも値と
+    // DOM は書かれるので、診断だけが壊れたまま自己回復しなかった。
+    const { host, shadowRoot, stateEl } = await mount(rowGetterState(["a", "b"]), ROW_HTML);
+    expect(txt(shadowRoot, ".u")).toEqual(["A", "B"]);
+
+    stateEl.setInitialState(rowGetterState(["x", "y"]));
+    await flush();
+
+    expect(writeError(stateEl, (s: any) => { s.items = [{ name: "p" }, { name: "q" }]; })).toBe("");
+    await flush();
+    expect(txt(shadowRoot, ".u")).toEqual(["P", "Q"]);
+
+    expect(writeError(stateEl, (s: any) => { s.$resolve("items.*.name", [0], "leaf"); })).toBe("");
+    await flush();
+    expect(txt(shadowRoot, ".u")).toEqual(["LEAF", "Q"]);
+
+    // 2 回目も落ちない（残骸が無い）
+    expect(writeError(stateEl, (s: any) => { s.items = [{ name: "r" }, { name: "s" }]; })).toBe("");
+    await flush();
+    expect(txt(shadowRoot, ".u")).toEqual(["R", "S"]);
+    expect(read(stateEl, (s: any) => s.$getAll("items.*.upper", []))).toEqual(["R", "S"]);
+    host.remove();
+  });
+
+  it("再セット直後に listPaths / elementPaths / pathSet が作り直されている", async () => {
+    // 機構そのものの固定。旧挙動ではこの 3 つが空のままだった（静的辺だけが残る非対称）。
+    const { host, stateEl } = await mount(rowGetterState(["a", "b"]), ROW_HTML);
+    expect(Array.from((stateEl as any).listPaths)).toEqual(["items"]);
+
+    stateEl.setInitialState(rowGetterState(["x", "y"]));
+    await flush();
+    expect(Array.from((stateEl as any).listPaths)).toEqual(["items"]);         // 旧: []
+    expect(Array.from((stateEl as any).elementPaths)).toEqual(["items.*"]);    // 旧: []
+    expect(Array.from((stateEl as any)._pathSet).sort()).toEqual(["items", "items.*.upper"]); // 旧: []
+    host.remove();
+  });
+
+  it("再帰: 再セット＋全リスト書き込みのあと、静的な辺 nodes.* → nodes.*.total が戻る", async () => {
+    // 前世代の生成アクセサ（`nodes.*.total`）を指す辺は `forgetGeneration` が外す。行バインドが
+    // 名指していても作り直しの対象から外す — 新しい世代ではまだ実体化されていないため。
+    // 辺は「行が作り直されたとき」に BindingSession の setPathInfo が張り直す（自己修復）。
+    const recursive = (nodes: any): any => {
+      const state: any = { nodes, $recursion: { "nodes.*": "children.*" } };
+      Object.defineProperty(state, "nodes.**.total", {
+        get(this: any) {
+          return this["nodes.**.value"] +
+            this.$getAll("nodes.**.children.*.total").reduce((a: number, b: number) => a + b, 0);
+        },
+        enumerable: true, configurable: true,
+      });
+      return state;
+    };
+    const html =
+      `<div><template data-wcs="for: nodes">` +
+      `<span class="t" data-wcs="textContent: nodes.*.total"></span></template></div>`;
+    const { host, shadowRoot, stateEl } = await mount(recursive([node(7, [node(70)]), node(8)]), html);
+    expect(txt(shadowRoot, ".t")).toEqual(["77", "8"]);
+
+    stateEl.setInitialState(recursive([node(7, [node(70)]), node(8)]));
+    await flush();
+    const afterReset = new Map(edgesOf(stateEl));
+    expect(afterReset.get("nodes.*") ?? [], "実体化前に辺を張り直さない").not.toContain("nodes.*.total");
+    expect(afterReset.get("nodes"), "アンカーのリスト辺は残る").toEqual(["nodes.*"]);
+
+    expect(writeError(stateEl, (s: any) => { s.nodes = [node(11, [node(110)]), node(12)]; })).toBe("");
+    await flush();
+    expect(txt(shadowRoot, ".t")).toEqual(["121", "12"]);
+    expect(read(stateEl, (s: any) => s.$getAll("nodes.*.total", []))).toEqual([121, 12]);
+    const afterWrite = new Map(edgesOf(stateEl));
+    expect(afterWrite.get("nodes.*"), "行が作り直されて辺が戻る").toContain("nodes.*.total");
+    expect(afterWrite.get("nodes.*.children.*")).toContain("nodes.*.children.*.total");
+    host.remove();
+  });
+
+  it("対照: 再セット後の行まるごと置換でも DOM と state が食い違わない", async () => {
+    // 経路情報を「クリアせず持ち越す」案が壊す形。走査を経ていない cold な $resolve は
+    // 別の既知欠陥で拒否されるが、拒否されたぶん DOM も動かないので乖離しない。
+    const recursive = (nodes: any): any => {
+      const state: any = { nodes, $recursion: { "nodes.*": "children.*" } };
+      Object.defineProperty(state, "nodes.**.total", {
+        get(this: any) {
+          return this["nodes.**.value"] +
+            this.$getAll("nodes.**.children.*.total").reduce((a: number, b: number) => a + b, 0);
+        },
+        enumerable: true, configurable: true,
+      });
+      return state;
+    };
+    const html =
+      `<div><template data-wcs="for: nodes">` +
+      `<span class="t" data-wcs="textContent: nodes.*.total"></span></template></div>`;
+    const { host, shadowRoot, stateEl } = await mount(recursive([node(7, [node(70)]), node(8)]), html);
+    stateEl.setInitialState(recursive([node(7, [node(70)]), node(8)]));
+    await flush();
+
+    const error = writeError(stateEl, (s: any) => { s.$resolve("nodes.*", [0], node(9, [node(90)])); });
+    await flush();
+    expect(error).toContain("ListIndexes not found"); // 走査を経ていない cold な $resolve（別課題）
+    expect(txt(shadowRoot, ".t")).toEqual(["77", "8"]);
+    expect(read(stateEl, (s: any) => s.$getAll("nodes.*.total", [])), "表示と一致する").toEqual([77, 8]);
+    host.remove();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// リスト差分の基準（世代を跨いで残る台帳）
+// ---------------------------------------------------------------------------
+
+describe("再セットとリスト差分の基準: 第 1 世代の配列が残っても無害であること", () => {
+  const ITEMS_HTML =
+    `<div><template data-wcs="for: items">` +
+    `<i class="r" data-wcs="textContent: items.*.n"></i></template></div>`;
+
+  it("基準の台帳は第 1 世代の配列を握ったままだが、最初の構造書き込みで上書きされ結果は正しい", async () => {
+    // `stateListBaseline` / `lastListValueByAbsoluteStateAddress` も絶対アドレスがキーなので、
+    // 世代を跨いで第 1 世代の配列インスタンスを握り続ける（世代印は付けていない）。
+    // 害が出るのは「基準が実体とずれたまま diff を取る」ときなので、再セット直後に
+    // 一度も読まずに構造書き込みする最悪順序で固定する。
+    const first = [{ n: 1 }, { n: 2 }];
+    const { host, shadowRoot, stateEl } = await mount({ items: first }, ITEMS_HTML);
+    expect(read(stateEl, (s: any) => s.$getAll("items.*.n", []))).toEqual([1, 2]);
+
+    stateEl.setInitialState({ items: [{ n: 9 }, { n: 8 }, { n: 7 }] });
+    const address = absOf(stateEl, "items");
+    expect(getStateListBaseline(address), "第 1 世代の配列のまま").toBe(first as any);
+    expect(getLastListValueByAbsoluteStateAddress(address)).toBe(first as any);
+
+    // 読まずに（＝基準を更新しないまま）長さの違う構造書き込み
+    expect(writeError(stateEl, (s: any) => { s.items = [{ n: 5 }]; })).toBe("");
+    await flush();
+    expect(txt(shadowRoot, ".r")).toEqual(["5"]);
+    expect(read(stateEl, (s: any) => s.$getAll("items.*.n", []))).toEqual([5]);
+    expect(getStateListBaseline(address), "書き込みで新しい値に入れ替わる").not.toBe(first as any);
+    host.remove();
+  });
+
+  it("入れ子リスト: 再セット後の構造書き込みと集計が DOM まで一致する", async () => {
+    // 基準がずれると壊れるのは親子の連鎖（stateListBaseline.ts のヘッダ）。2 段のリストと
+    // 2 段の集計で、再セット後の全置換・葉の書き込み・子リスト差し替えを順に通す。
+    const nested = (rows: number[][]): any => {
+      const state: any = { groups: rows.map((ns) => ({ items: ns.map((n) => ({ n })) })) };
+      Object.defineProperty(state, "groups.*.sum", {
+        get(this: any) { return this.$getAll("groups.*.items.*.n").reduce((a: number, b: number) => a + b, 0); },
+        enumerable: true, configurable: true,
+      });
+      Object.defineProperty(state, "total", {
+        get(this: any) { return this.$getAll("groups.*.sum", []).reduce((a: number, b: number) => a + b, 0); },
+        enumerable: true, configurable: true,
+      });
+      return state;
+    };
+    const html =
+      `<div><template data-wcs="for: groups"><b class="g" data-wcs="textContent: groups.*.sum"></b>` +
+      `<template data-wcs="for: groups.*.items">` +
+      `<i class="i" data-wcs="textContent: groups.*.items.*.n"></i></template></template></div>`;
+    const { host, shadowRoot, stateEl } = await mount(nested([[1, 2], [3]]), html);
+    expect(txt(shadowRoot, ".g")).toEqual(["3", "3"]);
+    expect(read(stateEl, (s: any) => s.total)).toBe(6);
+
+    stateEl.setInitialState(nested([[10, 20], [30]]));
+    await flush();
+
+    expect(writeError(stateEl, (s: any) => {
+      s.groups = [{ items: [{ n: 100 }, { n: 200 }] }, { items: [{ n: 300 }] }];
+    })).toBe("");
+    await flush();
+    expect(txt(shadowRoot, ".g")).toEqual(["300", "300"]);
+    expect(txt(shadowRoot, ".i")).toEqual(["100", "200", "300"]);
+    expect(read(stateEl, (s: any) => s.total)).toBe(600); // 旧: 6（全リスト書き込みが throw して集計が止まる）
+
+    expect(writeError(stateEl, (s: any) => { s.$resolve("groups.*.items.*.n", [0, 0], 999); })).toBe("");
+    await flush();
+    expect(txt(shadowRoot, ".g")).toEqual(["1199", "300"]);
+    expect(read(stateEl, (s: any) => s.total)).toBe(1499);
+
+    expect(writeError(stateEl, (s: any) => { s.$resolve("groups.*.items", [1], [{ n: 1 }, { n: 2 }]); })).toBe("");
+    await flush();
+    expect(txt(shadowRoot, ".g")).toEqual(["1199", "3"]);
+    expect(txt(shadowRoot, ".i")).toEqual(["999", "200", "1", "2"]);
+    expect(read(stateEl, (s: any) => s.total)).toBe(1202);
+    host.remove();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// この修理が触っていない半分（別課題として切り出し・現状固定）
+// ---------------------------------------------------------------------------
+
+describe("既知の穴（#258 から切り出し）: 再セットはバインドを再適用しない", () => {
+  // DEFECT: 再セットで新しい state を入れても、確立済みのバインドは一度も再適用されないので
+  //         画面は第 1 世代のテキストのまま残る（スカラー・wildcard 無しの getter・`for` の
+  //         いずれも）。読みだけが新しい世代になるため、`read()` しか見ないテストでは
+  //         「直った」ように見える。作者が X7 と呼ぶのはこの半分。
+  //         should be: 再セットで生きているバインドを再適用する（契約の決定は別課題）。
+  it("スカラー・getter・for のいずれも第 1 世代の表示のまま（読みだけが新しい）", async () => {
+    const page = (title: string, ns: number[]): any => {
+      const state: any = { title, items: ns.map((n) => ({ n })) };
+      Object.defineProperty(state, "upper", {
+        get(this: any) { return String(this.title).toUpperCase(); },
+        enumerable: true, configurable: true,
+      });
+      return state;
+    };
+    const html =
+      `<div><span id="t" data-wcs="textContent: title"></span>` +
+      `<span id="u" data-wcs="textContent: upper"></span>` +
+      `<template data-wcs="for: items"><i class="r" data-wcs="textContent: items.*.n"></i></template></div>`;
+    const { host, shadowRoot, stateEl } = await mount(page("a", [1, 2]), html);
+    expect(shadowRoot.querySelector("#t")!.textContent).toBe("a");
+    expect(shadowRoot.querySelector("#u")!.textContent).toBe("A");
+    expect(txt(shadowRoot, ".r")).toEqual(["1", "2"]);
+
+    stateEl.setInitialState(page("b", [9, 8]));
+    await flush();
+    await flush();
+
+    expect(shadowRoot.querySelector("#t")!.textContent).toBe("a");  // should be: "b"
+    expect(shadowRoot.querySelector("#u")!.textContent).toBe("A");  // should be: "B"
+    expect(txt(shadowRoot, ".r")).toEqual(["1", "2"]);              // should be: ["9", "8"]
+    // 読みは新しい世代（`upper` は #258 の世代スタンプで直った側 — 旧挙動は "A"）
+    expect(read(stateEl, (s: any) => [s.title, s.upper, s.$getAll("items.*.n", [])]))
+      .toEqual(["b", "B", [9, 8]]);
+    host.remove();
+  });
+});

@@ -140,7 +140,10 @@ function commitWriteCache(
   }
   setCacheEntryByAbsoluteStateAddress(absAddress, {
     value: value,
-    dirty: false
+    dirty: false,
+    // 読み側（getByAddress）と同じ世代印を付ける。付けないと、再セット直後の書き込みが
+    // 載せた値が次の読みで必ず「世代違い」になり、毎回取り直しになる。
+    generation: stateElement.stateGeneration
   });
 }
 

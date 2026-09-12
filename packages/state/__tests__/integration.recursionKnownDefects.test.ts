@@ -1505,7 +1505,8 @@ describe("欠陥6: 描画ありでも、in-place の深い変異を構造変化�
 
 // ---------------------------------------------------------------------------
 // 着地後レビュー（2026-09-11・実装計画 §7-3）で見つかった既存欠陥。どちらも再帰固有ではなく、
-// 手書きの多段 getter・wildcard 無しの getter で同じ形になる。現状固定 / 修正時に反転させる。
+// 手書きの多段 getter・wildcard 無しの getter で同じ形になる。欠陥7 は現状固定のまま
+// （X2 / #256 の担当）、欠陥8 は #258 で修理済みなので反転させてある。
 // ---------------------------------------------------------------------------
 
 describe("欠陥7: 行オブジェクトを作り直す置換（children 配列は引き継ぐ）のあと、その行の集計だけが葉の更新に追従しない（X2 と同根・現状固定）", () => {
@@ -1584,12 +1585,18 @@ describe("欠陥7: 行オブジェクトを作り直す置換（children 配列�
   });
 });
 
-describe("欠陥8（X10）: setInitialState の再セット後、wildcard 無しの getter が旧世代のキャッシュ値を返す（現状固定）", () => {
-  // DEFECT: `_state` セッタは listPaths / getterPaths / pathSet と再帰の生成辺は整理するが、
-  //         getter キャッシュ（cacheEntryByAbsoluteStateAddress）には触らない。wildcard 無しの
-  //         getter の絶対アドレスは世代をまたいで同一なので、旧世代の値が dirty:false のまま返る。
-  //         should be: 11。
-  it("{ items, get sum } を再セットしても sum が旧世代の 3 のまま", async () => {
+describe("欠陥8（X10 / #258）: setInitialState の再セットで getter キャッシュが世代ごと無効になる（修理済み）", () => {
+  // 契約（#258 で修理済み）: キャッシュ項目は「載せた世代」の番号を持ち（cache/types.ts の
+  //         `generation`）、`_state` の差し替えごとに世代が 1 つ進む。世代の違う項目はヒット
+  //         扱いにせず読みが getter を評価し直すので、値だけでなく**新しい世代の依存辺**も張られる。
+  //         世代を進める位置は「旧世代の後始末（forgetGenerated）の後・`__state` 差し替えの前」で、
+  //         宣言の検証で throw する再セットは世代を進めない（要素は丸ごと旧世代に留まる）。
+  //         旧挙動: 絶対アドレスは (stateElement, pathInfo, listIndex) で intern され世代を跨いで
+  //         同一なので、再セット前に一度でも読んだ getter は旧世代の値を dirty:false のまま
+  //         恒久的に返していた。依存集合が変わる再セットでは「新しい依存を書いても動かず、
+  //         旧世代だけが読んでいたパスを書くと動く」という誤った反応グラフまで残っていた
+  //         （その形は integration.stateGenerationReset.test.ts が固定している）。
+  it("{ items, get sum } を再セットすると sum が新しい世代で評価し直される", async () => {
     const make = (items: number[]) => {
       const s: any = { items };
       Object.defineProperty(s, "sum", {
@@ -1604,10 +1611,10 @@ describe("欠陥8（X10）: setInitialState の再セット後、wildcard 無し
     stateEl.setInitialState(make([5, 6]));
     await flush();
     expect(read(stateEl, (s: any) => s.items)).toEqual([5, 6]);
-    expect(read(stateEl, (s: any) => s.sum)).toBe(3); // should be: 11
+    expect(read(stateEl, (s: any) => s.sum)).toBe(11); // Fixed by #258 — was: 3
   });
 
-  it("再帰の合併形も同じ: 再セット前に読んだ getter だけが旧値を返す", async () => {
+  it("再帰の合併形も同じ: 再セット前に読んだ getter も新しい世代の値を返す", async () => {
     const make = (nodes: any[]) => {
       const s: any = { nodes, $recursion: { "nodes.*": "children.*" } };
       Object.defineProperty(s, "nodes.**.total", {
@@ -1635,7 +1642,7 @@ describe("欠陥8（X10）: setInitialState の再セット後、wildcard 無し
     await flush();
     expect(read(stateEl, (s: any) => s.$getAll("nodes.*.value", []))).toEqual([5]);
     expect(read(stateEl, (s: any) => s.treeTotal)).toBe(555);          // 初めて読むので正しい
-    expect(read(stateEl, (s: any) => s.rootTotals)).toEqual([111]);   // should be: [555]
+    expect(read(stateEl, (s: any) => s.rootTotals)).toEqual([555]);   // Fixed by #258 — was: [111]
     // 生成アクセサ経由の直接読みは正しい（キャッシュの主は rootTotals の側）
     expect(totalsAt(stateEl, 0)).toEqual([555]);
   });

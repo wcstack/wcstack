@@ -398,8 +398,12 @@ export class RecursionRegistry {
    * この世代が生やしたもの（own の生成アクセサ・依存辺・キャッシュ）を忘れる（state の
    * 再セット時、`getStateInfo` の再収集より**前**に呼ぶ）。実体は generation.ts。
    */
-  forgetGenerated(stateElement: IStateElement, previousState: object): void {
-    forgetGeneration(stateElement, previousState, new Set(this._accessors.keys()));
+  forgetGenerated(stateElement: IStateElement, previousState: object): ReadonlySet<string> {
+    const generatedPaths: ReadonlySet<string> = new Set(this._accessors.keys());
+    forgetGeneration(stateElement, previousState, generatedPaths);
+    // 忘れた具体パスを返す。`_state` のセッタは経路情報を作り直すときにこれを除く —
+    // この世代ではまだ実体化されていないので、辺だけ張り直してはならない。
+    return generatedPaths;
   }
 
   /**
