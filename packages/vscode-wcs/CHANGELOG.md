@@ -8,7 +8,7 @@
 
 - **`$scan` 宣言の静的検証（新設）** — `@wcstack/state` の `$scan`（時間軸方向の累積・`docs/state-scan-design.md`）に追随する。code はランタイムと同じ語彙で 3 つ。
 
-  - **`wcs/scan-declaration-invalid`**（error） — 出力名が平坦でない（`.` / `*` / `$` 始まり）・getter や `$streams` 名との衝突／エントリがオブジェクトでない／`from` と `on` が 0 本か 2 本／`initial` の欠落・`fold` の欠落や非関数リテラル／`on` が `$eventTokens` に無い／`from`・`resetOn` のパスの形（`$` 始まり・`@`・空セグメント・`**`）／`from` が自分の出力を読む／`resetOn` の `*`・自分の `from`・scan 出力の読み
+  - **`wcs/scan-declaration-invalid`**（error） — 出力名が平坦でない（`.` / `*` / `$` 始まり）・`Object.prototype` の継承名・getter / setter や `$streams` 名との衝突／エントリがオブジェクトでない／`from` と `on` が 0 本か 2 本／`initial` の欠落・`fold` の欠落や非関数リテラル／`on` が `$eventTokens` に無い／`from`・`resetOn` のパスの形（`$` 始まり・`@`・空セグメント・`**`・`Object.prototype` の継承名）／`from` が自分の出力を読む／`resetOn` の `*`・自分の `from` かその配下・scan 出力の読み
   - **`wcs/scan-source-computed`**（error） — `from`・`resetOn` が getter（その配下を含む）
   - **`wcs/scan-path-missing`**（warning） — `from`・`resetOn` のパスが状態定義に無い（`wcs/watch-path-missing` と同じ severity）
 
@@ -16,7 +16,7 @@
 
 - **`$scan` の出力を候補パスとして実体化** — `$streams` の値プロパティと同じ規則で、`initial` のリテラルから子パスも展開する（`for: feed.items` が `wcs/binding-path-missing` にならない）。明示宣言された同名プロパティが優先する
 
-- **プリアンブル** — `defineState` の宣言に `$scan?:` を追加（`fold` の引数に文脈型を与える）
+- **プリアンブル** — `defineState` の宣言に `$scan?:` を追加（`fold` の引数に文脈型を与える）。`fold` は `this: void` で型付けする（ランタイムは `this` 無しで呼ぶので、メソッド形の `fold` で `this` を読むと型エラーになる）
 
 ## 1.14.0 — 2026-09-12
 

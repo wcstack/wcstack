@@ -677,16 +677,16 @@ export function findNonObjectScan(scriptContent: string): { start: number; end: 
 function findNonObjectDeclaration(scriptContent: string, key: string): { start: number; end: number } | null {
   const root = locateDefaultExportObject(scriptContent);
   if (!root) return null;
-  const watchProp = parseTopLevelProperties(root.content).find(p => p.name === key);
-  if (!watchProp || watchProp.nameStart === undefined || watchProp.nameEnd === undefined) {
+  const declarationProp = parseTopLevelProperties(root.content).find(p => p.name === key);
+  if (!declarationProp || declarationProp.nameStart === undefined || declarationProp.nameEnd === undefined) {
     return null;
   }
-  const span = { start: root.start + watchProp.nameStart, end: root.start + watchProp.nameEnd };
-  if (watchProp.kind === 'method') {
+  const span = { start: root.start + declarationProp.nameStart, end: root.start + declarationProp.nameEnd };
+  if (declarationProp.kind === 'method') {
     return span;
   }
-  if (watchProp.kind !== 'data' || !watchProp.value) return null;
-  const trimmed = watchProp.value.trim();
+  if (declarationProp.kind !== 'data' || !declarationProp.value) return null;
+  const trimmed = declarationProp.value.trim();
   if (trimmed.startsWith('{')) return null;
   const scan = maskCommentsAndStrings(trimmed).trim();
   // 値そのものがアロー関数（`(a, b) => ...` / `a => ...`）。呼び出し式・IIFE

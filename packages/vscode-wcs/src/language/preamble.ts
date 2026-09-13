@@ -88,12 +88,13 @@ type _WcsListKeys = Record<string, string | ((row: any) => unknown)>;
 type _WcsWatch = Record<string, (cur: any, prev: any, ...indexes: number[]) => void>;
 // $scan: { "<output>": { from | on, initial, fold, resetOn? } }（scan/processScanDeclaration.ts）。
 // fold の引数に文脈型を与えるためだけの宣言。from と on で第 2 引数の意味が変わる（cur か event）ので
-// 引数は any に倒す。fold に this は渡らない（ランタイムは this 無しで呼ぶ）。
+// 引数は any に倒す。fold に this は渡らない（ランタイムは this 無しで呼ぶ）ので this: void と書く —
+// 書かないと defineState の ThisType がメソッド形の fold にも state 型の this を与えてしまう。
 type _WcsScan = Record<string, {
   from?: string;
   on?: string;
   initial: any;
-  fold: (acc: any, ...args: any[]) => any;
+  fold: (this: void, acc: any, ...args: any[]) => any;
   resetOn?: string[];
 }>;
 // $recursion: { "<anchor>": "<repeat>" }（recursion/declaration.ts）。初版は単一の自己再帰

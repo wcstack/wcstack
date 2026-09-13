@@ -69,17 +69,36 @@ describe('validateScanDeclarations', () => {
       ]);
     });
 
-    it('出力名が getter / $streams 名と衝突する', () => {
+    it('出力名が getter / setter / $streams 名と衝突する', () => {
       const diags = diagnose(`
   get total() { return 1; },
+  set sink(v) { },
   $streams: { feed: { source(a, s) { return x; } } },
   $scan: {
     total: { from: "n", initial: 0, fold: f },
     feed: { from: "n", initial: 0, fold: f },
+    sink: { from: "n", initial: 0, fold: f },
   }`);
-      expect(diags.map(d => d.text)).toEqual(['total', 'feed']);
+      expect(diags.map(d => d.text)).toEqual(['total', 'feed', 'sink']);
       expect(diags[0].message).toContain('getter');
       expect(diags[1].message).toContain('$streams');
+      expect(diags[2].message).toContain('setter');
+    });
+
+    it('出力名・from・resetOn が Object.prototype の継承名', () => {
+      const diags = diagnose(`
+  n: 0,
+  $scan: {
+    constructor: { from: "n", initial: 0, fold: f },
+    a: { from: "toString", initial: 0, fold: f },
+    b: { from: "n", initial: 0, fold: f, resetOn: ["valueOf"] },
+  }`);
+      expect(diags.map(d => [d.code, d.text])).toEqual([
+        [WcsDiagnosticCode.ScanDeclarationInvalid, 'constructor'],
+        [WcsDiagnosticCode.ScanDeclarationInvalid, 'toString'],
+        [WcsDiagnosticCode.ScanDeclarationInvalid, 'valueOf'],
+      ]);
+      expect(diags.every(d => d.message.includes('Object.prototype'))).toBe(true);
     });
 
     it('エントリがメソッド・非オブジェクトリテラル', () => {
@@ -154,6 +173,18 @@ describe('validateScanDeclarations', () => {
   }`);
       expect(diags.map(d => d.text)).toEqual(['a', 'items.*', 'n', 'a']);
       expect(diags.every(d => d.code === WcsDiagnosticCode.ScanDeclarationInvalid)).toBe(true);
+    });
+
+    it('resetOn が自分の from の配下なら error、祖先なら通す', () => {
+      const diags = diagnose(`
+  user: { id: 1, name: "a" },
+  items: [{ qty: 1 }],
+  $scan: {
+    a: { from: "user", initial: 0, fold: f, resetOn: ["user.id"] },
+    b: { from: "items.*.qty", initial: [], fold: f, resetOn: ["items"] },
+  }`);
+      expect(diags).toEqual([expect.objectContaining({ code: WcsDiagnosticCode.ScanDeclarationInvalid, text: 'user.id' })]);
+      expect(diags[0].message).toContain('"user"');
     });
   });
 

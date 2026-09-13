@@ -165,7 +165,7 @@ Severity policy: **error** = the runtime raises or the binding can never work; *
 | `wcs/updated-callback-unbound` | `$updatedCallback` tests a path that no binding reads — the branch never runs (the callback is binding-driven) | ⚠ warning |
 | `wcs/watch-declaration-invalid` | `$watch` key the runtime rejects: `$`-prefixed, empty segment, non-function handler literal | ❌ error |
 | `wcs/watch-path-missing` | `$watch` key that does not exist in the state — the handler silently never fires | ⚠ warning |
-| `wcs/scan-declaration-invalid` | `$scan` entry the runtime rejects: non-flat output name, output clashing with a getter or `$streams` entry, neither or both of `from` / `on`, missing `initial` / `fold`, `on` token not in `$eventTokens`, malformed `from` / `resetOn` path, `from` reading its own output, `resetOn` with `*`, equal to `from`, or reading a scan output | ❌ error |
+| `wcs/scan-declaration-invalid` | `$scan` entry the runtime rejects: non-flat or `Object.prototype` output name, output clashing with a getter, setter or `$streams` entry, neither or both of `from` / `on`, missing `initial` / `fold`, `on` token not in `$eventTokens`, malformed `from` / `resetOn` path, `from` reading its own output, `resetOn` with `*`, equal to `from` or under it, or reading a scan output | ❌ error |
 | `wcs/scan-source-computed` | `$scan` `from` / `resetOn` that is a getter (or sits under one) — folding it would count re-evaluations, not events | ❌ error |
 | `wcs/scan-path-missing` | `$scan` `from` / `resetOn` path that does not exist in the state — it silently never folds (or never resets) | ⚠ warning |
 | `wcs/type-annotation` | JSDoc `@type` incompatible with the initial value (see below) | ⚠ warning |

@@ -48,6 +48,16 @@ defineState({
 `)).toEqual([]);
   });
 
+  it('fold は this 無しで呼ばれるので、メソッド形の fold で this を読むと型エラーになる', () => {
+    const errors = typecheck(`
+defineState({
+  page: 1,
+  $scan: { total: { from: "page", initial: 0, fold(acc, cur) { return acc + cur + this.page; } } },
+});
+`);
+    expect(errors.some(message => message.includes('void'))).toBe(true);
+  });
+
   it('initial と fold は必須として型に現れる', () => {
     const missing = typecheck(`
 defineState({

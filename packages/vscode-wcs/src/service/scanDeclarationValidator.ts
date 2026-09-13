@@ -100,6 +100,10 @@ function validateOutput(entry: ScanEntryInfo, context: IScanContext): IEntryDiag
   if (name.startsWith('$') || name.includes('.') || name.includes('*')) {
     return invalid(context.msgs.scanOutputInvalid(name));
   }
+  // ランタイムの assertOutputName と同じ判定（`name in Object.prototype`）
+  if (name in Object.prototype) {
+    return invalid(context.msgs.scanOutputReserved(name));
+  }
   if (context.paths.some(p => p.path === name && p.kind === 'computed')) {
     return invalid(context.msgs.scanOutputConflict(name, 'getter'));
   }
@@ -161,6 +165,11 @@ function validateEntry(entry: ScanEntryInfo, context: IScanContext): IEntryDiagn
       out.push(atField(reset, WcsDiagnosticCode.ScanDeclarationInvalid, msgs.scanResetIsFrom(name, reset.value)));
       continue;
     }
+    // 子孫は from の書き込みで必ず同じバッチに載る（祖先は「親の差し替えで作り直す」として通す）
+    if (from !== null && reset.value.startsWith(`${from.value}.`)) {
+      out.push(atField(reset, WcsDiagnosticCode.ScanDeclarationInvalid, msgs.scanResetUnderFrom(name, reset.value, from.value)));
+      continue;
+    }
     const root = reset.value.split('.')[0];
     if (context.outputs.has(root)) {
       out.push(atField(reset, WcsDiagnosticCode.ScanDeclarationInvalid, msgs.scanResetReadsOutput(name, reset.value, root)));
@@ -193,6 +202,9 @@ function checkPath(
     path.includes('**') || segments.some(segment => segment.length === 0)
   ) {
     return at(WcsDiagnosticCode.ScanDeclarationInvalid, msgs.scanPathInvalid(name, field, path), 'error');
+  }
+  if (path in Object.prototype) {
+    return at(WcsDiagnosticCode.ScanDeclarationInvalid, msgs.scanPathReserved(name, field, path), 'error');
   }
   const computed = new Set(paths.filter(p => p.kind === 'computed').map(p => p.path));
   for (let i = 1; i <= segments.length; i++) {
