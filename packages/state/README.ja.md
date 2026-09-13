@@ -2189,7 +2189,7 @@ $updatedCallback(paths) {
 | `on` | `$eventTokens` に宣言したイベントトークン名。 |
 | `initial` | 必須。累積の種であり、`resetOn` の戻り先。 |
 | `fold` | 必須。`from` は `(acc, cur, prev, ...indexes) => next`、`on` は `(acc, event, ...indexes) => next`。同期で、`this` 無しで呼ばれ、新しい値を返す。`acc` そのものを返すと書き込まない。 |
-| `resetOn` | 任意。素の state パスの配列。どれかが書かれたら出力を `initial` に戻し、そのバッチの fold は行わない。 |
+| `resetOn` | 任意。素の state パスの配列。どれかが書かれたら出力を `initial` に戻す。`from` の scan はそのバッチの fold を行わず、`on` の scan は書き込みより後に来たイベントを `initial` から畳む。`from` の配下は raise、`from` の祖先は可（親の差し替えで作り直す）。 |
 
 **出力はランタイムが所有します**（`$streams` の値と同じ）。state にそのプロパティが無ければ `initial` で実体化され、他のパスと同じようにバインドできます。stream の restart・切断と再接続・同じオブジェクトの再セットを跨いで残り、新しい宣言での再セットでは作り直されます。
 

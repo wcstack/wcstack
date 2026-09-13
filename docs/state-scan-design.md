@@ -17,7 +17,7 @@
 | **D3** | 発火単位（G8-a/b） | `from`: **drain 終端で、バッチに載った絶対アドレス 1 つにつき fold 1 回**（変化の scan）。同一 job 内の複数書き込みは 1 回に畳まれる。`on`: **イベント 1 回につき fold 1 回・同期**（出来事の scan）。`on` には drain を待つ遅延が無い。 |
 | **D4** | fold 契約（G8-j） | 同期・純粋・**新しい値を返す**。`this` は渡さない（`$streams.fold` と同じ）。引数は `from` が `(acc, cur, prev, ...indexes)`、`on` が `(acc, event, ...indexes)`。`acc` と同一参照を返したら書かない。throw と thenable の戻り値は報告して書かない（例外隔離）。 |
 | **D5** | getter を source に許すか（G4） | **許さない**。`from` 自身またはその祖先パスが getter なら宣言時 raise。接ぎ木（ボリューム）で後から getter になった `from` は発火時に検出して報告し、その scan を止める。 |
-| **D6** | reset（G2） | `resetOn: ["<path>", ...]`（平坦な state パスの配列）。どれかがバッチに載ったら**出力を `initial` に戻し、そのバッチの fold は行わない**（reset が勝つ）。戻すのは**出力だけ**で、協調するカーソル（`page` 等）は戻さない（G2-a (i)）。発火はアドレス駆動で値比較なし（`$streams.args` と同じ。primitive は same-value guard により実質変化時のみ）。getter・wildcard・`$` 始まり・自分の `from`・scan 出力（自他とも）は raise。ユーザー起点の reset は nonce を `resetOn` に読ませる（G2-c）。 |
+| **D6** | reset（G2） | `resetOn: ["<path>", ...]`（平坦な state パスの配列）。どれかがバッチに載ったら**出力を `initial` に戻し、そのバッチの fold は行わない**（reset が勝つ）。戻すのは**出力だけ**で、協調するカーソル（`page` 等）は戻さない（G2-a (i)）。発火はアドレス駆動で値比較なし（`$streams.args` と同じ。primitive は same-value guard により実質変化時のみ）。getter・wildcard・`$` 始まり・自分の `from` とその子孫・scan 出力（自他とも）は raise（`from` の祖先は「親の差し替えで作り直す」として許す）。ユーザー起点の reset は nonce を `resetOn` に読ませる（G2-c）。**`on` の scan では reset を enqueue の時点で保留する**: 保留中に来た出来事の fold は `initial` から畳んで保留を消し、保留が残ったまま drain に来たら `initial` に戻す。書き込みより後の出来事（その書き込みの binding 適用で要素が同期に dispatch したものを含む）を消さないため（§5-4）。 |
 | **D7** | 出力 | 名前は平坦（`.` / `*` / `$` 始まり / 空文字 / `Object.prototype` 継承名を raise）。getter・setter・`$streams` 名との衝突は raise。**未定義なら `initial` で実体化し、既に値があれば保持する**（同じオブジェクトの再セット・SSR ハイドレーションで累積を失わない）。 |
 | **D8** | 寿命（G6） | 出力は通常の state 値として**切断・再接続を跨いで保持**する。切断中の出来事は畳まない。`from` は再接続で再開する（`$watch` と同じ二段構え）。`on` は `$on` と同じ購読経路に乗るので、ルート `<wcs-state>` の再接続で購読が戻らない既存欠陥（[#273](https://github.com/wcstack/wcstack/issues/273)）を共有する。#273 を直せば `$on` と一緒に戻る（`scan.on.test.ts` の `DEFECT(#273)` を反転させる）。`_state` の再セットで宣言を作り直す。SSR では `from` は発火せず出力の実体化だけを行い、`on` は `$on` と同じ扱い。ボリューム（`mount=`）での宣言は raise、マウントされたコンポーネントでは warn（`$streams` / `$watch` と同じ扱い）。 |
 | **D9** | 自己ループの柵（G5） | `from` の根が `$streams` 名である scan について、**その stream の `args` 依存に、scan 出力から依存グラフで到達できるパスが含まれていたら raise**（起動時は loud fail、依存駆動 restart では `$streamError` に正規化）。「scan 出力 → getter → 同じ stream の args」は、sentinel を経由せずに全ページを読み続ける（冪等キーが無ければ無限に再取得する）前進ループになるため。 |
@@ -29,6 +29,7 @@
 | **D15** | bound path の初期同期（G10） | `from` は state の書き込みを見るので、要素出力の初期同期（directional initial sync）も 1 回の変化として畳む。**要素の出来事は `on` で受ける**ことを規範にし、runtime は書き手を区別しない。 |
 | **D16** | pre-drain gate（G8-g） | 採らない。drain 終端で始め、`from` の 2 hop 遅延が実害になった時点で再評価する。`on` は同期なのでこの問題を持たない。 |
 | **D17** | signals 共有契約（G7） | 該当なし（`$streams.persist` 案を採らないため、`$streams` の restart-reset 契約は不変）。 |
+| **D18** | 同じ drain での scan 間の読み（§5-4） | drain 側の発火を **計画 → 書き込みの 2 相**にする。全 scan の次の値を読むだけで決めてから、宣言順に書く。1 相で「畳んでは書く」と、別の scan の出力を `from` に取る scan が同じ drain で先行 scan の書いたばかりの値を先取りし、次のバッチで同じ値をもう一度畳む（届いていた値は取りこぼす）。宣言順しだいで exactly-once が破れる。 |
 
 ---
 
@@ -90,7 +91,7 @@ export default {
 - `from` と `on` がどちらも無い／両方ある。`on` が `$eventTokens` に無い。
 - `from` が空・`$` 始まり・`@` を含む・空セグメント・wildcard 深度超過・getter（祖先を含む）・自出力またはその子孫。
 - `initial` が無い。`fold` が関数でない。
-- `resetOn` が文字列配列でない／要素が getter・wildcard・`$` 始まり・自分の `from`・いずれかの scan 出力（またはその子孫）。
+- `resetOn` が文字列配列でない／要素が getter・wildcard・`$` 始まり・自分の `from`・自分の `from` の子孫・いずれかの scan 出力（またはその子孫）。
 - scan 出力を介した循環（A の `from` の根が B の出力、B の `from` の根が A の出力、…）。
 
 ---
@@ -103,14 +104,15 @@ watch runtime の drain リスナー内で、`$watch` の収集より前に scan
 
 1. バッチの各絶対アドレスについて、発火対象の stateElement の scan registry を `from` パスと `resetOn` パスで引く。
 2. entry ごとに「reset hit があるか」「from hit（行ごと）があるか」をまとめる。
-3. 宣言順に発火する。1 entry につき `createState("writable")` を 1 回。
-   - 発火直前に registry の identity と発火対象集合を再確認する（先行 fold の書き込みが同期に切断・再セットを起こし得る — `$watch` と同じ）。
+3. **相 1（計画）**: 宣言順に、次の値を読むだけで決める。1 entry につき `createState("readonly")` を 1 回（D18）。
+   - 直前に registry の identity と発火対象集合を再確認する（先行 fold が同期に切断・再セットを起こし得る — `$watch` と同じ）。
+   - reset hit があれば「`initial` を書く」計画にして終わる（D6）。
    - `from` が後から getter になっていたら報告して止める（D5）。
-   - reset hit があれば出力を `initial` にして終わる（D6）。
    - `from` の根が `$streams` 名で、その stream の依存がバッチに載っていれば何もしない（D10）。
-   - 行を indexes 昇順に並べ、`acc = fold(acc, cur, prev, ...indexes)` を連鎖し、開始値と `Object.is` で異なるときだけ 1 回書く。
-4. fold の throw・thenable の戻り値は entry ごとに閉じて報告する。
-5. scan 発火は `beginWatchFiring` の内側で行う（scan の書き込みも連鎖深さに数える）。
+   - 行を indexes 昇順に並べ、`acc = fold(acc, cur, prev, ...indexes)` を連鎖し、開始値と `Object.is` で異なるときだけ書く計画を立てる。
+4. **相 2（書き込み）**: 計画を宣言順に書く。1 計画につき `createState("writable")` を 1 回。直前に同じ再確認をする。`on` の scan の reset は保留が残っているときだけ書く（§2-2）。
+5. fold の throw・thenable の戻り値・書き込みの throw は entry ごとに閉じて報告する。
+6. scan 発火は `beginWatchFiring` の内側で行う（scan の書き込みも連鎖深さに数える）。
 
 `prev` は `$watch` と同じ台帳から取る。そのため `from` パスは `$watch` のパスと並んで旧値キャプチャのゲートに入る（`scanPaths`）。
 
@@ -119,6 +121,8 @@ watch runtime の drain リスナー内で、`$watch` の収集より前に scan
 event-token の subscriber として登録する。`_state` セッターで `clearEventTokenRegistry` の直後・`processOnDeclaration` の直前に購読するので、同じトークンでは `$on` ハンドラより先に呼ばれる。
 
 subscriber は `(state, event, ...indexes)` を受け、`state[output]` を読んで fold し、同一参照でなければ書く。例外は閉じて報告する（後続の `$on` ハンドラを巻き添えにしない）。
+
+`resetOn` は書き込みの時点で効かせる（D6）。updater の enqueue に葉モジュール（`scan/eventReset.ts`）のフックを置き、発火対象の state で `on` の scan の `resetOn` アドレスが enqueue されたら、その entry に reset を保留する。subscriber は保留があれば `initial` から畳み、成功したら保留を消す（throw・thenable なら保留を残し、drain が `initial` に戻す）。drain 側は保留が残っているときだけ `initial` を書く。`resetOn` を持つ `on` の scan がページに無ければ、フックは整数比較 1 回で抜ける。
 
 ### 2-3. 自己ループの柵（D9）
 
@@ -203,6 +207,14 @@ Issue #272 の G0 は「D1 は `$scan` としてプロトタイプされてい�
 ### 5-3. 見つけた既存欠陥
 
 ルート `<wcs-state>` を付け直すと `$on` と command-token の購読が失われる（[#273](https://github.com/wcstack/wcstack/issues/273)）。`on` の scan は同じ購読経路に乗るので同じく止まる（`scan.on.test.ts` の `DEFECT(#273)`）。
+
+### 5-4. 実装レビューで直したもの（2026-09-13）
+
+| 指摘 | 実測（修正前） | 対処 |
+|---|---|---|
+| 連鎖した scan（`history.from` が `total` の出力）で、上流の source を `$watch` が同じ drain に書くと、下流が先取り・二重に畳む | 上流を先に宣言すると `history = [3, 6, 6]`、下流を先に宣言すると `[1, 3, 6]` | D18（計画 → 書き込みの 2 相）。`scan.from.test.ts` が両方の宣言順で `[1, 3, 6]` を固定 |
+| `on` の scan の `resetOn` が drain 終端でしか効かず、書き込みより後の出来事まで消す | 同じジョブで `server = "b"` の後に来た出来事、および `data-wcs="src: server"` の setter が同期に dispatch した `started:b` が `[]` に消える。`<wcs-fetch>` は自動 fetch を `queueMicrotask` に回すので当たらない | D6 改訂（enqueue 時点の保留 reset）。`scan.on.test.ts` が同じジョブ・2 回書き・同期 dispatch・fold の throw・切断中の書き込みを固定 |
+| `resetOn` が `from` の子孫だと reset が毎回勝ち、一度も畳まれない | — | 宣言時 raise（runtime・vscode-wcs）。祖先は許し、`scan.from.test.ts` が「行の書き込みは畳み、親の差し替えで作り直す」を固定 |
 
 ---
 

@@ -86,7 +86,7 @@ $scan: {
 - `from` と `on` がどちらも無い、または両方ある。`on` が `$eventTokens` に無い。
 - `from` のパスの形が壊れている。`from` が getter かその配下（`wcs/scan-source-computed`）。`from` が自分の出力かその子孫。
 - `initial` が無い。`fold` が関数でない。
-- `resetOn` が文字列の配列でない。要素がワイルドカード・getter（`wcs/scan-source-computed`）・自分の `from`・いずれかの scan 出力（またはその子孫）。
+- `resetOn` が文字列の配列でない。要素がワイルドカード・getter（`wcs/scan-source-computed`）・自分の `from` かその配下・いずれかの scan 出力（またはその子孫）。
 - scan 同士が `from` の根を辿って循環する（`a` の `from` が `b` の出力、`b` の `from` が `a` の出力、…）。
 
 ---
@@ -101,6 +101,7 @@ $scan: {
 - **同値の primitive の書き込み**は same-value guard がバッチに載せないので、実質「変化したとき」だけ畳みます。`config.sameValueGuard` を切った構成はサポートしません。
 - **親オブジェクトの丸ごと書き**（`state.user = { … }`）でも子の `from`（`user.name`）が載ります。このとき `prev` は `undefined` です。
 - **要素の出力プロパティ**（`message` など）を `from` にすると、バインド確立時の初期同期も 1 回の書き込みとして畳みます。要素の出来事は `on` で受けてください。
+- **別の scan の出力を `from` にする**と、その出力を着地した値のまま、着地 1 回につき 1 回畳みます（宣言順に依りません）。drain は全 scan の次の値を先に決めてから書くので、この drain で scan が書いた値は、それを読む scan には次のバッチで届きます。
 
 機構間の順序は固定です。
 
@@ -174,10 +175,13 @@ fold: (log, event) => [...log, event.detail],            // ✗ 無限の source
 
 ## resetOn
 
-- `resetOn` のパスのどれかがバッチに載ったら、出力を `initial` に戻します。**同じバッチの fold は行いません**（reset が勝つ）。
+- `resetOn` のパスのどれかが書かれたら、出力を `initial` に戻します。
+  - **`from` の scan** は drain の終わりに戻し、**同じバッチの fold は行いません**（reset が勝つ）。
+  - **`on` の scan** は書き込みの時点から reset を見ます。書き込みより後に来たイベント — 同じジョブの後続や、その書き込みを binding に適用する最中に要素が同期に dispatch したもの — は `initial` から畳みます。間にイベントが無ければ、drain の終わりに `initial` へ戻します。
 - 出力が既に `initial` と同一参照なら書き込みません。
 - 戻すのは**出力だけ**です。協調するカーソル（`page` など）は戻しません。カーソルも巻き戻す必要があるなら、それは `$watch` などの副作用として書いてください。
-- 発火はアドレス駆動で、値は比較しません（`$streams` の `args` と同じ）。primitive は same-value guard により実質変化したときだけ載ります。オブジェクトのパスは同じ内容の再代入でも reset します。
+- 発火はアドレス駆動で、値は比較しません（`$streams` の `args` と同じ）。primitive は same-value guard により実質変化したときだけ載ります。オブジェクトのパスは同じ内容の再代入でも reset します。状態要素が切断されている間の書き込みは reset しません。
+- `resetOn` は `from` の**祖先**にできます。`from: "items.*.qty"` に `resetOn: ["items"]` なら、行の書き込みは畳み、リストを丸ごと差し替えたら作り直します（新しいリストの行は畳みません — reset が勝つ）。`from` の**配下**は raise します。`from` を書くたびに同じバッチに載り、reset が毎回勝つからです。
 - ユーザー操作で消したいときは、nonce を `resetOn` に読ませます。
 
 ```javascript
@@ -280,7 +284,7 @@ $scan: {
 | `on` | イベントトークンの出来事を同期に畳む（イベント 1 回につき 1 回・`$on` より先） |
 | `fold` | 同期・`this` 無し・新しい値を返す。同一参照なら書かない |
 | `initial` | 必須。実体化の種と `resetOn` の戻り先 |
-| `resetOn` | 載ったら出力を `initial` に戻し、そのバッチの fold は行わない |
+| `resetOn` | 書かれたら出力を `initial` に戻す（`from`: そのバッチの fold は行わない／`on`: 後のイベントは `initial` から畳む） |
 | getter | source にしない（宣言時に raise） |
 | `$streams` との交差 | restart が勝つ。自分の出力から args を導出すると raise |
 | 冪等性 | 着地ごとに 1 回。ページごとに 1 回にするなら fold にキーを持たせる |

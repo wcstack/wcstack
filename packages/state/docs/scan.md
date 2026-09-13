@@ -86,7 +86,7 @@ These violations raise with `[wcs/scan-declaration-invalid]` or `[wcs/scan-sourc
 - An entry declares neither or both of `from` and `on`. `on` is not declared in `$eventTokens`.
 - `from` is not a well-formed path, is a getter or sits under one (`wcs/scan-source-computed`), or reads the entry's own output.
 - `initial` is missing, or `fold` is not a function.
-- `resetOn` is not an array of strings, or one of its paths contains a wildcard, is a getter (`wcs/scan-source-computed`), equals the entry's own `from`, or reads any scan output.
+- `resetOn` is not an array of strings, or one of its paths contains a wildcard, is a getter (`wcs/scan-source-computed`), equals the entry's own `from` or sits under it, or reads any scan output.
 - Scans feed each other through the roots of their `from` paths (the `from` of `a` is `b`'s output and the `from` of `b` is `a`'s output, and so on).
 
 ---
@@ -101,6 +101,7 @@ These violations raise with `[wcs/scan-declaration-invalid]` or `[wcs/scan-sourc
 - **An equal primitive write** never reaches the batch (the same-value guard drops it), so in practice the fold runs on change. A configuration with `config.sameValueGuard` turned off is not supported.
 - **A whole-parent write** (`state.user = { … }`) also lands a child `from` such as `user.name`, with `prev === undefined`.
 - **An element output property** (such as `message`) as `from` also folds the initial sync that runs when the binding is established. Receive element occurrences through `on`.
+- **A `from` that is another scan's output** folds that output as it landed, once per landing, whatever the declaration order. The drain first decides every scan's next value and only then writes them, so a value that a scan writes in this drain reaches the scans reading it in the next batch.
 
 The order between mechanisms is fixed:
 
@@ -174,10 +175,13 @@ fold: (log, event) => [...log, event.detail],            // ✗ unbounded on an 
 
 ## resetOn
 
-- When any `resetOn` path lands in a batch, the output returns to `initial` and **that batch's fold is skipped** (reset wins).
+- When a `resetOn` path is written, the output returns to `initial`.
+  - **A `from` scan** resets at the end of the drain, and **that batch's fold is skipped** (reset wins).
+  - **An `on` scan** sees the reset from the moment of the write. An event that comes after the write — later in the same job, or dispatched synchronously by an element while the write is applied to its binding — folds into `initial`. With no event in between, the output returns to `initial` at the end of the drain.
 - If the output is already the same reference as `initial`, nothing is written.
 - It resets **the output only**. A cooperating cursor (such as `page`) is not rewound; if the cursor has to move too, write that as a side effect in `$watch` or similar.
-- It fires on addresses, without comparing values (the same as `$streams` `args`). A primitive only lands when it actually changes, thanks to the same-value guard; an object path resets even when re-assigned with the same contents.
+- It fires on addresses, without comparing values (the same as `$streams` `args`). A primitive only lands when it actually changes, thanks to the same-value guard; an object path resets even when re-assigned with the same contents. A write while the state element is disconnected does not reset.
+- A `resetOn` path may be an **ancestor** of `from`: `from: "items.*.qty"` with `resetOn: ["items"]` folds row edits and starts over when the whole list is replaced (the rows of the new list are not folded — reset wins). A path **under** `from` raises: every write of `from` lands it too, so the reset would win every time.
 - To clear from a user action, have `resetOn` read a nonce.
 
 ```javascript
@@ -280,7 +284,7 @@ $scan: {
 | `on` | Folds an event token's occurrences synchronously (once per event, before `$on`) |
 | `fold` | Synchronous, no `this`, returns a new value; the same reference writes nothing |
 | `initial` | Required: the seed and the value `resetOn` returns to |
-| `resetOn` | When a path lands, the output returns to `initial` and that batch's fold is skipped |
+| `resetOn` | When a path is written, the output returns to `initial` (`from`: that batch's fold is skipped; `on`: later events fold into `initial`) |
 | Getters | Never a source (raises at declaration) |
 | With `$streams` | Restart wins; deriving `args` from the scan's own output raises |
 | Idempotency | Once per landing; keep a key in the fold for once per page |

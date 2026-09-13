@@ -2193,7 +2193,7 @@ Key rules:
 | `on` | An event-token name declared in `$eventTokens`. |
 | `initial` | Required. The seed of the accumulator, and what `resetOn` returns to. |
 | `fold` | Required. `from`: `(acc, cur, prev, ...indexes) => next`. `on`: `(acc, event, ...indexes) => next`. Synchronous, called without `this`, returns a new value. Returning `acc` itself writes nothing. |
-| `resetOn` | Optional array of plain state paths. When one of them is written, the output returns to `initial` and that batch's fold is skipped. |
+| `resetOn` | Optional array of plain state paths. When one of them is written, the output returns to `initial`: a `from` scan skips that batch's fold, and an `on` scan folds any event that comes after the write into `initial`. A path under `from` raises; an ancestor of `from` is allowed (start over when the parent is replaced). |
 
 **The runtime owns the output**, like a `$streams` value. It is materialized from `initial` when the state does not already have that property, and you bind it like any other path. It survives stream restarts, disconnect and reconnect, and a re-set of the same object; a re-set with a new declaration rebuilds the scan.
 
