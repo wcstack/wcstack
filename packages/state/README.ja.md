@@ -2070,9 +2070,9 @@ $updatedCallback(paths) {
 }
 ```
 
-**規則:** 描画に依存させたくないロジックは、`$watch`（または `$streams` の `args`）に根を置いてください。`$updatedCallback` は「描かれたものに追随する」用途に限ります。
+**規則:** 描画に依存させたくないロジックは、`$watch`・`$scan`・`$streams` の `args` のどれかに根を置いてください。`$updatedCallback` は「描かれたものに追随する」用途に限ります。
 
-上の例は `$watch` に置き換え済みで、`<b>` は表示専用に戻っています。この形（`$updatedCallback` が、どのバインディングにも現れないパスを判定に使っている）は **`wcs/updated-callback-unbound`** として静的に検出されます。
+上の例はいまは `$scan` で feed を積み（sentinel の再武装は `$watch`）、`<b>` は表示専用に戻っています。この形（`$updatedCallback` が、どのバインディングにも現れないパスを判定に使っている）は **`wcs/updated-callback-unbound`** として静的に検出されます。
 
 ### 残る制約
 
@@ -2127,11 +2127,11 @@ $updatedCallback(paths) {
 
 | 層 | 順序 | 制御 |
 |---|---|---|
-| 機構間 | `$updatedCallback` → `$watch` → `$streams` restart | 固定 |
+| 機構間 | `$updatedCallback` → `$scan` → `$watch` → `$streams` restart | 固定 |
 | ハンドラ間 | `$watch` の宣言順 | **宣言を並べ替える** |
 | 同一パスの行間 | `indexes` 昇順 | 固定 |
 
-**機構間の層を動かす唯一のもの**が、`state` 参加者を受け付ける `<wcs-view-transition>` です。バインディング適用 —— したがって `$updatedCallback` —— がフレームで着地する一方、`$watch` と `$streams` restart は state アドレスを消費し DOM を見ないので、drain がキューされた microtask に留まります。タグがある間の順序は `$watch` → `$streams` restart → `$updatedCallback` です。この層を並べ替えるものはページ上でこれ 1 つだけです。[docs/timing-and-firing-contract.ja.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.ja.md) §4.3 を参照してください。
+**機構間の層を動かす唯一のもの**が、`state` 参加者を受け付ける `<wcs-view-transition>` です。バインディング適用 —— したがって `$updatedCallback` —— がフレームで着地する一方、`$scan`・`$watch`・`$streams` restart は state アドレスを消費し DOM を見ないので、drain がキューされた microtask に留まります。タグがある間の順序は `$scan` → `$watch` → `$streams` restart → `$updatedCallback` です。この層を並べ替えるものはページ上でこれ 1 つだけです。[docs/timing-and-firing-contract.ja.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.ja.md) §4.3 を参照してください。
 
 主なルール:
 
@@ -2143,6 +2143,76 @@ $updatedCallback(paths) {
 - **書き込みの連鎖には上限があります** —— ハンドラの書き込みは新しいバッチを作るため、相互に書き合う watch は無限ループになり得ます。32 段で打ち切り、コンソールに報告します（値と DOM は巻き戻しません）。
 - **マウントされた `bind-component` スコープでは実行されません** —— マウントされたコンポーネントは宣言面を実行せず、`$watch` の宣言があると 1 回だけ console.warn でルート state（またはボリューム —— `<wcs-state mount>` は `$watch` / `$listKeys` / `$updatedCallback` を持てます）へ誘導します（`$streams` も同様）。plain な（配線なし Shadow の）子は独立ツリーを持つので宣言できます。
 - **SSR では実行されません** —— ハンドラの副作用がサーバーとクライアントで二重に走るためです。
+
+## Scan（`$scan`）
+
+`$streams` が畳むのは 1 回の run の**内側**で、restart のたびに値は `initial` へ戻ります。`$watch` は値を所有しません。**`$scan`** はその両方を跨いで残る値 —— 時間軸方向の累積 —— を、持ち主・発火単位・reset 条件つきで宣言します。
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      page: 1,
+      host: "a",
+      $eventTokens: ["message"],
+      $streams: {
+        pageResult: { args: (s) => s.page, source: loadPage },
+      },
+      $scan: {
+        // from: state パスの着地ごとに畳む（ここでは stream の値）
+        feed: {
+          from: "pageResult",
+          initial: { items: [], pages: [] },
+          fold: (feed, chunk) =>
+            chunk?.kind === "success" && !feed.pages.includes(chunk.page)
+              ? { items: feed.items.concat(chunk.items), pages: [...feed.pages, chunk.page] }
+              : feed,
+        },
+        // on: 宣言済みイベントトークンの出来事ごとに畳む
+        log: {
+          on: "message",
+          initial: [],
+          fold: (log, event) => [...log.slice(-49), event.detail],
+          resetOn: ["host"], // host が変わるたびに [] へ戻す
+        },
+      },
+    };
+  </script>
+</wcs-state>
+
+<template data-wcs="for: feed.items">…</template>
+```
+
+| フィールド | 契約 |
+|---|---|
+| `from` | state パス。ワイルドカード可。`$` 始まり・getter・getter の配下は不可。`from` と `on` はどちらか 1 つだけ。 |
+| `on` | `$eventTokens` に宣言したイベントトークン名。 |
+| `initial` | 必須。累積の種であり、`resetOn` の戻り先。 |
+| `fold` | 必須。`from` は `(acc, cur, prev, ...indexes) => next`、`on` は `(acc, event, ...indexes) => next`。同期で、`this` 無しで呼ばれ、新しい値を返す。`acc` そのものを返すと書き込まない。 |
+| `resetOn` | 任意。素の state パスの配列。どれかが書かれたら出力を `initial` に戻し、そのバッチの fold は行わない。 |
+
+**出力はランタイムが所有します**（`$streams` の値と同じ）。state にそのプロパティが無ければ `initial` で実体化され、他のパスと同じようにバインドできます。stream の restart・切断と再接続・同じオブジェクトの再セットを跨いで残り、新しい宣言での再セットでは作り直されます。
+
+2 つの source の発火:
+
+| | `from`（パス） | `on`（イベントトークン） |
+|---|---|---|
+| 単位 | 更新バッチに載ったアドレス 1 つにつき 1 回。同じ job 内の複数の書き込みは 1 回に畳まれる。 | イベント 1 回につき 1 回。同じ task の 2 回は 2 回畳む。 |
+| いつ | drain の終わり、`$watch` より先。 | イベントの中、そのトークンの `$on` ハンドラより先。 |
+| 出力が見えるのは | 次のバッチから。出力を見る `$watch` はそこで発火し、`prev` は `undefined`。 | すぐ。同じイベントの `$on` ハンドラは畳んだ後の値を見る。 |
+
+主なルール:
+
+- **getter を畳まない。** getter は入力が変わるたびに再評価されるので、畳むと出来事ではなく再評価の回数を数えます。`from` や `resetOn` に getter を書くと宣言時に raise します（`wcs/scan-source-computed`）。
+- **1 回の fold は着地ごとで、ページごとではない。** `done` 後の再試行や、ページの再接続は同じページをもう一度着地させます。問題になるなら fold に冪等キーを持たせてください（上の `pages`）。
+- **stream の `args` を自分の scan 出力から導出しない。** `feed` から導出した getter を `pageResult` の `args` が読むと、stream が自分の結果で restart し続けるので、ランタイムは `wcs/scan-feedback-loop` を raise します。カーソルはイベントから進めてください。stream の restart と同じバッチに着地した chunk は abort される run のものなので畳みません。
+- **要素の出来事は `on` で受ける。** `from` はそのパスへの書き込みをすべて見ます。バインドした要素の初期同期や、親オブジェクトの丸ごと書き（`prev` は `undefined`）も 1 回として畳みます。
+- **fold は有界に。** 無限の source は有界な値（直近 N 件・件数）に畳んでください（`$streams` と同じ）。
+- **例外は隔離される。** throw や Promise の戻り値はコンソールと DevTools に報告され、書き込みません。他の scan・watch・stream の restart は続行します。
+- **ルートのみ。** ボリューム（`mount=`）は `$scan` を拒否し、マウントされた `bind-component` スコープは 1 回の warn で無視します。SSR では `from` は畳みません（出力の実体化は行います）。
+- **既知の穴:** `on` の scan は `$on` と同じ購読経路なので、ルート `<wcs-state>` を付け直すと両方止まります（[#273](https://github.com/wcstack/wcstack/issues/273)）。
+
+リファレンス: [docs/scan.ja.md](https://github.com/wcstack/wcstack/blob/main/packages/state/docs/scan.ja.md)。設計の決定レコード: [docs/state-scan-design.md](https://github.com/wcstack/wcstack/blob/main/docs/state-scan-design.md)。
 
 ## Inputs と属性ミラー
 

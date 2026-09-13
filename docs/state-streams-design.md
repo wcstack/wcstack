@@ -307,6 +307,8 @@ binding / 構造（`deactivateContent`）単位の細粒度停止・再開は第
 7. DCC **定義要素**（`_initializeDCC` 経路）での `$streams` の起動（インスタンス内 `<wcs-state>` は通常経路で起動する、§7-2）。
 8. backpressure の保持（恒久的な非目標）。
 
+run（restart）を跨いで持続する累積は、第 1 段の後に別の宣言面 [`$scan`](./state-scan-design.md) になった。stream の値を `from` に取って畳む。restart の `initial` リセット（§2-2・signals 共有契約）はそのまま変えていない。
+
 ---
 
 ## 9. 実装計画

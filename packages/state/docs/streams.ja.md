@@ -98,6 +98,8 @@ export default {
 
 同名プロパティをユーザー側で先に宣言しても構いません（`defineState` での型付けに有用）が、**stream の起動時に値は `initial` で上書きされます**。起動後のプロパティは stream ランタイムの所有物です: ユーザーコードからの代入は禁止されませんが、動作は未定義です — 次の fold は代入後の値の上に畳みます。
 
+restart を跨いで累積したい場合は、stream の値を [`$scan`](./scan.ja.md) の `from` に取って畳んでください。stream 自身の値は restart のたびに `initial` へ戻ります。
+
 ---
 
 ## コンパニオン名前空間: `$streamStatus` / `$streamError`

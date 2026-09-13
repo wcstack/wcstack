@@ -2074,9 +2074,9 @@ $updatedCallback(paths) {
 }
 ```
 
-**The rule:** logic that must not depend on what is rendered belongs on a `$watch` (or a `$streams` `args`). Keep `$updatedCallback` for "follow what was drawn".
+**The rule:** logic that must not depend on what is rendered belongs on a `$watch`, a `$scan`, or a `$streams` `args`. Keep `$updatedCallback` for "follow what was drawn".
 
-That example now uses `$watch`, and the `<b>` is display-only again. This shape — `$updatedCallback` testing a path that is not bound anywhere — is detected statically as **`wcs/updated-callback-unbound`**.
+That example now accumulates its feed with `$scan` (and re-arms the sentinel from a `$watch`), and the `<b>` is display-only again. This shape — `$updatedCallback` testing a path that is not bound anywhere — is detected statically as **`wcs/updated-callback-unbound`**.
 
 ### The limitation that remains
 
@@ -2131,11 +2131,11 @@ Firing order is defined in three layers, and only the middle one is yours to ste
 
 | Layer | Order | Your control |
 |---|---|---|
-| Mechanisms | `$updatedCallback` → `$watch` → `$streams` restart | fixed |
+| Mechanisms | `$updatedCallback` → `$scan` → `$watch` → `$streams` restart | fixed |
 | Between handlers | declaration order in `$watch` | **reorder the declarations** |
 | Between rows of one path | ascending `indexes` | fixed |
 
-**The one thing that moves the mechanism layer** is a `<wcs-view-transition>` that accepts the `state` participant. Binding application — and with it `$updatedCallback` — then lands on a frame, while `$watch` and the `$streams` restart stay on the microtask the drain was queued on, because they consume state addresses and not the DOM. For as long as the tag is present the order is `$watch` → `$streams` restart → `$updatedCallback`. Nothing else on the page reorders this layer; see [docs/timing-and-firing-contract.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.md) §4.3.
+**The one thing that moves the mechanism layer** is a `<wcs-view-transition>` that accepts the `state` participant. Binding application — and with it `$updatedCallback` — then lands on a frame, while `$scan`, `$watch` and the `$streams` restart stay on the microtask the drain was queued on, because they consume state addresses and not the DOM. For as long as the tag is present the order is `$scan` → `$watch` → `$streams` restart → `$updatedCallback`. Nothing else on the page reorders this layer; see [docs/timing-and-firing-contract.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.md) §4.3.
 
 Key rules:
 
@@ -2147,6 +2147,76 @@ Key rules:
 - **Write chains are bounded** — a handler's writes form a new batch, so mutually-writing watches would loop forever; the chain is cut off after 32 links with a console error. Values and DOM are not rolled back.
 - **Not run on a mounted `bind-component` scope** — mounted components do not execute declaration surfaces: the `$watch` declaration is ignored with a one-time console warning that points to the root state (or a volume — `<wcs-state mount>` hosts `$watch` / `$listKeys` / `$updatedCallback`). This applies to `$streams` too. A plain (unwired Shadow) child owns an independent tree and can declare it.
 - **SSR does not run watches** — handler side effects would otherwise execute on both server and client.
+
+## Scan (`$scan`)
+
+`$streams` folds *within* one run — every restart resets the value to `initial` — and `$watch` owns no value. **`$scan`** declares the value that has to outlive both: an accumulation over time, with an owner, a firing unit and a reset condition.
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      page: 1,
+      host: "a",
+      $eventTokens: ["message"],
+      $streams: {
+        pageResult: { args: (s) => s.page, source: loadPage },
+      },
+      $scan: {
+        // from: fold each landing of a state path — here, the stream's value
+        feed: {
+          from: "pageResult",
+          initial: { items: [], pages: [] },
+          fold: (feed, chunk) =>
+            chunk?.kind === "success" && !feed.pages.includes(chunk.page)
+              ? { items: feed.items.concat(chunk.items), pages: [...feed.pages, chunk.page] }
+              : feed,
+        },
+        // on: fold each event of a declared event token
+        log: {
+          on: "message",
+          initial: [],
+          fold: (log, event) => [...log.slice(-49), event.detail],
+          resetOn: ["host"], // back to [] whenever host changes
+        },
+      },
+    };
+  </script>
+</wcs-state>
+
+<template data-wcs="for: feed.items">…</template>
+```
+
+| Field | Contract |
+|---|---|
+| `from` | A state path. Wildcards are allowed; it may not start with `$`, and may not be a getter or sit under one. Declare exactly one of `from` / `on`. |
+| `on` | An event-token name declared in `$eventTokens`. |
+| `initial` | Required. The seed of the accumulator, and what `resetOn` returns to. |
+| `fold` | Required. `from`: `(acc, cur, prev, ...indexes) => next`. `on`: `(acc, event, ...indexes) => next`. Synchronous, called without `this`, returns a new value. Returning `acc` itself writes nothing. |
+| `resetOn` | Optional array of plain state paths. When one of them is written, the output returns to `initial` and that batch's fold is skipped. |
+
+**The runtime owns the output**, like a `$streams` value. It is materialized from `initial` when the state does not already have that property, and you bind it like any other path. It survives stream restarts, disconnect and reconnect, and a re-set of the same object; a re-set with a new declaration rebuilds the scan.
+
+How the two sources fire:
+
+| | `from` (a path) | `on` (an event token) |
+|---|---|---|
+| Unit | One fold per address that landed in an update batch. Writes made in one job are coalesced. | One fold per event. Two events in one task fold twice. |
+| When | At the end of the drain, before `$watch`. | Inside the event, before that token's `$on` handlers. |
+| Output visible | From the next batch. A `$watch` on the output fires then, with `prev === undefined`. | Immediately. The `$on` handlers of the same event already see it. |
+
+Key rules:
+
+- **Never fold a getter.** A getter re-evaluates whenever its inputs change, so a fold over it would count re-evaluations, not events. A getter as `from` or `resetOn` raises at declaration (`wcs/scan-source-computed`).
+- **One fold per landing, not per page.** A retry after the page is `done`, or reconnecting the page, lands the same page again. When that matters, keep an idempotency key in the fold — the `pages` list above.
+- **Do not derive a stream's `args` from its own scan output.** A getter over `feed` read by `pageResult`'s `args` would restart the stream on its own result, so the runtime raises `wcs/scan-feedback-loop`. Advance the cursor from an event instead. A chunk that lands in the same batch as its stream's restart belongs to the aborted run and is not folded.
+- **Receive element events through `on`.** A `from` path sees every write to that path, including a bound element's initial sync and a whole-parent write (which arrives with `prev === undefined`).
+- **Keep folds bounded.** An infinite source must fold into a bounded value (the last N, a count), exactly as with `$streams`.
+- **Errors are isolated.** A throw or a returned Promise is reported to the console and DevTools and writes nothing; the other scans, watches and stream restarts still run.
+- **Root only.** A volume (`mount=`) refuses `$scan`, and a mounted `bind-component` scope ignores it with a one-time warning. Under SSR, `from` does not fold; the output is still materialized.
+- **Known gap:** an `on` scan shares `$on`'s subscription, so re-attaching the root `<wcs-state>` stops both ([#273](https://github.com/wcstack/wcstack/issues/273)).
+
+Reference: [docs/scan.md](https://github.com/wcstack/wcstack/blob/main/packages/state/docs/scan.md). Design record: [docs/state-scan-design.md](https://github.com/wcstack/wcstack/blob/main/docs/state-scan-design.md).
 
 ## Inputs and Attribute Mirror
 

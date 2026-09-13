@@ -169,6 +169,43 @@ subscriber は `(state, event, ...indexes)` を受け、`state[output]` を読�
 
 ---
 
+## 5. 実測と、Issue #272 の推奨からの変更（2026-09-13）
+
+### 5-1. G0 の決着
+
+Issue #272 の G0 は「D1 は `$scan` としてプロトタイプされていない」だった。Phase A〜D をそのまま実装として書き、次を実測した。
+
+| 項目 | 結果 |
+|---|---|
+| e2e `state-intersect-scroll` 6 本（`$scan` へ書き直した example・ローカル dist） | 全 pass（spec は無改変） |
+| scan → watch の発火順 | `scan.from.test.ts` で固定 |
+| `acc` と同一参照を返したら書かない（出力の `$watch` も鳴らない） | `scan.from.test.ts` / `scan.on.test.ts` で固定 |
+| fold の `this` | `undefined`（D4。Issue の書き直し案の readonly `this` は採らなかった） |
+| `$watch.<path>` と `$scan{from:<path>}` の同居・同じ `from` の 2 scan | 各 1 回（`scan.from.test.ts`） |
+| wildcard `from` の同一バッチ複数行・2 段 wildcard | 添字昇順に連鎖して 1 回書き（`scan.from.test.ts` / `scan.runtimeEdges.test.ts`） |
+| progress chunk（loading / retrying）での行 getter の再評価 | 0 回（`scan.streamCommit.test.ts`）。D5（`$streams.persist`）で実測された全行再展開は起きない |
+| 同じ page の再着地（done 後の Retry・再接続） | page キーで捨てる。キーが要ることも固定（`scan.streamCommit.test.ts`） |
+| restart が勝つ（D10）・自己ループの柵（D9） | `scan.from.test.ts` で固定（restart 経路の `$streamError` 正規化を含む） |
+| `wcs-validate` の診断（example の書き直し前後） | どちらも 0 error・同じ 4 warning（行フィールドの `binding-path-missing`） |
+| カバレッジ | `src/scan/` 100 / 100 / 100 / 100。state 全体は閾値内 |
+
+未計測のまま残したもの: `$listKeys` を出力そのもの（平坦な配列）に付けたときのキー突合（D14 は機構の読みに基づく）、成功 chunk の fold と `sink.done()` が同じバッチに合流するかのホップ数（G8-d。e2e の挙動には現れない）。
+
+### 5-2. 推奨からの変更
+
+| 論点 | Issue #272 の推奨 | 採った形 | 理由 |
+|---|---|---|---|
+| source の種類（G3-a） | 第 1 段は path のみ、event-token は第 2 段 | **`from` と `on` の両方を第 1 段に入れた**（D2） | 同型 13 サイトのうち 11 は要素所有の出来事で、path の `from` では state semantics の occurrence（`loading` の true→true）と同一 task の複数回を落とし、初期同期を拾う（G10）。同期 subscriber にすれば lane §9-2 の保留理由（bridge の microtask・initial リセット）が当たらない |
+| reset の形（G2-b） | `$streams.args` と同じ関数の依存捕捉 | **`resetOn` をパスの配列にした**（D6） | 値を返す必要が無く、静的に検査でき、getter を読む reset（依存書き込みごとの wipe）を宣言時に拒否できる |
+| registry（G0-4） | watch registry に第 3 台帳 | **別モジュールの scan registry** から watch runtime が引く | watch の registry は path につき entry 1 個で、同居と同 `from` の 2 scan を載せられない。発火対象集合・連鎖深さ・prev 台帳は共有した |
+| fold の `this`（G8-j） | readonly `this` | **渡さない**（D4） | 規則が 1 本減り、`$streams.fold` と揃う。必要な値は source の値に載せる（example は chunk に `pageSize` を載せた） |
+
+### 5-3. 見つけた既存欠陥
+
+ルート `<wcs-state>` を付け直すと `$on` と command-token の購読が失われる（[#273](https://github.com/wcstack/wcstack/issues/273)）。`on` の scan は同じ購読経路に乗るので同じく止まる（`scan.on.test.ts` の `DEFECT(#273)`）。
+
+---
+
 ## 関連
 
 - [Issue #272](https://github.com/wcstack/wcstack/issues/272) — 外部評の判定・13 サイト・5 案比較・反証・決定ゲート

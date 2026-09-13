@@ -324,4 +324,5 @@ watch ハンドラ内の書き込みは新しい microtask バッチを作るた
 - `@stateName` 越境 watch（D8 で明示的に不採用）
 - 動的な watch 登録 / 解除 API（宣言のみ。`$on` と同じ姿勢）
 - `$effects`（依存を自動追跡する副作用）── watch はパス明示。自動追跡は別機構であり、混ぜない
+- 時間軸方向の累積 ── `$watch` は値を所有しないので、run を跨ぐ累積は `$scan` が担う（[state-scan-design.md](./state-scan-design.md)）。`$scan` はパスかイベントトークンを明示する fold であって `$effects` ではない。発火は同じ drain リスナーの中で `$watch` より先
 - watch の非同期完了待ち（`await` しない規範を第 1 段で固定する）

@@ -382,6 +382,8 @@ element の CustomEvent
 
 宣言が短くなる利得は認めるので、**lane が入って手書きガードが減った後に再評価する**。
 
+> **2026-09-13 追記**: lane は不採用のまま（§0-1）なので、この再評価条件は失効した。event-token を source にする累積は `$streams.source` への bridge ではなく、`$scan` の `on`（event-token の同期 subscriber）として採用した（[state-scan-design.md](./state-scan-design.md) D2）。上の保留理由のうち「push→pull ブリッジは microtask を 1 段挟む」と「args restart の `initial` リセットと噛み合わない」は bridge 案に固有で、同期 subscriber には当たらない。「正しさの利得がゼロ」には、[Issue #272](https://github.com/wcstack/wcstack/issues/272) の G1 で予防的正しさを Gate 0 に数えると決裁した。
+
 ### 9-3. `data-wcs` に lane 修飾子を足す（却下）
 
 `data-wcs="command.fetch#exhaust: $command.refetch"` の形。`data-wcs` は端点指定と線上変換のみという既存方針（`feedback_data_wcs_wiring`）に抵触する。実行意味論は計算であり、state 側に押し出すべきものである。

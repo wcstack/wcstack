@@ -84,9 +84,9 @@
 `page++` すると、page N の in-flight run を後発 edge が abort し、N+1 へ飛ばすため誤りである。
 デモは次の組み合わせで ordered append を守る。
 
-1. `sentinelChanged`（IntersectionObserver task）は `page = floor(items.length / pageSize) + 1` とする
-2. page N の実行中／失敗後は `items.length` が不変なので N を再代入するだけ。既定 ON の primitive same-value guard が enqueue 自体を no-op にし、stream は restart しない
-3. 成功 chunk を `$updatedCallback` が `items` へ commit し、`reobserve()` する
+1. `sentinelChanged`（IntersectionObserver task）は `page = floor(feed.items.length / pageSize) + 1` とする
+2. page N の実行中／失敗後は `feed.items.length` が不変なので N を再代入するだけ。既定 ON の primitive same-value guard が enqueue 自体を no-op にし、stream は restart しない
+3. 成功 chunk の着地を `$scan`（`from: "pageResult"`）が `feed.items` へ畳み、次のバッチの `$watch.feed` が `reobserve()` する。commit は `done` ではなく成功 chunk の着地で、同じ page の再着地は fold の page キーが捨てる
 4. 新しい可視性 callback では式が N+1 を返す。`page` 更新の updater drain 後、`$streams.args` の依存 hit が旧 run を abort し、新しい args で run を開始する
 
 → `!loading` / `!error` の手書き exhaust guard は不要で、通常の交差 edge は失敗ページの予算外 retry にもならない。
@@ -137,7 +137,7 @@ drain（`Updater._applyChange`）は通常、キューされた microtask の中
 
 → **帰結 1**: state に書いてから `await Promise.resolve()` で DOM を読むコードは古い DOM を見る。遷移を待つか、`$updatedCallback` を使うこと —— こちらは更新コールバックの中、バインディング適用の直後に発火するので*位置*は変わらない（ただし適用ごと 1 フレーム後ろへずれる）。
 
-→ **帰結 2 —— 機構間の順序が反転する**。drain 終了リスナー（`$watch` → `$streams` restart、§3）は state アドレスを消費し DOM を見ないので元の microtask に留まる。`$updatedCallback` は留まらない。したがって §3 が「固定」と呼ぶ `$updatedCallback` → `$watch` → `$streams` restart は、arbiter が `state` を受け付けている間だけ `$watch` → `$streams` restart → `$updatedCallback` になる。この層を並べ替えるものはページ上でこれ 1 つだけ。`$updatedCallback` が書いたものを `$watch` ハンドラが読む組み方は、タグがある間は成立しない。
+→ **帰結 2 —— 機構間の順序が反転する**。drain 終了リスナー（`$scan` → `$watch` → `$streams` restart、§3）は state アドレスを消費し DOM を見ないので元の microtask に留まる。`$updatedCallback` は留まらない。したがって §3 が「固定」と呼ぶ `$updatedCallback` → `$scan` → `$watch` → `$streams` restart は、arbiter が `state` を受け付けている間だけ `$scan` → `$watch` → `$streams` restart → `$updatedCallback` になる。この層を並べ替えるものはページ上でこれ 1 つだけ。`$updatedCallback` が書いたものを `$watch` ハンドラが読む組み方は、タグがある間は成立しない。
 
 **変わらない**もの: 初期レンダリングは決して包まれない（包むのは drain だけ）。`inSsr()` は同期パスへ短絡する。適用すべきバインディングが 0 本のバッチは arbiter へ渡さないので、headless なパス（`$watch` 専用・`$streams` の内部状態）への書き込みはアニメーションも遅延も起こさない。arbiter が居ない場合、あるいは `for="router"` の場合、drain は従来と完全に同一。
 
