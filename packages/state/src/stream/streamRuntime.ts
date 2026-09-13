@@ -33,6 +33,7 @@ import {
   STATE_STREAM_STATUS_NAMESPACE_NAME,
   STREAM_LISTENER_PRIORITY,
 } from "../define";
+import { assertNoScanFeedback } from "../scan/scanFeedback";
 import { registerUpdateBatchListener } from "../updater/updater";
 import { addActiveStateElement, getActiveStateElements } from "./activeStateElements";
 import { traceArgs } from "./argsTrace";
@@ -81,6 +82,8 @@ export function startStream(stateElement: IStateElement, entry: IStreamEntry): v
   // args 評価 ＋ 依存の per-run 再捕捉（args === null なら depAddresses を clear して
   // undefined。Promise / 自己依存 / wildcard 読みは raiseError、§3-1）
   const argsValue = traceArgs(stateElement, entry);
+  // scan 出力 → args の前進ループを起動前に止める（docs/state-scan-design.md D9）
+  assertNoScanFeedback(stateElement, entry);
 
   // 値リセット: setByAddress を通すことで updater coalesce・sameValueGuard・
   // walkDependency（stream 値に依存する computed の dirty 化）がすべて乗る（§3-3）

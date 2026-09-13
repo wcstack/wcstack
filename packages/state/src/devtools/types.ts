@@ -76,7 +76,7 @@ export type DevtoolsEvent =
       // 「静かに握られた失敗」が見えないので、同じ地点からここにも流す。
       readonly type: "state:watch-error";
       /** throw 元。cur の評価（getter）とハンドラ本体では原因も直し方も違う */
-      readonly phase: "prime" | "evaluate" | "handler";
+      readonly phase: "prime" | "evaluate" | "handler" | "fold";
       /** `$watch` の宣言キー（ワイルドカードを含む生のパス） */
       readonly path: string;
       readonly error: unknown;
@@ -110,7 +110,7 @@ export type DevtoolsEvent =
       // 「配線したのに黙って死んでいる」を devtools からも見えるようにする。
       readonly type: "state:path-unresolved";
       /** 書き手が書いた面。診断 code が binding / watch で変わる */
-      readonly source: "binding" | "watch";
+      readonly source: "binding" | "watch" | "scan";
       /** 宣言されたパス（ワイルドカードを含む生の文字列） */
       readonly path: string;
       /** 解決に失敗したセグメント */

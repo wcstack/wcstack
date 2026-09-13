@@ -118,6 +118,12 @@ export interface IStateElement {
    */
   readonly watchPaths?: ReadonlySet<string> | null;
   /**
+   * `$scan` の `from` パスの集合（docs/state-scan-design.md §2-1）。`watchPaths` と並んで
+   * setByAddress の旧値キャプチャのゲートになる（fold に `prev` を渡すため）。
+   * 宣言が無ければ null / undefined。optional なのはテスト用モック互換のため。
+   */
+  readonly scanPaths?: ReadonlySet<string> | null;
+  /**
    * パスを依存グラフへ登録する。DOM バインディング登録（BindingSession）のほか、
    * `$watch` 宣言（processWatchDeclaration）からも呼ばれる — 静的依存グラフに
    * 載るのがバインド済みパスだけだと headless 購読が成立しないため（設計書 §8）。

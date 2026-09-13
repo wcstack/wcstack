@@ -60,11 +60,14 @@ function recordWatchPrevValue(
   oldValue: unknown,
   hasOldValue: boolean,
 ): void {
-  const watchPaths = stateElement.watchPaths;
-  if (watchPaths == null || !hasOldValue) {
+  if (!hasOldValue) {
     return;
   }
-  if (watchPaths.has(path)) {
+  // `$scan` の `from`（scanPaths）も同じ台帳から `prev` を取る（docs/state-scan-design.md §2-1）。
+  // どちらも未宣言なら null 判定 2 個で抜ける。
+  const watchPaths = stateElement.watchPaths;
+  const scanPaths = stateElement.scanPaths;
+  if (watchPaths?.has(path) === true || scanPaths?.has(path) === true) {
     recordPrevValue(absAddress, oldValue);
   }
 }

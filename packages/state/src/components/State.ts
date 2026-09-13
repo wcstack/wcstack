@@ -27,6 +27,8 @@ import { processWatchDeclaration } from "../watch/processWatchDeclaration";
 import { clearComputedSnapshots } from "../watch/computedSnapshots";
 import { clearWatchRegistry, deactivateWatch } from "../watch/watchRegistry";
 import { startWatch } from "../watch/watchRuntime";
+import { materializeScanOutputs, parseScanDeclaration, registerScans, subscribeScanEvents } from "../scan/processScanDeclaration";
+import { clearScanRegistry } from "../scan/scanRegistry";
 import { defineDCC } from "../dcc/defineDCC";
 import { getCustomElementRegistry } from "../platform/customElementRegistry";
 import { getPathInfo } from "../address/PathInfo";
@@ -172,6 +174,7 @@ export class State extends HTMLElementBase implements IStateElement {
   private _generatedPaths: Set<string> = new Set<string>();
   // `$watch` 宣言の監視対象パス。宣言が無ければ null（setByAddress のゼロコスト契約）
   private _watchPaths: ReadonlySet<string> | null = null;
+  private _scanPaths: ReadonlySet<string> | null = null;
   private _version = 0;
   private _rootNode: Node | null = null;
   private _boundComponent: Element | null = null;
@@ -229,8 +232,8 @@ export class State extends HTMLElementBase implements IStateElement {
     // 順序: **`value` しか読まない検証** → 旧世代の後始末 → 世代を進める → 差し替え → 再収集。
     //
     // 宣言の検証は世代更新を挟んで 2 群に割れる。
-    //  - 世代を進める**前**に走る 4 つ: `$recursion`（宣言とレジストリの構築）・`$commandTokens`・
-    //    `$eventTokens`・`$listKeys`。どれも `value` しか読まないのでここへ置ける。この 4 つで
+    //  - 世代を進める**前**に走る 5 つ: `$recursion`（宣言とレジストリの構築）・`$commandTokens`・
+    //    `$eventTokens`・`$listKeys`・`$scan`。どれも `value` しか読まないのでここへ置ける。この 5 つで
     //    throw した再セットは世代を進めず、`__state` も旧世代の読みもそのまま残る。
     //  - 世代を進めた**後**に走る 3 つ: `$on`（下・`_eventTokenNames` と token registry を要る）・
     //    `$streams`・`$watch`。この 3 つで throw した再セットは、世代が進んで `__state` も
@@ -250,6 +253,8 @@ export class State extends HTMLElementBase implements IStateElement {
     // $listKeys の検証は `value` しか読まない（要素にも旧世代にも触れない）ので、ここで済ませる。
     // 反映は下の所定位置のまま（クリアと再収集の並びは変えない）。
     const listKeys = processListKeysDeclaration(value);
+    // $scan の検証も `value` と宣言済みトークン名しか読まない（docs/state-scan-design.md §1-2）。
+    const scanEntries = parseScanDeclaration(value, eventTokenNames);
     // 旧世代の生成アクセサ（own）・それを指す依存辺・評価結果のキャッシュを忘れてから
     // 差し替える（recursion/generation.ts）。own の生成アクセサは、同じオブジェクトを再セットする
     // ときに下の `getStateInfo` が `getterPaths` へ拾い直す前に消えていなければならない。
@@ -265,7 +270,7 @@ export class State extends HTMLElementBase implements IStateElement {
     this._commandTokenNames = commandTokenNames;
     this._eventTokenNames = eventTokenNames;
     // 世代を進める（issue #258 の X10）。位置は「旧世代の後始末（forgetGenerated）の**後**・
-    // `__state` の差し替えの**前**」。上の 4 つ（`value` しか読まない検証）で throw した再セットは
+    // `__state` の差し替えの**前**」。上の 5 つ（`value` しか読まない検証）で throw した再セットは
     // ここへ到達しないので、要素は丸ごと旧世代に留まる — 世代も、旧世代のキャッシュが返す読みも
     // 据え置き（同ファイルの「throw する再セットは世代を進めない」4 本が固定する）。
     this._stateGeneration++;
@@ -280,6 +285,12 @@ export class State extends HTMLElementBase implements IStateElement {
     this._hasErrorCallback = STATE_ERROR_CALLBACK_NAME in value;
     // 再 set 時に二重 subscribe しないよう registry をクリアしてから $on を配線し直す。
     clearEventTokenRegistry(this);
+    // $scan（docs/state-scan-design.md §2-4）: 出力の実体化は `_rebuildPathInfo` より前、
+    // `on` の購読は `$on` より前（同じトークンでは reducer → effect の順、D11）。
+    if (scanEntries !== null) {
+      materializeScanOutputs(value, scanEntries);
+      subscribeScanEvents(this, scanEntries);
+    }
     processOnDeclaration(this, value, this._eventTokenNames);
     this._listPaths.clear();
     this._elementPaths.clear();
@@ -326,6 +337,10 @@ export class State extends HTMLElementBase implements IStateElement {
     // `setPathInfo` をやり直しても新しい診断は出ない — 第 2 世代で消えたバインド先が無言のまま
     // であることを `__tests__/integration.stateGenerationReset.test.ts` の末尾が固定する。
     this._rebuildPathInfo();
+    // $scan: registry と from / resetOn の依存グラフ登録（_pathSet クリア後であること）。
+    // startWatch より前に置く（scan だけを宣言した state も drain の発火対象に載せるため）。
+    clearScanRegistry(this);
+    this._scanPaths = scanEntries === null ? null : registerScans(this, scanEntries);
     // $watch: 旧宣言のハンドラが残らないよう registry を落としてから新宣言を解析する。
     // _pathSet.clear() の後であること（依存グラフ登録をやり直す必要がある、
     // docs/state-watch-hook-design.md §8）。宣言が無ければ watchPaths は null で、
@@ -1141,6 +1156,10 @@ export class State extends HTMLElementBase implements IStateElement {
 
   get watchPaths(): ReadonlySet<string> | null {
     return this._watchPaths;
+  }
+
+  get scanPaths(): ReadonlySet<string> | null {
+    return this._scanPaths;
   }
 
   get elementPaths(): Set<string> {

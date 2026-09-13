@@ -32,6 +32,8 @@ import { beginWatchFiring, consumeWatchChainDepth, endWatchFiring } from "./chai
 import { getComputedSnapshot, setComputedSnapshot } from "./computedSnapshots";
 import { clearPrevValues, getPrevValue } from "./prevValues";
 import { addActiveWatchStateElement, getActiveWatchStateElements, getVolumeWatchEntries, getWatchEntries } from "./watchRegistry";
+import { hasScanDrainWork } from "../scan/scanRegistry";
+import { fireScansOnUpdateBatch } from "../scan/scanRuntime";
 import type { IWatchEntry } from "./types";
 
 interface IWatchHit {
@@ -55,9 +57,12 @@ interface IWatchHit {
  * 「接続中の全 `<wcs-state>`」になり、`fireWatchOnUpdateBatch` の early return が
  * 実アプリで効かなくなる ＝ `$watch` 未使用アプリの drain にも収集ループが乗る
  * （ゼロコスト契約、設計書 §10 ／ 実装計画 P16）。
+ *
+ * `$scan` の `from` / `resetOn` も同じ drain リスナーで発火するので、それだけを宣言した
+ * state も発火対象に載せる（docs/state-scan-design.md D11）。
  */
 export function startWatch(stateElement: IStateElement): void {
-  if (getWatchEntries(stateElement).size === 0 && getVolumeWatchEntries(stateElement).size === 0) {
+  if (getWatchEntries(stateElement).size === 0 && getVolumeWatchEntries(stateElement).size === 0 && !hasScanDrainWork(stateElement)) {
     return;
   }
   addActiveWatchStateElement(stateElement);
@@ -80,7 +85,7 @@ export function startWatch(stateElement: IStateElement): void {
  * 「DOM にバインドされていれば発火する」ままとし、§5-3 に制約として書く。
  */
 function primeComputedWatches(stateElement: IStateElement): void {
-  // 宣言が 1 つ以上あることは startWatch が保証済み
+  // 宣言（watch か scan）が 1 つ以上あることは startWatch が保証済み。scan だけなら targets は空
   const targets: IWatchEntry[] = [];
   for (const entry of getWatchEntries(stateElement).values()) {
     if (isScalarComputed(stateElement, entry)) {
@@ -184,6 +189,10 @@ function fireWatchOnUpdateBatch(batch: ReadonlySet<IAbsoluteStateAddress>): void
       }
       return;
     }
+
+    // `$scan` の from / resetOn を `$watch` より先に畳む（docs/state-scan-design.md D11）。
+    // scan の書き込みは次のバッチに乗るので、この drain の `$watch` の収集には影響しない。
+    fireScansOnUpdateBatch(batch, activeStateElements, depth);
 
     // --- 収集フェーズ ---
     const hits: IWatchHit[] = [];
