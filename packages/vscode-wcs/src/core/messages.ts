@@ -80,6 +80,24 @@ export interface WcsMessageCatalog {
   watchKeyEmptySegment(key: string): string;
   watchHandlerNotFunction(key: string): string;
   watchPathMissing(key: string): string;
+  // --- scanDeclarationValidator ---
+  /** `$scan` の値がオブジェクトでないと静的に断定できる（ランタイムは読み込み時に throw）。 */
+  scanNotObject(): string;
+  scanOutputInvalid(name: string): string;
+  scanOutputConflict(name: string, other: 'getter' | 'stream'): string;
+  scanEntryNotObject(name: string): string;
+  scanSourceCount(name: string): string;
+  scanInitialMissing(name: string): string;
+  scanFoldNotFunction(name: string): string;
+  scanOnUndeclared(name: string, token: string): string;
+  scanPathInvalid(name: string, field: 'from' | 'resetOn', path: string): string;
+  scanFromSelf(name: string, path: string): string;
+  scanResetNotArray(name: string): string;
+  scanResetWildcard(name: string, path: string): string;
+  scanResetIsFrom(name: string, path: string): string;
+  scanResetReadsOutput(name: string, path: string, output: string): string;
+  scanSourceComputed(name: string, field: 'from' | 'resetOn', path: string, getter: string): string;
+  scanPathMissing(name: string, field: 'from' | 'resetOn', path: string): string;
   // --- arrayMutationValidator ---
   arrayMutation(method: string, alternative: string): string;
   arrayIndexAssign(suggestedPath: string): string;
@@ -218,6 +236,24 @@ const ja: WcsMessageCatalog = {
   watchKeyEmptySegment: (k) => `$watch のキー "${k}" に空のパスセグメントがあります`,
   watchHandlerNotFunction: (k) => `$watch のエントリ "${k}" の値は関数である必要があります`,
   watchPathMissing: (k) => `$watch のキー "${k}" は状態定義に存在しません（一度も発火しません）`,
+  scanNotObject: () => `$scan は「出力名 → { from | on, initial, fold, resetOn? }」のオブジェクトである必要があります（この形はランタイムが読み込み時に throw します）`,
+  scanOutputInvalid: (n) => `$scan の出力名 "${n}" は平坦なプロパティ名である必要があります（"."・"*"・先頭の "$" は使えません）`,
+  scanOutputConflict: (n, other) => other === 'getter'
+    ? `$scan の出力名 "${n}" は同名の getter と衝突しています（出力はランタイムが所有するプロパティです）`
+    : `$scan の出力名 "${n}" は同名の $streams エントリと衝突しています（出力の持ち主は 1 つだけです）`,
+  scanEntryNotObject: (n) => `$scan のエントリ "${n}" は { from | on, initial, fold, resetOn? } のオブジェクトである必要があります`,
+  scanSourceCount: (n) => `$scan のエントリ "${n}" には "from"（state パス）か "on"（イベントトークン名）のどちらか 1 つだけを書きます`,
+  scanInitialMissing: (n) => `$scan のエントリ "${n}" に "initial" がありません（累積の種であり、resetOn の戻り先です）`,
+  scanFoldNotFunction: (n) => `$scan のエントリ "${n}" の "fold" は関数である必要があります`,
+  scanOnUndeclared: (n, t) => `$scan のエントリ "${n}" の on "${t}" は $eventTokens に宣言されていません`,
+  scanPathInvalid: (n, f, p) => `$scan のエントリ "${n}" の ${f} "${p}" は state パスとして成立しません（先頭の "$"・"@"・空のセグメント・"**" は使えません）`,
+  scanFromSelf: (n, p) => `$scan のエントリ "${n}" の from "${p}" は自分の出力を読んでいます（自分の書き込みを永久に畳み続けます）`,
+  scanResetNotArray: (n) => `$scan のエントリ "${n}" の "resetOn" は state パスの配列である必要があります`,
+  scanResetWildcard: (n, p) => `$scan のエントリ "${n}" の resetOn "${p}" に "*" は使えません（reset は出力全体を initial に戻します）`,
+  scanResetIsFrom: (n, p) => `$scan のエントリ "${n}" の resetOn "${p}" は自分の from と同じです（変化のたびに畳まずに reset します）`,
+  scanResetReadsOutput: (n, p, o) => `$scan のエントリ "${n}" の resetOn "${p}" は $scan の出力 "${o}" を読んでいます（累積で累積を消すフィードバックになります）。素の入力で reset してください`,
+  scanSourceComputed: (n, f, p, g) => `$scan のエントリ "${n}" の ${f} "${p}" は${g === p ? ' getter' : ` getter "${g}" の配下`}です。getter は入力が変わるたびに再評価されるので、畳むと出来事ではなく再評価の回数を数えます。getter が読む素の値を指すか、on でイベントを受けてください`,
+  scanPathMissing: (n, f, p) => `$scan のエントリ "${n}" の ${f} "${p}" は状態定義に存在しません（${f === 'from' ? '一度も畳まれません' : '一度も reset されません'}）`,
   typeAnnotationIncompatible: (vt, rt) => `型 "${vt}" は @type {${rt}} と互換性がありません`,
   arrayMutation: (m, alt) =>
     `配列の破壊的メソッド "${m}" はリアクティブ更新をトリガーしません（同一参照の自己再代入でも要素の追加・削除は反映されません）。非破壊メソッドと再代入を使用してください（例: ${alt}）。`,
@@ -400,6 +436,24 @@ const en: WcsMessageCatalog = {
   watchKeyEmptySegment: (k) => `$watch key "${k}" has an empty path segment`,
   watchHandlerNotFunction: (k) => `The value of $watch entry "${k}" must be a function`,
   watchPathMissing: (k) => `$watch key "${k}" does not exist in the state definition (it will never fire)`,
+  scanNotObject: () => `$scan must be an object mapping output names to { from | on, initial, fold, resetOn? } (the runtime throws on this shape at load time)`,
+  scanOutputInvalid: (n) => `$scan output name "${n}" must be a flat property name ("." and "*" and a leading "$" are not allowed)`,
+  scanOutputConflict: (n, other) => other === 'getter'
+    ? `$scan output "${n}" conflicts with a getter of the same name (the output is a property the runtime owns)`
+    : `$scan output "${n}" conflicts with the $streams entry of the same name (each output has exactly one owner)`,
+  scanEntryNotObject: (n) => `$scan entry "${n}" must be an object { from | on, initial, fold, resetOn? }`,
+  scanSourceCount: (n) => `$scan entry "${n}" must declare exactly one of "from" (a state path) or "on" (an event-token name)`,
+  scanInitialMissing: (n) => `$scan entry "${n}" requires "initial" (the seed of the accumulator and the value resetOn returns to)`,
+  scanFoldNotFunction: (n) => `$scan entry "${n}" fold must be a function`,
+  scanOnUndeclared: (n, t) => `$scan entry "${n}" on "${t}" is not declared in $eventTokens`,
+  scanPathInvalid: (n, f, p) => `$scan entry "${n}" ${f} "${p}" is not a valid state path (a leading "$", "@", empty segments and "**" are not allowed)`,
+  scanFromSelf: (n, p) => `$scan entry "${n}" from "${p}" reads the entry's own output (it would fold its own writes forever)`,
+  scanResetNotArray: (n) => `$scan entry "${n}" "resetOn" must be an array of state paths`,
+  scanResetWildcard: (n, p) => `$scan entry "${n}" resetOn "${p}" must not contain "*" (a reset returns the whole output to initial)`,
+  scanResetIsFrom: (n, p) => `$scan entry "${n}" resetOn "${p}" is the entry's own from (every change would reset instead of fold)`,
+  scanResetReadsOutput: (n, p, o) => `$scan entry "${n}" resetOn "${p}" reads the $scan output "${o}" (a reset driven by an accumulator is a feedback loop). Reset on the plain inputs instead`,
+  scanSourceComputed: (n, f, p, g) => `$scan entry "${n}" ${f} "${p}" ${g === p ? 'is a getter' : `is under the getter "${g}"`}. A getter re-evaluates whenever its inputs change, so folding it counts re-evaluations, not events. Point at the plain value the getter reads, or use "on" with an event token`,
+  scanPathMissing: (n, f, p) => `$scan entry "${n}" ${f} "${p}" does not exist in the state definition (${f === 'from' ? 'it will never fold' : 'it will never reset'})`,
   typeAnnotationIncompatible: (vt, rt) => `Type "${vt}" is not compatible with @type {${rt}}`,
   arrayMutation: (m, alt) =>
     `Destructive array method "${m}" does not trigger a reactive update (re-assigning the same reference does not reflect added/removed elements either). Use a non-destructive method with reassignment (e.g. ${alt}).`,

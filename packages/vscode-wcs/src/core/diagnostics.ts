@@ -81,6 +81,14 @@ export const WcsDiagnosticCode = {
   // `$watch` のキーが状態定義に存在しない。バインディング側と違い黙って発火しない
   // だけなので気づけない。severity は binding-path-missing に揃える（warning）。
   WatchPathMissing: "wcs/watch-path-missing",
+  // --- <wcs-state> script: $scan declaration ---
+  // ランタイム（scan/processScanDeclaration.ts）が raiseError で落とす宣言の形。出力名・source の本数・
+  // initial / fold の欠落・from / resetOn のパスの形・未宣言トークン・自出力の読み。
+  ScanDeclarationInvalid: "wcs/scan-declaration-invalid",
+  // from / resetOn が getter（またはその配下）。畳むと出来事ではなく再評価の回数を数える。ランタイムも raise。
+  ScanSourceComputed: "wcs/scan-source-computed",
+  // from / resetOn のパスが状態定義に存在しない。黙って一度も畳まれない。severity は watch-path-missing に揃える。
+  ScanPathMissing: "wcs/scan-path-missing",
   // --- <wcs-state> script: $recursion declaration / `**` paths ---
   // ランタイムと同じ code 語彙(@wcstack/state src/recursion/ が正本。
   // docs/state-recursive-path-impl-plan.md §7)。静的に出すのは**パス文字列と宣言だけで

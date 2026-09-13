@@ -32,6 +32,8 @@ const untrackedReadHtml = join(workDir, "untracked-read.html");
 const recursionOkHtml = join(workDir, "recursion-ok.html");
 const recursionBadHtml = join(workDir, "recursion-bad.html");
 const recursionSpreadHtml = join(workDir, "recursion-spread.html");
+const scanOkHtml = join(workDir, "scan-ok.html");
+const scanBadHtml = join(workDir, "scan-bad.html");
 // stateSchema 発見（D8）: HTML と同じディレクトリの wcstack.manifest.json を自動で読み、
 // 宣言済み state の未存在パスは error に上がる（D6）。tmp 下なので repo の CI gate は走査しない。
 const schemaDir = join(workDir, "schema");
@@ -126,6 +128,35 @@ writeFileSync(missingPathHtml, `<!doctype html>
 export default { message: "hi" };
 </script></wcs-state>
 <div data-wcs="textContent: missingPath"></div>
+`);
+
+// $scan（時間軸の累積）。宣言の形と getter source は runtime（scan/processScanDeclaration.ts）と
+// 同じ code の error。正しい宣言（from / on / resetOn）は出力が候補パスとして実体化され無診断。
+writeFileSync(scanOkHtml, `<!doctype html>
+<wcs-state><script type="module">
+export default {
+  page: 1,
+  $eventTokens: ["pageArrived"],
+  $streams: { pageResult: { args: (s) => s.page, source: (page, signal) => load(page, signal) } },
+  $scan: {
+    feed: { from: "pageResult", initial: { items: [] }, fold: (acc, chunk) => acc },
+    log: { on: "pageArrived", initial: [], fold: (acc, event) => [...acc, event.detail], resetOn: ["page"] },
+  },
+};
+</script></wcs-state>
+<p data-wcs="textContent: feed.items.length"></p>
+`);
+writeFileSync(scanBadHtml, `<!doctype html>
+<wcs-state><script type="module">
+export default {
+  get total() { return 1; },
+  $eventTokens: ["tick"],
+  $scan: {
+    count: { on: "tikc", initial: 0, fold: (acc) => acc + 1 },
+    sum: { from: "total", initial: 0, fold: (acc, cur) => acc + cur },
+  },
+};
+</script></wcs-state>
 `);
 
 const failures = [];
@@ -263,6 +294,17 @@ check("--strict + --errors-only: warning hidden from output but still fails", ["
 check("nearest wcstack.manifest.json declares stateSchema → typo is error wcs/path-nonexistent, exit 1", ["--lang=en", schemaHtml], {
   exit: 1,
   stdout: [/index\.html:\d+:\d+ error wcs\/path-nonexistent .*"mesage"/, "1 error(s), 0 warning(s)"],
+});
+
+check("$scan declarations with from / on / resetOn are clean, exit 0", ["--lang=en", scanOkHtml], {
+  exit: 0,
+  stdout: ["0 error(s), 0 warning(s)"],
+});
+
+// 未宣言トークンと getter source は runtime が読み込み時に raise する形 ＝ error（exit 1）。
+check("$scan: undeclared token + getter source → errors wcs/scan-declaration-invalid and wcs/scan-source-computed, exit 1", ["--lang=en", scanBadHtml], {
+  exit: 1,
+  stdout: [/error wcs\/scan-declaration-invalid /, /error wcs\/scan-source-computed /, "2 error(s), 0 warning(s)"],
 });
 
 rmSync(workDir, { recursive: true, force: true });

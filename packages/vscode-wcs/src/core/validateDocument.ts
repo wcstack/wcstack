@@ -19,6 +19,7 @@ import { validateIoNodes } from "../service/ioNodeValidator.js";
 import { validateAriaAttributes } from "../service/ariaValidator.js";
 import { validateDocumentEnv } from "../service/documentEnvValidator.js";
 import { validateWatchDeclarations } from "../service/watchDeclarationValidator.js";
+import { validateScanDeclarations } from "../service/scanDeclarationValidator.js";
 import { validateRecursion } from "../service/recursionValidator.js";
 import { validateNamedState } from "../service/namedStateValidator.js";
 import { validateMountAttributes } from "../service/mountAttrValidator.js";
@@ -84,6 +85,8 @@ export function validateDocument(text: string, options: ValidateDocumentOptions 
   out.push(...validateSemantics(text, stateTagName, locale, bindAttribute));
   out.push(...validateArrayMutations(text, stateTagName, locale));
   out.push(...validateWatchDeclarations(text, stateTagName, locale));
+  // `$scan` 宣言（runtime の scan/processScanDeclaration.ts と同じ診断 code。3 コード持ち）
+  out.push(...validateScanDeclarations(text, stateTagName, locale));
   // `$recursion` 宣言と `**` の使い方（runtime の recursion/ と同じ診断 code）。
   out.push(...validateRecursion(text, stateTagName, locale));
   // 名前付き State の deprecation（v2 でマウントに置き換わる。docs/state-mount-design.md D16）

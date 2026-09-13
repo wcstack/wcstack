@@ -2,6 +2,22 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+### 検証
+
+- **`$scan` 宣言の静的検証（新設）** — `@wcstack/state` の `$scan`（時間軸方向の累積・`docs/state-scan-design.md`）に追随する。code はランタイムと同じ語彙で 3 つ。
+
+  - **`wcs/scan-declaration-invalid`**（error） — 出力名が平坦でない（`.` / `*` / `$` 始まり）・getter や `$streams` 名との衝突／エントリがオブジェクトでない／`from` と `on` が 0 本か 2 本／`initial` の欠落・`fold` の欠落や非関数リテラル／`on` が `$eventTokens` に無い／`from`・`resetOn` のパスの形（`$` 始まり・`@`・空セグメント・`**`）／`from` が自分の出力を読む／`resetOn` の `*`・自分の `from`・scan 出力の読み
+  - **`wcs/scan-source-computed`**（error） — `from`・`resetOn` が getter（その配下を含む）
+  - **`wcs/scan-path-missing`**（warning） — `from`・`resetOn` のパスが状態定義に無い（`wcs/watch-path-missing` と同じ severity）
+
+  識別子参照・計算キー・spread で中身が読めないエントリと、配列リテラルでない `$eventTokens` では断定しない。scan 同士の循環と、stream との前進ループ（`wcs/scan-feedback-loop`）は依存グラフが要るので runtime 専用。
+
+- **`$scan` の出力を候補パスとして実体化** — `$streams` の値プロパティと同じ規則で、`initial` のリテラルから子パスも展開する（`for: feed.items` が `wcs/binding-path-missing` にならない）。明示宣言された同名プロパティが優先する
+
+- **プリアンブル** — `defineState` の宣言に `$scan?:` を追加（`fold` の引数に文脈型を与える）
+
 ## 1.14.0 — 2026-09-12
 
 `@wcstack/state` 2.3.0 の dist を同梱。

@@ -161,7 +161,8 @@ export type DevtoolsEventLike =
       // `$watch` の実行中の throw。watch は例外を自分で閉じる（drain と他機能を
       // 巻き添えにしないため）ので、これが無いと失敗が devtools から見えない。
       readonly type: "state:watch-error";
-      readonly phase: "prime" | "evaluate" | "handler";
+      // "fold" は `$scan` の fold（state の scan/scanReport.ts。path は "$scan.<output>"）。
+      readonly phase: "prime" | "evaluate" | "handler" | "fold";
       readonly path: string;
       readonly error: unknown;
     }
@@ -189,7 +190,7 @@ export type DevtoolsEventLike =
       // ランタイムは console.warn で続行するので、これが無いと「配線したのに
       // 黙って死んでいる」が devtools から見えない。
       readonly type: "state:path-unresolved";
-      readonly source: "binding" | "watch";
+      readonly source: "binding" | "watch" | "scan";
       readonly path: string;
       readonly missingSegment: string;
     }

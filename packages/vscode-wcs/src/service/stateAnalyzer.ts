@@ -60,6 +60,10 @@ const RESERVED_LIST_KEYS_KEY = '$listKeys';
 // `$watch` はパスを新設しないので analyzeStatePaths では派生候補を作らない。
 // 宣言そのものの検証（キーがパスとして成立するか）は analyzeWatchEntries が担う。
 const RESERVED_WATCH_KEY = '$watch';
+// `$scan: { <output>: { from | on, initial, fold, resetOn? } }`。`$streams` と同じく**出力の値プロパティを
+// 実体化する**宣言（@wcstack/state scan/processScanDeclaration.ts の materializeScanOutputs）。
+// 宣言そのものの検証は analyzeScanEntries + scanDeclarationValidator が担う。
+const RESERVED_SCAN_KEY = '$scan';
 // `$recursion: { "<anchor>": "<repeat>" }`。`$listKeys` と同じく**構造を実体化する**宣言
 // （宣言だけで `nodes` / `nodes.*.children` の存在が確定する）ので後処理で候補を足す。
 // 宣言そのものの検証は analyzeRecursionDeclaration + recursionValidator が担う。
@@ -85,10 +89,10 @@ export function analyzeStatePaths(scriptContent: string): PathCandidate[] {
   const recursionSpec = specFromRecursionValue(topLevelProps.find(p => p.name === RESERVED_RECURSION_KEY));
 
   for (const prop of topLevelProps) {
-    // トップレベルの `$` プレフィックスキーは予約名（$streams/$commandTokens/$eventTokens/
+    // トップレベルの `$` プレフィックスキーは予約名（$streams/$scan/$commandTokens/$eventTokens/
     // $listKeys/$watch/$on/$bindables/$connectedCallback 等）。データパスにせず宣言由来の
     // 候補だけを導出する。`$watch` は既存パスを購読するだけで新しいパスを作らないため、
-    // `$streams`（値プロパティを実体化する）と違い個別処理は要らない。
+    // `$streams` / `$scan`（値プロパティを実体化する）と違い個別処理は要らない。
     if (prop.name.startsWith('$')) {
       collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys);
       continue;
@@ -114,7 +118,8 @@ export function analyzeStatePaths(scriptContent: string): PathCandidate[] {
     pushDataPropertyPaths(prop, paths);
   }
 
-  // $streams 宣言による値プロパティの実体化（processStreamsDeclaration §1-3 相当）。
+  // $streams / $scan 宣言による値プロパティの実体化（processStreamsDeclaration §1-3 /
+  // materializeScanOutputs 相当）。
   // ユーザーが同名プロパティを明示宣言している場合は上書きしない。
   for (const streamValue of pendingStreamValues) {
     if (paths.some(p => p.path === streamValue.name)) continue;
@@ -321,6 +326,160 @@ export function analyzeListKeyEntries(scriptContent: string): ListKeyEntryInfo[]
     .map(entry => ({ key: entry.key, start: entry.start, end: entry.end }));
 }
 
+/** `$scan` エントリの文字列リテラル値（`from` / `on` / `resetOn` の要素）と、引用符を除いた範囲。 */
+export interface ScanStringField {
+  readonly value: string;
+  /** scriptContent 内の範囲（引用符は含まない） */
+  readonly start: number;
+  readonly end: number;
+}
+
+/**
+ * `$scan` の 1 エントリ（キー ＝ 出力名）の静的な素性。
+ * 断定できないもの（識別子参照・計算キー・spread）は null / false に倒す（誤検出を出さない側）。
+ */
+export interface ScanEntryInfo {
+  readonly name: string;
+  /** scriptContent 内での出力名の範囲（引用符は含まない） */
+  readonly start: number;
+  readonly end: number;
+  /** 値がオブジェクトでないと断定できる（メソッド短縮記法・明白な非オブジェクトリテラル）。 */
+  readonly notObject: boolean;
+  /** 値がオブジェクトリテラルで、計算キー・spread が無く中身を静的に読める。 */
+  readonly readable: boolean;
+  readonly hasFrom: boolean;
+  readonly hasOn: boolean;
+  /** `from` が文字列リテラルならその値（識別子参照などは null）。 */
+  readonly from: ScanStringField | null;
+  readonly on: ScanStringField | null;
+  readonly hasInitial: boolean;
+  /** `fold` が無いか、関数でないと断定できる。 */
+  readonly foldMissingOrNotFunction: boolean;
+  /** `resetOn` が文字列リテラルだけの配列リテラルならその要素（無い・断定できないなら null）。 */
+  readonly resetOn: readonly ScanStringField[] | null;
+  /** `resetOn` が配列でないと断定できる。 */
+  readonly resetOnNotArray: boolean;
+}
+
+/**
+ * `$scan: { <output>: { from | on, initial, fold, resetOn? } }` のエントリを位置付きで抽出する
+ * （scanDeclarationValidator 用。`analyzeWatchEntries` と同型）。
+ */
+export function analyzeScanEntries(scriptContent: string): ScanEntryInfo[] {
+  return analyzeObjectEntries(scriptContent, RESERVED_SCAN_KEY).map(describeScanEntry);
+}
+
+function describeScanEntry(entry: ObjectEntry): ScanEntryInfo {
+  const unreadable: ScanEntryInfo = {
+    name: entry.key,
+    start: entry.start,
+    end: entry.end,
+    notObject: false,
+    readable: false,
+    hasFrom: false,
+    hasOn: false,
+    from: null,
+    on: null,
+    hasInitial: false,
+    foldMissingOrNotFunction: false,
+    resetOn: null,
+    resetOnNotArray: false,
+  };
+  if (entry.kind === 'method') {
+    // `feed() {}` — 値は関数（ランタイムは「オブジェクトでない」で raise）
+    return { ...unreadable, notObject: true };
+  }
+  const value = entry.value;
+  if (entry.kind !== 'data' || value === undefined || entry.valueStart === undefined) {
+    return unreadable;
+  }
+  if (!isObjectLiteral(value)) {
+    return { ...unreadable, notObject: isDefiniteNonObjectLiteral(value) };
+  }
+  const content = extractObjectContent(value);
+  if (hasUndecidableEntries(content)) {
+    return unreadable;
+  }
+  // 値テキストは先頭空白を除いた位置（valueStart）で `{` から始まる。中身はその次から。
+  const contentStart = entry.valueStart + 1;
+  const props = parseTopLevelProperties(content);
+  const find = (name: string): PropertyInfo | undefined =>
+    props.find(p => p.name === name && !(p.kind === 'data' && p.value?.trim() === 'undefined'));
+  const foldProp = find('fold');
+  const resetProp = find('resetOn');
+  return {
+    ...unreadable,
+    readable: true,
+    hasFrom: find('from') !== undefined,
+    hasOn: find('on') !== undefined,
+    from: scanStringField(find('from'), contentStart),
+    on: scanStringField(find('on'), contentStart),
+    hasInitial: props.some(p => p.name === 'initial'),
+    foldMissingOrNotFunction: foldProp === undefined || (foldProp.kind === 'data' && isNonFunctionLiteral(foldProp.value)),
+    resetOn: resetProp === undefined ? null : scanStringArrayFields(resetProp, contentStart),
+    resetOnNotArray: resetProp !== undefined && resetProp.kind === 'data' && isDefiniteNonArrayLiteral(resetProp.value),
+  };
+}
+
+function scanStringField(prop: PropertyInfo | undefined, contentStart: number): ScanStringField | null {
+  if (!prop || prop.kind !== 'data' || prop.value === undefined || prop.valueStart === undefined) return null;
+  const literal = extractStringLiteralValue(prop.value);
+  if (literal === null) return null;
+  const leading = prop.value.length - prop.value.trimStart().length;
+  const start = contentStart + prop.valueStart + leading + 1;
+  return { value: literal, start, end: start + literal.length };
+}
+
+function scanStringArrayFields(prop: PropertyInfo, contentStart: number): ScanStringField[] | null {
+  if (prop.kind !== 'data' || prop.value === undefined || prop.valueStart === undefined) return null;
+  const text = prop.value.trim();
+  if (!isArrayLiteral(text)) return null;
+  const literal = /(["'])([^"'\\\n]*)\1/g;
+  // 要素が文字列リテラルだけで構成されているときに限る（識別子や式が混ざれば断定しない）
+  if (text.replace(literal, '').replace(/[\s,]/g, '') !== '[]') return null;
+  const base = contentStart + prop.valueStart + (prop.value.length - prop.value.trimStart().length);
+  const fields: ScanStringField[] = [];
+  for (const match of text.matchAll(literal)) {
+    const start = base + (match.index as number) + 1;
+    fields.push({ value: match[2], start, end: start + match[2].length });
+  }
+  return fields;
+}
+
+/** オブジェクトでないと断定できる値（文字列・数値・真偽値・null・関数）。配列はランタイムの別の検査が拾うので含めない。 */
+function isDefiniteNonObjectLiteral(value: string): boolean {
+  const scan = maskCommentsAndStrings(value).trim();
+  return /^(["'`])[^"'`]*\1$/.test(scan) ||
+    /^-?\d[\w.]*$/.test(scan) ||
+    /^(?:true|false|null)$/.test(scan) ||
+    /^(?:async\s+)?function\b[\s\S]*\}$/.test(scan) ||
+    /^(?:async\s+)?\([^()]*\)\s*=>/.test(scan) ||
+    /^(?:async\s+)?[$\w]+\s*=>/.test(scan);
+}
+
+/** 配列でないと断定できる値（文字列・数値・真偽値・null・オブジェクトリテラル）。`undefined` は「無い」扱い。 */
+function isDefiniteNonArrayLiteral(value: string | undefined): boolean {
+  if (value === undefined) return false;
+  const scan = maskCommentsAndStrings(value).trim();
+  return /^(["'`])[^"'`]*\1$/.test(scan) ||
+    /^-?\d[\w.]*$/.test(scan) ||
+    /^(?:true|false|null)$/.test(scan) ||
+    /^\{/.test(scan);
+}
+
+/**
+ * `$eventTokens` に宣言されたトークン名。宣言が無ければ空集合、配列リテラルでない
+ * （識別子参照など）・トップレベルに spread がある（宣言を持ち込みうる）なら null ＝ 断定しない。
+ */
+export function readEventTokenNames(scriptContent: string): ReadonlySet<string> | null {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root || hasTopLevelSpread(scriptContent)) return null;
+  const prop = parseTopLevelProperties(root.content).find(p => p.name === RESERVED_EVENT_TOKENS_KEY);
+  if (!prop) return new Set<string>();
+  if (prop.kind !== 'data' || prop.value === undefined || !isArrayLiteral(prop.value)) return null;
+  return new Set(extractStringArrayItems(prop.value));
+}
+
 /** `export default { ... }` のオブジェクトリテラルが見つかるか（診断のゲート用）。 */
 export function hasDefaultExportObject(scriptContent: string): boolean {
   return locateDefaultExportObject(scriptContent) !== null;
@@ -353,6 +512,8 @@ interface ObjectEntry {
   readonly end: number;
   readonly kind: PropertyInfo['kind'];
   readonly value?: string;
+  /** 値テキスト（先頭空白を除く）の scriptContent 内での開始位置。値が無ければ undefined */
+  readonly valueStart?: number;
 }
 
 /**
@@ -384,6 +545,9 @@ function analyzeObjectEntries(scriptContent: string, key: string): ObjectEntry[]
       end: innerStart + entry.nameEnd,
       kind: entry.kind,
       value: entry.value,
+      valueStart: entry.valueStart === undefined || entry.value === undefined
+        ? undefined
+        : innerStart + entry.valueStart + (entry.value.length - entry.value.trimStart().length),
     });
   }
   return entries;
@@ -502,9 +666,18 @@ function isNonFunctionLiteral(value: string | undefined): boolean {
  * `undefined`（ランタイムは宣言なし扱いで早期 return）、getter（評価結果は不明）。
  */
 export function findNonObjectWatch(scriptContent: string): { start: number; end: number } | null {
+  return findNonObjectDeclaration(scriptContent, RESERVED_WATCH_KEY);
+}
+
+/** `$scan` の値がオブジェクトでないと断定できる宣言（判定規則は findNonObjectWatch と同じ）。 */
+export function findNonObjectScan(scriptContent: string): { start: number; end: number } | null {
+  return findNonObjectDeclaration(scriptContent, RESERVED_SCAN_KEY);
+}
+
+function findNonObjectDeclaration(scriptContent: string, key: string): { start: number; end: number } | null {
   const root = locateDefaultExportObject(scriptContent);
   if (!root) return null;
-  const watchProp = parseTopLevelProperties(root.content).find(p => p.name === RESERVED_WATCH_KEY);
+  const watchProp = parseTopLevelProperties(root.content).find(p => p.name === key);
   if (!watchProp || watchProp.nameStart === undefined || watchProp.nameEnd === undefined) {
     return null;
   }
@@ -541,6 +714,7 @@ export function findNonObjectWatch(scriptContent: string): { start: number; end:
  *
  * - `$streams: { <name>: { initial?, ... } }` → 値プロパティ `<name>`（実体化・後処理）＋
  *   `$streamStatus.<name>` / `$streamError.<name>`（読み取り専用名前空間パス）
+ * - `$scan: { <output>: { initial?, ... } }` → 値プロパティ `<output>`（実体化・後処理）
  * - `$commandTokens: ["a", ...]` → `$command.<a>`（kind: 'command'）
  * - `$eventTokens: ["a", ...]` → `<a>`（kind: 'eventToken'）
  * - `$listKeys: { "<listPath>": "<field>" }` → `<listPath>` / `<listPath>.*` /
@@ -569,6 +743,24 @@ function collectReservedKeyPaths(
       });
       paths.push({ path: `$streamStatus.${entry.name}`, kind: 'data', typeHint: 'string' });
       paths.push({ path: `$streamError.${entry.name}`, kind: 'data' });
+    }
+    return;
+  }
+
+  if (prop.name === RESERVED_SCAN_KEY && prop.kind === 'data' && prop.value && isObjectLiteral(prop.value)) {
+    for (const entry of parseTopLevelProperties(extractObjectContent(prop.value))) {
+      // 出力名は平坦なプロパティ名のみ（ランタイムは `.` / `*` / `$` 始まりを拒否する）。
+      // 壊れた宣言からは候補を作らない（$listKeys と同じ規約 — 誤りは validator が報告する）。
+      if (entry.kind !== 'data' || !isFlatScanOutputName(entry.name)) continue;
+      const initial = entry.value && isObjectLiteral(entry.value)
+        ? findStreamInitialProperty(entry.value)
+        : undefined;
+      pendingStreamValues.push({
+        name: entry.name,
+        kind: 'data',
+        value: initial?.value,
+        typeHint: initial?.typeHint,
+      });
     }
     return;
   }
@@ -846,6 +1038,11 @@ function splitTopLevelElements(text: string): string[] {
 function findStreamInitialProperty(entryValue: string): PropertyInfo | undefined {
   const defProps = parseTopLevelProperties(extractObjectContent(entryValue));
   return defProps.find(p => p.kind === 'data' && p.name === 'initial');
+}
+
+/** `$scan` の出力名として成立するか（平坦・`$` 始まりでない — runtime の assertOutputName の形の部分と同条件）。 */
+function isFlatScanOutputName(name: string): boolean {
+  return name.length > 0 && !name.startsWith('$') && !name.includes('.') && !name.includes('*');
 }
 
 /**
