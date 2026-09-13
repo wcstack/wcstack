@@ -26,8 +26,18 @@ const registryByStateElement: WeakMap<IStateElement, IScanRegistry> = new WeakMa
  */
 let drainRegistryCount = 0;
 
+/**
+ * enqueue 側のゲート: `resetOn` を持つ `on` scan がある registry の数（scan/eventReset.ts）。
+ * 0 のあいだ updater の enqueue は整数比較 1 回で抜ける。数え方の注意は drainRegistryCount と同じ。
+ */
+let eventResetRegistryCount = 0;
+
 function hasDrainWork(registry: IScanRegistry): boolean {
   return registry.byFromPath.size > 0 || registry.byResetPath.size > 0;
+}
+
+function hasEventResetWork(registry: IScanRegistry): boolean {
+  return registry.eventResetByPath.size > 0;
 }
 
 function pushEntry(map: Map<string, IScanEntry[]>, key: string, entry: IScanEntry): void {
@@ -44,18 +54,25 @@ export function setScanRegistry(stateElement: IStateElement, entries: readonly I
   clearScanRegistry(stateElement);
   const byFromPath = new Map<string, IScanEntry[]>();
   const byResetPath = new Map<string, IScanEntry[]>();
+  const eventResetByPath = new Map<string, IScanEntry[]>();
   for (const entry of entries) {
     if (entry.source.kind === "path") {
       pushEntry(byFromPath, entry.source.path, entry);
     }
     for (const path of entry.resetOn) {
       pushEntry(byResetPath, path, entry);
+      if (entry.source.kind === "event") {
+        pushEntry(eventResetByPath, path, entry);
+      }
     }
   }
-  const registry: IScanRegistry = { entries: new Set(entries), byFromPath, byResetPath };
+  const registry: IScanRegistry = { entries: new Set(entries), byFromPath, byResetPath, eventResetByPath };
   registryByStateElement.set(stateElement, registry);
   if (hasDrainWork(registry)) {
     drainRegistryCount++;
+  }
+  if (hasEventResetWork(registry)) {
+    eventResetRegistryCount++;
   }
   return registry;
 }
@@ -73,6 +90,9 @@ export function clearScanRegistry(stateElement: IStateElement): void {
   if (hasDrainWork(registry)) {
     drainRegistryCount--;
   }
+  if (hasEventResetWork(registry)) {
+    eventResetRegistryCount--;
+  }
   registryByStateElement.delete(stateElement);
 }
 
@@ -87,6 +107,10 @@ export function hasScanDrainWork(stateElement: IStateElement): boolean {
 
 export function getScanDrainRegistryCount(): number {
   return drainRegistryCount;
+}
+
+export function getScanEventResetRegistryCount(): number {
+  return eventResetRegistryCount;
 }
 
 export const __private__ = {

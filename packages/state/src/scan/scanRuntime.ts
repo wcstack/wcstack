@@ -9,6 +9,11 @@
  * 発火単位（D3）: バッチに載った `from` の絶対アドレス 1 つにつき fold 1 回。
  * 同じ出力へ複数行（wildcard）が載ったバッチでは、indexes 昇順に acc を連鎖させて
  * 最後に 1 回だけ書く。開始値と `Object.is` で同じなら書かない。
+ *
+ * 計画と書き込みを 2 相に分ける（D18）: 全 scan の次の値を読むだけで決めてから、宣言順に書く。
+ * 1 相で「畳んでは書く」と、ある scan の出力を `from` に取る後続の scan が、同じ drain で
+ * 先行 scan が書いたばかりの（まだバッチとして届いていない）値を畳み、次のバッチで同じ値を
+ * もう一度畳む — 届いていた値は取りこぼす。宣言順しだいで exactly-once が破れる。
  */
 
 import type { IAbsoluteStateAddress } from "../address/types";
@@ -17,6 +22,7 @@ import { getScopedIndexes } from "../list/wildcardLevel";
 import { getStreamEntries } from "../stream/streamRegistry";
 import { beginWatchFiring, endWatchFiring } from "../watch/chainDepth";
 import { getPrevValue } from "../watch/prevValues";
+import { consumePendingScanReset } from "./eventReset";
 import { isThenable, reportLateGetterSource, reportScanError, reportScanThenable } from "./scanReport";
 import { getScanDrainRegistryCount, getScanRegistry } from "./scanRegistry";
 import type { IScanEntry, IScanPathSource } from "./types";
@@ -31,6 +37,13 @@ interface IScanGroup {
   readonly entry: IScanEntry;
   readonly rows: IScanRow[];
   reset: boolean;
+}
+
+/** 相 1 の結果。reset なら書く値は `initial`（書くかどうかは相 2 で決める） */
+interface IScanPlan {
+  readonly group: IScanGroup;
+  readonly reset: boolean;
+  readonly next: unknown;
 }
 
 function groupOf(groups: Map<IScanEntry, IScanGroup>, stateElement: IStateElement, entry: IScanEntry): IScanGroup {
@@ -85,34 +98,39 @@ function hasGetterOnPath(stateElement: IStateElement, source: IScanPathSource): 
   return false;
 }
 
-function fireGroup(
+/** 先行する fold や書き込みが同期に切断・再セットを起こし得る（`$watch` と同じ再確認） */
+function isLive(group: IScanGroup, activeStateElements: ReadonlySet<IStateElement>): boolean {
+  return activeStateElements.has(group.stateElement)
+    && getScanRegistry(group.stateElement)?.entries.has(group.entry) === true;
+}
+
+/** 相 1: 次の値を読むだけで決める。書き込みは無いか null。 */
+function planGroup(
   group: IScanGroup,
   batch: ReadonlySet<IAbsoluteStateAddress>,
   activeStateElements: ReadonlySet<IStateElement>,
-): void {
-  const { stateElement, entry } = group;
-  // 先行 fold の書き込みが同期に切断・再セットを起こし得る（`$watch` と同じ再確認）
-  if (!activeStateElements.has(stateElement) || getScanRegistry(stateElement)?.entries.has(entry) !== true) {
-    return;
+): IScanPlan | null {
+  if (!isLive(group, activeStateElements)) {
+    return null;
   }
+  const { stateElement, entry } = group;
+  if (group.reset) {
+    // reset が勝つ（D6）。同じバッチの行は畳まない
+    return { group, reset: true, next: entry.initial };
+  }
+  // reset でない group は `from` の行ヒットから作られている
+  const source = entry.source as IScanPathSource;
+  if (hasGetterOnPath(stateElement, source)) {
+    reportLateGetterSource(entry, entry.name, source.path);
+    return null;
+  }
+  if (isStreamRestartPending(stateElement, source.pathInfo.segments[0], batch)) {
+    return null;
+  }
+  // コールバック内の代入は制御フロー解析に載らないので、結果は入れ物で受け取る
+  const result: { plan: IScanPlan | null } = { plan: null };
   try {
-    stateElement.createState("writable", (state) => {
-      if (group.reset) {
-        // reset が勝つ（D6）。同じバッチの行は畳まない
-        if (!Object.is(state[entry.name], entry.initial)) {
-          state[entry.name] = entry.initial;
-        }
-        return;
-      }
-      // reset でない group は `from` の行ヒットから作られている
-      const source = entry.source as IScanPathSource;
-      if (hasGetterOnPath(stateElement, source)) {
-        reportLateGetterSource(entry, entry.name, source.path);
-        return;
-      }
-      if (isStreamRestartPending(stateElement, source.pathInfo.segments[0], batch)) {
-        return;
-      }
+    stateElement.createState("readonly", (state) => {
       const rows = group.rows.sort(compareRows);
       const fold = entry.fold;
       const start = state[entry.name];
@@ -129,12 +147,36 @@ function fireGroup(
         acc = next;
       }
       if (!Object.is(acc, start)) {
-        state[entry.name] = acc;
+        result.plan = { group, reset: false, next: acc };
       }
     });
   } catch (error) {
     // 他の scan・`$watch`・`$streams` restart を巻き添えにしない（D4）
-    reportScanError(entry.name, error);
+    reportScanError(entry.name, error, "threw");
+  }
+  return result.plan;
+}
+
+/** 相 2: 宣言順に書く。 */
+function commitPlan(plan: IScanPlan, activeStateElements: ReadonlySet<IStateElement>): void {
+  const { group } = plan;
+  if (!isLive(group, activeStateElements)) {
+    return;
+  }
+  const { stateElement, entry } = group;
+  // `on` の reset は保留が残っているときだけ。書き込みの後に来た出来事が `initial` から
+  // 畳んで保留を消していれば、その出力は reset 済み（scan/eventReset.ts）
+  if (plan.reset && entry.source.kind === "event" && !consumePendingScanReset(entry)) {
+    return;
+  }
+  try {
+    stateElement.createState("writable", (state) => {
+      if (!Object.is(state[entry.name], plan.next)) {
+        state[entry.name] = plan.next;
+      }
+    });
+  } catch (error) {
+    reportScanError(entry.name, error, "write");
   }
 }
 
@@ -188,8 +230,15 @@ export function fireScansOnUpdateBatch(
   const ordered = Array.from(groups.values()).sort((a, b) => a.entry.order - b.entry.order);
   beginWatchFiring(depth);
   try {
+    const plans: IScanPlan[] = [];
     for (const group of ordered) {
-      fireGroup(group, batch, activeStateElements);
+      const plan = planGroup(group, batch, activeStateElements);
+      if (plan !== null) {
+        plans.push(plan);
+      }
+    }
+    for (const plan of plans) {
+      commitPlan(plan, activeStateElements);
     }
   } finally {
     endWatchFiring();

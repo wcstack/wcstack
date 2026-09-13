@@ -25,7 +25,8 @@ import type { IStateProxy } from "../proxy/types";
 import { raiseError } from "../raiseError";
 import type { TokenSubscriber } from "../token/Token";
 import type { IState } from "../types";
-import { isThenable, reportScanError, reportScanThenable } from "./scanReport";
+import { consumePendingScanReset, hasPendingScanReset } from "./eventReset";
+import { isThenable, reportScanError, reportScanThenable, type ScanFailure } from "./scanReport";
 import { setScanRegistry } from "./scanRegistry";
 import type { IScanEntry, ScanFold, ScanSource } from "./types";
 
@@ -182,6 +183,11 @@ function parseResetOn(
     if (source.kind === "path" && item === source.path) {
       raiseError(`${INVALID} ${label} resetOn "${item}" is the entry's own "from" — every change would reset instead of fold.${LINT_HINT}`);
     }
+    // 子孫は死に設定: `from` を書くと依存展開で子孫も同じバッチに載り、reset が毎回勝つ。
+    // 祖先（`from: "items.*.qty"` × `resetOn: ["items"]`）は「親の差し替えで作り直す」として通す
+    if (source.kind === "path" && item.startsWith(source.path + DELIMITER)) {
+      raiseError(`${INVALID} ${label} resetOn "${item}" sits under the entry's own "from" "${source.path}" — every write of "from" also lands it, so the reset would win every time and nothing would fold.${LINT_HINT}`);
+    }
     paths.push(item);
   }
   return paths;
@@ -296,19 +302,28 @@ function createEventFold(entry: IScanEntry): TokenSubscriber {
   const fold = entry.fold;
   return (state: unknown, event: unknown, ...indexes: unknown[]): void => {
     const proxy = state as IStateProxy;
+    // 報告を「fold が throw した」と「出力を書けなかった」で分ける
+    let failure: ScanFailure = "threw";
     try {
-      const acc = proxy[entry.name];
-      const next = fold(acc, event, ...indexes);
+      const current = proxy[entry.name];
+      // `resetOn` の書き込みより後の出来事は、reset 後の出力に畳む（scan/eventReset.ts）
+      const reset = hasPendingScanReset(entry);
+      const next = fold(reset ? entry.initial : current, event, ...indexes);
       if (isThenable(next)) {
+        // 保留は残す — drain が出力を initial に戻す
         reportScanThenable(entry.name, next);
         return;
       }
-      if (!Object.is(next, acc)) {
+      if (reset) {
+        consumePendingScanReset(entry);
+      }
+      if (!Object.is(next, current)) {
+        failure = "write";
         proxy[entry.name] = next;
       }
     } catch (error) {
       // 後続の subscriber（同じトークンの `$on`）を巻き添えにしない
-      reportScanError(entry.name, error);
+      reportScanError(entry.name, error, failure);
     }
   };
 }

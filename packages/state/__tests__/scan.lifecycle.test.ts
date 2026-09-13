@@ -14,31 +14,13 @@ import { getScanRegistry } from "../src/scan/scanRegistry";
 import { getUpdater } from "../src/updater/updater";
 import { getActiveWatchStateElements } from "../src/watch/watchRegistry";
 import type { IState } from "../src/types";
-import { flushAsync, makeConnectHost } from "./helpers/streamTestUtils";
+import { flushAsync, flushTimes, makeConnectHost, readState, writeState } from "./helpers/streamTestUtils";
 
 beforeAll(() => {
   bootstrapState();
 });
 
 const connectHost = makeConnectHost("scan-lc-host");
-
-function write(stateEl: State, fn: (state: any) => void): void {
-  stateEl.createState("writable", fn);
-}
-
-function read<T>(stateEl: State, fn: (state: any) => T): T {
-  let value: T | undefined;
-  stateEl.createState("readonly", (state) => {
-    value = fn(state);
-  });
-  return value as T;
-}
-
-async function flush(times = 2): Promise<void> {
-  for (let i = 0; i < times; i++) {
-    await flushAsync();
-  }
-}
 
 describe("切断と再接続（D8）", () => {
   it("切断中のバッチは畳まず、再接続後は再開し、出力は保持されること", async () => {
@@ -48,9 +30,9 @@ describe("切断と再接続（D8）", () => {
       $scan: { total: { from: "n", initial: 0, fold } },
     } as unknown as IState);
 
-    write(stateEl, (s) => { s.n = 1; });
-    await flush();
-    expect(read(stateEl, (s) => s.total)).toBe(1);
+    writeState(stateEl, (s) => { s.n = 1; });
+    await flushTimes();
+    expect(readState(stateEl, (s) => s.total)).toBe(1);
 
     host.remove();
     await flushAsync();
@@ -61,18 +43,18 @@ describe("切断と再接続（D8）", () => {
     // 切断中に from が書かれたバッチ
     (stateEl as any).__state.n = 5;
     getUpdater().testApplyChange([createAbsoluteStateAddress(getAbsolutePathInfo(stateEl, getPathInfo("n")), null)]);
-    await flush();
+    await flushTimes();
     expect(fold).toHaveBeenCalledTimes(1);
 
     document.body.appendChild(host);
     await stateEl.connectedCallbackPromise;
     await flushAsync();
     expect(getActiveWatchStateElements().has(stateEl)).toBe(true);
-    expect(read(stateEl, (s) => s.total), "出力は保持される").toBe(1);
+    expect(readState(stateEl, (s) => s.total), "出力は保持される").toBe(1);
 
-    write(stateEl, (s) => { s.n = 7; });
-    await flush();
-    expect(read(stateEl, (s) => s.total)).toBe(8);
+    writeState(stateEl, (s) => { s.n = 7; });
+    await flushTimes();
+    expect(readState(stateEl, (s) => s.total)).toBe(8);
     expect(fold).toHaveBeenCalledTimes(2);
     host.remove();
   });
@@ -89,8 +71,8 @@ describe("_state の再セット（§2-4）", () => {
 
     stateEl.setInitialState({ n: 0, $scan: { b: { from: "n", initial: 0, fold: foldB } } } as unknown as IState);
     await flushAsync();
-    write(stateEl, (s) => { s.n = 1; });
-    await flush();
+    writeState(stateEl, (s) => { s.n = 1; });
+    await flushTimes();
     expect(foldA).not.toHaveBeenCalled();
     expect(foldB).toHaveBeenCalledTimes(1);
 
@@ -99,8 +81,8 @@ describe("_state の再セット（§2-4）", () => {
     expect(stateEl.scanPaths).toBeNull();
     expect(getScanRegistry(stateEl)).toBeUndefined();
     expect(getActiveWatchStateElements().has(stateEl)).toBe(false);
-    write(stateEl, (s) => { s.n = 2; });
-    await flush();
+    writeState(stateEl, (s) => { s.n = 2; });
+    await flushTimes();
     expect(foldB).toHaveBeenCalledTimes(1);
     host.remove();
   });
@@ -114,12 +96,12 @@ describe("_state の再セット（§2-4）", () => {
 
     expect(() => stateEl.setInitialState({ n: 100, $scan: { bad: 1 } } as unknown as IState))
       .toThrow(/\[wcs\/scan-declaration-invalid\]/);
-    expect(read(stateEl, (s) => s.n), "旧世代の state のまま").toBe(0);
+    expect(readState(stateEl, (s) => s.n), "旧世代の state のまま").toBe(0);
 
-    write(stateEl, (s) => { s.n = 1; });
-    await flush();
+    writeState(stateEl, (s) => { s.n = 1; });
+    await flushTimes();
     expect(foldA).toHaveBeenCalledTimes(1);
-    expect(read(stateEl, (s) => s.a)).toBe(1);
+    expect(readState(stateEl, (s) => s.a)).toBe(1);
     host.remove();
   });
 
@@ -130,15 +112,15 @@ describe("_state の再セット（§2-4）", () => {
     } as unknown as IState;
     const { host, stateEl } = await connectHost("", raw);
 
-    write(stateEl, (s) => { s.n = 3; });
-    await flush();
+    writeState(stateEl, (s) => { s.n = 3; });
+    await flushTimes();
     stateEl.setInitialState(raw);
     await flushAsync();
-    expect(read(stateEl, (s) => s.total)).toBe(3);
+    expect(readState(stateEl, (s) => s.total)).toBe(3);
 
-    write(stateEl, (s) => { s.n = 4; });
-    await flush();
-    expect(read(stateEl, (s) => s.total)).toBe(7);
+    writeState(stateEl, (s) => { s.n = 4; });
+    await flushTimes();
+    expect(readState(stateEl, (s) => s.total)).toBe(7);
     host.remove();
   });
 });
@@ -155,8 +137,8 @@ describe("SSR / ボリューム / マウント（D8）", () => {
 
       expect((raw as Record<string, unknown>).out).toBe("seed");
       expect(getActiveWatchStateElements().has(connected.stateEl)).toBe(false);
-      write(connected.stateEl, (s) => { s.n = 1; });
-      await flush();
+      writeState(connected.stateEl, (s) => { s.n = 1; });
+      await flushTimes();
       expect(fold).not.toHaveBeenCalled();
     } finally {
       host?.remove();
@@ -173,7 +155,7 @@ describe("SSR / ボリューム / マウント（D8）", () => {
       volumeEl.setInitialState({ plain: 1, $scan: { x: { from: "plain", initial: 0, fold: (acc: unknown) => acc } } } as unknown as IState);
       await rootEl.connectedCallbackPromise;
       await volumeEl.connectedCallbackPromise;
-      await flush();
+      await flushTimes();
 
       const messages = errorSpy.mock.calls.map((call) => String(call[0]) + "|" + String((call[1] as any)?.message ?? ""));
       expect(messages.some((m) => m.includes("declares $scan, which volumes do not support yet"))).toBe(true);

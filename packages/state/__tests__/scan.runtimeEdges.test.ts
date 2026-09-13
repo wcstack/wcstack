@@ -11,35 +11,17 @@ import { createAbsoluteStateAddress } from "../src/address/AbsoluteStateAddress"
 import { getPathInfo } from "../src/address/PathInfo";
 import { bootstrapState } from "../src/bootstrapState";
 import type { State } from "../src/components/State";
-import { getScanDrainRegistryCount, getScanRegistry } from "../src/scan/scanRegistry";
+import { getScanDrainRegistryCount, getScanEventResetRegistryCount, getScanRegistry } from "../src/scan/scanRegistry";
 import { getUpdater } from "../src/updater/updater";
 import type { IState } from "../src/types";
 import { makeManualAsyncGenerator } from "./helpers/fakeStreamSources";
-import { flushAsync, makeConnectHost } from "./helpers/streamTestUtils";
+import { flushAsync, flushTimes, makeConnectHost, readState, writeState } from "./helpers/streamTestUtils";
 
 beforeAll(() => {
   bootstrapState();
 });
 
 const connectHost = makeConnectHost("scan-edge-host");
-
-function write(stateEl: State, fn: (state: any) => void): void {
-  stateEl.createState("writable", fn);
-}
-
-function read<T>(stateEl: State, fn: (state: any) => T): T {
-  let value: T | undefined;
-  stateEl.createState("readonly", (state) => {
-    value = fn(state);
-  });
-  return value as T;
-}
-
-async function flush(times = 2): Promise<void> {
-  for (let i = 0; i < times; i++) {
-    await flushAsync();
-  }
-}
 
 describe("行の並び", () => {
   it("2 段 wildcard の from は、外側の段が同じ行も含めて indexes 昇順に畳むこと", async () => {
@@ -56,16 +38,16 @@ describe("行の並び", () => {
         },
       } as unknown as IState,
     );
-    await flush();
+    await flushTimes();
 
-    write(stateEl, (s) => {
+    writeState(stateEl, (s) => {
       s.$resolve("groups.*.items.*.qty", [1, 0], 30);
       s.$resolve("groups.*.items.*.qty", [0, 1], 20);
       s.$resolve("groups.*.items.*.qty", [0, 0], 10);
     });
-    await flush(3);
+    await flushTimes(3);
 
-    expect(read(stateEl, (s) => s.log)).toEqual(["0.0:10", "0.1:20", "1.0:30"]);
+    expect(readState(stateEl, (s) => s.log)).toEqual(["0.0:10", "0.1:20", "1.0:30"]);
     host.remove();
   });
 });
@@ -83,10 +65,27 @@ describe("先行 fold による同期の変化", () => {
     } as unknown as IState);
     hostRef = host;
 
-    write(stateEl, (s) => { s.n = 1; });
-    await flush();
+    writeState(stateEl, (s) => { s.n = 1; });
+    await flushTimes();
 
     expect(foldB).not.toHaveBeenCalled();
+  });
+
+  it("後続の fold が同期に切断したら、先行 scan が計画した書き込みもしないこと（相 2 の再確認）", async () => {
+    let hostRef: HTMLElement | null = null;
+    const { stateEl } = await connectHost("", {
+      n: 0,
+      $scan: {
+        a: { from: "n", initial: 0, fold: (acc: number) => acc + 1 },
+        b: { from: "n", initial: 0, fold: (acc: unknown) => { hostRef?.remove(); return acc; } },
+      },
+    } as unknown as IState);
+    hostRef = (stateEl.getRootNode() as ShadowRoot).host as HTMLElement;
+
+    writeState(stateEl, (s) => { s.n = 1; });
+    await flushTimes();
+
+    expect((stateEl as any).__state.a).toBe(0);
   });
 
   it("先行 fold が同期に再セットしたら、旧宣言の後続 scan は畳まないこと", async () => {
@@ -109,8 +108,8 @@ describe("先行 fold による同期の変化", () => {
     } as unknown as IState);
     stateElRef = stateEl;
 
-    write(stateEl, (s) => { s.n = 1; });
-    await flush();
+    writeState(stateEl, (s) => { s.n = 1; });
+    await flushTimes();
 
     expect(foldB).not.toHaveBeenCalled();
     // 収集はバッチの時点で終わっているので、差し替え後の宣言もこのバッチでは畳まない
@@ -128,9 +127,9 @@ describe("バッチに載る他のアドレス", () => {
     const c = await connectHost("", { n: 0 } as unknown as IState);
 
     // 同じ task の書き込みは 1 つのバッチに載る（updater は全ツリーで 1 本）
-    write(b.stateEl, (s) => { s.n = 1; });
-    write(c.stateEl, (s) => { s.n = 1; });
-    await flush();
+    writeState(b.stateEl, (s) => { s.n = 1; });
+    writeState(c.stateEl, (s) => { s.n = 1; });
+    await flushTimes();
 
     expect(watchB).toHaveBeenCalledTimes(1);
     expect(foldA).not.toHaveBeenCalled();
@@ -148,12 +147,12 @@ describe("バッチに載る他のアドレス", () => {
         $scan: { log: { from: "items.*.qty", initial: [], fold } },
       } as unknown as IState,
     );
-    await flush();
+    await flushTimes();
 
     getUpdater().testApplyChange([
       createAbsoluteStateAddress(getAbsolutePathInfo(stateEl, getPathInfo("items.*.qty")), null),
     ]);
-    await flush();
+    await flushTimes();
 
     expect(fold).not.toHaveBeenCalled();
     host.remove();
@@ -172,12 +171,12 @@ describe("自己ループの柵の探索（D9）", () => {
       $scan: { feed: { from: "pageResult", initial: [], fold: (acc: unknown) => acc } },
     } as unknown as IState);
     // feed → size・feed → total・size → total の辺を張る（total には 2 経路で届く）
-    expect(read(stateEl, (s) => s.total)).toBe(0);
+    expect(readState(stateEl, (s) => s.total)).toBe(0);
 
-    write(stateEl, (s) => { s.page = 2; });
-    await flush();
+    writeState(stateEl, (s) => { s.page = 2; });
+    await flushTimes();
 
-    expect(read(stateEl, (s) => s["$streamStatus.pageResult"])).toBe("active");
+    expect(readState(stateEl, (s) => s["$streamStatus.pageResult"])).toBe("active");
     host.remove();
   });
 });
@@ -196,6 +195,27 @@ describe("drain ゲートの数え方", () => {
     await flushAsync();
     expect(getScanRegistry(stateEl)).toBeUndefined();
     expect(getScanDrainRegistryCount()).toBe(before);
+    host.remove();
+  });
+
+  it("resetOn を持つ on scan の registry だけを enqueue ゲートに数え、再セットで消せば数が戻ること", async () => {
+    const before = getScanEventResetRegistryCount();
+    const { host, stateEl } = await connectHost("", {
+      host: "a",
+      n: 0,
+      $eventTokens: ["tick"],
+      $scan: {
+        count: { on: "tick", initial: 0, fold: (acc: number) => acc + 1, resetOn: ["host"] },
+        total: { from: "n", initial: 0, fold: (acc: number) => acc, resetOn: ["host"] },
+      },
+    } as unknown as IState);
+    const registry = getScanRegistry(stateEl)!;
+    expect([...registry.eventResetByPath.get("host")!].map((entry) => entry.name)).toEqual(["count"]);
+    expect(getScanEventResetRegistryCount()).toBe(before + 1);
+
+    stateEl.setInitialState({ host: "a", n: 0 } as unknown as IState);
+    await flushAsync();
+    expect(getScanEventResetRegistryCount()).toBe(before);
     host.remove();
   });
 

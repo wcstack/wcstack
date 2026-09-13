@@ -15,31 +15,13 @@ import { getUpdater } from "../src/updater/updater";
 import { getActiveWatchStateElements } from "../src/watch/watchRegistry";
 import type { IState } from "../src/types";
 import { makeManualAsyncGenerator } from "./helpers/fakeStreamSources";
-import { flushAsync, makeConnectHost } from "./helpers/streamTestUtils";
+import { flushTimes, makeConnectHost, readState, writeState } from "./helpers/streamTestUtils";
 
 beforeAll(() => {
   bootstrapState();
 });
 
 const connectHost = makeConnectHost("scan-from-host");
-
-function write(stateEl: State, fn: (state: any) => void): void {
-  stateEl.createState("writable", fn);
-}
-
-function read<T>(stateEl: State, fn: (state: any) => T): T {
-  let value: T | undefined;
-  stateEl.createState("readonly", (state) => {
-    value = fn(state);
-  });
-  return value as T;
-}
-
-async function flush(times = 2): Promise<void> {
-  for (let i = 0; i < times; i++) {
-    await flushAsync();
-  }
-}
 
 describe("from: 発火単位と fold の引数", () => {
   it("バインドが無くても、from の書き込み 1 回につき fold 1 回で出力が更新されること", async () => {
@@ -52,13 +34,13 @@ describe("from: 発火単位と fold の引数", () => {
     expect(getActiveWatchStateElements().has(stateEl)).toBe(true);
     expect(stateEl.scanPaths?.has("n")).toBe(true);
 
-    write(stateEl, (s) => { s.n = 2; });
-    await flush();
-    write(stateEl, (s) => { s.n = 3; });
-    await flush();
+    writeState(stateEl, (s) => { s.n = 2; });
+    await flushTimes();
+    writeState(stateEl, (s) => { s.n = 3; });
+    await flushTimes();
 
     expect(fold).toHaveBeenCalledTimes(2);
-    expect(read(stateEl, (s) => s.total)).toBe(5);
+    expect(readState(stateEl, (s) => s.total)).toBe(5);
     host.remove();
   });
 
@@ -75,8 +57,8 @@ describe("from: 発火単位と fold の引数", () => {
       $scan: { out: { from: "n", initial: "seed", fold } },
     } as unknown as IState);
 
-    write(stateEl, (s) => { s.n = 2; });
-    await flush();
+    writeState(stateEl, (s) => { s.n = 2; });
+    await flushTimes();
 
     expect(calls).toEqual([["seed", 2, 1]]);
     expect(seenThis).toBeUndefined();
@@ -90,11 +72,11 @@ describe("from: 発火単位と fold の引数", () => {
       $scan: { out: { from: "n", initial: "", fold } },
     } as unknown as IState);
 
-    write(stateEl, (s) => { s.n = 1; s.n = 2; s.n = 3; });
-    await flush();
+    writeState(stateEl, (s) => { s.n = 1; s.n = 2; s.n = 3; });
+    await flushTimes();
 
     expect(fold).toHaveBeenCalledTimes(1);
-    expect(read(stateEl, (s) => s.out)).toBe("0->3");
+    expect(readState(stateEl, (s) => s.out)).toBe("0->3");
     host.remove();
   });
 
@@ -106,8 +88,8 @@ describe("from: 発火単位と fold の引数", () => {
       $watch: { out: watch },
     } as unknown as IState);
 
-    write(stateEl, (s) => { s.n = 1; });
-    await flush(3);
+    writeState(stateEl, (s) => { s.n = 1; });
+    await flushTimes(3);
 
     expect(watch).not.toHaveBeenCalled();
     host.remove();
@@ -119,10 +101,10 @@ describe("from: 発火単位と fold の引数", () => {
       $scan: { out: { from: "obj.x", initial: [], fold: (acc: unknown[], cur: unknown, prev: unknown) => [...acc, [cur, prev]] } },
     } as unknown as IState);
 
-    write(stateEl, (s) => { s.obj = { x: 2 }; });
-    await flush();
+    writeState(stateEl, (s) => { s.obj = { x: 2 }; });
+    await flushTimes();
 
-    expect(read(stateEl, (s) => s.out)).toEqual([[2, undefined]]);
+    expect(readState(stateEl, (s) => s.out)).toEqual([[2, undefined]]);
     host.remove();
   });
 });
@@ -136,8 +118,8 @@ describe("from: 機構間の順序と同居（D11 / D12）", () => {
       $watch: { n() { order.push("watch"); } },
     } as unknown as IState);
 
-    write(stateEl, (s) => { s.n = 1; });
-    await flush();
+    writeState(stateEl, (s) => { s.n = 1; });
+    await flushTimes();
 
     expect(order).toEqual(["scan", "watch"]);
     host.remove();
@@ -151,8 +133,8 @@ describe("from: 機構間の順序と同居（D11 / D12）", () => {
       $watch: { count: watch },
     } as unknown as IState);
 
-    write(stateEl, (s) => { s.n = 5; });
-    await flush(3);
+    writeState(stateEl, (s) => { s.n = 5; });
+    await flushTimes(3);
 
     expect(watch).toHaveBeenCalledTimes(1);
     expect(watch).toHaveBeenCalledWith(1, undefined);
@@ -172,13 +154,13 @@ describe("from: 機構間の順序と同居（D11 / D12）", () => {
       $watch: { n: watch },
     } as unknown as IState);
 
-    write(stateEl, (s) => { s.n = 1; });
-    await flush();
+    writeState(stateEl, (s) => { s.n = 1; });
+    await flushTimes();
 
     expect(watch).toHaveBeenCalledTimes(1);
     expect(foldA).toHaveBeenCalledTimes(1);
     expect(foldB).toHaveBeenCalledTimes(1);
-    expect(read(stateEl, (s) => [s.a, s.b])).toEqual([1, 10]);
+    expect(readState(stateEl, (s) => [s.a, s.b])).toEqual([1, 10]);
     host.remove();
   });
 
@@ -191,12 +173,33 @@ describe("from: 機構間の順序と同居（D11 / D12）", () => {
       },
     } as unknown as IState);
 
-    write(stateEl, (s) => { s.n = 1; });
-    await flush(3);
-    write(stateEl, (s) => { s.n = 4; });
-    await flush(3);
+    writeState(stateEl, (s) => { s.n = 1; });
+    await flushTimes(3);
+    writeState(stateEl, (s) => { s.n = 4; });
+    await flushTimes(3);
 
-    expect(read(stateEl, (s) => s.history)).toEqual([2, 8]);
+    expect(readState(stateEl, (s) => s.history)).toEqual([2, 8]);
+    host.remove();
+  });
+
+  it.each([
+    ["上流 → 下流", true],
+    ["下流 → 上流", false],
+  ])("連鎖した scan は、同じ drain で先行 scan が書いた値を先取りせず、着地した値を 1 回ずつ畳むこと（宣言順 %s、D18）", async (_label, upstreamFirst) => {
+    // $watch が上流の source を書くので、上流 scan の書き込みと source が同じバッチに合流する。
+    // 1 相で「畳んでは書く」実装だと、上流を先に宣言したとき history が [3, 6, 6] になる
+    const total = { from: "count", initial: 0, fold: (acc: number, cur: number) => acc + cur };
+    const history = { from: "total", initial: [], fold: (acc: unknown[], cur: unknown) => [...acc, cur] };
+    const { host, stateEl } = await connectHost("", {
+      count: 0,
+      $scan: upstreamFirst ? { total, history } : { history, total },
+      $watch: { count(this: any) { if (this.count < 3) this.count = this.count + 1; } },
+    } as unknown as IState);
+
+    writeState(stateEl, (s) => { s.count = 1; });
+    await flushTimes(12);
+
+    expect(readState(stateEl, (s) => [s.total, s.history])).toEqual([6, [1, 3, 6]]);
     host.remove();
   });
 
@@ -229,15 +232,15 @@ describe("from: wildcard（行ごとの fold）", () => {
         $watch: { log: watch },
       } as unknown as IState,
     );
-    await flush();
+    await flushTimes();
 
-    write(stateEl, (s) => {
+    writeState(stateEl, (s) => {
       s.$resolve("items.*.qty", [1], 20);
       s.$resolve("items.*.qty", [0], 10);
     });
-    await flush(3);
+    await flushTimes(3);
 
-    expect(read(stateEl, (s) => s.log)).toEqual(["0:1->10", "1:2->20"]);
+    expect(readState(stateEl, (s) => s.log)).toEqual(["0:1->10", "1:2->20"]);
     expect(watch).toHaveBeenCalledTimes(1);
     host.remove();
   });
@@ -253,20 +256,42 @@ describe("resetOn（D6）", () => {
       $scan: { log: { from: "n", initial, fold, resetOn: ["host"] } },
     } as unknown as IState);
 
-    write(stateEl, (s) => { s.n = 1; });
-    await flush();
-    write(stateEl, (s) => { s.n = 2; });
-    await flush();
-    expect(read(stateEl, (s) => s.log)).toEqual([1, 2]);
+    writeState(stateEl, (s) => { s.n = 1; });
+    await flushTimes();
+    writeState(stateEl, (s) => { s.n = 2; });
+    await flushTimes();
+    expect(readState(stateEl, (s) => s.log)).toEqual([1, 2]);
 
-    write(stateEl, (s) => { s.host = "b"; s.n = 3; });
-    await flush();
-    expect(read(stateEl, (s) => s.log)).toBe(initial);
+    writeState(stateEl, (s) => { s.host = "b"; s.n = 3; });
+    await flushTimes();
+    expect(readState(stateEl, (s) => s.log)).toBe(initial);
     expect(fold).toHaveBeenCalledTimes(2);
 
-    write(stateEl, (s) => { s.n = 4; });
-    await flush();
-    expect(read(stateEl, (s) => s.log)).toEqual([4]);
+    writeState(stateEl, (s) => { s.n = 4; });
+    await flushTimes();
+    expect(readState(stateEl, (s) => s.log)).toEqual([4]);
+    host.remove();
+  });
+
+  it("resetOn が from の祖先なら、行の書き込みは畳み、親の差し替えで initial に戻ること", async () => {
+    const initial: unknown[] = [];
+    const { host, stateEl } = await connectHost(
+      `<template data-wcs="for: items"><span data-wcs="textContent: .qty"></span></template>`,
+      {
+        items: [{ qty: 1 }],
+        $scan: { log: { from: "items.*.qty", initial, fold: (acc: unknown[], cur: unknown) => [...acc, cur], resetOn: ["items"] } },
+      } as unknown as IState,
+    );
+    await flushTimes();
+
+    writeState(stateEl, (s) => { s.$resolve("items.*.qty", [0], 5); });
+    await flushTimes(3);
+    expect(readState(stateEl, (s) => s.log)).toEqual([5]);
+
+    // 差し替えで載る新しい行よりも reset が勝つ
+    writeState(stateEl, (s) => { s.items = [{ qty: 7 }]; });
+    await flushTimes(3);
+    expect(readState(stateEl, (s) => s.log)).toBe(initial);
     host.remove();
   });
 
@@ -279,8 +304,8 @@ describe("resetOn（D6）", () => {
       $watch: { log: watch },
     } as unknown as IState);
 
-    write(stateEl, (s) => { s.host = "b"; });
-    await flush(3);
+    writeState(stateEl, (s) => { s.host = "b"; });
+    await flushTimes(3);
 
     expect(watch).not.toHaveBeenCalled();
     host.remove();
@@ -301,12 +326,40 @@ describe("失敗の隔離（D4）", () => {
         },
       } as unknown as IState);
 
-      write(stateEl, (s) => { s.n = 1; });
-      await flush();
+      writeState(stateEl, (s) => { s.n = 1; });
+      await flushTimes();
 
-      expect(read(stateEl, (s) => [s.bad, s.good])).toEqual([0, 1]);
+      expect(readState(stateEl, (s) => [s.bad, s.good])).toEqual([0, 1]);
       expect(errorSpy.mock.calls.some((call) => String(call[0]).includes(`$scan fold for "bad" threw`))).toBe(true);
       expect(events).toContainEqual(expect.objectContaining({ type: "state:watch-error", phase: "fold", path: "$scan.bad" }));
+      host.remove();
+    } finally {
+      setDevtoolsSink(null);
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("出力への書き込みが throw しても報告して、後続の scan は書き込むこと", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    setDevtoolsSink((event: any) => {
+      if (event.type === "state:write" && event.absoluteAddress.absolutePathInfo.pathInfo.path === "bad") {
+        throw new Error("write refused");
+      }
+    });
+    try {
+      const { host, stateEl } = await connectHost("", {
+        n: 0,
+        $scan: {
+          bad: { from: "n", initial: 0, fold: (acc: number) => acc + 1 },
+          good: { from: "n", initial: 0, fold: (acc: number) => acc + 1 },
+        },
+      } as unknown as IState);
+
+      writeState(stateEl, (s) => { s.n = 1; });
+      await flushTimes();
+
+      expect(readState(stateEl, (s) => [s.bad, s.good])).toEqual([0, 1]);
+      expect(errorSpy.mock.calls.some((call) => String(call[0]).includes(`$scan could not write the output "bad"`))).toBe(true);
       host.remove();
     } finally {
       setDevtoolsSink(null);
@@ -322,11 +375,11 @@ describe("失敗の隔離（D4）", () => {
         $scan: { out: { from: "n", initial: "seed", fold: () => Promise.reject(new Error("later")) } },
       } as unknown as IState);
 
-      write(stateEl, (s) => { s.n = 1; });
-      await flush(3);
+      writeState(stateEl, (s) => { s.n = 1; });
+      await flushTimes(3);
 
-      expect(read(stateEl, (s) => s.out)).toBe("seed");
-      const reported = errorSpy.mock.calls.find((call) => String(call[0]).includes(`$scan fold for "out" threw`));
+      expect(readState(stateEl, (s) => s.out)).toBe("seed");
+      const reported = errorSpy.mock.calls.find((call) => String(call[0]).includes(`$scan fold for "out" returned a Promise`));
       expect(String((reported?.[1] as Error).message)).toMatch(/returned a Promise/);
       host.remove();
     } finally {
@@ -344,10 +397,10 @@ describe("失敗の隔離（D4）", () => {
       } as unknown as IState);
 
       stateEl.defineTreeAccessor("vol.x", { get() { return 42; }, enumerable: false, configurable: true });
-      write(stateEl, (s) => { s.$postUpdate("vol.x"); });
-      await flush();
-      write(stateEl, (s) => { s.$postUpdate("vol.x"); });
-      await flush();
+      writeState(stateEl, (s) => { s.$postUpdate("vol.x"); });
+      await flushTimes();
+      writeState(stateEl, (s) => { s.$postUpdate("vol.x"); });
+      await flushTimes();
 
       expect(fold).not.toHaveBeenCalled();
       const reports = errorSpy.mock.calls.filter((call) => String(call[0]).includes("[wcs/scan-source-computed]"));
@@ -399,15 +452,15 @@ describe("$streams との交差（D9 / D10）", () => {
     // 対照: chunk だけのバッチは畳む
     raw.pageResult = "c1";
     getUpdater().testApplyChange([abs(stateEl, "pageResult")]);
-    await flush();
-    expect(read(stateEl, (s) => s.feed)).toEqual(["c1"]);
+    await flushTimes();
+    expect(readState(stateEl, (s) => s.feed)).toEqual(["c1"]);
 
     // chunk と restart 依存（page）が同じバッチ: 畳まずに restart させる
     raw.pageResult = "c2";
     raw.page = 2;
     getUpdater().testApplyChange([abs(stateEl, "pageResult"), abs(stateEl, "page")]);
-    await flush();
-    expect(read(stateEl, (s) => s.feed)).toEqual(["c1"]);
+    await flushTimes();
+    expect(readState(stateEl, (s) => s.feed)).toEqual(["c1"]);
     expect(runs).toEqual([1, 2]);
     host.remove();
   });
@@ -427,14 +480,14 @@ describe("$streams との交差（D9 / D10）", () => {
         feed: { from: "pageResult", initial: [], fold: (acc: unknown[], chunk: unknown) => (chunk === undefined ? acc : [...acc, chunk]) },
       },
     } as unknown as IState);
-    expect(read(stateEl, (s) => s["$streamStatus.pageResult"])).toBe("active");
+    expect(readState(stateEl, (s) => s["$streamStatus.pageResult"])).toBe("active");
 
     derived = true;
-    write(stateEl, (s) => { s.mode = 1; });
-    await flush();
+    writeState(stateEl, (s) => { s.mode = 1; });
+    await flushTimes();
 
-    expect(read(stateEl, (s) => s["$streamStatus.pageResult"])).toBe("error");
-    expect(String(read(stateEl, (s) => s["$streamError.pageResult"]))).toContain("[wcs/scan-feedback-loop]");
+    expect(readState(stateEl, (s) => s["$streamStatus.pageResult"])).toBe("error");
+    expect(String(readState(stateEl, (s) => s["$streamError.pageResult"]))).toContain("[wcs/scan-feedback-loop]");
     host.remove();
   });
 
@@ -452,10 +505,10 @@ describe("$streams との交差（D9 / D10）", () => {
     } as unknown as IState);
 
     direct = true;
-    write(stateEl, (s) => { s.mode = 1; });
-    await flush();
+    writeState(stateEl, (s) => { s.mode = 1; });
+    await flushTimes();
 
-    expect(String(read(stateEl, (s) => s["$streamError.pageResult"]))).toContain(`args read "feed"`);
+    expect(String(readState(stateEl, (s) => s["$streamError.pageResult"]))).toContain(`args read "feed"`);
     host.remove();
   });
 
@@ -468,10 +521,10 @@ describe("$streams との交差（D9 / D10）", () => {
       $scan: { feed: { from: "pageResult", initial: [], fold: (acc: unknown) => acc } },
     } as unknown as IState);
 
-    write(stateEl, (s) => { s.page = 2; });
-    await flush();
+    writeState(stateEl, (s) => { s.page = 2; });
+    await flushTimes();
 
-    expect(read(stateEl, (s) => s["$streamStatus.pageResult"])).toBe("active");
+    expect(readState(stateEl, (s) => s["$streamStatus.pageResult"])).toBe("active");
     host.remove();
   });
 
@@ -490,10 +543,10 @@ describe("$streams との交差（D9 / D10）", () => {
     } as unknown as IState);
 
     readFeed = true;
-    write(stateEl, (s) => { s.mode = 1; });
-    await flush();
+    writeState(stateEl, (s) => { s.mode = 1; });
+    await flushTimes();
 
-    expect(read(stateEl, (s) => s["$streamStatus.downstream"])).toBe("active");
+    expect(readState(stateEl, (s) => s["$streamStatus.downstream"])).toBe("active");
     host.remove();
   });
 });

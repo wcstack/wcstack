@@ -51,4 +51,9 @@ export interface IScanRegistry {
   readonly byFromPath: ReadonlyMap<string, readonly IScanEntry[]>;
   /** `resetOn` パス → そのパスで reset する scan（宣言順） */
   readonly byResetPath: ReadonlyMap<string, readonly IScanEntry[]>;
+  /**
+   * `byResetPath` のうち `on` の scan だけ。enqueue の時点で reset を保留する対象
+   * （scan/eventReset.ts — 設計書 D6）
+   */
+  readonly eventResetByPath: ReadonlyMap<string, readonly IScanEntry[]>;
 }

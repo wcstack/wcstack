@@ -3,7 +3,7 @@
  *
  * `$scan` の失敗の報告（docs/state-scan-design.md D4 / D5）。
  *
- * fold の例外は scan 側で閉じる（drain リスナーと event-token の emit ループを
+ * fold と出力の書き込みの例外は scan 側で閉じる（drain リスナーと event-token の emit ループを
  * 他の機構と共有しているため）。閉じた事実を console と devtools の両方に出す。
  * devtools には `$watch` と同じ `state:watch-error` を `phase: "fold"` で流す。
  */
@@ -11,8 +11,18 @@
 import { STATE_SCAN_NAME } from "../define";
 import { devtoolsSink } from "../devtools/sink";
 
-export function reportScanError(name: string, error: unknown): void {
-  console.error(`[@wcstack/state] ${STATE_SCAN_NAME} fold for "${name}" threw. The output was not written.`, error);
+/** 失敗の種類。原因も直し方も違うので console の文言を分ける */
+export type ScanFailure = "threw" | "returned-promise" | "write";
+
+const SCAN_FAILURE_MESSAGE: Readonly<Record<ScanFailure, (name: string) => string>> = {
+  threw: (name) => `${STATE_SCAN_NAME} fold for "${name}" threw. The output was not written.`,
+  "returned-promise": (name) =>
+    `${STATE_SCAN_NAME} fold for "${name}" returned a Promise. fold must be synchronous and return the next value; the output was not written.`,
+  write: (name) => `${STATE_SCAN_NAME} could not write the output "${name}".`,
+};
+
+export function reportScanError(name: string, error: unknown, failure: ScanFailure): void {
+  console.error(`[@wcstack/state] ${SCAN_FAILURE_MESSAGE[failure](name)}`, error);
   if (devtoolsSink !== null) {
     devtoolsSink({
       type: "state:watch-error",
@@ -38,6 +48,7 @@ export function reportScanThenable(name: string, value: unknown): void {
   reportScanError(
     name,
     new TypeError(`${STATE_SCAN_NAME} fold for "${name}" returned a Promise. fold must be synchronous and return the next value.`),
+    "returned-promise",
   );
 }
 

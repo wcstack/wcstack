@@ -7,6 +7,8 @@
  * connectHost はホストタグ名プレフィックスだけがファイル間差分だったため、
  * プレフィックスを引数化したファクトリ makeConnectHost として抽出）。
  *
+ * scan.*.test.ts で重複していた writeState / readState / flushTimes も同じ理由でここに置く。
+ *
  * State は型としてのみ参照する（import type）。ランタイム依存を持たないため、
  * consumeSource 等の純粋な単体テストからも flushAsync だけを軽量に import できる。
  * connectHost を使う側は bootstrapState() 済み（<wcs-state> 定義済み）であること。
@@ -17,6 +19,27 @@ import type { IState } from "../../src/types";
 
 /** マイクロタスクを出し切る（updater の drain と consume ループの双方を進める） */
 export const flushAsync = (): Promise<void> => new Promise<void>((r) => setTimeout(r, 0));
+
+/** flushAsync を times 回進める（drain → リスナーの書き込み → 次の drain と段を進めるとき） */
+export async function flushTimes(times = 2): Promise<void> {
+  for (let i = 0; i < times; i++) {
+    await flushAsync();
+  }
+}
+
+/** writable な state proxy で書き込む（書き込みの drain は次のマイクロタスク） */
+export function writeState(stateEl: State, fn: (state: any) => void): void {
+  stateEl.createState("writable", fn);
+}
+
+/** readonly な state proxy で読み、コールバックの戻り値を返す */
+export function readState<T>(stateEl: State, fn: (state: any) => T): T {
+  let value: T | undefined;
+  stateEl.createState("readonly", (state) => {
+    value = fn(state);
+  });
+  return value as T;
+}
 
 /** 条件成立までマクロタスクを進める（再接続の connectedCallback 完了待ちなど） */
 export async function waitFor(cond: () => boolean, tries = 20): Promise<void> {

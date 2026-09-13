@@ -177,11 +177,11 @@ function fireWatchOnUpdateBatch(batch: ReadonlySet<IAbsoluteStateAddress>): void
     }
     const depth = consumeWatchChainDepth();
     if (depth > MAX_WATCH_CHAIN_DEPTH) {
-      // 打ち切るのは watch の発火のみ。値と binding 適用は巻き戻さない
-      // （伝播 hop 上限超過時の quarantine と同じ姿勢、§7-2）。
+      // 打ち切るのは同じリスナーの発火（`$scan` の from / resetOn と `$watch`）のみ。
+      // 値と binding 適用は巻き戻さない（伝播 hop 上限超過時の quarantine と同じ姿勢、§7-2）。
       const paths = Array.from(batch, (absAddress) => absAddress.absolutePathInfo.pathInfo.path);
       console.error(
-        `[@wcstack/state] $watch chain depth limit exceeded; watch handlers for this batch were skipped.`,
+        `[@wcstack/state] $watch chain depth limit exceeded; $scan folds and $watch handlers for this batch were skipped.`,
         { maxDepth: MAX_WATCH_CHAIN_DEPTH, paths },
       );
       if (devtoolsSink !== null) {

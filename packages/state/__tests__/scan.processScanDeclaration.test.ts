@@ -147,9 +147,15 @@ describe("resetOn", () => {
     [[""], /"resetOn" must be a non-empty state path/],
     [["items.*"], /resetOn "items\.\*" must not contain "\*"/],
     [["n"], /resetOn "n" is the entry's own "from"/],
+    [["n.x"], /resetOn "n\.x" sits under the entry's own "from" "n"/],
     [["out"], /resetOn "out" reads the \$scan output "out"/],
   ])("resetOn %j は raise すること", (resetOn, pattern) => {
     expect(() => scan({ out: { from: "n", initial: 0, fold, resetOn } })).toThrow(pattern);
+  });
+
+  it("resetOn が from の祖先なら受理すること（親の差し替えで作り直す形）", () => {
+    const entries = scan({ log: { from: "items.*.qty", initial: [], fold, resetOn: ["items"] } });
+    expect(entries![0].resetOn).toEqual(["items"]);
   });
 
   it("resetOn が getter を読むなら wcs/scan-source-computed で raise すること", () => {

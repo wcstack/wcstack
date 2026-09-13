@@ -9,6 +9,7 @@ import { devtoolsSink } from "../devtools/sink";
 import { IPropagationContext } from "../propagation/types";
 import { IBindingInfo } from "../types";
 import { noteEnqueueForWatchChain } from "../watch/chainDepth";
+import { noteEnqueueForScanReset } from "../scan/eventReset";
 
 /**
  * drain（_applyChange）終了通知のリスナー（docs/state-streams-design.md §3-2）。
@@ -96,6 +97,9 @@ class Updater {
     // `$watch` ハンドラ実行中の書き込みだけを連鎖としてマークする（watch/chainDepth.ts）。
     // ハンドラ実行中でなければ即 return する葉モジュール呼び出し 1 個のコスト。
     noteEnqueueForWatchChain();
+    // `on` scan の `resetOn` を書き込みの時点で保留する（scan/eventReset.ts）。
+    // 該当する宣言がページに無ければ整数比較 1 回で抜ける。
+    noteEnqueueForScanReset(absoluteAddress);
     const requireStartProcess = this._queueUpdateRecords.length === 0;
     this._queueUpdateRecords.push({ absoluteAddress, context });
     if (requireStartProcess) {
