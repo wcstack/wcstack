@@ -12,6 +12,8 @@ switchMap 型キャンセル、有界リトライを所有します。着地し�
 
 ## 起動
 
+> **`$scan` はまだ公開されていません。** このページは CDN から公開済みの最新の `@wcstack/state` を読み込みますが、`$scan` は 2.3.0 の次のリリースに入ります。そのリリースまでは、この方法で開いても feed は積み上がりません。それまでに作業ツリーで動かすには、`packages/state` と `packages/intersection` をビルドし（それぞれで `npm run build`）、ローカルの `dist` を配信して `/api/items` を差し替える e2e のスペックを使ってください（`e2e/serve.mjs` だけでもページは開きますが、`/api/items` を返さないので一覧が出ません）。初回は `cd e2e && npm ci && npx playwright install chromium` で e2e の依存を入れます。そのうえで `e2e` で `npx playwright test state-intersect-scroll --headed`（または `--ui`）を実行すると、ページがスクロールする様子を見られます。`--headed` を付けないとヘッドレスで走ります。
+
 package は CDN（[esm.run](https://esm.run)）から読み込むため、必要なのは Node.js だけです。
 
 ```bash

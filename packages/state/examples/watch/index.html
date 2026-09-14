@@ -159,7 +159,7 @@ export default {
       <ul class="notes">
         <li><strong>Nothing binds <code>freeShipping</code>.</strong> It is watched, not rendered — which is precisely what <code>$updatedCallback</code> cannot do, since that callback only reports paths whose DOM bindings were applied.</li>
         <li>Watching a getter <strong>makes it eager</strong>: normally a computed nobody reads is never evaluated, so it would never fire at all.</li>
-        <li>The row watch receives <code>(cur, prev, index)</code>. <code>prev</code> is the value at the start of the update batch, and is meaningful for scalars only.</li>
+        <li>The row watch receives <code>(cur, prev, index)</code>. <code>prev</code> is the value at the start of the update batch, and is recorded only when a primitive is written (the value before may be an object).</li>
         <li><strong>Restock</strong> replaces the whole array. Because <code>$listKeys</code> is declared, only the row that actually changed fires — without it every row would fire with <code>prev === undefined</code>.</li>
         <li>Handlers fire in declaration order; rows of one path fire in ascending index order.</li>
       </ul>

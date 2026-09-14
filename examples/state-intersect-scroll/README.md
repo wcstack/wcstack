@@ -13,6 +13,8 @@ starts the newest one through `$streams`.
 
 ## Getting Started
 
+> **`$scan` is not published yet.** The page loads the latest published `@wcstack/state` from the CDN, and `$scan` ships in the release after 2.3.0. Until that release is out, the feed does not accumulate when you open the page this way. To run the demo against the working tree before then, build `packages/state` and `packages/intersection` (`npm run build` in each) and use its e2e spec, which serves the local `dist` and mocks `/api/items` (`e2e/serve.mjs` alone opens the page but does not serve `/api/items`, so the list stays empty). The first time, install the e2e dependencies with `cd e2e && npm ci && npx playwright install chromium`. Then, in `e2e`, run `npx playwright test state-intersect-scroll --headed` (or `--ui`) to watch the page scroll; without `--headed` the spec runs headless.
+
 The packages load from a CDN ([esm.run](https://esm.run)), so Node.js is all you need:
 
 ```bash

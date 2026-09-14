@@ -2118,10 +2118,10 @@ The handler runs with `this` bound to a **writable** state proxy, so it can writ
 | Argument | Contract |
 |---|---|
 | `cur` | The value at drain time (the settled value for the batch) |
-| `prev` | The value at the **start of the batch** (first-write-wins). Meaningful **for scalars only** — see below |
+| `prev` | The value at the **start of the batch** (first-write-wins). Recorded **only when a primitive is written** (the value before may be an object) — see below |
 | `...indexes` | Only for wildcard paths: this scope's own loop indexes, same convention as `$1`, `$2` |
 
-**`prev` is scalar-only.** It reuses the old value the same-value guard already reads, so watch costs no extra read — and it is `undefined` for reference types (an in-place mutation would give you the same reference anyway), for `$postUpdate`, and when `config.sameValueGuard` is off.
+**`prev` comes only with primitive writes.** It reuses the old value the same-value guard reads before writing a primitive, so watch costs no extra read — and it is `undefined` when the new value is a reference type (an in-place mutation would give you the same reference anyway), for `$postUpdate`, and when `config.sameValueGuard` is off. A primitive written over an object passes that object as `prev`.
 
 **Watch adds no firing condition of its own.** It fires for whatever landed in the update batch. That falls out well: an equal primitive write is already dropped before it is enqueued (so you effectively get change-only firing), while an occurrence write — a `semantics: "event"` property — is deliberately *not* dropped, and still fires with `cur === prev`. If you need edge detection, compare `cur` and `prev` in the handler.
 
@@ -2193,9 +2193,9 @@ Key rules:
 | `on` | An event-token name declared in `$eventTokens`. |
 | `initial` | Required. The seed of the accumulator, and what `resetOn` returns to. |
 | `fold` | Required. `from`: `(acc, cur, prev, ...indexes) => next`. `on`: `(acc, event, ...indexes) => next`. Synchronous, called without `this`, returns a new value. Returning `acc` itself writes nothing. |
-| `resetOn` | Optional array of plain state paths. When one of them is written, the output returns to `initial`: a `from` scan skips that batch's fold, and an `on` scan folds any event that comes after the write into `initial`. A path under `from` raises; an ancestor of `from` is allowed (start over when the parent is replaced). |
+| `resetOn` | Optional array of plain state paths. When one of them is written, the output returns to `initial`: a `from` scan skips that batch's fold, and an `on` scan folds any event that comes after the write into `initial`. A path under `from` raises; an ancestor of `from` is allowed (start over when the parent is replaced). An object path resets only when that object itself is written, not on writes to its children — list the leaf paths or use a nonce. |
 
-**The runtime owns the output**, like a `$streams` value. It is materialized from `initial` when the state does not already have that property, and you bind it like any other path. It survives stream restarts, disconnect and reconnect, and a re-set of the same object; a re-set with a new declaration rebuilds the scan.
+**The runtime owns the output**, like a `$streams` value. It is materialized from `initial` when the state does not already have that property (plain data is copied, so writing a child path in the plain part of the output never changes the declared `initial`; class instances, frozen values and other non-plain values stay shared with it), and you bind it like any other path. It survives stream restarts, disconnect and reconnect, and a re-set of the same object; a re-set with a new declaration rebuilds the scan. An output name that collides with a getter, a setter, a method or a `$streams` entry raises.
 
 How the two sources fire:
 
@@ -2203,16 +2203,17 @@ How the two sources fire:
 |---|---|---|
 | Unit | One fold per address that landed in an update batch. Writes made in one job are coalesced. | One fold per event. Two events in one task fold twice. |
 | When | At the end of the drain, before `$watch`. | Inside the event, before that token's `$on` handlers. |
-| Output visible | From the next batch. A `$watch` on the output fires then, with `prev === undefined`. | Immediately. The `$on` handlers of the same event already see it. |
+| Output visible | From the next batch. A `$watch` on the output fires then, normally with `prev === undefined` (see below). | Immediately. The `$on` handlers of the same event already see it. |
 
 Key rules:
 
-- **Never fold a getter.** A getter re-evaluates whenever its inputs change, so a fold over it would count re-evaluations, not events. A getter as `from` or `resetOn` raises at declaration (`wcs/scan-source-computed`).
+- **Never fold a getter.** A getter re-evaluates whenever its inputs change, so a fold over it would count re-evaluations, not events. A getter as `from` or `resetOn` — or an expansion of a `$recursion` `**` getter such as `nodes.*.total` as `from` — raises at declaration (`wcs/scan-source-computed`).
 - **One fold per landing, not per page.** A retry after the page is `done`, or reconnecting the page, lands the same page again. When that matters, keep an idempotency key in the fold — the `pages` list above.
-- **Do not derive a stream's `args` from its own scan output.** A getter over `feed` read by `pageResult`'s `args` would restart the stream on its own result, so the runtime raises `wcs/scan-feedback-loop`. Advance the cursor from an event instead. A chunk that lands in the same batch as its stream's restart belongs to the aborted run and is not folded.
-- **Receive element events through `on`.** A `from` path sees every write to that path, including a bound element's initial sync and a whole-parent write (which arrives with `prev === undefined`).
+- **Do not derive a stream's `args` from its own scan output.** A getter over `feed` — or over another scan that folds `feed` — read by `pageResult`'s `args` would restart the stream on its own result, so the runtime raises `wcs/scan-feedback-loop`. Advance the cursor from an event instead. A chunk that lands in the same batch as its stream's restart belongs to the aborted run and is not folded.
+- **Receive element events through `on`.** A `from` path sees every write to that path, including a bound element's initial sync and a whole-parent write (which arrives with `prev === undefined`). `prev` follows `$watch`'s ledger, so it is also `undefined` for a write made inside the `$scan` / `$watch` listener — by a `$watch` handler, or by another scan whose output is the `from`. The ledger is cleared at the end of that listener, so the `$streams` restart that runs after it in the same drain keeps `prev`.
 - **Keep folds bounded.** An infinite source must fold into a bounded value (the last N, a count), exactly as with `$streams`.
-- **Errors are isolated.** A throw or a returned Promise is reported to the console and DevTools and writes nothing; the other scans, watches and stream restarts still run.
+- **Errors are isolated.** A throw, a returned Promise or a value that cannot be read is reported to the console and DevTools and writes nothing (an unreadable row of a wildcard `from` is skipped alone, and row landings are narrowed to one per list position); the other scans, watches and stream restarts still run.
+- **`$watch` runs after the scan write.** A `$watch` handler in the same drain reads the output as folded, and a value it writes to the output stays. When the `from` source is written again before the output's landing drains — by a `$watch` handler in that drain, say — both land in one batch: a `$watch` on the output then gets the landed value in `prev`, sees `cur` one step ahead, and can fire again with the same value in the next batch, so make it tolerant of a repeated value. Clear an accumulation from a user action with a nonce read by `resetOn`.
 - **Root only.** A volume (`mount=`) refuses `$scan`, and a mounted `bind-component` scope ignores it with a one-time warning. Under SSR, `from` does not fold; the output is still materialized.
 - **Known gap:** an `on` scan shares `$on`'s subscription, so re-attaching the root `<wcs-state>` stops both ([#273](https://github.com/wcstack/wcstack/issues/273)).
 
@@ -2503,7 +2504,7 @@ li {
 Two consequences to know while that tag accepts the `state` participant:
 
 - The drain lands on a frame instead of a microtask, so code that writes state and then reads the DOM after `await Promise.resolve()` must wait for the transition. `$updatedCallback` still fires immediately after the bindings are applied — its *position* is unchanged, but it moves a frame later along with them.
-- Because `$watch` and the `$streams` restart stay on the original microtask, they now run **before** `$updatedCallback` instead of after it.
+- Because `$scan`, `$watch` and the `$streams` restart stay on the original microtask, they now run **before** `$updatedCallback` instead of after it.
 
 Only a batch that actually has bindings to apply is handed to the tag, so a write to a headless path never starts a transition. Without the tag the drain is exactly what it was. See [docs/timing-and-firing-contract.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.md) §4.3.
 
@@ -2511,7 +2512,7 @@ Only a batch that actually has bindings to apply is handed to the tag, so a writ
 
 ### Wiring to a path that does not exist is reported
 
-When a wired path provably does not resolve against the state, you get one warning at binding time (at declaration time for `$watch`). The diagnostic codes are shared by the console, `@wcstack/lint`, and the VS Code extension:
+When a wired path provably does not resolve against the state, you get one warning at binding time (at declaration time for `$watch` and `$scan`). The diagnostic codes are shared by the console, `@wcstack/lint`, and the VS Code extension:
 
 ```
 [@wcstack/state] [wcs/binding-path-missing] Bound path "user.nmae" does not resolve on the state tree:
@@ -2524,6 +2525,7 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 | Typo in a nested path (`user.nmae`) | `console.warn` (`wcs/binding-path-missing`). Updates still never arrive — you fix it |
 | Typo in a top-level path (`cout`) | Throws on read, with the same wording and did-you-mean |
 | Typo in a `$watch` key | `console.warn` (`wcs/watch-path-missing`), reported even for a single segment |
+| Typo in a `$scan` `from` / `resetOn` path | `console.warn` (`wcs/scan-path-missing`), reported even for a single segment. The scan never folds (or never resets) |
 
 The check **under-approximates**: it stays silent for anything it cannot decide statically, because a false alarm costs more than a missed one. None of these warn:
 

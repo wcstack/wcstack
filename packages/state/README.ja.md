@@ -2114,10 +2114,10 @@ $updatedCallback(paths) {
 | 引数 | 契約 |
 |---|---|
 | `cur` | drain 時点の値（そのバッチの確定値） |
-| `prev` | **バッチ開始時点**の値（first-write-wins）。意味を持つのは**スカラのときだけ**（下記） |
+| `prev` | **バッチ開始時点**の値（first-write-wins）。記録されるのは**プリミティブを書いたときだけ**（書く前の値はオブジェクトでもよい。下記） |
 | `...indexes` | ワイルドカードパスのときのみ。そのスコープ自身のループ添字（`$1` / `$2` と同じ規約） |
 
-**`prev` はスカラ限定です。** same-value guard が既に読んでいる旧値を再利用するため watch のための追加読みは発生せず、その帰結として参照型（in-place 変異では同じ参照になるため）・`$postUpdate` 経由・`config.sameValueGuard` オフのときは `undefined` になります。
+**`prev` はプリミティブの書き込みにだけ付きます。** same-value guard がプリミティブを書く前に読む旧値を再利用するため watch のための追加読みは発生せず、その帰結として書く値が参照型（in-place 変異では同じ参照になるため）・`$postUpdate` 経由・`config.sameValueGuard` オフのときは `undefined` になります。オブジェクトの上にプリミティブを書いたときは、そのオブジェクトが `prev` に渡ります。
 
 **`$watch` は独自の発火条件を持ちません。** 更新バッチに載ったものをそのまま発火します。これはうまく噛み合っていて、同値の primitive 書き込みは enqueue 前に落ちている（＝実質的に変化時のみ発火）一方、occurrence（`semantics: "event"` の property）は**意図的に**落とされないので `cur === prev` で発火します。エッジ検出が要るならハンドラ内で `cur` と `prev` を比較してください。
 
@@ -2189,9 +2189,9 @@ $updatedCallback(paths) {
 | `on` | `$eventTokens` に宣言したイベントトークン名。 |
 | `initial` | 必須。累積の種であり、`resetOn` の戻り先。 |
 | `fold` | 必須。`from` は `(acc, cur, prev, ...indexes) => next`、`on` は `(acc, event, ...indexes) => next`。同期で、`this` 無しで呼ばれ、新しい値を返す。`acc` そのものを返すと書き込まない。 |
-| `resetOn` | 任意。素の state パスの配列。どれかが書かれたら出力を `initial` に戻す。`from` の scan はそのバッチの fold を行わず、`on` の scan は書き込みより後に来たイベントを `initial` から畳む。`from` の配下は raise、`from` の祖先は可（親の差し替えで作り直す）。 |
+| `resetOn` | 任意。素の state パスの配列。どれかが書かれたら出力を `initial` に戻す。`from` の scan はそのバッチの fold を行わず、`on` の scan は書き込みより後に来たイベントを `initial` から畳む。`from` の配下は raise、`from` の祖先は可（親の差し替えで作り直す）。オブジェクトのパスはそのオブジェクト自身が書かれたときだけ reset し、子への書き込みでは reset しない（葉のパスを並べるか nonce を使う）。 |
 
-**出力はランタイムが所有します**（`$streams` の値と同じ）。state にそのプロパティが無ければ `initial` で実体化され、他のパスと同じようにバインドできます。stream の restart・切断と再接続・同じオブジェクトの再セットを跨いで残り、新しい宣言での再セットでは作り直されます。
+**出力はランタイムが所有します**（`$streams` の値と同じ）。state にそのプロパティが無ければ `initial` で実体化され（plain なデータは複製するので、出力の plain な部分の子パスへ書いても宣言の `initial` は変わりません。クラスのインスタンスや凍結された値など plain でない値は宣言と共有したままです）、他のパスと同じようにバインドできます。stream の restart・切断と再接続・同じオブジェクトの再セットを跨いで残り、新しい宣言での再セットでは作り直されます。出力名が getter・setter・メソッド・`$streams` のエントリと衝突すると raise します。
 
 2 つの source の発火:
 
@@ -2199,16 +2199,17 @@ $updatedCallback(paths) {
 |---|---|---|
 | 単位 | 更新バッチに載ったアドレス 1 つにつき 1 回。同じ job 内の複数の書き込みは 1 回に畳まれる。 | イベント 1 回につき 1 回。同じ task の 2 回は 2 回畳む。 |
 | いつ | drain の終わり、`$watch` より先。 | イベントの中、そのトークンの `$on` ハンドラより先。 |
-| 出力が見えるのは | 次のバッチから。出力を見る `$watch` はそこで発火し、`prev` は `undefined`。 | すぐ。同じイベントの `$on` ハンドラは畳んだ後の値を見る。 |
+| 出力が見えるのは | 次のバッチから。出力を見る `$watch` はそこで発火し、`prev` はふつう `undefined`（下の注記）。 | すぐ。同じイベントの `$on` ハンドラは畳んだ後の値を見る。 |
 
 主なルール:
 
-- **getter を畳まない。** getter は入力が変わるたびに再評価されるので、畳むと出来事ではなく再評価の回数を数えます。`from` や `resetOn` に getter を書くと宣言時に raise します（`wcs/scan-source-computed`）。
+- **getter を畳まない。** getter は入力が変わるたびに再評価されるので、畳むと出来事ではなく再評価の回数を数えます。`from` や `resetOn` に getter を書く（`from` に `$recursion` の `**` getter の展開形 `nodes.*.total` を書くのも同じ）と、宣言時に raise します（`wcs/scan-source-computed`）。
 - **1 回の fold は着地ごとで、ページごとではない。** `done` 後の再試行や、ページの再接続は同じページをもう一度着地させます。問題になるなら fold に冪等キーを持たせてください（上の `pages`）。
-- **stream の `args` を自分の scan 出力から導出しない。** `feed` から導出した getter を `pageResult` の `args` が読むと、stream が自分の結果で restart し続けるので、ランタイムは `wcs/scan-feedback-loop` を raise します。カーソルはイベントから進めてください。stream の restart と同じバッチに着地した chunk は abort される run のものなので畳みません。
-- **要素の出来事は `on` で受ける。** `from` はそのパスへの書き込みをすべて見ます。バインドした要素の初期同期や、親オブジェクトの丸ごと書き（`prev` は `undefined`）も 1 回として畳みます。
+- **stream の `args` を自分の scan 出力から導出しない。** `feed` から導出した getter（`feed` を畳む別の scan の出力から導出したものを含む）を `pageResult` の `args` が読むと、stream が自分の結果で restart し続けるので、ランタイムは `wcs/scan-feedback-loop` を raise します。カーソルはイベントから進めてください。stream の restart と同じバッチに着地した chunk は abort される run のものなので畳みません。
+- **要素の出来事は `on` で受ける。** `from` はそのパスへの書き込みをすべて見ます。バインドした要素の初期同期や、親オブジェクトの丸ごと書き（`prev` は `undefined`）も 1 回として畳みます。`prev` は `$watch` と同じ台帳なので、`$scan` / `$watch` のリスナーの中の書き込み（`$watch` ハンドラや、`from` にした別の scan の出力）でも `undefined` です。台帳はそのリスナーの終わりに消えるので、同じ drain でその後に走る `$streams` の restart の書き込みは `prev` を持ちます。
 - **fold は有界に。** 無限の source は有界な値（直近 N 件・件数）に畳んでください（`$streams` と同じ）。
-- **例外は隔離される。** throw や Promise の戻り値はコンソールと DevTools に報告され、書き込みません。他の scan・watch・stream の restart は続行します。
+- **例外は隔離される。** throw・Promise の戻り値・読めない値はコンソールと DevTools に報告され、書き込みません（ワイルドカードの `from` で読めない行はその行だけを飛ばし、行の着地はリストの位置 1 つにつき 1 回に絞ります）。他の scan・watch・stream の restart は続行します。
+- **`$watch` は scan の書き込みの後に走る。** 同じ drain の `$watch` ハンドラは畳んだ後の出力を読み、ハンドラが出力へ書いた値はそのまま残ります。出力の着地が drain される前に `from` の source がもう一度書かれる（その drain の `$watch` ハンドラが書くなど）と、両方が同じバッチに載ります。このとき出力を見る `$watch` は `prev` に着地した値を受け、`cur` に 1 段先の値を見て、次のバッチで同じ値でもう一度発火することがあるので、同じ値の重複に耐える形にしてください。ユーザー操作で累積を消すなら、`resetOn` に nonce を読ませてください。
 - **ルートのみ。** ボリューム（`mount=`）は `$scan` を拒否し、マウントされた `bind-component` スコープは 1 回の warn で無視します。SSR では `from` は畳みません（出力の実体化は行います）。
 - **既知の穴:** `on` の scan は `$on` と同じ購読経路なので、ルート `<wcs-state>` を付け直すと両方止まります（[#273](https://github.com/wcstack/wcstack/issues/273)）。
 
@@ -2499,7 +2500,7 @@ li {
 そのタグが `state` 参加者を受け付けている間、知っておくべき帰結が 2 つある。
 
 - drain は microtask ではなくフレームで着地する。state に書いてから `await Promise.resolve()` で DOM を読むコードは遷移を待つ必要がある。`$updatedCallback` はバインディング適用の直後という*位置*こそ変わらないが、その適用ごと 1 フレーム後ろへずれる。
-- `$watch` と `$streams` restart は元の microtask に留まるため、`$updatedCallback` の**前**に走るようになる。
+- `$scan`・`$watch`・`$streams` restart は元の microtask に留まるため、`$updatedCallback` の**前**に走るようになる。
 
 適用すべきバインディングが実際にあるバッチだけがタグへ渡されるので、headless なパスへの書き込みが遷移を起こすことはない。タグが無ければ drain は従来どおり。[docs/timing-and-firing-contract.ja.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.ja.md) §4.3 参照。
 
@@ -2507,7 +2508,7 @@ li {
 
 ### 存在しないパスへの配線は報告されます
 
-配線したパスが state 上で解決しないことが**確実**なとき、バインド確立時（`$watch` は宣言時）に 1 回だけ警告します。診断 code はコンソール・`@wcstack/lint`・VS Code 拡張で共通です：
+配線したパスが state 上で解決しないことが**確実**なとき、バインド確立時（`$watch` と `$scan` は宣言時）に 1 回だけ警告します。診断 code はコンソール・`@wcstack/lint`・VS Code 拡張で共通です：
 
 ```
 [@wcstack/state] [wcs/binding-path-missing] Bound path "user.nmae" does not resolve on the state tree:
@@ -2520,6 +2521,7 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 | ネストしたパスの打ち間違い（`user.nmae`） | `console.warn`（`wcs/binding-path-missing`）。更新は届かないままなので、直すのは書き手 |
 | トップレベルのパスの打ち間違い（`cout`） | 読み取り時に throw。文面は上と同じ語彙（did-you-mean 付き） |
 | `$watch` のキーの打ち間違い | `console.warn`（`wcs/watch-path-missing`）。単一セグメントでも報告する |
+| `$scan` の `from` / `resetOn` のパスの打ち間違い | `console.warn`（`wcs/scan-path-missing`）。単一セグメントでも報告する。その scan は一度も畳まれない（reset されない） |
 
 判定は**過小近似**です。静的に決められない形では黙ります —— 誤検知でページを騒がせないことを優先しているためで、以下はすべて警告しません：
 

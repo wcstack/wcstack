@@ -181,11 +181,11 @@ router は `_initialize` の中で最初のルート適用を await するが、
   `$updatedCallback` を使う。これはバインディング適用後、コールバック内で発火する）
   必要がある。
 - **機構間の順序が反転する**。`notifyUpdateBatchListeners` は drain の `finally` に
-  あり、元の microtask で走る —— `$watch` と `$streams` restart は state アドレスを
+  あり、元の microtask で走る —— `$scan`・`$watch`・`$streams` restart は state アドレスを
   消費し DOM を見ないため。一方 `$updatedCallback` はバインディングと一緒に更新
   コールバックへ乗る。したがって state の README が「固定」と宣言する
-  `$updatedCallback` → `$watch` → `$streams` restart は、arbiter が `state` を
-  受け付けている間だけ `$watch` → `$streams` restart → `$updatedCallback` になる。
+  `$updatedCallback` → `$scan` → `$watch` → `$streams` restart は、arbiter が `state` を
+  受け付けている間だけ `$scan` → `$watch` → `$streams` restart → `$updatedCallback` になる。
   これは意図的な選択であり（`$watch` を 1 フレーム待たせる方が悪い）、あの層が固定で
   あることの唯一の明文化された例外である。
 - **適用すべきバインディングが 0 本のバッチは arbiter へ渡さない**。書き込みはパスが
