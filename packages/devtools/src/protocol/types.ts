@@ -161,8 +161,10 @@ export type DevtoolsEventLike =
       // `$watch` の実行中の throw。watch は例外を自分で閉じる（drain と他機能を
       // 巻き添えにしないため）ので、これが無いと失敗が devtools から見えない。
       readonly type: "state:watch-error";
-      // "fold" は `$scan` の fold（state の scan/scanReport.ts。path は "$scan.<output>"）。
-      readonly phase: "prime" | "evaluate" | "handler" | "fold";
+      // `$scan`（state の scan/scanReport.ts。path は "$scan.<output>"）は "evaluate"（source /
+      // 出力の読み）・"fold"（fold の throw・Promise の戻り値・接ぎ木で getter になった from）・
+      // "write"（出力の書き込み）を使う。
+      readonly phase: "prime" | "evaluate" | "handler" | "fold" | "write";
       readonly path: string;
       readonly error: unknown;
     }

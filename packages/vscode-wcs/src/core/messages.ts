@@ -85,9 +85,18 @@ export interface WcsMessageCatalog {
   scanNotObject(): string;
   scanOutputInvalid(name: string): string;
   scanOutputReserved(name: string): string;
-  scanOutputConflict(name: string, other: 'getter' | 'stream'): string;
+  scanOutputEmpty(): string;
+  /** ボリューム（`mount=`）の `$scan`（runtime は接ぎ木の前に raise）。 */
+  scanInVolume(mountPath: string): string;
+  /** マウントされたコンポーネント（`bind-component`）の `$scan`（runtime は warn して捨てる）。 */
+  scanInMountedComponent(): string;
+  scanOutputConflict(name: string, other: 'getter' | 'stream' | 'method'): string;
   scanEntryNotObject(name: string): string;
   scanSourceCount(name: string): string;
+  scanFromNotString(name: string): string;
+  scanOnNotString(name: string): string;
+  scanResetNotString(name: string): string;
+  scanOutputCycle(chain: readonly string[]): string;
   scanInitialMissing(name: string): string;
   scanFoldNotFunction(name: string): string;
   scanOnUndeclared(name: string, token: string): string;
@@ -100,6 +109,7 @@ export interface WcsMessageCatalog {
   scanResetUnderFrom(name: string, path: string, from: string): string;
   scanResetReadsOutput(name: string, path: string, output: string): string;
   scanSourceComputed(name: string, field: 'from' | 'resetOn', path: string, getter: string): string;
+  scanFromWriteOnly(name: string, path: string, setter: string): string;
   scanPathMissing(name: string, field: 'from' | 'resetOn', path: string): string;
   // --- arrayMutationValidator ---
   arrayMutation(method: string, alternative: string): string;
@@ -175,7 +185,7 @@ export type MountPathProblem = 'empty' | 'emptySegment' | 'wildcard' | 'reserved
 /** `**` が現れた場所（`**` を解釈しない消費者）。 */
 export type RecursionWildcardSite =
   | 'binding' | 'watch' | 'resolve' | 'undeclared'
-  | 'assignment' | 'postUpdate' | 'trackDependency' | 'listKeys';
+  | 'assignment' | 'postUpdate' | 'trackDependency' | 'listKeys' | 'scan';
 /** `$getAll` が `**` に対して拒否する添字の形。 */
 export type RecursionGetAllProblem = 'prefix' | 'notArray';
 /** `$setAll` が `**` に対して拒否する形。 */
@@ -242,15 +252,24 @@ const ja: WcsMessageCatalog = {
   scanNotObject: () => `$scan は「出力名 → { from | on, initial, fold, resetOn? }」のオブジェクトである必要があります（この形はランタイムが読み込み時に throw します）`,
   scanOutputInvalid: (n) => `$scan の出力名 "${n}" は平坦なプロパティ名である必要があります（"."・"*"・先頭の "$" は使えません）`,
   scanOutputReserved: (n) => `$scan の出力名 "${n}" は Object.prototype から継承される名前です（"constructor" など）`,
+  scanOutputEmpty: () => `$scan の出力名は空でない文字列である必要があります`,
+  scanInVolume: (mountPath) => `$scan はボリューム（mount="${mountPath}"）では宣言できません（ランタイムは接ぎ木の前に throw します）。scan はルートの state に宣言してください`,
+  scanInMountedComponent: () => `$scan はマウントされたコンポーネント（bind-component）では実行されません（ランタイムは wcs/mount-dollar-declaration で警告し、黙って捨てます）。scan はルートの state に宣言してください`,
   scanOutputConflict: (n, other) => other === 'getter'
     ? `$scan の出力名 "${n}" は同名の getter / setter と衝突しています（出力はランタイムが所有するプロパティです）`
-    : `$scan の出力名 "${n}" は同名の $streams エントリと衝突しています（出力の持ち主は 1 つだけです）`,
+    : other === 'method'
+      ? `$scan の出力名 "${n}" は同名のメソッドと衝突しています（出力はランタイムが所有するプロパティで、畳んだ値がメソッドを上書きします）`
+      : `$scan の出力名 "${n}" は同名の $streams エントリと衝突しています（出力の持ち主は 1 つだけです）`,
   scanEntryNotObject: (n) => `$scan のエントリ "${n}" は { from | on, initial, fold, resetOn? } のオブジェクトである必要があります`,
   scanSourceCount: (n) => `$scan のエントリ "${n}" には "from"（state パス）か "on"（イベントトークン名）のどちらか 1 つだけを書きます`,
+  scanFromNotString: (n) => `$scan のエントリ "${n}" の "from" は空でない state パスの文字列である必要があります`,
+  scanOnNotString: (n) => `$scan のエントリ "${n}" の "on" は空でないイベントトークン名である必要があります`,
+  scanResetNotString: (n) => `$scan のエントリ "${n}" の "resetOn" には state パスの文字列だけを書きます`,
+  scanOutputCycle: (chain) => `$scan のエントリ ${chain.map(c => `"${c}"`).join(' → ')} は from を通じて互いを畳み合っています（互いの書き込みで永久に畳み続けます）`,
   scanInitialMissing: (n) => `$scan のエントリ "${n}" に "initial" がありません（累積の種であり、resetOn の戻り先です）`,
   scanFoldNotFunction: (n) => `$scan のエントリ "${n}" の "fold" は関数である必要があります`,
   scanOnUndeclared: (n, t) => `$scan のエントリ "${n}" の on "${t}" は $eventTokens に宣言されていません`,
-  scanPathInvalid: (n, f, p) => `$scan のエントリ "${n}" の ${f} "${p}" は state パスとして成立しません（先頭の "$"・"@"・空のセグメント・"**" は使えません）`,
+  scanPathInvalid: (n, f, p) => `$scan のエントリ "${n}" の ${f} "${p}" は state パスとして成立しません（先頭の "$"・"@"・空のセグメントは使えません）`,
   scanPathReserved: (n, f, p) => `$scan のエントリ "${n}" の ${f} "${p}" は Object.prototype から継承される名前です（"constructor" など）`,
   scanFromSelf: (n, p) => `$scan のエントリ "${n}" の from "${p}" は自分の出力を読んでいます（自分の書き込みを永久に畳み続けます）`,
   scanResetNotArray: (n) => `$scan のエントリ "${n}" の "resetOn" は state パスの配列である必要があります`,
@@ -258,7 +277,8 @@ const ja: WcsMessageCatalog = {
   scanResetIsFrom: (n, p) => `$scan のエントリ "${n}" の resetOn "${p}" は自分の from と同じです（変化のたびに畳まずに reset します）`,
   scanResetUnderFrom: (n, p, from) => `$scan のエントリ "${n}" の resetOn "${p}" は自分の from "${from}" の配下です（from を書くたびに同じバッチに載り、reset が毎回勝って一度も畳まれません）`,
   scanResetReadsOutput: (n, p, o) => `$scan のエントリ "${n}" の resetOn "${p}" は $scan の出力 "${o}" を読んでいます（累積で累積を消すフィードバックになります）。素の入力で reset してください`,
-  scanSourceComputed: (n, f, p, g) => `$scan のエントリ "${n}" の ${f} "${p}" は${g === p ? ' getter' : ` getter "${g}" の配下`}です。getter は入力が変わるたびに再評価されるので、畳むと出来事ではなく再評価の回数を数えます。getter が読む素の値を指すか、on でイベントを受けてください`,
+  scanSourceComputed: (n, f, p, g) => `$scan のエントリ "${n}" の ${f} "${p}" は${g === p ? ' getter' : g.includes('**') ? `再帰 getter "${g}" が計算するパス` : ` getter "${g}" の配下`}です。getter は入力が変わるたびに再評価されるので、畳むと出来事ではなく再評価の回数を数えます。getter が読む素の値を指すか、on でイベントを受けてください`,
+  scanFromWriteOnly: (n, p, s) => `$scan のエントリ "${n}" の from "${p}" は${s === p ? ' getter の無い setter' : ` getter の無い setter "${s}" の配下`}です。読むと常に undefined なので、fold は毎回 undefined を受け取ります。setter が書く素の値を指すか、on でイベントを受けてください`,
   scanPathMissing: (n, f, p) => `$scan のエントリ "${n}" の ${f} "${p}" は状態定義に存在しません（${f === 'from' ? '一度も畳まれません' : '一度も reset されません'}）`,
   typeAnnotationIncompatible: (vt, rt) => `型 "${vt}" は @type {${rt}} と互換性がありません`,
   arrayMutation: (m, alt) =>
@@ -317,6 +337,8 @@ const ja: WcsMessageCatalog = {
         return `$trackDependency("${p}") に "**" は渡せません。依存の登録は展開後の具体パス（固定本数の "*"）に対してのみ成立します`;
       case 'listKeys':
         return `$listKeys のキー "${p}" に "**" は使えません。キー付きリストは 1 本の具体リストパスです — 深さごとに宣言してください（例: "nodes.*.children"）`;
+      case 'scan':
+        return `$scan のパス "${p}" に "**" は使えません。from / resetOn は具体パス（固定本数の "*"）を指します`;
       default:
         return `"${p}" は "**" を含みますが、この state には $recursion 宣言がありません。$recursion = { "<anchor>": "<repeat>" }（例: { "nodes.*": "children.*" }）を宣言してください（宣言が無いと "**" のキーは黙って無視されます）`;
     }
@@ -445,15 +467,24 @@ const en: WcsMessageCatalog = {
   scanNotObject: () => `$scan must be an object mapping output names to { from | on, initial, fold, resetOn? } (the runtime throws on this shape at load time)`,
   scanOutputInvalid: (n) => `$scan output name "${n}" must be a flat property name ("." and "*" and a leading "$" are not allowed)`,
   scanOutputReserved: (n) => `$scan output name "${n}" is a property name inherited from Object.prototype (e.g. "constructor")`,
+  scanOutputEmpty: () => `$scan output name must be a non-empty string`,
+  scanInVolume: (mountPath) => `$scan cannot be declared in a volume (mount="${mountPath}"); the runtime throws before grafting. Declare the scan on the root state`,
+  scanInMountedComponent: () => `$scan is not run by a mounted component (bind-component); the runtime warns with wcs/mount-dollar-declaration and drops it. Declare the scan on the root state`,
   scanOutputConflict: (n, other) => other === 'getter'
     ? `$scan output "${n}" conflicts with a getter or setter of the same name (the output is a property the runtime owns)`
-    : `$scan output "${n}" conflicts with the $streams entry of the same name (each output has exactly one owner)`,
+    : other === 'method'
+      ? `$scan output "${n}" conflicts with a method of the same name (the output is a property the runtime owns, so the folded value would overwrite the method)`
+      : `$scan output "${n}" conflicts with the $streams entry of the same name (each output has exactly one owner)`,
   scanEntryNotObject: (n) => `$scan entry "${n}" must be an object { from | on, initial, fold, resetOn? }`,
   scanSourceCount: (n) => `$scan entry "${n}" must declare exactly one of "from" (a state path) or "on" (an event-token name)`,
+  scanFromNotString: (n) => `$scan entry "${n}" "from" must be a non-empty state path string`,
+  scanOnNotString: (n) => `$scan entry "${n}" "on" must be a non-empty event-token name`,
+  scanResetNotString: (n) => `$scan entry "${n}" "resetOn" must contain only state path strings`,
+  scanOutputCycle: (chain) => `$scan entries ${chain.map(c => `"${c}"`).join(' → ')} feed each other through "from" (each fold would re-trigger the next forever)`,
   scanInitialMissing: (n) => `$scan entry "${n}" requires "initial" (the seed of the accumulator and the value resetOn returns to)`,
   scanFoldNotFunction: (n) => `$scan entry "${n}" fold must be a function`,
   scanOnUndeclared: (n, t) => `$scan entry "${n}" on "${t}" is not declared in $eventTokens`,
-  scanPathInvalid: (n, f, p) => `$scan entry "${n}" ${f} "${p}" is not a valid state path (a leading "$", "@", empty segments and "**" are not allowed)`,
+  scanPathInvalid: (n, f, p) => `$scan entry "${n}" ${f} "${p}" is not a valid state path (a leading "$", "@" and empty segments are not allowed)`,
   scanPathReserved: (n, f, p) => `$scan entry "${n}" ${f} "${p}" is a property name inherited from Object.prototype (e.g. "constructor")`,
   scanFromSelf: (n, p) => `$scan entry "${n}" from "${p}" reads the entry's own output (it would fold its own writes forever)`,
   scanResetNotArray: (n) => `$scan entry "${n}" "resetOn" must be an array of state paths`,
@@ -461,7 +492,8 @@ const en: WcsMessageCatalog = {
   scanResetIsFrom: (n, p) => `$scan entry "${n}" resetOn "${p}" is the entry's own from (every change would reset instead of fold)`,
   scanResetUnderFrom: (n, p, from) => `$scan entry "${n}" resetOn "${p}" sits under the entry's own from "${from}" (every write of from also lands it, so the reset would win every time and nothing would fold)`,
   scanResetReadsOutput: (n, p, o) => `$scan entry "${n}" resetOn "${p}" reads the $scan output "${o}" (a reset driven by an accumulator is a feedback loop). Reset on the plain inputs instead`,
-  scanSourceComputed: (n, f, p, g) => `$scan entry "${n}" ${f} "${p}" ${g === p ? 'is a getter' : `is under the getter "${g}"`}. A getter re-evaluates whenever its inputs change, so folding it counts re-evaluations, not events. Point at the plain value the getter reads, or use "on" with an event token`,
+  scanSourceComputed: (n, f, p, g) => `$scan entry "${n}" ${f} "${p}" ${g === p ? 'is a getter' : g.includes('**') ? `is computed by the recursive getter "${g}"` : `is under the getter "${g}"`}. A getter re-evaluates whenever its inputs change, so folding it counts re-evaluations, not events. Point at the plain value the getter reads, or use "on" with an event token`,
+  scanFromWriteOnly: (n, p, s) => `$scan entry "${n}" from "${p}" ${s === p ? 'is a setter without a getter' : `is under the setter without a getter "${s}"`}, so it always reads undefined and every fold would receive undefined. Point at the plain value the setter writes, or use "on" with an event token`,
   scanPathMissing: (n, f, p) => `$scan entry "${n}" ${f} "${p}" does not exist in the state definition (${f === 'from' ? 'it will never fold' : 'it will never reset'})`,
   typeAnnotationIncompatible: (vt, rt) => `Type "${vt}" is not compatible with @type {${rt}}`,
   arrayMutation: (m, alt) =>
@@ -521,6 +553,8 @@ const en: WcsMessageCatalog = {
         return `$trackDependency("${p}") cannot take "**" — a dependency is registered against a concrete path (a fixed number of "*")`;
       case 'listKeys':
         return `$listKeys key "${p}" cannot contain "**" — a keyed list is one concrete list path. Declare the key per depth instead (for example "nodes.*.children")`;
+      case 'scan':
+        return `$scan path "${p}" cannot contain "**" — "from" and "resetOn" name a concrete path (a fixed number of "*")`;
       default:
         return `"${p}" contains "**" but this state declares no $recursion anchor. Declare $recursion = { "<anchor>": "<repeat>" } (for example { "nodes.*": "children.*" }) — without it a "**" key is silently ignored`;
     }

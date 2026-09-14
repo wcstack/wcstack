@@ -1008,7 +1008,7 @@ export class WcsDevtools extends HTMLElement {
     if (entry.kind === "watch-error" || entry.kind === "watch-chain-limit") {
       kind.classList.add("warn");
       kind.title = entry.kind === "watch-error"
-        ? "a $watch handler or $scan fold threw; the runtime isolated it (console.error only)"
+        ? "a $watch or $scan failure (read, handler, fold or write — see the phase in the detail); the runtime isolated it (console.error only)"
         : "a $watch write chain hit the depth limit and was cut off";
     }
     // 配線の死（解決しないパス）と隔離された適用失敗も、ランタイムが console に

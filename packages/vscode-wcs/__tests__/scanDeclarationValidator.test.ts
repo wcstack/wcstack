@@ -12,9 +12,9 @@ ${script}
   </script></wcs-state>`;
 }
 
-const diagnose = (script: string) => {
+const diagnose = (script: string, locale?: string) => {
   const html = makeHtml(script);
-  return validateScanDeclarations(html).map(d => ({
+  return validateScanDeclarations(html, 'wcs-state', locale).map(d => ({
     code: d.code,
     severity: d.severity,
     text: html.slice(d.start, d.end),
@@ -54,6 +54,19 @@ describe('validateScanDeclarations', () => {
     it('$scan の値がオブジェクトでないと断定できる', () => {
       const diags = diagnose(`  $scan: "feed"`);
       expect(diags).toEqual([expect.objectContaining({ code: WcsDiagnosticCode.ScanDeclarationInvalid, severity: 'error', text: '$scan' })]);
+    });
+
+    it('エントリの値が配列リテラルなら「オブジェクトでない」と断定し（ランタイムも同じ文言で raise する）、配列で始まる式は断定しない', () => {
+      const diags = diagnose(`
+  n: 0,
+  $scan: { log: [], opaque: ["from"].concat(REST) },`, 'en');
+      expect(diags.map(d => [d.code, d.severity, d.text])).toEqual([[WcsDiagnosticCode.ScanDeclarationInvalid, 'error', 'log']]);
+      expect(diags[0].message).toContain('$scan entry "log" must be an object');
+    });
+
+    it('$scan の値が配列リテラルなら断定し（ランタイムは配列を拒否する）、配列で始まる式は断定しない', () => {
+      expect(diagnose(`  $scan: []`).map(d => [d.code, d.text])).toEqual([[WcsDiagnosticCode.ScanDeclarationInvalid, '$scan']]);
+      expect(diagnose(`  $scan: [].concat(EXTRA)`)).toEqual([]);
     });
 
     it('出力名が平坦でない・$ 始まり', () => {
@@ -135,7 +148,7 @@ describe('validateScanDeclarations', () => {
   $scan: { c: { on: "tick", initial: 0, fold: f } }`).map(d => d.text)).toEqual(['tick']);
     });
 
-    it('from / resetOn のパスの形が壊れている', () => {
+    it('from / resetOn のパスの形が壊れている（"**" はランタイムと同じ wcs/recursion-unsupported）', () => {
       const diags = diagnose(`
   n: 0,
   $scan: {
@@ -143,12 +156,100 @@ describe('validateScanDeclarations', () => {
     b: { from: "a..b", initial: 0, fold: f },
     c: { from: "nodes.**.value", initial: 0, fold: f },
     d: { from: "n", initial: 0, fold: f, resetOn: ["user@other"] },
-  }`);
+    e: { from: "n", initial: 0, fold: f, resetOn: ["a.**"] },
+  }`, 'en');
       expect(diags.map(d => [d.code, d.text])).toEqual([
         [WcsDiagnosticCode.ScanDeclarationInvalid, '$streamStatus.feed'],
         [WcsDiagnosticCode.ScanDeclarationInvalid, 'a..b'],
-        [WcsDiagnosticCode.ScanDeclarationInvalid, 'nodes.**.value'],
+        [WcsDiagnosticCode.RecursionUnsupported, 'nodes.**.value'],
         [WcsDiagnosticCode.ScanDeclarationInvalid, 'user@other'],
+        // 形の検査が先（ランタイムの assertValidScanPath は scan 出力の読みより前に落とす）
+        [WcsDiagnosticCode.RecursionUnsupported, 'a.**'],
+      ]);
+      expect(diags[2].message).toContain('$scan path "nodes.**.value" cannot contain "**"');
+    });
+
+    it('from / on が文字列でない・空文字列（識別子参照と式は断定しない）', () => {
+      const diags = diagnose(`
+  n: 0,
+  $eventTokens: ["tick"],
+  $scan: {
+    a: { from: 1, initial: 0, fold: f },
+    b: { on: "", initial: 0, fold: f },
+    c: { from: () => "n", initial: 0, fold: f },
+    d: { from: ["n"], initial: 0, fold: f },
+    e: { from() { return "n"; }, initial: 0, fold: f },
+    f: { from: FROM, initial: 0, fold: f },
+    g: { from: ["n", "m"].join("."), initial: 0, fold: f },
+  }`, 'en');
+      expect(diags.map(d => [d.code, d.text])).toEqual([
+        [WcsDiagnosticCode.ScanDeclarationInvalid, 'a'],
+        [WcsDiagnosticCode.ScanDeclarationInvalid, 'b'],
+        [WcsDiagnosticCode.ScanDeclarationInvalid, 'c'],
+        [WcsDiagnosticCode.ScanDeclarationInvalid, 'd'],
+        [WcsDiagnosticCode.ScanDeclarationInvalid, 'e'],
+      ]);
+      expect(diags[0].message).toContain('"from" must be a non-empty state path string');
+      expect(diags[1].message).toContain('"on" must be a non-empty event-token name');
+    });
+
+    it('resetOn に文字列でない要素がある（識別子参照は断定しない）', () => {
+      const diags = diagnose(`
+  n: 0,
+  host: "a",
+  $scan: {
+    a: { from: "n", initial: 0, fold: f, resetOn: ["host", 1] },
+    b: { from: "n", initial: 0, fold: f, resetOn: ["host", KEY] },
+    c: { from: "n", initial: 0, fold: f, resetOn: [["host"]] },
+  }`, 'en');
+      expect(diags.map(d => [d.code, d.text])).toEqual([
+        [WcsDiagnosticCode.ScanDeclarationInvalid, 'a'],
+        [WcsDiagnosticCode.ScanDeclarationInvalid, 'c'],
+      ]);
+      expect(diags[0].message).toContain('"resetOn" must contain only state path strings');
+    });
+
+    it('出力名が空文字列なら、エントリの中身を出力名と誤読せず 1 件だけ報告する', () => {
+      const html = makeHtml(`
+  n: 0,
+  $scan: { "": { from: "n", initial: 0, fold: f } }`);
+      const diags = validateScanDeclarations(html, 'wcs-state', 'en');
+      expect(diags.map(d => [d.code, html.slice(d.start, d.end), d.message])).toEqual([
+        [WcsDiagnosticCode.ScanDeclarationInvalid, '""', '$scan output name must be a non-empty string'],
+      ]);
+    });
+
+    it('出力名が同名のメソッドと衝突する', () => {
+      const diags = diagnose(`
+  n: 0,
+  log() { return 1; },
+  $scan: { log: { from: "n", initial: [], fold: f } }`, 'en');
+      expect(diags).toEqual([expect.objectContaining({ code: WcsDiagnosticCode.ScanDeclarationInvalid, text: 'log' })]);
+      expect(diags[0].message).toContain('conflicts with a method of the same name');
+    });
+
+    it('scan 同士が from の根を辿って循環する（循環に乗るエントリの from に報告し、流れ込むだけの scan は報告しない）', () => {
+      const diags = diagnose(`
+  src: 0,
+  $eventTokens: ["tick"],
+  $scan: {
+    a: { from: "b.x", initial: 0, fold: f },
+    b: { from: "a", initial: 0, fold: f },
+    c: { from: "a", initial: 0, fold: f },
+    p: { from: "q", initial: 0, fold: f },
+    q: { from: "r", initial: 0, fold: f },
+    r: { from: "p", initial: 0, fold: f },
+    chained: { from: "src", initial: { items: [] }, fold: f },
+    reader: { from: "chained.items", initial: 0, fold: f },
+    fromOn: { from: "ticks", initial: 0, fold: f },
+    ticks: { on: "tick", initial: 0, fold: f },
+  }`, 'en').filter(d => d.code === WcsDiagnosticCode.ScanDeclarationInvalid);
+      expect(diags.map(d => [d.text, d.message])).toEqual([
+        ['b.x', expect.stringContaining('$scan entries "a" → "b" → "a" feed each other through "from"')],
+        ['a', expect.stringContaining('"b" → "a" → "b"')],
+        ['q', expect.stringContaining('"p" → "q" → "r" → "p"')],
+        ['r', expect.stringContaining('"q" → "r" → "p" → "q"')],
+        ['p', expect.stringContaining('"r" → "p" → "q" → "r"')],
       ]);
     });
 
@@ -206,9 +307,135 @@ describe('validateScanDeclarations', () => {
       ]);
       expect(diags[1].message).toContain('"row"');
     });
+
+    it('$recursion の ** getter の展開形（深い段・値の内側を含む）を from に書くと getter として報告し、データのパスは通す（ランタイムと同じ）', () => {
+      const script = `
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [{ value: 1, children: [] }],
+  get "nodes.**.total"() { return this["nodes.**.value"]; },
+  get "nodes.**.stats"() { return { count: 0 }; },
+  $scan: {
+    a: { from: "nodes.*.total", initial: 0, fold: f },
+    b: { from: "nodes.*.children.*.total", initial: 0, fold: f },
+    c: { from: "nodes.*.stats.count", initial: 0, fold: f },
+    d: { from: "nodes.*.value", initial: 0, fold: f },
+  }`;
+      const diags = diagnose(script, 'en');
+      expect(diags.map(d => [d.code, d.severity, d.text])).toEqual([
+        [WcsDiagnosticCode.ScanSourceComputed, 'error', 'nodes.*.total'],
+        [WcsDiagnosticCode.ScanSourceComputed, 'error', 'nodes.*.children.*.total'],
+        [WcsDiagnosticCode.ScanSourceComputed, 'error', 'nodes.*.stats.count'],
+      ]);
+      expect(diags[0].message).toContain('is computed by the recursive getter "nodes.**.total"');
+      expect(diags[2].message).toContain('"nodes.**.stats"');
+      expect(diagnose(script, 'ja')[0].message).toContain('再帰 getter "nodes.**.total" が計算するパス');
+    });
+
+    it('getter の無い setter は from にだけ報告し（読むと常に undefined）、getter と setter の組は getter として報告し、resetOn の引き金には使える（ランタイムと同じ）', () => {
+      const script = `
+  n: 0,
+  set sink(v) { this.n = v; },
+  set pair(v) {},
+  get pair() { return 1; },
+  get pair2() { return 1; },
+  set pair2(v) {},
+  $scan: {
+    a: { from: "sink", initial: 0, fold: f },
+    b: { from: "sink.x", initial: 0, fold: f },
+    c: { from: "pair", initial: 0, fold: f },
+    d: { from: "pair2", initial: 0, fold: f },
+    e: { from: "n", initial: 0, fold: f, resetOn: ["sink"] },
+  }`;
+      const diags = diagnose(script, 'en');
+      expect(diags.map(d => [d.code, d.severity, d.text])).toEqual([
+        [WcsDiagnosticCode.ScanDeclarationInvalid, 'error', 'sink'],
+        [WcsDiagnosticCode.ScanDeclarationInvalid, 'error', 'sink.x'],
+        [WcsDiagnosticCode.ScanSourceComputed, 'error', 'pair'],
+        [WcsDiagnosticCode.ScanSourceComputed, 'error', 'pair2'],
+      ]);
+      expect(diags[0].message).toContain('from "sink" is a setter without a getter');
+      expect(diags[1].message).toContain('is under the setter without a getter "sink"');
+      expect(diagnose(script, 'ja')[0].message).toContain('from "sink" は getter の無い setterです');
+    });
+
+    it('getter の無い setter の判定は宣言順に依存しない: 同じキーは後の宣言が勝ち、dotted な setter は同じパスのデータ候補を前後に関わらず覆う（ランタイムと同じ）', () => {
+      const diags = diagnose(`
+  user: { name: "a" },
+  set "user.name"(v) { },
+  set "profile.name"(v) { },
+  profile: { name: "a" },
+  items: [{ qty: 1 }],
+  set "items.*.qty"(v) { },
+  x: 1,
+  set x(v) { },
+  set y(v) { },
+  y: 1,
+  $scan: {
+    a: { from: "user.name", initial: 0, fold: f },
+    b: { from: "profile.name", initial: 0, fold: f },
+    c: { from: "items.*.qty", initial: 0, fold: f },
+    d: { from: "x", initial: 0, fold: f },
+    e: { from: "y", initial: 0, fold: f },
+  }`, 'en');
+      expect(diags.map(d => [d.code, d.text])).toEqual([
+        [WcsDiagnosticCode.ScanDeclarationInvalid, 'user.name'],
+        [WcsDiagnosticCode.ScanDeclarationInvalid, 'profile.name'],
+        [WcsDiagnosticCode.ScanDeclarationInvalid, 'items.*.qty'],
+        [WcsDiagnosticCode.ScanDeclarationInvalid, 'x'],
+      ]);
+    });
+  });
+
+  describe('ボリュームとマウントされたコンポーネント', () => {
+    const block = (attrs: string, body: string) => `<wcs-state${attrs}><script type="module">
+export default {
+${body}
+};
+</script></wcs-state>`;
+
+    it('ボリューム（mount=）の $scan は error で、中身は検証しない', () => {
+      const html = block(' mount="vol"', `  n: 0,\n  $scan: { out: { from: "nn", initial: 0, fold: f } },`);
+      const diags = validateScanDeclarations(html, 'wcs-state', 'en');
+      expect(diags.map(d => [d.code, d.severity, html.slice(d.start, d.end)])).toEqual([
+        [WcsDiagnosticCode.ScanDeclarationInvalid, 'error', '$scan'],
+      ]);
+      expect(diags[0].message).toContain('mount="vol"');
+    });
+
+    it('マウントされたコンポーネント（bind-component）の $scan は warning で、中身は検証しない', () => {
+      const html = block(' bind-component="state"', `  n: 0,\n  $scan: { out: { from: "nn", initial: 0, fold: f } },`);
+      const diags = validateScanDeclarations(html, 'wcs-state', 'en');
+      expect(diags.map(d => [d.code, d.severity, html.slice(d.start, d.end)])).toEqual([
+        [WcsDiagnosticCode.ScanDeclarationInvalid, 'warning', '$scan'],
+      ]);
+      expect(diags[0].message).toContain('bind-component');
+    });
+
+    it('属性値の中の "bind-component" はマウントとみなさず、ルートとして中身を検証する', () => {
+      const html = block(' data-note="no bind-component here"', `  n: 0,\n  $scan: { out: { from: "nn", initial: 0, fold: f } },`);
+      const diags = validateScanDeclarations(html, 'wcs-state', 'en');
+      expect(diags.map(d => [d.code, d.severity, html.slice(d.start, d.end)])).toEqual([
+        [WcsDiagnosticCode.ScanPathMissing, 'warning', 'nn'],
+      ]);
+    });
+
+    it('$scan を持たないボリュームには何も出さない', () => {
+      expect(validateScanDeclarations(block(' mount="vol"', '  n: 0,'), 'wcs-state', 'en')).toEqual([]);
+    });
   });
 
   describe('存在しないパス（warning・wcs/scan-path-missing）', () => {
+    it('$recursion の展開形は宣言済みとみなし、畳めないパスだけを報告する（$watch と同じ照合）', () => {
+      const diags = diagnose(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [{ value: 1, children: [{ value: 2, children: [] }] }],
+  $scan: {
+    deep: { from: "nodes.*.children.*.children.*.value", initial: 0, fold: f },
+    typo: { from: "nodes.*.children.*.nope", initial: 0, fold: f },
+  }`);
+      expect(diags.map(d => [d.code, d.text])).toEqual([[WcsDiagnosticCode.ScanPathMissing, 'nodes.*.children.*.nope']]);
+    });
+
     it('from / resetOn のタイプミス', () => {
       const diags = diagnose(`
   pageResult: null,
@@ -250,6 +477,24 @@ export default {
     expect(paths.filter(p => p.path === 'total')).toEqual([expect.objectContaining({ typeHint: 'string' })]);
   });
 
+  it('$eventTokens と同名の出力と $streams の値も initial から子パスを実体化し、binding-path-missing を出さないこと（トークン名はパスではない）', () => {
+    const names = analyzeStatePaths(`export default {
+  $eventTokens: ["message", "tick"],
+  $streams: { tick: { source(args, signal) { return make(); }, initial: { rows: [] } } },
+  $scan: { message: { on: "message", initial: { items: [] }, fold: f } },
+};`).map(p => p.path);
+    expect(names).toEqual(expect.arrayContaining(['message', 'message.items', 'message.items.*', 'tick', 'tick.rows', 'tick.rows.*']));
+
+    const html = `<wcs-state><script type="module">
+export default {
+  $eventTokens: ["message"],
+  $scan: { message: { on: "message", initial: { items: [] }, fold: (acc, e) => acc } },
+};
+</script></wcs-state>
+<template data-wcs="for: message.items"><p data-wcs="textContent: ."></p></template>`;
+    expect(validateDocument(html).map(d => d.code)).not.toContain('wcs/binding-path-missing');
+  });
+
   it('エントリの素性を位置付きで取り出す', () => {
     const script = `export default {
   $scan: {
@@ -265,6 +510,20 @@ export default {
     expect(log).toMatchObject({ hasOn: true, foldMissingOrNotFunction: true });
     expect(script.slice(log.on!.start, log.on!.end)).toBe('tick');
     expect(opaque).toMatchObject({ readable: false, notObject: false });
+  });
+
+  it('空の出力名は 1 エントリとして拾い、中身のプロパティを出力名や候補パスにしない', () => {
+    const script = `export default {
+  n: 0,
+  $scan: { "": { from: "n", initial: 0, fold: f }, total: { from: "n", initial: 0, fold: f } },
+};`;
+    expect(analyzeScanEntries(script).map(entry => entry.name)).toEqual(['', 'total']);
+    const names = analyzeStatePaths(script).map(p => p.path);
+    expect(names).toContain('total');
+    expect(names).not.toContain('from');
+    expect(names).not.toContain('initial');
+    expect(names).not.toContain('fold');
+    expect(names).not.toContain('');
   });
 
   it('resetOn に文字列以外が混ざる配列は断定しない', () => {

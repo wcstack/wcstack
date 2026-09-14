@@ -147,6 +147,14 @@ var WcsDiagnosticCode = {
   // `$watch` のキーが状態定義に存在しない。バインディング側と違い黙って発火しない
   // だけなので気づけない。severity は binding-path-missing に揃える（warning）。
   WatchPathMissing: "wcs/watch-path-missing",
+  // --- <wcs-state> script: $scan declaration ---
+  // ランタイム（scan/processScanDeclaration.ts）が raiseError で落とす宣言の形。出力名・source の本数・
+  // initial / fold の欠落・from / resetOn のパスの形・未宣言トークン・自出力の読み。
+  ScanDeclarationInvalid: "wcs/scan-declaration-invalid",
+  // from / resetOn が getter（またはその配下）。畳むと出来事ではなく再評価の回数を数える。ランタイムも raise。
+  ScanSourceComputed: "wcs/scan-source-computed",
+  // from / resetOn のパスが状態定義に存在しない。黙って一度も畳まれない。severity は watch-path-missing に揃える。
+  ScanPathMissing: "wcs/scan-path-missing",
   // --- <wcs-state> script: $recursion declaration / `**` paths ---
   // ランタイムと同じ code 語彙(@wcstack/state src/recursion/ が正本。
   // docs/state-recursive-path-impl-plan.md §7)。静的に出すのは**パス文字列と宣言だけで
@@ -1124,6 +1132,7 @@ var RESERVED_COMMAND_TOKENS_KEY = "$commandTokens";
 var RESERVED_EVENT_TOKENS_KEY = "$eventTokens";
 var RESERVED_LIST_KEYS_KEY = "$listKeys";
 var RESERVED_WATCH_KEY = "$watch";
+var RESERVED_SCAN_KEY = "$scan";
 var RESERVED_RECURSION_KEY = RECURSION_KEY;
 function analyzeStatePaths(scriptContent) {
   const objectContent = extractDefaultExportObject(scriptContent);
@@ -1133,9 +1142,14 @@ function analyzeStatePaths(scriptContent) {
   const pendingStreamValues = [];
   const pendingListKeys = [];
   const recursionSpec = specFromRecursionValue(topLevelProps.find((p) => p.name === RESERVED_RECURSION_KEY));
+  const effectiveDescriptors = effectiveTopLevelDescriptors(topLevelProps);
   for (const prop of topLevelProps) {
     if (prop.name.startsWith("$")) {
       collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys);
+      continue;
+    }
+    const effective = effectiveDescriptors.get(prop.name);
+    if (prop.kind === "getter" !== (effective !== "data")) {
       continue;
     }
     if (prop.kind === "method") {
@@ -1143,15 +1157,21 @@ function analyzeStatePaths(scriptContent) {
       continue;
     }
     if (prop.kind === "getter") {
-      if (!paths.some((p) => p.path === prop.name)) {
-        paths.push({ path: prop.name, kind: hasRecursionWildcard(prop.name) ? "recursive" : "computed" });
+      const { get, set } = effective;
+      const writeOnly = set && !get;
+      const declared = paths.find((p) => p.path === prop.name);
+      if (declared === void 0) {
+        const kind = hasRecursionWildcard(prop.name) ? "recursive" : "computed";
+        paths.push(writeOnly ? { path: prop.name, kind, writeOnly: true } : { path: prop.name, kind });
+      } else if (writeOnly) {
+        declared.writeOnly = true;
       }
       continue;
     }
     pushDataPropertyPaths(prop, paths);
   }
   for (const streamValue of pendingStreamValues) {
-    if (paths.some((p) => p.path === streamValue.name)) continue;
+    if (paths.some((p) => p.path === streamValue.name && p.kind !== "eventToken")) continue;
     pushDataPropertyPaths(streamValue, paths);
   }
   for (const listKeyEntry of pendingListKeys) {
@@ -1230,6 +1250,146 @@ function analyzeWatchEntries(scriptContent) {
 function analyzeListKeyEntries(scriptContent) {
   return analyzeObjectEntries(scriptContent, RESERVED_LIST_KEYS_KEY).map((entry) => ({ key: entry.key, start: entry.start, end: entry.end }));
 }
+function analyzeScanEntries(scriptContent) {
+  return analyzeObjectEntries(scriptContent, RESERVED_SCAN_KEY, true).map(describeScanEntry);
+}
+function describeScanEntry(entry) {
+  const unreadable = {
+    name: entry.key,
+    start: entry.start,
+    end: entry.end,
+    notObject: false,
+    readable: false,
+    hasFrom: false,
+    hasOn: false,
+    from: null,
+    on: null,
+    hasInitial: false,
+    foldMissingOrNotFunction: false,
+    resetOn: null,
+    resetOnNotArray: false,
+    fromNotString: false,
+    onNotString: false,
+    resetOnHasNonString: false
+  };
+  if (entry.kind === "method") {
+    return { ...unreadable, notObject: true };
+  }
+  const value = entry.value;
+  if (entry.kind !== "data" || value === void 0 || entry.valueStart === void 0) {
+    return unreadable;
+  }
+  if (!isObjectLiteral(value)) {
+    return { ...unreadable, notObject: isDefiniteNonObjectLiteral(value) };
+  }
+  const content = extractObjectContent(value);
+  if (hasUndecidableEntries(content)) {
+    return unreadable;
+  }
+  const contentStart = entry.valueStart + 1;
+  const props = parseTopLevelProperties(content);
+  const find = (name) => props.find((p) => p.name === name && !(p.kind === "data" && p.value?.trim() === "undefined"));
+  const foldProp = find("fold");
+  const resetProp = find("resetOn");
+  return {
+    ...unreadable,
+    readable: true,
+    hasFrom: find("from") !== void 0,
+    hasOn: find("on") !== void 0,
+    from: scanStringField(find("from"), contentStart),
+    on: scanStringField(find("on"), contentStart),
+    hasInitial: props.some((p) => p.name === "initial"),
+    foldMissingOrNotFunction: foldProp === void 0 || foldProp.kind === "data" && isNonFunctionLiteral(foldProp.value),
+    resetOn: resetProp === void 0 ? null : scanStringArrayFields(resetProp, contentStart),
+    resetOnNotArray: resetProp !== void 0 && resetProp.kind === "data" && isDefiniteNonArrayLiteral(resetProp.value),
+    fromNotString: isDefiniteNonPathValue(find("from")),
+    onNotString: isDefiniteNonPathValue(find("on")),
+    resetOnHasNonString: resetProp !== void 0 && resetProp.kind === "data" && resetProp.value !== void 0 && hasDefiniteNonStringElement(resetProp.value)
+  };
+}
+function isDefiniteNonPathValue(prop) {
+  if (prop === void 0 || prop.kind === "getter") return false;
+  if (prop.kind === "method") return true;
+  return prop.value !== void 0 && isDefiniteNonPathLiteral(prop.value, true);
+}
+function isDefiniteNonPathLiteral(value, emptyIsInvalid) {
+  const text = value.trim();
+  if (/^(["'`])\1$/.test(text)) return emptyIsInvalid;
+  const scan = maskCommentsAndStrings(text).trim();
+  return /^-?\d[\w.]*$/.test(scan) || /^(?:true|false|null)$/.test(scan) || isWholeBracketLiteral(scan) || /^(?:async\s+)?function\b[\s\S]*\}$/.test(scan) || /^(?:async\s+)?\([^()]*\)\s*=>/.test(scan) || /^(?:async\s+)?[$\w]+\s*=>/.test(scan);
+}
+function isWholeBracketLiteral(scan) {
+  if (scan[0] !== "[" && scan[0] !== "{") return false;
+  let depth = 0;
+  for (let i = 0; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === "(" || ch === "[" || ch === "{") {
+      depth++;
+    } else if (ch === ")" || ch === "]" || ch === "}") {
+      depth--;
+      if (depth === 0) return i === scan.length - 1;
+    }
+  }
+  return false;
+}
+function hasDefiniteNonStringElement(value) {
+  const text = value.trim();
+  const scan = maskCommentsAndStrings(text);
+  if (scan[0] !== "[" || !isWholeBracketLiteral(scan)) return false;
+  const elements = [];
+  let depth = 0;
+  let start = 1;
+  for (let i = 1; i < scan.length - 1; i++) {
+    const ch = scan[i];
+    if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") depth--;
+    else if (ch === "," && depth === 0) {
+      elements.push(text.slice(start, i));
+      start = i + 1;
+    }
+  }
+  elements.push(text.slice(start, scan.length - 1));
+  return elements.some((element) => element.trim().length > 0 && isDefiniteNonPathLiteral(element, false));
+}
+function scanStringField(prop, contentStart) {
+  if (!prop || prop.kind !== "data" || prop.value === void 0 || prop.valueStart === void 0) return null;
+  const literal2 = extractStringLiteralValue(prop.value);
+  if (literal2 === null) return null;
+  const leading = prop.value.length - prop.value.trimStart().length;
+  const start = contentStart + prop.valueStart + leading + 1;
+  return { value: literal2, start, end: start + literal2.length };
+}
+function scanStringArrayFields(prop, contentStart) {
+  if (prop.kind !== "data" || prop.value === void 0 || prop.valueStart === void 0) return null;
+  const text = prop.value.trim();
+  if (!isArrayLiteral(text)) return null;
+  const literal2 = /(["'])([^"'\\\n]*)\1/g;
+  if (text.replace(literal2, "").replace(/[\s,]/g, "") !== "[]") return null;
+  const base = contentStart + prop.valueStart + (prop.value.length - prop.value.trimStart().length);
+  const fields = [];
+  for (const match of text.matchAll(literal2)) {
+    const start = base + match.index + 1;
+    fields.push({ value: match[2], start, end: start + match[2].length });
+  }
+  return fields;
+}
+function isDefiniteNonObjectLiteral(value) {
+  const scan = maskCommentsAndStrings(value).trim();
+  return /^(["'`])[^"'`]*\1$/.test(scan) || /^-?\d[\w.]*$/.test(scan) || /^(?:true|false|null)$/.test(scan) || scan[0] === "[" && isWholeBracketLiteral(scan) || /^(?:async\s+)?function\b[\s\S]*\}$/.test(scan) || /^(?:async\s+)?\([^()]*\)\s*=>/.test(scan) || /^(?:async\s+)?[$\w]+\s*=>/.test(scan);
+}
+function isDefiniteNonArrayLiteral(value) {
+  if (value === void 0) return false;
+  const scan = maskCommentsAndStrings(value).trim();
+  return /^(["'`])[^"'`]*\1$/.test(scan) || /^-?\d[\w.]*$/.test(scan) || /^(?:true|false|null)$/.test(scan) || /^\{/.test(scan);
+}
+function readEventTokenNames(scriptContent) {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root || hasTopLevelSpread(scriptContent)) return null;
+  const prop = parseTopLevelProperties(root.content).find((p) => p.name === RESERVED_EVENT_TOKENS_KEY);
+  if (!prop) return /* @__PURE__ */ new Set();
+  if (prop.kind !== "data" || prop.value === void 0 || !isArrayLiteral(prop.value)) return null;
+  return new Set(extractStringArrayItems(prop.value));
+}
 function hasDefaultExportObject(scriptContent) {
   return locateDefaultExportObject(scriptContent) !== null;
 }
@@ -1246,7 +1406,7 @@ function hasTopLevelSpread(scriptContent) {
   }
   return false;
 }
-function analyzeObjectEntries(scriptContent, key) {
+function analyzeObjectEntries(scriptContent, key, allowEmptyKeys = false) {
   const root = locateDefaultExportObject(scriptContent);
   if (!root) return [];
   const prop = parseTopLevelProperties(root.content).find((p) => p.name === key);
@@ -1256,14 +1416,15 @@ function analyzeObjectEntries(scriptContent, key) {
   const leading = prop.value.length - prop.value.trimStart().length;
   const innerStart = root.start + prop.valueStart + leading + 1;
   const entries = [];
-  for (const entry of parseTopLevelProperties(extractObjectContent(prop.value))) {
+  for (const entry of parseTopLevelProperties(extractObjectContent(prop.value), allowEmptyKeys)) {
     if (entry.nameStart === void 0 || entry.nameEnd === void 0) continue;
     entries.push({
       key: entry.name,
       start: innerStart + entry.nameStart,
       end: innerStart + entry.nameEnd,
       kind: entry.kind,
-      value: entry.value
+      value: entry.value,
+      valueStart: entry.valueStart === void 0 || entry.value === void 0 ? void 0 : innerStart + entry.valueStart + (entry.value.length - entry.value.trimStart().length)
     });
   }
   return entries;
@@ -1311,20 +1472,27 @@ function isNonFunctionLiteral(value) {
   return /^["'`]/.test(trimmed) || /^-?\d/.test(trimmed) || /^(?:true|false|null|undefined)\b/.test(trimmed) || trimmed.startsWith("[") || trimmed.startsWith("{");
 }
 function findNonObjectWatch(scriptContent) {
+  return findNonObjectDeclaration(scriptContent, RESERVED_WATCH_KEY);
+}
+function findNonObjectScan(scriptContent) {
+  return findNonObjectDeclaration(scriptContent, RESERVED_SCAN_KEY, true);
+}
+function findNonObjectDeclaration(scriptContent, key, rejectArray = false) {
   const root = locateDefaultExportObject(scriptContent);
   if (!root) return null;
-  const watchProp = parseTopLevelProperties(root.content).find((p) => p.name === RESERVED_WATCH_KEY);
-  if (!watchProp || watchProp.nameStart === void 0 || watchProp.nameEnd === void 0) {
+  const declarationProp = parseTopLevelProperties(root.content).find((p) => p.name === key);
+  if (!declarationProp || declarationProp.nameStart === void 0 || declarationProp.nameEnd === void 0) {
     return null;
   }
-  const span = { start: root.start + watchProp.nameStart, end: root.start + watchProp.nameEnd };
-  if (watchProp.kind === "method") {
+  const span = { start: root.start + declarationProp.nameStart, end: root.start + declarationProp.nameEnd };
+  if (declarationProp.kind === "method") {
     return span;
   }
-  if (watchProp.kind !== "data" || !watchProp.value) return null;
-  const trimmed = watchProp.value.trim();
+  if (declarationProp.kind !== "data" || !declarationProp.value) return null;
+  const trimmed = declarationProp.value.trim();
   if (trimmed.startsWith("{")) return null;
   const scan = maskCommentsAndStrings(trimmed).trim();
+  if (rejectArray && scan.startsWith("[") && isWholeBracketLiteral(scan)) return span;
   const isArrowFunction = /^(?:async\s+)?\([^()]*\)\s*=>/.test(scan) || /^(?:async\s+)?[$\w]+\s*=>/.test(scan);
   const isWholeLiteral = /^(["'`])[^"'`]*\1$/.test(scan) || /^-?\d[\w.]*$/.test(scan) || /^(?:true|false|null)$/.test(scan) || /^(?:async\s+)?function\b[\s\S]*\}$/.test(scan);
   if (!isArrowFunction && !isWholeLiteral) return null;
@@ -1344,6 +1512,19 @@ function collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKe
       });
       paths.push({ path: `$streamStatus.${entry.name}`, kind: "data", typeHint: "string" });
       paths.push({ path: `$streamError.${entry.name}`, kind: "data" });
+    }
+    return;
+  }
+  if (prop.name === RESERVED_SCAN_KEY && prop.kind === "data" && prop.value && isObjectLiteral(prop.value)) {
+    for (const entry of parseTopLevelProperties(extractObjectContent(prop.value), true)) {
+      if (entry.kind !== "data" || !isFlatScanOutputName(entry.name)) continue;
+      const initial = entry.value && isObjectLiteral(entry.value) ? findStreamInitialProperty(entry.value) : void 0;
+      pendingStreamValues.push({
+        name: entry.name,
+        kind: "data",
+        value: initial?.value,
+        typeHint: initial?.typeHint
+      });
     }
     return;
   }
@@ -1520,6 +1701,9 @@ function findStreamInitialProperty(entryValue) {
   const defProps = parseTopLevelProperties(extractObjectContent(entryValue));
   return defProps.find((p) => p.kind === "data" && p.name === "initial");
 }
+function isFlatScanOutputName(name) {
+  return name.length > 0 && !name.startsWith("$") && !name.includes(".") && !name.includes("*");
+}
 function extractStringArrayItems(value) {
   if (!isArrayLiteral(value)) return [];
   const items = [];
@@ -1531,6 +1715,19 @@ function extractStringArrayItems(value) {
   return items;
 }
 var MAX_OBJECT_NEST_DEPTH = 5;
+function effectiveTopLevelDescriptors(props) {
+  const effective = /* @__PURE__ */ new Map();
+  for (const prop of props) {
+    if (prop.kind !== "getter") {
+      effective.set(prop.name, "data");
+      continue;
+    }
+    const current2 = effective.get(prop.name);
+    const pair = current2 === void 0 || current2 === "data" ? { get: false, set: false } : current2;
+    effective.set(prop.name, prop.accessor === "set" ? { ...pair, set: true } : { ...pair, get: true });
+  }
+  return effective;
+}
 function pushDataPropertyPaths(prop, paths) {
   pushDataPropertyPathsAt(prop.name, prop, paths, 0);
 }
@@ -1609,10 +1806,10 @@ function locateDefaultExportObject(script) {
 function extractDefaultExportObject(script) {
   return locateDefaultExportObject(script)?.content ?? null;
 }
-function parseTopLevelProperties(objectContent) {
+function parseTopLevelProperties(objectContent, allowEmptyDataKeys = false) {
   const props = [];
   const scan = maskCommentsAndStrings(objectContent);
-  const regex = /(?:(?:get|set)\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:async\s+)?(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*:\s*)/gd;
+  const regex = allowEmptyDataKeys ? /(?:(?:get|set)\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:async\s+)?(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:"([^"]*)"|'([^']*)'|([$\w]+))\s*:\s*)/gd : /(?:(?:get|set)\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:async\s+)?(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*:\s*)/gd;
   let match;
   while ((match = regex.exec(scan)) !== null) {
     const indices = match.indices;
@@ -1658,7 +1855,7 @@ function parseTopLevelProperties(objectContent) {
       continue;
     }
     const propName = nameAt(7) ?? nameAt(8) ?? nameAt(9);
-    if (propName) {
+    if (propName !== void 0) {
       const valueStartIndex = match.index + match[0].length;
       const value = extractFullValue(objectContent, scan, valueStartIndex);
       const jsdocType = extractJsDocType(objectContent, match.index);
@@ -2019,6 +2216,7 @@ function parseWcsStateElements(html, stateTagName = "wcs-state") {
       continue;
     }
     const mountPath = extractAttribute(wcsMatch.tagContent, "mount");
+    const bindComponent = parseAttributeNames(wcsMatch.tagContent).has("bind-component");
     const jsonAttr = extractAttribute(wcsMatch.tagContent, "json") ?? void 0;
     const stateAttr = extractAttribute(wcsMatch.tagContent, "state") ?? void 0;
     const srcAttr = extractAttribute(wcsMatch.tagContent, "src") ?? void 0;
@@ -2060,7 +2258,7 @@ function parseWcsStateElements(html, stateTagName = "wcs-state") {
       pos = html.indexOf(">", scriptCloseIdx) + 1;
       if (pos === 0) break;
     }
-    elements.push({ mountPath, jsonAttr, stateAttr, srcAttr, scriptBlocks, tagStart, tagEnd });
+    elements.push({ mountPath, bindComponent, jsonAttr, stateAttr, srcAttr, scriptBlocks, tagStart, tagEnd });
     pos = wcsEnd;
     if (wcsCloseIdx !== -1) {
       const closeEnd = html.indexOf(">", wcsCloseIdx);
@@ -2149,6 +2347,15 @@ function findCloseTag(html, startPos, tagName) {
     pos = idx + 1;
   }
   return -1;
+}
+function parseAttributeNames(tagContent) {
+  const names = /* @__PURE__ */ new Set();
+  const attribute = /([^\s"'<>/=]+)(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'<>`=]+))?/g;
+  let match;
+  while ((match = attribute.exec(tagContent)) !== null) {
+    names.add(match[1].toLowerCase());
+  }
+  return names;
 }
 function extractAttribute(tagContent, attrName) {
   const regex = new RegExp(
@@ -2389,6 +2596,33 @@ var ja = {
   watchKeyEmptySegment: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306B\u7A7A\u306E\u30D1\u30B9\u30BB\u30B0\u30E1\u30F3\u30C8\u304C\u3042\u308A\u307E\u3059`,
   watchHandlerNotFunction: (k) => `$watch \u306E\u30A8\u30F3\u30C8\u30EA "${k}" \u306E\u5024\u306F\u95A2\u6570\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059`,
   watchPathMissing: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093\uFF08\u4E00\u5EA6\u3082\u767A\u706B\u3057\u307E\u305B\u3093\uFF09`,
+  scanNotObject: () => `$scan \u306F\u300C\u51FA\u529B\u540D \u2192 { from | on, initial, fold, resetOn? }\u300D\u306E\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u3053\u306E\u5F62\u306F\u30E9\u30F3\u30BF\u30A4\u30E0\u304C\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09`,
+  scanOutputInvalid: (n) => `$scan \u306E\u51FA\u529B\u540D "${n}" \u306F\u5E73\u5766\u306A\u30D7\u30ED\u30D1\u30C6\u30A3\u540D\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08"."\u30FB"*"\u30FB\u5148\u982D\u306E "$" \u306F\u4F7F\u3048\u307E\u305B\u3093\uFF09`,
+  scanOutputReserved: (n) => `$scan \u306E\u51FA\u529B\u540D "${n}" \u306F Object.prototype \u304B\u3089\u7D99\u627F\u3055\u308C\u308B\u540D\u524D\u3067\u3059\uFF08"constructor" \u306A\u3069\uFF09`,
+  scanOutputEmpty: () => `$scan \u306E\u51FA\u529B\u540D\u306F\u7A7A\u3067\u306A\u3044\u6587\u5B57\u5217\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059`,
+  scanInVolume: (mountPath) => `$scan \u306F\u30DC\u30EA\u30E5\u30FC\u30E0\uFF08mount="${mountPath}"\uFF09\u3067\u306F\u5BA3\u8A00\u3067\u304D\u307E\u305B\u3093\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u63A5\u304E\u6728\u306E\u524D\u306B throw \u3057\u307E\u3059\uFF09\u3002scan \u306F\u30EB\u30FC\u30C8\u306E state \u306B\u5BA3\u8A00\u3057\u3066\u304F\u3060\u3055\u3044`,
+  scanInMountedComponent: () => `$scan \u306F\u30DE\u30A6\u30F3\u30C8\u3055\u308C\u305F\u30B3\u30F3\u30DD\u30FC\u30CD\u30F3\u30C8\uFF08bind-component\uFF09\u3067\u306F\u5B9F\u884C\u3055\u308C\u307E\u305B\u3093\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F wcs/mount-dollar-declaration \u3067\u8B66\u544A\u3057\u3001\u9ED9\u3063\u3066\u6368\u3066\u307E\u3059\uFF09\u3002scan \u306F\u30EB\u30FC\u30C8\u306E state \u306B\u5BA3\u8A00\u3057\u3066\u304F\u3060\u3055\u3044`,
+  scanOutputConflict: (n, other) => other === "getter" ? `$scan \u306E\u51FA\u529B\u540D "${n}" \u306F\u540C\u540D\u306E getter / setter \u3068\u885D\u7A81\u3057\u3066\u3044\u307E\u3059\uFF08\u51FA\u529B\u306F\u30E9\u30F3\u30BF\u30A4\u30E0\u304C\u6240\u6709\u3059\u308B\u30D7\u30ED\u30D1\u30C6\u30A3\u3067\u3059\uFF09` : other === "method" ? `$scan \u306E\u51FA\u529B\u540D "${n}" \u306F\u540C\u540D\u306E\u30E1\u30BD\u30C3\u30C9\u3068\u885D\u7A81\u3057\u3066\u3044\u307E\u3059\uFF08\u51FA\u529B\u306F\u30E9\u30F3\u30BF\u30A4\u30E0\u304C\u6240\u6709\u3059\u308B\u30D7\u30ED\u30D1\u30C6\u30A3\u3067\u3001\u7573\u3093\u3060\u5024\u304C\u30E1\u30BD\u30C3\u30C9\u3092\u4E0A\u66F8\u304D\u3057\u307E\u3059\uFF09` : `$scan \u306E\u51FA\u529B\u540D "${n}" \u306F\u540C\u540D\u306E $streams \u30A8\u30F3\u30C8\u30EA\u3068\u885D\u7A81\u3057\u3066\u3044\u307E\u3059\uFF08\u51FA\u529B\u306E\u6301\u3061\u4E3B\u306F 1 \u3064\u3060\u3051\u3067\u3059\uFF09`,
+  scanEntryNotObject: (n) => `$scan \u306E\u30A8\u30F3\u30C8\u30EA "${n}" \u306F { from | on, initial, fold, resetOn? } \u306E\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059`,
+  scanSourceCount: (n) => `$scan \u306E\u30A8\u30F3\u30C8\u30EA "${n}" \u306B\u306F "from"\uFF08state \u30D1\u30B9\uFF09\u304B "on"\uFF08\u30A4\u30D9\u30F3\u30C8\u30C8\u30FC\u30AF\u30F3\u540D\uFF09\u306E\u3069\u3061\u3089\u304B 1 \u3064\u3060\u3051\u3092\u66F8\u304D\u307E\u3059`,
+  scanFromNotString: (n) => `$scan \u306E\u30A8\u30F3\u30C8\u30EA "${n}" \u306E "from" \u306F\u7A7A\u3067\u306A\u3044 state \u30D1\u30B9\u306E\u6587\u5B57\u5217\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059`,
+  scanOnNotString: (n) => `$scan \u306E\u30A8\u30F3\u30C8\u30EA "${n}" \u306E "on" \u306F\u7A7A\u3067\u306A\u3044\u30A4\u30D9\u30F3\u30C8\u30C8\u30FC\u30AF\u30F3\u540D\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059`,
+  scanResetNotString: (n) => `$scan \u306E\u30A8\u30F3\u30C8\u30EA "${n}" \u306E "resetOn" \u306B\u306F state \u30D1\u30B9\u306E\u6587\u5B57\u5217\u3060\u3051\u3092\u66F8\u304D\u307E\u3059`,
+  scanOutputCycle: (chain) => `$scan \u306E\u30A8\u30F3\u30C8\u30EA ${chain.map((c) => `"${c}"`).join(" \u2192 ")} \u306F from \u3092\u901A\u3058\u3066\u4E92\u3044\u3092\u7573\u307F\u5408\u3063\u3066\u3044\u307E\u3059\uFF08\u4E92\u3044\u306E\u66F8\u304D\u8FBC\u307F\u3067\u6C38\u4E45\u306B\u7573\u307F\u7D9A\u3051\u307E\u3059\uFF09`,
+  scanInitialMissing: (n) => `$scan \u306E\u30A8\u30F3\u30C8\u30EA "${n}" \u306B "initial" \u304C\u3042\u308A\u307E\u305B\u3093\uFF08\u7D2F\u7A4D\u306E\u7A2E\u3067\u3042\u308A\u3001resetOn \u306E\u623B\u308A\u5148\u3067\u3059\uFF09`,
+  scanFoldNotFunction: (n) => `$scan \u306E\u30A8\u30F3\u30C8\u30EA "${n}" \u306E "fold" \u306F\u95A2\u6570\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059`,
+  scanOnUndeclared: (n, t) => `$scan \u306E\u30A8\u30F3\u30C8\u30EA "${n}" \u306E on "${t}" \u306F $eventTokens \u306B\u5BA3\u8A00\u3055\u308C\u3066\u3044\u307E\u305B\u3093`,
+  scanPathInvalid: (n, f, p) => `$scan \u306E\u30A8\u30F3\u30C8\u30EA "${n}" \u306E ${f} "${p}" \u306F state \u30D1\u30B9\u3068\u3057\u3066\u6210\u7ACB\u3057\u307E\u305B\u3093\uFF08\u5148\u982D\u306E "$"\u30FB"@"\u30FB\u7A7A\u306E\u30BB\u30B0\u30E1\u30F3\u30C8\u306F\u4F7F\u3048\u307E\u305B\u3093\uFF09`,
+  scanPathReserved: (n, f, p) => `$scan \u306E\u30A8\u30F3\u30C8\u30EA "${n}" \u306E ${f} "${p}" \u306F Object.prototype \u304B\u3089\u7D99\u627F\u3055\u308C\u308B\u540D\u524D\u3067\u3059\uFF08"constructor" \u306A\u3069\uFF09`,
+  scanFromSelf: (n, p) => `$scan \u306E\u30A8\u30F3\u30C8\u30EA "${n}" \u306E from "${p}" \u306F\u81EA\u5206\u306E\u51FA\u529B\u3092\u8AAD\u3093\u3067\u3044\u307E\u3059\uFF08\u81EA\u5206\u306E\u66F8\u304D\u8FBC\u307F\u3092\u6C38\u4E45\u306B\u7573\u307F\u7D9A\u3051\u307E\u3059\uFF09`,
+  scanResetNotArray: (n) => `$scan \u306E\u30A8\u30F3\u30C8\u30EA "${n}" \u306E "resetOn" \u306F state \u30D1\u30B9\u306E\u914D\u5217\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059`,
+  scanResetWildcard: (n, p) => `$scan \u306E\u30A8\u30F3\u30C8\u30EA "${n}" \u306E resetOn "${p}" \u306B "*" \u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08reset \u306F\u51FA\u529B\u5168\u4F53\u3092 initial \u306B\u623B\u3057\u307E\u3059\uFF09`,
+  scanResetIsFrom: (n, p) => `$scan \u306E\u30A8\u30F3\u30C8\u30EA "${n}" \u306E resetOn "${p}" \u306F\u81EA\u5206\u306E from \u3068\u540C\u3058\u3067\u3059\uFF08\u5909\u5316\u306E\u305F\u3073\u306B\u7573\u307E\u305A\u306B reset \u3057\u307E\u3059\uFF09`,
+  scanResetUnderFrom: (n, p, from) => `$scan \u306E\u30A8\u30F3\u30C8\u30EA "${n}" \u306E resetOn "${p}" \u306F\u81EA\u5206\u306E from "${from}" \u306E\u914D\u4E0B\u3067\u3059\uFF08from \u3092\u66F8\u304F\u305F\u3073\u306B\u540C\u3058\u30D0\u30C3\u30C1\u306B\u8F09\u308A\u3001reset \u304C\u6BCE\u56DE\u52DD\u3063\u3066\u4E00\u5EA6\u3082\u7573\u307E\u308C\u307E\u305B\u3093\uFF09`,
+  scanResetReadsOutput: (n, p, o) => `$scan \u306E\u30A8\u30F3\u30C8\u30EA "${n}" \u306E resetOn "${p}" \u306F $scan \u306E\u51FA\u529B "${o}" \u3092\u8AAD\u3093\u3067\u3044\u307E\u3059\uFF08\u7D2F\u7A4D\u3067\u7D2F\u7A4D\u3092\u6D88\u3059\u30D5\u30A3\u30FC\u30C9\u30D0\u30C3\u30AF\u306B\u306A\u308A\u307E\u3059\uFF09\u3002\u7D20\u306E\u5165\u529B\u3067 reset \u3057\u3066\u304F\u3060\u3055\u3044`,
+  scanSourceComputed: (n, f, p, g) => `$scan \u306E\u30A8\u30F3\u30C8\u30EA "${n}" \u306E ${f} "${p}" \u306F${g === p ? " getter" : g.includes("**") ? `\u518D\u5E30 getter "${g}" \u304C\u8A08\u7B97\u3059\u308B\u30D1\u30B9` : ` getter "${g}" \u306E\u914D\u4E0B`}\u3067\u3059\u3002getter \u306F\u5165\u529B\u304C\u5909\u308F\u308B\u305F\u3073\u306B\u518D\u8A55\u4FA1\u3055\u308C\u308B\u306E\u3067\u3001\u7573\u3080\u3068\u51FA\u6765\u4E8B\u3067\u306F\u306A\u304F\u518D\u8A55\u4FA1\u306E\u56DE\u6570\u3092\u6570\u3048\u307E\u3059\u3002getter \u304C\u8AAD\u3080\u7D20\u306E\u5024\u3092\u6307\u3059\u304B\u3001on \u3067\u30A4\u30D9\u30F3\u30C8\u3092\u53D7\u3051\u3066\u304F\u3060\u3055\u3044`,
+  scanFromWriteOnly: (n, p, s) => `$scan \u306E\u30A8\u30F3\u30C8\u30EA "${n}" \u306E from "${p}" \u306F${s === p ? " getter \u306E\u7121\u3044 setter" : ` getter \u306E\u7121\u3044 setter "${s}" \u306E\u914D\u4E0B`}\u3067\u3059\u3002\u8AAD\u3080\u3068\u5E38\u306B undefined \u306A\u306E\u3067\u3001fold \u306F\u6BCE\u56DE undefined \u3092\u53D7\u3051\u53D6\u308A\u307E\u3059\u3002setter \u304C\u66F8\u304F\u7D20\u306E\u5024\u3092\u6307\u3059\u304B\u3001on \u3067\u30A4\u30D9\u30F3\u30C8\u3092\u53D7\u3051\u3066\u304F\u3060\u3055\u3044`,
+  scanPathMissing: (n, f, p) => `$scan \u306E\u30A8\u30F3\u30C8\u30EA "${n}" \u306E ${f} "${p}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093\uFF08${f === "from" ? "\u4E00\u5EA6\u3082\u7573\u307E\u308C\u307E\u305B\u3093" : "\u4E00\u5EA6\u3082 reset \u3055\u308C\u307E\u305B\u3093"}\uFF09`,
   typeAnnotationIncompatible: (vt, rt) => `\u578B "${vt}" \u306F @type {${rt}} \u3068\u4E92\u63DB\u6027\u304C\u3042\u308A\u307E\u305B\u3093`,
   arrayMutation: (m, alt) => `\u914D\u5217\u306E\u7834\u58CA\u7684\u30E1\u30BD\u30C3\u30C9 "${m}" \u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\uFF08\u540C\u4E00\u53C2\u7167\u306E\u81EA\u5DF1\u518D\u4EE3\u5165\u3067\u3082\u8981\u7D20\u306E\u8FFD\u52A0\u30FB\u524A\u9664\u306F\u53CD\u6620\u3055\u308C\u307E\u305B\u3093\uFF09\u3002\u975E\u7834\u58CA\u30E1\u30BD\u30C3\u30C9\u3068\u518D\u4EE3\u5165\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u4F8B: ${alt}\uFF09\u3002`,
   arrayIndexAssign: (sp) => `\u914D\u5217\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u3078\u306E\u76F4\u63A5\u4EE3\u5165\u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\u3002this["${sp}"] \u306E\u3088\u3046\u306A\u30C9\u30C3\u30C8\u30D1\u30B9\u4EE3\u5165\u3001\u307E\u305F\u306F with() \u3068\u518D\u4EE3\u5165\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
@@ -2434,6 +2668,8 @@ var ja = {
         return `$trackDependency("${p}") \u306B "**" \u306F\u6E21\u305B\u307E\u305B\u3093\u3002\u4F9D\u5B58\u306E\u767B\u9332\u306F\u5C55\u958B\u5F8C\u306E\u5177\u4F53\u30D1\u30B9\uFF08\u56FA\u5B9A\u672C\u6570\u306E "*"\uFF09\u306B\u5BFE\u3057\u3066\u306E\u307F\u6210\u7ACB\u3057\u307E\u3059`;
       case "listKeys":
         return `$listKeys \u306E\u30AD\u30FC "${p}" \u306B "**" \u306F\u4F7F\u3048\u307E\u305B\u3093\u3002\u30AD\u30FC\u4ED8\u304D\u30EA\u30B9\u30C8\u306F 1 \u672C\u306E\u5177\u4F53\u30EA\u30B9\u30C8\u30D1\u30B9\u3067\u3059 \u2014 \u6DF1\u3055\u3054\u3068\u306B\u5BA3\u8A00\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u4F8B: "nodes.*.children"\uFF09`;
+      case "scan":
+        return `$scan \u306E\u30D1\u30B9 "${p}" \u306B "**" \u306F\u4F7F\u3048\u307E\u305B\u3093\u3002from / resetOn \u306F\u5177\u4F53\u30D1\u30B9\uFF08\u56FA\u5B9A\u672C\u6570\u306E "*"\uFF09\u3092\u6307\u3057\u307E\u3059`;
       default:
         return `"${p}" \u306F "**" \u3092\u542B\u307F\u307E\u3059\u304C\u3001\u3053\u306E state \u306B\u306F $recursion \u5BA3\u8A00\u304C\u3042\u308A\u307E\u305B\u3093\u3002$recursion = { "<anchor>": "<repeat>" }\uFF08\u4F8B: { "nodes.*": "children.*" }\uFF09\u3092\u5BA3\u8A00\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u5BA3\u8A00\u304C\u7121\u3044\u3068 "**" \u306E\u30AD\u30FC\u306F\u9ED9\u3063\u3066\u7121\u8996\u3055\u308C\u307E\u3059\uFF09`;
     }
@@ -2548,6 +2784,33 @@ var en = {
   watchKeyEmptySegment: (k) => `$watch key "${k}" has an empty path segment`,
   watchHandlerNotFunction: (k) => `The value of $watch entry "${k}" must be a function`,
   watchPathMissing: (k) => `$watch key "${k}" does not exist in the state definition (it will never fire)`,
+  scanNotObject: () => `$scan must be an object mapping output names to { from | on, initial, fold, resetOn? } (the runtime throws on this shape at load time)`,
+  scanOutputInvalid: (n) => `$scan output name "${n}" must be a flat property name ("." and "*" and a leading "$" are not allowed)`,
+  scanOutputReserved: (n) => `$scan output name "${n}" is a property name inherited from Object.prototype (e.g. "constructor")`,
+  scanOutputEmpty: () => `$scan output name must be a non-empty string`,
+  scanInVolume: (mountPath) => `$scan cannot be declared in a volume (mount="${mountPath}"); the runtime throws before grafting. Declare the scan on the root state`,
+  scanInMountedComponent: () => `$scan is not run by a mounted component (bind-component); the runtime warns with wcs/mount-dollar-declaration and drops it. Declare the scan on the root state`,
+  scanOutputConflict: (n, other) => other === "getter" ? `$scan output "${n}" conflicts with a getter or setter of the same name (the output is a property the runtime owns)` : other === "method" ? `$scan output "${n}" conflicts with a method of the same name (the output is a property the runtime owns, so the folded value would overwrite the method)` : `$scan output "${n}" conflicts with the $streams entry of the same name (each output has exactly one owner)`,
+  scanEntryNotObject: (n) => `$scan entry "${n}" must be an object { from | on, initial, fold, resetOn? }`,
+  scanSourceCount: (n) => `$scan entry "${n}" must declare exactly one of "from" (a state path) or "on" (an event-token name)`,
+  scanFromNotString: (n) => `$scan entry "${n}" "from" must be a non-empty state path string`,
+  scanOnNotString: (n) => `$scan entry "${n}" "on" must be a non-empty event-token name`,
+  scanResetNotString: (n) => `$scan entry "${n}" "resetOn" must contain only state path strings`,
+  scanOutputCycle: (chain) => `$scan entries ${chain.map((c) => `"${c}"`).join(" \u2192 ")} feed each other through "from" (each fold would re-trigger the next forever)`,
+  scanInitialMissing: (n) => `$scan entry "${n}" requires "initial" (the seed of the accumulator and the value resetOn returns to)`,
+  scanFoldNotFunction: (n) => `$scan entry "${n}" fold must be a function`,
+  scanOnUndeclared: (n, t) => `$scan entry "${n}" on "${t}" is not declared in $eventTokens`,
+  scanPathInvalid: (n, f, p) => `$scan entry "${n}" ${f} "${p}" is not a valid state path (a leading "$", "@" and empty segments are not allowed)`,
+  scanPathReserved: (n, f, p) => `$scan entry "${n}" ${f} "${p}" is a property name inherited from Object.prototype (e.g. "constructor")`,
+  scanFromSelf: (n, p) => `$scan entry "${n}" from "${p}" reads the entry's own output (it would fold its own writes forever)`,
+  scanResetNotArray: (n) => `$scan entry "${n}" "resetOn" must be an array of state paths`,
+  scanResetWildcard: (n, p) => `$scan entry "${n}" resetOn "${p}" must not contain "*" (a reset returns the whole output to initial)`,
+  scanResetIsFrom: (n, p) => `$scan entry "${n}" resetOn "${p}" is the entry's own from (every change would reset instead of fold)`,
+  scanResetUnderFrom: (n, p, from) => `$scan entry "${n}" resetOn "${p}" sits under the entry's own from "${from}" (every write of from also lands it, so the reset would win every time and nothing would fold)`,
+  scanResetReadsOutput: (n, p, o) => `$scan entry "${n}" resetOn "${p}" reads the $scan output "${o}" (a reset driven by an accumulator is a feedback loop). Reset on the plain inputs instead`,
+  scanSourceComputed: (n, f, p, g) => `$scan entry "${n}" ${f} "${p}" ${g === p ? "is a getter" : g.includes("**") ? `is computed by the recursive getter "${g}"` : `is under the getter "${g}"`}. A getter re-evaluates whenever its inputs change, so folding it counts re-evaluations, not events. Point at the plain value the getter reads, or use "on" with an event token`,
+  scanFromWriteOnly: (n, p, s) => `$scan entry "${n}" from "${p}" ${s === p ? "is a setter without a getter" : `is under the setter without a getter "${s}"`}, so it always reads undefined and every fold would receive undefined. Point at the plain value the setter writes, or use "on" with an event token`,
+  scanPathMissing: (n, f, p) => `$scan entry "${n}" ${f} "${p}" does not exist in the state definition (${f === "from" ? "it will never fold" : "it will never reset"})`,
   typeAnnotationIncompatible: (vt, rt) => `Type "${vt}" is not compatible with @type {${rt}}`,
   arrayMutation: (m, alt) => `Destructive array method "${m}" does not trigger a reactive update (re-assigning the same reference does not reflect added/removed elements either). Use a non-destructive method with reassignment (e.g. ${alt}).`,
   arrayIndexAssign: (sp) => `Assigning directly to an array index does not trigger a reactive update. Use a dot-path assignment like this["${sp}"], or with() plus reassignment.`,
@@ -2593,6 +2856,8 @@ var en = {
         return `$trackDependency("${p}") cannot take "**" \u2014 a dependency is registered against a concrete path (a fixed number of "*")`;
       case "listKeys":
         return `$listKeys key "${p}" cannot contain "**" \u2014 a keyed list is one concrete list path. Declare the key per depth instead (for example "nodes.*.children")`;
+      case "scan":
+        return `$scan path "${p}" cannot contain "**" \u2014 "from" and "resetOn" name a concrete path (a fixed number of "*")`;
       default:
         return `"${p}" contains "**" but this state declares no $recursion anchor. Declare $recursion = { "<anchor>": "<repeat>" } (for example { "nodes.*": "children.*" }) \u2014 without it a "**" key is silently ignored`;
     }
@@ -5630,6 +5895,240 @@ function validateEntry(entry, pathSet, paths, msgs) {
   return null;
 }
 
+// src/service/scanDeclarationValidator.ts
+function validateScanDeclarations(html, stateTagName = "wcs-state", locale3) {
+  const msgs = getMessages(locale3);
+  const out = [];
+  for (const element of parseWcsStateElements(html, stateTagName)) {
+    const mounted = element.bindComponent;
+    for (const block of element.scriptBlocks) {
+      if (block.mountPath !== null || mounted) {
+        const declaration = analyzeDeclarationSpans(block.content).find((span) => span.name === "$scan");
+        if (declaration !== void 0) {
+          out.push({
+            code: WcsDiagnosticCode.ScanDeclarationInvalid,
+            start: block.contentStart + declaration.start,
+            end: block.contentStart + declaration.end,
+            message: block.mountPath !== null ? msgs.scanInVolume(block.mountPath) : msgs.scanInMountedComponent(),
+            severity: block.mountPath !== null ? "error" : "warning"
+          });
+        }
+        continue;
+      }
+      const nonObject = findNonObjectScan(block.content);
+      if (nonObject !== null) {
+        out.push({
+          code: WcsDiagnosticCode.ScanDeclarationInvalid,
+          start: block.contentStart + nonObject.start,
+          end: block.contentStart + nonObject.end,
+          message: msgs.scanNotObject(),
+          severity: "error"
+        });
+      }
+      const entries = analyzeScanEntries(block.content);
+      if (entries.length === 0) continue;
+      const paths = analyzeStatePaths(block.content);
+      const context = {
+        paths,
+        pathSet: new Set(paths.map((p) => p.path)),
+        recursionSpecs: collectRecursionSpecs(paths),
+        tokens: readEventTokenNames(block.content),
+        outputs: new Set(entries.map((entry) => entry.name)),
+        msgs
+      };
+      const diagnostics = [
+        ...entries.flatMap((entry) => validateEntry2(entry, context)),
+        ...findOutputCycles(entries, context)
+      ];
+      for (const diagnostic of diagnostics) {
+        out.push({
+          code: diagnostic.code,
+          start: block.contentStart + diagnostic.start,
+          end: block.contentStart + diagnostic.end,
+          message: diagnostic.message,
+          severity: diagnostic.severity
+        });
+      }
+    }
+  }
+  return out;
+}
+function validateOutput(entry, context) {
+  const { name } = entry;
+  const invalid = (message) => ({ code: WcsDiagnosticCode.ScanDeclarationInvalid, message, severity: "error", start: entry.start, end: entry.end });
+  if (name.length === 0) {
+    return { ...invalid(context.msgs.scanOutputEmpty()), start: entry.start - 1, end: entry.end + 1 };
+  }
+  if (name.startsWith("$") || name.includes(".") || name.includes("*")) {
+    return invalid(context.msgs.scanOutputInvalid(name));
+  }
+  if (name in Object.prototype) {
+    return invalid(context.msgs.scanOutputReserved(name));
+  }
+  if (context.paths.some((p) => p.path === name && p.kind === "computed")) {
+    return invalid(context.msgs.scanOutputConflict(name, "getter"));
+  }
+  if (context.paths.some((p) => p.path === `$streamStatus.${name}`)) {
+    return invalid(context.msgs.scanOutputConflict(name, "stream"));
+  }
+  if (entry.notObject) {
+    return invalid(context.msgs.scanEntryNotObject(name));
+  }
+  if (context.paths.some((p) => p.path === name && p.kind === "method")) {
+    return invalid(context.msgs.scanOutputConflict(name, "method"));
+  }
+  return null;
+}
+function validateEntry2(entry, context) {
+  const outputProblem = validateOutput(entry, context);
+  if (outputProblem !== null) return [outputProblem];
+  if (!entry.readable) return [];
+  const { name } = entry;
+  const { msgs } = context;
+  const out = [];
+  const atName = (message) => ({ code: WcsDiagnosticCode.ScanDeclarationInvalid, message, severity: "error", start: entry.start, end: entry.end });
+  const atField = (field, message) => ({ code: WcsDiagnosticCode.ScanDeclarationInvalid, message, severity: "error", start: field.start, end: field.end });
+  if (entry.hasFrom === entry.hasOn) {
+    out.push(atName(msgs.scanSourceCount(name)));
+  }
+  if (entry.onNotString) {
+    out.push(atName(msgs.scanOnNotString(name)));
+  }
+  if (entry.fromNotString) {
+    out.push(atName(msgs.scanFromNotString(name)));
+  }
+  if (!entry.hasInitial) {
+    out.push(atName(msgs.scanInitialMissing(name)));
+  }
+  if (entry.foldMissingOrNotFunction) {
+    out.push(atName(msgs.scanFoldNotFunction(name)));
+  }
+  if (entry.on !== null && context.tokens !== null && !context.tokens.has(entry.on.value)) {
+    out.push(atField(entry.on, msgs.scanOnUndeclared(name, entry.on.value)));
+  }
+  const from = entry.from;
+  if (from !== null) {
+    const problem = checkPathForm(name, "from", from, msgs) ?? checkPathComputed(name, "from", from, context) ?? checkFromWriteOnly(name, from, context) ?? (from.value === name || from.value.startsWith(`${name}.`) ? atField(from, msgs.scanFromSelf(name, from.value)) : null) ?? checkPathMissing(name, "from", from, context);
+    if (problem !== null) out.push(problem);
+  }
+  if (entry.resetOnNotArray) {
+    out.push(atName(msgs.scanResetNotArray(name)));
+  }
+  if (entry.resetOnHasNonString) {
+    out.push(atName(msgs.scanResetNotString(name)));
+  }
+  for (const reset2 of entry.resetOn ?? []) {
+    const root = reset2.value.split(".")[0];
+    const problem = checkPathForm(name, "resetOn", reset2, msgs) ?? (reset2.value.includes("*") ? atField(reset2, msgs.scanResetWildcard(name, reset2.value)) : null) ?? checkPathComputed(name, "resetOn", reset2, context) ?? (from !== null && reset2.value === from.value ? atField(reset2, msgs.scanResetIsFrom(name, reset2.value)) : null) ?? (from !== null && reset2.value.startsWith(`${from.value}.`) ? atField(reset2, msgs.scanResetUnderFrom(name, reset2.value, from.value)) : null) ?? (context.outputs.has(root) ? atField(reset2, msgs.scanResetReadsOutput(name, reset2.value, root)) : null) ?? checkPathMissing(name, "resetOn", reset2, context);
+    if (problem !== null) out.push(problem);
+  }
+  return out;
+}
+function checkPathForm(name, field, target, msgs) {
+  const path = target.value;
+  const at2 = (code, message) => ({ code, message, severity: "error", start: target.start, end: target.end });
+  if (path.length === 0 || path.startsWith("$") || path.includes("@")) {
+    return at2(WcsDiagnosticCode.ScanDeclarationInvalid, msgs.scanPathInvalid(name, field, path));
+  }
+  if (path in Object.prototype) {
+    return at2(WcsDiagnosticCode.ScanDeclarationInvalid, msgs.scanPathReserved(name, field, path));
+  }
+  if (hasRecursionWildcard(path)) {
+    return at2(WcsDiagnosticCode.RecursionUnsupported, msgs.recursionUnsupported(path, "scan"));
+  }
+  if (path.split(".").some((segment) => segment.length === 0)) {
+    return at2(WcsDiagnosticCode.ScanDeclarationInvalid, msgs.scanPathInvalid(name, field, path));
+  }
+  return null;
+}
+function checkPathComputed(name, field, target, context) {
+  const segments = target.value.split(".");
+  const computed = new Set(context.paths.filter((p) => p.kind === "computed" && p.writeOnly !== true).map((p) => p.path));
+  const at2 = (getter) => ({
+    code: WcsDiagnosticCode.ScanSourceComputed,
+    message: context.msgs.scanSourceComputed(name, field, target.value, getter),
+    severity: "error",
+    start: target.start,
+    end: target.end
+  });
+  for (let i = 1; i <= segments.length; i++) {
+    const prefix = segments.slice(0, i).join(".");
+    if (computed.has(prefix)) {
+      return at2(prefix);
+    }
+  }
+  const recursive = new Set(context.paths.filter((p) => p.kind === "recursive").map((p) => p.path));
+  const found = { getter: null };
+  matchesRecursion(context.recursionSpecs, target.value, (candidate) => {
+    if (!recursive.has(candidate)) return false;
+    found.getter = candidate;
+    return true;
+  });
+  return found.getter === null ? null : at2(found.getter);
+}
+function checkFromWriteOnly(name, target, context) {
+  const writeOnly = new Set(context.paths.filter((p) => p.writeOnly === true).map((p) => p.path));
+  const segments = target.value.split(".");
+  for (let i = 1; i <= segments.length; i++) {
+    const prefix = segments.slice(0, i).join(".");
+    if (writeOnly.has(prefix)) {
+      return {
+        code: WcsDiagnosticCode.ScanDeclarationInvalid,
+        message: context.msgs.scanFromWriteOnly(name, target.value, prefix),
+        severity: "error",
+        start: target.start,
+        end: target.end
+      };
+    }
+  }
+  return null;
+}
+function checkPathMissing(name, field, target, context) {
+  const { paths, pathSet, recursionSpecs } = context;
+  if (paths.length > 0 && !pathSet.has(target.value) && // `$recursion` の展開形は、宣言済みの候補へ畳めれば存在する（`$watch` と同じ照合）
+  !matchesRecursion(recursionSpecs, target.value, (candidate) => pathSet.has(candidate))) {
+    return {
+      code: WcsDiagnosticCode.ScanPathMissing,
+      message: context.msgs.scanPathMissing(name, field, target.value),
+      severity: "warning",
+      start: target.start,
+      end: target.end
+    };
+  }
+  return null;
+}
+function findOutputCycles(entries, context) {
+  const fromByName = /* @__PURE__ */ new Map();
+  const next = /* @__PURE__ */ new Map();
+  for (const entry of entries) {
+    if (entry.from === null) continue;
+    const root = entry.from.value.split(".")[0];
+    if (root !== entry.name && context.outputs.has(root)) {
+      fromByName.set(entry.name, entry.from);
+      next.set(entry.name, root);
+    }
+  }
+  const out = [];
+  for (const [start, from] of fromByName) {
+    const chain = [start];
+    let current2 = next.get(start);
+    while (current2 !== void 0 && current2 !== start && chain.length <= next.size) {
+      chain.push(current2);
+      current2 = next.get(current2);
+    }
+    if (current2 === start) {
+      out.push({
+        code: WcsDiagnosticCode.ScanDeclarationInvalid,
+        message: context.msgs.scanOutputCycle([...chain, start]),
+        severity: "error",
+        start: from.start,
+        end: from.end
+      });
+    }
+  }
+  return out;
+}
+
 // src/service/scriptCallArgs.ts
 var STRING_LITERAL = /^\s*(["'])((?:\\.|(?!\1)[^\\])*)\1\s*$/;
 var TEMPLATE_NO_SUBST = /^\s*`((?:\\.|[^\\`$]|\$(?!\{))*)`\s*$/;
@@ -5760,7 +6259,7 @@ function validateRecursion(html, stateTagName = "wcs-state", locale3) {
   const msgs = getMessages(locale3);
   const out = [];
   for (const element of parseWcsStateElements(html, stateTagName)) {
-    const mounted = /\sbind-component\b/i.test(html.slice(element.tagStart, element.tagEnd));
+    const mounted = element.bindComponent;
     for (const block of element.scriptBlocks) {
       if (!hasRecursionWildcard(block.content) && block.content.indexOf("$recursion") === -1) continue;
       const declaration = analyzeRecursionDeclaration(block.content);
@@ -6068,7 +6567,7 @@ function validateApiCalls(script, offset2, spec, getterSuffixes, undeclared, msg
         const indexes = literalArrayLength(indexesArg);
         if (indexes !== null && indexes > 0) {
           push(out, WcsDiagnosticCode.RecursionGetAllForm, start, end, msgs.recursionGetAllForm(path, "prefix"));
-        } else if (indexes === null && isDefiniteNonArrayLiteral(indexesArg)) {
+        } else if (indexes === null && isDefiniteNonArrayLiteral2(indexesArg)) {
           push(out, WcsDiagnosticCode.RecursionGetAllForm, start, end, msgs.recursionGetAllForm(path, "notArray"));
         }
       }
@@ -6156,7 +6655,7 @@ function validateAssignments(script, offset2, spec, getterSuffixes, msgs, out) {
     }
   }
 }
-function isDefiniteNonArrayLiteral(arg) {
+function isDefiniteNonArrayLiteral2(arg) {
   const trimmed = arg.trim();
   return trimmed === "null" || /^["'`]/.test(trimmed) || /^-?\d/.test(trimmed) || /^(?:true|false)$/.test(trimmed) || trimmed.startsWith("{");
 }
@@ -14086,6 +14585,7 @@ function validateDocument(text, options = {}) {
   out.push(...validateSemantics(text, stateTagName, locale3, bindAttribute));
   out.push(...validateArrayMutations(text, stateTagName, locale3));
   out.push(...validateWatchDeclarations(text, stateTagName, locale3));
+  out.push(...validateScanDeclarations(text, stateTagName, locale3));
   out.push(...validateRecursion(text, stateTagName, locale3));
   out.push(...validateNamedState(text, bindAttribute, stateTagName, locale3));
   out.push(...validateMountAttributes(text, stateTagName, locale3));

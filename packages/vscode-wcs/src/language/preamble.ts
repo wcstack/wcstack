@@ -78,7 +78,14 @@ interface WcsStateApi {
   // 末尾が \`.**\` のキーにも同じ索引を置く（@wcstack/state の defineState と対）。
   readonly [key: \`\${string}.**\`]: any;
 }
-type _WcsThis<T> = T & WcsStateApi & _WcsPathAccessor<T>;
+// $scan の出力と $streams の値は、ランタイムが宣言キーの名前で実体化するプロパティ。T には宣言
+// オブジェクトの中にしか現れないので、getter やメソッドの this から読めるよう any で写す。initial の
+// 型は使わない — 空配列の initial が never[] になり、正しい読み（要素のプロパティ）まで型エラーになるため。
+// T に同名のプロパティを明示的に事前宣言していれば写さない（交差でその型まで any に潰さないため）。
+type _WcsDeclaredValues<T> =
+  (T extends { $scan: infer S } ? { [K in Exclude<keyof S & string, keyof T>]: any } : {}) &
+  (T extends { $streams: infer S } ? { [K in Exclude<keyof S & string, keyof T>]: any } : {});
+type _WcsThis<T> = T & WcsStateApi & _WcsPathAccessor<T> & _WcsDeclaredValues<T>;
 // $listKeys: { "<listPath>": "<field>" | (row) => key }（list/listKeys.ts）。
 // キー指定の関数引数に文脈型を与えるためだけの宣言（noImplicitAny 下の偽エラー回避）。
 type _WcsListKeys = Record<string, string | ((row: any) => unknown)>;

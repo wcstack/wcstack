@@ -8,15 +8,17 @@
 
 - **`$scan` 宣言の静的検証（新設）** — `@wcstack/state` の `$scan`（時間軸方向の累積・`docs/state-scan-design.md`）に追随する。code はランタイムと同じ語彙で 3 つ。
 
-  - **`wcs/scan-declaration-invalid`**（error） — 出力名が平坦でない（`.` / `*` / `$` 始まり）・`Object.prototype` の継承名・getter / setter や `$streams` 名との衝突／エントリがオブジェクトでない／`from` と `on` が 0 本か 2 本／`initial` の欠落・`fold` の欠落や非関数リテラル／`on` が `$eventTokens` に無い／`from`・`resetOn` のパスの形（`$` 始まり・`@`・空セグメント・`**`・`Object.prototype` の継承名）／`from` が自分の出力を読む／`resetOn` の `*`・自分の `from` かその配下・scan 出力の読み
-  - **`wcs/scan-source-computed`**（error） — `from`・`resetOn` が getter（その配下を含む）
-  - **`wcs/scan-path-missing`**（warning） — `from`・`resetOn` のパスが状態定義に無い（`wcs/watch-path-missing` と同じ severity）
+  - **`wcs/scan-declaration-invalid`**（error） — 出力名が平坦でない（`.` / `*` / `$` 始まり）・`Object.prototype` の継承名・getter / setter や `$streams` 名との衝突／エントリがオブジェクトでない／`from` と `on` が 0 本か 2 本／`initial` の欠落・`fold` の欠落や非関数リテラル／`on` が `$eventTokens` に無い／出力名が空・同名のメソッドと衝突／`from`・`on` が空でない文字列でない・`resetOn` に文字列でない要素／`from`・`resetOn` のパスの形（`$` 始まり・`@`・空セグメント・`Object.prototype` の継承名）／`from` が自分の出力を読む／`resetOn` の `*`・自分の `from` かその配下・scan 出力の読み／scan 同士が `from` の根を辿って循環する／`$scan` の値やエントリが配列リテラル／`from` が getter の無い setter（その配下を含む。`resetOn` の setter は引き金として通す）／ボリューム（`mount=`）の `$scan`（マウントされたコンポーネント（`bind-component`）の `$scan` は warning。どちらも中身は検証しない）
+  - **`wcs/scan-source-computed`**（error） — `from`・`resetOn` が getter（その配下を含む）／`from` が `$recursion` の `**` getter の展開形（`nodes.*.total`・その値の内側）
+  - **`wcs/scan-path-missing`**（warning） — `from`・`resetOn` のパスが状態定義に無い（`wcs/watch-path-missing` と同じ severity。`$recursion` の展開形は `$watch` と同じく宣言済みとみなす）
 
-  識別子参照・計算キー・spread で中身が読めないエントリと、配列リテラルでない `$eventTokens` では断定しない。scan 同士の循環と、stream との前進ループ（`wcs/scan-feedback-loop`）は依存グラフが要るので runtime 専用。
+  `from`・`resetOn` の `**` はランタイムと同じく `wcs/recursion-unsupported`（error）で報告する。識別子参照・計算キー・spread で中身が読めないエントリと、配列リテラルでない `$eventTokens` では断定しない。stream との前進ループ（`wcs/scan-feedback-loop`）は getter が何を読むかという依存グラフが要るので runtime 専用。ワイルドカード段数の上限（128）は `$watch` と同じく静的には見ない。
 
-- **`$scan` の出力を候補パスとして実体化** — `$streams` の値プロパティと同じ規則で、`initial` のリテラルから子パスも展開する（`for: feed.items` が `wcs/binding-path-missing` にならない）。明示宣言された同名プロパティが優先する
+- **`$scan` の出力を候補パスとして実体化** — `$streams` の値プロパティと同じ規則で、`initial` のリテラルから子パスも展開する（`for: feed.items` が `wcs/binding-path-missing` にならない）。明示宣言された同名プロパティが優先する。`$eventTokens` と同じ名前の出力と `$streams` の値も実体化する（トークン名はパスではないが、同名の候補とみなして子パスを展開せず、`for: message.items` に偽の `wcs/binding-path-missing` を出していた。`$streams` の値にも以前からあった穴）
 
-- **プリアンブル** — `defineState` の宣言に `$scan?:` を追加（`fold` の引数に文脈型を与える）。`fold` は `this: void` で型付けする（ランタイムは `this` 無しで呼ぶので、メソッド形の `fold` で `this` を読むと型エラーになる）
+- **プリアンブル** — `defineState` の宣言に `$scan?:` を追加（`fold` の引数に文脈型を与える）。`fold` は `this: void` で型付けする（ランタイムは `this` 無しで呼ぶので、メソッド形の `fold` で `this` を読むと型エラーになる）。getter やメソッドの `this` から `$scan` の出力と `$streams` の値を読めるようにした（型は `any`。`$streams` の値を `this` から読むと型エラーになっていた既存の穴も同時に塞ぐ。同名のプロパティを明示的に事前宣言していれば、その型を保つ）
+
+- **`bind-component` の判定を属性名で行う** — `$scan` と `$recursion` の検証が、`<wcs-state>` の開始タグ全体に対する正規表現で `bind-component` を探していたため、属性値の中の文字列（`data-note="no bind-component here"`）でもルートの state をマウント扱いにし、warning を出して中身の検証を飛ばしていた。開始タグの属性を先頭から読んだ属性名で判定する
 
 ## 1.14.0 — 2026-09-12
 

@@ -90,8 +90,9 @@ export function validateRecursion(
   const out: WcsDiagnostic[] = [];
 
   for (const element of parseWcsStateElements(html, stateTagName)) {
-    // マウントされたコンポーネントの state（`bind-component`）は `$recursion` / `**` getter を実行しない
-    const mounted = /\sbind-component\b/i.test(html.slice(element.tagStart, element.tagEnd));
+    // マウントされたコンポーネントの state（`bind-component`）は `$recursion` / `**` getter を実行しない。
+    // 属性名で判定する（タグ全体への正規表現は属性値の中の "bind-component" にも当たる）
+    const mounted = element.bindComponent;
     for (const block of element.scriptBlocks) {
     // `**` も `$recursion` も無いスクリプトは 1 回の indexOf で抜ける（ゼロコスト規約）
     if (!hasRecursionWildcard(block.content) && block.content.indexOf('$recursion') === -1) continue;

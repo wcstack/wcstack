@@ -58,6 +58,39 @@ defineState({
     expect(errors.some(message => message.includes('void'))).toBe(true);
   });
 
+  it('getter / メソッドの this から $scan の出力と $streams の値を読める（型は any）', () => {
+    expect(typecheck(`
+defineState({
+  page: 1,
+  $streams: { pageResult: { args: (s: any) => s.page, source: async function* () {} } },
+  $scan: { feed: { from: "pageResult", initial: { items: [] as number[] }, fold: (acc: any) => acc } },
+  get loaded(): number { return this.feed.items.length; },
+  get kind(): unknown { return this.pageResult; },
+  ids() { return this.feed.items.map((item: any) => item.id); },
+});
+`)).toEqual([]);
+  });
+
+  it('同名のプロパティを明示的に事前宣言していれば、その型を保つ（any に潰さない）', () => {
+    const scanErrors = typecheck(`
+defineState({
+  feed: "x" as string,
+  n: 0,
+  $scan: { feed: { from: "n", initial: "", fold: (acc: any) => acc } },
+  m() { const k: number = this.feed; return k; },
+});
+`);
+    expect(scanErrors.some(message => message.includes("'string' is not assignable to type 'number'"))).toBe(true);
+    const streamErrors = typecheck(`
+defineState({
+  pageResult: 0 as number,
+  $streams: { pageResult: { source: async function* () {} } },
+  m() { const k: string = this.pageResult; return k; },
+});
+`);
+    expect(streamErrors.some(message => message.includes("'number' is not assignable to type 'string'"))).toBe(true);
+  });
+
   it('initial と fold は必須として型に現れる', () => {
     const missing = typecheck(`
 defineState({

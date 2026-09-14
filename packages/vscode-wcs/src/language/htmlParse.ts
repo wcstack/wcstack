@@ -14,6 +14,8 @@
 export interface WcsStateInfo {
   /** mount 属性の値（ボリューム）。無ければ null（＝ルートツリー） */
   mountPath: string | null;
+  /** 開始タグに `bind-component` 属性があるか（マウントされたコンポーネントの state）。属性名で判定する */
+  bindComponent: boolean;
   /** json 属性の値（インライン JSON） */
   jsonAttr?: string;
   /** state 属性の値（<script type="application/json"> の ID 参照） */
@@ -158,6 +160,7 @@ export function parseWcsStateElements(html: string, stateTagName: string = 'wcs-
     }
 
     const mountPath = extractAttribute(wcsMatch.tagContent, 'mount');
+    const bindComponent = parseAttributeNames(wcsMatch.tagContent).has('bind-component');
     const jsonAttr = extractAttribute(wcsMatch.tagContent, 'json') ?? undefined;
     const stateAttr = extractAttribute(wcsMatch.tagContent, 'state') ?? undefined;
     const srcAttr = extractAttribute(wcsMatch.tagContent, 'src') ?? undefined;
@@ -208,7 +211,7 @@ export function parseWcsStateElements(html: string, stateTagName: string = 'wcs-
       if (pos === 0) break;
     }
 
-    elements.push({ mountPath, jsonAttr, stateAttr, srcAttr, scriptBlocks, tagStart, tagEnd });
+    elements.push({ mountPath, bindComponent, jsonAttr, stateAttr, srcAttr, scriptBlocks, tagStart, tagEnd });
 
     pos = wcsEnd;
     if (wcsCloseIdx !== -1) {
@@ -344,6 +347,21 @@ function findCloseTag(html: string, startPos: number, tagName: string): number {
     pos = idx + 1;
   }
   return -1;
+}
+
+/**
+ * 開始タグの属性名を、値を読み飛ばしながら先頭から列挙する（小文字）。
+ * タグ全体への正規表現だと、属性値の中の文字列（`data-note="no bind-component here"`）まで
+ * 属性名と取り違えるので、名前と値を順に消費して読む。
+ */
+export function parseAttributeNames(tagContent: string): Set<string> {
+  const names = new Set<string>();
+  const attribute = /([^\s"'<>/=]+)(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'<>`=]+))?/g;
+  let match: RegExpExecArray | null;
+  while ((match = attribute.exec(tagContent)) !== null) {
+    names.add(match[1].toLowerCase());
+  }
+  return names;
 }
 
 /**
