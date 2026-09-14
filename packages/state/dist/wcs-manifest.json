@@ -642,6 +642,7 @@
     "$on",
     "$streams",
     "$watch",
+    "$scan",
     "$listKeys",
     "$recursion",
     "$streamStatus",

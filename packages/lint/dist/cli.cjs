@@ -881,6 +881,7 @@ var STATE_EVENT_TOKENS_NAME = "$eventTokens";
 var STATE_ON_NAME = "$on";
 var STATE_STREAMS_NAME = "$streams";
 var STATE_WATCH_NAME = "$watch";
+var STATE_SCAN_NAME = "$scan";
 var STATE_RECURSION_NAME = "$recursion";
 var STATE_LIST_KEYS_NAME = "$listKeys";
 var STATE_STREAM_STATUS_NAMESPACE_NAME = "$streamStatus";
@@ -943,6 +944,7 @@ function getWcsManifest() {
       STATE_ON_NAME,
       STATE_STREAMS_NAME,
       STATE_WATCH_NAME,
+      STATE_SCAN_NAME,
       STATE_LIST_KEYS_NAME,
       STATE_RECURSION_NAME,
       STATE_STREAM_STATUS_NAMESPACE_NAME,

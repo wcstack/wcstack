@@ -68,6 +68,8 @@ type PathInfoSource =
 "binding"
 /** `$watch` の宣言キー */
  | "watch"
+/** `$scan` の `from` / `resetOn`（docs/state-scan-design.md §2-4） */
+ | "scan"
 /** ランタイム内部のパス翻訳（mapped な bind-component の外向き伝播）。検査しない */
  | "internal";
 
@@ -253,7 +255,7 @@ declare class RecursionRegistry {
      * この世代が生やしたもの（own の生成アクセサ・依存辺・キャッシュ）を忘れる（state の
      * 再セット時、`getStateInfo` の再収集より**前**に呼ぶ）。実体は generation.ts。
      */
-    forgetGenerated(stateElement: IStateElement, previousState: object): void;
+    forgetGenerated(stateElement: IStateElement, previousState: object): ReadonlySet<string>;
     /**
      * `**` 接尾辞の深さ `depth` の具体パス（`concretePathAt` の記憶付き版）。
      * 束縛形の読み（`this["nodes.**.value"]` / 省略形 `$getAll`）は再帰 getter の評価ごとに
@@ -310,6 +312,14 @@ interface IStateElement {
     readonly dynamicDependency: Map<string, string[]>;
     readonly staticDependency: Map<string, string[]>;
     readonly version: number;
+    /**
+     * state の世代。`_state` の差し替えごとに 1 つ進み、キャッシュ項目の印になる
+     * （cache/types.ts の `generation`）。`version`（更新サイクルの番号）とは別のカウンタ。
+     * optional なのはテスト用モック互換のため（undefined のモックが載せた項目は
+     * undefined 同士で一致し、従来どおりヒットする — `__tests__/proxy.getByAddress.test.ts`
+     * の「キャッシュがある場合はキャッシュを返すこと」が固定する）。
+     */
+    readonly stateGeneration?: number;
     readonly rootNode: Node;
     readonly boundComponentStateProp: string | null;
     /**
@@ -395,6 +405,12 @@ interface IStateElement {
      * optional なのはテスト用モック互換のため（undefined は「宣言なし」扱い）。
      */
     readonly watchPaths?: ReadonlySet<string> | null;
+    /**
+     * `$scan` の `from` パスの集合（docs/state-scan-design.md §2-1）。`watchPaths` と並んで
+     * setByAddress の旧値キャプチャのゲートになる（fold に `prev` を渡すため）。
+     * 宣言が無ければ null / undefined。optional なのはテスト用モック互換のため。
+     */
+    readonly scanPaths?: ReadonlySet<string> | null;
     /**
      * パスを依存グラフへ登録する。DOM バインディング登録（BindingSession）のほか、
      * `$watch` 宣言（processWatchDeclaration）からも呼ばれる — 静的依存グラフに
@@ -1160,9 +1176,13 @@ type DevtoolsEvent = {
     readonly stateElement?: IStateElement;
 } | {
     readonly type: "state:watch-error";
-    /** throw 元。cur の評価（getter）とハンドラ本体では原因も直し方も違う */
-    readonly phase: "prime" | "evaluate" | "handler";
-    /** `$watch` の宣言キー（ワイルドカードを含む生のパス） */
+    /**
+     * throw 元。cur の評価（getter）とハンドラ本体では原因も直し方も違う。
+     * `$scan`（scan/scanReport.ts）は `evaluate`（source / 出力の読み）・`fold`（fold の throw・
+     * Promise の戻り値・接ぎ木で getter になった from）・`write`（出力の書き込み）を使う
+     */
+    readonly phase: "prime" | "evaluate" | "handler" | "fold" | "write";
+    /** `$watch` の宣言キー（ワイルドカードを含む生のパス）。`$scan` は `$scan.<出力名>` */
     readonly path: string;
     readonly error: unknown;
 } | {
@@ -1184,7 +1204,7 @@ type DevtoolsEvent = {
 } | {
     readonly type: "state:path-unresolved";
     /** 書き手が書いた面。診断 code が binding / watch で変わる */
-    readonly source: "binding" | "watch";
+    readonly source: "binding" | "watch" | "scan";
     /** 宣言されたパス（ワイルドカードを含む生の文字列） */
     readonly path: string;
     /** 解決に失敗したセグメント */
@@ -1302,6 +1322,20 @@ declare class State extends HTMLElementBase implements IStateElement {
     private _crossRowListPaths;
     private _indexDependentGetterPaths;
     private _initialized;
+    /**
+     * 初期化（`_initialize`）が失敗した（#257）。`_initialized` の裏返しではない —
+     * 「まだ初期化していない」と「もう初期化できない」を取り違えると、復旧不能の
+     * 要素に `setInitialState` が効いたように見える。真にするのは
+     * `_failInitializeLoudly` だけ。
+     */
+    private _initializeFailed;
+    /**
+     * この接続サイクルの失敗は**もう着地した**（#257）。設定エラーの fail-fast
+     * （`_failInitialization` と `initializeMountScope` の catch）は自分で promise を
+     * 解決してから raise する — connectedCallbackPromise を**解決**する側のクラスなので、
+     * 下の loud な着地（reject ＋ 診断）に載せ替えると意味論が変わる。接続ごとに畳む。
+     */
+    private _initializationLanded;
     private _initializePromise;
     private _resolveInitialize;
     private _connectedCallbackPromise;
@@ -1321,7 +1355,39 @@ declare class State extends HTMLElementBase implements IStateElement {
     private _dynamicDependency;
     private _staticDependency;
     private _pathSet;
+    /**
+     * state の世代（issue #258 の X10）。`_state` の差し替えごとに 1 つ進み、キャッシュ項目の
+     * 印になる（cache/types.ts の `generation`）。`_version`（更新サイクルの番号）とは別の
+     * カウンタで、増える条件が違う — 再セットは世代だけを進める
+     * （`__tests__/integration.stateGenerationReset.test.ts` の
+     * 「再セットは世代だけを進め、version は動かさない」が固定する）。
+     */
+    private _stateGeneration;
+    /**
+     * この要素が受け取った `setPathInfo` の台帳（issue #258 の X7）。パス → 種別と呼び出し元。
+     *
+     * `_pathSet` / `_listPaths` / `_elementPaths` は再セットでクリアされるが、それらを登録した
+     * バインドは生き残る（再セットは DOM を作り直さない）。台帳が空のままだと依存ウォークが
+     * `items` をリストとして展開できず、全リスト書き込みが「非リストのアドレスにワイルドカードを
+     * 展開できない」で恒久的に throw する（値と DOM は追従するが、書き込みのたびに投げ続ける）。
+     * クリアのあと、この台帳から作り直す（`_rebuildPathInfo`）。
+     *
+     * `source === "internal"`（再帰の生成アクセサ・ボリュームのツリーアクセサ）は載せない。
+     * あれらは生やした機構が新しい世代で登録し直す（recursion/registry.ts の `_define`）。
+     */
+    private _pathRegistrations;
+    /**
+     * これまでのどの世代かで再帰レジストリが実体化した具体パス（`nodes.*.total` 等）の累積。
+     * 再セットのたびに `forgetGenerated` の戻り値を足し、`_rebuildPathInfo` の除外に使う。
+     *
+     * 除外は**世代を跨いで累積する**。読みを挟まない連続した再セットでも、生成アクセサの具体パスを
+     * 指す静的辺（`nodes.*` → `nodes.*.total`）が戻らないことは、
+     * `__tests__/integration.stateGenerationReset.test.ts` の
+     * 「読みを挟まない 3 連続の再セットで静的辺が戻らない」が固定する。
+     */
+    private _generatedPaths;
     private _watchPaths;
+    private _scanPaths;
     private _version;
     private _rootNode;
     private _boundComponent;
@@ -1353,6 +1419,10 @@ declare class State extends HTMLElementBase implements IStateElement {
      * ルートより先に接続されてもよい — ルート登録が保留分を引き取る（V5）。
      */
     private _initializeVolume;
+    /**
+     * 初回マウントのロードと登録。戻り値は「この接続で初期化を**完了**したか」で、
+     * `false` は失敗ではなく**中断**（ロード中に要素が剥がされた — 下の注記）。
+     */
     private _initialize;
     /**
      * 設定エラーでの fail-fast。initializePromise 等を解決してから raise する —
@@ -1362,6 +1432,54 @@ declare class State extends HTMLElementBase implements IStateElement {
      * として loud に残る。
      */
     private _failInitialization;
+    /**
+     * `_initialize` の失敗の着地（#257）。旧挙動は「throw が connectedCallback の外へ
+     * 出るだけ」で、`_initializePromise` も `_connectedCallbackPromise` も永久に未解決の
+     * まま残り、作者が受け取るのは診断ではなく無言のハングだった。載るのは
+     * `_initialize` が投げうるもの全部 — `_state` セッタの宣言検証（$recursion /
+     * $commandTokens / $eventTokens / $on / $streams / $listKeys / $watch）、
+     * `_loadStateFromSource` のロード失敗（src の拡張子・json のパース・内包スクリプト・
+     * 外部モジュール）、SSR データの merge、そして `setStateElement` の
+     * 「1 rootNode 1 ツリー」違反（**別の**要素が 2 本目に来た形 — 同じ要素の再登録は
+     * 冪等なので、ロード中の remove → append はここへ来ない）。
+     *
+     * 載**らない**もの: ロード中に要素が剥がされた形。作者のミスが 1 つも無いので
+     * 初期化失敗ではなく中断として扱う（`_initialize` が `false` を返す）。
+     *
+     * もう 1 つ載らないのがボリューム（`mount=`）の失敗。`_initializeVolume` の catch が
+     * 3 つの promise（initialize / loading / connectedCallback）を自分で解決してから raise し、
+     * `connectedCallback` のボリューム分岐はそれを包まないので、ボリュームはこの着地に
+     * 載らず connectedCallbackPromise を**拒否しない**。自前の報告が出るかどうかは失敗の
+     * 種類による。報告が無い形では、逃げ方は `name=`（`_failInitialization` の注記）と
+     * 同じで、throw はカスタム要素リアクションが捨てる戻り Promise へ出ていく
+     * （ブラウザのコンソールには "Uncaught (in promise)" として残るが、promise を待つ側
+     * ＝ renderToString・mount・テストレシピには届かない）。失敗箇所ごとの正確な挙動は
+     * `__tests__/integration.initFailureDiagnostics.test.ts` が固定している。挙動はこの
+     * PR では変えない（枠の寿命は別 Issue）。
+     *
+     * `connectedCallback` が `_initialize` より前に await する 2 つ
+     * （`_initializeDCC` / `_initializeBindWebComponent`）の raise も同じ着地に載る。
+     * 特に「初期化に失敗した要素の再接続」は `bindWebComponent` → `setInitialState` の
+     * 復旧不能 raise でそこへ来るので、包まないと診断ゼロで素通りする。
+     *
+     * `_failInitialization`（設定エラーの fail-fast）との違いは 1 つ:
+     * **connectedCallbackPromise を reject する**。ここまで来た要素は state を 1 つも
+     * 持たない ＝ このツリーは存在しない。resolve すると、それを待つ消費者
+     * （@wcstack/server の renderToString・@wcstack/testing の mount・README の
+     * テストレシピ）に「準備完了」と嘘をつく。下の SSR 経路（_rejectConnectedCallback）と
+     * 同じ規範で、そちらと同じく**元のエラーをそのまま**投げ直す。
+     *
+     * `initializePromise` は従来どおり**解決**する（reject しない）。
+     * `waitForStateInitialize` はページ中の全 `<wcs-state>` の initializePromise を
+     * `Promise.all` で待つので、reject にすると 1 要素の設定ミスが無関係な
+     * バインディングまで道連れになる（_failInitialization の注記と同じ理由）。
+     *
+     * 後始末はしない: `_initialized` を立てないので `disconnectedCallback` は初期化前
+     * ガードで抜ける。`$listKeys` / `$watch` のようにセッタの後半で落ちた形では
+     * `$on` の購読と stream registry が残るが、この要素は復旧不能（setInitialState が
+     * throw する）なので、残骸は要素ごと捨てる前提で放置する。
+     */
+    private _failInitializeLoudly;
     private _initializeBindWebComponent;
     private _callStateConnectedCallback;
     private _initializeDCC;
@@ -1376,6 +1494,7 @@ declare class State extends HTMLElementBase implements IStateElement {
     get hasRecursion(): boolean;
     get recursionRegistry(): RecursionRegistry | null;
     get watchPaths(): ReadonlySet<string> | null;
+    get scanPaths(): ReadonlySet<string> | null;
     get elementPaths(): Set<string>;
     /**
      * ボリューム（webComponent/volume.ts）のアクセサ登録: ツリーパスをキーにした
@@ -1400,6 +1519,8 @@ declare class State extends HTMLElementBase implements IStateElement {
     get dynamicDependency(): Map<string, string[]>;
     get staticDependency(): Map<string, string[]>;
     get version(): number;
+    /** state の世代（キャッシュ項目の印の正本 — cache/types.ts の `generation`）。 */
+    get stateGeneration(): number;
     get rootNode(): Node;
     get boundComponentStateProp(): string | null;
     get hasMounts(): boolean;
@@ -1440,6 +1561,24 @@ declare class State extends HTMLElementBase implements IStateElement {
      */
     addStaticDependency(sourcePath: string, targetPath: string): boolean;
     setPathInfo(path: string, bindingType: BindingType, source?: PathInfoSource): void;
+    /**
+     * 再セットで消した経路情報を、生き残ったバインドの登録から作り直す（issue #258 の X7）。
+     *
+     * `_pathSet.clear()` は残す。あのクリアには、`forgetGeneration` が外した静的辺を「行が
+     * 作り直されたときに登録し直させる」自己修復が乗っている（辺が戻ることは
+     * `__tests__/integration.stateGenerationReset.test.ts` の
+     * 「静的な辺 nodes.* → nodes.*.total が戻る」が固定する）。消したうえで、生きているバインド
+     * ぶんだけ `setPathInfo` をやり直す — `$recursion` のアンカーで既に同じことをしている手口を、
+     * バインド全体へ広げたもの。
+     *
+     * `_generatedPaths`（これまでの世代の生成アクセサの具体パス）は張り直さない。行バインドが
+     * 名指していても、新しい世代ではまだ実体化されていないため（recursion/generation.ts）。読みが
+     * 実体化したときに `defineTreeAccessor` が登録し直す。
+     *
+     * 反復中に `setPathInfo` が台帳へ書き戻す（既存キーの上書きのみで新キーは増えない）ので、
+     * 誤解を避けるためスナップショットを取ってから回す。
+     */
+    private _rebuildPathInfo;
     private _createState;
     createStateAsync(mutability: Mutability, callback: (state: IStateProxy) => Promise<void>): Promise<void>;
     createState(mutability: Mutability, callback: (state: IStateProxy) => void): void;

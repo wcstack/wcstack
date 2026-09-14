@@ -224,7 +224,14 @@ interface WcsStateApi {
   // \u672B\u5C3E\u304C \`.**\` \u306E\u30AD\u30FC\u306B\u3082\u540C\u3058\u7D22\u5F15\u3092\u7F6E\u304F\uFF08@wcstack/state \u306E defineState \u3068\u5BFE\uFF09\u3002
   readonly [key: \`\${string}.**\`]: any;
 }
-type _WcsThis<T> = T & WcsStateApi & _WcsPathAccessor<T>;
+// $scan \u306E\u51FA\u529B\u3068 $streams \u306E\u5024\u306F\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u304C\u5BA3\u8A00\u30AD\u30FC\u306E\u540D\u524D\u3067\u5B9F\u4F53\u5316\u3059\u308B\u30D7\u30ED\u30D1\u30C6\u30A3\u3002T \u306B\u306F\u5BA3\u8A00
+// \u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u306E\u4E2D\u306B\u3057\u304B\u73FE\u308C\u306A\u3044\u306E\u3067\u3001getter \u3084\u30E1\u30BD\u30C3\u30C9\u306E this \u304B\u3089\u8AAD\u3081\u308B\u3088\u3046 any \u3067\u5199\u3059\u3002initial \u306E
+// \u578B\u306F\u4F7F\u308F\u306A\u3044 \u2014 \u7A7A\u914D\u5217\u306E initial \u304C never[] \u306B\u306A\u308A\u3001\u6B63\u3057\u3044\u8AAD\u307F\uFF08\u8981\u7D20\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\uFF09\u307E\u3067\u578B\u30A8\u30E9\u30FC\u306B\u306A\u308B\u305F\u3081\u3002
+// T \u306B\u540C\u540D\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u3092\u660E\u793A\u7684\u306B\u4E8B\u524D\u5BA3\u8A00\u3057\u3066\u3044\u308C\u3070\u5199\u3055\u306A\u3044\uFF08\u4EA4\u5DEE\u3067\u305D\u306E\u578B\u307E\u3067 any \u306B\u6F70\u3055\u306A\u3044\u305F\u3081\uFF09\u3002
+type _WcsDeclaredValues<T> =
+  (T extends { $scan: infer S } ? { [K in Exclude<keyof S & string, keyof T>]: any } : {}) &
+  (T extends { $streams: infer S } ? { [K in Exclude<keyof S & string, keyof T>]: any } : {});
+type _WcsThis<T> = T & WcsStateApi & _WcsPathAccessor<T> & _WcsDeclaredValues<T>;
 // $listKeys: { "<listPath>": "<field>" | (row) => key }\uFF08list/listKeys.ts\uFF09\u3002
 // \u30AD\u30FC\u6307\u5B9A\u306E\u95A2\u6570\u5F15\u6570\u306B\u6587\u8108\u578B\u3092\u4E0E\u3048\u308B\u305F\u3081\u3060\u3051\u306E\u5BA3\u8A00\uFF08noImplicitAny \u4E0B\u306E\u507D\u30A8\u30E9\u30FC\u56DE\u907F\uFF09\u3002
 type _WcsListKeys = Record<string, string | ((row: any) => unknown)>;
@@ -232,12 +239,23 @@ type _WcsListKeys = Record<string, string | ((row: any) => unknown)>;
 // \u30CF\u30F3\u30C9\u30E9\u5F15\u6570\u306B\u6587\u8108\u578B\u3092\u4E0E\u3048\u308B\u305F\u3081\u3060\u3051\u306E\u5BA3\u8A00\uFF08$listKeys \u3068\u540C\u3058\u7406\u7531\uFF09\u3002
 // this \u306F ThisType<_WcsThis<T>> \u306B\u3088\u308A state \u578B\u306B\u306A\u308B\u3002
 type _WcsWatch = Record<string, (cur: any, prev: any, ...indexes: number[]) => void>;
+// $scan: { "<output>": { from | on, initial, fold, resetOn? } }\uFF08scan/processScanDeclaration.ts\uFF09\u3002
+// fold \u306E\u5F15\u6570\u306B\u6587\u8108\u578B\u3092\u4E0E\u3048\u308B\u305F\u3081\u3060\u3051\u306E\u5BA3\u8A00\u3002from \u3068 on \u3067\u7B2C 2 \u5F15\u6570\u306E\u610F\u5473\u304C\u5909\u308F\u308B\uFF08cur \u304B event\uFF09\u306E\u3067
+// \u5F15\u6570\u306F any \u306B\u5012\u3059\u3002fold \u306B this \u306F\u6E21\u3089\u306A\u3044\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F this \u7121\u3057\u3067\u547C\u3076\uFF09\u306E\u3067 this: void \u3068\u66F8\u304F \u2014
+// \u66F8\u304B\u306A\u3044\u3068 defineState \u306E ThisType \u304C\u30E1\u30BD\u30C3\u30C9\u5F62\u306E fold \u306B\u3082 state \u578B\u306E this \u3092\u4E0E\u3048\u3066\u3057\u307E\u3046\u3002
+type _WcsScan = Record<string, {
+  from?: string;
+  on?: string;
+  initial: any;
+  fold: (this: void, acc: any, ...args: any[]) => any;
+  resetOn?: string[];
+}>;
 // $recursion: { "<anchor>": "<repeat>" }\uFF08recursion/declaration.ts\uFF09\u3002\u521D\u7248\u306F\u5358\u4E00\u306E\u81EA\u5DF1\u518D\u5E30
 // \u306E\u307F\u3067\u3001\u30A2\u30F3\u30AB\u30FC\u3082\u53CD\u5FA9\u30B5\u30D6\u30D1\u30B9\u3082\u300C\u56FA\u5B9A\u30D7\u30ED\u30D1\u30C6\u30A3\u5217 + \u672B\u5C3E\u306E .*\u300D\u306B\u9650\u308B\u3002\u5F62\u306E\u691C\u8A3C\u306F
 // service/recursionValidator.ts\uFF08wcs/recursion-declaration-invalid\uFF09\u304C\u62C5\u3046\u3002
 type _WcsRecursion = Record<string, string>;
 function defineState<T extends Record<string, any>>(
-  def: T & { $listKeys?: _WcsListKeys; $watch?: _WcsWatch; $recursion?: _WcsRecursion } & ThisType<_WcsThis<T>>
+  def: T & { $listKeys?: _WcsListKeys; $watch?: _WcsWatch; $scan?: _WcsScan; $recursion?: _WcsRecursion } & ThisType<_WcsThis<T>>
 ): T { return def; }
 // --- end preamble ---
 `;

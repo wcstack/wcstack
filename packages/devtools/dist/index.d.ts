@@ -159,7 +159,7 @@ type DevtoolsEventLike = {
     readonly stateElement?: unknown;
 } | {
     readonly type: "state:watch-error";
-    readonly phase: "prime" | "evaluate" | "handler";
+    readonly phase: "prime" | "evaluate" | "handler" | "fold" | "write";
     readonly path: string;
     readonly error: unknown;
 } | {
@@ -178,7 +178,7 @@ type DevtoolsEventLike = {
     readonly stateElement?: unknown;
 } | {
     readonly type: "state:path-unresolved";
-    readonly source: "binding" | "watch";
+    readonly source: "binding" | "watch" | "scan";
     readonly path: string;
     readonly missingSegment: string;
 } | {

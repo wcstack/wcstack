@@ -230,6 +230,7 @@ const STATE_EVENT_TOKENS_NAME = "$eventTokens";
 const STATE_ON_NAME = "$on";
 const STATE_STREAMS_NAME = "$streams";
 const STATE_WATCH_NAME = "$watch";
+const STATE_SCAN_NAME = "$scan";
 const STATE_RECURSION_NAME = "$recursion";
 /**
  * 再帰ワイルドカード。オーサリング層（$recursion 宣言・getter キー・API 引数）にだけ
@@ -2404,7 +2405,7 @@ function processDeferredNode(entry) {
 
 let nextMountId = 0;
 const MOUNT_DOLLAR_DECLARATIONS = [
-    "$watch", "$streams", "$listKeys", "$updatedCallback", "$commandTokens", "$eventTokens", "$on",
+    "$watch", "$streams", "$scan", "$listKeys", "$updatedCallback", "$commandTokens", "$eventTokens", "$on",
     "$recursion",
 ];
 const dollarDeclarationWarned = new Set();
@@ -3674,7 +3675,7 @@ function detachCheckboxEventHandler(binding) {
  * 同期 throw はここを通らない（従来どおり呼び出し元へ伝播する）。プログラマエラーを
  * loud に落とす `raiseError` の挙動は一切変えない。
  */
-function isThenable(value) {
+function isThenable$1(value) {
     return ((typeof value === "object" || typeof value === "function") &&
         value !== null &&
         typeof value.then === "function");
@@ -3688,7 +3689,7 @@ function captureHandlerRejection(result, describe) {
     // emit は subscriber ごとの戻り値配列。単一ハンドラの戻り値はそのまま届く。
     const values = Array.isArray(result) ? result : [result];
     for (const value of values) {
-        if (!isThenable(value)) {
+        if (!isThenable$1(value)) {
             continue;
         }
         // Promise.resolve は native Promise をそのまま返すため、catch の登録によって
@@ -3764,12 +3765,12 @@ class EventToken extends Token {
     }
 }
 
-const registryByStateElement$3 = new WeakMap();
+const registryByStateElement$4 = new WeakMap();
 function getOrCreateEventToken(stateElement, name) {
-    let registry = registryByStateElement$3.get(stateElement);
+    let registry = registryByStateElement$4.get(stateElement);
     if (typeof registry === "undefined") {
         registry = new Map();
-        registryByStateElement$3.set(stateElement, registry);
+        registryByStateElement$4.set(stateElement, registry);
     }
     let token = registry.get(name);
     if (typeof token === "undefined") {
@@ -3780,7 +3781,7 @@ function getOrCreateEventToken(stateElement, name) {
     return token;
 }
 function clearEventTokenRegistry(stateElement) {
-    registryByStateElement$3.delete(stateElement);
+    registryByStateElement$4.delete(stateElement);
 }
 
 /**
@@ -6006,7 +6007,9 @@ function applyChangeToClass(binding, _context, newValue) {
  *
  * 既知の制約:
  *   - emit が来なければ stale subscriber は token に残り続ける（要素が GC されても subscriber 関数自体は残る）。
- *     state インスタンスが disconnect されたタイミングで registry ごとクリアされるため、最終的には解放される。
+ *     registry は state 要素をキーにした WeakMap なので、state 要素ごと GC されたときに解放される。
+ *     切断では registry を捨てない — 捨てると、ルート <wcs-state> を付け直した後の emit が
+ *     購読者の居ない新しい token に届き、命令が無言で止まる（#273）。
  *     element ライフサイクルに直接フックする手段が現状の binding 機構に無いため、能動的な purge は将来課題。
  */
 const subscribedBindings = new WeakMap();
@@ -6103,6 +6106,14 @@ function getUUID() {
 }
 
 let version$1 = 0;
+/**
+ * 親の付け替え（#256 の修理）の世代。`listIndexes` の WeakRef 連鎖は一度組んだら
+ * 作り直されないので、祖先が付け替わったら子孫のキャッシュも無効にする必要がある。
+ * `dirty`（version 比較）は `indexes` の再構築が消費してしまうため、連鎖専用の世代を持つ。
+ */
+let chainGeneration = 0;
+/** 値が一度も記録されていない行の印（`undefined` を持つ行と区別するため）。 */
+const NO_VALUE = Symbol("wcs.listIndex.noValue");
 class ListIndex {
     uuid = getUUID();
     parentListIndex;
@@ -6112,18 +6123,36 @@ class ListIndex {
     _version;
     _indexes;
     _listIndexes;
+    _chainGeneration;
+    /**
+     * この行集合を最初に展開した親（`home`・#256）。付け替えても変わらない。退役した親から
+     * 付け替えたあと、その親が戻ってきたら戻す先になる。既存の行集合を引き継ぐ行は、鋳造時の
+     * 親ではなくその行集合の home を継ぐ（`createListDiff`）── 1 組の行集合に home は 1 つ。
+     */
+    _homeParentListIndex;
+    /**
+     * この行が表しているリスト要素（#256）。差分が返すたびに付け直す。
+     * 「同じ行が戻ってきた」を配列インスタンスをまたいで言えるのはこの値だけ ──
+     * 行を戻す普通のやり方（新しい配列に同じ要素を並べ直す）は ListIndex を作り直すので、
+     * 行オブジェクトの identity では判定できない。
+     */
+    _value;
     /**
      * Creates a new ListIndex instance.
      *
      * @param parentListIndex - Parent list index for nested loops, or null for top-level
      * @param index - Current index value in the loop
+     * @param homeParentListIndex - Parent this row's set belongs to (#256)
      */
-    constructor(parentListIndex, index) {
+    constructor(parentListIndex, index, homeParentListIndex) {
         this.parentListIndex = parentListIndex;
         this.position = parentListIndex ? parentListIndex.position + 1 : 0;
         this.length = this.position + 1;
+        this._homeParentListIndex = homeParentListIndex;
+        this._value = NO_VALUE;
         this._index = index;
         this._version = version$1;
+        this._chainGeneration = chainGeneration;
     }
     /**
      * Gets current index value.
@@ -6150,6 +6179,17 @@ class ListIndex {
      */
     get version() {
         return this._version;
+    }
+    /** 行集合を最初に展開した親（付け替えても変わらない）。 */
+    get homeParentListIndex() {
+        return this._homeParentListIndex;
+    }
+    /** この行が表しているリスト要素（未記録なら `NO_VALUE`）。 */
+    get value() {
+        return this._value;
+    }
+    set value(value) {
+        this._value = value;
     }
     /**
      * Checks if parent indexes have changed since last access.
@@ -6196,8 +6236,9 @@ class ListIndex {
             }
         }
         else {
-            if (typeof this._listIndexes === "undefined") {
+            if (typeof this._listIndexes === "undefined" || this._chainGeneration !== chainGeneration) {
                 this._listIndexes = [...this.parentListIndex.listIndexes, new WeakRef(this)];
+                this._chainGeneration = chainGeneration;
             }
         }
         return this._listIndexes;
@@ -6217,6 +6258,20 @@ class ListIndex {
      * @param pos - Position index (0-based, negative for from end)
      * @returns ListIndex at position or null if not found/garbage collected
      */
+    /**
+     * 退役した親を、同じ深さの生きた親へ差し替える（#256）。**行の identity は保つ**ので、
+     * 描画済み content も、その行に紐づくバインドしていない DOM の状態も残る。
+     * 添字の値は親が変われば変わりうる（並べ替えを伴う置換）ため、`indexes` と WeakRef 連鎖を
+     * 捨て、version を進めて子孫の `dirty` を立てる。`_homeParentListIndex` は動かさない
+     * ── 外した行が戻ってきたときに持ち主を返す先だから。
+     */
+    reparent(parentListIndex) {
+        this.parentListIndex = parentListIndex;
+        this._indexes = undefined;
+        this._listIndexes = undefined;
+        this._version = ++version$1;
+        chainGeneration++;
+    }
     at(pos) {
         if (pos >= 0) {
             return this.listIndexes[pos]?.deref() || null;
@@ -6231,15 +6286,203 @@ class ListIndex {
  *
  * @param parentListIndex - Parent list index for nested loops, or null for top-level
  * @param index - Current index value in the loop
+ * @param homeParentListIndex - Row set this row joins (#256); defaults to the minting parent
  * @returns New IListIndex instance
  */
-function createListIndex(parentListIndex, index) {
-    return new ListIndex(parentListIndex, index);
+function createListIndex(parentListIndex, index, homeParentListIndex = parentListIndex) {
+    return new ListIndex(parentListIndex, index, homeParentListIndex);
+}
+/**
+ * 台帳（`listIndexesByList`）専用の入口。行は必ずこのモジュールが鋳造した実体なので、
+ * 到達不能な防御分岐を置かずに直接呼ぶ。
+ */
+function reparentListIndex(listIndex, parentListIndex) {
+    listIndex.reparent(parentListIndex);
+}
+/**
+ * 台帳専用の入口その 2。行集合の home を読む（`IListIndex` を広げないための cast ──
+ * この型は dist/index.d.ts に出るので、内部だけの都合で公開面を増やさない）。
+ */
+function getHomeParentListIndex(listIndex) {
+    return listIndex.homeParentListIndex;
+}
+/** 台帳専用の入口その 3。差分が返した行に、その行が表している要素を憶えさせる（#256）。 */
+function setListIndexValue(listIndex, value) {
+    listIndex.value = value;
+}
+/**
+ * 2 つの行が**同じリスト要素**を表しているか（#256）。
+ * 差分を通っていない行（`hydrateBindings` / `setByAddress` が鋳造する行）は値を持たないので、
+ * 未記録どうしは「同じ」と見なさない ── 値の無い行を取り違えて付け替えないため。
+ * 行を書き換えない読むだけの判定なので、台帳の外からも使う: `$scan` の drain が、行のアドレスが
+ * いまその位置の要素を表しているかを見る（scan/scanRuntime.ts の placementOf）。
+ */
+function isSameListIndexValue(listIndex, other) {
+    const value = listIndex.value;
+    return value !== NO_VALUE && value === other.value;
 }
 
+/**
+ * list/listIndexesByList.ts
+ *
+ * 行（`IListIndex`）の正本台帳。1 本の配列につき行集合は **1 組**。
+ *
+ * #256 が扱うのは「共有」ではなく「陳腐化」である。台帳はこの 2 つを分ける:
+ *
+ * - **生きた共有** ── 1 本の配列が 2 つの生きた親から到達できる形。行集合は 1 組のまま
+ *   全員で共有する（どの親から読んでも同じ値が見える）。親ごとに私有の行集合を持たせると
+ *   同じスロットに 2 本の絶対アドレスができ、片方へ書いた値がもう片方から**永久に**
+ *   見えなくなる。共有そのものの帰結（親を読む getter が持ち主の行の文脈で評価される・
+ *   1 スロットへ到達経路の数だけ書かれる）は残るが、それはデータが実際に共有されている
+ *   ことの帰結であって、**もう存在しない古い値**ではない。
+ * - **陳腐化** ── 行オブジェクトだけを作り直す置換（`nodes.map(n => ({...n}))` は
+ *   `children` を参照ごと引き継ぐ）で、台帳の行がぶら下がる親が**退役した**形。読み手は
+ *   新しい行の絶対アドレスを見るのに、書き手は行の親ポインタを遡って旧行の絶対アドレスを
+ *   dirty にするので、葉への書き込みが集計へ届かない（#256）。
+ *
+ * 判別は「台帳の行が持つ親が、生きた親集合に属するか」。属さないときだけ、**行の identity を
+ * 保ったまま**新しい親へ付け替える（`reparentListIndex`）。作り直さないのは、消費者が
+ * 描画済み content を行 ListIndex の identity で持っているため ── 作り直すと、著者が何も
+ * 間違えていないページで行の DOM が丸ごと失われる（`<details>` の開閉のような、バインド
+ * していない状態ごと）。
+ *
+ * 退役の signal は差分の `deleteIndexSet`（＝エンジン自身が「この行はもう無い」と決めた
+ * 集合）で、**復活の signal は同じ差分の `newIndexes`**。印は差分ごとに付け直され、
+ * 消えない印は残らない（`retireListIndexes` / `reviveListIndexes` を `createListDiff` が
+ * 対で呼ぶ）。
+ *
+ * 付け替えは**一方通行ではない**。行は自分の行集合を最初に展開した親（`home`）を憶えていて、
+ * その home が**リストに戻ってきたら**持ち主を返す。これが無いと「行を削除して戻す」ページで
+ * 持ち主が隣の行に移ったまま固定され、削除の履歴によって集計が凍る行が変わってしまう。
+ *
+ * 戻ってきたかどうかは **行オブジェクト（ListIndex）の identity ではなく、行が表している
+ * リスト要素の identity** で判定する。同じ配列インスタンスを戻す綴りなら home そのものが
+ * 生き返るが、行を戻す普通のやり方（新しい配列に同じ要素を並べ直す）では差分が ListIndex を
+ * 作り直すので、ListIndex の identity で見ると home は永久に退役したままになる。
+ * 要素そのものを作り直した行は**別の行**なので home には一致しない。生き残った行が
+ * 1 つでもあればそちらへ戻るが、**全ての行を作り直す**綴り（`map(n => ({...n}))`）では
+ * どの要素も一致せず、退役した親からの付け替えが位置に対して働く。
+ */
 const listIndexesByList = new WeakMap();
+/**
+ * 差分で `newIndexes` から外れた行 ＝ 消費者が画面から外した行。
+ * 「生きた親集合に属さない」の判定材料。復活した行はこの集合から外れる。
+ */
+const retiredListIndexes = new WeakSet();
+/** 差分が捨てた行を退役として記録する（`createListDiff` が呼ぶ）。 */
+function retireListIndexes(listIndexes) {
+    for (const listIndex of listIndexes) {
+        retiredListIndexes.add(listIndex);
+    }
+}
+/**
+ * 差分が「いま生きている」と返した行の退役印を落とす（`createListDiff` が呼ぶ）。
+ * 同じ配列インスタンスを戻す・タブを切り替えて戻る等で、退役した行は実際に生き返る。
+ */
+function reviveListIndexes(listIndexes) {
+    for (const listIndex of listIndexes) {
+        retiredListIndexes.delete(listIndex);
+    }
+}
+/**
+ * 差分がリストから外し、まだ戻っていない行か。読むだけの判定で、`$scan` の drain が
+ * 行のアドレスの指す行がもうリストに居ないかを見る（scan/scanRuntime.ts の placementOf）。
+ */
+function isRetiredListIndex(listIndex) {
+    return retiredListIndexes.has(listIndex);
+}
+/**
+ * 台帳の行がぶら下がる親（`oldParent`）を、いま要求している親（`newParent`）へ
+ * 付け替えてよいか。**退役した親のときだけ**真 ── 生きているなら共有であって
+ * 陳腐化ではないので、main と同じく 1 組の行集合に合流させる。
+ * 深さ（`position`）が変わる付け替えはしない。行の `position` / `length` は鋳造時に
+ * 確定していて、そこがずれると絶対アドレスの段数が壊れる（bind-component が 1 本の
+ * 配列を 2 つの深さから展開する形が実際にある）。
+ */
+function canReparent(oldParent, newParent) {
+    if (oldParent === newParent) {
+        // 自分が展開した行集合（ここが圧倒的多数）。ルート直下どうし（両方 null）もここ。
+        return false;
+    }
+    if (oldParent === null || newParent === null) {
+        return false;
+    }
+    if (oldParent.position !== newParent.position) {
+        return false;
+    }
+    return retiredListIndexes.has(oldParent) && !retiredListIndexes.has(newParent);
+}
+/**
+ * 要求している親（`newParent`）が、退役した `home` の**行そのもの**か。
+ * 行を戻す普通のやり方（新しい配列に同じ要素を並べ直す）では差分が ListIndex を作り直すので、
+ * home の ListIndex は二度と生き返らない。同じリスト要素を同じ深さで表している生きた行が
+ * 現れたら、それが戻ってきた home である。
+ */
+function isRestoredHome(home, oldParent, newParent) {
+    if (home === null || newParent === null) {
+        return false;
+    }
+    if (newParent === oldParent) {
+        // すでにそこにある（＝毎回 reparent して version を進めない）。
+        return false;
+    }
+    if (!retiredListIndexes.has(home)) {
+        // home が生きているなら「生き返った home」の分岐が扱う。
+        return false;
+    }
+    if (retiredListIndexes.has(newParent) || newParent.position !== home.position) {
+        return false;
+    }
+    return isSameListIndexValue(newParent, home);
+}
+/**
+ * 行集合の親をどこへ向けるか。`null` なら何もしない。
+ * 優先順位は **「生き返った home」＞「戻ってきた home の行」＞「陳腐化した親の付け替え」**。
+ */
+function getRepairTarget(first, parentListIndex) {
+    const home = getHomeParentListIndex(first);
+    const oldParent = first.parentListIndex;
+    if (home !== null && home !== oldParent && !retiredListIndexes.has(home)) {
+        return home;
+    }
+    if (isRestoredHome(home, oldParent, parentListIndex)) {
+        return parentListIndex;
+    }
+    return canReparent(oldParent, parentListIndex) ? parentListIndex : null;
+}
+/**
+ * 台帳を**引き当てるだけ**。行の親ポインタには触らない。
+ * 観測（テスト・世代の後始末・`$scan` の drain が行の置き換わりを見る判定）と存在判定はこちらを使う。
+ */
 function getListIndexesByList(list) {
-    return listIndexesByList.get(list) || null;
+    const listIndexes = listIndexesByList.get(list);
+    if (typeof listIndexes === "undefined") {
+        return null;
+    }
+    return listIndexes;
+}
+/**
+ * 台帳を引き当て、**必要なら親ポインタを修理して**返す（#256）。
+ * 引き当てのついでに行を書き換えるので、観測目的では使わないこと ──
+ * 修理が要るのは「その親の文脈で値を解決する」経路（差分・アドレス解決）だけ。
+ */
+function resolveListIndexesByList(list, parentListIndex) {
+    const listIndexes = listIndexesByList.get(list);
+    if (typeof listIndexes === "undefined") {
+        return null;
+    }
+    const first = listIndexes[0];
+    if (typeof first !== "undefined") {
+        const target = getRepairTarget(first, parentListIndex);
+        if (target !== null) {
+            // 1 組の行集合は 1 つの親のもとにある、を保つ（差分が別の親の行を混ぜて
+            // 作った集合も、ここで揃える）。
+            for (const listIndex of listIndexes) {
+                reparentListIndex(listIndex, target);
+            }
+        }
+    }
+    return listIndexes;
 }
 function setListIndexesByList(list, listIndexes) {
     if (listIndexes === null) {
@@ -6292,12 +6535,16 @@ function isSameList(oldList, newList) {
  * earlier diff in the same batch (two replacements in one microtask) may have
  * moved shared indexes toward a list that never got applied, and a cache hit
  * skips recomputation entirely — so every createListDiff return re-aligns.
+ * 同じ走査で、行が表している要素も憶えさせる（#256）。行を戻す普通のやり方は
+ * 配列を作り直すので ListIndex も作り直される ── 「同じ行が戻ってきた」と言えるのは
+ * 行オブジェクトの identity ではなく、この値だけ。
  */
-function syncListIndexes(newIndexes) {
+function syncListIndexes(newIndexes, newList) {
     for (let i = 0; i < newIndexes.length; i++) {
         if (newIndexes[i].index !== i) {
             newIndexes[i].index = i;
         }
+        setListIndexValue(newIndexes[i], newList[i]);
     }
 }
 /**
@@ -6311,7 +6558,12 @@ function syncListIndexes(newIndexes) {
  */
 function createListDiff(parentListIndex, rawOldList, rawNewList) {
     const diff = computeListDiff(parentListIndex, rawOldList, rawNewList);
-    syncListIndexes(diff.newIndexes);
+    syncListIndexes(diff.newIndexes, (Array.isArray(rawNewList) && rawNewList.length > 0) ? rawNewList : EMPTY_LIST);
+    // 捨てた行を退役、返した行を復活として記録する。台帳はこれを見て「共有」と「陳腐化」を
+    // 分ける（#256）。両方を毎回の差分で付け直すので、消えない印は残らない。
+    // deleteIndexSet と newIndexes は構造上交わらない。
+    retireListIndexes(diff.deleteIndexSet);
+    reviveListIndexes(diff.newIndexes);
     return diff;
 }
 function computeListDiff(parentListIndex, rawOldList, rawNewList) {
@@ -6322,7 +6574,14 @@ function computeListDiff(parentListIndex, rawOldList, rawNewList) {
     if (cachedDiff) {
         return cachedDiff;
     }
-    const oldIndexes = getListIndexesByList(oldList) || [];
+    // 台帳は 1 本の配列につき行集合 1 組（listIndexesByList.ts）。親は「行がぶら下がる親が
+    // 退役していたら、この親へ付け替える」ための差し替え先として渡す（#256）。
+    const oldIndexes = resolveListIndexesByList(oldList, parentListIndex) || [];
+    // 1 組の行集合の home は 1 つ（#256）。前の行集合を引き継ぐ差分で新しく鋳造する行は、
+    // 鋳造時の親ではなくその行集合の home を継ぐ ── 行ごとに home が違う集合ができると、
+    // 「持ち主が戻ってきたか」の判定が行の並び順で変わる。
+    const homeParentListIndex = oldIndexes.length > 0 ?
+        getHomeParentListIndex(oldIndexes[0]) : parentListIndex;
     let retValue;
     try {
         // Early return for empty list
@@ -6336,12 +6595,12 @@ function computeListDiff(parentListIndex, rawOldList, rawNewList) {
             };
         }
         // If old list was empty, create all new indexes
-        let newIndexes = getListIndexesByList(newList);
+        let newIndexes = resolveListIndexesByList(newList, parentListIndex);
         if (oldList.length === 0) {
             if (newIndexes === null) {
                 newIndexes = [];
                 for (let i = 0; i < newList.length; i++) {
-                    const newListIndex = createListIndex(parentListIndex, i);
+                    const newListIndex = createListIndex(parentListIndex, i, homeParentListIndex);
                     newIndexes.push(newListIndex);
                 }
             }
@@ -6388,7 +6647,7 @@ function computeListDiff(parentListIndex, rawOldList, rawNewList) {
             const oldIndex = existingIndexes && existingIndexes.length > 0 ? existingIndexes.shift() : undefined;
             if (typeof oldIndex === "undefined") {
                 // New element
-                const newListIndex = createListIndex(parentListIndex, i);
+                const newListIndex = createListIndex(parentListIndex, i, homeParentListIndex);
                 newIndexes.push(newListIndex);
                 addIndexSet.add(newListIndex);
             }
@@ -8230,11 +8489,65 @@ function getVolumeUpdatedCallbacks(stateElement) {
     return volumeUpdatedCallbacksByRoot.get(stateElement) ?? NO_VOLUME_UPDATED_CALLBACKS;
 }
 const pendingVolumesByRootNode = new WeakMap();
+/**
+ * ルートの state 要素が初期化に失敗した rootNode（#257）。ルート登録（setStateElement）は
+ * 二度と起きないので `drainPendingVolumes` も呼ばれず、保留中のボリュームの
+ * `onGrafted` が走らないまま initializePromise / connectedCallbackPromise が永久に
+ * 未解決になる（ルートの診断だけが出て、同じページのボリュームは無言で消える）。
+ * 「ルートは来ない」と確定した時点で保留分を孤児として着地させ、以後に届く保留要求も
+ * 同じ着地へ合流させる。D11 の「ルート無し」報告はここには出ない — 検査（State.ts の
+ * reportVolumeWithoutRoot）は**要素の存在**で見るので、落ちたルート要素が居る限り黙る。
+ *
+ * 印は**落ちた要素がこの rootNode に居る間だけ**有効（`clearFailedRootNode`）。持続させると、
+ * この PR が案内する復旧（壊れた要素を取り除いて作り直す）と矛盾する: 外してから修正版を
+ * 接続するまでの窓で接続したボリュームが即座に孤児化し、正しいルートが来ても採用されない。
+ */
+const failedRootNodes = new WeakSet();
+/** 接ぎ木先を失ったボリュームの着地（graftIsolated の失敗と同じ形 — 1 件 1 報告 ＋ finish(null)）。 */
+function orphanPendingVolume(request) {
+    console.error(`[@wcstack/state] volume "${request.mountPath}" was not grafted — the root state element ` +
+        `on this root node failed to initialize (its own diagnostic is reported separately). ` +
+        `The volume is not at fault: fix the root <wcs-state>.`);
+    request.onGrafted(null);
+}
+/**
+ * 失敗の印を落とす（#257）。呼び手は State の `disconnectedCallback` ただ 1 つで、
+ * **初期化に失敗した当の要素**が剥がされたときだけ呼ぶ — 落ちたルートが DOM から
+ * 消えた時点で「このルートノードにルートは来ない」は成り立たなくなる（作者は
+ * 取り除いて作り直す）。
+ *
+ * 呼び手を本人に限るのは第 3 ラウンドの修正: 「初期化前に剥がされた要素」全部で
+ * 落としていたため、同じ rootNode の別要素（登録されなかった 2 本目・行プールの
+ * 張り直し・ロード中の DOM 移動）の切断で印が消え、以後のボリュームが孤児報告を
+ * 受けられず永久保留へ戻っていた。
+ */
+function clearFailedRootNode(rootNode) {
+    failedRootNodes.delete(rootNode);
+}
+/** ルートの初期化失敗を確定し、保留中のボリュームを孤児として着地させる（State の _failInitializeLoudly が唯一の呼び手）。 */
+function failPendingVolumes(rootNode) {
+    failedRootNodes.add(rootNode);
+    const pending = pendingVolumesByRootNode.get(rootNode);
+    if (typeof pending === "undefined") {
+        // 保留はまだ無い（ボリュームのロードのほうが遅い形）— 下の queuePendingVolume が拾う
+        return;
+    }
+    pendingVolumesByRootNode.delete(rootNode);
+    for (const request of pending) {
+        orphanPendingVolume(request);
+    }
+}
 let graftHandler = null;
 function setVolumeGraftHandler(handler) {
     graftHandler = handler;
 }
 function queuePendingVolume(rootNode, request) {
+    if (failedRootNodes.has(rootNode)) {
+        // ルートが落ちた後に届いた保留要求（ボリュームのロードのほうが遅い形）。
+        // 積んでも引き取り手は永久に来ない
+        orphanPendingVolume(request);
+        return;
+    }
     let pending = pendingVolumesByRootNode.get(rootNode);
     if (typeof pending === "undefined") {
         pending = [];
@@ -8244,6 +8557,9 @@ function queuePendingVolume(rootNode, request) {
 }
 /** ルート登録時に保留中のボリュームを接ぎ木する（stateElementByName から呼ばれる）。 */
 function drainPendingVolumes(rootNode, rootStateElement) {
+    // ルートが成立した ＝ 失敗の印は無効（落ちたルートを外して正しいルートを接続し直した
+    // 形。WeakSet.delete は未登録でも安全なので分岐は要らない）
+    failedRootNodes.delete(rootNode);
     const pending = pendingVolumesByRootNode.get(rootNode);
     if (typeof pending === "undefined" || pending.length === 0 || graftHandler === null) {
         return;
@@ -8395,10 +8711,12 @@ function resolvePathExistence(target, path, declaredPaths) {
 const DIAGNOSTIC_CODE = {
     binding: "wcs/binding-path-missing",
     watch: "wcs/watch-path-missing",
+    scan: "wcs/scan-path-missing",
 };
 const SUBJECT = {
     binding: "Bound path",
     watch: "$watch path",
+    scan: "$scan path",
 };
 /**
  * ルート直下（単一セグメント）のパスが state に無いときのエラーメッセージ。
@@ -9547,7 +9865,7 @@ async function buildBindings(root) {
     }
 }
 
-var version = "2.3.0";
+var version = "2.4.0";
 var pkg = {
 	version: version};
 
@@ -10508,6 +10826,26 @@ function getStateElement(rootNode) {
 function getBindingsReady(rootNode) {
     return bindingsReadyByNode.get(rootNode) ?? Promise.resolve();
 }
+/**
+ * この rootNode ではバインド構築が起きない、と確定する（#257）。
+ *
+ * ルートの state 要素が初期化に失敗すると `setStateElement` に到達しないので、
+ * 台帳はエントリが無いまま残る。上の既定（未登録 ＝ 即時解決）は「まだ登録されて
+ * いない」と「バインドを張り終えた」を区別しないため、@wcstack/server の
+ * `waitForReady` は**バインディングが 1 本も無いページ**を ready と報告してしまう。
+ * 失敗した rootNode には reject 済みの ready を置き、待ち手へ同じ診断を届ける。
+ *
+ * 呼び手は State の `_failInitializeLoudly` ただ 1 つで、そちらが「この rootNode に
+ * 生きたルートが居ない」ことを確かめてから呼ぶ（2 本目の `<wcs-state>` が落ちても
+ * 1 本目の ready は壊さない）。
+ */
+function markBindingsUnavailable(rootNode, error) {
+    const failed = Promise.reject(error);
+    // reject と同じティックで handled を立てる（getBindingsReady を誰も呼ばない
+    // ページで unhandled rejection にしないため）。await した側は従来どおり受け取る
+    failed.catch(() => undefined);
+    bindingsReadyByNode.set(rootNode, failed);
+}
 const bindingsBuiltRoots = new WeakSet();
 /**
  * マウントされたスコープ（コンポーネントの ShadowRoot）に、**親の** state element を
@@ -10576,6 +10914,16 @@ function setStateElement(rootNode, element) {
     }
     else {
         // 登録の場合
+        if (existing === element) {
+            // 同じ要素の再登録は冪等（setStateElementAlias と同じ規範）。ロード完了前の
+            // remove → append（DOM の移動・行プールの張り直し・shadow の組み直し）は
+            // `_initialize` を 2 本同時に走らせるので、後から登録に来たほうが**自分自身**を
+            // 「2 本目の <wcs-state>」と誤診する。DOM の移動は正常な操作であり、拒否すると
+            // 健全なページの connectedCallbackPromise が reject される（#257）。
+            // 切断時に登録を解除する案では直らない — 実測で、切断の時点ではまだ何も
+            // 登録されていない（登録は進行中の `_initialize` の続きで起きる）。
+            return;
+        }
         if (existing === undefined) {
             // 初めてルートノードに登録する場合
             // enable-ssr 属性があり、サーバーサイドでない場合はハイドレーション
@@ -10639,8 +10987,14 @@ function setStateElement(rootNode, element) {
         if (existing !== undefined) {
             // v2 は 1 rootNode 1 ツリー。2 つ目の <wcs-state> は設定エラー — 追加の状態は
             // マウント（mount= / ホスト配線の bind-component）でツリーに載せる
+            // 文言は実測のゾンビの姿に合わせる（#257 第 3 ラウンド）: 2 本目は state を
+            // 組み上げたまま**登録されない**。データもトークンも $on の購読も生きているのに
+            // 誰もバインドしておらず、_initialized が false なので切断時の後始末も走らない
             raiseError(`A state tree is already registered on this root — one <wcs-state> per root in v2. ` +
-                `Mount additional states onto the tree instead: <wcs-state mount="...">.`);
+                `This second element stays unregistered: it keeps the state it loaded and its ` +
+                `declarations stay live, but nothing binds to it and disconnecting it runs no ` +
+                `cleanup — remove it. Mount additional states onto the tree instead: ` +
+                `<wcs-state mount="...">.`);
         }
         stateElementByNode.set(rootNode, element);
         liveStateElements.add(element);
@@ -10701,12 +11055,233 @@ function consumeWatchChainDepth() {
     return depth;
 }
 
+/**
+ * scan/scanRegistry.ts
+ *
+ * `$scan` の registry（docs/state-scan-design.md §2）。
+ *
+ * `$watch` の registry とは別台帳にする。watch の registry はパスにつき entry 1 個
+ * （`Map<string, IWatchEntry>`）なので、同じパスを `$watch` と `$scan` が並んで
+ * 見る形・同じ `from` を 2 つの scan が畳む形を載せられない。
+ *
+ * 寿命は `$watch` と揃える: `_state` 再セットで作り直し、切断では消さない
+ * （発火対象から外れるのは watch runtime の active 集合側）。
+ */
+const registryByStateElement$3 = new WeakMap();
+/**
+ * drain 側の粗いゲート: 発火対象（watch runtime の active 集合）に居て、`from` か `resetOn` を持つ state。
+ *
+ * 空のあいだ watch runtime は scan の収集ループに入らない ＝ `$scan` を使っていない画面の drain に、
+ * バッチのアドレスごとの registry 引きを載せない。registry の有無ではなく active 集合への出入り
+ * （watch/watchRegistry.ts の addActiveWatchStateElement / deactivateWatch / clearWatchRegistry）で
+ * 数えるので、`$scan` を持つ state を DOM から外せば（SPA のページ差し替え）ゲートは閉じ、
+ * 再接続（startWatch）で開き直す。strong Set でも、切断と再セットで必ず外れるので GC を妨げない
+ * （active 集合と同じ不変条件）。
+ */
+const drainActive = new Set();
+/**
+ * enqueue 側のゲート: 発火対象に居て、`resetOn` を持つ `on` scan がある state（scan/eventReset.ts）。
+ * 空のあいだ updater の enqueue は整数比較 1 回で抜ける。数え方は drainActive と同じ。
+ */
+const eventResetActive = new Set();
+function hasDrainWork(registry) {
+    return registry.byFromPath.size > 0 || registry.byResetPath.size > 0;
+}
+function hasEventResetWork(registry) {
+    return registry.eventResetByPath.size > 0;
+}
+function pushEntry(map, key, entry) {
+    const list = map.get(key);
+    if (typeof list === "undefined") {
+        map.set(key, [entry]);
+    }
+    else {
+        list.push(entry);
+    }
+}
+/** registry を置換登録する（`_state` セッターから）。 */
+function setScanRegistry(stateElement, entries) {
+    clearScanRegistry(stateElement);
+    const byFromPath = new Map();
+    const byResetPath = new Map();
+    const eventResetByPath = new Map();
+    for (const entry of entries) {
+        if (entry.source.kind === "path") {
+            pushEntry(byFromPath, entry.source.path, entry);
+        }
+        for (const path of entry.resetOn) {
+            pushEntry(byResetPath, path, entry);
+            if (entry.source.kind === "event") {
+                pushEntry(eventResetByPath, path, entry);
+            }
+        }
+    }
+    const registry = { entries: new Set(entries), byFromPath, byResetPath, eventResetByPath };
+    registryByStateElement$3.set(stateElement, registry);
+    return registry;
+}
+function getScanRegistry(stateElement) {
+    return registryByStateElement$3.get(stateElement);
+}
+/**
+ * registry を削除する（`_state` 再セットで作り直す前）。ゲートからも外す — 同じ再セットの
+ * startWatch が新しい registry で数え直す（`_state` セッターは registry を作った後に
+ * clearWatchRegistry → startWatch を通る）。
+ */
+function clearScanRegistry(stateElement) {
+    deactivateScanGates(stateElement);
+    registryByStateElement$3.delete(stateElement);
+}
+/** 発火対象に載った（watch/watchRegistry.ts の addActiveWatchStateElement 専用）。冪等。 */
+function activateScanGates(stateElement) {
+    const registry = registryByStateElement$3.get(stateElement);
+    if (typeof registry === "undefined") {
+        return;
+    }
+    if (hasDrainWork(registry)) {
+        drainActive.add(stateElement);
+    }
+    if (hasEventResetWork(registry)) {
+        eventResetActive.add(stateElement);
+    }
+}
+/** 発火対象から外れた（切断・再セット）。 */
+function deactivateScanGates(stateElement) {
+    drainActive.delete(stateElement);
+    eventResetActive.delete(stateElement);
+}
+/**
+ * drain で発火すべき scan（`from` か `resetOn`）を持つか。
+ * `startWatch` が発火対象集合へ載せる判定に使う（`on` だけの scan は drain を要らない）。
+ */
+function hasScanDrainWork(stateElement) {
+    const registry = registryByStateElement$3.get(stateElement);
+    return typeof registry !== "undefined" && hasDrainWork(registry);
+}
+/** 発火対象に居て、`resetOn` を持つ `on` scan がある state か（enqueue の保留判定）。 */
+function hasActiveScanEventReset(stateElement) {
+    return eventResetActive.has(stateElement);
+}
+function getScanDrainGateCount() {
+    return drainActive.size;
+}
+function getScanEventResetGateCount() {
+    return eventResetActive.size;
+}
+
+/**
+ * scan/eventReset.ts
+ *
+ * `on` scan の `resetOn` を「書き込みの時点」で効かせる台帳（docs/state-scan-design.md D6）。
+ *
+ * `on` の fold は出来事のその場で同期に書く。一方 `resetOn` のパスはバッチに載って drain の
+ * 終わりにしか見えない。drain で reset するだけだと、reset の書き込みから drain までに起きた
+ * 出来事 — その書き込みの binding 適用で要素が同期に dispatch したものを含む — まで消える。
+ *
+ * そこで reset の要求を enqueue の時点で entry に保留する。
+ * - 保留中に来た出来事の fold は `initial` から畳み、出力の書き込みが通ったら保留を消す
+ *   （fold の throw・thenable・書き込みの throw なら残す）。
+ * - 保留が残ったまま drain に来たら、scan runtime が出力を `initial` に戻して保留を消す。
+ * これで「書き込みより後の出来事は reset 後の出力に畳まれる」順序になる。
+ *
+ * 保留は「その書き込みが載ったバッチの drain で initial に戻す」予約なので、寿命をそのバッチに
+ * 揃える。drain がそのバッチの scan を発火しない（書き込みの後・drain の前に切断された・連鎖深さの
+ * 上限で打ち切った・先行 fold が同期に切断や再セットをした）なら保留を捨てる。残すと、後の無関係な
+ * 出来事が突然 `initial` から畳み始める。同じ条件の `from` の scan は reset しない（発火しない）ので、
+ * それに揃える。保留は entry ごとの 1 bit でどのバッチの書き込みかを持たないので、同じ `resetOn` の
+ * パスが次のバッチ向けに既に積まれていれば捨てない — その保留は次のバッチの drain が使う。
+ *
+ * updater（enqueue 側）から呼ばれるので updater を import しない（watch/chainDepth.ts と同じ理由）。
+ */
+const pendingResets = new WeakSet();
+/**
+ * 保留中の entry の数。捨てる走査（discardPendingScanResets）のゲート。保留は enqueue の直後の drain で
+ * 使うか捨てるか次のバッチへ持ち越すので、ふつうは 0。enqueue のゲート（発火対象の state）と別に持つのは、
+ * 書き込みの後・drain の前に切断された state がゲートから外れても、その保留は drain で捨てるため。
+ */
+let pendingResetCount = 0;
+/** このアドレスを `resetOn` に持つ `on` scan（無ければ undefined） */
+function eventResetEntriesAt(absAddress) {
+    return getScanRegistry(absAddress.absolutePathInfo.stateElement)
+        ?.eventResetByPath.get(absAddress.absolutePathInfo.pathInfo.path);
+}
+/**
+ * 書き込みの enqueue を記録する（updater 専用）。
+ * `resetOn` を持つ `on` scan が発火対象の state に 1 つも無ければ（そうした state を DOM から外した後を含む）、
+ * 整数比較 1 回で抜ける。
+ */
+function noteEnqueueForScanReset(absAddress) {
+    if (getScanEventResetGateCount() === 0) {
+        return;
+    }
+    // 発火対象でない state（切断中・初期化中・SSR）の書き込みは reset しない — drain 側と同じ扱い
+    if (!hasActiveScanEventReset(absAddress.absolutePathInfo.stateElement)) {
+        return;
+    }
+    const entries = eventResetEntriesAt(absAddress);
+    if (typeof entries === "undefined") {
+        return;
+    }
+    for (const entry of entries) {
+        markPendingScanReset(entry);
+    }
+}
+/**
+ * 保留を立てる。enqueue の記録（上）と、`_state` 再セットで旧宣言の保留を同じ出力の `on` scan へ
+ * 引き継ぐとき（processScanDeclaration.ts の registerScans）だけが呼ぶ。
+ */
+function markPendingScanReset(entry) {
+    if (!pendingResets.has(entry)) {
+        pendingResets.add(entry);
+        pendingResetCount++;
+    }
+}
+function hasPendingScanReset(entry) {
+    return pendingResets.has(entry);
+}
+/** 保留があれば消して true を返す。 */
+function consumePendingScanReset(entry) {
+    if (!pendingResets.delete(entry)) {
+        return false;
+    }
+    pendingResetCount--;
+    return true;
+}
+/**
+ * drain がバッチの scan を発火しないとき、そのバッチが載せた保留を捨てる。
+ * `firing` はこの drain で scan を発火する state の集合。null はバッチ全体を発火しない
+ * （連鎖深さの上限）。`isQueued` は「次のバッチ向けに、この state のこのパスが積まれているか」
+ * （updater を import しないので呼び出し側から受け取る）。
+ */
+function discardPendingScanResets(batch, firing, isQueued) {
+    if (pendingResetCount === 0) {
+        return;
+    }
+    for (const absAddress of batch) {
+        const stateElement = absAddress.absolutePathInfo.stateElement;
+        if (firing?.has(stateElement) === true) {
+            continue;
+        }
+        const entries = eventResetEntriesAt(absAddress);
+        if (typeof entries === "undefined") {
+            continue;
+        }
+        for (const entry of entries) {
+            if (!entry.resetOn.some((path) => isQueued(stateElement, path))) {
+                consumePendingScanReset(entry);
+            }
+        }
+    }
+}
+
 const updateBatchListeners = [];
 /**
  * drain 終了リスナーを登録する。
  *
  * `priority` の昇順に呼ばれる（同値は登録順）。機構間の実行順序
- * （`$watch` → `$streams` restart、docs/state-watch-hook-design.md §3-2 層 1）は
+ * （`$scan` → `$watch` → `$streams` restart。前の 2 つは同じ watch リスナーの中の順序で、
+ * `$scan` は畳んで書いてから `$watch` を発火する —
+ * docs/state-watch-hook-design.md §3-2 層 1・docs/state-scan-design.md D11）は
  * この優先度で固定する — import 順に順序を持たせると、無関係な import 整理で
  * 静かに壊れるため。定数は define.ts の `*_LISTENER_PRIORITY` を使うこと。
  */
@@ -10760,6 +11335,9 @@ class Updater {
         // `$watch` ハンドラ実行中の書き込みだけを連鎖としてマークする（watch/chainDepth.ts）。
         // ハンドラ実行中でなければ即 return する葉モジュール呼び出し 1 個のコスト。
         noteEnqueueForWatchChain();
+        // `on` scan の `resetOn` を書き込みの時点で保留する（scan/eventReset.ts）。
+        // 該当する宣言がページに無ければ整数比較 1 回で抜ける。
+        noteEnqueueForScanReset(absoluteAddress);
         const requireStartProcess = this._queueUpdateRecords.length === 0;
         this._queueUpdateRecords.push({ absoluteAddress, context });
         if (requireStartProcess) {
@@ -10772,6 +11350,15 @@ class Updater {
                 this._applyChange(updateRecords);
             });
         }
+    }
+    /**
+     * まだ drain されていない書き込み（次のバッチ）に、この state のこのパスがあるか。
+     * drain の最中のキューは次のバッチの分だけになっている（_applyChange の前に差し替える）。
+     * `on` scan の保留 reset を、発火しない drain で捨ててよいかの判定に使う（scan/eventReset.ts）。
+     */
+    hasQueuedPath(stateElement, path) {
+        return this._queueUpdateRecords.some((record) => record.absoluteAddress.absolutePathInfo.stateElement === stateElement
+            && record.absoluteAddress.absolutePathInfo.pathInfo.path === path);
     }
     // テスト用に公開
     testApplyChange(absoluteAddresses, contexts) {
@@ -11597,9 +12184,6 @@ function getOrCreateCommandToken(stateElement, name) {
         registry.set(name, token);
     }
     return token;
-}
-function clearCommandTokenRegistry(stateElement) {
-    registryByStateElement$2.delete(stateElement);
 }
 
 /**
@@ -12911,7 +13495,11 @@ class RecursionRegistry {
      * 再セット時、`getStateInfo` の再収集より**前**に呼ぶ）。実体は generation.ts。
      */
     forgetGenerated(stateElement, previousState) {
-        forgetGeneration(stateElement, previousState, new Set(this._accessors.keys()));
+        const generatedPaths = new Set(this._accessors.keys());
+        forgetGeneration(stateElement, previousState, generatedPaths);
+        // 忘れた具体パスを返す。`_state` のセッタは経路情報を作り直すときにこれを除く —
+        // この世代ではまだ実体化されていないので、辺だけ張り直してはならない。
+        return generatedPaths;
     }
     /**
      * `**` 接尾辞の深さ `depth` の具体パス（`concretePathAt` の記憶付き版）。
@@ -13028,6 +13616,69 @@ function getStreamErrorNamespace(stateElement) {
 function clearStreamNamespace(stateElement) {
     statusNamespaceByStateElement.delete(stateElement);
     errorNamespaceByStateElement.delete(stateElement);
+}
+
+/**
+ * scan/scanFeedback.ts
+ *
+ * 自己ループの柵（docs/state-scan-design.md D9 / §2-3）。
+ *
+ * `from` の根が `$streams` 名である scan について、その stream の `args` 依存に
+ * scan 出力から到達できるパスが含まれていたら raise する。
+ *
+ *     $scan.feed { from: "pageResult" }
+ *     get page() { return Math.floor(this.feed.items.length / this.pageSize) + 1; }
+ *     $streams.pageResult { args: (s) => ({ page: s.page }) }
+ *
+ * は、ページが着地するたびに `feed` → `page` → restart と進み、sentinel を経由せずに
+ * 全ページを読み続ける（冪等キーが無ければ同じページを無限に取り直す）。
+ *
+ * 辿る辺は書き込みが届く先そのもの:
+ * - `staticDependency`（親 → 子）と `dynamicDependency`（読まれたパス → それを読む getter）。
+ *   書き込みの伝播（`walkDependency`）と同じグラフ。
+ * - 到達したパスを `from` に持つ別の scan の出力。依存グラフには載らない辺だが、その scan が
+ *   次のバッチで畳んで書くので、`feed` → `feed2`（`from: "feed"`）→ `page` の連鎖も同じループになる。
+ */
+const NO_EDGES = Object.freeze([]);
+const NO_SCANS = Object.freeze([]);
+function collectReachablePaths(stateElement, registry, start) {
+    const reachable = new Set([start]);
+    const queue = [start];
+    while (queue.length > 0) {
+        const path = queue.pop();
+        const children = stateElement.staticDependency.get(path) ?? NO_EDGES;
+        const dependents = stateElement.dynamicDependency.get(path) ?? NO_EDGES;
+        const downstream = registry.byFromPath.get(path) ?? NO_SCANS;
+        for (const next of [...children, ...dependents, ...downstream.map((scan) => scan.name)]) {
+            if (!reachable.has(next)) {
+                reachable.add(next);
+                queue.push(next);
+            }
+        }
+    }
+    return reachable;
+}
+/** stream の起動・restart（`traceArgs` の直後）で呼ぶ。 */
+function assertNoScanFeedback(stateElement, streamEntry) {
+    const registry = getScanRegistry(stateElement);
+    if (typeof registry === "undefined" || streamEntry.depAddresses.size === 0) {
+        return;
+    }
+    for (const scan of registry.entries) {
+        if (scan.source.kind !== "path" || scan.source.pathInfo.segments[0] !== streamEntry.name) {
+            continue;
+        }
+        const reachable = collectReachablePaths(stateElement, registry, scan.name);
+        for (const dep of streamEntry.depAddresses) {
+            const depPath = dep.absolutePathInfo.pathInfo.path;
+            if (reachable.has(depPath)) {
+                raiseError(`[wcs/scan-feedback-loop] ${STATE_STREAMS_NAME} entry "${streamEntry.name}" args read "${depPath}", ` +
+                    `which is derived from the ${STATE_SCAN_NAME} output "${scan.name}" that this stream feeds. ` +
+                    `Every landing would restart the stream on its own result. Advance the cursor from an event ($on) ` +
+                    `and keep it a plain property instead of deriving it from the accumulator.`);
+            }
+        }
+    }
 }
 
 /**
@@ -13348,6 +13999,8 @@ function startStream(stateElement, entry) {
     // args 評価 ＋ 依存の per-run 再捕捉（args === null なら depAddresses を clear して
     // undefined。Promise / 自己依存 / wildcard 読みは raiseError、§3-1）
     const argsValue = traceArgs(stateElement, entry);
+    // scan 出力 → args の前進ループを起動前に止める（docs/state-scan-design.md D9）
+    assertNoScanFeedback(stateElement, entry);
     // 値リセット: setByAddress を通すことで updater coalesce・sameValueGuard・
     // walkDependency（stream 値に依存する computed の dirty 化）がすべて乗る（§3-3）
     stateElement.createState("writable", (state) => {
@@ -13509,6 +14162,7 @@ registerUpdateBatchListener(restartStreamsOnUpdateBatch, STREAM_LISTENER_PRIORIT
  * どちらの経路も必ずここを通るため「Set に居る = 接続中かつ宣言済み」が保たれる。
  * この「宣言済み」の側が崩れると、`$watch` 未使用アプリの drain にも収集ループが乗る
  * （ゼロコスト契約、docs/state-watch-hook-design.md §10）。
+ * `$scan` の drain / enqueue のゲート（scan/scanRegistry.ts）も同じ出入りで数える。
  */
 const registryByStateElement = new WeakMap();
 /**
@@ -13546,6 +14200,7 @@ function getWatchEntries(stateElement) {
  */
 function addActiveWatchStateElement(stateElement) {
     activeStateElements.add(stateElement);
+    activateScanGates(stateElement);
 }
 /**
  * 発火対象を列挙する（drain リスナーの early return 判定用）。
@@ -13562,12 +14217,14 @@ function getActiveWatchStateElements() {
  */
 function deactivateWatch(stateElement) {
     activeStateElements.delete(stateElement);
+    deactivateScanGates(stateElement);
 }
 /**
  * registry から削除し、発火対象からも外す（`_state` 再 set 時の再配線用）。
  */
 function clearWatchRegistry(stateElement) {
     activeStateElements.delete(stateElement);
+    deactivateScanGates(stateElement);
     registryByStateElement.delete(stateElement);
 }
 /** ボリュームの watch entry を追記する（置換しない）。 */
@@ -13762,6 +14419,573 @@ function clearPrevValues() {
 }
 
 /**
+ * watch/rowLanding.ts
+ *
+ * ワイルドカードのパスの行の着地を、drain の時点のリストの位置 1 つにつき 1 つに絞る（#274）。
+ * `$watch` と `$scan` の `from` が共有する（docs/state-scan-design.md D3・§5-5）。
+ *
+ * バッチに載る行のアドレスは、書き込みの時点の行を指す。同じ job でその後にリストを短くした・
+ * 置き換えた・途中から取り除いた・`list.*` へ要素を書き込んだと、drain の時点ではアドレスの行が
+ * もうその位置に居ないことがある。添字で読むと、範囲外の読みで throw するか、その位置にいま居る
+ * 別の行の値で発火する。
+ */
+/**
+ * 行の連鎖に、差分がリストから外した（退役した）行があるか。読むだけの前判定で、リストは読まない。
+ * `$watch` はこれが真のヒット（か、同じ位置に重なるヒット）があるときだけ位置を引く。
+ */
+function hasRetiredRow(listIndex) {
+    for (let row = listIndex; row !== null; row = row.parentListIndex) {
+        if (isRetiredListIndex(row)) {
+            return true;
+        }
+    }
+    return false;
+}
+/**
+ * 行のアドレスが、いまのリストのその位置とどう関係するか。外側の段から台帳を引く。
+ * 読むだけ（`$scan` の計画の相・D18）なので、台帳は観測用の `getListIndexesByList` で引き、
+ * 親ポインタを修理する `resolveListIndexesByList` は使わない。
+ * - `gone`: その位置に行が無い（リストを短くした・空にした・配列でなくした）か、アドレスの行を
+ *   差分がリストから外した（退役した — 行を取り除いた・リストを置き換えた）。
+ * - `current`: その位置の行が、アドレスの行そのものか、同じリスト要素を表す行。
+ * - `replaced`: その位置には別の要素の行が居るが、アドレスの行は差分に外されていない
+ *   （`list.*` への要素の書き込みは、差分を通らずに台帳のその位置へ別の行を差し込む）。
+ */
+function placementOf(state, pathInfo, row) {
+    // ワイルドカードのパスの着地は、収集の段階で listIndex を持つものに限っている
+    const listIndex = row.absAddress.listIndex;
+    let placement = "current";
+    let parentListIndex = null;
+    for (let level = 0; level < pathInfo.wildcardCount; level++) {
+        const list = state[getByAddressSymbol](createStateAddress(pathInfo.wildcardParentPathInfos[level], parentListIndex));
+        // 台帳を持たない値（配列でない・空の配列）は行が無い
+        const current = getListIndexesByList(list)?.[row.indexes[level]];
+        if (typeof current === "undefined") {
+            return "gone";
+        }
+        // `$scan` も `$watch` もルートのツリーでだけ発火するので、行の連鎖にスコープの base 段は無い（段は必ずある）
+        const own = listIndexAtWildcard(listIndex, level, pathInfo.wildcardCount);
+        if (current !== own && !isSameListIndexValue(current, own)) {
+            if (isRetiredListIndex(own)) {
+                return "gone";
+            }
+            placement = "replaced";
+        }
+        parentListIndex = current;
+    }
+    return placement;
+}
+/**
+ * 行の着地を、いまのリストの位置 1 つにつき 1 つに絞る。戻り値の順は、位置ごとに最初に残した行の順。
+ *
+ * - 位置に行が無いアドレス（行を書いてからリストを短くした・空にした）は捨てる。
+ *   添字で読むと範囲外の読みで throw する。
+ * - 差分がリストから外した行のアドレス（行を書いてからその行を取り除いた・リストを置き換えた）は捨てる。
+ *   添字で読むと、その位置にいま居る行の値を読む — 置き換えで入った行は自分のアドレスで着地するので二重になり、
+ *   位置だけが移ってきた行は変わっていないのに着地する（#274・docs/state-scan-design.md §5-5）。
+ * - 同じ位置に、いまそこに居る行のアドレスと、差分に外されていない別の行のアドレス（`list.*` への要素の
+ *   書き込みの前にその行へ書いた形）が並んだら前者を残す。後者しか無い位置は残し、その位置のいまの値を読ませる。
+ */
+function selectLandedRows(state, pathInfo, rows) {
+    const byPosition = new Map();
+    for (const row of rows) {
+        const placement = placementOf(state, pathInfo, row);
+        if (placement === "gone") {
+            continue;
+        }
+        const rank = placement === "current" ? 1 : 0;
+        const key = row.indexes.join(",");
+        const kept = byPosition.get(key);
+        if (typeof kept === "undefined" || rank > kept.rank) {
+            byPosition.set(key, { row, rank });
+        }
+    }
+    return Array.from(byPosition.values(), (kept) => kept.row);
+}
+
+/**
+ * scan/initialValue.ts
+ *
+ * 出力に置く `initial` の複製と、「出力がいま `initial` と同じ値か」の判定
+ * （docs/state-scan-design.md D6 / D7・§5-9）。
+ *
+ * 実体化と reset が宣言の `initial` をそのまま置くと、出力が `initial` の間に子パスへ書いた値
+ * （`$watch` ハンドラの注記など）が宣言の `initial` 自体を書き換える。以後の reset はその値に戻し、
+ * 出力が同じ参照なので書き込みもしない。そこで plain なデータは複製して置く。
+ *
+ * plain なデータ: プロトタイプが `Array.prototype` / `Object.prototype` / null で、凍結されておらず、
+ * 自前のプロパティがすべて列挙できる文字列キーのデータプロパティ（配列は添字と `length` だけ）の
+ * 配列とオブジェクト。判定は property descriptor で行い、getter を実行しない。それ以外
+ * （getter / setter・Symbol キー・列挙できないプロパティ・配列の追加プロパティ・Array のサブクラス・
+ * 凍結された値・関数・クラスのインスタンス・Map / Set・Date・DOM ノード）は参照のまま置く。
+ *
+ * 「reset で出力が既に `initial` なら書かない」は、参照ではなく値で見る。plain なデータは中身を再帰で
+ * 比べ、それ以外は同一性で比べる。訪れた対を覚えるので、形の違う循環でも止まる。
+ */
+const ARRAY_INDEX = /^(?:0|[1-9]\d*)$/;
+function isEnumerableData(target, key) {
+    const descriptor = Object.getOwnPropertyDescriptor(target, key);
+    return descriptor.enumerable === true && "value" in descriptor;
+}
+/** plain なデータならその種類、そうでなければ null（参照のまま扱う）。 */
+function plainKind(value) {
+    if (typeof value !== "object" || value === null || Object.isFrozen(value)) {
+        return null;
+    }
+    const proto = Object.getPrototypeOf(value);
+    if (Array.isArray(value)) {
+        const plainArray = proto === Array.prototype && Reflect.ownKeys(value).every((key) => key === "length" || (typeof key === "string" && ARRAY_INDEX.test(key) && isEnumerableData(value, key)));
+        return plainArray ? "array" : null;
+    }
+    const plainObject = (proto === Object.prototype || proto === null) && Reflect.ownKeys(value).every((key) => typeof key === "string" && isEnumerableData(value, key));
+    return plainObject ? "object" : null;
+}
+function cloneValue(value, copies) {
+    const kind = plainKind(value);
+    if (kind === null) {
+        return value;
+    }
+    const source = value;
+    const known = copies.get(source);
+    if (typeof known !== "undefined") {
+        return known;
+    }
+    let copy;
+    if (kind === "array") {
+        // 穴はそのまま（添字のキーだけを写す）
+        copy = new Array(value.length);
+    }
+    else {
+        copy = Object.getPrototypeOf(value) === null ? Object.create(null) : {};
+    }
+    copies.set(source, copy);
+    for (const key of Object.keys(source)) {
+        copy[key] = cloneValue(source[key], copies);
+    }
+    return copy;
+}
+/** plain なデータを再帰で複製する。それ以外の値は参照のまま返す（循環と共有参照も保つ）。 */
+function cloneInitial(initial) {
+    return cloneValue(initial, new Map());
+}
+function sameValue(current, initial, compared) {
+    if (Object.is(current, initial)) {
+        return true;
+    }
+    // 宣言側の種類を先に決め、配列の長さ・キーの数が違えば、出力側の descriptor を見ずに抜ける
+    // （大きく積み上がった出力を空の initial と比べるたびに、出力の大きさに比例させない）
+    const kind = plainKind(initial);
+    if (kind === null || typeof current !== "object" || current === null) {
+        return false;
+    }
+    const left = current;
+    const right = initial;
+    if (kind === "array") {
+        if (!Array.isArray(current) || current.length !== initial.length) {
+            return false;
+        }
+    }
+    else if (Array.isArray(current) || Object.keys(left).length !== Object.keys(right).length) {
+        return false;
+    }
+    if (plainKind(current) !== kind) {
+        return false;
+    }
+    // 訪れた対を出力側の値ごとの集合で覚える。形の違う循環（自己循環と 2 段の循環など）でも、同じ対の 2 回目で止まる
+    let seen = compared.get(left);
+    if (typeof seen === "undefined") {
+        seen = new Set();
+        compared.set(left, seen);
+    }
+    else if (seen.has(right)) {
+        return true;
+    }
+    seen.add(right);
+    if (kind === "array") {
+        for (let index = 0; index < current.length; index++) {
+            if (!sameValue(left[index], right[index], compared)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    return Object.keys(right).every((key) => Object.prototype.hasOwnProperty.call(left, key) && sameValue(left[key], right[key], compared));
+}
+/** 出力が `initial` と同じ値か（plain なデータは中身を、それ以外は同一性を比べる）。 */
+function isSameAsInitial(current, initial) {
+    return sameValue(current, initial, new Map());
+}
+/**
+ * 実体化・fold・reset が出力に置いた関数値と、その出力名（docs/state-scan-design.md D7・§5-9 の C5-14）。
+ *
+ * fold が関数を返す出力は、再セットの宣言検査で state の関数値として見える。それがこの出力に置いた値なら
+ * 累積で、メソッドとの衝突ではない。どの世代の state オブジェクトに書かれたか（世代を進めた後に throw した
+ * 再セットの後は、新しい `__state` にだけ書かれる）に依らず判定できるよう、値そのものを記録する。
+ * 関数は WeakMap のキーなので、出力から外れれば記録ごと回収される。
+ */
+const outputNamesByFunction = new WeakMap();
+/** 出力に置いた値を記録する（関数のときだけ残す）。 */
+function recordOutputValue(name, value) {
+    if (typeof value !== "function") {
+        return;
+    }
+    const names = outputNamesByFunction.get(value);
+    if (typeof names === "undefined") {
+        outputNamesByFunction.set(value, new Set([name]));
+    }
+    else {
+        names.add(name);
+    }
+}
+/** その関数値を、実体化・fold・reset がこの出力に置いたことがあるか。 */
+function wasPlacedOnOutput(name, value) {
+    return typeof value === "function" && outputNamesByFunction.get(value)?.has(name) === true;
+}
+
+/**
+ * scan/scanReport.ts
+ *
+ * `$scan` の失敗の報告（docs/state-scan-design.md D4 / D5）。
+ *
+ * 値の読み・fold・出力の書き込みの例外は scan 側で閉じる（drain リスナーと event-token の
+ * emit ループを他の機構と共有しているため）。閉じた事実を console と devtools の両方に出す。
+ * devtools には `$watch` と同じ `state:watch-error` を path `$scan.<出力名>` で流し、phase は
+ * 直し方で分ける: 値を読めなかった（`evaluate`）・fold が契約を破った（`fold`）・出力を
+ * 書けなかった（`write`）。
+ */
+const SCAN_FAILURE_MESSAGE = {
+    "read-source": (name) => `${STATE_SCAN_NAME} could not read a "from" value for "${name}". That landing was not folded; the other landings of the batch still were.`,
+    "read-output": (name) => `${STATE_SCAN_NAME} could not read the output "${name}". Nothing was folded or written.`,
+    threw: (name) => `${STATE_SCAN_NAME} fold for "${name}" threw. The output was not written.`,
+    "returned-promise": (name) => `${STATE_SCAN_NAME} fold for "${name}" returned a Promise. fold must be synchronous and return the next value; the output was not written.`,
+    write: (name) => `${STATE_SCAN_NAME} could not write the output "${name}".`,
+};
+const SCAN_FAILURE_PHASE = {
+    "read-source": "evaluate",
+    "read-output": "evaluate",
+    threw: "fold",
+    "returned-promise": "fold",
+    write: "write",
+};
+function sendToDevtools(name, phase, error) {
+    if (devtoolsSink !== null) {
+        devtoolsSink({
+            type: "state:watch-error",
+            phase,
+            path: `${STATE_SCAN_NAME}.${name}`,
+            error,
+        });
+    }
+}
+function reportScanError(name, error, failure) {
+    console.error(`[@wcstack/state] ${SCAN_FAILURE_MESSAGE[failure](name)}`, error);
+    sendToDevtools(name, SCAN_FAILURE_PHASE[failure], error);
+}
+function isThenable(value) {
+    return value !== null
+        && (typeof value === "object" || typeof value === "function")
+        && typeof value.then === "function";
+}
+/**
+ * fold が thenable を返した（同期契約違反）。書き込まずに報告し、
+ * 後から reject されても unhandled rejection にしない。
+ */
+function reportScanThenable(name, value) {
+    value.then(undefined, () => undefined);
+    reportScanError(name, new TypeError(`${STATE_SCAN_NAME} fold for "${name}" returned a Promise. fold must be synchronous and return the next value.`), "returned-promise");
+}
+const lateGetterReported = new WeakSet();
+/**
+ * 宣言時には plain だった `from` が、接ぎ木（ボリュームのアクセサ登録）で後から getter に
+ * なった（設計書 D5 後段）。getter の再評価回数を畳まないよう、その scan を止める。
+ * entry につき 1 回だけ報告する。fold を適用しないと決めた失敗なので devtools の phase は `fold`。
+ */
+function reportLateGetterSource(entry, name, path) {
+    if (lateGetterReported.has(entry)) {
+        return;
+    }
+    lateGetterReported.add(entry);
+    const message = `[wcs/scan-source-computed] ${STATE_SCAN_NAME} entry "${name}" from "${path}" is now backed by a getter ` +
+        `(registered after the declaration, e.g. by a volume). A getter re-evaluates whenever its inputs change, ` +
+        `so this scan stopped folding. Fold the plain value the getter reads instead.`;
+    console.error(`[@wcstack/state] ${message}`);
+    sendToDevtools(name, "fold", new Error(message));
+}
+
+/**
+ * scan/scanRuntime.ts
+ *
+ * `$scan` の drain 側の発火 — `from` と `resetOn`（docs/state-scan-design.md §2-1）。
+ *
+ * watch runtime の drain リスナー（`WATCH_LISTENER_PRIORITY`）から呼ばれる（D11）。
+ * 発火対象集合・連鎖深さ・`prev` 台帳は `$watch` と共有する。
+ *
+ * 発火単位（D3）: バッチに載った `from` の絶対アドレス 1 つにつき fold 1 回。
+ * 同じ出力へ複数行（wildcard）が載ったバッチでは、indexes 昇順に acc を連鎖させて
+ * 最後に 1 回だけ書く。開始値と `Object.is` で同じなら書かない。
+ * 行の着地は、いまのリストの位置 1 つにつき 1 回に絞る（watch/rowLanding.ts の selectLandedRows — `$watch` と共有）。
+ *
+ * 計画と書き込みを 2 相に分ける（D18）: 全 scan の次の値を読むだけで決め（planScansOnUpdateBatch）、
+ * 宣言順に書く（commitScanPlans）。どちらも同じ drain の `$watch` の発火より前（D11）。
+ * - 1 相で「畳んでは書く」と、ある scan の出力を `from` に取る後続の scan が、同じ drain で
+ *   先行 scan が書いたばかりの（まだバッチとして届いていない）値を畳み、次のバッチで同じ値を
+ *   もう一度畳む — 届いていた値は取りこぼす。宣言順しだいで exactly-once が破れる。
+ * - 書き込みが `$watch` より前なので、同じ drain の `$watch` ハンドラは畳んで書いた後の出力を読み、ハンドラが
+ *   出力へ書いた値はそのまま残る。その代わり、出力の source を drain のリスナーが書き進めて、出力の着地と
+ *   source の新しい着地が同じバッチに載る連鎖では、出力を見る `$watch` の prev が前の着地を持ち、cur が
+ *   1 段先行し、同じ値で 2 回発火し得る（D12 の契約・§5-6 の差し戻し）。
+ *
+ * 失敗は種類ごとに閉じる（D4）: 読めない行はその行だけを捨てて連鎖を続け（`$watch` が行ごとに
+ * evaluate で閉じるのと同じ）、出力の読み・fold の throw はその scan の書き込みを止める。
+ */
+const NO_PLANS = Object.freeze([]);
+function groupOf(groups, stateElement, entry) {
+    let group = groups.get(entry);
+    if (typeof group === "undefined") {
+        group = { stateElement, entry, rows: [], reset: false };
+        groups.set(entry, group);
+    }
+    return group;
+}
+/**
+ * 同じ entry の行は wildcard の段数が同じ（indexes の長さが等しい）なので、
+ * 外側の段から最初に違う段で比べる。
+ */
+function compareRows(a, b) {
+    let level = 0;
+    while (level < a.indexes.length - 1 && a.indexes[level] === b.indexes[level]) {
+        level++;
+    }
+    return a.indexes[level] - b.indexes[level];
+}
+/**
+ * `from` の根が `$streams` 名で、そのバッチにその stream の restart 依存が載っているか（D10）。
+ * 載っていれば同じ drain の STREAM リスナーが run を abort する。到着した chunk は
+ * 捨てられる run のものなので畳まない（`$streams` §3-2「restart が勝つ」）。
+ */
+function isStreamRestartPending(stateElement, rootName, batch) {
+    const streamEntry = getStreamEntries(stateElement).get(rootName);
+    if (typeof streamEntry === "undefined") {
+        return false;
+    }
+    for (const dep of streamEntry.depAddresses) {
+        if (batch.has(dep)) {
+            return true;
+        }
+    }
+    return false;
+}
+function hasGetterOnPath(stateElement, source) {
+    for (const path of source.pathInfo.cumulativePaths) {
+        if (stateElement.getterPaths.has(path)) {
+            return true;
+        }
+    }
+    return false;
+}
+/** 先行する fold や書き込みが同期に切断・再セットを起こし得る（`$watch` と同じ再確認） */
+function isLive(group, activeStateElements) {
+    return activeStateElements.has(group.stateElement)
+        && getScanRegistry(group.stateElement)?.entries.has(group.entry) === true;
+}
+/**
+ * 発火しないと決まった group の、`on` scan の保留 reset を捨てる（scan/eventReset.ts）。
+ * `on` の group は `resetOn` のヒットからしか作られない。同じ `resetOn` のパスが次のバッチ向けに
+ * 積まれていれば、その保留は次のバッチの drain が使うので残す（discardSkippedScanResets と同じ規則）。
+ */
+function dropPendingReset(group) {
+    const { entry, stateElement } = group;
+    if (entry.source.kind === "event" && !entry.resetOn.some((path) => isQueuedForNextBatch(stateElement, path))) {
+        consumePendingScanReset(entry);
+    }
+}
+/** 次のバッチ（まだ drain されていない書き込み）に、この state のこのパスが積まれているか */
+function isQueuedForNextBatch(stateElement, path) {
+    return getUpdater().hasQueuedPath(stateElement, path);
+}
+/**
+ * このバッチの scan を発火しない drain（発火対象でない state・連鎖深さの上限）で、`on` scan の
+ * 保留 reset を捨てる。`firing` はこの drain で scan を発火する state の集合、null はバッチ全体を
+ * 発火しない。同じ `resetOn` のパスが次のバッチ向けに積まれていれば、その保留は残す。
+ */
+function discardSkippedScanResets(batch, firing) {
+    discardPendingScanResets(batch, firing, isQueuedForNextBatch);
+}
+function readSource(state, source, row) {
+    return source.pathInfo.wildcardCount === 0
+        ? state[source.path]
+        : state.$resolve(source.path, row.indexes);
+}
+/** 相 1: 次の値を読むだけで決める。書き込みは無いか null。 */
+function planGroup(group, batch, activeStateElements) {
+    if (!isLive(group, activeStateElements)) {
+        dropPendingReset(group);
+        return null;
+    }
+    const { stateElement, entry } = group;
+    if (group.reset) {
+        // reset が勝つ（D6）。同じバッチの行は畳まない
+        return { group, next: entry.initial };
+    }
+    // reset でない group は `from` の行ヒットから作られている
+    const source = entry.source;
+    if (hasGetterOnPath(stateElement, source)) {
+        reportLateGetterSource(entry, entry.name, source.path);
+        return null;
+    }
+    if (isStreamRestartPending(stateElement, source.pathInfo.segments[0], batch)) {
+        return null;
+    }
+    // コールバック内の代入は制御フロー解析に載らないので、結果と進み具合は入れ物で受け取る
+    const result = { plan: null, failure: "read-output" };
+    try {
+        stateElement.createState("readonly", (state) => {
+            const start = state[entry.name];
+            const rows = source.pathInfo.wildcardCount === 0
+                ? group.rows
+                : selectLandedRows(state, source.pathInfo, group.rows);
+            result.failure = "threw";
+            const fold = entry.fold;
+            let acc = start;
+            for (const row of rows.sort(compareRows)) {
+                let cur;
+                try {
+                    cur = readSource(state, source, row);
+                }
+                catch (error) {
+                    // 読めない行だけを捨てて、残りの行の連鎖は続ける
+                    reportScanError(entry.name, error, "read-source");
+                    continue;
+                }
+                const next = fold(acc, cur, getPrevValue(row.absAddress), ...row.indexes);
+                if (isThenable(next)) {
+                    reportScanThenable(entry.name, next);
+                    return;
+                }
+                acc = next;
+            }
+            if (!Object.is(acc, start)) {
+                result.plan = { group, next: acc };
+            }
+        });
+    }
+    catch (error) {
+        // 他の scan・`$watch`・`$streams` restart を巻き添えにしない（D4）
+        reportScanError(entry.name, error, result.failure);
+    }
+    return result.plan;
+}
+/** 相 2 の 1 件: 書く直前に再確認する（後続の scan の fold が同期に切断・再セットし得る）。 */
+function commitPlan(plan, activeStateElements) {
+    const { group } = plan;
+    if (!isLive(group, activeStateElements)) {
+        dropPendingReset(group);
+        return;
+    }
+    const { stateElement, entry } = group;
+    // `on` の reset は保留が残っているときだけ。書き込みの後に来た出来事が `initial` から
+    // 畳んで保留を消していれば、その出力は reset 済み（scan/eventReset.ts）
+    if (group.reset && entry.source.kind === "event" && !consumePendingScanReset(entry)) {
+        return;
+    }
+    try {
+        stateElement.createState("writable", (state) => {
+            const current = state[entry.name];
+            // reset は既に initial と同じ値なら書かない（着地も `$watch` の発火も起こさない）。書くときは複製を置く（D6 / D7）
+            const writes = group.reset ? !isSameAsInitial(current, entry.initial) : !Object.is(current, plan.next);
+            if (writes) {
+                const next = group.reset ? cloneInitial(entry.initial) : plan.next;
+                state[entry.name] = next;
+                recordOutputValue(entry.name, next);
+            }
+        });
+    }
+    catch (error) {
+        reportScanError(entry.name, error, "write");
+    }
+}
+/**
+ * 相 1: バッチの `from` / `resetOn` ヒットを集め、宣言順に次の値を決める（書かない）。
+ * `depth` は watch runtime が消費した連鎖深さ。fold の中の書き込みも連鎖に数える。
+ */
+function planScansOnUpdateBatch(batch, activeStateElements, depth) {
+    // 発火対象でない state（書き込みの後に切断された）の `on` scan の保留 reset を捨てる（D6）。
+    // drain のゲートより前に置く — 切断で最後の scan がゲートから外れても、その書き込みの保留は残っている
+    discardSkippedScanResets(batch, activeStateElements);
+    if (getScanDrainGateCount() === 0) {
+        return NO_PLANS;
+    }
+    const groups = new Map();
+    for (const absAddress of batch) {
+        const stateElement = absAddress.absolutePathInfo.stateElement;
+        if (!activeStateElements.has(stateElement)) {
+            continue;
+        }
+        const registry = getScanRegistry(stateElement);
+        if (typeof registry === "undefined") {
+            continue;
+        }
+        const pathInfo = absAddress.absolutePathInfo.pathInfo;
+        const fromEntries = registry.byFromPath.get(pathInfo.path);
+        if (typeof fromEntries !== "undefined") {
+            let indexes = [];
+            if (pathInfo.wildcardCount > 0) {
+                if (absAddress.listIndex === null) {
+                    // 行が特定できないヒット（リストの依存展開で載る中間アドレス等）。`$watch` と同じく落とす
+                    continue;
+                }
+                indexes = getScopedIndexes(absAddress.listIndex, pathInfo.wildcardCount);
+            }
+            for (const entry of fromEntries) {
+                groupOf(groups, stateElement, entry).rows.push({ absAddress, indexes });
+            }
+        }
+        const resetEntries = registry.byResetPath.get(pathInfo.path);
+        if (typeof resetEntries !== "undefined") {
+            for (const entry of resetEntries) {
+                groupOf(groups, stateElement, entry).reset = true;
+            }
+        }
+    }
+    if (groups.size === 0) {
+        return NO_PLANS;
+    }
+    const ordered = Array.from(groups.values()).sort((a, b) => a.entry.order - b.entry.order);
+    const plans = [];
+    beginWatchFiring(depth);
+    try {
+        for (const group of ordered) {
+            const plan = planGroup(group, batch, activeStateElements);
+            if (plan !== null) {
+                plans.push(plan);
+            }
+        }
+    }
+    finally {
+        endWatchFiring();
+    }
+    return plans;
+}
+/**
+ * 相 2: 計画を宣言順に書く（D18）。同じ drain の `$watch` の発火より前（D11）。
+ * scan の書き込みも連鎖深さに数える。
+ */
+function commitScanPlans(plans, activeStateElements, depth) {
+    if (plans.length === 0) {
+        return;
+    }
+    beginWatchFiring(depth);
+    try {
+        for (const plan of plans) {
+            commitPlan(plan, activeStateElements);
+        }
+    }
+    finally {
+        endWatchFiring();
+    }
+}
+
+/**
  * watch/watchRuntime.ts
  *
  * `$watch` の発火（docs/state-watch-hook-design.md §3 / §7）。
@@ -13771,8 +14995,10 @@ function clearPrevValues() {
  * これが headless 購読の実体になる（binding 駆動の `$updatedCallback` との違い）。
  *
  * 実行順序（設計書 §3-2）:
- * - 機構間は優先度で固定（`$updatedCallback` → `$watch` → `$streams` restart）。
+ * - 機構間は優先度で固定（`$updatedCallback` → `$scan` → `$watch` → `$streams` restart）。
  *   `$updatedCallback` が先なのは binding 適用ループの内側で呼ばれる構造的必然。
+ *   `$scan` の `from` / `resetOn` は同じリスナーの中で `$watch` より先に畳んで書く
+ *   （docs/state-scan-design.md D11 / D18）。
  * - watch ハンドラ間は `$watch` の宣言順（entry.order）。利用者が順序に意思を持てる唯一の層。
  * - 同一パスの複数行は indexes 昇順。
  *
@@ -13795,9 +15021,12 @@ function clearPrevValues() {
  * 「接続中の全 `<wcs-state>`」になり、`fireWatchOnUpdateBatch` の early return が
  * 実アプリで効かなくなる ＝ `$watch` 未使用アプリの drain にも収集ループが乗る
  * （ゼロコスト契約、設計書 §10 ／ 実装計画 P16）。
+ *
+ * `$scan` の `from` / `resetOn` も同じ drain リスナーで発火するので、それだけを宣言した
+ * state も発火対象に載せる（docs/state-scan-design.md D11）。
  */
 function startWatch(stateElement) {
-    if (getWatchEntries(stateElement).size === 0 && getVolumeWatchEntries(stateElement).size === 0) {
+    if (getWatchEntries(stateElement).size === 0 && getVolumeWatchEntries(stateElement).size === 0 && !hasScanDrainWork(stateElement)) {
         return;
     }
     addActiveWatchStateElement(stateElement);
@@ -13819,7 +15048,7 @@ function startWatch(stateElement) {
  * 「DOM にバインドされていれば発火する」ままとし、§5-3 に制約として書く。
  */
 function primeComputedWatches(stateElement) {
-    // 宣言が 1 つ以上あることは startWatch が保証済み
+    // 宣言（watch か scan）が 1 つ以上あることは startWatch が保証済み。scan だけなら targets は空
     const targets = [];
     for (const entry of getWatchEntries(stateElement).values()) {
         if (isScalarComputed(stateElement, entry)) {
@@ -13898,84 +15127,158 @@ function fireWatchOnUpdateBatch(batch) {
             // ここも finally を通す: 宣言済みの state が切断されている間（active からは
             // 外れるが watchPaths は残る）の書き込みで台帳に旧値が積まれるため、
             // クリアを早期 return の外に置くと次のバッチどころか永久に残る。
+            // 書き込みの後・drain の前に切断された state の `on` scan の保留 reset も、このバッチでは
+            // 発火しないので捨てる（scan/eventReset.ts）。
+            discardSkippedScanResets(batch, activeStateElements);
             return;
         }
         const depth = consumeWatchChainDepth();
         if (depth > MAX_WATCH_CHAIN_DEPTH) {
-            // 打ち切るのは watch の発火のみ。値と binding 適用は巻き戻さない
-            // （伝播 hop 上限超過時の quarantine と同じ姿勢、§7-2）。
+            // 打ち切るのは同じリスナーの発火（`$scan` の from / resetOn と `$watch`）のみ。
+            // 値と binding 適用は巻き戻さない（伝播 hop 上限超過時の quarantine と同じ姿勢、§7-2）。
+            // `on` scan の保留 reset もこのバッチでは効かせない（`from` の scan が reset しないのと揃える）。
+            discardSkippedScanResets(batch, null);
             const paths = Array.from(batch, (absAddress) => absAddress.absolutePathInfo.pathInfo.path);
-            console.error(`[@wcstack/state] $watch chain depth limit exceeded; watch handlers for this batch were skipped.`, { maxDepth: MAX_WATCH_CHAIN_DEPTH, paths });
+            console.error(`[@wcstack/state] $watch chain depth limit exceeded; $scan folds and $watch handlers for this batch were skipped.`, { maxDepth: MAX_WATCH_CHAIN_DEPTH, paths });
             if (devtoolsSink !== null) {
                 devtoolsSink({ type: "state:watch-chain-limit", maxDepth: MAX_WATCH_CHAIN_DEPTH, paths });
             }
             return;
         }
-        // --- 収集フェーズ ---
-        const hits = [];
-        for (const absAddress of batch) {
-            // stateElement 参照で引く。AbsolutePathInfo は
-            // stateElement 単位でキャッシュされるので、同名 state が複数の rootNode に
-            // 居ても取り違えない（address/AbsolutePathInfo.ts）。他 state のアドレスは
-            // ここで自然に落ちる ＝ 越境しない（設計 D8）。
-            const stateElement = absAddress.absolutePathInfo.stateElement;
-            if (!activeStateElements.has(stateElement)) {
-                continue;
-            }
-            const path = absAddress.absolutePathInfo.pathInfo.path;
-            const own = getWatchEntries(stateElement).get(path);
-            const fromVolumes = getVolumeWatchEntries(stateElement).get(path);
-            if (typeof own === "undefined" && typeof fromVolumes === "undefined") {
-                continue;
-            }
-            const matched = typeof own === "undefined" ? [] : [own];
-            if (typeof fromVolumes !== "undefined") {
-                matched.push(...fromVolumes);
-            }
-            for (const entry of matched) {
-                let indexes = [];
-                if (entry.pathInfo.wildcardCount > 0) {
-                    if (absAddress.listIndex === null) {
-                        // ワイルドカードパスなのに行が特定できないヒット（リストの依存展開で載る
-                        // 中間アドレス等）。indexes を空のまま発火すると cur の解決（$resolve）が
-                        // 「indexes 不足」で throw し、例外隔離に落ちて console.error だけが残る。
-                        // 行が定まらない以上ハンドラに渡せる意味が無いので、収集段階で落とす。
-                        continue;
-                    }
-                    indexes = getScopedIndexes(absAddress.listIndex, entry.pathInfo.wildcardCount);
-                }
-                hits.push({ stateElement, entry, absAddress, indexes });
-            }
-        }
-        if (hits.length === 0) {
-            return;
-        }
-        hits.sort(compareHits);
-        // --- 発火フェーズ ---
-        beginWatchFiring(depth);
-        try {
-            for (const hit of hits) {
-                // 先行ハンドラが同期的に切断や `_state` 再 set を行い得るため、発火直前に
-                // 「まだ active か」「entry が現行 registry のものか」を再確認する。
-                if (!activeStateElements.has(hit.stateElement)) {
-                    continue;
-                }
-                const stillOwn = getWatchEntries(hit.stateElement).get(hit.entry.path) === hit.entry;
-                const stillVolume = getVolumeWatchEntries(hit.stateElement).get(hit.entry.path)?.includes(hit.entry) === true;
-                if (!stillOwn && !stillVolume) {
-                    continue;
-                }
-                fireOne(hit);
-            }
-        }
-        finally {
-            endWatchFiring();
-        }
+        // `$scan` の from / resetOn を `$watch` より先に畳んで書く（docs/state-scan-design.md D11 / D18）。
+        // scan の書き込みは次のバッチに乗るので、この drain の `$watch` の収集には影響しない。同じ drain の
+        // `$watch` ハンドラは書いた後の出力を読み、ハンドラが出力へ書いた値はそのまま残る。
+        commitScanPlans(planScansOnUpdateBatch(batch, activeStateElements, depth), activeStateElements, depth);
+        fireWatchHits(batch, activeStateElements, depth);
     }
     finally {
         // 旧値台帳はこの drain 限りのもの。次のバッチへ持ち越さない（§4-1）。
         clearPrevValues();
     }
+}
+/** バッチの `$watch` ヒットを集めて（収集フェーズ）、宣言順・indexes 昇順に発火する（発火フェーズ）。 */
+function fireWatchHits(batch, activeStateElements, depth) {
+    // --- 収集フェーズ ---
+    const hits = [];
+    for (const absAddress of batch) {
+        // stateElement 参照で引く。AbsolutePathInfo は
+        // stateElement 単位でキャッシュされるので、同名 state が複数の rootNode に
+        // 居ても取り違えない（address/AbsolutePathInfo.ts）。他 state のアドレスは
+        // ここで自然に落ちる ＝ 越境しない（設計 D8）。
+        const stateElement = absAddress.absolutePathInfo.stateElement;
+        if (!activeStateElements.has(stateElement)) {
+            continue;
+        }
+        const path = absAddress.absolutePathInfo.pathInfo.path;
+        const own = getWatchEntries(stateElement).get(path);
+        const fromVolumes = getVolumeWatchEntries(stateElement).get(path);
+        if (typeof own === "undefined" && typeof fromVolumes === "undefined") {
+            continue;
+        }
+        const matched = typeof own === "undefined" ? [] : [own];
+        if (typeof fromVolumes !== "undefined") {
+            matched.push(...fromVolumes);
+        }
+        for (const entry of matched) {
+            let indexes = [];
+            if (entry.pathInfo.wildcardCount > 0) {
+                if (absAddress.listIndex === null) {
+                    // ワイルドカードパスなのに行が特定できないヒット（リストの依存展開で載る
+                    // 中間アドレス等）。indexes を空のまま発火すると cur の解決（$resolve）が
+                    // 「indexes 不足」で throw し、例外隔離に落ちて console.error だけが残る。
+                    // 行が定まらない以上ハンドラに渡せる意味が無いので、収集段階で落とす。
+                    continue;
+                }
+                indexes = getScopedIndexes(absAddress.listIndex, entry.pathInfo.wildcardCount);
+            }
+            hits.push({ stateElement, entry, absAddress, indexes });
+        }
+    }
+    if (hits.length === 0) {
+        return;
+    }
+    hits.sort(compareHits);
+    const landed = selectWatchLandings(hits);
+    // --- 発火フェーズ ---
+    beginWatchFiring(depth);
+    try {
+        for (const hit of landed) {
+            // 先行ハンドラが同期的に切断や `_state` 再 set を行い得るため、発火直前に
+            // 「まだ active か」「entry が現行 registry のものか」を再確認する。
+            if (!activeStateElements.has(hit.stateElement)) {
+                continue;
+            }
+            const stillOwn = getWatchEntries(hit.stateElement).get(hit.entry.path) === hit.entry;
+            const stillVolume = getVolumeWatchEntries(hit.stateElement).get(hit.entry.path)?.includes(hit.entry) === true;
+            if (!stillOwn && !stillVolume) {
+                continue;
+            }
+            fireOne(hit);
+        }
+    }
+    finally {
+        endWatchFiring();
+    }
+}
+/**
+ * ワイルドカードの watch の行の着地を、いまのリストの位置 1 つにつき 1 つに絞る（`$scan` の `from` と
+ * 同じ選別 — watch/rowLanding.ts・#274）。`hits` は compareHits でソート済みで、戻り値もその順を保つ。
+ *
+ * 位置を引くにはリストを読むので、引くのは退役した行を含むヒットがあるか、同じ entry・同じ indexes の
+ * ヒットが並ぶ（ソート済みなので隣り合う）entry だけ。行の値を書くだけのバッチ（大多数）は
+ * WeakSet の引きだけで抜ける。
+ */
+function selectWatchLandings(hits) {
+    let entries = null;
+    for (let i = 0; i < hits.length; i++) {
+        const hit = hits[i];
+        if (hit.entry.pathInfo.wildcardCount === 0) {
+            continue;
+        }
+        const previous = hits[i - 1];
+        // ワイルドカードの hit は収集の段階で listIndex を持つものに限っている
+        if (hasRetiredRow(hit.absAddress.listIndex)
+            || (previous?.entry === hit.entry && isSameIndexes(previous.indexes, hit.indexes))) {
+            (entries ??= new Set()).add(hit.entry);
+        }
+    }
+    if (entries === null) {
+        return hits;
+    }
+    const dropped = new Set();
+    for (const entry of entries) {
+        // entry は 1 つの state 要素の registry に属するので、group の state 要素は 1 つ
+        const group = hits.filter((hit) => hit.entry === entry);
+        const stateElement = group[0].stateElement;
+        try {
+            stateElement.createState("readonly", (state) => {
+                const kept = new Set(selectLandedRows(state, entry.pathInfo, group));
+                for (const hit of group) {
+                    if (!kept.has(hit)) {
+                        dropped.add(hit);
+                    }
+                }
+            });
+        }
+        catch (e) {
+            // 位置を引く読み（リストのパスの getter など）が throw した。同じリストを通る cur も読めないので、
+            // この entry のヒットは発火せず、評価の失敗として 1 回報告する（他の watch は続行する）
+            reportWatchError(stateElement, entry.path, "evaluate", e);
+            for (const hit of group) {
+                dropped.add(hit);
+            }
+        }
+    }
+    return hits.filter((hit) => !dropped.has(hit));
+}
+/** 同じ entry の hit どうし（indexes の長さは等しい） */
+function isSameIndexes(a, b) {
+    for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) {
+            return false;
+        }
+    }
+    return true;
 }
 /**
  * 層 2（宣言順）→ 層 3（indexes 昇順）の順に比較する（設計書 §3-3）。
@@ -14049,6 +15352,407 @@ function readCurrentValue(state, entry, indexes) {
 }
 // 優先度で `$streams` の restart より先に固定する（設計書 §3-2 層 1）。import 順には依存しない。
 registerUpdateBatchListener(fireWatchOnUpdateBatch, WATCH_LISTENER_PRIORITY);
+
+/**
+ * scan/processScanDeclaration.ts
+ *
+ * `$scan: { <output>: { from | on, initial, fold, resetOn? } }` の解析と配線
+ * （docs/state-scan-design.md §1-2 / §2-4）。
+ *
+ * `_state` セッター上の位置が違う 3 段に分ける:
+ * 1. `parseScanDeclaration` — `value` だけを読む検査。世代を進める**前**に走るので、
+ *    ここで throw した再セットは要素を丸ごと旧世代に残す。
+ * 2. `materializeScanOutputs` / `subscribeScanEvents` — `clearEventTokenRegistry` の直後。
+ *    実体化を `_rebuildPathInfo` より前に置くのは、前世代の `from`（別 scan の出力の子）を
+ *    張り直すときに存在検査が偽の miss を出さないため。`on` の購読を `$on` より前に置くのは、
+ *    同じトークンで reducer → effect の順にするため（D11）。
+ * 3. `registerScans` — `processWatchDeclaration` の直前（`_pathSet` クリア後）。
+ */
+const INVALID = "[wcs/scan-declaration-invalid]";
+const COMPUTED = "[wcs/scan-source-computed]";
+const NO_RESET = Object.freeze([]);
+function entryLabel(name) {
+    return `${STATE_SCAN_NAME} entry "${name}"`;
+}
+/** 累積パス（`a` / `a.b` / `a.b.c`）のうち最初に getter であるものを返す */
+function findGetterOnPath(pathInfo, getterPaths) {
+    for (const path of pathInfo.cumulativePaths) {
+        if (getterPaths.has(path)) {
+            return path;
+        }
+    }
+    return null;
+}
+function computedMessage(label, field, path, getter) {
+    const where = getter === path
+        ? "is a getter"
+        : getter.includes(`${WILDCARD}${WILDCARD}`)
+            ? `is computed by the recursive getter "${getter}"`
+            : `is under the getter "${getter}"`;
+    return `${COMPUTED} ${label} ${field} "${path}" ${where}. A getter re-evaluates whenever its inputs change, ` +
+        `so folding it would count re-evaluations, not events. Fold the plain value the getter reads, or use "on" with an event token.${LINT_HINT}`;
+}
+function writeOnlyMessage(label, path, setter) {
+    const where = setter === path ? "is a setter without a getter" : `is under the setter without a getter "${setter}"`;
+    return `${INVALID} ${label} from "${path}" ${where}, so it always reads undefined and every fold would receive undefined. ` +
+        `Fold the plain value the setter writes, or use "on" with an event token.${LINT_HINT}`;
+}
+function assertValidScanPath(label, field, path) {
+    if (path.length === 0) {
+        raiseError(`${INVALID} ${label} "${field}" must be a non-empty state path.${LINT_HINT}`);
+    }
+    if (path.startsWith("$")) {
+        raiseError(`${INVALID} ${label} ${field} "${path}" must not start with "$" (reserved namespace).${LINT_HINT}`);
+    }
+    if (path.includes("@")) {
+        raiseError(`${INVALID} ${label} ${field} "${path}" must not contain "@" — there is a single state tree per root.${LINT_HINT}`);
+    }
+    if (path in Object.prototype) {
+        raiseError(`${INVALID} ${label} ${field} "${path}" must not be a property name inherited from Object.prototype (e.g. "__proto__", "constructor").${LINT_HINT}`);
+    }
+    const pathInfo = getPathInfo(path);
+    for (const segment of pathInfo.segments) {
+        if (segment.length === 0) {
+            raiseError(`${INVALID} ${label} ${field} "${path}" has an empty path segment.${LINT_HINT}`);
+        }
+    }
+    if (pathInfo.wildcardCount > MAX_WILDCARD_DEPTH) {
+        raiseError(`${INVALID} ${label} ${field} "${path}" exceeds the maximum wildcard depth (${MAX_WILDCARD_DEPTH}).`);
+    }
+    return pathInfo;
+}
+function collectStreamNames(state) {
+    const streams = state[STATE_STREAMS_NAME];
+    if (typeof streams !== "object" || streams === null) {
+        return new Set();
+    }
+    return new Set(Object.keys(streams));
+}
+function assertOutputName(name, getterPaths, setterPaths, streamNames) {
+    const label = entryLabel(name);
+    if (name.length === 0) {
+        raiseError(`${INVALID} ${STATE_SCAN_NAME} entry name must be a non-empty string.${LINT_HINT}`);
+    }
+    if (name.includes(DELIMITER) || name.includes(WILDCARD)) {
+        raiseError(`${INVALID} ${label} must be a flat property name ("${DELIMITER}" and "${WILDCARD}" are not allowed). The output is a property the runtime owns.${LINT_HINT}`);
+    }
+    if (name.startsWith("$")) {
+        raiseError(`${INVALID} ${label} must not start with "$" (reserved namespace).${LINT_HINT}`);
+    }
+    if (name in Object.prototype) {
+        raiseError(`${INVALID} ${label} must not be a property name inherited from Object.prototype (e.g. "__proto__", "constructor").${LINT_HINT}`);
+    }
+    if (getterPaths.has(name)) {
+        raiseError(`${INVALID} ${label} conflicts with a getter declared on the state.${LINT_HINT}`);
+    }
+    if (setterPaths.has(name)) {
+        raiseError(`${INVALID} ${label} conflicts with a setter declared on the state.${LINT_HINT}`);
+    }
+    if (streamNames.has(name)) {
+        raiseError(`${INVALID} ${label} conflicts with the ${STATE_STREAMS_NAME} entry of the same name — each output has exactly one owner.${LINT_HINT}`);
+    }
+}
+/**
+ * 出力名がメソッド（関数値のプロパティ）と衝突していないか（D7）。
+ *
+ * 実体化は既にある値を保持するので、衝突を通すと最初の `acc` がメソッドになり、fold の結果が
+ * メソッドを上書きする。`initial` 自身が関数で、その値が置かれている形だけは通す —
+ * 同じオブジェクトの再セットで、実体化済みの出力を見ているだけだから。
+ */
+function assertNoMethodConflict(name, functionValues, definition) {
+    const value = functionValues.get(name);
+    // fold・実体化・reset がこの出力に置いたことのある関数値なら、それは累積（同じオブジェクト・値のコピーの
+    // 再セット・D7）。どの世代のオブジェクトに書かれたかに依らない。名前だけで通すと、新しいオブジェクトの
+    // 同名の本物のメソッドを見逃す（§5-9 の C5-8 / C5-14）
+    if (functionValues.has(name) && value !== definition.initial && !wasPlacedOnOutput(name, value)) {
+        raiseError(`${INVALID} ${entryLabel(name)} conflicts with a method (a function-valued property) declared on the state. The output is a property the runtime owns.${LINT_HINT}`);
+    }
+}
+function parseSource(name, definition, eventTokenNames, getterPaths, writeOnlyPaths, recursion) {
+    const label = entryLabel(name);
+    const hasFrom = typeof definition.from !== "undefined";
+    const hasOn = typeof definition.on !== "undefined";
+    if (hasFrom === hasOn) {
+        raiseError(`${INVALID} ${label} must declare exactly one of "from" (a state path) or "on" (an event-token name).${LINT_HINT}`);
+    }
+    if (hasOn) {
+        const tokenName = definition.on;
+        if (typeof tokenName !== "string" || tokenName.length === 0) {
+            raiseError(`${INVALID} ${label} "on" must be a non-empty event-token name.${LINT_HINT}`);
+        }
+        if (!eventTokenNames.has(tokenName)) {
+            raiseError(`${INVALID} ${label} on "${tokenName}" is not declared in ${STATE_EVENT_TOKENS_NAME}.${didYouMean(tokenName, eventTokenNames)}${LINT_HINT}`);
+        }
+        return { kind: "event", tokenName };
+    }
+    const path = definition.from;
+    if (typeof path !== "string") {
+        raiseError(`${INVALID} ${label} "from" must be a state path string.${LINT_HINT}`);
+    }
+    const pathInfo = assertValidScanPath(label, "from", path);
+    // `**` getter の展開形（`nodes.*.total`）とその値の内側も getter。字面の getterPaths には `**` の形しか
+    // 載らないので、再帰レジストリで引く（pathDiagnostics の checkDeclaredPath と同じ判定）。
+    // 展開形は必ず `*` を含むので `resetOn` はワイルドカードの検査で先に落ちる
+    const getter = findGetterOnPath(pathInfo, getterPaths) ?? recursion?.recursiveGetterOwning(path) ?? null;
+    if (getter !== null) {
+        raiseError(computedMessage(label, "from", path, getter));
+    }
+    // getter の無い setter は読むと常に undefined（`resetOn` は値を読まない引き金なので通す）
+    const setter = findGetterOnPath(pathInfo, writeOnlyPaths);
+    if (setter !== null) {
+        raiseError(writeOnlyMessage(label, path, setter));
+    }
+    if (path === name || path.startsWith(name + DELIMITER)) {
+        raiseError(`${INVALID} ${label} from "${path}" reads the entry's own output — the scan would fold its own writes forever.${LINT_HINT}`);
+    }
+    return { kind: "path", path, pathInfo };
+}
+function parseResetOn(name, raw, source, getterPaths) {
+    if (typeof raw === "undefined") {
+        return NO_RESET;
+    }
+    const label = entryLabel(name);
+    if (!Array.isArray(raw)) {
+        raiseError(`${INVALID} ${label} "resetOn" must be an array of state paths.${LINT_HINT}`);
+    }
+    const paths = [];
+    for (const item of raw) {
+        if (typeof item !== "string") {
+            raiseError(`${INVALID} ${label} "resetOn" must contain only state path strings.${LINT_HINT}`);
+        }
+        const pathInfo = assertValidScanPath(label, "resetOn", item);
+        if (pathInfo.wildcardCount > 0) {
+            raiseError(`${INVALID} ${label} resetOn "${item}" must not contain "${WILDCARD}" — a reset returns the whole output to "initial".${LINT_HINT}`);
+        }
+        const getter = findGetterOnPath(pathInfo, getterPaths);
+        if (getter !== null) {
+            raiseError(computedMessage(label, "resetOn", item, getter));
+        }
+        if (source.kind === "path" && item === source.path) {
+            raiseError(`${INVALID} ${label} resetOn "${item}" is the entry's own "from" — every change would reset instead of fold.${LINT_HINT}`);
+        }
+        // 子孫は死に設定: `from` を書くと依存展開で子孫も同じバッチに載り、reset が毎回勝つ。
+        // 祖先（`from: "items.*.qty"` × `resetOn: ["items"]`）は「親の差し替えで作り直す」として通す
+        if (source.kind === "path" && item.startsWith(source.path + DELIMITER)) {
+            raiseError(`${INVALID} ${label} resetOn "${item}" sits under the entry's own "from" "${source.path}" — every write of "from" also lands it, so the reset would win every time and nothing would fold.${LINT_HINT}`);
+        }
+        paths.push(item);
+    }
+    return paths;
+}
+/**
+ * scan 出力を介した参照の検査（エントリを跨ぐもの）:
+ * - `resetOn` が scan 出力（自他とも）を読む ＝ 累積が累積を消すフィードバック。
+ * - `from` の根を辿って scan 同士が循環する ＝ 互いの書き込みで永久に畳み合う。
+ *   各 scan の `from` は 1 本なので、辿る先は高々 1 つ（関数グラフ）。
+ */
+function assertNoOutputReferences(entries) {
+    const outputs = new Set(entries.map((entry) => entry.name));
+    const next = new Map();
+    for (const entry of entries) {
+        for (const path of entry.resetOn) {
+            const root = getPathInfo(path).segments[0];
+            if (outputs.has(root)) {
+                raiseError(`${INVALID} ${entryLabel(entry.name)} resetOn "${path}" reads the ${STATE_SCAN_NAME} output "${root}" — a reset driven by an accumulator is a feedback loop. Reset on the plain inputs instead.${LINT_HINT}`);
+            }
+        }
+        if (entry.source.kind === "path") {
+            const root = entry.source.pathInfo.segments[0];
+            if (outputs.has(root)) {
+                next.set(entry.name, root);
+            }
+        }
+    }
+    for (const start of next.keys()) {
+        const chain = [start];
+        let current = next.get(start);
+        while (typeof current !== "undefined" && chain.length <= outputs.size) {
+            if (current === start) {
+                raiseError(`${INVALID} ${STATE_SCAN_NAME} entries ${[...chain, start].map((n) => `"${n}"`).join(" → ")} feed each other through "from" — each fold would re-trigger the next forever.${LINT_HINT}`);
+            }
+            chain.push(current);
+            current = next.get(current);
+        }
+    }
+}
+/**
+ * `$scan` 宣言の検査（`value` だけを読む）。宣言が無い・空なら null。
+ *
+ * getter / setter の判定は `value` の property descriptor から直接取る（`_getterPaths` は
+ * この時点ではまだ旧世代のもの）。`$streams` 名との衝突も `value` の宣言から見る。
+ * `recursion` は `value` から作った `$recursion` のレジストリ（宣言が無ければ null）。
+ */
+function parseScanDeclaration(state, eventTokenNames, recursion = null) {
+    const declared = state[STATE_SCAN_NAME];
+    if (typeof declared === "undefined") {
+        return null;
+    }
+    if (typeof declared !== "object" || declared === null || Array.isArray(declared)) {
+        raiseError(`${INVALID} ${STATE_SCAN_NAME} must be an object mapping output names to scan definitions ({ from | on, initial, fold, resetOn? }).${LINT_HINT}`);
+    }
+    const getterPaths = new Set();
+    const setterPaths = new Set();
+    const writeOnlyPaths = new Set();
+    const functionValues = new Map();
+    for (const [key, descriptor] of Object.entries(getAllPropertyDescriptors(state))) {
+        if (typeof descriptor.get === "function") {
+            getterPaths.add(key);
+        }
+        else if (typeof descriptor.set === "function") {
+            writeOnlyPaths.add(key);
+        }
+        if (typeof descriptor.set === "function") {
+            setterPaths.add(key);
+        }
+        if (typeof descriptor.value === "function") {
+            functionValues.set(key, descriptor.value);
+        }
+    }
+    const streamNames = collectStreamNames(state);
+    const entries = [];
+    let order = 0;
+    for (const [name, def] of Object.entries(declared)) {
+        assertOutputName(name, getterPaths, setterPaths, streamNames);
+        // 配列もオブジェクトとして読まない（`$scan` 自体の検査と同じ。静的検証も同じ文言で拾う）
+        if (typeof def !== "object" || def === null || Array.isArray(def)) {
+            raiseError(`${INVALID} ${entryLabel(name)} must be an object ({ from | on, initial, fold, resetOn? }).${LINT_HINT}`);
+        }
+        const definition = def;
+        assertNoMethodConflict(name, functionValues, definition);
+        const source = parseSource(name, definition, eventTokenNames, getterPaths, writeOnlyPaths, recursion);
+        if (!("initial" in definition)) {
+            raiseError(`${INVALID} ${entryLabel(name)} requires "initial" — the seed of the accumulator and the value "resetOn" returns to.${LINT_HINT}`);
+        }
+        if (typeof definition.fold !== "function") {
+            raiseError(`${INVALID} ${entryLabel(name)} fold must be a function.${LINT_HINT}`);
+        }
+        const resetOn = parseResetOn(name, definition.resetOn, source, getterPaths);
+        entries.push({
+            name,
+            source,
+            fold: definition.fold,
+            initial: definition.initial,
+            resetOn,
+            order: order++,
+        });
+    }
+    assertNoOutputReferences(entries);
+    return entries.length > 0 ? entries : null;
+}
+/**
+ * 出力の実体化（設計書 D7）。未定義なら `initial` を置き、既に値があれば保持する
+ * （同じオブジェクトの再セット・SSR ハイドレーションで累積を失わない）。plain な配列とオブジェクトは
+ * 複製して置く — 出力が `initial` の間に子パスへ書いても宣言の `initial` を書き換えない（scan/initialValue.ts）。
+ */
+function materializeScanOutputs(state, entries) {
+    for (const entry of entries) {
+        if (!(entry.name in state)) {
+            const value = cloneInitial(entry.initial);
+            state[entry.name] = value;
+            recordOutputValue(entry.name, value);
+        }
+    }
+}
+function createEventFold(entry) {
+    const fold = entry.fold;
+    return (state, event, ...indexes) => {
+        const proxy = state;
+        // 報告を「出力を読めなかった」「fold が throw した」「出力を書けなかった」で分ける
+        let failure = "read-output";
+        try {
+            const current = proxy[entry.name];
+            failure = "threw";
+            // `resetOn` の書き込みより後の出来事は、reset 後の出力に畳む（scan/eventReset.ts）
+            const reset = hasPendingScanReset(entry);
+            // reset 後の出力から畳む。出力が既に initial と同じ値ならそのまま、違えば複製から（宣言の initial は渡さない）
+            const acc = reset && !isSameAsInitial(current, entry.initial) ? cloneInitial(entry.initial) : current;
+            const next = fold(acc, event, ...indexes);
+            if (isThenable(next)) {
+                // 保留は残す — drain が出力を initial に戻す
+                reportScanThenable(entry.name, next);
+                return;
+            }
+            if (!Object.is(next, current)) {
+                failure = "write";
+                proxy[entry.name] = next;
+                recordOutputValue(entry.name, next);
+            }
+            // 保留は書き込みが通ってから消す。書き込みが throw したら残し、drain が initial に戻す（§2-2）
+            if (reset) {
+                consumePendingScanReset(entry);
+            }
+        }
+        catch (error) {
+            // 後続の subscriber（同じトークンの `$on`）を巻き添えにしない
+            reportScanError(entry.name, error, failure);
+        }
+    };
+}
+/**
+ * `on` の scan を event-token の subscriber として登録する（設計書 §2-2）。
+ * 購読の寿命は `$on` と同じ（`_state` の再セットで `clearEventTokenRegistry` の後に張り直す。
+ * 切断では消えないので、ルート `<wcs-state>` の再接続の後も畳み続ける — Issue #273）。
+ */
+function subscribeScanEvents(stateElement, entries) {
+    for (const entry of entries) {
+        if (entry.source.kind === "event") {
+            getOrCreateEventToken(stateElement, entry.source.tokenName).subscribe(createEventFold(entry));
+        }
+    }
+}
+/**
+ * registry を外す（`_state` 再セットで作り直す前）。旧宣言の `on` scan に立っていた保留 reset は、
+ * 新しい宣言の entry（別のオブジェクト）へ引き継ぐ候補として返し、旧 entry からは消す
+ * （残すと誰にも使われず、保留の数 — scan/eventReset.ts の捨てる走査のゲート — だけが戻らない）。
+ */
+function unregisterScans(stateElement) {
+    const carry = new Map();
+    const registry = getScanRegistry(stateElement);
+    if (typeof registry !== "undefined") {
+        for (const entry of registry.entries) {
+            if (consumePendingScanReset(entry)) {
+                carry.set(entry.name, entry.resetOn);
+            }
+        }
+    }
+    clearScanRegistry(stateElement);
+    return carry;
+}
+/**
+ * registry を作り、`from` / `resetOn` を依存グラフへ登録する。`from` パスの集合
+ * （旧値キャプチャのゲート）を返す。無ければ null。
+ *
+ * 依存グラフ登録が要る理由は `$watch` と同じ（docs/state-watch-hook-design.md §8）:
+ * `setPathInfo` はバインドからしか呼ばれないので、宣言しただけでは祖先への書き込みが
+ * このパスへ展開されず、バッチに載らない。
+ *
+ * `carry`（unregisterScans の戻り値）の保留 reset は、同じ出力名の `on` scan が、まだ drain されていない
+ * 書き込み（updater のキューに積まれているパス）を新旧どちらの `resetOn` にも持つときだけ引き継ぐ（D6）。
+ * 旧宣言の保留は発火対象の state への書き込みでしか立たないので、「enqueue の時点で立つ」契約は保たれる。
+ * 引き継がないと、書き込みより後のイベントが reset されていない出力に畳まれ、drain でも戻らない
+ * （同じバッチの `from` の scan は reset される）。
+ */
+function registerScans(stateElement, entries, carry) {
+    const registry = setScanRegistry(stateElement, entries);
+    for (const entry of entries) {
+        const carried = carry.get(entry.name);
+        if (entry.source.kind !== "event" || typeof carried === "undefined") {
+            continue;
+        }
+        if (entry.resetOn.some((path) => carried.includes(path) && getUpdater().hasQueuedPath(stateElement, path))) {
+            markPendingScanReset(entry);
+        }
+    }
+    const fromPaths = new Set();
+    for (const path of registry.byFromPath.keys()) {
+        fromPaths.add(path);
+        stateElement.setPathInfo(path, "prop", "scan");
+    }
+    for (const path of registry.byResetPath.keys()) {
+        stateElement.setPathInfo(path, "prop", "scan");
+    }
+    return fromPaths.size > 0 ? fromPaths : null;
+}
 
 function getterFn(name) {
     return function () {
@@ -15303,13 +17007,18 @@ function _getByAddressWithCache(target, address, receiver, handler, stateElement
     const absPathInfo = getAbsolutePathInfo(stateElement, address.pathInfo);
     const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
     const cacheEntry = getCacheEntryByAbsoluteStateAddress(absAddress);
-    if (cacheEntry !== null && cacheEntry.dirty === false) {
+    // 世代印（issue #258 の X10）。絶対アドレスは再セットを跨いで同一なので、dirty だけでは
+    // 旧世代の値と新世代の値を見分けられない。世代の違う項目は単に miss として再評価し、
+    // 下で新しい印を付けて上書きする（列挙も掃き出しも要らず、どのアドレス形状でも自己修復する）。
+    const generation = stateElement.stateGeneration;
+    if (cacheEntry !== null && cacheEntry.dirty === false && cacheEntry.generation === generation) {
         return cacheEntry.value;
     }
     const value = _getByAddress(target, address, receiver, handler, stateElement);
     setCacheEntryByAbsoluteStateAddress(absAddress, {
         value: value,
-        dirty: false
+        dirty: false,
+        generation: generation
     });
     return value;
 }
@@ -15428,7 +17137,7 @@ function getListIndexByIndexes(target, receiver, handler, pathInfo, indexes) {
         const wildcardParentPathInfo = pathInfo.wildcardParentPathInfos[i];
         const wildcardAddress = createStateAddress(wildcardParentPathInfo, listIndex);
         const tmpValue = getByAddress(target, wildcardAddress, receiver, handler);
-        const listIndexes = getListIndexesByList(tmpValue);
+        const listIndexes = resolveListIndexesByList(tmpValue, listIndex);
         if (listIndexes == null) {
             raiseError(`ListIndexes not found: ${wildcardParentPathInfo.path}`);
         }
@@ -16094,17 +17803,19 @@ function walkDependency(stateElement, startAddress, staticDependency, dynamicDep
  * - getter/setter経由のスコープ切り替えも考慮した設計
  */
 /**
- * `$watch` の `prev` 台帳へ旧値を記録する（docs/state-watch-hook-design.md §4-1）。
+ * 宣言済みパスの `prev` 台帳へ旧値を記録する。台帳を読むのは `$watch`
+ * （docs/state-watch-hook-design.md §4-1）と `$scan` の `from`（docs/state-scan-design.md §2-1）。
  *
- * same-value guard が既に読んだ旧値だけを使い、watch のための追加読みはしない。
- * `$watch` 未宣言時のコストは `watchPaths` の null 判定 1 個に収める（§10）。
+ * same-value guard が既に読んだ旧値だけを使い、そのための追加読みはしない。
+ * どちらも未宣言なら `watchPaths` / `scanPaths` の null 判定 2 個で抜ける（watch 設計書 §10）。
  */
-function recordWatchPrevValue(stateElement, path, absAddress, oldValue, hasOldValue) {
-    const watchPaths = stateElement.watchPaths;
-    if (watchPaths == null || !hasOldValue) {
+function recordDeclaredPrevValue(stateElement, path, absAddress, oldValue, hasOldValue) {
+    if (!hasOldValue) {
         return;
     }
-    if (watchPaths.has(path)) {
+    const watchPaths = stateElement.watchPaths;
+    const scanPaths = stateElement.scanPaths;
+    if (watchPaths?.has(path) === true || scanPaths?.has(path) === true) {
         recordPrevValue(absAddress, oldValue);
     }
 }
@@ -16112,12 +17823,22 @@ function recordWatchPrevValue(stateElement, path, absAddress, oldValue, hasOldVa
 // binding 経由の書き込みは呼び出し元の dynamic scope から context を引き継ぎ、
 // binding 外からの API update は新しい transaction を開始する（設計書 §4 規則 1）。
 // 依存 walk で enqueue される派生アドレスも同じ書き込みの因果に属する。
-function notifyWrite(address, absAddress, receiver, handler, keyedMergePath) {
+function notifyWrite(address, absAddress, receiver, handler, keyedMergePath, cacheable) {
     const propagationContext = config.enablePropagationContext
         ? (getCurrentPropagationContext() ?? beginPropagationTransaction(-1))
         : null;
     const updater = getUpdater();
     updater.enqueueAbsoluteAddress(absAddress, propagationContext);
+    // 書いたアドレス自身のキャッシュを、依存ウォークより先に無効化する（#274）。ウォークはリスト展開
+    // （list → list.*）と動的依存の親リスト展開で、書いたパスの値を読む。ワイルドカードを含むリストパス
+    // （`groups.*.items`）はキャッシュ対象なので、無効化しないと書き込み前の配列がヒットし、基準との差分が
+    // 「変化なし」になって置き換える前の行だけを展開する（長い配列に置き換えた分の行が着地しない）。
+    // 依存先は下の callback が訪問のたびに読む前に無効化するが、開始アドレスは callback が飛ばす
+    // （二重 enqueue の防止）のでここで済ませる — 開始アドレスも callback で無効化する $postUpdate と同じ順序。
+    // 値は直後の commitWriteCache が載せ直す。
+    if (cacheable) {
+        dirtyCacheEntryByAbsoluteStateAddress(absAddress);
+    }
     // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
     walkDependency(handler.stateElement, address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "new", (depAddress) => {
         // キャッシュを無効化（ダーティ）
@@ -16158,10 +17879,13 @@ function commitWriteCache(stateElement, path, absAddress, value, cacheable) {
     }
     setCacheEntryByAbsoluteStateAddress(absAddress, {
         value: value,
-        dirty: false
+        dirty: false,
+        // 読み側（getByAddress）と同じ世代印を付ける — ヒットになるのは世代が一致する項目だけ
+        // （cache/types.ts の `generation`）。
+        generation: stateElement.stateGeneration
     });
 }
-function _setByAddress(target, address, absAddress, value, receiver, handler, keyedMergePath) {
+function _setByAddress(target, address, absAddress, value, receiver, handler, keyedMergePath, cacheable) {
     try {
         if (address.pathInfo.path in target) {
             if (handler.stateElement.setterPaths.has(address.pathInfo.path)) {
@@ -16204,10 +17928,10 @@ function _setByAddress(target, address, absAddress, value, receiver, handler, ke
         }
     }
     finally {
-        notifyWrite(address, absAddress, receiver, handler, keyedMergePath);
+        notifyWrite(address, absAddress, receiver, handler, keyedMergePath, cacheable);
     }
 }
-function _setByAddressWithSwap(target, address, absAddress, value, receiver, handler, keyedMergePath) {
+function _setByAddressWithSwap(target, address, absAddress, value, receiver, handler, keyedMergePath, cacheable) {
     // elementsの場合はswapInfoを準備
     let parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
     let swapInfo = getSwapInfoByAddress(parentAddress);
@@ -16220,7 +17944,7 @@ function _setByAddressWithSwap(target, address, absAddress, value, receiver, han
         setSwapInfoByAddress(parentAddress, swapInfo);
     }
     try {
-        return _setByAddress(target, address, absAddress, value, receiver, handler, keyedMergePath);
+        return _setByAddress(target, address, absAddress, value, receiver, handler, keyedMergePath, cacheable);
     }
     finally {
         const index = swapInfo.value.indexOf(value);
@@ -16388,7 +18112,7 @@ function setByAddressCore(target, address, value, receiver, handler, keyedMergeP
                     hasOldValue: devHasOldValue,
                 });
             }
-            recordWatchPrevValue(stateElement, path, absAddress, devOldValue, devHasOldValue);
+            recordDeclaredPrevValue(stateElement, path, absAddress, devOldValue, devHasOldValue);
             let dispatchedExport = false;
             try {
                 if (key === undefined) {
@@ -16409,7 +18133,7 @@ function setByAddressCore(target, address, value, receiver, handler, keyedMergeP
                 return Reflect.set(parentValue, key, value);
             }
             finally {
-                notifyWrite(address, absAddress, receiver, handler, keyedMergePath);
+                notifyWrite(address, absAddress, receiver, handler, keyedMergePath, cacheable);
                 if (dispatchedExport) {
                     // Exported row paths are cacheable but absent from getterPaths. The
                     // accessor may normalize or reject the input; never pin that input.
@@ -16454,13 +18178,13 @@ function setByAddressCore(target, address, value, receiver, handler, keyedMergeP
             hasOldValue: devHasOldValue,
         });
     }
-    recordWatchPrevValue(stateElement, path, absAddress, devOldValue, devHasOldValue);
+    recordDeclaredPrevValue(stateElement, path, absAddress, devOldValue, devHasOldValue);
     try {
         if (isSwappable) {
-            return _setByAddressWithSwap(target, address, absAddress, value, receiver, handler, keyedMergePath);
+            return _setByAddressWithSwap(target, address, absAddress, value, receiver, handler, keyedMergePath, cacheable);
         }
         else {
-            return _setByAddress(target, address, absAddress, value, receiver, handler, keyedMergePath);
+            return _setByAddress(target, address, absAddress, value, receiver, handler, keyedMergePath, cacheable);
         }
     }
     finally {
@@ -16912,7 +18636,7 @@ function getAll(target, prop, receiver, handler) {
  *
  * 設計ポイント:
  * - ワイルドカードや多重ループ、ネストした配列バインディングに柔軟に対応
- * - getListIndexesByListで各階層のリストインデックス集合を取得
+ * - resolveListIndexesByListで各階層のリストインデックス集合を取得
  * - エラー時はraiseErrorで例外を投げる
  */
 function getListIndex(target, resolvedAddress, receiver, handler) {
@@ -16933,7 +18657,7 @@ function getListIndex(target, resolvedAddress, receiver, handler) {
                     raiseError(`wildcardParentPathInfo is null: ${resolvedAddress.pathInfo.path}`);
                 const wildcardParentAddress = createStateAddress(wildcardParentPathInfo, parentListIndex);
                 const wildcardParentValue = getByAddress(target, wildcardParentAddress, receiver, handler);
-                const wildcardParentListIndexes = getListIndexesByList(wildcardParentValue) ??
+                const wildcardParentListIndexes = resolveListIndexesByList(wildcardParentValue, parentListIndex) ??
                     raiseError(`ListIndex not found: ${wildcardParentPathInfo.path}`);
                 const wildcardIndex = resolvedAddress.wildcardIndexes[i] ??
                     raiseError(`wildcardIndex is null: ${resolvedAddress.pathInfo.path}`);
@@ -18220,6 +19944,10 @@ function validateVolumeDeclarations(rootStateElement, mountPath, volumeState) {
     if (typeof volumeState["$streams"] !== "undefined") {
         raiseError(`Volume "${mountPath}" declares $streams, which volumes do not support yet. Declare the stream on the root state.`);
     }
+    // $scan も未対応（docs/state-scan-design.md D8）。from / on はルートのツリーと token を前提にする
+    if (typeof volumeState["$scan"] !== "undefined") {
+        raiseError(`Volume "${mountPath}" declares $scan, which volumes do not support yet. Declare the scan on the root state.`);
+    }
     // $recursion も同じく未対応。宣言だけ受理されたように見えて、どの深さも解決しない
     // 状態を作らない（docs/state-recursive-path-impl-plan.md §7）。
     if (typeof volumeState[STATE_RECURSION_NAME] !== "undefined") {
@@ -18476,6 +20204,20 @@ class State extends HTMLElementBase {
     // 静的子展開はこの集合の subtree に限定される。追加のみ・クリアしない（安全側）。
     _indexDependentGetterPaths = new Set();
     _initialized = false;
+    /**
+     * 初期化（`_initialize`）が失敗した（#257）。`_initialized` の裏返しではない —
+     * 「まだ初期化していない」と「もう初期化できない」を取り違えると、復旧不能の
+     * 要素に `setInitialState` が効いたように見える。真にするのは
+     * `_failInitializeLoudly` だけ。
+     */
+    _initializeFailed = false;
+    /**
+     * この接続サイクルの失敗は**もう着地した**（#257）。設定エラーの fail-fast
+     * （`_failInitialization` と `initializeMountScope` の catch）は自分で promise を
+     * 解決してから raise する — connectedCallbackPromise を**解決**する側のクラスなので、
+     * 下の loud な着地（reject ＋ 診断）に載せ替えると意味論が変わる。接続ごとに畳む。
+     */
+    _initializationLanded = false;
     _initializePromise;
     _resolveInitialize = null;
     _connectedCallbackPromise;
@@ -18496,8 +20238,40 @@ class State extends HTMLElementBase {
     _dynamicDependency = new Map();
     _staticDependency = new Map();
     _pathSet = new Set();
+    /**
+     * state の世代（issue #258 の X10）。`_state` の差し替えごとに 1 つ進み、キャッシュ項目の
+     * 印になる（cache/types.ts の `generation`）。`_version`（更新サイクルの番号）とは別の
+     * カウンタで、増える条件が違う — 再セットは世代だけを進める
+     * （`__tests__/integration.stateGenerationReset.test.ts` の
+     * 「再セットは世代だけを進め、version は動かさない」が固定する）。
+     */
+    _stateGeneration = 0;
+    /**
+     * この要素が受け取った `setPathInfo` の台帳（issue #258 の X7）。パス → 種別と呼び出し元。
+     *
+     * `_pathSet` / `_listPaths` / `_elementPaths` は再セットでクリアされるが、それらを登録した
+     * バインドは生き残る（再セットは DOM を作り直さない）。台帳が空のままだと依存ウォークが
+     * `items` をリストとして展開できず、全リスト書き込みが「非リストのアドレスにワイルドカードを
+     * 展開できない」で恒久的に throw する（値と DOM は追従するが、書き込みのたびに投げ続ける）。
+     * クリアのあと、この台帳から作り直す（`_rebuildPathInfo`）。
+     *
+     * `source === "internal"`（再帰の生成アクセサ・ボリュームのツリーアクセサ）は載せない。
+     * あれらは生やした機構が新しい世代で登録し直す（recursion/registry.ts の `_define`）。
+     */
+    _pathRegistrations = new Map();
+    /**
+     * これまでのどの世代かで再帰レジストリが実体化した具体パス（`nodes.*.total` 等）の累積。
+     * 再セットのたびに `forgetGenerated` の戻り値を足し、`_rebuildPathInfo` の除外に使う。
+     *
+     * 除外は**世代を跨いで累積する**。読みを挟まない連続した再セットでも、生成アクセサの具体パスを
+     * 指す静的辺（`nodes.*` → `nodes.*.total`）が戻らないことは、
+     * `__tests__/integration.stateGenerationReset.test.ts` の
+     * 「読みを挟まない 3 連続の再セットで静的辺が戻らない」が固定する。
+     */
+    _generatedPaths = new Set();
     // `$watch` 宣言の監視対象パス。宣言が無ければ null（setByAddress のゼロコスト契約）
     _watchPaths = null;
+    _scanPaths = null;
     _version = 0;
     _rootNode = null;
     _boundComponent = null;
@@ -18549,26 +20323,53 @@ class State extends HTMLElementBase {
     set _state(value) {
         // 旧世代のデータ。再帰の生成物（辺・キャッシュ）を忘れるとき、台帳を辿る起点になる
         const previousState = this.__state;
-        // 順序: **純検証をすべて** → 旧世代の後始末 → 差し替え → 再収集。
-        // `value` しか読まない検証（$recursion の宣言とレジストリの構築・$commandTokens・$eventTokens）は
-        // 何かを書き換える前に全部済ませる。どれかが throw すれば要素は丸ごと旧世代に留まる
-        // （旧 state・旧レジストリ・旧世代の辺とキャッシュ・トークン名がそのまま）。後始末を先に
-        // すると「レジストリは新・own 生成アクセサと辺は消えた・`__state` は旧」という半端な状態で
-        // throw する（第 4 サイクルの再検証で実測 — 別アンカー＋不正な $commandTokens で旧世代の
-        // 集計が無言で消えた）。
+        // 順序: **`value` しか読まない検証** → 旧世代の後始末 → 世代を進める → 差し替え → 再収集。
+        //
+        // 宣言の検証は世代更新を挟んで 2 群に割れる。
+        //  - 世代を進める**前**に走る 5 つ: `$recursion`（宣言とレジストリの構築）・`$commandTokens`・
+        //    `$eventTokens`・`$listKeys`・`$scan`。どれも `value` しか読まないのでここへ置ける。この 5 つで
+        //    throw した再セットは世代を進めず、`__state` も旧世代の読みもそのまま残る。
+        //  - 世代を進めた**後**に走る 3 つ: `$on`（下・`_eventTokenNames` と token registry を要る）・
+        //    `$streams`・`$watch`。この 3 つで throw した再セットは、世代が進んで `__state` も
+        //    新しくなった後に落ちる。
+        // throw の後に何が残るかは検証ごとに違う。散文で言い直さない —
+        // `__tests__/integration.stateGenerationReset.test.ts` が 1 つずつ固定する。
+        //
+        // 後の 2 つがこの位置に要る理由（同じファイルが 1 本ずつ固定する）:
+        //  - `$streams` の衝突検査は**新しい** value から集め直した `getterPaths` / `setterPaths` を
+        //    見る（旧 state だけが持つ getter は、新 state の同名 `$streams` と衝突しない）。
+        //  - `$watch` の存在検査は**新しい** `__state` を見る（新 state にだけあるパスの watch は
+        //    `wcs/watch-path-missing` にならない）。
         const recursionSpec = processRecursionDeclaration(value);
         const recursionRegistry = recursionSpec === null ? null : new RecursionRegistry(recursionSpec, value);
         const commandTokenNames = processCommandTokensDeclaration(value);
         const eventTokenNames = processEventTokensDeclaration(value);
+        // $listKeys の検証は `value` しか読まない（要素にも旧世代にも触れない）ので、ここで済ませる。
+        // 反映は下の所定位置のまま（クリアと再収集の並びは変えない）。
+        const listKeys = processListKeysDeclaration(value);
+        // $scan の検証も `value` と宣言済みトークン名しか読まない（docs/state-scan-design.md §1-2）。
+        // `**` getter の展開形を from に書いた形を落とすため、`value` から作った再帰レジストリも渡す（D5）。
+        // fold が関数を返す出力は、その出力に置いた関数値をメソッド衝突と見なさない（scan/initialValue.ts の記録・D7）。
+        const scanEntries = parseScanDeclaration(value, eventTokenNames, recursionRegistry);
         // 旧世代の生成アクセサ（own）・それを指す依存辺・評価結果のキャッシュを忘れてから
         // 差し替える（recursion/generation.ts）。own の生成アクセサは、同じオブジェクトを再セットする
         // ときに下の `getStateInfo` が `getterPaths` へ拾い直す前に消えていなければならない。
+        // 前世代の再帰レジストリが生やした具体パスは `_generatedPaths` に積む。経路情報の作り直し
+        // （`_rebuildPathInfo`）はそこを除く — 新しい世代ではまだ実体化されていないため。除外が
+        // 世代を跨いで累積することは `_generatedPaths` の注記（と、そこが挙げるテスト）。
         if (this._recursionRegistry !== null) {
-            this._recursionRegistry.forgetGenerated(this, previousState);
+            for (const path of this._recursionRegistry.forgetGenerated(this, previousState)) {
+                this._generatedPaths.add(path);
+            }
         }
         this._recursionRegistry = recursionRegistry;
         this._commandTokenNames = commandTokenNames;
         this._eventTokenNames = eventTokenNames;
+        // 世代を進める（issue #258 の X10）。位置は「旧世代の後始末（forgetGenerated）の**後**・
+        // `__state` の差し替えの**前**」。上の 5 つ（`value` しか読まない検証）で throw した再セットは
+        // ここへ到達しないので、要素は丸ごと旧世代に留まる — 世代も、旧世代のキャッシュが返す読みも
+        // 据え置き（同ファイルの「throw する再セットは世代を進めない」4 本が固定する）。
+        this._stateGeneration++;
         this.__state = value;
         // $updatedCallback の有無を state セット時に確定しておく（in はプロトタイプ
         // チェーンも見る・getter を評価しない）。drain 側はこのフラグで更新アドレスの
@@ -18580,6 +20381,12 @@ class State extends HTMLElementBase {
         this._hasErrorCallback = STATE_ERROR_CALLBACK_NAME in value;
         // 再 set 時に二重 subscribe しないよう registry をクリアしてから $on を配線し直す。
         clearEventTokenRegistry(this);
+        // $scan（docs/state-scan-design.md §2-4）: 出力の実体化は `_rebuildPathInfo` より前、
+        // `on` の購読は `$on` より前（同じトークンでは reducer → effect の順、D11）。
+        if (scanEntries !== null) {
+            materializeScanOutputs(value, scanEntries);
+            subscribeScanEvents(this, scanEntries);
+        }
         processOnDeclaration(this, value, this._eventTokenNames);
         this._listPaths.clear();
         this._elementPaths.clear();
@@ -18604,7 +20411,7 @@ class State extends HTMLElementBase {
         processStreamsDeclaration(this, value);
         // $listKeys: 宣言が無ければ null のままで、setByAddress のキー突合経路には
         // 一切入らない（docs/state-list-key-design.md §7-1）。再 set で必ず置き換える。
-        this._listKeys = processListKeysDeclaration(value);
+        this._listKeys = listKeys;
         // $recursion: 宣言が無ければ null のままで、読みのホットパスには一切入らない。
         // レジストリの構築・旧世代の後始末・差し替えはセッタの先頭で済んでいる（`__state` の
         // 差し替え前）。ここに残るのはリストパスの登録だけ（`_listPaths.clear()` の後であること）。
@@ -18621,6 +20428,15 @@ class State extends HTMLElementBase {
             // 乖離したまま自己回復しない）。
             this._listPaths.add(recursionSpec.anchorList);
         }
+        // 生きているバインドの経路情報を作り直す（issue #258 の X7）。置き場所は
+        // `_pathSet` / `_listPaths` / `_elementPaths` のクリアより後、startWatch / startStreams より前。
+        // `setPathInfo` をやり直しても新しい診断は出ない — 第 2 世代で消えたバインド先が無言のまま
+        // であることを `__tests__/integration.stateGenerationReset.test.ts` の末尾が固定する。
+        this._rebuildPathInfo();
+        // $scan: registry と from / resetOn の依存グラフ登録（_pathSet クリア後であること）。
+        // startWatch より前に置く（scan だけを宣言した state も drain の発火対象に載せるため）。
+        const carriedScanResets = unregisterScans(this);
+        this._scanPaths = scanEntries === null ? null : registerScans(this, scanEntries, carriedScanResets);
         // $watch: 旧宣言のハンドラが残らないよう registry を落としてから新宣言を解析する。
         // _pathSet.clear() の後であること（依存グラフ登録をやり直す必要がある、
         // docs/state-watch-hook-design.md §8）。宣言が無ければ watchPaths は null で、
@@ -18736,7 +20552,12 @@ class State extends HTMLElementBase {
         }
         catch (error) {
             // 設定エラーでも初期化待ちをウェッジさせない（_failInitialization と同じ規範 —
-            // 未解決のまま投げると waitForStateInitialize がページ全体を無言で止める）
+            // 未解決のまま投げると waitForStateInitialize がページ全体を無言で止める）。
+            // ここを `_failInitializeLoudly` に載せないのは意図（#257 第 3 ラウンド）:
+            // この要素はルートではないので、あちらの「この rootNode にルートは来ない」着地
+            //（markBindingsUnavailable / failPendingVolumes）が**無関係なルートと兄弟
+            // ボリュームを巻き添えにする**。promise を解決してから raise する点は
+            // `name=` と同じクラスで、reject 側へ動かすのは別の設計判断
             this._resolveInitialize?.();
             this._resolveLoading?.();
             this._resolveConnectedCallback?.();
@@ -18779,6 +20600,10 @@ class State extends HTMLElementBase {
         }
         graftOrQueueVolume(rootNode, getStateElement(rootNode), mountPath, volumeState, finish);
     }
+    /**
+     * 初回マウントのロードと登録。戻り値は「この接続で初期化を**完了**したか」で、
+     * `false` は失敗ではなく**中断**（ロード中に要素が剥がされた — 下の注記）。
+     */
     async _initialize() {
         // enable-ssr (クライアント側のみ): <wcs-ssr> から初期データを取得
         const ssrState = !inSsr() ? this._loadFromSsrElement() : null;
@@ -18803,7 +20628,21 @@ class State extends HTMLElementBase {
             }
         }
         await this._loadingPromise;
-        setStateElement(this.rootNode, this);
+        if (this._rootNode === null) {
+            // ロード中に剥がされた（行プールの張り直し・DOM の移動・shadow の組み直し）。
+            // これは初期化の**失敗ではなく中断**である: 作者のミスは 1 つも無く、state も
+            // 健全。診断を出さず、要素を毒化せず（_initializeFailed を立てず）、
+            // connectedCallbackPromise も拒否せずに、この接続だけを黙って終わらせる。
+            //
+            // 拒否してはいけない理由は取り返しのつかなさ: promise はコンストラクタで
+            // 1 度だけ作られるので、一度拒否すると**付け直して正常に初期化できた要素**まで
+            // 永久に「失敗」を報告し続け、それを待つ @wcstack/server の renderToString と
+            // @wcstack/testing の mount が健全なページで throw する。
+            // 付け直した接続が改めてここへ来て、通常どおり登録と解決を行う。
+            return false;
+        }
+        setStateElement(this._rootNode, this);
+        return true;
     }
     /**
      * 設定エラーでの fail-fast。initializePromise 等を解決してから raise する —
@@ -18813,12 +20652,91 @@ class State extends HTMLElementBase {
      * として loud に残る。
      */
     _failInitialization(message) {
+        // 着地はここで完了（connectedCallback の catch が二重に着地させない — #257）
+        this._initializationLanded = true;
         // _initialized は立てない — 切断時の後始末（createState を要する）が
         // 未ロードの state を触らないよう、初期化前ガードに掛かるままにする
         this._resolveInitialize?.();
         this._resolveLoading?.();
         this._resolveConnectedCallback?.();
         raiseError(message);
+    }
+    /**
+     * `_initialize` の失敗の着地（#257）。旧挙動は「throw が connectedCallback の外へ
+     * 出るだけ」で、`_initializePromise` も `_connectedCallbackPromise` も永久に未解決の
+     * まま残り、作者が受け取るのは診断ではなく無言のハングだった。載るのは
+     * `_initialize` が投げうるもの全部 — `_state` セッタの宣言検証（$recursion /
+     * $commandTokens / $eventTokens / $on / $streams / $listKeys / $watch）、
+     * `_loadStateFromSource` のロード失敗（src の拡張子・json のパース・内包スクリプト・
+     * 外部モジュール）、SSR データの merge、そして `setStateElement` の
+     * 「1 rootNode 1 ツリー」違反（**別の**要素が 2 本目に来た形 — 同じ要素の再登録は
+     * 冪等なので、ロード中の remove → append はここへ来ない）。
+     *
+     * 載**らない**もの: ロード中に要素が剥がされた形。作者のミスが 1 つも無いので
+     * 初期化失敗ではなく中断として扱う（`_initialize` が `false` を返す）。
+     *
+     * もう 1 つ載らないのがボリューム（`mount=`）の失敗。`_initializeVolume` の catch が
+     * 3 つの promise（initialize / loading / connectedCallback）を自分で解決してから raise し、
+     * `connectedCallback` のボリューム分岐はそれを包まないので、ボリュームはこの着地に
+     * 載らず connectedCallbackPromise を**拒否しない**。自前の報告が出るかどうかは失敗の
+     * 種類による。報告が無い形では、逃げ方は `name=`（`_failInitialization` の注記）と
+     * 同じで、throw はカスタム要素リアクションが捨てる戻り Promise へ出ていく
+     * （ブラウザのコンソールには "Uncaught (in promise)" として残るが、promise を待つ側
+     * ＝ renderToString・mount・テストレシピには届かない）。失敗箇所ごとの正確な挙動は
+     * `__tests__/integration.initFailureDiagnostics.test.ts` が固定している。挙動はこの
+     * PR では変えない（枠の寿命は別 Issue）。
+     *
+     * `connectedCallback` が `_initialize` より前に await する 2 つ
+     * （`_initializeDCC` / `_initializeBindWebComponent`）の raise も同じ着地に載る。
+     * 特に「初期化に失敗した要素の再接続」は `bindWebComponent` → `setInitialState` の
+     * 復旧不能 raise でそこへ来るので、包まないと診断ゼロで素通りする。
+     *
+     * `_failInitialization`（設定エラーの fail-fast）との違いは 1 つ:
+     * **connectedCallbackPromise を reject する**。ここまで来た要素は state を 1 つも
+     * 持たない ＝ このツリーは存在しない。resolve すると、それを待つ消費者
+     * （@wcstack/server の renderToString・@wcstack/testing の mount・README の
+     * テストレシピ）に「準備完了」と嘘をつく。下の SSR 経路（_rejectConnectedCallback）と
+     * 同じ規範で、そちらと同じく**元のエラーをそのまま**投げ直す。
+     *
+     * `initializePromise` は従来どおり**解決**する（reject しない）。
+     * `waitForStateInitialize` はページ中の全 `<wcs-state>` の initializePromise を
+     * `Promise.all` で待つので、reject にすると 1 要素の設定ミスが無関係な
+     * バインディングまで道連れになる（_failInitialization の注記と同じ理由）。
+     *
+     * 後始末はしない: `_initialized` を立てないので `disconnectedCallback` は初期化前
+     * ガードで抜ける。`$listKeys` / `$watch` のようにセッタの後半で落ちた形では
+     * `$on` の購読と stream registry が残るが、この要素は復旧不能（setInitialState が
+     * throw する）なので、残骸は要素ごと捨てる前提で放置する。
+     */
+    _failInitializeLoudly(error) {
+        if (this._initializationLanded) {
+            // 設定エラーの fail-fast が自分で着地済み（promise は解決済み）。ここで
+            // reject に載せ替えると「ページの残りは生きている設定ミス」と「state を 1 つも
+            // 持たない要素」を混ぜることになるので、伝播だけさせる
+            throw error;
+        }
+        this._initializeFailed = true;
+        // 診断は必ず 1 件出す。カスタム要素リアクションは connectedCallback の戻り
+        // Promise を捨てるので、ブラウザの "Uncaught (in promise)" 以外に受け手が居ない
+        console.error(`[@wcstack/state] <${config.tagNames.state}> failed to initialize.`, error);
+        this._resolveInitialize?.();
+        this._resolveLoading?.();
+        // reject より先に handled を立てる。DOM 駆動のマウントでは
+        // connectedCallbackPromise を誰も await しないため、印が無いと
+        // unhandled rejection になる（Node ではプロセスごと落ちる）
+        this._connectedCallbackPromise.catch(() => undefined);
+        this._rejectConnectedCallback?.(error);
+        // このツリーは存在しない。ready を即時解決のまま残すと waitForReady
+        // （@wcstack/server）が「バインド構築済み」と報告し、保留中のボリュームは
+        // ルート登録が来ないので永久に未解決のまま残る。
+        // 生きたルートが既にこの rootNode に居る形（2 本目の <wcs-state> ＝ v2 の
+        // 「1 rootNode 1 ツリー」違反）では、ページは 1 本目で成立している —
+        // ready も保留ボリュームも 1 本目のものなので触らない
+        if (this._rootNode !== null && getStateElement(this._rootNode) === null) {
+            markBindingsUnavailable(this._rootNode, error);
+            failPendingVolumes(this._rootNode);
+        }
+        throw error;
     }
     async _initializeBindWebComponent() {
         if (this.hasAttribute("bind-component")) {
@@ -18940,6 +20858,8 @@ class State extends HTMLElementBase {
                         initializeMountScope(record, parentNode instanceof ShadowRoot ? parentNode : boundComponent);
                     }
                     catch (error) {
+                        // 着地はここで完了（_failInitialization と同じクラス — #257）
+                        this._initializationLanded = true;
                         this._resolveInitialize?.();
                         this._resolveLoading?.();
                         this._resolveConnectedCallback?.();
@@ -19020,6 +20940,8 @@ class State extends HTMLElementBase {
         // 再開からの起動を防ぐ）。前回接続中の再 set（S13）で立った
         // _streamsStartedGeneration も世代不一致となり自然に無効化される。
         const connectGeneration = ++this._connectGeneration;
+        // 着地の印は接続ごとに畳む（前の接続の fail-fast をこの接続へ持ち越さない — #257）
+        this._initializationLanded = false;
         if (!this._initialized) {
             // 名前次元は v2 で撤去（D16 / §9）。名前付き State はボリュームへ移行する。
             // mount 併記（移行途中で name を残した形）は専用文言で誘導する
@@ -19034,14 +20956,21 @@ class State extends HTMLElementBase {
             const parentNode = this.parentNode;
             if (parentNode instanceof ShadowRoot &&
                 parentNode.host.hasAttribute(DCC_DEFINITION_ATTRIBUTE)) {
-                // DCC と bind-component は排他。DCC の state はテンプレートに属し、
-                // インスタンスごとにロードされるので、定義時点のホストのプロパティを
-                // ソースにする bind-component とは両立しない。従来はこの return で
-                // 無言に無視していた（docs/architecture-hardening/15 §3.1）。
-                if (this.hasAttribute("bind-component")) {
-                    raiseError(`"bind-component" cannot be used inside a [${DCC_DEFINITION_ATTRIBUTE}] host. DCC state comes from the template, not from a component property.`);
+                try {
+                    // DCC と bind-component は排他。DCC の state はテンプレートに属し、
+                    // インスタンスごとにロードされるので、定義時点のホストのプロパティを
+                    // ソースにする bind-component とは両立しない。従来はこの return で
+                    // 無言に無視していた（docs/architecture-hardening/15 §3.1）。
+                    if (this.hasAttribute("bind-component")) {
+                        raiseError(`"bind-component" cannot be used inside a [${DCC_DEFINITION_ATTRIBUTE}] host. DCC state comes from the template, not from a component property.`);
+                    }
+                    await this._initializeDCC(parentNode.host, parentNode);
                 }
-                await this._initializeDCC(parentNode.host, parentNode);
+                catch (error) {
+                    // _initialize と同じ着地（#257）。DCC のロード失敗もここまでは
+                    // 「throw が connectedCallback の外へ出るだけ」＝ 無言のハングだった
+                    this._failInitializeLoudly(error);
+                }
                 return;
             }
             // ボリューム（`mount="path"` — 接ぎ木・docs/state-mount-design.md §4-2）
@@ -19056,7 +20985,17 @@ class State extends HTMLElementBase {
                 await this._initializeVolume();
                 return;
             }
-            await this._initializeBindWebComponent();
+            try {
+                await this._initializeBindWebComponent();
+            }
+            catch (error) {
+                // bind-component の raise も同じ着地に載せる（#257）。とりわけ「初期化に
+                // 失敗した要素の再接続」は bindWebComponent → setInitialState の復旧不能
+                // raise でここへ来る — _initialize の外なので、包まないと素通りする。
+                // 自分で着地済みの fail-fast（_failInitialization / initializeMountScope）は
+                // _failInitializeLoudly の先頭で弾かれ、従来どおり伝播するだけ
+                this._failInitializeLoudly(error);
+            }
             if (this._mountRecord !== null) {
                 // v2 マウント: この要素は独立ツリーを持たない（台帳エイリアスが親を指す）。
                 // 名前登録・state ロード・$connectedCallback / $watch / $streams は行わない
@@ -19067,7 +21006,20 @@ class State extends HTMLElementBase {
                 this._resolveConnectedCallback?.();
                 return;
             }
-            await this._initialize();
+            let completed = false;
+            try {
+                completed = await this._initialize();
+            }
+            catch (error) {
+                // ここが唯一の無防備な await だった（#257）。throw は下の 2 行と
+                // 末尾の _resolveConnectedCallback を飛ばし、両 promise を永久未解決にする
+                this._failInitializeLoudly(error);
+            }
+            if (!completed) {
+                // ロード中に剥がされた ＝ 失敗ではなく中断（_initialize の注記）。promise は
+                // 未解決のまま残し、付け直した接続にそのまま解決させる
+                return;
+            }
             this._initialized = true;
             this._resolveInitialize?.();
         }
@@ -19114,7 +21066,13 @@ class State extends HTMLElementBase {
         }
         // enable-ssr (クライアント側): SSR で $connectedCallback 済みなのでスキップ
         // inSsr() (サーバー側): レンダリング中なので実行する
-        if (!this.hasAttribute('enable-ssr') || inSsr()) {
+        // 世代ガード（connectGeneration 照合）: ロード完了前の remove → append では
+        // _initialize が 2 本同時に走り、**負けたほうもここまで到達する**（登録は冪等に
+        // 弾かれるだけで tail は止まらない）。ガードが無いと作者の $connectedCallback が
+        // 1 接続につき 2 回走り、副作用も 2 回出る。下の startWatch / startStreams と
+        // 同じ規範で、起動点を最新の connect に一本化する
+        if ((!this.hasAttribute('enable-ssr') || inSsr())
+            && connectGeneration === this._connectGeneration) {
             await this._callStateConnectedCallback();
         }
         // サーバーモード + enable-ssr: バインディング完了後に <wcs-ssr> を生成。
@@ -19204,6 +21162,16 @@ class State extends HTMLElementBase {
                 // 初期化前に剥がされた（bind-component の await 中に shadow が張り直された等）。
                 // 名前登録も token も stream もまだ無く、state も作れないので後始末は不要。
                 // ここで createState すると "_state is not initialized" で CE リアクションが落ちる
+                if (this._initializeFailed) {
+                    // 落ちたルート要素**本人**が DOM から消えた ＝「このルートノードにルートは
+                    // 来ない」はもう成り立たない（作者の復旧は取り除いて作り直す）。印が残ると、
+                    // 外してから修正版を接続するまでの窓で接続したボリュームが即座に孤児化する。
+                    // 条件は本人に限る（#257 第 3 ラウンド）: 「初期化前に剥がされた要素」全部で
+                    // 落とすと、同じ rootNode の別要素（ゾンビの 2 本目・行プールの張り直し・
+                    // ロード中の DOM 移動）の切断で印が消え、以後のボリュームが孤児報告を
+                    // 受けられず永久保留へ戻る
+                    clearFailedRootNode(this._rootNode);
+                }
                 this._rootNode = null;
                 return;
             }
@@ -19217,9 +21185,14 @@ class State extends HTMLElementBase {
             }
             finally {
                 setStateElement(this.rootNode, null);
-                clearCommandTokenRegistry(this);
+                // command-token / event-token の registry は捨てない（#273）。`$on` は `_state` セッターでしか、
+                // `command.<method>:` は値の適用でしか購読しないので、捨てると再接続の後の発火が購読者の
+                // 居ない新しい token に届き、無言で止まる（下の stream / watch が registry を保持するのと同じ理由）。
+                // 切断中の発火は state の解決で止まる: 要素のイベントは上の登録解除で state を引けず、
+                // `$command` の emit は `rootNode` の無い createState を通れない。
+                // namespace proxy の memo は破棄する（registry は残るので、再接続後の初回アクセスで
+                // 同じ token を返す proxy が作り直される）。
                 clearCommandNamespace(this);
-                clearEventTokenRegistry(this);
                 // stream は abort のみで registry は保持する（再接続時に同じ宣言から
                 // initial で再起動できる、設計書 §5-1 / §5-2）。
                 // namespace proxy の memo は破棄する（clearCommandNamespace と対称。
@@ -19257,6 +21230,9 @@ class State extends HTMLElementBase {
     }
     get watchPaths() {
         return this._watchPaths;
+    }
+    get scanPaths() {
+        return this._scanPaths;
     }
     get elementPaths() {
         return this._elementPaths;
@@ -19337,6 +21313,10 @@ class State extends HTMLElementBase {
     get version() {
         return this._version;
     }
+    /** state の世代（キャッシュ項目の印の正本 — cache/types.ts の `generation`）。 */
+    get stateGeneration() {
+        return this._stateGeneration;
+    }
     get rootNode() {
         if (this._rootNode === null) {
             raiseError('State rootNode is not available.');
@@ -19415,6 +21395,17 @@ class State extends HTMLElementBase {
         return this._addDependency(this._staticDependency, sourcePath, targetPath);
     }
     setPathInfo(path, bindingType, source = "binding") {
+        // 再セットで作り直すための台帳（issue #258 の X7）。同じパスは複数の呼び出し元から登録
+        // されうる（バインド・`$watch` の宣言）ので、いちど `for` で登録されたパスは `for` のまま
+        // 保つ — `listPaths` / `elementPaths` を決めるのは下のとおり `for` だけ。保たない場合に
+        // 何が壊れるかは `__tests__/integration.stateGenerationReset.test.ts` の
+        // 「`for` で登録したリストパスは `$watch` の prop 登録に上書きされない」が固定する。
+        if (source !== "internal") {
+            const previous = this._pathRegistrations.get(path);
+            if (typeof previous === "undefined" || previous.bindingType !== "for") {
+                this._pathRegistrations.set(path, { bindingType, source });
+            }
+        }
         if (bindingType === "for") {
             this._listPaths.add(path);
             this._elementPaths.add(path + '.' + WILDCARD);
@@ -19435,6 +21426,31 @@ class State extends HTMLElementBase {
                     currentPathInfo = getPathInfo(currentPathInfo.parentPath);
                 }
             }
+        }
+    }
+    /**
+     * 再セットで消した経路情報を、生き残ったバインドの登録から作り直す（issue #258 の X7）。
+     *
+     * `_pathSet.clear()` は残す。あのクリアには、`forgetGeneration` が外した静的辺を「行が
+     * 作り直されたときに登録し直させる」自己修復が乗っている（辺が戻ることは
+     * `__tests__/integration.stateGenerationReset.test.ts` の
+     * 「静的な辺 nodes.* → nodes.*.total が戻る」が固定する）。消したうえで、生きているバインド
+     * ぶんだけ `setPathInfo` をやり直す — `$recursion` のアンカーで既に同じことをしている手口を、
+     * バインド全体へ広げたもの。
+     *
+     * `_generatedPaths`（これまでの世代の生成アクセサの具体パス）は張り直さない。行バインドが
+     * 名指していても、新しい世代ではまだ実体化されていないため（recursion/generation.ts）。読みが
+     * 実体化したときに `defineTreeAccessor` が登録し直す。
+     *
+     * 反復中に `setPathInfo` が台帳へ書き戻す（既存キーの上書きのみで新キーは増えない）ので、
+     * 誤解を避けるためスナップショットを取ってから回す。
+     */
+    _rebuildPathInfo() {
+        for (const [path, registration] of Array.from(this._pathRegistrations)) {
+            if (this._generatedPaths.has(path)) {
+                continue;
+            }
+            this.setPathInfo(path, registration.bindingType, registration.source);
         }
     }
     _createState(rootNode, mutability, callback) {
@@ -19476,6 +21492,14 @@ class State extends HTMLElementBase {
     }
     setInitialState(state) {
         if (!this._initialized) {
+            if (this._initializeFailed) {
+                // 初期化に失敗した要素は再武装しない（#257）。_setStatePromise は解決済みで、
+                // ここで渡し直しても読み手が居ないため、旧挙動は無言の no-op だった。
+                // 再武装は「落ちた宣言の残骸（$on の購読・stream registry）をどう畳むか」を
+                // 決める別の設計判断なので、ここでは唯一有効な復旧手段を伝えるに留める
+                raiseError(`<${config.tagNames.state}> failed to initialize (the diagnostic was reported when it connected), ` +
+                    `so its state cannot be replaced. Remove this element and create a new one with the corrected state.`);
+            }
             this._resolveSetState?.(state);
             return;
         }
@@ -19833,6 +21857,7 @@ function getWcsManifest() {
             STATE_ON_NAME,
             STATE_STREAMS_NAME,
             STATE_WATCH_NAME,
+            STATE_SCAN_NAME,
             STATE_LIST_KEYS_NAME,
             STATE_RECURSION_NAME,
             STATE_STREAM_STATUS_NAMESPACE_NAME,
