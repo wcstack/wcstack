@@ -368,7 +368,7 @@ Using several packages? The **`wcstack` entry bundle** packs the SPA core — st
 
 ```html
 <script type="module"
-        src="https://cdn.jsdelivr.net/npm/wcstack@2.2.0/dist/auto.min.js"
+        src="https://cdn.jsdelivr.net/npm/wcstack@2.4.0/dist/auto.min.js"
         integrity="sha384-..."></script>
 ```
 
