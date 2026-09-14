@@ -947,14 +947,16 @@ describe("on: resetOn と寿命（D6 / D8）", () => {
     host.remove();
   });
 
-  it("DEFECT(#273): ルート <wcs-state> の再接続で on の購読が外れ、以後は畳まれないこと（$on と同じ寿命）", async () => {
-    // $on の購読は `_state` セッターでしか張られず、切断が event-token の registry を捨てる。
-    // `on` の scan も同じ経路に乗るので同じく止まる。#273 を直したらこのテストを反転させる。
+  it("ルート <wcs-state> の再接続の後も on の購読が残り、畳み続けること（$on と同じ寿命・#273）", async () => {
+    // $on の購読は `_state` セッターでしか張られない。切断が event-token の registry を捨てていた頃は、
+    // 再接続の後の出来事が購読者の居ない新しい token に届き、無言で畳まれなかった
     const { host, shadowRoot, stateEl } = await mount(SINGLE, {
       $eventTokens: ["received"],
       $scan: { log: { on: "received", initial: [], fold: append } },
     } as unknown as IState);
 
+    dispatch(shadowRoot.querySelector(TARGET)!, "before");
+    await flushAsync();
     host.remove();
     await flushAsync();
     document.body.appendChild(host);
@@ -963,7 +965,7 @@ describe("on: resetOn と寿命（D6 / D8）", () => {
 
     dispatch(shadowRoot.querySelector(TARGET)!, "after-reconnect");
     await flushAsync();
-    expect(readState(stateEl, (s) => s.log)).toEqual([]);
+    expect(readState(stateEl, (s) => s.log)).toEqual(["before", "after-reconnect"]);
     host.remove();
   });
 });

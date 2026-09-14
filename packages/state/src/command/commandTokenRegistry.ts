@@ -19,10 +19,6 @@ export function getOrCreateCommandToken(stateElement: IStateElement, name: strin
   return token;
 }
 
-export function clearCommandTokenRegistry(stateElement: IStateElement): void {
-  registryByStateElement.delete(stateElement);
-}
-
 export const __private__ = {
   registryByStateElement,
 };
