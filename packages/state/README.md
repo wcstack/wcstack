@@ -1782,7 +1782,7 @@ interface CommandToken {
 
 - The subscriber holds the element via `WeakRef`, so a removed element can still be garbage collected even while it remains in the token's subscriber set
 - On `emit`, if the WeakRef has been collected or the element is no longer connected (`isConnected === false`), the subscription is purged automatically (lazy purge)
-- When the owning `<wcs-state>` is disconnected, the entire token registry is cleared
+- Disconnecting the owning `<wcs-state>` keeps the token registry, so the subscriptions still receive commands after the root `<wcs-state>` is re-attached (for example when its host moves in the DOM). While it is disconnected, the state cannot be created, so nothing emits through `$command`
 
 The element's method is invoked with the arguments from `emit`:
 
@@ -1959,7 +1959,7 @@ $on: {
 
 ### Token API
 
-Event tokens share the same `Token` pub/sub primitive as command tokens — `name` / `size` / `subscribe` / `unsubscribe` / `emit`, with subscribe-order preservation (see [Token API](#token-api)). The token is resolved from the registry on every event so a re-`setInitialState()` rebuild still reaches the latest `$on` subscribers. When the owning `<wcs-state>` is disconnected, the event-token registry is cleared.
+Event tokens share the same `Token` pub/sub primitive as command tokens — `name` / `size` / `subscribe` / `unsubscribe` / `emit`, with subscribe-order preservation (see [Token API](#token-api)). The token is resolved from the registry on every event so a re-`setInitialState()` rebuild still reaches the latest `$on` subscribers. Disconnecting the owning `<wcs-state>` keeps the event-token registry, so `$on` handlers (and `on` scans) receive events again once the root `<wcs-state>` is re-attached; an event dispatched while it is disconnected finds no state tree and is not delivered.
 
 ## Streams (`$streams`)
 
@@ -2215,7 +2215,6 @@ Key rules:
 - **Errors are isolated.** A throw, a returned Promise or a value that cannot be read is reported to the console and DevTools and writes nothing (an unreadable row of a wildcard `from` is skipped alone, and row landings are narrowed to one per list position); the other scans, watches and stream restarts still run.
 - **`$watch` runs after the scan write.** A `$watch` handler in the same drain reads the output as folded, and a value it writes to the output stays. When the `from` source is written again before the output's landing drains — by a `$watch` handler in that drain, say — both land in one batch: a `$watch` on the output then gets the landed value in `prev`, sees `cur` one step ahead, and can fire again with the same value in the next batch, so make it tolerant of a repeated value. Clear an accumulation from a user action with a nonce read by `resetOn`.
 - **Root only.** A volume (`mount=`) refuses `$scan`, and a mounted `bind-component` scope ignores it with a one-time warning. Under SSR, `from` does not fold; the output is still materialized.
-- **Known gap:** an `on` scan shares `$on`'s subscription, so re-attaching the root `<wcs-state>` stops both ([#273](https://github.com/wcstack/wcstack/issues/273)).
 
 Reference: [docs/scan.md](https://github.com/wcstack/wcstack/blob/main/packages/state/docs/scan.md). Design record: [docs/state-scan-design.md](https://github.com/wcstack/wcstack/blob/main/docs/state-scan-design.md).
 

@@ -218,7 +218,7 @@ $scan: { log: { on: "message", initial: [], fold: …, resetOn: ["clearNonce"] }
 | `_state` のセット | 宣言を検査し、出力が無ければ `initial` で実体化する（plain な配列とオブジェクトは複製）。既に値があれば保持する（同じオブジェクトの再セット・SSR ハイドレーションで累積を失わない）。fold が関数を返す出力も同じで、実体化・fold・reset がその出力に置いた関数値はメソッド衝突とみなさない（runtime（実体化・fold・reset）が置いていない関数値はすべて raise する。新しいオブジェクトの同名の本物のメソッドや、ハンドラ・メソッド・`$resolve` / `$setAll`・state への直接の書き込みで出力へ書いた関数）。 |
 | 接続 | `from` / `resetOn` を持つ scan は drain の発火対象に載る。`on` の scan はセット時に購読済み。 |
 | 切断 | `from` / `resetOn` は発火しなくなる（registry は保持）。切断中の出来事は畳まない。出力は保持する。`$watch` ハンドラが要素を切断しても、接続中に着地した分は残る（scan の書き込みは `$watch` の発火より前）。 |
-| 再接続 | `from` / `resetOn` は再び発火する。`on` は `$on` と同じく購読が戻らない既知の穴がある（[#273](https://github.com/wcstack/wcstack/issues/273)）。 |
+| 再接続 | `from` / `resetOn` は再び発火する。`on` も再び畳む — `$on` と同じく購読は切断を跨いで保持される（[#273](https://github.com/wcstack/wcstack/issues/273)）。 |
 | 新しい宣言での再セット | registry と購読を作り直す。旧宣言の scan は発火しない。宣言が消えたら何も発火しない。 |
 | SSR（`inSsr()`） | 宣言の検査と出力の実体化だけを行い、`from` は畳まない。 |
 | ボリューム（`mount=`） | 宣言を接ぎ木前に拒否する。 |

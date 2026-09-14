@@ -11,7 +11,6 @@ import { ILoopContextStack } from "../list/types";
 import { createLoopContextStack } from "../list/loopContext";
 import { DCC_DEFINITION_ATTRIBUTE, NO_SET_TIMEOUT, STATE_CONNECTED_CALLBACK_NAME, STATE_DISCONNECTED_CALLBACK_NAME, STATE_ERROR_CALLBACK_NAME, STATE_UPDATED_CALLBACK_NAME, WILDCARD } from "../define";
 import { processCommandTokensDeclaration } from "../command/processCommandTokensDeclaration";
-import { clearCommandTokenRegistry } from "../command/commandTokenRegistry";
 import { clearCommandNamespace } from "../command/commandNamespace";
 import { processEventTokensDeclaration } from "../event/processEventTokensDeclaration";
 import { clearEventTokenRegistry } from "../event/eventTokenRegistry";
@@ -1109,9 +1108,14 @@ export class State extends HTMLElementBase implements IStateElement {
         this._callStateDisconnectedCallback();
       } finally {
         setStateElement(this.rootNode, null);
-        clearCommandTokenRegistry(this);
+        // command-token / event-token の registry は捨てない（#273）。`$on` は `_state` セッターでしか、
+        // `command.<method>:` は値の適用でしか購読しないので、捨てると再接続の後の発火が購読者の
+        // 居ない新しい token に届き、無言で止まる（下の stream / watch が registry を保持するのと同じ理由）。
+        // 切断中の発火は state の解決で止まる: 要素のイベントは上の登録解除で state を引けず、
+        // `$command` の emit は `rootNode` の無い createState を通れない。
+        // namespace proxy の memo は破棄する（registry は残るので、再接続後の初回アクセスで
+        // 同じ token を返す proxy が作り直される）。
         clearCommandNamespace(this);
-        clearEventTokenRegistry(this);
         // stream は abort のみで registry は保持する（再接続時に同じ宣言から
         // initial で再起動できる、設計書 §5-1 / §5-2）。
         // namespace proxy の memo は破棄する（clearCommandNamespace と対称。

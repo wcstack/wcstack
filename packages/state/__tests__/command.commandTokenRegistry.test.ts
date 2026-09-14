@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getOrCreateCommandToken, clearCommandTokenRegistry, __private__ } from '../src/command/commandTokenRegistry';
+import { getOrCreateCommandToken, __private__ } from '../src/command/commandTokenRegistry';
 import type { IStateElement } from '../src/components/types';
 
 function makeStateElement(): IStateElement {
@@ -31,13 +31,10 @@ describe('commandTokenRegistry', () => {
     expect(t1).not.toBe(t2);
   });
 
-  it('clearCommandTokenRegistryで登録が破棄されること', () => {
+  it('registry は state 要素をキーに作られること（切断では捨てない — #273）', () => {
     const se = makeStateElement();
-    const t1 = getOrCreateCommandToken(se, 'x');
-    expect(__private__.registryByStateElement.has(se)).toBe(true);
-    clearCommandTokenRegistry(se);
     expect(__private__.registryByStateElement.has(se)).toBe(false);
-    const t2 = getOrCreateCommandToken(se, 'x');
-    expect(t2).not.toBe(t1);
+    const t1 = getOrCreateCommandToken(se, 'x');
+    expect(__private__.registryByStateElement.get(se)?.get('x')).toBe(t1);
   });
 });
