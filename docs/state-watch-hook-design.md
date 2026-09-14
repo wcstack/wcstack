@@ -14,7 +14,7 @@
 |---|---|---|
 | **D1** | 何を作るのか | **headless 購読**。`$updatedCallback` は binding 駆動で、live DOM binding が適用されたパスしか載らない。画面に出していない値の変化を state 側で捕まえる手段が現行 API に無い（`packages/state/docs/streams.md` にその穴を明記済み）。パス別ディスパッチと prev は同梱するが、存在理由は headless。 |
 | **D2** | 発火点 | **updater の drain 終了フック**（`registerUpdateBatchListener`）。`$streams` の依存駆動 restart と同じ土俵。結果として **`$watch` は `$updatedCallback` より後**に走る（§3-2）。 |
-| **D3** | prev の意味論 | **バッチ開始時点の値（first-write-wins）**、**スカラ限定**。参照型では `undefined`（§4）。 |
+| **D3** | prev の意味論 | **バッチ開始時点の値（first-write-wins）**、**スカラ限定**。参照型では `undefined`（§4）。*2026-09-14 追記: 判定の軸は**書く値**。プリミティブを書いたときに書く前の値（オブジェクトでもよい）を記録し、書く値が参照型なら `undefined`。「スカラ限定」「参照型では」はこの意味に読む（§4-1 の追記。README・`packages/state/docs/scan.md`・`scan.from.test.ts` と一致）。* |
 | **D4** | 同値・occurrence | **`$watch` は独自の発火条件を持たない**。「updater のバッチに載ったアドレス」をそのまま発火する。`cur !== prev` の判定は watch 側では行わない（§4-2）。 |
 | **D5** | computed（getter） | **opt-in で eager 化**。watch 対象の getter は宣言時に依存グラフへ登録され、drain 終端で強制評価される。「**watch した getter は lazy でなくなる**」を規範として明記する（§5）。 |
 | **D6** | ワイルドカード粒度 | **絶対アドレス単位で per-address 発火**（要素ごとに複数回）。indexes は `getScopedIndexes` に揃える（§6）。 |
@@ -103,7 +103,9 @@ function (cur, prev, ...indexes): void
 
 **層 1 — 機構間（固定。利用者の選択肢は無い）**
 
-1 バッチにつき **`$updatedCallback` → `$watch` → `$streams` の依存駆動 restart**。
+1 バッチにつき **`$updatedCallback` → `$scan` → `$watch` → `$streams` の依存駆動 restart**。
+
+*`$scan`（時間軸方向の累積）の `from` / `resetOn` は後から加わった機構で、同じ watch リスナーの中で `$watch` の収集より先に畳んで書く（[state-scan-design.md](./state-scan-design.md) D11 / D18）。scan の書き込みは次のバッチに乗るので、この drain の `$watch` の収集は変わらない。同じ drain の `$watch` ハンドラは書いた後の出力を読み、ハンドラが出力へ書いた値はそのまま残る。本節の `$watch` と stream restart の関係はそのまま。*
 
 - `$updatedCallback` が先なのは構造的必然（binding 適用ループの内側で呼ばれる。`applyChangeFromBindings.ts:97-101`）。watch を先にするには同ファイルの改造が要るが、**改造しない**。`$updatedCallback` は「DOM に何が適用されたか」の要約、watch は「state で何が変わったか」の通知であり、DOM 適用済みを前提に副作用を書けるほうが両者の性格に合う
 - `$watch` が stream restart より先なのは、watch ハンドラの書き込みが同じバッチの restart 判定に影響しないようにするため（watch → restart の一方向）
@@ -123,7 +125,7 @@ function (cur, prev, ...indexes): void
 
 | 層 | 順序 | 利用者の制御 |
 |---|---|---|
-| 機構間 | `$updatedCallback` → `$watch` → stream restart | 不可（固定） |
+| 機構間 | `$updatedCallback` → `$scan` → `$watch` → stream restart | 不可（固定） |
 | watch ハンドラ間 | `$watch` の宣言順 | **宣言を並べ替える** |
 | 同一パスの行間 | indexes 昇順 | 不可（固定） |
 
@@ -137,7 +139,7 @@ function (cur, prev, ...indexes): void
 
 ## 4. prev の意味論
 
-### 4-1. 基準時点とスカラ限定（D3）
+### 4-1. 基準時点とスカラ限定（D3・判定の軸は節末の 2026-09-14 追記）
 
 - `prev` = **そのバッチで最初にそのアドレスへ書き込む直前の値**（first-write-wins）。`cur` = drain 時点の確定値。
 - 旧値台帳は `Map<IAbsoluteStateAddress, unknown>`。**バッチ内で最初の 1 回だけ**記録し、drain 後にクリアする。
@@ -146,6 +148,8 @@ function (cur, prev, ...indexes): void
   - 読んだとしても in-place 変異では `prev === cur`（同一参照）で差分にならない。
 - したがって `prev` が意味を持つのは **スカラ（primitive / null）だけ**。ドキュメントにこの限定を明記する。「参照型でも一応何か渡す」は誤誘導なので `undefined` に倒す。
 - 実装は same-value guard が読んだ旧値を再利用し、**watch のために追加の `getByAddress` はしない**（実装計画 A-4）。その帰結として **`config.sameValueGuard = false` のときも `prev` は `undefined`** になる。guard OFF は実質デバッグ用途であり、prev のために別経路の読みを増やすほうが害が大きい。
+
+*2026-09-14 追記（[state-scan-design.md](./state-scan-design.md) §5-7 の C3-10）: 上の「参照型では `undefined`」「意味を持つのはスカラだけ」の判定の軸は**書く値**である。same-value guard はプリミティブ（`null` を含む）を書くときだけ旧値を読むので、書く前の値がオブジェクトでも、それを `prev` に記録する（`{ a: 1 }` の上に `5` を書くと、`prev` はそのオブジェクト）。書く値が参照型なら `undefined`。本文の理由（guard は参照型を素通しするので旧値を読まない）はこの読みで成り立ち、ずれていたのは見出しと結論の書き方だけ。README（`$watch` の引数表と「`prev` はプリミティブの書き込みにだけ付く」の段落）・`packages/state/docs/scan.md`・`scan.from.test.ts`（`$scan` と `$watch` の両方）と一致する。*
 
 ### 4-2. 発火条件を持たない（D4）
 
@@ -324,4 +328,5 @@ watch ハンドラ内の書き込みは新しい microtask バッチを作るた
 - `@stateName` 越境 watch（D8 で明示的に不採用）
 - 動的な watch 登録 / 解除 API（宣言のみ。`$on` と同じ姿勢）
 - `$effects`（依存を自動追跡する副作用）── watch はパス明示。自動追跡は別機構であり、混ぜない
+- 時間軸方向の累積 ── `$watch` は値を所有しないので、run を跨ぐ累積は `$scan` が担う（[state-scan-design.md](./state-scan-design.md)）。`$scan` はパスかイベントトークンを明示する fold であって `$effects` ではない。発火は同じ drain リスナーの中で `$watch` より先（畳んで書いてから `$watch` を発火する。D12 の `prev` の契約は state-scan-design.md を参照）
 - watch の非同期完了待ち（`await` しない規範を第 1 段で固定する）

@@ -8,8 +8,10 @@
  * これが headless 購読の実体になる（binding 駆動の `$updatedCallback` との違い）。
  *
  * 実行順序（設計書 §3-2）:
- * - 機構間は優先度で固定（`$updatedCallback` → `$watch` → `$streams` restart）。
+ * - 機構間は優先度で固定（`$updatedCallback` → `$scan` → `$watch` → `$streams` restart）。
  *   `$updatedCallback` が先なのは binding 適用ループの内側で呼ばれる構造的必然。
+ *   `$scan` の `from` / `resetOn` は同じリスナーの中で `$watch` より先に畳んで書く
+ *   （docs/state-scan-design.md D11 / D18）。
  * - watch ハンドラ間は `$watch` の宣言順（entry.order）。利用者が順序に意思を持てる唯一の層。
  * - 同一パスの複数行は indexes 昇順。
  *
@@ -32,6 +34,8 @@ import { beginWatchFiring, consumeWatchChainDepth, endWatchFiring } from "./chai
 import { getComputedSnapshot, setComputedSnapshot } from "./computedSnapshots";
 import { clearPrevValues, getPrevValue } from "./prevValues";
 import { addActiveWatchStateElement, getActiveWatchStateElements, getVolumeWatchEntries, getWatchEntries } from "./watchRegistry";
+import { hasScanDrainWork } from "../scan/scanRegistry";
+import { commitScanPlans, discardSkippedScanResets, planScansOnUpdateBatch } from "../scan/scanRuntime";
 import type { IWatchEntry } from "./types";
 
 interface IWatchHit {
@@ -55,9 +59,12 @@ interface IWatchHit {
  * 「接続中の全 `<wcs-state>`」になり、`fireWatchOnUpdateBatch` の early return が
  * 実アプリで効かなくなる ＝ `$watch` 未使用アプリの drain にも収集ループが乗る
  * （ゼロコスト契約、設計書 §10 ／ 実装計画 P16）。
+ *
+ * `$scan` の `from` / `resetOn` も同じ drain リスナーで発火するので、それだけを宣言した
+ * state も発火対象に載せる（docs/state-scan-design.md D11）。
  */
 export function startWatch(stateElement: IStateElement): void {
-  if (getWatchEntries(stateElement).size === 0 && getVolumeWatchEntries(stateElement).size === 0) {
+  if (getWatchEntries(stateElement).size === 0 && getVolumeWatchEntries(stateElement).size === 0 && !hasScanDrainWork(stateElement)) {
     return;
   }
   addActiveWatchStateElement(stateElement);
@@ -80,7 +87,7 @@ export function startWatch(stateElement: IStateElement): void {
  * 「DOM にバインドされていれば発火する」ままとし、§5-3 に制約として書く。
  */
 function primeComputedWatches(stateElement: IStateElement): void {
-  // 宣言が 1 つ以上あることは startWatch が保証済み
+  // 宣言（watch か scan）が 1 つ以上あることは startWatch が保証済み。scan だけなら targets は空
   const targets: IWatchEntry[] = [];
   for (const entry of getWatchEntries(stateElement).values()) {
     if (isScalarComputed(stateElement, entry)) {
@@ -168,15 +175,20 @@ function fireWatchOnUpdateBatch(batch: ReadonlySet<IAbsoluteStateAddress>): void
       // ここも finally を通す: 宣言済みの state が切断されている間（active からは
       // 外れるが watchPaths は残る）の書き込みで台帳に旧値が積まれるため、
       // クリアを早期 return の外に置くと次のバッチどころか永久に残る。
+      // 書き込みの後・drain の前に切断された state の `on` scan の保留 reset も、このバッチでは
+      // 発火しないので捨てる（scan/eventReset.ts）。
+      discardSkippedScanResets(batch, activeStateElements);
       return;
     }
     const depth = consumeWatchChainDepth();
     if (depth > MAX_WATCH_CHAIN_DEPTH) {
-      // 打ち切るのは watch の発火のみ。値と binding 適用は巻き戻さない
-      // （伝播 hop 上限超過時の quarantine と同じ姿勢、§7-2）。
+      // 打ち切るのは同じリスナーの発火（`$scan` の from / resetOn と `$watch`）のみ。
+      // 値と binding 適用は巻き戻さない（伝播 hop 上限超過時の quarantine と同じ姿勢、§7-2）。
+      // `on` scan の保留 reset もこのバッチでは効かせない（`from` の scan が reset しないのと揃える）。
+      discardSkippedScanResets(batch, null);
       const paths = Array.from(batch, (absAddress) => absAddress.absolutePathInfo.pathInfo.path);
       console.error(
-        `[@wcstack/state] $watch chain depth limit exceeded; watch handlers for this batch were skipped.`,
+        `[@wcstack/state] $watch chain depth limit exceeded; $scan folds and $watch handlers for this batch were skipped.`,
         { maxDepth: MAX_WATCH_CHAIN_DEPTH, paths },
       );
       if (devtoolsSink !== null) {
@@ -185,28 +197,45 @@ function fireWatchOnUpdateBatch(batch: ReadonlySet<IAbsoluteStateAddress>): void
       return;
     }
 
-    // --- 収集フェーズ ---
-    const hits: IWatchHit[] = [];
-    for (const absAddress of batch) {
-      // stateElement 参照で引く。AbsolutePathInfo は
-      // stateElement 単位でキャッシュされるので、同名 state が複数の rootNode に
-      // 居ても取り違えない（address/AbsolutePathInfo.ts）。他 state のアドレスは
-      // ここで自然に落ちる ＝ 越境しない（設計 D8）。
-      const stateElement = absAddress.absolutePathInfo.stateElement;
-      if (!activeStateElements.has(stateElement)) {
-        continue;
-      }
-      const path = absAddress.absolutePathInfo.pathInfo.path;
-      const own = getWatchEntries(stateElement).get(path);
-      const fromVolumes = getVolumeWatchEntries(stateElement).get(path);
-      if (typeof own === "undefined" && typeof fromVolumes === "undefined") {
-        continue;
-      }
-      const matched: IWatchEntry[] = typeof own === "undefined" ? [] : [own];
-      if (typeof fromVolumes !== "undefined") {
-        matched.push(...fromVolumes);
-      }
-      for (const entry of matched) {
+    // `$scan` の from / resetOn を `$watch` より先に畳んで書く（docs/state-scan-design.md D11 / D18）。
+    // scan の書き込みは次のバッチに乗るので、この drain の `$watch` の収集には影響しない。同じ drain の
+    // `$watch` ハンドラは書いた後の出力を読み、ハンドラが出力へ書いた値はそのまま残る。
+    commitScanPlans(planScansOnUpdateBatch(batch, activeStateElements, depth), activeStateElements, depth);
+    fireWatchHits(batch, activeStateElements, depth);
+  } finally {
+    // 旧値台帳はこの drain 限りのもの。次のバッチへ持ち越さない（§4-1）。
+    clearPrevValues();
+  }
+}
+
+/** バッチの `$watch` ヒットを集めて（収集フェーズ）、宣言順・indexes 昇順に発火する（発火フェーズ）。 */
+function fireWatchHits(
+  batch: ReadonlySet<IAbsoluteStateAddress>,
+  activeStateElements: ReadonlySet<IStateElement>,
+  depth: number,
+): void {
+  // --- 収集フェーズ ---
+  const hits: IWatchHit[] = [];
+  for (const absAddress of batch) {
+    // stateElement 参照で引く。AbsolutePathInfo は
+    // stateElement 単位でキャッシュされるので、同名 state が複数の rootNode に
+    // 居ても取り違えない（address/AbsolutePathInfo.ts）。他 state のアドレスは
+    // ここで自然に落ちる ＝ 越境しない（設計 D8）。
+    const stateElement = absAddress.absolutePathInfo.stateElement;
+    if (!activeStateElements.has(stateElement)) {
+      continue;
+    }
+    const path = absAddress.absolutePathInfo.pathInfo.path;
+    const own = getWatchEntries(stateElement).get(path);
+    const fromVolumes = getVolumeWatchEntries(stateElement).get(path);
+    if (typeof own === "undefined" && typeof fromVolumes === "undefined") {
+      continue;
+    }
+    const matched: IWatchEntry[] = typeof own === "undefined" ? [] : [own];
+    if (typeof fromVolumes !== "undefined") {
+      matched.push(...fromVolumes);
+    }
+    for (const entry of matched) {
       let indexes: number[] = [];
       if (entry.pathInfo.wildcardCount > 0) {
         if (absAddress.listIndex === null) {
@@ -219,35 +248,31 @@ function fireWatchOnUpdateBatch(batch: ReadonlySet<IAbsoluteStateAddress>): void
         indexes = getScopedIndexes(absAddress.listIndex, entry.pathInfo.wildcardCount);
       }
       hits.push({ stateElement, entry, absAddress, indexes });
-      }
     }
-    if (hits.length === 0) {
-      return;
-    }
-    hits.sort(compareHits);
+  }
+  if (hits.length === 0) {
+    return;
+  }
+  hits.sort(compareHits);
 
-    // --- 発火フェーズ ---
-    beginWatchFiring(depth);
-    try {
-      for (const hit of hits) {
-        // 先行ハンドラが同期的に切断や `_state` 再 set を行い得るため、発火直前に
-        // 「まだ active か」「entry が現行 registry のものか」を再確認する。
-        if (!activeStateElements.has(hit.stateElement)) {
-          continue;
-        }
-        const stillOwn = getWatchEntries(hit.stateElement).get(hit.entry.path) === hit.entry;
-        const stillVolume = getVolumeWatchEntries(hit.stateElement).get(hit.entry.path)?.includes(hit.entry) === true;
-        if (!stillOwn && !stillVolume) {
-          continue;
-        }
-        fireOne(hit);
+  // --- 発火フェーズ ---
+  beginWatchFiring(depth);
+  try {
+    for (const hit of hits) {
+      // 先行ハンドラが同期的に切断や `_state` 再 set を行い得るため、発火直前に
+      // 「まだ active か」「entry が現行 registry のものか」を再確認する。
+      if (!activeStateElements.has(hit.stateElement)) {
+        continue;
       }
-    } finally {
-      endWatchFiring();
+      const stillOwn = getWatchEntries(hit.stateElement).get(hit.entry.path) === hit.entry;
+      const stillVolume = getVolumeWatchEntries(hit.stateElement).get(hit.entry.path)?.includes(hit.entry) === true;
+      if (!stillOwn && !stillVolume) {
+        continue;
+      }
+      fireOne(hit);
     }
   } finally {
-    // 旧値台帳はこの drain 限りのもの。次のバッチへ持ち越さない（§4-1）。
-    clearPrevValues();
+    endWatchFiring();
   }
 }
 

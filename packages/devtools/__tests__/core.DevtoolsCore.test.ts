@@ -183,6 +183,15 @@ describe('DevtoolsCore', () => {
       expect(evaluate).toMatchObject({ kind: 'watch-error', label: 'total', detail: 'evaluate: "plain string throw"' });
     });
 
+    it('$scan の fold 失敗（phase: fold）と scan パスの未解決（source: scan）も同じ行で記録すること', () => {
+      const { core, source } = setupConnected();
+      source.emit({ type: 'state:watch-error', phase: 'fold', path: '$scan.feed', error: new TypeError('boom') });
+      source.emit({ type: 'state:path-unresolved', source: 'scan', path: 'pageResutl', missingSegment: 'pageResutl' });
+      const [fold, unresolved] = core.getTimeline();
+      expect(fold).toMatchObject({ kind: 'watch-error', label: '$scan.feed', detail: 'fold: TypeError: boom' });
+      expect(unresolved).toMatchObject({ kind: 'path-unresolved', label: 'pageResutl', detail: 'scan: "pageResutl" is not declared' });
+    });
+
     it('path-unresolvedを記録すること（配線が黙って死んでいることの唯一の可視化点）', () => {
       const { core, source } = setupConnected();
       source.emit({

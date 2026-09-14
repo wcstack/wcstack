@@ -31,6 +31,8 @@ export type PathInfoSource =
   | "binding"
   /** `$watch` の宣言キー */
   | "watch"
+  /** `$scan` の `from` / `resetOn`（docs/state-scan-design.md §2-4） */
+  | "scan"
   /** ランタイム内部のパス翻訳（mapped な bind-component の外向き伝播）。検査しない */
   | "internal";
 
@@ -172,14 +174,16 @@ export function resolvePathExistence(
 }
 
 /** 診断 code は lint / IDE と同一語彙（errorGuidance.ts の三面共有規約） */
-const DIAGNOSTIC_CODE: Readonly<Record<"binding" | "watch", string>> = {
+const DIAGNOSTIC_CODE: Readonly<Record<"binding" | "watch" | "scan", string>> = {
   binding: "wcs/binding-path-missing",
   watch: "wcs/watch-path-missing",
+  scan: "wcs/scan-path-missing",
 };
 
-const SUBJECT: Readonly<Record<"binding" | "watch", string>> = {
+const SUBJECT: Readonly<Record<"binding" | "watch" | "scan", string>> = {
   binding: "Bound path",
   watch: "$watch path",
+  scan: "$scan path",
 };
 
 /**
@@ -428,7 +432,7 @@ export function flushDeferredPathReports(stateElement: IStateElement): void {
 function reportMissing(
   stateElement: IStateElement,
   path: string,
-  source: PathInfoSource & ("binding" | "watch"),
+  source: PathInfoSource & ("binding" | "watch" | "scan"),
   result: IMissingResult,
 ): void {
   // 接頭辞は raiseError と同じ `[@wcstack/state] [wcs/...]` の並び（コンソールの

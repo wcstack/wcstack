@@ -1344,6 +1344,20 @@ export default {
     expect(diags[0].message).toContain('wcs/mount-dollar-declaration');
   });
 
+  it('属性値の中の "bind-component" はマウントとみなさず、ルートとして検証する', () => {
+    const body = `<script type="module">
+export default {
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  get "nodes.**.total"() { return 0; },
+};
+</script></wcs-state>`;
+    const mountedMessage = (html: string) =>
+      validateRecursion(html, 'wcs-state', 'en').some(d => d.message.includes('wcs/mount-dollar-declaration'));
+    expect(mountedMessage(`<wcs-state data-note="no bind-component here">${body}`)).toBe(false);
+    expect(mountedMessage(`<wcs-state bind-component="state">${body}`), '対照: 属性として書けばマウント扱い').toBe(true);
+  });
+
   it('`**` を含まないコンポーネント state は従来どおり素通り', () => {
     expect(validateRecursion(`<wcs-state bind-component="state"><script type="module">
 export default { node: {}, get label() { return this.node.value; } };

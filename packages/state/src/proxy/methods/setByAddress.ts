@@ -48,23 +48,25 @@ import { resolveExport } from "../../webComponent/exportIndex";
 import { writeExportedAccessor } from "../../webComponent/overlay";
 
 /**
- * `$watch` の `prev` 台帳へ旧値を記録する（docs/state-watch-hook-design.md §4-1）。
+ * 宣言済みパスの `prev` 台帳へ旧値を記録する。台帳を読むのは `$watch`
+ * （docs/state-watch-hook-design.md §4-1）と `$scan` の `from`（docs/state-scan-design.md §2-1）。
  *
- * same-value guard が既に読んだ旧値だけを使い、watch のための追加読みはしない。
- * `$watch` 未宣言時のコストは `watchPaths` の null 判定 1 個に収める（§10）。
+ * same-value guard が既に読んだ旧値だけを使い、そのための追加読みはしない。
+ * どちらも未宣言なら `watchPaths` / `scanPaths` の null 判定 2 個で抜ける（watch 設計書 §10）。
  */
-function recordWatchPrevValue(
+function recordDeclaredPrevValue(
   stateElement: IStateHandler["stateElement"],
   path: string,
   absAddress: IAbsoluteStateAddress,
   oldValue: unknown,
   hasOldValue: boolean,
 ): void {
-  const watchPaths = stateElement.watchPaths;
-  if (watchPaths == null || !hasOldValue) {
+  if (!hasOldValue) {
     return;
   }
-  if (watchPaths.has(path)) {
+  const watchPaths = stateElement.watchPaths;
+  const scanPaths = stateElement.scanPaths;
+  if (watchPaths?.has(path) === true || scanPaths?.has(path) === true) {
     recordPrevValue(absAddress, oldValue);
   }
 }
@@ -420,7 +422,7 @@ function setByAddressCore(
           hasOldValue: devHasOldValue,
         });
       }
-      recordWatchPrevValue(stateElement, path, absAddress, devOldValue, devHasOldValue);
+      recordDeclaredPrevValue(stateElement, path, absAddress, devOldValue, devHasOldValue);
       let dispatchedExport = false;
       try {
         if (key === undefined) {
@@ -489,7 +491,7 @@ function setByAddressCore(
       hasOldValue: devHasOldValue,
     });
   }
-  recordWatchPrevValue(stateElement, path, absAddress, devOldValue, devHasOldValue);
+  recordDeclaredPrevValue(stateElement, path, absAddress, devOldValue, devHasOldValue);
   try {
     if (isSwappable) {
       return _setByAddressWithSwap(target, address, absAddress, value, receiver, handler, keyedMergePath);

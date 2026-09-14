@@ -10,8 +10,8 @@ import type { IPathInfo } from "../address/types";
  * `$watch` のハンドラ。
  *
  * - `cur` はバッチ確定値、`prev` はバッチ開始時点の値（first-write-wins、設計書 §4-1）。
- *   `prev` が意味を持つのはスカラのときだけで、参照型・`$postUpdate` 経由・
- *   `config.sameValueGuard = false` では `undefined` になる。
+ *   `prev` が記録されるのはプリミティブを書いたときだけ（書く前の値はオブジェクトでもよい）で、
+ *   書く値が参照型・`$postUpdate` 経由・`config.sameValueGuard = false` では `undefined` になる。
  * - `indexes` はワイルドカードパスのときだけ、そのスコープ自身のループ分が渡る
  *   （`getScopedIndexes`。bind-component の子スコープでも意味が変わらない）。
  * - `this` は writable な state proxy（設計書 D8）。

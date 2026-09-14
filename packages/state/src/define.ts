@@ -101,6 +101,7 @@ export const STATE_EVENT_TOKENS_NAME = "$eventTokens";
 export const STATE_ON_NAME = "$on";
 export const STATE_STREAMS_NAME = "$streams";
 export const STATE_WATCH_NAME = "$watch";
+export const STATE_SCAN_NAME = "$scan";
 export const STATE_RECURSION_NAME = "$recursion";
 
 /**

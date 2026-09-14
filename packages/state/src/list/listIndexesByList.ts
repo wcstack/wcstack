@@ -135,7 +135,7 @@ function getRepairTarget(first: IListIndex, parentListIndex: IListIndex | null):
 
 /**
  * 台帳を**引き当てるだけ**。行の親ポインタには触らない。
- * 観測（テスト・世代の後始末）と存在判定はこちらを使う。
+ * 観測（テスト・世代の後始末・`$scan` の drain が行の置き換わりを見る判定）と存在判定はこちらを使う。
  */
 export function getListIndexesByList(list: readonly unknown[]): IListIndex[] | null {
   const listIndexes = listIndexesByList.get(list);

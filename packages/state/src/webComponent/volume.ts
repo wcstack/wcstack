@@ -161,6 +161,10 @@ function validateVolumeDeclarations(
   if (typeof (volumeState as Record<string, unknown>)["$streams"] !== "undefined") {
     raiseError(`Volume "${mountPath}" declares $streams, which volumes do not support yet. Declare the stream on the root state.`);
   }
+  // $scan も未対応（docs/state-scan-design.md D8）。from / on はルートのツリーと token を前提にする
+  if (typeof (volumeState as Record<string, unknown>)["$scan"] !== "undefined") {
+    raiseError(`Volume "${mountPath}" declares $scan, which volumes do not support yet. Declare the scan on the root state.`);
+  }
   // $recursion も同じく未対応。宣言だけ受理されたように見えて、どの深さも解決しない
   // 状態を作らない（docs/state-recursive-path-impl-plan.md §7）。
   if (typeof (volumeState as Record<string, unknown>)[STATE_RECURSION_NAME] !== "undefined") {

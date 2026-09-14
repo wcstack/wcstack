@@ -82,9 +82,9 @@ Visibility notifications arrive as a task after layout. They are **not microtask
 
 `state-intersect-scroll` uses the switchMap-style restart of `$streams`. Incrementing `page++` on every intersection edge would be wrong there: a later edge would abort the in-flight run for page N and jump to N+1. The demo preserves ordered appends with the following combination.
 
-1. `sentinelChanged` (an IntersectionObserver task) computes `page = floor(items.length / pageSize) + 1`
-2. While page N is running, or after it failed, `items.length` is unchanged, so this merely re-assigns N. The primitive same-value guard (on by default) makes the enqueue itself a no-op and the stream does not restart
-3. `$updatedCallback` commits a successful chunk into `items` and calls `reobserve()`
+1. `sentinelChanged` (an IntersectionObserver task) computes `page = floor(feed.items.length / pageSize) + 1`
+2. While page N is running, or after it failed, `feed.items.length` is unchanged, so this merely re-assigns N. The primitive same-value guard (on by default) makes the enqueue itself a no-op and the stream does not restart
+3. `$scan` (`from: "pageResult"`) folds the landing of a successful chunk into `feed.items`, and `$watch.feed` calls `reobserve()` at the end of the next batch. The commit is the chunk's landing, not `done`, and a second landing of the same page is dropped by the page key inside the fold
 4. On the next visibility callback the expression returns N+1. After the updater drains the `page` update, the dependency hit in `$streams.args` aborts the old run and starts a new one with the new args
 
 → No hand-written exhaust guard on `!loading` / `!error` is needed, and an ordinary intersection edge never turns into an out-of-budget retry of a failed page.
@@ -124,7 +124,7 @@ The drain (`Updater._applyChange`) normally applies its bindings synchronously i
 
 → **Consequence 1**: code that writes state and then reads the DOM after `await Promise.resolve()` sees the old DOM. Wait for the transition, or use `$updatedCallback` — it still fires right after the bindings are applied, inside the update callback, so its *position* is unchanged even though it moves a frame later along with them.
 
-→ **Consequence 2 — the mechanism order inverts.** The drain-end batch listeners (`$watch` → `$streams` restart, §3) stay on the original microtask, because they consume state addresses and not the DOM. `$updatedCallback` does not. So the order §3 calls fixed — `$updatedCallback` → `$watch` → `$streams` restart — becomes `$watch` → `$streams` restart → `$updatedCallback` for as long as the arbiter accepts `state`. This is the only thing on a page that reorders that layer. A `$watch` handler that reads something `$updatedCallback` wrote cannot rely on the declared order while the tag is present.
+→ **Consequence 2 — the mechanism order inverts.** The drain-end batch listeners (`$scan` → `$watch` → `$streams` restart, §3) stay on the original microtask, because they consume state addresses and not the DOM. `$updatedCallback` does not. So the order §3 calls fixed — `$updatedCallback` → `$scan` → `$watch` → `$streams` restart — becomes `$scan` → `$watch` → `$streams` restart → `$updatedCallback` for as long as the arbiter accepts `state`. This is the only thing on a page that reorders that layer. A `$watch` handler that reads something `$updatedCallback` wrote cannot rely on the declared order while the tag is present.
 
 What does **not** change: initial rendering is never wrapped (only the drain is); `inSsr()` short-circuits to the synchronous path; and a batch with no bindings to apply is never handed to the arbiter, so a write to a headless path (`$watch`-only, `$streams` internal state) neither animates nor defers. With no arbiter installed — or with `for="router"` — the drain is byte-for-byte what it was.
 

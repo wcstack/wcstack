@@ -750,7 +750,8 @@ describe('WcsDevtools shell', () => {
       expect(body.textContent).toContain('depth > 32');
       const warned = Array.from(body.querySelectorAll('.badge-tag.warn')) as HTMLElement[];
       expect(warned.map((el) => el.textContent)).toEqual(['watch-error', 'watch-chain-limit']);
-      expect(warned[0].title).toContain('$watch threw');
+      expect(warned[0].title).toContain('$watch or $scan failure');
+      expect(warned[0].title).toContain('see the phase');
       expect(warned[1].title).toContain('depth limit');
     });
 

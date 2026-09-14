@@ -1,7 +1,9 @@
 /**
  * watch.streamCommit.test.ts
  *
- * `examples/state-intersect-scroll/index.html` の commit 境界を固定する。
+ * `$watch` で stream の完了を commit する形を固定する。`examples/state-intersect-scroll` が
+ * `$scan` へ移る前の境界で、example の現在の境界は scan.streamCommit.test.ts が固定する。
+ * ここに残すのは、`$watch` が headless に commit できることの対比として有効だから。
  *
  * この example は元々 `$updatedCallback` で `$streamStatus.pageResult` の遷移を拾って
  * ページを feed へ commit していた。`$updatedCallback` は binding 駆動なので、

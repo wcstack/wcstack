@@ -195,11 +195,11 @@ The single wrap point is the drain in
   instead await the transition (or use `$updatedCallback`, which still fires after
   the bindings have been applied, inside the callback).
 - **The mechanism order inverts.** `notifyUpdateBatchListeners` runs in the drain's
-  `finally`, on the original microtask, because `$watch` and the `$streams` restart
-  consume state addresses and not the DOM. `$updatedCallback` rides with the
+  `finally`, on the original microtask, because `$scan`, `$watch` and the `$streams`
+  restart consume state addresses and not the DOM. `$updatedCallback` rides with the
   bindings into the update callback. So the order the state README declares fixed —
-  `$updatedCallback` → `$watch` → `$streams` restart — becomes
-  `$watch` → `$streams` restart → `$updatedCallback` while the arbiter accepts
+  `$updatedCallback` → `$scan` → `$watch` → `$streams` restart — becomes
+  `$scan` → `$watch` → `$streams` restart → `$updatedCallback` while the arbiter accepts
   `state`. This is deliberate (holding `$watch` for a frame would be worse), and it
   is the one documented exception to that layer being fixed.
 - **A batch with no bindings to apply is never handed to the arbiter.** Every write

@@ -98,6 +98,8 @@ At parse time, if `state[name]` is undefined it is materialized as an ordinary d
 
 You may pre-declare the property yourself (useful for typing with `defineState`), but the value is **overwritten with `initial` when the stream starts**. Once started, the property is owned by the stream runtime: assigning to it from user code is not blocked, but the behavior is undefined — the next fold simply folds on top of whatever you wrote.
 
+To keep an accumulation across restarts, fold the stream's value in a [`$scan`](./scan.md) whose `from` is the stream name. The stream's own value still resets to `initial` on every restart.
+
 ---
 
 ## Companion Namespaces: `$streamStatus` / `$streamError`

@@ -240,8 +240,8 @@ describe('updater/updater', () => {
     /**
      * 適用側が throw しても drain フックは落とさない（予測可能性）。
      *
-     * README の「機構間の順序は固定（$updatedCallback → $watch → $streams restart）」は、
-     * 適用が throw した瞬間に $watch と stream restart が丸ごと消えていた。binding 1 本の
+     * README の「機構間の順序は固定（$updatedCallback → $scan → $watch → $streams restart）」は、
+     * 適用が throw した瞬間に $scan・$watch と stream restart が丸ごと消えていた。binding 1 本の
      * 失敗は applyChangeFromBindings 側で隔離されるので、ここへ来るのは
      * $updatedCallback の throw 等。例外は握らず（loud のまま）通知だけ保証する。
      */

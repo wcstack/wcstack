@@ -17,9 +17,11 @@
  * どちらの経路も必ずここを通るため「Set に居る = 接続中かつ宣言済み」が保たれる。
  * この「宣言済み」の側が崩れると、`$watch` 未使用アプリの drain にも収集ループが乗る
  * （ゼロコスト契約、docs/state-watch-hook-design.md §10）。
+ * `$scan` の drain / enqueue のゲート（scan/scanRegistry.ts）も同じ出入りで数える。
  */
 
 import type { IStateElement } from "../components/types";
+import { activateScanGates, deactivateScanGates } from "../scan/scanRegistry";
 import type { IWatchEntry } from "./types";
 
 const registryByStateElement: WeakMap<IStateElement, Map<string, IWatchEntry>> = new WeakMap();
@@ -63,6 +65,7 @@ export function getWatchEntries(stateElement: IStateElement): ReadonlyMap<string
  */
 export function addActiveWatchStateElement(stateElement: IStateElement): void {
   activeStateElements.add(stateElement);
+  activateScanGates(stateElement);
 }
 
 /**
@@ -81,6 +84,7 @@ export function getActiveWatchStateElements(): ReadonlySet<IStateElement> {
  */
 export function deactivateWatch(stateElement: IStateElement): void {
   activeStateElements.delete(stateElement);
+  deactivateScanGates(stateElement);
 }
 
 /**
@@ -88,6 +92,7 @@ export function deactivateWatch(stateElement: IStateElement): void {
  */
 export function clearWatchRegistry(stateElement: IStateElement): void {
   activeStateElements.delete(stateElement);
+  deactivateScanGates(stateElement);
   registryByStateElement.delete(stateElement);
 }
 
