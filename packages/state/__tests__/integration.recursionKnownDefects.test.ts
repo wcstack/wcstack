@@ -21,15 +21,17 @@
  *     循環を名指しする**ことを別の it で固定してある（分岐が片側へ退化していない担保）。
  *  3b. **E3 — `$129` の無言 undefined**。`$` + 数字の表引き失敗を `[wcs/index-param-range]`
  *     で raiseError する。
+ *  1''. **#274 — ネストしたリストへの構造書き込み直後の cold な `$resolve`**。書き込みの依存
+ *     ウォークが書いたパス自身のキャッシュ（書き込み前の配列）を読み、新しい配列の台帳を
+ *     作っていなかった。ウォークの前にそのキャッシュを無効化する（setByAddress.ts の notifyWrite）。
  *
  * 現状固定のまま残っている欠陥:
- *  1'. 欠陥1 の describe に 3 箇所残る（いずれも `DEFECT:` コメント付き）。
+ *  1'. 欠陥1 の describe に 2 箇所残る（いずれも `DEFECT:` コメント付き）。
  *      (i) in-place push 後の `[...arr]` 再代入（in-place 変異規範の側）、
- *      (ii) ネストしたリストへの構造書き込み直後の cold な `$resolve`、
  *      (iii) describe 末尾の it に **埋め込まれた** `(1')`＝走査を一度も経ていない
  *      cold な `$resolve`（it 全体は緑なので、独立した it を数えると見落とす）。
- *      (ii)(iii) はどちらも「$resolve だけが走査の第 1 相を持たない」（Phase A の A1）で、
- *      E1 とは別の契約。
+ *      (iii) は「$resolve だけが走査の第 1 相を持たない」（Phase A の A1）で、E1 とは別の契約。
+ *      （(ii) の構造書き込み直後の cold な `$resolve` は #274 で直った — 上の 1''）
  *  2. 同じ配列インスタンスが 2 つ以上の親から到達可能（DAG・循環・同一リスト内の
  *     重複）だと、台帳（src/list/listIndexesByList.ts）が配列インスタンスだけを
  *     キーにしているため ListIndex が先着の親に別名化し、無言で誤る（E6 で修理予定）。
@@ -362,11 +364,10 @@ describe("欠陥1（E1 修理済み）: 描画なしのルートリストでも�
     expect(totalsAt(stateEl, 1)).toEqual([440, 110]);
   });
 
-  // DEFECT: ネストしたリストへの構造書き込みの直後は、その新配列を誰も走査していない
-  //         ので getListIndexByIndexes が台帳を引けずに throw する（引くだけで作らない）。
-  //         走査を 1 回挟めば同じ書き込みが通る＝「書く前に走査する」を実装側が
-  //         保証すべき。修理後は走査を挟まなくても通るべき。
-  it("ネストしたリストへの構造書き込み直後、走査を挟まない $resolve が throw する", async () => {
+  // 修理前は、ネストしたリストへの構造書き込みの依存ウォークが、書いたパス自身のキャッシュ
+  // （書き込み前の配列）を読んで「変化なし」と判定し、新しい配列の台帳を作らなかった。
+  // 直後の cold な $resolve が台帳を引けずに throw し、走査（$getAll）を 1 回挟む必要があった。
+  it("ネストしたリストへの構造書き込み直後でも、走査を挟まない $resolve が通る", async () => {
     const { stateEl } = await mount(unrollTotals({
       nodes: [NODE(1, [NODE(10, [NODE(100)]), NODE(20, [NODE(200)])])],
     }, 3));
@@ -381,14 +382,10 @@ describe("欠陥1（E1 修理済み）: 描画なしのルートリストでも�
       } catch (e: any) { err = String(e && e.message); }
     });
     await flush();
-    expect(err).toBe("[@wcstack/state] ListIndexes not found: nodes.*.children");
-
-    // 走査（$getAll）を 1 回挟めば同じ書き込みが通る
-    expect(totalsAt(stateEl, 1)).toEqual([220, 110]);
-    write(stateEl, (s: any) => {
-      s.$resolve("nodes.*.children.*.children.*.value", [0, 1, 0], 9000);
-    });
-    await flush();
+    // Fixed by #274 (the write's dependency walk reads the array it wrote, not the cached pre-write array)
+    //   — was: "[@wcstack/state] ListIndexes not found: nodes.*.children"
+    expect(err).toBeNull();
+    expect(totalsAt(stateEl, 1)).toEqual([220, 9010]);
     expect(totalsAt(stateEl, 0)).toEqual([9231]);
   });
   // 壊れていたのは値ではなく「文脈から導かれる添字タプル」だったので、受け入れ試験と

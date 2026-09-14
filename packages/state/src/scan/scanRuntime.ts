@@ -9,7 +9,7 @@
  * 発火単位（D3）: バッチに載った `from` の絶対アドレス 1 つにつき fold 1 回。
  * 同じ出力へ複数行（wildcard）が載ったバッチでは、indexes 昇順に acc を連鎖させて
  * 最後に 1 回だけ書く。開始値と `Object.is` で同じなら書かない。
- * 行の着地は、いまのリストの位置 1 つにつき 1 回に絞る（selectLandedRows）。
+ * 行の着地は、いまのリストの位置 1 つにつき 1 回に絞る（watch/rowLanding.ts の selectLandedRows — `$watch` と共有）。
  *
  * 計画と書き込みを 2 相に分ける（D18）: 全 scan の次の値を読むだけで決め（planScansOnUpdateBatch）、
  * 宣言順に書く（commitScanPlans）。どちらも同じ drain の `$watch` の発火より前（D11）。
@@ -25,19 +25,15 @@
  * evaluate で閉じるのと同じ）、出力の読み・fold の throw はその scan の書き込みを止める。
  */
 
-import { createStateAddress } from "../address/StateAddress";
-import type { IAbsoluteStateAddress, IPathInfo } from "../address/types";
+import type { IAbsoluteStateAddress } from "../address/types";
 import type { IStateElement } from "../components/types";
-import { isSameListIndexValue } from "../list/createListIndex";
-import { getListIndexesByList } from "../list/listIndexesByList";
-import type { IListIndex } from "../list/types";
-import { getScopedIndexes, listIndexAtWildcard } from "../list/wildcardLevel";
-import { getByAddressSymbol } from "../proxy/symbols";
+import { getScopedIndexes } from "../list/wildcardLevel";
 import type { IStateProxy } from "../proxy/types";
 import { getStreamEntries } from "../stream/streamRegistry";
 import { getUpdater } from "../updater/updater";
 import { beginWatchFiring, endWatchFiring } from "../watch/chainDepth";
 import { getPrevValue } from "../watch/prevValues";
+import { selectLandedRows } from "../watch/rowLanding";
 import { consumePendingScanReset, discardPendingScanResets } from "./eventReset";
 import { cloneInitial, isSameAsInitial, recordOutputValue } from "./initialValue";
 import { isThenable, reportLateGetterSource, reportScanError, reportScanThenable, type ScanFailure } from "./scanReport";
@@ -63,9 +59,6 @@ export interface IScanPlan {
 }
 
 const NO_PLANS: readonly IScanPlan[] = Object.freeze([]);
-
-/** 行のアドレスと、いまのリストの位置の関係 */
-type RowPlacement = "current" | "replaced" | "gone";
 
 function groupOf(groups: Map<IScanEntry, IScanGroup>, stateElement: IStateElement, entry: IScanEntry): IScanGroup {
   let group = groups.get(entry);
@@ -152,64 +145,6 @@ export function discardSkippedScanResets(
   firing: ReadonlySet<IStateElement> | null,
 ): void {
   discardPendingScanResets(batch, firing, isQueuedForNextBatch);
-}
-
-/**
- * 行のアドレスが、いまのリストのその位置とどう関係するか。外側の段から台帳を引く。
- * 計画の相は読むだけ（D18）なので、台帳は観測用の `getListIndexesByList` で引き、
- * 親ポインタを修理する `resolveListIndexesByList` は使わない。
- * - `gone`: その位置に行が無い（リストを短くした・空にした・配列でなくした）。
- * - `current`: その位置の行が、アドレスの行そのものか、同じリスト要素を表す行。
- * - `replaced`: その位置には別の要素の行が居る（アドレスの行はリストから外れた）。
- */
-function placementOf(state: IStateProxy, pathInfo: IPathInfo, row: IScanRow): RowPlacement {
-  // wildcard の `from` のアドレスは収集の段階で listIndex を持つものに限っている
-  const listIndex = row.absAddress.listIndex as IListIndex;
-  let placement: RowPlacement = "current";
-  let parentListIndex: IListIndex | null = null;
-  for (let level = 0; level < pathInfo.wildcardCount; level++) {
-    const list = state[getByAddressSymbol](createStateAddress(pathInfo.wildcardParentPathInfos[level], parentListIndex));
-    // 台帳を持たない値（配列でない・空の配列）は行が無い
-    const current: IListIndex | undefined = getListIndexesByList(list as readonly unknown[])?.[row.indexes[level]];
-    if (typeof current === "undefined") {
-      return "gone";
-    }
-    // scan はルート専用なので、行の連鎖にスコープの base 段は無い（段は必ずある）
-    const own = listIndexAtWildcard(listIndex, level, pathInfo.wildcardCount) as IListIndex;
-    if (current !== own && !isSameListIndexValue(current, own)) {
-      placement = "replaced";
-    }
-    parentListIndex = current;
-  }
-  return placement;
-}
-
-/**
- * wildcard の行の着地を、いまのリストの位置 1 つにつき 1 つに絞る（D3）。
- *
- * - 位置に行が無いアドレス（行を書いてからリストを短くした・空にした）は畳まない。
- *   添字で読むと範囲外の読みで throw する。
- * - 同じ位置に、いまそこに居る行のアドレスと、外れた行のアドレスが並んだら前者を残す
- *   （行を書いてからリストを置換した形。外れた行を添字で読むと、新しい行を同じ位置で二重に畳む）。
- * - 外れた行のアドレスしか無い位置は残す。入れ子のリストを置き換えると、書き込みの依存展開が
- *   置き換える前の行でアドレスを載せ、それがその位置の唯一の着地になるため
- *   （#274・docs/state-scan-design.md §5-5・テストの DEFECT(#274)）。
- */
-function selectLandedRows(state: IStateProxy, pathInfo: IPathInfo, rows: readonly IScanRow[]): IScanRow[] {
-  const byPosition = new Map<string, { readonly row: IScanRow; readonly rank: number }>();
-  for (const row of rows) {
-    const placement = placementOf(state, pathInfo, row);
-    if (placement === "gone") {
-      continue;
-    }
-    const rank = placement === "current" ? 1 : 0;
-    const key = row.indexes.join(",");
-    const kept = byPosition.get(key);
-    if (typeof kept === "undefined" || rank > kept.rank) {
-      byPosition.set(key, { row, rank });
-    }
-  }
-  return Array.from(byPosition.values(), (kept) => kept.row);
 }
 
 function readSource(state: IStateProxy, source: IScanPathSource, row: IScanRow): unknown {

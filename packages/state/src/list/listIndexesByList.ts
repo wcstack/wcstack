@@ -68,6 +68,14 @@ export function reviveListIndexes(listIndexes: Iterable<IListIndex>): void {
 }
 
 /**
+ * 差分がリストから外し、まだ戻っていない行か。読むだけの判定で、`$scan` の drain が
+ * 行のアドレスの指す行がもうリストに居ないかを見る（scan/scanRuntime.ts の placementOf）。
+ */
+export function isRetiredListIndex(listIndex: IListIndex): boolean {
+  return retiredListIndexes.has(listIndex);
+}
+
+/**
  * 台帳の行がぶら下がる親（`oldParent`）を、いま要求している親（`newParent`）へ
  * 付け替えてよいか。**退役した親のときだけ**真 ── 生きているなら共有であって
  * 陳腐化ではないので、main と同じく 1 組の行集合に合流させる。

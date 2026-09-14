@@ -33,6 +33,7 @@ import { registerUpdateBatchListener } from "../updater/updater";
 import { beginWatchFiring, consumeWatchChainDepth, endWatchFiring } from "./chainDepth";
 import { getComputedSnapshot, setComputedSnapshot } from "./computedSnapshots";
 import { clearPrevValues, getPrevValue } from "./prevValues";
+import { hasRetiredRow, selectLandedRows } from "./rowLanding";
 import { addActiveWatchStateElement, getActiveWatchStateElements, getVolumeWatchEntries, getWatchEntries } from "./watchRegistry";
 import { hasScanDrainWork } from "../scan/scanRegistry";
 import { commitScanPlans, discardSkippedScanResets, planScansOnUpdateBatch } from "../scan/scanRuntime";
@@ -254,11 +255,12 @@ function fireWatchHits(
     return;
   }
   hits.sort(compareHits);
+  const landed = selectWatchLandings(hits);
 
   // --- 発火フェーズ ---
   beginWatchFiring(depth);
   try {
-    for (const hit of hits) {
+    for (const hit of landed) {
       // 先行ハンドラが同期的に切断や `_state` 再 set を行い得るため、発火直前に
       // 「まだ active か」「entry が現行 registry のものか」を再確認する。
       if (!activeStateElements.has(hit.stateElement)) {
@@ -274,6 +276,67 @@ function fireWatchHits(
   } finally {
     endWatchFiring();
   }
+}
+
+/**
+ * ワイルドカードの watch の行の着地を、いまのリストの位置 1 つにつき 1 つに絞る（`$scan` の `from` と
+ * 同じ選別 — watch/rowLanding.ts・#274）。`hits` は compareHits でソート済みで、戻り値もその順を保つ。
+ *
+ * 位置を引くにはリストを読むので、引くのは退役した行を含むヒットがあるか、同じ entry・同じ indexes の
+ * ヒットが並ぶ（ソート済みなので隣り合う）entry だけ。行の値を書くだけのバッチ（大多数）は
+ * WeakSet の引きだけで抜ける。
+ */
+function selectWatchLandings(hits: IWatchHit[]): IWatchHit[] {
+  let entries: Set<IWatchEntry> | null = null;
+  for (let i = 0; i < hits.length; i++) {
+    const hit = hits[i];
+    if (hit.entry.pathInfo.wildcardCount === 0) {
+      continue;
+    }
+    const previous = hits[i - 1];
+    // ワイルドカードの hit は収集の段階で listIndex を持つものに限っている
+    if (hasRetiredRow(hit.absAddress.listIndex!)
+      || (previous?.entry === hit.entry && isSameIndexes(previous.indexes, hit.indexes))) {
+      (entries ??= new Set()).add(hit.entry);
+    }
+  }
+  if (entries === null) {
+    return hits;
+  }
+  const dropped = new Set<IWatchHit>();
+  for (const entry of entries) {
+    // entry は 1 つの state 要素の registry に属するので、group の state 要素は 1 つ
+    const group = hits.filter((hit) => hit.entry === entry);
+    const stateElement = group[0].stateElement;
+    try {
+      stateElement.createState("readonly", (state) => {
+        const kept = new Set(selectLandedRows(state, entry.pathInfo, group));
+        for (const hit of group) {
+          if (!kept.has(hit)) {
+            dropped.add(hit);
+          }
+        }
+      });
+    } catch (e) {
+      // 位置を引く読み（リストのパスの getter など）が throw した。同じリストを通る cur も読めないので、
+      // この entry のヒットは発火せず、評価の失敗として 1 回報告する（他の watch は続行する）
+      reportWatchError(stateElement, entry.path, "evaluate", e);
+      for (const hit of group) {
+        dropped.add(hit);
+      }
+    }
+  }
+  return hits.filter((hit) => !dropped.has(hit));
+}
+
+/** 同じ entry の hit どうし（indexes の長さは等しい） */
+function isSameIndexes(a: readonly number[], b: readonly number[]): boolean {
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /**
