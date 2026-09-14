@@ -1778,7 +1778,7 @@ interface CommandToken {
 
 - 購読者は要素を `WeakRef` で保持するため、token の購読者セットに残っていても、取り外された要素はガベージコレクト可能
 - `emit` 時、WeakRef が回収済みか要素が接続されていない（`isConnected === false`）場合、購読は自動的に破棄される（lazy purge）
-- 所有する `<wcs-state>` が disconnect されると、token レジストリ全体がクリアされる
+- 所有する `<wcs-state>` が disconnect されても token レジストリは保持されるので、ルート `<wcs-state>` を付け直した後（ホストを DOM 上で移動したときなど）も購読に命令が届く。切断中は state を作れないので、`$command` 経由の emit は起きない
 
 要素のメソッドは `emit` の引数で呼び出されます：
 
@@ -1955,7 +1955,7 @@ $on: {
 
 ### Token API
 
-event token は command token と同じ `Token` pub/sub プリミティブを共有します —— `name` / `size` / `subscribe` / `unsubscribe` / `emit`、subscribe 順の保持つき（[Token API](#token-api) 参照）。token はイベントごとに registry から解決されるため、`setInitialState()` による再構築後も最新の `$on` 購読者に届きます。所有する `<wcs-state>` が disconnect されると、event-token registry はクリアされます。
+event token は command token と同じ `Token` pub/sub プリミティブを共有します —— `name` / `size` / `subscribe` / `unsubscribe` / `emit`、subscribe 順の保持つき（[Token API](#token-api) 参照）。token はイベントごとに registry から解決されるため、`setInitialState()` による再構築後も最新の `$on` 購読者に届きます。所有する `<wcs-state>` が disconnect されても event-token registry は保持されるので、ルート `<wcs-state>` を付け直せば `$on` ハンドラ（と `on` の scan）は再びイベントを受けます。切断中に dispatch されたイベントは state ツリーが見つからず、届きません。
 
 ## Stream（`$streams`）
 
@@ -2212,7 +2212,6 @@ $updatedCallback(paths) {
 - **例外は隔離される。** throw・Promise の戻り値・読めない値はコンソールと DevTools に報告され、書き込みません（ワイルドカードの `from` で読めない行はその行だけを飛ばし、行の着地はリストの位置 1 つにつき 1 回に絞ります）。他の scan・watch・stream の restart は続行します。
 - **`$watch` は scan の書き込みの後に走る。** 同じ drain の `$watch` ハンドラは畳んだ後の出力を読み、ハンドラが出力へ書いた値はそのまま残ります。出力の着地が drain される前に `from` の source がもう一度書かれる（その drain の `$watch` ハンドラが書くなど）と、両方が同じバッチに載ります。このとき出力を見る `$watch` は `prev` に着地した値を受け、`cur` に 1 段先の値を見て、次のバッチで同じ値でもう一度発火することがあるので、同じ値の重複に耐える形にしてください。ユーザー操作で累積を消すなら、`resetOn` に nonce を読ませてください。
 - **ルートのみ。** ボリューム（`mount=`）は `$scan` を拒否し、マウントされた `bind-component` スコープは 1 回の warn で無視します。SSR では `from` は畳みません（出力の実体化は行います）。
-- **既知の穴:** `on` の scan は `$on` と同じ購読経路なので、ルート `<wcs-state>` を付け直すと両方止まります（[#273](https://github.com/wcstack/wcstack/issues/273)）。
 
 リファレンス: [docs/scan.ja.md](https://github.com/wcstack/wcstack/blob/main/packages/state/docs/scan.ja.md)。設計の決定レコード: [docs/state-scan-design.md](https://github.com/wcstack/wcstack/blob/main/docs/state-scan-design.md)。
 

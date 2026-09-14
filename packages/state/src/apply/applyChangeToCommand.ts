@@ -15,7 +15,9 @@
  *
  * 既知の制約:
  *   - emit が来なければ stale subscriber は token に残り続ける（要素が GC されても subscriber 関数自体は残る）。
- *     state インスタンスが disconnect されたタイミングで registry ごとクリアされるため、最終的には解放される。
+ *     registry は state 要素をキーにした WeakMap なので、state 要素ごと GC されたときに解放される。
+ *     切断では registry を捨てない — 捨てると、ルート <wcs-state> を付け直した後の emit が
+ *     購読者の居ない新しい token に届き、命令が無言で止まる（#273）。
  *     element ライフサイクルに直接フックする手段が現状の binding 機構に無いため、能動的な purge は将来課題。
  */
 

@@ -400,7 +400,8 @@ function createEventFold(entry: IScanEntry): TokenSubscriber {
 
 /**
  * `on` の scan を event-token の subscriber として登録する（設計書 §2-2）。
- * 購読の寿命は `$on` と同じ（`clearEventTokenRegistry` で消える — Issue #273）。
+ * 購読の寿命は `$on` と同じ（`_state` の再セットで `clearEventTokenRegistry` の後に張り直す。
+ * 切断では消えないので、ルート `<wcs-state>` の再接続の後も畳み続ける — Issue #273）。
  */
 export function subscribeScanEvents(stateElement: IStateElement, entries: readonly IScanEntry[]): void {
   for (const entry of entries) {
