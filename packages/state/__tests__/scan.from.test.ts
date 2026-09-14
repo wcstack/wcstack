@@ -717,11 +717,10 @@ describe("from: wildcard（行ごとの fold）", () => {
   });
 });
 
-describe("DEFECT(#274): 行の着地の既知の穴（https://github.com/wcstack/wcstack/issues/274・docs/state-scan-design.md §5-5）", () => {
-  it("DEFECT(#274): 入れ子のリストを長い配列に置き換えると、以前の長さを超える位置の行が着地せず、scan も $watch も畳まないこと", async () => {
-    // 書き込みの依存展開が、書いたパス自身のキャッシュ（書き込み前の配列）を読んで差分を取るので、
-    // 「変化なし」として置き換える前の行だけを展開する（トップレベルのリストはキャッシュされないので起きない）。
-    // 直ったら scan を ["0.0:5", "0.1:6"]、$watch を 2 回に反転させる
+describe("入れ子のリストの置換と、行の取り除き（#274・docs/state-scan-design.md §5-5）", () => {
+  it("入れ子のリストを長い配列に置き換えると、以前の長さを超える位置の行も着地し、scan も $watch も行ごとに畳むこと", async () => {
+    // 書き込みの依存展開が、書いたパス自身のキャッシュ（書き込み前の配列）を読んで差分を取り、
+    // 「変化なし」として置き換える前の行だけを展開していた（トップレベルのリストはキャッシュされないので起きなかった）
     const watch = vi.fn();
     const { host, stateEl } = await connectHost(
       `<template data-wcs="for: groups"><template data-wcs="for: groups.*.items"><span data-wcs="textContent: .qty"></span></template></template>`,
@@ -742,16 +741,16 @@ describe("DEFECT(#274): 行の着地の既知の穴（https://github.com/wcstack
     writeState(stateEl, (s) => { s.$resolve("groups.*.items", [0], [{ qty: 5 }, { qty: 6 }]); });
     await flushTimes(3);
 
-    expect(readState(stateEl, (s) => s.log)).toEqual(["0.0:5"]);
-    expect(watch).toHaveBeenCalledTimes(1);
+    expect(readState(stateEl, (s) => s.log)).toEqual(["0.0:5", "0.1:6"]);
+    expect(watch).toHaveBeenCalledTimes(2);
     expect(watch).toHaveBeenCalledWith(5, undefined, 0, 0);
+    expect(watch).toHaveBeenCalledWith(6, undefined, 0, 1);
     host.remove();
   });
 
-  it("DEFECT(#274): 行を書いた同じ job でその行をリストの途中から取り除くと、移ってきた変わっていない行の値を、取り除いた行の prev で 1 回畳むこと", async () => {
-    // 移ってきた行は位置だけが変わった行なので着地しない。外れた行のアドレスしか無い位置は、
-    // 入れ子の置換（上のテスト）の着地を落とさないために添字で読んで畳む（selectLandedRows）。
-    // 上の穴が直れば外れた行を捨てられるので、ここを [] に反転させる
+  it("行を書いた同じ job でその行をリストの途中から取り除くと、移ってきた変わっていない行を畳まないこと", async () => {
+    // 移ってきた行は位置だけが変わった行なので着地しない。取り除いた行のアドレスを添字で読み、
+    // 移ってきた行の値を取り除いた行の prev で 1 回畳んでいた（["1:2->3"]）
     const { host, stateEl } = await connectHost(
       `<template data-wcs="for: items"><span data-wcs="textContent: .qty"></span></template>`,
       {
@@ -773,7 +772,59 @@ describe("DEFECT(#274): 行の着地の既知の穴（https://github.com/wcstack
     });
     await flushTimes(3);
 
-    expect(readState(stateEl, (s) => s.log)).toEqual(["1:2->3"]);
+    expect(readState(stateEl, (s) => s.log)).toEqual([]);
+    host.remove();
+  });
+
+  it("list.* へ要素を書き込んだ位置（差分を通らない行の差し込み）は、その位置のいまの値を 1 回畳むこと", async () => {
+    // 要素の書き込みは台帳のその位置へ別の行を差し込むが、差し替えられた行は退役しない。
+    // 退役した行だけを捨てるので、この着地は残る
+    const { host, stateEl } = await connectHost(
+      `<template data-wcs="for: items"><span data-wcs="textContent: .qty"></span></template>`,
+      {
+        items: [{ qty: 1 }, { qty: 2 }, { qty: 3 }],
+        $scan: {
+          log: {
+            from: "items.*.qty",
+            initial: [],
+            fold: (acc: string[], cur: unknown, prev: unknown, index: number) => [...acc, `${index}:${prev}->${cur}`],
+          },
+        },
+      } as unknown as IState,
+    );
+    await flushTimes();
+
+    writeState(stateEl, (s) => { s.$resolve("items.*", [1], { qty: 9 }); });
+    await flushTimes(3);
+
+    expect(readState(stateEl, (s) => s.log)).toEqual(["1:undefined->9"]);
+    host.remove();
+  });
+
+  it("list.* へ要素を書き込んだ位置に、差し込まれた行の着地も並んだら、差し込まれた行の着地だけを 1 回畳むこと", async () => {
+    const { host, stateEl } = await connectHost(
+      `<template data-wcs="for: items"><span data-wcs="textContent: .qty"></span></template>`,
+      {
+        items: [{ qty: 1 }, { qty: 2 }, { qty: 3 }],
+        $scan: {
+          log: {
+            from: "items.*.qty",
+            initial: [],
+            fold: (acc: string[], cur: unknown, prev: unknown, index: number) => [...acc, `${index}:${prev}->${cur}`],
+          },
+        },
+      } as unknown as IState,
+    );
+    await flushTimes();
+
+    writeState(stateEl, (s) => {
+      s.$resolve("items.*.qty", [1], 20);
+      s.$resolve("items.*", [1], { qty: 9 });
+      s.$resolve("items.*.qty", [1], 10);
+    });
+    await flushTimes(3);
+
+    expect(readState(stateEl, (s) => s.log)).toEqual(["1:9->10"]);
     host.remove();
   });
 });

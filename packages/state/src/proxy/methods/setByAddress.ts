@@ -80,13 +80,24 @@ function notifyWrite(
   absAddress: IAbsoluteStateAddress,
   receiver : any,
   handler  : IStateHandler,
-  keyedMergePath: string | null
+  keyedMergePath: string | null,
+  cacheable: boolean
 ): void {
   const propagationContext = config.enablePropagationContext
     ? (getCurrentPropagationContext() ?? beginPropagationTransaction(-1))
     : null;
   const updater = getUpdater();
   updater.enqueueAbsoluteAddress(absAddress, propagationContext);
+  // 書いたアドレス自身のキャッシュを、依存ウォークより先に無効化する（#274）。ウォークはリスト展開
+  // （list → list.*）と動的依存の親リスト展開で、書いたパスの値を読む。ワイルドカードを含むリストパス
+  // （`groups.*.items`）はキャッシュ対象なので、無効化しないと書き込み前の配列がヒットし、基準との差分が
+  // 「変化なし」になって置き換える前の行だけを展開する（長い配列に置き換えた分の行が着地しない）。
+  // 依存先は下の callback が訪問のたびに読む前に無効化するが、開始アドレスは callback が飛ばす
+  // （二重 enqueue の防止）のでここで済ませる — 開始アドレスも callback で無効化する $postUpdate と同じ順序。
+  // 値は直後の commitWriteCache が載せ直す。
+  if (cacheable) {
+    dirtyCacheEntryByAbsoluteStateAddress(absAddress);
+  }
   // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
   walkDependency(
     handler.stateElement,
@@ -156,7 +167,8 @@ function _setByAddress(
   value    : any,
   receiver : any,
   handler  : IStateHandler,
-  keyedMergePath: string | null
+  keyedMergePath: string | null,
+  cacheable: boolean
 ): any {
   try {
     if (address.pathInfo.path in target) {
@@ -202,7 +214,7 @@ function _setByAddress(
       }
     }
   } finally {
-    notifyWrite(address, absAddress, receiver, handler, keyedMergePath);
+    notifyWrite(address, absAddress, receiver, handler, keyedMergePath, cacheable);
   }
 }
 
@@ -213,7 +225,8 @@ function _setByAddressWithSwap(
   value    : any,
   receiver : any,
   handler  : IStateHandler,
-  keyedMergePath: string | null
+  keyedMergePath: string | null,
+  cacheable: boolean
 ) {
   // elementsの場合はswapInfoを準備
   let parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
@@ -227,7 +240,7 @@ function _setByAddressWithSwap(
     setSwapInfoByAddress(parentAddress, swapInfo);
   }
   try {
-    return _setByAddress(target, address, absAddress, value, receiver, handler, keyedMergePath);
+    return _setByAddress(target, address, absAddress, value, receiver, handler, keyedMergePath, cacheable);
   } finally {
     const index = swapInfo.value.indexOf(value);
     const currentParentValue = getByAddress(target, parentAddress, receiver, handler) ?? [];
@@ -446,7 +459,7 @@ function setByAddressCore(
         }
         return Reflect.set(parentValue, key, value);
       } finally {
-        notifyWrite(address, absAddress, receiver, handler, keyedMergePath);
+        notifyWrite(address, absAddress, receiver, handler, keyedMergePath, cacheable);
         if (dispatchedExport) {
           // Exported row paths are cacheable but absent from getterPaths. The
           // accessor may normalize or reject the input; never pin that input.
@@ -494,9 +507,9 @@ function setByAddressCore(
   recordDeclaredPrevValue(stateElement, path, absAddress, devOldValue, devHasOldValue);
   try {
     if (isSwappable) {
-      return _setByAddressWithSwap(target, address, absAddress, value, receiver, handler, keyedMergePath);
+      return _setByAddressWithSwap(target, address, absAddress, value, receiver, handler, keyedMergePath, cacheable);
     } else {
-      return _setByAddress(target, address, absAddress, value, receiver, handler, keyedMergePath);
+      return _setByAddress(target, address, absAddress, value, receiver, handler, keyedMergePath, cacheable);
     }
   } finally {
     commitWriteCache(stateElement, path, absAddress, value, cacheable);
