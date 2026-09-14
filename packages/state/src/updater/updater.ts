@@ -1,4 +1,5 @@
 import { IAbsoluteStateAddress } from "../address/types";
+import type { IStateElement } from "../components/types";
 import { beginStateListBaselineBatch, endStateListBaselineBatch } from "../list/stateListBaseline";
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
 import { peekBindingsForAddress } from "../binding/getBindingSetByAbsoluteStateAddress";
@@ -30,7 +31,9 @@ const updateBatchListeners: IRegisteredBatchListener[] = [];
  * drain 終了リスナーを登録する。
  *
  * `priority` の昇順に呼ばれる（同値は登録順）。機構間の実行順序
- * （`$watch` → `$streams` restart、docs/state-watch-hook-design.md §3-2 層 1）は
+ * （`$scan` → `$watch` → `$streams` restart。前の 2 つは同じ watch リスナーの中の順序で、
+ * `$scan` は畳んで書いてから `$watch` を発火する —
+ * docs/state-watch-hook-design.md §3-2 層 1・docs/state-scan-design.md D11）は
  * この優先度で固定する — import 順に順序を持たせると、無関係な import 整理で
  * 静かに壊れるため。定数は define.ts の `*_LISTENER_PRIORITY` を使うこと。
  */
@@ -112,6 +115,17 @@ class Updater {
         this._applyChange(updateRecords);
       });
     }
+  }
+
+  /**
+   * まだ drain されていない書き込み（次のバッチ）に、この state のこのパスがあるか。
+   * drain の最中のキューは次のバッチの分だけになっている（_applyChange の前に差し替える）。
+   * `on` scan の保留 reset を、発火しない drain で捨ててよいかの判定に使う（scan/eventReset.ts）。
+   */
+  hasQueuedPath(stateElement: IStateElement, path: string): boolean {
+    return this._queueUpdateRecords.some((record) =>
+      record.absoluteAddress.absolutePathInfo.stateElement === stateElement
+      && record.absoluteAddress.absolutePathInfo.pathInfo.path === path);
   }
 
   // テスト用に公開

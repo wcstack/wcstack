@@ -4,7 +4,7 @@
  * 自己ループの柵（docs/state-scan-design.md D9 / §2-3）。
  *
  * `from` の根が `$streams` 名である scan について、その stream の `args` 依存に
- * scan 出力から依存グラフで到達できるパスが含まれていたら raise する。
+ * scan 出力から到達できるパスが含まれていたら raise する。
  *
  *     $scan.feed { from: "pageResult" }
  *     get page() { return Math.floor(this.feed.items.length / this.pageSize) + 1; }
@@ -13,9 +13,11 @@
  * は、ページが着地するたびに `feed` → `page` → restart と進み、sentinel を経由せずに
  * 全ページを読み続ける（冪等キーが無ければ同じページを無限に取り直す）。
  *
- * 辿るグラフは書き込みの伝播（`walkDependency`）と同じ `staticDependency`（親 → 子）と
- * `dynamicDependency`（読まれたパス → それを読む getter）なので、「出力への書き込みが
- * args の読みに届くか」をそのまま判定できる。
+ * 辿る辺は書き込みが届く先そのもの:
+ * - `staticDependency`（親 → 子）と `dynamicDependency`（読まれたパス → それを読む getter）。
+ *   書き込みの伝播（`walkDependency`）と同じグラフ。
+ * - 到達したパスを `from` に持つ別の scan の出力。依存グラフには載らない辺だが、その scan が
+ *   次のバッチで畳んで書くので、`feed` → `feed2`（`from: "feed"`）→ `page` の連鎖も同じループになる。
  */
 
 import type { IStateElement } from "../components/types";
@@ -23,17 +25,20 @@ import { STATE_SCAN_NAME, STATE_STREAMS_NAME } from "../define";
 import { raiseError } from "../raiseError";
 import type { IStreamEntry } from "../stream/types";
 import { getScanRegistry } from "./scanRegistry";
+import type { IScanEntry, IScanRegistry } from "./types";
 
 const NO_EDGES: readonly string[] = Object.freeze([]);
+const NO_SCANS: readonly IScanEntry[] = Object.freeze([]);
 
-function collectReachablePaths(stateElement: IStateElement, start: string): ReadonlySet<string> {
+function collectReachablePaths(stateElement: IStateElement, registry: IScanRegistry, start: string): ReadonlySet<string> {
   const reachable = new Set<string>([start]);
   const queue = [start];
   while (queue.length > 0) {
     const path = queue.pop() as string;
     const children = stateElement.staticDependency.get(path) ?? NO_EDGES;
     const dependents = stateElement.dynamicDependency.get(path) ?? NO_EDGES;
-    for (const next of [...children, ...dependents]) {
+    const downstream = registry.byFromPath.get(path) ?? NO_SCANS;
+    for (const next of [...children, ...dependents, ...downstream.map((scan) => scan.name)]) {
       if (!reachable.has(next)) {
         reachable.add(next);
         queue.push(next);
@@ -53,7 +58,7 @@ export function assertNoScanFeedback(stateElement: IStateElement, streamEntry: I
     if (scan.source.kind !== "path" || scan.source.pathInfo.segments[0] !== streamEntry.name) {
       continue;
     }
-    const reachable = collectReachablePaths(stateElement, scan.name);
+    const reachable = collectReachablePaths(stateElement, registry, scan.name);
     for (const dep of streamEntry.depAddresses) {
       const depPath = dep.absolutePathInfo.pathInfo.path;
       if (reachable.has(depPath)) {

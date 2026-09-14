@@ -17,20 +17,22 @@ import type { IScanEntry, IScanRegistry } from "./types";
 const registryByStateElement: WeakMap<IStateElement, IScanRegistry> = new WeakMap();
 
 /**
- * drain 側の粗いゲート: `from` か `resetOn` を持つ registry の数。
+ * drain 側の粗いゲート: 発火対象（watch runtime の active 集合）に居て、`from` か `resetOn` を持つ state。
  *
- * 0 のあいだ watch runtime は scan の収集ループに入らない ＝ `$watch` だけを使う
- * アプリの drain に、バッチのアドレスごとの registry 引きを載せない。
- * clear を経ずに GC された stateElement のぶんは減らない（ゲートが開いたままになるだけで、
- * 正しさには影響しない）。
+ * 空のあいだ watch runtime は scan の収集ループに入らない ＝ `$scan` を使っていない画面の drain に、
+ * バッチのアドレスごとの registry 引きを載せない。registry の有無ではなく active 集合への出入り
+ * （watch/watchRegistry.ts の addActiveWatchStateElement / deactivateWatch / clearWatchRegistry）で
+ * 数えるので、`$scan` を持つ state を DOM から外せば（SPA のページ差し替え）ゲートは閉じ、
+ * 再接続（startWatch）で開き直す。strong Set でも、切断と再セットで必ず外れるので GC を妨げない
+ * （active 集合と同じ不変条件）。
  */
-let drainRegistryCount = 0;
+const drainActive = new Set<IStateElement>();
 
 /**
- * enqueue 側のゲート: `resetOn` を持つ `on` scan がある registry の数（scan/eventReset.ts）。
- * 0 のあいだ updater の enqueue は整数比較 1 回で抜ける。数え方の注意は drainRegistryCount と同じ。
+ * enqueue 側のゲート: 発火対象に居て、`resetOn` を持つ `on` scan がある state（scan/eventReset.ts）。
+ * 空のあいだ updater の enqueue は整数比較 1 回で抜ける。数え方は drainActive と同じ。
  */
-let eventResetRegistryCount = 0;
+const eventResetActive = new Set<IStateElement>();
 
 function hasDrainWork(registry: IScanRegistry): boolean {
   return registry.byFromPath.size > 0 || registry.byResetPath.size > 0;
@@ -68,12 +70,6 @@ export function setScanRegistry(stateElement: IStateElement, entries: readonly I
   }
   const registry: IScanRegistry = { entries: new Set(entries), byFromPath, byResetPath, eventResetByPath };
   registryByStateElement.set(stateElement, registry);
-  if (hasDrainWork(registry)) {
-    drainRegistryCount++;
-  }
-  if (hasEventResetWork(registry)) {
-    eventResetRegistryCount++;
-  }
   return registry;
 }
 
@@ -81,19 +77,34 @@ export function getScanRegistry(stateElement: IStateElement): IScanRegistry | un
   return registryByStateElement.get(stateElement);
 }
 
-/** registry を削除する（`_state` 再セットで作り直す前）。 */
+/**
+ * registry を削除する（`_state` 再セットで作り直す前）。ゲートからも外す — 同じ再セットの
+ * startWatch が新しい registry で数え直す（`_state` セッターは registry を作った後に
+ * clearWatchRegistry → startWatch を通る）。
+ */
 export function clearScanRegistry(stateElement: IStateElement): void {
+  deactivateScanGates(stateElement);
+  registryByStateElement.delete(stateElement);
+}
+
+/** 発火対象に載った（watch/watchRegistry.ts の addActiveWatchStateElement 専用）。冪等。 */
+export function activateScanGates(stateElement: IStateElement): void {
   const registry = registryByStateElement.get(stateElement);
   if (typeof registry === "undefined") {
     return;
   }
   if (hasDrainWork(registry)) {
-    drainRegistryCount--;
+    drainActive.add(stateElement);
   }
   if (hasEventResetWork(registry)) {
-    eventResetRegistryCount--;
+    eventResetActive.add(stateElement);
   }
-  registryByStateElement.delete(stateElement);
+}
+
+/** 発火対象から外れた（切断・再セット）。 */
+export function deactivateScanGates(stateElement: IStateElement): void {
+  drainActive.delete(stateElement);
+  eventResetActive.delete(stateElement);
 }
 
 /**
@@ -105,14 +116,15 @@ export function hasScanDrainWork(stateElement: IStateElement): boolean {
   return typeof registry !== "undefined" && hasDrainWork(registry);
 }
 
-export function getScanDrainRegistryCount(): number {
-  return drainRegistryCount;
+/** 発火対象に居て、`resetOn` を持つ `on` scan がある state か（enqueue の保留判定）。 */
+export function hasActiveScanEventReset(stateElement: IStateElement): boolean {
+  return eventResetActive.has(stateElement);
 }
 
-export function getScanEventResetRegistryCount(): number {
-  return eventResetRegistryCount;
+export function getScanDrainGateCount(): number {
+  return drainActive.size;
 }
 
-export const __private__ = {
-  registryByStateElement,
-};
+export function getScanEventResetGateCount(): number {
+  return eventResetActive.size;
+}

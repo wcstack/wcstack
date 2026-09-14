@@ -30,6 +30,8 @@ import { getAbsolutePathInfo } from "../src/address/AbsolutePathInfo";
 import { createAbsoluteStateAddress } from "../src/address/AbsoluteStateAddress";
 import { getStateListBaseline } from "../src/list/stateListBaseline";
 import { getLastListValueByAbsoluteStateAddress } from "../src/list/lastListValueByAbsoluteStateAddress";
+import { getScanRegistry } from "../src/scan/scanRegistry";
+import { getActiveWatchStateElements } from "../src/watch/watchRegistry";
 
 beforeAll(() => {
   bootstrapState();
@@ -395,6 +397,46 @@ describe("再セット後の経路情報: 生きているバインドぶんを�
     expect(read(stateEl, (s: any) => s.$getAll("items.*.upper", []))).toEqual(["P", "Q"]);
     host.remove();
   });
+
+  // `$scan` は検査が世代更新より前、registry の作り直しが `processWatchDeclaration` の直前にある。
+  // 世代更新より後の 3 つで落ちたとき、残る宣言と発火対象はその位置で割れる — `$on` / `$streams` は
+  // 作り直しより前（旧宣言が発火対象のまま残る）、`$watch` は後（新宣言だが発火対象から外れる）。
+  // どちらも畳まない。挙動は変えずに、何が残るかを 1 本ずつ固定する。
+  const scanResidue: Array<[string, Record<string, unknown>, string, boolean]> = [
+    ["$on（$eventTokens に無い名前）", { $on: { nope: () => {} } }, "a", true],
+    ["$streams（source が関数でない）", { $streams: { s: { source: 1 } } }, "a", true],
+    ["$watch（ハンドラが関数でない）", { $watch: { n: 1 } }, "b", false],
+  ];
+  for (const [label, declaration, registered, active] of scanResidue) {
+    it(`throw した再セットが残す $scan: ${label}`, async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const foldA = vi.fn((acc: number) => acc + 1);
+        const foldB = vi.fn((acc: number) => acc + 1);
+        const { host, stateEl } = await mount({ n: 0, $scan: { a: { from: "n", initial: 0, fold: foldA } } });
+
+        expect(() => stateEl.setInitialState(
+          { n: 0, $scan: { b: { from: "n", initial: 0, fold: foldB } }, ...declaration } as any,
+        )).toThrow();
+        expect([...getScanRegistry(stateEl as any)!.entries].map((entry) => entry.name), "残る宣言").toEqual([registered]);
+        expect(getActiveWatchStateElements().has(stateEl as any), "発火対象か").toBe(active);
+        expect((stateEl as any).__state.b, "新しい宣言の出力は実体化済み").toBe(0);
+
+        errorSpy.mockClear();
+        write(stateEl, (s: any) => { s.n = 1; });
+        await flush();
+        expect(foldA).not.toHaveBeenCalled();
+        expect(foldB).not.toHaveBeenCalled();
+        // 旧宣言が発火対象に残る形は、新しい state に無い旧出力を読めずに報告する（fold の失敗とは分ける）
+        const messages = errorSpy.mock.calls.map((call) => String(call[0]));
+        expect(messages.some((m) => m.includes(`$scan could not read the output "a"`))).toBe(active);
+        expect(messages.some((m) => m.includes(`$scan fold for "a" threw`))).toBe(false);
+        host.remove();
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
+  }
 
   it("再セット後の全リスト書き込みが $watch のハンドラまで届く（1 行に 1 回）", async () => {
     // 作り直しが連れてくる挙動変化。main では台帳が空で、この書き込みが依存ウォークで throw する

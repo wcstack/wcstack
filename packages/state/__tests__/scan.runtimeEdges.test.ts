@@ -11,7 +11,9 @@ import { createAbsoluteStateAddress } from "../src/address/AbsoluteStateAddress"
 import { getPathInfo } from "../src/address/PathInfo";
 import { bootstrapState } from "../src/bootstrapState";
 import type { State } from "../src/components/State";
-import { getScanDrainRegistryCount, getScanEventResetRegistryCount, getScanRegistry } from "../src/scan/scanRegistry";
+import { setDevtoolsSink } from "../src/devtools/sink";
+import { getPendingScanResetCount } from "../src/scan/eventReset";
+import { getScanDrainGateCount, getScanEventResetGateCount, getScanRegistry } from "../src/scan/scanRegistry";
 import { getUpdater } from "../src/updater/updater";
 import type { IState } from "../src/types";
 import { makeManualAsyncGenerator } from "./helpers/fakeStreamSources";
@@ -118,6 +120,35 @@ describe("先行 fold による同期の変化", () => {
   });
 });
 
+describe("出力の読み", () => {
+  it("出力の読みが throw したら fold も書き込みもせず、fold の失敗と区別して報告すること（devtools には phase: evaluate）", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const events: unknown[] = [];
+    setDevtoolsSink((event) => { events.push(event); });
+    try {
+      const fold = vi.fn((acc: number) => acc + 1);
+      const { host, stateEl } = await connectHost("", {
+        n: 0,
+        $scan: { out: { from: "n", initial: 0, fold } },
+      } as unknown as IState);
+      stateEl.defineTreeAccessor("out", { get() { throw new Error("output read refused"); }, enumerable: false, configurable: true });
+
+      writeState(stateEl, (s) => { s.n = 1; });
+      await flushTimes();
+
+      expect(fold).not.toHaveBeenCalled();
+      const messages = errorSpy.mock.calls.map((call) => String(call[0]));
+      expect(messages.some((m) => m.includes(`$scan could not read the output "out"`))).toBe(true);
+      expect(messages.some((m) => m.includes(`$scan fold for "out" threw`))).toBe(false);
+      expect(events).toContainEqual(expect.objectContaining({ type: "state:watch-error", phase: "evaluate", path: "$scan.out" }));
+      host.remove();
+    } finally {
+      setDevtoolsSink(null);
+      errorSpy.mockRestore();
+    }
+  });
+});
+
 describe("バッチに載る他のアドレス", () => {
   it("発火対象でない state・scan を持たない state のアドレスは素通りすること", async () => {
     const foldA = vi.fn((acc: unknown) => acc);
@@ -181,25 +212,111 @@ describe("自己ループの柵の探索（D9）", () => {
   });
 });
 
+describe("相 2 の書き込み", () => {
+  it("相 1 の後に出力が計画と同じ値になっていたら、相 2 は書き直さないこと", async () => {
+    let stateRef: State | null = null;
+    const watched: unknown[] = [];
+    const { host, stateEl } = await connectHost("", {
+      n: 0,
+      $scan: {
+        a: { from: "n", initial: 0, fold: (acc: number, cur: number) => acc + cur },
+        // 後続の scan の fold が、先行 scan の出力へ計画と同じ値を書く（相 1 の副作用）
+        b: {
+          from: "n",
+          initial: 0,
+          fold: (acc: number, cur: number) => {
+            stateRef?.createState("writable", (s: any) => { s.a = cur; });
+            return acc;
+          },
+        },
+      },
+      $watch: { a(cur: unknown) { watched.push(cur); } },
+    } as unknown as IState);
+    stateRef = stateEl;
+
+    writeState(stateEl, (s) => { s.n = 5; });
+    await flushTimes(4);
+
+    expect(readState(stateEl, (s) => s.a)).toBe(5);
+    expect(watched).toEqual([5]);
+    host.remove();
+  });
+});
+
 describe("drain ゲートの数え方", () => {
-  it("on だけの scan の registry は drain ゲートに数えず、作り直しても数は変わらないこと", async () => {
-    const before = getScanDrainRegistryCount();
+  it("on だけの scan の state は drain ゲートに数えず、作り直しても数は変わらないこと", async () => {
+    const before = getScanDrainGateCount();
     const { host, stateEl } = await connectHost("", {
       $eventTokens: ["tick"],
       $scan: { count: { on: "tick", initial: 0, fold: (acc: number) => acc + 1 } },
     } as unknown as IState);
     expect(getScanRegistry(stateEl)).toBeDefined();
-    expect(getScanDrainRegistryCount()).toBe(before);
+    expect(getScanDrainGateCount()).toBe(before);
 
     stateEl.setInitialState({ $eventTokens: ["tick"] } as unknown as IState);
     await flushAsync();
     expect(getScanRegistry(stateEl)).toBeUndefined();
-    expect(getScanDrainRegistryCount()).toBe(before);
+    expect(getScanDrainGateCount()).toBe(before);
     host.remove();
   });
 
-  it("resetOn を持つ on scan の registry だけを enqueue ゲートに数え、再セットで消せば数が戻ること", async () => {
-    const before = getScanEventResetRegistryCount();
+  it("切断でゲートから外れ（registry は保持する）、ルート <wcs-state> の再接続で数え直すこと", async () => {
+    const drain0 = getScanDrainGateCount();
+    const reset0 = getScanEventResetGateCount();
+    const { host, stateEl } = await connectHost("", {
+      host: "a",
+      $eventTokens: ["tick"],
+      $scan: { log: { on: "tick", initial: [], fold: (acc: unknown) => acc, resetOn: ["host"] } },
+    } as unknown as IState);
+    expect([getScanDrainGateCount(), getScanEventResetGateCount()]).toEqual([drain0 + 1, reset0 + 1]);
+
+    host.remove();
+    await flushAsync();
+    expect(getScanRegistry(stateEl)).toBeDefined();
+    expect([getScanDrainGateCount(), getScanEventResetGateCount()]).toEqual([drain0, reset0]);
+
+    document.body.appendChild(host);
+    await stateEl.connectedCallbackPromise;
+    await flushAsync();
+    expect([getScanDrainGateCount(), getScanEventResetGateCount()]).toEqual([drain0 + 1, reset0 + 1]);
+    host.remove();
+    await flushAsync();
+    expect([getScanDrainGateCount(), getScanEventResetGateCount()]).toEqual([drain0, reset0]);
+  });
+
+  it("接続中の再セットで scan を足した宣言は、同じ再セットの中で数え、切断で外すこと", async () => {
+    const drain0 = getScanDrainGateCount();
+    const { host, stateEl } = await connectHost("", { n: 0 } as unknown as IState);
+    expect(getScanDrainGateCount()).toBe(drain0);
+
+    stateEl.setInitialState({ n: 0, $scan: { out: { from: "n", initial: 0, fold: (acc: unknown) => acc } } } as unknown as IState);
+    expect(getScanDrainGateCount()).toBe(drain0 + 1);
+
+    host.remove();
+    await flushAsync();
+    expect(getScanDrainGateCount()).toBe(drain0);
+  });
+
+  it("resetOn の書き込みと drain の間に再セットしたら、旧宣言の保留を新しい宣言へ引き継ぎ、数を二重に数えず、drain で使い切ること", async () => {
+    const declaration = () => ({
+      host: "a",
+      $eventTokens: ["tick"],
+      $scan: { log: { on: "tick", initial: [], fold: (acc: unknown) => acc, resetOn: ["host"] } },
+    });
+    const { host, stateEl } = await connectHost("", declaration() as unknown as IState);
+    const pending0 = getPendingScanResetCount();
+
+    stateEl.createState("writable", (s: any) => { s.host = "b"; });
+    expect(getPendingScanResetCount()).toBe(pending0 + 1);
+    stateEl.setInitialState(declaration() as unknown as IState);
+    expect(getPendingScanResetCount()).toBe(pending0 + 1);
+    await flushAsync();
+    expect(getPendingScanResetCount()).toBe(pending0);
+    host.remove();
+  });
+
+  it("resetOn を持つ on scan の state だけを enqueue ゲートに数え、再セットで消せば数が戻ること", async () => {
+    const before = getScanEventResetGateCount();
     const { host, stateEl } = await connectHost("", {
       host: "a",
       n: 0,
@@ -211,25 +328,25 @@ describe("drain ゲートの数え方", () => {
     } as unknown as IState);
     const registry = getScanRegistry(stateEl)!;
     expect([...registry.eventResetByPath.get("host")!].map((entry) => entry.name)).toEqual(["count"]);
-    expect(getScanEventResetRegistryCount()).toBe(before + 1);
+    expect(getScanEventResetGateCount()).toBe(before + 1);
 
     stateEl.setInitialState({ host: "a", n: 0 } as unknown as IState);
     await flushAsync();
-    expect(getScanEventResetRegistryCount()).toBe(before);
+    expect(getScanEventResetGateCount()).toBe(before);
     host.remove();
   });
 
-  it("from を持つ registry は数え、再セットで消せば数が戻ること", async () => {
-    const before = getScanDrainRegistryCount();
+  it("from を持つ state は数え、再セットで消せば数が戻ること", async () => {
+    const before = getScanDrainGateCount();
     const { host, stateEl } = await connectHost("", {
       n: 0,
       $scan: { out: { from: "n", initial: 0, fold: (acc: unknown) => acc } },
     } as unknown as IState);
-    expect(getScanDrainRegistryCount()).toBe(before + 1);
+    expect(getScanDrainGateCount()).toBe(before + 1);
 
     stateEl.setInitialState({ n: 0 } as unknown as IState);
     await flushAsync();
-    expect(getScanDrainRegistryCount()).toBe(before);
+    expect(getScanDrainGateCount()).toBe(before);
     host.remove();
   });
 });

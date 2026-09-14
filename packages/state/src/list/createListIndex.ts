@@ -232,6 +232,8 @@ export function setListIndexValue(listIndex: IListIndex, value: unknown): void {
  * 2 つの行が**同じリスト要素**を表しているか（#256）。
  * 差分を通っていない行（`hydrateBindings` / `setByAddress` が鋳造する行）は値を持たないので、
  * 未記録どうしは「同じ」と見なさない ── 値の無い行を取り違えて付け替えないため。
+ * 行を書き換えない読むだけの判定なので、台帳の外からも使う: `$scan` の drain が、行のアドレスが
+ * いまその位置の要素を表しているかを見る（scan/scanRuntime.ts の placementOf）。
  */
 export function isSameListIndexValue(listIndex: IListIndex, other: IListIndex): boolean {
   const value = (listIndex as ListIndex).value;

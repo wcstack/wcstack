@@ -25,14 +25,24 @@ import type { IStateProxy } from "../proxy/types";
 import { raiseError } from "../raiseError";
 import type { TokenSubscriber } from "../token/Token";
 import type { IState } from "../types";
-import { consumePendingScanReset, hasPendingScanReset } from "./eventReset";
+import { getUpdater } from "../updater/updater";
+import { consumePendingScanReset, hasPendingScanReset, markPendingScanReset } from "./eventReset";
+import { cloneInitial, isSameAsInitial, recordOutputValue, wasPlacedOnOutput } from "./initialValue";
 import { isThenable, reportScanError, reportScanThenable, type ScanFailure } from "./scanReport";
-import { setScanRegistry } from "./scanRegistry";
+import { clearScanRegistry, getScanRegistry, setScanRegistry } from "./scanRegistry";
 import type { IScanEntry, ScanFold, ScanSource } from "./types";
 
 const INVALID = "[wcs/scan-declaration-invalid]";
 const COMPUTED = "[wcs/scan-source-computed]";
 const NO_RESET: readonly string[] = Object.freeze([]);
+
+/**
+ * `$recursion` の `**` getter の展開形を引く口（recursion/registry.ts の RecursionRegistry）。
+ * `_state` セッターは `$scan` の検査より前に新しい宣言のレジストリを作るので、それを受け取る。
+ */
+export interface IRecursiveGetterLookup {
+  recursiveGetterOwning(concretePath: string): string | null;
+}
 
 function entryLabel(name: string): string {
   return `${STATE_SCAN_NAME} entry "${name}"`;
@@ -49,9 +59,19 @@ function findGetterOnPath(pathInfo: IPathInfo, getterPaths: ReadonlySet<string>)
 }
 
 function computedMessage(label: string, field: string, path: string, getter: string): string {
-  const where = getter === path ? "is a getter" : `is under the getter "${getter}"`;
+  const where = getter === path
+    ? "is a getter"
+    : getter.includes(`${WILDCARD}${WILDCARD}`)
+      ? `is computed by the recursive getter "${getter}"`
+      : `is under the getter "${getter}"`;
   return `${COMPUTED} ${label} ${field} "${path}" ${where}. A getter re-evaluates whenever its inputs change, ` +
     `so folding it would count re-evaluations, not events. Fold the plain value the getter reads, or use "on" with an event token.${LINT_HINT}`;
+}
+
+function writeOnlyMessage(label: string, path: string, setter: string): string {
+  const where = setter === path ? "is a setter without a getter" : `is under the setter without a getter "${setter}"`;
+  return `${INVALID} ${label} from "${path}" ${where}, so it always reads undefined and every fold would receive undefined. ` +
+    `Fold the plain value the setter writes, or use "on" with an event token.${LINT_HINT}`;
 }
 
 function assertValidScanPath(label: string, field: string, path: string): IPathInfo {
@@ -65,7 +85,7 @@ function assertValidScanPath(label: string, field: string, path: string): IPathI
     raiseError(`${INVALID} ${label} ${field} "${path}" must not contain "@" — there is a single state tree per root.${LINT_HINT}`);
   }
   if (path in Object.prototype) {
-    raiseError(`${INVALID} ${label} ${field} "${path}" must not be a property name inherited from Object.prototype (e.g. "__proto__", "constructor").`);
+    raiseError(`${INVALID} ${label} ${field} "${path}" must not be a property name inherited from Object.prototype (e.g. "__proto__", "constructor").${LINT_HINT}`);
   }
   const pathInfo = getPathInfo(path);
   for (const segment of pathInfo.segments) {
@@ -104,7 +124,7 @@ function assertOutputName(
     raiseError(`${INVALID} ${label} must not start with "$" (reserved namespace).${LINT_HINT}`);
   }
   if (name in Object.prototype) {
-    raiseError(`${INVALID} ${label} must not be a property name inherited from Object.prototype (e.g. "__proto__", "constructor").`);
+    raiseError(`${INVALID} ${label} must not be a property name inherited from Object.prototype (e.g. "__proto__", "constructor").${LINT_HINT}`);
   }
   if (getterPaths.has(name)) {
     raiseError(`${INVALID} ${label} conflicts with a getter declared on the state.${LINT_HINT}`);
@@ -117,11 +137,34 @@ function assertOutputName(
   }
 }
 
+/**
+ * 出力名がメソッド（関数値のプロパティ）と衝突していないか（D7）。
+ *
+ * 実体化は既にある値を保持するので、衝突を通すと最初の `acc` がメソッドになり、fold の結果が
+ * メソッドを上書きする。`initial` 自身が関数で、その値が置かれている形だけは通す —
+ * 同じオブジェクトの再セットで、実体化済みの出力を見ているだけだから。
+ */
+function assertNoMethodConflict(
+  name: string,
+  functionValues: ReadonlyMap<string, unknown>,
+  definition: Record<string, unknown>,
+): void {
+  const value = functionValues.get(name);
+  // fold・実体化・reset がこの出力に置いたことのある関数値なら、それは累積（同じオブジェクト・値のコピーの
+  // 再セット・D7）。どの世代のオブジェクトに書かれたかに依らない。名前だけで通すと、新しいオブジェクトの
+  // 同名の本物のメソッドを見逃す（§5-9 の C5-8 / C5-14）
+  if (functionValues.has(name) && value !== definition.initial && !wasPlacedOnOutput(name, value)) {
+    raiseError(`${INVALID} ${entryLabel(name)} conflicts with a method (a function-valued property) declared on the state. The output is a property the runtime owns.${LINT_HINT}`);
+  }
+}
+
 function parseSource(
   name: string,
   definition: Record<string, unknown>,
   eventTokenNames: ReadonlySet<string>,
   getterPaths: ReadonlySet<string>,
+  writeOnlyPaths: ReadonlySet<string>,
+  recursion: IRecursiveGetterLookup | null,
 ): ScanSource {
   const label = entryLabel(name);
   const hasFrom = typeof definition.from !== "undefined";
@@ -144,9 +187,17 @@ function parseSource(
     raiseError(`${INVALID} ${label} "from" must be a state path string.${LINT_HINT}`);
   }
   const pathInfo = assertValidScanPath(label, "from", path);
-  const getter = findGetterOnPath(pathInfo, getterPaths);
+  // `**` getter の展開形（`nodes.*.total`）とその値の内側も getter。字面の getterPaths には `**` の形しか
+  // 載らないので、再帰レジストリで引く（pathDiagnostics の checkDeclaredPath と同じ判定）。
+  // 展開形は必ず `*` を含むので `resetOn` はワイルドカードの検査で先に落ちる
+  const getter = findGetterOnPath(pathInfo, getterPaths) ?? recursion?.recursiveGetterOwning(path) ?? null;
   if (getter !== null) {
     raiseError(computedMessage(label, "from", path, getter));
+  }
+  // getter の無い setter は読むと常に undefined（`resetOn` は値を読まない引き金なので通す）
+  const setter = findGetterOnPath(pathInfo, writeOnlyPaths);
+  if (setter !== null) {
+    raiseError(writeOnlyMessage(label, path, setter));
   }
   if (path === name || path.startsWith(name + DELIMITER)) {
     raiseError(`${INVALID} ${label} from "${path}" reads the entry's own output — the scan would fold its own writes forever.${LINT_HINT}`);
@@ -234,10 +285,12 @@ function assertNoOutputReferences(entries: readonly IScanEntry[]): void {
  *
  * getter / setter の判定は `value` の property descriptor から直接取る（`_getterPaths` は
  * この時点ではまだ旧世代のもの）。`$streams` 名との衝突も `value` の宣言から見る。
+ * `recursion` は `value` から作った `$recursion` のレジストリ（宣言が無ければ null）。
  */
 export function parseScanDeclaration(
   state: IState,
   eventTokenNames: ReadonlySet<string>,
+  recursion: IRecursiveGetterLookup | null = null,
 ): readonly IScanEntry[] | null {
   const declared = (state as Record<string, unknown>)[STATE_SCAN_NAME];
   if (typeof declared === "undefined") {
@@ -248,12 +301,19 @@ export function parseScanDeclaration(
   }
   const getterPaths = new Set<string>();
   const setterPaths = new Set<string>();
+  const writeOnlyPaths = new Set<string>();
+  const functionValues = new Map<string, unknown>();
   for (const [key, descriptor] of Object.entries(getAllPropertyDescriptors(state))) {
     if (typeof descriptor.get === "function") {
       getterPaths.add(key);
+    } else if (typeof descriptor.set === "function") {
+      writeOnlyPaths.add(key);
     }
     if (typeof descriptor.set === "function") {
       setterPaths.add(key);
+    }
+    if (typeof descriptor.value === "function") {
+      functionValues.set(key, descriptor.value);
     }
   }
   const streamNames = collectStreamNames(state);
@@ -261,11 +321,13 @@ export function parseScanDeclaration(
   let order = 0;
   for (const [name, def] of Object.entries(declared as Record<string, unknown>)) {
     assertOutputName(name, getterPaths, setterPaths, streamNames);
-    if (typeof def !== "object" || def === null) {
+    // 配列もオブジェクトとして読まない（`$scan` 自体の検査と同じ。静的検証も同じ文言で拾う）
+    if (typeof def !== "object" || def === null || Array.isArray(def)) {
       raiseError(`${INVALID} ${entryLabel(name)} must be an object ({ from | on, initial, fold, resetOn? }).${LINT_HINT}`);
     }
     const definition = def as Record<string, unknown>;
-    const source = parseSource(name, definition, eventTokenNames, getterPaths);
+    assertNoMethodConflict(name, functionValues, definition);
+    const source = parseSource(name, definition, eventTokenNames, getterPaths, writeOnlyPaths, recursion);
     if (!("initial" in definition)) {
       raiseError(`${INVALID} ${entryLabel(name)} requires "initial" — the seed of the accumulator and the value "resetOn" returns to.${LINT_HINT}`);
     }
@@ -288,12 +350,15 @@ export function parseScanDeclaration(
 
 /**
  * 出力の実体化（設計書 D7）。未定義なら `initial` を置き、既に値があれば保持する
- * （同じオブジェクトの再セット・SSR ハイドレーションで累積を失わない）。
+ * （同じオブジェクトの再セット・SSR ハイドレーションで累積を失わない）。plain な配列とオブジェクトは
+ * 複製して置く — 出力が `initial` の間に子パスへ書いても宣言の `initial` を書き換えない（scan/initialValue.ts）。
  */
 export function materializeScanOutputs(state: IState, entries: readonly IScanEntry[]): void {
   for (const entry of entries) {
     if (!(entry.name in state)) {
-      (state as Record<string, unknown>)[entry.name] = entry.initial;
+      const value = cloneInitial(entry.initial);
+      (state as Record<string, unknown>)[entry.name] = value;
+      recordOutputValue(entry.name, value);
     }
   }
 }
@@ -302,24 +367,29 @@ function createEventFold(entry: IScanEntry): TokenSubscriber {
   const fold = entry.fold;
   return (state: unknown, event: unknown, ...indexes: unknown[]): void => {
     const proxy = state as IStateProxy;
-    // 報告を「fold が throw した」と「出力を書けなかった」で分ける
-    let failure: ScanFailure = "threw";
+    // 報告を「出力を読めなかった」「fold が throw した」「出力を書けなかった」で分ける
+    let failure: ScanFailure = "read-output";
     try {
       const current = proxy[entry.name];
+      failure = "threw";
       // `resetOn` の書き込みより後の出来事は、reset 後の出力に畳む（scan/eventReset.ts）
       const reset = hasPendingScanReset(entry);
-      const next = fold(reset ? entry.initial : current, event, ...indexes);
+      // reset 後の出力から畳む。出力が既に initial と同じ値ならそのまま、違えば複製から（宣言の initial は渡さない）
+      const acc = reset && !isSameAsInitial(current, entry.initial) ? cloneInitial(entry.initial) : current;
+      const next = fold(acc, event, ...indexes);
       if (isThenable(next)) {
         // 保留は残す — drain が出力を initial に戻す
         reportScanThenable(entry.name, next);
         return;
       }
-      if (reset) {
-        consumePendingScanReset(entry);
-      }
       if (!Object.is(next, current)) {
         failure = "write";
         proxy[entry.name] = next;
+        recordOutputValue(entry.name, next);
+      }
+      // 保留は書き込みが通ってから消す。書き込みが throw したら残し、drain が initial に戻す（§2-2）
+      if (reset) {
+        consumePendingScanReset(entry);
       }
     } catch (error) {
       // 後続の subscriber（同じトークンの `$on`）を巻き添えにしない
@@ -340,6 +410,28 @@ export function subscribeScanEvents(stateElement: IStateElement, entries: readon
   }
 }
 
+/** 再セットで引き継ぐ `on` scan の保留 reset（出力名 → 旧宣言の `resetOn`） */
+export type ScanResetCarry = ReadonlyMap<string, readonly string[]>;
+
+/**
+ * registry を外す（`_state` 再セットで作り直す前）。旧宣言の `on` scan に立っていた保留 reset は、
+ * 新しい宣言の entry（別のオブジェクト）へ引き継ぐ候補として返し、旧 entry からは消す
+ * （残すと誰にも使われず、保留の数 — scan/eventReset.ts の捨てる走査のゲート — だけが戻らない）。
+ */
+export function unregisterScans(stateElement: IStateElement): ScanResetCarry {
+  const carry = new Map<string, readonly string[]>();
+  const registry = getScanRegistry(stateElement);
+  if (typeof registry !== "undefined") {
+    for (const entry of registry.entries) {
+      if (consumePendingScanReset(entry)) {
+        carry.set(entry.name, entry.resetOn);
+      }
+    }
+  }
+  clearScanRegistry(stateElement);
+  return carry;
+}
+
 /**
  * registry を作り、`from` / `resetOn` を依存グラフへ登録する。`from` パスの集合
  * （旧値キャプチャのゲート）を返す。無ければ null。
@@ -347,9 +439,28 @@ export function subscribeScanEvents(stateElement: IStateElement, entries: readon
  * 依存グラフ登録が要る理由は `$watch` と同じ（docs/state-watch-hook-design.md §8）:
  * `setPathInfo` はバインドからしか呼ばれないので、宣言しただけでは祖先への書き込みが
  * このパスへ展開されず、バッチに載らない。
+ *
+ * `carry`（unregisterScans の戻り値）の保留 reset は、同じ出力名の `on` scan が、まだ drain されていない
+ * 書き込み（updater のキューに積まれているパス）を新旧どちらの `resetOn` にも持つときだけ引き継ぐ（D6）。
+ * 旧宣言の保留は発火対象の state への書き込みでしか立たないので、「enqueue の時点で立つ」契約は保たれる。
+ * 引き継がないと、書き込みより後のイベントが reset されていない出力に畳まれ、drain でも戻らない
+ * （同じバッチの `from` の scan は reset される）。
  */
-export function registerScans(stateElement: IStateElement, entries: readonly IScanEntry[]): ReadonlySet<string> | null {
+export function registerScans(
+  stateElement: IStateElement,
+  entries: readonly IScanEntry[],
+  carry: ScanResetCarry,
+): ReadonlySet<string> | null {
   const registry = setScanRegistry(stateElement, entries);
+  for (const entry of entries) {
+    const carried = carry.get(entry.name);
+    if (entry.source.kind !== "event" || typeof carried === "undefined") {
+      continue;
+    }
+    if (entry.resetOn.some((path) => carried.includes(path) && getUpdater().hasQueuedPath(stateElement, path))) {
+      markPendingScanReset(entry);
+    }
+  }
   const fromPaths = new Set<string>();
   for (const path of registry.byFromPath.keys()) {
     fromPaths.add(path);

@@ -27,8 +27,7 @@ import { processWatchDeclaration } from "../watch/processWatchDeclaration";
 import { clearComputedSnapshots } from "../watch/computedSnapshots";
 import { clearWatchRegistry, deactivateWatch } from "../watch/watchRegistry";
 import { startWatch } from "../watch/watchRuntime";
-import { materializeScanOutputs, parseScanDeclaration, registerScans, subscribeScanEvents } from "../scan/processScanDeclaration";
-import { clearScanRegistry } from "../scan/scanRegistry";
+import { materializeScanOutputs, parseScanDeclaration, registerScans, subscribeScanEvents, unregisterScans } from "../scan/processScanDeclaration";
 import { defineDCC } from "../dcc/defineDCC";
 import { getCustomElementRegistry } from "../platform/customElementRegistry";
 import { getPathInfo } from "../address/PathInfo";
@@ -254,7 +253,9 @@ export class State extends HTMLElementBase implements IStateElement {
     // 反映は下の所定位置のまま（クリアと再収集の並びは変えない）。
     const listKeys = processListKeysDeclaration(value);
     // $scan の検証も `value` と宣言済みトークン名しか読まない（docs/state-scan-design.md §1-2）。
-    const scanEntries = parseScanDeclaration(value, eventTokenNames);
+    // `**` getter の展開形を from に書いた形を落とすため、`value` から作った再帰レジストリも渡す（D5）。
+    // fold が関数を返す出力は、その出力に置いた関数値をメソッド衝突と見なさない（scan/initialValue.ts の記録・D7）。
+    const scanEntries = parseScanDeclaration(value, eventTokenNames, recursionRegistry);
     // 旧世代の生成アクセサ（own）・それを指す依存辺・評価結果のキャッシュを忘れてから
     // 差し替える（recursion/generation.ts）。own の生成アクセサは、同じオブジェクトを再セットする
     // ときに下の `getStateInfo` が `getterPaths` へ拾い直す前に消えていなければならない。
@@ -339,8 +340,8 @@ export class State extends HTMLElementBase implements IStateElement {
     this._rebuildPathInfo();
     // $scan: registry と from / resetOn の依存グラフ登録（_pathSet クリア後であること）。
     // startWatch より前に置く（scan だけを宣言した state も drain の発火対象に載せるため）。
-    clearScanRegistry(this);
-    this._scanPaths = scanEntries === null ? null : registerScans(this, scanEntries);
+    const carriedScanResets = unregisterScans(this);
+    this._scanPaths = scanEntries === null ? null : registerScans(this, scanEntries, carriedScanResets);
     // $watch: 旧宣言のハンドラが残らないよう registry を落としてから新宣言を解析する。
     // _pathSet.clear() の後であること（依存グラフ登録をやり直す必要がある、
     // docs/state-watch-hook-design.md §8）。宣言が無ければ watchPaths は null で、

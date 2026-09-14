@@ -6,6 +6,9 @@
  */
 import { describe, it, expect } from "vitest";
 import { MAX_WILDCARD_DEPTH } from "../src/define";
+import { processRecursionDeclaration } from "../src/recursion/declaration";
+import { RecursionRegistry } from "../src/recursion/registry";
+import { recordOutputValue } from "../src/scan/initialValue";
 import { materializeScanOutputs, parseScanDeclaration } from "../src/scan/processScanDeclaration";
 import type { IState } from "../src/types";
 
@@ -34,6 +37,8 @@ describe("$scan 宣言の形", () => {
   it("エントリがオブジェクトでなければ raise すること", () => {
     expect(() => scan({ out: 1 })).toThrow(/\$scan entry "out" must be an object/);
     expect(() => scan({ out: null })).toThrow(/\$scan entry "out" must be an object/);
+    // 配列も `$scan` 自体の検査と同じくオブジェクトとして読まない
+    expect(() => scan({ out: [] })).toThrow(/\$scan entry "out" must be an object/);
   });
 });
 
@@ -61,6 +66,22 @@ describe("出力名", () => {
       { feed: { from: "n", initial: 0, fold } },
       { $streams: { feed: { source: () => null } } },
     )).toThrow(/conflicts with the \$streams entry of the same name/);
+  });
+
+  it("メソッド（関数値のプロパティ）と衝突したら raise し、initial 自身が置かれている形は通すこと（D7）", () => {
+    expect(() => parse({
+      log() { return 1; },
+      $scan: { log: { from: "n", initial: [], fold } },
+    })).toThrow(/\$scan entry "log" conflicts with a method \(a function-valued property\)/);
+    expect(() => scan({ log: { from: "n", initial: [], fold } }, { log: () => 1 })).toThrow(/conflicts with a method/);
+    class ClassState {
+      log(): number { return 1; }
+      $scan = { log: { from: "n", initial: [], fold } };
+    }
+    expect(() => parse(new ClassState())).toThrow(/conflicts with a method/);
+    // 同じオブジェクトの再セットでは、関数の initial が実体化済みの出力として置かれている
+    const seed = (): number => 1;
+    expect(scan({ log: { from: "n", initial: seed, fold } }, { log: seed })).toHaveLength(1);
   });
 
   it("$streams がオブジェクトでなければ名前の衝突検査はしないこと（形の検査は $streams 側の責務）", () => {
@@ -113,6 +134,47 @@ describe("source（from / on）", () => {
       $scan = { out: { from: "src", initial: 0, fold } };
     }
     expect(() => parse(new ClassState())).toThrow(/from "src" is a getter/);
+  });
+
+  it("from が $recursion の ** getter の展開形（深い段・値の内側を含む）なら wcs/scan-source-computed で raise し、データのパスは受理すること（D5）", () => {
+    const parseRecursive = (from: string) => {
+      const state: Record<string, unknown> = {
+        nodes: [{ value: 1, children: [] }],
+        $recursion: { "nodes.*": "children.*" },
+        $scan: { out: { from, initial: 0, fold } },
+      };
+      Object.defineProperty(state, "nodes.**.total", { get: () => 0, enumerable: true, configurable: true });
+      Object.defineProperty(state, "nodes.**.stats", { get: () => ({ count: 0 }), enumerable: true, configurable: true });
+      const recursion = new RecursionRegistry(processRecursionDeclaration(state as unknown as IState)!, state);
+      return parseScanDeclaration(state as unknown as IState, NO_TOKENS, recursion);
+    };
+    expect(() => parseRecursive("nodes.*.total"))
+      .toThrow(/\[wcs\/scan-source-computed\] \$scan entry "out" from "nodes\.\*\.total" is computed by the recursive getter "nodes\.\*\*\.total"/);
+    expect(() => parseRecursive("nodes.*.children.*.total")).toThrow(/is computed by the recursive getter "nodes\.\*\*\.total"/);
+    expect(() => parseRecursive("nodes.*.stats.count")).toThrow(/is computed by the recursive getter "nodes\.\*\*\.stats"/);
+    expect(parseRecursive("nodes.*.value")).toHaveLength(1);
+  });
+
+  it("from が getter の無い setter（その配下を含む）なら raise し、getter と setter の組は getter として扱い、resetOn の setter は引き金として受理すること", () => {
+    const withAccessor = (descriptor: PropertyDescriptor, def: Record<string, unknown>) => {
+      const state: Record<string, unknown> = { n: 0, $scan: { out: def } };
+      Object.defineProperty(state, "sink", { ...descriptor, enumerable: true, configurable: true });
+      return () => parse(state);
+    };
+    const setterOnly: PropertyDescriptor = { set(_value: unknown) { /* sink */ } };
+    expect(withAccessor(setterOnly, { from: "sink", initial: 0, fold }))
+      .toThrow(/\[wcs\/scan-declaration-invalid\] \$scan entry "out" from "sink" is a setter without a getter, so it always reads undefined/);
+    expect(withAccessor(setterOnly, { from: "sink.x", initial: 0, fold }))
+      .toThrow(/from "sink\.x" is under the setter without a getter "sink"/);
+    expect(withAccessor({ get: () => 1, set(_value: unknown) { /* pair */ } }, { from: "sink", initial: 0, fold }))
+      .toThrow(/\[wcs\/scan-source-computed\] \$scan entry "out" from "sink" is a getter/);
+    expect(withAccessor(setterOnly, { from: "n", initial: 0, fold, resetOn: ["sink"] })()).toHaveLength(1);
+  });
+
+  it("別のキーのデータの下にあたる dotted な setter（getter 無し）を from に書いても raise すること（キー自身の descriptor で見る）", () => {
+    const state: Record<string, unknown> = { user: { name: "a" }, $scan: { out: { from: "user.name", initial: 0, fold } } };
+    Object.defineProperty(state, "user.name", { set(_value: unknown) { /* sink */ }, enumerable: true, configurable: true });
+    expect(() => parse(state)).toThrow(/from "user\.name" is a setter without a getter/);
   });
 
   it("from が自分の出力またはその子孫なら raise すること", () => {
@@ -237,8 +299,29 @@ describe("materializeScanOutputs（D7）", () => {
       empty: { from: "n", initial: "seed", fold },
     }, state);
     materializeScanOutputs(state as unknown as IState, entries!);
-    expect(state.fresh).toBe(initial);
+    // plain なデータは複製して置く（子パスへの書き込みで宣言の initial を書き換えない・§5-9）
+    expect(state.fresh).toEqual(initial);
+    expect(state.fresh).not.toBe(initial);
     expect(state.kept).toBe("hydrated");
     expect(state.empty).toBeUndefined();
+  });
+});
+
+describe("旧宣言の出力名（D7）", () => {
+  it("出力名と同じ関数値は、その出力に置いた値なら累積とみなして通し、置いていない値（本物のメソッド・別の出力に置いた値）なら raise すること", () => {
+    const folded = (): string => "folded";
+    const state = { handler: folded, $scan: { handler: { from: "n", initial: (): string => "initial", fold } } };
+    expect(() => parse(state), "どの出力にも置いていない").toThrow(/\$scan entry "handler" conflicts with a method/);
+    recordOutputValue("other", folded);
+    expect(() => parse(state), "別の出力に置いた").toThrow(/conflicts with a method/);
+    recordOutputValue("handler", folded);
+    expect(parse(state)).toHaveLength(1);
+  });
+});
+
+describe("lint の案内", () => {
+  it("Object.prototype の継承名（出力名・パス）の raise にも lint の案内を付けること（静的検証が同じ形を拾う）", () => {
+    expect(() => scan({ toString: { from: "n", initial: 0, fold } })).toThrow(/inherited from Object\.prototype .*npx @wcstack\/lint/);
+    expect(() => scan({ out: { from: "constructor", initial: 0, fold } })).toThrow(/inherited from Object\.prototype .*npx @wcstack\/lint/);
   });
 });
