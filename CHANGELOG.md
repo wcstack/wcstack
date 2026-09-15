@@ -8,6 +8,10 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Fixed
+
+- `@wcstack/state`: a `<wcs-state mount="…">` volume that never grafts no longer keeps its mount slot. The slot ledger had no way to release a slot, so a volume detached while its source was still loading, a volume orphaned by a failed root, and a volume whose load or graft failed each held its mount path for as long as the root node lived: a replacement volume on the same path was rejected with `Volume slot "…" is already mounted on this tree.` — an error nothing awaiting the page ever saw — and reloading the page was the only recovery. A volume now releases its slot when it settles without grafting, and when it is detached while loading or while waiting for its root; re-attaching it before that settles takes the slot back, and if another volume took the slot in the meantime the re-attached element reports it and does not graft. A release only removes the element's own reservation, so removing a dead volume never frees a slot another volume holds. A grafted volume keeps its slot.
+
 ## [2.4.0] — 2026-09-15
 
 ### Added

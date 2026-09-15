@@ -40,7 +40,7 @@ import { createPublicMountState } from "../webComponent/overlay";
 import { warnOwnKeyShadowsForMount } from "../webComponent/ownKeyShadow";
 import { markWebComponentAsComplete, markWebComponentStatePropDeclared } from "../webComponent/completeWebComponent";
 import { getInjectedKeys, restoreOverwrittenValues, takeOverwrittenObject } from "../webComponent/preCompletionWrites";
-import { callVolumeLifecycle, clearFailedRootNode, failPendingVolumes, graftOrQueueVolume, IVolumeGraftInfo, reserveVolumeSlot, validateVolumeMountPath } from "../webComponent/volume";
+import { callVolumeLifecycle, clearFailedRootNode, failPendingVolumes, graftOrQueueVolume, IVolumeGraftInfo, releaseVolumeSlot, reserveVolumeSlot, validateVolumeMountPath } from "../webComponent/volume";
 import { hasRootMountBinding } from "../webComponent/rootMountBinding";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/symbols";
 import { waitInitializeBinding } from "../bindings/initializeBindingPromiseByNode";
@@ -183,6 +183,17 @@ export class State extends HTMLElementBase implements IStateElement {
   private _volumeGraftInfo: IVolumeGraftInfo | null = null;
   /** ボリューム: スロット予約済み・接ぎ木進行中（ロード完了前の再接続の再入ガード） */
   private _volumeInitializing: boolean = false;
+  /**
+   * ボリューム: 予約したマウントパス（#265）。枠を返した後に取り直すときもこれを使う —
+   * `mount` 属性は書き換えられるので読み直さない。
+   */
+  private _volumeMountPath: string | null = null;
+  /**
+   * ボリューム: いま枠を握っている rootNode（#265）。null は「握っていない」。解放はこの控えと
+   * `_volumeMountPath` の組でだけ行う。切断時の `_rootNode`（先に null になる）から読み直すと、
+   * 予約した組と一致する保証が無く、別の要素の枠を消しうる。
+   */
+  private _volumeSlotRootNode: Node | null = null;
   /** v2 マウント（Phase 2）: この bind-component 要素が構築したマウント記録 */
   private _mountRecord: IMountRecord | null = null;
   private _bindableEventMap: Record<string, string> = {};
@@ -448,7 +459,9 @@ export class State extends HTMLElementBase implements IStateElement {
         // D14: スナップショットはルートに 1 本 — ボリューム側の enable-ssr は意味を持たない
         console.warn(`[@wcstack/state] <${config.tagNames.state} mount="${mountPath}"> ignores "enable-ssr" — snapshots are per root tree (the root state element aggregates volume data).`);
       }
-      reserveVolumeSlot(rootNode, mountPath);
+      reserveVolumeSlot(rootNode, mountPath, this);
+      this._volumeMountPath = mountPath;
+      this._volumeSlotRootNode = rootNode;
     } catch (error) {
       // 設定エラーでも初期化待ちをウェッジさせない（_failInitialization と同じ規範 —
       // 未解決のまま投げると waitForStateInitialize がページ全体を無言で止める）。
@@ -472,6 +485,12 @@ export class State extends HTMLElementBase implements IStateElement {
     const finish = (info: IVolumeGraftInfo | null): void => {
       this._volumeGraftInfo = info;
       this._initialized = true;
+      if (info === null) {
+        // 接ぎ木しないまま決着した（ロード失敗・接ぎ木失敗・孤児・外れたまま）ので枠を返す（#265）。
+        // 握ったままだと、同じマウントパスで作り直した要素が "already mounted" に弾かれ、
+        // 復旧がページの読み直ししか無くなる
+        this._releaseVolumeSlot();
+      }
       this._resolveInitialize?.();
       this._resolveLoading?.();
       this._resolveConnectedCallback?.();
@@ -481,7 +500,7 @@ export class State extends HTMLElementBase implements IStateElement {
       volumeState = await this._loadStateFromSource();
     } catch (error) {
       // ロード失敗（404 / JSON パースエラー / import 失敗）は 1 ボリュームに閉じる
-      // （graftIsolated と同じ隔離規範 — 接ぎ木は載らず予約だけが残る着地）。
+      // （graftIsolated と同じ隔離規範 — 接ぎ木は載らず、枠も返す着地）。
       // 未解決のまま投げると waitForStateInitialize が全 <wcs-state> の
       // initializePromise を Promise.all で待つためページ全体が無言でウェッジし、
       // 上で立てた _volumeInitializing の再入ガードが remove → append の復旧も
@@ -491,17 +510,21 @@ export class State extends HTMLElementBase implements IStateElement {
       finish(null);
       return;
     }
-    // await 中に剥がされたら何もしない（スコープは持っていない）
-    if (this._rootNode === null) {
+    // await 中に剥がされた、または枠を握っていなければ接ぎ木しない（#265）。後者は付け直した先で別の
+    // 要素が同じマウントパスを取っていた形（控えは disconnectedCallback / connectedCallback が更新する）
+    const slotRootNode = this._volumeSlotRootNode;
+    if (this._rootNode === null || slotRootNode === null) {
       finish(null);
       return;
     }
+    // 接ぎ木先は枠を握っている rootNode。保留に積まれた後で外れたら、ルートが来ても接ぎ木しない
     graftOrQueueVolume(
-      rootNode,
-      getStateElement(rootNode),
+      slotRootNode,
+      getStateElement(slotRootNode),
       mountPath,
       volumeState,
       finish,
+      () => this._volumeSlotRootNode === slotRootNode,
     );
   }
 
@@ -895,11 +918,12 @@ export class State extends HTMLElementBase implements IStateElement {
       }
       // ボリューム（`mount="path"` — 接ぎ木・docs/state-mount-design.md §4-2）
       if (this.hasAttribute("mount")) {
-        // ロード完了前の remove → append 再入: スロット予約も接ぎ木も進行中の
-        // _initializeVolume が持っている。再実行すると reserveVolumeSlot が自分の
-        // 予約に "already mounted" を誤 raise する（接ぎ木自体は進行中の呼び出しが
-        // 完了させる — connectedCallbackPromise もそちらが解決する）
+        // ロード完了前の remove → append 再入: 接ぎ木は進行中の _initializeVolume が持っている
+        // （connectedCallbackPromise もそちらが解決する）ので再実行しない。再実行すると
+        // reserveVolumeSlot を二重に呼ぶ。外れたときに返した枠だけをここで取り直す
+        // （#265 — disconnectedCallback が返す）
         if (this._volumeInitializing) {
+          this._reacquireVolumeSlot();
           return;
         }
         await this._initializeVolume();
@@ -1059,13 +1083,50 @@ export class State extends HTMLElementBase implements IStateElement {
     this._resolveConnectedCallback?.();
   }
 
+  /** 控えている枠を返す（#265）。所有者の確認は `releaseVolumeSlot` が行う。 */
+  private _releaseVolumeSlot(): void {
+    if (this._volumeSlotRootNode === null) {
+      return;
+    }
+    releaseVolumeSlot(this._volumeSlotRootNode, this._volumeMountPath!, this);
+    this._volumeSlotRootNode = null;
+  }
+
+  /**
+   * ロード中に外れて返した枠を、付け直した先で取り直す（#265）。外れている間に別の要素が同じ
+   * マウントパスを取っていれば横取りせず、この要素は接ぎ木しない（ロード後の `_initializeVolume` が
+   * 控えの無さを見て決着させる）。黙らせない — 作者に見えるのは「データが現れない」だけになるため。
+   */
+  private _reacquireVolumeSlot(): void {
+    if (this._volumeSlotRootNode !== null) {
+      return;
+    }
+    const mountPath = this._volumeMountPath!;
+    try {
+      reserveVolumeSlot(this._rootNode!, mountPath, this);
+      this._volumeSlotRootNode = this._rootNode;
+    } catch {
+      console.error(
+        `[@wcstack/state] <${config.tagNames.state} mount="${mountPath}"> was re-attached while loading, ` +
+        `but another volume took the "${mountPath}" slot in the meantime, so this element will not graft. ` +
+        `Keep one volume per mount path.`,
+      );
+    }
+  }
+
   disconnectedCallback() {
     if (this.hasAttribute("mount")) {
       // ボリューム: 接ぎ木したデータ・アクセサ・宣言はツリーに残る（アンマウントは
-      // 未対応 — 揮発させると依存グラフに残った getter 登録が宙に浮く）。予約も維持。
+      // 未対応 — 揮発させると依存グラフに残った getter 登録が宙に浮く）。接ぎ木済みなら予約も維持。
       // $disconnectedCallback だけは要素のライフサイクルとして chroot で呼ぶ
       if (this._volumeGraftInfo !== null) {
         callVolumeLifecycle(this._volumeGraftInfo, "$disconnectedCallback");
+      }
+      if (!this._initialized) {
+        // ロード中（ルート待ちの保留中を含む）に外れた: 枠を返す（#265）。握ったままだと、ソースが
+        // 来ないまま外れた要素の枠が漏れ、同じマウントパスで作り直した要素が "already mounted" に
+        // 弾かれる。決着前に付け直せば connectedCallback が取り直す
+        this._releaseVolumeSlot();
       }
       this._rootNode = null;
       return;

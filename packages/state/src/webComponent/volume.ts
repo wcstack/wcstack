@@ -39,7 +39,7 @@ import { raiseError } from "../raiseError";
 import { IStateProxy } from "../proxy/types";
 import { addVolumeUpdatedCallback, createVolumeChroot, IPendingVolumeRequest, IVolumeUpdatedCallback, queuePendingVolume, recordGraftedSlot, setVolumeGraftHandler } from "./volumeShared";
 
-export { clearFailedRootNode, createVolumeChroot, drainPendingVolumes, failPendingVolumes, getVolumeUpdatedCallbacks, isPathUnderReservedVolume, reserveVolumeSlot } from "./volumeShared";
+export { clearFailedRootNode, createVolumeChroot, drainPendingVolumes, failPendingVolumes, getVolumeUpdatedCallbacks, isPathUnderReservedVolume, releaseVolumeSlot, reserveVolumeSlot } from "./volumeShared";
 export type { IVolumeUpdatedCallback } from "./volumeShared";
 import { assertValidWatchPath } from "../watch/processWatchDeclaration";
 import { addVolumeWatchEntries } from "../watch/watchRegistry";
@@ -360,6 +360,11 @@ export function graftVolume(
  * ルートの名前登録（`default`）が保留分を `drainPendingVolumes` で引き取る。
  */
 function graftIsolated(rootStateElement: IStateElement, volume: IPendingVolumeRequest): void {
+  if (!volume.holdsSlot()) {
+    // 要求した要素が保留中に外れて枠を返した（#265）。接ぎ木せずに決着させる
+    volume.onGrafted(null);
+    return;
+  }
   let info: IVolumeGraftInfo | null = null;
   try {
     info = graftVolume(rootStateElement, volume.mountPath, volume.volumeState);
@@ -379,12 +384,19 @@ export function graftOrQueueVolume(
   mountPath: string,
   volumeState: Record<string, any>,
   onGrafted: (info: IVolumeGraftInfo | null) => void,
+  holdsSlot: () => boolean,
 ): void {
+  const request: IPendingVolumeRequest = {
+    mountPath,
+    volumeState,
+    onGrafted: onGrafted as IPendingVolumeRequest["onGrafted"],
+    holdsSlot,
+  };
   if (rootStateElement !== null) {
-    graftIsolated(rootStateElement, { mountPath, volumeState, onGrafted: onGrafted as IPendingVolumeRequest["onGrafted"] });
+    graftIsolated(rootStateElement, request);
     return;
   }
-  queuePendingVolume(rootNode, { mountPath, volumeState, onGrafted: onGrafted as IPendingVolumeRequest["onGrafted"] });
+  queuePendingVolume(rootNode, request);
 }
 
 // stateElementByName の drainPendingVolumes は import 循環（updater まで届く）を避けて

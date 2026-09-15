@@ -21,9 +21,9 @@
  *    （ルート登録が来ない ＝ `drainPendingVolumes` が呼ばれないので、放置すると永久
  *    未解決になる）。「ルートは来ない」の印は**落ちた要素が居る間だけ**有効。
  *    ただし孤児として報告されたボリュームはそこが終点で、後から修正版のルートを
- *    接続しても自分で接ぎ木し直さない（マウントの枠も予約されたまま — 枠の解放には
- *    所有者の確認が要る別の設計問題なので、この PR では扱わない）。復旧はページの
- *    読み直し。
+ *    接続しても自分で接ぎ木し直さない。マウントの枠は決着の時点で返す（#265）ので、
+ *    壊れたルートとボリュームを作り直せば、ページを読み直さずに復旧できる
+ *    （枠の寿命は integration.volumeSlotRelease.test.ts が固定する）。
  *  - 失敗した要素は復旧不能。`setInitialState` は無言の no-op ではなく throw する。
  *
  * 載る throw 元は「`_initialize` が投げうるもの全部」— コードから導いてある:
@@ -43,7 +43,8 @@
  * 包まないので、ボリュームは connectedCallbackPromise を**拒否しない** —— `name=` と
  * 同じ逃げ方で、エラーはカスタム要素リアクションが捨てる戻り Promise（ブラウザの
  * "Uncaught (in promise)"）として残り、promise を待つ側には届かない。自前の報告が出るか
- * どうかは失敗の種類による。挙動はこの PR では変えない（枠の寿命は別 Issue）。
+ * どうかは失敗の種類による。挙動はこの PR では変えない（枠の寿命は #265 —
+ * integration.volumeSlotRelease.test.ts）。
  *
  * `connectedCallback` が `_initialize` より前に await する 2 つ（`_initializeDCC` /
  * `_initializeBindWebComponent`）の raise も同じ着地に載る。自分で promise を解決してから
