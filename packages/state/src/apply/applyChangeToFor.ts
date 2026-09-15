@@ -9,7 +9,8 @@ import { createListDiff } from "../list/createListDiff";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
 import { getLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
 import { computeStableIndexSet } from "../list/stableListOrder";
-import { IListIndex } from "../list/types";
+import { isSwapBaselineList } from "../list/swapBaselineList";
+import { IListDiff, IListIndex } from "../list/types";
 import { raiseError } from "../raiseError";
 import { activateContent, deactivateContent } from "../structural/activateContent";
 import { deleteContentByNode } from "../structural/contentsByNode";
@@ -127,6 +128,44 @@ function isPhysicallyAfter(lastNode: Node, firstNode: Node | null): boolean {
     && (position & Node.DOCUMENT_POSITION_DISCONNECTED) === 0;
 }
 
+interface IInPlaceContents {
+  /** 入る行の listIndex → その場で使い回す Content */
+  readonly byAddedIndex: Map<IListIndex, IContent>;
+  readonly reused: Set<IContent>;
+}
+
+/**
+ * 要素書き込みの入れ替えを描き直す差分（基準が「書き込む前の並びの写し」— swapBaselineList.ts）で、
+ * 同じ位置の「外す行」と「入る行」を組にし、外す行の Content を入る行にその場で使い回す（#4）。
+ * 行の置き換え（リストに無かった値の書き込み）はその位置の行が新しい行に替わるだけなので、プールを通して
+ * ブロックを DOM から外す必要が無い — 外すと、双方向バインドの入力で打鍵ごとにフォーカスが失われる。
+ * 配列の置換の差分は対象にしない（外した行の Content はこれまでどおりプールを通す）。
+ */
+function collectInPlaceContents(
+  contentMap: WeakMap<IListIndex, IContent>,
+  lastValue: unknown,
+  diff: IListDiff,
+): IInPlaceContents | null {
+  if (!isSwapBaselineList(lastValue)) {
+    return null;
+  }
+  let inPlace: IInPlaceContents | null = null;
+  for (let position = 0; position < diff.newIndexes.length; position++) {
+    const added = diff.newIndexes[position];
+    const removed = diff.oldIndexes[position];
+    const content = diff.addIndexSet.has(added) && diff.deleteIndexSet.has(removed)
+      ? contentMap.get(removed)
+      : undefined;
+    if (typeof content === "undefined") {
+      continue;
+    }
+    inPlace ??= { byAddedIndex: new Map(), reused: new Set() };
+    inPlace.byAddedIndex.set(added, content);
+    inPlace.reused.add(content);
+  }
+  return inPlace;
+}
+
 function setContent(node: Node, listIndex: IListIndex, content: IContent | null): void {
   let contentByListIndex = contentByListIndexByNode.get(node);
   if (typeof contentByListIndex === 'undefined') {
@@ -164,10 +203,14 @@ export function applyChangeToFor(
   const diff = createListDiff(listIndex, lastValue, newValue);
   context.newListValueByAbsAddress.set(absAddress, Array.isArray(newValue) ? newValue : []);
 
+  let contentMap = contentByListIndexByNode.get(bindingInfo.node);
+  // 要素書き込みの入れ替えを描き直す差分では、同じ位置で外す行の Content を入る行がその場で使い回す（#4）
+  const inPlaceContents = typeof contentMap !== 'undefined' ? collectInPlaceContents(contentMap, lastValue, diff) : null;
   const fullDelete = Array.isArray(lastValue)
     && lastValue.length === diff.deleteIndexSet.size
     && diff.deleteIndexSet.size > 0;
-  if (fullDelete && bindingInfo.node.parentNode !== null) {
+  // その場で使い回す Content があるときは、親を空にする近道を取らない（使い回す行の DOM も消える）
+  if (fullDelete && inPlaceContents === null && bindingInfo.node.parentNode !== null) {
     let isOnlyNode = isOnlyNodeInParentContentByNode.get(bindingInfo.node);
     if (typeof isOnlyNode === 'undefined') {
       const lastNode = lastNodeByNode.get(bindingInfo.node) || bindingInfo.node;
@@ -188,7 +231,6 @@ export function applyChangeToFor(
   // ホットスポット: 外側の node→map 解決はループ外に持ち上げ、fullDelete（旧全行が
   // deleteIndexSet に載る＝台帳の全エントリが消える）では per-index delete を廃して
   // 台帳ごと 1 回で手放す。
-  let contentMap = contentByListIndexByNode.get(bindingInfo.node);
   let poolBudget = fullDelete
     ? maxPooledContents - getPooledContents(bindingInfo).length
     : Number.POSITIVE_INFINITY;
@@ -196,7 +238,10 @@ export function applyChangeToFor(
     for(const deleteIndex of diff.deleteIndexSet) {
       const content = contentMap.get(deleteIndex);
       if (typeof content !== 'undefined') {
-        if (poolBudget <= 0 && content.tryDestroy()) {
+        if (inPlaceContents !== null && inPlaceContents.reused.has(content)) {
+          // 同じ位置に入る行がその場で使い回す。DOM から外さず、プールにも入れない
+          deactivateContent(content);
+        } else if (poolBudget <= 0 && content.tryDestroy()) {
           deleteContentByNode(bindingInfo.node, content);
         } else {
           deactivateContent(content);
@@ -227,6 +272,7 @@ export function applyChangeToFor(
   if (diff.newIndexes.length == diff.addIndexSet.size 
     && diff.newIndexes.length > 0
     && lastNode.isConnected
+    && inPlaceContents === null
   ) {
     // 全部追加の場合はまとめて処理
     fragment = document.createDocumentFragment();
@@ -247,11 +293,12 @@ export function applyChangeToFor(
     if (diff.addIndexSet.has(index)) {
       const stateAddress = createStateAddress(elementPathInfo, index);
       loopContextStack.createLoopContext(stateAddress, (loopContext) => {
-        content = typeof pooledContents !== 'undefined' ? pooledContents.pop() : undefined;
+        content = inPlaceContents?.byAddedIndex.get(index)
+          ?? (typeof pooledContents !== 'undefined' ? pooledContents.pop() : undefined);
         if (typeof content === 'undefined') {
           content = createContent(bindingInfo);
         } else {
-          // プールから使い回す Content の binding は、同じバッチで**外した行として**適用済みのことがある。
+          // プール（か同じ位置）から使い回す Content の binding は、同じバッチで**外した行として**適用済みのことがある。
           // 外した行のアドレスへの書き込み（行の葉・要素の置き換え）で enqueue された binding が、この `for`
           // より先に適用された形。印が残ると activateContent の applyChange が飛ばし、新しい行に外した行の
           // 値が残る（表示と state が食い違う）。新しい行として適用し直す

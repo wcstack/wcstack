@@ -12,9 +12,11 @@
  * 行を別のオブジェクトに置き換える書き込み（`$resolve("items.*", [0], row)`）では、束ねていない
  * 行 getter の表示が更新されず、再帰の集計では古い葉と新しい子を足した値を表示した。
  *
- * 契約（1 本ずつ固定する）: 入れ替え・置き換えが揃った時点で、リストは「書き込む前の並び →
- * いまの並び」の置換として描画し直される。ブロックは値と一緒に動き、読み書き・`$1`・表示が
- * 実配列と一致する。
+ * 契約（1 本ずつ固定する）: 入れ替えが揃った時点で、リストは「書き込む前の並び → いまの並び」の
+ * 置換として描画し直される。ブロックは値と一緒に動き、読み書き・`$1`・表示が実配列と一致する。
+ * リストに無かった値の書き込み（行の置き換え）は新しい行になる（#274 の着地の契約どおり）が、`for` は
+ * 同じ位置で外す行の DOM ブロックをその場で使い回す — 入力中の欄はフォーカスを保つ。要素パス自身の
+ * `$watch` は、その位置の書き込む前の値を prev に受け取る。
  *
  * 末尾の describe は、置き換えの修理で見つかった drain の既存欠陥（同じバッチで消える行に書くと、
  * プールから使い回した Content に新しい行の値が当たらない）の固定。
@@ -230,14 +232,125 @@ describe("要素書き込みによる行の置き換え", () => {
     });
     const html = `<template data-wcs="for: items"><b class="d" data-wcs="textContent: items.*.double"></b></template>`;
     const { host, shadowRoot, stateEl } = await mount(state, html);
-    const second = shadowRoot.querySelectorAll(".d")[1];
+    const blocks = Array.from(shadowRoot.querySelectorAll(".d"));
 
     write(stateEl, (s: any) => { s.$resolve("items.*", [0], { n: 50 }); });
     await flush();
     expect(texts(shadowRoot, ".d")).toEqual(["100", "4"]); // 旧: ["2", "4"]
     expect(read(stateEl, (s: any) => s.$getAll("items.*.double", []))).toEqual([100, 4]);
-    // 置き換えた行の DOM は、外した行の Content をプールから使い回すことがある（identity は契約にしない）
-    expect(shadowRoot.querySelectorAll(".d")[1], "他の行はそのまま").toBe(second);
+    expect(Array.from(shadowRoot.querySelectorAll(".d")), "置き換えた行もブロックはその場に残る").toEqual(blocks);
+    host.remove();
+  });
+
+  it("プリミティブの行を双方向バインドで編集しても、入力欄は DOM から外れずフォーカスを保つ", async () => {
+    const html = `<div class="box"><template data-wcs="for: tags"><input class="ed" data-wcs="value: tags.*"></template></div>`;
+    const { host, shadowRoot, stateEl } = await mount({ tags: ["red", "green", "blue"] }, html);
+    const editor = shadowRoot.querySelectorAll<HTMLInputElement>(".ed")[1];
+    let detached = 0;
+    const countDetached = (records: MutationRecord[]): void => {
+      for (const record of records) {
+        detached += Array.from(record.removedNodes).filter((removed) => removed === editor).length;
+      }
+    };
+    const observer = new MutationObserver(countDetached);
+    observer.observe(shadowRoot.querySelector(".box")!, { childList: true, subtree: true });
+    editor.focus();
+
+    for (const typed of ["greenx", "greenxy"]) {
+      editor.value = typed;
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      await flush();
+    }
+    await flush();
+    countDetached(observer.takeRecords());
+    observer.disconnect();
+    expect(read(stateEl, (s: any) => [...s.tags])).toEqual(["red", "greenxy", "blue"]);
+    expect(detached, "打鍵ごとにブロックを作り直さない").toBe(0); // 旧（このブランチの初版）: 2
+    expect(shadowRoot.querySelectorAll(".ed")[1]).toBe(editor);
+    expect(shadowRoot.activeElement).toBe(editor);
+    host.remove();
+  });
+
+  it("1 行だけのリストでも、行を置き換える書き込みで入力欄が DOM から外れない", async () => {
+    const html = `<div class="box"><template data-wcs="for: tags"><input class="ed" data-wcs="value: tags.*"></template></div>`;
+    const { host, shadowRoot, stateEl } = await mount({ tags: ["solo"] }, html);
+    const editor = shadowRoot.querySelector<HTMLInputElement>(".ed")!;
+    editor.focus();
+
+    editor.value = "solo!";
+    editor.dispatchEvent(new Event("input", { bubbles: true }));
+    await flush();
+    expect(read(stateEl, (s: any) => [...s.tags])).toEqual(["solo!"]);
+    expect(shadowRoot.querySelector(".ed")).toBe(editor);
+    expect(shadowRoot.activeElement, "親を空にする近道で外さない").toBe(editor);
+    host.remove();
+  });
+
+  it("行ハンドラで行を新しいオブジェクトに差し替えても（不変更新）、ブロックと行の DOM の状態はその場に残る", async () => {
+    const html =
+      `<template data-wcs="for: todos"><div class="row">` +
+      `<button class="toggle" data-wcs="onclick: toggle; textContent: todos.*.label"></button><input class="note">` +
+      `</div></template>`;
+    const { host, shadowRoot, stateEl } = await mount({
+      todos: [{ label: "a" }, { label: "b" }],
+      toggle(this: any) {
+        const row = this["todos.*"];
+        this["todos.*"] = { ...row, label: `${row.label}!` };
+      },
+    }, html);
+    const rows = Array.from(shadowRoot.querySelectorAll(".row"));
+    (rows[0].querySelector(".note") as HTMLInputElement).value = "typed";
+    const button = rows[0].querySelector<HTMLButtonElement>(".toggle")!;
+    button.focus();
+
+    button.click();
+    await flush();
+    expect(read(stateEl, (s: any) => s.todos.map((todo: any) => todo.label))).toEqual(["a!", "b"]);
+    expect(texts(shadowRoot, ".toggle")).toEqual(["a!", "b"]);
+    expect(Array.from(shadowRoot.querySelectorAll(".row"))).toEqual(rows);
+    expect((rows[0].querySelector(".note") as HTMLInputElement).value).toBe("typed");
+    expect(shadowRoot.activeElement).toBe(button);
+    host.remove();
+  });
+
+  it("プリミティブの行を置き換えると、$watch の prev は置き換える前の値", async () => {
+    const calls: unknown[] = [];
+    const html = `<template data-wcs="for: tags"><i data-wcs="textContent: tags.*"></i></template>`;
+    const { host, stateEl } = await mount({
+      tags: ["a", "b", "c"],
+      $watch: {
+        "tags.*"(current: unknown, previous: unknown, index: unknown) { calls.push([current, previous, index]); },
+      },
+    }, html);
+    await flush();
+    calls.length = 0;
+
+    write(stateEl, (s: any) => { s["tags.1"] = "Q"; });
+    await flush();
+    await flush();
+    expect(calls).toEqual([["Q", "b", 1]]); // 旧（このブランチの初版）: [["Q", undefined, 1]]
+    host.remove();
+  });
+
+  it("同じバッチで同じ位置を 2 回置き換えても、$watch の prev はバッチが始まる前の値", async () => {
+    const calls: unknown[] = [];
+    const html = `<template data-wcs="for: tags"><i data-wcs="textContent: tags.*"></i></template>`;
+    const { host, stateEl } = await mount({
+      tags: ["a", "b", "c"],
+      $watch: {
+        "tags.*"(current: unknown, previous: unknown, index: unknown) { calls.push([current, previous, index]); },
+      },
+    }, html);
+    await flush();
+    calls.length = 0;
+
+    write(stateEl, (s: any) => {
+      s["tags.1"] = "Q";
+      s["tags.1"] = "R";
+    });
+    await flush();
+    await flush();
+    expect(calls).toEqual([["R", "b", 1]]);
     host.remove();
   });
 
@@ -278,5 +391,65 @@ describe("同じバッチで消える行に書いてから置き換える（drai
     expect(texts(shadowRoot, ".n")).toEqual(["9", "2"]); // 旧: ["5", "2"]
     expect(read(stateEl, (s: any) => s.$getAll("items.*.n", []))).toEqual([9, 2]);
     host.remove();
+  });
+});
+
+describe("入れ替えの記録（書き込む前の並び）", () => {
+  const html = `<template data-wcs="for: items"><i class="r" data-wcs="onclick: pick; textContent: items.*.name"></i></template>`;
+
+  it("入れ替えの途中で行を置き換え、押し出した値を別の位置へ戻しても、ブロックと読み書きが実配列と一致する", async () => {
+    const picks: unknown[] = [];
+    const { host, shadowRoot, stateEl } = await mount({
+      items: [{ name: "a" }, { name: "b" }, { name: "c" }, { name: "d" }],
+      pick(this: any, _event: Event, index: number) { picks.push([index, this["items.*.name"]]); },
+    }, html);
+    const [, blockB, blockC, blockD] = Array.from(shadowRoot.querySelectorAll(".r"));
+
+    write(stateEl, (s: any) => {
+      const b = s["items.1"];
+      s["items.0"] = s["items.3"]; // [d, b, c, d] — 重複があるので入れ替えはまだ揃っていない
+      s["items.1"] = { name: "x" }; // [d, x, c, d]
+      s["items.3"] = b; // [d, x, c, b] — b は元の行のまま位置 3 へ動き、x は新しい行
+    });
+    await flush();
+    expect(read(stateEl, (s: any) => s.items.map((item: any) => item.name))).toEqual(["d", "x", "c", "b"]);
+    expect(texts(shadowRoot, ".r")).toEqual(["d", "x", "c", "b"]);
+    const blocks = Array.from(shadowRoot.querySelectorAll(".r"));
+    expect([blocks[0], blocks[2], blocks[3]]).toEqual([blockD, blockC, blockB]);
+    expect(read(stateEl, (s: any) => [s["items.1.name"], s["items.3.name"]])).toEqual(["x", "b"]);
+
+    blocks.forEach((block) => block.dispatchEvent(new Event("click")));
+    await flush();
+    expect(picks).toEqual([[0, "d"], [1, "x"], [2, "c"], [3, "b"]]);
+
+    write(stateEl, (s: any) => { s["items.1.name"] = "y"; });
+    await flush();
+    expect(texts(shadowRoot, ".r")).toEqual(["d", "y", "c", "b"]);
+    host.remove();
+  });
+
+  it("別の state 要素で揃っていない入れ替えの記録を、同じパスのリストが拾わない", async () => {
+    const first = await mount({ items: [{ name: "a" }, { name: "b" }, { name: "c" }], pick() {} }, html);
+    const second = await mount({ items: [{ name: "p" }, { name: "q" }, { name: "r" }], pick() {} }, html);
+    const firstBlocks = Array.from(first.shadowRoot.querySelectorAll(".r"));
+    const secondBlocks = Array.from(second.shadowRoot.querySelectorAll(".r"));
+    let a: unknown;
+
+    write(first.stateEl, (s: any) => {
+      a = s["items.0"];
+      s["items.0"] = s["items.1"]; // [b, b, c] — 揃っていない
+    });
+    await flush();
+    write(second.stateEl, (s: any) => { s["items.1"] = { name: "z" }; });
+    await flush();
+    expect(texts(second.shadowRoot, ".r")).toEqual(["p", "z", "r"]);
+    expect(Array.from(second.shadowRoot.querySelectorAll(".r")), "もう一方の記録で行を作り直さない").toEqual(secondBlocks);
+
+    write(first.stateEl, (s: any) => { s["items.1"] = a; }); // [b, a, c] — 揃う
+    await flush();
+    expect(texts(first.shadowRoot, ".r")).toEqual(["b", "a", "c"]);
+    expect(Array.from(first.shadowRoot.querySelectorAll(".r"))).toEqual([firstBlocks[1], firstBlocks[0], firstBlocks[2]]);
+    first.host.remove();
+    second.host.remove();
   });
 });

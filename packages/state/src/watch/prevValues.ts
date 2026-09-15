@@ -40,6 +40,13 @@ export function getPrevValue(absAddress: IAbsoluteStateAddress): unknown {
 }
 
 /**
+ * 旧値が記録済みか（記録された undefined と、記録が無いことを区別する）。
+ */
+export function hasPrevValue(absAddress: IAbsoluteStateAddress): boolean {
+  return prevValueByAbsoluteStateAddress.has(absAddress);
+}
+
+/**
  * 台帳をクリアする（drain 終端で必ず呼ぶ）。
  */
 export function clearPrevValues(): void {

@@ -1104,7 +1104,7 @@ export default {
 };
 ```
 
-Swapping rows this way moves the rendered rows with their values once the swap is complete: the row blocks are reordered rather than rewritten in place, so a row's `$1` and any state it holds outside bindings (such as text typed into an unbound input) follow the value. Replacing a row with a different value re-renders that row.
+Swapping rows this way moves the rendered rows with their values once the swap is complete: the row blocks are reordered rather than rewritten in place, so a row's `$1` and any state it holds outside bindings (such as text typed into an unbound input) follow the value. Writing a value that was not in the list replaces that row in place: its block stays where it is and its bindings show the new value, so an input bound to the row keeps focus while you type. In a list of primitives, equal values cannot be told apart, so writes that end in a reordering of the same values count as a swap.
 
 ## Recursive Paths (`$recursion`)
 

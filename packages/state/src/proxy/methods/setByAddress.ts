@@ -36,7 +36,8 @@ import { IStateHandler, IStateProxy } from "../types";
 import { getByAddress } from "./getByAddress";
 import { isCacheable } from "./isCacheable";
 import { hasByAddress } from "./hasByAddress";
-import { getSwapInfoByAddress, setSwapInfoByAddress } from "./swapInfo";
+import { markSwapBaselineList } from "../../list/swapBaselineList";
+import { getSwapInfoByList, setSwapInfoByList } from "./swapInfo";
 import { walkDependency } from "../../dependency/walkDependency";
 import { dirtyCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
 import { getAbsolutePathInfo } from "../../address/AbsolutePathInfo";
@@ -44,7 +45,7 @@ import { config } from "../../config";
 import { devtoolsSink } from "../../devtools/sink";
 import { beginPropagationTransaction, getCurrentPropagationContext } from "../../propagation/propagation";
 import { consumeOccurrenceWrite } from "../occurrenceWrite";
-import { recordPrevValue } from "../../watch/prevValues";
+import { getPrevValue, hasPrevValue, recordPrevValue } from "../../watch/prevValues";
 import { findGraftedSlotUnder } from "../../webComponent/volumeShared";
 import { resolveExport } from "../../webComponent/exportIndex";
 import { writeExportedAccessor } from "../../webComponent/overlay";
@@ -230,16 +231,16 @@ function _setByAddressWithSwap(
   keyedMergePath: string | null,
   cacheable: boolean
 ) {
-  // elementsの場合はswapInfoを準備
-  let parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
-  let swapInfo = getSwapInfoByAddress(parentAddress);
+  // elementsの場合はswapInfoを準備（キーはリストの配列そのもの — swapInfo.ts 参照）
+  const parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
+  const parentValue = getByAddress(target, parentAddress, receiver, handler) ?? [];
+  let swapInfo = getSwapInfoByList(parentValue);
   if (swapInfo === null) {
-    const parentValue = getByAddress(target, parentAddress, receiver, handler) ?? [];
     const listIndexes = getListIndexesByList(parentValue) ?? [];
     swapInfo = {
       value: [...parentValue], listIndexes: [...listIndexes]
     }
-    setSwapInfoByAddress(parentAddress, swapInfo);
+    setSwapInfoByList(parentValue, swapInfo);
   }
   try {
     return _setByAddress(target, address, absAddress, value, receiver, handler, keyedMergePath, cacheable);
@@ -260,7 +261,7 @@ function _setByAddressWithSwap(
         currentListIndexes[i].index = i;
       }
       // 完了したのでswapInfoを削除
-      setSwapInfoByAddress(parentAddress, null);
+      setSwapInfoByList(parentValue, null);
       notifySwappedList(parentAddress, swapInfo, currentParentValue, currentListIndexes, receiver, handler);
     }
   }
@@ -280,9 +281,11 @@ function _setByAddressWithSwap(
  *
  * 行ごとの扱い（書き込む前といまの台帳の位置を比べる）:
  *  - 位置が変わらない行: 何もしない。
- *  - 置き換えで入った行（書き込む前の台帳に無い）: その位置の値の書き込みとして着地させる。差し替えられた
+ *  - 新しい listIndex の行（書き込む前の台帳に無い）: その位置の値の書き込みとして着地させる。差し替えられた
  *    行は `for` の差分で退役し、その行のアドレスの着地は `$watch` / `$scan` の選別で捨てられるので、
- *    着地は新しい行が持つ（#274 の「その位置のいまの値で 1 回」）。
+ *    着地は新しい行が持つ（#274 の「その位置のいまの値で 1 回」）。要素パス自身の prev は、書き込みがその位置の
+ *    前の行のアドレスで記録した値を引き継ぐ（引き継がないと `$watch "items.*"` の prev が消える）。ブロックは
+ *    `for` が同じ位置で外す行の Content をその場で使い回す（applyChangeToFor の collectInPlaceContents）。
  *  - 値と一緒に動いた行: 値は変わっていないので、依存を無効化して描画だけをやり直す。書き込みを別の
  *    バッチに分けると、途中のバッチで別の値を描いた行が残る。
  * リスト自身も描画だけを積む（updater の enqueueRenderOnlyAddress）。書き込みとして積むと、`items` の
@@ -305,6 +308,7 @@ function notifySwappedList(
   if (getLastListValueByAbsoluteStateAddress(listAbsAddress) === currentParentValue) {
     setListIndexesByList(swapInfo.value, swapInfo.listIndexes);
     setLastListValueByAbsoluteStateAddress(listAbsAddress, swapInfo.value);
+    markSwapBaselineList(swapInfo.value);
   }
   updater.enqueueRenderOnlyAddress(listAbsAddress);
 
@@ -321,6 +325,10 @@ function notifySwappedList(
     const elementAddress = createStateAddress(elementPathInfo, listIndex);
     const elementAbsAddress = createAbsoluteStateAddress(elementAbsPathInfo, listIndex);
     if (typeof before === "undefined") {
+      const displacedAbsAddress = createAbsoluteStateAddress(elementAbsPathInfo, swapInfo.listIndexes[position] ?? null);
+      if (hasPrevValue(displacedAbsAddress)) {
+        recordPrevValue(elementAbsAddress, getPrevValue(displacedAbsAddress));
+      }
       notifyWrite(elementAddress, elementAbsAddress, receiver, handler, null, isCacheable(stateElement, elementAddress));
       continue;
     }
