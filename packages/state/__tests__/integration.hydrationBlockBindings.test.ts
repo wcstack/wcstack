@@ -122,9 +122,9 @@ describe("入れ子の for（ハイドレーションの既知の制限）", () 
     <wcs-ssr name="default">
       <script type="application/json">{"groups":[{"title":"G1","items":[{"name":"x"},{"name":"y"}]}]}</script>
       <template id="hbb2" data-wcs="for: groups">
-        <div class="group"><h3 data-wcs="textContent: groups.*.title"></h3>
+        <div class="group"><h3 data-wcs="textContent: groups.*.title"></h3><em class="outer-index" data-wcs="textContent: $1"></em>
           <template id="hbb3" data-wcs="for: groups.*.items">
-            <i data-wcs="textContent: groups.*.items.*.name"></i>
+            <i data-wcs="textContent: groups.*.items.*.name"></i><b class="inner-index" data-wcs="textContent: $2"></b>
           </template>
         </div>
       </template>
@@ -132,15 +132,15 @@ describe("入れ子の for（ハイドレーションの既知の制限）", () 
     <wcs-state enable-ssr json='{"groups":[]}'></wcs-state>
     <div id="outer">
       <!--@@wcs-for:hbb2-->
-      <!--@@wcs-for-start:hbb2:groups:0--><div class="group"><h3 data-wcs="textContent: groups.*.title">G1</h3>
+      <!--@@wcs-for-start:hbb2:groups:0--><div class="group"><h3 data-wcs="textContent: groups.*.title">G1</h3><em class="outer-index" data-wcs="textContent: $1">0</em>
         <!--@@wcs-for:hbb3-->
-        <!--@@wcs-for-start:hbb3:groups.*.items:0--><i data-wcs="textContent: groups.*.items.*.name">x</i><!--@@wcs-for-end:hbb3:groups.*.items:0-->
-        <!--@@wcs-for-start:hbb3:groups.*.items:1--><i data-wcs="textContent: groups.*.items.*.name">y</i><!--@@wcs-for-end:hbb3:groups.*.items:1-->
+        <!--@@wcs-for-start:hbb3:groups.*.items:0--><i data-wcs="textContent: groups.*.items.*.name">x</i><b class="inner-index" data-wcs="textContent: $2">0</b><!--@@wcs-for-end:hbb3:groups.*.items:0-->
+        <!--@@wcs-for-start:hbb3:groups.*.items:1--><i data-wcs="textContent: groups.*.items.*.name">y</i><b class="inner-index" data-wcs="textContent: $2">1</b><!--@@wcs-for-end:hbb3:groups.*.items:1-->
       </div><!--@@wcs-for-end:hbb2:groups:0-->
     </div>
   `;
 
-  it("段数の足りない内側の行のバインディングは適用せず、失敗を報告しない（外側の行は追従する）", async () => {
+  it("段数の足りない内側の行のバインディングと添字（$1 / $2）は適用せず、失敗を報告しない（外側の行は追従する）", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     document.body.innerHTML = FIXTURE;
     const el = document.querySelector("wcs-state") as State;
@@ -148,7 +148,9 @@ describe("入れ子の for（ハイドレーションの既知の制限）", () 
     await new Promise((resolve) => setTimeout(resolve, 200));
 
     expect(texts("h3")).toEqual(["G1"]);
+    expect(texts(".outer-index"), "添字は state に依存しないので、サーバーが書いたテキストのまま").toEqual(["0"]);
     expect(texts("i"), "サーバーが書いたテキストのまま").toEqual(["x", "y"]);
+    expect(texts(".inner-index"), "サーバーが書いたテキストのまま").toEqual(["0", "1"]);
     expect(errorSpy.mock.calls.map((args) => String(args[0])), "失敗の報告を増やさない").toEqual([]);
 
     write(el, (s: any) => { s["groups.0.title"] = "G2"; });

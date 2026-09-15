@@ -154,17 +154,19 @@ function collectBindingsFromLiveNodes(
  *    （`<!--@@wcs-for:uuid-->`）だけで、テキストの `@@:` はこの後で `Ssr.restoreTextBindings` が戻す。
  *    テンプレートを復帰できなかった入れ子の置き場は text として解釈される（`text: uuid`）ので、
  *    構造の種別だけでは除けない。
+ *  - 添字のバインディング（`$1` / `$2` …）。state に依存しないので依存辺のための適用が要らず、SSR が
+ *    描いた添字のままでよい（入れ子の内側の `$2` は、外側のループ文脈しか持たないので読めもしない）。
  *  - ループの深さより多いワイルドカードを持つバインディング。入れ子のブロックの行は外側のブロックの
  *    Content に吸収され、外側のループ文脈しか持たない（入れ子ハイドレーションの既知の制限・
  *    integration.listLedgerParentKey.test.ts）。
- * 後の 2 つは適用しても、失敗の報告をハイドレーションのたびに増やすだけになる。
+ * コメントと段数の足りないバインディングは、適用しても失敗の報告をハイドレーションのたびに増やすだけになる。
  */
 function collectBlockBindings(out: IBindingInfo[], bindings: readonly IBindingInfo[], loopDepth: number): void {
   for (const binding of bindings) {
     if (binding.bindingType === "event" || STRUCTURAL_TYPES.has(binding.bindingType)) {
       continue;
     }
-    if (binding.node.nodeType === Node.COMMENT_NODE) {
+    if (binding.node.nodeType === Node.COMMENT_NODE || binding.statePathName in INDEX_BY_INDEX_NAME) {
       continue;
     }
     if (getPathInfo(binding.statePathName).wildcardCount > loopDepth) {
