@@ -49,8 +49,9 @@ import { Ssr } from "./Ssr";
 import { VERSION } from "../version";
 import { HTMLElementBase } from "../platform/HTMLElementBase";
 import { getAllPropertyDescriptors } from "../getAllPropertyDescriptors";
-import { checkDeclaredPath, findDescriptor, PathInfoSource } from "../pathDiagnostics";
+import { checkDeclaredPath, findDescriptor, PathInfoSource, resetPathDiagnostics } from "../pathDiagnostics";
 import { notifyExports } from "../webComponent/exportIndex";
+import { collectReapplyPaths, reapplyStateBindings } from "../apply/reapplyStateBindings";
 
 function getStateInfo(
   state: IState
@@ -157,9 +158,20 @@ export class State extends HTMLElementBase implements IStateElement {
    *
    * `source === "internal"`（再帰の生成アクセサ・ボリュームのツリーアクセサ）は載せない。
    * あれらは生やした機構が新しい世代で登録し直す（recursion/registry.ts の `_define`）。
+   *
+   * `bound` はバインドがいちどでも登録したか（#270）。作り直しで存在検査をやり直すのはバインドの
+   * パスだけ — `$watch` / `$scan` の登録は前の世代の宣言の残骸でもあり、今の世代の宣言は
+   * 作り直しの後で自分の検査をする（`processWatchDeclaration` / `registerScans`）。残骸まで
+   * 検査すると、新しい宣言から外したパスを「存在しない」と誤って報告する。
    */
-  private _pathRegistrations: Map<string, { bindingType: BindingType; source: PathInfoSource }> =
-    new Map<string, { bindingType: BindingType; source: PathInfoSource }>();
+  private _pathRegistrations: Map<string, { bindingType: BindingType; bound: boolean }> =
+    new Map<string, { bindingType: BindingType; bound: boolean }>();
+  /**
+   * 切断中の再セットで適用し直せなかったトップレベルのパス（#267）。再適用には rootNode が要るので、
+   * 再接続で `reapplyStateBindings` に渡す。切断中に何度入れ直しても和集合で持つ
+   * （前の世代にしか無いキーのバインドも失敗として報告させるため）。
+   */
+  private _pendingReapplyPaths: Set<string> | null = null;
   /**
    * これまでのどの世代かで再帰レジストリが実体化した具体パス（`nodes.*.total` 等）の累積。
    * 再セットのたびに `forgetGenerated` の戻り値を足し、`_rebuildPathInfo` の除外に使う。
@@ -275,6 +287,11 @@ export class State extends HTMLElementBase implements IStateElement {
     // 据え置き（同ファイルの「throw する再セットは世代を進めない」4 本が固定する）。
     this._stateGeneration++;
     this.__state = value;
+    // 存在検査の台帳も世代に属する（#270）。「パスごとに 1 回」の印を前の世代から持ち越すと、
+    // 下の経路情報の作り直しが新しい state で検査し直さない。初回のセットには捨てるものが無い
+    if (typeof previousState !== "undefined") {
+      resetPathDiagnostics(this);
+    }
     // $updatedCallback の有無を state セット時に確定しておく（in はプロトタイプ
     // チェーンも見る・getter を評価しない）。drain 側はこのフラグで更新アドレスの
     // 集計と writable createState をスキップできる。
@@ -334,8 +351,9 @@ export class State extends HTMLElementBase implements IStateElement {
     }
     // 生きているバインドの経路情報を作り直す（issue #258 の X7）。置き場所は
     // `_pathSet` / `_listPaths` / `_elementPaths` のクリアより後、startWatch / startStreams より前。
-    // `setPathInfo` をやり直しても新しい診断は出ない — 第 2 世代で消えたバインド先が無言のまま
-    // であることを `__tests__/integration.stateGenerationReset.test.ts` の末尾が固定する。
+    // 上で存在検査の台帳を捨てているので、バインドのパスはここで新しい state に対して検査し直され、
+    // 第 2 世代で消えたバインド先が報告される（#270 — `__tests__/integration.stateGenerationReset.test.ts`
+    // の末尾が固定する）。
     this._rebuildPathInfo();
     // $scan: registry と from / resetOn の依存グラフ登録（_pathSet クリア後であること）。
     // startWatch より前に置く（scan だけを宣言した state も drain の発火対象に載せるため）。
@@ -979,6 +997,13 @@ export class State extends HTMLElementBase implements IStateElement {
       // （$connectedCallback の再実行と $streams の initial からの再起動が依存する、設計書 §2-3）。
       setStateElement(this._rootNode, this);
     }
+    // 切断中に入れ直した state を、戻ってきた rootNode のバインドへ適用する（#267）。上の登録より
+    // 後であること — 適用は rootNode から state 要素を引く
+    if (this._pendingReapplyPaths !== null) {
+      const paths = this._pendingReapplyPaths;
+      this._pendingReapplyPaths = null;
+      this._reapplyBindings(paths);
+    }
     // enable-ssr (クライアント側): SSR で $connectedCallback 済みなのでスキップ
     // inSsr() (サーバー側): レンダリング中なので実行する
     // 世代ガード（connectGeneration 照合）: ロード完了前の remove → append では
@@ -1367,9 +1392,12 @@ export class State extends HTMLElementBase implements IStateElement {
     // 何が壊れるかは `__tests__/integration.stateGenerationReset.test.ts` の
     // 「`for` で登録したリストパスは `$watch` の prop 登録に上書きされない」が固定する。
     if (source !== "internal") {
+      // `for` の登録はバインドからしか来ないので、`for` の登録を残すときは `bound` も真のまま
       const previous = this._pathRegistrations.get(path);
-      if (typeof previous === "undefined" || previous.bindingType !== "for") {
-        this._pathRegistrations.set(path, { bindingType, source });
+      if (typeof previous === "undefined") {
+        this._pathRegistrations.set(path, { bindingType, bound: source === "binding" });
+      } else if (previous.bindingType !== "for") {
+        this._pathRegistrations.set(path, { bindingType, bound: previous.bound || source === "binding" });
       }
     }
     if (bindingType === "for") {
@@ -1409,15 +1437,20 @@ export class State extends HTMLElementBase implements IStateElement {
    * 名指していても、新しい世代ではまだ実体化されていないため（recursion/generation.ts）。読みが
    * 実体化したときに `defineTreeAccessor` が登録し直す。
    *
+   * 作り直すのはバインドが登録したパスだけ（`_pathRegistrations` の `bound`・#270）。`$watch` /
+   * `$scan` だけの登録は飛ばす — 作り直しの後で今の世代の宣言が自分で登録し直し、そこで存在も
+   * 検査される。ここで `_pathSet` に入れてしまうと、宣言側の `setPathInfo` が `_pathSet.has` で
+   * 素通りし、両方の世代で宣言し続けたパスが新しい state で消えても報告されない。
+   *
    * 反復中に `setPathInfo` が台帳へ書き戻す（既存キーの上書きのみで新キーは増えない）ので、
    * 誤解を避けるためスナップショットを取ってから回す。
    */
   private _rebuildPathInfo(): void {
     for (const [path, registration] of Array.from(this._pathRegistrations)) {
-      if (this._generatedPaths.has(path)) {
+      if (!registration.bound || this._generatedPaths.has(path)) {
         continue;
       }
-      this.setPathInfo(path, registration.bindingType, registration.source);
+      this.setPathInfo(path, registration.bindingType);
     }
   }
 
@@ -1483,6 +1516,17 @@ export class State extends HTMLElementBase implements IStateElement {
       this._resolveSetState?.(state);
       return;
     }
+    // 読み込み済みのボリューム（#268）: 接ぎ木はロード完了時にデータをルートの木へ一度だけ複製する
+    // ので、この要素の state を入れ直してもページには届かない（要素自身の読みだけが新しくなる）。
+    // 無言の no-op にせず、下のルート側の拒否（D22）と同じく loud に落とす。`_volumeInitializing` は
+    // スロットを予約したボリュームだけが立て、下ろさない — 接ぎ木に失敗した形もここで弾く。
+    if (this._volumeInitializing) {
+      raiseError(
+        `Cannot replace the state of <${config.tagNames.state} mount="${this.getAttribute("mount")}"> after it has loaded: ` +
+        `a volume's data is copied into the root tree when it grafts, so a new state would never reach the page. ` +
+        `Write the paths under "${this.getAttribute("mount")}" on the root state instead.`,
+      );
+    }
     // D22 と同型の防御: 接ぎ木済みボリューム / マウント記録の居るツリーの丸ごと再 set は、
     // 接ぎ木データ・quoted-path アクセサ（defineTreeAccessor）・マーカーの getterPaths・
     // 合流済み宣言面（$watch / $listKeys / $updatedCallback ゲート）を全て無言で捨てる。
@@ -1495,7 +1539,23 @@ export class State extends HTMLElementBase implements IStateElement {
         `Write the changed paths instead.`,
       );
     }
+    const previousState = this.__state;
     this._state = state;
+    // 再セットは描画し直す（#267）。読みは世代印で新しい state を返すので、確立済みのバインドも
+    // ここで新しい世代に揃える（apply/reapplyStateBindings.ts）。消えたキーのバインドも失敗として
+    // 報告させるため、前後両方の state のキーを起点にする
+    const paths = collectReapplyPaths([previousState, state]);
+    if (this._rootNode === null) {
+      // 切断中は適用先の rootNode が無い。再接続（connectedCallback）で適用し直す
+      this._pendingReapplyPaths = new Set([...(this._pendingReapplyPaths ?? []), ...paths]);
+      return;
+    }
+    this._reapplyBindings(paths);
+  }
+
+  /** 確立済みのバインドを今の世代で適用し直す（#267）。行のバインドは経路情報の台帳のパスから引く。 */
+  private _reapplyBindings(paths: Iterable<string>): void {
+    reapplyStateBindings(this, paths, this._pathRegistrations.keys());
   }
 }
 

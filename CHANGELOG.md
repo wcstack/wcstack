@@ -8,6 +8,16 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Changed
+
+- `@wcstack/state`: **re-setting an initialized element re-renders the page.** `setInitialState(state)` on a `<wcs-state>` that had already initialized swapped in the new state, and reads returned its values, but no established binding was applied again, so the page kept showing the previous state until a dependent path happened to be written. The re-set now re-applies the established bindings to the new state before `setInitialState()` returns — scalars, getters, row getters, `for` and `if` alike. A binding that cannot be read from the new state reports a failed apply (`console.error`, or the new state's `$errorCallback`). A re-set is not a write: it fires no `$watch` handler and no `$updatedCallback`. Lists are matched by array identity, so pass a new array when a list's length changed; re-setting with the same array instance after pushing to or splicing it in place is not supported. A detached element re-applies when it reconnects, and a view-transition arbiter on the page receives the re-apply the same way it receives an update.
+- `@wcstack/state`: `setInitialState()` on a loaded volume (`<wcs-state mount="…">`) now throws. A volume's data is copied into the root tree once, when the volume grafts, so re-setting the volume element changed only that element's own reads and never reached the page — without an error or a warning. Write the paths under the mount path on the root state instead. A volume that failed to graft throws as well.
+
+### Fixed
+
+- `@wcstack/state`: a re-set checks bound paths against the new state. `wcs/binding-path-missing` reports each path once, and that record survived a re-set, so a binding to `user.name` stayed silent when the new state had only `user.nmae`. The record now belongs to one state generation; a `$watch` path that the new state no longer declares is not reported.
+- `@wcstack/state`: `setInitialState()` on a detached, initialized `<wcs-state>` no longer throws `State rootNode is not available.` after it has already swapped in the new state (a regression in 2.4.0).
+
 ## [2.4.0] — 2026-09-15
 
 ### Added
