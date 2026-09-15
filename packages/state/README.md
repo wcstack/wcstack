@@ -1104,6 +1104,8 @@ export default {
 };
 ```
 
+Swapping rows this way moves the rendered rows with their values once the swap is complete: the row blocks are reordered rather than rewritten in place, so a row's `$1` and any state it holds outside bindings (such as text typed into an unbound input) follow the value. Replacing a row with a different value re-renders that row.
+
 ## Recursive Paths (`$recursion`)
 
 A path burns its depth into the string. `nodes.*.children.*.total` has exactly two wildcard levels, and nothing about it stretches to three when the tree grows a level — but a tree's depth belongs to the data, not to the code. `$recursion` closes that gap: declare where the shape repeats, then write `**` for "however deep this is".

@@ -25,6 +25,7 @@ const mockEnqueueAbsoluteAddress = vi.fn();
 vi.mock('../src/updater/updater', () => ({
   getUpdater: vi.fn(() => ({
     enqueueAbsoluteAddress: mockEnqueueAbsoluteAddress,
+    enqueueRenderOnlyAddress: vi.fn(),
   })),
 }));
 

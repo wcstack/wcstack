@@ -90,6 +90,11 @@ interface IQueuedUpdateRecord {
 
 class Updater {
   private _queueUpdateRecords: IQueuedUpdateRecord[] = [];
+  /**
+   * 描画だけをやり直すアドレス（`enqueueRenderOnlyAddress`）。書き込みの record とは別に持つ —
+   * drain 終了リスナーへ渡すバッチにも、`hasQueuedPath`（`on` scan の保留 reset の判定）にも混ぜない。
+   */
+  private _queueRenderOnlyAddresses: IAbsoluteStateAddress[] = [];
   constructor() {
   }
 
@@ -103,18 +108,43 @@ class Updater {
     // `on` scan の `resetOn` を書き込みの時点で保留する（scan/eventReset.ts）。
     // 該当する宣言がページに無ければ整数比較 1 回で抜ける。
     noteEnqueueForScanReset(absoluteAddress);
-    const requireStartProcess = this._queueUpdateRecords.length === 0;
+    const requireStartProcess = this._isQueueEmpty();
     this._queueUpdateRecords.push({ absoluteAddress, context });
     if (requireStartProcess) {
-      // このバッチのあいだ、依存ウォークと読みが観測したリスト値は保留にする。
-      // 確定は drain の finally（list/stateListBaseline.ts の頭のコメント）。
-      beginStateListBaselineBatch();
-      queueMicrotask(() => {
-        const updateRecords = this._queueUpdateRecords;
-        this._queueUpdateRecords = [];
-        this._applyChange(updateRecords);
-      });
+      this._scheduleDrain();
     }
+  }
+
+  /**
+   * 描画だけをやり直させる（#4）。値を書いたわけではないので、書き込みの着地としては扱わない —
+   * binding の適用には載せるが、drain 終了リスナー（`$scan` / `$watch` / `$streams` restart）へ渡す
+   * バッチに入れず、`$watch` の連鎖や `on` scan の reset の印も付けない。同じバッチで同じアドレスが
+   * 書き込みとしても積まれていれば、そちらが着地になる。
+   * 呼び手は要素書き込みの入れ替えの完了（proxy/methods/setByAddress.ts の notifySwappedList）。
+   */
+  enqueueRenderOnlyAddress(absoluteAddress: IAbsoluteStateAddress): void {
+    const requireStartProcess = this._isQueueEmpty();
+    this._queueRenderOnlyAddresses.push(absoluteAddress);
+    if (requireStartProcess) {
+      this._scheduleDrain();
+    }
+  }
+
+  private _isQueueEmpty(): boolean {
+    return this._queueUpdateRecords.length === 0 && this._queueRenderOnlyAddresses.length === 0;
+  }
+
+  private _scheduleDrain(): void {
+    // このバッチのあいだ、依存ウォークと読みが観測したリスト値は保留にする。
+    // 確定は drain の finally（list/stateListBaseline.ts の頭のコメント）。
+    beginStateListBaselineBatch();
+    queueMicrotask(() => {
+      const updateRecords = this._queueUpdateRecords;
+      const renderOnlyAddresses = this._queueRenderOnlyAddresses;
+      this._queueUpdateRecords = [];
+      this._queueRenderOnlyAddresses = [];
+      this._applyChange(updateRecords, renderOnlyAddresses);
+    });
   }
 
   /**
@@ -139,7 +169,10 @@ class Updater {
     })));
   }
 
-  private _applyChange(updateRecords: IQueuedUpdateRecord[]): void {
+  private _applyChange(
+    updateRecords: IQueuedUpdateRecord[],
+    renderOnlyAddresses: readonly IAbsoluteStateAddress[] = [],
+  ): void {
     // Note: AbsoluteStateAddress はキャッシュされているため、
     // 同一の (stateElement, address) は同じインスタンスとなり、
     // Map / Set による重複排除が正しく機能する。
@@ -163,6 +196,14 @@ class Updater {
         });
       }
       contextByAbsoluteAddress.set(record.absoluteAddress, record.context);
+    }
+    // drain 終了リスナーへ渡すのは書き込みの着地だけ。描画だけのアドレスは、この後で適用の対象に足す
+    // （同じアドレスの書き込みがあれば、その context のまま着地として残る）
+    const landedAddresses = new Set(contextByAbsoluteAddress.keys());
+    for (const absoluteAddress of renderOnlyAddresses) {
+      if (!contextByAbsoluteAddress.has(absoluteAddress)) {
+        contextByAbsoluteAddress.set(absoluteAddress, null);
+      }
     }
     const processBindings: IBindingInfo[] = [];
     const propagationContextByBinding = new Map<IBindingInfo, IPropagationContext | null>();
@@ -254,7 +295,7 @@ class Updater {
       // 置くのは、リスナー（$watch / $streams restart）の中で走る書き込みが
       // 「このバッチの結果」を基準として見るべきだから。
       endStateListBaselineBatch();
-      notifyUpdateBatchListeners(new Set(contextByAbsoluteAddress.keys()));
+      notifyUpdateBatchListeners(landedAddresses);
     }
   }
 

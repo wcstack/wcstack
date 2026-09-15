@@ -1,6 +1,7 @@
 import { getPathInfo } from "../address/PathInfo";
 import { createStateAddress } from "../address/StateAddress";
 import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding";
+import { getBindingsByContent } from "../bindings/bindingsByContent";
 import { getIndexBindingsByContent } from "../bindings/indexBindingsByContent";
 import { inSsr } from "../config";
 import { WILDCARD } from "../define";
@@ -249,6 +250,14 @@ export function applyChangeToFor(
         content = typeof pooledContents !== 'undefined' ? pooledContents.pop() : undefined;
         if (typeof content === 'undefined') {
           content = createContent(bindingInfo);
+        } else {
+          // プールから使い回す Content の binding は、同じバッチで**外した行として**適用済みのことがある。
+          // 外した行のアドレスへの書き込み（行の葉・要素の置き換え）で enqueue された binding が、この `for`
+          // より先に適用された形。印が残ると activateContent の applyChange が飛ばし、新しい行に外した行の
+          // 値が残る（表示と state が食い違う）。新しい行として適用し直す
+          for (const binding of getBindingsByContent(content)) {
+            context.appliedBindingSet.delete(binding);
+          }
         }
         // コンテント活性化の前にDOMツリーに追加しておく必要がある
         if (fragment !== null) {

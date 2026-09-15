@@ -21,7 +21,9 @@ import { IAbsoluteStateAddress, IStateAddress } from "../../address/types";
 import { DELIMITER, WILDCARD } from "../../define";
 import { dispatchBindableEvent } from "../../dcc/dispatchBindableEvent";
 import { createListIndex } from "../../list/createListIndex";
-import { getListIndexesByList } from "../../list/listIndexesByList";
+import { getListIndexesByList, setListIndexesByList } from "../../list/listIndexesByList";
+import { getLastListValueByAbsoluteStateAddress, setLastListValueByAbsoluteStateAddress } from "../../list/lastListValueByAbsoluteStateAddress";
+import { ISwapInfo } from "./types";
 import { createListDiff } from "../../list/createListDiff";
 import { collectFieldWrites, IKeyedListMerge, mergeKeyedList } from "../../list/mergeKeyedList";
 import { IListIndex } from "../../list/types";
@@ -259,7 +261,87 @@ function _setByAddressWithSwap(
       }
       // 完了したのでswapInfoを削除
       setSwapInfoByAddress(parentAddress, null);
+      notifySwappedList(parentAddress, swapInfo, currentParentValue, currentListIndexes, receiver, handler);
     }
+  }
+}
+
+/**
+ * 要素書き込みの入れ替え（または行の置き換え）が揃ったとき、リストを「書き込む前の並び →
+ * いまの並び」の置換として描画し直させる（#4 — 同一性モデル）。
+ *
+ * 台帳は上で「listIndex は値に付いて動く」形に組み替え済み。ところが `for` の描画基準
+ * （lastListValue）はその場で書き換えられた同じ配列なので、差分に入れ替えが映らず、ブロックは
+ * 動かないまま中身だけが書き換わっていた。基準を「書き込む前の並びの写し」とその台帳の写しに
+ * すると、`for` は写しといまの配列の差分を listIndex の同一性で突き合わせ（createListDiff の
+ * calcDiffIndexes）、ブロックを値と一緒に動かし、置き換えた行を作り直す。基準を写しに替えるのは、
+ * 描画基準がいま入れ替えている配列そのもののときだけ — 同じバッチで配列を丸ごと書き換えた後なら、
+ * 描画はまだその前の配列で、そちらとの差分が入れ替えも含む。
+ *
+ * 行ごとの扱い（書き込む前といまの台帳の位置を比べる）:
+ *  - 位置が変わらない行: 何もしない。
+ *  - 置き換えで入った行（書き込む前の台帳に無い）: その位置の値の書き込みとして着地させる。差し替えられた
+ *    行は `for` の差分で退役し、その行のアドレスの着地は `$watch` / `$scan` の選別で捨てられるので、
+ *    着地は新しい行が持つ（#274 の「その位置のいまの値で 1 回」）。
+ *  - 値と一緒に動いた行: 値は変わっていないので、依存を無効化して描画だけをやり直す。書き込みを別の
+ *    バッチに分けると、途中のバッチで別の値を描いた行が残る。
+ * リスト自身も描画だけを積む（updater の enqueueRenderOnlyAddress）。書き込みとして積むと、`items` の
+ * `$watch` が配列の参照の変わらない入れ替えで発火する。
+ */
+function notifySwappedList(
+  parentAddress: IStateAddress,
+  swapInfo: ISwapInfo,
+  currentParentValue: unknown,
+  currentListIndexes: readonly IListIndex[],
+  receiver: any,
+  handler: IStateHandler,
+): void {
+  const stateElement = handler.stateElement;
+  const updater = getUpdater();
+  const listAbsAddress = createAbsoluteStateAddress(
+    getAbsolutePathInfo(stateElement, parentAddress.pathInfo),
+    parentAddress.listIndex,
+  );
+  if (getLastListValueByAbsoluteStateAddress(listAbsAddress) === currentParentValue) {
+    setListIndexesByList(swapInfo.value, swapInfo.listIndexes);
+    setLastListValueByAbsoluteStateAddress(listAbsAddress, swapInfo.value);
+  }
+  updater.enqueueRenderOnlyAddress(listAbsAddress);
+
+  const positionBefore = new Map<IListIndex, number>();
+  swapInfo.listIndexes.forEach((listIndex, position) => positionBefore.set(listIndex, position));
+  const elementPathInfo = getPathInfo(parentAddress.pathInfo.path + DELIMITER + WILDCARD);
+  const elementAbsPathInfo = getAbsolutePathInfo(stateElement, elementPathInfo);
+  for (let position = 0; position < currentListIndexes.length; position++) {
+    const listIndex = currentListIndexes[position];
+    const before = positionBefore.get(listIndex);
+    if (before === position) {
+      continue;
+    }
+    const elementAddress = createStateAddress(elementPathInfo, listIndex);
+    const elementAbsAddress = createAbsoluteStateAddress(elementAbsPathInfo, listIndex);
+    if (typeof before === "undefined") {
+      notifyWrite(elementAddress, elementAbsAddress, receiver, handler, null, isCacheable(stateElement, elementAddress));
+      continue;
+    }
+    walkDependency(
+      stateElement,
+      elementAddress,
+      stateElement.staticDependency,
+      stateElement.dynamicDependency,
+      stateElement.listPaths,
+      receiver as IStateProxy,
+      "new",
+      (depAddress: IStateAddress) => {
+        const depAbsAddress = createAbsoluteStateAddress(
+          getAbsolutePathInfo(stateElement, depAddress.pathInfo),
+          depAddress.listIndex,
+        );
+        dirtyCacheEntryByAbsoluteStateAddress(depAbsAddress);
+        updater.enqueueRenderOnlyAddress(depAbsAddress);
+      },
+      { listExpansion: "diff" },
+    );
   }
 }
 
@@ -512,7 +594,13 @@ function setByAddressCore(
       return _setByAddress(target, address, absAddress, value, receiver, handler, keyedMergePath, cacheable);
     }
   } finally {
-    commitWriteCache(stateElement, path, absAddress, value, cacheable);
+    // 要素書き込み（#4）の代入値は、書き込んだアドレスのキャッシュに固定しない。入れ替えでは listIndex が
+    // 値に付いて動くので、書き込んだ時点の listIndex がこの位置に残るとは限らない — 固定すると、台帳は
+    // 入れ替わったのにキャッシュだけが位置のまま交差する。notifyWrite が無効化した項目を、次の読みが
+    // 台帳に沿って読み直す
+    if (!isSwappable) {
+      commitWriteCache(stateElement, path, absAddress, value, cacheable);
+    }
     // DCC bindable イベントディスパッチ（完全一致 ＋ サブパス → 先頭セグメント、§2.1）
     dispatchBindableEvent(stateElement, address.pathInfo, { value });
   }

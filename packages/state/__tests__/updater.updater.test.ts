@@ -341,5 +341,53 @@ describe('updater/updater', () => {
       // binding 適用（drain 本体）はリスナー通知より前に完了している
       expect(applyChangeFromBindingsMock).toHaveBeenCalledTimes(1);
     });
+
+    it('描画だけのアドレスはbindingを適用するが、リスナーのバッチには入らないこと（#4）', async () => {
+      const stateElement = createStateElement('default');
+      setStateElement(document, stateElement);
+      const replaceNode = document.createElement('div');
+      document.body.appendChild(replaceNode);
+      const bindingInfo = { propName: 'value', stateName: 'default', node: document.createTextNode(''), replaceNode } as any;
+
+      const updater = getUpdater();
+      const renderOnly = createAbsAddress(stateElement, 'renderOnlyFirst');
+      createdAbsAddresses.push(renderOnly);
+      addBindingByAbsoluteStateAddress(renderOnly, bindingInfo);
+      const listener = vi.fn();
+      register(listener);
+
+      // バッチの先頭が描画だけでも drain が始まる
+      updater.enqueueRenderOnlyAddress(renderOnly);
+      await new Promise<void>((resolve) => queueMicrotask(() => resolve()));
+
+      expect(applyChangeFromBindingsMock).toHaveBeenCalledWith([bindingInfo]);
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect([...listener.mock.calls[0][0]]).toEqual([]);
+      replaceNode.remove();
+    });
+
+    it('同じバッチで同じアドレスが書き込みとしても積まれていれば、書き込みの着地としてリスナーに渡ること', async () => {
+      const stateElement = createStateElement('default');
+      setStateElement(document, stateElement);
+      const replaceNode = document.createElement('div');
+      document.body.appendChild(replaceNode);
+      const bindingInfo = { propName: 'value', stateName: 'default', node: document.createTextNode(''), replaceNode } as any;
+
+      const updater = getUpdater();
+      const address = createAbsAddress(stateElement, 'renderOnlyAndWritten');
+      createdAbsAddresses.push(address);
+      addBindingByAbsoluteStateAddress(address, bindingInfo);
+      const listener = vi.fn();
+      register(listener);
+
+      updater.enqueueRenderOnlyAddress(address);
+      updater.enqueueAbsoluteAddress(address);
+      await new Promise<void>((resolve) => queueMicrotask(() => resolve()));
+
+      expect(applyChangeFromBindingsMock).toHaveBeenCalledTimes(1);
+      expect(applyChangeFromBindingsMock).toHaveBeenCalledWith([bindingInfo]);
+      expect([...listener.mock.calls[0][0]]).toEqual([address]);
+      replaceNode.remove();
+    });
   });
 });
