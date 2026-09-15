@@ -8,6 +8,10 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Fixed
+
+- `@wcstack/state`: after SSR hydration, a getter bound with `data-wcs` inside an `if` block, or inside the rows of a `for` that is not itself inside another block, follows updates. Hydration registered the bindings inside server-rendered blocks without applying them — it applied only the bindings outside those blocks — and a getter records its dependencies only when it is evaluated, so `textContent: items.*.double` kept the server-rendered text when `items.0.n` changed while an aggregate outside the rows did update. Hydration now applies the bindings inside those blocks once, as it does the bindings outside them; the rendered text stays the same. Index bindings (`$1`, `$2`, …) depend on no state and keep their server-rendered text. The inner rows of a nested `for` still hydrate only at the outer level (a known limitation): their bindings are left unapplied rather than reporting a failure on every hydration. Mustache text inside rows, a `for` inside an `if`, and bind-component children inside rows are separate hydration gaps and are unchanged.
+
 ## [2.4.0] — 2026-09-15
 
 ### Added

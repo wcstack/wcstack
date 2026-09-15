@@ -146,11 +146,44 @@ function collectBindingsFromLiveNodes(
 }
 
 /**
- * SSR ブロックの DOM ノードを Content 化し、バインディングを登録する。
+ * ブロックの中で初回値を適用するバインディングを集める（#258 X6 — hydrateBindings の注記）。
+ *
+ * 除くもの:
+ *  - 構造バインディング（SSR が描画済み）とイベント。
+ *  - コメントに乗ったバインディング。ブロックを集める時点のコメントのバインディングは構造の置き場
+ *    （`<!--@@wcs-for:uuid-->`）だけで、テキストの `@@:` はこの後で `Ssr.restoreTextBindings` が戻す。
+ *    テンプレートを復帰できなかった入れ子の置き場は text として解釈される（`text: uuid`）ので、
+ *    構造の種別だけでは除けない。
+ *  - 添字のバインディング（`$1` / `$2` …）。state に依存しないので依存辺のための適用が要らず、SSR が
+ *    描いた添字のままでよい（入れ子の内側の `$2` は、外側のループ文脈しか持たないので読めもしない）。
+ *  - ループの深さより多いワイルドカードを持つバインディング。入れ子のブロックの行は外側のブロックの
+ *    Content に吸収され、外側のループ文脈しか持たない（入れ子ハイドレーションの既知の制限・
+ *    integration.listLedgerParentKey.test.ts）。
+ * コメントと段数の足りないバインディングは、適用しても失敗の報告をハイドレーションのたびに増やすだけになる。
  */
-function hydrateBlocks(root: Node, blocks: ISsrBlock[]): void {
+function collectBlockBindings(out: IBindingInfo[], bindings: readonly IBindingInfo[], loopDepth: number): void {
+  for (const binding of bindings) {
+    if (binding.bindingType === "event" || STRUCTURAL_TYPES.has(binding.bindingType)) {
+      continue;
+    }
+    if (binding.node.nodeType === Node.COMMENT_NODE || binding.statePathName in INDEX_BY_INDEX_NAME) {
+      continue;
+    }
+    if (getPathInfo(binding.statePathName).wildcardCount > loopDepth) {
+      continue;
+    }
+    out.push(binding);
+  }
+}
+
+/**
+ * SSR ブロックの DOM ノードを Content 化し、バインディングを登録する。
+ * 戻り値はブロックの中で初回値を適用するバインディング（`collectBlockBindings`）。
+ */
+function hydrateBlocks(root: Node, blocks: ISsrBlock[]): IBindingInfo[] {
   // for ブロックの listIndex を UUID ごとに収集
   const listIndexesByUuid: Map<string, IListIndex[]> = new Map();
+  const blockBindings: IBindingInfo[] = [];
 
   for (const block of blocks) {
     if (block.nodes.length === 0) continue;
@@ -199,6 +232,7 @@ function hydrateBlocks(root: Node, blocks: ISsrBlock[]): void {
           registerPathInfo: false,
           applyOnReconnect: false,
         });
+        collectBlockBindings(blockBindings, bindingInfos, pathInfo.wildcardCount);
 
         // listIndex を UUID ごとに収集（後で setListIndexesByList に渡す）
         let indexes = listIndexesByUuid.get(block.uuid);
@@ -218,6 +252,8 @@ function hydrateBlocks(root: Node, blocks: ISsrBlock[]): void {
           registerPathInfo: false,
           applyOnReconnect: false,
         });
+        // if / elseif / else の中身はループの外（入れ子の行はここに吸収されても段数で除かれる）
+        collectBlockBindings(blockBindings, bindingInfos, 0);
       }
     }
   }
@@ -241,6 +277,7 @@ function hydrateBlocks(root: Node, blocks: ISsrBlock[]): void {
       }
     });
   }
+  return blockBindings;
 }
 
 function findPlaceholderComment(root: Node, type: string, uuid: string): Comment | null {
@@ -340,7 +377,7 @@ export async function hydrateBindings(root: Document): Promise<boolean> {
 
   // SSR ブロック境界コメントから既存 DOM を Content 化
   const blocks = collectSsrBlocks(document.body);
-  hydrateBlocks(document.body, blocks);
+  const blockBindings = hydrateBlocks(document.body, blocks);
 
   // ブロック境界コメント (start/end) を除去
   Ssr.removeBlockBoundaryComments(document.body);
@@ -416,8 +453,11 @@ export async function hydrateBindings(root: Document): Promise<boolean> {
     }
   }
 
-  // 通常バインディングのみ初回値適用（構造バインディングはSSR描画済み）
-  applyChangeFromBindings(normalBindings);
+  // 初回値の適用（構造バインディングは SSR 描画済みなので除く）。SSR ブロック（for の行・if の中身）の
+  // 中のバインディングも適用する（#258 X6）: getter の依存辺は getter を評価したときにしか張られない
+  // ので、適用しないと行の `items.*.double` は `items.*.n` を書いても一度も再評価されず、サーバーが
+  // 書いたテキストのまま固まる。値は SSR と同じ state から読むのでテキストは変わらない
+  applyChangeFromBindings([...normalBindings, ...blockBindings]);
 
   // <wcs-ssr> を元に戻す
   for (const { el, parent, next } of ssrParents) {
