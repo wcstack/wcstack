@@ -176,11 +176,12 @@ export interface IPendingVolumeRequest {
   readonly volumeState: Record<string, any>;
   readonly onGrafted: (info: unknown) => void;
   /**
-   * 接ぎ木する時点で、要求した要素がまだ枠を握っているか（#265）。保留中に外れた要素は枠を返す
-   * （同じマウントパスの別の要素が予約できるように）ので、握っていない要求は接ぎ木しない —
-   * 接ぎ木すると、予約の無いマウントパスにデータとアクセサが載る。
+   * 接ぎ木の直前に、要求した要素がマウントの枠を取る（#265）。握っていれば真、空いていれば取り直して真、
+   * 別の要素が握っていれば偽（報告は取る側が出す）。ロード中・保留中に外れた要素は枠を返しているので、
+   * ここで取り直す — 外れたままでも接ぎ木する従来の着地を保ちつつ、その間に同じマウントパスを取った
+   * 別のボリュームと二重に接ぎ木しない。
    */
-  readonly holdsSlot: () => boolean;
+  readonly acquireSlot: () => boolean;
 }
 const pendingVolumesByRootNode = new WeakMap<Node, IPendingVolumeRequest[]>();
 

@@ -12,10 +12,11 @@
  *    渡し、台帳は予約した要素と突き合わせる — 死んだ要素の後始末が生きている要素の枠を奪わない。
  *  - 手放すのは持ち主だけで、読みの寛容（予約下の読みは undefined）は残る。
  *  - 接ぎ木しないまま決着したボリュームは枠を手放す（孤児・ロード失敗・接ぎ木失敗）。
- *  - ロード中（ルート待ちの保留中を含む）に外れたボリュームは、外れた時点で枠を手放す。決着前に
- *    付け直せば取り直して接ぎ木する。外れている間に別の要素が枠を取っていれば横取りせず、
- *    報告を 1 件出して接ぎ木しない。
- *  - 接ぎ木済みのボリュームは外しても枠を握ったまま（データはツリーに残る）。
+ *  - ロード中・ルート待ちの保留中に外れたボリュームは、外れた時点で枠を手放す。枠は接ぎ木の直前
+ *    （ロードの完了・ルートの登録）に取り直し、空いていれば接ぎ木する — 外れたままでも、別の root へ
+ *    移っていても従来どおり。その間に別の要素が枠を取っていれば、報告を 1 件出して接ぎ木しない。
+ *  - 接ぎ木済みのボリュームは外しても枠を握ったまま（データはツリーに残る）。`$connectedCallback` の
+ *    同期の throw は接ぎ木の失敗にしない。
  *
  * 枠を手放したかは「別の要素が同じマウントパスを予約・接ぎ木できるか」で見る。
  */
@@ -70,6 +71,9 @@ const takenByAnother = (rootNode: Node, mountPath: string): boolean => {
   }
 };
 
+const notGraftedReports = (spy: { mock: { calls: unknown[][] } }, mountPath: string): string[] =>
+  spy.mock.calls.map((args) => String(args[0])).filter((message) => message.includes(`mount="${mountPath}"> will not graft`));
+
 describe("枠の台帳: 所有者が一致するときだけ手放す", () => {
   it("予約した要素は手放せ、別の要素の解放・台帳の無い rootNode の解放は何もしない", () => {
     const rootNode = document.createDocumentFragment();
@@ -109,7 +113,7 @@ describe("ロード中に外れたボリューム", () => {
     host.remove();
   });
 
-  it("決着前に付け直せば枠を取り直し、接ぎ木する", async () => {
+  it("決着前に付け直せば、ロードの完了で枠を取り直して接ぎ木する", async () => {
     const { host, shadowRoot } = makeHost();
     shadowRoot.innerHTML = `<p id="lang" data-wcs="textContent: i18n.lang"></p>`;
     const rootElement = root(`{"count":1}`);
@@ -119,17 +123,16 @@ describe("ロード中に外れたボリューム", () => {
 
     volumeElement.remove();
     shadowRoot.insertBefore(volumeElement, rootElement);
-    expect(takenByAnother(shadowRoot, "i18n"), "付け直した時点で取り直す").toBe(true);
-
     volumeElement.setInitialState({ lang: "en" });
     await volumeElement.connectedCallbackPromise;
     await State.getBindingsReady(shadowRoot);
     await flush();
     expect(shadowRoot.querySelector("#lang")!.textContent).toBe("en");
+    expect(takenByAnother(shadowRoot, "i18n")).toBe(true);
     host.remove();
   });
 
-  it("外れている間に別の要素が枠を取っていれば、付け直しても横取りせず、報告して接ぎ木しない", async () => {
+  it("外れている間に別の要素が枠を取っていれば、付け直しても横取りせず、ロードの完了で報告して接ぎ木しない", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const { host, shadowRoot } = makeHost();
     const rootElement = root(`{"count":1}`);
@@ -147,26 +150,28 @@ describe("ロード中に外れたボリューム", () => {
     expect(readRoot(rootElement, "i18n.lang")).toBe("second");
 
     shadowRoot.appendChild(first);
-    const reports = errorSpy.mock.calls.map((args) => String(args[0]))
-      .filter((message) => message.includes(`mount="i18n"> was re-attached while loading`));
-    expect(reports).toHaveLength(1);
+    expect(notGraftedReports(errorSpy, "i18n"), "付け直しただけでは取り直さない（取るのは接ぎ木の直前）").toEqual([]);
 
     first.setInitialState({ lang: "first" });
     await first.connectedCallbackPromise;
     await flush();
+    expect(notGraftedReports(errorSpy, "i18n")).toHaveLength(1);
     expect(readRoot(rootElement, "i18n.lang"), "付け直した要素は接ぎ木しない").toBe("second");
 
     first.remove();
     expect(takenByAnother(shadowRoot, "i18n"), "枠を持たない要素の切断は、持ち主の枠を奪わない").toBe(true);
     host.remove();
   });
+});
 
-  it("ルート待ちの保留中に外れた要素は、ルートが来ても接ぎ木しない", async () => {
+describe("ルート待ちの保留中に外れたボリューム", () => {
+  it("ルートが来れば、外れたままでも接ぎ木する（付け直すと $connectedCallback がもう一度呼ばれる）", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {}); // D11（ルートの居ないボリューム）の報告
     const { host, shadowRoot } = makeHost();
+    let connected = 0;
     const volumeElement = volume("i18n");
     shadowRoot.appendChild(volumeElement);
-    volumeElement.setInitialState({ lang: "queued" });
+    volumeElement.setInitialState({ lang: "queued", $connectedCallback() { connected++; } });
     await flush();
     await flush();
 
@@ -176,14 +181,75 @@ describe("ロード中に外れたボリューム", () => {
     await rootElement.connectedCallbackPromise;
     await volumeElement.connectedCallbackPromise;
     await flush();
-    let grafted = true;
-    rootElement.createState("readonly", (state: any) => { grafted = "i18n" in state; });
-    expect(grafted).toBe(false);
-    expect(takenByAnother(shadowRoot, "i18n"), "枠は手放されている").toBe(false);
+    expect(readRoot(rootElement, "i18n.lang")).toBe("queued");
+    expect(connected).toBe(1);
+    expect(takenByAnother(shadowRoot, "i18n"), "ルートが来た時点で取り直している").toBe(true);
+
+    shadowRoot.appendChild(volumeElement);
+    await flush();
+    expect(connected).toBe(2);
     host.remove();
   });
 
-  it("ルート待ちの保留中に外れても、ルートが来る前に付け直せば接ぎ木する", async () => {
+  it("外れている間に同じパスの別のボリュームが保留に積まれていたら、ルートが来ても二重に接ぎ木しない（報告 1 件）", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { host, shadowRoot } = makeHost();
+    const first = volume("i18n");
+    shadowRoot.appendChild(first);
+    first.setInitialState({ lang: "first" });
+    await flush();
+    await flush();
+
+    first.remove();
+    const second = volume("i18n");
+    shadowRoot.appendChild(second);
+    second.setInitialState({ lang: "second" });
+    await flush();
+    await flush();
+
+    const rootElement = root(`{"count":1}`);
+    shadowRoot.appendChild(rootElement);
+    await rootElement.connectedCallbackPromise;
+    await first.connectedCallbackPromise;
+    await second.connectedCallbackPromise;
+    await flush();
+    expect(readRoot(rootElement, "i18n.lang")).toBe("second");
+    expect(notGraftedReports(errorSpy, "i18n")).toHaveLength(1);
+    host.remove();
+  });
+
+  it("別の root へ移しても、移した先の同じパスの別ボリュームを妨げず、元の root にルートが来ればそこへ接ぎ木する", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const a = makeHost();
+    const b = makeHost();
+    const moved = volume("i18n");
+    a.shadowRoot.appendChild(moved);
+    moved.setInitialState({ lang: "fromA" });
+    await flush();
+    await flush();
+
+    b.shadowRoot.appendChild(moved); // 保留のまま B へ移す
+    const rootB = root(`{"count":1}`);
+    b.shadowRoot.appendChild(rootB);
+    await rootB.connectedCallbackPromise;
+    const other = volume("i18n");
+    b.shadowRoot.appendChild(other);
+    other.setInitialState({ lang: "W" });
+    await other.connectedCallbackPromise;
+    await flush();
+    expect(readRoot(rootB, "i18n.lang"), "移した先の枠を握らない").toBe("W");
+
+    const rootA = root(`{"count":1}`);
+    a.shadowRoot.appendChild(rootA);
+    await rootA.connectedCallbackPromise;
+    await moved.connectedCallbackPromise;
+    await flush();
+    expect(readRoot(rootA, "i18n.lang")).toBe("fromA");
+    a.host.remove();
+    b.host.remove();
+  });
+
+  it("ルートが来る前に付け直しても接ぎ木する", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const { host, shadowRoot } = makeHost();
     const volumeElement = volume("i18n");
@@ -290,6 +356,26 @@ describe("接ぎ木済みのボリューム", () => {
     volumeElement.remove();
     expect(takenByAnother(shadowRoot, "i18n")).toBe(true);
     expect(readRoot(rootElement, "i18n.lang")).toBe("en");
+    host.remove();
+  });
+
+  it("$connectedCallback が同期で投げても接ぎ木は済んだものとして扱い、枠を握ったまま", async () => {
+    // 旧: 同期の throw が接ぎ木の失敗（failed to graft）として扱われ、データが載ったまま枠を返していた
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { host, shadowRoot } = makeHost();
+    const volumeElement = volume("cfg");
+    const rootElement = root(`{"count":1}`);
+    shadowRoot.append(volumeElement, rootElement);
+    volumeElement.setInitialState({ a: 1, $connectedCallback() { throw new Error("boom"); } });
+    await rootElement.connectedCallbackPromise;
+    await volumeElement.connectedCallbackPromise;
+    await flush();
+
+    const messages = errorSpy.mock.calls.map((args) => String(args[0]));
+    expect(messages.some((message) => message.includes(`volume "cfg" $connectedCallback failed`))).toBe(true);
+    expect(messages.some((message) => message.includes(`volume "cfg" failed to graft`))).toBe(false);
+    expect(readRoot(rootElement, "cfg.a")).toBe(1);
+    expect(takenByAnother(shadowRoot, "cfg")).toBe(true);
     host.remove();
   });
 });

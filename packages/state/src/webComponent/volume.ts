@@ -344,7 +344,16 @@ export function graftVolume(
   const connectedCallback = (volumeState as { $connectedCallback?: unknown }).$connectedCallback;
   if (typeof connectedCallback === "function") {
     rootStateElement.createState("writable", (state) => {
-      const result = connectedCallback.call(createVolumeChroot(mountPath, state as IStateProxy));
+      let result: unknown;
+      try {
+        result = connectedCallback.call(createVolumeChroot(mountPath, state as IStateProxy));
+      } catch (error) {
+        // 同期の throw も非同期の reject と同じく報告に留める。データ・アクセサ・宣言はもう載っているので、
+        // ここから投げると接ぎ木済みのボリュームが「接ぎ木に失敗した」扱いになり、枠まで返してしまう
+        // （同じマウントパスで作り直した要素が、残ったデータと衝突する — #265）
+        console.error(`[@wcstack/state] volume "${mountPath}" $connectedCallback failed.`, error);
+        return;
+      }
       if (result instanceof Promise) {
         result.catch((error) => {
           console.error(`[@wcstack/state] volume "${mountPath}" $connectedCallback failed.`, error);
@@ -360,8 +369,9 @@ export function graftVolume(
  * ルートの名前登録（`default`）が保留分を `drainPendingVolumes` で引き取る。
  */
 function graftIsolated(rootStateElement: IStateElement, volume: IPendingVolumeRequest): void {
-  if (!volume.holdsSlot()) {
-    // 要求した要素が保留中に外れて枠を返した（#265）。接ぎ木せずに決着させる
+  if (!volume.acquireSlot()) {
+    // 接ぎ木の直前に枠を取れなかった（#265）— 要素が外れている間に、別のボリュームが同じマウントパスを
+    // 取った。報告は acquireSlot が出す。接ぎ木せずに決着させる
     volume.onGrafted(null);
     return;
   }
@@ -384,13 +394,13 @@ export function graftOrQueueVolume(
   mountPath: string,
   volumeState: Record<string, any>,
   onGrafted: (info: IVolumeGraftInfo | null) => void,
-  holdsSlot: () => boolean,
+  acquireSlot: () => boolean,
 ): void {
   const request: IPendingVolumeRequest = {
     mountPath,
     volumeState,
     onGrafted: onGrafted as IPendingVolumeRequest["onGrafted"],
-    holdsSlot,
+    acquireSlot,
   };
   if (rootStateElement !== null) {
     graftIsolated(rootStateElement, request);
