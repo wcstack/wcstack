@@ -13,7 +13,7 @@ import { isSwapBaselineList } from "../list/swapBaselineList";
 import { IListDiff, IListIndex } from "../list/types";
 import { raiseError } from "../raiseError";
 import { activateContent, deactivateContent } from "../structural/activateContent";
-import { deleteContentByNode } from "../structural/contentsByNode";
+import { deleteContentByNode, getContentSetByNode } from "../structural/contentsByNode";
 import { createContent } from "../structural/createContent";
 import { IContent } from "../structural/types";
 import { IBindingInfo } from "../types";
@@ -167,6 +167,50 @@ function collectInPlaceContents(
   return inPlace;
 }
 
+const STRUCTURAL_BINDING_TYPES = new Set(['if', 'elseif', 'else', 'for']);
+
+/**
+ * 使い回す Content の「適用済み」の印を落とす。入れ子の構造ディレクティブが持つ Content も辿る —
+ * `if` の中の `for` や、`elseif` / `else` のアンカーは行の Content ではなく**内側の** Content に
+ * 属するので、行の binding だけ落としても新しい行として適用し直されない（印が残ったまま
+ * activateContent の applyChange に飛ばされ、解体した内側が描き直されないまま空になる）。
+ */
+function clearAppliedMarks(content: IContent, context: IApplyContext): void {
+  for (const binding of getBindingsByContent(content)) {
+    context.appliedBindingSet.delete(binding);
+    if (!STRUCTURAL_BINDING_TYPES.has(binding.bindingType)) {
+      continue;
+    }
+    for (const nested of getContentSetByNode(binding.node)) {
+      clearAppliedMarks(nested, context);
+    }
+  }
+}
+
+/**
+ * 入れ子の `for` が持つ Content をプールへ返す（#4）。その場で使い回す行を解体するとき、内側の
+ * `for` の Content をただ外すと次の描画で作り直され、アンカーの content 台帳（contentSetByNode）が
+ * 置き換えのたびに伸び続ける。プールへ返しておけば次の描画がそれを引き当てる（`if` の Content は
+ * アンカーごとに 1 つを使い回すので、返す対象は `for` の分だけ）。
+ */
+function poolNestedContents(content: IContent): void {
+  for (const binding of getBindingsByContent(content)) {
+    if (!STRUCTURAL_BINDING_TYPES.has(binding.bindingType)) {
+      continue;
+    }
+    const pooled = binding.bindingType === 'for';
+    for (const nested of getContentSetByNode(binding.node)) {
+      poolNestedContents(nested);
+      if (!pooled || !nested.mounted) {
+        continue;
+      }
+      deactivateContent(nested);
+      nested.unmount();
+      setPooledContent(binding, nested);
+    }
+  }
+}
+
 function setContent(node: Node, listIndex: IListIndex, content: IContent | null): void {
   let contentByListIndex = contentByListIndexByNode.get(node);
   if (typeof contentByListIndex === 'undefined') {
@@ -243,6 +287,7 @@ export function applyChangeToFor(
           // 同じ位置に入る行がその場で使い回す。自分のノードは DOM に残し、プールにも入れないが、
           // 解体は unmount と同じ（ネストした for / if の Content とアドレス台帳を落とす）
           deactivateContent(content);
+          poolNestedContents(content);
           content.unmountInPlace();
         } else if (poolBudget <= 0 && content.tryDestroy()) {
           deleteContentByNode(bindingInfo.node, content);
@@ -305,9 +350,7 @@ export function applyChangeToFor(
           // 外した行のアドレスへの書き込み（行の葉・要素の置き換え）で enqueue された binding が、この `for`
           // より先に適用された形。印が残ると activateContent の applyChange が飛ばし、新しい行に外した行の
           // 値が残る（表示と state が食い違う）。新しい行として適用し直す
-          for (const binding of getBindingsByContent(content)) {
-            context.appliedBindingSet.delete(binding);
-          }
+          clearAppliedMarks(content, context);
         }
         // コンテント活性化の前にDOMツリーに追加しておく必要がある
         if (fragment !== null) {

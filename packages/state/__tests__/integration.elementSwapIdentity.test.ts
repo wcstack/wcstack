@@ -23,6 +23,7 @@
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
+import { getContentSetByNode } from "../src/structural/contentsByNode";
 import { flush, makeMount, node, read, write } from "./helpers/recursionTestUtils";
 
 beforeAll(() => {
@@ -339,6 +340,75 @@ describe("要素書き込みによる行の置き換え", () => {
     // 旧（その場で使い回すだけで解体しなかった版）: ["x", "y", "x", "y", "x", "y", "z"]
     expect(texts(shadowRoot, ".tag"), "内側の行が書き込みのたびに増えない").toEqual(["x", "y", "z"]);
     expect(shadowRoot.querySelector(".group")).toBe(firstGroup);
+    host.remove();
+  });
+
+  it("入れ子の for を持つ行を繰り返し置き換えても、内側の Content の台帳が増え続けない", async () => {
+    const html =
+      `<template data-wcs="for: groups"><div class="group">` +
+      `<template data-wcs="for: groups.*.items"><i class="item" data-wcs="textContent: groups.*.items.*"></i></template>` +
+      `</div></template>`;
+    const { host, shadowRoot, stateEl } = await mount({ groups: [{ items: ["a", "b"] }] }, html);
+    const anchor = Array.from(shadowRoot.querySelector(".group")!.childNodes)
+      .find((child) => child.nodeType === Node.COMMENT_NODE && (child as Comment).data.includes("@@wcs-for"))!;
+    expect(getContentSetByNode(anchor).size).toBe(2);
+
+    for (let round = 1; round <= 5; round++) {
+      write(stateEl, (s: any) => { s["groups.0"] = { items: [`p${round}`, `q${round}`] }; });
+      await flush();
+    }
+    expect(texts(shadowRoot, ".item")).toEqual(["p5", "q5"]);
+    // 旧（内側の Content をプールへ返さなかった版）: 置き換えごとに 2 ずつ増えた（12）
+    expect(getContentSetByNode(anchor).size).toBe(2);
+    host.remove();
+  });
+
+  it("if の中に入れ子の for を持つ行を置き換えても、内側の行が描き直される", async () => {
+    const html =
+      `<template data-wcs="for: groups"><div class="group">` +
+      `<b class="gname" data-wcs="textContent: groups.*.name"></b>` +
+      `<template data-wcs="if: groups.*.open">` +
+      `<template data-wcs="for: groups.*.items"><i class="item" data-wcs="textContent: groups.*.items.*"></i></template>` +
+      `</template></div></template>`;
+    const { host, shadowRoot, stateEl } = await mount({
+      groups: [{ name: "g1", open: true, items: ["a", "b"] }, { name: "g2", open: true, items: ["c"] }],
+    }, html);
+    expect(texts(shadowRoot, ".item")).toEqual(["a", "b", "c"]);
+
+    write(stateEl, (s: any) => { s["groups.0"] = { name: "G1", open: true, items: ["p", "q"] }; });
+    await flush();
+    expect(texts(shadowRoot, ".gname")).toEqual(["G1", "g2"]);
+    // 旧（入れ子を解体しても適用済みの印を落とさなかった版）: ["c"]（内側の for が何も描かない）
+    expect(texts(shadowRoot, ".item")).toEqual(["p", "q", "c"]);
+
+    write(stateEl, (s: any) => { s["groups.0"] = { name: "G2", open: true, items: ["r"] }; });
+    await flush();
+    expect(texts(shadowRoot, ".item")).toEqual(["r", "c"]);
+    host.remove();
+  });
+
+  it("if / elseif / else の分岐を持つ行を置き換えても、新しい値の分岐が描かれる", async () => {
+    const html =
+      `<template data-wcs="for: rows"><div class="row">` +
+      `<template data-wcs="if: rows.*.a"><i class="A" data-wcs="textContent: rows.*.t"></i></template>` +
+      `<template data-wcs="elseif: rows.*.b"><i class="B" data-wcs="textContent: rows.*.t"></i></template>` +
+      `<template data-wcs="else:"><i class="C" data-wcs="textContent: rows.*.t"></i></template>` +
+      `</div></template>`;
+    const branches = (root: ParentNode): (string | null)[][] =>
+      [texts(root, ".A"), texts(root, ".B"), texts(root, ".C")];
+    const { host, shadowRoot, stateEl } = await mount({
+      rows: [{ t: "r0", a: true, b: false }, { t: "r1", a: false, b: true }],
+    }, html);
+    expect(branches(shadowRoot)).toEqual([["r0"], ["r1"], []]);
+
+    write(stateEl, (s: any) => { s["rows.0"] = { t: "x", a: false, b: true }; });
+    await flush();
+    // 旧（同上）: [[], ["r1"], []]（置き換えた行はどの分岐も描かれなかった）
+    expect(branches(shadowRoot)).toEqual([[], ["x", "r1"], []]);
+
+    write(stateEl, (s: any) => { s["rows.0"] = { t: "y", a: false, b: false }; });
+    await flush();
+    expect(branches(shadowRoot)).toEqual([[], ["r1"], ["y"]]);
     host.remove();
   });
 
