@@ -1437,19 +1437,20 @@ export class State extends HTMLElementBase implements IStateElement {
    * 名指していても、新しい世代ではまだ実体化されていないため（recursion/generation.ts）。読みが
    * 実体化したときに `defineTreeAccessor` が登録し直す。
    *
-   * 存在検査（#270）はバインドが登録したパスだけをやり直す（`_pathRegistrations` の `bound`）。
-   * それ以外は `"internal"` で登録し直し、検査を飛ばす — `$watch` / `$scan` は作り直しの後で
-   * 今の世代の宣言が自分で検査する。
+   * 作り直すのはバインドが登録したパスだけ（`_pathRegistrations` の `bound`・#270）。`$watch` /
+   * `$scan` だけの登録は飛ばす — 作り直しの後で今の世代の宣言が自分で登録し直し、そこで存在も
+   * 検査される。ここで `_pathSet` に入れてしまうと、宣言側の `setPathInfo` が `_pathSet.has` で
+   * 素通りし、両方の世代で宣言し続けたパスが新しい state で消えても報告されない。
    *
    * 反復中に `setPathInfo` が台帳へ書き戻す（既存キーの上書きのみで新キーは増えない）ので、
    * 誤解を避けるためスナップショットを取ってから回す。
    */
   private _rebuildPathInfo(): void {
     for (const [path, registration] of Array.from(this._pathRegistrations)) {
-      if (this._generatedPaths.has(path)) {
+      if (!registration.bound || this._generatedPaths.has(path)) {
         continue;
       }
-      this.setPathInfo(path, registration.bindingType, registration.bound ? "binding" : "internal");
+      this.setPathInfo(path, registration.bindingType);
     }
   }
 

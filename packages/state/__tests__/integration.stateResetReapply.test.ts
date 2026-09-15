@@ -251,6 +251,38 @@ describe("新しい state で消えたキー", () => {
   });
 });
 
+describe("構造と値の適用順", () => {
+  it("if を閉じる再セットで、閉じる中身のバインディングは偽の失敗を報告しない（キーの並びに依らない）", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const html =
+      `<p id="s" data-wcs="textContent: status"></p>` +
+      `<template data-wcs="if: loggedIn"><span class="n" data-wcs="textContent: user.name"></span>` +
+      `<template data-wcs="for: user.items"><i class="r" data-wcs="textContent: user.items.*.n"></i></template></template>`;
+    // `user` を `loggedIn` より前に置く — 閉じる中身のバインディングが先に集まる並び
+    const { host, shadowRoot, stateEl } = await mount(
+      { user: { name: "u", items: [{ n: 1 }] }, loggedIn: true, status: "in" },
+      html,
+    );
+    expect(texts(shadowRoot, ".r")).toEqual(["1"]);
+
+    const failures: string[] = [];
+    stateEl.setInitialState({
+      status: "out",
+      loggedIn: false,
+      $errorCallback(_error: unknown, info: { path: string; bindingType: string }) {
+        failures.push(`${info.bindingType}: ${info.path}`);
+      },
+    });
+    expect(failures).toEqual([]);
+    expect(errorSpy.mock.calls.map((args) => String(args[0])).join(" | ")).not.toContain("failed to apply");
+    expect(text(shadowRoot, "#s")).toBe("out");
+    expect(shadowRoot.querySelector(".n")).toBeNull();
+    expect(texts(shadowRoot, ".r")).toEqual([]);
+    host.remove();
+  });
+});
+
 describe("切断中の再セット", () => {
   it("再接続したときに適用し直す（切断中に 2 回入れ直せば、両方の世代のキーを最後の state で）", async () => {
     const html = `<span id="t" data-wcs="textContent: title"></span><span id="o" data-wcs="textContent: other"></span>`;

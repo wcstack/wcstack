@@ -52,6 +52,31 @@ export function collectReapplyPaths(states: readonly (object | undefined)[]): Se
   return paths;
 }
 
+const STRUCTURAL_BINDING_TYPES: ReadonlySet<string> = new Set(["for", "if", "elseif", "else"]);
+
+/**
+ * 構造バインディング（for / if）を文書順で先に、値のバインディングを後に並べる。
+ *
+ * 再セットは全キーを一度に適用し直すので、閉じる if・消える行の中の値のバインディングも集まる。
+ * それを構造より先に適用すると、新しい state では読めない（構造がこれから DOM から外す）パスを
+ * 読んで偽の失敗を報告する（どちらが先に集まるかはキーの並び次第）。構造を外側から先に適用すれば、
+ * 外れた中身は applyChangeFromBindings が isConnected で飛ばす。
+ */
+function orderStructuralFirst(bindings: readonly IBindingInfo[]): IBindingInfo[] {
+  const structural: IBindingInfo[] = [];
+  const values: IBindingInfo[] = [];
+  for (const binding of bindings) {
+    if (STRUCTURAL_BINDING_TYPES.has(binding.bindingType)) {
+      structural.push(binding);
+    } else {
+      values.push(binding);
+    }
+  }
+  structural.sort((a, b) =>
+    (a.replaceNode.compareDocumentPosition(b.replaceNode) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 ? -1 : 1);
+  return structural.concat(values);
+}
+
 /**
  * `paths` は再適用の起点（`collectReapplyPaths`）。`registeredPaths` は state 要素が経路情報を
  * 登録したパス全部で、ここから行のバインドのパスを行（最後のワイルドカードのリスト要素）ごとに引く。
@@ -129,8 +154,9 @@ export function reapplyStateBindings(
     if (bindings.length === 0) {
       return;
     }
+    const ordered = orderStructuralFirst(bindings);
     const apply = (): void => {
-      applyChangeFromBindings(bindings, undefined, { updatedCallback: false });
+      applyChangeFromBindings(ordered, undefined, { updatedCallback: false });
     };
     // 遷移への参加は drain と同じ（updater.ts の `_applyChange`）
     if (inSsr()) {

@@ -908,6 +908,30 @@ describe("再セットで消えたバインド先パスを診断する（#270）
     }
   });
 
+  it("両方の世代で宣言し続けた $watch / $scan のパスが新しい state で消えたら報告する", async () => {
+    // 作り直しが前の世代の宣言の登録まで `_pathSet` に入れると、今の世代の宣言の登録が素通りして
+    // 検査されない（新しく作った要素なら報告される形が、再セットでは無言になっていた）
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const declarations = (): any => ({
+        $watch: { "a.deep": () => {} },
+        $scan: { count: { from: "n", initial: 0, fold: (acc: number) => acc + 1 } },
+      });
+      const { host, stateEl } = await mount({ a: { deep: 1 }, n: 0, ...declarations() });
+      await flush();
+      expect(reports(warn, "wcs/watch-path-missing")).toEqual([]);
+      expect(reports(warn, "wcs/scan-path-missing")).toEqual([]);
+
+      stateEl.setInitialState({ a: {}, m: 0, ...declarations() });
+      await flush();
+      expect(reports(warn, "wcs/watch-path-missing")).toHaveLength(1);
+      expect(reports(warn, "wcs/scan-path-missing")).toHaveLength(1);
+      host.remove();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("前の世代で判定した遅延中の報告は、入れ直しで捨てて新しい世代で判定し直す", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
