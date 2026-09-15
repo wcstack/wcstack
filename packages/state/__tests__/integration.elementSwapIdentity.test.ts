@@ -313,6 +313,102 @@ describe("要素書き込みによる行の置き換え", () => {
     host.remove();
   });
 
+  it("入れ子の for を持つ行を置き換えても、内側の行が二重にならない", async () => {
+    const html =
+      `<template data-wcs="for: groups"><div class="group">` +
+      `<b class="gname" data-wcs="textContent: groups.*.name"></b><button class="rename" data-wcs="onclick: rename"></button>` +
+      `<template data-wcs="for: groups.*.tags"><i class="tag" data-wcs="textContent: groups.*.tags.*"></i></template>` +
+      `</div></template>`;
+    const { host, shadowRoot, stateEl } = await mount({
+      groups: [{ name: "g1", tags: ["x", "y"] }, { name: "g2", tags: ["z"] }],
+      rename(this: any) {
+        const group = this["groups.*"];
+        this["groups.*"] = { ...group, name: `${group.name}!` };
+      },
+    }, html);
+    const firstGroup = shadowRoot.querySelector(".group");
+    const rename = shadowRoot.querySelector<HTMLButtonElement>(".rename")!;
+
+    rename.click();
+    await flush();
+    rename.click();
+    await flush();
+    expect(read(stateEl, (s: any) => s.groups.map((group: any) => [group.name, [...group.tags]])))
+      .toEqual([["g1!!", ["x", "y"]], ["g2", ["z"]]]);
+    expect(texts(shadowRoot, ".gname")).toEqual(["g1!!", "g2"]);
+    // 旧（その場で使い回すだけで解体しなかった版）: ["x", "y", "x", "y", "x", "y", "z"]
+    expect(texts(shadowRoot, ".tag"), "内側の行が書き込みのたびに増えない").toEqual(["x", "y", "z"]);
+    expect(shadowRoot.querySelector(".group")).toBe(firstGroup);
+    host.remove();
+  });
+
+  it("if を持つ行に書き込んでも、if の中身が新しい値に追従する", async () => {
+    const html =
+      `<template data-wcs="for: tags"><div class="row"><input class="ed" data-wcs="value: tags.*">` +
+      `<template data-wcs="if: tags.*"><span class="echo" data-wcs="textContent: tags.*"></span></template>` +
+      `</div></template>`;
+    const { host, shadowRoot, stateEl } = await mount({ tags: ["red", "green"] }, html);
+    const editor = shadowRoot.querySelectorAll<HTMLInputElement>(".ed")[1];
+    editor.focus();
+
+    for (const typed of ["greenx", "greenxy"]) {
+      editor.value = typed;
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      await flush();
+    }
+    expect(read(stateEl, (s: any) => [...s.tags])).toEqual(["red", "greenxy"]);
+    // 旧（同上）: ["red", "greenx"]（if の中身が最初の打鍵で固まった）
+    expect(texts(shadowRoot, ".echo")).toEqual(["red", "greenxy"]);
+    expect(shadowRoot.activeElement).toBe(editor);
+    host.remove();
+  });
+
+  it("行の中の子コンポーネントも、行を置き換えたら新しい行の値を映す", async () => {
+    const tag = "swap-identity-row-view";
+    if (typeof customElements.get(tag) === "undefined") {
+      class RowView extends HTMLElement {
+        state: Record<string, unknown> = {};
+        constructor() {
+          super();
+          this.attachShadow({ mode: "open" });
+          this.shadowRoot!.innerHTML =
+            `<wcs-state bind-component="state"></wcs-state><b class="rv" data-wcs="textContent: row.name"></b>`;
+        }
+      }
+      customElements.define(tag, RowView);
+    }
+    const html =
+      `<template data-wcs="for: groups"><div class="group">` +
+      `<b class="gname" data-wcs="textContent: groups.*.name"></b><button class="bump" data-wcs="onclick: bump"></button>` +
+      `<${tag} data-wcs="state.row: groups.*"></${tag}>` +
+      `</div></template>`;
+    const { host, shadowRoot, stateEl } = await mount({
+      groups: [{ name: "g1" }, { name: "g2" }],
+      bump(this: any) {
+        const group = this["groups.*"];
+        this["groups.*"] = { ...group, name: `${group.name}!` };
+      },
+    }, html);
+    const childTexts = (): (string | null)[] =>
+      Array.from(shadowRoot.querySelectorAll(tag))
+        .map((element) => element.shadowRoot!.querySelector(".rv")!.textContent);
+    await flush();
+    expect(childTexts()).toEqual(["g1", "g2"]);
+
+    const bump = shadowRoot.querySelector<HTMLButtonElement>(".bump")!;
+    bump.click();
+    await flush();
+    await flush();
+    bump.click();
+    await flush();
+    await flush();
+    expect(read(stateEl, (s: any) => s.groups.map((group: any) => group.name))).toEqual(["g1!!", "g2"]);
+    expect(texts(shadowRoot, ".gname")).toEqual(["g1!!", "g2"]);
+    // 旧（その場で使い回すだけで解体しなかった版）: ["g1!", "g2"]（子が最初の置き換えで固まった）
+    expect(childTexts(), "子の表示も新しい行に追従する").toEqual(["g1!!", "g2"]);
+    host.remove();
+  });
+
   it("プリミティブの行を置き換えると、$watch の prev は置き換える前の値", async () => {
     const calls: unknown[] = [];
     const html = `<template data-wcs="for: tags"><i data-wcs="textContent: tags.*"></i></template>`;

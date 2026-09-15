@@ -7,7 +7,8 @@ import { setBindingsReadyForScope, setStateElementAlias } from "../stateElementB
 import { collectStructuralFragments } from "../structural/collectStructuralFragments";
 import { raiseError } from "../raiseError";
 import { ParseBindTextResult } from "../bindTextParser/types";
-import { getMountRecordByScopeRoot, IMountRecord, registerMountRecord, translateParsedForMount } from "./mount";
+import { IContent } from "../structural/types";
+import { getMountRecordByScopeRoot, getMountRecordsForStateElement, getScopeRootByMountRecord, IMountRecord, registerMountRecord, stateElementHasMounts, translateParsedForMount } from "./mount";
 import { notifyExports, registerExports, warnShadowedExports } from "./exportIndex";
 
 /**
@@ -106,4 +107,45 @@ export function remountScopeBindings(record: IMountRecord, scopeRoot: ShadowRoot
   applyChangeFromBindings(rebound);
   // 別の行に付け替わった ＝ その行の公開パスの答えが変わった（X6）
   notifyExports(record);
+}
+
+/**
+ * 行 content をその場で使い回したときの張り直し（#4）。
+ *
+ * 要素書き込みで行を置き換えると `for` は同じ位置の Content を新しい行に使い回す。中の
+ * コンポーネント要素は DOM から外れないので、付け替えを知らせる connectedCallback が来ない —
+ * マウントスコープのバインディングは前の行の listIndex に張られたままになり、子の表示がそこで
+ * 固まる。プール再利用の再接続（State.connectedCallback → remountScopeBindings）と同じ
+ * 張り直しを、行の活性化（= ループ文脈の付け替え）の直後に行う。
+ */
+export function remountScopesUnderContent(
+  content: IContent,
+  stateElement: IMountRecord["parentStateElement"],
+): void {
+  if (!stateElementHasMounts(stateElement)) {
+    return;
+  }
+  for (const record of getMountRecordsForStateElement(stateElement)) {
+    if (!isNodeInContentRange(record.component, content)) {
+      continue;
+    }
+    const scopeRoot = getScopeRootByMountRecord(record);
+    if (scopeRoot === null) {
+      continue;
+    }
+    remountScopeBindings(record, scopeRoot as ShadowRoot | Element);
+  }
+}
+
+/** content の DOM レンジ（firstNode..lastNode）の中にあるノードか */
+function isNodeInContentRange(node: Node, content: IContent): boolean {
+  for (let current = content.firstNode; current !== null; current = current.nextSibling) {
+    if (current === node || current.contains(node)) {
+      return true;
+    }
+    if (current === content.lastNode) {
+      break;
+    }
+  }
+  return false;
 }

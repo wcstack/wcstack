@@ -17,6 +17,7 @@ import { deleteContentByNode } from "../structural/contentsByNode";
 import { createContent } from "../structural/createContent";
 import { IContent } from "../structural/types";
 import { IBindingInfo } from "../types";
+import { remountScopesUnderContent } from "../webComponent/mountScope";
 import { applyChange } from "./applyChange";
 import { setRootNodeByFragment } from "./rootNodeByFragment";
 import { IApplyContext } from "./types";
@@ -239,8 +240,10 @@ export function applyChangeToFor(
       const content = contentMap.get(deleteIndex);
       if (typeof content !== 'undefined') {
         if (inPlaceContents !== null && inPlaceContents.reused.has(content)) {
-          // 同じ位置に入る行がその場で使い回す。DOM から外さず、プールにも入れない
+          // 同じ位置に入る行がその場で使い回す。自分のノードは DOM に残し、プールにも入れないが、
+          // 解体は unmount と同じ（ネストした for / if の Content とアドレス台帳を落とす）
           deactivateContent(content);
+          content.unmountInPlace();
         } else if (poolBudget <= 0 && content.tryDestroy()) {
           deleteContentByNode(bindingInfo.node, content);
         } else {
@@ -340,6 +343,11 @@ export function applyChangeToFor(
       });
       if (typeof content === 'undefined') {
         raiseError(`Content not found for ListIndex: ${index.index} at path "${listPathInfo.path}"`);
+      }
+      if (inPlaceContents !== null && inPlaceContents.reused.has(content)) {
+        // その場で使い回した行の中のコンポーネントは DOM から外れない = 付け替えを知らせる
+        // connectedCallback が来ないので、マウントスコープを新しい行の listIndex へ張り直す（#4）
+        remountScopesUnderContent(content, context.stateElement);
       }
     } else {
       // getContent 相当（undefined→null 正規化は後段の raiseError 判定が null 比較のため維持）

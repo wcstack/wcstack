@@ -157,6 +157,34 @@ class Content implements IContent {
     return true;
   }
 
+  /**
+   * 自分のノードを DOM に残したまま、unmount と同じ解体をする（#4）。
+   *
+   * 行の置き換えで `for` が同じ位置の Content を新しい行に使い回すとき、入力中の欄を DOM から
+   * 外さないための経路。解体そのものは省けない — 中の構造ディレクティブ（ネストした for / if）が
+   * 持つ Content を古い行のまま残すと、新しい行として活性化したときに内側の行が二重に描かれ、
+   * `if` の中身は古い行のアドレスに紐づいたまま取り残される。
+   */
+  unmountInPlace(): void {
+    getBindingSessionByContent(this)?.dispose();
+    this._teardownBindings();
+  }
+
+  /** binding ごとの解体（ネストした構造ディレクティブの Content・アドレス台帳） */
+  private _teardownBindings(): void {
+    const bindings = getBindingsByContent(this);
+    for(const binding of bindings) {
+      if (recursiveBindingTypes.has(binding.bindingType)) {
+        const contents = getContentSetByNode(binding.node);
+        for (const content of contents) {
+          content.unmount();
+        }
+      }
+      clearStateAddressByBindingInfo(binding);
+      clearAbsoluteStateAddressByBinding(binding);
+    }
+  }
+
   unmount(): void {
     getBindingSessionByContent(this)?.dispose();
     for(const node of this._childNodeArray) {

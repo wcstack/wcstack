@@ -9,6 +9,11 @@ export interface IContent {
   mountAfter(targetNode: Node): void;
   unmount(): void;
   /**
+   * 自分のノードを DOM に残したままの解体（#4）。行の置き換えで `for` が同じ位置の Content を
+   * 新しい行に使い回すとき、入力中の欄を DOM から外さずに unmount と同じ後始末をする。
+   */
+  unmountInPlace(): void;
+  /**
    * wholesale 破棄: 全行クリアで再利用されない content の binding teardown
    * （listener 解除・アドレス台帳・loopContext 掃除）を省略し、ノード・binding
    * もろとも GC に任せる。定義待ち等の副作用がある場合は false を返し、呼び出し側が
