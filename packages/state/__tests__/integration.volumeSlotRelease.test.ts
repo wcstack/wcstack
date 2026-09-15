@@ -113,7 +113,7 @@ describe("ロード中に外れたボリューム", () => {
     host.remove();
   });
 
-  it("決着前に付け直せば、ロードの完了で枠を取り直して接ぎ木する", async () => {
+  it("同じ root の中で付け直した（並べ替えた）なら、その場で枠を取り直して接ぎ木する", async () => {
     const { host, shadowRoot } = makeHost();
     shadowRoot.innerHTML = `<p id="lang" data-wcs="textContent: i18n.lang"></p>`;
     const rootElement = root(`{"count":1}`);
@@ -123,6 +123,8 @@ describe("ロード中に外れたボリューム", () => {
 
     volumeElement.remove();
     shadowRoot.insertBefore(volumeElement, rootElement);
+    // 並べ替えの一瞬に、後から来た同じパスのボリュームへ枠を渡さない
+    expect(takenByAnother(shadowRoot, "i18n"), "付け直した時点で取り直している").toBe(true);
     volumeElement.setInitialState({ lang: "en" });
     await volumeElement.connectedCallbackPromise;
     await State.getBindingsReady(shadowRoot);

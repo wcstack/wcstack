@@ -194,6 +194,11 @@ export class State extends HTMLElementBase implements IStateElement {
    * 予約した組と一致する保証が無く、別の要素の枠を消しうる。
    */
   private _volumeSlotRootNode: Node | null = null;
+  /**
+   * ボリューム: ロード中に外れたときに枠を返した rootNode（#265）。同じ rootNode へ付け直した（並べ替えた）
+   * ときだけ connectedCallback がその場で枠を取り直すための控え。付け直すたびに null へ戻す。
+   */
+  private _volumeDetachedFrom: Node | null = null;
   /** v2 マウント（Phase 2）: この bind-component 要素が構築したマウント記録 */
   private _mountRecord: IMountRecord | null = null;
   private _bindableEventMap: Record<string, string> = {};
@@ -925,10 +930,21 @@ export class State extends HTMLElementBase implements IStateElement {
       if (this.hasAttribute("mount")) {
         // ロード完了前の remove → append 再入: 接ぎ木は進行中の _initializeVolume が持っている
         // （connectedCallbackPromise もそちらが解決する）ので再実行しない。再実行すると
-        // reserveVolumeSlot を二重に呼ぶ。外れたときに返した枠は、接ぎ木の直前に取り直す（#265 —
-        // `_acquireVolumeSlot`）。ここで取り直すと、保留の要求が残る元の root と付け直した先の root が
-        // 食い違ったまま、付け直した先の枠を握り続ける
+        // reserveVolumeSlot を二重に呼ぶ。外れたときに返した枠は、原則として接ぎ木の直前に取り直す（#265 —
+        // `_acquireVolumeSlot`）。別の root へ移った形でここで取ると、保留の要求が残る元の root と食い違った
+        // まま、移った先の枠を握り続ける。同じ root へ付け直した（並べ替えた）だけなら、空いている枠を
+        // その場で黙って取り直す — 取らないと、並べ替えの一瞬に後から来た同じパスのボリュームに枠を奪われる。
+        // 取れなければ、接ぎ木の直前の取り直しが報告する
         if (this._volumeInitializing) {
+          if (this._volumeDetachedFrom === this._rootNode) {
+            try {
+              reserveVolumeSlot(this._rootNode!, this._volumeMountPath!, this);
+              this._volumeSlotRootNode = this._rootNode;
+            } catch {
+              // 外れている間に別のボリュームが取った。接ぎ木の直前の `_acquireVolumeSlot` が報告する
+            }
+          }
+          this._volumeDetachedFrom = null;
           return;
         }
         await this._initializeVolume();
@@ -1131,7 +1147,9 @@ export class State extends HTMLElementBase implements IStateElement {
       if (!this._initialized) {
         // ロード中（ルート待ちの保留中を含む）に外れた: 枠を返す（#265）。握ったままだと、ソースが
         // 来ないまま外れた要素の枠が漏れ、同じマウントパスで作り直した要素が "already mounted" に
-        // 弾かれる。枠は接ぎ木の直前に取り直す（`_acquireVolumeSlot`）
+        // 弾かれる。枠は接ぎ木の直前に取り直す（`_acquireVolumeSlot`）。同じ root へ付け直したときだけは
+        // connectedCallback がその場で取り直すので、外れた root を控える
+        this._volumeDetachedFrom = this._volumeSlotRootNode;
         this._releaseVolumeSlot();
       }
       this._rootNode = null;
