@@ -298,6 +298,20 @@ export function clearReportedPaths(stateElement: IStateElement): void {
   reportedPathsByStateElement.delete(stateElement);
 }
 
+/**
+ * state の世代が進んだ（再セット）ときに、この要素の検査済みの印と遅延中の報告を捨てる（#270）。
+ *
+ * 「パスごとに 1 回」は同じ誤りを更新のたびに報告し続けないための台帳で、世代をまたいで
+ * 持ち越す理由は無い。持ち越すと、第 1 世代で検査済みのパスが第 2 世代の state から消えても
+ * 無言のままになる。遅延中の報告は前の世代の state で判定した結果なので、あわせて捨てる
+ * （呼び手の経路情報の作り直しが、新しい世代で判定し直して積み直す）。公開 getter の登録
+ * （`markExportedPath`）はマウント記録の寿命に属するので触らない。
+ */
+export function resetPathDiagnostics(stateElement: IStateElement): void {
+  reportedPathsByStateElement.delete(stateElement);
+  deferredReportsByStateElement.delete(stateElement);
+}
+
 function alreadyReported(stateElement: IStateElement, path: string): boolean {
   let reported = reportedPathsByStateElement.get(stateElement);
   if (typeof reported === "undefined") {
@@ -337,8 +351,13 @@ export function checkDeclaredPath(
   if (path.indexOf("#") !== -1) {
     return;
   }
-  // 予約済みのボリュームスロット配下はロード完了まで undefined が正（D22）
-  if (isPathUnderReservedVolume((stateElement as { rootNode?: Node }).rootNode ?? null, path)) {
+  // 予約済みのボリュームスロット配下はロード完了まで undefined が正（D22）。切断中の要素には
+  // rootNode が無い（State の getter は投げる）ので予約を引かない — 切断中の再セットも経路情報を
+  // 作り直してここへ来る（#267）
+  const rootNode = stateElement.isConnected === false
+    ? null
+    : (stateElement as { rootNode?: Node }).rootNode ?? null;
+  if (isPathUnderReservedVolume(rootNode, path)) {
     return;
   }
 
