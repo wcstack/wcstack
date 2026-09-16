@@ -11,19 +11,43 @@ import { DELIMITER } from "../define";
 import { raiseError } from "../raiseError";
 import { IStateElement } from "../components/types";
 
-/** 予約済みスロット（D22）。キーは rootNode、値はマウントパスの集合。 */
-const reservedSlotsByRootNode = new WeakMap<Node, Set<string>>();
+/**
+ * 予約済みスロット（D22）。キーは rootNode、値はマウントパス → 予約した要素（所有者）。
+ * 所有者が `null` の枠は持ち主を手放した枠（#265）: 読みの寛容（予約下の読みは undefined・
+ * 存在の診断は黙る）はそのまま残し、同じマウントパスを別の要素が予約できる。
+ */
+const reservedSlotsByRootNode = new WeakMap<Node, Map<string, object | null>>();
 
-export function reserveVolumeSlot(rootNode: Node, mountPath: string): void {
+export function reserveVolumeSlot(rootNode: Node, mountPath: string, owner: object): void {
   let slots = reservedSlotsByRootNode.get(rootNode);
   if (typeof slots === "undefined") {
-    slots = new Set();
+    slots = new Map();
     reservedSlotsByRootNode.set(rootNode, slots);
   }
-  if (slots.has(mountPath)) {
+  const current = slots.get(mountPath);
+  if (typeof current !== "undefined" && current !== null) {
     raiseError(`Volume slot "${mountPath}" is already mounted on this tree.`);
   }
-  slots.add(mountPath);
+  slots.set(mountPath, owner);
+}
+
+/**
+ * 予約を手放す（#265）。`owner` がその枠を予約した要素のときだけ手放す。
+ *
+ * 所有者を確かめずに手放すと、枠を失った要素（孤児・ロード失敗）の後始末が、同じマウントパスで
+ * 後から予約した**生きている別の要素**の枠を奪う（#257 第 3 ラウンドで実測した横取り）。
+ * 呼び手は予約した `(rootNode, mountPath)` の組を自分で控えておき、それを渡すこと —
+ * 切断時の rootNode や `mount` 属性から読み直した組は、予約した組と一致する保証が無い。
+ *
+ * 台帳から消さずに持ち主だけを外すのは、読みの寛容を残すため。消すと、接ぎ木しなかった
+ * ボリュームの配下を読むページ（ルートの getter・バインド）が「存在しないパス」の raise に変わり、
+ * ロード失敗を 1 ボリュームに閉じる規範が破れる。
+ */
+export function releaseVolumeSlot(rootNode: Node, mountPath: string, owner: object): void {
+  const slots = reservedSlotsByRootNode.get(rootNode);
+  if (slots?.get(mountPath) === owner) {
+    slots.set(mountPath, null);
+  }
 }
 
 /**
@@ -38,7 +62,7 @@ export function isPathUnderReservedVolume(rootNode: Node | null, path: string): 
   if (typeof slots === "undefined" || slots.size === 0) {
     return false;
   }
-  for (const slot of slots) {
+  for (const slot of slots.keys()) {
     if (path === slot || path.startsWith(slot + DELIMITER) || slot.startsWith(path + DELIMITER)) {
       return true;
     }
@@ -151,6 +175,13 @@ export interface IPendingVolumeRequest {
   readonly mountPath: string;
   readonly volumeState: Record<string, any>;
   readonly onGrafted: (info: unknown) => void;
+  /**
+   * 接ぎ木の直前に、要求した要素がマウントの枠を取る（#265）。握っていれば真、空いていれば取り直して真、
+   * 別の要素が握っていれば偽（報告は取る側が出す）。ロード中・保留中に外れた要素は枠を返しているので、
+   * ここで取り直す — 外れたままでも接ぎ木する従来の着地を保ちつつ、その間に同じマウントパスを取った
+   * 別のボリュームと二重に接ぎ木しない。
+   */
+  readonly acquireSlot: () => boolean;
 }
 const pendingVolumesByRootNode = new WeakMap<Node, IPendingVolumeRequest[]>();
 

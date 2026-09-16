@@ -15,11 +15,12 @@
  * 登録し直させる」自己修復が乗っている（「静的な辺 nodes.* → nodes.*.total が戻る」と
  * 「行まるごと置換」の 2 本がその側）。
  *
- * **この修理が触っていない半分**（別課題として切り出し・末尾の 3 つの describe が現状を固定する）:
- *  - 再セットはバインドを再適用しないので、画面は第 1 世代のテキストのまま（読みだけが新しい）。
- *  - `<wcs-state mount="…">` への再セットはセッタまで届くが、接ぎ木がルートの木へ複製している
- *    ため、ページ全体が第 1 世代のまま。
- *  - 第 2 世代で消えたバインド先パスは診断されない（パスごとに 1 回だけ検査する台帳のため）。
+ * #258 から切り出した 3 件の着地は末尾の 3 つの describe が固定する:
+ *  - 再セットは確立済みのバインドを新しい世代で適用し直す（#267 — 契約の細部は
+ *    integration.stateResetReapply.test.ts）。
+ *  - 読み込み済みの `<wcs-state mount="…">` への再セットは throw する（#268 — 接ぎ木がルートの木へ
+ *    複製しているので、入れ直してもページに届かない）。
+ *  - 第 2 世代で消えたバインド先パスを診断する（#270 — 検査済みの印は世代に属する）。
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
@@ -510,11 +511,17 @@ describe("再セット後の経路情報: 生きているバインドぶんを�
     const { host, shadowRoot, stateEl } = await mount(recursive([node(7, [node(70)]), node(8)]), html);
     expect(txt(shadowRoot, ".t")).toEqual(["77", "8"]);
 
+    // 作り直しそのものを見るため、適用し直し（#267 — その読みが実体化して辺を戻す）を再接続まで遅らせる
+    stateEl.remove();
     stateEl.setInitialState(recursive([node(7, [node(70)]), node(8)]));
-    await flush();
     const afterReset = new Map(edgesOf(stateEl));
     expect(afterReset.get("nodes.*") ?? [], "実体化前に辺を張り直さない").not.toContain("nodes.*.total");
     expect(afterReset.get("nodes"), "アンカーのリスト辺は残る").toEqual(["nodes.*"]);
+
+    shadowRoot.appendChild(stateEl);
+    await flush();
+    expect(txt(shadowRoot, ".t")).toEqual(["77", "8"]);
+    expect(new Map(edgesOf(stateEl)).get("nodes.*"), "適用し直しの読みが実体化して辺が戻る").toContain("nodes.*.total");
 
     expect(writeError(stateEl, (s: any) => { s.nodes = [node(11, [node(110)]), node(12)]; })).toBe("");
     await flush();
@@ -534,15 +541,23 @@ describe("再セット後の経路情報: 生きているバインドぶんを�
     expect(txt(shadowRoot, ".t")).toEqual(["77", "8"]);
     expect(txt(shadowRoot, ".c")).toEqual(["70"]);
 
+    // 読みを挟まない形は、適用し直し（#267 — その読みが実体化する）を再接続まで遅らせて作る
+    stateEl.remove();
     for (let i = 1; i <= 3; i++) {
       stateEl.setInitialState(recursiveTotals(tree()));
-      await flush();
       const edges = new Map(edgesOf(stateEl));
       expect(materialized(stateEl), `${i} 回目: まだ何も実体化していない`).toEqual([]);
       expect(edges.get("nodes.*") ?? [], `${i} 回目`).not.toContain("nodes.*.total");
       expect(edges.get("nodes.*.children.*") ?? [], `${i} 回目（深い行）`).not.toContain("nodes.*.children.*.total");
       expect(edges.get("nodes") ?? [], `${i} 回目: アンカーのリスト辺は残る`).toContain("nodes.*");
     }
+
+    // 再接続の適用し直しが読んで実体化し、辺が戻る
+    shadowRoot.appendChild(stateEl);
+    await flush();
+    expect(txt(shadowRoot, ".t")).toEqual(["77", "8"]);
+    expect(txt(shadowRoot, ".c")).toEqual(["70"]);
+    expect(new Map(edgesOf(stateEl)).get("nodes.*")).toContain("nodes.*.total");
 
     // 除外したままでも自己修復する: 行が作り直されれば辺は戻り、表示も集計も追従する
     expect(writeError(stateEl, (s: any) => { s.nodes = [node(11, [node(110)]), node(12)]; })).toBe("");
@@ -567,9 +582,10 @@ describe("再セット後の経路情報: 生きているバインドぶんを�
     host.remove();
   });
 
-  it("対照: 再セット後の行まるごと置換でも DOM と state が食い違わない", async () => {
-    // 走査を経ていない cold な $resolve は別の既知欠陥で拒否されるが、拒否されたぶん DOM も
-    // 動かないので乖離しない。
+  it("再セット後に行をまるごと置換しても、表示が state と一致する（#4）", async () => {
+    // 旧: 再セット直後の台帳は走査を経ていない cold な状態で、この $resolve は別の既知欠陥
+    // （「ListIndexes not found」）で拒否された（拒否されたぶん DOM も動かず、乖離もしなかった）。
+    // いまは再セットの適用し直し（#267）が行を走査するので台帳があり、置換そのものは通る。
     const recursive = (nodes: any): any => {
       const state: any = { nodes, $recursion: { "nodes.*": "children.*" } };
       Object.defineProperty(state, "nodes.**.total", {
@@ -590,9 +606,12 @@ describe("再セット後の経路情報: 生きているバインドぶんを�
 
     const error = writeError(stateEl, (s: any) => { s.$resolve("nodes.*", [0], node(9, [node(90)])); });
     await flush();
-    expect(error).toContain("ListIndexes not found"); // 走査を経ていない cold な $resolve（別課題）
-    expect(txt(shadowRoot, ".t")).toEqual(["77", "8"]);
-    expect(read(stateEl, (s: any) => s.$getAll("nodes.*.total", [])), "表示と一致する").toEqual([77, 8]);
+    expect(error).toBe(""); // 旧: "ListIndexes not found"（走査を経ていない cold な $resolve）
+    // 旧: ["97", "8"]（#4 — 代入値を書き込み前の listIndex のキャッシュに固定し、台帳には新しい
+    // listIndex を入れていたので、束ねていない `nodes.*.value` の古いキャッシュ 7 と新しい子の集計 90 を
+    // 足していた）。#4 の修理で、置き換えた行は新しい値で描き直される。
+    expect(txt(shadowRoot, ".t")).toEqual(["99", "8"]);
+    expect(read(stateEl, (s: any) => s.$getAll("nodes.*.total", []))).toEqual([99, 8]);
     host.remove();
   });
 });
@@ -606,24 +625,42 @@ describe("再セットとリスト差分の基準: 第 1 世代の配列が残�
     `<div><template data-wcs="for: items">` +
     `<i class="r" data-wcs="textContent: items.*.n"></i></template></div>`;
 
-  it("基準の台帳は第 1 世代の配列を握ったままだが、最初の構造書き込みで上書きされ結果は正しい", async () => {
-    // `stateListBaseline` / `lastListValueByAbsoluteStateAddress` も絶対アドレスがキーなので、
-    // 世代を跨いで第 1 世代の配列インスタンスを握り続ける（世代印は付けていない）。
-    // 害が出るのは「基準が実体とずれたまま diff を取る」ときなので、再セット直後に
-    // 一度も読まずに構造書き込みする最悪順序で固定する。
+  it("描画しているリストでは、再セットの適用し直しが描画側と state 側の基準を新しい配列へ進める", async () => {
+    // 旧: 再セットは基準に触れず、第 1 世代の配列を握ったまま最初の構造書き込みを迎えた（書き込みで
+    // 上書きされ、結果は正しかった）。いまは適用し直し（#267）の走査と `for` の描画が新しい配列を観測する。
     const first = [{ n: 1 }, { n: 2 }];
     const { host, shadowRoot, stateEl } = await mount({ items: first }, ITEMS_HTML);
+    const second = [{ n: 9 }, { n: 8 }, { n: 7 }];
+
+    stateEl.setInitialState({ items: second });
+    const address = absOf(stateEl, "items");
+    expect(getStateListBaseline(address)).toBe(second as any);
+    expect(getLastListValueByAbsoluteStateAddress(address)).toBe(second as any);
+    expect(txt(shadowRoot, ".r")).toEqual(["9", "8", "7"]);
+
+    expect(writeError(stateEl, (s: any) => { s.items = [{ n: 5 }]; })).toBe("");
+    await flush();
+    expect(txt(shadowRoot, ".r")).toEqual(["5"]);
+    expect(read(stateEl, (s: any) => s.$getAll("items.*.n", []))).toEqual([5]);
+    host.remove();
+  });
+
+  it("バインドの無いリストでは基準が第 1 世代の配列のまま残るが、最初の構造書き込みで上書きされ結果は正しい", async () => {
+    // `stateListBaseline` は絶対アドレスがキーなので、世代を跨いで第 1 世代の配列インスタンスを
+    // 握り続ける（世代印は付けていない）。適用し直しが辿るのは依存グラフの辺で、バインドの無い
+    // リストには辺が無いので、ここでは基準が残る。害が出るのは「基準が実体とずれたまま diff を取る」
+    // ときなので、再セット直後に一度も読まずに構造書き込みする最悪順序で固定する。
+    const first = [{ n: 1 }, { n: 2 }];
+    const { host, stateEl } = await mount({ items: first });
     expect(read(stateEl, (s: any) => s.$getAll("items.*.n", []))).toEqual([1, 2]);
 
     stateEl.setInitialState({ items: [{ n: 9 }, { n: 8 }, { n: 7 }] });
     const address = absOf(stateEl, "items");
     expect(getStateListBaseline(address), "第 1 世代の配列のまま").toBe(first as any);
-    expect(getLastListValueByAbsoluteStateAddress(address)).toBe(first as any);
 
     // 読まずに（＝基準を更新しないまま）長さの違う構造書き込み
     expect(writeError(stateEl, (s: any) => { s.items = [{ n: 5 }]; })).toBe("");
     await flush();
-    expect(txt(shadowRoot, ".r")).toEqual(["5"]);
     expect(read(stateEl, (s: any) => s.$getAll("items.*.n", []))).toEqual([5]);
     expect(getStateListBaseline(address), "書き込みで新しい値に入れ替わる").not.toBe(first as any);
     host.remove();
@@ -678,16 +715,13 @@ describe("再セットとリスト差分の基準: 第 1 世代の配列が残�
 });
 
 // ---------------------------------------------------------------------------
-// この修理が触っていない半分（別課題として切り出し・現状固定）
+// #258 から切り出した 3 件の着地（#267 / #268 / #270）
 // ---------------------------------------------------------------------------
 
-describe("既知の穴（#258 から切り出し）: 再セットはバインドを再適用しない", () => {
-  // DEFECT: 再セットで新しい state を入れても、確立済みのバインドは一度も再適用されないので
-  //         画面は第 1 世代のテキストのまま残る（スカラー・wildcard 無しの getter・`for` の
-  //         いずれも）。読みだけが新しい世代になるため、`read()` しか見ないテストでは
-  //         「直った」ように見える。作者が X7 と呼ぶのはこの半分。
-  //         should be: 再セットで生きているバインドを再適用する（契約の決定は別課題）。
-  it("スカラー・getter・for のいずれも第 1 世代の表示のまま（読みだけが新しい）", async () => {
+describe("再セットはバインドを適用し直す（#267）", () => {
+  // 旧挙動: 確立済みのバインドは一度も適用し直されず、画面は第 1 世代のテキストのまま残った
+  // （読みだけが新しい世代）。契約の細部は integration.stateResetReapply.test.ts が固定する。
+  it("スカラー・getter・for のいずれも新しい世代で描画され、読みと一致する", async () => {
     const page = (title: string, ns: number[]): any => {
       const state: any = { title, items: ns.map((n) => ({ n })) };
       Object.defineProperty(state, "upper", {
@@ -706,25 +740,21 @@ describe("既知の穴（#258 から切り出し）: 再セットはバインド
     expect(txt(shadowRoot, ".r")).toEqual(["1", "2"]);
 
     stateEl.setInitialState(page("b", [9, 8]));
-    await flush();
-    await flush();
 
-    expect(shadowRoot.querySelector("#t")!.textContent).toBe("a");  // should be: "b"
-    expect(shadowRoot.querySelector("#u")!.textContent).toBe("A");  // should be: "B"
-    expect(txt(shadowRoot, ".r")).toEqual(["1", "2"]);              // should be: ["9", "8"]
-    // 読みは新しい世代（`upper` は #258 の世代スタンプで直った側 — 旧挙動は "A"）
+    // 適用し直しは setInitialState の中で同期に済む（drain を待たない）
+    expect(shadowRoot.querySelector("#t")!.textContent).toBe("b");  // 旧: "a"
+    expect(shadowRoot.querySelector("#u")!.textContent).toBe("B");  // 旧: "A"
+    expect(txt(shadowRoot, ".r")).toEqual(["9", "8"]);              // 旧: ["1", "2"]
     expect(read(stateEl, (s: any) => [s.title, s.upper, s.$getAll("items.*.n", [])]))
       .toEqual(["b", "B", [9, 8]]);
     host.remove();
   });
 });
 
-
-describe("既知の穴（#258 から切り出し）: ボリュームへの再セットは無言で効かない", () => {
-  // DEFECT: `<wcs-state mount="i18n">` への `setInitialState` はボリューム要素のセッタまで届く
-  //         （その要素自身の読みは新しい state を返す）が、接ぎ木はロード完了時の一度きりなので、
-  //         ルートの木は第 1 世代のデータのまま・DOM も第 1 世代のまま・例外も警告も出ない。
-  //         should be: 再接ぎ木するか、明確に拒否する（#258 の E — 今回は実装しない）。
+describe("読み込み済みのボリュームへの再セットは拒否する（#268）", () => {
+  // 旧挙動: ボリューム要素のセッタまでは届く（要素自身の読みだけが新しくなる）が、接ぎ木はロード
+  // 完了時に一度だけルートの木へデータを複製するので、ルートの木も DOM も第 1 世代のまま、例外も
+  // 警告も出なかった。接ぎ木し直すにはボリュームを外す経路が要る（未対応）ので、拒否する。
   let volumeSeq = 0;
   const volumeState = (lang: string, title: string): any => ({
     lang,
@@ -732,14 +762,16 @@ describe("既知の穴（#258 から切り出し）: ボリュームへの再セ
     get t() { return (this as any).dict[(this as any).lang]; },
   });
 
-  it("ボリューム要素の読みだけが新しくなり、ルートの木と DOM は第 1 世代のまま", async () => {
+  /** ボリューム `i18n` を API でロードし、ルートは `rootJson` から読むページ。 */
+  const mountVolumePage = async (rootJson: string, bindings: string): Promise<{
+    host: HTMLElement; shadowRoot: ShadowRoot; volumeEl: State; rootEl: State;
+  }> => {
     const host = document.createElement(`genreset-vol-${volumeSeq++}`);
     const shadowRoot = host.attachShadow({ mode: "open" });
     shadowRoot.innerHTML =
       `<wcs-state mount="i18n"></wcs-state>` +
-      `<wcs-state json='{"count":1}'></wcs-state>` +
-      `<h1 id="title" data-wcs="textContent: i18n.t.title"></h1>` +
-      `<p id="lang" data-wcs="textContent: i18n.lang"></p>`;
+      `<wcs-state json='${rootJson}'></wcs-state>` +
+      bindings;
     document.body.appendChild(host);
     const volumeEl = shadowRoot.querySelector("wcs-state[mount]") as State;
     const rootEl = shadowRoot.querySelector("wcs-state:not([mount])") as State;
@@ -749,51 +781,167 @@ describe("既知の穴（#258 から切り出し）: ボリュームへの再セ
     await (rootEl.constructor as typeof State).getBindingsReady(shadowRoot);
     await flush();
     await flush();
+    return { host, shadowRoot, volumeEl, rootEl };
+  };
+
+  it("setInitialState は throw し、ルートの木も画面も変えない（案内どおりルートへ書けば届く）", async () => {
+    const { host, shadowRoot, volumeEl, rootEl } = await mountVolumePage(
+      `{"count":1}`,
+      `<h1 id="title" data-wcs="textContent: i18n.t.title"></h1><p id="lang" data-wcs="textContent: i18n.lang"></p>`,
+    );
     expect(shadowRoot.querySelector("#title")!.textContent).toBe("Hello");
     expect(shadowRoot.querySelector("#lang")!.textContent).toBe("en");
 
-    // 例外も警告も出ない（無言）。警告が出ないことは spy で固定する（例外はこの it が落ちる）
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      volumeEl.setInitialState(volumeState("ja", "第二世代"));
-      await flush();
-      await flush();
-      expect(warn.mock.calls, "警告は 1 件も出ない").toEqual([]);
-    } finally {
-      warn.mockRestore();
-    }
-
-    expect(shadowRoot.querySelector("#title")!.textContent).toBe("Hello"); // should be: "第二世代"
-    expect(shadowRoot.querySelector("#lang")!.textContent).toBe("en");     // should be: "ja"
+    expect(() => volumeEl.setInitialState(volumeState("ja", "第二世代")))
+      .toThrow(`Cannot replace the state of <wcs-state mount="i18n"> after it has loaded`);
+    await flush();
+    expect(shadowRoot.querySelector("#title")!.textContent).toBe("Hello");
+    expect(shadowRoot.querySelector("#lang")!.textContent).toBe("en");
     expect(read(rootEl, (s: any) => s.i18n.lang), "ルートの木は第 1 世代のまま").toBe("en");
-    expect(read(rootEl, (s: any) => s.i18n.dict.en.title)).toBe("Hello");
-    // 届いていないのではない — ボリューム要素自身の読みは新しい世代になっている
-    expect(read(volumeEl, (s: any) => s.lang), "ボリューム要素の読みだけが新しい").toBe("ja");
+
+    // 文言が案内する差し替え方: ルートの木のマウントパスの下へ書く
+    write(rootEl, (s: any) => { s["i18n.lang"] = "ja"; });
+    await flush();
+    expect(shadowRoot.querySelector("#lang")!.textContent).toBe("ja");
     host.remove();
+  });
+
+  it("接ぎ木に失敗したボリューム（ルートのキーと衝突）への setInitialState も throw する", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { host, volumeEl, rootEl } = await mountVolumePage(`{"i18n":1}`, "");
+      expect(errorSpy.mock.calls.map((args) => String(args[0])).join(" | "))
+        .toContain(`volume "i18n" failed to graft`);
+      expect(() => volumeEl.setInitialState(volumeState("ja", "x")))
+        .toThrow(`Cannot replace the state of <wcs-state mount="i18n"> after it has loaded`);
+      expect(read(rootEl, (s: any) => s.i18n)).toBe(1);
+      host.remove();
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });
 
-describe("既知の穴（#258 から切り出し）: 再セットで消えたバインド先パスは診断されない", () => {
-  // DEFECT: `checkDeclaredPath` は要素ごと・パスごとに 1 回しか走らない（pathDiagnostics.ts の
-  //         `alreadyReported`）。第 1 世代で検査済みのパスは、第 2 世代の state から消えても
-  //         報告されない。経路情報の作り直し（`_rebuildPathInfo`）が `setPathInfo` をやり直しても
-  //         同じで、main と同じ挙動になる（作り直しは診断を増やしも減らしもしない）。
-  //         should be: 世代ごとに検査し直す（別課題）。
-  it("第 2 世代で消えた user.name のバインドが無言のまま（wcs/binding-path-missing が出ない）", async () => {
-    const { host, stateEl } = await mount(
-      { user: { name: "a" } },
-      `<div><span id="n" data-wcs="textContent: user.name"></span></div>`,
-    );
+describe("再セットで消えたバインド先パスを診断する（#270）", () => {
+  // 旧挙動: `checkDeclaredPath` の「要素ごと・パスごとに 1 回」の印を世代をまたいで持ち越したので、
+  // 第 1 世代で検査済みのパスが第 2 世代の state から消えても無言だった。印は世代に属する
+  // （pathDiagnostics.ts の `resetPathDiagnostics`）。
+  const reports = (spy: { mock: { calls: unknown[][] } }, code: string): string[] =>
+    spy.mock.calls.map((args) => String(args[0])).filter((message) => message.includes(code));
+  const USER_NAME = `<div><span data-wcs="textContent: user.name"></span></div>`;
+
+  it("第 2 世代で消えた user.name を報告する（綴りの候補つき）", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
+      const { host, stateEl } = await mount({ user: { name: "a" } }, USER_NAME);
+      await flush();
+      expect(reports(warn, "wcs/binding-path-missing")).toEqual([]);
+
       stateEl.setInitialState({ user: { nmae: "b" } } as any);
       await flush();
-      await flush();
-      expect(warn.mock.calls.map((args) => String(args[0])).join(" | "))
-        .not.toContain("wcs/binding-path-missing"); // should be: 第 2 世代でも報告する
+      const found = reports(warn, "wcs/binding-path-missing");
+      expect(found).toHaveLength(1); // 旧: 0
+      expect(found[0]).toContain(`Bound path "user.name"`);
+      expect(found[0]).toContain(`"nmae"`);
+      host.remove();
     } finally {
       warn.mockRestore();
     }
-    host.remove();
+  });
+
+  it("第 2 世代にも在るパスは報告しない", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { host, stateEl } = await mount({ user: { name: "a" } }, USER_NAME);
+      stateEl.setInitialState({ user: { name: "b" } });
+      await flush();
+      expect(reports(warn, "wcs/binding-path-missing")).toEqual([]);
+      host.remove();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("同じ誤りは 1 世代に 1 回（同じ世代の書き込みでは繰り返さず、世代が進めばもう 1 回）", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { host, stateEl } = await mount({ user: { nmae: "a" } }, USER_NAME);
+      await flush();
+      expect(reports(warn, "wcs/binding-path-missing")).toHaveLength(1);
+
+      write(stateEl, (s: any) => { s["user.nmae"] = "x"; });
+      await flush();
+      write(stateEl, (s: any) => { s["user.nmae"] = "y"; });
+      await flush();
+      expect(reports(warn, "wcs/binding-path-missing"), "同じ世代では繰り返さない").toHaveLength(1);
+
+      stateEl.setInitialState({ user: { nmae: "b" } });
+      await flush();
+      expect(reports(warn, "wcs/binding-path-missing"), "世代が進めばもう 1 回").toHaveLength(2);
+      host.remove();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("前の世代の $watch から外したパスは報告しない（今の世代の $watch は報告する）", async () => {
+    // 作り直しは台帳にある登録を全部やり直すが、`$watch` の登録は前の世代の宣言の残骸でもある。
+    // 検査までやり直すと、新しい宣言から外したパスを missing と誤って報告する。
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { host, stateEl } = await mount({ a: { deep: 1 }, $watch: { "a.deep": () => {} } });
+      await flush();
+      stateEl.setInitialState({ b: 1 } as any);
+      await flush();
+      expect(reports(warn, "wcs/watch-path-missing"), "外した a.deep は報告しない").toEqual([]);
+
+      stateEl.setInitialState({ c: {}, $watch: { "c.nope": () => {} } } as any);
+      await flush();
+      const found = reports(warn, "wcs/watch-path-missing");
+      expect(found).toHaveLength(1);
+      expect(found[0]).toContain(`"c.nope"`);
+      host.remove();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("両方の世代で宣言し続けた $watch / $scan のパスが新しい state で消えたら報告する", async () => {
+    // 作り直しが前の世代の宣言の登録まで `_pathSet` に入れると、今の世代の宣言の登録が素通りして
+    // 検査されない（新しく作った要素なら報告される形が、再セットでは無言になっていた）
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const declarations = (): any => ({
+        $watch: { "a.deep": () => {} },
+        $scan: { count: { from: "n", initial: 0, fold: (acc: number) => acc + 1 } },
+      });
+      const { host, stateEl } = await mount({ a: { deep: 1 }, n: 0, ...declarations() });
+      await flush();
+      expect(reports(warn, "wcs/watch-path-missing")).toEqual([]);
+      expect(reports(warn, "wcs/scan-path-missing")).toEqual([]);
+
+      stateEl.setInitialState({ a: {}, m: 0, ...declarations() });
+      await flush();
+      expect(reports(warn, "wcs/watch-path-missing")).toHaveLength(1);
+      expect(reports(warn, "wcs/scan-path-missing")).toHaveLength(1);
+      host.remove();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("前の世代で判定した遅延中の報告は、入れ直しで捨てて新しい世代で判定し直す", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { host, stateEl } = await mount({ user: { name: "a" } }, USER_NAME);
+      await flush();
+      stateEl.setInitialState({ user: {} });           // user.name が消える → 報告は遅延中
+      stateEl.setInitialState({ user: { name: "c" } }); // マクロタスクを待たずに戻す
+      await flush();
+      expect(reports(warn, "wcs/binding-path-missing")).toEqual([]);
+      host.remove();
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

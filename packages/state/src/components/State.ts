@@ -40,7 +40,7 @@ import { createPublicMountState } from "../webComponent/overlay";
 import { warnOwnKeyShadowsForMount } from "../webComponent/ownKeyShadow";
 import { markWebComponentAsComplete, markWebComponentStatePropDeclared } from "../webComponent/completeWebComponent";
 import { getInjectedKeys, restoreOverwrittenValues, takeOverwrittenObject } from "../webComponent/preCompletionWrites";
-import { callVolumeLifecycle, clearFailedRootNode, failPendingVolumes, graftOrQueueVolume, IVolumeGraftInfo, reserveVolumeSlot, validateVolumeMountPath } from "../webComponent/volume";
+import { callVolumeLifecycle, clearFailedRootNode, failPendingVolumes, graftOrQueueVolume, IVolumeGraftInfo, releaseVolumeSlot, reserveVolumeSlot, validateVolumeMountPath } from "../webComponent/volume";
 import { hasRootMountBinding } from "../webComponent/rootMountBinding";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/symbols";
 import { waitInitializeBinding } from "../bindings/initializeBindingPromiseByNode";
@@ -49,8 +49,9 @@ import { Ssr } from "./Ssr";
 import { VERSION } from "../version";
 import { HTMLElementBase } from "../platform/HTMLElementBase";
 import { getAllPropertyDescriptors } from "../getAllPropertyDescriptors";
-import { checkDeclaredPath, findDescriptor, PathInfoSource } from "../pathDiagnostics";
+import { checkDeclaredPath, findDescriptor, PathInfoSource, resetPathDiagnostics } from "../pathDiagnostics";
 import { notifyExports } from "../webComponent/exportIndex";
+import { collectReapplyPaths, reapplyStateBindings } from "../apply/reapplyStateBindings";
 
 function getStateInfo(
   state: IState
@@ -157,9 +158,20 @@ export class State extends HTMLElementBase implements IStateElement {
    *
    * `source === "internal"`（再帰の生成アクセサ・ボリュームのツリーアクセサ）は載せない。
    * あれらは生やした機構が新しい世代で登録し直す（recursion/registry.ts の `_define`）。
+   *
+   * `bound` はバインドがいちどでも登録したか（#270）。作り直しで存在検査をやり直すのはバインドの
+   * パスだけ — `$watch` / `$scan` の登録は前の世代の宣言の残骸でもあり、今の世代の宣言は
+   * 作り直しの後で自分の検査をする（`processWatchDeclaration` / `registerScans`）。残骸まで
+   * 検査すると、新しい宣言から外したパスを「存在しない」と誤って報告する。
    */
-  private _pathRegistrations: Map<string, { bindingType: BindingType; source: PathInfoSource }> =
-    new Map<string, { bindingType: BindingType; source: PathInfoSource }>();
+  private _pathRegistrations: Map<string, { bindingType: BindingType; bound: boolean }> =
+    new Map<string, { bindingType: BindingType; bound: boolean }>();
+  /**
+   * 切断中の再セットで適用し直せなかったトップレベルのパス（#267）。再適用には rootNode が要るので、
+   * 再接続で `reapplyStateBindings` に渡す。切断中に何度入れ直しても和集合で持つ
+   * （前の世代にしか無いキーのバインドも失敗として報告させるため）。
+   */
+  private _pendingReapplyPaths: Set<string> | null = null;
   /**
    * これまでのどの世代かで再帰レジストリが実体化した具体パス（`nodes.*.total` 等）の累積。
    * 再セットのたびに `forgetGenerated` の戻り値を足し、`_rebuildPathInfo` の除外に使う。
@@ -183,6 +195,22 @@ export class State extends HTMLElementBase implements IStateElement {
   private _volumeGraftInfo: IVolumeGraftInfo | null = null;
   /** ボリューム: スロット予約済み・接ぎ木進行中（ロード完了前の再接続の再入ガード） */
   private _volumeInitializing: boolean = false;
+  /**
+   * ボリューム: 予約したマウントパス（#265）。枠を返した後に取り直すときもこれを使う —
+   * `mount` 属性は書き換えられるので読み直さない。
+   */
+  private _volumeMountPath: string | null = null;
+  /**
+   * ボリューム: いま枠を握っている rootNode（#265）。null は「握っていない」。解放はこの控えと
+   * `_volumeMountPath` の組でだけ行う。切断時の `_rootNode`（先に null になる）から読み直すと、
+   * 予約した組と一致する保証が無く、別の要素の枠を消しうる。
+   */
+  private _volumeSlotRootNode: Node | null = null;
+  /**
+   * ボリューム: ロード中に外れたときに枠を返した rootNode（#265）。同じ rootNode へ付け直した（並べ替えた）
+   * ときだけ connectedCallback がその場で枠を取り直すための控え。付け直すたびに null へ戻す。
+   */
+  private _volumeDetachedFrom: Node | null = null;
   /** v2 マウント（Phase 2）: この bind-component 要素が構築したマウント記録 */
   private _mountRecord: IMountRecord | null = null;
   private _bindableEventMap: Record<string, string> = {};
@@ -275,6 +303,11 @@ export class State extends HTMLElementBase implements IStateElement {
     // 据え置き（同ファイルの「throw する再セットは世代を進めない」4 本が固定する）。
     this._stateGeneration++;
     this.__state = value;
+    // 存在検査の台帳も世代に属する（#270）。「パスごとに 1 回」の印を前の世代から持ち越すと、
+    // 下の経路情報の作り直しが新しい state で検査し直さない。初回のセットには捨てるものが無い
+    if (typeof previousState !== "undefined") {
+      resetPathDiagnostics(this);
+    }
     // $updatedCallback の有無を state セット時に確定しておく（in はプロトタイプ
     // チェーンも見る・getter を評価しない）。drain 側はこのフラグで更新アドレスの
     // 集計と writable createState をスキップできる。
@@ -334,8 +367,9 @@ export class State extends HTMLElementBase implements IStateElement {
     }
     // 生きているバインドの経路情報を作り直す（issue #258 の X7）。置き場所は
     // `_pathSet` / `_listPaths` / `_elementPaths` のクリアより後、startWatch / startStreams より前。
-    // `setPathInfo` をやり直しても新しい診断は出ない — 第 2 世代で消えたバインド先が無言のまま
-    // であることを `__tests__/integration.stateGenerationReset.test.ts` の末尾が固定する。
+    // 上で存在検査の台帳を捨てているので、バインドのパスはここで新しい state に対して検査し直され、
+    // 第 2 世代で消えたバインド先が報告される（#270 — `__tests__/integration.stateGenerationReset.test.ts`
+    // の末尾が固定する）。
     this._rebuildPathInfo();
     // $scan: registry と from / resetOn の依存グラフ登録（_pathSet クリア後であること）。
     // startWatch より前に置く（scan だけを宣言した state も drain の発火対象に載せるため）。
@@ -448,7 +482,9 @@ export class State extends HTMLElementBase implements IStateElement {
         // D14: スナップショットはルートに 1 本 — ボリューム側の enable-ssr は意味を持たない
         console.warn(`[@wcstack/state] <${config.tagNames.state} mount="${mountPath}"> ignores "enable-ssr" — snapshots are per root tree (the root state element aggregates volume data).`);
       }
-      reserveVolumeSlot(rootNode, mountPath);
+      reserveVolumeSlot(rootNode, mountPath, this);
+      this._volumeMountPath = mountPath;
+      this._volumeSlotRootNode = rootNode;
     } catch (error) {
       // 設定エラーでも初期化待ちをウェッジさせない（_failInitialization と同じ規範 —
       // 未解決のまま投げると waitForStateInitialize がページ全体を無言で止める）。
@@ -472,6 +508,12 @@ export class State extends HTMLElementBase implements IStateElement {
     const finish = (info: IVolumeGraftInfo | null): void => {
       this._volumeGraftInfo = info;
       this._initialized = true;
+      if (info === null) {
+        // 接ぎ木しないまま決着した（ロード失敗・接ぎ木失敗・孤児・外れたまま）ので枠を返す（#265）。
+        // 握ったままだと、同じマウントパスで作り直した要素が "already mounted" に弾かれ、
+        // 復旧がページの読み直ししか無くなる
+        this._releaseVolumeSlot();
+      }
       this._resolveInitialize?.();
       this._resolveLoading?.();
       this._resolveConnectedCallback?.();
@@ -481,7 +523,7 @@ export class State extends HTMLElementBase implements IStateElement {
       volumeState = await this._loadStateFromSource();
     } catch (error) {
       // ロード失敗（404 / JSON パースエラー / import 失敗）は 1 ボリュームに閉じる
-      // （graftIsolated と同じ隔離規範 — 接ぎ木は載らず予約だけが残る着地）。
+      // （graftIsolated と同じ隔離規範 — 接ぎ木は載らず、枠も返す着地）。
       // 未解決のまま投げると waitForStateInitialize が全 <wcs-state> の
       // initializePromise を Promise.all で待つためページ全体が無言でウェッジし、
       // 上で立てた _volumeInitializing の再入ガードが remove → append の復旧も
@@ -491,17 +533,26 @@ export class State extends HTMLElementBase implements IStateElement {
       finish(null);
       return;
     }
-    // await 中に剥がされたら何もしない（スコープは持っていない）
+    // await 中に剥がされていたら接ぎ木しない（スコープは持っていない）
     if (this._rootNode === null) {
       finish(null);
       return;
     }
+    // 接ぎ木先はいま繋がっている rootNode。ロード中に外れて枠を返していれば、ここで取り直す（#265）。
+    // 保留に積むなら、ルートが来た時点でもう一度取る — その間に外れて枠を返していることがあり、そのとき
+    // 枠が空いていれば外れたままでも接ぎ木する（従来の着地）。別の要素が取っていれば接ぎ木しない
+    const graftRootNode = this._rootNode;
+    if (!this._acquireVolumeSlot(graftRootNode)) {
+      finish(null);
+      return;
+    }
     graftOrQueueVolume(
-      rootNode,
-      getStateElement(rootNode),
+      graftRootNode,
+      getStateElement(graftRootNode),
       mountPath,
       volumeState,
       finish,
+      () => this._acquireVolumeSlot(graftRootNode),
     );
   }
 
@@ -895,11 +946,23 @@ export class State extends HTMLElementBase implements IStateElement {
       }
       // ボリューム（`mount="path"` — 接ぎ木・docs/state-mount-design.md §4-2）
       if (this.hasAttribute("mount")) {
-        // ロード完了前の remove → append 再入: スロット予約も接ぎ木も進行中の
-        // _initializeVolume が持っている。再実行すると reserveVolumeSlot が自分の
-        // 予約に "already mounted" を誤 raise する（接ぎ木自体は進行中の呼び出しが
-        // 完了させる — connectedCallbackPromise もそちらが解決する）
+        // ロード完了前の remove → append 再入: 接ぎ木は進行中の _initializeVolume が持っている
+        // （connectedCallbackPromise もそちらが解決する）ので再実行しない。再実行すると
+        // reserveVolumeSlot を二重に呼ぶ。外れたときに返した枠は、原則として接ぎ木の直前に取り直す（#265 —
+        // `_acquireVolumeSlot`）。別の root へ移った形でここで取ると、保留の要求が残る元の root と食い違った
+        // まま、移った先の枠を握り続ける。同じ root へ付け直した（並べ替えた）だけなら、空いている枠を
+        // その場で黙って取り直す — 取らないと、並べ替えの一瞬に後から来た同じパスのボリュームに枠を奪われる。
+        // 取れなければ、接ぎ木の直前の取り直しが報告する
         if (this._volumeInitializing) {
+          if (this._volumeDetachedFrom === this._rootNode) {
+            try {
+              reserveVolumeSlot(this._rootNode!, this._volumeMountPath!, this);
+              this._volumeSlotRootNode = this._rootNode;
+            } catch {
+              // 外れている間に別のボリュームが取った。接ぎ木の直前の `_acquireVolumeSlot` が報告する
+            }
+          }
+          this._volumeDetachedFrom = null;
           return;
         }
         await this._initializeVolume();
@@ -978,6 +1041,13 @@ export class State extends HTMLElementBase implements IStateElement {
       // createState が rootNode 経由でこの要素を解決できるようにするために必要
       // （$connectedCallback の再実行と $streams の initial からの再起動が依存する、設計書 §2-3）。
       setStateElement(this._rootNode, this);
+    }
+    // 切断中に入れ直した state を、戻ってきた rootNode のバインドへ適用する（#267）。上の登録より
+    // 後であること — 適用は rootNode から state 要素を引く
+    if (this._pendingReapplyPaths !== null) {
+      const paths = this._pendingReapplyPaths;
+      this._pendingReapplyPaths = null;
+      this._reapplyBindings(paths);
     }
     // enable-ssr (クライアント側): SSR で $connectedCallback 済みなのでスキップ
     // inSsr() (サーバー側): レンダリング中なので実行する
@@ -1059,13 +1129,53 @@ export class State extends HTMLElementBase implements IStateElement {
     this._resolveConnectedCallback?.();
   }
 
+  /** 控えている枠を返す（#265）。所有者の確認は `releaseVolumeSlot` が行う。 */
+  private _releaseVolumeSlot(): void {
+    if (this._volumeSlotRootNode === null) {
+      return;
+    }
+    releaseVolumeSlot(this._volumeSlotRootNode, this._volumeMountPath!, this);
+    this._volumeSlotRootNode = null;
+  }
+
+  /**
+   * 接ぎ木の直前に、`rootNode` のマウントの枠を取る（#265）。握っていれば真。ロード中・保留中に外れて
+   * 返していれば取り直して真。外れている間に別の要素が同じマウントパスを取っていれば、横取りせずに
+   * 報告して偽 — 黙らせると、作者に見えるのは「データが現れない」だけになる。
+   */
+  private _acquireVolumeSlot(rootNode: Node): boolean {
+    if (this._volumeSlotRootNode === rootNode) {
+      return true;
+    }
+    const mountPath = this._volumeMountPath!;
+    try {
+      reserveVolumeSlot(rootNode, mountPath, this);
+    } catch {
+      console.error(
+        `[@wcstack/state] <${config.tagNames.state} mount="${mountPath}"> will not graft: another volume already holds ` +
+        `the "${mountPath}" slot on this root. Keep one volume per mount path.`,
+      );
+      return false;
+    }
+    this._volumeSlotRootNode = rootNode;
+    return true;
+  }
+
   disconnectedCallback() {
     if (this.hasAttribute("mount")) {
       // ボリューム: 接ぎ木したデータ・アクセサ・宣言はツリーに残る（アンマウントは
-      // 未対応 — 揮発させると依存グラフに残った getter 登録が宙に浮く）。予約も維持。
+      // 未対応 — 揮発させると依存グラフに残った getter 登録が宙に浮く）。接ぎ木済みなら予約も維持。
       // $disconnectedCallback だけは要素のライフサイクルとして chroot で呼ぶ
       if (this._volumeGraftInfo !== null) {
         callVolumeLifecycle(this._volumeGraftInfo, "$disconnectedCallback");
+      }
+      if (!this._initialized) {
+        // ロード中（ルート待ちの保留中を含む）に外れた: 枠を返す（#265）。握ったままだと、ソースが
+        // 来ないまま外れた要素の枠が漏れ、同じマウントパスで作り直した要素が "already mounted" に
+        // 弾かれる。枠は接ぎ木の直前に取り直す（`_acquireVolumeSlot`）。同じ root へ付け直したときだけは
+        // connectedCallback がその場で取り直すので、外れた root を控える
+        this._volumeDetachedFrom = this._volumeSlotRootNode;
+        this._releaseVolumeSlot();
       }
       this._rootNode = null;
       return;
@@ -1367,9 +1477,12 @@ export class State extends HTMLElementBase implements IStateElement {
     // 何が壊れるかは `__tests__/integration.stateGenerationReset.test.ts` の
     // 「`for` で登録したリストパスは `$watch` の prop 登録に上書きされない」が固定する。
     if (source !== "internal") {
+      // `for` の登録はバインドからしか来ないので、`for` の登録を残すときは `bound` も真のまま
       const previous = this._pathRegistrations.get(path);
-      if (typeof previous === "undefined" || previous.bindingType !== "for") {
-        this._pathRegistrations.set(path, { bindingType, source });
+      if (typeof previous === "undefined") {
+        this._pathRegistrations.set(path, { bindingType, bound: source === "binding" });
+      } else if (previous.bindingType !== "for") {
+        this._pathRegistrations.set(path, { bindingType, bound: previous.bound || source === "binding" });
       }
     }
     if (bindingType === "for") {
@@ -1409,15 +1522,20 @@ export class State extends HTMLElementBase implements IStateElement {
    * 名指していても、新しい世代ではまだ実体化されていないため（recursion/generation.ts）。読みが
    * 実体化したときに `defineTreeAccessor` が登録し直す。
    *
+   * 作り直すのはバインドが登録したパスだけ（`_pathRegistrations` の `bound`・#270）。`$watch` /
+   * `$scan` だけの登録は飛ばす — 作り直しの後で今の世代の宣言が自分で登録し直し、そこで存在も
+   * 検査される。ここで `_pathSet` に入れてしまうと、宣言側の `setPathInfo` が `_pathSet.has` で
+   * 素通りし、両方の世代で宣言し続けたパスが新しい state で消えても報告されない。
+   *
    * 反復中に `setPathInfo` が台帳へ書き戻す（既存キーの上書きのみで新キーは増えない）ので、
    * 誤解を避けるためスナップショットを取ってから回す。
    */
   private _rebuildPathInfo(): void {
     for (const [path, registration] of Array.from(this._pathRegistrations)) {
-      if (this._generatedPaths.has(path)) {
+      if (!registration.bound || this._generatedPaths.has(path)) {
         continue;
       }
-      this.setPathInfo(path, registration.bindingType, registration.source);
+      this.setPathInfo(path, registration.bindingType);
     }
   }
 
@@ -1483,6 +1601,17 @@ export class State extends HTMLElementBase implements IStateElement {
       this._resolveSetState?.(state);
       return;
     }
+    // 読み込み済みのボリューム（#268）: 接ぎ木はロード完了時にデータをルートの木へ一度だけ複製する
+    // ので、この要素の state を入れ直してもページには届かない（要素自身の読みだけが新しくなる）。
+    // 無言の no-op にせず、下のルート側の拒否（D22）と同じく loud に落とす。`_volumeInitializing` は
+    // スロットを予約したボリュームだけが立て、下ろさない — 接ぎ木に失敗した形もここで弾く。
+    if (this._volumeInitializing) {
+      raiseError(
+        `Cannot replace the state of <${config.tagNames.state} mount="${this.getAttribute("mount")}"> after it has loaded: ` +
+        `a volume's data is copied into the root tree when it grafts, so a new state would never reach the page. ` +
+        `Write the paths under "${this.getAttribute("mount")}" on the root state instead.`,
+      );
+    }
     // D22 と同型の防御: 接ぎ木済みボリューム / マウント記録の居るツリーの丸ごと再 set は、
     // 接ぎ木データ・quoted-path アクセサ（defineTreeAccessor）・マーカーの getterPaths・
     // 合流済み宣言面（$watch / $listKeys / $updatedCallback ゲート）を全て無言で捨てる。
@@ -1495,7 +1624,23 @@ export class State extends HTMLElementBase implements IStateElement {
         `Write the changed paths instead.`,
       );
     }
+    const previousState = this.__state;
     this._state = state;
+    // 再セットは描画し直す（#267）。読みは世代印で新しい state を返すので、確立済みのバインドも
+    // ここで新しい世代に揃える（apply/reapplyStateBindings.ts）。消えたキーのバインドも失敗として
+    // 報告させるため、前後両方の state のキーを起点にする
+    const paths = collectReapplyPaths([previousState, state]);
+    if (this._rootNode === null) {
+      // 切断中は適用先の rootNode が無い。再接続（connectedCallback）で適用し直す
+      this._pendingReapplyPaths = new Set([...(this._pendingReapplyPaths ?? []), ...paths]);
+      return;
+    }
+    this._reapplyBindings(paths);
+  }
+
+  /** 確立済みのバインドを今の世代で適用し直す（#267）。行のバインドは経路情報の台帳のパスから引く。 */
+  private _reapplyBindings(paths: Iterable<string>): void {
+    reapplyStateBindings(this, paths, this._pathRegistrations.keys());
   }
 }
 

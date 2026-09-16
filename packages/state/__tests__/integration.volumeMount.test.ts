@@ -303,8 +303,8 @@ describe("volume: 検査と chroot の面（カバレッジ確定）", () => {
   it("同じスロットの二重予約と、空パス・空セグメントは throw すること", async () => {
     const { reserveVolumeSlot, validateVolumeMountPath, isPathUnderReservedVolume } = await import("../src/webComponent/volume");
     const rootNode = document.createDocumentFragment();
-    reserveVolumeSlot(rootNode, "dup");
-    expect(() => reserveVolumeSlot(rootNode, "dup")).toThrow(/already mounted/);
+    reserveVolumeSlot(rootNode, "dup", {});
+    expect(() => reserveVolumeSlot(rootNode, "dup", {})).toThrow(/already mounted/);
     expect(() => validateVolumeMountPath("")).toThrow(/non-empty/);
     expect(() => validateVolumeMountPath("a..b")).toThrow(/empty segment/);
     // 予約判定: 配下・祖先・無関係
@@ -323,7 +323,7 @@ describe("volume: 検査と chroot の面（カバレッジ確定）", () => {
     document.body.appendChild(host);
     const rootElement = shadowRoot.querySelector("wcs-state") as State;
     await rootElement.connectedCallbackPromise;
-    reserveVolumeSlot(shadowRoot, "pending");
+    reserveVolumeSlot(shadowRoot, "pending", {});
 
     let single: unknown = "sentinel";
     let deep: unknown = "sentinel";
@@ -444,7 +444,7 @@ describe("volume: 端の分岐（chroot・直接接ぎ木・非同期 $connected
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     let grafted = false;
     try {
-      graftOrQueueVolume(document.createDocumentFragment(), rootStub, "app.i18n", { x: 1 }, () => { grafted = true; });
+      graftOrQueueVolume(document.createDocumentFragment(), rootStub, "app.i18n", { x: 1 }, () => { grafted = true; }, () => true);
       expect(grafted).toBe(true); // 失敗しても finish は呼ばれる（隔離）
       expect(error.mock.calls.some((c) => String(c[0]).includes("failed to graft"))).toBe(true);
     } finally {
@@ -514,8 +514,8 @@ describe("volume: 残りの腕", () => {
     // 2 本のボリュームを同じ rootNode で保留 → drain で両方接ぎ木（pending 配列の再利用腕）
     const rootNode = document.createDocumentFragment();
     let count = 0;
-    graftOrQueueVolume(rootNode, null, "q1", { a: 1 }, () => { count++; });
-    graftOrQueueVolume(rootNode, null, "q2", { b: 2 }, () => { count++; });
+    graftOrQueueVolume(rootNode, null, "q1", { a: 1 }, () => { count++; }, () => true);
+    graftOrQueueVolume(rootNode, null, "q2", { b: 2 }, () => { count++; }, () => true);
     drainPendingVolumes(rootNode, rootStub);
     await flush();
     expect(count).toBe(2);
@@ -1200,7 +1200,7 @@ describe("volume: ロード失敗の隔離", () => {
       expect(error.mock.calls.some((c) => c.some((a) => String(a).includes('volume "broken" failed to load')))).toBe(true);
       // ページの他のバインディングは生きている
       expect((shadowRoot.querySelector("#count") as HTMLElement).textContent).toBe("1");
-      // 接ぎ木は載っていない（予約だけが残る — 読みは undefined で騒がない）
+      // 接ぎ木は載っていない（枠の持ち主は手放すが、読みの寛容は残る — 読みは undefined で騒がない）
       let broken: unknown = "sentinel";
       rootElement.createState("readonly", (s: any) => { broken = s.broken; });
       expect(broken).toBeUndefined();

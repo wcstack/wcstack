@@ -863,21 +863,20 @@ describe("再帰 × SSR / hydration", () => {
     expect(document.querySelector("#grand")?.textContent).toBe("1033");
   });
 
-  it("【現状の記録】hydration 後、行の再帰 getter バインドは葉の更新に追従しない", async () => {
+  it("hydration 後、行の再帰 getter バインドも葉の更新に追従する（#258 X6）", async () => {
     const html = await serverRender(MARKUP, () => new TreeStateClass());
     const el = await clientHydrate(html, () => new TreeStateClass());
-    // hydration は初期適用を行わないので、この時点で実体化は 0 本
-    expect(Array.from((el as any).recursionRegistry.materializedPaths)).toEqual([]);
+    // ハイドレーションが行のバインドにも初回値を適用する。その評価が生成アクセサを実体化し、依存辺を張る
+    // （旧挙動: 初回適用が無く、この時点で実体化は 0 本・行のバインドは依存辺を持たなかった）
+    expect(Array.from((el as any).recursionRegistry.materializedPaths)).toContain("nodes.*.total");
+    expect(rowTexts(), "適用してもサーバーが書いたテキストと同じ").toEqual(["131", "2"]);
     write(el, (s: any) => { s["nodes.0.children.0.children.0.value"] = 1000; });
     await flush();
-    // DEFECT: 本来は ["1031", "2"]。行のバインドが依存辺を持たないため、
-    // サーバーが書いたテキストのまま固まる。
-    expect(rowTexts()).toEqual(["131", "2"]);
-    // 値そのものは正しい（＝表示だけが取り残されている）
+    expect(rowTexts()).toEqual(["1031", "2"]); // 旧: ["131", "2"]（サーバーが書いたテキストのまま）
     expect(read(el, (s) => s.$getAll("nodes.**.total", []))).toEqual([1031, 1010, 1000, 20, 2]);
   });
 
-  it("対照: 同じ取り残しは再帰でない行 getter でも起きる（＝スナップショット側の穴ではない）", async () => {
+  it("再帰でない行 getter も、hydration 後の葉の更新に追従する（#258 X6 は再帰に固有ではなかった）", async () => {
     const plain = () => {
       const state: any = { title: "plain", nodes: forest() };
       Object.defineProperty(state, "nodes.*.double", {
@@ -894,9 +893,9 @@ describe("再帰 × SSR / hydration", () => {
     const el = await clientHydrate(html, plain);
     write(el, (s: any) => { s["nodes.0.value"] = 7; });
     await flush();
-    // 再帰と無関係に同じ形で取り残される。展開深さをスナップショットへ載せても
-    // これは直らない（このパスには展開すべき深さが無い）。
-    expect(rowTexts()).toEqual(["2", "4"]);
+    // 旧: ["2", "4"]。再帰と無関係に同じ形で取り残されていた（スナップショット側の穴ではなく、
+    // ハイドレーションが行のバインドに初回値を適用しなかったため）
+    expect(rowTexts()).toEqual(["14", "4"]);
     expect(read(el, (s) => s.$getAll("nodes.*.double"))).toEqual([14, 4]);
   });
 
