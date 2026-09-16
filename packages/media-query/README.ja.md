@@ -34,7 +34,7 @@
 npm install @wcstack/media-query
 ```
 
-CDN（バージョン固定）: `https://esm.run/@wcstack/media-query@2.4.0/auto`
+CDN（バージョン固定）: `https://esm.run/@wcstack/media-query@2.5.0/auto`
 
 ## クイックスタート
 

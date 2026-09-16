@@ -8,6 +8,8 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+## [2.5.0] — 2026-09-17
+
 ### Changed
 
 - `@wcstack/state`: **re-setting an initialized element re-renders the page.** `setInitialState(state)` on a `<wcs-state>` that had already initialized swapped in the new state, and reads returned its values, but no established binding was applied again, so the page kept showing the previous state until a dependent path happened to be written. The re-set now re-applies the established bindings to the new state before `setInitialState()` returns — scalars, getters, row getters, `for` and `if` alike. A binding that cannot be read from the new state reports a failed apply (`console.error`, or the new state's `$errorCallback`). A re-set is not a write: it fires no `$watch` handler and no `$updatedCallback`. Lists are matched by array identity, so pass a new array when a list's length changed; re-setting with the same array instance after pushing to or splicing it in place is not supported. A detached element re-applies when it reconnects, and a view-transition arbiter on the page receives the re-apply the same way it receives an update.
@@ -240,7 +242,8 @@ Repairs from the pre-release quality loop, all with tests: `setInitialState` on 
 
 1.29.0 and earlier predate this file. Their contents are in the merged pull requests (`gh pr list --state merged`) and the git history; each GitHub Release page carries the SRI digests for that version.
 
-[Unreleased]: https://github.com/wcstack/wcstack/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/wcstack/wcstack/compare/v2.5.0...HEAD
+[2.5.0]: https://github.com/wcstack/wcstack/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/wcstack/wcstack/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/wcstack/wcstack/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/wcstack/wcstack/compare/v2.1.1...v2.2.0
