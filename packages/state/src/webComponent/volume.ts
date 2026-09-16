@@ -39,7 +39,7 @@ import { raiseError } from "../raiseError";
 import { IStateProxy } from "../proxy/types";
 import { addVolumeUpdatedCallback, createVolumeChroot, IPendingVolumeRequest, IVolumeUpdatedCallback, queuePendingVolume, recordGraftedSlot, setVolumeGraftHandler } from "./volumeShared";
 
-export { clearFailedRootNode, createVolumeChroot, drainPendingVolumes, failPendingVolumes, getVolumeUpdatedCallbacks, isPathUnderReservedVolume, reserveVolumeSlot } from "./volumeShared";
+export { clearFailedRootNode, createVolumeChroot, drainPendingVolumes, failPendingVolumes, getVolumeUpdatedCallbacks, isPathUnderReservedVolume, releaseVolumeSlot, reserveVolumeSlot } from "./volumeShared";
 export type { IVolumeUpdatedCallback } from "./volumeShared";
 import { assertValidWatchPath } from "../watch/processWatchDeclaration";
 import { addVolumeWatchEntries } from "../watch/watchRegistry";
@@ -344,7 +344,16 @@ export function graftVolume(
   const connectedCallback = (volumeState as { $connectedCallback?: unknown }).$connectedCallback;
   if (typeof connectedCallback === "function") {
     rootStateElement.createState("writable", (state) => {
-      const result = connectedCallback.call(createVolumeChroot(mountPath, state as IStateProxy));
+      let result: unknown;
+      try {
+        result = connectedCallback.call(createVolumeChroot(mountPath, state as IStateProxy));
+      } catch (error) {
+        // 同期の throw も非同期の reject と同じく報告に留める。データ・アクセサ・宣言はもう載っているので、
+        // ここから投げると接ぎ木済みのボリュームが「接ぎ木に失敗した」扱いになり、枠まで返してしまう
+        // （同じマウントパスで作り直した要素が、残ったデータと衝突する — #265）
+        console.error(`[@wcstack/state] volume "${mountPath}" $connectedCallback failed.`, error);
+        return;
+      }
       if (result instanceof Promise) {
         result.catch((error) => {
           console.error(`[@wcstack/state] volume "${mountPath}" $connectedCallback failed.`, error);
@@ -360,6 +369,12 @@ export function graftVolume(
  * ルートの名前登録（`default`）が保留分を `drainPendingVolumes` で引き取る。
  */
 function graftIsolated(rootStateElement: IStateElement, volume: IPendingVolumeRequest): void {
+  if (!volume.acquireSlot()) {
+    // 接ぎ木の直前に枠を取れなかった（#265）— 要素が外れている間に、別のボリュームが同じマウントパスを
+    // 取った。報告は acquireSlot が出す。接ぎ木せずに決着させる
+    volume.onGrafted(null);
+    return;
+  }
   let info: IVolumeGraftInfo | null = null;
   try {
     info = graftVolume(rootStateElement, volume.mountPath, volume.volumeState);
@@ -379,12 +394,19 @@ export function graftOrQueueVolume(
   mountPath: string,
   volumeState: Record<string, any>,
   onGrafted: (info: IVolumeGraftInfo | null) => void,
+  acquireSlot: () => boolean,
 ): void {
+  const request: IPendingVolumeRequest = {
+    mountPath,
+    volumeState,
+    onGrafted: onGrafted as IPendingVolumeRequest["onGrafted"],
+    acquireSlot,
+  };
   if (rootStateElement !== null) {
-    graftIsolated(rootStateElement, { mountPath, volumeState, onGrafted: onGrafted as IPendingVolumeRequest["onGrafted"] });
+    graftIsolated(rootStateElement, request);
     return;
   }
-  queuePendingVolume(rootNode, { mountPath, volumeState, onGrafted: onGrafted as IPendingVolumeRequest["onGrafted"] });
+  queuePendingVolume(rootNode, request);
 }
 
 // stateElementByName の drainPendingVolumes は import 循環（updater まで届く）を避けて
