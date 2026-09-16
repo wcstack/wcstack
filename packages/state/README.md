@@ -2,7 +2,7 @@
 
 > 🤖 **AI coding agents**: This README is a package-level reference, not the primary entry point for building a wcstack application. If you have not already done so, first read the repository [README](https://github.com/wcstack/wcstack#readme) and [AGENTS.md](https://github.com/wcstack/wcstack/blob/main/AGENTS.md), then use the [wcstack-app skill](https://github.com/wcstack/wcstack-skill).
 
-**This is not another convenient frontend framework. It is a different lineage that rearranges the premises of frontend development.**
+**This is not another convenient frontend framework. It brings a lineage established outside frontend development — the one where a path string is the contract between view and model — onto web standards.**
 
 Most libraries place the coupling point between UI, state, and components inside JavaScript. `@wcstack/state` does not. It assumes no virtual DOM, no compilation step, no hooks, no selectors. UI and state are connected by HTML and path strings alone.
 
@@ -32,7 +32,7 @@ This is not React / Vue / Solid with a different syntax. Those put the coupling 
 | JavaScript is the center of rendering | HTML and the DOM are the center |
 | State is pulled into components | Paths are declared and the DOM connects to state |
 | hooks / selectors / signals express subscriptions | Attributes and paths express bindings |
-| The whole app runs inside a framework execution model | A thin reactive layer is added on top of web standards |
+| The whole app runs inside a framework execution model | A reactive layer is added on top of web standards, and the page stays a page |
 
 The nearer relatives are the **attribute-directive, no-build libraries** — Alpine.js, petite-vue and their kind. They share the premise (attributes on plain HTML, no compiler) and differ on two points that decide the choice:
 
@@ -45,6 +45,23 @@ The nearer relatives are the **attribute-directive, no-build libraries** — Alp
 
 On those axes the comparison is concrete: the [Performance](#performance) section below is one, and the drivers under `e2e/bench/` regenerate it on your own hardware.
 
+### The Lineage Outside JavaScript
+
+The premise — *a path string is the whole contract between a view and a model* — is older than the framework era, and most of it was worked out outside JavaScript. Inside it, the direct ancestors are Knockout's `data-bind="text: user.name"` (an attribute carrying the binding, though it evaluates expressions and needs `ko.observable` wrappers) and Polymer's path system, which had dotted paths, `items.*` observers and `this.set("users.0.name", v)` — but required `set()` / `notifyPath()`, because plain assignment could not be observed on the platform of its time. Naming the older lineage is more useful than claiming novelty:
+
+| Lineage | What it already had | What differs here |
+|---|---|---|
+| **Spreadsheets** (VisiCalc, 1979) | An address, a formula declaring what a cell **is**, a dependency graph, lazy recomputation — and no update code anywhere | Names instead of grid coordinates, and one formula per *shape* rather than per cell: `get "cart.items.*.subtotal"()` is not filled down into the rows; the wildcard is the definition |
+| **Cocoa Bindings / KVC–KVO** (NeXT's EOF, 1994; Mac OS X 10.3, 2003) | Key paths (`person.address.street`), a binding triple of target + key path + value transformer, and collection operators that aggregate along a path (`@sum.items.price`) | The triple lives in the markup instead of a nib or a `bind:toObject:withKeyPath:` call, so it can be grepped, linted and diffed. Change detection is an ES Proxy over plain objects rather than KVC compliance |
+| **XForms** (W3C Recommendation, 2003) | Model / instance / view separation, `ref` paths into the instance, and `<bind calculate="…">` — a computed value declared **at a path**, the direct ancestor of a path getter | The path is an address and nothing else: the computation is a JavaScript getter on the state, not XPath inside an attribute. And it runs in a stock browser, with no XForms processor |
+| **WPF / XAML** (2006) | `{Binding Path=User.Name, Mode=TwoWay}`; a `DataContext` that re-roots a whole subtree; `UpdateSourceTrigger` choosing when the source is written; `IValueConverter` between the ends | One state tree per root, rather than a context inherited down the visual tree with `RelativeSource` / `ElementName` escapes — `state: user` is that re-rooting, written in the host's HTML. Converters are a closed set of 46 filters, not classes you register, and nothing is compiled |
+| **Android Data Binding** (2015) | The path in the layout file itself — `android:text="@{user.name}"`, `@={}` for two-way | No build step and no generated binding class, and no expressions inside the attribute |
+| **SCADA / HMI tag binding** (industrial, decades) | Widget properties wired to tag paths (`Line1/Tank/Level`) by configuration alone, and *indirect* bindings that parameterize the path (`Folder/Tag_{1}`) so one screen drives many devices | The tree carries derived values, lists and mounted components, not a flat namespace of scalars; the parameter is a loop's wildcard, resolved by the row the binding sits in rather than assigned from a dropdown |
+
+Wildcards also resemble MQTT topic filters (`sensor/+/temperature`) and OSC address patterns (`/synth/*/freq`), but those select **messages in flight**. `items.*.price` names state addresses, and the one string is both the subscription and the write target.
+
+What survives the comparison as genuinely new is narrow: the **wildcard path getter** — a getter whose *key* is a path pattern, so one definition serves every row and the dependency edge is held per pattern instead of per cell. The rest is a recombination of the lineage above onto three things none of them could assume: Custom Elements, ES Proxy and Import Maps.
+
 ## First Principle: Path as the Universal Contract
 
 In every existing framework, the **component** is the coupling point between UI and state. Components import state hooks, selectors, or reactive primitives, and the binding happens inside JavaScript. No matter how cleanly you separate your state store, there is always glue code in the component that pulls state in.
@@ -55,23 +72,23 @@ In every existing framework, the **component** is the coupling point between UI 
 |-------|---------------|----------------------|
 | **State** (`<wcs-state>`) | Data structure and business logic | Which DOM nodes are bound |
 | **UI** (`data-wcs`) | Path strings and display intent | How state is stored or computed |
-| **Components** (`state: path`) | The mount table the host writes | The other component's internals |
+| **Components** (`state: path`) | The mount table the host writes | Who mounted it, and what the rest of the tree holds |
 
 Three levels of path contracts keep everything loosely coupled:
 
-1. **UI ↔ State** — A `data-wcs="textContent: user.name"` attribute is the entire binding. No hooks, no selectors, no reactive primitives. The component's JavaScript doesn't contain a single line that references state.
+1. **UI ↔ State** — A `data-wcs="textContent: user.name"` attribute is the entire binding. No hooks, no selectors, no reactive primitives: no component code imports a reactive primitive or registers a subscription. A `bind-component` class still declares its own plain `state` object and reads it like a plain object — what never appears is glue that pulls state into the component.
 
-2. **Component ↔ Component** — The host mounts a subtree onto each component (`<my-card data-wcs="state: user">`), and volumes graft extra modules onto the tree (`<wcs-state mount="i18n">`). Components never import or depend on each other; every connection is a path prefix on the single tree, nothing more.
+2. **Component ↔ Component** — The host mounts a subtree onto each component (`<my-card data-wcs="state: user">`), and volumes graft extra modules onto the tree (`<wcs-state mount="i18n">`). Components never import one another, and a whole-object mount is a path prefix on the single tree and nothing more. Two declarative forms reach further, each spelled out where it is defined: the [per-property form](#host-usage) (`state.message: user.name`) has the host name the component's own keys, and an [exported getter](#exported-getters-reading-a-components-getter-from-outside) lets the host read a value the component computes — that binding then depends on a component being mounted there.
 
 3. **Loop context** — Inside a `for` loop, `*` acts as an abstract index. Bindings like `items.*.price` resolve to the current element automatically. The template doesn't know its concrete position — the wildcard is the contract.
 
 ### Why This Matters
 
-This is complete separation of UI and state with **no JavaScript intermediary**. You can:
+This separates UI and state with **no JavaScript intermediary**. You can:
 
-- Redesign the entire UI without touching state logic
+- Redesign the UI without touching state logic — as far as the logic does not hang off what is rendered: a live binding is one of the three [demand roots](#demand-roots--what-makes-a-getter-run), so an element you think of as display-only can be the page's only subscription
 - Refactor state structure and only update path strings
-- Read the HTML alone and understand every data dependency
+- Read the HTML and know every binding; the dependencies that are not in the HTML (`$watch`, `$streams`, `$scan`) are all declared in one place, the state
 
 The path contract works like a URL in a REST API — a simple string that both sides agree on, with no shared code between them. It's the natural result of building on HTML's declarative nature rather than inventing a template language on top of JavaScript.
 
@@ -101,29 +118,46 @@ That's it. No build, no bootstrap code, no framework.
 
 ## Features Derived from This Principle
 
-- **Declarative data binding** — `data-wcs` attribute for property / text / event / structural binding
-- **Reactive Proxy** — ES Proxy-based automatic DOM updates with dependency tracking
-- **Structural directives** — `for`, `if` / `elseif` / `else` via `<template>` elements
-- **Volumes** — `<wcs-state mount="cart">` grafts a module onto the single state tree; bindings read it as `cart.…`
-- **Row identity** — `$listKeys` keeps row DOM and row objects across refetched arrays
-- **Wildcard aggregation** — `$getAll` / `$setAll` read and write across `items.*.price` without rebuilding the array
-- **Built-in filters** — 46 filters for formatting, comparison, arithmetic, date, and more
-- **Two-way binding** — automatic for `<input>`, `<select>`, `<textarea>`
-- **Web Component binding** — bidirectional state binding with Shadow DOM components
-- **Command tokens** — invoke methods on wc-bindable custom elements from state via a pub/sub channel (`command.<method>: tokenName`)
-- **Event tokens** — the dual of command tokens: receive a wc-bindable element's dispatched events in state via `eventToken.<prop>: tokenName` + the `$on` map
-- **Streams** — fold continuous async flows (async iterables / `ReadableStream`) into reactive properties via the `$streams` declaration, with switchMap-style dependency-driven restart
-- **Path getters** — dot-path key getters (`get "users.*.fullName"()`) for virtual properties at any depth in a data tree, all defined flat in one place with automatic dependency tracking and caching
-- **Recursive paths** — `$recursion: { "nodes.*": "children.*" }` declares where a tree's shape repeats, and one `**` getter (`get "nodes.**.total"()`) covers every depth; `$getAll(path, [])` unions all depths and `$setAll(path, [], value)` broadcasts to all of them
-- **Mustache syntax** — `{{ path|filter }}` in text nodes
-- **Multiple state sources** — JSON, JS module, inline script, API, attribute
-- **SVG support** — full binding support inside `<svg>` elements
-- **Lifecycle hooks** — `$connectedCallback` / `$disconnectedCallback` / `$updatedCallback` / `$errorCallback`, plus `$stateReadyCallback` for Web Components
-- **Headless watch** — `$watch` fires on state changes whether or not the path is rendered
-- **Diagnostics** — unresolved paths, index arity and getter cycles are reported with the same codes as `@wcstack/lint` and the VS Code extension
-- **TypeScript support** — `defineState()` for typed state definitions with dot-path autocompletion ([details](docs/define-state.md)); `@wcstack/typescript` carries the same types into the HTML validator (`wcs-schema`) and type-checks inline state scripts (`wcs-tsc`) — see [docs/typescript.md](../../docs/typescript.md)
-- **Server-Side Rendering** — `enable-ssr` attribute + `@wcstack/server` for full SSR with automatic hydration
-- **Zero dependencies** — no runtime dependencies
+Every row is a section of this README. Unless it appears under [Where the neighbours come in](#where-the-neighbours-come-in), it ships in this package.
+
+| Area | In one line | Reference |
+|---|---|---|
+| **Path model** | Dot paths address state; `*` is an abstract index, `**` a depth, `$1` / `$2` name the axes | [First principle](#first-principle-path-as-the-universal-contract) · [Loop index variables](#loop-index-variables-1-2) |
+| **Binding syntax** | One `data-wcs` attribute carries property / text / class / style / attribute / event bindings; `{{ }}` in text nodes; the same inside `<svg>` | [Binding syntax](#binding-syntax) · [Mustache](#mustache-syntax) · [SVG](#svg-support) |
+| **Structural directives** | `for` and `if` / `elseif` / `else` on `<template>` elements | [Structural directives](#structural-directives) |
+| **Row identity** | Rows diff by reference, so a sort or a filter reuses the DOM; `$listKeys` keeps row DOM and row objects across refetched arrays | [`$listKeys`](#listkeys--identity-for-refetched-rows) |
+| **Forms** | Two-way binding for `input` / `select` / `textarea`, a radio group to one value, a checkbox group to an array, `#ro` / `#onchange` / `#prevent` / `#stop` | [Two-way binding](#two-way-binding) · [Modifiers](#modifiers) |
+| **Filters** | 46 built-ins, chainable, locale-aware formatting that reads `<html lang>` | [Filters](#filters) · [Locale](#locale) |
+| **Derived state** | Path getters declare virtual properties at any depth from one flat place; they chain, and they take setters | [Path getters](#path-getters-computed-properties) |
+| **Aggregation and bulk write** | `$getAll` / `$setAll` / `$resolve` read and write across `items.*.price` without rebuilding the array | [Proxy APIs](#proxy-apis) |
+| **Recursive paths** | `$recursion` declares where a tree's shape repeats; one `**` getter covers every depth | [Recursive paths](#recursive-paths-recursion) |
+| **Reactivity** | An ES Proxy tracks reads per address, caches per address, invalidates in dependency order and batches DOM writes on a microtask | [Updating state](#updating-state) · [Dependency tracking boundaries](#dependency-tracking-boundaries) |
+| **What makes a getter run** | Getters are lazy. Demand comes from a live binding, a `$watch` or a `$streams` `args` — and from nowhere else | [Demand roots](#demand-roots--what-makes-a-getter-run) |
+| **Modularity** | `mount=` grafts a module onto the one tree; `state: path` mounts a subtree onto a component; the per-property form maps single keys, and a mounted component's getters are exported at its mount point | [Volumes](#mounting-additional-state-mount) · [Whole-object mount](#whole-object-mount-state-path) |
+| **Components** | Two mutually exclusive mechanisms: a JavaScript class with `bind-component`, or HTML-only DCC | [Choosing a mechanism](#choosing-a-component-mechanism) |
+| **Wiring to other elements** | The wc-bindable protocol, spread (`...: obj`), `#init=` / `#sync=` authority, property-to-attribute mirroring | [Binding authority](#binding-authority-init--sync) · [Spread](#spread-binding) · [Inputs](#inputs-and-attribute-mirror) |
+| **Tokens** | Command tokens call an element's methods from state; event tokens carry the element's events back | [Command token](#command-token-method-binding) · [Event token](#event-token-event-binding) |
+| **Time** | `$streams` folds an async source, `$watch` reacts headlessly, `$scan` owns an accumulation that outlives both | [Choosing a time mechanism](#choosing-a-time-mechanism) |
+| **Initialization and lifecycle** | Six ways to supply the state; `$connectedCallback` … `$stateReadyCallback`; `bootstrapState()` / `createState()` | [State initialization](#state-initialization) · [Lifecycle hooks](#lifecycle-hooks) · [API reference](#api-reference) |
+| **Diagnostics** | Unresolved paths, index arity, wildcard rank and getter cycles are reported; one failing binding stays confined, and neither values nor the DOM are rolled back | [Diagnostics](#diagnostics-and-failure-handling) |
+| **Delivery** | Zero runtime dependencies, no build step, ESM, one CDN `/auto` tag; no `unsafe-eval`, Trusted Types supported | [Installation](#installation) · [docs/csp.md](../../docs/csp.md) |
+
+### Where the neighbours come in
+
+`@wcstack/state` is the reactive core and nothing else. Tooling, I/O and routing live in sibling packages, and the split is always the same shape: this package provides the hook and the contract, the neighbour provides the machinery.
+
+| Package | What it adds | What this package already provides |
+|---|---|---|
+| [`@wcstack/server`](../server/) | Renders the page on the server and hydrates the markup the client receives | The `enable-ssr` attribute and the hydration contract — [SSR](#server-side-rendering) |
+| [`@wcstack/lint`](../lint/) | `npx @wcstack/lint <file>` checks every `data-wcs` in an HTML file before it runs | The diagnostic codes and `getWcsManifest()`, both derived from this implementation — [Diagnostics](#diagnostics-and-failure-handling) |
+| VS Code extension (`wcstack-intellisense`) | The same diagnostics, plus completion, inside the editor | The same manifest and codes |
+| [`@wcstack/typescript`](../typescript/) | `wcs-schema` carries the types into the HTML validator; `wcs-tsc` type-checks inline state scripts | `defineState()`, `WcsPaths<T>` / `WcsPathValue<T, P>` — [TypeScript support](#typescript-support) |
+| [`@wcstack/devtools`](../devtools/) | A browser panel over state, wiring and update history | The instrumentation the panel reads |
+| [`@wcstack/testing`](../testing/) | `mount()` / `settle()` / `fire()` as one import | The bare recipes that need no extra package — [Testing your page](#testing-your-page) |
+| [`@wcstack/view-transition`](../view-transition/) | Animates list moves, removals and branch swaps through the View Transition API | The transition-runner hand-off; with no arbiter on the page the mutation applies directly — [Transition animations](#transition-animations) |
+| [`@wcstack/router`](../router/) · [`@wcstack/autoloader`](../autoloader/) | Declarative routing; automatic loading of undefined custom elements | Paths a route can write into, and bindings that wait for a late definition |
+| The [I/O nodes](../../README.md#additional-packages) — `fetch`, `storage`, `ws`, `midi`, … | The platform APIs as elements | The wc-bindable wiring, spread and the token protocols that connect them — [Spread](#spread-binding) |
+| [`@wcstack/signals`](../signals/) | A different reactive core, 2.5–3.5× faster on create / append for very large keyed lists | Interop — both speak wc-bindable, so the I/O nodes and DCCs are shared — [Performance](#performance) |
 
 ## Installation
 
@@ -1438,10 +1472,10 @@ Many frameworks use patterns like prop drilling, context providers, or external 
 
 1. The child references and updates the parent's state through its own state proxy — no props, no events, no awareness of the parent.
 2. When the parent's state changes, the Proxy `set` trap automatically notifies any child bindings that reference the affected path.
-3. Because the only coupling is the **path name**, both sides remain loosely coupled and independently testable.
-4. The cost is path resolution (cached at O(1) after first access) plus change propagation through the dependency graph.
+3. Because the only coupling is the **path name**, both sides stay loosely coupled. A Shadow DOM component also runs on its own ([standalone injection](#standalone-web-component-injection-e2esingle-component)); a Light DOM one does not — the host has to wire it.
+4. The cost is path resolution (cached at O(1) after first access), change propagation through the dependency graph, and the per-row binding ledger the package builds for every row it renders.
 
-This provides a lightweight approach to cross-component state management based on path resolution rather than component-level abstractions.
+This is cross-component state management built on path resolution rather than on component-level abstractions. It is not the cheapest way to render: [Performance](#performance) puts create and append at 2.5–3.5× [`@wcstack/signals`](../signals/), which is what the per-row ledger costs. What it buys is wiring that stays declarative and inspectable.
 
 ### Component Definition (Shadow DOM)
 
@@ -1610,6 +1644,7 @@ customElements.define("my-component", MyComponent);
 - `<wcs-state>` with `bind-component` must be a **direct child** of the component element (top-level)
 - The parent element must be a **custom element** (tag name containing a hyphen)
 - Light DOM components must be wired from the host (the plain, unwired form was removed in v2)
+- A **mounted** scope does not execute declaration surfaces: `$watch`, `$streams` and `$scan` are ignored there with a one-time warning, and `$recursion` / `**` getters are rejected. Declare them on the root state — a volume (`<wcs-state mount>`) can host `$watch`, while `$scan` and `$recursion` are root-only. An unwired Shadow DOM child owns an independent tree and can declare all of them
 
 ### Loop with Components
 
@@ -1962,6 +1997,22 @@ $on: {
 ### Token API
 
 Event tokens share the same `Token` pub/sub primitive as command tokens — `name` / `size` / `subscribe` / `unsubscribe` / `emit`, with subscribe-order preservation (see [Token API](#token-api)). The token is resolved from the registry on every event so a re-`setInitialState()` rebuild still reaches the latest `$on` subscribers. Disconnecting the owning `<wcs-state>` keeps the event-token registry, so `$on` handlers (and `on` scans) receive events again once the root `<wcs-state>` is re-attached; an event dispatched while it is disconnected finds no state tree and is not delivered.
+
+## Choosing a Time Mechanism
+
+The next four sections answer four different questions, and the usual mistake is to reach for the wrong one. Choose by **what you are declaring**, not by where the data comes from:
+
+| Declaration | What you declare | Owns a value | Fires | Typical use |
+|---|---|---|---|---|
+| [Path getter](#path-getters-computed-properties) | What a value **is**, in terms of the current state | No — it is recomputed and cached per address | Lazily, when a demand root reads it | Subtotals, classification, aggregates |
+| [`$streams`](#streams-streams) | An async producer, and the value folded **within one run** | Yes — the runtime owns the output | Per chunk; restarts, back to `initial`, when `args` change | Feeds, sockets, continuous observation |
+| [`$watch`](#watch-watch) | A reaction to a change | No | Once per batch per changed address, after the scan write | Side effects, "when this becomes true" |
+| [`$scan`](#scan-scan) | An accumulation over time, and what resets it | Yes — the runtime owns the output | Once per landing (`from`) or once per event (`on`) | Paging accumulation, history, counters |
+
+Two rules cut most of the confusion:
+
+- **`$updatedCallback` is not on this list.** It reports the bindings that were applied, so anything hung on it silently depends on what is rendered. See [Demand roots](#demand-roots--what-makes-a-getter-run).
+- **A `$streams` fold resets on every restart; a `$scan` does not.** When the value has to survive the restart, or has to count events rather than states, it belongs in `$scan`.
 
 ## Streams (`$streams`)
 

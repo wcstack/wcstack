@@ -2,7 +2,7 @@
 
 > 🤖 **AI coding agents**: This README is a package-level reference, not the primary entry point for building a wcstack application. If you have not already done so, first read the repository [README](https://github.com/wcstack/wcstack#readme) and [AGENTS.md](https://github.com/wcstack/wcstack/blob/main/AGENTS.md), then use the [wcstack-app skill](https://github.com/wcstack/wcstack-skill).
 
-**これは便利な既存FWの別実装ではありません。フロントエンド開発の前提を組み替える、別系譜の試みです。**
+**これは便利な既存FWの別実装ではありません。パスがビューとモデルの契約になる——フロントエンドの外で確立した系譜を、Web標準の上に持ち込む試みです。**
 
 多くのライブラリは、UI・状態・コンポーネントの結合点を JavaScript の中に置きます。`@wcstack/state` はそこを選びません。仮想DOMも、コンパイルも、hook も、selector も前提にせず、HTML とパス文字列だけを契約として UI と状態を結びつけます。
 
@@ -32,7 +32,7 @@
 | JavaScript が描画の中心 | HTML と DOM が中心 |
 | state を取り出して component へ流し込む | path を宣言して DOM を状態へ接続する |
 | hook / selector / signal で購読する | 属性とパスで束縛する |
-| フレームワークの実行モデルにアプリ全体を載せる | ブラウザ標準の上に薄い reactive layer を足す |
+| フレームワークの実行モデルにアプリ全体を載せる | ブラウザ標準の上に reactive layer を足す。ページはページのまま |
 
 より近い親戚は **属性ディレクティブ型・ビルド不要のライブラリ** — Alpine.js や petite-vue の系統です。前提（素の HTML への属性・コンパイラ不要）は共有しつつ、選択を分ける違いが 2 つあります。
 
@@ -45,6 +45,23 @@
 
 この軸に乗せれば比較は具体的になります。下の[パフォーマンス](#パフォーマンス)節がその一例で、`e2e/bench/` のドライバで手元のハードウェアでも再現できます。
 
+### JavaScript の外にある系譜
+
+「*パス文字列だけがビューとモデルの契約である*」という前提は、フレームワークの時代より古く、その大半は JavaScript の外で作られました。JavaScript の内側での直系は、Knockout の `data-bind="text: user.name"`（バインディングを属性に載せる。ただし式を評価し、`ko.observable` のラップが要る）と、Polymer のパス体系（ドットパス、`items.*` オブザーバ、`this.set("users.0.name", v)`）です。後者が `set()` / `notifyPath()` を必須にしたのは、当時のプラットフォームでは素の代入を観測できなかったからでした。新規性を主張するより、先行系譜を名指しするほうが有益です。
+
+| 系譜 | すでに持っていたもの | ここで異なる点 |
+|---|---|---|
+| **表計算**（VisiCalc, 1979） | アドレス、セルが**何であるか**を宣言する数式、依存グラフ、遅延再計算 — 更新コードはどこにもない | 格子座標ではなく名前を使い、数式をセル単位ではなく*形*単位で書く。`get "cart.items.*.subtotal"()` は各行へフィルダウンされるのではなく、ワイルドカードそのものが定義 |
+| **Cocoa Bindings / KVC–KVO**（NeXT の EOF, 1994／Mac OS X 10.3, 2003） | キーパス（`person.address.street`）、「対象 + キーパス + value transformer」の三つ組、パスに沿って集計するコレクション演算子（`@sum.items.price`） | その三つ組が nib や `bind:toObject:withKeyPath:` の呼び出しではなくマークアップにあるので、grep・lint・diff できる。変更検知は KVC 準拠ではなく素のオブジェクトへの ES Proxy |
+| **XForms**（W3C 勧告, 2003） | model / instance / view の分離、instance を指す `ref` パス、そして `<bind calculate="…">` — **パスの位置に**宣言される算出値であり、パス getter の直系の祖先 | パスはアドレスに徹し、計算は属性内の XPath ではなく state 上の JavaScript getter。XForms プロセッサなしで素のブラウザで動く |
+| **WPF / XAML**（2006） | `{Binding Path=User.Name, Mode=TwoWay}`、部分木ごと基点を張り替える `DataContext`、ソースへの書き戻し時点を選ぶ `UpdateSourceTrigger`、両端を変換する `IValueConverter` | ビジュアルツリーを継承するコンテキストと `RelativeSource` / `ElementName` の脱出口ではなく、ルートごとに 1 本の state ツリー。`state: user` がその基点張り替えで、しかもホストの HTML に書かれる。変換器は登録するクラスではなく 46 個の閉じたフィルタで、コンパイルも不要 |
+| **Android Data Binding**（2015） | レイアウトファイル自体に書くパス — `android:text="@{user.name}"`、双方向は `@={}` | ビルド手順も生成されるバインディングクラスもなく、属性の中に式を書かない |
+| **SCADA / HMI のタグバインド**（産業用・数十年） | 設定だけでウィジェットのプロパティをタグパス（`Line1/Tank/Level`）へ配線する。パスを媒介変数化する*間接*バインド（`Folder/Tag_{1}`）で 1 画面が多数の機器を駆動する | ツリーが持つのはスカラーのフラットな名前空間ではなく、派生値・リスト・マウントされたコンポーネント。媒介変数はドロップダウンから与えるものではなく、バインディングが置かれた行が解決するループのワイルドカード |
+
+ワイルドカードは MQTT のトピックフィルタ（`sensor/+/temperature`）や OSC のアドレスパターン（`/synth/*/freq`）にも似ていますが、あちらが選ぶのは**流れているメッセージ**です。`items.*.price` が名指すのは state のアドレスで、同じ 1 本の文字列が購読先であり書き込み先でもあります。
+
+この比較を経て本当に新しいと言えるのは狭い範囲です。**ワイルドカードパス getter** — *キー*がパスパターンである getter なので、定義 1 本が全行に効き、依存エッジはセル単位ではなくパターン単位で保持されます。それ以外は、上の系譜を、いずれもが前提にできなかった 3 つのもの（Custom Elements・ES Proxy・Import Maps）の上へ組み直したものです。
+
 ## 第一原理: パスが唯一の契約
 
 既存の多くのフレームワークでは、**コンポーネント**がUIと状態の結合点になっています。状態ストアを外部に切り出しても、コンポーネント内にフックやセレクタ、リアクティブプリミティブといった**状態を引き込むためのコード**が必ず必要になります。つまり、UIと状態は常にJavaScriptの中で結びついているのです。
@@ -55,23 +72,23 @@
 |----------|----------------|--------------|
 | **状態** (`<wcs-state>`) | データ構造とビジネスロジック | どのDOM要素がバインドされているか |
 | **UI** (`data-wcs`) | パス文字列と表示意図 | 状態がどう保存・算出されているか |
-| **コンポーネント** (`state: path`) | ホストが書くマウント表 | 他コンポーネントの内部実装 |
+| **コンポーネント** (`state: path`) | ホストが書くマウント表 | 誰がマウントしたのか、ツリーの他の部分に何があるのか |
 
 3つのレベルのパス契約が疎結合を実現しています:
 
-1. **UI ↔ 状態** — `data-wcs="textContent: user.name"` という属性がバインディングのすべてです。フックもセレクタもリアクティブプリミティブもありません。コンポーネントのJavaScriptには、状態を参照するコードが**一行も**必要ありません。
+1. **UI ↔ 状態** — `data-wcs="textContent: user.name"` という属性がバインディングのすべてです。フックもセレクタもリアクティブプリミティブもありません。コンポーネント側のコードがリアクティブプリミティブを import することも、購読を登録することもありません。`bind-component` するクラスは素の `state` オブジェクトを自分で宣言し、素のオブジェクトとして読み書きします。存在しないのは、状態をコンポーネントへ引き込む glue コードのほうです。
 
-2. **コンポーネント ↔ コンポーネント** — ホストが各コンポーネントへ部分木をマウントし（`<my-card data-wcs="state: user">`）、ボリュームが追加モジュールをツリーに接ぎ木します（`<wcs-state mount="i18n">`）。コンポーネント同士がお互いを直接インポートしたり参照したりすることはありません。すべての接続は単一ツリー上のパス接頭辞だけです。
+2. **コンポーネント ↔ コンポーネント** — ホストが各コンポーネントへ部分木をマウントし（`<my-card data-wcs="state: user">`）、ボリュームが追加モジュールをツリーに接ぎ木します（`<wcs-state mount="i18n">`）。コンポーネント同士がお互いを import することはなく、丸ごとマウントは単一ツリー上のパス接頭辞そのものです。これより踏み込む宣言形式が 2 つあり、それぞれ定義箇所に明記しています。[個別対応付け](#ホスト側の使用方法)（`state.message: user.name`）はホストがコンポーネント自身のキー名を書くことになり、[公開 getter](#公開-getterコンポーネントの-getter-を外から読む) はコンポーネントが計算した値をホストが読むので、そのバインディングはそこにコンポーネントがマウントされていることに依存します。
 
 3. **ループコンテキスト** — `for` ループ内では `*` が抽象インデックスとして機能します。`items.*.price` のようなバインディングは自動的に現在の要素へと解決されます。テンプレートは自身の具体的な位置（インデックス）を知る必要がなく、ワイルドカードがその契約となります。
 
 ### なぜこれが重要なのか
 
-これはUIと状態の完全な分離を、**JavaScriptのコードを介することなく**実現していることを意味します。つまり:
+これはUIと状態の分離を、**JavaScriptのコードを介することなく**実現していることを意味します。つまり:
 
-- UIをすべて作り直しても、状態のロジックに触れる必要がありません。
+- UIを作り直しても、状態のロジックに触れる必要がありません — ただしロジックが描画内容にぶら下がっていない範囲で。live binding は 3 つある[評価のきっかけ](#評価のきっかけdemand-root)の 1 つなので、表示専用のつもりの要素がページ唯一の購読になりえます。
 - 状態のデータ構造をリファクタリングしても、パス文字列の更新だけで済みます。
-- HTMLを読むだけで、すべてのデータ依存関係を把握できます。
+- HTMLを読めば、すべてのバインディングを把握できます。HTMLに現れない依存（`$watch`・`$streams`・`$scan`）は、すべて state という 1 箇所に宣言されています。
 
 このパスによる契約は、REST APIのURLと同じ発想です — 両者が合意するシンプルな文字列だけが存在し、そこに共有するコードはありません。これはJavaScriptの上に独自のテンプレート言語を発明するのではなく、HTML本来の宣言的な性質をフルに活かした結果として生まれた設計です。
 
@@ -101,29 +118,46 @@
 
 ## この原理から導かれる機能
 
-- **宣言的データバインディング** — `data-wcs` 属性によるプロパティ / テキスト / イベント / 構造バインディング
-- **リアクティブ Proxy** — ES Proxy による依存追跡付き自動 DOM 更新
-- **構造ディレクティブ** — `<template>` 要素による `for`, `if` / `elseif` / `else`
-- **ボリューム** — `<wcs-state mount="cart">` がモジュールを 1 本の state ツリーに接ぎ木し、バインディングは `cart.…` で読む
-- **行の同一性** — `$listKeys` が再取得した配列でも行の DOM と行オブジェクトを保つ
-- **ワイルドカード集計** — `$getAll` / `$setAll` が配列を作り直さずに `items.*.price` を横断して読み書きする
-- **組み込みフィルタ** — フォーマット、比較、算術、日付など 46 種類
-- **双方向バインディング** — `<input>`, `<select>`, `<textarea>` で自動有効
-- **Web Component バインディング** — Shadow DOM コンポーネントとの双方向状態バインディング
-- **command token** — pub/sub チャネル（`command.<method>: tokenName`）で state から wc-bindable カスタム要素のメソッドを起動
-- **event token** — command token の双対。wc-bindable 要素が dispatch するイベントを `eventToken.<prop>: tokenName` + `$on` マップで state が受信
-- **stream** — `$streams` 宣言で連続的な非同期フロー（async iterable / `ReadableStream`）を fold して reactive プロパティ化。switchMap 型の依存駆動 restart 付き
-- **パス getter** — ドットパスキー getter（`get "users.*.fullName"()`）によるデータツリーの任意の深さへのフラットな仮想プロパティ定義、自動依存追跡・キャッシュ
-- **再帰パス** — `$recursion: { "nodes.*": "children.*" }` で木の形が繰り返す場所を宣言し、1 本の `**` getter（`get "nodes.**.total"()`）が全深さを覆う。`$getAll(path, [])` は全深さを合併し、`$setAll(path, [], value)` は全深さへブロードキャストする
-- **Mustache 構文** — テキストノードでの `{{ path|filter }}`
-- **複数の状態ソース** — JSON, JS モジュール, インラインスクリプト, API, 属性
-- **SVG サポート** — `<svg>` 要素内でのフルバインディング対応
-- **ライフサイクルフック** — `$connectedCallback` / `$disconnectedCallback` / `$updatedCallback` / `$errorCallback`、Web Component 用 `$stateReadyCallback`
-- **headless な watch** — `$watch` はパスが描画されていてもいなくても state の変化で発火する
-- **診断** — 解決しないパス・添字の本数・getter の循環を `@wcstack/lint`・VS Code 拡張と同じ診断 code で報告する
-- **TypeScript サポート** — `defineState()` によるドットパス自動補完付き型付き状態定義（[詳細](docs/define-state.ja.md)）。`@wcstack/typescript` は同じ型を HTML の検証器へ運び（`wcs-schema`）、インライン state スクリプトを型検査する（`wcs-tsc`）— [docs/typescript.ja.md](../../docs/typescript.ja.md)
-- **サーバーサイドレンダリング** — `enable-ssr` 属性 + `@wcstack/server` でフル SSR と自動ハイドレーション
-- **依存ゼロ** — ランタイム依存なし
+各行はこの README の 1 節に対応します。[周辺パッケージの役割](#周辺パッケージの役割)に挙げたもの以外は、すべてこのパッケージ単体の機能です。
+
+| 領域 | 一行で言うと | 参照 |
+|---|---|---|
+| **パスモデル** | ドットパスが state を指す。`*` は抽象添字、`**` は深さ、`$1` / `$2` は軸の名前 | [第一原理](#第一原理-パスが唯一の契約) · [ループインデックス変数](#ループインデックス変数1-2) |
+| **バインディング構文** | 1 つの `data-wcs` 属性にプロパティ / テキスト / class / style / 属性 / イベントを載せる。テキストノードでは `{{ }}`、`<svg>` の内側でも同じ | [バインディング構文](#バインディング構文) · [Mustache](#mustache-構文) · [SVG](#svg-サポート) |
+| **構造ディレクティブ** | `<template>` 上の `for` と `if` / `elseif` / `else` | [構造ディレクティブ](#構造ディレクティブ) |
+| **行の同一性** | 行は参照で差分を取るので、並べ替えや絞り込みで DOM を再利用する。`$listKeys` は再取得した配列でも行 DOM と行オブジェクトを保つ | [`$listKeys`](#listkeys--再取得された行の同一性) |
+| **フォーム** | `input` / `select` / `textarea` の双方向バインディング、ラジオグループと単一値、チェックボックスグループと配列、`#ro` / `#onchange` / `#prevent` / `#stop` | [双方向バインディング](#双方向バインディング) · [修飾子](#修飾子) |
+| **フィルタ** | 46 種類の組み込み、チェーン可能、`<html lang>` を見るロケール依存フォーマット | [フィルタ](#フィルタ) · [ロケール](#ロケール) |
+| **派生状態** | パス getter がデータツリーの任意の深さの仮想プロパティを 1 箇所にフラットに宣言する。チェーンでき、setter も書ける | [パス getter](#パス-getter算出プロパティ) |
+| **集計と一括書き込み** | `$getAll` / `$setAll` / `$resolve` が `items.*.price` を横断して読み書きする。配列は作り直さない | [Proxy API](#proxy-api) |
+| **再帰パス** | `$recursion` が木の形の繰り返し地点を宣言し、1 本の `**` getter が全深さを覆う | [再帰パス](#再帰パスrecursion) |
+| **リアクティビティ** | ES Proxy がアドレス単位で読み取りを追跡・キャッシュし、依存順に無効化し、DOM 書き込みをマイクロタスクでまとめる | [状態の更新](#状態の更新) · [依存追跡の境界](#依存追跡の境界) |
+| **getter が動く条件** | getter は遅延評価。評価需要は live binding・`$watch`・`$streams` の `args` の 3 箇所からしか生まれない | [評価のきっかけ](#評価のきっかけdemand-root) |
+| **モジュール化** | `mount=` がモジュールを 1 本のツリーに接ぎ木し、`state: path` が部分木をコンポーネントにマウントする。個別対応付けは単一キーを繋ぎ、マウントされたコンポーネントの getter はマウント点で公開される | [ボリューム](#追加の状態をマウントするmount) · [丸ごとマウント](#丸ごとマウントstate-path) |
+| **コンポーネント** | 排他的な 2 方式 — JavaScript クラス＋`bind-component` か、HTML だけの DCC か | [機構の選び方](#コンポーネント機構の選び方) |
+| **他要素との配線** | wc-bindable プロトコル、spread（`...: obj`）、`#init=` / `#sync=` の authority、プロパティ→属性ミラー | [バインディング authority](#バインディング-authority-init--sync) · [Spread](#spread-バインディング) · [Inputs](#inputs-と属性ミラー) |
+| **トークン** | command token が state から要素のメソッドを呼び、event token が要素のイベントを state へ戻す | [Command token](#command-tokenメソッドバインディング) · [Event token](#event-tokenイベントバインディング) |
+| **時間** | `$streams` が非同期ソースを fold し、`$watch` が headless に反応し、`$scan` が両者を越えて残る累積値を持つ | [時間を扱う機構の選び方](#時間を扱う機構の選び方) |
+| **初期化とライフサイクル** | state の供給は 6 通り。`$connectedCallback` 〜 `$stateReadyCallback`、`bootstrapState()` / `createState()` | [状態の初期化](#状態の初期化) · [ライフサイクルフック](#ライフサイクルフック) · [API リファレンス](#api-リファレンス) |
+| **診断** | 解決しないパス・添字の本数・階数・getter の循環を報告する。失敗はそのバインディング 1 本に閉じ、値も DOM も巻き戻さない | [診断と失敗の扱い](#診断と失敗の扱い) |
+| **配布** | ランタイム依存ゼロ、ビルド不要、ESM、CDN の `/auto` 1 タグ。`unsafe-eval` 不要で Trusted Types 対応 | [インストール](#インストール) · [docs/csp.ja.md](../../docs/csp.ja.md) |
+
+### 周辺パッケージの役割
+
+`@wcstack/state` はリアクティブコアだけを担います。ツール・I/O・ルーティングは別パッケージで、分担はいつも同じ形です —— このパッケージが接続点と契約を用意し、周辺パッケージが機構を持ち込みます。
+
+| パッケージ | 加わるもの | このパッケージ側にあるもの |
+|---|---|---|
+| [`@wcstack/server`](../server/) | サーバー側での描画と、クライアントに届いた markup のハイドレーション | `enable-ssr` 属性とハイドレーション契約 — [SSR](#サーバーサイドレンダリング) |
+| [`@wcstack/lint`](../lint/) | `npx @wcstack/lint <file>` が HTML 中の `data-wcs` を実行前に検査する | 診断 code と `getWcsManifest()`（どちらもこの実装から導出）— [診断](#診断と失敗の扱い) |
+| VS Code 拡張（`wcstack-intellisense`） | 同じ診断と補完をエディタ内で | 同じ manifest と診断 code |
+| [`@wcstack/typescript`](../typescript/) | `wcs-schema` が型を HTML 検証器へ運び、`wcs-tsc` がインライン state スクリプトを型検査する | `defineState()`、`WcsPaths<T>` / `WcsPathValue<T, P>` — [TypeScript サポート](#typescript-サポート) |
+| [`@wcstack/devtools`](../devtools/) | state・配線・更新履歴を見るブラウザパネル | パネルが読む計装 |
+| [`@wcstack/testing`](../testing/) | `mount()` / `settle()` / `fire()` を 1 import で | 追加パッケージなしで書ける素のレシピ — [ページをテストする](#ページをテストする) |
+| [`@wcstack/view-transition`](../view-transition/) | リストの移動・削除や分岐の入れ替えを View Transition API でアニメーションさせる | transition-runner の受け渡し。ページに arbiter がなければ変更はそのまま適用される — [遷移アニメーション](#遷移アニメーション) |
+| [`@wcstack/router`](../router/) · [`@wcstack/autoloader`](../autoloader/) | 宣言的ルーティング、未定義カスタム要素の自動読み込み | ルートが書き込めるパスと、遅延定義を待つバインディング |
+| [I/O ノード群](../../README.ja.md#追加パッケージ) — `fetch`, `storage`, `ws`, `midi`, … | プラットフォーム API を要素として | それらを繋ぐ wc-bindable 配線・spread・トークンプロトコル — [Spread](#spread-バインディング) |
+| [`@wcstack/signals`](../signals/) | もう 1 つのリアクティブコア。巨大な keyed リストの生成・追加が 2.5〜3.5 倍速い | 相互運用 —— どちらも wc-bindable を話すので I/O ノードと DCC は共有できる — [パフォーマンス](#パフォーマンス) |
 
 ## インストール
 
@@ -1437,10 +1471,10 @@ export default {
 
 1. 子コンポーネントは、自身の状態プロキシを通じて親の状態を参照・更新します。props の受け渡しやイベント発行など、親の存在を意識したコーディングは必要ありません。
 2. 親の状態が変更されると、Proxy の `set` トラップが影響するパスを参照している子のバインディングへ自動的に通知します。
-3. 結合点は**パス名のみ**であるため、親と子は完全に疎結合な状態を保ち、それぞれ独立してテスト可能です。
-4. 実行コストは、パスの解決（初回アクセス後はキャッシュされるため O(1) で動作します）と、依存グラフを通じた変更の伝播のみです。
+3. 結合点は**パス名のみ**であるため、親と子は疎結合に保たれます。Shadow DOM のコンポーネントは単体でも動作しますが（[独立した Web Component への状態注入](#独立した-web-component-への状態注入e2esingle-component)）、Light DOM はホストからの配線が必須です。
+4. 実行コストは、パスの解決（初回アクセス後はキャッシュされるため O(1) で動作します）、依存グラフを通じた変更の伝播、そして描画する行ごとに構築されるバインディング台帳です。
 
-これは、コンポーネントレベルの複雑な抽象化ではなく、「パスの解決」に基づいたコンポーネント間状態管理への軽量なアプローチです。
+これは、コンポーネントレベルの抽象化ではなく「パスの解決」に基づくコンポーネント間の状態管理です。描画が最も安い方式という意味ではありません。[パフォーマンス](#パフォーマンス)のとおり生成・追加は [`@wcstack/signals`](../signals/) の 2.5〜3.5 倍で、それが行ごとの台帳の代価です。得られるのは、配線が宣言的で検査可能であることです。
 
 ### コンポーネント定義（Shadow DOM）
 
@@ -1610,6 +1644,7 @@ customElements.define("my-component", MyComponent);
 - `bind-component` 付きの `<wcs-state>` はコンポーネント要素の**直下**（トップレベル）に配置すること
 - 親要素は**カスタム要素**（ハイフンを含むタグ名）であること
 - Light DOM コンポーネントはホストからの配線が必須（plain 形は v2 で廃止）
+- **マウントされた**スコープは宣言面を実行しない。`$watch`・`$streams`・`$scan` は一度だけ警告を出して無視され、`$recursion` / `**` getter は拒否される。ルート state に宣言すること（ボリューム `<wcs-state mount>` は `$watch` を持てるが、`$scan` と `$recursion` はルート専用）。配線されていない Shadow DOM の子は独立したツリーを持つため、いずれも宣言できる
 
 ### ループ内でのコンポーネント使用
 
@@ -1959,11 +1994,27 @@ $on: {
 
 event token は command token と同じ `Token` pub/sub プリミティブを共有します —— `name` / `size` / `subscribe` / `unsubscribe` / `emit`、subscribe 順の保持つき（[Token API](#token-api) 参照）。token はイベントごとに registry から解決されるため、`setInitialState()` による再構築後も最新の `$on` 購読者に届きます。所有する `<wcs-state>` が disconnect されても event-token registry は保持されるので、ルート `<wcs-state>` を付け直せば `$on` ハンドラ（と `on` の scan）は再びイベントを受けます。切断中に dispatch されたイベントは state ツリーが見つからず、届きません。
 
+## 時間を扱う機構の選び方
+
+続く 4 節は、それぞれ別の問いに答えるものです。取り違えが起きやすいので、データの出どころではなく**何を宣言しているか**で選んでください。
+
+| 宣言 | 宣言するもの | 値を持つか | 発火 | 主な用途 |
+|---|---|---|---|---|
+| [パス getter](#パス-getter算出プロパティ) | その値が現在の state から見て**何であるか** | 持たない（アドレス単位で再計算・キャッシュ） | 評価需要が読んだときに遅延評価 | 小計、分類、集計 |
+| [`$streams`](#streamstreams) | 非同期の供給元と、**1 回の実行の中で** fold される値 | 持つ（出力は runtime の所有） | chunk ごと。`args` が変われば `initial` に戻して restart | フィード、ソケット、継続的な観測 |
+| [`$watch`](#watchwatch) | 変更への反応 | 持たない | 変化したアドレスごとにバッチ 1 回、scan の書き込みの後 | 副作用、「条件が成立したとき」 |
+| [`$scan`](#scanscan) | 時間をまたぐ累積値と、それを戻す条件 | 持つ（出力は runtime の所有） | 着地ごと（`from`）またはイベントごと（`on`） | ページ蓄積、履歴、件数 |
+
+混乱のほとんどは、次の 2 点で解けます。
+
+- **`$updatedCallback` はこの表に入りません。** 適用されたバインディングを報告するものなので、そこに処理をぶら下げると描画内容に暗黙に依存します。[評価のきっかけ](#評価のきっかけdemand-root)を参照してください。
+- **`$streams` の fold は restart のたびに戻り、`$scan` は戻りません。** restart を越えて値を保ちたいとき、あるいは状態ではなく出来事を数えたいときは `$scan` の領分です。
+
 ## Stream（`$streams`）
 
 command token / event token が運ぶのは離散的なやり取りです。**`$streams`** は残る形 —— 連続的なフローをカバーします。非同期 producer（async iterable / async generator / `ReadableStream`）を宣言すると、フレームワークがそれを **fold して単一の reactive プロパティに畳み込みます** —— 各チャンクは通常のパス代入を通るため、バインディング・パス getter・`$updatedCallback` は自分で値を代入した場合とまったく同じように反応します。`args` 関数が読んだ state パスが変化すると、実行中の producer は abort され、新しい引数で source が張り直されます（switchMap 型の依存駆動 restart）。stream は `$connectedCallback` 完了後に eager に起動し、要素の disconnect で abort されます。
 
-`$updatedCallback` は引き続き binding 駆動です。stream 宣言だけでは headless な購読にならず、その value/status/error の live DOM binding が実際に適用されたときだけ callback の path に現れます。描画せずに stream の値へ反応したい場合は、そのパスに [`$watch`](#watch-watch) を宣言してください。観測契約は [stream リファレンス](docs/streams.md) を参照してください。
+`$updatedCallback` は引き続き binding 駆動です。stream 宣言だけでは headless な購読にならず、その value/status/error の live DOM binding が実際に適用されたときだけ callback の path に現れます。描画せずに stream の値へ反応したい場合は、そのパスに [`$watch`](#watchwatch) を宣言してください。観測契約は [stream リファレンス](docs/streams.md) を参照してください。
 
 ```html
 <wcs-state>
