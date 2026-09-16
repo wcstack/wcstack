@@ -2840,8 +2840,14 @@ function cleanupCollectedMountRecord(held) {
     }
 }
 const collectedMountRegistry = new FinalizationRegistry(cleanupCollectedMountRecord);
+/** マウント記録 → スコープ根。行 content をその場で使い回したときの張り直しが引く（#4） */
+const scopeRootByMountRecord = new WeakMap();
+function getScopeRootByMountRecord(record) {
+    return scopeRootByMountRecord.get(record) ?? null;
+}
 function registerMountRecord(scopeRoot, record) {
     mountRecordByScopeRoot.set(scopeRoot, record);
+    scopeRootByMountRecord.set(record, scopeRoot);
     let byMarker = mountRecordsByStateElement.get(record.parentStateElement);
     if (typeof byMarker === "undefined") {
         byMarker = new Map();
@@ -2906,6 +2912,11 @@ function getMountRecordsForStateElement(stateElement) {
         }
     }
     return records;
+}
+/** 親 state element がマウントを 1 つでも持つか（D18: 無ければ dispatch は分岐 1 つで抜ける） */
+function stateElementHasMounts(stateElement) {
+    const byMarker = mountRecordsByStateElement.get(stateElement);
+    return typeof byMarker !== "undefined" && byMarker.size > 0;
 }
 /**
  * パスに含まれるマーカーからマウント記録を引く。`hasMounts` が真のときだけ呼ぶこと。
@@ -6071,6 +6082,14 @@ function applyChangeToCommand(binding, _context, newValue) {
     subscribedBindings.set(binding, { token, unsubscribe, elementRef });
 }
 
+const bindingsByContent = new WeakMap();
+function getBindingsByContent(content) {
+    return bindingsByContent.get(content) ?? [];
+}
+function setBindingsByContent(content, bindings) {
+    bindingsByContent.set(content, bindings);
+}
+
 const indexBindingsByContent = new WeakMap();
 function getIndexBindingsByContent(content) {
     return indexBindingsByContent.get(content) ?? [];
@@ -6817,12 +6836,19 @@ function computeStableIndexSet(diff) {
     return stable;
 }
 
-const bindingsByContent = new WeakMap();
-function getBindingsByContent(content) {
-    return bindingsByContent.get(content) ?? [];
+/**
+ * 要素書き込みの入れ替えが揃ったとき、`for` の描画基準に据える「書き込む前の並びの写し」の印（#4）。
+ *
+ * `for` はこの写しとの差分でだけ、同じ位置で外す行と入る行の Content をその場で使い回す
+ * （applyChangeToFor の collectInPlaceContents）。配列の置換の差分は、これまでどおり外した行の
+ * Content をプールに通す。
+ */
+const swapBaselineLists = new WeakSet();
+function markSwapBaselineList(list) {
+    swapBaselineLists.add(list);
 }
-function setBindingsByContent(content, bindings) {
-    bindingsByContent.set(content, bindings);
+function isSwapBaselineList(list) {
+    return swapBaselineLists.has(list);
 }
 
 const bindingSessionByContent = new WeakMap();
@@ -7131,6 +7157,32 @@ class Content {
         this._mounted = false;
         return true;
     }
+    /**
+     * 自分のノードを DOM に残したまま、unmount と同じ解体をする（#4）。
+     *
+     * 行の置き換えで `for` が同じ位置の Content を新しい行に使い回すとき、入力中の欄を DOM から
+     * 外さないための経路。解体そのものは省けない — 中の構造ディレクティブ（ネストした for / if）が
+     * 持つ Content を古い行のまま残すと、新しい行として活性化したときに内側の行が二重に描かれ、
+     * `if` の中身は古い行のアドレスに紐づいたまま取り残される。
+     */
+    unmountInPlace() {
+        getBindingSessionByContent(this)?.dispose();
+        this._teardownBindings();
+    }
+    /** binding ごとの解体（ネストした構造ディレクティブの Content・アドレス台帳） */
+    _teardownBindings() {
+        const bindings = getBindingsByContent(this);
+        for (const binding of bindings) {
+            if (recursiveBindingTypes.has(binding.bindingType)) {
+                const contents = getContentSetByNode(binding.node);
+                for (const content of contents) {
+                    content.unmount();
+                }
+            }
+            clearStateAddressByBindingInfo(binding);
+            clearAbsoluteStateAddressByBinding(binding);
+        }
+    }
     unmount() {
         getBindingSessionByContent(this)?.dispose();
         for (const node of this._childNodeArray) {
@@ -7304,6 +7356,1346 @@ function createContent(bindingInfo) {
     setNodesByContent(content, initialInfo.nodes);
     setContentByNode(bindingInfo.node, content);
     return content;
+}
+
+const MUSTACHE_REGEX = /\{\{\s*(.+?)\s*\}\}/g;
+const SKIP_TAGS = new Set(["SCRIPT", "STYLE"]);
+function convertMustacheToComments(root) {
+    if (!config.enableMustache) {
+        return;
+    }
+    convertTextNodes(root);
+    const templates = Array.from(root.querySelectorAll("template"));
+    for (const template of templates) {
+        if (template.namespaceURI === SVG_NAMESPACE) {
+            const newTemplate = document.createElement("template");
+            const childNodes = Array.from(template.childNodes);
+            for (let i = 0; i < childNodes.length; i++) {
+                const childNode = childNodes[i];
+                newTemplate.content.appendChild(childNode);
+            }
+            for (const attr of template.attributes) {
+                newTemplate.setAttribute(attr.name, attr.value);
+            }
+            template.replaceWith(newTemplate);
+            convertMustacheToComments(newTemplate.content);
+        }
+        else {
+            convertMustacheToComments(template.content);
+        }
+    }
+}
+function convertTextNodes(root) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const textNodes = [];
+    while (walker.nextNode()) {
+        textNodes.push(walker.currentNode);
+    }
+    for (const textNode of textNodes) {
+        if (textNode.parentElement && SKIP_TAGS.has(textNode.parentElement.tagName)) {
+            continue;
+        }
+        replaceTextNode(textNode);
+    }
+}
+function replaceTextNode(textNode) {
+    const text = textNode.data;
+    MUSTACHE_REGEX.lastIndex = 0;
+    if (!MUSTACHE_REGEX.test(text)) {
+        return;
+    }
+    MUSTACHE_REGEX.lastIndex = 0;
+    const fragment = document.createDocumentFragment();
+    let lastIndex = 0;
+    let match;
+    while ((match = MUSTACHE_REGEX.exec(text)) !== null) {
+        if (match.index > lastIndex) {
+            fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+        }
+        const bindText = match[1];
+        fragment.appendChild(document.createComment(`@@: ${bindText}`));
+        lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < text.length) {
+        fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
+    }
+    textNode.parentNode.replaceChild(fragment, textNode);
+}
+
+let _notFilterInfo = undefined;
+function createNotFilter() {
+    if (_notFilterInfo) {
+        return _notFilterInfo;
+    }
+    const filterName = "not";
+    const args = [];
+    const filterFn = builtinFilterFn(filterName, args)(outputBuiltinFilters);
+    _notFilterInfo = {
+        filterName,
+        args,
+        filterFn,
+    };
+    return _notFilterInfo;
+}
+
+const COMMENT_REGEX = /^(\s*@@\s*(?:.*?)\s*:\s*)(.+?)(\s*)$/;
+function expandShorthandInStatePart(statePart, forPath) {
+    const prefix = forPath + DELIMITER + WILDCARD;
+    const pipeIndex = statePart.indexOf('|');
+    let pathPart;
+    let suffix;
+    if (pipeIndex !== -1) {
+        pathPart = statePart.slice(0, pipeIndex).trim();
+        suffix = statePart.slice(pipeIndex);
+    }
+    else {
+        pathPart = statePart.trim();
+        suffix = '';
+    }
+    if (pathPart === '.') {
+        pathPart = prefix;
+    }
+    else if (pathPart.startsWith('.')) {
+        pathPart = prefix + DELIMITER + pathPart.slice(1);
+    }
+    else {
+        return statePart;
+    }
+    if (suffix.length > 0) {
+        return pathPart + suffix;
+    }
+    return pathPart;
+}
+function expandCommentData(data, forPath) {
+    const match = COMMENT_REGEX.exec(data);
+    if (match === null) {
+        return data;
+    }
+    const commentPrefix = match[1];
+    const bindText = match[2];
+    const commentSuffix = match[3];
+    const expanded = expandShorthandInStatePart(bindText, forPath);
+    return commentPrefix + expanded + commentSuffix;
+}
+function expandBindAttribute(attrValue, forPath) {
+    const parts = attrValue.split(';');
+    let changed = false;
+    const result = parts.map(part => {
+        const trimmed = part.trim();
+        if (trimmed.length === 0)
+            return part;
+        const colonIndex = trimmed.indexOf(':');
+        if (colonIndex === -1)
+            return part;
+        const propPart = trimmed.slice(0, colonIndex).trim();
+        const statePart = trimmed.slice(colonIndex + 1).trim();
+        const expanded = expandShorthandInStatePart(statePart, forPath);
+        if (expanded !== statePart) {
+            changed = true;
+            return `${propPart}: ${expanded}`;
+        }
+        return part;
+    });
+    if (!changed)
+        return attrValue;
+    return result.join(';');
+}
+function expandShorthandInBindAttribute(attrValue, forPath) {
+    return expandBindAttribute(attrValue, forPath);
+}
+function expandShorthandPaths(root, forPath) {
+    const bindAttr = config.bindAttributeName;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT | NodeFilter.SHOW_ELEMENT);
+    while (walker.nextNode()) {
+        const node = walker.currentNode;
+        if (node.nodeType === Node.COMMENT_NODE) {
+            const comment = node;
+            comment.data = expandCommentData(comment.data, forPath);
+            continue;
+        }
+        const element = node;
+        if (element instanceof HTMLTemplateElement) {
+            continue;
+        }
+        const attr = element.getAttribute(bindAttr);
+        if (attr !== null) {
+            const expanded = expandBindAttribute(attr, forPath);
+            if (expanded !== attr) {
+                element.setAttribute(bindAttr, expanded);
+            }
+        }
+    }
+}
+
+function getNodePath(node) {
+    let currentNode = node;
+    const path = [];
+    while (currentNode.parentNode !== null) {
+        const nodes = Array.from(currentNode.parentNode.childNodes);
+        const index = nodes.indexOf(currentNode);
+        path.unshift(index);
+        currentNode = currentNode.parentNode;
+    }
+    return path;
+}
+
+function getFragmentNodeInfos(fragment) {
+    const fragmnentNodeInfos = [];
+    const subscriberNodes = getSubscriberNodes(fragment);
+    for (const subscriberNode of subscriberNodes) {
+        const parseBindingTextResults = getParseBindTextResults(subscriberNode);
+        let node = subscriberNode;
+        // テンプレート登録時の事前正規化: text 専用の wcs-text コメントは、この時点で
+        // 空 Text に置き換えておく。行 clone は最初から Text を持ち、getBindingInfos が
+        // その Text を replaceNode に使うため、行ごとの createTextNode と start() 時の
+        // replaceChild（コメント→Text 差し替え）が丸ごと不要になる。
+        // 置換は同じ位置なので nodePath は不変。wcs-for/if 等の構造コメントは
+        // アンカーとしてコメントのまま維持する（bindingType で判別）。
+        // 非フラグメント経路（実 DOM 上のコメント）は従来どおり実行時に差し替える。
+        if (subscriberNode.nodeType === Node.COMMENT_NODE
+            && parseBindingTextResults.length === 1
+            && parseBindingTextResults[0].bindingType === "text"
+            && subscriberNode.parentNode !== null) {
+            const textNode = document.createTextNode("");
+            subscriberNode.parentNode.replaceChild(textNode, subscriberNode);
+            node = textNode;
+        }
+        fragmnentNodeInfos.push({
+            nodePath: getNodePath(node),
+            parseBindTextResults: parseBindingTextResults,
+        });
+    }
+    return fragmnentNodeInfos;
+}
+
+function optimizeFragment(fragment) {
+    const childNodes = Array.from(fragment.childNodes);
+    for (const childNode of childNodes) {
+        if (childNode.nodeType === Node.TEXT_NODE) {
+            const textContent = childNode.textContent || '';
+            if (textContent.trim() === '') {
+                // Remove empty text nodes
+                fragment.removeChild(childNode);
+            }
+        }
+    }
+}
+
+const keywordByBindingType = new Map([
+    ["for", config.commentForPrefix],
+    ["if", config.commentIfPrefix],
+    ["elseif", config.commentElseIfPrefix],
+    ["else", config.commentElsePrefix],
+]);
+const notFilter = createNotFilter();
+function cloneNotParseBindTextResult(bindingType, parseBindTextResult) {
+    const filters = parseBindTextResult.outFilters;
+    return {
+        ...parseBindTextResult,
+        outFilters: [...filters, notFilter],
+        bindingType: bindingType,
+    };
+}
+function transformNodeInfos(nodeInfos, transform, forPath) {
+    for (const nodeInfo of nodeInfos) {
+        for (let i = 0; i < nodeInfo.parseBindTextResults.length; i++) {
+            const parsed = nodeInfo.parseBindTextResults[i];
+            if (parsed.uuid != null)
+                continue;
+            // forPath はこのフラグメントの中身を囲む for のスコープ相対パス（`$n` のシフト量の根拠）
+            nodeInfo.parseBindTextResults[i] = transform(parsed, forPath);
+        }
+    }
+}
+function _getFragmentInfo(rootNode, fragment, parseBindingTextResult, forPath, transform, 
+// else 節はテンプレート自身の結果を if の**変換済み**結果から clone するため、
+// そこだけ再変換しない（nodeInfos は通常どおり変換する）
+transformOwnResult = true) {
+    optimizeFragment(fragment);
+    if (typeof forPath === "string") {
+        expandShorthandPaths(fragment, forPath);
+    }
+    collectStructuralFragments(rootNode, fragment, forPath, transform);
+    // after replacing and collect node infos on child fragment
+    const fragmentInfo = {
+        fragment: fragment,
+        // own result（テンプレート自身の for/if/elseif）にも forPath を渡す — `$n` の
+        // シフト量は囲む for の翻訳が根拠（translateParsedForMount）で、渡し漏れると
+        // record.delta に落ち、翻訳がワイルドカードを増やす部分マウント内の for の
+        // `if: $n` / `elseif: $n` が誤った添字に解決される（transformNodeInfos と対称）。
+        // if/elseif の forPath（呼び手の childForPath）は外側 forPath そのもの。
+        // for テンプレートの own path は `$n` になり得ず、非 `$n` パスの変換は forPath を
+        // 読まないため、for に自パスが渡っても無害
+        parseBindTextResult: typeof transform === "undefined" || !transformOwnResult
+            ? parseBindingTextResult
+            : transform(parseBindingTextResult, forPath),
+        nodeInfos: getFragmentNodeInfos(fragment),
+    };
+    if (typeof transform !== "undefined") {
+        transformNodeInfos(fragmentInfo.nodeInfos, transform, forPath);
+    }
+    return fragmentInfo;
+}
+function collectStructuralFragments(rootNode, walkRoot, forPath, transform) {
+    const elseKeyword = config.commentElsePrefix;
+    // Light DOM の mapped コンポーネントの内側は、その子スコープが自分で処理する（§1.13）。
+    // fragment info は rootNode + state 名で登録されるため、ホストのパスでここを拾うと
+    // コンポーネント側の state がまだ名前登録を済ませておらず解決に失敗する。
+    // コンポーネント要素自身は template ではないので、REJECT でサブツリーごと落として問題ない。
+    const nestedComponents = findNestedLightDomComponents(walkRoot);
+    const walker = document.createTreeWalker(walkRoot, NodeFilter.SHOW_ELEMENT, {
+        acceptNode(node) {
+            const element = node;
+            if (nestedComponents.length > 0 && nestedComponents.indexOf(element) !== -1) {
+                return NodeFilter.FILTER_REJECT;
+            }
+            if (element.tagName.toLowerCase() === 'template') {
+                const bindText = element.getAttribute(config.bindAttributeName) || '';
+                if (bindText.length > 0) {
+                    return NodeFilter.FILTER_ACCEPT;
+                }
+            }
+            return NodeFilter.FILTER_SKIP;
+        }
+    });
+    let lastIfFragmentInfo = null; // for elseif chaining
+    const elseFragmentInfos = []; // for elseif chaining
+    const templates = [];
+    while (walker.nextNode()) {
+        const template = walker.currentNode;
+        templates.push(template);
+    }
+    for (const template of templates) {
+        let bindText = template.getAttribute(config.bindAttributeName) || '';
+        if (typeof forPath === "string") {
+            bindText = expandShorthandInBindAttribute(bindText, forPath);
+        }
+        const parseBindTextResults = parseBindTextsForElement(bindText);
+        let parseBindTextResult = parseBindTextResults[0];
+        const keyword = keywordByBindingType.get(parseBindTextResult.bindingType);
+        if (typeof keyword === 'undefined') {
+            continue;
+        }
+        const bindingType = parseBindTextResult.bindingType;
+        const fragment = template.content;
+        const uuid = getUUID();
+        let fragmentInfo = null;
+        // Determine childForPath for shorthand expansion
+        const childForPath = bindingType === "for"
+            ? parseBindTextResult.statePathName
+            : forPath;
+        if (bindingType === "else") {
+            // check last 'if' or 'elseif' fragment info
+            if (lastIfFragmentInfo === null) {
+                raiseError(`'else' binding found without preceding 'if' or 'elseif' binding.`);
+            }
+            // else condition（if の変換済み結果の clone なので自身の再変換はしない）
+            parseBindTextResult = cloneNotParseBindTextResult("else", lastIfFragmentInfo.parseBindTextResult);
+            fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath, transform, false);
+            setFragmentInfoByUUID(uuid, rootNode, fragmentInfo);
+            const lastElseFragmentInfo = elseFragmentInfos.at(-1);
+            const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
+            if (typeof lastElseFragmentInfo !== "undefined") {
+                template.remove();
+                lastElseFragmentInfo.fragment.appendChild(placeHolder);
+                lastElseFragmentInfo.nodeInfos.push({
+                    nodePath: getNodePath(placeHolder),
+                    parseBindTextResults: getParseBindTextResults(placeHolder),
+                });
+            }
+            else {
+                template.replaceWith(placeHolder);
+            }
+        }
+        else if (bindingType === "elseif") {
+            // check last 'if' or 'elseif' fragment info
+            if (lastIfFragmentInfo === null) {
+                raiseError(`'elseif' binding found without preceding 'if' or 'elseif' binding.`);
+            }
+            fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath, transform);
+            setFragmentInfoByUUID(uuid, rootNode, fragmentInfo);
+            const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
+            // create else fragment
+            const elseUUID = getUUID();
+            const elseFragmentInfo = {
+                fragment: document.createDocumentFragment(),
+                parseBindTextResult: cloneNotParseBindTextResult("else", lastIfFragmentInfo.parseBindTextResult),
+                nodeInfos: [],
+            };
+            elseFragmentInfo.fragment.appendChild(placeHolder);
+            elseFragmentInfo.nodeInfos.push({
+                nodePath: getNodePath(placeHolder),
+                parseBindTextResults: getParseBindTextResults(placeHolder),
+            });
+            setFragmentInfoByUUID(elseUUID, rootNode, elseFragmentInfo);
+            const lastElseFragmentInfo = elseFragmentInfos.at(-1);
+            elseFragmentInfos.push(elseFragmentInfo);
+            const elsePlaceHolder = document.createComment(`@@${elseKeyword}:${elseUUID}`);
+            if (typeof lastElseFragmentInfo !== "undefined") {
+                template.remove();
+                lastElseFragmentInfo.fragment.appendChild(elsePlaceHolder);
+                lastElseFragmentInfo.nodeInfos.push({
+                    nodePath: getNodePath(elsePlaceHolder),
+                    parseBindTextResults: getParseBindTextResults(elsePlaceHolder),
+                });
+            }
+            else {
+                template.replaceWith(elsePlaceHolder);
+            }
+        }
+        else {
+            fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath, transform);
+            setFragmentInfoByUUID(uuid, rootNode, fragmentInfo);
+            const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
+            template.replaceWith(placeHolder);
+        }
+        // Update lastIfFragmentInfo for if/elseif/else chaining
+        if (bindingType === "if") {
+            elseFragmentInfos.length = 0; // start new if chain
+            lastIfFragmentInfo = fragmentInfo;
+        }
+        else if (bindingType === "elseif") {
+            lastIfFragmentInfo = fragmentInfo;
+        }
+        else if (bindingType === "else") {
+            lastIfFragmentInfo = null;
+            elseFragmentInfos.length = 0; // end if chain
+        }
+    }
+}
+
+/**
+ * webComponent/volumeShared.ts — ボリュームの軽量共有面。
+ *
+ * ホットパス（proxy/methods/getByAddress・proxy/apis/updatedCallback・pathDiagnostics）が
+ * 引く台帳と chroot だけを置く。graft 本体（webComponent/volume.ts）は watch runtime 等の
+ * 重い依存を持つため、ここに混ぜると「updater を部分モックするテスト」が import 連鎖で
+ * 壊れる（watchRuntime は import 時に drain リスナーを登録する）。
+ */
+/**
+ * 予約済みスロット（D22）。キーは rootNode、値はマウントパス → 予約した要素（所有者）。
+ * 所有者が `null` の枠は持ち主を手放した枠（#265）: 読みの寛容（予約下の読みは undefined・
+ * 存在の診断は黙る）はそのまま残し、同じマウントパスを別の要素が予約できる。
+ */
+const reservedSlotsByRootNode = new WeakMap();
+function reserveVolumeSlot(rootNode, mountPath, owner) {
+    let slots = reservedSlotsByRootNode.get(rootNode);
+    if (typeof slots === "undefined") {
+        slots = new Map();
+        reservedSlotsByRootNode.set(rootNode, slots);
+    }
+    const current = slots.get(mountPath);
+    if (typeof current !== "undefined" && current !== null) {
+        raiseError(`Volume slot "${mountPath}" is already mounted on this tree.`);
+    }
+    slots.set(mountPath, owner);
+}
+/**
+ * 予約を手放す（#265）。`owner` がその枠を予約した要素のときだけ手放す。
+ *
+ * 所有者を確かめずに手放すと、枠を失った要素（孤児・ロード失敗）の後始末が、同じマウントパスで
+ * 後から予約した**生きている別の要素**の枠を奪う（#257 第 3 ラウンドで実測した横取り）。
+ * 呼び手は予約した `(rootNode, mountPath)` の組を自分で控えておき、それを渡すこと —
+ * 切断時の rootNode や `mount` 属性から読み直した組は、予約した組と一致する保証が無い。
+ *
+ * 台帳から消さずに持ち主だけを外すのは、読みの寛容を残すため。消すと、接ぎ木しなかった
+ * ボリュームの配下を読むページ（ルートの getter・バインド）が「存在しないパス」の raise に変わり、
+ * ロード失敗を 1 ボリュームに閉じる規範が破れる。
+ */
+function releaseVolumeSlot(rootNode, mountPath, owner) {
+    const slots = reservedSlotsByRootNode.get(rootNode);
+    if (slots?.get(mountPath) === owner) {
+        slots.set(mountPath, null);
+    }
+}
+/**
+ * パスが予約済みスロットの配下（または祖先）か。pathDiagnostics と getByAddress の
+ * ルート欠落 raise が「予約下の読みは undefined が正」（D22）のために引く。
+ */
+function isPathUnderReservedVolume(rootNode, path) {
+    if (rootNode === null) {
+        return false;
+    }
+    const slots = reservedSlotsByRootNode.get(rootNode);
+    if (typeof slots === "undefined" || slots.size === 0) {
+        return false;
+    }
+    for (const slot of slots.keys()) {
+        if (path === slot || path.startsWith(slot + DELIMITER) || slot.startsWith(path + DELIMITER)) {
+            return true;
+        }
+    }
+    return false;
+}
+/**
+ * 接ぎ木済みスロット（D22 後段）。キーはルートの state element。
+ * setByAddress のガード（findGraftedSlotUnder）と graftVolume（recordGraftedSlot）が使う。
+ * 予約（reservedSlots）と別台帳なのは、接ぎ木**前**の中間 `{}` 生成
+ * （graftVolume の親作成）をガードに掛けないため。
+ */
+const graftedSlotsByStateElement = new WeakMap();
+function recordGraftedSlot(stateElement, mountPath) {
+    let slots = graftedSlotsByStateElement.get(stateElement);
+    if (typeof slots === "undefined") {
+        slots = new Set();
+        graftedSlotsByStateElement.set(stateElement, slots);
+    }
+    slots.add(mountPath);
+}
+/**
+ * 書き込みパスが接ぎ木済みスロットの**真の祖先**なら、そのスロットを返す（D22 後段）。
+ * マウントポイントを含む親の丸ごと書きは、接ぎ木データを無言で捨てて quoted-path
+ * アクセサだけを宙に浮かせるため throw の根拠になる。スロット自身への書き込みは
+ * 通常のデータ差し替えなので対象外。`hasGraftedVolumes` が真のときだけ呼ぶこと。
+ */
+function findGraftedSlotUnder(stateElement, path) {
+    const slots = graftedSlotsByStateElement.get(stateElement);
+    if (typeof slots === "undefined" || slots.size === 0) {
+        return null;
+    }
+    const prefix = path + DELIMITER;
+    for (const slot of slots) {
+        if (slot.startsWith(prefix)) {
+            return slot;
+        }
+    }
+    return null;
+}
+/** ボリュームの chroot（相対キー → `<mountPath>.<key>` を receiver に翻訳する薄い proxy）。 */
+function createVolumeChroot(mountPath, receiver) {
+    return new Proxy({}, {
+        get(_target, prop) {
+            if (typeof prop !== "string" || prop === "then") {
+                return undefined;
+            }
+            if (prop[0] === "$") {
+                if (prop === "$postUpdate") {
+                    return (path) => {
+                        receiver.$postUpdate(mountPath + DELIMITER + path);
+                    };
+                }
+                if (prop === "$getAll" || prop === "$setAll" || prop === "$resolve") {
+                    const api = prop;
+                    return (path, ...rest) => receiver[api](mountPath + DELIMITER + path, ...rest);
+                }
+                // 他の `$` は親の意味論のまま（宣言面はボリュームが登録時に翻訳する）
+                return receiver[prop];
+            }
+            return receiver[mountPath + DELIMITER + prop];
+        },
+        set(_target, prop, value) {
+            if (typeof prop !== "string") {
+                return true;
+            }
+            receiver[mountPath + DELIMITER + prop] = value;
+            return true;
+        },
+        has(_target, prop) {
+            // ボリュームの面はツリーそのもの — マウント配下は常に解決する
+            return typeof prop === "string" && prop[0] !== "$" && prop[0] !== "#";
+        },
+    });
+}
+const volumeUpdatedCallbacksByRoot = new WeakMap();
+const NO_VOLUME_UPDATED_CALLBACKS = [];
+function addVolumeUpdatedCallback(stateElement, entry) {
+    let callbacks = volumeUpdatedCallbacksByRoot.get(stateElement);
+    if (typeof callbacks === "undefined") {
+        callbacks = [];
+        volumeUpdatedCallbacksByRoot.set(stateElement, callbacks);
+    }
+    callbacks.push(entry);
+}
+function getVolumeUpdatedCallbacks(stateElement) {
+    return volumeUpdatedCallbacksByRoot.get(stateElement) ?? NO_VOLUME_UPDATED_CALLBACKS;
+}
+const pendingVolumesByRootNode = new WeakMap();
+/**
+ * ルートの state 要素が初期化に失敗した rootNode（#257）。ルート登録（setStateElement）は
+ * 二度と起きないので `drainPendingVolumes` も呼ばれず、保留中のボリュームの
+ * `onGrafted` が走らないまま initializePromise / connectedCallbackPromise が永久に
+ * 未解決になる（ルートの診断だけが出て、同じページのボリュームは無言で消える）。
+ * 「ルートは来ない」と確定した時点で保留分を孤児として着地させ、以後に届く保留要求も
+ * 同じ着地へ合流させる。D11 の「ルート無し」報告はここには出ない — 検査（State.ts の
+ * reportVolumeWithoutRoot）は**要素の存在**で見るので、落ちたルート要素が居る限り黙る。
+ *
+ * 印は**落ちた要素がこの rootNode に居る間だけ**有効（`clearFailedRootNode`）。持続させると、
+ * この PR が案内する復旧（壊れた要素を取り除いて作り直す）と矛盾する: 外してから修正版を
+ * 接続するまでの窓で接続したボリュームが即座に孤児化し、正しいルートが来ても採用されない。
+ */
+const failedRootNodes = new WeakSet();
+/** 接ぎ木先を失ったボリュームの着地（graftIsolated の失敗と同じ形 — 1 件 1 報告 ＋ finish(null)）。 */
+function orphanPendingVolume(request) {
+    console.error(`[@wcstack/state] volume "${request.mountPath}" was not grafted — the root state element ` +
+        `on this root node failed to initialize (its own diagnostic is reported separately). ` +
+        `The volume is not at fault: fix the root <wcs-state>.`);
+    request.onGrafted(null);
+}
+/**
+ * 失敗の印を落とす（#257）。呼び手は State の `disconnectedCallback` ただ 1 つで、
+ * **初期化に失敗した当の要素**が剥がされたときだけ呼ぶ — 落ちたルートが DOM から
+ * 消えた時点で「このルートノードにルートは来ない」は成り立たなくなる（作者は
+ * 取り除いて作り直す）。
+ *
+ * 呼び手を本人に限るのは第 3 ラウンドの修正: 「初期化前に剥がされた要素」全部で
+ * 落としていたため、同じ rootNode の別要素（登録されなかった 2 本目・行プールの
+ * 張り直し・ロード中の DOM 移動）の切断で印が消え、以後のボリュームが孤児報告を
+ * 受けられず永久保留へ戻っていた。
+ */
+function clearFailedRootNode(rootNode) {
+    failedRootNodes.delete(rootNode);
+}
+/** ルートの初期化失敗を確定し、保留中のボリュームを孤児として着地させる（State の _failInitializeLoudly が唯一の呼び手）。 */
+function failPendingVolumes(rootNode) {
+    failedRootNodes.add(rootNode);
+    const pending = pendingVolumesByRootNode.get(rootNode);
+    if (typeof pending === "undefined") {
+        // 保留はまだ無い（ボリュームのロードのほうが遅い形）— 下の queuePendingVolume が拾う
+        return;
+    }
+    pendingVolumesByRootNode.delete(rootNode);
+    for (const request of pending) {
+        orphanPendingVolume(request);
+    }
+}
+let graftHandler = null;
+function setVolumeGraftHandler(handler) {
+    graftHandler = handler;
+}
+function queuePendingVolume(rootNode, request) {
+    if (failedRootNodes.has(rootNode)) {
+        // ルートが落ちた後に届いた保留要求（ボリュームのロードのほうが遅い形）。
+        // 積んでも引き取り手は永久に来ない
+        orphanPendingVolume(request);
+        return;
+    }
+    let pending = pendingVolumesByRootNode.get(rootNode);
+    if (typeof pending === "undefined") {
+        pending = [];
+        pendingVolumesByRootNode.set(rootNode, pending);
+    }
+    pending.push(request);
+}
+/** ルート登録時に保留中のボリュームを接ぎ木する（stateElementByName から呼ばれる）。 */
+function drainPendingVolumes(rootNode, rootStateElement) {
+    // ルートが成立した ＝ 失敗の印は無効（落ちたルートを外して正しいルートを接続し直した
+    // 形。WeakSet.delete は未登録でも安全なので分岐は要らない）
+    failedRootNodes.delete(rootNode);
+    const pending = pendingVolumesByRootNode.get(rootNode);
+    if (typeof pending === "undefined" || pending.length === 0 || graftHandler === null) {
+        return;
+    }
+    pendingVolumesByRootNode.delete(rootNode);
+    // 登録はルートの _initialize の途中（createState はまだ危うい）— microtask に
+    // 遅らせてルートの接続完了後に接ぎ木する
+    const handler = graftHandler;
+    queueMicrotask(() => {
+        for (const request of pending) {
+            handler(rootStateElement, request);
+        }
+    });
+}
+
+/**
+ * pathDiagnostics.ts — バインド / `$watch` 対象パスの存在検査（silent failure の可視化）。
+ *
+ * なぜ必要か:
+ * `getByAddress` は「親が null / undefined のパスの読み」を undefined で返し、
+ * undefined はプロパティ書き込みがスキップされる値なので、`user.nmae` のような
+ * 打ち間違いは**エラーも警告も出さずに DOM が更新されない**だけになる。一方で
+ * トップレベルの打ち間違い（`cout`）は parentAddress を辿れず raiseError で落ちる。
+ * 同じ「パスを打ち間違えた」という 1 つの失敗が、パスの深さで silent / loud に
+ * 割れており、書き手からは区別がつかない。ここはその silent 側を埋める。
+ *
+ * 精度方針（過小近似）:
+ * 「確実に存在しない」と言い切れる場合にだけ報告する。getter の戻り値の先・
+ * 空配列・null 親・mapped な `bind-component` など、静的に決められない形はすべて
+ * `"unknown"` に倒して黙る（偽陽性ゼロ優先。docs/static-wiring-dx-design.md D7 /
+ * [ADR-06](../../docs/architecture-hardening/06-path-type-safety.md) の精度哲学）。
+ *
+ * 診断 code はコンソール → lint → IDE の三面で共有する（errorGuidance.ts の規約）。
+ */
+const UNKNOWN = Object.freeze({
+    existence: "unknown",
+    missingSegment: "",
+    candidates: Object.freeze([]),
+});
+const EXISTS = Object.freeze({
+    existence: "exists",
+    missingSegment: "",
+    candidates: Object.freeze([]),
+});
+/**
+ * `obj` 自身＋プロトタイプチェーン（Object.prototype 手前まで）から descriptor を引く。
+ * 打ち切り位置は getAllPropertyDescriptors と同じ — 「state が宣言したもの」だけを
+ * 存在とみなし、`toString` 等の Object.prototype 由来を存在扱いしない。
+ *
+ * `State.findStateDescriptor`（再帰アクセサの衝突検査）も同じ走査を使う。打ち切り位置が
+ * 2 本に分かれると、片方だけが `Object.prototype` を存在扱いするようなずれ方をする。
+ */
+function findDescriptor(obj, key) {
+    let proto = obj;
+    while (proto !== null && proto !== Object.prototype) {
+        const descriptor = Object.getOwnPropertyDescriptor(proto, key);
+        if (typeof descriptor !== "undefined") {
+            return descriptor;
+        }
+        proto = Object.getPrototypeOf(proto);
+    }
+    return undefined;
+}
+/** `obj` 自身＋プロトタイプチェーンのキー名（did-you-mean の候補集合） */
+function ownKeys(obj) {
+    const keys = [];
+    let proto = obj;
+    while (proto !== null && proto !== Object.prototype) {
+        for (const key of Object.getOwnPropertyNames(proto)) {
+            keys.push(key);
+        }
+        proto = Object.getPrototypeOf(proto);
+    }
+    return keys;
+}
+/**
+ * 失敗した階層の兄弟候補。生オブジェクトのキーに加え、その階層にフラット宣言
+ * （ドットパス getter）されているものも混ぜる — `cart.items.*.subtotl` の正解
+ * `subtotal` は行オブジェクトには無く getterPaths にしか居ないため。
+ */
+function collectCandidates(container, parentPrefix, declaredPaths) {
+    const candidates = ownKeys(container);
+    const prefix = parentPrefix.length > 0 ? parentPrefix + DELIMITER : "";
+    for (const declared of declaredPaths) {
+        if (prefix.length > 0 && !declared.startsWith(prefix)) {
+            continue;
+        }
+        const rest = declared.slice(prefix.length);
+        // 直下の 1 セグメントだけを候補にする（孫は別階層の名前なので提案しない）
+        if (rest.length > 0 && rest.indexOf(DELIMITER) === -1) {
+            candidates.push(rest);
+        }
+    }
+    return candidates;
+}
+/**
+ * `target` に対して `path` が解決しうるかを、値を読まずに（getter を評価せずに）判定する。
+ *
+ * 解決の順序は `getByAddress` の実装に合わせる: まず「パス文字列そのものがキーか」
+ * （ドットパス getter がこれ）、次にセグメントを 1 つずつ降りる。
+ */
+function resolvePathExistence(target, path, declaredPaths) {
+    // ドットパス getter / フラットキーの完全一致（`get "users.*.fullName"()` 等）
+    if (findDescriptor(target, path) !== undefined) {
+        return EXISTS;
+    }
+    const segments = getPathInfo(path).segments;
+    let current = target;
+    let prefix = "";
+    for (let i = 0; i < segments.length; i++) {
+        const segment = segments[i];
+        const parentPrefix = prefix;
+        prefix = i === 0 ? segment : prefix + DELIMITER + segment;
+        // 途中のプレフィックスがフラット宣言されている（`cart.totalPrice` が getter で、
+        // その戻り値のサブプロパティを読む形）。戻り値の形は評価しないと分からない
+        if (i > 0 && i < segments.length - 1 && findDescriptor(target, prefix) !== undefined) {
+            return UNKNOWN;
+        }
+        // null / undefined / primitive より深い読みは実行時 undefined 解決 = 判定不能。
+        // 「初期値 null のオブジェクトに後から代入する」形を偽陽性で潰さないため
+        if (Object(current) !== current) {
+            return UNKNOWN;
+        }
+        if (segment === WILDCARD) {
+            // 行の形は「いま入っている要素」からしか分からない。空配列・非配列は判定不能
+            if (!Array.isArray(current) || current.length === 0) {
+                return UNKNOWN;
+            }
+            current = current[0];
+            continue;
+        }
+        const descriptor = findDescriptor(current, segment);
+        if (typeof descriptor === "undefined") {
+            return {
+                existence: "missing",
+                missingSegment: segment,
+                candidates: collectCandidates(current, parentPrefix, declaredPaths),
+            };
+        }
+        if (typeof descriptor.get === "function") {
+            // getter の戻り値の先は評価しないと分からない（末尾なら存在は確定）
+            return i === segments.length - 1 ? EXISTS : UNKNOWN;
+        }
+        current = descriptor.value;
+    }
+    return EXISTS;
+}
+/** 診断 code は lint / IDE と同一語彙（errorGuidance.ts の三面共有規約） */
+const DIAGNOSTIC_CODE = {
+    binding: "wcs/binding-path-missing",
+    watch: "wcs/watch-path-missing",
+    scan: "wcs/scan-path-missing",
+};
+const SUBJECT = {
+    binding: "Bound path",
+    watch: "$watch path",
+    scan: "$scan path",
+};
+/**
+ * ルート直下（単一セグメント）のパスが state に無いときのエラーメッセージ。
+ *
+ * この形だけは親アドレスを辿れないので読み取りが throw する ＝ 元から loud だが、
+ * 文面が `address.parentAddress is undefined path: cout` という内部実装の言葉で、
+ * 「打ち間違い」だと分からず did-you-mean も lint 誘導も無かった。深いパスの
+ * `console.warn` と同じ語彙に揃える。
+ */
+function missingRootPathMessage(path, target, declaredPaths) {
+    return `[${DIAGNOSTIC_CODE.binding}] Path "${path}" does not exist on the state tree.` +
+        `${didYouMean(path, collectCandidates(target, "", declaredPaths))}${LINT_HINT}`;
+}
+/**
+ * `$resolve` / `$getAll` に渡した添字の本数がワイルドカードの本数と噛み合わない。
+ *
+ * 不足（`$resolve`）は元から throw していたが、**超過は両 API とも黙って無視**され、
+ * 取り違えた添字のまま「もっともらしい値」を返していた。本数はパス文字列から
+ * 決まるので、噛み合わないことは常にプログラマのミス。
+ */
+function indexArityMessage(api, path, wildcardCount, actual) {
+    // `$getAll` / `$setAll` の添字は前方一致の接頭辞なので上限、`$resolve` だけが厳密一致
+    // （docs/state-set-all-design.md §4）。
+    const requirement = api === "$resolve"
+        ? `exactly ${wildcardCount}`
+        : `at most ${wildcardCount}`;
+    return `[wcs/index-arity] ${api}("${path}") requires ${requirement} index(es) ` +
+        `("*" appears ${wildcardCount} time(s) in the path) but got ${actual}.${LINT_HINT}`;
+}
+/**
+ * `**` を含むパスが宣言済みの再帰アンカーと合致しない（綴り違い・2 つ目の `**`）。
+ * 束縛形（bind.ts）・合併形（getAllRecursive.ts）・ブロードキャスト（setAllRecursive.ts）の
+ * 3 入口が同じ文面で報告する。
+ */
+function recursionAnchorMismatchMessage(path, recursiveAnchor) {
+    return `[wcs/recursion-anchor] "${path}" does not match the declared recursion anchor ` +
+        `"${recursiveAnchor}". This version supports exactly one anchor per state, and "**" must be followed ` +
+        `by a well-formed suffix (no second "**", no empty segment, no bare "*" right after "**").`;
+}
+/**
+ * `$getAll(path)`（添字省略）の既定値はループ文脈の添字 `[$1..$n]` だが、それを
+ * 敷けるのは path と文脈がワイルドカード連鎖を共有している場合だけ。共有ゼロなのに
+ * 文脈が添字を持っている場合、黙って全展開に倒すと「文脈で絞られている」という
+ * 書き手の期待と食い違い、異なる文脈の添字の流用とも区別が付かないため throw する。
+ *
+ * 実行時の評価文脈に依存する（`$setAll` の spread 長と同種）ので lint へは誘導しない。
+ */
+function getAllContextMismatchMessage(path, contextPath) {
+    return `$getAll("${path}") was called without indexes inside the loop context of ` +
+        `"${contextPath}", but the path shares no wildcard level with that context, ` +
+        `so the context indexes ($1..$n) do not apply. ` +
+        `Pass indexes explicitly ([] expands every level).`;
+}
+/**
+ * `$setAll(path, indexes, values, { spread: true })` の配列長がマッチ件数と噛み合わない。
+ *
+ * 静的には件数が分からない（実行時のリスト長に依存する）ので lint へは誘導しない。
+ * 黙って切り詰める／余りを捨てると誤配が通ってしまうため throw する
+ * （docs/state-set-all-design.md §3-3）。
+ */
+function setAllSpreadArityMessage(path, matched, actual) {
+    return `$setAll("${path}", …, { spread: true }) requires the values array to have ` +
+        `exactly one entry per matched address (matched ${matched}) but got ${actual}. ` +
+        `Did the list change between $getAll and $setAll?`;
+}
+/**
+ * `$setAll` の値と `options` の組み合わせが意味を成さない。
+ * （docs/state-set-all-design.md §3-1）
+ */
+function setAllValueKindMessage(path, reason) {
+    return `$setAll("${path}") ${reason}`;
+}
+/**
+ * ワイルドカードを解決するループ文脈が足りない（＝パスの階数 > スコープの階数）。
+ *
+ * `matrix.*.*` を 1 段の `for` の中で読む、`$2` を 1 段のループの中で読む、といった
+ * 取り違えがこれ。元の文面は `address.listIndex?.index is undefined path: matrix.*` /
+ * `Index not found at position 1 for loopContext:` という内部実装の言葉で、
+ * **何を間違えたのかが書かれていなかった**。
+ */
+function wildcardScopeMessage(subject, needed, available) {
+    return `[wcs/wildcard-rank] ${subject} needs ${needed} enclosing loop level(s) but the current ` +
+        `scope provides ${available}. Wrap it in that many "for" templates, or use $resolve(path, indexes) ` +
+        `to name the row explicitly.${LINT_HINT}`;
+}
+/** 同じ (state 要素, パス) の報告は 1 回だけにする台帳 */
+const reportedPathsByStateElement = new WeakMap();
+/**
+ * state の世代が進んだ（再セット）ときに、この要素の検査済みの印と遅延中の報告を捨てる（#270）。
+ *
+ * 「パスごとに 1 回」は同じ誤りを更新のたびに報告し続けないための台帳で、世代をまたいで
+ * 持ち越す理由は無い。持ち越すと、第 1 世代で検査済みのパスが第 2 世代の state から消えても
+ * 無言のままになる。遅延中の報告は前の世代の state で判定した結果なので、あわせて捨てる
+ * （呼び手の経路情報の作り直しが、新しい世代で判定し直して積み直す）。公開 getter の登録
+ * （`markExportedPath`）はマウント記録の寿命に属するので触らない。
+ */
+function resetPathDiagnostics(stateElement) {
+    reportedPathsByStateElement.delete(stateElement);
+    deferredReportsByStateElement.delete(stateElement);
+}
+function alreadyReported(stateElement, path) {
+    let reported = reportedPathsByStateElement.get(stateElement);
+    if (typeof reported === "undefined") {
+        reported = new Set();
+        reportedPathsByStateElement.set(stateElement, reported);
+    }
+    if (reported.has(path)) {
+        return true;
+    }
+    reported.add(path);
+    return false;
+}
+/**
+ * バインド確立時 / `$watch` 宣言時にパスの存在を検査し、確実に存在しないものだけ報告する。
+ *
+ * 報告は `console.warn` に留める（`raiseError` にしない）:
+ * 判定は過小近似とはいえ動的にキーが生える形まで排除できたわけではなく、
+ * 既存ページを起動不能にする代償に見合わない。silent を破ることが目的であり、
+ * 停止させることではない。
+ */
+function checkDeclaredPath(stateElement, state, path, source) {
+    if (source === "internal" || typeof state === "undefined") {
+        return;
+    }
+    // `$command` / `$streamStatus` / `$1` 等の予約名前空間は raw state に実体を持たない
+    if (path.startsWith("$")) {
+        return;
+    }
+    // マウントの予約セグメント（`users.*.#m1.editing` — D20）はオーバーレイに実体があり
+    // raw state には無い。`#else`（構造プレースホルダ）も同様（webComponent/mount.ts）
+    if (path.indexOf("#") !== -1) {
+        return;
+    }
+    // 予約済みのボリュームスロット配下はロード完了まで undefined が正（D22）。切断中の要素には
+    // rootNode が無い（State の getter は投げる）ので予約を引かない — 切断中の再セットも経路情報を
+    // 作り直してここへ来る（#267）
+    const rootNode = stateElement.isConnected === false
+        ? null
+        : stateElement.rootNode ?? null;
+    if (isPathUnderReservedVolume(rootNode, path)) {
+        return;
+    }
+    // 単一セグメントのバインディングは読み取り時に raiseError で loud に落ちるので、
+    // ここで二重に報告しない。`$watch` は落ちずに黙って発火しないだけなので検査する
+    const segments = getPathInfo(path).segments;
+    if (source === "binding" && segments.length < 2) {
+        return;
+    }
+    if (alreadyReported(stateElement, path)) {
+        return;
+    }
+    // 再帰 getter の展開形は、バインド確立の時点ではまだ生えていない（読む直前に
+    // 遅延実体化する — recursion/registry.ts）。素の存在検査では必ず「解決できない」に
+    // なるので、宣言済みの `**` getter に合致するかを先に見る。実体化はしない。
+    // 展開形の**値の内側**（`nodes.*.stats.count` で `get "nodes.**.stats"()` がオブジェクトを
+    // 返す形）も同じ — 通常の getter なら下の「途中のプレフィックスがフラット宣言」で
+    // UNKNOWN に倒れるところ、未実体化のアクセサは findDescriptor に見えないのでここで畳む。
+    if (stateElement.hasRecursion === true && stateElement.recursionRegistry.recursiveGetterOwning(path) !== null) {
+        return;
+    }
+    const result = resolvePathExistence(state, path, stateElement.getterPaths);
+    if (result.existence !== "missing") {
+        return;
+    }
+    if (isExportedPath(stateElement, path)) {
+        return;
+    }
+    if (source === "binding") {
+        // 遅延報告（docs/state-overlay-export-design.md X7）: バインド確立時点では、その位置に
+        // マウントされるコンポーネントの getter（公開 getter）がまだ登録されていない。
+        // 1 マクロタスク待って、登録で解消しなかったものだけを報告する
+        deferReport(stateElement, path, result);
+        return;
+    }
+    reportMissing(stateElement, path, source, result);
+}
+const deferredReportsByStateElement = new WeakMap();
+const flushScheduled = new WeakSet();
+const exportedPathsByStateElement = new WeakMap();
+/** 公開 getter の登録（webComponent/exportIndex.ts）— このパスは「存在しない」ではない */
+function markExportedPath(stateElement, path) {
+    let paths = exportedPathsByStateElement.get(stateElement);
+    if (typeof paths === "undefined") {
+        paths = new Set();
+        exportedPathsByStateElement.set(stateElement, paths);
+    }
+    paths.add(path);
+    deferredReportsByStateElement.get(stateElement)?.delete(path);
+}
+function isExportedPath(stateElement, path) {
+    return exportedPathsByStateElement.get(stateElement)?.has(path) === true;
+}
+function deferReport(stateElement, path, result) {
+    let pending = deferredReportsByStateElement.get(stateElement);
+    if (typeof pending === "undefined") {
+        pending = new Map();
+        deferredReportsByStateElement.set(stateElement, pending);
+    }
+    pending.set(path, result);
+    if (flushScheduled.has(stateElement)) {
+        return;
+    }
+    flushScheduled.add(stateElement);
+    setTimeout(() => flushDeferredPathReports(stateElement), 0);
+}
+/** 遅延中の報告を今すぐ流す（タイマー到達時・テスト用） */
+function flushDeferredPathReports(stateElement) {
+    flushScheduled.delete(stateElement);
+    const pending = deferredReportsByStateElement.get(stateElement);
+    if (typeof pending === "undefined") {
+        return;
+    }
+    deferredReportsByStateElement.delete(stateElement);
+    // 登録で解消したものは markExportedPath が pending から消している
+    for (const [path, result] of pending) {
+        reportMissing(stateElement, path, "binding", result);
+    }
+}
+function reportMissing(stateElement, path, source, result) {
+    // 接頭辞は raiseError と同じ `[@wcstack/state] [wcs/...]` の並び（コンソールの
+    // grep 単位をパッケージで揃える）
+    console.warn(`[@wcstack/state] [${DIAGNOSTIC_CODE[source]}] ${SUBJECT[source]} "${path}" does not resolve on the state tree: ` +
+        `"${result.missingSegment}" is not declared.${didYouMean(result.missingSegment, result.candidates)}` +
+        ` Updates to this path will be silently dropped.${LINT_HINT}`);
+    if (devtoolsSink !== null) {
+        devtoolsSink({
+            type: "state:path-unresolved",
+            source,
+            path,
+            missingSegment: result.missingSegment,
+        });
+    }
+}
+
+const exportIndexByStateElement = new WeakMap();
+const reportedShadows = new Set();
+function slotFor(stateElement, parentPath, key, create) {
+    let byParent = exportIndexByStateElement.get(stateElement);
+    if (typeof byParent === "undefined") {
+        if (!create)
+            return null;
+        byParent = new Map();
+        exportIndexByStateElement.set(stateElement, byParent);
+    }
+    let byKey = byParent.get(parentPath);
+    if (typeof byKey === "undefined") {
+        if (!create)
+            return null;
+        byKey = new Map();
+        byParent.set(parentPath, byKey);
+    }
+    let slot = byKey.get(key);
+    if (typeof slot === "undefined") {
+        if (!create)
+            return null;
+        slot = { holders: new Set(), byListIndex: new WeakMap(), noIndex: null };
+        byKey.set(key, slot);
+    }
+    return slot;
+}
+/**
+ * 記録の getter / setter を公開索引に載せる（初回登録で 1 回・冪等）。
+ * translateInnerPath のマーカー化を通すので accessorBySuffixByMarkerParent も同時に埋まる。
+ * 翻訳できないアクセサ（ワイルドカード終端・部分マウントのみで接頭辞不一致）と、
+ * `$` 名前空間のアクセサ（翻訳されずマーカーが付かない）は公開しない。
+ * ルートエントリの無い部分マウントは公開位置（ツリー上のパス）を持たないので対象外。
+ */
+function registerExports(record) {
+    if (record.exports.size > 0 || record.rootEntry === null) {
+        return;
+    }
+    const keys = new Set([...record.getterKeys, ...record.setterKeys]);
+    for (const key of keys) {
+        let markerPath;
+        try {
+            markerPath = translateInnerPath(record, key);
+        }
+        catch {
+            continue;
+        }
+        const markerIndex = markerPath.indexOf(DELIMITER + record.marker);
+        if (markerIndex === -1) {
+            continue;
+        }
+        // `users.*.#m7.display` → 末端マーカーパス `users.*.#m7`・接尾 `display`・公開 `users.*.display`
+        // （接尾は常に非空 — markerizeAccessorPath が空を raise 済み。公開パスはルート
+        // エントリの外側パス＋接尾なので常に 2 セグメント以上 ＝ 親パスを持つ）
+        const markerTerminalPath = markerPath.slice(0, markerIndex + 1 + record.marker.length);
+        const suffix = markerPath.slice(markerTerminalPath.length + 1);
+        const exportedPath = markerPath.slice(0, markerIndex) + DELIMITER + suffix;
+        const exportedInfo = getPathInfo(exportedPath);
+        // Internal wildcard accessors need their own row resolution and lifecycle
+        // notifications. Only publish accessors at the mount instance's depth.
+        if (exportedInfo.wildcardCount !== record.delta) {
+            continue;
+        }
+        const entry = { markerTerminalPath, suffix, markerPath, exportedPath };
+        record.exports.set(exportedPath, entry);
+        slotFor(record.parentStateElement, exportedInfo.parentPath, exportedInfo.lastSegment, true)
+            .holders.add({ ref: new WeakRef(record), entry });
+        // エイリアス辺（X5）: 子 getter のアドレス → 公開パス
+        record.parentStateElement.addDynamicDependency(markerPath, exportedPath);
+        // 未存在パスの遅延診断（X7）: この公開パスへのバインドは「存在しない」ではない
+        markExportedPath(record.parentStateElement, exportedPath);
+    }
+    record.parentStateElement.markHasMounts?.();
+}
+/** 読みの listIndex がホスト要素のループ文脈と一致するか（配下の深い文脈も一致とみなす） */
+function isInstanceOf(record, listIndex) {
+    if (!record.component.isConnected) {
+        return false;
+    }
+    const own = getLoopContextByNode(record.component)?.listIndex ?? null;
+    if (listIndex === null) {
+        return own === null;
+    }
+    let current = own;
+    while (current !== null) {
+        if (current === listIndex) {
+            return true;
+        }
+        current = current.parentListIndex;
+    }
+    return false;
+}
+/** ホルダーが生きていて、この listIndex のインスタンスなら記録を返す */
+function liveInstance(holder, listIndex) {
+    const record = holder.ref.deref();
+    if (typeof record === "undefined" || !isInstanceOf(record, listIndex)) {
+        return null;
+    }
+    return record;
+}
+/**
+ * `P.k`（listIndex）に答える記録を引く。索引に無ければ null（今日どおり undefined 解決）。
+ * 複数一致は raise。
+ */
+function resolveExport(stateElement, parentPath, key, listIndex) {
+    const slot = slotFor(stateElement, parentPath, key, false);
+    if (slot === null) {
+        return null;
+    }
+    const cached = listIndex === null ? slot.noIndex : (slot.byListIndex.get(listIndex) ?? null);
+    if (cached !== null) {
+        const record = liveInstance(cached, listIndex);
+        if (record !== null) {
+            return { record, entry: cached.entry };
+        }
+    }
+    let found = null;
+    let foundRecord = null;
+    for (const holder of slot.holders) {
+        const record = holder.ref.deref();
+        if (typeof record === "undefined") {
+            // 記録は回収済み（finalizer 発火前の窓）— 遅延 prune
+            slot.holders.delete(holder);
+            continue;
+        }
+        if (!isInstanceOf(record, listIndex)) {
+            continue;
+        }
+        if (foundRecord !== null) {
+            raiseError(`[wcs/mount-export-ambiguous] "${parentPath}${DELIMITER}${key}" is exported by two mounted components on the same instance: ` +
+                `<${foundRecord.component.tagName.toLowerCase()}> and <${record.component.tagName.toLowerCase()}>. ` +
+                `Mount only one of them there, or rename one accessor. See docs/state-overlay-export-design.md X4.`);
+        }
+        found = holder;
+        foundRecord = record;
+    }
+    if (found === null || foundRecord === null) {
+        return null;
+    }
+    if (listIndex === null) {
+        slot.noIndex = found;
+    }
+    else {
+        slot.byListIndex.set(listIndex, found);
+    }
+    return { record: foundRecord, entry: found.entry };
+}
+/** 公開パスの `$postUpdate` を、記録のホスト要素のループ文脈で打つ（X6）。 */
+function notifyExports(record) {
+    const parent = record.parentStateElement;
+    const loopContext = getLoopContextByNode(record.component);
+    if (parent.isConnected === false || (record.delta > 0 && loopContext === null)) {
+        // A removed tree needs no notification. A removed row is handled by its
+        // parent's list update. Other notification failures must remain visible.
+        return;
+    }
+    for (const entry of record.exports.values()) {
+        parent.createState("readonly", (state) => {
+            state[setLoopContextSymbol](loopContext, () => {
+                state.$postUpdate(entry.exportedPath);
+            });
+        });
+    }
+}
+/**
+ * X1: ツリーに同名キーがある公開 getter は親から読まれない（ツリーが勝つ）。
+ * 登録時に 1 回 warn（タグ × 公開パス）。行マウントはホスト要素のループ文脈で読む。
+ */
+function warnShadowedExports(record) {
+    const loopContext = getLoopContextByNode(record.component);
+    if (record.delta > 0 && loopContext === null) {
+        // 行マウントでループ文脈が無い（行の実体化前）— 読めないので黙る
+        return;
+    }
+    const tag = record.component.tagName.toLowerCase();
+    for (const entry of record.exports.values()) {
+        const reportKey = `${tag}|${entry.exportedPath}`;
+        if (reportedShadows.has(reportKey)) {
+            continue;
+        }
+        const exportedInfo = getPathInfo(entry.exportedPath);
+        let parentValue = undefined;
+        record.parentStateElement.createState("readonly", (state) => {
+            state[setLoopContextSymbol](loopContext, () => {
+                parentValue = state[exportedInfo.parentPath];
+            });
+        });
+        if (parentValue === null || typeof parentValue === "undefined"
+            || !(exportedInfo.lastSegment in Object(parentValue))) {
+            continue;
+        }
+        reportedShadows.add(reportKey);
+        console.warn(`[@wcstack/state] [wcs/mount-export-shadowed] <${tag}>.${record.stateProp}.${entry.suffix} is exported at ` +
+            `"${entry.exportedPath}" but the tree already has that key, so readers outside the component get the tree value. ` +
+            `Remove the tree key or rename the accessor. See docs/state-overlay-export-design.md X1.`);
+    }
+}
+
+/**
+ * webComponent/mountScope.ts — マウントされたスコープの構築（Phase 2・impl-plan §3-0）。
+ *
+ * v1 の buildBindings（rootNode ごとの独立ツリー構築）に対応する、マウント版の 1 パス。
+ * やることは 3 つだけで、以後このスコープのバインディングは「親スコープにインラインで
+ * 書かれたもの」と完全に同じ経路（台帳・依存グラフ・updater・for/プール）を流れる。
+ *
+ * 1. マウント記録の登録（ループ文脈の境界ホップとオーバーレイ dispatch が引く）
+ * 2. 台帳エイリアス（Shadow DOM 形のみ）: 子 rootNode → 親 state element。
+ *    `getRootNode()` で解決する全サイトがこれで親ツリーに到達する
+ * 3. 変換付きの収集: mustache 変換 → 構造フラグメント収集 → バインディング初期化。
+ *    パース結果は translateParsedForMount で親ツリーの絶対パスに書き換わる
+ *    （フラグメントは登録時に変換されるので、行の実体化は無改造・無コスト）
+ *
+ * 呼び手（State._initializeBindWebComponent の v2 経路）は、この完了を
+ * `setBindingsReadyForScope` で子 rootNode の ready として公開する。
+ */
+/**
+ * スコープ根は Shadow DOM 形ならコンポーネントの shadowRoot、Light DOM 形なら
+ * コンポーネント要素自身（そのサブツリーがスコープ・D7）。Light DOM は rootNode を
+ * ホストと共有するのでエイリアス不要（親の名前登録がそのまま解決に使われる）。
+ * ホスト側の走査からの除外は getSubscriberNodes / collectStructuralFragments の
+ * Light DOM prune（§1.13 の機構）がそのまま担う。
+ */
+function initializeMountScope(record, scopeRoot) {
+    const existing = getMountRecordByScopeRoot(scopeRoot);
+    // 1 スコープ根 1 マウント（v2）: 同じコンポーネントに 2 本目の
+    // `<wcs-state bind-component>`（別 stateProp）が来ても受けられない — 受けると
+    // 1 本目の session を dispose した上、収集済みノードは registeredNodeSet
+    // （collectNodesAndBindingInfos.ts）が弾いて再収集されず、スコープ全体が
+    // 無言で死ぬ。設定ミスとして 1 本目に触れる前に loud に落とす
+    if (existing !== null && existing.stateProp !== record.stateProp) {
+        raiseError(`A mount scope is already initialized on this component for "${existing.stateProp}" — ` +
+            `one <wcs-state bind-component> per component (v2). ` +
+            `Merge the "${record.stateProp}" wiring into "${existing.stateProp}" or split the component.`);
+    }
+    // 再初期化（コンポーネントが connectedCallback で shadow の innerHTML を張り直し、
+    // 新しい <wcs-state> が同じ shadowRoot に入った）: 旧スコープのバインディングは
+    // 捨てられた DOM を指したまま親の台帳に残りうるので session ごと破棄してから組み直す
+    //（普段は session の MutationObserver が先に破棄している — これは取りこぼし保険。
+    // dispose は records と deferred を空にするだけで session 自体は使い回せる）。
+    // 旧 for が残した lastListValue は applyChangeToFor 側の「content 台帳が空の
+    // binding は白紙から描く」ガードが吸収する
+    if (existing !== null) {
+        getOrCreateBindingSession(scopeRoot).dispose();
+    }
+    registerMountRecord(scopeRoot, record);
+    if (scopeRoot instanceof ShadowRoot) {
+        setStateElementAlias(scopeRoot, record.parentStateElement);
+    }
+    buildMountScopeBindings(record, scopeRoot);
+    // Register exports and alias edges once. Notify parents that evaluated before
+    // registration, including on reinitialization when values may have changed.
+    registerExports(record);
+    warnShadowedExports(record);
+    notifyExports(record);
+    setBindingsReadyForScope(scopeRoot, Promise.resolve());
+}
+function buildMountScopeBindings(record, walkRoot) {
+    const transform = (parsed, forPath) => translateParsedForMount(record, parsed, forPath);
+    convertMustacheToComments(walkRoot);
+    // スコープ直下のバインディングのループ文脈は、行 content の初期化と同じく
+    // **直接エントリ**で渡す（ホスト要素の文脈＝境界ホップの解決結果）。
+    // text binding は登録前に comment が replaceNode に差し替えられて切断される
+    //（bindings/replaceToReplaceNode.ts）ため、DOM walk では文脈に届かない —
+    // happy-dom は切断後も parentNode を残す非準拠で偶然通るが、実ブラウザでは落ちる
+    const parentLoopContext = getLoopContextByNode(record.component);
+    // rootNode は「fragment info の setPathInfo が state element を引く場所」。
+    // Shadow DOM 形はエイリアス済みの scopeRoot 自身、Light DOM 形はホストの rootNode
+    const rootNode = walkRoot instanceof ShadowRoot ? walkRoot : walkRoot.getRootNode();
+    collectStructuralFragments(rootNode, walkRoot, undefined, transform);
+    initializeBindings(walkRoot, parentLoopContext, transform);
+}
+/**
+ * プール再利用の再接続（行 content の再利用で、コンポーネント要素が**別の行**に
+ * 付け替わった）: マウントスコープの全バインディングを現在のループ文脈の listIndex で
+ * 台帳へ張り直し、最新値を適用する。v1 の `_reloadMappedPathsAfterReconnect`（派生規則
+ * memo の破棄＋プライマリ粒度の $postUpdate）に対応する、単一ツリー版の 1 手。
+ * swap では listIndex が行と一緒に動くので張り直しは冪等（同じ台帳に戻るだけ）。
+ */
+function remountScopeBindings(record, scopeRoot) {
+    const session = getOrCreateBindingSession(scopeRoot);
+    // スコープ直下の直接エントリを現在の行の文脈へ張り替える（構築時と対称）。
+    // 台帳の張り直し（rebindAddresses）はこのエントリ経由で新しい listIndex を読む
+    const parentLoopContext = getLoopContextByNode(record.component);
+    session.forEachActiveBindingNode((node) => setLoopContextByNode(node, parentLoopContext));
+    const rebound = session.rebindAddresses();
+    // 空でも呼んで良い（ループが回らないだけ）— 分岐を持たない
+    applyChangeFromBindings(rebound);
+    // 別の行に付け替わった ＝ その行の公開パスの答えが変わった（X6）
+    notifyExports(record);
+}
+/**
+ * 行 content をその場で使い回したときの張り直し（#4）。
+ *
+ * 要素書き込みで行を置き換えると `for` は同じ位置の Content を新しい行に使い回す。中の
+ * コンポーネント要素は DOM から外れないので、付け替えを知らせる connectedCallback が来ない —
+ * マウントスコープのバインディングは前の行の listIndex に張られたままになり、子の表示がそこで
+ * 固まる。プール再利用の再接続（State.connectedCallback → remountScopeBindings）と同じ
+ * 張り直しを、行の活性化（= ループ文脈の付け替え）の直後に行う。
+ */
+function remountScopesUnderContent(content, stateElement) {
+    if (!stateElementHasMounts(stateElement)) {
+        return;
+    }
+    for (const record of getMountRecordsForStateElement(stateElement)) {
+        if (!isNodeInContentRange(record.component, content)) {
+            continue;
+        }
+        const scopeRoot = getScopeRootByMountRecord(record);
+        if (scopeRoot === null) {
+            continue;
+        }
+        remountScopeBindings(record, scopeRoot);
+    }
+}
+/** content の DOM レンジ（firstNode..lastNode）の中にあるノードか */
+function isNodeInContentRange(node, content) {
+    for (let current = content.firstNode; current !== null; current = current.nextSibling) {
+        if (current === node || current.contains(node)) {
+            return true;
+        }
+        if (current === content.lastNode) {
+            break;
+        }
+    }
+    return false;
 }
 
 // ===========================================================================
@@ -7493,21 +8885,34 @@ function setPooledContent(bindingInfo, content) {
         deleteContentByNode(bindingInfo.node, content);
     }
 }
+/**
+ * 親の中身を一括で捨てて良いか（全行削除の近道）の判定に数えるノードか。要素・空白でないテキストの
+ * ほかに、**構造ディレクティブのアンカー（コメント）** も数える（#4）。数えないと、同じ親に居る `if` の
+ * アンカーまで textContent='' で消え、その `if` は以後何も描けない — 行の中が `if` だけの形では、
+ * 行の器ごと壊れる（行を描き直さない main では表に出ないが、消えているのは同じ）。
+ */
+function countsAsParentContent(node) {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+        return true;
+    }
+    if (node.nodeType === Node.TEXT_NODE) {
+        return (node.textContent?.trim() ?? '') !== '';
+    }
+    return node.nodeType === Node.COMMENT_NODE && node.data.startsWith('@@wcs-');
+}
 function isOnlyNodeInParentContent(firstNode, lastNode) {
     let prevCheckNode = firstNode.previousSibling;
     let nextCheckNode = lastNode.nextSibling;
     let onlyNode = true;
     while (prevCheckNode !== null) {
-        if (prevCheckNode.nodeType === Node.ELEMENT_NODE
-            || (prevCheckNode.nodeType === Node.TEXT_NODE && (prevCheckNode.textContent?.trim() ?? '') !== '')) {
+        if (countsAsParentContent(prevCheckNode)) {
             onlyNode = false;
             break;
         }
         prevCheckNode = prevCheckNode.previousSibling;
     }
     while (nextCheckNode !== null) {
-        if (nextCheckNode.nodeType === Node.ELEMENT_NODE
-            || (nextCheckNode.nodeType === Node.TEXT_NODE && (nextCheckNode.textContent?.trim() ?? '') !== '')) {
+        if (countsAsParentContent(nextCheckNode)) {
             onlyNode = false;
             break;
         }
@@ -7531,6 +8936,75 @@ function isPhysicallyAfter(lastNode, firstNode) {
     const position = lastNode.compareDocumentPosition(firstNode);
     return (position & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
         && (position & Node.DOCUMENT_POSITION_DISCONNECTED) === 0;
+}
+/**
+ * 要素書き込みの入れ替えを描き直す差分（基準が「書き込む前の並びの写し」— swapBaselineList.ts）で、
+ * 同じ位置の「外す行」と「入る行」を組にし、外す行の Content を入る行にその場で使い回す（#4）。
+ * 行の置き換え（リストに無かった値の書き込み）はその位置の行が新しい行に替わるだけなので、プールを通して
+ * ブロックを DOM から外す必要が無い — 外すと、双方向バインドの入力で打鍵ごとにフォーカスが失われる。
+ * 配列の置換の差分は対象にしない（外した行の Content はこれまでどおりプールを通す）。
+ */
+function collectInPlaceContents(contentMap, lastValue, diff) {
+    if (!isSwapBaselineList(lastValue)) {
+        return null;
+    }
+    let inPlace = null;
+    for (let position = 0; position < diff.newIndexes.length; position++) {
+        const added = diff.newIndexes[position];
+        const removed = diff.oldIndexes[position];
+        const content = diff.addIndexSet.has(added) && diff.deleteIndexSet.has(removed)
+            ? contentMap.get(removed)
+            : undefined;
+        if (typeof content === "undefined") {
+            continue;
+        }
+        inPlace ??= { byAddedIndex: new Map(), reused: new Set() };
+        inPlace.byAddedIndex.set(added, content);
+        inPlace.reused.add(content);
+    }
+    return inPlace;
+}
+const STRUCTURAL_BINDING_TYPES$1 = new Set(['if', 'elseif', 'else', 'for']);
+/**
+ * 使い回す Content の「適用済み」の印を落とす。入れ子の構造ディレクティブが持つ Content も辿る —
+ * `if` の中の `for` や、`elseif` / `else` のアンカーは行の Content ではなく**内側の** Content に
+ * 属するので、行の binding だけ落としても新しい行として適用し直されない（印が残ったまま
+ * activateContent の applyChange に飛ばされ、解体した内側が描き直されないまま空になる）。
+ */
+function clearAppliedMarks(content, context) {
+    for (const binding of getBindingsByContent(content)) {
+        context.appliedBindingSet.delete(binding);
+        if (!STRUCTURAL_BINDING_TYPES$1.has(binding.bindingType)) {
+            continue;
+        }
+        for (const nested of getContentSetByNode(binding.node)) {
+            clearAppliedMarks(nested, context);
+        }
+    }
+}
+/**
+ * 入れ子の `for` が持つ Content を解体して台帳から外す（#4）。その場で使い回す行の中身は新しい行として
+ * 作り直されるので、外した Content をアンカーの content 台帳（contentSetByNode）に残すと、置き換えの
+ * たびに伸び続ける。プールへ返さないのは、返すと次の適用で内側の `for` が「全行削除」の近道
+ * （親の textContent を空にする）に入り、囲む `if` のアンカーごと行を壊すため。`if` の Content は
+ * アンカーごとに 1 つを使い回すので外さない。
+ */
+function dropNestedContents(content) {
+    for (const binding of getBindingsByContent(content)) {
+        if (!STRUCTURAL_BINDING_TYPES$1.has(binding.bindingType)) {
+            continue;
+        }
+        const dropped = binding.bindingType === 'for';
+        for (const nested of getContentSetByNode(binding.node)) {
+            dropNestedContents(nested);
+            if (!dropped || !nested.mounted) {
+                continue;
+            }
+            deactivateContent(nested);
+            nested.unmount();
+            deleteContentByNode(binding.node, nested);
+        }
+    }
 }
 function setContent(node, listIndex, content) {
     let contentByListIndex = contentByListIndexByNode.get(node);
@@ -7564,10 +9038,14 @@ function applyChangeToFor(bindingInfo, context, newValue) {
         : recordedLastValue;
     const diff = createListDiff(listIndex, lastValue, newValue);
     context.newListValueByAbsAddress.set(absAddress, Array.isArray(newValue) ? newValue : []);
+    let contentMap = contentByListIndexByNode.get(bindingInfo.node);
+    // 要素書き込みの入れ替えを描き直す差分では、同じ位置で外す行の Content を入る行がその場で使い回す（#4）
+    const inPlaceContents = typeof contentMap !== 'undefined' ? collectInPlaceContents(contentMap, lastValue, diff) : null;
     const fullDelete = Array.isArray(lastValue)
         && lastValue.length === diff.deleteIndexSet.size
         && diff.deleteIndexSet.size > 0;
-    if (fullDelete && bindingInfo.node.parentNode !== null) {
+    // その場で使い回す Content があるときは、親を空にする近道を取らない（使い回す行の DOM も消える）
+    if (fullDelete && inPlaceContents === null && bindingInfo.node.parentNode !== null) {
         let isOnlyNode = isOnlyNodeInParentContentByNode.get(bindingInfo.node);
         if (typeof isOnlyNode === 'undefined') {
             const lastNode = lastNodeByNode.get(bindingInfo.node) || bindingInfo.node;
@@ -7588,7 +9066,6 @@ function applyChangeToFor(bindingInfo, context, newValue) {
     // ホットスポット: 外側の node→map 解決はループ外に持ち上げ、fullDelete（旧全行が
     // deleteIndexSet に載る＝台帳の全エントリが消える）では per-index delete を廃して
     // 台帳ごと 1 回で手放す。
-    let contentMap = contentByListIndexByNode.get(bindingInfo.node);
     let poolBudget = fullDelete
         ? maxPooledContents - getPooledContents(bindingInfo).length
         : Number.POSITIVE_INFINITY;
@@ -7596,7 +9073,14 @@ function applyChangeToFor(bindingInfo, context, newValue) {
         for (const deleteIndex of diff.deleteIndexSet) {
             const content = contentMap.get(deleteIndex);
             if (typeof content !== 'undefined') {
-                if (poolBudget <= 0 && content.tryDestroy()) {
+                if (inPlaceContents !== null && inPlaceContents.reused.has(content)) {
+                    // 同じ位置に入る行がその場で使い回す。自分のノードは DOM に残し、プールにも入れないが、
+                    // 解体は unmount と同じ（ネストした for / if の Content とアドレス台帳を落とす）
+                    deactivateContent(content);
+                    dropNestedContents(content);
+                    content.unmountInPlace();
+                }
+                else if (poolBudget <= 0 && content.tryDestroy()) {
                     deleteContentByNode(bindingInfo.node, content);
                 }
                 else {
@@ -7626,7 +9110,8 @@ function applyChangeToFor(bindingInfo, context, newValue) {
     let fragment = null;
     if (diff.newIndexes.length == diff.addIndexSet.size
         && diff.newIndexes.length > 0
-        && lastNode.isConnected) {
+        && lastNode.isConnected
+        && inPlaceContents === null) {
         // 全部追加の場合はまとめて処理
         fragment = document.createDocumentFragment();
         setRootNodeByFragment(fragment, context.rootNode);
@@ -7646,9 +9131,17 @@ function applyChangeToFor(bindingInfo, context, newValue) {
         if (diff.addIndexSet.has(index)) {
             const stateAddress = createStateAddress(elementPathInfo, index);
             loopContextStack.createLoopContext(stateAddress, (loopContext) => {
-                content = typeof pooledContents !== 'undefined' ? pooledContents.pop() : undefined;
+                content = inPlaceContents?.byAddedIndex.get(index)
+                    ?? (typeof pooledContents !== 'undefined' ? pooledContents.pop() : undefined);
                 if (typeof content === 'undefined') {
                     content = createContent(bindingInfo);
+                }
+                else {
+                    // プール（か同じ位置）から使い回す Content の binding は、同じバッチで**外した行として**適用済みのことがある。
+                    // 外した行のアドレスへの書き込み（行の葉・要素の置き換え）で enqueue された binding が、この `for`
+                    // より先に適用された形。印が残ると activateContent の applyChange が飛ばし、新しい行に外した行の
+                    // 値が残る（表示と state が食い違う）。新しい行として適用し直す
+                    clearAppliedMarks(content, context);
                 }
                 // コンテント活性化の前にDOMツリーに追加しておく必要がある
                 if (fragment !== null) {
@@ -7685,6 +9178,11 @@ function applyChangeToFor(bindingInfo, context, newValue) {
             });
             if (typeof content === 'undefined') {
                 raiseError(`Content not found for ListIndex: ${index.index} at path "${listPathInfo.path}"`);
+            }
+            if (inPlaceContents !== null && inPlaceContents.reused.has(content)) {
+                // その場で使い回した行の中のコンポーネントは DOM から外れない = 付け替えを知らせる
+                // connectedCallback が来ないので、マウントスコープを新しい行の listIndex へ張り直す（#4）
+                remountScopesUnderContent(content, context.stateElement);
             }
         }
         else {
@@ -8366,573 +9864,6 @@ function applyChangeToWebComponent(_binding, _context, _newValue) {
     return;
 }
 
-/**
- * webComponent/volumeShared.ts — ボリュームの軽量共有面。
- *
- * ホットパス（proxy/methods/getByAddress・proxy/apis/updatedCallback・pathDiagnostics）が
- * 引く台帳と chroot だけを置く。graft 本体（webComponent/volume.ts）は watch runtime 等の
- * 重い依存を持つため、ここに混ぜると「updater を部分モックするテスト」が import 連鎖で
- * 壊れる（watchRuntime は import 時に drain リスナーを登録する）。
- */
-/** 予約済みスロット（D22）。キーは rootNode、値はマウントパスの集合。 */
-const reservedSlotsByRootNode = new WeakMap();
-function reserveVolumeSlot(rootNode, mountPath) {
-    let slots = reservedSlotsByRootNode.get(rootNode);
-    if (typeof slots === "undefined") {
-        slots = new Set();
-        reservedSlotsByRootNode.set(rootNode, slots);
-    }
-    if (slots.has(mountPath)) {
-        raiseError(`Volume slot "${mountPath}" is already mounted on this tree.`);
-    }
-    slots.add(mountPath);
-}
-/**
- * パスが予約済みスロットの配下（または祖先）か。pathDiagnostics と getByAddress の
- * ルート欠落 raise が「予約下の読みは undefined が正」（D22）のために引く。
- */
-function isPathUnderReservedVolume(rootNode, path) {
-    if (rootNode === null) {
-        return false;
-    }
-    const slots = reservedSlotsByRootNode.get(rootNode);
-    if (typeof slots === "undefined" || slots.size === 0) {
-        return false;
-    }
-    for (const slot of slots) {
-        if (path === slot || path.startsWith(slot + DELIMITER) || slot.startsWith(path + DELIMITER)) {
-            return true;
-        }
-    }
-    return false;
-}
-/**
- * 接ぎ木済みスロット（D22 後段）。キーはルートの state element。
- * setByAddress のガード（findGraftedSlotUnder）と graftVolume（recordGraftedSlot）が使う。
- * 予約（reservedSlots）と別台帳なのは、接ぎ木**前**の中間 `{}` 生成
- * （graftVolume の親作成）をガードに掛けないため。
- */
-const graftedSlotsByStateElement = new WeakMap();
-function recordGraftedSlot(stateElement, mountPath) {
-    let slots = graftedSlotsByStateElement.get(stateElement);
-    if (typeof slots === "undefined") {
-        slots = new Set();
-        graftedSlotsByStateElement.set(stateElement, slots);
-    }
-    slots.add(mountPath);
-}
-/**
- * 書き込みパスが接ぎ木済みスロットの**真の祖先**なら、そのスロットを返す（D22 後段）。
- * マウントポイントを含む親の丸ごと書きは、接ぎ木データを無言で捨てて quoted-path
- * アクセサだけを宙に浮かせるため throw の根拠になる。スロット自身への書き込みは
- * 通常のデータ差し替えなので対象外。`hasGraftedVolumes` が真のときだけ呼ぶこと。
- */
-function findGraftedSlotUnder(stateElement, path) {
-    const slots = graftedSlotsByStateElement.get(stateElement);
-    if (typeof slots === "undefined" || slots.size === 0) {
-        return null;
-    }
-    const prefix = path + DELIMITER;
-    for (const slot of slots) {
-        if (slot.startsWith(prefix)) {
-            return slot;
-        }
-    }
-    return null;
-}
-/** ボリュームの chroot（相対キー → `<mountPath>.<key>` を receiver に翻訳する薄い proxy）。 */
-function createVolumeChroot(mountPath, receiver) {
-    return new Proxy({}, {
-        get(_target, prop) {
-            if (typeof prop !== "string" || prop === "then") {
-                return undefined;
-            }
-            if (prop[0] === "$") {
-                if (prop === "$postUpdate") {
-                    return (path) => {
-                        receiver.$postUpdate(mountPath + DELIMITER + path);
-                    };
-                }
-                if (prop === "$getAll" || prop === "$setAll" || prop === "$resolve") {
-                    const api = prop;
-                    return (path, ...rest) => receiver[api](mountPath + DELIMITER + path, ...rest);
-                }
-                // 他の `$` は親の意味論のまま（宣言面はボリュームが登録時に翻訳する）
-                return receiver[prop];
-            }
-            return receiver[mountPath + DELIMITER + prop];
-        },
-        set(_target, prop, value) {
-            if (typeof prop !== "string") {
-                return true;
-            }
-            receiver[mountPath + DELIMITER + prop] = value;
-            return true;
-        },
-        has(_target, prop) {
-            // ボリュームの面はツリーそのもの — マウント配下は常に解決する
-            return typeof prop === "string" && prop[0] !== "$" && prop[0] !== "#";
-        },
-    });
-}
-const volumeUpdatedCallbacksByRoot = new WeakMap();
-const NO_VOLUME_UPDATED_CALLBACKS = [];
-function addVolumeUpdatedCallback(stateElement, entry) {
-    let callbacks = volumeUpdatedCallbacksByRoot.get(stateElement);
-    if (typeof callbacks === "undefined") {
-        callbacks = [];
-        volumeUpdatedCallbacksByRoot.set(stateElement, callbacks);
-    }
-    callbacks.push(entry);
-}
-function getVolumeUpdatedCallbacks(stateElement) {
-    return volumeUpdatedCallbacksByRoot.get(stateElement) ?? NO_VOLUME_UPDATED_CALLBACKS;
-}
-const pendingVolumesByRootNode = new WeakMap();
-/**
- * ルートの state 要素が初期化に失敗した rootNode（#257）。ルート登録（setStateElement）は
- * 二度と起きないので `drainPendingVolumes` も呼ばれず、保留中のボリュームの
- * `onGrafted` が走らないまま initializePromise / connectedCallbackPromise が永久に
- * 未解決になる（ルートの診断だけが出て、同じページのボリュームは無言で消える）。
- * 「ルートは来ない」と確定した時点で保留分を孤児として着地させ、以後に届く保留要求も
- * 同じ着地へ合流させる。D11 の「ルート無し」報告はここには出ない — 検査（State.ts の
- * reportVolumeWithoutRoot）は**要素の存在**で見るので、落ちたルート要素が居る限り黙る。
- *
- * 印は**落ちた要素がこの rootNode に居る間だけ**有効（`clearFailedRootNode`）。持続させると、
- * この PR が案内する復旧（壊れた要素を取り除いて作り直す）と矛盾する: 外してから修正版を
- * 接続するまでの窓で接続したボリュームが即座に孤児化し、正しいルートが来ても採用されない。
- */
-const failedRootNodes = new WeakSet();
-/** 接ぎ木先を失ったボリュームの着地（graftIsolated の失敗と同じ形 — 1 件 1 報告 ＋ finish(null)）。 */
-function orphanPendingVolume(request) {
-    console.error(`[@wcstack/state] volume "${request.mountPath}" was not grafted — the root state element ` +
-        `on this root node failed to initialize (its own diagnostic is reported separately). ` +
-        `The volume is not at fault: fix the root <wcs-state>.`);
-    request.onGrafted(null);
-}
-/**
- * 失敗の印を落とす（#257）。呼び手は State の `disconnectedCallback` ただ 1 つで、
- * **初期化に失敗した当の要素**が剥がされたときだけ呼ぶ — 落ちたルートが DOM から
- * 消えた時点で「このルートノードにルートは来ない」は成り立たなくなる（作者は
- * 取り除いて作り直す）。
- *
- * 呼び手を本人に限るのは第 3 ラウンドの修正: 「初期化前に剥がされた要素」全部で
- * 落としていたため、同じ rootNode の別要素（登録されなかった 2 本目・行プールの
- * 張り直し・ロード中の DOM 移動）の切断で印が消え、以後のボリュームが孤児報告を
- * 受けられず永久保留へ戻っていた。
- */
-function clearFailedRootNode(rootNode) {
-    failedRootNodes.delete(rootNode);
-}
-/** ルートの初期化失敗を確定し、保留中のボリュームを孤児として着地させる（State の _failInitializeLoudly が唯一の呼び手）。 */
-function failPendingVolumes(rootNode) {
-    failedRootNodes.add(rootNode);
-    const pending = pendingVolumesByRootNode.get(rootNode);
-    if (typeof pending === "undefined") {
-        // 保留はまだ無い（ボリュームのロードのほうが遅い形）— 下の queuePendingVolume が拾う
-        return;
-    }
-    pendingVolumesByRootNode.delete(rootNode);
-    for (const request of pending) {
-        orphanPendingVolume(request);
-    }
-}
-let graftHandler = null;
-function setVolumeGraftHandler(handler) {
-    graftHandler = handler;
-}
-function queuePendingVolume(rootNode, request) {
-    if (failedRootNodes.has(rootNode)) {
-        // ルートが落ちた後に届いた保留要求（ボリュームのロードのほうが遅い形）。
-        // 積んでも引き取り手は永久に来ない
-        orphanPendingVolume(request);
-        return;
-    }
-    let pending = pendingVolumesByRootNode.get(rootNode);
-    if (typeof pending === "undefined") {
-        pending = [];
-        pendingVolumesByRootNode.set(rootNode, pending);
-    }
-    pending.push(request);
-}
-/** ルート登録時に保留中のボリュームを接ぎ木する（stateElementByName から呼ばれる）。 */
-function drainPendingVolumes(rootNode, rootStateElement) {
-    // ルートが成立した ＝ 失敗の印は無効（落ちたルートを外して正しいルートを接続し直した
-    // 形。WeakSet.delete は未登録でも安全なので分岐は要らない）
-    failedRootNodes.delete(rootNode);
-    const pending = pendingVolumesByRootNode.get(rootNode);
-    if (typeof pending === "undefined" || pending.length === 0 || graftHandler === null) {
-        return;
-    }
-    pendingVolumesByRootNode.delete(rootNode);
-    // 登録はルートの _initialize の途中（createState はまだ危うい）— microtask に
-    // 遅らせてルートの接続完了後に接ぎ木する
-    const handler = graftHandler;
-    queueMicrotask(() => {
-        for (const request of pending) {
-            handler(rootStateElement, request);
-        }
-    });
-}
-
-/**
- * pathDiagnostics.ts — バインド / `$watch` 対象パスの存在検査（silent failure の可視化）。
- *
- * なぜ必要か:
- * `getByAddress` は「親が null / undefined のパスの読み」を undefined で返し、
- * undefined はプロパティ書き込みがスキップされる値なので、`user.nmae` のような
- * 打ち間違いは**エラーも警告も出さずに DOM が更新されない**だけになる。一方で
- * トップレベルの打ち間違い（`cout`）は parentAddress を辿れず raiseError で落ちる。
- * 同じ「パスを打ち間違えた」という 1 つの失敗が、パスの深さで silent / loud に
- * 割れており、書き手からは区別がつかない。ここはその silent 側を埋める。
- *
- * 精度方針（過小近似）:
- * 「確実に存在しない」と言い切れる場合にだけ報告する。getter の戻り値の先・
- * 空配列・null 親・mapped な `bind-component` など、静的に決められない形はすべて
- * `"unknown"` に倒して黙る（偽陽性ゼロ優先。docs/static-wiring-dx-design.md D7 /
- * [ADR-06](../../docs/architecture-hardening/06-path-type-safety.md) の精度哲学）。
- *
- * 診断 code はコンソール → lint → IDE の三面で共有する（errorGuidance.ts の規約）。
- */
-const UNKNOWN = Object.freeze({
-    existence: "unknown",
-    missingSegment: "",
-    candidates: Object.freeze([]),
-});
-const EXISTS = Object.freeze({
-    existence: "exists",
-    missingSegment: "",
-    candidates: Object.freeze([]),
-});
-/**
- * `obj` 自身＋プロトタイプチェーン（Object.prototype 手前まで）から descriptor を引く。
- * 打ち切り位置は getAllPropertyDescriptors と同じ — 「state が宣言したもの」だけを
- * 存在とみなし、`toString` 等の Object.prototype 由来を存在扱いしない。
- *
- * `State.findStateDescriptor`（再帰アクセサの衝突検査）も同じ走査を使う。打ち切り位置が
- * 2 本に分かれると、片方だけが `Object.prototype` を存在扱いするようなずれ方をする。
- */
-function findDescriptor(obj, key) {
-    let proto = obj;
-    while (proto !== null && proto !== Object.prototype) {
-        const descriptor = Object.getOwnPropertyDescriptor(proto, key);
-        if (typeof descriptor !== "undefined") {
-            return descriptor;
-        }
-        proto = Object.getPrototypeOf(proto);
-    }
-    return undefined;
-}
-/** `obj` 自身＋プロトタイプチェーンのキー名（did-you-mean の候補集合） */
-function ownKeys(obj) {
-    const keys = [];
-    let proto = obj;
-    while (proto !== null && proto !== Object.prototype) {
-        for (const key of Object.getOwnPropertyNames(proto)) {
-            keys.push(key);
-        }
-        proto = Object.getPrototypeOf(proto);
-    }
-    return keys;
-}
-/**
- * 失敗した階層の兄弟候補。生オブジェクトのキーに加え、その階層にフラット宣言
- * （ドットパス getter）されているものも混ぜる — `cart.items.*.subtotl` の正解
- * `subtotal` は行オブジェクトには無く getterPaths にしか居ないため。
- */
-function collectCandidates(container, parentPrefix, declaredPaths) {
-    const candidates = ownKeys(container);
-    const prefix = parentPrefix.length > 0 ? parentPrefix + DELIMITER : "";
-    for (const declared of declaredPaths) {
-        if (prefix.length > 0 && !declared.startsWith(prefix)) {
-            continue;
-        }
-        const rest = declared.slice(prefix.length);
-        // 直下の 1 セグメントだけを候補にする（孫は別階層の名前なので提案しない）
-        if (rest.length > 0 && rest.indexOf(DELIMITER) === -1) {
-            candidates.push(rest);
-        }
-    }
-    return candidates;
-}
-/**
- * `target` に対して `path` が解決しうるかを、値を読まずに（getter を評価せずに）判定する。
- *
- * 解決の順序は `getByAddress` の実装に合わせる: まず「パス文字列そのものがキーか」
- * （ドットパス getter がこれ）、次にセグメントを 1 つずつ降りる。
- */
-function resolvePathExistence(target, path, declaredPaths) {
-    // ドットパス getter / フラットキーの完全一致（`get "users.*.fullName"()` 等）
-    if (findDescriptor(target, path) !== undefined) {
-        return EXISTS;
-    }
-    const segments = getPathInfo(path).segments;
-    let current = target;
-    let prefix = "";
-    for (let i = 0; i < segments.length; i++) {
-        const segment = segments[i];
-        const parentPrefix = prefix;
-        prefix = i === 0 ? segment : prefix + DELIMITER + segment;
-        // 途中のプレフィックスがフラット宣言されている（`cart.totalPrice` が getter で、
-        // その戻り値のサブプロパティを読む形）。戻り値の形は評価しないと分からない
-        if (i > 0 && i < segments.length - 1 && findDescriptor(target, prefix) !== undefined) {
-            return UNKNOWN;
-        }
-        // null / undefined / primitive より深い読みは実行時 undefined 解決 = 判定不能。
-        // 「初期値 null のオブジェクトに後から代入する」形を偽陽性で潰さないため
-        if (Object(current) !== current) {
-            return UNKNOWN;
-        }
-        if (segment === WILDCARD) {
-            // 行の形は「いま入っている要素」からしか分からない。空配列・非配列は判定不能
-            if (!Array.isArray(current) || current.length === 0) {
-                return UNKNOWN;
-            }
-            current = current[0];
-            continue;
-        }
-        const descriptor = findDescriptor(current, segment);
-        if (typeof descriptor === "undefined") {
-            return {
-                existence: "missing",
-                missingSegment: segment,
-                candidates: collectCandidates(current, parentPrefix, declaredPaths),
-            };
-        }
-        if (typeof descriptor.get === "function") {
-            // getter の戻り値の先は評価しないと分からない（末尾なら存在は確定）
-            return i === segments.length - 1 ? EXISTS : UNKNOWN;
-        }
-        current = descriptor.value;
-    }
-    return EXISTS;
-}
-/** 診断 code は lint / IDE と同一語彙（errorGuidance.ts の三面共有規約） */
-const DIAGNOSTIC_CODE = {
-    binding: "wcs/binding-path-missing",
-    watch: "wcs/watch-path-missing",
-    scan: "wcs/scan-path-missing",
-};
-const SUBJECT = {
-    binding: "Bound path",
-    watch: "$watch path",
-    scan: "$scan path",
-};
-/**
- * ルート直下（単一セグメント）のパスが state に無いときのエラーメッセージ。
- *
- * この形だけは親アドレスを辿れないので読み取りが throw する ＝ 元から loud だが、
- * 文面が `address.parentAddress is undefined path: cout` という内部実装の言葉で、
- * 「打ち間違い」だと分からず did-you-mean も lint 誘導も無かった。深いパスの
- * `console.warn` と同じ語彙に揃える。
- */
-function missingRootPathMessage(path, target, declaredPaths) {
-    return `[${DIAGNOSTIC_CODE.binding}] Path "${path}" does not exist on the state tree.` +
-        `${didYouMean(path, collectCandidates(target, "", declaredPaths))}${LINT_HINT}`;
-}
-/**
- * `$resolve` / `$getAll` に渡した添字の本数がワイルドカードの本数と噛み合わない。
- *
- * 不足（`$resolve`）は元から throw していたが、**超過は両 API とも黙って無視**され、
- * 取り違えた添字のまま「もっともらしい値」を返していた。本数はパス文字列から
- * 決まるので、噛み合わないことは常にプログラマのミス。
- */
-function indexArityMessage(api, path, wildcardCount, actual) {
-    // `$getAll` / `$setAll` の添字は前方一致の接頭辞なので上限、`$resolve` だけが厳密一致
-    // （docs/state-set-all-design.md §4）。
-    const requirement = api === "$resolve"
-        ? `exactly ${wildcardCount}`
-        : `at most ${wildcardCount}`;
-    return `[wcs/index-arity] ${api}("${path}") requires ${requirement} index(es) ` +
-        `("*" appears ${wildcardCount} time(s) in the path) but got ${actual}.${LINT_HINT}`;
-}
-/**
- * `**` を含むパスが宣言済みの再帰アンカーと合致しない（綴り違い・2 つ目の `**`）。
- * 束縛形（bind.ts）・合併形（getAllRecursive.ts）・ブロードキャスト（setAllRecursive.ts）の
- * 3 入口が同じ文面で報告する。
- */
-function recursionAnchorMismatchMessage(path, recursiveAnchor) {
-    return `[wcs/recursion-anchor] "${path}" does not match the declared recursion anchor ` +
-        `"${recursiveAnchor}". This version supports exactly one anchor per state, and "**" must be followed ` +
-        `by a well-formed suffix (no second "**", no empty segment, no bare "*" right after "**").`;
-}
-/**
- * `$getAll(path)`（添字省略）の既定値はループ文脈の添字 `[$1..$n]` だが、それを
- * 敷けるのは path と文脈がワイルドカード連鎖を共有している場合だけ。共有ゼロなのに
- * 文脈が添字を持っている場合、黙って全展開に倒すと「文脈で絞られている」という
- * 書き手の期待と食い違い、異なる文脈の添字の流用とも区別が付かないため throw する。
- *
- * 実行時の評価文脈に依存する（`$setAll` の spread 長と同種）ので lint へは誘導しない。
- */
-function getAllContextMismatchMessage(path, contextPath) {
-    return `$getAll("${path}") was called without indexes inside the loop context of ` +
-        `"${contextPath}", but the path shares no wildcard level with that context, ` +
-        `so the context indexes ($1..$n) do not apply. ` +
-        `Pass indexes explicitly ([] expands every level).`;
-}
-/**
- * `$setAll(path, indexes, values, { spread: true })` の配列長がマッチ件数と噛み合わない。
- *
- * 静的には件数が分からない（実行時のリスト長に依存する）ので lint へは誘導しない。
- * 黙って切り詰める／余りを捨てると誤配が通ってしまうため throw する
- * （docs/state-set-all-design.md §3-3）。
- */
-function setAllSpreadArityMessage(path, matched, actual) {
-    return `$setAll("${path}", …, { spread: true }) requires the values array to have ` +
-        `exactly one entry per matched address (matched ${matched}) but got ${actual}. ` +
-        `Did the list change between $getAll and $setAll?`;
-}
-/**
- * `$setAll` の値と `options` の組み合わせが意味を成さない。
- * （docs/state-set-all-design.md §3-1）
- */
-function setAllValueKindMessage(path, reason) {
-    return `$setAll("${path}") ${reason}`;
-}
-/**
- * ワイルドカードを解決するループ文脈が足りない（＝パスの階数 > スコープの階数）。
- *
- * `matrix.*.*` を 1 段の `for` の中で読む、`$2` を 1 段のループの中で読む、といった
- * 取り違えがこれ。元の文面は `address.listIndex?.index is undefined path: matrix.*` /
- * `Index not found at position 1 for loopContext:` という内部実装の言葉で、
- * **何を間違えたのかが書かれていなかった**。
- */
-function wildcardScopeMessage(subject, needed, available) {
-    return `[wcs/wildcard-rank] ${subject} needs ${needed} enclosing loop level(s) but the current ` +
-        `scope provides ${available}. Wrap it in that many "for" templates, or use $resolve(path, indexes) ` +
-        `to name the row explicitly.${LINT_HINT}`;
-}
-/** 同じ (state 要素, パス) の報告は 1 回だけにする台帳 */
-const reportedPathsByStateElement = new WeakMap();
-function alreadyReported(stateElement, path) {
-    let reported = reportedPathsByStateElement.get(stateElement);
-    if (typeof reported === "undefined") {
-        reported = new Set();
-        reportedPathsByStateElement.set(stateElement, reported);
-    }
-    if (reported.has(path)) {
-        return true;
-    }
-    reported.add(path);
-    return false;
-}
-/**
- * バインド確立時 / `$watch` 宣言時にパスの存在を検査し、確実に存在しないものだけ報告する。
- *
- * 報告は `console.warn` に留める（`raiseError` にしない）:
- * 判定は過小近似とはいえ動的にキーが生える形まで排除できたわけではなく、
- * 既存ページを起動不能にする代償に見合わない。silent を破ることが目的であり、
- * 停止させることではない。
- */
-function checkDeclaredPath(stateElement, state, path, source) {
-    if (source === "internal" || typeof state === "undefined") {
-        return;
-    }
-    // `$command` / `$streamStatus` / `$1` 等の予約名前空間は raw state に実体を持たない
-    if (path.startsWith("$")) {
-        return;
-    }
-    // マウントの予約セグメント（`users.*.#m1.editing` — D20）はオーバーレイに実体があり
-    // raw state には無い。`#else`（構造プレースホルダ）も同様（webComponent/mount.ts）
-    if (path.indexOf("#") !== -1) {
-        return;
-    }
-    // 予約済みのボリュームスロット配下はロード完了まで undefined が正（D22）
-    if (isPathUnderReservedVolume(stateElement.rootNode ?? null, path)) {
-        return;
-    }
-    // 単一セグメントのバインディングは読み取り時に raiseError で loud に落ちるので、
-    // ここで二重に報告しない。`$watch` は落ちずに黙って発火しないだけなので検査する
-    const segments = getPathInfo(path).segments;
-    if (source === "binding" && segments.length < 2) {
-        return;
-    }
-    if (alreadyReported(stateElement, path)) {
-        return;
-    }
-    // 再帰 getter の展開形は、バインド確立の時点ではまだ生えていない（読む直前に
-    // 遅延実体化する — recursion/registry.ts）。素の存在検査では必ず「解決できない」に
-    // なるので、宣言済みの `**` getter に合致するかを先に見る。実体化はしない。
-    // 展開形の**値の内側**（`nodes.*.stats.count` で `get "nodes.**.stats"()` がオブジェクトを
-    // 返す形）も同じ — 通常の getter なら下の「途中のプレフィックスがフラット宣言」で
-    // UNKNOWN に倒れるところ、未実体化のアクセサは findDescriptor に見えないのでここで畳む。
-    if (stateElement.hasRecursion === true && stateElement.recursionRegistry.recursiveGetterOwning(path) !== null) {
-        return;
-    }
-    const result = resolvePathExistence(state, path, stateElement.getterPaths);
-    if (result.existence !== "missing") {
-        return;
-    }
-    if (isExportedPath(stateElement, path)) {
-        return;
-    }
-    if (source === "binding") {
-        // 遅延報告（docs/state-overlay-export-design.md X7）: バインド確立時点では、その位置に
-        // マウントされるコンポーネントの getter（公開 getter）がまだ登録されていない。
-        // 1 マクロタスク待って、登録で解消しなかったものだけを報告する
-        deferReport(stateElement, path, result);
-        return;
-    }
-    reportMissing(stateElement, path, source, result);
-}
-const deferredReportsByStateElement = new WeakMap();
-const flushScheduled = new WeakSet();
-const exportedPathsByStateElement = new WeakMap();
-/** 公開 getter の登録（webComponent/exportIndex.ts）— このパスは「存在しない」ではない */
-function markExportedPath(stateElement, path) {
-    let paths = exportedPathsByStateElement.get(stateElement);
-    if (typeof paths === "undefined") {
-        paths = new Set();
-        exportedPathsByStateElement.set(stateElement, paths);
-    }
-    paths.add(path);
-    deferredReportsByStateElement.get(stateElement)?.delete(path);
-}
-function isExportedPath(stateElement, path) {
-    return exportedPathsByStateElement.get(stateElement)?.has(path) === true;
-}
-function deferReport(stateElement, path, result) {
-    let pending = deferredReportsByStateElement.get(stateElement);
-    if (typeof pending === "undefined") {
-        pending = new Map();
-        deferredReportsByStateElement.set(stateElement, pending);
-    }
-    pending.set(path, result);
-    if (flushScheduled.has(stateElement)) {
-        return;
-    }
-    flushScheduled.add(stateElement);
-    setTimeout(() => flushDeferredPathReports(stateElement), 0);
-}
-/** 遅延中の報告を今すぐ流す（タイマー到達時・テスト用） */
-function flushDeferredPathReports(stateElement) {
-    flushScheduled.delete(stateElement);
-    const pending = deferredReportsByStateElement.get(stateElement);
-    if (typeof pending === "undefined") {
-        return;
-    }
-    deferredReportsByStateElement.delete(stateElement);
-    // 登録で解消したものは markExportedPath が pending から消している
-    for (const [path, result] of pending) {
-        reportMissing(stateElement, path, "binding", result);
-    }
-}
-function reportMissing(stateElement, path, source, result) {
-    // 接頭辞は raiseError と同じ `[@wcstack/state] [wcs/...]` の並び（コンソールの
-    // grep 単位をパッケージで揃える）
-    console.warn(`[@wcstack/state] [${DIAGNOSTIC_CODE[source]}] ${SUBJECT[source]} "${path}" does not resolve on the state tree: ` +
-        `"${result.missingSegment}" is not declared.${didYouMean(result.missingSegment, result.candidates)}` +
-        ` Updates to this path will be silently dropped.${LINT_HINT}`);
-    if (devtoolsSink !== null) {
-        devtoolsSink({
-            type: "state:path-unresolved",
-            source,
-            path,
-            missingSegment: result.missingSegment,
-        });
-    }
-}
-
 // indexName ... $1, $2, ...
 function getIndexValueByLoopContext(loopContext, indexName) {
     if (loopContext.listIndex === null) {
@@ -9255,8 +10186,12 @@ function reportBindingApplyError(binding, error, stateElement, failuresByStateEl
  *
  * 最適化のため、以下のグループ化を行う:
  * 同じ rootNode を持つバインディングをグループ化 → createState の呼び出しを削減
+ *
+ * `options.updatedCallback === false` は `$updatedCallback` を呼ばない。唯一の呼び手は再セットの
+ * 再適用（apply/reapplyStateBindings.ts）で、再セットは書き込みではないため。`$errorCallback` は
+ * 適用の失敗の報告なので、どの経路でも配送する。
  */
-function applyChangeFromBindings(bindings, propagationContextByBinding) {
+function applyChangeFromBindings(bindings, propagationContextByBinding, options) {
     let bindingIndex = 0;
     const appliedBindingSet = new Set();
     const newListValueByAbsAddress = new Map();
@@ -9339,10 +10274,12 @@ function applyChangeFromBindings(bindings, propagationContextByBinding) {
         // 書き込みで基準が空のまま ListIndex を鋳造してしまう（E1）。
         setStateListBaseline(absAddress, newListValue);
     }
-    for (const [stateElement, absAddressSet] of updatedAbsAddressSetByStateElement.entries()) {
-        stateElement.createState("writable", (state) => {
-            state[updatedCallbackSymbol](Array.from(absAddressSet));
-        });
+    if (options?.updatedCallback !== false) {
+        for (const [stateElement, absAddressSet] of updatedAbsAddressSetByStateElement.entries()) {
+            stateElement.createState("writable", (state) => {
+                state[updatedCallbackSymbol](Array.from(absAddressSet));
+            });
+        }
     }
     // $errorCallback の配送。$updatedCallback の後・失敗した本数ぶん・this は writable proxy。
     // callback 自身の throw は隔離する — 1 件の報告失敗が残りの報告と drain を道連れにしない
@@ -9411,412 +10348,6 @@ function initializeRowBindings(plan, bindings) {
     return session;
 }
 
-const MUSTACHE_REGEX = /\{\{\s*(.+?)\s*\}\}/g;
-const SKIP_TAGS = new Set(["SCRIPT", "STYLE"]);
-function convertMustacheToComments(root) {
-    if (!config.enableMustache) {
-        return;
-    }
-    convertTextNodes(root);
-    const templates = Array.from(root.querySelectorAll("template"));
-    for (const template of templates) {
-        if (template.namespaceURI === SVG_NAMESPACE) {
-            const newTemplate = document.createElement("template");
-            const childNodes = Array.from(template.childNodes);
-            for (let i = 0; i < childNodes.length; i++) {
-                const childNode = childNodes[i];
-                newTemplate.content.appendChild(childNode);
-            }
-            for (const attr of template.attributes) {
-                newTemplate.setAttribute(attr.name, attr.value);
-            }
-            template.replaceWith(newTemplate);
-            convertMustacheToComments(newTemplate.content);
-        }
-        else {
-            convertMustacheToComments(template.content);
-        }
-    }
-}
-function convertTextNodes(root) {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    const textNodes = [];
-    while (walker.nextNode()) {
-        textNodes.push(walker.currentNode);
-    }
-    for (const textNode of textNodes) {
-        if (textNode.parentElement && SKIP_TAGS.has(textNode.parentElement.tagName)) {
-            continue;
-        }
-        replaceTextNode(textNode);
-    }
-}
-function replaceTextNode(textNode) {
-    const text = textNode.data;
-    MUSTACHE_REGEX.lastIndex = 0;
-    if (!MUSTACHE_REGEX.test(text)) {
-        return;
-    }
-    MUSTACHE_REGEX.lastIndex = 0;
-    const fragment = document.createDocumentFragment();
-    let lastIndex = 0;
-    let match;
-    while ((match = MUSTACHE_REGEX.exec(text)) !== null) {
-        if (match.index > lastIndex) {
-            fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
-        }
-        const bindText = match[1];
-        fragment.appendChild(document.createComment(`@@: ${bindText}`));
-        lastIndex = match.index + match[0].length;
-    }
-    if (lastIndex < text.length) {
-        fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
-    }
-    textNode.parentNode.replaceChild(fragment, textNode);
-}
-
-let _notFilterInfo = undefined;
-function createNotFilter() {
-    if (_notFilterInfo) {
-        return _notFilterInfo;
-    }
-    const filterName = "not";
-    const args = [];
-    const filterFn = builtinFilterFn(filterName, args)(outputBuiltinFilters);
-    _notFilterInfo = {
-        filterName,
-        args,
-        filterFn,
-    };
-    return _notFilterInfo;
-}
-
-const COMMENT_REGEX = /^(\s*@@\s*(?:.*?)\s*:\s*)(.+?)(\s*)$/;
-function expandShorthandInStatePart(statePart, forPath) {
-    const prefix = forPath + DELIMITER + WILDCARD;
-    const pipeIndex = statePart.indexOf('|');
-    let pathPart;
-    let suffix;
-    if (pipeIndex !== -1) {
-        pathPart = statePart.slice(0, pipeIndex).trim();
-        suffix = statePart.slice(pipeIndex);
-    }
-    else {
-        pathPart = statePart.trim();
-        suffix = '';
-    }
-    if (pathPart === '.') {
-        pathPart = prefix;
-    }
-    else if (pathPart.startsWith('.')) {
-        pathPart = prefix + DELIMITER + pathPart.slice(1);
-    }
-    else {
-        return statePart;
-    }
-    if (suffix.length > 0) {
-        return pathPart + suffix;
-    }
-    return pathPart;
-}
-function expandCommentData(data, forPath) {
-    const match = COMMENT_REGEX.exec(data);
-    if (match === null) {
-        return data;
-    }
-    const commentPrefix = match[1];
-    const bindText = match[2];
-    const commentSuffix = match[3];
-    const expanded = expandShorthandInStatePart(bindText, forPath);
-    return commentPrefix + expanded + commentSuffix;
-}
-function expandBindAttribute(attrValue, forPath) {
-    const parts = attrValue.split(';');
-    let changed = false;
-    const result = parts.map(part => {
-        const trimmed = part.trim();
-        if (trimmed.length === 0)
-            return part;
-        const colonIndex = trimmed.indexOf(':');
-        if (colonIndex === -1)
-            return part;
-        const propPart = trimmed.slice(0, colonIndex).trim();
-        const statePart = trimmed.slice(colonIndex + 1).trim();
-        const expanded = expandShorthandInStatePart(statePart, forPath);
-        if (expanded !== statePart) {
-            changed = true;
-            return `${propPart}: ${expanded}`;
-        }
-        return part;
-    });
-    if (!changed)
-        return attrValue;
-    return result.join(';');
-}
-function expandShorthandInBindAttribute(attrValue, forPath) {
-    return expandBindAttribute(attrValue, forPath);
-}
-function expandShorthandPaths(root, forPath) {
-    const bindAttr = config.bindAttributeName;
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT | NodeFilter.SHOW_ELEMENT);
-    while (walker.nextNode()) {
-        const node = walker.currentNode;
-        if (node.nodeType === Node.COMMENT_NODE) {
-            const comment = node;
-            comment.data = expandCommentData(comment.data, forPath);
-            continue;
-        }
-        const element = node;
-        if (element instanceof HTMLTemplateElement) {
-            continue;
-        }
-        const attr = element.getAttribute(bindAttr);
-        if (attr !== null) {
-            const expanded = expandBindAttribute(attr, forPath);
-            if (expanded !== attr) {
-                element.setAttribute(bindAttr, expanded);
-            }
-        }
-    }
-}
-
-function getNodePath(node) {
-    let currentNode = node;
-    const path = [];
-    while (currentNode.parentNode !== null) {
-        const nodes = Array.from(currentNode.parentNode.childNodes);
-        const index = nodes.indexOf(currentNode);
-        path.unshift(index);
-        currentNode = currentNode.parentNode;
-    }
-    return path;
-}
-
-function getFragmentNodeInfos(fragment) {
-    const fragmnentNodeInfos = [];
-    const subscriberNodes = getSubscriberNodes(fragment);
-    for (const subscriberNode of subscriberNodes) {
-        const parseBindingTextResults = getParseBindTextResults(subscriberNode);
-        let node = subscriberNode;
-        // テンプレート登録時の事前正規化: text 専用の wcs-text コメントは、この時点で
-        // 空 Text に置き換えておく。行 clone は最初から Text を持ち、getBindingInfos が
-        // その Text を replaceNode に使うため、行ごとの createTextNode と start() 時の
-        // replaceChild（コメント→Text 差し替え）が丸ごと不要になる。
-        // 置換は同じ位置なので nodePath は不変。wcs-for/if 等の構造コメントは
-        // アンカーとしてコメントのまま維持する（bindingType で判別）。
-        // 非フラグメント経路（実 DOM 上のコメント）は従来どおり実行時に差し替える。
-        if (subscriberNode.nodeType === Node.COMMENT_NODE
-            && parseBindingTextResults.length === 1
-            && parseBindingTextResults[0].bindingType === "text"
-            && subscriberNode.parentNode !== null) {
-            const textNode = document.createTextNode("");
-            subscriberNode.parentNode.replaceChild(textNode, subscriberNode);
-            node = textNode;
-        }
-        fragmnentNodeInfos.push({
-            nodePath: getNodePath(node),
-            parseBindTextResults: parseBindingTextResults,
-        });
-    }
-    return fragmnentNodeInfos;
-}
-
-function optimizeFragment(fragment) {
-    const childNodes = Array.from(fragment.childNodes);
-    for (const childNode of childNodes) {
-        if (childNode.nodeType === Node.TEXT_NODE) {
-            const textContent = childNode.textContent || '';
-            if (textContent.trim() === '') {
-                // Remove empty text nodes
-                fragment.removeChild(childNode);
-            }
-        }
-    }
-}
-
-const keywordByBindingType = new Map([
-    ["for", config.commentForPrefix],
-    ["if", config.commentIfPrefix],
-    ["elseif", config.commentElseIfPrefix],
-    ["else", config.commentElsePrefix],
-]);
-const notFilter = createNotFilter();
-function cloneNotParseBindTextResult(bindingType, parseBindTextResult) {
-    const filters = parseBindTextResult.outFilters;
-    return {
-        ...parseBindTextResult,
-        outFilters: [...filters, notFilter],
-        bindingType: bindingType,
-    };
-}
-function transformNodeInfos(nodeInfos, transform, forPath) {
-    for (const nodeInfo of nodeInfos) {
-        for (let i = 0; i < nodeInfo.parseBindTextResults.length; i++) {
-            const parsed = nodeInfo.parseBindTextResults[i];
-            if (parsed.uuid != null)
-                continue;
-            // forPath はこのフラグメントの中身を囲む for のスコープ相対パス（`$n` のシフト量の根拠）
-            nodeInfo.parseBindTextResults[i] = transform(parsed, forPath);
-        }
-    }
-}
-function _getFragmentInfo(rootNode, fragment, parseBindingTextResult, forPath, transform, 
-// else 節はテンプレート自身の結果を if の**変換済み**結果から clone するため、
-// そこだけ再変換しない（nodeInfos は通常どおり変換する）
-transformOwnResult = true) {
-    optimizeFragment(fragment);
-    if (typeof forPath === "string") {
-        expandShorthandPaths(fragment, forPath);
-    }
-    collectStructuralFragments(rootNode, fragment, forPath, transform);
-    // after replacing and collect node infos on child fragment
-    const fragmentInfo = {
-        fragment: fragment,
-        // own result（テンプレート自身の for/if/elseif）にも forPath を渡す — `$n` の
-        // シフト量は囲む for の翻訳が根拠（translateParsedForMount）で、渡し漏れると
-        // record.delta に落ち、翻訳がワイルドカードを増やす部分マウント内の for の
-        // `if: $n` / `elseif: $n` が誤った添字に解決される（transformNodeInfos と対称）。
-        // if/elseif の forPath（呼び手の childForPath）は外側 forPath そのもの。
-        // for テンプレートの own path は `$n` になり得ず、非 `$n` パスの変換は forPath を
-        // 読まないため、for に自パスが渡っても無害
-        parseBindTextResult: typeof transform === "undefined" || !transformOwnResult
-            ? parseBindingTextResult
-            : transform(parseBindingTextResult, forPath),
-        nodeInfos: getFragmentNodeInfos(fragment),
-    };
-    if (typeof transform !== "undefined") {
-        transformNodeInfos(fragmentInfo.nodeInfos, transform, forPath);
-    }
-    return fragmentInfo;
-}
-function collectStructuralFragments(rootNode, walkRoot, forPath, transform) {
-    const elseKeyword = config.commentElsePrefix;
-    // Light DOM の mapped コンポーネントの内側は、その子スコープが自分で処理する（§1.13）。
-    // fragment info は rootNode + state 名で登録されるため、ホストのパスでここを拾うと
-    // コンポーネント側の state がまだ名前登録を済ませておらず解決に失敗する。
-    // コンポーネント要素自身は template ではないので、REJECT でサブツリーごと落として問題ない。
-    const nestedComponents = findNestedLightDomComponents(walkRoot);
-    const walker = document.createTreeWalker(walkRoot, NodeFilter.SHOW_ELEMENT, {
-        acceptNode(node) {
-            const element = node;
-            if (nestedComponents.length > 0 && nestedComponents.indexOf(element) !== -1) {
-                return NodeFilter.FILTER_REJECT;
-            }
-            if (element.tagName.toLowerCase() === 'template') {
-                const bindText = element.getAttribute(config.bindAttributeName) || '';
-                if (bindText.length > 0) {
-                    return NodeFilter.FILTER_ACCEPT;
-                }
-            }
-            return NodeFilter.FILTER_SKIP;
-        }
-    });
-    let lastIfFragmentInfo = null; // for elseif chaining
-    const elseFragmentInfos = []; // for elseif chaining
-    const templates = [];
-    while (walker.nextNode()) {
-        const template = walker.currentNode;
-        templates.push(template);
-    }
-    for (const template of templates) {
-        let bindText = template.getAttribute(config.bindAttributeName) || '';
-        if (typeof forPath === "string") {
-            bindText = expandShorthandInBindAttribute(bindText, forPath);
-        }
-        const parseBindTextResults = parseBindTextsForElement(bindText);
-        let parseBindTextResult = parseBindTextResults[0];
-        const keyword = keywordByBindingType.get(parseBindTextResult.bindingType);
-        if (typeof keyword === 'undefined') {
-            continue;
-        }
-        const bindingType = parseBindTextResult.bindingType;
-        const fragment = template.content;
-        const uuid = getUUID();
-        let fragmentInfo = null;
-        // Determine childForPath for shorthand expansion
-        const childForPath = bindingType === "for"
-            ? parseBindTextResult.statePathName
-            : forPath;
-        if (bindingType === "else") {
-            // check last 'if' or 'elseif' fragment info
-            if (lastIfFragmentInfo === null) {
-                raiseError(`'else' binding found without preceding 'if' or 'elseif' binding.`);
-            }
-            // else condition（if の変換済み結果の clone なので自身の再変換はしない）
-            parseBindTextResult = cloneNotParseBindTextResult("else", lastIfFragmentInfo.parseBindTextResult);
-            fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath, transform, false);
-            setFragmentInfoByUUID(uuid, rootNode, fragmentInfo);
-            const lastElseFragmentInfo = elseFragmentInfos.at(-1);
-            const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
-            if (typeof lastElseFragmentInfo !== "undefined") {
-                template.remove();
-                lastElseFragmentInfo.fragment.appendChild(placeHolder);
-                lastElseFragmentInfo.nodeInfos.push({
-                    nodePath: getNodePath(placeHolder),
-                    parseBindTextResults: getParseBindTextResults(placeHolder),
-                });
-            }
-            else {
-                template.replaceWith(placeHolder);
-            }
-        }
-        else if (bindingType === "elseif") {
-            // check last 'if' or 'elseif' fragment info
-            if (lastIfFragmentInfo === null) {
-                raiseError(`'elseif' binding found without preceding 'if' or 'elseif' binding.`);
-            }
-            fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath, transform);
-            setFragmentInfoByUUID(uuid, rootNode, fragmentInfo);
-            const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
-            // create else fragment
-            const elseUUID = getUUID();
-            const elseFragmentInfo = {
-                fragment: document.createDocumentFragment(),
-                parseBindTextResult: cloneNotParseBindTextResult("else", lastIfFragmentInfo.parseBindTextResult),
-                nodeInfos: [],
-            };
-            elseFragmentInfo.fragment.appendChild(placeHolder);
-            elseFragmentInfo.nodeInfos.push({
-                nodePath: getNodePath(placeHolder),
-                parseBindTextResults: getParseBindTextResults(placeHolder),
-            });
-            setFragmentInfoByUUID(elseUUID, rootNode, elseFragmentInfo);
-            const lastElseFragmentInfo = elseFragmentInfos.at(-1);
-            elseFragmentInfos.push(elseFragmentInfo);
-            const elsePlaceHolder = document.createComment(`@@${elseKeyword}:${elseUUID}`);
-            if (typeof lastElseFragmentInfo !== "undefined") {
-                template.remove();
-                lastElseFragmentInfo.fragment.appendChild(elsePlaceHolder);
-                lastElseFragmentInfo.nodeInfos.push({
-                    nodePath: getNodePath(elsePlaceHolder),
-                    parseBindTextResults: getParseBindTextResults(elsePlaceHolder),
-                });
-            }
-            else {
-                template.replaceWith(elsePlaceHolder);
-            }
-        }
-        else {
-            fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath, transform);
-            setFragmentInfoByUUID(uuid, rootNode, fragmentInfo);
-            const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
-            template.replaceWith(placeHolder);
-        }
-        // Update lastIfFragmentInfo for if/elseif/else chaining
-        if (bindingType === "if") {
-            elseFragmentInfos.length = 0; // start new if chain
-            lastIfFragmentInfo = fragmentInfo;
-        }
-        else if (bindingType === "elseif") {
-            lastIfFragmentInfo = fragmentInfo;
-        }
-        else if (bindingType === "else") {
-            lastIfFragmentInfo = null;
-            elseFragmentInfos.length = 0; // end if chain
-        }
-    }
-}
-
 async function waitForStateInitialize(root) {
     const elements = root.querySelectorAll(config.tagNames.state);
     const promises = [];
@@ -9865,7 +10396,7 @@ async function buildBindings(root) {
     }
 }
 
-var version = "2.4.0";
+var version = "2.5.0";
 var pkg = {
 	version: version};
 
@@ -10317,11 +10848,43 @@ function collectBindingsFromLiveNodes(nodes) {
     };
 }
 /**
+ * ブロックの中で初回値を適用するバインディングを集める（#258 X6 — hydrateBindings の注記）。
+ *
+ * 除くもの:
+ *  - 構造バインディング（SSR が描画済み）とイベント。
+ *  - コメントに乗ったバインディング。ブロックを集める時点のコメントのバインディングは構造の置き場
+ *    （`<!--@@wcs-for:uuid-->`）だけで、テキストの `@@:` はこの後で `Ssr.restoreTextBindings` が戻す。
+ *    テンプレートを復帰できなかった入れ子の置き場は text として解釈される（`text: uuid`）ので、
+ *    構造の種別だけでは除けない。
+ *  - 添字のバインディング（`$1` / `$2` …）。state に依存しないので依存辺のための適用が要らず、SSR が
+ *    描いた添字のままでよい（入れ子の内側の `$2` は、外側のループ文脈しか持たないので読めもしない）。
+ *  - ループの深さより多いワイルドカードを持つバインディング。入れ子のブロックの行は外側のブロックの
+ *    Content に吸収され、外側のループ文脈しか持たない（入れ子ハイドレーションの既知の制限・
+ *    integration.listLedgerParentKey.test.ts）。
+ * コメントと段数の足りないバインディングは、適用しても失敗の報告をハイドレーションのたびに増やすだけになる。
+ */
+function collectBlockBindings(out, bindings, loopDepth) {
+    for (const binding of bindings) {
+        if (binding.bindingType === "event" || STRUCTURAL_TYPES.has(binding.bindingType)) {
+            continue;
+        }
+        if (binding.node.nodeType === Node.COMMENT_NODE || binding.statePathName in INDEX_BY_INDEX_NAME) {
+            continue;
+        }
+        if (getPathInfo(binding.statePathName).wildcardCount > loopDepth) {
+            continue;
+        }
+        out.push(binding);
+    }
+}
+/**
  * SSR ブロックの DOM ノードを Content 化し、バインディングを登録する。
+ * 戻り値はブロックの中で初回値を適用するバインディング（`collectBlockBindings`）。
  */
 function hydrateBlocks(root, blocks) {
     // for ブロックの listIndex を UUID ごとに収集
     const listIndexesByUuid = new Map();
+    const blockBindings = [];
     for (const block of blocks) {
         if (block.nodes.length === 0)
             continue;
@@ -10363,6 +10926,7 @@ function hydrateBlocks(root, blocks) {
                     registerPathInfo: false,
                     applyOnReconnect: false,
                 });
+                collectBlockBindings(blockBindings, bindingInfos, pathInfo.wildcardCount);
                 // listIndex を UUID ごとに収集（後で setListIndexesByList に渡す）
                 let indexes = listIndexesByUuid.get(block.uuid);
                 if (!indexes) {
@@ -10381,6 +10945,8 @@ function hydrateBlocks(root, blocks) {
                     registerPathInfo: false,
                     applyOnReconnect: false,
                 });
+                // if / elseif / else の中身はループの外（入れ子の行はここに吸収されても段数で除かれる）
+                collectBlockBindings(blockBindings, bindingInfos, 0);
             }
         }
     }
@@ -10406,6 +10972,7 @@ function hydrateBlocks(root, blocks) {
             }
         });
     }
+    return blockBindings;
 }
 function findPlaceholderComment(root, type, uuid) {
     const keywordMap = {
@@ -10494,7 +11061,7 @@ async function hydrateBindings(root) {
     }
     // SSR ブロック境界コメントから既存 DOM を Content 化
     const blocks = collectSsrBlocks(document.body);
-    hydrateBlocks(document.body, blocks);
+    const blockBindings = hydrateBlocks(document.body, blocks);
     // ブロック境界コメント (start/end) を除去
     Ssr.removeBlockBoundaryComments(document.body);
     // <wcs-ssr> を一時除去（バインディング走査に含めない）
@@ -10564,8 +11131,11 @@ async function hydrateBindings(root) {
             }
         }
     }
-    // 通常バインディングのみ初回値適用（構造バインディングはSSR描画済み）
-    applyChangeFromBindings(normalBindings);
+    // 初回値の適用（構造バインディングは SSR 描画済みなので除く）。SSR ブロック（for の行・if の中身）の
+    // 中のバインディングも適用する（#258 X6）: getter の依存辺は getter を評価したときにしか張られない
+    // ので、適用しないと行の `items.*.double` は `items.*.n` を書いても一度も再評価されず、サーバーが
+    // 書いたテキストのまま固まる。値は SSR と同じ state から読むのでテキストは変わらない
+    applyChangeFromBindings([...normalBindings, ...blockBindings]);
     // <wcs-ssr> を元に戻す
     for (const { el, parent, next } of ssrParents) {
         parent.insertBefore(el, next);
@@ -11329,6 +11899,11 @@ function reportDeferredApplyFailure(error) {
 }
 class Updater {
     _queueUpdateRecords = [];
+    /**
+     * 描画だけをやり直すアドレス（`enqueueRenderOnlyAddress`）。書き込みの record とは別に持つ —
+     * drain 終了リスナーへ渡すバッチにも、`hasQueuedPath`（`on` scan の保留 reset の判定）にも混ぜない。
+     */
+    _queueRenderOnlyAddresses = [];
     constructor() {
     }
     enqueueAbsoluteAddress(absoluteAddress, context = null) {
@@ -11338,18 +11913,40 @@ class Updater {
         // `on` scan の `resetOn` を書き込みの時点で保留する（scan/eventReset.ts）。
         // 該当する宣言がページに無ければ整数比較 1 回で抜ける。
         noteEnqueueForScanReset(absoluteAddress);
-        const requireStartProcess = this._queueUpdateRecords.length === 0;
+        const requireStartProcess = this._isQueueEmpty();
         this._queueUpdateRecords.push({ absoluteAddress, context });
         if (requireStartProcess) {
-            // このバッチのあいだ、依存ウォークと読みが観測したリスト値は保留にする。
-            // 確定は drain の finally（list/stateListBaseline.ts の頭のコメント）。
-            beginStateListBaselineBatch();
-            queueMicrotask(() => {
-                const updateRecords = this._queueUpdateRecords;
-                this._queueUpdateRecords = [];
-                this._applyChange(updateRecords);
-            });
+            this._scheduleDrain();
         }
+    }
+    /**
+     * 描画だけをやり直させる（#4）。値を書いたわけではないので、書き込みの着地としては扱わない —
+     * binding の適用には載せるが、drain 終了リスナー（`$scan` / `$watch` / `$streams` restart）へ渡す
+     * バッチに入れず、`$watch` の連鎖や `on` scan の reset の印も付けない。同じバッチで同じアドレスが
+     * 書き込みとしても積まれていれば、そちらが着地になる。
+     * 呼び手は要素書き込みの入れ替えの完了（proxy/methods/setByAddress.ts の notifySwappedList）。
+     */
+    enqueueRenderOnlyAddress(absoluteAddress) {
+        const requireStartProcess = this._isQueueEmpty();
+        this._queueRenderOnlyAddresses.push(absoluteAddress);
+        if (requireStartProcess) {
+            this._scheduleDrain();
+        }
+    }
+    _isQueueEmpty() {
+        return this._queueUpdateRecords.length === 0 && this._queueRenderOnlyAddresses.length === 0;
+    }
+    _scheduleDrain() {
+        // このバッチのあいだ、依存ウォークと読みが観測したリスト値は保留にする。
+        // 確定は drain の finally（list/stateListBaseline.ts の頭のコメント）。
+        beginStateListBaselineBatch();
+        queueMicrotask(() => {
+            const updateRecords = this._queueUpdateRecords;
+            const renderOnlyAddresses = this._queueRenderOnlyAddresses;
+            this._queueUpdateRecords = [];
+            this._queueRenderOnlyAddresses = [];
+            this._applyChange(updateRecords, renderOnlyAddresses);
+        });
     }
     /**
      * まだ drain されていない書き込み（次のバッチ）に、この state のこのパスがあるか。
@@ -11367,7 +11964,7 @@ class Updater {
             context: contexts?.[index] ?? null,
         })));
     }
-    _applyChange(updateRecords) {
+    _applyChange(updateRecords, renderOnlyAddresses = []) {
         // Note: AbsoluteStateAddress はキャッシュされているため、
         // 同一の (stateElement, address) は同じインスタンスとなり、
         // Map / Set による重複排除が正しく機能する。
@@ -11389,6 +11986,14 @@ class Updater {
                 });
             }
             contextByAbsoluteAddress.set(record.absoluteAddress, record.context);
+        }
+        // drain 終了リスナーへ渡すのは書き込みの着地だけ。描画だけのアドレスは、この後で適用の対象に足す
+        // （同じアドレスの書き込みがあれば、その context のまま着地として残る）
+        const landedAddresses = new Set(contextByAbsoluteAddress.keys());
+        for (const absoluteAddress of renderOnlyAddresses) {
+            if (!contextByAbsoluteAddress.has(absoluteAddress)) {
+                contextByAbsoluteAddress.set(absoluteAddress, null);
+            }
         }
         const processBindings = [];
         const propagationContextByBinding = new Map();
@@ -11484,7 +12089,7 @@ class Updater {
             // 置くのは、リスナー（$watch / $streams restart）の中で走る書き込みが
             // 「このバッチの結果」を基準として見るべきだから。
             endStateListBaselineBatch();
-            notifyUpdateBatchListeners(new Set(contextByAbsoluteAddress.keys()));
+            notifyUpdateBatchListeners(landedAddresses);
         }
     }
 }
@@ -14412,6 +15017,12 @@ function getPrevValue(absAddress) {
     return prevValueByAbsoluteStateAddress.get(absAddress);
 }
 /**
+ * 旧値が記録済みか（記録された undefined と、記録が無いことを区別する）。
+ */
+function hasPrevValue(absAddress) {
+    return prevValueByAbsoluteStateAddress.has(absAddress);
+}
+/**
  * 台帳をクリアする（drain 終端で必ず呼ぶ）。
  */
 function clearPrevValues() {
@@ -16649,203 +17260,6 @@ function createPublicMountState(record) {
     });
 }
 
-const exportIndexByStateElement = new WeakMap();
-const reportedShadows = new Set();
-function slotFor(stateElement, parentPath, key, create) {
-    let byParent = exportIndexByStateElement.get(stateElement);
-    if (typeof byParent === "undefined") {
-        if (!create)
-            return null;
-        byParent = new Map();
-        exportIndexByStateElement.set(stateElement, byParent);
-    }
-    let byKey = byParent.get(parentPath);
-    if (typeof byKey === "undefined") {
-        if (!create)
-            return null;
-        byKey = new Map();
-        byParent.set(parentPath, byKey);
-    }
-    let slot = byKey.get(key);
-    if (typeof slot === "undefined") {
-        if (!create)
-            return null;
-        slot = { holders: new Set(), byListIndex: new WeakMap(), noIndex: null };
-        byKey.set(key, slot);
-    }
-    return slot;
-}
-/**
- * 記録の getter / setter を公開索引に載せる（初回登録で 1 回・冪等）。
- * translateInnerPath のマーカー化を通すので accessorBySuffixByMarkerParent も同時に埋まる。
- * 翻訳できないアクセサ（ワイルドカード終端・部分マウントのみで接頭辞不一致）と、
- * `$` 名前空間のアクセサ（翻訳されずマーカーが付かない）は公開しない。
- * ルートエントリの無い部分マウントは公開位置（ツリー上のパス）を持たないので対象外。
- */
-function registerExports(record) {
-    if (record.exports.size > 0 || record.rootEntry === null) {
-        return;
-    }
-    const keys = new Set([...record.getterKeys, ...record.setterKeys]);
-    for (const key of keys) {
-        let markerPath;
-        try {
-            markerPath = translateInnerPath(record, key);
-        }
-        catch {
-            continue;
-        }
-        const markerIndex = markerPath.indexOf(DELIMITER + record.marker);
-        if (markerIndex === -1) {
-            continue;
-        }
-        // `users.*.#m7.display` → 末端マーカーパス `users.*.#m7`・接尾 `display`・公開 `users.*.display`
-        // （接尾は常に非空 — markerizeAccessorPath が空を raise 済み。公開パスはルート
-        // エントリの外側パス＋接尾なので常に 2 セグメント以上 ＝ 親パスを持つ）
-        const markerTerminalPath = markerPath.slice(0, markerIndex + 1 + record.marker.length);
-        const suffix = markerPath.slice(markerTerminalPath.length + 1);
-        const exportedPath = markerPath.slice(0, markerIndex) + DELIMITER + suffix;
-        const exportedInfo = getPathInfo(exportedPath);
-        // Internal wildcard accessors need their own row resolution and lifecycle
-        // notifications. Only publish accessors at the mount instance's depth.
-        if (exportedInfo.wildcardCount !== record.delta) {
-            continue;
-        }
-        const entry = { markerTerminalPath, suffix, markerPath, exportedPath };
-        record.exports.set(exportedPath, entry);
-        slotFor(record.parentStateElement, exportedInfo.parentPath, exportedInfo.lastSegment, true)
-            .holders.add({ ref: new WeakRef(record), entry });
-        // エイリアス辺（X5）: 子 getter のアドレス → 公開パス
-        record.parentStateElement.addDynamicDependency(markerPath, exportedPath);
-        // 未存在パスの遅延診断（X7）: この公開パスへのバインドは「存在しない」ではない
-        markExportedPath(record.parentStateElement, exportedPath);
-    }
-    record.parentStateElement.markHasMounts?.();
-}
-/** 読みの listIndex がホスト要素のループ文脈と一致するか（配下の深い文脈も一致とみなす） */
-function isInstanceOf(record, listIndex) {
-    if (!record.component.isConnected) {
-        return false;
-    }
-    const own = getLoopContextByNode(record.component)?.listIndex ?? null;
-    if (listIndex === null) {
-        return own === null;
-    }
-    let current = own;
-    while (current !== null) {
-        if (current === listIndex) {
-            return true;
-        }
-        current = current.parentListIndex;
-    }
-    return false;
-}
-/** ホルダーが生きていて、この listIndex のインスタンスなら記録を返す */
-function liveInstance(holder, listIndex) {
-    const record = holder.ref.deref();
-    if (typeof record === "undefined" || !isInstanceOf(record, listIndex)) {
-        return null;
-    }
-    return record;
-}
-/**
- * `P.k`（listIndex）に答える記録を引く。索引に無ければ null（今日どおり undefined 解決）。
- * 複数一致は raise。
- */
-function resolveExport(stateElement, parentPath, key, listIndex) {
-    const slot = slotFor(stateElement, parentPath, key, false);
-    if (slot === null) {
-        return null;
-    }
-    const cached = listIndex === null ? slot.noIndex : (slot.byListIndex.get(listIndex) ?? null);
-    if (cached !== null) {
-        const record = liveInstance(cached, listIndex);
-        if (record !== null) {
-            return { record, entry: cached.entry };
-        }
-    }
-    let found = null;
-    let foundRecord = null;
-    for (const holder of slot.holders) {
-        const record = holder.ref.deref();
-        if (typeof record === "undefined") {
-            // 記録は回収済み（finalizer 発火前の窓）— 遅延 prune
-            slot.holders.delete(holder);
-            continue;
-        }
-        if (!isInstanceOf(record, listIndex)) {
-            continue;
-        }
-        if (foundRecord !== null) {
-            raiseError(`[wcs/mount-export-ambiguous] "${parentPath}${DELIMITER}${key}" is exported by two mounted components on the same instance: ` +
-                `<${foundRecord.component.tagName.toLowerCase()}> and <${record.component.tagName.toLowerCase()}>. ` +
-                `Mount only one of them there, or rename one accessor. See docs/state-overlay-export-design.md X4.`);
-        }
-        found = holder;
-        foundRecord = record;
-    }
-    if (found === null || foundRecord === null) {
-        return null;
-    }
-    if (listIndex === null) {
-        slot.noIndex = found;
-    }
-    else {
-        slot.byListIndex.set(listIndex, found);
-    }
-    return { record: foundRecord, entry: found.entry };
-}
-/** 公開パスの `$postUpdate` を、記録のホスト要素のループ文脈で打つ（X6）。 */
-function notifyExports(record) {
-    const parent = record.parentStateElement;
-    const loopContext = getLoopContextByNode(record.component);
-    if (parent.isConnected === false || (record.delta > 0 && loopContext === null)) {
-        // A removed tree needs no notification. A removed row is handled by its
-        // parent's list update. Other notification failures must remain visible.
-        return;
-    }
-    for (const entry of record.exports.values()) {
-        parent.createState("readonly", (state) => {
-            state[setLoopContextSymbol](loopContext, () => {
-                state.$postUpdate(entry.exportedPath);
-            });
-        });
-    }
-}
-/**
- * X1: ツリーに同名キーがある公開 getter は親から読まれない（ツリーが勝つ）。
- * 登録時に 1 回 warn（タグ × 公開パス）。行マウントはホスト要素のループ文脈で読む。
- */
-function warnShadowedExports(record) {
-    const loopContext = getLoopContextByNode(record.component);
-    if (record.delta > 0 && loopContext === null) {
-        // 行マウントでループ文脈が無い（行の実体化前）— 読めないので黙る
-        return;
-    }
-    const tag = record.component.tagName.toLowerCase();
-    for (const entry of record.exports.values()) {
-        const reportKey = `${tag}|${entry.exportedPath}`;
-        if (reportedShadows.has(reportKey)) {
-            continue;
-        }
-        const exportedInfo = getPathInfo(entry.exportedPath);
-        let parentValue = undefined;
-        record.parentStateElement.createState("readonly", (state) => {
-            state[setLoopContextSymbol](loopContext, () => {
-                parentValue = state[exportedInfo.parentPath];
-            });
-        });
-        if (parentValue === null || typeof parentValue === "undefined"
-            || !(exportedInfo.lastSegment in Object(parentValue))) {
-            continue;
-        }
-        reportedShadows.add(reportKey);
-        console.warn(`[@wcstack/state] [wcs/mount-export-shadowed] <${tag}>.${record.stateProp}.${entry.suffix} is exported at ` +
-            `"${entry.exportedPath}" but the tree already has that key, so readers outside the component get the tree value. ` +
-            `Remove the tree key or rename the accessor. See docs/state-overlay-export-design.md X1.`);
-    }
-}
-
 /**
  * このアドレスの値をキャッシュしてよいか（getByAddress / setByAddress 共通の判定）。
  *
@@ -17344,16 +17758,22 @@ function hasByAddress(target, address, receiver, handler) {
     return lastSegment in parentValue;
 }
 
-const swapInfoByStateAddress = new WeakMap();
-function getSwapInfoByAddress(address) {
-    return swapInfoByStateAddress.get(address) ?? null;
+/**
+ * 要素書き込みで入れ替え中のリストの「書き込む前の並び」。キーはリストの配列そのもの —
+ * 台帳（listIndexesByList）と同じ単位にそろえる。アドレスはパスと listIndex でキャッシュされ
+ * `<wcs-state>` を区別しないので、アドレスをキーにすると、別の state 要素や置き換え前の配列で
+ * 揃わなかった入れ替えの記録を拾ってしまう。
+ */
+const swapInfoByList = new WeakMap();
+function getSwapInfoByList(list) {
+    return swapInfoByList.get(list) ?? null;
 }
-function setSwapInfoByAddress(address, swapInfo) {
+function setSwapInfoByList(list, swapInfo) {
     if (swapInfo === null) {
-        swapInfoByStateAddress.delete(address);
+        swapInfoByList.delete(list);
     }
     else {
-        swapInfoByStateAddress.set(address, swapInfo);
+        swapInfoByList.set(list, swapInfo);
     }
 }
 
@@ -17823,7 +18243,7 @@ function recordDeclaredPrevValue(stateElement, path, absAddress, oldValue, hasOl
 // binding 経由の書き込みは呼び出し元の dynamic scope から context を引き継ぎ、
 // binding 外からの API update は新しい transaction を開始する（設計書 §4 規則 1）。
 // 依存 walk で enqueue される派生アドレスも同じ書き込みの因果に属する。
-function notifyWrite(address, absAddress, receiver, handler, keyedMergePath, cacheable) {
+function notifyWrite(address, absAddress, receiver, handler, keyedMergePath, cacheable, listExpansion = "diff") {
     const propagationContext = config.enablePropagationContext
         ? (getCurrentPropagationContext() ?? beginPropagationTransaction(-1))
         : null;
@@ -17852,7 +18272,7 @@ function notifyWrite(address, absAddress, receiver, handler, keyedMergePath, cac
     }, 
     // リスト置換時は追加行・位置変更行のみ展開する（未変更行の再訪を省く。
     // $postUpdate の手動リフレッシュは従来通り全行展開のまま）
-    { listExpansion: "diff", keyedMergePath });
+    { listExpansion, keyedMergePath });
 }
 /**
  * 書き込み完了後のキャッシュ整合（Issue #234）。
@@ -17932,16 +18352,16 @@ function _setByAddress(target, address, absAddress, value, receiver, handler, ke
     }
 }
 function _setByAddressWithSwap(target, address, absAddress, value, receiver, handler, keyedMergePath, cacheable) {
-    // elementsの場合はswapInfoを準備
-    let parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
-    let swapInfo = getSwapInfoByAddress(parentAddress);
+    // elementsの場合はswapInfoを準備（キーはリストの配列そのもの — swapInfo.ts 参照）
+    const parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
+    const parentValue = getByAddress(target, parentAddress, receiver, handler) ?? [];
+    let swapInfo = getSwapInfoByList(parentValue);
     if (swapInfo === null) {
-        const parentValue = getByAddress(target, parentAddress, receiver, handler) ?? [];
         const listIndexes = getListIndexesByList(parentValue) ?? [];
         swapInfo = {
             value: [...parentValue], listIndexes: [...listIndexes]
         };
-        setSwapInfoByAddress(parentAddress, swapInfo);
+        setSwapInfoByList(parentValue, swapInfo);
     }
     try {
         return _setByAddress(target, address, absAddress, value, receiver, handler, keyedMergePath, cacheable);
@@ -17963,8 +18383,72 @@ function _setByAddressWithSwap(target, address, absAddress, value, receiver, han
                 currentListIndexes[i].index = i;
             }
             // 完了したのでswapInfoを削除
-            setSwapInfoByAddress(parentAddress, null);
+            setSwapInfoByList(parentValue, null);
+            notifySwappedList(parentAddress, swapInfo, currentParentValue, currentListIndexes, receiver, handler);
         }
+    }
+}
+/**
+ * 要素書き込みの入れ替え（または行の置き換え）が揃ったとき、リストを「書き込む前の並び →
+ * いまの並び」の置換として描画し直させる（#4 — 同一性モデル）。
+ *
+ * 台帳は上で「listIndex は値に付いて動く」形に組み替え済み。ところが `for` の描画基準
+ * （lastListValue）はその場で書き換えられた同じ配列なので、差分に入れ替えが映らず、ブロックは
+ * 動かないまま中身だけが書き換わっていた。基準を「書き込む前の並びの写し」とその台帳の写しに
+ * すると、`for` は写しといまの配列の差分を listIndex の同一性で突き合わせ（createListDiff の
+ * calcDiffIndexes）、ブロックを値と一緒に動かし、置き換えた行を作り直す。基準を写しに替えるのは、
+ * 描画基準がいま入れ替えている配列そのもののときだけ — 同じバッチで配列を丸ごと書き換えた後なら、
+ * 描画はまだその前の配列で、そちらとの差分が入れ替えも含む。
+ *
+ * 行ごとの扱い（書き込む前といまの台帳の位置を比べる）:
+ *  - 位置が変わらない行: 何もしない。
+ *  - 新しい listIndex の行（書き込む前の台帳に無い）: その位置の値の書き込みとして着地させる。差し替えられた
+ *    行は `for` の差分で退役し、その行のアドレスの着地は `$watch` / `$scan` の選別で捨てられるので、
+ *    着地は新しい行が持つ（#274 の「その位置のいまの値で 1 回」）。要素パス自身の prev は、書き込みがその位置の
+ *    前の行のアドレスで記録した値を引き継ぐ（引き継がないと `$watch "items.*"` の prev が消える）。ブロックは
+ *    `for` が同じ位置で外す行の Content をその場で使い回す（applyChangeToFor の collectInPlaceContents）。
+ *  - 値と一緒に動いた行: 値は変わっていないので、依存を無効化して描画だけをやり直す。書き込みを別の
+ *    バッチに分けると、途中のバッチで別の値を描いた行が残る。
+ * リスト自身も描画だけを積む（updater の enqueueRenderOnlyAddress）。書き込みとして積むと、`items` の
+ * `$watch` が配列の参照の変わらない入れ替えで発火する。
+ */
+function notifySwappedList(parentAddress, swapInfo, currentParentValue, currentListIndexes, receiver, handler) {
+    const stateElement = handler.stateElement;
+    const updater = getUpdater();
+    const listAbsAddress = createAbsoluteStateAddress(getAbsolutePathInfo(stateElement, parentAddress.pathInfo), parentAddress.listIndex);
+    if (getLastListValueByAbsoluteStateAddress(listAbsAddress) === currentParentValue) {
+        setListIndexesByList(swapInfo.value, swapInfo.listIndexes);
+        setLastListValueByAbsoluteStateAddress(listAbsAddress, swapInfo.value);
+        markSwapBaselineList(swapInfo.value);
+    }
+    updater.enqueueRenderOnlyAddress(listAbsAddress);
+    const positionBefore = new Map();
+    swapInfo.listIndexes.forEach((listIndex, position) => positionBefore.set(listIndex, position));
+    const elementPathInfo = getPathInfo(parentAddress.pathInfo.path + DELIMITER + WILDCARD);
+    const elementAbsPathInfo = getAbsolutePathInfo(stateElement, elementPathInfo);
+    for (let position = 0; position < currentListIndexes.length; position++) {
+        const listIndex = currentListIndexes[position];
+        const before = positionBefore.get(listIndex);
+        if (before === position) {
+            continue;
+        }
+        const elementAddress = createStateAddress(elementPathInfo, listIndex);
+        const elementAbsAddress = createAbsoluteStateAddress(elementAbsPathInfo, listIndex);
+        if (typeof before === "undefined") {
+            const displacedAbsAddress = createAbsoluteStateAddress(elementAbsPathInfo, swapInfo.listIndexes[position] ?? null);
+            if (hasPrevValue(displacedAbsAddress)) {
+                recordPrevValue(elementAbsAddress, getPrevValue(displacedAbsAddress));
+            }
+            // 置き換えで入った行は中身が丸ごと新しい。差分展開だと入れ子のリストの行（`items.*.tags.*`）が
+            // 着地せず `$watch` / `$scan` が取り逃すので、この行の下だけ全行展開で通知する
+            notifyWrite(elementAddress, elementAbsAddress, receiver, handler, null, isCacheable(stateElement, elementAddress), "full");
+            continue;
+        }
+        walkDependency(stateElement, elementAddress, stateElement.staticDependency, stateElement.dynamicDependency, stateElement.listPaths, receiver, "new", (depAddress) => {
+            const depAbsAddress = createAbsoluteStateAddress(getAbsolutePathInfo(stateElement, depAddress.pathInfo), depAddress.listIndex);
+            dirtyCacheEntryByAbsoluteStateAddress(depAbsAddress);
+            updater.enqueueRenderOnlyAddress(depAbsAddress);
+        }, { listExpansion: "diff" });
     }
 }
 /**
@@ -18188,7 +18672,13 @@ function setByAddressCore(target, address, value, receiver, handler, keyedMergeP
         }
     }
     finally {
-        commitWriteCache(stateElement, path, absAddress, value, cacheable);
+        // 要素書き込み（#4）の代入値は、書き込んだアドレスのキャッシュに固定しない。入れ替えでは listIndex が
+        // 値に付いて動くので、書き込んだ時点の listIndex がこの位置に残るとは限らない — 固定すると、台帳は
+        // 入れ替わったのにキャッシュだけが位置のまま交差する。notifyWrite が無効化した項目を、次の読みが
+        // 台帳に沿って読み直す
+        if (!isSwappable) {
+            commitWriteCache(stateElement, path, absAddress, value, cacheable);
+        }
         // DCC bindable イベントディスパッチ（完全一致 ＋ サブパス → 先頭セグメント、§2.1）
         dispatchBindableEvent(stateElement, address.pathInfo, { value });
     }
@@ -19645,99 +20135,6 @@ function invokeStateReadyCallback(component, stateProp) {
 }
 
 /**
- * webComponent/mountScope.ts — マウントされたスコープの構築（Phase 2・impl-plan §3-0）。
- *
- * v1 の buildBindings（rootNode ごとの独立ツリー構築）に対応する、マウント版の 1 パス。
- * やることは 3 つだけで、以後このスコープのバインディングは「親スコープにインラインで
- * 書かれたもの」と完全に同じ経路（台帳・依存グラフ・updater・for/プール）を流れる。
- *
- * 1. マウント記録の登録（ループ文脈の境界ホップとオーバーレイ dispatch が引く）
- * 2. 台帳エイリアス（Shadow DOM 形のみ）: 子 rootNode → 親 state element。
- *    `getRootNode()` で解決する全サイトがこれで親ツリーに到達する
- * 3. 変換付きの収集: mustache 変換 → 構造フラグメント収集 → バインディング初期化。
- *    パース結果は translateParsedForMount で親ツリーの絶対パスに書き換わる
- *    （フラグメントは登録時に変換されるので、行の実体化は無改造・無コスト）
- *
- * 呼び手（State._initializeBindWebComponent の v2 経路）は、この完了を
- * `setBindingsReadyForScope` で子 rootNode の ready として公開する。
- */
-/**
- * スコープ根は Shadow DOM 形ならコンポーネントの shadowRoot、Light DOM 形なら
- * コンポーネント要素自身（そのサブツリーがスコープ・D7）。Light DOM は rootNode を
- * ホストと共有するのでエイリアス不要（親の名前登録がそのまま解決に使われる）。
- * ホスト側の走査からの除外は getSubscriberNodes / collectStructuralFragments の
- * Light DOM prune（§1.13 の機構）がそのまま担う。
- */
-function initializeMountScope(record, scopeRoot) {
-    const existing = getMountRecordByScopeRoot(scopeRoot);
-    // 1 スコープ根 1 マウント（v2）: 同じコンポーネントに 2 本目の
-    // `<wcs-state bind-component>`（別 stateProp）が来ても受けられない — 受けると
-    // 1 本目の session を dispose した上、収集済みノードは registeredNodeSet
-    // （collectNodesAndBindingInfos.ts）が弾いて再収集されず、スコープ全体が
-    // 無言で死ぬ。設定ミスとして 1 本目に触れる前に loud に落とす
-    if (existing !== null && existing.stateProp !== record.stateProp) {
-        raiseError(`A mount scope is already initialized on this component for "${existing.stateProp}" — ` +
-            `one <wcs-state bind-component> per component (v2). ` +
-            `Merge the "${record.stateProp}" wiring into "${existing.stateProp}" or split the component.`);
-    }
-    // 再初期化（コンポーネントが connectedCallback で shadow の innerHTML を張り直し、
-    // 新しい <wcs-state> が同じ shadowRoot に入った）: 旧スコープのバインディングは
-    // 捨てられた DOM を指したまま親の台帳に残りうるので session ごと破棄してから組み直す
-    //（普段は session の MutationObserver が先に破棄している — これは取りこぼし保険。
-    // dispose は records と deferred を空にするだけで session 自体は使い回せる）。
-    // 旧 for が残した lastListValue は applyChangeToFor 側の「content 台帳が空の
-    // binding は白紙から描く」ガードが吸収する
-    if (existing !== null) {
-        getOrCreateBindingSession(scopeRoot).dispose();
-    }
-    registerMountRecord(scopeRoot, record);
-    if (scopeRoot instanceof ShadowRoot) {
-        setStateElementAlias(scopeRoot, record.parentStateElement);
-    }
-    buildMountScopeBindings(record, scopeRoot);
-    // Register exports and alias edges once. Notify parents that evaluated before
-    // registration, including on reinitialization when values may have changed.
-    registerExports(record);
-    warnShadowedExports(record);
-    notifyExports(record);
-    setBindingsReadyForScope(scopeRoot, Promise.resolve());
-}
-function buildMountScopeBindings(record, walkRoot) {
-    const transform = (parsed, forPath) => translateParsedForMount(record, parsed, forPath);
-    convertMustacheToComments(walkRoot);
-    // スコープ直下のバインディングのループ文脈は、行 content の初期化と同じく
-    // **直接エントリ**で渡す（ホスト要素の文脈＝境界ホップの解決結果）。
-    // text binding は登録前に comment が replaceNode に差し替えられて切断される
-    //（bindings/replaceToReplaceNode.ts）ため、DOM walk では文脈に届かない —
-    // happy-dom は切断後も parentNode を残す非準拠で偶然通るが、実ブラウザでは落ちる
-    const parentLoopContext = getLoopContextByNode(record.component);
-    // rootNode は「fragment info の setPathInfo が state element を引く場所」。
-    // Shadow DOM 形はエイリアス済みの scopeRoot 自身、Light DOM 形はホストの rootNode
-    const rootNode = walkRoot instanceof ShadowRoot ? walkRoot : walkRoot.getRootNode();
-    collectStructuralFragments(rootNode, walkRoot, undefined, transform);
-    initializeBindings(walkRoot, parentLoopContext, transform);
-}
-/**
- * プール再利用の再接続（行 content の再利用で、コンポーネント要素が**別の行**に
- * 付け替わった）: マウントスコープの全バインディングを現在のループ文脈の listIndex で
- * 台帳へ張り直し、最新値を適用する。v1 の `_reloadMappedPathsAfterReconnect`（派生規則
- * memo の破棄＋プライマリ粒度の $postUpdate）に対応する、単一ツリー版の 1 手。
- * swap では listIndex が行と一緒に動くので張り直しは冪等（同じ台帳に戻るだけ）。
- */
-function remountScopeBindings(record, scopeRoot) {
-    const session = getOrCreateBindingSession(scopeRoot);
-    // スコープ直下の直接エントリを現在の行の文脈へ張り替える（構築時と対称）。
-    // 台帳の張り直し（rebindAddresses）はこのエントリ経由で新しい listIndex を読む
-    const parentLoopContext = getLoopContextByNode(record.component);
-    session.forEachActiveBindingNode((node) => setLoopContextByNode(node, parentLoopContext));
-    const rebound = session.rebindAddresses();
-    // 空でも呼んで良い（ループが回らないだけ）— 分岐を持たない
-    applyChangeFromBindings(rebound);
-    // 別の行に付け替わった ＝ その行の公開パスの答えが変わった（X6）
-    notifyExports(record);
-}
-
-/**
  * コンポーネントの own data key とマウントの衝突を、バインド確立時に 1 回だけ報告する
  * （docs/state-mount-design.md D4 / D19、impl-plan P1-10 / P1-11）。
  *
@@ -20099,7 +20496,17 @@ function graftVolume(rootStateElement, mountPath, volumeState) {
     const connectedCallback = volumeState.$connectedCallback;
     if (typeof connectedCallback === "function") {
         rootStateElement.createState("writable", (state) => {
-            const result = connectedCallback.call(createVolumeChroot(mountPath, state));
+            let result;
+            try {
+                result = connectedCallback.call(createVolumeChroot(mountPath, state));
+            }
+            catch (error) {
+                // 同期の throw も非同期の reject と同じく報告に留める。データ・アクセサ・宣言はもう載っているので、
+                // ここから投げると接ぎ木済みのボリュームが「接ぎ木に失敗した」扱いになり、枠まで返してしまう
+                // （同じマウントパスで作り直した要素が、残ったデータと衝突する — #265）
+                console.error(`[@wcstack/state] volume "${mountPath}" $connectedCallback failed.`, error);
+                return;
+            }
             if (result instanceof Promise) {
                 result.catch((error) => {
                     console.error(`[@wcstack/state] volume "${mountPath}" $connectedCallback failed.`, error);
@@ -20114,6 +20521,12 @@ function graftVolume(rootStateElement, mountPath, volumeState) {
  * ルートの名前登録（`default`）が保留分を `drainPendingVolumes` で引き取る。
  */
 function graftIsolated(rootStateElement, volume) {
+    if (!volume.acquireSlot()) {
+        // 接ぎ木の直前に枠を取れなかった（#265）— 要素が外れている間に、別のボリュームが同じマウントパスを
+        // 取った。報告は acquireSlot が出す。接ぎ木せずに決着させる
+        volume.onGrafted(null);
+        return;
+    }
     let info = null;
     try {
         info = graftVolume(rootStateElement, volume.mountPath, volume.volumeState);
@@ -20128,12 +20541,18 @@ function graftIsolated(rootStateElement, volume) {
         volume.onGrafted(info);
     }
 }
-function graftOrQueueVolume(rootNode, rootStateElement, mountPath, volumeState, onGrafted) {
+function graftOrQueueVolume(rootNode, rootStateElement, mountPath, volumeState, onGrafted, acquireSlot) {
+    const request = {
+        mountPath,
+        volumeState,
+        onGrafted: onGrafted,
+        acquireSlot,
+    };
     if (rootStateElement !== null) {
-        graftIsolated(rootStateElement, { mountPath, volumeState, onGrafted: onGrafted });
+        graftIsolated(rootStateElement, request);
         return;
     }
-    queuePendingVolume(rootNode, { mountPath, volumeState, onGrafted: onGrafted });
+    queuePendingVolume(rootNode, request);
 }
 // stateElementByName の drainPendingVolumes は import 循環（updater まで届く）を避けて
 // 軽量な volumeShared に住む — graft の実体はここで注入する（State.ts が本モジュールを
@@ -20159,6 +20578,151 @@ function hasRootMountBinding(component, stateProp) {
         }
     }
     return false;
+}
+
+/**
+ * apply/reapplyStateBindings.ts — 再セットで、確立済みのバインドを新しい世代で適用し直す（#267）。
+ *
+ * 初期化済みの `<wcs-state>` に `setInitialState` で state を入れ直すと、読みは新しい世代を返す
+ * （キャッシュの世代印と経路情報の作り直し — #258）。しかしバインドは次に依存パスが書かれるまで
+ * 動かないので、画面だけが前の世代のまま残っていた。ここで、入れ直す前と後の state の
+ * トップレベルのパスから依存を辿り、そこに登録されているバインドを適用し直す。
+ *
+ * 集め方は `$postUpdate` と同じ（起点のアドレス＋依存ウォーク、リストは全行展開）。適用は drain と
+ * 同じ `applyChangeFromBindings` を通すが、updater には**積まない**。再セットは書き込みではない:
+ * drain 終了リスナー（`$scan` の畳み込み・`$watch`・`$streams` の依存駆動 restart）を起こさず、
+ * `$updatedCallback` も呼ばない。`$watch` / `$streams` はセッタが新しい宣言で起動し直しているので、
+ * restart を重ねると source が二重に起動する。
+ */
+/**
+ * 再適用の起点になるトップレベルのパス。前後**両方**の state から集める — 新しい state で消えた
+ * キーのバインドも適用し直し、読めないことを「黙った古い表示」ではなく適用の失敗として報告させる。
+ *
+ * 除くもの: `$` の宣言面、ワイルドカードを含むキー（`"items.*.upper"` / `"nodes.**.total"` —
+ * 行の getter には親のリストから静的辺で辿り着く）、メソッド。
+ */
+function collectReapplyPaths(states) {
+    const paths = new Set();
+    for (const state of states) {
+        if (typeof state === "undefined") {
+            continue;
+        }
+        for (const [key, descriptor] of Object.entries(getAllPropertyDescriptors(state))) {
+            if (key.startsWith("$") || key.includes(WILDCARD) || typeof descriptor.value === "function") {
+                continue;
+            }
+            paths.add(key);
+        }
+    }
+    return paths;
+}
+const STRUCTURAL_BINDING_TYPES = new Set(["for", "if", "elseif", "else"]);
+/**
+ * 構造バインディング（for / if）を文書順で先に、値のバインディングを後に並べる。
+ *
+ * 再セットは全キーを一度に適用し直すので、閉じる if・消える行の中の値のバインディングも集まる。
+ * それを構造より先に適用すると、新しい state では読めない（構造がこれから DOM から外す）パスを
+ * 読んで偽の失敗を報告する（どちらが先に集まるかはキーの並び次第）。構造を外側から先に適用すれば、
+ * 外れた中身は applyChangeFromBindings が isConnected で飛ばす。
+ */
+function orderStructuralFirst(bindings) {
+    const structural = [];
+    const values = [];
+    for (const binding of bindings) {
+        if (STRUCTURAL_BINDING_TYPES.has(binding.bindingType)) {
+            structural.push(binding);
+        }
+        else {
+            values.push(binding);
+        }
+    }
+    structural.sort((a, b) => (a.replaceNode.compareDocumentPosition(b.replaceNode) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 ? -1 : 1);
+    return structural.concat(values);
+}
+/**
+ * `paths` は再適用の起点（`collectReapplyPaths`）。`registeredPaths` は state 要素が経路情報を
+ * 登録したパス全部で、ここから行のバインドのパスを行（最後のワイルドカードのリスト要素）ごとに引く。
+ */
+function reapplyStateBindings(stateElement, paths, registeredPaths) {
+    const rowPathInfosByElementPath = new Map();
+    for (const path of registeredPaths) {
+        const pathInfo = getPathInfo(path);
+        if (pathInfo.lastWildcardPath === null) {
+            continue;
+        }
+        const rowPathInfos = rowPathInfosByElementPath.get(pathInfo.lastWildcardPath);
+        if (typeof rowPathInfos === "undefined") {
+            rowPathInfosByElementPath.set(pathInfo.lastWildcardPath, [pathInfo]);
+        }
+        else {
+            rowPathInfos.push(pathInfo);
+        }
+    }
+    const bindings = [];
+    const visited = new Set();
+    const collect = (address) => {
+        const absAddress = createAbsoluteStateAddress(getAbsolutePathInfo(stateElement, address.pathInfo), address.listIndex);
+        if (visited.has(absAddress)) {
+            return;
+        }
+        visited.add(absAddress);
+        const entry = peekBindingsForAddress(absAddress);
+        if (entry instanceof Set) {
+            bindings.push(...entry);
+        }
+        else if (typeof entry !== "undefined") {
+            bindings.push(entry);
+        }
+        // 行に来たら、その行に登録された行のバインドも集める。依存グラフに辺の無い行バインドがある —
+        // 再帰の生成パス（`nodes.*.total`）の静的辺は、新しい世代で実体化するまで作り直さない（State の
+        // `_generatedPaths`）。同じノードオブジェクトを入れ直すと `for` は行を作り直さないので、辺を
+        // 辿るだけでは行の集計が前の世代の表示のまま残る。
+        if (address.listIndex !== null) {
+            const rowPathInfos = rowPathInfosByElementPath.get(address.pathInfo.path);
+            if (typeof rowPathInfos !== "undefined") {
+                for (const rowPathInfo of rowPathInfos) {
+                    collect(createStateAddress(rowPathInfo, address.listIndex));
+                }
+            }
+        }
+    };
+    // ウォークと描画が観測したリスト値は、drain と同じくまとめて確定する（list/stateListBaseline.ts）
+    beginStateListBaselineBatch();
+    try {
+        stateElement.createState("readonly", (state) => {
+            for (const path of paths) {
+                const address = createStateAddress(getPathInfo(path), null);
+                collect(address);
+                try {
+                    walkDependency(stateElement, address, stateElement.staticDependency, stateElement.dynamicDependency, stateElement.listPaths, state, "new", collect);
+                }
+                catch {
+                    // 片方の世代にしか無いリストを辿ると、行の展開がそのリストを読めずに投げる（新しい state で
+                    // 消えたキーなど）。辿れなかった先は集めない。起点のバインド（`for: items`）は上で集めてあり、
+                    // その適用が同じ理由で失敗して `console.error` / `$errorCallback` に報告される。
+                }
+            }
+        });
+        if (bindings.length === 0) {
+            return;
+        }
+        const ordered = orderStructuralFirst(bindings);
+        const apply = () => {
+            applyChangeFromBindings(ordered, undefined, { updatedCallback: false });
+        };
+        // 遷移への参加は drain と同じ（updater.ts の `_applyChange`）
+        if (inSsr()) {
+            apply();
+            return;
+        }
+        const pending = runTransition("state", apply);
+        if (pending !== undefined) {
+            pending.catch(reportDeferredApplyFailure);
+        }
+    }
+    finally {
+        endStateListBaselineBatch();
+    }
 }
 
 function getStateInfo(state) {
@@ -20257,8 +20821,19 @@ class State extends HTMLElementBase {
      *
      * `source === "internal"`（再帰の生成アクセサ・ボリュームのツリーアクセサ）は載せない。
      * あれらは生やした機構が新しい世代で登録し直す（recursion/registry.ts の `_define`）。
+     *
+     * `bound` はバインドがいちどでも登録したか（#270）。作り直しで存在検査をやり直すのはバインドの
+     * パスだけ — `$watch` / `$scan` の登録は前の世代の宣言の残骸でもあり、今の世代の宣言は
+     * 作り直しの後で自分の検査をする（`processWatchDeclaration` / `registerScans`）。残骸まで
+     * 検査すると、新しい宣言から外したパスを「存在しない」と誤って報告する。
      */
     _pathRegistrations = new Map();
+    /**
+     * 切断中の再セットで適用し直せなかったトップレベルのパス（#267）。再適用には rootNode が要るので、
+     * 再接続で `reapplyStateBindings` に渡す。切断中に何度入れ直しても和集合で持つ
+     * （前の世代にしか無いキーのバインドも失敗として報告させるため）。
+     */
+    _pendingReapplyPaths = null;
     /**
      * これまでのどの世代かで再帰レジストリが実体化した具体パス（`nodes.*.total` 等）の累積。
      * 再セットのたびに `forgetGenerated` の戻り値を足し、`_rebuildPathInfo` の除外に使う。
@@ -20282,6 +20857,22 @@ class State extends HTMLElementBase {
     _volumeGraftInfo = null;
     /** ボリューム: スロット予約済み・接ぎ木進行中（ロード完了前の再接続の再入ガード） */
     _volumeInitializing = false;
+    /**
+     * ボリューム: 予約したマウントパス（#265）。枠を返した後に取り直すときもこれを使う —
+     * `mount` 属性は書き換えられるので読み直さない。
+     */
+    _volumeMountPath = null;
+    /**
+     * ボリューム: いま枠を握っている rootNode（#265）。null は「握っていない」。解放はこの控えと
+     * `_volumeMountPath` の組でだけ行う。切断時の `_rootNode`（先に null になる）から読み直すと、
+     * 予約した組と一致する保証が無く、別の要素の枠を消しうる。
+     */
+    _volumeSlotRootNode = null;
+    /**
+     * ボリューム: ロード中に外れたときに枠を返した rootNode（#265）。同じ rootNode へ付け直した（並べ替えた）
+     * ときだけ connectedCallback がその場で枠を取り直すための控え。付け直すたびに null へ戻す。
+     */
+    _volumeDetachedFrom = null;
     /** v2 マウント（Phase 2）: この bind-component 要素が構築したマウント記録 */
     _mountRecord = null;
     _bindableEventMap = {};
@@ -20371,6 +20962,11 @@ class State extends HTMLElementBase {
         // 据え置き（同ファイルの「throw する再セットは世代を進めない」4 本が固定する）。
         this._stateGeneration++;
         this.__state = value;
+        // 存在検査の台帳も世代に属する（#270）。「パスごとに 1 回」の印を前の世代から持ち越すと、
+        // 下の経路情報の作り直しが新しい state で検査し直さない。初回のセットには捨てるものが無い
+        if (typeof previousState !== "undefined") {
+            resetPathDiagnostics(this);
+        }
         // $updatedCallback の有無を state セット時に確定しておく（in はプロトタイプ
         // チェーンも見る・getter を評価しない）。drain 側はこのフラグで更新アドレスの
         // 集計と writable createState をスキップできる。
@@ -20430,8 +21026,9 @@ class State extends HTMLElementBase {
         }
         // 生きているバインドの経路情報を作り直す（issue #258 の X7）。置き場所は
         // `_pathSet` / `_listPaths` / `_elementPaths` のクリアより後、startWatch / startStreams より前。
-        // `setPathInfo` をやり直しても新しい診断は出ない — 第 2 世代で消えたバインド先が無言のまま
-        // であることを `__tests__/integration.stateGenerationReset.test.ts` の末尾が固定する。
+        // 上で存在検査の台帳を捨てているので、バインドのパスはここで新しい state に対して検査し直され、
+        // 第 2 世代で消えたバインド先が報告される（#270 — `__tests__/integration.stateGenerationReset.test.ts`
+        // の末尾が固定する）。
         this._rebuildPathInfo();
         // $scan: registry と from / resetOn の依存グラフ登録（_pathSet クリア後であること）。
         // startWatch より前に置く（scan だけを宣言した state も drain の発火対象に載せるため）。
@@ -20548,7 +21145,9 @@ class State extends HTMLElementBase {
                 // D14: スナップショットはルートに 1 本 — ボリューム側の enable-ssr は意味を持たない
                 console.warn(`[@wcstack/state] <${config.tagNames.state} mount="${mountPath}"> ignores "enable-ssr" — snapshots are per root tree (the root state element aggregates volume data).`);
             }
-            reserveVolumeSlot(rootNode, mountPath);
+            reserveVolumeSlot(rootNode, mountPath, this);
+            this._volumeMountPath = mountPath;
+            this._volumeSlotRootNode = rootNode;
         }
         catch (error) {
             // 設定エラーでも初期化待ちをウェッジさせない（_failInitialization と同じ規範 —
@@ -20573,6 +21172,12 @@ class State extends HTMLElementBase {
         const finish = (info) => {
             this._volumeGraftInfo = info;
             this._initialized = true;
+            if (info === null) {
+                // 接ぎ木しないまま決着した（ロード失敗・接ぎ木失敗・孤児・外れたまま）ので枠を返す（#265）。
+                // 握ったままだと、同じマウントパスで作り直した要素が "already mounted" に弾かれ、
+                // 復旧がページの読み直ししか無くなる
+                this._releaseVolumeSlot();
+            }
             this._resolveInitialize?.();
             this._resolveLoading?.();
             this._resolveConnectedCallback?.();
@@ -20583,7 +21188,7 @@ class State extends HTMLElementBase {
         }
         catch (error) {
             // ロード失敗（404 / JSON パースエラー / import 失敗）は 1 ボリュームに閉じる
-            // （graftIsolated と同じ隔離規範 — 接ぎ木は載らず予約だけが残る着地）。
+            // （graftIsolated と同じ隔離規範 — 接ぎ木は載らず、枠も返す着地）。
             // 未解決のまま投げると waitForStateInitialize が全 <wcs-state> の
             // initializePromise を Promise.all で待つためページ全体が無言でウェッジし、
             // 上で立てた _volumeInitializing の再入ガードが remove → append の復旧も
@@ -20593,12 +21198,20 @@ class State extends HTMLElementBase {
             finish(null);
             return;
         }
-        // await 中に剥がされたら何もしない（スコープは持っていない）
+        // await 中に剥がされていたら接ぎ木しない（スコープは持っていない）
         if (this._rootNode === null) {
             finish(null);
             return;
         }
-        graftOrQueueVolume(rootNode, getStateElement(rootNode), mountPath, volumeState, finish);
+        // 接ぎ木先はいま繋がっている rootNode。ロード中に外れて枠を返していれば、ここで取り直す（#265）。
+        // 保留に積むなら、ルートが来た時点でもう一度取る — その間に外れて枠を返していることがあり、そのとき
+        // 枠が空いていれば外れたままでも接ぎ木する（従来の着地）。別の要素が取っていれば接ぎ木しない
+        const graftRootNode = this._rootNode;
+        if (!this._acquireVolumeSlot(graftRootNode)) {
+            finish(null);
+            return;
+        }
+        graftOrQueueVolume(graftRootNode, getStateElement(graftRootNode), mountPath, volumeState, finish, () => this._acquireVolumeSlot(graftRootNode));
     }
     /**
      * 初回マウントのロードと登録。戻り値は「この接続で初期化を**完了**したか」で、
@@ -20975,11 +21588,24 @@ class State extends HTMLElementBase {
             }
             // ボリューム（`mount="path"` — 接ぎ木・docs/state-mount-design.md §4-2）
             if (this.hasAttribute("mount")) {
-                // ロード完了前の remove → append 再入: スロット予約も接ぎ木も進行中の
-                // _initializeVolume が持っている。再実行すると reserveVolumeSlot が自分の
-                // 予約に "already mounted" を誤 raise する（接ぎ木自体は進行中の呼び出しが
-                // 完了させる — connectedCallbackPromise もそちらが解決する）
+                // ロード完了前の remove → append 再入: 接ぎ木は進行中の _initializeVolume が持っている
+                // （connectedCallbackPromise もそちらが解決する）ので再実行しない。再実行すると
+                // reserveVolumeSlot を二重に呼ぶ。外れたときに返した枠は、原則として接ぎ木の直前に取り直す（#265 —
+                // `_acquireVolumeSlot`）。別の root へ移った形でここで取ると、保留の要求が残る元の root と食い違った
+                // まま、移った先の枠を握り続ける。同じ root へ付け直した（並べ替えた）だけなら、空いている枠を
+                // その場で黙って取り直す — 取らないと、並べ替えの一瞬に後から来た同じパスのボリュームに枠を奪われる。
+                // 取れなければ、接ぎ木の直前の取り直しが報告する
                 if (this._volumeInitializing) {
+                    if (this._volumeDetachedFrom === this._rootNode) {
+                        try {
+                            reserveVolumeSlot(this._rootNode, this._volumeMountPath, this);
+                            this._volumeSlotRootNode = this._rootNode;
+                        }
+                        catch {
+                            // 外れている間に別のボリュームが取った。接ぎ木の直前の `_acquireVolumeSlot` が報告する
+                        }
+                    }
+                    this._volumeDetachedFrom = null;
                     return;
                 }
                 await this._initializeVolume();
@@ -21064,6 +21690,13 @@ class State extends HTMLElementBase {
             // （$connectedCallback の再実行と $streams の initial からの再起動が依存する、設計書 §2-3）。
             setStateElement(this._rootNode, this);
         }
+        // 切断中に入れ直した state を、戻ってきた rootNode のバインドへ適用する（#267）。上の登録より
+        // 後であること — 適用は rootNode から state 要素を引く
+        if (this._pendingReapplyPaths !== null) {
+            const paths = this._pendingReapplyPaths;
+            this._pendingReapplyPaths = null;
+            this._reapplyBindings(paths);
+        }
         // enable-ssr (クライアント側): SSR で $connectedCallback 済みなのでスキップ
         // inSsr() (サーバー側): レンダリング中なので実行する
         // 世代ガード（connectGeneration 照合）: ロード完了前の remove → append では
@@ -21135,13 +21768,50 @@ class State extends HTMLElementBase {
         }
         this._resolveConnectedCallback?.();
     }
+    /** 控えている枠を返す（#265）。所有者の確認は `releaseVolumeSlot` が行う。 */
+    _releaseVolumeSlot() {
+        if (this._volumeSlotRootNode === null) {
+            return;
+        }
+        releaseVolumeSlot(this._volumeSlotRootNode, this._volumeMountPath, this);
+        this._volumeSlotRootNode = null;
+    }
+    /**
+     * 接ぎ木の直前に、`rootNode` のマウントの枠を取る（#265）。握っていれば真。ロード中・保留中に外れて
+     * 返していれば取り直して真。外れている間に別の要素が同じマウントパスを取っていれば、横取りせずに
+     * 報告して偽 — 黙らせると、作者に見えるのは「データが現れない」だけになる。
+     */
+    _acquireVolumeSlot(rootNode) {
+        if (this._volumeSlotRootNode === rootNode) {
+            return true;
+        }
+        const mountPath = this._volumeMountPath;
+        try {
+            reserveVolumeSlot(rootNode, mountPath, this);
+        }
+        catch {
+            console.error(`[@wcstack/state] <${config.tagNames.state} mount="${mountPath}"> will not graft: another volume already holds ` +
+                `the "${mountPath}" slot on this root. Keep one volume per mount path.`);
+            return false;
+        }
+        this._volumeSlotRootNode = rootNode;
+        return true;
+    }
     disconnectedCallback() {
         if (this.hasAttribute("mount")) {
             // ボリューム: 接ぎ木したデータ・アクセサ・宣言はツリーに残る（アンマウントは
-            // 未対応 — 揮発させると依存グラフに残った getter 登録が宙に浮く）。予約も維持。
+            // 未対応 — 揮発させると依存グラフに残った getter 登録が宙に浮く）。接ぎ木済みなら予約も維持。
             // $disconnectedCallback だけは要素のライフサイクルとして chroot で呼ぶ
             if (this._volumeGraftInfo !== null) {
                 callVolumeLifecycle(this._volumeGraftInfo, "$disconnectedCallback");
+            }
+            if (!this._initialized) {
+                // ロード中（ルート待ちの保留中を含む）に外れた: 枠を返す（#265）。握ったままだと、ソースが
+                // 来ないまま外れた要素の枠が漏れ、同じマウントパスで作り直した要素が "already mounted" に
+                // 弾かれる。枠は接ぎ木の直前に取り直す（`_acquireVolumeSlot`）。同じ root へ付け直したときだけは
+                // connectedCallback がその場で取り直すので、外れた root を控える
+                this._volumeDetachedFrom = this._volumeSlotRootNode;
+                this._releaseVolumeSlot();
             }
             this._rootNode = null;
             return;
@@ -21401,9 +22071,13 @@ class State extends HTMLElementBase {
         // 何が壊れるかは `__tests__/integration.stateGenerationReset.test.ts` の
         // 「`for` で登録したリストパスは `$watch` の prop 登録に上書きされない」が固定する。
         if (source !== "internal") {
+            // `for` の登録はバインドからしか来ないので、`for` の登録を残すときは `bound` も真のまま
             const previous = this._pathRegistrations.get(path);
-            if (typeof previous === "undefined" || previous.bindingType !== "for") {
-                this._pathRegistrations.set(path, { bindingType, source });
+            if (typeof previous === "undefined") {
+                this._pathRegistrations.set(path, { bindingType, bound: source === "binding" });
+            }
+            else if (previous.bindingType !== "for") {
+                this._pathRegistrations.set(path, { bindingType, bound: previous.bound || source === "binding" });
             }
         }
         if (bindingType === "for") {
@@ -21442,15 +22116,20 @@ class State extends HTMLElementBase {
      * 名指していても、新しい世代ではまだ実体化されていないため（recursion/generation.ts）。読みが
      * 実体化したときに `defineTreeAccessor` が登録し直す。
      *
+     * 作り直すのはバインドが登録したパスだけ（`_pathRegistrations` の `bound`・#270）。`$watch` /
+     * `$scan` だけの登録は飛ばす — 作り直しの後で今の世代の宣言が自分で登録し直し、そこで存在も
+     * 検査される。ここで `_pathSet` に入れてしまうと、宣言側の `setPathInfo` が `_pathSet.has` で
+     * 素通りし、両方の世代で宣言し続けたパスが新しい state で消えても報告されない。
+     *
      * 反復中に `setPathInfo` が台帳へ書き戻す（既存キーの上書きのみで新キーは増えない）ので、
      * 誤解を避けるためスナップショットを取ってから回す。
      */
     _rebuildPathInfo() {
         for (const [path, registration] of Array.from(this._pathRegistrations)) {
-            if (this._generatedPaths.has(path)) {
+            if (!registration.bound || this._generatedPaths.has(path)) {
                 continue;
             }
-            this.setPathInfo(path, registration.bindingType, registration.source);
+            this.setPathInfo(path, registration.bindingType);
         }
     }
     _createState(rootNode, mutability, callback) {
@@ -21503,6 +22182,15 @@ class State extends HTMLElementBase {
             this._resolveSetState?.(state);
             return;
         }
+        // 読み込み済みのボリューム（#268）: 接ぎ木はロード完了時にデータをルートの木へ一度だけ複製する
+        // ので、この要素の state を入れ直してもページには届かない（要素自身の読みだけが新しくなる）。
+        // 無言の no-op にせず、下のルート側の拒否（D22）と同じく loud に落とす。`_volumeInitializing` は
+        // スロットを予約したボリュームだけが立て、下ろさない — 接ぎ木に失敗した形もここで弾く。
+        if (this._volumeInitializing) {
+            raiseError(`Cannot replace the state of <${config.tagNames.state} mount="${this.getAttribute("mount")}"> after it has loaded: ` +
+                `a volume's data is copied into the root tree when it grafts, so a new state would never reach the page. ` +
+                `Write the paths under "${this.getAttribute("mount")}" on the root state instead.`);
+        }
         // D22 と同型の防御: 接ぎ木済みボリューム / マウント記録の居るツリーの丸ごと再 set は、
         // 接ぎ木データ・quoted-path アクセサ（defineTreeAccessor）・マーカーの getterPaths・
         // 合流済み宣言面（$watch / $listKeys / $updatedCallback ゲート）を全て無言で捨てる。
@@ -21513,7 +22201,22 @@ class State extends HTMLElementBase {
                 `re-setting would silently drop grafted data, tree accessors and mount ledgers (D22). ` +
                 `Write the changed paths instead.`);
         }
+        const previousState = this.__state;
         this._state = state;
+        // 再セットは描画し直す（#267）。読みは世代印で新しい state を返すので、確立済みのバインドも
+        // ここで新しい世代に揃える（apply/reapplyStateBindings.ts）。消えたキーのバインドも失敗として
+        // 報告させるため、前後両方の state のキーを起点にする
+        const paths = collectReapplyPaths([previousState, state]);
+        if (this._rootNode === null) {
+            // 切断中は適用先の rootNode が無い。再接続（connectedCallback）で適用し直す
+            this._pendingReapplyPaths = new Set([...(this._pendingReapplyPaths ?? []), ...paths]);
+            return;
+        }
+        this._reapplyBindings(paths);
+    }
+    /** 確立済みのバインドを今の世代で適用し直す（#267）。行のバインドは経路情報の台帳のパスから引く。 */
+    _reapplyBindings(paths) {
+        reapplyStateBindings(this, paths, this._pathRegistrations.keys());
     }
 }
 /**

@@ -1374,8 +1374,19 @@ declare class State extends HTMLElementBase implements IStateElement {
      *
      * `source === "internal"`（再帰の生成アクセサ・ボリュームのツリーアクセサ）は載せない。
      * あれらは生やした機構が新しい世代で登録し直す（recursion/registry.ts の `_define`）。
+     *
+     * `bound` はバインドがいちどでも登録したか（#270）。作り直しで存在検査をやり直すのはバインドの
+     * パスだけ — `$watch` / `$scan` の登録は前の世代の宣言の残骸でもあり、今の世代の宣言は
+     * 作り直しの後で自分の検査をする（`processWatchDeclaration` / `registerScans`）。残骸まで
+     * 検査すると、新しい宣言から外したパスを「存在しない」と誤って報告する。
      */
     private _pathRegistrations;
+    /**
+     * 切断中の再セットで適用し直せなかったトップレベルのパス（#267）。再適用には rootNode が要るので、
+     * 再接続で `reapplyStateBindings` に渡す。切断中に何度入れ直しても和集合で持つ
+     * （前の世代にしか無いキーのバインドも失敗として報告させるため）。
+     */
+    private _pendingReapplyPaths;
     /**
      * これまでのどの世代かで再帰レジストリが実体化した具体パス（`nodes.*.total` 等）の累積。
      * 再セットのたびに `forgetGenerated` の戻り値を足し、`_rebuildPathInfo` の除外に使う。
@@ -1398,6 +1409,22 @@ declare class State extends HTMLElementBase implements IStateElement {
     private _volumeGraftInfo;
     /** ボリューム: スロット予約済み・接ぎ木進行中（ロード完了前の再接続の再入ガード） */
     private _volumeInitializing;
+    /**
+     * ボリューム: 予約したマウントパス（#265）。枠を返した後に取り直すときもこれを使う —
+     * `mount` 属性は書き換えられるので読み直さない。
+     */
+    private _volumeMountPath;
+    /**
+     * ボリューム: いま枠を握っている rootNode（#265）。null は「握っていない」。解放はこの控えと
+     * `_volumeMountPath` の組でだけ行う。切断時の `_rootNode`（先に null になる）から読み直すと、
+     * 予約した組と一致する保証が無く、別の要素の枠を消しうる。
+     */
+    private _volumeSlotRootNode;
+    /**
+     * ボリューム: ロード中に外れたときに枠を返した rootNode（#265）。同じ rootNode へ付け直した（並べ替えた）
+     * ときだけ connectedCallback がその場で枠を取り直すための控え。付け直すたびに null へ戻す。
+     */
+    private _volumeDetachedFrom;
     /** v2 マウント（Phase 2）: この bind-component 要素が構築したマウント記録 */
     private _mountRecord;
     private _bindableEventMap;
@@ -1485,6 +1512,14 @@ declare class State extends HTMLElementBase implements IStateElement {
     private _initializeDCC;
     private _callStateDisconnectedCallback;
     connectedCallback(): Promise<void>;
+    /** 控えている枠を返す（#265）。所有者の確認は `releaseVolumeSlot` が行う。 */
+    private _releaseVolumeSlot;
+    /**
+     * 接ぎ木の直前に、`rootNode` のマウントの枠を取る（#265）。握っていれば真。ロード中・保留中に外れて
+     * 返していれば取り直して真。外れている間に別の要素が同じマウントパスを取っていれば、横取りせずに
+     * 報告して偽 — 黙らせると、作者に見えるのは「データが現れない」だけになる。
+     */
+    private _acquireVolumeSlot;
     disconnectedCallback(): void;
     get initialized(): boolean;
     get initializePromise(): Promise<void>;
@@ -1575,6 +1610,11 @@ declare class State extends HTMLElementBase implements IStateElement {
      * 名指していても、新しい世代ではまだ実体化されていないため（recursion/generation.ts）。読みが
      * 実体化したときに `defineTreeAccessor` が登録し直す。
      *
+     * 作り直すのはバインドが登録したパスだけ（`_pathRegistrations` の `bound`・#270）。`$watch` /
+     * `$scan` だけの登録は飛ばす — 作り直しの後で今の世代の宣言が自分で登録し直し、そこで存在も
+     * 検査される。ここで `_pathSet` に入れてしまうと、宣言側の `setPathInfo` が `_pathSet.has` で
+     * 素通りし、両方の世代で宣言し続けたパスが新しい state で消えても報告されない。
+     *
      * 反復中に `setPathInfo` が台帳へ書き戻す（既存キーの上書きのみで新キーは増えない）ので、
      * 誤解を避けるためスナップショットを取ってから回す。
      */
@@ -1590,6 +1630,8 @@ declare class State extends HTMLElementBase implements IStateElement {
     get indexDependentGetterPaths(): ReadonlySet<string>;
     addIndexDependentGetterPath(path: string): void;
     setInitialState(state: Record<string, any>): void;
+    /** 確立済みのバインドを今の世代で適用し直す（#267）。行のバインドは経路情報の台帳のパスから引く。 */
+    private _reapplyBindings;
 }
 
 declare global {
