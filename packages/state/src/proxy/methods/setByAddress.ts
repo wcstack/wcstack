@@ -84,7 +84,8 @@ function notifyWrite(
   receiver : any,
   handler  : IStateHandler,
   keyedMergePath: string | null,
-  cacheable: boolean
+  cacheable: boolean,
+  listExpansion: "diff" | "full" = "diff"
 ): void {
   const propagationContext = config.enablePropagationContext
     ? (getCurrentPropagationContext() ?? beginPropagationTransaction(-1))
@@ -121,7 +122,7 @@ function notifyWrite(
     },
     // リスト置換時は追加行・位置変更行のみ展開する（未変更行の再訪を省く。
     // $postUpdate の手動リフレッシュは従来通り全行展開のまま）
-    { listExpansion: "diff", keyedMergePath }
+    { listExpansion, keyedMergePath }
   )
 }
 
@@ -291,6 +292,27 @@ function _setByAddressWithSwap(
  * リスト自身も描画だけを積む（updater の enqueueRenderOnlyAddress）。書き込みとして積むと、`items` の
  * `$watch` が配列の参照の変わらない入れ替えで発火する。
  */
+/**
+ * 置き換えで入った行の中のリストの台帳が、前の行の listIndex を親に持っていたら捨てる（#4）。
+ * 同じバッチの最初の書き込み（前の行のアドレス）の依存ウォークが先に台帳を作るため、そのままだと
+ * 行の着地の選別（watch/rowLanding）が親を退役した行と見て、入れ子の着地（`$watch "items.*.tags.*"`）を
+ * 捨ててしまう。捨てておけば、この行の通知のウォークが新しい行を親に引き直す。
+ */
+function dropStaleRowListLedgers(rowValue: unknown, rowListIndex: IListIndex): void {
+  if (rowValue === null || typeof rowValue !== "object") {
+    return;
+  }
+  for (const value of Object.values(rowValue as Record<string, unknown>)) {
+    if (!Array.isArray(value)) {
+      continue;
+    }
+    const listIndexes = getListIndexesByList(value);
+    if (listIndexes !== null && listIndexes.length > 0 && listIndexes[0].parentListIndex !== rowListIndex) {
+      setListIndexesByList(value, null);
+    }
+  }
+}
+
 function notifySwappedList(
   parentAddress: IStateAddress,
   swapInfo: ISwapInfo,
@@ -329,7 +351,13 @@ function notifySwappedList(
       if (hasPrevValue(displacedAbsAddress)) {
         recordPrevValue(elementAbsAddress, getPrevValue(displacedAbsAddress));
       }
-      notifyWrite(elementAddress, elementAbsAddress, receiver, handler, null, isCacheable(stateElement, elementAddress));
+      dropStaleRowListLedgers((currentParentValue as readonly unknown[])[position], listIndex);
+      // 置き換えで入った行は中身が丸ごと新しい。差分展開だと入れ子のリストの行（`items.*.tags.*`）が
+      // 着地せず `$watch` / `$scan` が取り逃すので、この行の下だけ全行展開で通知する
+      notifyWrite(
+        elementAddress, elementAbsAddress, receiver, handler, null,
+        isCacheable(stateElement, elementAddress), "full",
+      );
       continue;
     }
     walkDependency(

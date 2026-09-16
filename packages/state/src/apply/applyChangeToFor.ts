@@ -88,21 +88,35 @@ function setPooledContent(bindingInfo: IBindingInfo, content: IContent): void {
   }
 }
 
+/**
+ * 親の中身を一括で捨てて良いか（全行削除の近道）の判定に数えるノードか。要素・空白でないテキストの
+ * ほかに、**構造ディレクティブのアンカー（コメント）** も数える（#4）。数えないと、同じ親に居る `if` の
+ * アンカーまで textContent='' で消え、その `if` は以後何も描けない — 行の中が `if` だけの形では、
+ * 行の器ごと壊れる（行を描き直さない main では表に出ないが、消えているのは同じ）。
+ */
+function countsAsParentContent(node: Node): boolean {
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    return true;
+  }
+  if (node.nodeType === Node.TEXT_NODE) {
+    return (node.textContent?.trim() ?? '') !== '';
+  }
+  return node.nodeType === Node.COMMENT_NODE && (node as Comment).data.startsWith('@@wcs-');
+}
+
 function isOnlyNodeInParentContent(firstNode: Node, lastNode: Node): boolean {
   let prevCheckNode = firstNode.previousSibling;
   let nextCheckNode = lastNode.nextSibling;
   let onlyNode = true;
   while(prevCheckNode !== null) {
-    if (prevCheckNode.nodeType === Node.ELEMENT_NODE 
-      || (prevCheckNode.nodeType === Node.TEXT_NODE && (prevCheckNode.textContent?.trim() ?? '') !== '')) {
+    if (countsAsParentContent(prevCheckNode)) {
       onlyNode = false;
       break;
     }
     prevCheckNode = prevCheckNode.previousSibling;
   }
   while(nextCheckNode !== null) {
-    if (nextCheckNode.nodeType === Node.ELEMENT_NODE 
-      || (nextCheckNode.nodeType === Node.TEXT_NODE && (nextCheckNode.textContent?.trim() ?? '') !== '')) {
+    if (countsAsParentContent(nextCheckNode)) {
       onlyNode = false;
       break;
     }
@@ -188,25 +202,26 @@ function clearAppliedMarks(content: IContent, context: IApplyContext): void {
 }
 
 /**
- * 入れ子の `for` が持つ Content をプールへ返す（#4）。その場で使い回す行を解体するとき、内側の
- * `for` の Content をただ外すと次の描画で作り直され、アンカーの content 台帳（contentSetByNode）が
- * 置き換えのたびに伸び続ける。プールへ返しておけば次の描画がそれを引き当てる（`if` の Content は
- * アンカーごとに 1 つを使い回すので、返す対象は `for` の分だけ）。
+ * 入れ子の `for` が持つ Content を解体して台帳から外す（#4）。その場で使い回す行の中身は新しい行として
+ * 作り直されるので、外した Content をアンカーの content 台帳（contentSetByNode）に残すと、置き換えの
+ * たびに伸び続ける。プールへ返さないのは、返すと次の適用で内側の `for` が「全行削除」の近道
+ * （親の textContent を空にする）に入り、囲む `if` のアンカーごと行を壊すため。`if` の Content は
+ * アンカーごとに 1 つを使い回すので外さない。
  */
-function poolNestedContents(content: IContent): void {
+function dropNestedContents(content: IContent): void {
   for (const binding of getBindingsByContent(content)) {
     if (!STRUCTURAL_BINDING_TYPES.has(binding.bindingType)) {
       continue;
     }
-    const pooled = binding.bindingType === 'for';
+    const dropped = binding.bindingType === 'for';
     for (const nested of getContentSetByNode(binding.node)) {
-      poolNestedContents(nested);
-      if (!pooled || !nested.mounted) {
+      dropNestedContents(nested);
+      if (!dropped || !nested.mounted) {
         continue;
       }
       deactivateContent(nested);
       nested.unmount();
-      setPooledContent(binding, nested);
+      deleteContentByNode(binding.node, nested);
     }
   }
 }
@@ -287,7 +302,7 @@ export function applyChangeToFor(
           // 同じ位置に入る行がその場で使い回す。自分のノードは DOM に残し、プールにも入れないが、
           // 解体は unmount と同じ（ネストした for / if の Content とアドレス台帳を落とす）
           deactivateContent(content);
-          poolNestedContents(content);
+          dropNestedContents(content);
           content.unmountInPlace();
         } else if (poolBudget <= 0 && content.tryDestroy()) {
           deleteContentByNode(bindingInfo.node, content);

@@ -363,6 +363,57 @@ describe("要素書き込みによる行の置き換え", () => {
     host.remove();
   });
 
+  it("行の中身が if だけの形でも、置き換えのたびに内側の for が描き直される", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const html =
+        `<template data-wcs="for: groups"><div class="group">` +
+        `<template data-wcs="if: groups.*.open">` +
+        `<template data-wcs="for: groups.*.items"><i class="item" data-wcs="textContent: groups.*.items.*"></i></template>` +
+        `</template></div></template>`;
+      const { host, shadowRoot, stateEl } = await mount({
+        groups: [{ open: true, items: ["a", "b"] }, { open: true, items: ["c"] }],
+      }, html);
+      expect(texts(shadowRoot, ".item")).toEqual(["a", "b", "c"]);
+
+      for (let round = 1; round <= 3; round++) {
+        write(stateEl, (s: any) => { s["groups.0"] = { open: true, items: [`p${round}`, `q${round}`] }; });
+        await flush();
+        // 旧（内側の Content をプールへ返した版）: 1 回おきに ["c"] になり、行の器ごと DOM から外れた
+        expect(texts(shadowRoot, ".item"), `${round} 回目`).toEqual([`p${round}`, `q${round}`, "c"]);
+        expect(shadowRoot.querySelectorAll(".group").length, `${round} 回目`).toBe(2);
+      }
+      expect(errorSpy).not.toHaveBeenCalled();
+      host.remove();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("置き換えた行の入れ子のリストにも $watch が着地する", async () => {
+    const calls: unknown[] = [];
+    const html =
+      `<template data-wcs="for: groups"><div class="group">` +
+      `<template data-wcs="for: groups.*.items"><i class="item" data-wcs="textContent: groups.*.items.*"></i></template>` +
+      `</div></template>`;
+    const { host, shadowRoot, stateEl } = await mount({
+      groups: [{ items: ["a", "b"] }, { items: ["c"] }],
+      $watch: {
+        "groups.*.items.*"(current: unknown, _previous: unknown, ...indexes: number[]) { calls.push([current, ...indexes]); },
+      },
+    }, html);
+    await flush();
+    calls.length = 0;
+
+    write(stateEl, (s: any) => { s["groups.0"] = { items: ["p", "q"] }; });
+    await flush();
+    await flush();
+    expect(texts(shadowRoot, ".item")).toEqual(["p", "q", "c"]);
+    // 旧（差分展開のまま通知した版）: []（入れ子の行の着地が消えた）
+    expect(calls).toEqual([["p", 0, 0], ["q", 0, 1]]);
+    host.remove();
+  });
+
   it("if の中に入れ子の for を持つ行を置き換えても、内側の行が描き直される", async () => {
     const html =
       `<template data-wcs="for: groups"><div class="group">` +
