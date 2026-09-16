@@ -612,8 +612,16 @@ export function cleanupCollectedMountRecord(held: ICollectedMountLedgers): void 
 
 const collectedMountRegistry = new FinalizationRegistry<ICollectedMountLedgers>(cleanupCollectedMountRecord);
 
+/** マウント記録 → スコープ根。行 content をその場で使い回したときの張り直しが引く（#4） */
+const scopeRootByMountRecord: WeakMap<IMountRecord, Node> = new WeakMap();
+
+export function getScopeRootByMountRecord(record: IMountRecord): Node | null {
+  return scopeRootByMountRecord.get(record) ?? null;
+}
+
 export function registerMountRecord(scopeRoot: Node, record: IMountRecord): void {
   mountRecordByScopeRoot.set(scopeRoot, record);
+  scopeRootByMountRecord.set(record, scopeRoot);
   let byMarker = mountRecordsByStateElement.get(record.parentStateElement);
   if (typeof byMarker === "undefined") {
     byMarker = new Map();

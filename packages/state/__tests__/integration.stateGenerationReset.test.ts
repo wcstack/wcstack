@@ -582,7 +582,7 @@ describe("再セット後の経路情報: 生きているバインドぶんを�
     host.remove();
   });
 
-  it("再セット後の行まるごと置換（要素への書き込み）は通るが、表示が state と食い違う（#4 と同じ欠陥）", async () => {
+  it("再セット後に行をまるごと置換しても、表示が state と一致する（#4）", async () => {
     // 旧: 再セット直後の台帳は走査を経ていない cold な状態で、この $resolve は別の既知欠陥
     // （「ListIndexes not found」）で拒否された（拒否されたぶん DOM も動かず、乖離もしなかった）。
     // いまは再セットの適用し直し（#267）が行を走査するので台帳があり、置換そのものは通る。
@@ -607,12 +607,10 @@ describe("再セット後の経路情報: 生きているバインドぶんを�
     const error = writeError(stateEl, (s: any) => { s.$resolve("nodes.*", [0], node(9, [node(90)])); });
     await flush();
     expect(error).toBe(""); // 旧: "ListIndexes not found"（走査を経ていない cold な $resolve）
-    // DEFECT: 行の要素への書き込みは、代入値を書き込み前の listIndex のキャッシュに固定し、台帳には
-    //         新しい listIndex を入れる（#4 の機序）。ブロックは古い listIndex のまま、束ねていない
-    //         `nodes.*.value` の古いキャッシュ（7）と新しい子の集計（90）を足して 97 を表示する。
-    //         再セットに固有ではない — 再セットを挟まない main でも同じ手順で ["97", "8"] / [99, 8] になる。
-    //         should be: ["99", "8"]（#4 の修理で反転する）。
-    expect(txt(shadowRoot, ".t")).toEqual(["97", "8"]);
+    // 旧: ["97", "8"]（#4 — 代入値を書き込み前の listIndex のキャッシュに固定し、台帳には新しい
+    // listIndex を入れていたので、束ねていない `nodes.*.value` の古いキャッシュ 7 と新しい子の集計 90 を
+    // 足していた）。#4 の修理で、置き換えた行は新しい値で描き直される。
+    expect(txt(shadowRoot, ".t")).toEqual(["99", "8"]);
     expect(read(stateEl, (s: any) => s.$getAll("nodes.*.total", []))).toEqual([99, 8]);
     host.remove();
   });

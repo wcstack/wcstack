@@ -6,7 +6,7 @@ import { getPathInfo } from '../src/address/PathInfo';
 import { createListIndex } from '../src/list/createListIndex';
 import { createListDiff } from '../src/list/createListDiff';
 import { getListIndexesByList, setListIndexesByList } from '../src/list/listIndexesByList';
-import { getSwapInfoByAddress, setSwapInfoByAddress } from '../src/proxy/methods/swapInfo';
+import { getSwapInfoByList, setSwapInfoByList } from '../src/proxy/methods/swapInfo';
 import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
 
 const createListIndexes = (
@@ -25,6 +25,7 @@ const mockEnqueueAbsoluteAddress = vi.fn();
 vi.mock('../src/updater/updater', () => ({
   getUpdater: vi.fn(() => ({
     enqueueAbsoluteAddress: mockEnqueueAbsoluteAddress,
+    enqueueRenderOnlyAddress: vi.fn(),
   })),
 }));
 
@@ -215,7 +216,6 @@ describe('setByAddress', () => {
     const parentListIndex = createListIndex(null, 0);
     const listIndex = createListIndex(parentListIndex, 0);
     const address = createStateAddress(getPathInfo('items.*'), listIndex);
-    const parentAddress = address.parentAddress!;
 
     const indexes = createListIndexes(parentListIndex, [], target.items, []);
     setListIndexesByList(target.items, indexes);
@@ -232,7 +232,7 @@ describe('setByAddress', () => {
 
     setByAddress(target, address, 'a', target, handler as any);
 
-    expect(getSwapInfoByAddress(parentAddress)).toBeNull();
+    expect(getSwapInfoByList(target.items)).toBeNull();
     const currentIndexes = getListIndexesByList(target.items)!;
     expect(currentIndexes[0].index).toBe(0);
 
@@ -244,7 +244,6 @@ describe('setByAddress', () => {
     const parentListIndex = createListIndex(null, 0);
     const listIndex = createListIndex(parentListIndex, 0);
     const address = createStateAddress(getPathInfo('items.*'), listIndex);
-    const parentAddress = address.parentAddress!;
 
     const indexes = createListIndexes(parentListIndex, [], target.items, []);
     setListIndexesByList(target.items, indexes);
@@ -261,7 +260,7 @@ describe('setByAddress', () => {
 
     setByAddress(target, address, 'a', target, handler as any);
 
-    expect(getSwapInfoByAddress(parentAddress)).not.toBeNull();
+    expect(getSwapInfoByList(target.items)).not.toBeNull();
 
     setListIndexesByList(target.items, null);
   });
@@ -271,7 +270,6 @@ describe('setByAddress', () => {
     const parentListIndex = createListIndex(null, 0);
     const listIndex = createListIndex(parentListIndex, 0);
     const address = createStateAddress(getPathInfo('items.*'), listIndex);
-    const parentAddress = address.parentAddress!;
 
     const indexes = createListIndexes(parentListIndex, [], target.items, []);
     setListIndexesByList(target.items, indexes);
@@ -292,7 +290,7 @@ describe('setByAddress', () => {
     expect(currentIndexes[0]).toBeDefined();
 
     // swapInfo should be cleared after successful swap
-    expect(getSwapInfoByAddress(parentAddress)).toBeNull();
+    expect(getSwapInfoByList(target.items)).toBeNull();
 
     setListIndexesByList(target.items, null);
   });
@@ -328,7 +326,6 @@ describe('setByAddress', () => {
     const parentListIndex = createListIndex(null, 0);
     const listIndex = createListIndex(parentListIndex, 0);
     const address = createStateAddress(getPathInfo('items.*'), listIndex);
-    const parentAddress = address.parentAddress!;
 
     const indexes = createListIndexes(parentListIndex, [], target.items, []);
     setListIndexesByList(target.items, indexes);
@@ -338,7 +335,7 @@ describe('setByAddress', () => {
       value: ['a', 'b'],
       listIndexes: [...indexes]
     };
-    setSwapInfoByAddress(parentAddress, existingSwapInfo);
+    setSwapInfoByList(target.items, existingSwapInfo);
 
     const stateElement = createStateElement({ elementPaths: new Set(['items.*']) });
     const handler = createHandler(stateElement);
@@ -353,7 +350,7 @@ describe('setByAddress', () => {
     setByAddress(target, address, 'a', target, handler as any);
 
     // swapが完了したのでnullになる
-    expect(getSwapInfoByAddress(parentAddress)).toBeNull();
+    expect(getSwapInfoByList(target.items)).toBeNull();
 
     setListIndexesByList(target.items, null);
   });
@@ -363,10 +360,6 @@ describe('setByAddress', () => {
     const parentListIndex = createListIndex(null, 0);
     const listIndex = createListIndex(parentListIndex, 0);
     const address = createStateAddress(getPathInfo('items.*'), listIndex);
-    const parentAddress = address.parentAddress!;
-
-    // swapInfoがまだ存在しない状態でテスト
-    setSwapInfoByAddress(parentAddress, null);
 
     const stateElement = createStateElement({ elementPaths: new Set(['items.*']) });
     const handler = createHandler(stateElement);
@@ -391,7 +384,7 @@ describe('setByAddress', () => {
     setByAddress(target, address, 'b', target, handler as any);
 
     // クリーンアップ
-    setSwapInfoByAddress(parentAddress, null);
+    setSwapInfoByList(target.items, null);
   });
 
   it('finallyブロック内でgetByAddressがnullを返す場合も空配列にフォールバックすること', () => {
@@ -399,10 +392,6 @@ describe('setByAddress', () => {
     const parentListIndex = createListIndex(null, 0);
     const listIndex = createListIndex(parentListIndex, 0);
     const address = createStateAddress(getPathInfo('items.*'), listIndex);
-    const parentAddress = address.parentAddress!;
-
-    // swapInfoがまだ存在しない状態でテスト
-    setSwapInfoByAddress(parentAddress, null);
 
     const stateElement = createStateElement({ elementPaths: new Set(['items.*']) });
     const handler = createHandler(stateElement);
@@ -428,7 +417,7 @@ describe('setByAddress', () => {
     setByAddress(target, address, 'b', target, handler as any);
 
     // クリーンアップ
-    setSwapInfoByAddress(parentAddress, null);
+    setSwapInfoByList(target.items, null);
   });
 
   it('finallyブロック内でgetByAddressが配列ではない値を返す場合は空配列にフォールバックすること', () => {
@@ -436,9 +425,6 @@ describe('setByAddress', () => {
     const parentListIndex = createListIndex(null, 0);
     const listIndex = createListIndex(parentListIndex, 0);
     const address = createStateAddress(getPathInfo('items.*'), listIndex);
-    const parentAddress = address.parentAddress!;
-
-    setSwapInfoByAddress(parentAddress, null);
 
     const stateElement = createStateElement({ elementPaths: new Set(['items.*']) });
     const handler = createHandler(stateElement);
@@ -465,7 +451,7 @@ describe('setByAddress', () => {
     setByAddress(target, address, 'b', target, handler as any);
 
     // クリーンアップ
-    setSwapInfoByAddress(parentAddress, null);
+    setSwapInfoByList(target.items, null);
   });
 
   it('bindableEventMapにパスがある場合はCustomEventがディスパッチされること', () => {

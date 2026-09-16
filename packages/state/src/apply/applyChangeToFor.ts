@@ -1,6 +1,7 @@
 import { getPathInfo } from "../address/PathInfo";
 import { createStateAddress } from "../address/StateAddress";
 import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding";
+import { getBindingsByContent } from "../bindings/bindingsByContent";
 import { getIndexBindingsByContent } from "../bindings/indexBindingsByContent";
 import { inSsr } from "../config";
 import { WILDCARD } from "../define";
@@ -8,13 +9,15 @@ import { createListDiff } from "../list/createListDiff";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
 import { getLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
 import { computeStableIndexSet } from "../list/stableListOrder";
-import { IListIndex } from "../list/types";
+import { isSwapBaselineList } from "../list/swapBaselineList";
+import { IListDiff, IListIndex } from "../list/types";
 import { raiseError } from "../raiseError";
 import { activateContent, deactivateContent } from "../structural/activateContent";
-import { deleteContentByNode } from "../structural/contentsByNode";
+import { deleteContentByNode, getContentSetByNode } from "../structural/contentsByNode";
 import { createContent } from "../structural/createContent";
 import { IContent } from "../structural/types";
 import { IBindingInfo } from "../types";
+import { remountScopesUnderContent } from "../webComponent/mountScope";
 import { applyChange } from "./applyChange";
 import { setRootNodeByFragment } from "./rootNodeByFragment";
 import { IApplyContext } from "./types";
@@ -85,21 +88,35 @@ function setPooledContent(bindingInfo: IBindingInfo, content: IContent): void {
   }
 }
 
+/**
+ * 親の中身を一括で捨てて良いか（全行削除の近道）の判定に数えるノードか。要素・空白でないテキストの
+ * ほかに、**構造ディレクティブのアンカー（コメント）** も数える（#4）。数えないと、同じ親に居る `if` の
+ * アンカーまで textContent='' で消え、その `if` は以後何も描けない — 行の中が `if` だけの形では、
+ * 行の器ごと壊れる（行を描き直さない main では表に出ないが、消えているのは同じ）。
+ */
+function countsAsParentContent(node: Node): boolean {
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    return true;
+  }
+  if (node.nodeType === Node.TEXT_NODE) {
+    return (node.textContent?.trim() ?? '') !== '';
+  }
+  return node.nodeType === Node.COMMENT_NODE && (node as Comment).data.startsWith('@@wcs-');
+}
+
 function isOnlyNodeInParentContent(firstNode: Node, lastNode: Node): boolean {
   let prevCheckNode = firstNode.previousSibling;
   let nextCheckNode = lastNode.nextSibling;
   let onlyNode = true;
   while(prevCheckNode !== null) {
-    if (prevCheckNode.nodeType === Node.ELEMENT_NODE 
-      || (prevCheckNode.nodeType === Node.TEXT_NODE && (prevCheckNode.textContent?.trim() ?? '') !== '')) {
+    if (countsAsParentContent(prevCheckNode)) {
       onlyNode = false;
       break;
     }
     prevCheckNode = prevCheckNode.previousSibling;
   }
   while(nextCheckNode !== null) {
-    if (nextCheckNode.nodeType === Node.ELEMENT_NODE 
-      || (nextCheckNode.nodeType === Node.TEXT_NODE && (nextCheckNode.textContent?.trim() ?? '') !== '')) {
+    if (countsAsParentContent(nextCheckNode)) {
       onlyNode = false;
       break;
     }
@@ -124,6 +141,89 @@ function isPhysicallyAfter(lastNode: Node, firstNode: Node | null): boolean {
   const position = lastNode.compareDocumentPosition(firstNode);
   return (position & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
     && (position & Node.DOCUMENT_POSITION_DISCONNECTED) === 0;
+}
+
+interface IInPlaceContents {
+  /** 入る行の listIndex → その場で使い回す Content */
+  readonly byAddedIndex: Map<IListIndex, IContent>;
+  readonly reused: Set<IContent>;
+}
+
+/**
+ * 要素書き込みの入れ替えを描き直す差分（基準が「書き込む前の並びの写し」— swapBaselineList.ts）で、
+ * 同じ位置の「外す行」と「入る行」を組にし、外す行の Content を入る行にその場で使い回す（#4）。
+ * 行の置き換え（リストに無かった値の書き込み）はその位置の行が新しい行に替わるだけなので、プールを通して
+ * ブロックを DOM から外す必要が無い — 外すと、双方向バインドの入力で打鍵ごとにフォーカスが失われる。
+ * 配列の置換の差分は対象にしない（外した行の Content はこれまでどおりプールを通す）。
+ */
+function collectInPlaceContents(
+  contentMap: WeakMap<IListIndex, IContent>,
+  lastValue: unknown,
+  diff: IListDiff,
+): IInPlaceContents | null {
+  if (!isSwapBaselineList(lastValue)) {
+    return null;
+  }
+  let inPlace: IInPlaceContents | null = null;
+  for (let position = 0; position < diff.newIndexes.length; position++) {
+    const added = diff.newIndexes[position];
+    const removed = diff.oldIndexes[position];
+    const content = diff.addIndexSet.has(added) && diff.deleteIndexSet.has(removed)
+      ? contentMap.get(removed)
+      : undefined;
+    if (typeof content === "undefined") {
+      continue;
+    }
+    inPlace ??= { byAddedIndex: new Map(), reused: new Set() };
+    inPlace.byAddedIndex.set(added, content);
+    inPlace.reused.add(content);
+  }
+  return inPlace;
+}
+
+const STRUCTURAL_BINDING_TYPES = new Set(['if', 'elseif', 'else', 'for']);
+
+/**
+ * 使い回す Content の「適用済み」の印を落とす。入れ子の構造ディレクティブが持つ Content も辿る —
+ * `if` の中の `for` や、`elseif` / `else` のアンカーは行の Content ではなく**内側の** Content に
+ * 属するので、行の binding だけ落としても新しい行として適用し直されない（印が残ったまま
+ * activateContent の applyChange に飛ばされ、解体した内側が描き直されないまま空になる）。
+ */
+function clearAppliedMarks(content: IContent, context: IApplyContext): void {
+  for (const binding of getBindingsByContent(content)) {
+    context.appliedBindingSet.delete(binding);
+    if (!STRUCTURAL_BINDING_TYPES.has(binding.bindingType)) {
+      continue;
+    }
+    for (const nested of getContentSetByNode(binding.node)) {
+      clearAppliedMarks(nested, context);
+    }
+  }
+}
+
+/**
+ * 入れ子の `for` が持つ Content を解体して台帳から外す（#4）。その場で使い回す行の中身は新しい行として
+ * 作り直されるので、外した Content をアンカーの content 台帳（contentSetByNode）に残すと、置き換えの
+ * たびに伸び続ける。プールへ返さないのは、返すと次の適用で内側の `for` が「全行削除」の近道
+ * （親の textContent を空にする）に入り、囲む `if` のアンカーごと行を壊すため。`if` の Content は
+ * アンカーごとに 1 つを使い回すので外さない。
+ */
+function dropNestedContents(content: IContent): void {
+  for (const binding of getBindingsByContent(content)) {
+    if (!STRUCTURAL_BINDING_TYPES.has(binding.bindingType)) {
+      continue;
+    }
+    const dropped = binding.bindingType === 'for';
+    for (const nested of getContentSetByNode(binding.node)) {
+      dropNestedContents(nested);
+      if (!dropped || !nested.mounted) {
+        continue;
+      }
+      deactivateContent(nested);
+      nested.unmount();
+      deleteContentByNode(binding.node, nested);
+    }
+  }
 }
 
 function setContent(node: Node, listIndex: IListIndex, content: IContent | null): void {
@@ -163,10 +263,14 @@ export function applyChangeToFor(
   const diff = createListDiff(listIndex, lastValue, newValue);
   context.newListValueByAbsAddress.set(absAddress, Array.isArray(newValue) ? newValue : []);
 
+  let contentMap = contentByListIndexByNode.get(bindingInfo.node);
+  // 要素書き込みの入れ替えを描き直す差分では、同じ位置で外す行の Content を入る行がその場で使い回す（#4）
+  const inPlaceContents = typeof contentMap !== 'undefined' ? collectInPlaceContents(contentMap, lastValue, diff) : null;
   const fullDelete = Array.isArray(lastValue)
     && lastValue.length === diff.deleteIndexSet.size
     && diff.deleteIndexSet.size > 0;
-  if (fullDelete && bindingInfo.node.parentNode !== null) {
+  // その場で使い回す Content があるときは、親を空にする近道を取らない（使い回す行の DOM も消える）
+  if (fullDelete && inPlaceContents === null && bindingInfo.node.parentNode !== null) {
     let isOnlyNode = isOnlyNodeInParentContentByNode.get(bindingInfo.node);
     if (typeof isOnlyNode === 'undefined') {
       const lastNode = lastNodeByNode.get(bindingInfo.node) || bindingInfo.node;
@@ -187,7 +291,6 @@ export function applyChangeToFor(
   // ホットスポット: 外側の node→map 解決はループ外に持ち上げ、fullDelete（旧全行が
   // deleteIndexSet に載る＝台帳の全エントリが消える）では per-index delete を廃して
   // 台帳ごと 1 回で手放す。
-  let contentMap = contentByListIndexByNode.get(bindingInfo.node);
   let poolBudget = fullDelete
     ? maxPooledContents - getPooledContents(bindingInfo).length
     : Number.POSITIVE_INFINITY;
@@ -195,7 +298,13 @@ export function applyChangeToFor(
     for(const deleteIndex of diff.deleteIndexSet) {
       const content = contentMap.get(deleteIndex);
       if (typeof content !== 'undefined') {
-        if (poolBudget <= 0 && content.tryDestroy()) {
+        if (inPlaceContents !== null && inPlaceContents.reused.has(content)) {
+          // 同じ位置に入る行がその場で使い回す。自分のノードは DOM に残し、プールにも入れないが、
+          // 解体は unmount と同じ（ネストした for / if の Content とアドレス台帳を落とす）
+          deactivateContent(content);
+          dropNestedContents(content);
+          content.unmountInPlace();
+        } else if (poolBudget <= 0 && content.tryDestroy()) {
           deleteContentByNode(bindingInfo.node, content);
         } else {
           deactivateContent(content);
@@ -226,6 +335,7 @@ export function applyChangeToFor(
   if (diff.newIndexes.length == diff.addIndexSet.size 
     && diff.newIndexes.length > 0
     && lastNode.isConnected
+    && inPlaceContents === null
   ) {
     // 全部追加の場合はまとめて処理
     fragment = document.createDocumentFragment();
@@ -246,9 +356,16 @@ export function applyChangeToFor(
     if (diff.addIndexSet.has(index)) {
       const stateAddress = createStateAddress(elementPathInfo, index);
       loopContextStack.createLoopContext(stateAddress, (loopContext) => {
-        content = typeof pooledContents !== 'undefined' ? pooledContents.pop() : undefined;
+        content = inPlaceContents?.byAddedIndex.get(index)
+          ?? (typeof pooledContents !== 'undefined' ? pooledContents.pop() : undefined);
         if (typeof content === 'undefined') {
           content = createContent(bindingInfo);
+        } else {
+          // プール（か同じ位置）から使い回す Content の binding は、同じバッチで**外した行として**適用済みのことがある。
+          // 外した行のアドレスへの書き込み（行の葉・要素の置き換え）で enqueue された binding が、この `for`
+          // より先に適用された形。印が残ると activateContent の applyChange が飛ばし、新しい行に外した行の
+          // 値が残る（表示と state が食い違う）。新しい行として適用し直す
+          clearAppliedMarks(content, context);
         }
         // コンテント活性化の前にDOMツリーに追加しておく必要がある
         if (fragment !== null) {
@@ -284,6 +401,11 @@ export function applyChangeToFor(
       });
       if (typeof content === 'undefined') {
         raiseError(`Content not found for ListIndex: ${index.index} at path "${listPathInfo.path}"`);
+      }
+      if (inPlaceContents !== null && inPlaceContents.reused.has(content)) {
+        // その場で使い回した行の中のコンポーネントは DOM から外れない = 付け替えを知らせる
+        // connectedCallback が来ないので、マウントスコープを新しい行の listIndex へ張り直す（#4）
+        remountScopesUnderContent(content, context.stateElement);
       }
     } else {
       // getContent 相当（undefined→null 正規化は後段の raiseError 判定が null 比較のため維持）
