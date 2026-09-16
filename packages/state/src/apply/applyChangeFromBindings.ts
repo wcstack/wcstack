@@ -76,10 +76,15 @@ function reportBindingApplyError(
  *
  * 最適化のため、以下のグループ化を行う:
  * 同じ rootNode を持つバインディングをグループ化 → createState の呼び出しを削減
+ *
+ * `options.updatedCallback === false` は `$updatedCallback` を呼ばない。唯一の呼び手は再セットの
+ * 再適用（apply/reapplyStateBindings.ts）で、再セットは書き込みではないため。`$errorCallback` は
+ * 適用の失敗の報告なので、どの経路でも配送する。
  */
 export function applyChangeFromBindings(
   bindings: IBindingInfo[],
   propagationContextByBinding?: ReadonlyMap<IBindingInfo, IPropagationContext | null>,
+  options?: { readonly updatedCallback?: boolean },
 ): void {
   let bindingIndex = 0;
   const appliedBindingSet: Set<IBindingInfo> = new Set();
@@ -164,10 +169,12 @@ export function applyChangeFromBindings(
     // 書き込みで基準が空のまま ListIndex を鋳造してしまう（E1）。
     setStateListBaseline(absAddress, newListValue);
   }
-  for(const [ stateElement, absAddressSet ] of updatedAbsAddressSetByStateElement.entries()) {
-    stateElement.createState("writable", (state) => {
-      state[updatedCallbackSymbol](Array.from(absAddressSet));
-    });
+  if (options?.updatedCallback !== false) {
+    for(const [ stateElement, absAddressSet ] of updatedAbsAddressSetByStateElement.entries()) {
+      stateElement.createState("writable", (state) => {
+        state[updatedCallbackSymbol](Array.from(absAddressSet));
+      });
+    }
   }
   // $errorCallback の配送。$updatedCallback の後・失敗した本数ぶん・this は writable proxy。
   // callback 自身の throw は隔離する — 1 件の報告失敗が残りの報告と drain を道連れにしない
