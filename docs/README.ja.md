@@ -32,12 +32,14 @@
 | [async-execution-model.md](./async-execution-model.md) | [async-execution-model.ja.md](./async-execution-model.ja.md) |
 | [async-io-node-guidelines.md](./async-io-node-guidelines.md) | [async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md) |
 | [timing-and-firing-contract.md](./timing-and-firing-contract.md) | [timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) |
+| [io-node-pattern-testing-plan.md](./io-node-pattern-testing-plan.md) | [io-node-pattern-testing-plan.ja.md](./io-node-pattern-testing-plan.ja.md) |
 | [a11y-sr-testing.md](./a11y-sr-testing.md) | [a11y-sr-testing.ja.md](./a11y-sr-testing.ja.md) |
 | [devtools-hook-protocol.md](./devtools-hook-protocol.md) | [devtools-hook-protocol.ja.md](./devtools-hook-protocol.ja.md) |
 | [custom-state-reflection-design.md](./custom-state-reflection-design.md) | [custom-state-reflection-design.ja.md](./custom-state-reflection-design.ja.md) |
 | [signals-definition-timing.md](./signals-definition-timing.md) | [signals-definition-timing.ja.md](./signals-definition-timing.ja.md) |
 | [signals-state-design.md](./signals-state-design.md) | [signals-state-design.ja.md](./signals-state-design.ja.md) |
 | [state-binding-init-races.md](./state-binding-init-races.md) | [state-binding-init-races.ja.md](./state-binding-init-races.ja.md) |
+| [state-bundle-size-analysis.md](./state-bundle-size-analysis.md) | [state-bundle-size-analysis.ja.md](./state-bundle-size-analysis.ja.md) |
 | [scoped-custom-element-registries.md](./scoped-custom-element-registries.md) | [scoped-custom-element-registries.ja.md](./scoped-custom-element-registries.ja.md) |
 | [screen-orientation-tag-design.md](./screen-orientation-tag-design.md) | [screen-orientation-tag-design.ja.md](./screen-orientation-tag-design.ja.md) |
 | [audio-impl-plan.md](./audio-impl-plan.md) | [audio-impl-plan.ja.md](./audio-impl-plan.ja.md) |

@@ -78,7 +78,7 @@ function notifyUpdateBatchListeners(batch: ReadonlySet<IAbsoluteStateAddress>): 
  * 「loud に出す」挙動へ揃える。握り潰すと `$updatedCallback` の throw が黙って
  * 消える（README の 3 層表が定める伝播の契約が破れる）。
  */
-function reportDeferredApplyFailure(error: unknown): void {
+export function reportDeferredApplyFailure(error: unknown): void {
   queueMicrotask(() => { throw error; });
 }
 
