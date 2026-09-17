@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>@wcstack/state — read benchmark</title>
+    <!-- Measures the cost of a single read through the state proxy, per address shape.
+         The list benchmarks next door (benchmark/, benchmark-component/) time DOM updates and
+         cannot see this path. Driver: e2e/bench/plain-read.mjs
+         (docs/state-address-unification-impl-plan.md §4-4).
+
+         R1 plain   — no wildcard, no getter: not cacheable, so the read never reaches the
+                      cache ledger. The most frequent read there is; today it interns one
+                      address and does nothing else with it.
+         R2 getter  — a computed property: a cache hit on a null-row address.
+         R3 row     — a computed property of a list row: a cache hit on a row address.
+
+         The loops live in state methods so that `this` is the proxy and every iteration is a
+         real get-trap round trip. Each method returns a checksum so the engine cannot drop
+         the reads, and so the driver can tell that every variant computed the same thing. -->
+    <script type="module" src="../../dist/auto.min.js"></script>
+  </head>
+  <body>
+    <wcs-state>
+      <script type="module">
+const ROWS = 1000;
+export default {
+  count: 3,
+  items: Array.from({ length: ROWS }, (_, i) => ({ id: i, label: `row ${i}` })),
+  rowPaths: Array.from({ length: ROWS }, (_, i) => `items.${i}.size`),
+  get doubled() { return this.count * 2; },
+  get "items.*.size"() { return this["items.*.label"].length; },
+
+  readPlain(reads) {
+    let sum = 0;
+    for (let i = 0; i < reads; i++) sum += this.count;
+    return sum;
+  },
+  readGetter(reads) {
+    let sum = 0;
+    for (let i = 0; i < reads; i++) sum += this.doubled;
+    return sum;
+  },
+  readRow(reads) {
+    // The path strings are built once, outside the timed loop.
+    const paths = this.rowPaths;
+    let sum = 0;
+    for (let i = 0; i < reads; i++) sum += this[paths[i % ROWS]];
+    return sum;
+  },
+};
+      </script>
+    </wcs-state>
+    <!-- Renders the list once so the rows have ListIndexes and the row getter is warm. -->
+    <ul hidden>
+      <template data-wcs="for: items"><li data-wcs="textContent: .size"></li></template>
+    </ul>
+    <output id="plain" data-wcs="textContent: count"></output>
+    <output id="getter" data-wcs="textContent: doubled"></output>
+    <script type="module">
+      const stateElement = document.querySelector("wcs-state");
+      await stateElement.connectedCallbackPromise;
+      window.__readBench = {
+        rows: () => document.querySelectorAll("li").length,
+        /** One timed sample: `reads` reads of one shape. Returns elapsed ms and the checksum. */
+        sample(method, reads) {
+          let checksum;
+          const t0 = performance.now();
+          stateElement.createState("readonly", (state) => { checksum = state[method](reads); });
+          return { ms: performance.now() - t0, checksum };
+        },
+      };
+      document.documentElement.dataset.ready = "true";
+    </script>
+  </body>
+</html>
