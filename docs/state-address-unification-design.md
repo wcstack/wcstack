@@ -1,20 +1,21 @@
 # 設計: アドレス型の統合 — 正方形を 1 本に畳む
 
-- **状態**: 検討（2026-09-17・2026-09-18 レビュー反映）。**未決**。§0 の優先順位と決定レコードは提案であって合意ではない。実装前。
+- **状態**: **採択**（2026-09-18・著者決定）。§0 の優先順位と決定レコードは合意済み。案 A を進める。実装前 — 手順は [state-address-unification-impl-plan.md](./state-address-unification-impl-plan.md)。未確定は intern の表の置き場所（§5-5）だけで、合意済みの判定規則（実装計画 §5-2）に従って実測で決める。
 - **対象**: `@wcstack/state` の内部アドレス型（`src/address/`）と、それをキーにする全台帳。proxy・updater・依存グラフの**契約は変えない**（同じ意味の型に名前と形が付け替わるだけ）。
 - **一言で**: 「パス × ツリー × 行」の 3 次元を、**4 つの型が成す正方形**で表すのをやめ、**1 本のアドレス型**に畳む。`IAbsoluteStateAddress` を削除し、`IStateAddress` が `stateElement` を持つ。
 - **契機**: `IAbsoluteStateAddress` は「名前付き State」の名前次元を運ぶために生まれた型で（§2）、v2 でその次元を撤去したあとも形を変えて残っている。ツリーが 1 rootNode 1 本になった今、2 本のアドレス型を持ち続ける理由が何なのかを確定させる。
 - **結論の先出し**: **`stateElement` 次元そのものは消せない**（§3）。消せるのは**次元を足したり降ろしたりする往復**のほう（§4）。
 - **双対**: [state-mount-design.md](./state-mount-design.md) の D16（名前次元の撤去）。本書はその撤去が型に残した跡地の整理。
 - **改訂（2026-09-18）**: 設計レビューの反映。①判断の優先順位を明示（§0-1）②「行はツリーに属さない」という実測を足し、intern のキーを 3 つ組の不変条件として書き直した（§3-1・§5-3）③ホットパス収支を intern の置き場所ごとに分けた（§5-5）④罠だけを塞ぐ案 E を追加（§6-4）⑤devtools をリポジトリ内 consumer として移行計画に入れ、互換を両方向に張った（§7-1・§8）⑥アドレス生成 31 箇所を移行範囲に計上（§4-6）。
+- **採択（2026-09-18）**: §10 の 6 点を著者が決定した。優先順位は P1 > P2 > P3、改名先は `ITreePath`（第一候補だった `IScopedPath` は不採用 — §5-4）、assert は debug 時のみ＋テストで常時 ON、互換 getter の撤去は次の major、置き場所は実測、`IResolvedAddress` は範囲外。結果は §10 に記録。
 
 ---
 
-## 0. 優先順位と決定レコード（提案）
+## 0. 優先順位と決定レコード
 
 ### 0-1. 判断の優先順位
 
-以下の決定はすべてこの順序を根拠にする。**順序そのものが未合意**（§10 の 1）。
+以下の決定はすべてこの順序を根拠にする。**順序は合意済み**（2026-09-18・§10 の 1）。
 
 **制約**（取引しない）
 
@@ -31,7 +32,7 @@
 
 ### 0-2. 決定レコード
 
-| ゲート | 論点 | 決定（提案） |
+| ゲート | 論点 | 決定 |
 |---|---|---|
 | **D1** | `IAbsoluteStateAddress` を消して `IStateAddress` に戻せるか | **戻せない**。updater はモジュール単一で drain のバッチはツリーをまたぐ（§3）。台帳のキーはツリーを識別できなければならない。 |
 | **D2** | ではどうするか | **正方形を 1 本に畳む**。`IStateAddress` に `stateElement` を足し、`IAbsoluteStateAddress` を削除して全台帳のキーを `IStateAddress` に統一する（§5）。 |
@@ -237,13 +238,13 @@ const _cacheNullListIndex: WeakMap<IPathInfo, IStateAddress> = new WeakMap();
 
 行バインディング台帳 [patternLedger](../packages/state/src/binding/getBindingSetByAbsoluteStateAddress.ts#L81) は `(absolutePathInfo, listIndex)` の 2 段キーで引き、**登録側でアドレスを一切 intern しない**（[state-row-instantiation-redesign.md](./state-row-instantiation-redesign.md) §3-3）。これは行のホットパスを支える実測済みの構造なので壊さない。
 
-そこで `IAbsolutePathInfo` は**公開概念からは落とすが、`src/address/` 内部の intern 中間ノードとして残す**。アドレス intern の内部表であり、`patternLedger` のキーでもある。名前は「ツリーに固定されたパス」を表す `IScopedPath`（または `ITreePath`）に改める — `Absolute` は絶対/相対の対が無くなった時点で意味を失う語である。
+そこで `IAbsolutePathInfo` は**公開概念からは落とすが、`src/address/` 内部の intern 中間ノードとして残す**。アドレス intern の内部表であり、`patternLedger` のキーでもある。名前は「ツリーに固定されたパス」を表す **`ITreePath`** に改める — `Absolute` は絶対/相対の対が無くなった時点で意味を失う語である。当初の第一候補 `IScopedPath` は採らない。state の `src/` では `scope` が**マウントスコープ**の語として定着しており（`scopeRoot`・`getScopedIndexes`・`mountScope` ほか）、「マウントスコープ内のパス」と読まれるため。`Tree` は既存の `translateTreePath`（ツリーの絶対パスへ翻訳）と同じ意味で、§1 の「パス × ツリー」をそのまま名にできる。
 
 中間ノードは**アドレスの表も持つ**。
 
 ```ts
-// src/address/ScopedPath.ts（内部）
-class ScopedPath {
+// src/address/TreePath.ts（内部）
+class TreePath {
   readonly stateElement: IStateElement;
   readonly pathInfo: IPathInfo;
   nullRowAddress: IStateAddress | undefined;                     // listIndex === null
@@ -255,11 +256,11 @@ class ScopedPath {
 
 ### 5-5. ホットパスの収支 — 表の置き場所で変わる
 
-中間ノードの表（`pathInfo → ScopedPath`）をどこに置くかで 3 案ある。I1・I2 はどれも満たす。
+中間ノードの表（`pathInfo → TreePath`）をどこに置くかで 3 案ある。I1・I2 はどれも満たす。
 
 - **(a1)** `IStateElement` にメソッド `addressFor()` を生やし、表を要素のフィールドに持つ
 - **(a2)** 入口は `src/address/` の自由関数のまま、表だけを要素のプロパティ（symbol キー）に置く。`State` クラスはフィールドとして宣言し、テストのモックには初回に遅延生成する
-- **(b)** `src/address/` が `WeakMap<IStateElement, Map<IPathInfo, ScopedPath>>` を持つ（今日の `AbsolutePathInfo.ts` の構造を継ぐ）
+- **(b)** `src/address/` が `WeakMap<IStateElement, Map<IPathInfo, TreePath>>` を持つ（今日の `AbsolutePathInfo.ts` の構造を継ぐ）
 
 数えるのは WeakMap / Map を引く段数（プロパティ読みは数えない）。現行の lift は `getAbsolutePathInfo` 2 段 ＋ `createAbsoluteStateAddress` 1〜2 段。
 
@@ -268,14 +269,14 @@ class ScopedPath {
 | **素のパスの読み**（ワイルドカードも getter も無く、`isCacheable` が偽） | **1**（null 行 intern のみ。lift しない） | 1 | **2** |
 | キャッシュを引く読み・null 行（getter） | 1 ＋ lift 3 ＝ 4 | 1 | 2 |
 | キャッシュを引く読み・行付き | 2 ＋ lift 4 ＝ 6 | 2 | 3 |
-| 台帳到達アドレス 1 個の割当 | StateAddress ＋ AbsoluteStateAddress（＋ AbsolutePathInfo は path 単位） | **1 個**（＋ ScopedPath は path 単位） | 同左 |
+| 台帳到達アドレス 1 個の割当 | StateAddress ＋ AbsoluteStateAddress（＋ AbsolutePathInfo は path 単位） | **1 個**（＋ TreePath は path 単位） | 同左 |
 | 行バインディング登録 | アドレス intern なし（patternLedger） | 同じ（不変） | 同じ（不変） |
 
 キャッシュを引く読みはどの案でも減る（行付きで 3〜4 段）。**差が出るのは 1 行目**である。素のパスの読み（`state.count`）は最も頻度が高く、今日は lift を一切通らない。(b) はここを 1 段増やすので、P1 に照らすと**実測で無害と示せない限り採れない**。一方 P3 では (b) が最も安い — 要素の API 面が不変で、`stateElement` を自前のモックで作る約 60 本のテストは**モックに手を入れずに済む**（`createStateAddress` の引数追加は別勘定 — §4-6）。
 
 (a1) は同じ 60 本すべてに `addressFor` の実装を要求する。(a2) に対する利点は型の素直さだけなので **(a1) は却下**。(a2) の欠点は、要素オブジェクトへの書き込み（モックへの遅延生成）を伴うこと。
 
-**提案**: (a2) と (b) を §9 のベンチで並べて測り、**素のパスの読みの差が測定誤差に収まるなら (b)、収まらないなら (a2)**。P1 が P3 より上なので、差が出たら差分の小ささは理由にならない（§10 の 6）。
+**決定（2026-09-18）**: (a2) と (b) を §9 のベンチで並べて測り、**素のパスの読みの差が測定誤差に収まるなら (b)、収まらないなら (a2)**。P1 が P3 より上なので、差が出たら差分の小ささは理由にならない（§10 の 6）。
 
 段数はいずれも見積もりであり、実測（§9）で確認する。
 
@@ -362,7 +363,7 @@ buildless 配布なので devtools と state のバージョンが揃わない�
 
 1. PR ②は**追加的変更**にする。アドレスに `pathInfo` / `stateElement` を直接生やし、旧経路は deprecated getter で残す。protocol §2 の規則（追加は版を上げない）どおり、版印は据え置く。
 2. devtools は同じリリースで両読みにする。
-3. 旧経路を消す PR ③が破壊的変更で、ここで版印を 3 に上げる。**時期は次の major を提案する**（§10 の 5）。getter 1 個を残す費用はほぼゼロで、消したときの失敗は上のとおり検査対象アプリに届くため。
+3. 旧経路を消す PR ③が破壊的変更で、ここで版印を 3 に上げる。**時期は次の major**（§10 の 5 で決定）。getter 1 個を残す費用はほぼゼロで、消したときの失敗は上のとおり検査対象アプリに届くため。
 
 ```ts
 /** @deprecated 次の major で撤去。`address.pathInfo` / `address.stateElement` を直接読むこと */
@@ -394,7 +395,7 @@ get absolutePathInfo(): { pathInfo: IPathInfo; stateElement: IStateElement } { r
 
 ### PR ① 内部化と改名（振る舞い不変）
 
-- `IAbsolutePathInfo` → `IScopedPath`、`AbsolutePathInfo.ts` → `ScopedPath.ts`
+- `IAbsolutePathInfo` → `ITreePath`、`AbsolutePathInfo.ts` → `TreePath.ts`
 - `src/address/` の外から `getAbsolutePathInfo` を直接呼ばせない（`patternLedger` と `src/address/` 内部だけに閉じる）ため、まず lift を `liftAddress(stateElement, address)` の 1 関数に集約する（21 箇所 → 1 実装）
 - テストは名前の追随のみ。**この PR は差分レビューで「意味が変わっていない」ことだけを確認できる形にする**
 
@@ -430,11 +431,21 @@ get absolutePathInfo(): { pathInfo: IPathInfo; stateElement: IStateElement } { r
 
 ---
 
-## 10. 未決の論点
+## 10. 論点と決定（2026-09-18・著者決定）
 
-1. **優先順位（§0-1）の合意**。P1 > P2 > P3 は本書の提案であって、決めるのは著者。とくに P1 と P3 の順は §5-5 の結論を、P2 の位置は案 A を採るか案 E で止めるか（§6-3）を直接変える。
-2. **`IResolvedAddress` を残すか**。正方形の外側だが、`Map<string, _>` の不滅キャッシュを持つ 5 本目である。`ResolvedAddress` → `PathInfo` は 1:多の正規化で、`getResolvedAddress` は proxy の入口でしか使われない。統合とは独立に畳めるかもしれないが、本書では触らない。
-3. **改名先**（`IScopedPath` / `ITreePath` / `IPathInSite` …）。`Absolute` を捨てるのは決めたが、代わりの語は未決。
+初版では 6 点とも未決だった。論点の文面は経緯として残し、**決定**を足す。
+
+1. **優先順位（§0-1）の合意**。P1 と P3 の順は §5-5 の結論を、P2 の位置は案 A を採るか案 E で止めるか（§6-3）を直接変える。
+   **決定: P1 > P2 > P3。案 A を進める。**
+2. **`IResolvedAddress` を残すか**。正方形の外側だが、`Map<string, _>` の不滅キャッシュを持つ 5 本目である。`ResolvedAddress` → `PathInfo` は 1:多の正規化で、`getResolvedAddress` は proxy の入口でしか使われない。統合とは独立に畳めるかもしれない。
+   **決定: 範囲外。本書でも実装計画でも触らず、Issue も切らない。この項だけが未決のまま残る。**
+3. **改名先**（`IScopedPath` / `ITreePath` / `IPathInSite` …）。
+   **決定: `ITreePath`**（`TreePath.ts` / `getTreePath`）。`IScopedPath` を採らない理由は §5-4。
 4. **assert の常時 ON**（D5）。`config.debug` 時のみにするか、統合直後の 1 リリースだけ常時 ON にして実地で取り違えを炙り出すか。
-5. **互換 getter の撤去時期**（D7）。本書の提案は次の major。「1 リリースだけ」にすると、旧 devtools をピン留めしたページが state の更新で**検査対象アプリごと**例外を受ける（§7-1）。getter を残す費用と釣り合うかは著者の判断。
-6. **intern の表の置き場所**（§5-5 の (a2) か (b) か）。これは責務の論点ではなく **P1 と P3 の取引**で、素のパスの読みの実測が決める。(b) は要素の API 面が不変で、約 60 本のテストのモックに手を入れずに済み、実装は今日の `AbsolutePathInfo.ts` の構造を継ぐ — 差が測定誤差に収まるならこちら。(a1) は却下済み。
+   **決定: 出荷物は `config.debug` 時のみ。テストスイートでは常時 ON** にして、炙り出しを CI の中で済ませる。本番で誤発火すると利用者のアプリが throw するので、実地では炙り出さない。
+5. **互換 getter の撤去時期**（D7）。「1 リリースだけ」にすると、旧 devtools をピン留めしたページが state の更新で**検査対象アプリごと**例外を受ける（§7-1）。
+   **決定: 次の major。**
+6. **intern の表の置き場所**（§5-5 の (a2) か (b) か）。責務の論点ではなく **P1 と P3 の取引**で、素のパスの読みの実測が決める。(b) は要素の API 面が不変で、約 60 本のテストのモックに手を入れずに済み、実装は今日の `AbsolutePathInfo.ts` の構造を継ぐ。(a1) は却下済み。
+   **決定: 実測で決める。判定規則は測る前に固定し、測ったあとに動かさない**（実装計画 §5-2）— main 同士の差をノイズ床とし、素のパスの読みの差が床以内なら (b)、超えたら (a2)、**(a2) も超えたら着手を止めて本書へ戻す**（案 A そのものが P1 を破っている）。
+
+本書に無かった論点が 2 つ、実装計画の側で決まっている: `*AbsoluteStateAddress*` を名に含むファイル・関数の改名は PR ② の後の別 PR（実装計画 G7）、PR ② のリリースは minor で state と devtools を同時（同 §11）。
