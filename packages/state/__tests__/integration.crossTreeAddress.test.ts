@@ -16,7 +16,7 @@ import { State } from "../src/components/State";
 import { getStateElement } from "../src/stateElementByName";
 import { getPathInfo } from "../src/address/PathInfo";
 import { createStateAddress } from "../src/address/StateAddress";
-import { getAbsolutePathInfo } from "../src/address/AbsolutePathInfo";
+import { getTreePath } from "../src/address/TreePath";
 import { createAbsoluteStateAddress } from "../src/address/AbsoluteStateAddress";
 import { getCacheEntryByAbsoluteStateAddress } from "../src/cache/cacheEntryByAbsoluteStateAddress";
 import { getStateListBaseline } from "../src/list/stateListBaseline";
@@ -70,7 +70,7 @@ async function mountTree(items: IRow[]) {
  * アドレス型の統合（impl-plan Phase 2）で書き換わるのはここだけにしてある。
  */
 function absOf(stateElement: IStateElement, path: string, listIndex: IListIndex | null) {
-  return createAbsoluteStateAddress(getAbsolutePathInfo(stateElement, getPathInfo(path)), listIndex);
+  return createAbsoluteStateAddress(getTreePath(stateElement, getPathInfo(path)), listIndex);
 }
 
 function rowListIndex(shadowRoot: ShadowRoot, row: number): IListIndex {

@@ -1,4 +1,4 @@
-import { getAbsolutePathInfo } from "../address/AbsolutePathInfo";
+import { getTreePath } from "../address/TreePath";
 import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
 import { calcWildcardLen } from "../address/calcWildcardLen";
 import { getPathInfo } from "../address/PathInfo";
@@ -58,7 +58,7 @@ function _walkExpandWildcard(
 ): void {
   const parentPath = context.wildcardParentPaths[currentWildcardIndex];
   const parentPathInfo = getPathInfo(parentPath);
-  const parentAbsPathInfo = getAbsolutePathInfo(context.stateElement, parentPathInfo);
+  const parentAbsPathInfo = getTreePath(context.stateElement, parentPathInfo);
   const parentAddress = createStateAddress(parentPathInfo, parentListIndex);
   const parentAbsAddress = createAbsoluteStateAddress(parentAbsPathInfo, parentListIndex);
   const lastValue = getStateListBaseline(parentAbsAddress);
@@ -282,7 +282,7 @@ function _collectDependencies(
       if (context.listPathSet.has(sourcePath) && depPathInfo.lastSegment === WILDCARD) {
         //expand indexes
         const newValue = context.stateProxy[getByAddressSymbol](address);
-        const absPathInfo = getAbsolutePathInfo(context.stateElement, address.pathInfo);
+        const absPathInfo = getTreePath(context.stateElement, address.pathInfo);
         const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
         const lastValue = getStateListBaseline(absAddress);
         const listDiff = createListDiff(

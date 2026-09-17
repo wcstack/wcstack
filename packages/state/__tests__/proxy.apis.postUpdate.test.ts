@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../src/address/ResolvedAddress', () => ({
   getResolvedAddress: vi.fn()
 }));
-vi.mock('../src/address/AbsolutePathInfo', () => ({
-  getAbsolutePathInfo: vi.fn()
+vi.mock('../src/address/TreePath', () => ({
+  getTreePath: vi.fn()
 }));
 vi.mock('../src/address/AbsoluteStateAddress', () => ({
   createAbsoluteStateAddress: vi.fn()
@@ -27,7 +27,7 @@ vi.mock('../src/proxy/methods/getListIndex', () => ({
 
 import { postUpdate } from '../src/proxy/apis/postUpdate';
 import { getResolvedAddress } from '../src/address/ResolvedAddress';
-import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
+import { getTreePath } from '../src/address/TreePath';
 import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
 import { createStateAddress } from '../src/address/StateAddress';
 import { dirtyCacheEntryByAbsoluteStateAddress } from '../src/cache/cacheEntryByAbsoluteStateAddress';
@@ -36,7 +36,7 @@ import { getUpdater } from '../src/updater/updater';
 import { getListIndex } from '../src/proxy/methods/getListIndex';
 
 const getResolvedAddressMock = vi.mocked(getResolvedAddress);
-const getAbsolutePathInfoMock = vi.mocked(getAbsolutePathInfo);
+const getAbsolutePathInfoMock = vi.mocked(getTreePath);
 const createAbsoluteStateAddressMock = vi.mocked(createAbsoluteStateAddress);
 const createStateAddressMock = vi.mocked(createStateAddress);
 const dirtyCacheMock = vi.mocked(dirtyCacheEntryByAbsoluteStateAddress);

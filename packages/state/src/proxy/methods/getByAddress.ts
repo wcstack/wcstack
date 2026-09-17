@@ -18,7 +18,7 @@
  * - finallyでキャッシュへの格納を保証
  */
 
-import { getAbsolutePathInfo } from "../../address/AbsolutePathInfo";
+import { getTreePath } from "../../address/TreePath";
 import { isPathUnderReservedVolume } from "../../webComponent/volumeShared";
 import { createAbsoluteStateAddress } from "../../address/AbsoluteStateAddress";
 import { IStateAddress } from "../../address/types";
@@ -169,7 +169,7 @@ function _getByAddressWithCache(
   handler  : IStateHandler,
   stateElement: IStateElement
 ): any {
-  const absPathInfo = getAbsolutePathInfo(stateElement, address.pathInfo);
+  const absPathInfo = getTreePath(stateElement, address.pathInfo);
   const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
   const cacheEntry = getCacheEntryByAbsoluteStateAddress(absAddress);
   // 世代印（issue #258 の X10）。絶対アドレスは再セットを跨いで同一なので、dirty だけでは

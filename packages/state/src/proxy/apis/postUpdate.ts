@@ -1,4 +1,4 @@
-import { getAbsolutePathInfo } from "../../address/AbsolutePathInfo";
+import { getTreePath } from "../../address/TreePath";
 import { createAbsoluteStateAddress } from "../../address/AbsoluteStateAddress";
 import { getResolvedAddress } from "../../address/ResolvedAddress";
 import { createStateAddress } from "../../address/StateAddress";
@@ -24,7 +24,7 @@ export function postUpdate(
     const resolvedAddress = getResolvedAddress(path);
     const listIndex = getListIndex(target, resolvedAddress, receiver, handler);
     const address = createStateAddress(resolvedAddress.pathInfo, listIndex);
-    const absPathInfo = getAbsolutePathInfo(stateElement, address.pathInfo);
+    const absPathInfo = getTreePath(stateElement, address.pathInfo);
     const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
     const updater = getUpdater();
     updater.enqueueAbsoluteAddress(absAddress);
@@ -39,7 +39,7 @@ export function postUpdate(
       "new",
       (depAddress: IStateAddress) => {
         // キャッシュを無効化（ダーティ）
-        const absDepPathInfo = getAbsolutePathInfo(stateElement, depAddress.pathInfo);
+        const absDepPathInfo = getTreePath(stateElement, depAddress.pathInfo);
         const absDepAddress = createAbsoluteStateAddress(absDepPathInfo, depAddress.listIndex);
         dirtyCacheEntryByAbsoluteStateAddress(absDepAddress);
         // 更新対象として登録

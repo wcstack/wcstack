@@ -5,7 +5,7 @@ import { createListDiff } from '../src/list/createListDiff';
 import { setListIndexesByList } from '../src/list/listIndexesByList';
 import { setStateElement } from '../src/stateElementByName';
 import { getPathInfo } from '../src/address/PathInfo';
-import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
+import { getTreePath } from '../src/address/TreePath';
 import { createLoopContextStack } from '../src/list/loopContext';
 import { getFragmentNodeInfos } from '../src/structural/getFragmentNodeInfos';
 import type { ParseBindTextResult } from '../src/bindTextParser/types';
@@ -213,10 +213,10 @@ describe('applyChangeToFor ネストされたforループの回帰テスト', ()
     // Clear cached lastListValue to prevent cross-test contamination
     const itemsPathInfo = getPathInfo('items');
     const stateElement = {} as IStateElement;
-    const itemsAbsPathInfo = getAbsolutePathInfo(stateElement, itemsPathInfo);
+    const itemsAbsPathInfo = getTreePath(stateElement, itemsPathInfo);
     clearLastListValueByAbsoluteStateAddress(createAbsoluteStateAddress(itemsAbsPathInfo, null));
     const childrenPathInfo = getPathInfo('items.*.children');
-    const childrenAbsPathInfo = getAbsolutePathInfo(stateElement, childrenPathInfo);
+    const childrenAbsPathInfo = getTreePath(stateElement, childrenPathInfo);
     clearLastListValueByAbsoluteStateAddress(createAbsoluteStateAddress(childrenAbsPathInfo, null));
   });
 

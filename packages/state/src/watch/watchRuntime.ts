@@ -21,7 +21,7 @@
  * 2. 上記の順序規約のために hits をソートする必要がある（バッチの反復順は enqueue 順）。
  */
 
-import { getAbsolutePathInfo } from "../address/AbsolutePathInfo";
+import { getTreePath } from "../address/TreePath";
 import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
 import type { IAbsoluteStateAddress } from "../address/types";
 import type { IStateElement } from "../components/types";
@@ -120,7 +120,7 @@ function primeComputedWatches(stateElement: IStateElement): void {
 
 /** ワイルドカードを含まない watch パスの絶対アドレス（listIndex は常に null） */
 function absoluteAddressOf(stateElement: IStateElement, entry: IWatchEntry): IAbsoluteStateAddress {
-  return createAbsoluteStateAddress(getAbsolutePathInfo(stateElement, entry.pathInfo), null);
+  return createAbsoluteStateAddress(getTreePath(stateElement, entry.pathInfo), null);
 }
 
 /**
@@ -218,9 +218,9 @@ function fireWatchHits(
   // --- 収集フェーズ ---
   const hits: IWatchHit[] = [];
   for (const absAddress of batch) {
-    // stateElement 参照で引く。AbsolutePathInfo は
+    // stateElement 参照で引く。TreePath は
     // stateElement 単位でキャッシュされるので、同名 state が複数の rootNode に
-    // 居ても取り違えない（address/AbsolutePathInfo.ts）。他 state のアドレスは
+    // 居ても取り違えない（address/TreePath.ts）。他 state のアドレスは
     // ここで自然に落ちる ＝ 越境しない（設計 D8）。
     const stateElement = absAddress.absolutePathInfo.stateElement;
     if (!activeStateElements.has(stateElement)) {

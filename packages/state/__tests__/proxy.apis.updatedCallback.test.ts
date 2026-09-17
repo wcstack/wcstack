@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { updatedCallback } from '../src/proxy/apis/updatedCallback';
 import { STATE_UPDATED_CALLBACK_NAME } from '../src/define';
-import { IAbsoluteStateAddress, IAbsolutePathInfo, IPathInfo } from '../src/address/types';
+import { IAbsoluteStateAddress, ITreePath, IPathInfo } from '../src/address/types';
 import { IStateHandler } from '../src/proxy/types';
 import { IListIndex } from '../src/list/types';
 import { addVolumeUpdatedCallback } from '../src/webComponent/volumeShared';
@@ -44,7 +44,7 @@ function elementFor(stateName: string): object {
   return el;
 }
 
-function createAbsolutePathInfo(stateName: string, path: string, wildcardCount = 0): IAbsolutePathInfo {
+function createAbsolutePathInfo(stateName: string, path: string, wildcardCount = 0): ITreePath {
   return {
     stateElement: elementFor(stateName) as any,
     pathInfo: createPathInfo(path, wildcardCount),

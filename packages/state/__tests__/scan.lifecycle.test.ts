@@ -5,7 +5,7 @@
  * 切断・再接続・`_state` 再セット・throw した再セット・SSR・ボリューム・マウント。
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
-import { getAbsolutePathInfo } from "../src/address/AbsolutePathInfo";
+import { getTreePath } from "../src/address/TreePath";
 import { createAbsoluteStateAddress } from "../src/address/AbsoluteStateAddress";
 import { getPathInfo } from "../src/address/PathInfo";
 import { bootstrapState } from "../src/bootstrapState";
@@ -43,7 +43,7 @@ describe("切断と再接続（D8）", () => {
 
     // 切断中に from が書かれたバッチ
     (stateEl as any).__state.n = 5;
-    getUpdater().testApplyChange([createAbsoluteStateAddress(getAbsolutePathInfo(stateEl, getPathInfo("n")), null)]);
+    getUpdater().testApplyChange([createAbsoluteStateAddress(getTreePath(stateEl, getPathInfo("n")), null)]);
     await flushTimes();
     expect(fold).toHaveBeenCalledTimes(1);
 

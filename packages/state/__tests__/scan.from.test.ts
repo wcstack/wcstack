@@ -5,7 +5,7 @@
  * （docs/state-scan-design.md §2-1 / D3〜D6 / D10 / D11 / D12）。
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
-import { getAbsolutePathInfo } from "../src/address/AbsolutePathInfo";
+import { getTreePath } from "../src/address/TreePath";
 import { createAbsoluteStateAddress } from "../src/address/AbsoluteStateAddress";
 import { getPathInfo } from "../src/address/PathInfo";
 import { bootstrapState } from "../src/bootstrapState";
@@ -1155,7 +1155,7 @@ describe("失敗の隔離（D4）", () => {
 
       // 生きている 2 行のアドレスを同じバッチに載せる（行 0 は読むと throw する）
       const rows = getListIndexesByList((stateEl as any).__state.items)!;
-      const pathInfo = getAbsolutePathInfo(stateEl, getPathInfo("items.*.qty"));
+      const pathInfo = getTreePath(stateEl, getPathInfo("items.*.qty"));
       getUpdater().testApplyChange(rows.map((row) => createAbsoluteStateAddress(pathInfo, row)));
       await flushTimes();
 
@@ -1299,7 +1299,7 @@ describe("失敗の隔離（D4）", () => {
 
 describe("$streams との交差（D9 / D10）", () => {
   function abs(stateEl: State, path: string) {
-    return createAbsoluteStateAddress(getAbsolutePathInfo(stateEl, getPathInfo(path)), null);
+    return createAbsoluteStateAddress(getTreePath(stateEl, getPathInfo(path)), null);
   }
 
   it.each([

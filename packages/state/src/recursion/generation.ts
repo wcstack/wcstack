@@ -7,7 +7,7 @@
  * 依存表・キャッシュ・台帳という state 全体の構造に触る。
  */
 
-import { getAbsolutePathInfo } from "../address/AbsolutePathInfo";
+import { getTreePath } from "../address/TreePath";
 import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
 import { getPathInfo } from "../address/PathInfo";
 import { setCacheEntryByAbsoluteStateAddress } from "../cache/cacheEntryByAbsoluteStateAddress";
@@ -110,7 +110,7 @@ function forgetCacheEntries(
 ): void {
   for (const concretePath of generatedPaths) {
     const pathInfo = getPathInfo(concretePath);
-    const absPathInfo = getAbsolutePathInfo(stateElement, pathInfo);
+    const absPathInfo = getTreePath(stateElement, pathInfo);
     const lists = pathInfo.wildcardParentPathInfos;
     const forget = (owner: unknown, ownerListIndex: IListIndex | null, level: number): void => {
       if (level === lists.length) {

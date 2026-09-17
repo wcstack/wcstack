@@ -1,8 +1,8 @@
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
 import { EVENT_TOKEN_NAMESPACE, MODIFIER_READONLY } from "../define";
 import { IAbsoluteStateAddress } from "../address/types";
-import { getAbsolutePathInfo } from "../address/AbsolutePathInfo";
-import { IAbsolutePathInfo } from "../address/types";
+import { getTreePath } from "../address/TreePath";
+import { ITreePath } from "../address/types";
 import { clearAbsoluteStateAddressByBinding, getAbsoluteStateAddressByBinding, resolveBindingRootNode } from "../binding/getAbsoluteStateAddressByBinding";
 import { addBindingByAbsoluteStateAddress, addBindingByPattern, removeBindingByAbsoluteStateAddress, removeBindingByPattern } from "../binding/getBindingSetByAbsoluteStateAddress";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
@@ -72,7 +72,7 @@ interface IInternalBindingRecord extends IBindingRecord {
    * パターン索引台帳（(absolutePathInfo, listIndex) 2 段キー）への登録。リスト行の
    * binding は address を intern せずこちらに登録する。address とは排他。
    */
-  patternPathInfo: IAbsolutePathInfo | null;
+  patternPathInfo: ITreePath | null;
   patternListIndex: IListIndex | null;
   pendingDefinitions: number;
   initialPolicy: IInitialSyncPolicy | null;
@@ -1033,7 +1033,7 @@ export class BindingSession {
       if (stateElement === null) {
         raiseError(`No state tree found on this root for binding.`);
       }
-      const absolutePathInfo = getAbsolutePathInfo(stateElement, binding.statePathInfo);
+      const absolutePathInfo = getTreePath(stateElement, binding.statePathInfo);
       addBindingByPattern(absolutePathInfo, listIndex, binding);
       record.patternPathInfo = absolutePathInfo;
       record.patternListIndex = listIndex;

@@ -40,7 +40,7 @@ import { markSwapBaselineList } from "../../list/swapBaselineList";
 import { getSwapInfoByList, setSwapInfoByList } from "./swapInfo";
 import { walkDependency } from "../../dependency/walkDependency";
 import { dirtyCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
-import { getAbsolutePathInfo } from "../../address/AbsolutePathInfo";
+import { getTreePath } from "../../address/TreePath";
 import { config } from "../../config";
 import { devtoolsSink } from "../../devtools/sink";
 import { beginPropagationTransaction, getCurrentPropagationContext } from "../../propagation/propagation";
@@ -114,7 +114,7 @@ function notifyWrite(
     (depAddress: IStateAddress) => {
       // キャッシュを無効化（ダーティ）
       if (depAddress === address) return;
-      const absDepPathInfo = getAbsolutePathInfo(handler.stateElement, depAddress.pathInfo);
+      const absDepPathInfo = getTreePath(handler.stateElement, depAddress.pathInfo);
       const absDepAddress = createAbsoluteStateAddress(absDepPathInfo, depAddress.listIndex);
       dirtyCacheEntryByAbsoluteStateAddress(absDepAddress);
       // 更新対象として登録
@@ -304,7 +304,7 @@ function notifySwappedList(
   const stateElement = handler.stateElement;
   const updater = getUpdater();
   const listAbsAddress = createAbsoluteStateAddress(
-    getAbsolutePathInfo(stateElement, parentAddress.pathInfo),
+    getTreePath(stateElement, parentAddress.pathInfo),
     parentAddress.listIndex,
   );
   if (getLastListValueByAbsoluteStateAddress(listAbsAddress) === currentParentValue) {
@@ -317,7 +317,7 @@ function notifySwappedList(
   const positionBefore = new Map<IListIndex, number>();
   swapInfo.listIndexes.forEach((listIndex, position) => positionBefore.set(listIndex, position));
   const elementPathInfo = getPathInfo(parentAddress.pathInfo.path + DELIMITER + WILDCARD);
-  const elementAbsPathInfo = getAbsolutePathInfo(stateElement, elementPathInfo);
+  const elementAbsPathInfo = getTreePath(stateElement, elementPathInfo);
   for (let position = 0; position < currentListIndexes.length; position++) {
     const listIndex = currentListIndexes[position];
     const before = positionBefore.get(listIndex);
@@ -349,7 +349,7 @@ function notifySwappedList(
       "new",
       (depAddress: IStateAddress) => {
         const depAbsAddress = createAbsoluteStateAddress(
-          getAbsolutePathInfo(stateElement, depAddress.pathInfo),
+          getTreePath(stateElement, depAddress.pathInfo),
           depAddress.listIndex,
         );
         dirtyCacheEntryByAbsoluteStateAddress(depAbsAddress);
@@ -521,7 +521,7 @@ function setByAddressCore(
         devHasOldValue = true;
       }
       const cacheable = isCacheable(stateElement, address);
-      const absPathInfo = getAbsolutePathInfo(stateElement, address.pathInfo);
+      const absPathInfo = getTreePath(stateElement, address.pathInfo);
       const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
       if (devtoolsSink !== null) {
         devtoolsSink({
@@ -590,7 +590,7 @@ function setByAddressCore(
   // --- end same-value guard ---
   const isSwappable = stateElement.elementPaths.has(address.pathInfo.path);
   const cacheable = isCacheable(stateElement, address);
-  const absPathInfo = getAbsolutePathInfo(stateElement, address.pathInfo);
+  const absPathInfo = getTreePath(stateElement, address.pathInfo);
   const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
   if (devtoolsSink !== null) {
     devtoolsSink({

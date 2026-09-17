@@ -13,7 +13,7 @@ import { getPathInfo } from '../src/address/PathInfo';
 import { setLoopContextSymbol } from '../src/proxy/symbols';
 
 import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
-import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
+import { getTreePath } from '../src/address/TreePath';
 import { addBindingByAbsoluteStateAddress } from '../src/binding/getBindingSetByAbsoluteStateAddress';
 
 vi.mock('../src/apply/applyChangeFromBindings', () => ({
@@ -156,7 +156,7 @@ describe('proxy/StateHandler', () => {
     const address = createStateAddress(bindingInfo.statePathInfo!, null);
     const stateElement = createMockStateElement();
     setStateElement(document, stateElement);
-    const absoluteAddress = createAbsoluteStateAddress(getAbsolutePathInfo(stateElement, address.pathInfo), address.listIndex);
+    const absoluteAddress = createAbsoluteStateAddress(getTreePath(stateElement, address.pathInfo), address.listIndex);
     addBindingByAbsoluteStateAddress(absoluteAddress, bindingInfo);
     const proxy = createStateProxy(document, { count: 0 }, 'writable');
 

@@ -12,7 +12,7 @@
  * `$updatedCallback` も呼ばない。`$watch` / `$streams` はセッタが新しい宣言で起動し直しているので、
  * restart を重ねると source が二重に起動する。
  */
-import { getAbsolutePathInfo } from "../address/AbsolutePathInfo";
+import { getTreePath } from "../address/TreePath";
 import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
 import { getPathInfo } from "../address/PathInfo";
 import { createStateAddress } from "../address/StateAddress";
@@ -102,7 +102,7 @@ export function reapplyStateBindings(
   const bindings: IBindingInfo[] = [];
   const visited = new Set<IAbsoluteStateAddress>();
   const collect = (address: IStateAddress): void => {
-    const absAddress = createAbsoluteStateAddress(getAbsolutePathInfo(stateElement, address.pathInfo), address.listIndex);
+    const absAddress = createAbsoluteStateAddress(getTreePath(stateElement, address.pathInfo), address.listIndex);
     if (visited.has(absAddress)) {
       return;
     }

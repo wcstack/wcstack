@@ -1,5 +1,5 @@
 import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
-import { IAbsolutePathInfo, IAbsoluteStateAddress } from "../address/types";
+import { ITreePath, IAbsoluteStateAddress } from "../address/types";
 import { devtoolsSink } from "../devtools/sink";
 import { IListIndex } from "../list/types";
 import { IBindingInfo } from "./types";
@@ -78,9 +78,9 @@ export function removeBindingByAbsoluteStateAddress(absoluteStateAddress: IAbsol
  * devtools 計装（state:binding-added/removed）はプロトコル契約なので、sink 接続時に
  * 限りアドレスを intern してイベントを流す（フック未接続時のコストは分岐 1 個の規範を維持）。
  */
-const patternLedger: WeakMap<IAbsolutePathInfo, WeakMap<IListIndex, IBindingInfo | Set<IBindingInfo>>> = new WeakMap();
+const patternLedger: WeakMap<ITreePath, WeakMap<IListIndex, IBindingInfo | Set<IBindingInfo>>> = new WeakMap();
 
-export function addBindingByPattern(absolutePathInfo: IAbsolutePathInfo, listIndex: IListIndex, binding: IBindingInfo): void {
+export function addBindingByPattern(absolutePathInfo: ITreePath, listIndex: IListIndex, binding: IBindingInfo): void {
   let rowMap = patternLedger.get(absolutePathInfo);
   if (typeof rowMap === "undefined") {
     rowMap = new WeakMap();
@@ -99,7 +99,7 @@ export function addBindingByPattern(absolutePathInfo: IAbsolutePathInfo, listInd
   }
 }
 
-export function removeBindingByPattern(absolutePathInfo: IAbsolutePathInfo, listIndex: IListIndex, binding: IBindingInfo): void {
+export function removeBindingByPattern(absolutePathInfo: ITreePath, listIndex: IListIndex, binding: IBindingInfo): void {
   const rowMap = patternLedger.get(absolutePathInfo);
   if (typeof rowMap === "undefined") {
     return;

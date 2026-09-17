@@ -27,7 +27,7 @@ import { bootstrapState } from "../src/bootstrapState";
 import type { State } from "../src/components/State";
 import { flush, makeMount, node, read, write, writeError } from "./helpers/recursionTestUtils";
 import { getPathInfo } from "../src/address/PathInfo";
-import { getAbsolutePathInfo } from "../src/address/AbsolutePathInfo";
+import { getTreePath } from "../src/address/TreePath";
 import { createAbsoluteStateAddress } from "../src/address/AbsoluteStateAddress";
 import { getStateListBaseline } from "../src/list/stateListBaseline";
 import { getLastListValueByAbsoluteStateAddress } from "../src/list/lastListValueByAbsoluteStateAddress";
@@ -46,7 +46,7 @@ const txt = (root: ParentNode, selector: string): (string | null)[] =>
 
 /** ルートリストの絶対アドレス（差分基準の台帳を直接のぞくため）。 */
 const absOf = (stateEl: State, path: string): any =>
-  createAbsoluteStateAddress(getAbsolutePathInfo(stateEl as any, getPathInfo(path)), null);
+  createAbsoluteStateAddress(getTreePath(stateEl as any, getPathInfo(path)), null);
 
 /** 静的依存グラフの辺（source → targets）。 */
 const edgesOf = (stateEl: State): [string, string[]][] =>

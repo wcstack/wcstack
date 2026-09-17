@@ -16,7 +16,7 @@
  * Throws: LIST-201（インデックス未解決）、BIND-201（ワイルドカード情報不整合）
  */
 
-import { getAbsolutePathInfo } from "../../address/AbsolutePathInfo";
+import { getTreePath } from "../../address/TreePath";
 import { createAbsoluteStateAddress } from "../../address/AbsoluteStateAddress";
 import { createStateAddress } from "../../address/StateAddress";
 import { IAbsoluteStateAddress, IPathInfo } from "../../address/types";
@@ -77,7 +77,7 @@ export function collectWildcardIndexes(
     }
     const wildcardAddress = createStateAddress(wildcardParentPathInfo, listIndex);
     const wildcardAbsAddress = createAbsoluteStateAddress(
-      getAbsolutePathInfo(handler.stateElement, wildcardParentPathInfo), listIndex);
+      getTreePath(handler.stateElement, wildcardParentPathInfo), listIndex);
     const oldValue = getStateListBaseline(wildcardAbsAddress);
     const newValue = getByAddress(target, wildcardAddress, receiver, handler);
     const listDiff = createListDiff(
