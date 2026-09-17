@@ -16,7 +16,7 @@
  * - getter/setter経由のスコープ切り替えも考慮した設計
  */
 
-import { createAbsoluteStateAddress } from "../../address/AbsoluteStateAddress";
+import { liftAddress, absoluteAddressOf } from "../../address/liftAddress";
 import { IAbsoluteStateAddress, IStateAddress } from "../../address/types";
 import { DELIMITER, WILDCARD } from "../../define";
 import { dispatchBindableEvent } from "../../dcc/dispatchBindableEvent";
@@ -40,7 +40,6 @@ import { markSwapBaselineList } from "../../list/swapBaselineList";
 import { getSwapInfoByList, setSwapInfoByList } from "./swapInfo";
 import { walkDependency } from "../../dependency/walkDependency";
 import { dirtyCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
-import { getTreePath } from "../../address/TreePath";
 import { config } from "../../config";
 import { devtoolsSink } from "../../devtools/sink";
 import { beginPropagationTransaction, getCurrentPropagationContext } from "../../propagation/propagation";
@@ -114,8 +113,7 @@ function notifyWrite(
     (depAddress: IStateAddress) => {
       // キャッシュを無効化（ダーティ）
       if (depAddress === address) return;
-      const absDepPathInfo = getTreePath(handler.stateElement, depAddress.pathInfo);
-      const absDepAddress = createAbsoluteStateAddress(absDepPathInfo, depAddress.listIndex);
+      const absDepAddress = liftAddress(handler.stateElement, depAddress);
       dirtyCacheEntryByAbsoluteStateAddress(absDepAddress);
       // 更新対象として登録
       updater.enqueueAbsoluteAddress(absDepAddress, propagationContext);
@@ -303,10 +301,7 @@ function notifySwappedList(
 ): void {
   const stateElement = handler.stateElement;
   const updater = getUpdater();
-  const listAbsAddress = createAbsoluteStateAddress(
-    getTreePath(stateElement, parentAddress.pathInfo),
-    parentAddress.listIndex,
-  );
+  const listAbsAddress = liftAddress(stateElement, parentAddress);
   if (getLastListValueByAbsoluteStateAddress(listAbsAddress) === currentParentValue) {
     setListIndexesByList(swapInfo.value, swapInfo.listIndexes);
     setLastListValueByAbsoluteStateAddress(listAbsAddress, swapInfo.value);
@@ -317,7 +312,6 @@ function notifySwappedList(
   const positionBefore = new Map<IListIndex, number>();
   swapInfo.listIndexes.forEach((listIndex, position) => positionBefore.set(listIndex, position));
   const elementPathInfo = getPathInfo(parentAddress.pathInfo.path + DELIMITER + WILDCARD);
-  const elementAbsPathInfo = getTreePath(stateElement, elementPathInfo);
   for (let position = 0; position < currentListIndexes.length; position++) {
     const listIndex = currentListIndexes[position];
     const before = positionBefore.get(listIndex);
@@ -325,9 +319,9 @@ function notifySwappedList(
       continue;
     }
     const elementAddress = createStateAddress(elementPathInfo, listIndex);
-    const elementAbsAddress = createAbsoluteStateAddress(elementAbsPathInfo, listIndex);
+    const elementAbsAddress = liftAddress(stateElement, elementAddress);
     if (typeof before === "undefined") {
-      const displacedAbsAddress = createAbsoluteStateAddress(elementAbsPathInfo, swapInfo.listIndexes[position] ?? null);
+      const displacedAbsAddress = absoluteAddressOf(stateElement, elementPathInfo, swapInfo.listIndexes[position] ?? null);
       if (hasPrevValue(displacedAbsAddress)) {
         recordPrevValue(elementAbsAddress, getPrevValue(displacedAbsAddress));
       }
@@ -348,10 +342,7 @@ function notifySwappedList(
       receiver as IStateProxy,
       "new",
       (depAddress: IStateAddress) => {
-        const depAbsAddress = createAbsoluteStateAddress(
-          getTreePath(stateElement, depAddress.pathInfo),
-          depAddress.listIndex,
-        );
+        const depAbsAddress = liftAddress(stateElement, depAddress);
         dirtyCacheEntryByAbsoluteStateAddress(depAbsAddress);
         updater.enqueueRenderOnlyAddress(depAbsAddress);
       },
@@ -521,8 +512,7 @@ function setByAddressCore(
         devHasOldValue = true;
       }
       const cacheable = isCacheable(stateElement, address);
-      const absPathInfo = getTreePath(stateElement, address.pathInfo);
-      const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
+      const absAddress = liftAddress(stateElement, address);
       if (devtoolsSink !== null) {
         devtoolsSink({
           type: "state:write",
@@ -590,8 +580,7 @@ function setByAddressCore(
   // --- end same-value guard ---
   const isSwappable = stateElement.elementPaths.has(address.pathInfo.path);
   const cacheable = isCacheable(stateElement, address);
-  const absPathInfo = getTreePath(stateElement, address.pathInfo);
-  const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
+  const absAddress = liftAddress(stateElement, address);
   if (devtoolsSink !== null) {
     devtoolsSink({
       type: "state:write",

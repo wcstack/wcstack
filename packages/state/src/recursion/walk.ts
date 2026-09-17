@@ -17,8 +17,7 @@
  * （途中まで進めた基準を残すと、次の読みが「変化なし」と誤認しうる）。
  */
 
-import { getTreePath } from "../address/TreePath";
-import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
+import { liftAddress } from "../address/liftAddress";
 import { getPathInfo } from "../address/PathInfo";
 import { createStateAddress } from "../address/StateAddress";
 import { IAbsoluteStateAddress, IPathInfo, IStateAddress } from "../address/types";
@@ -151,8 +150,7 @@ export function collectRecursiveAddresses(
     seen: Set<readonly unknown[]> | null,
   ): { rows: IListIndex[], tracked: readonly unknown[] | null } {
     const listAddress = createStateAddress(listPathInfo, parentListIndex);
-    const absAddress = createAbsoluteStateAddress(
-      getTreePath(handler.stateElement, listPathInfo), parentListIndex);
+    const absAddress = liftAddress(handler.stateElement, listAddress);
     const value = getByAddress(target, listAddress, receiver, handler);
     const tracked = seen === null ? null : guardShape(listPathInfo.path, value, seen);
     const listDiff = createListDiff(

@@ -16,8 +16,7 @@
  *   （getByAddress → argsTrace ← streamRuntime の一方向依存に保つ）。
  */
 
-import { getTreePath } from "../address/TreePath";
-import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
+import { liftAddress } from "../address/liftAddress";
 import type { IAbsoluteStateAddress, IStateAddress } from "../address/types";
 import type { IStateElement } from "../components/types";
 import {
@@ -40,8 +39,7 @@ export function collectStreamDependency(stateElement: IStateElement, address: IS
   if (collector === null) {
     return;
   }
-  const absolutePathInfo = getTreePath(stateElement, address.pathInfo);
-  collector.add(createAbsoluteStateAddress(absolutePathInfo, address.listIndex));
+  collector.add(liftAddress(stateElement, address));
 }
 
 /**

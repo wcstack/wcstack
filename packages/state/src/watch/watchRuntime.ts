@@ -21,8 +21,7 @@
  * 2. 上記の順序規約のために hits をソートする必要がある（バッチの反復順は enqueue 順）。
  */
 
-import { getTreePath } from "../address/TreePath";
-import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
+import { absoluteAddressOf } from "../address/liftAddress";
 import type { IAbsoluteStateAddress } from "../address/types";
 import type { IStateElement } from "../components/types";
 import { MAX_WATCH_CHAIN_DEPTH, WATCH_LISTENER_PRIORITY } from "../define";
@@ -109,7 +108,8 @@ function primeComputedWatches(stateElement: IStateElement): void {
   stateElement.createState("readonly", (state) => {
     for (const entry of targets) {
       try {
-        setComputedSnapshot(stateElement, absoluteAddressOf(stateElement, entry), state[entry.path]);
+        // ワイルドカードを含まない watch パスなので、listIndex は常に null
+        setComputedSnapshot(stateElement, absoluteAddressOf(stateElement, entry.pathInfo, null), state[entry.path]);
       } catch (e) {
         // 初回評価の throw は接続を巻き添えにしない（発火時と同じ隔離方針、§7-1）
         reportWatchError(stateElement, entry.path, "prime", e);
@@ -118,10 +118,6 @@ function primeComputedWatches(stateElement: IStateElement): void {
   });
 }
 
-/** ワイルドカードを含まない watch パスの絶対アドレス（listIndex は常に null） */
-function absoluteAddressOf(stateElement: IStateElement, entry: IWatchEntry): IAbsoluteStateAddress {
-  return createAbsoluteStateAddress(getTreePath(stateElement, entry.pathInfo), null);
-}
 
 /**
  * 前回評価値のスナップショット台帳（computedSnapshots）に載せる entry か。

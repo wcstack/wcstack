@@ -7,8 +7,7 @@
  * 依存表・キャッシュ・台帳という state 全体の構造に触る。
  */
 
-import { getTreePath } from "../address/TreePath";
-import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
+import { absoluteAddressOf } from "../address/liftAddress";
 import { getPathInfo } from "../address/PathInfo";
 import { setCacheEntryByAbsoluteStateAddress } from "../cache/cacheEntryByAbsoluteStateAddress";
 import { IStateElement } from "../components/types";
@@ -110,11 +109,10 @@ function forgetCacheEntries(
 ): void {
   for (const concretePath of generatedPaths) {
     const pathInfo = getPathInfo(concretePath);
-    const absPathInfo = getTreePath(stateElement, pathInfo);
     const lists = pathInfo.wildcardParentPathInfos;
     const forget = (owner: unknown, ownerListIndex: IListIndex | null, level: number): void => {
       if (level === lists.length) {
-        setCacheEntryByAbsoluteStateAddress(createAbsoluteStateAddress(absPathInfo, ownerListIndex), null);
+        setCacheEntryByAbsoluteStateAddress(absoluteAddressOf(stateElement, pathInfo, ownerListIndex), null);
         return;
       }
       // 直前のリストの行（または state のルート）から、次のリストまでの相対セグメントを辿る
