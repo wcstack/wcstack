@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { getUpdater, registerUpdateBatchListener, unregisterUpdateBatchListener, type UpdateBatchListener } from '../src/updater/updater';
 import { setStateElement } from '../src/stateElementByName';
 import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
-import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
+import { getTreePath } from '../src/address/TreePath';
 import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
 import { addBindingByAbsoluteStateAddress, clearBindingSetByAbsoluteStateAddress } from '../src/binding/getBindingSetByAbsoluteStateAddress';
@@ -23,7 +23,7 @@ function createAddress(path: string) {
 
 function createAbsAddress(stateElement: any, path: string) {
   const pathInfo = getPathInfo(path);
-  const absPathInfo = getAbsolutePathInfo(stateElement, pathInfo);
+  const absPathInfo = getTreePath(stateElement, pathInfo);
   return createAbsoluteStateAddress(absPathInfo, null);
 }
 

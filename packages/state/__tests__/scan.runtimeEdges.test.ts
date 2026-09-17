@@ -6,7 +6,7 @@
  * 行を特定できないアドレス・合流する依存グラフ・drain ゲートの数え方。
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
-import { getAbsolutePathInfo } from "../src/address/AbsolutePathInfo";
+import { getTreePath } from "../src/address/TreePath";
 import { createAbsoluteStateAddress } from "../src/address/AbsoluteStateAddress";
 import { getPathInfo } from "../src/address/PathInfo";
 import { bootstrapState } from "../src/bootstrapState";
@@ -181,7 +181,7 @@ describe("バッチに載る他のアドレス", () => {
     await flushTimes();
 
     getUpdater().testApplyChange([
-      createAbsoluteStateAddress(getAbsolutePathInfo(stateEl, getPathInfo("items.*.qty")), null),
+      createAbsoluteStateAddress(getTreePath(stateEl, getPathInfo("items.*.qty")), null),
     ]);
     await flushTimes();
 

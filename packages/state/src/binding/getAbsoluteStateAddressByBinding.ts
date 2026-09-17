@@ -1,5 +1,4 @@
-import { getAbsolutePathInfo } from "../address/AbsolutePathInfo";
-import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
+import { absoluteAddressOf } from "../address/liftAddress";
 import { IAbsoluteStateAddress } from "../address/types";
 import { getRootNodeByFragment } from "../apply/rootNodeByFragment";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
@@ -46,9 +45,7 @@ export function getAbsoluteStateAddressByBinding(binding: IBindingInfo, knownRoo
   if (stateElement === null) {
     raiseError(`No state tree found on this root for binding.`);
   }
-  const absolutePathInfo = getAbsolutePathInfo(stateElement, binding.statePathInfo);
-  absoluteStateAddress = 
-    createAbsoluteStateAddress(absolutePathInfo, listIndex);
+  absoluteStateAddress = absoluteAddressOf(stateElement, binding.statePathInfo, listIndex);
   absoluteStateAddressByBinding.set(binding, absoluteStateAddress);
   return absoluteStateAddress;
 }

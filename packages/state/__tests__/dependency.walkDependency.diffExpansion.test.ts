@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { walkDependency } from '../src/dependency/walkDependency';
 import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
-import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
+import { getTreePath } from '../src/address/TreePath';
 import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
 import { createListDiff } from '../src/list/createListDiff';
 import {
@@ -20,7 +20,7 @@ function createStateProxy(values: Record<string, any>) {
 }
 
 function usersAbsAddress(stateElement: IStateElement) {
-  const absPathInfo = getAbsolutePathInfo(stateElement, getPathInfo('users'));
+  const absPathInfo = getTreePath(stateElement, getPathInfo('users'));
   return createAbsoluteStateAddress(absPathInfo, null);
 }
 

@@ -23,7 +23,7 @@ import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
 import { getPathInfo } from "../src/address/PathInfo";
-import { getAbsolutePathInfo } from "../src/address/AbsolutePathInfo";
+import { getTreePath } from "../src/address/TreePath";
 import { createAbsoluteStateAddress } from "../src/address/AbsoluteStateAddress";
 import { peekBindingsByAbsoluteStateAddress } from "../src/binding/getBindingSetByAbsoluteStateAddress";
 
@@ -345,7 +345,7 @@ describe("$streamStatus / $streamError の reactive 反映 end-to-end（B-3）",
 
     // binding は絶対アドレス単位で登録される。再接続で二重登録されないことの基準値を取る
     const tokensAbsAddress = createAbsoluteStateAddress(
-      getAbsolutePathInfo(stateEl, getPathInfo("tokens")),
+      getTreePath(stateEl, getPathInfo("tokens")),
       null,
     );
     const bindingCountBefore = countLedgerBindings(peekBindingsByAbsoluteStateAddress(tokensAbsAddress));

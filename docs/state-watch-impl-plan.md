@@ -150,7 +150,7 @@ function fireWatchOnUpdateBatch(batch) {
 }
 ```
 
-**`absolutePathInfo.stateElement` で発火先を引ける**のが効く（`address/AbsolutePathInfo.ts:23,28`）。絶対アドレスは stateElement 単位の WeakMap でキャッシュされるので、同名 state が複数の rootNode に居ても取り違えない。`stateName` 文字列で照合してはいけない。
+**`absolutePathInfo.stateElement` で発火先を引ける**のが効く（[`address/AbsolutePathInfo.ts:22,26`](https://github.com/wcstack/wcstack/blob/bf27363fec154f1abb861b6b2d0f525d45274178/packages/state/src/address/AbsolutePathInfo.ts#L22-L26) — このファイルはアドレス型の統合の Phase 1 で `address/TreePath.ts` に改名された。型は `ITreePath`、プロパティ名 `absolutePathInfo` はそのまま）。絶対アドレスは stateElement 単位の WeakMap でキャッシュされるので、同名 state が複数の rootNode に居ても取り違えない。`stateName` 文字列で照合してはいけない。
 
 発火は `stateElement.createState("writable", state => entry.handler.call(state, cur, prev))`（D8）。`cur` は `state[path]`（Phase A は完全一致パスなので素直に読める）。
 

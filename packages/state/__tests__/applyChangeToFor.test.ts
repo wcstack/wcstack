@@ -20,7 +20,7 @@ import { createListDiff } from '../src/list/createListDiff';
 import { setListIndexesByList } from '../src/list/listIndexesByList';
 import { setStateElement } from '../src/stateElementByName';
 import { getPathInfo } from '../src/address/PathInfo';
-import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
+import { getTreePath } from '../src/address/TreePath';
 import { createLoopContextStack } from '../src/list/loopContext';
 import type { IStateElement } from '../src/components/types';
 import type { IBindingInfo } from '../src/types';
@@ -231,7 +231,7 @@ describe('applyChangeToFor', () => {
     // Clear cached lastListValue to prevent cross-test contamination
     const pathInfo = getPathInfo('items');
     const stateElement = {} as IStateElement;
-    const absPathInfo = getAbsolutePathInfo(stateElement, pathInfo);
+    const absPathInfo = getTreePath(stateElement, pathInfo);
     const absAddress = createAbsoluteStateAddress(absPathInfo, null);
     clearLastListValueByAbsoluteStateAddress(absAddress);
   });

@@ -46,14 +46,14 @@ import {
 import { BindingSession } from "../src/bindings/BindingSession";
 import { setDevtoolsSink } from "../src/devtools/sink";
 import type { DevtoolsEvent } from "../src/devtools/types";
-import type { IAbsolutePathInfo, IAbsoluteStateAddress } from "../src/address/types";
+import type { ITreePath, IAbsoluteStateAddress } from "../src/address/types";
 import type { IBindingInfo } from "../src/types";
 import type { IListIndex } from "../src/list/types";
 
-const makePathInfo = (): IAbsolutePathInfo => ({} as IAbsolutePathInfo);
+const makePathInfo = (): ITreePath => ({} as ITreePath);
 const makeListIndex = (): IListIndex => ({} as IListIndex);
 const makeBinding = (): IBindingInfo => ({} as IBindingInfo);
-const addressOf = (absolutePathInfo: IAbsolutePathInfo, listIndex: IListIndex | null): IAbsoluteStateAddress =>
+const addressOf = (absolutePathInfo: ITreePath, listIndex: IListIndex | null): IAbsoluteStateAddress =>
   ({ absolutePathInfo, listIndex } as IAbsoluteStateAddress);
 
 afterEach(() => {

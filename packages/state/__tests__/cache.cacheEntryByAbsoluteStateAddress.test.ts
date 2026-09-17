@@ -5,7 +5,7 @@ import {
   dirtyCacheEntryByAbsoluteStateAddress
 } from '../src/cache/cacheEntryByAbsoluteStateAddress';
 import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
-import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
+import { getTreePath } from '../src/address/TreePath';
 import { getPathInfo } from '../src/address/PathInfo';
 import type { IStateElement } from '../src/components/types';
 
@@ -13,7 +13,7 @@ const defaultStateElement = {} as IStateElement;
 
 function createAddress(path: string) {
   const pathInfo = getPathInfo(path);
-  const absPathInfo = getAbsolutePathInfo(defaultStateElement, pathInfo);
+  const absPathInfo = getTreePath(defaultStateElement, pathInfo);
   return createAbsoluteStateAddress(absPathInfo, null);
 }
 

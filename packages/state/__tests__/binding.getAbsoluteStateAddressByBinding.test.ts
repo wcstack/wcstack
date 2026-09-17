@@ -9,8 +9,8 @@ vi.mock('../src/list/getListIndexByBindingInfo', () => ({
 vi.mock('../src/stateElementByName', () => ({
   getStateElement: vi.fn()
 }));
-vi.mock('../src/address/AbsolutePathInfo', () => ({
-  getAbsolutePathInfo: vi.fn()
+vi.mock('../src/address/TreePath', () => ({
+  getTreePath: vi.fn()
 }));
 vi.mock('../src/address/AbsoluteStateAddress', () => ({
   createAbsoluteStateAddress: vi.fn()
@@ -23,7 +23,7 @@ import {
 import { getRootNodeByFragment } from '../src/apply/rootNodeByFragment';
 import { getListIndexByBindingInfo } from '../src/list/getListIndexByBindingInfo';
 import { getStateElement } from '../src/stateElementByName';
-import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
+import { getTreePath } from '../src/address/TreePath';
 import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
 import type { IBindingInfo } from '../src/binding/types';
@@ -31,7 +31,7 @@ import type { IBindingInfo } from '../src/binding/types';
 const getRootNodeByFragmentMock = vi.mocked(getRootNodeByFragment);
 const getListIndexByBindingInfoMock = vi.mocked(getListIndexByBindingInfo);
 const getStateElementByNameMock = vi.mocked(getStateElement);
-const getAbsolutePathInfoMock = vi.mocked(getAbsolutePathInfo);
+const getAbsolutePathInfoMock = vi.mocked(getTreePath);
 const createAbsoluteStateAddressMock = vi.mocked(createAbsoluteStateAddress);
 
 function createBinding(overrides: Partial<IBindingInfo> = {}): IBindingInfo {

@@ -6,7 +6,7 @@ vi.mock("../src/apply/applyChangeFromBindings", () => ({
   applyChangeFromBindings: vi.fn(),
 }));
 
-import { getAbsolutePathInfo } from "../src/address/AbsolutePathInfo";
+import { getTreePath } from "../src/address/TreePath";
 import { createAbsoluteStateAddress } from "../src/address/AbsoluteStateAddress";
 import { getPathInfo } from "../src/address/PathInfo";
 import { applyChangeFromBindings } from "../src/apply/applyChangeFromBindings";
@@ -51,7 +51,7 @@ function createBinding(node: Element, statePathName: string): IBindingInfo {
 
 function createAbsAddress(path: string) {
   const stateElement = {} as IStateElement;
-  return createAbsoluteStateAddress(getAbsolutePathInfo(stateElement, getPathInfo(path)), null);
+  return createAbsoluteStateAddress(getTreePath(stateElement, getPathInfo(path)), null);
 }
 
 describe("propagation core", () => {

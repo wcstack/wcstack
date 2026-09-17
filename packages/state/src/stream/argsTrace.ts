@@ -5,7 +5,7 @@
  *
  * - モジュールスコープの collector を立てて readonly proxy 上で args を評価し、
  *   getByAddress を通った読みを絶対アドレス（IAbsoluteStateAddress）として捕捉する。
- *   AbsolutePathInfo / AbsoluteStateAddress は両方キャッシュ済みのため、捕捉した
+ *   TreePath / AbsoluteStateAddress は両方キャッシュ済みのため、捕捉した
  *   アドレスは drain バッチと Set.has のインスタンス同一性で O(1) 照合できる（§2-1）。
  * - collectStreamDependency は getByAddress のホットパスから毎読み呼ばれるため、
  *   collector === null なら即 return し、それ以外の計算を一切しない。
@@ -16,8 +16,7 @@
  *   （getByAddress → argsTrace ← streamRuntime の一方向依存に保つ）。
  */
 
-import { getAbsolutePathInfo } from "../address/AbsolutePathInfo";
-import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
+import { liftAddress } from "../address/liftAddress";
 import type { IAbsoluteStateAddress, IStateAddress } from "../address/types";
 import type { IStateElement } from "../components/types";
 import {
@@ -40,8 +39,7 @@ export function collectStreamDependency(stateElement: IStateElement, address: IS
   if (collector === null) {
     return;
   }
-  const absolutePathInfo = getAbsolutePathInfo(stateElement, address.pathInfo);
-  collector.add(createAbsoluteStateAddress(absolutePathInfo, address.listIndex));
+  collector.add(liftAddress(stateElement, address));
 }
 
 /**

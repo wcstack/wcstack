@@ -21,8 +21,7 @@
  * 2. 上記の順序規約のために hits をソートする必要がある（バッチの反復順は enqueue 順）。
  */
 
-import { getAbsolutePathInfo } from "../address/AbsolutePathInfo";
-import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
+import { absoluteAddressOf } from "../address/liftAddress";
 import type { IAbsoluteStateAddress } from "../address/types";
 import type { IStateElement } from "../components/types";
 import { MAX_WATCH_CHAIN_DEPTH, WATCH_LISTENER_PRIORITY } from "../define";
@@ -109,7 +108,8 @@ function primeComputedWatches(stateElement: IStateElement): void {
   stateElement.createState("readonly", (state) => {
     for (const entry of targets) {
       try {
-        setComputedSnapshot(stateElement, absoluteAddressOf(stateElement, entry), state[entry.path]);
+        // ワイルドカードを含まない watch パスなので、listIndex は常に null
+        setComputedSnapshot(stateElement, absoluteAddressOf(stateElement, entry.pathInfo, null), state[entry.path]);
       } catch (e) {
         // 初回評価の throw は接続を巻き添えにしない（発火時と同じ隔離方針、§7-1）
         reportWatchError(stateElement, entry.path, "prime", e);
@@ -118,10 +118,6 @@ function primeComputedWatches(stateElement: IStateElement): void {
   });
 }
 
-/** ワイルドカードを含まない watch パスの絶対アドレス（listIndex は常に null） */
-function absoluteAddressOf(stateElement: IStateElement, entry: IWatchEntry): IAbsoluteStateAddress {
-  return createAbsoluteStateAddress(getAbsolutePathInfo(stateElement, entry.pathInfo), null);
-}
 
 /**
  * 前回評価値のスナップショット台帳（computedSnapshots）に載せる entry か。
@@ -218,9 +214,9 @@ function fireWatchHits(
   // --- 収集フェーズ ---
   const hits: IWatchHit[] = [];
   for (const absAddress of batch) {
-    // stateElement 参照で引く。AbsolutePathInfo は
+    // stateElement 参照で引く。TreePath は
     // stateElement 単位でキャッシュされるので、同名 state が複数の rootNode に
-    // 居ても取り違えない（address/AbsolutePathInfo.ts）。他 state のアドレスは
+    // 居ても取り違えない（address/TreePath.ts）。他 state のアドレスは
     // ここで自然に落ちる ＝ 越境しない（設計 D8）。
     const stateElement = absAddress.absolutePathInfo.stateElement;
     if (!activeStateElements.has(stateElement)) {

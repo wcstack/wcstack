@@ -5,7 +5,7 @@
  * 実 binding（`eventToken.<prop>: <name>`）→ パーサ → 要素 dispatch まで本物で通す。
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
-import { getAbsolutePathInfo } from "../src/address/AbsolutePathInfo";
+import { getTreePath } from "../src/address/TreePath";
 import { createAbsoluteStateAddress } from "../src/address/AbsoluteStateAddress";
 import { getPathInfo } from "../src/address/PathInfo";
 import { bootstrapState } from "../src/bootstrapState";
@@ -589,7 +589,7 @@ describe("on: resetOn と寿命（D6 / D8）", () => {
     const entry = [...getScanRegistry(stateEl)!.entries].find((e) => e.name === "log")!;
     dispatch(shadowRoot.querySelector(TARGET)!, "a1");
 
-    const abs = (path: string) => createAbsoluteStateAddress(getAbsolutePathInfo(stateEl, getPathInfo(path)), null);
+    const abs = (path: string) => createAbsoluteStateAddress(getTreePath(stateEl, getPathInfo(path)), null);
     (stateEl as any).__state.server = "b";
     (stateEl as any).__state.n = 1;
     // server と n を載せたバッチを同期に drain する（fold が積んだ次のバッチはまだ drain しない）
@@ -702,7 +702,7 @@ describe("on: resetOn と寿命（D6 / D8）", () => {
 
     host.remove();
     expect(getScanEventResetGateCount()).toBeGreaterThan(0);
-    getUpdater().enqueueAbsoluteAddress(createAbsoluteStateAddress(getAbsolutePathInfo(stateEl, getPathInfo("server")), null));
+    getUpdater().enqueueAbsoluteAddress(createAbsoluteStateAddress(getTreePath(stateEl, getPathInfo("server")), null));
     expect(hasPendingScanReset(entry)).toBe(false);
     await flushAsync();
     other.host.remove();

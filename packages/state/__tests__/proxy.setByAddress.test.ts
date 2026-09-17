@@ -29,8 +29,8 @@ vi.mock('../src/updater/updater', () => ({
   })),
 }));
 
-vi.mock('../src/address/AbsolutePathInfo', () => ({
-  getAbsolutePathInfo: vi.fn((stateElement, pathInfo) => {
+vi.mock('../src/address/TreePath', () => ({
+  getTreePath: vi.fn((stateElement, pathInfo) => {
     return { stateName: stateElement.name, pathInfo };
   }),
 }));

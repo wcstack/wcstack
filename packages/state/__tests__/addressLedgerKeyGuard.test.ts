@@ -122,7 +122,7 @@ describe("番人の走査そのものの試験", () => {
 
   it("ツリーを含む絶対アドレスをキーにした台帳は検出しないこと", () => {
     expect(scan(`const ledger: WeakMap<IAbsoluteStateAddress, number> = new WeakMap();`)).toEqual([]);
-    expect(scan(`const pattern: WeakMap<IAbsolutePathInfo, WeakMap<IListIndex, number>> = new WeakMap();`)).toEqual([]);
+    expect(scan(`const pattern: WeakMap<ITreePath, WeakMap<IListIndex, number>> = new WeakMap();`)).toEqual([]);
   });
 
   it("関数内の局所コレクションは検出しないこと（1 回の walk に閉じる）", () => {

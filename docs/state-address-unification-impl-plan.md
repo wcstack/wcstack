@@ -1,6 +1,6 @@
 # 実装計画: アドレス型の統合（@wcstack/state）
 
-- **状態**: **Phase 0 実装済み**（2026-09-18・ブランチ `test/state-address-guard-and-baseline`）。Spike S 以降は未着手。**ゲートは全て決着済み**（2026-09-18・§2）— 案 A を進める。残る未確定は Spike S の実測で決まる intern の置き場所（G6）だけ。その判定規則（§5-2）は、Phase 0 の A/A 測定を受けて統計量を精密化した版で確定している（F10・著者承認済み）。
+- **状態**: **Phase 0・Phase 1 実装済み**（2026-09-18・ブランチ `test/state-address-guard-and-baseline` と、その上に積んだ `refactor/state-address-tree-path`。PR は 2 本まとめて出す）。Spike S と Phase 2 以降は未着手。**ゲートは全て決着済み**（2026-09-18・§2）— 案 A を進める。残る未確定は Spike S の実測で決まる intern の置き場所（G6）だけ。その判定規則（§5-2）は、Phase 0 の A/A 測定を受けて統計量を精密化した版で確定している（F10・著者承認済み）。
 - **ブランチ**: Phase ごとに 1 本（§1 の表）。
 - **設計検討**: [state-address-unification-design.md](./state-address-unification-design.md)（以下「設計書」）。`設計書 §n`・`Dn`・`I1`/`I2`・`C1`/`C2`・`P1`〜`P3` は設計書の番号。本書の節は単に `§n` と書く。
 - **到達点**: `IAbsoluteStateAddress` と lift / downgrade の往復が消え、`IStateAddress` が `stateElement` を持つ 1 本になる。proxy・updater・依存グラフ・drain の契約は不変（C1）。素のパスの読みと行バインディング登録が退行しない（P1）。`<wcs-state>` が GC から隠れない（I2）。同じ配列を持つ 2 ツリーが混線しない（I1）。旧 devtools × 新 state、新 devtools × 旧 state のどちらも壊れない（D7）。
@@ -167,7 +167,9 @@
 
 **成果物**: 測定 JSON と、設計書 §5-5・§10-6 への結果の追記（G6 の決着）。ブランチは捨てる。
 
-## 6. Phase 1 — 内部化と改名（PR ①・振る舞い不変）
+## 6. Phase 1 — 内部化と改名（PR ①・振る舞い不変）（**実装済み**・2026-09-18）
+
+ブランチ `refactor/state-address-tree-path`（Phase 0 のブランチの上に積んだ）。
 
 ### 6-A. lift の 1 関数化
 
@@ -189,17 +191,42 @@ export function liftAddress(stateElement: IStateElement, address: IStateAddress)
 | `proxy/apis/wildcardIndexes.ts`・`recursion/walk.ts`・`recursion/generation.ts`・`stream/argsTrace.ts`・`apply/reapplyStateBindings.ts`・`watch/watchRuntime.ts`・`binding/getAbsoluteStateAddressByBinding.ts` | 各 1 |
 | `bindings/BindingSession.ts:1036` | **lift ではない**（`patternLedger` の登録）。`getTreePath` の直接呼びとして残す |
 
-- [ ] 上の 18 箇所を `liftAddress` / `absoluteAddressOf` に置き換える（`createAbsoluteStateAddress` の呼びで数えると 19 — `setByAddress.ts:320` が 1 つの `absPathInfo` から 2 本作る。設計書の「21」の残り 2 つは `patternLedger` の devtools sink（`getBindingSetByAbsoluteStateAddress.ts:98` / `:117`）で、`TreePath` を直接受けるので残す）。`generation.ts` と `setByAddress.ts:320` は今日 `absPathInfo` をループの外に巻き上げているが、どちらもコールドパス（再帰の実体化・スワップ）なので毎回引く形にしてよい。
-- [ ] 2 行にまたがる置換になる。**CRLF のファイルに対する perl の複数行置換は空振りする**（§12 の罠 3）ので、Edit で 1 箇所ずつか、TS の AST を使う。
+- [x] 上の 18 箇所を `liftAddress` / `absoluteAddressOf` に置き換えた（`createAbsoluteStateAddress` の呼びで数えると 19 — `setByAddress.ts:320` が 1 つの `absPathInfo` から 2 本作る。設計書の「21」の残り 2 つは `patternLedger` の devtools sink（`getBindingSetByAbsoluteStateAddress.ts:98` / `:117`）で、`TreePath` を直接受けるので残す）。`generation.ts` と `setByAddress.ts:320` は今日 `absPathInfo` をループの外に巻き上げているが、どちらもコールドパス（再帰の実体化・スワップ）なので毎回引く形にした。置き場所は `src/address/liftAddress.ts`。`watchRuntime.ts` にあった同名の局所関数 `absoluteAddressOf(stateElement, entry)` は、共通の入口を直接呼ぶ形に畳んだ（呼び出しは 1 箇所だった）。
+- [x] `src/address/` の外に残る intern の直接呼びは、計画どおり 3 箇所だけ: `BindingSession.ts` の `getTreePath`（パターン台帳への登録）と、`getBindingSetByAbsoluteStateAddress.ts` の `createAbsoluteStateAddress` × 2（devtools sink）。
+- [x] 2 行にまたがる置換になる。**CRLF のファイルに対する perl の複数行置換は空振りする**（§12 の罠 3）ので、Edit で 1 箇所ずつか、TS の AST を使う。実際には「CRLF を LF に正規化 → 完全一致で**ちょうど 1 回**当たることを確認して置換 → 元の改行に戻す」node スクリプトで行った。当たりが 1 回でなければ例外にするので、空振りも二重置換も起きない。
 
 ### 6-B. 改名（G3）
 
-- [ ] `IAbsolutePathInfo` → `ITreePath`、`AbsolutePathInfo.ts` → `TreePath.ts`（`git mv`）、`getAbsolutePathInfo` → `getTreePath`。
-- [ ] **プロパティ名 `absolutePathInfo` / `parentAbsolutePathInfo` は変えない**（F6）。
-- [ ] 境界の番人を足す（§4-1 と同じ走査の仕組み）: `getTreePath` を import してよいのは `src/address/**`・`binding/getBindingSetByAbsoluteStateAddress.ts`・`bindings/BindingSession.ts` だけ。`createAbsoluteStateAddress` は `src/address/**` と `patternLedger` のファイル（devtools sink の 2 箇所）だけ。
-- [ ] テストは名前の追随のみ。**期待値を 1 つも変えない**。
+- [x] `IAbsolutePathInfo` → `ITreePath`、`AbsolutePathInfo.ts` → `TreePath.ts`（`git mv`）、`getAbsolutePathInfo` → `getTreePath`。クラス名も `TreePath`。40 ファイル・162 箇所（src と `__tests__`）。他パッケージに該当は無い（devtools は自前のミラー型 `IAbsolutePathInfoLike` を持ち、state の型を import していない）。
+- [x] **プロパティ名 `absolutePathInfo` / `parentAbsolutePathInfo` は変えない**（F6）。置換を語境界つき（`AbsolutePathInfo`）にすれば機械的に守れる — 前者は小文字の `a` で始まり、後者は `A` の前が語の文字なので、どちらも当たらない。
+- [x] 境界の番人 `__tests__/addressImportBoundary.test.ts`（8 件）。`sourceScan.ts` に import を拾う部品（`collectImportedModules` — 静的・type・複数行・`export from`・動的・副作用 import を、ファイルの位置から解決する）を足した。`address/TreePath` を `src/address/` の外から import してよいのは `bindings/BindingSession.ts` だけ、`address/AbsoluteStateAddress` は `binding/getBindingSetByAbsoluteStateAddress.ts` だけ（計画時は前者に `getBindingSetByAbsoluteStateAddress.ts` も挙げていたが、あのファイルは `ITreePath` を引数で受けるだけで `getTreePath` を呼ばない）。**この番人は Phase 2 のあとも残る**。
+- [x] テストは名前の追随のみ。**期待値は 1 つも変えていない**。
 
-**完了条件**: 差分が「呼び出しの畳み込み」と「名前」だけで読める。全テスト・カバレッジ・lint・e2e が緑。R1〜R3 と `jsfb-verify` を main と並べて測り、退行なし（lift の関数化は呼び出し 1 段ぶんのコストを足しうる — インライン化されるはずだが、**片側だけ測った主張は採らない**）。
+**完了条件（達成）**: 差分が「呼び出しの畳み込み」と「名前」だけで読める（コミットを分けた — 改名だけ／畳み込みだけ）。state の全テスト 304 ファイル・3656 件が**期待値の変更ゼロで**緑、カバレッジ 99.62 / 98.78 / 100 / 99.78（Phase 0 と同じ）、lint 緑、GC spec を Phase 1 のビルドに対して流して 4 / 4 緑。e2e の全 spec は CI で流す。
+
+**性能（2026-09-18・main と Phase 1 の src を同じ esbuild で束ね、同一セッションで交互に測定）**: 退行なし。lift の関数化ぶんの呼び出し 1 段はインライン化されている。
+
+| 読み（ns/読み・min） | main | main-again（床） | Phase 1 |
+|---|---|---|---|
+| R1 素のパス | 41.9 | +0.5 | **+0.6**（p25 は −0.09） |
+| R2 getter — `getByAddress` のキャッシュ経路が `liftAddress` を通る | 45.45 | +0.6 | **+0.3**（p25 は −0.44） |
+| R3 行の getter | 123.95 | +0.05 | **−0.25**（p25 は −0.89） |
+
+| リスト（`jsfb-verify`・中央値 ms） | main | Phase 1 | main（2 回目） | Phase 1（2 回目） |
+|---|---|---|---|---|
+| create1k | 41.55 | 42.0 | 41.05 | 40.45 |
+| replace1k | 17.6 | 16.35 | 26.35 | 25.15 |
+| update10k | 11.85 | 12.45 | 12.2 | 11.85 |
+| swap1k | 0.8 | 1.0 | 1.0 | 1.0 |
+| remove1k | 2.95 | 3.2 | 3.0 | 2.65 |
+| append1kTo10k | 60.9 | 56.7 | 56.55 | 60.65 |
+| clear10k | 69.5 | 70.2 | 68.15 | 69.3 |
+
+どの操作も、Phase 1 と main の差は **main どうしの実行間の揺れより小さい**（replace1k は main の 2 回で 17.6 と 26.35）。keyed の判定（`isKeyed`・`swapTrAdded=2`）は 4 回とも同一。絶対値は無圧縮の esbuild バンドルでの値で、リリース物の数字ではない。
+
+`jsfb-verify.mjs` に `--bundle <path>` を足した（読みのベンチ・GC spec と同じく、リクエストを横取りして差し替える）。これが無いと、リスト性能を main と並べて測るには tracked な dist を書き換えるしかなかった。
+
+**成果物**: `src/address/liftAddress.ts`・`src/address/TreePath.ts`（`AbsolutePathInfo.ts` から `git mv`）・`__tests__/addressImportBoundary.test.ts`（8）・`__tests__/helpers/sourceScan.ts`（import を拾う部品を追加）・`e2e/bench/jsfb-verify.mjs`（`--bundle`）。
 
 ## 7. Phase 2 — 統合と lift 削除（PR ②）
 

@@ -1,16 +1,16 @@
 import { WILDCARD } from "../define";
 import { IListIndex } from "../list/types";
-import { IAbsolutePathInfo, IAbsoluteStateAddress } from "./types";
+import { ITreePath, IAbsoluteStateAddress } from "./types";
 
-const _cache: WeakMap<IListIndex, WeakMap<IAbsolutePathInfo, IAbsoluteStateAddress>> = new WeakMap();
-const _cacheNullListIndex: WeakMap<IAbsolutePathInfo, IAbsoluteStateAddress> = new WeakMap();
+const _cache: WeakMap<IListIndex, WeakMap<ITreePath, IAbsoluteStateAddress>> = new WeakMap();
+const _cacheNullListIndex: WeakMap<ITreePath, IAbsoluteStateAddress> = new WeakMap();
 
 class AbsoluteStateAddress implements IAbsoluteStateAddress {
-  readonly absolutePathInfo: IAbsolutePathInfo;
+  readonly absolutePathInfo: ITreePath;
   readonly listIndex: IListIndex | null;
   private _parentAbsoluteAddress: IAbsoluteStateAddress | null | undefined;
 
-  constructor(absolutePathInfo: IAbsolutePathInfo, listIndex: IListIndex | null) {
+  constructor(absolutePathInfo: ITreePath, listIndex: IListIndex | null) {
     this.absolutePathInfo = absolutePathInfo;
     this.listIndex = listIndex;
   }
@@ -37,7 +37,7 @@ class AbsoluteStateAddress implements IAbsoluteStateAddress {
   }
 }
 
-export function createAbsoluteStateAddress(absolutePathInfo: IAbsolutePathInfo, listIndex: IListIndex | null): IAbsoluteStateAddress {
+export function createAbsoluteStateAddress(absolutePathInfo: ITreePath, listIndex: IListIndex | null): IAbsoluteStateAddress {
   if (listIndex === null) {
     let cached = _cacheNullListIndex.get(absolutePathInfo);
     if (typeof cached !== "undefined") {
@@ -49,7 +49,7 @@ export function createAbsoluteStateAddress(absolutePathInfo: IAbsolutePathInfo, 
   } else {
     let cacheByAbsolutePathInfo = _cache.get(listIndex);
     if (typeof cacheByAbsolutePathInfo === "undefined") {
-      cacheByAbsolutePathInfo = new WeakMap<IAbsolutePathInfo, IAbsoluteStateAddress>();
+      cacheByAbsolutePathInfo = new WeakMap<ITreePath, IAbsoluteStateAddress>();
       _cache.set(listIndex, cacheByAbsolutePathInfo);
     }
     let cached = cacheByAbsolutePathInfo.get(absolutePathInfo);

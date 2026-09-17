@@ -33,14 +33,14 @@ export interface IStateAddress {
   readonly parentAddress: IStateAddress | null;
 }
 
-export interface IAbsolutePathInfo {
+export interface ITreePath {
   readonly stateElement: IStateElement;
   readonly pathInfo: IPathInfo;
-  readonly parentAbsolutePathInfo: IAbsolutePathInfo | null;
+  readonly parentAbsolutePathInfo: ITreePath | null;
 }
 
 export interface IAbsoluteStateAddress {
-  readonly absolutePathInfo: IAbsolutePathInfo;
+  readonly absolutePathInfo: ITreePath;
   readonly listIndex: IListIndex | null;
   readonly parentAbsoluteAddress: IAbsoluteStateAddress | null;
 }

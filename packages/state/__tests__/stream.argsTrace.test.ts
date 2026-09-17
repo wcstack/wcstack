@@ -18,7 +18,7 @@ import { getStreamEntries } from "../src/stream/streamRegistry";
 import { createStateProxy } from "../src/proxy/StateHandler";
 import { setStateElement } from "../src/stateElementByName";
 import { getResolvedAddress } from "../src/address/ResolvedAddress";
-import { getAbsolutePathInfo } from "../src/address/AbsolutePathInfo";
+import { getTreePath } from "../src/address/TreePath";
 import { createAbsoluteStateAddress } from "../src/address/AbsoluteStateAddress";
 import { createStateAddress } from "../src/address/StateAddress";
 import type { IAbsoluteStateAddress } from "../src/address/types";
@@ -73,7 +73,7 @@ function declareStreams(state: IState, getterPaths: string[] = []) {
 /** パス文字列（listIndex なし）の絶対アドレスをキャッシュ経由で解決する。 */
 function absoluteAddressOf(stateElement: IStateElement, path: string): IAbsoluteStateAddress {
   const pathInfo = getResolvedAddress(path).pathInfo;
-  return createAbsoluteStateAddress(getAbsolutePathInfo(stateElement, pathInfo), null);
+  return createAbsoluteStateAddress(getTreePath(stateElement, pathInfo), null);
 }
 
 /** depAddresses をパス文字列の配列（ソート済み）に落とす。 */
