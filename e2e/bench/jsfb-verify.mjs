@@ -11,6 +11,9 @@
 // Usage (from e2e/):  node bench/jsfb-verify.mjs --label before --out results.json
 // --throttle N applies CDP CPU throttling (the official jsfb harness measures
 // at 4x slowdown); default 1 = unthrottled.
+// --bundle <path> swaps the state bundle the page loads for that file, by intercepting
+// the request — the tracked packages/state/dist is never rewritten. Use it to measure
+// main and a branch side by side in one session (build each with esbuild from its src).
 // The server (serve.mjs) is spawned on PORT (default 4199) and killed on exit.
 
 import { spawn } from "node:child_process";
@@ -30,6 +33,7 @@ const LABEL = argOf("label", "run");
 const OUT = argOf("out", `bench-${LABEL}.json`);
 const PAGE = argOf("page", "packages/state/__e2e__/benchmark/index.html");
 const THROTTLE = Number(argOf("throttle", "1"));
+const BUNDLE = argOf("bundle", null);
 const BENCH_URL = `http://127.0.0.1:${PORT}/${PAGE}`;
 
 // --- official isKeyed.ts instrumentation, minimally adapted (no shadow DOM) ---
@@ -365,6 +369,12 @@ async function main() {
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage();
     page.setDefaultTimeout(20000);
+    if (BUNDLE !== null) {
+      const bundlePath = resolve(BUNDLE);
+      await page.route("**/packages/state/dist/auto.min.js", (route) =>
+        route.fulfill({ path: bundlePath, contentType: "text/javascript; charset=utf-8" }));
+      console.log(`[${LABEL}] state bundle: ${bundlePath}`);
+    }
     if (THROTTLE > 1) {
       const cdp = await page.context().newCDPSession(page);
       await cdp.send("Emulation.setCPUThrottlingRate", { rate: THROTTLE });
