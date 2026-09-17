@@ -155,3 +155,37 @@ function endOfTypeArguments(text: string, open: number): number {
   }
   return text.length - 1;
 }
+
+/**
+ * ソースが import しているモジュールを、`src/` からの相対パス（拡張子なし・区切りは `/`）で返す。
+ * 静的 import・`export … from`・動的 `import()` の指定子を拾い、相対指定だけを `file` の位置から解決する
+ * （bare specifier は対象外）。
+ */
+export function collectImportedModules(file: string, source: string): string[] {
+  const specifiers = new Set<string>();
+  const patterns = [
+    /\b(?:import|export)\b[^;'"]*?\bfrom\s*["']([^"']+)["']/g,
+    /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g,
+    /\bimport\s*["']([^"']+)["']/g,
+  ];
+  for (const pattern of patterns) {
+    for (const match of source.matchAll(pattern)) {
+      specifiers.add(match[1]);
+    }
+  }
+  const dir = file.includes("/") ? file.slice(0, file.lastIndexOf("/")) : "";
+  const resolved: string[] = [];
+  for (const specifier of specifiers) {
+    if (!specifier.startsWith(".")) {
+      continue;
+    }
+    const segments = dir === "" ? [] : dir.split("/");
+    for (const part of specifier.split("/")) {
+      if (part === "." || part === "") continue;
+      if (part === "..") segments.pop();
+      else segments.push(part);
+    }
+    resolved.push(segments.join("/").replace(/\.ts$/, ""));
+  }
+  return resolved.sort();
+}
