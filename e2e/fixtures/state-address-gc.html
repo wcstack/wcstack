@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: state address interning must not hide a &lt;wcs-state&gt; from GC</title>
+  <!-- docs/state-address-unification-design.md §5-3 (I2), impl-plan §4-3.
+
+       An address is interned, and the intern tables are keyed by things that never die
+       (PathInfo lives in a strong Map for the lifetime of the page) or that outlive a tree
+       (a ListIndex is shared by every tree that holds the same array instance). If an address
+       that references its <wcs-state> is reachable from such a key, the element can never be
+       collected once it has been read through. Nothing throws; the page only leaks.
+
+       Each tree here is a ShadowRoot with its own <wcs-state>. The page keeps WeakRefs only —
+       the spec forces a GC over CDP from a separate task (a WeakRef keeps its target alive
+       until the end of the job that created or dereferenced it) and then asks what survived. -->
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+  <script type="module">
+    const TEMPLATE = `
+<wcs-state></wcs-state>
+<h2 class="title" data-wcs="textContent: title"></h2>
+<span class="count" data-wcs="textContent: count"></span>
+<ul><template data-wcs="for: items"><li data-wcs="textContent: .upper"></li></template></ul>`;
+
+    // No closure over the host or the element: the state object must not be what keeps them alive.
+    function createTreeState(title, items) {
+      return {
+        title,
+        items,
+        get "items.*.upper"() { return String(this["items.*.name"]).toUpperCase(); },
+        get count() { return this.items.length; },
+      };
+    }
+
+    const refs = new Map();   // name -> { host: WeakRef, state: WeakRef }
+    const pinned = [];        // the control: a strong reference on purpose
+
+    function hostOf(name) {
+      return document.querySelector(`[data-tree="${name}"]`);
+    }
+
+    async function mount(name, items) {
+      const host = document.createElement("div");
+      host.dataset.tree = name;
+      host.attachShadow({ mode: "open" }).innerHTML = TEMPLATE;
+      document.body.appendChild(host);
+      const state = host.shadowRoot.querySelector("wcs-state");
+      state.setInitialState(createTreeState(name, items));
+      await state.connectedCallbackPromise;
+      refs.set(name, { host: new WeakRef(host), state: new WeakRef(state) });
+    }
+
+    window.__gc = {
+      // Two independent arrays with the same path shape.
+      mountOwn: (name) => mount(name, [{ name: `${name}-0` }, { name: `${name}-1` }]),
+      // The same array instance in both trees: their rows share ListIndex objects.
+      async mountSharing(first, second) {
+        const shared = [{ name: "shared-0" }, { name: "shared-1" }];
+        await mount(first, shared);
+        await mount(second, shared);
+      },
+      // Goes through the proxy, the updater queue and a drain — every ledger gets touched.
+      write(name, index, value) {
+        const state = hostOf(name).shadowRoot.querySelector("wcs-state");
+        state.createState("writable", (s) => { s[`items.${index}.name`] = value; });
+      },
+      rows: (name) => Array.from(hostOf(name).shadowRoot.querySelectorAll("li"), (li) => li.textContent),
+      count: (name) => hostOf(name).shadowRoot.querySelector(".count").textContent,
+      pin(name) { pinned.push(hostOf(name)); },
+      unmount(name) { hostOf(name).remove(); },
+      // Called only after the spec has forced a GC from another task.
+      survivors(name) {
+        const entry = refs.get(name);
+        return { host: entry.host.deref() !== undefined, state: entry.state.deref() !== undefined };
+      },
+    };
+    document.documentElement.dataset.ready = "true";
+  </script>
+</head>
+<body></body>
+</html>

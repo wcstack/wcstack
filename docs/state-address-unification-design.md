@@ -8,6 +8,7 @@
 - **双対**: [state-mount-design.md](./state-mount-design.md) の D16（名前次元の撤去）。本書はその撤去が型に残した跡地の整理。
 - **改訂（2026-09-18）**: 設計レビューの反映。①判断の優先順位を明示（§0-1）②「行はツリーに属さない」という実測を足し、intern のキーを 3 つ組の不変条件として書き直した（§3-1・§5-3）③ホットパス収支を intern の置き場所ごとに分けた（§5-5）④罠だけを塞ぐ案 E を追加（§6-4）⑤devtools をリポジトリ内 consumer として移行計画に入れ、互換を両方向に張った（§7-1・§8）⑥アドレス生成 31 箇所を移行範囲に計上（§4-6）。
 - **採択（2026-09-18）**: §10 の 6 点を著者が決定した。優先順位は P1 > P2 > P3、改名先は `ITreePath`（第一候補だった `IScopedPath` は不採用 — §5-4）、assert は debug 時のみ＋テストで常時 ON、互換 getter の撤去は次の major、置き場所は実測、`IResolvedAddress` は範囲外。結果は §10 に記録。
+- **Phase 0 の反映（2026-09-18）**: 実装計画の作成時に見つけた事実（`placementOf` に引数は要らない — §4-6／絶対側の親連鎖は死にコード — §5-2／互換 getter は内部では使えない — §7-1／改名できるのはプロパティ名の手前まで・消えるファイルへのリンクはパーマリンクに — §8）と、基準試験の結果（§9 — 閾値の訂正、GC とクロスツリーの基準と検出力、読みのベンチの統計量と基準値）を反映した。
 
 ---
 
@@ -176,7 +177,7 @@ const absAddress  = createAbsoluteStateAddress(absPathInfo, address.listIndex);
 | 引数の追加か解決順の入れ替えが要る | 4（3 関数） | 下記 |
 
 - [getStateAddressByBindingInfo.ts](../packages/state/src/binding/getStateAddressByBindingInfo.ts)（2 箇所）— `IBindingInfo` は要素を持たない。呼び出し元は [applyChange.ts:94](../packages/state/src/apply/applyChange.ts#L94) の `getValue(context.state, binding)` と [initialSync.ts](../packages/state/src/bindings/initialSync.ts) の `isBindingStateInitialized` の 2 つで、**どちらも要素を既に持っている**（`context.stateElement`／直前の `getStateElement(rootNode)`）。
-- [rowLanding.ts](../packages/state/src/watch/rowLanding.ts) の `placementOf(state, pathInfo, row)` — proxy しか受け取らない。呼び出し元（`scanRuntime`・`watchRuntime`）は要素単位で動くので、引数を 1 つ通す。
+- [rowLanding.ts](../packages/state/src/watch/rowLanding.ts) の `placementOf(state, pathInfo, row)` — proxy しか受け取らないが、引数の `row.absAddress` が要素を運んでいるので、そこから取る。**引数の追加は要らない**（2026-09-18 の実装計画時に確認。当初は「引数を 1 つ通す」と書いていた）。
 - [hydrateBindings.ts](../packages/state/src/hydrateBindings.ts) の `hydrateBlocks` — 要素の解決（`getStateElement(rootNode)`）がアドレス生成より**後**にある。順序を入れ替える。
 
 バインディングには今日、非対称がある。`getStateAddressByBindingInfo` は**切断中でも引ける**が、[getAbsoluteStateAddressByBinding.ts](../packages/state/src/binding/getAbsoluteStateAddressByBinding.ts) は root が解決できないと raise する。統合すると前者が消えるので、どちらの前提に寄せるかを決める必要がある（D12）。
@@ -209,6 +210,8 @@ export interface IStateAddress {
 ### 5-2. `parentAddress` は 1 本になる
 
 `(stateElement, pathInfo.parentPathInfo, 末尾が `*` なら parentListIndex)` の 1 実装。`AbsolutePathInfo.parentAbsolutePathInfo` の連鎖も不要になる。
+
+絶対側の親連鎖は、畳む以前に**死にコード**である。`parentAbsoluteAddress` / `parentAbsolutePathInfo` の読み手は `src/address/` の外に 1 つも無い（2026-09-18 実測）。それでも `AbsolutePathInfo` のコンストラクタは祖先ぶんの中間ノードを**先行生成**しているので、統合はこの割当（パス 1 本につき祖先の数だけ）も落とす。
 
 ### 5-3. intern の 2 つの不変条件 — 同一性と GC
 
@@ -372,6 +375,8 @@ get absolutePathInfo(): { pathInfo: IPathInfo; stateElement: IStateElement } { r
 
 アドレス自身が `pathInfo` と `stateElement` を持つので、`this` を返すだけで `absoluteAddress.absolutePathInfo.pathInfo.path` が通る。ただし `parentAbsolutePathInfo` は返さない（`packages/devtools` は読んでいない — grep で確認済み）。
 
+**この getter は内部では使えない。** 戻り値はアドレス自身であって、intern の中間ノード（§5-4）ではない。`patternLedger` は中間ノードをキーにしているので、[getBindingSetByAbsoluteStateAddress.ts:136](../packages/state/src/binding/getBindingSetByAbsoluteStateAddress.ts#L136) の `patternLedger.get(address.absolutePathInfo)` を getter 越しのまま残すと、行バインディングの引きが**例外なしで全て外れる**。getter を生やすのと同じコミットで、この引きを内部フィールドへ切り替える（実装計画 §7-1 の C2）。
+
 ### 7-2. README の internals 節
 
 [packages/state/README.md:2969](../packages/state/README.md#L2969) が 5 本の型を説明している。ここは 3 本の説明に書き換える（`README.ja.md` も同時）。README は `npm view` で読まれる AI 向けの正本でもあるので、統合と同じ PR で更新する。
@@ -395,7 +400,7 @@ get absolutePathInfo(): { pathInfo: IPathInfo; stateElement: IStateElement } { r
 
 ### PR ① 内部化と改名（振る舞い不変）
 
-- `IAbsolutePathInfo` → `ITreePath`、`AbsolutePathInfo.ts` → `TreePath.ts`
+- `IAbsolutePathInfo` → `ITreePath`、`AbsolutePathInfo.ts` → `TreePath.ts`。**プロパティ名 `absolutePathInfo` は変えない** — devtools が `absoluteAddress.absolutePathInfo.pathInfo.path` を読むプロトコル面なので（§7-1）、改名できるのは型・ファイル・関数まで
 - `src/address/` の外から `getAbsolutePathInfo` を直接呼ばせない（`patternLedger` と `src/address/` 内部だけに閉じる）ため、まず lift を `liftAddress(stateElement, address)` の 1 関数に集約する（21 箇所 → 1 実装）
 - テストは名前の追随のみ。**この PR は差分レビューで「意味が変わっていない」ことだけを確認できる形にする**
 
@@ -408,7 +413,7 @@ get absolutePathInfo(): { pathInfo: IPathInfo; stateElement: IStateElement } { r
 - `.absolutePathInfo.pathInfo` → `.pathInfo`、`.absolutePathInfo.stateElement` → `.stateElement`
 - `getByAddress` / `setByAddress` / `hasByAddress` の入口に `address.stateElement === handler.stateElement` の assert を入れる（D5・`config.debug` 時のみ）
 - `packages/devtools` — ミラー型を新旧両形にし、`DevtoolsCore` の読み取りを両読みのヘルパーに集約する（§7-1）。旧形の payload を流すテストは**残す**（新 devtools × 旧 state の回帰試験になる）
-- README internals（§7-2）と devtools protocol doc の**英日両方**（§7-1）を同時更新。版印は据え置き
+- README internals（§7-2）と devtools protocol doc の**英日両方**（§7-1）を同時更新。版印は据え置き。削除する `AbsoluteStateAddress.ts#L5` への相対リンク 3 本（本書 §7-1・protocol doc の英日）は、[docs/README.md](./README.md) の規則 4 に従ってコミットのパーマリンクに直す
 - 案 E の走査テストは対象の型が無くなるので削除する。許可していた `ILoopContext` キーの台帳は、キーが要素を含むようになったことを確認して終える
 
 ### PR ③ 互換面の撤去（次の major）
@@ -421,13 +426,19 @@ get absolutePathInfo(): { pathInfo: IPathInfo; stateElement: IStateElement } { r
 
 ## 9. 検証
 
-- **カバレッジ**: 100/97/100/100 を維持（state の閾値）。アドレス周りのテストは `__tests__` 301 本中 49 本が絶対アドレス型に触れる。
-- **GC 回帰**（§5-3 が本題なので必須）: `<wcs-state>` を接続 → パスを読ませて intern を作る → 切断・参照破棄 → `FinalizationRegistry` か heap snapshot で要素が回収されることを確認する。**PR ② の受け入れ条件**。現行でも同じ試験を先に通して基準を取る（PR ⓪）。**行を共有する 2 ツリーの片方だけを破棄する**場合も測る（§5-3 の最後の段落 — 残ったツリーが `ListIndex` を生かしていても、破棄した側の要素が回収されること）。
-- **性能**: §5-5 の見積もりを実測で確認する。既存のベンチ（[__e2e__/benchmark](../packages/state/__e2e__/benchmark) と [benchmark-component](../packages/state/__e2e__/benchmark-component) の append / clear・深さ方向）を branch と main の両方で測る。**片側だけ測った主張は採用しない**。加えて**素のパスの読み**（ワイルドカードも getter も無いパスを大量に読む）の項目を足し、(a2) と (b) を並べて測る。§5-5 の置き場所はこの結果で決める。
+- **カバレッジ**: state の閾値 **99.5 / 98.5 / 100 / 99.5**（[vitest.config.ts](../packages/state/vitest.config.ts)）を維持。初版は 100/97/100/100 と書いていたが誤り。branches の余裕は薄い（2026-09-18 の main で 98.78%）。アドレス周りのテストは `__tests__` 301 本中 50 本が絶対アドレス型に触れる。
+- **GC 回帰**（§5-3 が本題なので必須）: `<wcs-state>` を接続 → パスを読ませて intern を作る → 切断・参照破棄 → 要素が回収されることを確認する。**PR ② の受け入れ条件**。**行を共有する 2 ツリーの片方だけを破棄する**場合も測る（§5-3 の最後の段落 — 残ったツリーが `ListIndex` を生かしていても、破棄した側の要素が回収されること）。
+  - **手段**: state の vitest には GC を強制する手段が無いので、Playwright の spec で書く — [state-address-gc.spec.ts](../e2e/tests/state-address-gc.spec.ts)。ページは `WeakRef` だけを持ち、GC は CDP の `HeapProfiler.collectGarbage` で**別タスクから**掛ける（`WeakRef` は作った・deref したジョブの終わりまで対象を生かす）。観測は **drain が終わってから** — `$watch` の `prev` 台帳は drain 終端まで強参照の `Map` でアドレスを持つ。
+  - **基準（2026-09-18・PR ⓪）**: 現行実装で 4 件とも緑。spec が本当に落ちることも、変異を入れたビルドで確認した — null 行の intern を不滅の `PathInfo` キーにすると単一ツリーを含む 3 件が「回収されない」で落ち、行アドレスを `ListIndex` から強参照するだけの変異（機能は壊れない）は「片方だけ破棄」の 1 件だけが落ちる。後者は、単一ツリーでは `ListIndex` がツリーと一緒に死ぬので現れない — §5-3 の最後の段落の形でしか見えない漏れである。`WCS_STATE_BUNDLE=<絶対パス>` で、tracked な dist を書き換えずに別のビルドへ差し替えて流せる。
+- **性能**: §5-5 の見積もりを実測で確認する。既存のベンチ（[__e2e__/benchmark](../packages/state/__e2e__/benchmark) と [benchmark-component](../packages/state/__e2e__/benchmark-component) の append / clear・深さ方向）を branch と main の両方で測る。**片側だけ測った主張は採用しない**。加えて**読みのベンチ**（[benchmark-read](../packages/state/__e2e__/benchmark-read/index.html)・[plain-read.mjs](../e2e/bench/plain-read.mjs)）で (a2) と (b) を並べて測る。§5-5 の置き場所はこの結果で決める。
+  - 形は 3 つ: **R1** 素のパス（§5-5 の表の 1 行目）・**R2** getter（キャッシュを引く読み・null 行）・**R3** 行の getter（同・行付き）。
+  - **統計量は中央値ではなく最小値**（p25 を併記して照合）。同一バンドルどうしを比べる A/A 測定で、1 ページ 1 サンプルの中央値は **25% ずれた** — ページごとの最初の計測がまだ遅く、サンプルが約 44ns と約 83ns の二峰に割れる。1 ページ 5 サンプルの最小値なら A/A の差は R1 で 0.0ns・R2 で 0.5ns・R3 で 1.5ns（いずれも約 1% 以内）に収まり、intern の 1 段ぶん（数 ns）を見分けられる。
+  - **基準（2026-09-18・main `bf27363f`・この開発機）**: R1 42.7 / R2 46.4 / R3 128.6 ns/読み。絶対値は機械に依存するので、比較は必ず同一セッションの main と並べて行う。
 - **クロスツリー**: 独立した `<wcs-state>` を持つコンポーネントを 2 つ並べ、**同じパス形状のルート配列**を持たせて baseline が混線しないことを確認する（§4-3 が今日ぎりぎりで避けている事故の再現テスト）。これは統合前に**現行で落ちるか通るか**を先に測る。
 - **クロスツリー（同じ配列インスタンス）**: 2 ツリーに**同じ配列インスタンス**を持たせ、片方の行への書き込みが、もう片方の台帳（cache・bindings・baseline）と描画に触れないことを確認する。今日は `IAbsolutePathInfo` がこれを分けているので現行では通るはず（§3-1）。**統合後に落ちたら I1 違反**。D5 の assert を有効にして同じ試験を流し、発火しないことも見る。
+  - **基準（2026-09-18・PR ⓪）**: [integration.crossTreeAddress.test.ts](../packages/state/__tests__/integration.crossTreeAddress.test.ts) の 6 件が現行実装で緑（上の「同じパス形状」も同じファイル）。§3-1 の実測（`ListIndex` の共有）もここに固定した。変異での確認: 行付きの intern からだけ要素の段を落とす（D11 が禁じる形）と、「同じパス形状」の 2 件は緑のまま、「同じ配列インスタンス」の 3 件が落ちる — 片方への書き込みがもう片方のキャッシュを書き換え、片方を外すと残った側が**更新されなくなる**。例外は出ない。
 - **devtools 互換**: 旧形の payload（`absolutePathInfo` 経由）と新形の両方を `DevtoolsCore` に流し、roster / wiring / timeline が同じになること。state 側は getter 経由の旧経路が読めること。§7-1 の表の 2 行がそれぞれ 1 本の試験になる。
-- **SSR**: `@wcstack/server` の hydration 経路（`hydrateBindings`）が旧台帳側に登録する経路を持つので、素の Node での SSR スモークを通す（vitest は素 Node の代替にならない）。
+- **SSR**: `@wcstack/server` の hydration 経路（`hydrateBindings`）が旧台帳側に登録する経路を持つので、素の Node での SSR スモークを通す（vitest は素 Node の代替にならない）。該当するのは root e2e の `ssr-router.spec.ts` — `serve.mjs` が素の Node で `packages/server/dist` を通して描画する。`packages/server` の `test:e2e` は happy-dom 上の vitest なので、これには当たらない。
 
 ---
 
@@ -447,5 +458,6 @@ get absolutePathInfo(): { pathInfo: IPathInfo; stateElement: IStateElement } { r
    **決定: 次の major。**
 6. **intern の表の置き場所**（§5-5 の (a2) か (b) か）。責務の論点ではなく **P1 と P3 の取引**で、素のパスの読みの実測が決める。(b) は要素の API 面が不変で、約 60 本のテストのモックに手を入れずに済み、実装は今日の `AbsolutePathInfo.ts` の構造を継ぐ。(a1) は却下済み。
    **決定: 実測で決める。判定規則は測る前に固定し、測ったあとに動かさない**（実装計画 §5-2）— main 同士の差をノイズ床とし、素のパスの読みの差が床以内なら (b)、超えたら (a2)、**(a2) も超えたら着手を止めて本書へ戻す**（案 A そのものが P1 を破っている）。
+   **統計量の精密化（同日・変種を測る前・著者承認済み）**: 比べるのは中央値ではなく**最小値**で、p25 を併記して照合する。床は同一セッションの main と main-again の差（下限は main の R1 の 1%）、「床以内」は min と p25 の両方が床以内のとき。中央値のままだと、同一バンドルどうしでも 25% ずれて規則が何も決めない（§9 の性能の項）。骨格は変えていない。
 
 本書に無かった論点が 2 つ、実装計画の側で決まっている: `*AbsoluteStateAddress*` を名に含むファイル・関数の改名は PR ② の後の別 PR（実装計画 G7）、PR ② のリリースは minor で state と devtools を同時（同 §11）。

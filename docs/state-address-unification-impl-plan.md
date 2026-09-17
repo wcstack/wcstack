@@ -1,6 +1,6 @@
 # 実装計画: アドレス型の統合（@wcstack/state）
 
-- **状態**: 計画（2026-09-18）。**未着手**。**ゲートは全て決着済み**（2026-09-18・§2）— 案 A を進める。残る未確定は Spike S の実測で決まる intern の置き場所（G6）だけで、その判定規則（§5-2）は合意済み。Phase 0 から着手できる。
+- **状態**: **Phase 0 実装済み**（2026-09-18・ブランチ `test/state-address-guard-and-baseline`）。Spike S 以降は未着手。**ゲートは全て決着済み**（2026-09-18・§2）— 案 A を進める。残る未確定は Spike S の実測で決まる intern の置き場所（G6）だけ。その判定規則（§5-2）は、Phase 0 の A/A 測定を受けて統計量を精密化した版で確定している（F10・著者承認済み）。
 - **ブランチ**: Phase ごとに 1 本（§1 の表）。
 - **設計検討**: [state-address-unification-design.md](./state-address-unification-design.md)（以下「設計書」）。`設計書 §n`・`Dn`・`I1`/`I2`・`C1`/`C2`・`P1`〜`P3` は設計書の番号。本書の節は単に `§n` と書く。
 - **到達点**: `IAbsoluteStateAddress` と lift / downgrade の往復が消え、`IStateAddress` が `stateElement` を持つ 1 本になる。proxy・updater・依存グラフ・drain の契約は不変（C1）。素のパスの読みと行バインディング登録が退行しない（P1）。`<wcs-state>` が GC から隠れない（I2）。同じ配列を持つ 2 ツリーが混線しない（I1）。旧 devtools × 新 state、新 devtools × 旧 state のどちらも壊れない（D7）。
@@ -29,7 +29,7 @@
 | **G3** | `Absolute` の改名先（§10-3） | 1 | **`ITreePath`** / `TreePath.ts` / `getTreePath`。設計書の第一候補 `IScopedPath` は採らない — state の `src/` では `scope` が**マウントスコープ**の語として定着しており（`scopeRoot`・`getScopedIndexes`・`mountScope` ほか識別子で 150 回以上）、「マウントスコープ内のパス」と読まれる。`Tree` は `translateTreePath`（ツリーの絶対パスへ翻訳）と同じ意味で、設計書の「パス × ツリー」をそのまま名にできる |
 | **G4** | D5 の assert の範囲（§10-4） | 2（C4） | 出荷物は **`config.debug` 時のみ**。**テストスイートでは常時 ON**（`__tests__/setup.ts` で専用フラグ）— 取り違えの炙り出しを出荷コスト無しで得る |
 | **G5** | 互換 getter の撤去時期（§10-5） | 3 | **次の major** |
-| **G6** | intern の表の置き場所（§10-6） | 2（C1b） | **§5-2 の規則で実測して決める**。規則は合意済みで、測ったあとに動かさない |
+| **G6** | intern の表の置き場所（§10-6） | 2（C1b） | **§5-2 の規則で実測して決める**。規則は合意済みで、測ったあとに動かさない。統計量だけ、変種を測る前に精密化した（中央値 → 最小値＋p25。Phase 0 の A/A 測定による・承認済み） |
 | **G7** | `*AbsoluteStateAddress*` を名に含むファイル・関数の改名 | なし | **PR ② の後に別 PR ②-b**（§7-3）。devtools payload のフィールド名 `absoluteAddress` はプロトコルの一部なので**永久に改名しない** |
 | **—** | PR ② のリリース粒度 | なし | **minor・state と devtools を同時**（§11） |
 
@@ -50,27 +50,41 @@
 | **F7** | [docs/README.md](./README.md) の規則 4: 消えたファイルへの参照は**コミットのパーマリンク**にする。対象の相対リンクは 3 本（設計書 §7-1・`devtools-hook-protocol.md:326`・同 `.ja.md:318`、いずれも `AbsoluteStateAddress.ts#L5`） | Phase 2 の docs コミットで処理する。`AbsolutePathInfo.ts` への相対リンクは docs に無いので Phase 1 では不要 |
 | **F8** | [prevValues.ts](../packages/state/src/watch/prevValues.ts) の台帳は**強参照の `Map`**（drain 終端でクリア） | 保持関係は今日と同じで変更不要。ただし GC 試験は **drain が終わってから**観測する |
 | **F9** | 「素の Node の SSR スモーク」に当たるのは root e2e の `ssr-router.spec.ts`（`serve.mjs` が素の Node で `packages/server/dist` を通して描画する）。`packages/server` の `test:e2e` は happy-dom 上の vitest で、素の Node ではない | Phase 2 の受け入れ条件は前者を指す |
+| **F10** | 読みのベンチで、**同一バンドルどうしの中央値が 25% ずれた**（Phase 0 の A/A 測定）。ページごとの最初の計測がまだ遅く、サンプルが約 44ns と約 83ns の二峰に割れる。1 ページ 5 サンプルの**最小値**なら A/A の差は R1 で 0.0ns・R2 で 0.5ns・R3 で 1.5ns（約 1% 以内） | §5-2 の「中央値の差をノイズ床とする」は、そのままでは**どの変種も床以内になって規則が効かない**。統計量を最小値（p25 併記）に精密化する（§5-2） |
 
-## 4. Phase 0 — 番人と基準試験（PR ⓪）
+## 4. Phase 0 — 番人と基準試験（PR ⓪）（**実装済み**・2026-09-18）
 
 **目的**: 案 A を採るかどうかに関係なく価値が残るものを先に入れ、Phase 2 の受け入れ条件になる試験を**現行実装に対して**通して基準を取る。`src/` は触らない。
 
+**結果の要約**: 基準は 3 種とも main で緑。そして 3 種とも、**壊したビルドで実際に落ちること**を確かめた（§4-2・§4-3 の「検出力」）。通るだけの試験は Phase 2 の受け入れ条件にならない。
+
 ### 4-1. 番人（案 E）
 
-- [ ] `__tests__/addressLedgerKeyGuard.test.ts` を新設。`src/**/*.ts` を読み、**モジュール直下**（行頭の `const` / `let` / `export const`）の `WeakMap` / `Map` / `WeakSet` / `Set` 宣言で、型引数が `IStateAddress` または `ILoopContext` で始まるものを失敗にする。前例は `__tests__/tagNameMap.test.ts`。
-- [ ] 宣言が複数行にまたがる綴りも拾う（行単位ではなく、宣言の開始から `=` までを 1 単位に見る）。
-- [ ] 許可リストは 1 件: [getListIndexByBindingInfo.ts:7](../packages/state/src/list/getListIndexByBindingInfo.ts#L7)。理由（内側キー `IBindingInfo` がツリー単位）をテスト内に書く。
-- [ ] **番人自身の試験**: 禁止する綴りを含む文字列を走査関数に渡し、検出されることを確認する。発火しない番人は無いのと同じ。
+- [x] `__tests__/addressLedgerKeyGuard.test.ts` を新設。`src/**/*.ts` を読み、**モジュール直下**（行頭の `const` / `let` / `var` / `export const`）の `WeakMap` / `Map` / `WeakSet` / `Set` 宣言で、`IStateAddress` または `ILoopContext` をキーにするものを失敗にする。前例は `__tests__/tagNameMap.test.ts`。走査の部品は `__tests__/helpers/sourceScan.ts` に分けた — Phase 1 の import 境界の番人（§6-B）が同じ部品を使う。
+- [x] 宣言が複数行にまたがる綴り・CRLF・型注釈が無くコンストラクタの型引数だけに現れる綴り（`new Map<ILoopContext, …>()`）・入れ子（`Map<string, WeakMap<IStateAddress, …>>`）を拾う。関数内の局所コレクション、モジュール直下の関数式の本体、クラスのフィールドは拾わない。
+- [x] 許可リストは 1 件: [getListIndexByBindingInfo.ts:7](../packages/state/src/list/getListIndexByBindingInfo.ts#L7)。理由（内側キー `IBindingInfo` がツリー単位）をテスト内に書いた。**許可リストの各項目が今も該当宣言として実在すること**も試験する — 古い許可を残さないためで、同時に「実ソースから実際に検出できている」ことの証明になる。
+- [x] **番人自身の試験**（11 件）。加えて、走査したファイル数が 200 を超えることを確認する（空振りの番人は無いのと同じ）。
+
+実ソースの該当は許可リストの 1 件だけ。`walkDependency` の `visited` / `result` と `StateHandler` の `seen` は局所なので対象外（設計書 §6-4 のとおり）。
 
 ### 4-2. クロスツリーの基準試験
 
 `__tests__/integration.crossTreeAddress.test.ts` を新設。独立した ShadowRoot に `<wcs-state>` を 1 つずつ持つコンポーネントを 2 つ並べる。
 
-- [ ] **同じパス形状**: 両ツリーが同名のルート配列を持つ。片方の構造変更・行の書き込みが、もう片方の baseline・cache・bindings・描画に触れない。
-- [ ] **同じ配列インスタンス**: 両ツリーの初期値に同一の配列を渡して `for` で描画する。片方の行への書き込みが、もう片方の台帳と描画に触れない。
-- [ ] **前提の固定**（characterization）: 同じ配列インスタンスのとき、両ツリーの 1 行目の `ListIndex` が同一オブジェクトで、`createStateAddress` の戻り値も同一オブジェクトであること。設計書 §3-1 の実測をテストに落とす。**Phase 2 の C1b で「アドレスは別オブジェクト」に反転させる唯一の期待値**（`ListIndex` の共有は反転しない）。
+- [x] **同じパス形状**（2 件）: 両ツリーが同名のルート配列を持つ。片方の行の書き込み・構造変更が、もう片方の描画・キャッシュ・差分基準・null 行の getter・`$updatedCallback` に触れない。
+- [x] **同じ配列インスタンス**（3 件）: 両ツリーの初期値に同一の配列を渡して `for` で描画する。行バインディングの台帳が同じ `ListIndex` でもツリーごとに引ける／片方の行への書き込みが、もう片方の描画・キャッシュ・`$updatedCallback` に触れない／片方を外しても残った側が同じ `ListIndex` で更新を続ける。
+- [x] **前提の固定**（characterization・1 件）: 同じ配列インスタンスのとき、両ツリーの 1 行目の `ListIndex` が同一オブジェクトで、`createStateAddress` の戻り値と**ループ文脈**も同一オブジェクトであること。設計書 §3-1 の実測をテストに落とした。**Phase 2 の C1b で反転させるのはこの 2 つの期待値だけ**で、テスト内に `FLIP` の印がある（`ListIndex` の共有は反転しない）。
+- [x] 台帳を white-box で引くためのアドレス生成は、テスト内の `absOf()` 1 箇所に閉じた。Phase 2 で書き換わるのはそこだけ。
 
-どれも現行で通るはず（今日は `IAbsolutePathInfo` が分けている）。**通らなければ既存欠陥**なので、Issue を切って本計画とは別に扱う。
+6 件とも現行で緑（今日は `IAbsolutePathInfo` が分けている）。
+
+**検出力**（scratchpad にコピーした src を壊して同じテストを流した）:
+
+| 変異 | 結果 |
+|---|---|
+| 対照（無変異） | 6 / 6 緑 |
+| **行付きの intern からだけ要素の段を落とす**（D11 が禁じる形・Phase 2 で最も起きやすい誤り） | 「同じパス形状」の 2 件は緑のまま、「同じ配列インスタンス」の 3 件が赤 — 片方への書き込みがもう片方のキャッシュを書き換え、片方を外すと残った側が**更新されなくなる**。例外は出ない |
+| ツリー次元を丸ごと落とす（`TreePath` の intern を全ツリーで共有） | 5 / 6 赤。緑の 1 件（配列が別のツリーへの行書き込み）は、配列が別なら `ListIndex` が別なので行アドレスがそもそも分かれるため。null 行の混線は「構造変更＋`count`」の件が捕まえる |
 
 ### 4-3. GC の基準試験
 
@@ -78,30 +92,51 @@
 
 手順: ページ内で `<wcs-state>` を持つホストを接続 → 素のパス・getter・行付きパスを読ませて intern を作る → `WeakRef` を取る → ホストを外して参照を捨てる → **drain の完了を待つ**（F8）→ `HeapProfiler.collectGarbage` を 2 回 → `deref()` が `undefined` であること。
 
-- [ ] 単一ツリー・null 行の読みだけ（設計書 §5-3 の I2 が直接効く形）
-- [ ] 単一ツリー・行付き
-- [ ] **行を共有する 2 ツリーの片方だけを破棄**。破棄した側が回収され、残った側が引き続き正しく描画・更新される
-- [ ] 対照: 参照を握ったままなら回収**されない**こと（試験が GC を本当に観測している証明）
+- [x] 単一ツリー・null 行の読みだけ（設計書 §5-3 の I2 が直接効く形）
+- [x] 単一ツリー・行付き（書き込みで updater の queue と drain も通す）
+- [x] **行を共有する 2 ツリーの片方だけを破棄**。破棄した側が回収され、残った側が引き続き正しく描画・更新される
+- [x] 対照: 参照を握ったままなら回収**されない**こと（試験が GC を本当に観測している証明）
+- [x] `WCS_STATE_BUNDLE=<絶対パス>` で、ページが読む state のバンドルを差し替えられる（`page.route` でリクエストを横取りするので、tracked な dist もリポジトリ内のファイルも触らない）。Spike S と Phase 2 で、別ブランチのビルドに対してこの spec を流すための口。
 
-**基準が main で赤だった場合**: intern と無関係な保持源（`liveStateElements`・イベント台帳・devtools など）がある。`Runtime.queryObjects` かヒープスナップショットで保持経路を特定し、既存リークなら Issue 化する。その間は、この spec を Phase 2 の受け入れ条件に使えない — 代わりに intern の表の形を見る white-box 試験（表の根が `stateElement` を弱キーにしているか、要素が所有しているか）を vitest 側に置く。
+4 件とも main で緑。**intern と無関係な保持源は無かった**ので、この spec はそのまま Phase 2 の受け入れ条件に使える（計画時に用意した「基準が赤だった場合」の迂回路は不要になった）。
+
+**検出力**（src のコピーを壊して esbuild で束ね、`WCS_STATE_BUNDLE` で流した）:
+
+| 変異 | 結果 |
+|---|---|
+| 対照（無変異を esbuild で束ねたもの） | 4 / 4 緑 — 差し替えの口と束ね方が正しいことの確認 |
+| **null 行の intern を不滅の `PathInfo` キーにする**（設計書 §5-3 が警告する形そのもの） | 単一ツリーの 2 件を含む 3 件が「host も state も回収されない」で赤。対照は緑のまま |
+| **行アドレスを `ListIndex` から強参照するだけ**（同一性は正しいまま＝機能は壊れない） | 「片方だけ破棄」の 1 件だけが赤。単一ツリーの 2 件は緑 — 単一ツリーでは `ListIndex` がツリーと一緒に死ぬので漏れが現れない。**設計書 §5-3 の最後の段落の形でしか見えない漏れ**で、このシナリオが無ければ素通りする |
+| 行付きの intern から要素の段を落とす（I1 と I2 の両方の違反） | 「片方だけ破棄」の件が赤。ただし GC の表明に届く前に、機能の表明（残す側が自分への書き込みを受け取らない）で落ちる |
 
 ### 4-4. ベンチ項目「読み」
 
 既存のベンチ（append / clear / create・深さ方向）は設計書 §5-5 の表の 1 行目を測れない。
 
-- [ ] `packages/state/__e2e__/benchmark-read/index.html` ＋ `e2e/bench/plain-read.mjs` を新設。state のメソッド内で N 回読む。
+- [x] `packages/state/__e2e__/benchmark-read/index.html` ＋ `e2e/bench/plain-read.mjs` を新設。state のメソッド内で N 回読む（`this` が proxy なので、1 回ごとに get トラップを往復する）。各メソッドはチェックサムを返し、スクリプトは**全変種が同じ値を計算したこと**を確認する。
   - **R1** 素のパス（ワイルドカードも getter も無い・`isCacheable` が偽）— 設計書 §5-5 の 1 行目
   - **R2** getter（キャッシュを引く読み・null 行）
-  - **R3** ループ文脈の中の行付きパス（キャッシュを引く読み・行付き）
-- [ ] 出力は ns/読みの中央値。結果は `e2e/bench-results/address-unification-*.json`（既存の置き場）。
-- [ ] `--bundle <path>` でバンドルを差し替えられるようにする。**tracked な `packages/state/dist` を書き換えずに**、main / (a2) / (b) の 3 本を並べて測るため（§12 の罠 1）。
-- [ ] main に対して R1〜R3 と既存ベンチ（`jsfb-verify` / `list-component` / `create-cost` / `clear-cost` / `append-accumulation`）を流し、基準値を記録する。
+  - **R3** 行の getter を添字つきのパス（`items.5.size`）で読む（キャッシュを引く読み・行付き）
+- [x] `--variant <名前>=<バンドル>` を複数与えると、変種を**ラウンドごとに順序を回しながら交互に**測る（熱ドリフトと背景負荷を全変種に均等に載せる）。差し替えは `page.route` なので **tracked な `packages/state/dist` を書き換えない**（§12 の罠 1）。同じバンドルを 2 つの名前で与えれば、それがノイズ床の測定になる。
+- [x] **統計量は最小値と p25**（中央値ではない — F10）。1 ページ 5 サンプル × 12 ページ、計測前にウォームアップ 3 回。
+- [x] main の基準値（2026-09-18・main `bf27363f`・この開発機・スロットル無し・200 万読み / サンプル）:
+
+  | 形 | min (ns/読み) | p25 | A/A の差（min） | A/A の差（p25） |
+  |---|---|---|---|---|
+  | R1 素のパス | 42.7 | 43.6 | 0.0 ns（0%） | 0.05 ns（0.1%） |
+  | R2 getter | 46.4 | 47.8 | 0.5 ns（1.1%） | 0.14 ns（0.3%） |
+  | R3 行の getter | 128.6 | 130.0 | 1.5 ns（1.2%） | 0.31 ns（0.2%） |
+
+  R1 と R2 が近い値なのは偶然の一致で、**ここから lift のコストは読み取れない**。2 つは通る経路が違う — R1 は `_getByAddress` で実値を読み、R2 は lift してキャッシュを引いて返す。lift の実コスト（設計書 §5-5 の見積もりで 3〜4 段）は、Spike S で (a2)・(b) の R2・R3 を main と並べて初めて分かる。
+- [ ] 既存ベンチ（`jsfb-verify` / `list-component` / `create-cost` / `clear-cost` / `append-accumulation`）の基準は**取らなかった**。`e2e/bench-results/` は `.gitignore` 済みで数字が残らず、絶対値は機械と日で動くので、保存した基準と比べても意味が無い。Phase 1・Phase 2 の検証で **main と branch を同じセッションで**測る（§9）。
 
 ### 4-5. 設計書の同期
 
-- [ ] §3 の F1〜F9 を設計書に反映する（§9 の閾値、§4-6 の 4 箇所 3 関数、§5-2 の親連鎖、§9 の GC 手段と SSR スモークの指す先）。
+- [x] §3 の F1〜F9 を設計書に反映した（§4-6 の `placementOf`、§5-2 の親連鎖が死にコードであること、§7-1 の互換 getter が内部では使えないこと、§8 のプロパティ名とパーマリンク、§9 の閾値・GC の手段と基準・ベンチの統計量と基準・SSR スモークの指す先）。F10 は設計書 §9 の性能の項に入れた。
 
-**完了条件**: `src/` の差分ゼロ。`npm test`・`npm run test:coverage`（99.5/98.5/100/99.5）・`npm run lint`・e2e が緑。基準値が JSON で残っている。
+**完了条件（達成）**: `src/` の差分ゼロ。state の全テスト 303 ファイル・3648 件が緑、カバレッジ 99.62 / 98.78 / 100 / 99.78（閾値 99.5 / 98.5 / 100 / 99.5）、lint 緑、GC spec 4 件が緑。e2e の全 spec は CI で流す。
+
+**成果物**: `__tests__/addressLedgerKeyGuard.test.ts`（14）・`__tests__/helpers/sourceScan.ts`・`__tests__/integration.crossTreeAddress.test.ts`（6）・`e2e/tests/state-address-gc.spec.ts`（4）・`e2e/fixtures/state-address-gc.html`・`packages/state/__e2e__/benchmark-read/index.html`・`e2e/bench/plain-read.mjs`。
 
 ## 5. Spike S — intern の置き場所を測る（マージしない）
 
@@ -116,9 +151,16 @@
 
 ### 5-2. 判定規則（測る前に固定する）
 
-1. main 同士を 2 セッション測り、R1 の中央値の差を**ノイズ床**とする。
-2. main・(a2)・(b) を**交互に** 10 回以上測る（順序固定だと熱ドリフトが片側に乗る）。条件（スロットル・件数）は 3 本で同一。
-3. `R1(b) − R1(main)` がノイズ床以内 → **(b)**（P3 で最も安い。約 63 本のモックに手が入らない）。
+> **精密化（2026-09-18・Phase 0 の実測による・著者承認済み）**
+> 最初に合意した規則の 1 は「R1 の**中央値**の差をノイズ床とする」だった。Phase 0 の A/A 測定で、同一バンドルどうしの中央値が 25% ずれることが分かった（F10）。そのままだと床が広すぎて、**どの変種も「床以内」になり、規則が何も決めない**。変種を測る前に、次の 3 点を精密化した。規則の骨格（床以内なら (b)・超えたら (a2)・(a2) も超えたら設計へ戻す）は変えていない。**これが確定版で、変種を測ったあとには動かさない。**
+>
+> - **統計量**: 中央値ではなく**最小値**。p25 を併記して照合する（1 ページ 5 サンプル × 12 ページ）。
+> - **ノイズ床**: 同じセッションで main を 2 つの変種名（`main` / `main-again`）で測り、R1 の |Δmin| と |Δp25| の大きい方。ただし**下限を main の R1 の 1%** とする。Phase 0 の A/A では R1 の Δmin がちょうど 0.0ns だった — 下限が無いと、偶然 0 が出た回に規則が「1 サンプルの揺らぎも許さない」に化ける。1% は A/A で観測した 3 つの形の最大（R3 の 1.2%）に合わせた値。
+> - **床以内の判定**: Δmin と Δp25 の**両方**が床以内のとき。
+
+1. main を 2 つの変種名で同じセッションに入れて測り、R1 の |Δmin| と |Δp25| の大きい方を**ノイズ床**とする（下限は main の R1 の 1%）。
+2. main・main-again・(a2)・(b) を**交互に**測る（`plain-read.mjs` がラウンドごとに順序を回す）。条件（スロットル・件数）は全変種で同一。全変種のチェックサムが一致すること。
+3. `R1(b) − R1(main)` が、min と p25 の両方でノイズ床以内 → **(b)**（P3 で最も安い。約 63 本のモックに手が入らない）。
 4. 超える → **(a2)**。P1 > P3 なので、差分の小ささは理由にしない。
 5. **(a2) もノイズ床を超える → 着手を止めて設計へ戻す**。案 A そのものが P1 を破っている。
 6. R2・R3 は設計書 §5-5 の見積もり（3〜4 段の減少）の確認用。悪化していたら見積もりが誤りなので、原因を特定するまで進めない。
@@ -284,4 +326,6 @@ export function liftAddress(stateElement: IStateElement, address: IStateAddress)
 2. **作業ツリーを別セッションと共有していることがある**。挙動の確認は scratchpad に `--root` を向けた vitest プローブで行い、tracked なテストに一時コードを足さない。main と branch の src を並べてコピーすれば、同じプローブで両方を測れる。
 3. **CRLF のファイルに対する perl の複数行置換は空振りする**。lift の 2 行パターン（§6-A）と C3 の置換はこれに当たる。
 4. **サブエージェントに差分レビューを任せると src を revert されたことがある**。レビューは読み取り専用の指示で出す。
-5. branches 98.5% の閾値は余裕が薄い。assert や分岐を足したコミットは単独で `test:coverage` を回す。
+5. branches 98.5% の閾値は余裕が薄い（2026-09-18 の main で 98.78%）。assert や分岐を足したコミットは単独で `test:coverage` を回す。
+6. **scratchpad プローブの `--root` は、パスの `c--Users-…` の区間を大文字の `C--Users-…` で渡す**。小文字で渡すと、vite が同じファイルを 2 つのパス表記（`c--Users` と `C--Users`）で解決して**モジュールを二重にロードする**。描画は片方のモジュールグラフで動き、テストが直接 import した台帳はもう片方の空のインスタンスを見るので、「描画はされるのに `getStateElement()` が null」という形で全テストが落ちる。Phase 0 では、これを変異の検出と取り違えかけた — **変異を当てる前に、必ず無変異の対照を流すこと**。
+7. 変異を入れたビルドが要るときは、src のコピーを `packages/state/node_modules/.bin/esbuild <copy>/src/auto.ts --bundle --format=esm` で束ねれば足りる（rollup の設定も tracked な dist も触らない）。できたファイルを `WCS_STATE_BUNDLE`（GC spec）か `--variant`（読みのベンチ）に渡す。
