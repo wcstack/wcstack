@@ -2966,7 +2966,7 @@ Paths like `users.*.name` are decomposed into:
 - **PathInfo** — static path metadata (segments, wildcard count, parent path)
 - **ListIndex** — runtime loop index chain
 - **StateAddress** — combination of PathInfo + ListIndex
-- **AbsolutePathInfo / AbsoluteStateAddress** — a PathInfo pinned to the state element that owns the tree, plus its ListIndex. Mounted components and volumes translate their relative paths onto the host tree at this level; v2 has one tree per root, so an address carries no state name
+- **TreePath / AbsoluteStateAddress** — a PathInfo pinned to the state element that owns the tree, plus its ListIndex. Mounted components and volumes translate their relative paths onto the host tree at this level; v2 has one tree per root, so an address carries no state name
 
 ## Performance
 

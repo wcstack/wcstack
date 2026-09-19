@@ -11,8 +11,8 @@
  * （docs/state-address-unification-design.md §4-3・§6-4 の案 E、impl-plan §4-1）。
  * 台帳のキーは、ツリーを含む `IAbsoluteStateAddress` にすること。
  *
- * 案 A（アドレス型の統合）が着地すれば、ツリー非依存のアドレス型そのものが無くなるので、
- * この番人は役目を終えて削除される（impl-plan §7-1 の C7）。
+ * 案 A（アドレス型の統合 — ツリー非依存のアドレス型そのものを無くす案）は、素のパスの読みを
+ * 退行させることが実測で分かり、2026-09-20 に閉じた（設計書 §12）。この番人が恒久策である。
  */
 import { describe, it, expect } from "vitest";
 import {

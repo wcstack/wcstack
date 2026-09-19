@@ -1,6 +1,6 @@
 # 実装計画: アドレス型の統合（@wcstack/state）
 
-- **状態**: **Phase 0・Phase 1 は main 着地（PR #291・#292・2026-09-18）。Spike S（§5-3）と追試 E1（§5-4）を実施し、どちらも規則で不成立（2026-09-19）。Phase 2 は保留**。設計書 §11 の推奨は B（案 A を閉じる・Phase 0 の番人を恒久策に・main-tp を単独の最適化 PR に）。未検証の形は設計書 §11-4（採るなら新しい spike として事前登録）。**著者判断待ち**。**ゲートは全て決着済み**（2026-09-18・§2）— 案 A を進める。残る未確定は Spike S の実測で決まる intern の置き場所（G6）だけ。その判定規則（§5-2）は、Phase 0 の A/A 測定を受けて統計量を精密化した版で確定している（F10・著者承認済み）。
+- **状態**: **完了（案 A は閉じた — 2026-09-20・著者決定・設計書 §12）**。Phase 0・Phase 1 は main 着地（PR #291・#292）。Spike S（§5-3）と追試 E1（§5-4）はどちらも規則で不成立。**Phase 2・Phase 3 は実施しない**。残作業は `TreePath` の引き方の最適化（main-tp）を統合と切り離して単独で着地させること（設計書 §12-2）。
 - **ブランチ**: Phase ごとに 1 本（§1 の表）。
 - **設計検討**: [state-address-unification-design.md](./state-address-unification-design.md)（以下「設計書」）。`設計書 §n`・`Dn`・`I1`/`I2`・`C1`/`C2`・`P1`〜`P3` は設計書の番号。本書の節は単に `§n` と書く。
 - **到達点**: `IAbsoluteStateAddress` と lift / downgrade の往復が消え、`IStateAddress` が `stateElement` を持つ 1 本になる。proxy・updater・依存グラフ・drain の契約は不変（C1）。素のパスの読みと行バインディング登録が退行しない（P1）。`<wcs-state>` が GC から隠れない（I2）。同じ配列を持つ 2 ツリーが混線しない（I1）。旧 devtools × 新 state、新 devtools × 旧 state のどちらも壊れない（D7）。
@@ -13,8 +13,8 @@
 | **0** | ⓪ | `test/state-address-guard-and-baseline` | 番人（案 E）・基準試験・ベンチ項目 | 不変（`src/` 変更ゼロ） | なし（**着手可**） | 新規 5 ファイル前後 |
 | **S** | なし（捨てブランチ） | `spike/state-address-intern-placement` | (a2) と (b) を実測して G6 を決める | — | Phase 0 のベンチ | intern だけの最小パッチ × 2 |
 | **1** | ① | `refactor/state-address-tree-path` | lift の 1 関数化・`ITreePath` へ改名 | 不変 | Phase 0 | src 約 20 ファイル・機械的 |
-| **2** | ② | `refactor/state-address-unification` | 統合本体・devtools 両読み・docs | 内部の同一性だけ変わる（§7-0） | **保留** — Spike S で規則 5 が発動（§5-3）。設計書 §11 の判断のあと | src 約 45 ファイル・テスト 50+ ファイル |
-| **3** | ③ | `chore/state-address-compat-removal` | 互換 getter 撤去・版印 3 | 破壊的 | 次の major（G5） | 小 |
+| **2** | ② | `refactor/state-address-unification` | 統合本体・devtools 両読み・docs | 内部の同一性だけ変わる（§7-0） | **中止**（案 A を閉じた — 設計書 §12） | — |
+| **3** | ③ | `chore/state-address-compat-removal` | 互換 getter 撤去・版印 3 | 破壊的 | **中止**（同上） | — |
 
 依存: `0 → (S ∥ 1) → 2 → 3`。S と 1 は互いに独立なので並行できる。案 A から降りる出口は 1 つだけ残っている — **Spike S で (a2) も素のパスの読みを退行させたら、着手を止めて設計へ戻す**（§5-2 の 5）。その場合でも Phase 0 は案 D ＋ E（設計書 §6-3）の恒久策として残る。
 
@@ -264,7 +264,9 @@ export function liftAddress(stateElement: IStateElement, address: IStateAddress)
 
 **成果物**: `src/address/liftAddress.ts`・`src/address/TreePath.ts`（`AbsolutePathInfo.ts` から `git mv`）・`__tests__/addressImportBoundary.test.ts`（8）・`__tests__/helpers/sourceScan.ts`（import を拾う部品を追加）・`e2e/bench/jsfb-verify.mjs`（`--bundle`）。
 
-## 7. Phase 2 — 統合と lift 削除（PR ②）
+## 7. Phase 2 — 統合と lift 削除（PR ②）（**中止**・2026-09-20・設計書 §12）
+
+以下は採択時の計画をそのまま残したもの。実施しない。
 
 ### 7-0. 変わるもの・変わらないもの
 
@@ -337,7 +339,7 @@ export function liftAddress(stateElement: IStateElement, address: IStateAddress)
 
 `*ByAbsoluteStateAddress` を名に含む 4 ファイル（`getBindingSetByAbsoluteStateAddress.ts`・`getAbsoluteStateAddressByBinding.ts`・`cacheEntryByAbsoluteStateAddress.ts`・`lastListValueByAbsoluteStateAddress.ts`）と関数名の改名。`git mv` と識別子置換だけ、ロジックの差分ゼロ。`devtools-hook-protocol.md:273` が旧ファイル名にリンクしているので同時に直す。
 
-## 8. Phase 3 — 互換面の撤去（PR ③・次の major）
+## 8. Phase 3 — 互換面の撤去（PR ③・次の major）（**中止**・2026-09-20）
 
 - [ ] deprecated な `absolutePathInfo` getter を削除。
 - [ ] `DEVTOOLS_PROTOCOL_VERSION` を 3 へ — state（[devtools/types.ts:19](../packages/state/src/devtools/types.ts#L19)）と devtools（[protocol/types.ts:16](../packages/devtools/src/protocol/types.ts#L16)）の両方。protocol doc の英日両方。
