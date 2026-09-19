@@ -36,13 +36,11 @@ export interface IStateAddress {
 export interface ITreePath {
   readonly stateElement: IStateElement;
   readonly pathInfo: IPathInfo;
-  readonly parentAbsolutePathInfo: ITreePath | null;
 }
 
 export interface IAbsoluteStateAddress {
   readonly absolutePathInfo: ITreePath;
   readonly listIndex: IListIndex | null;
-  readonly parentAbsoluteAddress: IAbsoluteStateAddress | null;
 }
 
 export type WildcardType = "none" | "context" | "partial" | "all";

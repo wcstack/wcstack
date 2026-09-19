@@ -48,7 +48,6 @@ function createAbsolutePathInfo(stateName: string, path: string, wildcardCount =
   return {
     stateElement: elementFor(stateName) as any,
     pathInfo: createPathInfo(path, wildcardCount),
-    parentAbsolutePathInfo: null,
   };
 }
 
@@ -61,7 +60,6 @@ function createAbsoluteStateAddress(
   return {
     absolutePathInfo: createAbsolutePathInfo(stateName, path, wildcardCount),
     listIndex,
-    parentAbsoluteAddress: null,
   };
 }
 

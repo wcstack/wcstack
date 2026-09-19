@@ -34,14 +34,8 @@ export function getTreePath(stateElement: IStateElement, pathInfo: IPathInfo): I
 class TreePath implements ITreePath {
   readonly pathInfo: IPathInfo;
   readonly stateElement: IStateElement;
-  readonly parentAbsolutePathInfo: ITreePath | null;
   constructor(stateElement: IStateElement, pathInfo: IPathInfo) {
     this.pathInfo = pathInfo;
     this.stateElement = stateElement;
-    if (pathInfo.parentPathInfo === null) {
-      this.parentAbsolutePathInfo = null;
-    } else {
-      this.parentAbsolutePathInfo = getTreePath(stateElement, pathInfo.parentPathInfo);
-    }
   }
 }
