@@ -1,0 +1,126 @@
+diff --git a/packages/state/src/address/StateAddress.ts b/packages/state/src/address/StateAddress.ts
+index 3771b72..9d56779 100644
+--- a/packages/state/src/address/StateAddress.ts
++++ b/packages/state/src/address/StateAddress.ts
+@@ -1,5 +1,7 @@
++import { IStateElement } from "../components/types";
+ import { WILDCARD } from "../define";
+ import { IListIndex } from "../list/types";
++import { getTreePath, TreePath } from "./TreePath";
+ import { IPathInfo, IStateAddress } from "./types";
+ 
+ const _cache: WeakMap<IListIndex, WeakMap<IPathInfo, IStateAddress>> = new WeakMap();
+@@ -34,7 +36,30 @@ class StateAddress implements IStateAddress {
+   }
+ }
+ 
+-export function createStateAddress(pathInfo: IPathInfo, listIndex: IListIndex | null): IStateAddress {
++export function createStateAddress(pathInfo: IPathInfo, listIndex: IListIndex | null, stateElement?: IStateElement | null): IStateAddress {
++  if (stateElement != null) {
++    const treePath = getTreePath(stateElement, pathInfo) as TreePath;
++    if (listIndex === null) {
++      let cached = treePath.nullRowAddress;
++      if (cached === undefined) {
++        cached = new StateAddress(pathInfo, null);
++        treePath.nullRowAddress = cached;
++      }
++      return cached;
++    } else {
++      let rowAddresses = treePath.rowAddresses;
++      if (rowAddresses === undefined) {
++        rowAddresses = new WeakMap<IListIndex, IStateAddress>();
++        treePath.rowAddresses = rowAddresses;
++      }
++      let cached = rowAddresses.get(listIndex);
++      if (cached === undefined) {
++        cached = new StateAddress(pathInfo, listIndex);
++        rowAddresses.set(listIndex, cached);
++      }
++      return cached;
++    }
++  }
+   if (listIndex === null) {
+     let cached = _cacheNullListIndex.get(pathInfo);
+     if (typeof cached !== "undefined") {
+diff --git a/packages/state/src/address/TreePath.ts b/packages/state/src/address/TreePath.ts
+index a9e9674..a9ad19b 100644
+--- a/packages/state/src/address/TreePath.ts
++++ b/packages/state/src/address/TreePath.ts
+@@ -1,26 +1,29 @@
+ import { IStateElement } from "../components/types";
+-import { ITreePath, IPathInfo } from "./types";
++import { IListIndex } from "../list/types";
++import { ITreePath, IPathInfo, IStateAddress } from "./types";
+ 
+-const _cache: WeakMap<IStateElement, WeakMap<IPathInfo, ITreePath>> = new WeakMap();
++export const TREE_PATHS: unique symbol = Symbol("wcs:treePaths");
+ 
+ export function getTreePath(stateElement: IStateElement, pathInfo: IPathInfo): ITreePath {
+-  if (_cache.has(stateElement)) {
+-    const pathMap = _cache.get(stateElement)!;
+-    if (pathMap.has(pathInfo)) {
+-      return pathMap.get(pathInfo)!;
+-    }
+-  } else {
+-    _cache.set(stateElement, new WeakMap());
++  let table: Map<IPathInfo, TreePath> | undefined = (stateElement as any)[TREE_PATHS];
++  if (table === undefined) {
++    table = new Map<IPathInfo, TreePath>();
++    (stateElement as any)[TREE_PATHS] = table;
++  }
++  let treePath = table.get(pathInfo);
++  if (treePath === undefined) {
++    treePath = new TreePath(stateElement, pathInfo);
++    table.set(pathInfo, treePath);
+   }
+-  const absolutePathInfo = Object.freeze(new TreePath(stateElement, pathInfo));
+-  _cache.get(stateElement)!.set(pathInfo, absolutePathInfo);
+-  return absolutePathInfo;
++  return treePath;
+ }
+ 
+-class TreePath implements ITreePath {
++export class TreePath implements ITreePath {
+   readonly pathInfo: IPathInfo;
+   readonly stateElement: IStateElement;
+   readonly parentAbsolutePathInfo: ITreePath | null;
++  nullRowAddress: IStateAddress | undefined;
++  rowAddresses: WeakMap<IListIndex, IStateAddress> | undefined;
+   constructor(stateElement: IStateElement, pathInfo: IPathInfo) {
+     this.pathInfo = pathInfo;
+     this.stateElement = stateElement;
+diff --git a/packages/state/src/components/State.ts b/packages/state/src/components/State.ts
+index 4e152d7..c0e873e 100644
+--- a/packages/state/src/components/State.ts
++++ b/packages/state/src/components/State.ts
+@@ -30,6 +30,8 @@ import { materializeScanOutputs, parseScanDeclaration, registerScans, subscribeS
+ import { defineDCC } from "../dcc/defineDCC";
+ import { getCustomElementRegistry } from "../platform/customElementRegistry";
+ import { getPathInfo } from "../address/PathInfo";
++import { TREE_PATHS } from "../address/TreePath";
++import { IPathInfo, ITreePath } from "../address/types";
+ import { IStateProxy, Mutability } from "../proxy/types";
+ import { createStateProxy } from "../proxy/StateHandler";
+ import { bindWebComponent, invokeStateReadyCallback } from "../webComponent/bindWebComponent";
+@@ -92,6 +94,8 @@ export class State extends HTMLElementBase implements IStateElement {
+     return ["mount"];
+   }
+ 
++  /** intern の中間ノード `pathInfo → TreePath` の表（Spike S 変種 a2: 要素側に置く）。 */
++  [TREE_PATHS]: Map<IPathInfo, ITreePath> = new Map();
+   private __state: IState | undefined;
+   private _hasUpdatedCallback: boolean = false;
+   /** $errorCallback の有無（_hasUpdatedCallback と同じく state セット時に確定。ルートのみ） */
+diff --git a/packages/state/src/proxy/traps/get.ts b/packages/state/src/proxy/traps/get.ts
+index 37f3adb..45046d9 100644
+--- a/packages/state/src/proxy/traps/get.ts
++++ b/packages/state/src/proxy/traps/get.ts
+@@ -217,7 +217,7 @@ export function get(
+       : prop;
+     const resolvedAddress = getResolvedAddress(path);
+     const listIndex = getListIndex(target, resolvedAddress, receiver, handler);
+-    const stateAddress = createStateAddress(resolvedAddress.pathInfo, listIndex);
++    const stateAddress = createStateAddress(resolvedAddress.pathInfo, listIndex, handler.stateElement);
+     return getByAddress(
+       target,
+       stateAddress,

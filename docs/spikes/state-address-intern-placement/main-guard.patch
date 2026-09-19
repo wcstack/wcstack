@@ -1,0 +1,44 @@
+diff --git a/packages/state/src/address/StateAddress.ts b/packages/state/src/address/StateAddress.ts
+index 3771b72..9d56779 100644
+--- a/packages/state/src/address/StateAddress.ts
++++ b/packages/state/src/address/StateAddress.ts
+@@ -1,5 +1,7 @@
++import { IStateElement } from "../components/types";
+ import { WILDCARD } from "../define";
+ import { IListIndex } from "../list/types";
++import { getTreePath, TreePath } from "./TreePath";
+ import { IPathInfo, IStateAddress } from "./types";
+ 
+ const _cache: WeakMap<IListIndex, WeakMap<IPathInfo, IStateAddress>> = new WeakMap();
+@@ -34,7 +36,30 @@ class StateAddress implements IStateAddress {
+   }
+ }
+ 
+-export function createStateAddress(pathInfo: IPathInfo, listIndex: IListIndex | null): IStateAddress {
++export function createStateAddress(pathInfo: IPathInfo, listIndex: IListIndex | null, stateElement?: IStateElement | null): IStateAddress {
++  if (stateElement != null) {
++    const treePath = getTreePath(stateElement, pathInfo) as TreePath;
++    if (listIndex === null) {
++      let cached = treePath.nullRowAddress;
++      if (cached === undefined) {
++        cached = new StateAddress(pathInfo, null);
++        treePath.nullRowAddress = cached;
++      }
++      return cached;
++    } else {
++      let rowAddresses = treePath.rowAddresses;
++      if (rowAddresses === undefined) {
++        rowAddresses = new WeakMap<IListIndex, IStateAddress>();
++        treePath.rowAddresses = rowAddresses;
++      }
++      let cached = rowAddresses.get(listIndex);
++      if (cached === undefined) {
++        cached = new StateAddress(pathInfo, listIndex);
++        rowAddresses.set(listIndex, cached);
++      }
++      return cached;
++    }
++  }
+   if (listIndex === null) {
+     let cached = _cacheNullListIndex.get(pathInfo);
+     if (typeof cached !== "undefined") {
