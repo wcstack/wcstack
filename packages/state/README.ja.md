@@ -2958,7 +2958,7 @@ buildBindings(root)
 - **PathInfo** — 静的パスメタデータ（セグメント、ワイルドカード数、親パス）
 - **ListIndex** — ランタイムループインデックスチェーン
 - **StateAddress** — PathInfo + ListIndex の組み合わせ
-- **AbsolutePathInfo / AbsoluteStateAddress** — ツリーを持つ state 要素に固定した PathInfo と、その ListIndex の組。マウントされたコンポーネントとボリュームは相対パスをこの層でホストのツリーへ翻訳する。v2 は 1 root 1 ツリーなので、アドレスに状態名はない
+- **TreePath / AbsoluteStateAddress** — ツリーを持つ state 要素に固定した PathInfo と、その ListIndex の組。マウントされたコンポーネントとボリュームは相対パスをこの層でホストのツリーへ翻訳する。v2 は 1 root 1 ツリーなので、アドレスに状態名はない
 
 ## パフォーマンス
 

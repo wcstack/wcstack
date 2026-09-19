@@ -14,7 +14,7 @@
 npm run build            # clean → tsc → rollup
 npm test                 # vitest run
 npm run test:watch       # vitest watch
-npm run test:coverage    # カバレッジ付き (100/97/100/100)
+npm run test:coverage    # カバレッジ付き (99.5/98.5/100/99.5)
 npm run lint             # ESLint on src/
 npx vitest run __tests__/someFile.test.ts  # 単一テスト実行
 ```
@@ -34,7 +34,9 @@ src/
 │   ├── PathInfo.ts         # パス解析・ワイルドカード情報
 │   ├── StateAddress.ts     # パス + リストインデックスのアドレス
 │   ├── ResolvedAddress.ts  # ワイルドカード解決済みアドレス
-│   └── AbsoluteStateAddress.ts  # stateElement（どのツリーか）まで確定した絶対アドレス
+│   ├── TreePath.ts         # ツリー（stateElement）に固定した PathInfo。絶対アドレスの intern の中間ノード
+│   ├── AbsoluteStateAddress.ts  # stateElement（どのツリーか）まで確定した絶対アドレス
+│   └── liftAddress.ts      # IStateAddress → IAbsoluteStateAddress の持ち上げ（台帳のキーはこちら）
 ├── proxy/
 │   ├── StateHandler.ts     # Proxy handler (get/set/has トラップ)
 │   ├── traps/              # get, set トラップの実装
@@ -138,6 +140,8 @@ wc-bindable 対応カスタム要素に対して `...: target` で properties + 
 - `IPathInfo`: パスのメタ情報 (セグメント、ワイルドカード位置、親パス等)
 - `IStateAddress`: pathInfo + listIndex で具体的な位置を表現
 - `IResolvedAddress`: ワイルドカード解決後の実パス
+- `ITreePath`: stateElement（どのツリーか）+ pathInfo。絶対アドレスの intern の中間ノードで、行バインディングのパターン台帳のキー
+- `IAbsoluteStateAddress`: treePath + listIndex。**モジュール寿命の台帳（cache / bindings / baseline / updater）のキーはこちら** — `IStateAddress` はツリーを知らないので、キーにすると 2 つの `<wcs-state>` が混線する（番人: `__tests__/addressLedgerKeyGuard.test.ts`）。`liftAddress()` で持ち上げる
 
 ### Key Types
 - `BindingType`: `'text' | 'prop' | 'event' | 'for' | 'if' | 'elseif' | 'else' | 'radio' | 'checkbox' | 'spread'`
@@ -149,7 +153,7 @@ wc-bindable 対応カスタム要素に対して `...: target` で properties + 
 
 - テストファイル: `__tests__/*.test.ts`
 - テスト記述は日本語
-- カバレッジ閾値: statements 100%, branches 97%, functions 100%, lines 100%
+- カバレッジ閾値: statements 99.5%, branches 98.5%, functions 100%, lines 99.5%（`vitest.config.ts`）
 - 環境: happy-dom
 - セットアップ: `__tests__/setup.ts`
 

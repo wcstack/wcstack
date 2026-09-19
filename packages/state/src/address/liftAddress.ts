@@ -12,8 +12,10 @@ import { IAbsoluteStateAddress, IPathInfo, IStateAddress } from "./types";
  * 2 つの `<wcs-state>` が混線する（__tests__/addressLedgerKeyGuard.test.ts が番人）。
  *
  * 持ち上げは選択の余地が無い決定的な変換で、以前は各呼び出し元が 2 行で手書きしていた。
- * ここに集めてあるのは、アドレス型の統合（docs/state-address-unification-design.md）で
- * この関数が恒等になり、呼び出しごと消えるため。
+ * ここに集めて、intern の関数（getTreePath / createAbsoluteStateAddress）を src/address/ の外から
+ * 直接呼ばせない（__tests__/addressImportBoundary.test.ts が番人）。2 本の型を 1 本に畳む統合
+ * （docs/state-address-unification-design.md）は、素のパスの読みを退行させることが実測で分かり、
+ * 閉じた（同 §12）— この持ち上げは残る。
  */
 export function liftAddress(stateElement: IStateElement, address: IStateAddress): IAbsoluteStateAddress {
   return createAbsoluteStateAddress(getTreePath(stateElement, address.pathInfo), address.listIndex);

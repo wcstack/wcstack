@@ -10,8 +10,9 @@
  * パターン台帳は `(treePath, listIndex)` の 2 段キーで登録し、登録側でアドレスを intern しない設計で
  * （docs/state-row-instantiation-redesign.md §3-3）、intern の中間ノード `ITreePath` を自分で扱う必要がある。
  *
- * この境界はアドレス型の統合のあとも残る。統合後は `TreePath` が intern の表そのものを持つので、
- * 外から触れる場所が増えると、同一性（I1）と GC（I2）の不変条件を 1 箇所で守れなくなる。
+ * アドレス型の統合（案 A）は 2026-09-20 に閉じたが（設計書 §12）、境界は残す。intern の表と
+ * その引き方は src/address/ の中で一括して変えられるべきもので（TreePath の引き方の最適化が
+ * その例）、外から触れる場所が増えると、同一性（I1）と GC（I2）の不変条件を 1 箇所で守れなくなる。
  */
 import { describe, it, expect } from "vitest";
 import { collectImportedModules, listSourceFiles, readSourceFile } from "./helpers/sourceScan";
