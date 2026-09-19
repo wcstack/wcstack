@@ -315,7 +315,7 @@ binding**。どちらもランタイムは報告して続行する ＝ ここに
 | 宣言配線ビュー（element⇔path の対応） | ✓ | ✓（**DOM 再スキャン**で代替） |
 
 - 復元不能の理由: binding 台帳のキー `IAbsoluteStateAddress` のキャッシュは
-  [AbsoluteStateAddress.ts:5](../packages/state/src/address/AbsoluteStateAddress.ts#L5) の
+  [AbsoluteStateAddress.ts:4](../packages/state/src/address/AbsoluteStateAddress.ts#L4) の
   WeakMap 二段で**列挙不能**。列挙可能化は GC 寿命を変えるため却下。
 - 代替の DOM 再スキャン: `data-wcs` 属性と `<!--wcs-*-->` コメントは binding 構築後も
   DOM に残るため、devtools 側が `bindTextParser` 相当（または同パーサの import）で

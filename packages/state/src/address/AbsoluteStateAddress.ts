@@ -1,4 +1,3 @@
-import { WILDCARD } from "../define";
 import { IListIndex } from "../list/types";
 import { ITreePath, IAbsoluteStateAddress } from "./types";
 
@@ -8,32 +7,10 @@ const _cacheNullListIndex: WeakMap<ITreePath, IAbsoluteStateAddress> = new WeakM
 class AbsoluteStateAddress implements IAbsoluteStateAddress {
   readonly absolutePathInfo: ITreePath;
   readonly listIndex: IListIndex | null;
-  private _parentAbsoluteAddress: IAbsoluteStateAddress | null | undefined;
 
   constructor(absolutePathInfo: ITreePath, listIndex: IListIndex | null) {
     this.absolutePathInfo = absolutePathInfo;
     this.listIndex = listIndex;
-  }
-
-  get parentAbsoluteAddress(): IAbsoluteStateAddress | null {
-    if (typeof this._parentAbsoluteAddress !== 'undefined') {
-      return this._parentAbsoluteAddress;
-    }
-    const parentAbsolutePathInfo = this.absolutePathInfo.parentAbsolutePathInfo;
-    if (parentAbsolutePathInfo === null) {
-      return null;
-    }
-    const lastSegment = this.absolutePathInfo.pathInfo.segments[this.absolutePathInfo.pathInfo.segments.length - 1];
-    let parentListIndex: IListIndex | null = null;
-    if (lastSegment === WILDCARD) {
-      parentListIndex = this.listIndex?.parentListIndex ?? null;
-    } else {
-      parentListIndex = this.listIndex;
-    }
-    return this._parentAbsoluteAddress = createAbsoluteStateAddress(
-      parentAbsolutePathInfo,
-      parentListIndex
-    );
   }
 }
 

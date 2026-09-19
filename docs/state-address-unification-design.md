@@ -563,7 +563,7 @@ E1 の批評が挙げた候補。**どれも E1 の再試行ではない**。採
 ### 12-3. 残る負債（§6-3 で挙げたもの）
 
 - lift 21 サイト → 1 関数（`liftAddress`）に畳んだので、往復の「手書き」は消えた。downgrade（`.absolutePathInfo.pathInfo` 11・`.absolutePathInfo.stateElement` 9）は残る。
-- `parentAddress` / `parentAbsoluteAddress` の二重実装は残る（後者は読み手が無い死にコード — §5-2。消すだけなら別の小さな PR でできる）。
+- `parentAddress` / `parentAbsoluteAddress` の二重実装 — **解消**（2026-09-20）。後者は読み手が無い死にコードだったので、`ITreePath.parentAbsolutePathInfo` の先行生成ごと消した（§5-2）。
 - 別ツリーのアドレスを proxy に渡す取り違え（D5）は検出できないまま。
 - 案 E が塞ぐのは典型的な綴りだけ（§6-4）。
 

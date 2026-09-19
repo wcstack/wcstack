@@ -323,7 +323,7 @@ The information available at attach time splits into two layers. **The differenc
 | the declared wiring view (the element⇔path correspondence) | ✓ | ✓ (substituted by **re-scanning the DOM**) |
 
 - Why it cannot be reconstructed: the cache of the binding ledger's key `IAbsoluteStateAddress` is a two-level
-  WeakMap in [AbsoluteStateAddress.ts:5](../packages/state/src/address/AbsoluteStateAddress.ts#L5) and is
+  WeakMap in [AbsoluteStateAddress.ts:4](../packages/state/src/address/AbsoluteStateAddress.ts#L4) and is
   **not enumerable**. Making it enumerable would change GC lifetimes, so that is rejected.
 - The substitute, re-scanning the DOM: `data-wcs` attributes and `<!--wcs-*-->` comments remain in the DOM after
   bindings are built, so the devtools side can assemble a **declaration-level wiring view** with the equivalent

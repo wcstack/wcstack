@@ -9,9 +9,8 @@ import type { IAbsoluteStateAddress } from '../src/address/types';
 
 function createAddress(): IAbsoluteStateAddress {
   return {
-    absolutePathInfo: { path: 'test', name: 'test', parentAbsolutePathInfo: null },
+    absolutePathInfo: { path: 'test', name: 'test' },
     listIndex: null,
-    parentAbsoluteAddress: null,
   } as IAbsoluteStateAddress;
 }
 
