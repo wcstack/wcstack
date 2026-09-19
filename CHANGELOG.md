@@ -8,6 +8,16 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+## [2.5.1] — 2026-09-20
+
+### Changed
+
+- `@wcstack/state`: reading a cached getter or row getter is a few nanoseconds faster. The lookup of a path's tree-pinned node (`TreePath`, formerly `AbsolutePathInfo` — an internal type) probed each tier twice (`has`, then `get`) and kept its inner table as a `WeakMap` keyed by `PathInfo`; `PathInfo` objects live for the page, so the inner table is now a plain `Map` and each tier is one `get`. Plain path reads do not pass through it and are unchanged. Measured against 2.5.0 on the release build, same session: a getter read −3.7 ns, a row getter read −3.8 ns, a plain read ±0 (of about 46 / 125 / 42 ns). No behaviour changes; the address types were studied for a unification that was not adopted ([docs/state-address-unification-design.md](./docs/state-address-unification-design.md) §12), and the guard tests and baselines from that study are in.
+
+### Removed
+
+- `@wcstack/state`: the undocumented `parentAbsoluteAddress` property of the absolute address that DevTools hook events carry, and `parentAbsolutePathInfo` on its `absolutePathInfo`. Nothing in the repository read them, `@wcstack/devtools` included, and the hook protocol never listed them; an `absoluteAddress` still carries `absolutePathInfo.pathInfo`, `absolutePathInfo.stateElement` and `listIndex`.
+
 ## [2.5.0] — 2026-09-17
 
 ### Changed
@@ -242,7 +252,8 @@ Repairs from the pre-release quality loop, all with tests: `setInitialState` on 
 
 1.29.0 and earlier predate this file. Their contents are in the merged pull requests (`gh pr list --state merged`) and the git history; each GitHub Release page carries the SRI digests for that version.
 
-[Unreleased]: https://github.com/wcstack/wcstack/compare/v2.5.0...HEAD
+[Unreleased]: https://github.com/wcstack/wcstack/compare/v2.5.1...HEAD
+[2.5.1]: https://github.com/wcstack/wcstack/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/wcstack/wcstack/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/wcstack/wcstack/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/wcstack/wcstack/compare/v2.2.0...v2.3.0
