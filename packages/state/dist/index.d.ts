@@ -492,15 +492,13 @@ interface IStateAddress {
     readonly listIndex: IListIndex | null;
     readonly parentAddress: IStateAddress | null;
 }
-interface IAbsolutePathInfo {
+interface ITreePath {
     readonly stateElement: IStateElement;
     readonly pathInfo: IPathInfo;
-    readonly parentAbsolutePathInfo: IAbsolutePathInfo | null;
 }
 interface IAbsoluteStateAddress {
-    readonly absolutePathInfo: IAbsolutePathInfo;
+    readonly absolutePathInfo: ITreePath;
     readonly listIndex: IListIndex | null;
-    readonly parentAbsoluteAddress: IAbsoluteStateAddress | null;
 }
 
 /**

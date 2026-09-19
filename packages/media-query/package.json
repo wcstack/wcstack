@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/media-query",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "description": "Declarative matchMedia component for Web Components. Framework-agnostic media-query monitor (prefers-color-scheme, prefers-reduced-motion, viewport width) via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",
