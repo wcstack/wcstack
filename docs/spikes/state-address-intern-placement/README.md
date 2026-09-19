@@ -1,6 +1,6 @@
 # Spike S — アドレス intern の置き場所の実測（2026-09-19）
 
-[state-address-unification-impl-plan.md](../../state-address-unification-impl-plan.md) §5 の Spike S の記録。設計書 [state-address-unification-design.md](../../state-address-unification-design.md) §5-5 の (a2) / (b) を、素のパスの読み（R1）で実測して G6 を決めるためのもの。**結論は「規則 5 — 着手を止めて設計へ戻す」**（計画書 §5-2 の確定版を機械的に適用。独立した審査 3 名が一致）。数値の読み方と設計への含意は設計書 §5-5 の実測の項に書いた。ここには**再現に要るものだけ**を置く。
+[state-address-unification-impl-plan.md](../../state-address-unification-impl-plan.md) §5 の Spike S の記録。設計書 [state-address-unification-design.md](../../state-address-unification-design.md) §5-5 の (a2) / (b) を、素のパスの読み（R1）で実測して G6 を決めるためのもの。**結論は「規則 5 — 着手を止めて設計へ戻す」**（計画書 §5-2 の確定版を機械的に適用。独立した審査 3 名が一致）。 続く**追試 E1**（後半）も不成立。数値の読み方と設計への含意は設計書 §5-5 の実測の項に書いた。ここには**再現に要るものだけ**を置く。
 
 ## 何を測ったか
 
@@ -54,3 +54,46 @@ R2 / R3 は、この spike では新しい段を 2 回通る（get trap の inte
 - 5 サンプル全部が約 2 倍のページが各セッションに 1〜2 ページある（P/E コア混在機で、レンダラが E コアに載った可能性が高いが未確認）。min には効かず p25 に 5/60 だけ混入する。
 - 単一エンジン・単一機・単一パス・単一要素（`count` を 1 要素で 200 万回）。多態時のコスト・Firefox / WebKit・リリース物・アプリ水準（`jsfb-verify`）は未測定。
 - 変種は統合設計の実装ではない。get trap だけが要素を渡し、他の呼び出し元は旧 intern のまま（同じ `(pathInfo, null)` に 2 つのアドレスが共存するハイブリッド）。読み取り専用のベンチなので同一性に依存する機構の正しさは検証していない。
+
+---
+
+# 追試 E1 — 足場なしの flat 形（2026-09-19）
+
+設計書 §11 の選択肢 A（著者決定）。Spike S で分かった主因（素の読みが `TreePath` 節点を経由する固定費）を外した形が P1 を満たすかを、同じ規則で測る。**結論は「不成立」** — 2 セッションとも p25 が床の外（判定は下の表・独立審査は設計書 §5-7）。
+
+## 変種（main `a98608d6` — `packages/state/src` は `601fda5a` と同一 — に対する patch）
+
+| 変種 | patch | 何が違うか |
+|---|---|---|
+| main | — | main そのもの。`main-again`・`main-third` は同じバンドルを別名で入れた A/A（3 名） |
+| main-tp | [e1-main-tp.patch](./e1-main-tp.patch) | `TreePath` の引き方の変更だけ（内側 `Map`・`get` 1 回・凍結なし・`rowAddresses` フィールド）。**前回の main-tp と違いガードを含まない**。素の読みには触れない |
+| **flat** | [e1-flat.patch](./e1-flat.patch) ＋ [e1-flat-tests.patch](./e1-flat-tests.patch) | 足場なし: get trap は常に `handler.stateElement` を渡し、`createElementAddress(要素, pathInfo, listIndex)` は単一経路でガード無し。null 行は要素の **symbol キーの class field**（`State` の最初のフィールド・`IStateElement` の必須メンバ）の `Map<pathInfo, address>` から 1 回で引く。行は `TreePath.rowAddresses`。symbol は `address/elementSlots.ts` に置き、`State.ts` が `address/TreePath` を import しないようにした（Phase 1 の番人を通す）。他の呼び出し元は旧 intern のまま（Spike S と同じハイブリッド） |
+| flat-str（診断） | [e1-flat-str.patch](./e1-flat-str.patch) | flat の表を symbol ではなく文字列名の public フィールド `nullRowAddresses` に置く。「symbol キーの keyed load が原因か」を切り分ける |
+| flat-wm（診断） | [e1-flat-wm.patch](./e1-flat-wm.patch) | flat の表をモジュール側の `WeakMap<要素, Map<pathInfo, address>>` に置く（(b) 型の flat） |
+
+flat はエージェントが実装し、3 観点（仕様との一致／統合設計の素の読みとの忠実さ／I1・I2 とテストの健全性）の反証で refuted なし。scratch コピーで state の全テスト 304 / 3656 が緑（モック 4 ファイルに新しいフィールドを足しただけ — `e1-flat-tests.patch`）。flat-str・flat-wm は型検査のみ。バンドルの実体差分: flat − main-tp ＝ symbol の宣言・`createElementAddress`・trap の 1 呼び出し・`State` の class field。
+
+## 出所
+
+同じ esbuild（0.27.2・無圧縮）・同じ Chromium 149.0.7827.55・同じ開発機。sha256（先頭 16 桁）/ バイト: main `3175840fd179b51f` / 582650（Spike S と同一）・main-tp `5c7a00c1a861edc1` / 582623・flat `54eb195dad088839` / 583675・flat-str `ee413c1334184eaf` / 583563・flat-wm `c11fc0b2e6ed55e6` / 583880。
+
+## 結果（R1・ns/読み・main との差・min / p25）
+
+[e1-session-1.json](./e1-session-1.json)・[e1-session-2.json](./e1-session-2.json)（事前登録の 2 セッション・24 ページ × 5 サンプル）・[e1-session-3-diag.json](./e1-session-3-diag.json)（診断・規則の対象外）。
+
+| 変種 | S1 | S2 | S3（診断） |
+|---|---|---|---|
+| main（絶対値） | 41.60 / 42.95 | 41.65 / 43.19 | 41.50 / 43.05 |
+| main-again | +0.50 / +0.10 | +0.55 / −0.20 | +0.25 / −0.11 |
+| main-third | +0.45 / +0.09 | +0.10 / −0.10 | +0.40 / +0.34 |
+| **床**（A/A 2 組の最大・下限 1%） | **0.50** | **0.55** | **0.42** |
+| main-tp | −0.05 / −0.30 | +0.35 / −0.09 | +0.05 / −0.11 |
+| **flat** | **+0.60 / +1.70** | **+0.30 / +1.44** | +0.45 / +0.80 |
+| flat-str | — | — | +0.60 / +1.31 |
+| flat-wm | — | — | +2.90 / +2.45 |
+
+flat − main-tp: S1 **+0.65 / +2.00**、S2 **−0.05 / +1.53**、S3 +0.40 / +0.91。**min は床の縁（S2 では床以内）、p25 は 3 セッションとも床の外**。規則（両統計量・両セッション）は不成立。main を比較先にしても同じ。
+
+ページ最小値（S3）: main は 24 ページ中 19、main-tp は 17 が 43.5ns 以下。flat は 10、flat-str は 7、flat-wm は **0**。要素が持つ表は最良ページでは main と同等だが、6 割前後のページで +1〜2ns のレベルに固定される。文字列名にしても変わらない（symbol キーが原因ではない）。要素キーの WeakMap は全ページで +2.5〜3ns（決定的）。
+
+R2 / R3（参考・この形では新しい段を 2 回通らない — flat の trap は null 行で `TreePath` を引かず、lift は残る）: main-tp が R2 −1.2〜1.6 / R3 −3.2〜5.1、flat が R2 −2.6〜2.7 / R3 −3.9〜4.1。
