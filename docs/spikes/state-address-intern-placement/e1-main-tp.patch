@@ -1,0 +1,53 @@
+diff --git a/packages/state/src/address/TreePath.ts b/packages/state/src/address/TreePath.ts
+index a9e9674..a527a10 100644
+--- a/packages/state/src/address/TreePath.ts
++++ b/packages/state/src/address/TreePath.ts
+@@ -1,26 +1,28 @@
+ import { IStateElement } from "../components/types";
+-import { ITreePath, IPathInfo } from "./types";
++import { IListIndex } from "../list/types";
++import { ITreePath, IPathInfo, IStateAddress } from "./types";
+ 
+-const _cache: WeakMap<IStateElement, WeakMap<IPathInfo, ITreePath>> = new WeakMap();
++const treePathsByElement: WeakMap<IStateElement, Map<IPathInfo, TreePath>> = new WeakMap();
+ 
+ export function getTreePath(stateElement: IStateElement, pathInfo: IPathInfo): ITreePath {
+-  if (_cache.has(stateElement)) {
+-    const pathMap = _cache.get(stateElement)!;
+-    if (pathMap.has(pathInfo)) {
+-      return pathMap.get(pathInfo)!;
+-    }
+-  } else {
+-    _cache.set(stateElement, new WeakMap());
++  let table = treePathsByElement.get(stateElement);
++  if (table === undefined) {
++    table = new Map();
++    treePathsByElement.set(stateElement, table);
++  }
++  let treePath = table.get(pathInfo);
++  if (treePath === undefined) {
++    treePath = new TreePath(stateElement, pathInfo);
++    table.set(pathInfo, treePath);
+   }
+-  const absolutePathInfo = Object.freeze(new TreePath(stateElement, pathInfo));
+-  _cache.get(stateElement)!.set(pathInfo, absolutePathInfo);
+-  return absolutePathInfo;
++  return treePath;
+ }
+ 
+-class TreePath implements ITreePath {
++export class TreePath implements ITreePath {
+   readonly pathInfo: IPathInfo;
+   readonly stateElement: IStateElement;
+   readonly parentAbsolutePathInfo: ITreePath | null;
++  rowAddresses: WeakMap<IListIndex, IStateAddress> | undefined;
+   constructor(stateElement: IStateElement, pathInfo: IPathInfo) {
+     this.pathInfo = pathInfo;
+     this.stateElement = stateElement;
+@@ -30,4 +32,4 @@ class TreePath implements ITreePath {
+       this.parentAbsolutePathInfo = getTreePath(stateElement, pathInfo.parentPathInfo);
+     }
+   }
+-}
+\ No newline at end of file
++}

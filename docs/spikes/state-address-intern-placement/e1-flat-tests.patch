@@ -1,0 +1,87 @@
+diff --git a/packages/state/__tests__/proxy.Proxy.test.ts b/packages/state/__tests__/proxy.Proxy.test.ts
+index f30e579..2bafb2e 100644
+--- a/packages/state/__tests__/proxy.Proxy.test.ts
++++ b/packages/state/__tests__/proxy.Proxy.test.ts
+@@ -9,6 +9,7 @@ import type { ICacheEntry } from '../src/cache/types';
+ import type { IVersionInfo } from '../src/version/types';
+ import { setStateElement } from '../src/stateElementByName';
+ import { createStateAddress } from '../src/address/StateAddress';
++import { NULL_ROW_ADDRESSES } from '../src/address/elementSlots';
+ import { getPathInfo } from '../src/address/PathInfo';
+ import { setLoopContextSymbol } from '../src/proxy/symbols';
+ 
+@@ -41,6 +42,9 @@ function createMockStateElement(options?: {
+   let version = 0;
+   return {
+     name: 'default',
++    // 素のパスの読み（get トラップ）が要素直下から引く null 行アドレスの intern 表。
++    // 実要素では State の class field。モックは自分で持たせる（src 側にフォールバックは無い）。
++    [NULL_ROW_ADDRESSES]: new Map(),
+     initializePromise: Promise.resolve(),
+     listPaths,
+     elementPaths,
+diff --git a/packages/state/__tests__/proxy.traps.get.test.ts b/packages/state/__tests__/proxy.traps.get.test.ts
+index f61fdeb..5980a38 100644
+--- a/packages/state/__tests__/proxy.traps.get.test.ts
++++ b/packages/state/__tests__/proxy.traps.get.test.ts
+@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
+ import { get } from '../src/proxy/traps/get';
+ import { createListIndex } from '../src/list/createListIndex';
+ import { createStateAddress } from '../src/address/StateAddress';
++import { NULL_ROW_ADDRESSES } from '../src/address/elementSlots';
+ import { getPathInfo } from '../src/address/PathInfo';
+ import { setLoopContextSymbol, getByAddressSymbol, hasByAddressSymbol, setByAddressSymbol, connectedCallbackSymbol, disconnectedCallbackSymbol, updatedCallbackSymbol } from '../src/proxy/symbols';
+ 
+@@ -301,7 +302,9 @@ describe('proxy/traps/get', () => {
+     getListIndexMock.mockReturnValueOnce(listIndex as any);
+     getByAddressMock.mockReturnValueOnce('result');
+ 
+-    const handler = {} as any;
++    // 素のパスの読みは handler.stateElement を intern の鍵にする（行は要素キーの
++    // WeakMap、null 行は要素直下の表）。実 handler は構築時に必ず持つので、モックにも持たせる。
++    const handler = { stateElement: { [NULL_ROW_ADDRESSES]: new Map() } } as any;
+     const target = { user: { name: 'Alice' } };
+     const receiver = { receiver: true };
+ 
+diff --git a/packages/state/__tests__/stream.argsTrace.test.ts b/packages/state/__tests__/stream.argsTrace.test.ts
+index 96a2f69..62bfa60 100644
+--- a/packages/state/__tests__/stream.argsTrace.test.ts
++++ b/packages/state/__tests__/stream.argsTrace.test.ts
+@@ -21,6 +21,7 @@ import { getResolvedAddress } from "../src/address/ResolvedAddress";
+ import { getTreePath } from "../src/address/TreePath";
+ import { createAbsoluteStateAddress } from "../src/address/AbsoluteStateAddress";
+ import { createStateAddress } from "../src/address/StateAddress";
++import { NULL_ROW_ADDRESSES } from "../src/address/elementSlots";
+ import type { IAbsoluteStateAddress } from "../src/address/types";
+ import type { IStateElement } from "../src/components/types";
+ import type { IStateProxy, Mutability } from "../src/proxy/types";
+@@ -40,6 +41,8 @@ function createTestStateElement(state: IState, getterPaths: string[] = []): ISta
+   const name = `stream-args-trace-${++seq}`;
+   const stateElement = {
+     name,
++    // 素のパスの読み（get トラップ）が要素直下から引く null 行アドレスの intern 表
++    [NULL_ROW_ADDRESSES]: new Map(),
+     listPaths: new Set<string>(),
+     elementPaths: new Set<string>(),
+     getterPaths: new Set<string>(getterPaths),
+diff --git a/packages/state/__tests__/stream.streamRuntime.test.ts b/packages/state/__tests__/stream.streamRuntime.test.ts
+index 2f947ca..b34a43d 100644
+--- a/packages/state/__tests__/stream.streamRuntime.test.ts
++++ b/packages/state/__tests__/stream.streamRuntime.test.ts
+@@ -17,6 +17,7 @@ import { abortAllStreams, getStreamEntries } from "../src/stream/streamRegistry"
+ import { createStateProxy } from "../src/proxy/StateHandler";
+ import { setStateElement } from "../src/stateElementByName";
+ import { getUpdater } from "../src/updater/updater";
++import { NULL_ROW_ADDRESSES } from "../src/address/elementSlots";
+ import type { IStateElement } from "../src/components/types";
+ import type { IStateProxy, Mutability } from "../src/proxy/types";
+ import type { IState } from "../src/types";
+@@ -36,6 +37,8 @@ function createTestStateElement(state: IState): IStateElement {
+   const name = `stream-runtime-${++seq}`;
+   const stateElement = {
+     name,
++    // 素のパスの読み（get トラップ）が要素直下から引く null 行アドレスの intern 表
++    [NULL_ROW_ADDRESSES]: new Map(),
+     listPaths: new Set<string>(),
+     elementPaths: new Set<string>(),
+     getterPaths: new Set<string>(),
