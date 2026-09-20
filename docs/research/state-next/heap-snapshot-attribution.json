@@ -1,0 +1,440 @@
+{
+  "revision": "6bff9f2cf8c4915c93dceb9c40b56e376eb06119",
+  "timestamp": "2026-09-20T13:39:13.441Z",
+  "browser": "149.0.7827.55",
+  "runtime": "dist/auto.min.js (checked in)",
+  "fixture": "tracked",
+  "rows": 10000,
+  "before": {
+    "totalBytes": 1702645,
+    "nodes": 41931
+  },
+  "after": {
+    "totalBytes": 131915337,
+    "nodes": 1920314
+  },
+  "deltaBytesPerRow": 13021.3,
+  "deltaNodesPerRow": 187.84,
+  "top": [
+    {
+      "key": "native:",
+      "deltaBytes": 97183436,
+      "deltaCount": 1312946,
+      "bytesPerRow": 9718.3,
+      "countPerRow": 131.29
+    },
+    {
+      "key": "array:",
+      "deltaBytes": 16485600,
+      "deltaCount": 80065,
+      "bytesPerRow": 1648.6,
+      "countPerRow": 8.01
+    },
+    {
+      "key": "object:Object",
+      "deltaBytes": 8163804,
+      "deltaCount": 160161,
+      "bytesPerRow": 816.4,
+      "countPerRow": 16.02
+    },
+    {
+      "key": "string:",
+      "deltaBytes": 1355584,
+      "deltaCount": 22813,
+      "bytesPerRow": 135.6,
+      "countPerRow": 2.28
+    },
+    {
+      "key": "array:(object elements)",
+      "deltaBytes": 1002860,
+      "deltaCount": 40096,
+      "bytesPerRow": 100.3,
+      "countPerRow": 4.01
+    },
+    {
+      "key": "object:WeakMap",
+      "deltaBytes": 960064,
+      "deltaCount": 60004,
+      "bytesPerRow": 96,
+      "countPerRow": 6
+    },
+    {
+      "key": "object:_n",
+      "deltaBytes": 960008,
+      "deltaCount": 40002,
+      "bytesPerRow": 96,
+      "countPerRow": 4
+    },
+    {
+      "key": "object:Array",
+      "deltaBytes": 801648,
+      "deltaCount": 50103,
+      "bytesPerRow": 80.2,
+      "countPerRow": 5.01
+    },
+    {
+      "key": "object:Yt",
+      "deltaBytes": 800040,
+      "deltaCount": 40002,
+      "bytesPerRow": 80,
+      "countPerRow": 4
+    },
+    {
+      "key": "object:Os",
+      "deltaBytes": 560000,
+      "deltaCount": 10000,
+      "bytesPerRow": 56,
+      "countPerRow": 1
+    },
+    {
+      "key": "object:hr",
+      "deltaBytes": 360000,
+      "deltaCount": 10000,
+      "bytesPerRow": 36,
+      "countPerRow": 1
+    },
+    {
+      "key": "object:hs",
+      "deltaBytes": 359968,
+      "deltaCount": 10000,
+      "bytesPerRow": 36,
+      "countPerRow": 1
+    },
+    {
+      "key": "object:Set",
+      "deltaBytes": 320480,
+      "deltaCount": 20030,
+      "bytesPerRow": 32,
+      "countPerRow": 2
+    },
+    {
+      "key": "code:system / InstructionStream",
+      "deltaBytes": 247744,
+      "deltaCount": 219,
+      "bytesPerRow": 24.8,
+      "countPerRow": 0.02
+    },
+    {
+      "key": "object:WeakRef",
+      "deltaBytes": 160000,
+      "deltaCount": 10000,
+      "bytesPerRow": 16,
+      "countPerRow": 1
+    },
+    {
+      "key": "object shape:",
+      "deltaBytes": 63384,
+      "deltaCount": 1119,
+      "bytesPerRow": 6.3,
+      "countPerRow": 0.11
+    },
+    {
+      "key": "code:system / TrustedByteArray",
+      "deltaBytes": 56484,
+      "deltaCount": 509,
+      "bytesPerRow": 5.6,
+      "countPerRow": 0.05
+    },
+    {
+      "key": "code:system / BytecodeArray",
+      "deltaBytes": 52276,
+      "deltaCount": 252,
+      "bytesPerRow": 5.2,
+      "countPerRow": 0.03
+    },
+    {
+      "key": "code:system / FeedbackVector",
+      "deltaBytes": 23040,
+      "deltaCount": 139,
+      "bytesPerRow": 2.3,
+      "countPerRow": 0.01
+    },
+    {
+      "key": "code:system / FeedbackCell",
+      "deltaBytes": 19856,
+      "deltaCount": 1241,
+      "bytesPerRow": 2,
+      "countPerRow": 0.12
+    },
+    {
+      "key": "code:system / UncompiledDataWithoutPreparseData",
+      "deltaBytes": 19360,
+      "deltaCount": 968,
+      "bytesPerRow": 1.9,
+      "countPerRow": 0.1
+    },
+    {
+      "key": "code:system / ScopeInfo",
+      "deltaBytes": 18392,
+      "deltaCount": 373,
+      "bytesPerRow": 1.8,
+      "countPerRow": 0.04
+    },
+    {
+      "key": "code:system / Code",
+      "deltaBytes": 15768,
+      "deltaCount": 219,
+      "bytesPerRow": 1.6,
+      "countPerRow": 0.02
+    },
+    {
+      "key": "code:system / ProtectedFixedArray",
+      "deltaBytes": 15516,
+      "deltaCount": 78,
+      "bytesPerRow": 1.6,
+      "countPerRow": 0.01
+    },
+    {
+      "key": "array:(object properties)",
+      "deltaBytes": 14016,
+      "deltaCount": 48,
+      "bytesPerRow": 1.4,
+      "countPerRow": 0
+    },
+    {
+      "key": "code:(constant pool)",
+      "deltaBytes": 11240,
+      "deltaCount": 248,
+      "bytesPerRow": 1.1,
+      "countPerRow": 0.02
+    },
+    {
+      "key": "code:system / FeedbackMetadata",
+      "deltaBytes": 8948,
+      "deltaCount": 244,
+      "bytesPerRow": 0.9,
+      "countPerRow": 0.02
+    },
+    {
+      "key": "code:(context local names)",
+      "deltaBytes": 8232,
+      "deltaCount": 2,
+      "bytesPerRow": 0.8,
+      "countPerRow": 0
+    },
+    {
+      "key": "code:system / WeakFixedArray",
+      "deltaBytes": 7776,
+      "deltaCount": 48,
+      "bytesPerRow": 0.8,
+      "countPerRow": 0
+    },
+    {
+      "key": "code:system / ObjectBoilerplateDescription",
+      "deltaBytes": 4968,
+      "deltaCount": 141,
+      "bytesPerRow": 0.5,
+      "countPerRow": 0.01
+    },
+    {
+      "key": "code:system / LoadHandler",
+      "deltaBytes": 3992,
+      "deltaCount": 244,
+      "bytesPerRow": 0.4,
+      "countPerRow": 0.02
+    },
+    {
+      "key": "concatenated string:",
+      "deltaBytes": 3160,
+      "deltaCount": 158,
+      "bytesPerRow": 0.3,
+      "countPerRow": 0.02
+    },
+    {
+      "key": "code:system / SharedFunctionInfo",
+      "deltaBytes": 2592,
+      "deltaCount": 54,
+      "bytesPerRow": 0.3,
+      "countPerRow": 0.01
+    },
+    {
+      "key": "code:(constant elements)",
+      "deltaBytes": 2460,
+      "deltaCount": 118,
+      "bytesPerRow": 0.2,
+      "countPerRow": 0.01
+    },
+    {
+      "key": "code:system / TrustedWeakFixedArray",
+      "deltaBytes": 2436,
+      "deltaCount": 78,
+      "bytesPerRow": 0.2,
+      "countPerRow": 0.01
+    },
+    {
+      "key": "code:system / BytecodeWrapper",
+      "deltaBytes": 2016,
+      "deltaCount": 252,
+      "bytesPerRow": 0.2,
+      "countPerRow": 0.03
+    },
+    {
+      "key": "code:system / SharedFunctionInfo / queryAll",
+      "deltaBytes": 1920,
+      "deltaCount": 40,
+      "bytesPerRow": 0.2,
+      "countPerRow": 0
+    },
+    {
+      "key": "code:system / CodeWrapper",
+      "deltaBytes": 1752,
+      "deltaCount": 219,
+      "bytesPerRow": 0.2,
+      "countPerRow": 0.02
+    },
+    {
+      "key": "closure:queryAll",
+      "deltaBytes": 1680,
+      "deltaCount": 60,
+      "bytesPerRow": 0.2,
+      "countPerRow": 0.01
+    },
+    {
+      "key": "code:system / ArrayBoilerplateDescription",
+      "deltaBytes": 1440,
+      "deltaCount": 120,
+      "bytesPerRow": 0.1,
+      "countPerRow": 0.01
+    },
+    {
+      "key": "object:system / Context / scope @1124569",
+      "deltaBytes": 1344,
+      "deltaCount": 1,
+      "bytesPerRow": 0.1,
+      "countPerRow": 0
+    },
+    {
+      "key": "code:system / SharedFunctionInfo / toSource",
+      "deltaBytes": 1344,
+      "deltaCount": 28,
+      "bytesPerRow": 0.1,
+      "countPerRow": 0
+    },
+    {
+      "key": "object:system / Context / scope @1359739",
+      "deltaBytes": 1344,
+      "deltaCount": 1,
+      "bytesPerRow": 0.1,
+      "countPerRow": 0
+    },
+    {
+      "key": "code:system / SharedFunctionInfo / matches",
+      "deltaBytes": 1296,
+      "deltaCount": 27,
+      "bytesPerRow": 0.1,
+      "countPerRow": 0
+    },
+    {
+      "key": "code:system / SharedFunctionInfo / toString",
+      "deltaBytes": 1248,
+      "deltaCount": 26,
+      "bytesPerRow": 0.1,
+      "countPerRow": 0
+    },
+    {
+      "key": "code:system / PreparseData",
+      "deltaBytes": 1108,
+      "deltaCount": 7,
+      "bytesPerRow": 0.1,
+      "countPerRow": 0
+    },
+    {
+      "key": "code:system / ClosureFeedbackCellArray",
+      "deltaBytes": 1092,
+      "deltaCount": 81,
+      "bytesPerRow": 0.1,
+      "countPerRow": 0.01
+    },
+    {
+      "key": "closure:matches",
+      "deltaBytes": 980,
+      "deltaCount": 35,
+      "bytesPerRow": 0.1,
+      "countPerRow": 0
+    },
+    {
+      "key": "code:system / SharedFunctionInfo / toJSON",
+      "deltaBytes": 864,
+      "deltaCount": 18,
+      "bytesPerRow": 0.1,
+      "countPerRow": 0
+    },
+    {
+      "key": "closure:toSource",
+      "deltaBytes": 784,
+      "deltaCount": 28,
+      "bytesPerRow": 0.1,
+      "countPerRow": 0
+    },
+    {
+      "key": "closure:native_bind",
+      "deltaBytes": 768,
+      "deltaCount": 32,
+      "bytesPerRow": 0.1,
+      "countPerRow": 0
+    },
+    {
+      "key": "closure:toString",
+      "deltaBytes": 728,
+      "deltaCount": 26,
+      "bytesPerRow": 0.1,
+      "countPerRow": 0
+    },
+    {
+      "key": "code:system / SharedFunctionInfo / query",
+      "deltaBytes": 528,
+      "deltaCount": 11,
+      "bytesPerRow": 0.1,
+      "countPerRow": 0
+    },
+    {
+      "key": "closure:toJSON",
+      "deltaBytes": 504,
+      "deltaCount": 18,
+      "bytesPerRow": 0.1,
+      "countPerRow": 0
+    },
+    {
+      "key": "code:system / AllocationSite",
+      "deltaBytes": 504,
+      "deltaCount": 18,
+      "bytesPerRow": 0.1,
+      "countPerRow": 0
+    },
+    {
+      "key": "object:CSSParserToken",
+      "deltaBytes": 504,
+      "deltaCount": 42,
+      "bytesPerRow": 0.1,
+      "countPerRow": 0
+    },
+    {
+      "key": "code:system / SharedFunctionInfo / generateLocator",
+      "deltaBytes": 480,
+      "deltaCount": 10,
+      "bytesPerRow": 0,
+      "countPerRow": 0
+    },
+    {
+      "key": "code:system / SharedFunctionInfo / chainLocators",
+      "deltaBytes": 480,
+      "deltaCount": 10,
+      "bytesPerRow": 0,
+      "countPerRow": 0
+    },
+    {
+      "key": "closure:toCSS",
+      "deltaBytes": 448,
+      "deltaCount": 16,
+      "bytesPerRow": 0,
+      "countPerRow": 0
+    },
+    {
+      "key": "object:Map",
+      "deltaBytes": 416,
+      "deltaCount": 26,
+      "bytesPerRow": 0,
+      "countPerRow": 0
+    }
+  ]
+}

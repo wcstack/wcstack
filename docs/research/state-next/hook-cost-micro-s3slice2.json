@@ -1,0 +1,122 @@
+{
+  "revision": "6bff9f2cf8c4915c93dceb9c40b56e376eb06119",
+  "timestamp": "2026-09-20T21:04:53.940Z",
+  "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+  "samples": 9,
+  "reads": 1000000,
+  "writes": 100000,
+  "results": [
+    {
+      "runtime": "shipped",
+      "readMs": {
+        "median": 42,
+        "min": 41.6,
+        "max": 80,
+        "samples": [
+          42,
+          80,
+          41.8,
+          43,
+          41.6,
+          43.6,
+          41.8,
+          43.2,
+          41.7
+        ]
+      },
+      "writeMs": {
+        "median": 4.4,
+        "min": 4.2,
+        "max": 8.1,
+        "samples": [
+          4.2,
+          8.1,
+          4.3,
+          4.5,
+          4.4,
+          4.6,
+          4.3,
+          4.4,
+          4.3
+        ]
+      },
+      "nsPerRead": 42,
+      "nsPerWrite": 44
+    },
+    {
+      "runtime": "base",
+      "readMs": {
+        "median": 42.5,
+        "min": 41.8,
+        "max": 43.2,
+        "samples": [
+          43,
+          42.6,
+          42.2,
+          42.7,
+          43.2,
+          41.8,
+          42.5,
+          42.4,
+          41.9
+        ]
+      },
+      "writeMs": {
+        "median": 4.4,
+        "min": 4.2,
+        "max": 4.4,
+        "samples": [
+          4.4,
+          4.4,
+          4.4,
+          4.4,
+          4.2,
+          4.3,
+          4.4,
+          4.4,
+          4.3
+        ]
+      },
+      "nsPerRead": 42.5,
+      "nsPerWrite": 44
+    },
+    {
+      "runtime": "s3slice2",
+      "readMs": {
+        "median": 41.3,
+        "min": 40.3,
+        "max": 41.9,
+        "samples": [
+          41.6,
+          41.1,
+          40.3,
+          41.5,
+          41.6,
+          40.9,
+          41.9,
+          41,
+          41.3
+        ]
+      },
+      "writeMs": {
+        "median": 4.1,
+        "min": 4,
+        "max": 4.3,
+        "samples": [
+          4.1,
+          4.1,
+          4,
+          4.3,
+          4.2,
+          4.2,
+          4.2,
+          4.1,
+          4
+        ]
+      },
+      "nsPerRead": 41.3,
+      "nsPerWrite": 41
+    }
+  ],
+  "browser": "149.0.7827.55"
+}

@@ -1,0 +1,535 @@
+{
+  "revision": "6bff9f2cf8c4915c93dceb9c40b56e376eb06119",
+  "timestamp": "2026-09-20T19:40:28.516Z",
+  "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+  "sizes": {
+    "shippedAutoMin": {
+      "bytes": 234638,
+      "gzip": 68731
+    },
+    "protoAutoMin": {
+      "bytes": 241311,
+      "gzip": 70733
+    }
+  },
+  "results": [
+    {
+      "bundle": "shipped",
+      "variant": "tracked",
+      "rows": 1000,
+      "selectionCorrect": true,
+      "select": {
+        "median": 1.05,
+        "min": 0.7,
+        "max": 2.6,
+        "samples": [
+          0.9,
+          1,
+          1.1,
+          1.1,
+          1.1,
+          1,
+          2.6,
+          1.4,
+          0.9,
+          0.7
+        ]
+      },
+      "remove": {
+        "median": 1.6,
+        "min": 1.3,
+        "max": 2.6,
+        "samples": [
+          2.3,
+          2.6,
+          1.6,
+          1.3,
+          1.6
+        ]
+      },
+      "selectionAfterRemove": {
+        "before": {
+          "count": 1,
+          "index": 10,
+          "id": "10"
+        },
+        "after": {
+          "count": 1,
+          "index": 10,
+          "id": "15"
+        },
+        "followsId": false,
+        "followsIndex": true
+      },
+      "swap": {
+        "median": 0.5,
+        "min": 0.5,
+        "max": 1.2,
+        "samples": [
+          1.2,
+          0.8,
+          0.5,
+          0.5,
+          0.5
+        ]
+      },
+      "selectionAfterSwap": {
+        "before": {
+          "count": 1,
+          "index": 2,
+          "id": "2"
+        },
+        "after": {
+          "count": 1,
+          "index": 2,
+          "id": "999"
+        },
+        "count": 1,
+        "followsId": false,
+        "followsIndex": true
+      },
+      "pageErrors": []
+    },
+    {
+      "bundle": "shipped",
+      "variant": "tracked",
+      "rows": 10000,
+      "selectionCorrect": true,
+      "select": {
+        "median": 20.15,
+        "min": 18.2,
+        "max": 21.5,
+        "samples": [
+          21.5,
+          21.5,
+          19.2,
+          18.9,
+          20.2,
+          20.5,
+          20.4,
+          20.1,
+          18.3,
+          18.2
+        ]
+      },
+      "remove": {
+        "median": 36.7,
+        "min": 32.4,
+        "max": 53.1,
+        "samples": [
+          37.8,
+          34.4,
+          36.7,
+          53.1,
+          32.4
+        ]
+      },
+      "selectionAfterRemove": {
+        "before": {
+          "count": 1,
+          "index": 10,
+          "id": "10"
+        },
+        "after": {
+          "count": 1,
+          "index": 10,
+          "id": "15"
+        },
+        "followsId": false,
+        "followsIndex": true
+      },
+      "swap": null,
+      "selectionAfterSwap": null,
+      "pageErrors": []
+    },
+    {
+      "bundle": "proto",
+      "variant": "tracked",
+      "rows": 1000,
+      "selectionCorrect": true,
+      "select": {
+        "median": 1.9,
+        "min": 1.7,
+        "max": 3.2,
+        "samples": [
+          2,
+          1.9,
+          1.8,
+          1.7,
+          1.8,
+          2,
+          1.9,
+          1.9,
+          1.9,
+          3.2
+        ]
+      },
+      "remove": {
+        "median": 3.4,
+        "min": 2.9,
+        "max": 4.8,
+        "samples": [
+          4.8,
+          3.4,
+          3.5,
+          2.9,
+          3
+        ]
+      },
+      "selectionAfterRemove": {
+        "before": {
+          "count": 1,
+          "index": 10,
+          "id": "10"
+        },
+        "after": {
+          "count": 1,
+          "index": 10,
+          "id": "15"
+        },
+        "followsId": false,
+        "followsIndex": true
+      },
+      "swap": {
+        "median": 1,
+        "min": 0.9,
+        "max": 2.5,
+        "samples": [
+          2.5,
+          1.1,
+          0.9,
+          1,
+          0.9
+        ]
+      },
+      "selectionAfterSwap": {
+        "before": {
+          "count": 1,
+          "index": 2,
+          "id": "2"
+        },
+        "after": {
+          "count": 1,
+          "index": 2,
+          "id": "999"
+        },
+        "count": 1,
+        "followsId": false,
+        "followsIndex": true
+      },
+      "pageErrors": []
+    },
+    {
+      "bundle": "proto",
+      "variant": "tracked",
+      "rows": 10000,
+      "selectionCorrect": true,
+      "select": {
+        "median": 17.45,
+        "min": 14.7,
+        "max": 19.9,
+        "samples": [
+          19.9,
+          18.7,
+          19.5,
+          16.9,
+          17,
+          17.9,
+          18.6,
+          14.7,
+          14.9,
+          16.1
+        ]
+      },
+      "remove": {
+        "median": 30.9,
+        "min": 25.5,
+        "max": 31.1,
+        "samples": [
+          25.5,
+          28.7,
+          30.9,
+          31,
+          31.1
+        ]
+      },
+      "selectionAfterRemove": {
+        "before": {
+          "count": 1,
+          "index": 10,
+          "id": "10"
+        },
+        "after": {
+          "count": 1,
+          "index": 10,
+          "id": "15"
+        },
+        "followsId": false,
+        "followsIndex": true
+      },
+      "swap": null,
+      "selectionAfterSwap": null,
+      "pageErrors": []
+    },
+    {
+      "bundle": "proto",
+      "variant": "keyedIdPath",
+      "rows": 1000,
+      "selectionCorrect": true,
+      "select": {
+        "median": 0.15,
+        "min": 0,
+        "max": 0.3,
+        "samples": [
+          0.1,
+          0.2,
+          0.1,
+          0.2,
+          0.2,
+          0.3,
+          0.2,
+          0.1,
+          0,
+          0.1
+        ]
+      },
+      "remove": {
+        "median": 1.4,
+        "min": 1.2,
+        "max": 2.1,
+        "samples": [
+          2.1,
+          1.5,
+          1.3,
+          1.2,
+          1.4
+        ]
+      },
+      "selectionAfterRemove": {
+        "before": {
+          "count": 1,
+          "index": 10,
+          "id": "10"
+        },
+        "after": {
+          "count": 1,
+          "index": 5,
+          "id": "10"
+        },
+        "followsId": true,
+        "followsIndex": false
+      },
+      "swap": {
+        "median": 1,
+        "min": 0.6,
+        "max": 2.6,
+        "samples": [
+          2.6,
+          1.1,
+          1,
+          0.8,
+          0.6
+        ]
+      },
+      "selectionAfterSwap": {
+        "before": {
+          "count": 1,
+          "index": 2,
+          "id": "2"
+        },
+        "after": {
+          "count": 1,
+          "index": 999,
+          "id": "2"
+        },
+        "count": 1,
+        "followsId": true,
+        "followsIndex": false
+      },
+      "pageErrors": []
+    },
+    {
+      "bundle": "proto",
+      "variant": "keyedIdPath",
+      "rows": 10000,
+      "selectionCorrect": true,
+      "select": {
+        "median": 0.2,
+        "min": 0.1,
+        "max": 0.3,
+        "samples": [
+          0.3,
+          0.2,
+          0.2,
+          0.2,
+          0.2,
+          0.2,
+          0.1,
+          0.3,
+          0.3,
+          0.2
+        ]
+      },
+      "remove": {
+        "median": 13.5,
+        "min": 11.5,
+        "max": 17.9,
+        "samples": [
+          17.9,
+          13.5,
+          11.5,
+          14.2,
+          12.8
+        ]
+      },
+      "selectionAfterRemove": {
+        "before": {
+          "count": 1,
+          "index": 10,
+          "id": "10"
+        },
+        "after": {
+          "count": 1,
+          "index": 5,
+          "id": "10"
+        },
+        "followsId": true,
+        "followsIndex": false
+      },
+      "swap": null,
+      "selectionAfterSwap": null,
+      "pageErrors": []
+    },
+    {
+      "bundle": "proto",
+      "variant": "keyedIndex",
+      "rows": 1000,
+      "selectionCorrect": true,
+      "select": {
+        "median": 0.2,
+        "min": 0.1,
+        "max": 0.3,
+        "samples": [
+          0.3,
+          0.2,
+          0.1,
+          0.2,
+          0.3,
+          0.2,
+          0.2,
+          0.1,
+          0.1,
+          0.2
+        ]
+      },
+      "remove": {
+        "median": 1.5,
+        "min": 1.2,
+        "max": 2.5,
+        "samples": [
+          2.5,
+          1.5,
+          1.6,
+          1.2,
+          1.4
+        ]
+      },
+      "selectionAfterRemove": {
+        "before": {
+          "count": 1,
+          "index": 10,
+          "id": "10"
+        },
+        "after": {
+          "count": 1,
+          "index": 10,
+          "id": "15"
+        },
+        "followsId": false,
+        "followsIndex": true
+      },
+      "swap": {
+        "median": 0.9,
+        "min": 0.8,
+        "max": 2.7,
+        "samples": [
+          2.7,
+          1.2,
+          0.9,
+          0.8,
+          0.8
+        ]
+      },
+      "selectionAfterSwap": {
+        "before": {
+          "count": 1,
+          "index": 2,
+          "id": "2"
+        },
+        "after": {
+          "count": 1,
+          "index": 2,
+          "id": "999"
+        },
+        "count": 1,
+        "followsId": false,
+        "followsIndex": true
+      },
+      "pageErrors": []
+    },
+    {
+      "bundle": "proto",
+      "variant": "keyedIndex",
+      "rows": 10000,
+      "selectionCorrect": true,
+      "select": {
+        "median": 0.25,
+        "min": 0.1,
+        "max": 0.3,
+        "samples": [
+          0.2,
+          0.3,
+          0.3,
+          0.2,
+          0.3,
+          0.3,
+          0.2,
+          0.3,
+          0.2,
+          0.1
+        ]
+      },
+      "remove": {
+        "median": 14.5,
+        "min": 12.6,
+        "max": 17.5,
+        "samples": [
+          17.5,
+          15,
+          12.6,
+          14.5,
+          14.2
+        ]
+      },
+      "selectionAfterRemove": {
+        "before": {
+          "count": 1,
+          "index": 10,
+          "id": "10"
+        },
+        "after": {
+          "count": 1,
+          "index": 10,
+          "id": "15"
+        },
+        "followsId": false,
+        "followsIndex": true
+      },
+      "swap": null,
+      "selectionAfterSwap": null,
+      "pageErrors": []
+    }
+  ],
+  "errors": [],
+  "browser": "149.0.7827.55"
+}

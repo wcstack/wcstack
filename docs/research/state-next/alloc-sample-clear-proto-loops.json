@@ -1,0 +1,168 @@
+{
+  "revision": "6bff9f2cf8c4915c93dceb9c40b56e376eb06119",
+  "timestamp": "2026-09-20T13:59:41.370Z",
+  "browser": "149.0.7827.55",
+  "bundle": "index.esm.js",
+  "fixture": "tracked",
+  "rows": 10000,
+  "samples": 3,
+  "samplingIntervalBytes": 4096,
+  "clearMs": [
+    68.8,
+    68.6,
+    67.3
+  ],
+  "allocatedBytesPerRun": 3694996,
+  "top": [
+    {
+      "fn": "next :0",
+      "bytesPerRun": 1304404,
+      "share": 35.3
+    },
+    {
+      "fn": "add :0",
+      "bytesPerRun": 843855,
+      "share": 22.8
+    },
+    {
+      "fn": "delete :0",
+      "bytesPerRun": 588865,
+      "share": 15.9
+    },
+    {
+      "fn": "unmount auto.min.js:8124",
+      "bytesPerRun": 177949,
+      "share": 4.8
+    },
+    {
+      "fn": "from :0",
+      "bytesPerRun": 159153,
+      "share": 4.3
+    },
+    {
+      "fn": "unbindLoopContextToContent auto.min.js:7811",
+      "bytesPerRun": 113611,
+      "share": 3.1
+    },
+    {
+      "fn": "deactivateContent auto.min.js:7841",
+      "bytesPerRun": 104035,
+      "share": 2.8
+    },
+    {
+      "fn": "push :0",
+      "bytesPerRun": 67460,
+      "share": 1.8
+    },
+    {
+      "fn": "filter :0",
+      "bytesPerRun": 63037,
+      "share": 1.7
+    },
+    {
+      "fn": "detachEventHandler auto.min.js:4029",
+      "bytesPerRun": 54787,
+      "share": 1.5
+    },
+    {
+      "fn": "dispose auto.min.js:5269",
+      "bytesPerRun": 43812,
+      "share": 1.2
+    },
+    {
+      "fn": "slice :0",
+      "bytesPerRun": 35580,
+      "share": 1
+    },
+    {
+      "fn": "values :0",
+      "bytesPerRun": 32872,
+      "share": 0.9
+    },
+    {
+      "fn": "getHandlerKey$2 auto.min.js:3959",
+      "bytesPerRun": 24660,
+      "share": 0.7
+    },
+    {
+      "fn": "(anonymous) auto.min.js:9950",
+      "bytesPerRun": 13855,
+      "share": 0.4
+    },
+    {
+      "fn": "get :0",
+      "bytesPerRun": 5267,
+      "share": 0.1
+    },
+    {
+      "fn": "StateHandler auto.min.js:20270",
+      "bytesPerRun": 4235,
+      "share": 0.1
+    },
+    {
+      "fn": "(V8 API) :0",
+      "bytesPerRun": 4208,
+      "share": 0.1
+    },
+    {
+      "fn": "handleMutations auto.min.js:4963",
+      "bytesPerRun": 4164,
+      "share": 0.1
+    },
+    {
+      "fn": "evaluate :297",
+      "bytesPerRun": 4124,
+      "share": 0.1
+    },
+    {
+      "fn": "(IDLE_EXTERNAL) :0",
+      "bytesPerRun": 3627,
+      "share": 0.1
+    },
+    {
+      "fn": "getPooledContents auto.min.js:9739",
+      "bytesPerRun": 3328,
+      "share": 0.1
+    },
+    {
+      "fn": "get size :0",
+      "bytesPerRun": 2952,
+      "share": 0.1
+    },
+    {
+      "fn": "serialize :169",
+      "bytesPerRun": 2891,
+      "share": 0.1
+    },
+    {
+      "fn": "createListDiff auto.min.js:7509",
+      "bytesPerRun": 2789,
+      "share": 0.1
+    },
+    {
+      "fn": "getTopologicalRanks auto.min.js:18129",
+      "bytesPerRun": 2760,
+      "share": 0.1
+    },
+    {
+      "fn": "(anonymous) :3",
+      "bytesPerRun": 1856,
+      "share": 0.1
+    },
+    {
+      "fn": "(anonymous) auto.min.js:4994",
+      "bytesPerRun": 1472,
+      "share": 0
+    },
+    {
+      "fn": "Promise :0",
+      "bytesPerRun": 1411,
+      "share": 0
+    },
+    {
+      "fn": "disposeRowSlot auto.min.js:5682",
+      "bytesPerRun": 1404,
+      "share": 0
+    }
+  ]
+}

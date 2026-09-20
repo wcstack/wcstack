@@ -1,0 +1,41 @@
+{
+  "revision": "6bff9f2cf8c4915c93dceb9c40b56e376eb06119",
+  "timestamp": "2026-09-20T11:10:38.276Z",
+  "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+  "samples": 6,
+  "bundle": "dist/auto.min.js (checked in)",
+  "sequence": "counters",
+  "results": [
+    {
+      "op": "clear10k",
+      "note": "timed clear of 11,000 rows after create 1k → clear → create 10k → append 1k",
+      "cold": {
+        "median": 77.05,
+        "min": 60,
+        "max": 81.4,
+        "samples": [
+          68.9,
+          60,
+          78,
+          81.4,
+          80.5,
+          76.1
+        ]
+      },
+      "warm": {
+        "median": 78.55,
+        "min": 73.1,
+        "max": 91.1,
+        "samples": [
+          73.1,
+          76.4,
+          81.6,
+          80.2,
+          76.9,
+          91.1
+        ]
+      }
+    }
+  ],
+  "browser": "149.0.7827.55"
+}

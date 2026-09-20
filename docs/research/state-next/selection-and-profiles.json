@@ -1,0 +1,444 @@
+{
+  "revision": "bf27363fec154f1abb861b6b2d0f525d45274178",
+  "timestamp": "2026-09-17T21:19:52.251Z",
+  "selection": [
+    {
+      "variant": "manual two-row invalidation",
+      "count": 1000,
+      "median": 0.10000002384185791,
+      "min": 0,
+      "max": 0.5,
+      "samples": [
+        0.5,
+        0.30000001192092896,
+        0.20000001788139343,
+        0.19999998807907104,
+        0.09999999403953552,
+        0.19999998807907104,
+        0.09999999403953552,
+        0.09999999403953552,
+        0.20000001788139343,
+        0.10000002384185791,
+        0.10000002384185791,
+        0.09999999403953552,
+        0,
+        0.09999999403953552,
+        0.10000002384185791
+      ]
+    },
+    {
+      "variant": "manual two-row invalidation",
+      "count": 10000,
+      "median": 0.09999999403953552,
+      "min": 0,
+      "max": 0.20000001788139343,
+      "samples": [
+        0.09999999403953552,
+        0.19999998807907104,
+        0.09999999403953552,
+        0.20000001788139343,
+        0.19999998807907104,
+        0.19999998807907104,
+        0.09999999403953552,
+        0.19999998807907104,
+        0.09999999403953552,
+        0,
+        0.09999999403953552,
+        0,
+        0.10000002384185791,
+        0.09999999403953552,
+        0
+      ]
+    },
+    {
+      "variant": "tracked getter",
+      "count": 1000,
+      "median": 1,
+      "min": 0.800000011920929,
+      "max": 1.300000011920929,
+      "samples": [
+        1.100000023841858,
+        1.0999999940395355,
+        1,
+        0.9000000059604645,
+        1,
+        1.2000000178813934,
+        1.300000011920929,
+        0.800000011920929,
+        1,
+        0.8999999761581421,
+        1,
+        1.199999988079071,
+        1.0999999940395355,
+        1,
+        1.199999988079071
+      ]
+    },
+    {
+      "variant": "tracked getter",
+      "count": 10000,
+      "median": 21.099999994039536,
+      "min": 18.599999994039536,
+      "max": 23.30000001192093,
+      "samples": [
+        21.299999982118607,
+        22.099999994039536,
+        23.30000001192093,
+        21.099999994039536,
+        19.80000001192093,
+        20.099999994039536,
+        21.100000023841858,
+        21.5,
+        22.400000005960464,
+        18.599999994039536,
+        19.200000017881393,
+        18.700000017881393,
+        19.5,
+        21.30000001192093,
+        20.400000005960464
+      ]
+    }
+  ],
+  "profiles": [
+    {
+      "op": "create10k",
+      "elapsed": 576,
+      "topSelfMs": [
+        {
+          "fn": "(program):0",
+          "ms": 666.12
+        },
+        {
+          "fn": "(garbage collector):0",
+          "ms": 89.022
+        },
+        {
+          "fn": "importNode:0",
+          "ms": 57.098
+        },
+        {
+          "fn": "resolveNodePath:713",
+          "ms": 37.017
+        },
+        {
+          "fn": "initializeRow:5446",
+          "ms": 28.225
+        },
+        {
+          "fn": "markNodeRegistered:2391",
+          "ms": 23.205
+        },
+        {
+          "fn": "applyChange:10060",
+          "ms": 18.019
+        },
+        {
+          "fn": "addInterestedSession:4882",
+          "ms": 17.918
+        },
+        {
+          "fn": "_walkDependency:17993",
+          "ms": 15.469
+        },
+        {
+          "fn": "setLoopContextByNode:2975",
+          "ms": 14.659
+        },
+        {
+          "fn": "createAbsoluteStateAddress:3133",
+          "ms": 14.494
+        },
+        {
+          "fn": "getStateAddressByBindingInfo:3494",
+          "ms": 14.242
+        },
+        {
+          "fn": "insertBefore:0",
+          "ms": 13.217
+        },
+        {
+          "fn": "resolveInitializedBinding:276",
+          "ms": 12.531
+        },
+        {
+          "fn": "getCustomElement:406",
+          "ms": 10.9
+        },
+        {
+          "fn": "createStateAddress:3467",
+          "ms": 9.926
+        },
+        {
+          "fn": "_applyChange:11967",
+          "ms": 9.759
+        },
+        {
+          "fn": "_applyChange:10008",
+          "ms": 9.724
+        },
+        {
+          "fn": "addBindingByPattern:3383",
+          "ms": 9.564
+        },
+        {
+          "fn": "appendChild:0",
+          "ms": 9.398
+        },
+        {
+          "fn": "getListIndexByBindingInfo:3254",
+          "ms": 9.087
+        },
+        {
+          "fn": "add:3522",
+          "ms": 9.034
+        },
+        {
+          "fn": "applyChangeToText:9826",
+          "ms": 8.826
+        },
+        {
+          "fn": "getAbsoluteStateAddressByBinding:3306",
+          "ms": 8.272
+        },
+        {
+          "fn": "addEventListener:0",
+          "ms": 7.351
+        }
+      ]
+    },
+    {
+      "op": "append1kTo10k",
+      "elapsed": 87.39999997615814,
+      "topSelfMs": [
+        {
+          "fn": "(program):0",
+          "ms": 172.31
+        },
+        {
+          "fn": "(garbage collector):0",
+          "ms": 28.537
+        },
+        {
+          "fn": "observe:0",
+          "ms": 5.203
+        },
+        {
+          "fn": "computeListDiff:6588",
+          "ms": 4.89
+        },
+        {
+          "fn": "importNode:0",
+          "ms": 4.824
+        },
+        {
+          "fn": "querySelectorAll:0",
+          "ms": 4.744
+        },
+        {
+          "fn": "activatePlanRows:5509",
+          "ms": 3.936
+        },
+        {
+          "fn": "applyChangeToFor:9025",
+          "ms": 3.236
+        },
+        {
+          "fn": "markNodeRegistered:2391",
+          "ms": 2.661
+        },
+        {
+          "fn": "addInterestedSession:4882",
+          "ms": 2.615
+        },
+        {
+          "fn": "getByAddress:17439",
+          "ms": 2.272
+        },
+        {
+          "fn": "getListIndexByBindingInfo:3254",
+          "ms": 2.249
+        },
+        {
+          "fn": "addEventListener:0",
+          "ms": 2.238
+        },
+        {
+          "fn": "insertBefore:0",
+          "ms": 2.224
+        },
+        {
+          "fn": "activateContent:6883",
+          "ms": 2.144
+        },
+        {
+          "fn": "_applyChange:10008",
+          "ms": 1.938
+        },
+        {
+          "fn": "add:3522",
+          "ms": 1.678
+        },
+        {
+          "fn": "initializeRow:5446",
+          "ms": 1.651
+        },
+        {
+          "fn": "createAbsoluteStateAddress:3133",
+          "ms": 1.617
+        },
+        {
+          "fn": "Content:7045",
+          "ms": 1.131
+        },
+        {
+          "fn": "resolveNodePath:713",
+          "ms": 1.124
+        },
+        {
+          "fn": "createStateAddress:3467",
+          "ms": 1.099
+        },
+        {
+          "fn": "BindingOwner.observer:4945",
+          "ms": 0.807
+        },
+        {
+          "fn": "mountAfter:7096",
+          "ms": 0.662
+        },
+        {
+          "fn": "click:0",
+          "ms": 0.657
+        }
+      ]
+    },
+    {
+      "op": "clear10k",
+      "elapsed": 121.2000000178814,
+      "topSelfMs": [
+        {
+          "fn": "(program):0",
+          "ms": 70.318
+        },
+        {
+          "fn": "applyChangeToFor:9025",
+          "ms": 55.24
+        },
+        {
+          "fn": "(garbage collector):0",
+          "ms": 40.223
+        },
+        {
+          "fn": "tryDestroy:7130",
+          "ms": 4.638
+        },
+        {
+          "fn": "removeBindingByAbsoluteStateAddress:3353",
+          "ms": 3.423
+        },
+        {
+          "fn": "disposeRecord:5817",
+          "ms": 1.93
+        },
+        {
+          "fn": "handleMutations:4949",
+          "ms": 1.591
+        },
+        {
+          "fn": "markObserverSkipOnRemove:4613",
+          "ms": 1.39
+        },
+        {
+          "fn": "retireListIndexes:6392",
+          "ms": 1.382
+        },
+        {
+          "fn": "canWholesaleDestroy:5223",
+          "ms": 1.334
+        },
+        {
+          "fn": "consumeObserverSkipOnRemove:4617",
+          "ms": 1.333
+        },
+        {
+          "fn": "get:19658",
+          "ms": 1.328
+        },
+        {
+          "fn": "removeEventListener:0",
+          "ms": 1.18
+        },
+        {
+          "fn": "disposeBinding:5201",
+          "ms": 1.133
+        },
+        {
+          "fn": "removeBindingByPattern:3403",
+          "ms": 1.131
+        },
+        {
+          "fn": "remove:3535",
+          "ms": 1.001
+        },
+        {
+          "fn": "computeListDiff:6588",
+          "ms": 0.856
+        },
+        {
+          "fn": "getBindingsByContent:6086",
+          "ms": 0.622
+        },
+        {
+          "fn": "getBindingSessionByContent:6855",
+          "ms": 0.592
+        },
+        {
+          "fn": "clearAbsoluteStateAddressByBinding:3325",
+          "ms": 0.574
+        },
+        {
+          "fn": "clearStateAddressByBindingInfo:3514",
+          "ms": 0.569
+        },
+        {
+          "fn": "destroyRecords:5244",
+          "ms": 0.56
+        },
+        {
+          "fn": "forEachInclusive:4917",
+          "ms": 0.548
+        },
+        {
+          "fn": "getNodesByContent:6863",
+          "ms": 0.547
+        },
+        {
+          "fn": "getSymbolApiCache:19650",
+          "ms": 0.389
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "browser": "149.0.7827.55",
+  "apiContracts": {
+    "resolveUndefined": 7,
+    "directReadonlyWrite": "[@wcstack/state] This state is readonly.",
+    "resolveReadonlyWrite": 9,
+    "setAllReadonlyWrite": 10
+  },
+  "emptyValueSemantics": [
+    {
+      "input": "undefined",
+      "property": "seed",
+      "mustache": "",
+      "attribute": "undefined"
+    },
+    {
+      "input": "null",
+      "property": "",
+      "mustache": "",
+      "attribute": "null"
+    }
+  ]
+}

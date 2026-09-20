@@ -1,0 +1,105 @@
+{
+  "revision": "6bff9f2cf8c4915c93dceb9c40b56e376eb06119",
+  "timestamp": "2026-09-20T11:38:18.953Z",
+  "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+  "samples": 6,
+  "results": [
+    {
+      "page": "bare DOM (replaceChildren, synchronous)",
+      "wait": "immediate",
+      "rows": 10000,
+      "median": 3.6,
+      "min": 3.2,
+      "max": 3.8,
+      "samples": [
+        3.8,
+        3.8,
+        3.2,
+        3.7,
+        3.5,
+        3.3
+      ]
+    },
+    {
+      "page": "bare DOM (replaceChildren, synchronous)",
+      "wait": "raf",
+      "rows": 10000,
+      "median": 28.1,
+      "min": 24.9,
+      "max": 37.7,
+      "samples": [
+        27.4,
+        28.8,
+        37.7,
+        27.4,
+        28.8,
+        24.9
+      ]
+    },
+    {
+      "page": "bare DOM (replaceChildren, synchronous)",
+      "wait": "task",
+      "rows": 10000,
+      "median": 35.75,
+      "min": 2.7,
+      "max": 43.1,
+      "samples": [
+        2.7,
+        3.2,
+        29.7,
+        41.8,
+        43.1,
+        42.3
+      ]
+    },
+    {
+      "page": "shipped runtime (click #clear → MutationObserver)",
+      "wait": "immediate",
+      "rows": 10000,
+      "median": 66.7,
+      "min": 27.2,
+      "max": 71,
+      "samples": [
+        71,
+        68.5,
+        65.2,
+        32.3,
+        68.2,
+        27.2
+      ]
+    },
+    {
+      "page": "shipped runtime (click #clear → MutationObserver)",
+      "wait": "raf",
+      "rows": 10000,
+      "median": 49.45,
+      "min": 47.5,
+      "max": 74.7,
+      "samples": [
+        49.7,
+        48,
+        74.7,
+        49.2,
+        51.7,
+        47.5
+      ]
+    },
+    {
+      "page": "shipped runtime (click #clear → MutationObserver)",
+      "wait": "task",
+      "rows": 10000,
+      "median": 52.35,
+      "min": 48.1,
+      "max": 55.5,
+      "samples": [
+        50.2,
+        52.3,
+        48.1,
+        52.4,
+        53.6,
+        55.5
+      ]
+    }
+  ],
+  "browser": "149.0.7827.55"
+}

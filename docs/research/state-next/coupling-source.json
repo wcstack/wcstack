@@ -1,0 +1,1104 @@
+{
+  "revision": "6bff9f2cf8c4915c93dceb9c40b56e376eb06119",
+  "timestamp": "2026-09-20T00:10:06.766Z",
+  "typescript": "5.9.3",
+  "analysis": "typescript-source (type-only imports without the type keyword count as value edges)",
+  "modules": 257,
+  "loc": 29294,
+  "groups": {
+    "(root)": 2768,
+    "proxy": 2708,
+    "webComponent": 2664,
+    "components": 2262,
+    "bindings": 2233,
+    "apply": 1893,
+    "recursion": 1464,
+    "list": 1461,
+    "scan": 1447,
+    "event": 1224,
+    "structural": 1096,
+    "stream": 1074,
+    "filters": 1036,
+    "watch": 957,
+    "devtools": 771,
+    "dependency": 559,
+    "bindTextParser": 553,
+    "address": 532,
+    "protocol": 517,
+    "dcc": 506,
+    "updater": 323,
+    "binding": 257,
+    "propagation": 199,
+    "contract": 190,
+    "command": 184,
+    "stateLoader": 140,
+    "mustache": 81,
+    "platform": 74,
+    "token": 54,
+    "cache": 49,
+    "version": 17,
+    "hydrater": 1
+  },
+  "unresolved": [
+    {
+      "from": "version.ts",
+      "spec": "../package.json"
+    }
+  ],
+  "externals": {},
+  "reachability": {
+    "exports.ts": {
+      "files": 246,
+      "loc": 28976,
+      "byGroup": {
+        "proxy": 2708,
+        "(root)": 2700,
+        "webComponent": 2664,
+        "components": 2262,
+        "bindings": 2233,
+        "apply": 1893,
+        "recursion": 1464,
+        "list": 1461,
+        "scan": 1387,
+        "event": 1218,
+        "structural": 1096,
+        "filters": 1036,
+        "stream": 1012,
+        "watch": 923,
+        "devtools": 771,
+        "dependency": 559,
+        "bindTextParser": 553,
+        "address": 532,
+        "dcc": 506,
+        "protocol": 455,
+        "updater": 315,
+        "binding": 257,
+        "propagation": 199,
+        "contract": 190,
+        "command": 184,
+        "stateLoader": 140,
+        "mustache": 81,
+        "platform": 74,
+        "token": 54,
+        "cache": 49
+      },
+      "evaluatedModules": [
+        "bindings/parseCommentNode.ts",
+        "event/checkboxHandler.ts",
+        "event/handler.ts",
+        "event/radioHandler.ts",
+        "event/twowayHandler.ts",
+        "stream/streamRuntime.ts",
+        "structural/collectStructuralFragments.ts",
+        "updater/updater.ts",
+        "watch/watchRuntime.ts",
+        "webComponent/volume.ts"
+      ]
+    },
+    "defineState.ts": {
+      "files": 1,
+      "loc": 396,
+      "byGroup": {
+        "(root)": 396
+      },
+      "evaluatedModules": []
+    },
+    "bootstrapState.ts": {
+      "files": 240,
+      "loc": 28054,
+      "byGroup": {
+        "proxy": 2708,
+        "webComponent": 2664,
+        "components": 2262,
+        "bindings": 2233,
+        "(root)": 2059,
+        "apply": 1893,
+        "recursion": 1464,
+        "list": 1461,
+        "scan": 1387,
+        "event": 1218,
+        "structural": 1096,
+        "stream": 1012,
+        "filters": 945,
+        "watch": 923,
+        "devtools": 771,
+        "dependency": 559,
+        "bindTextParser": 553,
+        "address": 532,
+        "dcc": 506,
+        "protocol": 455,
+        "updater": 315,
+        "binding": 257,
+        "propagation": 199,
+        "command": 184,
+        "stateLoader": 140,
+        "mustache": 81,
+        "platform": 74,
+        "token": 54,
+        "cache": 49
+      },
+      "evaluatedModules": [
+        "bindings/parseCommentNode.ts",
+        "event/checkboxHandler.ts",
+        "event/handler.ts",
+        "event/radioHandler.ts",
+        "event/twowayHandler.ts",
+        "stream/streamRuntime.ts",
+        "structural/collectStructuralFragments.ts",
+        "updater/updater.ts",
+        "watch/watchRuntime.ts",
+        "webComponent/volume.ts"
+      ]
+    },
+    "components/State.ts": {
+      "files": 234,
+      "loc": 27148,
+      "byGroup": {
+        "proxy": 2708,
+        "webComponent": 2664,
+        "components": 2262,
+        "bindings": 2233,
+        "(root)": 1903,
+        "apply": 1893,
+        "recursion": 1464,
+        "list": 1461,
+        "scan": 1387,
+        "event": 1218,
+        "structural": 1096,
+        "stream": 1012,
+        "filters": 945,
+        "watch": 923,
+        "dependency": 559,
+        "bindTextParser": 553,
+        "address": 532,
+        "dcc": 506,
+        "protocol": 455,
+        "updater": 315,
+        "binding": 257,
+        "propagation": 199,
+        "command": 184,
+        "stateLoader": 140,
+        "mustache": 81,
+        "platform": 74,
+        "token": 54,
+        "cache": 49,
+        "devtools": 21
+      },
+      "evaluatedModules": [
+        "bindings/parseCommentNode.ts",
+        "event/checkboxHandler.ts",
+        "event/handler.ts",
+        "event/radioHandler.ts",
+        "event/twowayHandler.ts",
+        "stream/streamRuntime.ts",
+        "structural/collectStructuralFragments.ts",
+        "updater/updater.ts",
+        "watch/watchRuntime.ts",
+        "webComponent/volume.ts"
+      ]
+    },
+    "auto.ts": {
+      "files": 247,
+      "loc": 28986,
+      "byGroup": {
+        "(root)": 2710,
+        "proxy": 2708,
+        "webComponent": 2664,
+        "components": 2262,
+        "bindings": 2233,
+        "apply": 1893,
+        "recursion": 1464,
+        "list": 1461,
+        "scan": 1387,
+        "event": 1218,
+        "structural": 1096,
+        "filters": 1036,
+        "stream": 1012,
+        "watch": 923,
+        "devtools": 771,
+        "dependency": 559,
+        "bindTextParser": 553,
+        "address": 532,
+        "dcc": 506,
+        "protocol": 455,
+        "updater": 315,
+        "binding": 257,
+        "propagation": 199,
+        "contract": 190,
+        "command": 184,
+        "stateLoader": 140,
+        "mustache": 81,
+        "platform": 74,
+        "token": 54,
+        "cache": 49
+      },
+      "evaluatedModules": [
+        "auto.ts",
+        "bindings/parseCommentNode.ts",
+        "event/checkboxHandler.ts",
+        "event/handler.ts",
+        "event/radioHandler.ts",
+        "event/twowayHandler.ts",
+        "stream/streamRuntime.ts",
+        "structural/collectStructuralFragments.ts",
+        "updater/updater.ts",
+        "watch/watchRuntime.ts",
+        "webComponent/volume.ts"
+      ]
+    },
+    "parser.ts": {
+      "files": 27,
+      "loc": 2492,
+      "byGroup": {
+        "filters": 945,
+        "(root)": 466,
+        "bindTextParser": 384,
+        "address": 200,
+        "components": 177,
+        "list": 145,
+        "protocol": 77,
+        "proxy": 56,
+        "binding": 33,
+        "structural": 9
+      },
+      "evaluatedModules": []
+    },
+    "manifest.ts": {
+      "files": 19,
+      "loc": 2195,
+      "byGroup": {
+        "filters": 1036,
+        "(root)": 604,
+        "components": 177,
+        "list": 145,
+        "protocol": 77,
+        "address": 58,
+        "proxy": 56,
+        "binding": 33,
+        "structural": 9
+      },
+      "evaluatedModules": []
+    },
+    "updater/updater.ts": {
+      "files": 234,
+      "loc": 27148,
+      "byGroup": {
+        "proxy": 2708,
+        "webComponent": 2664,
+        "components": 2262,
+        "bindings": 2233,
+        "(root)": 1903,
+        "apply": 1893,
+        "recursion": 1464,
+        "list": 1461,
+        "scan": 1387,
+        "event": 1218,
+        "structural": 1096,
+        "stream": 1012,
+        "filters": 945,
+        "watch": 923,
+        "dependency": 559,
+        "bindTextParser": 553,
+        "address": 532,
+        "dcc": 506,
+        "protocol": 455,
+        "updater": 315,
+        "binding": 257,
+        "propagation": 199,
+        "command": 184,
+        "stateLoader": 140,
+        "mustache": 81,
+        "platform": 74,
+        "token": 54,
+        "cache": 49,
+        "devtools": 21
+      },
+      "evaluatedModules": [
+        "bindings/parseCommentNode.ts",
+        "event/checkboxHandler.ts",
+        "event/handler.ts",
+        "event/radioHandler.ts",
+        "event/twowayHandler.ts",
+        "stream/streamRuntime.ts",
+        "structural/collectStructuralFragments.ts",
+        "updater/updater.ts",
+        "watch/watchRuntime.ts",
+        "webComponent/volume.ts"
+      ]
+    },
+    "proxy/StateHandler.ts": {
+      "files": 234,
+      "loc": 27148,
+      "byGroup": {
+        "proxy": 2708,
+        "webComponent": 2664,
+        "components": 2262,
+        "bindings": 2233,
+        "(root)": 1903,
+        "apply": 1893,
+        "recursion": 1464,
+        "list": 1461,
+        "scan": 1387,
+        "event": 1218,
+        "structural": 1096,
+        "stream": 1012,
+        "filters": 945,
+        "watch": 923,
+        "dependency": 559,
+        "bindTextParser": 553,
+        "address": 532,
+        "dcc": 506,
+        "protocol": 455,
+        "updater": 315,
+        "binding": 257,
+        "propagation": 199,
+        "command": 184,
+        "stateLoader": 140,
+        "mustache": 81,
+        "platform": 74,
+        "token": 54,
+        "cache": 49,
+        "devtools": 21
+      },
+      "evaluatedModules": [
+        "bindings/parseCommentNode.ts",
+        "event/checkboxHandler.ts",
+        "event/handler.ts",
+        "event/radioHandler.ts",
+        "event/twowayHandler.ts",
+        "stream/streamRuntime.ts",
+        "structural/collectStructuralFragments.ts",
+        "updater/updater.ts",
+        "watch/watchRuntime.ts",
+        "webComponent/volume.ts"
+      ]
+    }
+  },
+  "evaluation": [
+    {
+      "module": "auto.ts",
+      "group": "(root)",
+      "effects": [
+        {
+          "kind": "statement",
+          "line": 9,
+          "text": "await bootstrapState();"
+        }
+      ]
+    },
+    {
+      "module": "bindings/parseCommentNode.ts",
+      "group": "bindings",
+      "effects": [
+        {
+          "kind": "call-initializer",
+          "line": 24,
+          "text": "EMBEDDED_REGEX = new RegExp(`^\\\\s*@@\\\\s*(.*?)\\\\s*:\\\\s*(.+?)\\\\s*$`)"
+        }
+      ]
+    },
+    {
+      "module": "event/checkboxHandler.ts",
+      "group": "event",
+      "effects": [
+        {
+          "kind": "call-initializer",
+          "line": 11,
+          "text": "bindingRegistry = createHandlerBindingRegistry()"
+        }
+      ]
+    },
+    {
+      "module": "event/handler.ts",
+      "group": "event",
+      "effects": [
+        {
+          "kind": "call-initializer",
+          "line": 24,
+          "text": "bindingRegistry = createHandlerBindingRegistry()"
+        }
+      ]
+    },
+    {
+      "module": "event/radioHandler.ts",
+      "group": "event",
+      "effects": [
+        {
+          "kind": "call-initializer",
+          "line": 11,
+          "text": "bindingRegistry = createHandlerBindingRegistry()"
+        }
+      ]
+    },
+    {
+      "module": "event/twowayHandler.ts",
+      "group": "event",
+      "effects": [
+        {
+          "kind": "call-initializer",
+          "line": 19,
+          "text": "bindingRegistry = createHandlerBindingRegistry()"
+        }
+      ]
+    },
+    {
+      "module": "stream/streamRuntime.ts",
+      "group": "stream",
+      "effects": [
+        {
+          "kind": "statement",
+          "line": 241,
+          "text": "registerUpdateBatchListener(restartStreamsOnUpdateBatch, STREAM_LISTENER_PRIORITY);"
+        }
+      ]
+    },
+    {
+      "module": "structural/collectStructuralFragments.ts",
+      "group": "structural",
+      "effects": [
+        {
+          "kind": "call-initializer",
+          "line": 24,
+          "text": "notFilter = createNotFilter()"
+        }
+      ]
+    },
+    {
+      "module": "updater/updater.ts",
+      "group": "updater",
+      "effects": [
+        {
+          "kind": "call-initializer",
+          "line": 304,
+          "text": "updater = new Updater()"
+        }
+      ]
+    },
+    {
+      "module": "watch/watchRuntime.ts",
+      "group": "watch",
+      "effects": [
+        {
+          "kind": "statement",
+          "line": 410,
+          "text": "registerUpdateBatchListener(fireWatchOnUpdateBatch, WATCH_LISTENER_PRIORITY);"
+        }
+      ]
+    },
+    {
+      "module": "webComponent/volume.ts",
+      "group": "webComponent",
+      "effects": [
+        {
+          "kind": "statement",
+          "line": 415,
+          "text": "setVolumeGraftHandler(graftIsolated);"
+        }
+      ]
+    }
+  ],
+  "coreToFeatureEdges": [
+    {
+      "from": "address/liftAddress.ts",
+      "to": "components/types.ts"
+    },
+    {
+      "from": "address/TreePath.ts",
+      "to": "components/types.ts"
+    },
+    {
+      "from": "address/types.ts",
+      "to": "components/types.ts"
+    },
+    {
+      "from": "apply/applyChange.ts",
+      "to": "webComponent/completeWebComponent.ts"
+    },
+    {
+      "from": "apply/applyChangeFromBindings.ts",
+      "to": "components/types.ts"
+    },
+    {
+      "from": "apply/applyChangeFromBindings.ts",
+      "to": "devtools/sink.ts"
+    },
+    {
+      "from": "apply/applyChangeToFor.ts",
+      "to": "webComponent/mountScope.ts"
+    },
+    {
+      "from": "apply/applyChangeToProperty.ts",
+      "to": "devtools/sink.ts"
+    },
+    {
+      "from": "apply/applyChangeToProperty.ts",
+      "to": "webComponent/preCompletionWrites.ts"
+    },
+    {
+      "from": "apply/reapplyStateBindings.ts",
+      "to": "components/types.ts"
+    },
+    {
+      "from": "apply/types.ts",
+      "to": "components/types.ts"
+    },
+    {
+      "from": "binding/getBindingSetByAbsoluteStateAddress.ts",
+      "to": "devtools/sink.ts"
+    },
+    {
+      "from": "bootstrapState.ts",
+      "to": "devtools/bridge.ts"
+    },
+    {
+      "from": "buildSsrDocument.ts",
+      "to": "components/Ssr.ts"
+    },
+    {
+      "from": "command/commandNamespace.ts",
+      "to": "components/types.ts"
+    },
+    {
+      "from": "command/CommandToken.ts",
+      "to": "devtools/sink.ts"
+    },
+    {
+      "from": "command/commandTokenRegistry.ts",
+      "to": "components/types.ts"
+    },
+    {
+      "from": "contract/contractAnalyzer.ts",
+      "to": "devtools/sink.ts"
+    },
+    {
+      "from": "contract/contractAnalyzer.ts",
+      "to": "devtools/types.ts"
+    },
+    {
+      "from": "dependency/walkDependency.ts",
+      "to": "components/types.ts"
+    },
+    {
+      "from": "event/EventToken.ts",
+      "to": "devtools/sink.ts"
+    },
+    {
+      "from": "event/eventTokenRegistry.ts",
+      "to": "components/types.ts"
+    },
+    {
+      "from": "event/handler.ts",
+      "to": "webComponent/mount.ts"
+    },
+    {
+      "from": "event/processOnDeclaration.ts",
+      "to": "components/types.ts"
+    },
+    {
+      "from": "event/twowayHandler.ts",
+      "to": "devtools/sink.ts"
+    },
+    {
+      "from": "exports.ts",
+      "to": "components/Ssr.ts"
+    },
+    {
+      "from": "hydrateBindings.ts",
+      "to": "components/Ssr.ts"
+    },
+    {
+      "from": "list/loopContextByNode.ts",
+      "to": "webComponent/mount.ts"
+    },
+    {
+      "from": "pathDiagnostics.ts",
+      "to": "webComponent/volumeShared.ts"
+    },
+    {
+      "from": "pathDiagnostics.ts",
+      "to": "devtools/sink.ts"
+    },
+    {
+      "from": "proxy/apis/getAll.ts",
+      "to": "recursion/bind.ts"
+    },
+    {
+      "from": "proxy/apis/getAll.ts",
+      "to": "recursion/expand.ts"
+    },
+    {
+      "from": "proxy/apis/getAll.ts",
+      "to": "recursion/getAllRecursive.ts"
+    },
+    {
+      "from": "proxy/apis/postUpdate.ts",
+      "to": "dcc/dispatchBindableEvent.ts"
+    },
+    {
+      "from": "proxy/apis/setAll.ts",
+      "to": "recursion/expand.ts"
+    },
+    {
+      "from": "proxy/apis/setAll.ts",
+      "to": "recursion/setAllRecursive.ts"
+    },
+    {
+      "from": "proxy/apis/trackDependency.ts",
+      "to": "recursion/expand.ts"
+    },
+    {
+      "from": "proxy/apis/updatedCallback.ts",
+      "to": "webComponent/volumeShared.ts"
+    },
+    {
+      "from": "proxy/methods/getByAddress.ts",
+      "to": "webComponent/volumeShared.ts"
+    },
+    {
+      "from": "proxy/methods/getByAddress.ts",
+      "to": "components/types.ts"
+    },
+    {
+      "from": "proxy/methods/getByAddress.ts",
+      "to": "stream/argsTrace.ts"
+    },
+    {
+      "from": "proxy/methods/getByAddress.ts",
+      "to": "stream/streamNamespace.ts"
+    },
+    {
+      "from": "proxy/methods/getByAddress.ts",
+      "to": "webComponent/mount.ts"
+    },
+    {
+      "from": "proxy/methods/getByAddress.ts",
+      "to": "webComponent/overlay.ts"
+    },
+    {
+      "from": "proxy/methods/getByAddress.ts",
+      "to": "webComponent/exportIndex.ts"
+    },
+    {
+      "from": "proxy/methods/isCacheable.ts",
+      "to": "components/types.ts"
+    },
+    {
+      "from": "proxy/methods/setByAddress.ts",
+      "to": "dcc/dispatchBindableEvent.ts"
+    },
+    {
+      "from": "proxy/methods/setByAddress.ts",
+      "to": "devtools/sink.ts"
+    },
+    {
+      "from": "proxy/methods/setByAddress.ts",
+      "to": "watch/prevValues.ts"
+    },
+    {
+      "from": "proxy/methods/setByAddress.ts",
+      "to": "webComponent/volumeShared.ts"
+    },
+    {
+      "from": "proxy/methods/setByAddress.ts",
+      "to": "webComponent/exportIndex.ts"
+    },
+    {
+      "from": "proxy/methods/setByAddress.ts",
+      "to": "webComponent/overlay.ts"
+    },
+    {
+      "from": "proxy/StateHandler.ts",
+      "to": "components/types.ts"
+    },
+    {
+      "from": "proxy/traps/get.ts",
+      "to": "webComponent/mount.ts"
+    },
+    {
+      "from": "proxy/traps/get.ts",
+      "to": "stream/streamNamespace.ts"
+    },
+    {
+      "from": "proxy/traps/get.ts",
+      "to": "recursion/bind.ts"
+    },
+    {
+      "from": "proxy/traps/get.ts",
+      "to": "recursion/expand.ts"
+    },
+    {
+      "from": "proxy/types.ts",
+      "to": "components/types.ts"
+    },
+    {
+      "from": "registerComponents.ts",
+      "to": "components/Ssr.ts"
+    },
+    {
+      "from": "registerComponents.ts",
+      "to": "components/State.ts"
+    },
+    {
+      "from": "stateElementByName.ts",
+      "to": "components/types.ts"
+    },
+    {
+      "from": "stateElementByName.ts",
+      "to": "devtools/sink.ts"
+    },
+    {
+      "from": "stateElementByName.ts",
+      "to": "webComponent/volumeShared.ts"
+    },
+    {
+      "from": "updater/updater.ts",
+      "to": "devtools/sink.ts"
+    },
+    {
+      "from": "updater/updater.ts",
+      "to": "watch/chainDepth.ts"
+    },
+    {
+      "from": "updater/updater.ts",
+      "to": "scan/eventReset.ts"
+    },
+    {
+      "from": "waitForStateInitialize.ts",
+      "to": "components/State.ts"
+    },
+    {
+      "from": "waitForStateInitialize.ts",
+      "to": "components/types.ts"
+    }
+  ],
+  "groupEdges": {
+    "address": {
+      "list": 4,
+      "(root)": 3,
+      "components": 3
+    },
+    "apply": {
+      "binding": 8,
+      "(root)": 39,
+      "bindings": 5,
+      "platform": 3,
+      "webComponent": 3,
+      "address": 8,
+      "components": 3,
+      "devtools": 2,
+      "list": 12,
+      "proxy": 4,
+      "propagation": 3,
+      "command": 2,
+      "protocol": 3,
+      "structural": 9,
+      "event": 2,
+      "dependency": 1,
+      "updater": 1
+    },
+    "bindTextParser": {
+      "address": 3,
+      "(root)": 13,
+      "platform": 1,
+      "protocol": 1,
+      "structural": 1,
+      "filters": 2,
+      "binding": 1
+    },
+    "binding": {
+      "address": 7,
+      "apply": 1,
+      "list": 3,
+      "(root)": 4,
+      "devtools": 1,
+      "filters": 1
+    },
+    "bindings": {
+      "apply": 2,
+      "(root)": 26,
+      "address": 2,
+      "binding": 6,
+      "list": 9,
+      "event": 6,
+      "platform": 2,
+      "structural": 10,
+      "protocol": 2,
+      "mustache": 1,
+      "bindTextParser": 6,
+      "proxy": 1
+    },
+    "(root)": {
+      "devtools": 3,
+      "bindings": 12,
+      "mustache": 1,
+      "structural": 10,
+      "components": 8,
+      "protocol": 2,
+      "contract": 1,
+      "filters": 3,
+      "binding": 2,
+      "list": 6,
+      "bindTextParser": 7,
+      "apply": 2,
+      "address": 4,
+      "webComponent": 2,
+      "platform": 1
+    },
+    "cache": {
+      "address": 1
+    },
+    "command": {
+      "devtools": 1,
+      "token": 2,
+      "components": 2,
+      "(root)": 4
+    },
+    "components": {
+      "(root)": 13,
+      "structural": 1,
+      "apply": 2,
+      "platform": 3,
+      "stateLoader": 4,
+      "list": 5,
+      "command": 2,
+      "event": 3,
+      "stream": 4,
+      "recursion": 2,
+      "watch": 4,
+      "scan": 1,
+      "dcc": 1,
+      "address": 1,
+      "proxy": 4,
+      "webComponent": 10,
+      "bindings": 2
+    },
+    "contract": {
+      "(root)": 1,
+      "devtools": 2,
+      "platform": 1
+    },
+    "dcc": {
+      "components": 2,
+      "(root)": 10,
+      "platform": 1,
+      "address": 1
+    },
+    "dependency": {
+      "(root)": 4,
+      "address": 5,
+      "components": 1,
+      "list": 4,
+      "proxy": 2
+    },
+    "devtools": {
+      "(root)": 6,
+      "webComponent": 1,
+      "updater": 1,
+      "components": 1,
+      "bindTextParser": 4,
+      "structural": 1
+    },
+    "event": {
+      "devtools": 2,
+      "token": 2,
+      "(root)": 35,
+      "list": 7,
+      "proxy": 6,
+      "platform": 4,
+      "protocol": 4,
+      "components": 2,
+      "address": 2,
+      "command": 2,
+      "webComponent": 1,
+      "propagation": 1
+    },
+    "filters": {
+      "(root)": 4
+    },
+    "list": {
+      "(root)": 12,
+      "address": 5,
+      "webComponent": 1
+    },
+    "mustache": {
+      "(root)": 2
+    },
+    "proxy": {
+      "address": 35,
+      "components": 4,
+      "(root)": 31,
+      "list": 24,
+      "recursion": 8,
+      "cache": 3,
+      "dcc": 2,
+      "dependency": 2,
+      "updater": 2,
+      "webComponent": 9,
+      "command": 2,
+      "stream": 3,
+      "devtools": 1,
+      "propagation": 1,
+      "watch": 1
+    },
+    "recursion": {
+      "components": 3,
+      "(root)": 17,
+      "proxy": 7,
+      "address": 7,
+      "cache": 1,
+      "list": 5
+    },
+    "scan": {
+      "address": 1,
+      "(root)": 7,
+      "event": 1,
+      "updater": 2,
+      "devtools": 1,
+      "list": 1,
+      "stream": 1,
+      "watch": 3
+    },
+    "stateLoader": {
+      "(root)": 7
+    },
+    "stream": {
+      "address": 1,
+      "(root)": 7,
+      "scan": 1,
+      "updater": 1
+    },
+    "structural": {
+      "apply": 2,
+      "binding": 4,
+      "bindings": 16,
+      "list": 1,
+      "bindTextParser": 3,
+      "(root)": 19,
+      "filters": 1,
+      "event": 1
+    },
+    "updater": {
+      "address": 2,
+      "version": 1,
+      "list": 1,
+      "apply": 1,
+      "binding": 1,
+      "(root)": 3,
+      "protocol": 1,
+      "devtools": 1,
+      "propagation": 1,
+      "watch": 1,
+      "scan": 1
+    },
+    "watch": {
+      "address": 3,
+      "(root)": 4,
+      "list": 4,
+      "proxy": 1,
+      "scan": 3,
+      "devtools": 1,
+      "updater": 1
+    },
+    "webComponent": {
+      "components": 7,
+      "(root)": 19,
+      "address": 7,
+      "list": 7,
+      "proxy": 6,
+      "apply": 1,
+      "bindings": 3,
+      "mustache": 1,
+      "structural": 2,
+      "bindTextParser": 1,
+      "watch": 3
+    }
+  },
+  "cycles": [
+    {
+      "size": 46,
+      "groups": [
+        "(root)",
+        "apply",
+        "binding",
+        "bindings",
+        "components",
+        "event",
+        "proxy",
+        "recursion",
+        "scan",
+        "stream",
+        "structural",
+        "updater",
+        "watch",
+        "webComponent"
+      ],
+      "members": [
+        "apply/applyChange.ts",
+        "apply/applyChangeFromBindings.ts",
+        "apply/applyChangeToFor.ts",
+        "apply/applyChangeToIf.ts",
+        "apply/reapplyStateBindings.ts",
+        "apply/scheduleDeferredApply.ts",
+        "binding/getAbsoluteStateAddressByBinding.ts",
+        "bindings/BindingSession.ts",
+        "bindings/binder.ts",
+        "bindings/collectNodesAndBindingInfos.ts",
+        "bindings/getParseBindTextResults.ts",
+        "bindings/initialSync.ts",
+        "bindings/initializeBindings.ts",
+        "buildBindings.ts",
+        "components/Ssr.ts",
+        "components/State.ts",
+        "event/checkboxHandler.ts",
+        "event/eventTokenHandler.ts",
+        "event/handler.ts",
+        "event/radioHandler.ts",
+        "event/twowayHandler.ts",
+        "hydrateBindings.ts",
+        "proxy/StateHandler.ts",
+        "proxy/apis/getAll.ts",
+        "proxy/apis/postUpdate.ts",
+        "proxy/apis/resolve.ts",
+        "proxy/apis/setAll.ts",
+        "proxy/methods/setByAddress.ts",
+        "proxy/traps/get.ts",
+        "proxy/traps/set.ts",
+        "recursion/setAllRecursive.ts",
+        "scan/processScanDeclaration.ts",
+        "scan/scanRuntime.ts",
+        "stateElementByName.ts",
+        "stream/streamRuntime.ts",
+        "structural/activateContent.ts",
+        "structural/collectStructuralFragments.ts",
+        "structural/createContent.ts",
+        "structural/fragmentInfoByUUID.ts",
+        "structural/getFragmentNodeInfos.ts",
+        "structural/rowPlan.ts",
+        "updater/updater.ts",
+        "waitForStateInitialize.ts",
+        "watch/watchRuntime.ts",
+        "webComponent/mountScope.ts",
+        "webComponent/volume.ts"
+      ]
+    },
+    {
+      "size": 6,
+      "groups": [
+        "(root)",
+        "address",
+        "binding",
+        "components",
+        "list",
+        "proxy"
+      ],
+      "members": [
+        "address/types.ts",
+        "binding/types.ts",
+        "components/types.ts",
+        "list/types.ts",
+        "proxy/types.ts",
+        "types.ts"
+      ]
+    }
+  ]
+}

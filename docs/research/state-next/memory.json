@@ -1,0 +1,56 @@
+{
+  "label": "next-major",
+  "timestamp": "2026-09-17T21:20:43.230Z",
+  "url": "http://127.0.0.1:4297/packages/state/__e2e__/benchmark/index.html",
+  "samplesPerScenario": 3,
+  "memory": {
+    "readyMemory": {
+      "medianMB": 1.04,
+      "samples": [
+        1.04,
+        1.04,
+        1.04
+      ]
+    },
+    "runMemory": {
+      "medianMB": 5.72,
+      "samples": [
+        5.72,
+        5.72,
+        5.72
+      ]
+    },
+    "replace5Memory": {
+      "medianMB": 6.34,
+      "samples": [
+        6.34,
+        6.46,
+        6.34
+      ]
+    },
+    "update5Memory": {
+      "medianMB": 5.98,
+      "samples": [
+        5.98,
+        5.98,
+        5.98
+      ]
+    },
+    "creation10k": {
+      "medianMB": 35.37,
+      "samples": [
+        35.37,
+        35.38,
+        35.37
+      ]
+    },
+    "clear10k": {
+      "medianMB": 13.34,
+      "samples": [
+        13.34,
+        13.34,
+        13.34
+      ]
+    }
+  }
+}

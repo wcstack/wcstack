@@ -1,0 +1,364 @@
+{
+  "revision": "bf27363fec154f1abb861b6b2d0f525d45274178",
+  "timestamp": "2026-09-17T21:30:03.535Z",
+  "node": "v22.19.0",
+  "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+  "versions": {
+    "rollup": "4.56.0",
+    "terser": "5.46.0",
+    "typescript": "5.9.3"
+  },
+  "sizes": {
+    "index.esm.js": {
+      "bytes": 1123671,
+      "gzip": 310916,
+      "brotli": 225933
+    },
+    "auto.min.js": {
+      "bytes": 235472,
+      "gzip": 68843,
+      "brotli": 58343
+    },
+    "manifest.esm.js": {
+      "bytes": 44596,
+      "gzip": 10382,
+      "brotli": 8642
+    },
+    "parser.esm.js": {
+      "bytes": 58038,
+      "gzip": 15978,
+      "brotli": 13053
+    },
+    "index.min.experiment": {
+      "bytes": 244371,
+      "gzip": 71194,
+      "brotli": 60192
+    },
+    "defineState.only": {
+      "bytes": 89768,
+      "gzip": 26806,
+      "brotli": 23634
+    },
+    "VERSION.only": {
+      "bytes": 89751,
+      "gzip": 26816,
+      "brotli": 23640
+    }
+  },
+  "attribution": {
+    "webComponent": 24409,
+    "components": 23871,
+    "bindings": 21375,
+    "proxy": 19082,
+    "(root)": 16616,
+    "apply": 16497,
+    "scan": 14851,
+    "recursion": 14339,
+    "event": 11994,
+    "list": 10506,
+    "structural": 9616,
+    "stream": 6176,
+    "watch": 5987,
+    "bindTextParser": 5246,
+    "filters": 5019,
+    "dcc": 4537,
+    "address": 4479,
+    "dependency": 4421,
+    "devtools": 3708,
+    "updater": 2359,
+    "protocol": 2326,
+    "binding": 1888,
+    "stateLoader": 1781,
+    "command": 1443,
+    "mustache": 1044,
+    "propagation": 945,
+    "platform": 425,
+    "token": 338,
+    "cache": 156
+  },
+  "autoMatchesCheckedInIgnoringCRLF": true,
+  "autoSha256": "2081554bdc50573c12043f277ce7001ccda00a2209c388e828d1b83473b24182",
+  "temporaryBuildDirectory": "C:\\Users\\kikuzawa\\AppData\\Local\\Temp\\wcstack-state-audit-jaoiZ5",
+  "warnings": [
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/buildBindings.ts -> src/bindings/initializeBindings.ts -> src/bindings/collectNodesAndBindingInfos.ts -> src/bindings/getParseBindTextResults.ts -> src/structural/fragmentInfoByUUID.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/buildBindings.ts -> src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/buildBindings.ts -> src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/binding/getAbsoluteStateAddressByBinding.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/bindings/BindingSession.ts -> src/apply/applyChangeFromBindings.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/buildBindings.ts -> src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/bindings/BindingSession.ts -> src/event/checkboxHandler.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/buildBindings.ts -> src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/bindings/BindingSession.ts -> src/event/eventTokenHandler.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/buildBindings.ts -> src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/bindings/BindingSession.ts -> src/event/handler.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/buildBindings.ts -> src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/bindings/BindingSession.ts -> src/event/radioHandler.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/buildBindings.ts -> src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/bindings/BindingSession.ts -> src/event/twowayHandler.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/buildBindings.ts -> src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/bindings/BindingSession.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/buildBindings.ts -> src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/bindings/BindingSession.ts -> src/bindings/initialSync.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/buildBindings.ts -> src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/apply/applyChange.ts -> src/apply/applyChangeToFor.ts -> src/structural/activateContent.ts -> src/apply/applyChange.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/apply/applyChangeToFor.ts -> src/structural/createContent.ts -> src/bindings/initializeBindings.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/apply/applyChangeToFor.ts -> src/webComponent/mountScope.ts -> src/apply/applyChangeFromBindings.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/apply/applyChangeToFor.ts -> src/webComponent/mountScope.ts -> src/bindings/initializeBindings.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/buildBindings.ts -> src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/apply/applyChangeToFor.ts -> src/webComponent/mountScope.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/apply/applyChange.ts -> src/apply/applyChangeToFor.ts -> src/apply/applyChange.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/apply/scheduleDeferredApply.ts -> src/apply/applyChangeFromBindings.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/hydrateBindings.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/bindings/binder.ts -> src/stateElementByName.ts",
+    "PLUGIN_WARNING: [plugin typescript] @rollup/plugin-typescript TS5051: Option 'inlineSources can only be used when either option '--inlineSourceMap' or option '--sourceMap' is provided."
+  ],
+  "syntax": [
+    {
+      "input": "textContent: x|join(', ')",
+      "result": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "modifiers": [],
+          "path": "x",
+          "filters": [
+            {
+              "name": "join",
+              "args": [
+                ", "
+              ],
+              "sample": "X, Y"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "input": "textContent: x|join(';')",
+      "error": "[@wcstack/state] Invalid filter format: missing closing parenthesis in \"join('\""
+    },
+    {
+      "input": "textContent: x|join('|')",
+      "error": "[@wcstack/state] Invalid filter format: missing closing parenthesis in \"join('\""
+    },
+    {
+      "input": "textContent: x|join('a:b')",
+      "result": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "modifiers": [],
+          "path": "x",
+          "filters": [
+            {
+              "name": "join",
+              "args": [
+                "a:b"
+              ],
+              "sample": "Xa:bY"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "input": "textContent: x|join('unterminated)",
+      "result": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "modifiers": [],
+          "path": "x",
+          "filters": [
+            {
+              "name": "join",
+              "args": [
+                "unterminated"
+              ],
+              "sample": "XunterminatedY"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "input": "value#unknown: x",
+      "result": [
+        {
+          "type": "prop",
+          "prop": "value",
+          "modifiers": [
+            "unknown"
+          ],
+          "path": "x",
+          "filters": []
+        }
+      ]
+    },
+    {
+      "input": "value#ro#wo: x",
+      "result": [
+        {
+          "type": "prop",
+          "prop": "value",
+          "modifiers": [
+            "ro"
+          ],
+          "path": "x",
+          "filters": []
+        }
+      ]
+    },
+    {
+      "input": "else: ignored",
+      "result": [
+        {
+          "type": "else",
+          "prop": "else",
+          "modifiers": [],
+          "path": "#else",
+          "filters": []
+        }
+      ]
+    },
+    {
+      "input": "radio#ro: x",
+      "result": [
+        {
+          "type": "prop",
+          "prop": "radio",
+          "modifiers": [
+            "ro"
+          ],
+          "path": "x",
+          "filters": []
+        }
+      ]
+    },
+    {
+      "input": "only: x",
+      "result": [
+        {
+          "type": "event",
+          "prop": "only",
+          "modifiers": [],
+          "path": "x",
+          "filters": []
+        }
+      ]
+    },
+    {
+      "input": "online: x",
+      "result": [
+        {
+          "type": "event",
+          "prop": "online",
+          "modifiers": [],
+          "path": "x",
+          "filters": []
+        }
+      ]
+    },
+    {
+      "input": "onclick: x",
+      "result": [
+        {
+          "type": "event",
+          "prop": "onclick",
+          "modifiers": [],
+          "path": "x",
+          "filters": []
+        }
+      ]
+    },
+    {
+      "input": "command.run: token",
+      "result": [
+        {
+          "type": "prop",
+          "prop": "command.run",
+          "modifiers": [],
+          "path": "token",
+          "filters": []
+        }
+      ]
+    },
+    {
+      "input": "eventToken.done: token",
+      "result": [
+        {
+          "type": "event",
+          "prop": "eventToken.done",
+          "modifiers": [],
+          "path": "token",
+          "filters": []
+        }
+      ]
+    },
+    {
+      "input": "textContent: x|join('a,b')",
+      "result": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "modifiers": [],
+          "path": "x",
+          "filters": [
+            {
+              "name": "join",
+              "args": [
+                "a,b"
+              ],
+              "sample": "Xa,bY"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "input": "textContent: x|join(a,b)",
+      "result": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "modifiers": [],
+          "path": "x",
+          "filters": [
+            {
+              "name": "join",
+              "args": [
+                "a",
+                "b"
+              ],
+              "sample": "Xa,bY"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "filterSemantics": [
+    {
+      "expression": "eq(true)",
+      "input": "true",
+      "inputType": "boolean",
+      "output": false
+    },
+    {
+      "expression": "eq(1)",
+      "input": "1",
+      "inputType": "number",
+      "output": true
+    },
+    {
+      "expression": "truthy",
+      "input": "0",
+      "inputType": "bigint",
+      "output": true
+    },
+    {
+      "expression": "boolean",
+      "input": "0",
+      "inputType": "bigint",
+      "output": false
+    },
+    {
+      "expression": "defaults(fallback)",
+      "input": "0",
+      "inputType": "number",
+      "output": "fallback"
+    }
+  ],
+  "filterCacheIsolated": "XaY"
+}

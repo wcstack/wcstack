@@ -1,0 +1,247 @@
+{
+  "revision": "6bff9f2cf8c4915c93dceb9c40b56e376eb06119",
+  "timestamp": "2026-09-20T13:27:04.618Z",
+  "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+  "samples": 5,
+  "rows": 10000,
+  "results": [
+    {
+      "shape": "none",
+      "create": {
+        "windowMs": {
+          "median": 50,
+          "min": 31,
+          "max": 52.4,
+          "samples": [
+            31,
+            49.8,
+            50,
+            52.4,
+            50.5
+          ]
+        },
+        "gcMs": {
+          "median": 4.6,
+          "min": 3.1,
+          "max": 5.5,
+          "samples": [
+            3.1,
+            4.1,
+            5.5,
+            5,
+            4.6
+          ]
+        },
+        "gcEvents": {
+          "median": 68,
+          "min": 65,
+          "max": 71,
+          "samples": [
+            65,
+            68,
+            70,
+            71,
+            67
+          ]
+        }
+      },
+      "clear": {
+        "windowMs": {
+          "median": 4.3,
+          "min": 3.8,
+          "max": 4.8,
+          "samples": [
+            3.8,
+            4.4,
+            4.8,
+            4.3,
+            4.3
+          ]
+        },
+        "gcMs": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "gcEvents": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "shape": "current",
+      "create": {
+        "windowMs": {
+          "median": 109.1,
+          "min": 105,
+          "max": 115.6,
+          "samples": [
+            109.1,
+            107.2,
+            110.7,
+            105,
+            115.6
+          ]
+        },
+        "gcMs": {
+          "median": 20.1,
+          "min": 18.8,
+          "max": 23.7,
+          "samples": [
+            23.4,
+            19.5,
+            23.7,
+            18.8,
+            20.1
+          ]
+        },
+        "gcEvents": {
+          "median": 142,
+          "min": 140,
+          "max": 147,
+          "samples": [
+            142,
+            145,
+            147,
+            140,
+            140
+          ]
+        }
+      },
+      "clear": {
+        "windowMs": {
+          "median": 4.6,
+          "min": 4.1,
+          "max": 5,
+          "samples": [
+            4.1,
+            5,
+            4.6,
+            4.9,
+            4.3
+          ]
+        },
+        "gcMs": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "gcEvents": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "shape": "folded",
+      "create": {
+        "windowMs": {
+          "median": 54.9,
+          "min": 53,
+          "max": 56.4,
+          "samples": [
+            54,
+            54.9,
+            53,
+            56,
+            56.4
+          ]
+        },
+        "gcMs": {
+          "median": 5.3,
+          "min": 4.7,
+          "max": 7.6,
+          "samples": [
+            5.3,
+            5.9,
+            4.7,
+            5.2,
+            7.6
+          ]
+        },
+        "gcEvents": {
+          "median": 69,
+          "min": 67,
+          "max": 91,
+          "samples": [
+            71,
+            69,
+            67,
+            67,
+            91
+          ]
+        }
+      },
+      "clear": {
+        "windowMs": {
+          "median": 4.4,
+          "min": 4.2,
+          "max": 4.5,
+          "samples": [
+            4.3,
+            4.5,
+            4.2,
+            4.4,
+            4.4
+          ]
+        },
+        "gcMs": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "gcEvents": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    }
+  ],
+  "browser": "149.0.7827.55"
+}
