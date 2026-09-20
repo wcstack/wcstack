@@ -11,7 +11,7 @@ import { createAbsoluteStateAddress } from "../src/address/AbsoluteStateAddress"
 import { getPathInfo } from "../src/address/PathInfo";
 import { bootstrapState } from "../src/bootstrapState";
 import type { State } from "../src/components/State";
-import { setDevtoolsSink } from "../src/devtools/sink";
+import { setDevtoolsSink } from "../src/platform/devtoolsSink";
 import { getPendingScanResetCount } from "../src/scan/eventReset";
 import { getScanDrainGateCount, getScanEventResetGateCount, getScanRegistry } from "../src/scan/scanRegistry";
 import { getUpdater } from "../src/updater/updater";

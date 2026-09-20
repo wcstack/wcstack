@@ -16,7 +16,7 @@ import { addBindingByAbsoluteStateAddress, clearBindingSetByAbsoluteStateAddress
 import type { IStateElement } from "../src/components/types";
 import { setConfig } from "../src/config";
 import { MAX_PROPAGATION_HOPS } from "../src/define";
-import { setDevtoolsSink } from "../src/devtools/sink";
+import { setDevtoolsSink } from "../src/platform/devtoolsSink";
 import type { DevtoolsEvent } from "../src/devtools/types";
 import {
   __private__,

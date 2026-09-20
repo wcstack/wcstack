@@ -1,5 +1,5 @@
 import type { IStateElement } from "../components/types";
-import { devtoolsSink } from "../devtools/sink";
+import { devtoolsSink } from "../platform/devtoolsSink";
 import { Token } from "../token/Token";
 import { ICommandToken } from "./types";
 

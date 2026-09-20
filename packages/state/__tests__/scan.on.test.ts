@@ -10,7 +10,7 @@ import { createAbsoluteStateAddress } from "../src/address/AbsoluteStateAddress"
 import { getPathInfo } from "../src/address/PathInfo";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
-import { setDevtoolsSink } from "../src/devtools/sink";
+import { setDevtoolsSink } from "../src/platform/devtoolsSink";
 import type { IWcBindable } from "../src/event/types";
 import { getPendingScanResetCount, hasPendingScanReset } from "../src/scan/eventReset";
 import { getScanEventResetGateCount, getScanRegistry } from "../src/scan/scanRegistry";

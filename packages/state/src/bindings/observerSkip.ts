@@ -31,6 +31,28 @@ export function consumeObserverSkipOnRemove(node: Node): boolean {
 // observer flush より先に active 済み。よって待ちがグローバルに 1 つも無ければ
 // 追加側走査も冗長であり丸ごとスキップできる（削除側スキップの対称形）。
 // マーク〜配送が単一 microtask で外部変異が割り込めない前提も削除側と同じ。
+// framework の削除を親ごとの件数で数える（1 つの mutation record がその件数の子をまとめて消したとき、
+// 削除ノードごとの WeakSet 印の代わりに 1 回の判定で飛ばせる）
+const skipRemovedChildrenByParent = new WeakMap<Node, number>();
+
+export function markObserverSkipRemovedChildren(parent: Node, count: number): void {
+  skipRemovedChildrenByParent.set(parent, (skipRemovedChildrenByParent.get(parent) ?? 0) + count);
+}
+
+/** Consumes `count` framework removals of `parent`; false (and nothing consumed) when the count does not cover them. */
+export function consumeObserverSkipRemovedChildren(parent: Node, count: number): boolean {
+  const pending = skipRemovedChildrenByParent.get(parent);
+  if (typeof pending === "undefined" || pending < count) {
+    return false;
+  }
+  if (pending === count) {
+    skipRemovedChildrenByParent.delete(parent);
+  } else {
+    skipRemovedChildrenByParent.set(parent, pending - count);
+  }
+  return true;
+}
+
 const observerSkipAddedNodes = new WeakSet<Node>();
 
 export function markObserverSkipOnAdd(node: Node): void {

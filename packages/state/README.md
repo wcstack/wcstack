@@ -969,6 +969,7 @@ The rule: **read only through `this`, and don't write state or touch the DOM fro
 | `this.$trackDependency(path)` | Register an extra dependency so this getter is dirtied when that path changes |
 | `this.$postUpdate(path)` | Announce that an untracked input changed, from outside the getter |
 | `this.$untrackDependency(fn)` | Read a path *without* registering it as a dependency (the inverse) |
+| `this.$eq(path, key)` / `$eqPath(path, keyPath)` / `$eqIndex(path)` | A keyed subscription: "is `path` equal to this row's key?" without a pattern dependency (see [Keyed selection](#keyed-selection-eq--eqpath--eqindex)) |
 
 ```javascript
 // ✅ The clock ticks in state; the getter stays pure
@@ -994,6 +995,31 @@ Three rules decide what the dependency graph sees. None of them matters until yo
 The first rule is the one static analysis can catch: `wcs-validate` and the VS Code extension report `wcs/getter-untracked-read` when a getter reads `this.form.name` and the document writes `form.name` somewhere (a `value:` binding, a spread, `this["form.name"] = …`). A root that is only ever replaced wholesale — router params, a `$streams` fold — is left alone.
 
 `$untrackDependency(fn)` applies the setter rule to a getter on purpose: reads inside `fn` are not tracked. `$trackDependency(path)` is the escape hatch for the first rule.
+
+### Keyed selection (`$eq` / `$eqPath` / `$eqIndex`)
+
+A row getter that answers "is this row the selected one?" is the classic case where dependency tracking scales badly: `get "items.*.selected"() { return this.$1 === this.selectedIndex; }` makes every row depend on `selectedIndex`, so one click re-evaluates 10,000 getters. The keyed forms subscribe each row under **its own key** instead, and a write to the path re-evaluates only the row that was selected and the row that becomes selected:
+
+| API | Key | Selection follows | Notes |
+|---|---|---|---|
+| `this.$eq(path, key)` | any value | the key | `path` is read without a dependency; the row registers under `key` |
+| `this.$eqPath(path, keyPath)` | the value at `keyPath` (wildcards resolve to this row) | the id | reads the key without a dependency too, so replacing or reordering the list never re-evaluates the rows |
+| `this.$eqIndex(path, level = 1)` | this row's index (`$1`; `level` picks the wildcard) | the index | unlike reading `$1`, the getter is **not** recorded as index-dependent: the list diff re-keys moved rows, so removing a row re-evaluates at most two rows |
+
+```javascript
+export default {
+  items: [],
+  selectedId: null,
+  selectedIndex: null,
+  // selection by id: survives sorting and removal
+  get "items.*.selected"() { return this.$eqPath("selectedId", "items.*.id"); },
+  // selection by position: the same row count of work, keyed on the index
+  get "items.*.current"() { return this.$eqIndex("selectedIndex"); },
+  onSelect(e, $1) { this.selectedId = this["items." + $1 + ".id"]; this.selectedIndex = $1; },
+};
+```
+
+Rules: the three calls only subscribe when evaluated inside a getter under a list row (elsewhere they just return the comparison); a row's subscription is dropped when the list diff removes the row; keys compare with `Object.is` except that Map semantics treat `+0`/`-0` and `NaN`/`NaN` as equal. `$eqPath` reads the key without a dependency, so a row whose key changes in place is not re-evaluated by that change — use it for identities that do not change (ids), and `$eq` with a tracked read when the key itself is live.
 
 ### Loop Index Variables (`$1`, `$2`, ...)
 
@@ -1041,6 +1067,7 @@ Inside state objects (getters / methods), the following APIs are available via `
 | `this.$postUpdate(path)` | Manually trigger update notification for a path |
 | `this.$trackDependency(path)` | Manually register a dependency for cache invalidation |
 | `this.$untrackDependency(fn)` | Read values inside fn without registering dependencies (symmetric to `$trackDependency`) |
+| `this.$eq(path, key)` / `$eqPath(path, keyPath)` / `$eqIndex(path, level?)` | Keyed subscription for "is this row's key the value of `path`?" (see [Keyed selection](#keyed-selection-eq--eqpath--eqindex)) |
 | `this.$command.<name>` | Access a `CommandToken` declared in `$commandTokens` (see [Command Token](#command-token-method-binding)) |
 | `this.$stateElement` | Access to the `IStateElement` instance |
 | `this.$1`, `this.$2`, ... | Current loop index (1-based naming, 0-based value) |

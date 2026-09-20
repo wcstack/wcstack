@@ -549,7 +549,7 @@ describe('setByAddress', () => {
     });
 
     it('fast path でも devtools sink に write イベントが流れること', async () => {
-      const { setDevtoolsSink } = await import('../src/devtools/sink');
+      const { setDevtoolsSink } = await import('../src/platform/devtoolsSink');
       const sink = vi.fn();
       setConfig({ sameValueGuard: true });
       try {

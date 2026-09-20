@@ -10,7 +10,7 @@ import { createAbsoluteStateAddress } from "../src/address/AbsoluteStateAddress"
 import { getPathInfo } from "../src/address/PathInfo";
 import { bootstrapState } from "../src/bootstrapState";
 import type { State } from "../src/components/State";
-import { setDevtoolsSink } from "../src/devtools/sink";
+import { setDevtoolsSink } from "../src/platform/devtoolsSink";
 import { getListIndexesByList } from "../src/list/listIndexesByList";
 import { startStreams } from "../src/stream/streamRuntime";
 import { getUpdater } from "../src/updater/updater";

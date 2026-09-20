@@ -2,6 +2,7 @@ import "../polyfills";
 import { createListIndex, getHomeParentListIndex, setListIndexValue } from "./createListIndex";
 import { resolveListIndexesByList, retireListIndexes, reviveListIndexes, setListIndexesByList } from "./listIndexesByList";
 import { IListDiff, IListIndex } from "./types";
+import { dropKeyedSubscriptionsByListIndex, moveIndexWatchers, rekeyIndexSubscriptions } from "../dependency/keyedDependency";
 
 const listDiffByOldListByNewList = new WeakMap<readonly unknown[], WeakMap<readonly unknown[], IListDiff>>();
 
@@ -59,7 +60,10 @@ function isSameList(oldList: readonly unknown[], newList: readonly unknown[]): b
 function syncListIndexes(newIndexes: IListIndex[], newList: readonly unknown[]): void {
   for (let i = 0; i < newIndexes.length; i++) {
     if (newIndexes[i].index !== i) {
+      const oldIndex = newIndexes[i].index;
       newIndexes[i].index = i;
+      // `$eqIndex` の購読は差分側で鍵を付け替える（dependency/keyedDependency.ts）
+      rekeyIndexSubscriptions(newIndexes[i], oldIndex, i);
     }
     setListIndexValue(newIndexes[i], newList[i]);
   }
@@ -88,7 +92,13 @@ export function createListDiff(
   // 分ける（#256）。両方を毎回の差分で付け直すので、消えない印は残らない。
   // deleteIndexSet と newIndexes は構造上交わらない。
   retireListIndexes(diff.deleteIndexSet);
+  // 退役した行の鍵付き購読（`$eq` 系）は行と一緒に落とす
+  for (const retired of diff.deleteIndexSet) {
+    dropKeyedSubscriptionsByListIndex(retired);
+  }
   reviveListIndexes(diff.newIndexes);
+  // `$eqIndex` の最内段の監視は listIndex 配列に付く: 配列が変わったら移し、最後の値の位置の行を enqueue
+  moveIndexWatchers(diff.oldIndexes, diff.newIndexes);
   return diff;
 }
 

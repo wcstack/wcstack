@@ -3,7 +3,7 @@ import { hydrateBindings } from "./hydrateBindings";
 import { IStateElement } from "./components/types";
 import { config, inSsr } from "./config";
 import { raiseError } from "./raiseError";
-import { devtoolsSink } from "./devtools/sink";
+import { devtoolsSink } from "./platform/devtoolsSink";
 import { drainPendingBinds } from "./bindings/binder";
 import { drainPendingVolumes } from "./webComponent/volumeShared";
 

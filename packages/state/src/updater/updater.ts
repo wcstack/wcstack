@@ -6,7 +6,7 @@ import { peekBindingsForAddress } from "../binding/getBindingSetByAbsoluteStateA
 import { inSsr } from "../config";
 import { MAX_PROPAGATION_HOPS } from "../define";
 import { runTransition } from "../protocol/transitionRunner";
-import { devtoolsSink } from "../devtools/sink";
+import { devtoolsSink } from "../platform/devtoolsSink";
 import { IPropagationContext } from "../propagation/types";
 import { IBindingInfo } from "../types";
 import { noteEnqueueForWatchChain } from "../watch/chainDepth";
@@ -301,7 +301,9 @@ class Updater {
 
 }
 
-const updater = new Updater();
+// コンストラクタは空でフィールド初期化だけ（純粋な割り当て）。バンドラが未使用時に落とせるよう
+// 明示する: ヘルパーだけの import（defineState / 型 / version）にランタイムを残さない
+const updater = /*#__PURE__*/ new Updater();
 
 export function getUpdater(): Updater {
   return updater;

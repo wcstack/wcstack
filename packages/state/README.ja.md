@@ -969,6 +969,7 @@ get total() { return this.price * exchangeRate; }          // モジュール変
 | `this.$trackDependency(path)` | 依存を明示的に追加し、そのパスの変更でこの getter を dirty にする |
 | `this.$postUpdate(path)` | 追跡外の入力が変わったことを getter の外から通知する |
 | `this.$untrackDependency(fn)` | 依存として登録せずにパスを読む（上の対称） |
+| `this.$eq(path, key)` / `$eqPath(path, keyPath)` / `$eqIndex(path)` | 鍵付き購読: 「`path` はこの行の鍵に等しいか」をパターン依存なしで答える（[鍵付き選択](#鍵付き選択eq--eqpath--eqindex)） |
 
 ```javascript
 // ✅ 時計を state 側で刻み、getter は純粋なまま
@@ -994,6 +995,31 @@ getter の例外は握り潰されません。評価された場所（バイン�
 規則 1 は静的解析で捕まえられる唯一の規則です。getter が `this.form.name` を読んでいて、ドキュメントのどこかで `form.name` を書いている（`value:` バインド・spread・`this["form.name"] = …`）と、`wcs-validate` と VS Code 拡張が `wcs/getter-untracked-read` を報告します。ルートを丸ごと置換するだけの設計（router の params・`$streams` の fold）には出ません。
 
 `$untrackDependency(fn)` は setter の規則を getter に意図的に適用するもので、`fn` の中の読み取りは追跡されません。`$trackDependency(path)` は最初の規則に対する逃げ道です。
+
+### 鍵付き選択（`$eq` / `$eqPath` / `$eqIndex`）
+
+「この行は選択中か」を答える行 getter は、依存追跡が最も効きにくい形です。`get "items.*.selected"() { return this.$1 === this.selectedIndex; }` と書くと全行が `selectedIndex` に依存し、1 クリックで 1 万行の getter が再評価されます。鍵付きの形は各行を **その行自身の鍵** の下に購読させ、パスへの書き込みでは「選択されていた行」と「選択される行」だけを再評価します：
+
+| API | 鍵 | 選択の付き先 | 備考 |
+|---|---|---|---|
+| `this.$eq(path, key)` | 任意の値 | 鍵 | `path` は依存を張らずに読み、行は `key` の下に登録される |
+| `this.$eqPath(path, keyPath)` | `keyPath` の値（ワイルドカードはこの行で解決） | id | 鍵も依存を張らずに読むので、リストの置換や並べ替えで行が再評価されない |
+| `this.$eqIndex(path, level = 1)` | この行の index（`$1`。`level` でワイルドカード段を選ぶ） | index | `$1` を読む場合と違い getter を **index 依存に記録しない**: 行の移動はリスト差分が鍵を付け替えるので、1 行削除で再評価されるのは高々 2 行 |
+
+```javascript
+export default {
+  items: [],
+  selectedId: null,
+  selectedIndex: null,
+  // id による選択: 並べ替えや削除をまたいで同じ行に付いて行く
+  get "items.*.selected"() { return this.$eqPath("selectedId", "items.*.id"); },
+  // 位置による選択: 同じ仕事量で index に付く
+  get "items.*.current"() { return this.$eqIndex("selectedIndex"); },
+  onSelect(e, $1) { this.selectedId = this["items." + $1 + ".id"]; this.selectedIndex = $1; },
+};
+```
+
+規則: 3 つの呼び出しが購読を張るのはリスト行の getter の中で評価されたときだけで、それ以外では比較結果を返すだけです。行の購読はリスト差分がその行を外した時点で落ちます。鍵の比較は `Object.is` ですが、Map の意味論により `+0` と `-0`、`NaN` 同士は同じ鍵になります。`$eqPath` は鍵を依存なしで読むので、行の鍵がその場で書き換わっても行は再評価されません — 変わらない同一性（id）に使い、鍵自体が動く場合は追跡付きの読みと `$eq` を組み合わせてください。
 
 ### ループインデックス変数（`$1`, `$2`, ...）
 
@@ -1041,6 +1067,7 @@ export default {
 | `this.$postUpdate(path)` | 指定パスの更新通知を手動で発行 |
 | `this.$trackDependency(path)` | キャッシュ無効化のための依存関係を手動で登録 |
 | `this.$untrackDependency(fn)` | fn 実行中の依存追跡を抑止して値を読む（`$trackDependency` と対称） |
+| `this.$eq(path, key)` / `$eqPath(path, keyPath)` / `$eqIndex(path, level?)` | 鍵付き購読: 「`path` の値はこの行の鍵か」（[鍵付き選択](#鍵付き選択eq--eqpath--eqindex)） |
 | `this.$stateElement` | `IStateElement` インスタンスへのアクセス |
 | `this.$1`, `this.$2`, ... | 現在のループインデックス（1始まりの命名、0始まりの値） |
 

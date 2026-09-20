@@ -35,6 +35,9 @@ import { resolve } from "../apis/resolve";
 import { ISetAllOptions, setAll } from "../apis/setAll";
 import { trackDependency } from "../apis/trackDependency";
 import { untrackDependency } from "../apis/untrackDependency";
+import { registerIndexKeyedDependency, registerIndexWatcher, registerKeyedDependency } from "../../dependency/keyedDependency";
+import { getListIndexesByList } from "../../list/listIndexesByList";
+import { liftAddress as liftAddressForKeyed } from "../../address/liftAddress";
 import { updatedCallback } from "../apis/updatedCallback";
 import { errorCallback } from "../apis/errorCallback";
 import { getByAddress } from "../methods/getByAddress";
@@ -179,6 +182,84 @@ export function get(
               handler
             )(path);
           }
+        }
+        case "$eq": {
+          // 鍵付き購読（dependency/keyedDependency.ts）: `path` を依存に張らず読み、評価中の
+          // getter がリスト行のものならその行を `key` の下に登録する。`path` への書き込みは
+          // 旧値・新値の鍵の行だけを再評価する（選択のような「1 行だけ真」の getter 向け）
+          return (path: string, key: unknown): boolean => {
+            // getter の外（メソッド・コールバック）ではアドレススタックが空: 比較だけ返す
+            const lastAddress = handler.addressStackLength > 0 ? handler.lastAddressStack : null;
+            handler.beginUntrack();
+            let current: unknown;
+            try {
+              current = receiver[path];
+            } finally {
+              handler.endUntrack();
+            }
+            if (lastAddress !== null && handler.stateElement.getterPaths.has(lastAddress.pathInfo.path)) {
+              registerKeyedDependency(handler.stateElement, path, key, liftAddressForKeyed(handler.stateElement, lastAddress), current);
+            }
+            return Object.is(current, key);
+          };
+        }
+        case "$eqPath": {
+          // `$eq` の鍵を keyPath から依存を張らずに読む形（dependency/keyedDependency.ts）。
+          // 追跡付きで行 id を読むと動的辺がリスト置換で全行に展開されるので、ここで抑止する
+          return (path: string, keyPath: string): boolean => {
+            const lastAddress = handler.addressStackLength > 0 ? handler.lastAddressStack : null;
+            handler.beginUntrack();
+            let current: unknown;
+            let key: unknown;
+            try {
+              current = receiver[path];
+              key = receiver[keyPath];
+            } finally {
+              handler.endUntrack();
+            }
+            if (lastAddress !== null && handler.stateElement.getterPaths.has(lastAddress.pathInfo.path)) {
+              registerKeyedDependency(handler.stateElement, path, key, liftAddressForKeyed(handler.stateElement, lastAddress), current);
+            }
+            return Object.is(current, key);
+          };
+        }
+        case "$eqIndex": {
+          // `$eq` の鍵を評価中の行の index（`$1` = level 1）にする形。`$1` の読み取りと違い
+          // getter を index 依存には記録しない: 行の移動はリスト差分が鍵を付け替える
+          // （dependency/keyedDependency.ts の rekeyIndexSubscriptions）
+          return (path: string, level: number = 1): boolean => {
+            const lastAddress = handler.addressStackLength > 0 ? handler.lastAddressStack : null;
+            if (lastAddress === null || lastAddress.listIndex === null) {
+              raiseError(`$eqIndex("${path}") needs a list row scope.`);
+            }
+            const levelListIndex = listIndexAtWildcard(lastAddress.listIndex, level - 1, lastAddress.pathInfo.wildcardCount);
+            if (levelListIndex === null) {
+              raiseError(`$eqIndex("${path}", ${level}): no list index at that level.`);
+            }
+            // 最内段（getter 自身の行の段）はリスト単位の監視で O(1)、外側の段は行ごとの購読
+            const innermost = level === lastAddress.pathInfo.wildcardCount;
+            handler.beginUntrack();
+            let current: unknown;
+            let listValue: unknown;
+            try {
+              current = receiver[path];
+              if (innermost) {
+                listValue = receiver[lastAddress.pathInfo.wildcardParentPaths[level - 1]];
+              }
+            } finally {
+              handler.endUntrack();
+            }
+            if (handler.stateElement.getterPaths.has(lastAddress.pathInfo.path)) {
+              // 描画済みの行の親リストは必ず台帳（listIndexesByList）を持つ
+              const indexes = innermost ? getListIndexesByList(listValue as readonly unknown[]) : null;
+              if (indexes !== null) {
+                registerIndexWatcher(handler.stateElement, path, lastAddress.pathInfo, indexes, current);
+              } else {
+                registerIndexKeyedDependency(handler.stateElement, path, levelListIndex, liftAddressForKeyed(handler.stateElement, lastAddress), current);
+              }
+            }
+            return Object.is(current, levelListIndex.index);
+          };
         }
         case "$untrackDependency": {
           return <T>(fn: () => T): T => {

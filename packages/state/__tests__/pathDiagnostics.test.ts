@@ -15,7 +15,7 @@ import {
   missingRootPathMessage,
   resolvePathExistence,
 } from "../src/pathDiagnostics";
-import { setDevtoolsSink } from "../src/devtools/sink";
+import { setDevtoolsSink } from "../src/platform/devtoolsSink";
 import type { IStateElement } from "../src/components/types";
 import type { DevtoolsEvent } from "../src/devtools/types";
 

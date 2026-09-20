@@ -20,7 +20,7 @@ import { raiseError } from "../raiseError";
 import { VERSION } from "../version";
 import { IStateElement } from "../components/types";
 import { collectDeclaredBindings } from "./declaredBindings";
-import { devtoolsSink, setDevtoolsSink } from "./sink";
+import { devtoolsSink, setDevtoolsSink } from "../platform/devtoolsSink";
 import {
   DEVTOOLS_HOOK_GLOBAL,
   DEVTOOLS_PROTOCOL_VERSION,

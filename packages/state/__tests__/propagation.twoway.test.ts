@@ -13,7 +13,7 @@ vi.mock("../src/stateElementByName", () => ({
 }));
 
 import { setConfig } from "../src/config";
-import { setDevtoolsSink } from "../src/devtools/sink";
+import { setDevtoolsSink } from "../src/platform/devtoolsSink";
 import type { DevtoolsEvent } from "../src/devtools/types";
 import { attachTwowayEventHandler, detachTwowayEventHandler } from "../src/event/twowayHandler";
 import { getPathInfo } from "../src/address/PathInfo";

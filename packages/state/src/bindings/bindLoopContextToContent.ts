@@ -12,7 +12,7 @@ export function bindLoopContextToContent(content: IContent, loopContext: ILoopCo
 
 export function unbindLoopContextToContent(content: IContent): void {
   const nodes = getNodesByContent(content);
-  for(const node of nodes) {
-    setLoopContextByNode(node, null);
+  for (let i = 0; i < nodes.length; i++) { // 添字ループ（消去の窓に反復子のごみを残さない）
+    setLoopContextByNode(nodes[i], null);
   }
 }

@@ -3,7 +3,7 @@ import { IContent } from "./types";
 
 const contentSetByNode = new WeakMap<Node, Set<IContent>>();
 
-const EMPTY_SET = createEmptySet<IContent>();
+const EMPTY_SET = /*#__PURE__*/ createEmptySet<IContent>();
 
 export function setContentByNode(node: Node, content: IContent): void {
   const contents = contentSetByNode.get(node);
