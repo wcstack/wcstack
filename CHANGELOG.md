@@ -8,6 +8,15 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Added
+
+- `@wcstack/state`: **keyed selection** — `this.$eq(path, key)`, `this.$eqPath(path, keyPath)` and `this.$eqIndex(path, level = 1)`. A row getter that answers "is this row the selected one?" used to depend on the selection path from every row, so one click re-evaluated the whole list (`get "items.*.selected"() { return this.$1 === this.selectedIndex; }`). The keyed forms subscribe each row under its own key, and a write to the path re-evaluates only the row that was selected and the row that becomes selected: selecting one of 10,000 rows goes from 20 ms to 0.2 ms. `$eqPath` keys on an id and survives sorting and removal; `$eqIndex` keys on the row's index, and the list diff re-keys moved rows, so removing a row re-evaluates at most two rows. They subscribe only inside a getter under a list row (elsewhere they return the comparison), a row's subscription is dropped with the row, and keys compare as `Map` keys. Contract: the state README, "Keyed selection".
+
+### Changed
+
+- `@wcstack/state`: clearing a long list allocates a quarter of what it did. The teardown ran on iterators and grew a per-node `WeakSet` of observer-skip marks; it now runs index loops and keeps one skip count per parent, which moves the young-generation GC out of the clear (clearing 10,000 rows: 8.1 → 2.1 MB allocated, 18–20 ms). No behaviour changes.
+- `@wcstack/state`: importing only `defineState` (or the types) no longer keeps the runtime. Three registrations ran at module evaluation (the `$watch` and `$streams` runtimes and volume grafting); they are installed by `bootstrapState()` and on first use instead, so a `defineState`-only import tree-shakes to about 0.3 KB gzip (was 26.7 KB). No behaviour changes.
+
 ## [2.5.1] — 2026-09-20
 
 ### Changed
