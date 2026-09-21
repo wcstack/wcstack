@@ -47,7 +47,7 @@ Where the 28 µs of a row go (survey §10.7, §10.11, §10.13):
 | Stage | Content | Measured effect | Ships in | Surface |
 |---|---|---|---|---|
 | R1 | The clear's allocation (index loops, per-parent skip counts) | clear 22–72 → 18–20 ms, no scavenge inside the window | **2.6.x (ported)** | none |
-| R2 | Plan-level initial render | 10,000 rows −10 %, warm 1,000 −27 % | 3.0 (D10) | `applyValueToBinding` exported internally |
+| R2 | Plan-level initial render | reads 7 → 4 and applies 3 → 1 per row, activation phase −34 %, warm 1,000 rows −34 % (§4-1) | **3.0 (implemented, §4-1)** | `applyValueToBinding` exported internally |
 | R3 | Row record + one session per list | heap −16 % (3.6 → 3.0 KB/row), time unchanged | 3.0 (D11) | `BindingSession`'s core (`disposeBindings`, `destroyRow`, `isRowSession`, a composed `getRecord`) |
 | R4 | Unify `BindingSession`'s two paths | core −2.9 KB minified (wiring design §5) | 3.0 | the plan path and the general path become one |
 | R5 | Cold candidates (T4 clone / node-path forms, pool pre-warming) | unmeasured (8 ms of cold is the target) | undecided | `resolveNodePath`'s shape, an opt-in attribute |
@@ -61,6 +61,25 @@ R2 before R3 follows the order the measurements were stacked in (§10.13 → §1
 - **When it falls back**: a state with `$updatedCallback` (the per-binding address collection is needed) and a state with `**` (the expanded getters are not in `getterPaths`).
 - **What breaks easily** (8 tests failed on the prototype's first version): recursion and `_state` re-set — the expanded getters and the rebuilt `getterPaths`. Two boundary tests pin them.
 - **Verification**: the counters' third stage (reads 7 → 4, applies 3 → 1), the profile (initial apply 6.0 → 4.2 µs/row) and the benchmark timings (warm 1,000 rows 19.0 → 17.4; cold unchanged).
+
+### 4-1. R2's implementation record (2026-09-21, `packages/state`)
+
+The prototype's shape (survey §10.13) went into the product as is: a new `structural/planByContent.ts` (plan lookup for a content), `applyValueToBinding` exported from `apply/applyChange.ts`, and `applyPlanRow` in `structural/activateContent.ts`.
+
+- **Which slots qualify is row-invariant**, so it is computed once per (plan, row path) and kept in a `WeakMap<IRowPlan, Map<rowPath, tails>>`. Only the getter test is redone per row, against `getterPaths` (a re-set rebuilds that set).
+- **The two things that broke the prototype (recursion, re-set) were built in from the start**, so all 3,704 tests passed on the first run. Six boundary tests were added ([structural.planRender.test.ts](../packages/state/__tests__/structural.planRender.test.ts): plain leaves beside getters, updating a row, a nested list, a `**` state, a re-set that turns a getter into plain data, and a state with `$updatedCallback`).
+- **Measured** with [audit-state-tech-counters.mjs](../scripts/audit-state-tech-counters.mjs) `--content --fixture tracked` (the "before" side is a copy of HEAD measured with `--pkg`), two runs each, medians. Artefacts: [-r2-before.json](./research/state-next/runtime-counters-content-tracked-r2-before.json), [-r2-before-2.json](./research/state-next/runtime-counters-content-tracked-r2-before-2.json), [-r2-after-1.json](./research/state-next/runtime-counters-content-tracked-r2-after-1.json), [runtime-counters-content-tracked.json](./research/state-next/runtime-counters-content-tracked.json).
+
+| Measure | Before | After |
+|---|---:|---:|
+| Reads per row | 7 | **4** |
+| Applies per row | 3 | **1** |
+| Warm 1,000 rows (elapsed, 8 samples) | 20.7 ms | **13.6 ms** (−34 %) |
+| Warm 1,000 rows (activation phase) | 14.9 ms | **8.1 ms** (−46 %) |
+| Create 10,000 rows (activation phase, 6 samples) | 150.1 ms | **98.9 ms** (−34 %) |
+| Create 10,000 rows (elapsed, 6 samples) | 353.8 ms | 335.2 ms (−5 %; the samples, 323–371 and 285–362, overlap) |
+
+- **Elapsed sinks into the sample spread** (creating 10,000 rows moves ±30 ms on this machine). What is solid is the counters and the phase the change targets. The prototype's −10 % in §10.13 was measured on a sandbox that also carried the row record and the clear patches, which is consistent with the −5 % here.
 
 ## 5. R3 — the row record and one session per list
 

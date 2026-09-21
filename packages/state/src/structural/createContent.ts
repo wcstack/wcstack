@@ -16,6 +16,7 @@ import { getContentSetByNode, setContentByNode } from "./contentsByNode.js";
 import { getFragmentInfoByUUID } from "./fragmentInfoByUUID.js";
 import { resolveNodePath } from "./resolveNodePath.js";
 import { compileRowPlan } from "./rowPlan.js";
+import { setPlanByContent } from "./planByContent.js";
 import { IContent, IFragmentInfo, IRowPlan } from "./types.js";
 
 const recursiveBindingTypes = new Set(['if', 'elseif', 'else', 'for']);
@@ -331,6 +332,8 @@ function createPlanContent(
   const content = new Content(cloneFragment);
   setBindingSessionByContent(content, session);
   setBindingsByContent(content, bindings);
+  // 活性化がこの行をプラン初期描画に載せてよいか判定するための逆引き（設計 R2）
+  setPlanByContent(content, plan);
   setIndexBindingsByContent(content, indexBindings);
   setNodesByContent(content, nodes);
   setContentByNode(bindingInfo.node, content);

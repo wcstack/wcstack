@@ -47,7 +47,7 @@
 | 段 | 内容 | 効果（実測） | 出荷 | 公開面 |
 |---|---|---|---|---|
 | R1 | 消去の割り当て（添字ループ＋親ごとのスキップ件数） | 消去 22〜72 → 18〜20 ms、窓の中の scavenge 0 | **2.6.x（移植済み）** | なし |
-| R2 | プラン初期描画 | 1 万行 −10%、warm 1,000 行 −27% | 3.0（D10） | `applyValueToBinding` の内部 export |
+| R2 | プラン初期描画 | 読み 7 → 4・適用 3 → 1 回/行、活性化の段 −34%、warm 1,000 行 −34%（§4-1 の実測） | **3.0（実装済み、§4-1）** | `applyValueToBinding` の内部 export |
 | R3 | 行 record ＋ session をリストごとに 1 つ | ヒープ −16%（3.6 → 3.0 KB/行）、時間は不変 | 3.0（D11） | `BindingSession` の中核（`disposeBindings` / `destroyRow` / `isRowSession`、`getRecord` の合成ビュー） |
 | R4 | `BindingSession` の二重経路の一本化 | core −2.9 KB minify の見込み（配線設計 §5） | 3.0 | プラン経路と汎用経路の統合 |
 | R5 | cold の候補（複製とノードパス解決の T4 形・プールの事前生成） | 未測定（cold 8 ms が対象） | 未定 | `resolveNodePath` の形・opt-in 属性 |
@@ -61,6 +61,25 @@ R2 → R3 の順は計測の積み上げ順（§10.13 → §10.14）に合わせ
 - **倒す条件**: `$updatedCallback` を持つ state（束縛ごとのアドレス集計が要る）と `**` を持つ state（展開形の getter が `getterPaths` に無い）。
 - **壊しやすい点**（試作で実際に落ちた 8 件）: 再帰と `_state` 再セット。前者は展開形の getter、後者は `getterPaths` の作り直し。境界テストを 2 本足す。
 - **検証**: 第 3 段計数（読み 7 → 4・適用 3 → 1）、プロファイル（初期適用 6.0 → 4.2 µs/行）、ベンチ計時（warm 1,000 行 19.0 → 17.4、cold は不変）。
+
+### 4-1. R2 の実装記録（2026-09-21、`packages/state`）
+
+試作（調査 §10.13）と同じ形を製品に入れた。新規 `structural/planByContent.ts`（プラン行の逆引き）、`apply/applyChange.ts` の `applyValueToBinding`（内部 export）、`structural/activateContent.ts` の `applyPlanRow`。
+
+- **載せる slot の判定は行不変なので、プランと行パスの組ごとに 1 回**だけ作って `WeakMap<IRowPlan, Map<rowPath, tails>>` に持つ。getter かどうかだけは行ごとに `getterPaths` を引く（再セットで作り直されるため）。
+- **試作で落ちた 2 点（再帰・再セット）は最初から入れてあるので、全テスト 3,704 件が一度で通った**。境界テストを 6 件足した（[structural.planRender.test.ts](../packages/state/__tests__/structural.planRender.test.ts): 素の葉と getter の同居・行の更新・入れ子リスト・`**` の state・再セットで getter が入れ替わる形・`$updatedCallback` を持つ state）。
+- **実測**（[audit-state-tech-counters.mjs](../scripts/audit-state-tech-counters.mjs) `--content --fixture tracked`、移植前は HEAD のコピーに `--pkg`。各 2 回走らせた標本の中央値。成果物: [-r2-before.json](./research/state-next/runtime-counters-content-tracked-r2-before.json) / [-r2-before-2.json](./research/state-next/runtime-counters-content-tracked-r2-before-2.json) / [-r2-after-1.json](./research/state-next/runtime-counters-content-tracked-r2-after-1.json) / [runtime-counters-content-tracked.json](./research/state-next/runtime-counters-content-tracked.json)）:
+
+| 指標 | 前 | 後 |
+|---|---:|---:|
+| 読み（回/行） | 7 | **4** |
+| 適用（回/行） | 3 | **1** |
+| warm 1,000 行（経過、8 標本） | 20.7 ms | **13.6 ms**（−34%） |
+| warm 1,000 行（活性化の段） | 14.9 ms | **8.1 ms**（−46%） |
+| 生成 1 万行（活性化の段、6 標本） | 150.1 ms | **98.9 ms**（−34%） |
+| 生成 1 万行（経過、6 標本） | 353.8 ms | 335.2 ms（−5%。標本は 323〜371 と 285〜362 で重なる） |
+
+- **経過は標本のばらつきに沈む**（この機械では 1 万行の生成が ±30 ms 動く）。確かなのは計数（読み・適用）と、変更が狙った活性化の段。試作の §10.13 が「1 万行 −10%」と出したのは、行 record と消去パッチを積んだサンドボックスでの値で、ここでの −5% と矛盾しない。
 
 ## 5. R3 行 record ＋ session をリストごとに 1 つ
 

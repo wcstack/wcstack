@@ -95,7 +95,15 @@ function resolveCustomElementApply(binding: IBindingInfo): ApplyChangeFn {
 }
 
 function _applyChange(binding: IBindingInfo, context: IApplyContext): void {
-  const value = getValue(context.state, binding);
+  applyValueToBinding(binding, context, getValue(context.state, binding));
+}
+
+/**
+ * 値が既に手元にあるときの `_applyChange` の後半（フィルタ適用 → DOM 書き込み）。
+ * プラン初期描画（structural/activateContent.ts、設計 R2）が、行オブジェクトから直に
+ * 読んだ素の値を渡すために使う。値の出どころ以外は通常の適用と同じ経路。
+ */
+export function applyValueToBinding(binding: IBindingInfo, context: IApplyContext, value: unknown): void {
   const filteredValue = getFilteredValue(value, binding.outFilters);
 
   if (deferredSelectBindingByBinding.get(binding) === true) {
