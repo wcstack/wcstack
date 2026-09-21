@@ -184,15 +184,32 @@ uses every feature is smaller as one file than as core plus features. When a pag
 leaves features out, it can compose them instead:
 
 ```html
+<script type="importmap">
+{
+  "imports": {
+    "@wcstack/state/core": "https://cdn.jsdelivr.net/npm/@wcstack/state@3.0.0/dist/split/core.js",
+    "@wcstack/state/features/temporal": "https://cdn.jsdelivr.net/npm/@wcstack/state@3.0.0/dist/split/features/temporal.js",
+    "@wcstack/state/features/scopes": "https://cdn.jsdelivr.net/npm/@wcstack/state@3.0.0/dist/split/features/scopes.js"
+  }
+}
+</script>
 <script type="module">
-  import { bootstrapState, installFeatures } from 'https://esm.run/@wcstack/state/core';
-  import temporal from 'https://esm.run/@wcstack/state/features/temporal';  // $watch / $scan / $streams
-  import scopes from 'https://esm.run/@wcstack/state/features/scopes';      // bind-component, mount=, DCC
+  import { bootstrapState, installFeatures } from '@wcstack/state/core';
+  import temporal from '@wcstack/state/features/temporal';  // $watch / $scan / $streams
+  import scopes from '@wcstack/state/features/scopes';      // bind-component, mount=, DCC
 
   installFeatures([temporal, scopes]);
   bootstrapState();
 </script>
 ```
+
+Load the split form from the package's own files — jsDelivr's plain, version-pinned `/npm/` path as
+above (it does not read `exports`, so name the file under `dist/split/`), or a bundler — and **never
+through `esm.run`**. Its `+esm` endpoint re-bundles every entry on the server and inlines the shared
+core chunk into each one, so every entry would carry its own engine: a feature would install into a
+copy the core never sees, and the page throws `[wcs/feature-not-installed]` in spite of
+`installFeatures`. From the plain files, every entry's relative import resolves to the same chunk URL,
+so the browser evaluates the engine once. Integrity for this form: [docs/sri.md §5.1](../../docs/sri.md#51-the-split-entries-of-wcstackstate).
 
 | Entry | What it adds |
 |---|---|

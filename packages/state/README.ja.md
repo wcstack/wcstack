@@ -183,15 +183,32 @@
 機能に分けるより 1 ファイルのほうが小さい）。機能を意図的に落とすページは、組み合わせて入れられます。
 
 ```html
+<script type="importmap">
+{
+  "imports": {
+    "@wcstack/state/core": "https://cdn.jsdelivr.net/npm/@wcstack/state@3.0.0/dist/split/core.js",
+    "@wcstack/state/features/temporal": "https://cdn.jsdelivr.net/npm/@wcstack/state@3.0.0/dist/split/features/temporal.js",
+    "@wcstack/state/features/scopes": "https://cdn.jsdelivr.net/npm/@wcstack/state@3.0.0/dist/split/features/scopes.js"
+  }
+}
+</script>
 <script type="module">
-  import { bootstrapState, installFeatures } from 'https://esm.run/@wcstack/state/core';
-  import temporal from 'https://esm.run/@wcstack/state/features/temporal';  // $watch / $scan / $streams
-  import scopes from 'https://esm.run/@wcstack/state/features/scopes';      // bind-component・mount=・DCC
+  import { bootstrapState, installFeatures } from '@wcstack/state/core';
+  import temporal from '@wcstack/state/features/temporal';  // $watch / $scan / $streams
+  import scopes from '@wcstack/state/features/scopes';      // bind-component・mount=・DCC
 
   installFeatures([temporal, scopes]);
   bootstrapState();
 </script>
 ```
+
+分割の形は、パッケージのファイルそのものから読みます — 上の例のように jsDelivr の素の `/npm/` パスで
+版を固定するか（素のパスは `exports` を読まないので、`dist/split/` 以下のファイル名を書く）、バンドラを
+通します。**`esm.run` からは読まないでください**。`+esm` はエントリごとにサーバー側で再バンドルし、
+共有の core チャンクをそれぞれに取り込むため、エントリごとに別のエンジンを抱えます。機能は core から
+見えないコピーへ install され、`installFeatures` を呼んでも `[wcs/feature-not-installed]` で落ちます。
+素のファイルなら、どのエントリの相対 import も同じチャンクの URL に解決され、エンジンは 1 回だけ評価
+されます。この形の integrity は [docs/sri.ja.md §5.1](../../docs/sri.ja.md#51-wcstackstate-の分割エントリ) を参照。
 
 | エントリ | 足されるもの |
 |---|---|
