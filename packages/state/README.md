@@ -1098,7 +1098,7 @@ What reaches the rows:
 - **A write to `path`** — of any value, objects included (`this.selected = row` with `$eq("selected", this["items.*"])`): the row that was selected and the row that becomes selected.
 - **A write to an object above `path`** — `this.sel = { id: 2 }` for `$eq("sel.id", …)`: the same two rows, keyed by the value `path` had under the old object and has under the new one.
 - **A `path` that is a getter, or sits under one** (`$eq("current.id", …)` with `get current()`): its value changes without a write to it, so the calls fall back to an ordinary tracked read. The selection stays correct, but a change re-evaluates every row, as without the keyed form. Point `path` at the written state (`selectedId`) to keep the two-row cost.
-- **No type conversion:** `"2"` does not match the id `2`. An `<input>` or `<select>` writes strings, so store ids as strings, bind `valueAsNumber` on a number input, or convert in the handler.
+- **No type conversion:** `"2"` does not match the id `2`. An `<input>` or `<select>` writes strings, so convert on the way in (`value|number: selectedId`) or keep the ids as strings.
 
 ### Loop Index Variables (`$1`, `$2`, ...)
 
