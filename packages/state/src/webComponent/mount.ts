@@ -1,7 +1,8 @@
 import { getPathInfo } from "../address/PathInfo";
 import { IPathInfo } from "../address/types";
 import { IStateElement } from "../components/types";
-import { DELIMITER, RECURSION_WILDCARD, WILDCARD } from "../define";
+import { DELIMITER, MODIFIER_READONLY, RECURSION_WILDCARD, WILDCARD } from "../define";
+import { warnV3Migration } from "../v3Migration";
 import { raiseError } from "../raiseError";
 import { IBindingInfo } from "../types";
 
@@ -34,6 +35,8 @@ export interface IMountEntry {
   /** 内側接頭辞のセグメント（ルートエントリは 0 個 — あらゆる内側パスに一致する） */
   readonly innerSegments: readonly string[];
   readonly outerPathInfo: IPathInfo;
+  /** ホストが `#ro` を付けたか（`state#ro: user`）。2.x は読まないが、3.0 はコンポーネント側の書き込みを拒否する（要件 D2 / B14 ①の予告） */
+  readonly readonly?: boolean;
 }
 
 export interface IMountRecord {
@@ -114,7 +117,8 @@ let nextMountId = 0;
 
 const MOUNT_DOLLAR_DECLARATIONS = [
   "$watch", "$streams", "$scan", "$listKeys", "$updatedCallback", "$commandTokens", "$eventTokens", "$on",
-  "$recursion",
+  // $errorCallback もルート専用（以前は無言で無視していた — 3.0 と同じく名指しで知らせる）
+  "$recursion", "$errorCallback",
 ] as const;
 const dollarDeclarationWarned = new Set<string>();
 
@@ -228,7 +232,11 @@ export function buildMountRecord(
       raiseError('Duplicate mapping rule for web component.');
     }
     seenInnerPaths.add(innerPath);
-    const entry: IMountEntry = { innerSegments, outerPathInfo: binding.statePathInfo };
+    const entry: IMountEntry = {
+      innerSegments,
+      outerPathInfo: binding.statePathInfo,
+      readonly: binding.propModifiers?.includes(MODIFIER_READONLY) === true,
+    };
     entries.push(entry);
     if (innerSegments.length === 0) {
       rootEntry = entry;
@@ -419,6 +427,28 @@ export function getIndexShiftForScope(record: IMountRecord, forPath: string | un
   }
   const translated = translateInnerPath(record, forPath);
   return getPathInfo(translated).wildcardCount - getPathInfo(forPath).wildcardCount;
+}
+
+/**
+ * コンポーネント側の書き込みの翻訳。2.x は `translateInnerPath` と同じだが、読み取り専用で
+ * マウントされたエントリ（`state#ro: user`）を通るツリーへの書き込みなら 3.0 の拒否を予告する
+ * （要件 D2 / B14 ①）。
+ */
+export function translateInnerWritePath(record: IMountRecord, innerPath: string): string {
+  const translated = translateInnerPath(record, innerPath);
+  const head = innerPath[0];
+  if (head !== "$" && head !== "#" && !translated.includes(record.marker)) {
+    const segments = innerPath.split(DELIMITER);
+    const entry = record.entries.find((e) => e.innerSegments.every((s, i) => segments[i] === s));
+    if (entry !== undefined && entry.readonly === true) {
+      const suffix = entry.innerSegments.length === 0 ? "" : DELIMITER + entry.innerSegments.join(DELIMITER);
+      warnV3Migration(
+        `<${record.component.tagName.toLowerCase()}> writes "${innerPath}" through "${record.stateProp}${suffix}#${MODIFIER_READONLY}: ` +
+        `${entry.outerPathInfo.path}": 3.0 throws. Write it on the host, or drop #${MODIFIER_READONLY}.`,
+      );
+    }
+  }
+  return translated;
 }
 
 export function translateInnerPath(record: IMountRecord, innerPath: string): string {

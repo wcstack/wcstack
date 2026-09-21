@@ -241,7 +241,8 @@ function processVolumeDeclarations(
 
   // $commandTokens / $eventTokens / $on も未対応（トークンはパスではなく要素の面 —
   // ルートに宣言する）。無言に捨てないが、接ぎ木自体は成立させる（warn 止まり）
-  for (const name of ["$commandTokens", "$eventTokens", "$on"]) {
+  // $errorCallback もルート専用（以前は無言で無視していた — 3.0 と同じく名指しで知らせる）
+  for (const name of ["$commandTokens", "$eventTokens", "$on", "$errorCallback"]) {
     if (typeof (volumeState as Record<string, unknown>)[name] !== "undefined") {
       console.warn(
         `[@wcstack/state] volume "${mountPath}" declares ${name}, which volumes do not support. ` +

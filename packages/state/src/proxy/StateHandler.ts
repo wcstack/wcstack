@@ -32,6 +32,10 @@ class StateHandler implements IStateHandler {
     this._mutability = mutability;
   }
 
+  get mutability(): Mutability {
+    return this._mutability;
+  }
+
   get stateElement(): IStateElement {
     return this._stateElement;
   }

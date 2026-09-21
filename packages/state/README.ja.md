@@ -2668,6 +2668,38 @@ this.$getAll("matrix.*.*", [row]);
 | `$watch` の書き込み連鎖 | 32 | そのバッチの watch 発火をスキップ |
 | バインディングの適用失敗 | — | その 1 本のみスキップ |
 
+### 3.0 への準備（`wcs/v3-migration`）
+
+3.0 は互換層を持ちません。代わりにこのリリースは、3.0 が拒否する書き方・読み方が変わる書き方を 2.x のまま動かしつつ名指しで知らせます。警告は書き方とサイトごとに 1 回だけ、コード `wcs/v3-migration` で出し、3.0 での扱いと今の書き換え先を示します：
+
+```
+[@wcstack/state] [wcs/v3-migration] "value#ro#wo": 3.0 rejects a second "#". Write "value#ro,wo".
+See "Preparing for 3.0" in the @wcstack/state README.
+```
+
+| 書き方 | 2.x | 3.0 | 今の書き方 |
+|---|---|---|---|
+| 2 つ目の `#`（`value#ro#wo:`） | 最初の修飾子列だけ残す | `[wcs/binding-syntax]` | `value#ro,wo:` |
+| `else:` の後ろの値 | 無視 | `[wcs/binding-syntax]` | `else:` |
+| `for` / `if` / `elseif` / `else` / `...` の修飾子・フィルタ | ただのプロパティのバインディングになる | `[wcs/binding-syntax]` | キーワードだけ |
+| `radio#ro:` / `checkbox#ro:` | `radio` という名前のプロパティになり効かない | 修飾子を守る radio / checkbox のバインディング | —（意図どおりか確かめる） |
+| フィルタ引数の閉じていない引用符 | 黙って閉じる | `[wcs/binding-syntax]` | 引用符を閉じる |
+| フィルタが受け取る数を超える引数 | 余りは無視 | `[wcs/filter-arity]` | 余りを消す |
+| `eq` / `ne` の引用符の無い `true` / `false` / `null`（`eq(true)`） | 真偽値・`null` の値を文字列と比べる | 型付きの値と比べる | 文字列で比べ続けるなら `eq('true')` |
+| `defaults` の引用符の無い `true` / `false` / `null` | 文字列（`"null"`）を既定値にする | 型付きの値を既定値にする | 文字列のままなら `defaults('null')` |
+| `truthy` / `falsy` / `defaults` に来た `0n` | 真 | 偽（JavaScript の真偽判定） | — |
+| `textContent` / `innerText` / `innerHTML` への `undefined` | 前のテキストを残す（使い回した行では前の行のもの） | 空にする | 「値なし」は `""` か `null` を返す |
+| `attr.*` への `undefined` / `null` | `"undefined"` / `"null"` を書く | 属性を削除する | — |
+| `style.*` への `undefined` | 前の値を残す | 消す | — |
+| `$resolve(path, indexes, undefined)` | 読む | `undefined` を書く（引数の個数で決める） | 読むなら `$resolve(path, indexes)` |
+| readonly のプロキシからの `$resolve(path, indexes, value)` / `$setAll` | 書く | `This state is readonly.` を投げる | `createState("writable", …)` から書く |
+| `#ro` のマウント（`state#ro: user`）を通るコンポーネントの書き込み | ホストのツリーに書く | `[wcs/mount-readonly]` | ホストで書くか、`#ro` を外す |
+| 部分マウントに隠された自前の既定値（コンポーネントが `name` を宣言し、`state.name: user.name`） | 既定値が勝つ（警告あり） | 明示したマウントが勝つ | 既定値を消す |
+
+もう 1 つは予告でなく先に入れています：ボリュームやマウントされたコンポーネントの `$errorCallback` は黙って無視していましたが、ルート専用のキー（`$commandTokens`、`$on` など）を挙げる既存の警告で名指しするようにしました（3.0 と同じ）。動くのは今もルートの state だけです。
+
+値の警告はその値が実際に来たときにだけ出ます。コンソールが静かでも、テストが通らなかった経路については何も分かりません。文法の行はバインディングを最初に解析したときに調べます。`npx @wcstack/lint <file>`（と VS Code 拡張）も同じ判定で `wcs/v3-migration`（info）として報告するので、ページを動かさずに見つけられます。
+
 ## 設定
 
 `bootstrapState()` に部分的な設定オブジェクトを渡します：

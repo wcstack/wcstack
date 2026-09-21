@@ -15,6 +15,7 @@
  * - spread            `$setAll(path, indexes, values, { spread: true })`
  */
 
+import { READONLY_WRITE, warnV3Migration } from "../../v3Migration";
 import { getPathInfo } from "../../address/PathInfo";
 import { createStateAddress } from "../../address/StateAddress";
 import { IStateAddress } from "../../address/types";
@@ -51,6 +52,10 @@ export function setAll(
   handler : IStateHandler
 ): SetAllFunction {
   return (path: string, indexes: number[], value: any, options?: ISetAllOptions): number => {
+    if (handler.mutability === "readonly") {
+      // 3.0 は readonly のプロキシからの書き込みを拒否する（要件 B6）
+      warnV3Migration(READONLY_WRITE);
+    }
     // オーサリング層の `**`。書き側は `[]` のブロードキャストだけを受け付ける
     // （形の検査は列挙より前に行い、1 件も書かないことを保証する。設計 §7-3）。
     // 宣言の無い state は boolean 判定 1 個で抜ける。

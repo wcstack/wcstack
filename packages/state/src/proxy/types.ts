@@ -22,6 +22,8 @@ export interface IStateHandler extends ProxyHandler<IState> {
    * 張らない）は true。checkDependency / $1 インデックス依存の登録が抑止される。
    */
   readonly untracking: boolean;
+  /** このプロキシの書き込み能力（省略は writable）。3.0 の予告（要件 D2 / B6）が読む */
+  readonly mutability?: Mutability;
 
   pushAddress(address: IStateAddress | null): void;
   popAddress(): IStateAddress | null;

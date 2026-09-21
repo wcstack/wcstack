@@ -62,7 +62,8 @@ export function warnOwnKeyShadowsForMount(record: IMountRecord): void {
       report(
         `${tag}|${stateProp}|${key}|root`,
         `<${tag}>.${stateProp}.${key} is private and hides the mounted entry "${stateProp}.${key}: ${partialOuter}" (the host value no longer reaches it). ` +
-        `Remove the default to read the tree, or rename it to keep it private.`,
+        `Remove the default to read the tree, or rename it to keep it private. ` +
+        `[wcs/v3-migration] In 3.0 the mount wins over the default.`,
       );
       continue;
     }

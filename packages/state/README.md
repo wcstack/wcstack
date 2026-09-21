@@ -2672,6 +2672,38 @@ Every failure mode reports and continues; nothing already applied is reverted:
 | `$watch` write chain | 32 | Skip watch firing for that batch |
 | Binding apply failure | — | Skip that one binding |
 
+### Preparing for 3.0 (`wcs/v3-migration`)
+
+3.0 has no compatibility layer. Instead, this release names each form that 3.0 rejects or reads differently, while still running it the 2.x way. Each warning is printed once per form and site, under the code `wcs/v3-migration`, and says what 3.0 does and what to write now:
+
+```
+[@wcstack/state] [wcs/v3-migration] "value#ro#wo": 3.0 rejects a second "#". Write "value#ro,wo".
+See "Preparing for 3.0" in the @wcstack/state README.
+```
+
+| Form | 2.x | 3.0 | Write now |
+|---|---|---|---|
+| A second `#` (`value#ro#wo:`) | Keeps the first modifier list | `[wcs/binding-syntax]` | `value#ro,wo:` |
+| A value after `else:` | Ignored | `[wcs/binding-syntax]` | `else:` |
+| Modifiers or filters on `for` / `if` / `elseif` / `else` / `...` | A plain property binding | `[wcs/binding-syntax]` | The bare keyword |
+| `radio#ro:` / `checkbox#ro:` | A property named `radio`, no effect | A radio / checkbox binding that honours the modifiers | — (check the binding still does what you meant) |
+| An unterminated quote in filter arguments | Closed silently | `[wcs/binding-syntax]` | Close the quote |
+| More filter arguments than the filter takes | The rest ignored | `[wcs/filter-arity]` | Remove them |
+| Unquoted `true` / `false` / `null` in `eq` / `ne` (`eq(true)`) | Compares a boolean or `null` value with the string | Compares with the typed value | `eq('true')` to keep the text comparison |
+| Unquoted `true` / `false` / `null` in `defaults` | Falls back to the string (`"null"`) | Falls back to the typed value | `defaults('null')` to keep the text |
+| `0n` through `truthy` / `falsy` / `defaults` | Truthy | Falsy (JavaScript truthiness) | — |
+| `undefined` into `textContent` / `innerText` / `innerHTML` | Keeps the previous text (in a reused row, the previous row's) | Empties it | Return `""` or `null` for "no value" |
+| `undefined` / `null` into `attr.*` | Writes `"undefined"` / `"null"` | Removes the attribute | — |
+| `undefined` into `style.*` | Keeps the previous value | Clears it | — |
+| `$resolve(path, indexes, undefined)` | Reads | Writes `undefined` (the argument count decides) | `$resolve(path, indexes)` to read |
+| `$resolve(path, indexes, value)` / `$setAll` on a readonly proxy | Writes | Throws `This state is readonly.` | Write from `createState("writable", …)` |
+| A component writing through a `#ro` mount (`state#ro: user`) | Writes the host's tree | `[wcs/mount-readonly]` | Write on the host, or drop `#ro` |
+| An own default shadowed by a partial mount (`state.name: user.name` while the component declares `name`) | The default wins, with a warning | The explicit mount wins | Remove the default |
+
+One more change arrives early instead of being announced: `$errorCallback` on a volume or a mounted component, which was ignored silently, is now named by the warning that already lists the root-only keys (`$commandTokens`, `$on`, …), as 3.0 does. It still runs only on the root state.
+
+A value warning fires only when that value actually arrives, so a clean console proves nothing about the paths your tests did not reach. The syntax rows are checked when a binding is first parsed, and `npx @wcstack/lint <file>` (and the VS Code extension) reports them with the same check, as `wcs/v3-migration` at info severity, without running the page.
+
 ## Configuration
 
 Pass a partial configuration object to `bootstrapState()`:

@@ -1,3 +1,4 @@
+import { warnV3Migration } from "../v3Migration";
 import { config, inSsr } from "../config";
 import { devtoolsSink } from "../platform/devtoolsSink";
 import { applyMirrorAttribute, getInputAttributeMirror } from "../event/getInputAttributeMirror";
@@ -49,6 +50,11 @@ export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyCon
   // slot を配線したときに顕在化)。明示的なクリアは null で表現する。
   // mirror 属性 (applyMirrorAttribute) の「undefined → 属性削除」と同じ語彙。
   if (typeof newValue === "undefined") {
+    // 3.0 は表示のプロパティへの undefined を空にする（要件 B8）— 2.x との差を予告する
+    const prop = binding.propSegments.length === 1 ? binding.propSegments[0] : "";
+    if (prop === "textContent" || prop === "innerText" || prop === "innerHTML") {
+      warnV3Migration(`"${prop}: ${binding.statePathName}" got undefined: 3.0 empties it. Return "" for no value.`);
+    }
     if (config.debug) {
       console.debug(`Skipped property write: state value is undefined.`, {
         element: binding.node,

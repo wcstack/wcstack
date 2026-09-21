@@ -164,13 +164,13 @@ export function get(
           }
         }
         case "$resolve": {
-          return (path: string, indexes: number[], value?: any): any => {
+          return (path: string, indexes: number[], ...value: [value?: any]): any => {
             return resolve(
               target, 
               prop, 
               receiver,
               handler
-            )(path, indexes, value);
+            )(path, indexes, ...value);
           }
         }
         case "$trackDependency": {
