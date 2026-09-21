@@ -24,6 +24,9 @@ function finalizeArg(text: string, firstQuoteStart: number, lastQuoteEnd: number
   return text.slice(start, end);
 }
 
+import { LINT_HINT } from "../errorGuidance";
+import { raiseError } from "../raiseError";
+
 export function parseFilterArgs(argsText: string): string[] {
   const args: string[] = [];
   let current = '';
@@ -63,6 +66,10 @@ export function parseFilterArgs(argsText: string): string[] {
     }
   }
 
+  if (inQuote !== null) {
+    // 閉じていない引用符は受理しない（要件 B2）。以前は黙って閉じたことにしていた
+    raiseError(`[wcs/binding-syntax] unterminated ${inQuote} quote in the filter arguments "(${argsText})". Close the quote.${LINT_HINT}`);
+  }
   const last = finalizeArg(current, firstQuoteStart, lastQuoteEnd);
   if (last || hasQuote) {
     args.push(last);

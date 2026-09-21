@@ -3,7 +3,7 @@ import { raiseError } from "../raiseError";
 import { FILTER_SEPARATOR } from "../define";
 import { IParsedBinding, IParsedFilter } from "../types";
 import { parseFilters } from "./parseFilters";
-import { trimFn } from "./utils";
+import { indexOfOutsideQuotes, splitOutsideQuotes, trimFn } from "./utils";
 
 // 解析の段の形（フィルタは名前と引数だけ — 実関数は束縛計画の段で引く。要件 D16）
 type StatePartParseResult = Pick<IParsedBinding,
@@ -20,7 +20,8 @@ export function clearStatePartCacheForTooling(): void {
 // statePath-format: path.to.property (e.g., user.name.first, users.*.name, users.0.name, not include @)
 // filters-format: filterName or filterName(arg1,arg2)
 export function parseStatePart(statePart: string): StatePartParseResult {
-  const pos = statePart.indexOf(FILTER_SEPARATOR);
+  // 引用符の中の `|` はフィルタの区切りではない（要件 B1 — `join('|')`）
+  const pos = indexOfOutsideQuotes(statePart, FILTER_SEPARATOR);
   let stateAndPath: string = '';
   let filterTexts: string[] = [];
   let filtersText = '';
@@ -31,7 +32,7 @@ export function parseStatePart(statePart: string): StatePartParseResult {
     if (cacheFilterInfos.has(filtersText)) {
       filters = cacheFilterInfos.get(filtersText)!;
     } else {
-      filterTexts = filtersText.split(FILTER_SEPARATOR).map(trimFn);
+      filterTexts = splitOutsideQuotes(filtersText, FILTER_SEPARATOR).map(trimFn);
       filters = parseFilters(filterTexts, "output");
       cacheFilterInfos.set(filtersText, filters);
     }

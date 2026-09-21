@@ -397,6 +397,8 @@ property[#modifier]: path[|filter[|filter(args)...]]
 <div data-wcs="textContent: count; class.over: count|gt(10)"></div>
 ```
 
+区切りの `;` と `|` は引用符の外でだけ区切るので（3.0）、引用符付きのフィルタ引数に含められます: `textContent: tags|join('; ')`、`title: parts|join(' | ')`。3.0 より前はどちらも束縛が壊れていました。
+
 | 要素 | 説明 | 例 |
 |---|---|---|
 | `property` | バインドする DOM プロパティ | `value`, `textContent`, `checked` |
@@ -432,6 +434,10 @@ property[#modifier]: path[|filter[|filter(args)...]]
 | `#sync=<timing>` | 要素スナップショットの読み取りタイミング — [バインディング authority](#バインディング-authority-init--sync) 参照 |
 
 複数の修飾子は 1 つの `#` の後にカンマ区切りで書きます: `value#ro,init=none: path`
+
+修飾子は束縛の種別を変えません: `radio#ro:` と `checkbox#ro:` は radio / checkbox の束縛のままです（3.0）。3.0 より前は修飾子を付けると `radio` という名前の素のプロパティ束縛になり、radio グループの `#ro` が効いていませんでした。
+
+3.0 からパーサは、以前黙って丸めていた書き方を `[wcs/binding-syntax]` で拒否します: 2 つ目の `#`（`value#ro#wo` は `ro` だけ残して後ろを捨てていた — `value#ro,wo` と書く）、`else:` の後ろの値（`else:` と書く）、`for` / `if` / `elseif` / `else` / `...` の左辺の修飾子やフィルタ、フィルタ引数の閉じていない引用符。
 
 ### 双方向バインディング
 

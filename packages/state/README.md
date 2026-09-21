@@ -398,6 +398,8 @@ Multiple bindings separated by `;`:
 <div data-wcs="textContent: count; class.over: count|gt(10)"></div>
 ```
 
+The separators `;` and `|` split only outside quotes (3.0), so a quoted filter argument may contain them: `textContent: tags|join('; ')`, `title: parts|join(' | ')`. Before 3.0 both broke the binding.
+
 | Part | Description | Example |
 |---|---|---|
 | `property` | DOM property to bind | `value`, `textContent`, `checked` |
@@ -433,6 +435,10 @@ Multiple bindings separated by `;`:
 | `#sync=<timing>` | Element snapshot timing — see [Binding Authority](#binding-authority-init--sync) |
 
 Multiple modifiers are comma-separated after a single `#`: `value#ro,init=none: path`.
+
+A modifier never changes the kind of binding: `radio#ro:` and `checkbox#ro:` stay radio / checkbox bindings (3.0). Before 3.0 a modifier turned them into a plain property named `radio`, so `#ro` on a radio group did not take effect.
+
+As of 3.0 the parser rejects what it used to round off silently, with `[wcs/binding-syntax]`: a second `#` (`value#ro#wo` kept `ro` and dropped the rest — write `value#ro,wo`), a value after `else:` (write `else:`), modifiers or left-side filters on `for` / `if` / `elseif` / `else` / `...`, and an unterminated quote in filter arguments.
 
 ### Two-Way Binding
 

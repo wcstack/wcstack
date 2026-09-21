@@ -3,6 +3,8 @@ import {
   BINDING_SEPARATOR,
   ELSE_KEYWORD,
   EVENT_PROP_PREFIX,
+  FILTER_SEPARATOR,
+  MODIFIER_SEPARATOR,
   EVENT_TOKEN_NAMESPACE,
   PROP_VALUE_SEPARATOR,
   SPREAD_PROP,
@@ -13,7 +15,7 @@ import { STRUCTURAL_BINDING_TYPE_SET } from "../structural/define.js";
 import { parsePropPart } from "./parsePropPart.js";
 import { parseStatePart } from "./parseStatePart.js";
 import { ParseBindTextResult } from "./types.js";
-import { trimFn } from "./utils.js";
+import { splitOutsideQuotes, trimFn } from "./utils.js";
 
 // format: propPart:statePart; propPart:statePart; ...
 // special-propPart:
@@ -24,8 +26,12 @@ import { trimFn } from "./utils.js";
 //   onclick: statePart, onchange: statePart etc. (event listeners)
 //   ...: statePart (spread — expand wcBindable properties+inputs of target object)
 
+/** 左辺に修飾子も入力フィルタも取らない束縛（構造ディレクティブと spread）— 付いていれば拒否する（要件 B4） */
+const KEYWORDS_WITHOUT_MODIFIERS = new Set<string>([ELSE_KEYWORD, 'if', 'elseif', 'for', SPREAD_PROP]);
+
 export function parseBindTextsForElement(bindText: string): ParseBindTextResult[] {
-  const [ ...bindTexts ] = bindText.split(BINDING_SEPARATOR).map(trimFn).filter(s => s.length > 0);
+  // 引用符の中の `;` は区切りではない（要件 B1 — `join(';')`）
+  const [ ...bindTexts ] = splitOutsideQuotes(bindText, BINDING_SEPARATOR).map(trimFn).filter(s => s.length > 0);
   const results = bindTexts.map((bindText): ParseBindTextResult => {
     const separatorIndex = bindText.indexOf(PROP_VALUE_SEPARATOR);
     if (separatorIndex === -1) {
@@ -33,7 +39,17 @@ export function parseBindTextsForElement(bindText: string): ParseBindTextResult[
     }
     const propPart = bindText.slice(0, separatorIndex).trim();
     const statePart = bindText.slice(separatorIndex + 1).trim();
+    // 種別は修飾子・入力フィルタより前の名前で決める（要件 B4）。以前は左辺全体との完全一致で
+    // 判定していたので、`radio#ro:` が汎用プロパティに落ちていた
+    const keyword = propPart.split(MODIFIER_SEPARATOR)[0].split(FILTER_SEPARATOR)[0].trim();
+    if (keyword !== propPart && KEYWORDS_WITHOUT_MODIFIERS.has(keyword)) {
+      raiseError(`[wcs/binding-syntax] "${bindText}": "${keyword}" takes no modifiers or filters on its left side — write "${keyword}:".${LINT_HINT}`);
+    }
     if (propPart === ELSE_KEYWORD) {
+      if (statePart.length > 0) {
+        // else は値を取らない（要件 B2）。以前は右辺を黙って捨てていた
+        raiseError(`[wcs/binding-syntax] "${bindText}": "else" takes no value — write "else:".${LINT_HINT}`);
+      }
       const pathInfo = getPathInfo('#else');
       return {
         propName: ELSE_KEYWORD,
@@ -64,8 +80,6 @@ export function parseBindTextsForElement(bindText: string): ParseBindTextResult[
     } else if (propPart === 'if'
       || propPart === 'elseif'
       || propPart === 'for'
-      || propPart === 'radio'
-      || propPart === 'checkbox'
     ) {
       const stateResult = parseStatePart(statePart);
       return {
@@ -75,6 +89,15 @@ export function parseBindTextsForElement(bindText: string): ParseBindTextResult[
         inFilters: [],
         ...stateResult,
         bindingType: propPart,
+      };
+    } else if (keyword === 'radio' || keyword === 'checkbox') {
+      // 修飾子（`#ro`・`#onchange` …）と入力フィルタは radio / checkbox のハンドラが読む（要件 B4）
+      const stateResult = parseStatePart(statePart);
+      const propResult = parsePropPart(propPart);
+      return {
+        ...propResult,
+        ...stateResult,
+        bindingType: keyword,
       };
     } else {
       const stateResult = parseStatePart(statePart);

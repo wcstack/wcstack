@@ -44,31 +44,35 @@ async function mount(initial: Record<string, unknown>, body: string): Promise<{ 
 const parseOne = (text: string) => parseBindTextsForElement(text)[0];
 const output = (name: string, args: string[]) => resolveFilterFn(name, args, "output");
 
-describe("B1 引用符と区切り（現状: 外側の分割が引用符解析より先）", () => {
+describe("B1 引用符と区切り（3.0 で採用: 引用符の中は区切らない）", () => {
   it("区切りを含まない引用符の引数は通ること", () => {
     expect(parseOne("textContent: x|join(', ')").outFilters[0].args).toEqual([", "]);
   });
 
-  it("引用符の中の ; と | でフィルタが壊れること", () => {
-    expect(() => parseBindTextsForElement("textContent: x|join(';')")).toThrow(/missing closing parenthesis/);
-    expect(() => parseBindTextsForElement("textContent: x|join('|')")).toThrow(/missing closing parenthesis/);
+  it("引用符の中の ; と | は引数のまま、外側の区切りは効くこと", () => {
+    expect(parseOne("textContent: x|join(';')").outFilters[0].args).toEqual([";"]);
+    expect(parseOne("textContent: x|join('|')").outFilters[0].args).toEqual(["|"]);
+    const two = parseBindTextsForElement("textContent: x|join(';'); title: y|join(\"|\")|uc");
+    expect(two.map((r) => r.propName)).toEqual(["textContent", "title"]);
+    expect(two[1].outFilters.map((f) => [f.filterName, f.args])).toEqual([["join", ["|"]], ["uc", []]]);
+    expect(output("join", [";"])(["X", "Y"])).toBe("X;Y");
   });
 });
 
-describe("B2 不正構文の受理（現状: 受理して黙って丸める）", () => {
-  it("未閉じの引用符が通ること", () => {
-    expect(parseOne("textContent: x|join('unterminated)").outFilters[0].args).toEqual(["unterminated"]);
+describe("B2 不正構文の受理（3.0 で採用: 拒否して名指しで診断する）", () => {
+  it("閉じていない引用符を [wcs/binding-syntax] で拒否すること", () => {
+    expect(() => parseBindTextsForElement("textContent: x|join('unterminated)")).toThrow(/\[wcs\/binding-syntax\] unterminated ' quote/);
   });
 
-  it("value#ro#wo は ro だけが残り、未知の修飾子もそのまま通ること", () => {
-    expect(parseOne("value#ro#wo: x").propModifiers).toEqual(["ro"]);
+  it("value#ro#wo を拒否し、1 つの修飾子の並びへ誘導すること（未知の修飾子は従来どおり通る）", () => {
+    expect(() => parseBindTextsForElement("value#ro#wo: x")).toThrow(/\[wcs\/binding-syntax\] "value#ro#wo": .* write "value#ro,wo"/);
+    expect(parseOne("value#ro,wo: x").propModifiers).toEqual(["ro", "wo"]);
     expect(parseOne("value#unknown: x").propModifiers).toEqual(["unknown"]);
   });
 
-  it("else: の右辺は捨てられること", () => {
-    const result = parseOne("else: ignored");
-    expect(result.bindingType).toBe("else");
-    expect(result.statePathName).toBe("#else");
+  it("else: の右辺を拒否すること", () => {
+    expect(() => parseBindTextsForElement("else: ignored")).toThrow(/\[wcs\/binding-syntax\] "else: ignored": "else" takes no value/);
+    expect(parseOne("else:").bindingType).toBe("else");
   });
 });
 
@@ -95,12 +99,33 @@ describe("B3 フィルタ引数（3.0 で採用: 構造的なキャッシュキ�
   });
 });
 
-describe("B4 修飾子とバインド種別（現状: 修飾子が種別を変える）", () => {
-  it("radio: は専用の種別で、radio#ro: は汎用プロパティに落ちること", () => {
+describe("B4 修飾子とバインド種別（3.0 で採用: 修飾子は種別を変えない）", () => {
+  it("radio#ro: / checkbox#ro: は radio / checkbox のまま修飾子を運ぶこと", () => {
     expect(parseOne("radio: x").bindingType).toBe("radio");
-    const withModifier = parseOne("radio#ro: x");
-    expect(withModifier.bindingType).toBe("prop");
-    expect(withModifier.propName).toBe("radio");
+    const radio = parseOne("radio#ro: x");
+    expect(radio.bindingType).toBe("radio");
+    expect(radio.propName).toBe("radio");
+    expect(radio.propModifiers).toEqual(["ro"]);
+    expect(parseOne("checkbox#ro: x").bindingType).toBe("checkbox");
+  });
+
+  it("構造ディレクティブと spread に修飾子が付いたら拒否すること", () => {
+    for (const text of ["for#ro: items", "if#ro: x", "elseif#x: y", "else#x:", "...#ro: slot"]) {
+      expect(() => parseBindTextsForElement(text), text).toThrow(/\[wcs\/binding-syntax\] .* takes no modifiers/);
+    }
+  });
+
+  it("radio#ro: は state に従ってチェックされ、要素の操作を state へ書き戻さないこと", async () => {
+    const { root, stateEl } = await mount({ choice: "b" },
+      `<input type="radio" name="g" value="a" data-wcs="radio#ro: choice"><input type="radio" name="g" value="b" data-wcs="radio#ro: choice">`);
+    const [a, b] = Array.from(root.querySelectorAll("input")) as HTMLInputElement[];
+    expect([a.checked, b.checked]).toEqual([false, true]);
+    a.checked = true;
+    a.dispatchEvent(new Event("input", { bubbles: true }));
+    await flush();
+    let choice: unknown;
+    stateEl.createState("readonly", (s: any) => { choice = s.choice; });
+    expect(choice).toBe("b");
   });
 });
 

@@ -1,7 +1,9 @@
 import { DELIMITER, FILTER_SEPARATOR, MODIFIER_SEPARATOR } from "../define";
+import { LINT_HINT } from "../errorGuidance";
+import { raiseError } from "../raiseError";
 import { IParsedBinding, IParsedFilter } from "../types";
 import { parseFilters } from "./parseFilters";
-import { trimFn } from "./utils";
+import { indexOfOutsideQuotes, splitOutsideQuotes, trimFn } from "./utils";
 
 // 解析の段の形（フィルタは名前と引数だけ — 実関数は束縛計画の段で引く。要件 D16）
 type PropPartParseResult = Pick<IParsedBinding, 'propName' | 'propSegments' | 'propModifiers' | 'inFilters'>;
@@ -22,7 +24,7 @@ export function clearPropPartCacheForTooling(): void {
 //   'onclick', 'onchange' etc. for event listeners
 
 export function parsePropPart(propPart: string): PropPartParseResult {
-  const pos = propPart.indexOf(FILTER_SEPARATOR);
+  const pos = indexOfOutsideQuotes(propPart, FILTER_SEPARATOR);
   let propText: string = '';
   let filterTexts: string[] = [];
   let filtersText = '';
@@ -33,7 +35,7 @@ export function parsePropPart(propPart: string): PropPartParseResult {
     if (cacheFilterInfos.has(filtersText)) {
       filters = cacheFilterInfos.get(filtersText)!;
     } else {
-      filterTexts = filtersText.split(FILTER_SEPARATOR).map(trimFn);
+      filterTexts = splitOutsideQuotes(filtersText, FILTER_SEPARATOR).map(trimFn);
       filters = parseFilters(filterTexts, "input");
       cacheFilterInfos.set(filtersText, filters);
     }
@@ -41,7 +43,12 @@ export function parsePropPart(propPart: string): PropPartParseResult {
     propText = propPart.trim();
   }
 
-  const [propName, propModifiersText] = propText.split(MODIFIER_SEPARATOR).map(trimFn);
+  const modifierParts = propText.split(MODIFIER_SEPARATOR).map(trimFn);
+  if (modifierParts.length > 2) {
+    // 修飾子の並びは 1 つだけ（要件 B2）。`value#ro#wo` は以前 `ro` だけを残して黙って捨てていた
+    raiseError(`[wcs/binding-syntax] "${propText}": a binding takes one modifier list after a single "${MODIFIER_SEPARATOR}" — write "${modifierParts[0]}${MODIFIER_SEPARATOR}${modifierParts.slice(1).join(",")}".${LINT_HINT}`);
+  }
+  const [propName, propModifiersText] = modifierParts;
   const propSegments = propName.split(DELIMITER).map(trimFn);
   const propModifiers = propModifiersText
     ? propModifiersText.split(',').map(trimFn)
