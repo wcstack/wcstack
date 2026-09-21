@@ -81,6 +81,16 @@ function valueMustBeArray(fnName) {
     raiseError(`filter ${fnName} requires an array value`);
 }
 
+const warned = new Set();
+/** 同じ文面は 1 回だけ警告する（文面は書き方とサイトを含むので、書き方・サイトごとに 1 回） */
+function warnV3Migration(message) {
+    if (warned.has(message)) {
+        return;
+    }
+    warned.add(message);
+    console.warn(`[@wcstack/state] [wcs/v3-migration] ${message} See "Preparing for 3.0" in the @wcstack/state README.`);
+}
+
 /**
  * builtinFilters.ts
  *
@@ -807,6 +817,12 @@ const hms = (options) => {
         return `${hours}${opt}${minutes}${opt}${seconds}`;
     };
 };
+/** 3.0 は truthy / falsy / defaults を JavaScript の真偽判定に揃える（要件 B10）— 0n の差を予告する */
+function warnBigIntZero(fnName, value) {
+    if (value === 0n) {
+        warnV3Migration(`"${fnName}" got 0n: 3.0 treats it as falsy.`);
+    }
+}
 /**
  * Falsy filter - checks if value is falsy.
  *
@@ -814,7 +830,10 @@ const hms = (options) => {
  * @returns Filter function that returns true for false/null/undefined/0/''/NaN
  */
 const falsy = (_options) => {
-    return (value) => value === false || value === null || value === undefined || value === 0 || value === '' || Number.isNaN(value);
+    return (value) => {
+        warnBigIntZero('falsy', value);
+        return value === false || value === null || value === undefined || value === 0 || value === '' || Number.isNaN(value);
+    };
 };
 /**
  * Truthy filter - checks if value is truthy.
@@ -823,7 +842,10 @@ const falsy = (_options) => {
  * @returns Filter function that returns true for non-falsy values
  */
 const truthy = (_options) => {
-    return (value) => value !== false && value !== null && value !== undefined && value !== 0 && value !== '' && !Number.isNaN(value);
+    return (value) => {
+        warnBigIntZero('truthy', value);
+        return value !== false && value !== null && value !== undefined && value !== 0 && value !== '' && !Number.isNaN(value);
+    };
 };
 /**
  * Default filter - returns default value if input is falsy.
@@ -834,6 +856,7 @@ const truthy = (_options) => {
 const defaults = (options) => {
     const opt = options?.[0] ?? optionsRequired('defaults');
     return (value) => {
+        warnBigIntZero('defaults', value);
         if (value === false || value === null || value === undefined || value === 0 || value === '' || Number.isNaN(value)) {
             return opt;
         }

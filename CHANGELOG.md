@@ -8,6 +8,30 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+## [2.6.1] — 2026-09-21
+
+### Fixed
+
+- `@wcstack/state`: keyed selection (`$eq` / `$eqPath` / `$eqIndex`) could leave a row selected, or never select it, without an error:
+  - **Object keys.** Writing an object to `path` (`this.selected = row` for `$eq("selected", this["items.*"])`) did not re-evaluate the previously selected row, so two rows showed as selected. An object write skips the same-value guard, which was the only source of the old key; the rows are now keyed by the value they last saw. The same applied to any write with `config.sameValueGuard` off.
+  - **Replacing an object above `path`.** `this.sel = { id: 2 }` for `$eq("sel.id", …)` re-evaluated no row, and a later write to `sel.id` left the stale row selected. Such a write now re-evaluates the rows under the value `path` had in the old object and has in the new one.
+  - **A getter `path`.** For `$eq("current.id", …)` with `get current()`, the value changes without a write to `path`, so no row was ever re-evaluated. When `path` is a getter or sits under one, the calls now fall back to an ordinary tracked read. The selection is correct, but every row re-evaluates on a change.
+
+  A key that no row holds any more is also dropped from the ledger, so a removed row object is no longer retained. The state README ("Keyed selection") lists what reaches the rows and notes that keys are not type-converted (`"2"` from an `<input>` does not match the id `2`). The filter and property sections now say what the 3.0 migration table already did: `eq(true)` never matches a boolean in 2.x, and `undefined` leaves the previous text in a reused row.
+
+## [2.6.0] — 2026-09-21
+
+### Added
+
+- `@wcstack/state`: **keyed selection** — `this.$eq(path, key)`, `this.$eqPath(path, keyPath)` and `this.$eqIndex(path, level = 1)`. A row getter that answers "is this row the selected one?" used to depend on the selection path from every row, so one click re-evaluated the whole list (`get "items.*.selected"() { return this.$1 === this.selectedIndex; }`). The keyed forms subscribe each row under its own key, and a write to the path re-evaluates only the row that was selected and the row that becomes selected: selecting one of 10,000 rows goes from 20 ms to 0.2 ms. `$eqPath` keys on an id and survives sorting and removal; `$eqIndex` keys on the row's index, and the list diff re-keys moved rows, so removing a row re-evaluates at most two rows. They subscribe only inside a getter under a list row (elsewhere they return the comparison), a row's subscription is dropped with the row, and keys compare as `Map` keys. Contract: the state README, "Keyed selection".
+- `@wcstack/state`: **`wcs/v3-migration` warnings.** 3.0 ships without a compatibility layer, so this release names each form that 3.0 rejects or reads differently — a second `#`, a value after `else:`, modifiers on a structural directive, `radio#ro:`, unterminated quotes and extra filter arguments; unquoted `true` / `false` / `null` in `eq` / `ne` / `defaults` and `0n` through `truthy`; `undefined` reaching `textContent`, an attribute or a style; `$resolve(path, indexes, undefined)`; writes through a readonly proxy or a `#ro` mount; a component default that a partial mount shadows. Each is printed once per form and site, says what 3.0 does and what to write now, and changes nothing about how 2.x runs it. `@wcstack/lint` reports the syntax forms with the same check, as `wcs/v3-migration` at info severity (so `--strict` does not fail on them). List: the state README, "Preparing for 3.0".
+
+### Changed
+
+- `@wcstack/state`: `$errorCallback` on a volume (`<wcs-state mount="…">`) or a mounted component is named by the warning that lists the root-only keys, as in 3.0. It was ignored silently; it still runs only on the root state.
+- `@wcstack/state`: clearing a long list allocates a quarter of what it did. The teardown ran on iterators and grew a per-node `WeakSet` of observer-skip marks; it now runs index loops and keeps one skip count per parent, which moves the young-generation GC out of the clear (clearing 10,000 rows: 8.1 → 2.1 MB allocated, 18–20 ms). No behaviour changes.
+- `@wcstack/state`: importing only `defineState` (or the types) no longer keeps the runtime. Three registrations ran at module evaluation (the `$watch` and `$streams` runtimes and volume grafting); they are installed by `bootstrapState()` and on first use instead, so a `defineState`-only import tree-shakes to about 0.3 KB gzip (was 26.7 KB). No behaviour changes.
+
 ## [2.5.1] — 2026-09-20
 
 ### Changed
@@ -252,7 +276,9 @@ Repairs from the pre-release quality loop, all with tests: `setInitialState` on 
 
 1.29.0 and earlier predate this file. Their contents are in the merged pull requests (`gh pr list --state merged`) and the git history; each GitHub Release page carries the SRI digests for that version.
 
-[Unreleased]: https://github.com/wcstack/wcstack/compare/v2.5.1...HEAD
+[Unreleased]: https://github.com/wcstack/wcstack/compare/v2.6.1...HEAD
+[2.6.1]: https://github.com/wcstack/wcstack/compare/v2.6.0...v2.6.1
+[2.6.0]: https://github.com/wcstack/wcstack/compare/v2.5.1...v2.6.0
 [2.5.1]: https://github.com/wcstack/wcstack/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/wcstack/wcstack/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/wcstack/wcstack/compare/v2.3.0...v2.4.0
