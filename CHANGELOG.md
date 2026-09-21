@@ -8,6 +8,15 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Fixed
+
+- `@wcstack/state`: keyed selection (`$eq` / `$eqPath` / `$eqIndex`) could leave a row selected, or never select it, without an error:
+  - **Object keys.** Writing an object to `path` (`this.selected = row` for `$eq("selected", this["items.*"])`) did not re-evaluate the previously selected row, so two rows showed as selected. An object write skips the same-value guard, which was the only source of the old key; the rows are now keyed by the value they last saw. The same applied to any write with `config.sameValueGuard` off.
+  - **Replacing an object above `path`.** `this.sel = { id: 2 }` for `$eq("sel.id", …)` re-evaluated no row, and a later write to `sel.id` left the stale row selected. Such a write now re-evaluates the rows under the value `path` had in the old object and has in the new one.
+  - **A getter `path`.** For `$eq("current.id", …)` with `get current()`, the value changes without a write to `path`, so no row was ever re-evaluated. When `path` is a getter or sits under one, the calls now fall back to an ordinary tracked read. The selection is correct, but every row re-evaluates on a change.
+
+  A key that no row holds any more is also dropped from the ledger, so a removed row object is no longer retained. The state README ("Keyed selection") lists what reaches the rows and notes that keys are not type-converted (`"2"` from an `<input>` does not match the id `2`). The filter and property sections now say what the 3.0 migration table already did: `eq(true)` never matches a boolean in 2.x, and `undefined` leaves the previous text in a reused row.
+
 ## [2.6.0] — 2026-09-21
 
 ### Added
