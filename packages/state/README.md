@@ -449,6 +449,15 @@ The separators `;` and `|` split only outside quotes (3.0), so a quoted filter a
 | `radio` | Radio button group binding (two-way) |
 | `checkbox` | Checkbox group binding to array (two-way) |
 | `onclick`, `on*` | Event handler binding |
+| `.NAME` | Explicit property (3.1): never an event, even when the name starts with `on` |
+
+**Properties whose names start with `on` (3.1).** A binding whose name starts with `on` is an event binding (`onclick:`). So `online: x` listens for a `"line"` event and never writes the element's `online` property. To bind such a property, put a dot in front of the name:
+
+```html
+<my-status data-wcs=".online: isOnline; onclick: refresh"></my-status>
+```
+
+The dotted form is the same binding as the undotted one, except that it is never an event. `.value:` is two-way like `value:`, and modifiers and input filters work as usual. A namespace word (`.class`, `.attr`, `.style`, `.command`, `.eventToken`) or an empty name after the dot is rejected with `[wcs/binding-syntax]`.
 
 ### Modifiers
 

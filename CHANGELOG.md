@@ -17,6 +17,7 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
   - One key per injection, static target paths, no filters. A malformed injection is `[wcs/mount-path-invalid]`, reported before the volume loads.
 
   Until now such a `data-wcs` failed to apply as a write to a missing `state` property. It is no longer collected as a binding. Contract: the state README, `mount=`.
+- `@wcstack/state`: **an explicit property form, `.name:`.** A name that starts with `on` makes an event binding, so `online: x` listened for a `"line"` event and could not reach an element's `online` property. The leading dot binds the property by name: `.online: isOnline`. It is the same binding as the undotted form in every other way; `.value:` is two-way, and modifiers and input filters apply. A namespace word after the dot (`.class`, `.attr`, `.style`, `.command`, `.eventToken`) and an empty name are rejected with `[wcs/binding-syntax]`. The leading dot used to fail at apply time, so no working page changes. The manifest gains `syntax.bindingTypes.explicitPropertyPrefix` (`"."`).
 
 ## [3.0.0] — 2026-09-22
 

@@ -448,6 +448,15 @@ property[#modifier]: path[|filter[|filter(args)...]]
 | `radio` | ラジオボタングループバインディング（双方向） |
 | `checkbox` | チェックボックスグループの配列バインディング（双方向） |
 | `onclick`, `on*` | イベントハンドラバインディング |
+| `.NAME` | 明示のプロパティ（3.1）— `on` で始まってもイベントにしない |
+
+**`on` で始まるプロパティ（3.1）。** 名前が `on` で始まる束縛はイベントになります（`onclick:`）。そのため `online: x` は "line" イベントを待ち、要素の `online` プロパティには書きません。`on` で始まるプロパティに値を書くには、左辺の先頭にドットを付けます:
+
+```html
+<my-status data-wcs=".online: isOnline; onclick: refresh"></my-status>
+```
+
+ドットの付いた形はドットの無い形と同じ束縛で、イベントにならない点だけが違います（`.value:` は `value:` と同じく双方向、修飾子と入力フィルタもそのまま使えます）。名前空間の語（`.class` / `.attr` / `.style` / `.command` / `.eventToken`）と空の名前は `[wcs/binding-syntax]` で拒否します。
 
 ### 修飾子
 
