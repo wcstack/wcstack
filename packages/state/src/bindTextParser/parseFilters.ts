@@ -1,4 +1,5 @@
 import { clearFilterResolutionCache } from "../core/filterRegistry";
+import { LINT_HINT } from "../errorGuidance";
 import { FilterIOType } from "../filters/types";
 import { raiseError } from "../raiseError";
 import { IParsedFilter } from "../types";
@@ -28,12 +29,17 @@ export function parseFilters(filterTextList: string[], _filterIOType: FilterIOTy
     if (closeParenIndex !== -1 && openParenIndex === -1) {
       raiseError(`Invalid filter format: missing opening parenthesis in "${filterText}"`);
     }
+    const filterName = (openParenIndex === -1 ? filterText : filterText.substring(0, openParenIndex)).trim();
+    if (filterName.length === 0) {
+      // 空のフィルタ（`x|`・`x||y`・`x|(1)`）は文法の誤り。解析の段で名指しで落とす — 未知の
+      // フィルタとは別物で、実関数の解決（束縛計画の段）まで持ち越すと tooling の解析が素通りする
+      raiseError(`[wcs/binding-syntax] an empty filter in "${filterTextList.join("|")}" — remove the extra "|" or name the filter.${LINT_HINT}`);
+    }
     if (openParenIndex === -1) {
       // no arguments
-      return { filterName: filterText.trim(), args: [], literals: [] };
+      return { filterName, args: [], literals: [] };
     }
     const argsText = filterText.substring(openParenIndex + 1, closeParenIndex);
-    const filterName = filterText.substring(0, openParenIndex).trim();
     return { filterName, ...parseFilterArgsWithLiterals(argsText) };
   });
 }

@@ -13,6 +13,7 @@ import {
   parseBindTextForEmbeddedNode,
   getPathInfo,
   clearParserCaches,
+  splitBindTexts,
 } from "../src/parser";
 
 describe("parseBindTextsForElement（正本パーサの公開契約）", () => {
@@ -63,6 +64,13 @@ describe("parseBindTextsForElement（正本パーサの公開契約）", () => {
     expect(() => parseBindTextsForElement("if: a; textContent: b")).toThrow();
     expect(() => parseBindTextsForElement("...: target | uc")).toThrow(/filters are not allowed/);
     expect(() => parseBindTextsForElement("...:")).toThrow(/target path is required/);
+  });
+});
+
+describe("splitBindTexts（属性値の区切りの正本 — 要件 B1）", () => {
+  it("引用符の外の ; だけで区切り、前後の空白を残すこと（tooling が位置を数えられる）", () => {
+    expect(splitBindTexts("a: x; b: y|join(';') ;")).toEqual(["a: x", " b: y|join(';') ", ""]);
+    expect(parseBindTextsForElement("a: x; b: y|join(';') ;").map((r) => r.propName)).toEqual(["a", "b"]);
   });
 });
 

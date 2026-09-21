@@ -17,6 +17,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
 import { parseBindTextsForElement } from "../src/bindTextParser/parseBindTextsForElement";
+import { parseBindTextForEmbeddedNode } from "../src/bindTextParser/parseBindTextForEmbeddedNode";
 import { resolveFilterFn } from "../src/core/filterRegistry";
 import { builtinFilterArity, outputBuiltinFilters } from "../src/formats/builtinFilters";
 import { builtinFilterMeta } from "../src/filters/filterMeta";
@@ -68,6 +69,13 @@ describe("B2 不正構文の受理（3.0 で採用: 拒否して名指しで診�
     expect(() => parseBindTextsForElement("value#ro#wo: x")).toThrow(/\[wcs\/binding-syntax\] "value#ro#wo": .* write "value#ro,wo"/);
     expect(parseOne("value#ro,wo: x").propModifiers).toEqual(["ro", "wo"]);
     expect(parseOne("value#unknown: x").propModifiers).toEqual(["unknown"]);
+  });
+
+  it("空のフィルタ（x| ・ x||y ・ x|(1)）を [wcs/binding-syntax] で拒否すること", () => {
+    for (const text of ["textContent: x|", "textContent: x||uc", "textContent: x|(1)"]) {
+      expect(() => parseBindTextsForElement(text), text).toThrow(/\[wcs\/binding-syntax\] an empty filter/);
+    }
+    expect(() => parseBindTextForEmbeddedNode("count | ")).toThrow(/\[wcs\/binding-syntax\] an empty filter/);
   });
 
   it("else: の右辺を拒否すること", () => {

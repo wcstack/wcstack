@@ -29,9 +29,16 @@ import { splitOutsideQuotes, trimFn } from "./utils.js";
 /** 左辺に修飾子も入力フィルタも取らない束縛（構造ディレクティブと spread）— 付いていれば拒否する（要件 B4） */
 const KEYWORDS_WITHOUT_MODIFIERS = new Set<string>([ELSE_KEYWORD, 'if', 'elseif', 'for', SPREAD_PROP]);
 
+/**
+ * `data-wcs` の値をバインディングごとに区切る（前後の空白は残す — tooling が位置を数えられるように）。
+ * 引用符の中の `;` は区切りではない（要件 B1 — `join(';')`）。ランタイムと tooling（`@wcstack/state/parser`）で共有する
+ */
+export function splitBindTexts(bindText: string): string[] {
+  return splitOutsideQuotes(bindText, BINDING_SEPARATOR);
+}
+
 export function parseBindTextsForElement(bindText: string): ParseBindTextResult[] {
-  // 引用符の中の `;` は区切りではない（要件 B1 — `join(';')`）
-  const [ ...bindTexts ] = splitOutsideQuotes(bindText, BINDING_SEPARATOR).map(trimFn).filter(s => s.length > 0);
+  const [ ...bindTexts ] = splitBindTexts(bindText).map(trimFn).filter(s => s.length > 0);
   const results = bindTexts.map((bindText): ParseBindTextResult => {
     const separatorIndex = bindText.indexOf(PROP_VALUE_SEPARATOR);
     if (separatorIndex === -1) {
