@@ -279,6 +279,15 @@ D16's decision — "filter functions are resolved at binding-plan time; only the
 - **Result**: all 3,741 tests pass (two boundary tests: a core-only page does not warn about a typo'd path, and `installFeatures([diagnostics])` makes the same typo warn by name). Coverage 99.64 / 98.50 / 100 / 99.81; all four gates pass (one more install edge, so the coupling baseline is 9).
 - **Where A2 ends**: with every lever of §5 used, the core is 43.2 KB gzip. The remaining 8 KB to 35 KB cannot be closed in this structure ([row runtime design](./state-next-major-runtime-design.md) §9).
 
+### 8-15. Where the attribute readiness barriers land (2026-09-21, requirements D23, `packages/state`)
+
+§9's open item, "landing the attribute barriers", is aligned as requirements D23 decided. The `mount=` and DCC barriers only threw out of `connectedCallback`, leaving `connectedCallbackPromise` pending — on a `/core` page that forgot scopes, `renderToString`, `mount()` and `getBindingsReady` waited forever.
+
+- **DCC**: the barrier now lands where a DCC load failure does (`dcc/dccLifecycle.ts`): `_failInitializeLoudly`, one diagnostic, `connectedCallbackPromise` rejected. A DCC's `<wcs-state>` owns its shadow's tree, so the tree becomes unavailable (as with a load failure).
+- **`mount=`**: `_failInitializeLoudly` takes an `ownsTree` argument; when it is false, marking the root (`markBindingsUnavailable`) and notifying pending volumes (`runInitializeFailed`) are skipped. A volume does not own the tree, and a volume connected before its root finds nobody on the root node yet, so the default landing would mark the not-yet-arrived root's node unavailable (as §9 noted).
+- **Other volume failures are unchanged**: `_initializeVolume`'s failures still resolve the promises and then raise (pinned by `integration.initFailureDiagnostics.test.ts`; the slot lifetime is a separate issue). Only the barrier rejects, because a forgotten feature is a configuration the page author must fix, and a test entry such as `mount()` must not let it through quietly.
+- **Tests**: the two cases in [core.lifecycleHooks.test.ts](../packages/state/__tests__/core.lifecycleHooks.test.ts) now check the landing (`connectedCallbackPromise` rejected, one diagnostic, and the tree's marking — set for DCC, not for `mount=`). Putting `mount=` back on the default landing makes the latter fail. All 3,743 tests pass; coverage unchanged.
+
 ## 9. Decided and undecided
 
 Decided (2026-09-21, requirements §6 D12, D13, D15, D16):
@@ -289,7 +298,9 @@ Decided (2026-09-21, requirements §6 D12, D13, D15, D16):
 - **When the readiness barrier fires**: it throws in the `_state` setter (at declaration time). Never on `auto` / full.
 - **The +1.3 KB gzip that S3's receptacles add to the full bundle** (requirements D19, §8-2's record of slices 2 and 3): re-record `scripts/state-size-baseline.json` from the 3.0 build and accept it. Whether to fold the 12 loops into one shared runner is decided after measuring it when S3 lands on the 3.0 vehicle.
 
-Undecided:
+Decided (2026-09-21, second round; the two items below used to be listed as undecided):
 
-- Unifying `BindingSession`'s two paths and the concrete design of the row record, the shared session and the plan-level initial render (survey §10.7, §10.13, §10.14; that they ride the 3.0 vehicle is decided) are outside this design → [the row runtime design](./state-next-major-runtime-design.md) (R1–R5).
+- Unifying `BindingSession`'s two paths and the concrete design of the row record, the shared session and the plan-level initial render (survey §10.7, §10.13, §10.14) are outside this design and implemented as R1–R5 → [the row runtime design](./state-next-major-runtime-design.md) (R1–R5).
 - **Landing the attribute barriers** (found in §8-8; **decided on 2026-09-21 as requirements D23, "align them"** — DCC lands where its load failure does, and `mount=` gets a landing of its own that rejects `connectedCallbackPromise` without taking the root down; implemented in §8-15): the `mount=` and DCC barriers only throw out of `connectedCallback`, leaving `connectedCallbackPromise` pending, whereas a declaration barrier fails inside `_initialize` and so lands per #257. Aligning them needs a landing that does not drag the root in: `_failInitializeLoudly` cannot serve `mount=` as is (for a volume connected before its root, it would mark the not-yet-arrived root's node unavailable and fail the other pending volumes with it). The path exists only in split entries, so it is decided with S5. The `bind-component` barrier added in §8-9 sits inside the same try as bind-component's other configuration errors, so it lands; the DCC barrier could equally land the way a DCC load failure does.
+
+Undecided: none.

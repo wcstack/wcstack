@@ -13,27 +13,57 @@ if (!customElements.get(STATE_TAG)) {
   customElements.define(STATE_TAG, State);
 }
 
+/** ルートノードの getBindingsReady が、次のマクロタスクまでにどう決着したか（印付けされていれば即 reject 済み） */
+async function bindingsReadyState(rootNode: Node): Promise<"resolved" | "rejected" | "pending"> {
+  return Promise.race([
+    State.getBindingsReady(rootNode).then(() => "resolved" as const, () => "rejected" as const),
+    new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), 0)),
+  ]);
+}
+
 describe("core/lifecycleHooks — readiness barrier", () => {
   afterEach(() => {
     document.body.innerHTML = "";
   });
 
-  it("dcc 未 install で [data-wc-definition] ホスト内の <wcs-state> を接続すると名指しで落ちること", async () => {
-    const host = document.createElement("x-lifecycle-dcc-host");
-    host.setAttribute("data-wc-definition", "");
-    const shadow = host.attachShadow({ mode: "open" });
-    const stateEl = document.createElement(STATE_TAG) as State;
-    shadow.appendChild(stateEl);
-    await expect((stateEl as any).connectedCallback())
-      .rejects.toThrow(/\[wcs\/feature-not-installed\] a <wcs-state> inside a \[data-wc-definition\] host needs the "dcc" feature/);
+  it("dcc 未 install で [data-wc-definition] ホスト内の <wcs-state> を接続すると名指しで落ち、DCC のロード失敗と同じ着地に載ること", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const host = document.createElement("x-lifecycle-dcc-host");
+      host.setAttribute("data-wc-definition", "");
+      const shadow = host.attachShadow({ mode: "open" });
+      const stateEl = document.createElement(STATE_TAG) as State;
+      shadow.appendChild(stateEl);
+      await expect((stateEl as any).connectedCallback())
+        .rejects.toThrow(/\[wcs\/feature-not-installed\] a <wcs-state> inside a \[data-wc-definition\] host needs the "dcc" feature/);
+      // 要件 D23: connectedCallbackPromise を待つ側（renderToString・mount）が止まらない
+      await expect(stateEl.connectedCallbackPromise).rejects.toThrow(/feature-not-installed/);
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      // DCC の <wcs-state> はそのシャドウのツリーの持ち主なので、ツリーごと利用不能になる
+      expect(await bindingsReadyState(shadow)).toBe("rejected");
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
-  it("scopes 未 install で mount= を接続すると名指しで落ちること", async () => {
-    const stateEl = document.createElement(STATE_TAG) as State;
-    stateEl.setAttribute("mount", "vol");
-    document.body.appendChild(stateEl);
-    await expect((stateEl as any).connectedCallback())
-      .rejects.toThrow(/\[wcs\/feature-not-installed\] the "mount" attribute needs the "scopes" feature/);
+  it("scopes 未 install で mount= を接続すると名指しで落ち、ルートを巻き込まずに着地すること", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const host = document.createElement("x-lifecycle-volume-host");
+      const shadow = host.attachShadow({ mode: "open" });
+      const stateEl = document.createElement(STATE_TAG) as State;
+      stateEl.setAttribute("mount", "vol");
+      shadow.appendChild(stateEl);
+      await expect((stateEl as any).connectedCallback())
+        .rejects.toThrow(/\[wcs\/feature-not-installed\] the "mount" attribute needs the "scopes" feature/);
+      // 要件 D23: この要素の connectedCallbackPromise は reject される
+      await expect(stateEl.connectedCallbackPromise).rejects.toThrow(/feature-not-installed/);
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      // ボリュームはツリーの持ち主ではない。まだ来ていないルートのノードを利用不能と印付けしない
+      expect(await bindingsReadyState(shadow)).not.toBe("rejected");
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });
 

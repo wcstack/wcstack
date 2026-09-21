@@ -279,6 +279,15 @@ D16 の決定（「実関数の解決は束縛計画の段。文法段だけを 
 - **結果**: 全テスト 3,741 件成功（境界テスト 2 件 — core だけのページは打ち間違いを警告しない、`installFeatures([diagnostics])` で同じ打ち間違いが名指しで警告される）。カバレッジ 99.64 / 98.50 / 100 / 99.81、門は 4 つとも通る（結合は install 辺が 1 本増えて基準 9）。
 - **A2 の最終地点**: §5 の手を出し尽くした状態で core は 43.2 KB gzip。35 KB との差 8 KB はこの構造では埋まらない（[行ランタイム設計](./state-next-major-runtime-design.ja.md) §9）。
 
+### 8-15. 属性の readiness barrier の着地（2026-09-21、要件 D23、`packages/state`）
+
+§9 に残していた「属性の barrier の着地」を、要件 D23 の決定どおり揃えた。`mount=` と DCC の barrier は `connectedCallback` から throw するだけで、`connectedCallbackPromise` は未解決のまま残っていた — scopes を入れ忘れた `/core` のページでは、それを待つ `renderToString`・`mount()`・`getBindingsReady` が止まる。
+
+- **DCC**: barrier を DCC のロード失敗（`dcc/dccLifecycle.ts`）と同じ着地 `_failInitializeLoudly` に載せた。診断は 1 件、`connectedCallbackPromise` は reject。DCC の `<wcs-state>` はそのシャドウのツリーの持ち主なので、ツリーごと利用不能になる（ロード失敗と同じ）。
+- **`mount=`**: `_failInitializeLoudly` に `ownsTree` 引数を足し、false のときはルートの印付け（`markBindingsUnavailable`）と保留ボリュームへの通知（`runInitializeFailed`）を飛ばす。ボリュームはツリーの持ち主ではなく、ルートより先に接続したボリュームでは rootNode にまだ誰も居ないので、既定の着地だとまだ来ていないルートのノードを利用不能と印付けしてしまう（§9 に書いたとおり）。
+- **他のボリュームの失敗は変えていない**: `_initializeVolume` の失敗は従来どおり promise を解決してから raise する（`integration.initFailureDiagnostics.test.ts` が固定、枠の寿命は別 Issue）。barrier だけが reject になるのは、「機能を入れ忘れた」はページの作者に必ず直してもらう設定であり、`mount()` のようなテストの入口で黙って通してはいけないから。
+- **テスト**: [core.lifecycleHooks.test.ts](../packages/state/__tests__/core.lifecycleHooks.test.ts) の 2 件を着地まで確かめる形にした（`connectedCallbackPromise` の reject・診断 1 件・ツリーの印付け — DCC は付く、`mount=` は付かない）。`mount=` を既定の着地に戻すと後者が落ちることも確かめた。全テスト 3,743 件成功、カバレッジ不変。
+
 ## 9. 決めたこと・決めていないこと
 
 決めた（2026-09-21、要件 §6 の D12・D13・D15・D16）:
@@ -289,7 +298,9 @@ D16 の決定（「実関数の解決は束縛計画の段。文法段だけを 
 - **readiness barrier の発火時点**: `_state` setter（宣言の評価時）で throw。`auto` / full では起きない。
 - **S3 の受け口が full に足す +1.3 KB gzip**（要件 D19、§8-2 の第 2・3 片の記録）: 3.0 のビルドで `scripts/state-size-baseline.json` を取り直して受け入れる。12 種のループを共通 runner に畳むかは、3.0 の器に載せるときに測ってから決める。
 
-決めていない:
+決めた（2026-09-21、第 2 回。以前は「決めていない」に置いていた 2 項目）:
 
-- `BindingSession` の二重経路の一本化と、行 record・session 共有・プラン初期描画（調査 §10.7・§10.13・§10.14。3.0 の器に載せることは決めた）の具体設計は本設計の外 → [行ランタイムの設計案](./state-next-major-runtime-design.ja.md)（R1〜R5）。
+- `BindingSession` の二重経路の一本化と、行 record・session 共有・プラン初期描画（調査 §10.7・§10.13・§10.14）の具体設計は本設計の外で、R1〜R5 として実装済み → [行ランタイムの設計案](./state-next-major-runtime-design.ja.md)（R1〜R5）。
 - **属性の barrier の着地**（§8-8 で見つけた。**2026-09-21 に要件 D23 で「揃える」と決めた** — DCC はロード失敗と同じ着地、`mount=` はルートを巻き込まない専用の着地で `connectedCallbackPromise` を reject する。実装は §8-15）: `mount=` と DCC の barrier は `connectedCallback` から throw するだけで、`connectedCallbackPromise` は未解決のまま残る。宣言の barrier は `_initialize` の中で落ちるので #257 の着地に載る。そろえるなら、`mount=` には `_failInitializeLoudly` をそのまま使えない（ルートより先に接続したボリュームでは、まだ来ていないルートのノードを利用不能と印付けし、保留中の他のボリュームまで落とす）ので、ルートを巻き込まない着地が要る。分割エントリにしか無い経路なので、S5 で決める。§8-9 で足した `bind-component` の barrier は、bind-component の他の設定エラーと同じ try の中にあるので着地する。DCC の barrier も、DCC のロード失敗と同じ着地に載せて差し支えない。
+
+決めていない: なし。

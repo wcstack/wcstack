@@ -477,8 +477,13 @@ export class State extends HTMLElementBase implements IStateElement {
    * ガードで抜ける。`$listKeys` / `$watch` のようにセッタの後半で落ちた形では
    * `$on` の購読と stream registry が残るが、この要素は復旧不能（setInitialState が
    * throw する）なので、残骸は要素ごと捨てる前提で放置する。
+   *
+   * `ownsTree` が false の着地は、この要素だけを失敗させてルートに触らない。`mount=` の
+   * readiness barrier（要件 D23）が使う: ボリュームはツリーの持ち主ではなく、ルートより先に
+   * 接続したボリュームでは rootNode にまだ誰も居ないので、既定の着地だとまだ来ていないルートの
+   * ノードを利用不能と印付けし、保留中の他のボリュームまで落としてしまう。
    */
-  private _failInitializeLoudly(error: unknown): never {
+  private _failInitializeLoudly(error: unknown, ownsTree: boolean = true): never {
     if (this._initializationLanded) {
       // 設定エラーの fail-fast が自分で着地済み（promise は解決済み）。ここで
       // reject に載せ替えると「ページの残りは生きている設定ミス」と「state を 1 つも
@@ -502,7 +507,7 @@ export class State extends HTMLElementBase implements IStateElement {
     // 生きたルートが既にこの rootNode に居る形（2 本目の <wcs-state> ＝ v2 の
     // 「1 rootNode 1 ツリー」違反）では、ページは 1 本目で成立している —
     // ready も保留ボリュームも 1 本目のものなので触らない
-    if (this._rootNode !== null && getStateElement(this._rootNode) === null) {
+    if (ownsTree && this._rootNode !== null && getStateElement(this._rootNode) === null) {
       markBindingsUnavailable(this._rootNode, error);
       // このルートを待っている機能（保留中のボリューム）に知らせる（設計案 H3）
       runInitializeFailed(this, this._rootNode, error);
@@ -561,13 +566,25 @@ export class State extends HTMLElementBase implements IStateElement {
         return;
       }
       // 引き取り手の居ない宣言 ＝ その機能が未 install（readiness barrier、H5 / D13）。
-      // full / auto では bootstrapState() が install するので起きない
+      // full / auto では bootstrapState() が install するので起きない。どちらも初期化失敗として
+      // 着地させる（要件 D23）: throw するだけだと connectedCallbackPromise が未解決のまま残り、
+      // それを待つ renderToString・mount・getBindingsReady が止まる
       const parentNode = this.parentNode;
       if (parentNode instanceof ShadowRoot && parentNode.host.hasAttribute(DCC_DEFINITION_ATTRIBUTE)) {
-        requireLifecycleFeature("dcc", `a <${config.tagNames.state}> inside a [${DCC_DEFINITION_ATTRIBUTE}] host`);
+        try {
+          requireLifecycleFeature("dcc", `a <${config.tagNames.state}> inside a [${DCC_DEFINITION_ATTRIBUTE}] host`);
+        } catch (error) {
+          // DCC のロード失敗（dcc/dccLifecycle.ts）と同じ着地
+          this._failInitializeLoudly(error);
+        }
       }
       if (this.hasAttribute("mount")) {
-        requireLifecycleFeature("scopes", `the "mount" attribute`);
+        try {
+          requireLifecycleFeature("scopes", `the "mount" attribute`);
+        } catch (error) {
+          // ボリュームはツリーの持ち主ではないので、ルートを巻き込まない着地
+          this._failInitializeLoudly(error, false);
+        }
       }
       // 接続の前処理（設計案 H3 の preparing）。`bind-component` はここで走り、マウントスコープを
       // 組んだときだけこの要素を丸ごと引き取る（webComponent/bindComponentLifecycle.ts）
