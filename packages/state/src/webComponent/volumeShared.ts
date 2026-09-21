@@ -70,6 +70,12 @@ export function isPathUnderReservedVolume(rootNode: Node | null, path: string): 
   return false;
 }
 
+/** このルートに予約（手放した枠も台帳に残る）があるか — ルート登録時にスコープ機能の hook を付ける判定 */
+export function hasReservedVolumeSlots(rootNode: Node): boolean {
+  const slots = reservedSlotsByRootNode.get(rootNode);
+  return typeof slots !== "undefined" && slots.size > 0;
+}
+
 /**
  * 接ぎ木済みスロット（D22 後段）。キーはルートの state element。
  * setByAddress のガード（findGraftedSlotUnder）と graftVolume（recordGraftedSlot）が使う。
@@ -160,6 +166,8 @@ export function addVolumeUpdatedCallback(stateElement: IStateElement, entry: IVo
     volumeUpdatedCallbacksByRoot.set(stateElement, callbacks);
   }
   callbacks.push(entry);
+  // 相対配送はルートに付いた updated hook が行う（接ぎ木が途中で落ちても配送先は付いている）
+  stateElement.markHasVolume?.();
 }
 
 export function getVolumeUpdatedCallbacks(stateElement: IStateElement): readonly IVolumeUpdatedCallback[] {

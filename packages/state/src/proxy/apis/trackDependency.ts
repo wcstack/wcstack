@@ -16,7 +16,7 @@
  */
 
 import { raiseError } from "../../raiseError";
-import { hasRecursionWildcard } from "../../recursion/expand";
+import { RECURSION_WILDCARD } from "../../define";
 import { IStateHandler } from "../types";
 
 /**
@@ -46,7 +46,7 @@ export function trackDependency(
     // `$resolve` は `getPathInfo` の不変条件で落ちるが、この API は生の文字列を依存表へ
     // そのまま載せるので、ゲートを置かないと無言で受理されて getter が stale になる
     // （第 2 サイクルのレビューで実測）。宣言の有無に関わらず拒否する。
-    if (hasRecursionWildcard(path)) {
+    if (path.indexOf(RECURSION_WILDCARD) !== -1) {
       raiseError(
         `[wcs/recursion-unsupported] $trackDependency("${path}") cannot take "**" — a dependency is ` +
         `registered against a concrete path (a fixed number of "*"). Track the concrete depth, or read ` +

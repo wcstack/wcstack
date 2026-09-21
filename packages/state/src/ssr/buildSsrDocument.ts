@@ -1,7 +1,7 @@
-import { config } from "./config";
-import { Ssr } from "./components/Ssr";
-import { VERSION } from "./version";
-import { IWcsSsrSnapshotBuilder, SSR_SNAPSHOT_BUILDER_KEY } from "./protocol/ssrSnapshot";
+import { config } from "../config";
+import { Ssr } from "./Ssr";
+import { VERSION } from "../version";
+import { IWcsSsrSnapshotBuilder, SSR_SNAPSHOT_BUILDER_KEY } from "../protocol/ssrSnapshot";
 
 /**
  * ssr-snapshot プロトコルの提供側（docs/ssr-router-design.md §5）。

@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
-import { Ssr } from "../src/components/Ssr";
+import { Ssr } from "../src/ssr/Ssr";
 import { VERSION } from "../src/version";
 
 beforeAll(() => {

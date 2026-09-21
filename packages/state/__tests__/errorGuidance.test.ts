@@ -6,7 +6,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { didYouMean, LINT_HINT } from "../src/errorGuidance";
-import { builtinFilterFn, outputBuiltinFilters } from "../src/filters/builtinFilters";
+import { builtinFilterFn, outputBuiltinFilters } from "../src/formats/builtinFilters";
 import { parseBindTextsForElement } from "../src/bindTextParser/parseBindTextsForElement";
 import { processDccDeclarations } from "../src/dcc/processDccDeclarations";
 

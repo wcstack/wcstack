@@ -1,4 +1,5 @@
 import { IState } from "../types";
+import { installDccHooks } from "./addressHooks";
 import { DCC_DEFINITION_ATTRIBUTE, STATE_BINDABLES_NAME } from "../define";
 import { config } from "../config";
 import { raiseError } from "../raiseError";
@@ -130,6 +131,8 @@ export function defineDCC(hostElement: Element, shadowRoot: ShadowRoot, state: I
       if (Object.keys(DCCElement.bindableEventMap).length > 0) {
         const stateEl = shadow.querySelector(stateTagSelector) as IStateElement | null;
         if (stateEl) {
+          // 書き込み後の bindable イベントを撃つ hook を、束ねる時点で install する（設計案 H1）
+          installDccHooks();
           stateEl.setBindableEventMap(DCCElement.bindableEventMap);
         } else {
           // $bindables を宣言しているのに束ねる先が無い。この分岐に落ちると

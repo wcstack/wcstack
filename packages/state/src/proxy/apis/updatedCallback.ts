@@ -18,8 +18,6 @@ import { IAbsoluteStateAddress } from "../../address/types";
 import { STATE_UPDATED_CALLBACK_NAME } from "../../define";
 import { getScopedIndexes } from "../../list/wildcardLevel";
 import { IStateHandler } from "../types";
-import { DELIMITER } from "../../define";
-import { createVolumeChroot, getVolumeUpdatedCallbacks } from "../../webComponent/volumeShared";
 
 /**
  * Invokes the $updatedCallback lifecycle hook if defined on the target.
@@ -71,46 +69,13 @@ export function updatedCallback(
     }
     result = callback.call(receiver, Array.from(paths), indexesListByPath);
   }
-  // ボリュームの相対 $updatedCallback（webComponent/volume.ts）: 自分の接頭辞配下の
-  // 更新だけを相対パスで受ける。呼び出し順はルート自身の $updatedCallback の**後**
-  // （$watch の order 規約と同じ「ルート宣言が先」の向き — volume.ts）。
-  // ルートのコールバックが async でも待たない（順序の契約は呼び出し順のみ）
-  const volumeCallbacks = handler.stateElement ? getVolumeUpdatedCallbacks(handler.stateElement) : [];
-  if (volumeCallbacks.length > 0) {
-    for (const volume of volumeCallbacks) {
-      const prefix = volume.mountPath + DELIMITER;
-      const relativePaths: Set<string> = new Set();
-      const relativeIndexes: Record<string, Array<number[]>> = {};
-      for (const ref of refs) {
-        if (ref.absolutePathInfo.stateElement !== handler.stateElement) {
-          continue;
-        }
-        const path = ref.absolutePathInfo.pathInfo.path;
-        if (path !== volume.mountPath && !path.startsWith(prefix)) {
-          continue;
-        }
-        // マーカーパス（マウント私有キー）はボリューム相対配送にも漏らさない（上と同じ D20/D21）
-        if (path.indexOf("#") !== -1) {
-          continue;
-        }
-        const relative = path === volume.mountPath ? "" : path.slice(prefix.length);
-        if (relative === "") {
-          continue; // マウントポイント自身（接ぎ木そのもの）は相対で表せない
-        }
-        relativePaths.add(relative);
-        const wildcardCount = ref.absolutePathInfo.pathInfo.wildcardCount;
-        if (wildcardCount > 0 && ref.listIndex !== null) {
-          const indexes = getScopedIndexes(ref.listIndex, wildcardCount);
-          (relativeIndexes[relative] ??= []).push(indexes);
-        }
-      }
-      if (relativePaths.size > 0) {
-        try {
-          volume.callback.call(createVolumeChroot(volume.mountPath, receiver), Array.from(relativePaths), relativeIndexes);
-        } catch (error) {
-          console.error(`[@wcstack/state] volume "${volume.mountPath}" $updatedCallback threw.`, error);
-        }
-      }
+  // ルートのコールバックの**後**に配送する機能（ボリュームの相対 $updatedCallback — webComponent/addressHooks.ts）は
+  // updated hook が受ける。hook の無い state は判定 1 個で抜ける
+  const hooks = handler.stateElement?.addressHooks;
+  if (hooks) {
+    const updated = hooks.updated;
+    for (let i = 0; i < updated.length; i++) {
+      updated[i](handler.stateElement, refs, receiver);
     }
   }
   return result;

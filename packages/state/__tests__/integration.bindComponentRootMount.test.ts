@@ -9,6 +9,7 @@
  * 片側しかモックできない）。
  */
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
+import { bindComponentLifecycleHooks } from "../src/webComponent/bindComponentLifecycle";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
 import { clearOwnKeyShadowReportsForTesting } from "../src/webComponent/ownKeyShadow";
@@ -520,7 +521,7 @@ describe("bind-component: v2 設定エラーの fail-fast（初期化待ちを�
       second.setAttribute("bind-component", "extra");
       cs.appendChild(second); // 非接続なので connectedCallback は走らない
 
-      await expect((second as any)._initializeBindWebComponent())
+      await expect(bindComponentLifecycleHooks.preparing!(second as any)!)
         .rejects.toThrow(/one <wcs-state bind-component> per component/);
       // fail-fast でも初期化待ちはウェッジしない（旧挙動: 未解決 throw で永久待ち）
       await second.initializePromise;
@@ -540,7 +541,7 @@ describe("bind-component: v2 設定エラーの fail-fast（初期化待ちを�
     replacement.setAttribute("bind-component", "state");
     cs.appendChild(replacement); // 非接続なので connectedCallback は走らない
 
-    await expect((replacement as any)._initializeBindWebComponent())
+    await expect(bindComponentLifecycleHooks.preparing!(replacement as any)!)
       .rejects.toThrow(/No state tree found on this root for mount host/);
     // fail-fast でも初期化待ちはウェッジしない
     await replacement.initializePromise;

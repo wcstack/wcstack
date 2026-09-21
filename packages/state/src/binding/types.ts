@@ -3,9 +3,17 @@ import { FilterFn } from "../filters/types";
 
 export type BindingType = 'text' | 'prop' | 'event' | 'for' | 'if' | 'elseif' | 'else' | 'radio' | 'checkbox' | 'spread';
 
-export interface IFilterInfo {
+/**
+ * 文法の段が読むフィルタ（名前と引数だけ。要件 D16）。実関数は束縛計画の段で
+ * 登録簿から解決される（`core/filterRegistry.ts`）ので、パース結果はここで止まる。
+ */
+export interface IParsedFilter {
   readonly filterName: string;
   readonly args: string[];
+}
+
+/** 束縛計画の段で実関数まで解決したフィルタ */
+export interface IFilterInfo extends IParsedFilter {
   readonly filterFn: FilterFn;
 }
 
@@ -20,13 +28,19 @@ export interface IParsedBinding {
   readonly propModifiers: string[];
   readonly statePathName: string;
   readonly statePathInfo: IPathInfo;
-  readonly inFilters: IFilterInfo[];
-  readonly outFilters: IFilterInfo[];
+  readonly inFilters: IParsedFilter[];
+  readonly outFilters: IParsedFilter[];
   readonly bindingType: BindingType;
   readonly uuid?: string | null; // for 'for', 'if', 'elseif', 'else' bindings
 }
 
+/**
+ * 束縛計画の段のバインディング。パース結果に DOM のノードと、**解決済みのフィルタ**が付く
+ * （`bindings/getBindingInfos.ts` が登録簿から引く — 要件 D16）。
+ */
 export interface IBindingInfo extends IParsedBinding {
+  readonly inFilters: IFilterInfo[];
+  readonly outFilters: IFilterInfo[];
   readonly node: Node; // raw node
   readonly replaceNode: Node; // replaced node or raw node
 }

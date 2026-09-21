@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { inSsr, getConfig } from "../src/config";
-import { Ssr } from "../src/components/Ssr";
+import { Ssr } from "../src/ssr/Ssr";
 import { addSsrProperty, trackSsrPropertyNode, getSsrProperties, getAllSsrPropertyNodes, clearSsrPropertyStore } from "../src/apply/ssrPropertyStore";
 import { getBindingsReady } from "../src/stateElementByName";
 

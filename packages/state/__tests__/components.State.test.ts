@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { bindComponentLifecycleHooks } from "../src/webComponent/bindComponentLifecycle";
 
 vi.mock('../src/stateLoader/loadFromInnerScript', () => ({
   loadFromInnerScript: vi.fn().mockResolvedValue({ fromInner: true })
@@ -534,7 +535,7 @@ describe('State component', () => {
     fragment.appendChild(stateEl);
     (stateEl as any)._rootNode = document;
 
-    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
+    await expect(bindComponentLifecycleHooks.preparing!(stateEl as any)!).rejects.toThrow(
       /"bind-component" requires/
     );
   });
@@ -549,7 +550,7 @@ describe('State component', () => {
     host.appendChild(stateEl);
     (stateEl as any)._rootNode = document; // LightDOM: rootNodeはdocument
 
-    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
+    await expect(bindComponentLifecycleHooks.preparing!(stateEl as any)!).rejects.toThrow(
       /plain \(unwired\) Light DOM "bind-component" is not supported/
     );
   });
@@ -565,7 +566,7 @@ describe('State component', () => {
     createHostWithState(stateEl);
     (stateEl as any)._rootNode = stateEl.getRootNode();
 
-    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(pattern);
+    await expect(bindComponentLifecycleHooks.preparing!(stateEl as any)!).rejects.toThrow(pattern);
   });
 
   it('bind-componentとinner scriptの併記はエラーになること', async () => {
@@ -576,7 +577,7 @@ describe('State component', () => {
     createHostWithState(stateEl);
     (stateEl as any)._rootNode = stateEl.getRootNode();
 
-    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
+    await expect(bindComponentLifecycleHooks.preparing!(stateEl as any)!).rejects.toThrow(
       /cannot be combined with <script type="module">/
     );
   });
@@ -586,7 +587,7 @@ describe('State component', () => {
     const host = createHostWithState(stateEl);
     (stateEl as any)._rootNode = stateEl.getRootNode();
 
-    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
+    await expect(bindComponentLifecycleHooks.preparing!(stateEl as any)!).rejects.toThrow(
       /does not have property "outer"/
     );
   });
@@ -599,7 +600,7 @@ describe('State component', () => {
     (stateEl as any)._rootNode = stateEl.getRootNode();
     Object.defineProperty(host, 'customElementRegistry', { value: null });
 
-    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
+    await expect(bindComponentLifecycleHooks.preparing!(stateEl as any)!).rejects.toThrow(
       /CustomElementRegistry is unavailable/
     );
   });
@@ -610,7 +611,7 @@ describe('State component', () => {
     (stateEl as any)._rootNode = stateEl.getRootNode();
     (host as any).outer = 123;
 
-    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
+    await expect(bindComponentLifecycleHooks.preparing!(stateEl as any)!).rejects.toThrow(
       /is not an object/
     );
   });
@@ -622,7 +623,7 @@ describe('State component', () => {
     const initialState = { message: 'hi' };
     (host as any).outer = initialState;
 
-    await (stateEl as any)._initializeBindWebComponent();
+    await bindComponentLifecycleHooks.preparing!(stateEl as any)!;
 
     expect((stateEl as any)._boundComponent).toBe(host);
     expect((stateEl as any)._boundComponentStateProp).toBe('outer');
@@ -638,7 +639,7 @@ describe('State component', () => {
     const initialState = { message: 'hi' };
     (host as any).outer = initialState;
 
-    await (stateEl as any)._initializeBindWebComponent();
+    await bindComponentLifecycleHooks.preparing!(stateEl as any)!;
 
     expect(bindWebComponentMock).toHaveBeenCalledWith(stateEl, host, 'outer', initialState);
   });
@@ -650,7 +651,7 @@ describe('State component', () => {
     const initialState = { message: 'hi' };
     (host as any).outer = initialState;
 
-    await (stateEl as any)._initializeBindWebComponent();
+    await bindComponentLifecycleHooks.preparing!(stateEl as any)!;
 
     // data-wcs属性がない場合もbindWebComponentがstateを含めて呼ばれる
     expect(bindWebComponentMock).toHaveBeenCalledWith(stateEl, host, 'outer', initialState);
@@ -667,7 +668,7 @@ describe('State component', () => {
     });
     (host as any).outer = frozenState;
 
-    await (stateEl as any)._initializeBindWebComponent();
+    await bindComponentLifecycleHooks.preparing!(stateEl as any)!;
 
     // bindWebComponentにフリーズされたstateが渡される（解凍はbindWebComponent内部で行われる）
     expect(bindWebComponentMock).toHaveBeenCalledWith(stateEl, host, 'outer', frozenState);
@@ -684,7 +685,7 @@ describe('State component', () => {
       throw new Error('bind failed');
     });
 
-    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
+    await expect(bindComponentLifecycleHooks.preparing!(stateEl as any)!).rejects.toThrow(
       /bind failed/
     );
   });
@@ -718,7 +719,7 @@ describe('plain Light DOM の廃止（v2 のゲート後）', () => {
     host.appendChild(stateEl);
     (stateEl as any)._rootNode = document;
 
-    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
+    await expect(bindComponentLifecycleHooks.preparing!(stateEl as any)!).rejects.toThrow(
       /No state tree found on this root/
     );
   });
@@ -751,7 +752,7 @@ describe('plain Light DOM の廃止（v2 のゲート後）', () => {
     host.appendChild(stateEl);
     (stateEl as any)._rootNode = document;
 
-    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
+    await expect(bindComponentLifecycleHooks.preparing!(stateEl as any)!).rejects.toThrow(
       /plain \(unwired\) Light DOM "bind-component" is not supported/
     );
   });
@@ -770,7 +771,7 @@ describe('plain Light DOM の廃止（台帳が空の形）', () => {
     host.appendChild(stateEl);
     (stateEl as any)._rootNode = document;
 
-    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
+    await expect(bindComponentLifecycleHooks.preparing!(stateEl as any)!).rejects.toThrow(
       /plain \(unwired\) Light DOM "bind-component" is not supported/
     );
   });

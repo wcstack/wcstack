@@ -287,7 +287,8 @@ describe("volume: 検査と chroot の面（カバレッジ確定）", () => {
     const holder = document.createElement("div");
     holder.appendChild(el);
     document.body.appendChild(holder);
-    await expect((el as any)._initializeVolume()).rejects.toThrow(/cannot be combined/);
+    const { volumeLifecycleHooks } = await import("../src/webComponent/volumeLifecycle");
+    await expect(volumeLifecycleHooks.connecting!(el as any)).rejects.toThrow(/cannot be combined/);
     holder.remove();
 
     // name 併記は connectedCallback 冒頭の name チェックが専用文言で落とす
@@ -324,6 +325,7 @@ describe("volume: 検査と chroot の面（カバレッジ確定）", () => {
     const rootElement = shadowRoot.querySelector("wcs-state") as State;
     await rootElement.connectedCallbackPromise;
     reserveVolumeSlot(shadowRoot, "pending", {});
+    rootElement.markHasVolume();
 
     let single: unknown = "sentinel";
     let deep: unknown = "sentinel";
@@ -478,7 +480,8 @@ describe("volume: 端の分岐（chroot・直接接ぎ木・非同期 $connected
     const holder = document.createElement("div");
     holder.appendChild(el); // document には繋がない（自動 connect を避けて直接呼ぶ）
     (el as any)._rootNode = holder;
-    const done = (el as any)._initializeVolume();
+    const { volumeLifecycleHooks } = await import("../src/webComponent/volumeLifecycle");
+    const done = volumeLifecycleHooks.connecting!(el as any)!;
     (el as any)._rootNode = null; // await 中に切断された体
     el.setInitialState({ a: 1 });
     await done;

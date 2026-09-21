@@ -60,6 +60,45 @@ export interface IStateElement {
    */
   readonly hasGraftedVolumes?: boolean;
   markHasGraftedVolumes?(): void;
+  /** ボリュームがこのルートに予約・接ぎ木された: スコープ機能の hook を付ける（webComponent/addressHooks.ts） */
+  markHasVolume?(): void;
+  /**
+   * ライフサイクル機能（core/lifecycleHooks.ts、設計案 H3）へ開く内部面。接続を引き取った機能が
+   * 要素の初期化を所有するために要る最小限で、optional はテスト用モック互換のため。
+   */
+  /** いま接続している rootNode（未接続は null）。公開の `rootNode` と違い throw しない */
+  readonly connectedRootNode?: Node | null;
+  clearConnectedRootNode?(): void;
+  /** 初期化完了の印（引き取った機能が自分の着地で立てる） */
+  markInitialized?(): void;
+  /** 初期化待ちの 3 つの promise を解決する（未解決のまま投げるとページが無言でウェッジする） */
+  settleInitialization?(): void;
+  /** `state` / `src` / 内包スクリプトからこの要素のソースを読む */
+  loadStateFromSource?(): Promise<Record<string, any>>;
+  /** 自分のツリーを持たずに初期化を終えた印（DCC 定義要素。再接続でこの rootNode のツリーとして登録し直さない） */
+  markTreeless?(): void;
+  /** 初期化失敗の着地（診断 1 件・connectedCallbackPromise の reject — #257）。常に throw する */
+  failInitializeLoudly?(error: unknown): never;
+  /** 接続の世代（接続の末尾の起動が、陳腐化した connect の再開を弾くために照合する） */
+  readonly connectGeneration?: number;
+  /** `$watch` / ボリュームの合流が決めた監視パス（setByAddress の旧値キャプチャのゲート） */
+  setWatchPaths?(paths: ReadonlySet<string> | null): void;
+  /** `$scan` の `from` パス（`watchPaths` と並ぶ旧値キャプチャのゲート） */
+  setScanPaths?(paths: ReadonlySet<string> | null): void;
+  /** 設定エラーの着地（初期化待ちの promise を解決し、二重着地の印を立てる） */
+  landInitialization?(): void;
+  /** `bind-component` が束ねた相手（`boundComponentStateProp` の答えになる） */
+  setBoundComponent?(component: Element | null, stateProp: string | null): void;
+  /** `$recursion` のレジストリ（宣言が無ければ null。`hasRecursion` の裏づけ） */
+  setRecursionRegistry?(registry: RecursionRegistry | null): void;
+  /** 前世代の再帰レジストリが生やした具体パス（経路情報の作り直しから除く） */
+  addGeneratedPath?(path: string): void;
+  /**
+   * 読み書き境界の hook（core/addressHooks.ts、設計案 H1）。宣言が要求する機能の分だけ
+   * `attachAddressHooks` で付く。無い state は null 判定 1 個で抜ける。optional はモック互換
+   */
+  readonly addressHooks?: import("../core/addressHooks").IAttachedHooks | null;
+  attachAddressHooks?(feature: string, declaration: string): void;
   /**
    * この state 要素に束ねられた（`setPathInfo` を通った）パスの集合。丸ごとマウント
    * （ルート規則）の親→子通知が「登録済みパス全部を読み直せ」を組み立てるのに使う

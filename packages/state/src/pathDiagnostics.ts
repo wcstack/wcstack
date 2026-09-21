@@ -19,7 +19,6 @@
  */
 
 import { getPathInfo } from "./address/PathInfo";
-import { isPathUnderReservedVolume } from "./webComponent/volumeShared";
 import type { IStateElement } from "./components/types";
 import { DELIMITER, WILDCARD } from "./define";
 import { devtoolsSink } from "./platform/devtoolsSink";
@@ -351,14 +350,16 @@ export function checkDeclaredPath(
   if (path.indexOf("#") !== -1) {
     return;
   }
-  // 予約済みのボリュームスロット配下はロード完了まで undefined が正（D22）。切断中の要素には
-  // rootNode が無い（State の getter は投げる）ので予約を引かない — 切断中の再セットも経路情報を
-  // 作り直してここへ来る（#267）
-  const rootNode = stateElement.isConnected === false
-    ? null
-    : (stateElement as { rootNode?: Node }).rootNode ?? null;
-  if (isPathUnderReservedVolume(rootNode, path)) {
-    return;
+  // 機能が黙らせる領域（予約済みボリュームスロットの配下 — D22。webComponent/addressHooks.ts）は
+  // suppressPathDiagnostic hook に聞く。hook の無い state は判定 1 個で抜ける
+  const hooks = stateElement.addressHooks;
+  if (hooks) {
+    const suppress = hooks.suppressPathDiagnostic;
+    for (let i = 0; i < suppress.length; i++) {
+      if (suppress[i](stateElement, path)) {
+        return;
+      }
+    }
   }
 
   // 単一セグメントのバインディングは読み取り時に raiseError で loud に落ちるので、

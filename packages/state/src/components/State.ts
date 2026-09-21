@@ -15,42 +15,20 @@ import { clearCommandNamespace } from "../command/commandNamespace";
 import { processEventTokensDeclaration } from "../event/processEventTokensDeclaration";
 import { clearEventTokenRegistry } from "../event/eventTokenRegistry";
 import { processOnDeclaration } from "../event/processOnDeclaration";
-import { processStreamsDeclaration } from "../stream/processStreamsDeclaration";
 import { ListKeyMap, ListKeySpec, processListKeysDeclaration } from "../list/listKeys";
-import { processRecursionDeclaration } from "../recursion/declaration";
-import { RecursionRegistry } from "../recursion/registry";
-import { clearStreamNamespace } from "../stream/streamNamespace";
-import { abortAllStreams, clearStreamRegistry } from "../stream/streamRegistry";
-import { startStreams } from "../stream/streamRuntime";
-import { processWatchDeclaration } from "../watch/processWatchDeclaration";
-import { clearComputedSnapshots } from "../watch/computedSnapshots";
-import { clearWatchRegistry, deactivateWatch } from "../watch/watchRegistry";
-import { startWatch } from "../watch/watchRuntime";
-import { materializeScanOutputs, parseScanDeclaration, registerScans, subscribeScanEvents, unregisterScans } from "../scan/processScanDeclaration";
-import { defineDCC } from "../dcc/defineDCC";
-import { getCustomElementRegistry } from "../platform/customElementRegistry";
+import type { RecursionRegistry } from "../recursion/registry";
+import { STATE_WATCH_NAME, STATE_BINDABLES_NAME } from "../define";
+import { appendHooks, createAttachedHooks, IAttachedHooks, requireFeature } from "../core/addressHooks";
+import { createDeclarationContext, runActivate, runApply, runApplyEarly, runDeactivate, runPreCommit, runRegister, runValidate, runValidateEarly } from "../core/declarationHooks";
 import { getPathInfo } from "../address/PathInfo";
 import { IStateProxy, Mutability } from "../proxy/types";
 import { createStateProxy } from "../proxy/StateHandler";
-import { bindWebComponent, invokeStateReadyCallback } from "../webComponent/bindWebComponent";
-import { getBindingsByNode } from "../bindings/getBindingsByNode";
-import { buildMountRecord, callMountLifecycleCallback, getRegisteredMountRecord, IMountRecord, warnMountedDollarDeclarations } from "../webComponent/mount";
-import { initializeMountScope, remountScopeBindings } from "../webComponent/mountScope";
-import { createPublicMountState } from "../webComponent/overlay";
-import { warnOwnKeyShadowsForMount } from "../webComponent/ownKeyShadow";
-import { markWebComponentAsComplete, markWebComponentStatePropDeclared } from "../webComponent/completeWebComponent";
-import { getInjectedKeys, restoreOverwrittenValues, takeOverwrittenObject } from "../webComponent/preCompletionWrites";
-import { callVolumeLifecycle, clearFailedRootNode, failPendingVolumes, graftOrQueueVolume, IVolumeGraftInfo, releaseVolumeSlot, reserveVolumeSlot, validateVolumeMountPath } from "../webComponent/volume";
-import { hasRootMountBinding } from "../webComponent/rootMountBinding";
+import { requireLifecycleFeature, runConnecting, runDisconnecting, runInitializeFailed, runInitializeFailureCleared, runPreparing, runReconnecting, runReplacingState } from "../core/lifecycleHooks";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/symbols";
-import { waitInitializeBinding } from "../bindings/initializeBindingPromiseByNode";
-import { getCustomElement } from "../getCustomElement";
-import { Ssr } from "./Ssr";
-import { VERSION } from "../version";
+import { requireSsrHooks } from "../core/ssrHooks";
 import { HTMLElementBase } from "../platform/HTMLElementBase";
 import { getAllPropertyDescriptors } from "../getAllPropertyDescriptors";
 import { checkDeclaredPath, findDescriptor, PathInfoSource, resetPathDiagnostics } from "../pathDiagnostics";
-import { notifyExports } from "../webComponent/exportIndex";
 import { collectReapplyPaths, reapplyStateBindings } from "../apply/reapplyStateBindings";
 
 function getStateInfo(
@@ -191,42 +169,22 @@ export class State extends HTMLElementBase implements IStateElement {
   private _boundComponentStateProp: string | null = null;
   private _hasMounts: boolean = false;
   private _hasGraftedVolumes: boolean = false;
-  /** ボリューム（mount=）: 接ぎ木済みの控え（$disconnectedCallback 用） */
-  private _volumeGraftInfo: IVolumeGraftInfo | null = null;
-  /** ボリューム: スロット予約済み・接ぎ木進行中（ロード完了前の再接続の再入ガード） */
-  private _volumeInitializing: boolean = false;
-  /**
-   * ボリューム: 予約したマウントパス（#265）。枠を返した後に取り直すときもこれを使う —
-   * `mount` 属性は書き換えられるので読み直さない。
-   */
-  private _volumeMountPath: string | null = null;
-  /**
-   * ボリューム: いま枠を握っている rootNode（#265）。null は「握っていない」。解放はこの控えと
-   * `_volumeMountPath` の組でだけ行う。切断時の `_rootNode`（先に null になる）から読み直すと、
-   * 予約した組と一致する保証が無く、別の要素の枠を消しうる。
-   */
-  private _volumeSlotRootNode: Node | null = null;
-  /**
-   * ボリューム: ロード中に外れたときに枠を返した rootNode（#265）。同じ rootNode へ付け直した（並べ替えた）
-   * ときだけ connectedCallback がその場で枠を取り直すための控え。付け直すたびに null へ戻す。
-   */
-  private _volumeDetachedFrom: Node | null = null;
-  /** v2 マウント（Phase 2）: この bind-component 要素が構築したマウント記録 */
-  private _mountRecord: IMountRecord | null = null;
+  /** 読み書き境界の hook（設計案 H1）。宣言が要求する機能の分だけ付く */
+  private _addressHooks: IAttachedHooks | null = null;
+  // ボリューム（mount=）の控え（接ぎ木情報・枠・再入ガード）は webComponent/volumeLifecycle.ts が
+  // 要素ごとに持つ（設計案 H3 — State はボリュームを知らない）
   private _bindableEventMap: Record<string, string> = {};
   private _commandTokenNames: Set<string> = new Set<string>();
   private _eventTokenNames: Set<string> = new Set<string>();
-  private _dcc: boolean = false;
+  // 自分のツリーを持たずに初期化を終えた（DCC 定義要素 — dcc/dccLifecycle.ts）。再接続でこの rootNode の
+  // ツリーとして登録し直さない
+  private _treeless: boolean = false;
   // connect サイクルの世代カウンタ（connectedCallback 冒頭でインクリメント）。
   // $connectedCallback の await 中の「切断 → 即再接続」では、新 connect が
   // _rootNode を再設定済みのため陳腐化した旧 connect の再開が _rootNode ガードを
   // 素通りして startStreams に到達し、同一の再接続に対して source が二重起動する。
   // 末尾で冒頭に捕捉した世代と照合し、陳腐 connect からの起動を skip する（設計書 §2-3）。
   private _connectGeneration: number = 0;
-  // _state セッター側の startStreams が走った connect 世代
-  // （connectedCallback 末尾の startStreams との二重起動防止、設計書 §2-3。
-  //  世代が進めば不一致となり自然に無効化される — サイクル単位のフラグリセット相当）
-  private _streamsStartedGeneration: number = 0;
 
   constructor() {
     super();
@@ -272,29 +230,23 @@ export class State extends HTMLElementBase implements IStateElement {
     //    見る（旧 state だけが持つ getter は、新 state の同名 `$streams` と衝突しない）。
     //  - `$watch` の存在検査は**新しい** `__state` を見る（新 state にだけあるパスの watch は
     //    `wcs/watch-path-missing` にならない）。
-    const recursionSpec = processRecursionDeclaration(value);
-    const recursionRegistry = recursionSpec === null ? null : new RecursionRegistry(recursionSpec, value);
+    // 宣言の段（設計案 H4）。文脈袋はこの set のぶんだけ作り、機能どうしの受け渡しに使う。
+    // `$recursion` はここで解析され、構築したレジストリを袋に置く — `$scan` の検証がそれを読む
+    const declarations = createDeclarationContext();
+    declarations.set("previousState", previousState);
+    runValidateEarly(this, value, declarations);
     const commandTokenNames = processCommandTokensDeclaration(value);
     const eventTokenNames = processEventTokensDeclaration(value);
     // $listKeys の検証は `value` しか読まない（要素にも旧世代にも触れない）ので、ここで済ませる。
     // 反映は下の所定位置のまま（クリアと再収集の並びは変えない）。
     const listKeys = processListKeysDeclaration(value);
-    // $scan の検証も `value` と宣言済みトークン名しか読まない（docs/state-scan-design.md §1-2）。
-    // `**` getter の展開形を from に書いた形を落とすため、`value` から作った再帰レジストリも渡す（D5）。
-    // fold が関数を返す出力は、その出力に置いた関数値をメソッド衝突と見なさない（scan/initialValue.ts の記録・D7）。
-    const scanEntries = parseScanDeclaration(value, eventTokenNames, recursionRegistry);
-    // 旧世代の生成アクセサ（own）・それを指す依存辺・評価結果のキャッシュを忘れてから
-    // 差し替える（recursion/generation.ts）。own の生成アクセサは、同じオブジェクトを再セットする
-    // ときに下の `getStateInfo` が `getterPaths` へ拾い直す前に消えていなければならない。
-    // 前世代の再帰レジストリが生やした具体パスは `_generatedPaths` に積む。経路情報の作り直し
-    // （`_rebuildPathInfo`）はそこを除く — 新しい世代ではまだ実体化されていないため。除外が
-    // 世代を跨いで累積することは `_generatedPaths` の注記（と、そこが挙げるテスト）。
-    if (this._recursionRegistry !== null) {
-      for (const path of this._recursionRegistry.forgetGenerated(this, previousState as IState)) {
-        this._generatedPaths.add(path);
-      }
-    }
-    this._recursionRegistry = recursionRegistry;
+    // 検証の段（設計案 H4 の validate）: 世代を進める前の、`value` しか読まない段。ここで throw した
+    // 再セットは世代を進めない。core が作ったトークン名を袋へ publish する（`$scan` の検証が読む）
+    declarations.set("eventTokenNames", eventTokenNames);
+    runValidate(this, value, declarations);
+    // 検証がすべて済み、まだ世代を進めていない点（設計案 H4 の preCommit）: 旧世代の後始末と
+    // 差し替えがここに載る（`$recursion` — recursion/declarations.ts）
+    runPreCommit(this, value, declarations);
     this._commandTokenNames = commandTokenNames;
     this._eventTokenNames = eventTokenNames;
     // 世代を進める（issue #258 の X10）。位置は「旧世代の後始末（forgetGenerated）の**後**・
@@ -318,12 +270,9 @@ export class State extends HTMLElementBase implements IStateElement {
     this._hasErrorCallback = STATE_ERROR_CALLBACK_NAME in value;
     // 再 set 時に二重 subscribe しないよう registry をクリアしてから $on を配線し直す。
     clearEventTokenRegistry(this);
-    // $scan（docs/state-scan-design.md §2-4）: 出力の実体化は `_rebuildPathInfo` より前、
-    // `on` の購読は `$on` より前（同じトークンでは reducer → effect の順、D11）。
-    if (scanEntries !== null) {
-      materializeScanOutputs(value, scanEntries);
-      subscribeScanEvents(this, scanEntries);
-    }
+    // 差し替え直後の段（設計案 H4 の applyEarly）: `$on` の配線より前に走る（`$scan` の出力の実体化と
+    // 購読 — 同じトークンでは reducer → effect の順、D11。scan/declarations.ts）
+    runApplyEarly(this, value, declarations);
     processOnDeclaration(this, value, this._eventTokenNames);
     this._listPaths.clear();
     this._elementPaths.clear();
@@ -339,65 +288,25 @@ export class State extends HTMLElementBase implements IStateElement {
     for(const path of stateInfo.setterPaths) {
       this._setterPaths.add(path);
     }
-    // $streams: 再 set 時の二重起動防止のため旧 stream を abort ＋ registry 全削除してから
-    // 新宣言をパースする（clearEventTokenRegistry → processOnDeclaration と同じ再配線パターン）。
-    // getterPaths / setterPaths の収集後であること（宣言バリデーションが衝突検査で参照する）。
-    // namespace proxy の memo も破棄して古い proxy を捨てる（clearCommandNamespace と対称）。
-    clearStreamNamespace(this);
-    clearStreamRegistry(this);
-    processStreamsDeclaration(this, value);
+    // 宣言の反映（設計案 H4 の apply）: パス収集の後に走る段。`$streams` の衝突検査が
+    // 新しい getterPaths / setterPaths を見るので、この位置でなければならない（stream/streamRuntime.ts）
+    runApply(this, value, declarations);
     // $listKeys: 宣言が無ければ null のままで、setByAddress のキー突合経路には
     // 一切入らない（docs/state-list-key-design.md §7-1）。再 set で必ず置き換える。
     this._listKeys = listKeys;
-    // $recursion: 宣言が無ければ null のままで、読みのホットパスには一切入らない。
-    // レジストリの構築・旧世代の後始末・差し替えはセッタの先頭で済んでいる（`__state` の
-    // 差し替え前）。ここに残るのはリストパスの登録だけ（`_listPaths.clear()` の後であること）。
-    if (recursionSpec !== null) {
-      // アンカーのリストパス（`nodes.*` なら `nodes`）は**宣言から静的に分かる**ので、
-      // 展開を待たずに今すぐ登録する。
-      //
-      // これが無いと、再帰パスを一度読んだ後の再セットで構造書き込みが恒久的に落ちる。
-      // 生成アクセサの `setPathInfo` が張った静的辺（`nodes` → `nodes.*`）は依存グラフに
-      // 残るのに、`_listPaths` はこのセッタでクリアされ、次に再帰パスを読むまで
-      // 張り直されない。その隙間に構造書き込みが来ると `walkDependency` が
-      // 「リストではないパス」として `nodes.*` に到達し、listIndex を持たないアドレスで
-      // `Cannot expand dynamic dependency…` になる（値は書かれるので、データと表示が
-      // 乖離したまま自己回復しない）。
-      this._listPaths.add(recursionSpec.anchorList);
-    }
     // 生きているバインドの経路情報を作り直す（issue #258 の X7）。置き場所は
     // `_pathSet` / `_listPaths` / `_elementPaths` のクリアより後、startWatch / startStreams より前。
     // 上で存在検査の台帳を捨てているので、バインドのパスはここで新しい state に対して検査し直され、
     // 第 2 世代で消えたバインド先が報告される（#270 — `__tests__/integration.stateGenerationReset.test.ts`
     // の末尾が固定する）。
     this._rebuildPathInfo();
-    // $scan: registry と from / resetOn の依存グラフ登録（_pathSet クリア後であること）。
-    // startWatch より前に置く（scan だけを宣言した state も drain の発火対象に載せるため）。
-    const carriedScanResets = unregisterScans(this);
-    this._scanPaths = scanEntries === null ? null : registerScans(this, scanEntries, carriedScanResets);
-    // $watch: 旧宣言のハンドラが残らないよう registry を落としてから新宣言を解析する。
-    // _pathSet.clear() の後であること（依存グラフ登録をやり直す必要がある、
-    // docs/state-watch-hook-design.md §8）。宣言が無ければ watchPaths は null で、
-    // setByAddress の旧値キャプチャには一切入らない（§10 のゼロコスト契約）。
-    clearWatchRegistry(this);
-    // computed の前回評価値も宣言と寿命を共にする（旧宣言の値を新しい watch の
-    // prev として渡さない）。切断では消さない — 再接続の初回評価が上書きする。
-    clearComputedSnapshots(this);
-    this._watchPaths = processWatchDeclaration(this, value);
-    // 接続中の再 set（S13）は新宣言で即再起動する。
-    // 初回（_initialize 中）は _initialized が false なのでここでは起動されず、
-    // connectedCallback 側の startStreams（$connectedCallback 完了後）が担う。
-    if (this._initialized && this._rootNode !== null && !inSsr()) {
-      // watch は stream より先に有効化する（stream の起動時書き込みを観測できるように）
-      startWatch(this);
-      startStreams(this);
-      // $connectedCallback 実行中の再 set（setInitialState）では、ここで新宣言が
-      // 起動済みのため connectedCallback 末尾の startStreams を skip させる。
-      // skip しないと同一 connect サイクルで新宣言の source が 2 回起動する
-      // （1 回目は即 abort — switchMap 意味論で状態は壊れないが、副作用を持つ
-      // source が 2 回発火してしまう）。
-      this._streamsStartedGeneration = this._connectGeneration;
-    }
+    // 依存グラフ登録の段（設計案 H4 の register）: `_rebuildPathInfo` と `$scan` の登録の後。
+    // `$watch` はここで宣言を解析し直す（watch/watchRuntime.ts）
+    runRegister(this, value, declarations);
+    // 接続中の再 set（S13）は新宣言で即再起動する（設計案 H4 の activate）。起動の可否・
+    // 二重起動ガード・SSR の除外は機能側が持つ。初回（_initialize 中）は初期化前なので
+    // ここでは起動されず、接続の末尾の activate が担う
+    runActivate(this, null);
     this._resolveLoading?.();
   }
 
@@ -415,12 +324,8 @@ export class State extends HTMLElementBase implements IStateElement {
 
   private _loadFromSsrElement(): IState | null {
     if (!this.hasAttribute('enable-ssr')) return null;
-    const root = this.parentNode;
-    if (!root) return null;
-    const ssrEl = Ssr.find(root);
-    if (!ssrEl) return null;
-    const data = ssrEl.stateData;
-    return Object.keys(data).length > 0 ? data : null;
+    // `<wcs-ssr>` に載った state データの読み出しは SSR 機能（ssr/install.ts）。未 install なら名指しで落とす
+    return requireSsrHooks(`the "enable-ssr" attribute`).loadState(this) as IState | null;
   }
 
   /** state / src / json / inner <script> / API set のソース解決（_initialize とボリュームで共用）。 */
@@ -461,99 +366,6 @@ export class State extends HTMLElementBase implements IStateElement {
     } catch(e) {
       raiseError(`Failed to initialize state: ${e}`);
     }
-  }
-
-  /**
-   * ボリューム（`<wcs-state mount="path">`）: 独立ツリーを持たず、ロード完了で
-   * ルートに接ぎ木する（webComponent/volume.ts）。接続時にスロットを予約（D22）。
-   * ルートより先に接続されてもよい — ルート登録が保留分を引き取る（V5）。
-   */
-  private async _initializeVolume(): Promise<void> {
-    const rootNode = this._rootNode!;
-    const mountPath = this.getAttribute("mount")!;
-    try {
-      validateVolumeMountPath(mountPath);
-      if (this.hasAttribute("bind-component")) {
-        raiseError(`"mount" cannot be combined with "bind-component".`);
-      }
-      // name 併記は connectedCallback 冒頭の name チェックが mount 専用文言で先に落とす
-      //（ここに同じ検査を置いても到達しない）
-      if (this.hasAttribute("enable-ssr")) {
-        // D14: スナップショットはルートに 1 本 — ボリューム側の enable-ssr は意味を持たない
-        console.warn(`[@wcstack/state] <${config.tagNames.state} mount="${mountPath}"> ignores "enable-ssr" — snapshots are per root tree (the root state element aggregates volume data).`);
-      }
-      reserveVolumeSlot(rootNode, mountPath, this);
-      this._volumeMountPath = mountPath;
-      this._volumeSlotRootNode = rootNode;
-    } catch (error) {
-      // 設定エラーでも初期化待ちをウェッジさせない（_failInitialization と同じ規範 —
-      // 未解決のまま投げると waitForStateInitialize がページ全体を無言で止める）。
-      // ここを `_failInitializeLoudly` に載せないのは意図（#257 第 3 ラウンド）:
-      // この要素はルートではないので、あちらの「この rootNode にルートは来ない」着地
-      //（markBindingsUnavailable / failPendingVolumes）が**無関係なルートと兄弟
-      // ボリュームを巻き添えにする**。promise を解決してから raise する点は
-      // `name=` と同じクラスで、reject 側へ動かすのは別の設計判断
-      this._resolveInitialize?.();
-      this._resolveLoading?.();
-      this._resolveConnectedCallback?.();
-      throw error;
-    }
-    // 予約成立後に立てる（設定エラーの再接続は従来どおり再 raise させる）
-    this._volumeInitializing = true;
-    // D11: ルートの居ないページのボリュームを無言にしない（検査は要素の存在・
-    // パース完了後 — 下の module 関数を参照）
-    if (getStateElement(rootNode) === null) {
-      reportVolumeWithoutRoot(rootNode, mountPath);
-    }
-    const finish = (info: IVolumeGraftInfo | null): void => {
-      this._volumeGraftInfo = info;
-      this._initialized = true;
-      if (info === null) {
-        // 接ぎ木しないまま決着した（ロード失敗・接ぎ木失敗・孤児・外れたまま）ので枠を返す（#265）。
-        // 握ったままだと、同じマウントパスで作り直した要素が "already mounted" に弾かれ、
-        // 復旧がページの読み直ししか無くなる
-        this._releaseVolumeSlot();
-      }
-      this._resolveInitialize?.();
-      this._resolveLoading?.();
-      this._resolveConnectedCallback?.();
-    };
-    let volumeState: Record<string, any>;
-    try {
-      volumeState = await this._loadStateFromSource();
-    } catch (error) {
-      // ロード失敗（404 / JSON パースエラー / import 失敗）は 1 ボリュームに閉じる
-      // （graftIsolated と同じ隔離規範 — 接ぎ木は載らず、枠も返す着地）。
-      // 未解決のまま投げると waitForStateInitialize が全 <wcs-state> の
-      // initializePromise を Promise.all で待つためページ全体が無言でウェッジし、
-      // 上で立てた _volumeInitializing の再入ガードが remove → append の復旧も
-      // 握り潰す。予約成立後の失敗は graft 失敗と同じ着地（finish(null)）に合流し、
-      // 予約成立前の設定エラー（上の try/catch）だけが fail-fast で再 raise する
-      console.error(`[@wcstack/state] volume "${mountPath}" failed to load.`, error);
-      finish(null);
-      return;
-    }
-    // await 中に剥がされていたら接ぎ木しない（スコープは持っていない）
-    if (this._rootNode === null) {
-      finish(null);
-      return;
-    }
-    // 接ぎ木先はいま繋がっている rootNode。ロード中に外れて枠を返していれば、ここで取り直す（#265）。
-    // 保留に積むなら、ルートが来た時点でもう一度取る — その間に外れて枠を返していることがあり、そのとき
-    // 枠が空いていれば外れたままでも接ぎ木する（従来の着地）。別の要素が取っていれば接ぎ木しない
-    const graftRootNode = this._rootNode;
-    if (!this._acquireVolumeSlot(graftRootNode)) {
-      finish(null);
-      return;
-    }
-    graftOrQueueVolume(
-      graftRootNode,
-      getStateElement(graftRootNode),
-      mountPath,
-      volumeState,
-      finish,
-      () => this._acquireVolumeSlot(graftRootNode),
-    );
   }
 
   /**
@@ -643,7 +455,8 @@ export class State extends HTMLElementBase implements IStateElement {
    * PR では変えない（枠の寿命は別 Issue）。
    *
    * `connectedCallback` が `_initialize` より前に await する 2 つ
-   * （`_initializeDCC` / `_initializeBindWebComponent`）の raise も同じ着地に載る。
+   * （DCC の接続 — dcc/dccLifecycle.ts が内部面の `failInitializeLoudly` で載せる — と、
+   * `bind-component` の preparing）の raise も同じ着地に載る。
    * 特に「初期化に失敗した要素の再接続」は `bindWebComponent` → `setInitialState` の
    * 復旧不能 raise でそこへ来るので、包まないと診断ゼロで素通りする。
    *
@@ -690,170 +503,12 @@ export class State extends HTMLElementBase implements IStateElement {
     // ready も保留ボリュームも 1 本目のものなので触らない
     if (this._rootNode !== null && getStateElement(this._rootNode) === null) {
       markBindingsUnavailable(this._rootNode, error);
-      failPendingVolumes(this._rootNode);
+      // このルートを待っている機能（保留中のボリューム）に知らせる（設計案 H3）
+      runInitializeFailed(this, this._rootNode, error);
     }
     throw error;
   }
 
-  private async _initializeBindWebComponent() {
-    if (this.hasAttribute("bind-component")) {
-      // wcs-stateはコンポーネントのトップレベル要素であること
-      // ShadowDOM直下: parentNodeがShadowRoot → hostが親コンポーネント
-      // LightDOM/ShadowDOM内のLightDOM: parentNodeがElement → それが親コンポーネント
-      const parentNode = this.parentNode;
-      const boundComponent = parentNode instanceof ShadowRoot
-        ? parentNode.host
-        : parentNode instanceof Element
-          ? parentNode
-          : null;
-      const customTagName = boundComponent ? getCustomElement(boundComponent) : null;
-      if (boundComponent === null || customTagName === null) {
-        raiseError(`"bind-component" requires <${config.tagNames.state}> to be a direct child of a custom element.`);
-      }
-      // plain（ホスト配線なし）の Light DOM は廃止（v2・2026-09-03 著者決定）。
-      // 共有 rootNode に独立ツリーを置くには名前次元が要り、単一登録簿（P3-6）と
-      // 両立しない。shadow を付ければ plain Shadow 形（独立ツリー・$ 宣言込み）に
-      // そのままなる。data-wcs が無ければ確実に plain — 従来の位置で fail-fast。
-      // data-wcs があるときの判定はホスト配線が要るため下（waitInitializeBinding の後）
-      if (!(parentNode instanceof ShadowRoot) && !boundComponent.hasAttribute(config.bindAttributeName)) {
-        this._failInitialization(
-          `A plain (unwired) Light DOM "bind-component" is not supported. ` +
-          `Attach a shadow root to <${customTagName}>, or mount it from the host ` +
-          `(data-wcs="${this.getAttribute("bind-component")}: path").`,
-        );
-      }
-      // bind-component はコンポーネント側の state プロパティを唯一のソースにする。
-      // state / src / json / inner <script> と併記すると、この後の _initialize が
-      // そちらを採用して _setStatePromise を await しないため、bindWebComponent が
-      // setInitialState で渡した innerState proxy ごと捨てられ、親↔子マッピングが
-      // 無言で死ぬ。併記は必ず設定ミスなので fail-fast させる
-      // （docs/architecture-hardening/15-state-component-mechanism-consistency.md §2.6）。
-      const conflicting = ["state", "src", "json"].filter((name) => this.hasAttribute(name));
-      if (this.querySelector('script[type="module"]') !== null) {
-        conflicting.push('<script type="module">');
-      }
-      if (conflicting.length > 0) {
-        raiseError(`"bind-component" cannot be combined with ${conflicting.join(", ")}. The component's "${this.getAttribute("bind-component")}" property is the only state source.`);
-      }
-      const boundComponentStateProp = this.getAttribute("bind-component")!;
-      // 束ねる意思をここで宣言する（完了はずっと後）。丸ごとマウント `state: user` の
-      // 完了前の初期適用は、この宣言を見て書き込みを抑止する
-      // （webComponent/completeWebComponent.ts）。下の await より前でなければ、
-      // 親の初期適用が先に走って親のオブジェクトを state プロパティに書いてしまう。
-      markWebComponentStatePropDeclared(boundComponent, boundComponentStateProp);
-      const componentRegistry = getCustomElementRegistry(boundComponent);
-      if (componentRegistry === null) {
-        // null レジストリのサブツリーではホストは永久に upgrade されない。
-        // whenDefined を待つと無言でウェッジするので落とす。
-        raiseError(`CustomElementRegistry is unavailable for <${customTagName}>.`);
-      }
-      await componentRegistry.whenDefined(customTagName.toLowerCase());
-      // data-wcs属性がある場合は、上位の状態によりbinding情報の設定が完了するまで待機する
-      if (boundComponent.hasAttribute(config.bindAttributeName)) {
-        await waitInitializeBinding(boundComponent);
-      }
-      if (!(boundComponentStateProp in boundComponent)) {
-        raiseError(`Component does not have property "${boundComponentStateProp}" for state binding.`);
-      }
-      let state = (boundComponent as any)[boundComponentStateProp] as Record<string, any>;
-      if (typeof state !== 'object' || state === null) {
-        raiseError(`Component property "${boundComponentStateProp}" is not an object for state binding.`);
-      }
-      // 丸ごとマウント（`state: user`）の完了前の初期適用が、宣言より先に走って state
-      // プロパティを親のオブジェクトごと置き換えていたら、作者のオブジェクトに戻す
-      // （webComponent/preCompletionWrites.ts）。戻さないと親のキー全部が own data key に
-      // なり、R1 で全部が私有に化ける。
-      const authored = takeOverwrittenObject(boundComponent, boundComponentStateProp);
-      if (typeof authored !== 'undefined' && hasRootMountBinding(boundComponent, boundComponentStateProp)) {
-        (boundComponent as any)[boundComponentStateProp] = authored;
-        state = authored as Record<string, any>;
-      }
-      this._boundComponent = boundComponent;
-      this._boundComponentStateProp = boundComponentStateProp;
-      // data-wcs はあるが state 配線が無い Light DOM も plain（廃止 — 上と同じ誘導）。
-      // 判定にホスト配線（台帳）が要るためここ（waitInitializeBinding の後）で行う
-      if (!(parentNode instanceof ShadowRoot)
-        && !(getBindingsByNode(boundComponent) ?? []).some((b) => b.propSegments[0] === boundComponentStateProp)) {
-        this._failInitialization(
-          `A plain (unwired) Light DOM "bind-component" is not supported. ` +
-          `Attach a shadow root to <${customTagName}>, or mount it from the host ` +
-          `(data-wcs="${boundComponentStateProp}: path").`,
-        );
-      }
-      // v2 マウント（Phase 2・impl-plan §3-0）: この stateProp へのホスト配線
-      //（ルートエントリ / 部分マウントのみ、Shadow / Light DOM とも）は単一ツリーで
-      // 構築する。ホスト配線が 1 本も無い plain Shadow 形だけが下の bindWebComponent
-      //（独立ツリー）に落ちる。
-      if (boundComponent.hasAttribute(config.bindAttributeName)) {
-        const hostBindings = (getBindingsByNode(boundComponent) ?? []).filter(
-          (hostBinding) => hostBinding.propSegments[0] === boundComponentStateProp,
-        );
-        if (hostBindings.length > 0) {
-          // 設定エラーは _failInitialization 経由（未解決 throw は waitForStateInitialize を
-          // 永久待ちにしてページ全体をウェッジする — _failInitialization の注記参照）
-          const parentStateElement = getStateElement(boundComponent.getRootNode() as Node)
-            ?? this._failInitialization(`No state tree found on this root for mount host <${customTagName}>.`);
-          // 再初期化（コンポーネントが connectedCallback で shadow の innerHTML を張り直す
-          // 作りだと、再接続のたびに新しい <wcs-state> がここへ来る）: 記録を再利用して
-          // マーカーを安定させる。このとき上の `state` はもう公開プロキシ（下の
-          // defineProperty 済み）だが、buildMountRecord を通らないので実害はない
-          let record = getRegisteredMountRecord(boundComponent, boundComponentStateProp);
-          const isReinitialize = record !== null;
-          if (record === null) {
-            // 宣言前の窓（fragment 内の初期適用）で積みが作者の既存キーを上書きして
-            // いたら、作者の値に戻してから snapshot する（厳格 R1 — D19/D21）
-            restoreOverwrittenValues(boundComponent, boundComponentStateProp, state);
-            record = buildMountRecord(
-              boundComponent,
-              boundComponentStateProp,
-              hostBindings,
-              parentStateElement,
-              state,
-              getInjectedKeys(boundComponent, boundComponentStateProp),
-            );
-            warnOwnKeyShadowsForMount(record);
-          }
-          this._mountRecord = record;
-          // shadow 張り直しの連打で、上の await 中に自分が剥がされた形。スコープは
-          // 次に入った <wcs-state> が組み直すので触らない（_mountRecord は立てて、
-          // connectedCallback の続きが v1 の _initialize に落ちないようにする）
-          if (this.parentNode !== parentNode) {
-            return;
-          }
-          // スコープ根: Shadow DOM 形はコンポーネントの shadowRoot、
-          // Light DOM 形はコンポーネント要素自身（そのサブツリーがスコープ・D7）。
-          // 設定エラー（1 スコープ根 1 マウント違反等）でも初期化待ちを
-          // ウェッジさせない（_failInitialization と同じ規範 — resolve してから伝播）
-          try {
-            initializeMountScope(record, parentNode instanceof ShadowRoot ? parentNode : boundComponent);
-          } catch (error) {
-            // 着地はここで完了（_failInitialization と同じクラス — #257）
-            this._initializationLanded = true;
-            this._resolveInitialize?.();
-            this._resolveLoading?.();
-            this._resolveConnectedCallback?.();
-            throw error;
-          }
-          if (!isReinitialize) {
-            const publicState = createPublicMountState(record);
-            Object.defineProperty(boundComponent, boundComponentStateProp, {
-              get: () => publicState,
-              enumerable: true,
-              configurable: true,
-            });
-            markWebComponentAsComplete(boundComponent, boundComponentStateProp);
-          }
-          invokeStateReadyCallback(boundComponent, boundComponentStateProp);
-          // 宣言面はマウントでは実行しない（1 回だけ誘導 warn — 設計書 §4-6）。
-          // ライフサイクルはスコープごとに残る — $connectedCallback を chroot で呼ぶ
-          warnMountedDollarDeclarations(record);
-          callMountLifecycleCallback(record, "$connectedCallback");
-          return;
-        }
-      }
-      bindWebComponent(this, this._boundComponent, this._boundComponentStateProp, state);
-    }
-  }
 
 
   private async _callStateConnectedCallback(): Promise<void> {
@@ -863,35 +518,6 @@ export class State extends HTMLElementBase implements IStateElement {
         await state[connectedCallbackSymbol]();
       }
     });
-  }
-
-  private async _initializeDCC(hostElement: Element, shadowRoot: ShadowRoot): Promise<void> {
-    let state: IState;
-    try {
-      if (this.hasAttribute('src')) {
-        const src = this.getAttribute('src')!;
-        if (src.endsWith('.js')) {
-          state = await loadFromScriptFile(src);
-        } else {
-          raiseError(`DCC: Unsupported src type: ${src}`);
-        }
-      } else {
-        const script = this.querySelector<HTMLScriptElement>('script[type="module"]');
-        if (script) {
-          state = await loadFromInnerScript(script, hostElement.tagName.toLowerCase());
-        } else {
-          raiseError(`DCC: No state source found for "${hostElement.tagName.toLowerCase()}".`);
-        }
-      }
-    } catch (e) {
-      raiseError(`DCC: Failed to load state: ${e}`);
-    }
-    defineDCC(hostElement, shadowRoot, state!);
-    this._dcc = true;
-    this._initialized = true;
-    this._rootNode = null; // disconnectedCallbackでのstate参照を防止
-    this._resolveInitialize?.();
-    this._resolveConnectedCallback?.();
   }
 
   private _callStateDisconnectedCallback(): void {
@@ -924,52 +550,38 @@ export class State extends HTMLElementBase implements IStateElement {
               `and read it as "${this.getAttribute("name")}.<path>".`,
         );
       }
-      // DCC 検出: ShadowRoot 内かつホストに data-wc-definition がある場合
+      // この接続を引き取る機能（DCC 定義要素 — dcc/dccLifecycle.ts、ボリューム `mount=` —
+      // webComponent/volumeLifecycle.ts。設計案 H3。聞く順は DCC → ボリュームで、従来の分岐順どおり）。
+      // 引き取った機能がこの接続の初期化を所有する（promise を返すのは引き取ったときだけなので、
+      // 引き取り手の無い素の state に microtask の境界は増えない）
+      const claimed = runConnecting(this);
+      if (claimed !== null) {
+        await claimed;
+        return;
+      }
+      // 引き取り手の居ない宣言 ＝ その機能が未 install（readiness barrier、H5 / D13）。
+      // full / auto では bootstrapState() が install するので起きない
       const parentNode = this.parentNode;
-      if (parentNode instanceof ShadowRoot &&
-          parentNode.host.hasAttribute(DCC_DEFINITION_ATTRIBUTE)) {
-        try {
-          // DCC と bind-component は排他。DCC の state はテンプレートに属し、
-          // インスタンスごとにロードされるので、定義時点のホストのプロパティを
-          // ソースにする bind-component とは両立しない。従来はこの return で
-          // 無言に無視していた（docs/architecture-hardening/15 §3.1）。
-          if (this.hasAttribute("bind-component")) {
-            raiseError(`"bind-component" cannot be used inside a [${DCC_DEFINITION_ATTRIBUTE}] host. DCC state comes from the template, not from a component property.`);
-          }
-          await this._initializeDCC(parentNode.host, parentNode);
-        } catch (error) {
-          // _initialize と同じ着地（#257）。DCC のロード失敗もここまでは
-          // 「throw が connectedCallback の外へ出るだけ」＝ 無言のハングだった
-          this._failInitializeLoudly(error);
-        }
-        return;
+      if (parentNode instanceof ShadowRoot && parentNode.host.hasAttribute(DCC_DEFINITION_ATTRIBUTE)) {
+        requireLifecycleFeature("dcc", `a <${config.tagNames.state}> inside a [${DCC_DEFINITION_ATTRIBUTE}] host`);
       }
-      // ボリューム（`mount="path"` — 接ぎ木・docs/state-mount-design.md §4-2）
       if (this.hasAttribute("mount")) {
-        // ロード完了前の remove → append 再入: 接ぎ木は進行中の _initializeVolume が持っている
-        // （connectedCallbackPromise もそちらが解決する）ので再実行しない。再実行すると
-        // reserveVolumeSlot を二重に呼ぶ。外れたときに返した枠は、原則として接ぎ木の直前に取り直す（#265 —
-        // `_acquireVolumeSlot`）。別の root へ移った形でここで取ると、保留の要求が残る元の root と食い違った
-        // まま、移った先の枠を握り続ける。同じ root へ付け直した（並べ替えた）だけなら、空いている枠を
-        // その場で黙って取り直す — 取らないと、並べ替えの一瞬に後から来た同じパスのボリュームに枠を奪われる。
-        // 取れなければ、接ぎ木の直前の取り直しが報告する
-        if (this._volumeInitializing) {
-          if (this._volumeDetachedFrom === this._rootNode) {
-            try {
-              reserveVolumeSlot(this._rootNode!, this._volumeMountPath!, this);
-              this._volumeSlotRootNode = this._rootNode;
-            } catch {
-              // 外れている間に別のボリュームが取った。接ぎ木の直前の `_acquireVolumeSlot` が報告する
-            }
-          }
-          this._volumeDetachedFrom = null;
-          return;
-        }
-        await this._initializeVolume();
-        return;
+        requireLifecycleFeature("scopes", `the "mount" attribute`);
       }
+      // 接続の前処理（設計案 H3 の preparing）。`bind-component` はここで走り、マウントスコープを
+      // 組んだときだけこの要素を丸ごと引き取る（webComponent/bindComponentLifecycle.ts）
+      let prepared = false;
       try {
-        await this._initializeBindWebComponent();
+        // 引き取り手が無くても await する: 従来この位置には必ず `await this._initializeBindWebComponent()`
+        // があり、素の state でも microtask の境界が 1 つ入っていた。同期にすると、内包スクリプトの
+        // ロードのようにその境界に依存する経路が時間切れになる（実測）。接続は 1 要素 1 回なので費用は無い
+        const preparing = runPreparing(this);
+        if (preparing === null && this.hasAttribute("bind-component")) {
+          // 引き取り手の居ない `bind-component` ＝ スコープ機能が未 install（readiness barrier、H5 / D13）。
+          // 黙って素の state にしない。bind-component の他の設定エラーと同じく下の着地に載る
+          requireLifecycleFeature("scopes", `the "bind-component" attribute`);
+        }
+        prepared = await (preparing ?? false);
       } catch (error) {
         // bind-component の raise も同じ着地に載せる（#257）。とりわけ「初期化に
         // 失敗した要素の再接続」は bindWebComponent → setInitialState の復旧不能
@@ -978,14 +590,7 @@ export class State extends HTMLElementBase implements IStateElement {
         // _failInitializeLoudly の先頭で弾かれ、従来どおり伝播するだけ
         this._failInitializeLoudly(error);
       }
-      if (this._mountRecord !== null) {
-        // v2 マウント: この要素は独立ツリーを持たない（台帳エイリアスが親を指す）。
-        // 名前登録・state ロード・$connectedCallback / $watch / $streams は行わない
-        // （マウントスコープの $ 面は P2-9 — 設計書 §4-6）
-        this._initialized = true;
-        this._resolveInitialize?.();
-        this._resolveLoading?.();
-        this._resolveConnectedCallback?.();
+      if (prepared) {
         return;
       }
       let completed = false;
@@ -1004,40 +609,13 @@ export class State extends HTMLElementBase implements IStateElement {
       this._initialized = true;
 
       this._resolveInitialize?.();
-    } else if (this.hasAttribute("mount")) {
-      // 初期化済みボリュームの再接続（remove → append）: 接ぎ木・アクセサ・宣言は
-      // ツリーに残っている（disconnectedCallback と対称 — アンマウント未対応）。
-      // 下の「ルート再登録」分岐に落とすと、独立ツリーを持たないボリューム自身が
-      // この rootNode のツリー根として登録されてしまう（ルート不在時）か、
-      // "already registered" で落ちる（ルート健在時）。
-      // $connectedCallback だけは要素のライフサイクルとして chroot で再実行する
-      // （マウント済みコンポーネントの再接続と同じ意味論）。ルートが既に居ない・
-      // 別 rootNode へ移された形では接ぎ木先ツリーに到達できないので呼ばない
-      if (this._volumeGraftInfo !== null
-        && getStateElement(this._rootNode) === this._volumeGraftInfo.rootStateElement) {
-        callVolumeLifecycle(this._volumeGraftInfo, "$connectedCallback");
-      }
+    } else if (runReconnecting(this)) {
+      // 再接続を引き取った機能（初期化済みボリューム — webComponent/volumeLifecycle.ts。設計案 H3）
       this._resolveConnectedCallback?.();
       return;
-    } else if (this._mountRecord !== null) {
-      // マウント済みコンポーネントの再接続（行 content のプール再利用）: 現在の行の
-      // listIndex でマウントスコープの台帳を張り直し、最新値を適用する（§1.9 の v2 版）。
-      // microtask に遅らせるのは、この connectedCallback が親の行ループ（mountAfter）の
-      // 最中に同期で発火し、新しいループ文脈は直後の activateContent が張るため —
-      // 同期で張り直すと旧行の listIndex を読んでしまう
-      const mountRecord = this._mountRecord;
-      // Shadow DOM 形は shadowRoot、Light DOM 形はコンポーネント要素自身
-      const scopeRoot = this.parentNode as ShadowRoot | Element;
-      queueMicrotask(() => {
-        if (this._rootNode === null) return; // 再接続後すぐ切断された（プール返却）
-        remountScopeBindings(mountRecord, scopeRoot);
-      });
-      // 接続ごとのライフサイクル（v1 の $connectedCallback 再実行と同じ意味論）
-      callMountLifecycleCallback(mountRecord, "$connectedCallback");
-      this._resolveConnectedCallback?.();
-      return;
-    } else if (!this._dcc && getStateElement(this._rootNode) !== this) {
+    } else if (!this._treeless && getStateElement(this._rootNode) !== this) {
       // 再接続（disconnect で名前登録が解除された後の再 connect）: 登録を復元する。
+      // 自分のツリーを持たない要素（DCC 定義要素）は登録しない。
       // createState が rootNode 経由でこの要素を解決できるようにするために必要
       // （$connectedCallback の再実行と $streams の initial からの再起動が依存する、設計書 §2-3）。
       setStateElement(this._rootNode, this);
@@ -1068,13 +646,8 @@ export class State extends HTMLElementBase implements IStateElement {
     // 取り逃がすレースがある（state のロード方式と文書順に依存）
     if (inSsr() && this.hasAttribute('enable-ssr') && !isOrchestratedSsr()) {
       try {
-        await getBindingsReady(this.rootNode);
-
-        const stateData = Ssr.extractStateData(this);
-        const ssrEl = document.createElement(config.tagNames.ssr);
-        ssrEl.setAttribute('version', VERSION);
-        Ssr.buildContent(ssrEl, stateData);
-        this.parentNode?.insertBefore(ssrEl, this);
+        // `<wcs-ssr>` の生成は SSR 機能（ssr/install.ts）。バインディング完了を待つのも機能側
+        await requireSsrHooks(`the "enable-ssr" attribute`).emitSnapshot(this);
       } catch (error) {
         // reject を配管しないと _connectedCallbackPromise が永久に未解決になり、
         // renderToString が mutex を握ったまま connectedCallbackPromise 待ちで
@@ -1089,106 +662,16 @@ export class State extends HTMLElementBase implements IStateElement {
     // inSsr() 時は起動しない（SSR 出力には initial が乗る、§7-1）。
     // enable-ssr のクライアント側は $connectedCallback をスキップしても起動する
     // （stream はシリアライズ不能なランタイム副作用のため）。
-    // _rootNode ガード: $connectedCallback の await 中に切断された場合は起動しない。
-    // ガードなしだと startStream 内の createState が rootNode 解決（disconnectedCallback
-    // で null 化済み）の raiseError で throw し、connectedCallbackPromise が永遠に
-    // 未解決になる。「未接続の entry は restart しない」設計書 §3-2 とも整合し、
-    // _state セッター側の startStreams 前ガード（_rootNode !== null）と対称。
-    // 世代ガード（connectGeneration 照合）: await 中に「切断 → 即再接続」された場合、
-    // 新 connect が _rootNode を再設定済みで上のガードを素通りするため、世代不一致で
-    // 陳腐化した connect の再開を検出して skip する。起動点が新 connect の末尾に
-    // 一本化され、「$connectedCallback 完了後に起動」（S1）の順序保証も保たれる。
-    // _streamsStartedGeneration ガード: $connectedCallback 内の setInitialState
-    // （接続中の再 set）で _state セッター側が新宣言を起動済みの場合は skip する
-    // （skip しないと同一 connect サイクルで source が 2 回起動する、設計書 §2-3）。
-    // $watch の有効化（$connectedCallback 完了後 ＝ 初期化中の書き込みは購読対象外）。
-    // ガードは startStreams と同じ理由で必要（await 中の切断・再接続）。SSR では
-    // 走らせない — ハンドラの副作用がサーバとクライアントで二重に実行されるため
-    // （docs/state-watch-hook-design.md §11）。
-    // startStreams より先に呼ぶ: stream の起動時書き込み（initial リセット・status 遷移）は
-    // watch から観測できるべきで、逆向きは要らない。
-    // 再入不要: 接続中の _state 再 set は _state セッター側で startWatch 済みだが、
-    // startWatch は Set への add で冪等なので $streams のような世代ガードは要らない。
-    if (
-      !inSsr() &&
-      this._rootNode !== null &&
-      connectGeneration === this._connectGeneration
-    ) {
-      startWatch(this);
-    }
-
-    if (
-      !inSsr() &&
-      this._rootNode !== null &&
-      connectGeneration === this._connectGeneration &&
-      this._streamsStartedGeneration !== connectGeneration
-    ) {
-      startStreams(this);
-    }
+    // $connectedCallback 完了後の起動（設計案 H4 の activate）。捕捉した世代を渡し、
+    // 「切断 → 即再接続」で陳腐化した connect の再開からの起動は機能側が弾く
+    runActivate(this, connectGeneration);
 
     this._resolveConnectedCallback?.();
   }
 
-  /** 控えている枠を返す（#265）。所有者の確認は `releaseVolumeSlot` が行う。 */
-  private _releaseVolumeSlot(): void {
-    if (this._volumeSlotRootNode === null) {
-      return;
-    }
-    releaseVolumeSlot(this._volumeSlotRootNode, this._volumeMountPath!, this);
-    this._volumeSlotRootNode = null;
-  }
-
-  /**
-   * 接ぎ木の直前に、`rootNode` のマウントの枠を取る（#265）。握っていれば真。ロード中・保留中に外れて
-   * 返していれば取り直して真。外れている間に別の要素が同じマウントパスを取っていれば、横取りせずに
-   * 報告して偽 — 黙らせると、作者に見えるのは「データが現れない」だけになる。
-   */
-  private _acquireVolumeSlot(rootNode: Node): boolean {
-    if (this._volumeSlotRootNode === rootNode) {
-      return true;
-    }
-    const mountPath = this._volumeMountPath!;
-    try {
-      reserveVolumeSlot(rootNode, mountPath, this);
-    } catch {
-      console.error(
-        `[@wcstack/state] <${config.tagNames.state} mount="${mountPath}"> will not graft: another volume already holds ` +
-        `the "${mountPath}" slot on this root. Keep one volume per mount path.`,
-      );
-      return false;
-    }
-    this._volumeSlotRootNode = rootNode;
-    return true;
-  }
-
   disconnectedCallback() {
-    if (this.hasAttribute("mount")) {
-      // ボリューム: 接ぎ木したデータ・アクセサ・宣言はツリーに残る（アンマウントは
-      // 未対応 — 揮発させると依存グラフに残った getter 登録が宙に浮く）。接ぎ木済みなら予約も維持。
-      // $disconnectedCallback だけは要素のライフサイクルとして chroot で呼ぶ
-      if (this._volumeGraftInfo !== null) {
-        callVolumeLifecycle(this._volumeGraftInfo, "$disconnectedCallback");
-      }
-      if (!this._initialized) {
-        // ロード中（ルート待ちの保留中を含む）に外れた: 枠を返す（#265）。握ったままだと、ソースが
-        // 来ないまま外れた要素の枠が漏れ、同じマウントパスで作り直した要素が "already mounted" に
-        // 弾かれる。枠は接ぎ木の直前に取り直す（`_acquireVolumeSlot`）。同じ root へ付け直したときだけは
-        // connectedCallback がその場で取り直すので、外れた root を控える
-        this._volumeDetachedFrom = this._volumeSlotRootNode;
-        this._releaseVolumeSlot();
-      }
-      this._rootNode = null;
-      return;
-    }
-    if (this._mountRecord !== null) {
-      // v2 マウント: 名前登録・streams・watch を持たないので後始末は不要。
-      // 台帳エイリアスは消さない（プール再利用の再接続が同じスコープに戻る）。
-      // $disconnectedCallback だけは要素のライフサイクルとして呼ぶ（例外は隔離）
-      callMountLifecycleCallback(this._mountRecord, "$disconnectedCallback");
-      // 公開 getter の答えが消えた（X6）— 親の依存者を再評価させる。プール返却も
-      // 恒久破棄もここを通る（行ごと消えた形は $postUpdate が届かず無視される）
-      notifyExports(this._mountRecord);
-      this._rootNode = null;
+    // この切断を引き取る機能（ボリューム — webComponent/volumeLifecycle.ts。設計案 H3）
+    if (runDisconnecting(this)) {
       return;
     }
     if (this._rootNode !== null) {
@@ -1204,7 +687,7 @@ export class State extends HTMLElementBase implements IStateElement {
           // 落とすと、同じ rootNode の別要素（ゾンビの 2 本目・行プールの張り直し・
           // ロード中の DOM 移動）の切断で印が消え、以後のボリュームが孤児報告を
           // 受けられず永久保留へ戻る
-          clearFailedRootNode(this._rootNode);
+          runInitializeFailureCleared(this, this._rootNode);
         }
         this._rootNode = null;
         return;
@@ -1226,16 +709,8 @@ export class State extends HTMLElementBase implements IStateElement {
         // namespace proxy の memo は破棄する（registry は残るので、再接続後の初回アクセスで
         // 同じ token を返す proxy が作り直される）。
         clearCommandNamespace(this);
-        // stream は abort のみで registry は保持する（再接続時に同じ宣言から
-        // initial で再起動できる、設計書 §5-1 / §5-2）。
-        // namespace proxy の memo は破棄する（clearCommandNamespace と対称。
-        // registry は残るため再接続後の初回アクセスで同内容の proxy が再生成される）。
-        abortAllStreams(this);
-        clearStreamNamespace(this);
-        // watch は発火対象から外すだけで registry は保持する（stream の abortAllStreams と
-        // 同じ二段構え、設計書 §9）。registry まで捨てると、_state セッターが再度走らない
-        // 再接続で宣言を作り直せず watch が二度と発火しない。
-        deactivateWatch(this);
+        // 機能の停止（設計案 H4 の deactivate。起動の逆順 — stream を止めてから watch を外す）
+        runDeactivate(this);
         this._rootNode = null;
       }
     }
@@ -1243,6 +718,74 @@ export class State extends HTMLElementBase implements IStateElement {
 
   get initialized(): boolean {
     return this._initialized;
+  }
+
+  /**
+   * ライフサイクル機能（core/lifecycleHooks.ts、設計案 H3）へ開く内部面。接続を引き取った機能が
+   * 要素の初期化を所有するために要る最小限。
+   */
+  get connectedRootNode(): Node | null {
+    return this._rootNode;
+  }
+
+  clearConnectedRootNode(): void {
+    this._rootNode = null;
+  }
+
+  markInitialized(): void {
+    this._initialized = true;
+  }
+
+  settleInitialization(): void {
+    this._resolveInitialize?.();
+    this._resolveLoading?.();
+    this._resolveConnectedCallback?.();
+  }
+
+  loadStateFromSource(): Promise<Record<string, any>> {
+    return this._loadStateFromSource();
+  }
+
+  markTreeless(): void {
+    this._treeless = true;
+  }
+
+  /** 初期化失敗の着地（`_failInitializeLoudly`）。接続を引き取った機能が自分の失敗を載せる */
+  failInitializeLoudly(error: unknown): never {
+    return this._failInitializeLoudly(error);
+  }
+
+  get connectGeneration(): number {
+    return this._connectGeneration;
+  }
+
+  setWatchPaths(paths: ReadonlySet<string> | null): void {
+    this._watchPaths = paths;
+  }
+
+  setScanPaths(paths: ReadonlySet<string> | null): void {
+    this._scanPaths = paths;
+  }
+
+  /** 設定エラーの着地（`_failInitialization` の raise を除いた部分）。引き取った機能が使う */
+  landInitialization(): void {
+    this._initializationLanded = true;
+    this._resolveInitialize?.();
+    this._resolveLoading?.();
+    this._resolveConnectedCallback?.();
+  }
+
+  setRecursionRegistry(registry: RecursionRegistry | null): void {
+    this._recursionRegistry = registry;
+  }
+
+  addGeneratedPath(path: string): void {
+    this._generatedPaths.add(path);
+  }
+
+  setBoundComponent(component: Element | null, stateProp: string | null): void {
+    this._boundComponent = component;
+    this._boundComponentStateProp = stateProp;
   }
 
   get initializePromise(): Promise<void> {
@@ -1297,6 +840,8 @@ export class State extends HTMLElementBase implements IStateElement {
       merged.add(path);
     }
     this._watchPaths = merged;
+    // ルートが `$watch` を宣言していなくても、合流した watch パスの旧値は同じ hook が記録する
+    this.attachAddressHooks("watch", STATE_WATCH_NAME);
   }
 
   /** ボリュームの $listKeys（接頭辞翻訳済み）をルートの表へ合流させる。衝突は設定ミス。 */
@@ -1395,15 +940,42 @@ export class State extends HTMLElementBase implements IStateElement {
   /** 唯一の呼び手は webComponent/mount.ts の registerMountRecord（Phase 2）。 */
   markHasMounts(): void {
     this._hasMounts = true;
+    this._attachScopeHooks("bind-component");
   }
 
   get hasGraftedVolumes(): boolean {
     return this._hasGraftedVolumes;
   }
 
+  get addressHooks(): IAttachedHooks | null {
+    return this._addressHooks;
+  }
+
+  /** 宣言 `declaration` が要求する機能 `feature` の hook をこの state に付ける（未 install なら throw、D13） */
+  attachAddressHooks(feature: string, declaration: string): void {
+    const hooks = requireFeature(feature, declaration);
+    if (this._addressHooks === null) {
+      this._addressHooks = createAttachedHooks();
+    }
+    appendHooks(this._addressHooks, hooks);
+  }
+
   /** 唯一の呼び手は webComponent/volume.ts の graftVolume（D22 後段のガードが読む）。 */
   markHasGraftedVolumes(): void {
     this._hasGraftedVolumes = true;
+    this._attachScopeHooks("mount");
+  }
+
+  /** ボリュームがこのルートに予約された（接ぎ木前でも、予約下の読みは undefined が正 — D22） */
+  markHasVolume(): void {
+    this._attachScopeHooks("mount");
+  }
+
+  /** スコープ機能（マウント・ボリューム）の hook をこの state に付ける（冪等） */
+  private _attachScopeHooks(declaration: string): void {
+    // install は `bootstrapState()` の `installVolumeGraft()` が済ませている（未 install は
+    // `attachAddressHooks` の readiness barrier が名指しで落とす — D13）
+    this.attachAddressHooks("scopes", declaration);
   }
 
   get bindableEventMap(): Record<string, string> {
@@ -1420,6 +992,9 @@ export class State extends HTMLElementBase implements IStateElement {
 
   setBindableEventMap(map: Record<string, string>): void {
     this._bindableEventMap = map;
+    // `$bindables` の束ね先になった: 書き込み後の bindable イベントを撃つ hook を付ける
+    // （install は dcc/defineDCC.ts が束ねる時点で済ませている）
+    this.attachAddressHooks("dcc", STATE_BINDABLES_NAME);
   }
 
   private _addDependency(
@@ -1601,17 +1176,8 @@ export class State extends HTMLElementBase implements IStateElement {
       this._resolveSetState?.(state);
       return;
     }
-    // 読み込み済みのボリューム（#268）: 接ぎ木はロード完了時にデータをルートの木へ一度だけ複製する
-    // ので、この要素の state を入れ直してもページには届かない（要素自身の読みだけが新しくなる）。
-    // 無言の no-op にせず、下のルート側の拒否（D22）と同じく loud に落とす。`_volumeInitializing` は
-    // スロットを予約したボリュームだけが立て、下ろさない — 接ぎ木に失敗した形もここで弾く。
-    if (this._volumeInitializing) {
-      raiseError(
-        `Cannot replace the state of <${config.tagNames.state} mount="${this.getAttribute("mount")}"> after it has loaded: ` +
-        `a volume's data is copied into the root tree when it grafts, so a new state would never reach the page. ` +
-        `Write the paths under "${this.getAttribute("mount")}" on the root state instead.`,
-      );
-    }
+    // state の差し替えを拒む機能（ロード済みボリューム #268 — webComponent/volumeLifecycle.ts。設計案 H3）に聞く
+    runReplacingState(this);
     // D22 と同型の防御: 接ぎ木済みボリューム / マウント記録の居るツリーの丸ごと再 set は、
     // 接ぎ木データ・quoted-path アクセサ（defineTreeAccessor）・マーカーの getterPaths・
     // 合流済み宣言面（$watch / $listKeys / $updatedCallback ゲート）を全て無言で捨てる。
@@ -1644,40 +1210,3 @@ export class State extends HTMLElementBase implements IStateElement {
   }
 }
 
-/**
- * D11（設計 §4-7）: ボリュームだけでルートの無いページを無言にしない。
- * 接ぎ木は保留キューで待つ（V5 — ルートが後から来れば成立する）ため throw はせず、
- * connectedCallback 内 throw は初期化待ちを永久未解決にする（_failInitialization の注記
- * と同じ理由）。そこで文書のパース完了後に「ルート候補（mount も bind-component も
- * 無い <wcs-state>）が**要素として**存在するか」を検査し、無ければ console.error で
- * 誘導する。登録（ロード完了）でなく要素の存在で見るのは、ルートの src ロードの
- * 遅さで誤検知しないため。ルートを後から動的に足すページでは報告が出るが、
- * 接ぎ木自体はその後も成立する（文言で釈明）。
- */
-function reportVolumeWithoutRoot(rootNode: Node, mountPath: string): void {
-  const check = (): void => {
-    if (getStateElement(rootNode) !== null) {
-      return; // ルートが登録された
-    }
-    // rootNode は Document / ShadowRoot / Element のいずれか — querySelectorAll は必ずある
-    const candidates = (rootNode as ParentNode).querySelectorAll(config.tagNames.state);
-    for (const el of candidates) {
-      if (!el.hasAttribute("mount") && !el.hasAttribute("bind-component")) {
-        return; // ルート候補が居る（ロード中かもしれない）— 登録を待つ
-      }
-    }
-    console.error(
-      `[@wcstack/state] <${config.tagNames.state} mount="${mountPath}"> has no root state tree to graft onto (D11). ` +
-      `A volume mounts onto the root tree — add a root <${config.tagNames.state}> to this root node ` +
-      `(an empty <${config.tagNames.state}></${config.tagNames.state}> is enough). ` +
-      `If the root is added dynamically later, the graft will still complete and this report can be ignored.`,
-    );
-  };
-  const doc = (rootNode.ownerDocument ?? rootNode) as Document;
-  if (doc.readyState === "loading") {
-    // パース中は後続にルートが書かれていてもまだ DOM に無い — 完了後に検査する
-    doc.addEventListener("DOMContentLoaded", () => queueMicrotask(check), { once: true });
-  } else {
-    setTimeout(check, 0);
-  }
-}

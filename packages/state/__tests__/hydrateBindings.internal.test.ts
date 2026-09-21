@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
-import { __test } from "../src/hydrateBindings";
+import { __test } from "../src/ssr/hydrateBindings";
 import { setStateElement } from "../src/stateElementByName";
 import { setFragmentInfoByUUID } from "../src/structural/fragmentInfoByUUID";
 import { getPathInfo } from "../src/address/PathInfo";

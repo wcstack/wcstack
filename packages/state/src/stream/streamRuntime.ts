@@ -35,6 +35,14 @@ import {
 } from "../define";
 import { assertNoScanFeedback } from "../scan/scanFeedback";
 import { registerUpdateBatchListener } from "../updater/updater";
+import { registerFeatureHooks } from "../core/addressHooks";
+import { IDeclarationHooks, registerDeclarationHooks } from "../core/declarationHooks";
+import { STATE_STREAMS_NAME } from "../define";
+import { inSsr } from "../config";
+import { processStreamsDeclaration } from "./processStreamsDeclaration";
+import { clearStreamNamespace } from "./streamNamespace";
+import { abortAllStreams, clearStreamRegistry } from "./streamRegistry";
+import { streamAddressHooks } from "./addressHooks";
 import { addActiveStateElement, getActiveStateElements } from "./activeStateElements";
 import { traceArgs } from "./argsTrace";
 import { consumeSource } from "./consumeSource";
@@ -242,8 +250,73 @@ function restartStreamsOnUpdateBatch(batch: ReadonlySet<IAbsoluteStateAddress>):
 // drain 終了 listener の登録。優先度で `$watch` の後に固定する（設計書 §3-2 層 1）。
 // モジュール評価時には登録しない（watch/watchRuntime.ts と同じ理由）。bootstrapState() が呼ぶ（冪等）。
 let streamRuntimeInstalled = false;
+/**
+ * `_state` セッター側の startStreams が走った connect 世代（接続末尾の startStreams との
+ * 二重起動防止、設計書 §2-3。世代が進めば不一致となり自然に無効化される — サイクル単位の
+ * フラグリセット相当）。従来 `State` の private フィールドだった。
+ */
+const startedGenerationByElement = new WeakMap<IStateElement, number>();
+
+/**
+ * `$streams` の宣言とライフサイクル（設計案 H4）。
+ */
+export const streamDeclarationHooks: IDeclarationHooks = {
+  // watch の後に起動し、先に停止する（受け口が deactivate を逆順で回す）
+  order: 20,
+  apply(element, value) {
+    // $streams: 再 set 時の二重起動防止のため旧 stream を abort ＋ registry 全削除してから
+    // 新宣言をパースする（clearEventTokenRegistry → processOnDeclaration と同じ再配線パターン）。
+    // getterPaths / setterPaths の収集後であること（宣言バリデーションが衝突検査で参照する）。
+    // namespace proxy の memo も破棄して古い proxy を捨てる（clearCommandNamespace と対称）。
+    clearStreamNamespace(element);
+    clearStreamRegistry(element);
+    processStreamsDeclaration(element, value);
+    // hook は要素の寿命の間は付いたまま（再 set で $streams が消えても、残った $streamStatus /
+    // $streamError の束縛は名前空間の null を読む — 従来の core 直結と同じ振る舞い）
+    if (typeof (value as Record<string, unknown>)[STATE_STREAMS_NAME] !== "undefined") {
+      element.attachAddressHooks?.("streams", STATE_STREAMS_NAME);
+    }
+  },
+  activate(element, captured) {
+    // rootNode ガード: $connectedCallback の await 中に切断された場合は起動しない。ガードなしだと
+    // startStream 内の createState が rootNode 解決の raiseError で throw し、
+    // connectedCallbackPromise が永遠に未解決になる（「未接続の entry は restart しない」設計書 §3-2）。
+    if (inSsr() || element.connectedRootNode == null) {
+      return;
+    }
+    if (captured === null) {
+      // 接続中の再 set（S13）: 新宣言で即再起動する。初回（初期化中）は起動せず、接続の末尾が担う
+      if (element.initialized !== true) {
+        return;
+      }
+      startStreams(element);
+      // $connectedCallback 実行中の再 set（setInitialState）では、ここで新宣言が起動済みのため
+      // 接続末尾の startStreams を skip させる。skip しないと同一 connect サイクルで新宣言の
+      // source が 2 回起動する（1 回目は即 abort — switchMap 意味論で状態は壊れないが、
+      // 副作用を持つ source が 2 回発火してしまう）
+      startedGenerationByElement.set(element, element.connectGeneration ?? 0);
+      return;
+    }
+    // 接続の末尾: 世代ガード（陳腐な connect の再開を弾く）と、宣言側で起動済みの世代を skip する
+    if (captured !== element.connectGeneration || startedGenerationByElement.get(element) === captured) {
+      return;
+    }
+    startStreams(element);
+  },
+  deactivate(element) {
+    // stream は abort のみで registry は保持する（再接続時に同じ宣言から initial で
+    // 再起動できる、設計書 §5-1 / §5-2）。namespace proxy の memo は破棄する
+    // （clearCommandNamespace と対称。registry は残るため再接続後の初回アクセスで
+    // 同内容の proxy が再生成される）。
+    abortAllStreams(element);
+    clearStreamNamespace(element);
+  },
+};
+
 export function installStreamRuntime(): void {
   if (streamRuntimeInstalled) return;
   streamRuntimeInstalled = true;
+  registerFeatureHooks("streams", streamAddressHooks);
+  registerDeclarationHooks("streams", streamDeclarationHooks);
   registerUpdateBatchListener(restartStreamsOnUpdateBatch, STREAM_LISTENER_PRIORITY);
 }

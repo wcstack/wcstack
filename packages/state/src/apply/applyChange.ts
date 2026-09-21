@@ -6,7 +6,7 @@ import { getCustomElementRegistry } from "../platform/customElementRegistry.js";
 import { raiseError } from "../raiseError.js";
 import { getStateElement } from "../stateElementByName.js";
 import { IBindingInfo } from "../types.js";
-import { isWebComponentComplete, isWebComponentStatePropDeclared } from "../webComponent/completeWebComponent.js";
+import { componentApplyHooks } from "../core/componentApplyHooks.js";
 import { applyChangeToAttribute } from "./applyChangeToAttribute.js";
 import { applyChangeToCheckbox } from "./applyChangeToCheckbox.js";
 import { applyChangeToClass } from "./applyChangeToClass.js";
@@ -55,7 +55,7 @@ const definedApplyVerifiedByBinding: WeakMap<IBindingInfo, boolean> = new WeakMa
 /**
  * 宣言済みマウントの完了前の初期適用は書かない。子が完了すればマウント経由で
  * ライブに読むので、ここで親の値を書く意味は無い（書くと害がある —
- * webComponent/completeWebComponent.ts の宣言台帳を参照）。v2 では部分規則
+ * webComponent/completeWebComponent.ts の宣言台帳を参照 — core/componentApplyHooks.ts 越しに引く）。v2 では部分規則
  *（`state.name: user.name`）にも同じ原則を適用する: 積みの上書きが作者の既定値を
  * 汚すと、厳格 R1（作者の own data key は私有・D19）の privateSnapshot が親の値で
  * 汚染される。積みが要るのは**未宣言**（`<wcs-state bind-component>` がまだ来ていない
@@ -79,13 +79,17 @@ function skipPendingMountWrite(): void {}
  * 巻き添えにした）。残余空がルート規則の意味を持った今、その除外は要らない。
  */
 function resolveCustomElementApply(binding: IBindingInfo): ApplyChangeFn {
-  const element = binding.replaceNode as Element;
-  const stateProp = binding.propSegments[0];
-  if (isWebComponentComplete(element, stateProp)) {
-    return applyChangeToWebComponent;
-  }
-  if (isWebComponentStatePropDeclared(element, stateProp)) {
-    return skipPendingMountWrite;
+  // 完了・宣言の台帳は bind-component の機能が受け口に置く。置かれていなければ素の書き込み
+  const hooks = componentApplyHooks;
+  if (hooks !== null) {
+    const element = binding.replaceNode as Element;
+    const stateProp = binding.propSegments[0];
+    if (hooks.isComplete(element, stateProp)) {
+      return applyChangeToWebComponent;
+    }
+    if (hooks.isDeclared(element, stateProp)) {
+      return skipPendingMountWrite;
+    }
   }
   return applyChangeToProperty;
 }

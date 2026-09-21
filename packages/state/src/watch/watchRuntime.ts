@@ -28,10 +28,18 @@ import { MAX_WATCH_CHAIN_DEPTH, WATCH_LISTENER_PRIORITY } from "../define";
 import { devtoolsSink } from "../platform/devtoolsSink";
 import { getScopedIndexes } from "../list/wildcardLevel";
 import type { IStateProxy } from "../proxy/types";
-import { registerUpdateBatchListener } from "../updater/updater";
-import { beginWatchFiring, consumeWatchChainDepth, endWatchFiring } from "./chainDepth";
+import { registerEnqueueListener, registerUpdateBatchListener } from "../updater/updater";
+import { beginWatchFiring, consumeWatchChainDepth, endWatchFiring, noteEnqueueForWatchChain } from "./chainDepth";
 import { getComputedSnapshot, setComputedSnapshot } from "./computedSnapshots";
 import { clearPrevValues, getPrevValue } from "./prevValues";
+import { IDeclarationHooks, registerDeclarationHooks } from "../core/declarationHooks";
+import { STATE_SCAN_NAME, STATE_WATCH_NAME } from "../define";
+import { inSsr } from "../config";
+import { clearComputedSnapshots } from "./computedSnapshots";
+import { processWatchDeclaration } from "./processWatchDeclaration";
+import { clearWatchRegistry, deactivateWatch } from "./watchRegistry";
+import { registerFeatureHooks } from "../core/addressHooks";
+import { watchAddressHooks } from "./addressHooks";
 import { hasRetiredRow, selectLandedRows } from "./rowLanding";
 import { addActiveWatchStateElement, getActiveWatchStateElements, getVolumeWatchEntries, getWatchEntries } from "./watchRegistry";
 import { hasScanDrainWork } from "../scan/scanRegistry";
@@ -415,8 +423,59 @@ let watchRuntimeInstalled = false;
 export function installWatchRuntime(): void {
   if (watchRuntimeInstalled) return;
   watchRuntimeInstalled = true;
+  registerFeatureHooks("watch", watchAddressHooks);
+  registerDeclarationHooks("watch", watchDeclarationHooks);
   registerUpdateBatchListener(fireWatchOnUpdateBatch, WATCH_LISTENER_PRIORITY);
+  // ハンドラ実行中の書き込みだけを連鎖としてマークする（chainDepth.ts）。ハンドラ実行中でなければ即 return
+  registerEnqueueListener(noteEnqueueForWatchChain);
 }
+
+/**
+ * `$watch` の宣言とライフサイクル（設計案 H4）。従来 `State` の `_state` セッターと
+ * connectedCallback / disconnectedCallback に直書きされていた分岐で、順序の理由は各所に残した。
+ */
+export const watchDeclarationHooks: IDeclarationHooks = {
+  // stream より先に起動し、後に停止する（受け口が deactivate を逆順で回す）
+  order: 10,
+  register(element, value) {
+    // $watch: 旧宣言のハンドラが残らないよう registry を落としてから新宣言を解析する。
+    // _pathSet.clear() の後であること（依存グラフ登録をやり直す必要がある、
+    // docs/state-watch-hook-design.md §8）。宣言が無ければ watchPaths は null で、
+    // setByAddress の旧値キャプチャには一切入らない（§10 のゼロコスト契約）。
+    clearWatchRegistry(element);
+    // computed の前回評価値も宣言と寿命を共にする（旧宣言の値を新しい watch の
+    // prev として渡さない）。切断では消さない — 再接続の初回評価が上書きする。
+    clearComputedSnapshots(element);
+    const watchPaths = processWatchDeclaration(element, value);
+    element.setWatchPaths?.(watchPaths);
+    if (watchPaths !== null || element.scanPaths != null) {
+      // 旧値の台帳（`$watch` の prev・`$scan` の from）は watch 機能の hook が書き込み時に記録する
+      element.attachAddressHooks?.("watch", watchPaths !== null ? STATE_WATCH_NAME : STATE_SCAN_NAME);
+    }
+  },
+  activate(element, captured) {
+    // SSR では走らせない — ハンドラの副作用がサーバとクライアントで二重に実行されるため
+    // （docs/state-watch-hook-design.md §11）。rootNode ガード: $connectedCallback の await 中に
+    // 切断された場合は起動しない。世代ガード（接続末尾のみ）: await 中に「切断 → 即再接続」された
+    // 場合、新 connect が rootNode を再設定済みでガードを素通りするため、世代不一致で陳腐化した
+    // connect の再開を検出して skip する。
+    // 再入不要: 接続中の再 set は下の宣言側で startWatch 済みだが、startWatch は Set への add で
+    // 冪等なので $streams のような世代ガードは要らない。
+    if (inSsr() || element.connectedRootNode == null) {
+      return;
+    }
+    if (captured === null ? element.initialized !== true : captured !== element.connectGeneration) {
+      return;
+    }
+    startWatch(element);
+  },
+  deactivate(element) {
+    // watch は発火対象から外すだけで registry は保持する（stream の abortAllStreams と
+    // 同じ二段構え、設計書 §9）。registry まで捨てると、_state セッターが再度走らない
+    // 再接続で宣言を作り直せず watch が二度と発火しない。
+    deactivateWatch(element);
+  },
+};
 
 export const __private__ = {
   fireWatchOnUpdateBatch,

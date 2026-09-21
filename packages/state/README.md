@@ -177,6 +177,40 @@ Every row is a section of this README. Unless it appears under [Where the neighb
 </script>
 ```
 
+### Split entries (only the features you use)
+
+`@wcstack/state` and `/auto` ship everything, and they stay the recommended way in: a page that
+uses every feature is smaller as one file than as core plus features. When a page deliberately
+leaves features out, it can compose them instead:
+
+```html
+<script type="module">
+  import { bootstrapState, installFeatures } from 'https://esm.run/@wcstack/state/core';
+  import temporal from 'https://esm.run/@wcstack/state/features/temporal';  // $watch / $scan / $streams
+  import scopes from 'https://esm.run/@wcstack/state/features/scopes';      // bind-component, mount=, DCC
+
+  installFeatures([temporal, scopes]);
+  bootstrapState();
+</script>
+```
+
+| Entry | What it adds |
+|---|---|
+| `@wcstack/state/core` | The binding engine: `data-wcs`, `for` / `if`, path getters, filters, events, `$command` / `$on`, `bootstrapState`, `installFeatures` |
+| `@wcstack/state/features/temporal` | `$watch`, `$scan`, `$streams` |
+| `@wcstack/state/features/scopes` | `bind-component`, `mount=` volumes, overlay exports, DCC (`data-wc-definition`) |
+| `@wcstack/state/features/recursion` | `$recursion` and `**` paths |
+| `@wcstack/state/features/ssr` | `enable-ssr`: server rendering and hydration |
+| `@wcstack/state/features/formats` | The formatting filters (`uc`, `date`, `round`, `truncate`, …). The core answers only `not`, which `if` / `else` need |
+| `@wcstack/state/features/devtools` | The DevTools hook protocol source |
+| `@wcstack/state/define` | `defineState` and the types only — no runtime at all |
+
+A declaration whose feature is missing does not fail quietly: it throws
+`[wcs/feature-not-installed] … install it with installFeatures([...]) from "@wcstack/state/features/…"`
+when the state is defined, and a filter with no implementation throws `[wcs/filter-unknown]` when the
+bindings are planned. Installing is idempotent, and every entry shares one core chunk (a feature
+never carries a second copy of the engine).
+
 ## Basic Usage
 
 ```html

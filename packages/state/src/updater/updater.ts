@@ -9,8 +9,6 @@ import { runTransition } from "../protocol/transitionRunner";
 import { devtoolsSink } from "../platform/devtoolsSink";
 import { IPropagationContext } from "../propagation/types";
 import { IBindingInfo } from "../types";
-import { noteEnqueueForWatchChain } from "../watch/chainDepth";
-import { noteEnqueueForScanReset } from "../scan/eventReset";
 
 /**
  * drain（_applyChange）終了通知のリスナー（docs/state-streams-design.md §3-2）。
@@ -26,6 +24,22 @@ interface IRegisteredBatchListener {
 }
 
 const updateBatchListeners: IRegisteredBatchListener[] = [];
+
+/**
+ * 書き込みの enqueue を見る機能（設計案 H2 の enqueue 側）。`$watch` の連鎖深さ（watch/chainDepth.ts）と
+ * `on` scan の保留 reset（scan/eventReset.ts）が install で登録する。互いに独立なので順序契約は無い。
+ * 登録が無ければ enqueue は配列長 0 の判定 1 回で抜ける。
+ */
+export type EnqueueListener = (absoluteAddress: IAbsoluteStateAddress) => void;
+
+const enqueueListeners: EnqueueListener[] = [];
+
+/** 機能の install が呼ぶ（冪等 — 同じ listener は 1 回だけ） */
+export function registerEnqueueListener(listener: EnqueueListener): void {
+  if (!enqueueListeners.includes(listener)) {
+    enqueueListeners.push(listener);
+  }
+}
 
 /**
  * drain 終了リスナーを登録する。
@@ -102,12 +116,11 @@ class Updater {
     absoluteAddress: IAbsoluteStateAddress,
     context: IPropagationContext | null = null,
   ): void {
-    // `$watch` ハンドラ実行中の書き込みだけを連鎖としてマークする（watch/chainDepth.ts）。
-    // ハンドラ実行中でなければ即 return する葉モジュール呼び出し 1 個のコスト。
-    noteEnqueueForWatchChain();
-    // `on` scan の `resetOn` を書き込みの時点で保留する（scan/eventReset.ts）。
-    // 該当する宣言がページに無ければ整数比較 1 回で抜ける。
-    noteEnqueueForScanReset(absoluteAddress);
+    // 書き込みの時点を見る機能（`$watch` の連鎖のマーク・`on` scan の `resetOn` の保留）。
+    // install されていなければ配列長 0 の判定 1 回
+    for (let i = 0; i < enqueueListeners.length; i++) {
+      enqueueListeners[i](absoluteAddress);
+    }
     const requireStartProcess = this._isQueueEmpty();
     this._queueUpdateRecords.push({ absoluteAddress, context });
     if (requireStartProcess) {

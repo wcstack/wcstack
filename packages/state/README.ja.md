@@ -177,6 +177,39 @@
 </script>
 ```
 
+### 分割エントリ（使う機能だけを入れる）
+
+`@wcstack/state` と `/auto` は全機能入りで、こちらが引き続き推奨です（全部使うページなら、core ＋
+機能に分けるより 1 ファイルのほうが小さい）。機能を意図的に落とすページは、組み合わせて入れられます。
+
+```html
+<script type="module">
+  import { bootstrapState, installFeatures } from 'https://esm.run/@wcstack/state/core';
+  import temporal from 'https://esm.run/@wcstack/state/features/temporal';  // $watch / $scan / $streams
+  import scopes from 'https://esm.run/@wcstack/state/features/scopes';      // bind-component・mount=・DCC
+
+  installFeatures([temporal, scopes]);
+  bootstrapState();
+</script>
+```
+
+| エントリ | 足されるもの |
+|---|---|
+| `@wcstack/state/core` | バインディングの本体: `data-wcs`・`for` / `if`・パス getter・フィルタ・イベント・`$command` / `$on`・`bootstrapState`・`installFeatures` |
+| `@wcstack/state/features/temporal` | `$watch`・`$scan`・`$streams` |
+| `@wcstack/state/features/scopes` | `bind-component`・`mount=` のボリューム・オーバーレイの公開 getter・DCC（`data-wc-definition`） |
+| `@wcstack/state/features/recursion` | `$recursion` と `**` パス |
+| `@wcstack/state/features/ssr` | `enable-ssr`: サーバー描画とハイドレーション |
+| `@wcstack/state/features/formats` | 書式フィルタ群（`uc`・`date`・`round`・`truncate` …）。core が答えるのは `if` / `else` が要る `not` だけ |
+| `@wcstack/state/features/devtools` | DevTools Hook Protocol への source 登録 |
+| `@wcstack/state/define` | `defineState` と型だけ — ランタイムは 0 |
+
+機能が入っていない宣言は黙って無視されません。state の定義時に
+`[wcs/feature-not-installed] … install it with installFeatures([...]) from "@wcstack/state/features/…"`
+で落ち、実装の無いフィルタは束縛計画の段で `[wcs/filter-unknown]` で落ちます。install は冪等で、
+どのエントリも core のチャンクを 1 つだけ共有します（機能側がエンジンの 2 つ目のコピーを抱える
+ことはありません）。
+
 ## 基本的な使い方
 
 ```html

@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
 vi.mock('../src/registerComponents', () => ({
-  registerComponents: vi.fn()
+  registerComponents: vi.fn(),
+  registerComponentDefiner: vi.fn()
 }));
 
 vi.mock('../src/config', async (importOriginal) => {

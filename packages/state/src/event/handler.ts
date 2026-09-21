@@ -8,7 +8,6 @@ import { getByAddressSymbol, setLoopContextSymbol } from "../proxy/symbols";
 import { getScopedIndexes } from "../list/wildcardLevel";
 import { raiseError } from "../raiseError";
 import { getStateElement } from "../stateElementByName";
-import { findMountRecordForNode } from "../webComponent/mount";
 import { IBindingInfo } from "../types";
 import { captureHandlerRejection } from "./captureHandlerRejection";
 import { createHandlerBindingRegistry } from "./handlerBindingRegistry";
@@ -56,11 +55,15 @@ const stateEventHandlerFunction = (
       // （shadowRoot）で直に引け、Light DOM 形はスコープ根がコンポーネント要素
       // 自身なので祖先走査が要る（rootNode だけ見ると Light DOM で外側の添字が漏れる）
       let scopedWildcardCount = loopContext !== null ? loopContext.pathInfo.wildcardCount : 0;
-      if (loopContext !== null && stateElement.hasMounts === true) {
-        const mountRecord = findMountRecordForNode(node, rootNode);
-        if (mountRecord !== null) {
-          const shift = mountRecord.indexShiftByLoopElementPath.get(loopContext.pathInfo.path);
-          scopedWildcardCount = typeof shift !== "undefined" ? scopedWildcardCount - shift : 0;
+      if (loopContext !== null) {
+        // 添字の段数はスコープ機能の handlerScope hook（webComponent/addressHooks.ts）が決める。
+        // hook の無い state は判定 1 個で抜ける
+        const hooks = stateElement.addressHooks;
+        if (hooks) {
+          const scopes = hooks.handlerScope;
+          for (let i = 0; i < scopes.length; i++) {
+            scopedWildcardCount = scopes[i](stateElement, node, rootNode, loopContext, scopedWildcardCount);
+          }
         }
       }
       const indexes = loopContext !== null

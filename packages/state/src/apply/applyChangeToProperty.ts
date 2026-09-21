@@ -5,7 +5,7 @@ import { beginPropagationTransaction, extendPropagationContext, getCurrentPropag
 import { isPossibleTwoWay } from "../event/isPossibleTwoWay";
 import { getCustomElement } from "../getCustomElement";
 import { IBindingInfo } from "../types";
-import { recordInjectedKey, rememberOverwrittenObject, rememberOverwrittenValue } from "../webComponent/preCompletionWrites";
+import { componentApplyHooks } from "../core/componentApplyHooks";
 import { IApplyContext } from "./types";
 import { addSsrProperty, trackSsrPropertyNode } from "./ssrPropertyStore";
 import { isHtmlSinkProp, reportTrustedTypesBlock, trustHtmlValue } from "../trustedTypes";
@@ -67,12 +67,13 @@ export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyCon
     if (current !== newValue) {
       // 完了前の丸ごとマウント（`state: user`）は、作者の state オブジェクトを親の
       // オブジェクトで置き換えてしまう。あとで戻せるように置き換え前を控える
-      // （webComponent/preCompletionWrites.ts）。オブジェクト → オブジェクトの書き込みで
+      // （webComponent/preCompletionWrites.ts — bind-component の機能が core/componentApplyHooks.ts に置く。
+      // 置かれていなければ判定 1 回で抜ける）。オブジェクト → オブジェクトの書き込みで
       // 相手がカスタム要素のときだけ台帳に触る（通常の書き込みは typeof 判定で抜ける）。
-      if (current !== null && typeof current === 'object'
+      if (componentApplyHooks !== null && current !== null && typeof current === 'object'
         && newValue !== null && typeof newValue === 'object'
         && getCustomElement(element) !== null) {
-        rememberOverwrittenObject(element, firstSegment, current);
+        componentApplyHooks.rememberOverwrittenObject(element, firstSegment, current);
       }
       // Trusted Types: HTML sink (`innerHTML` 等) への書き込みだけ、利用側が注入した
       // sanitizer 付き policy を通す。state が identity policy を作って素通しさせるのは
@@ -198,17 +199,17 @@ export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyCon
     }
     // 完了前の部分マウント（`state.theme: theme`）が、作者の state オブジェクトに無かった
     // キーを作る（積み）ことを控える。R1 の衝突報告はこのキーを作者のものとして扱わない
-    // （webComponent/preCompletionWrites.ts）
-    if (propSegments.length === 2 && typeof subObject === 'object' && subObject !== null
+    // （webComponent/preCompletionWrites.ts — core/componentApplyHooks.ts 越し）
+    if (componentApplyHooks !== null && propSegments.length === 2 && typeof subObject === 'object' && subObject !== null
       && getCustomElement(element) !== null) {
       if (!(lastSegment in subObject)) {
-        recordInjectedKey(element, firstSegment, lastSegment);
+        componentApplyHooks.recordInjectedKey(element, firstSegment, lastSegment);
       } else {
         // 既存キーの上書き: 作者の値を控える（v2 の厳格 R1 が snapshot 前に復元する）。
         // 完了後の (element, stateProp) への適用はここへルーティングされない
         //（applyChangeToWebComponent の no-op へ行く — apply/applyChange.ts）ので、
         // ここに来る上書きは常に完了前＝控えの対象で良い
-        rememberOverwrittenValue(element, firstSegment, lastSegment, subObject[lastSegment]);
+        componentApplyHooks.rememberOverwrittenValue(element, firstSegment, lastSegment, subObject[lastSegment]);
       }
     }
     try {

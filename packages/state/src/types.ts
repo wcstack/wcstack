@@ -1,4 +1,4 @@
-export { IFilterInfo, IBindingInfo, BindingType } from './binding/types.js';
+export { IParsedFilter, IFilterInfo, IParsedBinding, IBindingInfo, BindingType } from './binding/types.js';
 import type { BindingType as _BindingType } from './binding/types.js';
 
 export interface IState {

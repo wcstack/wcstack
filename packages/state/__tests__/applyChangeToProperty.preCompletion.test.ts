@@ -11,6 +11,10 @@ import { getPathInfo } from '../src/address/PathInfo';
 import { takeOverwrittenObject, getInjectedKeys } from '../src/webComponent/preCompletionWrites';
 import type { IBindingInfo } from '../src/types';
 import type { IApplyContext } from '../src/apply/types';
+import { setComponentApplyHooks } from '../src/core/componentApplyHooks';
+import { bindComponentApplyHooks } from '../src/webComponent/componentApply';
+// bind-component の台帳は機能が受け口に置く（core/componentApplyHooks.ts）。bootstrapState() を経ないので自分で置く
+setComponentApplyHooks(bindComponentApplyHooks);
 
 const context = { stateName: 'default', stateElement: {} as any, state: {} as any, appliedBindingSet: new Set() } as IApplyContext;
 

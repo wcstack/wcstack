@@ -18,7 +18,7 @@ import { config } from "../config.js";
 import { didYouMean, LINT_HINT } from "../errorGuidance.js";
 import { raiseError } from "../raiseError.js";
 import { optionMustBeNumber, optionsRequired, valueMustBeArray, valueMustBeBoolean, valueMustBeDate, valueMustBeNumber } from "./errorMessages.js";
-import { FilterFn, FilterWithOptions } from "./types";
+import { FilterFn, FilterWithOptions } from "../filters/types";
 
 function validateNumberString(value: string): boolean {
   if (!value || isNaN(Number(value))) {

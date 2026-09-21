@@ -1,6 +1,7 @@
 import { getPathInfo } from "../address/PathInfo";
 import { IPathInfo } from "../address/types";
 import { IStateElement } from "../components/types";
+import { setMountedScopeHost } from "../list/loopContextByNode";
 import { DELIMITER, RECURSION_WILDCARD, WILDCARD } from "../define";
 import { raiseError } from "../raiseError";
 import { IBindingInfo } from "../types";
@@ -619,7 +620,17 @@ export function getScopeRootByMountRecord(record: IMountRecord): Node | null {
   return scopeRootByMountRecord.get(record) ?? null;
 }
 
+// ループ文脈の探索がマウントされた ShadowRoot でホストへ抜ける受け口（list/loopContextByNode.ts）。
+// 最初の記録の登録で 1 回だけ注入する（マウントの無いページでは探索は境界で止まったまま）
+let scopeHostInstalled = false;
+function installMountedScopeHost(): void {
+  if (scopeHostInstalled) return;
+  scopeHostInstalled = true;
+  setMountedScopeHost((root) => mountRecordByScopeRoot.has(root) ? root.host : null);
+}
+
 export function registerMountRecord(scopeRoot: Node, record: IMountRecord): void {
+  installMountedScopeHost();
   mountRecordByScopeRoot.set(scopeRoot, record);
   scopeRootByMountRecord.set(record, scopeRoot);
   let byMarker = mountRecordsByStateElement.get(record.parentStateElement);

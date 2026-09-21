@@ -3,7 +3,6 @@ import { getResolvedAddress } from "../../address/ResolvedAddress";
 import { createStateAddress } from "../../address/StateAddress";
 import { IStateAddress } from "../../address/types";
 import { dirtyCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
-import { dispatchBindableEvent } from "../../dcc/dispatchBindableEvent";
 import { walkDependency } from "../../dependency/walkDependency";
 import { getUpdater } from "../../updater/updater";
 import { getListIndex } from "../methods/getListIndex";
@@ -43,9 +42,15 @@ export function postUpdate(
         updater.enqueueAbsoluteAddress(absDepAddress);
       }
     );
-    // DCC bindable イベントディスパッチ。$postUpdate は in-place 変異を通知する正規の idiom で、
-    // set トラップを通らない変更が観測面に出る唯一の経路なので、ここでも撃つ
+    // $postUpdate は in-place 変異を通知する正規の idiom で、set トラップを通らない変更が観測面に
+    // 出る唯一の経路なので、書き込み後の hook（DCC の bindable イベント等）をここでも撃つ
     // （docs/architecture-hardening/15-state-component-mechanism-consistency.md §2.1）。
-    dispatchBindableEvent(stateElement, address.pathInfo);
+    const hooks = stateElement.addressHooks;
+    if (hooks) {
+      const written = hooks.written;
+      for (let i = 0; i < written.length; i++) {
+        written[i](stateElement, address.pathInfo);
+      }
+    }
   }
 }

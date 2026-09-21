@@ -1,11 +1,12 @@
 import { DELIMITER, FILTER_SEPARATOR, MODIFIER_SEPARATOR } from "../define";
-import { IBindingInfo, IFilterInfo } from "../types";
+import { IParsedBinding, IParsedFilter } from "../types";
 import { parseFilters } from "./parseFilters";
 import { trimFn } from "./utils";
 
-type PropPartParseResult = Pick<IBindingInfo, 'propName' | 'propSegments' | 'propModifiers' | 'inFilters'>;
+// 解析の段の形（フィルタは名前と引数だけ — 実関数は束縛計画の段で引く。要件 D16）
+type PropPartParseResult = Pick<IParsedBinding, 'propName' | 'propSegments' | 'propModifiers' | 'inFilters'>;
 
-const cacheFilterInfos = new Map<string, IFilterInfo[]>();
+const cacheFilterInfos = new Map<string, IParsedFilter[]>();
 
 /** tooling 専用（parser.ts の clearParserCaches からのみ呼ぶ）。 */
 export function clearPropPartCacheForTooling(): void {
@@ -25,7 +26,7 @@ export function parsePropPart(propPart: string): PropPartParseResult {
   let propText: string = '';
   let filterTexts: string[] = [];
   let filtersText = '';
-  let filters: IFilterInfo[] = [];
+  let filters: IParsedFilter[] = [];
   if (pos !== -1) {
     propText = propPart.slice(0, pos).trim();
     filtersText = propPart.slice(pos + 1).trim();

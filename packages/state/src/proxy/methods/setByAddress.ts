@@ -19,7 +19,6 @@
 import { liftAddress, absoluteAddressOf } from "../../address/liftAddress";
 import { IAbsoluteStateAddress, IStateAddress } from "../../address/types";
 import { DELIMITER, WILDCARD } from "../../define";
-import { dispatchBindableEvent } from "../../dcc/dispatchBindableEvent";
 import { createListIndex } from "../../list/createListIndex";
 import { getListIndexesByList, setListIndexesByList } from "../../list/listIndexesByList";
 import { getLastListValueByAbsoluteStateAddress, setLastListValueByAbsoluteStateAddress } from "../../list/lastListValueByAbsoluteStateAddress";
@@ -39,23 +38,21 @@ import { hasByAddress } from "./hasByAddress";
 import { markSwapBaselineList } from "../../list/swapBaselineList";
 import { getSwapInfoByList, setSwapInfoByList } from "./swapInfo";
 import { walkDependency } from "../../dependency/walkDependency";
+import { NOT_HANDLED } from "../../core/addressHooks";
 import { hasKeyedDependents, keyedDependents } from "../../dependency/keyedDependency";
 import { dirtyCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
 import { config } from "../../config";
 import { devtoolsSink } from "../../platform/devtoolsSink";
 import { beginPropagationTransaction, getCurrentPropagationContext } from "../../propagation/propagation";
 import { consumeOccurrenceWrite } from "../occurrenceWrite";
-import { getPrevValue, hasPrevValue, recordPrevValue } from "../../watch/prevValues";
-import { findGraftedSlotUnder } from "../../webComponent/volumeShared";
-import { resolveExport } from "../../webComponent/exportIndex";
-import { writeExportedAccessor } from "../../webComponent/overlay";
 
 /**
  * 宣言済みパスの `prev` 台帳へ旧値を記録する。台帳を読むのは `$watch`
  * （docs/state-watch-hook-design.md §4-1）と `$scan` の `from`（docs/state-scan-design.md §2-1）。
  *
  * same-value guard が既に読んだ旧値だけを使い、そのための追加読みはしない。
- * どちらも未宣言なら `watchPaths` / `scanPaths` の null 判定 2 個で抜ける（watch 設計書 §10）。
+ * 台帳の実体は watch/addressHooks.ts の writeObserve hook（`$watch` / `$scan` を宣言した state にだけ付く）。
+ * 宣言の無い state は `addressHooks` の null 判定 1 個で抜ける。
  */
 function recordDeclaredPrevValue(
   stateElement: IStateHandler["stateElement"],
@@ -64,13 +61,34 @@ function recordDeclaredPrevValue(
   oldValue: unknown,
   hasOldValue: boolean,
 ): void {
-  if (!hasOldValue) {
-    return;
+  const hooks = stateElement.addressHooks;
+  if (hooks) {
+    const observers = hooks.writeObserve;
+    for (let i = 0; i < observers.length; i++) {
+      observers[i](stateElement, path, absAddress, oldValue, hasOldValue);
+    }
   }
-  const watchPaths = stateElement.watchPaths;
-  const scanPaths = stateElement.scanPaths;
-  if (watchPaths?.has(path) === true || scanPaths?.has(path) === true) {
-    recordPrevValue(absAddress, oldValue);
+}
+
+// 書き込み・入れ替えの後の通知（設計案 H1 の written / swapped）: 観測面を持つ機能（DCC の
+// bindable イベント・watch の旧値台帳）が state に付けた hook だけを呼ぶ
+function notifyWritten(stateElement: IStateHandler["stateElement"], pathInfo: IStateAddress["pathInfo"], detail?: { readonly value: unknown }): void {
+  const hooks = stateElement.addressHooks;
+  if (hooks) {
+    const written = hooks.written;
+    for (let i = 0; i < written.length; i++) {
+      written[i](stateElement, pathInfo, detail);
+    }
+  }
+}
+
+function notifySwapped(stateElement: IStateHandler["stateElement"], elementAbsAddress: IAbsoluteStateAddress, displacedAbsAddress: IAbsoluteStateAddress): void {
+  const hooks = stateElement.addressHooks;
+  if (hooks) {
+    const swapped = hooks.swapped;
+    for (let i = 0; i < swapped.length; i++) {
+      swapped[i](stateElement, elementAbsAddress, displacedAbsAddress);
+    }
   }
 }
 
@@ -338,9 +356,7 @@ function notifySwappedList(
     const elementAbsAddress = liftAddress(stateElement, elementAddress);
     if (typeof before === "undefined") {
       const displacedAbsAddress = absoluteAddressOf(stateElement, elementPathInfo, swapInfo.listIndexes[position] ?? null);
-      if (hasPrevValue(displacedAbsAddress)) {
-        recordPrevValue(elementAbsAddress, getPrevValue(displacedAbsAddress));
-      }
+      notifySwapped(stateElement, elementAbsAddress, displacedAbsAddress);
       // 置き換えで入った行は中身が丸ごと新しい。差分展開だと入れ子のリストの行（`items.*.tags.*`）が
       // 着地せず `$watch` / `$scan` が取り逃すので、この行の下だけ全行展開で通知する
       notifyWrite(
@@ -465,37 +481,17 @@ function setByAddressCore(
 ): any {
   const stateElement = handler.stateElement;
   const path = address.pathInfo.path;
-  // D22 後段: 接ぎ木済みボリュームのマウントポイントを**含む親**の丸ごと書きは throw
-  // （設計書 §4-2）。黙って通すと接ぎ木データが消え、quoted-path アクセサだけが
-  // 宙に浮いて原因の見えない undefined / TypeError になる。スロット自身への書き込みは
-  // 通常のデータ差し替えとして通す。ボリュームの無い state は boolean 判定 1 個で抜ける（D18）
-  if (stateElement.hasGraftedVolumes === true) {
-    const shadowedSlot = findGraftedSlotUnder(stateElement, path);
-    if (shadowedSlot !== null) {
-      raiseError(
-        `Cannot replace "${path}" wholesale: a volume is mounted at "${shadowedSlot}" under it (D22). ` +
-        `Replacing an ancestor of a mount point silently discards the grafted data while its accessors remain. ` +
-        `Write "${shadowedSlot}" itself, or individual fields inside "${path}", instead.`,
-      );
+  // 読み書き境界の hook（設計案 H1、書き側）。無ければ判定 1 回
+  const hooks = stateElement.addressHooks;
+  if (hooks) {
+    const writeHooks = hooks.write;
+    for (let i = 0; i < writeHooks.length; i++) {
+      const handled = writeHooks[i](stateElement, address, value, receiver, handler);
+      if (handled !== NOT_HANDLED) return handled;
     }
   }
-  // 再帰 getter の展開形（`nodes.*.children.*.total`）とその値の内側への書き込みは、`**` を
-  // 含まないので `setAllRecursive` の読み取り専用検査を通らない。未実体化なら下の fast path が
-  // 「親オブジェクトの未存在キー」として行オブジェクトへ素の値を書き、代入値を `dirty:false` で
-  // キャッシュに載せる — ノードが汚れ、実体化後も getter が評価されず、深さ 0 の集計まで
-  // 巻き込む（レビュー P18 で実測）。実体化後は `Reflect.set` が false を返すだけの無言 no-op。
-  // 読み側の遅延実体化（getByAddress の E5）と対称に、書き側はここで止める。
-  // 宣言の無い state は boolean 判定 1 個で抜ける（D18）
-  if (stateElement.hasRecursion === true) {
-    const owner = stateElement.recursionRegistry!.recursiveGetterOwningPath(address.pathInfo);
-    if (owner !== null) {
-      raiseError(
-        `[wcs/recursion-readonly] "${path}" writes into the recursive getter "${owner}" ` +
-        `(this path is that getter at one depth, or a path inside the value it derives), which has ` +
-        `no setter. Write the values it derives from instead.`
-      );
-    }
-  }
+  // D22 後段（接ぎ木済みボリュームの親の丸ごと書き禁止）は webComponent/addressHooks.ts の write hook が担う
+  // 再帰 getter への書き込み禁止（[wcs/recursion-readonly]）は recursion/addressHooks.ts の write hook が担う
   // occurrence（wc-bindable の `semantics: "event"`）由来の書き込みは、同値でも
   // 「もう一度起きた」ことを落としてはならないため same-value guard を 1 回だけ飛ばす。
   // トークンはここで消費されるので、この write の内側で走る他の書き込みには波及しない。
@@ -551,14 +547,18 @@ function setByAddressCore(
             address.listIndex?.length ?? 0,
           ));
         }
-        // 公開 getter への書き込み（docs/state-overlay-export-design.md X9）: 未存在キーへの
-        // 書き込みは今日「ツリーに作る」が、その位置に公開 getter があると以後ツリーが勝ち
-        // （X1）getter を無言で隠す。setter があれば setter、無ければ raise（overlay の set）
-        if (stateElement.hasMounts === true && lastSegment !== WILDCARD && !(key in parentValue)) {
-          const exported = resolveExport(stateElement, address.parentAddress.pathInfo.path, lastSegment, address.listIndex);
-          if (exported !== null) {
+        // 「親にそのキーが無い」書き込みは writeMissing hook（公開 getter への書き込み — X9）に先に聞く。
+        // hook の無い state は判定 1 個で抜ける。hook が throw しても（setter の無い公開 getter）
+        // 代入値をキャッシュに固定しないよう、呼ぶ前に印を立て、素通しなら戻す
+        if (hooks && hooks.writeMissing.length !== 0 && lastSegment !== WILDCARD && !(key in parentValue)) {
+          const missing = hooks.writeMissing;
+          for (let i = 0; i < missing.length; i++) {
             dispatchedExport = true;
-            return writeExportedAccessor(exported.record, exported.entry, address.listIndex, value, receiver, handler);
+            const handled = missing[i](stateElement, address, parentValue, key, value, receiver, handler);
+            if (handled !== NOT_HANDLED) {
+              return handled;
+            }
+            dispatchedExport = false;
           }
         }
         return Reflect.set(parentValue, key, value);
@@ -571,8 +571,7 @@ function setByAddressCore(
         } else {
           commitWriteCache(stateElement, path, absAddress, value, cacheable);
         }
-        // DCC bindable イベントディスパッチ（完全一致 ＋ サブパス → 先頭セグメント、§2.1）
-        dispatchBindableEvent(stateElement, address.pathInfo, { value });
+        notifyWritten(stateElement, address.pathInfo, { value });
       }
     }
   }
@@ -623,8 +622,7 @@ function setByAddressCore(
     if (!isSwappable) {
       commitWriteCache(stateElement, path, absAddress, value, cacheable);
     }
-    // DCC bindable イベントディスパッチ（完全一致 ＋ サブパス → 先頭セグメント、§2.1）
-    dispatchBindableEvent(stateElement, address.pathInfo, { value });
+    notifyWritten(stateElement, address.pathInfo, { value });
   }
 }
 

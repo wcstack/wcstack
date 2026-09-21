@@ -1,21 +1,24 @@
-import { builtinFilterFn, builtinFiltersByFilterIOType } from "../filters/builtinFilters";
-import { FilterFn, FilterIOType } from "../filters/types";
+import { clearFilterResolutionCache } from "../core/filterRegistry";
+import { FilterIOType } from "../filters/types";
 import { raiseError } from "../raiseError";
-import { IFilterInfo } from "../types";
+import { IParsedFilter } from "../types";
 import { parseFilterArgs } from "./parseFilterArgs";
-
-const filterFnByKey: Map<string, FilterFn<unknown>> = new Map();
 
 /** tooling 専用（parser.ts の clearParserCaches からのみ呼ぶ）。 */
 export function clearFilterFnCacheForTooling(): void {
-  filterFnByKey.clear();
+  clearFilterResolutionCache();
 }
 
 // format: filterName(arg1,arg2) or filterName
 
-export function parseFilters(filterTextList: string[], filterIOType: FilterIOType): IFilterInfo[] {
-  const builtinFilters = builtinFiltersByFilterIOType[filterIOType];
-  const filters: IFilterInfo[] = filterTextList.map((filterText) => {
+/**
+ * 文法の段（要件 D16）: 名前と引数だけを読む。**実関数は引かない** — 束縛計画の段で
+ * 登録簿から解決する（`core/filterRegistry.ts`・`bindings/getBindingInfos.ts`）。
+ * 未知のフィルタもここでは落とさない: パーサだけを使う tooling は実装を持たないので、
+ * 「知らない名前」を解析の段で判定できない。
+ */
+export function parseFilters(filterTextList: string[], _filterIOType: FilterIOType): IParsedFilter[] {
+  return filterTextList.map((filterText) => {
     const openParenIndex = filterText.indexOf('(');
     const closeParenIndex = filterText.lastIndexOf(')');
     // check parentheses
@@ -27,34 +30,10 @@ export function parseFilters(filterTextList: string[], filterIOType: FilterIOTyp
     }
     if (openParenIndex === -1) {
       // no arguments
-      const filterName = filterText.trim();
-      const filterKey = `${filterName}():${filterIOType}`;
-      let filterFn = filterFnByKey.get(filterKey);
-      if (typeof filterFn === 'undefined') {
-        filterFn = builtinFilterFn(filterName, [])(builtinFilters);
-        filterFnByKey.set(filterKey, filterFn);
-      }
-      return {
-        filterName: filterName,
-        args: [],
-        filterFn: filterFn,
-      };
-    } else {
-      const argsText = filterText.substring(openParenIndex + 1, closeParenIndex);
-      const filterName = filterText.substring(0, openParenIndex).trim();
-      const args = parseFilterArgs(argsText);
-      const filterKey = `${filterName}(${args.join(',')}):${filterIOType}`;
-      let filterFn = filterFnByKey.get(filterKey);
-      if (typeof filterFn === 'undefined') {
-        filterFn = builtinFilterFn(filterName, args)(builtinFilters);
-        filterFnByKey.set(filterKey, filterFn);
-      }
-      return {
-        filterName,
-        args,
-        filterFn,
-      };
+      return { filterName: filterText.trim(), args: [] };
     }
+    const argsText = filterText.substring(openParenIndex + 1, closeParenIndex);
+    const filterName = filterText.substring(0, openParenIndex).trim();
+    return { filterName, args: parseFilterArgs(argsText) };
   });
-  return filters;
 }

@@ -52,6 +52,90 @@ export default [
     },
     plugins: [dts()],
   },
+  // Split entries (docs/state-next-major-wiring-design.md §4): `@wcstack/state/core` plus one
+  // entry per feature. Multi-entry on purpose — rollup puts everything the entries share into
+  // chunks, so the core is bundled ONCE and every `features/*` imports that same chunk
+  // (requirement B13). Chunk names are stable (no hash): a buildless page pins the version in its
+  // import map and covers each URL with its own `integrity` (docs/sri.md).
+  // Source maps are not optional here: the CI gate that proves no feature entry carries core
+  // modules reads them (scripts/research/measureSplitEntries.mjs).
+  {
+    input: {
+      'core': 'src/entries/core.ts',
+      'features/temporal': 'src/features/temporal.ts',
+      'features/scopes': 'src/features/scopes.ts',
+      'features/recursion': 'src/features/recursion.ts',
+      'features/ssr': 'src/features/ssr.ts',
+      'features/devtools': 'src/features/devtools.ts',
+      'features/formats': 'src/features/formats.ts',
+    },
+    output: {
+      dir: 'dist/split',
+      format: 'esm',
+      sourcemap: true,
+      entryFileNames: '[name].js',
+      chunkFileNames: 'chunks/[name].js',
+      minifyInternalExports: true,
+    },
+    plugins: [
+      json(),
+      typescript({
+        tsconfig: './tsconfig.json',
+        declaration: false,
+        declarationMap: false,
+        // the plugin requires tsc's outDir to sit inside rollup's output dir
+        outDir: 'dist/split',
+      }),
+      terser(),
+    ],
+  },
+  {
+    input: {
+      'core': 'src/entries/core.ts',
+      'features/temporal': 'src/features/temporal.ts',
+      'features/scopes': 'src/features/scopes.ts',
+      'features/recursion': 'src/features/recursion.ts',
+      'features/ssr': 'src/features/ssr.ts',
+      'features/devtools': 'src/features/devtools.ts',
+      'features/formats': 'src/features/formats.ts',
+    },
+    output: {
+      dir: 'dist/split',
+      format: 'esm',
+      entryFileNames: '[name].d.ts',
+      chunkFileNames: 'chunks/[name].d.ts',
+    },
+    plugins: [dts()],
+  },
+  // Authoring-only entry (requirements N2): `defineState` and the types, zero runtime.
+  // Minified because a buildless page imports this file itself; the types (and the prose that
+  // explains them) travel in dist/define.d.ts.
+  {
+    input: 'src/entries/define.ts',
+    output: {
+      file: 'dist/define.js',
+      format: 'esm',
+      sourcemap: false,
+    },
+    plugins: [
+      json(),
+      typescript({
+        tsconfig: './tsconfig.json',
+        declaration: false,
+        declarationMap: false,
+        sourceMap: false,
+      }),
+      terser(),
+    ],
+  },
+  {
+    input: 'src/entries/define.ts',
+    output: {
+      file: 'dist/define.d.ts',
+      format: 'esm',
+    },
+    plugins: [dts()],
+  },
   // Manifest entry (DOM 非依存・wcs-manifest.json 生成用 + 単一正本の consumable)
   {
     input: 'src/manifest.ts',

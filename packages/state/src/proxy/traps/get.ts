@@ -24,9 +24,8 @@ import { IAbsoluteStateAddress, IStateAddress } from "../../address/types";
 import { getCommandNamespace } from "../../command/commandNamespace";
 import { DELIMITER, INDEX_BY_INDEX_NAME, INDEX_PARAM_PREFIX, MAX_WILDCARD_DEPTH, STATE_COMMAND_NAMESPACE_NAME, STATE_STREAM_ERROR_NAMESPACE_NAME, STATE_STREAM_STATUS_NAMESPACE_NAME } from "../../define";
 import { listIndexAtWildcard } from "../../list/wildcardLevel";
-import { getIndexShiftForMarkerPath, getMountRecordByPath } from "../../webComponent/mount";
 import { raiseError } from "../../raiseError";
-import { getStreamErrorNamespace, getStreamStatusNamespace } from "../../stream/streamNamespace";
+import { NOT_HANDLED } from "../../core/addressHooks";
 import { connectedCallback } from "../apis/connectedCallback";
 import { disconnectedCallback } from "../apis/disconnectedCallback";
 import { getAll } from "../apis/getAll";
@@ -47,8 +46,6 @@ import { setByAddress } from "../methods/setByAddress";
 import { setLoopContext } from "../methods/setLoopContext";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol, errorCallbackSymbol, getByAddressSymbol, hasByAddressSymbol, setByAddressSymbol, setLoopContextSymbol, updatedCallbackSymbol } from "../symbols";
 import type { IBindingErrorInfo } from "../../types";
-import { bindRecursivePath } from "../../recursion/bind";
-import { hasRecursionWildcard } from "../../recursion/expand";
 import { IStateHandler } from "../types";
 
 /** `$` + 数字だけの prop（`$1` / `$129`）。範囲外を無言で通さないための判別。 */
@@ -115,19 +112,28 @@ export function get(
     // 番号がずれないよう末尾から数える（list/wildcardLevel.ts）
     let scopedIndex = index;
     const lastPathInfo = lastAddress!.pathInfo;
-    // マウントのアクセサ評価中（マーカーパスが push されている）はスコープ相対の Δ を
-    // 足す（設計書 §4-4: `$n → listIndex.at(Δ + n - 1)`。テンプレート側の `$n` は
-    // 変換時に織り込み済み — webComponent/mount.ts の translateInnerPath）
-    if (handler.stateElement?.hasMounts === true && lastPathInfo.path.indexOf('#') !== -1) {
-      const mountRecord = getMountRecordByPath(handler.stateElement, lastPathInfo.path);
-      if (mountRecord !== null) {
-        scopedIndex = index + getIndexShiftForMarkerPath(mountRecord, lastPathInfo.path);
+    // スコープ相対の Δ（マウントのアクセサ評価中 — 設計書 §4-4）は indexShift hook が足す
+    // （webComponent/addressHooks.ts。hook の無い state は判定 1 個で抜ける）
+    const shiftHooks = handler.stateElement?.addressHooks;
+    if (shiftHooks) {
+      const shifts = shiftHooks.indexShift;
+      for (let i = 0; i < shifts.length; i++) {
+        scopedIndex += shifts[i](handler, lastAddress!);
       }
     }
     const indexListIndex = listIndexAtWildcard(listIndex, scopedIndex, lastPathInfo.wildcardCount);
     return indexListIndex?.index ?? raiseError(`ListIndex not found: ${prop.toString()}`);
   }
   if (typeof prop === "string") {
+    // 読み書き境界の hook（設計案 H1）: $streamStatus / $streamError などの名前空間は機能側が答える
+    const hooks = handler.stateElement?.addressHooks;
+    if (hooks) {
+      const getHooks = hooks.get;
+      for (let i = 0; i < getHooks.length; i++) {
+        const handled = getHooks[i](handler, prop, receiver, target);
+        if (handled !== NOT_HANDLED) return handled;
+      }
+    }
     if (prop[0] === '$') {
       switch (prop) {
         case "$stateElement": {
@@ -274,12 +280,6 @@ export function get(
         case STATE_COMMAND_NAMESPACE_NAME: {
           return getCommandNamespace(handler.stateElement);
         }
-        case STATE_STREAM_STATUS_NAMESPACE_NAME: {
-          return getStreamStatusNamespace(handler.stateElement);
-        }
-        case STATE_STREAM_ERROR_NAMESPACE_NAME: {
-          return getStreamErrorNamespace(handler.stateElement);
-        }
       }
       // switch 不一致の $ プロパティのうち、`$streamStatus.<name>` / `$streamError.<name>`
       // の dotted パスだけは通常のパス解決（getByAddress）へフォールスルーさせる。
@@ -291,12 +291,8 @@ export function get(
         return undefined;
       }
     }
-    // オーサリング層の `**` を、いま評価している再帰 getter の深さへ束縛する。
-    // 宣言の無い state は boolean 判定 1 個で抜ける（D18 の形）。
-    const path = (handler.stateElement?.hasRecursion === true && hasRecursionWildcard(prop))
-      ? bindRecursivePath(handler.stateElement, handler, prop)
-      : prop;
-    const resolvedAddress = getResolvedAddress(path);
+    // オーサリング層の `**`（再帰 getter の深さへの束縛）は recursion/addressHooks.ts の get hook が上で受けている
+    const resolvedAddress = getResolvedAddress(prop);
     const listIndex = getListIndex(target, resolvedAddress, receiver, handler);
     const stateAddress = createStateAddress(resolvedAddress.pathInfo, listIndex);
     return getByAddress(

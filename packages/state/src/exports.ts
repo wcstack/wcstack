@@ -5,8 +5,8 @@ export { getTrustedTypesPolicy, setTrustedTypesPolicy, TRUSTED_TYPES_POLICY_SLOT
 export type { IWcsTrustedTypesPolicy } from "./trustedTypes.js";
 export { getBindingsReady } from "./stateElementByName.js";
 
-export { Ssr } from "./components/Ssr.js";
-export type { ISsrElement } from "./components/Ssr.js";
+export { Ssr } from "./ssr/Ssr.js";
+export type { ISsrElement } from "./ssr/Ssr.js";
 
 export { buildBindings } from "./buildBindings.js";
 
@@ -39,7 +39,7 @@ export type { IFilterMeta, FilterResultType, FilterArgType } from "./filters/fil
 // dist/index.d.ts; it applies once this package's types are in the consuming program
 // (`import "@wcstack/state"` or a tsconfig `types` entry).
 import type { State } from "./components/State.js";
-import type { Ssr } from "./components/Ssr.js";
+import type { Ssr } from "./ssr/Ssr.js";
 declare global {
   interface HTMLElementTagNameMap {
     "wcs-state": State;

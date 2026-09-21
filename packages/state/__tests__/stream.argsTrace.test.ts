@@ -12,6 +12,8 @@
  */
 import { describe, it, expect } from "vitest";
 import { collectStreamDependency, traceArgs } from "../src/stream/argsTrace";
+import { streamAddressHooks } from "../src/stream/addressHooks";
+import { createAttachedHooksFrom } from "../src/core/addressHooks";
 import { startStream } from "../src/stream/streamRuntime";
 import { processStreamsDeclaration } from "../src/stream/processStreamsDeclaration";
 import { getStreamEntries } from "../src/stream/streamRegistry";
@@ -47,6 +49,7 @@ function createTestStateElement(state: IState, getterPaths: string[] = []): ISta
     staticDependency: new Map<string, string[]>(),
     dynamicDependency: new Map<string, string[]>(),
     bindableEventMap: {},
+    addressHooks: createAttachedHooksFrom(streamAddressHooks),
     setPathInfo() {},
     addStaticDependency() {
       return false;

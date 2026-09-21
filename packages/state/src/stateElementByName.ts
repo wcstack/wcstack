@@ -1,11 +1,10 @@
 import { buildBindings } from "./buildBindings";
-import { hydrateBindings } from "./hydrateBindings";
+import { requireSsrHooks } from "./core/ssrHooks";
 import { IStateElement } from "./components/types";
 import { config, inSsr } from "./config";
 import { raiseError } from "./raiseError";
 import { devtoolsSink } from "./platform/devtoolsSink";
 import { drainPendingBinds } from "./bindings/binder";
-import { drainPendingVolumes } from "./webComponent/volumeShared";
 
 // v2: 1 rootNode 1 ツリー（P3-6）。名前次元は無い — 追加の state はマウント（mount= / bind-component）で載る。
 const stateElementByNode: WeakMap<Node, IStateElement> = new WeakMap();
@@ -15,6 +14,17 @@ const bindingsReadyByNode: WeakMap<Node, Promise<void>> = new WeakMap();
 // サイズは <wcs-state> 要素数に拘束され、unregister（disconnectedCallback）で
 // 必ず削除されるためリークしない。
 const liveStateElements: Set<IStateElement> = new Set();
+
+// ルートの登録を待つ機能（先に接続されたボリュームの引き取り — webComponent/volume.ts）の受け口。
+// 登録は 1 ルートにつき 1 回なので大域の listener 列で足りる（hot path には載らない）
+type StateElementRegisteredListener = (rootNode: Node, element: IStateElement) => void;
+const registeredListeners: StateElementRegisteredListener[] = [];
+
+export function onStateElementRegistered(listener: StateElementRegisteredListener): void {
+  if (!registeredListeners.includes(listener)) {
+    registeredListeners.push(listener);
+  }
+}
 
 export function getLiveStateElements(): ReadonlySet<IStateElement> {
   return liveStateElements;
@@ -154,7 +164,8 @@ export function setStateElement(rootNode: Node, element: IStateElement | null): 
           queueMicrotask(async () => {
             try {
               if (enableSsr) {
-                const success = await hydrateBindings(rootNode as Document);
+                // ハイドレーションは SSR 機能（ssr/hydrateBindings.ts）。未 install なら名指しで落とす（H5 / D13）
+                const success = await requireSsrHooks(`the "enable-ssr" attribute`).hydrate(rootNode as Document);
                 if (!success) {
                   await buildBindings(rootNode as Document);
                 }
@@ -208,9 +219,10 @@ export function setStateElement(rootNode: Node, element: IStateElement | null): 
     }
     stateElementByNode.set(rootNode, element);
     liveStateElements.add(element);
-    // ルートの登録は、先に接続されて保留中のボリュームを引き取る
-    //（webComponent/volume.ts・ロード順に依存しない — V5）
-    drainPendingVolumes(rootNode, element);
+    // ルートの登録を待っていた機能へ（先に接続されて保留中のボリュームの引き取り — ロード順に依存しない、V5）
+    for (let i = 0; i < registeredListeners.length; i++) {
+      registeredListeners[i](rootNode, element);
+    }
     if (devtoolsSink !== null) {
       devtoolsSink({ type: "state:element-registered", rootNode, element });
     }
