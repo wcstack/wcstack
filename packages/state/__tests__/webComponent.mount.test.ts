@@ -8,6 +8,8 @@ import {
   buildMountRecord,
   translateInnerPath,
   translateBindingForMount,
+  translateInnerWritePath,
+  translateParsedForMount,
   registerMountRecord,
   getMountRecordByScopeRoot,
   getMountRecordByPath,
@@ -111,9 +113,12 @@ describe('mount: translateInnerPath（§4-1 の解決規則）', () => {
     expect(translateInnerPath(r, 'draft.title')).toBe('users.*.#m1.draft.title');
   });
 
-  it('規則 2: 作者の own data key は部分エントリと同名でも私有であること（v2 の厳格 R1）', () => {
+  it('規則 2: 部分エントリが明示したキーは、同名の own data key よりツリーが勝つこと（要件 B14 ②）', () => {
     const r = record([[[] as any, 'user'], [['theme'], 'theme']], { theme: { mode: 'own' } });
-    expect(translateInnerPath(r, 'theme.mode')).toBe('user.#m1.theme.mode');
+    expect(translateInnerPath(r, 'theme.mode')).toBe('theme.mode');
+    // 明示していない own data key は従来どおり私有
+    const r2 = record([[[] as any, 'user']], { theme: { mode: 'own' } });
+    expect(translateInnerPath(r2, 'theme.mode')).toBe('user.#m2.theme.mode');
   });
 
   it('規則 2: 積みで注入されたキーは作者のものでなく、ツリー（マウント表）に落ちること', () => {
@@ -174,6 +179,55 @@ describe('mount: translateInnerPath（§4-1 の解決規則）', () => {
     expect(translateInnerPath(r, '$1')).toBe('$1');
     expect(translateInnerPath(r, '$streamStatus.load')).toBe('$streamStatus.load');
     expect(translateInnerPath(r, '#else')).toBe('#else');
+  });
+});
+
+/** `#ro` 付きのホスト束縛（要件 B14 ①） */
+function readonlyRecord(hostEntries: [string[], string, boolean][], stateObject: Record<string, any> = {}) {
+  const component = document.createElement('my-card');
+  return buildMountRecord(
+    component,
+    'state',
+    hostEntries.map(([segments, path, ro]) => ({ ...hostBinding(['state', ...segments], path), propModifiers: ro ? ['ro'] : [] })),
+    parentStateElement,
+    stateObject,
+  );
+}
+
+describe('mount: translateInnerWritePath（要件 B14 ①: #ro のマウント）', () => {
+  it('読み取り専用のエントリを通るツリーへの書き込みを名指しで拒否し、読みの翻訳は変えないこと', () => {
+    const r = readonlyRecord([[[], 'user', true]]);
+    expect(r.entries[0].readonly).toBe(true);
+    expect(() => translateInnerWritePath(r, 'name')).toThrow(/\[wcs\/mount-readonly\] <my-card> cannot write "name": it is mounted read-only \("state#ro: user"\)/);
+    expect(translateInnerPath(r, 'name')).toBe('user.name');
+  });
+
+  it('部分エントリの #ro はそのエントリだけに効き、他のエントリ・私有キー・アクセサ・$ パスは書けること', () => {
+    const r = readonlyRecord([[['title'], 'doc.title', true], [['note'], 'doc.note', false]], {
+      editing: false,
+      get display() { return ''; },
+      set display(_v: string) {},
+    });
+    expect(() => translateInnerWritePath(r, 'title')).toThrow(/\("state\.title#ro: doc\.title"\)/);
+    expect(translateInnerWritePath(r, 'note')).toBe('doc.note');
+    expect(translateInnerWritePath(r, 'editing')).toBe('#m1.editing');
+    expect(translateInnerWritePath(r, 'display')).toBe('#m1.display');
+    expect(translateInnerWritePath(r, '$1')).toBe('$1');
+  });
+
+  it('どのエントリにも一致しないパスは、読みの翻訳と同じ診断で落ちること', () => {
+    const r = readonlyRecord([[['title'], 'doc.title', true]]);
+    expect(() => translateInnerWritePath(r, 'other')).toThrow(/does not resolve/);
+  });
+
+  it('読み取り専用のエントリを通る束縛の翻訳は ro 修飾子を足し、既にあれば足さないこと', () => {
+    const r = readonlyRecord([[[], 'user', true]]);
+    const binding = { ...hostBinding(['value'], 'name'), propModifiers: [] as string[] };
+    expect(translateParsedForMount(r, binding).propModifiers).toEqual(['ro']);
+    const already = { ...hostBinding(['value'], 'name'), propModifiers: ['ro'] };
+    expect(translateParsedForMount(r, already).propModifiers).toEqual(['ro']);
+    const writable = readonlyRecord([[[], 'user', false]]);
+    expect(translateParsedForMount(writable, { ...hostBinding(['value'], 'name'), propModifiers: [] as string[] }).propModifiers).toEqual([]);
   });
 });
 

@@ -1669,10 +1669,17 @@ customElements.define("user-card", UserCard);
 - Mounting an array as the root (`state: rows` with `for` over it inside) is not supported; mount the row (`state: .`) or the object that holds the array (`state: group` with `for: children` inside). Both forms are contract-tested; mounts are the only way to extend the tree.
 
 > The per-property form (`state.message: user.name`) keeps working — it is a partial mount on
-> the same machinery. R1 is strict for every mount form — a component that declares a default
-> for a mapped key (`state = { message: "" }` together with `state.message: ...`) keeps its
-> own key **private**, hiding the host value (a one-time `wcs/mount-own-key-shadow` warning
-> points at it). Drop the default to read the tree. The mounted `<wcs-state>` needs no `name`
+> the same machinery. **An explicit partial mount wins over the component's own key (3.0):** a
+> component that declares a default for a mapped key (`state = { message: "" }` together with
+> `state.message: ...`) reads the host value; the default is simply not used. (In 2.x R1 made
+> that own key private and it hid the host value, with a `wcs/mount-own-key-shadow` warning.)
+> R1 still keeps every *unmapped* own key private.
+>
+> **`#ro` on a mount is honoured (3.0):** `state#ro: user` or `state.title#ro: doc.title`
+> lets the component read the entry but not write it — `element.state.title = …`, `this.title = …`
+> in a method and `$setAll` / `$resolve` writes throw `[wcs/mount-readonly]`, and a two-way
+> binding inside the component (`value: title`) does not write back. The host can still write the
+> path. (2.x accepted the modifier and ignored it.) The mounted `<wcs-state>` needs no `name`
 > in Light DOM, and `$getAll` / `$setAll` / `$resolve` / `$postUpdate` on `element.state`
 > (and on `this` inside getters/methods) speak the component's own vocabulary — paths are
 > translated onto the mount and the host row's indexes are prepended automatically.

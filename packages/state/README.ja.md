@@ -1668,10 +1668,16 @@ customElements.define("user-card", UserCard);
 - 配列そのものをルートにマウントする形（`state: rows` ＋ 中で `for`）は非対応です。行をマウントする（`state: .`）か、配列を持つオブジェクトをマウントして中で `for` を回してください（`state: group` ＋ `for: children`）。どちらも契約テストで固定されており、マウントがツリー拡張の唯一の手段です
 
 > プロパティ単位の形（`state.message: user.name`）はそのまま動きます — 同じ機構の上の部分マウントです。
-> R1 はすべてのマウント形で厳格です — マップされるキーに既定値を
-> 宣言しているコンポーネント（`state = { message: "" }` ＋ `state.message: ...`）は自前のキーが
-> **私有**になり、ホストの値を隠します（1 回だけ `wcs/mount-own-key-shadow` が指します）。ツリーを
-> 読むには既定値を消してください。Light DOM のマウントに `name` は不要で、
+> **明示した部分マウントはコンポーネント自前のキーに勝ちます（3.0）:** マップされるキーに既定値を
+> 宣言しているコンポーネント（`state = { message: "" }` ＋ `state.message: ...`）もホストの値を読み、
+> 既定値は使われません（2.x では R1 によって自前のキーが私有になり、ホストの値を隠していました —
+> `wcs/mount-own-key-shadow` の警告付き）。マップしていない自前のキーは今も R1 で私有です。
+>
+> **マウントの `#ro` を尊重します（3.0）:** `state#ro: user` や `state.title#ro: doc.title` では、
+> コンポーネントはそのエントリを読めても書けません — `element.state.title = …`・メソッド内の
+> `this.title = …`・`$setAll` / `$resolve` の書き込みは `[wcs/mount-readonly]` で落ち、コンポーネント内の
+> 双方向束縛（`value: title`）は書き戻しません。ホストはそのパスに書けます（2.x は修飾子を受け付けて
+> 無視していました）。Light DOM のマウントに `name` は不要で、
 > `element.state`（および getter / メソッド内の `this`）の `$getAll` / `$setAll` / `$resolve` /
 > `$postUpdate` はコンポーネント自身の語彙で書けます — パスはマウント先へ翻訳され、ホスト行の
 > 添字は自動で前置されます。

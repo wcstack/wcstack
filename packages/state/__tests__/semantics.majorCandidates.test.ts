@@ -273,8 +273,8 @@ describe("B12 名前の正典化（現状の語彙のうち、値で確かめら
   });
 });
 
-describe("B14 ① マウントの修飾子（現状: state#ro: を受理するが、マウントは修飾子を読まない）", () => {
-  it("state#ro: でマウントしたコンポーネントからの書き込みがホストへ届くこと", async () => {
+describe("B14 ① マウントの修飾子（3.0 で採用: マウント記録が #ro を尊重する）", () => {
+  it("state#ro: でマウントしたコンポーネントからの書き込みは拒否され、ホストの書き込みは届くこと", async () => {
     expect(parseOne("state#ro: user").propModifiers).toEqual(["ro"]);
 
     const tag = `major-candidates-card-${++seq}`;
@@ -298,11 +298,79 @@ describe("B14 ① マウントの修飾子（現状: state#ro: を受理する�
     expect(card.shadowRoot!.querySelector(".name")!.textContent).toBe("A");
 
     // マウントされたコンポーネントは element.state 経由で書く（自前の state を持たない）
-    (card as any).state.name = "B";
-    await flush();
+    expect(() => { (card as any).state.name = "B"; }).toThrow(/\[wcs\/mount-readonly\] .* cannot write "name": it is mounted read-only \("state#ro: user"\)/);
+    expect(() => (card as any).state.$setAll("name", [], "C")).toThrow(/\[wcs\/mount-readonly\]/);
+    expect(() => (card as any).state.$resolve("name", [], "D")).toThrow(/\[wcs\/mount-readonly\]/);
+    // 読みは通る
+    expect((card as any).state.name).toBe("A");
     await flush();
     let hostName: unknown;
     stateEl.createState("readonly", (s: any) => { hostName = s["user.name"]; });
-    expect(hostName).toBe("B");
+    expect(hostName).toBe("A");
+
+    // ホスト自身の書き込みは止めない
+    stateEl.createState("writable", (s: any) => { s["user.name"] = "E"; });
+    await flush();
+    expect(card.shadowRoot!.querySelector(".name")!.textContent).toBe("E");
+  });
+
+  it("部分マウントの #ro はそのエントリだけを読み取り専用にし、コンポーネント内の双方向束縛も書き戻さないこと", async () => {
+    const tag = `major-candidates-form-${++seq}`;
+    class Form extends HTMLElement {
+      state: Record<string, unknown> = {};
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" });
+      }
+      connectedCallback() {
+        this.shadowRoot!.innerHTML = `<wcs-state bind-component="state"></wcs-state><input class="title" data-wcs="value: title"><input class="note" data-wcs="value: note">`;
+      }
+    }
+    customElements.define(tag, Form);
+    const { root, stateEl } = await mount({ doc: { title: "T", note: "N" } },
+      `<${tag} data-wcs="state.title#ro: doc.title; state.note: doc.note"></${tag}>`);
+    const form = root.querySelector(tag)!;
+    const childState = form.shadowRoot!.querySelector("wcs-state") as State;
+    await childState.connectedCallbackPromise;
+    await State.getBindingsReady(form.shadowRoot!);
+    await flush();
+    const title = form.shadowRoot!.querySelector(".title") as HTMLInputElement;
+    const note = form.shadowRoot!.querySelector(".note") as HTMLInputElement;
+    expect([title.value, note.value]).toEqual(["T", "N"]);
+
+    title.value = "typed";
+    title.dispatchEvent(new Event("input", { bubbles: true }));
+    note.value = "typed";
+    note.dispatchEvent(new Event("input", { bubbles: true }));
+    await flush();
+    let doc: unknown;
+    stateEl.createState("readonly", (s: any) => { doc = { title: s["doc.title"], note: s["doc.note"] }; });
+    expect(doc).toEqual({ title: "T", note: "typed" });
+    expect(() => { (form as any).state.title = "x"; }).toThrow(/\[wcs\/mount-readonly\] .* \("state.title#ro: doc.title"\)/);
+    (form as any).state.note = "y";
+  });
+});
+
+describe("B14 ② 部分マウントと own key（3.0 で採用: 明示したエントリが勝つ）", () => {
+  it("作者の既定値があっても、明示した部分マウントのホストの値が届くこと", async () => {
+    const tag = `major-candidates-msg-${++seq}`;
+    class Msg extends HTMLElement {
+      state: Record<string, unknown> = { message: "own-default" };
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" });
+      }
+      connectedCallback() {
+        this.shadowRoot!.innerHTML = `<wcs-state bind-component="state"></wcs-state><span class="msg" data-wcs="textContent: message"></span>`;
+      }
+    }
+    customElements.define(tag, Msg);
+    const { root } = await mount({ user: { name: "Alice" } }, `<${tag} data-wcs="state.message: user.name"></${tag}>`);
+    const msg = root.querySelector(tag)!;
+    const childState = msg.shadowRoot!.querySelector("wcs-state") as State;
+    await childState.connectedCallbackPromise;
+    await State.getBindingsReady(msg.shadowRoot!);
+    await flush();
+    expect(msg.shadowRoot!.querySelector(".msg")!.textContent).toBe("Alice");
   });
 });
