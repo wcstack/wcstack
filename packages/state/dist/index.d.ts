@@ -42,26 +42,163 @@ interface ILoopContextStack {
     createLoopContext(elementStateAddress: IStateAddress, callback: (loopContext: ILoopContext) => void | Promise<void>): void | Promise<void>;
 }
 
+declare const setLoopContextSymbol: unique symbol;
+declare const getByAddressSymbol: unique symbol;
+declare const hasByAddressSymbol: unique symbol;
+declare const setByAddressSymbol: unique symbol;
+declare const connectedCallbackSymbol: unique symbol;
+declare const disconnectedCallbackSymbol: unique symbol;
+declare const updatedCallbackSymbol: unique symbol;
+declare const errorCallbackSymbol: unique symbol;
+
+interface IStateHandler extends ProxyHandler<IState> {
+    readonly stateElement: IStateElement;
+    readonly addressStackLength: number;
+    /**
+     * アドレススタックの先頭（いま評価しているアドレス）。ループ文脈の無いスコープでは null。
+     * 再帰の深さ解決（recursion/bind.ts）もここだけを見る — 添字の供給元
+     * （getContextListIndex / `$getAll` の省略形）が先頭しか見ないので、深さだけを外側の
+     * フレームから拾うと「深さはあるが行が無い」定義にない状態になる。
+     */
+    readonly lastAddressStack: IStateAddress | null;
+    readonly loopContext: ILoopContext | null | undefined;
+    /**
+     * 依存追跡の抑止中か。$untrackDependency のスコープ内、および setter 実行中
+     * （setter は命令的な代入であって派生ではないため、その中の読み取りで依存を
+     * 張らない）は true。checkDependency / $1 インデックス依存の登録が抑止される。
+     */
+    readonly untracking: boolean;
+    /**
+     * このプロキシの書き込み能力。書き込み API の入口（proxy/assertWritable.ts）が検査する — set
+     * トラップを通らない `$resolve` / `$setAll` も readonly では書けない（要件 B6）。省略は writable。
+     */
+    readonly mutability?: Mutability;
+    pushAddress(address: IStateAddress | null): void;
+    popAddress(): IStateAddress | null;
+    setLoopContext(loopContext: ILoopContext | null): void;
+    clearLoopContext(): void;
+    beginUntrack(): void;
+    endUntrack(): void;
+}
+interface IStateProxy extends IState {
+    [setLoopContextSymbol](loopContext: ILoopContext | null, callback: () => any): any;
+    [getByAddressSymbol](address: IStateAddress): any;
+    [hasByAddressSymbol](address: IStateAddress): boolean;
+    [setByAddressSymbol](address: IStateAddress, value: any): void;
+    [connectedCallbackSymbol](): Promise<void>;
+    [disconnectedCallbackSymbol](): void;
+    [updatedCallbackSymbol](updatedAbsAddressList: IAbsoluteStateAddress[]): void;
+    [errorCallbackSymbol](error: unknown, info: IBindingErrorInfo): void;
+}
+type Mutability = "readonly" | "writable";
+
 /**
- * pathDiagnostics.ts — バインド / `$watch` 対象パスの存在検査（silent failure の可視化）。
+ * Filter/types.ts
  *
- * なぜ必要か:
- * `getByAddress` は「親が null / undefined のパスの読み」を undefined で返し、
- * undefined はプロパティ書き込みがスキップされる値なので、`user.nmae` のような
- * 打ち間違いは**エラーも警告も出さずに DOM が更新されない**だけになる。一方で
- * トップレベルの打ち間違い（`cout`）は parentAddress を辿れず raiseError で落ちる。
- * 同じ「パスを打ち間違えた」という 1 つの失敗が、パスの深さで silent / loud に
- * 割れており、書き手からは区別がつかない。ここはその silent 側を埋める。
+ * Type definition file for filter functions.
  *
- * 精度方針（過小近似）:
- * 「確実に存在しない」と言い切れる場合にだけ報告する。getter の戻り値の先・
- * 空配列・null 親・mapped な `bind-component` など、静的に決められない形はすべて
- * `"unknown"` に倒して黙る（偽陽性ゼロ優先。docs/static-wiring-dx-design.md D7 /
- * [ADR-06](../../docs/architecture-hardening/06-path-type-safety.md) の精度哲学）。
+ * Main responsibilities:
+ * - Defines types for filter functions (FilterFn) and filter functions with options (FilterWithOptionsFn)
+ * - Type-safe management of filter name-to-function mappings (FilterWithOptions) and filter function arrays (Filters)
+ * - Defines types for retrieving filter functions from built-in filter collections
+ *
+ * Design points:
+ * - Type design enabling flexible filter design and extension
+ * - Supports filters with options and combinations of multiple filters
+ */
+type FilterFn<T = unknown> = (value: unknown) => T;
+
+interface IContent {
+    readonly firstNode: Node | null;
+    readonly lastNode: Node | null;
+    readonly mounted: boolean;
+    appendTo(targetNode: Node): void;
+    mountAfter(targetNode: Node): void;
+    unmount(): void;
+    /**
+     * 自分のノードを DOM に残したままの解体（#4）。行の置き換えで `for` が同じ位置の Content を
+     * 新しい行に使い回すとき、入力中の欄を DOM から外さずに unmount と同じ後始末をする。
+     */
+    unmountInPlace(): void;
+    /**
+     * wholesale 破棄: 全行クリアで再利用されない content の binding teardown
+     * （listener 解除・アドレス台帳・loopContext 掃除）を省略し、ノード・binding
+     * もろとも GC に任せる。定義待ち等の副作用がある場合は false を返し、呼び出し側が
+     * 従来経路（deactivate + unmount）で解体する。
+     */
+    tryDestroy(): boolean;
+}
+
+/**
+ * core/addressHooks.ts — 読み書き境界の受け口（設計案 H1、S3）。
+ *
+ * 機能は `install()` でレジストリに hook 実装を置く（hot path には触れない）。state 要素は
+ * 宣言が要求する機能の hook だけを `attachAddressHooks` で自分に付け、core の各受け口は
+ * `stateElement.addressHooks` が null なら判定 1 回で抜ける
+ * （調査 §10.8: 大域配列の走査は読み +40%、state ごとの門なら +0.1 ns）。
+ * 宣言が要求する機能が未 install なら `requireFeature` が宣言時に throw する（readiness barrier、D13）。
+ *
+ * 受け口（core 側の呼び出し点）:
+ *   read         getByAddress の先頭（キャッシュより前）。名前空間・マーカーなど raw state に無い値を答える
+ *   readMissing  getByAddress で「ツリーにそのキーが無い」と分かった点（親の値つき。親が無ければ null）
+ *   write        setByAddress の先頭。書き込みを奪うか、禁止して throw する
+ *   writeMissing setByAddress の fast path で「親にそのキーが無い」と分かった点（公開 getter への書き込み）
+ *   writeObserve 旧値が分かった点（同値ガードの直後）。旧値の台帳を持つ機能が読む
+ *   written      書き込み・`$postUpdate` の後。観測面へ通知する機能が読む
+ *   swapped      要素の入れ替えで行が動いた点（旧値の台帳を行に追従させる）
+ *   get          get トラップの文字列プロパティ先頭。API・名前空間・パスの翻訳を答える
+ *   indexShift   `$n` の解決点。スコープ相対の段ずれを足す
+ *   handlerScope イベントハンドラの添字の段数を決める点
+ *   updated      `$updatedCallback` の後。相対配送する機能が読む
+ *   suppressPathDiagnostic  束縛時の未宣言パス診断を黙らせるか（予約済みスロットの配下など）
+ *   rowReused    その場で使い回した行（DOM から外れない）の点。行の中のスコープを新しい listIndex へ張り直す
+ */
+
+type ReadHook = (stateElement: IStateElement, address: IStateAddress, receiver: any, handler: IStateHandler) => unknown;
+type ReadMissingHook = (stateElement: IStateElement, address: IStateAddress, parentValue: object | null, receiver: any, handler: IStateHandler) => unknown;
+type WriteHook = (stateElement: IStateElement, address: IStateAddress, value: unknown, receiver: any, handler: IStateHandler) => unknown;
+type WriteMissingHook = (stateElement: IStateElement, address: IStateAddress, parentValue: object, key: PropertyKey, value: unknown, receiver: any, handler: IStateHandler) => unknown;
+type WriteObserveHook = (stateElement: IStateElement, path: string, absAddress: IAbsoluteStateAddress, oldValue: unknown, hasOldValue: boolean) => void;
+type WrittenHook = (stateElement: IStateElement, pathInfo: IPathInfo, detail?: {
+    readonly value: unknown;
+}) => void;
+type SwappedHook = (stateElement: IStateElement, elementAbsAddress: IAbsoluteStateAddress, displacedAbsAddress: IAbsoluteStateAddress) => void;
+type GetHook = (handler: IStateHandler, prop: string, receiver: any, target: object) => unknown;
+type IndexShiftHook = (handler: IStateHandler, lastAddress: IStateAddress) => number;
+type HandlerScopeHook = (stateElement: IStateElement, node: Node, rootNode: Node, loopContext: ILoopContext, wildcardCount: number) => number;
+type UpdatedHook = (stateElement: IStateElement, refs: IAbsoluteStateAddress[], receiver: any) => void;
+type SuppressPathDiagnosticHook = (stateElement: IStateElement, path: string) => boolean;
+type RowReusedHook = (stateElement: IStateElement, content: IContent) => void;
+interface IAddressHooks {
+    readonly read?: ReadHook;
+    readonly readMissing?: ReadMissingHook;
+    readonly write?: WriteHook;
+    readonly writeMissing?: WriteMissingHook;
+    readonly writeObserve?: WriteObserveHook;
+    readonly written?: WrittenHook;
+    readonly swapped?: SwappedHook;
+    readonly get?: GetHook;
+    readonly indexShift?: IndexShiftHook;
+    readonly handlerScope?: HandlerScopeHook;
+    readonly updated?: UpdatedHook;
+    readonly suppressPathDiagnostic?: SuppressPathDiagnosticHook;
+    readonly rowReused?: RowReusedHook;
+}
+/** state 要素に付いた hook 群（種類ごとに、機能の登録順） */
+type IAttachedHooks = {
+    readonly [K in keyof Required<IAddressHooks>]: NonNullable<IAddressHooks[K]>[];
+};
+
+/**
+ * pathDiagnostics.ts — パスに関する**エラーの文言**（throw する側）と、診断の両面が共有する部品。
+ *
+ * 束縛時の存在検査（`user.nmae` のような打ち間違いを console.warn で知らせる開発時の診断）は
+ * `features/diagnostics` へ分けた（diagnostics/pathChecks.ts）。core に残るのは、実行を止める
+ * エラーの文言と、その did-you-mean が使う候補の集め方だけ。エラーは機能の有無に関わらず
+ * 読める文言で落ちなければならないので、ここは core から外せない。
  *
  * 診断 code はコンソール → lint → IDE の三面で共有する（errorGuidance.ts の規約）。
  */
-
 /** `setPathInfo` の呼び出し元の種別。診断 code と適用範囲がこれで変わる */
 type PathInfoSource = 
 /** data-wcs / mustache / コメントバインディング */
@@ -272,27 +409,6 @@ declare class RecursionRegistry {
     get materializedPaths(): ReadonlySet<string>;
 }
 
-declare const setLoopContextSymbol: unique symbol;
-declare const getByAddressSymbol: unique symbol;
-declare const hasByAddressSymbol: unique symbol;
-declare const setByAddressSymbol: unique symbol;
-declare const connectedCallbackSymbol: unique symbol;
-declare const disconnectedCallbackSymbol: unique symbol;
-declare const updatedCallbackSymbol: unique symbol;
-declare const errorCallbackSymbol: unique symbol;
-
-interface IStateProxy extends IState {
-    [setLoopContextSymbol](loopContext: ILoopContext | null, callback: () => any): any;
-    [getByAddressSymbol](address: IStateAddress): any;
-    [hasByAddressSymbol](address: IStateAddress): boolean;
-    [setByAddressSymbol](address: IStateAddress, value: any): void;
-    [connectedCallbackSymbol](): Promise<void>;
-    [disconnectedCallbackSymbol](): void;
-    [updatedCallbackSymbol](updatedAbsAddressList: IAbsoluteStateAddress[]): void;
-    [errorCallbackSymbol](error: unknown, info: IBindingErrorInfo): void;
-}
-type Mutability = "readonly" | "writable";
-
 interface IStateElement {
     /** DOM connection state; optional for non-DOM state implementations. */
     readonly isConnected?: boolean;
@@ -348,6 +464,45 @@ interface IStateElement {
      */
     readonly hasGraftedVolumes?: boolean;
     markHasGraftedVolumes?(): void;
+    /** ボリュームがこのルートに予約・接ぎ木された: スコープ機能の hook を付ける（webComponent/addressHooks.ts） */
+    markHasVolume?(): void;
+    /**
+     * ライフサイクル機能（core/lifecycleHooks.ts、設計案 H3）へ開く内部面。接続を引き取った機能が
+     * 要素の初期化を所有するために要る最小限で、optional はテスト用モック互換のため。
+     */
+    /** いま接続している rootNode（未接続は null）。公開の `rootNode` と違い throw しない */
+    readonly connectedRootNode?: Node | null;
+    clearConnectedRootNode?(): void;
+    /** 初期化完了の印（引き取った機能が自分の着地で立てる） */
+    markInitialized?(): void;
+    /** 初期化待ちの 3 つの promise を解決する（未解決のまま投げるとページが無言でウェッジする） */
+    settleInitialization?(): void;
+    /** `state` / `src` / 内包スクリプトからこの要素のソースを読む */
+    loadStateFromSource?(): Promise<Record<string, any>>;
+    /** 自分のツリーを持たずに初期化を終えた印（DCC 定義要素。再接続でこの rootNode のツリーとして登録し直さない） */
+    markTreeless?(): void;
+    /** 初期化失敗の着地（診断 1 件・connectedCallbackPromise の reject — #257）。常に throw する */
+    failInitializeLoudly?(error: unknown): never;
+    /** 接続の世代（接続の末尾の起動が、陳腐化した connect の再開を弾くために照合する） */
+    readonly connectGeneration?: number;
+    /** `$watch` / ボリュームの合流が決めた監視パス（setByAddress の旧値キャプチャのゲート） */
+    setWatchPaths?(paths: ReadonlySet<string> | null): void;
+    /** `$scan` の `from` パス（`watchPaths` と並ぶ旧値キャプチャのゲート） */
+    setScanPaths?(paths: ReadonlySet<string> | null): void;
+    /** 設定エラーの着地（初期化待ちの promise を解決し、二重着地の印を立てる） */
+    landInitialization?(): void;
+    /** `bind-component` が束ねた相手（`boundComponentStateProp` の答えになる） */
+    setBoundComponent?(component: Element | null, stateProp: string | null): void;
+    /** `$recursion` のレジストリ（宣言が無ければ null。`hasRecursion` の裏づけ） */
+    setRecursionRegistry?(registry: RecursionRegistry | null): void;
+    /** 前世代の再帰レジストリが生やした具体パス（経路情報の作り直しから除く） */
+    addGeneratedPath?(path: string): void;
+    /**
+     * 読み書き境界の hook（core/addressHooks.ts、設計案 H1）。宣言が要求する機能の分だけ
+     * `attachAddressHooks` で付く。無い state は null 判定 1 個で抜ける。optional はモック互換
+     */
+    readonly addressHooks?: IAttachedHooks | null;
+    attachAddressHooks?(feature: string, declaration: string): void;
     /**
      * この state 要素に束ねられた（`setPathInfo` を通った）パスの集合。丸ごとマウント
      * （ルート規則）の親→子通知が「登録済みパス全部を読み直せ」を組み立てるのに使う
@@ -501,26 +656,23 @@ interface IAbsoluteStateAddress {
     readonly listIndex: IListIndex | null;
 }
 
-/**
- * Filter/types.ts
- *
- * Type definition file for filter functions.
- *
- * Main responsibilities:
- * - Defines types for filter functions (FilterFn) and filter functions with options (FilterWithOptionsFn)
- * - Type-safe management of filter name-to-function mappings (FilterWithOptions) and filter function arrays (Filters)
- * - Defines types for retrieving filter functions from built-in filter collections
- *
- * Design points:
- * - Type design enabling flexible filter design and extension
- * - Supports filters with options and combinations of multiple filters
- */
-type FilterFn<T = unknown> = (value: unknown) => T;
-
 type BindingType = 'text' | 'prop' | 'event' | 'for' | 'if' | 'elseif' | 'else' | 'radio' | 'checkbox' | 'spread';
-interface IFilterInfo {
+/**
+ * 文法の段が読むフィルタ（名前と引数だけ。要件 D16）。実関数は束縛計画の段で
+ * 登録簿から解決される（`core/filterRegistry.ts`）ので、パース結果はここで止まる。
+ */
+interface IParsedFilter {
     readonly filterName: string;
     readonly args: string[];
+    /**
+     * 引数の型付きの値（要件 B9）。引用符の無い `true` / `false` / `null` / 数値は型付き、引用符付きは
+     * 文字列のまま。`args` は引用符を外した原文（書式フィルタはこちらを読む）。組み立てた側が省略したら
+     * `args` と同じ扱い。
+     */
+    readonly literals?: readonly unknown[];
+}
+/** 束縛計画の段で実関数まで解決したフィルタ */
+interface IFilterInfo extends IParsedFilter {
     readonly filterFn: FilterFn;
 }
 /**
@@ -534,12 +686,18 @@ interface IParsedBinding {
     readonly propModifiers: string[];
     readonly statePathName: string;
     readonly statePathInfo: IPathInfo;
-    readonly inFilters: IFilterInfo[];
-    readonly outFilters: IFilterInfo[];
+    readonly inFilters: IParsedFilter[];
+    readonly outFilters: IParsedFilter[];
     readonly bindingType: BindingType;
     readonly uuid?: string | null;
 }
+/**
+ * 束縛計画の段のバインディング。パース結果に DOM のノードと、**解決済みのフィルタ**が付く
+ * （`bindings/getBindingInfos.ts` が登録簿から引く — 要件 D16）。
+ */
 interface IBindingInfo extends IParsedBinding {
+    readonly inFilters: IFilterInfo[];
+    readonly outFilters: IFilterInfo[];
     readonly node: Node;
     readonly replaceNode: Node;
 }
@@ -624,6 +782,10 @@ interface IWritableConfig {
     sameValueGuard?: boolean;
 }
 
+/**
+ * 全機能を入れてから core を立ち上げる（従来の `bootstrapState()` と同じ挙動）。
+ * install は要素の定義（connectedCallback が走り得る）より前に行う。いずれも冪等。
+ */
 declare function bootstrapState(config?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare function getConfig(): IConfig;
@@ -1422,34 +1584,13 @@ declare class State extends HTMLElementBase implements IStateElement {
     private _boundComponentStateProp;
     private _hasMounts;
     private _hasGraftedVolumes;
-    /** ボリューム（mount=）: 接ぎ木済みの控え（$disconnectedCallback 用） */
-    private _volumeGraftInfo;
-    /** ボリューム: スロット予約済み・接ぎ木進行中（ロード完了前の再接続の再入ガード） */
-    private _volumeInitializing;
-    /**
-     * ボリューム: 予約したマウントパス（#265）。枠を返した後に取り直すときもこれを使う —
-     * `mount` 属性は書き換えられるので読み直さない。
-     */
-    private _volumeMountPath;
-    /**
-     * ボリューム: いま枠を握っている rootNode（#265）。null は「握っていない」。解放はこの控えと
-     * `_volumeMountPath` の組でだけ行う。切断時の `_rootNode`（先に null になる）から読み直すと、
-     * 予約した組と一致する保証が無く、別の要素の枠を消しうる。
-     */
-    private _volumeSlotRootNode;
-    /**
-     * ボリューム: ロード中に外れたときに枠を返した rootNode（#265）。同じ rootNode へ付け直した（並べ替えた）
-     * ときだけ connectedCallback がその場で枠を取り直すための控え。付け直すたびに null へ戻す。
-     */
-    private _volumeDetachedFrom;
-    /** v2 マウント（Phase 2）: この bind-component 要素が構築したマウント記録 */
-    private _mountRecord;
+    /** 読み書き境界の hook（設計案 H1）。宣言が要求する機能の分だけ付く */
+    private _addressHooks;
     private _bindableEventMap;
     private _commandTokenNames;
     private _eventTokenNames;
-    private _dcc;
+    private _treeless;
     private _connectGeneration;
-    private _streamsStartedGeneration;
     constructor();
     private get _state();
     private set _state(value);
@@ -1457,12 +1598,6 @@ declare class State extends HTMLElementBase implements IStateElement {
     private _loadFromSsrElement;
     /** state / src / json / inner <script> / API set のソース解決（_initialize とボリュームで共用）。 */
     private _loadStateFromSource;
-    /**
-     * ボリューム（`<wcs-state mount="path">`）: 独立ツリーを持たず、ロード完了で
-     * ルートに接ぎ木する（webComponent/volume.ts）。接続時にスロットを予約（D22）。
-     * ルートより先に接続されてもよい — ルート登録が保留分を引き取る（V5）。
-     */
-    private _initializeVolume;
     /**
      * 初回マウントのロードと登録。戻り値は「この接続で初期化を**完了**したか」で、
      * `false` は失敗ではなく**中断**（ロード中に要素が剥がされた — 下の注記）。
@@ -1502,7 +1637,8 @@ declare class State extends HTMLElementBase implements IStateElement {
      * PR では変えない（枠の寿命は別 Issue）。
      *
      * `connectedCallback` が `_initialize` より前に await する 2 つ
-     * （`_initializeDCC` / `_initializeBindWebComponent`）の raise も同じ着地に載る。
+     * （DCC の接続 — dcc/dccLifecycle.ts が内部面の `failInitializeLoudly` で載せる — と、
+     * `bind-component` の preparing）の raise も同じ着地に載る。
      * 特に「初期化に失敗した要素の再接続」は `bindWebComponent` → `setInitialState` の
      * 復旧不能 raise でそこへ来るので、包まないと診断ゼロで素通りする。
      *
@@ -1522,23 +1658,38 @@ declare class State extends HTMLElementBase implements IStateElement {
      * ガードで抜ける。`$listKeys` / `$watch` のようにセッタの後半で落ちた形では
      * `$on` の購読と stream registry が残るが、この要素は復旧不能（setInitialState が
      * throw する）なので、残骸は要素ごと捨てる前提で放置する。
+     *
+     * `ownsTree` が false の着地は、この要素だけを失敗させてルートに触らない。`mount=` の
+     * readiness barrier（要件 D23）が使う: ボリュームはツリーの持ち主ではなく、ルートより先に
+     * 接続したボリュームでは rootNode にまだ誰も居ないので、既定の着地だとまだ来ていないルートの
+     * ノードを利用不能と印付けし、保留中の他のボリュームまで落としてしまう。
      */
     private _failInitializeLoudly;
-    private _initializeBindWebComponent;
     private _callStateConnectedCallback;
-    private _initializeDCC;
     private _callStateDisconnectedCallback;
     connectedCallback(): Promise<void>;
-    /** 控えている枠を返す（#265）。所有者の確認は `releaseVolumeSlot` が行う。 */
-    private _releaseVolumeSlot;
-    /**
-     * 接ぎ木の直前に、`rootNode` のマウントの枠を取る（#265）。握っていれば真。ロード中・保留中に外れて
-     * 返していれば取り直して真。外れている間に別の要素が同じマウントパスを取っていれば、横取りせずに
-     * 報告して偽 — 黙らせると、作者に見えるのは「データが現れない」だけになる。
-     */
-    private _acquireVolumeSlot;
     disconnectedCallback(): void;
     get initialized(): boolean;
+    /**
+     * ライフサイクル機能（core/lifecycleHooks.ts、設計案 H3）へ開く内部面。接続を引き取った機能が
+     * 要素の初期化を所有するために要る最小限。
+     */
+    get connectedRootNode(): Node | null;
+    clearConnectedRootNode(): void;
+    markInitialized(): void;
+    settleInitialization(): void;
+    loadStateFromSource(): Promise<Record<string, any>>;
+    markTreeless(): void;
+    /** 初期化失敗の着地（`_failInitializeLoudly`）。接続を引き取った機能が自分の失敗を載せる */
+    failInitializeLoudly(error: unknown): never;
+    get connectGeneration(): number;
+    setWatchPaths(paths: ReadonlySet<string> | null): void;
+    setScanPaths(paths: ReadonlySet<string> | null): void;
+    /** 設定エラーの着地（`_failInitialization` の raise を除いた部分）。引き取った機能が使う */
+    landInitialization(): void;
+    setRecursionRegistry(registry: RecursionRegistry | null): void;
+    addGeneratedPath(path: string): void;
+    setBoundComponent(component: Element | null, stateProp: string | null): void;
     get initializePromise(): Promise<void>;
     get connectedCallbackPromise(): Promise<void>;
     get listPaths(): Set<string>;
@@ -1579,8 +1730,15 @@ declare class State extends HTMLElementBase implements IStateElement {
     /** 唯一の呼び手は webComponent/mount.ts の registerMountRecord（Phase 2）。 */
     markHasMounts(): void;
     get hasGraftedVolumes(): boolean;
+    get addressHooks(): IAttachedHooks | null;
+    /** 宣言 `declaration` が要求する機能 `feature` の hook をこの state に付ける（未 install なら throw、D13） */
+    attachAddressHooks(feature: string, declaration: string): void;
     /** 唯一の呼び手は webComponent/volume.ts の graftVolume（D22 後段のガードが読む）。 */
     markHasGraftedVolumes(): void;
+    /** ボリュームがこのルートに予約された（接ぎ木前でも、予約下の読みは undefined が正 — D22） */
+    markHasVolume(): void;
+    /** スコープ機能（マウント・ボリューム）の hook をこの state に付ける（冪等） */
+    private _attachScopeHooks;
     get bindableEventMap(): Record<string, string>;
     get commandTokenNames(): ReadonlySet<string>;
     get eventTokenNames(): ReadonlySet<string>;

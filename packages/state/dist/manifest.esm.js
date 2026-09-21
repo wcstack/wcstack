@@ -81,16 +81,6 @@ function valueMustBeArray(fnName) {
     raiseError(`filter ${fnName} requires an array value`);
 }
 
-const warned = new Set();
-/** 同じ文面は 1 回だけ警告する（文面は書き方とサイトを含むので、書き方・サイトごとに 1 回） */
-function warnV3Migration(message) {
-    if (warned.has(message)) {
-        return;
-    }
-    warned.add(message);
-    console.warn(`[@wcstack/state] [wcs/v3-migration] ${message} See "Preparing for 3.0" in the @wcstack/state README.`);
-}
-
 /**
  * builtinFilters.ts
  *
@@ -119,8 +109,10 @@ function validateNumberString(value) {
  * @param options - Array with comparison value as first element
  * @returns Filter function that returns boolean
  */
-const eq = (options) => {
+const eq = (options, literals) => {
     const opt = options?.[0] ?? optionsRequired('eq');
+    // The typed literal (B9): unquoted true / false / null / numbers are typed, quoted arguments are strings
+    const literal = literals !== undefined && literals.length > 0 ? literals[0] : opt;
     return (value) => {
         // Align types for comparison
         if (typeof value === 'number') {
@@ -132,8 +124,8 @@ const eq = (options) => {
         if (typeof value === 'string') {
             return value === opt;
         }
-        // Strict equality for others
-        return value === opt;
+        // Booleans, null and the rest compare with the typed literal: eq(true) matches true (B9)
+        return value === literal;
     };
 };
 /**
@@ -142,8 +134,9 @@ const eq = (options) => {
  * @param options - Array with comparison value as first element
  * @returns Filter function that returns boolean
  */
-const ne = (options) => {
+const ne = (options, literals) => {
     const opt = options?.[0] ?? optionsRequired('ne');
+    const literal = literals !== undefined && literals.length > 0 ? literals[0] : opt;
     return (value) => {
         // Align types for comparison
         if (typeof value === 'number') {
@@ -155,8 +148,8 @@ const ne = (options) => {
         if (typeof value === 'string') {
             return value !== opt;
         }
-        // Strict equality for others
-        return value !== opt;
+        // Booleans, null and the rest compare with the typed literal (B9)
+        return value !== literal;
     };
 };
 /**
@@ -817,23 +810,15 @@ const hms = (options) => {
         return `${hours}${opt}${minutes}${opt}${seconds}`;
     };
 };
-/** 3.0 は truthy / falsy / defaults を JavaScript の真偽判定に揃える（要件 B10）— 0n の差を予告する */
-function warnBigIntZero(fnName, value) {
-    if (value === 0n) {
-        warnV3Migration(`"${fnName}" got 0n: 3.0 treats it as falsy.`);
-    }
-}
 /**
- * Falsy filter - checks if value is falsy.
+ * Falsy filter - checks if value is falsy, by JavaScript's own truthiness (`!value`: false, null,
+ * undefined, 0, -0, 0n, '' and NaN). Before 3.0 the list was spelled out and missed 0n (B10).
  *
  * @param options - Unused
- * @returns Filter function that returns true for false/null/undefined/0/''/NaN
+ * @returns Filter function that returns true for falsy values
  */
 const falsy = (_options) => {
-    return (value) => {
-        warnBigIntZero('falsy', value);
-        return value === false || value === null || value === undefined || value === 0 || value === '' || Number.isNaN(value);
-    };
+    return (value) => !value;
 };
 /**
  * Truthy filter - checks if value is truthy.
@@ -842,23 +827,22 @@ const falsy = (_options) => {
  * @returns Filter function that returns true for non-falsy values
  */
 const truthy = (_options) => {
-    return (value) => {
-        warnBigIntZero('truthy', value);
-        return value !== false && value !== null && value !== undefined && value !== 0 && value !== '' && !Number.isNaN(value);
-    };
+    // JavaScript's truthiness, the same as the `boolean` filter (B10)
+    return (value) => !!value;
 };
 /**
- * Default filter - returns default value if input is falsy.
+ * Default filter - returns default value if input is falsy (JavaScript's truthiness, as `falsy`).
  *
  * @param options - Array with default value as first element
  * @returns Filter function that returns value or default
  */
-const defaults = (options) => {
+const defaults = (options, literals) => {
     const opt = options?.[0] ?? optionsRequired('defaults');
+    // The fallback is the typed literal (B9): defaults(0) gives 0, defaults(null) gives null, defaults('0') gives "0"
+    const fallback = literals !== undefined && literals.length > 0 ? literals[0] : opt;
     return (value) => {
-        warnBigIntZero('defaults', value);
-        if (value === false || value === null || value === undefined || value === 0 || value === '' || Number.isNaN(value)) {
-            return opt;
+        if (!value) {
+            return fallback;
         }
         return value;
     };

@@ -15,7 +15,7 @@ var __copyProps = (to, from, except, desc) => {
   }
   return to;
 };
-var __toCommonJS = (mod3) => __copyProps(__defProp({}, "__esModule", { value: true }), mod3);
+var __toCommonJS = (mod2) => __copyProps(__defProp({}, "__esModule", { value: true }), mod2);
 
 // src/schemaCore.ts
 var schemaCore_exports = {};
@@ -133,9 +133,10 @@ var WcsDiagnosticCode = {
   RecursionDeclarationInvalid: "wcs/recursion-declaration-invalid",
   TypeAnnotation: "wcs/type-annotation",
   TemplateSyntax: "wcs/template-syntax",
-  // @wcstack/state 3.0 が拒否する(または読み方を変える)書き方の予告(info)。判定はランタイムの
-  // [wcs/v3-migration] と同じ正本(@wcstack/state/parser の findV3MigrationIssues)。2.x 系だけの code。
-  V3Migration: "wcs/v3-migration",
+  // ランタイムの正本パーサが [wcs/binding-syntax] で拒否する書き方(@wcstack/state 3.0 の文法の
+  // 厳格化: 閉じていない引用符・2 つ目の '#'・else: の値・構造ディレクティブの修飾子・空のフィルタ)。
+  // 判定は正本パーサに委ねる(service/bindingSyntaxValidator.ts)。
+  BindingSyntax: "wcs/binding-syntax",
   // --- <wcs-state> script: array reactivity hazards ---
   // 配列破壊的メソッド呼び出し(push 等 9 種)。Proxy を素通りしリアクティブ更新されない。
   // 同一参照の自己再代入でも要素の追加・削除は反映されない(docs/array-mutation-diagnostic-design.md §3)。
@@ -690,22 +691,15 @@ function valueMustBeDate(fnName) {
 function valueMustBeArray(fnName) {
   raiseError(`filter ${fnName} requires an array value`);
 }
-var warned = /* @__PURE__ */ new Set();
-function warnV3Migration(message) {
-  if (warned.has(message)) {
-    return;
-  }
-  warned.add(message);
-  console.warn(`[@wcstack/state] [wcs/v3-migration] ${message} See "Preparing for 3.0" in the @wcstack/state README.`);
-}
 function validateNumberString(value) {
   if (!value || isNaN(Number(value))) {
     return false;
   }
   return true;
 }
-var eq = (options) => {
+var eq = (options, literals) => {
   const opt = options?.[0] ?? optionsRequired("eq");
+  const literal2 = literals !== void 0 && literals.length > 0 ? literals[0] : opt;
   return (value) => {
     if (typeof value === "number") {
       if (!validateNumberString(opt)) {
@@ -716,11 +710,12 @@ var eq = (options) => {
     if (typeof value === "string") {
       return value === opt;
     }
-    return value === opt;
+    return value === literal2;
   };
 };
-var ne = (options) => {
+var ne = (options, literals) => {
   const opt = options?.[0] ?? optionsRequired("ne");
+  const literal2 = literals !== void 0 && literals.length > 0 ? literals[0] : opt;
   return (value) => {
     if (typeof value === "number") {
       if (!validateNumberString(opt)) {
@@ -731,7 +726,7 @@ var ne = (options) => {
     if (typeof value === "string") {
       return value !== opt;
     }
-    return value !== opt;
+    return value !== literal2;
   };
 };
 var not = (_options) => {
@@ -1124,29 +1119,18 @@ var hms = (options) => {
     return `${hours}${opt}${minutes}${opt}${seconds}`;
   };
 };
-function warnBigIntZero(fnName, value) {
-  if (value === 0n) {
-    warnV3Migration(`"${fnName}" got 0n: 3.0 treats it as falsy.`);
-  }
-}
 var falsy = (_options) => {
-  return (value) => {
-    warnBigIntZero("falsy", value);
-    return value === false || value === null || value === void 0 || value === 0 || value === "" || Number.isNaN(value);
-  };
+  return (value) => !value;
 };
 var truthy = (_options) => {
-  return (value) => {
-    warnBigIntZero("truthy", value);
-    return value !== false && value !== null && value !== void 0 && value !== 0 && value !== "" && !Number.isNaN(value);
-  };
+  return (value) => !!value;
 };
-var defaults = (options) => {
+var defaults = (options, literals) => {
   const opt = options?.[0] ?? optionsRequired("defaults");
+  const fallback = literals !== void 0 && literals.length > 0 ? literals[0] : opt;
   return (value) => {
-    warnBigIntZero("defaults", value);
-    if (value === false || value === null || value === void 0 || value === 0 || value === "" || Number.isNaN(value)) {
-      return opt;
+    if (!value) {
+      return fallback;
     }
     return value;
   };
@@ -1461,11 +1445,11 @@ function foldSuffixIndexes(suffix) {
 }
 function foldRecursion(spec, path) {
   if (!path.startsWith(spec.anchor)) return null;
-  const unit3 = "." + spec.repeat;
+  const unit2 = "." + spec.repeat;
   let cursor = spec.anchor.length;
   let depth = 0;
-  while (path.startsWith(unit3, cursor)) {
-    cursor += unit3.length;
+  while (path.startsWith(unit2, cursor)) {
+    cursor += unit2.length;
     depth++;
   }
   if (cursor !== path.length && path.charCodeAt(cursor) !== 46) return null;
@@ -1475,9 +1459,9 @@ function matchesRecursion(specs, path, has) {
   for (const spec of specs) {
     const folded = foldRecursion(spec, path);
     if (folded === null) continue;
-    const unit3 = "." + spec.repeat;
+    const unit2 = "." + spec.repeat;
     for (let depth = folded.depth; depth >= 0; depth--) {
-      const rest = unit3.repeat(folded.depth - depth) + folded.rest;
+      const rest = unit2.repeat(folded.depth - depth) + folded.rest;
       if (has(spec.anchor + rest)) return true;
       if (has(spec.recursiveAnchor + rest)) return true;
       for (let dot = rest.lastIndexOf("."); dot > 0; dot = rest.lastIndexOf(".", dot - 1)) {
@@ -1491,10 +1475,10 @@ function owningGetterSuffix(spec, getterSuffixes, path) {
   const pattern = indexSegmentsToWildcard(path);
   const folded = foldRecursion(spec, pattern);
   if (folded === null) return null;
-  const unit3 = "." + spec.repeat;
+  const unit2 = "." + spec.repeat;
   for (const suffix of getterSuffixes) {
     for (let depth = folded.depth; depth >= 0; depth--) {
-      const expansion = spec.anchor + unit3.repeat(depth) + suffix;
+      const expansion = spec.anchor + unit2.repeat(depth) + suffix;
       if (pattern === expansion || pattern.startsWith(expansion + ".")) return suffix;
     }
   }
@@ -1506,10 +1490,10 @@ function indexSegmentsToWildcard(path) {
 function concreteExpansionSuffix(spec, getterSuffixes, key) {
   const folded = foldRecursion(spec, key);
   if (folded === null) return null;
-  const unit3 = "." + spec.repeat;
+  const unit2 = "." + spec.repeat;
   for (const suffix of getterSuffixes) {
     for (let depth = folded.depth; depth >= 0; depth--) {
-      if (key === spec.anchor + unit3.repeat(depth) + suffix) return suffix;
+      if (key === spec.anchor + unit2.repeat(depth) + suffix) return suffix;
     }
   }
   return null;
@@ -1541,9 +1525,9 @@ function impliedStructurePaths(spec) {
   return out;
 }
 function structuralWriteTarget(spec, suffix) {
-  const unit3 = "." + spec.repeat;
+  const unit2 = "." + spec.repeat;
   let rest = suffix;
-  while (rest.startsWith(unit3)) rest = rest.slice(unit3.length);
+  while (rest.startsWith(unit2)) rest = rest.slice(unit2.length);
   if (rest.length === 0) return "node";
   if (rest === "." + spec.repeatList + ".length") return "length";
   const segments = spec.repeatList.split(".");
@@ -1553,15 +1537,15 @@ function structuralWriteTarget(spec, suffix) {
   return null;
 }
 function sameFamily(spec, a, b) {
-  const unit3 = "." + spec.repeat;
+  const unit2 = "." + spec.repeat;
   const shorter = a.length <= b.length ? a : b;
   const longer = a.length <= b.length ? b : a;
   if (!longer.endsWith(shorter)) return false;
   const gap = longer.slice(0, longer.length - shorter.length);
   if (gap.length === 0) return true;
-  if (gap.length % unit3.length !== 0) return false;
-  for (let cursor = 0; cursor < gap.length; cursor += unit3.length) {
-    if (!gap.startsWith(unit3, cursor)) return false;
+  if (gap.length % unit2.length !== 0) return false;
+  for (let cursor = 0; cursor < gap.length; cursor += unit2.length) {
+    if (!gap.startsWith(unit2, cursor)) return false;
   }
   return true;
 }
@@ -2751,8 +2735,8 @@ function matchOpenTag(html, pos, tagName) {
   const nameStart = pos + 1;
   const nameEnd = nameStart + tagName.length;
   if (nameEnd > html.length) return null;
-  const slice3 = html.slice(nameStart, nameEnd);
-  if (slice3.toLowerCase() !== tagName.toLowerCase()) return null;
+  const slice2 = html.slice(nameStart, nameEnd);
+  if (slice2.toLowerCase() !== tagName.toLowerCase()) return null;
   const charAfter = html[nameEnd];
   if (charAfter !== ">" && charAfter !== " " && charAfter !== "	" && charAfter !== "\n" && charAfter !== "\r" && charAfter !== "/") {
     return null;
@@ -3002,8 +2986,8 @@ function getForTemplateDepthAt(html, openPos, offset2, bindAttrName) {
 }
 
 // src/core/messages.ts
-function resolveLocale(locale3) {
-  if (locale3 === void 0 || locale3 === "" || /^ja\b|^ja[-_]/i.test(locale3) || locale3.toLowerCase() === "ja") return "ja";
+function resolveLocale(locale2) {
+  if (locale2 === void 0 || locale2 === "" || /^ja\b|^ja[-_]/i.test(locale2) || locale2.toLowerCase() === "ja") return "ja";
   return "en";
 }
 var JA_EXPECTED_LABEL = {
@@ -3014,8 +2998,8 @@ var JA_EXPECTED_LABEL = {
 var ja = {
   spreadFilterNotAllowed: () => `\u30B9\u30D7\u30EC\u30C3\u30C9\u306E\u30BF\u30FC\u30B2\u30C3\u30C8\u306B\u30D5\u30A3\u30EB\u30BF\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093`,
   spreadTargetRequired: () => `\u30B9\u30D7\u30EC\u30C3\u30C9\u306B\u306F\u30BF\u30FC\u30B2\u30C3\u30C8\u30D1\u30B9\u304C\u5FC5\u8981\u3067\u3059`,
-  v3Migration: (detail) => `3.0 \u3078\u306E\u6E96\u5099\uFF082.x \u3067\u306F\u3053\u306E\u307E\u307E\u52D5\u304D\u307E\u3059\uFF09: ${detail}`,
   structuralMustBeSingle: (d) => `'${d}' \u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u306F\u5358\u72EC\u3067\u6307\u5B9A\u3059\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08';' \u3067\u4ED6\u306E\u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u3068\u4F75\u8A18\u3067\u304D\u307E\u305B\u3093\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09`,
+  bindingSyntax: (detail) => `\u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u306E\u69CB\u6587\u30A8\u30E9\u30FC\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09: ${detail}`,
   eventTokenUndeclared: (t) => `\u30A4\u30D9\u30F3\u30C8\u30C8\u30FC\u30AF\u30F3 "${t}" \u306F $eventTokens \u306B\u5BA3\u8A00\u3055\u308C\u3066\u3044\u307E\u305B\u3093`,
   commandRhsFormat: () => `command \u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u306E\u53F3\u8FBA\u306B\u306F $command.<name>\uFF08$commandTokens \u3067\u5BA3\u8A00\uFF09\u3092\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044`,
   commandTokenUndeclared: (t) => `\u30B3\u30DE\u30F3\u30C9\u30C8\u30FC\u30AF\u30F3 "${t}" \u306F $commandTokens \u306B\u5BA3\u8A00\u3055\u308C\u3066\u3044\u307E\u305B\u3093`,
@@ -3203,8 +3187,8 @@ var EN_EXPECTED_LABEL = {
 var en = {
   spreadFilterNotAllowed: () => `Filters cannot be applied to a spread target`,
   spreadTargetRequired: () => `Spread requires a target path`,
-  v3Migration: (detail) => `Preparing for 3.0 (this still runs on 2.x): ${detail}`,
   structuralMustBeSingle: (d) => `'${d}' must be the only binding in this attribute (it cannot be combined with ';'; the runtime throws at load time)`,
+  bindingSyntax: (detail) => `Binding syntax error (the runtime throws at load time): ${detail}`,
   eventTokenUndeclared: (t) => `Event token "${t}" is not declared in $eventTokens`,
   commandRhsFormat: () => `The right side of a command binding must be $command.<name> (declared in $commandTokens)`,
   commandTokenUndeclared: (t) => `Command token "${t}" is not declared in $commandTokens`,
@@ -3385,15 +3369,15 @@ var en = {
   recursionInMountedComponent: (subject) => `${subject} is not run by a mounted component (bind-component); the runtime warns with wcs/mount-dollar-declaration and drops it. Declare $recursion and "**" getters on the root state \u2014 the anchor path is resolved against the root tree`
 };
 var CATALOGS = { ja, en };
-function getMessages(locale3) {
-  return CATALOGS[resolveLocale(locale3)];
+function getMessages(locale2) {
+  return CATALOGS[resolveLocale(locale2)];
 }
 
 // src/service/bindingValidator.ts
 var filterMap = new Map(BUILTIN_FILTERS.map((f) => [f.name, f]));
-function validateBindings(html, attrName, stateTagName = "wcs-state", locale3, fileReader, applicationSchema) {
+function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, fileReader, applicationSchema) {
   const diagnostics = [];
-  const msgs = getMessages(locale3);
+  const msgs = getMessages(locale2);
   const statePaths = mergeSchemaCandidates(getStatePathsFromHtml(html, stateTagName, fileReader), applicationSchema);
   const attrs = findAllBindAttributes(html, attrName);
   let structuralTemplates = null;
@@ -3950,8 +3934,8 @@ function isLiteral(value) {
 }
 
 // src/service/stateTypeValidator.ts
-function validateStateTypes(html, stateTagName = "wcs-state", locale3) {
-  const msgs = getMessages(locale3);
+function validateStateTypes(html, stateTagName = "wcs-state", locale2) {
+  const msgs = getMessages(locale2);
   const blocks = parseWcsScriptBlocks(html, stateTagName);
   const diagnostics = [];
   for (const block of blocks) {
@@ -4078,8 +4062,8 @@ function isApiRoot(root) {
 // src/service/nestedAssignValidator.ts
 var NESTED_ASSIGN = new RegExp(`${ROOT_DOT}(${CHAIN_ONE_PLUS})${ASSIGN_TAIL}`, "g");
 var PRE_NESTED_INCDEC = new RegExp(`${PRE_INCDEC}${ROOT_DOT}(${CHAIN_ONE_PLUS})`, "g");
-function validateNestedAssigns(html, stateTagName = "wcs-state", locale3) {
-  const msgs = getMessages(locale3);
+function validateNestedAssigns(html, stateTagName = "wcs-state", locale2) {
+  const msgs = getMessages(locale2);
   const blocks = parseWcsScriptBlocks(html, stateTagName);
   const diagnostics = [];
   for (const block of blocks) {
@@ -4130,8 +4114,8 @@ var PRE_BRACKET_INDEX = new RegExp(`${PRE_INCDEC}${ROOT_BRACKET}(${BRACKETS_ONLY
 function toAccessor(path) {
   return /^[A-Za-z_]\w*$/.test(path) ? `this.${path}` : `this["${path}"]`;
 }
-function validateArrayMutations(html, stateTagName = "wcs-state", locale3) {
-  const msgs = getMessages(locale3);
+function validateArrayMutations(html, stateTagName = "wcs-state", locale2) {
+  const msgs = getMessages(locale2);
   const blocks = parseWcsScriptBlocks(html, stateTagName);
   const diagnostics = [];
   for (const block of blocks) {
@@ -4241,9 +4225,9 @@ function isInsideTag(html, offset2, tagName) {
 }
 
 // src/service/templateSyntaxValidator.ts
-function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", locale3, fileReader, applicationSchema) {
+function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", locale2, fileReader, applicationSchema) {
   const diagnostics = [];
-  const msgs = getMessages(locale3);
+  const msgs = getMessages(locale2);
   const allPaths = mergeSchemaCandidates(getStatePathsFromHtml(html, stateTagName, fileReader), applicationSchema);
   const defaultSchema = applicationSchema;
   const missingVerdict = (path, displayPath, pathSet2, scoped) => {
@@ -4509,43 +4493,6 @@ var PathInfo = class {
     this.wildcardCount = wildcardCount;
   }
 };
-function editDistance(a, b, max) {
-  if (Math.abs(a.length - b.length) > max) {
-    return max + 1;
-  }
-  const prev = new Array(b.length + 1);
-  const curr = new Array(b.length + 1);
-  for (let j = 0; j <= b.length; j++) {
-    prev[j] = j;
-  }
-  for (let i = 1; i <= a.length; i++) {
-    curr[0] = i;
-    for (let j = 1; j <= b.length; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
-    }
-    for (let j = 0; j <= b.length; j++) {
-      prev[j] = curr[j];
-    }
-  }
-  return prev[b.length];
-}
-function didYouMean(input, candidates) {
-  if (input.length === 0) {
-    return "";
-  }
-  const folded = input.toLowerCase();
-  let best = null;
-  let bestDistance = 3;
-  for (const candidate of candidates) {
-    const distance = editDistance(folded, candidate.toLowerCase(), 2);
-    if (distance < bestDistance) {
-      best = candidate;
-      bestDistance = distance;
-    }
-  }
-  return best !== null ? ` Did you mean "${best}"?` : "";
-}
 var LINT_HINT = " Validate statically: npx @wcstack/lint <file>.";
 var STRUCTURAL_BINDING_TYPE_SET2 = /* @__PURE__ */ new Set([
   "if",
@@ -4553,660 +4500,10 @@ var STRUCTURAL_BINDING_TYPE_SET2 = /* @__PURE__ */ new Set([
   "else",
   "for"
 ]);
-var _config2 = {
-  locale: "en"
-};
-var config2 = _config2;
-function optionsRequired2(fnName) {
-  raiseError2(`filter ${fnName} requires at least one option`);
+var resolvedByKey = /* @__PURE__ */ new Map();
+function clearFilterResolutionCache() {
+  resolvedByKey.clear();
 }
-function optionMustBeNumber2(fnName) {
-  raiseError2(`filter ${fnName} requires a number as option`);
-}
-function valueMustBeNumber2(fnName) {
-  raiseError2(`filter ${fnName} requires a number value`);
-}
-function valueMustBeBoolean2(fnName) {
-  raiseError2(`filter ${fnName} requires a boolean value`);
-}
-function valueMustBeDate2(fnName) {
-  raiseError2(`filter ${fnName} requires a date value`);
-}
-function valueMustBeArray2(fnName) {
-  raiseError2(`filter ${fnName} requires an array value`);
-}
-var NO_ARGS = /* @__PURE__ */ new Set([
-  "not",
-  "abs",
-  "uc",
-  "lc",
-  "cap",
-  "trim",
-  "rev",
-  "int",
-  "float",
-  "date",
-  "time",
-  "datetime",
-  "falsy",
-  "truthy",
-  "boolean",
-  "number",
-  "string",
-  "null"
-]);
-var TWO_ARGS = /* @__PURE__ */ new Set(["clamp", "slice", "substr", "pad", "truncate"]);
-function maxFilterArgs(name) {
-  return NO_ARGS.has(name) ? 0 : TWO_ARGS.has(name) ? 2 : 1;
-}
-var STRUCTURAL_KEYWORDS = /* @__PURE__ */ new Set(["for", "if", "elseif", "else", "..."]);
-var TYPED_LITERAL = /(?:^|\|)\s*(eq|ne|defaults)\s*\(\s*(true|false|null)\s*\)/g;
-function hasUnterminatedQuote(text) {
-  let quote = null;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (quote !== null) {
-      if (c === quote)
-        quote = null;
-    } else if (c === "'" || c === '"') {
-      quote = c;
-    }
-  }
-  return quote !== null;
-}
-function checkStatePart(text, parsed, issues) {
-  if (hasUnterminatedQuote(text)) {
-    issues.push(`"${text}": 3.0 rejects the unterminated quote.`);
-  }
-  for (const [, fnName, literal2] of text.matchAll(TYPED_LITERAL)) {
-    issues.push(`"${fnName}(${literal2})": 3.0 reads an unquoted ${literal2} as a ${literal2 === "null" ? "null" : "boolean"}, not the text. Write ${fnName}('${literal2}') to keep the text.`);
-  }
-  if (parsed !== null) {
-    issues.push(...findFilterArityIssues([parsed]));
-  }
-}
-function findFilterArityIssues(results) {
-  const issues = [];
-  for (const result of results) {
-    for (const filter of [...result.inFilters, ...result.outFilters]) {
-      const max = maxFilterArgs(filter.filterName);
-      if (filter.args.length > max) {
-        issues.push(`"${filter.filterName}" takes at most ${max} argument(s); 3.0 rejects more.`);
-      }
-    }
-  }
-  return issues;
-}
-function findV3MigrationIssues(expr, parsed = null) {
-  const issues = [];
-  const colon = expr.indexOf(":");
-  if (colon === -1)
-    return issues;
-  const propPart = expr.slice(0, colon).trim();
-  const modifierParts = propPart.split("#");
-  const keyword = modifierParts[0].split("|")[0].trim();
-  if (modifierParts.length > 2) {
-    issues.push(`"${propPart}": 3.0 rejects a second "#". Write "${modifierParts[0].trim()}#${modifierParts.slice(1).map((m) => m.trim()).join(",")}".`);
-  }
-  if (keyword === "else" && expr.slice(colon + 1).trim().length > 0) {
-    issues.push(`"${expr}": 3.0 rejects a value after "else:".`);
-  }
-  if (STRUCTURAL_KEYWORDS.has(keyword) && keyword !== propPart) {
-    issues.push(`"${propPart}": 3.0 rejects modifiers and filters on "${keyword}". Write "${keyword}:".`);
-  }
-  if ((keyword === "radio" || keyword === "checkbox") && keyword !== propPart) {
-    issues.push(`"${propPart}": 3.0 keeps this a ${keyword} binding that honours the modifiers (2.x binds a property named "${keyword}").`);
-  }
-  checkStatePart(expr.slice(colon + 1).trim(), parsed, issues);
-  return issues;
-}
-function findEmbeddedV3MigrationIssues(expression, parsed = null) {
-  const issues = [];
-  checkStatePart(expression, parsed, issues);
-  return issues;
-}
-var warned2 = /* @__PURE__ */ new Set();
-function warnV3Migration2(message) {
-  if (warned2.has(message)) {
-    return;
-  }
-  warned2.add(message);
-  console.warn(`[@wcstack/state] [wcs/v3-migration] ${message} See "Preparing for 3.0" in the @wcstack/state README.`);
-}
-function validateNumberString2(value) {
-  if (!value || isNaN(Number(value))) {
-    return false;
-  }
-  return true;
-}
-var eq2 = (options) => {
-  const opt = options?.[0] ?? optionsRequired2("eq");
-  return (value) => {
-    if (typeof value === "number") {
-      if (!validateNumberString2(opt)) {
-        optionMustBeNumber2("eq");
-      }
-      return value === Number(opt);
-    }
-    if (typeof value === "string") {
-      return value === opt;
-    }
-    return value === opt;
-  };
-};
-var ne2 = (options) => {
-  const opt = options?.[0] ?? optionsRequired2("ne");
-  return (value) => {
-    if (typeof value === "number") {
-      if (!validateNumberString2(opt)) {
-        optionMustBeNumber2("ne");
-      }
-      return value !== Number(opt);
-    }
-    if (typeof value === "string") {
-      return value !== opt;
-    }
-    return value !== opt;
-  };
-};
-var not2 = (_options) => {
-  return (value) => {
-    if (typeof value !== "boolean") {
-      valueMustBeBoolean2("not");
-    }
-    return !value;
-  };
-};
-var lt2 = (options) => {
-  const opt = options?.[0] ?? optionsRequired2("lt");
-  if (!validateNumberString2(opt)) {
-    optionMustBeNumber2("lt");
-  }
-  return (value) => {
-    if (typeof value !== "number") {
-      valueMustBeNumber2("lt");
-    }
-    return value < Number(opt);
-  };
-};
-var le2 = (options) => {
-  const opt = options?.[0] ?? optionsRequired2("le");
-  if (!validateNumberString2(opt)) {
-    optionMustBeNumber2("le");
-  }
-  return (value) => {
-    if (typeof value !== "number") {
-      valueMustBeNumber2("le");
-    }
-    return value <= Number(opt);
-  };
-};
-var gt2 = (options) => {
-  const opt = options?.[0] ?? optionsRequired2("gt");
-  if (!validateNumberString2(opt)) {
-    optionMustBeNumber2("gt");
-  }
-  return (value) => {
-    if (typeof value !== "number") {
-      valueMustBeNumber2("gt");
-    }
-    return value > Number(opt);
-  };
-};
-var ge2 = (options) => {
-  const opt = options?.[0] ?? optionsRequired2("ge");
-  if (!validateNumberString2(opt)) {
-    optionMustBeNumber2("ge");
-  }
-  return (value) => {
-    if (typeof value !== "number") {
-      valueMustBeNumber2("ge");
-    }
-    return value >= Number(opt);
-  };
-};
-var inc2 = (options) => {
-  const opt = options?.[0] ?? optionsRequired2("inc");
-  if (!validateNumberString2(opt)) {
-    optionMustBeNumber2("inc");
-  }
-  return (value) => {
-    if (typeof value !== "number") {
-      valueMustBeNumber2("inc");
-    }
-    return value + Number(opt);
-  };
-};
-var dec2 = (options) => {
-  const opt = options?.[0] ?? optionsRequired2("dec");
-  if (!validateNumberString2(opt)) {
-    optionMustBeNumber2("dec");
-  }
-  return (value) => {
-    if (typeof value !== "number") {
-      valueMustBeNumber2("dec");
-    }
-    return value - Number(opt);
-  };
-};
-var mul2 = (options) => {
-  const opt = options?.[0] ?? optionsRequired2("mul");
-  if (!validateNumberString2(opt)) {
-    optionMustBeNumber2("mul");
-  }
-  return (value) => {
-    if (typeof value !== "number") {
-      valueMustBeNumber2("mul");
-    }
-    return value * Number(opt);
-  };
-};
-var div2 = (options) => {
-  const opt = options?.[0] ?? optionsRequired2("div");
-  if (!validateNumberString2(opt)) {
-    optionMustBeNumber2("div");
-  }
-  return (value) => {
-    if (typeof value !== "number") {
-      valueMustBeNumber2("div");
-    }
-    return value / Number(opt);
-  };
-};
-var mod2 = (options) => {
-  const opt = options?.[0] ?? optionsRequired2("mod");
-  if (!validateNumberString2(opt)) {
-    optionMustBeNumber2("mod");
-  }
-  return (value) => {
-    if (typeof value !== "number") {
-      valueMustBeNumber2("mod");
-    }
-    return value % Number(opt);
-  };
-};
-var abs2 = (_options) => {
-  return (value) => {
-    if (typeof value !== "number") {
-      valueMustBeNumber2("abs");
-    }
-    return Math.abs(value);
-  };
-};
-var clamp2 = (options) => {
-  const opt1 = options?.[0] ?? optionsRequired2("clamp");
-  if (!validateNumberString2(opt1)) {
-    optionMustBeNumber2("clamp");
-  }
-  const opt2 = options?.[1] ?? optionsRequired2("clamp");
-  if (!validateNumberString2(opt2)) {
-    optionMustBeNumber2("clamp");
-  }
-  const min = Number(opt1);
-  const max = Number(opt2);
-  return (value) => {
-    if (typeof value !== "number") {
-      valueMustBeNumber2("clamp");
-    }
-    return Math.min(Math.max(value, min), max);
-  };
-};
-var fix2 = (options) => {
-  const opt = options?.[0] ?? "0";
-  if (!validateNumberString2(opt)) {
-    optionMustBeNumber2("fix");
-  }
-  return (value) => {
-    if (typeof value !== "number") {
-      valueMustBeNumber2("fix");
-    }
-    return value.toFixed(Number(opt));
-  };
-};
-var locale2 = (options) => {
-  const explicit = options?.[0];
-  return (value) => {
-    if (typeof value !== "number") {
-      valueMustBeNumber2("locale");
-    }
-    return value.toLocaleString(explicit ?? config2.locale);
-  };
-};
-var uc2 = (_options) => {
-  return (value) => {
-    return String(value).toUpperCase();
-  };
-};
-var lc2 = (_options) => {
-  return (value) => {
-    return String(value).toLowerCase();
-  };
-};
-var cap2 = (_options) => {
-  return (value) => {
-    const v = String(value);
-    if (v.length === 0) {
-      return v;
-    }
-    if (v.length === 1) {
-      return v.toUpperCase();
-    }
-    return v.charAt(0).toUpperCase() + v.slice(1);
-  };
-};
-var trim2 = (_options) => {
-  return (value) => {
-    return String(value).trim();
-  };
-};
-var slice2 = (options) => {
-  const numberedOpts = [];
-  const opt1 = options?.[0] ?? optionsRequired2("slice");
-  if (!validateNumberString2(opt1)) {
-    optionMustBeNumber2("slice");
-  }
-  numberedOpts.push(Number(opt1));
-  const opt2 = options?.[1];
-  if (typeof opt2 !== "undefined") {
-    if (!validateNumberString2(opt2)) {
-      optionMustBeNumber2("slice");
-    }
-    numberedOpts.push(Number(opt2));
-  }
-  return (value) => {
-    return String(value).slice(...numberedOpts);
-  };
-};
-var substr2 = (options) => {
-  const opt1 = options?.[0] ?? optionsRequired2("substr");
-  if (!validateNumberString2(opt1)) {
-    optionMustBeNumber2("substr");
-  }
-  const opt2 = options?.[1] ?? optionsRequired2("substr");
-  if (!validateNumberString2(opt2)) {
-    optionMustBeNumber2("substr");
-  }
-  return (value) => {
-    return String(value).substr(Number(opt1), Number(opt2));
-  };
-};
-var pad2 = (options) => {
-  const opt1 = options?.[0] ?? optionsRequired2("pad");
-  if (!validateNumberString2(opt1)) {
-    optionMustBeNumber2("pad");
-  }
-  const opt2 = options?.[1] ?? "0";
-  return (value) => {
-    return String(value).padStart(Number(opt1), opt2);
-  };
-};
-var rep2 = (options) => {
-  const opt = options?.[0] ?? optionsRequired2("rep");
-  if (!validateNumberString2(opt)) {
-    optionMustBeNumber2("rep");
-  }
-  return (value) => {
-    return String(value).repeat(Number(opt));
-  };
-};
-var rev2 = (_options) => {
-  return (value) => {
-    return String(value).split("").reverse().join("");
-  };
-};
-var int2 = (_options) => {
-  return (value) => {
-    return parseInt(String(value), 10);
-  };
-};
-var float2 = (_options) => {
-  return (value) => {
-    return parseFloat(String(value));
-  };
-};
-var round2 = (options) => {
-  const opt = options?.[0] ?? "0";
-  if (!validateNumberString2(opt)) {
-    optionMustBeNumber2("round");
-  }
-  return (value) => {
-    if (typeof value !== "number") {
-      valueMustBeNumber2("round");
-    }
-    const optValue = Math.pow(10, Number(opt));
-    return Math.round(value * optValue) / optValue;
-  };
-};
-var floor2 = (options) => {
-  const opt = options?.[0] ?? "0";
-  if (!validateNumberString2(opt)) {
-    optionMustBeNumber2("floor");
-  }
-  return (value) => {
-    if (typeof value !== "number") {
-      valueMustBeNumber2("floor");
-    }
-    const optValue = Math.pow(10, Number(opt));
-    return Math.floor(value * optValue) / optValue;
-  };
-};
-var ceil2 = (options) => {
-  const opt = options?.[0] ?? "0";
-  if (!validateNumberString2(opt)) {
-    optionMustBeNumber2("ceil");
-  }
-  return (value) => {
-    if (typeof value !== "number") {
-      valueMustBeNumber2("ceil");
-    }
-    const optValue = Math.pow(10, Number(opt));
-    return Math.ceil(value * optValue) / optValue;
-  };
-};
-var percent2 = (options) => {
-  const opt = options?.[0] ?? "0";
-  if (!validateNumberString2(opt)) {
-    optionMustBeNumber2("percent");
-  }
-  return (value) => {
-    if (typeof value !== "number") {
-      valueMustBeNumber2("percent");
-    }
-    return `${(value * 100).toFixed(Number(opt))}%`;
-  };
-};
-var unit2 = (options) => {
-  const opt = options?.[0] ?? optionsRequired2("unit");
-  return (value) => {
-    if (value === null || typeof value === "undefined") {
-      return value;
-    }
-    return String(value) + opt;
-  };
-};
-var join2 = (options) => {
-  const opt = options?.[0] ?? ", ";
-  return (value) => {
-    if (!Array.isArray(value)) {
-      valueMustBeArray2("join");
-    }
-    return value.join(opt);
-  };
-};
-var truncate2 = (options) => {
-  const opt1 = options?.[0] ?? optionsRequired2("truncate");
-  if (!validateNumberString2(opt1)) {
-    optionMustBeNumber2("truncate");
-  }
-  const maxLength = Number(opt1);
-  const suffix = options?.[1] ?? "\u2026";
-  return (value) => {
-    const v = String(value);
-    if (v.length <= maxLength) {
-      return v;
-    }
-    return v.slice(0, maxLength) + suffix;
-  };
-};
-var date2 = (options) => {
-  const explicit = options?.[0];
-  return (value) => {
-    if (!(value instanceof Date)) {
-      valueMustBeDate2("date");
-    }
-    return value.toLocaleDateString(explicit ?? config2.locale);
-  };
-};
-var time2 = (options) => {
-  const explicit = options?.[0];
-  return (value) => {
-    if (!(value instanceof Date)) {
-      valueMustBeDate2("time");
-    }
-    return value.toLocaleTimeString(explicit ?? config2.locale);
-  };
-};
-var datetime2 = (options) => {
-  const explicit = options?.[0];
-  return (value) => {
-    if (!(value instanceof Date)) {
-      valueMustBeDate2("datetime");
-    }
-    return value.toLocaleString(explicit ?? config2.locale);
-  };
-};
-var ymd2 = (options) => {
-  const opt = options?.[0] ?? "-";
-  return (value) => {
-    if (!(value instanceof Date)) {
-      valueMustBeDate2("ymd");
-    }
-    const year = value.getFullYear().toString();
-    const month = (value.getMonth() + 1).toString().padStart(2, "0");
-    const day = value.getDate().toString().padStart(2, "0");
-    return `${year}${opt}${month}${opt}${day}`;
-  };
-};
-var hms2 = (options) => {
-  const opt = options?.[0] ?? ":";
-  return (value) => {
-    if (!(value instanceof Date)) {
-      valueMustBeDate2("hms");
-    }
-    const hours = value.getHours().toString().padStart(2, "0");
-    const minutes = value.getMinutes().toString().padStart(2, "0");
-    const seconds = value.getSeconds().toString().padStart(2, "0");
-    return `${hours}${opt}${minutes}${opt}${seconds}`;
-  };
-};
-function warnBigIntZero2(fnName, value) {
-  if (value === 0n) {
-    warnV3Migration2(`"${fnName}" got 0n: 3.0 treats it as falsy.`);
-  }
-}
-var falsy2 = (_options) => {
-  return (value) => {
-    warnBigIntZero2("falsy", value);
-    return value === false || value === null || value === void 0 || value === 0 || value === "" || Number.isNaN(value);
-  };
-};
-var truthy2 = (_options) => {
-  return (value) => {
-    warnBigIntZero2("truthy", value);
-    return value !== false && value !== null && value !== void 0 && value !== 0 && value !== "" && !Number.isNaN(value);
-  };
-};
-var defaults2 = (options) => {
-  const opt = options?.[0] ?? optionsRequired2("defaults");
-  return (value) => {
-    warnBigIntZero2("defaults", value);
-    if (value === false || value === null || value === void 0 || value === 0 || value === "" || Number.isNaN(value)) {
-      return opt;
-    }
-    return value;
-  };
-};
-var boolean2 = (_options) => {
-  return (value) => {
-    return Boolean(value);
-  };
-};
-var number2 = (_options) => {
-  return (value) => {
-    return Number(value);
-  };
-};
-var string2 = (_options) => {
-  return (value) => {
-    return String(value);
-  };
-};
-var _null2 = (_options) => {
-  return (value) => {
-    return value === "" ? null : value;
-  };
-};
-var builtinFilters2 = {
-  "eq": eq2,
-  "ne": ne2,
-  "not": not2,
-  "lt": lt2,
-  "le": le2,
-  "gt": gt2,
-  "ge": ge2,
-  "inc": inc2,
-  "dec": dec2,
-  "mul": mul2,
-  "div": div2,
-  "mod": mod2,
-  "abs": abs2,
-  "clamp": clamp2,
-  "fix": fix2,
-  "locale": locale2,
-  "uc": uc2,
-  "lc": lc2,
-  "cap": cap2,
-  "trim": trim2,
-  "slice": slice2,
-  "substr": substr2,
-  "pad": pad2,
-  "rep": rep2,
-  "rev": rev2,
-  "truncate": truncate2,
-  "join": join2,
-  "int": int2,
-  "float": float2,
-  "round": round2,
-  "floor": floor2,
-  "ceil": ceil2,
-  "percent": percent2,
-  "unit": unit2,
-  "date": date2,
-  "time": time2,
-  "datetime": datetime2,
-  "ymd": ymd2,
-  "hms": hms2,
-  "falsy": falsy2,
-  "truthy": truthy2,
-  "defaults": defaults2,
-  "boolean": boolean2,
-  "number": number2,
-  "string": string2,
-  "null": _null2
-};
-var outputBuiltinFilters2 = builtinFilters2;
-var inputBuiltinFilters = builtinFilters2;
-var builtinFiltersByFilterIOType = {
-  "input": inputBuiltinFilters,
-  "output": outputBuiltinFilters2
-};
-var builtinFilterFn = (name, options) => (filters) => {
-  const filter = filters[name];
-  if (!filter) {
-    raiseError2(`[wcs/filter-unknown] filter not found: ${name}.${didYouMean(name, Object.keys(filters))}${LINT_HINT}`);
-  }
-  return filter(options);
-};
 function finalizeArg(text, firstQuoteStart, lastQuoteEnd) {
   const startLimit = firstQuoteStart === -1 ? text.length : firstQuoteStart;
   let start = 0;
@@ -5220,15 +4517,30 @@ function finalizeArg(text, firstQuoteStart, lastQuoteEnd) {
   }
   return text.slice(start, end);
 }
-function parseFilterArgs(argsText) {
+var NUMBER_LITERAL = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+function toLiteral(text, quoted) {
+  if (quoted)
+    return text;
+  if (text === "true")
+    return true;
+  if (text === "false")
+    return false;
+  if (text === "null")
+    return null;
+  return NUMBER_LITERAL.test(text) ? Number(text) : text;
+}
+function parseFilterArgsWithLiterals(argsText) {
   const args = [];
+  const literals = [];
   let current2 = "";
   let inQuote = null;
   let hasQuote = false;
   let firstQuoteStart = -1;
   let lastQuoteEnd = -1;
   const flush = () => {
-    args.push(finalizeArg(current2, firstQuoteStart, lastQuoteEnd));
+    const arg = finalizeArg(current2, firstQuoteStart, lastQuoteEnd);
+    args.push(arg);
+    literals.push(toLiteral(arg, hasQuote));
     current2 = "";
     hasQuote = false;
     firstQuoteStart = -1;
@@ -5255,19 +4567,21 @@ function parseFilterArgs(argsText) {
       current2 += char;
     }
   }
+  if (inQuote !== null) {
+    raiseError2(`[wcs/binding-syntax] unterminated ${inQuote} quote in the filter arguments "(${argsText})". Close the quote.${LINT_HINT}`);
+  }
   const last = finalizeArg(current2, firstQuoteStart, lastQuoteEnd);
   if (last || hasQuote) {
     args.push(last);
+    literals.push(toLiteral(last, hasQuote));
   }
-  return args;
+  return { args, literals };
 }
-var filterFnByKey = /* @__PURE__ */ new Map();
 function clearFilterFnCacheForTooling() {
-  filterFnByKey.clear();
+  clearFilterResolutionCache();
 }
-function parseFilters(filterTextList, filterIOType) {
-  const builtinFilters3 = builtinFiltersByFilterIOType[filterIOType];
-  const filters = filterTextList.map((filterText) => {
+function parseFilters(filterTextList, _filterIOType) {
+  return filterTextList.map((filterText) => {
     const openParenIndex = filterText.indexOf("(");
     const closeParenIndex = filterText.lastIndexOf(")");
     if (openParenIndex !== -1 && closeParenIndex === -1) {
@@ -5276,45 +4590,59 @@ function parseFilters(filterTextList, filterIOType) {
     if (closeParenIndex !== -1 && openParenIndex === -1) {
       raiseError2(`Invalid filter format: missing opening parenthesis in "${filterText}"`);
     }
-    if (openParenIndex === -1) {
-      const filterName = filterText.trim();
-      const filterKey = `${filterName}():${filterIOType}`;
-      let filterFn = filterFnByKey.get(filterKey);
-      if (typeof filterFn === "undefined") {
-        filterFn = builtinFilterFn(filterName, [])(builtinFilters3);
-        filterFnByKey.set(filterKey, filterFn);
-      }
-      return {
-        filterName,
-        args: [],
-        filterFn
-      };
-    } else {
-      const argsText = filterText.substring(openParenIndex + 1, closeParenIndex);
-      const filterName = filterText.substring(0, openParenIndex).trim();
-      const args = parseFilterArgs(argsText);
-      const filterKey = `${filterName}(${args.join(",")}):${filterIOType}`;
-      let filterFn = filterFnByKey.get(filterKey);
-      if (typeof filterFn === "undefined") {
-        filterFn = builtinFilterFn(filterName, args)(builtinFilters3);
-        filterFnByKey.set(filterKey, filterFn);
-      }
-      return {
-        filterName,
-        args,
-        filterFn
-      };
+    const filterName = (openParenIndex === -1 ? filterText : filterText.substring(0, openParenIndex)).trim();
+    if (filterName.length === 0) {
+      raiseError2(`[wcs/binding-syntax] an empty filter in "${filterTextList.join("|")}" \u2014 remove the extra "|" or name the filter.${LINT_HINT}`);
     }
+    if (openParenIndex === -1) {
+      return { filterName, args: [], literals: [] };
+    }
+    const argsText = filterText.substring(openParenIndex + 1, closeParenIndex);
+    return { filterName, ...parseFilterArgsWithLiterals(argsText) };
   });
-  return filters;
 }
 var trimFn = (s) => s.trim();
+var isQuote = (c) => c === "'" || c === '"';
+function indexOfOutsideQuotes(text, char) {
+  let quote = null;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quote !== null) {
+      if (c === quote)
+        quote = null;
+    } else if (isQuote(c)) {
+      quote = c;
+    } else if (c === char) {
+      return i;
+    }
+  }
+  return -1;
+}
+function splitOutsideQuotes(text, separator) {
+  const parts = [];
+  let quote = null;
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quote !== null) {
+      if (c === quote)
+        quote = null;
+    } else if (isQuote(c)) {
+      quote = c;
+    } else if (c === separator) {
+      parts.push(text.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(text.slice(start));
+  return parts;
+}
 var cacheFilterInfos$1 = /* @__PURE__ */ new Map();
 function clearPropPartCacheForTooling() {
   cacheFilterInfos$1.clear();
 }
 function parsePropPart(propPart) {
-  const pos = propPart.indexOf(FILTER_SEPARATOR2);
+  const pos = indexOfOutsideQuotes(propPart, FILTER_SEPARATOR2);
   let propText = "";
   let filterTexts = [];
   let filtersText = "";
@@ -5325,14 +4653,18 @@ function parsePropPart(propPart) {
     if (cacheFilterInfos$1.has(filtersText)) {
       filters = cacheFilterInfos$1.get(filtersText);
     } else {
-      filterTexts = filtersText.split(FILTER_SEPARATOR2).map(trimFn);
-      filters = parseFilters(filterTexts, "input");
+      filterTexts = splitOutsideQuotes(filtersText, FILTER_SEPARATOR2).map(trimFn);
+      filters = parseFilters(filterTexts);
       cacheFilterInfos$1.set(filtersText, filters);
     }
   } else {
     propText = propPart.trim();
   }
-  const [propName, propModifiersText] = propText.split(MODIFIER_SEPARATOR2).map(trimFn);
+  const modifierParts = propText.split(MODIFIER_SEPARATOR2).map(trimFn);
+  if (modifierParts.length > 2) {
+    raiseError2(`[wcs/binding-syntax] "${propText}": a binding takes one modifier list after a single "${MODIFIER_SEPARATOR2}" \u2014 write "${modifierParts[0]}${MODIFIER_SEPARATOR2}${modifierParts.slice(1).join(",")}".${LINT_HINT}`);
+  }
+  const [propName, propModifiersText] = modifierParts;
   const propSegments = propName.split(DELIMITER2).map(trimFn);
   const propModifiers = propModifiersText ? propModifiersText.split(",").map(trimFn) : [];
   return {
@@ -5347,7 +4679,7 @@ function clearStatePartCacheForTooling() {
   cacheFilterInfos.clear();
 }
 function parseStatePart(statePart) {
-  const pos = statePart.indexOf(FILTER_SEPARATOR2);
+  const pos = indexOfOutsideQuotes(statePart, FILTER_SEPARATOR2);
   let stateAndPath = "";
   let filterTexts = [];
   let filtersText = "";
@@ -5358,8 +4690,8 @@ function parseStatePart(statePart) {
     if (cacheFilterInfos.has(filtersText)) {
       filters = cacheFilterInfos.get(filtersText);
     } else {
-      filterTexts = filtersText.split(FILTER_SEPARATOR2).map(trimFn);
-      filters = parseFilters(filterTexts, "output");
+      filterTexts = splitOutsideQuotes(filtersText, FILTER_SEPARATOR2).map(trimFn);
+      filters = parseFilters(filterTexts);
       cacheFilterInfos.set(filtersText, filters);
     }
   } else {
@@ -5376,8 +4708,12 @@ function parseStatePart(statePart) {
     outFilters: filters
   };
 }
+var KEYWORDS_WITHOUT_MODIFIERS = /* @__PURE__ */ new Set([ELSE_KEYWORD2, "if", "elseif", "for", SPREAD_PROP2]);
+function splitBindTexts(bindText) {
+  return splitOutsideQuotes(bindText, BINDING_SEPARATOR2);
+}
 function parseBindTextsForElement(bindText) {
-  const [...bindTexts] = bindText.split(BINDING_SEPARATOR2).map(trimFn).filter((s) => s.length > 0);
+  const [...bindTexts] = splitBindTexts(bindText).map(trimFn).filter((s) => s.length > 0);
   const results = bindTexts.map((bindText2) => {
     const separatorIndex = bindText2.indexOf(PROP_VALUE_SEPARATOR2);
     if (separatorIndex === -1) {
@@ -5385,7 +4721,14 @@ function parseBindTextsForElement(bindText) {
     }
     const propPart = bindText2.slice(0, separatorIndex).trim();
     const statePart = bindText2.slice(separatorIndex + 1).trim();
+    const keyword = propPart.split(MODIFIER_SEPARATOR2)[0].split(FILTER_SEPARATOR2)[0].trim();
+    if (keyword !== propPart && KEYWORDS_WITHOUT_MODIFIERS.has(keyword)) {
+      raiseError2(`[wcs/binding-syntax] "${bindText2}": "${keyword}" takes no modifiers or filters on its left side \u2014 write "${keyword}:".${LINT_HINT}`);
+    }
     if (propPart === ELSE_KEYWORD2) {
+      if (statePart.length > 0) {
+        raiseError2(`[wcs/binding-syntax] "${bindText2}": "else" takes no value \u2014 write "else:".${LINT_HINT}`);
+      }
       const pathInfo = getPathInfo("#else");
       return {
         propName: ELSE_KEYWORD2,
@@ -5413,7 +4756,7 @@ function parseBindTextsForElement(bindText) {
         ...stateResult,
         bindingType: "spread"
       };
-    } else if (propPart === "if" || propPart === "elseif" || propPart === "for" || propPart === "radio" || propPart === "checkbox") {
+    } else if (propPart === "if" || propPart === "elseif" || propPart === "for") {
       const stateResult = parseStatePart(statePart);
       return {
         propName: propPart,
@@ -5422,6 +4765,14 @@ function parseBindTextsForElement(bindText) {
         inFilters: [],
         ...stateResult,
         bindingType: propPart
+      };
+    } else if (keyword === "radio" || keyword === "checkbox") {
+      const stateResult = parseStatePart(statePart);
+      const propResult = parsePropPart(propPart);
+      return {
+        ...propResult,
+        ...stateResult,
+        bindingType: keyword
       };
     } else {
       const stateResult = parseStatePart(statePart);
@@ -5508,7 +4859,7 @@ function parseEmbeddedTextWithPositions(expression) {
 }
 function parseBindTextWithPositions(bindText) {
   const results = [];
-  const segments = bindText.split(delimiters.binding);
+  const segments = splitBindTexts(bindText);
   let segmentStart = 0;
   for (const segment of segments) {
     const leading = segment.length - segment.trimStart().length;
@@ -5551,24 +4902,42 @@ function parseBindTextWithPositions(bindText) {
   return results;
 }
 
-// src/service/v3MigrationValidator.ts
-function validateV3Migration(html, bindAttrName = "data-wcs", locale3) {
+// src/service/bindingSyntaxValidator.ts
+var CODE_MARKER = "[wcs/binding-syntax]";
+function bindingSyntaxDetail(error) {
+  if (error === null) return null;
+  const at2 = error.indexOf(CODE_MARKER);
+  if (at2 === -1) return null;
+  const detail = error.slice(at2 + CODE_MARKER.length).trim();
+  const hint = detail.indexOf(" Validate statically:");
+  return hint === -1 ? detail : detail.slice(0, hint);
+}
+function validateBindingSyntax(html, bindAttrName = "data-wcs", locale2) {
   const diagnostics = [];
-  const msgs = getMessages(locale3);
-  const push2 = (detail, start, end) => {
-    diagnostics.push({ code: WcsDiagnosticCode.V3Migration, start, end, message: msgs.v3Migration(detail), severity: "info" });
-  };
+  const msgs = getMessages(locale2);
   for (const attr of findAllBindAttributes(html, bindAttrName)) {
     for (const binding of parseBindTextWithPositions(attr.value)) {
-      for (const detail of findV3MigrationIssues(binding.exprText)) {
-        push2(detail, attr.valueStart + binding.exprRange.start, attr.valueStart + binding.exprRange.end);
-      }
+      const detail = bindingSyntaxDetail(binding.error);
+      if (detail === null) continue;
+      diagnostics.push({
+        code: WcsDiagnosticCode.BindingSyntax,
+        start: attr.valueStart + binding.exprRange.start,
+        end: attr.valueStart + binding.exprRange.end,
+        message: msgs.bindingSyntax(detail),
+        severity: "error"
+      });
     }
   }
-  for (const item of [...findAllMustacheSyntax(html), ...findAllCommentBindings(html)]) {
-    for (const detail of findEmbeddedV3MigrationIssues(item.expression)) {
-      push2(detail, item.exprStart, item.exprEnd);
-    }
+  for (const mustache of findAllMustacheSyntax(html)) {
+    const detail = bindingSyntaxDetail(parseEmbeddedTextWithPositions(mustache.expression).error);
+    if (detail === null) continue;
+    diagnostics.push({
+      code: WcsDiagnosticCode.BindingSyntax,
+      start: mustache.exprStart,
+      end: mustache.exprStart + mustache.expression.length,
+      message: msgs.bindingSyntax(detail),
+      severity: "error"
+    });
   }
   return diagnostics;
 }
@@ -6861,9 +6230,9 @@ var DOM_COMMON_PROPERTIES = /* @__PURE__ */ new Set([
 ]);
 var STRUCTURAL_DIRECTIVES2 = /* @__PURE__ */ new Set(["for", "if", "elseif", "else"]);
 var EMPTYISH_SEEDS = /* @__PURE__ */ new Set(["''", '""', "``", "null", "[]", "{}"]);
-function validateIoNodes(html, bindAttribute = "data-wcs", stateTagName = "wcs-state", locale3, fileReader) {
+function validateIoNodes(html, bindAttribute = "data-wcs", stateTagName = "wcs-state", locale2, fileReader) {
   const diagnostics = [];
-  const msgs = getMessages(locale3);
+  const msgs = getMessages(locale2);
   const occurrences = findBuiltinTagOccurrences(html);
   if (occurrences.length === 0) return diagnostics;
   let statePaths = null;
@@ -7011,7 +6380,7 @@ function suggestion(input, candidates, msgs) {
   let best = null;
   let bestDistance = 3;
   for (const c of candidates) {
-    const d = editDistance2(input.toLowerCase(), c.toLowerCase(), bestDistance);
+    const d = editDistance(input.toLowerCase(), c.toLowerCase(), bestDistance);
     if (d < bestDistance) {
       best = c;
       bestDistance = d;
@@ -7019,7 +6388,7 @@ function suggestion(input, candidates, msgs) {
   }
   return best !== null ? msgs.didYouMean(best) : "";
 }
-function editDistance2(a, b, bound) {
+function editDistance(a, b, bound) {
   if (Math.abs(a.length - b.length) >= bound) return bound;
   const prev = new Array(b.length + 1);
   const curr = new Array(b.length + 1);
@@ -7133,9 +6502,9 @@ var ARIA_ATTRIBUTES = /* @__PURE__ */ new Set([
   "aria-brailleroledescription",
   "aria-description"
 ]);
-function validateAriaAttributes(html, bindAttribute = "data-wcs", locale3) {
+function validateAriaAttributes(html, bindAttribute = "data-wcs", locale2) {
   const diagnostics = [];
-  const msgs = getMessages(locale3);
+  const msgs = getMessages(locale2);
   for (const attr of findAllBindAttributes(html, bindAttribute)) {
     let exprOffset = 0;
     for (const expr of splitBindingExpressions(attr.value)) {
@@ -7164,9 +6533,9 @@ function validateAriaAttributes(html, bindAttribute = "data-wcs", locale3) {
 }
 
 // src/service/documentEnvValidator.ts
-function validateDocumentEnv(html, locale3) {
+function validateDocumentEnv(html, locale2) {
   const diagnostics = [];
-  const msgs = getMessages(locale3);
+  const msgs = getMessages(locale2);
   const scanText = blankHtmlComments(html);
   const autos = findWcstackAutoScripts(scanText);
   const stateIndex = autos.findIndex((a) => a.pkg === "state");
@@ -7277,8 +6646,8 @@ function blankJsComments(code) {
 
 // src/service/watchDeclarationValidator.ts
 var STATE_NAME_SEPARATOR = "@";
-function validateWatchDeclarations(html, stateTagName = "wcs-state", locale3) {
-  const msgs = getMessages(locale3);
+function validateWatchDeclarations(html, stateTagName = "wcs-state", locale2) {
+  const msgs = getMessages(locale2);
   const out = [];
   for (const block of parseWcsScriptBlocks(html, stateTagName)) {
     const nonObject = findNonObjectWatch(block.content);
@@ -7342,8 +6711,8 @@ function validateEntry(entry, pathSet, paths, msgs) {
 }
 
 // src/service/scanDeclarationValidator.ts
-function validateScanDeclarations(html, stateTagName = "wcs-state", locale3) {
-  const msgs = getMessages(locale3);
+function validateScanDeclarations(html, stateTagName = "wcs-state", locale2) {
+  const msgs = getMessages(locale2);
   const out = [];
   for (const element of parseWcsStateElements(html, stateTagName)) {
     const mounted = element.bindComponent;
@@ -7701,8 +7070,8 @@ var UNSUPPORTED_API_SITE = {
 };
 var BRACKET_ASSIGNMENT = new RegExp(`${ROOT_BRACKET}${ASSIGN_TAIL}`, "g");
 var PRE_BRACKET_INCDEC = new RegExp(`${PRE_INCDEC}${ROOT_BRACKET}`, "g");
-function validateRecursion(html, stateTagName = "wcs-state", locale3) {
-  const msgs = getMessages(locale3);
+function validateRecursion(html, stateTagName = "wcs-state", locale2) {
+  const msgs = getMessages(locale2);
   const out = [];
   for (const element of parseWcsStateElements(html, stateTagName)) {
     const mounted = element.bindComponent;
@@ -8133,8 +7502,8 @@ function findStateSelector(expr, embedded = false) {
   const nameStart = at2 + 1 + (raw.length - raw.trimStart().length);
   return { start: at2, end: name.length === 0 ? at2 + 1 : nameStart + name.length, name: name.length === 0 ? "default" : name };
 }
-function validateNamedState(html, attrName, stateTagName = "wcs-state", locale3) {
-  const msgs = getMessages(locale3);
+function validateNamedState(html, attrName, stateTagName = "wcs-state", locale2) {
+  const msgs = getMessages(locale2);
   const diagnostics = [];
   for (const element of parseWcsStateElements(html, stateTagName)) {
     const tagText = html.slice(element.tagStart, element.tagEnd);
@@ -8192,8 +7561,8 @@ function findMountPathProblem(mountPath) {
   }
   return null;
 }
-function validateMountAttributes(html, stateTagName = "wcs-state", locale3) {
-  const msgs = getMessages(locale3);
+function validateMountAttributes(html, stateTagName = "wcs-state", locale2) {
+  const msgs = getMessages(locale2);
   const diagnostics = [];
   for (const element of parseWcsStateElements(html, stateTagName)) {
     if (element.mountPath === null) continue;
@@ -14336,8 +13705,8 @@ function buildReferenceIndex(html, options = {}) {
 // src/service/semanticValidator.ts
 var STATE_UPDATED_CALLBACK = "$updatedCallback";
 var API_CALL = /\.\s*\$(getAll|setAll|resolve)\s*\(/g;
-function validateIndexArity(script, scriptStart, locale3) {
-  const msgs = getMessages(locale3);
+function validateIndexArity(script, scriptStart, locale2) {
+  const msgs = getMessages(locale2);
   const out = [];
   API_CALL.lastIndex = 0;
   let match;
@@ -14368,8 +13737,8 @@ function validateIndexArity(script, scriptStart, locale3) {
   }
   return out;
 }
-function validateGetterCycles(script, scriptStart, locale3) {
-  const msgs = getMessages(locale3);
+function validateGetterCycles(script, scriptStart, locale2) {
+  const msgs = getMessages(locale2);
   const getters = analyzeCallableBodies(script).filter((entry) => entry.kind === "getter");
   if (getters.length === 0) return [];
   const declared = new Set(getters.map((getter) => getter.name));
@@ -14424,7 +13793,7 @@ function validateGetterCycles(script, scriptStart, locale3) {
   }
   return out;
 }
-function validateGetterUntrackedReads(script, scriptStart, nestedWriteRoots, locale3) {
+function validateGetterUntrackedReads(script, scriptStart, nestedWriteRoots, locale2) {
   const getters = analyzeCallableBodies(script).filter((entry) => entry.kind === "getter" && entry.accessor === "get");
   if (getters.length === 0) return [];
   const objectRoots = /* @__PURE__ */ new Set();
@@ -14434,7 +13803,7 @@ function validateGetterUntrackedReads(script, scriptStart, nestedWriteRoots, loc
     }
   }
   if (objectRoots.size === 0) return [];
-  const msgs = getMessages(locale3);
+  const msgs = getMessages(locale2);
   const out = [];
   for (const getter of getters) {
     for (const read of collectGetterReads(getter.body) ?? []) {
@@ -14513,12 +13882,12 @@ function collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks) {
   return roots;
 }
 var PATH_TEST_LITERAL = /(?:\.\s*(?:includes|indexOf)\s*\(\s*|[!=]==\s*)(["'])((?:\\.|(?!\1)[^\\])*)\1/g;
-function validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale3) {
+function validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale2) {
   const blocks = parseWcsScriptBlocks(html, stateTagName);
   if (blocks.length === 0) return [];
   const hasCallback = blocks.some((block) => block.content.includes(STATE_UPDATED_CALLBACK));
   if (!hasCallback) return [];
-  const msgs = getMessages(locale3);
+  const msgs = getMessages(locale2);
   const boundPaths = collectBoundPaths(html, stateTagName, bindAttrName);
   const out = [];
   for (const block of blocks) {
@@ -14562,17 +13931,17 @@ function collectBoundPaths(html, stateTagName, bindAttrName) {
   }
   return bound;
 }
-function validateSemantics(html, stateTagName = "wcs-state", locale3, bindAttrName = "data-wcs") {
+function validateSemantics(html, stateTagName = "wcs-state", locale2, bindAttrName = "data-wcs") {
   const out = [];
   const blocks = parseWcsScriptBlocks(html, stateTagName);
   let nestedWriteRoots = null;
   const getNestedWriteRoots = () => nestedWriteRoots ??= collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks);
   for (const block of blocks) {
-    out.push(...validateIndexArity(block.content, block.contentStart, locale3));
-    out.push(...validateGetterCycles(block.content, block.contentStart, locale3));
-    out.push(...validateGetterUntrackedReads(block.content, block.contentStart, getNestedWriteRoots, locale3));
+    out.push(...validateIndexArity(block.content, block.contentStart, locale2));
+    out.push(...validateGetterCycles(block.content, block.contentStart, locale2));
+    out.push(...validateGetterUntrackedReads(block.content, block.contentStart, getNestedWriteRoots, locale2));
   }
-  out.push(...validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale3));
+  out.push(...validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale2));
   return out;
 }
 
@@ -14604,27 +13973,27 @@ function applicationSchemaOf(loaded) {
 function validateDocument(text, options = {}) {
   const bindAttribute = options.bindAttribute ?? "data-wcs";
   const stateTagName = options.stateTagName ?? "wcs-state";
-  const locale3 = options.locale;
+  const locale2 = options.locale;
   const fileReader = options.fileReader;
   const applicationSchema = options.applicationSchema ?? (fileReader !== void 0 ? discoverApplicationManifest(fileReader)?.schema : void 0);
   const out = [];
-  out.push(...validateBindings(text, bindAttribute, stateTagName, locale3, fileReader, applicationSchema));
-  out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute, locale3, fileReader, applicationSchema));
-  out.push(...validateV3Migration(text, bindAttribute, locale3));
-  out.push(...validateIoNodes(text, bindAttribute, stateTagName, locale3, fileReader));
-  out.push(...validateAriaAttributes(text, bindAttribute, locale3));
-  out.push(...validateDocumentEnv(text, locale3));
-  out.push(...validateSemantics(text, stateTagName, locale3, bindAttribute));
-  out.push(...validateArrayMutations(text, stateTagName, locale3));
-  out.push(...validateWatchDeclarations(text, stateTagName, locale3));
-  out.push(...validateScanDeclarations(text, stateTagName, locale3));
-  out.push(...validateRecursion(text, stateTagName, locale3));
-  out.push(...validateNamedState(text, bindAttribute, stateTagName, locale3));
-  out.push(...validateMountAttributes(text, stateTagName, locale3));
-  for (const d of validateStateTypes(text, stateTagName, locale3)) {
+  out.push(...validateBindings(text, bindAttribute, stateTagName, locale2, fileReader, applicationSchema));
+  out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute, locale2, fileReader, applicationSchema));
+  out.push(...validateBindingSyntax(text, bindAttribute, locale2));
+  out.push(...validateIoNodes(text, bindAttribute, stateTagName, locale2, fileReader));
+  out.push(...validateAriaAttributes(text, bindAttribute, locale2));
+  out.push(...validateDocumentEnv(text, locale2));
+  out.push(...validateSemantics(text, stateTagName, locale2, bindAttribute));
+  out.push(...validateArrayMutations(text, stateTagName, locale2));
+  out.push(...validateWatchDeclarations(text, stateTagName, locale2));
+  out.push(...validateScanDeclarations(text, stateTagName, locale2));
+  out.push(...validateRecursion(text, stateTagName, locale2));
+  out.push(...validateNamedState(text, bindAttribute, stateTagName, locale2));
+  out.push(...validateMountAttributes(text, stateTagName, locale2));
+  for (const d of validateStateTypes(text, stateTagName, locale2)) {
     out.push({ code: WcsDiagnosticCode.TypeAnnotation, start: d.start, end: d.end, message: d.message, severity: d.severity });
   }
-  for (const d of validateNestedAssigns(text, stateTagName, locale3)) {
+  for (const d of validateNestedAssigns(text, stateTagName, locale2)) {
     out.push({ code: WcsDiagnosticCode.NestedAssign, start: d.start, end: d.end, message: d.message, severity: d.severity });
   }
   return sortDiagnostics(out);

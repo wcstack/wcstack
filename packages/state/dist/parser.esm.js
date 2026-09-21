@@ -183,51 +183,6 @@ class PathInfo {
  * 安定診断 code（packages/vscode-wcs/src/core/diagnostics.ts）と同一。
  */
 /** 挿入・削除・置換の編集距離。長さ差が max を超えたら早期に max+1 を返す。 */
-function editDistance(a, b, max) {
-    if (Math.abs(a.length - b.length) > max) {
-        return max + 1;
-    }
-    const prev = new Array(b.length + 1);
-    const curr = new Array(b.length + 1);
-    for (let j = 0; j <= b.length; j++) {
-        prev[j] = j;
-    }
-    for (let i = 1; i <= a.length; i++) {
-        curr[0] = i;
-        for (let j = 1; j <= b.length; j++) {
-            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-            curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
-        }
-        for (let j = 0; j <= b.length; j++) {
-            prev[j] = curr[j];
-        }
-    }
-    return prev[b.length];
-}
-/**
- * 候補集合から編集距離 2 以内の最近傍を探し、` Did you mean "<best>"?` を返す。
- * 該当なしは空文字。規準（距離 2・同距離は先勝ち・大小文字は畳んで比較）は
- * lint の did-you-mean（ioNodeValidator の suggestion）と同じ — 三面で提案が
- * 割れないように揃えている。動的キー等で候補が列挙できないサイトでは呼ばない
- * = 誘導文のみに縮退（設計 §3 の縮退）。
- */
-function didYouMean(input, candidates) {
-    // 空入力（`a|` の末尾パイプ等）に短い候補を提案しても無意味なので出さない。
-    if (input.length === 0) {
-        return "";
-    }
-    const folded = input.toLowerCase();
-    let best = null;
-    let bestDistance = 3;
-    for (const candidate of candidates) {
-        const distance = editDistance(folded, candidate.toLowerCase(), 2);
-        if (distance < bestDistance) {
-            best = candidate;
-            bestDistance = distance;
-        }
-    }
-    return best !== null ? ` Did you mean "${best}"?` : "";
-}
 /**
  * lint への誘導（誘導付きメッセージ共通の一文）。
  * **lint が実際にそのケースを検出するサイトにだけ付ける** — 検出しないケースに
@@ -247,1070 +202,23 @@ const STRUCTURAL_BINDING_TYPE_SET = new Set([
     "for",
 ]);
 
-const _config = {
-    locale: 'en'};
-// backward compatible export (read-only usage)
-const config = _config;
-
 /**
- * errorMessages.ts
+ * core/filterRegistry.ts — フィルタ実関数の登録簿（設計案 §4、要件 D16）。
  *
- * Error message generation utilities used by filter functions.
+ * 文法（`path|filter(args)` の解析）は core に残り、**実関数は登録簿から束縛計画の段で引く**。
+ * 解析の段は名前と引数しか作らない（`bindTextParser/parseFilters.ts`）ので、パーサだけを使う
+ * tooling（`@wcstack/state/parser`）はフィルタの実装を 1 バイトも引き込まない。
  *
- * Main responsibilities:
- * - Throws clear error messages when filter options or value type checks fail
- * - Takes function name as argument to specify which filter caused the error
- *
- * Design points:
- * - optionsRequired: Error when required option is not specified
- * - optionMustBeNumber: Error when option value is not a number
- * - valueMustBeNumber: Error when value is not a number
- * - valueMustBeBoolean: Error when value is not boolean
- * - valueMustBeDate: Error when value is not a Date
+ * 書式フィルタ群（`uc` / `date` / `round` …）は `features/formats` が install で登録する。
+ * core が自前で持つのは、エンジン自身が差し込む `not` だけ（`if` / `else` の反転 —
+ * structural/notFilter.ts）。未知のフィルタは束縛計画の段で名指しで落ちる（従来は解析時）。
  */
-/**
- * Throws error when filter requires at least one option but none provided.
- *
- * @param fnName - Name of the filter function
- * @returns Never returns (always throws)
- */
-function optionsRequired(fnName) {
-    raiseError(`filter ${fnName} requires at least one option`);
+/** 名前 + 引数 + 入出力ごとに解決済みの実関数（解決は 1 回だけ） */
+const resolvedByKey = new Map();
+/** 解決済みの答えを捨てる（tooling: `@wcstack/state/parser` の clearParserCaches） */
+function clearFilterResolutionCache() {
+    resolvedByKey.clear();
 }
-/**
- * Throws error when filter option must be a number but invalid value provided.
- *
- * @param fnName - Name of the filter function
- * @returns Never returns (always throws)
- */
-function optionMustBeNumber(fnName) {
-    raiseError(`filter ${fnName} requires a number as option`);
-}
-/**
- * Throws error when filter requires numeric value but non-number provided.
- *
- * @param fnName - Name of the filter function
- * @returns Never returns (always throws)
- */
-function valueMustBeNumber(fnName) {
-    raiseError(`filter ${fnName} requires a number value`);
-}
-/**
- * Throws error when filter requires boolean value but non-boolean provided.
- *
- * @param fnName - Name of the filter function
- * @returns Never returns (always throws)
- */
-function valueMustBeBoolean(fnName) {
-    raiseError(`filter ${fnName} requires a boolean value`);
-}
-/**
- * Throws error when filter requires Date value but non-Date provided.
- *
- * @param fnName - Name of the filter function
- * @returns Never returns (always throws)
- */
-function valueMustBeDate(fnName) {
-    raiseError(`filter ${fnName} requires a date value`);
-}
-/**
- * Throws error when filter requires array value but non-array provided.
- *
- * @param fnName - Name of the filter function
- * @returns Never returns (always throws)
- */
-function valueMustBeArray(fnName) {
-    raiseError(`filter ${fnName} requires an array value`);
-}
-
-// 組み込みフィルタの引数の上限。正本は filters/filterMeta.ts の maxArgs だが、説明文ごとランタイムに
-// 載せないためここに畳む（一致はテストが固定する）。2.x の組み込みに無い名前はパーサが先に拒否する。
-// 配列リテラルで書く — split() の呼び出しは副作用ありとみなされ、defineState だけの import に残る。
-const NO_ARGS = new Set([
-    "not", "abs", "uc", "lc", "cap", "trim", "rev", "int", "float", "date", "time", "datetime",
-    "falsy", "truthy", "boolean", "number", "string", "null",
-]);
-const TWO_ARGS = new Set(["clamp", "slice", "substr", "pad", "truncate"]);
-/** 組み込みフィルタ name が受け取る引数の上限 */
-function maxFilterArgs(name) {
-    return NO_ARGS.has(name) ? 0 : TWO_ARGS.has(name) ? 2 : 1;
-}
-const STRUCTURAL_KEYWORDS = new Set(["for", "if", "elseif", "else", "..."]);
-/**
- * 引用符の無い true / false / null を 1 つだけ取る eq / ne / defaults。3.0 は型付きの値として読む（要件 B9）。
- * 2.x はフィルタに渡す前に引用符を剥がすので、値の側では `eq('true')` と区別できない — 原文で見る。
- */
-const TYPED_LITERAL = /(?:^|\|)\s*(eq|ne|defaults)\s*\(\s*(true|false|null)\s*\)/g;
-/** 閉じていない引用符があるか */
-function hasUnterminatedQuote(text) {
-    let quote = null;
-    for (let i = 0; i < text.length; i++) {
-        const c = text[i];
-        if (quote !== null) {
-            if (c === quote)
-                quote = null;
-        }
-        else if (c === "'" || c === '"') {
-            quote = c;
-        }
-    }
-    return quote !== null;
-}
-/** 右辺（とフィルタ）の判定。属性の式とテキストバインディングで共通 */
-function checkStatePart(text, parsed, issues) {
-    if (hasUnterminatedQuote(text)) {
-        issues.push(`"${text}": 3.0 rejects the unterminated quote.`);
-    }
-    for (const [, fnName, literal] of text.matchAll(TYPED_LITERAL)) {
-        issues.push(`"${fnName}(${literal})": 3.0 reads an unquoted ${literal} as a ${literal === "null" ? "null" : "boolean"}, ` +
-            `not the text. Write ${fnName}('${literal}') to keep the text.`);
-    }
-    if (parsed !== null) {
-        issues.push(...findFilterArityIssues([parsed]));
-    }
-}
-/** 解析済みのフィルタの引数の個数（3.0 は束縛計画の段で [wcs/filter-arity] として拒否する） */
-function findFilterArityIssues(results) {
-    const issues = [];
-    for (const result of results) {
-        for (const filter of [...result.inFilters, ...result.outFilters]) {
-            const max = maxFilterArgs(filter.filterName);
-            if (filter.args.length > max) {
-                issues.push(`"${filter.filterName}" takes at most ${max} argument(s); 3.0 rejects more.`);
-            }
-        }
-    }
-    return issues;
-}
-/**
- * `data-wcs` の式 1 つ（`;` を含まない、trim 済み）の判定。`parsed` があればフィルタの引数の個数も見る。
- * 区切りの無い式は 2.x のパーサが先に拒否するので何も言わない。
- */
-function findV3MigrationIssues(expr, parsed = null) {
-    const issues = [];
-    const colon = expr.indexOf(":");
-    if (colon === -1)
-        return issues;
-    const propPart = expr.slice(0, colon).trim();
-    const modifierParts = propPart.split("#");
-    const keyword = modifierParts[0].split("|")[0].trim();
-    if (modifierParts.length > 2) {
-        issues.push(`"${propPart}": 3.0 rejects a second "#". Write "${modifierParts[0].trim()}#${modifierParts.slice(1).map((m) => m.trim()).join(",")}".`);
-    }
-    if (keyword === "else" && expr.slice(colon + 1).trim().length > 0) {
-        issues.push(`"${expr}": 3.0 rejects a value after "else:".`);
-    }
-    if (STRUCTURAL_KEYWORDS.has(keyword) && keyword !== propPart) {
-        issues.push(`"${propPart}": 3.0 rejects modifiers and filters on "${keyword}". Write "${keyword}:".`);
-    }
-    if ((keyword === "radio" || keyword === "checkbox") && keyword !== propPart) {
-        issues.push(`"${propPart}": 3.0 keeps this a ${keyword} binding that honours the modifiers (2.x binds a property named "${keyword}").`);
-    }
-    checkStatePart(expr.slice(colon + 1).trim(), parsed, issues);
-    return issues;
-}
-/** mustache / コメントのテキストバインディング（右辺だけ、`;` で割らない）の判定 */
-function findEmbeddedV3MigrationIssues(expression, parsed = null) {
-    const issues = [];
-    checkStatePart(expression, parsed, issues);
-    return issues;
-}
-
-const warned = new Set();
-/** 同じ文面は 1 回だけ警告する（文面は書き方とサイトを含むので、書き方・サイトごとに 1 回） */
-function warnV3Migration(message) {
-    if (warned.has(message)) {
-        return;
-    }
-    warned.add(message);
-    console.warn(`[@wcstack/state] [wcs/v3-migration] ${message} See "Preparing for 3.0" in the @wcstack/state README.`);
-}
-
-/**
- * builtinFilters.ts
- *
- * Implementation file for built-in filter functions available in Structive.
- *
- * Main responsibilities:
- * - Provides filters for conversion, comparison, formatting, and validation of numbers, strings, dates, booleans, etc.
- * - Defines functions with options for each filter name, enabling flexible use during binding
- * - Designed for common use as both input and output filters
- *
- * Design points:
- * - Comprehensive coverage of diverse filters: eq, ne, lt, gt, inc, abs, clamp, fix, locale, uc, lc, cap, trim, slice, pad, truncate, join, int, float, round, percent, unit, date, time, ymd, hms, falsy, truthy, defaults, boolean, number, string, null, etc.
- * - Rich type checking and error handling for option values
- * - Centralized management of filter functions with FilterWithOptions type, easy to extend
- * - Dynamic retrieval of filter functions from filter names and options via builtinFilterFn
- */
-function validateNumberString(value) {
-    if (!value || isNaN(Number(value))) {
-        return false;
-    }
-    return true;
-}
-/**
- * Equality filter - compares value with option.
- *
- * @param options - Array with comparison value as first element
- * @returns Filter function that returns boolean
- */
-const eq = (options) => {
-    const opt = options?.[0] ?? optionsRequired('eq');
-    return (value) => {
-        // Align types for comparison
-        if (typeof value === 'number') {
-            if (!validateNumberString(opt)) {
-                optionMustBeNumber('eq');
-            }
-            return value === Number(opt);
-        }
-        if (typeof value === 'string') {
-            return value === opt;
-        }
-        // Strict equality for others
-        return value === opt;
-    };
-};
-/**
- * Inequality filter - compares value with option.
- *
- * @param options - Array with comparison value as first element
- * @returns Filter function that returns boolean
- */
-const ne = (options) => {
-    const opt = options?.[0] ?? optionsRequired('ne');
-    return (value) => {
-        // Align types for comparison
-        if (typeof value === 'number') {
-            if (!validateNumberString(opt)) {
-                optionMustBeNumber('ne');
-            }
-            return value !== Number(opt);
-        }
-        if (typeof value === 'string') {
-            return value !== opt;
-        }
-        // Strict equality for others
-        return value !== opt;
-    };
-};
-/**
- * Boolean NOT filter - inverts boolean value.
- *
- * @param options - Unused
- * @returns Filter function that returns inverted boolean
- */
-const not = (_options) => {
-    return (value) => {
-        if (typeof value !== 'boolean') {
-            valueMustBeBoolean('not');
-        }
-        return !value;
-    };
-};
-/**
- * Less than filter - checks if value is less than option.
- *
- * @param options - Array with comparison number as first element
- * @returns Filter function that returns boolean
- */
-const lt = (options) => {
-    const opt = options?.[0] ?? optionsRequired('lt');
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('lt');
-    }
-    return (value) => {
-        if (typeof value !== 'number') {
-            valueMustBeNumber('lt');
-        }
-        return value < Number(opt);
-    };
-};
-/**
- * Less than or equal filter - checks if value is less than or equal to option.
- *
- * @param options - Array with comparison number as first element
- * @returns Filter function that returns boolean
- */
-const le = (options) => {
-    const opt = options?.[0] ?? optionsRequired('le');
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('le');
-    }
-    return (value) => {
-        if (typeof value !== 'number') {
-            valueMustBeNumber('le');
-        }
-        return value <= Number(opt);
-    };
-};
-/**
- * Greater than filter - checks if value is greater than option.
- *
- * @param options - Array with comparison number as first element
- * @returns Filter function that returns boolean
- */
-const gt = (options) => {
-    const opt = options?.[0] ?? optionsRequired('gt');
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('gt');
-    }
-    return (value) => {
-        if (typeof value !== 'number') {
-            valueMustBeNumber('gt');
-        }
-        return value > Number(opt);
-    };
-};
-/**
- * Greater than or equal filter - checks if value is greater than or equal to option.
- *
- * @param options - Array with comparison number as first element
- * @returns Filter function that returns boolean
- */
-const ge = (options) => {
-    const opt = options?.[0] ?? optionsRequired('ge');
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('ge');
-    }
-    return (value) => {
-        if (typeof value !== 'number') {
-            valueMustBeNumber('ge');
-        }
-        return value >= Number(opt);
-    };
-};
-/**
- * Increment filter - adds option value to input value.
- *
- * @param options - Array with increment number as first element
- * @returns Filter function that returns incremented number
- */
-const inc = (options) => {
-    const opt = options?.[0] ?? optionsRequired('inc');
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('inc');
-    }
-    return (value) => {
-        if (typeof value !== 'number') {
-            valueMustBeNumber('inc');
-        }
-        return value + Number(opt);
-    };
-};
-/**
- * Decrement filter - subtracts option value from input value.
- *
- * @param options - Array with decrement number as first element
- * @returns Filter function that returns decremented number
- */
-const dec = (options) => {
-    const opt = options?.[0] ?? optionsRequired('dec');
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('dec');
-    }
-    return (value) => {
-        if (typeof value !== 'number') {
-            valueMustBeNumber('dec');
-        }
-        return value - Number(opt);
-    };
-};
-/**
- * Multiply filter - multiplies value by option.
- *
- * @param options - Array with multiplier number as first element
- * @returns Filter function that returns multiplied number
- */
-const mul = (options) => {
-    const opt = options?.[0] ?? optionsRequired('mul');
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('mul');
-    }
-    return (value) => {
-        if (typeof value !== 'number') {
-            valueMustBeNumber('mul');
-        }
-        return value * Number(opt);
-    };
-};
-/**
- * Divide filter - divides value by option.
- *
- * @param options - Array with divisor number as first element
- * @returns Filter function that returns divided number
- */
-const div = (options) => {
-    const opt = options?.[0] ?? optionsRequired('div');
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('div');
-    }
-    return (value) => {
-        if (typeof value !== 'number') {
-            valueMustBeNumber('div');
-        }
-        return value / Number(opt);
-    };
-};
-/**
- * Modulo filter - returns remainder of division.
- *
- * @param options - Array with divisor number as first element
- * @returns Filter function that returns remainder
- */
-const mod = (options) => {
-    const opt = options?.[0] ?? optionsRequired('mod');
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('mod');
-    }
-    return (value) => {
-        if (typeof value !== 'number') {
-            valueMustBeNumber('mod');
-        }
-        return value % Number(opt);
-    };
-};
-/**
- * Absolute value filter - returns the magnitude of a number.
- *
- * @param options - Unused
- * @returns Filter function that returns the absolute value
- */
-const abs = (_options) => {
-    return (value) => {
-        if (typeof value !== 'number') {
-            valueMustBeNumber('abs');
-        }
-        return Math.abs(value);
-    };
-};
-/**
- * Clamp filter - constrains a number to the inclusive range [min, max].
- *
- * Saturating conversion in the same family as round/floor/ceil, so it stays on
- * the wire rather than in state. Pairs with `unit` for style bindings:
- * `style.width: ratio|clamp(0,1)|percent(0)`.
- *
- * @param options - Array with minimum as first element and maximum as second (both required)
- * @returns Filter function that returns the clamped number
- */
-const clamp = (options) => {
-    const opt1 = options?.[0] ?? optionsRequired('clamp');
-    if (!validateNumberString(opt1)) {
-        optionMustBeNumber('clamp');
-    }
-    const opt2 = options?.[1] ?? optionsRequired('clamp');
-    if (!validateNumberString(opt2)) {
-        optionMustBeNumber('clamp');
-    }
-    const min = Number(opt1);
-    const max = Number(opt2);
-    return (value) => {
-        if (typeof value !== 'number') {
-            valueMustBeNumber('clamp');
-        }
-        return Math.min(Math.max(value, min), max);
-    };
-};
-/**
- * Fixed decimal filter - formats number to fixed decimal places.
- *
- * @param options - Array with decimal places as first element (default: 0)
- * @returns Filter function that returns formatted string
- */
-const fix = (options) => {
-    const opt = options?.[0] ?? "0";
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('fix');
-    }
-    return (value) => {
-        if (typeof value !== 'number') {
-            valueMustBeNumber('fix');
-        }
-        return value.toFixed(Number(opt));
-    };
-};
-/**
- * Locale number filter - formats number according to locale.
- *
- * ロケール依存フィルタ（`locale` / `date` / `time` / `datetime`）は
- * **明示引数だけを構築時に確定し、既定の `config.locale` は適用のたびに読む**。
- *
- * 以前は `options?.[0] ?? config.locale` を返り値の関数の**外**で解決していた。
- * フィルタ関数はバインド構築時に一度だけ作られるので、これはロケールを
- * クロージャに焼き込むことを意味する。`config.locale` の確定がバインド構築より
- * 遅れると、それ以降どう直しても「同じページの中で日付だけ既定ロケール」が
- * 永続し、しかも `config.locale` は依存グラフに載らないので再描画で回復もしない。
- * 症状（日付だけ英語）は原因（起動順序）から遠く、追いにくい。
- *
- * 適用のたびに読めば、少なくとも**再適用されたバインドは回復する**。ロケールは
- * 起動時に確定する前提（docs/i18n-design.md D1）なので通常この差は現れず、
- * これは順序事故から復帰できるようにするための保険である。
- *
- * 明示引数（`|date(ja-JP)`）は構築時に固定でよい — バインド式の一部であり、
- * 実行中に変わらない。
- *
- * @param options - Array with locale string as first element (default: config.locale)
- * @returns Filter function that returns localized number string
- */
-const locale = (options) => {
-    const explicit = options?.[0];
-    return (value) => {
-        if (typeof value !== 'number') {
-            valueMustBeNumber('locale');
-        }
-        return value.toLocaleString(explicit ?? config.locale);
-    };
-};
-/**
- * Uppercase filter - converts string to uppercase.
- *
- * @param options - Unused
- * @returns Filter function that returns uppercase string
- */
-const uc = (_options) => {
-    return (value) => {
-        return String(value).toUpperCase();
-    };
-};
-/**
- * Lowercase filter - converts string to lowercase.
- *
- * @param options - Unused
- * @returns Filter function that returns lowercase string
- */
-const lc = (_options) => {
-    return (value) => {
-        return String(value).toLowerCase();
-    };
-};
-/**
- * Capitalize filter - capitalizes first character of string.
- *
- * @param options - Unused
- * @returns Filter function that returns capitalized string
- */
-const cap = (_options) => {
-    return (value) => {
-        const v = String(value);
-        if (v.length === 0) {
-            return v;
-        }
-        if (v.length === 1) {
-            return v.toUpperCase();
-        }
-        return v.charAt(0).toUpperCase() + v.slice(1);
-    };
-};
-/**
- * Trim filter - removes whitespace from both ends of string.
- *
- * @param options - Unused
- * @returns Filter function that returns trimmed string
- */
-const trim = (_options) => {
-    return (value) => {
-        return String(value).trim();
-    };
-};
-/**
- * Slice filter - extracts portion of string from specified index.
- *
- * @param options - Array with start index and optional end index
- * @returns Filter function that returns sliced string
- */
-const slice = (options) => {
-    const numberedOpts = [];
-    const opt1 = options?.[0] ?? optionsRequired('slice');
-    if (!validateNumberString(opt1)) {
-        optionMustBeNumber('slice');
-    }
-    numberedOpts.push(Number(opt1));
-    const opt2 = options?.[1];
-    if (typeof opt2 !== 'undefined') {
-        if (!validateNumberString(opt2)) {
-            optionMustBeNumber('slice');
-        }
-        numberedOpts.push(Number(opt2));
-    }
-    return (value) => {
-        return String(value).slice(...numberedOpts);
-    };
-};
-/**
- * Substring filter - extracts substring from specified position and length.
- *
- * @param options - Array with start index and length
- * @returns Filter function that returns substring
- */
-const substr = (options) => {
-    const opt1 = options?.[0] ?? optionsRequired('substr');
-    if (!validateNumberString(opt1)) {
-        optionMustBeNumber('substr');
-    }
-    const opt2 = options?.[1] ?? optionsRequired('substr');
-    if (!validateNumberString(opt2)) {
-        optionMustBeNumber('substr');
-    }
-    return (value) => {
-        return String(value).substr(Number(opt1), Number(opt2));
-    };
-};
-/**
- * Pad filter - pads string to specified length from start.
- *
- * @param options - Array with target length and pad string (default: '0')
- * @returns Filter function that returns padded string
- */
-const pad = (options) => {
-    const opt1 = options?.[0] ?? optionsRequired('pad');
-    if (!validateNumberString(opt1)) {
-        optionMustBeNumber('pad');
-    }
-    const opt2 = options?.[1] ?? '0';
-    return (value) => {
-        return String(value).padStart(Number(opt1), opt2);
-    };
-};
-/**
- * Repeat filter - repeats string specified number of times.
- *
- * @param options - Array with repeat count as first element
- * @returns Filter function that returns repeated string
- */
-const rep = (options) => {
-    const opt = options?.[0] ?? optionsRequired('rep');
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('rep');
-    }
-    return (value) => {
-        return String(value).repeat(Number(opt));
-    };
-};
-/**
- * Reverse filter - reverses character order in string.
- *
- * @param options - Unused
- * @returns Filter function that returns reversed string
- */
-const rev = (_options) => {
-    return (value) => {
-        return String(value).split('').reverse().join('');
-    };
-};
-/**
- * Integer filter - parses value to integer.
- *
- * @param options - Unused
- * @returns Filter function that returns integer
- */
-const int = (_options) => {
-    return (value) => {
-        return parseInt(String(value), 10);
-    };
-};
-/**
- * Float filter - parses value to floating point number.
- *
- * @param options - Unused
- * @returns Filter function that returns float
- */
-const float = (_options) => {
-    return (value) => {
-        return parseFloat(String(value));
-    };
-};
-/**
- * Round filter - rounds number to specified decimal places.
- *
- * @param options - Array with decimal places as first element (default: 0)
- * @returns Filter function that returns rounded number
- */
-const round = (options) => {
-    const opt = options?.[0] ?? '0';
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('round');
-    }
-    return (value) => {
-        if (typeof value !== 'number') {
-            valueMustBeNumber('round');
-        }
-        const optValue = Math.pow(10, Number(opt));
-        return Math.round(value * optValue) / optValue;
-    };
-};
-/**
- * Floor filter - rounds number down to specified decimal places.
- *
- * @param options - Array with decimal places as first element (default: 0)
- * @returns Filter function that returns floored number
- */
-const floor = (options) => {
-    const opt = options?.[0] ?? '0';
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('floor');
-    }
-    return (value) => {
-        if (typeof value !== 'number') {
-            valueMustBeNumber('floor');
-        }
-        const optValue = Math.pow(10, Number(opt));
-        return Math.floor(value * optValue) / optValue;
-    };
-};
-/**
- * Ceiling filter - rounds number up to specified decimal places.
- *
- * @param options - Array with decimal places as first element (default: 0)
- * @returns Filter function that returns ceiled number
- */
-const ceil = (options) => {
-    const opt = options?.[0] ?? '0';
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('ceil');
-    }
-    return (value) => {
-        if (typeof value !== 'number') {
-            valueMustBeNumber('ceil');
-        }
-        const optValue = Math.pow(10, Number(opt));
-        return Math.ceil(value * optValue) / optValue;
-    };
-};
-/**
- * Percent filter - formats number as percentage string.
- *
- * @param options - Array with decimal places as first element (default: 0)
- * @returns Filter function that returns percentage string with '%'
- */
-const percent = (options) => {
-    const opt = options?.[0] ?? '0';
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('percent');
-    }
-    return (value) => {
-        if (typeof value !== 'number') {
-            valueMustBeNumber('percent');
-        }
-        return `${(value * 100).toFixed(Number(opt))}%`;
-    };
-};
-/**
- * Unit filter - appends a CSS unit (or any suffix) to the value.
- *
- * A number alone does nothing in CSS, so without this the unit has to be built in
- * state — which drags presentation into the source of truth, and in the worst case
- * forces a whole derived array just to carry `"42%"` strings.
- * `style.height: samples.*.cpu|clamp(0,100)|fix(0)|unit(%)` keeps it on the wire.
- *
- * Accepts strings as well as numbers **on purpose**: the useful chains run through
- * `fix` / `percent`, which already return strings. Rejecting non-numbers here would
- * break exactly the combination this filter exists for.
- *
- * `null` / `undefined` pass through untouched rather than becoming `"undefinedpx"`,
- * so the binding layer's "undefined skips the write, null clears" semantics survive.
- *
- * @param options - Array with the unit/suffix as first element (required)
- * @returns Filter function that returns the value with the unit appended
- */
-const unit = (options) => {
-    const opt = options?.[0] ?? optionsRequired('unit');
-    return (value) => {
-        if (value === null || typeof value === 'undefined') {
-            return value;
-        }
-        return String(value) + opt;
-    };
-};
-/**
- * Join filter - joins array elements into a string.
- *
- * The default separator is `", "` rather than `","`: a bare comma is what `String()`
- * already produces without any filter, so defaulting to it would make `|join` a no-op.
- *
- * @param options - Array with separator as first element (default: ', ')
- * @returns Filter function that returns the joined string
- */
-const join = (options) => {
-    const opt = options?.[0] ?? ', ';
-    return (value) => {
-        if (!Array.isArray(value)) {
-            valueMustBeArray('join');
-        }
-        return value.join(opt);
-    };
-};
-/**
- * Truncate filter - shortens a string and appends an ellipsis.
- *
- * The length option counts **kept characters**, not the total including the suffix,
- * matching the existing `slice(0, n)` reading. A string at or below the limit is
- * returned untouched (no suffix).
- *
- * @param options - Array with max kept length as first element and suffix as second (default: '…')
- * @returns Filter function that returns the truncated string
- */
-const truncate = (options) => {
-    const opt1 = options?.[0] ?? optionsRequired('truncate');
-    if (!validateNumberString(opt1)) {
-        optionMustBeNumber('truncate');
-    }
-    const maxLength = Number(opt1);
-    const suffix = options?.[1] ?? '…';
-    return (value) => {
-        const v = String(value);
-        if (v.length <= maxLength) {
-            return v;
-        }
-        return v.slice(0, maxLength) + suffix;
-    };
-};
-/**
- * Date filter - formats Date object as localized date string.
- *
- * @param options - Array with locale string as first element (default: config.locale)
- * @returns Filter function that returns date string
- */
-const date = (options) => {
-    // 既定ロケールは適用のたびに読む（`locale` フィルタの注記を参照）
-    const explicit = options?.[0];
-    return (value) => {
-        if (!(value instanceof Date)) {
-            valueMustBeDate('date');
-        }
-        return value.toLocaleDateString(explicit ?? config.locale);
-    };
-};
-/**
- * Time filter - formats Date object as localized time string.
- *
- * @param options - Array with locale string as first element (default: config.locale)
- * @returns Filter function that returns time string
- */
-const time = (options) => {
-    // 既定ロケールは適用のたびに読む（`locale` フィルタの注記を参照）
-    const explicit = options?.[0];
-    return (value) => {
-        if (!(value instanceof Date)) {
-            valueMustBeDate('time');
-        }
-        return value.toLocaleTimeString(explicit ?? config.locale);
-    };
-};
-/**
- * DateTime filter - formats Date object as localized date and time string.
- *
- * @param options - Array with locale string as first element (default: config.locale)
- * @returns Filter function that returns datetime string
- */
-const datetime = (options) => {
-    // 既定ロケールは適用のたびに読む（`locale` フィルタの注記を参照）
-    const explicit = options?.[0];
-    return (value) => {
-        if (!(value instanceof Date)) {
-            valueMustBeDate('datetime');
-        }
-        return value.toLocaleString(explicit ?? config.locale);
-    };
-};
-/**
- * Year-Month-Day filter - formats Date object as YYYY-MM-DD string.
- *
- * @param options - Array with separator string as first element (default: '-')
- * @returns Filter function that returns formatted date string
- */
-const ymd = (options) => {
-    const opt = options?.[0] ?? '-';
-    return (value) => {
-        if (!(value instanceof Date)) {
-            valueMustBeDate('ymd');
-        }
-        const year = value.getFullYear().toString();
-        const month = (value.getMonth() + 1).toString().padStart(2, '0');
-        const day = value.getDate().toString().padStart(2, '0');
-        return `${year}${opt}${month}${opt}${day}`;
-    };
-};
-/**
- * Hour-Minute-Second filter - formats Date object as HH:MM:SS string.
- *
- * The counterpart of `ymd`: a fixed, zero-padded, locale-independent rendering with a
- * configurable separator, for when `time` (locale-formatted) is not stable enough.
- *
- * @param options - Array with separator string as first element (default: ':')
- * @returns Filter function that returns formatted time string
- */
-const hms = (options) => {
-    const opt = options?.[0] ?? ':';
-    return (value) => {
-        if (!(value instanceof Date)) {
-            valueMustBeDate('hms');
-        }
-        const hours = value.getHours().toString().padStart(2, '0');
-        const minutes = value.getMinutes().toString().padStart(2, '0');
-        const seconds = value.getSeconds().toString().padStart(2, '0');
-        return `${hours}${opt}${minutes}${opt}${seconds}`;
-    };
-};
-/** 3.0 は truthy / falsy / defaults を JavaScript の真偽判定に揃える（要件 B10）— 0n の差を予告する */
-function warnBigIntZero(fnName, value) {
-    if (value === 0n) {
-        warnV3Migration(`"${fnName}" got 0n: 3.0 treats it as falsy.`);
-    }
-}
-/**
- * Falsy filter - checks if value is falsy.
- *
- * @param options - Unused
- * @returns Filter function that returns true for false/null/undefined/0/''/NaN
- */
-const falsy = (_options) => {
-    return (value) => {
-        warnBigIntZero('falsy', value);
-        return value === false || value === null || value === undefined || value === 0 || value === '' || Number.isNaN(value);
-    };
-};
-/**
- * Truthy filter - checks if value is truthy.
- *
- * @param options - Unused
- * @returns Filter function that returns true for non-falsy values
- */
-const truthy = (_options) => {
-    return (value) => {
-        warnBigIntZero('truthy', value);
-        return value !== false && value !== null && value !== undefined && value !== 0 && value !== '' && !Number.isNaN(value);
-    };
-};
-/**
- * Default filter - returns default value if input is falsy.
- *
- * @param options - Array with default value as first element
- * @returns Filter function that returns value or default
- */
-const defaults = (options) => {
-    const opt = options?.[0] ?? optionsRequired('defaults');
-    return (value) => {
-        warnBigIntZero('defaults', value);
-        if (value === false || value === null || value === undefined || value === 0 || value === '' || Number.isNaN(value)) {
-            return opt;
-        }
-        return value;
-    };
-};
-/**
- * Boolean filter - converts value to boolean.
- *
- * @param options - Unused
- * @returns Filter function that returns boolean
- */
-const boolean = (_options) => {
-    return (value) => {
-        return Boolean(value);
-    };
-};
-/**
- * Number filter - converts value to number.
- *
- * @param options - Unused
- * @returns Filter function that returns number
- */
-const number = (_options) => {
-    return (value) => {
-        return Number(value);
-    };
-};
-/**
- * String filter - converts value to string.
- *
- * @param options - Unused
- * @returns Filter function that returns string
- */
-const string = (_options) => {
-    return (value) => {
-        return String(value);
-    };
-};
-/**
- * Null filter - converts empty string to null.
- *
- * @param options - Unused
- * @returns Filter function that returns null for empty string, otherwise original value
- */
-const _null = (_options) => {
-    return (value) => {
-        return (value === "") ? null : value;
-    };
-};
-const builtinFilters = {
-    "eq": eq,
-    "ne": ne,
-    "not": not,
-    "lt": lt,
-    "le": le,
-    "gt": gt,
-    "ge": ge,
-    "inc": inc,
-    "dec": dec,
-    "mul": mul,
-    "div": div,
-    "mod": mod,
-    "abs": abs,
-    "clamp": clamp,
-    "fix": fix,
-    "locale": locale,
-    "uc": uc,
-    "lc": lc,
-    "cap": cap,
-    "trim": trim,
-    "slice": slice,
-    "substr": substr,
-    "pad": pad,
-    "rep": rep,
-    "rev": rev,
-    "truncate": truncate,
-    "join": join,
-    "int": int,
-    "float": float,
-    "round": round,
-    "floor": floor,
-    "ceil": ceil,
-    "percent": percent,
-    "unit": unit,
-    "date": date,
-    "time": time,
-    "datetime": datetime,
-    "ymd": ymd,
-    "hms": hms,
-    "falsy": falsy,
-    "truthy": truthy,
-    "defaults": defaults,
-    "boolean": boolean,
-    "number": number,
-    "string": string,
-    "null": _null,
-};
-const outputBuiltinFilters = builtinFilters;
-const inputBuiltinFilters = builtinFilters;
-const builtinFiltersByFilterIOType = {
-    "input": inputBuiltinFilters,
-    "output": outputBuiltinFilters,
-};
-/**
- * Retrieves built-in filter function by name and options.
- *
- * @param name - Filter name
- * @param options - Array of option strings
- * @returns Function that takes FilterWithOptions and returns filter function
- */
-const builtinFilterFn = (name, options) => (filters) => {
-    const filter = filters[name];
-    if (!filter) {
-        // lint の wcs/filter-unknown と同じ語彙・同じ did-you-mean 規準（三面同語彙）。
-        raiseError(`[wcs/filter-unknown] filter not found: ${name}.${didYouMean(name, Object.keys(filters))}${LINT_HINT}`);
-    }
-    return filter(options);
-};
 
 /**
  * フィルタ引数リストのパース。`filter(a, b)` の `a, b` 部分を受け取る。
@@ -1336,15 +244,32 @@ function finalizeArg(text, firstQuoteStart, lastQuoteEnd) {
     }
     return text.slice(start, end);
 }
-function parseFilterArgs(argsText) {
+/** 引用符の無い引数の型（要件 B9）: true / false / null / 数値は型付き、それ以外は文字列 */
+const NUMBER_LITERAL = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+function toLiteral(text, quoted) {
+    if (quoted)
+        return text;
+    if (text === "true")
+        return true;
+    if (text === "false")
+        return false;
+    if (text === "null")
+        return null;
+    return NUMBER_LITERAL.test(text) ? Number(text) : text;
+}
+/** 引数の原文と、その型付きの値（要件 B9）を一緒に返す。原文は引用符を外したもの */
+function parseFilterArgsWithLiterals(argsText) {
     const args = [];
+    const literals = [];
     let current = '';
     let inQuote = null;
     let hasQuote = false;
     let firstQuoteStart = -1;
     let lastQuoteEnd = -1;
     const flush = () => {
-        args.push(finalizeArg(current, firstQuoteStart, lastQuoteEnd));
+        const arg = finalizeArg(current, firstQuoteStart, lastQuoteEnd);
+        args.push(arg);
+        literals.push(toLiteral(arg, hasQuote));
         current = '';
         hasQuote = false;
         firstQuoteStart = -1;
@@ -1375,22 +300,31 @@ function parseFilterArgs(argsText) {
             current += char;
         }
     }
+    if (inQuote !== null) {
+        // 閉じていない引用符は受理しない（要件 B2）。以前は黙って閉じたことにしていた
+        raiseError(`[wcs/binding-syntax] unterminated ${inQuote} quote in the filter arguments "(${argsText})". Close the quote.${LINT_HINT}`);
+    }
     const last = finalizeArg(current, firstQuoteStart, lastQuoteEnd);
     if (last || hasQuote) {
         args.push(last);
+        literals.push(toLiteral(last, hasQuote));
     }
-    return args;
+    return { args, literals };
 }
 
-const filterFnByKey = new Map();
 /** tooling 専用（parser.ts の clearParserCaches からのみ呼ぶ）。 */
 function clearFilterFnCacheForTooling() {
-    filterFnByKey.clear();
+    clearFilterResolutionCache();
 }
 // format: filterName(arg1,arg2) or filterName
-function parseFilters(filterTextList, filterIOType) {
-    const builtinFilters = builtinFiltersByFilterIOType[filterIOType];
-    const filters = filterTextList.map((filterText) => {
+/**
+ * 文法の段（要件 D16）: 名前と引数だけを読む。**実関数は引かない** — 束縛計画の段で
+ * 登録簿から解決する（`core/filterRegistry.ts`・`bindings/getBindingInfos.ts`）。
+ * 未知のフィルタもここでは落とさない: パーサだけを使う tooling は実装を持たないので、
+ * 「知らない名前」を解析の段で判定できない。
+ */
+function parseFilters(filterTextList, _filterIOType) {
+    return filterTextList.map((filterText) => {
         const openParenIndex = filterText.indexOf('(');
         const closeParenIndex = filterText.lastIndexOf(')');
         // check parentheses
@@ -1400,42 +334,69 @@ function parseFilters(filterTextList, filterIOType) {
         if (closeParenIndex !== -1 && openParenIndex === -1) {
             raiseError(`Invalid filter format: missing opening parenthesis in "${filterText}"`);
         }
+        const filterName = (openParenIndex === -1 ? filterText : filterText.substring(0, openParenIndex)).trim();
+        if (filterName.length === 0) {
+            // 空のフィルタ（`x|`・`x||y`・`x|(1)`）は文法の誤り。解析の段で名指しで落とす — 未知の
+            // フィルタとは別物で、実関数の解決（束縛計画の段）まで持ち越すと tooling の解析が素通りする
+            raiseError(`[wcs/binding-syntax] an empty filter in "${filterTextList.join("|")}" — remove the extra "|" or name the filter.${LINT_HINT}`);
+        }
         if (openParenIndex === -1) {
             // no arguments
-            const filterName = filterText.trim();
-            const filterKey = `${filterName}():${filterIOType}`;
-            let filterFn = filterFnByKey.get(filterKey);
-            if (typeof filterFn === 'undefined') {
-                filterFn = builtinFilterFn(filterName, [])(builtinFilters);
-                filterFnByKey.set(filterKey, filterFn);
-            }
-            return {
-                filterName: filterName,
-                args: [],
-                filterFn: filterFn,
-            };
+            return { filterName, args: [], literals: [] };
         }
-        else {
-            const argsText = filterText.substring(openParenIndex + 1, closeParenIndex);
-            const filterName = filterText.substring(0, openParenIndex).trim();
-            const args = parseFilterArgs(argsText);
-            const filterKey = `${filterName}(${args.join(',')}):${filterIOType}`;
-            let filterFn = filterFnByKey.get(filterKey);
-            if (typeof filterFn === 'undefined') {
-                filterFn = builtinFilterFn(filterName, args)(builtinFilters);
-                filterFnByKey.set(filterKey, filterFn);
-            }
-            return {
-                filterName,
-                args,
-                filterFn,
-            };
-        }
+        const argsText = filterText.substring(openParenIndex + 1, closeParenIndex);
+        return { filterName, ...parseFilterArgsWithLiterals(argsText) };
     });
-    return filters;
 }
 
 const trimFn = (s) => s.trim();
+const isQuote = (c) => c === "'" || c === '"';
+/**
+ * `text` の中で、引用符（`'` / `"`）の外にある最初の `char` の位置。無ければ -1（要件 B1）。
+ * 閉じていない引用符はそのまま末尾まで続く扱い — 不正な引用符はフィルタ引数の段で名指しで落ちる。
+ */
+function indexOfOutsideQuotes(text, char) {
+    let quote = null;
+    for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (quote !== null) {
+            if (c === quote)
+                quote = null;
+        }
+        else if (isQuote(c)) {
+            quote = c;
+        }
+        else if (c === char) {
+            return i;
+        }
+    }
+    return -1;
+}
+/**
+ * `separator` で区切る。ただし引用符の中は区切らない（要件 B1）: `join(';')` や `join('|')` の
+ * 区切り文字は引数であって、バインディングやフィルタの区切りではない。
+ */
+function splitOutsideQuotes(text, separator) {
+    const parts = [];
+    let quote = null;
+    let start = 0;
+    for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (quote !== null) {
+            if (c === quote)
+                quote = null;
+        }
+        else if (isQuote(c)) {
+            quote = c;
+        }
+        else if (c === separator) {
+            parts.push(text.slice(start, i));
+            start = i + 1;
+        }
+    }
+    parts.push(text.slice(start));
+    return parts;
+}
 
 const cacheFilterInfos$1 = new Map();
 /** tooling 専用（parser.ts の clearParserCaches からのみ呼ぶ）。 */
@@ -1450,7 +411,7 @@ function clearPropPartCacheForTooling() {
 //   'class.className' for class names (e.g., class.active, class.hidden)
 //   'onclick', 'onchange' etc. for event listeners
 function parsePropPart(propPart) {
-    const pos = propPart.indexOf(FILTER_SEPARATOR);
+    const pos = indexOfOutsideQuotes(propPart, FILTER_SEPARATOR);
     let propText = '';
     let filterTexts = [];
     let filtersText = '';
@@ -1462,15 +423,20 @@ function parsePropPart(propPart) {
             filters = cacheFilterInfos$1.get(filtersText);
         }
         else {
-            filterTexts = filtersText.split(FILTER_SEPARATOR).map(trimFn);
-            filters = parseFilters(filterTexts, "input");
+            filterTexts = splitOutsideQuotes(filtersText, FILTER_SEPARATOR).map(trimFn);
+            filters = parseFilters(filterTexts);
             cacheFilterInfos$1.set(filtersText, filters);
         }
     }
     else {
         propText = propPart.trim();
     }
-    const [propName, propModifiersText] = propText.split(MODIFIER_SEPARATOR).map(trimFn);
+    const modifierParts = propText.split(MODIFIER_SEPARATOR).map(trimFn);
+    if (modifierParts.length > 2) {
+        // 修飾子の並びは 1 つだけ（要件 B2）。`value#ro#wo` は以前 `ro` だけを残して黙って捨てていた
+        raiseError(`[wcs/binding-syntax] "${propText}": a binding takes one modifier list after a single "${MODIFIER_SEPARATOR}" — write "${modifierParts[0]}${MODIFIER_SEPARATOR}${modifierParts.slice(1).join(",")}".${LINT_HINT}`);
+    }
+    const [propName, propModifiersText] = modifierParts;
     const propSegments = propName.split(DELIMITER).map(trimFn);
     const propModifiers = propModifiersText
         ? propModifiersText.split(',').map(trimFn)
@@ -1492,7 +458,8 @@ function clearStatePartCacheForTooling() {
 // statePath-format: path.to.property (e.g., user.name.first, users.*.name, users.0.name, not include @)
 // filters-format: filterName or filterName(arg1,arg2)
 function parseStatePart(statePart) {
-    const pos = statePart.indexOf(FILTER_SEPARATOR);
+    // 引用符の中の `|` はフィルタの区切りではない（要件 B1 — `join('|')`）
+    const pos = indexOfOutsideQuotes(statePart, FILTER_SEPARATOR);
     let stateAndPath = '';
     let filterTexts = [];
     let filtersText = '';
@@ -1504,8 +471,8 @@ function parseStatePart(statePart) {
             filters = cacheFilterInfos.get(filtersText);
         }
         else {
-            filterTexts = filtersText.split(FILTER_SEPARATOR).map(trimFn);
-            filters = parseFilters(filterTexts, "output");
+            filterTexts = splitOutsideQuotes(filtersText, FILTER_SEPARATOR).map(trimFn);
+            filters = parseFilters(filterTexts);
             cacheFilterInfos.set(filtersText, filters);
         }
     }
@@ -1534,8 +501,17 @@ function parseStatePart(statePart) {
 //   for: statePart only (single binding for loop rendering)
 //   onclick: statePart, onchange: statePart etc. (event listeners)
 //   ...: statePart (spread — expand wcBindable properties+inputs of target object)
+/** 左辺に修飾子も入力フィルタも取らない束縛（構造ディレクティブと spread）— 付いていれば拒否する（要件 B4） */
+const KEYWORDS_WITHOUT_MODIFIERS = new Set([ELSE_KEYWORD, 'if', 'elseif', 'for', SPREAD_PROP]);
+/**
+ * `data-wcs` の値をバインディングごとに区切る（前後の空白は残す — tooling が位置を数えられるように）。
+ * 引用符の中の `;` は区切りではない（要件 B1 — `join(';')`）。ランタイムと tooling（`@wcstack/state/parser`）で共有する
+ */
+function splitBindTexts(bindText) {
+    return splitOutsideQuotes(bindText, BINDING_SEPARATOR);
+}
 function parseBindTextsForElement(bindText) {
-    const [...bindTexts] = bindText.split(BINDING_SEPARATOR).map(trimFn).filter(s => s.length > 0);
+    const [...bindTexts] = splitBindTexts(bindText).map(trimFn).filter(s => s.length > 0);
     const results = bindTexts.map((bindText) => {
         const separatorIndex = bindText.indexOf(PROP_VALUE_SEPARATOR);
         if (separatorIndex === -1) {
@@ -1543,7 +519,17 @@ function parseBindTextsForElement(bindText) {
         }
         const propPart = bindText.slice(0, separatorIndex).trim();
         const statePart = bindText.slice(separatorIndex + 1).trim();
+        // 種別は修飾子・入力フィルタより前の名前で決める（要件 B4）。以前は左辺全体との完全一致で
+        // 判定していたので、`radio#ro:` が汎用プロパティに落ちていた
+        const keyword = propPart.split(MODIFIER_SEPARATOR)[0].split(FILTER_SEPARATOR)[0].trim();
+        if (keyword !== propPart && KEYWORDS_WITHOUT_MODIFIERS.has(keyword)) {
+            raiseError(`[wcs/binding-syntax] "${bindText}": "${keyword}" takes no modifiers or filters on its left side — write "${keyword}:".${LINT_HINT}`);
+        }
         if (propPart === ELSE_KEYWORD) {
+            if (statePart.length > 0) {
+                // else は値を取らない（要件 B2）。以前は右辺を黙って捨てていた
+                raiseError(`[wcs/binding-syntax] "${bindText}": "else" takes no value — write "else:".${LINT_HINT}`);
+            }
             const pathInfo = getPathInfo('#else');
             return {
                 propName: ELSE_KEYWORD,
@@ -1575,9 +561,7 @@ function parseBindTextsForElement(bindText) {
         }
         else if (propPart === 'if'
             || propPart === 'elseif'
-            || propPart === 'for'
-            || propPart === 'radio'
-            || propPart === 'checkbox') {
+            || propPart === 'for') {
             const stateResult = parseStatePart(statePart);
             return {
                 propName: propPart,
@@ -1586,6 +570,16 @@ function parseBindTextsForElement(bindText) {
                 inFilters: [],
                 ...stateResult,
                 bindingType: propPart,
+            };
+        }
+        else if (keyword === 'radio' || keyword === 'checkbox') {
+            // 修飾子（`#ro`・`#onchange` …）と入力フィルタは radio / checkbox のハンドラが読む（要件 B4）
+            const stateResult = parseStatePart(statePart);
+            const propResult = parsePropPart(propPart);
+            return {
+                ...propResult,
+                ...stateResult,
+                bindingType: keyword,
             };
         }
         else {
@@ -1683,4 +677,4 @@ function clearParserCaches() {
     clearFilterFnCacheForTooling();
 }
 
-export { clearParserCaches, findEmbeddedV3MigrationIssues, findV3MigrationIssues, getPathInfo, parseBindTextForEmbeddedNode, parseBindTextsForElement };
+export { clearParserCaches, getPathInfo, parseBindTextForEmbeddedNode, parseBindTextsForElement, splitBindTexts };

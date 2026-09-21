@@ -96,6 +96,24 @@ interface IMountOverlaySummaryLike {
     readonly getterKeys: readonly string[];
 }
 /**
+ * 鍵付き購読（`$eq` / `$eqPath` / `$eqIndex`）の path 1 つ分の要約（keyedSubscriptions の要素 —
+ * protocol v2 追補・要件 D17）。取り出した時点の数え。
+ */
+interface IKeyedSubscriptionSummaryLike {
+    /** `$eq` 系の第 1 引数（選択を持つパス） */
+    readonly path: string;
+    /** path が getter 由来で鍵付きで購読できず、追跡付きの読みに落ちた（変わるたびに読む getter が全部再評価される） */
+    readonly tracked: boolean;
+    /** 行ごとの購読の数 */
+    readonly rows: number;
+    /** 行ごとの購読が使っている鍵の数 */
+    readonly keys: number;
+    /** `$eqIndex` の最内段のリスト単位の監視の数 */
+    readonly lists: number;
+    /** path の最後に見た値（見ていなければ undefined）。生値 */
+    readonly lastValue: unknown;
+}
+/**
  * 宣言レベルのバインディング 1 件（getDeclaredBindings の要素・protocol v1 追補）。
  * ランタイム正本パーサの結果が構造的に流れる。宣言タプルで dedupe 済みの
  * 「宣言の集合」であり、レンダリング行数に比例したインスタンス列ではない。
@@ -232,6 +250,12 @@ interface IDevtoolsSourceLike {
      * v2 より前のランタイムには無いため、無ければ UI はセクションごと出さない。
      */
     overlays?(rootNode: Node): IMountOverlaySummaryLike[];
+    /**
+     * protocol v2 追補 API（optional 扱いで呼ぶ・要件 D17）。rootNode のツリーの鍵付き購読の
+     * path ごとの要約。`$eq` 系が一度も評価されていなければ空配列。3.0 より前の state には無いため、
+     * 無ければ UI はセクションごと出さない。
+     */
+    keyedSubscriptions?(rootNode: Node): IKeyedSubscriptionSummaryLike[];
     read(rootNode: Node, path: string, indexes?: number[]): unknown;
     write(rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
     /**
@@ -405,6 +429,11 @@ declare class DevtoolsCore {
      * 出さない（後方互換）。マウントが無いツリーは空配列。
      */
     overlaysOf(entry: IRosterEntry): IMountOverlaySummaryLike[] | null;
+    /**
+     * roster entry のツリーの鍵付き購読（keyedSubscriptions — protocol v2 追補・要件 D17）。
+     * 実装しないランタイム（3.0 より前の state）では null — UI はセクションごと出さない。
+     */
+    keyedSubscriptionsOf(entry: IRosterEntry): IKeyedSubscriptionSummaryLike[] | null;
     readValue(entry: IRosterEntry, path: string, indexes?: number[]): unknown;
     writeValue(entry: IRosterEntry, path: string, value: unknown, indexes?: number[]): void;
     private _notify;
@@ -484,6 +513,17 @@ declare class WcsDevtools extends HTMLElement {
     private _rosterKey;
     private _selectedRoster;
     private _renderStatePane;
+    /**
+     * 選択ツリーの鍵付き購読セクション（keyedSubscriptions — protocol v2 追補・要件 D17）。
+     * `$eq` / `$eqPath` / `$eqIndex` の購読は依存グラフの動的な変化で、上の状態ツリーにも
+     * Wiring の台帳にも現れない。path ごとに購読の数と最後の値を出し、getter 由来の path で
+     * 追跡付きの読みに落ちたもの（変わるたびに読む getter が全部再評価される）を warn で目立たせる。
+     * 未提供の旧ランタイム（null）と `$eq` 系が一度も評価されていないツリー（空配列）では出さない。
+     * pull の時機は Overlays と同じく State ペインの再描画に乗る。
+     */
+    private _renderKeyedSection;
+    /** 鍵付き購読 1 path の描画（path・購読の数・最後の値、または追跡付きへの落ち）。 */
+    private _keyedRow;
     /**
      * 選択ツリーのマウント記録セクション（overlays — protocol v2・D20 の可視化）。
      * マウントの私有キー・getter はオーバーレイ専用アドレス空間（マーカー `#m<id>`）に

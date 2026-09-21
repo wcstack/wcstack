@@ -1,3 +1,19 @@
+/**
+ * Filter/types.ts
+ *
+ * Type definition file for filter functions.
+ *
+ * Main responsibilities:
+ * - Defines types for filter functions (FilterFn) and filter functions with options (FilterWithOptionsFn)
+ * - Type-safe management of filter name-to-function mappings (FilterWithOptions) and filter function arrays (Filters)
+ * - Defines types for retrieving filter functions from built-in filter collections
+ *
+ * Design points:
+ * - Type design enabling flexible filter design and extension
+ * - Supports filters with options and combinations of multiple filters
+ */
+type FilterFn<T = unknown> = (value: unknown) => T;
+
 interface IPathInfo {
     readonly id: number;
     readonly path: string;
@@ -24,26 +40,23 @@ interface IPathInfo {
     readonly wildcardCount: number;
 }
 
-/**
- * Filter/types.ts
- *
- * Type definition file for filter functions.
- *
- * Main responsibilities:
- * - Defines types for filter functions (FilterFn) and filter functions with options (FilterWithOptionsFn)
- * - Type-safe management of filter name-to-function mappings (FilterWithOptions) and filter function arrays (Filters)
- * - Defines types for retrieving filter functions from built-in filter collections
- *
- * Design points:
- * - Type design enabling flexible filter design and extension
- * - Supports filters with options and combinations of multiple filters
- */
-type FilterFn<T = unknown> = (value: unknown) => T;
-
 type BindingType = 'text' | 'prop' | 'event' | 'for' | 'if' | 'elseif' | 'else' | 'radio' | 'checkbox' | 'spread';
-interface IFilterInfo {
+/**
+ * 文法の段が読むフィルタ（名前と引数だけ。要件 D16）。実関数は束縛計画の段で
+ * 登録簿から解決される（`core/filterRegistry.ts`）ので、パース結果はここで止まる。
+ */
+interface IParsedFilter {
     readonly filterName: string;
     readonly args: string[];
+    /**
+     * 引数の型付きの値（要件 B9）。引用符の無い `true` / `false` / `null` / 数値は型付き、引用符付きは
+     * 文字列のまま。`args` は引用符を外した原文（書式フィルタはこちらを読む）。組み立てた側が省略したら
+     * `args` と同じ扱い。
+     */
+    readonly literals?: readonly unknown[];
+}
+/** 束縛計画の段で実関数まで解決したフィルタ */
+interface IFilterInfo extends IParsedFilter {
     readonly filterFn: FilterFn;
 }
 /**
@@ -57,39 +70,24 @@ interface IParsedBinding {
     readonly propModifiers: string[];
     readonly statePathName: string;
     readonly statePathInfo: IPathInfo;
-    readonly inFilters: IFilterInfo[];
-    readonly outFilters: IFilterInfo[];
+    readonly inFilters: IParsedFilter[];
+    readonly outFilters: IParsedFilter[];
     readonly bindingType: BindingType;
     readonly uuid?: string | null;
 }
 
 type ParseBindTextResult = IParsedBinding;
 
+/**
+ * `data-wcs` の値をバインディングごとに区切る（前後の空白は残す — tooling が位置を数えられるように）。
+ * 引用符の中の `;` は区切りではない（要件 B1 — `join(';')`）。ランタイムと tooling（`@wcstack/state/parser`）で共有する
+ */
+declare function splitBindTexts(bindText: string): string[];
 declare function parseBindTextsForElement(bindText: string): ParseBindTextResult[];
 
 declare function parseBindTextForEmbeddedNode(bindText: string): ParseBindTextResult;
 
 declare function getPathInfo(path: string): IPathInfo;
-
-/**
- * v3MigrationRules.ts — 3.0 で拒否される（または読み方が変わる）書き方の判定。純関数。
- *
- * ランタイム（v3Migration.ts が `[wcs/v3-migration]` として console に 1 回ずつ出す）と
- * tooling（`@wcstack/state/parser` 経由で lint が同じ判定を使う）の共通の正本。
- * ここは console に何も出さず、2.x の挙動も変えない（次期メジャーの要件 D2）。
- * 文面は短く保つ — 全文はランタイムのバンドルに載る。2.x との差と書き換え先の一覧は
- * state README の "Preparing for 3.0"（警告の末尾が案内する）。
- *
- * 式は 2.x の分割（`;` で無条件に割る）のまま受け取る — 引用符の中の `;` は 2.x では既に壊れている。
- */
-
-/**
- * `data-wcs` の式 1 つ（`;` を含まない、trim 済み）の判定。`parsed` があればフィルタの引数の個数も見る。
- * 区切りの無い式は 2.x のパーサが先に拒否するので何も言わない。
- */
-declare function findV3MigrationIssues(expr: string, parsed?: ParseBindTextResult | null): string[];
-/** mustache / コメントのテキストバインディング（右辺だけ、`;` で割らない）の判定 */
-declare function findEmbeddedV3MigrationIssues(expression: string, parsed?: ParseBindTextResult | null): string[];
 
 /**
  * parser.ts — `data-wcs` バインディング構文の正本パーサを tooling 向けに公開する
@@ -130,5 +128,5 @@ declare function findEmbeddedV3MigrationIssues(expression: string, parsed?: Pars
  */
 declare function clearParserCaches(): void;
 
-export { clearParserCaches, findEmbeddedV3MigrationIssues, findV3MigrationIssues, getPathInfo, parseBindTextForEmbeddedNode, parseBindTextsForElement };
+export { clearParserCaches, getPathInfo, parseBindTextForEmbeddedNode, parseBindTextsForElement, splitBindTexts };
 export type { BindingType, IFilterInfo, IPathInfo, ParseBindTextResult };
