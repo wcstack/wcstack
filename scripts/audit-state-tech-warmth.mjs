@@ -7,6 +7,7 @@
 // repository root after `npm ci` in e2e/, with no other performance driver running:
 //   node scripts/audit-state-tech-warmth.mjs [--bundle auto|index|<file>] [--fixture manual|tracked]
 //        [--sequence plain|counters] [--method jsfb|counters|task] [--setup input|sync] [--gc-before] [--ops a,b]
+//        [--raw] [--suffix name]
 //   --bundle index      serve the checked-in unminified dist/index.esm.js + bootstrapState()
 //   --bundle <file>     serve that file as the runtime (e.g. a counter-instrumented temporary build)
 //   --fixture tracked   the audit's "ordinary tracked getter" variant of the fixture (the counter
@@ -18,7 +19,12 @@
 //                       page.evaluate, waiting on a MutationObserver, with no rendering frame in
 //                       between (default input: Playwright page.click + rAF-polled waitForFunction)
 //   --gc-before         force a full GC (CDP HeapProfiler.collectGarbage) right before each timed click
-//   --ops clear10k      restrict to some of create1k, append1k, clear10k
+//   --ops clear10k      restrict to some of create1k, create10k, append1k, clear10k (create10k is not in
+//                       the default set; requirements D14 / A3 measure it cold)
+//   --raw               serve the --bundle file as is, without appending bootstrapState() — for a
+//                       self-contained auto bundle (e.g. a release's dist/auto.min.js)
+//   --suffix name       write warm-vs-cold-<tag>-<name>.json, so that a comparison does not overwrite
+//                       the committed warm-vs-cold-<tag>.json artefacts
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, resolve, basename } from 'node:path';
 import { createRequire } from 'node:module';
@@ -41,9 +47,11 @@ const method = arg('--method', 'jsfb');
 const setupStyle = arg('--setup', 'input');
 const gcBefore = process.argv.includes('--gc-before');
 const ops = arg('--ops', 'create1k,append1k,clear10k').split(',');
+const raw = process.argv.includes('--raw');
+const suffix = arg('--suffix', null);
 const runtime = bundle === 'auto' ? null
   : bundle === 'index' ? (await readFile(join(root, 'packages/state/dist/index.esm.js'), 'utf8')) + '\nbootstrapState();\n'
-  : await readFile(bundle, 'utf8').then(s => s.includes('\nbootstrapState();') ? s : s + '\nbootstrapState();\n');
+  : await readFile(bundle, 'utf8').then(s => raw || s.includes('\nbootstrapState();') ? s : s + '\nbootstrapState();\n');
 let html = null;
 if (fixture === 'tracked') {
   const original = await readFile(join(root, 'packages/state/__e2e__/benchmark/index.html'), 'utf8');
@@ -112,6 +120,7 @@ const step = setupStyle === 'sync'
   : async (page, selector, n) => { await page.click(selector); await rows(n)(page); };
 const OPS = {
   create1k: { setup: async () => {}, selector: '#run', rowCount: 1000, reset: page => step(page, '#clear', 0) },
+  create10k: { setup: async () => {}, selector: '#runlots', rowCount: 10000, reset: page => step(page, '#clear', 0) },
   append1k: { setup: page => step(page, '#runlots', 10000), selector: '#add', rowCount: 11000, reset: page => step(page, '#clear', 0) },
   clear10k: sequence === 'counters'
     ? { setup: async page => { await step(page, '#run', 1000); await step(page, '#clear', 0); await step(page, '#runlots', 10000); await step(page, '#add', 11000); },
@@ -155,6 +164,6 @@ try {
     report.results.push(r);
     console.log(JSON.stringify({ op, tag, cold: r.cold.median, coldRange: [r.cold.min, r.cold.max], warm: r.warm.median, warmRange: [r.warm.min, r.warm.max], warmSamples: r.warm.samples }));
   }
-  await writeFile(join(outDir, `warm-vs-cold-${tag}.json`), JSON.stringify(report, null, 2) + '\n');
+  await writeFile(join(outDir, `warm-vs-cold-${tag}${suffix ? `-${suffix}` : ''}.json`), JSON.stringify(report, null, 2) + '\n');
 } finally { if (browser) await browser.close(); server.kill(); }
 process.exit(0);

@@ -121,7 +121,8 @@ N1–N4 and N6 can ship in 2.6.x, which is also where the deprecation notices of
 | D23 | Where the attribute readiness barriers (`mount=` / DCC) land (wiring design §9) | (a) align them: DCC lands where its load failure does (`failInitializeLoudly`); `mount=` gets a landing of its own that rejects `connectedCallbackPromise` without taking the root down (b) leave them (they throw from `connectedCallback` and the promise never settles) | **(a)**. It matches v2.4's "an initialization failure reports once and rejects" (#257). As things stand, a `/core` page that forgot scopes leaves `mount()` and `getBindingsReady` waiting forever |
 | D24 | An opt-in attribute for pool pre-warming (row runtime design R5, candidate 2) | (a) not in 3.0 (b) an opt-in attribute (c) a programmatic API | **(a)**. It only moves the creation cost before the first render — the total does not shrink, and unused rows are waste. D14 already revised the denominator. It can be added non-breakingly in 3.x on request |
 | D25 | Cutting the remaining 3.0 KB/row (row runtime design §5) | (a) attribute the heap and cut (b) after 3.0 | **(b)**. R3 took −18 %; no acceptance criterion asks for more (A5 asks for the trend to be explained) |
-| D26 | How 2.6.x is cut (shipping D8 and D9) | (a) branch release/2.6.0 from `0ce4e35e` (`597a3a44` — keyed selection, the clear's allocation, install-time wiring — plus the CI gates; its parent is main) and pick only the keyed selection's SSR-path test (it landed in `7979827d`) (b) skip 2.6 and fold it into 3.0 | **(a)**. No cherry-pick needed, exactly what D8 and D9 decided. wcstack-skill ships its v2.6+ part first too |
+| D26 | How 2.6.x is cut (shipping D8 and D9) | (a) branch release/2.6.0 from `0ce4e35e` (`597a3a44` — keyed selection, the clear's allocation, install-time wiring — plus the CI gates; its parent is main) (the keyed selection's SSR-path test is already in `597a3a44` — `7979827d` only moved its import path) (b) skip 2.6 and fold it into 3.0 | **(a)**. Nothing to pick; exactly what D8 and D9 decided. wcstack-skill ships its v2.6+ part first too |
+| D27 | What to do when A3 (25 % improvement) falls short | (a) restate A3 as 3.0's measurement and do not hold 3.0 (b) hold 3.0 until 25 % (c) drop A3 | **(a)**. The same treatment as A1 / A2 (D21 / D22); the levers that could reach 25 % (D24, D25) are decided out of 3.0 |
 
 **Decided (2026-09-21)**: D8–D18 as recommended. D8 and D9 ship from the current working tree (implemented) in 2.6.x; D10 and D11 ride the 3.0 vehicle; D12, D13, D15 and D16 are recorded in the design draft as 3.0 decisions; D14 revises A3's denominator (§8); D17 comes with 3.0's protocol version bump; D18 is introduced as the size CI.
 
@@ -133,12 +134,25 @@ N1–N4 and N6 can ship in 2.6.x, which is also where the deprecation notices of
 - **D2 is (a), no compatibility layer** (changed from the table's (b)). Instead, the last 2.x minor reports the constructs 3.0 rejects or reinterprets, through lint and a runtime warning. B1–B3 reject input that is already broken and need no layer; B5's reinterpretation cannot recover the author's intent even with the old parser kept; and carrying the old grammar in the core runs against A1 / A2. The warned constructs are fixed by D20's decision on the B items.
 - **D3 as recommended** (keep full / auto; the split form is the second form), implemented.
 - **D4 as recommended** (keep through 3.x, remove in 4.0). It applies once B12's renames are taken.
-- **D5: inventory now.** One item is already known: D17's DevTools protocol version bump (on the `@wcstack/devtools` side).
+- **D5: inventory now.** One item is already known: D17's DevTools protocol version bump (on the `@wcstack/devtools` side). → **Inventoried (2026-09-21)**: nothing outside state needs 3.0 to break. The only open issues are state's two (#258, #2), and no router or I/O node README, doc or source defers a change to a major. The one candidate was replacing the I/O nodes' existing error outputs with `WcsIoError` (architecture-hardening 09 §7.2, "a major change if needed"); the opt-in `errorInfo` already covers it, so 3.0 does not replace them. All packages release in lockstep, so the others only follow the version.
 - **D6 is (b)** (a 3.x minor).
 - **D7 as recommended** (no O(1) promise; supported by `$eq` / `$eqPath` / `$eqIndex`, with the O(N) cases published in the README), implemented.
 - **D20–D26 as recommended.**
 - D19's (b) (folding the receptacle loops into one runner) is measured now and taken if it saves at least 0.5 KB gzip without slowing the read path. → **Measured and not taken** (`auto.min.js` −32 B, split core closure −112 B; wiring design §9).
-- A3 has not been judged yet. Compare 2.5.1 with 3.0 on D14's four measures first, then decide what to do about any that fall short.
+- A3 has not been judged yet. Compare 2.5.1 with 3.0 on D14's four measures first, then decide what to do about any that fall short. → **Judged (D27).**
+
+**Addendum (2026-09-21, the A3 judgement)**: the released 2.5.1 `auto.min.js` against this branch's `auto.min.js`, on the audit benchmark's fixture (manual), alternated four times each (median of 24 samples per cell; p is a two-sided Mann-Whitney; [a3-v251-vs-3.0.json](./research/state-next/a3-v251-vs-3.0.json)).
+
+| D14 measure | 2.5.1 | 3.0 | Difference | p |
+|---|---:|---:|---:|---:|
+| Warm create 1,000 | 14.4 ms | 15.7 ms | +9.4 % | 0.31 |
+| Cold create 10,000 | 371.7 ms | 302.3 ms | **−18.7 %** | 0.003 |
+| Append 1,000 (cold) | 48.3 ms | 40.6 ms | **−15.9 %** | 0.024 |
+| Clear 10,000 (cold) | 54.4 ms | 46.4 ms | **−14.7 %** | < 0.001 |
+| (regression check) cold create 1,000 | 44.5 ms | 41.2 ms | −7.4 % | 0.037 |
+
+- **No measure reaches 25 %.** Three improved significantly; warm create 1,000 did not move beyond the noise (R2's −34 % compared the tracked fixture against the build just before R2, not against 2.5.1). Nothing regressed.
+- **D27 is decided as recommended, (a)**: (a) restate A3 as 3.0's measurement (the table above) and do not hold 3.0 for it (b) hold 3.0 until 25 % (c) drop A3 — the same treatment as A1 / A2 (D21 / D22). The levers that could reach 25 % in this structure (pool pre-warming — D24, cutting allocation much further — D25) are already decided out of 3.0.
 
 ## 7. Migration and deprecation
 
@@ -155,7 +169,7 @@ These carry over the provisional targets of audit §8. They are **targets, not m
 |---|---|---|
 | A1 | Named full entry at or under about 72 KB gzip → **restated as 3.0's measurement (D21): 77.6 KB gzip** (`dist/index.esm.js` minified; `auto.min.js` 75.2 KB) | Measured once N1 ships (done), then held by the size CI (N3, D18's +3 %). A helper-only import retains no runtime |
 | A2 | Selected base + DOM at or under 35 KB gzip → **restated as 3.0's measured core, 43.2 KB (D22)** | A prototype target, measured with the excluded features listed explicitly. **Measured 2026-09-21: the split `@wcstack/state/core` is 42.7 KB gzip** (single-file bundle; extracting the wiring did not shrink it, and `features/formats` took 1.1 KB off — wiring design §8-11 and §8-13). Unifying `BindingSession` stopped being a lever after R2 and R3 (row runtime design §6-1); the last lever, separating the diagnostics (`features/diagnostics`, wiring design §8-14), leaves the core at 43.2 KB, and 35 KB is out of reach for this structure |
-| A3 | At least 25% median improvement in create / append / clear, measured on **warm create 1,000, cold create 10,000, append 1,000 and clear 10,000** (D14: cold create 1,000 is "the content creation the pool hides + the creation's GC + warm-up", which per-binding optimisation does not move, survey §10.15; cold create 1,000 is only checked for regressions) | Without concealing regressions in plain reads, partial updates, swaps or startup. Alternate A/B order, use multiple browser processes and sufficient samples |
+| A3 | At least 25% median improvement in create / append / clear → **restated as 3.0's measurement (D27): cold create 10,000 −18.7 %, append −15.9 %, clear −14.7 %, warm create 1,000 unchanged** — measured on **warm create 1,000, cold create 10,000, append 1,000 and clear 10,000** (D14: cold create 1,000 is "the content creation the pool hides + the creation's GC + warm-up", which per-binding optimisation does not move, survey §10.15; cold create 1,000 is only checked for regressions) | Without concealing regressions in plain reads, partial updates, swaps or startup. Alternate A/B order, use multiple browser processes and sufficient samples |
 | A4 | No architecture chosen from differences near 0.1 ms | Below timer resolution, no ratio is claimed (audit §4.2) |
 | A5 | Memory behaviour is explainable | Tens of create/clear and root attach/dispose cycles, with post-GC trend, retaining owners, and explicit pool bounds |
 | A6 | Every reproduced inconsistency is pinned | For each item in §3, a test fixes the behaviour whichever way the decision goes |

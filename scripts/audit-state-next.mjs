@@ -22,7 +22,7 @@ process.chdir(pkg);
 const configs = (await import(pathToFileURL(join(pkg, 'rollup.config.js')))).default;
 const warnings = new Set();
 const built = {};
-for (const config of configs.filter(c => c.input.endsWith('.ts') && !c.output.file.endsWith('.d.ts'))) {
+for (const config of configs.filter(c => typeof c.input === 'string' && c.input.endsWith('.ts') && typeof c.output.file === 'string' && !c.output.file.endsWith('.d.ts'))) {
   const bundle = await rollup({ ...config, onwarn: w => warnings.add(`${w.code}: ${w.message}`) });
   const generated = await bundle.generate(config.output);
   const chunk = generated.output.find(o => o.type === 'chunk');
@@ -64,6 +64,25 @@ decode(auto.map.mappings).forEach((segments, line) => {
 const tracked = await readFile(join(pkg, 'dist/auto.min.js'), 'utf8');
 const normalize = s => s.replaceAll('\r\n', '\n');
 const parser = await import(pathToFileURL(join(temp, 'parser.esm.js')));
+// Since requirement D16 the parse stage yields names and arguments only (no filterFn); the function is
+// resolved from the registry when the bindings are planned. Bundle the registry and the formats from
+// src into the temporary directory to evaluate the same filters the runtime would.
+{
+  const esmConfig = configs.find(c => c.output.file === 'dist/index.esm.js');
+  const srcFile = rel => JSON.stringify(join(pkg, 'src', rel).replaceAll('\\', '/'));
+  const bundle = await rollup({ input: 'audit-filters', plugins: [{ name: 'audit-filters',
+    resolveId: id => id === 'audit-filters' ? id : null,
+    load: id => id === 'audit-filters'
+      ? `export { resolveFilterFn, clearFilterResolutionCache } from ${srcFile('core/filterRegistry.ts')};\nexport { installFormats } from ${srcFile('formats/install.ts')};\n`
+      : null,
+  }, ...esmConfig.plugins.filter(p => p.name !== 'terser')], onwarn: w => warnings.add(`${w.code}: ${w.message}`) });
+  const generated = await bundle.generate({ format: 'esm' });
+  await writeFile(join(temp, 'filters.mjs'), generated.output[0].code);
+  await bundle.close();
+}
+const filters = await import(pathToFileURL(join(temp, 'filters.mjs')));
+filters.installFormats();
+const filterFn = f => filters.resolveFilterFn(f.filterName, f.args, 'output');
 const syntax = [];
 for (const input of [
   "textContent: x|join(', ')", "textContent: x|join(';')", "textContent: x|join('|')",
@@ -76,7 +95,7 @@ for (const input of [
     syntax.push({ input, result: parser.parseBindTextsForElement(input).map(r => ({
       type: r.bindingType, prop: r.propName, modifiers: r.propModifiers, path: r.statePathName,
       filters: r.outFilters.map(f => ({ name: f.filterName, args: f.args,
-        sample: f.filterName === 'join' ? f.filterFn(['X', 'Y']) : undefined })),
+        sample: f.filterName === 'join' ? filterFn(f)(['X', 'Y']) : undefined })),
     })) });
   } catch (e) { syntax.push({ input, error: e.message }); }
 }
@@ -91,10 +110,11 @@ const report = {
   filterSemantics: [
     ['eq(true)', true], ['eq(1)', 1], ['truthy', 0n], ['boolean', 0n], ['defaults(fallback)', 0],
   ].map(([expression, value]) => ({ expression, input: String(value), inputType: typeof value,
-    output: parser.parseBindTextsForElement(`textContent: x|${expression}`)[0].outFilters[0].filterFn(value) })),
+    output: filterFn(parser.parseBindTextsForElement(`textContent: x|${expression}`)[0].outFilters[0])(value) })),
 };
 parser.clearParserCaches();
-report.filterCacheIsolated = parser.parseBindTextsForElement('textContent: x|join(a,b)')[0].outFilters[0].filterFn(['X', 'Y']);
+filters.clearFilterResolutionCache();
+report.filterCacheIsolated = filterFn(parser.parseBindTextsForElement('textContent: x|join(a,b)')[0].outFilters[0])(['X', 'Y']);
 await writeFile(join(output, 'size-and-syntax.json'), JSON.stringify(report, null, 2) + '\n');
 console.log(JSON.stringify({ ...report, warnings: report.warnings.map(w => w.slice(0, 180)) }, null, 2));
 // The imported multi-entry TypeScript configuration can retain worker handles.
