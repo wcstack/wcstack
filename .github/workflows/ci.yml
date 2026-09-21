@@ -253,12 +253,19 @@ jobs:
         run: node ../../scripts/audit-state-tech-helper-import.mjs --check --max-gzip 1024
       - run: npm run lint
       - run: npm run build
-      # Size gate for the shipped bundles of @wcstack/state (requirements N3 / D18): auto.min.js and
-      # index.esm.js may not grow more than 3 % gzip over scripts/state-size-baseline.json (the last
-      # recorded release build); an intended increase is recorded with --update.
+      # Size gate for the shipped bundles of @wcstack/state (requirements N3 / D18): auto.min.js,
+      # index.esm.js and the `core` entry with its chunks may not grow more than 3 % gzip over
+      # scripts/state-size-baseline.json (the last recorded release build); an intended increase is
+      # recorded with --update.
       - name: Check the shipped bundle sizes of @wcstack/state against the release baseline
         if: ${{ matrix.package == 'state' }}
         run: node ../../scripts/check-state-size.mjs --check
+      # One core chunk (requirement B13, wiring design §7-1): every `@wcstack/state/features/*`
+      # entry must import the core's chunk instead of carrying a copy. Reads the source maps of
+      # the split build, so it runs after the build.
+      - name: Check that no feature entry of @wcstack/state re-bundles the core
+        if: ${{ matrix.package == 'state' }}
+        run: node ../../scripts/check-state-split.mjs --check
       - run: npm run typecheck --if-present
       - run: npm run size --if-present
       - run: npm run test:coverage

@@ -31,7 +31,7 @@ const GROUPS = {
   temporal: id => /^(watch|scan|stream)\//.test(id),
   recursion: id => id.startsWith('recursion/'),
   scopes: id => /^(webComponent|dcc)\//.test(id),
-  ssr: id => id === 'components/Ssr.ts' || id === 'buildSsrDocument.ts' || id === 'hydrateBindings.ts' || id.startsWith('hydrater/'),
+  ssr: id => id === 'components/Ssr.ts' || id === 'buildSsrDocument.ts' || id === 'hydrateBindings.ts' || id.startsWith('hydrater/') || id.startsWith('ssr/'),
   formats: id => id.startsWith('filters/'),
 };
 const VARIANTS = [[], ['devtools'], ['devtools', 'temporal'], ['devtools', 'temporal', 'recursion'],

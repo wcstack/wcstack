@@ -1,10 +1,15 @@
 {
-  "$comment": "Baseline for `node scripts/audit-state-tech-coupling.mjs --check` (CI gate for @wcstack/state, docs/state-next-major-wiring-design.md §7-1). evaluatedModules: the only modules allowed to run code at module evaluation (allocations such as `new Map()` and initializers annotated `/*#__PURE__*/` do not count). maxCoreToFeatureEdges: value imports from core groups into feature groups may not exceed this; tighten it when the audit reports fewer. reachability: entries whose reachable module count must stay at or below the limit (defineState must reach only itself, requirements N2).",
+  "$comment": "Baseline for `node scripts/audit-state-tech-coupling.mjs --check` (CI gate for @wcstack/state, docs/state-next-major-wiring-design.md §7-1). evaluatedModules: the only modules allowed to run code at module evaluation (allocations such as `new Map()` and initializers annotated `/*#__PURE__*/` do not count). maxCoreToFeatureEdges: value imports from core modules into feature modules may not exceed this; tighten it when the audit reports fewer. It read 41 while the audit still counted components/State.ts — the core's own element — as a feature, 62 once that was corrected, and 6 after S3-S5 moved the wiring behind receptacles; the eight that remain are entry edges: the full entry installing its features (bootstrapState -> features/*), exports -> ssr/Ssr, and manifest.ts -> formats/builtinFilters (the manifest lists the filter names from the implementation, which is the single source of truth for tooling). reachability.noFeatures: the entry may not reach ANY feature group (the split core entry, wiring design §7-1). reachability: entries whose reachable module count must stay at or below the limit (defineState must reach only itself, requirements N2).",
   "evaluatedModules": [
     "auto.ts"
   ],
-  "maxCoreToFeatureEdges": 41,
+  "maxCoreToFeatureEdges": 8,
   "reachability": {
-    "defineState.ts": { "maxFiles": 1 }
+    "defineState.ts": {
+      "maxFiles": 1
+    },
+    "entries/core.ts": {
+      "noFeatures": true
+    }
   }
 }
