@@ -1021,7 +1021,7 @@ export default {
 };
 ```
 
-Rules: the three calls only subscribe when evaluated inside a getter under a list row (elsewhere they just return the comparison); a row's subscription is dropped when the list diff removes the row; keys compare with `Object.is` except that Map semantics treat `+0`/`-0` and `NaN`/`NaN` as equal. `$eqPath` reads the key without a dependency, so a row whose key changes in place is not re-evaluated by that change — use it for identities that do not change (ids), and `$eq` with a tracked read when the key itself is live.
+Rules: `$eq` and `$eqPath` subscribe when evaluated inside any getter — a row getter, or a top-level one such as `get isAdmin() { return this.$eq("role", "admin"); }` — and called from a method or a handler they just return the comparison. `$eqIndex` needs a list row: outside one it throws `$eqIndex("…") needs a list row scope.`, and a `level` with no list index at that depth throws too. A row's subscription is dropped when the list diff removes the row; keys compare with `Object.is` except that Map semantics treat `+0`/`-0` and `NaN`/`NaN` as equal. `$eqPath` reads the key without a dependency, so a row whose key changes in place is not re-evaluated by that change — use it for identities that do not change (ids), and `$eq` with a tracked read when the key itself is live.
 
 What reaches the rows:
 
