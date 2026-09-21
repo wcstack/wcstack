@@ -7335,11 +7335,36 @@ const indexKeyedByListIndex = new WeakMap();
 let anyRegistered = false;
 const watchersByElement = new WeakMap();
 const watchersByIndexes = new WeakMap();
+// 祖先パス → その配下の鍵付きパス（祖先への書き込みを配下の鍵付き購読へ届ける）
+const descendantsByElement = new WeakMap();
 const EMPTY$1 = [];
+/** `path` の祖先を逆引きに載せる（同じ path は 1 回だけ）。祖先の無いトップレベルの path は載せない */
+function recordAncestors(stateElement, path) {
+    const ledger = ledgerOf(stateElement);
+    if (ledger.recorded.has(path)) {
+        return;
+    }
+    ledger.recorded.add(path);
+    const cumulativePaths = getPathInfo(path).cumulativePaths;
+    if (cumulativePaths.length < 2) {
+        return;
+    }
+    let byAncestor = descendantsByElement.get(stateElement);
+    if (typeof byAncestor === "undefined") {
+        descendantsByElement.set(stateElement, byAncestor = new Map());
+    }
+    for (let i = 0; i < cumulativePaths.length - 1; i++) {
+        let descendants = byAncestor.get(cumulativePaths[i]);
+        if (typeof descendants === "undefined") {
+            byAncestor.set(cumulativePaths[i], descendants = new Set());
+        }
+        descendants.add(path);
+    }
+}
 function ledgerOf(stateElement) {
     let ledger = ledgerByElement.get(stateElement);
     if (typeof ledger === "undefined") {
-        ledgerByElement.set(stateElement, ledger = { byPath: new Map(), lastValue: new Map() });
+        ledgerByElement.set(stateElement, ledger = { byPath: new Map(), lastValue: new Map(), recorded: new Set() });
     }
     return ledger;
 }
@@ -7357,6 +7382,14 @@ function addToKey(keyMap, key, absAddress) {
     }
     set.add(absAddress);
 }
+/** 鍵から行を外し、空になった鍵は Map から消す（オブジェクトの鍵を行の退役後まで握らない） */
+function removeFromKey(keyMap, key, absAddress) {
+    const set = keyMap.get(key);
+    set.delete(absAddress);
+    if (set.size === 0) {
+        keyMap.delete(key);
+    }
+}
 /** 台帳へ登録する。既に同じ (アドレス, path) が登録済みなら鍵を移すだけで、false を返す */
 function subscribe(ledger, path, key, absAddress) {
     const keyMap = keyMapOf(ledger, path);
@@ -7367,7 +7400,7 @@ function subscribe(ledger, path, key, absAddress) {
     if (previous.has(path)) {
         const oldKey = previous.get(path);
         if (!Object.is(oldKey, key)) {
-            keyMap.get(oldKey).delete(absAddress);
+            removeFromKey(keyMap, oldKey, absAddress);
             previous.set(path, key);
             addToKey(keyMap, key, absAddress);
         }
@@ -7403,6 +7436,7 @@ function record(ledger, path, current, absAddress, isNew, entry) {
 function registerKeyedDependency(stateElement, path, key, absAddress, current) {
     anyRegistered = true;
     const ledger = ledgerOf(stateElement);
+    recordAncestors(stateElement, path);
     const isNew = subscribe(ledger, path, key, absAddress);
     record(ledger, path, current, absAddress, isNew, { stateElement, path, absAddress, levelListIndex: null });
 }
@@ -7410,6 +7444,7 @@ function registerKeyedDependency(stateElement, path, key, absAddress, current) {
 function registerIndexKeyedDependency(stateElement, path, levelListIndex, absAddress, current) {
     anyRegistered = true;
     const ledger = ledgerOf(stateElement);
+    recordAncestors(stateElement, path);
     const isNew = subscribe(ledger, path, levelListIndex.index, absAddress);
     record(ledger, path, current, absAddress, isNew, { stateElement, path, absAddress, levelListIndex });
 }
@@ -7421,6 +7456,7 @@ function hasKeyedDependents(stateElement, path) {
 function registerIndexWatcher(stateElement, path, getterPathInfo, indexes, current) {
     anyRegistered = true;
     ledgerOf(stateElement).lastValue.set(path, current);
+    recordAncestors(stateElement, path);
     let byPath = watchersByElement.get(stateElement);
     if (typeof byPath === "undefined") {
         watchersByElement.set(stateElement, byPath = new Map());
@@ -7505,6 +7541,7 @@ function collect(set, out) {
 }
 /**
  * `path` への書き込み: 旧値（同値ガードが読めたとき）と新値の鍵に登録された行アドレス。
+ * 控えていた最後の値が旧値と違う（旧値を読めなかった）ときは、その鍵の行も加える。
  * 新値を `path` の最後の値として控える。呼び出し側は hasKeyedDependents で門を通す。
  */
 function keyedDependents(stateElement, path, hasOldKey, oldKey, newKey) {
@@ -7514,12 +7551,19 @@ function keyedDependents(stateElement, path, hasOldKey, oldKey, newKey) {
     if (typeof ledger === "undefined" || (typeof keyMap === "undefined" && typeof watchers === "undefined")) {
         return EMPTY$1;
     }
+    const hasLast = ledger.lastValue.has(path);
+    const last = ledger.lastValue.get(path);
     ledger.lastValue.set(path, newKey);
     const out = [];
     const newDiffers = !hasOldKey || !Object.is(oldKey, newKey);
+    // 行が最後に見た値。旧値を読めなかったときに真のまま残る行はここにいる
+    const lastDiffers = hasLast && (!hasOldKey || !Object.is(last, oldKey)) && !Object.is(last, newKey);
     if (typeof keyMap !== "undefined") {
         if (hasOldKey) {
             collect(keyMap.get(oldKey), out);
+        }
+        if (lastDiffers) {
+            collect(keyMap.get(last), out);
         }
         if (newDiffers) {
             collect(keyMap.get(newKey), out);
@@ -7530,12 +7574,66 @@ function keyedDependents(stateElement, path, hasOldKey, oldKey, newKey) {
             if (hasOldKey) {
                 watchedRowsAt(watcher, oldKey, out);
             }
+            if (lastDiffers) {
+                watchedRowsAt(watcher, last, out);
+            }
             if (newDiffers) {
                 watchedRowsAt(watcher, newKey, out);
             }
         }
     }
     return out;
+}
+function hasKeyedDescendants(stateElement, path) {
+    return descendantsByElement.get(stateElement)?.has(path) === true;
+}
+/** `value` から `segments` を辿った値（途中がオブジェクトでなければ undefined） */
+function valueAt(value, segments) {
+    let current = value;
+    for (const segment of segments) {
+        if (typeof current !== "object" || current === null) {
+            return undefined;
+        }
+        current = current[segment];
+    }
+    return current;
+}
+/**
+ * `path`（鍵付きパスの祖先）への書き込み: 配下の鍵付きパスごとに、旧い親と新しい親から鍵を辿り、
+ * その鍵の行を返す（`keyedDependents` と同じ扱い）。残りのパスにワイルドカードがあると行ごとの鍵が
+ * 辿れないので、そのパスに購読している行をすべて返す。呼び出し側は hasKeyedDescendants で門を通す。
+ */
+function keyedDescendantDependents(stateElement, path, oldValue, newValue) {
+    const depth = getPathInfo(path).segments.length;
+    const out = [];
+    for (const descendant of descendantsByElement.get(stateElement).get(path)) {
+        const rest = getPathInfo(descendant).segments.slice(depth);
+        if (rest.includes(WILDCARD)) {
+            allDependents(stateElement, descendant, out);
+            continue;
+        }
+        for (const address of keyedDependents(stateElement, descendant, true, valueAt(oldValue, rest), valueAt(newValue, rest))) {
+            out.push(address);
+        }
+    }
+    return out;
+}
+/** `path` に鍵付きで購読しているすべての行 */
+function allDependents(stateElement, path, out) {
+    const keyMap = ledgerByElement.get(stateElement).byPath.get(path);
+    if (typeof keyMap !== "undefined") {
+        for (const set of keyMap.values()) {
+            collect(set, out);
+        }
+    }
+    const watchers = watchersByElement.get(stateElement)?.get(path);
+    if (typeof watchers !== "undefined") {
+        for (const watcher of watchers) {
+            for (let index = 0; index < watcher.indexes.length; index++) {
+                watchedRowsAt(watcher, index, out);
+            }
+        }
+    }
 }
 function removeIndexEntry(entry) {
     const entries = indexKeyedByListIndex.get(entry.levelListIndex);
@@ -7557,7 +7655,7 @@ function dropKeyedSubscriptionsByListIndex(listIndex) {
         const keys = keyByPathByAddress.get(absAddress);
         const key = keys.get(path);
         keys.delete(path);
-        ledgerByElement.get(stateElement).byPath.get(path).get(key).delete(absAddress);
+        removeFromKey(ledgerByElement.get(stateElement).byPath.get(path), key, absAddress);
         if (entry.levelListIndex !== null) {
             removeIndexEntry(entry);
         }
@@ -7580,7 +7678,7 @@ function rekeyIndexSubscriptions(listIndex, oldIndex, newIndex) {
     for (const { stateElement, path, absAddress } of entries) {
         const ledger = ledgerByElement.get(stateElement);
         const keyMap = ledger.byPath.get(path);
-        keyMap.get(oldIndex).delete(absAddress);
+        removeFromKey(keyMap, oldIndex, absAddress);
         addToKey(keyMap, newIndex, absAddress);
         keyByPathByAddress.get(absAddress).set(path, newIndex);
         const last = ledger.lastValue.get(path);
@@ -11440,7 +11538,7 @@ async function buildBindings(root) {
     }
 }
 
-var version = "2.6.0";
+var version = "2.6.1";
 var pkg = {
 	version: version};
 
@@ -18763,16 +18861,26 @@ function recordDeclaredPrevValue(stateElement, path, absAddress, oldValue, hasOl
 // binding 外からの API update は新しい transaction を開始する（設計書 §4 規則 1）。
 // 依存 walk で enqueue される派生アドレスも同じ書き込みの因果に属する。
 // 鍵付き購読（`$eq` 系、dependency/keyedDependency.ts）への通知。同値ガードが読んだ旧値と
-// 新値の鍵に登録された行だけを dirty 化して enqueue する。購読の無いパスは Map 参照 1 回で抜ける
-function notifyKeyed(stateElement, path, hasOldValue, oldValue, value) {
-    if (!hasKeyedDependents(stateElement, path)) {
+// 新値の鍵に登録された行だけを dirty 化して enqueue する。購読の無いパスは Map 参照 2 回で抜ける。
+// 祖先への書き込み（`$eq("sel.id")` に対する `sel = {…}`）は配下の鍵付きパスへ知らせる。その旧値は
+// 同値ガードが読めなかったときだけ `readOld` で書き込み前に読む
+function notifyKeyed(stateElement, path, hasOldValue, oldValue, value, readOld) {
+    const direct = hasKeyedDependents(stateElement, path);
+    const descendants = hasKeyedDescendants(stateElement, path);
+    if (!direct && !descendants) {
         return;
     }
     const updater = getUpdater();
     const context = config.enablePropagationContext ? (getCurrentPropagationContext() ?? null) : null;
-    for (const absAddress of keyedDependents(stateElement, path, hasOldValue, oldValue, value)) {
+    const enqueue = (absAddress) => {
         dirtyCacheEntryByAbsoluteStateAddress(absAddress);
         updater.enqueueAbsoluteAddress(absAddress, context);
+    };
+    if (direct) {
+        keyedDependents(stateElement, path, hasOldValue, oldValue, value).forEach(enqueue);
+    }
+    if (descendants) {
+        keyedDescendantDependents(stateElement, path, hasOldValue ? oldValue : readOld(), value).forEach(enqueue);
     }
 }
 function notifyWrite(address, absAddress, receiver, handler, keyedMergePath, cacheable, listExpansion = "diff") {
@@ -19114,7 +19222,8 @@ function setByAddressCore(target, address, value, receiver, handler, keyedMergeP
                 devOldValue = oldValue;
                 devHasOldValue = true;
             }
-            notifyKeyed(stateElement, path, devHasOldValue, devOldValue, value);
+            // key が undefined（listIndex の無い不正アドレス）なら読みは undefined — 書き込みが下で投げる
+            notifyKeyed(stateElement, path, devHasOldValue, devOldValue, value, () => parentValue[key]);
             const cacheable = isCacheable(stateElement, address);
             const absAddress = liftAddress(stateElement, address);
             if (devtoolsSink !== null) {
@@ -19178,7 +19287,7 @@ function setByAddressCore(target, address, value, receiver, handler, keyedMergeP
         devOldValue = oldValue;
         devHasOldValue = true;
     }
-    notifyKeyed(stateElement, path, devHasOldValue, devOldValue, value);
+    notifyKeyed(stateElement, path, devHasOldValue, devOldValue, value, () => getByAddress(target, address, receiver, handler));
     // --- end same-value guard ---
     const isSwappable = stateElement.elementPaths.has(address.pathInfo.path);
     const cacheable = isCacheable(stateElement, address);
@@ -20179,6 +20288,23 @@ function setLoopContext(handler, loopContext, callback) {
  * - 通常のプロパティアクセスもバインディングや多重ループに対応
  * - シンボルAPIやReflect.getで拡張性・互換性も確保
  */
+/**
+ * 鍵付き購読の `path` が getter か getter の配下か。getter の値は `path` への書き込みを経ずに変わるので
+ * 鍵付き購読では知らせられない — そのときは依存を張る普通の読み取りに戻す（正しいが、変化で全行が
+ * 再評価される。鍵付きの形を使わないのと同じ）。
+ */
+function derivesFromGetter(stateElement, path) {
+    const getterPaths = stateElement.getterPaths;
+    if (getterPaths.size === 0) {
+        return false;
+    }
+    for (const cumulativePath of getPathInfo(path).cumulativePaths) {
+        if (getterPaths.has(cumulativePath)) {
+            return true;
+        }
+    }
+    return false;
+}
 /** `$` + 数字だけの prop（`$1` / `$129`）。範囲外を無言で通さないための判別。 */
 const INDEX_PARAM_RE = /^\$\d+$/;
 // `$streamStatus.<name>` / `$streamError.<name>` の dotted パス判定用プレフィックス
@@ -20282,6 +20408,9 @@ function get(target, prop, receiver, handler) {
                     return (path, key) => {
                         // getter の外（メソッド・コールバック）ではアドレススタックが空: 比較だけ返す
                         const lastAddress = handler.addressStackLength > 0 ? handler.lastAddressStack : null;
+                        if (derivesFromGetter(handler.stateElement, path)) {
+                            return Object.is(receiver[path], key);
+                        }
                         handler.beginUntrack();
                         let current;
                         try {
@@ -20301,17 +20430,20 @@ function get(target, prop, receiver, handler) {
                     // 追跡付きで行 id を読むと動的辺がリスト置換で全行に展開されるので、ここで抑止する
                     return (path, keyPath) => {
                         const lastAddress = handler.addressStackLength > 0 ? handler.lastAddressStack : null;
+                        const tracked = derivesFromGetter(handler.stateElement, path);
+                        let current = tracked ? receiver[path] : undefined;
                         handler.beginUntrack();
-                        let current;
                         let key;
                         try {
-                            current = receiver[path];
+                            if (!tracked) {
+                                current = receiver[path];
+                            }
                             key = receiver[keyPath];
                         }
                         finally {
                             handler.endUntrack();
                         }
-                        if (lastAddress !== null && handler.stateElement.getterPaths.has(lastAddress.pathInfo.path)) {
+                        if (!tracked && lastAddress !== null && handler.stateElement.getterPaths.has(lastAddress.pathInfo.path)) {
                             registerKeyedDependency(handler.stateElement, path, key, liftAddress(handler.stateElement, lastAddress), current);
                         }
                         return Object.is(current, key);
@@ -20329,6 +20461,9 @@ function get(target, prop, receiver, handler) {
                         const levelListIndex = listIndexAtWildcard(lastAddress.listIndex, level - 1, lastAddress.pathInfo.wildcardCount);
                         if (levelListIndex === null) {
                             raiseError(`$eqIndex("${path}", ${level}): no list index at that level.`);
+                        }
+                        if (derivesFromGetter(handler.stateElement, path)) {
+                            return Object.is(receiver[path], levelListIndex.index);
                         }
                         // 最内段（getter 自身の行の段）はリスト単位の監視で O(1)、外側の段は行ごとの購読
                         const innermost = level === lastAddress.pathInfo.wildcardCount;

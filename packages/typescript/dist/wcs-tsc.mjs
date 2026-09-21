@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, isAbsolute, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-var version = "2.6.0";
+var version = "2.6.1";
 var pkg = {
 	version: version};
 
