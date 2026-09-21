@@ -131,7 +131,7 @@ const groupEdges = {};
 // 'features' holds the split entries themselves (src/features/temporal.ts …): they ARE the feature
 // side, so their imports of a feature's install are not core -> feature edges. 'entries' is NOT here:
 // src/entries/core.ts is the core entry, so an import of a feature from there must show up.
-const features = ['watch', 'scan', 'stream', 'recursion', 'webComponent', 'dcc', 'devtools', 'ssr', 'formats', 'features'];
+const features = ['watch', 'scan', 'stream', 'recursion', 'webComponent', 'dcc', 'devtools', 'ssr', 'formats', 'diagnostics', 'features'];
 // A module that is a feature although its directory is not: before the split, `<wcs-ssr>` lives in
 // components/ beside the core's own element (components/State.ts), which must NOT count as a feature.
 const FEATURE_MODULES = new Set(['components/Ssr.ts']);

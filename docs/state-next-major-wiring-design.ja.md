@@ -268,6 +268,17 @@ D16 の決定（「実関数の解決は束縛計画の段。文法段だけを 
 - **サイズ**: core 単体 43,779 → **42,705 B gzip**（minify 147,356 → 143,050）。`features/formats` は +1,272 B。full の `auto.min.js` は 73,561 → 73,968（+407 — 登録簿の間接化の分）。分割 core の閉包は 49,535 → 49,148 B。
 - **結果**: 全テスト 3,704 件成功（テスト側の調整は 3 ファイル: 解析時解決を前提にしていた 7 件を新しい契約へ書き直し、境界テスト `core.filterRegistry.test.ts` を追加）。カバレッジ・lint・門は 4 つとも通る。
 
+### 8-14. `features/diagnostics`（2026-09-21、開発時の診断、`packages/state`）
+
+§5 の表の「診断文言を dev ビルドへ」を、別ビルドではなく**機能の 1 つ**として実装した。
+
+- **形を選んだ理由**: buildless の配布で dev / 本番の 2 系統のファイル（URL）を持つと、利用者が URL を選び分けることになり、CDN の 1 行という前提が崩れる。既にある `installFeatures` の仕組みに載せれば、full / `auto` は従来どおり診断付きのまま、`@wcstack/state/core` を選んだページだけが診断を落とせる — A2 を測っているのもその `/core` だ。
+- **分けたのは「実行を止めない診断」だけ**: `pathDiagnostics.ts` には 2 種類が同居していた。束縛時のパス存在検査（打ち間違いを `console.warn` で知らせる、動作には関わらない開発時の診断）は `src/diagnostics/pathChecks.ts` へ。**throw するエラーの文言**（`$resolve` の添字の本数・ワイルドカードの段数・ルートパスの欠落など）と、その did-you-mean が使う候補集めは core に残した — エラーは機能の有無に関わらず読める文言で落ちなければならない。
+- **受け口**（`core/diagnosticsHooks.ts`）: `check` / `reset` / `markExported` の 3 点。置かれていなければ何もしない。**readiness barrier は置かない** — 診断が無いのは壊れた宣言ではなく静かな本番形なので、ここは他の機能と扱いが違う。
+- **サイズ**（単一ファイル束ね、gzip。[split-entry-sizes.json](research/state-next/split-entry-sizes.json)）: core **43,810 → 43,204 B**（minify 146,805 → 144,750、−2.0 KB）。`features/diagnostics` は +758 B。分割配信の閉包は 50,283 → 50,320 B とほぼ変わらない: 検査が抜けた分を、core と機能の間に新しく割れた共有チャンク（文言・`errorGuidance`・受け口）のファイルごとの gzip 代が食った。**分割配信の数字は、共有部分の割れ方しだいで減らない**ことがある。
+- **結果**: 全テスト 3,741 件成功（境界テスト 2 件 — core だけのページは打ち間違いを警告しない、`installFeatures([diagnostics])` で同じ打ち間違いが名指しで警告される）。カバレッジ 99.64 / 98.50 / 100 / 99.81、門は 4 つとも通る（結合は install 辺が 1 本増えて基準 9）。
+- **A2 の最終地点**: §5 の手を出し尽くした状態で core は 43.2 KB gzip。35 KB との差 8 KB はこの構造では埋まらない（[行ランタイム設計](./state-next-major-runtime-design.ja.md) §9）。
+
 ## 9. 決めたこと・決めていないこと
 
 決めた（2026-09-21、要件 §6 の D12・D13・D15・D16）:

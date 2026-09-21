@@ -68,6 +68,7 @@ export default [
       'features/ssr': 'src/features/ssr.ts',
       'features/devtools': 'src/features/devtools.ts',
       'features/formats': 'src/features/formats.ts',
+      'features/diagnostics': 'src/features/diagnostics.ts',
     },
     output: {
       dir: 'dist/split',
@@ -98,6 +99,7 @@ export default [
       'features/ssr': 'src/features/ssr.ts',
       'features/devtools': 'src/features/devtools.ts',
       'features/formats': 'src/features/formats.ts',
+      'features/diagnostics': 'src/features/diagnostics.ts',
     },
     output: {
       dir: 'dist/split',

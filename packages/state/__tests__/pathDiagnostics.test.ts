@@ -12,9 +12,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   checkDeclaredPath, flushDeferredPathReports,
   clearReportedPaths,
-  missingRootPathMessage,
   resolvePathExistence,
-} from "../src/pathDiagnostics";
+} from "../src/diagnostics/pathChecks";
+import { missingRootPathMessage } from "../src/pathDiagnostics";
 import { setDevtoolsSink } from "../src/platform/devtoolsSink";
 import type { IStateElement } from "../src/components/types";
 import type { DevtoolsEvent } from "../src/devtools/types";

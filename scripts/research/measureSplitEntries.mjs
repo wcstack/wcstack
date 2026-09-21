@@ -22,7 +22,7 @@ if (!pkg) throw new Error('usage: measureSplitEntries.mjs <sandbox>/packages/sta
 const require = createRequire(join(pkg, 'package.json'));
 const { decode } = require('@jridgewell/sourcemap-codec');
 
-const FEATURES = ['temporal', 'scopes', 'recursion', 'ssr', 'devtools', 'formats'];
+const FEATURES = ['temporal', 'scopes', 'recursion', 'ssr', 'devtools', 'formats', 'diagnostics'];
 const CORE_DIRS = ['proxy', 'updater', 'bindings', 'apply', 'binding', 'dependency', 'list', 'structural'];
 const gzipOf = async (file) => gzipSync(await readFile(file), { level: 9 }).length;
 

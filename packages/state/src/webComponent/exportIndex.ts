@@ -5,7 +5,7 @@ import { getLoopContextByNode } from "../list/loopContextByNode";
 import { IListIndex } from "../list/types";
 import { setLoopContextSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
-import { markExportedPath } from "../pathDiagnostics";
+import { pathDiagnostics } from "../core/diagnosticsHooks";
 import { IExportEntry, IMountRecord, translateInnerPath } from "./mount";
 
 /**
@@ -130,7 +130,7 @@ export function registerExports(record: IMountRecord): void {
     // エイリアス辺（X5）: 子 getter のアドレス → 公開パス
     record.parentStateElement.addDynamicDependency(markerPath, exportedPath);
     // 未存在パスの遅延診断（X7）: この公開パスへのバインドは「存在しない」ではない
-    markExportedPath(record.parentStateElement, exportedPath);
+    pathDiagnostics?.markExported(record.parentStateElement, exportedPath);
   }
   record.parentStateElement.markHasMounts?.();
 }

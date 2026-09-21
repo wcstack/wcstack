@@ -203,6 +203,7 @@ leaves features out, it can compose them instead:
 | `@wcstack/state/features/ssr` | `enable-ssr`: server rendering and hydration |
 | `@wcstack/state/features/formats` | The formatting filters (`uc`, `date`, `round`, `truncate`, …). The core answers only `not`, which `if` / `else` need |
 | `@wcstack/state/features/devtools` | The DevTools hook protocol source |
+| `@wcstack/state/features/diagnostics` | Development-time warnings: a bound / `$watch` / `$scan` path that does not resolve on the state is reported with a did-you-mean. Without it the page stays silent — thrown errors keep their full messages either way |
 | `@wcstack/state/define` | `defineState` and the types only — no runtime at all |
 
 A declaration whose feature is missing does not fail quietly: it throws

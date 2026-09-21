@@ -14,7 +14,11 @@ import {
   resolveExport,
   warnShadowedExports,
 } from "../src/webComponent/exportIndex";
-import { checkDeclaredPath, flushDeferredPathReports, markExportedPath } from "../src/pathDiagnostics";
+import { checkDeclaredPath, flushDeferredPathReports, markExportedPath } from "../src/diagnostics/pathChecks";
+import { installDiagnostics } from "../src/diagnostics/install";
+
+// 公開 getter の登録（exportIndex）が診断へ届くのは、診断の機能が入っているときだけ
+installDiagnostics();
 import { setLoopContextByNode } from "../src/list/loopContextByNode";
 import { createListIndex } from "../src/list/createListIndex";
 import { setLoopContextSymbol } from "../src/proxy/symbols";

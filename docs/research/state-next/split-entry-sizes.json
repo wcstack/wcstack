@@ -1,66 +1,71 @@
 {
-  "timestamp": "2026-09-21T00:59:25.219Z",
+  "timestamp": "2026-09-21T04:17:30.536Z",
   "pkg": "C:/Users/kikuzawa/Documents/git/wcstack/wcstack-next-major/packages/state",
   "note": "Single-file bundles are one gzip -9 stream each (comparable with the shipped auto.min.js); dist-split files are gzipped one by one, as a CDN serves them. byModule/byGroup are minified bytes of the core bundle attributed through its source map.",
   "singleFile": {
     "core": {
-      "bytes": 143050,
-      "gzip": 42705
+      "bytes": 144750,
+      "gzip": 43204
     },
     "core-all": {
-      "bytes": 249925,
-      "gzip": 73668
+      "bytes": 253860,
+      "gzip": 74926
     },
     "core-temporal": {
-      "bytes": 171426,
-      "gzip": 51003,
-      "gzipOverCore": 8298
+      "bytes": 173124,
+      "gzip": 51531,
+      "gzipOverCore": 8327
     },
     "core-scopes": {
-      "bytes": 195796,
-      "gzip": 58062,
-      "gzipOverCore": 15357
+      "bytes": 197368,
+      "gzip": 58497,
+      "gzipOverCore": 15293
     },
     "core-recursion": {
-      "bytes": 159241,
-      "gzip": 47528,
-      "gzipOverCore": 4823
+      "bytes": 160941,
+      "gzip": 48029,
+      "gzipOverCore": 4825
     },
     "core-ssr": {
-      "bytes": 154199,
-      "gzip": 45787,
-      "gzipOverCore": 3082
+      "bytes": 155899,
+      "gzip": 46303,
+      "gzipOverCore": 3099
     },
     "core-devtools": {
-      "bytes": 149255,
-      "gzip": 44672,
-      "gzipOverCore": 1967
+      "bytes": 150861,
+      "gzip": 45152,
+      "gzipOverCore": 1948
     },
     "core-formats": {
-      "bytes": 148126,
-      "gzip": 43977,
-      "gzipOverCore": 1272
+      "bytes": 149826,
+      "gzip": 44463,
+      "gzipOverCore": 1259
+    },
+    "core-diagnostics": {
+      "bytes": 147087,
+      "gzip": 43962,
+      "gzipOverCore": 758
     }
   },
   "splitFiles": {
     "chunks/binder.js": {
-      "bytes": 97993,
-      "gzip": 30342,
+      "bytes": 95118,
+      "gzip": 28935,
       "sourceGroups": {
         "bindings": 21,
         "apply": 19,
-        "structural": 13,
-        "(root)": 11,
+        "structural": 14,
         "list": 11,
         "event": 11,
+        "(root)": 9,
         "bindTextParser": 8,
-        "address": 6,
+        "address": 5,
         "protocol": 3,
         "binding": 3,
         "core": 3,
-        "platform": 2,
         "proxy": 2,
         "mustache": 1,
+        "platform": 1,
         "token": 1,
         "command": 1,
         "propagation": 1,
@@ -70,47 +75,70 @@
       }
     },
     "chunks/checkDependency.js": {
-      "bytes": 685,
+      "bytes": 684,
       "gzip": 409,
       "sourceGroups": {
         "proxy": 1
       }
     },
-    "chunks/filterRegistry.js": {
-      "bytes": 2931,
-      "gzip": 1155,
+    "chunks/diagnosticsHooks.js": {
+      "bytes": 97,
+      "gzip": 114,
       "sourceGroups": {
-        "(root)": 3,
+        "core": 1
+      }
+    },
+    "chunks/errorGuidance.js": {
+      "bytes": 713,
+      "gzip": 431,
+      "sourceGroups": {
+        "(root)": 2
+      }
+    },
+    "chunks/filterRegistry.js": {
+      "bytes": 2318,
+      "gzip": 877,
+      "sourceGroups": {
         "protocol": 1,
+        "(root)": 1,
         "core": 1
       }
     },
     "chunks/getAllPropertyDescriptors.js": {
-      "bytes": 1825,
-      "gzip": 811,
+      "bytes": 1824,
+      "gzip": 812,
       "sourceGroups": {
         "core": 2,
         "(root)": 1
       }
     },
     "chunks/lifecycleHooks.js": {
-      "bytes": 2373,
-      "gzip": 1140,
+      "bytes": 2372,
+      "gzip": 1138,
       "sourceGroups": {
         "stateLoader": 2,
         "core": 1
       }
     },
     "chunks/mount.js": {
-      "bytes": 7340,
-      "gzip": 2904,
+      "bytes": 7378,
+      "gzip": 2923,
       "sourceGroups": {
         "webComponent": 1
       }
     },
+    "chunks/pathDiagnostics.js": {
+      "bytes": 4981,
+      "gzip": 2299,
+      "sourceGroups": {
+        "(root)": 2,
+        "address": 1,
+        "platform": 1
+      }
+    },
     "chunks/registerComponents.js": {
-      "bytes": 26389,
-      "gzip": 8284,
+      "bytes": 26483,
+      "gzip": 8219,
       "sourceGroups": {
         "proxy": 11,
         "list": 2,
@@ -124,8 +152,8 @@
       }
     },
     "chunks/setAll.js": {
-      "bytes": 18535,
-      "gzip": 6310,
+      "bytes": 18586,
+      "gzip": 6362,
       "sourceGroups": {
         "proxy": 12,
         "command": 2,
@@ -142,8 +170,8 @@
       }
     },
     "chunks/watchRuntime.js": {
-      "bytes": 14798,
-      "gzip": 5299,
+      "bytes": 14858,
+      "gzip": 5292,
       "sourceGroups": {
         "watch": 8,
         "scan": 5,
@@ -151,40 +179,48 @@
       }
     },
     "core.js": {
-      "bytes": 1116,
-      "gzip": 609,
+      "bytes": 1223,
+      "gzip": 636,
       "sourceGroups": {
         "core": 2,
         "(root)": 1
       }
     },
     "features/devtools.js": {
-      "bytes": 4040,
-      "gzip": 1887,
+      "bytes": 4118,
+      "gzip": 1907,
       "sourceGroups": {
         "devtools": 3,
         "features": 1
       }
     },
+    "features/diagnostics.js": {
+      "bytes": 2390,
+      "gzip": 1139,
+      "sourceGroups": {
+        "diagnostics": 2,
+        "features": 1
+      }
+    },
     "features/formats.js": {
-      "bytes": 4992,
-      "gzip": 1432,
+      "bytes": 5027,
+      "gzip": 1445,
       "sourceGroups": {
         "formats": 3,
         "features": 1
       }
     },
     "features/recursion.js": {
-      "bytes": 16053,
-      "gzip": 5493,
+      "bytes": 16122,
+      "gzip": 5502,
       "sourceGroups": {
         "recursion": 10,
         "features": 1
       }
     },
     "features/scopes.js": {
-      "bytes": 32295,
-      "gzip": 10448,
+      "bytes": 32424,
+      "gzip": 10455,
       "sourceGroups": {
         "webComponent": 17,
         "dcc": 7,
@@ -192,16 +228,16 @@
       }
     },
     "features/ssr.js": {
-      "bytes": 11227,
-      "gzip": 3853,
+      "bytes": 11317,
+      "gzip": 3872,
       "sourceGroups": {
         "ssr": 4,
         "features": 1
       }
     },
     "features/temporal.js": {
-      "bytes": 14662,
-      "gzip": 5214,
+      "bytes": 14744,
+      "gzip": 5254,
       "sourceGroups": {
         "stream": 6,
         "scan": 3,
@@ -211,56 +247,61 @@
   },
   "splitDownload": {
     "core": {
-      "files": 9,
-      "bytes": 151915,
-      "gzip": 49148
+      "files": 12,
+      "bytes": 154467,
+      "gzip": 50320
     },
     "core+temporal": {
-      "files": 11,
-      "bytes": 181375,
-      "gzip": 59661
+      "files": 14,
+      "bytes": 184069,
+      "gzip": 60866
     },
     "core+scopes": {
-      "files": 12,
-      "bytes": 206348,
-      "gzip": 67799
+      "files": 15,
+      "bytes": 209127,
+      "gzip": 68990
     },
     "core+recursion": {
-      "files": 10,
-      "bytes": 167968,
-      "gzip": 54641
+      "files": 13,
+      "bytes": 170589,
+      "gzip": 55822
     },
     "core+ssr": {
-      "files": 10,
-      "bytes": 163142,
-      "gzip": 53001
+      "files": 13,
+      "bytes": 165784,
+      "gzip": 54192
     },
     "core+devtools": {
-      "files": 11,
-      "bytes": 163295,
-      "gzip": 53939
+      "files": 14,
+      "bytes": 165963,
+      "gzip": 55150
     },
     "core+formats": {
-      "files": 10,
-      "bytes": 156907,
-      "gzip": 50580
+      "files": 13,
+      "bytes": 159494,
+      "gzip": 51765
+    },
+    "core+diagnostics": {
+      "files": 13,
+      "bytes": 156857,
+      "gzip": 51459
     },
     "core+all": {
-      "files": 17,
-      "bytes": 257322,
-      "gzip": 85678
+      "files": 21,
+      "bytes": 262845,
+      "gzip": 88109
     }
   },
   "featureEntriesCarryingCoreModules": {},
   "coreBundleByGroup": {
-    "bindings": 22246,
+    "bindings": 24650,
     "proxy": 19030,
-    "apply": 15856,
-    "components": 12645,
-    "event": 11546,
-    "(root)": 10769,
+    "apply": 15894,
+    "components": 12588,
+    "event": 11564,
+    "structural": 10603,
     "list": 10556,
-    "structural": 9282,
+    "(root)": 8757,
     "dependency": 7389,
     "bindTextParser": 4972,
     "address": 4019,
@@ -268,7 +309,7 @@
     "protocol": 2258,
     "updater": 1864,
     "stateLoader": 1781,
-    "binding": 1580,
+    "binding": 1568,
     "command": 1302,
     "mustache": 1026,
     "propagation": 945,
@@ -277,21 +318,20 @@
     "cache": 156
   },
   "coreBundleByModule": {
-    "bindings/BindingSession.ts": 13049,
-    "components/State.ts": 12645,
+    "bindings/BindingSession.ts": 15390,
+    "components/State.ts": 12588,
     "proxy/methods/setByAddress.ts": 4578,
     "apply/applyChangeToFor.ts": 4014,
-    "structural/createContent.ts": 3565,
+    "structural/createContent.ts": 3721,
     "dependency/walkDependency.ts": 3556,
     "event/twowayHandler.ts": 3547,
-    "pathDiagnostics.ts": 3544,
     "proxy/traps/get.ts": 3126,
     "dependency/keyedDependency.ts": 3007,
     "bindings/initialSync.ts": 2452,
     "proxy/StateHandler.ts": 2212,
     "structural/collectStructuralFragments.ts": 2180,
     "list/createListDiff.ts": 2071,
-    "apply/applyChange.ts": 2042,
+    "apply/applyChange.ts": 2071,
     "bindTextParser/expandSpread.ts": 1907,
     "updater/updater.ts": 1864,
     "apply/applyChangeToProperty.ts": 1845,
@@ -300,12 +340,13 @@
     "address/PathInfo.ts": 1732,
     "config.ts": 1635,
     "proxy/methods/getByAddress.ts": 1571,
+    "pathDiagnostics.ts": 1532,
     "event/eventTokenHandler.ts": 1475,
+    "event/handler.ts": 1421,
     "list/mergeKeyedList.ts": 1410,
-    "event/handler.ts": 1408,
+    "structural/activateContent.ts": 1407,
     "stateElementByName.ts": 1389,
     "event/checkboxHandler.ts": 1320,
-    "protocol/wcBindableReader.ts": 1318,
-    "bindTextParser/parseBindTextsForElement.ts": 1298
+    "protocol/wcBindableReader.ts": 1318
   }
 }

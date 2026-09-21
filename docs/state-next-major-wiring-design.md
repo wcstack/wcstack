@@ -268,6 +268,17 @@ D16's decision — "filter functions are resolved at binding-plan time; only the
 - **Size**: the core alone goes 43,779 → **42,705 B gzip** (147,356 → 143,050 minified). `features/formats` costs +1,272 B. The full `auto.min.js` goes 73,561 → 73,968 (+407, the registry's indirection). The split core's closure goes 49,535 → 49,148 B.
 - **Result**: all 3,704 tests pass (three test files adapted: the 7 cases that assumed parse-time resolution were rewritten to the new contract, and `core.filterRegistry.test.ts` was added as the boundary test). Coverage, lint and all four gates pass.
 
+### 8-14. `features/diagnostics` (2026-09-21, development-time diagnostics, `packages/state`)
+
+§5's "diagnostic messages to a dev build" is implemented as **a feature**, not as a second build.
+
+- **Why this shape**: a buildless package with separate dev and production files (URLs) makes every user pick a URL, which breaks the one-line CDN premise. Riding the existing `installFeatures` mechanism keeps full and `auto` exactly as before (diagnostics included), and lets only a page that chose `@wcstack/state/core` leave them out — which is also the entry A2 is measured on.
+- **Only the diagnostics that do not stop execution moved**: `pathDiagnostics.ts` held two kinds of thing. The binding-time existence check (a `console.warn` for a typo'd path — a development aid that changes no behaviour) moved to `src/diagnostics/pathChecks.ts`. **The messages of thrown errors** (the index count of `$resolve`, the wildcard rank, a missing root path…) and the candidate collection their did-you-mean uses stay in the core: an error must fail with a readable message whether or not any feature is installed.
+- **The receptacle** (`core/diagnosticsHooks.ts`): three points, `check` / `reset` / `markExported`; with nothing installed they do nothing. **There is no readiness barrier** — missing diagnostics is not a broken declaration but a quiet production page, which is where this feature differs from the others.
+- **Size** (single-file bundles, gzip; [split-entry-sizes.json](research/state-next/split-entry-sizes.json)): the core goes **43,810 → 43,204 B** (146,805 → 144,750 minified, −2.0 KB); `features/diagnostics` costs +758 B. The split form's closure barely moves, 50,283 → 50,320 B: what the check took out was eaten by the per-file gzip overhead of the shared chunks the split newly carved between the core and the features (the messages, `errorGuidance`, the receptacle). **A split-delivery number can fail to drop, depending on how the shared code is cut.**
+- **Result**: all 3,741 tests pass (two boundary tests: a core-only page does not warn about a typo'd path, and `installFeatures([diagnostics])` makes the same typo warn by name). Coverage 99.64 / 98.50 / 100 / 99.81; all four gates pass (one more install edge, so the coupling baseline is 9).
+- **Where A2 ends**: with every lever of §5 used, the core is 43.2 KB gzip. The remaining 8 KB to 35 KB cannot be closed in this structure ([row runtime design](./state-next-major-runtime-design.md) §9).
+
 ## 9. Decided and undecided
 
 Decided (2026-09-21, requirements §6 D12, D13, D15, D16):

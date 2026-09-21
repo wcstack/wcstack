@@ -202,6 +202,7 @@
 | `@wcstack/state/features/ssr` | `enable-ssr`: サーバー描画とハイドレーション |
 | `@wcstack/state/features/formats` | 書式フィルタ群（`uc`・`date`・`round`・`truncate` …）。core が答えるのは `if` / `else` が要る `not` だけ |
 | `@wcstack/state/features/devtools` | DevTools Hook Protocol への source 登録 |
+| `@wcstack/state/features/diagnostics` | 開発時の警告: 束縛・`$watch`・`$scan` のパスが state 上で解決できないとき、did-you-mean 付きで知らせる。入れなければ静か（本番向け）。throw するエラーの文言はどちらでも変わらない |
 | `@wcstack/state/define` | `defineState` と型だけ — ランタイムは 0 |
 
 機能が入っていない宣言は黙って無視されません。state の定義時に

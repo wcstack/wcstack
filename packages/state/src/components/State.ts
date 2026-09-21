@@ -28,7 +28,8 @@ import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/sy
 import { requireSsrHooks } from "../core/ssrHooks";
 import { HTMLElementBase } from "../platform/HTMLElementBase";
 import { getAllPropertyDescriptors } from "../getAllPropertyDescriptors";
-import { checkDeclaredPath, findDescriptor, PathInfoSource, resetPathDiagnostics } from "../pathDiagnostics";
+import { findDescriptor, PathInfoSource } from "../pathDiagnostics";
+import { pathDiagnostics } from "../core/diagnosticsHooks";
 import { collectReapplyPaths, reapplyStateBindings } from "../apply/reapplyStateBindings";
 
 function getStateInfo(
@@ -258,7 +259,7 @@ export class State extends HTMLElementBase implements IStateElement {
     // 存在検査の台帳も世代に属する（#270）。「パスごとに 1 回」の印を前の世代から持ち越すと、
     // 下の経路情報の作り直しが新しい state で検査し直さない。初回のセットには捨てるものが無い
     if (typeof previousState !== "undefined") {
-      resetPathDiagnostics(this);
+      pathDiagnostics?.reset(this);
     }
     // $updatedCallback の有無を state セット時に確定しておく（in はプロトタイプ
     // チェーンも見る・getter を評価しない）。drain 側はこのフラグで更新アドレスの
@@ -1068,9 +1069,10 @@ export class State extends HTMLElementBase implements IStateElement {
       const pathInfo = getPathInfo(path);
       this._pathSet.add(path);
       // 存在しないパスへの配線は「黙って更新されない」だけで終わるため、
-      // 新規パスを 1 回だけ検査して確実な miss を報告する（pathDiagnostics.ts）。
+      // 新規パスを 1 回だけ検査して確実な miss を報告する（diagnostics/pathChecks.ts — 開発時の
+      // 診断なので features/diagnostics。入っていなければ検査しない）。
       // パスごとに 1 回・バインド確立時のみで、更新のホットパスには乗らない。
-      checkDeclaredPath(this, this.__state, path, source);
+      pathDiagnostics?.check(this, this.__state, path, source);
       if (pathInfo.parentPath !== null) {
         let currentPathInfo = pathInfo;
         while(currentPathInfo.parentPath !== null) {
