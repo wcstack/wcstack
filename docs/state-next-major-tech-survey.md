@@ -820,7 +820,7 @@ node scripts/audit-state-tech-hookcost.mjs <label>=<file> ... [--samples N]     
 node scripts/audit-state-tech-gcshape.mjs [--samples N]                              # GC of create → immediate clear per bookkeeping shape (DOM-floor page)
 node scripts/audit-state-tech-heapsnapshot.mjs [--proto <file>] [--top N]            # heap of 10,000 rows attributed by type / constructor (pass an unminified build for names)
 node scripts/audit-state-tech-profile.mjs [--bundle <file>] [--op create1k|create10k|append1k|select10k] [--warm]   # CDP Profiler self time per function (--warm also profiles a second run on the same page, cold against warm)
-node scripts/audit-state-tech-allocsample.mjs [--bundle <file>] [--samples N]          # allocation sampling of the clear's window (self size per function); output renamed to -shipped / -proto
+node scripts/audit-state-tech-allocsample.mjs [--bundle <file>] [--op clear10k|create1k] [--samples N]   # allocation sampling of the clear's window (self size per function); output renamed to -shipped / -proto. --op create1k samples the cold 1,000-row creation instead and writes alloc-sample-create1k-<bundle>.json (runtime design §7-1)
 node scripts/audit-state-tech-helper-import.mjs --check --max-gzip 1024               # CI gate: re-export of defineState only stays under 1 KB gzip
 node scripts/check-state-size.mjs --check [--update]                                 # CI gate: gzip of auto.min.js / index.esm.js within +3 % of the release baseline (requirements N3 / D18)
 # e2e directory: re-run of the audit's benchmark

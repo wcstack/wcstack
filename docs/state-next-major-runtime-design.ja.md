@@ -50,7 +50,7 @@
 | R2 | プラン初期描画 | 読み 7 → 4・適用 3 → 1 回/行、活性化の段 −34%、warm 1,000 行 −34%（§4-1 の実測） | **3.0（実装済み、§4-1）** | `applyValueToBinding` の内部 export |
 | R3 | 行 record ＋ session をリストごとに 1 つ | ヒープ −18%（3,616 → 2,953 B/行）、時間は不変（§5-1 の実測） | **3.0（実装済み、§5-1）** | `BindingSession` の中核（`disposeBindings` / `destroyRow` / `isRowSession`、`getRecord` の合成ビュー） |
 | R4 | `BindingSession` の二重経路の一本化 | **前提が崩れた**（§6-1）。台帳への出入りだけを共通化して −143 B minify | **3.0（実装済み、§6-1）** | 内部のみ |
-| R5 | cold の候補（複製とノードパス解決の T4 形・プールの事前生成） | 未測定（cold 8 ms が対象） | 未定 | `resolveNodePath` の形・opt-in 属性 |
+| R5 | cold の割り当て（兄弟ポインタでのノード解決・行 record の素の配列・drain の反復） | cold 1,000 行生成の割り当て −12%、`resolveNodePath` 4.0 → 1.7 ms。時間は標本のばらつきの内側（§7-1） | **3.0（実装済み、§7-1）** | なし（プールの事前生成は未着手 — 公開面の判断） |
 
 R2 → R3 の順は計測の積み上げ順（§10.13 → §10.14）に合わせる。R4 は R3 が `BindingSession` を触った後に、同じ器で行う。
 
@@ -125,6 +125,41 @@ cold 66 ms の超過 38 ms の内訳は、コンテンツ生成 18・GC 10・暖
 2. **プールの事前生成**（opt-in 属性で初回描画の前に N 行分の content を作る）: cold を warm に寄せる最短経路だが、使わない行の生成が無駄になる。D14 は (a)（分母の見直し）を採ったので、これは**やらないことにした訳ではなく、優先度が下がった**。
 3. **割り当てのさらなる削減**: 帰属が §10.11 の続きに依存する。
 
+### 7-1. R5 の実装記録（2026-09-21、`packages/state`）
+
+設計原理 4 に従い、まず現行の製品（R2〜R4 入り）で cold の内訳を取り直した（[profile-create1k-coldwarm-r4.json](./research/state-next/profile-create1k-coldwarm-r4.json)、9 ページ）。窓は cold 58.6 / warm 29.2 ms。GC は §10.15 の 10.0 → **5.7 ms** まで下がっていて、最大の固まりは `importNode` 4.85 ＋ `resolveNodePath` 4.01 ＝ 8.9 ms（どちらも warm では 0 — プールが隠す）だった。割り当ては [audit-state-tech-allocsample.mjs](../scripts/audit-state-tech-allocsample.mjs) に `--op create1k` を足して取った（1 回 6.27 MB ＝ 6.3 KB/行。[alloc-sample-create1k-r4.json](./research/state-next/alloc-sample-create1k-r4.json)）。native の枠（`Map#set`・`Set#add`・iterator の `next`）を最寄りの JS 呼び出し元へ帰属させると、意味論を持たない割り当てが 3 か所に見つかった。
+
+- **`resolveNodePath` の `childNodes[i]`**: 複製したばかりの行では、`childNodes` に触れたノードごとに NodeList（と NodeRareData）が作られ、行の寿命のあいだ残る。兄弟ポインタ（`firstChild` / `nextSibling`）で辿る形にした。DOM 下限ページでは 1,000 行・5 パスで 3.3 → 2.5 ms（複製だけなら 1.5 ms。先に解決したノードを起点にする接頭辞の再利用は上乗せにならなかった — パスが短い）。同じ理由で `Content` のコンストラクタの `Array.from(fragment.childNodes)` も兄弟ポインタで集める形にした（`resolveNodePath` が触らなくなった分を、ここが最初に払っていた — 一度直した後のプロファイルで `Content` が 0.89 → 2.22 ms に増えて分かった）。
+- **行 record の `Uint8Array` 2 本**（`phases` / `flags`）: 型付き配列は本体と backing store で 1 本 100 B を超え、1 行 250 B だった。同じ record の他の 3 本と同じ素の配列（Smi）にした。
+- **drain（`Updater._applyChange`）の `for...of`**: drain は 1 バッチに 1 回しか呼ばれないので最適化段に上がらず、`for...of` は反復ごとに結果オブジェクト（Map なら `[key, value]` 配列も）を割り当てる。生成 1,000 行では依存の展開（`data` → 追加行の `data.*` → その派生）で行ごとに数件のアドレスが積まれ（追加 1,000 行の計数では enqueue 4,001 件）、この反復だけで 0.6 MB だった。添字ループと `Map#forEach` にし、着地の Set も Map の鍵から作り直さず 1 本目のループで積む（順序は同じ）。
+
+**採らなかったもの**: `markNodeRegistered` / `resolveInitializedBinding` の台帳（再スキャン防止と初期化待ち — 設計原理 2 の意味論を持つ台帳）、束縛オブジェクトの複製（`{ ...slot.template, node, replaceNode }`。束縛は多数の WeakMap の鍵で、プロトタイプ共有にすると spread / `Object.keys` の利用者が壊れる）、`importNode`（`cloneNode` にすると行の中のカスタム要素が inert な document で作られ、upgrade の時期が変わる）。
+
+**結果**（前 = R4 のビルド、後 = R5。成果物は [alloc-sample-create1k-r5.json](./research/state-next/alloc-sample-create1k-r5.json) と [profile-create1k-coldwarm-r5.json](./research/state-next/profile-create1k-coldwarm-r5.json)）:
+
+| 指標 | 前 | 後 |
+|---|---:|---:|
+| cold 1,000 行生成の割り当て（9 ページ） | 6.27 MB | **5.52 MB（−12%）** |
+| `resolveNodePath`（プロファイル、cold） | 4.01 ms | **1.71 ms** |
+| `Content`（同） | 0.89 ms | 0.15 ms |
+| GC（同） | 5.7 ms | 5.6 ms |
+| 窓（プロファイル中、cold / warm） | 58.6 / 29.2 ms | 50.1 / 24.7 ms |
+
+ベンチ計時（[audit-state-tech-warmth.mjs](../scripts/audit-state-tech-warmth.mjs) `--fixture tracked`、前後を交互に 4 回ずつ走らせた 24 標本の中央値。p は Mann-Whitney の両側。標本は [warm-vs-cold-r5-alternating.json](./research/state-next/warm-vs-cold-r5-alternating.json)）:
+
+| 指標 | 前 | 後 | 差 |
+|---|---:|---:|---|
+| 1,000 行生成（cold） | 47.5 ms | 48.5 ms | p = 0.67 |
+| 1,000 行生成（warm） | 18.5 ms | 16.3 ms | p = 0.29 |
+| 1 万行へ 1,000 行追加（cold） | 60.7 ms | 51.8 ms | p = 0.11 |
+| 1 万行消去（cold） | 55.8 ms | 49.3 ms | p = 0.06 |
+| 1 万行消去（warm） | 68.8 ms | 65.0 ms | p = 0.05 |
+
+- **確かなのは割り当てとプロファイルの側で、時間はどれも p < 0.05 に届かない**。追加と消去は改善の向きに動いた（消去が境目）が、監査ベンチの指標である cold の 1,000 行生成は逆向きに動いた（ばらつきの内側）。`Content` を直す前のビルドで同じ計時を 1 度取ったときは cold 1,000 行生成 48.4 → 45.6 ms（p = 0.15）で、向きは走らせるたびに入れ替わる。この機械の cold は 1 ページごとに ±10 ms 動く。warm の消去は §8.5 のとおり GC のスパイクが混じる指標で、比較には使わない。
+- **GC は動かなかった**。割り当てを 1 割削っても、1,000 行の生成で起きる scavenge の回数（段）は変わらない。§7 の候補 3（割り当て削減）で cold の GC を動かすには、もっと大きな割合を削る必要がある（どこまで削れば段が変わるかは測っていない）。
+- 全テスト 3,743 件成功（`resolveNodePath` の境界テストを 2 件追加 — 範囲外の添字・テキストとコメントの数え方）、カバレッジ 99.64 / 98.50 / 100 / 99.81、門は 4 つとも通る。
+- **残るのはプールの事前生成（候補 2）だけ**。cold を warm に寄せる最短経路だが、opt-in 属性という公開面の判断なので、ここでは手を付けていない（§9）。
+
 ## 8. 検証
 
 1. **挙動**: 既存の全テストが緑（各段はサンドボックスで 3,661 件通過済み。製品では 3,704 件）。R2 は再帰・再セットの境界テスト 2 本、R3 は共有 session の deferred 規則の統合テスト 2 本を追加する。
@@ -144,6 +179,6 @@ cold 66 ms の超過 38 ms の内訳は、コンテンツ生成 18・GC 10・暖
 決めていない:
 
 - R4 の一本化の形（§6）。R3 の実装後に決める。
-- R5 の 3 候補の順序と、プール事前生成の opt-in 属性を作るかどうか。
+- プール事前生成の opt-in 属性を作るかどうか（R5 の候補 1・3 は §7-1 で実装済み）。
 - 残る 3.0 KB/行 の削減（帰属が先）。
 - A2（35 KB）に届かせるかどうか: R4（−2.9 KB minify）と診断の dev ビルド化（−5 KB minify）を積んでも、core は 42.7 KB gzip から 40 KB 前後にしかならない。**35 KB は、この構造のまま（proxy ＋ 依存グラフ ＋ 二重の初期同期）では届かない**という結論を先に書いておく — 届かせるには監査 §7 の「全面新実装」側の判断が要る。

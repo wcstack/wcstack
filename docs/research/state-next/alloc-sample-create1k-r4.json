@@ -1,0 +1,325 @@
+{
+  "revision": "de242a5a8081598ffc24ef449fe306ca551fcb3c",
+  "timestamp": "2026-09-21T04:27:00.135Z",
+  "browser": "149.0.7827.55",
+  "bundle": "r4.js",
+  "op": "create1k",
+  "fixture": "tracked",
+  "rows": 1000,
+  "samples": 9,
+  "samplingIntervalBytes": 4096,
+  "createMs": [
+    49.8,
+    31.5,
+    28.4,
+    49.4,
+    61.3,
+    52.3,
+    56.3,
+    60.8,
+    57.3
+  ],
+  "allocatedBytesPerRun": 6570569,
+  "top": [
+    {
+      "fn": "set :0",
+      "bytesPerRun": 1559002,
+      "share": 23.7
+    },
+    {
+      "fn": "add :0",
+      "bytesPerRun": 770385,
+      "share": 11.7
+    },
+    {
+      "fn": "next :0",
+      "bytesPerRun": 695593,
+      "share": 10.6
+    },
+    {
+      "fn": "createPlanContent auto.min.js:6925",
+      "bytesPerRun": 684840,
+      "share": 10.4
+    },
+    {
+      "fn": "Uint8Array :0",
+      "bytesPerRun": 254071,
+      "share": 3.9
+    },
+    {
+      "fn": "initializeRow auto.min.js:4338",
+      "bytesPerRun": 206277,
+      "share": 3.1
+    },
+    {
+      "fn": "WeakMap :0",
+      "bytesPerRun": 199487,
+      "share": 3
+    },
+    {
+      "fn": "values :0",
+      "bytesPerRun": 146048,
+      "share": 2.2
+    },
+    {
+      "fn": "get auto.min.js:12215",
+      "bytesPerRun": 144427,
+      "share": 2.2
+    },
+    {
+      "fn": "buildData buildData.js:22",
+      "bytesPerRun": 123117,
+      "share": 1.9
+    },
+    {
+      "fn": "enqueueAbsoluteAddress auto.min.js:5524",
+      "bytesPerRun": 119165,
+      "share": 1.8
+    },
+    {
+      "fn": "bindLoopContextToContent auto.min.js:6349",
+      "bytesPerRun": 116802,
+      "share": 1.8
+    },
+    {
+      "fn": "_collectDependencies auto.min.js:11004",
+      "bytesPerRun": 105321,
+      "share": 1.6
+    },
+    {
+      "fn": "createStateAddress auto.min.js:2158",
+      "bytesPerRun": 98593,
+      "share": 1.5
+    },
+    {
+      "fn": "getFilteredValue auto.min.js:4838",
+      "bytesPerRun": 98576,
+      "share": 1.5
+    },
+    {
+      "fn": "createLoopContext auto.min.js:9642",
+      "bytesPerRun": 85702,
+      "share": 1.3
+    },
+    {
+      "fn": "push :0",
+      "bytesPerRun": 84604,
+      "share": 1.3
+    },
+    {
+      "fn": "createAbsoluteStateAddress auto.min.js:1768",
+      "bytesPerRun": 76644,
+      "share": 1.2
+    },
+    {
+      "fn": "applyChangeToFor auto.min.js:7269",
+      "bytesPerRun": 68620,
+      "share": 1
+    },
+    {
+      "fn": "filter :0",
+      "bytesPerRun": 67135,
+      "share": 1
+    },
+    {
+      "fn": "createListIndex auto.min.js:5171",
+      "bytesPerRun": 62819,
+      "share": 1
+    },
+    {
+      "fn": "from :0",
+      "bytesPerRun": 57184,
+      "share": 0.9
+    },
+    {
+      "fn": "_getByAddressWithCache auto.min.js:10435",
+      "bytesPerRun": 50261,
+      "share": 0.8
+    },
+    {
+      "fn": "attachEventHandler auto.min.js:2704",
+      "bytesPerRun": 49776,
+      "share": 0.8
+    },
+    {
+      "fn": "slice :0",
+      "bytesPerRun": 44257,
+      "share": 0.7
+    },
+    {
+      "fn": "resolveNodePath auto.min.js:1352",
+      "bytesPerRun": 41962,
+      "share": 0.6
+    },
+    {
+      "fn": "enqueue auto.min.js:10966",
+      "bytesPerRun": 40899,
+      "share": 0.6
+    },
+    {
+      "fn": "WeakRef :0",
+      "bytesPerRun": 37121,
+      "share": 0.6
+    },
+    {
+      "fn": "random :0",
+      "bytesPerRun": 32360,
+      "share": 0.5
+    },
+    {
+      "fn": "random buildData.js:1",
+      "bytesPerRun": 31905,
+      "share": 0.5
+    },
+    {
+      "fn": "get listIndexes auto.min.js:5111",
+      "bytesPerRun": 31052,
+      "share": 0.5
+    },
+    {
+      "fn": "applyChange auto.min.js:8389",
+      "bytesPerRun": 29696,
+      "share": 0.5
+    },
+    {
+      "fn": "getHandlerKey$2 auto.min.js:2645",
+      "bytesPerRun": 28770,
+      "share": 0.4
+    },
+    {
+      "fn": "slotTails auto.min.js:6377",
+      "bytesPerRun": 27418,
+      "share": 0.4
+    },
+    {
+      "fn": "applyChangeToClass auto.min.js:4855",
+      "bytesPerRun": 21073,
+      "share": 0.3
+    },
+    {
+      "fn": "(anonymous) :1",
+      "bytesPerRun": 18528,
+      "share": 0.3
+    },
+    {
+      "fn": "applyChangeToText auto.min.js:7987",
+      "bytesPerRun": 15966,
+      "share": 0.2
+    },
+    {
+      "fn": "delete :0",
+      "bytesPerRun": 14392,
+      "share": 0.2
+    },
+    {
+      "fn": "toLowerCase :0",
+      "bytesPerRun": 14142,
+      "share": 0.2
+    },
+    {
+      "fn": "(V8 API) :0",
+      "bytesPerRun": 13906,
+      "share": 0.2
+    },
+    {
+      "fn": "Content auto.min.js:6655",
+      "bytesPerRun": 13256,
+      "share": 0.2
+    },
+    {
+      "fn": "toString :0",
+      "bytesPerRun": 13228,
+      "share": 0.2
+    },
+    {
+      "fn": "getUUID auto.min.js:4983",
+      "bytesPerRun": 11404,
+      "share": 0.2
+    },
+    {
+      "fn": "UtilityScript :272",
+      "bytesPerRun": 9233,
+      "share": 0.1
+    },
+    {
+      "fn": "Content auto.min.js:6667",
+      "bytesPerRun": 7756,
+      "share": 0.1
+    },
+    {
+      "fn": "walkDependency auto.min.js:11136",
+      "bytesPerRun": 7312,
+      "share": 0.1
+    },
+    {
+      "fn": "activateContent auto.min.js:6464",
+      "bytesPerRun": 6427,
+      "share": 0.1
+    },
+    {
+      "fn": "evaluate :297",
+      "bytesPerRun": 5994,
+      "share": 0.1
+    },
+    {
+      "fn": "_walkDependency auto.min.js:10960",
+      "bytesPerRun": 5709,
+      "share": 0.1
+    },
+    {
+      "fn": "compileRowPlan auto.min.js:6590",
+      "bytesPerRun": 4626,
+      "share": 0.1
+    },
+    {
+      "fn": "(BYTECODE_COMPILER) :0",
+      "bytesPerRun": 4604,
+      "share": 0.1
+    },
+    {
+      "fn": "notifyWrite auto.min.js:11245",
+      "bytesPerRun": 4161,
+      "share": 0.1
+    },
+    {
+      "fn": "(anonymous) :2",
+      "bytesPerRun": 4133,
+      "share": 0.1
+    },
+    {
+      "fn": "StateHandler auto.min.js:12506",
+      "bytesPerRun": 3740,
+      "share": 0.1
+    },
+    {
+      "fn": "applyPlanRow auto.min.js:6429",
+      "bytesPerRun": 3557,
+      "share": 0.1
+    },
+    {
+      "fn": "get untracking auto.min.js:12630",
+      "bytesPerRun": 3447,
+      "share": 0.1
+    },
+    {
+      "fn": "shouldApplyState auto.min.js:3900",
+      "bytesPerRun": 3388,
+      "share": 0.1
+    },
+    {
+      "fn": "createContent auto.min.js:6967",
+      "bytesPerRun": 3330,
+      "share": 0.1
+    },
+    {
+      "fn": "resolveRanged auto.min.js:6887",
+      "bytesPerRun": 3209,
+      "share": 0
+    },
+    {
+      "fn": "(IDLE_EXTERNAL) :0",
+      "bytesPerRun": 3190,
+      "share": 0
+    }
+  ]
+}

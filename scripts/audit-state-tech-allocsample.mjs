@@ -5,7 +5,10 @@
 // A scavenge inside the clear is triggered by these allocations, so they are what a form that
 // avoids it has to remove. Unminified bundle for readable names. Run from the repository root
 // after `npm ci` in e2e/:
-//   node scripts/audit-state-tech-allocsample.mjs [--bundle <file>] [--fixture manual|tracked] [--samples N] [--top N]
+//   node scripts/audit-state-tech-allocsample.mjs [--bundle <file>] [--op clear10k|create1k] [--fixture manual|tracked] [--samples N] [--top N]
+// --op create1k samples the audit benchmark's cold creation of 1,000 rows on a fresh page instead
+// (runtime design R5: what the young-generation GC of a cold creation is paying for); its report is
+// written as alloc-sample-create1k-<bundle>.json so that the clear's artefacts are left alone.
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, resolve, basename } from 'node:path';
 import { createRequire } from 'node:module';
@@ -19,6 +22,8 @@ await mkdir(outDir, { recursive: true });
 const arg = (name, dflt) => process.argv.includes(name) ? process.argv[process.argv.indexOf(name) + 1] : dflt;
 const bundlePath = arg('--bundle', join(root, 'packages/state/dist/index.esm.js'));
 const fixture = arg('--fixture', 'tracked');
+const op = arg('--op', 'clear10k');
+if (op !== 'clear10k' && op !== 'create1k') throw new Error(`unknown op ${op}`);
 const N = Number(arg('--samples', 3));
 const TOP = Number(arg('--top', 30));
 const port = 4309;
@@ -62,21 +67,24 @@ try {
     await page.route('**/benchmark/index.html', r => r.fulfill({ contentType: 'text/html', body: html }));
     await page.route('**/dist/auto.min.js', r => r.fulfill({ contentType: 'text/javascript', body: runtime }));
     await page.goto(url, { waitUntil: 'networkidle' });
-    await page.click('#runlots');
-    await page.waitForFunction(() => document.querySelectorAll('tbody>tr').length === 10000);
+    if (op === 'clear10k') {
+      await page.click('#runlots');
+      await page.waitForFunction(() => document.querySelectorAll('tbody>tr').length === 10000);
+    }
     const cdp = await page.context().newCDPSession(page);
     await cdp.send('HeapProfiler.enable');
     await cdp.send('HeapProfiler.startSampling', { samplingInterval: 4096, includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true });
-    const ms = await page.evaluate(() => new Promise((res, rej) => {
+    const [selector, rows] = op === 'clear10k' ? ['#clear', 0] : ['#run', 1000];
+    const ms = await page.evaluate(({ selector, rows }) => new Promise((res, rej) => {
       const to = setTimeout(() => rej(new Error('timeout')), 20000);
       const mo = new MutationObserver(() => {
-        if (document.querySelectorAll('tbody>tr').length !== 0) return;
+        if (document.querySelectorAll('tbody>tr').length !== rows) return;
         clearTimeout(to); mo.disconnect(); res(performance.now() - t0);
       });
       mo.observe(document.querySelector('tbody'), { childList: true, subtree: true, attributes: true, characterData: true });
       const t0 = performance.now();
-      document.querySelector('#clear').click();
-    }));
+      document.querySelector(selector).click();
+    }), { selector, rows });
     const { profile } = await cdp.send('HeapProfiler.stopSampling');
     await cdp.detach();
     clears.push(ms);
@@ -85,10 +93,11 @@ try {
   }
   const rows = [...total].map(([fn, bytes]) => ({ fn, bytesPerRun: Math.round(bytes / N), share: +(bytes / totalBytes * 100).toFixed(1) })).sort((a, b) => b.bytesPerRun - a.bytesPerRun);
   const report = { revision: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(), timestamp: new Date().toISOString(),
-    browser: browser.version(), bundle: basename(bundlePath), fixture, rows: 10000, samples: N, samplingIntervalBytes: 4096,
-    clearMs: clears.map(x => +x.toFixed(1)), allocatedBytesPerRun: Math.round(totalBytes / N), top: rows.slice(0, TOP) };
-  await writeFile(join(outDir, 'alloc-sample-clear.json'), JSON.stringify(report, null, 2) + '\n');
-  console.log(JSON.stringify({ clearMs: report.clearMs, allocatedMBPerRun: +(report.allocatedBytesPerRun / 1048576).toFixed(2) }));
+    browser: browser.version(), bundle: basename(bundlePath), op, fixture, rows: op === 'clear10k' ? 10000 : 1000, samples: N, samplingIntervalBytes: 4096,
+    [op === 'clear10k' ? 'clearMs' : 'createMs']: clears.map(x => +x.toFixed(1)), allocatedBytesPerRun: Math.round(totalBytes / N), top: rows.slice(0, TOP) };
+  const outName = op === 'clear10k' ? 'alloc-sample-clear.json' : `alloc-sample-create1k-${basename(bundlePath).replace(/\.js$/, '')}.json`;
+  await writeFile(join(outDir, outName), JSON.stringify(report, null, 2) + '\n');
+  console.log(JSON.stringify({ op, ms: report.clearMs ?? report.createMs, allocatedMBPerRun: +(report.allocatedBytesPerRun / 1048576).toFixed(2) }));
   for (const r of rows.slice(0, 25)) console.log(`${String((r.bytesPerRun / 1024).toFixed(0)).padStart(7)} KB ${String(r.share).padStart(5)}%  ${r.fn}`);
 } finally { if (browser) await browser.close(); server.kill(); }
 process.exit(0);

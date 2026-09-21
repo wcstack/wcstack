@@ -192,8 +192,18 @@ class Updater {
     // coalescing は last-write-wins: 同じ address は最後の update の
     // (値は state 側が既に保持) context をそのまま採用する（設計書 §4.1）。
     // visitedEdges の合成や synthetic transaction への置換は行わない。
+    //
+    // このメソッドの反復は for...of を使わない（添字ループと Map#forEach）。drain は 1 バッチに 1 回しか
+    // 呼ばれないので最適化段に上がらず、for...of は反復ごとに結果オブジェクト（Map なら [key, value] の
+    // 配列も）を割り当てる。cold の 1,000 行生成では行ごとに数件の依存アドレスが積まれ、その分が
+    // 生成の割り当ての 1 割近くを占めていた（設計 R5）。
     const contextByAbsoluteAddress = new Map<IAbsoluteStateAddress, IPropagationContext | null>();
-    for (const record of updateRecords) {
+    // drain 終了リスナーへ渡すのは書き込みの着地だけ。描画だけのアドレスは、この後で適用の対象に足す
+    // （同じアドレスの書き込みがあれば、その context のまま着地として残る）。Map の鍵から作り直さず
+    // ここで積む（鍵の iterator は反復ごとに割り当てる。順序は同じ ＝ 最初に現れた順）
+    const landedAddresses = new Set<IAbsoluteStateAddress>();
+    for (let i = 0; i < updateRecords.length; i++) {
+      const record = updateRecords[i];
       const previous = contextByAbsoluteAddress.get(record.absoluteAddress);
       if (
         devtoolsSink !== null
@@ -209,18 +219,17 @@ class Updater {
         });
       }
       contextByAbsoluteAddress.set(record.absoluteAddress, record.context);
+      landedAddresses.add(record.absoluteAddress);
     }
-    // drain 終了リスナーへ渡すのは書き込みの着地だけ。描画だけのアドレスは、この後で適用の対象に足す
-    // （同じアドレスの書き込みがあれば、その context のまま着地として残る）
-    const landedAddresses = new Set(contextByAbsoluteAddress.keys());
-    for (const absoluteAddress of renderOnlyAddresses) {
+    for (let i = 0; i < renderOnlyAddresses.length; i++) {
+      const absoluteAddress = renderOnlyAddresses[i];
       if (!contextByAbsoluteAddress.has(absoluteAddress)) {
         contextByAbsoluteAddress.set(absoluteAddress, null);
       }
     }
     const processBindings: IBindingInfo[] = [];
     const propagationContextByBinding = new Map<IBindingInfo, IPropagationContext | null>();
-    for (const [absoluteAddress, context] of contextByAbsoluteAddress) {
+    contextByAbsoluteAddress.forEach((context, absoluteAddress) => {
       if (context !== null && context.hop >= MAX_PROPAGATION_HOPS) {
         // hop 上限超過: この transaction の未処理 record だけを quarantine する。
         // 既に適用した値は戻さず、updater から例外は投げない（設計書 §4 規則 6）。
@@ -238,7 +247,7 @@ class Updater {
             hop: context.hop,
           });
         }
-        continue;
+        return;
       }
       // peek: バインディングの無いアドレス（リスト置換で enqueue される中間
       // アドレス等）に空エントリを生成・蓄積しない。エントリは単一 binding
@@ -246,7 +255,7 @@ class Updater {
       // 従来台帳 → パターン台帳（リスト行）の順で引く。
       const entry = peekBindingsForAddress(absoluteAddress);
       if (entry === undefined) {
-        continue;
+        return;
       }
       if (entry instanceof Set) {
         for(const binding of entry) {
@@ -265,7 +274,7 @@ class Updater {
           propagationContextByBinding.set(entry, context);
         }
       }
-    }
+    });
     // drain 終了フック: binding 適用後に dedup 済みバッチを通知する（設計書 §3-2）。
     // testApplyChange も同じ _applyChange を通るため、テストから同期に駆動できる。
     // quarantine された address も state 値は適用済みのため通知対象に含める。

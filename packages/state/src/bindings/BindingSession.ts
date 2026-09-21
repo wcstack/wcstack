@@ -128,9 +128,9 @@ interface IRowRecord {
   /** activate が address 登録を昇格したか（従来の record.options.registerAddress に相当、行で共有） */
   registered: boolean;
   /** SLOT_* per slot */
-  readonly phases: Uint8Array;
+  readonly phases: number[];
   /** FLAG_* bits per slot */
-  readonly flags: Uint8Array;
+  readonly flags: number[];
   readonly addresses: (IAbsoluteStateAddress | null)[];
   readonly patternPathInfos: (ITreePath | null)[];
   readonly patternListIndexes: (IListIndex | null)[];
@@ -898,8 +898,10 @@ export class BindingSession {
       plan,
       bindings,
       registered: false,
-      phases: new Uint8Array(n),
-      flags: new Uint8Array(n),
+      // 素の配列（Smi）。型付き配列は本体と backing store で 1 本あたり 100 B を超え、cold の
+      // 生成では行ごとの割り当ての上位に出た（設計 R5）
+      phases: new Array<number>(n).fill(SLOT_ACTIVE),
+      flags: new Array<number>(n).fill(0),
       addresses: new Array<IAbsoluteStateAddress | null>(n).fill(null),
       patternPathInfos: new Array<ITreePath | null>(n).fill(null),
       patternListIndexes: new Array<IListIndex | null>(n).fill(null),

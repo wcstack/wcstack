@@ -37,7 +37,13 @@ class Content implements IContent {
   constructor(content: DocumentFragment, ranged: boolean = false) {
     this._content = content;
     this._ranged = ranged;
-    this._childNodeArray = Array.from(this._content.childNodes);
+    // childNodes（NodeList）と Array.from の iterator を作らずに兄弟ポインタで集める。複製した
+    // ばかりの fragment ではここが childNodes に触れる最初の場所になる（resolveNodePath と同じ理由、設計 R5）
+    const childNodeArray: Node[] = [];
+    for (let node = content.firstChild; node !== null; node = node.nextSibling) {
+      childNodeArray.push(node);
+    }
+    this._childNodeArray = childNodeArray;
     this._firstNode = this._childNodeArray.length > 0 ? this._childNodeArray[0] : null;
     this._lastNode = this._childNodeArray.length > 0 ? this._childNodeArray[this._childNodeArray.length - 1] : null;
   }

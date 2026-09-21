@@ -50,7 +50,7 @@ Where the 28 µs of a row go (survey §10.7, §10.11, §10.13):
 | R2 | Plan-level initial render | reads 7 → 4 and applies 3 → 1 per row, activation phase −34 %, warm 1,000 rows −34 % (§4-1) | **3.0 (implemented, §4-1)** | `applyValueToBinding` exported internally |
 | R3 | Row record + one session per list | heap −18 % (3,616 → 2,953 B/row), time unchanged (§5-1) | **3.0 (implemented, §5-1)** | `BindingSession`'s core (`disposeBindings`, `destroyRow`, `isRowSession`, a composed `getRecord`) |
 | R4 | Unify `BindingSession`'s two paths | **premise invalidated** (§6-1); only the ledger entry / exit was folded, −143 B minified | **3.0 (implemented, §6-1)** | internal only |
-| R5 | Cold candidates (T4 clone / node-path forms, pool pre-warming) | unmeasured (8 ms of cold is the target) | undecided | `resolveNodePath`'s shape, an opt-in attribute |
+| R5 | Cold allocation (sibling-pointer node resolution, plain arrays in the row record, the drain's loops) | cold 1,000-row creation allocates −12 %, `resolveNodePath` 4.0 → 1.7 ms; time within the noise (§7-1) | **3.0 (implemented, §7-1)** | none (pool pre-warming not started — a surface decision) |
 
 R2 before R3 follows the order the measurements were stacked in (§10.13 → §10.14). R4 comes after R3 has already touched `BindingSession`, in the same vehicle.
 
@@ -125,6 +125,41 @@ Cold's 38 ms excess over warm is content creation 18, GC 10, warm-up 7 (survey �
 2. **Pool pre-warming** (an opt-in attribute that builds N rows' content before the first render): the shortest route from cold to warm, at the price of building rows that may never be used. D14 chose (a), the revised denominator, so this is **lower priority, not ruled out**.
 3. **Less allocation still**: depends on the attribution that §10.11's continuation owes.
 
+### 7-1. R5's implementation record (2026-09-21, `packages/state`)
+
+Following principle 4, the cold breakdown was first re-taken on the current product (R2–R4 in; [profile-create1k-coldwarm-r4.json](./research/state-next/profile-create1k-coldwarm-r4.json), 9 pages). The window is 58.6 ms cold / 29.2 ms warm. GC is down from §10.15's 10.0 to **5.7 ms**, and the largest lump is `importNode` 4.85 + `resolveNodePath` 4.01 = 8.9 ms (both 0 when warm — the pool hides them). Allocation was sampled by adding `--op create1k` to [audit-state-tech-allocsample.mjs](../scripts/audit-state-tech-allocsample.mjs) (6.27 MB per run = 6.3 KB/row; [alloc-sample-create1k-r4.json](./research/state-next/alloc-sample-create1k-r4.json)). Attributing the native frames (`Map#set`, `Set#add`, an iterator's `next`) to their nearest JS caller showed three allocations that carry no semantics:
+
+- **`childNodes[i]` in `resolveNodePath`**: on a freshly cloned row, every node whose `childNodes` is touched grows a NodeList (and NodeRareData) that lives as long as the row. It now walks sibling pointers (`firstChild` / `nextSibling`). On a DOM floor page, 1,000 rows with five paths each go 3.3 → 2.5 ms (cloning alone is 1.5 ms; reusing an already-resolved prefix as the starting point added nothing — the paths are short). For the same reason the `Content` constructor's `Array.from(fragment.childNodes)` now collects by sibling pointers too: once `resolveNodePath` stopped touching the fragment's `childNodes`, `Content` paid for creating it — a profile after the first fix showed `Content` going 0.89 → 2.22 ms.
+- **The row record's two `Uint8Array`s** (`phases` / `flags`): a typed array costs over 100 B with its backing store, 250 B per row for the two. They are now plain arrays (Smis) like the record's other three.
+- **`for...of` in the drain (`Updater._applyChange`)**: the drain runs once per batch, so it never reaches an optimizing tier, and `for...of` allocates a result object per iteration (plus the `[key, value]` array over a Map). Creating 1,000 rows queues a few addresses per row through the dependency expansion (`data` → the added rows' `data.*` → their derivations; appending 1,000 rows counts 4,001 enqueues), and these loops alone allocated 0.6 MB. They are index loops and `Map#forEach` now, and the landed set is built in the first loop instead of from the Map's keys (same order).
+
+**Not taken**: the `markNodeRegistered` / `resolveInitializedBinding` ledgers (re-scan protection and the initialization wait — ledgers that carry semantics, principle 2); the binding object copy (`{ ...slot.template, node, replaceNode }` — a binding keys many WeakMaps, and sharing through a prototype would break users of spread / `Object.keys`); `importNode` (`cloneNode` would create a row's custom elements in the inert document and move their upgrade).
+
+**Results** (before = the R4 build, after = R5; artefacts [alloc-sample-create1k-r5.json](./research/state-next/alloc-sample-create1k-r5.json) and [profile-create1k-coldwarm-r5.json](./research/state-next/profile-create1k-coldwarm-r5.json)):
+
+| Measure | Before | After |
+|---|---:|---:|
+| Cold 1,000-row creation, allocated (9 pages) | 6.27 MB | **5.52 MB (−12 %)** |
+| `resolveNodePath` (profile, cold) | 4.01 ms | **1.71 ms** |
+| `Content` (same) | 0.89 ms | 0.15 ms |
+| GC (same) | 5.7 ms | 5.6 ms |
+| Window (while profiling, cold / warm) | 58.6 / 29.2 ms | 50.1 / 24.7 ms |
+
+Benchmark timing ([audit-state-tech-warmth.mjs](../scripts/audit-state-tech-warmth.mjs) `--fixture tracked`, before and after alternated four times each; median of 24 samples; p is a two-sided Mann-Whitney; samples in [warm-vs-cold-r5-alternating.json](./research/state-next/warm-vs-cold-r5-alternating.json)):
+
+| Measure | Before | After | Difference |
+|---|---:|---:|---|
+| Create 1,000 rows (cold) | 47.5 ms | 48.5 ms | p = 0.67 |
+| Create 1,000 rows (warm) | 18.5 ms | 16.3 ms | p = 0.29 |
+| Append 1,000 to 10,000 (cold) | 60.7 ms | 51.8 ms | p = 0.11 |
+| Clear 10,000 (cold) | 55.8 ms | 49.3 ms | p = 0.06 |
+| Clear 10,000 (warm) | 68.8 ms | 65.0 ms | p = 0.05 |
+
+- **What is certain is the allocation and the profile; no timing difference reaches p < 0.05.** Append and clear moved the right way (the clear is borderline), but the audit benchmark's own measure, the cold creation of 1,000 rows, moved the wrong way inside the noise. The same timing, taken once on the build before the `Content` fix, gave the cold creation 48.4 → 45.6 ms (p = 0.15): the direction flips from run to run, and a cold sample on this machine moves ±10 ms from page to page. The warm clear is the measure §8.5 excludes for its GC spikes.
+- **GC did not move.** Cutting a tenth of the allocation does not change how many scavenges (steps) a 1,000-row creation triggers. Moving cold GC through §7's candidate 3 would take cutting a much larger share (how much changes the step is not measured).
+- All 3,743 tests pass (two boundary tests added for `resolveNodePath` — an out-of-range index, and text / comment nodes counted as children); coverage 99.64 / 98.50 / 100 / 99.81; all four gates pass.
+- **Pool pre-warming (candidate 2) is what remains.** It is the shortest route from cold to warm, but it is a surface decision (an opt-in attribute), so it is not started here (§9).
+
 ## 8. Verification
 
 1. **Behaviour**: the whole suite stays green (each stage passed 3,661 tests in the sandbox; the product is at 3,704). R2 adds two boundary tests (recursion, re-set); R3 adds two integration tests for the shared session's deferred rule.
@@ -144,6 +179,6 @@ Decided (requirements §6):
 Undecided:
 
 - R4's unified shape (§6). Decide after R3.
-- The order of R5's three candidates, and whether the pool pre-warming attribute is built at all.
+- Whether the pool pre-warming attribute is built at all (R5's candidates 1 and 3 are implemented, §7-1).
 - Cutting the remaining 3.0 KB/row (attribution first).
 - Whether A2 (35 KB) is pursued at all: even with R4 (−2.9 KB minified) and diagnostics moved to a dev build (−5 KB minified), the core goes from 42.7 KB gzip to about 40. **35 KB is out of reach for this structure** (proxy + dependency graph + two initial-sync paths); reaching it is a decision on audit §7's "full reimplementation" side, not a refactor.

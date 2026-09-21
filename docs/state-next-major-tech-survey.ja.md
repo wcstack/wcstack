@@ -820,7 +820,7 @@ node scripts/audit-state-tech-hookcost.mjs <label>=<file> ... [--samples N]     
 node scripts/audit-state-tech-gcshape.mjs [--samples N]                              # 帳簿形状別の生成 → 即消去の GC（DOM 下限ページ）
 node scripts/audit-state-tech-heapsnapshot.mjs [--proto <file>] [--top N]            # 1 万行のヒープを型・コンストラクタ名で帰属（非 minify ビルドを渡すと名前が読める）
 node scripts/audit-state-tech-profile.mjs [--bundle <file>] [--op create1k|create10k|append1k|select10k] [--warm]   # CDP Profiler の関数別自己時間（--warm で同じページの 2 回目も取り cold / warm を並べる）
-node scripts/audit-state-tech-allocsample.mjs [--bundle <file>] [--samples N]          # 消去の窓の allocation sampling（関数別の自己サイズ）。出力は -shipped / -proto に改名
+node scripts/audit-state-tech-allocsample.mjs [--bundle <file>] [--op clear10k|create1k] [--samples N]   # 消去の窓の allocation sampling（関数別の自己サイズ）。出力は -shipped / -proto に改名。--op create1k は cold の 1,000 行生成を取り、alloc-sample-create1k-<bundle>.json に書く（行ランタイム設計 §7-1）
 node scripts/audit-state-tech-helper-import.mjs --check --max-gzip 1024               # CI ゲート: defineState だけの再 export が 1 KB gzip 以下
 node scripts/check-state-size.mjs --check [--update]                                 # CI ゲート: auto.min.js / index.esm.js の gzip がリリース基準 +3% 以内（要件 N3 / D18）
 # e2e directory: 監査ベンチの再走行
