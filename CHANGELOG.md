@@ -8,6 +8,8 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+## [2.6.1] — 2026-09-21
+
 ### Fixed
 
 - `@wcstack/state`: keyed selection (`$eq` / `$eqPath` / `$eqIndex`) could leave a row selected, or never select it, without an error:
@@ -274,7 +276,8 @@ Repairs from the pre-release quality loop, all with tests: `setInitialState` on 
 
 1.29.0 and earlier predate this file. Their contents are in the merged pull requests (`gh pr list --state merged`) and the git history; each GitHub Release page carries the SRI digests for that version.
 
-[Unreleased]: https://github.com/wcstack/wcstack/compare/v2.6.0...HEAD
+[Unreleased]: https://github.com/wcstack/wcstack/compare/v2.6.1...HEAD
+[2.6.1]: https://github.com/wcstack/wcstack/compare/v2.6.0...v2.6.1
 [2.6.0]: https://github.com/wcstack/wcstack/compare/v2.5.1...v2.6.0
 [2.5.1]: https://github.com/wcstack/wcstack/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/wcstack/wcstack/compare/v2.4.0...v2.5.0
