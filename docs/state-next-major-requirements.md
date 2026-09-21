@@ -115,10 +115,30 @@ N1–N4 and N6 can ship in 2.6.x, which is also where the deprecation notices of
 | D18 | The full / auto thresholds of N3's size CI | (a) the release measurement +3 %, with an explicit note required to exceed it (b) fixed values (say auto 70 KB gzip) | **(a)**. The helper-entry gate (1 KB) is in place (survey §10.5 addendum). full / auto move every release, so a relative threshold fits the routine |
 
 | D19 | The +1.3 KB gzip that S3's receptacles add to full / auto (design §8-2, the record of slices 2 and 3) crosses D18's +3 % gate | (a) 3.0 is a major: re-record the baseline (`scripts/state-size-baseline.json`) from the 3.0 build and accept the +1.3 KB (the core of the split entries loses that much) (b) fold the 12 receptacle loops into one shared runner (estimated −0.5 KB, not measured) (c) keep the three boundary-only points (handlerScope / updated / suppressPathDiagnostic) as direct edges instead of hooks (edges 14 → 17) | **(a)**. The gate exists to catch unintended growth; S3's growth is intended. Decide (b) after measuring it when S3 lands on the 3.0 vehicle |
+| D20 | The scope of 3.0 | (a) cut 3.0 from what the branch holds (the split delivery, R1–R5, keyed selection) and move B1–B14 to 3.x / 4.0 (b) decide the B items first (turn §3's reproductions into regressions and judge each) and put the breaking fixes into 3.0; drop the comparison against a new core from 3.0's prerequisites (c) follow §9's original plan through the comparison prototype | **(b)**. Breaking fixes such as B2, B5, B6, B7 and B8 fit only a major; (a) would need a 4.0 soon. The comparison prototype served A2, which D22 revises |
+| D21 | What to do about A1 (named full entry ≤ about 72 KB) | (a) ship N1 (minify the named entry), measure it, restate A1 as 3.0's measurement and hold it with D18's +3 % gate (b) cut back to 72 KB (c) drop A1 | **(a)**. `auto.min.js` is 75.2 KB (the receptacles' +1.3 KB accepted by D19, +1.2 KB from R2 and R3); nothing in hand gets back to 72 KB |
+| D22 | What to do about A2 (base + DOM ≤ 35 KB) | (a) restate it as 3.0's measured core, 43.2 KB gzip, held by the size CI (b) chase 35 KB through D1's (c), the full rewrite (c) drop A2 | **(a)**. 35 KB is out of reach for this structure (wiring design §8-14, row runtime design §6-1) |
+| D23 | Where the attribute readiness barriers (`mount=` / DCC) land (wiring design §9) | (a) align them: DCC lands where its load failure does (`failInitializeLoudly`); `mount=` gets a landing of its own that rejects `connectedCallbackPromise` without taking the root down (b) leave them (they throw from `connectedCallback` and the promise never settles) | **(a)**. It matches v2.4's "an initialization failure reports once and rejects" (#257). As things stand, a `/core` page that forgot scopes leaves `mount()` and `getBindingsReady` waiting forever |
+| D24 | An opt-in attribute for pool pre-warming (row runtime design R5, candidate 2) | (a) not in 3.0 (b) an opt-in attribute (c) a programmatic API | **(a)**. It only moves the creation cost before the first render — the total does not shrink, and unused rows are waste. D14 already revised the denominator. It can be added non-breakingly in 3.x on request |
+| D25 | Cutting the remaining 3.0 KB/row (row runtime design §5) | (a) attribute the heap and cut (b) after 3.0 | **(b)**. R3 took −18 %; no acceptance criterion asks for more (A5 asks for the trend to be explained) |
+| D26 | How 2.6.x is cut (shipping D8 and D9) | (a) branch release/2.6.0 from `0ce4e35e` (`597a3a44` — keyed selection, the clear's allocation, install-time wiring — plus the CI gates; its parent is main) and pick only the keyed selection's SSR-path test (it landed in `7979827d`) (b) skip 2.6 and fold it into 3.0 | **(a)**. No cherry-pick needed, exactly what D8 and D9 decided. wcstack-skill ships its v2.6+ part first too |
 
 **Decided (2026-09-21)**: D8–D18 as recommended. D8 and D9 ship from the current working tree (implemented) in 2.6.x; D10 and D11 ride the 3.0 vehicle; D12, D13, D15 and D16 are recorded in the design draft as 3.0 decisions; D14 revises A3's denominator (§8); D17 comes with 3.0's protocol version bump; D18 is introduced as the size CI.
 
 **Addendum (2026-09-21, after S3's three slices)**: D19 is decided as recommended, **(a)**. `scripts/state-size-baseline.json` is re-recorded from the 3.0 build and the receptacles' +1.3 KB gzip is accepted (the gate exists to catch unintended growth; S3's growth is intended). The shared runner of (b) is decided after measuring it when S3 lands on the 3.0 vehicle. The re-record happens at the 3.0 release build; until then the working tree's current value (`auto.min.js` 70.3 KB gzip) is inside the current gate.
+
+**Decided (2026-09-21, second round)**: every remaining question is decided as recommended.
+
+- **D1 is (b).** 3.0 ships on the improved current runtime; the full rewrite (c) is research after 3.0. On this branch creation, heap and clear all improved on the current runtime, and only A2 was out of reach.
+- **D2 is (a), no compatibility layer** (changed from the table's (b)). Instead, the last 2.x minor reports the constructs 3.0 rejects or reinterprets, through lint and a runtime warning. B1–B3 reject input that is already broken and need no layer; B5's reinterpretation cannot recover the author's intent even with the old parser kept; and carrying the old grammar in the core runs against A1 / A2. The warned constructs are fixed by D20's decision on the B items.
+- **D3 as recommended** (keep full / auto; the split form is the second form), implemented.
+- **D4 as recommended** (keep through 3.x, remove in 4.0). It applies once B12's renames are taken.
+- **D5: inventory now.** One item is already known: D17's DevTools protocol version bump (on the `@wcstack/devtools` side).
+- **D6 is (b)** (a 3.x minor).
+- **D7 as recommended** (no O(1) promise; supported by `$eq` / `$eqPath` / `$eqIndex`, with the O(N) cases published in the README), implemented.
+- **D20–D26 as recommended.**
+- D19's (b) (folding the receptacle loops into one runner) is measured now and taken if it saves at least 0.5 KB gzip without slowing the read path.
+- A3 has not been judged yet. Compare 2.5.1 with 3.0 on D14's four measures first, then decide what to do about any that fall short.
 
 ## 7. Migration and deprecation
 
@@ -133,8 +153,8 @@ These carry over the provisional targets of audit §8. They are **targets, not m
 
 | ID | Criterion | How it is measured |
 |---|---|---|
-| A1 | Named full entry at or under about 72 KB gzip | Size CI (N3). A helper-only import retains no runtime |
-| A2 | Selected base + DOM at or under 35 KB gzip | A prototype target, measured with the excluded features listed explicitly. **Measured 2026-09-21: the split `@wcstack/state/core` is 42.7 KB gzip** (single-file bundle; extracting the wiring did not shrink it, and `features/formats` took 1.1 KB off — wiring design §8-11 and §8-13). Unifying `BindingSession` stopped being a lever after R2 and R3 (row runtime design §6-1); the last lever, separating the diagnostics (`features/diagnostics`, wiring design §8-14), leaves the core at 43.2 KB, and 35 KB is out of reach for this structure |
+| A1 | Named full entry at or under about 72 KB gzip → **restated as 3.0's measurement (D21)** | Measured once N1 ships, then held by the size CI (N3, D18's +3 %). A helper-only import retains no runtime |
+| A2 | Selected base + DOM at or under 35 KB gzip → **restated as 3.0's measured core, 43.2 KB (D22)** | A prototype target, measured with the excluded features listed explicitly. **Measured 2026-09-21: the split `@wcstack/state/core` is 42.7 KB gzip** (single-file bundle; extracting the wiring did not shrink it, and `features/formats` took 1.1 KB off — wiring design §8-11 and §8-13). Unifying `BindingSession` stopped being a lever after R2 and R3 (row runtime design §6-1); the last lever, separating the diagnostics (`features/diagnostics`, wiring design §8-14), leaves the core at 43.2 KB, and 35 KB is out of reach for this structure |
 | A3 | At least 25% median improvement in create / append / clear, measured on **warm create 1,000, cold create 10,000, append 1,000 and clear 10,000** (D14: cold create 1,000 is "the content creation the pool hides + the creation's GC + warm-up", which per-binding optimisation does not move, survey §10.15; cold create 1,000 is only checked for regressions) | Without concealing regressions in plain reads, partial updates, swaps or startup. Alternate A/B order, use multiple browser processes and sufficient samples |
 | A4 | No architecture chosen from differences near 0.1 ms | Below timer resolution, no ratio is claimed (audit §4.2) |
 | A5 | Memory behaviour is explainable | Tens of create/clear and root attach/dispose cycles, with post-GC trend, retaining owners, and explicit pool bounds |
@@ -146,11 +166,11 @@ All existing keyed checks pass today, but a full replacement reuses 1,000 TR nod
 
 1. **Freeze semantics** — turn the §3 reproductions into regressions and decide readonly, empty values, literal types, scope capabilities and ready/error behaviour. Establish one source of truth for the grammar.
 2. **Fix delivery** — N1–N3, by changing Rollup templates and synchronization rather than generated copies.
-3. **Compare prototypes** — the improved current runtime against a new core / DOM adapter, with address unification held as an independent variable.
+3. **Compare prototypes** — the improved current runtime against a new core / DOM adapter, with address unification held as an independent variable (**dropped from 3.0's prerequisites by D20**: 3.0 ships on the improved current runtime — D1).
 4. **Choose the major's scope** — inventory real usage and classify features as standard / optional / removed / compatibility. Source size is not evidence of popularity.
 5. **Migrate** — §7.
 
-Steps 1 and 2 can ship as 2.6.x. The 3.0 tag waits for 3 and 4.
+The behaviour-neutral part of step 1 (the reproductions as regressions) and step 2 can ship as 2.6.x. The 3.0 tag waits for step 1's breaking fixes (D20), 2 and 4.
 
 ## 10. Risks and what is unmeasured
 

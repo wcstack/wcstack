@@ -176,9 +176,11 @@ Decided (requirements §6):
 - **D11**: the row record and the shared session ride 3.0.
 - **D14**: the cold 1,000-row benchmark gets a revised denominator (warm 1,000, cold 10,000, append, clear).
 
-Undecided:
+Decided (2026-09-21, second round; requirements §6):
 
-- R4's unified shape (§6). Decide after R3.
-- Whether the pool pre-warming attribute is built at all (R5's candidates 1 and 3 are implemented, §7-1).
-- Cutting the remaining 3.0 KB/row (attribution first).
-- Whether A2 (35 KB) is pursued at all: even with R4 (−2.9 KB minified) and diagnostics moved to a dev build (−5 KB minified), the core goes from 42.7 KB gzip to about 40. **35 KB is out of reach for this structure** (proxy + dependency graph + two initial-sync paths); reaching it is a decision on audit §7's "full reimplementation" side, not a refactor.
+- **R4's unified shape**: settled. After R2 and R3 the premise of unifying did not hold, and only the ledger entry / exit was folded (§6-1).
+- **D24**: no pool pre-warming attribute in 3.0. It only moves the creation cost before the first render — the total does not shrink and unused rows are waste. It can be added non-breakingly in 3.x on request (R5's candidates 1 and 3 are implemented, §7-1).
+- **D25**: cutting the remaining 3.0 KB/row waits until after 3.0 (R3 took −18 %; no acceptance criterion asks for more).
+- **D22**: A2 is restated as 3.0's measured core, 43.2 KB gzip. R4 did almost nothing (§6-1), and after separating the diagnostics (wiring design §8-14) the core is 43.2 KB. **35 KB is out of reach for this structure** (proxy + dependency graph + two initial-sync paths); reaching it is D1's (c), the full reimplementation, which is research after 3.0.
+
+Undecided: none.
