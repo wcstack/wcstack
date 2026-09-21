@@ -95,7 +95,8 @@ describe("clearParserCaches（tooling 専用のキャッシュ解放）", () => 
     // 解析の段は文法だけを見る。実関数は束縛計画の段で登録簿から引くので、
     // パーサだけを使う tooling は書式フィルタの実装を 1 バイトも引き込まない。
     const [parsed] = parseBindTextsForElement("textContent: price | fix(2)");
-    expect(parsed.outFilters).toEqual([{ filterName: "fix", args: ["2"] }]);
+    // literals は引数の型付きの値（要件 B9）: 引用符の無い 2 は数値
+    expect(parsed.outFilters).toEqual([{ filterName: "fix", args: ["2"], literals: [2] }]);
     expect("filterFn" in parsed.outFilters[0]).toBe(false);
   });
 

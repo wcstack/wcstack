@@ -14,7 +14,7 @@ import type { FilterFn, FilterIOType, FilterWithOptions } from "../filters/types
 import { raiseError } from "../raiseError";
 
 /** `options` を受け取って実関数を返す工場（`filters/types.ts` の `FilterWithOptions` の要素） */
-export type FilterFactory = (options?: string[]) => FilterFn;
+export type FilterFactory = (options?: string[], literals?: readonly unknown[]) => FilterFn;
 
 /**
  * エンジン自身が差し込むフィルタ。`if` / `else` の分岐は `not` を付けた束縛として組み立てられる
@@ -74,9 +74,15 @@ export function clearFilterResolutionCache(): void {
  * 実関数を引く（束縛計画の段）。未知のフィルタはここで落ちる — 解析の段では落とさない。
  * 文言は lint の `wcs/filter-unknown` と同じ語彙・同じ did-you-mean 規準（三面同語彙）。
  */
-export function resolveFilterFn(filterName: string, args: string[], filterIOType: FilterIOType): FilterFn {
-  // 引数は構造のまま鍵にする（`join('a,b')` と `join(a,b)` を取り違えない — 要件 B3）
-  const key = `${filterName}${JSON.stringify(args)}:${filterIOType}`;
+export function resolveFilterFn(
+  filterName: string,
+  args: string[],
+  filterIOType: FilterIOType,
+  literals: readonly unknown[] = args,
+): FilterFn {
+  // 引数は型付きの値の構造のまま鍵にする（`join('a,b')` と `join(a,b)` — 要件 B3、`eq(1)` と
+  // `eq('1')` — 要件 B9 を取り違えない）
+  const key = `${filterName}${JSON.stringify(literals)}:${filterIOType}`;
   const resolved = resolvedByKey.get(key);
   if (typeof resolved !== "undefined") {
     return resolved;
@@ -92,7 +98,7 @@ export function resolveFilterFn(filterName: string, args: string[], filterIOType
       ? `[wcs/filter-arity] filter "${filterName}" requires at least ${bounds[0]} argument(s) (${args.length} given).${LINT_HINT}`
       : `[wcs/filter-arity] filter "${filterName}" accepts at most ${bounds[1]} argument(s) (${args.length} given).${LINT_HINT}`);
   }
-  const filterFn = factory(args);
+  const filterFn = factory(args, literals);
   resolvedByKey.set(key, filterFn);
   return filterFn;
 }

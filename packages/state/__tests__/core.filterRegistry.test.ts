@@ -20,7 +20,7 @@ describe("core/filterRegistry — formats 未 install", () => {
 
   it("解析は落とさず、束縛計画の段で落ちること", () => {
     const parsed = parseFilters(["uc"], "output");
-    expect(parsed).toEqual([{ filterName: "uc", args: [] }]);
+    expect(parsed).toEqual([{ filterName: "uc", args: [], literals: [] }]);
     expect(() => planFilters(parsed, "output")).toThrow(/filter-unknown/);
   });
 });

@@ -193,10 +193,38 @@ describe("B8 空値の契約（現状: 表面ごとにばらばら）", () => {
   });
 });
 
-describe("B9 フィルタのリテラル型（現状: 引数は文字列、数値変換だけがある）", () => {
-  it("真偽値 true に eq(true) は false、数値 1 に eq(1) は true を返すこと", () => {
-    expect(output("eq", ["true"])(true)).toBe(false);
-    expect(output("eq", ["1"])(1)).toBe(true);
+describe("B9 フィルタのリテラル型（3.0 で採用: 引用符の無い true / false / null / 数値は型付き）", () => {
+  /** 束縛と同じ経路: パーサの型付きの値で解決する */
+  const planned = (filterText: string) => {
+    const f = parseOne(`textContent: x|${filterText}`).outFilters[0];
+    return resolveFilterFn(f.filterName, f.args, "output", f.literals);
+  };
+
+  it("パーサが引数ごとに型付きの値を作ること", () => {
+    expect(parseOne("textContent: x|eq(true)").outFilters[0].literals).toEqual([true]);
+    expect(parseOne("textContent: x|eq('true')").outFilters[0].literals).toEqual(["true"]);
+    expect(parseOne("textContent: x|eq(null)").outFilters[0].literals).toEqual([null]);
+    expect(parseOne("textContent: x|slice(-1, 2.5)").outFilters[0].literals).toEqual([-1, 2.5]);
+    expect(parseOne("textContent: x|locale(ja-JP)").outFilters[0].literals).toEqual(["ja-JP"]);
+  });
+
+  it("eq / ne は真偽値と null を型付きで比べ、数値と文字列の比べ方は変えないこと", () => {
+    expect(planned("eq(true)")(true)).toBe(true);
+    expect(planned("eq('true')")(true)).toBe(false);
+    expect(planned("eq(false)")(false)).toBe(true);
+    expect(planned("eq(null)")(null)).toBe(true);
+    expect(planned("ne(true)")(true)).toBe(false);
+    // 数値の値は数として、文字列の値は原文と比べる（フォームの値 "1" と eq(1) は従来どおり一致）
+    expect(planned("eq(1)")(1)).toBe(true);
+    expect(planned("eq(1)")("1")).toBe(true);
+    expect(planned("eq('1')")(1)).toBe(true);
+  });
+
+  it("defaults は型付きの値を返し、eq(1) と eq('1') は別の関数に解決されること", () => {
+    expect(planned("defaults(0)")(undefined)).toBe(0);
+    expect(planned("defaults('0')")(undefined)).toBe("0");
+    expect(planned("defaults(null)")("")).toBeNull();
+    expect(planned("eq(1)")).not.toBe(planned("eq('1')"));
   });
 });
 

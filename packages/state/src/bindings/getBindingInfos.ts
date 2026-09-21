@@ -18,7 +18,7 @@ function planFilters(filters: IParsedFilter[], filterIOType: FilterIOType): IFil
     planned.push({
       filterName: filter.filterName,
       args: filter.args,
-      filterFn: resolveFilterFn(filter.filterName, filter.args, filterIOType),
+      filterFn: resolveFilterFn(filter.filterName, filter.args, filterIOType, filter.literals ?? filter.args),
     });
   }
   return planned;

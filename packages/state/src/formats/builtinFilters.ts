@@ -33,8 +33,10 @@ function validateNumberString(value: string): boolean {
  * @param options - Array with comparison value as first element
  * @returns Filter function that returns boolean
  */
-const eq = (options?:string[]): FilterFn<boolean> => {
+const eq = (options?:string[], literals?: readonly unknown[]): FilterFn<boolean> => {
   const opt = options?.[0] ?? optionsRequired('eq');
+  // The typed literal (B9): unquoted true / false / null / numbers are typed, quoted arguments are strings
+  const literal = literals !== undefined && literals.length > 0 ? literals[0] : opt;
   return (value: unknown): boolean => {
     // Align types for comparison
     if (typeof value === 'number') {
@@ -44,8 +46,8 @@ const eq = (options?:string[]): FilterFn<boolean> => {
     if (typeof value === 'string') {
       return value === opt;
     }
-    // Strict equality for others
-    return value === opt;
+    // Booleans, null and the rest compare with the typed literal: eq(true) matches true (B9)
+    return value === literal;
   }
 }
 
@@ -55,8 +57,9 @@ const eq = (options?:string[]): FilterFn<boolean> => {
  * @param options - Array with comparison value as first element
  * @returns Filter function that returns boolean
  */
-const ne = (options?:string[]): FilterFn<boolean> => {
+const ne = (options?:string[], literals?: readonly unknown[]): FilterFn<boolean> => {
   const opt = options?.[0] ?? optionsRequired('ne');
+  const literal = literals !== undefined && literals.length > 0 ? literals[0] : opt;
   return (value: unknown): boolean => {
     // Align types for comparison
     if (typeof value === 'number') {
@@ -66,8 +69,8 @@ const ne = (options?:string[]): FilterFn<boolean> => {
     if (typeof value === 'string') {
       return value !== opt;
     }
-    // Strict equality for others
-    return value !== opt;
+    // Booleans, null and the rest compare with the typed literal (B9)
+    return value !== literal;
   }
 }
 
@@ -692,10 +695,12 @@ const truthy = (_options?:string[]): FilterFn<boolean> => {
  * @param options - Array with default value as first element
  * @returns Filter function that returns value or default
  */
-const defaults = (options?:string[]): FilterFn<unknown> => {
+const defaults = (options?:string[], literals?: readonly unknown[]): FilterFn<unknown> => {
   const opt = options?.[0] ?? optionsRequired('defaults');
+  // The fallback is the typed literal (B9): defaults(0) gives 0, defaults(null) gives null, defaults('0') gives "0"
+  const fallback = literals !== undefined && literals.length > 0 ? literals[0] : opt;
   return (value: unknown): unknown => {
-    if (!value) {return opt;}
+    if (!value) {return fallback;}
     return value;
   }
 }

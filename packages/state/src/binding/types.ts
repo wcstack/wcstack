@@ -10,6 +10,12 @@ export type BindingType = 'text' | 'prop' | 'event' | 'for' | 'if' | 'elseif' | 
 export interface IParsedFilter {
   readonly filterName: string;
   readonly args: string[];
+  /**
+   * 引数の型付きの値（要件 B9）。引用符の無い `true` / `false` / `null` / 数値は型付き、引用符付きは
+   * 文字列のまま。`args` は引用符を外した原文（書式フィルタはこちらを読む）。組み立てた側が省略したら
+   * `args` と同じ扱い。
+   */
+  readonly literals?: readonly unknown[];
 }
 
 /** 束縛計画の段で実関数まで解決したフィルタ */

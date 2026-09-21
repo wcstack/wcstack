@@ -2,7 +2,7 @@ import { clearFilterResolutionCache } from "../core/filterRegistry";
 import { FilterIOType } from "../filters/types";
 import { raiseError } from "../raiseError";
 import { IParsedFilter } from "../types";
-import { parseFilterArgs } from "./parseFilterArgs";
+import { parseFilterArgsWithLiterals } from "./parseFilterArgs";
 
 /** tooling 専用（parser.ts の clearParserCaches からのみ呼ぶ）。 */
 export function clearFilterFnCacheForTooling(): void {
@@ -30,10 +30,10 @@ export function parseFilters(filterTextList: string[], _filterIOType: FilterIOTy
     }
     if (openParenIndex === -1) {
       // no arguments
-      return { filterName: filterText.trim(), args: [] };
+      return { filterName: filterText.trim(), args: [], literals: [] };
     }
     const argsText = filterText.substring(openParenIndex + 1, closeParenIndex);
     const filterName = filterText.substring(0, openParenIndex).trim();
-    return { filterName, args: parseFilterArgs(argsText) };
+    return { filterName, ...parseFilterArgsWithLiterals(argsText) };
   });
 }
