@@ -20,6 +20,7 @@ import { createStateAddress } from "../../address/StateAddress";
 import { IStateAddress } from "../../address/types";
 import { indexArityMessage, setAllSpreadArityMessage, setAllValueKindMessage } from "../../pathDiagnostics";
 import { raiseError } from "../../raiseError";
+import { assertWritable } from "../assertWritable";
 import { getByAddress } from "../methods/getByAddress";
 import { getListIndexByIndexes } from "../methods/getListIndexByIndexes";
 import { setByAddress } from "../methods/setByAddress";
@@ -49,6 +50,7 @@ export function setAll(
   handler : IStateHandler
 ): SetAllFunction {
   return (path: string, indexes: number[], value: any, options?: ISetAllOptions): number => {
+    assertWritable(handler);
     // オーサリング層の `**`（ブロードキャスト形）は recursion/addressHooks.ts の get hook が先に受ける
     const pathInfo = getPathInfo(path);
 

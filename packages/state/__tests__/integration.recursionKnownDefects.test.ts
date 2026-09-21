@@ -1007,7 +1007,7 @@ describe("欠陥3（E2/E3 修理済み）: 深さ超過と循環が別の診断�
 
 // ---------------------------------------------------------------------------
 
-describe("欠陥4: readonly ガードを $setAll / $resolve(set) が素通りする（現状の挙動を固定する / 修正時に反転させる）", () => {
+describe("欠陥4（修正済み、要件 B6）: readonly ガードは $setAll / $resolve(set) にも掛かる", () => {
   const coldTree = () => ({
     title: "cold",
     nodes: [
@@ -1018,42 +1018,40 @@ describe("欠陥4: readonly ガードを $setAll / $resolve(set) が素通りす
   const shape = (o: any) =>
     o.nodes.map((n: any) => n.children.map((c: any) => c.value));
 
-  // DEFECT: readonly セッションの中では $setAll も拒否されるべき
-  //         （"This state is readonly." で throw し、書き込み 0 件）。
-  //         ガードは src/proxy/StateHandler.ts の set トラップにしか無く、
-  //         $setAll は setByAddress を直接呼ぶので掛からない。
-  //         setAll.ts / resolve.ts の入口、あるいは setByAddress にガードを
-  //         足したら反転する。
-  it("readonly セッションの中で $setAll が実データを書き換える（直代入だけが拒否される）", async () => {
+  // 以前はガードが set トラップにしか無く、$setAll / $resolve(set) は setByAddress を直接呼ぶので
+  // 素通りしていた。書き込み API の入口（proxy/assertWritable.ts）で揃えて反転した。
+  it("readonly セッションの中の $setAll は throw し、1 件も書かないこと（直代入と同じ）", async () => {
     const initial = coldTree();
     const { stateEl } = await mount(initial, `<span data-wcs="textContent: title"></span>`);
 
-    let written: any = null;
+    let setAllError: string | null = null;
     let assignError: string | null = null;
     stateEl.createState("readonly", (s: any) => {
-      written = s.$setAll("nodes.*.children.*.value", [], 77);
+      try { s.$setAll("nodes.*.children.*.value", [], 77); } catch (e: any) { setAllError = String(e && e.message); }
       try { s.title = "changed"; } catch (e: any) { assignError = String(e && e.message); }
     });
 
-    expect(written).toBe(3);                        // should be: throw（書き込み 0 件）
-    expect(shape(initial)).toEqual([[77, 77], [77]]); // should be: [[10,11],[20]]
+    expect(setAllError).toBe("[@wcstack/state] This state is readonly.");
+    expect(shape(initial)).toEqual([[10, 11], [20]]);
 
     // 対照: 同じ readonly セッションの中でも、直代入だけは正しく拒否される
     expect(assignError).toBe("[@wcstack/state] This state is readonly.");
     expect(initial.title).toBe("cold");
   });
 
-  // DEFECT: $resolve(path, indexes, value) も readonly では拒否されるべき。
-  //         同上の修理で反転する。
-  it("readonly セッションの中で $resolve(path, indexes, value) が実データを書き換える", async () => {
+  it("readonly セッションの中の $resolve(path, indexes, value) は throw し、書かないこと", async () => {
     const initial = coldTree();
     const { stateEl } = await mount(initial, `<span data-wcs="textContent: title"></span>`);
 
+    let resolveError: string | null = null;
     stateEl.createState("readonly", (s: any) => {
       s.$getAll("nodes.*.children.*.value", []); // 台帳を作る（cold の $resolve は throw する）
-      s.$resolve("nodes.*.children.*.value", [1, 0], 55);
+      try { s.$resolve("nodes.*.children.*.value", [1, 0], 55); } catch (e: any) { resolveError = String(e && e.message); }
+      // 読み（引数 2 つ）は readonly でも通る
+      expect(s.$resolve("nodes.*.children.*.value", [1, 0])).toBe(20);
     });
-    expect(shape(initial)).toEqual([[10, 11], [55]]); // should be: [[10,11],[20]]
+    expect(resolveError).toBe("[@wcstack/state] This state is readonly.");
+    expect(shape(initial)).toEqual([[10, 11], [20]]);
   });
 });
 

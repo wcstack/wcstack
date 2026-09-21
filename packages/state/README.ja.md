@@ -1201,7 +1201,7 @@ this.$setAll("users.*", [], rows, { spread: true });   // 配列を保ったま�
 
 #### `$resolve` — 明示的なインデックスでのアクセス
 
-`$resolve` は特定のワイルドカードインデックスの値を読み書きします：
+`$resolve` は特定のワイルドカードインデックスの値を読み書きします。**読みか書きかは引数の個数で決まります**（3.0）: `$resolve(path, indexes)` は読み、`$resolve(path, indexes, value)` は `value` の書き込みで、`undefined` も書きます（3.0 より前は第 3 引数が `undefined` なら読みでした）。readonly のプロキシでは、この書き込みは直接代入と同じく `This state is readonly.` で throw し、`$setAll` も同じです（3.0 より前はどちらも readonly のプロキシから書けていました）：
 
 ```javascript
 export default {
@@ -1529,8 +1529,8 @@ export default {
 
 | フィルタ | 説明 | 例 |
 |---|---|---|
-| `truthy` | truthy チェック | `value\|truthy` |
-| `falsy` | falsy チェック | `value\|falsy` |
+| `truthy` | truthy チェック — JavaScript の真偽判定そのもので `boolean` と同じ（3.0 から `0n` は偽） | `value\|truthy` |
+| `falsy` | falsy チェック（JavaScript の真偽判定。`defaults` も同じ判定を使う） | `value\|falsy` |
 | `defaults(v)` | フォールバック値 | `name\|defaults(Anonymous)` |
 
 ### フィルタチェーン
@@ -1540,6 +1540,8 @@ export default {
 ```html
 <div data-wcs="textContent: price|mul(1.1)|round(2)|locale(ja-JP)"></div>
 ```
+
+フィルタは束縛計画の段で解決されます。未知の名前は `[wcs/filter-unknown]`（did-you-mean 付き）で、3.0 からは受け付ける個数の外の引数も `[wcs/filter-arity]`（`join(a,b)`: "accepts at most 1 argument(s) (2 given)"）で落ちます — lint と同じコード・同じ範囲です。引数は構造のままキャッシュされるので、`join('a,b')` と `join(a)` を取り違えません。
 
 ## Web Component バインディング
 

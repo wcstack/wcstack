@@ -251,9 +251,7 @@ export function registerDevtoolsSource(): void {
       const element = requireStateElement(rootNode);
       element.createState("writable", (state) => {
         if (indexes !== undefined && indexes.length > 0) {
-          // Note: $resolve は value===undefined を「取得」と解釈するため、
-          // ワイルドカードパスへの undefined 書き込みは非サポート
-          // （spread undefined 規範と同じ側に倒す）
+          // 3 引数の $resolve は値が undefined でも書き（引数の個数で読み書きを分ける — 要件 B7）
           (state as unknown as Record<string, (p: string, i: number[], v: unknown) => void>)["$resolve"](path, indexes, value);
         } else {
           (state as unknown as Record<string, unknown>)[path] = value;

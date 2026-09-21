@@ -6,13 +6,13 @@
  * 束縛計画の段で `[wcs/filter-unknown]` として名指しで落ちる（黙って素通ししない）。
  */
 import { registerFilters } from "../core/filterRegistry";
-import { inputBuiltinFilters, outputBuiltinFilters } from "./builtinFilters";
+import { builtinFilterArity, inputBuiltinFilters, outputBuiltinFilters } from "./builtinFilters";
 
 let installed = false;
 /** 冪等。full / auto では `bootstrapState()` が呼ぶ */
 export function installFormats(): void {
   if (installed) return;
   installed = true;
-  registerFilters("input", inputBuiltinFilters);
-  registerFilters("output", outputBuiltinFilters);
+  registerFilters("input", inputBuiltinFilters, builtinFilterArity);
+  registerFilters("output", outputBuiltinFilters, builtinFilterArity);
 }

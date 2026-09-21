@@ -20,12 +20,13 @@ import { getPathInfo } from "../../address/PathInfo";
 import { createStateAddress } from "../../address/StateAddress";
 import { indexArityMessage } from "../../pathDiagnostics";
 import { raiseError } from "../../raiseError";
+import { assertWritable } from "../assertWritable";
 import { getByAddress } from "../methods/getByAddress";
 import { getListIndexByIndexes } from "../methods/getListIndexByIndexes";
 import { setByAddress } from "../methods/setByAddress";
 import { IStateHandler } from "../types";
 
-type ResolveFunction = (path: string, indexes: number[], value?: any) => any;
+type ResolveFunction = (path: string, indexes: number[], ...value: [value?: any]) => any;
 
 export function resolve(
   target: object, 
@@ -33,7 +34,7 @@ export function resolve(
   receiver: any,
   handler: IStateHandler
 ): ResolveFunction {
-  return (path: string, indexes: number[], value?: any): any => {
+  return (path: string, indexes: number[], ...value: [value?: any]): any => {
     const pathInfo = getPathInfo(path);
     if (handler.addressStackLength > 0) {
       const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
@@ -58,11 +59,12 @@ export function resolve(
 
     // ToDo:WritableかReadonlyかを判定して適切なメソッドを呼び出す
     const address = createStateAddress(pathInfo, listIndex);
-    const hasSetValue = typeof value !== "undefined";
-    if (!hasSetValue) {
+    // 読みか書きかは引数の**個数**で決める（要件 B7）。値で決めると undefined を書けない
+    if (value.length === 0) {
       return getByAddress(target, address, receiver, handler);
     } else {
-      setByAddress(target, address, value, receiver, handler);
+      assertWritable(handler);
+      setByAddress(target, address, value[0], receiver, handler);
     }
   };
 } 

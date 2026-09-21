@@ -1203,7 +1203,7 @@ One thing `$setAll` is not: a shortcut for the dependency walk. Rendering still 
 
 #### `$resolve` — Access by Explicit Index
 
-`$resolve` reads or writes a value at a specific wildcard index:
+`$resolve` reads or writes a value at a specific wildcard index. **The argument count decides which** (3.0): `$resolve(path, indexes)` reads, and `$resolve(path, indexes, value)` writes `value` — `undefined` included (before 3.0 an `undefined` third argument was a read). On a readonly proxy the write throws `This state is readonly.`, exactly as a direct assignment does, and so does `$setAll` (before 3.0 both helpers wrote through a readonly proxy):
 
 ```javascript
 export default {
@@ -1531,8 +1531,8 @@ export default {
 
 | Filter | Description | Example |
 |---|---|---|
-| `truthy` | Truthy check | `value\|truthy` |
-| `falsy` | Falsy check | `value\|falsy` |
+| `truthy` | Truthy check — JavaScript's own truthiness, the same as `boolean` (so `0n` is falsy since 3.0) | `value\|truthy` |
+| `falsy` | Falsy check (JavaScript's truthiness; `defaults` uses the same test) | `value\|falsy` |
 | `defaults(v)` | Fallback value | `name\|defaults(Anonymous)` |
 
 ### Filter Chaining
@@ -1542,6 +1542,8 @@ Filters can be chained with `|`:
 ```html
 <div data-wcs="textContent: price|mul(1.1)|round(2)|locale(ja-JP)"></div>
 ```
+
+A filter is resolved when the bindings are planned. An unknown name throws `[wcs/filter-unknown]` (with a did-you-mean), and — as of 3.0 — an argument count outside what the filter accepts throws `[wcs/filter-arity]` (`join(a,b)`: "accepts at most 1 argument(s) (2 given)"), the same code and bounds lint reports. Arguments are cached by their structure, so `join('a,b')` and `join(a)` are never confused.
 
 ## Web Component Binding
 

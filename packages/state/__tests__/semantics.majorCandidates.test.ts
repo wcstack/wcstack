@@ -18,6 +18,8 @@ import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
 import { parseBindTextsForElement } from "../src/bindTextParser/parseBindTextsForElement";
 import { resolveFilterFn } from "../src/core/filterRegistry";
+import { builtinFilterArity, outputBuiltinFilters } from "../src/formats/builtinFilters";
+import { builtinFilterMeta } from "../src/filters/filterMeta";
 
 beforeAll(() => {
   bootstrapState();
@@ -70,14 +72,26 @@ describe("B2 不正構文の受理（現状: 受理して黙って丸める）",
   });
 });
 
-describe("B3 フィルタ引数（現状: キャッシュキーが args.join(',')、アリティ検証なし）", () => {
-  it("['a,b'] と ['a','b'] が同じ関数に解決されること", () => {
-    expect(output("join", ["a,b"])).toBe(output("join", ["a", "b"]));
-    expect(output("join", ["a", "b"])(["X", "Y"])).toBe("Xa,bY");
+describe("B3 フィルタ引数（3.0 で採用: 構造的なキャッシュキーと引数の個数の検査）", () => {
+  it("['a,b'] と ['a'] を別の関数に解決すること", () => {
+    expect(output("join", ["a,b"])).not.toBe(output("join", ["a"]));
+    expect(output("join", ["a,b"])(["X", "Y"])).toBe("Xa,bY");
+    expect(output("join", ["a"])(["X", "Y"])).toBe("XaY");
   });
 
-  it("過剰な引数がそのまま通ること", () => {
+  it("過剰な引数と不足した引数を、束縛計画の段で [wcs/filter-arity] として拒否すること", () => {
+    // 解析の段は引数をそのまま運ぶ（文法としては正しい）
     expect(parseOne("textContent: x|join(a,b)").outFilters[0].args).toEqual(["a", "b"]);
+    expect(() => output("join", ["a", "b"])).toThrow(/\[wcs\/filter-arity\] filter "join" accepts at most 1 argument\(s\) \(2 given\)/);
+    expect(() => output("clamp", ["0"])).toThrow(/\[wcs\/filter-arity\] filter "clamp" requires at least 2 argument\(s\) \(1 given\)/);
+  });
+
+  it("書式機能の引数の個数の表が builtinFilterMeta（lint と同じ正本）と一致すること", () => {
+    for (const name of Object.keys(outputBuiltinFilters)) {
+      const meta = builtinFilterMeta[name];
+      expect(builtinFilterArity[name], name).toEqual([meta.minArgs, meta.maxArgs]);
+    }
+    expect(Object.keys(builtinFilterArity).sort()).toEqual(Object.keys(outputBuiltinFilters).sort());
   });
 });
 
@@ -98,32 +112,36 @@ describe("B5 on 接頭辞（現状: on で始まる名前はすべてイベン�
   });
 });
 
-describe("B6 readonly の抜け穴（現状: ヘルパーは書き込み能力を検査しない）", () => {
-  it("直接代入は throw するが、同じ readonly プロキシの $resolve と $setAll は書けること", async () => {
+describe("B6 readonly の抜け穴（3.0 で採用: 書き込み API の入口がすべて検査する）", () => {
+  it("readonly のプロキシでは直接代入・$resolve の書き・$setAll がすべて throw し、書かないこと", async () => {
     const { stateEl } = await mount({ selectedIndex: 0 }, "");
-    const result: Record<string, unknown> = {};
+    const errors: string[] = [];
     stateEl.createState("readonly", (s: any) => {
-      try { s.selectedIndex = 8; result.direct = "accepted"; } catch (e) { result.direct = (e as Error).message; }
-      s.$resolve("selectedIndex", [], 9);
-      result.afterResolve = s.selectedIndex;
-      s.$setAll("selectedIndex", [], 10);
-      result.afterSetAll = s.selectedIndex;
+      try { s.selectedIndex = 8; } catch (e) { errors.push((e as Error).message); }
+      try { s.$resolve("selectedIndex", [], 9); } catch (e) { errors.push((e as Error).message); }
+      try { s.$setAll("selectedIndex", [], 10); } catch (e) { errors.push((e as Error).message); }
+      // 読みは通る
+      expect(s.$resolve("selectedIndex", [])).toBe(0);
     });
-    expect(result.direct).toMatch(/readonly/);
-    expect(result.afterResolve).toBe(9);
-    expect(result.afterSetAll).toBe(10);
+    expect(errors).toEqual(Array(3).fill("[@wcstack/state] This state is readonly."));
+    let after: unknown;
+    stateEl.createState("readonly", (s: any) => { after = s.selectedIndex; });
+    expect(after).toBe(0);
   });
 });
 
-describe("B7 $resolve のオーバーロード（現状: 引数の有無で読み書きを分ける）", () => {
-  it("$resolve(path, [], undefined) は読みになり、undefined を書けないこと", async () => {
+describe("B7 $resolve のオーバーロード（3.0 で採用: 引数の個数で読みと書きを分ける）", () => {
+  it("$resolve(path, []) は読み、$resolve(path, [], undefined) は undefined の書きになること", async () => {
     const { stateEl } = await mount({ selectedIndex: 7 }, "");
-    let after: unknown;
+    let read: unknown;
+    let after: unknown = "untouched";
     stateEl.createState("writable", (s: any) => {
+      read = s.$resolve("selectedIndex", []);
       s.$resolve("selectedIndex", [], undefined);
       after = s.selectedIndex;
     });
-    expect(after).toBe(7);
+    expect(read).toBe(7);
+    expect(after).toBeUndefined();
   });
 });
 
@@ -157,10 +175,14 @@ describe("B9 フィルタのリテラル型（現状: 引数は文字列、数�
   });
 });
 
-describe("B10 真偽判定（現状: truthy と boolean が 0n で食い違う）", () => {
-  it("0n に truthy は true、boolean は false を返すこと", () => {
-    expect(output("truthy", [])(0n)).toBe(true);
-    expect(output("boolean", [])(0n)).toBe(false);
+describe("B10 真偽判定（3.0 で採用: JavaScript の真偽判定に揃えた）", () => {
+  it("truthy / falsy / boolean / defaults が 0n を含めて Boolean() と一致すること", () => {
+    for (const value of [0n, 1n, 0, -0, NaN, "", "0", null, undefined, false, true, [], {}]) {
+      expect(output("truthy", [])(value)).toBe(Boolean(value));
+      expect(output("falsy", [])(value)).toBe(!value);
+      expect(output("boolean", [])(value)).toBe(Boolean(value));
+      expect(output("defaults", ["fallback"])(value)).toBe(value ? value : "fallback");
+    }
   });
 });
 

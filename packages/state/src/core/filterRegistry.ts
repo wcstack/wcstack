@@ -29,14 +29,31 @@ const registries: Record<FilterIOType, Map<string, FilterFactory>> = {
   output: new Map<string, FilterFactory>(),
 };
 
+/** 受け付ける引数の個数 [最少, 最多]。登録した機能が渡したものだけ（要件 B3） */
+const aritiesByIOType: Record<FilterIOType, Map<string, readonly [number, number]>> = {
+  input: new Map<string, readonly [number, number]>(),
+  output: new Map<string, readonly [number, number]>(),
+};
+
 /** 名前 + 引数 + 入出力ごとに解決済みの実関数（解決は 1 回だけ） */
 const resolvedByKey = new Map<string, FilterFn>();
 
 /** 機能の install が呼ぶ（冪等 — 同じ名前は置き換え）。hot path には触れない */
-export function registerFilters(filterIOType: FilterIOType, filters: FilterWithOptions): void {
+export function registerFilters(
+  filterIOType: FilterIOType,
+  filters: FilterWithOptions,
+  arity?: Readonly<Record<string, readonly [number, number]>>,
+): void {
   const registry = registries[filterIOType];
+  const arities = aritiesByIOType[filterIOType];
   for (const name of Object.keys(filters)) {
     registry.set(name, filters[name] as FilterFactory);
+    const bounds = arity?.[name];
+    if (typeof bounds === "undefined") {
+      arities.delete(name);
+    } else {
+      arities.set(name, bounds);
+    }
   }
   // 登録が変われば解決済みの答えも変わりうる（同じページで 2 回 install することは無いが、
   // テストと tooling は登録簿を入れ替える）
@@ -58,7 +75,8 @@ export function clearFilterResolutionCache(): void {
  * 文言は lint の `wcs/filter-unknown` と同じ語彙・同じ did-you-mean 規準（三面同語彙）。
  */
 export function resolveFilterFn(filterName: string, args: string[], filterIOType: FilterIOType): FilterFn {
-  const key = `${filterName}(${args.join(",")}):${filterIOType}`;
+  // 引数は構造のまま鍵にする（`join('a,b')` と `join(a,b)` を取り違えない — 要件 B3）
+  const key = `${filterName}${JSON.stringify(args)}:${filterIOType}`;
   const resolved = resolvedByKey.get(key);
   if (typeof resolved !== "undefined") {
     return resolved;
@@ -66,6 +84,13 @@ export function resolveFilterFn(filterName: string, args: string[], filterIOType
   const factory = registries[filterIOType].get(filterName) ?? CORE_FILTERS[filterName];
   if (typeof factory === "undefined") {
     raiseError(`[wcs/filter-unknown] filter not found: ${filterName}.${didYouMean(filterName, knownFilterNames(filterIOType))}${LINT_HINT}`);
+  }
+  const bounds = aritiesByIOType[filterIOType].get(filterName);
+  if (typeof bounds !== "undefined" && (args.length < bounds[0] || args.length > bounds[1])) {
+    // lint の wcs/filter-arity と同じ語彙
+    raiseError(args.length < bounds[0]
+      ? `[wcs/filter-arity] filter "${filterName}" requires at least ${bounds[0]} argument(s) (${args.length} given).${LINT_HINT}`
+      : `[wcs/filter-arity] filter "${filterName}" accepts at most ${bounds[1]} argument(s) (${args.length} given).${LINT_HINT}`);
   }
   const filterFn = factory(args);
   resolvedByKey.set(key, filterFn);

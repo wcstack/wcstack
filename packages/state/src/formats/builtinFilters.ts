@@ -665,13 +665,14 @@ const hms = (options?:string[]): FilterFn<string> => {
 }
 
 /**
- * Falsy filter - checks if value is falsy.
+ * Falsy filter - checks if value is falsy, by JavaScript's own truthiness (`!value`: false, null,
+ * undefined, 0, -0, 0n, '' and NaN). Before 3.0 the list was spelled out and missed 0n (B10).
  *
  * @param options - Unused
- * @returns Filter function that returns true for false/null/undefined/0/''/NaN
+ * @returns Filter function that returns true for falsy values
  */
 const falsy = (_options?:string[]): FilterFn<boolean> => {
-  return (value: unknown): boolean => value === false || value === null || value === undefined || value === 0 || value === '' || Number.isNaN(value);
+  return (value: unknown): boolean => !value;
 }
 
 /**
@@ -681,11 +682,12 @@ const falsy = (_options?:string[]): FilterFn<boolean> => {
  * @returns Filter function that returns true for non-falsy values
  */
 const truthy = (_options?:string[]): FilterFn<boolean> => {
-  return (value: unknown): boolean =>value !== false && value !== null && value !== undefined && value !== 0 && value !== '' && !Number.isNaN(value);
+  // JavaScript's truthiness, the same as the `boolean` filter (B10)
+  return (value: unknown): boolean => !!value;
 }
 
 /**
- * Default filter - returns default value if input is falsy.
+ * Default filter - returns default value if input is falsy (JavaScript's truthiness, as `falsy`).
  * 
  * @param options - Array with default value as first element
  * @returns Filter function that returns value or default
@@ -693,7 +695,7 @@ const truthy = (_options?:string[]): FilterFn<boolean> => {
 const defaults = (options?:string[]): FilterFn<unknown> => {
   const opt = options?.[0] ?? optionsRequired('defaults');
   return (value: unknown): unknown => {
-    if (value === false || value === null || value === undefined || value === 0 || value === '' || Number.isNaN(value)) {return opt;}
+    if (!value) {return opt;}
     return value;
   }
 }
@@ -800,6 +802,61 @@ const builtinFilters: FilterWithOptions = {
   "number": number,
   "string": string,
   "null": _null,
+};
+
+/**
+ * The argument count each built-in accepts, [min, max] — checked when the bindings are planned
+ * (`[wcs/filter-arity]`, requirement B3), with the same bounds lint uses. It is the same data as
+ * `builtinFilterMeta` (filters/filterMeta.ts) without the descriptions, so that installing the formats
+ * does not pull the metadata into the page; a test keeps the two equal.
+ */
+export const builtinFilterArity: Readonly<Record<string, readonly [number, number]>> = {
+  eq: [1, 1],
+  not: [0, 0],
+  ne: [1, 1],
+  lt: [1, 1],
+  le: [1, 1],
+  gt: [1, 1],
+  ge: [1, 1],
+  inc: [0, 1],
+  dec: [0, 1],
+  mul: [1, 1],
+  div: [1, 1],
+  mod: [1, 1],
+  abs: [0, 0],
+  clamp: [2, 2],
+  fix: [0, 1],
+  locale: [0, 1],
+  uc: [0, 0],
+  lc: [0, 0],
+  cap: [0, 0],
+  trim: [0, 0],
+  slice: [1, 2],
+  substr: [1, 2],
+  pad: [1, 2],
+  rep: [1, 1],
+  rev: [0, 0],
+  truncate: [1, 2],
+  join: [0, 1],
+  int: [0, 0],
+  float: [0, 0],
+  round: [0, 1],
+  floor: [0, 1],
+  ceil: [0, 1],
+  percent: [0, 1],
+  unit: [1, 1],
+  date: [0, 0],
+  time: [0, 0],
+  datetime: [0, 0],
+  ymd: [0, 1],
+  hms: [0, 1],
+  falsy: [0, 0],
+  truthy: [0, 0],
+  defaults: [1, 1],
+  boolean: [0, 0],
+  number: [0, 0],
+  string: [0, 0],
+  null: [0, 0],
 };
 
 export const outputBuiltinFilters = builtinFilters;
