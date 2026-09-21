@@ -164,7 +164,7 @@ major の器に載せるか、独立して進めるかを §6 で決める。
 | B5 | 3.0 では変えない（`onclick:` と `online:` を字句で区別できず、名前空間を分けると全ページの `on*:` が変わる）。明示のプロパティ形を足す | 3.x（非破壊） |
 | B6 | 書き込み能力を書き込み境界 1 点で検査し、readonly では throw する | 3.0 |
 | B7 | 引数の個数で読みと書きを分ける（`$resolve(p, i, undefined)` は書き） | 3.0 |
-| B8 | どの表面でも「undefined は書かない・null は消す（属性は削除）」 | 3.0 |
+| B8 | **改めた（2026-09-21、ユーザー判断）**: 表示の表面（`textContent` / `innerText` / `innerHTML`・mustache・属性・style）は undefined も null も「値が無い」＝空にする（属性・style は削除）。要素の入力（それ以外のプロパティ・spread）だけ undefined をスキップし、null で消す。当初案の「全表面で undefined を書かない」は、使い回した行に前の行の表示が残る既存の不具合（`textContent:`）を mustache と属性へ広げるので採らなかった | 3.0 |
 | B9 | 引用符なしの true / false / null / 数値は型付き、引用符付きは文字列 | 3.0 |
 | B10 | JavaScript の真偽判定に揃える（`truthy(0n)` は false） | 3.0 |
 | B11 | 能力マトリクスを README に明示する。挙動は変えない（既に名指しで拒否・警告している） | 文書 |

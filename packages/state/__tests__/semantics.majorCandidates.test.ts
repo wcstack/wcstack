@@ -170,26 +170,52 @@ describe("B7 $resolve のオーバーロード（3.0 で採用: 引数の個数�
   });
 });
 
-describe("B8 空値の契約（現状: 表面ごとにばらばら）", () => {
-  it("undefined と null が textContent・mustache・属性で別々の結果になること", async () => {
+describe("B8 空値の契約（3.0 で採用: 表示の表面は undefined も null も空、要素の入力は undefined をスキップ）", () => {
+  it("textContent・mustache・属性・style で、undefined と null がどちらも空（属性・style は削除）になること", async () => {
     const { root, stateEl } = await mount({ x: "seed" },
-      `<span id="prop" data-wcs="textContent: x"></span><span id="text">{{ x }}</span><span id="attr" data-wcs="attr.title: x"></span>`);
+      `<span id="prop" data-wcs="textContent: x"></span><span id="text">{{ x }}</span><span id="attr" data-wcs="attr.title: x; style.color: x"></span>`);
     const snapshot = () => ({
       property: root.querySelector("#prop")!.textContent,
       mustache: root.querySelector("#text")!.textContent,
       attribute: root.querySelector("#attr")!.getAttribute("title"),
+      hasAttribute: root.querySelector("#attr")!.hasAttribute("title"),
+      style: (root.querySelector("#attr") as HTMLElement).style.color,
     });
-    expect(snapshot()).toEqual({ property: "seed", mustache: "seed", attribute: "seed" });
-
-    stateEl.createState("writable", (s: any) => { s.x = undefined; });
+    stateEl.createState("writable", (s: any) => { s.x = "red"; });
     await flush();
-    // undefined: textContent は前の値を保持、mustache は空、属性は文字列 "undefined"
-    expect(snapshot()).toEqual({ property: "seed", mustache: "", attribute: "undefined" });
+    expect(snapshot()).toEqual({ property: "red", mustache: "red", attribute: "red", hasAttribute: true, style: "red" });
 
-    stateEl.createState("writable", (s: any) => { s.x = null; });
+    for (const empty of [undefined, null]) {
+      stateEl.createState("writable", (s: any) => { s.x = "red"; });
+      await flush();
+      stateEl.createState("writable", (s: any) => { s.x = empty; });
+      await flush();
+      expect(snapshot(), String(empty)).toEqual({ property: "", mustache: "", attribute: null, hasAttribute: false, style: "" });
+    }
+  });
+
+  it("使い回した行で、undefined の値が前の行の表示を残さないこと（textContent の既存の不具合）", async () => {
+    const { root, stateEl } = await mount({ items: [{ nick: "Alice" }] },
+      `<ul><template data-wcs="for: items"><li><span class="p" data-wcs="textContent: .nick"></span><span class="m">{{ .nick }}</span></li></template></ul>`);
+    stateEl.createState("writable", (s: any) => { s.items = []; });
     await flush();
-    // null: textContent と mustache は空、属性は文字列 "null"
-    expect(snapshot()).toEqual({ property: "", mustache: "", attribute: "null" });
+    stateEl.createState("writable", (s: any) => { s.items = [{ id: 2 }]; });
+    await flush();
+    const li = root.querySelector("li")!;
+    expect(li.querySelector(".p")!.textContent).toBe("");
+    expect(li.querySelector(".m")!.textContent).toBe("");
+  });
+
+  it("要素の入力（表示以外のプロパティ）への undefined は従来どおりスキップし、null で消すこと", async () => {
+    const { root, stateEl } = await mount({ v: "typed" }, `<input id="in" data-wcs="value#ro: v">`);
+    const input = root.querySelector("#in") as HTMLInputElement;
+    expect(input.value).toBe("typed");
+    stateEl.createState("writable", (s: any) => { s.v = undefined; });
+    await flush();
+    expect(input.value).toBe("typed");
+    stateEl.createState("writable", (s: any) => { s.v = null; });
+    await flush();
+    expect(input.value).toBe("");
   });
 });
 

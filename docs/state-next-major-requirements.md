@@ -165,7 +165,7 @@ N1–N4 and N6 can ship in 2.6.x, which is also where the deprecation notices of
 | B5 | Unchanged in 3.0 (`onclick:` and `online:` cannot be told apart lexically, and a separate namespace would change every page's `on*:`); add an explicit property form | 3.x (non-breaking) |
 | B6 | Check the write capability at the one write boundary; readonly throws | 3.0 |
 | B7 | Tell read from write by the argument count (`$resolve(p, i, undefined)` writes) | 3.0 |
-| B8 | On every surface, undefined writes nothing and null clears (an attribute is removed) | 3.0 |
+| B8 | **Revised (2026-09-21, the user's call)**: on display surfaces (`textContent` / `innerText` / `innerHTML`, mustache, attributes, style) undefined and null both mean "no value" — emptied, or removed for attributes and styles. Only element inputs (every other property, spread) skip undefined, and null clears them. The first proposal, "undefined writes nothing on every surface", was not taken: it would have spread an existing defect — `textContent:` leaving the previous row's text in a reused row — to mustache and attributes | 3.0 |
 | B9 | Unquoted true / false / null / numbers are typed; quoted arguments are strings | 3.0 |
 | B10 | Match JavaScript truthiness (`truthy(0n)` is false) | 3.0 |
 | B11 | State the capability matrix in the README; behaviour unchanged (it already rejects or warns by name) | docs |

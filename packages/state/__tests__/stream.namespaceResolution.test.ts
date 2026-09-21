@@ -270,9 +270,9 @@ describe("$streamStatus / $streamError の解決経路統合", () => {
       expect(s["$streamError.unknown"]).toBeUndefined();
       expect((s.$streamStatus as Record<string, unknown>).unknown).toBeUndefined();
     });
-    // undefined は「状態が値を持たない＝無意見」でプロパティ書き込みがスキップされる
-    // （applyChangeToProperty の undefined スキップ規約）ため、要素側の既定値が残る
-    expect(shadowRoot.querySelector("#unknown")!.textContent).toBe("initial");
+    // textContent は表示のプロパティなので、undefined は「値が無い」＝空表示になる（要件 B8）。
+    // 要素の入力へのプロパティ書き込みなら従来どおりスキップされる（applyChangeToProperty）
+    expect(shadowRoot.querySelector("#unknown")!.textContent).toBe("");
 
     host.remove();
   });
@@ -326,8 +326,8 @@ describe("$streamStatus / $streamError の解決経路統合", () => {
     failRun!();
     await flushAsync();
 
-    // primitive の葉を跨ぐ読みは undefined 解決 → プロパティ書き込みスキップで既定表示が残る
-    expect(shadowRoot.querySelector("#msg")!.textContent).toBe("initial");
+    // primitive の葉を跨ぐ読みは undefined 解決 → 表示のプロパティなので空表示（要件 B8）
+    expect(shadowRoot.querySelector("#msg")!.textContent).toBe("");
     // 同一 drain の後続 binding 適用と $updatedCallback は巻き添えにならない
     // （paths は binding を持つアドレス単位: $streamError.broken の通知は
     //   walkDependency 経由で binding を持つ子パス .message として列挙される）

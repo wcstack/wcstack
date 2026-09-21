@@ -42,8 +42,17 @@ const SSR_ATTR_PROPS: Record<string, (element: Element, value: unknown) => void>
   },
 };
 
+/**
+ * 表示のプロパティ（要件 B8）。ここへの undefined は「値が無い」ので空にする — 要素の入力と違って
+ * 生かすべき既定値が無く、スキップすると、使い回した行に前の行の表示が残る。
+ */
+const DISPLAY_PROPS = new Set<string>(["textContent", "innerText", "innerHTML"]);
+
 export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyContext, newValue: unknown): void {
-  // undefined は「状態が値を持たない＝無意見」であり、書き込み自体をスキップして
+  if (typeof newValue === "undefined" && binding.propSegments.length === 1 && DISPLAY_PROPS.has(binding.propSegments[0])) {
+    newValue = "";
+  }
+  // 要素の入力への undefined は「状態が値を持たない＝無意見」であり、書き込み自体をスキップして
   // 要素側の既定値を生かす。書き込んでしまうと setter の文字列化で
   // "undefined" 属性や removeAttribute が走り要素が壊れる (spread で未初期化
   // slot を配線したときに顕在化)。明示的なクリアは null で表現する。
