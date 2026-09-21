@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { installDccHooks } from "../src/dcc/addressHooks";
+import { installDccLifecycle } from "../src/dcc/dccLifecycle";
 
 vi.mock('../src/stateLoader/loadFromInnerScript', () => ({
   loadFromInnerScript: vi.fn().mockResolvedValue({ count: 0, $bindables: ['count'] })
@@ -32,6 +34,8 @@ const STATE_TAG = 'wcs-state-dcc-test';
 if (!customElements.get(STATE_TAG)) {
   customElements.define(STATE_TAG, State);
 }
+// bootstrapState() を経ないので、DCC の接続を引き取る機能を自分で install する（分割エントリのページと同じ）
+installDccLifecycle();
 
 function createDCCSetup(stateAttrs?: Record<string, string>, stateContent?: string): {
   host: HTMLElement;
@@ -125,6 +129,7 @@ describe('State DCC検出', () => {
     });
 
     it('setBindableEventMapで設定できること', () => {
+      installDccHooks();
       const stateEl = document.createElement(STATE_TAG) as State;
       stateEl.setBindableEventMap({ count: 'x-el:count-changed' });
       expect(stateEl.bindableEventMap).toEqual({ count: 'x-el:count-changed' });

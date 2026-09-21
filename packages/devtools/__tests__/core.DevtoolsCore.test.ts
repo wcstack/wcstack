@@ -834,6 +834,24 @@ describe('DevtoolsCore', () => {
       expect(core.overlaysOf(entry)).toBeNull();
     });
 
+    it('keyedSubscriptionsOfがsourceへ委譲されること（protocol v2 追補 — 要件 D17）', () => {
+      const { core, source } = setupConnected([summaryOf('main')]);
+      const summary = { path: 'selectedIndex', tracked: false, rows: 3, keys: 3, lists: 0, lastValue: 1 };
+      (source as any).keyedSubscriptions = vi.fn(() => [summary]);
+      const [entry] = core.getRoster();
+      expect(core.keyedSubscriptionsOf(entry)).toEqual([summary]);
+      expect((source as any).keyedSubscriptions).toHaveBeenCalledWith(entry.rootNode);
+    });
+
+    it('keyedSubscriptions未実装ランタイム・source消滅後はkeyedSubscriptionsOfがnullを返すこと（後方互換）', () => {
+      const { core, registry } = setupConnected([summaryOf('main')]);
+      const [entry] = core.getRoster();
+      // createFakeSource は keyedSubscriptions を持たない = 3.0 より前の state 相当
+      expect(core.keyedSubscriptionsOf(entry)).toBeNull();
+      registry.unregister('state:test');
+      expect(core.keyedSubscriptionsOf(entry)).toBeNull();
+    });
+
     it('source消滅後・keys未実装ランタイムに安全なこと', () => {
       const { core, source, registry } = setupConnected([summaryOf('main')]);
       const [entry] = core.getRoster();

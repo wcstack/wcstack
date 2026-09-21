@@ -35,8 +35,7 @@ export interface WcsMessageCatalog {
   spreadTargetRequired(): string;
   /** 構造ディレクティブ（for/if/elseif/else）が他バインディングと併記されている。 */
   structuralMustBeSingle(directive: string): string;
-  /** 3.0 が拒否する（または読み方を変える）書き方。detail は正本（@wcstack/state/parser）の英文 */
-  v3Migration(detail: string): string;
+  bindingSyntax(detail: string): string;
   eventTokenUndeclared(tokenName: string): string;
   commandRhsFormat(): string;
   commandTokenUndeclared(tokenPath: string): string;
@@ -210,8 +209,8 @@ const JA_EXPECTED_LABEL: Record<ExpectedTypeKind, string> = {
 const ja: WcsMessageCatalog = {
   spreadFilterNotAllowed: () => `スプレッドのターゲットにフィルタは使用できません`,
   spreadTargetRequired: () => `スプレッドにはターゲットパスが必要です`,
-  v3Migration: (detail) => `3.0 への準備（2.x ではこのまま動きます）: ${detail}`,
   structuralMustBeSingle: (d) => `'${d}' バインディングは単独で指定する必要があります（';' で他のバインディングと併記できません。ランタイムは読み込み時に throw します）`,
+  bindingSyntax: (detail) => `バインディングの構文エラー（ランタイムは読み込み時に throw します）: ${detail}`,
   eventTokenUndeclared: (t) => `イベントトークン "${t}" は $eventTokens に宣言されていません`,
   commandRhsFormat: () => `command バインディングの右辺には $command.<name>（$commandTokens で宣言）を指定してください`,
   commandTokenUndeclared: (t) => `コマンドトークン "${t}" は $commandTokens に宣言されていません`,
@@ -426,8 +425,8 @@ const EN_EXPECTED_LABEL: Record<ExpectedTypeKind, string> = {
 const en: WcsMessageCatalog = {
   spreadFilterNotAllowed: () => `Filters cannot be applied to a spread target`,
   spreadTargetRequired: () => `Spread requires a target path`,
-  v3Migration: (detail) => `Preparing for 3.0 (this still runs on 2.x): ${detail}`,
   structuralMustBeSingle: (d) => `'${d}' must be the only binding in this attribute (it cannot be combined with ';'; the runtime throws at load time)`,
+  bindingSyntax: (detail) => `Binding syntax error (the runtime throws at load time): ${detail}`,
   eventTokenUndeclared: (t) => `Event token "${t}" is not declared in $eventTokens`,
   commandRhsFormat: () => `The right side of a command binding must be $command.<name> (declared in $commandTokens)`,
   commandTokenUndeclared: (t) => `Command token "${t}" is not declared in $commandTokens`,

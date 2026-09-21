@@ -1,6 +1,7 @@
 import { IStateAddress } from "../address/types";
 import { IStateElement } from "../components/types";
 import { raiseError } from "../raiseError";
+import { assertWritable } from "./assertWritable";
 import { getStateElement } from "../stateElementByName";
 import { IStateHandler, IStateProxy, Mutability } from "./types";
 import { get as trapGet } from "./traps/get";
@@ -32,12 +33,12 @@ class StateHandler implements IStateHandler {
     this._mutability = mutability;
   }
 
-  get mutability(): Mutability {
-    return this._mutability;
-  }
-
   get stateElement(): IStateElement {
     return this._stateElement;
+  }
+
+  get mutability(): Mutability {
+    return this._mutability;
   }
 
   get lastAddressStack(): IStateAddress | null {
@@ -187,9 +188,7 @@ class StateHandler implements IStateHandler {
     value   : any, 
     receiver: any
   ): boolean {
-    if (this._mutability === "readonly") {
-      raiseError(`This state is readonly.`);
-    }
+    assertWritable(this);
     return trapSet(target, prop, value, receiver, this);
   }
 

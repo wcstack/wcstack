@@ -4,9 +4,16 @@
 
 ## Unreleased
 
+`@wcstack/state` 3.0（major/state-next）の文法の厳格化に追随する。
+
 ### 検証
 
-- **`wcs/v3-migration`（info・新設）** — `@wcstack/state` 3.0 が拒否する（または読み方を変える）書き方を、2.x のランタイムが `[wcs/v3-migration]` の警告に使うのと同じ判定（`@wcstack/state/parser` の `findV3MigrationIssues`）で知らせる: 2 つ目の `#`（`value#ro#wo`）・`else:` の後ろの値・構造ディレクティブや spread の修飾子とフィルタ・`radio#ro:` / `checkbox#ro:`・フィルタ引数の閉じていない引用符・`eq` / `ne` / `defaults` の引用符の無い `true` / `false` / `null`。属性の式ごと・mustache・コメントバインディングの式の範囲に出す。2.x ではそのまま動く書き方なので info とし、`--strict` の CI を落とさない。フィルタの引数の超過は既存の `wcs/filter-arity`（error）のまま重ねない。値や API 呼び出しで決まるもの（空値・readonly の書き込み・`#ro` マウント）はランタイムの警告だけが知らせる
+- **`wcs/binding-syntax`（新設、error）** — ランタイムの正本パーサが `[wcs/binding-syntax]` で拒否する書き方を、同じ判定で報告する: フィルタ引数の閉じていない引用符／2 つ目の `#`（`value#ro#wo` — `value#ro,wo` と書く）／`else:` の後ろの値／`for`・`if`・`elseif`・`else`・`...` の左辺の修飾子やフィルタ／空のフィルタ（`x|`・`x||y`）。属性と mustache の両方。判定は `@wcstack/state/parser` に委ね、ここでは複製しない（`service/bindingSyntaxValidator.ts`）。
+
+### 修正
+
+- **式の区切りをランタイムと同じにした** — 位置付きパーサ（参照インデックス・配線レンズ）は `;` を無条件に区切っていたが、ランタイムは 3.0 から引用符の中の `;` を区切らない（`join(';')`）。正本が公開する `splitBindTexts` をそのまま使う。
+- **`{{ count | }}` のような空のフィルタが参照インデックスの problems に載らなくなっていた** — `@wcstack/state` がフィルタ関数の解決を束縛計画の段へ移した（D16）ことで、空の名前がパースを通っていた。正本が空のフィルタを文法の誤りとして拒否するようになり、元に戻った（CI の wcs-validate の失敗の原因）。
 
 ## 1.15.0 — 2026-09-15
 

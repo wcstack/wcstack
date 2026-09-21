@@ -20,6 +20,7 @@ import {
   IBindingLike,
   IDeclaredBindingLike,
   IDevtoolsSourceLike,
+  IKeyedSubscriptionSummaryLike,
   IMountOverlaySummaryLike,
   IStateElementSummaryLike,
 } from "../protocol/types";
@@ -510,6 +511,18 @@ export class DevtoolsCore {
       return null;
     }
     return source.overlays(entry.rootNode);
+  }
+
+  /**
+   * roster entry のツリーの鍵付き購読（keyedSubscriptions — protocol v2 追補・要件 D17）。
+   * 実装しないランタイム（3.0 より前の state）では null — UI はセクションごと出さない。
+   */
+  keyedSubscriptionsOf(entry: IRosterEntry): IKeyedSubscriptionSummaryLike[] | null {
+    const source = this._sources.get(entry.sourceId);
+    if (source === undefined || typeof source.keyedSubscriptions !== "function") {
+      return null;
+    }
+    return source.keyedSubscriptions(entry.rootNode);
   }
 
   readValue(entry: IRosterEntry, path: string, indexes?: number[]): unknown {

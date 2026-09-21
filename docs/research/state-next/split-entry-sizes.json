@@ -1,0 +1,352 @@
+{
+  "timestamp": "2026-09-21T04:17:30.536Z",
+  "pkg": "C:/Users/kikuzawa/Documents/git/wcstack/wcstack-next-major/packages/state",
+  "note": "Single-file bundles are one gzip -9 stream each (comparable with the shipped auto.min.js); dist-split files are gzipped one by one, as a CDN serves them. byModule/byGroup are minified bytes of the core bundle attributed through its source map.",
+  "singleFile": {
+    "core": {
+      "bytes": 144750,
+      "gzip": 43204
+    },
+    "core-all": {
+      "bytes": 253860,
+      "gzip": 74926
+    },
+    "core-temporal": {
+      "bytes": 173124,
+      "gzip": 51531,
+      "gzipOverCore": 8327
+    },
+    "core-scopes": {
+      "bytes": 197368,
+      "gzip": 58497,
+      "gzipOverCore": 15293
+    },
+    "core-recursion": {
+      "bytes": 160941,
+      "gzip": 48029,
+      "gzipOverCore": 4825
+    },
+    "core-ssr": {
+      "bytes": 155899,
+      "gzip": 46303,
+      "gzipOverCore": 3099
+    },
+    "core-devtools": {
+      "bytes": 150861,
+      "gzip": 45152,
+      "gzipOverCore": 1948
+    },
+    "core-formats": {
+      "bytes": 149826,
+      "gzip": 44463,
+      "gzipOverCore": 1259
+    },
+    "core-diagnostics": {
+      "bytes": 147087,
+      "gzip": 43962,
+      "gzipOverCore": 758
+    }
+  },
+  "splitFiles": {
+    "chunks/binder.js": {
+      "bytes": 95118,
+      "gzip": 28935,
+      "sourceGroups": {
+        "bindings": 21,
+        "apply": 19,
+        "structural": 14,
+        "list": 11,
+        "event": 11,
+        "(root)": 9,
+        "bindTextParser": 8,
+        "address": 5,
+        "protocol": 3,
+        "binding": 3,
+        "core": 3,
+        "proxy": 2,
+        "mustache": 1,
+        "platform": 1,
+        "token": 1,
+        "command": 1,
+        "propagation": 1,
+        "cache": 1,
+        "updater": 1,
+        "dependency": 1
+      }
+    },
+    "chunks/checkDependency.js": {
+      "bytes": 684,
+      "gzip": 409,
+      "sourceGroups": {
+        "proxy": 1
+      }
+    },
+    "chunks/diagnosticsHooks.js": {
+      "bytes": 97,
+      "gzip": 114,
+      "sourceGroups": {
+        "core": 1
+      }
+    },
+    "chunks/errorGuidance.js": {
+      "bytes": 713,
+      "gzip": 431,
+      "sourceGroups": {
+        "(root)": 2
+      }
+    },
+    "chunks/filterRegistry.js": {
+      "bytes": 2318,
+      "gzip": 877,
+      "sourceGroups": {
+        "protocol": 1,
+        "(root)": 1,
+        "core": 1
+      }
+    },
+    "chunks/getAllPropertyDescriptors.js": {
+      "bytes": 1824,
+      "gzip": 812,
+      "sourceGroups": {
+        "core": 2,
+        "(root)": 1
+      }
+    },
+    "chunks/lifecycleHooks.js": {
+      "bytes": 2372,
+      "gzip": 1138,
+      "sourceGroups": {
+        "stateLoader": 2,
+        "core": 1
+      }
+    },
+    "chunks/mount.js": {
+      "bytes": 7378,
+      "gzip": 2923,
+      "sourceGroups": {
+        "webComponent": 1
+      }
+    },
+    "chunks/pathDiagnostics.js": {
+      "bytes": 4981,
+      "gzip": 2299,
+      "sourceGroups": {
+        "(root)": 2,
+        "address": 1,
+        "platform": 1
+      }
+    },
+    "chunks/registerComponents.js": {
+      "bytes": 26483,
+      "gzip": 8219,
+      "sourceGroups": {
+        "proxy": 11,
+        "list": 2,
+        "event": 2,
+        "stateLoader": 2,
+        "platform": 1,
+        "apply": 1,
+        "components": 1,
+        "command": 1,
+        "(root)": 1
+      }
+    },
+    "chunks/setAll.js": {
+      "bytes": 18586,
+      "gzip": 6362,
+      "sourceGroups": {
+        "proxy": 12,
+        "command": 2,
+        "dependency": 2,
+        "address": 1,
+        "list": 1
+      }
+    },
+    "chunks/version.js": {
+      "bytes": 68,
+      "gzip": 88,
+      "sourceGroups": {
+        "(root)": 1
+      }
+    },
+    "chunks/watchRuntime.js": {
+      "bytes": 14858,
+      "gzip": 5292,
+      "sourceGroups": {
+        "watch": 8,
+        "scan": 5,
+        "stream": 3
+      }
+    },
+    "core.js": {
+      "bytes": 1223,
+      "gzip": 636,
+      "sourceGroups": {
+        "core": 2,
+        "(root)": 1
+      }
+    },
+    "features/devtools.js": {
+      "bytes": 4118,
+      "gzip": 1907,
+      "sourceGroups": {
+        "devtools": 3,
+        "features": 1
+      }
+    },
+    "features/diagnostics.js": {
+      "bytes": 2390,
+      "gzip": 1139,
+      "sourceGroups": {
+        "diagnostics": 2,
+        "features": 1
+      }
+    },
+    "features/formats.js": {
+      "bytes": 5027,
+      "gzip": 1445,
+      "sourceGroups": {
+        "formats": 3,
+        "features": 1
+      }
+    },
+    "features/recursion.js": {
+      "bytes": 16122,
+      "gzip": 5502,
+      "sourceGroups": {
+        "recursion": 10,
+        "features": 1
+      }
+    },
+    "features/scopes.js": {
+      "bytes": 32424,
+      "gzip": 10455,
+      "sourceGroups": {
+        "webComponent": 17,
+        "dcc": 7,
+        "features": 1
+      }
+    },
+    "features/ssr.js": {
+      "bytes": 11317,
+      "gzip": 3872,
+      "sourceGroups": {
+        "ssr": 4,
+        "features": 1
+      }
+    },
+    "features/temporal.js": {
+      "bytes": 14744,
+      "gzip": 5254,
+      "sourceGroups": {
+        "stream": 6,
+        "scan": 3,
+        "features": 1
+      }
+    }
+  },
+  "splitDownload": {
+    "core": {
+      "files": 12,
+      "bytes": 154467,
+      "gzip": 50320
+    },
+    "core+temporal": {
+      "files": 14,
+      "bytes": 184069,
+      "gzip": 60866
+    },
+    "core+scopes": {
+      "files": 15,
+      "bytes": 209127,
+      "gzip": 68990
+    },
+    "core+recursion": {
+      "files": 13,
+      "bytes": 170589,
+      "gzip": 55822
+    },
+    "core+ssr": {
+      "files": 13,
+      "bytes": 165784,
+      "gzip": 54192
+    },
+    "core+devtools": {
+      "files": 14,
+      "bytes": 165963,
+      "gzip": 55150
+    },
+    "core+formats": {
+      "files": 13,
+      "bytes": 159494,
+      "gzip": 51765
+    },
+    "core+diagnostics": {
+      "files": 13,
+      "bytes": 156857,
+      "gzip": 51459
+    },
+    "core+all": {
+      "files": 21,
+      "bytes": 262845,
+      "gzip": 88109
+    }
+  },
+  "featureEntriesCarryingCoreModules": {},
+  "coreBundleByGroup": {
+    "bindings": 24650,
+    "proxy": 19030,
+    "apply": 15894,
+    "components": 12588,
+    "event": 11564,
+    "structural": 10603,
+    "list": 10556,
+    "(root)": 8757,
+    "dependency": 7389,
+    "bindTextParser": 4972,
+    "address": 4019,
+    "core": 3016,
+    "protocol": 2258,
+    "updater": 1864,
+    "stateLoader": 1781,
+    "binding": 1568,
+    "command": 1302,
+    "mustache": 1026,
+    "propagation": 945,
+    "platform": 431,
+    "token": 338,
+    "cache": 156
+  },
+  "coreBundleByModule": {
+    "bindings/BindingSession.ts": 15390,
+    "components/State.ts": 12588,
+    "proxy/methods/setByAddress.ts": 4578,
+    "apply/applyChangeToFor.ts": 4014,
+    "structural/createContent.ts": 3721,
+    "dependency/walkDependency.ts": 3556,
+    "event/twowayHandler.ts": 3547,
+    "proxy/traps/get.ts": 3126,
+    "dependency/keyedDependency.ts": 3007,
+    "bindings/initialSync.ts": 2452,
+    "proxy/StateHandler.ts": 2212,
+    "structural/collectStructuralFragments.ts": 2180,
+    "list/createListDiff.ts": 2071,
+    "apply/applyChange.ts": 2071,
+    "bindTextParser/expandSpread.ts": 1907,
+    "updater/updater.ts": 1864,
+    "apply/applyChangeToProperty.ts": 1845,
+    "apply/applyChangeFromBindings.ts": 1804,
+    "list/createListIndex.ts": 1760,
+    "address/PathInfo.ts": 1732,
+    "config.ts": 1635,
+    "proxy/methods/getByAddress.ts": 1571,
+    "pathDiagnostics.ts": 1532,
+    "event/eventTokenHandler.ts": 1475,
+    "event/handler.ts": 1421,
+    "list/mergeKeyedList.ts": 1410,
+    "structural/activateContent.ts": 1407,
+    "stateElementByName.ts": 1389,
+    "event/checkboxHandler.ts": 1320,
+    "protocol/wcBindableReader.ts": 1318
+  }
+}

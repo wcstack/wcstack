@@ -1,0 +1,277 @@
+{
+  "revision": "6bff9f2cf8c4915c93dceb9c40b56e376eb06119",
+  "timestamp": "2026-09-20T13:20:05.570Z",
+  "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+  "sizes": {
+    "shippedAutoMin": {
+      "bytes": 234638,
+      "gzip": 68731
+    },
+    "protoAutoMin": {
+      "bytes": 237786,
+      "gzip": 69723
+    }
+  },
+  "results": [
+    {
+      "bundle": "shipped",
+      "variant": "tracked",
+      "rows": 1000,
+      "selectionCorrect": true,
+      "select": {
+        "median": 1.1,
+        "min": 1,
+        "max": 3.9,
+        "samples": [
+          1.1,
+          1.1,
+          1.2,
+          1.1,
+          1.1,
+          1.1,
+          3.9,
+          1,
+          1.1,
+          1
+        ]
+      },
+      "remove": {
+        "median": 1.8,
+        "min": 1.5,
+        "max": 2.8,
+        "samples": [
+          2.4,
+          2.8,
+          1.8,
+          1.5,
+          1.5
+        ]
+      },
+      "selectionAfterRemove": {
+        "before": {
+          "count": 1,
+          "index": 10,
+          "id": "10"
+        },
+        "after": {
+          "count": 1,
+          "index": 10,
+          "id": "15"
+        },
+        "followsId": false,
+        "followsIndex": true
+      },
+      "swap": {
+        "median": 0.5,
+        "min": 0.3,
+        "max": 1.3,
+        "samples": [
+          1.3,
+          0.5,
+          0.6,
+          0.5,
+          0.3
+        ]
+      },
+      "selectionAfterSwap": {
+        "before": {
+          "count": 1,
+          "index": 2,
+          "id": "2"
+        },
+        "after": {
+          "count": 1,
+          "index": 2,
+          "id": "999"
+        },
+        "count": 1,
+        "followsId": false,
+        "followsIndex": true
+      },
+      "pageErrors": []
+    },
+    {
+      "bundle": "shipped",
+      "variant": "tracked",
+      "rows": 10000,
+      "selectionCorrect": true,
+      "select": {
+        "median": 19.3,
+        "min": 18.1,
+        "max": 22.1,
+        "samples": [
+          22.1,
+          19.3,
+          18.1,
+          19.9,
+          20.2,
+          21.2,
+          19.3,
+          18.2,
+          18.1,
+          18.4
+        ]
+      },
+      "remove": {
+        "median": 34.8,
+        "min": 28.6,
+        "max": 40.2,
+        "samples": [
+          40.2,
+          34.3,
+          34.8,
+          28.6,
+          34.8
+        ]
+      },
+      "selectionAfterRemove": {
+        "before": {
+          "count": 1,
+          "index": 10,
+          "id": "10"
+        },
+        "after": {
+          "count": 1,
+          "index": 10,
+          "id": "15"
+        },
+        "followsId": false,
+        "followsIndex": true
+      },
+      "swap": null,
+      "selectionAfterSwap": null,
+      "pageErrors": []
+    },
+    {
+      "bundle": "proto",
+      "variant": "tracked",
+      "rows": 1000,
+      "selectionCorrect": true,
+      "select": {
+        "median": 1.9,
+        "min": 1.7,
+        "max": 3.3,
+        "samples": [
+          2,
+          2,
+          1.7,
+          1.8,
+          1.8,
+          2.3,
+          2.1,
+          1.7,
+          1.7,
+          3.3
+        ]
+      },
+      "remove": {
+        "median": 3,
+        "min": 2.7,
+        "max": 5,
+        "samples": [
+          5,
+          2.8,
+          3,
+          2.7,
+          3
+        ]
+      },
+      "selectionAfterRemove": {
+        "before": {
+          "count": 1,
+          "index": 10,
+          "id": "10"
+        },
+        "after": {
+          "count": 1,
+          "index": 10,
+          "id": "15"
+        },
+        "followsId": false,
+        "followsIndex": true
+      },
+      "swap": {
+        "median": 1.1,
+        "min": 0.9,
+        "max": 2.3,
+        "samples": [
+          2.3,
+          1.2,
+          1.1,
+          1,
+          0.9
+        ]
+      },
+      "selectionAfterSwap": {
+        "before": {
+          "count": 1,
+          "index": 2,
+          "id": "2"
+        },
+        "after": {
+          "count": 1,
+          "index": 2,
+          "id": "999"
+        },
+        "count": 1,
+        "followsId": false,
+        "followsIndex": true
+      },
+      "pageErrors": []
+    },
+    {
+      "bundle": "proto",
+      "variant": "tracked",
+      "rows": 10000,
+      "selectionCorrect": true,
+      "select": {
+        "median": 20.65,
+        "min": 19.5,
+        "max": 23.5,
+        "samples": [
+          23.5,
+          21.5,
+          22.4,
+          19.5,
+          20.6,
+          21.5,
+          20.6,
+          20.3,
+          20.4,
+          20.7
+        ]
+      },
+      "remove": {
+        "median": 33.6,
+        "min": 26.5,
+        "max": 40.3,
+        "samples": [
+          40.3,
+          33.6,
+          34.4,
+          31.7,
+          26.5
+        ]
+      },
+      "selectionAfterRemove": {
+        "before": {
+          "count": 1,
+          "index": 10,
+          "id": "10"
+        },
+        "after": {
+          "count": 1,
+          "index": 10,
+          "id": "15"
+        },
+        "followsId": false,
+        "followsIndex": true
+      },
+      "swap": null,
+      "selectionAfterSwap": null,
+      "pageErrors": []
+    }
+  ],
+  "errors": [],
+  "browser": "149.0.7827.55"
+}

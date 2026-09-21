@@ -121,9 +121,10 @@ export const WcsDiagnosticCode = {
   RecursionDeclarationInvalid: "wcs/recursion-declaration-invalid",
   TypeAnnotation: "wcs/type-annotation",
   TemplateSyntax: "wcs/template-syntax",
-  // @wcstack/state 3.0 が拒否する(または読み方を変える)書き方の予告(info)。判定はランタイムの
-  // [wcs/v3-migration] と同じ正本(@wcstack/state/parser の findV3MigrationIssues)。2.x 系だけの code。
-  V3Migration: "wcs/v3-migration",
+  // ランタイムの正本パーサが [wcs/binding-syntax] で拒否する書き方(@wcstack/state 3.0 の文法の
+  // 厳格化: 閉じていない引用符・2 つ目の '#'・else: の値・構造ディレクティブの修飾子・空のフィルタ)。
+  // 判定は正本パーサに委ねる(service/bindingSyntaxValidator.ts)。
+  BindingSyntax: "wcs/binding-syntax",
   // --- <wcs-state> script: array reactivity hazards ---
   // 配列破壊的メソッド呼び出し(push 等 9 種)。Proxy を素通りしリアクティブ更新されない。
   // 同一参照の自己再代入でも要素の追加・削除は反映されない(docs/array-mutation-diagnostic-design.md §3)。

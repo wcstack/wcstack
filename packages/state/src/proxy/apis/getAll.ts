@@ -20,9 +20,6 @@ import { getContextListIndex } from "../methods/getContextListIndex";
 import { IStateHandler } from "../types";
 import { collectWildcardIndexes } from "./wildcardIndexes";
 import { resolve } from "./resolve";
-import { bindRecursivePath } from "../../recursion/bind";
-import { hasRecursionWildcard } from "../../recursion/expand";
-import { getAllRecursive } from "../../recursion/getAllRecursive";
 
 type GetAllFunction = (path: string, indexes?: number[]) => any[];
 
@@ -34,16 +31,7 @@ export function getAll(
 ): GetAllFunction {
     const resolveFn = resolve(target, prop, receiver, handler);
     return (path: string, indexes?: number[]): any[] => {
-      // オーサリング層の `**`。省略形は「いま評価している深さ」に束縛し、`[]` 明示は
-      // 全深さの合併になる（設計書 §6-2）。部分接頭辞は `**` に対して定義できない。
-      if (handler.stateElement.hasRecursion === true && hasRecursionWildcard(path)) {
-        if (typeof indexes === "undefined") {
-          path = bindRecursivePath(handler.stateElement, handler, path);
-        } else {
-          // アンカー照合と添字の形の検査は合併形の側で行う（判定順を静的側と揃えるため）
-          return getAllRecursive(target, receiver, handler, path, indexes);
-        }
-      }
+      // オーサリング層の `**`（束縛・合併形）は recursion/addressHooks.ts の get hook が先に受ける
       const pathInfo = getPathInfo(path);
       // 渡された添字が配列でない（`null` 等）のは素の TypeError にせず、形の診断にする。
       // 省略（undefined）だけが「文脈の添字」を意味する。

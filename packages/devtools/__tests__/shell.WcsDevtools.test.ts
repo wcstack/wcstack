@@ -383,6 +383,49 @@ describe('WcsDevtools shell', () => {
       expect(paneBody(devtools, 'state').textContent).not.toContain('Overlays');
     });
 
+    it('keyedSubscriptions対応ランタイムでは鍵付き購読セクションを描画すること（protocol v2 追補 — 要件 D17）', () => {
+      mount();
+      (source as any).keyedSubscriptions = vi.fn(() => [
+        { path: 'mode', tracked: false, rows: 3, keys: 2, lists: 0, lastValue: 'x' },
+        { path: 'selectedIndex', tracked: false, rows: 0, keys: 0, lists: 1, lastValue: 0 },
+        { path: 'current.id', tracked: true, rows: 0, keys: 0, lists: 0, lastValue: undefined },
+      ]);
+      source.emit({ type: 'state:element-registered', rootNode: document, element: {} });
+      devtools.__flushRenderForTest();
+      const body = paneBody(devtools, 'state');
+      expect(body.textContent).toContain('Keyed selection (3 paths)');
+      const rows = [...body.querySelectorAll<HTMLElement>('.keyed-row')];
+      expect(rows.map((row) => row.textContent)).toEqual([
+        'mode rows 3 · keys 2 · last "x"',
+        'selectedIndex list watchers 1 · last 0',
+        'current.id tracked',
+      ]);
+      // 追跡付きへの落ちは warn バッジで、理由は title に置く
+      const badge = rows[2].querySelector<HTMLElement>('.badge-tag.warn')!;
+      expect(badge.title).toContain('re-evaluates');
+      expect((source as any).keyedSubscriptions).toHaveBeenCalledWith(document);
+    });
+
+    it('鍵付き購読が 1 path なら見出しを単数で出すこと', () => {
+      mount();
+      (source as any).keyedSubscriptions = vi.fn(() => [
+        { path: 'selectedIndex', tracked: false, rows: 1, keys: 1, lists: 0, lastValue: null },
+      ]);
+      source.emit({ type: 'state:element-registered', rootNode: document, element: {} });
+      devtools.__flushRenderForTest();
+      expect(paneBody(devtools, 'state').textContent).toContain('Keyed selection (1 path)');
+    });
+
+    it('keyedSubscriptions未提供のランタイム・購読の無いツリーではセクションを出さないこと（後方互換）', () => {
+      mount(); // createFakeSource は keyedSubscriptions を持たない = 3.0 より前の state 相当
+      devtools.__flushRenderForTest();
+      expect(paneBody(devtools, 'state').textContent).not.toContain('Keyed selection');
+      (source as any).keyedSubscriptions = vi.fn(() => []);
+      source.emit({ type: 'state:element-registered', rootNode: document, element: {} });
+      devtools.__flushRenderForTest();
+      expect(paneBody(devtools, 'state').textContent).not.toContain('Keyed selection');
+    });
+
     it('ツリー切替でoverlaysセクションが選択ツリーの記録に追随すること', () => {
       const rootA = document.createElement('div');
       const rootB = document.createElement('div');

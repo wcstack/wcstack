@@ -1,8 +1,8 @@
 import { getPathInfo } from "../address/PathInfo";
 import { IPathInfo } from "../address/types";
 import { IStateElement } from "../components/types";
+import { setMountedScopeHost } from "../list/loopContextByNode";
 import { DELIMITER, MODIFIER_READONLY, RECURSION_WILDCARD, WILDCARD } from "../define";
-import { warnV3Migration } from "../v3Migration";
 import { raiseError } from "../raiseError";
 import { IBindingInfo } from "../types";
 
@@ -35,8 +35,11 @@ export interface IMountEntry {
   /** 内側接頭辞のセグメント（ルートエントリは 0 個 — あらゆる内側パスに一致する） */
   readonly innerSegments: readonly string[];
   readonly outerPathInfo: IPathInfo;
-  /** ホストが `#ro` を付けたか（`state#ro: user`）。2.x は読まないが、3.0 はコンポーネント側の書き込みを拒否する（要件 D2 / B14 ①の予告） */
-  readonly readonly?: boolean;
+  /**
+   * ホストが `#ro` を付けたか（`state#ro: user` / `state.name#ro: user.name`、要件 B14 ①）。
+   * 真なら、コンポーネント側からこのエントリを通るツリーへの書き込みは拒否される（ホスト自身の書き込みは止めない）。
+   */
+  readonly readonly: boolean;
 }
 
 export interface IMountRecord {
@@ -65,6 +68,8 @@ export interface IMountRecord {
    * 設計書 §4-1 規則 2。1.x の「マッピングが勝つ」からの反転は D19 が予告済み）。
    */
   readonly injectedKeys: ReadonlySet<string>;
+  /** 部分エントリが明示したキー（先頭セグメント）。同名の own data key より優先する（要件 B14 ②） */
+  readonly mappedKeys: ReadonlySet<string>;
   /**
    * 私有データの初期スナップショット（own data key の浅い複製・D21）。
    * マウントインスタンス（listIndex）ごとの私有オブジェクトはここから複製される。
@@ -117,7 +122,7 @@ let nextMountId = 0;
 
 const MOUNT_DOLLAR_DECLARATIONS = [
   "$watch", "$streams", "$scan", "$listKeys", "$updatedCallback", "$commandTokens", "$eventTokens", "$on",
-  // $errorCallback もルート専用（以前は無言で無視していた — 3.0 と同じく名指しで知らせる）
+  // $errorCallback もルート専用（要件 B11 — 以前は無言で無視していた）
   "$recursion", "$errorCallback",
 ] as const;
 const dollarDeclarationWarned = new Set<string>();
@@ -246,12 +251,20 @@ export function buildMountRecord(
   const id = ++nextMountId;
   const marker = `#m${id}`;
   const { getterKeys, setterKeys } = collectAccessorKeys(stateObject);
+  // ホストが部分エントリで明示したキー（`state.theme: theme`）は、同名の own data key があっても
+  // 私有にしない — 明示した配線が作者の既定値に勝つ（要件 B14 ②。以前は own key が勝ち、
+  // ホストの値が届かなかった）
+  const mappedKeys = new Set<string>();
+  for (const entry of entries) {
+    if (entry.innerSegments.length > 0) mappedKeys.add(entry.innerSegments[0]);
+  }
   const privateSnapshot: Record<string, unknown> = {};
   for (const key of Object.keys(stateObject)) {
     if (key.startsWith("$")) continue;
     if (getterKeys.has(key) || setterKeys.has(key)) continue;
     if (typeof stateObject[key] === "function") continue;
     if (injectedKeys.has(key)) continue;
+    if (mappedKeys.has(key)) continue;
     privateSnapshot[key] = stateObject[key];
   }
   return {
@@ -268,6 +281,7 @@ export function buildMountRecord(
     getterKeys,
     setterKeys,
     injectedKeys,
+    mappedKeys,
     privateSnapshot,
     accessorBySuffixByMarkerParent: new Map(),
     indexShiftByLoopElementPath: new Map(),
@@ -287,6 +301,16 @@ function startsWithSegments(segments: readonly string[], prefix: readonly string
     if (segments[i] !== prefix[i]) return false;
   }
   return true;
+}
+
+/** 規則 3 の一致: 最長接頭辞のエントリ（entries は長い順）。一致しなければ null。 */
+function findTreeEntry(record: IMountRecord, segments: readonly string[]): IMountEntry | null {
+  for (const entry of record.entries) {
+    if (startsWithSegments(segments, entry.innerSegments)) {
+      return entry;
+    }
+  }
+  return null;
 }
 
 /** 規則 3: 最長接頭辞一致でツリーの絶対パスへ翻訳する。一致しなければ null。 */
@@ -384,7 +408,7 @@ function markerizeAccessorPath(record: IMountRecord, innerPath: string): string 
 
 /** 先頭セグメントが「作者のもの」（own data key・メソッド。積みで注入されたキーは除く）か */
 function isPrivateAnchor(record: IMountRecord, firstSegment: string): boolean {
-  if (record.injectedKeys.has(firstSegment)) {
+  if (record.injectedKeys.has(firstSegment) || record.mappedKeys.has(firstSegment)) {
     return false;
   }
   if (typeof record.stateObject[firstSegment] === "function" && !record.getterKeys.has(firstSegment)) {
@@ -430,25 +454,35 @@ export function getIndexShiftForScope(record: IMountRecord, forPath: string | un
 }
 
 /**
- * コンポーネント側の書き込みの翻訳。2.x は `translateInnerPath` と同じだが、読み取り専用で
- * マウントされたエントリ（`state#ro: user`）を通るツリーへの書き込みなら 3.0 の拒否を予告する
- * （要件 D2 / B14 ①）。
+ * `innerPath` がツリーへ翻訳され、その先のエントリが読み取り専用（`#ro`）か（要件 B14 ①）。
+ * 私有キー・アクセサ・`$` / `#` で始まるパスはコンポーネント自身のものなので対象外。
+ */
+function isReadonlyTreePath(record: IMountRecord, innerPath: string): IMountEntry | null {
+  const head = innerPath[0];
+  if (head === "$" || head === "#") return null;
+  if (record.getterKeys.has(innerPath) || record.setterKeys.has(innerPath)) return null;
+  const first = firstSegmentOf(innerPath);
+  if (record.getterKeys.has(first) || record.setterKeys.has(first) || isPrivateAnchor(record, first)) return null;
+  const entry = findTreeEntry(record, innerPath.split(DELIMITER));
+  return entry !== null && entry.readonly ? entry : null;
+}
+
+/**
+ * 書き込みの翻訳（要件 B14 ①）。`translateInnerPath` と同じ行き先を返すが、読み取り専用で
+ * マウントされたエントリ（`state#ro: user`）を通るツリーへの書き込みは名指しで拒否する。
+ * コンポーネント側の書き込みの入口（`element.state`・オーバーレイ・`$setAll` / `$resolve`）が呼ぶ。
  */
 export function translateInnerWritePath(record: IMountRecord, innerPath: string): string {
-  const translated = translateInnerPath(record, innerPath);
-  const head = innerPath[0];
-  if (head !== "$" && head !== "#" && !translated.includes(record.marker)) {
-    const segments = innerPath.split(DELIMITER);
-    const entry = record.entries.find((e) => e.innerSegments.every((s, i) => segments[i] === s));
-    if (entry !== undefined && entry.readonly === true) {
-      const suffix = entry.innerSegments.length === 0 ? "" : DELIMITER + entry.innerSegments.join(DELIMITER);
-      warnV3Migration(
-        `<${record.component.tagName.toLowerCase()}> writes "${innerPath}" through "${record.stateProp}${suffix}#${MODIFIER_READONLY}: ` +
-        `${entry.outerPathInfo.path}": 3.0 throws. Write it on the host, or drop #${MODIFIER_READONLY}.`,
-      );
-    }
+  const readonlyEntry = isReadonlyTreePath(record, innerPath);
+  if (readonlyEntry !== null) {
+    const suffix = readonlyEntry.innerSegments.length === 0 ? "" : DELIMITER + readonlyEntry.innerSegments.join(DELIMITER);
+    raiseError(
+      `[wcs/mount-readonly] <${record.component.tagName.toLowerCase()}> cannot write "${innerPath}": ` +
+      `it is mounted read-only ("${record.stateProp}${suffix}#${MODIFIER_READONLY}: ${readonlyEntry.outerPathInfo.path}"). ` +
+      `Write it on the host, or drop #${MODIFIER_READONLY} from the mount.`,
+    );
   }
-  return translated;
+  return translateInnerPath(record, innerPath);
 }
 
 export function translateInnerPath(record: IMountRecord, innerPath: string): string {
@@ -511,13 +545,19 @@ export function translateParsedForMount<T extends ITranslatable>(record: IMountR
       record.indexShiftByLoopElementPath.set(translated + DELIMITER + WILDCARD, shift);
     }
   }
-  if (translated === parsed.statePathName) {
+  // 読み取り専用のマウント（要件 B14 ①）を通る束縛は、要素 → state の書き戻しを止める（`#ro` と同じ）
+  const modifiers = (parsed as { propModifiers?: readonly string[] }).propModifiers;
+  const forceReadonly = indexMatch === null && Array.isArray(modifiers)
+    && !modifiers.includes(MODIFIER_READONLY)
+    && isReadonlyTreePath(record, parsed.statePathName) !== null;
+  if (translated === parsed.statePathName && !forceReadonly) {
     return parsed;
   }
   return {
     ...parsed,
     statePathName: translated,
     statePathInfo: getPathInfo(translated),
+    ...(forceReadonly ? { propModifiers: [...modifiers!, MODIFIER_READONLY] } : {}),
   };
 }
 
@@ -649,7 +689,17 @@ export function getScopeRootByMountRecord(record: IMountRecord): Node | null {
   return scopeRootByMountRecord.get(record) ?? null;
 }
 
+// ループ文脈の探索がマウントされた ShadowRoot でホストへ抜ける受け口（list/loopContextByNode.ts）。
+// 最初の記録の登録で 1 回だけ注入する（マウントの無いページでは探索は境界で止まったまま）
+let scopeHostInstalled = false;
+function installMountedScopeHost(): void {
+  if (scopeHostInstalled) return;
+  scopeHostInstalled = true;
+  setMountedScopeHost((root) => mountRecordByScopeRoot.has(root) ? root.host : null);
+}
+
 export function registerMountRecord(scopeRoot: Node, record: IMountRecord): void {
+  installMountedScopeHost();
   mountRecordByScopeRoot.set(scopeRoot, record);
   scopeRootByMountRecord.set(record, scopeRoot);
   let byMarker = mountRecordsByStateElement.get(record.parentStateElement);

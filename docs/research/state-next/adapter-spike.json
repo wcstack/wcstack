@@ -1,0 +1,2482 @@
+{
+  "revision": "6bff9f2cf8c4915c93dceb9c40b56e376eb06119",
+  "timestamp": "2026-09-20T11:23:33.212Z",
+  "temporaryBuildDirectory": "C:\\Users\\kikuzawa\\AppData\\Local\\Temp\\wcstack-state-adapter-TPfaQX",
+  "sizes": {
+    "shippedGrammarStage": {
+      "note": "src/bindTextParser/* bundled alone; imports outside the directory external",
+      "unminified": {
+        "bytes": 12992,
+        "gzip": 3825,
+        "brotli": 3202
+      },
+      "minified": {
+        "bytes": 3863,
+        "gzip": 1693,
+        "brotli": 1452
+      }
+    },
+    "spikeOnly": {
+      "note": "bindTextLexerSpike.mjs alone",
+      "unminified": {
+        "bytes": 12308,
+        "gzip": 4133,
+        "brotli": 3589
+      },
+      "minified": {
+        "bytes": 6197,
+        "gzip": 2764,
+        "brotli": 2463
+      }
+    },
+    "spikePlusAdapter": {
+      "note": "bindTextLexerSpike.mjs + bindTextAdapterSpike.mjs; path info and filter functions injected",
+      "unminified": {
+        "bytes": 15569,
+        "gzip": 5163,
+        "brotli": 4503
+      },
+      "minified": {
+        "bytes": 7485,
+        "gzip": 3236,
+        "brotli": 2908
+      }
+    },
+    "adapterLines": 69
+  },
+  "probes": [
+    [
+      "X",
+      "Y"
+    ],
+    "abc",
+    "3",
+    "0",
+    "true",
+    "null",
+    "undefined",
+    "1234.567"
+  ],
+  "cases": [
+    {
+      "text": "textContent: x|join(', ')",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                ", "
+              ],
+              [
+                "\"X, Y\"",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error"
+              ]
+            ]
+          ]
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                ", "
+              ],
+              [
+                "\"X, Y\"",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error"
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "textContent: x|join(';')",
+      "verdict": "current-rejects-only",
+      "adapter": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                ";"
+              ],
+              [
+                "\"X;Y\"",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error"
+              ]
+            ]
+          ]
+        }
+      ],
+      "current": {
+        "error": "[@wcstack/state] Invalid filter format: missing closing parenthesis in \"join('\""
+      }
+    },
+    {
+      "text": "textContent: x|join('|')",
+      "verdict": "current-rejects-only",
+      "adapter": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "|"
+              ],
+              [
+                "\"X|Y\"",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error"
+              ]
+            ]
+          ]
+        }
+      ],
+      "current": {
+        "error": "[@wcstack/state] Invalid filter format: missing closing parenthesis in \"join('\""
+      }
+    },
+    {
+      "text": "textContent: x|join('a:b')",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "a:b"
+              ],
+              [
+                "\"Xa:bY\"",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error"
+              ]
+            ]
+          ]
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "a:b"
+              ],
+              [
+                "\"Xa:bY\"",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error"
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "textContent: x|join('unterminated)",
+      "verdict": "adapter-rejects-only",
+      "adapter": {
+        "error": "[wcs/template-syntax] E_QUOTE_UNTERMINATED at 20: quote is never closed"
+      },
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "unterminated"
+              ],
+              [
+                "\"XunterminatedY\"",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error"
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "value#unknown: x",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "prop",
+          "prop": "value",
+          "segments": [
+            "value"
+          ],
+          "mods": [
+            "unknown"
+          ],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": []
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "value",
+          "segments": [
+            "value"
+          ],
+          "mods": [
+            "unknown"
+          ],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "value#ro#wo: x",
+      "verdict": "adapter-rejects-only",
+      "adapter": {
+        "error": "[wcs/template-syntax] E_MODIFIER_SEPARATOR at 8: only one '#' is allowed; 'value#ro#wo' has 2"
+      },
+      "current": [
+        {
+          "type": "prop",
+          "prop": "value",
+          "segments": [
+            "value"
+          ],
+          "mods": [
+            "ro"
+          ],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "else: ignored",
+      "verdict": "adapter-rejects-only",
+      "adapter": {
+        "error": "[wcs/template-syntax] E_ELSE_STATE_PART at 5: 'else' takes no path; found 'ignored'"
+      },
+      "current": [
+        {
+          "type": "else",
+          "prop": "else",
+          "segments": [
+            "else"
+          ],
+          "mods": [],
+          "path": "#else",
+          "pathInfo": "#else",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "radio#ro: x",
+      "verdict": "shape-differs",
+      "adapter": [
+        {
+          "type": "radio",
+          "prop": "radio",
+          "segments": [
+            "radio"
+          ],
+          "mods": [
+            "ro"
+          ],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": []
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "radio",
+          "segments": [
+            "radio"
+          ],
+          "mods": [
+            "ro"
+          ],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "only: x",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "event",
+          "prop": "only",
+          "segments": [
+            "only"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": []
+        }
+      ],
+      "current": [
+        {
+          "type": "event",
+          "prop": "only",
+          "segments": [
+            "only"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "online: x",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "event",
+          "prop": "online",
+          "segments": [
+            "online"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": []
+        }
+      ],
+      "current": [
+        {
+          "type": "event",
+          "prop": "online",
+          "segments": [
+            "online"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "onclick: x",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "event",
+          "prop": "onclick",
+          "segments": [
+            "onclick"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": []
+        }
+      ],
+      "current": [
+        {
+          "type": "event",
+          "prop": "onclick",
+          "segments": [
+            "onclick"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "command.run: token",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "prop",
+          "prop": "command.run",
+          "segments": [
+            "command",
+            "run"
+          ],
+          "mods": [],
+          "path": "token",
+          "pathInfo": "token",
+          "in": [],
+          "out": []
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "command.run",
+          "segments": [
+            "command",
+            "run"
+          ],
+          "mods": [],
+          "path": "token",
+          "pathInfo": "token",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "eventToken.done: token",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "event",
+          "prop": "eventToken.done",
+          "segments": [
+            "eventToken",
+            "done"
+          ],
+          "mods": [],
+          "path": "token",
+          "pathInfo": "token",
+          "in": [],
+          "out": []
+        }
+      ],
+      "current": [
+        {
+          "type": "event",
+          "prop": "eventToken.done",
+          "segments": [
+            "eventToken",
+            "done"
+          ],
+          "mods": [],
+          "path": "token",
+          "pathInfo": "token",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "textContent: x|join('a,b')",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "a,b"
+              ],
+              [
+                "\"Xa,bY\"",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error"
+              ]
+            ]
+          ]
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "a,b"
+              ],
+              [
+                "\"Xa,bY\"",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error"
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "textContent: x|join(a,b)",
+      "verdict": "adapter-rejects-only",
+      "adapter": {
+        "error": "[wcs/template-syntax] E_FILTER_ARITY at 15: 'join' takes 0..1 argument(s); got 2"
+      },
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "a",
+                "b"
+              ],
+              [
+                "\"Xa,bY\"",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error"
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "else:",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "else",
+          "prop": "else",
+          "segments": [
+            "else"
+          ],
+          "mods": [],
+          "path": "#else",
+          "pathInfo": "#else",
+          "in": [],
+          "out": []
+        }
+      ],
+      "current": [
+        {
+          "type": "else",
+          "prop": "else",
+          "segments": [
+            "else"
+          ],
+          "mods": [],
+          "path": "#else",
+          "pathInfo": "#else",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "for#x: items",
+      "verdict": "adapter-rejects-only",
+      "adapter": {
+        "error": "[wcs/template-syntax] E_MODIFIER_NOT_ALLOWED at 0: 'for' takes no modifiers"
+      },
+      "current": [
+        {
+          "type": "prop",
+          "prop": "for",
+          "segments": [
+            "for"
+          ],
+          "mods": [
+            "x"
+          ],
+          "path": "items",
+          "pathInfo": "items",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "if: a; textContent: b",
+      "verdict": "both-reject",
+      "adapter": {
+        "error": "[wcs/template-syntax] E_STRUCTURAL_SINGLE at 0: 'if' must be the only binding on the element"
+      },
+      "current": {
+        "error": "[@wcstack/state] [wcs/template-syntax] Invalid bindText: \"if: a; textContent: b\". 'if', 'elseif', 'else', and 'for' bindings must be single binding. Put the str"
+      }
+    },
+    {
+      "text": "textContent: x|join('it\\'s')",
+      "verdict": "shape-differs",
+      "adapter": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "it's"
+              ],
+              [
+                "\"Xit'sY\"",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error"
+              ]
+            ]
+          ]
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "it\\s"
+              ],
+              [
+                "\"Xit\\\\sY\"",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error"
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "attr.data-id: x",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "prop",
+          "prop": "attr.data-id",
+          "segments": [
+            "attr",
+            "data-id"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": []
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "attr.data-id",
+          "segments": [
+            "attr",
+            "data-id"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "onclick#prevent,stop: run",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "event",
+          "prop": "onclick",
+          "segments": [
+            "onclick"
+          ],
+          "mods": [
+            "prevent",
+            "stop"
+          ],
+          "path": "run",
+          "pathInfo": "run",
+          "in": [],
+          "out": []
+        }
+      ],
+      "current": [
+        {
+          "type": "event",
+          "prop": "onclick",
+          "segments": [
+            "onclick"
+          ],
+          "mods": [
+            "prevent",
+            "stop"
+          ],
+          "path": "run",
+          "pathInfo": "run",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "value#init=element,sync=connect: w",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "prop",
+          "prop": "value",
+          "segments": [
+            "value"
+          ],
+          "mods": [
+            "init=element",
+            "sync=connect"
+          ],
+          "path": "w",
+          "pathInfo": "w",
+          "in": [],
+          "out": []
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "value",
+          "segments": [
+            "value"
+          ],
+          "mods": [
+            "init=element",
+            "sync=connect"
+          ],
+          "path": "w",
+          "pathInfo": "w",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "value#init: w",
+      "verdict": "adapter-rejects-only",
+      "adapter": {
+        "error": "[wcs/template-syntax] E_MODIFIER_VALUE at 6: '#init=' needs a value"
+      },
+      "current": [
+        {
+          "type": "prop",
+          "prop": "value",
+          "segments": [
+            "value"
+          ],
+          "mods": [
+            "init"
+          ],
+          "path": "w",
+          "pathInfo": "w",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "...: obj",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "spread",
+          "prop": "...",
+          "segments": [
+            "..."
+          ],
+          "mods": [],
+          "path": "obj",
+          "pathInfo": "obj",
+          "in": [],
+          "out": []
+        }
+      ],
+      "current": [
+        {
+          "type": "spread",
+          "prop": "...",
+          "segments": [
+            "..."
+          ],
+          "mods": [],
+          "path": "obj",
+          "pathInfo": "obj",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "...: obj|int",
+      "verdict": "both-reject",
+      "adapter": {
+        "error": "[wcs/template-syntax] E_SPREAD_FILTERS at 4: spread takes no filters"
+      },
+      "current": {
+        "error": "[@wcstack/state] Invalid spread binding \"...: obj|int\": filters are not allowed on spread targets."
+      }
+    },
+    {
+      "text": "command.run: $command.go",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "prop",
+          "prop": "command.run",
+          "segments": [
+            "command",
+            "run"
+          ],
+          "mods": [],
+          "path": "$command.go",
+          "pathInfo": "$command.go",
+          "in": [],
+          "out": []
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "command.run",
+          "segments": [
+            "command",
+            "run"
+          ],
+          "mods": [],
+          "path": "$command.go",
+          "pathInfo": "$command.go",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "eventToken.error#prevent: createFailed",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "event",
+          "prop": "eventToken.error",
+          "segments": [
+            "eventToken",
+            "error"
+          ],
+          "mods": [
+            "prevent"
+          ],
+          "path": "createFailed",
+          "pathInfo": "createFailed",
+          "in": [],
+          "out": []
+        }
+      ],
+      "current": [
+        {
+          "type": "event",
+          "prop": "eventToken.error",
+          "segments": [
+            "eventToken",
+            "error"
+          ],
+          "mods": [
+            "prevent"
+          ],
+          "path": "createFailed",
+          "pathInfo": "createFailed",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "textContent: x|pad(5, ' ')",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": [
+            [
+              "pad",
+              [
+                "5",
+                " "
+              ],
+              [
+                "\"  X,Y\"",
+                "\"  abc\"",
+                "\"    3\"",
+                "\"    0\"",
+                "\" true\"",
+                "\" null\"",
+                "\"undefined\"",
+                "\"1234.567\""
+              ]
+            ]
+          ]
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": [
+            [
+              "pad",
+              [
+                "5",
+                " "
+              ],
+              [
+                "\"  X,Y\"",
+                "\"  abc\"",
+                "\"    3\"",
+                "\"    0\"",
+                "\" true\"",
+                "\" null\"",
+                "\"undefined\"",
+                "\"1234.567\""
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "textContent: x|eq(1,2)",
+      "verdict": "adapter-rejects-only",
+      "adapter": {
+        "error": "[wcs/template-syntax] E_FILTER_ARITY at 15: 'eq' takes 1 argument(s); got 2"
+      },
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": [
+            [
+              "eq",
+              [
+                "1",
+                "2"
+              ],
+              [
+                "false",
+                "false",
+                "false",
+                "false",
+                "false",
+                "false",
+                "false",
+                "false"
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "textContent: x|nope",
+      "verdict": "both-reject",
+      "adapter": {
+        "error": "[@wcstack/state] [wcs/filter-unknown] filter not found: nope. Did you mean \"ne\"? Validate statically: npx @wcstack/lint <file>."
+      },
+      "current": {
+        "error": "[@wcstack/state] [wcs/filter-unknown] filter not found: nope. Did you mean \"ne\"? Validate statically: npx @wcstack/lint <file>."
+      }
+    },
+    {
+      "text": "textContent: x|join(",
+      "verdict": "both-reject",
+      "adapter": {
+        "error": "[wcs/template-syntax] E_PAREN_UNCLOSED at 19: 'join(': missing ')' (quote arguments that contain ; : | or ))"
+      },
+      "current": {
+        "error": "[@wcstack/state] Invalid filter format: missing closing parenthesis in \"join(\""
+      }
+    },
+    {
+      "text": "textContent: x|join)",
+      "verdict": "both-reject",
+      "adapter": {
+        "error": "[@wcstack/state] [wcs/filter-unknown] filter not found: join). Did you mean \"join\"? Validate statically: npx @wcstack/lint <file>."
+      },
+      "current": {
+        "error": "[@wcstack/state] Invalid filter format: missing opening parenthesis in \"join)\""
+      }
+    },
+    {
+      "text": "textContent: x|join('a') extra",
+      "verdict": "adapter-rejects-only",
+      "adapter": {
+        "error": "[wcs/template-syntax] E_FILTER_TRAILING at 24: unexpected 'extra' after ')'"
+      },
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "a"
+              ],
+              [
+                "\"XaY\"",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error"
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "textContent: user@main.name",
+      "verdict": "both-reject",
+      "adapter": {
+        "error": "[wcs/template-syntax] E_NAME_SELECTOR_REMOVED at 13: 'user@main.name': the \"@name\" selector was removed in v2"
+      },
+      "current": {
+        "error": "[@wcstack/state] \"user@main.name\": the \"@name\" selector was removed in v2 — there is a single state tree. Mount the named state onto the tree (<wcs-state mount="
+      }
+    },
+    {
+      "text": "class.active: .selected",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "prop",
+          "prop": "class.active",
+          "segments": [
+            "class",
+            "active"
+          ],
+          "mods": [],
+          "path": ".selected",
+          "pathInfo": ".selected",
+          "in": [],
+          "out": []
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "class.active",
+          "segments": [
+            "class",
+            "active"
+          ],
+          "mods": [],
+          "path": ".selected",
+          "pathInfo": ".selected",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "textContent: items.*.name",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "items.*.name",
+          "pathInfo": "items.*.name",
+          "in": [],
+          "out": []
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "items.*.name",
+          "pathInfo": "items.*.name",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "textContent: $1",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "$1",
+          "pathInfo": "$1",
+          "in": [],
+          "out": []
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "$1",
+          "pathInfo": "$1",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "textContent: ..parent",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "..parent",
+          "pathInfo": "..parent",
+          "in": [],
+          "out": []
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "..parent",
+          "pathInfo": "..parent",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "textContent:",
+      "verdict": "adapter-rejects-only",
+      "adapter": {
+        "error": "[wcs/template-syntax] E_PATH_REQUIRED at 12: 'textContent': path is required"
+      },
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "",
+          "pathInfo": "",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "textContent",
+      "verdict": "both-reject",
+      "adapter": {
+        "error": "[wcs/template-syntax] E_MISSING_COLON at 0: \"textContent\": missing ':' between property and path"
+      },
+      "current": {
+        "error": "[@wcstack/state] Invalid bindText: \"textContent\". Missing ':' separator between propPart and statePart."
+      }
+    },
+    {
+      "text": "textContent: x|fix(2)|locale",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": [
+            [
+              "fix",
+              [
+                "2"
+              ],
+              [
+                "throws:Error",
+                "throws:Error",
+                "\"3.00\"",
+                "\"0.00\"",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "\"1234.57\""
+              ]
+            ],
+            [
+              "locale",
+              [],
+              [
+                "throws:Error",
+                "throws:Error",
+                "\"3\"",
+                "\"0\"",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "\"1,234.567\""
+              ]
+            ]
+          ]
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": [
+            [
+              "fix",
+              [
+                "2"
+              ],
+              [
+                "throws:Error",
+                "throws:Error",
+                "\"3.00\"",
+                "\"0.00\"",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "\"1234.57\""
+              ]
+            ],
+            [
+              "locale",
+              [],
+              [
+                "throws:Error",
+                "throws:Error",
+                "\"3\"",
+                "\"0\"",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "\"1,234.567\""
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "value|int: count",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "prop",
+          "prop": "value",
+          "segments": [
+            "value"
+          ],
+          "mods": [],
+          "path": "count",
+          "pathInfo": "count",
+          "in": [
+            [
+              "int",
+              [],
+              [
+                "null",
+                "null",
+                "3",
+                "0",
+                "null",
+                "null",
+                "null",
+                "1234"
+              ]
+            ]
+          ],
+          "out": []
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "value",
+          "segments": [
+            "value"
+          ],
+          "mods": [],
+          "path": "count",
+          "pathInfo": "count",
+          "in": [
+            [
+              "int",
+              [],
+              [
+                "null",
+                "null",
+                "3",
+                "0",
+                "null",
+                "null",
+                "null",
+                "1234"
+              ]
+            ]
+          ],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "checkbox|int: values",
+      "verdict": "shape-differs",
+      "adapter": [
+        {
+          "type": "checkbox",
+          "prop": "checkbox",
+          "segments": [
+            "checkbox"
+          ],
+          "mods": [],
+          "path": "values",
+          "pathInfo": "values",
+          "in": [
+            [
+              "int",
+              [],
+              [
+                "null",
+                "null",
+                "3",
+                "0",
+                "null",
+                "null",
+                "null",
+                "1234"
+              ]
+            ]
+          ],
+          "out": []
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "checkbox",
+          "segments": [
+            "checkbox"
+          ],
+          "mods": [],
+          "path": "values",
+          "pathInfo": "values",
+          "in": [
+            [
+              "int",
+              [],
+              [
+                "null",
+                "null",
+                "3",
+                "0",
+                "null",
+                "null",
+                "null",
+                "1234"
+              ]
+            ]
+          ],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "textContent: x|join(a,)",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "a"
+              ],
+              [
+                "\"XaY\"",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error"
+              ]
+            ]
+          ]
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "a"
+              ],
+              [
+                "\"XaY\"",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error"
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "textContent: x|eq()",
+      "verdict": "adapter-rejects-only",
+      "adapter": {
+        "error": "[@wcstack/state] filter eq requires at least one option"
+      },
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": [
+            [
+              "eq",
+              [],
+              [
+                "false",
+                "false",
+                "throws:Error",
+                "throws:Error",
+                "false",
+                "false",
+                "false",
+                "throws:Error"
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "textContent: x|rep(3)|uc",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": [
+            [
+              "rep",
+              [
+                "3"
+              ],
+              [
+                "\"X,YX,YX,Y\"",
+                "\"abcabcabc\"",
+                "\"333\"",
+                "\"000\"",
+                "\"truetruetrue\"",
+                "\"nullnullnull\"",
+                "\"undefinedundefinedundefined\"",
+                "\"1234.5671234.5671234.567\""
+              ]
+            ],
+            [
+              "uc",
+              [],
+              [
+                "\"X,Y\"",
+                "\"ABC\"",
+                "\"3\"",
+                "\"0\"",
+                "\"TRUE\"",
+                "\"NULL\"",
+                "\"UNDEFINED\"",
+                "\"1234.567\""
+              ]
+            ]
+          ]
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "x",
+          "pathInfo": "x",
+          "in": [],
+          "out": [
+            [
+              "rep",
+              [
+                "3"
+              ],
+              [
+                "\"X,YX,YX,Y\"",
+                "\"abcabcabc\"",
+                "\"333\"",
+                "\"000\"",
+                "\"truetruetrue\"",
+                "\"nullnullnull\"",
+                "\"undefinedundefinedundefined\"",
+                "\"1234.5671234.5671234.567\""
+              ]
+            ],
+            [
+              "uc",
+              [],
+              [
+                "\"X,Y\"",
+                "\"ABC\"",
+                "\"3\"",
+                "\"0\"",
+                "\"TRUE\"",
+                "\"NULL\"",
+                "\"UNDEFINED\"",
+                "\"1234.567\""
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "textContent: price|fix(2)|unit(円)",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "price",
+          "pathInfo": "price",
+          "in": [],
+          "out": [
+            [
+              "fix",
+              [
+                "2"
+              ],
+              [
+                "throws:Error",
+                "throws:Error",
+                "\"3.00\"",
+                "\"0.00\"",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "\"1234.57\""
+              ]
+            ],
+            [
+              "unit",
+              [
+                "円"
+              ],
+              [
+                "\"X,Y円\"",
+                "\"abc円\"",
+                "\"3円\"",
+                "\"0円\"",
+                "\"true円\"",
+                "null",
+                "undefined",
+                "\"1234.567円\""
+              ]
+            ]
+          ]
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "price",
+          "pathInfo": "price",
+          "in": [],
+          "out": [
+            [
+              "fix",
+              [
+                "2"
+              ],
+              [
+                "throws:Error",
+                "throws:Error",
+                "\"3.00\"",
+                "\"0.00\"",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "\"1234.57\""
+              ]
+            ],
+            [
+              "unit",
+              [
+                "円"
+              ],
+              [
+                "\"X,Y円\"",
+                "\"abc円\"",
+                "\"3円\"",
+                "\"0円\"",
+                "\"true円\"",
+                "null",
+                "undefined",
+                "\"1234.567円\""
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "textContent: name|defaults('n/a')|cap",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "name",
+          "pathInfo": "name",
+          "in": [],
+          "out": [
+            [
+              "defaults",
+              [
+                "n/a"
+              ],
+              [
+                "[\"X\",\"Y\"]",
+                "\"abc\"",
+                "3",
+                "\"n/a\"",
+                "true",
+                "\"n/a\"",
+                "\"n/a\"",
+                "1234.567"
+              ]
+            ],
+            [
+              "cap",
+              [],
+              [
+                "\"X,Y\"",
+                "\"Abc\"",
+                "\"3\"",
+                "\"0\"",
+                "\"True\"",
+                "\"Null\"",
+                "\"Undefined\"",
+                "\"1234.567\""
+              ]
+            ]
+          ]
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "segments": [
+            "textContent"
+          ],
+          "mods": [],
+          "path": "name",
+          "pathInfo": "name",
+          "in": [],
+          "out": [
+            [
+              "defaults",
+              [
+                "n/a"
+              ],
+              [
+                "[\"X\",\"Y\"]",
+                "\"abc\"",
+                "3",
+                "\"n/a\"",
+                "true",
+                "\"n/a\"",
+                "\"n/a\"",
+                "1234.567"
+              ]
+            ],
+            [
+              "cap",
+              [],
+              [
+                "\"X,Y\"",
+                "\"Abc\"",
+                "\"3\"",
+                "\"0\"",
+                "\"True\"",
+                "\"Null\"",
+                "\"Undefined\"",
+                "\"1234.567\""
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "style.width: ratio|mul(100)|unit(%)",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "prop",
+          "prop": "style.width",
+          "segments": [
+            "style",
+            "width"
+          ],
+          "mods": [],
+          "path": "ratio",
+          "pathInfo": "ratio",
+          "in": [],
+          "out": [
+            [
+              "mul",
+              [
+                "100"
+              ],
+              [
+                "throws:Error",
+                "throws:Error",
+                "300",
+                "0",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "123456.7"
+              ]
+            ],
+            [
+              "unit",
+              [
+                "%"
+              ],
+              [
+                "\"X,Y%\"",
+                "\"abc%\"",
+                "\"3%\"",
+                "\"0%\"",
+                "\"true%\"",
+                "null",
+                "undefined",
+                "\"1234.567%\""
+              ]
+            ]
+          ]
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "style.width",
+          "segments": [
+            "style",
+            "width"
+          ],
+          "mods": [],
+          "path": "ratio",
+          "pathInfo": "ratio",
+          "in": [],
+          "out": [
+            [
+              "mul",
+              [
+                "100"
+              ],
+              [
+                "throws:Error",
+                "throws:Error",
+                "300",
+                "0",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "123456.7"
+              ]
+            ],
+            [
+              "unit",
+              [
+                "%"
+              ],
+              [
+                "\"X,Y%\"",
+                "\"abc%\"",
+                "\"3%\"",
+                "\"0%\"",
+                "\"true%\"",
+                "null",
+                "undefined",
+                "\"1234.567%\""
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "attr.title: items|join(\" / \")",
+      "verdict": "same",
+      "adapter": [
+        {
+          "type": "prop",
+          "prop": "attr.title",
+          "segments": [
+            "attr",
+            "title"
+          ],
+          "mods": [],
+          "path": "items",
+          "pathInfo": "items",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                " / "
+              ],
+              [
+                "\"X / Y\"",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error"
+              ]
+            ]
+          ]
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "attr.title",
+          "segments": [
+            "attr",
+            "title"
+          ],
+          "mods": [],
+          "path": "items",
+          "pathInfo": "items",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                " / "
+              ],
+              [
+                "\"X / Y\"",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error",
+                "throws:Error"
+              ]
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "corpus": {
+    "files": 150,
+    "unique": 539,
+    "verdicts": {
+      "same": 523,
+      "both-reject": 10,
+      "adapter-rejects-only": 6
+    },
+    "notSame": [
+      {
+        "text": "if: …",
+        "verdict": "adapter-rejects-only",
+        "adapter": {
+          "error": "[wcs/template-syntax] E_PATH_SEGMENT at 4: '…': bad path segment '…'"
+        },
+        "current": [
+          {
+            "type": "if",
+            "prop": "if",
+            "segments": [
+              "if"
+            ],
+            "mods": [],
+            "path": "…",
+            "pathInfo": "…",
+            "in": [],
+            "out": []
+          }
+        ],
+        "files": [
+          "packages/router/README.ja.md",
+          "packages/router/README.md"
+        ]
+      },
+      {
+        "text": "for:",
+        "verdict": "adapter-rejects-only",
+        "adapter": {
+          "error": "[wcs/template-syntax] E_PATH_REQUIRED at 4: 'for': path is required"
+        },
+        "current": [
+          {
+            "type": "for",
+            "prop": "for",
+            "segments": [
+              "for"
+            ],
+            "mods": [],
+            "path": "",
+            "pathInfo": "",
+            "in": [],
+            "out": []
+          }
+        ],
+        "files": [
+          "packages/server/README.ja.md",
+          "packages/server/README.md"
+        ]
+      },
+      {
+        "text": "for: ` → 配列型のパスのみ表示\r\n- `data-wcs=",
+        "verdict": "adapter-rejects-only",
+        "adapter": {
+          "error": "[wcs/template-syntax] E_PATH_SEGMENT at 5: '` → 配列型のパスのみ表示\r"
+        },
+        "current": [
+          {
+            "type": "for",
+            "prop": "for",
+            "segments": [
+              "for"
+            ],
+            "mods": [],
+            "path": "` → 配列型のパスのみ表示\r\n- `data-wcs=",
+            "pathInfo": "` → 配列型のパスのみ表示\r\n- `data-wcs=",
+            "in": [],
+            "out": []
+          }
+        ],
+        "files": [
+          "packages/vscode-wcs/README.ja.md"
+        ]
+      },
+      {
+        "text": "command.play: ` → `$command.<name>`（`$commandTokens` 宣言由来）のみ表示\r\n- `data-wcs=",
+        "verdict": "adapter-rejects-only",
+        "adapter": {
+          "error": "[wcs/template-syntax] E_PATH_SEGMENT at 14: '` → `$command.<name>`（`$commandTokens` 宣言由来）のみ表示\r"
+        },
+        "current": [
+          {
+            "type": "prop",
+            "prop": "command.play",
+            "segments": [
+              "command",
+              "play"
+            ],
+            "mods": [],
+            "path": "` → `$command.<name>`（`$commandTokens` 宣言由来）のみ表示\r\n- `data-wcs=",
+            "pathInfo": "` → `$command.<name>`（`$commandTokens` 宣言由来）のみ表示\r\n- `data-wcs=",
+            "in": [],
+            "out": []
+          }
+        ],
+        "files": [
+          "packages/vscode-wcs/README.ja.md"
+        ]
+      },
+      {
+        "text": "textContent:",
+        "verdict": "adapter-rejects-only",
+        "adapter": {
+          "error": "[wcs/template-syntax] E_PATH_REQUIRED at 12: 'textContent': path is required"
+        },
+        "current": [
+          {
+            "type": "prop",
+            "prop": "textContent",
+            "segments": [
+              "textContent"
+            ],
+            "mods": [],
+            "path": "",
+            "pathInfo": "",
+            "in": [],
+            "out": []
+          }
+        ],
+        "files": [
+          "packages/vscode-wcs/README.ja.md",
+          "packages/vscode-wcs/README.md"
+        ]
+      },
+      {
+        "text": "onclick: ` → only methods and `$command.<name>`\r\n- `data-wcs=",
+        "verdict": "adapter-rejects-only",
+        "adapter": {
+          "error": "[wcs/template-syntax] E_PATH_SEGMENT at 9: '` → only methods and `$command.<name>`\r"
+        },
+        "current": [
+          {
+            "type": "event",
+            "prop": "onclick",
+            "segments": [
+              "onclick"
+            ],
+            "mods": [],
+            "path": "` → only methods and `$command.<name>`\r\n- `data-wcs=",
+            "pathInfo": "` → only methods and `$command.<name>`\r\n- `data-wcs=",
+            "in": [],
+            "out": []
+          }
+        ],
+        "files": [
+          "packages/vscode-wcs/README.md"
+        ]
+      },
+      {
+        "text": "notice: statusMessage | debounce(1000)",
+        "verdict": "both-reject",
+        "adapter": {
+          "error": "[@wcstack/state] [wcs/filter-unknown] filter not found: debounce. Validate statically: npx @wcstack/lint <file>."
+        },
+        "current": {
+          "error": "[@wcstack/state] [wcs/filter-unknown] filter not found: debounce. Validate statically: npx @wcstack/lint <file>."
+        },
+        "files": [
+          "packages/notification/README.ja.md",
+          "packages/notification/README.md"
+        ]
+      },
+      {
+        "text": "...",
+        "verdict": "both-reject",
+        "adapter": {
+          "error": "[wcs/template-syntax] E_MISSING_COLON at 0: \"...\": missing ':' between property and path"
+        },
+        "current": {
+          "error": "[@wcstack/state] Invalid bindText: \"...\". Missing ':' separator between propPart and statePart."
+        },
+        "files": [
+          "packages/resize/README.ja.md",
+          "packages/resize/README.md"
+        ]
+      },
+      {
+        "text": "` → `textContent`, `class.`, `style.`, `onclick`, `for`, `if` ...\r\n- `data-wcs=",
+        "verdict": "both-reject",
+        "adapter": {
+          "error": "[wcs/template-syntax] E_MISSING_COLON at 0: \"` → `textContent`, `class.`, `style.`, `onclick`, `for`, `if` ...\r"
+        },
+        "current": {
+          "error": "[@wcstack/state] Invalid bindText: \"` → `textContent`, `class.`, `style.`, `onclick`, `for`, `if` ...\r"
+        },
+        "files": [
+          "packages/vscode-wcs/README.ja.md"
+        ]
+      },
+      {
+        "text": "textContent: count|` → `gt`, `eq`, `uc`, `trim` ...\r\n- `data-wcs=",
+        "verdict": "both-reject",
+        "adapter": {
+          "error": "[@wcstack/state] [wcs/filter-unknown] filter not found: ` → `gt`, `eq`, `uc`, `trim` ...\r"
+        },
+        "current": {
+          "error": "[@wcstack/state] [wcs/filter-unknown] filter not found: ` → `gt`, `eq`, `uc`, `trim` ...\r"
+        },
+        "files": [
+          "packages/vscode-wcs/README.ja.md"
+        ]
+      },
+      {
+        "text": "textContent: count@",
+        "verdict": "both-reject",
+        "adapter": {
+          "error": "[wcs/template-syntax] E_NAME_SELECTOR_REMOVED at 13: 'count@': the \"@name\" selector was removed in v2"
+        },
+        "current": {
+          "error": "[@wcstack/state] \"count@\": the \"@name\" selector was removed in v2 — there is a single state tree. Mount the named state onto the tree (<wcs-state mount=\"...\">) "
+        },
+        "files": [
+          "packages/vscode-wcs/README.ja.md"
+        ]
+      },
+      {
+        "text": "` → `textContent`, `class.`, `style.`, `attr.`, `onclick`, `for`, `if`, `...`, `radio`, `checkbox`, `command.`, `eventToken.` ...\r\n- `data-wcs=",
+        "verdict": "both-reject",
+        "adapter": {
+          "error": "[wcs/template-syntax] E_MISSING_COLON at 0: \"` → `textContent`, `class.`, `style.`, `attr.`, `onclick`, `for`, `if`, `...`, `radio`, `checkbox`, `command.`, `ev"
+        },
+        "current": {
+          "error": "[@wcstack/state] Invalid bindText: \"` → `textContent`, `class.`, `style.`, `attr.`, `onclick`, `for`, `if`, `...`, `radio`, `checkbox`, `command.`, `eventToken."
+        },
+        "files": [
+          "packages/vscode-wcs/README.md"
+        ]
+      },
+      {
+        "text": "textContent: count|` → `gt`, `eq`, `uc`, `trim` ... (all 46 built-in filters)\r\n- `data-wcs=",
+        "verdict": "both-reject",
+        "adapter": {
+          "error": "[@wcstack/state] [wcs/filter-unknown] filter not found: ` → `gt`, `eq`, `uc`, `trim` .... Validate statically: npx @wcstack/lint <file>."
+        },
+        "current": {
+          "error": "[@wcstack/state] [wcs/filter-unknown] filter not found: ` → `gt`, `eq`, `uc`, `trim` .... Validate statically: npx @wcstack/lint <file>."
+        },
+        "files": [
+          "packages/vscode-wcs/README.md"
+        ]
+      },
+      {
+        "text": "onclick#` → `prevent`, `stop`, `ro` (the modifier list is the same after any `#`; `ro` suppresses write-back on two-way bindings)\r\n- `data-wcs=",
+        "verdict": "both-reject",
+        "adapter": {
+          "error": "[wcs/template-syntax] E_MISSING_COLON at 0: \"onclick#` → `prevent`, `stop`, `ro` (the modifier list is the same after any `#`\": missing ':' between property and"
+        },
+        "current": {
+          "error": "[@wcstack/state] Invalid bindText: \"onclick#` → `prevent`, `stop`, `ro` (the modifier list is the same after any `#`\". Missing ':' separator between propPart an"
+        },
+        "files": [
+          "packages/vscode-wcs/README.md"
+        ]
+      },
+      {
+        "text": "eventToken.value: ` → only token names from the `$eventTokens` declaration\r\n\r\nPath candidates are derived from the `<wcs-state>` script (and from JSON state): nested arrays are followed (`a.*.b.*.c`), `$streams` entries appear as values plus `$streamStatus.<name>` / `$streamError.<name>`, and `$listKeys` declarations materialize list paths whose initial value is an empty array (the list path, `.*`, `.length` and the key field — not the other row fields).\r\n\r\nThe **row shape** of a list that starts as `[]` is read from the row literals in the assignments that add or replace rows — `this.items = this.items.concat({ id, kind:",
+        "verdict": "both-reject",
+        "adapter": {
+          "error": "[@wcstack/state] [wcs/recursion-unsupported] \"` → only token names from the `$eventTokens` declaration\r"
+        },
+        "current": {
+          "error": "[@wcstack/state] [wcs/recursion-unsupported] \"` → only token names from the `$eventTokens` declaration\r"
+        },
+        "files": [
+          "packages/vscode-wcs/README.md"
+        ]
+      },
+      {
+        "text": "onkeydown: add|enter",
+        "verdict": "both-reject",
+        "adapter": {
+          "error": "[@wcstack/state] [wcs/filter-unknown] filter not found: enter. Validate statically: npx @wcstack/lint <file>."
+        },
+        "current": {
+          "error": "[@wcstack/state] [wcs/filter-unknown] filter not found: enter. Validate statically: npx @wcstack/lint <file>."
+        },
+        "files": [
+          "packages/wcstack/README.md"
+        ]
+      }
+    ]
+  }
+}

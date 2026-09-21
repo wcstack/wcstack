@@ -5,6 +5,8 @@ The smallest page where all three `<wcs-devtools>` panes have real work to do:
 - **State** — a counter (plain write + computed getter), a todo list (list diff,
   wildcard getter), and clock state. Values are editable inline; edits go through
   the normal reactive pipeline, so the page (and the `double` getter) update.
+  Clicking a todo title selects it with `$eqIndex`; the keyed subscription shows
+  under **Keyed selection** at the bottom of the pane (`@wcstack/state` 3.0+).
 - **Wiring** — every `data-wcs` binding on the page as a live ledger. Click a
   path in the State pane (or use ⌖ pick on a page element) to highlight the
   bound nodes.

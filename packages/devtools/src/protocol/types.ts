@@ -92,6 +92,25 @@ export interface IMountOverlaySummaryLike {
 }
 
 /**
+ * 鍵付き購読（`$eq` / `$eqPath` / `$eqIndex`）の path 1 つ分の要約（keyedSubscriptions の要素 —
+ * protocol v2 追補・要件 D17）。取り出した時点の数え。
+ */
+export interface IKeyedSubscriptionSummaryLike {
+  /** `$eq` 系の第 1 引数（選択を持つパス） */
+  readonly path: string;
+  /** path が getter 由来で鍵付きで購読できず、追跡付きの読みに落ちた（変わるたびに読む getter が全部再評価される） */
+  readonly tracked: boolean;
+  /** 行ごとの購読の数 */
+  readonly rows: number;
+  /** 行ごとの購読が使っている鍵の数 */
+  readonly keys: number;
+  /** `$eqIndex` の最内段のリスト単位の監視の数 */
+  readonly lists: number;
+  /** path の最後に見た値（見ていなければ undefined）。生値 */
+  readonly lastValue: unknown;
+}
+
+/**
  * 宣言レベルのバインディング 1 件（getDeclaredBindings の要素・protocol v1 追補）。
  * ランタイム正本パーサの結果が構造的に流れる。宣言タプルで dedupe 済みの
  * 「宣言の集合」であり、レンダリング行数に比例したインスタンス列ではない。
@@ -260,6 +279,12 @@ export interface IDevtoolsSourceLike {
    * v2 より前のランタイムには無いため、無ければ UI はセクションごと出さない。
    */
   overlays?(rootNode: Node): IMountOverlaySummaryLike[];
+  /**
+   * protocol v2 追補 API（optional 扱いで呼ぶ・要件 D17）。rootNode のツリーの鍵付き購読の
+   * path ごとの要約。`$eq` 系が一度も評価されていなければ空配列。3.0 より前の state には無いため、
+   * 無ければ UI はセクションごと出さない。
+   */
+  keyedSubscriptions?(rootNode: Node): IKeyedSubscriptionSummaryLike[];
   read(rootNode: Node, path: string, indexes?: number[]): unknown;
   write(rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
   /**

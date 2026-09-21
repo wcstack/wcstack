@@ -1383,27 +1383,23 @@ describe("具体パス綴りでの再帰 getter への書き込み（`**` を経
   });
 });
 
-describe("readonly セッションの中のブロードキャスト（現状の記録）", () => {
-  // DEFECT: readonly セッションの中では合併形の $setAll も拒否されるべき
-  //         （"This state is readonly." で throw し、書き込み 0 件）。
-  //         ガードは src/proxy/StateHandler.ts の set トラップにしか無く、
-  //         $setAll は setByAddress を直接呼ぶので掛からない（Phase A の X1）。
-  //         これは再帰固有の欠陥ではなく、通常の `*` パスの $setAll と同じ穴である。
-  //         setAll.ts / resolve.ts の入口、あるいは setByAddress にガードを足したら反転する。
-  it("readonly の中でもブロードキャストが実データを書き換えること（直代入だけが拒否される）", async () => {
+describe("readonly セッションの中のブロードキャスト（要件 B6 で修正済み）", () => {
+  // 以前はガードが set トラップにしか無く、合併形の $setAll も setByAddress を直接呼ぶので素通りして
+  // いた（Phase A の X1、通常の `*` パスと同じ穴）。書き込み API の入口（proxy/assertWritable.ts）で揃えた。
+  it("readonly の中のブロードキャストは throw し、1 件も書かないこと（直代入と同じ）", async () => {
     const nodes = asymmetric();
     const { host, stateEl } = await mount(recursionState(nodes), NO_RENDER_HTML);
 
-    let count = -1;
+    let setAllError: string | null = null;
     let assignError: string | null = null;
     stateEl.createState("readonly", (s: any) => {
-      count = s.$setAll("nodes.**.selected", [], true);
+      try { s.$setAll("nodes.**.selected", [], true); } catch (e: any) { setAllError = String(e && e.message); }
       try { s.nodes = []; } catch (e: any) { assignError = String(e && e.message); }
     });
     await flush();
 
-    expect(count).toBe(9);                                  // should be: throw（0 件）
-    expect(countKey(nodes, "selected")).toBe(9);            // should be: 0
+    expect(setAllError).toBe("[@wcstack/state] This state is readonly.");
+    expect(countKey(nodes, "selected")).toBe(0);
     // 対照: 同じ readonly セッションでも、直代入だけは正しく拒否される
     expect(assignError).toBe("[@wcstack/state] This state is readonly.");
     expect(nodes.map((n) => n.value), "直代入は効いていない").toEqual([10, 20, 30]);

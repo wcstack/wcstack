@@ -14,7 +14,8 @@
  */
 export type FilterFn<T=unknown> = (value: unknown) => T;
 
-export type FilterWithOptionsFn = (options?: string[]) => FilterFn;
+/** `options` は引数の原文、`literals` はその型付きの値（要件 B9 — 読むのは値を比べたり返したりするフィルタだけ） */
+export type FilterWithOptionsFn = (options?: string[], literals?: readonly unknown[]) => FilterFn;
 
 export type FilterWithOptions = Record<string, FilterWithOptionsFn>;
 

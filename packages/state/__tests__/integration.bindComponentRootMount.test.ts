@@ -9,6 +9,7 @@
  * 片側しかモックできない）。
  */
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
+import { bindComponentLifecycleHooks } from "../src/webComponent/bindComponentLifecycle";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
 import { clearOwnKeyShadowReportsForTesting } from "../src/webComponent/ownKeyShadow";
@@ -421,9 +422,9 @@ describe("bind-component: R1 — own data key は私有 (integration)", () => {
     host.remove();
   });
 
-  it("P1-11 の反転（D19）: 部分マウントでも作者の own data key が私有として勝ち、警告が出ること", async () => {
-    // 1.x では「ホストが勝つ」＋反転予告の警告だった（Phase 1 の P1-11）。
-    // v2 は厳格 R1: 作者の既定値 { message: "" } が私有になりマッピングを隠す
+  it("要件 B14 ②: 部分マウントで明示したキーは、作者の own data key に勝ってホストの値を読むこと（警告も出ない）", async () => {
+    // 1.x は「ホストが勝つ」、v2 は厳格 R1 で作者の既定値が私有としてマッピングを隠していた。
+    // 3.0 は明示した配線を優先する — 既定値を消さなくてもホストの値が届く
     const tag = uniqueTag("bcrm-partial");
     defineComponent(tag, () => ({ message: "own-default" }), `<span class="msg" data-wcs="textContent: message"></span>`);
     const { host, shadowRoot } = await mountHost(
@@ -433,10 +434,8 @@ describe("bind-component: R1 — own data key は私有 (integration)", () => {
     const c = shadowRoot.querySelector(tag)!;
     await childReady(c);
 
-    expect(text(c.shadowRoot!, ".msg")).toBe("own-default");
-    const warnings = shadowWarnings();
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain('hides the mounted entry "state.message: user.name"');
+    expect(text(c.shadowRoot!, ".msg")).toBe("Alice");
+    expect(shadowWarnings()).toEqual([]);
 
     host.remove();
   });
@@ -520,7 +519,7 @@ describe("bind-component: v2 設定エラーの fail-fast（初期化待ちを�
       second.setAttribute("bind-component", "extra");
       cs.appendChild(second); // 非接続なので connectedCallback は走らない
 
-      await expect((second as any)._initializeBindWebComponent())
+      await expect(bindComponentLifecycleHooks.preparing!(second as any)!)
         .rejects.toThrow(/one <wcs-state bind-component> per component/);
       // fail-fast でも初期化待ちはウェッジしない（旧挙動: 未解決 throw で永久待ち）
       await second.initializePromise;
@@ -540,7 +539,7 @@ describe("bind-component: v2 設定エラーの fail-fast（初期化待ちを�
     replacement.setAttribute("bind-component", "state");
     cs.appendChild(replacement); // 非接続なので connectedCallback は走らない
 
-    await expect((replacement as any)._initializeBindWebComponent())
+    await expect(bindComponentLifecycleHooks.preparing!(replacement as any)!)
       .rejects.toThrow(/No state tree found on this root for mount host/);
     // fail-fast でも初期化待ちはウェッジしない
     await replacement.initializePromise;

@@ -12,6 +12,7 @@
  * `data-wcs` でバインドする形）は初期化がデッドロックする**（§1.13）。
  */
 import { describe, it, expect, beforeAll } from "vitest";
+import { bindComponentLifecycleHooks } from "../src/webComponent/bindComponentLifecycle";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
 
@@ -67,7 +68,7 @@ describe("bind-component: Light DOM の plain 形は廃止（v2）", () => {
     component.appendChild(stateEl);
     (stateEl as any)._rootNode = document; // 非接続のまま直接呼ぶ（自動 connect を避ける）
 
-    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
+    await expect(bindComponentLifecycleHooks.preparing!(stateEl as any)!).rejects.toThrow(
       /plain \(unwired\) Light DOM "bind-component" is not supported/,
     );
     // fail-fast でも初期化待ちはウェッジしない（waitForStateInitialize の巻き添え防止）

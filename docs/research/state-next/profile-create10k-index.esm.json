@@ -1,0 +1,317 @@
+{
+  "revision": "6bff9f2cf8c4915c93dceb9c40b56e376eb06119",
+  "timestamp": "2026-09-20T20:05:32.595Z",
+  "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+  "bundle": "index.esm.js",
+  "op": "create10k",
+  "fixture": "tracked",
+  "samples": 3,
+  "samplingIntervalUs": 100,
+  "results": {
+    "windowMsPerRun": 430.7,
+    "profiledMsPerRun": 998.7,
+    "top": [
+      {
+        "fn": "(program) :0",
+        "msPerRun": 548.11,
+        "usPerRow": 54.81
+      },
+      {
+        "fn": "(garbage collector) :0",
+        "msPerRun": 58.83,
+        "usPerRow": 5.88
+      },
+      {
+        "fn": "importNode :0",
+        "msPerRun": 39.21,
+        "usPerRow": 3.92
+      },
+      {
+        "fn": "resolveNodePath auto.min.js:713",
+        "msPerRun": 28.23,
+        "usPerRow": 2.82
+      },
+      {
+        "fn": "initializeRow auto.min.js:5632",
+        "msPerRun": 19.72,
+        "usPerRow": 1.97
+      },
+      {
+        "fn": "markNodeRegistered auto.min.js:2391",
+        "msPerRun": 16.5,
+        "usPerRow": 1.65
+      },
+      {
+        "fn": "_walkDependency auto.min.js:18644",
+        "msPerRun": 12.46,
+        "usPerRow": 1.25
+      },
+      {
+        "fn": "insertBefore :0",
+        "msPerRun": 11.97,
+        "usPerRow": 1.2
+      },
+      {
+        "fn": "addKnownRowBinding auto.min.js:5807",
+        "msPerRun": 11.1,
+        "usPerRow": 1.11
+      },
+      {
+        "fn": "resolveInitializedBinding auto.min.js:276",
+        "msPerRun": 10.91,
+        "usPerRow": 1.09
+      },
+      {
+        "fn": "applyChangeToText auto.min.js:11012",
+        "msPerRun": 10.76,
+        "usPerRow": 1.08
+      },
+      {
+        "fn": "appendChild :0",
+        "msPerRun": 10.7,
+        "usPerRow": 1.07
+      },
+      {
+        "fn": "createAbsoluteStateAddress auto.min.js:3083",
+        "msPerRun": 10.53,
+        "usPerRow": 1.05
+      },
+      {
+        "fn": "addEventListener :0",
+        "msPerRun": 10.11,
+        "usPerRow": 1.01
+      },
+      {
+        "fn": "createStateAddress auto.min.js:3473",
+        "msPerRun": 9.92,
+        "usPerRow": 0.99
+      },
+      {
+        "fn": "setLoopContextByNode auto.min.js:2975",
+        "msPerRun": 9.89,
+        "usPerRow": 0.99
+      },
+      {
+        "fn": "addInterestedSession auto.min.js:4917",
+        "msPerRun": 9.87,
+        "usPerRow": 0.99
+      },
+      {
+        "fn": "getListIndexByBindingInfo auto.min.js:3262",
+        "msPerRun": 8.68,
+        "usPerRow": 0.87
+      },
+      {
+        "fn": "_applyChange auto.min.js:7234",
+        "msPerRun": 8.22,
+        "usPerRow": 0.82
+      },
+      {
+        "fn": "Content auto.min.js:8266",
+        "msPerRun": 7.52,
+        "usPerRow": 0.75
+      },
+      {
+        "fn": "addBindingByPattern auto.min.js:3389",
+        "msPerRun": 6.77,
+        "usPerRow": 0.68
+      },
+      {
+        "fn": "getAbsoluteStateAddressByBinding auto.min.js:3314",
+        "msPerRun": 5.81,
+        "usPerRow": 0.58
+      },
+      {
+        "fn": "applyChangeToClass auto.min.js:6250",
+        "msPerRun": 5.23,
+        "usPerRow": 0.52
+      },
+      {
+        "fn": "applyValueToBinding auto.min.js:11198",
+        "msPerRun": 4.6,
+        "usPerRow": 0.46
+      },
+      {
+        "fn": "applyChange auto.min.js:11249",
+        "msPerRun": 4.49,
+        "usPerRow": 0.45
+      },
+      {
+        "fn": "getCustomElement auto.min.js:406",
+        "msPerRun": 4.18,
+        "usPerRow": 0.42
+      },
+      {
+        "fn": "applyChangeToFor auto.min.js:10206",
+        "msPerRun": 4.15,
+        "usPerRow": 0.42
+      },
+      {
+        "fn": "createPlanContent auto.min.js:8523",
+        "msPerRun": 4.07,
+        "usPerRow": 0.41
+      },
+      {
+        "fn": "get listIndexes auto.min.js:6506",
+        "msPerRun": 3.97,
+        "usPerRow": 0.4
+      },
+      {
+        "fn": "addBindingByAbsoluteStateAddress auto.min.js:3344",
+        "msPerRun": 3.89,
+        "usPerRow": 0.39
+      },
+      {
+        "fn": "_collectDependencies auto.min.js:18688",
+        "msPerRun": 3.8,
+        "usPerRow": 0.38
+      },
+      {
+        "fn": "add auto.min.js:3528",
+        "msPerRun": 3.8,
+        "usPerRow": 0.38
+      },
+      {
+        "fn": "getCacheEntryByAbsoluteStateAddress auto.min.js:6770",
+        "msPerRun": 3.35,
+        "usPerRow": 0.34
+      },
+      {
+        "fn": "querySelectorAll :0",
+        "msPerRun": 3.33,
+        "usPerRow": 0.33
+      },
+      {
+        "fn": "createContent auto.min.js:8564",
+        "msPerRun": 2.72,
+        "usPerRow": 0.27
+      },
+      {
+        "fn": "setContentByNode auto.min.js:8151",
+        "msPerRun": 2.7,
+        "usPerRow": 0.27
+      },
+      {
+        "fn": "setNodesByContent auto.min.js:8005",
+        "msPerRun": 2.63,
+        "usPerRow": 0.26
+      },
+      {
+        "fn": "getStateAddressByBindingInfo auto.min.js:3500",
+        "msPerRun": 2.54,
+        "usPerRow": 0.25
+      },
+      {
+        "fn": "applyPlanRow auto.min.js:8061",
+        "msPerRun": 2.46,
+        "usPerRow": 0.25
+      },
+      {
+        "fn": "attachEventHandler auto.min.js:4014",
+        "msPerRun": 2.45,
+        "usPerRow": 0.25
+      },
+      {
+        "fn": "(anonymous) auto.min.js:10319",
+        "msPerRun": 2.42,
+        "usPerRow": 0.24
+      },
+      {
+        "fn": "getTreePath auto.min.js:3124",
+        "msPerRun": 2.29,
+        "usPerRow": 0.23
+      },
+      {
+        "fn": "(idle) :0",
+        "msPerRun": 2.23,
+        "usPerRow": 0.22
+      },
+      {
+        "fn": "shouldApplyState auto.min.js:5170",
+        "msPerRun": 2.05,
+        "usPerRow": 0.21
+      },
+      {
+        "fn": "setCacheEntryByAbsoluteStateAddress auto.min.js:6773",
+        "msPerRun": 2.03,
+        "usPerRow": 0.2
+      },
+      {
+        "fn": "hasAttribute :0",
+        "msPerRun": 1.98,
+        "usPerRow": 0.2
+      },
+      {
+        "fn": "setBindingSessionByContent auto.min.js:7997",
+        "msPerRun": 1.95,
+        "usPerRow": 0.19
+      },
+      {
+        "fn": "setIndexBindingsByContent auto.min.js:6352",
+        "msPerRun": 1.86,
+        "usPerRow": 0.19
+      },
+      {
+        "fn": "_getByAddress auto.min.js:17982",
+        "msPerRun": 1.86,
+        "usPerRow": 0.19
+      },
+      {
+        "fn": "registerRowSlot auto.min.js:5726",
+        "msPerRun": 1.84,
+        "usPerRow": 0.18
+      },
+      {
+        "fn": "handleMutations auto.min.js:4984",
+        "msPerRun": 1.7,
+        "usPerRow": 0.17
+      },
+      {
+        "fn": "setBindingsByContent auto.min.js:6344",
+        "msPerRun": 1.56,
+        "usPerRow": 0.16
+      },
+      {
+        "fn": "calcWildcardLen auto.min.js:3181",
+        "msPerRun": 1.47,
+        "usPerRow": 0.15
+      },
+      {
+        "fn": "getStateElement auto.min.js:12585",
+        "msPerRun": 1.47,
+        "usPerRow": 0.15
+      },
+      {
+        "fn": "buildData buildData.js:22",
+        "msPerRun": 1.4,
+        "usPerRow": 0.14
+      },
+      {
+        "fn": "consumeObserverSkipOnAdd auto.min.js:4661",
+        "msPerRun": 1.36,
+        "usPerRow": 0.14
+      },
+      {
+        "fn": "initializeRowBindings auto.min.js:11536",
+        "msPerRun": 1.33,
+        "usPerRow": 0.13
+      },
+      {
+        "fn": "get auto.min.js:20316",
+        "msPerRun": 1.29,
+        "usPerRow": 0.13
+      },
+      {
+        "fn": "markObserverSkipOnAdd auto.min.js:4657",
+        "msPerRun": 1.29,
+        "usPerRow": 0.13
+      },
+      {
+        "fn": "activateContent auto.min.js:8095",
+        "msPerRun": 1.28,
+        "usPerRow": 0.13
+      }
+    ]
+  },
+  "browser": "149.0.7827.55"
+}

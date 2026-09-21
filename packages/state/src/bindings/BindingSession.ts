@@ -110,6 +110,34 @@ interface IObservableRoot extends Node {
 let nextRecordId = 0;
 let nextGeneration = 0;
 
+// プラン行の帳簿は束縛ごとの record ではなく行に 1 つの record（slot 配列）で持つ
+// （行ランタイム設計 R3）。phase は slot ごとの SLOT_*、フラグは FLAG_* のビット。
+const SLOT_ACTIVE = 0;
+const SLOT_DISPOSED = 1;
+const SLOT_FAILED = 2;
+const FLAG_INITIAL_APPLY_DONE = 1;
+const FLAG_EVENT_ATTACHED = 2;
+const SLOT_PHASE_NAMES: readonly BindingPhase[] = ["active", "disposed", "failed"];
+interface IRowRecord {
+  readonly id: number;
+  /** この行を持つ共有 session（行 → session の逆引き。設計 R3） */
+  readonly session: BindingSession;
+  generation: number;
+  readonly plan: IRowPlan;
+  readonly bindings: readonly IBindingInfo[];
+  /** activate が address 登録を昇格したか（従来の record.options.registerAddress に相当、行で共有） */
+  registered: boolean;
+  /** SLOT_* per slot */
+  readonly phases: number[];
+  /** FLAG_* bits per slot */
+  readonly flags: number[];
+  readonly addresses: (IAbsoluteStateAddress | null)[];
+  readonly patternPathInfos: (ITreePath | null)[];
+  readonly patternListIndexes: (IListIndex | null)[];
+}
+// 束縛 → その行の record（record が共有 session を知っている。設計 R3）
+const rowByBinding = new WeakMap<IBindingInfo, IRowRecord>();
+
 const recordByBinding = new WeakMap<IBindingInfo, IInternalBindingRecord>();
 const sessionByRoot = new WeakMap<Node, BindingSession>();
 
@@ -265,6 +293,52 @@ function bindingKey(binding: IBindingInfo): string {
   ].join("\u0000");
 }
 
+/*
+ * 束縛が状態の台帳へ出入りする経路（行ランタイム設計 R4）。行 slot（registerRowSlot /
+ * unregisterRowSlot）と record（registerAddress / runTeardowns / rebindAddresses）が同じ登録・
+ * 解除をそれぞれ書き写していたのを 1 箇所にした。登録した形（アドレスか、パターンの
+ * pathInfo ＋ listIndex か）は呼び出し側の器（行の slot 配列 / record のフィールド）へ書く —
+ * ここで値の組を返すと行ごとに割り当てが増えるため、器は呼び出し側に残す。
+ */
+
+/** リスト行: (absolutePathInfo, listIndex) のパターン台帳へ入れる（AbsoluteStateAddress の intern を省く） */
+function registerPattern(binding: IBindingInfo, listIndex: IListIndex, knownRoot?: Node | null): ITreePath {
+  const stateElement = getStateElement(resolveBindingRootNode(binding, knownRoot));
+  if (stateElement === null) {
+    raiseError(`No state tree found on this root for binding.`);
+  }
+  const absolutePathInfo = getTreePath(stateElement, binding.statePathInfo);
+  addBindingByPattern(absolutePathInfo, listIndex, binding);
+  return absolutePathInfo;
+}
+
+/** リスト行でない束縛: 絶対アドレスの台帳へ入れる */
+function registerAbsoluteAddress(binding: IBindingInfo, knownRoot?: Node | null): IAbsoluteStateAddress {
+  const address = getAbsoluteStateAddressByBinding(binding, knownRoot);
+  addBindingByAbsoluteStateAddress(address, binding);
+  return address;
+}
+
+/**
+ * 台帳から外す。`address` が null ならパターン登録（`pathInfo` ＋ `listIndex`）。相対アドレス
+ * （getValue）と絶対アドレス（applyChangeToFor / updatedCallback 経由の遅延 intern）のメモは
+ * パターン登録でも作られうるので、どちらでも対称にクリアする。
+ */
+function unregisterFromLedger(
+  binding: IBindingInfo,
+  address: IAbsoluteStateAddress | null,
+  pathInfo: ITreePath | null,
+  listIndex: IListIndex | null,
+): void {
+  if (address !== null) {
+    removeBindingByAbsoluteStateAddress(address, binding);
+  } else {
+    removeBindingByPattern(pathInfo!, listIndex!, binding);
+  }
+  clearStateAddressByBindingInfo(binding);
+  clearAbsoluteStateAddressByBinding(binding);
+}
+
 function addRecordTeardown(record: IInternalBindingRecord, teardown: () => void): void {
   if (record.teardowns === null) {
     record.teardowns = new Set();
@@ -279,6 +353,8 @@ export class BindingSession {
    * スロット整列の高速経路（activatePlanRows）を使う。
    */
   private rowPlan: IRowPlan | null = null;
+  /** この session が持つ生きている行（`for` 束縛 1 つにつき session 1 つ、行は複数。設計 R3） */
+  private readonly rows = new Set<IRowRecord>();
   // anchor ノードが持つ binding は大多数が 1 本なので単一値で持ち、2 本目から
   // Map（remember 経路のキー照合用）に昇格する（台帳・興味 session と同じ前例）
   private readonly knownBindingsByNode = new WeakMap<Node, IBindingInfo | Map<string, IBindingInfo>>();
@@ -311,6 +387,17 @@ export class BindingSession {
     const initialized: IBindingInfo[] = [];
     for (const candidate of bindings) {
       const binding = this.remember(candidate, resolvedOptions);
+      const rowRecord = this.rowOf(binding);
+      const rowSlot = rowRecord === null ? -1 : rowRecord.bindings.indexOf(binding);
+      if (rowRecord !== null && rowRecord.phases[rowSlot] === SLOT_ACTIVE) {
+        const row = rowRecord;
+        this.observe(binding.replaceNode);
+        if (resolvedOptions.registerAddress && row.addresses[rowSlot] === null && row.patternPathInfos[rowSlot] === null) {
+          row.registered = true;
+          this.registerRowSlot(row, rowSlot);
+        }
+        continue;
+      }
       const existing = recordByBinding.get(binding);
       if (typeof existing !== "undefined" && existing.phase !== "disposed" && existing.phase !== "failed") {
         this.observe(existing.anchor);
@@ -376,6 +463,21 @@ export class BindingSession {
       if (hasInitialSyncModifier(binding)) resolveInitialSyncPolicy(binding);
       return true;
     }
+    const row = this.rowOf(binding);
+    if (row !== null) {
+      const slot = row.bindings.indexOf(binding);
+      if (slot >= 0) {
+        if (!row.registered) return true;
+        if (row.phases[slot] === SLOT_FAILED) return false;
+        const planSlot = row.plan.slots[slot];
+        if ((row.flags[slot] & FLAG_INITIAL_APPLY_DONE) === 0) {
+          row.flags[slot] |= FLAG_INITIAL_APPLY_DONE;
+          return planSlot.authority === "state";
+        }
+        if (planSlot.authority === "state") return true;
+        return !planSlot.policy.outputOnly;
+      }
+    }
     const record = recordByBinding.get(binding);
     if (typeof record === "undefined" || record.session !== this) return true;
     if (!record.options.registerAddress || record.phase === "waiting-definition") return true;
@@ -398,10 +500,20 @@ export class BindingSession {
   }
 
   getRecord(binding: IBindingInfo): IBindingRecord | null {
+    const row = this.rowOf(binding);
+    const slot = row === null ? -1 : row.bindings.indexOf(binding);
+    if (row !== null && slot >= 0) {
+      return { id: row.id * 64 + slot, info: binding, generation: row.generation, phase: SLOT_PHASE_NAMES[row.phases[slot]], teardowns: null };
+    }
     const record = recordByBinding.get(binding);
     return record?.session === this ? record : null;
   }
 
+  /**
+   * teardown を足せるのは record を持つ束縛だけ（設計 R3）。唯一の呼び出し元は
+   * `scheduleDeferredApply`（未定義カスタム要素への遅延適用）で、プラン行はカスタム要素を
+   * 含み得ないため行 slot には来ない。
+   */
   addTeardown(binding: IBindingInfo, teardown: () => void): boolean {
     const record = recordByBinding.get(binding);
     if (typeof record === "undefined" || !this.isAlive(record, record.generation)) {
@@ -461,12 +573,77 @@ export class BindingSession {
   }
 
   disposeBinding(binding: IBindingInfo): void {
+    const row = this.rowOf(binding);
+    if (row !== null) {
+      const slot = row.bindings.indexOf(binding);
+      if (slot >= 0) {
+        this.disposeRowSlot(row, slot);
+        return;
+      }
+    }
     const record = recordByBinding.get(binding);
     if (typeof record === "undefined" || record.session !== this) return;
     this.disposeRecord(record);
   }
 
+  /** 行の session か（`for` 束縛ごとに 1 つを全行で共有する形。設計 R3） */
+  get isRowSession(): boolean {
+    return this.rowPlan !== null;
+  }
+
+  get currentRowPlan(): IRowPlan | null {
+    return this.rowPlan;
+  }
+
+  /**
+   * 共有 session の行単位の解体（設計 R3）。この content の行だけを解体する。
+   *
+   * 生きている行が 1 つも無くなったら、行ごと session だった頃の `dispose()` と同じく
+   * 残っている定義待ち（`deferUntilDefined`）を取り消す。プラン行そのものは未定義要素を
+   * 持てない（`compileRowPlan` がカスタム要素のテンプレートを不適格にする）が、
+   * この session に注入された待ちが残ると閉包が強参照で残り続ける。
+   */
+  disposeBindings(bindings: readonly IBindingInfo[]): void {
+    for (let i = 0; i < bindings.length; i++) {
+      this.disposeBinding(bindings[i]);
+    }
+    if (this.rows.size > 0) {
+      return;
+    }
+    for (const task of Array.from(this.deferred)) {
+      task.active = false;
+      task.cancel?.();
+      this.deferred.delete(task);
+      this.deferredByNode.get(task.node)?.delete(task);
+    }
+  }
+
+  /** 行単位の wholesale destroy（設計 R3）。行を持たない session は従来どおり全部を捨てる */
+  destroyRow(bindings: readonly IBindingInfo[]): void {
+    const row = bindings.length > 0 ? this.rowOf(bindings[0]) : null;
+    if (row === null) {
+      this.destroyRecords();
+      return;
+    }
+    this.destroyRowRecord(row);
+    this.rows.delete(row);
+  }
+
+  private destroyRowRecord(row: IRowRecord): void {
+    for (let i = 0; i < row.bindings.length; i++) {
+      const address = row.addresses[i];
+      if (address !== null) {
+        removeBindingByAbsoluteStateAddress(address, row.bindings[i]);
+        row.addresses[i] = null;
+      }
+      row.phases[i] = SLOT_DISPOSED;
+    }
+  }
+
   dispose(): void {
+    for (const row of Array.from(this.rows)) {
+      for (let i = 0; i < row.bindings.length; i++) this.disposeRowSlot(row, i);
+    }
     for (const record of Array.from(this.records)) this.disposeRecord(record);
     for (const task of Array.from(this.deferred)) {
       task.active = false;
@@ -504,6 +681,8 @@ export class BindingSession {
    * 実害はない設計（handlerBindingRegistry.ts の弱参照化コメント参照）。
    */
   destroyRecords(): void {
+    for (const row of this.rows) this.destroyRowRecord(row);
+    this.rows.clear();
     for (const record of this.records) {
       if (record.address !== null) {
         removeBindingByAbsoluteStateAddress(record.address, record.info);
@@ -531,6 +710,11 @@ export class BindingSession {
    * remountScopeBindings が現在の行の文脈へ張り替えるために使う。
    */
   forEachActiveBindingNode(callback: (node: Node) => void): void {
+    for (const row of this.rows) {
+      for (let i = 0; i < row.bindings.length; i++) {
+        if (row.phases[i] === SLOT_ACTIVE) callback(row.bindings[i].node);
+      }
+    }
     for (const record of this.records) {
       if (record.phase !== "active") continue;
       callback(record.info.node);
@@ -539,21 +723,25 @@ export class BindingSession {
 
   rebindAddresses(): IBindingInfo[] {
     const rebound: IBindingInfo[] = [];
+    for (const row of this.rows) {
+      for (let i = 0; i < row.bindings.length; i++) {
+        if (row.phases[i] !== SLOT_ACTIVE) continue;
+        if (row.addresses[i] === null && row.patternPathInfos[i] === null) continue;
+        const binding = row.bindings[i];
+        this.unregisterRowSlot(row, i);
+        this.registerRowSlot(row, i);
+        if (this.shouldApplyState(binding)) rebound.push(binding);
+      }
+    }
     for (const record of this.records) {
       if (record.phase !== "active") continue;
       const binding = record.info;
       if (record.address === null && record.patternListIndex === null) continue;
       const oldAbs = binding.bindingType === "for" ? getAbsoluteStateAddressByBinding(binding) : null;
-      if (record.address !== null) {
-        removeBindingByAbsoluteStateAddress(record.address, binding);
-        record.address = null;
-      } else {
-        removeBindingByPattern(record.patternPathInfo!, record.patternListIndex!, binding);
-        record.patternPathInfo = null;
-        record.patternListIndex = null;
-      }
-      clearStateAddressByBindingInfo(binding);
-      clearAbsoluteStateAddressByBinding(binding);
+      unregisterFromLedger(binding, record.address, record.patternPathInfo, record.patternListIndex);
+      record.address = null;
+      record.patternPathInfo = null;
+      record.patternListIndex = null;
       this.registerAddress(record);
       if (oldAbs !== null) {
         const newAbs = getAbsoluteStateAddressByBinding(binding);
@@ -701,52 +889,38 @@ export class BindingSession {
    */
   initializeRow(plan: IRowPlan, bindings: readonly IBindingInfo[]): void {
     this.rowPlan = plan;
-    const rowOptions: IBindingOptions = { registerAddress: false, registerPathInfo: false, applyOnReconnect: false };
     const slots = plan.slots;
-    for (let i = 0; i < bindings.length; i++) {
+    const n = bindings.length;
+    const row: IRowRecord = {
+      id: ++nextRecordId,
+      session: this,
+      generation: ++nextGeneration,
+      plan,
+      bindings,
+      registered: false,
+      // 素の配列（Smi）。型付き配列は本体と backing store で 1 本あたり 100 B を超え、cold の
+      // 生成では行ごとの割り当ての上位に出た（設計 R5）
+      phases: new Array<number>(n).fill(SLOT_ACTIVE),
+      flags: new Array<number>(n).fill(0),
+      addresses: new Array<IAbsoluteStateAddress | null>(n).fill(null),
+      patternPathInfos: new Array<ITreePath | null>(n).fill(null),
+      patternListIndexes: new Array<IListIndex | null>(n).fill(null),
+    };
+    this.rows.add(row);
+    for (let i = 0; i < n; i++) {
       const binding = bindings[i];
-      const slot = slots[i];
       const anchor = binding.replaceNode;
       addInterestedSession(anchor, this);
       this.addKnownRowBinding(anchor, binding, i);
-      this.optionsByBinding.set(binding, rowOptions);
-      const record: IInternalBindingRecord = {
-        id: ++nextRecordId,
-        info: binding,
-        generation: ++nextGeneration,
-        phase: "active",
-        teardowns: null,
-        session: this,
-        anchor,
-        options: rowOptions,
-        address: null,
-        patternPathInfo: null,
-        patternListIndex: null,
-        pendingDefinitions: 0,
-        initialPolicy: slot.policy,
-        resolvedAuthority: slot.authority,
-        initialSettled: true,
-        initialApplyDone: false,
-        outputOnlyMember: slot.policy.outputOnly,
-        observationPending: false,
-        eventSequence: 0,
-        hasProducerValue: false,
-        producerValue: undefined,
-        eventAttached: false,
-        twowayAttached: false,
-      };
-      recordByBinding.set(binding, record);
-      this.records.add(record);
-      if (slot.isEvent) {
+      rowByBinding.set(binding, row);
+      if (slots[i].isEvent) {
         try {
           attachEventHandler(binding);
         } catch (error) {
-          record.phase = "failed";
-          this.runTeardowns(record);
-          this.records.delete(record);
+          row.phases[i] = SLOT_FAILED;
           throw error;
         }
-        record.eventAttached = true;
+        row.flags[i] |= FLAG_EVENT_ATTACHED;
       }
       // 非 event スロットはプラン適格性により双方向不能・radio/checkbox 不能・
       // token 配線不能が確定しているため attach 系を一切呼ばない
@@ -763,44 +937,98 @@ export class BindingSession {
    * 世代だけ進めて listener attach とアドレス登録をやり直す（record 再割当なし）。
    */
   private activatePlanRows(plan: IRowPlan, bindings: readonly IBindingInfo[], knownRoot: Node): void {
-    const slots = plan.slots;
-    for (let i = 0; i < bindings.length; i++) {
-      const binding = bindings[i];
-      const record = recordByBinding.get(binding);
-      if (typeof record === "undefined" || record.session !== this) {
-        // この session の record を持たない binding（防御）: 従来経路
+    const row = bindings.length > 0 ? this.rowOf(bindings[0]) : null;
+    if (row === null || row.bindings !== bindings) {
+      // この session の行でない binding 配列（防御）: 従来経路
+      for (const binding of bindings) {
         this.initialize([binding], { registerAddress: true, registerPathInfo: false, applyOnReconnect: false });
-        continue;
       }
-      record.options.registerAddress = true;
-      if (record.phase === "disposed" || record.phase === "failed") {
-        // pool 再利用: dispose 済み record を initializeRow と同じ内容で再充填
-        const slot = slots[i];
-        record.generation = ++nextGeneration;
-        record.phase = "active";
-        record.initialPolicy = slot.policy;
-        record.resolvedAuthority = slot.authority;
-        record.initialSettled = true;
-        record.initialApplyDone = false;
-        record.outputOnlyMember = slot.policy.outputOnly;
-        this.records.add(record);
-        if (slot.isEvent) {
+      return;
+    }
+    row.registered = true;
+    const slots = plan.slots;
+    let revived = false;
+    for (let i = 0; i < bindings.length; i++) {
+      if (row.phases[i] !== SLOT_ACTIVE) {
+        // pool 再利用: 世代だけ進めて listener attach とアドレス登録をやり直す
+        if (!revived) {
+          row.generation = ++nextGeneration;
+          revived = true;
+          this.rows.add(row);
+        }
+        row.phases[i] = SLOT_ACTIVE;
+        row.flags[i] = 0;
+        if (slots[i].isEvent) {
           try {
-            attachEventHandler(binding);
+            attachEventHandler(bindings[i]);
           } catch (error) {
-            record.phase = "failed";
-            this.runTeardowns(record);
-            this.records.delete(record);
+            row.phases[i] = SLOT_FAILED;
+            this.runRowSlotTeardowns(row, i);
             throw error;
           }
-          record.eventAttached = true;
+          row.flags[i] |= FLAG_EVENT_ATTACHED;
         }
-        this.registerAddress(record, knownRoot);
+        this.registerRowSlot(row, i, knownRoot);
         continue;
       }
-      if (record.address === null && record.patternListIndex === null) {
+      if (row.addresses[i] === null && row.patternPathInfos[i] === null) {
         // 初回活性化
-        this.registerAddress(record, knownRoot);
+        this.registerRowSlot(row, i, knownRoot);
+      }
+    }
+  }
+
+  private rowOf(binding: IBindingInfo): IRowRecord | null {
+    const row = rowByBinding.get(binding);
+    return typeof row !== "undefined" && row.session === this ? row : null;
+  }
+
+  private registerRowSlot(row: IRowRecord, slot: number, knownRoot?: Node | null): void {
+    if (row.addresses[slot] !== null || row.patternPathInfos[slot] !== null) return;
+    const binding = row.bindings[slot];
+    const listIndex = getListIndexByBindingInfo(binding);
+    if (listIndex !== null) {
+      row.patternPathInfos[slot] = registerPattern(binding, listIndex, knownRoot);
+      row.patternListIndexes[slot] = listIndex;
+    } else {
+      row.addresses[slot] = registerAbsoluteAddress(binding, knownRoot);
+    }
+    // registerPathInfo は行オプションで常に false
+  }
+
+  private unregisterRowSlot(row: IRowRecord, slot: number): void {
+    const address = row.addresses[slot];
+    const pathInfo = row.patternPathInfos[slot];
+    if (address === null && pathInfo === null) return;
+    // 外せなかった（台帳の throw）ときは器を残す: 後で生き返った行が登録し直さないように
+    unregisterFromLedger(row.bindings[slot], address, pathInfo, row.patternListIndexes[slot]);
+    row.addresses[slot] = null;
+    row.patternPathInfos[slot] = null;
+    row.patternListIndexes[slot] = null;
+  }
+
+  private disposeRowSlot(row: IRowRecord, slot: number): void {
+    if (row.phases[slot] === SLOT_DISPOSED) return;
+    row.phases[slot] = SLOT_DISPOSED;
+    this.runRowSlotTeardowns(row, slot);
+    for (let i = 0; i < row.phases.length; i++) {
+      if (row.phases[i] === SLOT_ACTIVE) return;
+    }
+    this.rows.delete(row);
+  }
+
+  private runRowSlotTeardowns(row: IRowRecord, slot: number): void {
+    try {
+      this.unregisterRowSlot(row, slot);
+    } catch {
+      // Cleanup is best-effort; one faulty resource must not retain the rest.
+    }
+    if ((row.flags[slot] & FLAG_EVENT_ATTACHED) !== 0) {
+      row.flags[slot] &= ~FLAG_EVENT_ATTACHED;
+      try {
+        detachEventHandler(row.bindings[slot]);
+      } catch {
+        // Cleanup is best-effort.
       }
     }
   }
@@ -1034,21 +1262,10 @@ export class BindingSession {
     const binding = record.info;
     const listIndex = getListIndexByBindingInfo(binding);
     if (listIndex !== null) {
-      // リスト行: (absolutePathInfo, listIndex) のパターン台帳に登録し、
-      // AbsoluteStateAddress の intern（アドレス割当 + intern 用 WeakMap）を省略する
-      const rootNode = resolveBindingRootNode(binding, knownRoot);
-      const stateElement = getStateElement(rootNode);
-      if (stateElement === null) {
-        raiseError(`No state tree found on this root for binding.`);
-      }
-      const absolutePathInfo = getTreePath(stateElement, binding.statePathInfo);
-      addBindingByPattern(absolutePathInfo, listIndex, binding);
-      record.patternPathInfo = absolutePathInfo;
+      record.patternPathInfo = registerPattern(binding, listIndex, knownRoot);
       record.patternListIndex = listIndex;
     } else {
-      const address = getAbsoluteStateAddressByBinding(binding, knownRoot);
-      addBindingByAbsoluteStateAddress(address, binding);
-      record.address = address;
+      record.address = registerAbsoluteAddress(binding, knownRoot);
     }
     // 台帳解除は runTeardowns が record.address / pattern フィールドから
     // データ駆動で行う（クロージャ不要）
@@ -1089,26 +1306,14 @@ export class BindingSession {
     // 逆順実行と同じ: アドレス台帳解除（最後に積まれていた）→ 双方向 detach →
     // 希少クロージャ群（逆順）→ イベント detach。各 detach は互いに独立した資源を
     // 対象とするため、この順序で意味論は変わらない。
-    if (record.address !== null) {
+    if (record.address !== null || record.patternListIndex !== null) {
       try {
-        removeBindingByAbsoluteStateAddress(record.address, binding);
+        unregisterFromLedger(binding, record.address, record.patternPathInfo, record.patternListIndex);
         record.address = null;
-        clearStateAddressByBindingInfo(binding);
-        clearAbsoluteStateAddressByBinding(binding);
-      } catch {
-        // Cleanup is best-effort; one faulty resource must not retain the rest.
-      }
-    } else if (record.patternListIndex !== null) {
-      try {
-        removeBindingByPattern(record.patternPathInfo!, record.patternListIndex, binding);
         record.patternPathInfo = null;
         record.patternListIndex = null;
-        // 相対アドレス（getValue）と絶対アドレス（applyChangeToFor / updatedCallback 経由の
-        // 遅延 intern）のメモは pattern 登録でも作られうるため対称にクリアする
-        clearStateAddressByBindingInfo(binding);
-        clearAbsoluteStateAddressByBinding(binding);
       } catch {
-        // Cleanup is best-effort.
+        // Cleanup is best-effort; one faulty resource must not retain the rest.
       }
     }
     if (record.twowayAttached) {
@@ -1151,5 +1356,5 @@ export function getOrCreateBindingSession(root: Node): BindingSession {
 }
 
 export function getBindingSession(binding: IBindingInfo): BindingSession | null {
-  return recordByBinding.get(binding)?.session ?? null;
+  return recordByBinding.get(binding)?.session ?? rowByBinding.get(binding)?.session ?? null;
 }

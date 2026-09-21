@@ -8,6 +8,8 @@ import { createListDiff } from '../src/list/createListDiff';
 import { getListIndexesByList, setListIndexesByList } from '../src/list/listIndexesByList';
 import { getSwapInfoByList, setSwapInfoByList } from '../src/proxy/methods/swapInfo';
 import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
+import { createAttachedHooksFrom } from '../src/core/addressHooks';
+import { dccAddressHooks } from '../src/dcc/addressHooks';
 
 const createListIndexes = (
   parentListIndex,
@@ -469,6 +471,7 @@ describe('setByAddress', () => {
 
     const stateElement = createStateElement({
       bindableEventMap: { count: 'x-el:count-changed' },
+      addressHooks: createAttachedHooksFrom(dccAddressHooks),
     });
     (stateElement as any).rootNode = shadowRoot;
     const handler = createHandler(stateElement);
@@ -503,6 +506,7 @@ describe('setByAddress', () => {
 
     const stateElement = createStateElement({
       bindableEventMap: { count: 'x-el:count-changed' },
+      addressHooks: createAttachedHooksFrom(dccAddressHooks),
     });
     // rootNodeはdocument（ShadowRootではない）
     (stateElement as any).rootNode = document;
@@ -585,6 +589,7 @@ describe('setByAddress', () => {
       const address = createStateAddress(getPathInfo('cfg.theme'), null);
       const stateElement = createStateElement({
         bindableEventMap: { 'cfg.theme': 'cfg-theme-changed' },
+        addressHooks: createAttachedHooksFrom(dccAddressHooks),
       });
       (stateElement as any).rootNode = shadow;
       const handler = createHandler(stateElement);
@@ -602,6 +607,7 @@ describe('setByAddress', () => {
       const address = createStateAddress(getPathInfo('cfg.theme'), null);
       const stateElement = createStateElement({
         bindableEventMap: { 'cfg.theme': 'cfg-theme-changed' },
+        addressHooks: createAttachedHooksFrom(dccAddressHooks),
       });
       (stateElement as any).rootNode = document;
       const handler = createHandler(stateElement);

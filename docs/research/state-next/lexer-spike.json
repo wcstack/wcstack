@@ -1,0 +1,2100 @@
+{
+  "revision": "6bff9f2cf8c4915c93dceb9c40b56e376eb06119",
+  "timestamp": "2026-09-20T00:03:09.286Z",
+  "spike": {
+    "lines": 258,
+    "source": {
+      "bytes": 12288,
+      "gzip": 4127,
+      "brotli": 3587
+    },
+    "minified": {
+      "bytes": 6189,
+      "gzip": 2758,
+      "brotli": 2462
+    }
+  },
+  "currentParserEntry": {
+    "bytes": 58038,
+    "gzip": 15978,
+    "brotli": 13053
+  },
+  "cacheKey": {
+    "current": {
+      "join('a,b')": "join(a,b)",
+      "join(a,b)": "join(a,b)"
+    },
+    "structural": {
+      "join('a,b')": "[\"join\",[\"a,b\"]]",
+      "join(a,b)": "[\"join\",[\"a\",\"b\"]]"
+    }
+  },
+  "cases": [
+    {
+      "text": "textContent: x|join(', ')",
+      "verdict": "same",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                ", "
+              ]
+            ]
+          ]
+        }
+      ],
+      "diagnostics": [],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                ", "
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "textContent: x|join(';')",
+      "verdict": "current-rejects-only",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                ";"
+              ]
+            ]
+          ]
+        }
+      ],
+      "diagnostics": [],
+      "current": {
+        "error": "[@wcstack/state] Invalid filter format: missing closing parenthesis in \"join('\""
+      }
+    },
+    {
+      "text": "textContent: x|join('|')",
+      "verdict": "current-rejects-only",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "|"
+              ]
+            ]
+          ]
+        }
+      ],
+      "diagnostics": [],
+      "current": {
+        "error": "[@wcstack/state] Invalid filter format: missing closing parenthesis in \"join('\""
+      }
+    },
+    {
+      "text": "textContent: x|join('a:b')",
+      "verdict": "same",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "a:b"
+              ]
+            ]
+          ]
+        }
+      ],
+      "diagnostics": [],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "a:b"
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "textContent: x|join('unterminated)",
+      "verdict": "spike-rejects-only",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "unterminated)"
+              ]
+            ]
+          ]
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "E_QUOTE_UNTERMINATED",
+          "start": 20,
+          "end": 34,
+          "message": "quote is never closed"
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "unterminated"
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "value#unknown: x",
+      "verdict": "same",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "value",
+          "mods": [
+            "unknown"
+          ],
+          "path": "x",
+          "in": [],
+          "out": []
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "W_MODIFIER_UNKNOWN",
+          "start": 6,
+          "end": 13,
+          "message": "unknown modifier '#unknown'"
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "value",
+          "mods": [
+            "unknown"
+          ],
+          "path": "x",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "value#ro#wo: x",
+      "verdict": "spike-rejects-only",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "value",
+          "mods": [
+            "ro",
+            "wo"
+          ],
+          "path": "x",
+          "in": [],
+          "out": []
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "E_MODIFIER_SEPARATOR",
+          "start": 8,
+          "end": 9,
+          "message": "only one '#' is allowed; 'value#ro#wo' has 2"
+        },
+        {
+          "code": "W_MODIFIER_UNKNOWN",
+          "start": 9,
+          "end": 11,
+          "message": "unknown modifier '#wo'"
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "value",
+          "mods": [
+            "ro"
+          ],
+          "path": "x",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "else: ignored",
+      "verdict": "spike-rejects-only",
+      "spike": [
+        {
+          "type": "else",
+          "prop": "else",
+          "mods": [],
+          "path": "#else",
+          "in": [],
+          "out": []
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "E_ELSE_STATE_PART",
+          "start": 5,
+          "end": 13,
+          "message": "'else' takes no path; found 'ignored'"
+        }
+      ],
+      "current": [
+        {
+          "type": "else",
+          "prop": "else",
+          "mods": [],
+          "path": "#else",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "radio#ro: x",
+      "verdict": "shape-differs",
+      "spike": [
+        {
+          "type": "radio",
+          "prop": "radio",
+          "mods": [
+            "ro"
+          ],
+          "path": "x",
+          "in": [],
+          "out": []
+        }
+      ],
+      "diagnostics": [],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "radio",
+          "mods": [
+            "ro"
+          ],
+          "path": "x",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "only: x",
+      "verdict": "same",
+      "spike": [
+        {
+          "type": "event",
+          "prop": "only",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": []
+        }
+      ],
+      "diagnostics": [],
+      "current": [
+        {
+          "type": "event",
+          "prop": "only",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "online: x",
+      "verdict": "same",
+      "spike": [
+        {
+          "type": "event",
+          "prop": "online",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": []
+        }
+      ],
+      "diagnostics": [],
+      "current": [
+        {
+          "type": "event",
+          "prop": "online",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "onclick: x",
+      "verdict": "same",
+      "spike": [
+        {
+          "type": "event",
+          "prop": "onclick",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": []
+        }
+      ],
+      "diagnostics": [],
+      "current": [
+        {
+          "type": "event",
+          "prop": "onclick",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "command.run: token",
+      "verdict": "same",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "command.run",
+          "mods": [],
+          "path": "token",
+          "in": [],
+          "out": []
+        }
+      ],
+      "diagnostics": [],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "command.run",
+          "mods": [],
+          "path": "token",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "eventToken.done: token",
+      "verdict": "same",
+      "spike": [
+        {
+          "type": "event",
+          "prop": "eventToken.done",
+          "mods": [],
+          "path": "token",
+          "in": [],
+          "out": []
+        }
+      ],
+      "diagnostics": [],
+      "current": [
+        {
+          "type": "event",
+          "prop": "eventToken.done",
+          "mods": [],
+          "path": "token",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "textContent: x|join('a,b')",
+      "verdict": "same",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "a,b"
+              ]
+            ]
+          ]
+        }
+      ],
+      "diagnostics": [],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "a,b"
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "textContent: x|join(a,b)",
+      "verdict": "spike-rejects-only",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "a",
+                "b"
+              ]
+            ]
+          ]
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "E_FILTER_ARITY",
+          "start": 15,
+          "end": 24,
+          "message": "'join' takes 0..1 argument(s); got 2"
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "a",
+                "b"
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "else:",
+      "verdict": "same",
+      "spike": [
+        {
+          "type": "else",
+          "prop": "else",
+          "mods": [],
+          "path": "#else",
+          "in": [],
+          "out": []
+        }
+      ],
+      "diagnostics": [],
+      "current": [
+        {
+          "type": "else",
+          "prop": "else",
+          "mods": [],
+          "path": "#else",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "for#x: items",
+      "verdict": "spike-rejects-only",
+      "spike": [
+        {
+          "type": "for",
+          "prop": "for",
+          "mods": [
+            "x"
+          ],
+          "path": "items",
+          "in": [],
+          "out": []
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "W_MODIFIER_UNKNOWN",
+          "start": 4,
+          "end": 5,
+          "message": "unknown modifier '#x'"
+        },
+        {
+          "code": "E_MODIFIER_NOT_ALLOWED",
+          "start": 0,
+          "end": 5,
+          "message": "'for' takes no modifiers"
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "for",
+          "mods": [
+            "x"
+          ],
+          "path": "items",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "if: a; textContent: b",
+      "verdict": "both-reject",
+      "spike": [
+        {
+          "type": "if",
+          "prop": "if",
+          "mods": [],
+          "path": "a",
+          "in": [],
+          "out": []
+        },
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "b",
+          "in": [],
+          "out": []
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "E_STRUCTURAL_SINGLE",
+          "start": 0,
+          "end": 5,
+          "message": "'if' must be the only binding on the element"
+        }
+      ],
+      "current": {
+        "error": "[@wcstack/state] [wcs/template-syntax] Invalid bindText: \"if: a; textContent: b\". 'if', 'elseif', 'else', and 'for' bindings must be single binding. Put the structural binding alone in its own data-wc"
+      }
+    },
+    {
+      "text": "textContent: x|join('it\\'s')",
+      "verdict": "shape-differs",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "it's"
+              ]
+            ]
+          ]
+        }
+      ],
+      "diagnostics": [],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "it\\s"
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "attr.data-id: x",
+      "verdict": "same",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "attr.data-id",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": []
+        }
+      ],
+      "diagnostics": [],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "attr.data-id",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "onclick#prevent,stop: run",
+      "verdict": "same",
+      "spike": [
+        {
+          "type": "event",
+          "prop": "onclick",
+          "mods": [
+            "prevent",
+            "stop"
+          ],
+          "path": "run",
+          "in": [],
+          "out": []
+        }
+      ],
+      "diagnostics": [],
+      "current": [
+        {
+          "type": "event",
+          "prop": "onclick",
+          "mods": [
+            "prevent",
+            "stop"
+          ],
+          "path": "run",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "value#init=element,sync=connect: w",
+      "verdict": "same",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "value",
+          "mods": [
+            "init=element",
+            "sync=connect"
+          ],
+          "path": "w",
+          "in": [],
+          "out": []
+        }
+      ],
+      "diagnostics": [],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "value",
+          "mods": [
+            "init=element",
+            "sync=connect"
+          ],
+          "path": "w",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "value#init: w",
+      "verdict": "spike-rejects-only",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "value",
+          "mods": [
+            "init"
+          ],
+          "path": "w",
+          "in": [],
+          "out": []
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "E_MODIFIER_VALUE",
+          "start": 6,
+          "end": 10,
+          "message": "'#init=' needs a value"
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "value",
+          "mods": [
+            "init"
+          ],
+          "path": "w",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "...: obj",
+      "verdict": "same",
+      "spike": [
+        {
+          "type": "spread",
+          "prop": "...",
+          "mods": [],
+          "path": "obj",
+          "in": [],
+          "out": []
+        }
+      ],
+      "diagnostics": [],
+      "current": [
+        {
+          "type": "spread",
+          "prop": "...",
+          "mods": [],
+          "path": "obj",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "...: obj|int",
+      "verdict": "both-reject",
+      "spike": [
+        {
+          "type": "spread",
+          "prop": "...",
+          "mods": [],
+          "path": "obj",
+          "in": [],
+          "out": [
+            [
+              "int",
+              []
+            ]
+          ]
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "E_SPREAD_FILTERS",
+          "start": 4,
+          "end": 12,
+          "message": "spread takes no filters"
+        }
+      ],
+      "current": {
+        "error": "[@wcstack/state] Invalid spread binding \"...: obj|int\": filters are not allowed on spread targets."
+      }
+    },
+    {
+      "text": "command.run: $command.go",
+      "verdict": "same",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "command.run",
+          "mods": [],
+          "path": "$command.go",
+          "in": [],
+          "out": []
+        }
+      ],
+      "diagnostics": [],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "command.run",
+          "mods": [],
+          "path": "$command.go",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "eventToken.error#prevent: createFailed",
+      "verdict": "same",
+      "spike": [
+        {
+          "type": "event",
+          "prop": "eventToken.error",
+          "mods": [
+            "prevent"
+          ],
+          "path": "createFailed",
+          "in": [],
+          "out": []
+        }
+      ],
+      "diagnostics": [],
+      "current": [
+        {
+          "type": "event",
+          "prop": "eventToken.error",
+          "mods": [
+            "prevent"
+          ],
+          "path": "createFailed",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "textContent: x|pad(5, ' ')",
+      "verdict": "same",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "pad",
+              [
+                "5",
+                " "
+              ]
+            ]
+          ]
+        }
+      ],
+      "diagnostics": [],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "pad",
+              [
+                "5",
+                " "
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "textContent: x|eq(1,2)",
+      "verdict": "spike-rejects-only",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "eq",
+              [
+                "1",
+                "2"
+              ]
+            ]
+          ]
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "E_FILTER_ARITY",
+          "start": 15,
+          "end": 22,
+          "message": "'eq' takes 1 argument(s); got 2"
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "eq",
+              [
+                "1",
+                "2"
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "textContent: x|nope",
+      "verdict": "current-rejects-only",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "nope",
+              []
+            ]
+          ]
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "W_FILTER_UNKNOWN",
+          "start": 15,
+          "end": 19,
+          "message": "unknown filter 'nope'"
+        }
+      ],
+      "current": {
+        "error": "[@wcstack/state] [wcs/filter-unknown] filter not found: nope. Did you mean \"ne\"? Validate statically: npx @wcstack/lint <file>."
+      }
+    },
+    {
+      "text": "textContent: x|join(",
+      "verdict": "both-reject",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              []
+            ]
+          ]
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "E_PAREN_UNCLOSED",
+          "start": 19,
+          "end": 20,
+          "message": "'join(': missing ')' (quote arguments that contain ; : | or ))"
+        }
+      ],
+      "current": {
+        "error": "[@wcstack/state] Invalid filter format: missing closing parenthesis in \"join(\""
+      }
+    },
+    {
+      "text": "textContent: x|join)",
+      "verdict": "both-reject",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "join)",
+              []
+            ]
+          ]
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "E_PAREN_UNOPENED",
+          "start": 19,
+          "end": 20,
+          "message": "')' without '('"
+        },
+        {
+          "code": "E_FILTER_NAME",
+          "start": 15,
+          "end": 20,
+          "message": "bad filter name 'join)'"
+        }
+      ],
+      "current": {
+        "error": "[@wcstack/state] Invalid filter format: missing opening parenthesis in \"join)\""
+      }
+    },
+    {
+      "text": "textContent: x|join('a') extra",
+      "verdict": "spike-rejects-only",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "a"
+              ]
+            ]
+          ]
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "E_FILTER_TRAILING",
+          "start": 24,
+          "end": 30,
+          "message": "unexpected 'extra' after ')'"
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "a"
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "textContent: user@main.name",
+      "verdict": "both-reject",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "user@main.name",
+          "in": [],
+          "out": []
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "E_NAME_SELECTOR_REMOVED",
+          "start": 13,
+          "end": 27,
+          "message": "'user@main.name': the \"@name\" selector was removed in v2"
+        }
+      ],
+      "current": {
+        "error": "[@wcstack/state] \"user@main.name\": the \"@name\" selector was removed in v2 — there is a single state tree. Mount the named state onto the tree (<wcs-state mount=\"...\">) and read it by its path prefix i"
+      }
+    },
+    {
+      "text": "class.active: .selected",
+      "verdict": "same",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "class.active",
+          "mods": [],
+          "path": ".selected",
+          "in": [],
+          "out": []
+        }
+      ],
+      "diagnostics": [],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "class.active",
+          "mods": [],
+          "path": ".selected",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "textContent: items.*.name",
+      "verdict": "same",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "items.*.name",
+          "in": [],
+          "out": []
+        }
+      ],
+      "diagnostics": [],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "items.*.name",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "textContent: $1",
+      "verdict": "same",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "$1",
+          "in": [],
+          "out": []
+        }
+      ],
+      "diagnostics": [],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "$1",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "textContent: ..parent",
+      "verdict": "same",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "..parent",
+          "in": [],
+          "out": []
+        }
+      ],
+      "diagnostics": [],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "..parent",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "textContent:",
+      "verdict": "spike-rejects-only",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "",
+          "in": [],
+          "out": []
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "E_PATH_REQUIRED",
+          "start": 12,
+          "end": 12,
+          "message": "'textContent': path is required"
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "",
+          "in": [],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "textContent",
+      "verdict": "both-reject",
+      "spike": [],
+      "diagnostics": [
+        {
+          "code": "E_MISSING_COLON",
+          "start": 0,
+          "end": 11,
+          "message": "\"textContent\": missing ':' between property and path"
+        }
+      ],
+      "current": {
+        "error": "[@wcstack/state] Invalid bindText: \"textContent\". Missing ':' separator between propPart and statePart."
+      }
+    },
+    {
+      "text": "textContent: x|fix(2)|locale",
+      "verdict": "same",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "fix",
+              [
+                "2"
+              ]
+            ],
+            [
+              "locale",
+              []
+            ]
+          ]
+        }
+      ],
+      "diagnostics": [],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "fix",
+              [
+                "2"
+              ]
+            ],
+            [
+              "locale",
+              []
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "value|int: count",
+      "verdict": "same",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "value",
+          "mods": [],
+          "path": "count",
+          "in": [
+            [
+              "int",
+              []
+            ]
+          ],
+          "out": []
+        }
+      ],
+      "diagnostics": [],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "value",
+          "mods": [],
+          "path": "count",
+          "in": [
+            [
+              "int",
+              []
+            ]
+          ],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "checkbox|int: values",
+      "verdict": "shape-differs",
+      "spike": [
+        {
+          "type": "checkbox",
+          "prop": "checkbox",
+          "mods": [],
+          "path": "values",
+          "in": [
+            [
+              "int",
+              []
+            ]
+          ],
+          "out": []
+        }
+      ],
+      "diagnostics": [],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "checkbox",
+          "mods": [],
+          "path": "values",
+          "in": [
+            [
+              "int",
+              []
+            ]
+          ],
+          "out": []
+        }
+      ]
+    },
+    {
+      "text": "textContent: x|join(a,)",
+      "verdict": "same",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "a"
+              ]
+            ]
+          ]
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "W_ARG_EMPTY",
+          "start": 22,
+          "end": 22,
+          "message": "trailing comma"
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "join",
+              [
+                "a"
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "textContent: x|eq()",
+      "verdict": "spike-rejects-only",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "eq",
+              []
+            ]
+          ]
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "E_FILTER_ARITY",
+          "start": 15,
+          "end": 19,
+          "message": "'eq' takes 1 argument(s); got 0"
+        }
+      ],
+      "current": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "eq",
+              []
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": "textContent: x|rep('a', 'b')|uc",
+      "verdict": "both-reject",
+      "spike": [
+        {
+          "type": "prop",
+          "prop": "textContent",
+          "mods": [],
+          "path": "x",
+          "in": [],
+          "out": [
+            [
+              "rep",
+              [
+                "a",
+                "b"
+              ]
+            ],
+            [
+              "uc",
+              []
+            ]
+          ]
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "E_FILTER_ARITY",
+          "start": 15,
+          "end": 28,
+          "message": "'rep' takes 1 argument(s); got 2"
+        }
+      ],
+      "current": {
+        "error": "[@wcstack/state] filter rep requires a number as option"
+      }
+    }
+  ],
+  "corpus": {
+    "files": 150,
+    "unique": 539,
+    "verdicts": {
+      "same": 523,
+      "current-rejects-only": 2,
+      "both-reject": 8,
+      "spike-rejects-only": 6
+    },
+    "notSame": [
+      {
+        "text": "...",
+        "verdict": "both-reject",
+        "spike": [],
+        "diagnostics": [
+          {
+            "code": "E_MISSING_COLON",
+            "start": 0,
+            "end": 3,
+            "message": "\"...\": missing ':' between property and path"
+          }
+        ],
+        "current": {
+          "error": "[@wcstack/state] Invalid bindText: \"...\". Missing ':' separator between propPart and statePart."
+        },
+        "files": [
+          "packages/resize/README.ja.md",
+          "packages/resize/README.md"
+        ],
+        "fileCount": 2
+      },
+      {
+        "text": "` → `textContent`, `class.`, `style.`, `onclick`, `for`, `if` ...\r\n- `data-wcs=",
+        "verdict": "both-reject",
+        "spike": [],
+        "diagnostics": [
+          {
+            "code": "E_MISSING_COLON",
+            "start": 0,
+            "end": 79,
+            "message": "\"` → `textContent`, `class.`, `style.`, `onclick`, `for`, `if` ...\r\n- `data-wcs=\": missing ':' between property and path"
+          }
+        ],
+        "current": {
+          "error": "[@wcstack/state] Invalid bindText: \"` → `textContent`, `class.`, `style.`, `onclick`, `for`, `if` ...\r"
+        },
+        "files": [
+          "packages/vscode-wcs/README.ja.md"
+        ],
+        "fileCount": 1
+      },
+      {
+        "text": "textContent: count|` → `gt`, `eq`, `uc`, `trim` ...\r\n- `data-wcs=",
+        "verdict": "both-reject",
+        "spike": [
+          {
+            "type": "prop",
+            "prop": "textContent",
+            "mods": [],
+            "path": "count",
+            "in": [],
+            "out": [
+              [
+                "` → `gt`, `eq`, `uc`, `trim` ...\r\n- `data-wcs=",
+                []
+              ]
+            ]
+          }
+        ],
+        "diagnostics": [
+          {
+            "code": "E_FILTER_NAME",
+            "start": 19,
+            "end": 65,
+            "message": "bad filter name '` → `gt`, `eq`, `uc`, `trim` ...\r\n- `data-wcs='"
+          }
+        ],
+        "current": {
+          "error": "[@wcstack/state] [wcs/filter-unknown] filter not found: ` → `gt`, `eq`, `uc`, `trim` ...\r"
+        },
+        "files": [
+          "packages/vscode-wcs/README.ja.md"
+        ],
+        "fileCount": 1
+      },
+      {
+        "text": "textContent: count@",
+        "verdict": "both-reject",
+        "spike": [
+          {
+            "type": "prop",
+            "prop": "textContent",
+            "mods": [],
+            "path": "count@",
+            "in": [],
+            "out": []
+          }
+        ],
+        "diagnostics": [
+          {
+            "code": "E_NAME_SELECTOR_REMOVED",
+            "start": 13,
+            "end": 19,
+            "message": "'count@': the \"@name\" selector was removed in v2"
+          }
+        ],
+        "current": {
+          "error": "[@wcstack/state] \"count@\": the \"@name\" selector was removed in v2 — there is a single state tree. Mount the named state onto the tree (<wcs-state mount=\"...\">) and read it by its path prefix instead."
+        },
+        "files": [
+          "packages/vscode-wcs/README.ja.md"
+        ],
+        "fileCount": 1
+      },
+      {
+        "text": "` → `textContent`, `class.`, `style.`, `attr.`, `onclick`, `for`, `if`, `...`, `radio`, `checkbox`, `command.`, `eventToken.` ...\r\n- `data-wcs=",
+        "verdict": "both-reject",
+        "spike": [],
+        "diagnostics": [
+          {
+            "code": "E_MISSING_COLON",
+            "start": 0,
+            "end": 143,
+            "message": "\"` → `textContent`, `class.`, `style.`, `attr.`, `onclick`, `for`, `if`, `...`, `radio`, `checkbox`, `command.`, `eventToken.` ...\r\n- `data-wcs=\": missing ':' between property and path"
+          }
+        ],
+        "current": {
+          "error": "[@wcstack/state] Invalid bindText: \"` → `textContent`, `class.`, `style.`, `attr.`, `onclick`, `for`, `if`, `...`, `radio`, `checkbox`, `command.`, `eventToken.` ...\r"
+        },
+        "files": [
+          "packages/vscode-wcs/README.md"
+        ],
+        "fileCount": 1
+      },
+      {
+        "text": "textContent: count|` → `gt`, `eq`, `uc`, `trim` ... (all 46 built-in filters)\r\n- `data-wcs=",
+        "verdict": "both-reject",
+        "spike": [
+          {
+            "type": "prop",
+            "prop": "textContent",
+            "mods": [],
+            "path": "count",
+            "in": [],
+            "out": [
+              [
+                "` → `gt`, `eq`, `uc`, `trim` ...",
+                [
+                  "all 46 built-in filters"
+                ]
+              ]
+            ]
+          }
+        ],
+        "diagnostics": [
+          {
+            "code": "E_FILTER_TRAILING",
+            "start": 77,
+            "end": 91,
+            "message": "unexpected '- `data-wcs=' after ')'"
+          },
+          {
+            "code": "E_FILTER_NAME",
+            "start": 19,
+            "end": 91,
+            "message": "bad filter name '` → `gt`, `eq`, `uc`, `trim` ...'"
+          }
+        ],
+        "current": {
+          "error": "[@wcstack/state] [wcs/filter-unknown] filter not found: ` → `gt`, `eq`, `uc`, `trim` .... Validate statically: npx @wcstack/lint <file>."
+        },
+        "files": [
+          "packages/vscode-wcs/README.md"
+        ],
+        "fileCount": 1
+      },
+      {
+        "text": "onclick#` → `prevent`, `stop`, `ro` (the modifier list is the same after any `#`; `ro` suppresses write-back on two-way bindings)\r\n- `data-wcs=",
+        "verdict": "both-reject",
+        "spike": [],
+        "diagnostics": [
+          {
+            "code": "E_MISSING_COLON",
+            "start": 0,
+            "end": 80,
+            "message": "\"onclick#` → `prevent`, `stop`, `ro` (the modifier list is the same after any `#`\": missing ':' between property and path"
+          },
+          {
+            "code": "E_MISSING_COLON",
+            "start": 82,
+            "end": 143,
+            "message": "\"`ro` suppresses write-back on two-way bindings)\r\n- `data-wcs=\": missing ':' between property and path"
+          }
+        ],
+        "current": {
+          "error": "[@wcstack/state] Invalid bindText: \"onclick#` → `prevent`, `stop`, `ro` (the modifier list is the same after any `#`\". Missing ':' separator between propPart and statePart."
+        },
+        "files": [
+          "packages/vscode-wcs/README.md"
+        ],
+        "fileCount": 1
+      },
+      {
+        "text": "eventToken.value: ` → only token names from the `$eventTokens` declaration\r\n\r\nPath candidates are derived from the `<wcs-state>` script (and from JSON state): nested arrays are followed (`a.*.b.*.c`), `$streams` entries appear as values plus `$streamStatus.<name>` / `$streamError.<name>`, and `$listKeys` declarations materialize list paths whose initial value is an empty array (the list path, `.*`, `.length` and the key field — not the other row fields).\r\n\r\nThe **row shape** of a list that starts as `[]` is read from the row literals in the assignments that add or replace rows — `this.items = this.items.concat({ id, kind:",
+        "verdict": "both-reject",
+        "spike": [
+          {
+            "type": "event",
+            "prop": "eventToken.value",
+            "mods": [],
+            "path": "` → only token names from the `$eventTokens` declaration\r\n\r\nPath candidates are derived from the `<wcs-state>` script (and from JSON state): nested arrays are followed (`a.*.b.*.c`), `$streams` entries appear as values plus `$streamStatus.<name>` / `$streamError.<name>`, and `$listKeys` declarations materialize list paths whose initial value is an empty array (the list path, `.*`, `.length` and the key field — not the other row fields).\r\n\r\nThe **row shape** of a list that starts as `[]` is read from the row literals in the assignments that add or replace rows — `this.items = this.items.concat({ id, kind:",
+            "in": [],
+            "out": []
+          }
+        ],
+        "diagnostics": [
+          {
+            "code": "E_PATH_SEGMENT",
+            "start": 18,
+            "end": 629,
+            "message": "'` → only token names from the `$eventTokens` declaration\r\n\r\nPath candidates are derived from the `<wcs-state>` script (and from JSON state): nested arrays are followed (`a.*.b.*.c`), `$streams` entries appear as values plus `$streamStatus.<name>` / `$streamError.<name>`, and `$listKeys` declarations materialize list paths whose initial value is an empty array (the list path, `.*`, `.length` and the key field — not the other row fields).\r\n\r\nThe **row shape** of a list that starts as `[]` is read from the row literals in the assignments that add or replace rows — `this.items = this.items.concat({ id, kind:': bad path segment '` → only token names from the `$eventTokens` declaration\r\n\r\nPath candidates are derived from the `<wcs-state>` script (and from JSON state): nested arrays are followed (`a'"
+          }
+        ],
+        "current": {
+          "error": "[@wcstack/state] [wcs/recursion-unsupported] \"` → only token names from the `$eventTokens` declaration\r"
+        },
+        "files": [
+          "packages/vscode-wcs/README.md"
+        ],
+        "fileCount": 1
+      },
+      {
+        "text": "notice: statusMessage | debounce(1000)",
+        "verdict": "current-rejects-only",
+        "spike": [
+          {
+            "type": "prop",
+            "prop": "notice",
+            "mods": [],
+            "path": "statusMessage",
+            "in": [],
+            "out": [
+              [
+                "debounce",
+                [
+                  "1000"
+                ]
+              ]
+            ]
+          }
+        ],
+        "diagnostics": [
+          {
+            "code": "W_FILTER_UNKNOWN",
+            "start": 23,
+            "end": 31,
+            "message": "unknown filter 'debounce'"
+          }
+        ],
+        "current": {
+          "error": "[@wcstack/state] [wcs/filter-unknown] filter not found: debounce. Validate statically: npx @wcstack/lint <file>."
+        },
+        "files": [
+          "packages/notification/README.ja.md",
+          "packages/notification/README.md"
+        ],
+        "fileCount": 2
+      },
+      {
+        "text": "onkeydown: add|enter",
+        "verdict": "current-rejects-only",
+        "spike": [
+          {
+            "type": "event",
+            "prop": "onkeydown",
+            "mods": [],
+            "path": "add",
+            "in": [],
+            "out": [
+              [
+                "enter",
+                []
+              ]
+            ]
+          }
+        ],
+        "diagnostics": [
+          {
+            "code": "W_FILTER_UNKNOWN",
+            "start": 15,
+            "end": 20,
+            "message": "unknown filter 'enter'"
+          }
+        ],
+        "current": {
+          "error": "[@wcstack/state] [wcs/filter-unknown] filter not found: enter. Validate statically: npx @wcstack/lint <file>."
+        },
+        "files": [
+          "packages/wcstack/README.md"
+        ],
+        "fileCount": 1
+      },
+      {
+        "text": "if: …",
+        "verdict": "spike-rejects-only",
+        "spike": [
+          {
+            "type": "if",
+            "prop": "if",
+            "mods": [],
+            "path": "…",
+            "in": [],
+            "out": []
+          }
+        ],
+        "diagnostics": [
+          {
+            "code": "E_PATH_SEGMENT",
+            "start": 4,
+            "end": 5,
+            "message": "'…': bad path segment '…'"
+          }
+        ],
+        "current": [
+          {
+            "type": "if",
+            "prop": "if",
+            "mods": [],
+            "path": "…",
+            "in": [],
+            "out": []
+          }
+        ],
+        "files": [
+          "packages/router/README.ja.md",
+          "packages/router/README.md"
+        ],
+        "fileCount": 2
+      },
+      {
+        "text": "for:",
+        "verdict": "spike-rejects-only",
+        "spike": [
+          {
+            "type": "for",
+            "prop": "for",
+            "mods": [],
+            "path": "",
+            "in": [],
+            "out": []
+          }
+        ],
+        "diagnostics": [
+          {
+            "code": "E_PATH_REQUIRED",
+            "start": 4,
+            "end": 4,
+            "message": "'for': path is required"
+          }
+        ],
+        "current": [
+          {
+            "type": "for",
+            "prop": "for",
+            "mods": [],
+            "path": "",
+            "in": [],
+            "out": []
+          }
+        ],
+        "files": [
+          "packages/server/README.ja.md",
+          "packages/server/README.md"
+        ],
+        "fileCount": 2
+      },
+      {
+        "text": "for: ` → 配列型のパスのみ表示\r\n- `data-wcs=",
+        "verdict": "spike-rejects-only",
+        "spike": [
+          {
+            "type": "for",
+            "prop": "for",
+            "mods": [],
+            "path": "` → 配列型のパスのみ表示\r\n- `data-wcs=",
+            "in": [],
+            "out": []
+          }
+        ],
+        "diagnostics": [
+          {
+            "code": "E_PATH_SEGMENT",
+            "start": 5,
+            "end": 33,
+            "message": "'` → 配列型のパスのみ表示\r\n- `data-wcs=': bad path segment '` → 配列型のパスのみ表示\r\n- `data-wcs='"
+          }
+        ],
+        "current": [
+          {
+            "type": "for",
+            "prop": "for",
+            "mods": [],
+            "path": "` → 配列型のパスのみ表示\r\n- `data-wcs=",
+            "in": [],
+            "out": []
+          }
+        ],
+        "files": [
+          "packages/vscode-wcs/README.ja.md"
+        ],
+        "fileCount": 1
+      },
+      {
+        "text": "command.play: ` → `$command.<name>`（`$commandTokens` 宣言由来）のみ表示\r\n- `data-wcs=",
+        "verdict": "spike-rejects-only",
+        "spike": [
+          {
+            "type": "prop",
+            "prop": "command.play",
+            "mods": [],
+            "path": "` → `$command.<name>`（`$commandTokens` 宣言由来）のみ表示\r\n- `data-wcs=",
+            "in": [],
+            "out": []
+          }
+        ],
+        "diagnostics": [
+          {
+            "code": "E_PATH_SEGMENT",
+            "start": 14,
+            "end": 76,
+            "message": "'` → `$command.<name>`（`$commandTokens` 宣言由来）のみ表示\r\n- `data-wcs=': bad path segment '` → `$command'"
+          }
+        ],
+        "current": [
+          {
+            "type": "prop",
+            "prop": "command.play",
+            "mods": [],
+            "path": "` → `$command.<name>`（`$commandTokens` 宣言由来）のみ表示\r\n- `data-wcs=",
+            "in": [],
+            "out": []
+          }
+        ],
+        "files": [
+          "packages/vscode-wcs/README.ja.md"
+        ],
+        "fileCount": 1
+      },
+      {
+        "text": "textContent:",
+        "verdict": "spike-rejects-only",
+        "spike": [
+          {
+            "type": "prop",
+            "prop": "textContent",
+            "mods": [],
+            "path": "",
+            "in": [],
+            "out": []
+          }
+        ],
+        "diagnostics": [
+          {
+            "code": "E_PATH_REQUIRED",
+            "start": 12,
+            "end": 12,
+            "message": "'textContent': path is required"
+          }
+        ],
+        "current": [
+          {
+            "type": "prop",
+            "prop": "textContent",
+            "mods": [],
+            "path": "",
+            "in": [],
+            "out": []
+          }
+        ],
+        "files": [
+          "packages/vscode-wcs/README.ja.md",
+          "packages/vscode-wcs/README.md"
+        ],
+        "fileCount": 2
+      },
+      {
+        "text": "onclick: ` → only methods and `$command.<name>`\r\n- `data-wcs=",
+        "verdict": "spike-rejects-only",
+        "spike": [
+          {
+            "type": "event",
+            "prop": "onclick",
+            "mods": [],
+            "path": "` → only methods and `$command.<name>`\r\n- `data-wcs=",
+            "in": [],
+            "out": []
+          }
+        ],
+        "diagnostics": [
+          {
+            "code": "E_PATH_SEGMENT",
+            "start": 9,
+            "end": 61,
+            "message": "'` → only methods and `$command.<name>`\r\n- `data-wcs=': bad path segment '` → only methods and `$command'"
+          }
+        ],
+        "current": [
+          {
+            "type": "event",
+            "prop": "onclick",
+            "mods": [],
+            "path": "` → only methods and `$command.<name>`\r\n- `data-wcs=",
+            "in": [],
+            "out": []
+          }
+        ],
+        "files": [
+          "packages/vscode-wcs/README.md"
+        ],
+        "fileCount": 1
+      }
+    ]
+  }
+}

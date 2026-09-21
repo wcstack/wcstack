@@ -177,6 +177,57 @@
 </script>
 ```
 
+### 分割エントリ（使う機能だけを入れる）
+
+`@wcstack/state` と `/auto` は全機能入りで、こちらが引き続き推奨です（全部使うページなら、core ＋
+機能に分けるより 1 ファイルのほうが小さい）。機能を意図的に落とすページは、組み合わせて入れられます。
+
+```html
+<script type="importmap">
+{
+  "imports": {
+    "@wcstack/state/core": "https://cdn.jsdelivr.net/npm/@wcstack/state@3.0.0/dist/split/core.js",
+    "@wcstack/state/features/temporal": "https://cdn.jsdelivr.net/npm/@wcstack/state@3.0.0/dist/split/features/temporal.js",
+    "@wcstack/state/features/scopes": "https://cdn.jsdelivr.net/npm/@wcstack/state@3.0.0/dist/split/features/scopes.js"
+  }
+}
+</script>
+<script type="module">
+  import { bootstrapState, installFeatures } from '@wcstack/state/core';
+  import temporal from '@wcstack/state/features/temporal';  // $watch / $scan / $streams
+  import scopes from '@wcstack/state/features/scopes';      // bind-component・mount=・DCC
+
+  installFeatures([temporal, scopes]);
+  bootstrapState();
+</script>
+```
+
+分割の形は、パッケージのファイルそのものから読みます — 上の例のように jsDelivr の素の `/npm/` パスで
+版を固定するか（素のパスは `exports` を読まないので、`dist/split/` 以下のファイル名を書く）、バンドラを
+通します。**`esm.run` からは読まないでください**。`+esm` はエントリごとにサーバー側で再バンドルし、
+共有の core チャンクをそれぞれに取り込むため、エントリごとに別のエンジンを抱えます。機能は core から
+見えないコピーへ install され、`installFeatures` を呼んでも `[wcs/feature-not-installed]` で落ちます。
+素のファイルなら、どのエントリの相対 import も同じチャンクの URL に解決され、エンジンは 1 回だけ評価
+されます。この形の integrity は [docs/sri.ja.md §5.1](../../docs/sri.ja.md#51-wcstackstate-の分割エントリ) を参照。
+
+| エントリ | 足されるもの |
+|---|---|
+| `@wcstack/state/core` | バインディングの本体: `data-wcs`・`for` / `if`・パス getter・フィルタ・イベント・`$command` / `$on`・`bootstrapState`・`installFeatures` |
+| `@wcstack/state/features/temporal` | `$watch`・`$scan`・`$streams` |
+| `@wcstack/state/features/scopes` | `bind-component`・`mount=` のボリューム・オーバーレイの公開 getter・DCC（`data-wc-definition`） |
+| `@wcstack/state/features/recursion` | `$recursion` と `**` パス |
+| `@wcstack/state/features/ssr` | `enable-ssr`: サーバー描画とハイドレーション |
+| `@wcstack/state/features/formats` | 書式フィルタ群（`uc`・`date`・`round`・`truncate` …）。core が答えるのは `if` / `else` が要る `not` だけ |
+| `@wcstack/state/features/devtools` | DevTools Hook Protocol への source 登録 |
+| `@wcstack/state/features/diagnostics` | 開発時の警告: 束縛・`$watch`・`$scan` のパスが state 上で解決できないとき、did-you-mean 付きで知らせる。入れなければ静か（本番向け）。throw するエラーの文言はどちらでも変わらない |
+| `@wcstack/state/define` | `defineState` と型だけ — ランタイムは 0 |
+
+機能が入っていない宣言は黙って無視されません。state の定義時に
+`[wcs/feature-not-installed] … install it with installFeatures([...]) from "@wcstack/state/features/…"`
+で落ち、実装の無いフィルタは束縛計画の段で `[wcs/filter-unknown]` で落ちます。install は冪等で、
+どのエントリも core のチャンクを 1 つだけ共有します（機能側がエンジンの 2 つ目のコピーを抱える
+ことはありません）。
+
 ## 基本的な使い方
 
 ```html
@@ -284,6 +335,20 @@
 
 ボリュームは getter・`$watch`・`$listKeys`・`$updatedCallback`・`$connectedCallback`/`$disconnectedCallback` を宣言できます（すべてマウントパス相対）。`$errorCallback` はルート専用です（バインディングの失敗はツリーの所有者へ 1 回だけ報告されます）。読み込み順は自由です（ルートより先に接続されたボリュームは、ルートの登録時に接ぎ木されます）。ルートの `<wcs-state>` が初期化に失敗した場合、その時点で待機していたボリュームは永久に待たずに自分の報告を出して決着します。その報告が終点です —— 孤児として報告されたボリュームは後から自分で接ぎ木し直さないので、あとから修正版のルートを接続しても復帰しません。接ぎ木しないまま決着したボリューム（孤児・ロード失敗・接ぎ木失敗）はマウントの枠を返します。ロード中やルート待ちのあいだに外れたボリュームも枠を返します。そうしたボリュームは、同じ root へ付け直したときはその場で、それ以外は接ぎ木の直前に枠を取り直し、枠が空いていれば従来どおり（外れたままでも）接ぎ木します。外れている間に別のボリュームが枠を取っていた場合は、それを報告して接ぎ木しません。ボリュームの `$connectedCallback` が同期で投げた場合も非同期の失敗と同じく報告に留まり、接ぎ木は済んだものとして扱います。ページを読み直さずに復旧するには、壊れたルートと孤児のボリュームを取り除いて新しい要素を追加してください。接ぎ木済みのボリュームは、外してもデータがツリーに残るので枠を握ったままです。マウントパスは静的パスのみです（`*`・`$`・`#`・`@` は不可）。初期化後に `mount` 属性を変更することはできません — 変更は console 警告付きで無視されます。要素を取り除き、望むパスで新しい要素を追加してください。
 
+**スコープごとに動くもの**（3.0 で 1 つの表にしました — 要件 B11。ここに無言で無視されるものはありません）:
+
+| 宣言 | ルートの `<wcs-state>` | ボリューム `<wcs-state mount="p">` | マウントされたコンポーネント（`state: …` 付きの `bind-component`） |
+|---|---|---|---|
+| データキー・getter・setter・メソッド | 動く | 動く（`p` 相対） | 動く — 自前のキーはホストがマップしない限り私有、getter は公開される |
+| `$connectedCallback` / `$disconnectedCallback` | 動く | 動く（`p` 相対） | 動く |
+| `$watch`・`$listKeys`・`$updatedCallback` | 動く | 動く（`p` 相対） | 動かない — `wcs/mount-dollar-declaration` を 1 回警告 |
+| `$streams`・`$scan`・`$recursion`・`**` の getter | 動く | 接ぎ木の前にエラーで拒否 | 動かない — 警告 |
+| `$commandTokens`・`$eventTokens`・`$on` | 動く | 動かない — 警告 | 動かない — 警告 |
+| `$errorCallback` | 動く | 動かない — 警告（3.0 より前は無言） | 動かない — 警告（3.0 より前は無言） |
+| 初期化の失敗 | 1 回報告し、`connectedCallbackPromise` を reject | 接ぎ木せずに決着して枠を返す。`connectedCallbackPromise` は resolve（`scopes` 機能が無いときは reject） | 1 回報告し、コンポーネントの `connectedCallbackPromise` を reject |
+
+マウントされていないコンポーネント（自前の `<wcs-state>` を持つ素の Shadow DOM の子）はそれ自体がルートで、1 列目のすべてが動きます。
+
 > **v1 の名前付き状態からの移行:** `<wcs-state name="cart">` + `total@cart` は `<wcs-state mount="cart">` + `cart.total` になります。v2 では `name` 属性は fail-fast し、パス中の `@` は parse error です（どちらもこの誘導文付き）。移行の対応表: [docs/state-mount-design.md](../../docs/state-mount-design.md) §9。
 
 ## 状態の更新
@@ -346,6 +411,8 @@ property[#modifier]: path[|filter[|filter(args)...]]
 <div data-wcs="textContent: count; class.over: count|gt(10)"></div>
 ```
 
+区切りの `;` と `|` は引用符の外でだけ区切るので（3.0）、引用符付きのフィルタ引数に含められます: `textContent: tags|join('; ')`、`title: parts|join(' | ')`。3.0 より前はどちらも束縛が壊れていました。
+
 | 要素 | 説明 | 例 |
 |---|---|---|
 | `property` | バインドする DOM プロパティ | `value`, `textContent`, `checked` |
@@ -369,8 +436,6 @@ property[#modifier]: path[|filter[|filter(args)...]]
 | `checkbox` | チェックボックスグループの配列バインディング（双方向） |
 | `onclick`, `on*` | イベントハンドラバインディング |
 
-`undefined` は書き込みをスキップします。要素は表示していたものを保ち、再利用されたリスト行では**前の行の**テキストが残ります。「値なし」は `""` か `null` を返してください（3.0 は表示のプロパティへの `undefined` を空にします — [3.0 への準備](#30-への準備wcsv3-migration)）。
-
 ### 修飾子
 
 | 修飾子 | 説明 |
@@ -383,6 +448,10 @@ property[#modifier]: path[|filter[|filter(args)...]]
 | `#sync=<timing>` | 要素スナップショットの読み取りタイミング — [バインディング authority](#バインディング-authority-init--sync) 参照 |
 
 複数の修飾子は 1 つの `#` の後にカンマ区切りで書きます: `value#ro,init=none: path`
+
+修飾子は束縛の種別を変えません: `radio#ro:` と `checkbox#ro:` は radio / checkbox の束縛のままです（3.0）。3.0 より前は修飾子を付けると `radio` という名前の素のプロパティ束縛になり、radio グループの `#ro` が効いていませんでした。
+
+3.0 からパーサは、以前黙って丸めていた書き方を `[wcs/binding-syntax]` で拒否します: 2 つ目の `#`（`value#ro#wo` は `ro` だけ残して後ろを捨てていた — `value#ro,wo` と書く）、`else:` の後ろの値（`else:` と書く）、`for` / `if` / `elseif` / `else` / `...` の左辺の修飾子やフィルタ、フィルタ引数の閉じていない引用符。
 
 ### 双方向バインディング
 
@@ -561,7 +630,7 @@ export default {
 <wcs-fetch data-wcs="...: usersFetch; status: alternateStatus"></wcs-fetch>
 ```
 
-**`undefined` は「無意見」** — 展開された state パスが `undefined` に解決される場合（slot オブジェクトでその input を初期化していない場合など）、プロパティ書き込みは**スキップ**され、要素側の既定値がそのまま生きます。実際に使うパスだけ初期化すれば十分で、`<wcs-fetch>` が `method` / `manual` / `body` を宣言していても `usersFetch: { value: null, loading: false }` だけで動きます。明示的にクリアしたい場合は `null` を代入してください（`null` は常に書き込まれます）。このスキップは spread に限らずすべてのプロパティバインディングに適用され、`config.debug` 時はスキップごとに `console.debug` でログが出ます。
+**`undefined` は「無意見」** — 展開された state パスが `undefined` に解決される場合（slot オブジェクトでその input を初期化していない場合など）、プロパティ書き込みは**スキップ**され、要素側の既定値がそのまま生きます。実際に使うパスだけ初期化すれば十分で、`<wcs-fetch>` が `method` / `manual` / `body` を宣言していても `usersFetch: { value: null, loading: false }` だけで動きます。明示的にクリアしたい場合は `null` を代入してください（`null` は常に書き込まれます）。**表示の表面は別です（3.0）:** `textContent` / `innerText` / `innerHTML`・mustache のテキスト・`attr.*`・`style.*` には生かすべき要素側の既定値が無いので、`undefined` も `null` も「値が無い」— テキストは空になり、属性やスタイルは削除されます。3.0 より前は `textContent:` も `undefined` をスキップしていたため使い回したリストの行に前の行の文字が残り、属性には文字列 `"undefined"` / `"null"` が入っていました。このスキップは spread に限らずすべてのプロパティバインディングに適用され、`config.debug` 時はスキップごとに `console.debug` でログが出ます。
 
 **制約事項**：
 
@@ -1027,7 +1096,7 @@ export default {
 
 - **`path` への書き込み** — オブジェクトを含むどんな値でも（`$eq("selected", this["items.*"])` に対する `this.selected = row`）: 選ばれていた行と、新たに選ばれる行。
 - **`path` より上のオブジェクトへの書き込み** — `$eq("sel.id", …)` に対する `this.sel = { id: 2 }`: 同じく 2 行。旧いオブジェクトの下と新しいオブジェクトの下で `path` が持つ値を鍵にします。
-- **`path` が getter か getter の配下**（`get current()` に対する `$eq("current.id", …)`）: 値が書き込みなしに変わるので、依存を張る普通の読み取りに戻ります。選択は正しく保たれますが、変化のたびに全行が再評価されます（鍵付きの形を使わないのと同じ）。2 行で済ませるには、`path` を書き込まれる state（`selectedId`）に向けてください。
+- **`path` が getter か getter の配下**（`get current()` に対する `$eq("current.id", …)`）: 値が書き込みなしに変わるので、依存を張る普通の読み取りに戻ります。選択は正しく保たれますが、変化のたびに全行が再評価されます（鍵付きの形を使わないのと同じ）。2 行で済ませるには、`path` を書き込まれる state（`selectedId`）に向けてください。`@wcstack/devtools` の State ペインは、path ごとの購読の数を **Keyed selection** に出し、この形に落ちた path には `tracked` バッジを付けます（3.0）。
 - **型変換はしません:** `"2"` は id `2` に一致しません。`<input>` や `<select>` は文字列を書くので、入口で変換する（`value|number: selectedId`）か、id を文字列で持ってください。
 
 ### ループインデックス変数（`$1`, `$2`, ...）
@@ -1159,7 +1228,7 @@ this.$setAll("users.*", [], rows, { spread: true });   // 配列を保ったま�
 
 #### `$resolve` — 明示的なインデックスでのアクセス
 
-`$resolve` は特定のワイルドカードインデックスの値を読み書きします：
+`$resolve` は特定のワイルドカードインデックスの値を読み書きします。**読みか書きかは引数の個数で決まります**（3.0）: `$resolve(path, indexes)` は読み、`$resolve(path, indexes, value)` は `value` の書き込みで、`undefined` も書きます（3.0 より前は第 3 引数が `undefined` なら読みでした）。readonly のプロキシでは、この書き込みは直接代入と同じく `This state is readonly.` で throw し、`$setAll` も同じです（3.0 より前はどちらも readonly のプロキシから書けていました）：
 
 ```javascript
 export default {
@@ -1422,8 +1491,6 @@ export default {
 | `gt(n)` | より大きい | `count\|gt(0)` |
 | `ge(n)` | 以上 | `count\|ge(0)` |
 
-`eq` / `ne` は数値の値を数値として、それ以外を引数の**文字列**と比べます。そのため 2.x では真偽値が `eq(true)` に一致することはなく、`done|eq(true)` は常に `false` です。真偽値そのものをバインドする（`class.done: .done`）か `not` を使ってください。3.0 は引用符の無い `true` / `false` / `null` を型付きの値として読みます（[3.0 への準備](#30-への準備wcsv3-migration)）。
-
 ### 算術
 
 | フィルタ | 説明 | 例 |
@@ -1489,8 +1556,8 @@ export default {
 
 | フィルタ | 説明 | 例 |
 |---|---|---|
-| `truthy` | truthy チェック | `value\|truthy` |
-| `falsy` | falsy チェック | `value\|falsy` |
+| `truthy` | truthy チェック — JavaScript の真偽判定そのもので `boolean` と同じ（3.0 から `0n` は偽） | `value\|truthy` |
+| `falsy` | falsy チェック（JavaScript の真偽判定。`defaults` も同じ判定を使う） | `value\|falsy` |
 | `defaults(v)` | フォールバック値 | `name\|defaults(Anonymous)` |
 
 ### フィルタチェーン
@@ -1500,6 +1567,10 @@ export default {
 ```html
 <div data-wcs="textContent: price|mul(1.1)|round(2)|locale(ja-JP)"></div>
 ```
+
+フィルタは束縛計画の段で解決されます。未知の名前は `[wcs/filter-unknown]`（did-you-mean 付き）で、3.0 からは受け付ける個数の外の引数も `[wcs/filter-arity]`（`join(a,b)`: "accepts at most 1 argument(s) (2 given)"）で落ちます — lint と同じコード・同じ範囲です。引数は構造のままキャッシュされるので、`join('a,b')` と `join(a)` を取り違えません。
+
+**引数のリテラルは型を持ちます（3.0）。** 引用符の無い `true` / `false` / `null` / 数値はその値、引用符付きの引数は文字列です。比較フィルタは真偽値と `null` の比較にこれを使います: `done|eq(true)` は `true` に一致し（3.0 より前は文字列 `"true"` と比べていて一致しなかった）、`eq('true')` は一致せず、`eq(null)` は `null` に一致します。数値と文字列の比べ方は変わりません — 数値の値は数と、文字列の値は原文と比べるので、フォームの値 `"1"` は今も `eq(1)` に一致します。`defaults(v)` は型付きの値を返します: `defaults(0)` は `0`、`defaults('0')` は `"0"`、`defaults(null)` は `null`。
 
 ## Web Component バインディング
 
@@ -1618,10 +1689,16 @@ customElements.define("user-card", UserCard);
 - 配列そのものをルートにマウントする形（`state: rows` ＋ 中で `for`）は非対応です。行をマウントする（`state: .`）か、配列を持つオブジェクトをマウントして中で `for` を回してください（`state: group` ＋ `for: children`）。どちらも契約テストで固定されており、マウントがツリー拡張の唯一の手段です
 
 > プロパティ単位の形（`state.message: user.name`）はそのまま動きます — 同じ機構の上の部分マウントです。
-> R1 はすべてのマウント形で厳格です — マップされるキーに既定値を
-> 宣言しているコンポーネント（`state = { message: "" }` ＋ `state.message: ...`）は自前のキーが
-> **私有**になり、ホストの値を隠します（1 回だけ `wcs/mount-own-key-shadow` が指します）。ツリーを
-> 読むには既定値を消してください。Light DOM のマウントに `name` は不要で、
+> **明示した部分マウントはコンポーネント自前のキーに勝ちます（3.0）:** マップされるキーに既定値を
+> 宣言しているコンポーネント（`state = { message: "" }` ＋ `state.message: ...`）もホストの値を読み、
+> 既定値は使われません（2.x では R1 によって自前のキーが私有になり、ホストの値を隠していました —
+> `wcs/mount-own-key-shadow` の警告付き）。マップしていない自前のキーは今も R1 で私有です。
+>
+> **マウントの `#ro` を尊重します（3.0）:** `state#ro: user` や `state.title#ro: doc.title` では、
+> コンポーネントはそのエントリを読めても書けません — `element.state.title = …`・メソッド内の
+> `this.title = …`・`$setAll` / `$resolve` の書き込みは `[wcs/mount-readonly]` で落ち、コンポーネント内の
+> 双方向束縛（`value: title`）は書き戻しません。ホストはそのパスに書けます（2.x は修飾子を受け付けて
+> 無視していました）。Light DOM のマウントに `name` は不要で、
 > `element.state`（および getter / メソッド内の `this`）の `$getAll` / `$setAll` / `$resolve` /
 > `$postUpdate` はコンポーネント自身の語彙で書けます — パスはマウント先へ翻訳され、ホスト行の
 > 添字は自動で前置されます。
@@ -2678,38 +2755,6 @@ this.$getAll("matrix.*.*", [row]);
 | 因果伝播の hop | 32 | その transaction の未処理レコードのみ quarantine |
 | `$watch` の書き込み連鎖 | 32 | そのバッチの watch 発火をスキップ |
 | バインディングの適用失敗 | — | その 1 本のみスキップ |
-
-### 3.0 への準備（`wcs/v3-migration`）
-
-3.0 は互換層を持ちません。代わりにこのリリースは、3.0 が拒否する書き方・読み方が変わる書き方を 2.x のまま動かしつつ名指しで知らせます。警告は書き方とサイトごとに 1 回だけ、コード `wcs/v3-migration` で出し、3.0 での扱いと今の書き換え先を示します：
-
-```
-[@wcstack/state] [wcs/v3-migration] "value#ro#wo": 3.0 rejects a second "#". Write "value#ro,wo".
-See "Preparing for 3.0" in the @wcstack/state README.
-```
-
-| 書き方 | 2.x | 3.0 | 今の書き方 |
-|---|---|---|---|
-| 2 つ目の `#`（`value#ro#wo:`） | 最初の修飾子列だけ残す | `[wcs/binding-syntax]` | `value#ro,wo:` |
-| `else:` の後ろの値 | 無視 | `[wcs/binding-syntax]` | `else:` |
-| `for` / `if` / `elseif` / `else` / `...` の修飾子・フィルタ | ただのプロパティのバインディングになる | `[wcs/binding-syntax]` | キーワードだけ |
-| `radio#ro:` / `checkbox#ro:` | `radio` という名前のプロパティになり効かない | 修飾子を守る radio / checkbox のバインディング | —（意図どおりか確かめる） |
-| フィルタ引数の閉じていない引用符 | 黙って閉じる | `[wcs/binding-syntax]` | 引用符を閉じる |
-| フィルタが受け取る数を超える引数 | 余りは無視 | `[wcs/filter-arity]` | 余りを消す |
-| `eq` / `ne` の引用符の無い `true` / `false` / `null`（`eq(true)`） | 真偽値・`null` の値を文字列と比べる | 型付きの値と比べる | 文字列で比べ続けるなら `eq('true')` |
-| `defaults` の引用符の無い `true` / `false` / `null` | 文字列（`"null"`）を既定値にする | 型付きの値を既定値にする | 文字列のままなら `defaults('null')` |
-| `truthy` / `falsy` / `defaults` に来た `0n` | 真 | 偽（JavaScript の真偽判定） | — |
-| `textContent` / `innerText` / `innerHTML` への `undefined` | 前のテキストを残す（使い回した行では前の行のもの） | 空にする | 「値なし」は `""` か `null` を返す |
-| `attr.*` への `undefined` / `null` | `"undefined"` / `"null"` を書く | 属性を削除する | — |
-| `style.*` への `undefined` | 前の値を残す | 消す | — |
-| `$resolve(path, indexes, undefined)` | 読む | `undefined` を書く（引数の個数で決める） | 読むなら `$resolve(path, indexes)` |
-| readonly のプロキシからの `$resolve(path, indexes, value)` / `$setAll` | 書く | `This state is readonly.` を投げる | `createState("writable", …)` から書く |
-| `#ro` のマウント（`state#ro: user`）を通るコンポーネントの書き込み | ホストのツリーに書く | `[wcs/mount-readonly]` | ホストで書くか、`#ro` を外す |
-| 部分マウントに隠された自前の既定値（コンポーネントが `name` を宣言し、`state.name: user.name`） | 既定値が勝つ（警告あり） | 明示したマウントが勝つ | 既定値を消す |
-
-もう 1 つは予告でなく先に入れています：ボリュームやマウントされたコンポーネントの `$errorCallback` は黙って無視していましたが、ルート専用のキー（`$commandTokens`、`$on` など）を挙げる既存の警告で名指しするようにしました（3.0 と同じ）。動くのは今もルートの state だけです。
-
-値の警告はその値が実際に来たときにだけ出ます。コンソールが静かでも、テストが通らなかった経路については何も分かりません。文法の行はバインディングを最初に解析したときに調べます。`npx @wcstack/lint <file>`（と VS Code 拡張）も同じ判定で `wcs/v3-migration`（info）として報告するので、ページを動かさずに見つけられます。
 
 ## 設定
 

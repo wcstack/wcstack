@@ -37,7 +37,11 @@ import { IStateElement } from "../components/types";
 import { DELIMITER, WILDCARD } from "../define";
 import { raiseError } from "../raiseError";
 import { IStateProxy } from "../proxy/types";
-import { addVolumeUpdatedCallback, createVolumeChroot, IPendingVolumeRequest, IVolumeUpdatedCallback, queuePendingVolume, recordGraftedSlot, setVolumeGraftHandler } from "./volumeShared";
+import { addVolumeUpdatedCallback, createVolumeChroot, drainPendingVolumes, hasReservedVolumeSlots, IPendingVolumeRequest, IVolumeUpdatedCallback, queuePendingVolume, recordGraftedSlot, setVolumeGraftHandler } from "./volumeShared";
+import { onStateElementRegistered } from "../stateElementByName";
+import { installScopeHooks } from "./addressHooks";
+import { installVolumeLifecycle } from "./volumeLifecycle";
+import { installBindComponentLifecycle } from "./bindComponentLifecycle";
 
 export { clearFailedRootNode, createVolumeChroot, drainPendingVolumes, failPendingVolumes, getVolumeUpdatedCallbacks, isPathUnderReservedVolume, releaseVolumeSlot, reserveVolumeSlot } from "./volumeShared";
 export type { IVolumeUpdatedCallback } from "./volumeShared";
@@ -240,8 +244,8 @@ function processVolumeDeclarations(
   }
 
   // $commandTokens / $eventTokens / $on も未対応（トークンはパスではなく要素の面 —
-  // ルートに宣言する）。無言に捨てないが、接ぎ木自体は成立させる（warn 止まり）
-  // $errorCallback もルート専用（以前は無言で無視していた — 3.0 と同じく名指しで知らせる）
+  // ルートに宣言する）。$errorCallback もルート専用（要件 B11 — 以前は無言で無視していた）。
+  // 無言に捨てないが、接ぎ木自体は成立させる（warn 止まり）
   for (const name of ["$commandTokens", "$eventTokens", "$on", "$errorCallback"]) {
     if (typeof (volumeState as Record<string, unknown>)[name] !== "undefined") {
       console.warn(
@@ -420,6 +424,18 @@ let volumeGraftInstalled = false;
 export function installVolumeGraft(): void {
   if (volumeGraftInstalled) return;
   volumeGraftInstalled = true;
+  installScopeHooks();
+  installVolumeLifecycle();
+  installBindComponentLifecycle();
   setVolumeGraftHandler(graftIsolated);
+  onStateElementRegistered(adoptVolumesOnRootRegistered);
+}
+
+// ルートの登録: 先に予約されたボリュームがあればスコープ機能の hook を付け、保留中の接ぎ木を引き取る
+function adoptVolumesOnRootRegistered(rootNode: Node, element: IStateElement): void {
+  if (hasReservedVolumeSlots(rootNode)) {
+    element.markHasVolume?.();
+  }
+  drainPendingVolumes(rootNode, element);
 }
 

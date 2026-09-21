@@ -1,0 +1,503 @@
+{
+  "revision": "6bff9f2cf8c4915c93dceb9c40b56e376eb06119",
+  "timestamp": "2026-09-20T12:48:55.214Z",
+  "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+  "samples": 5,
+  "categories": [
+    "blink",
+    "disabled-by-default-devtools.timeline.stack",
+    "disabled-by-default-devtools.timeline.invalidationTracking"
+  ],
+  "bundle": "dist/auto.min.js (checked in)",
+  "rows": 10000,
+  "results": [
+    {
+      "sample": 0,
+      "createMs": 395.9,
+      "clearMs": 22.4,
+      "traceEvents": 14370,
+      "create": {
+        "layout": {
+          "count": 0,
+          "events": []
+        },
+        "summary": {
+          "windowMs": 396.3,
+          "layoutMs": 0,
+          "gcMs": 42.4,
+          "scriptMs": 346.8,
+          "counts": {
+            "Layout": 0,
+            "UpdateLayoutTree": 0,
+            "gc": 383
+          },
+          "top": {
+            "FunctionCall": 324.2,
+            "v8.callFunction": 22.5,
+            "V8.GC_SCAVENGER_SCAVENGE_PARALLEL_PHASE": 7.8,
+            "V8.GC_SCAVENGER_SCAVENGE_PARALLEL": 5.6,
+            "V8.GC_SCAVENGER_SCAVENGE": 5.6,
+            "V8.GC_SCAVENGER_SCAVENGE_FINALIZE": 5.5,
+            "V8.GC_MC_CLEAR_WEAK_COLLECTIONS": 4.9,
+            "V8.HandleInterrupts": 2.2,
+            "V8.GCMarkTransitiveClosureFixpoint": 2.1,
+            "V8.GC_MC_INCREMENTAL_EMBEDDER_TRACING": 1.9,
+            "LiveObjectVisitor::VisitMarkedObjectsNoFail": 1.8,
+            "V8.GCReachTransitiveClosureWithEmbedder": 1.7,
+            "V8.GC_SCAVENGER_SCAVENGE_ROOTS": 0.9,
+            "RememberedSetUpdatingItem::Process": 0.8
+          }
+        },
+        "blinkEvents": 6,
+        "blinkTopByTotal": [
+          {
+            "name": "AsyncTask Run",
+            "totalMs": 8.7,
+            "count": 2
+          },
+          {
+            "name": "HTMLDocumentParser::~HTMLDocumentParser",
+            "totalMs": 0,
+            "count": 2
+          },
+          {
+            "name": "AsyncTask Scheduled",
+            "totalMs": 0,
+            "count": 2
+          }
+        ]
+      },
+      "clear": {
+        "layout": {
+          "count": 0,
+          "events": []
+        },
+        "summary": {
+          "windowMs": 22.5,
+          "layoutMs": 0,
+          "gcMs": 0,
+          "scriptMs": 20.6,
+          "counts": {
+            "Layout": 0,
+            "UpdateLayoutTree": 0,
+            "gc": 0
+          },
+          "top": {
+            "FunctionCall": 20.6,
+            "V8.HandleInterrupts": 0.3,
+            "V8.BytecodeBudgetInterrupt": 0.1,
+            "V8.BytecodeBudgetInterruptWithStackCheck": 0.1,
+            "V8.DeoptimizeCode": 0,
+            "EventDispatch": 0,
+            "v8.callFunction": 0,
+            "V8.StackGuard": 0,
+            "AsyncTask Run": 0,
+            "AsyncTask Scheduled": 0
+          }
+        },
+        "blinkEvents": 4,
+        "blinkTopByTotal": [
+          {
+            "name": "AsyncTask Run",
+            "totalMs": 1.9,
+            "count": 2
+          },
+          {
+            "name": "AsyncTask Scheduled",
+            "totalMs": 0,
+            "count": 2
+          }
+        ]
+      }
+    },
+    {
+      "sample": 1,
+      "createMs": 589.8,
+      "clearMs": 71.6,
+      "traceEvents": 13977,
+      "create": {
+        "layout": {
+          "count": 0,
+          "events": []
+        },
+        "summary": {
+          "windowMs": 590.3,
+          "layoutMs": 0,
+          "gcMs": 50.6,
+          "scriptMs": 532.1,
+          "counts": {
+            "Layout": 0,
+            "UpdateLayoutTree": 0,
+            "gc": 387
+          },
+          "top": {
+            "FunctionCall": 499.9,
+            "v8.callFunction": 32,
+            "V8.GC_SCAVENGER_SCAVENGE": 11.5,
+            "V8.GC_SCAVENGER_SCAVENGE_PARALLEL": 10.9,
+            "V8.GC_SCAVENGER_SCAVENGE_FINALIZE": 5.8,
+            "V8.GC_SCAVENGER_SCAVENGE_PARALLEL_PHASE": 5.5,
+            "V8.GC_MC_CLEAR_WEAK_COLLECTIONS": 3.9,
+            "V8.HandleInterrupts": 2.9,
+            "V8.GC_SCAVENGER_SCAVENGE_ROOTS": 1.5,
+            "V8.GCReachTransitiveClosureWithEmbedder": 1.5,
+            "V8.GC_MC_SWEEP": 1.5,
+            "MinorGC": 1,
+            "FullEvacuator::RawEvacuatePage": 0.9,
+            "V8.GC_MC_INCREMENTAL_EMBEDDER_TRACING": 0.8
+          }
+        },
+        "blinkEvents": 5,
+        "blinkTopByTotal": [
+          {
+            "name": "AsyncTask Run",
+            "totalMs": 8.7,
+            "count": 2
+          },
+          {
+            "name": "AsyncTask Scheduled",
+            "totalMs": 0,
+            "count": 3
+          }
+        ]
+      },
+      "clear": {
+        "layout": {
+          "count": 0,
+          "events": []
+        },
+        "summary": {
+          "windowMs": 71.7,
+          "layoutMs": 0,
+          "gcMs": 34.9,
+          "scriptMs": 33.5,
+          "counts": {
+            "Layout": 0,
+            "UpdateLayoutTree": 0,
+            "gc": 22
+          },
+          "top": {
+            "FunctionCall": 33.4,
+            "V8.GC_SCAVENGER_SCAVENGE": 20.3,
+            "V8.GC_SCAVENGER_SCAVENGE_FINALIZE": 6.7,
+            "V8.GC_SCAVENGER_SCAVENGE_PARALLEL_PHASE": 5.5,
+            "V8.GC_SCAVENGER_SCAVENGE_ROOTS": 1.4,
+            "V8.HandleInterrupts": 0.5,
+            "V8.GC_SCAVENGER_TRACED_HANDLES_RESET_PARALLEL": 0.4,
+            "V8.GC_SCAVENGER_TRACED_HANDLES_COMPUTE_WEAKNESS_PARALLEL": 0.3,
+            "V8.BytecodeBudgetInterrupt": 0.2,
+            "V8.GC_SCAVENGER_FREE_REMEMBERED_SET": 0.1,
+            "MinorGC": 0.1,
+            "V8.StackGuard": 0.1,
+            "V8.BytecodeBudgetInterruptWithStackCheck": 0.1,
+            "V8.DeoptimizeCode": 0.1
+          }
+        },
+        "blinkEvents": 4,
+        "blinkTopByTotal": [
+          {
+            "name": "AsyncTask Run",
+            "totalMs": 2.8,
+            "count": 2
+          },
+          {
+            "name": "AsyncTask Scheduled",
+            "totalMs": 0,
+            "count": 2
+          }
+        ]
+      }
+    },
+    {
+      "sample": 2,
+      "createMs": 501.8,
+      "clearMs": 46.3,
+      "traceEvents": 14192,
+      "create": {
+        "layout": {
+          "count": 0,
+          "events": []
+        },
+        "summary": {
+          "windowMs": 502.3,
+          "layoutMs": 0,
+          "gcMs": 47.1,
+          "scriptMs": 443.8,
+          "counts": {
+            "Layout": 0,
+            "UpdateLayoutTree": 0,
+            "gc": 413
+          },
+          "top": {
+            "FunctionCall": 407.5,
+            "v8.callFunction": 36.1,
+            "V8.GC_SCAVENGER_SCAVENGE_PARALLEL": 10.1,
+            "V8.GC_SCAVENGER_SCAVENGE": 9.2,
+            "V8.GC_SCAVENGER_SCAVENGE_PARALLEL_PHASE": 6.5,
+            "V8.GC_SCAVENGER_SCAVENGE_FINALIZE": 5.4,
+            "V8.GC_MC_CLEAR_WEAK_COLLECTIONS": 3.7,
+            "LiveObjectVisitor::VisitMarkedObjectsNoFail": 3.4,
+            "V8.HandleInterrupts": 3,
+            "V8.GCReachTransitiveClosureWithEmbedder": 2,
+            "V8.GC_MC_INCREMENTAL_EMBEDDER_TRACING": 1.4,
+            "V8.GC_SCAVENGER_SCAVENGE_ROOTS": 1.2,
+            "MinorGC": 1.1,
+            "V8.BytecodeBudgetInterrupt": 1
+          }
+        },
+        "blinkEvents": 5,
+        "blinkTopByTotal": [
+          {
+            "name": "AsyncTask Run",
+            "totalMs": 9,
+            "count": 2
+          },
+          {
+            "name": "AsyncTask Scheduled",
+            "totalMs": 0,
+            "count": 3
+          }
+        ]
+      },
+      "clear": {
+        "layout": {
+          "count": 0,
+          "events": []
+        },
+        "summary": {
+          "windowMs": 46.3,
+          "layoutMs": 0,
+          "gcMs": 22,
+          "scriptMs": 21.7,
+          "counts": {
+            "Layout": 0,
+            "UpdateLayoutTree": 0,
+            "gc": 23
+          },
+          "top": {
+            "FunctionCall": 21.7,
+            "V8.GC_SCAVENGER_SCAVENGE": 11.7,
+            "V8.GC_SCAVENGER_SCAVENGE_FINALIZE": 4.5,
+            "V8.GC_SCAVENGER_SCAVENGE_PARALLEL_PHASE": 4.2,
+            "V8.GC_SCAVENGER_SCAVENGE_ROOTS": 0.8,
+            "V8.HandleInterrupts": 0.3,
+            "V8.GC_SCAVENGER_TRACED_HANDLES_RESET_PARALLEL": 0.3,
+            "V8.GC_SCAVENGER_TRACED_HANDLES_COMPUTE_WEAKNESS_PARALLEL": 0.2,
+            "V8.GC_SCAVENGER_FREE_REMEMBERED_SET": 0.1,
+            "V8.BytecodeBudgetInterrupt": 0.1,
+            "MinorGC": 0.1,
+            "V8.BytecodeBudgetInterruptWithStackCheck": 0,
+            "V8.StackGuard": 0,
+            "V8.DeoptimizeCode": 0
+          }
+        },
+        "blinkEvents": 5,
+        "blinkTopByTotal": [
+          {
+            "name": "AsyncTask Run",
+            "totalMs": 1.9,
+            "count": 2
+          },
+          {
+            "name": "AsyncTask Scheduled",
+            "totalMs": 0,
+            "count": 3
+          }
+        ]
+      }
+    },
+    {
+      "sample": 3,
+      "createMs": 631,
+      "clearMs": 33.6,
+      "traceEvents": 14610,
+      "create": {
+        "layout": {
+          "count": 0,
+          "events": []
+        },
+        "summary": {
+          "windowMs": 631.4,
+          "layoutMs": 0,
+          "gcMs": 83,
+          "scriptMs": 539.8,
+          "counts": {
+            "Layout": 0,
+            "UpdateLayoutTree": 0,
+            "gc": 414
+          },
+          "top": {
+            "FunctionCall": 505.7,
+            "v8.callFunction": 33.9,
+            "V8.GC_SCAVENGER_SCAVENGE": 29.9,
+            "V8.GC_SCAVENGER_SCAVENGE_PARALLEL_PHASE": 13,
+            "V8.GC_SCAVENGER_SCAVENGE_PARALLEL": 11.6,
+            "V8.GC_SCAVENGER_SCAVENGE_FINALIZE": 10.7,
+            "V8.HandleInterrupts": 3.3,
+            "V8.GC_MC_CLEAR_WEAK_COLLECTIONS": 3.1,
+            "V8.GC_SCAVENGER_SCAVENGE_ROOTS": 2.8,
+            "V8.GCReachTransitiveClosureWithEmbedder": 1.7,
+            "V8.GCMarkTransitiveClosureFixpoint": 1.3,
+            "LiveObjectVisitor::VisitMarkedObjectsNoFail": 1.1,
+            "MinorGC": 1.1,
+            "V8.GC_SCAVENGER_TRACED_HANDLES_RESET_PARALLEL": 1
+          }
+        },
+        "blinkEvents": 5,
+        "blinkTopByTotal": [
+          {
+            "name": "AsyncTask Run",
+            "totalMs": 42.8,
+            "count": 2
+          },
+          {
+            "name": "AsyncTask Scheduled",
+            "totalMs": 0,
+            "count": 3
+          }
+        ]
+      },
+      "clear": {
+        "layout": {
+          "count": 0,
+          "events": []
+        },
+        "summary": {
+          "windowMs": 33.6,
+          "layoutMs": 0,
+          "gcMs": 0,
+          "scriptMs": 30.5,
+          "counts": {
+            "Layout": 0,
+            "UpdateLayoutTree": 0,
+            "gc": 0
+          },
+          "top": {
+            "FunctionCall": 30.4,
+            "V8.HandleInterrupts": 0.4,
+            "V8.BytecodeBudgetInterrupt": 0.1,
+            "V8.BytecodeBudgetInterruptWithStackCheck": 0.1,
+            "V8.StackGuard": 0.1,
+            "V8.DeoptimizeCode": 0.1,
+            "v8.callFunction": 0,
+            "EventDispatch": 0,
+            "AsyncTask Run": 0,
+            "AsyncTask Scheduled": 0
+          }
+        },
+        "blinkEvents": 5,
+        "blinkTopByTotal": [
+          {
+            "name": "AsyncTask Run",
+            "totalMs": 2.9,
+            "count": 2
+          },
+          {
+            "name": "AsyncTask Scheduled",
+            "totalMs": 0,
+            "count": 3
+          }
+        ]
+      }
+    },
+    {
+      "sample": 4,
+      "createMs": 501,
+      "clearMs": 49,
+      "traceEvents": 13995,
+      "create": {
+        "layout": {
+          "count": 0,
+          "events": []
+        },
+        "summary": {
+          "windowMs": 501.4,
+          "layoutMs": 0,
+          "gcMs": 46.6,
+          "scriptMs": 446.4,
+          "counts": {
+            "Layout": 0,
+            "UpdateLayoutTree": 0,
+            "gc": 402
+          },
+          "top": {
+            "FunctionCall": 413.5,
+            "v8.callFunction": 32.7,
+            "V8.GC_SCAVENGER_SCAVENGE_PARALLEL": 13.7,
+            "V8.GC_SCAVENGER_SCAVENGE": 10.7,
+            "V8.GC_SCAVENGER_SCAVENGE_FINALIZE": 5.1,
+            "V8.GC_MC_CLEAR_WEAK_COLLECTIONS": 3.2,
+            "V8.HandleInterrupts": 2.9,
+            "V8.GC_SCAVENGER_SCAVENGE_PARALLEL_PHASE": 2.6,
+            "V8.GC_SCAVENGER_SCAVENGE_ROOTS": 1.5,
+            "LiveObjectVisitor::VisitMarkedObjectsNoFail": 1.5,
+            "V8.GC_MC_INCREMENTAL_EMBEDDER_TRACING": 1.2,
+            "V8.BytecodeBudgetInterrupt": 1.2,
+            "MinorGC": 1.1,
+            "V8.GCReachTransitiveClosureWithEmbedder": 0.8
+          }
+        },
+        "blinkEvents": 5,
+        "blinkTopByTotal": [
+          {
+            "name": "AsyncTask Run",
+            "totalMs": 8,
+            "count": 2
+          },
+          {
+            "name": "AsyncTask Scheduled",
+            "totalMs": 0,
+            "count": 3
+          }
+        ]
+      },
+      "clear": {
+        "layout": {
+          "count": 0,
+          "events": []
+        },
+        "summary": {
+          "windowMs": 49.1,
+          "layoutMs": 0,
+          "gcMs": 23.2,
+          "scriptMs": 23.6,
+          "counts": {
+            "Layout": 0,
+            "UpdateLayoutTree": 0,
+            "gc": 23
+          },
+          "top": {
+            "FunctionCall": 23.5,
+            "V8.GC_SCAVENGER_SCAVENGE": 13.1,
+            "V8.GC_SCAVENGER_SCAVENGE_FINALIZE": 4.1,
+            "V8.GC_SCAVENGER_SCAVENGE_PARALLEL": 4,
+            "V8.GC_SCAVENGER_SCAVENGE_ROOTS": 0.9,
+            "V8.GC_SCAVENGER_TRACED_HANDLES_COMPUTE_WEAKNESS_PARALLEL": 0.4,
+            "V8.GC_SCAVENGER_TRACED_HANDLES_RESET_PARALLEL": 0.3,
+            "V8.HandleInterrupts": 0.3,
+            "V8.BytecodeBudgetInterrupt": 0.1,
+            "V8.GC_SCAVENGER_SCAVENGE_PARALLEL_PHASE": 0.1,
+            "V8.GC_SCAVENGER_FREE_REMEMBERED_SET": 0.1,
+            "MinorGC": 0.1,
+            "EventDispatch": 0.1,
+            "V8.BytecodeBudgetInterruptWithStackCheck": 0.1
+          }
+        },
+        "blinkEvents": 4,
+        "blinkTopByTotal": [
+          {
+            "name": "AsyncTask Run",
+            "totalMs": 1.9,
+            "count": 2
+          },
+          {
+            "name": "AsyncTask Scheduled",
+            "totalMs": 0,
+            "count": 2
+          }
+        ]
+      }
+    }
+  ],
+  "browser": "149.0.7827.55"
+}

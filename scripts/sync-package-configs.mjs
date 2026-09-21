@@ -26,7 +26,7 @@ const DEVIATIONS = {
     notification: "extra Service Worker bundle entry (src/sw.ts) alongside the standard three outputs",
     router: "imports @rollup/plugin-json (inlines package.json), package-specific build shape",
     server: "imports @rollup/plugin-json, package-specific build shape",
-    state: "imports @rollup/plugin-json (inlines package.json), package-specific build shape",
+    state: "imports @rollup/plugin-json (inlines package.json), minifies the named entry (requirement N1), builds the split entries — package-specific build shape",
     signals: "no src/auto bootstrap (design decision G2); lazy typescript plugin instantiation",
     typescript: "node CLI package (wcs-schema / wcs-tsc bins), no src/auto bootstrap; extra bin entries and node built-ins external",
     testing: "vitest/node test-helper library, no src/auto bootstrap; peers (@wcstack/state, @wcstack/server, happy-dom) and node built-ins external",

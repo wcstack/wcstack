@@ -5,6 +5,8 @@ import { IAbsoluteStateAddress, ITreePath, IPathInfo } from '../src/address/type
 import { IStateHandler } from '../src/proxy/types';
 import { IListIndex } from '../src/list/types';
 import { addVolumeUpdatedCallback } from '../src/webComponent/volumeShared';
+import { createAttachedHooksFrom } from '../src/core/addressHooks';
+import { scopeAddressHooks } from '../src/webComponent/addressHooks';
 
 function createPathInfo(path: string, wildcardCount = 0): IPathInfo {
   const segments = path.split('.');
@@ -360,6 +362,7 @@ describe('proxy/apis/updatedCallback マーカーパスの非漏出（D20/D21）
     const handler = { stateElement } as IStateHandler;
     const volumeCallback = vi.fn();
     addVolumeUpdatedCallback(stateElement as any, { mountPath: 'vol', callback: volumeCallback });
+    (stateElement as any).addressHooks = createAttachedHooksFrom(scopeAddressHooks);
     const target = {};
     const receiver = {};
     const refs: IAbsoluteStateAddress[] = [

@@ -21,6 +21,7 @@ import { recursionAnchorMismatchMessage, setAllValueKindMessage } from "../pathD
 import { setByAddress } from "../proxy/methods/setByAddress";
 import { IStateHandler } from "../proxy/types";
 import { raiseError } from "../raiseError";
+import { assertWritable } from "../proxy/assertWritable";
 import { foldSuffixIndexes, isStructuralSuffix, splitRecursivePath } from "./expand";
 import { IRecursionSpec } from "./types";
 import { collectRecursiveAddresses } from "./walk";
@@ -52,6 +53,7 @@ export function setAllRecursive(
   value: any,
   options: { readonly spread?: boolean } | undefined,
 ): number {
+  assertWritable(handler);
   // 呼び出し元（setAll.ts）は `hasRecursion === true` をゲートにしているので必ずある。
   const registry = handler.stateElement.recursionRegistry!;
   const suffix = splitRecursivePath(registry.spec, path);

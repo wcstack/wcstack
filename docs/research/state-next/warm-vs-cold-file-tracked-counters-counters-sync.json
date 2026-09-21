@@ -1,0 +1,45 @@
+{
+  "revision": "6bff9f2cf8c4915c93dceb9c40b56e376eb06119",
+  "timestamp": "2026-09-20T11:21:31.141Z",
+  "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+  "samples": 6,
+  "bundle": "index.instrumented.js",
+  "fixture": "tracked",
+  "sequence": "counters",
+  "method": "counters",
+  "setup": "sync",
+  "gcBefore": false,
+  "results": [
+    {
+      "op": "clear10k",
+      "note": "timed clear of 11,000 rows after create 1k → clear → create 10k → append 1k",
+      "cold": {
+        "median": 79.35,
+        "min": 25.2,
+        "max": 83.9,
+        "samples": [
+          25.2,
+          80.7,
+          78,
+          83.9,
+          77.4,
+          82.3
+        ]
+      },
+      "warm": {
+        "median": 82.7,
+        "min": 53.4,
+        "max": 122.4,
+        "samples": [
+          59.5,
+          53.4,
+          87.5,
+          77.9,
+          122.4,
+          89.9
+        ]
+      }
+    }
+  ],
+  "browser": "149.0.7827.55"
+}

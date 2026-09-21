@@ -10,7 +10,7 @@ import { getStateElement } from "../src/stateElementByName";
 import { countKeyedSubscriptions, dropKeyedSubscriptionsByListIndex, hasKeyedDescendants, keyedDependents, keyedDescendantDependents, rekeyIndexSubscriptions } from "../src/dependency/keyedDependency";
 import { setConfig } from "../src/config";
 import { createListIndex } from "../src/list/createListIndex";
-import { buildSsrDocument } from "../src/buildSsrDocument";
+import { buildSsrDocument } from "../src/ssr/buildSsrDocument";
 
 beforeAll(() => {
   bootstrapState();

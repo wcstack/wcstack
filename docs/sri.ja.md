@@ -130,6 +130,31 @@ node -e "const s=require('fs').readFileSync('packages/state/dist/auto.min.js','u
 
 全ブラウザで確実に守りたいなら、named import ではなく `dist/auto.min.js` の 1 タグ形式を使うのが最も確実。
 
+### 5.1 `@wcstack/state` の分割エントリ
+
+`@wcstack/state/core` と各 `@wcstack/state/features/*` は named import であり、共有の core チャンクも
+一緒に読み込む。したがって §5 と同じ扱いで、覆えるのは import map の `integrity` だけ。ダイジェストは
+URL ごとに要る — エントリ・各機能・`dist/split/chunks/` の各チャンク。
+
+```html
+<script type="importmap" nonce="{RANDOM}">
+{
+  "imports": {
+    "@wcstack/state/core": "https://cdn.jsdelivr.net/npm/@wcstack/state@3.0.0/dist/split/core.js",
+    "@wcstack/state/features/temporal": "https://cdn.jsdelivr.net/npm/@wcstack/state@3.0.0/dist/split/features/temporal.js"
+  },
+  "integrity": {
+    "https://cdn.jsdelivr.net/npm/@wcstack/state@3.0.0/dist/split/core.js": "sha384-…",
+    "https://cdn.jsdelivr.net/npm/@wcstack/state@3.0.0/dist/split/features/temporal.js": "sha384-…",
+    "https://cdn.jsdelivr.net/npm/@wcstack/state@3.0.0/dist/split/chunks/binder.js": "sha384-…"
+  }
+}
+</script>
+```
+
+チャンクのファイル名にハッシュは付けない。ダイジェストはビルドではなく固定したバージョンに紐づく。
+全ブラウザで守りたいページは単一タグの `dist/auto.min.js` を使う — 分割エントリはそれを置き換えない。
+
 ## 6. 実装者向け — 壊してはいけない不変条件
 
 1. `src/auto.ts` は `./exports` からのみ import する。兄弟の dist ファイルを相対 import してはならない（MUST NOT）。それをやると `auto.min.js` が再びスタブに戻り、integrity のカバー率がほぼゼロになる。**「integrity が付いているのに守られていない」は integrity が無いより悪い**

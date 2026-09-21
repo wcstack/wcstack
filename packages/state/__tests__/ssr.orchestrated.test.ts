@@ -6,7 +6,7 @@ import {
   buildSsrDocument,
   registerSsrSnapshotBuilder,
   _unregisterSsrSnapshotBuilder,
-} from "../src/buildSsrDocument";
+} from "../src/ssr/buildSsrDocument";
 import { getSsrSnapshotBuilder, SSR_SNAPSHOT_BUILDER_KEY } from "../src/protocol/ssrSnapshot";
 
 // ssr-snapshot プロトコル（docs/ssr-router-design.md §5）:

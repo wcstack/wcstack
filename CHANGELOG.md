@@ -2,11 +2,62 @@
 
 All notable changes to the wcstack packages are documented here. All published `@wcstack/*` packages and the `wcstack` entry package share one version and are released in lockstep; a release bumps every package whether or not it changed. The VS Code extension (`packages/vscode-wcs`) is versioned separately and keeps [its own changelog](./packages/vscode-wcs/CHANGELOG.md).
 
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). What counts as a breaking change is defined in the root README under [Versioning and breaking changes](./README.md#versioning-and-breaking-changes). Upgrading from 1.x: read the [v1 → v2 migration guide](./docs/migration-v2.md) first.
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). What counts as a breaking change is defined in the root README under [Versioning and breaking changes](./README.md#versioning-and-breaking-changes). Upgrading from 2.x: read the [v2 → v3 migration guide](./docs/migration-v3.md) first; from 1.x, the [v1 → v2 migration guide](./docs/migration-v2.md).
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
 ## [Unreleased]
+
+**3.0 reads a binding as written, or refuses it by name — and the core of `@wcstack/state` is split from its features.** The changes are in `@wcstack/state` and its tooling; every other package moves to 3.0.0 only to keep the lockstep version. There is no compatibility layer: 2.6 announced every form that changes here as `wcs/v3-migration`, so upgrade to 2.6.1, clear those warnings, then move to 3.0. Migration: [docs/migration-v3.md](./docs/migration-v3.md).
+
+### Added
+
+- `@wcstack/state`: **split entries.** `@wcstack/state/core` holds the binding engine; `@wcstack/state/features/{temporal,scopes,recursion,ssr,formats,devtools,diagnostics}` add `$watch` / `$scan` / `$streams`, `bind-component` / `mount=` / DCC, `$recursion`, SSR, the formatting filters, the DevTools source and the development-time path warnings, installed with `installFeatures([...])`. Every entry shares one core chunk. A declaration whose feature is missing throws `[wcs/feature-not-installed]`, naming the entry to import. `@wcstack/state/define` gives `defineState` and the types with no runtime. `@wcstack/state` and `/auto` still install every feature, so existing pages load and behave as before. Load the split form from jsDelivr's plain `/npm/` paths or through a bundler, never through `esm.run` (each entry would carry its own engine); integrity for it is in [docs/sri.md §5.1](./docs/sri.md#51-the-split-entries-of-wcstackstate).
+- `@wcstack/state` / `@wcstack/devtools`: keyed subscriptions are visible in DevTools. The hook source gains `keyedSubscriptions(rootNode)`, an additive pull API (the protocol stays at v2): per path, the per-row subscriptions, keys, `$eqIndex` list watchers and the last value, and whether the path is a getter or under one, so `$eq` fell back to a tracked read and every row re-evaluates on a change. The State pane shows them in a **Keyed selection** section, with a `tracked` badge on such a path.
+- `@wcstack/state/parser`: `splitBindTexts`, the runtime's own quote-aware `;` splitter, for tools that cut expressions by position; parsed filters carry their typed argument values as `literals`.
+- `@wcstack/lint` and the VS Code extension: `wcs/binding-syntax` (error) for what the runtime now rejects with the same code — an unterminated quote in filter arguments, a second `#`, a value after `else:`, modifiers or left-side filters on a structural directive or spread, and an empty filter. The judgement is the canonical parser's.
+
+### Changed (breaking)
+
+All in `@wcstack/state`. "2.6" says whether 2.6.x's `wcs/v3-migration` names the form.
+
+| Form | 2.x | 3.0 | 2.6 |
+|---|---|---|---|
+| A second `#` (`value#ro#wo:`) | keeps the first modifier list | `[wcs/binding-syntax]` — write `value#ro,wo:` | runtime, lint |
+| A value after `else:` | dropped | `[wcs/binding-syntax]` | runtime, lint |
+| Modifiers or left-side filters on `for` / `if` / `elseif` / `else` / `...` | a plain property binding | `[wcs/binding-syntax]` | runtime, lint |
+| An unterminated quote in filter arguments | closed silently | `[wcs/binding-syntax]` | runtime, lint |
+| More or fewer filter arguments than the filter accepts | extras ignored | `[wcs/filter-arity]` when the bindings are planned | runtime, lint |
+| An empty filter (`x\|`, `x\|\|y`) | `[wcs/filter-unknown]` | `[wcs/binding-syntax]` (the code changes) | — |
+| `radio#ro:` / `checkbox#ro:` | a plain property named `radio` / `checkbox` that did nothing | a radio / checkbox binding that honours the modifiers | runtime, lint |
+| Unquoted `true` / `false` / `null` in `eq` / `ne` | compared with the text, so a boolean never matched `eq(true)` | compared with the typed value; `eq('true')` is text | runtime, lint |
+| Unquoted `true` / `false` / `null` / numbers in `defaults` | the text (`"null"`, `"0"`) | the typed value (`null`, `0`) | runtime, lint (not numbers) |
+| `0n` through `truthy` / `falsy` / `defaults` | truthy | falsy (JavaScript's truthiness, like `boolean`) | runtime |
+| `undefined` into `textContent` / `innerText` / `innerHTML` | the previous text stayed — in a reused row, the previous row's | emptied | runtime |
+| `undefined` / `null` into `attr.*` | the text `"undefined"` / `"null"` | the attribute is removed | runtime |
+| `undefined` into `style.*` | the previous value stayed | cleared | runtime |
+| `$resolve(path, indexes, undefined)` | a read | a write of `undefined` — the argument count decides | runtime |
+| `$resolve(path, indexes, value)` / `$setAll` (the `**` broadcast included) on a readonly proxy | wrote | `This state is readonly.` | runtime |
+| A component write through a `#ro` mount (`state#ro: user`) | reached the host tree | `[wcs/mount-readonly]`; a two-way input inside does not write back | runtime |
+| A component's own default for a key an explicit partial mount covers | the default won (`wcs/mount-own-key-shadow`) | the explicit mount wins | runtime |
+| `inFilters` / `outFilters` from `@wcstack/state/parser` | `IFilterInfo` with `filterFn` | `IParsedFilter` (`filterName` / `args` / `literals`); filters resolve when the bindings are planned, so parsing alone does not fail on an unknown filter (`[wcs/filter-unknown]` is unchanged) | — |
+
+Element inputs — every other property, spread included — still skip `undefined` and clear on `null`. `@wcstack/server` renders with the same runtime, so server output follows the empty-value rules.
+
+### Changed
+
+- `@wcstack/state`: `dist/index.esm.js`, what `@wcstack/state` resolves to, is minified: 321 KB → 79 KB gzip. Build from source with `WCS_STATE_UNMINIFIED=1` for readable names in profiles.
+- `@wcstack/state`: creating, appending and clearing rows is faster, and a row holds less. Medians against 2.5.1 on the audit bench: creating 10,000 rows (cold) −18.7 %, appending 1,000 rows −15.9 %, clearing 10,000 rows −14.7 %; creating 1,000 rows warm is unchanged, and no measure regressed. The heap per row goes from 3.6 to 3.0 KB. A plan row now renders straight from its row object, each row keeps one record, a list shares one binding session, and the cold row path stops allocating per node. Measurements: [docs/state-next-major-requirements.md](./docs/state-next-major-requirements.md) §6 (D27) and [docs/state-next-major-runtime-design.md](./docs/state-next-major-runtime-design.md).
+- `@wcstack/state`: `auto.min.js` grows from 71.6 KB (2.6.1) to about 77 KB gzip — the feature receptacles and the fixes above. The split form's core alone is about 52 KB (its chunks gzipped one by one).
+
+### Removed
+
+- `@wcstack/state`: the `wcs/v3-migration` warnings, and `findV3MigrationIssues` / `findEmbeddedV3MigrationIssues` from `@wcstack/state/parser` — 2.6-only surfaces whose job ends with 3.0. `@wcstack/lint` and the VS Code extension drop the rule of the same name.
+
+### Fixed
+
+- `@wcstack/state`: `;` between bindings and `|` between filters split only outside quotes, so `join('; ')` and `join(' | ')` work; both broke the binding before.
+- `@wcstack/state`: resolved filters are cached by the structure of their arguments; `slice('1,2')` (one argument) and `slice(1,2)` (two) used to share one cache entry, so whichever was planned first answered for both.
 
 ## [2.6.1] — 2026-09-21
 

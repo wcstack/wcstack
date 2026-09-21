@@ -18,7 +18,6 @@ import { deleteContentByNode, getContentSetByNode } from "../structural/contents
 import { createContent } from "../structural/createContent";
 import { IContent } from "../structural/types";
 import { IBindingInfo } from "../types";
-import { remountScopesUnderContent } from "../webComponent/mountScope";
 import { applyChange } from "./applyChange";
 import { setRootNodeByFragment } from "./rootNodeByFragment";
 import { IApplyContext } from "./types";
@@ -410,8 +409,15 @@ export function applyChangeToFor(
       }
       if (inPlaceContents !== null && inPlaceContents.reused.has(content)) {
         // その場で使い回した行の中のコンポーネントは DOM から外れない = 付け替えを知らせる
-        // connectedCallback が来ないので、マウントスコープを新しい行の listIndex へ張り直す（#4）
-        remountScopesUnderContent(content, context.stateElement);
+        // connectedCallback が来ないので、マウントスコープを新しい行の listIndex へ張り直す（#4）。
+        // スコープ機能の rowReused hook（webComponent/addressHooks.ts）。hook の無い state は判定 1 個で抜ける
+        const hooks = context.stateElement.addressHooks;
+        if (hooks) {
+          const reused = hooks.rowReused;
+          for (let i = 0; i < reused.length; i++) {
+            reused[i](context.stateElement, content);
+          }
+        }
       }
     } else {
       // getContent 相当（undefined→null 正規化は後段の raiseError 判定が null 比較のため維持）

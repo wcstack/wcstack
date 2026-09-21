@@ -1,19 +1,12 @@
-import { builtinFilterFn, outputBuiltinFilters } from "../filters/builtinFilters";
-import { IFilterInfo } from "../types";
+import { IParsedFilter } from "../types";
 
-let _notFilterInfo: IFilterInfo | undefined = undefined;
+/**
+ * `if` / `else` の反転として、エンジン自身がパース結果へ足すフィルタ（解析の段の形 —
+ * 名前と引数だけ。要件 D16）。実関数は束縛計画の段で登録簿から引かれ、`not` は
+ * `features/formats` の有無に関わらず core が答える（`core/filterRegistry.ts`）。
+ */
+let _notFilterInfo: IParsedFilter | undefined = undefined;
 
-export function createNotFilter(): IFilterInfo {
-  if (_notFilterInfo) {
-    return _notFilterInfo;
-  }
-  const filterName = "not"
-  const args: string[] = [];
-  const filterFn = builtinFilterFn(filterName, args)(outputBuiltinFilters);
-  _notFilterInfo = {
-    filterName,
-    args,
-    filterFn,
-  }
-  return _notFilterInfo;
+export function createNotFilter(): IParsedFilter {
+  return _notFilterInfo ??= { filterName: "not", args: [] };
 }

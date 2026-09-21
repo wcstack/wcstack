@@ -354,4 +354,86 @@ describe("BindingSession defensive branches", () => {
     const rootNode = document.createDocumentFragment();
     expect(getOrCreateBindingSession(rootNode)).toBe(getOrCreateBindingSession(rootNode));
   });
+
+  /**
+   * 束縛ごとの record を持つ session（プランに載らない content）の解体・走査・張り直し。
+   * プラン行は行 record 側（bindings.rowSession.branches.test.ts）を通るようになったので、
+   * こちらの経路は非プランの content だけが通る。
+   */
+  it("record を持つ session の destroyRecords / 走査 / 張り直しが record 側で働くこと", () => {
+    const session = new BindingSession();
+    const live = createBinding();
+    const disposed = createBinding();
+    session.initialize([live, disposed], { registerAddress: true });
+    session.disposeBinding(disposed);
+
+    // 活性なノードだけが走査に出る
+    const active: Node[] = [];
+    session.forEachActiveBindingNode((node) => active.push(node));
+    expect(active).toEqual([live.node]);
+
+    // 張り直しは活性でアドレスを持つ record だけ
+    mocks.removeAddress.mockClear();
+    const rebound = session.rebindAddresses();
+    expect(rebound).toEqual([live]);
+    expect(mocks.removeAddress).toHaveBeenCalledTimes(1);
+
+    // wholesale destroy は残った record のアドレスを外して台帳を空にする
+    mocks.removeAddress.mockClear();
+    session.destroyRecords();
+    expect(mocks.removeAddress).toHaveBeenCalledTimes(1);
+    expect(session.getRecord(live)?.phase).toBe("disposed");
+  });
+
+  it("アドレスを登録していない record と解体済みの record は、張り直しの対象外であること", () => {
+    const session = new BindingSession();
+    const unregistered = createBinding();
+    const disposed = createBinding();
+    session.initialize([unregistered, disposed], { registerAddress: false });
+    session.disposeBinding(disposed);
+
+    mocks.removeAddress.mockClear();
+    expect(session.rebindAddresses()).toEqual([]);
+    expect(mocks.removeAddress).not.toHaveBeenCalled();
+
+    // 走査には解体済みだけが出てこない
+    const active: Node[] = [];
+    session.forEachActiveBindingNode((node) => active.push(node));
+    expect(active).toEqual([unregistered.node]);
+  });
+
+  it("取り消した定義待ちのコールバックは、後から解決しても何もしないこと", async () => {
+    let define!: (constructor: CustomElementConstructor) => void;
+    let rejectDefine!: (error: unknown) => void;
+    mocks.registry = {
+      get: vi.fn(),
+      whenDefined: vi.fn(() => new Promise<CustomElementConstructor>((resolve, reject) => {
+        define = resolve;
+        rejectDefine = reject;
+      })),
+      upgrade: vi.fn(),
+    };
+    const node = document.createElement("x-late-session");
+    const session = new BindingSession();
+    const applied = vi.fn();
+    const rejected = vi.fn();
+    const cancel = session.deferUntilDefined(node, "x-late-session", applied, rejected);
+
+    cancel();
+    define(class extends HTMLElement {});
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(applied).not.toHaveBeenCalled();
+
+    // 取り消した待ちが reject されても同じ（finish が false を返す）
+    const other = document.createElement("x-late-session-2");
+    const otherSession = new BindingSession();
+    const otherRejected = vi.fn();
+    const cancelOther = otherSession.deferUntilDefined(other, "x-late-session", vi.fn(), otherRejected);
+    cancelOther();
+    rejectDefine(new Error("late failure"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(otherRejected).not.toHaveBeenCalled();
+  });
 });

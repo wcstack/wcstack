@@ -24,8 +24,27 @@ function finalizeArg(text: string, firstQuoteStart: number, lastQuoteEnd: number
   return text.slice(start, end);
 }
 
+import { LINT_HINT } from "../errorGuidance";
+import { raiseError } from "../raiseError";
+
+/** 引用符の無い引数の型（要件 B9）: true / false / null / 数値は型付き、それ以外は文字列 */
+const NUMBER_LITERAL = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+function toLiteral(text: string, quoted: boolean): unknown {
+  if (quoted) return text;
+  if (text === "true") return true;
+  if (text === "false") return false;
+  if (text === "null") return null;
+  return NUMBER_LITERAL.test(text) ? Number(text) : text;
+}
+
 export function parseFilterArgs(argsText: string): string[] {
+  return parseFilterArgsWithLiterals(argsText).args;
+}
+
+/** 引数の原文と、その型付きの値（要件 B9）を一緒に返す。原文は引用符を外したもの */
+export function parseFilterArgsWithLiterals(argsText: string): { args: string[]; literals: unknown[] } {
   const args: string[] = [];
+  const literals: unknown[] = [];
   let current = '';
   let inQuote: string | null = null;
   let hasQuote = false;
@@ -33,7 +52,9 @@ export function parseFilterArgs(argsText: string): string[] {
   let lastQuoteEnd = -1;
 
   const flush = (): void => {
-    args.push(finalizeArg(current, firstQuoteStart, lastQuoteEnd));
+    const arg = finalizeArg(current, firstQuoteStart, lastQuoteEnd);
+    args.push(arg);
+    literals.push(toLiteral(arg, hasQuote));
     current = '';
     hasQuote = false;
     firstQuoteStart = -1;
@@ -63,10 +84,15 @@ export function parseFilterArgs(argsText: string): string[] {
     }
   }
 
+  if (inQuote !== null) {
+    // 閉じていない引用符は受理しない（要件 B2）。以前は黙って閉じたことにしていた
+    raiseError(`[wcs/binding-syntax] unterminated ${inQuote} quote in the filter arguments "(${argsText})". Close the quote.${LINT_HINT}`);
+  }
   const last = finalizeArg(current, firstQuoteStart, lastQuoteEnd);
   if (last || hasQuote) {
     args.push(last);
+    literals.push(toLiteral(last, hasQuote));
   }
 
-  return args;
+  return { args, literals };
 }

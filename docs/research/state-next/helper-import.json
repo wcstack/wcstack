@@ -1,0 +1,110 @@
+{
+  "revision": "6bff9f2cf8c4915c93dceb9c40b56e376eb06119",
+  "timestamp": "2026-09-20T13:25:44.084Z",
+  "method": "export { <name> } from the bundle → Rollup tree-shake (default options) → terser; sizes in bytes / gzip level 9 / Brotli quality 11",
+  "note": "The checked-in dist is built from the release source at HEAD and predates S1 / S2, so the two rows differ only by the uncommitted source changes.",
+  "results": {
+    "before (checked-in dist/index.esm.js, release source)": {
+      "full": {
+        "bytes": 1146150,
+        "gzip": 312892,
+        "brotli": 227223
+      },
+      "defineState.only": {
+        "shaken": {
+          "bytes": 441637,
+          "gzip": 119576,
+          "brotli": 93513
+        },
+        "minified": {
+          "bytes": 89237,
+          "gzip": 26706,
+          "brotli": 23541
+        },
+        "keptTopLevelCalls": [
+          "createNotFilter();",
+          "registerUpdateBatchListener(restartStreamsOnUpdateBatch, STREAM_LISTENER_PRIORIT",
+          "registerUpdateBatchListener(fireWatchOnUpdateBatch, WATCH_LISTENER_PRIORITY);"
+        ],
+        "modulesKept": 558
+      },
+      "VERSION.only": {
+        "shaken": {
+          "bytes": 439139,
+          "gzip": 118747,
+          "brotli": 92874
+        },
+        "minified": {
+          "bytes": 89220,
+          "gzip": 26711,
+          "brotli": 23551
+        },
+        "keptTopLevelCalls": [
+          "createNotFilter();",
+          "registerUpdateBatchListener(restartStreamsOnUpdateBatch, STREAM_LISTENER_PRIORIT",
+          "registerUpdateBatchListener(fireWatchOnUpdateBatch, WATCH_LISTENER_PRIORITY);"
+        ],
+        "modulesKept": 560
+      }
+    },
+    "after (src/exports.ts built now: S1 + S2 applied)": {
+      "full": {
+        "bytes": 1125752,
+        "gzip": 312351,
+        "brotli": 227025
+      },
+      "defineState.only": {
+        "shaken": {
+          "bytes": 6764,
+          "gzip": 3007,
+          "brotli": 2414
+        },
+        "minified": {
+          "bytes": 589,
+          "gzip": 309,
+          "brotli": 262
+        },
+        "keptTopLevelCalls": [],
+        "modulesKept": 5
+      },
+      "VERSION.only": {
+        "shaken": {
+          "bytes": 4346,
+          "gzip": 2110,
+          "brotli": 1647
+        },
+        "minified": {
+          "bytes": 578,
+          "gzip": 315,
+          "brotli": 261
+        },
+        "keptTopLevelCalls": [],
+        "modulesKept": 7
+      }
+    }
+  },
+  "warnings": [
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/buildBindings.ts -> src/bindings/initializeBindings.ts -> src/bindings/collectNodesAndBindingInfos.ts -> src/bindings/getParseBindTextResults.ts -> src/structural/fragmentInfoByUUID.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/buildBindings.ts -> src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/buildBindings.ts -> src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/binding/getAbsoluteStateAddressByBinding.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/bindings/BindingSession.ts -> src/apply/applyChangeFromBindings.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/buildBindings.ts -> src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/bindings/BindingSession.ts -> src/event/checkboxHandler.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/buildBindings.ts -> src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/bindings/BindingSession.ts -> src/event/eventTokenHandler.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/buildBindings.ts -> src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/bindings/BindingSession.ts -> src/event/handler.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/buildBindings.ts -> src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/bindings/BindingSession.ts -> src/event/radioHandler.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/buildBindings.ts -> src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/bindings/BindingSession.ts -> src/event/twowayHandler.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/buildBindings.ts -> src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/bindings/BindingSession.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/buildBindings.ts -> src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/bindings/BindingSession.ts -> src/bindings/initialSync.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/buildBindings.ts -> src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/apply/applyChange.ts -> src/apply/applyChangeToFor.ts -> src/structural/activateContent.ts -> src/apply/applyChange.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/apply/applyChangeToFor.ts -> src/structural/createContent.ts -> src/bindings/initializeBindings.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/apply/applyChangeToFor.ts -> src/webComponent/mountScope.ts -> src/apply/applyChangeFromBindings.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/apply/applyChangeToFor.ts -> src/webComponent/mountScope.ts -> src/bindings/initializeBindings.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/buildBindings.ts -> src/bindings/initializeBindings.ts -> src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/apply/applyChangeToFor.ts -> src/webComponent/mountScope.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/apply/applyChange.ts -> src/apply/applyChangeToFor.ts -> src/apply/applyChange.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/apply/applyChangeFromBindings.ts -> src/apply/applyChange.ts -> src/apply/scheduleDeferredApply.ts -> src/apply/applyChangeFromBindings.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/hydrateBindings.ts -> src/stateElementByName.ts",
+    "CIRCULAR_DEPENDENCY: Circular dependency: src/stateElementByName.ts -> src/bindings/binder.ts -> src/stateElementByName.ts",
+    "PLUGIN_WARNING: [plugin typescript] @rollup/plugin-typescript: Rollup 'sourcemap' option must be set to generate source maps."
+  ]
+}

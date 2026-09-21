@@ -19,19 +19,14 @@
  */
 
 import { liftAddress } from "../../address/liftAddress";
-import { isPathUnderReservedVolume } from "../../webComponent/volumeShared";
 import { IStateAddress } from "../../address/types";
 import { getCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
 import { getCommandNamespace } from "../../command/commandNamespace";
 import { IStateElement } from "../../components/types";
-import { STATE_COMMAND_NAMESPACE_NAME, STATE_STREAM_ERROR_NAMESPACE_NAME, STATE_STREAM_STATUS_NAMESPACE_NAME, WILDCARD } from "../../define";
+import { STATE_COMMAND_NAMESPACE_NAME, WILDCARD } from "../../define";
 import { missingRootPathMessage, wildcardScopeMessage } from "../../pathDiagnostics";
 import { raiseError } from "../../raiseError";
-import { collectStreamDependency } from "../../stream/argsTrace";
-import { getStreamErrorNamespace, getStreamStatusNamespace } from "../../stream/streamNamespace";
-import { getMountRecordByPath } from "../../webComponent/mount";
-import { createOverlayValue, readExportedAccessor } from "../../webComponent/overlay";
-import { resolveExport } from "../../webComponent/exportIndex";
+import { NOT_HANDLED } from "../../core/addressHooks";
 import { IStateHandler } from "../types";
 import { checkDependency } from "./checkDependency";
 import { isCacheable } from "./isCacheable";
@@ -58,6 +53,26 @@ function walkNamespace(namespace: object, segments: string[]): any {
   return value;
 }
 
+// 「ツリーに意見が無い」読み（親が無い・親にそのキーが無い）を機能に聞く（設計案 H1 の readMissing）。
+// 親が無ければ parentValue は null。hook の無い state は判定 1 個で抜ける
+function readMissing(
+  stateElement: IStateElement,
+  address: IStateAddress,
+  parentValue: object | null,
+  receiver: any,
+  handler: IStateHandler,
+): unknown {
+  const hooks = stateElement.addressHooks;
+  if (hooks) {
+    const missing = hooks.readMissing;
+    for (let i = 0; i < missing.length; i++) {
+      const handled = missing[i](stateElement, address, parentValue, receiver, handler);
+      if (handled !== NOT_HANDLED) return handled;
+    }
+  }
+  return NOT_HANDLED;
+}
+
 function _getByAddress(
   target   : object,
   address  : IStateAddress,
@@ -70,26 +85,8 @@ function _getByAddress(
     // $command 名前空間: キーは宣言済み command token 名
     return walkNamespace(getCommandNamespace(stateElement), address.pathInfo.segments);
   }
-  if (firstSegment === STATE_STREAM_STATUS_NAMESPACE_NAME) {
-    // $streamStatus / $streamError 名前空間: キーは宣言済み stream 名
-    // （registry entry が正本の thin gateway、docs/state-streams-design.md §4-2）。
-    // setByAddress の親走査もここを通るため、子への Reflect.set が namespace proxy の
-    // raiseError に到達する = 書き込み防御（S11）もこの分岐で成立する。
-    return walkNamespace(getStreamStatusNamespace(stateElement), address.pathInfo.segments);
-  }
-  if (firstSegment === STATE_STREAM_ERROR_NAMESPACE_NAME) {
-    return walkNamespace(getStreamErrorNamespace(stateElement), address.pathInfo.segments);
-  }
-  // マウントのオーバーレイ dispatch（Phase 2・D20）。掛かるのは「マーカーで終わる
-  // パス」だけで、その下（私有キー・getter・メソッド）の読み書きは通常の親ウォークが
-  // 返された proxy への素の Reflect.get / Reflect.set として続く（webComponent/overlay.ts）。
-  // マウントの無い state は boolean 判定 1 個で抜ける（D18）
-  if (stateElement.hasMounts === true && address.pathInfo.lastSegment.charCodeAt(0) === 35 /* '#' */) {
-    const mountRecord = getMountRecordByPath(stateElement, address.pathInfo.path);
-    if (mountRecord !== null) {
-      return createOverlayValue(mountRecord, address, receiver, handler);
-    }
-  }
+  // $streamStatus / $streamError（stream/addressHooks.ts）とマーカーで終わるパスのオーバーレイ
+  // （webComponent/addressHooks.ts）は getByAddress の read hook が先に答える（宣言・マウントのある state だけに付く）
   if (address.pathInfo.path in target) {
     // getterの中で参照の可能性があるので、addressをプッシュする
     if (stateElement.getterPaths.has(address.pathInfo.path)) {
@@ -107,15 +104,16 @@ function _getByAddress(
     // 親アドレスが無い ＝ 単一セグメントのパスが state に存在しない。ここは元から
     // throw していたが、文面が内部実装の言葉だったので打ち間違いだと分からなかった。
     // 深いパスの console.warn（pathDiagnostics.checkDeclaredPath）と語彙を揃える。
-    // 予約済みのボリュームスロット（D22）: ロード前の読みは undefined が正で、
-    // 深いパスの親歩きがここに落ちても騒がない
-    if (address.parentAddress === null
-      && isPathUnderReservedVolume(safeVolumeRootNode(stateElement), address.pathInfo.path)) {
-      return undefined;
+    // 親が無い（＝ ルート欠落）: ツリーに意見が無いので readMissing hook（予約済みボリューム
+    // スロットの配下なら undefined — D22）に先に聞き、無ければ raise する
+    if (address.parentAddress === null) {
+      const missing = readMissing(stateElement, address, null, receiver, handler);
+      if (missing !== NOT_HANDLED) {
+        return missing;
+      }
+      raiseError(missingRootPathMessage(address.pathInfo.path, target, stateElement.getterPaths));
     }
-    const parentAddress = address.parentAddress ?? raiseError(
-      missingRootPathMessage(address.pathInfo.path, target, stateElement.getterPaths),
-    );
+    const parentAddress = address.parentAddress;
     const parentValue = getByAddress(target, parentAddress, receiver, handler);
     // 親が居ないパスの読みは undefined（＝「state に意見が無い」）。`Reflect.get` に
     // そのまま渡すと生の `TypeError: Reflect.get called on non-object` になり、
@@ -132,14 +130,14 @@ function _getByAddress(
       return undefined;
     }
     const lastSegment = address.pathInfo.segments[address.pathInfo.segments.length - 1];
-    // 公開 getter の dispatch（docs/state-overlay-export-design.md §2-1）: 掛かるのは
-    // 「ツリーの未存在キー」の分岐だけ（X1 — 命中する読みは無改造）。マウントの無い
-    // state は boolean 1 個で抜ける（D18）
-    if (stateElement.hasMounts === true && lastSegment !== WILDCARD
+    // 「ツリーの未存在キー」の分岐だけ readMissing hook（公開 getter の dispatch など）に聞く
+    // （X1 — 命中する読みは無改造）。hook の無い state は判定 1 個で抜ける
+    const hooks = stateElement.addressHooks;
+    if (hooks && hooks.readMissing.length !== 0 && lastSegment !== WILDCARD
       && !(lastSegment in Object(parentValue))) {
-      const exported = resolveExport(stateElement, parentAddress.pathInfo.path, lastSegment, address.listIndex);
-      if (exported !== null) {
-        return readExportedAccessor(exported.record, exported.entry, address.listIndex, receiver, handler);
+      const missing = readMissing(stateElement, address, Object(parentValue), receiver, handler);
+      if (missing !== NOT_HANDLED) {
+        return missing;
       }
     }
     if (lastSegment === WILDCARD) {
@@ -201,19 +199,20 @@ export function getByAddress(
   if (handler.stateElement.hasRecursion === true) {
     handler.stateElement.recursionRegistry!.materializeForPathInfo(handler.stateElement, address.pathInfo);
   }
-  // $streams の args トレース中のみ絶対アドレスを捕捉（collector 非活性なら即 return）
-  collectStreamDependency(handler.stateElement, address);
   const stateElement = handler.stateElement;
+  // 読み書き境界の hook（設計案 H1）: 宣言が要求した機能の分だけ state に付いている。無ければ判定 1 回
+  const hooks = stateElement.addressHooks;
+  if (hooks) {
+    const readHooks = hooks.read;
+    for (let i = 0; i < readHooks.length; i++) {
+      const handled = readHooks[i](stateElement, address, receiver, handler);
+      if (handled !== NOT_HANDLED) return handled;
+    }
+  }
   const cacheable = isCacheable(stateElement, address);
   if (cacheable) {
     return _getByAddressWithCache(target, address, receiver, handler, stateElement);
   } else {
     return _getByAddress(target, address, receiver, handler, stateElement);
   }
-}
-
-function safeVolumeRootNode(stateElement: { rootNode?: Node }): Node | null {
-  // 読みは createState セッション内でしか起きず、その間 rootNode は必ず有効
-  //（切断で null 化されるのは disconnectedCallback — セッション外）
-  return stateElement.rootNode ?? null;
 }

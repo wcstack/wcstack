@@ -12,6 +12,18 @@
       "import": "./dist/index.esm.js"
     },
     "./auto": "./dist/auto.min.js",
+    "./core": {
+      "types": "./dist/split/core.d.ts",
+      "import": "./dist/split/core.js"
+    },
+    "./features/*": {
+      "types": "./dist/split/features/*.d.ts",
+      "import": "./dist/split/features/*.js"
+    },
+    "./define": {
+      "types": "./dist/define.d.ts",
+      "import": "./dist/define.js"
+    },
     "./manifest": {
       "types": "./dist/manifest.d.ts",
       "import": "./dist/manifest.esm.js"

@@ -16,6 +16,7 @@ import { getContentSetByNode, setContentByNode } from "./contentsByNode.js";
 import { getFragmentInfoByUUID } from "./fragmentInfoByUUID.js";
 import { resolveNodePath } from "./resolveNodePath.js";
 import { compileRowPlan } from "./rowPlan.js";
+import { setPlanByContent } from "./planByContent.js";
 import { IContent, IFragmentInfo, IRowPlan } from "./types.js";
 
 const recursiveBindingTypes = new Set(['if', 'elseif', 'else', 'for']);
@@ -36,7 +37,13 @@ class Content implements IContent {
   constructor(content: DocumentFragment, ranged: boolean = false) {
     this._content = content;
     this._ranged = ranged;
-    this._childNodeArray = Array.from(this._content.childNodes);
+    // childNodes（NodeList）と Array.from の iterator を作らずに兄弟ポインタで集める。複製した
+    // ばかりの fragment ではここが childNodes に触れる最初の場所になる（resolveNodePath と同じ理由、設計 R5）
+    const childNodeArray: Node[] = [];
+    for (let node = content.firstChild; node !== null; node = node.nextSibling) {
+      childNodeArray.push(node);
+    }
+    this._childNodeArray = childNodeArray;
     this._firstNode = this._childNodeArray.length > 0 ? this._childNodeArray[0] : null;
     this._lastNode = this._childNodeArray.length > 0 ? this._childNodeArray[this._childNodeArray.length - 1] : null;
   }
@@ -135,7 +142,7 @@ class Content implements IContent {
     if (session === null || !session.canWholesaleDestroy()) {
       return false;
     }
-    session.destroyRecords();
+    session.destroyRow(getBindingsByContent(this));
     // 添字ループ: for...of の反復子オブジェクトを行ごとに割り当てない（消去の scavenge を窓から外す）
     const childNodes = this._childNodeArray;
     for (let i = 0; i < childNodes.length; i++) {
@@ -172,7 +179,15 @@ class Content implements IContent {
    * `if` の中身は古い行のアドレスに紐づいたまま取り残される。
    */
   unmountInPlace(): void {
-    getBindingSessionByContent(this)?.dispose();
+    {
+      // 共有 session（`for` 束縛ごとに 1 つ）ではこの content の行だけを解体する（設計 R3）。
+      // session ごと dispose すると同じリストの生きている行まで巻き込む
+      const session = getBindingSessionByContent(this);
+      if (session !== null) {
+        if (session.isRowSession) session.disposeBindings(getBindingsByContent(this));
+        else session.dispose();
+      }
+    }
     this._teardownBindings();
   }
 
@@ -190,7 +205,15 @@ class Content implements IContent {
   }
 
   unmount(): void {
-    getBindingSessionByContent(this)?.dispose();
+    {
+      // 共有 session（`for` 束縛ごとに 1 つ）ではこの content の行だけを解体する（設計 R3）。
+      // session ごと dispose すると同じリストの生きている行まで巻き込む
+      const session = getBindingSessionByContent(this);
+      if (session !== null) {
+        if (session.isRowSession) session.disposeBindings(getBindingsByContent(this));
+        else session.dispose();
+      }
+    }
     for(const node of this._childNodeArray) {
       // framework 起点の削除であることを observer に伝える。clear の
       // parentNode.textContent='' 一括削除でも、この top-level node が
@@ -324,13 +347,15 @@ function createPlanContent(
       indexBindings.push(binding);
     }
   }
-  const session = initializeRowBindings(plan, bindings);
+  const session = initializeRowBindings(plan, bindings, bindingInfo.node);
   // プラン経路の content は範囲モードにならない: compileRowPlan は bindingType が
   // text / prop / event のもの以外（= for / if / elseif / else）を含む時点で不適格に
   // するため、プラン適格なフラグメントはトップレベル構造アンカーを持ち得ない。
   const content = new Content(cloneFragment);
   setBindingSessionByContent(content, session);
   setBindingsByContent(content, bindings);
+  // 活性化がこの行をプラン初期描画に載せてよいか判定するための逆引き（設計 R2）
+  setPlanByContent(content, plan);
   setIndexBindingsByContent(content, indexBindings);
   setNodesByContent(content, nodes);
   setContentByNode(bindingInfo.node, content);

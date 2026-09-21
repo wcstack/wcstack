@@ -26,7 +26,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vite
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
 import { flush, read, write } from "./helpers/recursionTestUtils";
-import { buildSsrDocument } from "../src/buildSsrDocument";
+import { buildSsrDocument } from "../src/ssr/buildSsrDocument";
 
 beforeAll(() => {
   bootstrapState();

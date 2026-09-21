@@ -1,4 +1,5 @@
 import { IInitialSyncPolicy, resolveInitialSyncPolicy } from "../bindings/initialSync";
+import { planBinding } from "../bindings/planFilters";
 import { config } from "../config";
 import { COMMAND_NAMESPACE, EVENT_TOKEN_NAMESPACE, INDEX_BY_INDEX_NAME } from "../define";
 import { isPossibleTwoWay } from "../event/isPossibleTwoWay";
@@ -54,12 +55,16 @@ export function compileRowPlan(fragmentInfo: IFragmentInfo): IRowPlan | null {
       if (bindingType === "prop" && isPossibleTwoWay(node, template.propName)) {
         return null;
       }
+      // フィルタの実関数は行不変なので、テンプレートごとに 1 回だけ引く（要件 D16。
+      // 未知のフィルタはここで名指しで落ちる — 不適格として倒さない。従来経路へ倒しても
+      // 同じ診断が出るだけで、行の生成まで遅れる）
+      const planned = planBinding(template);
       let policy: IInitialSyncPolicy;
       try {
         // 判定はテンプレートのノードで行う（policy は node の宣言と行不変フィールドの
         // 純関数）。修飾子エラー等の throw は不適格として従来経路に倒し、従来経路が
         // 同じエラーを同じタイミング（初回行生成）で報告する。
-        const probe: IBindingInfo = { ...template, node, replaceNode: node };
+        const probe: IBindingInfo = { ...planned, node, replaceNode: node };
         policy = resolveInitialSyncPolicy(probe);
       } catch {
         return null;
@@ -69,7 +74,7 @@ export function compileRowPlan(fragmentInfo: IFragmentInfo): IRowPlan | null {
       }
       slots.push({
         nodeIndex,
-        template,
+        template: planned,
         isEvent: bindingType === "event",
         isIndexBinding: template.statePathName in INDEX_BY_INDEX_NAME,
         policy,

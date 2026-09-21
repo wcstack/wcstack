@@ -1,0 +1,275 @@
+{
+  "revision": "6bff9f2cf8c4915c93dceb9c40b56e376eb06119",
+  "timestamp": "2026-09-20T00:03:22.009Z",
+  "node": "v22.19.0",
+  "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+  "signalsDist": "packages/signals/dist/index.esm.js",
+  "repetitions": 7,
+  "note": "Models of the mechanisms, not the wcstack runtime; the browser measurement of the real runtime is in selection-and-profiles.json.",
+  "results": [
+    {
+      "mechanism": "P",
+      "n": 1000,
+      "op": "build",
+      "medianMs": 0.244
+    },
+    {
+      "mechanism": "P",
+      "n": 1000,
+      "op": "select",
+      "medianMs": 0.102,
+      "perOp": {
+        "evals": 1000,
+        "notified": 1000,
+        "applied": 2
+      }
+    },
+    {
+      "mechanism": "P",
+      "n": 1000,
+      "op": "select-manual",
+      "medianMs": 0.001,
+      "perOp": {
+        "evals": 2,
+        "notified": 2,
+        "applied": 2
+      }
+    },
+    {
+      "mechanism": "P",
+      "n": 1000,
+      "op": "update-every-10th",
+      "medianMs": 0.023,
+      "perOp": {
+        "evals": 100,
+        "notified": 100,
+        "applied": 100
+      }
+    },
+    {
+      "mechanism": "P",
+      "n": 1000,
+      "op": "replace",
+      "medianMs": 0.141
+    },
+    {
+      "mechanism": "S",
+      "n": 1000,
+      "op": "build",
+      "medianMs": 2.985
+    },
+    {
+      "mechanism": "S",
+      "n": 1000,
+      "op": "select",
+      "medianMs": 0.411,
+      "perOp": {
+        "evals": 1002,
+        "notified": 1,
+        "applied": 2
+      }
+    },
+    {
+      "mechanism": "S",
+      "n": 1000,
+      "op": "update-every-10th",
+      "medianMs": 0.047,
+      "perOp": {
+        "evals": 100,
+        "notified": 100,
+        "applied": 100
+      }
+    },
+    {
+      "mechanism": "S",
+      "n": 1000,
+      "op": "replace",
+      "medianMs": 1.692
+    },
+    {
+      "mechanism": "K",
+      "n": 1000,
+      "op": "build",
+      "medianMs": 0.267
+    },
+    {
+      "mechanism": "K",
+      "n": 1000,
+      "op": "select",
+      "medianMs": 0,
+      "perOp": {
+        "evals": 2,
+        "notified": 2,
+        "applied": 2
+      }
+    },
+    {
+      "mechanism": "K",
+      "n": 1000,
+      "op": "update-every-10th",
+      "medianMs": 0.017,
+      "perOp": {
+        "evals": 100,
+        "notified": 100,
+        "applied": 100
+      }
+    },
+    {
+      "mechanism": "K",
+      "n": 1000,
+      "op": "replace",
+      "medianMs": 0.068
+    },
+    {
+      "mechanism": "P",
+      "n": 10000,
+      "op": "build",
+      "medianMs": 0.462
+    },
+    {
+      "mechanism": "P",
+      "n": 10000,
+      "op": "select",
+      "medianMs": 0.441,
+      "perOp": {
+        "evals": 10000,
+        "notified": 10000,
+        "applied": 2
+      }
+    },
+    {
+      "mechanism": "P",
+      "n": 10000,
+      "op": "select-manual",
+      "medianMs": 0,
+      "perOp": {
+        "evals": 2,
+        "notified": 2,
+        "applied": 2
+      }
+    },
+    {
+      "mechanism": "P",
+      "n": 10000,
+      "op": "update-every-10th",
+      "medianMs": 0.126,
+      "perOp": {
+        "evals": 1000,
+        "notified": 1000,
+        "applied": 1000
+      }
+    },
+    {
+      "mechanism": "P",
+      "n": 10000,
+      "op": "replace",
+      "medianMs": 0.405
+    },
+    {
+      "mechanism": "S",
+      "n": 10000,
+      "op": "build",
+      "medianMs": 14.921
+    },
+    {
+      "mechanism": "S",
+      "n": 10000,
+      "op": "select",
+      "medianMs": 1.603,
+      "perOp": {
+        "evals": 10002,
+        "notified": 1,
+        "applied": 2
+      }
+    },
+    {
+      "mechanism": "S",
+      "n": 10000,
+      "op": "update-every-10th",
+      "medianMs": 0.341,
+      "perOp": {
+        "evals": 1000,
+        "notified": 1000,
+        "applied": 1000
+      }
+    },
+    {
+      "mechanism": "S",
+      "n": 10000,
+      "op": "replace",
+      "medianMs": 19.829
+    },
+    {
+      "mechanism": "K",
+      "n": 10000,
+      "op": "build",
+      "medianMs": 0.927
+    },
+    {
+      "mechanism": "K",
+      "n": 10000,
+      "op": "select",
+      "medianMs": 0,
+      "perOp": {
+        "evals": 2,
+        "notified": 2,
+        "applied": 2
+      }
+    },
+    {
+      "mechanism": "K",
+      "n": 10000,
+      "op": "update-every-10th",
+      "medianMs": 0.109,
+      "perOp": {
+        "evals": 1000,
+        "notified": 1000,
+        "applied": 1000
+      }
+    },
+    {
+      "mechanism": "K",
+      "n": 10000,
+      "op": "replace",
+      "medianMs": 0.845
+    }
+  ],
+  "memory": [
+    {
+      "mechanism": "P",
+      "n": 10000,
+      "fields": 1,
+      "bytesPerRow": 160
+    },
+    {
+      "mechanism": "S",
+      "n": 10000,
+      "fields": 1,
+      "bytesPerRow": 2260
+    },
+    {
+      "mechanism": "K",
+      "n": 10000,
+      "fields": 1,
+      "bytesPerRow": 335
+    },
+    {
+      "mechanism": "P",
+      "n": 10000,
+      "fields": 10,
+      "bytesPerRow": 593
+    },
+    {
+      "mechanism": "S",
+      "n": 10000,
+      "fields": 10,
+      "bytesPerRow": 9858
+    },
+    {
+      "mechanism": "K",
+      "n": 10000,
+      "fields": 10,
+      "bytesPerRow": 767
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { registerComponents } from '../src/registerComponents';
+import { registerComponents, registerComponentDefiner } from '../src/registerComponents';
 import { bootstrapState } from '../src/bootstrapState';
+import { installSsr } from '../src/ssr/install';
 import { config } from '../src/config';
 
 const ORIGINAL_TAG = config.tagNames.state;
@@ -41,6 +42,9 @@ describe('registerComponents', () => {
   it('registryを渡すとglobalではなくそちらへdefineされること', () => {
     // scoped registry は global の定義を継承しないので、そのツリーで使うには
     // そのレジストリ自身への define が要る。
+    // `<wcs-ssr>` は SSR 機能のタグなので、機能の install がレジストリへ届ける（設計案 H8）。
+    // full / auto では bootstrapState() が呼ぶ
+    installSsr();
     const defineSpy = vi.spyOn(customElements, 'define');
     const scoped = {
       get: vi.fn(() => undefined),
@@ -54,6 +58,32 @@ describe('registerComponents', () => {
     expect(defineSpy).not.toHaveBeenCalled();
 
     defineSpy.mockRestore();
+  });
+
+  it('定義済みのレジストリには機能のタグも state も define しないこと', () => {
+    installSsr();
+    const defined = {
+      get: vi.fn(() => class extends HTMLElement {}),
+      define: vi.fn(),
+    } as unknown as CustomElementRegistry;
+
+    registerComponents(defined);
+
+    expect(defined.define).not.toHaveBeenCalled();
+  });
+
+  it('同じ definer の再登録は 1 回として扱うこと（機能の install は冪等）', () => {
+    const definer = vi.fn();
+    registerComponentDefiner(definer);
+    registerComponentDefiner(definer);
+    const scoped = {
+      get: vi.fn(() => undefined),
+      define: vi.fn(),
+    } as unknown as CustomElementRegistry;
+
+    registerComponents(scoped);
+
+    expect(definer).toHaveBeenCalledTimes(1);
   });
 
   it('bootstrapStateがregistryを素通しすること', () => {

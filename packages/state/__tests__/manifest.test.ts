@@ -7,7 +7,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { getWcsManifest, WCS_MANIFEST_VERSION } from "../src/manifest";
-import { outputBuiltinFilters } from "../src/filters/builtinFilters";
+import { outputBuiltinFilters } from "../src/formats/builtinFilters";
 import { builtinFilterMeta } from "../src/filters/filterMeta";
 import { applyChangeByFirstSegment } from "../src/apply/applyChange";
 import * as stateDefine from "../src/define";

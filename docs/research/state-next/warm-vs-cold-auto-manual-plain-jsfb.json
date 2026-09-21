@@ -1,0 +1,97 @@
+{
+  "revision": "6bff9f2cf8c4915c93dceb9c40b56e376eb06119",
+  "timestamp": "2026-09-20T11:06:23.441Z",
+  "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+  "samples": 6,
+  "bundle": "packages/state/dist/auto.min.js (checked in)",
+  "results": [
+    {
+      "op": "create1k",
+      "cold": {
+        "median": 50.5,
+        "min": 27.1,
+        "max": 57.6,
+        "samples": [
+          53.9,
+          28.7,
+          27.1,
+          47.1,
+          57.6,
+          56.2
+        ]
+      },
+      "warm": {
+        "median": 19.75,
+        "min": 16.3,
+        "max": 55.7,
+        "samples": [
+          55.7,
+          22.4,
+          21.5,
+          17.7,
+          18,
+          16.3
+        ]
+      }
+    },
+    {
+      "op": "append1k",
+      "cold": {
+        "median": 50.05,
+        "min": 35.8,
+        "max": 63.4,
+        "samples": [
+          63.4,
+          50.7,
+          46.3,
+          35.8,
+          60.9,
+          49.4
+        ]
+      },
+      "warm": {
+        "median": 58.65,
+        "min": 49.8,
+        "max": 218.7,
+        "samples": [
+          61.6,
+          55.7,
+          182,
+          49.8,
+          218.7,
+          53.5
+        ]
+      }
+    },
+    {
+      "op": "clear10k",
+      "cold": {
+        "median": 67.25,
+        "min": 51.2,
+        "max": 69.7,
+        "samples": [
+          64.1,
+          69.7,
+          65.7,
+          51.2,
+          69.4,
+          68.8
+        ]
+      },
+      "warm": {
+        "median": 62,
+        "min": 47.7,
+        "max": 67.2,
+        "samples": [
+          62.2,
+          50.3,
+          67.2,
+          47.7,
+          61.8,
+          63
+        ]
+      }
+    }
+  ],
+  "browser": "149.0.7827.55"
+}

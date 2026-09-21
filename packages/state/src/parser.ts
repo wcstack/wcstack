@@ -26,6 +26,9 @@
  * （devtools の declared 正本化）は state 自身が pull API で答える。
  */
 export { parseBindTextsForElement } from "./bindTextParser/parseBindTextsForElement.js";
+// 属性値をバインディングごとに区切る正本（引用符の中の `;` は区切らない — 要件 B1）。位置付きの
+// tooling（vscode-wcs の positionalParser）が、ランタイムと同じ区切りで式を切り出すために使う
+export { splitBindTexts } from "./bindTextParser/parseBindTextsForElement.js";
 // テキストバインディング（mustache 変換後のコメント・`<!--@@:-->`）の正本経路。
 // `;` を**分割しない**（式全体が `path[|filters]` — `@state` は v2 で撤去）— 属性経路との違いは
 // 消費側が既知乖離として文書化していた点で、これで text チャネルも正本化できる。
@@ -34,9 +37,6 @@ export type { ParseBindTextResult } from "./bindTextParser/types.js";
 export { getPathInfo } from "./address/PathInfo.js";
 export type { IPathInfo } from "./address/types.js";
 export type { IFilterInfo, BindingType } from "./types.js";
-// 3.0 で拒否される（または読み方が変わる）書き方の判定（要件 D2）。ランタイムの `[wcs/v3-migration]` と
-// lint が同じ純関数を使う。2.x の最後の minor だけにある面で、3.0 には無い。
-export { findV3MigrationIssues, findEmbeddedV3MigrationIssues } from "./v3MigrationRules.js";
 
 import { clearPathInfoCacheForTooling } from "./address/PathInfo.js";
 import { clearPropPartCacheForTooling } from "./bindTextParser/parsePropPart.js";

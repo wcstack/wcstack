@@ -5,6 +5,8 @@
 - **State** — カウンタ（素の write + computed getter）、ToDo（リスト diff・
   ワイルドカード getter）、時計 state。値はインライン編集でき、編集は通常の
   リアクティブパイプラインを通るのでページ側（`double` getter 含む）が更新される。
+  ToDo のタイトルをクリックすると `$eqIndex` で選択し、その鍵付き購読はペイン下部の
+  **Keyed selection** に出る（`@wcstack/state` 3.0 以降）。
 - **Wiring** — ページ上の全 `data-wcs` 配線のライブ台帳。State ペインのパスを
   クリック（またはページ要素を ⌖ pick）すると束縛ノードがハイライトされる。
 - **Timeline** — 操作ごとの `write` → `batch` 行に加え、`<wcs-timer>` 時計の

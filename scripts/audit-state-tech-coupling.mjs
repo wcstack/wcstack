@@ -124,17 +124,24 @@ function reach(entry) {
   const evaluated = [...seen].filter(m => modules.get(m).evaluation.some(e => e.kind !== 'allocation'));
   return { files: seen.size, loc, byGroup: Object.fromEntries(Object.entries(byGroup).sort((a, b) => b[1] - a[1])), evaluatedModules: evaluated.sort() };
 }
-const entries = ['exports.ts', 'defineState.ts', 'bootstrapState.ts', 'components/State.ts', 'auto.ts', 'parser.ts', 'manifest.ts', 'updater/updater.ts', 'proxy/StateHandler.ts'].filter(e => modules.has(e));
+const entries = ['exports.ts', 'defineState.ts', 'bootstrapState.ts', 'entries/core.ts', 'components/State.ts', 'auto.ts', 'parser.ts', 'manifest.ts', 'updater/updater.ts', 'proxy/StateHandler.ts'].filter(e => modules.has(e));
 const reachability = Object.fromEntries(entries.map(e => [e, reach(e)]));
 // Group-level edges (value imports only).
 const groupEdges = {};
-const features = ['watch', 'scan', 'stream', 'recursion', 'webComponent', 'dcc', 'devtools', 'components'];
+// 'features' holds the split entries themselves (src/features/temporal.ts …): they ARE the feature
+// side, so their imports of a feature's install are not core -> feature edges. 'entries' is NOT here:
+// src/entries/core.ts is the core entry, so an import of a feature from there must show up.
+const features = ['watch', 'scan', 'stream', 'recursion', 'webComponent', 'dcc', 'devtools', 'ssr', 'formats', 'diagnostics', 'features'];
+// A module that is a feature although its directory is not: before the split, `<wcs-ssr>` lives in
+// components/ beside the core's own element (components/State.ts), which must NOT count as a feature.
+const FEATURE_MODULES = new Set(['components/Ssr.ts']);
+const isFeatureModule = m => features.includes(groupOf(m)) || FEATURE_MODULES.has(m);
 const coreToFeature = [];
 for (const m of modules.values()) for (const target of m.imports) {
   const g = modules.get(target).group;
   if (g === m.group) continue;
   (groupEdges[m.group] ??= {})[g] = (groupEdges[m.group][g] ?? 0) + 1;
-  if (!features.includes(m.group) && features.includes(g)) coreToFeature.push({ from: m.id, to: target });
+  if (!isFeatureModule(m.id) && isFeatureModule(target)) coreToFeature.push({ from: m.id, to: target });
 }
 // Strongly connected components (Tarjan) over value imports.
 let index = 0; const stackT = []; const onStack = new Set(); const idx = new Map(); const low = new Map(); const sccs = [];
@@ -204,6 +211,12 @@ if (check) {
     const r = reachability[entry];
     if (!r) { failures.push(`entry ${entry} pinned in the baseline does not exist`); continue; }
     if (typeof limit.maxFiles === 'number' && r.files > limit.maxFiles) failures.push(`${entry} reaches ${r.files} modules; the baseline allows ${limit.maxFiles}`);
+    // `noFeatures`: the entry may not reach ANY module in a feature group (the split `core` entry,
+    // wiring design §7-1). Pin it once src/entries/core.ts exists.
+    if (limit.noFeatures === true) {
+      const reached = Object.keys(r.byGroup).filter(g => features.includes(g));
+      if (reached.length > 0) failures.push(`${entry} reaches feature groups ${reached.join(', ')}; the baseline forbids all of them`);
+    }
   }
   for (const n of notes) console.log(`note: ${n}`);
   if (failures.length) {

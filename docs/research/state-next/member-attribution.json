@@ -1,0 +1,3417 @@
+{
+  "revision": "6bff9f2cf8c4915c93dceb9c40b56e376eb06119",
+  "timestamp": "2026-09-20T10:45:55.877Z",
+  "totalMinifiedBytes": 243535,
+  "temporaryBuildDirectory": "C:\\Users\\kikuzawa\\AppData\\Local\\Temp\\wcstack-state-members-5WVKBD",
+  "note": "Bytes are minified bytes attributed through the composed source map, rolled up to the enclosing top-level declaration or class member. refs lists imported value identifiers used inside the member, grouped by the source directory they come from (interface-looking names I* are ignored).",
+  "files": {
+    "components/State.ts": {
+      "bytes": 18714,
+      "members": 127,
+      "membersReferencingFeatures": {
+        "bytes": 10142,
+        "share": 54.2
+      },
+      "bytesOfMembersByReferencedGroup": {
+        "(root)": 15206,
+        "webComponent": 7662,
+        "stream": 4568,
+        "watch": 4568,
+        "components": 2949,
+        "bindings": 2343,
+        "platform": 2343,
+        "command": 1826,
+        "list": 1517,
+        "recursion": 1280,
+        "event": 1201,
+        "scan": 1201,
+        "stateLoader": 1200,
+        "apply": 1118,
+        "address": 545,
+        "dcc": 503,
+        "proxy": 388
+      },
+      "rows": [
+        {
+          "name": "State.connectedCallback",
+          "kind": "method",
+          "lines": [
+            906,
+            1130
+          ],
+          "loc": 225,
+          "bytes": 2742,
+          "refs": {
+            "(root)": [
+              "DCC_DEFINITION_ATTRIBUTE",
+              "VERSION",
+              "config",
+              "getBindingsReady",
+              "getStateElement",
+              "inSsr",
+              "isOrchestratedSsr",
+              "raiseError",
+              "setStateElement"
+            ],
+            "components": [
+              "Ssr"
+            ],
+            "stream": [
+              "startStreams"
+            ],
+            "watch": [
+              "startWatch"
+            ],
+            "webComponent": [
+              "callMountLifecycleCallback",
+              "callVolumeLifecycle",
+              "remountScopeBindings",
+              "reserveVolumeSlot"
+            ]
+          }
+        },
+        {
+          "name": "State._initializeBindWebComponent",
+          "kind": "method",
+          "lines": [
+            698,
+            856
+          ],
+          "loc": 159,
+          "bytes": 2343,
+          "refs": {
+            "(root)": [
+              "config",
+              "getCustomElement",
+              "getStateElement",
+              "raiseError"
+            ],
+            "bindings": [
+              "getBindingsByNode",
+              "waitInitializeBinding"
+            ],
+            "platform": [
+              "getCustomElementRegistry"
+            ],
+            "webComponent": [
+              "bindWebComponent",
+              "buildMountRecord",
+              "callMountLifecycleCallback",
+              "createPublicMountState",
+              "getInjectedKeys",
+              "getRegisteredMountRecord",
+              "hasRootMountBinding",
+              "initializeMountScope",
+              "invokeStateReadyCallback",
+              "markWebComponentAsComplete",
+              "markWebComponentStatePropDeclared",
+              "restoreOverwrittenValues",
+              "takeOverwrittenObject",
+              "warnMountedDollarDeclarations",
+              "warnOwnKeyShadowsForMount"
+            ]
+          }
+        },
+        {
+          "name": "State._state",
+          "kind": "get",
+          "lines": [
+            248,
+            253
+          ],
+          "loc": 6,
+          "bytes": 1201,
+          "refs": {
+            "(root)": [
+              "config",
+              "raiseError"
+            ]
+          }
+        },
+        {
+          "name": "State._state",
+          "kind": "set",
+          "lines": [
+            255,
+            402
+          ],
+          "loc": 148,
+          "bytes": 1201,
+          "refs": {
+            "(root)": [
+              "STATE_ERROR_CALLBACK_NAME",
+              "STATE_UPDATED_CALLBACK_NAME",
+              "inSsr",
+              "resetPathDiagnostics"
+            ],
+            "command": [
+              "processCommandTokensDeclaration"
+            ],
+            "event": [
+              "clearEventTokenRegistry",
+              "processEventTokensDeclaration",
+              "processOnDeclaration"
+            ],
+            "list": [
+              "processListKeysDeclaration"
+            ],
+            "recursion": [
+              "RecursionRegistry",
+              "processRecursionDeclaration"
+            ],
+            "scan": [
+              "materializeScanOutputs",
+              "parseScanDeclaration",
+              "registerScans",
+              "subscribeScanEvents",
+              "unregisterScans"
+            ],
+            "stream": [
+              "clearStreamNamespace",
+              "clearStreamRegistry",
+              "processStreamsDeclaration",
+              "startStreams"
+            ],
+            "watch": [
+              "clearComputedSnapshots",
+              "clearWatchRegistry",
+              "processWatchDeclaration",
+              "startWatch"
+            ]
+          }
+        },
+        {
+          "name": "State._initializeVolume",
+          "kind": "method",
+          "lines": [
+            471,
+            557
+          ],
+          "loc": 87,
+          "bytes": 1074,
+          "refs": {
+            "(root)": [
+              "config",
+              "getStateElement",
+              "raiseError"
+            ],
+            "webComponent": [
+              "graftOrQueueVolume",
+              "reserveVolumeSlot",
+              "validateVolumeMountPath"
+            ]
+          }
+        },
+        {
+          "name": "State.setInitialState",
+          "kind": "method",
+          "lines": [
+            1589,
+            1639
+          ],
+          "loc": 51,
+          "bytes": 1055,
+          "refs": {
+            "(root)": [
+              "config",
+              "raiseError"
+            ],
+            "apply": [
+              "collectReapplyPaths"
+            ]
+          }
+        },
+        {
+          "name": "State._loadStateFromSource",
+          "kind": "method",
+          "lines": [
+            427,
+            464
+          ],
+          "loc": 38,
+          "bytes": 697,
+          "refs": {
+            "(root)": [
+              "NO_SET_TIMEOUT",
+              "config",
+              "raiseError"
+            ],
+            "stateLoader": [
+              "loadFromInnerScript",
+              "loadFromJsonFile",
+              "loadFromScriptFile",
+              "loadFromScriptJson"
+            ]
+          }
+        },
+        {
+          "name": "reportVolumeWithoutRoot",
+          "kind": "function",
+          "lines": [
+            1657,
+            1683
+          ],
+          "loc": 27,
+          "bytes": 687,
+          "refs": {
+            "(root)": [
+              "config",
+              "getStateElement"
+            ]
+          }
+        },
+        {
+          "name": "State.disconnectedCallback",
+          "kind": "method",
+          "lines": [
+            1164,
+            1242
+          ],
+          "loc": 79,
+          "bytes": 625,
+          "refs": {
+            "(root)": [
+              "setStateElement"
+            ],
+            "command": [
+              "clearCommandNamespace"
+            ],
+            "stream": [
+              "abortAllStreams",
+              "clearStreamNamespace"
+            ],
+            "watch": [
+              "deactivateWatch"
+            ],
+            "webComponent": [
+              "callMountLifecycleCallback",
+              "callVolumeLifecycle",
+              "clearFailedRootNode",
+              "notifyExports"
+            ]
+          }
+        },
+        {
+          "name": "State.setPathInfo",
+          "kind": "method",
+          "lines": [
+            1473,
+            1509
+          ],
+          "loc": 37,
+          "bytes": 545,
+          "refs": {
+            "(root)": [
+              "BindingType",
+              "PathInfoSource",
+              "WILDCARD",
+              "checkDeclaredPath"
+            ],
+            "address": [
+              "getPathInfo"
+            ]
+          }
+        },
+        {
+          "name": "State._initializeDCC",
+          "kind": "method",
+          "lines": [
+            868,
+            895
+          ],
+          "loc": 28,
+          "bytes": 503,
+          "refs": {
+            "(root)": [
+              "raiseError"
+            ],
+            "dcc": [
+              "defineDCC"
+            ],
+            "stateLoader": [
+              "loadFromInnerScript",
+              "loadFromScriptFile"
+            ]
+          }
+        },
+        {
+          "name": "State._initialize",
+          "kind": "method",
+          "lines": [
+            563,
+            600
+          ],
+          "loc": 38,
+          "bytes": 468,
+          "refs": {
+            "(root)": [
+              "inSsr",
+              "setStateElement"
+            ]
+          }
+        },
+        {
+          "name": "State._failInitializeLoudly",
+          "kind": "method",
+          "lines": [
+            667,
+            696
+          ],
+          "loc": 30,
+          "bytes": 398,
+          "refs": {
+            "(root)": [
+              "config",
+              "getStateElement",
+              "markBindingsUnavailable"
+            ],
+            "webComponent": [
+              "failPendingVolumes"
+            ]
+          }
+        },
+        {
+          "name": "State.attributeChangedCallback",
+          "kind": "method",
+          "lines": [
+            404,
+            414
+          ],
+          "loc": 11,
+          "bytes": 347,
+          "refs": {
+            "(root)": [
+              "config"
+            ]
+          }
+        },
+        {
+          "name": "State._acquireVolumeSlot",
+          "kind": "method",
+          "lines": [
+            1146,
+            1162
+          ],
+          "loc": 17,
+          "bytes": 339,
+          "refs": {
+            "(root)": [
+              "config"
+            ],
+            "webComponent": [
+              "reserveVolumeSlot"
+            ]
+          }
+        },
+        {
+          "name": "State.constructor",
+          "kind": "constructor",
+          "lines": [
+            231,
+            246
+          ],
+          "loc": 16,
+          "bytes": 334,
+          "refs": {}
+        },
+        {
+          "name": "State.mergeVolumeListKeys",
+          "kind": "method",
+          "lines": [
+            1303,
+            1315
+          ],
+          "loc": 13,
+          "bytes": 243,
+          "refs": {
+            "(root)": [
+              "raiseError"
+            ],
+            "list": [
+              "ListKeySpec"
+            ]
+          }
+        },
+        {
+          "name": "State._loadFromSsrElement",
+          "kind": "method",
+          "lines": [
+            416,
+            424
+          ],
+          "loc": 9,
+          "bytes": 207,
+          "refs": {
+            "components": [
+              "Ssr"
+            ]
+          }
+        },
+        {
+          "name": "State.defineTreeAccessor",
+          "kind": "method",
+          "lines": [
+            1338,
+            1347
+          ],
+          "loc": 10,
+          "bytes": 203,
+          "refs": {}
+        },
+        {
+          "name": "getStateInfo",
+          "kind": "function",
+          "lines": [
+            56,
+            76
+          ],
+          "loc": 21,
+          "bytes": 187,
+          "refs": {
+            "(root)": [
+              "getAllPropertyDescriptors"
+            ]
+          }
+        },
+        {
+          "name": "State._failInitialization",
+          "kind": "method",
+          "lines": [
+            609,
+            618
+          ],
+          "loc": 10,
+          "bytes": 146,
+          "refs": {
+            "(root)": [
+              "raiseError"
+            ]
+          }
+        },
+        {
+          "name": "State._rebuildPathInfo",
+          "kind": "method",
+          "lines": [
+            1533,
+            1540
+          ],
+          "loc": 8,
+          "bytes": 145,
+          "refs": {}
+        },
+        {
+          "name": "State._releaseVolumeSlot",
+          "kind": "method",
+          "lines": [
+            1133,
+            1139
+          ],
+          "loc": 7,
+          "bytes": 141,
+          "refs": {
+            "webComponent": [
+              "releaseVolumeSlot"
+            ]
+          }
+        },
+        {
+          "name": "State.addVolumeWatchPaths",
+          "kind": "method",
+          "lines": [
+            1291,
+            1300
+          ],
+          "loc": 10,
+          "bytes": 127,
+          "refs": {}
+        },
+        {
+          "name": "State._callStateConnectedCallback",
+          "kind": "method",
+          "lines": [
+            859,
+            866
+          ],
+          "loc": 8,
+          "bytes": 109,
+          "refs": {
+            "(root)": [
+              "STATE_CONNECTED_CALLBACK_NAME"
+            ],
+            "proxy": [
+              "connectedCallbackSymbol"
+            ]
+          }
+        },
+        {
+          "name": "State._addDependency",
+          "kind": "method",
+          "lines": [
+            1425,
+            1439
+          ],
+          "loc": 15,
+          "bytes": 106,
+          "refs": {}
+        },
+        {
+          "name": "State.rootNode",
+          "kind": "get",
+          "lines": [
+            1378,
+            1383
+          ],
+          "loc": 6,
+          "bytes": 98,
+          "refs": {
+            "(root)": [
+              "raiseError"
+            ]
+          }
+        },
+        {
+          "name": "State._callStateDisconnectedCallback",
+          "kind": "method",
+          "lines": [
+            897,
+            904
+          ],
+          "loc": 8,
+          "bytes": 83,
+          "refs": {
+            "(root)": [
+              "STATE_DISCONNECTED_CALLBACK_NAME"
+            ],
+            "proxy": [
+              "disconnectedCallbackSymbol"
+            ]
+          }
+        },
+        {
+          "name": "State.addDynamicDependency",
+          "kind": "method",
+          "lines": [
+            1456,
+            1458
+          ],
+          "loc": 3,
+          "bytes": 82,
+          "refs": {}
+        },
+        {
+          "name": "State.addStaticDependency",
+          "kind": "method",
+          "lines": [
+            1469,
+            1471
+          ],
+          "loc": 3,
+          "bytes": 80,
+          "refs": {}
+        },
+        {
+          "name": "State.createStateAsync",
+          "kind": "method",
+          "lines": [
+            1551,
+            1553
+          ],
+          "loc": 3,
+          "bytes": 78,
+          "refs": {
+            "proxy": [
+              "Mutability"
+            ]
+          }
+        },
+        {
+          "name": "State.indexDependentGetterPaths",
+          "kind": "get",
+          "lines": [
+            1580,
+            1582
+          ],
+          "loc": 3,
+          "bytes": 71,
+          "refs": {}
+        },
+        {
+          "name": "State.addIndexDependentGetterPath",
+          "kind": "method",
+          "lines": [
+            1584,
+            1586
+          ],
+          "loc": 3,
+          "bytes": 70,
+          "refs": {}
+        },
+        {
+          "name": "State.connectedCallbackPromise",
+          "kind": "get",
+          "lines": [
+            1252,
+            1254
+          ],
+          "loc": 3,
+          "bytes": 69,
+          "refs": {}
+        },
+        {
+          "name": "State.boundComponentStateProp",
+          "kind": "get",
+          "lines": [
+            1385,
+            1387
+          ],
+          "loc": 3,
+          "bytes": 67,
+          "refs": {}
+        },
+        {
+          "name": "State._createState",
+          "kind": "method",
+          "lines": [
+            1542,
+            1549
+          ],
+          "loc": 8,
+          "bytes": 64,
+          "refs": {
+            "proxy": [
+              "Mutability",
+              "createStateProxy"
+            ]
+          }
+        },
+        {
+          "name": "State._reapplyBindings",
+          "kind": "method",
+          "lines": [
+            1642,
+            1644
+          ],
+          "loc": 3,
+          "bytes": 63,
+          "refs": {
+            "apply": [
+              "reapplyStateBindings"
+            ]
+          }
+        },
+        {
+          "name": "State.hasRecursion",
+          "kind": "get",
+          "lines": [
+            1264,
+            1266
+          ],
+          "loc": 3,
+          "bytes": 57,
+          "refs": {}
+        },
+        {
+          "name": "State.hasUpdatedCallback",
+          "kind": "get",
+          "lines": [
+            1564,
+            1566
+          ],
+          "loc": 3,
+          "bytes": 57,
+          "refs": {}
+        },
+        {
+          "name": "State.initializePromise",
+          "kind": "get",
+          "lines": [
+            1248,
+            1250
+          ],
+          "loc": 3,
+          "bytes": 55,
+          "refs": {}
+        },
+        {
+          "name": "State.recursionRegistry",
+          "kind": "get",
+          "lines": [
+            1268,
+            1270
+          ],
+          "loc": 3,
+          "bytes": 55,
+          "refs": {
+            "recursion": [
+              "RecursionRegistry"
+            ]
+          }
+        },
+        {
+          "name": "State.dynamicDependency",
+          "kind": "get",
+          "lines": [
+            1361,
+            1363
+          ],
+          "loc": 3,
+          "bytes": 55,
+          "refs": {}
+        },
+        {
+          "name": "State.hasGraftedVolumes",
+          "kind": "get",
+          "lines": [
+            1400,
+            1402
+          ],
+          "loc": 3,
+          "bytes": 55,
+          "refs": {}
+        },
+        {
+          "name": "State.commandTokenNames",
+          "kind": "get",
+          "lines": [
+            1413,
+            1415
+          ],
+          "loc": 3,
+          "bytes": 55,
+          "refs": {}
+        },
+        {
+          "name": "State.crossRowListPaths",
+          "kind": "get",
+          "lines": [
+            1572,
+            1574
+          ],
+          "loc": 3,
+          "bytes": 55,
+          "refs": {}
+        },
+        {
+          "name": "State.createState",
+          "kind": "method",
+          "lines": [
+            1555,
+            1557
+          ],
+          "loc": 3,
+          "bytes": 54,
+          "refs": {
+            "proxy": [
+              "Mutability"
+            ]
+          }
+        },
+        {
+          "name": "State.addCrossRowListPath",
+          "kind": "method",
+          "lines": [
+            1576,
+            1578
+          ],
+          "loc": 3,
+          "bytes": 54,
+          "refs": {}
+        },
+        {
+          "name": "State.loopContextStack",
+          "kind": "get",
+          "lines": [
+            1357,
+            1359
+          ],
+          "loc": 3,
+          "bytes": 53,
+          "refs": {}
+        },
+        {
+          "name": "State.staticDependency",
+          "kind": "get",
+          "lines": [
+            1365,
+            1367
+          ],
+          "loc": 3,
+          "bytes": 53,
+          "refs": {}
+        },
+        {
+          "name": "State.bindableEventMap",
+          "kind": "get",
+          "lines": [
+            1409,
+            1411
+          ],
+          "loc": 3,
+          "bytes": 53,
+          "refs": {}
+        },
+        {
+          "name": "State.hasErrorCallback",
+          "kind": "get",
+          "lines": [
+            1568,
+            1570
+          ],
+          "loc": 3,
+          "bytes": 53,
+          "refs": {}
+        },
+        {
+          "name": "State.enableUpdatedCallback",
+          "kind": "method",
+          "lines": [
+            1318,
+            1320
+          ],
+          "loc": 3,
+          "bytes": 52,
+          "refs": {}
+        },
+        {
+          "name": "State.hydratedFromSsr",
+          "kind": "get",
+          "lines": [
+            1323,
+            1325
+          ],
+          "loc": 3,
+          "bytes": 51,
+          "refs": {}
+        },
+        {
+          "name": "State.stateGeneration",
+          "kind": "get",
+          "lines": [
+            1374,
+            1376
+          ],
+          "loc": 3,
+          "bytes": 51,
+          "refs": {}
+        },
+        {
+          "name": "State.markHasGraftedVolumes",
+          "kind": "method",
+          "lines": [
+            1405,
+            1407
+          ],
+          "loc": 3,
+          "bytes": 51,
+          "refs": {}
+        },
+        {
+          "name": "State.eventTokenNames",
+          "kind": "get",
+          "lines": [
+            1417,
+            1419
+          ],
+          "loc": 3,
+          "bytes": 51,
+          "refs": {}
+        },
+        {
+          "name": "State.nextVersion",
+          "kind": "method",
+          "lines": [
+            1559,
+            1562
+          ],
+          "loc": 4,
+          "bytes": 51,
+          "refs": {}
+        },
+        {
+          "name": "State.observedAttributes",
+          "kind": "get",
+          "lines": [
+            91,
+            93
+          ],
+          "loc": 3,
+          "bytes": 48,
+          "refs": {}
+        },
+        {
+          "name": "State.findStateDescriptor",
+          "kind": "method",
+          "lines": [
+            1331,
+            1336
+          ],
+          "loc": 6,
+          "bytes": 48,
+          "refs": {
+            "(root)": [
+              "findDescriptor"
+            ]
+          }
+        },
+        {
+          "name": "State.setBindableEventMap",
+          "kind": "method",
+          "lines": [
+            1421,
+            1423
+          ],
+          "loc": 3,
+          "bytes": 48,
+          "refs": {}
+        },
+        {
+          "name": "State.elementPaths",
+          "kind": "get",
+          "lines": [
+            1280,
+            1282
+          ],
+          "loc": 3,
+          "bytes": 45,
+          "refs": {}
+        },
+        {
+          "name": "State.initialized",
+          "kind": "get",
+          "lines": [
+            1244,
+            1246
+          ],
+          "loc": 3,
+          "bytes": 43,
+          "refs": {}
+        },
+        {
+          "name": "State.getterPaths",
+          "kind": "get",
+          "lines": [
+            1349,
+            1351
+          ],
+          "loc": 3,
+          "bytes": 43,
+          "refs": {}
+        },
+        {
+          "name": "State.setterPaths",
+          "kind": "get",
+          "lines": [
+            1353,
+            1355
+          ],
+          "loc": 3,
+          "bytes": 43,
+          "refs": {}
+        },
+        {
+          "name": "State.watchPaths",
+          "kind": "get",
+          "lines": [
+            1272,
+            1274
+          ],
+          "loc": 3,
+          "bytes": 41,
+          "refs": {}
+        },
+        {
+          "name": "State.getBindingsReady",
+          "kind": "method",
+          "lines": [
+            81,
+            83
+          ],
+          "loc": 3,
+          "bytes": 40,
+          "refs": {
+            "(root)": [
+              "getBindingsReady"
+            ]
+          }
+        },
+        {
+          "name": "State.listPaths",
+          "kind": "get",
+          "lines": [
+            1256,
+            1258
+          ],
+          "loc": 3,
+          "bytes": 39,
+          "refs": {}
+        },
+        {
+          "name": "State.scanPaths",
+          "kind": "get",
+          "lines": [
+            1276,
+            1278
+          ],
+          "loc": 3,
+          "bytes": 39,
+          "refs": {}
+        },
+        {
+          "name": "State.hasMounts",
+          "kind": "get",
+          "lines": [
+            1391,
+            1393
+          ],
+          "loc": 3,
+          "bytes": 39,
+          "refs": {}
+        },
+        {
+          "name": "State.hasConnectedCallbackPromise",
+          "kind": "property",
+          "lines": [
+            79,
+            79
+          ],
+          "loc": 1,
+          "bytes": 38,
+          "refs": {}
+        },
+        {
+          "name": "State.addListPath",
+          "kind": "method",
+          "lines": [
+            1327,
+            1329
+          ],
+          "loc": 3,
+          "bytes": 38,
+          "refs": {}
+        },
+        {
+          "name": "State.listKeys",
+          "kind": "get",
+          "lines": [
+            1260,
+            1262
+          ],
+          "loc": 3,
+          "bytes": 37,
+          "refs": {
+            "list": [
+              "ListKeyMap"
+            ]
+          }
+        },
+        {
+          "name": "State._indexDependentGetterPaths",
+          "kind": "property",
+          "lines": [
+            106,
+            106
+          ],
+          "loc": 1,
+          "bytes": 35,
+          "refs": {}
+        },
+        {
+          "name": "State.version",
+          "kind": "get",
+          "lines": [
+            1369,
+            1371
+          ],
+          "loc": 3,
+          "bytes": 35,
+          "refs": {}
+        },
+        {
+          "name": "State.markHasMounts",
+          "kind": "method",
+          "lines": [
+            1396,
+            1398
+          ],
+          "loc": 3,
+          "bytes": 35,
+          "refs": {}
+        },
+        {
+          "name": "State._resolveConnectedCallback",
+          "kind": "property",
+          "lines": [
+            125,
+            125
+          ],
+          "loc": 1,
+          "bytes": 31,
+          "refs": {}
+        },
+        {
+          "name": "State._rejectConnectedCallback",
+          "kind": "property",
+          "lines": [
+            126,
+            126
+          ],
+          "loc": 1,
+          "bytes": 30,
+          "refs": {}
+        },
+        {
+          "name": "State._boundComponentStateProp",
+          "kind": "property",
+          "lines": [
+            191,
+            191
+          ],
+          "loc": 1,
+          "bytes": 30,
+          "refs": {}
+        },
+        {
+          "name": "State._streamsStartedGeneration",
+          "kind": "property",
+          "lines": [
+            229,
+            229
+          ],
+          "loc": 1,
+          "bytes": 28,
+          "refs": {}
+        },
+        {
+          "name": "State._crossRowListPaths",
+          "kind": "property",
+          "lines": [
+            103,
+            103
+          ],
+          "loc": 1,
+          "bytes": 27,
+          "refs": {}
+        },
+        {
+          "name": "State._dynamicDependency",
+          "kind": "property",
+          "lines": [
+            139,
+            139
+          ],
+          "loc": 1,
+          "bytes": 27,
+          "refs": {}
+        },
+        {
+          "name": "State._pathRegistrations",
+          "kind": "property",
+          "lines": [
+            167,
+            168
+          ],
+          "loc": 2,
+          "bytes": 27,
+          "refs": {
+            "(root)": [
+              "BindingType"
+            ]
+          }
+        },
+        {
+          "name": "State._commandTokenNames",
+          "kind": "property",
+          "lines": [
+            217,
+            217
+          ],
+          "loc": 1,
+          "bytes": 27,
+          "refs": {}
+        },
+        {
+          "name": "State._connectedCallbackPromise",
+          "kind": "property",
+          "lines": [
+            124,
+            124
+          ],
+          "loc": 1,
+          "bytes": 26,
+          "refs": {}
+        },
+        {
+          "name": "State._staticDependency",
+          "kind": "property",
+          "lines": [
+            140,
+            140
+          ],
+          "loc": 1,
+          "bytes": 26,
+          "refs": {}
+        },
+        {
+          "name": "State._pendingReapplyPaths",
+          "kind": "property",
+          "lines": [
+            174,
+            174
+          ],
+          "loc": 1,
+          "bytes": 26,
+          "refs": {}
+        },
+        {
+          "name": "State._initializationLanded",
+          "kind": "property",
+          "lines": [
+            121,
+            121
+          ],
+          "loc": 1,
+          "bytes": 25,
+          "refs": {}
+        },
+        {
+          "name": "State._volumeSlotRootNode",
+          "kind": "property",
+          "lines": [
+            208,
+            208
+          ],
+          "loc": 1,
+          "bytes": 25,
+          "refs": {}
+        },
+        {
+          "name": "State._volumeDetachedFrom",
+          "kind": "property",
+          "lines": [
+            213,
+            213
+          ],
+          "loc": 1,
+          "bytes": 25,
+          "refs": {}
+        },
+        {
+          "name": "State._eventTokenNames",
+          "kind": "property",
+          "lines": [
+            218,
+            218
+          ],
+          "loc": 1,
+          "bytes": 25,
+          "refs": {}
+        },
+        {
+          "name": "State._resolveInitialize",
+          "kind": "property",
+          "lines": [
+            123,
+            123
+          ],
+          "loc": 1,
+          "bytes": 24,
+          "refs": {}
+        },
+        {
+          "name": "State._recursionRegistry",
+          "kind": "property",
+          "lines": [
+            133,
+            133
+          ],
+          "loc": 1,
+          "bytes": 24,
+          "refs": {
+            "recursion": [
+              "RecursionRegistry"
+            ]
+          }
+        },
+        {
+          "name": "State._generatedPaths",
+          "kind": "property",
+          "lines": [
+            184,
+            184
+          ],
+          "loc": 1,
+          "bytes": 24,
+          "refs": {}
+        },
+        {
+          "name": "State._hasUpdatedCallback",
+          "kind": "property",
+          "lines": [
+            96,
+            96
+          ],
+          "loc": 1,
+          "bytes": 23,
+          "refs": {}
+        },
+        {
+          "name": "State._volumeInitializing",
+          "kind": "property",
+          "lines": [
+            197,
+            197
+          ],
+          "loc": 1,
+          "bytes": 23,
+          "refs": {}
+        },
+        {
+          "name": "State._setStatePromise",
+          "kind": "property",
+          "lines": [
+            129,
+            129
+          ],
+          "loc": 1,
+          "bytes": 22,
+          "refs": {}
+        },
+        {
+          "name": "State._resolveSetState",
+          "kind": "property",
+          "lines": [
+            130,
+            130
+          ],
+          "loc": 1,
+          "bytes": 22,
+          "refs": {}
+        },
+        {
+          "name": "State._elementPaths",
+          "kind": "property",
+          "lines": [
+            134,
+            134
+          ],
+          "loc": 1,
+          "bytes": 22,
+          "refs": {}
+        },
+        {
+          "name": "State._hasGraftedVolumes",
+          "kind": "property",
+          "lines": [
+            193,
+            193
+          ],
+          "loc": 1,
+          "bytes": 22,
+          "refs": {}
+        },
+        {
+          "name": "State._volumeGraftInfo",
+          "kind": "property",
+          "lines": [
+            195,
+            195
+          ],
+          "loc": 1,
+          "bytes": 22,
+          "refs": {}
+        },
+        {
+          "name": "State._volumeMountPath",
+          "kind": "property",
+          "lines": [
+            202,
+            202
+          ],
+          "loc": 1,
+          "bytes": 22,
+          "refs": {}
+        },
+        {
+          "name": "State._hasErrorCallback",
+          "kind": "property",
+          "lines": [
+            98,
+            98
+          ],
+          "loc": 1,
+          "bytes": 21,
+          "refs": {}
+        },
+        {
+          "name": "State._initializeFailed",
+          "kind": "property",
+          "lines": [
+            114,
+            114
+          ],
+          "loc": 1,
+          "bytes": 21,
+          "refs": {}
+        },
+        {
+          "name": "State._resolveLoading",
+          "kind": "property",
+          "lines": [
+            128,
+            128
+          ],
+          "loc": 1,
+          "bytes": 21,
+          "refs": {}
+        },
+        {
+          "name": "State._getterPaths",
+          "kind": "property",
+          "lines": [
+            135,
+            135
+          ],
+          "loc": 1,
+          "bytes": 21,
+          "refs": {}
+        },
+        {
+          "name": "State._setterPaths",
+          "kind": "property",
+          "lines": [
+            136,
+            136
+          ],
+          "loc": 1,
+          "bytes": 21,
+          "refs": {}
+        },
+        {
+          "name": "State._loopContextStack",
+          "kind": "property",
+          "lines": [
+            138,
+            138
+          ],
+          "loc": 1,
+          "bytes": 21,
+          "refs": {
+            "list": [
+              "createLoopContextStack"
+            ]
+          }
+        },
+        {
+          "name": "State._boundComponent",
+          "kind": "property",
+          "lines": [
+            190,
+            190
+          ],
+          "loc": 1,
+          "bytes": 21,
+          "refs": {}
+        },
+        {
+          "name": "State._bindableEventMap",
+          "kind": "property",
+          "lines": [
+            216,
+            216
+          ],
+          "loc": 1,
+          "bytes": 21,
+          "refs": {}
+        },
+        {
+          "name": "State._connectGeneration",
+          "kind": "property",
+          "lines": [
+            225,
+            225
+          ],
+          "loc": 1,
+          "bytes": 21,
+          "refs": {}
+        },
+        {
+          "name": "State._hydratedFromSsr",
+          "kind": "property",
+          "lines": [
+            100,
+            100
+          ],
+          "loc": 1,
+          "bytes": 20,
+          "refs": {}
+        },
+        {
+          "name": "(module level)",
+          "kind": "module",
+          "lines": null,
+          "loc": null,
+          "bytes": 20,
+          "refs": {}
+        },
+        {
+          "name": "State._initializePromise",
+          "kind": "property",
+          "lines": [
+            122,
+            122
+          ],
+          "loc": 1,
+          "bytes": 19,
+          "refs": {}
+        },
+        {
+          "name": "State._listPaths",
+          "kind": "property",
+          "lines": [
+            131,
+            131
+          ],
+          "loc": 1,
+          "bytes": 19,
+          "refs": {}
+        },
+        {
+          "name": "State._stateGeneration",
+          "kind": "property",
+          "lines": [
+            149,
+            149
+          ],
+          "loc": 1,
+          "bytes": 19,
+          "refs": {}
+        },
+        {
+          "name": "State._mountRecord",
+          "kind": "property",
+          "lines": [
+            215,
+            215
+          ],
+          "loc": 1,
+          "bytes": 18,
+          "refs": {}
+        },
+        {
+          "name": "State._pathSet",
+          "kind": "property",
+          "lines": [
+            141,
+            141
+          ],
+          "loc": 1,
+          "bytes": 17,
+          "refs": {}
+        },
+        {
+          "name": "State._watchPaths",
+          "kind": "property",
+          "lines": [
+            186,
+            186
+          ],
+          "loc": 1,
+          "bytes": 17,
+          "refs": {}
+        },
+        {
+          "name": "State._initialized",
+          "kind": "property",
+          "lines": [
+            107,
+            107
+          ],
+          "loc": 1,
+          "bytes": 16,
+          "refs": {}
+        },
+        {
+          "name": "State._loadingPromise",
+          "kind": "property",
+          "lines": [
+            127,
+            127
+          ],
+          "loc": 1,
+          "bytes": 16,
+          "refs": {}
+        },
+        {
+          "name": "State._scanPaths",
+          "kind": "property",
+          "lines": [
+            187,
+            187
+          ],
+          "loc": 1,
+          "bytes": 16,
+          "refs": {}
+        },
+        {
+          "name": "State._listKeys",
+          "kind": "property",
+          "lines": [
+            132,
+            132
+          ],
+          "loc": 1,
+          "bytes": 15,
+          "refs": {
+            "list": [
+              "ListKeyMap"
+            ]
+          }
+        },
+        {
+          "name": "State._rootNode",
+          "kind": "property",
+          "lines": [
+            189,
+            189
+          ],
+          "loc": 1,
+          "bytes": 15,
+          "refs": {}
+        },
+        {
+          "name": "State._hasMounts",
+          "kind": "property",
+          "lines": [
+            192,
+            192
+          ],
+          "loc": 1,
+          "bytes": 14,
+          "refs": {}
+        },
+        {
+          "name": "State._version",
+          "kind": "property",
+          "lines": [
+            188,
+            188
+          ],
+          "loc": 1,
+          "bytes": 11,
+          "refs": {}
+        },
+        {
+          "name": "State.__state",
+          "kind": "property",
+          "lines": [
+            95,
+            95
+          ],
+          "loc": 1,
+          "bytes": 8,
+          "refs": {}
+        },
+        {
+          "name": "State._dcc",
+          "kind": "property",
+          "lines": [
+            219,
+            219
+          ],
+          "loc": 1,
+          "bytes": 8,
+          "refs": {}
+        }
+      ]
+    },
+    "bindings/BindingSession.ts": {
+      "bytes": 12886,
+      "members": 60,
+      "membersReferencingFeatures": {
+        "bytes": 0,
+        "share": 0
+      },
+      "bytesOfMembersByReferencedGroup": {
+        "bindings": 4023,
+        "(root)": 3299,
+        "event": 2550,
+        "binding": 1719,
+        "platform": 1093,
+        "list": 1025,
+        "apply": 537,
+        "address": 522
+      },
+      "rows": [
+        {
+          "name": "BindingSession.initializeRow",
+          "kind": "method",
+          "lines": [
+            694,
+            746
+          ],
+          "loc": 53,
+          "bytes": 827,
+          "refs": {
+            "event": [
+              "attachEventHandler"
+            ]
+          }
+        },
+        {
+          "name": "BindingSession.start",
+          "kind": "method",
+          "lines": [
+            818,
+            863
+          ],
+          "loc": 46,
+          "bytes": 759,
+          "refs": {
+            "bindings": [
+              "replaceToReplaceNode"
+            ]
+          }
+        },
+        {
+          "name": "BindingSession.activatePlanRows",
+          "kind": "method",
+          "lines": [
+            757,
+            798
+          ],
+          "loc": 42,
+          "bytes": 721,
+          "refs": {
+            "event": [
+              "attachEventHandler"
+            ]
+          }
+        },
+        {
+          "name": "BindingSession.attachAfterDefinition",
+          "kind": "method",
+          "lines": [
+            915,
+            956
+          ],
+          "loc": 42,
+          "bytes": 608,
+          "refs": {
+            "(root)": [
+              "getCustomElement",
+              "raiseError"
+            ],
+            "bindings": [
+              "DefinitionCoordinator",
+              "getDefinitionCoordinator"
+            ],
+            "platform": [
+              "getCustomElementRegistry",
+              "upgradeCustomElement"
+            ]
+          }
+        },
+        {
+          "name": "BindingSession.activate",
+          "kind": "method",
+          "lines": [
+            336,
+            365
+          ],
+          "loc": 30,
+          "bytes": 568,
+          "refs": {}
+        },
+        {
+          "name": "BindingSession.initialize",
+          "kind": "method",
+          "lines": [
+            293,
+            322
+          ],
+          "loc": 30,
+          "bytes": 566,
+          "refs": {}
+        },
+        {
+          "name": "BindingSession.settleInitialRecord",
+          "kind": "method",
+          "lines": [
+            958,
+            987
+          ],
+          "loc": 30,
+          "bytes": 558,
+          "refs": {
+            "(root)": [
+              "config"
+            ],
+            "bindings": [
+              "incrementPendingObservation",
+              "resolveInitialAuthority",
+              "resolveInitialSyncPolicy"
+            ]
+          }
+        },
+        {
+          "name": "BindingSession.runTeardowns",
+          "kind": "method",
+          "lines": [
+            1072,
+            1133
+          ],
+          "loc": 62,
+          "bytes": 536,
+          "refs": {
+            "binding": [
+              "clearAbsoluteStateAddressByBinding",
+              "clearStateAddressByBindingInfo",
+              "removeBindingByAbsoluteStateAddress",
+              "removeBindingByPattern"
+            ],
+            "bindings": [
+              "decrementPendingObservation"
+            ],
+            "event": [
+              "detachEventHandler",
+              "detachTwowayEventHandler"
+            ]
+          }
+        },
+        {
+          "name": "BindingSession.registerAddress",
+          "kind": "method",
+          "lines": [
+            1024,
+            1056
+          ],
+          "loc": 33,
+          "bytes": 522,
+          "refs": {
+            "(root)": [
+              "getStateElement",
+              "raiseError"
+            ],
+            "address": [
+              "getTreePath"
+            ],
+            "binding": [
+              "addBindingByAbsoluteStateAddress",
+              "addBindingByPattern",
+              "getAbsoluteStateAddressByBinding",
+              "resolveBindingRootNode"
+            ],
+            "list": [
+              "getListIndexByBindingInfo"
+            ]
+          }
+        },
+        {
+          "name": "BindingSession.rebindAddresses",
+          "kind": "method",
+          "lines": [
+            532,
+            568
+          ],
+          "loc": 37,
+          "bytes": 503,
+          "refs": {
+            "binding": [
+              "clearAbsoluteStateAddressByBinding",
+              "clearStateAddressByBindingInfo",
+              "getAbsoluteStateAddressByBinding",
+              "removeBindingByAbsoluteStateAddress",
+              "removeBindingByPattern"
+            ],
+            "list": [
+              "getLastListValueByAbsoluteStateAddress",
+              "getStateListBaseline",
+              "hasLastListValueByAbsoluteStateAddress",
+              "hasStateListBaseline",
+              "setLastListValueByAbsoluteStateAddress",
+              "setStateListBaseline"
+            ]
+          }
+        },
+        {
+          "name": "BindingSession.deferUntilDefined",
+          "kind": "method",
+          "lines": [
+            407,
+            454
+          ],
+          "loc": 48,
+          "bytes": 485,
+          "refs": {
+            "(root)": [
+              "raiseError"
+            ],
+            "bindings": [
+              "getDefinitionCoordinator"
+            ],
+            "platform": [
+              "getCustomElementRegistry",
+              "upgradeCustomElement"
+            ]
+          }
+        },
+        {
+          "name": "BindingSession.attachListeners",
+          "kind": "method",
+          "lines": [
+            865,
+            913
+          ],
+          "loc": 49,
+          "bytes": 466,
+          "refs": {
+            "(root)": [
+              "EVENT_TOKEN_NAMESPACE",
+              "MODIFIER_READONLY",
+              "config"
+            ],
+            "event": [
+              "addTwowayValueObserver",
+              "attachCheckboxEventHandler",
+              "attachEventHandler",
+              "attachEventTokenHandler",
+              "attachRadioEventHandler",
+              "attachTwowayEventHandler",
+              "detachCheckboxEventHandler",
+              "detachEventTokenHandler",
+              "detachRadioEventHandler",
+              "isPossibleTwoWay"
+            ]
+          }
+        },
+        {
+          "name": "BindingSession.shouldApplyState",
+          "kind": "method",
+          "lines": [
+            367,
+            391
+          ],
+          "loc": 25,
+          "bytes": 412,
+          "refs": {
+            "(root)": [
+              "config"
+            ],
+            "bindings": [
+              "hasInitialSyncModifier",
+              "resolveInitialSyncPolicy"
+            ]
+          }
+        },
+        {
+          "name": "BindingSession.handleAddedNode",
+          "kind": "method",
+          "lines": [
+            616,
+            636
+          ],
+          "loc": 21,
+          "bytes": 393,
+          "refs": {}
+        },
+        {
+          "name": "BindingSession.remember",
+          "kind": "method",
+          "lines": [
+            660,
+            684
+          ],
+          "loc": 25,
+          "bytes": 391,
+          "refs": {}
+        },
+        {
+          "name": "BindingOwner.handleMutations",
+          "kind": "method",
+          "lines": [
+            198,
+            233
+          ],
+          "loc": 36,
+          "bytes": 347,
+          "refs": {
+            "apply": [
+              "applyChangeFromBindings"
+            ],
+            "bindings": [
+              "consumeObserverSkipOnAdd",
+              "consumeObserverSkipOnRemove",
+              "hasPendingObservation"
+            ]
+          }
+        },
+        {
+          "name": "BindingSession.readProducerSnapshot",
+          "kind": "method",
+          "lines": [
+            989,
+            1006
+          ],
+          "loc": 18,
+          "bytes": 318,
+          "refs": {
+            "bindings": [
+              "commitProducerValue",
+              "decrementPendingObservation"
+            ]
+          }
+        },
+        {
+          "name": "BindingSession.handleRemovedNode",
+          "kind": "method",
+          "lines": [
+            596,
+            614
+          ],
+          "loc": 19,
+          "bytes": 311,
+          "refs": {}
+        },
+        {
+          "name": "BindingSession.addKnownRowBinding",
+          "kind": "method",
+          "lines": [
+            800,
+            816
+          ],
+          "loc": 17,
+          "bytes": 271,
+          "refs": {}
+        },
+        {
+          "name": "bindingKey",
+          "kind": "function",
+          "lines": [
+            247,
+            259
+          ],
+          "loc": 13,
+          "bytes": 265,
+          "refs": {}
+        },
+        {
+          "name": "BindingSession.settleConnectedSnapshot",
+          "kind": "method",
+          "lines": [
+            1008,
+            1022
+          ],
+          "loc": 15,
+          "bytes": 248,
+          "refs": {
+            "(root)": [
+              "config"
+            ]
+          }
+        },
+        {
+          "name": "BindingSession.knownMapFor",
+          "kind": "method",
+          "lines": [
+            642,
+            658
+          ],
+          "loc": 17,
+          "bytes": 219,
+          "refs": {}
+        },
+        {
+          "name": "BindingSession.dispose",
+          "kind": "method",
+          "lines": [
+            462,
+            470
+          ],
+          "loc": 9,
+          "bytes": 205,
+          "refs": {}
+        },
+        {
+          "name": "BindingOwner.constructor",
+          "kind": "constructor",
+          "lines": [
+            190,
+            196
+          ],
+          "loc": 7,
+          "bytes": 194,
+          "refs": {}
+        },
+        {
+          "name": "BindingSession.handleMutations",
+          "kind": "method",
+          "lines": [
+            579,
+            594
+          ],
+          "loc": 16,
+          "bytes": 190,
+          "refs": {
+            "apply": [
+              "applyChangeFromBindings"
+            ]
+          }
+        },
+        {
+          "name": "BindingSession.destroyRecords",
+          "kind": "method",
+          "lines": [
+            498,
+            508
+          ],
+          "loc": 11,
+          "bytes": 158,
+          "refs": {
+            "binding": [
+              "removeBindingByAbsoluteStateAddress"
+            ]
+          }
+        },
+        {
+          "name": "BindingSession.canWholesaleDestroy",
+          "kind": "method",
+          "lines": [
+            478,
+            484
+          ],
+          "loc": 7,
+          "bytes": 149,
+          "refs": {}
+        },
+        {
+          "name": "addInterestedSession",
+          "kind": "function",
+          "lines": [
+            130,
+            142
+          ],
+          "loc": 13,
+          "bytes": 118,
+          "refs": {}
+        },
+        {
+          "name": "isObservableRoot",
+          "kind": "function",
+          "lines": [
+            176,
+            180
+          ],
+          "loc": 5,
+          "bytes": 117,
+          "refs": {}
+        },
+        {
+          "name": "forEachInterestedSession",
+          "kind": "function",
+          "lines": [
+            155,
+            163
+          ],
+          "loc": 9,
+          "bytes": 113,
+          "refs": {}
+        },
+        {
+          "name": "BindingSession.disposeRecord",
+          "kind": "method",
+          "lines": [
+            1065,
+            1070
+          ],
+          "loc": 6,
+          "bytes": 104,
+          "refs": {}
+        },
+        {
+          "name": "BindingSession.addTeardown",
+          "kind": "method",
+          "lines": [
+            398,
+            405
+          ],
+          "loc": 8,
+          "bytes": 100,
+          "refs": {}
+        },
+        {
+          "name": "BindingSession.isAlive",
+          "kind": "method",
+          "lines": [
+            1058,
+            1063
+          ],
+          "loc": 6,
+          "bytes": 99,
+          "refs": {}
+        },
+        {
+          "name": "forEachInclusive",
+          "kind": "function",
+          "lines": [
+            165,
+            174
+          ],
+          "loc": 10,
+          "bytes": 93,
+          "refs": {}
+        },
+        {
+          "name": "BindingSession.forEachActiveBindingNode",
+          "kind": "method",
+          "lines": [
+            525,
+            530
+          ],
+          "loc": 6,
+          "bytes": 91,
+          "refs": {}
+        },
+        {
+          "name": "BindingSession.disposeBinding",
+          "kind": "method",
+          "lines": [
+            456,
+            460
+          ],
+          "loc": 5,
+          "bytes": 88,
+          "refs": {}
+        },
+        {
+          "name": "getBindingOwner",
+          "kind": "function",
+          "lines": [
+            238,
+            245
+          ],
+          "loc": 8,
+          "bytes": 78,
+          "refs": {}
+        },
+        {
+          "name": "addRecordTeardown",
+          "kind": "function",
+          "lines": [
+            261,
+            266
+          ],
+          "loc": 6,
+          "bytes": 78,
+          "refs": {}
+        },
+        {
+          "name": "getOrCreateBindingSession",
+          "kind": "function",
+          "lines": [
+            1136,
+            1143
+          ],
+          "loc": 8,
+          "bytes": 78,
+          "refs": {}
+        },
+        {
+          "name": "BindingSession.getRecord",
+          "kind": "method",
+          "lines": [
+            393,
+            396
+          ],
+          "loc": 4,
+          "bytes": 63,
+          "refs": {}
+        },
+        {
+          "name": "observableRootFor",
+          "kind": "function",
+          "lines": [
+            182,
+            185
+          ],
+          "loc": 4,
+          "bytes": 56,
+          "refs": {}
+        },
+        {
+          "name": "getBindingSession",
+          "kind": "function",
+          "lines": [
+            1145,
+            1147
+          ],
+          "loc": 3,
+          "bytes": 47,
+          "refs": {}
+        },
+        {
+          "name": "BindingSession.constructor",
+          "kind": "constructor",
+          "lines": [
+            282,
+            284
+          ],
+          "loc": 3,
+          "bytes": 46,
+          "refs": {}
+        },
+        {
+          "name": "BindingSession.observe",
+          "kind": "method",
+          "lines": [
+            570,
+            577
+          ],
+          "loc": 8,
+          "bytes": 39,
+          "refs": {}
+        },
+        {
+          "name": "hasInterestedSession",
+          "kind": "function",
+          "lines": [
+            151,
+            153
+          ],
+          "loc": 3,
+          "bytes": 32,
+          "refs": {}
+        },
+        {
+          "name": "BindingSession.knownBindingsByNode",
+          "kind": "property",
+          "lines": [
+            277,
+            277
+          ],
+          "loc": 1,
+          "bytes": 32,
+          "refs": {}
+        },
+        {
+          "name": "BindingSession.optionsByBinding",
+          "kind": "property",
+          "lines": [
+            278,
+            278
+          ],
+          "loc": 1,
+          "bytes": 29,
+          "refs": {}
+        },
+        {
+          "name": "BindingSession.deferredByNode",
+          "kind": "property",
+          "lines": [
+            279,
+            279
+          ],
+          "loc": 1,
+          "bytes": 27,
+          "refs": {}
+        },
+        {
+          "name": "recordByBinding",
+          "kind": "variable",
+          "lines": [
+            113,
+            113
+          ],
+          "loc": 1,
+          "bytes": 21,
+          "refs": {}
+        },
+        {
+          "name": "ownerByRoot",
+          "kind": "variable",
+          "lines": [
+            236,
+            236
+          ],
+          "loc": 1,
+          "bytes": 21,
+          "refs": {}
+        },
+        {
+          "name": "BindingSession.deferred",
+          "kind": "property",
+          "lines": [
+            280,
+            280
+          ],
+          "loc": 1,
+          "bytes": 17,
+          "refs": {}
+        },
+        {
+          "name": "BindingSession.records",
+          "kind": "property",
+          "lines": [
+            269,
+            269
+          ],
+          "loc": 1,
+          "bytes": 16,
+          "refs": {}
+        },
+        {
+          "name": "sessionByRoot",
+          "kind": "variable",
+          "lines": [
+            114,
+            114
+          ],
+          "loc": 1,
+          "bytes": 15,
+          "refs": {}
+        },
+        {
+          "name": "bindingKeyByBinding",
+          "kind": "variable",
+          "lines": [
+            120,
+            120
+          ],
+          "loc": 1,
+          "bytes": 15,
+          "refs": {}
+        },
+        {
+          "name": "interestedSessionsByNode",
+          "kind": "variable",
+          "lines": [
+            128,
+            128
+          ],
+          "loc": 1,
+          "bytes": 15,
+          "refs": {}
+        },
+        {
+          "name": "BindingSession.rowPlan",
+          "kind": "property",
+          "lines": [
+            274,
+            274
+          ],
+          "loc": 1,
+          "bytes": 13,
+          "refs": {}
+        },
+        {
+          "name": "(module level)",
+          "kind": "module",
+          "lines": null,
+          "loc": null,
+          "bytes": 12,
+          "refs": {}
+        },
+        {
+          "name": "nextRecordId",
+          "kind": "variable",
+          "lines": [
+            110,
+            110
+          ],
+          "loc": 1,
+          "bytes": 9,
+          "refs": {}
+        },
+        {
+          "name": "BindingOwner.observer",
+          "kind": "property",
+          "lines": [
+            188,
+            188
+          ],
+          "loc": 1,
+          "bytes": 9,
+          "refs": {}
+        },
+        {
+          "name": "nextGeneration",
+          "kind": "variable",
+          "lines": [
+            111,
+            111
+          ],
+          "loc": 1,
+          "bytes": 5,
+          "refs": {}
+        }
+      ]
+    },
+    "proxy/methods/setByAddress.ts": {
+      "bytes": 4827,
+      "members": 9,
+      "membersReferencingFeatures": {
+        "bytes": 2634,
+        "share": 54.6
+      },
+      "bytesOfMembersByReferencedGroup": {
+        "(root)": 4370,
+        "proxy": 3867,
+        "address": 3263,
+        "cache": 3005,
+        "dcc": 1921,
+        "devtools": 1921,
+        "webComponent": 1921,
+        "list": 1711,
+        "dependency": 975,
+        "updater": 975,
+        "watch": 713,
+        "propagation": 373
+      },
+      "rows": [
+        {
+          "name": "setByAddressCore",
+          "kind": "function",
+          "lines": [
+            442,
+            611
+          ],
+          "loc": 170,
+          "bytes": 1921,
+          "refs": {
+            "(root)": [
+              "WILDCARD",
+              "config",
+              "raiseError",
+              "wildcardScopeMessage"
+            ],
+            "address": [
+              "liftAddress"
+            ],
+            "cache": [
+              "dirtyCacheEntryByAbsoluteStateAddress"
+            ],
+            "dcc": [
+              "dispatchBindableEvent"
+            ],
+            "devtools": [
+              "devtoolsSink"
+            ],
+            "proxy": [
+              "consumeOccurrenceWrite",
+              "getByAddress",
+              "hasByAddress",
+              "isCacheable"
+            ],
+            "webComponent": [
+              "findGraftedSlotUnder",
+              "resolveExport",
+              "writeExportedAccessor"
+            ]
+          }
+        },
+        {
+          "name": "_setByAddress",
+          "kind": "function",
+          "lines": [
+            165,
+            221
+          ],
+          "loc": 57,
+          "bytes": 602,
+          "refs": {
+            "(root)": [
+              "WILDCARD",
+              "raiseError",
+              "wildcardScopeMessage"
+            ],
+            "proxy": [
+              "getByAddress"
+            ]
+          }
+        },
+        {
+          "name": "notifySwappedList",
+          "kind": "function",
+          "lines": [
+            294,
+            352
+          ],
+          "loc": 59,
+          "bytes": 602,
+          "refs": {
+            "(root)": [
+              "DELIMITER",
+              "WILDCARD"
+            ],
+            "address": [
+              "absoluteAddressOf",
+              "createStateAddress",
+              "getPathInfo",
+              "liftAddress"
+            ],
+            "cache": [
+              "dirtyCacheEntryByAbsoluteStateAddress"
+            ],
+            "dependency": [
+              "walkDependency"
+            ],
+            "list": [
+              "getLastListValueByAbsoluteStateAddress",
+              "markSwapBaselineList",
+              "setLastListValueByAbsoluteStateAddress",
+              "setListIndexesByList"
+            ],
+            "proxy": [
+              "isCacheable"
+            ],
+            "updater": [
+              "getUpdater"
+            ],
+            "watch": [
+              "getPrevValue",
+              "hasPrevValue",
+              "recordPrevValue"
+            ]
+          }
+        },
+        {
+          "name": "_setByAddressWithSwap",
+          "kind": "function",
+          "lines": [
+            223,
+            267
+          ],
+          "loc": 45,
+          "bytes": 505,
+          "refs": {
+            "(root)": [
+              "raiseError"
+            ],
+            "list": [
+              "createListIndex",
+              "getListIndexesByList"
+            ],
+            "proxy": [
+              "getByAddress",
+              "getSwapInfoByList",
+              "setSwapInfoByList"
+            ]
+          }
+        },
+        {
+          "name": "notifyWrite",
+          "kind": "function",
+          "lines": [
+            80,
+            125
+          ],
+          "loc": 46,
+          "bytes": 373,
+          "refs": {
+            "(root)": [
+              "config"
+            ],
+            "address": [
+              "liftAddress"
+            ],
+            "cache": [
+              "dirtyCacheEntryByAbsoluteStateAddress"
+            ],
+            "dependency": [
+              "walkDependency"
+            ],
+            "propagation": [
+              "beginPropagationTransaction",
+              "getCurrentPropagationContext"
+            ],
+            "updater": [
+              "getUpdater"
+            ]
+          }
+        },
+        {
+          "name": "setKeyedListByAddress",
+          "kind": "function",
+          "lines": [
+            369,
+            418
+          ],
+          "loc": 50,
+          "bytes": 367,
+          "refs": {
+            "(root)": [
+              "DELIMITER",
+              "WILDCARD"
+            ],
+            "address": [
+              "createStateAddress",
+              "getPathInfo"
+            ],
+            "list": [
+              "collectFieldWrites",
+              "createListDiff",
+              "getListIndexesByList"
+            ]
+          }
+        },
+        {
+          "name": "setByAddress",
+          "kind": "function",
+          "lines": [
+            420,
+            440
+          ],
+          "loc": 21,
+          "bytes": 237,
+          "refs": {
+            "list": [
+              "mergeKeyedList"
+            ],
+            "proxy": [
+              "getByAddress"
+            ]
+          }
+        },
+        {
+          "name": "recordDeclaredPrevValue",
+          "kind": "function",
+          "lines": [
+            59,
+            74
+          ],
+          "loc": 16,
+          "bytes": 111,
+          "refs": {
+            "watch": [
+              "recordPrevValue"
+            ]
+          }
+        },
+        {
+          "name": "commitWriteCache",
+          "kind": "function",
+          "lines": [
+            142,
+            163
+          ],
+          "loc": 22,
+          "bytes": 109,
+          "refs": {
+            "cache": [
+              "dirtyCacheEntryByAbsoluteStateAddress",
+              "setCacheEntryByAbsoluteStateAddress"
+            ]
+          }
+        }
+      ]
+    },
+    "apply/applyChangeToFor.ts": {
+      "bytes": 4063,
+      "members": 24,
+      "membersReferencingFeatures": {
+        "bytes": 2466,
+        "share": 60.7
+      },
+      "bytesOfMembersByReferencedGroup": {
+        "structural": 2881,
+        "bindings": 2775,
+        "list": 2764,
+        "(root)": 2466,
+        "address": 2466,
+        "apply": 2466,
+        "binding": 2466,
+        "webComponent": 2466
+      },
+      "rows": [
+        {
+          "name": "applyChangeToFor",
+          "kind": "function",
+          "lines": [
+            245,
+            462
+          ],
+          "loc": 218,
+          "bytes": 2466,
+          "refs": {
+            "(root)": [
+              "WILDCARD",
+              "inSsr",
+              "raiseError"
+            ],
+            "address": [
+              "createStateAddress",
+              "getPathInfo"
+            ],
+            "apply": [
+              "applyChange",
+              "applyTransitionName",
+              "getAutoNaming",
+              "setRootNodeByFragment"
+            ],
+            "binding": [
+              "getAbsoluteStateAddressByBinding"
+            ],
+            "bindings": [
+              "getIndexBindingsByContent"
+            ],
+            "list": [
+              "computeStableIndexSet",
+              "createListDiff",
+              "getLastListValueByAbsoluteStateAddress",
+              "getListIndexByBindingInfo"
+            ],
+            "structural": [
+              "activateContent",
+              "createContent",
+              "deactivateContent",
+              "deleteContentByNode"
+            ],
+            "webComponent": [
+              "remountScopesUnderContent"
+            ]
+          }
+        },
+        {
+          "name": "collectInPlaceContents",
+          "kind": "function",
+          "lines": [
+            159,
+            182
+          ],
+          "loc": 24,
+          "bytes": 298,
+          "refs": {
+            "list": [
+              "isSwapBaselineList"
+            ]
+          }
+        },
+        {
+          "name": "isPhysicallyAfter",
+          "kind": "function",
+          "lines": [
+            134,
+            144
+          ],
+          "loc": 11,
+          "bytes": 198,
+          "refs": {}
+        },
+        {
+          "name": "dropNestedContents",
+          "kind": "function",
+          "lines": [
+            211,
+            227
+          ],
+          "loc": 17,
+          "bytes": 182,
+          "refs": {
+            "bindings": [
+              "getBindingsByContent"
+            ],
+            "structural": [
+              "deactivateContent",
+              "deleteContentByNode",
+              "getContentSetByNode"
+            ]
+          }
+        },
+        {
+          "name": "isOnlyNodeInParentContent",
+          "kind": "function",
+          "lines": [
+            107,
+            126
+          ],
+          "loc": 20,
+          "bytes": 178,
+          "refs": {}
+        },
+        {
+          "name": "countsAsParentContent",
+          "kind": "function",
+          "lines": [
+            97,
+            105
+          ],
+          "loc": 9,
+          "bytes": 177,
+          "refs": {}
+        },
+        {
+          "name": "clearAppliedMarks",
+          "kind": "function",
+          "lines": [
+            192,
+            202
+          ],
+          "loc": 11,
+          "bytes": 127,
+          "refs": {
+            "bindings": [
+              "getBindingsByContent"
+            ],
+            "structural": [
+              "getContentSetByNode"
+            ]
+          }
+        },
+        {
+          "name": "setContent",
+          "kind": "function",
+          "lines": [
+            229,
+            243
+          ],
+          "loc": 15,
+          "bytes": 124,
+          "refs": {}
+        },
+        {
+          "name": "setPooledContent",
+          "kind": "function",
+          "lines": [
+            76,
+            89
+          ],
+          "loc": 14,
+          "bytes": 106,
+          "refs": {
+            "structural": [
+              "deleteContentByNode"
+            ]
+          }
+        },
+        {
+          "name": "STRUCTURAL_BINDING_TYPES",
+          "kind": "variable",
+          "lines": [
+            184,
+            184
+          ],
+          "loc": 1,
+          "bytes": 47,
+          "refs": {}
+        },
+        {
+          "name": "getPooledContents",
+          "kind": "function",
+          "lines": [
+            53,
+            55
+          ],
+          "loc": 3,
+          "bytes": 38,
+          "refs": {}
+        },
+        {
+          "name": "hydrateSetLastNode",
+          "kind": "function",
+          "lines": [
+            45,
+            47
+          ],
+          "loc": 3,
+          "bytes": 29,
+          "refs": {}
+        },
+        {
+          "name": "lastNodeByNode",
+          "kind": "variable",
+          "lines": [
+            26,
+            26
+          ],
+          "loc": 1,
+          "bytes": 21,
+          "refs": {}
+        },
+        {
+          "name": "hydrateSetContent",
+          "kind": "function",
+          "lines": [
+            41,
+            43
+          ],
+          "loc": 3,
+          "bytes": 19,
+          "refs": {}
+        },
+        {
+          "name": "contentByListIndexByNode",
+          "kind": "variable",
+          "lines": [
+            27,
+            27
+          ],
+          "loc": 1,
+          "bytes": 15,
+          "refs": {}
+        },
+        {
+          "name": "pooledContentsByNode",
+          "kind": "variable",
+          "lines": [
+            28,
+            28
+          ],
+          "loc": 1,
+          "bytes": 15,
+          "refs": {}
+        },
+        {
+          "name": "isOnlyNodeInParentContentByNode",
+          "kind": "variable",
+          "lines": [
+            29,
+            29
+          ],
+          "loc": 1,
+          "bytes": 15,
+          "refs": {}
+        },
+        {
+          "name": "MAX_POOLED_CONTENTS",
+          "kind": "variable",
+          "lines": [
+            62,
+            62
+          ],
+          "loc": 1,
+          "bytes": 8,
+          "refs": {}
+        },
+        {
+          "name": "__test_setContentByListIndex",
+          "kind": "function",
+          "lines": [
+            32,
+            34
+          ],
+          "loc": 3,
+          "bytes": 0,
+          "refs": {}
+        },
+        {
+          "name": "__test_deleteLastNodeByNode",
+          "kind": "function",
+          "lines": [
+            36,
+            38
+          ],
+          "loc": 3,
+          "bytes": 0,
+          "refs": {}
+        },
+        {
+          "name": "__test_deleteContentByNode",
+          "kind": "function",
+          "lines": [
+            49,
+            51
+          ],
+          "loc": 3,
+          "bytes": 0,
+          "refs": {}
+        },
+        {
+          "name": "maxPooledContents",
+          "kind": "variable",
+          "lines": [
+            63,
+            63
+          ],
+          "loc": 1,
+          "bytes": 0,
+          "refs": {}
+        },
+        {
+          "name": "__test_setMaxPooledContents",
+          "kind": "function",
+          "lines": [
+            66,
+            70
+          ],
+          "loc": 5,
+          "bytes": 0,
+          "refs": {}
+        },
+        {
+          "name": "__test_getPooledContentsCount",
+          "kind": "function",
+          "lines": [
+            72,
+            74
+          ],
+          "loc": 3,
+          "bytes": 0,
+          "refs": {}
+        }
+      ]
+    },
+    "event/twowayHandler.ts": {
+      "bytes": 3808,
+      "members": 15,
+      "membersReferencingFeatures": {
+        "bytes": 1942,
+        "share": 51
+      },
+      "bytesOfMembersByReferencedGroup": {
+        "(root)": 2644,
+        "devtools": 1310,
+        "list": 1310,
+        "propagation": 1310,
+        "proxy": 1310,
+        "platform": 1082,
+        "event": 710,
+        "protocol": 632
+      },
+      "rows": [
+        {
+          "name": "twowayEventHandlerFunction",
+          "kind": "variable",
+          "lines": [
+            120,
+            237
+          ],
+          "loc": 118,
+          "bytes": 1310,
+          "refs": {
+            "(root)": [
+              "config",
+              "getStateElement",
+              "raiseError"
+            ],
+            "devtools": [
+              "devtoolsSink"
+            ],
+            "list": [
+              "getLoopContextByNode"
+            ],
+            "propagation": [
+              "beginPropagationTransaction",
+              "extendPropagationContext",
+              "getCurrentPropagationContext",
+              "getEdgeId",
+              "getWireId",
+              "matchWriteReceipt",
+              "runWithPropagationContext"
+            ],
+            "proxy": [
+              "beginOccurrenceWrite",
+              "endOccurrenceWrite",
+              "setLoopContextSymbol"
+            ]
+          }
+        },
+        {
+          "name": "warnDefaultGetterMismatch",
+          "kind": "function",
+          "lines": [
+            38,
+            64
+          ],
+          "loc": 27,
+          "bytes": 719,
+          "refs": {}
+        },
+        {
+          "name": "attachTwowayEventHandler",
+          "kind": "function",
+          "lines": [
+            262,
+            294
+          ],
+          "loc": 33,
+          "bytes": 409,
+          "refs": {
+            "(root)": [
+              "MODIFIER_READONLY",
+              "getCustomElement",
+              "raiseError"
+            ],
+            "event": [
+              "isPossibleTwoWay"
+            ],
+            "platform": [
+              "getCustomElementRegistry"
+            ]
+          }
+        },
+        {
+          "name": "getEventName",
+          "kind": "function",
+          "lines": [
+            71,
+            94
+          ],
+          "loc": 24,
+          "bytes": 380,
+          "refs": {
+            "(root)": [
+              "EVENT_PROP_PREFIX",
+              "getCustomElement",
+              "raiseError"
+            ],
+            "platform": [
+              "getCustomElementRegistry"
+            ],
+            "protocol": [
+              "readBindableDeclaration"
+            ]
+          }
+        },
+        {
+          "name": "detachTwowayEventHandler",
+          "kind": "function",
+          "lines": [
+            296,
+            323
+          ],
+          "loc": 28,
+          "bytes": 293,
+          "refs": {
+            "(root)": [
+              "MODIFIER_READONLY",
+              "getCustomElement"
+            ],
+            "event": [
+              "isPossibleTwoWay"
+            ],
+            "platform": [
+              "getCustomElementRegistry"
+            ]
+          }
+        },
+        {
+          "name": "addTwowayValueObserver",
+          "kind": "function",
+          "lines": [
+            239,
+            260
+          ],
+          "loc": 22,
+          "bytes": 196,
+          "refs": {}
+        },
+        {
+          "name": "getHandlerKey",
+          "kind": "function",
+          "lines": [
+            66,
+            69
+          ],
+          "loc": 4,
+          "bytes": 179,
+          "refs": {}
+        },
+        {
+          "name": "getValueGetter",
+          "kind": "function",
+          "lines": [
+            96,
+            105
+          ],
+          "loc": 10,
+          "bytes": 126,
+          "refs": {
+            "(root)": [
+              "getCustomElement"
+            ],
+            "protocol": [
+              "readBindableDeclaration"
+            ]
+          }
+        },
+        {
+          "name": "isOccurrenceProperty",
+          "kind": "function",
+          "lines": [
+            113,
+            118
+          ],
+          "loc": 6,
+          "bytes": 126,
+          "refs": {
+            "(root)": [
+              "getCustomElement"
+            ],
+            "protocol": [
+              "readBindableDeclaration"
+            ]
+          }
+        },
+        {
+          "name": "handlerByHandlerKey",
+          "kind": "variable",
+          "lines": [
+            17,
+            17
+          ],
+          "loc": 1,
+          "bytes": 17,
+          "refs": {}
+        },
+        {
+          "name": "producerValueObserversByNode",
+          "kind": "variable",
+          "lines": [
+            20,
+            20
+          ],
+          "loc": 1,
+          "bytes": 15,
+          "refs": {}
+        },
+        {
+          "name": "DEFAULT_GETTER",
+          "kind": "variable",
+          "lines": [
+            22,
+            22
+          ],
+          "loc": 1,
+          "bytes": 15,
+          "refs": {}
+        },
+        {
+          "name": "warnedDefaultGetter",
+          "kind": "variable",
+          "lines": [
+            37,
+            37
+          ],
+          "loc": 1,
+          "bytes": 15,
+          "refs": {}
+        },
+        {
+          "name": "bindingRegistry",
+          "kind": "variable",
+          "lines": [
+            19,
+            19
+          ],
+          "loc": 1,
+          "bytes": 8,
+          "refs": {
+            "event": [
+              "createHandlerBindingRegistry"
+            ]
+          }
+        },
+        {
+          "name": "__private__",
+          "kind": "variable",
+          "lines": [
+            325,
+            334
+          ],
+          "loc": 10,
+          "bytes": 0,
+          "refs": {}
+        }
+      ]
+    }
+  }
+}

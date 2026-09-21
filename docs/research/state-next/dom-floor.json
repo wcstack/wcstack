@@ -1,0 +1,1017 @@
+{
+  "revision": "6bff9f2cf8c4915c93dceb9c40b56e376eb06119",
+  "timestamp": "2026-09-20T00:59:32.048Z",
+  "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+  "quick": false,
+  "browsers": {
+    "chromium": "149.0.7827.55",
+    "firefox": "151.0",
+    "webkit": "26.5"
+  },
+  "results": [
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "create",
+      "variant": "clone-path",
+      "n": 1000,
+      "median": 3.900000035762787,
+      "min": 3.699999988079071,
+      "max": 5.100000023841858,
+      "samples": [
+        5.100000023841858,
+        4.099999964237213,
+        3.900000035762787,
+        4.300000011920929,
+        3.800000011920929,
+        3.699999988079071,
+        3.800000011920929
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "create",
+      "variant": "import-path",
+      "n": 1000,
+      "median": 2.799999952316284,
+      "min": 2.699999988079071,
+      "max": 3.699999988079071,
+      "samples": [
+        3.699999988079071,
+        2.699999988079071,
+        2.699999988079071,
+        2.799999952316284,
+        2.800000011920929,
+        2.899999976158142,
+        2.699999988079071
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "create",
+      "variant": "clone-qsa",
+      "n": 1000,
+      "median": 2.200000047683716,
+      "min": 2,
+      "max": 2.600000023841858,
+      "samples": [
+        2.600000023841858,
+        2.100000023841858,
+        2,
+        2.200000047683716,
+        2,
+        2.300000011920929,
+        2.299999952316284
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "create",
+      "variant": "clone-walker",
+      "n": 1000,
+      "median": 2.5,
+      "min": 2.300000011920929,
+      "max": 3.300000011920929,
+      "samples": [
+        3.300000011920929,
+        3,
+        2.800000011920929,
+        2.5,
+        2.300000011920929,
+        2.300000011920929,
+        2.300000011920929
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "create",
+      "variant": "clone-direct",
+      "n": 1000,
+      "median": 3.900000035762787,
+      "min": 3.699999988079071,
+      "max": 4.599999964237213,
+      "samples": [
+        4.599999964237213,
+        4.300000011920929,
+        3.800000011920929,
+        4,
+        3.900000035762787,
+        3.699999988079071,
+        3.899999976158142
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "create",
+      "variant": "clone-records",
+      "n": 1000,
+      "median": 3.900000035762787,
+      "min": 3.399999976158142,
+      "max": 5.5,
+      "samples": [
+        5.5,
+        4.300000011920929,
+        4.100000023841858,
+        3.900000035762787,
+        3.699999988079071,
+        3.599999964237213,
+        3.399999976158142
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "create",
+      "variant": "innerHTML",
+      "n": 1000,
+      "median": 6.299999952316284,
+      "min": 5.900000035762787,
+      "max": 7.199999988079071,
+      "samples": [
+        6.600000023841858,
+        6,
+        6.399999976158142,
+        7.199999988079071,
+        6.299999952316284,
+        6,
+        5.900000035762787
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "create",
+      "variant": "createElement",
+      "n": 1000,
+      "median": 5.900000035762787,
+      "min": 5.699999988079071,
+      "max": 8.5,
+      "samples": [
+        8.5,
+        6.199999988079071,
+        5.799999952316284,
+        6.899999976158142,
+        5.699999988079071,
+        5.900000035762787,
+        5.899999976158142
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "create",
+      "variant": "clone-path",
+      "n": 10000,
+      "median": 37,
+      "min": 33.60000002384186,
+      "max": 47.10000002384186,
+      "samples": [
+        47.10000002384186,
+        40.90000003576279,
+        33.60000002384186,
+        37.69999998807907,
+        34.89999997615814,
+        37,
+        34.59999996423721
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "create",
+      "variant": "import-path",
+      "n": 10000,
+      "median": 40.10000002384186,
+      "min": 33.19999998807907,
+      "max": 50.89999997615814,
+      "samples": [
+        50.89999997615814,
+        41.799999952316284,
+        34,
+        33.19999998807907,
+        41.30000001192093,
+        39,
+        40.10000002384186
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "create",
+      "variant": "clone-qsa",
+      "n": 10000,
+      "median": 37,
+      "min": 33.5,
+      "max": 41.59999996423721,
+      "samples": [
+        41.59999996423721,
+        40.59999996423721,
+        34,
+        39.5,
+        33.5,
+        34.09999996423721,
+        37
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "create",
+      "variant": "clone-walker",
+      "n": 10000,
+      "median": 34.69999998807907,
+      "min": 30.80000001192093,
+      "max": 42.299999952316284,
+      "samples": [
+        42.299999952316284,
+        40.89999997615814,
+        34.69999998807907,
+        35.40000003576279,
+        34.5,
+        32.60000002384186,
+        30.80000001192093
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "create",
+      "variant": "clone-direct",
+      "n": 10000,
+      "median": 31.30000001192093,
+      "min": 16.899999976158142,
+      "max": 44.59999996423721,
+      "samples": [
+        44.59999996423721,
+        38.80000001192093,
+        21.700000047683716,
+        16.899999976158142,
+        31.80000001192093,
+        31.30000001192093,
+        30.600000023841858
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "create",
+      "variant": "clone-records",
+      "n": 10000,
+      "median": 23.5,
+      "min": 18.099999964237213,
+      "max": 42.60000002384186,
+      "samples": [
+        42.60000002384186,
+        24.69999998807907,
+        18.099999964237213,
+        21.400000035762787,
+        22.899999976158142,
+        23.5,
+        24.599999964237213
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "create",
+      "variant": "innerHTML",
+      "n": 10000,
+      "median": 55.89999997615814,
+      "min": 51.700000047683716,
+      "max": 68.5,
+      "samples": [
+        68.5,
+        60.89999997615814,
+        53.80000001192093,
+        59.80000001192093,
+        53.69999998807907,
+        55.89999997615814,
+        51.700000047683716
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "create",
+      "variant": "createElement",
+      "n": 10000,
+      "median": 40,
+      "min": 25.100000023841858,
+      "max": 63.40000003576279,
+      "samples": [
+        63.40000003576279,
+        55.90000003576279,
+        35,
+        53.80000001192093,
+        40,
+        28.799999952316284,
+        25.100000023841858
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "create",
+      "variant": "pool-reuse",
+      "n": 10000,
+      "median": 18.099999964237213,
+      "min": 17.099999964237213,
+      "max": 25.899999976158142,
+      "samples": [
+        25.899999976158142,
+        17.19999998807907,
+        23,
+        17.19999998807907,
+        21.100000023841858,
+        18.099999964237213,
+        17.099999964237213
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "append",
+      "variant": "clone-path",
+      "n": 1000,
+      "median": 2.400000035762787,
+      "min": 2,
+      "max": 4.699999988079071,
+      "samples": [
+        4.699999988079071,
+        2.199999988079071,
+        2.400000035762787,
+        2,
+        2,
+        2.800000011920929,
+        3.699999988079071
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "clear",
+      "variant": "replaceChildren",
+      "n": 10000,
+      "median": 38.40000003576279,
+      "min": 5.099999964237213,
+      "max": 48.59999996423721,
+      "samples": [
+        44.89999997615814,
+        47.10000002384186,
+        6.100000023841858,
+        6,
+        48.59999996423721,
+        38.40000003576279,
+        5.099999964237213
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "clear",
+      "variant": "textContent",
+      "n": 10000,
+      "median": 42.89999997615814,
+      "min": 5.800000011920929,
+      "max": 48,
+      "samples": [
+        42.89999997615814,
+        45.80000001192093,
+        48,
+        6.5,
+        45,
+        5.800000011920929,
+        7
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "clear",
+      "variant": "innerHTML",
+      "n": 10000,
+      "median": 30.100000023841858,
+      "min": 4.699999988079071,
+      "max": 45.59999996423721,
+      "samples": [
+        45.59999996423721,
+        30.100000023841858,
+        4.699999988079071,
+        39.69999998807907,
+        5.399999976158142,
+        5.5,
+        35.60000002384186
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "clear",
+      "variant": "range",
+      "n": 10000,
+      "median": 42.89999997615814,
+      "min": 9,
+      "max": 55.39999997615814,
+      "samples": [
+        52.40000003576279,
+        42.89999997615814,
+        55.39999997615814,
+        9.100000023841858,
+        43.59999996423721,
+        9.599999964237213,
+        9
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "clear",
+      "variant": "removeLast",
+      "n": 10000,
+      "median": 37.299999952316284,
+      "min": 12,
+      "max": 57,
+      "samples": [
+        42.90000003576279,
+        12,
+        37.299999952316284,
+        35.59999996423721,
+        36.299999952316284,
+        52.89999997615814,
+        57
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "clear",
+      "variant": "removeFirst",
+      "n": 10000,
+      "median": 38.700000047683716,
+      "min": 12,
+      "max": 57,
+      "samples": [
+        38.700000047683716,
+        14,
+        35.60000002384186,
+        53.80000001192093,
+        12,
+        53.19999998807907,
+        57
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 4,
+      "op": "create",
+      "variant": "clone-path",
+      "n": 10000,
+      "median": 145.5,
+      "min": 112.60000002384186,
+      "max": 223.9000000357628,
+      "samples": [
+        223.9000000357628,
+        145.5,
+        176,
+        124,
+        137.69999998807907,
+        112.60000002384186,
+        174.19999998807907
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 4,
+      "op": "append",
+      "variant": "clone-path",
+      "n": 1000,
+      "median": 17.200000047683716,
+      "min": 10.299999952316284,
+      "max": 24.69999998807907,
+      "samples": [
+        24.69999998807907,
+        12.900000035762787,
+        10.299999952316284,
+        19.899999976158142,
+        21.5,
+        11.400000035762787,
+        17.200000047683716
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 4,
+      "op": "clear",
+      "variant": "replaceChildren",
+      "n": 10000,
+      "median": 180.0999999642372,
+      "min": 162.10000002384186,
+      "max": 240.80000001192093,
+      "samples": [
+        195.80000001192093,
+        180.0999999642372,
+        168.80000001192093,
+        162.10000002384186,
+        171.9000000357628,
+        240.80000001192093,
+        185.80000001192093
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "update",
+      "variant": "data",
+      "n": 10000,
+      "median": 1.899999976158142,
+      "min": 1.600000023841858,
+      "max": 2.199999988079071,
+      "samples": [
+        1.899999976158142,
+        1.699999988079071,
+        1.600000023841858,
+        1.600000023841858,
+        2.199999988079071,
+        2.100000023841858,
+        2.199999988079071
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "update",
+      "variant": "nodeValue",
+      "n": 10000,
+      "median": 2,
+      "min": 1.7000000476837158,
+      "max": 2,
+      "samples": [
+        2,
+        2,
+        1.7000000476837158,
+        1.7999999523162842,
+        1.800000011920929,
+        2,
+        2
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "update",
+      "variant": "textContent",
+      "n": 10000,
+      "median": 2,
+      "min": 1.5,
+      "max": 2.600000023841858,
+      "samples": [
+        2.600000023841858,
+        2,
+        1.7000000476837158,
+        1.5,
+        1.5,
+        2.399999976158142,
+        2.5
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "select",
+      "variant": "classList",
+      "n": 1000,
+      "median": 0,
+      "min": 0,
+      "max": 0.10000002384185791,
+      "samples": [
+        0,
+        0.09999996423721313,
+        0,
+        0.10000002384185791,
+        0,
+        0,
+        0.09999996423721313
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "select",
+      "variant": "className",
+      "n": 1000,
+      "median": 0,
+      "min": 0,
+      "max": 0.10000002384185791,
+      "samples": [
+        0,
+        0.09999996423721313,
+        0,
+        0,
+        0.10000002384185791,
+        0,
+        0
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "select",
+      "variant": "classList",
+      "n": 10000,
+      "median": 0,
+      "min": 0,
+      "max": 0.10000002384185791,
+      "samples": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0.10000002384185791
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "select",
+      "variant": "className",
+      "n": 10000,
+      "median": 0.09999996423721313,
+      "min": 0,
+      "max": 0.20000004768371582,
+      "samples": [
+        0.10000002384185791,
+        0.20000004768371582,
+        0,
+        0.09999996423721313,
+        0.09999996423721313,
+        0,
+        0
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "remove",
+      "variant": "remove",
+      "n": 1000,
+      "median": 0.10000002384185791,
+      "min": 0.09999996423721313,
+      "max": 0.10000002384185791,
+      "samples": [
+        0.10000002384185791,
+        0.09999996423721313,
+        0.10000002384185791,
+        0.10000002384185791,
+        0.09999996423721313,
+        0.10000002384185791,
+        0.10000002384185791
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "swap",
+      "variant": "insertBefore",
+      "n": 1000,
+      "median": 0,
+      "min": 0,
+      "max": 0.20000004768371582,
+      "samples": [
+        0.19999998807907104,
+        0.20000004768371582,
+        0,
+        0.10000002384185791,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "browser": "chromium",
+      "throttle": 1,
+      "op": "swap",
+      "variant": "moveBefore",
+      "n": 1000,
+      "median": 0,
+      "min": 0,
+      "max": 0.5999999642372131,
+      "samples": [
+        0,
+        0,
+        0,
+        0,
+        0.5999999642372131,
+        0.10000002384185791,
+        0.09999996423721313
+      ]
+    },
+    {
+      "browser": "firefox",
+      "throttle": 1,
+      "op": "create",
+      "variant": "clone-path",
+      "n": 1000,
+      "median": 6,
+      "min": 4,
+      "max": 9,
+      "samples": [
+        9,
+        7,
+        7,
+        5,
+        6,
+        4,
+        6
+      ]
+    },
+    {
+      "browser": "firefox",
+      "throttle": 1,
+      "op": "create",
+      "variant": "clone-path",
+      "n": 10000,
+      "median": 89,
+      "min": 83,
+      "max": 103,
+      "samples": [
+        86,
+        93,
+        86,
+        83,
+        89,
+        91,
+        103
+      ]
+    },
+    {
+      "browser": "firefox",
+      "throttle": 1,
+      "op": "append",
+      "variant": "clone-path",
+      "n": 1000,
+      "median": 9,
+      "min": 7,
+      "max": 28,
+      "samples": [
+        10,
+        8,
+        9,
+        8,
+        7,
+        28,
+        9
+      ]
+    },
+    {
+      "browser": "firefox",
+      "throttle": 1,
+      "op": "clear",
+      "variant": "replaceChildren",
+      "n": 10000,
+      "median": 130,
+      "min": 121,
+      "max": 143,
+      "samples": [
+        140,
+        133,
+        143,
+        127,
+        127,
+        121,
+        130
+      ]
+    },
+    {
+      "browser": "firefox",
+      "throttle": 1,
+      "op": "swap",
+      "variant": "insertBefore",
+      "n": 1000,
+      "median": 1,
+      "min": 0,
+      "max": 1,
+      "samples": [
+        0,
+        1,
+        0,
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "browser": "firefox",
+      "throttle": 1,
+      "op": "swap",
+      "variant": "moveBefore",
+      "n": 1000,
+      "median": 0,
+      "min": 0,
+      "max": 1,
+      "samples": [
+        0,
+        0,
+        0,
+        1,
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "browser": "webkit",
+      "throttle": 1,
+      "op": "create",
+      "variant": "clone-path",
+      "n": 1000,
+      "median": 4,
+      "min": 3,
+      "max": 7,
+      "samples": [
+        7,
+        5,
+        5,
+        4,
+        4,
+        4,
+        3
+      ]
+    },
+    {
+      "browser": "webkit",
+      "throttle": 1,
+      "op": "create",
+      "variant": "clone-path",
+      "n": 10000,
+      "median": 49,
+      "min": 35,
+      "max": 59,
+      "samples": [
+        59,
+        58,
+        58,
+        48,
+        35,
+        46,
+        49
+      ]
+    },
+    {
+      "browser": "webkit",
+      "throttle": 1,
+      "op": "append",
+      "variant": "clone-path",
+      "n": 1000,
+      "median": 5,
+      "min": 4,
+      "max": 9,
+      "samples": [
+        4,
+        5,
+        5,
+        5,
+        7,
+        6,
+        9
+      ]
+    },
+    {
+      "browser": "webkit",
+      "throttle": 1,
+      "op": "clear",
+      "variant": "replaceChildren",
+      "n": 10000,
+      "median": 40,
+      "min": 33,
+      "max": 61,
+      "samples": [
+        35,
+        33,
+        39,
+        61,
+        61,
+        45,
+        40
+      ]
+    },
+    {
+      "browser": "webkit",
+      "throttle": 1,
+      "op": "swap",
+      "variant": "insertBefore",
+      "n": 1000,
+      "median": 0,
+      "min": 0,
+      "max": 1,
+      "samples": [
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0
+      ]
+    }
+  ],
+  "moveBefore": {
+    "chromium": {
+      "available": true,
+      "insertBefore": {
+        "available": true,
+        "before": {
+          "focused": true,
+          "connects": 1,
+          "disconnects": 0
+        },
+        "after": {
+          "focused": false,
+          "connects": 2,
+          "disconnects": 1,
+          "value": "typed",
+          "selectionStart": 1,
+          "selectionEnd": 3
+        }
+      },
+      "moveBefore": {
+        "available": true,
+        "before": {
+          "focused": true,
+          "connects": 1,
+          "disconnects": 0
+        },
+        "after": {
+          "focused": true,
+          "connects": 2,
+          "disconnects": 1,
+          "value": "typed",
+          "selectionStart": 1,
+          "selectionEnd": 3
+        }
+      }
+    },
+    "firefox": {
+      "available": true,
+      "insertBefore": {
+        "available": true,
+        "before": {
+          "focused": true,
+          "connects": 1,
+          "disconnects": 0
+        },
+        "after": {
+          "focused": false,
+          "connects": 2,
+          "disconnects": 1,
+          "value": "typed",
+          "selectionStart": 1,
+          "selectionEnd": 3
+        }
+      },
+      "moveBefore": {
+        "available": true,
+        "before": {
+          "focused": true,
+          "connects": 1,
+          "disconnects": 0
+        },
+        "after": {
+          "focused": true,
+          "connects": 2,
+          "disconnects": 1,
+          "value": "typed",
+          "selectionStart": 1,
+          "selectionEnd": 3
+        }
+      }
+    },
+    "webkit": {
+      "available": false,
+      "insertBefore": {
+        "available": true,
+        "before": {
+          "focused": true,
+          "connects": 1,
+          "disconnects": 0
+        },
+        "after": {
+          "focused": false,
+          "connects": 2,
+          "disconnects": 1,
+          "value": "typed",
+          "selectionStart": 1,
+          "selectionEnd": 3
+        }
+      }
+    }
+  },
+  "errors": []
+}

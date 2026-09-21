@@ -13,6 +13,7 @@ import {
   parseBindTextForEmbeddedNode,
   getPathInfo,
   clearParserCaches,
+  splitBindTexts,
 } from "../src/parser";
 
 describe("parseBindTextsForElement（正本パーサの公開契約）", () => {
@@ -66,6 +67,13 @@ describe("parseBindTextsForElement（正本パーサの公開契約）", () => {
   });
 });
 
+describe("splitBindTexts（属性値の区切りの正本 — 要件 B1）", () => {
+  it("引用符の外の ; だけで区切り、前後の空白を残すこと（tooling が位置を数えられる）", () => {
+    expect(splitBindTexts("a: x; b: y|join(';') ;")).toEqual(["a: x", " b: y|join(';') ", ""]);
+    expect(parseBindTextsForElement("a: x; b: y|join(';') ;").map((r) => r.propName)).toEqual(["a", "b"]);
+  });
+});
+
 describe("parseBindTextForEmbeddedNode（テキストバインディングの正本経路）", () => {
   it("式全体を 1 本のパスとして扱い `;` を分割しないこと（属性経路との規定差）", () => {
     const r = parseBindTextForEmbeddedNode("count | fix(0)");
@@ -91,20 +99,28 @@ describe("clearParserCaches（tooling 専用のキャッシュ解放）", () => 
     expect(after.cumulativePaths).toEqual(before.cumulativePaths);
   });
 
-  it("フィルタ関数キャッシュも解放されること（クリア後は新しいクロージャ）", () => {
-    // filterFnByKey は filterName(args):ioType キーのモジュールレベル Map。
-    // 言語サーバー常駐では有効な編集中間フィルタ引数がキーごとに蓄積するため
-    // clearParserCaches の解放対象に含まれる（含まれないと intern 解放が部分解決）。
+  it("フィルタは名前と引数だけで、実関数はパーサに現れないこと（要件 D16）", () => {
+    // 解析の段は文法だけを見る。実関数は束縛計画の段で登録簿から引くので、
+    // パーサだけを使う tooling は書式フィルタの実装を 1 バイトも引き込まない。
+    const [parsed] = parseBindTextsForElement("textContent: price | fix(2)");
+    // literals は引数の型付きの値（要件 B9）: 引用符の無い 2 は数値
+    expect(parsed.outFilters).toEqual([{ filterName: "fix", args: ["2"], literals: [2] }]);
+    expect("filterFn" in parsed.outFilters[0]).toBe(false);
+  });
+
+  it("フィルタの解析結果のキャッシュも解放されること", () => {
+    // フィルタ列は filtersText をキーにモジュールレベルの Map へ載る。言語サーバー常駐では
+    // 編集中間のフィルタ式がキーごとに蓄積するため clearParserCaches の解放対象に含まれる
+    // （含まれないと intern 解放が部分解決になる）。解決済みの実関数のキャッシュは
+    // 登録簿側にあり、同じ呼び出しで解放される（core.filterRegistry.test.ts）。
     const [before] = parseBindTextsForElement("textContent: price | fix(2)");
-    const beforeFn = before.outFilters[0].filterFn;
-    // 同一キーはキャッシュされた同一クロージャを返す
     const [again] = parseBindTextsForElement("textContent: price | fix(2)");
-    expect(again.outFilters[0].filterFn).toBe(beforeFn);
+    expect(again.outFilters).toBe(before.outFilters);
     clearParserCaches();
     const [after] = parseBindTextsForElement("textContent: price | fix(2)");
-    expect(after.outFilters[0].filterFn).not.toBe(beforeFn);
-    // 挙動は同一（クリアは意味論を変えない）
-    expect(after.outFilters[0].filterFn(1.234)).toBe(beforeFn(1.234));
+    expect(after.outFilters).not.toBe(before.outFilters);
+    // 中身は同一（クリアは意味論を変えない）
+    expect(after.outFilters).toEqual(before.outFilters);
   });
 });
 

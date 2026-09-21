@@ -1,5 +1,6 @@
 import { ParseBindTextResult } from "../bindTextParser/types";
 import type { IInitialSyncPolicy, ResolvedInitialAuthority } from "../bindings/initialSync";
+import type { IPlannedBinding } from "../bindings/planFilters";
 
 export interface IContent {
   readonly firstNode: Node | null;
@@ -37,7 +38,7 @@ export interface IRowPlanSlot {
   /** nodeInfos / 解決済みノード配列への添字 */
   readonly nodeIndex: number;
   /** 行不変フィールドの正本（node/replaceNode 以外の IBindingInfo 全フィールド） */
-  readonly template: ParseBindTextResult;
+  readonly template: IPlannedBinding;
   readonly isEvent: boolean;
   /** $1 等のインデックスバインディング（indexBindingsByContent 対象） */
   readonly isIndexBinding: boolean;

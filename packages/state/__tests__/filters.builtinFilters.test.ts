@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { outputBuiltinFilters, builtinFilterFn } from '../src/filters/builtinFilters';
+import { outputBuiltinFilters, builtinFilterFn } from '../src/formats/builtinFilters';
 import { getConfig, setConfig } from '../src/config';
 
 const getFilter = (name: string, options: string[] = []) =>

@@ -1,0 +1,65 @@
+{
+  "revision": "6bff9f2cf8c4915c93dceb9c40b56e376eb06119",
+  "timestamp": "2026-09-20T20:03:32.942Z",
+  "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+  "samples": 5,
+  "fixture": "tracked",
+  "rows": 10000,
+  "results": [
+    {
+      "runtime": "shipped",
+      "heapDeltaBytes": {
+        "median": 36301492,
+        "min": 36296532,
+        "max": 36305088,
+        "samples": [
+          36301492,
+          36305088,
+          36304288,
+          36296532,
+          36301476
+        ]
+      },
+      "bytesPerRow": {
+        "median": 3630,
+        "min": 3630,
+        "max": 3631,
+        "samples": [
+          3630,
+          3631,
+          3630,
+          3630,
+          3630
+        ]
+      }
+    },
+    {
+      "runtime": "proto (index.esm.js)",
+      "heapDeltaBytes": {
+        "median": 30334716,
+        "min": 30331732,
+        "max": 30336704,
+        "samples": [
+          30334716,
+          30335052,
+          30336704,
+          30331732,
+          30334028
+        ]
+      },
+      "bytesPerRow": {
+        "median": 3033,
+        "min": 3033,
+        "max": 3034,
+        "samples": [
+          3033,
+          3034,
+          3034,
+          3033,
+          3033
+        ]
+      }
+    }
+  ],
+  "browser": "149.0.7827.55"
+}

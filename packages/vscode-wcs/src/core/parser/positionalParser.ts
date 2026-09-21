@@ -9,9 +9,9 @@
  * 2. **位置情報**: 正本の戻り値はオフセットを持たない。パース結果のトークン
  *    （propName / statePathName）を原文へ逆照合してスパンを返す。
  *
- * 分割規則は**ランタイムと同値**に保つ: `;` は無条件分割（正本パーサ自身の
- * `bindText.split(BINDING_SEPARATOR)` と同じ。既存の splitBindingExpressions は
- * 括弧深度を見るためランタイムより寛容で、乖離の既知源になっている）。
+ * 分割規則は**ランタイムと同値**に保つ: 正本パーサの `splitBindTexts`（引用符の外の `;` だけで
+ * 区切る — @wcstack/state 3.0 の要件 B1）をそのまま使う。既存の splitBindingExpressions は
+ * 括弧深度を見るためランタイムより寛容で、乖離の既知源になっている。
  * 区切り文字は manifest（`@wcstack/state/manifest`）から取り、リテラルを持たない。
  *
  * 注意: 「構造ディレクティブは単独バインディング」の検査は**属性全体**の性質で
@@ -22,6 +22,7 @@
 import {
   parseBindTextForEmbeddedNode,
   parseBindTextsForElement,
+  splitBindTexts,
   type ParseBindTextResult,
 } from '@wcstack/state/parser';
 import { getWcsManifest } from '../../service/wcsManifest.js';
@@ -101,7 +102,7 @@ export function parseEmbeddedTextWithPositions(expression: string): IPositionalB
  */
 export function parseBindTextWithPositions(bindText: string): IPositionalBinding[] {
   const results: IPositionalBinding[] = [];
-  const segments = bindText.split(delimiters.binding);
+  const segments = splitBindTexts(bindText);
   let segmentStart = 0;
 
   for (const segment of segments) {

@@ -12,7 +12,7 @@
  * - ドリフト検出テスト（__tests__/manifest.test.ts）が、フィルタ集合の golden と実装の一致を CI で保証する。
  */
 import { config } from "./config.js";
-import { outputBuiltinFilters } from "./filters/builtinFilters.js";
+import { outputBuiltinFilters } from "./formats/builtinFilters.js";
 import { builtinFilterMeta, IFilterMeta } from "./filters/filterMeta.js";
 import { STRUCTURAL_BINDING_TYPE_SET } from "./structural/define.js";
 import {

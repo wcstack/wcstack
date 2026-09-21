@@ -16,11 +16,11 @@
  * - 柔軟なバインディングやAPI経由での利用が可能
  */
 
-import { READONLY_WRITE, warnV3Migration } from "../../v3Migration";
 import { getPathInfo } from "../../address/PathInfo";
 import { createStateAddress } from "../../address/StateAddress";
 import { indexArityMessage } from "../../pathDiagnostics";
 import { raiseError } from "../../raiseError";
+import { assertWritable } from "../assertWritable";
 import { getByAddress } from "../methods/getByAddress";
 import { getListIndexByIndexes } from "../methods/getListIndexByIndexes";
 import { setByAddress } from "../methods/setByAddress";
@@ -34,8 +34,7 @@ export function resolve(
   receiver: any,
   handler: IStateHandler
 ): ResolveFunction {
-  return (path: string, indexes: number[], ...rest: [value?: any]): any => {
-    const value = rest[0];
+  return (path: string, indexes: number[], ...value: [value?: any]): any => {
     const pathInfo = getPathInfo(path);
     if (handler.addressStackLength > 0) {
       const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
@@ -60,19 +59,12 @@ export function resolve(
 
     // ToDo:WritableかReadonlyかを判定して適切なメソッドを呼び出す
     const address = createStateAddress(pathInfo, listIndex);
-    const hasSetValue = typeof value !== "undefined";
-    if (!hasSetValue) {
-      if (rest.length > 0) {
-        // 3.0 は引数の個数で読み書きを分ける（要件 B7）— 明示した undefined は書き込みになる
-        warnV3Migration(`$resolve("${path}", indexes, undefined): 3.0 writes undefined. Pass two arguments to read.`);
-      }
+    // 読みか書きかは引数の**個数**で決める（要件 B7）。値で決めると undefined を書けない
+    if (value.length === 0) {
       return getByAddress(target, address, receiver, handler);
     } else {
-      if (handler.mutability === "readonly") {
-        // 3.0 は readonly のプロキシからの書き込みを拒否する（要件 B6）
-        warnV3Migration(READONLY_WRITE);
-      }
-      setByAddress(target, address, value, receiver, handler);
+      assertWritable(handler);
+      setByAddress(target, address, value[0], receiver, handler);
     }
   };
 } 

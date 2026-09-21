@@ -7,7 +7,7 @@ import {
   valueMustBeBoolean,
   valueMustBeDate,
   valueMustBeArray
-} from '../src/filters/errorMessages';
+} from '../src/formats/errorMessages';
 
 describe('filter errorMessages', () => {
   describe('optionsRequired', () => {

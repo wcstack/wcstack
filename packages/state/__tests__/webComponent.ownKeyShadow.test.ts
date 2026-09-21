@@ -84,16 +84,16 @@ describe('ownKeyShadow: v2 マウント（warnOwnKeyShadowsForMount）', () => {
     expect(warnings()).toEqual([]);
   });
 
-  it('部分エントリと同名の作者キーは「私有が部分エントリを隠す」と報告すること（厳格 R1）', () => {
+  it('部分エントリと同名の作者キーは報告しないこと（明示したエントリが勝つ — 要件 B14 ②）', () => {
     const r = mountRecord([[[] as any, 'user'], [['theme'], 'theme']], { theme: { mode: 'own' } });
     warnOwnKeyShadowsForMount(r);
-    const w = warnings();
-    expect(w).toHaveLength(1);
-    expect(w[0]).toContain('hides the mounted entry "state.theme: theme"');
+    expect(warnings()).toEqual([]);
+    // 明示したキーは私有の初期値にも入らない
+    expect('theme' in r.privateSnapshot).toBe(false);
   });
 
   it('同じ (tag, prop, key) の報告は 1 回だけで、クリアすれば再度報告すること', () => {
-    const r = mountRecord([[[] as any, 'user'], [['theme'], 'theme']], { theme: {} });
+    const r = mountRecord([[[] as any, 'user']], { name: '' }, { name: 'default', ...outerStateElement({ user: { name: 'Alice' } }) });
     warnOwnKeyShadowsForMount(r);
     warnOwnKeyShadowsForMount(r);
     expect(warnings()).toHaveLength(1);

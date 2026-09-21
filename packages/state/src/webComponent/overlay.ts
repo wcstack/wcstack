@@ -102,6 +102,7 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
         const receiver = this.receiver;
         if (prop === "$resolve") {
           return (path: string, indexes: number[] | undefined, ...rest: unknown[]): unknown => {
+            // 書き込み形（第 3 引数あり）は読み取り専用マウントを検査する（要件 B14 ①）
             const translated = rest.length > 0 ? translateInnerWritePath(record, path) : translateInnerPath(record, path);
             const composed = composeMountIndexes(record, path, translated, indexes ?? [], contextIndexes);
             return receiver.$resolve(translated, composed, ...rest);

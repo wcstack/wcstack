@@ -1,4 +1,3 @@
-import { warnV3Migration } from "../v3Migration";
 import { config, inSsr } from "../config";
 import { devtoolsSink } from "../platform/devtoolsSink";
 import { applyMirrorAttribute, getInputAttributeMirror } from "../event/getInputAttributeMirror";
@@ -6,7 +5,7 @@ import { beginPropagationTransaction, extendPropagationContext, getCurrentPropag
 import { isPossibleTwoWay } from "../event/isPossibleTwoWay";
 import { getCustomElement } from "../getCustomElement";
 import { IBindingInfo } from "../types";
-import { recordInjectedKey, rememberOverwrittenObject, rememberOverwrittenValue } from "../webComponent/preCompletionWrites";
+import { componentApplyHooks } from "../core/componentApplyHooks";
 import { IApplyContext } from "./types";
 import { addSsrProperty, trackSsrPropertyNode } from "./ssrPropertyStore";
 import { isHtmlSinkProp, reportTrustedTypesBlock, trustHtmlValue } from "../trustedTypes";
@@ -43,18 +42,22 @@ const SSR_ATTR_PROPS: Record<string, (element: Element, value: unknown) => void>
   },
 };
 
+/**
+ * 表示のプロパティ（要件 B8）。ここへの undefined は「値が無い」ので空にする — 要素の入力と違って
+ * 生かすべき既定値が無く、スキップすると、使い回した行に前の行の表示が残る。
+ */
+const DISPLAY_PROPS = new Set<string>(["textContent", "innerText", "innerHTML"]);
+
 export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyContext, newValue: unknown): void {
-  // undefined は「状態が値を持たない＝無意見」であり、書き込み自体をスキップして
+  if (typeof newValue === "undefined" && binding.propSegments.length === 1 && DISPLAY_PROPS.has(binding.propSegments[0])) {
+    newValue = "";
+  }
+  // 要素の入力への undefined は「状態が値を持たない＝無意見」であり、書き込み自体をスキップして
   // 要素側の既定値を生かす。書き込んでしまうと setter の文字列化で
   // "undefined" 属性や removeAttribute が走り要素が壊れる (spread で未初期化
   // slot を配線したときに顕在化)。明示的なクリアは null で表現する。
   // mirror 属性 (applyMirrorAttribute) の「undefined → 属性削除」と同じ語彙。
   if (typeof newValue === "undefined") {
-    // 3.0 は表示のプロパティへの undefined を空にする（要件 B8）— 2.x との差を予告する
-    const prop = binding.propSegments.length === 1 ? binding.propSegments[0] : "";
-    if (prop === "textContent" || prop === "innerText" || prop === "innerHTML") {
-      warnV3Migration(`"${prop}: ${binding.statePathName}" got undefined: 3.0 empties it. Return "" for no value.`);
-    }
     if (config.debug) {
       console.debug(`Skipped property write: state value is undefined.`, {
         element: binding.node,
@@ -73,12 +76,13 @@ export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyCon
     if (current !== newValue) {
       // 完了前の丸ごとマウント（`state: user`）は、作者の state オブジェクトを親の
       // オブジェクトで置き換えてしまう。あとで戻せるように置き換え前を控える
-      // （webComponent/preCompletionWrites.ts）。オブジェクト → オブジェクトの書き込みで
+      // （webComponent/preCompletionWrites.ts — bind-component の機能が core/componentApplyHooks.ts に置く。
+      // 置かれていなければ判定 1 回で抜ける）。オブジェクト → オブジェクトの書き込みで
       // 相手がカスタム要素のときだけ台帳に触る（通常の書き込みは typeof 判定で抜ける）。
-      if (current !== null && typeof current === 'object'
+      if (componentApplyHooks !== null && current !== null && typeof current === 'object'
         && newValue !== null && typeof newValue === 'object'
         && getCustomElement(element) !== null) {
-        rememberOverwrittenObject(element, firstSegment, current);
+        componentApplyHooks.rememberOverwrittenObject(element, firstSegment, current);
       }
       // Trusted Types: HTML sink (`innerHTML` 等) への書き込みだけ、利用側が注入した
       // sanitizer 付き policy を通す。state が identity policy を作って素通しさせるのは
@@ -204,17 +208,17 @@ export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyCon
     }
     // 完了前の部分マウント（`state.theme: theme`）が、作者の state オブジェクトに無かった
     // キーを作る（積み）ことを控える。R1 の衝突報告はこのキーを作者のものとして扱わない
-    // （webComponent/preCompletionWrites.ts）
-    if (propSegments.length === 2 && typeof subObject === 'object' && subObject !== null
+    // （webComponent/preCompletionWrites.ts — core/componentApplyHooks.ts 越し）
+    if (componentApplyHooks !== null && propSegments.length === 2 && typeof subObject === 'object' && subObject !== null
       && getCustomElement(element) !== null) {
       if (!(lastSegment in subObject)) {
-        recordInjectedKey(element, firstSegment, lastSegment);
+        componentApplyHooks.recordInjectedKey(element, firstSegment, lastSegment);
       } else {
         // 既存キーの上書き: 作者の値を控える（v2 の厳格 R1 が snapshot 前に復元する）。
         // 完了後の (element, stateProp) への適用はここへルーティングされない
         //（applyChangeToWebComponent の no-op へ行く — apply/applyChange.ts）ので、
         // ここに来る上書きは常に完了前＝控えの対象で良い
-        rememberOverwrittenValue(element, firstSegment, lastSegment, subObject[lastSegment]);
+        componentApplyHooks.rememberOverwrittenValue(element, firstSegment, lastSegment, subObject[lastSegment]);
       }
     }
     try {

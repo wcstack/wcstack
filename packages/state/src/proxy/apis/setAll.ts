@@ -15,19 +15,17 @@
  * - spread            `$setAll(path, indexes, values, { spread: true })`
  */
 
-import { READONLY_WRITE, warnV3Migration } from "../../v3Migration";
 import { getPathInfo } from "../../address/PathInfo";
 import { createStateAddress } from "../../address/StateAddress";
 import { IStateAddress } from "../../address/types";
 import { indexArityMessage, setAllSpreadArityMessage, setAllValueKindMessage } from "../../pathDiagnostics";
 import { raiseError } from "../../raiseError";
+import { assertWritable } from "../assertWritable";
 import { getByAddress } from "../methods/getByAddress";
 import { getListIndexByIndexes } from "../methods/getListIndexByIndexes";
 import { setByAddress } from "../methods/setByAddress";
 import { IStateHandler } from "../types";
 import { collectWildcardIndexes } from "./wildcardIndexes";
-import { hasRecursionWildcard } from "../../recursion/expand";
-import { setAllRecursive } from "../../recursion/setAllRecursive";
 
 export interface ISetAllOptions {
   /**
@@ -52,16 +50,8 @@ export function setAll(
   handler : IStateHandler
 ): SetAllFunction {
   return (path: string, indexes: number[], value: any, options?: ISetAllOptions): number => {
-    if (handler.mutability === "readonly") {
-      // 3.0 は readonly のプロキシからの書き込みを拒否する（要件 B6）
-      warnV3Migration(READONLY_WRITE);
-    }
-    // オーサリング層の `**`。書き側は `[]` のブロードキャストだけを受け付ける
-    // （形の検査は列挙より前に行い、1 件も書かないことを保証する。設計 §7-3）。
-    // 宣言の無い state は boolean 判定 1 個で抜ける。
-    if (handler.stateElement.hasRecursion === true && hasRecursionWildcard(path)) {
-      return setAllRecursive(target, receiver, handler, path, indexes, value, options);
-    }
+    assertWritable(handler);
+    // オーサリング層の `**`（ブロードキャスト形）は recursion/addressHooks.ts の get hook が先に受ける
     const pathInfo = getPathInfo(path);
 
     // 書き込み API に暗黙の文脈依存は持たせない。`for` の中で `[]` と書けば
