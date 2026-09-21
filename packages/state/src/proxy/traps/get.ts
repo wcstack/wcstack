@@ -35,6 +35,26 @@ import { ISetAllOptions, setAll } from "../apis/setAll";
 import { trackDependency } from "../apis/trackDependency";
 import { untrackDependency } from "../apis/untrackDependency";
 import { registerIndexKeyedDependency, registerIndexWatcher, registerKeyedDependency } from "../../dependency/keyedDependency";
+import { getPathInfo } from "../../address/PathInfo";
+import { IStateElement } from "../../components/types";
+
+/**
+ * 鍵付き購読の `path` が getter か getter の配下か。getter の値は `path` への書き込みを経ずに変わるので
+ * 鍵付き購読では知らせられない — そのときは依存を張る普通の読み取りに戻す（正しいが、変化で全行が
+ * 再評価される。鍵付きの形を使わないのと同じ）。
+ */
+function derivesFromGetter(stateElement: IStateElement, path: string): boolean {
+  const getterPaths = stateElement.getterPaths;
+  if (getterPaths.size === 0) {
+    return false;
+  }
+  for (const cumulativePath of getPathInfo(path).cumulativePaths) {
+    if (getterPaths.has(cumulativePath)) {
+      return true;
+    }
+  }
+  return false;
+}
 import { getListIndexesByList } from "../../list/listIndexesByList";
 import { liftAddress as liftAddressForKeyed } from "../../address/liftAddress";
 import { updatedCallback } from "../apis/updatedCallback";
@@ -197,6 +217,9 @@ export function get(
           return (path: string, key: unknown): boolean => {
             // getter の外（メソッド・コールバック）ではアドレススタックが空: 比較だけ返す
             const lastAddress = handler.addressStackLength > 0 ? handler.lastAddressStack : null;
+            if (derivesFromGetter(handler.stateElement, path)) {
+              return Object.is(receiver[path], key);
+            }
             handler.beginUntrack();
             let current: unknown;
             try {
@@ -215,16 +238,19 @@ export function get(
           // 追跡付きで行 id を読むと動的辺がリスト置換で全行に展開されるので、ここで抑止する
           return (path: string, keyPath: string): boolean => {
             const lastAddress = handler.addressStackLength > 0 ? handler.lastAddressStack : null;
+            const tracked = derivesFromGetter(handler.stateElement, path);
+            let current: unknown = tracked ? receiver[path] : undefined;
             handler.beginUntrack();
-            let current: unknown;
             let key: unknown;
             try {
-              current = receiver[path];
+              if (!tracked) {
+                current = receiver[path];
+              }
               key = receiver[keyPath];
             } finally {
               handler.endUntrack();
             }
-            if (lastAddress !== null && handler.stateElement.getterPaths.has(lastAddress.pathInfo.path)) {
+            if (!tracked && lastAddress !== null && handler.stateElement.getterPaths.has(lastAddress.pathInfo.path)) {
               registerKeyedDependency(handler.stateElement, path, key, liftAddressForKeyed(handler.stateElement, lastAddress), current);
             }
             return Object.is(current, key);
@@ -242,6 +268,9 @@ export function get(
             const levelListIndex = listIndexAtWildcard(lastAddress.listIndex, level - 1, lastAddress.pathInfo.wildcardCount);
             if (levelListIndex === null) {
               raiseError(`$eqIndex("${path}", ${level}): no list index at that level.`);
+            }
+            if (derivesFromGetter(handler.stateElement, path)) {
+              return Object.is(receiver[path], levelListIndex.index);
             }
             // 最内段（getter 自身の行の段）はリスト単位の監視で O(1)、外側の段は行ごとの購読
             const innermost = level === lastAddress.pathInfo.wildcardCount;

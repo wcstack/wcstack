@@ -3,11 +3,12 @@
  * 選択のような「1 行だけ真」の行 getter が、パスへの書き込みで旧行と新行だけを再評価すること、
  * 退役した行の購読が行と一緒に落ちること、`$eqIndex` の鍵が差分側で付け替わることを固定する。
  */
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
 import { getStateElement } from "../src/stateElementByName";
-import { countKeyedSubscriptions, dropKeyedSubscriptionsByListIndex, keyedDependents, rekeyIndexSubscriptions } from "../src/dependency/keyedDependency";
+import { countKeyedSubscriptions, dropKeyedSubscriptionsByListIndex, hasKeyedDescendants, keyedDependents, keyedDescendantDependents, rekeyIndexSubscriptions } from "../src/dependency/keyedDependency";
+import { setConfig } from "../src/config";
 import { createListIndex } from "../src/list/createListIndex";
 import { buildSsrDocument } from "../src/ssr/buildSsrDocument";
 
@@ -398,5 +399,153 @@ describe("keyedDependency の直接呼び出し", () => {
     const listIndex = createListIndex(null, 0, null);
     expect(() => dropKeyedSubscriptionsByListIndex(listIndex)).not.toThrow();
     expect(() => rekeyIndexSubscriptions(listIndex, 0, 1)).not.toThrow();
+  });
+});
+
+describe("書き込みが鍵を知らせない経路（2.6.0 の穴）", () => {
+  afterEach(() => {
+    setConfig({ sameValueGuard: true });
+  });
+
+  it("行オブジェクトを鍵にしても、選択を移すと前の行が外れること（旧値を読めない書き込み）", async () => {
+    const { host, write, selected, stateElement } = await mount(
+      {
+        items: [{ id: "a" }, { id: "b" }, { id: "c" }],
+        selected: null,
+        get "items.*.selected"(this: any) { return this.$eq("selected", this["items.*"]); },
+      },
+      ROWS,
+    );
+    await write((s) => { s.selected = s.items[0]; });
+    expect(selected()).toEqual(["a"]);
+    await write((s) => { s.selected = s.items[1]; });
+    expect(selected()).toEqual(["b"]);
+    await write((s) => { s.selected = null; });
+    expect(selected()).toEqual([]);
+    // 行を消すと、空になった鍵（行オブジェクト）は台帳から外れる
+    await write((s) => { s.items = s.items.slice(1); });
+    expect(countKeyedSubscriptions(stateElement, "selected")).toBe(2);
+    host.remove();
+  });
+
+  it("同値ガードを切っても、前の行が外れること（$eqIndex のリスト単位の監視も同じ）", async () => {
+    setConfig({ sameValueGuard: false });
+    const { host, write, selected } = await mount(
+      {
+        items: [{ id: "a" }, { id: "b" }, { id: "c" }],
+        selectedId: null,
+        selectedIndex: null,
+        get "items.*.selected"(this: any) { return this.$eqPath("selectedId", "items.*.id") || this.$eqIndex("selectedIndex"); },
+      },
+      ROWS,
+    );
+    await write((s) => { s.selectedId = "a"; });
+    await write((s) => { s.selectedId = "b"; });
+    expect(selected()).toEqual(["b"]);
+    await write((s) => { s.selectedId = null; s.selectedIndex = 2; });
+    expect(selected()).toEqual(["c"]);
+    await write((s) => { s.selectedIndex = 0; });
+    expect(selected()).toEqual(["a"]);
+    // 同じ値の書き込み（ガード無しなので通知される）では何も動かない
+    await write((s) => { s.selectedIndex = 0; });
+    expect(selected()).toEqual(["a"]);
+    host.remove();
+  });
+
+  it("親を丸ごと置き換えても、選択が付いて行くこと（祖先への書き込み）", async () => {
+    const { host, write, selected, stateElement } = await mount(
+      {
+        items: [{ id: 1 }, { id: 2 }, { id: 3 }],
+        sel: { inner: { id: 1 } },
+        get "items.*.selected"(this: any) { return this.$eq("sel.inner.id", this["items.*.id"]); },
+      },
+      ROWS,
+    );
+    expect(selected()).toEqual(["1"]);
+    expect(hasKeyedDescendants(stateElement, "sel")).toBe(true);
+    expect(hasKeyedDescendants(stateElement, "sel.inner")).toBe(true);
+    expect(hasKeyedDescendants(stateElement, "items")).toBe(false);
+    await write((s) => { s.sel = { inner: { id: 2 } }; });
+    expect(selected()).toEqual(["2"]);
+    // 置き換えた後の直接の書き込みも、置き換えで控えた値を旧い鍵にする
+    await write((s) => { s["sel.inner.id"] = 3; });
+    expect(selected()).toEqual(["3"]);
+    await write((s) => { s["sel.inner"] = { id: 1 }; });
+    expect(selected()).toEqual(["1"]);
+    // 途中が null になれば鍵は undefined
+    await write((s) => { s.sel = null; });
+    expect(selected()).toEqual([]);
+    // null の下への書き込みは従来どおり投げる（旧値の読み取りは黙って undefined に倒す）
+    expect(() => stateElement.createState("writable", (s: any) => { s["sel.inner"] = { id: 2 }; })).toThrow();
+    host.remove();
+  });
+
+  it("同じ祖先の下の鍵付きパスが複数あっても、それぞれに知らせること", async () => {
+    const { host, write, shadowRoot } = await mount(
+      {
+        items: [{ id: 1, name: "x" }, { id: 2, name: "y" }],
+        sel: { id: 1, name: "y" },
+        get "items.*.byId"(this: any) { return this.$eq("sel.id", this["items.*.id"]); },
+        get "items.*.byName"(this: any) { return this.$eq("sel.name", this["items.*.name"]); },
+      },
+      `<ul><template data-wcs="for: items"><li data-wcs="class.id: .byId; class.name: .byName"></li></template></ul>`,
+    );
+    const flags = () => Array.from(shadowRoot.querySelectorAll("li")).map((li) => li.className);
+    expect(flags()).toEqual(["id", "name"]);
+    await write((s) => { s.sel = { id: 2, name: "x" }; });
+    expect(flags()).toEqual(["name", "id"]);
+    host.remove();
+  });
+
+  it("鍵付きパスの残りにワイルドカードがあれば、祖先への書き込みでそのパスに購読する全行を返すこと", async () => {
+    // 行ごとの鍵を旧い親・新しい親から辿れないので、鍵（$eq）でも index の監視（$eqIndex）でも全行
+    const { host, stateElement } = await mount(
+      {
+        rows: [{ tag: "a" }, { tag: "b" }],
+        groups: [{ sel: 0, items: [{ id: "x" }, { id: "y" }, { id: "z" }] }],
+        get "rows.*.isA"(this: any) { return this.$eq("rows.*.tag", "a"); },
+        get "groups.*.items.*.cur"(this: any) { return this.$eqIndex("groups.*.sel", 2); },
+      },
+      `<ul><template data-wcs="for: rows"><li data-wcs="class.a: .isA"></li></template></ul>` +
+      `<template data-wcs="for: groups"><template data-wcs="for: .items"><i data-wcs="class.cur: .cur"></i></template></template>`,
+    );
+    expect(keyedDescendantDependents(stateElement, "rows", [], [])).toHaveLength(2);
+    expect(keyedDescendantDependents(stateElement, "groups", [], [])).toHaveLength(3);
+    host.remove();
+  });
+
+  it("path が getter か getter の配下なら、依存を張る普通の読み取りに戻ること", async () => {
+    const { host, write, selected, stateElement } = await mount(
+      {
+        items: [{ id: 1 }, { id: 2 }, { id: 3 }],
+        selectedId: 1,
+        index: 0,
+        get selectedKey(this: any) { return this.selectedId; },
+        get current(this: any) { return this.items[this.index]; },
+        get "items.*.selected"(this: any) {
+          return this.$eq("selectedKey", this["items.*.id"]) || this.$eqPath("current.id", "items.*.id") || this.$eqIndex("selectedKey");
+        },
+      },
+      ROWS,
+    );
+    expect(selected()).toEqual(["1", "2"]);
+    await write((s) => { s.selectedId = 3; });
+    expect(selected()).toEqual(["1", "3"]);
+    await write((s) => { s.index = 2; });
+    expect(selected()).toEqual(["3"]);
+    await write((s) => { s.selectedId = 0; });
+    expect(selected()).toEqual(["1", "3"]);
+    expect(countKeyedSubscriptions(stateElement, "selectedKey")).toBe(0);
+    expect(countKeyedSubscriptions(stateElement, "current.id")).toBe(0);
+    host.remove();
+  });
+
+  it("getter の無い state のメソッドからも比較を返すこと", async () => {
+    const { host, read } = await mount(
+      { mode: "a", check(this: any) { return this.$eq("mode", "a"); } },
+      `<span></span>`,
+    );
+    expect(read((s) => s.check())).toBe(true);
+    host.remove();
   });
 });
