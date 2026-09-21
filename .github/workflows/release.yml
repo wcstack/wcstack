@@ -62,6 +62,15 @@ jobs:
       # package builds and tests like any other package since plan Phase 4;
       # `list` and `publish_list` are now the same set, kept as two outputs so
       # the consuming steps stay unchanged.
+      #
+      # `state` is taken out of the sort and built FIRST, for the same reason:
+      # `lint` (via its vscode-wcs build) and `typescript` inline state's
+      # dist/parser.esm.js and dist/manifest.esm.js through file:../state, and
+      # "lint" sorts before "state". Built in sorted order, lint read the
+      # committed dist — the previous release's — so a parser export added in
+      # this release failed the build (the first 2.6.0 attempt:
+      # findV3MigrationIssues). ci.yml's wcs-validate job already builds state
+      # first; this keeps the release in the same order.
       - name: Discover packages
         id: discover
         run: |
@@ -71,11 +80,12 @@ jobs:
               [ -f "${dir}package.json" ] || continue
               name=$(node -p "require('./${dir}package.json').name")
               case "$name" in
+                @wcstack/state) ;;
                 @wcstack/*) basename "$dir" ;;
               esac
             done | sort | tr '\n' ' '
           }
-          pkgs="$(members)wcstack "
+          pkgs="state $(members)wcstack "
           echo "Build/publish order: $pkgs"
           echo "list=$pkgs" >> "$GITHUB_OUTPUT"
           echo "publish_list=$pkgs" >> "$GITHUB_OUTPUT"
