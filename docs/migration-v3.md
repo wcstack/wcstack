@@ -97,7 +97,7 @@ All of them are in `@wcstack/state`. "2.6 notice" says whether 2.6.x's `wcs/v3-m
 - **The empty-value contract applies to server rendering too.** `@wcstack/server` renders with the same runtime as the browser, so an `undefined` / `null` attribute is not emitted and an `undefined` text is empty. Snapshot tests may need new expectations.
 - **`$errorCallback` on a volume or a mounted component is warned about.** Same as 2.6.0 (2.5 and earlier ignored it silently). It still runs only on the root state. What runs in which scope is one table under the state README's [`mount=`](../packages/state/README.md#mounting-additional-state-mount).
 - **The named entry (`dist/index.esm.js`) is minified.** 321 KB → 78.5 KB gzip. Function names in stack traces and profiles are no longer readable; build from source with `WCS_STATE_UNMINIFIED=1 npm run build` when you need them.
-- **Size.** `auto.min.js` grows from 71.6 KB (2.6.1) to 76.3 KB gzip — the feature receptacles and the breaking fixes above. The split form's core alone, with no feature installed, is about 51 KB (the sum of its chunks, each gzipped).
+- **Size.** `auto.min.js` grows from 71.6 KB (2.6.1) to about 77 KB gzip — the feature receptacles and the breaking fixes above. The split form's core alone, with no feature installed, is about 52 KB (the sum of its chunks, each gzipped).
 - **Performance.** Medians against 2.5.1: creating 10,000 rows (cold) −18.7 %, appending 1,000 rows −15.9 %, clearing 10,000 rows −14.7 %. Creating 1,000 rows warm is unchanged, and no measure regressed. The heap per row goes from 3.6 to 3.0 KB (against a 2.6-equivalent build).
 
 ## 5. Tools
