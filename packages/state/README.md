@@ -336,6 +336,19 @@ There is **one state tree per root**. To split state across modules, mount a vol
 
 A volume may declare getters, `$watch`, `$listKeys`, `$updatedCallback`, and `$connectedCallback`/`$disconnectedCallback` — all relative to its mount path. `$errorCallback` is root-only (a binding failure is reported once, to the tree's owner). Load order does not matter (a volume connected before the root is grafted when the root registers). If the root `<wcs-state>` fails to initialize, the volumes already waiting for it settle with a report of their own instead of waiting forever. That report is the end of the line for those volumes: a volume reported as an orphan does not graft itself later, so connecting a corrected root afterwards does not bring it back. A volume that settles without grafting — orphaned, failed to load, or failed to graft — releases its mount slot, and so does a volume detached while it is still loading or waiting for its root. Such a volume takes the slot back when it is re-attached to the same root, or otherwise just before it grafts, and still grafts as before when the slot is free — even while detached; if another volume took the slot in the meantime, it reports that and does not graft. A synchronous throw from a volume's `$connectedCallback` is reported like an asynchronous one, and the volume counts as grafted. To recover without reloading the page, remove the broken root and the orphaned volumes and add new elements. A grafted volume keeps its slot even when detached, because its data stays in the tree. Mount paths must be static (`*`, `$`, `#`, `@` are rejected). Changing `mount` after the element has initialized is not supported: the change is ignored with a console warning — remove the element and add a new one with the desired path.
 
+**Injecting root paths into a volume (3.1).** When a volume's code needs a path outside its own subtree, write the injection on the volume element's `data-wcs`, in the same form as a component's partial mount:
+
+```html
+<wcs-state mount="cart" src="./cart.js" data-wcs="state.taxRate: settings.taxRate"></wcs-state>
+```
+
+Inside `cart.js` — getters, methods, `$watch`, `$listKeys` and the lifecycle callbacks — `this.taxRate` reads and writes the root's `settings.taxRate`. The read records a dependency, so `get total()` re-evaluates when `settings.taxRate` changes. `$watch: { taxRate() {…} }` fires on changes to `settings.taxRate`, and `$updatedCallback` receives that update under the inner name `taxRate`. The injected name exists only inside the volume's code: the page keeps reading `settings.taxRate`, and the tree has no `cart.taxRate`.
+
+- **One key at a time.** The left side is a single `state.<key>`. `state: …` cannot move the whole volume; change `mount` for that.
+- **The injection wins over the volume's own key.** A data key of the same name (`taxRate: 0`) is not grafted. An accessor or method of the same name would make `this.taxRate` ambiguous, so that volume reports an error and does not graft.
+- **`#ro`.** With `state.taxRate#ro: settings.taxRate`, the value can be read but not written. An assignment from the volume's code, `$setAll`, or a writing `$resolve` throws `[wcs/mount-readonly]`; the root itself can still write the path.
+- **Static paths only.** The right side cannot contain a wildcard (`items.*.x`) or start with `$`, because a volume has no loop context. Filters are not accepted either; derive the value in a getter. A malformed injection is reported as `[wcs/mount-path-invalid]` before the volume loads.
+
 **What each scope runs** (3.0 states it as one table — requirement B11; nothing here is ignored silently):
 
 | Declaration | Root `<wcs-state>` | Volume `<wcs-state mount="p">` | Mounted component (`bind-component` with `state: …`) |

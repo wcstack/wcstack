@@ -361,7 +361,7 @@ describe('proxy/apis/updatedCallback マーカーパスの非漏出（D20/D21）
     const stateElement = elementFor('volume-root');
     const handler = { stateElement } as IStateHandler;
     const volumeCallback = vi.fn();
-    addVolumeUpdatedCallback(stateElement as any, { mountPath: 'vol', callback: volumeCallback });
+    addVolumeUpdatedCallback(stateElement as any, { mountPath: 'vol', injections: [], callback: volumeCallback });
     (stateElement as any).addressHooks = createAttachedHooksFrom(scopeAddressHooks);
     const target = {};
     const receiver = {};

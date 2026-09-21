@@ -5,6 +5,7 @@ import { setMountedScopeHost } from "../list/loopContextByNode";
 import { DELIMITER, MODIFIER_READONLY, RECURSION_WILDCARD, WILDCARD } from "../define";
 import { raiseError } from "../raiseError";
 import { IBindingInfo } from "../types";
+import { findMountEntry, IMountEntry, translateByMountEntry } from "./mountEntries";
 
 /**
  * webComponent/mount.ts — マウント記録（Phase 2・docs/state-mount-design.md §5、impl-plan §3-0）。
@@ -31,16 +32,7 @@ import { IBindingInfo } from "../types";
  *   → `<rootOuter>.#m.drafts.*.title` — 配列ごと私有側に閉じる
  */
 
-export interface IMountEntry {
-  /** 内側接頭辞のセグメント（ルートエントリは 0 個 — あらゆる内側パスに一致する） */
-  readonly innerSegments: readonly string[];
-  readonly outerPathInfo: IPathInfo;
-  /**
-   * ホストが `#ro` を付けたか（`state#ro: user` / `state.name#ro: user.name`、要件 B14 ①）。
-   * 真なら、コンポーネント側からこのエントリを通るツリーへの書き込みは拒否される（ホスト自身の書き込みは止めない）。
-   */
-  readonly readonly: boolean;
-}
+export type { IMountEntry } from "./mountEntries";
 
 export interface IMountRecord {
   readonly id: number;
@@ -295,35 +287,15 @@ function firstSegmentOf(path: string): string {
   return dot === -1 ? path : path.slice(0, dot);
 }
 
-function startsWithSegments(segments: readonly string[], prefix: readonly string[]): boolean {
-  if (prefix.length > segments.length) return false;
-  for (let i = 0; i < prefix.length; i++) {
-    if (segments[i] !== prefix[i]) return false;
-  }
-  return true;
-}
-
 /** 規則 3 の一致: 最長接頭辞のエントリ（entries は長い順）。一致しなければ null。 */
 function findTreeEntry(record: IMountRecord, segments: readonly string[]): IMountEntry | null {
-  for (const entry of record.entries) {
-    if (startsWithSegments(segments, entry.innerSegments)) {
-      return entry;
-    }
-  }
-  return null;
+  return findMountEntry(record.entries, segments);
 }
 
 /** 規則 3: 最長接頭辞一致でツリーの絶対パスへ翻訳する。一致しなければ null。 */
 function translateTreePath(record: IMountRecord, segments: readonly string[]): string | null {
-  for (const entry of record.entries) {
-    if (startsWithSegments(segments, entry.innerSegments)) {
-      const rest = segments.slice(entry.innerSegments.length);
-      return rest.length === 0
-        ? entry.outerPathInfo.path
-        : entry.outerPathInfo.path + DELIMITER + rest.join(DELIMITER);
-    }
-  }
-  return null;
+  const entry = findMountEntry(record.entries, segments);
+  return entry === null ? null : translateByMountEntry(entry, segments);
 }
 
 /** 私有アンカー: パス全体をマーカーの下に置く（`users.*.#m.editing` / `users.*.#m.drafts.*.title`） */

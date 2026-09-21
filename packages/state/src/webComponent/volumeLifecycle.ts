@@ -13,7 +13,8 @@ import { CLAIMED, ILifecycleHooks, registerLifecycleHooks } from "../core/lifecy
 import { config } from "../config";
 import { raiseError } from "../raiseError";
 import { getStateElement } from "../stateElementByName";
-import { callVolumeLifecycle, clearFailedRootNode, failPendingVolumes, graftOrQueueVolume, IVolumeGraftInfo, releaseVolumeSlot, reserveVolumeSlot, validateVolumeMountPath } from "./volume";
+import { callVolumeLifecycle, clearFailedRootNode, failPendingVolumes, graftOrQueueVolume, IVolumeGraftInfo, readVolumeInjections, releaseVolumeSlot, reserveVolumeSlot, validateVolumeMountPath } from "./volume";
+import type { IMountEntry } from "./mountEntries";
 
 /** 要素ごとのボリュームの控え（従来の `State` の private フィールド 5 つ） */
 interface IVolumeLedger {
@@ -91,8 +92,11 @@ async function initializeVolume(element: IStateElement, ledger: IVolumeLedger): 
   const el = asElement(element);
   const rootNode = element.connectedRootNode!;
   const mountPath = el.getAttribute("mount")!;
+  let injections: IMountEntry[];
   try {
     validateVolumeMountPath(mountPath);
+    // 注入口（`data-wcs="state.<key>: path"`、B14③）の形の誤りも、ロードより前に設定エラーとして落とす
+    injections = readVolumeInjections(el.getAttribute(config.bindAttributeName) ?? "", mountPath);
     if (el.hasAttribute("bind-component")) {
       raiseError(`"mount" cannot be combined with "bind-component".`);
     }
@@ -170,6 +174,7 @@ async function initializeVolume(element: IStateElement, ledger: IVolumeLedger): 
     volumeState,
     finish,
     () => acquireSlot(element, ledger, graftRootNode),
+    injections,
   );
 }
 

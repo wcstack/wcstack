@@ -8,6 +8,16 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Added
+
+- `@wcstack/state`: **an injection point for volumes.** `<wcs-state mount="cart" data-wcs="state.taxRate: settings.taxRate">` lets the volume's code use `this.taxRate` for the root's `settings.taxRate`: getters (with the dependency recorded), methods, `$watch`, `$listKeys` and the lifecycle callbacks. It uses the vocabulary of a component's partial mount and the same longest-prefix table (`webComponent/mountEntries.ts`). Components could already take `state.x: path` from the host; volumes had no equivalent.
+  - The injection wins over a data key of the same name, which is not grafted.
+  - `#ro` makes the key read-only for the volume (`[wcs/mount-readonly]`).
+  - `$updatedCallback` receives updates of an injected path under the inner name.
+  - One key per injection, static target paths, no filters. A malformed injection is `[wcs/mount-path-invalid]`, reported before the volume loads.
+
+  Until now such a `data-wcs` failed to apply as a write to a missing `state` property. It is no longer collected as a binding. Contract: the state README, `mount=`.
+
 ## [3.0.0] — 2026-09-22
 
 **3.0 reads a binding as written, or refuses it by name — and the core of `@wcstack/state` is split from its features.** The changes are in `@wcstack/state` and its tooling; every other package moves to 3.0.0 only to keep the lockstep version. There is no compatibility layer: 2.6 announced every form that changes here as `wcs/v3-migration`, so upgrade to 2.6.1, clear those warnings, then move to 3.0. Migration: [docs/migration-v3.md](./docs/migration-v3.md).

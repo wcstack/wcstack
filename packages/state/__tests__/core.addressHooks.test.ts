@@ -76,7 +76,7 @@ describe("hook は要素の寿命の間は付いたまま: 宣言が消えた後
     const root = { name: "root" } as any;
     const other = { name: "other" } as any;
     const callback = vi.fn();
-    addVolumeUpdatedCallback(root, { mountPath: "vol", callback });
+    addVolumeUpdatedCallback(root, { mountPath: "vol", injections: [], callback });
     const foreignRef = { absolutePathInfo: { stateElement: other, pathInfo: getPathInfo("vol.x") }, listIndex: null } as any;
     scopeAddressHooks.updated!(root, [foreignRef], {});
     expect(callback).not.toHaveBeenCalled();

@@ -1,0 +1,210 @@
+/**
+ * ボリュームの注入口（要件 B14③・docs/state-3x-plan.ja.md D28〜D33）。
+ * `<wcs-state mount="cart" data-wcs="state.taxRate: settings.taxRate">` で、ボリュームのコード
+ * （getter・メソッド・$watch・ライフサイクル）の `this.taxRate` がルートの `settings.taxRate` になること、
+ * 明示した注入が自前の既定値に勝つこと、`#ro`、`$updatedCallback` の相対配送、宣言の検査を固定する。
+ */
+import { describe, it, expect, beforeAll, vi } from "vitest";
+import { bootstrapState } from "../src/bootstrapState";
+import { State } from "../src/components/State";
+import { getStateElement } from "../src/stateElementByName";
+import { readVolumeInjections } from "../src/webComponent/volume";
+import { relativeVolumePath, translateVolumePath } from "../src/webComponent/volumeShared";
+
+beforeAll(() => {
+  bootstrapState();
+});
+
+const flush = () => new Promise((r) => setTimeout(r));
+let counter = 0;
+
+async function mountPage(inject: string, volumeState: Record<string, any>, rootState: Record<string, any>, body = "") {
+  const host = document.createElement(`vol-inject-host-${++counter}`);
+  const shadowRoot = host.attachShadow({ mode: "open" });
+  shadowRoot.innerHTML =
+    `<wcs-state mount="cart" data-wcs="${inject}"></wcs-state>` +
+    `<wcs-state></wcs-state>` +
+    `<span id="total" data-wcs="textContent: cart.total"></span>` + body;
+  document.body.appendChild(host);
+  const volumeElement = shadowRoot.querySelector("wcs-state[mount]") as State;
+  const rootElement = shadowRoot.querySelector("wcs-state:not([mount])") as State;
+  rootElement.setInitialState(rootState);
+  volumeElement.setInitialState(volumeState);
+  await rootElement.connectedCallbackPromise;
+  await volumeElement.connectedCallbackPromise;
+  await State.getBindingsReady(shadowRoot);
+  await flush();
+  await flush();
+  const stateElement = getStateElement(shadowRoot)!;
+  const write = async (fn: (s: any) => void) => { stateElement.createState("writable", fn); await flush(); };
+  const read = <T,>(fn: (s: any) => T): T => { let out!: T; stateElement.createState("readonly", (s: any) => { out = fn(s); }); return out; };
+  const text = (selector: string) => (shadowRoot.querySelector(selector) as HTMLElement).textContent;
+  return { host, shadowRoot, write, read, text };
+}
+
+describe("ボリュームの注入口（B14③）", () => {
+  it("ボリュームの getter が注入したルートのパスを読み、その変化に追従すること", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { host, write, text } = await mountPage(
+      "state.taxRate: settings.taxRate",
+      { subtotal: 100, get total(this: any) { return Math.round(this.subtotal * (1 + this.taxRate)); } },
+      { settings: { taxRate: 0.1 } },
+    );
+    expect(text("#total")).toBe("110");
+    await write((s) => { s["settings.taxRate"] = 0.2; });
+    expect(text("#total")).toBe("120");
+    // ボリューム要素の `state.*` はルートの束縛にならない（無い `state` プロパティへの適用失敗を出さない）
+    expect(errors).not.toHaveBeenCalled();
+    errors.mockRestore();
+    host.remove();
+  });
+
+  it("明示した注入が自前の既定値に勝ち、そのキーは接ぎ木されないこと（D30）", async () => {
+    const { host, read, text } = await mountPage(
+      "state.taxRate: settings.taxRate",
+      { subtotal: 100, taxRate: 0, get total(this: any) { return Math.round(this.subtotal * (1 + this.taxRate)); } },
+      { settings: { taxRate: 0.5 } },
+    );
+    expect(text("#total")).toBe("150");
+    expect(read((s) => s["cart.subtotal"])).toBe(100);
+    expect(read((s) => s["cart.taxRate"])).toBeUndefined();
+    host.remove();
+  });
+
+  it("メソッドからの書き込みは注入先のルートのパスに届き、$getAll / $resolve / $postUpdate も翻訳されること", async () => {
+    const { host, read } = await mountPage(
+      "state.rate: settings.rate; state.rows: settings.rows",
+      {
+        seen: null as unknown,
+        $connectedCallback(this: any) {
+          this.rate = 3;
+          this.$setAll("rows.*.n", [], 7);
+          this.$resolve("rows.*.n", [1], 9);
+          this.seen = [this.$getAll("rows.*.n", []), this.$resolve("rows.*.n", [0])];
+          this.$postUpdate("rate");
+        },
+      },
+      { settings: { rate: 1, rows: [{ n: 1 }, { n: 2 }] } },
+    );
+    expect(read((s) => s["settings.rate"])).toBe(3);
+    expect(read((s) => s["settings.rows"]).map((r: { n: number }) => r.n)).toEqual([7, 9]);
+    expect(read((s) => s["cart.seen"])).toEqual([[7, 9], 7]);
+    host.remove();
+  });
+
+  it("#ro の注入は読めるが、書き込み・$setAll・書きの $resolve は [wcs/mount-readonly] で拒否されること（D31）", async () => {
+    const outcomes: string[] = [];
+    const attempt = (fn: () => void) => {
+      try { fn(); outcomes.push("ok"); } catch (error) { const m = String((error as Error).message); outcomes.push(m.includes("[wcs/mount-readonly]") ? "ro" : "other:" + m); }
+    };
+    const { host, read } = await mountPage(
+      "state.rows#ro: settings.rows",
+      {
+        count: 0,
+        $connectedCallback(this: any) {
+          this.count = this.rows.length;
+          attempt(() => { this.rows = []; });
+          attempt(() => { this.$setAll("rows.*.n", [], 0); });
+          // 読みは通る（$resolve の読みはリストの index 台帳を要るので、先に $getAll で作る）
+          attempt(() => { this.$getAll("rows.*.n", []); });
+          attempt(() => { this.$resolve("rows.*.n", [0], 0); });
+          attempt(() => { this.$resolve("rows.*.n", [0]); });
+        },
+      },
+      { settings: { rows: [{ n: 1 }] } },
+    );
+    expect(outcomes).toEqual(["ro", "ro", "ok", "ro", "ok"]);
+    expect(read((s) => s["cart.count"])).toBe(1);
+    expect(read((s) => s["settings.rows"])).toEqual([{ n: 1 }]);
+    host.remove();
+  });
+
+  it("注入したキーの $watch はルートのパスの変化で発火し、ハンドラの this もボリューム相対であること", async () => {
+    const fired: unknown[] = [];
+    const { host, write } = await mountPage(
+      "state.taxRate: settings.taxRate",
+      {
+        subtotal: 100,
+        get total(this: any) { return this.subtotal; },
+        $watch: {
+          taxRate(this: any, cur: unknown) { fired.push([cur, this.taxRate, this.subtotal]); },
+        },
+      },
+      { settings: { taxRate: 0.1 } },
+    );
+    await write((s) => { s["settings.taxRate"] = 0.3; });
+    expect(fired).toContainEqual([0.3, 0.3, 100]);
+    host.remove();
+  });
+
+  it("$updatedCallback は注入したパスの更新を内側の名前で受けること（D33）", async () => {
+    const received: string[][] = [];
+    const { host, write } = await mountPage(
+      "state.taxRate: settings.taxRate",
+      {
+        subtotal: 100,
+        get total(this: any) { return this.subtotal; },
+        $updatedCallback(this: any, paths: string[]) { received.push([...paths].sort()); },
+      },
+      { settings: { taxRate: 0.1 }, other: 1 },
+      `<i data-wcs="textContent: settings.taxRate"></i><b data-wcs="textContent: other"></b>`,
+    );
+    await write((s) => { s["settings.taxRate"] = 0.4; s["cart.subtotal"] = 200; s.other = 2; });
+    expect(received.flat()).toContain("taxRate");
+    expect(received.flat()).not.toContain("other");
+    host.remove();
+  });
+});
+
+describe("注入口の宣言の検査", () => {
+  it("state.<key> の 1 段・静的なパス・#ro だけ・フィルタ無し・重複無しを受け付けること", () => {
+    const entries = readVolumeInjections("state.b#ro: x.b; state.a: x.a; title: t", "cart");
+    expect(entries.map((e) => [e.innerSegments.join("."), e.outerPathInfo.path, e.readonly])).toEqual([
+      ["b", "x.b", true],
+      ["a", "x.a", false],
+    ]);
+    expect(readVolumeInjections("", "cart")).toEqual([]);
+  });
+
+  it.each([
+    ["state: settings", /one key at a time/],
+    ["state.a.b: settings.a", /one key at a time/],
+    ["state.$x: settings.a", /one key at a time/],
+    ["state.: settings.a", /one key at a time/],
+    ["state.a: items.*.name", /static path/],
+    ["state.a: $1", /static path/],
+    ["state.a: settings.a|uc", /no filters/],
+    ["state.a|number: settings.a", /no filters/],
+    ["state.a#onchange: settings.a", /only #ro/],
+    ["state.a: settings.a; state.a: settings.b", /twice/],
+  ])("%s を [wcs/mount-path-invalid] で拒否すること", (bindText, message) => {
+    expect(() => readVolumeInjections(bindText, "cart")).toThrow(message);
+    expect(() => readVolumeInjections(bindText, "cart")).toThrow(/\[wcs\/mount-path-invalid\]/);
+  });
+
+  it("注入したキーと同名の getter やメソッドを宣言したボリュームは接ぎ木しないこと", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { host, read } = await mountPage(
+      "state.taxRate: settings.taxRate",
+      { subtotal: 1, get taxRate() { return 0; }, get total(this: any) { return this.subtotal; } },
+      { settings: { taxRate: 0.1 } },
+    );
+    expect(errors.mock.calls.some((call) => String(call[1]?.message ?? "").includes("also injects it"))).toBe(true);
+    expect(read((s) => s["cart.subtotal"])).toBeUndefined();
+    errors.mockRestore();
+    host.remove();
+  });
+
+  it("翻訳と逆翻訳: 注入の最長一致が先、無ければ接頭辞・関係ないパスは null", () => {
+    const [entry] = readVolumeInjections("state.rate: settings.rate", "cart");
+    expect(translateVolumePath("cart", [entry], "rate", false)).toBe("settings.rate");
+    expect(translateVolumePath("cart", [entry], "rate.deep", false)).toBe("settings.rate.deep");
+    expect(translateVolumePath("cart", [entry], "rated", false)).toBe("cart.rated");
+    expect(translateVolumePath("cart", [], "rate", true)).toBe("cart.rate");
+    expect(relativeVolumePath("cart", [entry], "settings.rate")).toBe("rate");
+    expect(relativeVolumePath("cart", [entry], "settings.rate.deep")).toBe("rate.deep");
+    expect(relativeVolumePath("cart", [entry], "cart")).toBe("");
+    expect(relativeVolumePath("cart", [entry], "cart.total")).toBe("total");
+    expect(relativeVolumePath("cart", [entry], "settings")).toBeNull();
+  });
+});
