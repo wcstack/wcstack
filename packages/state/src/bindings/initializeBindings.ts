@@ -71,8 +71,15 @@ export function initializeBindingsByFragment(
  * 返す session は従来経路と同じ活性化（activate）・破棄（dispose/wholesale）
  * インターフェースを持つ。
  */
-export function initializeRowBindings(plan: IRowPlan, bindings: IBindingInfo[]): BindingSession {
-  const session = new BindingSession();
+// `for` 束縛（そのノード）ごとに 1 つの session を全行で共有する（設計 R3）。
+// プランが差し替わったら（再セット・方向性初期同期の設定変更）新しい session に切り替える。
+const rowSessionByForNode = new WeakMap<Node, BindingSession>();
+export function initializeRowBindings(plan: IRowPlan, bindings: IBindingInfo[], forNode: Node): BindingSession {
+  let session = rowSessionByForNode.get(forNode);
+  if (typeof session === "undefined" || session.currentRowPlan !== plan) {
+    session = new BindingSession();
+    rowSessionByForNode.set(forNode, session);
+  }
   session.initializeRow(plan, bindings);
   return session;
 }

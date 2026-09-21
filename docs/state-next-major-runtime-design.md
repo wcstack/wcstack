@@ -48,7 +48,7 @@ Where the 28 µs of a row go (survey §10.7, §10.11, §10.13):
 |---|---|---|---|---|
 | R1 | The clear's allocation (index loops, per-parent skip counts) | clear 22–72 → 18–20 ms, no scavenge inside the window | **2.6.x (ported)** | none |
 | R2 | Plan-level initial render | reads 7 → 4 and applies 3 → 1 per row, activation phase −34 %, warm 1,000 rows −34 % (§4-1) | **3.0 (implemented, §4-1)** | `applyValueToBinding` exported internally |
-| R3 | Row record + one session per list | heap −16 % (3.6 → 3.0 KB/row), time unchanged | 3.0 (D11) | `BindingSession`'s core (`disposeBindings`, `destroyRow`, `isRowSession`, a composed `getRecord`) |
+| R3 | Row record + one session per list | heap −18 % (3,616 → 2,953 B/row), time unchanged (§5-1) | **3.0 (implemented, §5-1)** | `BindingSession`'s core (`disposeBindings`, `destroyRow`, `isRowSession`, a composed `getRecord`) |
 | R4 | Unify `BindingSession`'s two paths | core −2.9 KB minified (wiring design §5) | 3.0 | the plan path and the general path become one |
 | R5 | Cold candidates (T4 clone / node-path forms, pool pre-warming) | unmeasured (8 ms of cold is the target) | undecided | `resolveNodePath`'s shape, an opt-in attribute |
 
@@ -88,6 +88,17 @@ The prototype's shape (survey §10.13) went into the product as is: a new `struc
 - **The shared session's deferred rule**: a pending definition task is cancelled with the row whose node it belongs to, and all of them are cancelled once no row is alive. Two wholesale integration tests pin that rule.
 - **The gain is heap, not time** (3,630 → 3,033 B/row): the five collections a per-row session holds (3 WeakMaps, 2 Sets) are about 600 B/row. §10.11's estimate of 1.65 KB/row was too high, and §10.14 corrected it.
 - **The 3.0 KB/row that remain**: addresses, caches, listIndex, dependency ledgers and binding objects, plus module-side ledgers (the per-loop-context listIndex cache, the content ledgers). That is where the next cut would come from, but **it has not been attributed yet** (the continuation of survey §10.11).
+
+### 5-1. R3's implementation record (2026-09-21, `packages/state`)
+
+Both prototypes (the row record of survey §10.7 and the shared session of §10.14) went into the product back to back. Both applied to the current source unchanged, and the type check and the whole suite passed on the first run — **coverage did not**, and that turned out to be the lesson of this stage.
+
+- **The shape**: a plan row's bookkeeping is one record per row (slot arrays: phase, flags, address / pattern registration), and one `BindingSession` per `for` binding (that node) holds those rows in a Set. The content side's per-row operations became `disposeBindings` / `destroyRow`, and `unmountInPlace` / `unmount` dispose only this content's row when the session is shared (disposing the session would take the list's living rows with it).
+- **Heap** ([audit-state-tech-heap.mjs](../scripts/audit-state-tech-heap.mjs), 10,000 rows, difference after a forced GC): **3,616 → 2,953 bytes per row (−18 %)**, a little better than the prototype's −16 %. Time is unchanged (the counters' create 10,000, warm 1,000, append and clear all sit inside the sample spread). The measurement confirms §2's expectation that R3 buys heap, not time.
+- **The real subject is the coverage drop (92.5 %)**. The row record takes plan rows off the record path, so **branches that plan rows used to exercise on that path stopped being reached at all**. The prototype had stopped at "all tests green", so the hole only became visible on the port. The fix split in two:
+  - **Delete what cannot be reached**: plan eligibility (`compileRowPlan`) rejects custom elements and two-way bindings, so a plan row can hold neither a definition wait nor a deferred apply. The per-slot teardown array (`addTeardown`'s row branch and `row.teardowns`) existed only for that deferred apply and is gone. Cancelling the definition waits when the last row dies **stayed** — an integration test (wholesale destroy) pins that contract, and removing it failed two tests. A useful reminder that "never called" and "must never be called" are different claims.
+  - **Cover the rest with tests**: the integration file [bindings.rowSession.test.ts](../packages/state/__tests__/bindings.rowSession.test.ts) (12 cases — sharing, reuse, partial removal, pool revival, two lists, events, disconnect, re-set, and a plan-ineligible list) and the white-box [bindings.rowSession.branches.test.ts](../packages/state/__tests__/bindings.rowSession.branches.test.ts) (12 cases — unregistered rows, authority, a failed event attach, a missing state tree, double registration, rebinding, destroyRecords with rows). Three record-path cases were added to the existing [bindings.BindingSession.branches.test.ts](../packages/state/__tests__/bindings.BindingSession.branches.test.ts) to replace the traffic plan rows used to bring.
+- **Result**: all 3,739 tests pass, coverage 99.64 / 98.50 / 100 / 99.81 (exactly at the thresholds), lint clean, all four gates pass. `auto.min.js` goes 73,968 → 75,137 B gzip and the split core's closure 49,148 → 50,324 B — the cost of the row record and the shared session. The size baselines were re-recorded.
 
 ## 6. R4 — unifying `BindingSession`'s two paths
 

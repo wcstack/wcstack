@@ -48,7 +48,7 @@
 |---|---|---|---|---|
 | R1 | 消去の割り当て（添字ループ＋親ごとのスキップ件数） | 消去 22〜72 → 18〜20 ms、窓の中の scavenge 0 | **2.6.x（移植済み）** | なし |
 | R2 | プラン初期描画 | 読み 7 → 4・適用 3 → 1 回/行、活性化の段 −34%、warm 1,000 行 −34%（§4-1 の実測） | **3.0（実装済み、§4-1）** | `applyValueToBinding` の内部 export |
-| R3 | 行 record ＋ session をリストごとに 1 つ | ヒープ −16%（3.6 → 3.0 KB/行）、時間は不変 | 3.0（D11） | `BindingSession` の中核（`disposeBindings` / `destroyRow` / `isRowSession`、`getRecord` の合成ビュー） |
+| R3 | 行 record ＋ session をリストごとに 1 つ | ヒープ −18%（3,616 → 2,953 B/行）、時間は不変（§5-1 の実測） | **3.0（実装済み、§5-1）** | `BindingSession` の中核（`disposeBindings` / `destroyRow` / `isRowSession`、`getRecord` の合成ビュー） |
 | R4 | `BindingSession` の二重経路の一本化 | core −2.9 KB minify の見込み（配線設計 §5） | 3.0 | プラン経路と汎用経路の統合 |
 | R5 | cold の候補（複製とノードパス解決の T4 形・プールの事前生成） | 未測定（cold 8 ms が対象） | 未定 | `resolveNodePath` の形・opt-in 属性 |
 
@@ -88,6 +88,17 @@ R2 → R3 の順は計測の積み上げ順（§10.13 → §10.14）に合わせ
 - **共有 session の deferred 規則**: 定義待ちタスクは「その行のノードに紐づく分は行の解体で取り消し、生きている行が無くなったら全て取り消す」。wholesale の統合テスト 2 件がこの規則を固定する。
 - **効果は時間ではなくヒープ**（3,630 → 3,033 B/行）。行ごとの session が持つコレクション 5 個（WeakMap 3・Set 2）＝約 600 B/行が消える。§10.11 の「1.65 KB/行」は過大見積もりで、§10.14 が訂正した。
 - **残る 3.0 KB/行**: アドレス・キャッシュ・listIndex・依存台帳・束縛オブジェクトと、モジュール側の台帳（loop context ごとの listIndex キャッシュ、content の台帳）。次に削るならここだが、**まだ帰属が取れていない**（調査 §10.11 の続き）。
+
+### 5-1. R3 の実装記録（2026-09-21、`packages/state`）
+
+試作 2 本（調査 §10.7 の行 record、§10.14 の session 共有）を続けて製品に入れた。両方とも現行のコードにそのまま当たり、型検査と全テストは一度で通った — **ただしカバレッジは通らなかった**。そこが今回いちばんの学びになった。
+
+- **形**: プラン行の帳簿は行に 1 つの record（slot 配列: phase・flags・address / pattern 登録）になり、`for` 束縛（そのノード）ごとの 1 つの `BindingSession` がその行を Set で持つ。content 側の行単位の操作は `disposeBindings` / `destroyRow` に置き換え、`unmountInPlace` / `unmount` は行 session なら行だけを解体する（session ごと dispose すると同じリストの生きている行を巻き込む）。
+- **ヒープ**（[audit-state-tech-heap.mjs](../scripts/audit-state-tech-heap.mjs)、1 万行、GC 強制後の差分）: **3,616 → 2,953 bytes/行（−18%）**。試作の −16% より少し良い。時間は変わらない（計数器の前後で、生成 1 万行・warm 1,000 行・追加・消去のいずれも標本のばらつきの内側）。設計 §2 の「R3 の効果は時間ではなくヒープ」を実測が追認した。
+- **カバレッジが落ちた（92.5%）のが本題**。行 record はプラン行を record 経路から外すので、**以前はプラン行が通していた record 側の分岐に誰も来なくなった**。試作はテストが全部緑になった時点で止めていたため、この穴は移植で初めて見えた。直し方は 2 つに分けた:
+  - **到達し得ない分岐は削る**: プラン適格性（`compileRowPlan`）はカスタム要素と双方向を弾くので、プラン行は定義待ちも遅延適用も持てない。行 slot の teardown 配列（`addTeardown` の行分岐と `row.teardowns`）はその遅延適用のためだけにあったので落とした。行が全部消えたときの定義待ちの取り消しは**残した** — 統合テスト（wholesale destroy）がその契約を固定しており、削ったら 2 件落ちた。「呼ばれない」と「呼ばれてはいけない」は別物だという確認になった。
+  - **残りはテストで通す**: 行 session の統合テスト [bindings.rowSession.test.ts](../packages/state/__tests__/bindings.rowSession.test.ts)（12 件 — 共有・使い回し・部分削除・プール再利用・2 リスト・イベント・切断・再セット・プラン不適格な行）と、白箱の [bindings.rowSession.branches.test.ts](../packages/state/__tests__/bindings.rowSession.branches.test.ts)（12 件 — 未登録の行・権限別の適用・イベント配線の失敗・state ツリー無し・二重登録の回避・張り直し・行を持つ destroyRecords）。既存の [bindings.BindingSession.branches.test.ts](../packages/state/__tests__/bindings.BindingSession.branches.test.ts) にも record 経路の 3 件を足した（プラン行が通らなくなった分の穴埋め）。
+- **結果**: 全テスト 3,739 件成功、カバレッジ 99.64 / 98.50 / 100 / 99.81（閾値ちょうど）、lint 0、門は 4 つとも通る。`auto.min.js` 73,968 → 75,137 B gzip、分割 core の閉包 49,148 → 50,324 B（行 record と共有 session のコードの分）。サイズ基準は取り直した。
 
 ## 6. R4 `BindingSession` の二重経路の一本化
 
