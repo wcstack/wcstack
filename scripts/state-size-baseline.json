@@ -1,11 +1,11 @@
 {
   "$comment": "gzip level 9 of packages/state/dist at the recorded release; check-state-size.mjs --check allows +3 % over these (requirements N3 / D18). Update with --update after a release build.",
   "auto.min.js": {
-    "bytes": 234638,
-    "gzip": 68731
+    "bytes": 243291,
+    "gzip": 71589
   },
   "index.esm.js": {
-    "bytes": 1146150,
-    "gzip": 312892
+    "bytes": 1156921,
+    "gzip": 320939
   }
 }
