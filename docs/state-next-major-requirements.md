@@ -29,7 +29,7 @@ G1–G3 carry numeric targets in §8. G4 and G5 are satisfied by writing the con
 
 ## 3. Breaking-change candidates
 
-Each of these requires a major. **None of them is decided.** Every "today" column is behaviour the audit reproduced.
+Each of these requires a major. **Their adoption is decided in §6's addendum (D20's per-item adoption, 2026-09-21).** Every "today" column is behaviour the audit reproduced.
 
 ### 3.1 Grammar and parser
 
@@ -153,6 +153,24 @@ N1–N4 and N6 can ship in 2.6.x, which is also where the deprecation notices of
 
 - **No measure reaches 25 %.** Three improved significantly; warm create 1,000 did not move beyond the noise (R2's −34 % compared the tracked fixture against the build just before R2, not against 2.5.1). Nothing regressed.
 - **D27 is decided as recommended, (a)**: (a) restate A3 as 3.0's measurement (the table above) and do not hold 3.0 for it (b) hold 3.0 until 25 % (c) drop A3 — the same treatment as A1 / A2 (D21 / D22). The levers that could reach 25 % in this structure (pool pre-warming — D24, cutting allocation much further — D25) are already decided out of 3.0.
+
+**Addendum (2026-09-21, D20's per-item adoption of the B items)**: decided as proposed. Today's behaviour is pinned by `__tests__/semantics.majorCandidates.test.ts` (A6); an adopted item's test there is rewritten to the new contract.
+
+| B | Decision | Release |
+|---|---|---|
+| B1 | Quote-aware splitting (input that throws today simply starts working) | 3.0 (can go to 2.6.x) |
+| B2 | Reject malformed syntax with a positioned diagnostic | 3.0 |
+| B3 | A structural cache key (a bug fix); check the argument count | 3.0 (the key fix can go to 2.6.x) |
+| B4 | A modifier does not change the binding type; unsupported combinations are rejected | 3.0 |
+| B5 | Unchanged in 3.0 (`onclick:` and `online:` cannot be told apart lexically, and a separate namespace would change every page's `on*:`); add an explicit property form | 3.x (non-breaking) |
+| B6 | Check the write capability at the one write boundary; readonly throws | 3.0 |
+| B7 | Tell read from write by the argument count (`$resolve(p, i, undefined)` writes) | 3.0 |
+| B8 | On every surface, undefined writes nothing and null clears (an attribute is removed) | 3.0 |
+| B9 | Unquoted true / false / null / numbers are typed; quoted arguments are strings | 3.0 |
+| B10 | Match JavaScript truthiness (`truthy(0n)` is false) | 3.0 |
+| B11 | State the capability matrix in the README; behaviour unchanged (it already rejects or warns by name) | docs |
+| B12 | Unchanged in 3.0; canonical names + compatibility aliases in 3.x, removal in 4.0 (D4) | 3.x |
+| B14 | (1) the mount record honours modifiers (2) an explicit partial mount wins over an own key (3) volumes get an injection point | (1)(2) 3.0, (3) 3.x (non-breaking) |
 
 ## 7. Migration and deprecation
 
