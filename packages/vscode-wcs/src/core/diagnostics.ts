@@ -135,6 +135,9 @@ export const WcsDiagnosticCode = {
   // --- built-in wcs-* tag contract (generated/builtinTags.generated.ts が正本) ---
   // 未知メンバーへのバインド(プロパティ / command. / eventToken. キー)。黙って無視される。
   TagMemberUnknown: "wcs/tag-member-unknown",
+  // タグのメンバー名が "on" で始まる（`once` 等）のに先頭ドット無しで束縛した: ランタイムはイベント束縛にして
+  // "ce" イベントを待ち、値は届かない。明示のプロパティ形 `.once:` を提案する（@wcstack/state 3.1・要件 B5 / 3.x 計画 D36）
+  OnPrefixedMember: "wcs/on-prefixed-member",
   // wcBindable 無宣言タグ(wcs-fetch-header 等のヘルパー)への spread。
   // ランタイム(expandSpread)は raiseError で落とす。
   SpreadNoBindable: "wcs/spread-no-bindable",
