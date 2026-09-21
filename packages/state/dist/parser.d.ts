@@ -72,6 +72,26 @@ declare function parseBindTextForEmbeddedNode(bindText: string): ParseBindTextRe
 declare function getPathInfo(path: string): IPathInfo;
 
 /**
+ * v3MigrationRules.ts — 3.0 で拒否される（または読み方が変わる）書き方の判定。純関数。
+ *
+ * ランタイム（v3Migration.ts が `[wcs/v3-migration]` として console に 1 回ずつ出す）と
+ * tooling（`@wcstack/state/parser` 経由で lint が同じ判定を使う）の共通の正本。
+ * ここは console に何も出さず、2.x の挙動も変えない（次期メジャーの要件 D2）。
+ * 文面は短く保つ — 全文はランタイムのバンドルに載る。2.x との差と書き換え先の一覧は
+ * state README の "Preparing for 3.0"（警告の末尾が案内する）。
+ *
+ * 式は 2.x の分割（`;` で無条件に割る）のまま受け取る — 引用符の中の `;` は 2.x では既に壊れている。
+ */
+
+/**
+ * `data-wcs` の式 1 つ（`;` を含まない、trim 済み）の判定。`parsed` があればフィルタの引数の個数も見る。
+ * 区切りの無い式は 2.x のパーサが先に拒否するので何も言わない。
+ */
+declare function findV3MigrationIssues(expr: string, parsed?: ParseBindTextResult | null): string[];
+/** mustache / コメントのテキストバインディング（右辺だけ、`;` で割らない）の判定 */
+declare function findEmbeddedV3MigrationIssues(expression: string, parsed?: ParseBindTextResult | null): string[];
+
+/**
  * parser.ts — `data-wcs` バインディング構文の正本パーサを tooling 向けに公開する
  * サブパスエントリ（`@wcstack/state/parser`）。
  *
@@ -110,5 +130,5 @@ declare function getPathInfo(path: string): IPathInfo;
  */
 declare function clearParserCaches(): void;
 
-export { clearParserCaches, getPathInfo, parseBindTextForEmbeddedNode, parseBindTextsForElement };
+export { clearParserCaches, findEmbeddedV3MigrationIssues, findV3MigrationIssues, getPathInfo, parseBindTextForEmbeddedNode, parseBindTextsForElement };
 export type { BindingType, IFilterInfo, IPathInfo, ParseBindTextResult };

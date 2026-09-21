@@ -897,6 +897,25 @@ interface WcsStateApi {
      * 再評価させたくない場合に使う（該当行へ直接書き込む設計と組で用いる）。
      */
     $untrackDependency<T>(fn: () => T): T;
+    /**
+     * 鍵付き購読: `path` の現在値が `key` に等しいかを返し、評価中のリスト行 getter を
+     * その鍵で購読する。`path` への書き込みは旧値・新値の鍵の行だけを再評価する
+     * （パターン依存なら全行）。`path` 自体は依存として追跡しない。
+     * 例: `get "items.*.selected"() { return this.$eq("selectedId", this.$untrackDependency(() => this["items.*.id"])); }`
+     */
+    $eq(path: string, key: unknown): boolean;
+    /**
+     * `$eq` の鍵を `keyPath`（ワイルドカードは評価中の行で解決）から依存を張らずに読む形。
+     * 例: `get "items.*.selected"() { return this.$eqPath("selectedId", "items.*.id"); }`
+     */
+    $eqPath(path: string, keyPath: string): boolean;
+    /**
+     * `$eq` の鍵を評価中の行の index（`$1` 相当。`level` でワイルドカード段を選ぶ）にする形。
+     * getter を index 依存には記録せず、行の移動時はリスト差分が鍵を付け替えるので、
+     * 1 行削除で再評価されるのは高々 2 行。
+     * 例: `get "items.*.selected"() { return this.$eqIndex("selectedIndex"); }`
+     */
+    $eqIndex(path: string, level?: number): boolean;
     /** `<wcs-state>` 要素への参照 */
     readonly $stateElement: HTMLElement;
     /**

@@ -909,6 +909,135 @@ function valueMustBeArray(fnName) {
     raiseError(`filter ${fnName} requires an array value`);
 }
 
+// 組み込みフィルタの引数の上限。正本は filters/filterMeta.ts の maxArgs だが、説明文ごとランタイムに
+// 載せないためここに畳む（一致はテストが固定する）。2.x の組み込みに無い名前はパーサが先に拒否する。
+// 配列リテラルで書く — split() の呼び出しは副作用ありとみなされ、defineState だけの import に残る。
+const NO_ARGS = new Set([
+    "not", "abs", "uc", "lc", "cap", "trim", "rev", "int", "float", "date", "time", "datetime",
+    "falsy", "truthy", "boolean", "number", "string", "null",
+]);
+const TWO_ARGS = new Set(["clamp", "slice", "substr", "pad", "truncate"]);
+/** 組み込みフィルタ name が受け取る引数の上限 */
+function maxFilterArgs(name) {
+    return NO_ARGS.has(name) ? 0 : TWO_ARGS.has(name) ? 2 : 1;
+}
+const STRUCTURAL_KEYWORDS = new Set(["for", "if", "elseif", "else", "..."]);
+/**
+ * 引用符の無い true / false / null を 1 つだけ取る eq / ne / defaults。3.0 は型付きの値として読む（要件 B9）。
+ * 2.x はフィルタに渡す前に引用符を剥がすので、値の側では `eq('true')` と区別できない — 原文で見る。
+ */
+const TYPED_LITERAL = /(?:^|\|)\s*(eq|ne|defaults)\s*\(\s*(true|false|null)\s*\)/g;
+/** 閉じていない引用符があるか */
+function hasUnterminatedQuote(text) {
+    let quote = null;
+    for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (quote !== null) {
+            if (c === quote)
+                quote = null;
+        }
+        else if (c === "'" || c === '"') {
+            quote = c;
+        }
+    }
+    return quote !== null;
+}
+/** 右辺（とフィルタ）の判定。属性の式とテキストバインディングで共通 */
+function checkStatePart(text, parsed, issues) {
+    if (hasUnterminatedQuote(text)) {
+        issues.push(`"${text}": 3.0 rejects the unterminated quote.`);
+    }
+    for (const [, fnName, literal] of text.matchAll(TYPED_LITERAL)) {
+        issues.push(`"${fnName}(${literal})": 3.0 reads an unquoted ${literal} as a ${literal === "null" ? "null" : "boolean"}, ` +
+            `not the text. Write ${fnName}('${literal}') to keep the text.`);
+    }
+    if (parsed !== null) {
+        issues.push(...findFilterArityIssues([parsed]));
+    }
+}
+/** 解析済みのフィルタの引数の個数（3.0 は束縛計画の段で [wcs/filter-arity] として拒否する） */
+function findFilterArityIssues(results) {
+    const issues = [];
+    for (const result of results) {
+        for (const filter of [...result.inFilters, ...result.outFilters]) {
+            const max = maxFilterArgs(filter.filterName);
+            if (filter.args.length > max) {
+                issues.push(`"${filter.filterName}" takes at most ${max} argument(s); 3.0 rejects more.`);
+            }
+        }
+    }
+    return issues;
+}
+/**
+ * `data-wcs` の式 1 つ（`;` を含まない、trim 済み）の判定。`parsed` があればフィルタの引数の個数も見る。
+ * 区切りの無い式は 2.x のパーサが先に拒否するので何も言わない。
+ */
+function findV3MigrationIssues(expr, parsed = null) {
+    const issues = [];
+    const colon = expr.indexOf(":");
+    if (colon === -1)
+        return issues;
+    const propPart = expr.slice(0, colon).trim();
+    const modifierParts = propPart.split("#");
+    const keyword = modifierParts[0].split("|")[0].trim();
+    if (modifierParts.length > 2) {
+        issues.push(`"${propPart}": 3.0 rejects a second "#". Write "${modifierParts[0].trim()}#${modifierParts.slice(1).map((m) => m.trim()).join(",")}".`);
+    }
+    if (keyword === "else" && expr.slice(colon + 1).trim().length > 0) {
+        issues.push(`"${expr}": 3.0 rejects a value after "else:".`);
+    }
+    if (STRUCTURAL_KEYWORDS.has(keyword) && keyword !== propPart) {
+        issues.push(`"${propPart}": 3.0 rejects modifiers and filters on "${keyword}". Write "${keyword}:".`);
+    }
+    if ((keyword === "radio" || keyword === "checkbox") && keyword !== propPart) {
+        issues.push(`"${propPart}": 3.0 keeps this a ${keyword} binding that honours the modifiers (2.x binds a property named "${keyword}").`);
+    }
+    checkStatePart(expr.slice(colon + 1).trim(), parsed, issues);
+    return issues;
+}
+/** mustache / コメントのテキストバインディング（右辺だけ、`;` で割らない）の判定 */
+function findEmbeddedV3MigrationIssues(expression, parsed = null) {
+    const issues = [];
+    checkStatePart(expression, parsed, issues);
+    return issues;
+}
+
+const warned = new Set();
+/** 調べ終えた bindText（行の複製ごとに同じ文字列を調べ直さない） */
+const checked = new Set();
+/** 同じ文面は 1 回だけ警告する（文面は書き方とサイトを含むので、書き方・サイトごとに 1 回） */
+function warnV3Migration(message) {
+    if (warned.has(message)) {
+        return;
+    }
+    warned.add(message);
+    console.warn(`[@wcstack/state] [wcs/v3-migration] ${message} See "Preparing for 3.0" in the @wcstack/state README.`);
+}
+/** readonly のプロキシからの書き込み（$resolve の書き込み形・$setAll）。3.0 は拒否する（要件 B6） */
+const READONLY_WRITE = 'A write through a readonly state ($resolve with a value, $setAll): 3.0 throws. Write from createState("writable", …).';
+function report$1(issues) {
+    issues.forEach(warnV3Migration);
+}
+/** `data-wcs` の値を調べ、3.0 が拒否する（または意味を変える）書き方を知らせる */
+function checkBindTextForV3(bindText, results) {
+    if (checked.has(bindText))
+        return;
+    checked.add(bindText);
+    for (const expr of bindText.split(";")) {
+        report$1(findV3MigrationIssues(expr.trim()));
+    }
+    report$1(findFilterArityIssues(results));
+}
+/** mustache / コメントのテキストバインディング（右辺だけ）を調べる */
+function checkEmbeddedBindTextForV3(bindText, result) {
+    // 属性の値と同じ文字列でも経路が違うので、鍵を分ける
+    const key = "{{" + bindText;
+    if (checked.has(key))
+        return;
+    checked.add(key);
+    report$1(findEmbeddedV3MigrationIssues(bindText, result));
+}
+
 /**
  * builtinFilters.ts
  *
@@ -1635,6 +1764,12 @@ const hms = (options) => {
         return `${hours}${opt}${minutes}${opt}${seconds}`;
     };
 };
+/** 3.0 は truthy / falsy / defaults を JavaScript の真偽判定に揃える（要件 B10）— 0n の差を予告する */
+function warnBigIntZero(fnName, value) {
+    if (value === 0n) {
+        warnV3Migration(`"${fnName}" got 0n: 3.0 treats it as falsy.`);
+    }
+}
 /**
  * Falsy filter - checks if value is falsy.
  *
@@ -1642,7 +1777,10 @@ const hms = (options) => {
  * @returns Filter function that returns true for false/null/undefined/0/''/NaN
  */
 const falsy = (_options) => {
-    return (value) => value === false || value === null || value === undefined || value === 0 || value === '' || Number.isNaN(value);
+    return (value) => {
+        warnBigIntZero('falsy', value);
+        return value === false || value === null || value === undefined || value === 0 || value === '' || Number.isNaN(value);
+    };
 };
 /**
  * Truthy filter - checks if value is truthy.
@@ -1651,7 +1789,10 @@ const falsy = (_options) => {
  * @returns Filter function that returns true for non-falsy values
  */
 const truthy = (_options) => {
-    return (value) => value !== false && value !== null && value !== undefined && value !== 0 && value !== '' && !Number.isNaN(value);
+    return (value) => {
+        warnBigIntZero('truthy', value);
+        return value !== false && value !== null && value !== undefined && value !== 0 && value !== '' && !Number.isNaN(value);
+    };
 };
 /**
  * Default filter - returns default value if input is falsy.
@@ -1662,6 +1803,7 @@ const truthy = (_options) => {
 const defaults = (options) => {
     const opt = options?.[0] ?? optionsRequired('defaults');
     return (value) => {
+        warnBigIntZero('defaults', value);
         if (value === false || value === null || value === undefined || value === 0 || value === '' || Number.isNaN(value)) {
             return opt;
         }
@@ -2105,7 +2247,7 @@ const bindingTypeKeywordSet = new Set([
     config.commentElsePrefix,
 ]);
 // format: <!--@@:path-->は<!--@@wcs-text:path-->と同義にする
-const EMBEDDED_REGEX = new RegExp(`^\\s*@@\\s*(.*?)\\s*:\\s*(.+?)\\s*$`);
+const EMBEDDED_REGEX = /*#__PURE__*/ new RegExp(`^\\s*@@\\s*(.*?)\\s*:\\s*(.+?)\\s*$`);
 function parseCommentNode(node) {
     const savedText = bindTextByNode.get(node);
     if (typeof savedText === "string") {
@@ -2173,7 +2315,10 @@ function getParseBindTextResults(node) {
     if (node.nodeType === Node.ELEMENT_NODE) {
         const element = node;
         const bindText = element.getAttribute(config.bindAttributeName) || '';
-        return parseBindTextsForElement(bindText);
+        const results = parseBindTextsForElement(bindText);
+        // 3.0 で拒否される書き方の予告（要件 D2 — 2.x の挙動は変えない）
+        checkBindTextForV3(bindText, results);
+        return results;
     }
     else if (node.nodeType === Node.COMMENT_NODE) {
         const bindTextOrUUID = parseCommentNode(node);
@@ -2186,6 +2331,7 @@ function getParseBindTextResults(node) {
         if (parseBindingTextResult === null) {
             // It is not a structural fragment UUID, so treat it as bindText
             parseBindingTextResult = parseBindTextForEmbeddedNode(bindTextOrUUID);
+            checkEmbeddedBindTextForV3(bindTextOrUUID, parseBindingTextResult);
             uuid = null;
         }
         else {
@@ -2406,7 +2552,8 @@ function processDeferredNode(entry) {
 let nextMountId = 0;
 const MOUNT_DOLLAR_DECLARATIONS = [
     "$watch", "$streams", "$scan", "$listKeys", "$updatedCallback", "$commandTokens", "$eventTokens", "$on",
-    "$recursion",
+    // $errorCallback もルート専用（以前は無言で無視していた — 3.0 と同じく名指しで知らせる）
+    "$recursion", "$errorCallback",
 ];
 const dollarDeclarationWarned = new Set();
 /**
@@ -2498,7 +2645,11 @@ function buildMountRecord(component, stateProp, bindings, parentStateElement, st
             raiseError('Duplicate mapping rule for web component.');
         }
         seenInnerPaths.add(innerPath);
-        const entry = { innerSegments, outerPathInfo: binding.statePathInfo };
+        const entry = {
+            innerSegments,
+            outerPathInfo: binding.statePathInfo,
+            readonly: binding.propModifiers?.includes(MODIFIER_READONLY) === true,
+        };
         entries.push(entry);
         if (innerSegments.length === 0) {
             rootEntry = entry;
@@ -2683,6 +2834,25 @@ function getIndexShiftForScope(record, forPath) {
     }
     const translated = translateInnerPath(record, forPath);
     return getPathInfo(translated).wildcardCount - getPathInfo(forPath).wildcardCount;
+}
+/**
+ * コンポーネント側の書き込みの翻訳。2.x は `translateInnerPath` と同じだが、読み取り専用で
+ * マウントされたエントリ（`state#ro: user`）を通るツリーへの書き込みなら 3.0 の拒否を予告する
+ * （要件 D2 / B14 ①）。
+ */
+function translateInnerWritePath(record, innerPath) {
+    const translated = translateInnerPath(record, innerPath);
+    const head = innerPath[0];
+    if (head !== "$" && head !== "#" && !translated.includes(record.marker)) {
+        const segments = innerPath.split(DELIMITER);
+        const entry = record.entries.find((e) => e.innerSegments.every((s, i) => segments[i] === s));
+        if (entry !== undefined && entry.readonly === true) {
+            const suffix = entry.innerSegments.length === 0 ? "" : DELIMITER + entry.innerSegments.join(DELIMITER);
+            warnV3Migration(`<${record.component.tagName.toLowerCase()}> writes "${innerPath}" through "${record.stateProp}${suffix}#${MODIFIER_READONLY}: ` +
+                `${entry.outerPathInfo.path}": 3.0 throws. Write it on the host, or drop #${MODIFIER_READONLY}.`);
+        }
+    }
+    return translated;
 }
 function translateInnerPath(record, innerPath) {
     const head = innerPath[0];
@@ -2981,7 +3151,7 @@ function setLoopContextByNode(node, loopContext) {
 }
 
 /**
- * devtools/sink.ts
+ * platform/devtoolsSink.ts（旧 devtools/sink.ts。core 側に置き、devtools/bridge.ts がこちらを import する）
  *
  * 計装点が参照するホットパス唯一の接点。依存ゼロの葉モジュールにすることで、
  * 計装される側（stateElementByName / setByAddress / binding / token）と
@@ -3571,7 +3741,7 @@ function createHandlerBindingRegistry() {
 
 const handlerByHandlerKey$3 = new Map();
 // binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
-const bindingRegistry$3 = createHandlerBindingRegistry();
+const bindingRegistry$3 = /*#__PURE__*/ createHandlerBindingRegistry();
 function getHandlerKey$3(binding, eventName) {
     const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
     return `${binding.statePathName}::${eventName}::${filterKey}`;
@@ -3955,7 +4125,8 @@ function isCommandTokenPath(statePathName) {
 }
 const handlerByHandlerKey$2 = new Map();
 // binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
-const bindingRegistry$2 = createHandlerBindingRegistry();
+// 純粋な割り当て（Map 2 個）。バンドラが未使用時に落とせるよう明示する（ヘルパーだけの import に残さない）
+const bindingRegistry$2 = /*#__PURE__*/ createHandlerBindingRegistry();
 function getHandlerKey$2(binding) {
     const modifierKey = binding.propModifiers.filter(m => m === MODIFIER_PREVENT || m === MODIFIER_STOP).sort().join(',');
     return `${binding.statePathName}::${modifierKey}`;
@@ -4048,7 +4219,7 @@ function detachEventHandler(binding) {
 
 const handlerByHandlerKey$1 = new Map();
 // binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
-const bindingRegistry$1 = createHandlerBindingRegistry();
+const bindingRegistry$1 = /*#__PURE__*/ createHandlerBindingRegistry();
 function getHandlerKey$1(binding, eventName) {
     const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
     return `${binding.statePathName}::${eventName}::${filterKey}`;
@@ -4324,7 +4495,7 @@ function consumeOccurrenceWrite() {
 
 const handlerByHandlerKey = new Map();
 // binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
-const bindingRegistry = createHandlerBindingRegistry();
+const bindingRegistry = /*#__PURE__*/ createHandlerBindingRegistry();
 const producerValueObserversByNode = new WeakMap();
 const DEFAULT_GETTER = (e) => e.detail;
 /**
@@ -4633,6 +4804,26 @@ function consumeObserverSkipOnRemove(node) {
 // observer flush より先に active 済み。よって待ちがグローバルに 1 つも無ければ
 // 追加側走査も冗長であり丸ごとスキップできる（削除側スキップの対称形）。
 // マーク〜配送が単一 microtask で外部変異が割り込めない前提も削除側と同じ。
+// framework の削除を親ごとの件数で数える（1 つの mutation record がその件数の子をまとめて消したとき、
+// 削除ノードごとの WeakSet 印の代わりに 1 回の判定で飛ばせる）
+const skipRemovedChildrenByParent = new WeakMap();
+function markObserverSkipRemovedChildren(parent, count) {
+    skipRemovedChildrenByParent.set(parent, (skipRemovedChildrenByParent.get(parent) ?? 0) + count);
+}
+/** Consumes `count` framework removals of `parent`; false (and nothing consumed) when the count does not cover them. */
+function consumeObserverSkipRemovedChildren(parent, count) {
+    const pending = skipRemovedChildrenByParent.get(parent);
+    if (typeof pending === "undefined" || pending < count) {
+        return false;
+    }
+    if (pending === count) {
+        skipRemovedChildrenByParent.delete(parent);
+    }
+    else {
+        skipRemovedChildrenByParent.set(parent, pending - count);
+    }
+    return true;
+}
 const observerSkipAddedNodes = new WeakSet();
 function markObserverSkipOnAdd(node) {
     observerSkipAddedNodes.add(node);
@@ -4955,9 +5146,18 @@ class BindingOwner {
     handleMutations(mutations) {
         const removed = [];
         const added = [];
-        for (const mutation of mutations) {
-            removed.push(...Array.from(mutation.removedNodes));
-            added.push(...Array.from(mutation.addedNodes));
+        for (let m = 0; m < mutations.length; m++) {
+            const mutation = mutations[m];
+            const removedNodes = mutation.removedNodes;
+            // 削除された子がすべて framework の削除（消去が親に件数で印を付けた）なら record ごと飛ばし、
+            // ノードごとの印には触れない
+            if (removedNodes.length === 0 || !consumeObserverSkipRemovedChildren(mutation.target, removedNodes.length)) {
+                for (let i = 0; i < removedNodes.length; i++)
+                    removed.push(removedNodes[i]);
+            }
+            const addedNodes = mutation.addedNodes;
+            for (let i = 0; i < addedNodes.length; i++)
+                added.push(addedNodes[i]);
         }
         // 走査は owner が1回だけ行い、関心 session が居る node だけを配送・contains
         // 検査へ進める。contains は O(木の深さ) なので、関心の無い node で呼ばない。
@@ -5229,6 +5429,8 @@ class BindingSession {
     canWholesaleDestroy() {
         if (this.deferred.size > 0)
             return false;
+        if (this.records.size === 0)
+            return true; // 空の Set の反復も割り当てるので先に抜ける
         for (const record of this.records) {
             if (record.pendingDefinitions > 0 || record.observationPending)
                 return false;
@@ -5972,6 +6174,10 @@ function isWebComponentStatePropDeclared(webComponent, stateProp) {
 function applyChangeToAttribute(binding, _context, newValue) {
     const element = binding.node;
     const attrName = binding.propSegments[1];
+    if (newValue === undefined || newValue === null) {
+        // 3.0 は値の無い属性を削除する（要件 B8）— 2.x との差を予告する
+        warnV3Migration(`"attr.${attrName}: ${binding.statePathName}" got ${newValue}: 3.0 removes the attribute.`);
+    }
     if (element.getAttribute(attrName) !== newValue) {
         element.setAttribute(attrName, newValue);
     }
@@ -6517,6 +6723,874 @@ function setListIndexesByList(list, listIndexes) {
     listIndexesByList.set(list, listIndexes);
 }
 
+const cacheEntryByAbsoluteStateAddress = new WeakMap();
+function getCacheEntryByAbsoluteStateAddress(address) {
+    return cacheEntryByAbsoluteStateAddress.get(address) ?? null;
+}
+function setCacheEntryByAbsoluteStateAddress(address, cacheEntry) {
+    if (cacheEntry === null) {
+        cacheEntryByAbsoluteStateAddress.delete(address);
+    }
+    else {
+        cacheEntryByAbsoluteStateAddress.set(address, cacheEntry);
+    }
+}
+function dirtyCacheEntryByAbsoluteStateAddress(address) {
+    const cacheEntry = cacheEntryByAbsoluteStateAddress.get(address);
+    if (cacheEntry) {
+        cacheEntry.dirty = true;
+    }
+}
+
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /protocol/transition-runner.ts by scripts/sync-protocol-types.mjs.
+// Run `node scripts/sync-protocol-types.mjs` after editing the source.
+// ===========================================================================
+// transition-runner protocol — how a package that mutates the DOM hands that
+// mutation to whoever is arbitrating view transitions on the page.
+//
+// @wcstack/state and @wcstack/router must not depend on @wcstack/view-transition
+// (zero runtime dependencies, independently publishable), so the arbiter installs
+// itself on a well-known global symbol and the participants look it up lazily.
+// No arbiter installed means the mutation is invoked directly, synchronously —
+// byte-for-byte the behavior these packages had before the protocol existed.
+//
+// docs/view-transition-design.md §4 is the normative description.
+//
+// SINGLE SOURCE OF TRUTH: edit only this file (/protocol/transition-runner.ts), then run
+// `node scripts/sync-protocol-types.mjs` to regenerate the per-package copies
+// (packages/<pkg>/src/protocol/transitionRunner.ts). Those copies are generated — do not edit them.
+/**
+ * Global key the arbiter installs itself under. `Symbol.for` so independently
+ * loaded copies of this file (two CDN bundles on one page) still agree.
+ */
+const TRANSITION_RUNNER_KEY = Symbol.for("wcstack.transition-runner");
+/**
+ * The installed arbiter, or null when there is none, it speaks a version this
+ * reader does not, or it does not accept this participant.
+ *
+ * Looked up on every call rather than cached: the tag can be added, removed, or
+ * reconfigured at any point in a page's life, and a stale cache would either
+ * animate what the author just switched off or miss what they switched on.
+ */
+function getTransitionRunner(source) {
+    const candidate = globalThis[TRANSITION_RUNNER_KEY];
+    if (candidate === undefined || candidate === null)
+        return null;
+    if (candidate.protocol !== "wcs-transition-runner")
+        return null;
+    if (typeof candidate.version !== "number" || candidate.version < 1)
+        return null;
+    if (typeof candidate.run !== "function")
+        return null;
+    if (typeof candidate.accepts !== "function" || !candidate.accepts(source))
+        return null;
+    return candidate;
+}
+/**
+ * Run `mutate` under the installed arbiter, or directly when there is none.
+ *
+ * Returns `undefined` in the no-arbiter case instead of a resolved promise: the
+ * state drain calls this on every batch, and awaiting is a caller's choice, not
+ * an allocation the common path should pay for. `await` accepts both.
+ */
+function runTransition(source, mutate, types) {
+    const runner = getTransitionRunner(source);
+    if (runner === null) {
+        mutate();
+        return undefined;
+    }
+    return runner.run(mutate, { source, types });
+}
+
+/**
+ * watch/chainDepth.ts
+ *
+ * `$watch` ハンドラ起点の書き込み連鎖の深さを数える台帳
+ * （docs/state-watch-hook-design.md §7-2）。
+ *
+ * watch ハンドラ内の書き込みは新しい microtask バッチを作るため、伝播 context の
+ * hop 上限（MAX_PROPAGATION_HOPS）のガードが効かない。かつ書き込み先が動的なので、
+ * `$streams` のような「宣言時の自己依存検出」も使えない。よって実行時に数える。
+ *
+ * updater（enqueue 側）と watchRuntime（発火側）の両方から参照されるため、
+ * **依存ゼロの葉モジュール**にして循環 import を避ける（platform/devtoolsSink.ts と同じ方針）。
+ *
+ * 数え方: ハンドラ実行中に enqueue が起きたときだけ「次のバッチはこの連鎖の続き」と
+ * マークする。ハンドラが何も書かなければ次のバッチは深さ 0 に戻るので、利用者操作が
+ * 何度続いても深さは伸びない。
+ */
+/** ハンドラ実行中に立つ「今の連鎖の深さ + 1」。0 なら watch 起点ではない */
+let firingDepth = 0;
+/** 次に drain されるバッチの深さ */
+let pendingDepth = 0;
+/** watch の発火フェーズ開始（watchRuntime 専用） */
+function beginWatchFiring(depth) {
+    firingDepth = depth + 1;
+}
+/** watch の発火フェーズ終了（watchRuntime 専用。必ず finally で呼ぶ） */
+function endWatchFiring() {
+    firingDepth = 0;
+}
+/**
+ * 書き込みの enqueue を記録する（updater 専用）。
+ * ハンドラ実行中でなければ何もしない ＝ 通常の書き込みに深さは付かない。
+ */
+function noteEnqueueForWatchChain() {
+    if (firingDepth > pendingDepth) {
+        pendingDepth = firingDepth;
+    }
+}
+/** 次バッチの深さを消費する（watchRuntime 専用。読んだらリセット） */
+function consumeWatchChainDepth() {
+    const depth = pendingDepth;
+    pendingDepth = 0;
+    return depth;
+}
+
+/**
+ * scan/scanRegistry.ts
+ *
+ * `$scan` の registry（docs/state-scan-design.md §2）。
+ *
+ * `$watch` の registry とは別台帳にする。watch の registry はパスにつき entry 1 個
+ * （`Map<string, IWatchEntry>`）なので、同じパスを `$watch` と `$scan` が並んで
+ * 見る形・同じ `from` を 2 つの scan が畳む形を載せられない。
+ *
+ * 寿命は `$watch` と揃える: `_state` 再セットで作り直し、切断では消さない
+ * （発火対象から外れるのは watch runtime の active 集合側）。
+ */
+const registryByStateElement$3 = new WeakMap();
+/**
+ * drain 側の粗いゲート: 発火対象（watch runtime の active 集合）に居て、`from` か `resetOn` を持つ state。
+ *
+ * 空のあいだ watch runtime は scan の収集ループに入らない ＝ `$scan` を使っていない画面の drain に、
+ * バッチのアドレスごとの registry 引きを載せない。registry の有無ではなく active 集合への出入り
+ * （watch/watchRegistry.ts の addActiveWatchStateElement / deactivateWatch / clearWatchRegistry）で
+ * 数えるので、`$scan` を持つ state を DOM から外せば（SPA のページ差し替え）ゲートは閉じ、
+ * 再接続（startWatch）で開き直す。strong Set でも、切断と再セットで必ず外れるので GC を妨げない
+ * （active 集合と同じ不変条件）。
+ */
+const drainActive = new Set();
+/**
+ * enqueue 側のゲート: 発火対象に居て、`resetOn` を持つ `on` scan がある state（scan/eventReset.ts）。
+ * 空のあいだ updater の enqueue は整数比較 1 回で抜ける。数え方は drainActive と同じ。
+ */
+const eventResetActive = new Set();
+function hasDrainWork(registry) {
+    return registry.byFromPath.size > 0 || registry.byResetPath.size > 0;
+}
+function hasEventResetWork(registry) {
+    return registry.eventResetByPath.size > 0;
+}
+function pushEntry$1(map, key, entry) {
+    const list = map.get(key);
+    if (typeof list === "undefined") {
+        map.set(key, [entry]);
+    }
+    else {
+        list.push(entry);
+    }
+}
+/** registry を置換登録する（`_state` セッターから）。 */
+function setScanRegistry(stateElement, entries) {
+    clearScanRegistry(stateElement);
+    const byFromPath = new Map();
+    const byResetPath = new Map();
+    const eventResetByPath = new Map();
+    for (const entry of entries) {
+        if (entry.source.kind === "path") {
+            pushEntry$1(byFromPath, entry.source.path, entry);
+        }
+        for (const path of entry.resetOn) {
+            pushEntry$1(byResetPath, path, entry);
+            if (entry.source.kind === "event") {
+                pushEntry$1(eventResetByPath, path, entry);
+            }
+        }
+    }
+    const registry = { entries: new Set(entries), byFromPath, byResetPath, eventResetByPath };
+    registryByStateElement$3.set(stateElement, registry);
+    return registry;
+}
+function getScanRegistry(stateElement) {
+    return registryByStateElement$3.get(stateElement);
+}
+/**
+ * registry を削除する（`_state` 再セットで作り直す前）。ゲートからも外す — 同じ再セットの
+ * startWatch が新しい registry で数え直す（`_state` セッターは registry を作った後に
+ * clearWatchRegistry → startWatch を通る）。
+ */
+function clearScanRegistry(stateElement) {
+    deactivateScanGates(stateElement);
+    registryByStateElement$3.delete(stateElement);
+}
+/** 発火対象に載った（watch/watchRegistry.ts の addActiveWatchStateElement 専用）。冪等。 */
+function activateScanGates(stateElement) {
+    const registry = registryByStateElement$3.get(stateElement);
+    if (typeof registry === "undefined") {
+        return;
+    }
+    if (hasDrainWork(registry)) {
+        drainActive.add(stateElement);
+    }
+    if (hasEventResetWork(registry)) {
+        eventResetActive.add(stateElement);
+    }
+}
+/** 発火対象から外れた（切断・再セット）。 */
+function deactivateScanGates(stateElement) {
+    drainActive.delete(stateElement);
+    eventResetActive.delete(stateElement);
+}
+/**
+ * drain で発火すべき scan（`from` か `resetOn`）を持つか。
+ * `startWatch` が発火対象集合へ載せる判定に使う（`on` だけの scan は drain を要らない）。
+ */
+function hasScanDrainWork(stateElement) {
+    const registry = registryByStateElement$3.get(stateElement);
+    return typeof registry !== "undefined" && hasDrainWork(registry);
+}
+/** 発火対象に居て、`resetOn` を持つ `on` scan がある state か（enqueue の保留判定）。 */
+function hasActiveScanEventReset(stateElement) {
+    return eventResetActive.has(stateElement);
+}
+function getScanDrainGateCount() {
+    return drainActive.size;
+}
+function getScanEventResetGateCount() {
+    return eventResetActive.size;
+}
+
+/**
+ * scan/eventReset.ts
+ *
+ * `on` scan の `resetOn` を「書き込みの時点」で効かせる台帳（docs/state-scan-design.md D6）。
+ *
+ * `on` の fold は出来事のその場で同期に書く。一方 `resetOn` のパスはバッチに載って drain の
+ * 終わりにしか見えない。drain で reset するだけだと、reset の書き込みから drain までに起きた
+ * 出来事 — その書き込みの binding 適用で要素が同期に dispatch したものを含む — まで消える。
+ *
+ * そこで reset の要求を enqueue の時点で entry に保留する。
+ * - 保留中に来た出来事の fold は `initial` から畳み、出力の書き込みが通ったら保留を消す
+ *   （fold の throw・thenable・書き込みの throw なら残す）。
+ * - 保留が残ったまま drain に来たら、scan runtime が出力を `initial` に戻して保留を消す。
+ * これで「書き込みより後の出来事は reset 後の出力に畳まれる」順序になる。
+ *
+ * 保留は「その書き込みが載ったバッチの drain で initial に戻す」予約なので、寿命をそのバッチに
+ * 揃える。drain がそのバッチの scan を発火しない（書き込みの後・drain の前に切断された・連鎖深さの
+ * 上限で打ち切った・先行 fold が同期に切断や再セットをした）なら保留を捨てる。残すと、後の無関係な
+ * 出来事が突然 `initial` から畳み始める。同じ条件の `from` の scan は reset しない（発火しない）ので、
+ * それに揃える。保留は entry ごとの 1 bit でどのバッチの書き込みかを持たないので、同じ `resetOn` の
+ * パスが次のバッチ向けに既に積まれていれば捨てない — その保留は次のバッチの drain が使う。
+ *
+ * updater（enqueue 側）から呼ばれるので updater を import しない（watch/chainDepth.ts と同じ理由）。
+ */
+const pendingResets = new WeakSet();
+/**
+ * 保留中の entry の数。捨てる走査（discardPendingScanResets）のゲート。保留は enqueue の直後の drain で
+ * 使うか捨てるか次のバッチへ持ち越すので、ふつうは 0。enqueue のゲート（発火対象の state）と別に持つのは、
+ * 書き込みの後・drain の前に切断された state がゲートから外れても、その保留は drain で捨てるため。
+ */
+let pendingResetCount = 0;
+/** このアドレスを `resetOn` に持つ `on` scan（無ければ undefined） */
+function eventResetEntriesAt(absAddress) {
+    return getScanRegistry(absAddress.absolutePathInfo.stateElement)
+        ?.eventResetByPath.get(absAddress.absolutePathInfo.pathInfo.path);
+}
+/**
+ * 書き込みの enqueue を記録する（updater 専用）。
+ * `resetOn` を持つ `on` scan が発火対象の state に 1 つも無ければ（そうした state を DOM から外した後を含む）、
+ * 整数比較 1 回で抜ける。
+ */
+function noteEnqueueForScanReset(absAddress) {
+    if (getScanEventResetGateCount() === 0) {
+        return;
+    }
+    // 発火対象でない state（切断中・初期化中・SSR）の書き込みは reset しない — drain 側と同じ扱い
+    if (!hasActiveScanEventReset(absAddress.absolutePathInfo.stateElement)) {
+        return;
+    }
+    const entries = eventResetEntriesAt(absAddress);
+    if (typeof entries === "undefined") {
+        return;
+    }
+    for (const entry of entries) {
+        markPendingScanReset(entry);
+    }
+}
+/**
+ * 保留を立てる。enqueue の記録（上）と、`_state` 再セットで旧宣言の保留を同じ出力の `on` scan へ
+ * 引き継ぐとき（processScanDeclaration.ts の registerScans）だけが呼ぶ。
+ */
+function markPendingScanReset(entry) {
+    if (!pendingResets.has(entry)) {
+        pendingResets.add(entry);
+        pendingResetCount++;
+    }
+}
+function hasPendingScanReset(entry) {
+    return pendingResets.has(entry);
+}
+/** 保留があれば消して true を返す。 */
+function consumePendingScanReset(entry) {
+    if (!pendingResets.delete(entry)) {
+        return false;
+    }
+    pendingResetCount--;
+    return true;
+}
+/**
+ * drain がバッチの scan を発火しないとき、そのバッチが載せた保留を捨てる。
+ * `firing` はこの drain で scan を発火する state の集合。null はバッチ全体を発火しない
+ * （連鎖深さの上限）。`isQueued` は「次のバッチ向けに、この state のこのパスが積まれているか」
+ * （updater を import しないので呼び出し側から受け取る）。
+ */
+function discardPendingScanResets(batch, firing, isQueued) {
+    if (pendingResetCount === 0) {
+        return;
+    }
+    for (const absAddress of batch) {
+        const stateElement = absAddress.absolutePathInfo.stateElement;
+        if (firing?.has(stateElement) === true) {
+            continue;
+        }
+        const entries = eventResetEntriesAt(absAddress);
+        if (typeof entries === "undefined") {
+            continue;
+        }
+        for (const entry of entries) {
+            if (!entry.resetOn.some((path) => isQueued(stateElement, path))) {
+                consumePendingScanReset(entry);
+            }
+        }
+    }
+}
+
+const updateBatchListeners = [];
+/**
+ * drain 終了リスナーを登録する。
+ *
+ * `priority` の昇順に呼ばれる（同値は登録順）。機構間の実行順序
+ * （`$scan` → `$watch` → `$streams` restart。前の 2 つは同じ watch リスナーの中の順序で、
+ * `$scan` は畳んで書いてから `$watch` を発火する —
+ * docs/state-watch-hook-design.md §3-2 層 1・docs/state-scan-design.md D11）は
+ * この優先度で固定する — import 順に順序を持たせると、無関係な import 整理で
+ * 静かに壊れるため。定数は define.ts の `*_LISTENER_PRIORITY` を使うこと。
+ */
+function registerUpdateBatchListener(listener, priority = 0) {
+    // 挿入ソート: 同値優先度の中では登録順を保つ（find は最初の「より大きい」要素を指す）
+    const index = updateBatchListeners.findIndex((registered) => registered.priority > priority);
+    const entry = { listener, priority };
+    if (index === -1) {
+        updateBatchListeners.push(entry);
+    }
+    else {
+        updateBatchListeners.splice(index, 0, entry);
+    }
+}
+/**
+ * drain 終了リスナーを解除する（テスト間の分離用）。
+ */
+function unregisterUpdateBatchListener(listener) {
+    const index = updateBatchListeners.findIndex((registered) => registered.listener === listener);
+    if (index !== -1) {
+        updateBatchListeners.splice(index, 1);
+    }
+}
+/**
+ * 全リスナーに drain のバッチを優先度順で通知する。
+ * リスナーの throw は握りつぶさない（内部バグの隠蔽防止）。
+ * stream / watch 側リスナーが entry ごとに自前で try/catch する契約（設計書 §3-2）。
+ */
+function notifyUpdateBatchListeners(batch) {
+    // 反復中の register / unregister（ハンドラ内の切断・再 set）に耐えるためコピーする
+    for (const registered of updateBatchListeners.slice()) {
+        registered.listener(batch);
+    }
+}
+/**
+ * 遷移越しの適用が失敗したときの報告。
+ *
+ * 遷移の中では例外を同期的に呼び出し元へ投げ返せない。今日の drain は
+ * queueMicrotask の中で throw する ＝ uncaught として観測されるので、それと同じ
+ * 「loud に出す」挙動へ揃える。握り潰すと `$updatedCallback` の throw が黙って
+ * 消える（README の 3 層表が定める伝播の契約が破れる）。
+ */
+function reportDeferredApplyFailure(error) {
+    queueMicrotask(() => { throw error; });
+}
+class Updater {
+    _queueUpdateRecords = [];
+    /**
+     * 描画だけをやり直すアドレス（`enqueueRenderOnlyAddress`）。書き込みの record とは別に持つ —
+     * drain 終了リスナーへ渡すバッチにも、`hasQueuedPath`（`on` scan の保留 reset の判定）にも混ぜない。
+     */
+    _queueRenderOnlyAddresses = [];
+    constructor() {
+    }
+    enqueueAbsoluteAddress(absoluteAddress, context = null) {
+        // `$watch` ハンドラ実行中の書き込みだけを連鎖としてマークする（watch/chainDepth.ts）。
+        // ハンドラ実行中でなければ即 return する葉モジュール呼び出し 1 個のコスト。
+        noteEnqueueForWatchChain();
+        // `on` scan の `resetOn` を書き込みの時点で保留する（scan/eventReset.ts）。
+        // 該当する宣言がページに無ければ整数比較 1 回で抜ける。
+        noteEnqueueForScanReset(absoluteAddress);
+        const requireStartProcess = this._isQueueEmpty();
+        this._queueUpdateRecords.push({ absoluteAddress, context });
+        if (requireStartProcess) {
+            this._scheduleDrain();
+        }
+    }
+    /**
+     * 描画だけをやり直させる（#4）。値を書いたわけではないので、書き込みの着地としては扱わない —
+     * binding の適用には載せるが、drain 終了リスナー（`$scan` / `$watch` / `$streams` restart）へ渡す
+     * バッチに入れず、`$watch` の連鎖や `on` scan の reset の印も付けない。同じバッチで同じアドレスが
+     * 書き込みとしても積まれていれば、そちらが着地になる。
+     * 呼び手は要素書き込みの入れ替えの完了（proxy/methods/setByAddress.ts の notifySwappedList）。
+     */
+    enqueueRenderOnlyAddress(absoluteAddress) {
+        const requireStartProcess = this._isQueueEmpty();
+        this._queueRenderOnlyAddresses.push(absoluteAddress);
+        if (requireStartProcess) {
+            this._scheduleDrain();
+        }
+    }
+    _isQueueEmpty() {
+        return this._queueUpdateRecords.length === 0 && this._queueRenderOnlyAddresses.length === 0;
+    }
+    _scheduleDrain() {
+        // このバッチのあいだ、依存ウォークと読みが観測したリスト値は保留にする。
+        // 確定は drain の finally（list/stateListBaseline.ts の頭のコメント）。
+        beginStateListBaselineBatch();
+        queueMicrotask(() => {
+            const updateRecords = this._queueUpdateRecords;
+            const renderOnlyAddresses = this._queueRenderOnlyAddresses;
+            this._queueUpdateRecords = [];
+            this._queueRenderOnlyAddresses = [];
+            this._applyChange(updateRecords, renderOnlyAddresses);
+        });
+    }
+    /**
+     * まだ drain されていない書き込み（次のバッチ）に、この state のこのパスがあるか。
+     * drain の最中のキューは次のバッチの分だけになっている（_applyChange の前に差し替える）。
+     * `on` scan の保留 reset を、発火しない drain で捨ててよいかの判定に使う（scan/eventReset.ts）。
+     */
+    hasQueuedPath(stateElement, path) {
+        return this._queueUpdateRecords.some((record) => record.absoluteAddress.absolutePathInfo.stateElement === stateElement
+            && record.absoluteAddress.absolutePathInfo.pathInfo.path === path);
+    }
+    // テスト用に公開
+    testApplyChange(absoluteAddresses, contexts) {
+        this._applyChange(absoluteAddresses.map((absoluteAddress, index) => ({
+            absoluteAddress,
+            context: contexts?.[index] ?? null,
+        })));
+    }
+    _applyChange(updateRecords, renderOnlyAddresses = []) {
+        // Note: AbsoluteStateAddress はキャッシュされているため、
+        // 同一の (stateElement, address) は同じインスタンスとなり、
+        // Map / Set による重複排除が正しく機能する。
+        // coalescing は last-write-wins: 同じ address は最後の update の
+        // (値は state 側が既に保持) context をそのまま採用する（設計書 §4.1）。
+        // visitedEdges の合成や synthetic transaction への置換は行わない。
+        const contextByAbsoluteAddress = new Map();
+        for (const record of updateRecords) {
+            const previous = contextByAbsoluteAddress.get(record.absoluteAddress);
+            if (devtoolsSink !== null
+                && typeof previous !== "undefined" && previous !== null
+                && record.context !== null
+                && previous.transactionId !== record.context.transactionId) {
+                devtoolsSink({
+                    type: "propagation:coalesced",
+                    absoluteAddress: record.absoluteAddress,
+                    droppedTransactionId: previous.transactionId,
+                    winnerTransactionId: record.context.transactionId,
+                });
+            }
+            contextByAbsoluteAddress.set(record.absoluteAddress, record.context);
+        }
+        // drain 終了リスナーへ渡すのは書き込みの着地だけ。描画だけのアドレスは、この後で適用の対象に足す
+        // （同じアドレスの書き込みがあれば、その context のまま着地として残る）
+        const landedAddresses = new Set(contextByAbsoluteAddress.keys());
+        for (const absoluteAddress of renderOnlyAddresses) {
+            if (!contextByAbsoluteAddress.has(absoluteAddress)) {
+                contextByAbsoluteAddress.set(absoluteAddress, null);
+            }
+        }
+        const processBindings = [];
+        const propagationContextByBinding = new Map();
+        for (const [absoluteAddress, context] of contextByAbsoluteAddress) {
+            if (context !== null && context.hop >= MAX_PROPAGATION_HOPS) {
+                // hop 上限超過: この transaction の未処理 record だけを quarantine する。
+                // 既に適用した値は戻さず、updater から例外は投げない（設計書 §4 規則 6）。
+                console.error(`[@wcstack/state] propagation hop limit exceeded; update record quarantined.`, {
+                    path: absoluteAddress.absolutePathInfo.pathInfo.path,
+                    transactionId: context.transactionId,
+                    hop: context.hop,
+                    maxHops: MAX_PROPAGATION_HOPS,
+                });
+                if (devtoolsSink !== null) {
+                    devtoolsSink({
+                        type: "propagation:hop-limit",
+                        absoluteAddress,
+                        transactionId: context.transactionId,
+                        hop: context.hop,
+                    });
+                }
+                continue;
+            }
+            // peek: バインディングの無いアドレス（リスト置換で enqueue される中間
+            // アドレス等）に空エントリを生成・蓄積しない。エントリは単一 binding
+            // （通常ケース）か Set（同一アドレスに 2 本以上）のどちらか。
+            // 従来台帳 → パターン台帳（リスト行）の順で引く。
+            const entry = peekBindingsForAddress(absoluteAddress);
+            if (entry === undefined) {
+                continue;
+            }
+            if (entry instanceof Set) {
+                for (const binding of entry) {
+                    if (binding.replaceNode.isConnected === false) {
+                        // 切断されているバインディングは無視
+                        continue;
+                    }
+                    processBindings.push(binding);
+                    if (context !== null) {
+                        propagationContextByBinding.set(binding, context);
+                    }
+                }
+            }
+            else if (entry.replaceNode.isConnected !== false) {
+                processBindings.push(entry);
+                if (context !== null) {
+                    propagationContextByBinding.set(entry, context);
+                }
+            }
+        }
+        // drain 終了フック: binding 適用後に dedup 済みバッチを通知する（設計書 §3-2）。
+        // testApplyChange も同じ _applyChange を通るため、テストから同期に駆動できる。
+        // quarantine された address も state 値は適用済みのため通知対象に含める。
+        //
+        // try/finally なのは、適用側が throw しても `$watch` / `$streams` restart を
+        // 落とさないため。binding 1 本の失敗は applyChangeFromBindings が隔離するので
+        // ここへ来るのは $updatedCallback の throw（契約どおり loud に伝播させる）等に
+        // 限られるが、そのとき drain フックまで道連れにすると「機構間の順序は固定」
+        // （README の 3 層表）が黙って破れる。例外は握らない ＝ 伝播は維持する。
+        try {
+            const applyBindings = () => {
+                // context が無い場合は従来どおり 1 引数で呼ぶ（呼び出し契約の互換維持）
+                if (propagationContextByBinding.size > 0) {
+                    applyChangeFromBindings(processBindings, propagationContextByBinding);
+                }
+                else {
+                    applyChangeFromBindings(processBindings);
+                }
+            };
+            // View transition 参加点（docs/view-transition-design.md §7.2）。arbiter が
+            // 居なければ runTransition はその場で applyBindings を呼び、undefined を返す
+            // ＝ 従来と完全に同じ同期適用。SSR では遷移そのものを持たない（G5）。
+            //
+            // 適用する binding が 0 本のバッチは arbiter へ渡さない。書き込みはバインドの
+            // 有無に関わらず enqueue される（setByAddress）ため、headless なパス
+            // （`$watch` 専用・`$streams` の内部状態・リスト置換の中間アドレス）への
+            // 書き込みだけでもここへ到達する。それでページ全体をスナップショットするのは
+            // 無駄なだけでなく、既定の mode="latest" では「アニメーションすべき DOM 変更が
+            // 無い遷移」が実行中の本物の遷移をスキップしてしまう（ルート遷移が毎回途中で
+            // 切れる／active が空撃ちで振動する）。
+            if (inSsr() || processBindings.length === 0) {
+                applyBindings();
+            }
+            else {
+                const pending = runTransition("state", applyBindings);
+                if (pending !== undefined) {
+                    pending.catch(reportDeferredApplyFailure);
+                }
+            }
+        }
+        finally {
+            // バッチ中に溜めたリスト差分基準を確定する。notifyUpdateBatchListeners より先に
+            // 置くのは、リスナー（$watch / $streams restart）の中で走る書き込みが
+            // 「このバッチの結果」を基準として見るべきだから。
+            endStateListBaselineBatch();
+            notifyUpdateBatchListeners(landedAddresses);
+        }
+    }
+}
+// コンストラクタは空でフィールド初期化だけ（純粋な割り当て）。バンドラが未使用時に落とせるよう
+// 明示する: ヘルパーだけの import（defineState / 型 / version）にランタイムを残さない
+const updater = /*#__PURE__*/ new Updater();
+function getUpdater() {
+    return updater;
+}
+
+const ledgerByElement = new WeakMap();
+// アドレス → (path → 現在の鍵)。再評価した getter が購読を新しい鍵へ移すための逆引き
+const keyByPathByAddress = new WeakMap();
+// 行の listIndex にぶら下がる購読（退役時に落とす）
+const entriesByListIndex = new WeakMap();
+// index を鍵にしている購読を、その index の段の listIndex から引く（付け替え用）
+const indexKeyedByListIndex = new WeakMap();
+// 一度も登録が無ければ差分側のフックは Map 参照すら行わない
+let anyRegistered = false;
+const watchersByElement = new WeakMap();
+const watchersByIndexes = new WeakMap();
+const EMPTY$1 = [];
+function ledgerOf(stateElement) {
+    let ledger = ledgerByElement.get(stateElement);
+    if (typeof ledger === "undefined") {
+        ledgerByElement.set(stateElement, ledger = { byPath: new Map(), lastValue: new Map() });
+    }
+    return ledger;
+}
+function keyMapOf(ledger, path) {
+    let keyMap = ledger.byPath.get(path);
+    if (typeof keyMap === "undefined") {
+        ledger.byPath.set(path, keyMap = new Map());
+    }
+    return keyMap;
+}
+function addToKey(keyMap, key, absAddress) {
+    let set = keyMap.get(key);
+    if (typeof set === "undefined") {
+        keyMap.set(key, set = new Set());
+    }
+    set.add(absAddress);
+}
+/** 台帳へ登録する。既に同じ (アドレス, path) が登録済みなら鍵を移すだけで、false を返す */
+function subscribe(ledger, path, key, absAddress) {
+    const keyMap = keyMapOf(ledger, path);
+    let previous = keyByPathByAddress.get(absAddress);
+    if (typeof previous === "undefined") {
+        keyByPathByAddress.set(absAddress, previous = new Map());
+    }
+    if (previous.has(path)) {
+        const oldKey = previous.get(path);
+        if (!Object.is(oldKey, key)) {
+            keyMap.get(oldKey).delete(absAddress);
+            previous.set(path, key);
+            addToKey(keyMap, key, absAddress);
+        }
+        return false;
+    }
+    previous.set(path, key);
+    addToKey(keyMap, key, absAddress);
+    return true;
+}
+function pushEntry(map, listIndex, entry) {
+    const entries = map.get(listIndex);
+    if (typeof entries === "undefined") {
+        map.set(listIndex, [entry]);
+    }
+    else {
+        entries.push(entry);
+    }
+}
+function record(ledger, path, current, absAddress, isNew, entry) {
+    ledger.lastValue.set(path, current);
+    if (!isNew) {
+        return;
+    }
+    // 行の外（トップレベルの getter）からの登録は listIndex を持たず、退役で落ちることもない
+    if (absAddress.listIndex !== null) {
+        pushEntry(entriesByListIndex, absAddress.listIndex, entry);
+    }
+    if (entry.levelListIndex !== null) {
+        pushEntry(indexKeyedByListIndex, entry.levelListIndex, entry);
+    }
+}
+/** `$eq` / `$eqPath`: 評価中の getter のアドレスを `key` の下に登録する。`current` は今読んだ `path` の値 */
+function registerKeyedDependency(stateElement, path, key, absAddress, current) {
+    anyRegistered = true;
+    const ledger = ledgerOf(stateElement);
+    const isNew = subscribe(ledger, path, key, absAddress);
+    record(ledger, path, current, absAddress, isNew, { stateElement, path, absAddress, levelListIndex: null });
+}
+/** `$eqIndex`: `levelListIndex.index` を鍵にして登録する。差分が index を変えたとき鍵も付け替える */
+function registerIndexKeyedDependency(stateElement, path, levelListIndex, absAddress, current) {
+    anyRegistered = true;
+    const ledger = ledgerOf(stateElement);
+    const isNew = subscribe(ledger, path, levelListIndex.index, absAddress);
+    record(ledger, path, current, absAddress, isNew, { stateElement, path, absAddress, levelListIndex });
+}
+function hasKeyedDependents(stateElement, path) {
+    return ledgerByElement.get(stateElement)?.byPath.has(path) === true
+        || watchersByElement.get(stateElement)?.has(path) === true;
+}
+/** `$eqIndex` の最内段: リスト（listIndex 配列）単位の監視を 1 つ登録し、getter のパスを足す */
+function registerIndexWatcher(stateElement, path, getterPathInfo, indexes, current) {
+    anyRegistered = true;
+    ledgerOf(stateElement).lastValue.set(path, current);
+    let byPath = watchersByElement.get(stateElement);
+    if (typeof byPath === "undefined") {
+        watchersByElement.set(stateElement, byPath = new Map());
+    }
+    let watchers = byPath.get(path);
+    if (typeof watchers === "undefined") {
+        byPath.set(path, watchers = new Set());
+    }
+    let byList = watchersByIndexes.get(indexes);
+    let watcher;
+    if (typeof byList === "undefined") {
+        watchersByIndexes.set(indexes, byList = []);
+    }
+    else {
+        watcher = byList.find((w) => w.stateElement === stateElement && w.path === path);
+    }
+    if (typeof watcher === "undefined") {
+        watcher = { stateElement, path, indexes, getters: new Set() };
+        byList.push(watcher);
+        watchers.add(watcher);
+    }
+    watcher.getters.add(getterPathInfo);
+}
+function watchedRowsAt(watcher, key, out) {
+    if (typeof key !== "number") {
+        return;
+    }
+    const listIndex = watcher.indexes[key];
+    if (typeof listIndex === "undefined") {
+        return;
+    }
+    for (const getterPathInfo of watcher.getters) {
+        out.push(liftAddress(watcher.stateElement, createStateAddress(getterPathInfo, listIndex)));
+    }
+}
+/**
+ * 差分がリストの listIndex 配列を `oldIndexes` → `newIndexes` に付け替えた: 監視を新しい配列へ移し、
+ * `path` の最後の値の位置にいた行と来た行（違うときだけ）を dirty 化して enqueue する。
+ * 同じ差分の 2 回目の呼び出し（キャッシュ命中）は旧配列に監視が無いので何もしない。
+ */
+function moveIndexWatchers(oldIndexes, newIndexes) {
+    if (!anyRegistered || oldIndexes === newIndexes) {
+        return;
+    }
+    const watchers = watchersByIndexes.get(oldIndexes);
+    if (typeof watchers === "undefined") {
+        return;
+    }
+    watchersByIndexes.delete(oldIndexes);
+    const existing = watchersByIndexes.get(newIndexes);
+    watchersByIndexes.set(newIndexes, typeof existing === "undefined" ? watchers : existing.concat(watchers));
+    for (const watcher of watchers) {
+        watcher.indexes = newIndexes;
+        const last = ledgerOf(watcher.stateElement).lastValue.get(watcher.path);
+        if (typeof last !== "number") {
+            continue;
+        }
+        const before = oldIndexes[last];
+        const after = newIndexes[last];
+        if (before === after) {
+            continue;
+        }
+        for (const listIndex of [before, after]) {
+            if (typeof listIndex === "undefined" || isRetiredListIndex(listIndex)) {
+                continue;
+            }
+            for (const getterPathInfo of watcher.getters) {
+                const absAddress = liftAddress(watcher.stateElement, createStateAddress(getterPathInfo, listIndex));
+                dirtyCacheEntryByAbsoluteStateAddress(absAddress);
+                getUpdater().enqueueAbsoluteAddress(absAddress, null);
+            }
+        }
+    }
+}
+function collect(set, out) {
+    if (typeof set === "undefined") {
+        return;
+    }
+    for (const address of set) {
+        out.push(address);
+    }
+}
+/**
+ * `path` への書き込み: 旧値（同値ガードが読めたとき）と新値の鍵に登録された行アドレス。
+ * 新値を `path` の最後の値として控える。呼び出し側は hasKeyedDependents で門を通す。
+ */
+function keyedDependents(stateElement, path, hasOldKey, oldKey, newKey) {
+    const ledger = ledgerByElement.get(stateElement);
+    const keyMap = ledger?.byPath.get(path);
+    const watchers = watchersByElement.get(stateElement)?.get(path);
+    if (typeof ledger === "undefined" || (typeof keyMap === "undefined" && typeof watchers === "undefined")) {
+        return EMPTY$1;
+    }
+    ledger.lastValue.set(path, newKey);
+    const out = [];
+    const newDiffers = !hasOldKey || !Object.is(oldKey, newKey);
+    if (typeof keyMap !== "undefined") {
+        if (hasOldKey) {
+            collect(keyMap.get(oldKey), out);
+        }
+        if (newDiffers) {
+            collect(keyMap.get(newKey), out);
+        }
+    }
+    if (typeof watchers !== "undefined") {
+        for (const watcher of watchers) {
+            if (hasOldKey) {
+                watchedRowsAt(watcher, oldKey, out);
+            }
+            if (newDiffers) {
+                watchedRowsAt(watcher, newKey, out);
+            }
+        }
+    }
+    return out;
+}
+function removeIndexEntry(entry) {
+    const entries = indexKeyedByListIndex.get(entry.levelListIndex);
+    const at = entries.indexOf(entry);
+    entries.splice(at, 1);
+}
+/** 差分が `listIndex` を退役させた: その行にぶら下がる購読を台帳と逆引きから落とす（復活した行は再評価で張り直す） */
+function dropKeyedSubscriptionsByListIndex(listIndex) {
+    if (!anyRegistered) {
+        return;
+    }
+    const entries = entriesByListIndex.get(listIndex);
+    if (typeof entries === "undefined") {
+        return;
+    }
+    entriesByListIndex.delete(listIndex);
+    for (const entry of entries) {
+        const { stateElement, path, absAddress } = entry;
+        const keys = keyByPathByAddress.get(absAddress);
+        const key = keys.get(path);
+        keys.delete(path);
+        ledgerByElement.get(stateElement).byPath.get(path).get(key).delete(absAddress);
+        if (entry.levelListIndex !== null) {
+            removeIndexEntry(entry);
+        }
+    }
+}
+/**
+ * 差分が `listIndex` の index を `oldIndex` → `newIndex` に変えた: その段を鍵にする `$eqIndex` の購読を
+ * 新しい鍵へ移し、`path` の最後の値が旧 index か新 index に等しい行だけを dirty 化して enqueue する
+ * （それ以外の移動行では `$eqIndex` の答えは変わらない）。syncListIndexes から、drain が差分を
+ * 適用する前に呼ばれる。
+ */
+function rekeyIndexSubscriptions(listIndex, oldIndex, newIndex) {
+    if (!anyRegistered) {
+        return;
+    }
+    const entries = indexKeyedByListIndex.get(listIndex);
+    if (typeof entries === "undefined") {
+        return;
+    }
+    for (const { stateElement, path, absAddress } of entries) {
+        const ledger = ledgerByElement.get(stateElement);
+        const keyMap = ledger.byPath.get(path);
+        keyMap.get(oldIndex).delete(absAddress);
+        addToKey(keyMap, newIndex, absAddress);
+        keyByPathByAddress.get(absAddress).set(path, newIndex);
+        const last = ledger.lastValue.get(path);
+        if (Object.is(last, oldIndex) || Object.is(last, newIndex)) {
+            dirtyCacheEntryByAbsoluteStateAddress(absAddress);
+            getUpdater().enqueueAbsoluteAddress(absAddress, null);
+        }
+    }
+}
+
 const listDiffByOldListByNewList = new WeakMap();
 const EMPTY_LIST = Object.freeze([]);
 const EMPTY_SET$1 = new Set();
@@ -6567,7 +7641,10 @@ function isSameList(oldList, newList) {
 function syncListIndexes(newIndexes, newList) {
     for (let i = 0; i < newIndexes.length; i++) {
         if (newIndexes[i].index !== i) {
+            const oldIndex = newIndexes[i].index;
             newIndexes[i].index = i;
+            // `$eqIndex` の購読は差分側で鍵を付け替える（dependency/keyedDependency.ts）
+            rekeyIndexSubscriptions(newIndexes[i], oldIndex, i);
         }
         setListIndexValue(newIndexes[i], newList[i]);
     }
@@ -6588,7 +7665,13 @@ function createListDiff(parentListIndex, rawOldList, rawNewList) {
     // 分ける（#256）。両方を毎回の差分で付け直すので、消えない印は残らない。
     // deleteIndexSet と newIndexes は構造上交わらない。
     retireListIndexes(diff.deleteIndexSet);
+    // 退役した行の鍵付き購読（`$eq` 系）は行と一緒に落とす
+    for (const retired of diff.deleteIndexSet) {
+        dropKeyedSubscriptionsByListIndex(retired);
+    }
     reviveListIndexes(diff.newIndexes);
+    // `$eqIndex` の最内段の監視は listIndex 配列に付く: 配列が変わったら移し、最後の値の位置の行を enqueue
+    moveIndexWatchers(diff.oldIndexes, diff.newIndexes);
     return diff;
 }
 function computeListDiff(parentListIndex, rawOldList, rawNewList) {
@@ -6881,8 +7964,8 @@ function bindLoopContextToContent(content, loopContext) {
 }
 function unbindLoopContextToContent(content) {
     const nodes = getNodesByContent(content);
-    for (const node of nodes) {
-        setLoopContextByNode(node, null);
+    for (let i = 0; i < nodes.length; i++) { // 添字ループ（消去の窓に反復子のごみを残さない）
+        setLoopContextByNode(nodes[i], null);
     }
 }
 
@@ -6915,7 +7998,8 @@ function deactivateContent(content) {
     }
     const bindings = getBindingsByContent(content);
     const session = getBindingSessionByContent(content);
-    for (const binding of bindings) {
+    for (let i = 0; i < bindings.length; i++) { // 添字ループ（消去の窓に反復子のごみを残さない）
+        const binding = bindings[i];
         if (session !== null) {
             session.disposeBinding(binding);
         }
@@ -6932,7 +8016,7 @@ function createEmptySet() {
 }
 
 const contentSetByNode = new WeakMap();
-const EMPTY_SET = createEmptySet();
+const EMPTY_SET = /*#__PURE__*/ createEmptySet();
 function setContentByNode(node, content) {
     const contents = contentSetByNode.get(node);
     if (contents) {
@@ -7065,7 +8149,9 @@ class Content {
         return this._mounted;
     }
     appendTo(targetNode) {
-        for (const node of this._childNodeArray) {
+        const childNodes = this._childNodeArray;
+        for (let i = 0; i < childNodes.length; i++) {
+            const node = childNodes[i];
             // framework 起点のマウントを observer に伝える。中間 fragment へ append する
             // 経路でも、後続の一括 insertBefore(fragment) の mutation record には
             // この top-level node が addedNodes として現れるため、ここでのマークが届く。
@@ -7141,23 +8227,27 @@ class Content {
             return false;
         }
         session.destroyRecords();
-        for (const node of this._childNodeArray) {
+        // 添字ループ: for...of の反復子オブジェクトを行ごとに割り当てない（消去の scavenge を窓から外す）
+        const childNodes = this._childNodeArray;
+        for (let i = 0; i < childNodes.length; i++) {
+            const node = childNodes[i];
             // unmount と同じ理由の observer 向け削除マーク（clear の一括削除でも
             // top-level node が mutation record の root に現れる）
-            markObserverSkipOnRemove(node);
+            // この content が自分でノードを外すときだけ印を付ける（親の一括削除は親側で件数を数える）
             if (node.parentNode !== null) {
+                markObserverSkipOnRemove(node);
                 node.parentNode.removeChild(node);
             }
         }
         const bindings = getBindingsByContent(this);
-        for (const binding of bindings) {
+        for (let i = 0; i < bindings.length; i++) {
+            const binding = bindings[i];
             if (recursiveBindingTypes.has(binding.bindingType)) {
-                const contents = getContentSetByNode(binding.node);
-                for (const content of contents) {
+                getContentSetByNode(binding.node).forEach((content) => {
                     if (!content.tryDestroy()) {
                         content.unmount();
                     }
-                }
+                });
             }
         }
         this._mounted = false;
@@ -7178,12 +8268,10 @@ class Content {
     /** binding ごとの解体（ネストした構造ディレクティブの Content・アドレス台帳） */
     _teardownBindings() {
         const bindings = getBindingsByContent(this);
-        for (const binding of bindings) {
+        for (let i = 0; i < bindings.length; i++) {
+            const binding = bindings[i];
             if (recursiveBindingTypes.has(binding.bindingType)) {
-                const contents = getContentSetByNode(binding.node);
-                for (const content of contents) {
-                    content.unmount();
-                }
+                getContentSetByNode(binding.node).forEach((content) => { content.unmount(); });
             }
             clearStateAddressByBindingInfo(binding);
             clearAbsoluteStateAddressByBinding(binding);
@@ -7197,18 +8285,16 @@ class Content {
             // 削除サブツリーの root として mutation record に現れるため、ここで
             // マークしておけば observer の冗長走査をスキップできる。マークは
             // 同期実行中に立ち、observer は次 microtask で読むので順序は保証される。
-            markObserverSkipOnRemove(node);
             if (node.parentNode !== null) {
+                markObserverSkipOnRemove(node);
                 node.parentNode.removeChild(node);
             }
         }
         const bindings = getBindingsByContent(this);
-        for (const binding of bindings) {
+        for (let i = 0; i < bindings.length; i++) {
+            const binding = bindings[i];
             if (recursiveBindingTypes.has(binding.bindingType)) {
-                const contents = getContentSetByNode(binding.node);
-                for (const content of contents) {
-                    content.unmount();
-                }
+                getContentSetByNode(binding.node).forEach((content) => { content.unmount(); });
             }
             clearStateAddressByBindingInfo(binding);
             clearAbsoluteStateAddressByBinding(binding);
@@ -7593,7 +8679,7 @@ const keywordByBindingType = new Map([
     ["elseif", config.commentElseIfPrefix],
     ["else", config.commentElsePrefix],
 ]);
-const notFilter = createNotFilter();
+const notFilter = /*#__PURE__*/ createNotFilter();
 function cloneNotParseBindTextResult(bindingType, parseBindTextResult) {
     const filters = parseBindTextResult.outFilters;
     return {
@@ -8704,68 +9790,6 @@ function isNodeInContentRange(node, content) {
     return false;
 }
 
-// ===========================================================================
-// AUTO-GENERATED FILE - DO NOT EDIT.
-// Generated from /protocol/transition-runner.ts by scripts/sync-protocol-types.mjs.
-// Run `node scripts/sync-protocol-types.mjs` after editing the source.
-// ===========================================================================
-// transition-runner protocol — how a package that mutates the DOM hands that
-// mutation to whoever is arbitrating view transitions on the page.
-//
-// @wcstack/state and @wcstack/router must not depend on @wcstack/view-transition
-// (zero runtime dependencies, independently publishable), so the arbiter installs
-// itself on a well-known global symbol and the participants look it up lazily.
-// No arbiter installed means the mutation is invoked directly, synchronously —
-// byte-for-byte the behavior these packages had before the protocol existed.
-//
-// docs/view-transition-design.md §4 is the normative description.
-//
-// SINGLE SOURCE OF TRUTH: edit only this file (/protocol/transition-runner.ts), then run
-// `node scripts/sync-protocol-types.mjs` to regenerate the per-package copies
-// (packages/<pkg>/src/protocol/transitionRunner.ts). Those copies are generated — do not edit them.
-/**
- * Global key the arbiter installs itself under. `Symbol.for` so independently
- * loaded copies of this file (two CDN bundles on one page) still agree.
- */
-const TRANSITION_RUNNER_KEY = Symbol.for("wcstack.transition-runner");
-/**
- * The installed arbiter, or null when there is none, it speaks a version this
- * reader does not, or it does not accept this participant.
- *
- * Looked up on every call rather than cached: the tag can be added, removed, or
- * reconfigured at any point in a page's life, and a stale cache would either
- * animate what the author just switched off or miss what they switched on.
- */
-function getTransitionRunner(source) {
-    const candidate = globalThis[TRANSITION_RUNNER_KEY];
-    if (candidate === undefined || candidate === null)
-        return null;
-    if (candidate.protocol !== "wcs-transition-runner")
-        return null;
-    if (typeof candidate.version !== "number" || candidate.version < 1)
-        return null;
-    if (typeof candidate.run !== "function")
-        return null;
-    if (typeof candidate.accepts !== "function" || !candidate.accepts(source))
-        return null;
-    return candidate;
-}
-/**
- * Run `mutate` under the installed arbiter, or directly when there is none.
- *
- * Returns `undefined` in the no-arbiter case instead of a resolved promise: the
- * state drain calls this on every batch, and awaiting is a caller's choice, not
- * an allocation the common path should pay for. `await` accepts both.
- */
-function runTransition(source, mutate, types) {
-    const runner = getTransitionRunner(source);
-    if (runner === null) {
-        mutate();
-        return undefined;
-    }
-    return runner.run(mutate, { source, types });
-}
-
 /** Elements that already carry a generated name (never renamed). */
 const namedElements = new WeakSet();
 /**
@@ -9060,6 +10084,9 @@ function applyChangeToFor(bindingInfo, context, newValue) {
         }
         if (isOnlyNode) {
             const parentNode = bindingInfo.node.parentNode;
+            // 全行は 1 つの mutation record で消えるので、親に「framework の削除がこの件数」と 1 回書けば
+            // observer はその record を丸ごと飛ばせる（行ごとの印を消費しない。bindings/observerSkip.ts）
+            markObserverSkipRemovedChildren(parentNode, parentNode.childNodes.length);
             parentNode.textContent = '';
             parentNode.appendChild(bindingInfo.node);
         }
@@ -9076,8 +10103,10 @@ function applyChangeToFor(bindingInfo, context, newValue) {
         ? maxPooledContents - getPooledContents(bindingInfo).length
         : Number.POSITIVE_INFINITY;
     if (typeof contentMap !== 'undefined') {
-        for (const deleteIndex of diff.deleteIndexSet) {
-            const content = contentMap.get(deleteIndex);
+        // Set の for...of は行ごとに反復子の結果オブジェクトを割り当てる（消去の scavenge の引き金）ので forEach で回す
+        const map = contentMap;
+        diff.deleteIndexSet.forEach((deleteIndex) => {
+            const content = map.get(deleteIndex);
             if (typeof content !== 'undefined') {
                 if (inPlaceContents !== null && inPlaceContents.reused.has(content)) {
                     // 同じ位置に入る行がその場で使い回す。自分のノードは DOM に残し、プールにも入れないが、
@@ -9096,10 +10125,10 @@ function applyChangeToFor(bindingInfo, context, newValue) {
                     poolBudget -= 1;
                 }
                 if (!fullDelete) {
-                    contentMap.delete(deleteIndex);
+                    map.delete(deleteIndex);
                 }
             }
-        }
+        });
         if (fullDelete) {
             contentByListIndexByNode.delete(bindingInfo.node);
             contentMap = undefined;
@@ -9629,6 +10658,11 @@ function applyChangeToProperty(binding, _context, newValue) {
     // slot を配線したときに顕在化)。明示的なクリアは null で表現する。
     // mirror 属性 (applyMirrorAttribute) の「undefined → 属性削除」と同じ語彙。
     if (typeof newValue === "undefined") {
+        // 3.0 は表示のプロパティへの undefined を空にする（要件 B8）— 2.x との差を予告する
+        const prop = binding.propSegments.length === 1 ? binding.propSegments[0] : "";
+        if (prop === "textContent" || prop === "innerText" || prop === "innerHTML") {
+            warnV3Migration(`"${prop}: ${binding.statePathName}" got undefined: 3.0 empties it. Return "" for no value.`);
+        }
         if (config.debug) {
             console.debug(`Skipped property write: state value is undefined.`, {
                 element: binding.node,
@@ -9822,6 +10856,10 @@ function applyChangeToRadio(binding, _context, newValue) {
 function applyChangeToStyle(binding, _context, newValue) {
     const styleName = binding.propSegments[1];
     const style = binding.node.style;
+    if (newValue === undefined) {
+        // 3.0 は値の無いスタイルを消す（要件 B8）— 2.x との差を予告する
+        warnV3Migration(`"style.${styleName}: ${binding.statePathName}" got undefined: 3.0 clears it.`);
+    }
     const currentValue = style[styleName];
     if (currentValue !== newValue) {
         style[styleName] = newValue;
@@ -10402,7 +11440,7 @@ async function buildBindings(root) {
     }
 }
 
-var version = "2.5.1";
+var version = "2.6.0";
 var pkg = {
 	version: version};
 
@@ -11584,524 +12622,6 @@ function setStateElement(rootNode, element) {
             console.debug(`State element registered`, element);
         }
     }
-}
-
-/**
- * watch/chainDepth.ts
- *
- * `$watch` ハンドラ起点の書き込み連鎖の深さを数える台帳
- * （docs/state-watch-hook-design.md §7-2）。
- *
- * watch ハンドラ内の書き込みは新しい microtask バッチを作るため、伝播 context の
- * hop 上限（MAX_PROPAGATION_HOPS）のガードが効かない。かつ書き込み先が動的なので、
- * `$streams` のような「宣言時の自己依存検出」も使えない。よって実行時に数える。
- *
- * updater（enqueue 側）と watchRuntime（発火側）の両方から参照されるため、
- * **依存ゼロの葉モジュール**にして循環 import を避ける（devtools/sink.ts と同じ方針）。
- *
- * 数え方: ハンドラ実行中に enqueue が起きたときだけ「次のバッチはこの連鎖の続き」と
- * マークする。ハンドラが何も書かなければ次のバッチは深さ 0 に戻るので、利用者操作が
- * 何度続いても深さは伸びない。
- */
-/** ハンドラ実行中に立つ「今の連鎖の深さ + 1」。0 なら watch 起点ではない */
-let firingDepth = 0;
-/** 次に drain されるバッチの深さ */
-let pendingDepth = 0;
-/** watch の発火フェーズ開始（watchRuntime 専用） */
-function beginWatchFiring(depth) {
-    firingDepth = depth + 1;
-}
-/** watch の発火フェーズ終了（watchRuntime 専用。必ず finally で呼ぶ） */
-function endWatchFiring() {
-    firingDepth = 0;
-}
-/**
- * 書き込みの enqueue を記録する（updater 専用）。
- * ハンドラ実行中でなければ何もしない ＝ 通常の書き込みに深さは付かない。
- */
-function noteEnqueueForWatchChain() {
-    if (firingDepth > pendingDepth) {
-        pendingDepth = firingDepth;
-    }
-}
-/** 次バッチの深さを消費する（watchRuntime 専用。読んだらリセット） */
-function consumeWatchChainDepth() {
-    const depth = pendingDepth;
-    pendingDepth = 0;
-    return depth;
-}
-
-/**
- * scan/scanRegistry.ts
- *
- * `$scan` の registry（docs/state-scan-design.md §2）。
- *
- * `$watch` の registry とは別台帳にする。watch の registry はパスにつき entry 1 個
- * （`Map<string, IWatchEntry>`）なので、同じパスを `$watch` と `$scan` が並んで
- * 見る形・同じ `from` を 2 つの scan が畳む形を載せられない。
- *
- * 寿命は `$watch` と揃える: `_state` 再セットで作り直し、切断では消さない
- * （発火対象から外れるのは watch runtime の active 集合側）。
- */
-const registryByStateElement$3 = new WeakMap();
-/**
- * drain 側の粗いゲート: 発火対象（watch runtime の active 集合）に居て、`from` か `resetOn` を持つ state。
- *
- * 空のあいだ watch runtime は scan の収集ループに入らない ＝ `$scan` を使っていない画面の drain に、
- * バッチのアドレスごとの registry 引きを載せない。registry の有無ではなく active 集合への出入り
- * （watch/watchRegistry.ts の addActiveWatchStateElement / deactivateWatch / clearWatchRegistry）で
- * 数えるので、`$scan` を持つ state を DOM から外せば（SPA のページ差し替え）ゲートは閉じ、
- * 再接続（startWatch）で開き直す。strong Set でも、切断と再セットで必ず外れるので GC を妨げない
- * （active 集合と同じ不変条件）。
- */
-const drainActive = new Set();
-/**
- * enqueue 側のゲート: 発火対象に居て、`resetOn` を持つ `on` scan がある state（scan/eventReset.ts）。
- * 空のあいだ updater の enqueue は整数比較 1 回で抜ける。数え方は drainActive と同じ。
- */
-const eventResetActive = new Set();
-function hasDrainWork(registry) {
-    return registry.byFromPath.size > 0 || registry.byResetPath.size > 0;
-}
-function hasEventResetWork(registry) {
-    return registry.eventResetByPath.size > 0;
-}
-function pushEntry(map, key, entry) {
-    const list = map.get(key);
-    if (typeof list === "undefined") {
-        map.set(key, [entry]);
-    }
-    else {
-        list.push(entry);
-    }
-}
-/** registry を置換登録する（`_state` セッターから）。 */
-function setScanRegistry(stateElement, entries) {
-    clearScanRegistry(stateElement);
-    const byFromPath = new Map();
-    const byResetPath = new Map();
-    const eventResetByPath = new Map();
-    for (const entry of entries) {
-        if (entry.source.kind === "path") {
-            pushEntry(byFromPath, entry.source.path, entry);
-        }
-        for (const path of entry.resetOn) {
-            pushEntry(byResetPath, path, entry);
-            if (entry.source.kind === "event") {
-                pushEntry(eventResetByPath, path, entry);
-            }
-        }
-    }
-    const registry = { entries: new Set(entries), byFromPath, byResetPath, eventResetByPath };
-    registryByStateElement$3.set(stateElement, registry);
-    return registry;
-}
-function getScanRegistry(stateElement) {
-    return registryByStateElement$3.get(stateElement);
-}
-/**
- * registry を削除する（`_state` 再セットで作り直す前）。ゲートからも外す — 同じ再セットの
- * startWatch が新しい registry で数え直す（`_state` セッターは registry を作った後に
- * clearWatchRegistry → startWatch を通る）。
- */
-function clearScanRegistry(stateElement) {
-    deactivateScanGates(stateElement);
-    registryByStateElement$3.delete(stateElement);
-}
-/** 発火対象に載った（watch/watchRegistry.ts の addActiveWatchStateElement 専用）。冪等。 */
-function activateScanGates(stateElement) {
-    const registry = registryByStateElement$3.get(stateElement);
-    if (typeof registry === "undefined") {
-        return;
-    }
-    if (hasDrainWork(registry)) {
-        drainActive.add(stateElement);
-    }
-    if (hasEventResetWork(registry)) {
-        eventResetActive.add(stateElement);
-    }
-}
-/** 発火対象から外れた（切断・再セット）。 */
-function deactivateScanGates(stateElement) {
-    drainActive.delete(stateElement);
-    eventResetActive.delete(stateElement);
-}
-/**
- * drain で発火すべき scan（`from` か `resetOn`）を持つか。
- * `startWatch` が発火対象集合へ載せる判定に使う（`on` だけの scan は drain を要らない）。
- */
-function hasScanDrainWork(stateElement) {
-    const registry = registryByStateElement$3.get(stateElement);
-    return typeof registry !== "undefined" && hasDrainWork(registry);
-}
-/** 発火対象に居て、`resetOn` を持つ `on` scan がある state か（enqueue の保留判定）。 */
-function hasActiveScanEventReset(stateElement) {
-    return eventResetActive.has(stateElement);
-}
-function getScanDrainGateCount() {
-    return drainActive.size;
-}
-function getScanEventResetGateCount() {
-    return eventResetActive.size;
-}
-
-/**
- * scan/eventReset.ts
- *
- * `on` scan の `resetOn` を「書き込みの時点」で効かせる台帳（docs/state-scan-design.md D6）。
- *
- * `on` の fold は出来事のその場で同期に書く。一方 `resetOn` のパスはバッチに載って drain の
- * 終わりにしか見えない。drain で reset するだけだと、reset の書き込みから drain までに起きた
- * 出来事 — その書き込みの binding 適用で要素が同期に dispatch したものを含む — まで消える。
- *
- * そこで reset の要求を enqueue の時点で entry に保留する。
- * - 保留中に来た出来事の fold は `initial` から畳み、出力の書き込みが通ったら保留を消す
- *   （fold の throw・thenable・書き込みの throw なら残す）。
- * - 保留が残ったまま drain に来たら、scan runtime が出力を `initial` に戻して保留を消す。
- * これで「書き込みより後の出来事は reset 後の出力に畳まれる」順序になる。
- *
- * 保留は「その書き込みが載ったバッチの drain で initial に戻す」予約なので、寿命をそのバッチに
- * 揃える。drain がそのバッチの scan を発火しない（書き込みの後・drain の前に切断された・連鎖深さの
- * 上限で打ち切った・先行 fold が同期に切断や再セットをした）なら保留を捨てる。残すと、後の無関係な
- * 出来事が突然 `initial` から畳み始める。同じ条件の `from` の scan は reset しない（発火しない）ので、
- * それに揃える。保留は entry ごとの 1 bit でどのバッチの書き込みかを持たないので、同じ `resetOn` の
- * パスが次のバッチ向けに既に積まれていれば捨てない — その保留は次のバッチの drain が使う。
- *
- * updater（enqueue 側）から呼ばれるので updater を import しない（watch/chainDepth.ts と同じ理由）。
- */
-const pendingResets = new WeakSet();
-/**
- * 保留中の entry の数。捨てる走査（discardPendingScanResets）のゲート。保留は enqueue の直後の drain で
- * 使うか捨てるか次のバッチへ持ち越すので、ふつうは 0。enqueue のゲート（発火対象の state）と別に持つのは、
- * 書き込みの後・drain の前に切断された state がゲートから外れても、その保留は drain で捨てるため。
- */
-let pendingResetCount = 0;
-/** このアドレスを `resetOn` に持つ `on` scan（無ければ undefined） */
-function eventResetEntriesAt(absAddress) {
-    return getScanRegistry(absAddress.absolutePathInfo.stateElement)
-        ?.eventResetByPath.get(absAddress.absolutePathInfo.pathInfo.path);
-}
-/**
- * 書き込みの enqueue を記録する（updater 専用）。
- * `resetOn` を持つ `on` scan が発火対象の state に 1 つも無ければ（そうした state を DOM から外した後を含む）、
- * 整数比較 1 回で抜ける。
- */
-function noteEnqueueForScanReset(absAddress) {
-    if (getScanEventResetGateCount() === 0) {
-        return;
-    }
-    // 発火対象でない state（切断中・初期化中・SSR）の書き込みは reset しない — drain 側と同じ扱い
-    if (!hasActiveScanEventReset(absAddress.absolutePathInfo.stateElement)) {
-        return;
-    }
-    const entries = eventResetEntriesAt(absAddress);
-    if (typeof entries === "undefined") {
-        return;
-    }
-    for (const entry of entries) {
-        markPendingScanReset(entry);
-    }
-}
-/**
- * 保留を立てる。enqueue の記録（上）と、`_state` 再セットで旧宣言の保留を同じ出力の `on` scan へ
- * 引き継ぐとき（processScanDeclaration.ts の registerScans）だけが呼ぶ。
- */
-function markPendingScanReset(entry) {
-    if (!pendingResets.has(entry)) {
-        pendingResets.add(entry);
-        pendingResetCount++;
-    }
-}
-function hasPendingScanReset(entry) {
-    return pendingResets.has(entry);
-}
-/** 保留があれば消して true を返す。 */
-function consumePendingScanReset(entry) {
-    if (!pendingResets.delete(entry)) {
-        return false;
-    }
-    pendingResetCount--;
-    return true;
-}
-/**
- * drain がバッチの scan を発火しないとき、そのバッチが載せた保留を捨てる。
- * `firing` はこの drain で scan を発火する state の集合。null はバッチ全体を発火しない
- * （連鎖深さの上限）。`isQueued` は「次のバッチ向けに、この state のこのパスが積まれているか」
- * （updater を import しないので呼び出し側から受け取る）。
- */
-function discardPendingScanResets(batch, firing, isQueued) {
-    if (pendingResetCount === 0) {
-        return;
-    }
-    for (const absAddress of batch) {
-        const stateElement = absAddress.absolutePathInfo.stateElement;
-        if (firing?.has(stateElement) === true) {
-            continue;
-        }
-        const entries = eventResetEntriesAt(absAddress);
-        if (typeof entries === "undefined") {
-            continue;
-        }
-        for (const entry of entries) {
-            if (!entry.resetOn.some((path) => isQueued(stateElement, path))) {
-                consumePendingScanReset(entry);
-            }
-        }
-    }
-}
-
-const updateBatchListeners = [];
-/**
- * drain 終了リスナーを登録する。
- *
- * `priority` の昇順に呼ばれる（同値は登録順）。機構間の実行順序
- * （`$scan` → `$watch` → `$streams` restart。前の 2 つは同じ watch リスナーの中の順序で、
- * `$scan` は畳んで書いてから `$watch` を発火する —
- * docs/state-watch-hook-design.md §3-2 層 1・docs/state-scan-design.md D11）は
- * この優先度で固定する — import 順に順序を持たせると、無関係な import 整理で
- * 静かに壊れるため。定数は define.ts の `*_LISTENER_PRIORITY` を使うこと。
- */
-function registerUpdateBatchListener(listener, priority = 0) {
-    // 挿入ソート: 同値優先度の中では登録順を保つ（find は最初の「より大きい」要素を指す）
-    const index = updateBatchListeners.findIndex((registered) => registered.priority > priority);
-    const entry = { listener, priority };
-    if (index === -1) {
-        updateBatchListeners.push(entry);
-    }
-    else {
-        updateBatchListeners.splice(index, 0, entry);
-    }
-}
-/**
- * drain 終了リスナーを解除する（テスト間の分離用）。
- */
-function unregisterUpdateBatchListener(listener) {
-    const index = updateBatchListeners.findIndex((registered) => registered.listener === listener);
-    if (index !== -1) {
-        updateBatchListeners.splice(index, 1);
-    }
-}
-/**
- * 全リスナーに drain のバッチを優先度順で通知する。
- * リスナーの throw は握りつぶさない（内部バグの隠蔽防止）。
- * stream / watch 側リスナーが entry ごとに自前で try/catch する契約（設計書 §3-2）。
- */
-function notifyUpdateBatchListeners(batch) {
-    // 反復中の register / unregister（ハンドラ内の切断・再 set）に耐えるためコピーする
-    for (const registered of updateBatchListeners.slice()) {
-        registered.listener(batch);
-    }
-}
-/**
- * 遷移越しの適用が失敗したときの報告。
- *
- * 遷移の中では例外を同期的に呼び出し元へ投げ返せない。今日の drain は
- * queueMicrotask の中で throw する ＝ uncaught として観測されるので、それと同じ
- * 「loud に出す」挙動へ揃える。握り潰すと `$updatedCallback` の throw が黙って
- * 消える（README の 3 層表が定める伝播の契約が破れる）。
- */
-function reportDeferredApplyFailure(error) {
-    queueMicrotask(() => { throw error; });
-}
-class Updater {
-    _queueUpdateRecords = [];
-    /**
-     * 描画だけをやり直すアドレス（`enqueueRenderOnlyAddress`）。書き込みの record とは別に持つ —
-     * drain 終了リスナーへ渡すバッチにも、`hasQueuedPath`（`on` scan の保留 reset の判定）にも混ぜない。
-     */
-    _queueRenderOnlyAddresses = [];
-    constructor() {
-    }
-    enqueueAbsoluteAddress(absoluteAddress, context = null) {
-        // `$watch` ハンドラ実行中の書き込みだけを連鎖としてマークする（watch/chainDepth.ts）。
-        // ハンドラ実行中でなければ即 return する葉モジュール呼び出し 1 個のコスト。
-        noteEnqueueForWatchChain();
-        // `on` scan の `resetOn` を書き込みの時点で保留する（scan/eventReset.ts）。
-        // 該当する宣言がページに無ければ整数比較 1 回で抜ける。
-        noteEnqueueForScanReset(absoluteAddress);
-        const requireStartProcess = this._isQueueEmpty();
-        this._queueUpdateRecords.push({ absoluteAddress, context });
-        if (requireStartProcess) {
-            this._scheduleDrain();
-        }
-    }
-    /**
-     * 描画だけをやり直させる（#4）。値を書いたわけではないので、書き込みの着地としては扱わない —
-     * binding の適用には載せるが、drain 終了リスナー（`$scan` / `$watch` / `$streams` restart）へ渡す
-     * バッチに入れず、`$watch` の連鎖や `on` scan の reset の印も付けない。同じバッチで同じアドレスが
-     * 書き込みとしても積まれていれば、そちらが着地になる。
-     * 呼び手は要素書き込みの入れ替えの完了（proxy/methods/setByAddress.ts の notifySwappedList）。
-     */
-    enqueueRenderOnlyAddress(absoluteAddress) {
-        const requireStartProcess = this._isQueueEmpty();
-        this._queueRenderOnlyAddresses.push(absoluteAddress);
-        if (requireStartProcess) {
-            this._scheduleDrain();
-        }
-    }
-    _isQueueEmpty() {
-        return this._queueUpdateRecords.length === 0 && this._queueRenderOnlyAddresses.length === 0;
-    }
-    _scheduleDrain() {
-        // このバッチのあいだ、依存ウォークと読みが観測したリスト値は保留にする。
-        // 確定は drain の finally（list/stateListBaseline.ts の頭のコメント）。
-        beginStateListBaselineBatch();
-        queueMicrotask(() => {
-            const updateRecords = this._queueUpdateRecords;
-            const renderOnlyAddresses = this._queueRenderOnlyAddresses;
-            this._queueUpdateRecords = [];
-            this._queueRenderOnlyAddresses = [];
-            this._applyChange(updateRecords, renderOnlyAddresses);
-        });
-    }
-    /**
-     * まだ drain されていない書き込み（次のバッチ）に、この state のこのパスがあるか。
-     * drain の最中のキューは次のバッチの分だけになっている（_applyChange の前に差し替える）。
-     * `on` scan の保留 reset を、発火しない drain で捨ててよいかの判定に使う（scan/eventReset.ts）。
-     */
-    hasQueuedPath(stateElement, path) {
-        return this._queueUpdateRecords.some((record) => record.absoluteAddress.absolutePathInfo.stateElement === stateElement
-            && record.absoluteAddress.absolutePathInfo.pathInfo.path === path);
-    }
-    // テスト用に公開
-    testApplyChange(absoluteAddresses, contexts) {
-        this._applyChange(absoluteAddresses.map((absoluteAddress, index) => ({
-            absoluteAddress,
-            context: contexts?.[index] ?? null,
-        })));
-    }
-    _applyChange(updateRecords, renderOnlyAddresses = []) {
-        // Note: AbsoluteStateAddress はキャッシュされているため、
-        // 同一の (stateElement, address) は同じインスタンスとなり、
-        // Map / Set による重複排除が正しく機能する。
-        // coalescing は last-write-wins: 同じ address は最後の update の
-        // (値は state 側が既に保持) context をそのまま採用する（設計書 §4.1）。
-        // visitedEdges の合成や synthetic transaction への置換は行わない。
-        const contextByAbsoluteAddress = new Map();
-        for (const record of updateRecords) {
-            const previous = contextByAbsoluteAddress.get(record.absoluteAddress);
-            if (devtoolsSink !== null
-                && typeof previous !== "undefined" && previous !== null
-                && record.context !== null
-                && previous.transactionId !== record.context.transactionId) {
-                devtoolsSink({
-                    type: "propagation:coalesced",
-                    absoluteAddress: record.absoluteAddress,
-                    droppedTransactionId: previous.transactionId,
-                    winnerTransactionId: record.context.transactionId,
-                });
-            }
-            contextByAbsoluteAddress.set(record.absoluteAddress, record.context);
-        }
-        // drain 終了リスナーへ渡すのは書き込みの着地だけ。描画だけのアドレスは、この後で適用の対象に足す
-        // （同じアドレスの書き込みがあれば、その context のまま着地として残る）
-        const landedAddresses = new Set(contextByAbsoluteAddress.keys());
-        for (const absoluteAddress of renderOnlyAddresses) {
-            if (!contextByAbsoluteAddress.has(absoluteAddress)) {
-                contextByAbsoluteAddress.set(absoluteAddress, null);
-            }
-        }
-        const processBindings = [];
-        const propagationContextByBinding = new Map();
-        for (const [absoluteAddress, context] of contextByAbsoluteAddress) {
-            if (context !== null && context.hop >= MAX_PROPAGATION_HOPS) {
-                // hop 上限超過: この transaction の未処理 record だけを quarantine する。
-                // 既に適用した値は戻さず、updater から例外は投げない（設計書 §4 規則 6）。
-                console.error(`[@wcstack/state] propagation hop limit exceeded; update record quarantined.`, {
-                    path: absoluteAddress.absolutePathInfo.pathInfo.path,
-                    transactionId: context.transactionId,
-                    hop: context.hop,
-                    maxHops: MAX_PROPAGATION_HOPS,
-                });
-                if (devtoolsSink !== null) {
-                    devtoolsSink({
-                        type: "propagation:hop-limit",
-                        absoluteAddress,
-                        transactionId: context.transactionId,
-                        hop: context.hop,
-                    });
-                }
-                continue;
-            }
-            // peek: バインディングの無いアドレス（リスト置換で enqueue される中間
-            // アドレス等）に空エントリを生成・蓄積しない。エントリは単一 binding
-            // （通常ケース）か Set（同一アドレスに 2 本以上）のどちらか。
-            // 従来台帳 → パターン台帳（リスト行）の順で引く。
-            const entry = peekBindingsForAddress(absoluteAddress);
-            if (entry === undefined) {
-                continue;
-            }
-            if (entry instanceof Set) {
-                for (const binding of entry) {
-                    if (binding.replaceNode.isConnected === false) {
-                        // 切断されているバインディングは無視
-                        continue;
-                    }
-                    processBindings.push(binding);
-                    if (context !== null) {
-                        propagationContextByBinding.set(binding, context);
-                    }
-                }
-            }
-            else if (entry.replaceNode.isConnected !== false) {
-                processBindings.push(entry);
-                if (context !== null) {
-                    propagationContextByBinding.set(entry, context);
-                }
-            }
-        }
-        // drain 終了フック: binding 適用後に dedup 済みバッチを通知する（設計書 §3-2）。
-        // testApplyChange も同じ _applyChange を通るため、テストから同期に駆動できる。
-        // quarantine された address も state 値は適用済みのため通知対象に含める。
-        //
-        // try/finally なのは、適用側が throw しても `$watch` / `$streams` restart を
-        // 落とさないため。binding 1 本の失敗は applyChangeFromBindings が隔離するので
-        // ここへ来るのは $updatedCallback の throw（契約どおり loud に伝播させる）等に
-        // 限られるが、そのとき drain フックまで道連れにすると「機構間の順序は固定」
-        // （README の 3 層表）が黙って破れる。例外は握らない ＝ 伝播は維持する。
-        try {
-            const applyBindings = () => {
-                // context が無い場合は従来どおり 1 引数で呼ぶ（呼び出し契約の互換維持）
-                if (propagationContextByBinding.size > 0) {
-                    applyChangeFromBindings(processBindings, propagationContextByBinding);
-                }
-                else {
-                    applyChangeFromBindings(processBindings);
-                }
-            };
-            // View transition 参加点（docs/view-transition-design.md §7.2）。arbiter が
-            // 居なければ runTransition はその場で applyBindings を呼び、undefined を返す
-            // ＝ 従来と完全に同じ同期適用。SSR では遷移そのものを持たない（G5）。
-            //
-            // 適用する binding が 0 本のバッチは arbiter へ渡さない。書き込みはバインドの
-            // 有無に関わらず enqueue される（setByAddress）ため、headless なパス
-            // （`$watch` 専用・`$streams` の内部状態・リスト置換の中間アドレス）への
-            // 書き込みだけでもここへ到達する。それでページ全体をスナップショットするのは
-            // 無駄なだけでなく、既定の mode="latest" では「アニメーションすべき DOM 変更が
-            // 無い遷移」が実行中の本物の遷移をスキップしてしまう（ルート遷移が毎回途中で
-            // 切れる／active が空撃ちで振動する）。
-            if (inSsr() || processBindings.length === 0) {
-                applyBindings();
-            }
-            else {
-                const pending = runTransition("state", applyBindings);
-                if (pending !== undefined) {
-                    pending.catch(reportDeferredApplyFailure);
-                }
-            }
-        }
-        finally {
-            // バッチ中に溜めたリスト差分基準を確定する。notifyUpdateBatchListeners より先に
-            // 置くのは、リスナー（$watch / $streams restart）の中で走る書き込みが
-            // 「このバッチの結果」を基準として見るべきだから。
-            endStateListBaselineBatch();
-            notifyUpdateBatchListeners(landedAddresses);
-        }
-    }
-}
-const updater = new Updater();
-function getUpdater() {
-    return updater;
 }
 
 /**
@@ -13621,25 +14141,6 @@ function depthOfConcretePath(spec, suffix, path) {
     return depth;
 }
 
-const cacheEntryByAbsoluteStateAddress = new WeakMap();
-function getCacheEntryByAbsoluteStateAddress(address) {
-    return cacheEntryByAbsoluteStateAddress.get(address) ?? null;
-}
-function setCacheEntryByAbsoluteStateAddress(address, cacheEntry) {
-    if (cacheEntry === null) {
-        cacheEntryByAbsoluteStateAddress.delete(address);
-    }
-    else {
-        cacheEntryByAbsoluteStateAddress.set(address, cacheEntry);
-    }
-}
-function dirtyCacheEntryByAbsoluteStateAddress(address) {
-    const cacheEntry = cacheEntryByAbsoluteStateAddress.get(address);
-    if (cacheEntry) {
-        cacheEntry.dirty = true;
-    }
-}
-
 /**
  * recursion/generation.ts
  *
@@ -14582,6 +15083,8 @@ async function* readableToAsyncIterable(stream, signal) {
  * （既存の $connectedCallback と同じ扱い。正規化は drain リスナー側の restart のみ）。
  */
 function startStreams(stateElement) {
+    // 初回の宣言起動で listener を確実に載せる（bootstrapState() を経ない経路の保険。冪等）
+    installStreamRuntime();
     const entries = getStreamEntries(stateElement);
     if (entries.size === 0) {
         return;
@@ -14749,8 +15252,15 @@ function restartStreamsOnUpdateBatch(batch) {
         }
     }
 }
-// 優先度で `$watch` の後に固定する（設計書 §3-2 層 1）。import 順には依存しない。
-registerUpdateBatchListener(restartStreamsOnUpdateBatch, STREAM_LISTENER_PRIORITY);
+// drain 終了 listener の登録。優先度で `$watch` の後に固定する（設計書 §3-2 層 1）。
+// モジュール評価時には登録しない（watch/watchRuntime.ts と同じ理由）。bootstrapState() が呼ぶ（冪等）。
+let streamRuntimeInstalled = false;
+function installStreamRuntime() {
+    if (streamRuntimeInstalled)
+        return;
+    streamRuntimeInstalled = true;
+    registerUpdateBatchListener(restartStreamsOnUpdateBatch, STREAM_LISTENER_PRIORITY);
+}
 
 /**
  * watch/watchRegistry.ts
@@ -15641,6 +16151,8 @@ function commitScanPlans(plans, activeStateElements, depth) {
  * state も発火対象に載せる（docs/state-scan-design.md D11）。
  */
 function startWatch(stateElement) {
+    // 初回の宣言起動で listener を確実に載せる（bootstrapState() を経ない経路の保険。冪等）
+    installWatchRuntime();
     if (getWatchEntries(stateElement).size === 0 && getVolumeWatchEntries(stateElement).size === 0 && !hasScanDrainWork(stateElement)) {
         return;
     }
@@ -15962,8 +16474,16 @@ function readCurrentValue(state, entry, indexes) {
     // そのまま $resolve の引数として使える（list/wildcardLevel.ts の往復契約）。
     return state.$resolve(entry.path, indexes);
 }
-// 優先度で `$streams` の restart より先に固定する（設計書 §3-2 層 1）。import 順には依存しない。
-registerUpdateBatchListener(fireWatchOnUpdateBatch, WATCH_LISTENER_PRIORITY);
+// drain 終了 listener の登録。優先度で `$streams` の restart より先に固定する（設計書 §3-2 層 1）。
+// モジュール評価時には登録しない: import しただけの利用（ヘルパーだけの import・分割エントリ）に
+// 副作用を残さないため、full / auto エントリの bootstrapState() が呼ぶ（冪等）。
+let watchRuntimeInstalled = false;
+function installWatchRuntime() {
+    if (watchRuntimeInstalled)
+        return;
+    watchRuntimeInstalled = true;
+    registerUpdateBatchListener(fireWatchOnUpdateBatch, WATCH_LISTENER_PRIORITY);
+}
 
 /**
  * scan/processScanDeclaration.ts
@@ -17044,14 +17564,14 @@ class OverlayValueHandler {
                 const receiver = this.receiver;
                 if (prop === "$resolve") {
                     return (path, indexes, ...rest) => {
-                        const translated = translateInnerPath(record, path);
+                        const translated = rest.length > 0 ? translateInnerWritePath(record, path) : translateInnerPath(record, path);
                         const composed = composeMountIndexes(record, path, translated, indexes ?? [], contextIndexes);
                         return receiver.$resolve(translated, composed, ...rest);
                     };
                 }
                 const api = prop;
                 return (path, indexes, ...rest) => {
-                    const translated = translateInnerPath(record, path);
+                    const translated = api === "$setAll" ? translateInnerWritePath(record, path) : translateInnerPath(record, path);
                     const composed = composeMountIndexes(record, path, translated, indexes, contextIndexes);
                     return receiver[api](translated, composed, ...rest);
                 };
@@ -17117,7 +17637,7 @@ class OverlayValueHandler {
             target[prop] = value;
             return true;
         }
-        this.receiver[translateInnerPath(this.record, prop)] = value;
+        this.receiver[translateInnerWritePath(this.record, prop)] = value;
         return true;
     }
     has(target, prop) {
@@ -17195,11 +17715,12 @@ function createChrootDollarApi(record, api, withHostContext) {
         return (path) => call("readonly", (state) => state.$postUpdate(translateInnerPath(record, path)));
     }
     return (path, indexes, ...rest) => {
-        const translated = translateInnerPath(record, path);
+        const writes = api === "$setAll" || (api === "$resolve" && rest.length > 0);
+        const translated = writes ? translateInnerWritePath(record, path) : translateInnerPath(record, path);
         const contextIndexes = getLoopContextByNode(record.component)?.listIndex.indexes ?? [];
         // $resolve は indexes 必須の API（省略は空列と同義に倒す）。書き込み形（第 3 引数あり）は writable
         const composed = composeMountIndexes(record, path, translated, api === "$resolve" ? (indexes ?? []) : indexes, contextIndexes);
-        const mutability = api === "$setAll" || (api === "$resolve" && rest.length > 0) ? "writable" : "readonly";
+        const mutability = writes ? "writable" : "readonly";
         return call(mutability, (state) => state[api](translated, composed, ...rest));
     };
 }
@@ -17235,7 +17756,7 @@ function createPublicMountState(record) {
             }
             parent.createState("writable", (state) => {
                 withHostContext(state, () => {
-                    state[prop[0] === "$" ? prop : translateInnerPath(record, prop)] = value;
+                    state[prop[0] === "$" ? prop : translateInnerWritePath(record, prop)] = value;
                 });
             });
             return true;
@@ -18241,6 +18762,19 @@ function recordDeclaredPrevValue(stateElement, path, absAddress, oldValue, hasOl
 // binding 経由の書き込みは呼び出し元の dynamic scope から context を引き継ぎ、
 // binding 外からの API update は新しい transaction を開始する（設計書 §4 規則 1）。
 // 依存 walk で enqueue される派生アドレスも同じ書き込みの因果に属する。
+// 鍵付き購読（`$eq` 系、dependency/keyedDependency.ts）への通知。同値ガードが読んだ旧値と
+// 新値の鍵に登録された行だけを dirty 化して enqueue する。購読の無いパスは Map 参照 1 回で抜ける
+function notifyKeyed(stateElement, path, hasOldValue, oldValue, value) {
+    if (!hasKeyedDependents(stateElement, path)) {
+        return;
+    }
+    const updater = getUpdater();
+    const context = config.enablePropagationContext ? (getCurrentPropagationContext() ?? null) : null;
+    for (const absAddress of keyedDependents(stateElement, path, hasOldValue, oldValue, value)) {
+        dirtyCacheEntryByAbsoluteStateAddress(absAddress);
+        updater.enqueueAbsoluteAddress(absAddress, context);
+    }
+}
 function notifyWrite(address, absAddress, receiver, handler, keyedMergePath, cacheable, listExpansion = "diff") {
     const propagationContext = config.enablePropagationContext
         ? (getCurrentPropagationContext() ?? beginPropagationTransaction(-1))
@@ -18580,6 +19114,7 @@ function setByAddressCore(target, address, value, receiver, handler, keyedMergeP
                 devOldValue = oldValue;
                 devHasOldValue = true;
             }
+            notifyKeyed(stateElement, path, devHasOldValue, devOldValue, value);
             const cacheable = isCacheable(stateElement, address);
             const absAddress = liftAddress(stateElement, address);
             if (devtoolsSink !== null) {
@@ -18643,6 +19178,7 @@ function setByAddressCore(target, address, value, receiver, handler, keyedMergeP
         devOldValue = oldValue;
         devHasOldValue = true;
     }
+    notifyKeyed(stateElement, path, devHasOldValue, devOldValue, value);
     // --- end same-value guard ---
     const isSwappable = stateElement.elementPaths.has(address.pathInfo.path);
     const cacheable = isCacheable(stateElement, address);
@@ -18696,7 +19232,8 @@ function setByAddressCore(target, address, value, receiver, handler, keyedMergeP
  * - 柔軟なバインディングやAPI経由での利用が可能
  */
 function resolve(target, _prop, receiver, handler) {
-    return (path, indexes, value) => {
+    return (path, indexes, ...rest) => {
+        const value = rest[0];
         const pathInfo = getPathInfo(path);
         if (handler.addressStackLength > 0) {
             const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
@@ -18721,9 +19258,17 @@ function resolve(target, _prop, receiver, handler) {
         const address = createStateAddress(pathInfo, listIndex);
         const hasSetValue = typeof value !== "undefined";
         if (!hasSetValue) {
+            if (rest.length > 0) {
+                // 3.0 は引数の個数で読み書きを分ける（要件 B7）— 明示した undefined は書き込みになる
+                warnV3Migration(`$resolve("${path}", indexes, undefined): 3.0 writes undefined. Pass two arguments to read.`);
+            }
             return getByAddress(target, address, receiver, handler);
         }
         else {
+            if (handler.mutability === "readonly") {
+                // 3.0 は readonly のプロキシからの書き込みを拒否する（要件 B6）
+                warnV3Migration(READONLY_WRITE);
+            }
             setByAddress(target, address, value, receiver, handler);
         }
     };
@@ -19295,6 +19840,10 @@ function setAllRecursive(target, receiver, handler, path, indexes, value, option
  */
 function setAll(target, _prop, receiver, handler) {
     return (path, indexes, value, options) => {
+        if (handler.mutability === "readonly") {
+            // 3.0 は readonly のプロキシからの書き込みを拒否する（要件 B6）
+            warnV3Migration(READONLY_WRITE);
+        }
         // オーサリング層の `**`。書き側は `[]` のブロードキャストだけを受け付ける
         // （形の検査は列挙より前に行い、1 件も書かないことを保証する。設計 §7-3）。
         // 宣言の無い state は boolean 判定 1 個で抜ける。
@@ -19717,13 +20266,95 @@ function get(target, prop, receiver, handler) {
                     };
                 }
                 case "$resolve": {
-                    return (path, indexes, value) => {
-                        return resolve(target, prop, receiver, handler)(path, indexes, value);
+                    return (path, indexes, ...value) => {
+                        return resolve(target, prop, receiver, handler)(path, indexes, ...value);
                     };
                 }
                 case "$trackDependency": {
                     return (path) => {
                         return trackDependency(target, prop, receiver, handler)(path);
+                    };
+                }
+                case "$eq": {
+                    // 鍵付き購読（dependency/keyedDependency.ts）: `path` を依存に張らず読み、評価中の
+                    // getter がリスト行のものならその行を `key` の下に登録する。`path` への書き込みは
+                    // 旧値・新値の鍵の行だけを再評価する（選択のような「1 行だけ真」の getter 向け）
+                    return (path, key) => {
+                        // getter の外（メソッド・コールバック）ではアドレススタックが空: 比較だけ返す
+                        const lastAddress = handler.addressStackLength > 0 ? handler.lastAddressStack : null;
+                        handler.beginUntrack();
+                        let current;
+                        try {
+                            current = receiver[path];
+                        }
+                        finally {
+                            handler.endUntrack();
+                        }
+                        if (lastAddress !== null && handler.stateElement.getterPaths.has(lastAddress.pathInfo.path)) {
+                            registerKeyedDependency(handler.stateElement, path, key, liftAddress(handler.stateElement, lastAddress), current);
+                        }
+                        return Object.is(current, key);
+                    };
+                }
+                case "$eqPath": {
+                    // `$eq` の鍵を keyPath から依存を張らずに読む形（dependency/keyedDependency.ts）。
+                    // 追跡付きで行 id を読むと動的辺がリスト置換で全行に展開されるので、ここで抑止する
+                    return (path, keyPath) => {
+                        const lastAddress = handler.addressStackLength > 0 ? handler.lastAddressStack : null;
+                        handler.beginUntrack();
+                        let current;
+                        let key;
+                        try {
+                            current = receiver[path];
+                            key = receiver[keyPath];
+                        }
+                        finally {
+                            handler.endUntrack();
+                        }
+                        if (lastAddress !== null && handler.stateElement.getterPaths.has(lastAddress.pathInfo.path)) {
+                            registerKeyedDependency(handler.stateElement, path, key, liftAddress(handler.stateElement, lastAddress), current);
+                        }
+                        return Object.is(current, key);
+                    };
+                }
+                case "$eqIndex": {
+                    // `$eq` の鍵を評価中の行の index（`$1` = level 1）にする形。`$1` の読み取りと違い
+                    // getter を index 依存には記録しない: 行の移動はリスト差分が鍵を付け替える
+                    // （dependency/keyedDependency.ts の rekeyIndexSubscriptions）
+                    return (path, level = 1) => {
+                        const lastAddress = handler.addressStackLength > 0 ? handler.lastAddressStack : null;
+                        if (lastAddress === null || lastAddress.listIndex === null) {
+                            raiseError(`$eqIndex("${path}") needs a list row scope.`);
+                        }
+                        const levelListIndex = listIndexAtWildcard(lastAddress.listIndex, level - 1, lastAddress.pathInfo.wildcardCount);
+                        if (levelListIndex === null) {
+                            raiseError(`$eqIndex("${path}", ${level}): no list index at that level.`);
+                        }
+                        // 最内段（getter 自身の行の段）はリスト単位の監視で O(1)、外側の段は行ごとの購読
+                        const innermost = level === lastAddress.pathInfo.wildcardCount;
+                        handler.beginUntrack();
+                        let current;
+                        let listValue;
+                        try {
+                            current = receiver[path];
+                            if (innermost) {
+                                listValue = receiver[lastAddress.pathInfo.wildcardParentPaths[level - 1]];
+                            }
+                        }
+                        finally {
+                            handler.endUntrack();
+                        }
+                        if (handler.stateElement.getterPaths.has(lastAddress.pathInfo.path)) {
+                            // 描画済みの行の親リストは必ず台帳（listIndexesByList）を持つ
+                            const indexes = innermost ? getListIndexesByList(listValue) : null;
+                            if (indexes !== null) {
+                                registerIndexWatcher(handler.stateElement, path, lastAddress.pathInfo, indexes, current);
+                            }
+                            else {
+                                registerIndexKeyedDependency(handler.stateElement, path, levelListIndex, liftAddress(handler.stateElement, lastAddress), current);
+                            }
+                        }
+                        return Object.is(current, levelListIndex.index);
                     };
                 }
                 case "$untrackDependency": {
@@ -19869,6 +20500,9 @@ class StateHandler {
         }
         this._stateElement = stateElement;
         this._mutability = mutability;
+    }
+    get mutability() {
+        return this._mutability;
     }
     get stateElement() {
         return this._stateElement;
@@ -20175,7 +20809,8 @@ function warnOwnKeyShadowsForMount(record) {
         const partialOuter = partialOuterByKey.get(key);
         if (typeof partialOuter !== "undefined") {
             report(`${tag}|${stateProp}|${key}|root`, `<${tag}>.${stateProp}.${key} is private and hides the mounted entry "${stateProp}.${key}: ${partialOuter}" (the host value no longer reaches it). ` +
-                `Remove the default to read the tree, or rename it to keep it private.`);
+                `Remove the default to read the tree, or rename it to keep it private. ` +
+                `[wcs/v3-migration] In 3.0 the mount wins over the default.`);
             continue;
         }
         if (record.rootEntry === null) {
@@ -20401,7 +21036,8 @@ function processVolumeDeclarations(rootStateElement, mountPath, volumeState) {
     }
     // $commandTokens / $eventTokens / $on も未対応（トークンはパスではなく要素の面 —
     // ルートに宣言する）。無言に捨てないが、接ぎ木自体は成立させる（warn 止まり）
-    for (const name of ["$commandTokens", "$eventTokens", "$on"]) {
+    // $errorCallback もルート専用（以前は無言で無視していた — 3.0 と同じく名指しで知らせる）
+    for (const name of ["$commandTokens", "$eventTokens", "$on", "$errorCallback"]) {
         if (typeof volumeState[name] !== "undefined") {
             console.warn(`[@wcstack/state] volume "${mountPath}" declares ${name}, which volumes do not support. ` +
                 `Declare it on the root state instead.`);
@@ -20544,12 +21180,21 @@ function graftOrQueueVolume(rootNode, rootStateElement, mountPath, volumeState, 
         graftIsolated(rootStateElement, request);
         return;
     }
+    // 最初の接ぎ木要求で graft の実体を確実に注入する（bootstrapState() を経ない経路の保険。冪等）
+    installVolumeGraft();
     queuePendingVolume(rootNode, request);
 }
 // stateElementByName の drainPendingVolumes は import 循環（updater まで届く）を避けて
-// 軽量な volumeShared に住む — graft の実体はここで注入する（State.ts が本モジュールを
-// 必ず import するため、ルート登録の前には確実に配線されている）
-setVolumeGraftHandler(graftIsolated);
+// 軽量な volumeShared に住む — graft の実体はここで注入する。モジュール評価時には注入せず、
+// bootstrapState() が registerComponents() より前に呼ぶ（冪等）ので、ルート登録の前には
+// 確実に配線されている。
+let volumeGraftInstalled = false;
+function installVolumeGraft() {
+    if (volumeGraftInstalled)
+        return;
+    volumeGraftInstalled = true;
+    setVolumeGraftHandler(graftIsolated);
+}
 
 /**
  * ホストが `<stateProp>: path`（1 セグメント ＝ 丸ごとマウント・ルート規則）を
@@ -22312,6 +22957,11 @@ function bootstrapState(config, registry) {
     if (resolved) {
         setConfig(resolved);
     }
+    // 機能の登録（docs/state-next-major-wiring-design.md S2）。モジュール評価時の副作用ではなく
+    // ここで明示的に、要素の定義（connectedCallback が走り得る）より前に行う。いずれも冪等。
+    installWatchRuntime();
+    installStreamRuntime();
+    installVolumeGraft();
     registerComponents(registry);
     // binder プロトコルの提供（docs/binder-protocol-design.md）。router が後から
     // 差し込むノードをバインドできるようにする。登録は冪等。
