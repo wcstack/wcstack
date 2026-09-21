@@ -18,13 +18,20 @@
  *     （syncListIndexes → `rekeyIndexSubscriptions`）に鍵も付け替える。移動した行は
  *     「`path` の最後の値が旧 index か新 index に等しい」ときだけ enqueue する。
  *   どちらも 1 行削除で再評価されるのは高々 2 行。
- * - `path` の最後の値は登録時と書き込み時に控える（差分側の判定に使う）。
+ * - `path` の最後の値は登録時と書き込み時に控える（差分側の判定に使う）。書き込みが旧値を
+ *   読めなかったとき（オブジェクトの書き込みは同値ガードを通らない）は、これを旧い鍵として使う
+ *   — 読めないまま新しい鍵の行だけを再評価すると、前に選ばれていた行が真のまま残る。
+ * - `path` の祖先への書き込み（`$eq("sel.id")` に対する `sel = {…}`）は `path` への書き込みを
+ *   経ないので、祖先 → 配下の鍵付きパスの逆引きを持ち、旧い親と新しい親から鍵を辿って知らせる
+ *   （`keyedDescendantDependents`）。
  *
  * 不変条件: 同じ (アドレス, path) の購読は 1 つ。`keyByPathByAddress` が現在の鍵の正本で、
  * 台帳（`byPath`）とは常に一致する。退役した行のエントリは台帳・逆引きの両方から同時に消える。
  * 制約: Map の鍵比較は SameValueZero（`-0` と `+0` は同じ鍵、`NaN` 同士は同じ鍵）。
  */
 import { IAbsoluteStateAddress, IPathInfo } from "../address/types";
+import { getPathInfo } from "../address/PathInfo";
+import { WILDCARD } from "../define";
 import { createStateAddress } from "../address/StateAddress";
 import { liftAddress } from "../address/liftAddress";
 import { isRetiredListIndex } from "../list/listIndexesByList";
@@ -38,6 +45,8 @@ interface IElementLedger {
   readonly byPath: Map<string, KeyMap>;
   /** `path` の最後に見た値（登録時か書き込み時）。差分側の鍵付け替えが読む */
   readonly lastValue: Map<string, unknown>;
+  /** 祖先の逆引きに載せ終えた path */
+  readonly recorded: Set<string>;
 }
 interface IEntry {
   readonly stateElement: IStateElement;
@@ -71,12 +80,38 @@ interface IIndexWatcher {
 }
 const watchersByElement = new WeakMap<IStateElement, Map<string, Set<IIndexWatcher>>>();
 const watchersByIndexes = new WeakMap<IListIndex[], IIndexWatcher[]>();
+// 祖先パス → その配下の鍵付きパス（祖先への書き込みを配下の鍵付き購読へ届ける）
+const descendantsByElement = new WeakMap<IStateElement, Map<string, Set<string>>>();
 const EMPTY: IAbsoluteStateAddress[] = [];
+
+/** `path` の祖先を逆引きに載せる（同じ path は 1 回だけ）。祖先の無いトップレベルの path は載せない */
+function recordAncestors(stateElement: IStateElement, path: string): void {
+  const ledger = ledgerOf(stateElement);
+  if (ledger.recorded.has(path)) {
+    return;
+  }
+  ledger.recorded.add(path);
+  const cumulativePaths = getPathInfo(path).cumulativePaths;
+  if (cumulativePaths.length < 2) {
+    return;
+  }
+  let byAncestor = descendantsByElement.get(stateElement);
+  if (typeof byAncestor === "undefined") {
+    descendantsByElement.set(stateElement, byAncestor = new Map());
+  }
+  for (let i = 0; i < cumulativePaths.length - 1; i++) {
+    let descendants = byAncestor.get(cumulativePaths[i]);
+    if (typeof descendants === "undefined") {
+      byAncestor.set(cumulativePaths[i], descendants = new Set());
+    }
+    descendants.add(path);
+  }
+}
 
 function ledgerOf(stateElement: IStateElement): IElementLedger {
   let ledger = ledgerByElement.get(stateElement);
   if (typeof ledger === "undefined") {
-    ledgerByElement.set(stateElement, ledger = { byPath: new Map(), lastValue: new Map() });
+    ledgerByElement.set(stateElement, ledger = { byPath: new Map(), lastValue: new Map(), recorded: new Set() });
   }
   return ledger;
 }
@@ -97,6 +132,15 @@ function addToKey(keyMap: KeyMap, key: unknown, absAddress: IAbsoluteStateAddres
   set.add(absAddress);
 }
 
+/** 鍵から行を外し、空になった鍵は Map から消す（オブジェクトの鍵を行の退役後まで握らない） */
+function removeFromKey(keyMap: KeyMap, key: unknown, absAddress: IAbsoluteStateAddress): void {
+  const set = keyMap.get(key)!;
+  set.delete(absAddress);
+  if (set.size === 0) {
+    keyMap.delete(key);
+  }
+}
+
 /** 台帳へ登録する。既に同じ (アドレス, path) が登録済みなら鍵を移すだけで、false を返す */
 function subscribe(ledger: IElementLedger, path: string, key: unknown, absAddress: IAbsoluteStateAddress): boolean {
   const keyMap = keyMapOf(ledger, path);
@@ -107,7 +151,7 @@ function subscribe(ledger: IElementLedger, path: string, key: unknown, absAddres
   if (previous.has(path)) {
     const oldKey = previous.get(path);
     if (!Object.is(oldKey, key)) {
-      keyMap.get(oldKey)!.delete(absAddress);
+      removeFromKey(keyMap, oldKey, absAddress);
       previous.set(path, key);
       addToKey(keyMap, key, absAddress);
     }
@@ -151,6 +195,7 @@ export function registerKeyedDependency(
 ): void {
   anyRegistered = true;
   const ledger = ledgerOf(stateElement);
+  recordAncestors(stateElement, path);
   const isNew = subscribe(ledger, path, key, absAddress);
   record(ledger, path, current, absAddress, isNew, { stateElement, path, absAddress, levelListIndex: null });
 }
@@ -165,6 +210,7 @@ export function registerIndexKeyedDependency(
 ): void {
   anyRegistered = true;
   const ledger = ledgerOf(stateElement);
+  recordAncestors(stateElement, path);
   const isNew = subscribe(ledger, path, levelListIndex.index, absAddress);
   record(ledger, path, current, absAddress, isNew, { stateElement, path, absAddress, levelListIndex });
 }
@@ -184,6 +230,7 @@ export function registerIndexWatcher(
 ): void {
   anyRegistered = true;
   ledgerOf(stateElement).lastValue.set(path, current);
+  recordAncestors(stateElement, path);
   let byPath = watchersByElement.get(stateElement);
   if (typeof byPath === "undefined") {
     watchersByElement.set(stateElement, byPath = new Map());
@@ -271,6 +318,7 @@ function collect(set: Set<IAbsoluteStateAddress> | undefined, out: IAbsoluteStat
 
 /**
  * `path` への書き込み: 旧値（同値ガードが読めたとき）と新値の鍵に登録された行アドレス。
+ * 控えていた最後の値が旧値と違う（旧値を読めなかった）ときは、その鍵の行も加える。
  * 新値を `path` の最後の値として控える。呼び出し側は hasKeyedDependents で門を通す。
  */
 export function keyedDependents(
@@ -286,12 +334,19 @@ export function keyedDependents(
   if (typeof ledger === "undefined" || (typeof keyMap === "undefined" && typeof watchers === "undefined")) {
     return EMPTY;
   }
+  const hasLast = ledger.lastValue.has(path);
+  const last = ledger.lastValue.get(path);
   ledger.lastValue.set(path, newKey);
   const out: IAbsoluteStateAddress[] = [];
   const newDiffers = !hasOldKey || !Object.is(oldKey, newKey);
+  // 行が最後に見た値。旧値を読めなかったときに真のまま残る行はここにいる
+  const lastDiffers = hasLast && (!hasOldKey || !Object.is(last, oldKey)) && !Object.is(last, newKey);
   if (typeof keyMap !== "undefined") {
     if (hasOldKey) {
       collect(keyMap.get(oldKey), out);
+    }
+    if (lastDiffers) {
+      collect(keyMap.get(last), out);
     }
     if (newDiffers) {
       collect(keyMap.get(newKey), out);
@@ -302,12 +357,75 @@ export function keyedDependents(
       if (hasOldKey) {
         watchedRowsAt(watcher, oldKey, out);
       }
+      if (lastDiffers) {
+        watchedRowsAt(watcher, last, out);
+      }
       if (newDiffers) {
         watchedRowsAt(watcher, newKey, out);
       }
     }
   }
   return out;
+}
+
+export function hasKeyedDescendants(stateElement: IStateElement, path: string): boolean {
+  return descendantsByElement.get(stateElement)?.has(path) === true;
+}
+
+/** `value` から `segments` を辿った値（途中がオブジェクトでなければ undefined） */
+function valueAt(value: unknown, segments: readonly string[]): unknown {
+  let current = value;
+  for (const segment of segments) {
+    if (typeof current !== "object" || current === null) {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return current;
+}
+
+/**
+ * `path`（鍵付きパスの祖先）への書き込み: 配下の鍵付きパスごとに、旧い親と新しい親から鍵を辿り、
+ * その鍵の行を返す（`keyedDependents` と同じ扱い）。残りのパスにワイルドカードがあると行ごとの鍵が
+ * 辿れないので、そのパスに購読している行をすべて返す。呼び出し側は hasKeyedDescendants で門を通す。
+ */
+export function keyedDescendantDependents(
+  stateElement: IStateElement,
+  path: string,
+  oldValue: unknown,
+  newValue: unknown,
+): IAbsoluteStateAddress[] {
+  const depth = getPathInfo(path).segments.length;
+  const out: IAbsoluteStateAddress[] = [];
+  for (const descendant of descendantsByElement.get(stateElement)!.get(path)!) {
+    const rest = getPathInfo(descendant).segments.slice(depth);
+    if (rest.includes(WILDCARD)) {
+      allDependents(stateElement, descendant, out);
+      continue;
+    }
+    for (const address of keyedDependents(stateElement, descendant, true, valueAt(oldValue, rest), valueAt(newValue, rest))) {
+      out.push(address);
+    }
+  }
+  return out;
+}
+
+/** `path` に鍵付きで購読しているすべての行 */
+function allDependents(stateElement: IStateElement, path: string, out: IAbsoluteStateAddress[]): void {
+  const keyMap = ledgerByElement.get(stateElement)!.byPath.get(path);
+  if (typeof keyMap !== "undefined") {
+    for (const set of keyMap.values()) {
+      collect(set, out);
+    }
+  }
+  const watchers = watchersByElement.get(stateElement)?.get(path);
+  if (typeof watchers !== "undefined") {
+    for (const watcher of watchers) {
+      for (let index = 0; index < watcher.indexes.length; index++) {
+        watchedRowsAt(watcher, index, out);
+      }
+    }
+  }
 }
 
 function removeIndexEntry(entry: IEntry): void {
@@ -331,7 +449,7 @@ export function dropKeyedSubscriptionsByListIndex(listIndex: IListIndex): void {
     const keys = keyByPathByAddress.get(absAddress)!;
     const key = keys.get(path);
     keys.delete(path);
-    ledgerByElement.get(stateElement)!.byPath.get(path)!.get(key)!.delete(absAddress);
+    removeFromKey(ledgerByElement.get(stateElement)!.byPath.get(path)!, key, absAddress);
     if (entry.levelListIndex !== null) {
       removeIndexEntry(entry);
     }
@@ -355,7 +473,7 @@ export function rekeyIndexSubscriptions(listIndex: IListIndex, oldIndex: number,
   for (const { stateElement, path, absAddress } of entries) {
     const ledger = ledgerByElement.get(stateElement)!;
     const keyMap = ledger.byPath.get(path)!;
-    keyMap.get(oldIndex)!.delete(absAddress);
+    removeFromKey(keyMap, oldIndex, absAddress);
     addToKey(keyMap, newIndex, absAddress);
     keyByPathByAddress.get(absAddress)!.set(path, newIndex);
     const last = ledger.lastValue.get(path);

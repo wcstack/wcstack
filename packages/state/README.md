@@ -369,6 +369,8 @@ Multiple bindings separated by `;`:
 | `checkbox` | Checkbox group binding to array (two-way) |
 | `onclick`, `on*` | Event handler binding |
 
+`undefined` skips the write: the element keeps what it showed, and in a reused list row that is the **previous row's** text. Return `""` or `null` for "no value" (3.0 empties display properties on `undefined` — [Preparing for 3.0](#preparing-for-30-wcsv3-migration)).
+
 ### Modifiers
 
 | Modifier | Description |
@@ -1021,6 +1023,13 @@ export default {
 
 Rules: the three calls only subscribe when evaluated inside a getter under a list row (elsewhere they just return the comparison); a row's subscription is dropped when the list diff removes the row; keys compare with `Object.is` except that Map semantics treat `+0`/`-0` and `NaN`/`NaN` as equal. `$eqPath` reads the key without a dependency, so a row whose key changes in place is not re-evaluated by that change — use it for identities that do not change (ids), and `$eq` with a tracked read when the key itself is live.
 
+What reaches the rows:
+
+- **A write to `path`** — of any value, objects included (`this.selected = row` with `$eq("selected", this["items.*"])`): the row that was selected and the row that becomes selected.
+- **A write to an object above `path`** — `this.sel = { id: 2 }` for `$eq("sel.id", …)`: the same two rows, keyed by the value `path` had under the old object and has under the new one.
+- **A `path` that is a getter, or sits under one** (`$eq("current.id", …)` with `get current()`): its value changes without a write to it, so the calls fall back to an ordinary tracked read. The selection stays correct, but a change re-evaluates every row, as without the keyed form. Point `path` at the written state (`selectedId`) to keep the two-row cost.
+- **No type conversion:** `"2"` does not match the id `2`. An `<input>` or `<select>` writes strings, so store ids as strings, bind `valueAsNumber` on a number input, or convert in the handler.
+
 ### Loop Index Variables (`$1`, `$2`, ...)
 
 Inside getters and event handlers, `this.$1`, `this.$2`, etc. provide the current loop iteration index (0-based value, 1-based naming):
@@ -1413,6 +1422,8 @@ export default {
 | `le(n)` | Less than or equal | `count\|le(10)` |
 | `gt(n)` | Greater than | `count\|gt(0)` |
 | `ge(n)` | Greater than or equal | `count\|ge(0)` |
+
+`eq` / `ne` compare a number value numerically and anything else with the argument **as text**, so a boolean never equals `eq(true)` in 2.x: `done|eq(true)` is always `false`. Bind the boolean itself (`class.done: .done`) or use `not`. 3.0 reads an unquoted `true` / `false` / `null` as the typed value ([Preparing for 3.0](#preparing-for-30-wcsv3-migration)).
 
 ### Arithmetic
 

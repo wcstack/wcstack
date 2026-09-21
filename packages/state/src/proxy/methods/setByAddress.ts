@@ -39,7 +39,7 @@ import { hasByAddress } from "./hasByAddress";
 import { markSwapBaselineList } from "../../list/swapBaselineList";
 import { getSwapInfoByList, setSwapInfoByList } from "./swapInfo";
 import { walkDependency } from "../../dependency/walkDependency";
-import { hasKeyedDependents, keyedDependents } from "../../dependency/keyedDependency";
+import { hasKeyedDependents, hasKeyedDescendants, keyedDependents, keyedDescendantDependents } from "../../dependency/keyedDependency";
 import { dirtyCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
 import { config } from "../../config";
 import { devtoolsSink } from "../../platform/devtoolsSink";
@@ -80,16 +80,33 @@ function recordDeclaredPrevValue(
 // 依存 walk で enqueue される派生アドレスも同じ書き込みの因果に属する。
 
 // 鍵付き購読（`$eq` 系、dependency/keyedDependency.ts）への通知。同値ガードが読んだ旧値と
-// 新値の鍵に登録された行だけを dirty 化して enqueue する。購読の無いパスは Map 参照 1 回で抜ける
-function notifyKeyed(stateElement: IStateHandler["stateElement"], path: string, hasOldValue: boolean, oldValue: unknown, value: unknown): void {
-  if (!hasKeyedDependents(stateElement, path)) {
+// 新値の鍵に登録された行だけを dirty 化して enqueue する。購読の無いパスは Map 参照 2 回で抜ける。
+// 祖先への書き込み（`$eq("sel.id")` に対する `sel = {…}`）は配下の鍵付きパスへ知らせる。その旧値は
+// 同値ガードが読めなかったときだけ `readOld` で書き込み前に読む
+function notifyKeyed(
+  stateElement: IStateHandler["stateElement"],
+  path: string,
+  hasOldValue: boolean,
+  oldValue: unknown,
+  value: unknown,
+  readOld: () => unknown,
+): void {
+  const direct = hasKeyedDependents(stateElement, path);
+  const descendants = hasKeyedDescendants(stateElement, path);
+  if (!direct && !descendants) {
     return;
   }
   const updater = getUpdater();
   const context = config.enablePropagationContext ? (getCurrentPropagationContext() ?? null) : null;
-  for (const absAddress of keyedDependents(stateElement, path, hasOldValue, oldValue, value)) {
+  const enqueue = (absAddress: IAbsoluteStateAddress): void => {
     dirtyCacheEntryByAbsoluteStateAddress(absAddress);
     updater.enqueueAbsoluteAddress(absAddress, context);
+  };
+  if (direct) {
+    keyedDependents(stateElement, path, hasOldValue, oldValue, value).forEach(enqueue);
+  }
+  if (descendants) {
+    keyedDescendantDependents(stateElement, path, hasOldValue ? oldValue : readOld(), value).forEach(enqueue);
   }
 }
 
@@ -527,7 +544,9 @@ function setByAddressCore(
         devOldValue = oldValue;
         devHasOldValue = true;
       }
-      notifyKeyed(stateElement, path, devHasOldValue, devOldValue, value);
+      // key が undefined（listIndex の無い不正アドレス）なら読みは undefined — 書き込みが下で投げる
+      notifyKeyed(stateElement, path, devHasOldValue, devOldValue, value,
+        () => (parentValue as Record<PropertyKey, unknown>)[key as PropertyKey]);
       const cacheable = isCacheable(stateElement, address);
       const absAddress = liftAddress(stateElement, address);
       if (devtoolsSink !== null) {
@@ -594,7 +613,7 @@ function setByAddressCore(
     devOldValue = oldValue;
     devHasOldValue = true;
   }
-  notifyKeyed(stateElement, path, devHasOldValue, devOldValue, value);
+  notifyKeyed(stateElement, path, devHasOldValue, devOldValue, value, () => getByAddress(target, address, receiver, handler));
   // --- end same-value guard ---
   const isSwappable = stateElement.elementPaths.has(address.pathInfo.path);
   const cacheable = isCacheable(stateElement, address);
