@@ -174,9 +174,9 @@ major の器に載せるか、独立して進めるかを §6 で決める。
 ## 7. 移行と非推奨の運用
 
 - [README の非推奨運用](../README.ja.md#バージョニングと破壊的変更)に従い、採否が決まった破壊的変更は **3.0 の前に 2.6.x で予告する**（lint ルールと／またはランタイム通知＋置き換え先の提示）。v1.x が `wcs/named-state-deprecated` で名前付き state を予告した前例に倣う。
-- `docs/migration-v3.md` と `.ja.md` を [migration-v2.ja.md](./migration-v2.ja.md) と同じ構成で用意する。
+- `docs/migration-v3.md` と `.ja.md` を [migration-v2.ja.md](./migration-v2.ja.md) と同じ構成で用意する。**済み（2026-09-22）**: [migration-v3.ja.md](./migration-v3.ja.md)。3 つの表（文法・値と書き込み・ツール向けの面）の各行に、2.6.x の `wcs/v3-migration` が予告するかを書いた。ルートの README・CHANGELOG の冒頭・翻訳状況表からリンクした。
 - 追随先: 両 README、manifest スキーマ、lint、`packages/vscode-wcs`、DevTools、SSR、別リポジトリの `wcstack-app` スキル。
-- `docs/README.md` / `.ja.md` の翻訳状況表に、この文書と監査を登録する。
+- `docs/README.md` / `.ja.md` の翻訳状況表に、この文書と監査を登録する。**済み**（移行ガイドも登録した）。
 
 ## 8. 受け入れ基準
 

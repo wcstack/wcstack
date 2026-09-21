@@ -175,9 +175,9 @@ N1–N4 and N6 can ship in 2.6.x, which is also where the deprecation notices of
 ## 7. Migration and deprecation
 
 - Following the README's deprecation practice, every adopted breaking change is **announced in 2.6.x before 3.0** — a lint rule and/or a runtime notice naming the replacement. v1.x flagged named state with `wcs/named-state-deprecated` before v2.0 removed it; the same shape applies.
-- Write `docs/migration-v3.md` and `.ja.md` with the structure of [migration-v2.md](./migration-v2.md).
+- Write `docs/migration-v3.md` and `.ja.md` with the structure of [migration-v2.md](./migration-v2.md). **Done (2026-09-22):** [migration-v3.md](./migration-v3.md) — the three tables (syntax / values and writes / tooling surfaces) say for each row whether 2.6.x's `wcs/v3-migration` announces it; linked from the root READMEs, the CHANGELOG header and the translation table.
 - Followers: both READMEs, the manifest schema, lint, `packages/vscode-wcs`, DevTools, SSR, and the separate `wcstack-app` skill repository.
-- Register this document and the audit in the translation table in `docs/README.md` / `.ja.md`.
+- Register this document and the audit in the translation table in `docs/README.md` / `.ja.md`. **Done** (the migration guide as well).
 
 ## 8. Acceptance criteria
 

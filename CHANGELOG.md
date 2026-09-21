@@ -2,7 +2,7 @@
 
 All notable changes to the wcstack packages are documented here. All published `@wcstack/*` packages and the `wcstack` entry package share one version and are released in lockstep; a release bumps every package whether or not it changed. The VS Code extension (`packages/vscode-wcs`) is versioned separately and keeps [its own changelog](./packages/vscode-wcs/CHANGELOG.md).
 
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). What counts as a breaking change is defined in the root README under [Versioning and breaking changes](./README.md#versioning-and-breaking-changes). Upgrading from 1.x: read the [v1 → v2 migration guide](./docs/migration-v2.md) first.
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). What counts as a breaking change is defined in the root README under [Versioning and breaking changes](./README.md#versioning-and-breaking-changes). Upgrading from 2.x: read the [v2 → v3 migration guide](./docs/migration-v3.md) first; from 1.x, the [v1 → v2 migration guide](./docs/migration-v2.md).
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 

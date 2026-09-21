@@ -506,7 +506,7 @@ All published packages share one version and are released in lockstep — a rele
 
 **Deprecation practice**: where feasible, a surface is flagged for at least one minor release (a lint rule and/or a runtime notice pointing at the replacement) before the next major removes it — v1.x flagged named state with `wcs/named-state-deprecated` before v2.0 removed `name=` / `@name`.
 
-Release history: [CHANGELOG.md](./CHANGELOG.md). Upgrading from 1.x: [docs/migration-v2.md](./docs/migration-v2.md).
+Release history: [CHANGELOG.md](./CHANGELOG.md). Upgrading from 2.x: [docs/migration-v3.md](./docs/migration-v3.md). Upgrading from 1.x: [docs/migration-v2.md](./docs/migration-v2.md).
 
 ## License
 
