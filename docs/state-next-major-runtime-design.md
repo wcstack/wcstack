@@ -49,7 +49,7 @@ Where the 28 µs of a row go (survey §10.7, §10.11, §10.13):
 | R1 | The clear's allocation (index loops, per-parent skip counts) | clear 22–72 → 18–20 ms, no scavenge inside the window | **2.6.x (ported)** | none |
 | R2 | Plan-level initial render | reads 7 → 4 and applies 3 → 1 per row, activation phase −34 %, warm 1,000 rows −34 % (§4-1) | **3.0 (implemented, §4-1)** | `applyValueToBinding` exported internally |
 | R3 | Row record + one session per list | heap −18 % (3,616 → 2,953 B/row), time unchanged (§5-1) | **3.0 (implemented, §5-1)** | `BindingSession`'s core (`disposeBindings`, `destroyRow`, `isRowSession`, a composed `getRecord`) |
-| R4 | Unify `BindingSession`'s two paths | core −2.9 KB minified (wiring design §5) | 3.0 | the plan path and the general path become one |
+| R4 | Unify `BindingSession`'s two paths | **premise invalidated** (§6-1); only the ledger entry / exit was folded, −143 B minified | **3.0 (implemented, §6-1)** | internal only |
 | R5 | Cold candidates (T4 clone / node-path forms, pool pre-warming) | unmeasured (8 ms of cold is the target) | undecided | `resolveNodePath`'s shape, an opt-in attribute |
 
 R2 before R3 follows the order the measurements were stacked in (§10.13 → §10.14). R4 comes after R3 has already touched `BindingSession`, in the same vehicle.
@@ -106,6 +106,16 @@ Both prototypes (the row record of survey §10.7 and the shared session of §10.
 - **The idea**: once R3 has given plan rows and non-plan rows the same bookkeeping shape, the two paths can become one. The estimate is core −2.9 KB minified (wiring design §5).
 - **Order**: R3 first. The other way round means rebuilding the merged path a second time.
 - **Undecided**: what the unified shape is (fold the general path into the plan path, or a third shape that covers both). Decide it after R3, from the actual diff of `BindingSession`'s internal surface.
+
+### 6-1. R4's implementation record (2026-09-21, `packages/state`) — the premise did not survive
+
+Doing what this section left open — "decide the unified shape after R3, from the actual diff" — showed that **the premise of unifying no longer held**.
+
+- **Measured**: `BindingSession`'s 15.5 KB minified, attributed per method through the source map (`dist/split/chunks/binder.js`). The row path's own methods (`initializeRow` 493, `activatePlanRows` 570, `registerRowSlot` 346, `unregisterRowSlot` 266, `addKnownRowBinding` 271, `disposeBindings` / `destroyRow` and friends) come to about 2.9 KB; the record path (`start` 759, `attachAfterDefinition` 608, `settleInitialRecord` 558, `runTeardowns` 537, `registerAddress` 523, `addTeardown` 585 and friends) to about 5.8 KB.
+- **Neither can go**: the wiring design's "−2.9 KB" (§5) assumed one of the two paths would be deleted. After R2 and R3, though, the row path is **the fast path for plan-eligible rows** — R2's plan render and R3's −18 % heap both ride on it — and the record path takes everything the row path deliberately does not hold: custom-element definition waits, two-way, radio / checkbox, tokens, connect-time snapshots, deferred-apply teardowns. Deleting the row path would give back R2 and R3; the record path cannot be deleted. **"Two paths doing the same job in two shapes" described the code before R2 and R3.**
+- **Only the real duplicate was folded**: entering and leaving the address ledgers — registration in two places (`registerRowSlot` / `registerAddress`), removal in three (`unregisterRowSlot` / `runTeardowns` / `rebindAddresses`) — became three functions, `registerPattern` / `registerAbsoluteAddress` / `unregisterFromLedger`. What was registered (an address, or a pattern's pathInfo + listIndex) is written into the caller's own storage; returning a pair would add an allocation per row, so that shape was not taken. The old order — keep the storage when a removal throws, so a revived row does not register twice — is preserved.
+- **Result**: `BindingSession` 15,536 → 15,393 B minified (−143 B). `auto.min.js` 75,137 → 75,094 B gzip, the split core's closure 50,324 → 50,283 B. All 3,739 tests pass, coverage 99.64 / 98.50 / 100 / 99.81, all four gates pass. The size matters less than the fact that **a binding now enters and leaves the ledgers through one place** — asymmetric register / unregister code was a regular source of past defects.
+- **What it means for A2**: of the two stages §5 still listed for A2, R4 is now known to do almost nothing. What remains is moving diagnostics to a dev build (`pathDiagnostics` 3.6 KB and friends), which leaves the core around 42–43 KB gzip. As §9 says, 35 KB is out of reach for this structure.
 
 ## 7. R5 — cold (the audit benchmark's 1,000 rows)
 

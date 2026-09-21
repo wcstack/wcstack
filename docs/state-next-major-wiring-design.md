@@ -75,7 +75,7 @@ Buildless users pin `@wcstack/state/core` and `features/*` to one CDN version in
 | + wc-bindable contract analysis into the adapter | 123–126 KB | `contractAnalyzer`, `wcBindableReader`, `expandSpread`, `protocol`, about 7 KB |
 | + one path in `BindingSession` | 120–124 KB (about 36–37 KB gzip) | plan path 2.0 KB against general path 4.9 KB |
 
-A2's 35 KB (about 117 KB minified) is the level reached, if at all, only with all four stages stacked. This design alone (H1–H8) does not get there. Folding the row record (survey §10.2) helps time and memory more than size.
+A2's 35 KB (about 117 KB minified) is the level reached, if at all, only with all four stages stacked. This design alone (H1–H8) does not get there. Folding the row record (survey §10.2) helps time and memory more than size. **Corrected by measurement (2026-09-21)**: the second stage (extracting the wiring) did not shrink the core (§8-11), and the fourth (unifying `BindingSession`) lost its premise after R2 and R3 ([row runtime design](./state-next-major-runtime-design.md) §6-1). The third stage's contract analyzer is already absent from the core.
 
 ## 6. Compatibility and contracts
 

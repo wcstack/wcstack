@@ -110,7 +110,8 @@ interface IObservableRoot extends Node {
 let nextRecordId = 0;
 let nextGeneration = 0;
 
-// next-major prototype: one record per plan row (slot arrays) instead of one per binding.
+// プラン行の帳簿は束縛ごとの record ではなく行に 1 つの record（slot 配列）で持つ
+// （行ランタイム設計 R3）。phase は slot ごとの SLOT_*、フラグは FLAG_* のビット。
 const SLOT_ACTIVE = 0;
 const SLOT_DISPOSED = 1;
 const SLOT_FAILED = 2;
@@ -290,6 +291,52 @@ function bindingKey(binding: IBindingInfo): string {
     outFilters,
     binding.uuid ?? "",
   ].join("\u0000");
+}
+
+/*
+ * 束縛が状態の台帳へ出入りする経路（行ランタイム設計 R4）。行 slot（registerRowSlot /
+ * unregisterRowSlot）と record（registerAddress / runTeardowns / rebindAddresses）が同じ登録・
+ * 解除をそれぞれ書き写していたのを 1 箇所にした。登録した形（アドレスか、パターンの
+ * pathInfo ＋ listIndex か）は呼び出し側の器（行の slot 配列 / record のフィールド）へ書く —
+ * ここで値の組を返すと行ごとに割り当てが増えるため、器は呼び出し側に残す。
+ */
+
+/** リスト行: (absolutePathInfo, listIndex) のパターン台帳へ入れる（AbsoluteStateAddress の intern を省く） */
+function registerPattern(binding: IBindingInfo, listIndex: IListIndex, knownRoot?: Node | null): ITreePath {
+  const stateElement = getStateElement(resolveBindingRootNode(binding, knownRoot));
+  if (stateElement === null) {
+    raiseError(`No state tree found on this root for binding.`);
+  }
+  const absolutePathInfo = getTreePath(stateElement, binding.statePathInfo);
+  addBindingByPattern(absolutePathInfo, listIndex, binding);
+  return absolutePathInfo;
+}
+
+/** リスト行でない束縛: 絶対アドレスの台帳へ入れる */
+function registerAbsoluteAddress(binding: IBindingInfo, knownRoot?: Node | null): IAbsoluteStateAddress {
+  const address = getAbsoluteStateAddressByBinding(binding, knownRoot);
+  addBindingByAbsoluteStateAddress(address, binding);
+  return address;
+}
+
+/**
+ * 台帳から外す。`address` が null ならパターン登録（`pathInfo` ＋ `listIndex`）。相対アドレス
+ * （getValue）と絶対アドレス（applyChangeToFor / updatedCallback 経由の遅延 intern）のメモは
+ * パターン登録でも作られうるので、どちらでも対称にクリアする。
+ */
+function unregisterFromLedger(
+  binding: IBindingInfo,
+  address: IAbsoluteStateAddress | null,
+  pathInfo: ITreePath | null,
+  listIndex: IListIndex | null,
+): void {
+  if (address !== null) {
+    removeBindingByAbsoluteStateAddress(address, binding);
+  } else {
+    removeBindingByPattern(pathInfo!, listIndex!, binding);
+  }
+  clearStateAddressByBindingInfo(binding);
+  clearAbsoluteStateAddressByBinding(binding);
 }
 
 function addRecordTeardown(record: IInternalBindingRecord, teardown: () => void): void {
@@ -691,16 +738,10 @@ export class BindingSession {
       const binding = record.info;
       if (record.address === null && record.patternListIndex === null) continue;
       const oldAbs = binding.bindingType === "for" ? getAbsoluteStateAddressByBinding(binding) : null;
-      if (record.address !== null) {
-        removeBindingByAbsoluteStateAddress(record.address, binding);
-        record.address = null;
-      } else {
-        removeBindingByPattern(record.patternPathInfo!, record.patternListIndex!, binding);
-        record.patternPathInfo = null;
-        record.patternListIndex = null;
-      }
-      clearStateAddressByBindingInfo(binding);
-      clearAbsoluteStateAddressByBinding(binding);
+      unregisterFromLedger(binding, record.address, record.patternPathInfo, record.patternListIndex);
+      record.address = null;
+      record.patternPathInfo = null;
+      record.patternListIndex = null;
       this.registerAddress(record);
       if (oldAbs !== null) {
         const newAbs = getAbsoluteStateAddressByBinding(binding);
@@ -945,38 +986,23 @@ export class BindingSession {
     const binding = row.bindings[slot];
     const listIndex = getListIndexByBindingInfo(binding);
     if (listIndex !== null) {
-      const rootNode = resolveBindingRootNode(binding, knownRoot);
-      const stateElement = getStateElement(rootNode);
-      if (stateElement === null) {
-        raiseError(`No state tree found on this root for binding.`);
-      }
-      const absolutePathInfo = getTreePath(stateElement, binding.statePathInfo);
-      addBindingByPattern(absolutePathInfo, listIndex, binding);
-      row.patternPathInfos[slot] = absolutePathInfo;
+      row.patternPathInfos[slot] = registerPattern(binding, listIndex, knownRoot);
       row.patternListIndexes[slot] = listIndex;
     } else {
-      const address = getAbsoluteStateAddressByBinding(binding, knownRoot);
-      addBindingByAbsoluteStateAddress(address, binding);
-      row.addresses[slot] = address;
+      row.addresses[slot] = registerAbsoluteAddress(binding, knownRoot);
     }
     // registerPathInfo は行オプションで常に false
   }
 
   private unregisterRowSlot(row: IRowRecord, slot: number): void {
-    const binding = row.bindings[slot];
     const address = row.addresses[slot];
-    if (address !== null) {
-      removeBindingByAbsoluteStateAddress(address, binding);
-      row.addresses[slot] = null;
-    } else if (row.patternPathInfos[slot] !== null) {
-      removeBindingByPattern(row.patternPathInfos[slot]!, row.patternListIndexes[slot]!, binding);
-      row.patternPathInfos[slot] = null;
-      row.patternListIndexes[slot] = null;
-    } else {
-      return;
-    }
-    clearStateAddressByBindingInfo(binding);
-    clearAbsoluteStateAddressByBinding(binding);
+    const pathInfo = row.patternPathInfos[slot];
+    if (address === null && pathInfo === null) return;
+    // 外せなかった（台帳の throw）ときは器を残す: 後で生き返った行が登録し直さないように
+    unregisterFromLedger(row.bindings[slot], address, pathInfo, row.patternListIndexes[slot]);
+    row.addresses[slot] = null;
+    row.patternPathInfos[slot] = null;
+    row.patternListIndexes[slot] = null;
   }
 
   private disposeRowSlot(row: IRowRecord, slot: number): void {
@@ -1234,21 +1260,10 @@ export class BindingSession {
     const binding = record.info;
     const listIndex = getListIndexByBindingInfo(binding);
     if (listIndex !== null) {
-      // リスト行: (absolutePathInfo, listIndex) のパターン台帳に登録し、
-      // AbsoluteStateAddress の intern（アドレス割当 + intern 用 WeakMap）を省略する
-      const rootNode = resolveBindingRootNode(binding, knownRoot);
-      const stateElement = getStateElement(rootNode);
-      if (stateElement === null) {
-        raiseError(`No state tree found on this root for binding.`);
-      }
-      const absolutePathInfo = getTreePath(stateElement, binding.statePathInfo);
-      addBindingByPattern(absolutePathInfo, listIndex, binding);
-      record.patternPathInfo = absolutePathInfo;
+      record.patternPathInfo = registerPattern(binding, listIndex, knownRoot);
       record.patternListIndex = listIndex;
     } else {
-      const address = getAbsoluteStateAddressByBinding(binding, knownRoot);
-      addBindingByAbsoluteStateAddress(address, binding);
-      record.address = address;
+      record.address = registerAbsoluteAddress(binding, knownRoot);
     }
     // 台帳解除は runTeardowns が record.address / pattern フィールドから
     // データ駆動で行う（クロージャ不要）
@@ -1289,26 +1304,14 @@ export class BindingSession {
     // 逆順実行と同じ: アドレス台帳解除（最後に積まれていた）→ 双方向 detach →
     // 希少クロージャ群（逆順）→ イベント detach。各 detach は互いに独立した資源を
     // 対象とするため、この順序で意味論は変わらない。
-    if (record.address !== null) {
+    if (record.address !== null || record.patternListIndex !== null) {
       try {
-        removeBindingByAbsoluteStateAddress(record.address, binding);
+        unregisterFromLedger(binding, record.address, record.patternPathInfo, record.patternListIndex);
         record.address = null;
-        clearStateAddressByBindingInfo(binding);
-        clearAbsoluteStateAddressByBinding(binding);
-      } catch {
-        // Cleanup is best-effort; one faulty resource must not retain the rest.
-      }
-    } else if (record.patternListIndex !== null) {
-      try {
-        removeBindingByPattern(record.patternPathInfo!, record.patternListIndex, binding);
         record.patternPathInfo = null;
         record.patternListIndex = null;
-        // 相対アドレス（getValue）と絶対アドレス（applyChangeToFor / updatedCallback 経由の
-        // 遅延 intern）のメモは pattern 登録でも作られうるため対称にクリアする
-        clearStateAddressByBindingInfo(binding);
-        clearAbsoluteStateAddressByBinding(binding);
       } catch {
-        // Cleanup is best-effort.
+        // Cleanup is best-effort; one faulty resource must not retain the rest.
       }
     }
     if (record.twowayAttached) {

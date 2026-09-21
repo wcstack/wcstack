@@ -75,7 +75,7 @@ buildless の利用者は import map で `@wcstack/state/core` と `features/*` 
 | ＋ wc-bindable 契約解析を adapter へ | 123〜126 KB | `contractAnalyzer`・`wcBindableReader`・`expandSpread`・`protocol` 約 7 KB |
 | ＋ `BindingSession` 二重経路の一本化 | 120〜124 KB（gzip 約 36〜37 KB） | プラン経路 2.0 KB 対 汎用経路 4.9 KB |
 
-A2 の 35 KB（minify 約 117 KB）は、この 4 段をすべて積んで届くかどうかの水準。本設計（H1〜H8）単独では届かない。行 record を畳む設計（調査 §10.2）はサイズより時間・メモリに効く。
+A2 の 35 KB（minify 約 117 KB）は、この 4 段をすべて積んで届くかどうかの水準。本設計（H1〜H8）単独では届かない。**実測での訂正（2026-09-21）**: 2 段目（配線の切り出し）は core を縮めず（§8-11）、4 段目（`BindingSession` の一本化）は R2・R3 の後で前提が崩れた（[行ランタイム設計](./state-next-major-runtime-design.ja.md) §6-1）。3 段目の契約解析は既に core に入っていない。行 record を畳む設計（調査 §10.2）はサイズより時間・メモリに効く。
 
 ## 6. 互換性と契約
 

@@ -49,7 +49,7 @@
 | R1 | 消去の割り当て（添字ループ＋親ごとのスキップ件数） | 消去 22〜72 → 18〜20 ms、窓の中の scavenge 0 | **2.6.x（移植済み）** | なし |
 | R2 | プラン初期描画 | 読み 7 → 4・適用 3 → 1 回/行、活性化の段 −34%、warm 1,000 行 −34%（§4-1 の実測） | **3.0（実装済み、§4-1）** | `applyValueToBinding` の内部 export |
 | R3 | 行 record ＋ session をリストごとに 1 つ | ヒープ −18%（3,616 → 2,953 B/行）、時間は不変（§5-1 の実測） | **3.0（実装済み、§5-1）** | `BindingSession` の中核（`disposeBindings` / `destroyRow` / `isRowSession`、`getRecord` の合成ビュー） |
-| R4 | `BindingSession` の二重経路の一本化 | core −2.9 KB minify の見込み（配線設計 §5） | 3.0 | プラン経路と汎用経路の統合 |
+| R4 | `BindingSession` の二重経路の一本化 | **前提が崩れた**（§6-1）。台帳への出入りだけを共通化して −143 B minify | **3.0（実装済み、§6-1）** | 内部のみ |
 | R5 | cold の候補（複製とノードパス解決の T4 形・プールの事前生成） | 未測定（cold 8 ms が対象） | 未定 | `resolveNodePath` の形・opt-in 属性 |
 
 R2 → R3 の順は計測の積み上げ順（§10.13 → §10.14）に合わせる。R4 は R3 が `BindingSession` を触った後に、同じ器で行う。
@@ -106,6 +106,16 @@ R2 → R3 の順は計測の積み上げ順（§10.13 → §10.14）に合わせ
 - **狙い**: R3 で行 record が入り、プラン行と非プラン行の帳簿の形が揃うので、そこで 2 本を 1 本にする。見込みは core −2.9 KB minify（配線設計 §5 の表）。
 - **前提**: R3 が先。逆順にすると、統合した経路をもう一度組み替えることになる。
 - **未決**: 一本化の形（プラン経路に寄せるか、両方を包む第 3 の形か）。R3 の実装後に、`BindingSession` の公開面（内部 API）の実際の差分を見て決める。
+
+### 6-1. R4 の実装記録（2026-09-21、`packages/state`）— 前提が崩れた
+
+R3 の後で「実際の差分を見て一本化の形を決める」（本節の未決）を実行したら、**一本化そのものの前提が成り立たなくなっていた**。
+
+- **測った**: `BindingSession` の minify 15.5 KB を、source map でメソッドごとに帰属させた（`dist/split/chunks/binder.js`）。行経路の専用メソッド（`initializeRow` 493・`activatePlanRows` 570・`registerRowSlot` 346・`unregisterRowSlot` 266・`addKnownRowBinding` 271・`disposeBindings` / `destroyRow` ほか）で約 2.9 KB、record 経路（`start` 759・`attachAfterDefinition` 608・`settleInitialRecord` 558・`runTeardowns` 537・`registerAddress` 523・`addTeardown` 585 ほか）で約 5.8 KB。
+- **片方は消せない**: 配線設計 §5 の「−2.9 KB」は、2 本のうち片方を消す見込みだった。だが R2・R3 の後、行経路は**プラン適格な行だけの速い経路**（R2 のプラン初期描画と R3 のヒープ −18% はこの経路に乗っている）で、record 経路は行経路が意図して持たないもの — カスタム要素の定義待ち・双方向・radio / checkbox・token・接続時スナップショット・遅延適用の teardown — を引き受けている。行経路を消せば R2・R3 の効果が消え、record 経路は消せない。**「2 本が同じことを別の形でしている」は R2・R3 の前の話だった。**
+- **本当に重複していた所だけを畳んだ**: 台帳への出入り — 登録が 2 か所（`registerRowSlot` / `registerAddress`）、解除が 3 か所（`unregisterRowSlot` / `runTeardowns` / `rebindAddresses`）— を `registerPattern` / `registerAbsoluteAddress` / `unregisterFromLedger` の 3 関数にした。登録した形（アドレスか、パターンの pathInfo ＋ listIndex か）は呼び出し側の器に書く。値の組を返す形にすると行ごとの割り当てが増えるので採らなかった。解除に失敗したとき器を残す（生き返った行が二重登録しない）という従来の順序も保った。
+- **結果**: `BindingSession` 15,536 → 15,393 B minify（−143 B）。`auto.min.js` 75,137 → 75,094 B gzip、分割 core の閉包 50,324 → 50,283 B。全テスト 3,739 件成功、カバレッジ 99.64 / 98.50 / 100 / 99.81、門は 4 つとも通る。サイズより、**束縛が台帳へ出入りする経路が 1 か所になった**ことのほうが効く（登録と解除の非対称は、過去の不具合の常連だった）。
+- **A2 への帰結**: §5 の表で A2 に残っていた 2 段のうち、R4 はほぼ効かないことが確定した。残るのは診断の dev ビルド化（`pathDiagnostics` 3.6 KB ほか）だけで、core は 42〜43 KB gzip の水準に留まる。§9 に書いたとおり、35 KB はこの構造のままでは届かない。
 
 ## 7. R5 cold（監査ベンチの 1,000 行生成）
 
