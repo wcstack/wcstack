@@ -8,6 +8,8 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+## [2.6.0] — 2026-09-21
+
 ### Added
 
 - `@wcstack/state`: **keyed selection** — `this.$eq(path, key)`, `this.$eqPath(path, keyPath)` and `this.$eqIndex(path, level = 1)`. A row getter that answers "is this row the selected one?" used to depend on the selection path from every row, so one click re-evaluated the whole list (`get "items.*.selected"() { return this.$1 === this.selectedIndex; }`). The keyed forms subscribe each row under its own key, and a write to the path re-evaluates only the row that was selected and the row that becomes selected: selecting one of 10,000 rows goes from 20 ms to 0.2 ms. `$eqPath` keys on an id and survives sorting and removal; `$eqIndex` keys on the row's index, and the list diff re-keys moved rows, so removing a row re-evaluates at most two rows. They subscribe only inside a getter under a list row (elsewhere they return the comparison), a row's subscription is dropped with the row, and keys compare as `Map` keys. Contract: the state README, "Keyed selection".
@@ -263,7 +265,8 @@ Repairs from the pre-release quality loop, all with tests: `setInitialState` on 
 
 1.29.0 and earlier predate this file. Their contents are in the merged pull requests (`gh pr list --state merged`) and the git history; each GitHub Release page carries the SRI digests for that version.
 
-[Unreleased]: https://github.com/wcstack/wcstack/compare/v2.5.1...HEAD
+[Unreleased]: https://github.com/wcstack/wcstack/compare/v2.6.0...HEAD
+[2.6.0]: https://github.com/wcstack/wcstack/compare/v2.5.1...v2.6.0
 [2.5.1]: https://github.com/wcstack/wcstack/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/wcstack/wcstack/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/wcstack/wcstack/compare/v2.3.0...v2.4.0
