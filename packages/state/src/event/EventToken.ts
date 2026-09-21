@@ -1,5 +1,5 @@
 import type { IStateElement } from "../components/types";
-import { devtoolsSink } from "../devtools/sink";
+import { devtoolsSink } from "../platform/devtoolsSink";
 import { Token } from "../token/Token";
 
 // EventToken は共有 pub/sub プリミティブ Token の薄い特化（element→state 方向）。

@@ -14,7 +14,7 @@
  */
 
 import { config } from "../config.js";
-import { devtoolsSink } from "../devtools/sink.js";
+import { devtoolsSink } from "../platform/devtoolsSink.js";
 import { ContractEvent } from "../devtools/types.js";
 import { getCustomElementRegistry } from "../platform/customElementRegistry.js";
 import { IContractComponent, IContractManifest, ILiveDeclaration } from "./types.js";

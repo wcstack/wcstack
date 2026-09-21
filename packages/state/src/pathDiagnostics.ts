@@ -22,7 +22,7 @@ import { getPathInfo } from "./address/PathInfo";
 import { isPathUnderReservedVolume } from "./webComponent/volumeShared";
 import type { IStateElement } from "./components/types";
 import { DELIMITER, WILDCARD } from "./define";
-import { devtoolsSink } from "./devtools/sink";
+import { devtoolsSink } from "./platform/devtoolsSink";
 import { didYouMean, LINT_HINT } from "./errorGuidance";
 
 /** `setPathInfo` の呼び出し元の種別。診断 code と適用範囲がこれで変わる */

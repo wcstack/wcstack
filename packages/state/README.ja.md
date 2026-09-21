@@ -969,6 +969,7 @@ get total() { return this.price * exchangeRate; }          // モジュール変
 | `this.$trackDependency(path)` | 依存を明示的に追加し、そのパスの変更でこの getter を dirty にする |
 | `this.$postUpdate(path)` | 追跡外の入力が変わったことを getter の外から通知する |
 | `this.$untrackDependency(fn)` | 依存として登録せずにパスを読む（上の対称） |
+| `this.$eq(path, key)` / `$eqPath(path, keyPath)` / `$eqIndex(path)` | 鍵付き購読: 「`path` はこの行の鍵に等しいか」をパターン依存なしで答える（[鍵付き選択](#鍵付き選択eq--eqpath--eqindex)） |
 
 ```javascript
 // ✅ 時計を state 側で刻み、getter は純粋なまま
@@ -994,6 +995,31 @@ getter の例外は握り潰されません。評価された場所（バイン�
 規則 1 は静的解析で捕まえられる唯一の規則です。getter が `this.form.name` を読んでいて、ドキュメントのどこかで `form.name` を書いている（`value:` バインド・spread・`this["form.name"] = …`）と、`wcs-validate` と VS Code 拡張が `wcs/getter-untracked-read` を報告します。ルートを丸ごと置換するだけの設計（router の params・`$streams` の fold）には出ません。
 
 `$untrackDependency(fn)` は setter の規則を getter に意図的に適用するもので、`fn` の中の読み取りは追跡されません。`$trackDependency(path)` は最初の規則に対する逃げ道です。
+
+### 鍵付き選択（`$eq` / `$eqPath` / `$eqIndex`）
+
+「この行は選択中か」を答える行 getter は、依存追跡が最も効きにくい形です。`get "items.*.selected"() { return this.$1 === this.selectedIndex; }` と書くと全行が `selectedIndex` に依存し、1 クリックで 1 万行の getter が再評価されます。鍵付きの形は各行を **その行自身の鍵** の下に購読させ、パスへの書き込みでは「選択されていた行」と「選択される行」だけを再評価します：
+
+| API | 鍵 | 選択の付き先 | 備考 |
+|---|---|---|---|
+| `this.$eq(path, key)` | 任意の値 | 鍵 | `path` は依存を張らずに読み、行は `key` の下に登録される |
+| `this.$eqPath(path, keyPath)` | `keyPath` の値（ワイルドカードはこの行で解決） | id | 鍵も依存を張らずに読むので、リストの置換や並べ替えで行が再評価されない |
+| `this.$eqIndex(path, level = 1)` | この行の index（`$1`。`level` でワイルドカード段を選ぶ） | index | `$1` を読む場合と違い getter を **index 依存に記録しない**: 行の移動はリスト差分が鍵を付け替えるので、1 行削除で再評価されるのは高々 2 行 |
+
+```javascript
+export default {
+  items: [],
+  selectedId: null,
+  selectedIndex: null,
+  // id による選択: 並べ替えや削除をまたいで同じ行に付いて行く
+  get "items.*.selected"() { return this.$eqPath("selectedId", "items.*.id"); },
+  // 位置による選択: 同じ仕事量で index に付く
+  get "items.*.current"() { return this.$eqIndex("selectedIndex"); },
+  onSelect(e, $1) { this.selectedId = this["items." + $1 + ".id"]; this.selectedIndex = $1; },
+};
+```
+
+規則: 3 つの呼び出しが購読を張るのはリスト行の getter の中で評価されたときだけで、それ以外では比較結果を返すだけです。行の購読はリスト差分がその行を外した時点で落ちます。鍵の比較は `Object.is` ですが、Map の意味論により `+0` と `-0`、`NaN` 同士は同じ鍵になります。`$eqPath` は鍵を依存なしで読むので、行の鍵がその場で書き換わっても行は再評価されません — 変わらない同一性（id）に使い、鍵自体が動く場合は追跡付きの読みと `$eq` を組み合わせてください。
 
 ### ループインデックス変数（`$1`, `$2`, ...）
 
@@ -1041,6 +1067,7 @@ export default {
 | `this.$postUpdate(path)` | 指定パスの更新通知を手動で発行 |
 | `this.$trackDependency(path)` | キャッシュ無効化のための依存関係を手動で登録 |
 | `this.$untrackDependency(fn)` | fn 実行中の依存追跡を抑止して値を読む（`$trackDependency` と対称） |
+| `this.$eq(path, key)` / `$eqPath(path, keyPath)` / `$eqIndex(path, level?)` | 鍵付き購読: 「`path` の値はこの行の鍵か」（[鍵付き選択](#鍵付き選択eq--eqpath--eqindex)） |
 | `this.$stateElement` | `IStateElement` インスタンスへのアクセス |
 | `this.$1`, `this.$2`, ... | 現在のループインデックス（1始まりの命名、0始まりの値） |
 
@@ -2640,6 +2667,38 @@ this.$getAll("matrix.*.*", [row]);
 | 因果伝播の hop | 32 | その transaction の未処理レコードのみ quarantine |
 | `$watch` の書き込み連鎖 | 32 | そのバッチの watch 発火をスキップ |
 | バインディングの適用失敗 | — | その 1 本のみスキップ |
+
+### 3.0 への準備（`wcs/v3-migration`）
+
+3.0 は互換層を持ちません。代わりにこのリリースは、3.0 が拒否する書き方・読み方が変わる書き方を 2.x のまま動かしつつ名指しで知らせます。警告は書き方とサイトごとに 1 回だけ、コード `wcs/v3-migration` で出し、3.0 での扱いと今の書き換え先を示します：
+
+```
+[@wcstack/state] [wcs/v3-migration] "value#ro#wo": 3.0 rejects a second "#". Write "value#ro,wo".
+See "Preparing for 3.0" in the @wcstack/state README.
+```
+
+| 書き方 | 2.x | 3.0 | 今の書き方 |
+|---|---|---|---|
+| 2 つ目の `#`（`value#ro#wo:`） | 最初の修飾子列だけ残す | `[wcs/binding-syntax]` | `value#ro,wo:` |
+| `else:` の後ろの値 | 無視 | `[wcs/binding-syntax]` | `else:` |
+| `for` / `if` / `elseif` / `else` / `...` の修飾子・フィルタ | ただのプロパティのバインディングになる | `[wcs/binding-syntax]` | キーワードだけ |
+| `radio#ro:` / `checkbox#ro:` | `radio` という名前のプロパティになり効かない | 修飾子を守る radio / checkbox のバインディング | —（意図どおりか確かめる） |
+| フィルタ引数の閉じていない引用符 | 黙って閉じる | `[wcs/binding-syntax]` | 引用符を閉じる |
+| フィルタが受け取る数を超える引数 | 余りは無視 | `[wcs/filter-arity]` | 余りを消す |
+| `eq` / `ne` の引用符の無い `true` / `false` / `null`（`eq(true)`） | 真偽値・`null` の値を文字列と比べる | 型付きの値と比べる | 文字列で比べ続けるなら `eq('true')` |
+| `defaults` の引用符の無い `true` / `false` / `null` | 文字列（`"null"`）を既定値にする | 型付きの値を既定値にする | 文字列のままなら `defaults('null')` |
+| `truthy` / `falsy` / `defaults` に来た `0n` | 真 | 偽（JavaScript の真偽判定） | — |
+| `textContent` / `innerText` / `innerHTML` への `undefined` | 前のテキストを残す（使い回した行では前の行のもの） | 空にする | 「値なし」は `""` か `null` を返す |
+| `attr.*` への `undefined` / `null` | `"undefined"` / `"null"` を書く | 属性を削除する | — |
+| `style.*` への `undefined` | 前の値を残す | 消す | — |
+| `$resolve(path, indexes, undefined)` | 読む | `undefined` を書く（引数の個数で決める） | 読むなら `$resolve(path, indexes)` |
+| readonly のプロキシからの `$resolve(path, indexes, value)` / `$setAll` | 書く | `This state is readonly.` を投げる | `createState("writable", …)` から書く |
+| `#ro` のマウント（`state#ro: user`）を通るコンポーネントの書き込み | ホストのツリーに書く | `[wcs/mount-readonly]` | ホストで書くか、`#ro` を外す |
+| 部分マウントに隠された自前の既定値（コンポーネントが `name` を宣言し、`state.name: user.name`） | 既定値が勝つ（警告あり） | 明示したマウントが勝つ | 既定値を消す |
+
+もう 1 つは予告でなく先に入れています：ボリュームやマウントされたコンポーネントの `$errorCallback` は黙って無視していましたが、ルート専用のキー（`$commandTokens`、`$on` など）を挙げる既存の警告で名指しするようにしました（3.0 と同じ）。動くのは今もルートの state だけです。
+
+値の警告はその値が実際に来たときにだけ出ます。コンソールが静かでも、テストが通らなかった経路については何も分かりません。文法の行はバインディングを最初に解析したときに調べます。`npx @wcstack/lint <file>`（と VS Code 拡張）も同じ判定で `wcs/v3-migration`（info）として報告するので、ページを動かさずに見つけられます。
 
 ## 設定
 

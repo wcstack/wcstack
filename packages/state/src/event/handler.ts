@@ -21,7 +21,8 @@ function isCommandTokenPath(statePathName: string): boolean {
 
 const handlerByHandlerKey: Map<string, (event: Event) => any> = new Map();
 // binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
-const bindingRegistry = createHandlerBindingRegistry();
+// 純粋な割り当て（Map 2 個）。バンドラが未使用時に落とせるよう明示する（ヘルパーだけの import に残さない）
+const bindingRegistry = /*#__PURE__*/ createHandlerBindingRegistry();
 
 function getHandlerKey(binding: IBindingInfo): string {
   const modifierKey = binding.propModifiers.filter(m => m === MODIFIER_PREVENT || m === MODIFIER_STOP).sort().join(',');

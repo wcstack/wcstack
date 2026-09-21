@@ -54,6 +54,8 @@ import type { IConsumeSink, IStreamEntry, StreamStatus } from "./types";
  * （既存の $connectedCallback と同じ扱い。正規化は drain リスナー側の restart のみ）。
  */
 export function startStreams(stateElement: IStateElement): void {
+  // 初回の宣言起動で listener を確実に載せる（bootstrapState() を経ない経路の保険。冪等）
+  installStreamRuntime();
   const entries = getStreamEntries(stateElement);
   if (entries.size === 0) {
     return;
@@ -237,5 +239,11 @@ function restartStreamsOnUpdateBatch(batch: ReadonlySet<IAbsoluteStateAddress>):
   }
 }
 
-// 優先度で `$watch` の後に固定する（設計書 §3-2 層 1）。import 順には依存しない。
-registerUpdateBatchListener(restartStreamsOnUpdateBatch, STREAM_LISTENER_PRIORITY);
+// drain 終了 listener の登録。優先度で `$watch` の後に固定する（設計書 §3-2 層 1）。
+// モジュール評価時には登録しない（watch/watchRuntime.ts と同じ理由）。bootstrapState() が呼ぶ（冪等）。
+let streamRuntimeInstalled = false;
+export function installStreamRuntime(): void {
+  if (streamRuntimeInstalled) return;
+  streamRuntimeInstalled = true;
+  registerUpdateBatchListener(restartStreamsOnUpdateBatch, STREAM_LISTENER_PRIORITY);
+}

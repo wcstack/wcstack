@@ -1,5 +1,5 @@
 /**
- * devtools/sink.ts
+ * platform/devtoolsSink.ts（旧 devtools/sink.ts。core 側に置き、devtools/bridge.ts がこちらを import する）
  *
  * 計装点が参照するホットパス唯一の接点。依存ゼロの葉モジュールにすることで、
  * 計装される側（stateElementByName / setByAddress / binding / token）と
@@ -10,7 +10,7 @@
  * 必ずこのチェックの内側で行うこと。
  */
 
-import type { DevtoolsSink } from "./types";
+import type { DevtoolsSink } from "../devtools/types";
 
 /** live binding としてエクスポート。計装点は `if (devtoolsSink !== null)` で参照する */
 export let devtoolsSink: DevtoolsSink | null = null;

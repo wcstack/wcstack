@@ -8,6 +8,17 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Added
+
+- `@wcstack/state`: **keyed selection** — `this.$eq(path, key)`, `this.$eqPath(path, keyPath)` and `this.$eqIndex(path, level = 1)`. A row getter that answers "is this row the selected one?" used to depend on the selection path from every row, so one click re-evaluated the whole list (`get "items.*.selected"() { return this.$1 === this.selectedIndex; }`). The keyed forms subscribe each row under its own key, and a write to the path re-evaluates only the row that was selected and the row that becomes selected: selecting one of 10,000 rows goes from 20 ms to 0.2 ms. `$eqPath` keys on an id and survives sorting and removal; `$eqIndex` keys on the row's index, and the list diff re-keys moved rows, so removing a row re-evaluates at most two rows. They subscribe only inside a getter under a list row (elsewhere they return the comparison), a row's subscription is dropped with the row, and keys compare as `Map` keys. Contract: the state README, "Keyed selection".
+- `@wcstack/state`: **`wcs/v3-migration` warnings.** 3.0 ships without a compatibility layer, so this release names each form that 3.0 rejects or reads differently — a second `#`, a value after `else:`, modifiers on a structural directive, `radio#ro:`, unterminated quotes and extra filter arguments; unquoted `true` / `false` / `null` in `eq` / `ne` / `defaults` and `0n` through `truthy`; `undefined` reaching `textContent`, an attribute or a style; `$resolve(path, indexes, undefined)`; writes through a readonly proxy or a `#ro` mount; a component default that a partial mount shadows. Each is printed once per form and site, says what 3.0 does and what to write now, and changes nothing about how 2.x runs it. `@wcstack/lint` reports the syntax forms with the same check, as `wcs/v3-migration` at info severity (so `--strict` does not fail on them). List: the state README, "Preparing for 3.0".
+
+### Changed
+
+- `@wcstack/state`: `$errorCallback` on a volume (`<wcs-state mount="…">`) or a mounted component is named by the warning that lists the root-only keys, as in 3.0. It was ignored silently; it still runs only on the root state.
+- `@wcstack/state`: clearing a long list allocates a quarter of what it did. The teardown ran on iterators and grew a per-node `WeakSet` of observer-skip marks; it now runs index loops and keeps one skip count per parent, which moves the young-generation GC out of the clear (clearing 10,000 rows: 8.1 → 2.1 MB allocated, 18–20 ms). No behaviour changes.
+- `@wcstack/state`: importing only `defineState` (or the types) no longer keeps the runtime. Three registrations ran at module evaluation (the `$watch` and `$streams` runtimes and volume grafting); they are installed by `bootstrapState()` and on first use instead, so a `defineState`-only import tree-shakes to about 0.3 KB gzip (was 26.7 KB). No behaviour changes.
+
 ## [2.5.1] — 2026-09-20
 
 ### Changed

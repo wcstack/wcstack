@@ -8,7 +8,7 @@ import { checkDependency } from "../proxy/methods/checkDependency";
 import { setLoopContextSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
 import { IStateHandler, IStateProxy } from "../proxy/types";
-import { composeMountIndexes, IExportEntry, IMountRecord, translateInnerPath } from "./mount";
+import { composeMountIndexes, IExportEntry, IMountRecord, translateInnerPath, translateInnerWritePath } from "./mount";
 
 /**
  * webComponent/overlay.ts — マウントのオーバーレイ（D20 / D21・impl-plan §3-0 の 4）。
@@ -102,14 +102,14 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
         const receiver = this.receiver;
         if (prop === "$resolve") {
           return (path: string, indexes: number[] | undefined, ...rest: unknown[]): unknown => {
-            const translated = translateInnerPath(record, path);
+            const translated = rest.length > 0 ? translateInnerWritePath(record, path) : translateInnerPath(record, path);
             const composed = composeMountIndexes(record, path, translated, indexes ?? [], contextIndexes);
             return receiver.$resolve(translated, composed, ...rest);
           };
         }
         const api = prop;
         return (path: string, indexes?: number[], ...rest: unknown[]): unknown => {
-          const translated = translateInnerPath(record, path);
+          const translated = api === "$setAll" ? translateInnerWritePath(record, path) : translateInnerPath(record, path);
           const composed = composeMountIndexes(record, path, translated, indexes, contextIndexes);
           return receiver[api](translated, composed, ...rest);
         };
@@ -176,7 +176,7 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
       target[prop] = value;
       return true;
     }
-    this.receiver[translateInnerPath(this.record, prop)] = value;
+    this.receiver[translateInnerWritePath(this.record, prop)] = value;
     return true;
   }
 
@@ -287,12 +287,13 @@ function createChrootDollarApi(
     return (path: string) => call("readonly", (state) => state.$postUpdate(translateInnerPath(record, path)));
   }
   return (path: string, indexes?: number[], ...rest: unknown[]) => {
-    const translated = translateInnerPath(record, path);
+    const writes = api === "$setAll" || (api === "$resolve" && rest.length > 0);
+    const translated = writes ? translateInnerWritePath(record, path) : translateInnerPath(record, path);
     const contextIndexes = getLoopContextByNode(record.component)?.listIndex.indexes ?? [];
     // $resolve は indexes 必須の API（省略は空列と同義に倒す）。書き込み形（第 3 引数あり）は writable
     const composed = composeMountIndexes(
       record, path, translated, api === "$resolve" ? (indexes ?? []) : indexes, contextIndexes);
-    const mutability = api === "$setAll" || (api === "$resolve" && rest.length > 0) ? "writable" : "readonly";
+    const mutability = writes ? "writable" : "readonly";
     return call(mutability, (state) => state[api](translated, composed, ...rest));
   };
 }
@@ -330,7 +331,7 @@ export function createPublicMountState(record: IMountRecord): Record<string, any
       }
       parent.createState("writable", (state) => {
         withHostContext(state as IStateProxy, () => {
-          (state as Record<string, unknown>)[prop[0] === "$" ? prop : translateInnerPath(record, prop)] = value;
+          (state as Record<string, unknown>)[prop[0] === "$" ? prop : translateInnerWritePath(record, prop)] = value;
         });
       });
       return true;

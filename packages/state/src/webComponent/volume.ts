@@ -241,7 +241,8 @@ function processVolumeDeclarations(
 
   // $commandTokens / $eventTokens / $on も未対応（トークンはパスではなく要素の面 —
   // ルートに宣言する）。無言に捨てないが、接ぎ木自体は成立させる（warn 止まり）
-  for (const name of ["$commandTokens", "$eventTokens", "$on"]) {
+  // $errorCallback もルート専用（以前は無言で無視していた — 3.0 と同じく名指しで知らせる）
+  for (const name of ["$commandTokens", "$eventTokens", "$on", "$errorCallback"]) {
     if (typeof (volumeState as Record<string, unknown>)[name] !== "undefined") {
       console.warn(
         `[@wcstack/state] volume "${mountPath}" declares ${name}, which volumes do not support. ` +
@@ -406,11 +407,19 @@ export function graftOrQueueVolume(
     graftIsolated(rootStateElement, request);
     return;
   }
+  // 最初の接ぎ木要求で graft の実体を確実に注入する（bootstrapState() を経ない経路の保険。冪等）
+  installVolumeGraft();
   queuePendingVolume(rootNode, request);
 }
 
 // stateElementByName の drainPendingVolumes は import 循環（updater まで届く）を避けて
-// 軽量な volumeShared に住む — graft の実体はここで注入する（State.ts が本モジュールを
-// 必ず import するため、ルート登録の前には確実に配線されている）
-setVolumeGraftHandler(graftIsolated);
+// 軽量な volumeShared に住む — graft の実体はここで注入する。モジュール評価時には注入せず、
+// bootstrapState() が registerComponents() より前に呼ぶ（冪等）ので、ルート登録の前には
+// 確実に配線されている。
+let volumeGraftInstalled = false;
+export function installVolumeGraft(): void {
+  if (volumeGraftInstalled) return;
+  volumeGraftInstalled = true;
+  setVolumeGraftHandler(graftIsolated);
+}
 

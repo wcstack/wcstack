@@ -22,7 +22,7 @@ import { getPathInfo } from '../src/address/PathInfo';
 import { config } from '../src/config';
 import { errorCallbackSymbol, updatedCallbackSymbol } from '../src/proxy/symbols';
 import type { IBindingInfo } from '../src/types';
-import { setDevtoolsSink } from '../src/devtools/sink';
+import { setDevtoolsSink } from '../src/platform/devtoolsSink';
 
 const getStateElementByNameMock = vi.mocked(getStateElement);
 const applyChangeMock = vi.mocked(applyChange);

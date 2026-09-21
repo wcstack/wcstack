@@ -54,7 +54,9 @@ class Content implements IContent {
   }
 
   appendTo(targetNode: Node): void {
-    for(const node of this._childNodeArray) {
+    const childNodes = this._childNodeArray;
+    for (let i = 0; i < childNodes.length; i++) {
+      const node = childNodes[i];
       // framework 起点のマウントを observer に伝える。中間 fragment へ append する
       // 経路でも、後続の一括 insertBefore(fragment) の mutation record には
       // この top-level node が addedNodes として現れるため、ここでのマークが届く。
@@ -134,23 +136,27 @@ class Content implements IContent {
       return false;
     }
     session.destroyRecords();
-    for (const node of this._childNodeArray) {
+    // 添字ループ: for...of の反復子オブジェクトを行ごとに割り当てない（消去の scavenge を窓から外す）
+    const childNodes = this._childNodeArray;
+    for (let i = 0; i < childNodes.length; i++) {
+      const node = childNodes[i];
       // unmount と同じ理由の observer 向け削除マーク（clear の一括削除でも
       // top-level node が mutation record の root に現れる）
-      markObserverSkipOnRemove(node);
+      // この content が自分でノードを外すときだけ印を付ける（親の一括削除は親側で件数を数える）
       if (node.parentNode !== null) {
+        markObserverSkipOnRemove(node);
         node.parentNode.removeChild(node);
       }
     }
     const bindings = getBindingsByContent(this);
-    for (const binding of bindings) {
+    for (let i = 0; i < bindings.length; i++) {
+      const binding = bindings[i];
       if (recursiveBindingTypes.has(binding.bindingType)) {
-        const contents = getContentSetByNode(binding.node);
-        for (const content of contents) {
+        getContentSetByNode(binding.node).forEach((content) => {
           if (!content.tryDestroy()) {
             content.unmount();
           }
-        }
+        });
       }
     }
     this._mounted = false;
@@ -173,12 +179,10 @@ class Content implements IContent {
   /** binding ごとの解体（ネストした構造ディレクティブの Content・アドレス台帳） */
   private _teardownBindings(): void {
     const bindings = getBindingsByContent(this);
-    for(const binding of bindings) {
+    for (let i = 0; i < bindings.length; i++) {
+      const binding = bindings[i];
       if (recursiveBindingTypes.has(binding.bindingType)) {
-        const contents = getContentSetByNode(binding.node);
-        for (const content of contents) {
-          content.unmount();
-        }
+        getContentSetByNode(binding.node).forEach((content) => { content.unmount(); });
       }
       clearStateAddressByBindingInfo(binding);
       clearAbsoluteStateAddressByBinding(binding);
@@ -193,18 +197,16 @@ class Content implements IContent {
       // 削除サブツリーの root として mutation record に現れるため、ここで
       // マークしておけば observer の冗長走査をスキップできる。マークは
       // 同期実行中に立ち、observer は次 microtask で読むので順序は保証される。
-      markObserverSkipOnRemove(node);
       if (node.parentNode !== null) {
+        markObserverSkipOnRemove(node);
         node.parentNode.removeChild(node);
       }
     }
     const bindings = getBindingsByContent(this);
-    for(const binding of bindings) {
+    for (let i = 0; i < bindings.length; i++) {
+      const binding = bindings[i];
       if (recursiveBindingTypes.has(binding.bindingType)) {
-        const contents = getContentSetByNode(binding.node);
-        for (const content of contents) {
-          content.unmount();
-        }
+        getContentSetByNode(binding.node).forEach((content) => { content.unmount(); });
       }
       clearStateAddressByBindingInfo(binding);
       clearAbsoluteStateAddressByBinding(binding);

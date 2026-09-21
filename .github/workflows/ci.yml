@@ -235,8 +235,30 @@ jobs:
           rm -rf node_modules/@wcstack/state
           mkdir -p node_modules/@wcstack
           ln -s ../../../state node_modules/@wcstack/state
+      # T1 static coupling gate for @wcstack/state (docs/state-next-major-wiring-design.md
+      # §7-1). Compiles src with tsc into a temporary directory and checks the value-import
+      # graph against scripts/state-coupling-baseline.json: no module outside the baseline may
+      # run registration code at module evaluation (the "stays after a mere import" class that
+      # S2 removed), the number of core → feature value edges may not grow, and defineState
+      # must keep reaching only itself. Needs this package's node_modules (typescript).
+      - name: Check the core / feature coupling of @wcstack/state against its baseline
+        if: ${{ matrix.package == 'state' }}
+        run: node ../../scripts/audit-state-tech-coupling.mjs --check
+      # Size gate for the side-effect-free helper entry (requirements N2 / N3): re-exporting
+      # only defineState from the bundle must stay tiny after tree-shaking (309 bytes gzip at
+      # the time of writing; limit 1 KB). Builds src/exports.ts in memory with this package's
+      # Rollup config, so it needs node_modules and precedes the dist build.
+      - name: Check the helper-only import size of @wcstack/state
+        if: ${{ matrix.package == 'state' }}
+        run: node ../../scripts/audit-state-tech-helper-import.mjs --check --max-gzip 1024
       - run: npm run lint
       - run: npm run build
+      # Size gate for the shipped bundles of @wcstack/state (requirements N3 / D18): auto.min.js and
+      # index.esm.js may not grow more than 3 % gzip over scripts/state-size-baseline.json (the last
+      # recorded release build); an intended increase is recorded with --update.
+      - name: Check the shipped bundle sizes of @wcstack/state against the release baseline
+        if: ${{ matrix.package == 'state' }}
+        run: node ../../scripts/check-state-size.mjs --check
       - run: npm run typecheck --if-present
       - run: npm run size --if-present
       - run: npm run test:coverage

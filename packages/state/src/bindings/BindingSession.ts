@@ -22,7 +22,7 @@ import { getCustomElementRegistry, upgradeCustomElement } from "../platform/cust
 import { raiseError } from "../raiseError";
 import { getStateElement } from "../stateElementByName";
 import { IBindingInfo } from "../types";
-import { consumeObserverSkipOnAdd, consumeObserverSkipOnRemove, decrementPendingObservation, hasPendingObservation, incrementPendingObservation } from "./observerSkip";
+import { consumeObserverSkipOnAdd, consumeObserverSkipOnRemove, consumeObserverSkipRemovedChildren, decrementPendingObservation, hasPendingObservation, incrementPendingObservation } from "./observerSkip";
 import { DefinitionCoordinator, getDefinitionCoordinator } from "./DefinitionCoordinator";
 import { commitProducerValue, hasInitialSyncModifier, IInitialSyncPolicy, ResolvedInitialAuthority, resolveInitialAuthority, resolveInitialSyncPolicy } from "./initialSync";
 import { replaceToReplaceNode } from "./replaceToReplaceNode";
@@ -198,9 +198,16 @@ class BindingOwner {
   private handleMutations(mutations: MutationRecord[]): void {
     const removed: Node[] = [];
     const added: Node[] = [];
-    for (const mutation of mutations) {
-      removed.push(...Array.from(mutation.removedNodes));
-      added.push(...Array.from(mutation.addedNodes));
+    for (let m = 0; m < mutations.length; m++) {
+      const mutation = mutations[m];
+      const removedNodes = mutation.removedNodes;
+      // 削除された子がすべて framework の削除（消去が親に件数で印を付けた）なら record ごと飛ばし、
+      // ノードごとの印には触れない
+      if (removedNodes.length === 0 || !consumeObserverSkipRemovedChildren(mutation.target, removedNodes.length)) {
+        for (let i = 0; i < removedNodes.length; i++) removed.push(removedNodes[i]);
+      }
+      const addedNodes = mutation.addedNodes;
+      for (let i = 0; i < addedNodes.length; i++) added.push(addedNodes[i]);
     }
     // 走査は owner が1回だけ行い、関心 session が居る node だけを配送・contains
     // 検査へ進める。contains は O(木の深さ) なので、関心の無い node で呼ばない。
@@ -477,6 +484,7 @@ export class BindingSession {
    */
   canWholesaleDestroy(): boolean {
     if (this.deferred.size > 0) return false;
+    if (this.records.size === 0) return true; // 空の Set の反復も割り当てるので先に抜ける
     for (const record of this.records) {
       if (record.pendingDefinitions > 0 || record.observationPending) return false;
     }

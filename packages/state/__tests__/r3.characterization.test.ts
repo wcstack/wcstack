@@ -18,7 +18,7 @@ import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
 import { getStateElement } from "../src/stateElementByName";
-import { setDevtoolsSink } from "../src/devtools/sink";
+import { setDevtoolsSink } from "../src/platform/devtoolsSink";
 import type { DevtoolsEvent } from "../src/devtools/types";
 import type { IAbsoluteStateAddress } from "../src/address/types";
 import { peekBindingsForAddress } from "../src/binding/getBindingSetByAbsoluteStateAddress";

@@ -2,6 +2,7 @@ import { getPathInfo } from "../address/PathInfo";
 import { createStateAddress } from "../address/StateAddress";
 import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding";
 import { getBindingsByContent } from "../bindings/bindingsByContent";
+import { markObserverSkipRemovedChildren } from "../bindings/observerSkip";
 import { getIndexBindingsByContent } from "../bindings/indexBindingsByContent";
 import { inSsr } from "../config";
 import { WILDCARD } from "../define";
@@ -279,6 +280,9 @@ export function applyChangeToFor(
     }
     if (isOnlyNode) {
       const parentNode = bindingInfo.node.parentNode;
+      // 全行は 1 つの mutation record で消えるので、親に「framework の削除がこの件数」と 1 回書けば
+      // observer はその record を丸ごと飛ばせる（行ごとの印を消費しない。bindings/observerSkip.ts）
+      markObserverSkipRemovedChildren(parentNode, parentNode.childNodes.length);
       parentNode.textContent = '';
       parentNode.appendChild(bindingInfo.node);
     }
@@ -295,8 +299,10 @@ export function applyChangeToFor(
     ? maxPooledContents - getPooledContents(bindingInfo).length
     : Number.POSITIVE_INFINITY;
   if (typeof contentMap !== 'undefined') {
-    for(const deleteIndex of diff.deleteIndexSet) {
-      const content = contentMap.get(deleteIndex);
+    // Set の for...of は行ごとに反復子の結果オブジェクトを割り当てる（消去の scavenge の引き金）ので forEach で回す
+    const map = contentMap;
+    diff.deleteIndexSet.forEach((deleteIndex) => {
+      const content = map.get(deleteIndex);
       if (typeof content !== 'undefined') {
         if (inPlaceContents !== null && inPlaceContents.reused.has(content)) {
           // 同じ位置に入る行がその場で使い回す。自分のノードは DOM に残し、プールにも入れないが、
@@ -313,10 +319,10 @@ export function applyChangeToFor(
           poolBudget -= 1;
         }
         if (!fullDelete) {
-          contentMap.delete(deleteIndex);
+          map.delete(deleteIndex);
         }
       }
-    }
+    });
     if (fullDelete) {
       contentByListIndexByNode.delete(bindingInfo.node);
       contentMap = undefined;

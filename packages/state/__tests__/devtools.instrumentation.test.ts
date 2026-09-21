@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { setDevtoolsSink, devtoolsSink } from '../src/devtools/sink';
+import { setDevtoolsSink, devtoolsSink } from '../src/platform/devtoolsSink';
 import { DevtoolsEvent } from '../src/devtools/types';
 import { setStateElement, getLiveStateElements } from '../src/stateElementByName';
 import {

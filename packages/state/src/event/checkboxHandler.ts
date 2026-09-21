@@ -8,7 +8,7 @@ import { createHandlerBindingRegistry } from "./handlerBindingRegistry";
 
 const handlerByHandlerKey: Map<string, (event: Event) => any> = new Map();
 // binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
-const bindingRegistry = createHandlerBindingRegistry();
+const bindingRegistry = /*#__PURE__*/ createHandlerBindingRegistry();
 
 function getHandlerKey(binding: IBindingInfo, eventName: string): string {
   const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');

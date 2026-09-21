@@ -39,9 +39,10 @@ import { hasByAddress } from "./hasByAddress";
 import { markSwapBaselineList } from "../../list/swapBaselineList";
 import { getSwapInfoByList, setSwapInfoByList } from "./swapInfo";
 import { walkDependency } from "../../dependency/walkDependency";
+import { hasKeyedDependents, keyedDependents } from "../../dependency/keyedDependency";
 import { dirtyCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
 import { config } from "../../config";
-import { devtoolsSink } from "../../devtools/sink";
+import { devtoolsSink } from "../../platform/devtoolsSink";
 import { beginPropagationTransaction, getCurrentPropagationContext } from "../../propagation/propagation";
 import { consumeOccurrenceWrite } from "../occurrenceWrite";
 import { getPrevValue, hasPrevValue, recordPrevValue } from "../../watch/prevValues";
@@ -77,6 +78,21 @@ function recordDeclaredPrevValue(
 // binding 経由の書き込みは呼び出し元の dynamic scope から context を引き継ぎ、
 // binding 外からの API update は新しい transaction を開始する（設計書 §4 規則 1）。
 // 依存 walk で enqueue される派生アドレスも同じ書き込みの因果に属する。
+
+// 鍵付き購読（`$eq` 系、dependency/keyedDependency.ts）への通知。同値ガードが読んだ旧値と
+// 新値の鍵に登録された行だけを dirty 化して enqueue する。購読の無いパスは Map 参照 1 回で抜ける
+function notifyKeyed(stateElement: IStateHandler["stateElement"], path: string, hasOldValue: boolean, oldValue: unknown, value: unknown): void {
+  if (!hasKeyedDependents(stateElement, path)) {
+    return;
+  }
+  const updater = getUpdater();
+  const context = config.enablePropagationContext ? (getCurrentPropagationContext() ?? null) : null;
+  for (const absAddress of keyedDependents(stateElement, path, hasOldValue, oldValue, value)) {
+    dirtyCacheEntryByAbsoluteStateAddress(absAddress);
+    updater.enqueueAbsoluteAddress(absAddress, context);
+  }
+}
+
 function notifyWrite(
   address  : IStateAddress,
   absAddress: IAbsoluteStateAddress,
@@ -511,6 +527,7 @@ function setByAddressCore(
         devOldValue = oldValue;
         devHasOldValue = true;
       }
+      notifyKeyed(stateElement, path, devHasOldValue, devOldValue, value);
       const cacheable = isCacheable(stateElement, address);
       const absAddress = liftAddress(stateElement, address);
       if (devtoolsSink !== null) {
@@ -577,6 +594,7 @@ function setByAddressCore(
     devOldValue = oldValue;
     devHasOldValue = true;
   }
+  notifyKeyed(stateElement, path, devHasOldValue, devOldValue, value);
   // --- end same-value guard ---
   const isSwappable = stateElement.elementPaths.has(address.pathInfo.path);
   const cacheable = isCacheable(stateElement, address);

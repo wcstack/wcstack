@@ -21,7 +21,7 @@ const keywordByBindingType: Map<BindingType, string> = new Map<BindingType, stri
   ["else", config.commentElsePrefix],
 ]);
 
-const notFilter = createNotFilter();
+const notFilter = /*#__PURE__*/ createNotFilter();
 
 function cloneNotParseBindTextResult(
   bindingType: BindingType,

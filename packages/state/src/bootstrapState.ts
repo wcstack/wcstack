@@ -3,6 +3,9 @@ import { registerDevtoolsSource } from "./devtools/bridge";
 import { registerBinder } from "./bindings/binder";
 import { registerSsrSnapshotBuilder } from "./buildSsrDocument";
 import { registerComponents } from "./registerComponents";
+import { installWatchRuntime } from "./watch/watchRuntime";
+import { installStreamRuntime } from "./stream/streamRuntime";
+import { installVolumeGraft } from "./webComponent/volume";
 import { IWritableConfig } from "./types";
 
 /**
@@ -58,6 +61,11 @@ export function bootstrapState(config?: IWritableConfig, registry?: CustomElemen
   if (resolved) {
     setConfig(resolved);
   }
+  // 機能の登録（docs/state-next-major-wiring-design.md S2）。モジュール評価時の副作用ではなく
+  // ここで明示的に、要素の定義（connectedCallback が走り得る）より前に行う。いずれも冪等。
+  installWatchRuntime();
+  installStreamRuntime();
+  installVolumeGraft();
   registerComponents(registry);
   // binder プロトコルの提供（docs/binder-protocol-design.md）。router が後から
   // 差し込むノードをバインドできるようにする。登録は冪等。

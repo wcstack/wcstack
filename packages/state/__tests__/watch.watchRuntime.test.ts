@@ -20,7 +20,7 @@
 import { describe, it, expect, beforeAll, beforeEach, vi, afterEach } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { MAX_WATCH_CHAIN_DEPTH } from "../src/define";
-import { setDevtoolsSink } from "../src/devtools/sink";
+import { setDevtoolsSink } from "../src/platform/devtoolsSink";
 import type { DevtoolsEvent } from "../src/devtools/types";
 import type { IState } from "../src/types";
 import { __private__ as chainDepthPrivate } from "../src/watch/chainDepth";

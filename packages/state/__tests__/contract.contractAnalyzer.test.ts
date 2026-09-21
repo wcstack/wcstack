@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { analyzeContract, analyzeManifestContract } from "../src/contract/contractAnalyzer";
 import { setConfig } from "../src/config";
-import { setDevtoolsSink } from "../src/devtools/sink";
+import { setDevtoolsSink } from "../src/platform/devtoolsSink";
 import type { DevtoolsEvent } from "../src/devtools/types";
 import type { IContractManifest, ILiveDeclaration } from "../src/contract/types";
 

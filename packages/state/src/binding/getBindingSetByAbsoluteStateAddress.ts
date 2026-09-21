@@ -1,6 +1,6 @@
 import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
 import { ITreePath, IAbsoluteStateAddress } from "../address/types";
-import { devtoolsSink } from "../devtools/sink";
+import { devtoolsSink } from "../platform/devtoolsSink";
 import { IListIndex } from "../list/types";
 import { IBindingInfo } from "./types";
 

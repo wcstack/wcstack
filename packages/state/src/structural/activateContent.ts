@@ -44,7 +44,8 @@ export function deactivateContent(
   }
   const bindings = getBindingsByContent(content);
   const session = getBindingSessionByContent(content);
-  for (const binding of bindings) {
+  for (let i = 0; i < bindings.length; i++) { // 添字ループ（消去の窓に反復子のごみを残さない）
+    const binding = bindings[i];
     if (session !== null) {
       session.disposeBinding(binding);
     } else {

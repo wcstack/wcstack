@@ -19,6 +19,7 @@ import { didYouMean, LINT_HINT } from "../errorGuidance.js";
 import { raiseError } from "../raiseError.js";
 import { optionMustBeNumber, optionsRequired, valueMustBeArray, valueMustBeBoolean, valueMustBeDate, valueMustBeNumber } from "./errorMessages.js";
 import { FilterFn, FilterWithOptions } from "./types";
+import { warnV3Migration } from "../v3Migration";
 
 function validateNumberString(value: string): boolean {
   if (!value || isNaN(Number(value))) {
@@ -664,6 +665,13 @@ const hms = (options?:string[]): FilterFn<string> => {
   }
 }
 
+/** 3.0 は truthy / falsy / defaults を JavaScript の真偽判定に揃える（要件 B10）— 0n の差を予告する */
+function warnBigIntZero(fnName: string, value: unknown): void {
+  if (value === 0n) {
+    warnV3Migration(`"${fnName}" got 0n: 3.0 treats it as falsy.`);
+  }
+}
+
 /**
  * Falsy filter - checks if value is falsy.
  *
@@ -671,7 +679,10 @@ const hms = (options?:string[]): FilterFn<string> => {
  * @returns Filter function that returns true for false/null/undefined/0/''/NaN
  */
 const falsy = (_options?:string[]): FilterFn<boolean> => {
-  return (value: unknown): boolean => value === false || value === null || value === undefined || value === 0 || value === '' || Number.isNaN(value);
+  return (value: unknown): boolean => {
+    warnBigIntZero('falsy', value);
+    return value === false || value === null || value === undefined || value === 0 || value === '' || Number.isNaN(value);
+  };
 }
 
 /**
@@ -681,7 +692,10 @@ const falsy = (_options?:string[]): FilterFn<boolean> => {
  * @returns Filter function that returns true for non-falsy values
  */
 const truthy = (_options?:string[]): FilterFn<boolean> => {
-  return (value: unknown): boolean =>value !== false && value !== null && value !== undefined && value !== 0 && value !== '' && !Number.isNaN(value);
+  return (value: unknown): boolean => {
+    warnBigIntZero('truthy', value);
+    return value !== false && value !== null && value !== undefined && value !== 0 && value !== '' && !Number.isNaN(value);
+  };
 }
 
 /**
@@ -693,6 +707,7 @@ const truthy = (_options?:string[]): FilterFn<boolean> => {
 const defaults = (options?:string[]): FilterFn<unknown> => {
   const opt = options?.[0] ?? optionsRequired('defaults');
   return (value: unknown): unknown => {
+    warnBigIntZero('defaults', value);
     if (value === false || value === null || value === undefined || value === 0 || value === '' || Number.isNaN(value)) {return opt;}
     return value;
   }

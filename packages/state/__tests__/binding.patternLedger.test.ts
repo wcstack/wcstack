@@ -44,7 +44,7 @@ import {
   peekBindingsForAddress,
 } from "../src/binding/getBindingSetByAbsoluteStateAddress";
 import { BindingSession } from "../src/bindings/BindingSession";
-import { setDevtoolsSink } from "../src/devtools/sink";
+import { setDevtoolsSink } from "../src/platform/devtoolsSink";
 import type { DevtoolsEvent } from "../src/devtools/types";
 import type { ITreePath, IAbsoluteStateAddress } from "../src/address/types";
 import type { IBindingInfo } from "../src/types";

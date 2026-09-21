@@ -60,6 +60,9 @@ interface WcsStateApi {
   $resolve(path: string, indexes: number[], value?: any): any;
   $trackDependency(path: string): void;
   $untrackDependency<T>(fn: () => T): T;
+  $eq(path: string, key: unknown): boolean;
+  $eqPath(path: string, keyPath: string): boolean;
+  $eqIndex(path: string, level?: number): boolean;
   readonly $stateElement: HTMLElement;
   readonly $command: Record<string, { emit(...args: any[]): any }>;
   readonly $streamStatus: Record<string, _WcsStreamStatus>;

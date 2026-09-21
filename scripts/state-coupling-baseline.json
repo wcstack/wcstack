@@ -1,0 +1,10 @@
+{
+  "$comment": "Baseline for `node scripts/audit-state-tech-coupling.mjs --check` (CI gate for @wcstack/state, docs/state-next-major-wiring-design.md §7-1). evaluatedModules: the only modules allowed to run code at module evaluation (allocations such as `new Map()` and initializers annotated `/*#__PURE__*/` do not count). maxCoreToFeatureEdges: value imports from core groups into feature groups may not exceed this; tighten it when the audit reports fewer. reachability: entries whose reachable module count must stay at or below the limit (defineState must reach only itself, requirements N2).",
+  "evaluatedModules": [
+    "auto.ts"
+  ],
+  "maxCoreToFeatureEdges": 41,
+  "reachability": {
+    "defineState.ts": { "maxFiles": 1 }
+  }
+}

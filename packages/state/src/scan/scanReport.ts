@@ -11,7 +11,7 @@
  */
 
 import { STATE_SCAN_NAME } from "../define";
-import { devtoolsSink } from "../devtools/sink";
+import { devtoolsSink } from "../platform/devtoolsSink";
 
 /** 失敗の種類。原因も直し方も違うので console の文言を分ける */
 export type ScanFailure = "read-source" | "read-output" | "threw" | "returned-promise" | "write";

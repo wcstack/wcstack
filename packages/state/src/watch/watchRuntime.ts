@@ -25,7 +25,7 @@ import { absoluteAddressOf } from "../address/liftAddress";
 import type { IAbsoluteStateAddress } from "../address/types";
 import type { IStateElement } from "../components/types";
 import { MAX_WATCH_CHAIN_DEPTH, WATCH_LISTENER_PRIORITY } from "../define";
-import { devtoolsSink } from "../devtools/sink";
+import { devtoolsSink } from "../platform/devtoolsSink";
 import { getScopedIndexes } from "../list/wildcardLevel";
 import type { IStateProxy } from "../proxy/types";
 import { registerUpdateBatchListener } from "../updater/updater";
@@ -64,6 +64,8 @@ interface IWatchHit {
  * state も発火対象に載せる（docs/state-scan-design.md D11）。
  */
 export function startWatch(stateElement: IStateElement): void {
+  // 初回の宣言起動で listener を確実に載せる（bootstrapState() を経ない経路の保険。冪等）
+  installWatchRuntime();
   if (getWatchEntries(stateElement).size === 0 && getVolumeWatchEntries(stateElement).size === 0 && !hasScanDrainWork(stateElement)) {
     return;
   }
@@ -406,8 +408,15 @@ function readCurrentValue(state: IStateProxy, entry: IWatchEntry, indexes: numbe
   return state.$resolve(entry.path, indexes);
 }
 
-// 優先度で `$streams` の restart より先に固定する（設計書 §3-2 層 1）。import 順には依存しない。
-registerUpdateBatchListener(fireWatchOnUpdateBatch, WATCH_LISTENER_PRIORITY);
+// drain 終了 listener の登録。優先度で `$streams` の restart より先に固定する（設計書 §3-2 層 1）。
+// モジュール評価時には登録しない: import しただけの利用（ヘルパーだけの import・分割エントリ）に
+// 副作用を残さないため、full / auto エントリの bootstrapState() が呼ぶ（冪等）。
+let watchRuntimeInstalled = false;
+export function installWatchRuntime(): void {
+  if (watchRuntimeInstalled) return;
+  watchRuntimeInstalled = true;
+  registerUpdateBatchListener(fireWatchOnUpdateBatch, WATCH_LISTENER_PRIORITY);
+}
 
 export const __private__ = {
   fireWatchOnUpdateBatch,

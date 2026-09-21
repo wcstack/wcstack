@@ -1,7 +1,7 @@
 import { isPossibleTwoWay } from "./isPossibleTwoWay";
 import { EVENT_PROP_PREFIX, MODIFIER_READONLY } from "../define";
 import { config } from "../config";
-import { devtoolsSink } from "../devtools/sink";
+import { devtoolsSink } from "../platform/devtoolsSink";
 import { getLoopContextByNode } from "../list/loopContextByNode";
 import { beginPropagationTransaction, extendPropagationContext, getCurrentPropagationContext, getEdgeId, getWireId, matchWriteReceipt, runWithPropagationContext } from "../propagation/propagation";
 import { raiseError } from "../raiseError";
@@ -16,7 +16,7 @@ import { beginOccurrenceWrite, endOccurrenceWrite } from "../proxy/occurrenceWri
 
 const handlerByHandlerKey: Map<string, (event: Event) => any> = new Map();
 // binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
-const bindingRegistry = createHandlerBindingRegistry();
+const bindingRegistry = /*#__PURE__*/ createHandlerBindingRegistry();
 const producerValueObserversByNode = new WeakMap<Node, Map<string, Set<(value: unknown) => void>>>();
 
 const DEFAULT_GETTER = (e: Event) => (e as CustomEvent).detail;

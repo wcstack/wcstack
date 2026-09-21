@@ -6,7 +6,7 @@ import {
   __getRegisteredSourceForTest,
 } from '../src/devtools/bridge';
 import { DEVTOOLS_HOOK_GLOBAL, DEVTOOLS_PROTOCOL_VERSION, IDevtoolsListener } from '../src/devtools/types';
-import { devtoolsSink } from '../src/devtools/sink';
+import { devtoolsSink } from '../src/platform/devtoolsSink';
 import { setStateElement } from '../src/stateElementByName';
 import { getUpdater } from '../src/updater/updater';
 import { CommandToken } from '../src/command/CommandToken';

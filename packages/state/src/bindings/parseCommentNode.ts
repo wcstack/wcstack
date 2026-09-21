@@ -21,7 +21,7 @@ const bindingTypeKeywordSet: Set<string> = new Set<string>([
 ]);
 
 // format: <!--@@:path-->は<!--@@wcs-text:path-->と同義にする
-const EMBEDDED_REGEX = new RegExp(`^\\s*@@\\s*(.*?)\\s*:\\s*(.+?)\\s*$`);
+const EMBEDDED_REGEX = /*#__PURE__*/ new RegExp(`^\\s*@@\\s*(.*?)\\s*:\\s*(.+?)\\s*$`);
 
 export function parseCommentNode(node: Node): string | null {
   const savedText = bindTextByNode.get(node);

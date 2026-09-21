@@ -1,7 +1,7 @@
 import { IAbsoluteStateAddress } from "../address/types";
 import { IStateElement } from "../components/types";
 import { config } from "../config";
-import { devtoolsSink } from "../devtools/sink";
+import { devtoolsSink } from "../platform/devtoolsSink";
 import { setLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
 import { setStateListBaseline } from "../list/stateListBaseline";
 import { errorCallbackSymbol, updatedCallbackSymbol } from "../proxy/symbols";
