@@ -50,7 +50,7 @@ H1 の返り値契約: `read(stateElement, address, receiver) → { handled: tru
 | `@wcstack/state/features/recursion` | `**` の `install` | 新規 |
 | `@wcstack/state/features/ssr` | `Ssr` / hydrate の `install` | 新規 |
 | `@wcstack/state/features/devtools` | sink の設定 | 新規 |
-| `@wcstack/state/features/formats` | 書式フィルタ群の登録（フィルタ登録簿が前提。調査 §4.4 の「実関数の解決時機」を束縛計画の段に置く） | 新規 |
+| `@wcstack/state/features/formats` | 書式フィルタ群の登録（実装済み、§8-13。実関数の解決は束縛計画の段） | 新規 |
 | `@wcstack/state/define` | `defineState` と型のみ。値 import 0（調査 §3.1） | 新規（N2） |
 
 使い方（分割）:
@@ -98,11 +98,11 @@ A2 の 35 KB（minify 約 117 KB）は、この 4 段をすべて積んで届く
 |---|---|---|---|
 | S1 | H6 devtools sink の依存反転（12 辺） | 2.6.x（実装済み、§8-1） | なし |
 | S2 | H2 / H7 の登録呼び出しを評価時から `install()` へ。full / auto が呼ぶ | 2.6.x（実装済み、§8-1） | なし（順序契約を文書化） |
-| S3 | H1 読み書き境界 hook（27 辺） | 3.0 | なし（hot path に判定 1 回） |
-| S4 | H3 / H4 ライフサイクル・宣言 hook、H5 readiness barrier | 3.0 | 分割エントリのみ（未登録は throw） |
-| S5 | H8 SSR の分離、エントリ分割、単一 core チャンク、CI | 3.0 | 新エントリの追加のみ |
+| S3 | H1 読み書き境界 hook（27 辺） | 3.0（実装済み、§8-2） | なし（hot path に判定 1 回） |
+| S4 | H3 / H4 ライフサイクル・宣言 hook、H5 readiness barrier | 3.0（実装済み、§8-3〜§8-8） | 分割エントリのみ（未登録は throw） |
+| S5 | H8 SSR の分離、エントリ分割、単一 core チャンク、CI | 3.0（実装済み、§8-9〜§8-12） | 新エントリの追加のみ |
 
-S1・S2 は非破壊で先行できる（要件 §4 の N1〜N3 と同じ列）。S3 以降は major の器に載せる。
+S1・S2 は非破壊で先行できる（要件 §4 の N1〜N3 と同じ列）。S3 以降は major の器に載せる。**S3〜S5 は 2026-09-21 に `packages/state` へ移植済み**（§8-12、未コミット）。残るのは `features/formats`（D16 のフィルタ登録簿が前提）。
 
 ### 8-1. S1・S2 の実装記録（2026-09-20、未コミット）
 
@@ -194,6 +194,80 @@ H4（宣言 hook）を temporal の `$streams` と `$watch` に当てた（[s4Te
 
 **第 7 片（2026-09-21、ルート初期化失敗の着地）**: ルートが初期化に失敗したとき、そのルートを待っている保留中のボリュームに知らせる経路と、失敗したルート要素自身が DOM から消えたときに印を消す経路が、`State` から機能への最後の 2 呼び出しだった（[s4FailedRootPatch.mjs](../scripts/research/s4FailedRootPatch.mjs)）。受け口 `initializeFailed` / `initializeFailureCleared` を足し、core には自分のもの（`markBindingsUnavailable`）だけを残した。全テスト 3,676 件成功。**`State.ts` に残る機能の import は 2 本（型のみの `RecursionRegistry` と、DCC の `defineDCC`）— 値の import は 1 本だけ**になった。
 
+### 8-8. S4 の第 8 片の実装記録（2026-09-21、DCC の接続、サンドボックス）
+
+`State.ts` に残っていた最後の値 import（DCC の `defineDCC`）を外した（[s4DccLifecyclePatch.mjs](../scripts/research/s4DccLifecyclePatch.mjs)）。
+
+- **第 1 片の `connecting` がそのまま合った**。`[data-wc-definition]` ホスト内の `<wcs-state>` は自分のツリーを持たず、ソースを読んでホストのテンプレートからカスタム要素を定義したら終わる — 「この接続を引き取る／null」の形そのもの。order は 10 で、ボリューム（20）・bind-component（30）より先という従来の分岐順を番号で保つ。分岐と `_initializeDCC` は `dcc/dccLifecycle.ts` へ移った。
+- **要素の内部面が 2 つ増えた**: `failInitializeLoudly`（DCC のロード失敗は `_initialize` と同じ着地に載る — #257。ボリュームの失敗は載らないので、core の `await claimed` を包んで着地させる形は採れない）と `markTreeless`（従来の `_dcc` フラグ。再接続の分岐が「この rootNode のツリーとして登録し直さない」ために読む）。後者は「自分のツリーを持たずに初期化を終えた」という core の概念なので、フラグは `State` に `_treeless` の名で残し、DCC をその最初の利用者とした。
+- **readiness barrier に DCC の形を足した**（`mount=` と同じ場所・同じ順）: 引き取り手の居ない `[data-wc-definition]` ホスト内の `<wcs-state>` は `a <wcs-state> inside a [data-wc-definition] host needs the "dcc" feature` で落ちる。`bootstrapState()` が `installDccLifecycle()` を呼ぶので、full / auto では起きない。境界テスト `core.lifecycleHooks.test.ts`（4 件）が 2 つの barrier と `order` の契約（install の順でなく昇順・同名の再登録は置き換え）を固定する。`mount=` の barrier にはこれまでテストが無かった。
+- **前の片の取りこぼしを 2 つ拾った**: 呼び出し元の無い `isLifecycleFeatureRegistered` / `isDeclarationFeatureRegistered`（カバレッジの関数 100% を割っていた 2 関数）を削り、第 1 片の `CLAIMED = Promise.resolve()` に `/*#__PURE__*/` を付けた。後者は評価時の呼び出しで、製品へ移すと CI の結合門（評価時に処理を走らせるのは `auto.ts` だけ）に掛かる。
+- **結果**: 全テスト 3,680 件成功。テスト側の調整は `dcc.State.test.ts` の install 1 行（`bootstrapState()` を経ない単体テストなので、分割エントリのページと同じく自分で install する）。カバレッジ 99.61 / 98.51 / 100 / 99.8 で閾値内。`State.ts` は 1,252 → **1,220 行**（S4 の 8 片で −463）、機能の import は 24 → **1 本（型のみの `RecursionRegistry`）で、値の import は 0 本**。SSR（`Ssr`）はこれまでの数え方と同じく勘定の外で、S5 の H8 で切る。core → 機能の辺は 16 → 17（`bootstrapState → dcc/dccLifecycle` の install 辺が 1 本増え、install 辺は 7 本。分割形では `installFeatures([...])` が肩代わりする）。結合門（`--check`）はサンドボックスで通過（評価時モジュールは `auto.ts` だけ）。`auto.min.js` は 72,850 → 73,024 B gzip（+174 B）、rollup の循環警告は 2 件のまま。
+- **11 本のスクリプトは順に当てれば同じ木を再現する**（リポジトリの `packages/state` の新しいコピーへ replay し、サンドボックスと src・テストとも 1 バイトも違わないことを確認）。
+
+### 8-9. S5 の第 1 片の実装記録（2026-09-21、install と SSR 以外の辺、サンドボックス）
+
+S4 の後に残った core → 機能の辺 17 本のうち、install（7）でも SSR（4）でも `registerComponents → State`（1）でもない 5 本を受け口へ移した（[s5CoreEdgesPatch.mjs](../scripts/research/s5CoreEdgesPatch.mjs)）。§3 の表に無い受け口が 3 つ要った。
+
+- **enqueue listener**（H2 の enqueue 側）: `updater` は書き込みの enqueue ごとに、`$watch` の連鎖深さ（`watch/chainDepth`）と `on` scan の保留 reset（`scan/eventReset`）へ直接知らせていた。`registerEnqueueListener` を足し、watch と scan の install が登録する。2 つは互いに独立なので、drain listener のような優先度は持たない。未 install なら enqueue は配列長 0 の判定 1 回で済む。
+- **カスタム要素のプロパティ束縛の受け口**（`core/componentApplyHooks.ts`）: `apply` は bind-component の台帳 2 つ（完了・宣言の `completeWebComponent`、完了前の書き込みの控えの `preCompletionWrites`）を直接引いていた。受け口 1 つにまとめ、bind-component の install（`installBindComponentLifecycle`）が置く。置かれていなければ、カスタム要素への束縛も素のプロパティ書き込みになり、何も控えない。控えの読み手は bind-component の中にしか居ないので、控えても使われない。実装は台帳 2 つだけに依存する軽いモジュール（`webComponent/componentApply.ts`）に分けた。単体テストが重いライフサイクルのモジュールを評価せずに受け口を置けるようにするため。
+- **per-state hook の 13 種目 `rowReused`**: その場で使い回した行は DOM から外れないので `connectedCallback` が来ない。その行の中のマウントスコープを張り直す呼び出しを、スコープ機能の hook に移した。マウントもボリュームも無い state には hook が無いので、null 判定 1 個で抜ける。スコープの hook はボリュームだけの state にも付くため、hook 自身は従来どおり「マウントがあるか」で抜ける（境界テスト `webComponent.rowReused.test.ts`）。
+- **拾い物: `bind-component` に readiness barrier が無かった**。スコープ機能が未 install だと `preparing` の引き取り手が居ないまま null が返り、属性は黙って無視されて素の state になっていた（分割エントリだけの経路）。今は名指しで落ちる。置き場所は bind-component の他の設定エラーと同じ try の中なので、#257 の着地に載る（`connectedCallbackPromise` を reject し、診断を 1 件出す）。
+- **結果**: 全テスト 3,687 件成功。テスト側の調整は 3 ファイルで受け口を置く 1 行ずつで、境界テストを 7 件足した。カバレッジ 99.61 / 98.51 / 100 / 99.8 で閾値内。core → 機能の辺は 17 → **12**（install 7・SSR 4・`registerComponents → State` 1）。`auto.min.js` は 73,024 → 73,036 B gzip（+12 B）、rollup の循環警告は 2 件のまま。12 本のスクリプトは順に当てれば同じ木を再現する。
+- **測らなかったもの**: enqueue の変更は「同じ 2 関数を直接呼ぶ」から「同じ 2 関数を配列で回す」への置き換えで、既存の読み書きのマイクロベンチでは測れない（同値書き込みは enqueue の手前で返る）。分割形の core では配列が空なので、書き込みごとの呼び出しが 2 つ減る。
+
+### 8-10. S5 の第 2 片の実装記録（2026-09-21、SSR の分離＝H8、サンドボックス）
+
+SSR を core から外した（[s5SsrSplitPatch.mjs](../scripts/research/s5SsrSplitPatch.mjs)）。`components/Ssr.ts`・`hydrateBindings.ts`・`buildSsrDocument.ts` の約 960 行が `src/ssr/` へ移り、core に残ったのは自分のものだけになった。
+
+- **core が持つのは SSR の「モード」だけ**: `inSsr()` と、apply 側が書く `@@wcs-*` コメント・`ssrPropertyStore`。H8 が意図してそうしている — これは描画の様式であってモジュール依存ではない。機能へ渡るのは `enable-ssr` 属性の 3 点で、受け口 1 つ（`core/ssrHooks.ts`）に畳んだ: `hydrate`（ルート登録）・`loadState`（`_initialize` の冒頭で `<wcs-ssr>` のデータを読む）・`emitSnapshot`（サーバー側で、バインディング完了後に `<wcs-ssr>` を書き出す）。
+- **タグの定義は definer で登録する**: `registerComponents` は `<wcs-state>` だけを定義し、機能のタグは `registerComponentDefiner` で預ける。definer は state より**先**に走らせる — SSR 出力の `<wcs-ssr>` は state の接続が読むので、未 upgrade のまま state が先に動くと `stateData` が無い（従来 `registerComponents` が Ssr を先に define していたのと同じ順序を、受け口の契約として明示した）。
+- **readiness barrier**: `enable-ssr` を宣言したのに ssr 機能が未 install なら名指しで落ちる（`the "enable-ssr" attribute needs the "ssr" feature`）。`_loadFromSsrElement` は `_initialize` の中なので #257 の着地に載る。
+- **結果**: 全テスト 3,692 件成功（テスト側の調整は 2 箇所 — `registerComponents` のモックに新しい export を足す、`<wcs-ssr>` を期待するテストが `installSsr()` を呼ぶ。境界テスト `core.ssrHooks.test.ts` 3 件と definer の 2 件を追加）。カバレッジ 99.61 / 98.52 / 100 / 99.8 で閾値内。core → 機能の辺は 12 → **10 で、すべて入口の辺**（`bootstrapState` の install 8・`exports → ssr/Ssr`・`registerComponents → components/State`）。rollup の循環は 31 → **28 モジュール**に縮んだ（`hydrateBindings` が輪から抜けた）。警告は従来どおり 2 件。
+- **full のサイズは +390 B gzip**（73,036 → 73,426）。受け口と install の分で、full は必ず払う側。分割形の core が SSR の 960 行を落とせるかは、エントリを分ける次の片で実測する（スタブ化ビルドの見積もりではなく、実際の tree-shake で）。
+- **13 本のスクリプトは順に当てれば同じ木を再現する**。
+
+### 8-11. S5 の第 3 片の実装記録（2026-09-21、エントリ分割、サンドボックス）
+
+受け口が揃ったので、機能にエントリを与えてページが組み合わせられるようにした（[s5SplitEntriesPatch.mjs](../scripts/research/s5SplitEntriesPatch.mjs)）。
+
+- **記述子と `installFeatures`**（`core/features.ts`）: 機能のエントリは `{ name, install }` を default export し、ページは `installFeatures([temporal, scopes])` で要るものだけ入れる。**冪等は機能側の install が持つ**（どれも `installed` フラグを持っている）。core 側で名前を覚えて重複を弾く形も書いてみたが、同じことを 2 箇所に持つうえ「`bootstrapState()` の 2 回目は機能の install に届かない」という観測できる差が増え、既存テストがそれを捕まえた。core は並べた順に呼ぶだけにした。
+- **barrier はエントリを名指しする**（`core/featureEntries.ts`）: 当たったページが要るのは「どの import を足すか」で、内部の機能名（watch / scan / stream）と入れるエントリ（temporal）は 1 対 1 ではない。対応表を 1 箇所に置き、3 つの barrier が共有する。
+- **bootstrap は 2 つに割れた**: `core/bootstrapCore.ts`（設定・タグ登録・binder。install は一切しない）と、従来どおりの `bootstrapState()`（`installFeatures(ALL_FEATURES)` → `bootstrapCore()`）。full / auto の挙動は変わらない。
+- **`@wcstack/state/core` は「ビルドできる」だけでなく動く**: 機能を 1 つも入れないページで、束縛・更新・リスト描画が通ることを `entries.core.test.ts` が固定する。
+- **サイズ（実測、単一ファイル束ね・gzip -9。[split-entry-sizes.json](research/state-next/split-entry-sizes.json)、[measureSplitEntries.mjs](../scripts/research/measureSplitEntries.mjs) が生成）**: core だけ **43,779 B**（minify 147,356）。機能を足した差分は scopes +15,368・temporal +8,324・recursion +4,806・ssr +3,080・devtools +1,949 B で、全部入り 73,504 B（full の `auto.min.js` 73,561 とほぼ同じ）。**core の実測値は、調査 §9 の「機能をスタブ化した上限」44.0 KB とほぼ同じ**で、設計 §5 が見込んだ「配線の切り出しで 10〜13 KB 減る」は起きなかった — その配線はスタブ化ビルドでも既に機能側に数えられていた分で、受け口を足した分と相殺している。A2（35 KB）は本設計だけでは届かない、という §5 の結論は実測でも変わらない。
+- **core の内訳（source map 帰属、minify バイト）**: `bindings/BindingSession.ts` 13.0 KB・`components/State.ts` 12.6 KB・`filters/builtinFilters.ts` 4.7 KB・`proxy/methods/setByAddress.ts` 4.6 KB・`apply/applyChangeToFor.ts` 4.0 KB・`pathDiagnostics.ts` 3.6 KB。グループでは bindings 14.7%・proxy 12.9%・apply 10.8%・components 8.5%。**契約解析（`contract/`）と devtools は core に 1 バイトも残っていない**。A2 に効く次の手は §5 の表どおり（BindingSession の一本化・診断の dev ビルド化・`features/formats`）。
+- **単一 core チャンク（要件 B13）は成立した**: multi-entry ビルド（`rollup.split.config.js` → `dist-split/`）で、**どの機能エントリにも core のモジュールは入っていない**（source map 帰属で確認: scopes は webComponent / dcc だけ、temporal は stream / scan だけ…）。core は共有チャンク（`chunks/binder.js` ほか）に 1 つだけ置かれ、全機能がそれを import する。
+- **分割配信のチャンク代**: 同じ core が、単一ファイルなら 43.8 KB gzip、分割形（8 ファイル）では合計 **49,535 B（+13%）**。ファイルごとに gzip するためで、全部入りなら 84,609 B（単一ファイルの 73,504 より +11 KB）。**分割形は「機能を落とすページ」のためのもので、全部入りのページは従来どおり full / auto を使うのが軽い**。
+- **結合監査の分類を直した**: `components/State.ts` は core 自身の要素なのに「機能」に数えられていた（グループ名 `components` が `components/Ssr.ts` のために機能側だった）。機能はモジュール単位でも見るようにし（`FEATURE_MODULES = { components/Ssr.ts }`）、`components` はグループとしては core に戻した。その結果リポジトリ側の辺は 41 → **62** と見え方が変わる（同じコードの数え直し。基準 [state-coupling-baseline.json](../scripts/state-coupling-baseline.json) を取り直した）。**サンドボックスは 62 → 6** で、残るのは full エントリの辺だけ（`bootstrapState → features/*` 5 本と `exports → ssr/Ssr`）。
+- **CI の新しい門**: 監査に `reachability: { "entries/core.ts": { "noFeatures": true } }` を足せる形を入れた（core エントリが機能グループへ 1 本でも到達したら落ちる）。基準に載せるのは `src/entries/core.ts` が製品に入るときで、サンドボックスでは通ることを確認した。
+- **結果**: 全テスト 3,697 件成功、カバレッジ 99.61 / 98.52 / 100 / 99.8。`auto.min.js` は 73,426 → 73,561 B gzip（+135）。14 本のスクリプトは順に当てれば同じ木を再現する。
+- **まだやっていない**: `package.json` の `exports` への `./core` / `./features/*` / `./define` の追加、本体 `rollup.config.js` への分割出力の組み込み、import map ＋ SRI の実形、`features/formats`（D16 のフィルタ登録簿が要る）。
+
+### 8-12. 製品への移植（2026-09-21、`packages/state`）
+
+S3・S4・S5 の 14 本のスクリプトを `packages/state` に当て、サンドボックスの試作を製品にした。**サンドボックスでは出せない配線**（`exports` マップ・本体ビルド・CI の門）はここで足している。
+
+- **エントリ**: `package.json` の `exports` に `./core`・`./features/*`・`./define` を追加。`.`（full）と `./auto` は不変。
+- **ビルド**: `rollup.config.js` に multi-entry の分割ビルド（`dist/split/` — `core.js`・`features/*.js`・`chunks/*.js`、minify・source map 付き、チャンク名はハッシュ無し）と、その型（`dist/split/**/*.d.ts`）、それに `dist/define.js`（minify で **49 バイト** — 恒等関数と型だけ）・`dist/define.d.ts` を足した。source map は任意ではない: 「機能が core を再同梱していない」門がそれを読む。
+- **CI の門を 2 つ**: [check-state-split.mjs](../scripts/check-state-split.mjs)（各 `features/*` が core のチャンクを共有し、自分では core のコードを持たないこと ＝ 要件 B13）と、[check-state-size.mjs](../scripts/check-state-size.mjs) に core エントリを **閉包（`core.js` ＋ 引き込むチャンク）**で足した（エントリのファイル自体は 1 KB の殻なので、単体では意味の無い数字になる）。結合の基準は `maxCoreToFeatureEdges` 6 と `reachability: { "entries/core.ts": { "noFeatures": true } }` に締めた。
+- **掃除**: 片が残した未使用 import（`State.ts` の 6 本・`getByAddress` の 2 つの名前空間定数・宣言モジュールの型 3 本）を外した。lint の警告は 0 になり、同じ掃除をスクリプト側（§8-11 の第 7 段）にも入れてある。
+- **他パッケージ**: `@wcstack/server` / `router` / `wcstack` / e2e は `@wcstack/state` の公開面と `dist/auto.min.js` しか触っていないので、`components/Ssr.ts` → `ssr/Ssr.ts` の移動の影響は無い（`exports.ts` からの `Ssr` の再 export はそのまま）。
+- **文書**: README（ja/en）に分割エントリの節、[sri](./sri.ja.md) §5.1 に import map ＋ `integrity` の実形。
+- **結果**: 全テスト 3,697 件成功、カバレッジ 99.61 / 98.52 / 100 / 99.8、lint 0、ビルド成功。門は 4 つとも通る（結合 6 辺・ヘルパー入口 311 B gzip・サイズ・core の再同梱なし）。`dist` の実測は `auto.min.js` 73,561・`index.esm.js` 329,418・分割 core の閉包 49,535 B gzip（8 ファイル）。
+
+### 8-13. `features/formats`（2026-09-21、フィルタ登録簿、`packages/state`）
+
+D16 の決定（「実関数の解決は束縛計画の段。文法段だけを core に残し、書式フィルタ群を `features/formats` へ」）を実装した。§4 の表で最後に残っていたエントリ。
+
+- **段が分かれた**: 解析の段（`bindTextParser/parseFilters.ts`）は **名前と引数しか作らない**（`IParsedFilter`）。実関数は束縛計画の段（`bindings/planFilters.ts`）が登録簿（`core/filterRegistry.ts`）から引き、`IBindingInfo` にだけ `filterFn` が載る（`IFilterInfo extends IParsedFilter`）。
+- **束縛計画は 2 か所**: 通常経路の `getBindingInfos`（ノードごと）と、行プラン `structural/rowPlan.ts`（テンプレートごとに 1 回）。後者は「行不変の解決を焼き込む」という元の設計にそのまま乗る — 行ごとに引き直さない。
+- **診断が動いた**: 未知のフィルタは解析時 throw から **束縛計画の段**へ。文言（`[wcs/filter-unknown]` と did-you-mean）は lint と同じまま。パーサだけを使う tooling は実装を持たないので、そもそも「知らない名前」を解析の段で判定できない — 移動は必然だった。
+- **core が持つフィルタは `not` だけ**。`if` / `else` はエンジンが `not` を足した束縛として組み立てるので、`features/formats` を入れないページでも要る。`structural/createNotFilter.ts` は解析の段の形（名前と引数）を返すだけになった。
+- **実装の置き場**: `filters/builtinFilters.ts` と `filters/errorMessages.ts` は `src/formats/` へ（`git mv`）。`filters/` に残るのは型と `filterMeta`（manifest / tooling が読むメタデータ）。`manifest.ts` は実装から名前を引く正本なので `formats/builtinFilters` を import する — 入口の辺が 1 本増えて基準は 8 本になった。
+- **サイズ**: core 単体 43,779 → **42,705 B gzip**（minify 147,356 → 143,050）。`features/formats` は +1,272 B。full の `auto.min.js` は 73,561 → 73,968（+407 — 登録簿の間接化の分）。分割 core の閉包は 49,535 → 49,148 B。
+- **結果**: 全テスト 3,704 件成功（テスト側の調整は 3 ファイル: 解析時解決を前提にしていた 7 件を新しい契約へ書き直し、境界テスト `core.filterRegistry.test.ts` を追加）。カバレッジ・lint・門は 4 つとも通る。
+
 ## 9. 決めたこと・決めていないこと
 
 決めた（2026-09-21、要件 §6 の D12・D13・D15・D16）:
@@ -207,3 +281,4 @@ H4（宣言 hook）を temporal の `$streams` と `$watch` に当てた（[s4Te
 決めていない:
 
 - `BindingSession` の二重経路の一本化と、行 record・session 共有・プラン初期描画（調査 §10.7・§10.13・§10.14。3.0 の器に載せることは決めた）の具体設計は本設計の外。別文書にする。
+- **属性の barrier の着地**（§8-8 で見つけた）: `mount=` と DCC の barrier は `connectedCallback` から throw するだけで、`connectedCallbackPromise` は未解決のまま残る。宣言の barrier は `_initialize` の中で落ちるので #257 の着地に載る。そろえるなら、`mount=` には `_failInitializeLoudly` をそのまま使えない（ルートより先に接続したボリュームでは、まだ来ていないルートのノードを利用不能と印付けし、保留中の他のボリュームまで落とす）ので、ルートを巻き込まない着地が要る。分割エントリにしか無い経路なので、S5 で決める。§8-9 で足した `bind-component` の barrier は、bind-component の他の設定エラーと同じ try の中にあるので着地する。DCC の barrier も、DCC のロード失敗と同じ着地に載せて差し支えない。

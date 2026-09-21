@@ -134,7 +134,7 @@ These carry over the provisional targets of audit §8. They are **targets, not m
 | ID | Criterion | How it is measured |
 |---|---|---|
 | A1 | Named full entry at or under about 72 KB gzip | Size CI (N3). A helper-only import retains no runtime |
-| A2 | Selected base + DOM at or under 35 KB gzip | A prototype target, measured with the excluded features listed explicitly |
+| A2 | Selected base + DOM at or under 35 KB gzip | A prototype target, measured with the excluded features listed explicitly. **Measured 2026-09-21: the split `@wcstack/state/core` is 42.7 KB gzip** (single-file bundle; extracting the wiring did not shrink it, and `features/formats` took 1.1 KB off — wiring design §8-11 and §8-13). The remaining levers are unifying `BindingSession` and moving diagnostics to a dev build (wiring design §5) |
 | A3 | At least 25% median improvement in create / append / clear, measured on **warm create 1,000, cold create 10,000, append 1,000 and clear 10,000** (D14: cold create 1,000 is "the content creation the pool hides + the creation's GC + warm-up", which per-binding optimisation does not move, survey §10.15; cold create 1,000 is only checked for regressions) | Without concealing regressions in plain reads, partial updates, swaps or startup. Alternate A/B order, use multiple browser processes and sufficient samples |
 | A4 | No architecture chosen from differences near 0.1 ms | Below timer resolution, no ratio is claimed (audit §4.2) |
 | A5 | Memory behaviour is explainable | Tens of create/clear and root attach/dispose cycles, with post-GC trend, retaining owners, and explicit pool bounds |

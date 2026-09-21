@@ -130,6 +130,33 @@ The named-import style (`import { bootstrapState } from '…'`) against `dist/in
 
 If you want protection in every browser, the single-tag `dist/auto.min.js` form rather than named imports is the surest route.
 
+### 5.1 The split entries of `@wcstack/state`
+
+`@wcstack/state/core` and each `@wcstack/state/features/*` are named imports that also pull in the
+shared core chunk, so they fall under §5: an import map with an `integrity` key is the only way to
+cover them, and every URL needs its own digest — the entry, each feature, and each chunk under
+`dist/split/chunks/`.
+
+```html
+<script type="importmap" nonce="{RANDOM}">
+{
+  "imports": {
+    "@wcstack/state/core": "https://cdn.jsdelivr.net/npm/@wcstack/state@3.0.0/dist/split/core.js",
+    "@wcstack/state/features/temporal": "https://cdn.jsdelivr.net/npm/@wcstack/state@3.0.0/dist/split/features/temporal.js"
+  },
+  "integrity": {
+    "https://cdn.jsdelivr.net/npm/@wcstack/state@3.0.0/dist/split/core.js": "sha384-…",
+    "https://cdn.jsdelivr.net/npm/@wcstack/state@3.0.0/dist/split/features/temporal.js": "sha384-…",
+    "https://cdn.jsdelivr.net/npm/@wcstack/state@3.0.0/dist/split/chunks/binder.js": "sha384-…"
+  }
+}
+</script>
+```
+
+Chunk file names carry no hash, so a digest is tied to a pinned version rather than to a build. A
+page that wants protection in every browser uses the single-tag `dist/auto.min.js` form, which the
+split entries deliberately do not replace.
+
 ## 6. For implementers — invariants not to break
 
 1. `src/auto.ts` imports from `./exports` only. It MUST NOT relatively import a sibling dist file. Doing so turns `auto.min.js` back into a stub and drops integrity coverage to nearly zero. **"integrity is present but protects nothing" is worse than no integrity at all**
