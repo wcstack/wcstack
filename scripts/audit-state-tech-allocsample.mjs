@@ -3,7 +3,8 @@
 // HeapProfiler sampling (every 4 KB of allocation) runs around the click → MutationObserver
 // window of the clear; the samples are attributed to the allocating function (self) and summed.
 // A scavenge inside the clear is triggered by these allocations, so they are what a form that
-// avoids it has to remove. Unminified bundle for readable names. Run from the repository root
+// avoids it has to remove. Build with WCS_STATE_UNMINIFIED=1 for readable names (the named entry is
+// minified since requirement N1). Run from the repository root
 // after `npm ci` in e2e/:
 //   node scripts/audit-state-tech-allocsample.mjs [--bundle <file>] [--op clear10k|create1k] [--fixture manual|tracked] [--samples N] [--top N]
 // --op create1k samples the audit benchmark's cold creation of 1,000 rows on a fresh page instead

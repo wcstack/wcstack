@@ -296,7 +296,7 @@ Decided (2026-09-21, requirements §6 D12, D13, D15, D16):
 - **When filter functions are resolved**: from a registry at binding-plan time. Only the grammar stage (1.7–3.2 KB gzip, survey §4.3) stays in the core; the formatting filters move to `features/formats`. The "unknown filter" diagnostic moves from a parse-time throw to the binding-plan stage.
 - **Attaching H1 hooks**: the `_state` setter assembles the state element's `addressHooks` from the declarations (reserved keys, `**`, DCC); the `mount=` attribute is picked up in `connectedCallback` as a second pass (§8-2).
 - **When the readiness barrier fires**: it throws in the `_state` setter (at declaration time). Never on `auto` / full.
-- **The +1.3 KB gzip that S3's receptacles add to the full bundle** (requirements D19, §8-2's record of slices 2 and 3): re-record `scripts/state-size-baseline.json` from the 3.0 build and accept it. Whether to fold the 12 loops into one shared runner is decided after measuring it when S3 lands on the 3.0 vehicle.
+- **The +1.3 KB gzip that S3's receptacles add to the full bundle** (requirements D19, §8-2's record of slices 2 and 3): re-record `scripts/state-size-baseline.json` from the 3.0 build and accept it. Folding the 12 loops into a shared runner was measured on 2026-09-21 and **not taken**: two functions covering the six notify-style and four first-handled sites save 32 B on `auto.min.js` and 112 B on the split core closure (gzip), far from the adoption bar of 0.5 KB — gzip already compresses loops of the same shape well.
 
 Decided (2026-09-21, second round; the two items below used to be listed as undecided):
 

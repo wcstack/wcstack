@@ -71,7 +71,7 @@ Each of these requires a major. **None of them is decided.** Every "today" colum
 
 | ID | Item | Notes |
 |---|---|---|
-| N1 | Minify the named entry | The API does not change. Change the Rollup configuration and the synchronization scripts, not the generated copies |
+| N1 | Minify the named entry | The API does not change. Change the Rollup configuration and the synchronization scripts, not the generated copies. **Done (2026-09-21)**: `dist/index.esm.js` is minified by the state rollup configuration (a recorded deviation in `sync-package-configs.mjs`), 336,525 → 77,605 B gzip; `WCS_STATE_UNMINIFIED=1` keeps names readable for profiling |
 | N2 | A side-effect-free helper entry | `defineState`, types, version — pulling in no runtime |
 | N3 | Size CI | Pin gzip and Brotli for the four entries the audit measured, with thresholds. **In place (uncommitted)**: the re-export of `defineState` only ≤ 1 KB gzip (`audit-state-tech-helper-import.mjs --check`) and the gzip of `auto.min.js` / `index.esm.js` within +3 % of the release baseline (`check-state-size.mjs --check`, baseline in `scripts/state-size-baseline.json`, D18) |
 | N4 | Fix [#258](https://github.com/wcstack/wcstack/issues/258) | X6 (after SSR hydration, row getter bindings never follow leaf updates), X7 (row bindings stop following writes after a re-set), X10 (the getter cache survives `setInitialState`). These are bug fixes and do not need to wait for a major |
@@ -137,7 +137,7 @@ N1–N4 and N6 can ship in 2.6.x, which is also where the deprecation notices of
 - **D6 is (b)** (a 3.x minor).
 - **D7 as recommended** (no O(1) promise; supported by `$eq` / `$eqPath` / `$eqIndex`, with the O(N) cases published in the README), implemented.
 - **D20–D26 as recommended.**
-- D19's (b) (folding the receptacle loops into one runner) is measured now and taken if it saves at least 0.5 KB gzip without slowing the read path.
+- D19's (b) (folding the receptacle loops into one runner) is measured now and taken if it saves at least 0.5 KB gzip without slowing the read path. → **Measured and not taken** (`auto.min.js` −32 B, split core closure −112 B; wiring design §9).
 - A3 has not been judged yet. Compare 2.5.1 with 3.0 on D14's four measures first, then decide what to do about any that fall short.
 
 ## 7. Migration and deprecation
@@ -153,7 +153,7 @@ These carry over the provisional targets of audit §8. They are **targets, not m
 
 | ID | Criterion | How it is measured |
 |---|---|---|
-| A1 | Named full entry at or under about 72 KB gzip → **restated as 3.0's measurement (D21)** | Measured once N1 ships, then held by the size CI (N3, D18's +3 %). A helper-only import retains no runtime |
+| A1 | Named full entry at or under about 72 KB gzip → **restated as 3.0's measurement (D21): 77.6 KB gzip** (`dist/index.esm.js` minified; `auto.min.js` 75.2 KB) | Measured once N1 ships (done), then held by the size CI (N3, D18's +3 %). A helper-only import retains no runtime |
 | A2 | Selected base + DOM at or under 35 KB gzip → **restated as 3.0's measured core, 43.2 KB (D22)** | A prototype target, measured with the excluded features listed explicitly. **Measured 2026-09-21: the split `@wcstack/state/core` is 42.7 KB gzip** (single-file bundle; extracting the wiring did not shrink it, and `features/formats` took 1.1 KB off — wiring design §8-11 and §8-13). Unifying `BindingSession` stopped being a lever after R2 and R3 (row runtime design §6-1); the last lever, separating the diagnostics (`features/diagnostics`, wiring design §8-14), leaves the core at 43.2 KB, and 35 KB is out of reach for this structure |
 | A3 | At least 25% median improvement in create / append / clear, measured on **warm create 1,000, cold create 10,000, append 1,000 and clear 10,000** (D14: cold create 1,000 is "the content creation the pool hides + the creation's GC + warm-up", which per-binding optimisation does not move, survey §10.15; cold create 1,000 is only checked for regressions) | Without concealing regressions in plain reads, partial updates, swaps or startup. Alternate A/B order, use multiple browser processes and sufficient samples |
 | A4 | No architecture chosen from differences near 0.1 ms | Below timer resolution, no ratio is claimed (audit §4.2) |

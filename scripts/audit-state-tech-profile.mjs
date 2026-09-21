@@ -1,7 +1,8 @@
 // Sampling profile of one benchmark operation (create 10,000 rows by default) through CDP's
 // Profiler, aggregated by function as self time, so that the per-row cost of creation can be
 // attributed to functions rather than to the coarse counters of audit-state-tech-counters.mjs.
-// The unminified dist/index.esm.js (or a prototype build) is served so that names are readable;
+// dist/index.esm.js (or a prototype build) is served; build it with WCS_STATE_UNMINIFIED=1 so that the
+// names are readable (the named entry is minified since requirement N1);
 // samples every 100 µs; three pages, the function table is summed over them and expressed per
 // row. Run from the repository root after `npm ci` in e2e/, with no other performance driver running:
 //   node scripts/audit-state-tech-profile.mjs [--bundle <file>] [--op create10k|append1k|select10k] [--fixture manual|tracked] [--samples N] [--top N]

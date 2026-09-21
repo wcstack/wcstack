@@ -9,6 +9,12 @@ const typescriptPlugin = typescript({
   declarationMap: false,
 });
 
+// The named entry (`exports["."]`) is minified (requirement N1 / D21): a buildless page that imports
+// `@wcstack/state` by its file path took 311 KB gzip unminified against about 75 KB minified. The
+// research scripts that read function names from a profile (scripts/audit-state-tech-profile.mjs,
+// audit-state-tech-allocsample.mjs) build with WCS_STATE_UNMINIFIED=1 to keep them readable.
+const minifyNamedEntry = !process.env.WCS_STATE_UNMINIFIED;
+
 export default [
   // ESM build
   {
@@ -18,7 +24,7 @@ export default [
       format: 'esm',
       sourcemap: true,
     },
-    plugins: [json(), typescriptPlugin],
+    plugins: [json(), typescriptPlugin, ...(minifyNamedEntry ? [terser()] : [])],
   },
   // No dist/index.esm.min.js on purpose — see config-templates/rollup.config.js
   // for the rule. It was reachable only through the old auto stub's relative
