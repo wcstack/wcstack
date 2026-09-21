@@ -1148,6 +1148,7 @@ describe("volume: $commandTokens / $eventTokens の宣言は warn されるこ�
         $commandTokens: ["focus"],
         $eventTokens: { changed: "onChanged" },
         $on: { changed() {} },
+        $errorCallback() {},
       });
       await rootElement.connectedCallbackPromise;
       await volumeElement.connectedCallbackPromise;
@@ -1158,6 +1159,8 @@ describe("volume: $commandTokens / $eventTokens の宣言は warn されるこ�
       expect(warns.some((m) => m.includes("$commandTokens"))).toBe(true);
       expect(warns.some((m) => m.includes("$eventTokens"))).toBe(true);
       expect(warns.some((m) => m.includes("$on"))).toBe(true);
+      // $errorCallback もルート専用で、無言に無視しない（要件 B11）
+      expect(warns.some((m) => m.includes("$errorCallback"))).toBe(true);
       // 接ぎ木は成立している
       let value: unknown;
       rootElement.createState("readonly", (s: any) => { value = s["cfg.value"]; });

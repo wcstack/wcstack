@@ -122,7 +122,8 @@ let nextMountId = 0;
 
 const MOUNT_DOLLAR_DECLARATIONS = [
   "$watch", "$streams", "$scan", "$listKeys", "$updatedCallback", "$commandTokens", "$eventTokens", "$on",
-  "$recursion",
+  // $errorCallback もルート専用（要件 B11 — 以前は無言で無視していた）
+  "$recursion", "$errorCallback",
 ] as const;
 const dollarDeclarationWarned = new Set<string>();
 

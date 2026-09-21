@@ -336,6 +336,20 @@ There is **one state tree per root**. To split state across modules, mount a vol
 
 A volume may declare getters, `$watch`, `$listKeys`, `$updatedCallback`, and `$connectedCallback`/`$disconnectedCallback` — all relative to its mount path. `$errorCallback` is root-only (a binding failure is reported once, to the tree's owner). Load order does not matter (a volume connected before the root is grafted when the root registers). If the root `<wcs-state>` fails to initialize, the volumes already waiting for it settle with a report of their own instead of waiting forever. That report is the end of the line for those volumes: a volume reported as an orphan does not graft itself later, so connecting a corrected root afterwards does not bring it back. A volume that settles without grafting — orphaned, failed to load, or failed to graft — releases its mount slot, and so does a volume detached while it is still loading or waiting for its root. Such a volume takes the slot back when it is re-attached to the same root, or otherwise just before it grafts, and still grafts as before when the slot is free — even while detached; if another volume took the slot in the meantime, it reports that and does not graft. A synchronous throw from a volume's `$connectedCallback` is reported like an asynchronous one, and the volume counts as grafted. To recover without reloading the page, remove the broken root and the orphaned volumes and add new elements. A grafted volume keeps its slot even when detached, because its data stays in the tree. Mount paths must be static (`*`, `$`, `#`, `@` are rejected). Changing `mount` after the element has initialized is not supported: the change is ignored with a console warning — remove the element and add a new one with the desired path.
 
+**What each scope runs** (3.0 states it as one table — requirement B11; nothing here is ignored silently):
+
+| Declaration | Root `<wcs-state>` | Volume `<wcs-state mount="p">` | Mounted component (`bind-component` with `state: …`) |
+|---|---|---|---|
+| Data keys, getters, setters, methods | yes | yes, relative to `p` | yes — own keys are private unless the host maps them; getters are exported |
+| `$connectedCallback` / `$disconnectedCallback` | yes | yes, relative to `p` | yes |
+| `$watch`, `$listKeys`, `$updatedCallback` | yes | yes, relative to `p` | not run — one `wcs/mount-dollar-declaration` warning |
+| `$streams`, `$scan`, `$recursion`, `**` getters | yes | rejected with an error before grafting | not run — warning |
+| `$commandTokens`, `$eventTokens`, `$on` | yes | not run — warning | not run — warning |
+| `$errorCallback` | yes | not run — warning (silent before 3.0) | not run — warning (silent before 3.0) |
+| An initialization failure | reported once; `connectedCallbackPromise` rejects | settles without grafting and releases its slot; `connectedCallbackPromise` resolves (a missing `scopes` feature rejects it) | reported once; the component's `connectedCallbackPromise` rejects |
+
+A component that is not mounted (a plain Shadow DOM child with its own `<wcs-state>`) is a root of its own and runs everything in the first column.
+
 > **Migrating from v1's named states:** `<wcs-state name="cart">` + `total@cart` becomes `<wcs-state mount="cart">` + `cart.total`. In v2 the `name` attribute fails fast and `@` in a path is a parse error, each with this exact guidance. Migration table: [docs/state-mount-design.md](../../docs/state-mount-design.md) §9.
 
 ## Updating State

@@ -596,6 +596,7 @@ describe("mountOverlay: 宣言 warn とライフサイクル（設計書 §4-6�
       defineWiredComponent(tag, () => ({
         $watch: { name(cur: unknown) { watchFired.push(cur); } },
         $listKeys: { tags: "id" },
+        $errorCallback() {},
       }), `<span class="n" data-wcs="textContent: name"></span>`);
       const { host, parentStateElement } = await mountHost(
         '{"user":{"name":"Alice"}}',
@@ -614,6 +615,8 @@ describe("mountOverlay: 宣言 warn とライフサイクル（設計書 §4-6�
       const warns = warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes("[wcs/mount-dollar-declaration]"));
       expect(warns).toHaveLength(1); // 2 インスタンスでも 1 回
       expect(warns[0]).toContain("$watch, $listKeys");
+      // $errorCallback もルート専用で、無言に無視しない（要件 B11）
+      expect(warns[0]).toContain("$errorCallback");
       expect(warns[0]).toContain("volume");
       host.remove();
     } finally {
