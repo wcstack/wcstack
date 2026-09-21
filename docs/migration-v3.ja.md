@@ -105,7 +105,7 @@ wcstack 3.0.0 の変更は `@wcstack/state` に集中しています。主題は
 | ツール | 変わること |
 |---|---|
 | `@wcstack/lint` / VS Code 拡張 | `wcs/binding-syntax`（**error**）を新設: 閉じていない引用符・2 つ目の `#`・`else:` の後ろの値・構造ディレクティブ / spread の修飾子やフィルタ・空のフィルタ。判定は正本パーサ（`@wcstack/state/parser`）そのものなので、ランタイムとずれません。2.6.x の `wcs/v3-migration`（info）は無くなりました。引用符の中の `;` は区切りとして扱いません |
-| `@wcstack/devtools` | 変更なし。hook protocol は v2 のまま（2.x の devtools ビルドも 3.0 の state を表示できます） |
+| `@wcstack/devtools` | State ペインに **Keyed selection** 節が増えました: `$eq` / `$eqPath` / `$eqIndex` の購読を path ごとに数え、全行を再評価する getter の path には `tracked` バッジを付けます。読む元の `keyedSubscriptions(rootNode)` は追加の pull API なので hook protocol は v2 のままです — 2.x の devtools ビルドも 3.0 の state を（節なしで）表示でき、3.0 のビルドは 2.x の state では節を出しません |
 | `@wcstack/server` | API は変更なし。3.0 の `@wcstack/state` と組で使います。描画結果は §4 の空値の規則に従います |
 | `@wcstack/testing` / `wcs-schema`（`@wcstack/typescript`）/ manifest | 変更なし（manifest は `schemaVersion` 2 のまま） |
 | `wcstack/auto`・CDN ピン | 全パッケージ同時リリース。`@wcstack/*` のタグは全部同じ版に揃えます。リリースごとの SRI ダイジェストは GitHub Release ページと [sri.ja.md](./sri.ja.md) |

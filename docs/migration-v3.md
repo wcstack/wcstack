@@ -105,7 +105,7 @@ All of them are in `@wcstack/state`. "2.6 notice" says whether 2.6.x's `wcs/v3-m
 | Tool | What changes |
 |---|---|
 | `@wcstack/lint` / VS Code extension | New `wcs/binding-syntax` (**error**): an unterminated quote, a second `#`, a value after `else:`, modifiers or filters on a structural directive or spread, an empty filter. The judgement is the canonical parser's (`@wcstack/state/parser`), so it cannot drift from the runtime. 2.6.x's `wcs/v3-migration` (info) is gone. A `;` inside quotes is not a separator |
-| `@wcstack/devtools` | Unchanged. The hook protocol stays at v2 (a 2.x devtools build can display a 3.0 state) |
+| `@wcstack/devtools` | The State pane gains a **Keyed selection** section: the `$eq` / `$eqPath` / `$eqIndex` subscriptions per path, with a `tracked` badge on a getter path that re-evaluates every row. The source it reads, `keyedSubscriptions(rootNode)`, is an additive pull API, so the hook protocol stays at v2: a 2.x devtools build still displays a 3.0 state (without the section), and a 3.0 build hides the section on a 2.x state |
 | `@wcstack/server` | API unchanged. Use it with the 3.0 `@wcstack/state`; its output follows the empty-value rules in §4 |
 | `@wcstack/testing` / `wcs-schema` (`@wcstack/typescript`) / manifest | Unchanged (the manifest stays at `schemaVersion` 2) |
 | `wcstack/auto`, CDN pins | Every package is released together. Pin every `@wcstack/*` tag to the same version. Each release's SRI digests are on its GitHub Release page and in [sri.md](./sri.md) |

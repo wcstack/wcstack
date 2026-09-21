@@ -16,7 +16,7 @@
 import { DevtoolsCore, IRosterEntry, ITimelineEntry, IWiringEntry } from "../core/DevtoolsCore";
 import { formatValue } from "../core/formatValue";
 import { IDeclaredBinding, scanDeclaredBindings } from "../core/declaredScan";
-import { IDeclaredBindingLike, IMountOverlaySummaryLike } from "../protocol/types";
+import { IDeclaredBindingLike, IKeyedSubscriptionSummaryLike, IMountOverlaySummaryLike } from "../protocol/types";
 
 const STYLE_TEXT = /* css */ `
 :host {
@@ -115,6 +115,9 @@ header .spacer { flex: 1; }
 .overlay-row .prop { color: #b7f0c0; }
 .overlay-row .path { color: #9fd0ff; }
 .overlay-row .detail { color: #6f88a3; }
+.keyed-row { padding: 1px 0; white-space: nowrap; }
+.keyed-row .path { color: #9fd0ff; }
+.keyed-row .detail { color: #6f88a3; }
 .wiring-tabs { padding: 0 0 4px; }
 .wiring-tabs button { font: inherit; cursor: pointer; margin-right: 4px; opacity: 0.6; }
 .wiring-tabs button.active { opacity: 1; font-weight: bold; }
@@ -546,12 +549,69 @@ export class WcsDevtools extends HTMLElement {
       body.append(this._emptyRow("no readable keys (runtime without keys() API?)"));
       // keys が読めないランタイムでも overlays は独立に読める可能性があるため出す
       this._renderOverlaysSection(body, selected);
+      this._renderKeyedSection(body, selected);
       return;
     }
     for (const key of keys) {
       this._renderTreeNode(body, selected, { path: key, indexes: [] }, key, 0);
     }
     this._renderOverlaysSection(body, selected);
+    this._renderKeyedSection(body, selected);
+  }
+
+  /**
+   * 選択ツリーの鍵付き購読セクション（keyedSubscriptions — protocol v2 追補・要件 D17）。
+   * `$eq` / `$eqPath` / `$eqIndex` の購読は依存グラフの動的な変化で、上の状態ツリーにも
+   * Wiring の台帳にも現れない。path ごとに購読の数と最後の値を出し、getter 由来の path で
+   * 追跡付きの読みに落ちたもの（変わるたびに読む getter が全部再評価される）を warn で目立たせる。
+   * 未提供の旧ランタイム（null）と `$eq` 系が一度も評価されていないツリー（空配列）では出さない。
+   * pull の時機は Overlays と同じく State ペインの再描画に乗る。
+   */
+  private _renderKeyedSection(body: HTMLElement, entry: IRosterEntry): void {
+    const summaries = this._core!.keyedSubscriptionsOf(entry);
+    if (summaries === null || summaries.length === 0) {
+      return;
+    }
+    const heading = document.createElement("h3");
+    heading.className = "overlays-heading";
+    heading.textContent = `Keyed selection (${summaries.length} path${summaries.length === 1 ? "" : "s"})`;
+    body.append(heading);
+    for (const summary of summaries) {
+      body.append(this._keyedRow(summary));
+    }
+  }
+
+  /** 鍵付き購読 1 path の描画（path・購読の数・最後の値、または追跡付きへの落ち）。 */
+  private _keyedRow(summary: IKeyedSubscriptionSummaryLike): HTMLElement {
+    const row = document.createElement("div");
+    row.className = "keyed-row";
+    const path = document.createElement("span");
+    path.className = "path";
+    path.textContent = summary.path;
+    row.append(path);
+    if (summary.tracked) {
+      const badge = document.createElement("span");
+      badge.className = "badge-tag warn";
+      badge.textContent = "tracked";
+      badge.title = "the path is a getter or under one, so $eq cannot subscribe by key: every getter that reads it re-evaluates when it changes";
+      row.append(document.createTextNode(" "), badge);
+    }
+    const details: string[] = [];
+    // 空になった鍵は台帳から消えるので、鍵があれば行もある
+    if (summary.rows > 0) {
+      details.push(`rows ${summary.rows} · keys ${summary.keys}`);
+    }
+    if (summary.lists > 0) {
+      details.push(`list watchers ${summary.lists}`);
+    }
+    if (!summary.tracked) {
+      details.push(`last ${formatValue(summary.lastValue, 1)}`);
+    }
+    const detail = document.createElement("span");
+    detail.className = "detail";
+    detail.textContent = details.length > 0 ? ` ${details.join(" · ")}` : "";
+    row.append(detail);
+    return row;
   }
 
   /**

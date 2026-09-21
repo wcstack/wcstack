@@ -58,6 +58,10 @@ if (!hasBadge) fail("no badge");
 // 3. state pane: roster + top-level keys
 const stateText = await pane("state");
 if (!stateText.includes("count:") || !stateText.includes("todos:")) fail("state pane: " + stateText.slice(0, 200));
+// 3b. keyed selection section ($eqIndex on the todo rows: one list watcher, no row subscriptions)
+if (!/Keyed selection \(1 path\)selectedIndex list watchers 1 · last null/.test(stateText)) {
+  fail("keyed selection section: " + stateText.slice(stateText.indexOf("Keyed"), stateText.indexOf("Keyed") + 120));
+}
 
 // 4. wiring pane: LIVE bindings (devtools loaded first → not declared fallback)
 const wiringText = await pane("wiring");
@@ -73,6 +77,14 @@ let timelineText = await pane("timeline");
 if (!timelineText.includes("write") || !timelineText.includes("count") || !timelineText.includes("batch")) {
   fail("timeline missing write/batch: " + timelineText.slice(0, 300));
 }
+
+// 5b. clicking a todo title selects that row only (keyed selection through $eqIndex)
+await page.click("text=click a path to highlight bound nodes");
+await page.waitForTimeout(200);
+const selectedTitles = await page.evaluate(() =>
+  [...document.querySelectorAll("li .title.selected")].map((el) => el.textContent.trim())
+);
+if (selectedTitles.join() !== "click a path to highlight bound nodes") fail("keyed selection on the page: " + JSON.stringify(selectedTitles));
 
 // 6. ghost command → warn badge (subscriberCount 0)
 await page.click("text=fire ghost command");
@@ -122,7 +134,7 @@ if (highlightCount < 1) fail("path click produced no highlight boxes");
 // 10. no page errors overall
 if (errors.length > 0) fail("page errors: " + errors.join(" | "));
 
-console.log("SMOKE OK — hook/source, badge, state tree, live wiring, write/batch/command/event timeline, ghost-warn, devtools-edit round trip, highlight all verified");
+console.log("SMOKE OK — hook/source, badge, state tree, keyed selection, live wiring, write/batch/command/event timeline, ghost-warn, devtools-edit round trip, highlight all verified");
 await browser.close();
 server.kill();
 process.exit(0);

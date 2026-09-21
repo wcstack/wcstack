@@ -20,7 +20,9 @@
     ul { list-style: none; margin-top: 0.75rem; }
     li { display: flex; gap: 0.5rem; align-items: center; padding: 0.3rem 0; border-bottom: 1px dashed #eee; }
     li .box { cursor: pointer; user-select: none; }
+    li .title { cursor: pointer; }
     li .title.done { text-decoration: line-through; color: #999; }
+    li .title.selected { font-weight: 700; color: #3949ab; }
     .hint { font-size: 0.8rem; color: #888; margin-top: 0.75rem; }
     .hint li { border: none; display: list-item; list-style: disc; margin-left: 1.25rem; padding: 0.1rem 0; }
   </style>
@@ -55,6 +57,11 @@ export default {
     { title: "click a path to highlight bound nodes", done: false },
   ],
   get "todos.*.box"() { return this["todos.*.done"] ? "☑" : "☐"; },
+  // 鍵付き選択: 選択の変更で再評価されるのは旧行と新行だけ。
+  // 購読は State ペイン下部の "Keyed selection" に出る
+  selectedIndex: null,
+  get "todos.*.selected"() { return this.$eqIndex("selectedIndex"); },
+  selectTodo() { this.selectedIndex = this.$1; },
   get remaining() { return this.$getAll("todos.*.done", []).filter((done) => !done).length; },
   addTodo() {
     const title = this.newTitle.trim();
@@ -111,9 +118,12 @@ export default {
     <template data-wcs="for: todos">
       <li>
         <span class="box" data-wcs="onclick: toggleTodo">{{ .box }}</span>
-        <span class="title" data-wcs="class.done: .done">{{ .title }}</span>
+        <span class="title" data-wcs="class.done: .done; class.selected: .selected; onclick: selectTodo">{{ .title }}</span>
       </li>
     </template>
+  </ul>
+  <ul class="hint">
+    <li>タイトルをクリックすると選択します（<code>$eqIndex</code>）。鍵付き購読は State ペイン下部の <b>Keyed selection</b> に出ます。</li>
   </ul>
 </section>
 
