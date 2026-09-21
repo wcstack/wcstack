@@ -200,6 +200,28 @@ export interface IMountOverlaySummary {
   readonly getterKeys: readonly string[];
 }
 
+/**
+ * 鍵付き購読（`$eq` / `$eqPath` / `$eqIndex`）の path 1 つ分の要約（keyedSubscriptions の要素 —
+ * protocol v2 追補・additive、要件 D17）。取り出した時点の数えで、台帳への参照は持たない。
+ */
+export interface IKeyedSubscriptionSummary {
+  /** `$eq` 系の第 1 引数（選択を持つパス） */
+  readonly path: string;
+  /**
+   * `path` が getter かその下にあるので鍵付きで購読できず、追跡付きの読みに落ちた。`path` が
+   * 変わるたびに、それを読む getter がすべて再評価される（README「鍵付き選択」）
+   */
+  readonly tracked: boolean;
+  /** 行ごとの購読の数（`$eq` / `$eqPath`、`$eqIndex` の外側の段、行の外の getter） */
+  readonly rows: number;
+  /** 行ごとの購読が使っている鍵の数 */
+  readonly keys: number;
+  /** `$eqIndex` の最内段が置くリスト単位の監視の数（行ごとの購読を持たない） */
+  readonly lists: number;
+  /** `path` の最後に見た値（登録時か書き込み時）。見ていなければ undefined。生値（protocol 原則 4） */
+  readonly lastValue: unknown;
+}
+
 export interface IStateElementSummary {
   readonly rootNode: Node;
   readonly element: IStateElement;
@@ -275,6 +297,12 @@ export interface IDevtoolsSource {
    * 住むキー）を出す。マウントが無ければ空配列。
    */
   overlays(rootNode: Node): IMountOverlaySummary[];
+  /**
+   * rootNode のツリーの鍵付き購読を path ごとに要約する（protocol v2 追補・additive、要件 D17）。
+   * 購読は依存グラフの動的な変化なので、イベントではなくここで取る（protocol §4.6）。
+   * 一度も `$eq` 系が評価されていなければ空配列。
+   */
+  keyedSubscriptions(rootNode: Node): IKeyedSubscriptionSummary[];
   read(rootNode: Node, path: string, indexes?: number[]): unknown;
   write(rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
   /**

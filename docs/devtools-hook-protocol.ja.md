@@ -91,6 +91,13 @@ interface IDevtoolsSource {
   // 扱いで呼ぶ: overlays() の無いランタイム（v2 より前の state）ではセクションごと
   // 非表示、空配列でも見出しを残さない。
   overlays(rootNode: Node): IMountOverlaySummary[];
+  // v2 追補（additive・要件 D17 — 版は 2 のまま）: このツリーの鍵付き購読（$eq / $eqPath /
+  // $eqIndex）を path ごとに 1 件の要約で返す。購読は依存グラフの動的な変化なので、イベントで
+  // 流さずここで取る（§4.6。1 万行の描画を 1 万件のイベントにしない）。呼ばれた時点の数えで、
+  // 台帳への参照は返さない。$eq 系が一度も評価されていなければ空配列。@wcstack/state 3.0 より
+  // 前のランタイムには無いので optional 扱いで呼ぶ（@wcstack/devtools の State ペインは
+  // 「Keyed selection」セクションごと出さない）。
+  keyedSubscriptions(rootNode: Node): IKeyedSubscriptionSummary[];
   read(rootNode: Node, path: string, indexes?: number[]): unknown;
   write(rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
   // v1 追補（additive）: ランタイム自身の正本パーサによる宣言レベルバインディングの
@@ -120,6 +127,17 @@ interface IMountOverlaySummary {
   // 公開 accessor 機能で追加。旧 v2 runtime も読む場合は summary.exports ?? [] を使う。
   readonly exports: readonly string[];    // マウントのインスタンス階数で公開する accessor パス（例: users.*.display）
   readonly getterKeys: readonly string[];  // マーカーパスに載る getter のキー
+}
+
+// v2 追補: 1 つの path の鍵付き購読の要約（keyedSubscriptions の要素 — D17）。
+interface IKeyedSubscriptionSummary {
+  readonly path: string;       // $eq / $eqPath / $eqIndex の第 1 引数（選択を持つパス）
+  readonly tracked: boolean;   // path が getter かその下にあり、追跡付きの読みに落ちた:
+                               // path が変わるたびに、それを読む getter がすべて再評価される
+  readonly rows: number;       // 行ごとの購読の数（$eq / $eqPath、$eqIndex の外側の段、行の外の getter）
+  readonly keys: number;       // それらの購読が使っている鍵の数
+  readonly lists: number;      // $eqIndex の最内段が置くリスト単位の監視の数（行ごとの購読を持たない）
+  readonly lastValue: unknown; // path の最後に見た値（登録時か書き込み時）。見ていなければ undefined。生値（原則 4）
 }
 
 interface IStateElementSummary {
@@ -286,7 +304,8 @@ binding**。どちらもランタイムは報告して続行する ＝ ここに
 ### 4.6 v1 でやらない計装
 
 - get（読み取り）トレース: 量が桁違いでホットパス直撃。やらない。
-- 依存グラフの動的変化イベント: pull（`IStateElementSummary.staticDependency` 等）で足りる。
+- 依存グラフの動的変化イベント: pull（`IStateElementSummary.staticDependency` 等）で足りる。鍵付き購読も
+  同じ扱いで、`state:keyed-subscribed` イベントではなく `keyedSubscriptions(rootNode)`（§3）で取る。
 - `$streams`: status/error は `$streamStatus.*` 等の**通常パスとして** 4.2/4.3 に乗るため
   専用イベント不要（設計済みの reactive 露出を再利用）。
 

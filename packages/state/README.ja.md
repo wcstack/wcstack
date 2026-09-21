@@ -1096,7 +1096,7 @@ export default {
 
 - **`path` への書き込み** — オブジェクトを含むどんな値でも（`$eq("selected", this["items.*"])` に対する `this.selected = row`）: 選ばれていた行と、新たに選ばれる行。
 - **`path` より上のオブジェクトへの書き込み** — `$eq("sel.id", …)` に対する `this.sel = { id: 2 }`: 同じく 2 行。旧いオブジェクトの下と新しいオブジェクトの下で `path` が持つ値を鍵にします。
-- **`path` が getter か getter の配下**（`get current()` に対する `$eq("current.id", …)`）: 値が書き込みなしに変わるので、依存を張る普通の読み取りに戻ります。選択は正しく保たれますが、変化のたびに全行が再評価されます（鍵付きの形を使わないのと同じ）。2 行で済ませるには、`path` を書き込まれる state（`selectedId`）に向けてください。
+- **`path` が getter か getter の配下**（`get current()` に対する `$eq("current.id", …)`）: 値が書き込みなしに変わるので、依存を張る普通の読み取りに戻ります。選択は正しく保たれますが、変化のたびに全行が再評価されます（鍵付きの形を使わないのと同じ）。2 行で済ませるには、`path` を書き込まれる state（`selectedId`）に向けてください。`@wcstack/devtools` の State ペインは、path ごとの購読の数を **Keyed selection** に出し、この形に落ちた path には `tracked` バッジを付けます（3.0）。
 - **型変換はしません:** `"2"` は id `2` に一致しません。`<input>` や `<select>` は文字列を書くので、入口で変換する（`value|number: selectedId`）か、id を文字列で持ってください。
 
 ### ループインデックス変数（`$1`, `$2`, ...）

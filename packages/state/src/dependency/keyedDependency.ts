@@ -47,6 +47,11 @@ interface IElementLedger {
   readonly lastValue: Map<string, unknown>;
   /** 祖先の逆引きに載せ終えた path */
   readonly recorded: Set<string>;
+  /**
+   * getter の評価中に呼ばれたが、`path` が getter かその下にあるので鍵付きで購読できず、追跡付きの
+   * 読みに落ちた path。台帳の動作には使わず、DevTools の要約（要件 D17）だけが読む
+   */
+  readonly tracked: Set<string>;
 }
 interface IEntry {
   readonly stateElement: IStateElement;
@@ -111,7 +116,7 @@ function recordAncestors(stateElement: IStateElement, path: string): void {
 function ledgerOf(stateElement: IStateElement): IElementLedger {
   let ledger = ledgerByElement.get(stateElement);
   if (typeof ledger === "undefined") {
-    ledgerByElement.set(stateElement, ledger = { byPath: new Map(), lastValue: new Map(), recorded: new Set() });
+    ledgerByElement.set(stateElement, ledger = { byPath: new Map(), lastValue: new Map(), recorded: new Set(), tracked: new Set() });
   }
   return ledger;
 }
@@ -213,6 +218,28 @@ export function registerIndexKeyedDependency(
   recordAncestors(stateElement, path);
   const isNew = subscribe(ledger, path, levelListIndex.index, absAddress);
   record(ledger, path, current, absAddress, isNew, { stateElement, path, absAddress, levelListIndex });
+}
+
+/** getter の評価中の `$eq` / `$eqPath` / `$eqIndex` が、`path` が getter 由来のため追跡付きの読みに落ちた */
+export function recordTrackedKeyedPath(stateElement: IStateElement, path: string): void {
+  ledgerOf(stateElement).tracked.add(path);
+}
+
+/** DevTools の要約（devtools/keyedSubscriptions.ts）が読む、この state の台帳。読むだけで変えない */
+export interface IKeyedLedgerView {
+  readonly byPath: ReadonlyMap<string, ReadonlyMap<unknown, ReadonlySet<IAbsoluteStateAddress>>>;
+  readonly lastValue: ReadonlyMap<string, unknown>;
+  readonly tracked: ReadonlySet<string>;
+  /** `$eqIndex` の最内段のリスト単位の監視（path → 監視） */
+  readonly watchers: ReadonlyMap<string, ReadonlySet<unknown>> | undefined;
+}
+
+export function getKeyedLedgerView(stateElement: IStateElement): IKeyedLedgerView | null {
+  const ledger = ledgerByElement.get(stateElement);
+  if (typeof ledger === "undefined") {
+    return null;
+  }
+  return { byPath: ledger.byPath, lastValue: ledger.lastValue, tracked: ledger.tracked, watchers: watchersByElement.get(stateElement) };
 }
 
 export function hasKeyedDependents(stateElement: IStateElement, path: string): boolean {

@@ -34,7 +34,7 @@ import { resolve } from "../apis/resolve";
 import { ISetAllOptions, setAll } from "../apis/setAll";
 import { trackDependency } from "../apis/trackDependency";
 import { untrackDependency } from "../apis/untrackDependency";
-import { registerIndexKeyedDependency, registerIndexWatcher, registerKeyedDependency } from "../../dependency/keyedDependency";
+import { recordTrackedKeyedPath, registerIndexKeyedDependency, registerIndexWatcher, registerKeyedDependency } from "../../dependency/keyedDependency";
 import { getPathInfo } from "../../address/PathInfo";
 import { IStateElement } from "../../components/types";
 
@@ -218,6 +218,9 @@ export function get(
             // getter の外（メソッド・コールバック）ではアドレススタックが空: 比較だけ返す
             const lastAddress = handler.addressStackLength > 0 ? handler.lastAddressStack : null;
             if (derivesFromGetter(handler.stateElement, path)) {
+              if (lastAddress !== null && handler.stateElement.getterPaths.has(lastAddress.pathInfo.path)) {
+                recordTrackedKeyedPath(handler.stateElement, path);
+              }
               return Object.is(receiver[path], key);
             }
             handler.beginUntrack();
@@ -250,8 +253,12 @@ export function get(
             } finally {
               handler.endUntrack();
             }
-            if (!tracked && lastAddress !== null && handler.stateElement.getterPaths.has(lastAddress.pathInfo.path)) {
-              registerKeyedDependency(handler.stateElement, path, key, liftAddressForKeyed(handler.stateElement, lastAddress), current);
+            if (lastAddress !== null && handler.stateElement.getterPaths.has(lastAddress.pathInfo.path)) {
+              if (tracked) {
+                recordTrackedKeyedPath(handler.stateElement, path);
+              } else {
+                registerKeyedDependency(handler.stateElement, path, key, liftAddressForKeyed(handler.stateElement, lastAddress), current);
+              }
             }
             return Object.is(current, key);
           };
@@ -270,6 +277,9 @@ export function get(
               raiseError(`$eqIndex("${path}", ${level}): no list index at that level.`);
             }
             if (derivesFromGetter(handler.stateElement, path)) {
+              if (handler.stateElement.getterPaths.has(lastAddress.pathInfo.path)) {
+                recordTrackedKeyedPath(handler.stateElement, path);
+              }
               return Object.is(receiver[path], levelListIndex.index);
             }
             // 最内段（getter 自身の行の段）はリスト単位の監視で O(1)、外側の段は行ごとの購読

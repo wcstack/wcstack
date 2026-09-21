@@ -20,6 +20,7 @@ import { raiseError } from "../raiseError";
 import { VERSION } from "../version";
 import { IStateElement } from "../components/types";
 import { collectDeclaredBindings } from "./declaredBindings";
+import { collectKeyedSubscriptions } from "./keyedSubscriptions";
 import { devtoolsSink, setDevtoolsSink } from "../platform/devtoolsSink";
 import {
   DEVTOOLS_HOOK_GLOBAL,
@@ -214,6 +215,9 @@ export function registerDevtoolsSource(): void {
         getterKeys: [...record.getterKeys],
         exports: [...record.exports.keys()],
       }));
+    },
+    keyedSubscriptions(rootNode: Node) {
+      return collectKeyedSubscriptions(requireStateElement(rootNode));
     },
     keys(rootNode: Node): string[] {
       const element = requireStateElement(rootNode);

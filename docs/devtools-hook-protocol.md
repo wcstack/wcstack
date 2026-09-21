@@ -93,6 +93,15 @@ interface IDevtoolsSource {
   // address space and never appear in keys()/read()). The UI calls it as
   // optional: a runtime without overlays() (pre-v2 state) hides the whole
   // section, and an empty array renders no heading either.
+  // v2 addendum (additive, requirements D17 — the version stays 2): the keyed
+  // subscriptions ($eq / $eqPath / $eqIndex) of this tree, one summary per path.
+  // A subscription is a dynamic change in the dependency graph, so it is pulled
+  // here rather than pushed as an event (§4.6) — rendering 10,000 rows would
+  // otherwise emit 10,000 events. Counted at call time; no reference to the ledger
+  // is returned. Empty when no $eq-family call has run on this tree. Runtimes
+  // before @wcstack/state 3.0 lack this member; call it as optional (the
+  // @wcstack/devtools State pane then hides its "Keyed selection" section).
+  keyedSubscriptions(rootNode: Node): IKeyedSubscriptionSummary[];
   // v1 addendum (additive): the SET of declared-level bindings, enumerated by the
   // runtime's own canonical parser. Sources: attributes + comment anchors in the
   // live DOM (spread expanded from the live wcBindable; undefined elements stay
@@ -122,6 +131,17 @@ interface IMountOverlaySummary {
   // Added with overlay exports. Use summary.exports ?? [] with older v2 runtimes.
   readonly exports: readonly string[];    // public accessor paths at the mount instance's wildcard depth (e.g. users.*.display)
   readonly getterKeys: readonly string[];  // getter keys carried on marker paths
+}
+
+// v2 addendum: the keyed subscriptions on one path (element of keyedSubscriptions() — D17).
+interface IKeyedSubscriptionSummary {
+  readonly path: string;       // the first argument of $eq / $eqPath / $eqIndex (the path holding the selection)
+  readonly tracked: boolean;   // the path is a getter or under one, so the call fell back to a tracked read:
+                               // every getter that reads it re-evaluates when it changes
+  readonly rows: number;       // per-row subscriptions ($eq / $eqPath, the outer levels of $eqIndex, getters outside rows)
+  readonly keys: number;       // distinct keys those subscriptions use
+  readonly lists: number;      // list-level watchers of $eqIndex's innermost level (no per-row subscriptions)
+  readonly lastValue: unknown; // the value last seen at path (at registration or write), undefined if none; raw (principle 4)
 }
 
 interface IStateElementSummary {
@@ -294,7 +314,8 @@ console is the only other place they appear.
 
 - Tracing gets (reads): an order of magnitude more volume, straight into the hot path. Not doing it.
 - Events for dynamic changes in the dependency graph: pull suffices (`IStateElementSummary.staticDependency`
-  and the rest).
+  and the rest). Keyed subscriptions follow the same rule: `keyedSubscriptions(rootNode)` (§3) rather than a
+  `state:keyed-subscribed` event.
 - `$streams`: status/error ride on 4.2/4.3 **as ordinary paths** through `$streamStatus.*` and the like, so no
   dedicated event is needed (reusing the reactive exposure that is already designed).
 

@@ -171,6 +171,8 @@ major の器に載せるか、独立して進めるかを §6 で決める。
 | B12 | 3.0 では変えない。正式名＋互換エイリアスは 3.x、除去は 4.0（D4） | 3.x |
 | B14 | ① マウント記録で修飾子を尊重する ② 明示した部分マウントを own key より優先する ③ volume に注入口を足す | ①② 3.0、③ 3.x（非破壊） |
 
+**追記（2026-09-22、D17 の実装）**: 形をイベントから pull に改めた（ユーザー判断）。決定の前提だった「3.0 の protocol 版上げ」は無かった — protocol §2 は追加の変更で版を上げず、3.0 に他の protocol 変更も無い。また protocol §4.6 は依存グラフの動的な変化を pull で出すと決めており、イベントでは 1 万行の描画が 1 万件になる。source に `keyedSubscriptions(rootNode)`（optional・版は 2 のまま）を足し、path ごとに行ごとの購読・鍵・`$eqIndex` のリスト単位の監視の数と最後の値、getter 由来で追跡付きの読みに落ちたか（`tracked`）を返す。`tracked` は台帳の動作に使わない記録で、フォールバックの分岐だけが書く。要約の組み立ては `devtools/keyedSubscriptions.ts`（devtools 機能）に置き、core に増えたのは記録とアクセサだけ（分割 core +82 B・`auto.min.js` +223 B gzip）。`@wcstack/devtools` の State ペインに **Keyed selection** 節を足し、playground と `e2e/devtools-smoke.mjs` で実ブラウザでも確かめた。
+
 ## 7. 移行と非推奨の運用
 
 - [README の非推奨運用](../README.ja.md#バージョニングと破壊的変更)に従い、採否が決まった破壊的変更は **3.0 の前に 2.6.x で予告する**（lint ルールと／またはランタイム通知＋置き換え先の提示）。v1.x が `wcs/named-state-deprecated` で名前付き state を予告した前例に倣う。
