@@ -15,6 +15,7 @@ import { validateStateTypes } from "../service/stateTypeValidator.js";
 import { validateNestedAssigns } from "../service/nestedAssignValidator.js";
 import { validateArrayMutations } from "../service/arrayMutationValidator.js";
 import { validateTemplateSyntax } from "../service/templateSyntaxValidator.js";
+import { validateBindingSyntax } from "../service/bindingSyntaxValidator.js";
 import { validateIoNodes } from "../service/ioNodeValidator.js";
 import { validateAriaAttributes } from "../service/ariaValidator.js";
 import { validateDocumentEnv } from "../service/documentEnvValidator.js";
@@ -77,6 +78,7 @@ export function validateDocument(text: string, options: ValidateDocumentOptions 
   // bindingValidator / templateSyntaxValidator / ioNodeValidator / documentEnvValidator は既に code 付き。
   out.push(...validateBindings(text, bindAttribute, stateTagName, locale, fileReader, applicationSchema));
   out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute, locale, fileReader, applicationSchema));
+  out.push(...validateBindingSyntax(text, bindAttribute, locale));
   out.push(...validateIoNodes(text, bindAttribute, stateTagName, locale, fileReader));
   out.push(...validateAriaAttributes(text, bindAttribute, locale));
   out.push(...validateDocumentEnv(text, locale));

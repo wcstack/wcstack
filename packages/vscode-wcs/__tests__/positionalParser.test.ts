@@ -76,13 +76,15 @@ describe('parseBindTextWithPositions', () => {
     expect(sliceOf(text, b.pathRange)).toBe('count');
   });
 
-  it('分割はランタイム同値（`;` 無条件）であること — 括弧内の `;` も区切る', () => {
-    // ランタイム parseBindTextsForElement は bindText.split(';') で無条件分割する。
-    // このラッパーが正本より寛容になってはならない（既存 splitBindingExpressions
-    // との既知乖離をこちらに持ち込まない）。
-    const text = "textContent: a | pad(5,';')";
-    const results = parseBindTextWithPositions(text);
-    expect(results).toHaveLength(2);
-    expect(results[1].parsed).toBeNull(); // "')" 単体は不正 → error
+  it('分割はランタイム同値（正本の splitBindTexts — 引用符の外の `;` だけで区切る）であること', () => {
+    // @wcstack/state 3.0（要件 B1）でランタイムは引用符の中の `;` を区切らなくなった。このラッパーは
+    // 正本の splitBindTexts をそのまま使うので、引用符の中の `;` では割れず、外の `;` では割れる。
+    const quoted = "textContent: a | pad(5,';')";
+    const one = parseBindTextWithPositions(quoted);
+    expect(one).toHaveLength(1);
+    expect(one[0].parsed?.outFilters[0].args).toEqual(["5", ";"]);
+    const two = parseBindTextWithPositions("textContent: a | pad(5,';'); title: b");
+    expect(two.map((r) => r.parsed?.propName)).toEqual(["textContent", "title"]);
+    expect("textContent: a | pad(5,';'); title: b".slice(two[1].exprRange.start, two[1].exprRange.end)).toBe("title: b");
   });
 });

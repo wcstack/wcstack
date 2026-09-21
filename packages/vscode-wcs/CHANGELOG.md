@@ -2,6 +2,19 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+`@wcstack/state` 3.0（major/state-next）の文法の厳格化に追随する。
+
+### 検証
+
+- **`wcs/binding-syntax`（新設、error）** — ランタイムの正本パーサが `[wcs/binding-syntax]` で拒否する書き方を、同じ判定で報告する: フィルタ引数の閉じていない引用符／2 つ目の `#`（`value#ro#wo` — `value#ro,wo` と書く）／`else:` の後ろの値／`for`・`if`・`elseif`・`else`・`...` の左辺の修飾子やフィルタ／空のフィルタ（`x|`・`x||y`）。属性と mustache の両方。判定は `@wcstack/state/parser` に委ね、ここでは複製しない（`service/bindingSyntaxValidator.ts`）。
+
+### 修正
+
+- **式の区切りをランタイムと同じにした** — 位置付きパーサ（参照インデックス・配線レンズ）は `;` を無条件に区切っていたが、ランタイムは 3.0 から引用符の中の `;` を区切らない（`join(';')`）。正本が公開する `splitBindTexts` をそのまま使う。
+- **`{{ count | }}` のような空のフィルタが参照インデックスの problems に載らなくなっていた** — `@wcstack/state` がフィルタ関数の解決を束縛計画の段へ移した（D16）ことで、空の名前がパースを通っていた。正本が空のフィルタを文法の誤りとして拒否するようになり、元に戻った（CI の wcs-validate の失敗の原因）。
+
 ## 1.15.0 — 2026-09-15
 
 `@wcstack/state` 2.4.0 の dist を同梱。
