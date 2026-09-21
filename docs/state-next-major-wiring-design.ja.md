@@ -280,5 +280,5 @@ D16 の決定（「実関数の解決は束縛計画の段。文法段だけを 
 
 決めていない:
 
-- `BindingSession` の二重経路の一本化と、行 record・session 共有・プラン初期描画（調査 §10.7・§10.13・§10.14。3.0 の器に載せることは決めた）の具体設計は本設計の外。別文書にする。
+- `BindingSession` の二重経路の一本化と、行 record・session 共有・プラン初期描画（調査 §10.7・§10.13・§10.14。3.0 の器に載せることは決めた）の具体設計は本設計の外 → [行ランタイムの設計案](./state-next-major-runtime-design.ja.md)（R1〜R5）。
 - **属性の barrier の着地**（§8-8 で見つけた）: `mount=` と DCC の barrier は `connectedCallback` から throw するだけで、`connectedCallbackPromise` は未解決のまま残る。宣言の barrier は `_initialize` の中で落ちるので #257 の着地に載る。そろえるなら、`mount=` には `_failInitializeLoudly` をそのまま使えない（ルートより先に接続したボリュームでは、まだ来ていないルートのノードを利用不能と印付けし、保留中の他のボリュームまで落とす）ので、ルートを巻き込まない着地が要る。分割エントリにしか無い経路なので、S5 で決める。§8-9 で足した `bind-component` の barrier は、bind-component の他の設定エラーと同じ try の中にあるので着地する。DCC の barrier も、DCC のロード失敗と同じ着地に載せて差し支えない。

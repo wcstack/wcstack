@@ -57,6 +57,7 @@ Four rules go with it:
 | [state-next-major-requirements.md](./state-next-major-requirements.md) | [state-next-major-requirements.ja.md](./state-next-major-requirements.ja.md) |
 | [state-next-major-tech-survey.md](./state-next-major-tech-survey.md) | [state-next-major-tech-survey.ja.md](./state-next-major-tech-survey.ja.md) |
 | [state-next-major-wiring-design.md](./state-next-major-wiring-design.md) | [state-next-major-wiring-design.ja.md](./state-next-major-wiring-design.ja.md) |
+| [state-next-major-runtime-design.md](./state-next-major-runtime-design.md) | [state-next-major-runtime-design.ja.md](./state-next-major-runtime-design.ja.md) |
 
 That is the whole priority set — every document code, an example, or a README points at. What remains untranslated is the internal design notes and implementation plans (`*-tag-design.md`, `*-impl-plan.md`, `state-*.md`, `io-node-*.md`, `architecture-hardening/01`-`08`, `11`), translated on demand as they are touched.
 
