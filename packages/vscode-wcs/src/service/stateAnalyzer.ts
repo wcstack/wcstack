@@ -58,7 +58,8 @@ import {
 
 // ランタイム予約キー（@wcstack/state src/define.ts の reservedStateApi が正本）。
 // トップレベルの `$` プレフィックスキーは宣言・API 名前空間でありデータパスにならない。
-const RESERVED_STREAMS_KEY = '$streams';
+/** `$stream` が正式名、`$streams` は 3.x の間の旧名（@wcstack/state 3.2） */
+const RESERVED_STREAMS_KEYS: ReadonlySet<string> = new Set(['$stream', '$streams']);
 const RESERVED_COMMAND_TOKENS_KEY = '$commandTokens';
 const RESERVED_EVENT_TOKENS_KEY = '$eventTokens';
 const RESERVED_LIST_KEYS_KEY = '$listKeys';
@@ -849,7 +850,7 @@ function collectReservedKeyPaths(
   pendingStreamValues: PropertyInfo[],
   pendingListKeys: PropertyInfo[],
 ): void {
-  if (prop.name === RESERVED_STREAMS_KEY && prop.kind === 'data' && prop.value && isObjectLiteral(prop.value)) {
+  if (RESERVED_STREAMS_KEYS.has(prop.name) && prop.kind === 'data' && prop.value && isObjectLiteral(prop.value)) {
     const entries = parseTopLevelProperties(extractObjectContent(prop.value));
     for (const entry of entries) {
       // ストリーム名はフラットなプロパティ名のみ（`$` 始まりはランタイムが拒否）

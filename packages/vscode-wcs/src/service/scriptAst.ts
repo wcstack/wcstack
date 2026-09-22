@@ -64,9 +64,11 @@ const PREFIX = '(async function* () {\n';
 const SUFFIX = '\n})';
 
 /** ランタイム API のうち、第 1 引数の文字列リテラルがそのまま依存パスになるもの。 */
-const PATH_ARG_APIS = new Set(['$getAll', '$resolve', '$trackDependency']);
-/** この呼び出しの引数の中は依存追跡が抑止される。 */
-const UNTRACK_API = '$untrackDependency';
+const PATH_ARG_APIS = new Set(['$getAll', '$resolve', '$dependOn', '$trackDependency']);
+/** 明示の依存登録（`$dependOn` が正式名、`$trackDependency` は 3.x の間の旧名 — @wcstack/state 3.2） */
+const TRACK_APIS = new Set(['$dependOn', '$trackDependency']);
+/** この呼び出しの引数の中は依存追跡が抑止される（`$untracked` が正式名、`$untrackDependency` は旧名）。 */
+const UNTRACK_APIS = new Set(['$untracked', '$untrackDependency']);
 
 /**
  * getter 本体（`{ … }` の中身）から `this` 経由の読み取りを集める。
@@ -342,14 +344,14 @@ function visitCall(node: AnyNode & { type: 'CallExpression' }, scope: Scope, out
     const { segments, base } = resolveChain(callee);
     if (isThisRoot(base, scope) && segments.length === 1 && segments[0].text !== null) {
       const api = segments[0].text;
-      // `$untrackDependency(fn)` の中は依存追跡が抑止される — 引数ごと読まない
-      if (api === UNTRACK_API) return;
+      // `$untracked(fn)` / `$untrackDependency(fn)` の中は依存追跡が抑止される — 引数ごと読まない
+      if (UNTRACK_APIS.has(api)) return;
       if (PATH_ARG_APIS.has(api)) {
         const first = node.arguments[0];
         const path = first !== undefined && first.type !== 'SpreadElement' ? literalString(first) : null;
         if (path !== null && path.length > 0 && !path.startsWith('$')) {
           out.push({
-            path, chain: null, form: api === '$trackDependency' ? 'track' : 'api', callee: false, written: false,
+            path, chain: null, form: TRACK_APIS.has(api) ? 'track' : 'api', callee: false, written: false,
             start: node.start - PREFIX.length, end: node.end - PREFIX.length,
           });
         }

@@ -58,7 +58,11 @@ interface WcsStateApi {
   $setAll<V = any>(path: string, indexes: number[], values: readonly V[], options: { spread: true }): number;
   $postUpdate(path: string): void;
   $resolve(path: string, indexes: number[], value?: any): any;
+  $dependOn(path: string): void;
+  $untracked<T>(fn: () => T): T;
+  /** @deprecated $dependOn の旧名（@wcstack/state 3.2 — 4.0 で外れる） */
   $trackDependency(path: string): void;
+  /** @deprecated $untracked の旧名（@wcstack/state 3.2 — 4.0 で外れる） */
   $untrackDependency<T>(fn: () => T): T;
   $eq(path: string, key: unknown): boolean;
   $eqPath(path: string, keyPath: string): boolean;
@@ -87,6 +91,7 @@ interface WcsStateApi {
 // T に同名のプロパティを明示的に事前宣言していれば写さない（交差でその型まで any に潰さないため）。
 type _WcsDeclaredValues<T> =
   (T extends { $scan: infer S } ? { [K in Exclude<keyof S & string, keyof T>]: any } : {}) &
+  (T extends { $stream: infer S } ? { [K in Exclude<keyof S & string, keyof T>]: any } : {}) &
   (T extends { $streams: infer S } ? { [K in Exclude<keyof S & string, keyof T>]: any } : {});
 type _WcsThis<T> = T & WcsStateApi & _WcsPathAccessor<T> & _WcsDeclaredValues<T>;
 // $listKeys: { "<listPath>": "<field>" | (row) => key }（list/listKeys.ts）。

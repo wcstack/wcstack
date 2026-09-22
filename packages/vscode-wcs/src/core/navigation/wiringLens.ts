@@ -254,7 +254,8 @@ function declarationFor(index: IReferenceIndex, path: string): IDeclarationSite 
   if (direct !== null) return direct;
   if (path.startsWith('$command.')) return index.declarationOf('$commandTokens');
   if (path.startsWith('$streamStatus.') || path.startsWith('$streamError.')) {
-    return index.declarationOf('$streams');
+    // `$stream` が正式名、`$streams` は 3.x の間の旧名（@wcstack/state 3.2）
+    return index.declarationOf('$stream') ?? index.declarationOf('$streams');
   }
   return null;
 }
@@ -736,7 +737,7 @@ export function getReferencesAt(
     // `$streams` は $streamStatus.<n> / $streamError.<n> の派生パスを生む
     // （declarationFor の写像と対）。値プロパティ側は候補に導出元が残らないため
     // v1 では対象外（follow-up）。
-    if (declaration.name === '$streams') {
+    if (declaration.name === '$stream' || declaration.name === '$streams') {
       return resolved.startsWith('$streamStatus.') || resolved.startsWith('$streamError.');
     }
     return resolved === declaration.name || resolved.startsWith(`${declaration.name}.`);

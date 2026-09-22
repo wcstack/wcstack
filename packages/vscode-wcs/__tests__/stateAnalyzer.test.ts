@@ -852,3 +852,16 @@ describe('mergeSchemaCandidates — script / JSON 候補との合流（D12: sche
     expect(mergeSchemaCandidates(script)).toBe(script);
   });
 });
+
+describe('analyzeStatePaths — $stream（@wcstack/state 3.2 の正式名）', () => {
+  it('$stream のエントリ名も $streams と同じく値プロパティとして実体化する', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  $stream: {
+    ticks: { async *source() { yield 1; }, initial: [] },
+  },
+};`);
+    expect(paths.find(p => p.path === 'ticks')?.kind).toBe('data');
+    expect(paths.map(p => p.path)).toContain('ticks.*');
+  });
+});

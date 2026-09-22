@@ -508,3 +508,45 @@ describe("wcs/updated-callback-unbound — 表示要素が購読の実体にな�
     )).toHaveLength(0);
   });
 });
+
+describe("wcs/name-alias — 3.x の間だけ残る旧名（@wcstack/state 3.2）", () => {
+  it("旧名の API 呼び出しと宣言キーに info で正式名を提案し、正式名とコメントの中は黙ること", () => {
+    const html = `
+    <wcs-state><script type="module">
+      export default {
+        a: 1,
+        $streams: { s: { source() {} } },
+        $updatedCallback(paths) {},
+        get x() { this.$trackDependency("a"); return this.$untrackDependency(() => this.a); },
+        get y() { this.$dependOn("a"); return this.$untracked(() => this.a); },
+        // this.$trackDependency("a") in a comment
+      };
+    </script></wcs-state>`;
+    const found = validateSemantics(html, "wcs-state", "en", "data-wcs")
+      .filter((d) => d.code === WcsDiagnosticCode.NameAlias);
+    expect(found.map((d) => html.slice(d.start, d.end))).toEqual([
+      "$trackDependency", "$untrackDependency", "$streams", "$updatedCallback",
+    ]);
+    expect(found.every((d) => d.severity === "info")).toBe(true);
+    expect(found[0].message).toContain('"$dependOn"');
+    expect(found[2].message).toContain('"$stream"');
+    expect(found[3].message).toContain('"$renderedCallback"');
+  });
+
+  it("$renderedCallback も updated-callback-unbound の対象になること", () => {
+    const html = `
+    <wcs-state><script type="module">
+      export default {
+        page: 1,
+        other: 2,
+        $renderedCallback(paths) {
+          if (!paths.includes("other")) return;
+        },
+      };
+    </script></wcs-state><div data-wcs="textContent: page"></div>`;
+    expect(codes(
+      validateSemantics(html, "wcs-state", "en", "data-wcs"),
+      WcsDiagnosticCode.UpdatedCallbackUnbound,
+    )).toHaveLength(1);
+  });
+});

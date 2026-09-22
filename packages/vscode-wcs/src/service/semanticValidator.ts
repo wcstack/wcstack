@@ -36,8 +36,40 @@ import { ASSIGN_TAIL, PRE_INCDEC, ROOT_BRACKET } from './scriptPatterns.js';
 import { blankComments, literalArrayLength, literalString, splitCallArgs } from './scriptCallArgs.js';
 import { hasRecursionWildcard } from './recursionPaths.js';
 
-/** ランタイム予約キー（@wcstack/state の define.ts が正本）。 */
-const STATE_UPDATED_CALLBACK = '$updatedCallback';
+/** ランタイム予約キー（@wcstack/state の define.ts が正本）。`$renderedCallback` が正式名、`$updatedCallback` は 3.x の間の旧名（3.2） */
+const STATE_UPDATED_CALLBACKS: ReadonlySet<string> = new Set(['$renderedCallback', '$updatedCallback']);
+
+/** 3.x の間だけ残る旧名 → 正式名（@wcstack/state 3.2・要件 B12）。API はメソッド呼び出し、宣言は state のキー */
+const OLD_API_NAMES: Readonly<Record<string, string>> = { $trackDependency: '$dependOn', $untrackDependency: '$untracked' };
+const OLD_DECLARATION_KEYS: Readonly<Record<string, string>> = { $streams: '$stream', $updatedCallback: '$renderedCallback' };
+const OLD_API_CALL = /\.\s*(\$trackDependency|\$untrackDependency)\b/g;
+const OLD_DECLARATION_KEY = /(^|[{,\s])(\$streams|\$updatedCallback)(?=\s*[:(])/g;
+
+/** 旧名の API 呼び出しと宣言キーに `wcs/name-alias`（info）を付ける。動くが 4.0 で外れるので正式名を提案する */
+function validateNameAliases(script: string, scriptStart: number, locale?: string): WcsDiagnostic[] {
+  const msgs = getMessages(locale);
+  const scan = blankComments(script);
+  const out: WcsDiagnostic[] = [];
+  const push = (name: string, canonical: string, offset: number): void => {
+    out.push({
+      code: WcsDiagnosticCode.NameAlias,
+      start: scriptStart + offset,
+      end: scriptStart + offset + name.length,
+      message: msgs.nameAlias(name, canonical),
+      severity: 'info',
+    });
+  };
+  OLD_API_CALL.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = OLD_API_CALL.exec(scan)) !== null) {
+    push(match[1], OLD_API_NAMES[match[1]], match.index + match[0].length - match[1].length);
+  }
+  OLD_DECLARATION_KEY.lastIndex = 0;
+  while ((match = OLD_DECLARATION_KEY.exec(scan)) !== null) {
+    push(match[2], OLD_DECLARATION_KEYS[match[2]], match.index + match[1].length);
+  }
+  return out;
+}
 
 /** `this.$getAll(` / `this.$setAll(` / `this.$resolve(` の呼び出し開始。`?.` 経由も拾う。 */
 const API_CALL = /\.\s*\$(getAll|setAll|resolve)\s*\(/g;
@@ -340,7 +372,7 @@ function validateUpdatedCallbackDemand(
 ): WcsDiagnostic[] {
   const blocks = parseWcsScriptBlocks(html, stateTagName);
   if (blocks.length === 0) return [];
-  const hasCallback = blocks.some((block) => block.content.includes(STATE_UPDATED_CALLBACK));
+  const hasCallback = blocks.some((block) => [...STATE_UPDATED_CALLBACKS].some((name) => block.content.includes(name)));
   if (!hasCallback) return [];
 
   const msgs = getMessages(locale);
@@ -349,7 +381,7 @@ function validateUpdatedCallbackDemand(
 
   for (const block of blocks) {
     const callback = analyzeCallableBodies(block.content)
-      .find((entry) => entry.name === STATE_UPDATED_CALLBACK && entry.kind === 'method');
+      .find((entry) => STATE_UPDATED_CALLBACKS.has(entry.name) && entry.kind === 'method');
     if (callback === undefined) continue;
     // ボリューム（mount=）の $updatedCallback は runtime が**相対配送**で実行する
     //（自分の接頭辞配下の更新が相対パスで届く）。バインド側は接頭辞付き絶対パスなので
@@ -423,6 +455,7 @@ export function validateSemantics(
     (nestedWriteRoots ??= collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks));
   for (const block of blocks) {
     out.push(...validateIndexArity(block.content, block.contentStart, locale));
+    out.push(...validateNameAliases(block.content, block.contentStart, locale));
     out.push(...validateGetterCycles(block.content, block.contentStart, locale));
     out.push(...validateGetterUntrackedReads(block.content, block.contentStart, getNestedWriteRoots, locale));
   }
