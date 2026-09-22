@@ -1,7 +1,7 @@
-# state + intersection + `$streams` + `$scan` demo (infinite scroll via `<wcs-intersect>`)
+# state + intersection + `$stream` + `$scan` demo (infinite scroll via `<wcs-intersect>`)
 
 This is the lower-level counterpart to [`infinite-scroll`](../../packages/fetch/examples/infinite-scroll).
-`<wcs-intersect>` reports visibility, an `@wcstack/state` `$streams` entry owns page fetching,
+`<wcs-intersect>` reports visibility, an `@wcstack/state` `$stream` entry owns page fetching,
 switchMap-style cancellation, and bounded retry, and a `$scan` accumulates each landed page into a feed
 that outlives every page run — without depending on anything being rendered.
 
@@ -9,7 +9,7 @@ The important part is not merely that the request lives in a stream. The request
 the number of items **already in the feed** instead of being incremented blindly. Repeated intersection
 edges while page N is active or failed therefore write N again, which is a same-value no-op. Once page N
 lands in the feed, the same calculation produces N+1; that dependency change aborts the old producer and
-starts the newest one through `$streams`.
+starts the newest one through `$stream`.
 
 ## Getting Started
 
@@ -40,9 +40,9 @@ FLAKY=0.4 node examples/state-intersect-scroll/server.js
 <wcs-intersect> enter
   -> page = floor(feed.items.length / pageSize) + 1
        | same page: same-value no-op (active/error edges cannot skip or retry)
-       | new page: $streams args dependency changed
+       | new page: $stream args dependency changed
        v
-$streams.pageResult
+$stream.pageResult
   -> abort previous run
   -> fetch requested page with AbortSignal
   -> on failure: bounded delay/retry inside the producer
@@ -68,7 +68,7 @@ settled error with existing items
 ## Key Points
 
 - **This uses the advertised switchMap semantics.** `page`, `pageSize`, `maxRetries`, and `retryNonce`
-  are read by `$streams.pageResult.args`. Changing one aborts the current fetch or retry delay and starts
+  are read by `$stream.pageResult.args`. Changing one aborts the current fetch or retry delay and starts
   a run with the newest dependency snapshot. Stale runs cannot reach the feed.
 - **There is no hand-written loading/error exhaust gate on pagination.** Instead of guarding with
   `if (loading) return`, the sentinel handler derives the requested page from the feed's length.
@@ -76,11 +76,11 @@ settled error with existing items
   they select exactly the next page. A naive `page++` would be incorrect with switchMap because a second
   edge could cancel page N and jump to N+1. The `showError` branch that does exist is retry
   qualification — deciding whether an edge counts as a user gesture — not an exhaust gate.
-- **Page-local and feed-long lifetimes are separate declarations.** `$streams` resets its value on
+- **Page-local and feed-long lifetimes are separate declarations.** `$stream` resets its value on
   restart, so `pageResult` holds only the current page operation. `$scan.feed` folds each success landing
   into the long-lived feed; the runtime owns `feed` and keeps it across restarts and reconnects, and
   nothing has to be bound for it to run. Earlier revisions of this demo committed with
-  `$updatedCallback` — which made the visible stream-status meter load-bearing, since deleting that one
+  `$renderedCallback` — which made the visible stream-status meter load-bearing, since deleting that one
   `<b>` stopped the feed — and later with a `$watch` handler that concatenated by hand.
 - **The fold keeps a page key.** The runtime folds once per landing, not once per page. A Retry after a
   page is done, or re-attaching the page, runs the current page again, and that landing must not append
@@ -88,7 +88,7 @@ settled error with existing items
 - **`page` stays a plain property.** A getter derived from `feed` and read by the stream's `args` would
   restart the stream on its own result, loading every page without the sentinel; the runtime raises
   `wcs/scan-feedback-loop` for that shape.
-- **`$streams` is switchMap, not retryWhen.** It deliberately has no automatic reconnection. The
+- **`$stream` is switchMap, not retryWhen.** It deliberately has no automatic reconnection. The
   `loadPage` async generator therefore owns a finite `1 + maxRetries` attempt loop and an abort-aware
   fixed delay. Retry progress is yielded as ordinary stream values, which the fold passes over; final
   failure appears through `$streamStatus.pageResult === "error"` and `$streamError.pageResult`.
@@ -122,7 +122,7 @@ imperative parts are real API boundaries:
 - Re-arming the sentinel is a side effect (firing a command), so it stays in a `$watch`. Commit before
   re-observe is now the mechanism order — `$scan` writes in one batch and the `$watch` fires at the end of
   the next — rather than statement order inside one handler.
-- `$streams` has switchMap-style restart, but no `retryWhen`, timer, merge, or occurrence operator. The
+- `$stream` has switchMap-style restart, but no `retryWhen`, timer, merge, or occurrence operator. The
   producer therefore owns the attempt loop and abort-aware delay.
 - `retryNonce` converts “run the same page again” from an occurrence into a changing dependency value.
   This is intentional, but it is still an encoding necessitated by the value-based restart API.

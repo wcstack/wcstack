@@ -186,8 +186,8 @@ export default defineState({
 | `$getAll` | `$getAll<V>(path: string, defaultValue?: V[]): V[]` | ワイルドカードパスにマッチする全値を取得 |
 | `$postUpdate` | `$postUpdate(path: string): void` | パスの更新を手動トリガー |
 | `$resolve` | `$resolve(path: string, indexes: number[], value?: any): any` | ワイルドカードを特定インデックスで解決 |
-| `$trackDependency` | `$trackDependency(path: string): void` | 依存関係を手動登録 |
-| `$untrackDependency` | `$untrackDependency<T>(fn: () => T): T` | fn 実行中の依存追跡（動的依存・`$1` インデックス依存）を抑止して値を読む |
+| `$dependOn` | `$dependOn(path: string): void` | 依存関係を手動登録 |
+| `$untracked` | `$untracked<T>(fn: () => T): T` | fn 実行中の依存追跡（動的依存・`$1` インデックス依存）を抑止して値を読む |
 
 ### プロパティ
 
@@ -212,15 +212,15 @@ defineState({
     this.data = null;
   },
 
-  $updatedCallback() {
+  $renderedCallback() {
     console.log('DOM updated');
   }
 });
 ```
 
-## `$streams` 宣言
+## `$stream` 宣言
 
-`$commandTokens` / `$eventTokens` / `$on` と並んで、状態オブジェクトは `$streams` 宣言マップを認識します。各エントリは非同期プロデューサー（async iterable / async generator / `ReadableStream`）を単一のリアクティブプロパティに畳み込みます:
+`$commandTokens` / `$eventTokens` / `$on` と並んで、状態オブジェクトは `$stream` 宣言マップを認識します。各エントリは非同期プロデューサー（async iterable / async generator / `ReadableStream`）を単一のリアクティブプロパティに畳み込みます:
 
 ```typescript
 import { defineState } from '@wcstack/state';
@@ -232,9 +232,9 @@ export default defineState({
   prompt: "",
   answer: "",  // ランタイムでは stream の所有物。先に宣言しておくと `this.answer` に型が付く
 
-  $streams: {
+  $stream: {
     answer: {
-      // `$streams` のコールバックにはまだ文脈型が付かない（宣言マップの型付けは
+      // `$stream` のコールバックにはまだ文脈型が付かない（宣言マップの型付けは
       // 後続課題）ため、引数の型は明示的に注釈する。
       args:    (state: { prompt: string }) => state.prompt,  // ここで読んだパスが restart を駆動する
       source:  (prompt: string, signal: AbortSignal) => llmStream(prompt, signal),

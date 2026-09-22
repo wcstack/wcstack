@@ -1,4 +1,4 @@
-# `$streams` — Folding Async Producers into Reactive Properties
+# `$stream` — Folding Async Producers into Reactive Properties
 
 ## What Is This?
 
@@ -8,7 +8,7 @@ Take a look at the following state definition.
 export default {
   prompt: "",
 
-  $streams: {
+  $stream: {
     tokens: {
       args:    (state) => state.prompt,
       source:  (prompt, signal) => llmStream(prompt, signal),
@@ -25,9 +25,9 @@ export default {
 <p data-wcs="textContent: $streamError.tokens"></p>
 ```
 
-`$streams` is a declaration map on the state object — the same family as `$commandTokens`, `$eventTokens`, and `$on`. Each entry connects an **async producer** (an async iterable, an async generator, or a `ReadableStream`) to a single **reactive property**. Every chunk the producer yields is passed through `fold`, and the folded result becomes the new value of `state.tokens` — flowing through the ordinary update cycle, so bindings, computed getters, and `$updatedCallback` all react to it like any other property.
+`$stream` is a declaration map on the state object — the same family as `$commandTokens`, `$eventTokens`, and `$on`. Each entry connects an **async producer** (an async iterable, an async generator, or a `ReadableStream`) to a single **reactive property**. Every chunk the producer yields is passed through `fold`, and the folded result becomes the new value of `state.tokens` — flowing through the ordinary update cycle, so bindings, computed getters, and `$renderedCallback` all react to it like any other property.
 
-Two things `$streams` is deliberately **not**:
+Two things `$stream` is deliberately **not**:
 
 - It is **not a general streams pipeline**. There are no operators, no tees, no transforms — just "consume, fold, assign".
 - It does **not preserve backpressure**. Demand never flows back to the producer. This is an explicit non-goal, and it has one important consequence: [your fold must be bounded](#bounded-fold-must).
@@ -36,13 +36,13 @@ Two things `$streams` is deliberately **not**:
 
 ## Declaration Reference
 
-### The `$streams` Map
+### The `$stream` Map
 
-Each key of `$streams` is a flat property name; each value is a stream definition.
+Each key of `$stream` is a flat property name; each value is a stream definition.
 
 ```javascript
 export default {
-  $streams: {
+  $stream: {
     // Full form: accumulate an LLM token stream
     tokens: {
       args:    (state) => state.prompt,                   // dependencies are captured here, and only here
@@ -73,7 +73,7 @@ export default {
 
 Violations raise an error when the state is set (declaration parse time):
 
-- `$streams` must be an object mapping stream names to definitions.
+- `$stream` must be an object mapping stream names to definitions.
 - Each entry name must be a **flat property name**: non-empty, no `.`, no `*`, and must not start with `$` (reserved namespace).
 - Entry names must not be property names inherited from `Object.prototype` (`__proto__`, `constructor`, `toString`, `hasOwnProperty`, …). Such names break the runtime's own-property assumptions (`__proto__` would even rewrite the state's prototype on start). Note that a literal `__proto__:` key in an object literal is prototype-setting syntax — it never becomes an own key, so such an entry is silently ignored rather than rejected.
 - Entry names must not collide with a getter or setter declared on the state.
@@ -121,7 +121,7 @@ Semantics:
 - **Read-only.** Assigning to either namespace (including via two-way binding) throws an error. One known tolerance: assigning a **primitive or `null` value identical to the current one** is silently ignored instead of throwing (the same-value guard — `sameValueGuard`, on by default — short-circuits before the write defense; object values are outside the guard, so re-assigning e.g. the very `Error` instance currently held by `$streamError` still throws). Nothing is corrupted — the misuse diagnostic is just delayed until a write the guard lets through.
 - `$streamError.<name>` is reset to `null` on every start and restart.
 - On error, the **value property keeps the last folded value** — it is not reset. The reset to `initial` happens on the next (re)start.
-- Names not declared in `$streams` read as `undefined` (no throw), same as the `$command` namespace convention.
+- Names not declared in `$stream` read as `undefined` (no throw), same as the `$command` namespace convention.
 
 They bind like any other path:
 
@@ -143,7 +143,7 @@ Observation guarantees:
 
 - Intermediate statuses are not guaranteed to be observable. Transitions coalesced into one update batch (e.g. `active → done` within the same tick) may render only the final value — the same contract as every other binding update.
 - Stream values and companion paths participate in ordinary binding updates as `<name>`, `$streamStatus.<name>`, and `$streamError.<name>`.
-- `$updatedCallback` is **binding-driven**: its `paths` list contains paths whose live DOM bindings were actually applied in that drain. Declaring a `$streams` entry does not by itself subscribe `$updatedCallback` to its value or companions.
+- `$renderedCallback` is **binding-driven**: its `paths` list contains paths whose live DOM bindings were actually applied in that drain. Declaring a `$stream` entry does not by itself subscribe `$renderedCallback` to its value or companions.
 - To react to a stream without rendering it, declare `$watch` on its value path. `$watch` is the state-only (headless) subscription and fires whether or not the path is bound. Two limits apply here: the reserved companion namespaces (`$streamStatus.<name>` / `$streamError.<name>`) cannot be watched — a watch path may not start with `$` — and a stream's value written through `$postUpdate`-style paths arrives with `prev === undefined`. Watching the value path itself is the supported route; if you need the completion *status*, bind it in the UI or fold the terminal condition into the value.
 
 ---
@@ -160,7 +160,7 @@ Every path read inside `args` is captured as a dependency — automatically, the
 This is **switchMap semantics**: the newest dependency state always wins, and stale runs are cancelled rather than raced.
 
 ```javascript
-$streams: {
+$stream: {
   tokens: {
     args:   (state) => state.prompt,     // ← writing state.prompt aborts the old run and starts a new one
     source: (prompt, signal) => llmStream(prompt, signal),
@@ -219,8 +219,8 @@ fold: (acc, chunk) => [...acc.slice(-99), chunk],
 ### Chunk Reflection Granularity
 
 - `fold` is applied to **every chunk, exactly once** — no chunk is skipped or duplicated.
-- DOM reflection follows the updater's microtask batching. Chunks from an async iterator each arrive in their own microtask, so in practice **each chunk causes one drain** (one DOM flush, one `$updatedCallback`). The flush rate is bounded by the chunk arrival rate.
-- With the latest fold, **same-value primitive chunks are skipped entirely** by the same-value guard: no binding update, no `$updatedCallback` entry.
+- DOM reflection follows the updater's microtask batching. Chunks from an async iterator each arrive in their own microtask, so in practice **each chunk causes one drain** (one DOM flush, one `$renderedCallback`). The flush rate is bounded by the chunk arrival rate.
+- With the latest fold, **same-value primitive chunks are skipped entirely** by the same-value guard: no binding update, no `$renderedCallback` entry.
 - There is **no built-in throttling**. If your producer is too chatty for the DOM, thin it out at the producer, in the fold, or downstream with `wcs-debounce` / `wcs-throttle`.
 
 ---
@@ -253,7 +253,7 @@ The following are explicitly not supported:
 4. Automatic reconnection — retrying = re-touching a dependency.
 5. Lazy start (a future `lazy: true` option is reserved, not implemented).
 6. Per-binding / per-structural-block stream lifetimes — streams live and die with the `<wcs-state>` element's connection.
-7. `$streams` on a DCC **definition element** (a `<wcs-state>` initialized through the `data-wc-definition` / `_initializeDCC` path) — the declaration is ignored there. A `<wcs-state>` **inside a DCC instance** goes through the normal path, so its `$streams` start and stop independently per instance.
+7. `$stream` on a DCC **definition element** (a `<wcs-state>` initialized through the `data-wc-definition` / `_initializeDCC` path) — the declaration is ignored there. A `<wcs-state>` **inside a DCC instance** goes through the normal path, so its `$stream` start and stop independently per instance.
 8. Backpressure preservation (a permanent non-goal, not a first-stage gap).
 
 Known edge: if re-setting the state **removes** a stream declaration, bindings to its `$streamStatus.<name>` / `$streamError.<name>` are not notified of the removal and keep showing the last rendered value (subsequent reads resolve to `undefined`).
@@ -270,7 +270,7 @@ A finite token stream, accumulated into a string. Editing the prompt aborts the 
 export default {
   prompt: "",
 
-  $streams: {
+  $stream: {
     answer: {
       args:    (state) => state.prompt,
       source:  (prompt, signal) => llmStream(prompt, signal),  // async generator honoring signal
@@ -298,7 +298,7 @@ An infinite price feed. The latest fold (the default) keeps exactly one value �
 
 ```javascript
 export default {
-  $streams: {
+  $stream: {
     price: {
       source: (_args, signal) => priceStream(signal),  // infinite; latest fold keeps it bounded
     },
@@ -319,7 +319,7 @@ export default {
 export default {
   url: "/api/report",
 
-  $streams: {
+  $stream: {
     body: {
       args: (state) => state.url,
       source: async (url, signal) => {
@@ -344,7 +344,7 @@ export default {
 
 | Concept | Description |
 |---|---|
-| `$streams` | Declaration map: async producer → fold → reactive property |
+| `$stream` | Declaration map: async producer → fold → reactive property |
 | `source(args, signal)` | Returns the producer. MUST honor the `AbortSignal` |
 | `args(state)` | Synchronous dependency capture; its reads drive restart |
 | `fold(acc, chunk)` | Synchronous, returns a new value. Default: latest |

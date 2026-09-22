@@ -291,7 +291,7 @@ export default {
 | **`$getAll(path)`** | ❌ ^13 | ❌ ^13 | ✅ | ❌ | ❌ | ❌ |
 | **`$resolve(path, indexes)`** | ❌ ^14 | ❌ ^14 | ✅ | ❌ | ❌ | ❌ |
 | **`$postUpdate(path)`** | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
-| **`$trackDependency(path)`** | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| **`$dependOn(path)`** | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 
 ^7 データプロパティはオブジェクトリテラルのキーであり、パスではない（`count: 0` は有効だが `"cart.totalPrice": 0` はデータ構造が異なる）
 ^8 getter の単純パス宣言はネストパスの算出値（例: `get "totalPrice"()` — 事実上 `get totalPrice()`）

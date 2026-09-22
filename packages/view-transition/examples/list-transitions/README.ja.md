@@ -19,5 +19,5 @@
 
 - **これはポリシーノード。** 何も描画せず、自身のデータもバインドせず、アニメーションを記述もしない —— アニメーションは `::view-transition-*` に対する CSS の仕事。タグを外せば、ページは以前と完全に同じ挙動・同じタイミングに戻る。
 - **削除は同期のまま。** アニメーションのために行を mount したままにはしないので、リスト差分・content プール・`if`/`for` の不変条件はどれも触られていない。Vue 風の leave クラスではなく View Transition を選んだ理由がこれ（[設計文書](../../../../docs/view-transition-design.ja.md) §2）。
-- **知っておくべき帰結が 1 つ。** タグが `state` 参加者を受け付けている間（既定）、drain は microtask ではなくフレームで適用される。state に書いてから `await Promise.resolve()` で DOM を読むコードは遷移を待つ必要がある。`$updatedCallback` はバインディング適用直後に発火する点は変わらない。
+- **知っておくべき帰結が 1 つ。** タグが `state` 参加者を受け付けている間（既定）、drain は microtask ではなくフレームで適用される。state に書いてから `await Promise.resolve()` で DOM を読むコードは遷移を待つ必要がある。`$renderedCallback` はバインディング適用直後に発火する点は変わらない。
 - **`auto` はロード順に依存する。** 名前は content の mount 時に割り当てられるので、このページは `@wcstack/view-transition` を `@wcstack/state` より**前**に読み込んでいる。逆順だと最初の行に名前が付かず、後から付け直されることも無い。

@@ -3,9 +3,9 @@
 同じ Server-Sent Events **エンドポイント**を、同じページで 2 通りに消費します。それぞれの流儀が**自分の** `EventSource` を張り、サーバーは接続ごとにサンプルを生成するため、2 つのパネルの数値が一致することはありません — 同じ形のフィードを独立に 2 回読んでいます:
 
 - **左パネル** — `<wcs-sse>`: *タグ*が接続を所有します。名前付きイベントは `eventToken.message` で state に流れ、`$on` ハンドラで畳み込みます。
-- **右パネル** — `$streams`: *state* が接続を所有します。`EventSource` を **`ReadableStream`** にブリッジし、単一のリアクティブプロパティに fold します。ブリッジの形として選ぶべきは `ReadableStream` です: abort 時に停止中の read が `reader.cancel()` で強制的に巻き戻される（完全救済）のに対し、`await` で停止中の async generator は部分救済にとどまり、abort そのものではなく次に再開したときにしか止まりません。
+- **右パネル** — `$stream`: *state* が接続を所有します。`EventSource` を **`ReadableStream`** にブリッジし、単一のリアクティブプロパティに fold します。ブリッジの形として選ぶべきは `ReadableStream` です: abort 時に停止中の read が `reader.cancel()` で強制的に巻き戻される（完全救済）のに対し、`await` で停止中の async generator は部分救済にとどまり、abort そのものではなく次に再開したときにしか止まりません。
 
-`<wcs-sse>` と `$streams` は同じ仕事を取り合う競合手段です。だからこのデモはあえて両者を**並置**し、直列にはつなぎません — どちらをいつ選ぶかを見せるのが主題です。
+`<wcs-sse>` と `$stream` は同じ仕事を取り合う競合手段です。だからこのデモはあえて両者を**並置**し、直列にはつなぎません — どちらをいつ選ぶかを見せるのが主題です。
 
 ## 起動方法
 
@@ -13,7 +13,7 @@
 node examples/state-sse-dashboard/server.js
 ```
 
-http://localhost:3000 を開いてください。3 パッケージ（`state` / `sse` / `network`）はすべて CDN からロードします — `$streams` は v1.19.0 でリリース済みのため、ローカルビルドは不要です。
+http://localhost:3000 を開いてください。3 パッケージ（`state` / `sse` / `network`）はすべて CDN からロードします — 宣言キー `$stream` は 3.2 からリリース済み（旧名 `$streams` は v1.19.0 から）のため、ローカルビルドは不要です。
 
 ## 見せ場: ホスト切り替え
 

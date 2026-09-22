@@ -43,7 +43,7 @@
 <body>
 
 <h1>wcstack: infinite scroll <small>— &lt;wcs-intersect&gt;</small></h1>
-<p class="lead">state + intersection + <code>$streams</code> + <code>$scan</code> — a <code>&lt;wcs-intersect&gt;</code> sentinel selects the next page, a dependency-driven stream fetches it with switchMap-style cancellation and bounded retry, and <code>$scan</code> accumulates the landed pages into a feed that outlives every page run.</p>
+<p class="lead">state + intersection + <code>$stream</code> + <code>$scan</code> — a <code>&lt;wcs-intersect&gt;</code> sentinel selects the next page, a dependency-driven stream fetches it with switchMap-style cancellation and bounded retry, and <code>$scan</code> accumulates the landed pages into a feed that outlives every page run.</p>
 
 <!-- ============================================================
      App State
@@ -71,7 +71,7 @@
     }
 
     // One stream run owns one logical page request. Changing an args dependency
-    // aborts this generator (and its fetch/delay) before $streams starts the newest
+    // aborts this generator (and its fetch/delay) before $stream starts the newest
     // run: the switchMap semantics advertised by @wcstack/state.
     async function* loadPage({ page, pageSize, maxRetries }, signal) {
       const url = `/api/items?page=${page}&limit=${pageSize}`;
@@ -135,7 +135,7 @@
       $commandTokens: ["rearm"],
       $eventTokens: ["sentinelChanged"],
 
-      $streams: {
+      $stream: {
         // page/pageSize/retryNonce/maxRetries are captured dependencies. A change
         // aborts the old source and starts loadPage with the newest snapshot.
         pageResult: {
@@ -149,7 +149,7 @@
         },
       },
 
-      // The feed outlives every page run. $streams resets `pageResult` to its initial
+      // The feed outlives every page run. $stream resets `pageResult` to its initial
       // value on each restart, so the accumulation across runs lives here: the runtime
       // folds each landing of `pageResult` once, owns `feed`, and keeps it across
       // restarts and reconnects. Nothing has to be bound for this to run.

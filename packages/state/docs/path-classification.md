@@ -290,7 +290,7 @@ export default {
 | **`$getAll(path)`** | ❌ ^13 | ❌ ^13 | ✅ | ❌ | ❌ | ❌ |
 | **`$resolve(path, indexes)`** | ❌ ^14 | ❌ ^14 | ✅ | ❌ | ❌ | ❌ |
 | **`$postUpdate(path)`** | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
-| **`$trackDependency(path)`** | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| **`$dependOn(path)`** | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 
 ^7 Data properties are object literal keys, not paths (`count: 0` is valid but `"cart.totalPrice": 0` represents a different data structure)
 ^8 A simple path getter declaration is a computed value for a nested path (e.g., `get "totalPrice"()` — effectively `get totalPrice()`)

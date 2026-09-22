@@ -22,7 +22,7 @@ cd packages/state/examples
 npx serve .          # or any static file server
 ```
 
-The `$streams` demo's bundled server also serves this whole folder, if one is already running:
+The `$stream` demo's bundled server also serves this whole folder, if one is already running:
 `node examples/streams/server.js` → http://localhost:3000/recursive-tree/.
 
 ## What to look at

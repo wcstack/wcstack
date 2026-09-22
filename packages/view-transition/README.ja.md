@@ -96,7 +96,7 @@ npm install @wcstack/view-transition
 
 タグを足す前に知っておくべき帰結が 2 つ。
 
-1. **`for="state"`（既定で有効）は state の drain を非同期にする。** 現在の drain は microtask で着地するが、遷移の中ではフレームで着地する。state に書いてから `await Promise.resolve()` で DOM を読むコードは、代わりに遷移を待つ必要がある。`$updatedCallback` は影響を受けない（バインディング適用直後に発火する）。drain を完全に元のままにしたいなら `for="router"`。
+1. **`for="state"`（既定で有効）は state の drain を非同期にする。** 現在の drain は microtask で着地するが、遷移の中ではフレームで着地する。state に書いてから `await Promise.resolve()` で DOM を読むコードは、代わりに遷移を待つ必要がある。`$renderedCallback` は影響を受けない（バインディング適用直後に発火する）。drain を完全に元のままにしたいなら `for="router"`。
 2. **参加は要素単位ではなくドキュメント単位。** 1 つの updater がページ上の全 `<wcs-state>` をまとめて drain するので、`for="state"` は全部に効く。
 
 遷移がスキップされ、変更が現行どおり同期適用されるのは: `startViewTransition` が無い環境、`document.hidden` が true のとき（バックグラウンドタブには描画機会が無く、遷移を張ると見に戻るまで DOM が凍る）、`reduced-motion="animate"` でない状態で `prefers-reduced-motion: reduce` のとき、`disabled` のとき、そして SSR 中。
