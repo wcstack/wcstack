@@ -10,7 +10,6 @@
  * hook は要素の寿命の間は付いたままなので、各 hook は従来どおり `hasMounts` / `hasGraftedVolumes` の
  * boolean で自分の分岐を守る。
  */
-import { DELIMITER } from "../define";
 import { IAddressHooks, NOT_HANDLED, registerFeatureHooks } from "../core/addressHooks";
 import { getScopedIndexes } from "../list/wildcardLevel";
 import { raiseError } from "../raiseError";
@@ -18,7 +17,7 @@ import { resolveExport } from "./exportIndex";
 import { findMountRecordForNode, getIndexShiftForMarkerPath, getMountRecordByPath } from "./mount";
 import { createOverlayValue, readExportedAccessor, writeExportedAccessor } from "./overlay";
 import { remountScopesUnderContent } from "./mountScope";
-import { createVolumeChroot, findGraftedSlotUnder, getVolumeUpdatedCallbacks, isPathUnderReservedVolume } from "./volumeShared";
+import { createVolumeChroot, findGraftedSlotUnder, getVolumeUpdatedCallbacks, isPathUnderReservedVolume, relativeVolumePath } from "./volumeShared";
 
 export const scopeAddressHooks: IAddressHooks = {
   // マウントのオーバーレイ dispatch（Phase 2・D20）。掛かるのは「マーカーで終わるパス」だけで、
@@ -121,7 +120,6 @@ export const scopeAddressHooks: IAddressHooks = {
   updated(stateElement, refs, receiver) {
     const volumeCallbacks = getVolumeUpdatedCallbacks(stateElement);
     for (const volume of volumeCallbacks) {
-      const prefix = volume.mountPath + DELIMITER;
       const relativePaths: Set<string> = new Set();
       const relativeIndexes: Record<string, Array<number[]>> = {};
       for (const ref of refs) {
@@ -129,16 +127,14 @@ export const scopeAddressHooks: IAddressHooks = {
           continue;
         }
         const path = ref.absolutePathInfo.pathInfo.path;
-        if (path !== volume.mountPath && !path.startsWith(prefix)) {
-          continue;
-        }
         // マーカーパス（マウント私有キー）はボリューム相対配送にも漏らさない（D20/D21）
         if (path.indexOf("#") !== -1) {
           continue;
         }
-        const relative = path === volume.mountPath ? "" : path.slice(prefix.length);
-        if (relative === "") {
-          continue; // マウントポイント自身（接ぎ木そのもの）は相対で表せない
+        // 自分の接頭辞の配下と、注入したパス（内側の名前で — 3.x 計画 D33）
+        const relative = relativeVolumePath(volume.mountPath, volume.injections, path);
+        if (relative === null || relative === "") {
+          continue; // 関係ないパスと、マウントポイント自身（接ぎ木そのもの）は相対で表せない
         }
         relativePaths.add(relative);
         const wildcardCount = ref.absolutePathInfo.pathInfo.wildcardCount;
@@ -149,7 +145,7 @@ export const scopeAddressHooks: IAddressHooks = {
       }
       if (relativePaths.size > 0) {
         try {
-          volume.callback.call(createVolumeChroot(volume.mountPath, receiver), Array.from(relativePaths), relativeIndexes);
+          volume.callback.call(createVolumeChroot(volume.mountPath, receiver, volume.injections), Array.from(relativePaths), relativeIndexes);
         } catch (error) {
           console.error(`[@wcstack/state] volume "${volume.mountPath}" $updatedCallback threw.`, error);
         }

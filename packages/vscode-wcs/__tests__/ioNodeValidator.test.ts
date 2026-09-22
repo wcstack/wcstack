@@ -12,6 +12,31 @@ ${body}
 };
 </script></wcs-state>`;
 
+describe('validateIoNodes: on-prefixed-member（明示のプロパティ形、@wcstack/state 3.1）', () => {
+  it('"on" で始まるメンバーをドット無しで束縛すると警告し、".once:" を提案する', () => {
+    const html = `<wcs-timer data-wcs="once#ro: isOnce"></wcs-timer>`;
+    const diags = validateIoNodes(html);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].code).toBe(WcsDiagnosticCode.OnPrefixedMember);
+    expect(diags[0].severity).toBe('warning');
+    expect(diags[0].member).toBe('once');
+    expect(diags[0].message).toContain('".once:"');
+    expect(diags[0].message).toContain('"ce"');
+  });
+
+  it('".once:" はメンバーとして照合し、未知の ".name:" は tag-member-unknown にする', () => {
+    expect(validateIoNodes(`<wcs-timer data-wcs=".once: isOnce"></wcs-timer>`)).toHaveLength(0);
+    const diags = validateIoNodes(`<wcs-timer data-wcs=".onse: isOnce"></wcs-timer>`);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].code).toBe(WcsDiagnosticCode.TagMemberUnknown);
+    expect(diags[0].member).toBe('onse');
+  });
+
+  it('メンバーでない "on*"（イベント）とドットの後の名前空間は対象外', () => {
+    expect(validateIoNodes(`<wcs-timer data-wcs="onclick: go; .class.x: y; .command.start: z"></wcs-timer>`)).toHaveLength(0);
+  });
+});
+
 describe('validateIoNodes: tag-member-unknown', () => {
   it('存在しないプロパティへのバインドを警告する（typo 提案付き）', () => {
     const html = `<wcs-fetch data-wcs="valu: users"></wcs-fetch>`;

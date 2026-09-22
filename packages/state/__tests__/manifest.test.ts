@@ -100,6 +100,7 @@ describe("wcs-manifest（単一正本・A2-1）", () => {
       elseKeyword: "else",
       spread: "...",
       eventPropertyPrefix: "on",
+      explicitPropertyPrefix: ".",
       propNamespaces: {
         eventToken: "eventToken",
         command: "command",

@@ -7,9 +7,10 @@
  * 壊れる（watchRuntime は import 時に drain リスナーを登録する）。
  */
 
-import { DELIMITER } from "../define";
+import { DELIMITER, MODIFIER_READONLY, VOLUME_INJECTION_PROP } from "../define";
 import { raiseError } from "../raiseError";
 import { IStateElement } from "../components/types";
+import { findMountEntry, IMountEntry, translateByMountEntry } from "./mountEntries";
 
 /**
  * 予約済みスロット（D22）。キーは rootNode、値はマウントパス → 予約した要素（所有者）。
@@ -113,34 +114,92 @@ export function findGraftedSlotUnder(stateElement: IStateElement, path: string):
   return null;
 }
 
-/** ボリュームの chroot（相対キー → `<mountPath>.<key>` を receiver に翻訳する薄い proxy）。 */
-export function createVolumeChroot(mountPath: string, receiver: any): Record<string, any> {
+const NO_INJECTIONS: readonly IMountEntry[] = [];
+
+/**
+ * ボリューム相対のパスをルートの絶対パスへ翻訳する。注入口（`state.taxRate: settings.taxRate`、
+ * 要件 B14③）の最長一致が先で、一致しなければ `<mountPath>.<path>`。`write` なら、読み取り専用で
+ * 注入したキー（`state.taxRate#ro: …`）への書き込みを名指しで拒否する（コンポーネントの
+ * `translateInnerWritePath` と同じ規則・同じコード）。
+ */
+export function translateVolumePath(
+  mountPath: string,
+  injections: readonly IMountEntry[],
+  path: string,
+  write: boolean,
+): string {
+  if (injections.length > 0) {
+    const segments = path.split(DELIMITER);
+    const entry = findMountEntry(injections, segments);
+    if (entry !== null) {
+      if (write && entry.readonly) {
+        raiseError(
+          `[wcs/mount-readonly] volume "${mountPath}" cannot write "${path}": it is injected read-only ` +
+          `("${VOLUME_INJECTION_PROP}.${entry.innerSegments.join(DELIMITER)}#${MODIFIER_READONLY}: ${entry.outerPathInfo.path}"). ` +
+          `Write "${entry.outerPathInfo.path}" on the root, or drop #${MODIFIER_READONLY} from the injection.`,
+        );
+      }
+      return translateByMountEntry(entry, segments);
+    }
+  }
+  return mountPath + DELIMITER + path;
+}
+
+/**
+ * ルートの絶対パスを、ボリュームから見た相対パスへ戻す（`$updatedCallback` の相対配送）。
+ * 注入したパスは内側の名前で返す（3.x 計画 D33）。ボリュームに関係なければ null、マウントポイント自身は ""。
+ */
+export function relativeVolumePath(mountPath: string, injections: readonly IMountEntry[], path: string): string | null {
+  for (const entry of injections) {
+    const outer = entry.outerPathInfo.path;
+    if (path === outer) {
+      return entry.innerSegments.join(DELIMITER);
+    }
+    if (path.startsWith(outer + DELIMITER)) {
+      return entry.innerSegments.join(DELIMITER) + path.slice(outer.length);
+    }
+  }
+  if (path === mountPath) {
+    return "";
+  }
+  return path.startsWith(mountPath + DELIMITER) ? path.slice(mountPath.length + 1) : null;
+}
+
+/**
+ * ボリュームの chroot（相対キー → ルートの絶対パスを receiver に翻訳する薄い proxy）。
+ * 翻訳は translateVolumePath — 注入口があればそちら、無ければ `<mountPath>.<key>`。
+ */
+export function createVolumeChroot(mountPath: string, receiver: any, injections: readonly IMountEntry[] = NO_INJECTIONS): Record<string, any> {
   return new Proxy({} as Record<string, any>, {
     get(_target, prop): any {
       if (typeof prop !== "string" || prop === "then") {
         return undefined;
       }
       if (prop[0] === "$") {
-        if (prop === "$postUpdate") {
-          return (path: string): void => {
-            receiver.$postUpdate(mountPath + DELIMITER + path);
-          };
-        }
-        if (prop === "$getAll" || prop === "$setAll" || prop === "$resolve") {
+        if (prop === "$postUpdate" || prop === "$getAll") {
           const api = prop;
           return (path: string, ...rest: unknown[]): unknown =>
-            receiver[api](mountPath + DELIMITER + path, ...rest);
+            receiver[api](translateVolumePath(mountPath, injections, path, false), ...rest);
+        }
+        if (prop === "$setAll") {
+          return (path: string, ...rest: unknown[]): unknown =>
+            receiver.$setAll(translateVolumePath(mountPath, injections, path, true), ...rest);
+        }
+        if (prop === "$resolve") {
+          // 読みか書きかは引数の個数で決まる（要件 B7）— 個数を変えずに渡し、書きだけ `#ro` を検査する
+          return (path: string, ...rest: unknown[]): unknown =>
+            receiver.$resolve(translateVolumePath(mountPath, injections, path, rest.length > 1), ...rest);
         }
         // 他の `$` は親の意味論のまま（宣言面はボリュームが登録時に翻訳する）
         return receiver[prop];
       }
-      return receiver[mountPath + DELIMITER + prop];
+      return receiver[translateVolumePath(mountPath, injections, prop, false)];
     },
     set(_target, prop, value): boolean {
       if (typeof prop !== "string") {
         return true;
       }
-      receiver[mountPath + DELIMITER + prop] = value;
+      receiver[translateVolumePath(mountPath, injections, prop, true)] = value;
       return true;
     },
     has(_target, prop): boolean {
@@ -153,6 +212,8 @@ export function createVolumeChroot(mountPath: string, receiver: any): Record<str
 /** ボリュームの相対 $updatedCallback（ルート state 要素 → 登録リスト）。 */
 export interface IVolumeUpdatedCallback {
   readonly mountPath: string;
+  /** 注入口（B14③）。注入したパスの更新は内側の名前で届く */
+  readonly injections: readonly IMountEntry[];
   readonly callback: (this: unknown, paths: string[], indexesListByPath: Record<string, Array<number[]>>) => unknown;
 }
 const volumeUpdatedCallbacksByRoot = new WeakMap<IStateElement, IVolumeUpdatedCallback[]>();
@@ -182,6 +243,8 @@ export function getVolumeUpdatedCallbacks(stateElement: IStateElement): readonly
 export interface IPendingVolumeRequest {
   readonly mountPath: string;
   readonly volumeState: Record<string, any>;
+  /** ボリューム要素の注入口（`state.<key>: path`、B14③） */
+  readonly injections: readonly IMountEntry[];
   readonly onGrafted: (info: unknown) => void;
   /**
    * 接ぎ木の直前に、要求した要素がマウントの枠を取る（#265）。握っていれば真、空いていれば取り直して真、

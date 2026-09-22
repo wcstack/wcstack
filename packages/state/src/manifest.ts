@@ -108,6 +108,8 @@ export interface IWcsManifest {
       elseKeyword: string;
       spread: string;
       eventPropertyPrefix: string;
+      /** 左辺の先頭に付けると、名前が `on` で始まってもイベントにしない明示のプロパティ形（`.online:`、要件 B5） */
+      explicitPropertyPrefix: string;
       propNamespaces: {
         eventToken: string;
         command: string;
@@ -157,6 +159,7 @@ export function getWcsManifest(): IWcsManifest {
         elseKeyword: ELSE_KEYWORD,
         spread: SPREAD_PROP,
         eventPropertyPrefix: EVENT_PROP_PREFIX,
+        explicitPropertyPrefix: DELIMITER,
         propNamespaces: {
           eventToken: EVENT_TOKEN_NAMESPACE,
           command: COMMAND_NAMESPACE,

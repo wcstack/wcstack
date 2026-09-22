@@ -58,6 +58,11 @@ export const ELSE_KEYWORD = 'else';
 export const SPREAD_PROP = '...';
 export const EVENT_PROP_PREFIX = 'on';
 export const EVENT_TOKEN_NAMESPACE = 'eventToken';
+/**
+ * `<wcs-state mount>` の左辺 `state.<key>: path` — ボリュームの注入口（要件 B14③・3.x 計画 D28）。
+ * 束縛ではなくマウントの宣言なので、束縛の収集（getParseBindTextResults）は作らず、ボリュームが接ぎ木の時に読む
+ */
+export const VOLUME_INJECTION_PROP = 'state';
 export const COMMAND_NAMESPACE = 'command';
 export const CLASS_NAMESPACE = 'class';
 export const ATTR_NAMESPACE = 'attr';

@@ -34,10 +34,13 @@
 
 import { getPathInfo } from "../address/PathInfo";
 import { IStateElement } from "../components/types";
-import { DELIMITER, WILDCARD } from "../define";
+import { DELIMITER, MODIFIER_READONLY, VOLUME_INJECTION_PROP, WILDCARD } from "../define";
 import { raiseError } from "../raiseError";
 import { IStateProxy } from "../proxy/types";
-import { addVolumeUpdatedCallback, createVolumeChroot, drainPendingVolumes, hasReservedVolumeSlots, IPendingVolumeRequest, IVolumeUpdatedCallback, queuePendingVolume, recordGraftedSlot, setVolumeGraftHandler } from "./volumeShared";
+import { addVolumeUpdatedCallback, createVolumeChroot, drainPendingVolumes, hasReservedVolumeSlots, IPendingVolumeRequest, IVolumeUpdatedCallback, queuePendingVolume, recordGraftedSlot, setVolumeGraftHandler, translateVolumePath } from "./volumeShared";
+import type { IMountEntry } from "./mountEntries";
+import { parseBindTextsForElement } from "../bindTextParser/parseBindTextsForElement";
+import { config } from "../config";
 import { onStateElementRegistered } from "../stateElementByName";
 import { installScopeHooks } from "./addressHooks";
 import { installVolumeLifecycle } from "./volumeLifecycle";
@@ -60,6 +63,7 @@ export interface IVolumeGraftInfo {
   readonly rootStateElement: IStateElement;
   readonly mountPath: string;
   readonly volumeState: Record<string, any>;
+  readonly injections: readonly IMountEntry[];
 }
 
 /** chroot を作る（$disconnectedCallback など graft 後のライフサイクル呼び出し用）。 */
@@ -69,7 +73,7 @@ export function callVolumeLifecycle(info: IVolumeGraftInfo, name: string): void 
     return;
   }
   info.rootStateElement.createState("writable", (state) => {
-    const result = (callback as (this: unknown) => unknown).call(createVolumeChroot(info.mountPath, state as IStateProxy));
+    const result = (callback as (this: unknown) => unknown).call(createVolumeChroot(info.mountPath, state as IStateProxy, info.injections));
     if (result instanceof Promise) {
       result.catch((error) => {
         console.error(`[@wcstack/state] volume "${info.mountPath}" ${name} failed.`, error);
@@ -101,7 +105,46 @@ export function validateVolumeMountPath(mountPath: string): void {
   }
 }
 
-function splitVolumeState(volumeState: Record<string, any>): {
+/**
+ * ボリューム要素の注入口（`<wcs-state mount="cart" data-wcs="state.taxRate: settings.taxRate">`、
+ * 要件 B14③・3.x 計画 D28〜D32）を読む。左辺は `state.<キー>` の 1 段（キーごとに注入する）、右辺は
+ * ルートの静的なパス（ボリュームにはループ文脈が無い）。`#ro` だけを受け、フィルタは受けない。
+ * ルートの束縛収集はこの宣言を束縛にしない（getParseBindTextResults）。
+ */
+export function readVolumeInjections(bindText: string, mountPath: string): IMountEntry[] {
+  const entries: IMountEntry[] = [];
+  const seen = new Set<string>();
+  for (const result of parseBindTextsForElement(bindText)) {
+    if (result.propSegments[0] !== VOLUME_INJECTION_PROP) {
+      continue;
+    }
+    const inner = result.propSegments.slice(1);
+    const outer = result.statePathInfo;
+    const fail = (reason: string): never => raiseError(
+      `[wcs/mount-path-invalid] <${config.tagNames.state} mount="${mountPath}"> "${result.propName}: ${result.statePathName}": ${reason}`,
+    );
+    if (inner.length !== 1 || !inner[0] || inner[0] === WILDCARD || inner[0][0] === "$" || inner[0][0] === "#") {
+      fail(`inject one key at a time ("${VOLUME_INJECTION_PROP}.<key>: path"); change "mount" to move the whole volume.`);
+    }
+    if (outer.wildcardCount > 0 || outer.path[0] === "$" || outer.path[0] === "#") {
+      fail(`the injected path must be a static path on the root tree (a volume has no loop context).`);
+    }
+    if (result.inFilters.length > 0 || result.outFilters.length > 0) {
+      fail(`an injection takes no filters.`);
+    }
+    if (result.propModifiers.some((modifier) => modifier !== MODIFIER_READONLY)) {
+      fail(`an injection accepts only #${MODIFIER_READONLY}.`);
+    }
+    if (seen.has(inner[0])) {
+      fail(`"${inner[0]}" is injected twice.`);
+    }
+    seen.add(inner[0]);
+    entries.push({ innerSegments: inner, outerPathInfo: outer, readonly: result.propModifiers.includes(MODIFIER_READONLY) });
+  }
+  return entries;
+}
+
+function splitVolumeState(volumeState: Record<string, any>, injectedKeys: ReadonlySet<string>): {
   data: Record<string, unknown>;
   accessors: Map<string, PropertyDescriptor>;
 } {
@@ -110,6 +153,9 @@ function splitVolumeState(volumeState: Record<string, any>): {
   for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(volumeState))) {
     if (key.startsWith("$")) {
       continue; // 宣言面（$connectedCallback は graftVolume が直接読む・他は P2-9b）
+    }
+    if (injectedKeys.has(key)) {
+      continue; // 明示した注入が自前のキーに勝つ（B14② と同じ — 3.x 計画 D30）。既定値は接ぎ木しない
     }
     if (typeof descriptor.get === "function" || typeof descriptor.set === "function") {
       accessors.set(key, descriptor);
@@ -133,7 +179,21 @@ function validateVolumeDeclarations(
   rootStateElement: IStateElement,
   mountPath: string,
   volumeState: Record<string, any>,
+  injections: readonly IMountEntry[],
 ): void {
+  // 注入したキーと同名の getter / setter / メソッドは、どちらが `this.<key>` なのか書き手に見えない。
+  // データの既定値だけは注入が黙って勝つ（D30）
+  for (const entry of injections) {
+    const key = entry.innerSegments[0];
+    const descriptor = Object.getOwnPropertyDescriptor(volumeState, key);
+    if (typeof descriptor !== "undefined"
+      && (typeof descriptor.get === "function" || typeof descriptor.set === "function" || typeof descriptor.value === "function")) {
+      raiseError(
+        `Volume "${mountPath}" declares "${key}" as an accessor or a method and also injects it ` +
+        `("${VOLUME_INJECTION_PROP}.${key}: ${entry.outerPathInfo.path}"). Rename one of them.`,
+      );
+    }
+  }
   const watchDeclared = (volumeState as Record<string, unknown>)[STATE_WATCH_NAME];
   if (typeof watchDeclared !== "undefined") {
     if (typeof watchDeclared !== "object" || watchDeclared === null) {
@@ -156,8 +216,9 @@ function validateVolumeDeclarations(
         raiseError(`${STATE_LIST_KEYS_NAME} entry "${path}" must map a list path to a field name or a key function.`);
       }
       // 衝突（mergeVolumeListKeys の raise と同義）も接ぎ木前に検出する
-      if (rootStateElement.listKeys?.has(mountPath + DELIMITER + path)) {
-        raiseError(`${STATE_LIST_KEYS_NAME} entry "${mountPath + DELIMITER + path}" is declared by both the root and a volume (or two volumes). Keep exactly one.`);
+      const translated = translateVolumePath(mountPath, injections, path, false);
+      if (rootStateElement.listKeys?.has(translated)) {
+        raiseError(`${STATE_LIST_KEYS_NAME} entry "${translated}" is declared by both the root and a volume (or two volumes). Keep exactly one.`);
       }
     }
   }
@@ -197,20 +258,21 @@ function processVolumeDeclarations(
   rootStateElement: IStateElement,
   mountPath: string,
   volumeState: Record<string, any>,
+  injections: readonly IMountEntry[],
 ): void {
-  // $watch: 翻訳してルート台帳へ追記。ハンドラは chroot 包装。
+  // $watch: 翻訳してルート台帳へ追記。ハンドラは chroot 包装。注入したキーの watch はルートのパスを見る
   const watchDeclared = (volumeState as Record<string, unknown>)[STATE_WATCH_NAME];
   if (typeof watchDeclared !== "undefined") {
     const entries: IWatchEntry[] = [];
     const paths = new Set<string>();
     let order = 0;
     for (const [path, handler] of Object.entries(watchDeclared as Record<string, unknown>)) {
-      const translated = mountPath + DELIMITER + path;
+      const translated = translateVolumePath(mountPath, injections, path, false);
       const wrapped = function (this: unknown, cur: unknown, prev: unknown, ...indexes: number[]): void {
         // `this` は writable なルート proxy（watchRuntime の fireOne）— chroot で包む。
         // 接頭辞は静的（ワイルドカード無し）なので indexes はスコープ相対のまま
         (handler as (this: unknown, cur: unknown, prev: unknown, ...indexes: number[]) => void)
-          .call(createVolumeChroot(mountPath, this), cur, prev, ...indexes);
+          .call(createVolumeChroot(mountPath, this, injections), cur, prev, ...indexes);
       };
       // order はルート宣言（0 起点）の後に来る大きな値 — 同一バッチではルートの
       // watch が先に発火する（宣言順規約のボリューム拡張）
@@ -230,16 +292,16 @@ function processVolumeDeclarations(
   if (typeof listKeysDeclared !== "undefined") {
     const translatedEntries = new Map<string, ListKeySpec>();
     for (const [path, spec] of Object.entries(listKeysDeclared as Record<string, unknown>)) {
-      translatedEntries.set(mountPath + DELIMITER + path, spec as ListKeySpec);
+      translatedEntries.set(translateVolumePath(mountPath, injections, path, false), spec as ListKeySpec);
     }
     rootStateElement.mergeVolumeListKeys?.(translatedEntries);
   }
 
-  // $updatedCallback（相対）: 自分の接頭辞配下の更新だけが相対パスで届く。
-  // 収集ゲート（hasUpdatedCallback）を開けるのはここ
+  // $updatedCallback（相対）: 自分の接頭辞配下の更新と、注入したパスの更新（内側の名前で — D33）が
+  // 相対パスで届く。収集ゲート（hasUpdatedCallback）を開けるのはここ
   const updated = (volumeState as Record<string, unknown>)[STATE_UPDATED_CALLBACK_NAME];
   if (typeof updated === "function") {
-    addVolumeUpdatedCallback(rootStateElement, { mountPath, callback: updated as IVolumeUpdatedCallback["callback"] });
+    addVolumeUpdatedCallback(rootStateElement, { mountPath, injections, callback: updated as IVolumeUpdatedCallback["callback"] });
     rootStateElement.enableUpdatedCallback?.();
   }
 
@@ -264,11 +326,12 @@ export function graftVolume(
   rootStateElement: IStateElement,
   mountPath: string,
   volumeState: Record<string, any>,
+  injections: readonly IMountEntry[] = [],
 ): IVolumeGraftInfo {
   // raise しうる宣言検査は接ぎ木より前（半端な接ぎ木状態を残さない — ここで
   // 落ちた graft は「何も載っていない」が成立し、graftIsolated の隔離と整合する）
-  validateVolumeDeclarations(rootStateElement, mountPath, volumeState);
-  const { data, accessors } = splitVolumeState(volumeState);
+  validateVolumeDeclarations(rootStateElement, mountPath, volumeState, injections);
+  const { data, accessors } = splitVolumeState(volumeState, new Set(injections.map((entry) => entry.innerSegments[0])));
   const pathInfo = getPathInfo(mountPath);
   // D14: enable-ssr のスナップショットから初期化されたルートでは、スロットに既に
   // 値があれば**採用**する — モジュールはロード済み（getter / $ 宣言のため）だが、
@@ -331,18 +394,18 @@ export function graftVolume(
     const wrapped: PropertyDescriptor = { enumerable: false, configurable: true };
     if (typeof originalGet === "function") {
       wrapped.get = function (this: unknown) {
-        return originalGet.call(createVolumeChroot(mountPath, this));
+        return originalGet.call(createVolumeChroot(mountPath, this, injections));
       };
     }
     if (typeof originalSet === "function") {
       wrapped.set = function (this: unknown, value: unknown) {
-        originalSet.call(createVolumeChroot(mountPath, this), value);
+        originalSet.call(createVolumeChroot(mountPath, this, injections), value);
       };
     }
     rootStateElement.defineTreeAccessor(treePath, wrapped);
   }
 
-  processVolumeDeclarations(rootStateElement, mountPath, volumeState);
+  processVolumeDeclarations(rootStateElement, mountPath, volumeState, injections);
 
   // $connectedCallback（V7）: chroot で呼ぶ。async でもよい（待たない — ルートの
   // $connectedCallback と同格の「自分のライフサイクル」）
@@ -351,7 +414,7 @@ export function graftVolume(
     rootStateElement.createState("writable", (state) => {
       let result: unknown;
       try {
-        result = connectedCallback.call(createVolumeChroot(mountPath, state as IStateProxy));
+        result = connectedCallback.call(createVolumeChroot(mountPath, state as IStateProxy, injections));
       } catch (error) {
         // 同期の throw も非同期の reject と同じく報告に留める。データ・アクセサ・宣言はもう載っているので、
         // ここから投げると接ぎ木済みのボリュームが「接ぎ木に失敗した」扱いになり、枠まで返してしまう
@@ -366,7 +429,7 @@ export function graftVolume(
       }
     });
   }
-  return { rootStateElement, mountPath, volumeState };
+  return { rootStateElement, mountPath, volumeState, injections };
 }
 
 /**
@@ -382,7 +445,7 @@ function graftIsolated(rootStateElement: IStateElement, volume: IPendingVolumeRe
   }
   let info: IVolumeGraftInfo | null = null;
   try {
-    info = graftVolume(rootStateElement, volume.mountPath, volume.volumeState);
+    info = graftVolume(rootStateElement, volume.mountPath, volume.volumeState, volume.injections);
   } catch (error) {
     // 接ぎ木の失敗（衝突など）は 1 ボリュームに閉じる。ルートの初期化や他の
     // ボリュームを道連れにしない（connectedCallback 内の throw は promise を
@@ -400,10 +463,12 @@ export function graftOrQueueVolume(
   volumeState: Record<string, any>,
   onGrafted: (info: IVolumeGraftInfo | null) => void,
   acquireSlot: () => boolean,
+  injections: readonly IMountEntry[] = [],
 ): void {
   const request: IPendingVolumeRequest = {
     mountPath,
     volumeState,
+    injections,
     onGrafted: onGrafted as IPendingVolumeRequest["onGrafted"],
     acquireSlot,
   };

@@ -117,6 +117,7 @@ export interface WcsMessageCatalog {
   arrayIndexAssign(suggestedPath: string): string;
   // --- ioNodeValidator ---
   tagMemberUnknown(property: string, tag: string): string;
+  onPrefixedMember(member: string, tag: string): string;
   tagCommandUnknown(name: string, tag: string, declared: string): string;
   spreadNoBindable(tag: string): string;
   tagEventTokenKeyUnknown(name: string, tag: string, declared: string): string;
@@ -289,6 +290,8 @@ const ja: WcsMessageCatalog = {
     `配列インデックスへの直接代入はリアクティブ更新をトリガーしません。this["${sp}"] のようなドットパス代入、または with() と再代入を使用してください。`,
   tagMemberUnknown: (prop, tag) =>
     `"${prop}" は <${tag}> の wcBindable メンバーではありません（未知メンバーへのバインドは黙って無視されます）`,
+  onPrefixedMember: (member, tag) =>
+    `"${member}" は <${tag}> のメンバーですが、"on" で始まる名前はイベント束縛になり（"${member.slice(2)}" イベントを待つ）、値は届きません。プロパティとして束縛するには ".${member}:" と書いてください（@wcstack/state 3.1）`,
   tagCommandUnknown: (name, tag, declared) =>
     `"${name}" は <${tag}> の command ではありません（宣言済み: ${declared}）`,
   spreadNoBindable: (tag) =>
@@ -505,6 +508,8 @@ const en: WcsMessageCatalog = {
     `Assigning directly to an array index does not trigger a reactive update. Use a dot-path assignment like this["${sp}"], or with() plus reassignment.`,
   tagMemberUnknown: (prop, tag) =>
     `"${prop}" is not a wcBindable member of <${tag}> (bindings to unknown members are silently ignored)`,
+  onPrefixedMember: (member, tag) =>
+    `"${member}" is a member of <${tag}>, but a name starting with "on" makes an event binding (it listens for a "${member.slice(2)}" event) and the value never arrives. Write ".${member}:" to bind the property (@wcstack/state 3.1)`,
   tagCommandUnknown: (name, tag, declared) =>
     `"${name}" is not a command of <${tag}> (declared: ${declared})`,
   spreadNoBindable: (tag) =>

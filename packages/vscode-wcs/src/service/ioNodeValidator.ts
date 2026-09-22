@@ -143,11 +143,29 @@ function validateBindingAgainstContract(
   const modifiers = hashIndex === -1 ? '' : property.slice(hashIndex + 1);
   property = hashIndex === -1 ? property : property.slice(0, hashIndex);
 
+  // 明示のプロパティ形（`.once:`、@wcstack/state 3.1・要件 B5）: ドットを外して同じ名前で照合する。
+  // ドットの後の名前空間の語は正本パーサが [wcs/binding-syntax] で報告するので、ここでは重ねない
+  const explicit = property.startsWith('.') && property !== '...';
+  if (explicit) {
+    property = property.slice(1);
+    if (/^(class|style|attr|command|eventToken)(\.|$)/.test(property)) return;
+  }
+
   // 契約検査の対象外: スプレッド・構造ディレクティブ・DOM レベルのバインド。
   if (property === '...') return;
   if (STRUCTURAL_DIRECTIVES.has(property)) return;
   if (/^(class|style|attr)\./.test(property)) return;
-  if (/^on\w/.test(property)) return;
+  if (!explicit && /^on\w/.test(property)) {
+    // "on" で始まるメンバー（`once`）をドット無しで書くとイベント束縛になり、値が届かない（3.x 計画 D36）
+    if (contract.properties.includes(property) || property in contract.inputs) {
+      diagnostics.push({
+        code: WcsDiagnosticCode.OnPrefixedMember,
+        start, end, severity: 'warning', tag: tagName, member: property,
+        message: msgs.onPrefixedMember(property, tagName),
+      });
+    }
+    return;
+  }
 
   const inputNames = Object.keys(contract.inputs);
 
