@@ -7,7 +7,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { installFormats } from "../src/formats/install";
 import { resolveFilterFn } from "../src/core/filterRegistry";
 import { builtinFilterAliases } from "../src/filters/filterAliases";
-import { builtinFilterArity } from "../src/formats/builtinFilters";
+import { builtinFilterArity, builtinFilterFn, outputBuiltinFilters } from "../src/formats/builtinFilters";
 
 beforeAll(() => {
   installFormats();
@@ -66,5 +66,14 @@ describe("新しいフィルタ", () => {
     expect(out("defaults", ["0"], [0])(false)).toBe(0);
     // 型付きの値が無い（引用符付き）なら文字列で置き換える
     expect(out("coalesce", ["—"], ["—"])(null)).toBe("—");
+  });
+
+  it("工場を直接呼ぶ経路でも、引数が無ければ名指しで落ち、型付きの値が無ければ原文を使うこと", () => {
+    // 束縛計画の引数個数の検査を経ない呼び出し（tooling の builtinFilterFn）でも黙って進まない
+    expect(() => builtinFilterFn("padEnd", [])(outputBuiltinFilters)).toThrow(/padEnd requires at least one option/);
+    expect(() => builtinFilterFn("coalesce", [])(outputBuiltinFilters)).toThrow(/coalesce requires at least one option/);
+    expect(builtinFilterFn("coalesce", ["0"])(outputBuiltinFilters)(null)).toBe("0");
+    // 旧名も同じ工場に届く
+    expect(builtinFilterFn("pad", ["3"])(outputBuiltinFilters)("7")).toBe("007");
   });
 });

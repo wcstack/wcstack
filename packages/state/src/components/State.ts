@@ -10,6 +10,7 @@ import { setStateElement, getStateElement, getBindingsReady, markBindingsUnavail
 import { ILoopContextStack } from "../list/types";
 import { createLoopContextStack } from "../list/loopContext";
 import { DCC_DEFINITION_ATTRIBUTE, NO_SET_TIMEOUT, STATE_CONNECTED_CALLBACK_NAME, STATE_DISCONNECTED_CALLBACK_NAME, STATE_ERROR_CALLBACK_NAME, STATE_UPDATED_CALLBACK_NAME, WILDCARD } from "../define";
+import { normalizeDeclarationAliases } from "../declarationAliases";
 import { processCommandTokensDeclaration } from "../command/processCommandTokensDeclaration";
 import { clearCommandNamespace } from "../command/commandNamespace";
 import { processEventTokensDeclaration } from "../event/processEventTokensDeclaration";
@@ -212,6 +213,8 @@ export class State extends HTMLElementBase implements IStateElement {
   }
 
   private set _state(value: IState) {
+    // 宣言キーの旧名（`$updatedCallback` / `$streams`）を正式名へ写す（要件 B12）— 以降の読み手は正式名だけを見る
+    normalizeDeclarationAliases(value);
     // 旧世代のデータ。再帰の生成物（辺・キャッシュ）を忘れるとき、台帳を辿る起点になる
     const previousState = this.__state;
     // 順序: **`value` しか読まない検証** → 旧世代の後始末 → 世代を進める → 差し替え → 再収集。
@@ -761,7 +764,11 @@ export class State extends HTMLElementBase implements IStateElement {
   }
 
   loadStateFromSource(): Promise<Record<string, any>> {
-    return this._loadStateFromSource();
+    // ボリュームは `_state` を通らずに接ぎ木するので、宣言キーの正規化（要件 B12）はここで行う
+    return this._loadStateFromSource().then((state) => {
+      normalizeDeclarationAliases(state);
+      return state;
+    });
   }
 
   markTreeless(): void {

@@ -27,6 +27,7 @@
 
 import type { IStateElement } from "../components/types";
 import { DELIMITER, STATE_STREAMS_NAME, WILDCARD } from "../define";
+import { normalizeDeclarationAliases } from "../declarationAliases";
 import { raiseError } from "../raiseError";
 import type { IState } from "../types";
 import { pruneLastNotified } from "./lastNotified";
@@ -40,6 +41,8 @@ const latestFold: StreamFold = (_acc, chunk) => chunk;
 const NO_STREAM_NAMES: ReadonlySet<string> = new Set<string>();
 
 export function processStreamsDeclaration(stateElement: IStateElement, state: IState): void {
+  // 旧名（`$streams`）で宣言した state も読めるように（要件 B12 — 入口を経ない呼び出しでも効く。冪等）
+  normalizeDeclarationAliases(state);
   const declared = (state as Record<string, unknown>)[STATE_STREAMS_NAME];
   if (typeof declared === "undefined") {
     // $streams 無しの再 set でも旧宣言の名前は通知 dedup 台帳の残骸になるため prune する

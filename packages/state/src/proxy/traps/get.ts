@@ -200,6 +200,8 @@ export function get(
             )(path, indexes, ...value);
           }
         }
+        // `$dependOn` が正式名、`$trackDependency` は 3.x の間のエイリアス（要件 B12・4.0 で外す）
+        case "$dependOn":
         case "$trackDependency": {
           return (path: string): void => {
             return trackDependency(
@@ -307,6 +309,8 @@ export function get(
             return Object.is(current, levelListIndex.index);
           };
         }
+        // `$untracked` が正式名、`$untrackDependency` は 3.x の間のエイリアス（要件 B12・4.0 で外す）
+        case "$untracked":
         case "$untrackDependency": {
           return <T>(fn: () => T): T => {
             return untrackDependency(

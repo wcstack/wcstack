@@ -93,7 +93,8 @@ export const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 
 export const STATE_CONNECTED_CALLBACK_NAME = "$connectedCallback";
 export const STATE_DISCONNECTED_CALLBACK_NAME = "$disconnectedCallback";
-export const STATE_UPDATED_CALLBACK_NAME = "$updatedCallback";
+/** 旧名 `$updatedCallback` は 3.x の間のエイリアス（要件 B12・declarationAliases.ts） */
+export const STATE_UPDATED_CALLBACK_NAME = "$renderedCallback";
 export const STATE_ERROR_CALLBACK_NAME = "$errorCallback";
 
 export const WEBCOMPONENT_STATE_READY_CALLBACK_NAME = "$stateReadyCallback";
@@ -104,7 +105,8 @@ export const STATE_COMMAND_TOKENS_NAME = "$commandTokens";
 export const STATE_COMMAND_NAMESPACE_NAME = "$command";
 export const STATE_EVENT_TOKENS_NAME = "$eventTokens";
 export const STATE_ON_NAME = "$on";
-export const STATE_STREAMS_NAME = "$streams";
+/** 旧名 `$streams` は 3.x の間のエイリアス（要件 B12・declarationAliases.ts） */
+export const STATE_STREAMS_NAME = "$stream";
 export const STATE_WATCH_NAME = "$watch";
 export const STATE_SCAN_NAME = "$scan";
 export const STATE_RECURSION_NAME = "$recursion";

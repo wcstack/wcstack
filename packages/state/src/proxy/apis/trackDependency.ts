@@ -37,7 +37,7 @@ type TrackDependencyFunction = (path: string) => void;
 
 export function trackDependency(
   _target: object, 
-  _prop: PropertyKey, 
+  prop: PropertyKey,
   _receiver: any,
   handler: IStateHandler
 ): TrackDependencyFunction {
@@ -48,7 +48,7 @@ export function trackDependency(
     // （第 2 サイクルのレビューで実測）。宣言の有無に関わらず拒否する。
     if (path.indexOf(RECURSION_WILDCARD) !== -1) {
       raiseError(
-        `[wcs/recursion-unsupported] $trackDependency("${path}") cannot take "**" — a dependency is ` +
+        `[wcs/recursion-unsupported] ${String(prop)}("${path}") cannot take "**" — a dependency is ` +
         `registered against a concrete path (a fixed number of "*"). Track the concrete depth, or read ` +
         `the path through this[...] / $getAll inside the getter so the dependency is recorded automatically.`
       );

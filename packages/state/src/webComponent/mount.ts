@@ -2,7 +2,8 @@ import { getPathInfo } from "../address/PathInfo";
 import { IPathInfo } from "../address/types";
 import { IStateElement } from "../components/types";
 import { setMountedScopeHost } from "../list/loopContextByNode";
-import { DELIMITER, MODIFIER_READONLY, RECURSION_WILDCARD, WILDCARD } from "../define";
+import { DELIMITER, MODIFIER_READONLY, RECURSION_WILDCARD, STATE_STREAMS_NAME, STATE_UPDATED_CALLBACK_NAME, WILDCARD } from "../define";
+import { normalizeDeclarationAliases } from "../declarationAliases";
 import { raiseError } from "../raiseError";
 import { IBindingInfo } from "../types";
 import { findMountEntry, IMountEntry, translateByMountEntry } from "./mountEntries";
@@ -113,7 +114,7 @@ export interface IAccessorEntry {
 let nextMountId = 0;
 
 const MOUNT_DOLLAR_DECLARATIONS = [
-  "$watch", "$streams", "$scan", "$listKeys", "$updatedCallback", "$commandTokens", "$eventTokens", "$on",
+  "$watch", STATE_STREAMS_NAME, "$scan", "$listKeys", STATE_UPDATED_CALLBACK_NAME, "$commandTokens", "$eventTokens", "$on",
   // $errorCallback もルート専用（要件 B11 — 以前は無言で無視していた）
   "$recursion", "$errorCallback",
 ] as const;
@@ -218,6 +219,8 @@ export function buildMountRecord(
   if (bindings.length === 0) {
     raiseError(`Cannot build a mount record without host bindings for "${stateProp}".`);
   }
+  // 宣言キーの旧名を正式名へ（要件 B12）— 宣言の警告（MOUNT_DOLLAR_DECLARATIONS）は正式名で引く
+  normalizeDeclarationAliases(stateObject);
   const entries: IMountEntry[] = [];
   const seenInnerPaths = new Set<string>();
   let rootEntry: IMountEntry | null = null;

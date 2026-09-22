@@ -77,10 +77,10 @@ describe("wcs-manifest（単一正本・A2-1）", () => {
     });
     expect([...m.syntax.structuralDirectives].sort()).toEqual(["else", "elseif", "for", "if"]);
     expect(m.reservedLifecycle).toContain("$connectedCallback");
-    expect(m.reservedLifecycle).toContain("$updatedCallback");
+    expect(m.reservedLifecycle).toContain("$renderedCallback");
     expect(m.reservedStateApi).toContain("$commandTokens");
     expect(m.reservedStateApi).toContain("$on");
-    expect(m.reservedStateApi).toContain("$streams");
+    expect(m.reservedStateApi).toContain("$stream");
     expect(m.reservedStateApi).toContain("$streamStatus");
     expect(m.reservedStateApi).toContain("$streamError");
   });

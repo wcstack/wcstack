@@ -65,7 +65,7 @@ describe("出力名", () => {
     expect(() => scan(
       { feed: { from: "n", initial: 0, fold } },
       { $streams: { feed: { source: () => null } } },
-    )).toThrow(/conflicts with the \$streams entry of the same name/);
+    )).toThrow(/conflicts with the \$stream entry of the same name/);
   });
 
   it("メソッド（関数値のプロパティ）と衝突したら raise し、initial 自身が置かれている形は通すこと（D7）", () => {
