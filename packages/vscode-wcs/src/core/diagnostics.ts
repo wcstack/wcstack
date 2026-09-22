@@ -138,6 +138,9 @@ export const WcsDiagnosticCode = {
   // タグのメンバー名が "on" で始まる（`once` 等）のに先頭ドット無しで束縛した: ランタイムはイベント束縛にして
   // "ce" イベントを待ち、値は届かない。明示のプロパティ形 `.once:` を提案する（@wcstack/state 3.1・要件 B5 / 3.x 計画 D36）
   OnPrefixedMember: "wcs/on-prefixed-member",
+  // 3.x の間だけ残る旧名（フィルタ `uc` → `upper`、`$trackDependency` → `$dependOn` …）を書いた（info）。
+  // 動くが 4.0 で外れるので正式名を提案する（@wcstack/state 3.2・要件 B12 / 3.x 計画 D39）
+  NameAlias: "wcs/name-alias",
   // wcBindable 無宣言タグ(wcs-fetch-header 等のヘルパー)への spread。
   // ランタイム(expandSpread)は raiseError で落とす。
   SpreadNoBindable: "wcs/spread-no-bindable",

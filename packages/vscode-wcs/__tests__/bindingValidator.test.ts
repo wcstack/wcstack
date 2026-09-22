@@ -386,57 +386,57 @@ export default { count: 0 };
   });
 
   // フィルタチェーン型チェック
-  it('number に string フィルタ (uc) を適用すると warning', () => {
+  it('number に string フィルタ (upper) を適用すると warning', () => {
     const html = `
 <wcs-state>
   <script type="module">
 export default { count: 0 };
   </script>
 </wcs-state>
-<div data-wcs="textContent: count|uc"></div>`;
+<div data-wcs="textContent: count|upper"></div>`;
     const diags = validateBindings(html, 'data-wcs');
-    const ucDiag = diags.find(d => d.message.includes('"uc"'));
+    const ucDiag = diags.find(d => d.message.includes('"upper"'));
     expect(ucDiag).toBeDefined();
     expect(ucDiag!.message).toContain('string');
     expect(ucDiag!.message).toContain('number');
   });
 
-  it('number → string → uc は OK', () => {
+  it('number → string → upper は OK', () => {
     const html = `
 <wcs-state>
   <script type="module">
 export default { count: 0 };
   </script>
 </wcs-state>
-<div data-wcs="textContent: count|string|uc"></div>`;
+<div data-wcs="textContent: count|string|upper"></div>`;
     const diags = validateBindings(html, 'data-wcs');
-    expect(diags.find(d => d.message.includes('"uc"'))).toBeUndefined();
+    expect(diags.find(d => d.message.includes('"upper"'))).toBeUndefined();
   });
 
-  it('string に number フィルタ (inc) を適用すると warning', () => {
+  it('string に number フィルタ (add) を適用すると warning', () => {
     const html = `
 <wcs-state>
   <script type="module">
 export default { name: "hello" };
   </script>
 </wcs-state>
-<div data-wcs="textContent: name|inc(1)"></div>`;
+<div data-wcs="textContent: name|add(1)"></div>`;
     const diags = validateBindings(html, 'data-wcs');
-    const incDiag = diags.find(d => d.message.includes('"inc"'));
+    const incDiag = diags.find(d => d.message.includes('"add"'));
     expect(incDiag).toBeDefined();
     expect(incDiag!.message).toContain('number');
   });
 
-  it('string → int → inc は OK', () => {
+  it('string → int → add は OK', () => {
     const html = `
 <wcs-state>
   <script type="module">
 export default { price: "100" };
   </script>
 </wcs-state>
-<div data-wcs="textContent: price|int|inc(1)"></div>`;
+<div data-wcs="textContent: price|int|add(1)"></div>`;
     const diags = validateBindings(html, 'data-wcs');
-    expect(diags.find(d => d.message.includes('"inc"'))).toBeUndefined();
+    expect(diags.find(d => d.message.includes('"add"'))).toBeUndefined();
   });
 
   it('any 型を受け入れるフィルタ (eq) はどの型でも OK', () => {
@@ -487,9 +487,9 @@ export default { count: 0 };
 export default { count: 0 };
   </script>
 </wcs-state>
-<div data-wcs="textContent: count|inc"></div>`;
+<div data-wcs="textContent: count|round"></div>`;
     const diags = validateBindings(html, 'data-wcs');
-    expect(diags.find(d => d.message.includes('"inc"') && d.message.includes('引数'))).toBeUndefined();
+    expect(diags.find(d => d.message.includes('"round"') && d.message.includes('引数'))).toBeUndefined();
   });
 
   it('引数に非数値文字列を number 型引数に渡すと warning', () => {
@@ -961,5 +961,24 @@ export default { count: "0", get double() { return 1; }, inc() {} };
 `;
     const diags = validateBindings(page, 'data-wcs', 'wcs-state', 'en', undefined, schema);
     expect(diags.filter(d => d.code === WcsDiagnosticCode.PathNonexistent)).toHaveLength(0);
+  });
+});
+
+describe('validateBindings — フィルタの旧名（@wcstack/state 3.2・要件 B12）', () => {
+  it('旧名は正式名と同じ検査を受け、wcs/name-alias（info）で正式名を提案する', () => {
+    const html = `
+<wcs-state>
+  <script type="module">
+export default { name: "a", count: 1 };
+  </script>
+</wcs-state>
+<div data-wcs="textContent: name|uc; title: count|rep(1,2)"></div>`;
+    const diags = validateBindings(html, 'data-wcs');
+    const alias = diags.filter(d => d.code === WcsDiagnosticCode.NameAlias);
+    expect(alias.map(d => html.slice(d.start, d.end))).toEqual(['uc', 'rep']);
+    expect(alias.every(d => d.severity === 'info')).toBe(true);
+    expect(alias[0].message).toContain('"upper"');
+    // 引数の個数は正式名（repeat は 1 個）の範囲で検査する
+    expect(diags.some(d => d.code === WcsDiagnosticCode.FilterArity)).toBe(true);
   });
 });

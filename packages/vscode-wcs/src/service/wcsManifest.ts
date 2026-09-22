@@ -9,5 +9,5 @@
  * linkage はこの1ファイルに隔離してあるので、将来 npm 公開版へ切替える際もここだけ変えればよい。
  * 区切り文字など他のマニフェスト項目が必要になれば `getWcsManifest().syntax` から引ける。
  */
-export { builtinFilterMeta, STRUCTURAL_BINDING_TYPE_SET, getWcsManifest } from '@wcstack/state/manifest';
+export { builtinFilterMeta, builtinFilterAliases, STRUCTURAL_BINDING_TYPE_SET, getWcsManifest } from '@wcstack/state/manifest';
 export type { IFilterMeta } from '@wcstack/state/manifest';

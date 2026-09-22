@@ -118,6 +118,7 @@ export interface WcsMessageCatalog {
   // --- ioNodeValidator ---
   tagMemberUnknown(property: string, tag: string): string;
   onPrefixedMember(member: string, tag: string): string;
+  nameAlias(written: string, canonical: string): string;
   tagCommandUnknown(name: string, tag: string, declared: string): string;
   spreadNoBindable(tag: string): string;
   tagEventTokenKeyUnknown(name: string, tag: string, declared: string): string;
@@ -290,6 +291,8 @@ const ja: WcsMessageCatalog = {
     `配列インデックスへの直接代入はリアクティブ更新をトリガーしません。this["${sp}"] のようなドットパス代入、または with() と再代入を使用してください。`,
   tagMemberUnknown: (prop, tag) =>
     `"${prop}" は <${tag}> の wcBindable メンバーではありません（未知メンバーへのバインドは黙って無視されます）`,
+  nameAlias: (written, canonical) =>
+    `"${written}" は "${canonical}" の旧名です。3.x の間は動きますが 4.0 で外れるので、"${canonical}" と書いてください（@wcstack/state 3.2）`,
   onPrefixedMember: (member, tag) =>
     `"${member}" は <${tag}> のメンバーですが、"on" で始まる名前はイベント束縛になり（"${member.slice(2)}" イベントを待つ）、値は届きません。プロパティとして束縛するには ".${member}:" と書いてください（@wcstack/state 3.1）`,
   tagCommandUnknown: (name, tag, declared) =>
@@ -508,6 +511,8 @@ const en: WcsMessageCatalog = {
     `Assigning directly to an array index does not trigger a reactive update. Use a dot-path assignment like this["${sp}"], or with() plus reassignment.`,
   tagMemberUnknown: (prop, tag) =>
     `"${prop}" is not a wcBindable member of <${tag}> (bindings to unknown members are silently ignored)`,
+  nameAlias: (written, canonical) =>
+    `"${written}" is the old name of "${canonical}". It works through 3.x and goes in 4.0 — write "${canonical}" (@wcstack/state 3.2)`,
   onPrefixedMember: (member, tag) =>
     `"${member}" is a member of <${tag}>, but a name starting with "on" makes an event binding (it listens for a "${member.slice(2)}" event) and the value never arrives. Write ".${member}:" to bind the property (@wcstack/state 3.1)`,
   tagCommandUnknown: (name, tag, declared) =>

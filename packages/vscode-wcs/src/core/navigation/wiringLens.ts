@@ -56,6 +56,7 @@ import {
 } from '../../service/templateSyntax.js';
 import { parseWcsStateElements } from '../../language/htmlParse.js';
 import { builtinFilterMeta, getWcsManifest, type IFilterMeta } from '../../service/wcsManifest.js';
+import { canonicalFilterName } from '../../service/completionData.js';
 import { resolveLocale, type WcsLocale } from '../messages.js';
 
 export interface IWiringLensOptions {
@@ -431,7 +432,7 @@ function hoverForToken(
 
     const filterHit = locateFilterAt(binding, offset, site);
     if (filterHit !== null) {
-      const meta = builtinFilterMeta[filterHit.name];
+      const meta = builtinFilterMeta[canonicalFilterName(filterHit.name)];
       if (meta === undefined) return null; // 未知フィルタ（誤 hint ゼロ）
       const typeLine = filterTypeLineOf(meta, labels);
       const markdown = [
@@ -837,7 +838,7 @@ export function getInlayHints(
     let current: string | null = inputType ?? null;
     let known = true;
     for (const filter of binding.parsed.outFilters) {
-      const meta = builtinFilterMeta[filter.filterName];
+      const meta = builtinFilterMeta[canonicalFilterName(filter.filterName)];
       if (meta === undefined) {
         known = false;
         break;

@@ -5,7 +5,15 @@
  * @wcstack/state の仕様に基づく静的な補完データを提供する。
  */
 
-import { builtinFilterMeta, STRUCTURAL_BINDING_TYPE_SET, type IFilterMeta } from './wcsManifest.js';
+import { builtinFilterAliases, builtinFilterMeta, STRUCTURAL_BINDING_TYPE_SET, type IFilterMeta } from './wcsManifest.js';
+
+/**
+ * 組み込みフィルタの旧名（エイリアス）を正式名へ戻す（@wcstack/state 3.2・要件 B12）。未知の名前はそのまま返す。
+ * 補完は正式名だけを出し、検証は旧名も受けて `wcs/name-alias`（info）で正式名を提案する。
+ */
+export function canonicalFilterName(name: string): string {
+  return Object.prototype.hasOwnProperty.call(builtinFilterAliases, name) ? builtinFilterAliases[name] : name;
+}
 
 // ============================================================
 // フィルタ
