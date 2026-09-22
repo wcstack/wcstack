@@ -113,7 +113,7 @@ describe("#257 初期化失敗: $ 宣言の検証", () => {
     ["$commandTokens", { $commandTokens: "focus" }, /\$commandTokens must be an array of strings/],
     ["$eventTokens", { $eventTokens: ["changed", "changed"] }, /\$eventTokens entry "changed" is duplicated/],
     ["$on", { $eventTokens: [], $on: { changed() { /* noop */ } } }, /\$on entry "changed" is not declared in \$eventTokens/],
-    ["$streams", { $streams: { s: {} } }, /\$streams entry "s" source must be a function/],
+    ["$streams", { $streams: { s: {} } }, /\$stream entry "s" source must be a function/],
     ["$listKeys", { items: [], $listKeys: { "items.*": "id" } }, /\$listKeys entry "items\.\*" must be the list path itself/],
     ["$watch", { $watch: { a: 1 } }, /\[wcs\/watch-declaration-invalid\].*\$watch entry "a" must be a function/],
   ];

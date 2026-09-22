@@ -35,6 +35,12 @@ const aritiesByIOType: Record<FilterIOType, Map<string, readonly [number, number
   output: new Map<string, readonly [number, number]>(),
 };
 
+/** 旧名 → 正式名（要件 B12）。解決・引数の個数は正式名で引く。登録した機能が渡したものだけ */
+const aliasesByIOType: Record<FilterIOType, Map<string, string>> = {
+  input: new Map<string, string>(),
+  output: new Map<string, string>(),
+};
+
 /** 名前 + 引数 + 入出力ごとに解決済みの実関数（解決は 1 回だけ） */
 const resolvedByKey = new Map<string, FilterFn>();
 
@@ -43,6 +49,7 @@ export function registerFilters(
   filterIOType: FilterIOType,
   filters: FilterWithOptions,
   arity?: Readonly<Record<string, readonly [number, number]>>,
+  aliases?: Readonly<Record<string, string>>,
 ): void {
   const registry = registries[filterIOType];
   const arities = aritiesByIOType[filterIOType];
@@ -54,6 +61,9 @@ export function registerFilters(
     } else {
       arities.set(name, bounds);
     }
+  }
+  for (const alias of Object.keys(aliases ?? {})) {
+    aliasesByIOType[filterIOType].set(alias, aliases![alias]);
   }
   // 登録が変われば解決済みの答えも変わりうる（同じページで 2 回 install することは無いが、
   // テストと tooling は登録簿を入れ替える）
@@ -87,11 +97,13 @@ export function resolveFilterFn(
   if (typeof resolved !== "undefined") {
     return resolved;
   }
-  const factory = registries[filterIOType].get(filterName) ?? CORE_FILTERS[filterName];
+  // 旧名（`uc` / `fix` …）は正式名で引く — 3.x の間のエイリアス（要件 B12、4.0 で外す）
+  const canonical = aliasesByIOType[filterIOType].get(filterName) ?? filterName;
+  const factory = registries[filterIOType].get(canonical) ?? CORE_FILTERS[canonical];
   if (typeof factory === "undefined") {
     raiseError(`[wcs/filter-unknown] filter not found: ${filterName}.${didYouMean(filterName, knownFilterNames(filterIOType))}${LINT_HINT}`);
   }
-  const bounds = aritiesByIOType[filterIOType].get(filterName);
+  const bounds = aritiesByIOType[filterIOType].get(canonical);
   if (typeof bounds !== "undefined" && (args.length < bounds[0] || args.length > bounds[1])) {
     // lint の wcs/filter-arity と同じ語彙
     raiseError(args.length < bounds[0]

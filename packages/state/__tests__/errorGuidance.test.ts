@@ -42,12 +42,12 @@ describe("埋め込みサイトのメッセージ契約", () => {
   it("未知フィルタ: [wcs/filter-unknown] + did-you-mean + lint 誘導", () => {
     let message = "";
     try {
-      builtinFilterFn("uc2", [])(outputBuiltinFilters);
+      builtinFilterFn("uppr", [])(outputBuiltinFilters);
     } catch (e) {
       message = (e as Error).message;
     }
     expect(message).toContain("[wcs/filter-unknown]");
-    expect(message).toContain('Did you mean "uc"?');
+    expect(message).toContain('Did you mean "upper"?');
     expect(message).toContain(LINT_HINT);
   });
 

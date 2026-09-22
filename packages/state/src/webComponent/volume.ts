@@ -39,6 +39,7 @@ import { raiseError } from "../raiseError";
 import { IStateProxy } from "../proxy/types";
 import { addVolumeUpdatedCallback, createVolumeChroot, drainPendingVolumes, hasReservedVolumeSlots, IPendingVolumeRequest, IVolumeUpdatedCallback, queuePendingVolume, recordGraftedSlot, setVolumeGraftHandler, translateVolumePath } from "./volumeShared";
 import type { IMountEntry } from "./mountEntries";
+import { normalizeDeclarationAliases } from "../declarationAliases";
 import { parseBindTextsForElement } from "../bindTextParser/parseBindTextsForElement";
 import { config } from "../config";
 import { onStateElementRegistered } from "../stateElementByName";
@@ -52,7 +53,7 @@ import { assertValidWatchPath } from "../watch/processWatchDeclaration";
 import { addVolumeWatchEntries } from "../watch/watchRegistry";
 import { startWatch } from "../watch/watchRuntime";
 import { ListKeySpec } from "../list/listKeys";
-import { RECURSION_WILDCARD, STATE_LIST_KEYS_NAME, STATE_RECURSION_NAME, STATE_UPDATED_CALLBACK_NAME, STATE_WATCH_NAME } from "../define";
+import { RECURSION_WILDCARD, STATE_LIST_KEYS_NAME, STATE_RECURSION_NAME, STATE_STREAMS_NAME, STATE_UPDATED_CALLBACK_NAME, STATE_WATCH_NAME } from "../define";
 import { getAllPropertyDescriptors } from "../getAllPropertyDescriptors";
 import type { IWatchEntry } from "../watch/types";
 
@@ -223,8 +224,8 @@ function validateVolumeDeclarations(
     }
   }
   // $streams は未対応（無言に捨てない）
-  if (typeof (volumeState as Record<string, unknown>)["$streams"] !== "undefined") {
-    raiseError(`Volume "${mountPath}" declares $streams, which volumes do not support yet. Declare the stream on the root state.`);
+  if (typeof (volumeState as Record<string, unknown>)[STATE_STREAMS_NAME] !== "undefined") {
+    raiseError(`Volume "${mountPath}" declares ${STATE_STREAMS_NAME}, which volumes do not support yet. Declare the stream on the root state.`);
   }
   // $scan も未対応（docs/state-scan-design.md D8）。from / on はルートのツリーと token を前提にする
   if (typeof (volumeState as Record<string, unknown>)["$scan"] !== "undefined") {
@@ -328,6 +329,8 @@ export function graftVolume(
   volumeState: Record<string, any>,
   injections: readonly IMountEntry[] = [],
 ): IVolumeGraftInfo {
+  // 宣言キーの旧名を正式名へ（要件 B12 — loadStateFromSource でも済んでいる。冪等）
+  normalizeDeclarationAliases(volumeState);
   // raise しうる宣言検査は接ぎ木より前（半端な接ぎ木状態を残さない — ここで
   // 落ちた graft は「何も載っていない」が成立し、graftIsolated の隔離と整合する）
   validateVolumeDeclarations(rootStateElement, mountPath, volumeState, injections);

@@ -9,7 +9,7 @@
  * pure(DOM / vscode 非依存)。
  */
 
-import { BUILTIN_FILTERS } from "./completionData.js";
+import { BUILTIN_FILTERS, canonicalFilterName } from "./completionData.js";
 import { getStatePathsFromHtml, type FileReader } from "./statePathResolver.js";
 import { mergeSchemaCandidates, type PathCandidate } from "./stateAnalyzer.js";
 import { findAllCommentBindings, findAllMustacheSyntax } from "./templateSyntax.js";
@@ -189,8 +189,19 @@ export function validateTemplateSyntax(
 
     for (let i = 1; i < parts.length; i++) {
       const filterName = parts[i].trim().replace(/\(.*$/, "");
-      if (filterName && !filterNameSet.has(filterName)) {
-        const filterOffset = item.expression.indexOf(parts[i]);
+      // 範囲は名前の先頭から（区切りの `|` の後の空白を含めない）
+      const filterOffset = item.expression.indexOf(parts[i]) + (parts[i].length - parts[i].trimStart().length);
+      const canonical = canonicalFilterName(filterName);
+      if (filterName && canonical !== filterName && filterNameSet.has(canonical)) {
+        // 旧名（3.x のエイリアス）は動く — info で正式名を提案する（要件 B12）
+        diagnostics.push({
+          code: WcsDiagnosticCode.NameAlias,
+          start: item.exprStart + filterOffset,
+          end: item.exprStart + filterOffset + filterName.length,
+          message: msgs.nameAlias(filterName, canonical),
+          severity: "info",
+        });
+      } else if (filterName && !filterNameSet.has(filterName)) {
         diagnostics.push({
           code: WcsDiagnosticCode.FilterUnknown,
           start: item.exprStart + filterOffset,

@@ -279,8 +279,8 @@ describe('wiringLens: inlay hint（§5-2）', () => {
   });
 
   it('未知の入力型を passthrough フィルタが通す場合はヒントを出さないこと', () => {
-    // total は computed（型不明）— upper は passthrough なので最終型も不明
-    const html = SAMPLE.replace('{{ total }}', '{{ total | upper }}');
+    // total は computed（型不明）— nullIfEmpty は passthrough なので最終型も不明
+    const html = SAMPLE.replace('{{ total }}', '{{ total | nullIfEmpty }}');
     const hints = getInlayHints(html, 0, html.length).filter((h) => h.kind === 'filterType');
     // count | fix(0) の 2 箇所のまま増えない
     expect(hints).toHaveLength(2);

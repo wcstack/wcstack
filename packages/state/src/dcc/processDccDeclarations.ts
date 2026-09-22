@@ -17,6 +17,7 @@
  */
 
 import { STATE_BINDABLES_NAME, STATE_COMMANDS_NAME, STATE_STREAMS_NAME } from "../define";
+import { normalizeDeclarationAliases } from "../declarationAliases";
 import { didYouMean } from "../errorGuidance";
 import { getAllPropertyDescriptors } from "../getAllPropertyDescriptors";
 import { raiseError } from "../raiseError";
@@ -90,6 +91,8 @@ export interface IDccDeclarations {
 }
 
 export function processDccDeclarations(state: IState): IDccDeclarations {
+  // 旧名（`$streams`）で宣言した state も読めるように（要件 B12 — 入口を経ない呼び出しでも効く。冪等）
+  normalizeDeclarationAliases(state);
   const bindables = readNameList(state, STATE_BINDABLES_NAME) ?? [];
   const commands = readNameList(state, STATE_COMMANDS_NAME) ?? [];
 

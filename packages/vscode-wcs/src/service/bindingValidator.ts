@@ -8,7 +8,7 @@
  * - フィルタ名が組み込みフィルタに存在するか
  */
 
-import { BUILTIN_FILTERS, type FilterInfo } from './completionData.js';
+import { BUILTIN_FILTERS, canonicalFilterName, type FilterInfo } from './completionData.js';
 import { STRUCTURAL_BINDING_TYPE_SET } from './wcsManifest.js';
 import { mergeSchemaCandidates, type PathCandidate } from './stateAnalyzer.js';
 import { getStatePathsFromHtml, type FileReader } from './statePathResolver.js';
@@ -69,8 +69,6 @@ export function validateBindings(
     structuralTemplates ??= collectStructuralTemplates(html, attrName);
     return structuralTemplates;
   };
-
-  const filterNameSet = new Set(BUILTIN_FILTERS.map(f => f.name));
 
   for (const attr of attrs) {
     const bindings = splitBindingExpressions(attr.value);
@@ -558,7 +556,18 @@ function parseFilterSegments(expr: string, segments: string[], searchStart: numb
  */
 function validateFilterUsage(filter: ParsedFilter, bindingStart: number, msgs: WcsMessageCatalog): BindingDiagnostic[] {
   const diagnostics: BindingDiagnostic[] = [];
-  const info = filterMap.get(filter.name);
+  const canonical = canonicalFilterName(filter.name);
+  const info = filterMap.get(canonical);
+  if (info && canonical !== filter.name) {
+    // 旧名（3.x のエイリアス）: 動くので info で正式名を提案するだけ（要件 B12）
+    diagnostics.push({
+      code: WcsDiagnosticCode.NameAlias,
+      start: bindingStart + filter.offset,
+      end: bindingStart + filter.offset + filter.name.length,
+      message: msgs.nameAlias(filter.name, canonical),
+      severity: 'info',
+    });
+  }
   if (!info) {
     diagnostics.push({
       code: WcsDiagnosticCode.FilterUnknown,

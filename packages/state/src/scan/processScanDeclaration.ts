@@ -17,7 +17,8 @@
 import { getPathInfo } from "../address/PathInfo";
 import type { IPathInfo } from "../address/types";
 import type { IStateElement } from "../components/types";
-import { DELIMITER, MAX_WILDCARD_DEPTH, STATE_EVENT_TOKENS_NAME, STATE_SCAN_NAME, STATE_STREAMS_NAME, WILDCARD } from "../define";
+import { DELIMITER, MAX_WILDCARD_DEPTH, STATE_EVENT_TOKENS_NAME, STATE_SCAN_NAME, STATE_STREAMS_NAME, WILDCARD } from "../define";
+import { normalizeDeclarationAliases } from "../declarationAliases";
 import { didYouMean, LINT_HINT } from "../errorGuidance";
 import { getOrCreateEventToken } from "../event/eventTokenRegistry";
 import { getAllPropertyDescriptors } from "../getAllPropertyDescriptors";
@@ -100,6 +101,8 @@ function assertValidScanPath(label: string, field: string, path: string): IPathI
 }
 
 function collectStreamNames(state: IState): ReadonlySet<string> {
+  // 旧名（`$streams`）で宣言した state も読めるように（要件 B12 — 入口を経ない呼び出しでも効く。冪等）
+  normalizeDeclarationAliases(state);
   const streams = (state as Record<string, unknown>)[STATE_STREAMS_NAME];
   if (typeof streams !== "object" || streams === null) {
     return new Set<string>();

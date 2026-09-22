@@ -30,7 +30,9 @@ describe('BUILTIN_FILTERS は manifest（filterMeta 正本）から導出され�
     const byName = new Map(BUILTIN_FILTERS.map((f) => [f.name, f]));
     expect(byName.get('eq')?.hasArgs).toBe(true);
     expect(byName.get('slice')?.maxArgs).toBe(2);
-    expect(byName.get('null')?.resultType).toBe('passthrough');
+    expect(byName.get('nullIfEmpty')?.resultType).toBe('passthrough');
+    // 補完は正式名だけを出す — 旧名（3.x のエイリアス）は出さない（要件 B12）
+    expect(byName.has('uc')).toBe(false);
     // 件数は正本から引く。直書きするとフィルタを増減するたびに腐り、しかも消費している
     // dist はリリース時にしか更新されないため、壊れるのが増減の瞬間ではなく次のビルド時になる。
     // 「どのフィルタが存在するか」の golden は正本側（packages/state/__tests__/manifest.test.ts）が持つ。

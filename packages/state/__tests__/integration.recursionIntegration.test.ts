@@ -564,7 +564,7 @@ describe("再帰 × mount=（ボリューム）", () => {
     await volumeEl.connectedCallbackPromise;
     await flush();
     const messages = errorSpy.mock.calls.map((call) => String(call[0]) + "|" + String((call[1] as any)?.message ?? ""));
-    expect(messages.some((m) => m.includes("declares $streams, which volumes do not support yet"))).toBe(true);
+    expect(messages.some((m) => m.includes("declares $stream, which volumes do not support yet"))).toBe(true);
     // 拒否は接ぎ木より前なので、データも載らない
     expect((rootEl as any).__state.st).toBeUndefined();
     errorSpy.mockRestore();

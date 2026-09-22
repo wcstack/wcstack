@@ -656,7 +656,7 @@ describe("volume: 宣言面（$watch / $listKeys / $updatedCallback / $disconnec
         $streams: { load: {} },
       });
       await flush();
-      expect(error.mock.calls.some((c) => c.some((a) => String(a).includes("$streams")))).toBe(true);
+      expect(error.mock.calls.some((c) => c.some((a) => String(a).includes("declares $stream,")))).toBe(true);
       host.remove();
     } finally {
       error.mockRestore();

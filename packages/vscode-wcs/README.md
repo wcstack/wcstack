@@ -150,6 +150,7 @@ Severity policy: **error** = the runtime raises or the binding can never work; *
 | Code | Detects | Severity |
 |---|---|---|
 | `wcs/tag-member-unknown` | Binding to a property / `command.` / `eventToken.` key the tag does not declare in `wcBindable` — silently ignored at runtime | ⚠ warning |
+| `wcs/name-alias` | An old name that `@wcstack/state` 3.2 renamed: a filter (`uc` → `upper`, `fix` → `toFixed`, …), a dependency API (`$trackDependency` → `$dependOn`) or a declaration key (`$streams` → `$stream`, `$updatedCallback` → `$renderedCallback`). It works through 3.x and is removed in 4.0; the message suggests the canonical name | ℹ info |
 | `wcs/on-prefixed-member` | A tag member whose name starts with `on` (`once` on `<wcs-timer>`), bound without the leading dot: the runtime makes it an event binding and the value never arrives. Write `.once:` (`@wcstack/state` 3.1) | ⚠ warning |
 | `wcs/spread-no-bindable` | `...:` spread onto a helper tag without `wcBindable` (`wcs-fetch-header`, `wcs-fetch-body`, `wcs-infinite-scroll`, `wcs-voice`) — the runtime raises | ❌ error |
 | `wcs/trigger-seeded-truthy` | A `trigger` slot seeded with `true` (fires immediately, no edge) | ⚠ warning |

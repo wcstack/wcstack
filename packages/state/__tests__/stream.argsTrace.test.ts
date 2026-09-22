@@ -240,7 +240,7 @@ describe("argsTrace", () => {
       const entry = entries.get("tokens")!;
 
       expect(() => traceArgs(stateElement, entry)).toThrow(
-        /\$streams entry "tokens" args must not read the stream itself \("tokens"\)/,
+        /\$stream entry "tokens" args must not read the stream itself \("tokens"\)/,
       );
       // 初回トレースの失敗: 保持すべき前回成功 run の捕捉が無いため空のまま
       expect(entry.depAddresses.size).toBe(0);
@@ -258,7 +258,7 @@ describe("argsTrace", () => {
       const { stateElement, entries } = declareStreams(state);
 
       expect(() => traceArgs(stateElement, entries.get("tokens")!)).toThrow(
-        /\$streams entry "tokens" args must not read the stream itself \("\$streamStatus\.tokens"\)/,
+        /\$stream entry "tokens" args must not read the stream itself \("\$streamStatus\.tokens"\)/,
       );
     });
 
@@ -274,7 +274,7 @@ describe("argsTrace", () => {
       const { stateElement, entries } = declareStreams(state);
 
       expect(() => traceArgs(stateElement, entries.get("tokens")!)).toThrow(
-        /\$streams entry "tokens" args must not read the stream itself \("\$streamError\.tokens"\)/,
+        /\$stream entry "tokens" args must not read the stream itself \("\$streamError\.tokens"\)/,
       );
     });
 
@@ -292,7 +292,7 @@ describe("argsTrace", () => {
       const entry = entries.get("tokens")!;
 
       expect(() => traceArgs(stateElement, entry)).toThrow(
-        /\$streams entry "tokens" args must not read wildcard paths \("items\.\*"\)/,
+        /\$stream entry "tokens" args must not read wildcard paths \("items\.\*"\)/,
       );
       expect(entry.depAddresses.size).toBe(0);
     });
@@ -311,7 +311,7 @@ describe("argsTrace", () => {
       const entry = entries.get("tokens")!;
 
       expect(() => traceArgs(stateElement, entry)).toThrow(
-        /\$streams entry "tokens" args must be synchronous \(it returned a Promise\)\./,
+        /\$stream entry "tokens" args must be synchronous \(it returned a Promise\)\./,
       );
       // 同期評価分（prompt）の今回捕捉は採用されない（初回失敗のため保持分も空）
       expect(entry.depAddresses.size).toBe(0);

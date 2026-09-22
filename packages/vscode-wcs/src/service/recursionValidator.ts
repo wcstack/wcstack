@@ -67,6 +67,7 @@ const UNSUPPORTED_API_SITE = {
   $resolve: 'resolve',
   $postUpdate: 'postUpdate',
   $trackDependency: 'trackDependency',
+  $dependOn: 'trackDependency',
 } as const;
 
 /**

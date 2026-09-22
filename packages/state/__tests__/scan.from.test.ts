@@ -1438,7 +1438,7 @@ describe("$streams との交差（D9 / D10）", () => {
 
     // scan の from → 出力の辺は依存グラフに無いので、それを辿らないと feed → feed2 → page が見えない
     expect(readState(stateEl, (s) => s["$streamStatus.pageResult"])).toBe("error");
-    expect(String(readState(stateEl, (s) => s["$streamError.pageResult"]))).toContain(`[wcs/scan-feedback-loop] $streams entry "pageResult" args read "page"`);
+    expect(String(readState(stateEl, (s) => s["$streamError.pageResult"]))).toContain(`[wcs/scan-feedback-loop] $stream entry "pageResult" args read "page"`);
     host.remove();
   });
 

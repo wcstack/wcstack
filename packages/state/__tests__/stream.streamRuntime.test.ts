@@ -316,7 +316,7 @@ describe("streamRuntime", () => {
       };
       const { stateElement, entries } = declareStreams(state);
       expect(() => startStream(stateElement, entries.get("tokens")!)).toThrow(
-        /\$streams entry "tokens" args must be synchronous/,
+        /\$stream entry "tokens" args must be synchronous/,
       );
     });
 

@@ -230,3 +230,13 @@ describe("collectGetterReads — パース失敗", () => {
     expect(collectGetterReads(`  \n  `)).toEqual([]);
   });
 });
+
+describe("collectGetterReads — 依存 API の正式名（@wcstack/state 3.2）", () => {
+  it("$dependOn は $trackDependency と同じく track の path、$untracked の中は集めないこと", () => {
+    const found = reads(`this.$dependOn("t.x"); return this.$untracked(() => this.hidden) + this.$untrackDependency(() => this.also) + this.a;`);
+    expect(found.map((r) => [r.path, r.form])).toEqual([
+      ["t.x", "track"],
+      ["a", "member"],
+    ]);
+  });
+});

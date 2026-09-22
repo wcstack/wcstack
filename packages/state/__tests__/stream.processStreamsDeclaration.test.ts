@@ -23,37 +23,37 @@ describe('processStreamsDeclaration', () => {
   it('$streams がオブジェクトでない場合はエラーになること', () => {
     const se = fakeStateElement();
     expect(() => processStreamsDeclaration(se, { $streams: 'x' } as unknown as IState))
-      .toThrow(/\$streams must be an object/);
+      .toThrow(/\$stream must be an object/);
   });
 
   it('$streams が null の場合はエラーになること', () => {
     const se = fakeStateElement();
     expect(() => processStreamsDeclaration(se, { $streams: null } as unknown as IState))
-      .toThrow(/\$streams must be an object/);
+      .toThrow(/\$stream must be an object/);
   });
 
   it('名前が空文字の場合はエラーになること', () => {
     const se = fakeStateElement();
     expect(() => processStreamsDeclaration(se, { $streams: { '': { source: noopSource } } } as unknown as IState))
-      .toThrow(/\$streams entry name must be a non-empty string/);
+      .toThrow(/\$stream entry name must be a non-empty string/);
   });
 
   it('名前に DELIMITER(".") を含む場合はエラーになること', () => {
     const se = fakeStateElement();
     expect(() => processStreamsDeclaration(se, { $streams: { 'a.b': { source: noopSource } } } as unknown as IState))
-      .toThrow(/\$streams entry "a\.b" must be a flat property name/);
+      .toThrow(/\$stream entry "a\.b" must be a flat property name/);
   });
 
   it('名前に WILDCARD("*") を含む場合はエラーになること', () => {
     const se = fakeStateElement();
     expect(() => processStreamsDeclaration(se, { $streams: { 'a*': { source: noopSource } } } as unknown as IState))
-      .toThrow(/\$streams entry "a\*" must be a flat property name/);
+      .toThrow(/\$stream entry "a\*" must be a flat property name/);
   });
 
   it('名前が "$" で始まる場合はエラーになること', () => {
     const se = fakeStateElement();
     expect(() => processStreamsDeclaration(se, { $streams: { $tokens: { source: noopSource } } } as unknown as IState))
-      .toThrow(/\$streams entry "\$tokens" must not start with "\$"/);
+      .toThrow(/\$stream entry "\$tokens" must not start with "\$"/);
   });
 
   it('名前が Object.prototype の継承名の場合はエラーになること（__proto__ は prototype 差し替え・constructor 等は継承キー衝突を引き起こすため）', () => {
@@ -74,44 +74,44 @@ describe('processStreamsDeclaration', () => {
     const se = fakeStateElement();
     se.getterPaths.add('tokens');
     expect(() => processStreamsDeclaration(se, { $streams: { tokens: { source: noopSource } } } as unknown as IState))
-      .toThrow(/\$streams entry "tokens" conflicts with a getter/);
+      .toThrow(/\$stream entry "tokens" conflicts with a getter/);
   });
 
   it('setter 宣言済みパスと衝突する場合はエラーになること', () => {
     const se = fakeStateElement();
     se.setterPaths.add('tokens');
     expect(() => processStreamsDeclaration(se, { $streams: { tokens: { source: noopSource } } } as unknown as IState))
-      .toThrow(/\$streams entry "tokens" conflicts with a setter/);
+      .toThrow(/\$stream entry "tokens" conflicts with a setter/);
   });
 
   it('定義がオブジェクトでない場合はエラーになること（null 含む）', () => {
     const se = fakeStateElement();
     expect(() => processStreamsDeclaration(se, { $streams: { tokens: 'x' } } as unknown as IState))
-      .toThrow(/\$streams entry "tokens" must be an object/);
+      .toThrow(/\$stream entry "tokens" must be an object/);
     expect(() => processStreamsDeclaration(se, { $streams: { tokens: null } } as unknown as IState))
-      .toThrow(/\$streams entry "tokens" must be an object/);
+      .toThrow(/\$stream entry "tokens" must be an object/);
   });
 
   it('source が関数でない場合はエラーになること（欠落含む）', () => {
     const se = fakeStateElement();
     expect(() => processStreamsDeclaration(se, { $streams: { tokens: { source: 123 } } } as unknown as IState))
-      .toThrow(/\$streams entry "tokens" source must be a function/);
+      .toThrow(/\$stream entry "tokens" source must be a function/);
     expect(() => processStreamsDeclaration(se, { $streams: { tokens: {} } } as unknown as IState))
-      .toThrow(/\$streams entry "tokens" source must be a function/);
+      .toThrow(/\$stream entry "tokens" source must be a function/);
   });
 
   it('fold が関数でない場合はエラーになること', () => {
     const se = fakeStateElement();
     expect(() => processStreamsDeclaration(se, {
       $streams: { tokens: { source: noopSource, fold: 'x', initial: '' } },
-    } as unknown as IState)).toThrow(/\$streams entry "tokens" fold must be a function/);
+    } as unknown as IState)).toThrow(/\$stream entry "tokens" fold must be a function/);
   });
 
   it('fold があるのに initial が無い場合はエラーになること', () => {
     const se = fakeStateElement();
     expect(() => processStreamsDeclaration(se, {
       $streams: { tokens: { source: noopSource, fold: (acc: string, chunk: string) => acc + chunk } },
-    } as unknown as IState)).toThrow(/\$streams entry "tokens" requires "initial" when fold is specified/);
+    } as unknown as IState)).toThrow(/\$stream entry "tokens" requires "initial" when fold is specified/);
   });
 
   it('initial: undefined の明示宣言は in 演算子判定で許容されること', () => {
@@ -127,7 +127,7 @@ describe('processStreamsDeclaration', () => {
     const se = fakeStateElement();
     expect(() => processStreamsDeclaration(se, {
       $streams: { tokens: { source: noopSource, args: 'prompt' } },
-    } as unknown as IState)).toThrow(/\$streams entry "tokens" args must be a function/);
+    } as unknown as IState)).toThrow(/\$stream entry "tokens" args must be a function/);
   });
 
   it('フル形宣言から entry を構築して registry に一括登録すること', () => {

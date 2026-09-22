@@ -60,3 +60,18 @@ describe('validateTemplateSyntax — 入れ子 <template>', () => {
     expect(diags.filter(d => d.message.includes('省略パス'))).toHaveLength(0);
   });
 });
+
+describe('validateTemplateSyntax — フィルタの旧名（@wcstack/state 3.2・要件 B12）', () => {
+  it('旧名は未知扱いせず、wcs/name-alias（info）で正式名を提案する', () => {
+    const html = `${STATE}
+<p>{{ total | fix(1) }}</p><p>{{ total | toFixed(1) }}</p><p>{{ total | fxi }}</p>`;
+    const diags = validateTemplateSyntax(html, 'wcs-state');
+    const alias = diags.filter(d => d.code === WcsDiagnosticCode.NameAlias);
+    expect(alias).toHaveLength(1);
+    expect(alias[0].severity).toBe('info');
+    expect(alias[0].message).toContain('"toFixed"');
+    expect(html.slice(alias[0].start, alias[0].end)).toBe('fix');
+    // 正式名は何も出さず、本当に未知の名前は従来どおり filter-unknown
+    expect(diags.filter(d => d.code === WcsDiagnosticCode.FilterUnknown).map(d => html.slice(d.start, d.end))).toEqual(['fxi']);
+  });
+});

@@ -2,6 +2,15 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+`@wcstack/state` 3.2（名前の正典化）に追随する。
+
+### 検証
+
+- **`wcs/name-alias`（新設、info）** — `@wcstack/state` 3.2 で正式名を改めた旧名に付く。フィルタ（`uc` → `upper` など）、依存 API（`this.$trackDependency(` → `$dependOn`）、宣言キー（`$streams` → `$stream`、`$updatedCallback` → `$renderedCallback`）が対象で、正式名を提案する。旧名は 3.x の間は動くので info（`--strict` でも落ちない）。
+- **正式名を旧名と同じに解析する** — 旧名のフィルタは正式名の引数個数・型で検査する。`$dependOn` / `$untracked` は依存の読みの解析と `**` の拒否に、`$stream` は値プロパティの実体化・`this` の型・配線レンズに、`$renderedCallback` は updated-callback-unbound の検査に、それぞれ旧名と同じに入る。補完は正式名だけを出す。mustache のフィルタの報告範囲が `|` の後の空白から始まっていた癖も直した。
+
 ## 1.17.0 — 2026-09-22
 
 `@wcstack/state` 3.1.0 の dist を同梱。3.1（明示のプロパティ形・ボリュームの注入口）に追随する。
