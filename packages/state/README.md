@@ -1166,8 +1166,8 @@ Inside state objects (getters / methods), the following APIs are available via `
 | `this.$setAll(path, indexes, value, options?)` | Write to every address matching a wildcard path |
 | `this.$resolve(path, indexes, value?)` | Resolve a wildcard path with specific indexes |
 | `this.$postUpdate(path)` | Manually trigger update notification for a path |
-| `this.$trackDependency(path)` | Manually register a dependency for cache invalidation |
-| `this.$untrackDependency(fn)` | Read values inside fn without registering dependencies (symmetric to `$trackDependency`) |
+| `this.$dependOn(path)` (3.2; old name `$trackDependency`) | Manually register a dependency for cache invalidation |
+| `this.$untracked(fn)` (3.2; old name `$untrackDependency`) | Read values inside fn without registering dependencies |
 | `this.$eq(path, key)` / `$eqPath(path, keyPath)` / `$eqIndex(path, level?)` | Keyed subscription for "is this row's key the value of `path`?" (see [Keyed selection](#keyed-selection-eq--eqpath--eqindex)) |
 | `this.$command.<name>` | Access a `CommandToken` declared in `$commandTokens` (see [Command Token](#command-token-method-binding)) |
 | `this.$stateElement` | Access to the `IStateElement` instance |
@@ -1501,7 +1501,9 @@ export default {
 
 ## Filters
 
-46 built-in filters are available for both input (DOM → state) and output (state → DOM) directions.
+48 built-in filters are available for both input (DOM → state) and output (state → DOM) directions.
+
+**3.2 renamed some filters** (requirement B12). The tables show the canonical names, with the old name in parentheses. The old names work the same through 3.x and are removed in 4.0. Lint and the VS Code extension flag an old name with an info diagnostic (`wcs/name-alias`) that suggests the canonical one. On a page that uses 3.1 or earlier, write the old names.
 
 ### Comparison
 
@@ -1519,8 +1521,8 @@ export default {
 
 | Filter | Description | Example |
 |---|---|---|
-| `inc(n)` | Add | `count\|inc(1)` |
-| `dec(n)` | Subtract | `count\|dec(1)` |
+| `add(n)` (`inc`) | Add | `count\|add(1)` |
+| `sub(n)` (`dec`) | Subtract | `count\|sub(1)` |
 | `mul(n)` | Multiply | `price\|mul(1.1)` |
 | `div(n)` | Divide | `total\|div(100)` |
 | `mod(n)` | Modulo | `index\|mod(2)` |
@@ -1531,7 +1533,7 @@ export default {
 
 | Filter | Description | Example |
 |---|---|---|
-| `fix(n)` | Fixed decimal places | `price\|fix(2)` → `"100.00"` |
+| `toFixed(n)` (`fix`) | Fixed decimal places | `price\|toFixed(2)` → `"100.00"` |
 | `round(n?)` | Round | `value\|round(2)` |
 | `floor(n?)` | Floor | `value\|floor` |
 | `ceil(n?)` | Ceiling | `value\|ceil` |
@@ -1543,15 +1545,16 @@ export default {
 
 | Filter | Description | Example |
 |---|---|---|
-| `uc` | Upper case | `name\|uc` |
-| `lc` | Lower case | `name\|lc` |
-| `cap` | Capitalize | `name\|cap` |
+| `upper` (`uc`) | Upper case | `name\|upper` |
+| `lower` (`lc`) | Lower case | `name\|lower` |
+| `capitalize` (`cap`) | Capitalize | `name\|capitalize` |
 | `trim` | Trim whitespace | `text\|trim` |
 | `slice(n)` | Slice string | `text\|slice(5)` |
 | `substr(start, length)` | Substring | `text\|substr(0,10)` |
-| `pad(n, char?)` | Pad start | `id\|pad(5,0)` → `"00001"` |
-| `rep(n)` | Repeat | `text\|rep(3)` |
-| `rev` | Reverse | `text\|rev` |
+| `padStart(n, char?)` (`pad`) | Pad the start (default `0`) | `id\|padStart(5,0)` → `"00001"` |
+| `padEnd(n, char?)` | Pad the end (default a space; 3.2) | `code\|padEnd(8)` |
+| `repeat(n)` (`rep`) | Repeat | `text\|repeat(3)` |
+| `reverse` (`rev`) | Reverse | `text\|reverse` |
 | `truncate(n, suffix?)` | Shorten and append an ellipsis | `title\|truncate(20)` |
 | `join(sep?)` | Join an array (default `", "`) | `tags\|join` / `tags\|join(/)` |
 
@@ -1564,7 +1567,7 @@ export default {
 | `boolean` | To boolean | `value\|boolean` |
 | `number` | To number | `value\|number` |
 | `string` | To string | `value\|string` |
-| `null` | To null | `value\|null` |
+| `nullIfEmpty` (`null`) | Turn an empty string into `null` (anything else passes through) | `value\|nullIfEmpty` |
 
 ### Date / Time
 
@@ -1582,7 +1585,8 @@ export default {
 |---|---|---|
 | `truthy` | Truthy check — JavaScript's own truthiness, the same as `boolean` (so `0n` is falsy since 3.0) | `value\|truthy` |
 | `falsy` | Falsy check (JavaScript's truthiness; `defaults` uses the same test) | `value\|falsy` |
-| `defaults(v)` | Fallback value | `name\|defaults(Anonymous)` |
+| `defaults(v)` | Fallback for any falsy value (`0`, `false` and `""` included) | `name\|defaults(Anonymous)` |
+| `coalesce(v)` | Fallback for `null` / `undefined` only (`0`, `false` and `""` stay; 3.2) | `count\|coalesce(0)` |
 
 ### Filter Chaining
 
@@ -2155,6 +2159,8 @@ Two rules cut most of the confusion:
 
 ## Streams (`$streams`)
 
+> **As of 3.2 the canonical declaration key is `$stream`** (requirement B12), singular like `$watch` and `$scan`. The old `$streams` works the same through 3.x and is removed in 4.0. Declaring both fails with `[wcs/declaration-alias]`. The `$streamStatus` / `$streamError` namespaces do not change. On 3.1 or earlier, write `$streams`.
+
 Command tokens and event tokens carry discrete interactions. **`$streams`** covers the remaining shape: a continuous flow. Declare an async producer (async iterable / async generator / `ReadableStream`) and the framework **folds it into a single reactive property** — each chunk goes through normal path assignment, so bindings, path getters, and `$updatedCallback` react exactly as if you had assigned the value yourself. When a state path read by the `args` function changes, the running producer is aborted and the source is restarted with the new arguments (switchMap-style dependency-driven restart). Streams start eagerly after `$connectedCallback` completes and are aborted when the element disconnects.
 
 `$updatedCallback` remains binding-driven: a stream declaration alone is not a headless subscription. Its path appears in the callback only when a live DOM binding for that value/status/error is actually applied. To react to a stream's value without rendering it, declare [`$watch`](#watch-watch) on that path; see the [stream reference](docs/streams.md) for the observation contract.
@@ -2623,6 +2629,8 @@ All bindings work inside `<svg>` elements. Use `attr.*` for SVG attributes:
 ## Lifecycle Hooks
 
 State objects can define `$connectedCallback`, `$disconnectedCallback`, `$updatedCallback`, and `$errorCallback` for initialization, cleanup, update, and binding-failure handling.
+
+> **As of 3.2 the canonical name of `$updatedCallback` is `$renderedCallback`** (requirement B12). The hook receives updates of **applied bindings**, not every state update (use `$watch` for those), and the new name says so. The old name works the same through 3.x and is removed in 4.0. Declaring both fails with `[wcs/declaration-alias]`. On 3.1 or earlier, write `$updatedCallback`.
 
 ```html
 <wcs-state>

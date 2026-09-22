@@ -1165,8 +1165,8 @@ export default {
 | `this.$setAll(path, indexes, value, options?)` | ワイルドカードパスにマッチする全アドレスへ一括書き込み |
 | `this.$resolve(path, indexes, value?)` | ワイルドカードパスを特定のインデックスで解決 |
 | `this.$postUpdate(path)` | 指定パスの更新通知を手動で発行 |
-| `this.$trackDependency(path)` | キャッシュ無効化のための依存関係を手動で登録 |
-| `this.$untrackDependency(fn)` | fn 実行中の依存追跡を抑止して値を読む（`$trackDependency` と対称） |
+| `this.$dependOn(path)`（3.2。旧名 `$trackDependency`） | キャッシュ無効化のための依存関係を手動で登録 |
+| `this.$untracked(fn)`（3.2。旧名 `$untrackDependency`） | fn 実行中の依存追跡を抑止して値を読む |
 | `this.$eq(path, key)` / `$eqPath(path, keyPath)` / `$eqIndex(path, level?)` | 鍵付き購読: 「`path` の値はこの行の鍵か」（[鍵付き選択](#鍵付き選択eq--eqpath--eqindex)） |
 | `this.$stateElement` | `IStateElement` インスタンスへのアクセス |
 | `this.$1`, `this.$2`, ... | 現在のループインデックス（1始まりの命名、0始まりの値） |
@@ -1499,7 +1499,9 @@ export default {
 
 ## フィルタ
 
-46 種類の組み込みフィルタが入力（DOM → 状態）と出力（状態 → DOM）の両方向で利用できます。
+48 種類の組み込みフィルタが入力（DOM → 状態）と出力（状態 → DOM）の両方向で利用できます。
+
+**3.2 で一部の名前を改めました**（要件 B12）。表は正式名で、括弧の中が旧名です。旧名は 3.x の間は同じに動き、4.0 で外れます。lint と VS Code 拡張は、旧名に正式名を提案する info（`wcs/name-alias`）を出します。3.1 以前を使うページでは旧名で書いてください。
 
 ### 比較
 
@@ -1517,8 +1519,8 @@ export default {
 
 | フィルタ | 説明 | 例 |
 |---|---|---|
-| `inc(n)` | 加算 | `count\|inc(1)` |
-| `dec(n)` | 減算 | `count\|dec(1)` |
+| `add(n)`（`inc`） | 加算 | `count\|add(1)` |
+| `sub(n)`（`dec`） | 減算 | `count\|sub(1)` |
 | `mul(n)` | 乗算 | `price\|mul(1.1)` |
 | `div(n)` | 除算 | `total\|div(100)` |
 | `mod(n)` | 剰余 | `index\|mod(2)` |
@@ -1529,7 +1531,7 @@ export default {
 
 | フィルタ | 説明 | 例 |
 |---|---|---|
-| `fix(n)` | 固定小数点桁数 | `price\|fix(2)` → `"100.00"` |
+| `toFixed(n)`（`fix`） | 固定小数点桁数 | `price\|toFixed(2)` → `"100.00"` |
 | `round(n?)` | 四捨五入 | `value\|round(2)` |
 | `floor(n?)` | 切り捨て | `value\|floor` |
 | `ceil(n?)` | 切り上げ | `value\|ceil` |
@@ -1541,15 +1543,16 @@ export default {
 
 | フィルタ | 説明 | 例 |
 |---|---|---|
-| `uc` | 大文字変換 | `name\|uc` |
-| `lc` | 小文字変換 | `name\|lc` |
-| `cap` | 先頭大文字 | `name\|cap` |
+| `upper`（`uc`） | 大文字変換 | `name\|upper` |
+| `lower`（`lc`） | 小文字変換 | `name\|lower` |
+| `capitalize`（`cap`） | 先頭大文字 | `name\|capitalize` |
 | `trim` | 空白除去 | `text\|trim` |
 | `slice(n)` | 文字列スライス | `text\|slice(5)` |
 | `substr(start, length)` | 部分文字列 | `text\|substr(0,10)` |
-| `pad(n, char?)` | 先頭パディング | `id\|pad(5,0)` → `"00001"` |
-| `rep(n)` | 繰り返し | `text\|rep(3)` |
-| `rev` | 反転 | `text\|rev` |
+| `padStart(n, char?)`（`pad`） | 先頭を埋める（既定 `0`） | `id\|padStart(5,0)` → `"00001"` |
+| `padEnd(n, char?)` | 末尾を埋める（既定は空白。3.2） | `code\|padEnd(8)` |
+| `repeat(n)`（`rep`） | 繰り返し | `text\|repeat(3)` |
+| `reverse`（`rev`） | 反転 | `text\|reverse` |
 | `truncate(n, suffix?)` | 切り詰めて省略記号を付加 | `title\|truncate(20)` → `"…"` 付き |
 | `join(sep?)` | 配列を連結（既定 `", "`） | `tags\|join` / `tags\|join(/)` |
 
@@ -1562,7 +1565,7 @@ export default {
 | `boolean` | 真偽値に変換 | `value\|boolean` |
 | `number` | 数値に変換 | `value\|number` |
 | `string` | 文字列に変換 | `value\|string` |
-| `null` | null に変換 | `value\|null` |
+| `nullIfEmpty`（`null`） | 空文字を `null` にする（それ以外はそのまま） | `value\|nullIfEmpty` |
 
 ### 日付 / 時刻
 
@@ -1580,7 +1583,8 @@ export default {
 |---|---|---|
 | `truthy` | truthy チェック — JavaScript の真偽判定そのもので `boolean` と同じ（3.0 から `0n` は偽） | `value\|truthy` |
 | `falsy` | falsy チェック（JavaScript の真偽判定。`defaults` も同じ判定を使う） | `value\|falsy` |
-| `defaults(v)` | フォールバック値 | `name\|defaults(Anonymous)` |
+| `defaults(v)` | 偽値（`0`・`false`・`""` を含む）のときのフォールバック値 | `name\|defaults(Anonymous)` |
+| `coalesce(v)` | `null` / `undefined` のときだけのフォールバック値（`0`・`false`・`""` は残す。3.2） | `count\|coalesce(0)` |
 
 ### フィルタチェーン
 
@@ -2149,6 +2153,8 @@ event token は command token と同じ `Token` pub/sub プリミティブを共
 
 ## Stream（`$streams`）
 
+> **3.2 から宣言キーの正式名は `$stream` です**（要件 B12 — `$watch` / `$scan` と単数で揃えた）。旧名 `$streams` は 3.x の間は同じに動き、4.0 で外れます。両方を宣言すると `[wcs/declaration-alias]` で落ちます。`$streamStatus` / `$streamError` の名前空間は変わりません。3.1 以前では `$streams` と書いてください。
+
 command token / event token が運ぶのは離散的なやり取りです。**`$streams`** は残る形 —— 連続的なフローをカバーします。非同期 producer（async iterable / async generator / `ReadableStream`）を宣言すると、フレームワークがそれを **fold して単一の reactive プロパティに畳み込みます** —— 各チャンクは通常のパス代入を通るため、バインディング・パス getter・`$updatedCallback` は自分で値を代入した場合とまったく同じように反応します。`args` 関数が読んだ state パスが変化すると、実行中の producer は abort され、新しい引数で source が張り直されます（switchMap 型の依存駆動 restart）。stream は `$connectedCallback` 完了後に eager に起動し、要素の disconnect で abort されます。
 
 `$updatedCallback` は引き続き binding 駆動です。stream 宣言だけでは headless な購読にならず、その value/status/error の live DOM binding が実際に適用されたときだけ callback の path に現れます。描画せずに stream の値へ反応したい場合は、そのパスに [`$watch`](#watchwatch) を宣言してください。観測契約は [stream リファレンス](docs/streams.md) を参照してください。
@@ -2617,6 +2623,8 @@ export default {
 ## ライフサイクルフック
 
 状態オブジェクトに `$connectedCallback` / `$disconnectedCallback` / `$updatedCallback` / `$errorCallback` を定義すると、初期化・クリーンアップ・更新時・バインディング失敗時のフックとして利用できます。
+
+> **3.2 から `$updatedCallback` の正式名は `$renderedCallback` です**（要件 B12）。このフックが受けるのは**適用されたバインディング**の更新で、state の更新全体ではない（それには `$watch`）ことを名前で言うためです。旧名は 3.x の間は同じに動き、4.0 で外れます。両方を宣言すると `[wcs/declaration-alias]` で落ちます。3.1 以前では `$updatedCallback` と書いてください。
 
 ```html
 <wcs-state>
