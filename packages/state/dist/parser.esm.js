@@ -16,6 +16,10 @@ const ELSE_KEYWORD = 'else';
 const SPREAD_PROP = '...';
 const EVENT_PROP_PREFIX = 'on';
 const EVENT_TOKEN_NAMESPACE = 'eventToken';
+const COMMAND_NAMESPACE = 'command';
+const CLASS_NAMESPACE = 'class';
+const ATTR_NAMESPACE = 'attr';
+const STYLE_NAMESPACE = 'style';
 // リストインデックス参照名（`$1`..`$N`）の接頭辞（単一正本）。
 // manifest.syntax.indexParam で公開される。
 const INDEX_PARAM_PREFIX = '$';
@@ -503,6 +507,10 @@ function parseStatePart(statePart) {
 //   ...: statePart (spread — expand wcBindable properties+inputs of target object)
 /** 左辺に修飾子も入力フィルタも取らない束縛（構造ディレクティブと spread）— 付いていれば拒否する（要件 B4） */
 const KEYWORDS_WITHOUT_MODIFIERS = new Set([ELSE_KEYWORD, 'if', 'elseif', 'for', SPREAD_PROP]);
+/** 明示のプロパティ形（`.name:`）の先頭に置けない語 — 名前空間として読まれる語（要件 B5） */
+const EXPLICIT_PROPERTY_REJECTED_HEADS = new Set([
+    CLASS_NAMESPACE, ATTR_NAMESPACE, STYLE_NAMESPACE, COMMAND_NAMESPACE, EVENT_TOKEN_NAMESPACE,
+]);
 /**
  * `data-wcs` の値をバインディングごとに区切る（前後の空白は残す — tooling が位置を数えられるように）。
  * 引用符の中の `;` は区切りではない（要件 B1 — `join(';')`）。ランタイムと tooling（`@wcstack/state/parser`）で共有する
@@ -585,6 +593,23 @@ function parseBindTextsForElement(bindText) {
         else {
             const stateResult = parseStatePart(statePart);
             const propResult = parsePropPart(propPart);
+            // 左辺の先頭ドット（`.online:`）は明示のプロパティ形（要件 B5・3.x 計画 D34）。ドットの無い形と
+            // 同じ束縛だが、`on` で始まってもイベントにはならない（`online:` は "line" イベントを待つ）。
+            // 名前空間の語（`.class.x` / `.command.x` …）はプロパティか名前空間か曖昧なので受けない
+            if (propResult.propSegments[0] === '' && propResult.propSegments.length > 1) {
+                const propSegments = propResult.propSegments.slice(1);
+                if (propSegments.includes('') || EXPLICIT_PROPERTY_REJECTED_HEADS.has(propSegments[0])) {
+                    raiseError(`[wcs/binding-syntax] "${propPart}": a leading "." binds an element property by name — ` +
+                        `write a non-empty property that is not a namespace (${[...EXPLICIT_PROPERTY_REJECTED_HEADS].join(", ")}).${LINT_HINT}`);
+                }
+                return {
+                    ...propResult,
+                    propName: propSegments.join(DELIMITER),
+                    propSegments,
+                    ...stateResult,
+                    bindingType: 'prop',
+                };
+            }
             // eventToken.<prop>: <name> は要素 dispatch を state へ流す pub/sub 配線。
             // 値適用ではないため bindingType 'event' として listener attach 経路に乗せる。
             if (propResult.propSegments[0] === EVENT_TOKEN_NAMESPACE) {

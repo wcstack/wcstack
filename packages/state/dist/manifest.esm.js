@@ -1137,6 +1137,7 @@ function getWcsManifest() {
                 elseKeyword: ELSE_KEYWORD,
                 spread: SPREAD_PROP,
                 eventPropertyPrefix: EVENT_PROP_PREFIX,
+                explicitPropertyPrefix: DELIMITER,
                 propNamespaces: {
                     eventToken: EVENT_TOKEN_NAMESPACE,
                     command: COMMAND_NAMESPACE,

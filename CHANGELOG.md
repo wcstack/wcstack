@@ -10,14 +10,6 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ### Added
 
-- `@wcstack/state`: **an injection point for volumes.** `<wcs-state mount="cart" data-wcs="state.taxRate: settings.taxRate">` lets the volume's code use `this.taxRate` for the root's `settings.taxRate`: getters (with the dependency recorded), methods, `$watch`, `$listKeys` and the lifecycle callbacks. It uses the vocabulary of a component's partial mount and the same longest-prefix table (`webComponent/mountEntries.ts`). Components could already take `state.x: path` from the host; volumes had no equivalent.
-  - The injection wins over a data key of the same name, which is not grafted.
-  - `#ro` makes the key read-only for the volume (`[wcs/mount-readonly]`).
-  - `$updatedCallback` receives updates of an injected path under the inner name.
-  - One key per injection, static target paths, no filters. A malformed injection is `[wcs/mount-path-invalid]`, reported before the volume loads.
-
-  Until now such a `data-wcs` failed to apply as a write to a missing `state` property. It is no longer collected as a binding. Contract: the state README, `mount=`.
-- `@wcstack/state`: **an explicit property form, `.name:`.** A name that starts with `on` makes an event binding, so `online: x` listened for a `"line"` event and could not reach an element's `online` property. The leading dot binds the property by name: `.online: isOnline`. It is the same binding as the undotted form in every other way; `.value:` is two-way, and modifiers and input filters apply. A namespace word after the dot (`.class`, `.attr`, `.style`, `.command`, `.eventToken`) and an empty name are rejected with `[wcs/binding-syntax]`. The leading dot used to fail at apply time, so no working page changes. The manifest gains `syntax.bindingTypes.explicitPropertyPrefix` (`"."`).
 - `@wcstack/state`: **canonical names, with the old names as aliases** (requirement B12; docs/state-3x-naming.ja.md). Some names read as the wrong operation or abbreviated away from JavaScript's, and they get canonical names. The old names keep working through 3.x and are removed in 4.0. Lint and the VS Code extension flag each old name with `wcs/name-alias` (info). The runtime warns only in the last 3.x minor.
   - Filters:
     - `inc` / `dec` → `add` / `sub`;
@@ -32,6 +24,19 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
   - Proxy APIs: `$trackDependency` / `$untrackDependency` → `$dependOn` / `$untracked`. The old pair read as inverses of each other, and they are not.
   - Declaration keys: `$updatedCallback` → `$renderedCallback`, because it observes applied bindings, not every update. `$streams` → `$stream`, singular like `$watch` / `$scan`. An old key is moved onto the canonical one once, when the state enters the runtime. Declaring both spellings is `[wcs/declaration-alias]`. Error messages now name `$stream` / `$renderedCallback`.
   - Fixed on the way: `add` / `sub` (`inc` / `dec`) require their argument, as documented. The arity table said it was optional, so lint let `inc` pass without one and the runtime failed without a code. It now fails as `[wcs/filter-arity]`.
+
+## [3.1.0] — 2026-09-22
+
+### Added
+
+- `@wcstack/state`: **an injection point for volumes.** `<wcs-state mount="cart" data-wcs="state.taxRate: settings.taxRate">` lets the volume's code use `this.taxRate` for the root's `settings.taxRate`: getters (with the dependency recorded), methods, `$watch`, `$listKeys` and the lifecycle callbacks. It uses the vocabulary of a component's partial mount and the same longest-prefix table (`webComponent/mountEntries.ts`). Components could already take `state.x: path` from the host; volumes had no equivalent.
+  - The injection wins over a data key of the same name, which is not grafted.
+  - `#ro` makes the key read-only for the volume (`[wcs/mount-readonly]`).
+  - `$updatedCallback` receives updates of an injected path under the inner name.
+  - One key per injection, static target paths, no filters. A malformed injection is `[wcs/mount-path-invalid]`, reported before the volume loads.
+
+  Until now such a `data-wcs` failed to apply as a write to a missing `state` property. It is no longer collected as a binding. Contract: the state README, `mount=`.
+- `@wcstack/state`: **an explicit property form, `.name:`.** A name that starts with `on` makes an event binding, so `online: x` listened for a `"line"` event and could not reach an element's `online` property. The leading dot binds the property by name: `.online: isOnline`. It is the same binding as the undotted form in every other way; `.value:` is two-way, and modifiers and input filters apply. A namespace word after the dot (`.class`, `.attr`, `.style`, `.command`, `.eventToken`) and an empty name are rejected with `[wcs/binding-syntax]`. The leading dot used to fail at apply time, so no working page changes. The manifest gains `syntax.bindingTypes.explicitPropertyPrefix` (`"."`).
 
 ## [3.0.0] — 2026-09-22
 
@@ -354,7 +359,8 @@ Repairs from the pre-release quality loop, all with tests: `setInitialState` on 
 
 1.29.0 and earlier predate this file. Their contents are in the merged pull requests (`gh pr list --state merged`) and the git history; each GitHub Release page carries the SRI digests for that version.
 
-[Unreleased]: https://github.com/wcstack/wcstack/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/wcstack/wcstack/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/wcstack/wcstack/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/wcstack/wcstack/compare/v2.6.1...v3.0.0
 [2.6.1]: https://github.com/wcstack/wcstack/compare/v2.6.0...v2.6.1
 [2.6.0]: https://github.com/wcstack/wcstack/compare/v2.5.1...v2.6.0

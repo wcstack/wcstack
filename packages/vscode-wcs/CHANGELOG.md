@@ -4,13 +4,20 @@
 
 ## Unreleased
 
-`@wcstack/state` 3.1（明示のプロパティ形・ボリュームの注入口）と 3.2（名前の正典化）に追随する。
+`@wcstack/state` 3.2（名前の正典化）に追随する。
+
+### 検証
+
+- **`wcs/name-alias`（新設、info）** — `@wcstack/state` 3.2 で正式名を改めた旧名に付く。フィルタ（`uc` → `upper` など）、依存 API（`this.$trackDependency(` → `$dependOn`）、宣言キー（`$streams` → `$stream`、`$updatedCallback` → `$renderedCallback`）が対象で、正式名を提案する。旧名は 3.x の間は動くので info（`--strict` でも落ちない）。
+- **正式名を旧名と同じに解析する** — 旧名のフィルタは正式名の引数個数・型で検査する。`$dependOn` / `$untracked` は依存の読みの解析と `**` の拒否に、`$stream` は値プロパティの実体化・`this` の型・配線レンズに、`$renderedCallback` は updated-callback-unbound の検査に、それぞれ旧名と同じに入る。補完は正式名だけを出す。mustache のフィルタの報告範囲が `|` の後の空白から始まっていた癖も直した。
+
+## 1.17.0 — 2026-09-22
+
+`@wcstack/state` 3.1.0 の dist を同梱。3.1（明示のプロパティ形・ボリュームの注入口）に追随する。
 
 ### 検証
 
 - **`wcs/on-prefixed-member`（新設、warning）** — 組み込みタグのメンバーのうち名前が `on` で始まるもの（`<wcs-timer>` などの入力 `once`）を先頭ドット無しで束縛した形。ランタイムはイベント束縛にして "ce" イベントを待ち、値は届かない。`.once:` と書くよう提案する（3.x 計画 D36）。
-- **`wcs/name-alias`（新設、info）** — `@wcstack/state` 3.2 で正式名を改めた旧名に付く。フィルタ（`uc` → `upper` など）、依存 API（`this.$trackDependency(` → `$dependOn`）、宣言キー（`$streams` → `$stream`、`$updatedCallback` → `$renderedCallback`）が対象で、正式名を提案する。旧名は 3.x の間は動くので info（`--strict` でも落ちない）。
-- **正式名を旧名と同じに解析する** — 旧名のフィルタは正式名の引数個数・型で検査する。`$dependOn` / `$untracked` は依存の読みの解析と `**` の拒否に、`$stream` は値プロパティの実体化・`this` の型・配線レンズに、`$renderedCallback` は updated-callback-unbound の検査に、それぞれ旧名と同じに入る。補完は正式名だけを出す。mustache のフィルタの報告範囲が `|` の後の空白から始まっていた癖も直した。
 - **明示のプロパティ形 `.name:` を契約検査で照合する** — ドットを外した名前でメンバーを引く。未知の名前は `wcs/tag-member-unknown`、ドットの後の名前空間の語は正本パーサの `wcs/binding-syntax` に任せる。
 
 ## 1.16.0 — 2026-09-22

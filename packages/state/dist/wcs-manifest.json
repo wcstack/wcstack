@@ -37,6 +37,7 @@
       "elseKeyword": "else",
       "spread": "...",
       "eventPropertyPrefix": "on",
+      "explicitPropertyPrefix": ".",
       "propNamespaces": {
         "eventToken": "eventToken",
         "command": "command",
