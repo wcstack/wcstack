@@ -8,6 +8,8 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+## [3.1.0] — 2026-09-22
+
 ### Added
 
 - `@wcstack/state`: **an injection point for volumes.** `<wcs-state mount="cart" data-wcs="state.taxRate: settings.taxRate">` lets the volume's code use `this.taxRate` for the root's `settings.taxRate`: getters (with the dependency recorded), methods, `$watch`, `$listKeys` and the lifecycle callbacks. It uses the vocabulary of a component's partial mount and the same longest-prefix table (`webComponent/mountEntries.ts`). Components could already take `state.x: path` from the host; volumes had no equivalent.
@@ -340,7 +342,8 @@ Repairs from the pre-release quality loop, all with tests: `setInitialState` on 
 
 1.29.0 and earlier predate this file. Their contents are in the merged pull requests (`gh pr list --state merged`) and the git history; each GitHub Release page carries the SRI digests for that version.
 
-[Unreleased]: https://github.com/wcstack/wcstack/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/wcstack/wcstack/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/wcstack/wcstack/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/wcstack/wcstack/compare/v2.6.1...v3.0.0
 [2.6.1]: https://github.com/wcstack/wcstack/compare/v2.6.0...v2.6.1
 [2.6.0]: https://github.com/wcstack/wcstack/compare/v2.5.1...v2.6.0
