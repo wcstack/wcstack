@@ -8,6 +8,8 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+## [3.2.0] — 2026-09-22
+
 ### Added
 
 - `@wcstack/state`: **canonical names, with the old names as aliases** (requirement B12; docs/state-3x-naming.ja.md). Some names read as the wrong operation or abbreviated away from JavaScript's, and they get canonical names. The old names keep working through 3.x and are removed in 4.0. Lint and the VS Code extension flag each old name with `wcs/name-alias` (info). The runtime warns only in the last 3.x minor.
@@ -359,7 +361,8 @@ Repairs from the pre-release quality loop, all with tests: `setInitialState` on 
 
 1.29.0 and earlier predate this file. Their contents are in the merged pull requests (`gh pr list --state merged`) and the git history; each GitHub Release page carries the SRI digests for that version.
 
-[Unreleased]: https://github.com/wcstack/wcstack/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/wcstack/wcstack/compare/v3.2.0...HEAD
+[3.2.0]: https://github.com/wcstack/wcstack/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/wcstack/wcstack/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/wcstack/wcstack/compare/v2.6.1...v3.0.0
 [2.6.1]: https://github.com/wcstack/wcstack/compare/v2.6.0...v2.6.1
