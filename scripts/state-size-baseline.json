@@ -1,16 +1,16 @@
 {
   "$comment": "gzip level 9 of packages/state/dist at the recorded release; check-state-size.mjs --check allows +3 % over these (requirements N3 / D18). The split core entry is the sum of its chunks, each gzipped on its own. Update with --update after a release build.",
   "auto.min.js": {
-    "bytes": 262151,
-    "gzip": 77895
+    "bytes": 263359,
+    "gzip": 78287
   },
   "index.esm.js": {
-    "bytes": 271073,
-    "gzip": 80131
+    "bytes": 272659,
+    "gzip": 80629
   },
   "split/core (with its chunks)": {
-    "files": 12,
-    "bytes": 159112,
-    "gzip": 51894
+    "files": 13,
+    "bytes": 160046,
+    "gzip": 52451
   }
 }
