@@ -43,6 +43,7 @@ import {
   type IPositionalBinding,
   type ITokenRange,
 } from '../parser/positionalParser.js';
+import { indexOfOutsideQuotes } from '../parser/quoteAware.js';
 import { clearParserCaches } from '@wcstack/state/parser';
 import { getStatePathsFromHtml } from '../../service/statePathResolver.js';
 import type { PathCandidate } from '../../service/stateAnalyzer.js';
@@ -112,6 +113,8 @@ interface ILensLabels {
   declaredAtLine(line: number): string;
   externalState(src: string): string;
   onPrefixModifier(eventName: string): string;
+  /** 3.x の間だけ残る旧名（`uc` → `upper`）。説明だけ出すと「旧名である」ことが伝わらない。 */
+  filterAlias(written: string, canonical: string): string;
   readonly flagModifiers: Record<string, string>;
   readonly keyValueModifiers: Record<string, string>;
 }
@@ -132,6 +135,8 @@ const LABELS: Record<WcsLocale, ILensLabels> = {
     declaredAtLine: (line) => `declared at L${line}`,
     externalState: (src) => `external definition (\`${src}\`) — not statically analyzed`,
     onPrefixModifier: (eventName) => `overrides the two-way trigger event to \`${eventName}\``,
+    filterAlias: (written, canonical) =>
+      `\`${written}\` is the old name of \`${canonical}\` — it works through 3.x and goes in 4.0 (@wcstack/state 3.2)`,
     flagModifiers: {
       prevent: 'calls event.preventDefault()',
       stop: 'calls event.stopPropagation()',
@@ -157,6 +162,8 @@ const LABELS: Record<WcsLocale, ILensLabels> = {
     declaredAtLine: (line) => `宣言: L${line}`,
     externalState: (src) => `外部定義（\`${src}\`）— 静的解析の対象外`,
     onPrefixModifier: (eventName) => `双方向バインディングのトリガーイベントを \`${eventName}\` に上書き`,
+    filterAlias: (written, canonical) =>
+      `\`${written}\` は \`${canonical}\` の旧名です — 3.x の間は動きますが 4.0 で外れます（@wcstack/state 3.2）`,
     flagModifiers: {
       prevent: 'event.preventDefault() を呼ぶ',
       stop: 'event.stopPropagation() を呼ぶ',
@@ -433,11 +440,15 @@ function hoverForToken(
 
     const filterHit = locateFilterAt(binding, offset, site);
     if (filterHit !== null) {
-      const meta = builtinFilterMeta[canonicalFilterName(filterHit.name)];
+      const canonical = canonicalFilterName(filterHit.name);
+      const meta = builtinFilterMeta[canonical];
       if (meta === undefined) return null; // 未知フィルタ（誤 hint ゼロ）
       const typeLine = filterTypeLineOf(meta, labels);
+      // 旧名で書かれていたら、正式名の説明を出すだけでなく「旧名である」ことを言う
+      // （`wcs/name-alias` と同じ事実を hover でも見せる）
       const markdown = [
         `\`${filterSignatureOf(filterHit.name, meta)}\` — ${labels.filter}`,
+        ...(canonical === filterHit.name ? [] : [labels.filterAlias(filterHit.name, canonical)]),
         meta.description,
         ...(typeLine === null ? [] : [typeLine]),
       ].join('\n\n');
@@ -478,8 +489,9 @@ function locateFilterAt(binding: IPositionalBinding, offset: number, site: IExpr
   const exprText = binding.exprText;
   // text チャネル（embedded）は右辺のみの式で原文に `:` を持たない — 右辺は
   // 先頭から。属性は `:` で左辺 / 右辺が分かれる（フィルタ引数内の `:`
-  // （`date('HH:mm')` 等）を右辺開始と誤認しないよう、チャネルで分岐する）。
-  const colon = site.channel === 'attribute' ? exprText.indexOf(delimiters.propValue) : -1;
+  // （`date('HH:mm')` 等）を右辺開始と誤認しないよう、チャネルで分岐し、
+  // かつ引用符の外だけを見る — 左辺の入力フィルタの引数に `:` があっても崩れない）。
+  const colon = site.channel === 'attribute' ? indexOfOutsideQuotes(exprText, delimiters.propValue) : -1;
   const rhsStart = site.channel === 'attribute' ? (colon === -1 ? exprText.length : colon + 1) : 0;
 
   // out-filter 帯: 右辺の最初の `|` 以降
@@ -547,7 +559,7 @@ function locateModifierAt(binding: IPositionalBinding, offset: number, site: IEx
   const parsed = binding.parsed;
   if (parsed === null || parsed.propModifiers.length === 0) return null;
   const exprText = binding.exprText;
-  const colon = exprText.indexOf(delimiters.propValue);
+  const colon = indexOfOutsideQuotes(exprText, delimiters.propValue);
   const lhsEnd = colon === -1 ? exprText.length : colon;
   const hash = exprText.indexOf('#');
   if (hash === -1 || hash >= lhsEnd) return null;

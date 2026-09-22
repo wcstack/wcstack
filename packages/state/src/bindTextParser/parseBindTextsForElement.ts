@@ -13,6 +13,7 @@ import {
   EVENT_TOKEN_NAMESPACE,
   PROP_VALUE_SEPARATOR,
   SPREAD_PROP,
+  VOLUME_INJECTION_PROP,
 } from "../define.js";
 import { LINT_HINT } from "../errorGuidance.js";
 import { raiseError } from "../raiseError.js";
@@ -20,7 +21,7 @@ import { STRUCTURAL_BINDING_TYPE_SET } from "../structural/define.js";
 import { parsePropPart } from "./parsePropPart.js";
 import { parseStatePart } from "./parseStatePart.js";
 import { ParseBindTextResult } from "./types.js";
-import { splitOutsideQuotes, trimFn } from "./utils.js";
+import { indexOfOutsideQuotes, splitOutsideQuotes, trimFn } from "./utils.js";
 
 // format: propPart:statePart; propPart:statePart; ...
 // special-propPart:
@@ -34,9 +35,14 @@ import { splitOutsideQuotes, trimFn } from "./utils.js";
 /** 左辺に修飾子も入力フィルタも取らない束縛（構造ディレクティブと spread）— 付いていれば拒否する（要件 B4） */
 const KEYWORDS_WITHOUT_MODIFIERS = new Set<string>([ELSE_KEYWORD, 'if', 'elseif', 'for', SPREAD_PROP]);
 
-/** 明示のプロパティ形（`.name:`）の先頭に置けない語 — 名前空間として読まれる語（要件 B5） */
+/**
+ * 明示のプロパティ形（`.name:`）の先頭に置けない語 — 名前空間として読まれる語（要件 B5）。
+ * `state`（`VOLUME_INJECTION_PROP`）も含む: `<wcs-state mount>` 上の左辺 `state.<key>:` は
+ * 注入の宣言（要件 B14③）なので、`.state.taxRate:` はプロパティか注入か曖昧になる。
+ */
 const EXPLICIT_PROPERTY_REJECTED_HEADS = new Set<string>([
   CLASS_NAMESPACE, ATTR_NAMESPACE, STYLE_NAMESPACE, COMMAND_NAMESPACE, EVENT_TOKEN_NAMESPACE,
+  VOLUME_INJECTION_PROP,
 ]);
 
 /**
@@ -50,9 +56,11 @@ export function splitBindTexts(bindText: string): string[] {
 export function parseBindTextsForElement(bindText: string): ParseBindTextResult[] {
   const [ ...bindTexts ] = splitBindTexts(bindText).map(trimFn).filter(s => s.length > 0);
   const results = bindTexts.map((bindText): ParseBindTextResult => {
-    const separatorIndex = bindText.indexOf(PROP_VALUE_SEPARATOR);
+    // 左辺と右辺の区切りも引用符の外だけで探す（要件 B1）。`value|replace(':','-'): path` の
+    // 引数の中の `:` を区切りとして拾っていた
+    const separatorIndex = indexOfOutsideQuotes(bindText, PROP_VALUE_SEPARATOR);
     if (separatorIndex === -1) {
-      raiseError(`Invalid bindText: "${bindText}". Missing ':' separator between propPart and statePart.`);
+      raiseError(`[wcs/binding-syntax] Invalid bindText: "${bindText}". Missing ':' separator between propPart and statePart.${LINT_HINT}`);
     }
     const propPart = bindText.slice(0, separatorIndex).trim();
     const statePart = bindText.slice(separatorIndex + 1).trim();
@@ -81,10 +89,10 @@ export function parseBindTextsForElement(bindText: string): ParseBindTextResult[
     } else if (propPart === SPREAD_PROP) {
       const stateResult = parseStatePart(statePart);
       if (stateResult.outFilters.length > 0) {
-        raiseError(`Invalid spread binding "${bindText}": filters are not allowed on spread targets.`);
+        raiseError(`[wcs/binding-syntax] Invalid spread binding "${bindText}": filters are not allowed on spread targets.${LINT_HINT}`);
       }
       if (stateResult.statePathName.length === 0) {
-        raiseError(`Invalid spread binding "${bindText}": spread target path is required.`);
+        raiseError(`[wcs/binding-syntax] Invalid spread binding "${bindText}": spread target path is required.${LINT_HINT}`);
       }
       return {
         propName: SPREAD_PROP,

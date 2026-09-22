@@ -91,6 +91,18 @@ wcstack 3.0.0 の変更は `@wcstack/state` に集中しています。主題は
 | `findV3MigrationIssues` / `findEmbeddedV3MigrationIssues` | 2.6.x だけにある | 削除（予告の役目を終えた） |
 | `splitBindTexts` | — | 追加。ランタイムと同じ、引用符を知る `;` の分割 |
 
+### 3.1 / 3.2 — 2.x から 3.2 へ直接上げるときに一緒に来るもの
+
+ここに挙げたものは、3.0 で動いていた書き方を拒否しません。ただし 2.x から上げる人は最新の 3.x に着地するので、併せて読んでください。各項目の全文はルートの [CHANGELOG](../CHANGELOG.md)（英語）にあります。
+
+| リリース | 変更 | 2.x から来たときの意味 |
+|---|---|---|
+| 3.1 | **明示のプロパティ形 `.name:`**（要件 B5） | 追加のみ。`online: x` は従来どおりイベント束縛（`"line"` の購読）で、`.online: x` が要素の `online` **プロパティ**です。先頭のドットは以前は適用の段で落ちていたので、動いていたページは変わりません。ドットの後の名前空間の語（`.class` / `.attr` / `.style` / `.command` / `.eventToken` / `.state`）と空の名前は `[wcs/binding-syntax]` |
+| 3.1 | **ボリュームの注入口** `<wcs-state mount="cart" data-wcs="state.taxRate: settings.taxRate">`（要件 B14③） | 追加のみ。ただし 1 つ帰結があります: `<wcs-state mount=…>` の左辺が `state.` で始まると注入の宣言として読まれ、**束縛にはなりません**。2.x では無い `state` プロパティへの書き込みとして適用に失敗する束縛だったので、動いていたページは変わりません。`mount=` の無い `<wcs-state>` に書くと `[wcs/mount-path-invalid]` |
+| 3.2 | **フィルタ / API / 宣言キーの正式名と、旧名のエイリアス**（要件 B12） | 2.x の書き方は 3.x の間そのまま動きます。好きな時期に改名してください: `inc`/`dec` → `add`/`sub`、`fix` → `toFixed`、`uc`/`lc`/`cap` → `upper`/`lower`/`capitalize`、`rep`/`rev` → `repeat`/`reverse`、`pad` → `padStart`、`null` → `nullIfEmpty`。`$trackDependency`/`$untrackDependency` → `$dependOn`/`$untracked`。`$updatedCallback` → `$renderedCallback`、`$streams` → `$stream`。lint と VS Code 拡張は旧名を `wcs/name-alias`（info）で示します。ランタイムが警告するのは 3.x の最後のマイナーだけで、4.0 で外します。**宣言キーを旧名と正式名の両方で書くと `[wcs/declaration-alias]`** — 動かなくなるのはこの形だけです |
+| 3.2 | `add` / `sub`（`inc` / `dec`）は引数が必須 | 2.x では引数表が「省略可」と言っていたため、引数なしの `inc` が lint を通ってからコードなしで落ちていました。今は `[wcs/filter-arity]` です |
+| 3.2 | フィルタ `padEnd(n, c)` と `coalesce(v)` の追加 | 追加のみ。`coalesce` は `null` / `undefined` だけを置き換え、`defaults` は従来どおりすべての falsy を置き換えます。`padStart` の埋め文字の既定は `0`、`padEnd` は空白で、対は意図的に揃えていません（`padStart` はほぼゼロ埋めに使われるため） |
+
 ## 4. 構文ではない挙動の変更
 
 - **分割エントリ（追加）。** `@wcstack/state/core`・`@wcstack/state/features/{temporal,scopes,recursion,ssr,formats,devtools,diagnostics}`・`@wcstack/state/define` が増えました。`@wcstack/state` と `/auto` は `bootstrapState()` が全機能を install するので、既存のページは同じ挙動・同じ API です。core を使うページで、宣言が要る機能を入れ忘れると `[wcs/feature-not-installed]` が入れるべきエントリを名指しして落ちます（`bind-component`・`mount=`・DCC も同じ — 2.x には「機能が無い」という状態自体がありませんでした）。分割の形は jsDelivr の素の `/npm/` パスかバンドラから読み、**`esm.run` からは読まないでください**（エントリごとに別のエンジンを抱えます）。詳しくは state README の[分割エントリ](../packages/state/README.ja.md#分割エントリ使う機能だけを入れる)、integrity は [sri.ja.md §5.1](./sri.ja.md#51-wcstackstate-の分割エントリ)。

@@ -95,3 +95,50 @@ describe("正式名と旧名の宣言がページで同じに働くこと", () =
     host.remove();
   });
 });
+
+/**
+ * state がランタイムに入る最初の関門としての防御。`src="./x.json"` は `JSON.parse("null")` の
+ * ように非オブジェクトも返しうるし（`typeof null` は "object"）、凍結した state には正式名を
+ * 足せない。どちらも素の TypeError（"Cannot use 'in' operator in null" /
+ * "object is not extensible"）ではなく、形を名指しで落とす。
+ */
+describe("normalizeDeclarationAliases — 入力の形", () => {
+  it.each([
+    ["null", null],
+    ["数値", 1],
+    ["文字列", "x"],
+    ["真偽値", true],
+    ["undefined", undefined],
+  ])("%s を渡すと形を名指しで落とすこと", (_label, value) => {
+    expect(() => normalizeDeclarationAliases(value as unknown as object))
+      .toThrow(/The state must be an object, got/);
+  });
+
+  it("null は型名ではなく null と名指しすること", () => {
+    expect(() => normalizeDeclarationAliases(null as unknown as object)).toThrow(/got null/);
+    expect(() => normalizeDeclarationAliases(1 as unknown as object)).toThrow(/got number/);
+  });
+
+  it("関数の state は受け付けること（typeof が \"function\"）", () => {
+    const state = Object.assign(function () { /* noop */ }, { $streams: {} });
+    expect(() => normalizeDeclarationAliases(state)).not.toThrow();
+    expect("$stream" in state).toBe(true);
+  });
+
+  it("凍結した state が旧名を使っていたら [wcs/declaration-alias] で案内すること", () => {
+    const frozen = Object.freeze({ $updatedCallback() { /* noop */ } });
+    expect(() => normalizeDeclarationAliases(frozen))
+      .toThrow(/\[wcs\/declaration-alias\] The state is not extensible/);
+    expect(() => normalizeDeclarationAliases(frozen)).toThrow(/Declare "\$renderedCallback" directly/);
+  });
+
+  it("凍結していても正式名だけなら通ること", () => {
+    const frozen = Object.freeze({ $renderedCallback() { /* noop */ } });
+    expect(() => normalizeDeclarationAliases(frozen)).not.toThrow();
+  });
+
+  it("両方の綴りのエラーにも lint への誘導が付くこと", () => {
+    expect(() => normalizeDeclarationAliases({ $streams: {}, $stream: {} }))
+      .toThrow(/npx @wcstack\/lint/);
+  });
+});

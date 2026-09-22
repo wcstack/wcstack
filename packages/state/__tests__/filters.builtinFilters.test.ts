@@ -365,9 +365,15 @@ describe('builtinFilters', () => {
       expect(() => getFilter('substr', ['1'])).toThrow(/requires at least one option/);
     });
 
-    it('not: boolean以外はエラーになること', () => {
+    it('not: boolean以外も真偽性で反転すること（core の実装と同一）', () => {
       const fn = getFilter('not');
-      expect(() => fn('x' as unknown as boolean)).toThrow(/requires a boolean value/);
+      expect(fn('x' as unknown as boolean)).toBe(false);
+      expect(fn(0 as unknown as boolean)).toBe(true);
+      expect(fn('' as unknown as boolean)).toBe(true);
+      expect(fn(undefined as unknown as boolean)).toBe(true);
+      expect(fn(null as unknown as boolean)).toBe(true);
+      expect(fn(true)).toBe(false);
+      expect(fn(false)).toBe(true);
     });
 
     it('date/time/datetime/ymd: Date以外はエラーになること', () => {

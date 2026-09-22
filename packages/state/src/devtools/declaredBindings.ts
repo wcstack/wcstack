@@ -42,6 +42,7 @@ import { parseBindTextsForElement } from "../bindTextParser/parseBindTextsForEle
 import { parseBindTextForEmbeddedNode } from "../bindTextParser/parseBindTextForEmbeddedNode";
 import { expandSpread } from "../bindTextParser/expandSpread";
 import { getFragmentInfoByUUID } from "../structural/fragmentInfoByUUID";
+import { filterListKey } from "../binding/filterKey";
 import { ParseBindTextResult } from "../bindTextParser/types";
 import { IDeclaredBindingInfo } from "./types";
 
@@ -52,9 +53,8 @@ import { IDeclaredBindingInfo } from "./types";
 const COMMENT_PATTERN = /^\s*@@\s*(.*?)\s*:\s*(.+?)\s*$/;
 
 function declarationKey(info: IDeclaredBindingInfo): string {
-  const filters = [...info.inFilters, ...info.outFilters]
-    .map((f) => `${f.filterName}(${f.args.join(",")})`)
-    .join("|");
+  // 引数は型付きの値で書き出す（要件 B9）— `defaults(0)` と `defaults('0')` を同じ宣言に畳まない
+  const filters = filterListKey([...info.inFilters, ...info.outFilters]);
   return [info.statePathName, info.propName, info.bindingType, filters].join("\u0000");
 }
 

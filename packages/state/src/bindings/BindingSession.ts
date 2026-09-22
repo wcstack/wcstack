@@ -11,6 +11,7 @@ import { getStateListBaseline, hasStateListBaseline, setStateListBaseline } from
 import { IListIndex } from "../list/types";
 import { clearStateAddressByBindingInfo } from "../binding/getStateAddressByBindingInfo";
 import { config } from "../config";
+import { filterListKey } from "../binding/filterKey";
 import { detachCheckboxEventHandler, attachCheckboxEventHandler } from "../event/checkboxHandler";
 import { detachEventTokenHandler, attachEventTokenHandler } from "../event/eventTokenHandler";
 import { detachEventHandler, attachEventHandler } from "../event/handler";
@@ -137,6 +138,8 @@ interface IRowRecord {
 }
 // 束縛 → その行の record（record が共有 session を知っている。設計 R3）
 const rowByBinding = new WeakMap<IBindingInfo, IRowRecord>();
+// 行 slot に振った record id（`getRecord` — 検査・テスト専用の経路でしか作られない）
+const rowSlotIds = new WeakMap<IRowRecord, number[]>();
 
 const recordByBinding = new WeakMap<IBindingInfo, IInternalBindingRecord>();
 const sessionByRoot = new WeakMap<Node, BindingSession>();
@@ -280,8 +283,9 @@ function getBindingOwner(root: IObservableRoot): BindingOwner {
 }
 
 function bindingKey(binding: IBindingInfo): string {
-  const inFilters = binding.inFilters.map((filter) => `${filter.filterName}(${filter.args.join(",")})`).join("|");
-  const outFilters = binding.outFilters.map((filter) => `${filter.filterName}(${filter.args.join(",")})`).join("|");
+  // 引数は型付きの値で書き出す（要件 B9）— `defaults(0)` と `defaults('0')` を取り違えない
+  const inFilters = filterListKey(binding.inFilters);
+  const outFilters = filterListKey(binding.outFilters);
   return [
     binding.bindingType,
     binding.propName,
@@ -499,11 +503,24 @@ export class BindingSession {
     return !record.outputOnlyMember && !record.observationPending;
   }
 
+  /**
+   * **検査・テスト専用**（本番の呼び出し元は無い）。行の slot には record オブジェクトが
+   * 無いので、呼ぶたびに読み取り専用の合成オブジェクトを作る — ホットパスでは使わないこと。
+   *
+   * `id` は record の id と同じ通し番号から取る。かつて `row.id * 64 + slot` で合成していたが、
+   * 1 行が 64 スロットを超えると別の行の id と衝突した（`row.id` 自身も同じ通し番号なので、
+   * 素の record の id とも衝突しうる）。台帳は WeakMap なので本番経路の割り当ては増えない。
+   */
   getRecord(binding: IBindingInfo): IBindingRecord | null {
     const row = this.rowOf(binding);
     const slot = row === null ? -1 : row.bindings.indexOf(binding);
     if (row !== null && slot >= 0) {
-      return { id: row.id * 64 + slot, info: binding, generation: row.generation, phase: SLOT_PHASE_NAMES[row.phases[slot]], teardowns: null };
+      let ids = rowSlotIds.get(row);
+      if (typeof ids === "undefined") {
+        rowSlotIds.set(row, ids = []);
+      }
+      const id = ids[slot] ?? (ids[slot] = ++nextRecordId);
+      return { id, info: binding, generation: row.generation, phase: SLOT_PHASE_NAMES[row.phases[slot]], teardowns: null };
     }
     const record = recordByBinding.get(binding);
     return record?.session === this ? record : null;

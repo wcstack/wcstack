@@ -533,6 +533,115 @@ describe("wcs/name-alias — 3.x の間だけ残る旧名（@wcstack/state 3.2�
     expect(found[3].message).toContain('"$renderedCallback"');
   });
 
+  // Fixed by review — 宣言キーの走査が正規表現ベースで、文字列リテラルの中を誤検出し
+  // 引用符付きキーを取りこぼしていた（宣言側の正本 analyzeDeclarationSpans に寄せる）。
+  it("`export default { … }`（宣言が静的に読める経路）では、文字列リテラルの中の旧名は検出せず、引用符付きの宣言キーは検出すること", () => {
+    const html = `
+    <wcs-state><script type="module">
+      export default {
+        msg: "see $streams: docs",
+        "$updatedCallback"(paths) {},
+      };
+    </script></wcs-state>`;
+    const found = validateSemantics(html, "wcs-state", "en", "data-wcs")
+      .filter((d) => d.code === WcsDiagnosticCode.NameAlias);
+    expect(found.map((d) => html.slice(d.start, d.end))).toEqual(["$updatedCallback"]);
+  });
+
+  // 宣言オブジェクトが静的に読めない形（class 構文の state — ボリュームの通常形）では
+  // 正規表現へフォールバックする。3.2 の移行漏れがもっとも起きやすい場所なので、
+  // 「読めないから黙る」ではなく info を出す側に倒す。
+  it("class 構文の state でも旧名の宣言キーに wcs/name-alias（info）が出ること", () => {
+    const html = `
+    <wcs-state mount="cart"><script type="module">
+      export default class Cart {
+        items = [];
+        $streams = { s: { source() {} } };
+        $updatedCallback(paths) {}
+      }
+    </script></wcs-state>`;
+    const found = validateSemantics(html, "wcs-state", "en", "data-wcs")
+      .filter((d) => d.code === WcsDiagnosticCode.NameAlias);
+    expect(found.map((d) => html.slice(d.start, d.end))).toEqual(["$streams", "$updatedCallback"]);
+    expect(found.every((d) => d.severity === "info")).toBe(true);
+    expect(found[0].message).toContain('"$stream"');
+    expect(found[1].message).toContain('"$renderedCallback"');
+  });
+
+  it("class 構文で旧名と正式名の両方を宣言しても error には昇格せず info に留まること", () => {
+    const html = `
+    <wcs-state mount="cart"><script type="module">
+      export default class Cart {
+        $streams = { s: { source() {} } };
+        $stream = { t: { source() {} } };
+      }
+    </script></wcs-state>`;
+    const diags = validateSemantics(html, "wcs-state", "en", "data-wcs");
+    // 正規表現ベースの経路は誤検出しうるので、ランタイムが止める形でも error にはしない（安全側）
+    expect(diags.filter((d) => d.code === WcsDiagnosticCode.DeclarationAlias)).toHaveLength(0);
+    const found = diags.filter((d) => d.code === WcsDiagnosticCode.NameAlias);
+    expect(found.map((d) => html.slice(d.start, d.end))).toEqual(["$streams"]);
+    expect(found[0].severity).toBe("info");
+  });
+
+  it("旧名の宣言キーを this. 越しに読んでも info を出すこと", () => {
+    const html = `
+    <wcs-state><script type="module">
+      export default {
+        a: 1,
+        peek() { return this.$streams; },
+      };
+    </script></wcs-state>`;
+    const found = validateSemantics(html, "wcs-state", "en", "data-wcs")
+      .filter((d) => d.code === WcsDiagnosticCode.NameAlias);
+    expect(found.map((d) => html.slice(d.start, d.end))).toEqual(["$streams"]);
+    expect(found[0].message).toContain('"$stream"');
+  });
+});
+
+// Fixed by review — ランタイムは旧名と正式名の両方宣言を読み込み時に throw する
+//（ページ初期化ごと止まる）のに、拡張側は info を 2 件出すだけで error が 0 件だった。
+describe("wcs/declaration-alias — 旧名と正式名の両方宣言（@wcstack/state 3.2）", () => {
+  const both = (keys: string) => `
+    <wcs-state><script type="module">
+      export default {
+        a: 1,
+${keys}
+      };
+    </script></wcs-state>`;
+
+  it("$streams と $stream を両方宣言したら error にすること", () => {
+    const html = both(`        $streams: { s: { source() {} } },
+        $stream: { t: { source() {} } },`);
+    const diags = validateSemantics(html, "wcs-state", "en", "data-wcs");
+    const errors = diags.filter((d) => d.code === WcsDiagnosticCode.DeclarationAlias);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].severity).toBe("error");
+    expect(html.slice(errors[0].start, errors[0].end)).toBe("$streams");
+    expect(errors[0].message).toContain('"$stream"');
+    // 旧名の案内（info）へは落とさない — 止まる形なので error だけを出す
+    expect(diags.filter((d) => d.code === WcsDiagnosticCode.NameAlias)).toHaveLength(0);
+  });
+
+  it("$updatedCallback と $renderedCallback を両方宣言したら error にすること", () => {
+    const html = both(`        $updatedCallback(paths) {},
+        $renderedCallback(paths) {},`);
+    const errors = validateSemantics(html, "wcs-state", "ja", "data-wcs")
+      .filter((d) => d.code === WcsDiagnosticCode.DeclarationAlias);
+    expect(errors).toHaveLength(1);
+    expect(html.slice(errors[0].start, errors[0].end)).toBe("$updatedCallback");
+    expect(errors[0].message).toContain("$renderedCallback");
+  });
+
+  it("正式名だけ・旧名だけなら error にはしないこと", () => {
+    for (const keys of [`        $stream: { t: { source() {} } },`, `        $streams: { s: { source() {} } },`]) {
+      const diags = validateSemantics(both(keys), "wcs-state", "en", "data-wcs");
+      expect(diags.filter((d) => d.code === WcsDiagnosticCode.DeclarationAlias)).toHaveLength(0);
+    }
+  });
+});
+
+describe("wcs/name-alias — 補足", () => {
   it("$renderedCallback も updated-callback-unbound の対象になること", () => {
     const html = `
     <wcs-state><script type="module">

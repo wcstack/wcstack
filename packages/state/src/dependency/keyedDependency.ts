@@ -421,6 +421,7 @@ export function keyedDescendantDependents(
   path: string,
   oldValue: unknown,
   newValue: unknown,
+  hasOldValue: boolean = true,
 ): IAbsoluteStateAddress[] {
   const depth = getPathInfo(path).segments.length;
   const out: IAbsoluteStateAddress[] = [];
@@ -430,7 +431,10 @@ export function keyedDescendantDependents(
       allDependents(stateElement, descendant, out);
       continue;
     }
-    for (const address of keyedDependents(stateElement, descendant, true, valueAt(oldValue, rest), valueAt(newValue, rest))) {
+    // `hasOldValue` が偽なのは `$postUpdate`（in-place 変異の通知 — 旧い親がどこにも無い）。
+    // 旧い鍵は台帳の `lastValue` から引かせる（`keyedDependents` の lastDiffers 経路）
+    const oldKey = hasOldValue ? valueAt(oldValue, rest) : undefined;
+    for (const address of keyedDependents(stateElement, descendant, hasOldValue, oldKey, valueAt(newValue, rest))) {
       out.push(address);
     }
   }

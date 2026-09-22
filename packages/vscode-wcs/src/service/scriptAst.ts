@@ -28,12 +28,13 @@
  *
  * 収集規則の対応表は計画書 §1。要点:
  *   - `this.a` / `this["a.b"]` / `this?.a` / 式なしテンプレートリテラル添字 → path
- *   - `this.$getAll("p")` / `this.$resolve("p")` / `this.$trackDependency("p")` → path（文字列リテラルのみ）
+ *   - `this.$getAll("p")` / `this.$resolve("p")` / `this.$dependOn("p")`（旧名 `this.$trackDependency("p")`）
+ *     → path（文字列リテラルのみ）
  *   - `const { a } = this` / `const self = this; self.a` → path
  *   - `this.form.name` → path は `form`、chain は `["form", "name"]`（untracked-read の材料）
  *   - `this.a += 1` / `this.a++` / `this.a ??= x` → path（ランタイムは get → set の順に動く。`written: true`）
  *   - `this[key]` / 非リテラル引数 → 集めない（断定できない）
- *   - `this.$untrackDependency(fn)` の中 → 集めない（意図的な抑止）
+ *   - `this.$untracked(fn)`（旧名 `this.$untrackDependency(fn)`）の中 → 集めない（意図的な抑止）
  *   - 単純代入 `this.a = x` の左辺 → 集めない（読みではない。`wcs/nested-assign` の担当）
  *   - `$` 始まりのルート → 集めない（API 名前空間）
  */

@@ -1,8 +1,9 @@
 import { getPathInfo } from "../address/PathInfo";
 import { IPathInfo } from "../address/types";
 import { IStateElement } from "../components/types";
+import type { IMountOverlaySummary } from "../devtools/types";
 import { setMountedScopeHost } from "../list/loopContextByNode";
-import { DELIMITER, MODIFIER_READONLY, RECURSION_WILDCARD, STATE_STREAMS_NAME, STATE_UPDATED_CALLBACK_NAME, WILDCARD } from "../define";
+import { DELIMITER, MODIFIER_READONLY, RECURSION_WILDCARD, STATE_STREAM_NAME, STATE_RENDERED_CALLBACK_NAME, WILDCARD } from "../define";
 import { normalizeDeclarationAliases } from "../declarationAliases";
 import { raiseError } from "../raiseError";
 import { IBindingInfo } from "../types";
@@ -61,8 +62,14 @@ export interface IMountRecord {
    * 設計書 §4-1 規則 2。1.x の「マッピングが勝つ」からの反転は D19 が予告済み）。
    */
   readonly injectedKeys: ReadonlySet<string>;
-  /** 部分エントリが明示したキー（先頭セグメント）。同名の own data key より優先する（要件 B14 ②） */
+  /**
+   * 1 段の部分エントリが明示したキー（`state.theme: theme` の `theme`）。同名の own data key より
+   * 優先する（要件 B14 ②）。**深いエントリ（`state.a.b: outer.b`）はここに載せない** — 先頭
+   * セグメントを登録すると、そのエントリが覆っていない兄弟キー（`a.c`）の私有性まで奪う。
+   */
   readonly mappedKeys: ReadonlySet<string>;
+  /** `#ro` のエントリが 1 つでもあるか（無ければ書き込みの読み取り専用判定を丸ごと飛ばす — D18 と同じ形） */
+  readonly hasReadonlyEntries: boolean;
   /**
    * 私有データの初期スナップショット（own data key の浅い複製・D21）。
    * マウントインスタンス（listIndex）ごとの私有オブジェクトはここから複製される。
@@ -114,7 +121,7 @@ export interface IAccessorEntry {
 let nextMountId = 0;
 
 const MOUNT_DOLLAR_DECLARATIONS = [
-  "$watch", STATE_STREAMS_NAME, "$scan", "$listKeys", STATE_UPDATED_CALLBACK_NAME, "$commandTokens", "$eventTokens", "$on",
+  "$watch", STATE_STREAM_NAME, "$scan", "$listKeys", STATE_RENDERED_CALLBACK_NAME, "$commandTokens", "$eventTokens", "$on",
   // $errorCallback もルート専用（要件 B11 — 以前は無言で無視していた）
   "$recursion", "$errorCallback",
 ] as const;
@@ -248,10 +255,14 @@ export function buildMountRecord(
   const { getterKeys, setterKeys } = collectAccessorKeys(stateObject);
   // ホストが部分エントリで明示したキー（`state.theme: theme`）は、同名の own data key があっても
   // 私有にしない — 明示した配線が作者の既定値に勝つ（要件 B14 ②。以前は own key が勝ち、
-  // ホストの値が届かなかった）
+  // ホストの値が届かなかった）。
+  // **1 段のエントリに限る**: 深いエントリ（`state.a.b: outer.b`）で先頭セグメント `a` を
+  // 登録すると、そのエントリが覆っていない兄弟キー（`a.c`）まで私有でなくなり、ツリーの
+  // `outer.a.c` を読みに行ってしまう（部分マウントのみの形では noMountEntryMessage で throw）。
+  // B14 ② が決めたのは「同名の own key と 1 段のエントリ」の優先だけ
   const mappedKeys = new Set<string>();
   for (const entry of entries) {
-    if (entry.innerSegments.length > 0) mappedKeys.add(entry.innerSegments[0]);
+    if (entry.innerSegments.length === 1) mappedKeys.add(entry.innerSegments[0]);
   }
   const privateSnapshot: Record<string, unknown> = {};
   for (const key of Object.keys(stateObject)) {
@@ -277,6 +288,7 @@ export function buildMountRecord(
     setterKeys,
     injectedKeys,
     mappedKeys,
+    hasReadonlyEntries: entries.some((entry) => entry.readonly),
     privateSnapshot,
     accessorBySuffixByMarkerParent: new Map(),
     indexShiftByLoopElementPath: new Map(),
@@ -383,11 +395,22 @@ function markerizeAccessorPath(record: IMountRecord, innerPath: string): string 
 
 /** 先頭セグメントが「作者のもの」（own data key・メソッド。積みで注入されたキーは除く）か */
 function isPrivateAnchor(record: IMountRecord, firstSegment: string): boolean {
-  if (record.injectedKeys.has(firstSegment) || record.mappedKeys.has(firstSegment)) {
+  // 積みで注入されたキー（preCompletionWrites がホストの初期適用で書き込んだ値）は作者のもので
+  // なく、メソッドになることもない。プロパティ読みより**前**に Set 参照 1 回で抜ける
+  // （ここは translateInnerPath のホットパスで、読みは作者の getter を評価しうる）
+  if (record.injectedKeys.has(firstSegment)) {
     return false;
   }
-  if (typeof record.stateObject[firstSegment] === "function" && !record.getterKeys.has(firstSegment)) {
+  // **メソッドは常に作者のもの**なので、明示（mappedKeys）の短絡より先に見る。B14 ② が反転させたのは
+  // 「データキーの既定値」であってメソッドではない。後ろに置くと、`state.save: x` と書いたホストが
+  // 作者の `save()` を呼べなくする（`this.save` がツリーの `x` に翻訳される）。
+  // `getterKeys` の判定を `typeof` の**左**に置くのは必須 — 逆順だと作者の getter が
+  // この判定のたびに評価される（副作用も毎回走る）
+  if (!record.getterKeys.has(firstSegment) && typeof record.stateObject[firstSegment] === "function") {
     return true;
+  }
+  if (record.mappedKeys.has(firstSegment)) {
+    return false;
   }
   return Object.prototype.hasOwnProperty.call(record.stateObject, firstSegment)
     && !record.getterKeys.has(firstSegment)
@@ -433,6 +456,9 @@ export function getIndexShiftForScope(record: IMountRecord, forPath: string | un
  * 私有キー・アクセサ・`$` / `#` で始まるパスはコンポーネント自身のものなので対象外。
  */
 function isReadonlyTreePath(record: IMountRecord, innerPath: string): IMountEntry | null {
+  // `#ro` を 1 つも持たないマウント（圧倒的多数）は分岐 1 つで抜ける — 書き込みのたびに
+  // split(".") と最長一致走査を余計に 1 往復払わない（D18 の hasMounts と同じ形）
+  if (!record.hasReadonlyEntries) return null;
   const head = innerPath[0];
   if (head === "$" || head === "#") return null;
   if (record.getterKeys.has(innerPath) || record.setterKeys.has(innerPath)) return null;
@@ -494,6 +520,9 @@ interface ITranslatable {
   readonly statePathInfo: IPathInfo;
 }
 
+/** `#ro` を読む束縛の種別（要素 → state の書き戻しが起きうるもの）。 */
+const WRITE_BACK_BINDING_TYPES = new Set(["prop", "radio", "checkbox"]);
+
 /**
  * パース結果 / バインディングをマウント先の形へ変換した複製を返す
  * （パース結果キャッシュは触らない）。解決サイト（applyChangeFromBindings /
@@ -520,9 +549,14 @@ export function translateParsedForMount<T extends ITranslatable>(record: IMountR
       record.indexShiftByLoopElementPath.set(translated + DELIMITER + WILDCARD, shift);
     }
   }
-  // 読み取り専用のマウント（要件 B14 ①）を通る束縛は、要素 → state の書き戻しを止める（`#ro` と同じ）
+  // 読み取り専用のマウント（要件 B14 ①）を通る束縛は、要素 → state の書き戻しを止める（`#ro` と同じ）。
+  // 足すのは修飾子を**読む種別**だけ（`ro` の消費者は twowayHandler / radioHandler /
+  // checkboxHandler / BindingSession の初期同期の 4 つで、どれもこの 3 種にしか付かない）。
+  // `for` / `if` / `elseif` はパーサが左辺の修飾子を拒否する形なので、ここで足すと
+  // 「パースでは作れない束縛」をランタイムが作ることになる
   const modifiers = (parsed as { propModifiers?: readonly string[] }).propModifiers;
   const forceReadonly = indexMatch === null && Array.isArray(modifiers)
+    && WRITE_BACK_BINDING_TYPES.has((parsed as { bindingType?: string }).bindingType ?? "")
     && !modifiers.includes(MODIFIER_READONLY)
     && isReadonlyTreePath(record, parsed.statePathName) !== null;
   if (translated === parsed.statePathName && !forceReadonly) {
@@ -728,6 +762,28 @@ export function findMountRecordForNode(node: Node, rootNode: Node): IMountRecord
     current = current.parentNode;
   }
   return mountRecordByScopeRoot.get(rootNode) ?? null;
+}
+
+/**
+ * devtools の `overlays()` が読む要約（DevTools Hook Protocol）。devtools 側から記録の形へ
+ * 触らせないのは配布の都合: `devtools/bridge.ts` がここを静的 import すると、devtools だけを
+ * 入れたページにスコープ機能のコード（`chunks/mount.js`、3.3 KB gzip）が乗る。
+ * 受け口は bridge/featureBridge.ts で、`installScopeHooks` がこの関数を置く（要件 B13）。
+ */
+export function summarizeMountOverlays(stateElement: IStateElement): IMountOverlaySummary[] {
+  return getMountRecordsForStateElement(stateElement).map((record) => ({
+    marker: record.marker,
+    componentTag: record.component.tagName.toLowerCase(),
+    stateProp: record.stateProp,
+    mountTable: record.entries.map((entry) => ({
+      inner: entry.innerSegments.join(DELIMITER),
+      outer: entry.outerPathInfo.path,
+    })),
+    delta: record.delta,
+    privateKeys: Object.keys(record.privateSnapshot),
+    getterKeys: [...record.getterKeys],
+    exports: [...record.exports.keys()],
+  }));
 }
 
 /** この state element に登録済みのマウント記録を列挙する（devtools の overlays が読む）。 */

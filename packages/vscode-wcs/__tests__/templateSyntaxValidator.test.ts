@@ -74,4 +74,27 @@ describe('validateTemplateSyntax — フィルタの旧名（@wcstack/state 3.2�
     // 正式名は何も出さず、本当に未知の名前は従来どおり filter-unknown
     expect(diags.filter(d => d.code === WcsDiagnosticCode.FilterUnknown).map(d => html.slice(d.start, d.end))).toEqual(['fxi']);
   });
+
+  // Fixed by review — 区間の開始を `indexOf` で求めていたため、同じフィルタを 2 回書くと
+  // 2 件目のレンジも 1 個目の出現を指していた（積算オフセットに変更）。
+  it('同じフィルタを 2 回書いても、それぞれのレンジが自分の出現を指すこと', () => {
+    const html = `${STATE}
+<p>{{ label | uc | uc }}</p>`;
+    const alias = validateTemplateSyntax(html, 'wcs-state')
+      .filter(d => d.code === WcsDiagnosticCode.NameAlias);
+    expect(alias).toHaveLength(2);
+    expect(alias.map(d => html.slice(d.start, d.end))).toEqual(['uc', 'uc']);
+    expect(alias[0].start).not.toBe(alias[1].start);
+    expect(alias[1].start).toBe(html.indexOf('uc', alias[0].start + 1));
+  });
+
+  it('未知フィルタが 2 回でもレンジが重ならないこと', () => {
+    const html = `${STATE}
+<p>{{ label | zzz | zzz }}</p>`;
+    const unknown = validateTemplateSyntax(html, 'wcs-state')
+      .filter(d => d.code === WcsDiagnosticCode.FilterUnknown);
+    expect(unknown).toHaveLength(2);
+    expect(unknown.map(d => html.slice(d.start, d.end))).toEqual(['zzz', 'zzz']);
+    expect(unknown[1].start).toBe(html.indexOf('zzz', unknown[0].start + 1));
+  });
 });

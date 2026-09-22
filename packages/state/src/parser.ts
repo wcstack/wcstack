@@ -29,6 +29,11 @@ export { parseBindTextsForElement } from "./bindTextParser/parseBindTextsForElem
 // 属性値をバインディングごとに区切る正本（引用符の中の `;` は区切らない — 要件 B1）。位置付きの
 // tooling（vscode-wcs の positionalParser）が、ランタイムと同じ区切りで式を切り出すために使う
 export { splitBindTexts } from "./bindTextParser/parseBindTextsForElement.js";
+// 引用符の外にある最初の区切り文字を探す正本（要件 B1）。`splitBindTexts` が `;` を、ランタイムが
+// `|`（フィルタ）と `:`（左辺と右辺）を、これで切り出す。位置付きの tooling は式の内側を自分で
+// 走査する必要があり、同じ判定を手で写すとランタイムと乖離する（vscode-wcs の positionalParser
+// が持っていた写しを、この export に寄せて消せる）
+export { indexOfOutsideQuotes } from "./bindTextParser/utils.js";
 // テキストバインディング（mustache 変換後のコメント・`<!--@@:-->`）の正本経路。
 // `;` を**分割しない**（式全体が `path[|filters]` — `@state` は v2 で撤去）— 属性経路との違いは
 // 消費側が既知乖離として文書化していた点で、これで text チャネルも正本化できる。

@@ -21,7 +21,7 @@
  */
 
 import type { IStateElement } from "../components/types";
-import { STATE_SCAN_NAME, STATE_STREAMS_NAME } from "../define";
+import { STATE_SCAN_NAME, STATE_STREAM_NAME } from "../define";
 import { raiseError } from "../raiseError";
 import type { IStreamEntry } from "../stream/types";
 import { getScanRegistry } from "./scanRegistry";
@@ -63,7 +63,7 @@ export function assertNoScanFeedback(stateElement: IStateElement, streamEntry: I
       const depPath = dep.absolutePathInfo.pathInfo.path;
       if (reachable.has(depPath)) {
         raiseError(
-          `[wcs/scan-feedback-loop] ${STATE_STREAMS_NAME} entry "${streamEntry.name}" args read "${depPath}", ` +
+          `[wcs/scan-feedback-loop] ${STATE_STREAM_NAME} entry "${streamEntry.name}" args read "${depPath}", ` +
           `which is derived from the ${STATE_SCAN_NAME} output "${scan.name}" that this stream feeds. ` +
           `Every landing would restart the stream on its own result. Advance the cursor from an event ($on) ` +
           `and keep it a plain property instead of deriving it from the accumulator.`,

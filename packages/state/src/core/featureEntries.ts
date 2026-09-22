@@ -5,13 +5,18 @@
  * 内部では別々の機能（watch / scan / stream）が 1 つのエントリ（temporal）に載るので、
  * 対応表は 1 箇所に置き、3 つの barrier（addressHooks・lifecycleHooks・ssrHooks）が共有する。
  */
+/**
+ * 鍵は `registerFeatureHooks` / `registerDeclarationHooks` / `requireLifecycleFeature` が使う
+ * **実際の機能名**でなければならない（`__tests__/core.featureEntries.test.ts` が固定する）。
+ * かつて `stream` と書かれていたが登録名は `streams` で、`@wcstack/state/features/streams`
+ * という存在しないエントリを案内していた。
+ */
 const ENTRY_BY_FEATURE: Record<string, string> = {
   watch: "temporal",
   scan: "temporal",
-  stream: "temporal",
+  streams: "temporal",
   scopes: "scopes",
   dcc: "scopes",
-  bindComponent: "scopes",
   recursion: "recursion",
   ssr: "ssr",
   devtools: "devtools",

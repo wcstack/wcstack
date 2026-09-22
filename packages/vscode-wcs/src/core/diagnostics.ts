@@ -97,7 +97,7 @@ export const WcsDiagnosticCode = {
   // 依存する wcs/recursion-context は runtime 専用(静的側は出さない)。
   //
   // `**` を解釈しない場所へ `**` が渡った(data-wcs / mustache / $watch キー / $listKeys
-  // キー / $resolve / $postUpdate / $trackDependency / 代入)、または `$recursion` 宣言が
+  // キー / $resolve / $postUpdate / $dependOn(旧名 $trackDependency) / 代入)、または `$recursion` 宣言が
   // 無いのに `**` を使った。runtime は PathInfo の不変条件として raiseError するか
   //(API 経由)、getter を黙って無視する(宣言なしの `**` getter)。
   RecursionUnsupported: "wcs/recursion-unsupported",
@@ -141,6 +141,11 @@ export const WcsDiagnosticCode = {
   // 3.x の間だけ残る旧名（フィルタ `uc` → `upper`、`$trackDependency` → `$dependOn` …）を書いた（info）。
   // 動くが 4.0 で外れるので正式名を提案する（@wcstack/state 3.2・要件 B12 / 3.x 計画 D39）
   NameAlias: "wcs/name-alias",
+  // 旧名と正式名の宣言キーを**両方**書いた（`$streams` と `$stream` 等）。どちらが効くのか
+  // 書き手に見えないので、ランタイム（@wcstack/state declarationAliases.ts）は正規化の時点で
+  // 名指しで raiseError する ＝ ページ初期化ごと止まるので error。3.2 への移行中
+  //（新名を足して旧名を消し忘れる）にちょうど起きる形。
+  DeclarationAlias: "wcs/declaration-alias",
   // wcBindable 無宣言タグ(wcs-fetch-header 等のヘルパー)への spread。
   // ランタイム(expandSpread)は raiseError で落とす。
   SpreadNoBindable: "wcs/spread-no-bindable",

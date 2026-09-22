@@ -226,8 +226,11 @@ so the browser evaluates the engine once. Integrity for this form: [docs/sri.md 
 A declaration whose feature is missing does not fail quietly: it throws
 `[wcs/feature-not-installed] … install it with installFeatures([...]) from "@wcstack/state/features/…"`
 when the state is defined, and a filter with no implementation throws `[wcs/filter-unknown]` when the
-bindings are planned. Installing is idempotent, and every entry shares one core chunk (a feature
-never carries a second copy of the engine).
+bindings are planned. A volume (`<wcs-state mount=…>`) declaring `$watch` throws the same
+`[wcs/feature-not-installed]` when it grafts, because a volume's state never passes through the
+element's own declaration gate. Installing is idempotent, and every entry shares one core chunk —
+a feature never carries a second copy of the engine, and never a copy of another feature either
+(a call across that seam goes through a receptacle the owning feature fills on install).
 
 ## Basic Usage
 
@@ -653,7 +656,7 @@ Runtime reads `customClass.wcBindable.properties + inputs` and expands each name
 <wcs-fetch data-wcs="...: usersFetch; status: alternateStatus"></wcs-fetch>
 ```
 
-**`undefined` is "no opinion"** — when an expanded state path resolves to `undefined` (e.g. the slot object doesn't initialize that input), the property write is **skipped** and the element keeps its own default. You only need to initialize the paths you actually use; `usersFetch: { value: null, loading: false }` is enough even though `<wcs-fetch>` also declares `method` / `manual` / `body`. To explicitly clear a value, assign `null` — `null` is always written. (This skip applies to every property binding that feeds an element input, not just spread; with `config.debug` each skipped write is logged via `console.debug`.) **Display surfaces are different (3.0):** `textContent` / `innerText` / `innerHTML`, mustache text, `attr.*` and `style.*` have no element default worth keeping, so `undefined` and `null` both mean "no value" there — the text becomes empty and the attribute or style is removed. Before 3.0 a `textContent:` binding skipped `undefined` too, which left the previous row's text in a reused list row, and an attribute got the string `"undefined"` / `"null"`.
+**`undefined` is "no opinion"** — when an expanded state path resolves to `undefined` (e.g. the slot object doesn't initialize that input), the property write is **skipped** and the element keeps its own default. You only need to initialize the paths you actually use; `usersFetch: { value: null, loading: false }` is enough even though `<wcs-fetch>` also declares `method` / `manual` / `body`. To explicitly clear a value, assign `null` — `null` is always written. (This skip applies to every property binding that feeds an element input, not just spread; with `config.debug` each skipped write is logged via `console.debug`.) **Display surfaces are different (3.0):** `textContent` / `innerText` / `innerHTML`, mustache text, `attr.*`, `style.*` and `class.*` have no element default worth keeping, so `undefined` and `null` both mean "no value" there — the text becomes empty, the attribute or style is removed, and the class is taken off. Before 3.0 a `textContent:` binding skipped `undefined` too, which left the previous row's text in a reused list row, and an attribute got the string `"undefined"` / `"null"`. `class.*` is the narrow case: only `undefined` and `null` mean "no value"; **any other non-boolean still throws**, because a class binding is a boolean toggle and a truthy string is far more likely a mistake than an intent. Write `class.on: flag|truthy` when you mean "treat it as truthy".
 
 **Constraints**:
 
@@ -1511,7 +1514,7 @@ export default {
 |---|---|---|
 | `eq(value)` | Equal | `count\|eq(0)` → `true/false` |
 | `ne(value)` | Not equal | `count\|ne(0)` |
-| `not` | Boolean NOT | `isActive\|not` |
+| `not` | Invert truthiness — `0`, `""`, `null` and `undefined` all give `true` (3.x; it used to throw on a non-boolean, which made `else:` render neither branch) | `isActive\|not` |
 | `lt(n)` | Less than | `count\|lt(10)` |
 | `le(n)` | Less than or equal | `count\|le(10)` |
 | `gt(n)` | Greater than | `count\|gt(0)` |
@@ -1599,6 +1602,14 @@ Filters can be chained with `|`:
 A filter is resolved when the bindings are planned. An unknown name throws `[wcs/filter-unknown]` (with a did-you-mean), and — as of 3.0 — an argument count outside what the filter accepts throws `[wcs/filter-arity]` (`join(a,b)`: "accepts at most 1 argument(s) (2 given)"), the same code and bounds lint reports. Arguments are cached by their structure, so `join('a,b')` and `join(a)` are never confused.
 
 **Argument literals are typed (3.0).** An unquoted `true`, `false`, `null` or number is that value; a quoted argument is a string. The comparison filters use it for booleans and `null`: `done|eq(true)` matches `true` (before 3.0 it compared with the string `"true"` and never matched), `eq('true')` does not, and `eq(null)` matches `null`. Numbers and strings compare as before — a numeric value against the number, a string value against the text — so a form value `"1"` still matches `eq(1)`. `defaults(v)` returns the typed value: `defaults(0)` gives `0`, `defaults('0')` gives `"0"`, `defaults(null)` gives `null`.
+
+**Quoting rules.** Quotes (`'` or `"`) mark a literal, and the argument grammar is deliberately small:
+
+- Inside quotes, `,` `;` `|` and `:` are ordinary characters, so `join(', ')`, `replace(':','-')` and `join(';')` all parse.
+- Whitespace is trimmed **outside** the quotes only: `pad(5, ' ')` pads with a space, `fix( 2 )` is `fix(2)`.
+- **There is no escape character.** A quote of the same kind cannot appear inside its own literal — write `"it's"` rather than `'it\'s'`. (`'it\'s'` is an unterminated quote and throws `[wcs/binding-syntax]`.)
+- Adjacent runs are concatenated into one argument: `'a' 'b'` is the single string `a b`, and `1'2'` is the string `12` (any quote in the argument makes the whole argument a string).
+- An unterminated quote is rejected; a trailing empty argument is dropped (`filter()` takes no arguments), while a leading or middle empty argument keeps its position (`defaults(,)` passes one empty string).
 
 ## Web Component Binding
 
@@ -1720,7 +1731,11 @@ customElements.define("user-card", UserCard);
 > component that declares a default for a mapped key (`state = { message: "" }` together with
 > `state.message: ...`) reads the host value; the default is simply not used. (In 2.x R1 made
 > that own key private and it hid the host value, with a `wcs/mount-own-key-shadow` warning.)
-> R1 still keeps every *unmapped* own key private.
+> R1 still keeps every *unmapped* own key private. This is about a **one-segment** entry: a deeper
+> entry (`state.a.b: outer.b`) does not touch the privacy of `a`, so if the component declares `a`
+> itself, `a` and everything under it stay private and the entry never reaches it. The same holds
+> for an entry whose name is a getter, a setter or a method of the component — the component's own
+> surface wins. Each of those shapes is reported once as `wcs/mount-own-key-shadow`; rename one side.
 >
 > **`#ro` on a mount is honoured (3.0):** `state#ro: user` or `state.title#ro: doc.title`
 > lets the component read the entry but not write it — `element.state.title = …`, `this.title = …`

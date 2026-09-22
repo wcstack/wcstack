@@ -26,7 +26,7 @@
  */
 
 import type { IStateElement } from "../components/types";
-import { DELIMITER, STATE_STREAMS_NAME, WILDCARD } from "../define";
+import { DELIMITER, STATE_STREAM_NAME, WILDCARD } from "../define";
 import { normalizeDeclarationAliases } from "../declarationAliases";
 import { raiseError } from "../raiseError";
 import type { IState } from "../types";
@@ -43,59 +43,59 @@ const NO_STREAM_NAMES: ReadonlySet<string> = new Set<string>();
 export function processStreamsDeclaration(stateElement: IStateElement, state: IState): void {
   // 旧名（`$streams`）で宣言した state も読めるように（要件 B12 — 入口を経ない呼び出しでも効く。冪等）
   normalizeDeclarationAliases(state);
-  const declared = (state as Record<string, unknown>)[STATE_STREAMS_NAME];
+  const declared = (state as Record<string, unknown>)[STATE_STREAM_NAME];
   if (typeof declared === "undefined") {
     // $streams 無しの再 set でも旧宣言の名前は通知 dedup 台帳の残骸になるため prune する
     pruneLastNotified(stateElement, NO_STREAM_NAMES);
     return;
   }
   if (typeof declared !== "object" || declared === null) {
-    raiseError(`${STATE_STREAMS_NAME} must be an object mapping stream names to stream definitions.`);
+    raiseError(`${STATE_STREAM_NAME} must be an object mapping stream names to stream definitions.`);
   }
   const entries = new Map<string, IStreamEntry>();
   for (const [name, def] of Object.entries(declared as Record<string, unknown>)) {
     if (name.length === 0) {
-      raiseError(`${STATE_STREAMS_NAME} entry name must be a non-empty string.`);
+      raiseError(`${STATE_STREAM_NAME} entry name must be a non-empty string.`);
     }
     if (name.includes(DELIMITER)) {
-      raiseError(`${STATE_STREAMS_NAME} entry "${name}" must be a flat property name ("${DELIMITER}" is not allowed).`);
+      raiseError(`${STATE_STREAM_NAME} entry "${name}" must be a flat property name ("${DELIMITER}" is not allowed).`);
     }
     if (name.includes(WILDCARD)) {
-      raiseError(`${STATE_STREAMS_NAME} entry "${name}" must be a flat property name ("${WILDCARD}" is not allowed).`);
+      raiseError(`${STATE_STREAM_NAME} entry "${name}" must be a flat property name ("${WILDCARD}" is not allowed).`);
     }
     if (name.startsWith("$")) {
-      raiseError(`${STATE_STREAMS_NAME} entry "${name}" must not start with "$" (reserved namespace).`);
+      raiseError(`${STATE_STREAM_NAME} entry "${name}" must not start with "$" (reserved namespace).`);
     }
     // Object.prototype の継承名（__proto__ / constructor / toString 等）は一律拒否する。
     // own key でないのに `name in state` が真になるため実体化（§1-3）が skip され、
     // 起動時の initial リセット（Reflect.set）が継承 setter に化ける
     // （特に __proto__ は state の prototype を差し替える）ため、名前検査の防衛線で落とす（§1-2）。
     if (name in Object.prototype) {
-      raiseError(`${STATE_STREAMS_NAME} entry "${name}" must not be a property name inherited from Object.prototype (e.g. "__proto__", "constructor").`);
+      raiseError(`${STATE_STREAM_NAME} entry "${name}" must not be a property name inherited from Object.prototype (e.g. "__proto__", "constructor").`);
     }
     if (stateElement.getterPaths.has(name)) {
-      raiseError(`${STATE_STREAMS_NAME} entry "${name}" conflicts with a getter declared on the state.`);
+      raiseError(`${STATE_STREAM_NAME} entry "${name}" conflicts with a getter declared on the state.`);
     }
     if (stateElement.setterPaths.has(name)) {
-      raiseError(`${STATE_STREAMS_NAME} entry "${name}" conflicts with a setter declared on the state.`);
+      raiseError(`${STATE_STREAM_NAME} entry "${name}" conflicts with a setter declared on the state.`);
     }
     if (typeof def !== "object" || def === null) {
-      raiseError(`${STATE_STREAMS_NAME} entry "${name}" must be an object ({ args?, source, fold?, initial? }).`);
+      raiseError(`${STATE_STREAM_NAME} entry "${name}" must be an object ({ args?, source, fold?, initial? }).`);
     }
     const definition = def as Record<string, unknown>;
     if (typeof definition.source !== "function") {
-      raiseError(`${STATE_STREAMS_NAME} entry "${name}" source must be a function.`);
+      raiseError(`${STATE_STREAM_NAME} entry "${name}" source must be a function.`);
     }
     const hasFold = typeof definition.fold !== "undefined";
     if (hasFold && typeof definition.fold !== "function") {
-      raiseError(`${STATE_STREAMS_NAME} entry "${name}" fold must be a function.`);
+      raiseError(`${STATE_STREAM_NAME} entry "${name}" fold must be a function.`);
     }
     if (hasFold && !("initial" in definition)) {
-      raiseError(`${STATE_STREAMS_NAME} entry "${name}" requires "initial" when fold is specified (reduce needs a seed value).`);
+      raiseError(`${STATE_STREAM_NAME} entry "${name}" requires "initial" when fold is specified (reduce needs a seed value).`);
     }
     const hasArgs = typeof definition.args !== "undefined";
     if (hasArgs && typeof definition.args !== "function") {
-      raiseError(`${STATE_STREAMS_NAME} entry "${name}" args must be a function.`);
+      raiseError(`${STATE_STREAM_NAME} entry "${name}" args must be a function.`);
     }
     const entry: IStreamEntry = {
       name,

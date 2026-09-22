@@ -6,6 +6,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { parseBindTextWithPositions } from '../src/core/parser/positionalParser';
+import { indexOfOutsideQuotes } from '../src/core/parser/quoteAware';
 
 const sliceOf = (text: string, range: { start: number; end: number } | null): string | null =>
   range === null ? null : text.slice(range.start, range.end);
@@ -86,5 +87,37 @@ describe('parseBindTextWithPositions', () => {
     const two = parseBindTextWithPositions("textContent: a | pad(5,';'); title: b");
     expect(two.map((r) => r.parsed?.propName)).toEqual(["textContent", "title"]);
     expect("textContent: a | pad(5,';'); title: b".slice(two[1].exprRange.start, two[1].exprRange.end)).toBe("title: b");
+  });
+
+  it('右辺フィルタ引数の中の `:` でも propName / パスのスパンが崩れないこと', () => {
+    const text = "textContent: time|padStart(2, ':')";
+    const [b] = parseBindTextWithPositions(text);
+    expect(sliceOf(text, b.propRange)).toBe('textContent');
+    expect(sliceOf(text, b.pathRange)).toBe('time');
+  });
+});
+
+// Fixed by review — 左右を分ける `:` が素の indexOf のままで、引用符の中の `:` を
+// 区切りとして拾い、右辺トークンの逆照合がフィルタ引数の中を指していた。
+// 正本（@wcstack/state bindTextParser/utils.ts の indexOfOutsideQuotes）と同じ規則に揃える。
+// 正本の `:` 分割も同じ変更セットで引用符対応になったが、拡張が見るのはコミット済みの dist
+// なので、ラッパー経由（parseBindTextWithPositions）の回帰は state の dist 再ビルド後に足す。
+// ここでは規則そのものを直接固定する。
+describe('indexOfOutsideQuotes（正本と同じ規則）', () => {
+  it('引用符の外にある最初の 1 文字の位置を返し、無ければ -1 を返すこと', () => {
+    expect(indexOfOutsideQuotes('textContent: a', ':')).toBe(11);
+    expect(indexOfOutsideQuotes('value#ro,wo: x', ':')).toBe(11);
+    expect(indexOfOutsideQuotes('a|pad(1)', ':')).toBe(-1);
+  });
+
+  it('引用符の中の区切り文字は拾わず、閉じたあとの区切りを返すこと', () => {
+    expect(indexOfOutsideQuotes("value|replace(':x', ''): x", ':')).toBe(23);
+    expect(indexOfOutsideQuotes('value|replace(":x", ""): x', ':')).toBe(23);
+    // 種類の違う引用符は入れ子として扱わない（開いた側だけが閉じる）
+    expect(indexOfOutsideQuotes(`a|f('x":y')  : b`, ':')).toBe(13);
+  });
+
+  it('閉じていない引用符は末尾まで続く扱いにすること（区切りは見つからない）', () => {
+    expect(indexOfOutsideQuotes("value|f(': x", ':')).toBe(-1);
   });
 });

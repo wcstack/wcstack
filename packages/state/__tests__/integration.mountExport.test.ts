@@ -427,3 +427,35 @@ describe("mountExport: 遅延診断と devtools（E9 / X7）", () => {
     host.remove();
   });
 });
+
+/**
+ * プラン初期描画（設計 R2・structural/activateContent.ts の applyPlanRow）は、行オブジェクトを
+ * proxy で 1 回読んだ後、葉までを**生のプロパティアクセス**で辿る。公開 getter は
+ * `getterPaths` に載らない（webComponent/exportIndex.ts）ので `hasGetterOnPrefix` に掛からず、
+ * 素の葉として `undefined` に落ちていた。行マウントを持つリストを、プラン適格な別テンプレートが
+ * 描くときにだけ踏む（登録後に実体化する行 — ここでは `if:` の再マウント）。
+ */
+describe("mountExport: プラン適格な別テンプレートからの公開 getter", () => {
+  it("登録後に実体化したプラン行でも、公開 getter の値が描かれること", async () => {
+    const tag = uniqueTag("me-plan");
+    defineComponent(tag, () => ({
+      get display() { return `${this.name}!`; },
+    }), `<span data-wcs="textContent: display"></span>`);
+    const { host, shadowRoot, rootState } = await mountHost(
+      '{"users":[{"name":"a"},{"name":"b"}],"show":false}',
+      `<ul id="src"><template data-wcs="for: users"><li><${tag} data-wcs="state: ."></${tag}></li></template></ul>` +
+      `<template data-wcs="if: show">` +
+      `<ul id="plan"><template data-wcs="for: users"><li class="plan" data-wcs="textContent: .display"></li></template></ul>` +
+      `</template>`);
+    const comps = Array.from(shadowRoot.querySelectorAll(tag)) as HTMLElement[];
+    expect(comps).toHaveLength(2);
+    for (const c of comps) await readyScope(c.shadowRoot!);
+    await flush(); await flush();
+
+    // 公開 getter がもう登録されている状態で、プラン適格なテンプレートの行を実体化する
+    await write(rootState, (s) => { s.show = true; });
+    const planTexts = Array.from(shadowRoot.querySelectorAll(".plan")).map((e) => e.textContent);
+    expect(planTexts).toEqual(["a!", "b!"]);
+    host.remove();
+  });
+});

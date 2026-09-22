@@ -11,6 +11,7 @@ import { setLoopContextSymbol } from "../proxy/symbols";
 import { getCustomElement } from "../getCustomElement";
 import { getCustomElementRegistry } from "../platform/customElementRegistry";
 import { readBindableDeclaration } from "../protocol/wcBindableReader";
+import { filterListKey } from "../binding/filterKey";
 import { createHandlerBindingRegistry } from "./handlerBindingRegistry";
 import { beginOccurrenceWrite, endOccurrenceWrite } from "../proxy/occurrenceWrite";
 
@@ -64,7 +65,7 @@ function warnDefaultGetterMismatch(node: Element, propName: string, detail: unkn
 }
 
 function getHandlerKey(binding: IBindingInfo, eventName: string, hasGetter: boolean, isOccurrence: boolean): string {
-  const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
+  const filterKey = filterListKey(binding.inFilters);
   return `${binding.propName}::${binding.statePathName}::${eventName}::${filterKey}::${hasGetter ? 'g' : 'n'}::${isOccurrence ? 'o' : 's'}`;
 }
 

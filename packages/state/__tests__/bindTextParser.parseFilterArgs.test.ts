@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { parseFilterArgs } from '../src/bindTextParser/parseFilterArgs';
+import { parseFilterArgsWithLiterals } from '../src/bindTextParser/parseFilterArgs';
+
+/** 原文だけを見るケース用の薄いラッパ（かつては src 側にあったデッドエクスポート） */
+const parseFilterArgs = (argsText: string): string[] => parseFilterArgsWithLiterals(argsText).args;
 
 describe('parseFilterArgs', () => {
   describe('基本的なパース', () => {
@@ -107,5 +110,46 @@ describe('parseFilterArgs', () => {
     it('負の数値文字列をそのまま返すこと', () => {
       expect(parseFilterArgs('-10')).toEqual(['-10']);
     });
+  });
+});
+
+/**
+ * 型付きの値（要件 B9）。引用符の無い `true` / `false` / `null` / 数値は型付き、
+ * 引用符付きは文字列のまま。原文（args）だけを見ていると `eq(1)` と `eq('1')` を
+ * 取り違えるので、`literals` まで固定する。
+ */
+describe('parseFilterArgsWithLiterals — 型付きの値', () => {
+  it.each([
+    ['1', 1],
+    ['1.5', 1.5],
+    ['-10', -10],
+    ['+1', 1],
+    ['1e3', 1000],
+    ['true', true],
+    ['false', false],
+    ['null', null],
+    ['abc', 'abc'],
+  ])('引用符の無い %s は %s になること', (text, literal) => {
+    expect(parseFilterArgsWithLiterals(text).literals).toEqual([literal]);
+  });
+
+  it.each(["'1'", '"1"', "'true'", "'null'"])('引用符付きの %s は文字列のままであること', (text) => {
+    const { args, literals } = parseFilterArgsWithLiterals(text);
+    expect(literals).toEqual(args);
+    expect(typeof literals[0]).toBe('string');
+  });
+
+  it('原文と型付きの値が同じ個数・同じ並びであること', () => {
+    const { args, literals } = parseFilterArgsWithLiterals("1, '2', true, x");
+    expect(args).toEqual(['1', '2', 'true', 'x']);
+    expect(literals).toEqual([1, '2', true, 'x']);
+  });
+
+  it('末尾の空引数だけが落ちること（先頭・中間は位置を保つ）', () => {
+    expect(parseFilterArgsWithLiterals('a,').args).toEqual(['a']);
+    expect(parseFilterArgsWithLiterals(',a').args).toEqual(['', 'a']);
+    expect(parseFilterArgsWithLiterals(',').args).toEqual(['']);
+    expect(parseFilterArgsWithLiterals(',,,').args).toEqual(['', '', '']);
+    expect(parseFilterArgsWithLiterals('').args).toEqual([]);
   });
 });

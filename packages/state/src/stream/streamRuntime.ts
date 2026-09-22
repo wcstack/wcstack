@@ -37,7 +37,7 @@ import { assertNoScanFeedback } from "../scan/scanFeedback";
 import { registerUpdateBatchListener } from "../updater/updater";
 import { registerFeatureHooks } from "../core/addressHooks";
 import { IDeclarationHooks, registerDeclarationHooks } from "../core/declarationHooks";
-import { STATE_STREAMS_NAME } from "../define";
+import { STATE_STREAM_NAME } from "../define";
 import { inSsr } from "../config";
 import { processStreamsDeclaration } from "./processStreamsDeclaration";
 import { clearStreamNamespace } from "./streamNamespace";
@@ -273,8 +273,8 @@ export const streamDeclarationHooks: IDeclarationHooks = {
     processStreamsDeclaration(element, value);
     // hook は要素の寿命の間は付いたまま（再 set で $streams が消えても、残った $streamStatus /
     // $streamError の束縛は名前空間の null を読む — 従来の core 直結と同じ振る舞い）
-    if (typeof (value as Record<string, unknown>)[STATE_STREAMS_NAME] !== "undefined") {
-      element.attachAddressHooks?.("streams", STATE_STREAMS_NAME);
+    if (typeof (value as Record<string, unknown>)[STATE_STREAM_NAME] !== "undefined") {
+      element.attachAddressHooks?.("streams", STATE_STREAM_NAME);
     }
   },
   activate(element, captured) {

@@ -121,6 +121,50 @@ describe('mount: translateInnerPath（§4-1 の解決規則）', () => {
     expect(translateInnerPath(r2, 'theme.mode')).toBe('user.#m2.theme.mode');
   });
 
+  it('規則 2: 深い部分エントリは、覆っていない兄弟キーの私有性を奪わないこと', () => {
+    // `state.a.b: outer.b` は `a.b` だけを覆う。先頭セグメント `a` を「明示されたキー」に
+    // してしまうと、`a.c` がツリー（`user.a.c`）に落ちて作者の既定値が消える
+    const r = record([[[] as any, 'user'], [['a', 'b'], 'outer.b']], { a: { b: 1, c: 2 } });
+    expect(r.mappedKeys.has('a')).toBe(false);
+    expect('a' in r.privateSnapshot).toBe(true);
+    expect(translateInnerPath(r, 'a.c')).toBe('user.#m1.a.c');
+    expect(translateInnerPath(r, 'a')).toBe('user.#m1.a');
+  });
+
+  it('規則 2: 深い部分エントリでも、同名の own data key が無ければツリーへ写ること', () => {
+    const r = record([[[] as any, 'user'], [['a', 'b'], 'outer.b']]);
+    expect(translateInnerPath(r, 'a.b')).toBe('outer.b');
+    expect(translateInnerPath(r, 'a.c')).toBe('user.a.c');
+  });
+
+  it('規則 2: 部分マウントのみ ＋ 深いエントリでは、own key が無ければ他のキーが 4b で落ちること', () => {
+    const r = record([[['a', 'b'], 'outer.b']]);
+    expect(translateInnerPath(r, 'a.b')).toBe('outer.b');
+    expect(() => translateInnerPath(r, 'a.c')).toThrow(/does not resolve/);
+  });
+
+  it('規則 2: メソッドは、ホストが同名を明示しても作者のものであり続けること（B14 ② はデータキーの話）', () => {
+    const r = record([[[] as any, 'user'], [['save'], 'other.save']], { save() {} });
+    expect(translateInnerPath(r, 'save')).toBe('user.#m1.save');
+  });
+
+  it('規則 2: 判定のためのプロパティ読みで作者の getter を実行しないこと（ホットパス）', () => {
+    // `isPrivateAnchor` の「メソッドか」判定は `stateObject[key]` を読む。積みで注入されたキーは
+    // 読みより前に短絡し、作者の getter は getterKeys の判定が先に当たって評価されない
+    let reads = 0;
+    const base = { get injected() { reads++; return 1; } };
+    const stateObject = Object.create(base) as Record<string, any>;
+    stateObject.own = { get lazy() { reads++; return 2; } };
+    const r = record([[[] as any, 'user']], stateObject, new Set(['injected']));
+    expect(translateInnerPath(r, 'injected')).toBe('user.injected');
+    expect(translateInnerPath(r, 'injected.deep')).toBe('user.injected.deep');
+    expect(reads).toBe(0);
+    // 作者の own getter も評価されない（規則 1 が先に当たる）
+    const withGetter = record([[[] as any, 'user']], { get display() { reads++; return ''; } });
+    expect(translateInnerPath(withGetter, 'display')).toBe('user.#m2.display');
+    expect(reads).toBe(0);
+  });
+
   it('規則 2: 積みで注入されたキーは作者のものでなく、ツリー（マウント表）に落ちること', () => {
     const r = record(
       [[[] as any, 'user'], [['theme'], 'theme']],
@@ -228,6 +272,26 @@ describe('mount: translateInnerWritePath（要件 B14 ①: #ro のマウント�
     expect(translateParsedForMount(r, already).propModifiers).toEqual(['ro']);
     const writable = readonlyRecord([[[], 'user', false]]);
     expect(translateParsedForMount(writable, { ...hostBinding(['value'], 'name'), propModifiers: [] as string[] }).propModifiers).toEqual([]);
+  });
+
+  it('ro を足すのは修飾子を読む種別だけで、for / if にはパースで作れない修飾子を足さないこと', () => {
+    const r = readonlyRecord([[[], 'user', true]]);
+    for (const bindingType of ['prop', 'radio', 'checkbox']) {
+      const binding = { ...hostBinding(['value'], 'name'), propModifiers: [] as string[], bindingType } as any;
+      expect(translateParsedForMount(r, binding).propModifiers).toEqual(['ro']);
+    }
+    for (const bindingType of ['for', 'if', 'elseif', 'text', 'event']) {
+      const binding = { ...hostBinding([bindingType], 'items'), propModifiers: [] as string[], bindingType } as any;
+      expect(translateParsedForMount(r, binding).propModifiers).toEqual([]);
+    }
+  });
+
+  it('#ro のエントリを 1 つも持たないマウントは hasReadonlyEntries が偽で、書き込み判定を飛ばすこと', () => {
+    const plain = readonlyRecord([[[], 'user', false], [['title'], 'doc.title', false]]);
+    expect(plain.hasReadonlyEntries).toBe(false);
+    expect(translateInnerWritePath(plain, 'title')).toBe('doc.title');
+    const ro = readonlyRecord([[[], 'user', false], [['title'], 'doc.title', true]]);
+    expect(ro.hasReadonlyEntries).toBe(true);
   });
 });
 

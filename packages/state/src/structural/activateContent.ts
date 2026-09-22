@@ -92,6 +92,16 @@ function applyPlanRow(
 ): void {
   const tails = slotTails(plan, bindings, loopContext.pathInfo.path);
   const getterPaths = context.stateElement.getterPaths;
+  // 素の葉読みは `getByAddress` の readMissing hook（マウントの公開 getter の dispatch —
+  // webComponent/exportIndex.ts）を迂回する。公開キー `P.k` は **`getterPaths` に載らない**
+  // ので `hasGetterOnPrefix` にも掛からず、素の葉として undefined に落ちていた。
+  // hook を持たない state（スコープ機能を入れていないページ）は真偽値 1 個で抜ける。
+  //
+  // 追加コスト（Chromium 149・10,000 行 × 7 スロット × 1 段 = 70,000 回の走査、中央値 60 本）:
+  // 素の走査 0.10 ms → hook 無し 0.20 ms → hook 有り 0.40 ms。create-10k の実測（v3 cold 中央値
+  // 302.3 ms・docs/research/state-next/a3-v251-vs-3.0.json）に対して最悪 +0.3 ms ≒ 0.1 % で、
+  // 同ベンチのサンプル分散（272.9〜450.3 ms）に埋もれる。R2 の改善幅（2.5.1 比 −18.7 %）は保たれる。
+  const hasReadMissing = (context.stateElement.addressHooks?.readMissing.length ?? 0) !== 0;
   let rowValue: any;
   let rowRead = false;
   for (let i = 0; i < bindings.length; i++) {
@@ -107,20 +117,31 @@ function applyPlanRow(
     if (context.appliedBindingSet.has(binding)) {
       continue;
     }
-    context.appliedBindingSet.add(binding);
     if (!rowRead) {
       rowValue = (context.state as any)[getByAddressSymbol](loopContext);
       rowRead = true;
     }
     const tail = slotTail.tail;
     let value: any = rowValue;
+    let missingKey = false;
     for (let k = 0; k < tail.length; k++) {
       if (value === null || typeof value === "undefined") {
         value = undefined;
         break;
       }
+      // 「ツリーにそのキーが無い」= readMissing hook が答える形（getByAddress と同じ判定）。
+      // この slot だけ従来経路へ倒し、hook に聞かせる
+      if (hasReadMissing && !(tail[k] in Object(value))) {
+        missingKey = true;
+        break;
+      }
       value = value[tail[k]];
     }
+    if (missingKey) {
+      applyChange(binding, context);
+      continue;
+    }
+    context.appliedBindingSet.add(binding);
     applyValueToBinding(binding, context, value);
   }
 }

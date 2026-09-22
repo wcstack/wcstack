@@ -12,6 +12,7 @@
  * - ドリフト検出テスト（__tests__/manifest.test.ts）が、フィルタ集合の golden と実装の一致を CI で保証する。
  */
 import { config } from "./config.js";
+import { DECLARATION_ALIASES } from "./declarationAliases.js";
 import { outputBuiltinFilters } from "./formats/builtinFilters.js";
 import { builtinFilterMeta, IFilterMeta } from "./filters/filterMeta.js";
 import { builtinFilterAliases } from "./filters/filterAliases.js";
@@ -37,7 +38,7 @@ import {
   STYLE_NAMESPACE,
   STATE_CONNECTED_CALLBACK_NAME,
   STATE_DISCONNECTED_CALLBACK_NAME,
-  STATE_ERROR_CALLBACK_NAME, STATE_UPDATED_CALLBACK_NAME,
+  STATE_ERROR_CALLBACK_NAME, STATE_RENDERED_CALLBACK_NAME,
   WEBCOMPONENT_STATE_READY_CALLBACK_NAME,
   STATE_BINDABLES_NAME,
   STATE_COMMANDS_NAME,
@@ -45,7 +46,7 @@ import {
   STATE_COMMAND_NAMESPACE_NAME,
   STATE_EVENT_TOKENS_NAME,
   STATE_ON_NAME,
-  STATE_STREAMS_NAME,
+  STATE_STREAM_NAME,
   STATE_WATCH_NAME,
   STATE_SCAN_NAME,
   STATE_LIST_KEYS_NAME,
@@ -57,11 +58,28 @@ import {
 // 消費側（vscode-wcs 等）が `@wcstack/state/manifest` から正本を直接引けるよう再エクスポート。
 export { builtinFilterMeta } from "./filters/filterMeta.js";
 export { builtinFilterAliases } from "./filters/filterAliases.js";
+export { DECLARATION_ALIASES } from "./declarationAliases.js";
 export type { IFilterMeta, FilterResultType, FilterArgType } from "./filters/filterMeta.js";
 export { STRUCTURAL_BINDING_TYPE_SET } from "./structural/define.js";
 
-/** マニフェストのバージョン（構造を変えたら上げる）。 */
-export const WCS_MANIFEST_VERSION = 1;
+/**
+ * マニフェストのバージョン（構造を変えたら上げる）。
+ *
+ * 3.1 で `syntax.bindingTypes.explicitPropertyPrefix`、3.2 で `filterAliases`、
+ * 3.x の次で `declarationAliases` / `apiAliases` を足したので 2。
+ * 消費側（vscode-wcs）はまだこの定数を参照していないが、公開している以上ドリフトさせない。
+ */
+export const WCS_MANIFEST_VERSION = 2;
+
+/**
+ * state API の旧名 → 正式名（要件 B12・docs/state-3x-naming.ja.md）。正本は
+ * `proxy/traps/get.ts` の case ラベルで、ここはそれを機械可読にした写し
+ * （一致は `__tests__/manifest.test.ts` が固定する）。
+ */
+export const STATE_API_ALIASES: Readonly<Record<string, string>> = Object.freeze({
+  $trackDependency: "$dependOn",
+  $untrackDependency: "$untracked",
+});
 
 export interface IWcsManifest {
   version: number;
@@ -127,9 +145,18 @@ export interface IWcsManifest {
   filterMeta: Record<string, IFilterMeta>;
   /** 組み込みフィルタの旧名 → 正式名（要件 B12）。旧名も解決するが、ツールは正式名を提案する */
   filterAliases: Readonly<Record<string, string>>;
-  /** 予約ライフサイクルフック名 */
+  /**
+   * 宣言キーの旧名 → 正式名（要件 B12。`$updatedCallback` → `$renderedCallback`、
+   * `$streams` → `$stream`）。ランタイムは旧名も受けるが、ツールは正式名を提案する。
+   * `reservedLifecycle` / `reservedStateApi` は**正式名だけ**なので、旧名が予約かどうかは
+   * この表と併せて判断する
+   */
+  declarationAliases: Readonly<Record<string, string>>;
+  /** state API の旧名 → 正式名（`$trackDependency` → `$dependOn` 等、要件 B12） */
+  apiAliases: Readonly<Record<string, string>>;
+  /** 予約ライフサイクルフック名（正式名のみ。旧名は `declarationAliases` を見る） */
   reservedLifecycle: readonly string[];
-  /** 予約 state API（プロトコル系の `$` 名前空間） */
+  /** 予約 state API（プロトコル系の `$` 名前空間。正式名のみ） */
   reservedStateApi: readonly string[];
 }
 
@@ -177,10 +204,12 @@ export function getWcsManifest(): IWcsManifest {
     filters: Object.keys(outputBuiltinFilters),
     filterMeta: builtinFilterMeta,
     filterAliases: builtinFilterAliases,
+    declarationAliases: DECLARATION_ALIASES,
+    apiAliases: STATE_API_ALIASES,
     reservedLifecycle: [
       STATE_CONNECTED_CALLBACK_NAME,
       STATE_DISCONNECTED_CALLBACK_NAME,
-      STATE_UPDATED_CALLBACK_NAME,
+      STATE_RENDERED_CALLBACK_NAME,
       STATE_ERROR_CALLBACK_NAME,
       WEBCOMPONENT_STATE_READY_CALLBACK_NAME,
     ],
@@ -191,7 +220,7 @@ export function getWcsManifest(): IWcsManifest {
       STATE_COMMAND_NAMESPACE_NAME,
       STATE_EVENT_TOKENS_NAME,
       STATE_ON_NAME,
-      STATE_STREAMS_NAME,
+      STATE_STREAM_NAME,
       STATE_WATCH_NAME,
       STATE_SCAN_NAME,
       STATE_LIST_KEYS_NAME,

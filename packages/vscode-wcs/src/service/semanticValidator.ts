@@ -26,7 +26,7 @@
 import { parseWcsScriptBlocks } from '../language/htmlParse.js';
 import { getMessages } from '../core/messages.js';
 import { WcsDiagnostic, WcsDiagnosticCode } from '../core/diagnostics.js';
-import { analyzeCallableBodies, analyzeStatePaths, isObjectLiteral } from './stateAnalyzer.js';
+import { analyzeCallableBodies, analyzeDeclarationSpans, analyzeStatePaths, isObjectLiteral } from './stateAnalyzer.js';
 import { collectGetterReads } from './scriptAst.js';
 import { countWildcardSegments, getInnermostForPath } from './forContext.js';
 import { buildReferenceIndex } from '../core/index/referenceIndex.js';
@@ -43,9 +43,32 @@ const STATE_UPDATED_CALLBACKS: ReadonlySet<string> = new Set(['$renderedCallback
 const OLD_API_NAMES: Readonly<Record<string, string>> = { $trackDependency: '$dependOn', $untrackDependency: '$untracked' };
 const OLD_DECLARATION_KEYS: Readonly<Record<string, string>> = { $streams: '$stream', $updatedCallback: '$renderedCallback' };
 const OLD_API_CALL = /\.\s*(\$trackDependency|\$untrackDependency)\b/g;
-const OLD_DECLARATION_KEY = /(^|[{,\s])(\$streams|\$updatedCallback)(?=\s*[:(])/g;
+/** 旧名の宣言キーを `this.` 越しに読む（正規化で自前プロパティから消えるので旧名のまま残さない）。 */
+const OLD_DECLARATION_MEMBER = /\.\s*(\$streams|\$updatedCallback)\b/g;
+/**
+ * 宣言オブジェクトが静的に読めないとき（class 構文の state — ボリューム（`mount=`）の通常形）の
+ * フォールバック。オブジェクトリテラルのキー（`$streams:`）・メソッド（`$updatedCallback(…) {}`）に
+ * 加えて class フィールド（`$streams = …`。`==` / `===` は除く）も見る。
+ * 文字列リテラルの中は潰せないので誤検出が残りうるが、severity は info なので
+ * 「読めないから黙る」より「移行漏れを取りこぼさない」側に倒す（この診断の目的）。
+ */
+const OLD_DECLARATION_KEY = /(^|[{,;\s])(\$streams|\$updatedCallback)(?=\s*(?:[:(]|=(?!=)))/g;
 
-/** 旧名の API 呼び出しと宣言キーに `wcs/name-alias`（info）を付ける。動くが 4.0 で外れるので正式名を提案する */
+/**
+ * 旧名の API 呼び出しと宣言キーに `wcs/name-alias`（info）を付ける。動くが 4.0 で外れるので
+ * 正式名を提案する。旧名と正式名を**両方**宣言していたら `wcs/declaration-alias`（error）—
+ * ランタイム（@wcstack/state declarationAliases.ts）が正規化の時点で raiseError するので、
+ * info ではなくページごと止まる側の報告にする。
+ *
+ * 宣言キーの走査は 2 経路のハイブリッド:
+ *
+ *   1. 宣言側の正本（`analyzeDeclarationSpans`）が読めたとき — 正確なスパン・文字列リテラルの
+ *      誤検出なし・引用符付きキー（`"$streams": { … }`）も拾える。`wcs/declaration-alias`
+ *      （error）への昇格はこの経路だけ（断定できる形なので）。
+ *   2. 読めなかったとき（class 構文の state — ボリュームの通常形） — `OLD_DECLARATION_KEY` で
+ *      拾って info だけ出す。正規表現は誤検出しうるので、ここでは error に昇格させない
+ *      （ランタイムが止める形なので、error を出さないのは安全側）。
+ */
 function validateNameAliases(script: string, scriptStart: number, locale?: string): WcsDiagnostic[] {
   const msgs = getMessages(locale);
   const scan = blankComments(script);
@@ -59,14 +82,43 @@ function validateNameAliases(script: string, scriptStart: number, locale?: strin
       severity: 'info',
     });
   };
-  OLD_API_CALL.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = OLD_API_CALL.exec(scan)) !== null) {
-    push(match[1], OLD_API_NAMES[match[1]], match.index + match[0].length - match[1].length);
+  for (const pattern of [OLD_API_CALL, OLD_DECLARATION_MEMBER]) {
+    pattern.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(scan)) !== null) {
+      const written = match[1];
+      const canonical = OLD_API_NAMES[written] ?? OLD_DECLARATION_KEYS[written];
+      push(written, canonical, match.index + match[0].length - written.length);
+    }
   }
-  OLD_DECLARATION_KEY.lastIndex = 0;
-  while ((match = OLD_DECLARATION_KEY.exec(scan)) !== null) {
-    push(match[2], OLD_DECLARATION_KEYS[match[2]], match.index + match[1].length);
+
+  const spans = analyzeDeclarationSpans(script);
+  if (spans.length === 0) {
+    // 経路 2: 宣言が静的に読めない（class 構文など）。info だけを出す
+    OLD_DECLARATION_KEY.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = OLD_DECLARATION_KEY.exec(scan)) !== null) {
+      push(match[2], OLD_DECLARATION_KEYS[match[2]], match.index + match[1].length);
+    }
+    return out;
+  }
+
+  // 経路 1: 宣言側の正本が読めた
+  const declared = new Set(spans.map(span => span.name));
+  for (const span of spans) {
+    const canonical = OLD_DECLARATION_KEYS[span.name];
+    if (canonical === undefined) continue;
+    if (declared.has(canonical)) {
+      out.push({
+        code: WcsDiagnosticCode.DeclarationAlias,
+        start: scriptStart + span.start,
+        end: scriptStart + span.end,
+        message: msgs.declarationAlias(span.name, canonical),
+        severity: 'error',
+      });
+      continue;
+    }
+    push(span.name, canonical, span.start);
   }
   return out;
 }
@@ -124,8 +176,9 @@ function validateIndexArity(script: string, scriptStart: number, locale?: string
  * 「親パスを読む getter」（`get "cart.total"() { return this.cart… }`）のような
  * 正常形を巻き込まない。
  *
- * 読み取りの収集は AST（scriptAst.ts）。分割代入・`this` エイリアス・`$trackDependency`
- * を辺にし、`$untrackDependency` の中・入れ子 function の中・代入左辺は辺にしない。
+ * 読み取りの収集は AST（scriptAst.ts）。分割代入・`this` エイリアス・`$dependOn`（旧名
+ * `$trackDependency`）を辺にし、`$untracked`（旧名 `$untrackDependency`）の中・
+ * 入れ子 function の中・代入左辺は辺にしない。
  * setter は辺の起点にしない（ランタイムは setter 内の読み取りを依存に登録しない —
  * 依存追跡の境界 規則 2）。パースできない本体は辺なし（断定できないときは黙る）。
  *

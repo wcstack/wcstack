@@ -84,3 +84,9 @@
 
 - 新しい名前（`add` / `sub` / `upper` …）と同名のカスタムフィルタが既にあるページ: 3.x には公開の登録 API が無い（組み込み 46 個だけ）ので衝突は起きない。登録 API を作るときに考える。
 - エイリアスの名前を DevTools と manifest にどう出すか: manifest の `filters` には正式名だけを載せ、`filterAliases`（旧名 → 正式名）を足す案。実装時に決める。
+
+**追記（2026-09-23、3.2 後の品質改善）**: §3 の「拡張は旧名を正式名と同じに解析し、`wcs/name-alias`（info）で正式名を提案する」に、もう 1 段を足した。
+
+- 旧名と正式名を**両方**宣言した state は、`declarationAliases.ts` が読み込み時に throw する（ページ初期化が止まる）。これを lint で前に倒すため、拡張に `wcs/declaration-alias`（error）を新設した。`wcs/name-alias`（info）は片方だけのときに出る従来どおりの提案で、両者は排他。
+- 宣言キーの走査は `analyzeDeclarationSpans`（AST）を正本とし、`export default class …` のように静的に読めない形では正規表現へフォールバックする。フォールバック経路は誤検出しうるので `wcs/name-alias`（info）に留め、error へは昇格させない。
+- manifest に `declarationAliases` と `apiAliases` を足し、`WCS_MANIFEST_VERSION` を 2 に上げた。拡張が手書きで持っている対応表（`semanticValidator` / `wiringLens` / `stateAnalyzer` / `preamble`）は、state の dist が再ビルドされた次のリリースで撤去する。

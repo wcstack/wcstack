@@ -17,7 +17,7 @@
 import { config } from "../config.js";
 import { didYouMean, LINT_HINT } from "../errorGuidance.js";
 import { raiseError } from "../raiseError.js";
-import { optionMustBeNumber, optionsRequired, valueMustBeArray, valueMustBeBoolean, valueMustBeDate, valueMustBeNumber } from "./errorMessages.js";
+import { optionMustBeNumber, optionsRequired, valueMustBeArray, valueMustBeDate, valueMustBeNumber } from "./errorMessages.js";
 import { FilterFn, FilterWithOptions } from "../filters/types";
 import { builtinFilterAliases } from "../filters/filterAliases";
 
@@ -76,16 +76,22 @@ const ne = (options?:string[], literals?: readonly unknown[]): FilterFn<boolean>
 }
 
 /**
- * Boolean NOT filter - inverts boolean value.
- * 
+ * Boolean NOT filter - inverts the truthiness of the value.
+ *
+ * Deliberately the same lenient `!value` as the engine-owned copy in
+ * `core/filterRegistry.ts` (`CORE_FILTERS.not`). `if:` / `else:` are built as one
+ * `if` parse result plus an engine-injected `not` (`structural/createNotFilter.ts`),
+ * and `apply/applyChangeToIf.ts` coerces the `if` side with `Boolean()`. A strict
+ * `not` therefore made `else:` throw — and render neither branch — whenever the
+ * condition was a falsy non-boolean (`0` / `""` / `undefined` / `null`). Keeping the
+ * two implementations identical also means a page behaves the same whether or not
+ * `features/formats` is installed (the split core entry registers no `not`).
+ *
  * @param options - Unused
- * @returns Filter function that returns inverted boolean
+ * @returns Filter function that returns the inverted truthiness
  */
 const not = (_options?:string[]): FilterFn<boolean> => {
-  return (value: unknown): boolean => {
-    if (typeof value !== 'boolean') {valueMustBeBoolean('not');}
-    return !value;
-  }
+  return (value: unknown): boolean => !value;
 }
 
 /**
@@ -907,8 +913,16 @@ export const builtinFiltersByFilterIOType = {
 
 /**
  * Retrieves built-in filter function by name and options.
- * 
- * @param name - Filter name
+ *
+ * **Test / tooling only.** The binding pipeline never goes through here: it resolves
+ * filters from the registry with `core/filterRegistry.ts#resolveFilterFn`, which also
+ * checks `builtinFilterArity` and passes the **typed literals** (requirement B9).
+ * This helper takes raw option strings only, so `builtinFilterFn("coalesce", ["0"])`
+ * yields the string `"0"` where the runtime yields the number `0`. Prefer
+ * `resolveFilterFn` in any new code, and treat a difference between the two as a
+ * limitation of this helper rather than of the runtime.
+ *
+ * @param name - Filter name (a 3.x alias such as `uc` resolves to its canonical name)
  * @param options - Array of option strings
  * @returns Function that takes FilterWithOptions and returns filter function
  */

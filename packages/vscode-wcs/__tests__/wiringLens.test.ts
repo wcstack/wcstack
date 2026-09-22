@@ -105,6 +105,23 @@ describe('wiringLens: hover（§5-2）', () => {
     expect(hover.markdown).toContain('number → string');
   });
 
+  // Fixed by review — 旧名に対して正式名の説明を出すだけで「旧名である」ことを言わなかった
+  it('旧名のフィルタの hover が「旧名である」ことと正式名を言うこと', () => {
+    const en = getHoverAt(SAMPLE, offsetIn('count | fix(0)"', 'fix'), { locale: 'en' })!;
+    expect(en.markdown).toContain('`fix` is the old name of `toFixed`');
+    const ja = getHoverAt(SAMPLE, offsetIn('count | fix(0)"', 'fix'), { locale: 'ja' })!;
+    expect(ja.markdown).toContain('`fix` は `toFixed` の旧名です');
+  });
+
+  it('正式名のフィルタの hover には旧名の断り書きを出さないこと', () => {
+    const html = `<wcs-state><script type="module">export default { count: 0 };</script></wcs-state>
+<span data-wcs="textContent: count | toFixed(0)"></span>`;
+    const attr = 'textContent: count | toFixed(0)';
+    const hover = getHoverAt(html, html.indexOf(attr) + attr.indexOf('toFixed'), { locale: 'en' })!;
+    expect(hover.markdown).toContain('toFixed(');
+    expect(hover.markdown).not.toContain('old name');
+  });
+
   it('mustache 内のフィルタ名でも hover が出ること', () => {
     const hover = getHoverAt(SAMPLE, offsetIn('{{ count | fix(0) }}', 'fix'))!;
     expect(hover.markdown).toContain('fix(');

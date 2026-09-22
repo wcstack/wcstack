@@ -2,6 +2,30 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+3.2（名前の正典化）の追随漏れと、分割規則の二重実装を潰す。
+
+### 検証
+
+- **`wcs/declaration-alias`（新設、error）** — 旧名と正式名の宣言キーを**両方**書いた state（`$streams` と `$stream`、`$updatedCallback` と `$renderedCallback`）。ランタイムはどちらが効くか推測せず読み込み時に throw する（ページ初期化ごと止まる）のに、拡張は `wcs/name-alias`（info）を 2 件出すだけだった。3.2 への移行中（新名を足して旧名を消し忘れる）にちょうど起きる形。
+
+### 修正
+
+- **`$dependOn` に `wcs/recursion-unsupported` が出ていなかった** — 呼び出し検出の API 一覧に正式名が無く、旧名 `$trackDependency` を書いた人だけが守られていた（ランタイムはどちらでも throw する）。文言も旧名を直書きしていたので、書かれた名前が出るようにした（ランタイムと同じ）。
+- **フィルタの旧名で型検査が黙っていた** — エイリアスの正規化がフィルタ 1 件の検査にしか入っておらず、フィルタ鎖の型検査 2 か所が正式名キーだけの表を旧名で引いて中断していた。`count|uc` で `wcs/filter-input-type` / `wcs/binding-type-expectation` / `wcs/path-type-mismatch` が消えていた。
+- **コメントバインディング `<!--@@:…-->` が `wcs/binding-syntax` の対象から落ちていた** — v2 移行 validator の撤去に伴う退行。ランタイムは mustache と同じ経路で throw するのに lint だけが黙っていた。
+- **式の分割規則が拡張内で 2 つに割れていた** — 契約検査（`ioNodeValidator` / `bindingValidator` / `ariaValidator` / `namedStateValidator`）だけが括弧深度を見る独自実装のままで、引用符を見ていなかった。`interval: 'a;b'` を 2 式に割って偽の `wcs/tag-member-unknown` を出していた。正本（`@wcstack/state/parser` の `splitBindTexts`）へ委譲する。
+- **左辺と右辺を分ける `:` を引用符対応にした** — 入力（左辺）フィルタの引数に `:` があると左辺が `value|defaults('` で切れ、引数が消えて `wcs/filter-arity`（「引数 0 個」）を**誤報**していた（`value|defaults(':'): name` / `value|truncate(3,':'): name`）。パスも取り違えるので `wcs/binding-path-missing` まで巻き添えになる。走査は `core/parser/quoteAware.ts` に 1 本だけ置き、契約検査（`bindingValidator` / `namedStateValidator`）・補完文脈（`bindingContext`）・配線レンズ（`wiringLens`）・位置付きパーサの全消費者が同じものを使う（拡張内に素の `indexOf(':')` による左右分割は 1 つも残っていない）。
+- **宣言キーの旧名の走査を宣言側の正本に寄せた** — 正規表現ベースだったため文字列リテラルの中（`{ msg: "see $streams: docs" }`）で誤検出し、引用符付きキー（`"$streams": { … }`）を取りこぼしていた。宣言が静的に読めない形（class 構文の state — ボリューム（`mount=`）の通常形）では従来の正規表現へフォールバックして info を出す（class フィールドの `$streams = …` も見る）。フォールバック経路は誤検出しうるので `wcs/declaration-alias`（error）へは昇格させない。`this.$streams` のような旧名の読み出しにも info を付ける。
+- **同じフィルタを 2 回書いたとき、mustache の報告範囲が 2 件とも 1 個目を指していた**（`{{ name | uc | uc }}`）。
+- **`wcs/on-prefixed-member` の提案文が修飾子を落としていた** — `once#ro:` に対して `.once#ro:` と言う。また、正本パーサが `wcs/binding-syntax` で落とす形（`..once:` / `.:`）に `wcs/tag-member-unknown` を重ねない。
+- **旧名のフィルタの hover が「旧名である」ことを言わなかった** — 正式名の説明を出すだけだった。
+
+### ドキュメント
+
+- README の例と診断表に残っていた旧名（`count|uc` / `$streams` / `$updatedCallback`）を正式名に揃えた（旧名の説明が目的の `wcs/name-alias` の行は除く）。補完候補の例と組み込みフィルタ数（48）も正本に合わせた。
+
 ## 1.18.0 — 2026-09-22
 
 `@wcstack/state` 3.2.0 の dist を同梱。3.2（名前の正典化）に追随する。

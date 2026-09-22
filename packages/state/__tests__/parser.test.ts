@@ -14,6 +14,7 @@ import {
   getPathInfo,
   clearParserCaches,
   splitBindTexts,
+  indexOfOutsideQuotes,
 } from "../src/parser";
 
 describe("parseBindTextsForElement（正本パーサの公開契約）", () => {
@@ -71,6 +72,21 @@ describe("splitBindTexts（属性値の区切りの正本 — 要件 B1）", () 
   it("引用符の外の ; だけで区切り、前後の空白を残すこと（tooling が位置を数えられる）", () => {
     expect(splitBindTexts("a: x; b: y|join(';') ;")).toEqual(["a: x", " b: y|join(';') ", ""]);
     expect(parseBindTextsForElement("a: x; b: y|join(';') ;").map((r) => r.propName)).toEqual(["a", "b"]);
+  });
+});
+
+describe("indexOfOutsideQuotes（区切り文字探索の正本 — 要件 B1）", () => {
+  it("引用符の中の区切り文字を拾わないこと", () => {
+    // 引数の中の `:`（位置 15）ではなく、左辺と右辺を分ける `:`（位置 22）を返す
+    expect(indexOfOutsideQuotes("value|replace(':','-'): path", ":")).toBe(22);
+    expect(indexOfOutsideQuotes("a|join(';')", ";")).toBe(-1);
+    expect(indexOfOutsideQuotes("a|b", "|")).toBe(1);
+    expect(indexOfOutsideQuotes("abc", ":")).toBe(-1);
+  });
+
+  it("splitBindTexts と同じ判定であること（tooling が写しを持たなくて済む）", () => {
+    const text = "a: x; b: y|join(';')";
+    expect(text.slice(0, indexOfOutsideQuotes(text, ";"))).toBe(splitBindTexts(text)[0]);
   });
 });
 

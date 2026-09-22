@@ -117,8 +117,14 @@ export interface WcsMessageCatalog {
   arrayIndexAssign(suggestedPath: string): string;
   // --- ioNodeValidator ---
   tagMemberUnknown(property: string, tag: string): string;
-  onPrefixedMember(member: string, tag: string): string;
+  /**
+   * `on` で始まるメンバーをドット無しで束縛した。提案する書き方には**書かれた修飾子**を
+   * そのまま残す（`once#ro:` には `.once#ro:` と言う — 修飾子を落とすと直しの手が 1 つ増える）。
+   */
+  onPrefixedMember(member: string, tag: string, modifiers?: string): string;
   nameAlias(written: string, canonical: string): string;
+  /** 旧名と正式名の宣言キーを両方書いた（ランタイムは読み込み時に raiseError）。 */
+  declarationAlias(alias: string, canonical: string): string;
   tagCommandUnknown(name: string, tag: string, declared: string): string;
   spreadNoBindable(tag: string): string;
   tagEventTokenKeyUnknown(name: string, tag: string, declared: string): string;
@@ -145,7 +151,7 @@ export interface WcsMessageCatalog {
   // --- recursionValidator（$recursion / `**`） ---
   /**
    * `**` を解釈しない場所に `**` がある（`data-wcs` / mustache / `$watch` キー /
-   * `$listKeys` キー / `$resolve` / `$postUpdate` / `$trackDependency` / 代入）、
+   * `$listKeys` キー / `$resolve` / `$postUpdate` / `$dependOn`（旧名 `$trackDependency`）/ 代入）、
    * または `$recursion` 宣言が無い。場所は `RecursionWildcardSite`。
    */
   recursionUnsupported(path: string, where: RecursionWildcardSite): string;
@@ -188,7 +194,7 @@ export type MountPathProblem = 'empty' | 'emptySegment' | 'wildcard' | 'reserved
 /** `**` が現れた場所（`**` を解釈しない消費者）。 */
 export type RecursionWildcardSite =
   | 'binding' | 'watch' | 'resolve' | 'undeclared'
-  | 'assignment' | 'postUpdate' | 'trackDependency' | 'listKeys' | 'scan';
+  | 'assignment' | 'postUpdate' | 'dependOn' | 'trackDependency' | 'listKeys' | 'scan';
 /** `$getAll` が `**` に対して拒否する添字の形。 */
 export type RecursionGetAllProblem = 'prefix' | 'notArray';
 /** `$setAll` が `**` に対して拒否する形。 */
@@ -293,8 +299,10 @@ const ja: WcsMessageCatalog = {
     `"${prop}" は <${tag}> の wcBindable メンバーではありません（未知メンバーへのバインドは黙って無視されます）`,
   nameAlias: (written, canonical) =>
     `"${written}" は "${canonical}" の旧名です。3.x の間は動きますが 4.0 で外れるので、"${canonical}" と書いてください（@wcstack/state 3.2）`,
-  onPrefixedMember: (member, tag) =>
-    `"${member}" は <${tag}> のメンバーですが、"on" で始まる名前はイベント束縛になり（"${member.slice(2)}" イベントを待つ）、値は届きません。プロパティとして束縛するには ".${member}:" と書いてください（@wcstack/state 3.1）`,
+  declarationAlias: (alias, canonical) =>
+    `この state は "${alias}" と "${canonical}" を両方宣言しています。"${alias}" は "${canonical}" の旧名（3.x の間は動きます）なので、"${canonical}" だけを残してください（ランタイムは読み込み時に throw します）`,
+  onPrefixedMember: (member, tag, modifiers) =>
+    `"${member}" は <${tag}> のメンバーですが、"on" で始まる名前はイベント束縛になり（"${member.slice(2)}" イベントを待つ）、値は届きません。プロパティとして束縛するには ".${member}${modifiers ? `#${modifiers}` : ''}:" と書いてください（@wcstack/state 3.1）`,
   tagCommandUnknown: (name, tag, declared) =>
     `"${name}" は <${tag}> の command ではありません（宣言済み: ${declared}）`,
   spreadNoBindable: (tag) =>
@@ -341,6 +349,8 @@ const ja: WcsMessageCatalog = {
         return `this["${p}"] への代入に "**" は使えません（再帰 setter は初版では持てず、代入は展開後の具体パスにしか成立しません）。$setAll("${p}", [], value) で全深さへブロードキャストするか、具体パスへ書いてください`;
       case 'postUpdate':
         return `$postUpdate("${p}") に "**" は渡せません。通知は展開後の具体パス（固定本数の "*"）に対してのみ成立します`;
+      case 'dependOn':
+        return `$dependOn("${p}") に "**" は渡せません。依存の登録は展開後の具体パス（固定本数の "*"）に対してのみ成立します`;
       case 'trackDependency':
         return `$trackDependency("${p}") に "**" は渡せません。依存の登録は展開後の具体パス（固定本数の "*"）に対してのみ成立します`;
       case 'listKeys':
@@ -513,8 +523,10 @@ const en: WcsMessageCatalog = {
     `"${prop}" is not a wcBindable member of <${tag}> (bindings to unknown members are silently ignored)`,
   nameAlias: (written, canonical) =>
     `"${written}" is the old name of "${canonical}". It works through 3.x and goes in 4.0 — write "${canonical}" (@wcstack/state 3.2)`,
-  onPrefixedMember: (member, tag) =>
-    `"${member}" is a member of <${tag}>, but a name starting with "on" makes an event binding (it listens for a "${member.slice(2)}" event) and the value never arrives. Write ".${member}:" to bind the property (@wcstack/state 3.1)`,
+  declarationAlias: (alias, canonical) =>
+    `The state declares both "${alias}" and "${canonical}". "${alias}" is the old name of "${canonical}" (it works through 3.x) — keep "${canonical}" (the runtime throws at load time)`,
+  onPrefixedMember: (member, tag, modifiers) =>
+    `"${member}" is a member of <${tag}>, but a name starting with "on" makes an event binding (it listens for a "${member.slice(2)}" event) and the value never arrives. Write ".${member}${modifiers ? `#${modifiers}` : ''}:" to bind the property (@wcstack/state 3.1)`,
   tagCommandUnknown: (name, tag, declared) =>
     `"${name}" is not a command of <${tag}> (declared: ${declared})`,
   spreadNoBindable: (tag) =>
@@ -562,6 +574,8 @@ const en: WcsMessageCatalog = {
         return `this["${p}"] = … cannot use "**" (there are no recursive setters in this version; an assignment only resolves against an expanded concrete path). Broadcast with $setAll("${p}", [], value), or write a concrete path`;
       case 'postUpdate':
         return `$postUpdate("${p}") cannot take "**" — a notification is defined against a concrete path (a fixed number of "*")`;
+      case 'dependOn':
+        return `$dependOn("${p}") cannot take "**" — a dependency is registered against a concrete path (a fixed number of "*")`;
       case 'trackDependency':
         return `$trackDependency("${p}") cannot take "**" — a dependency is registered against a concrete path (a fixed number of "*")`;
       case 'listKeys':

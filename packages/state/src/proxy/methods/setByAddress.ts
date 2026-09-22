@@ -114,17 +114,52 @@ function notifyKeyed(
   if (!direct && !descendants) {
     return;
   }
-  const updater = getUpdater();
-  const context = config.enablePropagationContext ? (getCurrentPropagationContext() ?? null) : null;
-  const enqueue = (absAddress: IAbsoluteStateAddress): void => {
-    dirtyCacheEntryByAbsoluteStateAddress(absAddress);
-    updater.enqueueAbsoluteAddress(absAddress, context);
-  };
+  const enqueue = createKeyedEnqueue();
   if (direct) {
     keyedDependents(stateElement, path, hasOldValue, oldValue, value).forEach(enqueue);
   }
   if (descendants) {
     keyedDescendantDependents(stateElement, path, hasOldValue ? oldValue : readOld(), value).forEach(enqueue);
+  }
+}
+
+function createKeyedEnqueue(): (absAddress: IAbsoluteStateAddress) => void {
+  const updater = getUpdater();
+  const context = config.enablePropagationContext ? (getCurrentPropagationContext() ?? null) : null;
+  return (absAddress: IAbsoluteStateAddress): void => {
+    dirtyCacheEntryByAbsoluteStateAddress(absAddress);
+    updater.enqueueAbsoluteAddress(absAddress, context);
+  };
+}
+
+/**
+ * `$postUpdate` の鍵付き通知（proxy/apis/postUpdate.ts）。
+ *
+ * in-place 変異を通知する正規の idiom なので、呼ばれた時点で**変異はもう起きている** —
+ * `setByAddress` と違って旧値がどこにも無い。`hasOldKey = false` で引くと、台帳が控えている
+ * 「最後に観測した鍵」（`lastValue`）が旧値の代わりになり、前に選ばれていた行も
+ * 新しく選ばれる行も一緒に再評価される。これが無いと `raw.sel.id = 2; $postUpdate("sel.id")` で
+ * 前の行が真のまま残った（2.6.0 で `setByAddress` 側に入れた修正の取りこぼし）。
+ *
+ * 現在値の読みは購読があるときだけ行う（`readCurrent` の thunk）。
+ */
+export function notifyKeyedPostUpdate(
+  stateElement: IStateHandler["stateElement"],
+  path: string,
+  readCurrent: () => unknown,
+): void {
+  const direct = hasKeyedDependents(stateElement, path);
+  const descendants = hasKeyedDescendants(stateElement, path);
+  if (!direct && !descendants) {
+    return;
+  }
+  const current = readCurrent();
+  const enqueue = createKeyedEnqueue();
+  if (direct) {
+    keyedDependents(stateElement, path, false, undefined, current).forEach(enqueue);
+  }
+  if (descendants) {
+    keyedDescendantDependents(stateElement, path, undefined, current, false).forEach(enqueue);
   }
 }
 

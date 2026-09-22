@@ -187,10 +187,15 @@ export function validateTemplateSyntax(
       }
     }
 
+    // 区間の開始は**積算**で持つ（`indexOf` だと同じフィルタを 2 回書いたとき
+    // `{{ name | uc | uc }}` の 2 件目も 1 個目の位置を指してしまう）。
+    let segmentStart = parts[0].length + 1; // parts[0] ＋ 区切りの `|`
     for (let i = 1; i < parts.length; i++) {
-      const filterName = parts[i].trim().replace(/\(.*$/, "");
+      const segment = parts[i];
+      const filterName = segment.trim().replace(/\(.*$/, "");
       // 範囲は名前の先頭から（区切りの `|` の後の空白を含めない）
-      const filterOffset = item.expression.indexOf(parts[i]) + (parts[i].length - parts[i].trimStart().length);
+      const filterOffset = segmentStart + (segment.length - segment.trimStart().length);
+      segmentStart += segment.length + 1;
       const canonical = canonicalFilterName(filterName);
       if (filterName && canonical !== filterName && filterNameSet.has(canonical)) {
         // 旧名（3.x のエイリアス）は動く — info で正式名を提案する（要件 B12）

@@ -75,3 +75,39 @@ describe('parseBindTextsForElement', () => {
     expect(result[1].bindingType).toBe('prop');
   });
 });
+
+/**
+ * 引用符の中は区切りではない（要件 B1）。`;` と `|` は 3.1 で対応済みだったが、
+ * 左辺と右辺を分ける `:` だけが素の `indexOf` のままで、`replace(':','-')` のような
+ * 引数を書くとパースが壊れていた。
+ */
+describe('parseBindTextsForElement — 引用符の中の区切り文字', () => {
+  it('左辺の入力フィルタ引数の中の `:` を区切りにしないこと', () => {
+    const [result] = parseBindTextsForElement("value|replace(':','-'): path");
+    expect(result.propName).toBe('value');
+    expect(result.statePathName).toBe('path');
+    expect(result.inFilters[0]).toMatchObject({ filterName: 'replace', args: [':', '-'] });
+  });
+
+  it('右辺のフィルタ引数の中の `:` を区切りにしないこと', () => {
+    const [result] = parseBindTextsForElement("textContent: parts|join(': ')");
+    expect(result.propName).toBe('textContent');
+    expect(result.statePathName).toBe('parts');
+    expect(result.outFilters[0]).toMatchObject({ filterName: 'join', args: [': '] });
+  });
+});
+
+describe('parseBindTextsForElement — 文法エラーの語彙', () => {
+  it('`:` 欠落に [wcs/binding-syntax] と lint への誘導が付くこと', () => {
+    expect(() => parseBindTextsForElement('textContent message'))
+      .toThrow(/\[wcs\/binding-syntax\] Invalid bindText: "textContent message"\. Missing ':' separator/);
+    expect(() => parseBindTextsForElement('textContent message')).toThrow(/npx @wcstack\/lint/);
+  });
+
+  it('spread の 2 つのエラーに [wcs/binding-syntax] と lint への誘導が付くこと', () => {
+    expect(() => parseBindTextsForElement('...: target|uc'))
+      .toThrow(/\[wcs\/binding-syntax\] Invalid spread binding ".*": filters are not allowed/);
+    expect(() => parseBindTextsForElement('...: ')).toThrow(/\[wcs\/binding-syntax\] Invalid spread binding ".*": spread target path is required/);
+    expect(() => parseBindTextsForElement('...: ')).toThrow(/npx @wcstack\/lint/);
+  });
+});

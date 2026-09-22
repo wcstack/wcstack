@@ -45,6 +45,11 @@ const SSR_ATTR_PROPS: Record<string, (element: Element, value: unknown) => void>
 /**
  * 表示のプロパティ（要件 B8）。ここへの undefined は「値が無い」ので空にする — 要素の入力と違って
  * 生かすべき既定値が無く、スキップすると、使い回した行に前の行の表示が残る。
+ *
+ * `outerHTML` は **入れない**。`trustedTypes.isHtmlSinkProp` は HTML sink として認めるが、
+ * `element.outerHTML = ""` は要素そのものを DOM から外すので、「空にする」では済まず束縛先の
+ * ノードごと失われる（以降の更新が届かない）。値が無いときはスキップして前の描画を残す方が
+ * まだ壊れ方が小さい。`outerHTML:` を表示面として正しく畳むには「置換のやり直し」の設計が要る。
  */
 const DISPLAY_PROPS = new Set<string>(["textContent", "innerText", "innerHTML"]);
 

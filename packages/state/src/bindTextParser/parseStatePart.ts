@@ -33,7 +33,7 @@ export function parseStatePart(statePart: string): StatePartParseResult {
       filters = cacheFilterInfos.get(filtersText)!;
     } else {
       filterTexts = splitOutsideQuotes(filtersText, FILTER_SEPARATOR).map(trimFn);
-      filters = parseFilters(filterTexts, "output");
+      filters = parseFilters(filterTexts, "output", filtersText);
       cacheFilterInfos.set(filtersText, filters);
     }
   } else {

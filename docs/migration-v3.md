@@ -91,6 +91,18 @@ All of them are in `@wcstack/state`. "2.6 notice" says whether 2.6.x's `wcs/v3-m
 | `findV3MigrationIssues` / `findEmbeddedV3MigrationIssues` | only in 2.6.x | removed (the notice has done its job) |
 | `splitBindTexts` | — | added: the runtime's own quote-aware `;` splitter |
 
+### 3.1 and 3.2 — what a 2.x page also meets on the way to 3.2
+
+Nothing here refuses a form that worked on 3.0, but a page coming from 2.x lands on the newest 3.x, so read these too. Each one's full entry is in the [CHANGELOG](../CHANGELOG.md).
+
+| Release | Change | What it means when you come from 2.x |
+|---|---|---|
+| 3.1 | **An explicit property form, `.name:`** (requirement B5) | Additive. `online: x` is still an event binding (a `"line"` listener); `.online: x` is the element's `online` **property**. The leading dot used to fail at apply time, so nothing that worked changes. A namespace word after the dot (`.class`, `.attr`, `.style`, `.command`, `.eventToken`, `.state`) and an empty name are `[wcs/binding-syntax]` |
+| 3.1 | **An injection point for volumes**, `<wcs-state mount="cart" data-wcs="state.taxRate: settings.taxRate">` (requirement B14③) | Additive, with one consequence: on a `<wcs-state mount=…>`, a left-hand side that starts with `state.` is now read as an injection declaration and is **not** collected as a binding. On 2.x it was a binding that failed to apply as a write to a missing `state` property, so no working page changes. Written on a `<wcs-state>` **without** `mount=`, it is `[wcs/mount-path-invalid]` |
+| 3.2 | **Canonical filter / API / declaration names, with the old names as aliases** (requirement B12) | Everything from 2.x keeps working through 3.x. Rename at your own pace: `inc`/`dec` → `add`/`sub`, `fix` → `toFixed`, `uc`/`lc`/`cap` → `upper`/`lower`/`capitalize`, `rep`/`rev` → `repeat`/`reverse`, `pad` → `padStart`, `null` → `nullIfEmpty`; `$trackDependency`/`$untrackDependency` → `$dependOn`/`$untracked`; `$updatedCallback` → `$renderedCallback`, `$streams` → `$stream`. Lint and the VS Code extension flag each old name as `wcs/name-alias` (info); the runtime warns only in the last 3.x minor, and 4.0 removes them. **Declaring both spellings of a declaration key is `[wcs/declaration-alias]`** — that is the one form that stops working |
+| 3.2 | `add` / `sub` (`inc` / `dec`) require their argument | On 2.x the arity table said the argument was optional, so `inc` without one passed lint and then failed without a code. It is now `[wcs/filter-arity]` |
+| 3.2 | New filters `padEnd(n, c)` and `coalesce(v)` | Additive. `coalesce` replaces only `null` / `undefined`; `defaults` keeps replacing every falsy value. `padStart` pads with `0` by default and `padEnd` with a space — the pair is deliberately not symmetric (`padStart` is almost always used for zero padding) |
+
 ## 4. Behaviour changes that are not syntax
 
 - **Split entries (added).** New entries: `@wcstack/state/core`, `@wcstack/state/features/{temporal,scopes,recursion,ssr,formats,devtools,diagnostics}` and `@wcstack/state/define`. With `@wcstack/state` and `/auto`, `bootstrapState()` installs every feature, so existing pages keep the same behaviour and the same API. On a core page, a declaration whose feature is not installed fails with `[wcs/feature-not-installed]`, naming the entry to import (`bind-component`, `mount=` and DCC included — 2.x had no such thing as a missing feature). Load the split form from jsDelivr's plain `/npm/` path or through a bundler, **never through `esm.run`** (each entry would carry its own engine). Details in the state README, [Split entries](../packages/state/README.md#split-entries-only-the-features-you-use); integrity in [sri.md §5.1](./sri.md#51-the-split-entries-of-wcstackstate).

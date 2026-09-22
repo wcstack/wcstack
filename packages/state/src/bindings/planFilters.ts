@@ -24,10 +24,16 @@ export function planFilters(filters: IParsedFilter[], filterIOType: FilterIOType
   const planned: IFilterInfo[] = [];
   for (let i = 0; i < filters.length; i++) {
     const filter = filters[i];
+    // `literals`（型付きの値・要件 B9）は**落とさずに持ち回す**。落とすと、これより後ろで
+    // フィルタの並びを鍵にする側（`binding/filterKey.ts` — ハンドラ共有キー・束縛キー・
+    // devtools の宣言キー）が原文 `args` しか見られず、`defaults(0)` と `defaults('0')` を
+    // 取り違えてハンドラを共有してしまう
+    const literals = filter.literals ?? filter.args;
     planned.push({
       filterName: filter.filterName,
       args: filter.args,
-      filterFn: resolveFilterFn(filter.filterName, filter.args, filterIOType, filter.literals ?? filter.args),
+      literals,
+      filterFn: resolveFilterFn(filter.filterName, filter.args, filterIOType, literals),
     });
   }
   return planned;

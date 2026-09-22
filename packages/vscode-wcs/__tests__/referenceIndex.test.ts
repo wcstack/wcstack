@@ -151,9 +151,9 @@ export default { changed: 0, $eventTokens: ["changed"] };
 describe('コーパスパリティ — リポジトリ実 HTML を正本パーサが全件受理すること', () => {
   // CI の wcs-validate はリポジトリ全 HTML を 0 errors でゲートしており、全 examples は
   // ランタイム(= 正本パーサ)で実際に動いている。したがって正本ベースのインデックスは
-  // 実在コーパスで problems ゼロでなければならない。同時に、式分割数が既存の
-  // splitBindingExpressions(括弧深度考慮)と一致することも確認する — 乖離があれば
-  // そのファイルが既知乖離(括弧内セミコロン)の実例ということになる。
+  // 実在コーパスで problems ゼロでなければならない。同時に、式分割数が
+  // splitBindingExpressions と一致することも確認する — こちらも正本の splitBindTexts へ
+  // 委譲済みなので、乖離が出たらどちらかが正本から外れた合図になる。
   const repoRoot = join(__dirname, '..', '..', '..');
   const roots = [join(repoRoot, 'examples')];
   // 各パッケージの examples/ も対象（test-fixture 等の意図的に壊れた HTML は含めない）

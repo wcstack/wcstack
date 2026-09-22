@@ -49,11 +49,11 @@ import { installBindComponentLifecycle } from "./bindComponentLifecycle";
 
 export { clearFailedRootNode, createVolumeChroot, drainPendingVolumes, failPendingVolumes, getVolumeUpdatedCallbacks, isPathUnderReservedVolume, releaseVolumeSlot, reserveVolumeSlot } from "./volumeShared";
 export type { IVolumeUpdatedCallback } from "./volumeShared";
-import { assertValidWatchPath } from "../watch/processWatchDeclaration";
-import { addVolumeWatchEntries } from "../watch/watchRegistry";
-import { startWatch } from "../watch/watchRuntime";
+// `watch/*` を静的に import しない（要件 B13）: scopes だけを入れたページに temporal ランタイムが
+// 丸ごと乗る。受け口は bridge/featureBridge.ts（temporal の install が置く）
+import { IVolumeWatchSupport, requireVolumeWatchSupport } from "../bridge/featureBridge";
 import { ListKeySpec } from "../list/listKeys";
-import { RECURSION_WILDCARD, STATE_LIST_KEYS_NAME, STATE_RECURSION_NAME, STATE_STREAMS_NAME, STATE_UPDATED_CALLBACK_NAME, STATE_WATCH_NAME } from "../define";
+import { RECURSION_WILDCARD, STATE_LIST_KEYS_NAME, STATE_RECURSION_NAME, STATE_STREAM_NAME, STATE_RENDERED_CALLBACK_NAME, STATE_WATCH_NAME } from "../define";
 import { getAllPropertyDescriptors } from "../getAllPropertyDescriptors";
 import type { IWatchEntry } from "../watch/types";
 
@@ -115,7 +115,18 @@ export function validateVolumeMountPath(mountPath: string): void {
 export function readVolumeInjections(bindText: string, mountPath: string): IMountEntry[] {
   const entries: IMountEntry[] = [];
   const seen = new Set<string>();
-  for (const result of parseBindTextsForElement(bindText)) {
+  let parsed: ReturnType<typeof parseBindTextsForElement>;
+  try {
+    parsed = parseBindTextsForElement(bindText);
+  } catch (error) {
+    // パーサ自身の診断（`[wcs/binding-syntax]` / `[wcs/recursion-unsupported]` …）には
+    // 要素名も `mount=` も載らない。どの要素のどの属性かが分かる形に包み直す（元の文言は残す）
+    raiseError(
+      `[wcs/mount-path-invalid] <${config.tagNames.state} mount="${mountPath}"> has an invalid ` +
+      `${config.bindAttributeName}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  for (const result of parsed) {
     if (result.propSegments[0] !== VOLUME_INJECTION_PROP) {
       continue;
     }
@@ -142,6 +153,9 @@ export function readVolumeInjections(bindText: string, mountPath: string): IMoun
     seen.add(inner[0]);
     entries.push({ innerSegments: inner, outerPathInfo: outer, readonly: result.propModifiers.includes(MODIFIER_READONLY) });
   }
+  // findMountEntry の契約（内側接頭辞の長い順）を満たす。D28 の 1 段制限のおかげで今は
+  // どれも長さ 1 だが、緩めた瞬間に最長一致が宣言順に依存して壊れる
+  entries.sort((a, b) => b.innerSegments.length - a.innerSegments.length);
   return entries;
 }
 
@@ -151,7 +165,13 @@ function splitVolumeState(volumeState: Record<string, any>, injectedKeys: Readon
 } {
   const data: Record<string, unknown> = {};
   const accessors = new Map<string, PropertyDescriptor>();
-  for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(volumeState))) {
+  // プロトタイプ鎖込みで見る（`class Cart { get taxRate() {} }`）。own descriptor だけを見ていた頃は、
+  // クラスで書いたボリュームの getter が**無言で**接ぎ木されなかった — 同じ関数の `**` getter 検査・
+  // D30 の衝突検査・`components/State.ts` の getterPaths 収集はどれも鎖込みで、ここだけが外れていた。
+  // `getAllPropertyDescriptors` は `Object.prototype` の手前で打ち切り、同名は手前（インスタンスに
+  // 近い側）が勝つので、own data key がプロトタイプの getter を隠す順序も実際の解決と一致する。
+  // クラスの `constructor` とプロトタイプメソッドは下の「値が関数」の枝が従来どおり落とす
+  for (const [key, descriptor] of Object.entries(getAllPropertyDescriptors(volumeState as object))) {
     if (key.startsWith("$")) {
       continue; // 宣言面（$connectedCallback は graftVolume が直接読む・他は P2-9b）
     }
@@ -183,14 +203,17 @@ function validateVolumeDeclarations(
   injections: readonly IMountEntry[],
 ): void {
   // 注入したキーと同名の getter / setter / メソッドは、どちらが `this.<key>` なのか書き手に見えない。
-  // データの既定値だけは注入が黙って勝つ（D30）
+  // データの既定値だけは注入が黙って勝つ（D30）。
+  // descriptor はプロトタイプ鎖込みで見る（`class Cart { get taxRate() {} }` を取りこぼさない —
+  // 同じ関数の `**` getter 検査・`components/State.ts` の getterPaths 収集と同じ走査）
+  const declaredDescriptors = injections.length === 0 ? null : getAllPropertyDescriptors(volumeState as object);
   for (const entry of injections) {
     const key = entry.innerSegments[0];
-    const descriptor = Object.getOwnPropertyDescriptor(volumeState, key);
+    const descriptor = declaredDescriptors![key];
     if (typeof descriptor !== "undefined"
       && (typeof descriptor.get === "function" || typeof descriptor.set === "function" || typeof descriptor.value === "function")) {
       raiseError(
-        `Volume "${mountPath}" declares "${key}" as an accessor or a method and also injects it ` +
+        `[wcs/mount-path-invalid] Volume "${mountPath}" declares "${key}" as an accessor or a method and also injects it ` +
         `("${VOLUME_INJECTION_PROP}.${key}: ${entry.outerPathInfo.path}"). Rename one of them.`,
       );
     }
@@ -200,11 +223,14 @@ function validateVolumeDeclarations(
     if (typeof watchDeclared !== "object" || watchDeclared === null) {
       raiseError(`${STATE_WATCH_NAME} must be an object mapping state paths to handler functions.`);
     }
+    // ボリュームの state は `State._state` セッターを通らない（接ぎ木は loadStateFromSource の
+    // 戻り値をそのまま使う）ので、機能の readiness barrier（要件 D13）はここで張る
+    const watch = requireVolumeWatchSupport(mountPath);
     for (const [path, handler] of Object.entries(watchDeclared as Record<string, unknown>)) {
       if (typeof handler !== "function") {
         raiseError(`${STATE_WATCH_NAME} entry "${path}" must be a function.`);
       }
-      assertValidWatchPath(path);
+      watch.assertValidPath(path);
     }
   }
   const listKeysDeclared = (volumeState as Record<string, unknown>)[STATE_LIST_KEYS_NAME];
@@ -224,8 +250,8 @@ function validateVolumeDeclarations(
     }
   }
   // $streams は未対応（無言に捨てない）
-  if (typeof (volumeState as Record<string, unknown>)[STATE_STREAMS_NAME] !== "undefined") {
-    raiseError(`Volume "${mountPath}" declares ${STATE_STREAMS_NAME}, which volumes do not support yet. Declare the stream on the root state.`);
+  if (typeof (volumeState as Record<string, unknown>)[STATE_STREAM_NAME] !== "undefined") {
+    raiseError(`Volume "${mountPath}" declares ${STATE_STREAM_NAME}, which volumes do not support yet. Declare the stream on the root state.`);
   }
   // $scan も未対応（docs/state-scan-design.md D8）。from / on はルートのツリーと token を前提にする
   if (typeof (volumeState as Record<string, unknown>)["$scan"] !== "undefined") {
@@ -264,6 +290,8 @@ function processVolumeDeclarations(
   // $watch: 翻訳してルート台帳へ追記。ハンドラは chroot 包装。注入したキーの watch はルートのパスを見る
   const watchDeclared = (volumeState as Record<string, unknown>)[STATE_WATCH_NAME];
   if (typeof watchDeclared !== "undefined") {
+    // 受け口の有無は validateVolumeDeclarations が接ぎ木より前に確かめている
+    const watch: IVolumeWatchSupport = requireVolumeWatchSupport(mountPath);
     const entries: IWatchEntry[] = [];
     const paths = new Set<string>();
     let order = 0;
@@ -282,9 +310,9 @@ function processVolumeDeclarations(
       rootStateElement.setPathInfo(translated, "prop", "watch");
     }
     if (entries.length > 0) {
-      addVolumeWatchEntries(rootStateElement, entries);
+      watch.addEntries(rootStateElement, entries);
       rootStateElement.addVolumeWatchPaths?.(paths);
-      startWatch(rootStateElement);
+      watch.start(rootStateElement);
     }
   }
 
@@ -300,7 +328,7 @@ function processVolumeDeclarations(
 
   // $updatedCallback（相対）: 自分の接頭辞配下の更新と、注入したパスの更新（内側の名前で — D33）が
   // 相対パスで届く。収集ゲート（hasUpdatedCallback）を開けるのはここ
-  const updated = (volumeState as Record<string, unknown>)[STATE_UPDATED_CALLBACK_NAME];
+  const updated = (volumeState as Record<string, unknown>)[STATE_RENDERED_CALLBACK_NAME];
   if (typeof updated === "function") {
     addVolumeUpdatedCallback(rootStateElement, { mountPath, injections, callback: updated as IVolumeUpdatedCallback["callback"] });
     rootStateElement.enableUpdatedCallback?.();

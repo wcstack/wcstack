@@ -37,11 +37,12 @@ function toLiteral(text: string, quoted: boolean): unknown {
   return NUMBER_LITERAL.test(text) ? Number(text) : text;
 }
 
-export function parseFilterArgs(argsText: string): string[] {
-  return parseFilterArgsWithLiterals(argsText).args;
-}
-
-/** 引数の原文と、その型付きの値（要件 B9）を一緒に返す。原文は引用符を外したもの */
+/**
+ * 引数の原文と、その型付きの値（要件 B9）を一緒に返す。原文は引用符を外したもの。
+ *
+ * 末尾の空引数だけが落ちる（`"a,"` → 1 個、`",a"` → 2 個、`","` → 1 個）。`filter()` を
+ * 「引数 0 個」と読むための規則で、先頭・中間の空引数は位置を保つために残す。
+ */
 export function parseFilterArgsWithLiterals(argsText: string): { args: string[]; literals: unknown[] } {
   const args: string[] = [];
   const literals: unknown[] = [];

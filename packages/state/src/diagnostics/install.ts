@@ -5,7 +5,8 @@
 import { IPathDiagnostics, setPathDiagnostics } from "../core/diagnosticsHooks";
 import { checkDeclaredPath, markExportedPath, resetPathDiagnostics } from "./pathChecks";
 
-export const pathDiagnosticsFeature: IPathDiagnostics = {
+/** 受け口へ置く実装。外へ出す口は `installDiagnostics` だけなので export しない */
+const pathDiagnosticsFeature: IPathDiagnostics = {
   check: checkDeclaredPath,
   reset: resetPathDiagnostics,
   markExported: markExportedPath,

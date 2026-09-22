@@ -964,6 +964,56 @@ export default { count: "0", get double() { return 1; }, inc() {} };
   });
 });
 
+// Fixed by review — 左辺 / 右辺を分ける `:` が素の indexOf のままだったため、
+// 入力（左辺）フィルタの引数に `:` があると左辺が `value|defaults('` で切れ、
+// 引数が消えて `wcs/filter-arity`（引数 0 個）を誤報していた。
+//
+// このブロックは state の dist に依存しない: `validateBindings` が dist から使うのは
+// 式の区切り（`splitBindTexts`）だけで、`:` の分割は拡張内の `parseBindingExpression`
+// （core/parser/quoteAware の indexOfOutsideQuotes）が担う。正本パーサ経由の
+// `wcs/binding-syntax`（validateDocument 側）は `:` の引用符対応を含む dist の
+// 再ビルドが要るので、ここでは断言しない。
+describe('validateBindings — 引用符の中の `:` は左右の区切りではない（要件 B1）', () => {
+  const page = (attr: string): string => `
+<wcs-state>
+  <script type="module">
+export default { name: "a", items: ["x"] };
+  </script>
+</wcs-state>
+<input data-wcs="${attr}">`;
+
+  it('左辺（入力）フィルタの引数に `:` があっても filter-arity を誤報しないこと', () => {
+    for (const attr of [
+      "value|defaults('x'): name",     // `:` 無し — 元から通っていた対照
+      "value|defaults(':'): name",
+      "value|defaults('a:b'): name",
+      "value|truncate(3,':'): name",
+    ]) {
+      expect(validateBindings(page(attr), 'data-wcs'), attr).toEqual([]);
+    }
+  });
+
+  it('右辺（出力）フィルタの引数に `:` があっても診断を出さないこと', () => {
+    expect(validateBindings(page("textContent: items|join(': ')"), 'data-wcs')).toEqual([]);
+    expect(validateBindings(page("textContent: name|padStart(5,':')"), 'data-wcs')).toEqual([]);
+  });
+
+  it('本物の引数不足・未知フィルタは引き続き報告すること（黙らせていないことの対照）', () => {
+    const arity = validateBindings(page('value|defaults(): name'), 'data-wcs');
+    expect(arity.map(d => d.code)).toEqual([WcsDiagnosticCode.FilterArity]);
+    const unknown = validateBindings(page("value|nope(':'): name"), 'data-wcs');
+    expect(unknown.map(d => d.code)).toEqual([WcsDiagnosticCode.FilterUnknown]);
+  });
+
+  it('左辺の引数に `:` があってもプロパティ名とパスを取り違えないこと', () => {
+    // 取り違えると property が `value|defaults('`、path が `'): typo` になり
+    // binding-path-missing まで巻き添えで出る
+    const diags = validateBindings(page("value|defaults(':'): typo"), 'data-wcs');
+    expect(diags.map(d => d.code)).toEqual([WcsDiagnosticCode.BindingPathMissing]);
+    expect(diags[0].message).toContain('"typo"');
+  });
+});
+
 describe('validateBindings — フィルタの旧名（@wcstack/state 3.2・要件 B12）', () => {
   it('旧名は正式名と同じ検査を受け、wcs/name-alias（info）で正式名を提案する', () => {
     const html = `
@@ -980,5 +1030,41 @@ export default { name: "a", count: 1 };
     expect(alias[0].message).toContain('"upper"');
     // 引数の個数は正式名（repeat は 1 個）の範囲で検査する
     expect(diags.some(d => d.code === WcsDiagnosticCode.FilterArity)).toBe(true);
+  });
+
+  // Fixed by review — エイリアス正規化が validateFilterUsage にしか入っておらず、
+  // フィルタ鎖の型検査 2 か所（validateFilterChainTypes / resolveResultType）が
+  // 正式名キーだけの Map を旧名で引いて黙って中断していた（旧名を書くと型警告が消える）。
+  it('旧名でもフィルタ鎖の入力型検査（wcs/filter-input-type）が正式名と同じに出ること', () => {
+    const page = (chain: string): string => `
+<wcs-state>
+  <script type="module">
+export default { count: 1 };
+  </script>
+</wcs-state>
+<div data-wcs="textContent: ${chain}"></div>`;
+    const canonicalDiags = validateBindings(page('count|upper'), 'data-wcs');
+    const aliasDiags = validateBindings(page('count|uc'), 'data-wcs');
+    expect(canonicalDiags.some(d => d.code === WcsDiagnosticCode.FilterInputType)).toBe(true);
+    expect(aliasDiags.filter(d => d.code === WcsDiagnosticCode.FilterInputType)).toHaveLength(1);
+    // 文言・範囲は**書かれた名前**のまま（直す対象を指す）
+    const inputType = aliasDiags.find(d => d.code === WcsDiagnosticCode.FilterInputType)!;
+    expect(page('count|uc').slice(inputType.start, inputType.end)).toBe('uc');
+    // 旧名の案内（info）は従来どおり併記される
+    expect(aliasDiags.some(d => d.code === WcsDiagnosticCode.NameAlias)).toBe(true);
+  });
+
+  it('旧名でもフィルタ鎖を通した結果型でのバインド型期待（wcs/binding-type-expectation）が出ること', () => {
+    const page = (chain: string): string => `
+<wcs-state>
+  <script type="module">
+export default { count: 1 };
+  </script>
+</wcs-state>
+<div data-wcs="class.on: ${chain}"></div>`;
+    const canonicalDiags = validateBindings(page('count|upper'), 'data-wcs');
+    const aliasDiags = validateBindings(page('count|uc'), 'data-wcs');
+    expect(canonicalDiags.some(d => d.code === WcsDiagnosticCode.BindingTypeExpectation)).toBe(true);
+    expect(aliasDiags.filter(d => d.code === WcsDiagnosticCode.BindingTypeExpectation)).toHaveLength(1);
   });
 });

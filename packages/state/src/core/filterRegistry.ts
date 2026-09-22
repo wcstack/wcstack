@@ -9,6 +9,7 @@
  * core が自前で持つのは、エンジン自身が差し込む `not` だけ（`if` / `else` の反転 —
  * structural/notFilter.ts）。未知のフィルタは束縛計画の段で名指しで落ちる（従来は解析時）。
  */
+import { filterArgsKey } from "../binding/filterKey";
 import { didYouMean, LINT_HINT } from "../errorGuidance";
 import type { FilterFn, FilterIOType, FilterWithOptions } from "../filters/types";
 import { raiseError } from "../raiseError";
@@ -19,10 +20,22 @@ export type FilterFactory = (options?: string[], literals?: readonly unknown[]) 
 /**
  * エンジン自身が差し込むフィルタ。`if` / `else` の分岐は `not` を付けた束縛として組み立てられる
  * ので、`features/formats` の無いページでも必ず要る。
+ *
+ * `Map` であることに意味がある: 素のオブジェクトへのブラケット参照だと `Object.prototype` の
+ * メンバがフィルタとして通り（`|toString` / `|constructor` / `|valueOf` / `|hasOwnProperty`）、
+ * `[wcs/filter-unknown]` の代わりに意味不明な TypeError が出ていた。
  */
-const CORE_FILTERS: Record<string, FilterFactory> = {
-  not: () => (value: unknown): boolean => !value,
-};
+const CORE_FILTERS = new Map<string, FilterFactory>([
+  ["not", () => (value: unknown): boolean => !value],
+]);
+
+/**
+ * core が答えるフィルタの引数の個数（要件 B3）。`features/formats` を入れないページでも
+ * `|not(1)` が名指しで落ちるように、登録簿とは別にここに持つ。
+ */
+const CORE_ARITIES = new Map<string, readonly [number, number]>([
+  ["not", [0, 0]],
+]);
 
 const registries: Record<FilterIOType, Map<string, FilterFactory>> = {
   input: new Map<string, FilterFactory>(),
@@ -62,8 +75,18 @@ export function registerFilters(
       arities.set(name, bounds);
     }
   }
-  for (const alias of Object.keys(aliases ?? {})) {
-    aliasesByIOType[filterIOType].set(alias, aliases![alias]);
+  // 旧名も arity と同じ規則で掃除する（追加専用だと、登録簿を入れ替える tooling / テストに
+  // 前の登録の旧名が残る）。「今回登録した正式名を指す旧名」だけを対象にするので、別の機能が
+  // 登録した旧名は消さない
+  const nextAliases = aliases ?? {};
+  const aliasMap = aliasesByIOType[filterIOType];
+  for (const [alias, canonical] of [...aliasMap]) {
+    if (Object.prototype.hasOwnProperty.call(filters, canonical) && nextAliases[alias] !== canonical) {
+      aliasMap.delete(alias);
+    }
+  }
+  for (const alias of Object.keys(nextAliases)) {
+    aliasMap.set(alias, nextAliases[alias]);
   }
   // 登録が変われば解決済みの答えも変わりうる（同じページで 2 回 install することは無いが、
   // テストと tooling は登録簿を入れ替える）
@@ -72,7 +95,7 @@ export function registerFilters(
 
 /** 登録済みの名前（core のものを含む）。診断の did-you-mean が読む */
 export function knownFilterNames(filterIOType: FilterIOType): string[] {
-  return [...new Set([...Object.keys(CORE_FILTERS), ...registries[filterIOType].keys()])];
+  return [...new Set([...CORE_FILTERS.keys(), ...registries[filterIOType].keys()])];
 }
 
 /** 解決済みの答えを捨てる（tooling: `@wcstack/state/parser` の clearParserCaches） */
@@ -90,20 +113,27 @@ export function resolveFilterFn(
   filterIOType: FilterIOType,
   literals: readonly unknown[] = args,
 ): FilterFn {
-  // 引数は型付きの値の構造のまま鍵にする（`join('a,b')` と `join(a,b)` — 要件 B3、`eq(1)` と
-  // `eq('1')` — 要件 B9 を取り違えない）
-  const key = `${filterName}${JSON.stringify(literals)}:${filterIOType}`;
+  // 旧名（`uc` / `fix` …）は正式名で引く — 3.x の間のエイリアス（要件 B12、4.0 で外す）。
+  // 鍵も**正式名**で作るので、`uc` と `upper` は同じ実関数を共有する（旧名 1 つにつき
+  // クロージャが 1 つ増えていた）
+  const canonical = aliasesByIOType[filterIOType].get(filterName) ?? filterName;
+  // 引数の鍵は `binding/filterKey.ts` の 1 本に集約する（原文 `args` と型付きの値 `literals` の
+  // 両方 — 要件 B3 / B9）。ハンドラ共有キー側と同じ関数を通すことで、規準のずれを構造的に止める
+  const key = `${canonical}${filterArgsKey(args, literals)}:${filterIOType}`;
   const resolved = resolvedByKey.get(key);
   if (typeof resolved !== "undefined") {
     return resolved;
   }
-  // 旧名（`uc` / `fix` …）は正式名で引く — 3.x の間のエイリアス（要件 B12、4.0 で外す）
-  const canonical = aliasesByIOType[filterIOType].get(filterName) ?? filterName;
-  const factory = registries[filterIOType].get(canonical) ?? CORE_FILTERS[canonical];
+  const factory = registries[filterIOType].get(canonical) ?? CORE_FILTERS.get(canonical);
   if (typeof factory === "undefined") {
-    raiseError(`[wcs/filter-unknown] filter not found: ${filterName}.${didYouMean(filterName, knownFilterNames(filterIOType))}${LINT_HINT}`);
+    // 書式フィルタ（`uc` / `date` …）は `features/formats` が install で登録する。1 つも
+    // 登録されていないページは「打ち間違い」ではなく「機能の入れ忘れ」なので、そこまで案内する
+    const missingFormats = registries[filterIOType].size === 0
+      ? ` No formatting filters are installed — add them with installFeatures([...]) from "@wcstack/state/features/formats".`
+      : "";
+    raiseError(`[wcs/filter-unknown] filter not found: ${filterName}.${didYouMean(filterName, knownFilterNames(filterIOType))}${missingFormats}${LINT_HINT}`);
   }
-  const bounds = aritiesByIOType[filterIOType].get(canonical);
+  const bounds = aritiesByIOType[filterIOType].get(canonical) ?? CORE_ARITIES.get(canonical);
   if (typeof bounds !== "undefined" && (args.length < bounds[0] || args.length > bounds[1])) {
     // lint の wcs/filter-arity と同じ語彙
     raiseError(args.length < bounds[0]

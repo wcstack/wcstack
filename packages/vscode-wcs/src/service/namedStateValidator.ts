@@ -19,6 +19,7 @@ import { getMessages } from '../core/messages.js';
 import { parseWcsStateElements } from '../language/htmlParse.js';
 import { findAllBindAttributes, splitBindingExpressions, type BindingDiagnostic } from './bindingValidator.js';
 import { findAllCommentBindings, findAllMustacheSyntax } from './templateSyntax.js';
+import { indexOfOutsideQuotes } from '../core/parser/quoteAware.js';
 
 interface StateSelectorMatch {
   /** `@` の式内オフセット */
@@ -34,7 +35,8 @@ interface StateSelectorMatch {
  * フィルタ（括弧の外の `|`）より前だけを見る — `|default(@)` の引数の `@` は対象外。
  */
 export function findStateSelector(expr: string, embedded = false): StateSelectorMatch | null {
-  const colon = embedded ? -1 : expr.indexOf(':');
+  // 左右の境界は引用符の外の `:` だけ（正本と同値。`defaults(':')` の引数は境界ではない）
+  const colon = embedded ? -1 : indexOfOutsideQuotes(expr, ':');
   const from = colon + 1;
   let depth = 0;
   let end = expr.length;

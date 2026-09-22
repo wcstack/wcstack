@@ -31,6 +31,8 @@ export { analyzeContract } from "./contract/contractAnalyzer.js";
 export type { IContractManifest } from "./contract/types.js";
 export type { ContractEvent } from "./devtools/types.js";
 export { builtinFilterMeta } from "./filters/filterMeta.js";
+// `manifest.ts` は両方を公開するので、こちらも対にしておく（要件 B12 のエイリアス表）
+export { builtinFilterAliases } from "./filters/filterAliases.js";
 export type { IFilterMeta, FilterResultType, FilterArgType } from "./filters/filterMeta.js";
 
 // Typed element lookups (docs/typescript.md §3): `document.querySelector("wcs-state")`

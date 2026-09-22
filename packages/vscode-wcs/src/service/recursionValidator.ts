@@ -57,17 +57,22 @@ import {
 
 /**
  * パスを第 1 引数に取る API。`$getAll` / `$setAll` だけが `**` を解釈する。
- * `$resolve` / `$postUpdate` / `$trackDependency` は受け付けない ＝ 受け付けないことを報告する
- * （ランタイムは `getPathInfo` の不変条件で `wcs/recursion-unsupported`）。
+ * `$resolve` / `$postUpdate` / `$dependOn`（旧名 `$trackDependency`）は受け付けない ＝
+ * 受け付けないことを報告する（ランタイムは `getPathInfo` の不変条件で `wcs/recursion-unsupported`）。
+ * 正式名と旧名の**両方**を並べること — 片方だけだと、そちらを書いた人にしか診断が出ない。
  */
-const RECURSION_APIS = ['getAll', 'setAll', 'resolve', 'postUpdate', 'trackDependency'] as const;
+const RECURSION_APIS = ['getAll', 'setAll', 'resolve', 'postUpdate', 'dependOn', 'trackDependency'] as const;
 
-/** `**` を解釈しない API（`$getAll` / `$setAll` 以外）→ `recursionUnsupported` の site。 */
+/**
+ * `**` を解釈しない API（`$getAll` / `$setAll` 以外）→ `recursionUnsupported` の site。
+ * site は文言に出す API 名も決めるので、旧名と正式名は別の site に写す
+ * （ランタイムは `${String(prop)}` を埋める ＝ **書かれた名前**が出る）。
+ */
 const UNSUPPORTED_API_SITE = {
   $resolve: 'resolve',
   $postUpdate: 'postUpdate',
+  $dependOn: 'dependOn',
   $trackDependency: 'trackDependency',
-  $dependOn: 'trackDependency',
 } as const;
 
 /**
@@ -101,8 +106,8 @@ export function validateRecursion(
     // ボリューム（`mount=`）とマウントされたコンポーネント（`bind-component`）は `$recursion` も
     // `**` getter も持てない（runtime は接ぎ木前に raise / warn して捨てる）。宣言に依存する
     // 検査（getter の形・`$getAll` / `$setAll` の形）はそこで終わるが、宣言に依存しない検査
-    // — `**` を解釈しない消費者（代入・`$resolve` / `$postUpdate` / `$trackDependency`・
-    // `$listKeys` キー）— は runtime が必ず throw するので、そのまま掛ける
+    // — `**` を解釈しない消費者（代入・`$resolve` / `$postUpdate` / `$dependOn`（旧名
+    // `$trackDependency`）・`$listKeys` キー）— は runtime が必ず throw するので、そのまま掛ける
     // （`spec = null`・`undeclared = false` で呼べば宣言依存の分岐は自然に黙る）。
     let spec: RecursionSpec | null = null;
     let undeclared = false;

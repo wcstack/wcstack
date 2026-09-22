@@ -286,3 +286,39 @@ describe('resolve', () => {
     expect(mockStateElement.addDynamicDependency).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * 引数の形の検査（`$getAll` / `$setAll` と同じ語彙、要件 B7）。
+ * 添字を省いた `$resolve("a")` は素の TypeError（"Cannot read properties of undefined"）に
+ * なっていて、4 引数以上は黙って書きとして扱われ 4 番目以降が捨てられていた。
+ */
+describe('resolve — 引数の形', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    setStateElement(document, null);
+  });
+
+  function makeResolve() {
+    const stateElement = createStateElement();
+    setStateElement(document, stateElement);
+    const handler = createHandler(stateElement);
+    return resolve({}, '$resolve', {}, handler as any);
+  }
+
+  it.each([
+    ['省略', undefined],
+    ['null', null],
+    ['数値', 1],
+    ['文字列', 'a'],
+  ])('添字が %s なら形の診断で落ちること', (_label, indexes) => {
+    const resolveFn = makeResolve();
+    expect(() => resolveFn('a', indexes as any))
+      .toThrow(/\$resolve\("a"\) requires an explicit indexes array/);
+  });
+
+  it('4 引数以上は引数の個数として落ちること', () => {
+    const resolveFn = makeResolve();
+    expect(() => (resolveFn as any)('a', [], 1, 2))
+      .toThrow(/\$resolve\("a"\) takes 2 arguments to read and 3 to write \(path, indexes, value\) — got 4\./);
+  });
+});

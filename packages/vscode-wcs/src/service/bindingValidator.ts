@@ -8,6 +8,8 @@
  * - フィルタ名が組み込みフィルタに存在するか
  */
 
+import { splitBindTexts } from '@wcstack/state/parser';
+import { indexOfOutsideQuotes } from '../core/parser/quoteAware.js';
 import { BUILTIN_FILTERS, canonicalFilterName, type FilterInfo } from './completionData.js';
 import { STRUCTURAL_BINDING_TYPE_SET } from './wcsManifest.js';
 import { mergeSchemaCandidates, type PathCandidate } from './stateAnalyzer.js';
@@ -82,7 +84,7 @@ export function validateBindings(
     if (nonEmptyCount > 1) {
       let scanPos = 0;
       for (const b of bindings) {
-        const colon = b.indexOf(':');
+        const colon = indexOfOutsideQuotes(b, ':');
         const prop = (colon === -1 ? b : b.slice(0, colon)).trim();
         if ((STRUCTURAL_BINDING_TYPE_SET as ReadonlySet<string>).has(prop)) {
           const leading = b.length - b.trimStart().length;
@@ -461,34 +463,30 @@ export function findAllBindAttributes(html: string, attrName: string): BindAttrL
 
 /**
  * バインディング式を `;` で分割する。
- * （ioNodeValidator が同一パーサを共有するため export — 二重実装で構文解釈が
- * 割れると IDE / CI の診断が食い違うので、必ずこちらを使うこと。）
+ * （ioNodeValidator / ariaValidator / namedStateValidator が同一パーサを共有するため
+ * export — 二重実装で構文解釈が割れると IDE / CI の診断が食い違うので、必ずこちらを使うこと。）
+ *
+ * 分割規則は**正本**（`@wcstack/state/parser` の `splitBindTexts` — 引用符の外の `;` だけで
+ * 区切る、要件 B1）に委譲する。以前はここだけ括弧深度を見る独自実装で、引用符を見なかった
+ * ため `interval: 'a;b'` を 2 式に割って偽の `wcs/tag-member-unknown` を出し、逆に
+ * `f(a;b)` は 1 式に畳んでランタイムと食い違っていた（positionalParser は既に正本へ寄せ済み）。
+ * 前後の空白と `;` 区切りは保たれるので、呼び出し側の `expr.length + 1` というオフセット
+ * 計算はそのまま成立する。
  */
 export function splitBindingExpressions(value: string): string[] {
-  const result: string[] = [];
-  let current = '';
-  let parenDepth = 0;
-
-  for (const ch of value) {
-    if (ch === '(') parenDepth++;
-    else if (ch === ')') parenDepth = Math.max(0, parenDepth - 1);
-    else if (ch === ';' && parenDepth === 0) {
-      result.push(current);
-      current = '';
-      continue;
-    }
-    current += ch;
-  }
-  result.push(current);
-  return result;
+  return splitBindTexts(value);
 }
 
 /**
  * 単一のバインディング式を解析する。
  * （ioNodeValidator が同一パーサを共有するため export。）
+ *
+ * 左辺 / 右辺の境界は**引用符の外の `:`** だけ（正本 `parseBindTextsForElement` と同値）。
+ * 素の `indexOf(':')` だと `value|defaults(':'): name` の左辺が `value|defaults('` で切れ、
+ * 入力フィルタの引数が消えて `wcs/filter-arity`（引数 0 個）の誤検出になっていた。
  */
 export function parseBindingExpression(expr: string): ParsedBinding {
-  const colonIndex = expr.indexOf(':');
+  const colonIndex = indexOfOutsideQuotes(expr, ':');
 
   if (colonIndex === -1) {
     // else ディレクティブなど（パスなし）
@@ -782,7 +780,8 @@ function collectStructuralTemplates(html: string, attrName: string): StructuralT
       if (valueEnd !== -1) {
         // 構造ディレクティブは単独バインディング必須（parseBindTextsForElement.ts）。
         const first = splitBindingExpressions(html.slice(valueStart, valueEnd))[0] ?? '';
-        const prop = first.split(':')[0].replace(/#.*$/, '').trim();
+        const firstColon = indexOfOutsideQuotes(first, ':');
+        const prop = (firstColon === -1 ? first : first.slice(0, firstColon)).replace(/#.*$/, '').trim();
         const type = prop === 'if' || prop === 'elseif' || prop === 'else' ? prop : 'other';
         templates.push({ valueStart, depth, type });
       }
@@ -857,6 +856,11 @@ function getExpectedType(property: string, isNegatedIf: () => boolean): TypeRequ
 
 /**
  * フィルタチェーン内の各フィルタの入力型と前のフィルタの出力型の整合性を検証する。
+ *
+ * 引くキーは必ず正式名（`canonicalFilterName`）— `filterMap` は正式名しか持たないので、
+ * 旧名（`uc` / `fix` …）を書かれた分をそのまま引くと `!info` で黙って中断し、型検査だけが
+ * 消える（`wcs/name-alias` だけが出て型警告が出ない、という退行）。文言に出す名前は
+ * **書かれた名前**のまま（書き手が直す対象を指す）。
  */
 function validateFilterChainTypes(
   path: string,
@@ -874,7 +878,7 @@ function validateFilterChainTypes(
   let currentType = pathInfo.typeHint;
 
   for (const filter of filters) {
-    const info = filterMap.get(filter.name);
+    const info = filterMap.get(canonicalFilterName(filter.name));
     if (!info) break; // 不明なフィルタ → チェーン中断
 
     // 入力型チェック
@@ -905,6 +909,10 @@ function validateFilterChainTypes(
 /**
  * パスの型をフィルタチェーンを通して解決する。
  * 型が不明な場合は null を返す（検証をスキップ）。
+ *
+ * `validateFilterChainTypes` と同じく、引くキーは正式名に正規化する
+ * （旧名で書かれたチェーンだけ型追跡が止まり `wcs/binding-type-expectation` /
+ *  `wcs/path-type-mismatch` が消えるのを防ぐ）。
  */
 function resolveResultType(
   path: string,
@@ -919,7 +927,7 @@ function resolveResultType(
 
   // フィルタチェーンを通して型を更新
   for (const filter of filters) {
-    const info = filterMap.get(filter.name);
+    const info = filterMap.get(canonicalFilterName(filter.name));
     if (!info) return null; // 不明なフィルタ → 型追跡を中止
     if (info.resultType === 'passthrough') continue;
     currentType = info.resultType;

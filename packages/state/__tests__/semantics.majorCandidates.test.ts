@@ -214,6 +214,21 @@ describe("B8 空値の契約（3.0 で採用: 表示の表面は undefined も n
     expect(li.querySelector(".m")!.textContent).toBe("");
   });
 
+  it("使い回した行で、undefined の class 値が行ごと消さないこと（クラスを外すだけ）", async () => {
+    const { root, stateEl } = await mount({ items: [{ flag: true }] },
+      `<ul><template data-wcs="for: items"><li data-wcs="class.on: .flag; attr.title: .t"></li></template></ul>`);
+    expect(root.querySelector("li")!.className).toBe("on");
+    stateEl.createState("writable", (s: any) => { s.items = []; });
+    await flush();
+    stateEl.createState("writable", (s: any) => { s.items = [{ id: 2 }]; });
+    await flush();
+    const li = root.querySelector("li");
+    // かつては class の非 boolean が throw し、行そのものが描かれなかった（`attr.` は B8 で属性が消えるだけ）
+    expect(li).not.toBeNull();
+    expect(li!.classList.contains("on")).toBe(false);
+    expect(li!.hasAttribute("title")).toBe(false);
+  });
+
   it("要素の入力（表示以外のプロパティ）への undefined は従来どおりスキップし、null で消すこと", async () => {
     const { root, stateEl } = await mount({ v: "typed" }, `<input id="in" data-wcs="value#ro: v">`);
     const input = root.querySelector("#in") as HTMLInputElement;

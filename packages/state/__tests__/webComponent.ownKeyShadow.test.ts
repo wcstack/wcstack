@@ -145,6 +145,41 @@ describe('ownKeyShadow: v2 マウント（warnOwnKeyShadowsForMount）', () => {
     expect(w).toHaveLength(1);
     expect(w[0]).toContain('hides the mounted tree key "users.*.name"');
   });
+
+  it('同名の getter があるとホストの部分エントリが死ぬので報告すること', () => {
+    const r = mountRecord([[[] as any, 'user'], [['display'], 'other.label']], { get display() { return ''; } });
+    warnOwnKeyShadowsForMount(r);
+    const w = warnings();
+    expect(w).toHaveLength(1);
+    expect(w[0]).toContain('declares "display" as an accessor');
+    expect(w[0]).toContain('"state.display: other.label"');
+  });
+
+  it('プロトタイプで宣言した getter も拾うこと', () => {
+    class Card { get label() { return ''; } }
+    const r = mountRecord([[[] as any, 'user'], [['label'], 'other.label']], new Card() as any);
+    warnOwnKeyShadowsForMount(r);
+    expect(warnings()[0]).toContain('declares "label" as an accessor');
+  });
+
+  it('同名のメソッドがあるとホストの部分エントリが死ぬので報告すること', () => {
+    const r = mountRecord([[[] as any, 'user'], [['save'], 'other.save']], { save() {} });
+    warnOwnKeyShadowsForMount(r);
+    expect(warnings()[0]).toContain('declares "save" as a method');
+  });
+
+  it('深いエントリの先頭キーが own data key なら、エントリが届かないことを報告すること', () => {
+    const r = mountRecord([[[] as any, 'user'], [['a', 'b'], 'outer.b']], { a: { b: 1, c: 2 } });
+    warnOwnKeyShadowsForMount(r);
+    const w = warnings();
+    expect(w.some((m) => m.includes('declares "a" as an own data key') && m.includes('"state.a.b: outer.b"'))).toBe(true);
+  });
+
+  it('同名の面が無い部分エントリは報告しないこと', () => {
+    const r = mountRecord([[[] as any, 'user'], [['theme'], 'theme'], [['a', 'b'], 'outer.b']], {});
+    warnOwnKeyShadowsForMount(r);
+    expect(warnings()).toEqual([]);
+  });
 });
 
 describe('ownKeyShadow: v2 マウント — 複数キーの読みは 1 回', () => {

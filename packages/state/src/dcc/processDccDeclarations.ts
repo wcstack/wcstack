@@ -16,7 +16,7 @@
  * 自前のファクトリが自前の reader に棄却される状態なので、生成前に落とす。
  */
 
-import { STATE_BINDABLES_NAME, STATE_COMMANDS_NAME, STATE_STREAMS_NAME } from "../define";
+import { STATE_BINDABLES_NAME, STATE_COMMANDS_NAME, STATE_STREAM_NAME } from "../define";
 import { normalizeDeclarationAliases } from "../declarationAliases";
 import { didYouMean } from "../errorGuidance";
 import { getAllPropertyDescriptors } from "../getAllPropertyDescriptors";
@@ -74,7 +74,7 @@ function readNameList(state: IState, declarationName: string): string[] | null {
  * キーの取り出しだけを行い、形が違えば黙って空集合を返す。
  */
 function getStreamNames(state: IState): Set<string> {
-  const declared = (state as Record<string, unknown>)[STATE_STREAMS_NAME];
+  const declared = (state as Record<string, unknown>)[STATE_STREAM_NAME];
   if (typeof declared !== "object" || declared === null) {
     return new Set<string>();
   }

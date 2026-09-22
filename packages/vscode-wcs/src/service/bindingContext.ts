@@ -5,6 +5,8 @@
  * どの部分（プロパティ名、パス、フィルタ）の補完が必要かを判定する。
  */
 
+import { indexOfOutsideQuotes } from '../core/parser/quoteAware.js';
+
 /** カーソル位置のバインディングコンテキスト */
 export type BindingContext =
   | { kind: 'property'; partial: string }
@@ -79,8 +81,9 @@ function splitBindings(value: string): string[] {
 function parseBindingAtCursor(binding: string, offset: number): BindingContext {
   const textBeforeCursor = binding.slice(0, offset);
 
-  // `:` の位置を探す（プロパティ部とパス部の境界）
-  const colonIndex = binding.indexOf(':');
+  // `:` の位置を探す（プロパティ部とパス部の境界）。引用符の中の `:`
+  // （`defaults(':')` の引数）は境界ではない — 正本 parseBindTextsForElement と同じ規則
+  const colonIndex = indexOfOutsideQuotes(binding, ':');
 
   if (colonIndex === -1 || offset <= colonIndex) {
     // `:` の前（プロパティ部）

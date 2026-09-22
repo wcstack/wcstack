@@ -72,6 +72,17 @@ export function registerDeclarationHooks(feature: string, hooks: IDeclarationHoo
   reversed = ordered.slice().reverse();
 }
 
+/**
+ * 宣言の受け口が入っているか（readiness barrier の判定 — 要件 D13 / 設計案 H5）。
+ *
+ * 未 install の機能は段がすべて no-op になるだけなので、core 自身が「宣言は書かれているのに
+ * 受け口が無い」を見ていないと `$watch` / `$scan` / `$stream` / `$recursion` が**黙って**
+ * 素通りする。`components/State.ts` の `_state` セッターがこれで門を張る。
+ */
+export function isDeclarationFeatureRegistered(feature: string): boolean {
+  return registry.has(feature);
+}
+
 export function runValidateEarly(element: IStateElement, value: IState, ctx: IDeclarationContext): void {
   for (let i = 0; i < ordered.length; i++) {
     ordered[i].validateEarly?.(element, value, ctx);

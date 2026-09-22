@@ -1006,6 +1006,34 @@ describe('`**` を解釈しない消費者（代入・$postUpdate・$trackDepend
     expect(html.slice(one[0].start, one[0].end)).toBe('nodes.**.value');
   });
 
+  // Fixed by review — 正式名 `$dependOn` が RECURSION_APIS に無く、呼び出し検出の正規表現が
+  // 作られていなかったので、旧名 `$trackDependency` だけが守られるという逆転になっていた。
+  it('$dependOn（正式名）も $trackDependency（旧名）と同じく recursion-unsupported（error）になり、文言には書かれた名前が出ること', () => {
+    const canonical = validateRecursion(makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  poke() { this.$dependOn("nodes.**.x"); }`), 'wcs-state', 'en');
+    expect(codes(canonical)).toEqual([WcsDiagnosticCode.RecursionUnsupported]);
+    expect(canonical[0].severity).toBe('error');
+    expect(canonical[0].message).toContain('$dependOn(');
+    expect(canonical[0].message).not.toContain('$trackDependency(');
+
+    const legacy = validateRecursion(makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  poke() { this.$trackDependency("nodes.**.x"); }`), 'wcs-state', 'en');
+    expect(codes(legacy)).toEqual([WcsDiagnosticCode.RecursionUnsupported]);
+    expect(legacy[0].message).toContain('$trackDependency(');
+
+    // 日本語文言でも書かれた名前が出る（site を旧名へ写していた退行の番人）
+    const ja = validateRecursion(makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  poke() { this.$dependOn("nodes.**.x"); }`), 'wcs-state', 'ja');
+    expect(ja[0].message).toContain('$dependOn(');
+    expect(ja[0].message).not.toContain('$trackDependency(');
+  });
+
   it('比較（== / ===）と読み取りは代入ではない', () => {
     expect(validateRecursion(makeState(`
   $recursion: { "nodes.*": "children.*" },

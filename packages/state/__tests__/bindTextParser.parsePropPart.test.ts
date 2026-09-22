@@ -81,3 +81,29 @@ describe('parsePropPart', () => {
     expect(result.inFilters[1].filterName).toBe('int');
   });
 });
+
+/**
+ * 左辺は必ずプロパティを名指す（要件 B2 の並び）。空の左辺は `element[""] = value` の
+ * expando を作って完全に沈黙し、末尾が空のセグメント（`foo.:`）は適用の段で素の
+ * TypeError になっていた。どちらも解析の段で名指しで落とす。
+ */
+describe('parsePropPart — 左辺が空 / 空セグメント', () => {
+  it.each(['', '#ro', '|trim', '  ', 'foo.', 'foo..bar'])(
+    '"%s" を [wcs/binding-syntax] で拒否すること',
+    (propPart) => {
+      expect(() => parsePropPart(propPart))
+        .toThrow(/\[wcs\/binding-syntax\].*the left side of a binding must name a property/);
+    },
+  );
+
+  // 先頭のドットだけ（`.`）は明示のプロパティ形の空名なので、D34 の検査
+  // （parseBindTextsForElement）が `leading "."` の語彙で受け持つ
+  it('"." はここでは落とさず、明示のプロパティ形の検査へ渡すこと', () => {
+    expect(parsePropPart('.').propSegments).toEqual(['', '']);
+  });
+
+  it('明示のプロパティ形（先頭のドット）は従来どおり通ること', () => {
+    expect(parsePropPart('.online').propSegments).toEqual(['', 'online']);
+    expect(parsePropPart('.detail.onset').propSegments).toEqual(['', 'detail', 'onset']);
+  });
+});

@@ -10,11 +10,12 @@
  * hook は要素の寿命の間は付いたままなので、各 hook は従来どおり `hasMounts` / `hasGraftedVolumes` の
  * boolean で自分の分岐を守る。
  */
+import { setMountOverlayProvider } from "../bridge/featureBridge";
 import { IAddressHooks, NOT_HANDLED, registerFeatureHooks } from "../core/addressHooks";
 import { getScopedIndexes } from "../list/wildcardLevel";
 import { raiseError } from "../raiseError";
 import { resolveExport } from "./exportIndex";
-import { findMountRecordForNode, getIndexShiftForMarkerPath, getMountRecordByPath } from "./mount";
+import { findMountRecordForNode, getIndexShiftForMarkerPath, getMountRecordByPath, summarizeMountOverlays } from "./mount";
 import { createOverlayValue, readExportedAccessor, writeExportedAccessor } from "./overlay";
 import { remountScopesUnderContent } from "./mountScope";
 import { createVolumeChroot, findGraftedSlotUnder, getVolumeUpdatedCallbacks, isPathUnderReservedVolume, relativeVolumePath } from "./volumeShared";
@@ -174,4 +175,7 @@ export function installScopeHooks(): void {
   if (installed) return;
   installed = true;
   registerFeatureHooks("scopes", scopeAddressHooks);
+  // devtools の `overlays()` はこの受け口から読む（devtools が mount.ts を静的 import すると、
+  // devtools だけのページにスコープ機能のコードが乗る — 要件 B13 / bridge/featureBridge.ts）
+  setMountOverlayProvider(summarizeMountOverlays);
 }

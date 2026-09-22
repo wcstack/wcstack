@@ -261,9 +261,11 @@ jobs:
         if: ${{ matrix.package == 'state' }}
         run: node ../../scripts/check-state-size.mjs --check
       # One core chunk (requirement B13, wiring design §7-1): every `@wcstack/state/features/*`
-      # entry must import the core's chunk instead of carrying a copy. Reads the source maps of
-      # the split build, so it runs after the build.
-      - name: Check that no feature entry of @wcstack/state re-bundles the core
+      # entry must import the core's chunk instead of carrying a copy, must not carry another
+      # feature's code (cross-feature calls go through src/bridge/*), and its own gzip may not grow
+      # more than 3 % over scripts/state-split-baseline.json. Reads the source maps of the split
+      # build, so it runs after the build.
+      - name: Check that no feature entry of @wcstack/state re-bundles the core or another feature
         if: ${{ matrix.package == 'state' }}
         run: node ../../scripts/check-state-split.mjs --check
       - run: npm run typecheck --if-present

@@ -126,6 +126,38 @@ describe('proxy/StateHandler (coverage)', () => {
     expect(trapSet).not.toHaveBeenCalled();
   });
 
+  // `delete state.x` と `Object.defineProperty(state, ...)` も書き込み（要件 B6）。
+  // トラップが無いと readonly のプロキシからツリーの枝を消せてしまい、
+  // 次の読みが [wcs/binding-path-missing] で落ちていた
+  it('readonlyでは delete でエラーになること', () => {
+    vi.mocked(getStateElement).mockReturnValue(mockStateElement());
+    const handler = new StateHandler(document, 'readonly');
+    const target = { value: 1 } as any;
+
+    expect(() => handler.deleteProperty(target, 'value')).toThrow(/This state is readonly/);
+    expect('value' in target).toBe(true);
+  });
+
+  it('readonlyでは defineProperty でエラーになること', () => {
+    vi.mocked(getStateElement).mockReturnValue(mockStateElement());
+    const handler = new StateHandler(document, 'readonly');
+    const target = { value: 1 } as any;
+
+    expect(() => handler.defineProperty(target, 'added', { value: 2 })).toThrow(/This state is readonly/);
+    expect('added' in target).toBe(false);
+  });
+
+  it('writable では delete / defineProperty が通ること', () => {
+    vi.mocked(getStateElement).mockReturnValue(mockStateElement());
+    const handler = new StateHandler(document, 'writable');
+    const target = { value: 1 } as any;
+
+    expect(handler.defineProperty(target, 'added', { value: 2, configurable: true })).toBe(true);
+    expect(target.added).toBe(2);
+    expect(handler.deleteProperty(target, 'value')).toBe(true);
+    expect('value' in target).toBe(false);
+  });
+
   it('createStateProxyがStateProxyを生成すること', () => {
     const stateElement = mockStateElement();
     vi.mocked(getStateElement).mockReturnValue(stateElement);

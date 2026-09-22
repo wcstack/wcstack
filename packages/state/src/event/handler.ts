@@ -88,8 +88,24 @@ const stateEventHandlerFunction = (
   });
 }
 
+/**
+ * DOM イベントリスナを張る束縛かを判定する（要件 B5 / D34）。
+ *
+ * 名前の綴り（`on` で始まるか）だけでは足りない: 明示のプロパティ形 `.online:` は
+ * `propName` が `"online"` でも **プロパティ束縛**（`bindingType: 'prop'`）であって
+ * `"line"` イベントの購読ではない。`spread` で配線される `once`（`<wcs-timer>` /
+ * `<wcs-raf>` …）も同じ形。種別で判定することで、`for` 行の内（`structural/rowPlan.ts`
+ * の `isEvent`）と外で同じ束縛が同じ意味になる。
+ *
+ * `eventToken.<prop>:` も `bindingType: 'event'` だが DOM イベントではない（pub/sub 配線）
+ * ので、`on` 接頭辞の検査も併せて残す。
+ */
+function isDomEventBinding(binding: IBindingInfo): boolean {
+  return binding.bindingType === 'event' && binding.propName.startsWith(EVENT_PROP_PREFIX);
+}
+
 export function attachEventHandler(binding: IBindingInfo): boolean {
-  if (!binding.propName.startsWith(EVENT_PROP_PREFIX)) {
+  if (!isDomEventBinding(binding)) {
     return false;
   }
   const key = getHandlerKey(binding);
@@ -107,7 +123,7 @@ export function attachEventHandler(binding: IBindingInfo): boolean {
 }
 
 export function detachEventHandler(binding: IBindingInfo): boolean {
-  if (!binding.propName.startsWith(EVENT_PROP_PREFIX)) {
+  if (!isDomEventBinding(binding)) {
     return false;
   }
   const key = getHandlerKey(binding);

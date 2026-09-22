@@ -15,7 +15,7 @@
  */
 
 import { IAbsoluteStateAddress } from "../../address/types";
-import { STATE_UPDATED_CALLBACK_NAME } from "../../define";
+import { STATE_RENDERED_CALLBACK_NAME } from "../../define";
 import { getScopedIndexes } from "../../list/wildcardLevel";
 import { IStateHandler } from "../types";
 
@@ -34,7 +34,7 @@ export function updatedCallback(
   receiver: any,
   handler: IStateHandler
 ): unknown {
-  const callback: unknown = Reflect.get(target, STATE_UPDATED_CALLBACK_NAME);
+  const callback: unknown = Reflect.get(target, STATE_RENDERED_CALLBACK_NAME);
   let result: unknown;
   if (typeof callback === "function") {
     const paths: Set<string> = new Set();

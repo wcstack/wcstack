@@ -144,10 +144,13 @@ function validateBindingAgainstContract(
   property = hashIndex === -1 ? property : property.slice(0, hashIndex);
 
   // 明示のプロパティ形（`.once:`、@wcstack/state 3.1・要件 B5）: ドットを外して同じ名前で照合する。
-  // ドットの後の名前空間の語は正本パーサが [wcs/binding-syntax] で報告するので、ここでは重ねない
+  // 正本パーサが [wcs/binding-syntax] で落とす形（ドットの後が名前空間の語・空・さらにドット
+  // ＝ `..once:`）は、ここでは重ねない — 同じ 1 か所に「未知メンバー」という別の理由の
+  // 警告を並べても、直す手がかりが増えずに紛らわしくなるだけ。
   const explicit = property.startsWith('.') && property !== '...';
   if (explicit) {
     property = property.slice(1);
+    if (property.length === 0 || property.startsWith('.')) return;
     if (/^(class|style|attr|command|eventToken)(\.|$)/.test(property)) return;
   }
 
@@ -161,7 +164,7 @@ function validateBindingAgainstContract(
       diagnostics.push({
         code: WcsDiagnosticCode.OnPrefixedMember,
         start, end, severity: 'warning', tag: tagName, member: property,
-        message: msgs.onPrefixedMember(property, tagName),
+        message: msgs.onPrefixedMember(property, tagName, modifiers),
       });
     }
     return;

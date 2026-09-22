@@ -90,3 +90,31 @@ describe('parseFilters', () => {
     expect(result[0].args).toEqual(['5', '0']);
   });
 });
+
+/**
+ * 文法エラーの語彙（要件 B2 / B4・三面同語彙）。vscode-wcs は `[wcs/binding-syntax]` を
+ * 含むメッセージだけを診断に変換するので、構文エラーにはコードと lint への誘導を付ける。
+ */
+describe('parseFilters — 文法エラーの語彙', () => {
+  it('括弧の不一致に [wcs/binding-syntax] と lint への誘導が付くこと', () => {
+    expect(() => parseFilters(['truncate(3'], 'output'))
+      .toThrow(/\[wcs\/binding-syntax\] Invalid filter format: missing closing parenthesis in "truncate\(3"/);
+    expect(() => parseFilters(['truncate(3'], 'output')).toThrow(/npx @wcstack\/lint/);
+    expect(() => parseFilters(['truncate3)'], 'output'))
+      .toThrow(/\[wcs\/binding-syntax\] Invalid filter format: missing opening parenthesis in "truncate3\)"/);
+  });
+
+  it('空フィルタのメッセージに原文が入ること（つなぎ直しでは消える形でも）', () => {
+    // `a|` は `filterTextList` が `[""]` なので、join("|") では空文字になっていた
+    expect(() => parseFilters([''], 'output', ''))
+      .toThrow(/an empty filter in ""/);
+    expect(() => parseFilters(['', 'b'], 'output', '|b'))
+      .toThrow(/an empty filter in "\|b"/);
+  });
+
+  it('フィルタ名に修飾子が飲まれた形を、修飾子の位置として名指しで落とすこと', () => {
+    expect(() => parseFilters(['trim#ro'], 'input'))
+      .toThrow(/\[wcs\/binding-syntax\] "trim#ro" is not a filter name/);
+    expect(() => parseFilters(['trim#ro'], 'input')).toThrow(/write "…#ro\|trim"/);
+  });
+});

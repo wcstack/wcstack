@@ -44,6 +44,27 @@ describe("wcs/binding-syntax（正本パーサと同じ判定 — @wcstack/state
     expect(html.slice(d[0].start, d[0].end)).toBe("count |");
   });
 
+  // Fixed by review — v3 移行 validator の撤去でコメントバインディングが検査対象から
+  // 落ちていた（ランタイムは mustache と同じ経路で throw するのに lint だけ沈黙する退行）。
+  it("コメントバインディング <!--@@:…--> も mustache と同じく報告し、位置は式を指すこと", () => {
+    const unterminated = `<p><!--@@:name|join('a)--></p>`;
+    const d = codes(unterminated);
+    expect(d).toHaveLength(1);
+    expect(d[0].code).toBe("wcs/binding-syntax");
+    expect(d[0].severity).toBe("error");
+    expect(unterminated.slice(d[0].start, d[0].end)).toBe("name|join('a)");
+
+    const emptyFilter = `<p><!--@@:count | --></p>`;
+    const e = codes(emptyFilter);
+    expect(e).toHaveLength(1);
+    expect(emptyFilter.slice(e[0].start, e[0].end)).toBe("count |");
+
+    // 正式形（`<!--@@wcs-text:…-->`）も同じ経路で見る
+    expect(codes(`<p><!--@@wcs-text:count|--></p>`)).toHaveLength(1);
+    // 正しいコメントバインディングは報告しない
+    expect(codes(`<p><!--@@:count|gt(0)--></p>`)).toEqual([]);
+  });
+
   it("日本語のメッセージを返すこと", () => {
     const d = validateBindingSyntax(`<input data-wcs="value#ro#wo: x">`, "data-wcs", "ja");
     expect(d[0].message).toMatch(/^バインディングの構文エラー（ランタイムは読み込み時に throw します）: /);

@@ -224,9 +224,12 @@
 
 機能が入っていない宣言は黙って無視されません。state の定義時に
 `[wcs/feature-not-installed] … install it with installFeatures([...]) from "@wcstack/state/features/…"`
-で落ち、実装の無いフィルタは束縛計画の段で `[wcs/filter-unknown]` で落ちます。install は冪等で、
+で落ち、実装の無いフィルタは束縛計画の段で `[wcs/filter-unknown]` で落ちます。`$watch` を宣言した
+ボリューム（`<wcs-state mount=…>`）も接ぎ木の時点で同じ `[wcs/feature-not-installed]` で落ちます —
+ボリュームの state は要素自身の宣言の門を通らないためです。install は冪等で、
 どのエントリも core のチャンクを 1 つだけ共有します（機能側がエンジンの 2 つ目のコピーを抱える
-ことはありません）。
+ことも、**別の機能**のコピーを抱えることもありません — 機能をまたぐ呼び出しは、持ち主の機能が
+install 時に埋める受け口を通ります）。
 
 ## 基本的な使い方
 
@@ -652,7 +655,7 @@ export default {
 <wcs-fetch data-wcs="...: usersFetch; status: alternateStatus"></wcs-fetch>
 ```
 
-**`undefined` は「無意見」** — 展開された state パスが `undefined` に解決される場合（slot オブジェクトでその input を初期化していない場合など）、プロパティ書き込みは**スキップ**され、要素側の既定値がそのまま生きます。実際に使うパスだけ初期化すれば十分で、`<wcs-fetch>` が `method` / `manual` / `body` を宣言していても `usersFetch: { value: null, loading: false }` だけで動きます。明示的にクリアしたい場合は `null` を代入してください（`null` は常に書き込まれます）。**表示の表面は別です（3.0）:** `textContent` / `innerText` / `innerHTML`・mustache のテキスト・`attr.*`・`style.*` には生かすべき要素側の既定値が無いので、`undefined` も `null` も「値が無い」— テキストは空になり、属性やスタイルは削除されます。3.0 より前は `textContent:` も `undefined` をスキップしていたため使い回したリストの行に前の行の文字が残り、属性には文字列 `"undefined"` / `"null"` が入っていました。このスキップは spread に限らずすべてのプロパティバインディングに適用され、`config.debug` 時はスキップごとに `console.debug` でログが出ます。
+**`undefined` は「無意見」** — 展開された state パスが `undefined` に解決される場合（slot オブジェクトでその input を初期化していない場合など）、プロパティ書き込みは**スキップ**され、要素側の既定値がそのまま生きます。実際に使うパスだけ初期化すれば十分で、`<wcs-fetch>` が `method` / `manual` / `body` を宣言していても `usersFetch: { value: null, loading: false }` だけで動きます。明示的にクリアしたい場合は `null` を代入してください（`null` は常に書き込まれます）。**表示の表面は別です（3.0）:** `textContent` / `innerText` / `innerHTML`・mustache のテキスト・`attr.*`・`style.*`・`class.*` には生かすべき要素側の既定値が無いので、`undefined` も `null` も「値が無い」— テキストは空になり、属性やスタイルは削除され、クラスは外れます。3.0 より前は `textContent:` も `undefined` をスキップしていたため使い回したリストの行に前の行の文字が残り、属性には文字列 `"undefined"` / `"null"` が入っていました。`class.*` だけは範囲が狭く、「値が無い」扱いになるのは `undefined` と `null` だけです — **それ以外の非 boolean は今も throw します**。クラスの束縛は真偽の切り替えなので、truthy な文字列は意図というより書き間違いである方がずっと多いためです。「truthy として扱う」つもりなら `class.on: flag|truthy` と書いてください。このスキップは spread に限らずすべてのプロパティバインディングに適用され、`config.debug` 時はスキップごとに `console.debug` でログが出ます。
 
 **制約事項**：
 
@@ -1509,7 +1512,7 @@ export default {
 |---|---|---|
 | `eq(value)` | 等しい | `count\|eq(0)` → `true/false` |
 | `ne(value)` | 等しくない | `count\|ne(0)` |
-| `not` | 論理否定 | `isActive\|not` |
+| `not` | 真偽性を反転 — `0` / `""` / `null` / `undefined` はすべて `true`（3.x。以前は非 boolean で throw し、`else:` がどちらの枝も描かなかった） | `isActive\|not` |
 | `lt(n)` | より小さい | `count\|lt(10)` |
 | `le(n)` | 以下 | `count\|le(10)` |
 | `gt(n)` | より大きい | `count\|gt(0)` |
@@ -1597,6 +1600,14 @@ export default {
 フィルタは束縛計画の段で解決されます。未知の名前は `[wcs/filter-unknown]`（did-you-mean 付き）で、3.0 からは受け付ける個数の外の引数も `[wcs/filter-arity]`（`join(a,b)`: "accepts at most 1 argument(s) (2 given)"）で落ちます — lint と同じコード・同じ範囲です。引数は構造のままキャッシュされるので、`join('a,b')` と `join(a)` を取り違えません。
 
 **引数のリテラルは型を持ちます（3.0）。** 引用符の無い `true` / `false` / `null` / 数値はその値、引用符付きの引数は文字列です。比較フィルタは真偽値と `null` の比較にこれを使います: `done|eq(true)` は `true` に一致し（3.0 より前は文字列 `"true"` と比べていて一致しなかった）、`eq('true')` は一致せず、`eq(null)` は `null` に一致します。数値と文字列の比べ方は変わりません — 数値の値は数と、文字列の値は原文と比べるので、フォームの値 `"1"` は今も `eq(1)` に一致します。`defaults(v)` は型付きの値を返します: `defaults(0)` は `0`、`defaults('0')` は `"0"`、`defaults(null)` は `null`。
+
+**引用符の規則。** 引用符（`'` / `"`）は「ここはリテラル」という宣言で、引数の文法は意図的に小さく保たれています:
+
+- 引用符の中では `,` `;` `|` `:` はただの文字です。`join(', ')`・`replace(':','-')`・`join(';')` はそのまま通ります。
+- 空白のトリムは**引用符の外側だけ**です: `pad(5, ' ')` は空白で埋め、`fix( 2 )` は `fix(2)` と同じです。
+- **エスケープ文字はありません。** 同じ種類の引用符をリテラルの中に入れることはできません — `'it\'s'` ではなく `"it's"` と書いてください（前者は未終端の引用符として `[wcs/binding-syntax]` で落ちます）。
+- 隣り合う並びは 1 つの引数に連結されます: `'a' 'b'` は 1 個の文字列 `a b`、`1'2'` は文字列 `12` です（引数のどこかに引用符があれば、その引数は文字列になります）。
+- 未終端の引用符は受理しません。末尾の空引数は落とされ（`filter()` は引数 0 個）、先頭・中間の空引数は位置を保ちます（`defaults(,)` は空文字 1 個を渡します）。
 
 ## Web Component バインディング
 
@@ -1719,6 +1730,11 @@ customElements.define("user-card", UserCard);
 > 宣言しているコンポーネント（`state = { message: "" }` ＋ `state.message: ...`）もホストの値を読み、
 > 既定値は使われません（2.x では R1 によって自前のキーが私有になり、ホストの値を隠していました —
 > `wcs/mount-own-key-shadow` の警告付き）。マップしていない自前のキーは今も R1 で私有です。
+> これは**1 段のエントリ**の話です: より深いエントリ（`state.a.b: outer.b`）は `a` の私有性に
+> 触らないので、コンポーネントが `a` を自分で宣言していれば `a` とその配下は私有のままで、
+> エントリは届きません。名前がコンポーネントの getter / setter / メソッドと一致するエントリも同じで、
+> コンポーネント自身の面が勝ちます。いずれの形も `wcs/mount-own-key-shadow` で 1 回報告されます —
+> どちらかの名前を変えてください。
 >
 > **マウントの `#ro` を尊重します（3.0）:** `state#ro: user` や `state.title#ro: doc.title` では、
 > コンポーネントはそのエントリを読めても書けません — `element.state.title = …`・メソッド内の
