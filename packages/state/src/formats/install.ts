@@ -7,12 +7,13 @@
  */
 import { registerFilters } from "../core/filterRegistry";
 import { builtinFilterArity, inputBuiltinFilters, outputBuiltinFilters } from "./builtinFilters";
+import { builtinFilterAliases } from "../filters/filterAliases";
 
 let installed = false;
 /** 冪等。full / auto では `bootstrapState()` が呼ぶ */
 export function installFormats(): void {
   if (installed) return;
   installed = true;
-  registerFilters("input", inputBuiltinFilters, builtinFilterArity);
-  registerFilters("output", outputBuiltinFilters, builtinFilterArity);
+  registerFilters("input", inputBuiltinFilters, builtinFilterArity, builtinFilterAliases);
+  registerFilters("output", outputBuiltinFilters, builtinFilterArity, builtinFilterAliases);
 }

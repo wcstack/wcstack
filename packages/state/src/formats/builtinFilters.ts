@@ -19,6 +19,7 @@ import { didYouMean, LINT_HINT } from "../errorGuidance.js";
 import { raiseError } from "../raiseError.js";
 import { optionMustBeNumber, optionsRequired, valueMustBeArray, valueMustBeBoolean, valueMustBeDate, valueMustBeNumber } from "./errorMessages.js";
 import { FilterFn, FilterWithOptions } from "../filters/types";
+import { builtinFilterAliases } from "../filters/filterAliases";
 
 function validateNumberString(value: string): boolean {
   if (!value || isNaN(Number(value))) {
@@ -154,10 +155,10 @@ const ge = (options?:string[]): FilterFn<boolean> => {
  * @returns Filter function that returns incremented number
  */
 const inc = (options?:string[]): FilterFn<number> => {
-  const opt = options?.[0] ?? optionsRequired('inc');
-  if (!validateNumberString(opt)) {optionMustBeNumber('inc');}
+  const opt = options?.[0] ?? optionsRequired('add');
+  if (!validateNumberString(opt)) {optionMustBeNumber('add');}
   return (value: unknown): number => {
-    if (typeof value !== 'number') {valueMustBeNumber('inc');}
+    if (typeof value !== 'number') {valueMustBeNumber('add');}
     return value + Number(opt);
   }
 }
@@ -169,10 +170,10 @@ const inc = (options?:string[]): FilterFn<number> => {
  * @returns Filter function that returns decremented number
  */
 const dec = (options?:string[]): FilterFn<number> => {
-  const opt = options?.[0] ?? optionsRequired('dec');
-  if (!validateNumberString(opt)) {optionMustBeNumber('dec');}
+  const opt = options?.[0] ?? optionsRequired('sub');
+  if (!validateNumberString(opt)) {optionMustBeNumber('sub');}
   return (value: unknown): number => {
-    if (typeof value !== 'number') {valueMustBeNumber('dec');}
+    if (typeof value !== 'number') {valueMustBeNumber('sub');}
     return value - Number(opt);
   }
 }
@@ -266,9 +267,9 @@ const clamp = (options?:string[]): FilterFn<number> => {
  */
 const fix = (options?:string[]): FilterFn<string> => {
   const opt = options?.[0] ?? "0";
-  if (!validateNumberString(opt)) {optionMustBeNumber('fix');}
+  if (!validateNumberString(opt)) {optionMustBeNumber('toFixed');}
   return (value: unknown): string => {
-    if (typeof value !== 'number') {valueMustBeNumber('fix');}
+    if (typeof value !== 'number') {valueMustBeNumber('toFixed');}
     return value.toFixed(Number(opt));
   }
 }
@@ -399,11 +400,26 @@ const substr = (options?:string[]): FilterFn<string> => {
  * @returns Filter function that returns padded string
  */
 const pad = (options?:string[]): FilterFn<string> => {
-  const opt1 = options?.[0] ?? optionsRequired('pad');
-  if (!validateNumberString(opt1)) {optionMustBeNumber('pad');}
+  const opt1 = options?.[0] ?? optionsRequired('padStart');
+  if (!validateNumberString(opt1)) {optionMustBeNumber('padStart');}
   const opt2 = options?.[1] ?? '0';
   return (value: unknown): string => {
     return String(value).padStart(Number(opt1), opt2);
+  }
+}
+
+/**
+ * padEnd filter - pads string to specified length from the end (the pair of `padStart`, requirement B12).
+ *
+ * @param options - Array with target length and pad string (default: ' ')
+ * @returns Filter function that returns padded string
+ */
+const padEnd = (options?:string[]): FilterFn<string> => {
+  const opt1 = options?.[0] ?? optionsRequired('padEnd');
+  if (!validateNumberString(opt1)) {optionMustBeNumber('padEnd');}
+  const opt2 = options?.[1] ?? ' ';
+  return (value: unknown): string => {
+    return String(value).padEnd(Number(opt1), opt2);
   }
 }
 
@@ -414,8 +430,8 @@ const pad = (options?:string[]): FilterFn<string> => {
  * @returns Filter function that returns repeated string
  */
 const rep = (options?:string[]): FilterFn<string> => {
-  const opt = options?.[0] ?? optionsRequired('rep');
-  if (!validateNumberString(opt)) {optionMustBeNumber('rep');}
+  const opt = options?.[0] ?? optionsRequired('repeat');
+  if (!validateNumberString(opt)) {optionMustBeNumber('repeat');}
   return (value: unknown): string => {
     return String(value).repeat(Number(opt));
   }
@@ -706,6 +722,19 @@ const defaults = (options?:string[], literals?: readonly unknown[]): FilterFn<un
 }
 
 /**
+ * coalesce filter - returns the default only for null / undefined (`defaults` also replaces 0, false and "").
+ * Requirement B12: the nullish counterpart of `defaults`, read like SQL COALESCE.
+ *
+ * @param options - Array with default value as first element
+ * @returns Filter function that returns value or default
+ */
+const coalesce = (options?:string[], literals?: readonly unknown[]): FilterFn<unknown> => {
+  const opt = options?.[0] ?? optionsRequired('coalesce');
+  const fallback = literals !== undefined && literals.length > 0 ? literals[0] : opt;
+  return (value: unknown): unknown => value ?? fallback;
+}
+
+/**
  * Boolean filter - converts value to boolean.
  * 
  * @param options - Unused
@@ -763,25 +792,26 @@ const builtinFilters: FilterWithOptions = {
   "gt": gt,
   "ge": ge,
 
-  "inc": inc,
-  "dec": dec,
+  "add": inc,
+  "sub": dec,
   "mul": mul,
   "div": div,
   "mod": mod,
   "abs": abs,
   "clamp": clamp,
 
-  "fix": fix,
+  "toFixed": fix,
   "locale": locale,
-  "uc": uc,
-  "lc": lc,
-  "cap": cap,
+  "upper": uc,
+  "lower": lc,
+  "capitalize": cap,
   "trim": trim,
   "slice": slice,
   "substr": substr,
-  "pad": pad,
-  "rep": rep,
-  "rev": rev,
+  "padStart": pad,
+  "padEnd": padEnd,
+  "repeat": rep,
+  "reverse": rev,
   "truncate": truncate,
   "join": join,
 
@@ -802,11 +832,12 @@ const builtinFilters: FilterWithOptions = {
   "falsy": falsy,
   "truthy": truthy,
   "defaults": defaults,
+  "coalesce": coalesce,
 
   "boolean": boolean,
   "number": number,
   "string": string,
-  "null": _null,
+  "nullIfEmpty": _null,
 };
 
 /**
@@ -823,24 +854,25 @@ export const builtinFilterArity: Readonly<Record<string, readonly [number, numbe
   le: [1, 1],
   gt: [1, 1],
   ge: [1, 1],
-  inc: [0, 1],
-  dec: [0, 1],
+  add: [1, 1],
+  sub: [1, 1],
   mul: [1, 1],
   div: [1, 1],
   mod: [1, 1],
   abs: [0, 0],
   clamp: [2, 2],
-  fix: [0, 1],
+  toFixed: [0, 1],
   locale: [0, 1],
-  uc: [0, 0],
-  lc: [0, 0],
-  cap: [0, 0],
+  upper: [0, 0],
+  lower: [0, 0],
+  capitalize: [0, 0],
   trim: [0, 0],
   slice: [1, 2],
   substr: [1, 2],
-  pad: [1, 2],
-  rep: [1, 1],
-  rev: [0, 0],
+  padStart: [1, 2],
+  padEnd: [1, 2],
+  repeat: [1, 1],
+  reverse: [0, 0],
   truncate: [1, 2],
   join: [0, 1],
   int: [0, 0],
@@ -858,10 +890,11 @@ export const builtinFilterArity: Readonly<Record<string, readonly [number, numbe
   falsy: [0, 0],
   truthy: [0, 0],
   defaults: [1, 1],
+  coalesce: [1, 1],
   boolean: [0, 0],
   number: [0, 0],
   string: [0, 0],
-  null: [0, 0],
+  nullIfEmpty: [0, 0],
 };
 
 export const outputBuiltinFilters = builtinFilters;
@@ -880,7 +913,7 @@ export const builtinFiltersByFilterIOType = {
  * @returns Function that takes FilterWithOptions and returns filter function
  */
 export const builtinFilterFn = (name:string, options: string[]) => (filters: FilterWithOptions) => {
-  const filter = filters[name];
+  const filter = filters[name] ?? filters[builtinFilterAliases[name]];
   if (!filter) {
     // lint の wcs/filter-unknown と同じ語彙・同じ did-you-mean 規準（三面同語彙）。
     raiseError(`[wcs/filter-unknown] filter not found: ${name}.${didYouMean(name, Object.keys(filters))}${LINT_HINT}`);

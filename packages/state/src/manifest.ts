@@ -14,6 +14,7 @@
 import { config } from "./config.js";
 import { outputBuiltinFilters } from "./formats/builtinFilters.js";
 import { builtinFilterMeta, IFilterMeta } from "./filters/filterMeta.js";
+import { builtinFilterAliases } from "./filters/filterAliases.js";
 import { STRUCTURAL_BINDING_TYPE_SET } from "./structural/define.js";
 import {
   DELIMITER,
@@ -55,6 +56,7 @@ import {
 
 // 消費側（vscode-wcs 等）が `@wcstack/state/manifest` から正本を直接引けるよう再エクスポート。
 export { builtinFilterMeta } from "./filters/filterMeta.js";
+export { builtinFilterAliases } from "./filters/filterAliases.js";
 export type { IFilterMeta, FilterResultType, FilterArgType } from "./filters/filterMeta.js";
 export { STRUCTURAL_BINDING_TYPE_SET } from "./structural/define.js";
 
@@ -123,6 +125,8 @@ export interface IWcsManifest {
   filters: string[];
   /** 組み込みフィルタの構造化メタデータ（説明・引数仕様・型）。vscode-wcs の手リスト撤去用。 */
   filterMeta: Record<string, IFilterMeta>;
+  /** 組み込みフィルタの旧名 → 正式名（要件 B12）。旧名も解決するが、ツールは正式名を提案する */
+  filterAliases: Readonly<Record<string, string>>;
   /** 予約ライフサイクルフック名 */
   reservedLifecycle: readonly string[];
   /** 予約 state API（プロトコル系の `$` 名前空間） */
@@ -172,6 +176,7 @@ export function getWcsManifest(): IWcsManifest {
     // 実装（Record のキー）から自動導出。手リストを持たない＝ドリフトの構造的排除。
     filters: Object.keys(outputBuiltinFilters),
     filterMeta: builtinFilterMeta,
+    filterAliases: builtinFilterAliases,
     reservedLifecycle: [
       STATE_CONNECTED_CALLBACK_NAME,
       STATE_DISCONNECTED_CALLBACK_NAME,

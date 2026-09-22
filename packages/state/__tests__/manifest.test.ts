@@ -24,13 +24,25 @@ describe("wcs-manifest（単一正本・A2-1）", () => {
     expect(getWcsManifest().filters).toEqual([
       "eq", "ne", "not",
       "lt", "le", "gt", "ge",
-      "inc", "dec", "mul", "div", "mod", "abs", "clamp",
-      "fix", "locale", "uc", "lc", "cap", "trim", "slice", "substr", "pad", "rep", "rev", "truncate", "join",
+      "add", "sub", "mul", "div", "mod", "abs", "clamp",
+      "toFixed", "locale", "upper", "lower", "capitalize", "trim", "slice", "substr", "padStart", "padEnd", "repeat", "reverse", "truncate", "join",
       "int", "float", "round", "floor", "ceil", "percent", "unit",
       "date", "time", "datetime", "ymd", "hms",
-      "falsy", "truthy", "defaults",
-      "boolean", "number", "string", "null",
+      "falsy", "truthy", "defaults", "coalesce",
+      "boolean", "number", "string", "nullIfEmpty",
     ]);
+  });
+
+  it("filterAliases は旧名 → 正式名で、正式名とは重ならず、行き先は必ず実在する（要件 B12）", () => {
+    const aliases = getWcsManifest().filterAliases;
+    expect(aliases).toEqual({
+      inc: "add", dec: "sub", fix: "toFixed", uc: "upper", lc: "lower", cap: "capitalize",
+      rep: "repeat", rev: "reverse", pad: "padStart", null: "nullIfEmpty",
+    });
+    for (const [alias, canonical] of Object.entries(aliases)) {
+      expect(alias in outputBuiltinFilters).toBe(false);
+      expect(canonical in outputBuiltinFilters).toBe(true);
+    }
   });
 
   it("filterMeta は全フィルタを過不足なくカバーする（meta 書き忘れ・余剰を検出）", () => {
