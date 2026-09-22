@@ -1,12 +1,12 @@
-# `$streams` — fetch body streaming demo
+# `$stream` — fetch body streaming demo
 
 [日本語版](./README.ja.md)
 
-A demo of `$streams` in **`@wcstack/state`** — the core extension that folds an external async producer into a reactive property. It decodes a chunked HTTP response body (`response.body`) through `TextDecoderStream` and accumulates the text with `fold`.
+A demo of `$stream` in **`@wcstack/state`** — the core extension that folds an external async producer into a reactive property. It decodes a chunked HTTP response body (`response.body`) through `TextDecoderStream` and accumulates the text with `fold`.
 
 ## Getting Started
 
-`$streams` is released, so this demo loads state from the CDN (`https://esm.run/@wcstack/state/auto`) like every other one. No build is needed — but the chunked streaming route (`/api/story`) cannot be served statically, so start the bundled server.js.
+`$stream` is released, so this demo loads state from the CDN (`https://esm.run/@wcstack/state/auto`) like every other one. No build is needed — but the chunked streaming route (`/api/story`) cannot be served statically, so start the bundled server.js.
 
 ```bash
 cd packages/state

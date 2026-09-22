@@ -43,7 +43,7 @@
     code { font-family: ui-monospace, monospace; font-size: 0.95em; }
   </style>
 
-  <!-- All three packages load from the CDN ($streams ships since v1.19.0).
+  <!-- All three packages load from the CDN ($stream ships since 3.2, as $streams since v1.19.0).
 
        Module scripts execute in document order, so listing the I/O nodes
        BEFORE state keeps their elements defined by the time state initializes
@@ -58,7 +58,7 @@
 <body>
 
 <h1>wcstack: live metrics — one SSE endpoint, two idioms</h1>
-<p class="lead">sse + state($streams) + network — the same server-sent event endpoint consumed two ways: left through the <code>&lt;wcs-sse&gt;</code> tag, right through a state-side <code>$streams</code> fold. Each idiom holds its <em>own</em> <code>EventSource</code>, and the server samples per connection, so the two charts move independently. Switch hosts and watch who has to remember to reset.</p>
+<p class="lead">sse + state($stream) + network — the same server-sent event endpoint consumed two ways: left through the <code>&lt;wcs-sse&gt;</code> tag, right through a state-side <code>$stream</code> fold. Each idiom holds its <em>own</em> <code>EventSource</code>, and the server samples per connection, so the two charts move independently. Switch hosts and watch who has to remember to reset.</p>
 
 <!-- ============================================================
      App State
@@ -97,7 +97,7 @@
       $commandTokens: ["closeFeed", "openFeed"],
 
       // --- RIGHT panel: the state OWNS the connection ----------------------
-      $streams: {
+      $stream: {
         metrics: {
           // The dependency is captured HERE: writing `host` aborts the current
           // run, resets `metrics` to `initial` and reconnects with the new
@@ -231,7 +231,7 @@
       // WCAG 2.2.2: one control pauses BOTH panes at once. This demo is a
       // side-by-side comparison — pausing only one idiom would lie about the
       // other. Left = the tag's close/connect commands; right = the pauseBus
-      // into the $streams source above.
+      // into the $stream source above.
       togglePause() {
         this.paused = !this.paused;
         feedsPaused = this.paused;
@@ -256,7 +256,7 @@
         this.host = next;
         // LEFT panel bookkeeping: <wcs-sse> reconnects itself when sseUrl
         // changes, but the history WE folded in $on does not reset itself —
-        // three lines someone has to remember. The $streams panel needs none
+        // three lines someone has to remember. The $stream panel needs none
         // of this: the dependency-driven restart already reset it to initial.
         this.leftSamples = [];
         this.leftCount = 0;
@@ -345,9 +345,9 @@
     </template>
   </section>
 
-  <!-- RIGHT: $streams idiom -->
+  <!-- RIGHT: $stream idiom -->
   <section class="panel right">
-    <h2>$streams — the state owns the connection</h2>
+    <h2>$stream — the state owns the connection</h2>
     <p class="idiom">source(EventSource) → fold → reactive property</p>
     <span class="chip" data-wcs="textContent: rightStatus; class.on: rightActive; class.err: rightIsError"></span>
     <div class="stats">
@@ -368,7 +368,7 @@
 </div>
 
 <ul class="notes">
-  <li><b>Same job, two owners</b>: <code>&lt;wcs-sse&gt;</code> and <code>$streams</code> compete for the same work, so this page runs them side by side instead of chaining them. Rule of thumb: wiring events at elements → the tag; folding/switching inside state → <code>$streams</code>.</li>
+  <li><b>Same job, two owners</b>: <code>&lt;wcs-sse&gt;</code> and <code>$stream</code> compete for the same work, so this page runs them side by side instead of chaining them. Rule of thumb: wiring events at elements → the tag; folding/switching inside state → <code>$stream</code>.</li>
   <li><b>The host switch is the punchline</b>: the left panel's reset is three manual lines in <code>setHost()</code>; the right panel resets itself because <code>args</code> reads <code>host</code> — the dependency-driven restart aborts the old EventSource and starts from <code>initial</code>.</li>
   <li><b>Named events</b>: <code>events="metric,deploy"</code> funnels every named SSE event into the single <code>message</code> output — <code>message.event</code> tells you which one fired.</li>
   <li><b>network</b> is a pure monitor of the Network Information API (connection <em>quality</em>, not online/offline) — no attributes, no commands, five outputs. It is Chromium-only and the tile says so elsewhere.</li>

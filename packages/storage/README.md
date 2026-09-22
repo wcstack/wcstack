@@ -120,7 +120,7 @@ This pattern is fixed by `packages/storage/__tests__/integration.accessorPairFor
 
 #### Saving on demand (`manual` + `trigger`)
 
-To save at a moment of your choosing instead of on every change, add `manual` and drive `trigger:` from a boolean. The dependency walk is **parent → child only**, so a `settings` binding does not fire when `settings.theme` changes; `$trackDependency` lists the fields to watch and `trigger` commits the whole object:
+To save at a moment of your choosing instead of on every change, add `manual` and drive `trigger:` from a boolean. The dependency walk is **parent → child only**, so a `settings` binding does not fire when `settings.theme` changes; `$dependOn` lists the fields to watch and `trigger` commits the whole object:
 
 ```html
 <wcs-state>
@@ -129,8 +129,8 @@ To save at a moment of your choosing instead of on every change, add `manual` an
       settings: { theme: "light", lang: "en" },
 
       get settingsChanged() {
-        this.$trackDependency("settings.theme");
-        this.$trackDependency("settings.lang");
+        this.$dependOn("settings.theme");
+        this.$dependOn("settings.lang");
         return true;
       },
     });

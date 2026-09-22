@@ -22,7 +22,7 @@ cd packages/state/examples
 npx serve .          # 任意の静的サーバーで可
 ```
 
-`$streams` デモ同梱のサーバーもこのフォルダ全体を配信します。
+`$stream` デモ同梱のサーバーもこのフォルダ全体を配信します。
 `node examples/streams/server.js` → http://localhost:3000/recursive-tree/。
 
 ## 見どころ

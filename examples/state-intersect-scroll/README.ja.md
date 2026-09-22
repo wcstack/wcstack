@@ -1,14 +1,14 @@
-# state + intersection + `$streams` + `$scan` デモ（`<wcs-intersect>` による無限スクロール）
+# state + intersection + `$stream` + `$scan` デモ（`<wcs-intersect>` による無限スクロール）
 
 [`infinite-scroll`](../../packages/fetch/examples/infinite-scroll) の低レベル版です。
-`<wcs-intersect>` は可視性だけを報告し、`@wcstack/state` の `$streams` がページ取得、
+`<wcs-intersect>` は可視性だけを報告し、`@wcstack/state` の `$stream` がページ取得、
 switchMap 型キャンセル、有界リトライを所有します。着地したページを、page の run を跨いで残る feed へ
 畳むのは `$scan` で、**何かが描画されていることに依存しません**。
 
 重要なのは、単に fetch を stream 内へ移したことではありません。要求ページは `page++` ではなく、
 **feed に既にある** item 数から導出します。page N の実行中または失敗後に交差 edge が繰り返されても、
 再び N を書くだけなので同値 no-op です。N が feed に着地した後は同じ式が N+1 を返し、その依存変更を
-`$streams` が検出して旧 producer を abort し、最新 producer を起動します。
+`$stream` が検出して旧 producer を abort し、最新 producer を起動します。
 
 ## 起動
 
@@ -39,9 +39,9 @@ FLAKY=0.4 node examples/state-intersect-scroll/server.js
 <wcs-intersect> enter
   -> page = floor(feed.items.length / pageSize) + 1
        | 同じ page: 同値 no-op（実行中／error の edge は skip も retry もしない）
-       | 次の page: $streams の args 依存が変化
+       | 次の page: $stream の args 依存が変化
        v
-$streams.pageResult
+$stream.pageResult
   -> 旧 run を abort
   -> AbortSignal 付きで要求ページを fetch
   -> 失敗時: producer 内で有界 delay/retry
@@ -66,7 +66,7 @@ feed の $watch（次の更新バッチ）
 
 ## 要点
 
-- **README が宣伝する switchMap semantics を実際に使います。** `$streams.pageResult.args` が
+- **README が宣伝する switchMap semantics を実際に使います。** `$stream.pageResult.args` が
   `page`、`pageSize`、`maxRetries`、`retryNonce` を読みます。いずれかが変わると、実行中の fetch
   または retry delay を abort し、最新の依存 snapshot で再起動します。古い run は feed に届きません。
 - **pagination に手書きの loading/error exhaust guard はありません。** sentinel handler は
@@ -75,10 +75,10 @@ feed の $watch（次の更新バッチ）
   2回目の edge が page N を cancel して N+1 へ飛ばすため、switchMap と組み合わせる実装としては誤りです。
   handler に存在する `showError` 分岐は「その edge がユーザー操作か」を判定する retry 資格判定であり、
   pagination を守る exhaust gate ではありません。
-- **ページ単位と feed 全体の寿命は別の宣言です。** `$streams` の値は restart ごとに reset されるため、
+- **ページ単位と feed 全体の寿命は別の宣言です。** `$stream` の値は restart ごとに reset されるため、
   `pageResult` は現在ページの操作だけを保持します。成功の着地は `$scan.feed` が長寿命の feed へ畳みます。
   `feed` はランタイムの所有物で、restart と再接続を跨いで残り、どこにもバインドされていなくても畳まれます。
-  以前の版は `$updatedCallback` で commit しており、表示中の stream status meter が購読の実体
+  以前の版は `$renderedCallback` で commit しており、表示中の stream status meter が購読の実体
   ＝ load-bearing になっていました（あの `<b>` を 1 つ消すと feed が止まる）。その次の版は `$watch`
   ハンドラで手書きの `concat` をしていました。
 - **fold は page キーを持ちます。** ランタイムが畳むのは着地ごとに 1 回で、ページごとに 1 回ではありません。
@@ -87,7 +87,7 @@ feed の $watch（次の更新バッチ）
 - **`page` は plain property のままにします。** `feed` から導出した getter を stream の `args` が読むと、
   stream が自分の結果で restart し、sentinel を経由せずに全ページを読み続けます。ランタイムはこの形に
   `wcs/scan-feedback-loop` を raise します。
-- **`$streams` は switchMap であって retryWhen ではありません。** 自動再接続は意図的に持たないため、
+- **`$stream` は switchMap であって retryWhen ではありません。** 自動再接続は意図的に持たないため、
   async generator `loadPage` が有限の `1 + maxRetries` attempt と abort 対応の固定 delay を所有します。
   retry 進捗は通常の stream 値として yield し、fold は素通しします。最終失敗は
   `$streamStatus.pageResult === "error"` と `$streamError.pageResult` に現れます。
@@ -119,7 +119,7 @@ feed の $watch（次の更新バッチ）
 - sentinel の再武装は副作用（command の発射）なので `$watch` に残ります。commit してから reobserve する順序は、
   1 つのハンドラ内の文順ではなく、機構の順序（`$scan` があるバッチで書き、`$watch` が次のバッチの終わりに
   発火する）で表します。
-- `$streams` が持つのは switchMap 型 restart であり、`retryWhen`、timer、merge、occurrence operator は
+- `$stream` が持つのは switchMap 型 restart であり、`retryWhen`、timer、merge、occurrence operator は
   ありません。そのため attempt loop と abort 対応 delay は producer が所有します。
 - `retryNonce` は「同じ page をもう一度」を occurrence から変化する依存値へ変換します。これは意図的ですが、
   value ベースの restart API が必要とする符号化であることに変わりはありません。

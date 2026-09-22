@@ -1,5 +1,5 @@
 /**
- * Demo server for the SSE dashboard example (sse + state($streams) + network).
+ * Demo server for the SSE dashboard example (sse + state($stream) + network).
  *
  * One thing beyond static file serving, through the shared server's raw
  * (req, res) api hook:
@@ -11,7 +11,7 @@
  *   what the api hook permits: write the event-stream headers, keep
  *   writing, return true — and never call res.end().
  *
- * All wcstack packages (state / sse / network) load from the CDN — $streams
+ * All wcstack packages (state / sse / network) load from the CDN — $stream
  * ships since v1.19.0, so no local build mount is needed.
  */
 import { fileURLToPath } from "node:url";

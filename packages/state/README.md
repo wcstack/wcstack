@@ -88,7 +88,7 @@ This separates UI and state with **no JavaScript intermediary**. You can:
 
 - Redesign the UI without touching state logic — as far as the logic does not hang off what is rendered: a live binding is one of the three [demand roots](#demand-roots--what-makes-a-getter-run), so an element you think of as display-only can be the page's only subscription
 - Refactor state structure and only update path strings
-- Read the HTML and know every binding; the dependencies that are not in the HTML (`$watch`, `$streams`, `$scan`) are all declared in one place, the state
+- Read the HTML and know every binding; the dependencies that are not in the HTML (`$watch`, `$stream`, `$scan`) are all declared in one place, the state
 
 The path contract works like a URL in a REST API — a simple string that both sides agree on, with no shared code between them. It's the natural result of building on HTML's declarative nature rather than inventing a template language on top of JavaScript.
 
@@ -132,12 +132,12 @@ Every row is a section of this README. Unless it appears under [Where the neighb
 | **Aggregation and bulk write** | `$getAll` / `$setAll` / `$resolve` read and write across `items.*.price` without rebuilding the array | [Proxy APIs](#proxy-apis) |
 | **Recursive paths** | `$recursion` declares where a tree's shape repeats; one `**` getter covers every depth | [Recursive paths](#recursive-paths-recursion) |
 | **Reactivity** | An ES Proxy tracks reads per address, caches per address, invalidates in dependency order and batches DOM writes on a microtask | [Updating state](#updating-state) · [Dependency tracking boundaries](#dependency-tracking-boundaries) |
-| **What makes a getter run** | Getters are lazy. Demand comes from a live binding, a `$watch` or a `$streams` `args` — and from nowhere else | [Demand roots](#demand-roots--what-makes-a-getter-run) |
+| **What makes a getter run** | Getters are lazy. Demand comes from a live binding, a `$watch` or a `$stream` `args` — and from nowhere else | [Demand roots](#demand-roots--what-makes-a-getter-run) |
 | **Modularity** | `mount=` grafts a module onto the one tree; `state: path` mounts a subtree onto a component; the per-property form maps single keys, and a mounted component's getters are exported at its mount point | [Volumes](#mounting-additional-state-mount) · [Whole-object mount](#whole-object-mount-state-path) |
 | **Components** | Two mutually exclusive mechanisms: a JavaScript class with `bind-component`, or HTML-only DCC | [Choosing a mechanism](#choosing-a-component-mechanism) |
 | **Wiring to other elements** | The wc-bindable protocol, spread (`...: obj`), `#init=` / `#sync=` authority, property-to-attribute mirroring | [Binding authority](#binding-authority-init--sync) · [Spread](#spread-binding) · [Inputs](#inputs-and-attribute-mirror) |
 | **Tokens** | Command tokens call an element's methods from state; event tokens carry the element's events back | [Command token](#command-token-method-binding) · [Event token](#event-token-event-binding) |
-| **Time** | `$streams` folds an async source, `$watch` reacts headlessly, `$scan` owns an accumulation that outlives both | [Choosing a time mechanism](#choosing-a-time-mechanism) |
+| **Time** | `$stream` folds an async source, `$watch` reacts headlessly, `$scan` owns an accumulation that outlives both | [Choosing a time mechanism](#choosing-a-time-mechanism) |
 | **Initialization and lifecycle** | Six ways to supply the state; `$connectedCallback` … `$stateReadyCallback`; `bootstrapState()` / `createState()` | [State initialization](#state-initialization) · [Lifecycle hooks](#lifecycle-hooks) · [API reference](#api-reference) |
 | **Diagnostics** | Unresolved paths, index arity, wildcard rank and getter cycles are reported; one failing binding stays confined, and neither values nor the DOM are rolled back | [Diagnostics](#diagnostics-and-failure-handling) |
 | **Delivery** | Zero runtime dependencies, no build step, ESM, one CDN `/auto` tag; no `unsafe-eval`, Trusted Types supported | [Installation](#installation) · [docs/csp.md](../../docs/csp.md) |
@@ -195,7 +195,7 @@ leaves features out, it can compose them instead:
 </script>
 <script type="module">
   import { bootstrapState, installFeatures } from '@wcstack/state/core';
-  import temporal from '@wcstack/state/features/temporal';  // $watch / $scan / $streams
+  import temporal from '@wcstack/state/features/temporal';  // $watch / $scan / $stream
   import scopes from '@wcstack/state/features/scopes';      // bind-component, mount=, DCC
 
   installFeatures([temporal, scopes]);
@@ -214,7 +214,7 @@ so the browser evaluates the engine once. Integrity for this form: [docs/sri.md 
 | Entry | What it adds |
 |---|---|
 | `@wcstack/state/core` | The binding engine: `data-wcs`, `for` / `if`, path getters, filters, events, `$command` / `$on`, `bootstrapState`, `installFeatures` |
-| `@wcstack/state/features/temporal` | `$watch`, `$scan`, `$streams` |
+| `@wcstack/state/features/temporal` | `$watch`, `$scan`, `$stream` |
 | `@wcstack/state/features/scopes` | `bind-component`, `mount=` volumes, overlay exports, DCC (`data-wc-definition`) |
 | `@wcstack/state/features/recursion` | `$recursion` and `**` paths |
 | `@wcstack/state/features/ssr` | `enable-ssr`: server rendering and hydration |
@@ -334,7 +334,7 @@ There is **one state tree per root**. To split state across modules, mount a vol
 <div data-wcs="textContent: cart.total"></div>
 ```
 
-A volume may declare getters, `$watch`, `$listKeys`, `$updatedCallback`, and `$connectedCallback`/`$disconnectedCallback` — all relative to its mount path. `$errorCallback` is root-only (a binding failure is reported once, to the tree's owner). Load order does not matter (a volume connected before the root is grafted when the root registers). If the root `<wcs-state>` fails to initialize, the volumes already waiting for it settle with a report of their own instead of waiting forever. That report is the end of the line for those volumes: a volume reported as an orphan does not graft itself later, so connecting a corrected root afterwards does not bring it back. A volume that settles without grafting — orphaned, failed to load, or failed to graft — releases its mount slot, and so does a volume detached while it is still loading or waiting for its root. Such a volume takes the slot back when it is re-attached to the same root, or otherwise just before it grafts, and still grafts as before when the slot is free — even while detached; if another volume took the slot in the meantime, it reports that and does not graft. A synchronous throw from a volume's `$connectedCallback` is reported like an asynchronous one, and the volume counts as grafted. To recover without reloading the page, remove the broken root and the orphaned volumes and add new elements. A grafted volume keeps its slot even when detached, because its data stays in the tree. Mount paths must be static (`*`, `$`, `#`, `@` are rejected). Changing `mount` after the element has initialized is not supported: the change is ignored with a console warning — remove the element and add a new one with the desired path.
+A volume may declare getters, `$watch`, `$listKeys`, `$renderedCallback`, and `$connectedCallback`/`$disconnectedCallback` — all relative to its mount path. `$errorCallback` is root-only (a binding failure is reported once, to the tree's owner). Load order does not matter (a volume connected before the root is grafted when the root registers). If the root `<wcs-state>` fails to initialize, the volumes already waiting for it settle with a report of their own instead of waiting forever. That report is the end of the line for those volumes: a volume reported as an orphan does not graft itself later, so connecting a corrected root afterwards does not bring it back. A volume that settles without grafting — orphaned, failed to load, or failed to graft — releases its mount slot, and so does a volume detached while it is still loading or waiting for its root. Such a volume takes the slot back when it is re-attached to the same root, or otherwise just before it grafts, and still grafts as before when the slot is free — even while detached; if another volume took the slot in the meantime, it reports that and does not graft. A synchronous throw from a volume's `$connectedCallback` is reported like an asynchronous one, and the volume counts as grafted. To recover without reloading the page, remove the broken root and the orphaned volumes and add new elements. A grafted volume keeps its slot even when detached, because its data stays in the tree. Mount paths must be static (`*`, `$`, `#`, `@` are rejected). Changing `mount` after the element has initialized is not supported: the change is ignored with a console warning — remove the element and add a new one with the desired path.
 
 **Injecting root paths into a volume (3.1).** When a volume's code needs a path outside its own subtree, write the injection on the volume element's `data-wcs`, in the same form as a component's partial mount:
 
@@ -342,7 +342,7 @@ A volume may declare getters, `$watch`, `$listKeys`, `$updatedCallback`, and `$c
 <wcs-state mount="cart" src="./cart.js" data-wcs="state.taxRate: settings.taxRate"></wcs-state>
 ```
 
-Inside `cart.js` — getters, methods, `$watch`, `$listKeys` and the lifecycle callbacks — `this.taxRate` reads and writes the root's `settings.taxRate`. The read records a dependency, so `get total()` re-evaluates when `settings.taxRate` changes. `$watch: { taxRate() {…} }` fires on changes to `settings.taxRate`, and `$updatedCallback` receives that update under the inner name `taxRate`. The injected name exists only inside the volume's code: the page keeps reading `settings.taxRate`, and the tree has no `cart.taxRate`.
+Inside `cart.js` — getters, methods, `$watch`, `$listKeys` and the lifecycle callbacks — `this.taxRate` reads and writes the root's `settings.taxRate`. The read records a dependency, so `get total()` re-evaluates when `settings.taxRate` changes. `$watch: { taxRate() {…} }` fires on changes to `settings.taxRate`, and `$renderedCallback` receives that update under the inner name `taxRate`. The injected name exists only inside the volume's code: the page keeps reading `settings.taxRate`, and the tree has no `cart.taxRate`.
 
 - **One key at a time.** The left side is a single `state.<key>`. `state: …` cannot move the whole volume; change `mount` for that.
 - **The injection wins over the volume's own key.** A data key of the same name (`taxRate: 0`) is not grafted. An accessor or method of the same name would make `this.taxRate` ambiguous, so that volume reports an error and does not graft.
@@ -355,8 +355,8 @@ Inside `cart.js` — getters, methods, `$watch`, `$listKeys` and the lifecycle c
 |---|---|---|---|
 | Data keys, getters, setters, methods | yes | yes, relative to `p` | yes — own keys are private unless the host maps them; getters are exported |
 | `$connectedCallback` / `$disconnectedCallback` | yes | yes, relative to `p` | yes |
-| `$watch`, `$listKeys`, `$updatedCallback` | yes | yes, relative to `p` | not run — one `wcs/mount-dollar-declaration` warning |
-| `$streams`, `$scan`, `$recursion`, `**` getters | yes | rejected with an error before grafting | not run — warning |
+| `$watch`, `$listKeys`, `$renderedCallback` | yes | yes, relative to `p` | not run — one `wcs/mount-dollar-declaration` warning |
+| `$stream`, `$scan`, `$recursion`, `**` getters | yes | rejected with an error before grafting | not run — warning |
 | `$commandTokens`, `$eventTokens`, `$on` | yes | not run — warning | not run — warning |
 | `$errorCallback` | yes | not run — warning (silent before 3.0) | not run — warning (silent before 3.0) |
 | An initialization failure | reported once; `connectedCallbackPromise` rejects | settles without grafting and releases its slot; `connectedCallbackPromise` resolves (a missing `scopes` feature rejects it) | reported once; the component's `connectedCallbackPromise` rejects |
@@ -727,7 +727,7 @@ Inside a `for` loop, paths starting with `.` are expanded relative to the loop's
 |---|---|---|
 | `.name` | `users.*.name` | Property of the current element |
 | `.` | `users.*` | The current element itself |
-| `.name\|uc` | `users.*.name\|uc` | Filters are preserved |
+| `.name\|upper` | `users.*.name\|upper` | Filters are preserved |
 
 For primitive arrays, `.` refers to the element value directly:
 
@@ -1060,9 +1060,9 @@ The rule: **read only through `this`, and don't write state or touch the DOM fro
 
 | API | Use it for |
 |---|---|
-| `this.$trackDependency(path)` | Register an extra dependency so this getter is dirtied when that path changes |
+| `this.$dependOn(path)` | Register an extra dependency so this getter is dirtied when that path changes |
 | `this.$postUpdate(path)` | Announce that an untracked input changed, from outside the getter |
-| `this.$untrackDependency(fn)` | Read a path *without* registering it as a dependency (the inverse) |
+| `this.$untracked(fn)` | Read a path *without* registering it as a dependency (the inverse) |
 | `this.$eq(path, key)` / `$eqPath(path, keyPath)` / `$eqIndex(path)` | A keyed subscription: "is `path` equal to this row's key?" without a pattern dependency (see [Keyed selection](#keyed-selection-eq--eqpath--eqindex)) |
 
 ```javascript
@@ -1086,9 +1086,9 @@ Three rules decide what the dependency graph sees. None of them matters until yo
 | **Reads inside a setter are not tracked.** A setter is an imperative assignment, not a derivation, so nothing it reads becomes a dependency of anything | A setter that reads `this.a` to decide what to write does not run again when `a` changes — only a getter re-runs |
 | **The same-value guard applies to primitives only.** A primitive write `Object.is`-equal to the current value is dropped before anything is enqueued; an object or array write always passes, even the same reference | Assigning the same string again fires nothing; assigning the same object again re-fires its bindings and `$watch` (`config.sameValueGuard`; a `semantics: "event"` property is exempt either way) |
 
-The first rule is the one static analysis can catch: `wcs-validate` and the VS Code extension report `wcs/getter-untracked-read` when a getter reads `this.form.name` and the document writes `form.name` somewhere (a `value:` binding, a spread, `this["form.name"] = …`). A root that is only ever replaced wholesale — router params, a `$streams` fold — is left alone.
+The first rule is the one static analysis can catch: `wcs-validate` and the VS Code extension report `wcs/getter-untracked-read` when a getter reads `this.form.name` and the document writes `form.name` somewhere (a `value:` binding, a spread, `this["form.name"] = …`). A root that is only ever replaced wholesale — router params, a `$stream` fold — is left alone.
 
-`$untrackDependency(fn)` applies the setter rule to a getter on purpose: reads inside `fn` are not tracked. `$trackDependency(path)` is the escape hatch for the first rule.
+`$untracked(fn)` applies the setter rule to a getter on purpose: reads inside `fn` are not tracked. `$dependOn(path)` is the escape hatch for the first rule.
 
 ### Keyed selection (`$eq` / `$eqPath` / `$eqIndex`)
 
@@ -1152,7 +1152,7 @@ You can also display the loop index directly in templates:
 
 ```html
 <template data-wcs="for: items">
-  <td>{{ $1|inc(1) }}</td>  <!-- 1-based row number -->
+  <td>{{ $1|add(1) }}</td>  <!-- 1-based row number -->
 </template>
 ```
 
@@ -1339,7 +1339,7 @@ k=2   nodes.*.children.*.children.*
 | `$getAll(path, [])`, **explicit** | **Union of every depth** — depth-first, pre-order, ascending index |
 | `$getAll(path, [i, …])` | Rejected: a prefix cannot say which depth it applies to (`wcs/recursion-getall-form`) |
 | `$setAll(path, [], value)` | Broadcast to every depth, in that same order |
-| `$resolve`, `$postUpdate`, `$trackDependency`, `$watch` keys, `$listKeys` keys, `data-wcs` in markup, direct assignment | Rejected (`wcs/recursion-unsupported`) |
+| `$resolve`, `$postUpdate`, `$dependOn`, `$watch` keys, `$listKeys` keys, `data-wcs` in markup, direct assignment | Rejected (`wcs/recursion-unsupported`) |
 
 The bound forms need a depth to bind to, so they only resolve **inside** a recursive getter — or inside an ordinary row getter under the anchor, or an event handler bound to such a row — each of those carries a real `ListIndex` to read the depth from. Read `this["nodes.**.value"]` from the top level and you get `wcs/recursion-context`, not a silent guess at which node you meant. The depth is read from the innermost evaluation frame only, the same frame the row index comes from: a plain getter that a recursive getter calls (`get "nodes.**.x"() { return this.helper }` with `get helper() { return this["nodes.**.value"] }`) has no row of its own and gets `wcs/recursion-context` too — read `**` in the recursive getter and pass the value on. The union form needs no depth, so it can be read from anywhere: a top-level getter, a plain row getter, a method.
 
@@ -1465,7 +1465,7 @@ Each of these is a diagnostic, never a silent reinterpretation:
 - Recursive setters, a `**` getter whose suffix names the structure (`get "nodes.**.children"()`), a concrete getter with the same name as a `**` getter's expansion, and writing through `**` by assignment (`this["nodes.**.x"] = v`, `++` included)
 - In a recursive `$setAll`: a mapper, `{ spread: true }`, omitted indexes, a non-empty prefix, or a non-array `indexes`. The write API has no evaluation context to bind a depth to, so `[]` is mandatory
 - In a recursive `$getAll`: a non-empty prefix, or a non-array `indexes`. **Omitting the indexes is valid** — inside a recursive getter it is the bound form, and it reads the depth being evaluated
-- `**` in `data-wcs`, in `$watch` or `$listKeys` keys, or in `$resolve` / `$postUpdate` / `$trackDependency`
+- `**` in `data-wcs`, in `$watch` or `$listKeys` keys, or in `$resolve` / `$postUpdate` / `$dependOn`
 - `$recursion` and `**` getters in a volume (`mount=`) or a mounted component (`bind-component`) — declare them on the root state
 - A recursive `<template>`, a `$depth` variable, and a public `maxDepth` option — none of the three exist
 
@@ -1787,7 +1787,7 @@ customElements.define("my-component", MyComponent);
 - `<wcs-state>` with `bind-component` must be a **direct child** of the component element (top-level)
 - The parent element must be a **custom element** (tag name containing a hyphen)
 - Light DOM components must be wired from the host (the plain, unwired form was removed in v2)
-- A **mounted** scope does not execute declaration surfaces: `$watch`, `$streams` and `$scan` are ignored there with a one-time warning, and `$recursion` / `**` getters are rejected. Declare them on the root state — a volume (`<wcs-state mount>`) can host `$watch`, while `$scan` and `$recursion` are root-only. An unwired Shadow DOM child owns an independent tree and can declare all of them
+- A **mounted** scope does not execute declaration surfaces: `$watch`, `$stream` and `$scan` are ignored there with a one-time warning, and `$recursion` / `**` getters are rejected. Declare them on the root state — a volume (`<wcs-state mount>`) can host `$watch`, while `$scan` and `$recursion` are root-only. An unwired Shadow DOM child owns an independent tree and can declare all of them
 
 ### Loop with Components
 
@@ -1844,7 +1844,7 @@ that only passes the array through — running no `for:` of its own — still le
 from the owning scope reach the rows at the bottom.
 
 A component's author never has to know how deeply it is placed. `$1`, event-handler indexes,
-`$updatedCallback` and `$getAll` all report positions **within the component's own scope**.
+`$renderedCallback` and `$getAll` all report positions **within the component's own scope**.
 
 ## Command Token (Method Binding)
 
@@ -2148,22 +2148,22 @@ The next four sections answer four different questions, and the usual mistake is
 | Declaration | What you declare | Owns a value | Fires | Typical use |
 |---|---|---|---|---|
 | [Path getter](#path-getters-computed-properties) | What a value **is**, in terms of the current state | No — it is recomputed and cached per address | Lazily, when a demand root reads it | Subtotals, classification, aggregates |
-| [`$streams`](#streams-streams) | An async producer, and the value folded **within one run** | Yes — the runtime owns the output | Per chunk; restarts, back to `initial`, when `args` change | Feeds, sockets, continuous observation |
+| [`$stream`](#streams-stream) | An async producer, and the value folded **within one run** | Yes — the runtime owns the output | Per chunk; restarts, back to `initial`, when `args` change | Feeds, sockets, continuous observation |
 | [`$watch`](#watch-watch) | A reaction to a change | No | Once per batch per changed address, after the scan write | Side effects, "when this becomes true" |
 | [`$scan`](#scan-scan) | An accumulation over time, and what resets it | Yes — the runtime owns the output | Once per landing (`from`) or once per event (`on`) | Paging accumulation, history, counters |
 
 Two rules cut most of the confusion:
 
-- **`$updatedCallback` is not on this list.** It reports the bindings that were applied, so anything hung on it silently depends on what is rendered. See [Demand roots](#demand-roots--what-makes-a-getter-run).
-- **A `$streams` fold resets on every restart; a `$scan` does not.** When the value has to survive the restart, or has to count events rather than states, it belongs in `$scan`.
+- **`$renderedCallback` is not on this list.** It reports the bindings that were applied, so anything hung on it silently depends on what is rendered. See [Demand roots](#demand-roots--what-makes-a-getter-run).
+- **A `$stream` fold resets on every restart; a `$scan` does not.** When the value has to survive the restart, or has to count events rather than states, it belongs in `$scan`.
 
-## Streams (`$streams`)
+## Streams (`$stream`)
 
 > **As of 3.2 the canonical declaration key is `$stream`** (requirement B12), singular like `$watch` and `$scan`. The old `$streams` works the same through 3.x and is removed in 4.0. Declaring both fails with `[wcs/declaration-alias]`. The `$streamStatus` / `$streamError` namespaces do not change. On 3.1 or earlier, write `$streams`.
 
-Command tokens and event tokens carry discrete interactions. **`$streams`** covers the remaining shape: a continuous flow. Declare an async producer (async iterable / async generator / `ReadableStream`) and the framework **folds it into a single reactive property** — each chunk goes through normal path assignment, so bindings, path getters, and `$updatedCallback` react exactly as if you had assigned the value yourself. When a state path read by the `args` function changes, the running producer is aborted and the source is restarted with the new arguments (switchMap-style dependency-driven restart). Streams start eagerly after `$connectedCallback` completes and are aborted when the element disconnects.
+Command tokens and event tokens carry discrete interactions. **`$stream`** covers the remaining shape: a continuous flow. Declare an async producer (async iterable / async generator / `ReadableStream`) and the framework **folds it into a single reactive property** — each chunk goes through normal path assignment, so bindings, path getters, and `$renderedCallback` react exactly as if you had assigned the value yourself. When a state path read by the `args` function changes, the running producer is aborted and the source is restarted with the new arguments (switchMap-style dependency-driven restart). Streams start eagerly after `$connectedCallback` completes and are aborted when the element disconnects.
 
-`$updatedCallback` remains binding-driven: a stream declaration alone is not a headless subscription. Its path appears in the callback only when a live DOM binding for that value/status/error is actually applied. To react to a stream's value without rendering it, declare [`$watch`](#watch-watch) on that path; see the [stream reference](docs/streams.md) for the observation contract.
+`$renderedCallback` remains binding-driven: a stream declaration alone is not a headless subscription. Its path appears in the callback only when a live DOM binding for that value/status/error is actually applied. To react to a stream's value without rendering it, declare [`$watch`](#watch-watch) on that path; see the [stream reference](docs/streams.md) for the observation contract.
 
 ```html
 <wcs-state>
@@ -2171,7 +2171,7 @@ Command tokens and event tokens carry discrete interactions. **`$streams`** cove
     export default {
       prompt: "",
 
-      $streams: {
+      $stream: {
         // Full form: accumulate an LLM token stream
         tokens: {
           args:    (state) => state.prompt,                 // dependencies are captured here, and only here
@@ -2210,7 +2210,7 @@ On error the property keeps its last folded value and the error lands in `$strea
 **Bridging an event API** — most real sources are callback-shaped (`EventSource`, `WebSocket`, DOM events), not async iterables. Wrap them in a standard `ReadableStream`: enqueue in `start`, release the resource in `cancel`. You never touch the `AbortSignal` — on restart/dispose the runtime cancels its reader, which force-unwinds a parked read and runs your `cancel()`:
 
 ```js
-$streams: {
+$stream: {
   metrics: {
     args: (state) => ({ host: state.host }),
     source: ({ host }) => {
@@ -2250,9 +2250,9 @@ There are exactly **three** demand roots:
 |---|---|---|
 | **A live DOM binding** | `data-wcs` / mustache / comment bindings | **Yes** — remove the element and the demand goes with it |
 | **A `$watch` declaration** | the state | No (headless) |
-| **A `$streams` `args` function** | the state | No (evaluated on start and on every restart) |
+| **A `$stream` `args` function** | the state | No (evaluated on start and on every restart) |
 
-**`$updatedCallback` is not a root.** It reports what the bindings did; it does not create demand.
+**`$renderedCallback` is not a root.** It reports what the bindings did; it does not create demand.
 
 ### Rendering can change program semantics
 
@@ -2264,27 +2264,27 @@ Because the first root lives in the DOM, **an element you think of as display-on
 ```
 
 ```javascript
-// $updatedCallback is binding-driven — delete that <b> and the path stops
+// $renderedCallback is binding-driven — delete that <b> and the path stops
 // appearing in `paths`, so the feed silently stops committing.
-$updatedCallback(paths) {
+$renderedCallback(paths) {
   if (!paths.includes("$streamStatus.pageResult")) return;
   this.items = this.items.concat(this.pageResult.items);
 }
 ```
 
-**The rule:** logic that must not depend on what is rendered belongs on a `$watch`, a `$scan`, or a `$streams` `args`. Keep `$updatedCallback` for "follow what was drawn".
+**The rule:** logic that must not depend on what is rendered belongs on a `$watch`, a `$scan`, or a `$stream` `args`. Keep `$renderedCallback` for "follow what was drawn".
 
-That example now accumulates its feed with `$scan` (and re-arms the sentinel from a `$watch`), and the `<b>` is display-only again. This shape — `$updatedCallback` testing a path that is not bound anywhere — is detected statically as **`wcs/updated-callback-unbound`**.
+That example now accumulates its feed with `$scan` (and re-arms the sentinel from a `$watch`), and the `<b>` is display-only again. This shape — `$renderedCallback` testing a path that is not bound anywhere — is detected statically as **`wcs/updated-callback-unbound`**.
 
 ### The limitation that remains
 
-Demand still comes from three separate places. **To know whether a getter is evaluated you have to inspect all three — every binding on the page, every `$watch`, and every `$streams` `args` — and reading the getter's definition will not tell you.** The linter and the DevTools wiring-coverage view exist to make a machine do that cross-check.
+Demand still comes from three separate places. **To know whether a getter is evaluated you have to inspect all three — every binding on the page, every `$watch`, and every `$stream` `args` — and reading the getter's definition will not tell you.** The linter and the DevTools wiring-coverage view exist to make a machine do that cross-check.
 
 Note that a scalar getter named in `$watch` becomes **eager** (evaluated once at connect, then at the end of every batch touching its dependencies). Wildcard row getters do not become eager, because the first evaluation would walk the whole list.
 
 ## Watch (`$watch`)
 
-`$updatedCallback` is **binding-driven**: it reports the paths whose live DOM bindings were actually applied in that update, so a value you never render is invisible to it. **`$watch`** is the headless counterpart — it fires on state changes whether or not anything on the page is bound to the path. (One exception, spelled out below: a *wildcard* row path needs `$listKeys` to work headlessly.)
+`$renderedCallback` is **binding-driven**: it reports the paths whose live DOM bindings were actually applied in that update, so a value you never render is invisible to it. **`$watch`** is the headless counterpart — it fires on state changes whether or not anything on the page is bound to the path. (One exception, spelled out below: a *wildcard* row path needs `$listKeys` to work headlessly.)
 
 ```html
 <wcs-state>
@@ -2329,11 +2329,11 @@ Firing order is defined in three layers, and only the middle one is yours to ste
 
 | Layer | Order | Your control |
 |---|---|---|
-| Mechanisms | `$updatedCallback` → `$scan` → `$watch` → `$streams` restart | fixed |
+| Mechanisms | `$renderedCallback` → `$scan` → `$watch` → `$stream` restart | fixed |
 | Between handlers | declaration order in `$watch` | **reorder the declarations** |
 | Between rows of one path | ascending `indexes` | fixed |
 
-**The one thing that moves the mechanism layer** is a `<wcs-view-transition>` that accepts the `state` participant. Binding application — and with it `$updatedCallback` — then lands on a frame, while `$scan`, `$watch` and the `$streams` restart stay on the microtask the drain was queued on, because they consume state addresses and not the DOM. For as long as the tag is present the order is `$scan` → `$watch` → `$streams` restart → `$updatedCallback`. Nothing else on the page reorders this layer; see [docs/timing-and-firing-contract.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.md) §4.3.
+**The one thing that moves the mechanism layer** is a `<wcs-view-transition>` that accepts the `state` participant. Binding application — and with it `$renderedCallback` — then lands on a frame, while `$scan`, `$watch` and the `$stream` restart stay on the microtask the drain was queued on, because they consume state addresses and not the DOM. For as long as the tag is present the order is `$scan` → `$watch` → `$stream` restart → `$renderedCallback`. Nothing else on the page reorders this layer; see [docs/timing-and-firing-contract.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.md) §4.3.
 
 Key rules:
 
@@ -2342,14 +2342,14 @@ Key rules:
 - **Rows follow the list as it stands at the drain** — a row written and then removed, replaced or cut off in the same job does not fire, a row that only moved into another position does not fire, and each position fires at most once. Replacing a nested list fires for every row of the new array.
 - **Row-level diffs want `$listKeys`** — without it, assigning a whole array fires the row watch for *every* row with `prev === undefined`, because no row went through a path write. With `$listKeys` declared, the key match decomposes the assignment into per-field writes, so only changed rows fire and `prev` is a real scalar.
 - **A headless row watch requires `$listKeys`** — this is the one place `$watch` is *not* headless on its own. Expanding `items` into `items.*.price` is driven by the list's `for` binding, and declaring a watch deliberately does not register the path as a list. So with neither a `for` binding nor `$listKeys`, assigning the array fires the row watch **zero** times. Add `$listKeys` (the key match writes each field by path, bypassing the expansion) or render the list. Scalar paths — including nested ones like `user.name` — are headless with no such condition.
-- **Handler exceptions are isolated** — a throw is reported to the console and the remaining watches (and stream restarts) still run. This differs from `$connectedCallback` / `$updatedCallback`, which fail loudly.
+- **Handler exceptions are isolated** — a throw is reported to the console and the remaining watches (and stream restarts) still run. This differs from `$connectedCallback` / `$renderedCallback`, which fail loudly.
 - **Write chains are bounded** — a handler's writes form a new batch, so mutually-writing watches would loop forever; the chain is cut off after 32 links with a console error. Values and DOM are not rolled back.
-- **Not run on a mounted `bind-component` scope** — mounted components do not execute declaration surfaces: the `$watch` declaration is ignored with a one-time console warning that points to the root state (or a volume — `<wcs-state mount>` hosts `$watch` / `$listKeys` / `$updatedCallback`). This applies to `$streams` too. A plain (unwired Shadow) child owns an independent tree and can declare it.
+- **Not run on a mounted `bind-component` scope** — mounted components do not execute declaration surfaces: the `$watch` declaration is ignored with a one-time console warning that points to the root state (or a volume — `<wcs-state mount>` hosts `$watch` / `$listKeys` / `$renderedCallback`). This applies to `$stream` too. A plain (unwired Shadow) child owns an independent tree and can declare it.
 - **SSR does not run watches** — handler side effects would otherwise execute on both server and client.
 
 ## Scan (`$scan`)
 
-`$streams` folds *within* one run — every restart resets the value to `initial` — and `$watch` owns no value. **`$scan`** declares the value that has to outlive both: an accumulation over time, with an owner, a firing unit and a reset condition.
+`$stream` folds *within* one run — every restart resets the value to `initial` — and `$watch` owns no value. **`$scan`** declares the value that has to outlive both: an accumulation over time, with an owner, a firing unit and a reset condition.
 
 ```html
 <wcs-state>
@@ -2358,7 +2358,7 @@ Key rules:
       page: 1,
       host: "a",
       $eventTokens: ["message"],
-      $streams: {
+      $stream: {
         pageResult: { args: (s) => s.page, source: loadPage },
       },
       $scan: {
@@ -2394,7 +2394,7 @@ Key rules:
 | `fold` | Required. `from`: `(acc, cur, prev, ...indexes) => next`. `on`: `(acc, event, ...indexes) => next`. Synchronous, called without `this`, returns a new value. Returning `acc` itself writes nothing. |
 | `resetOn` | Optional array of plain state paths. When one of them is written, the output returns to `initial`: a `from` scan skips that batch's fold, and an `on` scan folds any event that comes after the write into `initial`. A path under `from` raises; an ancestor of `from` is allowed (start over when the parent is replaced). An object path resets only when that object itself is written, not on writes to its children — list the leaf paths or use a nonce. |
 
-**The runtime owns the output**, like a `$streams` value. It is materialized from `initial` when the state does not already have that property (plain data is copied, so writing a child path in the plain part of the output never changes the declared `initial`; class instances, frozen values and other non-plain values stay shared with it), and you bind it like any other path. It survives stream restarts, disconnect and reconnect, and a re-set of the same object; a re-set with a new declaration rebuilds the scan. An output name that collides with a getter, a setter, a method or a `$streams` entry raises.
+**The runtime owns the output**, like a `$stream` value. It is materialized from `initial` when the state does not already have that property (plain data is copied, so writing a child path in the plain part of the output never changes the declared `initial`; class instances, frozen values and other non-plain values stay shared with it), and you bind it like any other path. It survives stream restarts, disconnect and reconnect, and a re-set of the same object; a re-set with a new declaration rebuilds the scan. An output name that collides with a getter, a setter, a method or a `$stream` entry raises.
 
 How the two sources fire:
 
@@ -2409,8 +2409,8 @@ Key rules:
 - **Never fold a getter.** A getter re-evaluates whenever its inputs change, so a fold over it would count re-evaluations, not events. A getter as `from` or `resetOn` — or an expansion of a `$recursion` `**` getter such as `nodes.*.total` as `from` — raises at declaration (`wcs/scan-source-computed`).
 - **One fold per landing, not per page.** A retry after the page is `done`, or reconnecting the page, lands the same page again. When that matters, keep an idempotency key in the fold — the `pages` list above.
 - **Do not derive a stream's `args` from its own scan output.** A getter over `feed` — or over another scan that folds `feed` — read by `pageResult`'s `args` would restart the stream on its own result, so the runtime raises `wcs/scan-feedback-loop`. Advance the cursor from an event instead. A chunk that lands in the same batch as its stream's restart belongs to the aborted run and is not folded.
-- **Receive element events through `on`.** A `from` path sees every write to that path, including a bound element's initial sync and a whole-parent write (which arrives with `prev === undefined`). `prev` follows `$watch`'s ledger, so it is also `undefined` for a write made inside the `$scan` / `$watch` listener — by a `$watch` handler, or by another scan whose output is the `from`. The ledger is cleared at the end of that listener, so the `$streams` restart that runs after it in the same drain keeps `prev`.
-- **Keep folds bounded.** An infinite source must fold into a bounded value (the last N, a count), exactly as with `$streams`.
+- **Receive element events through `on`.** A `from` path sees every write to that path, including a bound element's initial sync and a whole-parent write (which arrives with `prev === undefined`). `prev` follows `$watch`'s ledger, so it is also `undefined` for a write made inside the `$scan` / `$watch` listener — by a `$watch` handler, or by another scan whose output is the `from`. The ledger is cleared at the end of that listener, so the `$stream` restart that runs after it in the same drain keeps `prev`.
+- **Keep folds bounded.** An infinite source must fold into a bounded value (the last N, a count), exactly as with `$stream`.
 - **Errors are isolated.** A throw, a returned Promise or a value that cannot be read is reported to the console and DevTools and writes nothing (an unreadable row of a wildcard `from` is skipped alone, and row landings are narrowed to one per list position); the other scans, watches and stream restarts still run.
 - **`$watch` runs after the scan write.** A `$watch` handler in the same drain reads the output as folded, and a value it writes to the output stays. When the `from` source is written again before the output's landing drains — by a `$watch` handler in that drain, say — both land in one batch: a `$watch` on the output then gets the landed value in `prev`, sees `cur` one step ahead, and can fire again with the same value in the next batch, so make it tolerant of a repeated value. Clear an accumulation from a user action with a nonce read by `resetOn`.
 - **Root only.** A volume (`mount=`) refuses `$scan`, and a mounted `bind-component` scope ignores it with a one-time warning. Under SSR, `from` does not fold; the output is still materialized.
@@ -2552,7 +2552,7 @@ Both declarations are validated when the component is defined, with the same str
 - an entry that is not a non-empty string
 - an entry starting with `$` (internal properties are never exposed on the component prototype)
 - a duplicated entry — this one used to fail silently: a duplicate name makes the whole `wcBindable` declaration unreadable, so the element would quietly stop being two-way bindable
-- an entry that does not exist on the state (own properties and the prototype chain are both searched; `$streams` names count as existing since their value properties are materialized per instance)
+- an entry that does not exist on the state (own properties and the prototype chain are both searched; `$stream` names count as existing since their value properties are materialized per instance)
 - a method listed in `$bindables`, or a value property listed in `$commands`
 
 ### Driving a DCC Method
@@ -2612,7 +2612,7 @@ Properties prefixed with `$` are internal and not exposed on the component proto
 | `$commands` | Declares invocable methods |
 | `$connectedCallback` | Lifecycle hook (runs on each instance) |
 | `$disconnectedCallback` | Cleanup hook |
-| `$updatedCallback` | Called after state mutations |
+| `$renderedCallback` | Called after state mutations |
 
 ## SVG Support
 
@@ -2628,7 +2628,7 @@ All bindings work inside `<svg>` elements. Use `attr.*` for SVG attributes:
 
 ## Lifecycle Hooks
 
-State objects can define `$connectedCallback`, `$disconnectedCallback`, `$updatedCallback`, and `$errorCallback` for initialization, cleanup, update, and binding-failure handling.
+State objects can define `$connectedCallback`, `$disconnectedCallback`, `$renderedCallback`, and `$errorCallback` for initialization, cleanup, update, and binding-failure handling.
 
 > **As of 3.2 the canonical name of `$updatedCallback` is `$renderedCallback`** (requirement B12). The hook receives updates of **applied bindings**, not every state update (use `$watch` for those), and the new name says so. The old name works the same through 3.x and is removed in 4.0. Declaring both fails with `[wcs/declaration-alias]`. On 3.1 or earlier, write `$updatedCallback`.
 
@@ -2659,15 +2659,15 @@ State objects can define `$connectedCallback`, `$disconnectedCallback`, `$update
 |---|---|---|
 | `$connectedCallback` | After state initialization on first connect; on every reconnect thereafter | Yes (awaited) |
 | `$disconnectedCallback` | When the element is removed from the DOM | No (sync only) |
-| `$updatedCallback(paths, indexesListByPath)` | After updates are applied to live bindings | Yes (not awaited) |
-| `$errorCallback(error, info)` | After a drain in which a binding failed to apply — once per failed binding, after `$updatedCallback` | Yes (not awaited) |
+| `$renderedCallback(paths, indexesListByPath)` | After updates are applied to live bindings | Yes (not awaited) |
+| `$errorCallback(error, info)` | After a drain in which a binding failed to apply — once per failed binding, after `$renderedCallback` | Yes (not awaited) |
 
 All hooks except `$disconnectedCallback` support `async` — you can use `async/await` in any of them. Since the reactive proxy detects every property assignment as a change, standard `async/await` with direct property updates is sufficient for asynchronous operations — loading flags, fetched data, and error messages are all just property assignments, without requiring additional abstractions for async state management.
 
 - `this` inside hooks is the state proxy with full read/write access
 - `$connectedCallback` is called **every time** the element is connected (including re-insertion after removal), making it suitable for setup that should be re-established
 - `$disconnectedCallback` is called synchronously — use it for cleanup such as clearing timers, removing event listeners, or releasing resources
-- `$updatedCallback(paths, indexesListByPath)` receives the paths whose live bindings were applied in that drain. Unbound state writes do not invoke it or appear in `paths`. For wildcard updates, `indexesListByPath` contains the updated index sets. Marker paths of mounted components (`#m…`) never appear in `paths` — a component's private keys stay private (DevTools shows them in its overlays view). Can be `async`, but the return value is not awaited
+- `$renderedCallback(paths, indexesListByPath)` receives the paths whose live bindings were applied in that drain. Unbound state writes do not invoke it or appear in `paths`. For wildcard updates, `indexesListByPath` contains the updated index sets. Marker paths of mounted components (`#m…`) never appear in `paths` — a component's private keys stay private (DevTools shows them in its overlays view). Can be `async`, but the return value is not awaited
 - `$errorCallback(error, info)` is the in-page **error boundary** for bindings. When applying a binding throws — a path getter or filter threw, a structural directive failed — the failure is isolated (the rest of the batch still applies, and neither the value nor the DOM is rolled back) and, without this hook, reported with `console.error`. Declare the hook and the report comes to you instead: `error` is what was thrown, `info` is `{ path, bindingType, node }` identifying the binding (`path` as written in `data-wcs`, wildcards intact). `this` is the writable state proxy, so the usual shape is to write the message into state and render it like anything else:
 
   ```js
@@ -2680,7 +2680,7 @@ All hooks except `$disconnectedCallback` support `async` — you can use `async/
   };
   ```
 
-  The hook runs after the batch (after `$updatedCallback`), is not awaited, and an exception thrown inside it is reported to the console without breaking the drain. DevTools still receives every failure as `state:binding-apply-error` whether or not the hook exists. Root-only: a volume (`<wcs-state mount>`) declaring it is ignored. It does not cover `$watch` handlers (isolated and reported separately) or errors thrown by `$connectedCallback` / `$updatedCallback` (those fail loudly).
+  The hook runs after the batch (after `$renderedCallback`), is not awaited, and an exception thrown inside it is reported to the console without breaking the drain. DevTools still receives every failure as `state:binding-apply-error` whether or not the hook exists. Root-only: a volume (`<wcs-state mount>`) declaring it is ignored. It does not cover `$watch` handlers (isolated and reported separately) or errors thrown by `$connectedCallback` / `$renderedCallback` (those fail loudly).
 - In Web Components, define `async $stateReadyCallback(stateProp)` to receive a hook when the bound state becomes available via `bind-component`
 
 ## Transition animations
@@ -2703,8 +2703,8 @@ li {
 
 Two consequences to know while that tag accepts the `state` participant:
 
-- The drain lands on a frame instead of a microtask, so code that writes state and then reads the DOM after `await Promise.resolve()` must wait for the transition. `$updatedCallback` still fires immediately after the bindings are applied — its *position* is unchanged, but it moves a frame later along with them.
-- Because `$scan`, `$watch` and the `$streams` restart stay on the original microtask, they now run **before** `$updatedCallback` instead of after it.
+- The drain lands on a frame instead of a microtask, so code that writes state and then reads the DOM after `await Promise.resolve()` must wait for the transition. `$renderedCallback` still fires immediately after the bindings are applied — its *position* is unchanged, but it moves a frame later along with them.
+- Because `$scan`, `$watch` and the `$stream` restart stay on the original microtask, they now run **before** `$renderedCallback` instead of after it.
 
 Only a batch that actually has bindings to apply is handed to the tag, so a write to a headless path never starts a transition. Without the tag the drain is exactly what it was. See [docs/timing-and-firing-contract.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.md) §4.3.
 
@@ -2748,7 +2748,7 @@ Anything that follows mechanically from the path string is reported at runtime a
 | `wcs/getter-cycle` | Path getters must not form a dependency cycle. At runtime this is the address stack revisiting an address it already holds | Break the cycle |
 | `wcs/getter-depth-exceeded` | Getter evaluation nests deeper than the engine evaluates in one pass (128 frames), with no address visited twice — the data is simply that deep | Aggregate in fewer levels, or flatten the tree |
 | `wcs/index-param-range` | `$N` must name an existing wildcard level: `$1` through `$128`, no leading zeros | Use a level that exists |
-| `wcs/recursion-unsupported` | `**` reached something that does not interpret it — markup, a `$watch` or `$listKeys` key, `$resolve` / `$postUpdate` / `$trackDependency`, an assignment — or the state declares no `$recursion` at all | Use a concrete path, or declare the anchor |
+| `wcs/recursion-unsupported` | `**` reached something that does not interpret it — markup, a `$watch` or `$listKeys` key, `$resolve` / `$postUpdate` / `$dependOn`, an assignment — or the state declares no `$recursion` at all | Use a concrete path, or declare the anchor |
 | `wcs/recursion-declaration-invalid` | The `$recursion` declaration or a `**` getter key has a shape this version refuses: an anchor or repeat that is not a list element or carries an index segment (`"nodes.0.items.*"`), more than one anchor, a `**` key that is not a getter or has a setter, `get "nodes.**"`, a getter that names the structure, two getters expanding to one concrete path, a concrete getter with the same name as an expansion. The linter reports it first; at runtime it throws when the declaration is read | Fix the declaration as the message says |
 | `wcs/recursion-anchor` | A `**` path that does not match the one declared anchor (this version takes exactly one self-recursive anchor per state), or whose suffix after `**` is not well-formed — an empty segment (`nodes.**.`, `nodes.**..x`) or a bare `*` right after `**` (`nodes.**.*`) | Spell the anchor as declared, and a real path after it |
 | `wcs/recursion-context` | A **bound** `**` was read where there is no depth to bind to — the top level, or a getter outside the anchor | Read it from a recursive or row getter, or pass `[]` to union every depth |
@@ -2774,7 +2774,7 @@ this.$getAll("matrix.*.*", [row]);
 
 ### One failing binding is confined to that binding
 
-If applying a binding throws, the rest of that batch, `$updatedCallback`, `$watch`, and `$streams` restarts all still run. The failure is not swallowed — it goes to `console.error` and to DevTools (`state:binding-apply-error`):
+If applying a binding throws, the rest of that batch, `$renderedCallback`, `$watch`, and `$stream` restarts all still run. The failure is not swallowed — it goes to `console.error` and to DevTools (`state:binding-apply-error`):
 
 ```
 [@wcstack/state] binding "text: items.*.label" failed to apply; the rest of this batch continues.
@@ -3072,7 +3072,7 @@ Subpath entries for tooling: `@wcstack/state/parser` (the `data-wcs` parser as a
 | `setterPaths` | Set of paths defined as setters |
 | `createState(mutability, callback)` | Create a state proxy (`"readonly"` or `"writable"`) |
 | `createStateAsync(mutability, callback)` | Async version of `createState` |
-| `setInitialState(state)` | Set state programmatically. Before initialization it supplies the initial state. On an initialized element it replaces the whole state and re-applies every established binding to the new state before it returns (a detached element re-applies them when it reconnects); a binding whose path the new state no longer has reports a failed apply instead of keeping the old text. A re-set is not a write: it fires no `$watch` handler and no `$updatedCallback`. Lists are matched by array identity, so pass a new array when a list's length changed — re-setting with the same array instance after pushing to or splicing it in place is not supported. Throws on a loaded volume (`<wcs-state mount="…">` — its data was copied into the root tree, so write the paths under the mount path on the root instead), on a tree with grafted volumes or mounted components, and on an element that already failed to initialize — such an element cannot be re-armed; remove it and create a new one |
+| `setInitialState(state)` | Set state programmatically. Before initialization it supplies the initial state. On an initialized element it replaces the whole state and re-applies every established binding to the new state before it returns (a detached element re-applies them when it reconnects); a binding whose path the new state no longer has reports a failed apply instead of keeping the old text. A re-set is not a write: it fires no `$watch` handler and no `$renderedCallback`. Lists are matched by array identity, so pass a new array when a list's length changed — re-setting with the same array instance after pushing to or splicing it in place is not supported. Throws on a loaded volume (`<wcs-state mount="…">` — its data was copied into the root tree, so write the paths under the mount path on the root instead), on a tree with grafted volumes or mounted components, and on an element that already failed to initialize — such an element cannot be re-armed; remove it and create a new one |
 | `nextVersion()` | Increment and return version number |
 
 ## Architecture

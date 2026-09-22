@@ -186,8 +186,8 @@ The following properties and methods are available on `this` inside `defineState
 | `$getAll` | `$getAll<V>(path: string, defaultValue?: V[]): V[]` | Get all values matching a wildcard path |
 | `$postUpdate` | `$postUpdate(path: string): void` | Manually trigger update for a path |
 | `$resolve` | `$resolve(path: string, indexes: number[], value?: any): any` | Resolve a wildcard path with specific indexes |
-| `$trackDependency` | `$trackDependency(path: string): void` | Manually register a dependency |
-| `$untrackDependency` | `$untrackDependency<T>(fn: () => T): T` | Run fn with dependency tracking (dynamic deps and `$1` index deps) suppressed |
+| `$dependOn` | `$dependOn(path: string): void` | Manually register a dependency |
+| `$untracked` | `$untracked<T>(fn: () => T): T` | Run fn with dependency tracking (dynamic deps and `$1` index deps) suppressed |
 
 ### Properties
 
@@ -212,15 +212,15 @@ defineState({
     this.data = null;
   },
 
-  $updatedCallback() {
+  $renderedCallback() {
     console.log('DOM updated');
   }
 });
 ```
 
-## `$streams` Declaration
+## `$stream` Declaration
 
-Alongside `$commandTokens` / `$eventTokens` / `$on`, the state object recognizes the `$streams` declaration map. Each entry folds an async producer (async iterable / async generator / `ReadableStream`) into a single reactive property:
+Alongside `$commandTokens` / `$eventTokens` / `$on`, the state object recognizes the `$stream` declaration map. Each entry folds an async producer (async iterable / async generator / `ReadableStream`) into a single reactive property:
 
 ```typescript
 import { defineState } from '@wcstack/state';
@@ -232,9 +232,9 @@ export default defineState({
   prompt: "",
   answer: "",  // owned by the stream at runtime; pre-declaring it types `this.answer`
 
-  $streams: {
+  $stream: {
     answer: {
-      // `$streams` callbacks get no contextual type yet (typing the declaration
+      // `$stream` callbacks get no contextual type yet (typing the declaration
       // map is a planned follow-up), so annotate the parameters explicitly.
       args:    (state: { prompt: string }) => state.prompt,  // paths read here drive restart
       source:  (prompt: string, signal: AbortSignal) => llmStream(prompt, signal),

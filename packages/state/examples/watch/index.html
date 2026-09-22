@@ -65,7 +65,7 @@ export default {
   get subtotalLabel() { return `¥${this.subtotal.toLocaleString()}`; },
 
   // NOTE: this getter is bound NOWHERE — no data-wcs reads it, and no other
-  // displayed getter reads it either. `$updatedCallback` could never observe
+  // displayed getter reads it either. `$renderedCallback` could never observe
   // it, because that callback only reports paths whose live DOM bindings were
   // applied. `$watch` sees it anyway; declaring it here also makes it eager
   // (evaluated once at connect, then at the end of every batch that touches
@@ -157,7 +157,7 @@ export default {
       </div>
 
       <ul class="notes">
-        <li><strong>Nothing binds <code>freeShipping</code>.</strong> It is watched, not rendered — which is precisely what <code>$updatedCallback</code> cannot do, since that callback only reports paths whose DOM bindings were applied.</li>
+        <li><strong>Nothing binds <code>freeShipping</code>.</strong> It is watched, not rendered — which is precisely what <code>$renderedCallback</code> cannot do, since that callback only reports paths whose DOM bindings were applied.</li>
         <li>Watching a getter <strong>makes it eager</strong>: normally a computed nobody reads is never evaluated, so it would never fire at all.</li>
         <li>The row watch receives <code>(cur, prev, index)</code>. <code>prev</code> is the value at the start of the update batch, and is recorded only when a primitive is written (the value before may be an object).</li>
         <li><strong>Restock</strong> replaces the whole array. Because <code>$listKeys</code> is declared, only the row that actually changed fires — without it every row would fire with <code>prev === undefined</code>.</li>

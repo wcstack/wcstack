@@ -88,7 +88,7 @@
 
 - UIを作り直しても、状態のロジックに触れる必要がありません — ただしロジックが描画内容にぶら下がっていない範囲で。live binding は 3 つある[評価のきっかけ](#評価のきっかけdemand-root)の 1 つなので、表示専用のつもりの要素がページ唯一の購読になりえます。
 - 状態のデータ構造をリファクタリングしても、パス文字列の更新だけで済みます。
-- HTMLを読めば、すべてのバインディングを把握できます。HTMLに現れない依存（`$watch`・`$streams`・`$scan`）は、すべて state という 1 箇所に宣言されています。
+- HTMLを読めば、すべてのバインディングを把握できます。HTMLに現れない依存（`$watch`・`$stream`・`$scan`）は、すべて state という 1 箇所に宣言されています。
 
 このパスによる契約は、REST APIのURLと同じ発想です — 両者が合意するシンプルな文字列だけが存在し、そこに共有するコードはありません。これはJavaScriptの上に独自のテンプレート言語を発明するのではなく、HTML本来の宣言的な性質をフルに活かした結果として生まれた設計です。
 
@@ -132,12 +132,12 @@
 | **集計と一括書き込み** | `$getAll` / `$setAll` / `$resolve` が `items.*.price` を横断して読み書きする。配列は作り直さない | [Proxy API](#proxy-api) |
 | **再帰パス** | `$recursion` が木の形の繰り返し地点を宣言し、1 本の `**` getter が全深さを覆う | [再帰パス](#再帰パスrecursion) |
 | **リアクティビティ** | ES Proxy がアドレス単位で読み取りを追跡・キャッシュし、依存順に無効化し、DOM 書き込みをマイクロタスクでまとめる | [状態の更新](#状態の更新) · [依存追跡の境界](#依存追跡の境界) |
-| **getter が動く条件** | getter は遅延評価。評価需要は live binding・`$watch`・`$streams` の `args` の 3 箇所からしか生まれない | [評価のきっかけ](#評価のきっかけdemand-root) |
+| **getter が動く条件** | getter は遅延評価。評価需要は live binding・`$watch`・`$stream` の `args` の 3 箇所からしか生まれない | [評価のきっかけ](#評価のきっかけdemand-root) |
 | **モジュール化** | `mount=` がモジュールを 1 本のツリーに接ぎ木し、`state: path` が部分木をコンポーネントにマウントする。個別対応付けは単一キーを繋ぎ、マウントされたコンポーネントの getter はマウント点で公開される | [ボリューム](#追加の状態をマウントするmount) · [丸ごとマウント](#丸ごとマウントstate-path) |
 | **コンポーネント** | 排他的な 2 方式 — JavaScript クラス＋`bind-component` か、HTML だけの DCC か | [機構の選び方](#コンポーネント機構の選び方) |
 | **他要素との配線** | wc-bindable プロトコル、spread（`...: obj`）、`#init=` / `#sync=` の authority、プロパティ→属性ミラー | [バインディング authority](#バインディング-authority-init--sync) · [Spread](#spread-バインディング) · [Inputs](#inputs-と属性ミラー) |
 | **トークン** | command token が state から要素のメソッドを呼び、event token が要素のイベントを state へ戻す | [Command token](#command-tokenメソッドバインディング) · [Event token](#event-tokenイベントバインディング) |
-| **時間** | `$streams` が非同期ソースを fold し、`$watch` が headless に反応し、`$scan` が両者を越えて残る累積値を持つ | [時間を扱う機構の選び方](#時間を扱う機構の選び方) |
+| **時間** | `$stream` が非同期ソースを fold し、`$watch` が headless に反応し、`$scan` が両者を越えて残る累積値を持つ | [時間を扱う機構の選び方](#時間を扱う機構の選び方) |
 | **初期化とライフサイクル** | state の供給は 6 通り。`$connectedCallback` 〜 `$stateReadyCallback`、`bootstrapState()` / `createState()` | [状態の初期化](#状態の初期化) · [ライフサイクルフック](#ライフサイクルフック) · [API リファレンス](#api-リファレンス) |
 | **診断** | 解決しないパス・添字の本数・階数・getter の循環を報告する。失敗はそのバインディング 1 本に閉じ、値も DOM も巻き戻さない | [診断と失敗の扱い](#診断と失敗の扱い) |
 | **配布** | ランタイム依存ゼロ、ビルド不要、ESM、CDN の `/auto` 1 タグ。`unsafe-eval` 不要で Trusted Types 対応 | [インストール](#インストール) · [docs/csp.ja.md](../../docs/csp.ja.md) |
@@ -194,7 +194,7 @@
 </script>
 <script type="module">
   import { bootstrapState, installFeatures } from '@wcstack/state/core';
-  import temporal from '@wcstack/state/features/temporal';  // $watch / $scan / $streams
+  import temporal from '@wcstack/state/features/temporal';  // $watch / $scan / $stream
   import scopes from '@wcstack/state/features/scopes';      // bind-component・mount=・DCC
 
   installFeatures([temporal, scopes]);
@@ -213,7 +213,7 @@
 | エントリ | 足されるもの |
 |---|---|
 | `@wcstack/state/core` | バインディングの本体: `data-wcs`・`for` / `if`・パス getter・フィルタ・イベント・`$command` / `$on`・`bootstrapState`・`installFeatures` |
-| `@wcstack/state/features/temporal` | `$watch`・`$scan`・`$streams` |
+| `@wcstack/state/features/temporal` | `$watch`・`$scan`・`$stream` |
 | `@wcstack/state/features/scopes` | `bind-component`・`mount=` のボリューム・オーバーレイの公開 getter・DCC（`data-wc-definition`） |
 | `@wcstack/state/features/recursion` | `$recursion` と `**` パス |
 | `@wcstack/state/features/ssr` | `enable-ssr`: サーバー描画とハイドレーション |
@@ -333,7 +333,7 @@
 <div data-wcs="textContent: cart.total"></div>
 ```
 
-ボリュームは getter・`$watch`・`$listKeys`・`$updatedCallback`・`$connectedCallback`/`$disconnectedCallback` を宣言できます（すべてマウントパス相対）。`$errorCallback` はルート専用です（バインディングの失敗はツリーの所有者へ 1 回だけ報告されます）。読み込み順は自由です（ルートより先に接続されたボリュームは、ルートの登録時に接ぎ木されます）。ルートの `<wcs-state>` が初期化に失敗した場合、その時点で待機していたボリュームは永久に待たずに自分の報告を出して決着します。その報告が終点です —— 孤児として報告されたボリュームは後から自分で接ぎ木し直さないので、あとから修正版のルートを接続しても復帰しません。接ぎ木しないまま決着したボリューム（孤児・ロード失敗・接ぎ木失敗）はマウントの枠を返します。ロード中やルート待ちのあいだに外れたボリュームも枠を返します。そうしたボリュームは、同じ root へ付け直したときはその場で、それ以外は接ぎ木の直前に枠を取り直し、枠が空いていれば従来どおり（外れたままでも）接ぎ木します。外れている間に別のボリュームが枠を取っていた場合は、それを報告して接ぎ木しません。ボリュームの `$connectedCallback` が同期で投げた場合も非同期の失敗と同じく報告に留まり、接ぎ木は済んだものとして扱います。ページを読み直さずに復旧するには、壊れたルートと孤児のボリュームを取り除いて新しい要素を追加してください。接ぎ木済みのボリュームは、外してもデータがツリーに残るので枠を握ったままです。マウントパスは静的パスのみです（`*`・`$`・`#`・`@` は不可）。初期化後に `mount` 属性を変更することはできません — 変更は console 警告付きで無視されます。要素を取り除き、望むパスで新しい要素を追加してください。
+ボリュームは getter・`$watch`・`$listKeys`・`$renderedCallback`・`$connectedCallback`/`$disconnectedCallback` を宣言できます（すべてマウントパス相対）。`$errorCallback` はルート専用です（バインディングの失敗はツリーの所有者へ 1 回だけ報告されます）。読み込み順は自由です（ルートより先に接続されたボリュームは、ルートの登録時に接ぎ木されます）。ルートの `<wcs-state>` が初期化に失敗した場合、その時点で待機していたボリュームは永久に待たずに自分の報告を出して決着します。その報告が終点です —— 孤児として報告されたボリュームは後から自分で接ぎ木し直さないので、あとから修正版のルートを接続しても復帰しません。接ぎ木しないまま決着したボリューム（孤児・ロード失敗・接ぎ木失敗）はマウントの枠を返します。ロード中やルート待ちのあいだに外れたボリュームも枠を返します。そうしたボリュームは、同じ root へ付け直したときはその場で、それ以外は接ぎ木の直前に枠を取り直し、枠が空いていれば従来どおり（外れたままでも）接ぎ木します。外れている間に別のボリュームが枠を取っていた場合は、それを報告して接ぎ木しません。ボリュームの `$connectedCallback` が同期で投げた場合も非同期の失敗と同じく報告に留まり、接ぎ木は済んだものとして扱います。ページを読み直さずに復旧するには、壊れたルートと孤児のボリュームを取り除いて新しい要素を追加してください。接ぎ木済みのボリュームは、外してもデータがツリーに残るので枠を握ったままです。マウントパスは静的パスのみです（`*`・`$`・`#`・`@` は不可）。初期化後に `mount` 属性を変更することはできません — 変更は console 警告付きで無視されます。要素を取り除き、望むパスで新しい要素を追加してください。
 
 **ルートのパスをボリュームへ注入する（3.1）。** ボリュームのコードが自分の外のパスを読むには、ボリューム要素の `data-wcs` にコンポーネントの部分マウントと同じ形で書きます:
 
@@ -341,7 +341,7 @@
 <wcs-state mount="cart" src="./cart.js" data-wcs="state.taxRate: settings.taxRate"></wcs-state>
 ```
 
-`cart.js` の中（getter・メソッド・`$watch`・`$listKeys`・ライフサイクル）では `this.taxRate` がルートの `settings.taxRate` を読み書きし、依存も張られるので、`settings.taxRate` が変われば `get total()` も再評価されます。`$watch: { taxRate() {…} }` は `settings.taxRate` の変化で発火し、`$updatedCallback` はその更新を内側の名前 `taxRate` で受けます。注入はボリュームのコードの中の名前です — ページは今までどおり `settings.taxRate` を読み、`cart.taxRate` はツリーにありません。
+`cart.js` の中（getter・メソッド・`$watch`・`$listKeys`・ライフサイクル）では `this.taxRate` がルートの `settings.taxRate` を読み書きし、依存も張られるので、`settings.taxRate` が変われば `get total()` も再評価されます。`$watch: { taxRate() {…} }` は `settings.taxRate` の変化で発火し、`$renderedCallback` はその更新を内側の名前 `taxRate` で受けます。注入はボリュームのコードの中の名前です — ページは今までどおり `settings.taxRate` を読み、`cart.taxRate` はツリーにありません。
 
 - **1 キーずつ**: 左辺は `state.<キー>` の 1 段です（`state: …` でボリューム全体を動かすことはできません — `mount` を変えてください）。
 - **注入が自前のキーに勝つ**: ボリュームが同名のデータキー（`taxRate: 0`）を宣言していても、その値は接ぎ木されません。同名の getter・setter・メソッドはどちらが `this.taxRate` か曖昧なので、そのボリュームは接ぎ木せずにエラーを報告します。
@@ -354,8 +354,8 @@
 |---|---|---|---|
 | データキー・getter・setter・メソッド | 動く | 動く（`p` 相対） | 動く — 自前のキーはホストがマップしない限り私有、getter は公開される |
 | `$connectedCallback` / `$disconnectedCallback` | 動く | 動く（`p` 相対） | 動く |
-| `$watch`・`$listKeys`・`$updatedCallback` | 動く | 動く（`p` 相対） | 動かない — `wcs/mount-dollar-declaration` を 1 回警告 |
-| `$streams`・`$scan`・`$recursion`・`**` の getter | 動く | 接ぎ木の前にエラーで拒否 | 動かない — 警告 |
+| `$watch`・`$listKeys`・`$renderedCallback` | 動く | 動く（`p` 相対） | 動かない — `wcs/mount-dollar-declaration` を 1 回警告 |
+| `$stream`・`$scan`・`$recursion`・`**` の getter | 動く | 接ぎ木の前にエラーで拒否 | 動かない — 警告 |
 | `$commandTokens`・`$eventTokens`・`$on` | 動く | 動かない — 警告 | 動かない — 警告 |
 | `$errorCallback` | 動く | 動かない — 警告（3.0 より前は無言） | 動かない — 警告（3.0 より前は無言） |
 | 初期化の失敗 | 1 回報告し、`connectedCallbackPromise` を reject | 接ぎ木せずに決着して枠を返す。`connectedCallbackPromise` は resolve（`scopes` 機能が無いときは reject） | 1 回報告し、コンポーネントの `connectedCallbackPromise` を reject |
@@ -726,7 +726,7 @@ this.items = await (await fetch("/api/items")).json();
 |---|---|---|
 | `.name` | `users.*.name` | 現在の要素のプロパティ |
 | `.` | `users.*` | 現在の要素そのもの |
-| `.name\|uc` | `users.*.name\|uc` | フィルタは保持される |
+| `.name\|upper` | `users.*.name\|upper` | フィルタは保持される |
 
 プリミティブ配列では、`.` が要素の値を直接参照します：
 
@@ -1059,9 +1059,9 @@ get total() { return this.price * exchangeRate; }          // モジュール変
 
 | API | 用途 |
 |---|---|
-| `this.$trackDependency(path)` | 依存を明示的に追加し、そのパスの変更でこの getter を dirty にする |
+| `this.$dependOn(path)` | 依存を明示的に追加し、そのパスの変更でこの getter を dirty にする |
 | `this.$postUpdate(path)` | 追跡外の入力が変わったことを getter の外から通知する |
-| `this.$untrackDependency(fn)` | 依存として登録せずにパスを読む（上の対称） |
+| `this.$untracked(fn)` | 依存として登録せずにパスを読む（上の対称） |
 | `this.$eq(path, key)` / `$eqPath(path, keyPath)` / `$eqIndex(path)` | 鍵付き購読: 「`path` はこの行の鍵に等しいか」をパターン依存なしで答える（[鍵付き選択](#鍵付き選択eq--eqpath--eqindex)） |
 
 ```javascript
@@ -1085,9 +1085,9 @@ getter の例外は握り潰されません。評価された場所（バイン�
 | **setter の中の読み取りは追跡しない。** setter は命令的な代入であって派生ではないので、その中で読んだものは何の依存にもならない | 何を書くかを `this.a` を読んで決める setter は、`a` が変わっても再実行されない。再実行されるのは getter だけ |
 | **同値ガードはプリミティブにだけ効く。** 現在値と `Object.is` で等しいプリミティブの書き込みはキューに入る前に落とされる。オブジェクト・配列の書き込みは同じ参照でも必ず通る | 同じ文字列を再代入しても何も起きない。同じオブジェクトを再代入するとバインディングと `$watch` が再発火する（`config.sameValueGuard`。`semantics: "event"` のプロパティはどちらにせよ対象外） |
 
-規則 1 は静的解析で捕まえられる唯一の規則です。getter が `this.form.name` を読んでいて、ドキュメントのどこかで `form.name` を書いている（`value:` バインド・spread・`this["form.name"] = …`）と、`wcs-validate` と VS Code 拡張が `wcs/getter-untracked-read` を報告します。ルートを丸ごと置換するだけの設計（router の params・`$streams` の fold）には出ません。
+規則 1 は静的解析で捕まえられる唯一の規則です。getter が `this.form.name` を読んでいて、ドキュメントのどこかで `form.name` を書いている（`value:` バインド・spread・`this["form.name"] = …`）と、`wcs-validate` と VS Code 拡張が `wcs/getter-untracked-read` を報告します。ルートを丸ごと置換するだけの設計（router の params・`$stream` の fold）には出ません。
 
-`$untrackDependency(fn)` は setter の規則を getter に意図的に適用するもので、`fn` の中の読み取りは追跡されません。`$trackDependency(path)` は最初の規則に対する逃げ道です。
+`$untracked(fn)` は setter の規則を getter に意図的に適用するもので、`fn` の中の読み取りは追跡されません。`$dependOn(path)` は最初の規則に対する逃げ道です。
 
 ### 鍵付き選択（`$eq` / `$eqPath` / `$eqIndex`）
 
@@ -1151,7 +1151,7 @@ export default {
 
 ```html
 <template data-wcs="for: items">
-  <td>{{ $1|inc(1) }}</td>  <!-- 1始まりの行番号 -->
+  <td>{{ $1|add(1) }}</td>  <!-- 1始まりの行番号 -->
 </template>
 ```
 
@@ -1337,7 +1337,7 @@ k=2   nodes.*.children.*.children.*
 | `$getAll(path, [])`（**明示**） | **全深さの合併** —— 深さ優先・行きがけ・添字昇順 |
 | `$getAll(path, [i, …])` | 拒否。接頭辞ではどの深さの話か言えない（`wcs/recursion-getall-form`） |
 | `$setAll(path, [], value)` | 全深さへのブロードキャスト（合併と同じ走査・同じ順序） |
-| `$resolve` / `$postUpdate` / `$trackDependency` / `$watch` のキー / `$listKeys` のキー / markup の `data-wcs` / 直接代入 | 拒否（`wcs/recursion-unsupported`） |
+| `$resolve` / `$postUpdate` / `$dependOn` / `$watch` のキー / `$listKeys` のキー / markup の `data-wcs` / 直接代入 | 拒否（`wcs/recursion-unsupported`） |
 
 束縛形は束縛先の深さを必要とするので、**再帰 getter の中**でしか解決できません（アンカー配下の普通の行 getter や、その行に紐づくイベントハンドラも同じく実体の `ListIndex` を持つので使えます）。トップレベルで `this["nodes.**.value"]` を読むと `wcs/recursion-context` になります —— どのノードのつもりだったかを黙って推測することはありません。深さは行の添字と同じく**最も内側の評価フレームだけ**から読みます。再帰 getter が呼ぶ普通の getter（`get "nodes.**.x"() { return this.helper }` と `get helper() { return this["nodes.**.value"] }`）は自分の行を持たないので、これも `wcs/recursion-context` になります —— `**` は再帰 getter の側で読み、値を渡してください。合併形は深さを要求しないので、トップレベルの getter でも普通の行 getter でもメソッドでも読めます。
 
@@ -1463,7 +1463,7 @@ customElements.define("tree-node", class extends HTMLElement {
 - 再帰 setter、接尾辞が構造そのものを名指す `**` getter（`get "nodes.**.children"()`）、`**` getter の展開形と同名の具体 getter、そして代入による `**` 経由の書き込み（`this["nodes.**.x"] = v`、`++` も含む）
 - 再帰 `$setAll` の mapper・`{ spread: true }`・添字省略・非空の接頭辞・配列でない `indexes`。書き込み API には深さを束縛する評価文脈が無いので、`[]` は必須です
 - 再帰 `$getAll` の非空の接頭辞・配列でない `indexes`。**添字省略は正当です** —— 再帰 getter の中では束縛形で、評価中の深さを読みます
-- `data-wcs` / `$watch` や `$listKeys` のキー / `$resolve` / `$postUpdate` / `$trackDependency` への `**`
+- `data-wcs` / `$watch` や `$listKeys` のキー / `$resolve` / `$postUpdate` / `$dependOn` への `**`
 - ボリューム（`mount=`）やマウントされたコンポーネント（`bind-component`）の `$recursion` と `**` getter —— ルートの state に置きます
 - 再帰 `<template>`、`$depth` 変数、公開の `maxDepth` オプション（3 つとも存在しません）
 
@@ -1785,7 +1785,7 @@ customElements.define("my-component", MyComponent);
 - `bind-component` 付きの `<wcs-state>` はコンポーネント要素の**直下**（トップレベル）に配置すること
 - 親要素は**カスタム要素**（ハイフンを含むタグ名）であること
 - Light DOM コンポーネントはホストからの配線が必須（plain 形は v2 で廃止）
-- **マウントされた**スコープは宣言面を実行しない。`$watch`・`$streams`・`$scan` は一度だけ警告を出して無視され、`$recursion` / `**` getter は拒否される。ルート state に宣言すること（ボリューム `<wcs-state mount>` は `$watch` を持てるが、`$scan` と `$recursion` はルート専用）。配線されていない Shadow DOM の子は独立したツリーを持つため、いずれも宣言できる
+- **マウントされた**スコープは宣言面を実行しない。`$watch`・`$stream`・`$scan` は一度だけ警告を出して無視され、`$recursion` / `**` getter は拒否される。ルート state に宣言すること（ボリューム `<wcs-state mount>` は `$watch` を持てるが、`$scan` と `$recursion` はルート専用）。配線されていない Shadow DOM の子は独立したツリーを持つため、いずれも宣言できる
 
 ### ループ内でのコンポーネント使用
 
@@ -1838,7 +1838,7 @@ this.shadowRoot.innerHTML = `
 
 コンポーネントの中にさらにコンポーネントを置いて、**スコープを重ねる**こともできます。途中のコンポーネントが配列を素通しするだけで自分では `for` を回さなくても、正本スコープ起点の行フィールド書き込みは最下層の行まで届きます。
 
-コンポーネントの作者が自分の置かれる深さを意識する必要はありません。`$1` / イベントハンドラのインデックス / `$updatedCallback` / `$getAll` はいずれも**自分のスコープ内の位置**を報告します。
+コンポーネントの作者が自分の置かれる深さを意識する必要はありません。`$1` / イベントハンドラのインデックス / `$renderedCallback` / `$getAll` はいずれも**自分のスコープ内の位置**を報告します。
 
 ## Command Token（メソッドバインディング）
 
@@ -2142,22 +2142,22 @@ event token は command token と同じ `Token` pub/sub プリミティブを共
 | 宣言 | 宣言するもの | 値を持つか | 発火 | 主な用途 |
 |---|---|---|---|---|
 | [パス getter](#パス-getter算出プロパティ) | その値が現在の state から見て**何であるか** | 持たない（アドレス単位で再計算・キャッシュ） | 評価需要が読んだときに遅延評価 | 小計、分類、集計 |
-| [`$streams`](#streamstreams) | 非同期の供給元と、**1 回の実行の中で** fold される値 | 持つ（出力は runtime の所有） | chunk ごと。`args` が変われば `initial` に戻して restart | フィード、ソケット、継続的な観測 |
+| [`$stream`](#streamstream) | 非同期の供給元と、**1 回の実行の中で** fold される値 | 持つ（出力は runtime の所有） | chunk ごと。`args` が変われば `initial` に戻して restart | フィード、ソケット、継続的な観測 |
 | [`$watch`](#watchwatch) | 変更への反応 | 持たない | 変化したアドレスごとにバッチ 1 回、scan の書き込みの後 | 副作用、「条件が成立したとき」 |
 | [`$scan`](#scanscan) | 時間をまたぐ累積値と、それを戻す条件 | 持つ（出力は runtime の所有） | 着地ごと（`from`）またはイベントごと（`on`） | ページ蓄積、履歴、件数 |
 
 混乱のほとんどは、次の 2 点で解けます。
 
-- **`$updatedCallback` はこの表に入りません。** 適用されたバインディングを報告するものなので、そこに処理をぶら下げると描画内容に暗黙に依存します。[評価のきっかけ](#評価のきっかけdemand-root)を参照してください。
-- **`$streams` の fold は restart のたびに戻り、`$scan` は戻りません。** restart を越えて値を保ちたいとき、あるいは状態ではなく出来事を数えたいときは `$scan` の領分です。
+- **`$renderedCallback` はこの表に入りません。** 適用されたバインディングを報告するものなので、そこに処理をぶら下げると描画内容に暗黙に依存します。[評価のきっかけ](#評価のきっかけdemand-root)を参照してください。
+- **`$stream` の fold は restart のたびに戻り、`$scan` は戻りません。** restart を越えて値を保ちたいとき、あるいは状態ではなく出来事を数えたいときは `$scan` の領分です。
 
-## Stream（`$streams`）
+## Stream（`$stream`）
 
 > **3.2 から宣言キーの正式名は `$stream` です**（要件 B12 — `$watch` / `$scan` と単数で揃えた）。旧名 `$streams` は 3.x の間は同じに動き、4.0 で外れます。両方を宣言すると `[wcs/declaration-alias]` で落ちます。`$streamStatus` / `$streamError` の名前空間は変わりません。3.1 以前では `$streams` と書いてください。
 
-command token / event token が運ぶのは離散的なやり取りです。**`$streams`** は残る形 —— 連続的なフローをカバーします。非同期 producer（async iterable / async generator / `ReadableStream`）を宣言すると、フレームワークがそれを **fold して単一の reactive プロパティに畳み込みます** —— 各チャンクは通常のパス代入を通るため、バインディング・パス getter・`$updatedCallback` は自分で値を代入した場合とまったく同じように反応します。`args` 関数が読んだ state パスが変化すると、実行中の producer は abort され、新しい引数で source が張り直されます（switchMap 型の依存駆動 restart）。stream は `$connectedCallback` 完了後に eager に起動し、要素の disconnect で abort されます。
+command token / event token が運ぶのは離散的なやり取りです。**`$stream`** は残る形 —— 連続的なフローをカバーします。非同期 producer（async iterable / async generator / `ReadableStream`）を宣言すると、フレームワークがそれを **fold して単一の reactive プロパティに畳み込みます** —— 各チャンクは通常のパス代入を通るため、バインディング・パス getter・`$renderedCallback` は自分で値を代入した場合とまったく同じように反応します。`args` 関数が読んだ state パスが変化すると、実行中の producer は abort され、新しい引数で source が張り直されます（switchMap 型の依存駆動 restart）。stream は `$connectedCallback` 完了後に eager に起動し、要素の disconnect で abort されます。
 
-`$updatedCallback` は引き続き binding 駆動です。stream 宣言だけでは headless な購読にならず、その value/status/error の live DOM binding が実際に適用されたときだけ callback の path に現れます。描画せずに stream の値へ反応したい場合は、そのパスに [`$watch`](#watchwatch) を宣言してください。観測契約は [stream リファレンス](docs/streams.md) を参照してください。
+`$renderedCallback` は引き続き binding 駆動です。stream 宣言だけでは headless な購読にならず、その value/status/error の live DOM binding が実際に適用されたときだけ callback の path に現れます。描画せずに stream の値へ反応したい場合は、そのパスに [`$watch`](#watchwatch) を宣言してください。観測契約は [stream リファレンス](docs/streams.md) を参照してください。
 
 ```html
 <wcs-state>
@@ -2165,7 +2165,7 @@ command token / event token が運ぶのは離散的なやり取りです。**`$
     export default {
       prompt: "",
 
-      $streams: {
+      $stream: {
         // フル形: LLM トークンストリームを累積
         tokens: {
           args:    (state) => state.prompt,                 // 依存はここでのみ捕捉される
@@ -2204,7 +2204,7 @@ error 時、プロパティは直前の fold 結果を保持し、エラーは `
 **イベント API の橋渡し** —— 実際の source の多くはコールバック型（`EventSource`・`WebSocket`・DOM イベント）で、async iterable ではありません。標準の `ReadableStream` で包んでください: `start` で enqueue し、`cancel` でリソースを解放します。`AbortSignal` には一切触れません —— restart / 破棄時は runtime が reader を cancel し、parked read を強制解放して `cancel()` まで届けます：
 
 ```js
-$streams: {
+$stream: {
   metrics: {
     args: (state) => ({ host: state.host }),
     source: ({ host }) => {
@@ -2244,9 +2244,9 @@ $streams: {
 |---|---|---|
 | **live DOM バインディング** | `data-wcs` / mustache / コメントバインディング | **する**（その要素が消えると需要も消える） |
 | **`$watch` の宣言** | state 側 | しない（headless） |
-| **`$streams` の `args`** | state 側 | しない（起動・restart のたびに評価される） |
+| **`$stream` の `args`** | state 側 | しない（起動・restart のたびに評価される） |
 
-**`$updatedCallback` は根ではありません。** それは「バインディングが適用された結果」の報告であり、需要を作りません。
+**`$renderedCallback` は根ではありません。** それは「バインディングが適用された結果」の報告であり、需要を作りません。
 
 ### 描画がプログラムの意味論を変えうる
 
@@ -2258,27 +2258,27 @@ $streams: {
 ```
 
 ```javascript
-// $updatedCallback は binding 駆動 —— 上の <b> を消すと paths に現れなくなり、
+// $renderedCallback は binding 駆動 —— 上の <b> を消すと paths に現れなくなり、
 // フィードの commit が黙って止まる
-$updatedCallback(paths) {
+$renderedCallback(paths) {
   if (!paths.includes("$streamStatus.pageResult")) return;
   this.items = this.items.concat(this.pageResult.items);
 }
 ```
 
-**規則:** 描画に依存させたくないロジックは、`$watch`・`$scan`・`$streams` の `args` のどれかに根を置いてください。`$updatedCallback` は「描かれたものに追随する」用途に限ります。
+**規則:** 描画に依存させたくないロジックは、`$watch`・`$scan`・`$stream` の `args` のどれかに根を置いてください。`$renderedCallback` は「描かれたものに追随する」用途に限ります。
 
-上の例はいまは `$scan` で feed を積み（sentinel の再武装は `$watch`）、`<b>` は表示専用に戻っています。この形（`$updatedCallback` が、どのバインディングにも現れないパスを判定に使っている）は **`wcs/updated-callback-unbound`** として静的に検出されます。
+上の例はいまは `$scan` で feed を積み（sentinel の再武装は `$watch`）、`<b>` は表示専用に戻っています。この形（`$renderedCallback` が、どのバインディングにも現れないパスを判定に使っている）は **`wcs/updated-callback-unbound`** として静的に検出されます。
 
 ### 残る制約
 
-需要の根が 3 か所に分かれること自体は変わりません。**ある getter が評価されるかを知るには、その 3 か所（ページの全バインディング・全 `$watch`・全 `$streams.args`）を見る必要があり、getter の定義だけを読んでも分かりません。** lint と DevTools の配線カバレッジはこの照合を機械にやらせるためのものです。
+需要の根が 3 か所に分かれること自体は変わりません。**ある getter が評価されるかを知るには、その 3 か所（ページの全バインディング・全 `$watch`・全 `$stream.args`）を見る必要があり、getter の定義だけを読んでも分かりません。** lint と DevTools の配線カバレッジはこの照合を機械にやらせるためのものです。
 
 なお `$watch` に宣言したスカラー getter は **eager** になります（接続時に 1 回、以後は依存に触れたバッチごとに評価）。ワイルドカード行の getter は eager 化しません（初回評価がリスト全体を舐めるため）。
 
 ## Watch（`$watch`）
 
-`$updatedCallback` は **binding 駆動** です。その更新で live DOM binding が実際に適用された path だけを報告するため、**描画していない値の変化は見えません**。**`$watch`** はその headless 版で、ページ上でそのパスがバインドされているかどうかに関わらず、state の変化で発火します（**ワイルドカードの行パスだけは例外**で、headless に成立させるには `$listKeys` が要ります。後述）。
+`$renderedCallback` は **binding 駆動** です。その更新で live DOM binding が実際に適用された path だけを報告するため、**描画していない値の変化は見えません**。**`$watch`** はその headless 版で、ページ上でそのパスがバインドされているかどうかに関わらず、state の変化で発火します（**ワイルドカードの行パスだけは例外**で、headless に成立させるには `$listKeys` が要ります。後述）。
 
 ```html
 <wcs-state>
@@ -2323,11 +2323,11 @@ $updatedCallback(paths) {
 
 | 層 | 順序 | 制御 |
 |---|---|---|
-| 機構間 | `$updatedCallback` → `$scan` → `$watch` → `$streams` restart | 固定 |
+| 機構間 | `$renderedCallback` → `$scan` → `$watch` → `$stream` restart | 固定 |
 | ハンドラ間 | `$watch` の宣言順 | **宣言を並べ替える** |
 | 同一パスの行間 | `indexes` 昇順 | 固定 |
 
-**機構間の層を動かす唯一のもの**が、`state` 参加者を受け付ける `<wcs-view-transition>` です。バインディング適用 —— したがって `$updatedCallback` —— がフレームで着地する一方、`$scan`・`$watch`・`$streams` restart は state アドレスを消費し DOM を見ないので、drain がキューされた microtask に留まります。タグがある間の順序は `$scan` → `$watch` → `$streams` restart → `$updatedCallback` です。この層を並べ替えるものはページ上でこれ 1 つだけです。[docs/timing-and-firing-contract.ja.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.ja.md) §4.3 を参照してください。
+**機構間の層を動かす唯一のもの**が、`state` 参加者を受け付ける `<wcs-view-transition>` です。バインディング適用 —— したがって `$renderedCallback` —— がフレームで着地する一方、`$scan`・`$watch`・`$stream` restart は state アドレスを消費し DOM を見ないので、drain がキューされた microtask に留まります。タグがある間の順序は `$scan` → `$watch` → `$stream` restart → `$renderedCallback` です。この層を並べ替えるものはページ上でこれ 1 つだけです。[docs/timing-and-firing-contract.ja.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.ja.md) §4.3 を参照してください。
 
 主なルール:
 
@@ -2336,14 +2336,14 @@ $updatedCallback(paths) {
 - **行は drain の時点のリストに従います** —— 同じ job で行を書いてから取り除いた・置き換えた・リストを短くした行は発火せず、位置だけが移った行も発火しません。1 つの位置が発火するのは多くても 1 回です。入れ子のリストを置き換えると、新しい配列の行がすべて発火します。
 - **行単位の差分を見たいなら `$listKeys`** —— 未宣言のまま配列全体を代入すると、行 watch は**全行**について `prev === undefined` で発火します（どの行もパス書き込みを通っていないため）。`$listKeys` を宣言すればキー突合が per-field 書き込みに分解するので、変化した行だけが発火し `prev` もスカラで取れます。
 - **headless な行 watch には `$listKeys` が必要** —— `$watch` が単独では headless にならない唯一の箇所です。`items` から `items.*.price` への展開はリストの `for` バインディングが駆動しており、watch を宣言してもそのパスをリストとしては登録しません（意図的）。したがって `for` バインドも `$listKeys` も無い状態で配列を代入すると、行 watch は**一度も**発火しません。`$listKeys` を宣言する（キー突合がフィールドごとにパス書き込みするので展開を経由しない）か、リストを描画してください。スカラーパスは `user.name` のようなネストしたものも含め、この条件なしに headless で発火します。
-- **ハンドラの例外は隔離されます** —— throw はコンソールに報告され、残りの watch（と stream の restart）は続行します。loud fail する `$connectedCallback` / `$updatedCallback` とは異なる扱いです。
+- **ハンドラの例外は隔離されます** —— throw はコンソールに報告され、残りの watch（と stream の restart）は続行します。loud fail する `$connectedCallback` / `$renderedCallback` とは異なる扱いです。
 - **書き込みの連鎖には上限があります** —— ハンドラの書き込みは新しいバッチを作るため、相互に書き合う watch は無限ループになり得ます。32 段で打ち切り、コンソールに報告します（値と DOM は巻き戻しません）。
-- **マウントされた `bind-component` スコープでは実行されません** —— マウントされたコンポーネントは宣言面を実行せず、`$watch` の宣言があると 1 回だけ console.warn でルート state（またはボリューム —— `<wcs-state mount>` は `$watch` / `$listKeys` / `$updatedCallback` を持てます）へ誘導します（`$streams` も同様）。plain な（配線なし Shadow の）子は独立ツリーを持つので宣言できます。
+- **マウントされた `bind-component` スコープでは実行されません** —— マウントされたコンポーネントは宣言面を実行せず、`$watch` の宣言があると 1 回だけ console.warn でルート state（またはボリューム —— `<wcs-state mount>` は `$watch` / `$listKeys` / `$renderedCallback` を持てます）へ誘導します（`$stream` も同様）。plain な（配線なし Shadow の）子は独立ツリーを持つので宣言できます。
 - **SSR では実行されません** —— ハンドラの副作用がサーバーとクライアントで二重に走るためです。
 
 ## Scan（`$scan`）
 
-`$streams` が畳むのは 1 回の run の**内側**で、restart のたびに値は `initial` へ戻ります。`$watch` は値を所有しません。**`$scan`** はその両方を跨いで残る値 —— 時間軸方向の累積 —— を、持ち主・発火単位・reset 条件つきで宣言します。
+`$stream` が畳むのは 1 回の run の**内側**で、restart のたびに値は `initial` へ戻ります。`$watch` は値を所有しません。**`$scan`** はその両方を跨いで残る値 —— 時間軸方向の累積 —— を、持ち主・発火単位・reset 条件つきで宣言します。
 
 ```html
 <wcs-state>
@@ -2352,7 +2352,7 @@ $updatedCallback(paths) {
       page: 1,
       host: "a",
       $eventTokens: ["message"],
-      $streams: {
+      $stream: {
         pageResult: { args: (s) => s.page, source: loadPage },
       },
       $scan: {
@@ -2388,7 +2388,7 @@ $updatedCallback(paths) {
 | `fold` | 必須。`from` は `(acc, cur, prev, ...indexes) => next`、`on` は `(acc, event, ...indexes) => next`。同期で、`this` 無しで呼ばれ、新しい値を返す。`acc` そのものを返すと書き込まない。 |
 | `resetOn` | 任意。素の state パスの配列。どれかが書かれたら出力を `initial` に戻す。`from` の scan はそのバッチの fold を行わず、`on` の scan は書き込みより後に来たイベントを `initial` から畳む。`from` の配下は raise、`from` の祖先は可（親の差し替えで作り直す）。オブジェクトのパスはそのオブジェクト自身が書かれたときだけ reset し、子への書き込みでは reset しない（葉のパスを並べるか nonce を使う）。 |
 
-**出力はランタイムが所有します**（`$streams` の値と同じ）。state にそのプロパティが無ければ `initial` で実体化され（plain なデータは複製するので、出力の plain な部分の子パスへ書いても宣言の `initial` は変わりません。クラスのインスタンスや凍結された値など plain でない値は宣言と共有したままです）、他のパスと同じようにバインドできます。stream の restart・切断と再接続・同じオブジェクトの再セットを跨いで残り、新しい宣言での再セットでは作り直されます。出力名が getter・setter・メソッド・`$streams` のエントリと衝突すると raise します。
+**出力はランタイムが所有します**（`$stream` の値と同じ）。state にそのプロパティが無ければ `initial` で実体化され（plain なデータは複製するので、出力の plain な部分の子パスへ書いても宣言の `initial` は変わりません。クラスのインスタンスや凍結された値など plain でない値は宣言と共有したままです）、他のパスと同じようにバインドできます。stream の restart・切断と再接続・同じオブジェクトの再セットを跨いで残り、新しい宣言での再セットでは作り直されます。出力名が getter・setter・メソッド・`$stream` のエントリと衝突すると raise します。
 
 2 つの source の発火:
 
@@ -2403,8 +2403,8 @@ $updatedCallback(paths) {
 - **getter を畳まない。** getter は入力が変わるたびに再評価されるので、畳むと出来事ではなく再評価の回数を数えます。`from` や `resetOn` に getter を書く（`from` に `$recursion` の `**` getter の展開形 `nodes.*.total` を書くのも同じ）と、宣言時に raise します（`wcs/scan-source-computed`）。
 - **1 回の fold は着地ごとで、ページごとではない。** `done` 後の再試行や、ページの再接続は同じページをもう一度着地させます。問題になるなら fold に冪等キーを持たせてください（上の `pages`）。
 - **stream の `args` を自分の scan 出力から導出しない。** `feed` から導出した getter（`feed` を畳む別の scan の出力から導出したものを含む）を `pageResult` の `args` が読むと、stream が自分の結果で restart し続けるので、ランタイムは `wcs/scan-feedback-loop` を raise します。カーソルはイベントから進めてください。stream の restart と同じバッチに着地した chunk は abort される run のものなので畳みません。
-- **要素の出来事は `on` で受ける。** `from` はそのパスへの書き込みをすべて見ます。バインドした要素の初期同期や、親オブジェクトの丸ごと書き（`prev` は `undefined`）も 1 回として畳みます。`prev` は `$watch` と同じ台帳なので、`$scan` / `$watch` のリスナーの中の書き込み（`$watch` ハンドラや、`from` にした別の scan の出力）でも `undefined` です。台帳はそのリスナーの終わりに消えるので、同じ drain でその後に走る `$streams` の restart の書き込みは `prev` を持ちます。
-- **fold は有界に。** 無限の source は有界な値（直近 N 件・件数）に畳んでください（`$streams` と同じ）。
+- **要素の出来事は `on` で受ける。** `from` はそのパスへの書き込みをすべて見ます。バインドした要素の初期同期や、親オブジェクトの丸ごと書き（`prev` は `undefined`）も 1 回として畳みます。`prev` は `$watch` と同じ台帳なので、`$scan` / `$watch` のリスナーの中の書き込み（`$watch` ハンドラや、`from` にした別の scan の出力）でも `undefined` です。台帳はそのリスナーの終わりに消えるので、同じ drain でその後に走る `$stream` の restart の書き込みは `prev` を持ちます。
+- **fold は有界に。** 無限の source は有界な値（直近 N 件・件数）に畳んでください（`$stream` と同じ）。
 - **例外は隔離される。** throw・Promise の戻り値・読めない値はコンソールと DevTools に報告され、書き込みません（ワイルドカードの `from` で読めない行はその行だけを飛ばし、行の着地はリストの位置 1 つにつき 1 回に絞ります）。他の scan・watch・stream の restart は続行します。
 - **`$watch` は scan の書き込みの後に走る。** 同じ drain の `$watch` ハンドラは畳んだ後の出力を読み、ハンドラが出力へ書いた値はそのまま残ります。出力の着地が drain される前に `from` の source がもう一度書かれる（その drain の `$watch` ハンドラが書くなど）と、両方が同じバッチに載ります。このとき出力を見る `$watch` は `prev` に着地した値を受け、`cur` に 1 段先の値を見て、次のバッチで同じ値でもう一度発火することがあるので、同じ値の重複に耐える形にしてください。ユーザー操作で累積を消すなら、`resetOn` に nonce を読ませてください。
 - **ルートのみ。** ボリューム（`mount=`）は `$scan` を拒否し、マウントされた `bind-component` スコープは 1 回の warn で無視します。SSR では `from` は畳みません（出力の実体化は行います）。
@@ -2546,7 +2546,7 @@ export default {
 - 非空文字列でないエントリ
 - `$` 始まりのエントリ（内部プロパティはコンポーネントの prototype に公開されません）
 - 重複したエントリ — これは従来サイレントに壊れていました。重複名があると `wcBindable` 宣言全体が読み取り不能になり、その要素が黙って双方向バインド不可になります
-- 状態に存在しないエントリ（自身とプロトタイプチェーンの両方を探索します。`$streams` の名前は値プロパティがインスタンスごとに実体化されるため「存在する」と見なされます）
+- 状態に存在しないエントリ（自身とプロトタイプチェーンの両方を探索します。`$stream` の名前は値プロパティがインスタンスごとに実体化されるため「存在する」と見なされます）
 - `$bindables` にメソッドを書いた場合、または `$commands` に値プロパティを書いた場合
 
 ### DCC のメソッドを起動する
@@ -2606,7 +2606,7 @@ export default {
 | `$commands` | 起動可能メソッドの宣言 |
 | `$connectedCallback` | ライフサイクルフック（各インスタンスで実行） |
 | `$disconnectedCallback` | クリーンアップフック |
-| `$updatedCallback` | 状態変更後に呼ばれる |
+| `$renderedCallback` | 状態変更後に呼ばれる |
 
 ## SVG サポート
 
@@ -2622,7 +2622,7 @@ export default {
 
 ## ライフサイクルフック
 
-状態オブジェクトに `$connectedCallback` / `$disconnectedCallback` / `$updatedCallback` / `$errorCallback` を定義すると、初期化・クリーンアップ・更新時・バインディング失敗時のフックとして利用できます。
+状態オブジェクトに `$connectedCallback` / `$disconnectedCallback` / `$renderedCallback` / `$errorCallback` を定義すると、初期化・クリーンアップ・更新時・バインディング失敗時のフックとして利用できます。
 
 > **3.2 から `$updatedCallback` の正式名は `$renderedCallback` です**（要件 B12）。このフックが受けるのは**適用されたバインディング**の更新で、state の更新全体ではない（それには `$watch`）ことを名前で言うためです。旧名は 3.x の間は同じに動き、4.0 で外れます。両方を宣言すると `[wcs/declaration-alias]` で落ちます。3.1 以前では `$updatedCallback` と書いてください。
 
@@ -2653,15 +2653,15 @@ export default {
 |---|---|---|
 | `$connectedCallback` | 初回接続時は状態初期化後、再接続時は毎回呼び出し | 可（await される） |
 | `$disconnectedCallback` | 要素が DOM から削除された時 | 不可（同期のみ） |
-| `$updatedCallback(paths, indexesListByPath)` | live binding に更新が適用された後に呼び出し | 可（await されない） |
-| `$errorCallback(error, info)` | バインディングの適用に失敗した drain の後 — 失敗した本数ぶん、`$updatedCallback` の後に呼び出し | 可（await されない） |
+| `$renderedCallback(paths, indexesListByPath)` | live binding に更新が適用された後に呼び出し | 可（await されない） |
+| `$errorCallback(error, info)` | バインディングの適用に失敗した drain の後 — 失敗した本数ぶん、`$renderedCallback` の後に呼び出し | 可（await されない） |
 
 `$disconnectedCallback` を除くすべてのフックで `async` を使用できます。リアクティブ Proxy はすべてのプロパティへの代入を変更として検知します。そのため、標準の `async/await` による処理とプロパティへの直接代入だけで非同期ロジックが完結します。ローディングフラグの切り替え、取得したデータの格納、エラーメッセージの更新といった処理もすべて単なるプロパティ代入で行えるため、非同期状態を管理するための複雑な抽象化機能は必要ありません。
 
 - フック内の `this` は読み書き可能な状態プロキシです。
 - `$connectedCallback` は要素が接続される**たびに**呼ばれます（一度削除された後の再接続も含みます）。再確立が必要なセットアップ処理に適しています。
 - `$disconnectedCallback` は同期的に呼び出されます。タイマーのクリア、イベントリスナーの削除、リソースの解放といったクリーンアップ処理に使用してください。
-- `$updatedCallback(paths, indexesListByPath)` は、その drain で live binding が適用された path の一覧を受け取ります。binding のない state 書き込みでは呼ばれず、`paths` にも現れません。ワイルドカードをもつパスが更新された場合は、`indexesListByPath` から対象のインデックス情報も取得可能です。マウントされたコンポーネントのマーカーパス（`#m…`）は `paths` に現れません — コンポーネントの私有キーは私有のままです（DevTools の overlays 表示で見えます）。`async` を使用できますが、戻り値は await されません。
+- `$renderedCallback(paths, indexesListByPath)` は、その drain で live binding が適用された path の一覧を受け取ります。binding のない state 書き込みでは呼ばれず、`paths` にも現れません。ワイルドカードをもつパスが更新された場合は、`indexesListByPath` から対象のインデックス情報も取得可能です。マウントされたコンポーネントのマーカーパス（`#m…`）は `paths` に現れません — コンポーネントの私有キーは私有のままです（DevTools の overlays 表示で見えます）。`async` を使用できますが、戻り値は await されません。
 - `$errorCallback(error, info)` はバインディングの**ページ内エラー境界**です。バインディングの適用が throw したとき（パス getter やフィルタが throw した、構造ディレクティブが失敗した）、その失敗は隔離され（同じバッチの残りは適用され、値も DOM も巻き戻されません）、このフックが無ければ `console.error` で報告されます。フックを宣言すると報告はそこへ届きます: `error` は throw された値、`info` はバインディングを識別する `{ path, bindingType, node }`（`path` は `data-wcs` に書いた形のまま。ワイルドカードもそのまま）。`this` は書き込み可能な state proxy なので、メッセージを state に書いて普通に描画するのが基本形です:
 
   ```js
@@ -2674,7 +2674,7 @@ export default {
   };
   ```
 
-  フックはバッチの後（`$updatedCallback` の後）に走り、await されず、フック内で throw しても console に報告されるだけで drain は壊れません。DevTools にはフックの有無に関わらず全失敗が `state:binding-apply-error` として届きます。ルート専用で、ボリューム（`<wcs-state mount>`）に宣言しても無視されます。`$watch` ハンドラの失敗（別途隔離・報告）や、`$connectedCallback` / `$updatedCallback` が投げた例外（loud に失敗する）は対象外です。
+  フックはバッチの後（`$renderedCallback` の後）に走り、await されず、フック内で throw しても console に報告されるだけで drain は壊れません。DevTools にはフックの有無に関わらず全失敗が `state:binding-apply-error` として届きます。ルート専用で、ボリューム（`<wcs-state mount>`）に宣言しても無視されます。`$watch` ハンドラの失敗（別途隔離・報告）や、`$connectedCallback` / `$renderedCallback` が投げた例外（loud に失敗する）は対象外です。
 - Web Component を使用している場合は、コンポーネント側に `async $stateReadyCallback(stateProp)` を定義おくことで、`bind-component` でバインドした状態が利用可能になった瞬間にフックとして呼び出されます。
 
 ## 遷移アニメーション
@@ -2697,8 +2697,8 @@ li {
 
 そのタグが `state` 参加者を受け付けている間、知っておくべき帰結が 2 つある。
 
-- drain は microtask ではなくフレームで着地する。state に書いてから `await Promise.resolve()` で DOM を読むコードは遷移を待つ必要がある。`$updatedCallback` はバインディング適用の直後という*位置*こそ変わらないが、その適用ごと 1 フレーム後ろへずれる。
-- `$scan`・`$watch`・`$streams` restart は元の microtask に留まるため、`$updatedCallback` の**前**に走るようになる。
+- drain は microtask ではなくフレームで着地する。state に書いてから `await Promise.resolve()` で DOM を読むコードは遷移を待つ必要がある。`$renderedCallback` はバインディング適用の直後という*位置*こそ変わらないが、その適用ごと 1 フレーム後ろへずれる。
+- `$scan`・`$watch`・`$stream` restart は元の microtask に留まるため、`$renderedCallback` の**前**に走るようになる。
 
 適用すべきバインディングが実際にあるバッチだけがタグへ渡されるので、headless なパスへの書き込みが遷移を起こすことはない。タグが無ければ drain は従来どおり。[docs/timing-and-firing-contract.ja.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.ja.md) §4.3 参照。
 
@@ -2742,7 +2742,7 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 | `wcs/getter-cycle` | パス getter どうしが循環参照していないか。実行時は「アドレススタックが既に積んでいるアドレスへ戻る」ことで判定する | 循環を断つ |
 | `wcs/getter-depth-exceeded` | getter の評価が 1 パスで評価できる深さ（128 段）を超え、かつ同じアドレスを 2 度通っていない ＝ データが単に深い | 集計の段数を減らすか、木を平らにする |
 | `wcs/index-param-range` | `$N` は実在するワイルドカード段を指すこと（`$1`〜`$128`・先頭ゼロ不可） | 実在する段を使う |
-| `wcs/recursion-unsupported` | `**` を解釈しない場所へ `**` が渡った —— markup・`$watch` / `$listKeys` のキー・`$resolve` / `$postUpdate` / `$trackDependency`・代入、あるいは state が `$recursion` を宣言していない | 具体パスを使うか、アンカーを宣言する |
+| `wcs/recursion-unsupported` | `**` を解釈しない場所へ `**` が渡った —— markup・`$watch` / `$listKeys` のキー・`$resolve` / `$postUpdate` / `$dependOn`・代入、あるいは state が `$recursion` を宣言していない | 具体パスを使うか、アンカーを宣言する |
 | `wcs/recursion-declaration-invalid` | `$recursion` 宣言か `**` getter のキーが、このバージョンが受け付けない形 —— 要素を指さない・途中に添字セグメントを持つ（`"nodes.0.items.*"`）アンカー / 反復サブパス、複数アンカー、getter でない・setter を持つ `**` キー、`get "nodes.**"`、構造を名指す getter、同じ具体パスへ展開する 2 本の getter、展開形と同名の具体 getter。lint が先に出し、実行時は宣言を読んだ時点で throw する | 文面のとおり宣言を直す |
 | `wcs/recursion-anchor` | 宣言済みのアンカーと合致しない `**` パス（このバージョンは state ごとに単一の自己再帰アンカー）、または `**` の後ろが整形されていない —— 空セグメント（`nodes.**.` / `nodes.**..x`）や `**` 直後の素の `*`（`nodes.**.*`） | 宣言どおりに綴り、その後ろに実在するパスを書く |
 | `wcs/recursion-context` | **束縛**形の `**` を、束縛先の深さが無い場所で読んだ —— トップレベル、またはアンカー外の getter | 再帰 getter か行 getter の中から読むか、`[]` で全深さを合併する |
@@ -2768,7 +2768,7 @@ this.$getAll("matrix.*.*", [row]);
 
 ### バインディング 1 本の失敗は 1 本に閉じ込められます
 
-バインディングの適用が throw しても、そのバッチの残り・`$updatedCallback`・`$watch`・`$streams` の restart はすべて続行します。失敗は握り潰されず、`console.error` と DevTools（`state:binding-apply-error`）に出ます。
+バインディングの適用が throw しても、そのバッチの残り・`$renderedCallback`・`$watch`・`$stream` の restart はすべて続行します。失敗は握り潰されず、`console.error` と DevTools（`state:binding-apply-error`）に出ます。
 
 ```
 [@wcstack/state] binding "text: items.*.label" failed to apply; the rest of this batch continues.
@@ -3062,7 +3062,7 @@ bootstrapState();
 | `setterPaths` | setter として定義されたパスの Set |
 | `createState(mutability, callback)` | 状態プロキシを作成（`"readonly"` または `"writable"`） |
 | `createStateAsync(mutability, callback)` | `createState` の非同期版 |
-| `setInitialState(state)` | プログラムから状態を設定。初期化前は初期 state を渡します。初期化済みの要素では state 全体を入れ替え、確立済みのバインドを戻る前に新しい state で適用し直します（切断中の要素は再接続したときに適用し直します）。新しい state に無いパスのバインドは、古い表示のまま残さず適用の失敗として報告します。再セットは書き込みではないので、`$watch` のハンドラも `$updatedCallback` も呼びません。リストは配列の同一性で突き合わせるので、長さが変わったリストは新しい配列で渡してください（push や splice でその場で長さを変えた同じ配列インスタンスでの再セットは非対応です）。読み込み済みのボリューム（`<wcs-state mount="…">` —— データはルートの木へ複製済みなので、ルートのマウントパスの下へ書いてください）、ボリュームやマウント済みコンポーネントのあるツリー、初期化に失敗した要素では throw します —— 失敗した要素は再武装できないので、取り除いて作り直してください |
+| `setInitialState(state)` | プログラムから状態を設定。初期化前は初期 state を渡します。初期化済みの要素では state 全体を入れ替え、確立済みのバインドを戻る前に新しい state で適用し直します（切断中の要素は再接続したときに適用し直します）。新しい state に無いパスのバインドは、古い表示のまま残さず適用の失敗として報告します。再セットは書き込みではないので、`$watch` のハンドラも `$renderedCallback` も呼びません。リストは配列の同一性で突き合わせるので、長さが変わったリストは新しい配列で渡してください（push や splice でその場で長さを変えた同じ配列インスタンスでの再セットは非対応です）。読み込み済みのボリューム（`<wcs-state mount="…">` —— データはルートの木へ複製済みなので、ルートのマウントパスの下へ書いてください）、ボリュームやマウント済みコンポーネントのあるツリー、初期化に失敗した要素では throw します —— 失敗した要素は再武装できないので、取り除いて作り直してください |
 | `nextVersion()` | バージョン番号をインクリメントして返す |
 
 ## アーキテクチャ

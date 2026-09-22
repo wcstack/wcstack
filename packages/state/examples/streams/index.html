@@ -74,8 +74,8 @@ export default {
   prompt: "a tiny robot",
   seed: 0,
 
-  // $streams: fold an async producer into ONE reactive property (`story`).
-  $streams: {
+  // $stream: fold an async producer into ONE reactive property (`story`).
+  $stream: {
     story: {
       // Dependencies are captured HERE (and only here): writing `prompt` or
       // `seed` aborts the current run, resets `story` to `initial`, and starts
@@ -131,7 +131,7 @@ export default {
 
     <div class="example-container wide">
       <p class="example-title">@wcstack/state</p>
-      <h1>$streams — fetch body streaming</h1>
+      <h1>$stream — fetch body streaming</h1>
 
       <div class="controls">
         <input type="text" data-wcs="value: prompt" placeholder="prompt"/>

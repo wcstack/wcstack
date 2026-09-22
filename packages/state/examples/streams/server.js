@@ -1,5 +1,5 @@
 /**
- * Demo server for the $streams example (fetch body streaming).
+ * Demo server for the $stream example (fetch body streaming).
  *
  * Self-contained, modeled on the repo-root examples/shared/server.js. Like the
  * other examples under packages/state/examples, the page pulls the released
@@ -153,6 +153,6 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`🚀 $streams demo running at http://localhost:${PORT}/streams/`);
+  console.log(`🚀 $stream demo running at http://localhost:${PORT}/streams/`);
   console.log(`   gallery: http://localhost:${PORT}/`);
 });

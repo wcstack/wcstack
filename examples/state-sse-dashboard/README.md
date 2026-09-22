@@ -3,9 +3,9 @@
 The same Server-Sent Events **endpoint**, consumed two ways on the same page. Each idiom opens its own `EventSource`, and the server generates samples per connection, so the two panels never show the same numbers — they are two independent readings of the same feed shape:
 
 - **Left panel** — `<wcs-sse>`: the *tag* owns the connection. Named events flow into state through `eventToken.message` and are folded by a `$on` handler.
-- **Right panel** — `$streams`: the *state* owns the connection. An `EventSource` is bridged into a **`ReadableStream`** and folded into a single reactive property. `ReadableStream` is the bridge shape to reach for: on abort a parked read is force-unwound through `reader.cancel()` (fully rescued), whereas an async generator parked on an `await` is only partially rescued — it stops on its next resume, not on the abort itself.
+- **Right panel** — `$stream`: the *state* owns the connection. An `EventSource` is bridged into a **`ReadableStream`** and folded into a single reactive property. `ReadableStream` is the bridge shape to reach for: on abort a parked read is force-unwound through `reader.cancel()` (fully rescued), whereas an async generator parked on an `await` is only partially rescued — it stops on its next resume, not on the abort itself.
 
-`<wcs-sse>` and `$streams` compete for the same job, so this demo deliberately runs them **side by side** instead of chaining them — the point is to show when to pick which.
+`<wcs-sse>` and `$stream` compete for the same job, so this demo deliberately runs them **side by side** instead of chaining them — the point is to show when to pick which.
 
 ## Getting Started
 
@@ -13,7 +13,7 @@ The same Server-Sent Events **endpoint**, consumed two ways on the same page. Ea
 node examples/state-sse-dashboard/server.js
 ```
 
-Open http://localhost:3000. All three packages (`state` / `sse` / `network`) load from the CDN — `$streams` ships since v1.19.0, so no local build is needed.
+Open http://localhost:3000. All three packages (`state` / `sse` / `network`) load from the CDN — the `$stream` key ships since 3.2 (as `$streams` since v1.19.0), so no local build is needed.
 
 ## The punchline: switch hosts
 

@@ -121,7 +121,7 @@ npm install @wcstack/storage
 
 #### 任意のタイミングで保存する（`manual` + `trigger`）
 
-変更のたびではなく自分で選んだ瞬間に保存したい場合は、`manual` を付けて `trigger:` を真偽値で駆動します。依存走査は**親→子方向**のみなので、`settings.theme` が変わっても `settings` へのバインディングは発火しません。`$trackDependency` で監視するフィールドを列挙し、`trigger` でオブジェクト全体をコミットします:
+変更のたびではなく自分で選んだ瞬間に保存したい場合は、`manual` を付けて `trigger:` を真偽値で駆動します。依存走査は**親→子方向**のみなので、`settings.theme` が変わっても `settings` へのバインディングは発火しません。`$dependOn` で監視するフィールドを列挙し、`trigger` でオブジェクト全体をコミットします:
 
 ```html
 <wcs-state>
@@ -130,8 +130,8 @@ npm install @wcstack/storage
       settings: { theme: "light", lang: "ja" },
 
       get settingsChanged() {
-        this.$trackDependency("settings.theme");
-        this.$trackDependency("settings.lang");
+        this.$dependOn("settings.theme");
+        this.$dependOn("settings.lang");
         return true;
       },
     });

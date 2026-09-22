@@ -1,12 +1,12 @@
-# `$streams` — fetch body streaming デモ
+# `$stream` — fetch body streaming デモ
 
 [English](./README.md)
 
-**`@wcstack/state`** の `$streams`（外部の async producer を fold して reactive プロパティに適合させる core 拡張）のデモ。チャンク送出される HTTP レスポンス本文（`response.body`）を `TextDecoderStream` で文字列化し、`fold` でテキストとして累積表示します。
+**`@wcstack/state`** の `$stream`（外部の async producer を fold して reactive プロパティに適合させる core 拡張）のデモ。チャンク送出される HTTP レスポンス本文（`response.body`）を `TextDecoderStream` で文字列化し、`fold` でテキストとして累積表示します。
 
 ## はじめに
 
-`$streams` はリリース済みなので、他のデモと同じく CDN（`https://esm.run/@wcstack/state/auto`）から読み込みます。ビルドは不要ですが、チャンク送出のストリーミングルート（`/api/story`）だけは静的配信では賄えないため、同梱の server.js を起動してください。
+`$stream` はリリース済みなので、他のデモと同じく CDN（`https://esm.run/@wcstack/state/auto`）から読み込みます。ビルドは不要ですが、チャンク送出のストリーミングルート（`/api/story`）だけは静的配信では賄えないため、同梱の server.js を起動してください。
 
 ```bash
 cd packages/state

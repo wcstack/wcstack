@@ -50,12 +50,12 @@ await するのは避けてください — あの Promise は「永久に regis
 | [`state-cross-tab-todo/`](state-cross-tab-todo/) | storage + broadcast + state | `node examples/state-cross-tab-todo/server.js`（2 タブで開く） | :3000 |
 | [`state-custom-states/`](state-custom-states/) | fetch + websocket + state（`:state()` ショーケース） | `node examples/state-custom-states/server.js`（[websocket-chat の shared インストール](websocket-chat/README.ja.md#セットアップ)が必要） | :3303 |
 | [`state-devtools-playground/`](state-devtools-playground/) | devtools + state + timer（オーバーレイインスペクタのデモ） | 任意の静的サーバー | — |
-| [`state-intersect-scroll/`](state-intersect-scroll/) | intersection + state（`$streams` の switchMap restart + 有界リトライ） | `node examples/state-intersect-scroll/server.js` | :3000 |
+| [`state-intersect-scroll/`](state-intersect-scroll/) | intersection + state（`$stream` の switchMap restart + 有界リトライ） | `node examples/state-intersect-scroll/server.js` | :3000 |
 | [`state-notification-chat/`](state-notification-chat/) | notification + permission + state | 任意の静的サーバー | — |
 | [`state-permission-banner/`](state-permission-banner/) | geolocation + permission + state | 任意の静的サーバー | — |
 | [`state-pomodoro/`](state-pomodoro/) | timer + wakelock + notification + state | 任意の静的サーバー（secure context 必須） | — |
 | [`state-search/`](state-search/) | fetch + debounce + state | `node examples/state-search/server.js` | :3000 |
-| [`state-sse-dashboard/`](state-sse-dashboard/) | sse + state（`$streams`）+ network — 1 フィード・2 流儀 | `node examples/state-sse-dashboard/server.js` | :3000 |
+| [`state-sse-dashboard/`](state-sse-dashboard/) | sse + state（`$stream`）+ network — 1 フィード・2 流儀 | `node examples/state-sse-dashboard/server.js` | :3000 |
 | [`state-tilt-maze/`](state-tilt-maze/) | tilt + accelerometer + raf + wakelock + defined + state（センサーゲーム） | 任意の静的サーバー（secure context 必須） | — |
 | [`signals-live-search/`](signals-live-search/) | signals + fetch | `node examples/signals-live-search/server.js` | :3000 |
 | [`signals-tilt-maze/`](signals-tilt-maze/) | signals × `state-tilt-maze` と同じ 4 センサーノード（コア差し替え比較） | 任意の静的サーバー（secure context 必須） | — |

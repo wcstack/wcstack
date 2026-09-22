@@ -51,12 +51,12 @@ See [`state-tilt-maze/`](state-tilt-maze/).
 | [`state-cross-tab-todo/`](state-cross-tab-todo/) | storage + broadcast + state | `node examples/state-cross-tab-todo/server.js` (open 2 tabs) | :3000 |
 | [`state-custom-states/`](state-custom-states/) | fetch + websocket + state (`:state()` showcase) | `node examples/state-custom-states/server.js` (needs the [websocket-chat shared install](websocket-chat/README.md#setup)) | :3303 |
 | [`state-devtools-playground/`](state-devtools-playground/) | devtools + state + timer (overlay inspector demo) | any static server | — |
-| [`state-intersect-scroll/`](state-intersect-scroll/) | intersection + state (`$streams` switchMap restart + bounded retry, `$scan` feed accumulation) | `node examples/state-intersect-scroll/server.js` | :3000 |
+| [`state-intersect-scroll/`](state-intersect-scroll/) | intersection + state (`$stream` switchMap restart + bounded retry, `$scan` feed accumulation) | `node examples/state-intersect-scroll/server.js` | :3000 |
 | [`state-notification-chat/`](state-notification-chat/) | notification + permission + state | any static server | — |
 | [`state-permission-banner/`](state-permission-banner/) | geolocation + permission + state | any static server | — |
 | [`state-pomodoro/`](state-pomodoro/) | timer + wakelock + notification + state | any static server (secure context) | — |
 | [`state-search/`](state-search/) | fetch + debounce + state | `node examples/state-search/server.js` | :3000 |
-| [`state-sse-dashboard/`](state-sse-dashboard/) | sse + state (`$streams`) + network — one feed, two idioms | `node examples/state-sse-dashboard/server.js` | :3000 |
+| [`state-sse-dashboard/`](state-sse-dashboard/) | sse + state (`$stream`) + network — one feed, two idioms | `node examples/state-sse-dashboard/server.js` | :3000 |
 | [`state-testing-todo/`](state-testing-todo/) | testing + state (a todo page and its headless vitest suite) | `cd examples/state-testing-todo && npm install && npm test` | — |
 | [`state-tilt-maze/`](state-tilt-maze/) | tilt + accelerometer + raf + wakelock + defined + state (sensor game) | any static server (secure context) | — |
 | [`signals-live-search/`](signals-live-search/) | signals + fetch | `node examples/signals-live-search/server.js` | :3000 |

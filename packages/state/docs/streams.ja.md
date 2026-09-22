@@ -1,4 +1,4 @@
-# `$streams` — 非同期プロデューサーを畳み込んでリアクティブプロパティにする
+# `$stream` — 非同期プロデューサーを畳み込んでリアクティブプロパティにする
 
 ## これは何か
 
@@ -8,7 +8,7 @@
 export default {
   prompt: "",
 
-  $streams: {
+  $stream: {
     tokens: {
       args:    (state) => state.prompt,
       source:  (prompt, signal) => llmStream(prompt, signal),
@@ -25,9 +25,9 @@ export default {
 <p data-wcs="textContent: $streamError.tokens"></p>
 ```
 
-`$streams` は状態オブジェクト上の宣言マップです — `$commandTokens`・`$eventTokens`・`$on` と同じ系統に属します。各エントリは**非同期プロデューサー**（async iterable / async generator / `ReadableStream`）を単一の**リアクティブプロパティ**に接続します。プロデューサーが産出する各チャンクは `fold` を通り、畳み込み結果が `state.tokens` の新しい値になります — 通常の更新サイクルを流れるため、バインディング・computed getter・`$updatedCallback` のすべてが他のプロパティと同じように反応します。
+`$stream` は状態オブジェクト上の宣言マップです — `$commandTokens`・`$eventTokens`・`$on` と同じ系統に属します。各エントリは**非同期プロデューサー**（async iterable / async generator / `ReadableStream`）を単一の**リアクティブプロパティ**に接続します。プロデューサーが産出する各チャンクは `fold` を通り、畳み込み結果が `state.tokens` の新しい値になります — 通常の更新サイクルを流れるため、バインディング・computed getter・`$renderedCallback` のすべてが他のプロパティと同じように反応します。
 
-`$streams` が意図的に**やらないこと**が 2 つあります:
+`$stream` が意図的に**やらないこと**が 2 つあります:
 
 - **汎用ストリームパイプラインではありません**。オペレーターも tee も transform もなく、「消費して、畳んで、代入する」だけです。
 - **backpressure を保持しません**。需要はプロデューサーに逆流しません。これは明示的な非目標であり、重要な帰結が 1 つあります: [fold は有界でなければなりません](#有界-foldmust)。
@@ -36,13 +36,13 @@ export default {
 
 ## 宣言リファレンス
 
-### `$streams` マップ
+### `$stream` マップ
 
-`$streams` の各キーはフラットなプロパティ名、各値は stream 定義です。
+`$stream` の各キーはフラットなプロパティ名、各値は stream 定義です。
 
 ```javascript
 export default {
-  $streams: {
+  $stream: {
     // フル形: LLM トークンストリームを累積
     tokens: {
       args:    (state) => state.prompt,                   // 依存はここでのみ捕捉される
@@ -73,7 +73,7 @@ export default {
 
 状態のセット時（宣言のパース時）に、違反はエラーを送出します:
 
-- `$streams` は stream 名から定義へのマップとなるオブジェクトであること。
+- `$stream` は stream 名から定義へのマップとなるオブジェクトであること。
 - 各エントリ名は**フラットなプロパティ名**であること: 空文字でない・`.` を含まない・`*` を含まない・`$` で始まらない（予約名前空間）。
 - エントリ名は `Object.prototype` の継承名（`__proto__`・`constructor`・`toString`・`hasOwnProperty` など）でないこと。これらはランタイムの own プロパティ前提を破ります（特に `__proto__` は起動時に state の prototype を差し替えてしまいます）。なおオブジェクトリテラルの `__proto__:` キーは prototype 指定構文で own key にならないため、そのようなエントリはエラーにならず黙って無視されます。
 - エントリ名は state に宣言済みの getter / setter と衝突しないこと。
@@ -121,7 +121,7 @@ restart を跨いで累積したい場合は、stream の値を [`$scan`](./scan
 - **読み取り専用**。どちらの名前空間への代入（two-way binding 経由を含む）もエラーを送出します。既知の許容が 1 つあります: **現在値と同値の primitive（または `null`）値**の代入は throw せず黙って無視されます（same-value ガード — `sameValueGuard`、既定 ON — が書き込み防御より先に短絡するため。オブジェクト値はガード対象外で、たとえば `$streamError` が現在保持している `Error` インスタンスそのものの再代入は throw します。何も壊れず、誤用の診断がガードを通過する書き込みまで遅れるだけです）。
 - `$streamError.<name>` は起動・restart のたびに `null` にリセットされます。
 - error 時、**値プロパティは直前の fold 結果を保持**します — リセットされません。`initial` へのリセットは次の（再）起動時です。
-- `$streams` に未宣言の名前の読みは `undefined` です（throw しない。`$command` 名前空間と同じ寛容規約）。
+- `$stream` に未宣言の名前の読みは `undefined` です（throw しない。`$command` 名前空間と同じ寛容規約）。
 
 他のパスと同じようにバインドできます:
 
@@ -142,7 +142,7 @@ get isStreaming() {
 観測保証:
 
 - 中間 status の観測は保証されません。同一の更新バッチに畳まれた遷移（例: 同一 tick 内の `active → done`）は最終値しか描画されないことがあります — 他のバインディング更新と同じ契約です。
-- `$updatedCallback` の paths には `<name>` / `$streamStatus.<name>` / `$streamError.<name>` が通常の更新パスとして載ります。ただし `$updatedCallback` は **binding 駆動**なので、live DOM binding が適用された path しか現れません。
+- `$renderedCallback` の paths には `<name>` / `$streamStatus.<name>` / `$streamError.<name>` が通常の更新パスとして載ります。ただし `$renderedCallback` は **binding 駆動**なので、live DOM binding が適用された path しか現れません。
 - 描画せずに stream へ反応するには、その**値のパス**に `$watch` を宣言します。`$watch` は state-only（headless）な購読で、バインドの有無に関わらず発火します。制約が 2 つあります: 予約名前空間（`$streamStatus.<name>` / `$streamError.<name>`）は watch できません（watch パスは `$` で始められない）。また完了 *status* が必要な場合は、UI にバインドするか、終端条件を値そのものに畳み込んでください。
 
 ---
@@ -159,7 +159,7 @@ get isStreaming() {
 これは **switchMap セマンティクス**です: 最新の依存状態が常に勝ち、陳腐化した run は競合させず打ち切られます。
 
 ```javascript
-$streams: {
+$stream: {
   tokens: {
     args:   (state) => state.prompt,     // ← state.prompt への書き込みで旧 run が abort され新 run が始まる
     source: (prompt, signal) => llmStream(prompt, signal),
@@ -217,8 +217,8 @@ fold: (acc, chunk) => [...acc.slice(-99), chunk],
 ### チャンク反映の粒度
 
 - `fold` は**各チャンクに正確に 1 回**適用されます — 取りこぼしも重複もありません。
-- DOM 反映は updater の microtask バッチに従います。async iterator 経由のチャンクは各々別の microtask で届くため、実際には**チャンクごとに 1 drain**（DOM flush 1 回・`$updatedCallback` 1 回）になります。flush レートはチャンク到着レートに有界です。
-- latest fold では、**同値の primitive チャンク**は same-value ガードで丸ごとスキップされます: バインディング更新も `$updatedCallback` エントリもありません。
+- DOM 反映は updater の microtask バッチに従います。async iterator 経由のチャンクは各々別の microtask で届くため、実際には**チャンクごとに 1 drain**（DOM flush 1 回・`$renderedCallback` 1 回）になります。flush レートはチャンク到着レートに有界です。
+- latest fold では、**同値の primitive チャンク**は same-value ガードで丸ごとスキップされます: バインディング更新も `$renderedCallback` エントリもありません。
 - **組み込みの間引き機構はありません**。プロデューサーが DOM に対して饒舌すぎる場合は、プロデューサー側・fold 内・または下流の `wcs-debounce` / `wcs-throttle` で間引いてください。
 
 ---
@@ -251,7 +251,7 @@ fold: (acc, chunk) => [...acc.slice(-99), chunk],
 4. 自動再接続 — 再試行 = 依存の叩き直し。
 5. lazy 起動（将来の `lazy: true` オプションの余地のみ予約。未実装）。
 6. バインディング / 構造ブロック単位の stream 生存期間 — stream は `<wcs-state>` 要素の接続状態とともに生き、死にます。
-7. DCC **定義要素**（`data-wc-definition` / `_initializeDCC` 経路で初期化される `<wcs-state>`）での `$streams` — 宣言は無視されます。**DCC インスタンス内の `<wcs-state>`** は通常経路を通るため、`$streams` はインスタンスごとに独立して起動・切断されます。
+7. DCC **定義要素**（`data-wc-definition` / `_initializeDCC` 経路で初期化される `<wcs-state>`）での `$stream` — 宣言は無視されます。**DCC インスタンス内の `<wcs-state>`** は通常経路を通るため、`$stream` はインスタンスごとに独立して起動・切断されます。
 8. backpressure の保持（第 1 段の欠落ではなく恒久的な非目標）。
 
 既知のエッジ: 状態の再セットで stream 宣言が**削除された**場合、その `$streamStatus.<name>` / `$streamError.<name>` のバインディングには削除が通知されず、最後に描画された値が表示され続けます（以後の読みは `undefined` に解決されます）。
@@ -268,7 +268,7 @@ fold: (acc, chunk) => [...acc.slice(-99), chunk],
 export default {
   prompt: "",
 
-  $streams: {
+  $stream: {
     answer: {
       args:    (state) => state.prompt,
       source:  (prompt, signal) => llmStream(prompt, signal),  // signal を尊重する async generator
@@ -296,7 +296,7 @@ export default {
 
 ```javascript
 export default {
-  $streams: {
+  $stream: {
     price: {
       source: (_args, signal) => priceStream(signal),  // 無限だが latest fold により有界
     },
@@ -317,7 +317,7 @@ export default {
 export default {
   url: "/api/report",
 
-  $streams: {
+  $stream: {
     body: {
       args: (state) => state.url,
       source: async (url, signal) => {
@@ -342,7 +342,7 @@ export default {
 
 | 概念 | 説明 |
 |---|---|
-| `$streams` | 宣言マップ: 非同期プロデューサー → fold → リアクティブプロパティ |
+| `$stream` | 宣言マップ: 非同期プロデューサー → fold → リアクティブプロパティ |
 | `source(args, signal)` | プロデューサーを返す。`AbortSignal` の尊重は MUST |
 | `args(state)` | 同期の依存捕捉。ここでの読みが restart を駆動する |
 | `fold(acc, chunk)` | 同期・新しい値を返す。既定は latest |
