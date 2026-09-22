@@ -82,6 +82,26 @@ function valueMustBeArray(fnName) {
 }
 
 /**
+ * filters/filterAliases.ts — 組み込みフィルタの旧名 → 正式名（要件 B12・docs/state-3x-naming.ja.md V1〜V9）。
+ *
+ * 旧名は 3.x の間エイリアスとして残り、4.0 で外す（D4）。解決は登録簿（core/filterRegistry）が行い、
+ * 実装・引数の個数・メタデータは正式名だけが持つ。formats の install と manifest（tooling）の両方が読むので、
+ * 実装にもメタデータにも依存しない小さな表として独立させている。
+ */
+const builtinFilterAliases = {
+    inc: "add",
+    dec: "sub",
+    fix: "toFixed",
+    uc: "upper",
+    lc: "lower",
+    cap: "capitalize",
+    rep: "repeat",
+    rev: "reverse",
+    pad: "padStart",
+    null: "nullIfEmpty",
+};
+
+/**
  * builtinFilters.ts
  *
  * Implementation file for built-in filter functions available in Structive.
@@ -245,13 +265,13 @@ const ge = (options) => {
  * @returns Filter function that returns incremented number
  */
 const inc = (options) => {
-    const opt = options?.[0] ?? optionsRequired('inc');
+    const opt = options?.[0] ?? optionsRequired('add');
     if (!validateNumberString(opt)) {
-        optionMustBeNumber('inc');
+        optionMustBeNumber('add');
     }
     return (value) => {
         if (typeof value !== 'number') {
-            valueMustBeNumber('inc');
+            valueMustBeNumber('add');
         }
         return value + Number(opt);
     };
@@ -263,13 +283,13 @@ const inc = (options) => {
  * @returns Filter function that returns decremented number
  */
 const dec = (options) => {
-    const opt = options?.[0] ?? optionsRequired('dec');
+    const opt = options?.[0] ?? optionsRequired('sub');
     if (!validateNumberString(opt)) {
-        optionMustBeNumber('dec');
+        optionMustBeNumber('sub');
     }
     return (value) => {
         if (typeof value !== 'number') {
-            valueMustBeNumber('dec');
+            valueMustBeNumber('sub');
         }
         return value - Number(opt);
     };
@@ -379,11 +399,11 @@ const clamp = (options) => {
 const fix = (options) => {
     const opt = options?.[0] ?? "0";
     if (!validateNumberString(opt)) {
-        optionMustBeNumber('fix');
+        optionMustBeNumber('toFixed');
     }
     return (value) => {
         if (typeof value !== 'number') {
-            valueMustBeNumber('fix');
+            valueMustBeNumber('toFixed');
         }
         return value.toFixed(Number(opt));
     };
@@ -521,13 +541,29 @@ const substr = (options) => {
  * @returns Filter function that returns padded string
  */
 const pad = (options) => {
-    const opt1 = options?.[0] ?? optionsRequired('pad');
+    const opt1 = options?.[0] ?? optionsRequired('padStart');
     if (!validateNumberString(opt1)) {
-        optionMustBeNumber('pad');
+        optionMustBeNumber('padStart');
     }
     const opt2 = options?.[1] ?? '0';
     return (value) => {
         return String(value).padStart(Number(opt1), opt2);
+    };
+};
+/**
+ * padEnd filter - pads string to specified length from the end (the pair of `padStart`, requirement B12).
+ *
+ * @param options - Array with target length and pad string (default: ' ')
+ * @returns Filter function that returns padded string
+ */
+const padEnd = (options) => {
+    const opt1 = options?.[0] ?? optionsRequired('padEnd');
+    if (!validateNumberString(opt1)) {
+        optionMustBeNumber('padEnd');
+    }
+    const opt2 = options?.[1] ?? ' ';
+    return (value) => {
+        return String(value).padEnd(Number(opt1), opt2);
     };
 };
 /**
@@ -537,9 +573,9 @@ const pad = (options) => {
  * @returns Filter function that returns repeated string
  */
 const rep = (options) => {
-    const opt = options?.[0] ?? optionsRequired('rep');
+    const opt = options?.[0] ?? optionsRequired('repeat');
     if (!validateNumberString(opt)) {
-        optionMustBeNumber('rep');
+        optionMustBeNumber('repeat');
     }
     return (value) => {
         return String(value).repeat(Number(opt));
@@ -848,6 +884,18 @@ const defaults = (options, literals) => {
     };
 };
 /**
+ * coalesce filter - returns the default only for null / undefined (`defaults` also replaces 0, false and "").
+ * Requirement B12: the nullish counterpart of `defaults`, read like SQL COALESCE.
+ *
+ * @param options - Array with default value as first element
+ * @returns Filter function that returns value or default
+ */
+const coalesce = (options, literals) => {
+    const opt = options?.[0] ?? optionsRequired('coalesce');
+    const fallback = literals !== undefined && literals.length > 0 ? literals[0] : opt;
+    return (value) => value ?? fallback;
+};
+/**
  * Boolean filter - converts value to boolean.
  *
  * @param options - Unused
@@ -899,24 +947,25 @@ const builtinFilters = {
     "le": le,
     "gt": gt,
     "ge": ge,
-    "inc": inc,
-    "dec": dec,
+    "add": inc,
+    "sub": dec,
     "mul": mul,
     "div": div,
     "mod": mod,
     "abs": abs,
     "clamp": clamp,
-    "fix": fix,
+    "toFixed": fix,
     "locale": locale,
-    "uc": uc,
-    "lc": lc,
-    "cap": cap,
+    "upper": uc,
+    "lower": lc,
+    "capitalize": cap,
     "trim": trim,
     "slice": slice,
     "substr": substr,
-    "pad": pad,
-    "rep": rep,
-    "rev": rev,
+    "padStart": pad,
+    "padEnd": padEnd,
+    "repeat": rep,
+    "reverse": rev,
     "truncate": truncate,
     "join": join,
     "int": int,
@@ -934,10 +983,11 @@ const builtinFilters = {
     "falsy": falsy,
     "truthy": truthy,
     "defaults": defaults,
+    "coalesce": coalesce,
     "boolean": boolean,
     "number": number,
     "string": string,
-    "null": _null,
+    "nullIfEmpty": _null,
 };
 const outputBuiltinFilters = builtinFilters;
 
@@ -963,26 +1013,27 @@ const builtinFilterMeta = {
     gt: { description: "より大きいか", hasArgs: true, resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
     ge: { description: "以上か", hasArgs: true, resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
     // 算術
-    inc: { description: "加算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
-    dec: { description: "減算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
+    add: { description: "加算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+    sub: { description: "減算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
     mul: { description: "乗算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
     div: { description: "除算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
     mod: { description: "剰余", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
     abs: { description: "絶対値", hasArgs: false, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 0 },
     clamp: { description: "範囲内に丸める (min,max)", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 2, maxArgs: 2, argTypes: ["number", "number"] },
     // 数値フォーマット
-    fix: { description: "固定小数点表記", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
+    toFixed: { description: "固定小数点表記", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
     locale: { description: "ロケール形式で数値フォーマット", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["string"] },
     // 文字列
-    uc: { description: "大文字に変換", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
-    lc: { description: "小文字に変換", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
-    cap: { description: "先頭文字を大文字に", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+    upper: { description: "大文字に変換", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+    lower: { description: "小文字に変換", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+    capitalize: { description: "先頭文字を大文字に", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
     trim: { description: "前後の空白を削除", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
     slice: { description: "部分文字列 (start[,end])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "number"] },
     substr: { description: "部分文字列 (pos,len)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "number"] },
-    pad: { description: "パディング (length[,char])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
-    rep: { description: "繰り返し (count)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
-    rev: { description: "文字順を反転", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+    padStart: { description: "先頭を埋める (length[,char])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
+    padEnd: { description: "末尾を埋める (length[,char])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
+    repeat: { description: "繰り返し (count)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+    reverse: { description: "文字順を反転", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
     truncate: { description: "切り詰めて省略記号 (length[,suffix])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
     join: { description: "配列を連結 ([separator])", hasArgs: true, resultType: "string", acceptTypes: ["array"], minArgs: 0, maxArgs: 1, argTypes: ["string"] },
     // 数値パース・丸め
@@ -1005,10 +1056,11 @@ const builtinFilterMeta = {
     falsy: { description: "偽値か判定", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
     truthy: { description: "真値か判定", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
     defaults: { description: "偽値の場合デフォルト値", hasArgs: true, resultType: "passthrough", acceptTypes: "any", minArgs: 1, maxArgs: 1, argTypes: ["any"] },
+    coalesce: { description: "null / undefined の場合デフォルト値", hasArgs: true, resultType: "passthrough", acceptTypes: "any", minArgs: 1, maxArgs: 1, argTypes: ["any"] },
     boolean: { description: "ブール値に変換", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
     number: { description: "数値に変換", hasArgs: false, resultType: "number", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
     string: { description: "文字列に変換", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
-    null: { description: "空文字列をnullに変換", hasArgs: false, resultType: "passthrough", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+    nullIfEmpty: { description: "空文字列をnullに変換", hasArgs: false, resultType: "passthrough", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
 };
 
 const STRUCTURAL_BINDING_TYPE_SET = new Set([
@@ -1075,7 +1127,8 @@ for (let i = 0; i < MAX_WILDCARD_DEPTH; i++) {
 Object.freeze(tmpIndexByIndexName);
 const STATE_CONNECTED_CALLBACK_NAME = "$connectedCallback";
 const STATE_DISCONNECTED_CALLBACK_NAME = "$disconnectedCallback";
-const STATE_UPDATED_CALLBACK_NAME = "$updatedCallback";
+/** 旧名 `$updatedCallback` は 3.x の間のエイリアス（要件 B12・declarationAliases.ts） */
+const STATE_UPDATED_CALLBACK_NAME = "$renderedCallback";
 const STATE_ERROR_CALLBACK_NAME = "$errorCallback";
 const WEBCOMPONENT_STATE_READY_CALLBACK_NAME = "$stateReadyCallback";
 const STATE_BINDABLES_NAME = "$bindables";
@@ -1084,7 +1137,8 @@ const STATE_COMMAND_TOKENS_NAME = "$commandTokens";
 const STATE_COMMAND_NAMESPACE_NAME = "$command";
 const STATE_EVENT_TOKENS_NAME = "$eventTokens";
 const STATE_ON_NAME = "$on";
-const STATE_STREAMS_NAME = "$streams";
+/** 旧名 `$streams` は 3.x の間のエイリアス（要件 B12・declarationAliases.ts） */
+const STATE_STREAMS_NAME = "$stream";
 const STATE_WATCH_NAME = "$watch";
 const STATE_SCAN_NAME = "$scan";
 const STATE_RECURSION_NAME = "$recursion";
@@ -1150,6 +1204,7 @@ function getWcsManifest() {
         // 実装（Record のキー）から自動導出。手リストを持たない＝ドリフトの構造的排除。
         filters: Object.keys(outputBuiltinFilters),
         filterMeta: builtinFilterMeta,
+        filterAliases: builtinFilterAliases,
         reservedLifecycle: [
             STATE_CONNECTED_CALLBACK_NAME,
             STATE_DISCONNECTED_CALLBACK_NAME,
@@ -1175,4 +1230,4 @@ function getWcsManifest() {
     };
 }
 
-export { STRUCTURAL_BINDING_TYPE_SET, WCS_MANIFEST_VERSION, builtinFilterMeta, getWcsManifest };
+export { STRUCTURAL_BINDING_TYPE_SET, WCS_MANIFEST_VERSION, builtinFilterAliases, builtinFilterMeta, getWcsManifest };

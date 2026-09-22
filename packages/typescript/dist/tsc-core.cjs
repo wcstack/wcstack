@@ -204,7 +204,11 @@ interface WcsStateApi {
   $setAll<V = any>(path: string, indexes: number[], values: readonly V[], options: { spread: true }): number;
   $postUpdate(path: string): void;
   $resolve(path: string, indexes: number[], value?: any): any;
+  $dependOn(path: string): void;
+  $untracked<T>(fn: () => T): T;
+  /** @deprecated $dependOn \u306E\u65E7\u540D\uFF08@wcstack/state 3.2 \u2014 4.0 \u3067\u5916\u308C\u308B\uFF09 */
   $trackDependency(path: string): void;
+  /** @deprecated $untracked \u306E\u65E7\u540D\uFF08@wcstack/state 3.2 \u2014 4.0 \u3067\u5916\u308C\u308B\uFF09 */
   $untrackDependency<T>(fn: () => T): T;
   $eq(path: string, key: unknown): boolean;
   $eqPath(path: string, keyPath: string): boolean;
@@ -233,6 +237,7 @@ interface WcsStateApi {
 // T \u306B\u540C\u540D\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u3092\u660E\u793A\u7684\u306B\u4E8B\u524D\u5BA3\u8A00\u3057\u3066\u3044\u308C\u3070\u5199\u3055\u306A\u3044\uFF08\u4EA4\u5DEE\u3067\u305D\u306E\u578B\u307E\u3067 any \u306B\u6F70\u3055\u306A\u3044\u305F\u3081\uFF09\u3002
 type _WcsDeclaredValues<T> =
   (T extends { $scan: infer S } ? { [K in Exclude<keyof S & string, keyof T>]: any } : {}) &
+  (T extends { $stream: infer S } ? { [K in Exclude<keyof S & string, keyof T>]: any } : {}) &
   (T extends { $streams: infer S } ? { [K in Exclude<keyof S & string, keyof T>]: any } : {});
 type _WcsThis<T> = T & WcsStateApi & _WcsPathAccessor<T> & _WcsDeclaredValues<T>;
 // $listKeys: { "<listPath>": "<field>" | (row) => key }\uFF08list/listKeys.ts\uFF09\u3002

@@ -30,6 +30,15 @@ interface IFilterMeta {
 /** 組み込みフィルタ名 → 構造化メタデータ。キー集合は builtinFilters と一致しなければならない。 */
 declare const builtinFilterMeta: Record<string, IFilterMeta>;
 
+/**
+ * filters/filterAliases.ts — 組み込みフィルタの旧名 → 正式名（要件 B12・docs/state-3x-naming.ja.md V1〜V9）。
+ *
+ * 旧名は 3.x の間エイリアスとして残り、4.0 で外す（D4）。解決は登録簿（core/filterRegistry）が行い、
+ * 実装・引数の個数・メタデータは正式名だけが持つ。formats の install と manifest（tooling）の両方が読むので、
+ * 実装にもメタデータにも依存しない小さな表として独立させている。
+ */
+declare const builtinFilterAliases: Readonly<Record<string, string>>;
+
 type BindingType = 'text' | 'prop' | 'event' | 'for' | 'if' | 'elseif' | 'else' | 'radio' | 'checkbox' | 'spread';
 
 declare const STRUCTURAL_BINDING_TYPE_SET: Set<BindingType>;
@@ -98,6 +107,8 @@ interface IWcsManifest {
     filters: string[];
     /** 組み込みフィルタの構造化メタデータ（説明・引数仕様・型）。vscode-wcs の手リスト撤去用。 */
     filterMeta: Record<string, IFilterMeta>;
+    /** 組み込みフィルタの旧名 → 正式名（要件 B12）。旧名も解決するが、ツールは正式名を提案する */
+    filterAliases: Readonly<Record<string, string>>;
     /** 予約ライフサイクルフック名 */
     reservedLifecycle: readonly string[];
     /** 予約 state API（プロトコル系の `$` 名前空間） */
@@ -106,5 +117,5 @@ interface IWcsManifest {
 /** 機械可読な単一正本を返す。vscode-wcs はこれを消費する想定。 */
 declare function getWcsManifest(): IWcsManifest;
 
-export { STRUCTURAL_BINDING_TYPE_SET, WCS_MANIFEST_VERSION, builtinFilterMeta, getWcsManifest };
+export { STRUCTURAL_BINDING_TYPE_SET, WCS_MANIFEST_VERSION, builtinFilterAliases, builtinFilterMeta, getWcsManifest };
 export type { FilterArgType, FilterResultType, IFilterMeta, IWcsManifest };

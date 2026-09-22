@@ -204,6 +204,9 @@ var WcsDiagnosticCode = {
   // タグのメンバー名が "on" で始まる（`once` 等）のに先頭ドット無しで束縛した: ランタイムはイベント束縛にして
   // "ce" イベントを待ち、値は届かない。明示のプロパティ形 `.once:` を提案する（@wcstack/state 3.1・要件 B5 / 3.x 計画 D36）
   OnPrefixedMember: "wcs/on-prefixed-member",
+  // 3.x の間だけ残る旧名（フィルタ `uc` → `upper`、`$trackDependency` → `$dependOn` …）を書いた（info）。
+  // 動くが 4.0 で外れるので正式名を提案する（@wcstack/state 3.2・要件 B12 / 3.x 計画 D39）
+  NameAlias: "wcs/name-alias",
   // wcBindable 無宣言タグ(wcs-fetch-header 等のヘルパー)への spread。
   // ランタイム(expandSpread)は raiseError で落とす。
   SpreadNoBindable: "wcs/spread-no-bindable",
@@ -267,6 +270,18 @@ function valueMustBeDate(fnName) {
 function valueMustBeArray(fnName) {
   raiseError(`filter ${fnName} requires an array value`);
 }
+var builtinFilterAliases = {
+  inc: "add",
+  dec: "sub",
+  fix: "toFixed",
+  uc: "upper",
+  lc: "lower",
+  cap: "capitalize",
+  rep: "repeat",
+  rev: "reverse",
+  pad: "padStart",
+  null: "nullIfEmpty"
+};
 function validateNumberString(value) {
   if (!value || isNaN(Number(value))) {
     return false;
@@ -362,25 +377,25 @@ var ge = (options) => {
   };
 };
 var inc = (options) => {
-  const opt = options?.[0] ?? optionsRequired("inc");
+  const opt = options?.[0] ?? optionsRequired("add");
   if (!validateNumberString(opt)) {
-    optionMustBeNumber("inc");
+    optionMustBeNumber("add");
   }
   return (value) => {
     if (typeof value !== "number") {
-      valueMustBeNumber("inc");
+      valueMustBeNumber("add");
     }
     return value + Number(opt);
   };
 };
 var dec = (options) => {
-  const opt = options?.[0] ?? optionsRequired("dec");
+  const opt = options?.[0] ?? optionsRequired("sub");
   if (!validateNumberString(opt)) {
-    optionMustBeNumber("dec");
+    optionMustBeNumber("sub");
   }
   return (value) => {
     if (typeof value !== "number") {
-      valueMustBeNumber("dec");
+      valueMustBeNumber("sub");
     }
     return value - Number(opt);
   };
@@ -450,11 +465,11 @@ var clamp = (options) => {
 var fix = (options) => {
   const opt = options?.[0] ?? "0";
   if (!validateNumberString(opt)) {
-    optionMustBeNumber("fix");
+    optionMustBeNumber("toFixed");
   }
   return (value) => {
     if (typeof value !== "number") {
-      valueMustBeNumber("fix");
+      valueMustBeNumber("toFixed");
     }
     return value.toFixed(Number(opt));
   };
@@ -527,19 +542,29 @@ var substr = (options) => {
   };
 };
 var pad = (options) => {
-  const opt1 = options?.[0] ?? optionsRequired("pad");
+  const opt1 = options?.[0] ?? optionsRequired("padStart");
   if (!validateNumberString(opt1)) {
-    optionMustBeNumber("pad");
+    optionMustBeNumber("padStart");
   }
   const opt2 = options?.[1] ?? "0";
   return (value) => {
     return String(value).padStart(Number(opt1), opt2);
   };
 };
+var padEnd = (options) => {
+  const opt1 = options?.[0] ?? optionsRequired("padEnd");
+  if (!validateNumberString(opt1)) {
+    optionMustBeNumber("padEnd");
+  }
+  const opt2 = options?.[1] ?? " ";
+  return (value) => {
+    return String(value).padEnd(Number(opt1), opt2);
+  };
+};
 var rep = (options) => {
-  const opt = options?.[0] ?? optionsRequired("rep");
+  const opt = options?.[0] ?? optionsRequired("repeat");
   if (!validateNumberString(opt)) {
-    optionMustBeNumber("rep");
+    optionMustBeNumber("repeat");
   }
   return (value) => {
     return String(value).repeat(Number(opt));
@@ -711,6 +736,11 @@ var defaults = (options, literals) => {
     return value;
   };
 };
+var coalesce = (options, literals) => {
+  const opt = options?.[0] ?? optionsRequired("coalesce");
+  const fallback = literals !== void 0 && literals.length > 0 ? literals[0] : opt;
+  return (value) => value ?? fallback;
+};
 var boolean = (_options) => {
   return (value) => {
     return Boolean(value);
@@ -739,24 +769,25 @@ var builtinFilters = {
   "le": le,
   "gt": gt,
   "ge": ge,
-  "inc": inc,
-  "dec": dec,
+  "add": inc,
+  "sub": dec,
   "mul": mul,
   "div": div,
   "mod": mod,
   "abs": abs,
   "clamp": clamp,
-  "fix": fix,
+  "toFixed": fix,
   "locale": locale,
-  "uc": uc,
-  "lc": lc,
-  "cap": cap,
+  "upper": uc,
+  "lower": lc,
+  "capitalize": cap,
   "trim": trim,
   "slice": slice,
   "substr": substr,
-  "pad": pad,
-  "rep": rep,
-  "rev": rev,
+  "padStart": pad,
+  "padEnd": padEnd,
+  "repeat": rep,
+  "reverse": rev,
   "truncate": truncate,
   "join": join,
   "int": int,
@@ -774,10 +805,11 @@ var builtinFilters = {
   "falsy": falsy,
   "truthy": truthy,
   "defaults": defaults,
+  "coalesce": coalesce,
   "boolean": boolean,
   "number": number,
   "string": string,
-  "null": _null
+  "nullIfEmpty": _null
 };
 var outputBuiltinFilters = builtinFilters;
 var builtinFilterMeta = {
@@ -790,26 +822,27 @@ var builtinFilterMeta = {
   gt: { description: "\u3088\u308A\u5927\u304D\u3044\u304B", hasArgs: true, resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
   ge: { description: "\u4EE5\u4E0A\u304B", hasArgs: true, resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
   // 算術
-  inc: { description: "\u52A0\u7B97", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
-  dec: { description: "\u6E1B\u7B97", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
+  add: { description: "\u52A0\u7B97", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+  sub: { description: "\u6E1B\u7B97", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
   mul: { description: "\u4E57\u7B97", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
   div: { description: "\u9664\u7B97", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
   mod: { description: "\u5270\u4F59", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
   abs: { description: "\u7D76\u5BFE\u5024", hasArgs: false, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 0 },
   clamp: { description: "\u7BC4\u56F2\u5185\u306B\u4E38\u3081\u308B (min,max)", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 2, maxArgs: 2, argTypes: ["number", "number"] },
   // 数値フォーマット
-  fix: { description: "\u56FA\u5B9A\u5C0F\u6570\u70B9\u8868\u8A18", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
+  toFixed: { description: "\u56FA\u5B9A\u5C0F\u6570\u70B9\u8868\u8A18", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
   locale: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u3067\u6570\u5024\u30D5\u30A9\u30FC\u30DE\u30C3\u30C8", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["string"] },
   // 文字列
-  uc: { description: "\u5927\u6587\u5B57\u306B\u5909\u63DB", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
-  lc: { description: "\u5C0F\u6587\u5B57\u306B\u5909\u63DB", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
-  cap: { description: "\u5148\u982D\u6587\u5B57\u3092\u5927\u6587\u5B57\u306B", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+  upper: { description: "\u5927\u6587\u5B57\u306B\u5909\u63DB", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+  lower: { description: "\u5C0F\u6587\u5B57\u306B\u5909\u63DB", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+  capitalize: { description: "\u5148\u982D\u6587\u5B57\u3092\u5927\u6587\u5B57\u306B", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
   trim: { description: "\u524D\u5F8C\u306E\u7A7A\u767D\u3092\u524A\u9664", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
   slice: { description: "\u90E8\u5206\u6587\u5B57\u5217 (start[,end])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "number"] },
   substr: { description: "\u90E8\u5206\u6587\u5B57\u5217 (pos,len)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "number"] },
-  pad: { description: "\u30D1\u30C7\u30A3\u30F3\u30B0 (length[,char])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
-  rep: { description: "\u7E70\u308A\u8FD4\u3057 (count)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
-  rev: { description: "\u6587\u5B57\u9806\u3092\u53CD\u8EE2", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+  padStart: { description: "\u5148\u982D\u3092\u57CB\u3081\u308B (length[,char])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
+  padEnd: { description: "\u672B\u5C3E\u3092\u57CB\u3081\u308B (length[,char])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
+  repeat: { description: "\u7E70\u308A\u8FD4\u3057 (count)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+  reverse: { description: "\u6587\u5B57\u9806\u3092\u53CD\u8EE2", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
   truncate: { description: "\u5207\u308A\u8A70\u3081\u3066\u7701\u7565\u8A18\u53F7 (length[,suffix])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
   join: { description: "\u914D\u5217\u3092\u9023\u7D50 ([separator])", hasArgs: true, resultType: "string", acceptTypes: ["array"], minArgs: 0, maxArgs: 1, argTypes: ["string"] },
   // 数値パース・丸め
@@ -832,10 +865,11 @@ var builtinFilterMeta = {
   falsy: { description: "\u507D\u5024\u304B\u5224\u5B9A", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
   truthy: { description: "\u771F\u5024\u304B\u5224\u5B9A", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
   defaults: { description: "\u507D\u5024\u306E\u5834\u5408\u30C7\u30D5\u30A9\u30EB\u30C8\u5024", hasArgs: true, resultType: "passthrough", acceptTypes: "any", minArgs: 1, maxArgs: 1, argTypes: ["any"] },
+  coalesce: { description: "null / undefined \u306E\u5834\u5408\u30C7\u30D5\u30A9\u30EB\u30C8\u5024", hasArgs: true, resultType: "passthrough", acceptTypes: "any", minArgs: 1, maxArgs: 1, argTypes: ["any"] },
   boolean: { description: "\u30D6\u30FC\u30EB\u5024\u306B\u5909\u63DB", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
   number: { description: "\u6570\u5024\u306B\u5909\u63DB", hasArgs: false, resultType: "number", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
   string: { description: "\u6587\u5B57\u5217\u306B\u5909\u63DB", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
-  null: { description: "\u7A7A\u6587\u5B57\u5217\u3092null\u306B\u5909\u63DB", hasArgs: false, resultType: "passthrough", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 }
+  nullIfEmpty: { description: "\u7A7A\u6587\u5B57\u5217\u3092null\u306B\u5909\u63DB", hasArgs: false, resultType: "passthrough", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 }
 };
 var STRUCTURAL_BINDING_TYPE_SET = /* @__PURE__ */ new Set([
   "if",
@@ -880,7 +914,7 @@ for (let i = 0; i < MAX_WILDCARD_DEPTH; i++) {
 Object.freeze(tmpIndexByIndexName);
 var STATE_CONNECTED_CALLBACK_NAME = "$connectedCallback";
 var STATE_DISCONNECTED_CALLBACK_NAME = "$disconnectedCallback";
-var STATE_UPDATED_CALLBACK_NAME = "$updatedCallback";
+var STATE_UPDATED_CALLBACK_NAME = "$renderedCallback";
 var STATE_ERROR_CALLBACK_NAME = "$errorCallback";
 var WEBCOMPONENT_STATE_READY_CALLBACK_NAME = "$stateReadyCallback";
 var STATE_BINDABLES_NAME = "$bindables";
@@ -889,7 +923,7 @@ var STATE_COMMAND_TOKENS_NAME = "$commandTokens";
 var STATE_COMMAND_NAMESPACE_NAME = "$command";
 var STATE_EVENT_TOKENS_NAME = "$eventTokens";
 var STATE_ON_NAME = "$on";
-var STATE_STREAMS_NAME = "$streams";
+var STATE_STREAMS_NAME = "$stream";
 var STATE_WATCH_NAME = "$watch";
 var STATE_SCAN_NAME = "$scan";
 var STATE_RECURSION_NAME = "$recursion";
@@ -939,6 +973,7 @@ function getWcsManifest() {
     // 実装（Record のキー）から自動導出。手リストを持たない＝ドリフトの構造的排除。
     filters: Object.keys(outputBuiltinFilters),
     filterMeta: builtinFilterMeta,
+    filterAliases: builtinFilterAliases,
     reservedLifecycle: [
       STATE_CONNECTED_CALLBACK_NAME,
       STATE_DISCONNECTED_CALLBACK_NAME,
@@ -965,6 +1000,9 @@ function getWcsManifest() {
 }
 
 // src/service/completionData.ts
+function canonicalFilterName(name) {
+  return Object.prototype.hasOwnProperty.call(builtinFilterAliases, name) ? builtinFilterAliases[name] : name;
+}
 var BUILTIN_FILTERS = Object.entries(builtinFilterMeta).map(
   ([name, meta]) => ({ name, ...meta })
 );
@@ -1140,7 +1178,7 @@ function coversSuffix(spec, familySuffix, suffix) {
 }
 
 // src/service/stateAnalyzer.ts
-var RESERVED_STREAMS_KEY = "$streams";
+var RESERVED_STREAMS_KEYS = /* @__PURE__ */ new Set(["$stream", "$streams"]);
 var RESERVED_COMMAND_TOKENS_KEY = "$commandTokens";
 var RESERVED_EVENT_TOKENS_KEY = "$eventTokens";
 var RESERVED_LIST_KEYS_KEY = "$listKeys";
@@ -1512,7 +1550,7 @@ function findNonObjectDeclaration(scriptContent, key, rejectArray = false) {
   return span;
 }
 function collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys) {
-  if (prop.name === RESERVED_STREAMS_KEY && prop.kind === "data" && prop.value && isObjectLiteral(prop.value)) {
+  if (RESERVED_STREAMS_KEYS.has(prop.name) && prop.kind === "data" && prop.value && isObjectLiteral(prop.value)) {
     const entries = parseTopLevelProperties(extractObjectContent(prop.value));
     for (const entry of entries) {
       if (entry.kind !== "data" || entry.name.startsWith("$")) continue;
@@ -2641,6 +2679,7 @@ var ja = {
   arrayMutation: (m, alt) => `\u914D\u5217\u306E\u7834\u58CA\u7684\u30E1\u30BD\u30C3\u30C9 "${m}" \u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\uFF08\u540C\u4E00\u53C2\u7167\u306E\u81EA\u5DF1\u518D\u4EE3\u5165\u3067\u3082\u8981\u7D20\u306E\u8FFD\u52A0\u30FB\u524A\u9664\u306F\u53CD\u6620\u3055\u308C\u307E\u305B\u3093\uFF09\u3002\u975E\u7834\u58CA\u30E1\u30BD\u30C3\u30C9\u3068\u518D\u4EE3\u5165\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u4F8B: ${alt}\uFF09\u3002`,
   arrayIndexAssign: (sp) => `\u914D\u5217\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u3078\u306E\u76F4\u63A5\u4EE3\u5165\u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\u3002this["${sp}"] \u306E\u3088\u3046\u306A\u30C9\u30C3\u30C8\u30D1\u30B9\u4EE3\u5165\u3001\u307E\u305F\u306F with() \u3068\u518D\u4EE3\u5165\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
   tagMemberUnknown: (prop, tag) => `"${prop}" \u306F <${tag}> \u306E wcBindable \u30E1\u30F3\u30D0\u30FC\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u672A\u77E5\u30E1\u30F3\u30D0\u30FC\u3078\u306E\u30D0\u30A4\u30F3\u30C9\u306F\u9ED9\u3063\u3066\u7121\u8996\u3055\u308C\u307E\u3059\uFF09`,
+  nameAlias: (written, canonical) => `"${written}" \u306F "${canonical}" \u306E\u65E7\u540D\u3067\u3059\u30023.x \u306E\u9593\u306F\u52D5\u304D\u307E\u3059\u304C 4.0 \u3067\u5916\u308C\u308B\u306E\u3067\u3001"${canonical}" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044\uFF08@wcstack/state 3.2\uFF09`,
   onPrefixedMember: (member, tag) => `"${member}" \u306F <${tag}> \u306E\u30E1\u30F3\u30D0\u30FC\u3067\u3059\u304C\u3001"on" \u3067\u59CB\u307E\u308B\u540D\u524D\u306F\u30A4\u30D9\u30F3\u30C8\u675F\u7E1B\u306B\u306A\u308A\uFF08"${member.slice(2)}" \u30A4\u30D9\u30F3\u30C8\u3092\u5F85\u3064\uFF09\u3001\u5024\u306F\u5C4A\u304D\u307E\u305B\u3093\u3002\u30D7\u30ED\u30D1\u30C6\u30A3\u3068\u3057\u3066\u675F\u7E1B\u3059\u308B\u306B\u306F ".${member}:" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044\uFF08@wcstack/state 3.1\uFF09`,
   tagCommandUnknown: (name, tag, declared) => `"${name}" \u306F <${tag}> \u306E command \u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u5BA3\u8A00\u6E08\u307F: ${declared}\uFF09`,
   spreadNoBindable: (tag) => `'...'\uFF08spread\uFF09\u306F <${tag}> \u306B\u6709\u52B9\u306A wcBindable \u5BA3\u8A00\u304C\u5FC5\u8981\u3067\u3059 \u2014 \u3053\u306E\u30BF\u30B0\u306F\u5BA3\u8A00\u3092\u6301\u305F\u306A\u3044\u305F\u3081\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30A8\u30E9\u30FC\u3092\u9001\u51FA\u3057\u307E\u3059`,
@@ -2831,6 +2870,7 @@ var en = {
   arrayMutation: (m, alt) => `Destructive array method "${m}" does not trigger a reactive update (re-assigning the same reference does not reflect added/removed elements either). Use a non-destructive method with reassignment (e.g. ${alt}).`,
   arrayIndexAssign: (sp) => `Assigning directly to an array index does not trigger a reactive update. Use a dot-path assignment like this["${sp}"], or with() plus reassignment.`,
   tagMemberUnknown: (prop, tag) => `"${prop}" is not a wcBindable member of <${tag}> (bindings to unknown members are silently ignored)`,
+  nameAlias: (written, canonical) => `"${written}" is the old name of "${canonical}". It works through 3.x and goes in 4.0 \u2014 write "${canonical}" (@wcstack/state 3.2)`,
   onPrefixedMember: (member, tag) => `"${member}" is a member of <${tag}>, but a name starting with "on" makes an event binding (it listens for a "${member.slice(2)}" event) and the value never arrives. Write ".${member}:" to bind the property (@wcstack/state 3.1)`,
   tagCommandUnknown: (name, tag, declared) => `"${name}" is not a command of <${tag}> (declared: ${declared})`,
   spreadNoBindable: (tag) => `'...' (spread) requires <${tag}> to expose a valid wcBindable declaration \u2014 this tag declares none, so the runtime raises an error`,
@@ -3156,7 +3196,6 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
     structuralTemplates ??= collectStructuralTemplates(html, attrName);
     return structuralTemplates;
   };
-  const filterNameSet = new Set(BUILTIN_FILTERS.map((f) => f.name));
   for (const attr of attrs) {
     const bindings = splitBindingExpressions(attr.value);
     const nonEmptyCount = bindings.filter((b) => b.trim().length > 0).length;
@@ -3490,7 +3529,17 @@ function parseFilterSegments(expr, segments, searchStart) {
 }
 function validateFilterUsage(filter, bindingStart, msgs) {
   const diagnostics = [];
-  const info = filterMap.get(filter.name);
+  const canonical = canonicalFilterName(filter.name);
+  const info = filterMap.get(canonical);
+  if (info && canonical !== filter.name) {
+    diagnostics.push({
+      code: WcsDiagnosticCode.NameAlias,
+      start: bindingStart + filter.offset,
+      end: bindingStart + filter.offset + filter.name.length,
+      message: msgs.nameAlias(filter.name, canonical),
+      severity: "info"
+    });
+  }
   if (!info) {
     diagnostics.push({
       code: WcsDiagnosticCode.FilterUnknown,
@@ -4120,8 +4169,17 @@ function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", l
     }
     for (let i = 1; i < parts.length; i++) {
       const filterName = parts[i].trim().replace(/\(.*$/, "");
-      if (filterName && !filterNameSet.has(filterName)) {
-        const filterOffset = item.expression.indexOf(parts[i]);
+      const filterOffset = item.expression.indexOf(parts[i]) + (parts[i].length - parts[i].trimStart().length);
+      const canonical = canonicalFilterName(filterName);
+      if (filterName && canonical !== filterName && filterNameSet.has(canonical)) {
+        diagnostics.push({
+          code: WcsDiagnosticCode.NameAlias,
+          start: item.exprStart + filterOffset,
+          end: item.exprStart + filterOffset + filterName.length,
+          message: msgs.nameAlias(filterName, canonical),
+          severity: "info"
+        });
+      } else if (filterName && !filterNameSet.has(filterName)) {
         diagnostics.push({
           code: WcsDiagnosticCode.FilterUnknown,
           start: item.exprStart + filterOffset,
@@ -6879,7 +6937,8 @@ var RECURSION_APIS = ["getAll", "setAll", "resolve", "postUpdate", "trackDepende
 var UNSUPPORTED_API_SITE = {
   $resolve: "resolve",
   $postUpdate: "postUpdate",
-  $trackDependency: "trackDependency"
+  $trackDependency: "trackDependency",
+  $dependOn: "trackDependency"
 };
 var BRACKET_ASSIGNMENT = new RegExp(`${ROOT_BRACKET}${ASSIGN_TAIL}`, "g");
 var PRE_BRACKET_INCDEC = new RegExp(`${PRE_INCDEC}${ROOT_BRACKET}`, "g");
@@ -9839,16 +9898,16 @@ pp$5.parseExprOp = function(left, leftStartPos, leftStartLoc, minPrec, forInit) 
   if (prec != null && (!forInit || this.type !== types$1._in)) {
     if (prec > minPrec) {
       var logical = this.type === types$1.logicalOR || this.type === types$1.logicalAND;
-      var coalesce = this.type === types$1.coalesce;
-      if (coalesce) {
+      var coalesce2 = this.type === types$1.coalesce;
+      if (coalesce2) {
         prec = types$1.logicalAND.binop;
       }
       var op = this.value;
       this.next();
       var startPos = this.start, startLoc = this.startLoc;
       var right = this.parseExprOp(this.parseMaybeUnary(null, false, false, forInit), startPos, startLoc, prec, forInit);
-      var node = this.buildBinary(leftStartPos, leftStartLoc, left, right, op, logical || coalesce);
-      if (logical && this.type === types$1.coalesce || coalesce && (this.type === types$1.logicalOR || this.type === types$1.logicalAND)) {
+      var node = this.buildBinary(leftStartPos, leftStartLoc, left, right, op, logical || coalesce2);
+      if (logical && this.type === types$1.coalesce || coalesce2 && (this.type === types$1.logicalOR || this.type === types$1.logicalAND)) {
         this.raiseRecoverable(this.start, "Logical expressions and coalesce expressions cannot be mixed. Wrap either by parentheses");
       }
       return this.parseExprOp(node, leftStartPos, leftStartLoc, minPrec, forInit);
@@ -13099,8 +13158,9 @@ function parse3(input, options) {
 // src/service/scriptAst.ts
 var PREFIX = "(async function* () {\n";
 var SUFFIX = "\n})";
-var PATH_ARG_APIS = /* @__PURE__ */ new Set(["$getAll", "$resolve", "$trackDependency"]);
-var UNTRACK_API = "$untrackDependency";
+var PATH_ARG_APIS = /* @__PURE__ */ new Set(["$getAll", "$resolve", "$dependOn", "$trackDependency"]);
+var TRACK_APIS = /* @__PURE__ */ new Set(["$dependOn", "$trackDependency"]);
+var UNTRACK_APIS = /* @__PURE__ */ new Set(["$untracked", "$untrackDependency"]);
 function collectGetterReads(body) {
   let program;
   try {
@@ -13325,7 +13385,7 @@ function visitCall(node, scope, out) {
     const { segments, base } = resolveChain(callee);
     if (isThisRoot(base, scope) && segments.length === 1 && segments[0].text !== null) {
       const api = segments[0].text;
-      if (api === UNTRACK_API) return;
+      if (UNTRACK_APIS.has(api)) return;
       if (PATH_ARG_APIS.has(api)) {
         const first = node.arguments[0];
         const path = first !== void 0 && first.type !== "SpreadElement" ? literalString2(first) : null;
@@ -13333,7 +13393,7 @@ function visitCall(node, scope, out) {
           out.push({
             path,
             chain: null,
-            form: api === "$trackDependency" ? "track" : "api",
+            form: TRACK_APIS.has(api) ? "track" : "api",
             callee: false,
             written: false,
             start: node.start - PREFIX.length,
@@ -13516,7 +13576,35 @@ function buildReferenceIndex(html, options = {}) {
 }
 
 // src/service/semanticValidator.ts
-var STATE_UPDATED_CALLBACK = "$updatedCallback";
+var STATE_UPDATED_CALLBACKS = /* @__PURE__ */ new Set(["$renderedCallback", "$updatedCallback"]);
+var OLD_API_NAMES = { $trackDependency: "$dependOn", $untrackDependency: "$untracked" };
+var OLD_DECLARATION_KEYS = { $streams: "$stream", $updatedCallback: "$renderedCallback" };
+var OLD_API_CALL = /\.\s*(\$trackDependency|\$untrackDependency)\b/g;
+var OLD_DECLARATION_KEY = /(^|[{,\s])(\$streams|\$updatedCallback)(?=\s*[:(])/g;
+function validateNameAliases(script, scriptStart, locale2) {
+  const msgs = getMessages(locale2);
+  const scan = blankComments(script);
+  const out = [];
+  const push2 = (name, canonical, offset2) => {
+    out.push({
+      code: WcsDiagnosticCode.NameAlias,
+      start: scriptStart + offset2,
+      end: scriptStart + offset2 + name.length,
+      message: msgs.nameAlias(name, canonical),
+      severity: "info"
+    });
+  };
+  OLD_API_CALL.lastIndex = 0;
+  let match;
+  while ((match = OLD_API_CALL.exec(scan)) !== null) {
+    push2(match[1], OLD_API_NAMES[match[1]], match.index + match[0].length - match[1].length);
+  }
+  OLD_DECLARATION_KEY.lastIndex = 0;
+  while ((match = OLD_DECLARATION_KEY.exec(scan)) !== null) {
+    push2(match[2], OLD_DECLARATION_KEYS[match[2]], match.index + match[1].length);
+  }
+  return out;
+}
 var API_CALL = /\.\s*\$(getAll|setAll|resolve)\s*\(/g;
 function validateIndexArity(script, scriptStart, locale2) {
   const msgs = getMessages(locale2);
@@ -13698,13 +13786,13 @@ var PATH_TEST_LITERAL = /(?:\.\s*(?:includes|indexOf)\s*\(\s*|[!=]==\s*)(["'])((
 function validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale2) {
   const blocks = parseWcsScriptBlocks(html, stateTagName);
   if (blocks.length === 0) return [];
-  const hasCallback = blocks.some((block) => block.content.includes(STATE_UPDATED_CALLBACK));
+  const hasCallback = blocks.some((block) => [...STATE_UPDATED_CALLBACKS].some((name) => block.content.includes(name)));
   if (!hasCallback) return [];
   const msgs = getMessages(locale2);
   const boundPaths = collectBoundPaths(html, stateTagName, bindAttrName);
   const out = [];
   for (const block of blocks) {
-    const callback = analyzeCallableBodies(block.content).find((entry) => entry.name === STATE_UPDATED_CALLBACK && entry.kind === "method");
+    const callback = analyzeCallableBodies(block.content).find((entry) => STATE_UPDATED_CALLBACKS.has(entry.name) && entry.kind === "method");
     if (callback === void 0) continue;
     if (block.mountPath !== null) continue;
     const declared = new Set(analyzeStatePaths(block.content).map((p) => p.path));
@@ -13751,6 +13839,7 @@ function validateSemantics(html, stateTagName = "wcs-state", locale2, bindAttrNa
   const getNestedWriteRoots = () => nestedWriteRoots ??= collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks);
   for (const block of blocks) {
     out.push(...validateIndexArity(block.content, block.contentStart, locale2));
+    out.push(...validateNameAliases(block.content, block.contentStart, locale2));
     out.push(...validateGetterCycles(block.content, block.contentStart, locale2));
     out.push(...validateGetterUntrackedReads(block.content, block.contentStart, getNestedWriteRoots, locale2));
   }

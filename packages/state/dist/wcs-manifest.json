@@ -55,24 +55,25 @@
     "le",
     "gt",
     "ge",
-    "inc",
-    "dec",
+    "add",
+    "sub",
     "mul",
     "div",
     "mod",
     "abs",
     "clamp",
-    "fix",
+    "toFixed",
     "locale",
-    "uc",
-    "lc",
-    "cap",
+    "upper",
+    "lower",
+    "capitalize",
     "trim",
     "slice",
     "substr",
-    "pad",
-    "rep",
-    "rev",
+    "padStart",
+    "padEnd",
+    "repeat",
+    "reverse",
     "truncate",
     "join",
     "int",
@@ -90,10 +91,11 @@
     "falsy",
     "truthy",
     "defaults",
+    "coalesce",
     "boolean",
     "number",
     "string",
-    "null"
+    "nullIfEmpty"
   ],
   "filterMeta": {
     "eq": {
@@ -184,27 +186,27 @@
         "number"
       ]
     },
-    "inc": {
+    "add": {
       "description": "加算",
       "hasArgs": true,
       "resultType": "number",
       "acceptTypes": [
         "number"
       ],
-      "minArgs": 0,
+      "minArgs": 1,
       "maxArgs": 1,
       "argTypes": [
         "number"
       ]
     },
-    "dec": {
+    "sub": {
       "description": "減算",
       "hasArgs": true,
       "resultType": "number",
       "acceptTypes": [
         "number"
       ],
-      "minArgs": 0,
+      "minArgs": 1,
       "maxArgs": 1,
       "argTypes": [
         "number"
@@ -273,7 +275,7 @@
         "number"
       ]
     },
-    "fix": {
+    "toFixed": {
       "description": "固定小数点表記",
       "hasArgs": true,
       "resultType": "string",
@@ -299,7 +301,7 @@
         "string"
       ]
     },
-    "uc": {
+    "upper": {
       "description": "大文字に変換",
       "hasArgs": false,
       "resultType": "string",
@@ -309,7 +311,7 @@
       "minArgs": 0,
       "maxArgs": 0
     },
-    "lc": {
+    "lower": {
       "description": "小文字に変換",
       "hasArgs": false,
       "resultType": "string",
@@ -319,7 +321,7 @@
       "minArgs": 0,
       "maxArgs": 0
     },
-    "cap": {
+    "capitalize": {
       "description": "先頭文字を大文字に",
       "hasArgs": false,
       "resultType": "string",
@@ -367,8 +369,8 @@
         "number"
       ]
     },
-    "pad": {
-      "description": "パディング (length[,char])",
+    "padStart": {
+      "description": "先頭を埋める (length[,char])",
       "hasArgs": true,
       "resultType": "string",
       "acceptTypes": [
@@ -381,7 +383,21 @@
         "string"
       ]
     },
-    "rep": {
+    "padEnd": {
+      "description": "末尾を埋める (length[,char])",
+      "hasArgs": true,
+      "resultType": "string",
+      "acceptTypes": [
+        "string"
+      ],
+      "minArgs": 1,
+      "maxArgs": 2,
+      "argTypes": [
+        "number",
+        "string"
+      ]
+    },
+    "repeat": {
       "description": "繰り返し (count)",
       "hasArgs": true,
       "resultType": "string",
@@ -394,7 +410,7 @@
         "number"
       ]
     },
-    "rev": {
+    "reverse": {
       "description": "文字順を反転",
       "hasArgs": false,
       "resultType": "string",
@@ -592,6 +608,17 @@
         "any"
       ]
     },
+    "coalesce": {
+      "description": "null / undefined の場合デフォルト値",
+      "hasArgs": true,
+      "resultType": "passthrough",
+      "acceptTypes": "any",
+      "minArgs": 1,
+      "maxArgs": 1,
+      "argTypes": [
+        "any"
+      ]
+    },
     "boolean": {
       "description": "ブール値に変換",
       "hasArgs": false,
@@ -616,7 +643,7 @@
       "minArgs": 0,
       "maxArgs": 0
     },
-    "null": {
+    "nullIfEmpty": {
       "description": "空文字列をnullに変換",
       "hasArgs": false,
       "resultType": "passthrough",
@@ -627,10 +654,22 @@
       "maxArgs": 0
     }
   },
+  "filterAliases": {
+    "inc": "add",
+    "dec": "sub",
+    "fix": "toFixed",
+    "uc": "upper",
+    "lc": "lower",
+    "cap": "capitalize",
+    "rep": "repeat",
+    "rev": "reverse",
+    "pad": "padStart",
+    "null": "nullIfEmpty"
+  },
   "reservedLifecycle": [
     "$connectedCallback",
     "$disconnectedCallback",
-    "$updatedCallback",
+    "$renderedCallback",
     "$errorCallback",
     "$stateReadyCallback"
   ],
@@ -641,7 +680,7 @@
     "$command",
     "$eventTokens",
     "$on",
-    "$streams",
+    "$stream",
     "$watch",
     "$scan",
     "$listKeys",

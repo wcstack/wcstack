@@ -917,19 +917,23 @@ interface WcsStateApi {
      * 指定パスへの依存関係を明示的に登録する。
      * computed getter 内で動的にパスを組み立てる場合に使用。
      */
-    $trackDependency(path: string): void;
+    $dependOn(path: string): void;
     /**
      * コールバック実行中の依存追跡（動的依存・`$1` インデックス依存の登録）を
-     * 抑止して fn を実行し、その戻り値を返す（`$trackDependency` と対称）。
+     * 抑止して fn を実行し、その戻り値を返す。
      * リスト行 getter が「行外の単一値」を読みたいが、その値の変更で全行を
      * 再評価させたくない場合に使う（該当行へ直接書き込む設計と組で用いる）。
      */
+    $untracked<T>(fn: () => T): T;
+    /** @deprecated `$dependOn` の旧名（3.x の間は動き、4.0 で外れる — 要件 B12） */
+    $trackDependency(path: string): void;
+    /** @deprecated `$untracked` の旧名（3.x の間は動き、4.0 で外れる — 要件 B12） */
     $untrackDependency<T>(fn: () => T): T;
     /**
      * 鍵付き購読: `path` の現在値が `key` に等しいかを返し、評価中のリスト行 getter を
      * その鍵で購読する。`path` への書き込みは旧値・新値の鍵の行だけを再評価する
      * （パターン依存なら全行）。`path` 自体は依存として追跡しない。
-     * 例: `get "items.*.selected"() { return this.$eq("selectedId", this.$untrackDependency(() => this["items.*.id"])); }`
+     * 例: `get "items.*.selected"() { return this.$eq("selectedId", this.$untracked(() => this["items.*.id"])); }`
      */
     $eq(path: string, key: unknown): boolean;
     /**
@@ -954,9 +958,9 @@ interface WcsStateApi {
     readonly $command: Record<string, {
         emit(...args: any[]): any;
     }>;
-    /** `$streams` 各エントリの状態（"idle" | "active" | "done" | "error"）を返す読み取り専用名前空間 */
+    /** `$stream` 各エントリの状態（"idle" | "active" | "done" | "error"）を返す読み取り専用名前空間 */
     readonly $streamStatus: Record<string, "idle" | "active" | "done" | "error">;
-    /** `$streams` 各エントリの直近エラーを返す読み取り専用名前空間 */
+    /** `$stream` 各エントリの直近エラーを返す読み取り専用名前空間 */
     readonly $streamError: Record<string, unknown>;
     readonly [key: `$streamStatus.${string}`]: "idle" | "active" | "done" | "error";
     readonly [key: `$streamError.${string}`]: unknown;
@@ -1055,8 +1059,8 @@ type WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T>;
  *   $disconnectedCallback() {
  *     // cleanup
  *   },
- *   $updatedCallback() {
- *     // called after DOM update
+ *   $renderedCallback() {
+ *     // called after the bindings are applied (old name: $updatedCallback)
  *   }
  * });
  * ```
