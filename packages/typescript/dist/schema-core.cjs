@@ -147,6 +147,9 @@ var WcsDiagnosticCode = {
   // --- built-in wcs-* tag contract (generated/builtinTags.generated.ts が正本) ---
   // 未知メンバーへのバインド(プロパティ / command. / eventToken. キー)。黙って無視される。
   TagMemberUnknown: "wcs/tag-member-unknown",
+  // タグのメンバー名が "on" で始まる（`once` 等）のに先頭ドット無しで束縛した: ランタイムはイベント束縛にして
+  // "ce" イベントを待ち、値は届かない。明示のプロパティ形 `.once:` を提案する（@wcstack/state 3.1・要件 B5 / 3.x 計画 D36）
+  OnPrefixedMember: "wcs/on-prefixed-member",
   // wcBindable 無宣言タグ(wcs-fetch-header 等のヘルパー)への spread。
   // ランタイム(expandSpread)は raiseError で落とす。
   SpreadNoBindable: "wcs/spread-no-bindable",
@@ -1350,6 +1353,7 @@ function getWcsManifest() {
         elseKeyword: ELSE_KEYWORD,
         spread: SPREAD_PROP,
         eventPropertyPrefix: EVENT_PROP_PREFIX,
+        explicitPropertyPrefix: DELIMITER,
         propNamespaces: {
           eventToken: EVENT_TOKEN_NAMESPACE,
           command: COMMAND_NAMESPACE,
@@ -3064,6 +3068,7 @@ var ja = {
   arrayMutation: (m, alt) => `\u914D\u5217\u306E\u7834\u58CA\u7684\u30E1\u30BD\u30C3\u30C9 "${m}" \u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\uFF08\u540C\u4E00\u53C2\u7167\u306E\u81EA\u5DF1\u518D\u4EE3\u5165\u3067\u3082\u8981\u7D20\u306E\u8FFD\u52A0\u30FB\u524A\u9664\u306F\u53CD\u6620\u3055\u308C\u307E\u305B\u3093\uFF09\u3002\u975E\u7834\u58CA\u30E1\u30BD\u30C3\u30C9\u3068\u518D\u4EE3\u5165\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u4F8B: ${alt}\uFF09\u3002`,
   arrayIndexAssign: (sp) => `\u914D\u5217\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u3078\u306E\u76F4\u63A5\u4EE3\u5165\u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\u3002this["${sp}"] \u306E\u3088\u3046\u306A\u30C9\u30C3\u30C8\u30D1\u30B9\u4EE3\u5165\u3001\u307E\u305F\u306F with() \u3068\u518D\u4EE3\u5165\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
   tagMemberUnknown: (prop, tag) => `"${prop}" \u306F <${tag}> \u306E wcBindable \u30E1\u30F3\u30D0\u30FC\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u672A\u77E5\u30E1\u30F3\u30D0\u30FC\u3078\u306E\u30D0\u30A4\u30F3\u30C9\u306F\u9ED9\u3063\u3066\u7121\u8996\u3055\u308C\u307E\u3059\uFF09`,
+  onPrefixedMember: (member, tag) => `"${member}" \u306F <${tag}> \u306E\u30E1\u30F3\u30D0\u30FC\u3067\u3059\u304C\u3001"on" \u3067\u59CB\u307E\u308B\u540D\u524D\u306F\u30A4\u30D9\u30F3\u30C8\u675F\u7E1B\u306B\u306A\u308A\uFF08"${member.slice(2)}" \u30A4\u30D9\u30F3\u30C8\u3092\u5F85\u3064\uFF09\u3001\u5024\u306F\u5C4A\u304D\u307E\u305B\u3093\u3002\u30D7\u30ED\u30D1\u30C6\u30A3\u3068\u3057\u3066\u675F\u7E1B\u3059\u308B\u306B\u306F ".${member}:" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044\uFF08@wcstack/state 3.1\uFF09`,
   tagCommandUnknown: (name, tag, declared) => `"${name}" \u306F <${tag}> \u306E command \u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u5BA3\u8A00\u6E08\u307F: ${declared}\uFF09`,
   spreadNoBindable: (tag) => `'...'\uFF08spread\uFF09\u306F <${tag}> \u306B\u6709\u52B9\u306A wcBindable \u5BA3\u8A00\u304C\u5FC5\u8981\u3067\u3059 \u2014 \u3053\u306E\u30BF\u30B0\u306F\u5BA3\u8A00\u3092\u6301\u305F\u306A\u3044\u305F\u3081\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30A8\u30E9\u30FC\u3092\u9001\u51FA\u3057\u307E\u3059`,
   tagEventTokenKeyUnknown: (name, tag, declared) => `eventToken \u306E\u30AD\u30FC "${name}" \u306F <${tag}> \u306E wcBindable \u30D7\u30ED\u30D1\u30C6\u30A3\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002\u751F DOM \u30A4\u30D9\u30F3\u30C8\u540D\u306F\u767A\u706B\u3057\u307E\u305B\u3093 \u2014 \u30D7\u30ED\u30D1\u30C6\u30A3\u540D\u3092\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u5BA3\u8A00\u6E08\u307F: ${declared}\uFF09`,
@@ -3253,6 +3258,7 @@ var en = {
   arrayMutation: (m, alt) => `Destructive array method "${m}" does not trigger a reactive update (re-assigning the same reference does not reflect added/removed elements either). Use a non-destructive method with reassignment (e.g. ${alt}).`,
   arrayIndexAssign: (sp) => `Assigning directly to an array index does not trigger a reactive update. Use a dot-path assignment like this["${sp}"], or with() plus reassignment.`,
   tagMemberUnknown: (prop, tag) => `"${prop}" is not a wcBindable member of <${tag}> (bindings to unknown members are silently ignored)`,
+  onPrefixedMember: (member, tag) => `"${member}" is a member of <${tag}>, but a name starting with "on" makes an event binding (it listens for a "${member.slice(2)}" event) and the value never arrives. Write ".${member}:" to bind the property (@wcstack/state 3.1)`,
   tagCommandUnknown: (name, tag, declared) => `"${name}" is not a command of <${tag}> (declared: ${declared})`,
   spreadNoBindable: (tag) => `'...' (spread) requires <${tag}> to expose a valid wcBindable declaration \u2014 this tag declares none, so the runtime raises an error`,
   tagEventTokenKeyUnknown: (name, tag, declared) => `eventToken key "${name}" is not a wcBindable property of <${tag}>. Raw DOM event names never fire \u2014 use the property name (declared: ${declared})`,
@@ -4385,6 +4391,10 @@ var ELSE_KEYWORD2 = "else";
 var SPREAD_PROP2 = "...";
 var EVENT_PROP_PREFIX2 = "on";
 var EVENT_TOKEN_NAMESPACE2 = "eventToken";
+var COMMAND_NAMESPACE2 = "command";
+var CLASS_NAMESPACE2 = "class";
+var ATTR_NAMESPACE2 = "attr";
+var STYLE_NAMESPACE2 = "style";
 var INDEX_PARAM_PREFIX2 = "$";
 var tmpIndexByIndexName2 = {};
 for (let i = 0; i < MAX_WILDCARD_DEPTH2; i++) {
@@ -4709,6 +4719,13 @@ function parseStatePart(statePart) {
   };
 }
 var KEYWORDS_WITHOUT_MODIFIERS = /* @__PURE__ */ new Set([ELSE_KEYWORD2, "if", "elseif", "for", SPREAD_PROP2]);
+var EXPLICIT_PROPERTY_REJECTED_HEADS = /* @__PURE__ */ new Set([
+  CLASS_NAMESPACE2,
+  ATTR_NAMESPACE2,
+  STYLE_NAMESPACE2,
+  COMMAND_NAMESPACE2,
+  EVENT_TOKEN_NAMESPACE2
+]);
 function splitBindTexts(bindText) {
   return splitOutsideQuotes(bindText, BINDING_SEPARATOR2);
 }
@@ -4777,6 +4794,19 @@ function parseBindTextsForElement(bindText) {
     } else {
       const stateResult = parseStatePart(statePart);
       const propResult = parsePropPart(propPart);
+      if (propResult.propSegments[0] === "" && propResult.propSegments.length > 1) {
+        const propSegments = propResult.propSegments.slice(1);
+        if (propSegments.includes("") || EXPLICIT_PROPERTY_REJECTED_HEADS.has(propSegments[0])) {
+          raiseError2(`[wcs/binding-syntax] "${propPart}": a leading "." binds an element property by name \u2014 write a non-empty property that is not a namespace (${[...EXPLICIT_PROPERTY_REJECTED_HEADS].join(", ")}).${LINT_HINT}`);
+        }
+        return {
+          ...propResult,
+          propName: propSegments.join(DELIMITER2),
+          propSegments,
+          ...stateResult,
+          bindingType: "prop"
+        };
+      }
       if (propResult.propSegments[0] === EVENT_TOKEN_NAMESPACE2) {
         return {
           ...propResult,
@@ -6292,10 +6322,28 @@ function validateBindingAgainstContract(tagName, contract, parsed, property, sta
   const hashIndex = property.indexOf("#");
   const modifiers = hashIndex === -1 ? "" : property.slice(hashIndex + 1);
   property = hashIndex === -1 ? property : property.slice(0, hashIndex);
+  const explicit = property.startsWith(".") && property !== "...";
+  if (explicit) {
+    property = property.slice(1);
+    if (/^(class|style|attr|command|eventToken)(\.|$)/.test(property)) return;
+  }
   if (property === "...") return;
   if (STRUCTURAL_DIRECTIVES2.has(property)) return;
   if (/^(class|style|attr)\./.test(property)) return;
-  if (/^on\w/.test(property)) return;
+  if (!explicit && /^on\w/.test(property)) {
+    if (contract.properties.includes(property) || property in contract.inputs) {
+      diagnostics.push({
+        code: WcsDiagnosticCode.OnPrefixedMember,
+        start,
+        end,
+        severity: "warning",
+        tag: tagName,
+        member: property,
+        message: msgs.onPrefixedMember(property, tagName)
+      });
+    }
+    return;
+  }
   const inputNames = Object.keys(contract.inputs);
   if (property.startsWith("command.")) {
     const name = property.slice("command.".length);
