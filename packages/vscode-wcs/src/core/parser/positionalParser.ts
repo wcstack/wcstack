@@ -86,7 +86,8 @@ export function parseEmbeddedTextWithPositions(expression: string): IPositionalB
   }
 
   // 右辺のみの式: パスは先頭から最初の `|` まで、`@state` はその窓内。
-  const firstPipe = expression.indexOf(delimiters.filter);
+  // 区切りは引用符の外だけ（拡張内の区切り走査は例外なく quoteAware 経由）
+  const firstPipe = indexOfOutsideQuotes(expression, delimiters.filter);
   const pathScopeEnd = firstPipe === -1 ? expression.length : firstPipe;
   const pathLocal = locate(expression, parsed.statePathName, 0, pathScopeEnd);
 
@@ -144,8 +145,9 @@ export function parseBindTextWithPositions(bindText: string): IPositionalBinding
     let pathLocal: ITokenRange | null = null;
     if (colon !== -1) {
       const stateBase = colon + 1;
-      const firstPipe = expr.indexOf(delimiters.filter, stateBase);
-      const pathScopeEnd = firstPipe === -1 ? expr.length : firstPipe;
+      // `stateBase` は `:` の直後 ＝ 引用符の外なので、そこから切り出して走査してよい
+      const rhsPipe = indexOfOutsideQuotes(expr.slice(stateBase), delimiters.filter);
+      const pathScopeEnd = rhsPipe === -1 ? expr.length : stateBase + rhsPipe;
       // `#else` のような合成パス（原文に現れない）は locate が null を返す。
       pathLocal = locate(expr, parsed.statePathName, stateBase, pathScopeEnd);
     }

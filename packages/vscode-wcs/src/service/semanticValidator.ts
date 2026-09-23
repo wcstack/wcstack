@@ -128,8 +128,10 @@ function collectDeclarationAliasReads(script: string): { name: string; start: nu
  *   - **API 呼び出し**（`this.$trackDependency(`）→ `wcs/name-alias`（info）。旧名でも動くので
  *     「4.0 で外れる」ことだけを伝える。
  *   - **宣言キーの読み出し**（`this.$streams`）→ `wcs/declaration-alias-read`。宣言と違い
- *     3.x でも動かない（正規化が旧名を `delete` する ＝ 黙って `undefined`）ので code を分ける。
- *     AST（`collectThisMemberRefs`）で断定できたら warning、読めない形は正規表現へ落として info。
+ *     旧名のままにはできないので code を分ける。AST（`collectThisMemberRefs`）で断定できたら
+ *     warning、読めない形は正規表現へ落として info。文言も経路で分ける — オブジェクト
+ *     リテラルなら旧名は自前プロパティなので必ず `delete` されて `undefined`、class 構文は
+ *     プロトタイプのメソッド / アクセサなら `delete` されず今は読める（`pushRead` を参照）。
  *   - **宣言キーそのもの**（`$streams: …`）→ `wcs/name-alias`（info）。旧名と正式名を**両方**
  *     宣言していたら `wcs/declaration-alias`（error）— ランタイムが正規化の時点で raiseError
  *     するので、ページごと止まる側の報告にする。
@@ -157,14 +159,25 @@ function validateNameAliases(script: string, scriptStart: number, locale?: strin
       severity: 'info',
     });
   };
-  /** 旧名の宣言キーの読み出し（`wcs/declaration-alias-read`）。severity は検出経路で決まる。 */
-  const pushRead = (name: string, offset: number, severity: 'warning' | 'info'): void => {
+  /**
+   * 旧名の宣言キーの読み出し（`wcs/declaration-alias-read`）。severity も文言も検出経路で決まる。
+   *
+   * AST 経路 ＝ `export default { … }` のオブジェクトリテラル ＝ 旧名は必ず**自前プロパティ**
+   * なので、正規化の `delete`（`declarationAliases.ts` の `owner === state` のときだけ）が必ず効き、
+   * 読み出しは `undefined` と断定できる。フォールバック経路（class 構文など）は自前プロパティか
+   * プロトタイプか分からない — プロトタイプのメソッド / アクセサは `delete` されず今は読めるので、
+   * 「undefined になる」と断定せず両方の形を説明する文言に分ける。
+   */
+  const pushRead = (name: string, offset: number, shape: 'own' | 'unknown'): void => {
+    const canonical = OLD_DECLARATION_KEYS[name];
     out.push({
       code: WcsDiagnosticCode.DeclarationAliasRead,
       start: scriptStart + offset,
       end: scriptStart + offset + name.length,
-      message: msgs.declarationAliasRead(name, OLD_DECLARATION_KEYS[name]),
-      severity,
+      message: shape === 'own'
+        ? msgs.declarationAliasRead(name, canonical)
+        : msgs.declarationAliasReadUncertain(name, canonical),
+      severity: shape === 'own' ? 'warning' : 'info',
     });
   };
 
@@ -180,12 +193,12 @@ function validateNameAliases(script: string, scriptStart: number, locale?: strin
   // 読めない形（class 構文など）だけ正規表現へ落として info に留める。
   const astReads = collectDeclarationAliasReads(script);
   if (astReads !== null) {
-    for (const read of astReads) pushRead(read.name, read.start, 'warning');
+    for (const read of astReads) pushRead(read.name, read.start, 'own');
   } else {
     OLD_DECLARATION_MEMBER.lastIndex = 0;
     while ((match = OLD_DECLARATION_MEMBER.exec(scan)) !== null) {
       const written = match[1];
-      pushRead(written, match.index + match[0].length - written.length, 'info');
+      pushRead(written, match.index + match[0].length - written.length, 'unknown');
     }
   }
 

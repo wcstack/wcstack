@@ -32,9 +32,10 @@ async function mountPage(state: object, body: string) {
 }
 
 describe("normalizeDeclarationAliases", () => {
-  // 「移す（＝旧名は消える）」のは契約。3.x の間そのまま動くのは「宣言として書けること」で
-  // あって「旧名で読み返せること」ではない — state のコードが `this.$streams` を読んでいたら
-  // `this.$stream` に直す（docs/migration-v3.md の 3.2 の行）
+  // 「正式名へ**写し**、旧名が**自前のプロパティなら**消す」のが契約。この分岐は state の
+  // 書き方（オブジェクトリテラル / class）で観測できるので、両方を固定する（下の 2 本）。
+  // 3.x の間そのまま動くのは「宣言として旧名で書けること」であって「旧名で読み返せること」
+  // ではない（docs/migration-v3.md の 3.2 の行）
   it("旧名は正式名へ移り、自前のプロパティなら旧名は消えること", () => {
     const handler = () => {};
     const state: Record<string, unknown> = { $updatedCallback: handler, $streams: { s: {} } };
@@ -57,6 +58,34 @@ describe("normalizeDeclarationAliases", () => {
     expect(state.calls).toBe(1);
     // 同じオブジェクトは二度処理しない（プロトタイプに旧名が残っていても衝突にしない）
     expect(() => normalizeDeclarationAliases(state)).not.toThrow();
+  });
+
+  /**
+   * 「旧名が消えるか」は state の書き方で分かれる（`findOwner` が自前プロパティを返したときだけ
+   * `delete` する）。この分岐は移行ガイドが説明している契約なので、両方を明示的に固定する —
+   * 暗黙のままだと「旧名は必ず消える」という誤った説明が文書に戻ってくる。
+   */
+  describe("旧名が残るかは state の書き方で分かれる（移行ガイドの契約）", () => {
+    it("オブジェクトリテラル（自前プロパティ）では旧名が消え、読み返すと undefined になること", () => {
+      const state: Record<string, unknown> = { $updatedCallback() { /* noop */ } };
+      normalizeDeclarationAliases(state);
+      expect(Object.prototype.hasOwnProperty.call(state, "$updatedCallback")).toBe(false);
+      expect("$updatedCallback" in state).toBe(false);
+      expect(typeof state.$updatedCallback).toBe("undefined");
+      expect(typeof state.$renderedCallback).toBe("function");
+    });
+
+    it("class（プロトタイプのメソッド）では旧名も読めたまま、正式名と同じ参照になること", () => {
+      class AppState {
+        $updatedCallback(): number { return 1; }
+      }
+      const state = new AppState() as any;
+      normalizeDeclarationAliases(state);
+      // インスタンスに写しが足されるだけで、プロトタイプの旧名は消せない（4.0 で外れる）
+      expect(Object.prototype.hasOwnProperty.call(state, "$updatedCallback")).toBe(false);
+      expect(typeof state.$updatedCallback).toBe("function");
+      expect(state.$updatedCallback).toBe(state.$renderedCallback);
+    });
   });
 
   it("両方の綴りを宣言した state は [wcs/declaration-alias] で拒否すること", () => {

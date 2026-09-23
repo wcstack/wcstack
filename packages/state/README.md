@@ -203,6 +203,12 @@ leaves features out, it can compose them instead:
 </script>
 ```
 
+Call `installFeatures([...])` **before** `bootstrapState()`, as above: a feature can register a tag of its
+own (`<wcs-ssr>`), and bootstrapping is what defines the tags. The reverse order is not an error — a
+feature installed afterwards catches up and defines its tags against the registries already
+bootstrapped — but keeping the declared order means every tag is defined before the first element
+upgrades.
+
 Load the split form from the package's own files — jsDelivr's plain, version-pinned `/npm/` path as
 above (it does not read `exports`, so name the file under `dist/split/`), or a bundler — and **never
 through `esm.run`**. Its `+esm` endpoint re-bundles every entry on the server and inlines the shared
@@ -1124,6 +1130,7 @@ What reaches the rows:
 - **A write to an object above `path`** — `this.sel = { id: 2 }` for `$eq("sel.id", …)`: the same two rows, keyed by the value `path` had under the old object and has under the new one.
 - **A `path` that is a getter, or sits under one** (`$eq("current.id", …)` with `get current()`): its value changes without a write to it, so the calls fall back to an ordinary tracked read. The selection stays correct, but a change re-evaluates every row, as without the keyed form. Point `path` at the written state (`selectedId`) to keep the two-row cost. The State pane of `@wcstack/devtools` counts the subscriptions per path under **Keyed selection** and marks a path that fell back this way with a `tracked` badge (3.0).
 - **No type conversion:** `"2"` does not match the id `2`. An `<input>` or `<select>` writes strings, so convert on the way in (`value|number: selectedId`) or keep the ids as strings.
+- **Inside a scope, `path` is relative** — like every other `$` API that takes a path. In a mounted component (`bind-component`) and in a volume (`<wcs-state mount="cart">`), `$eq("selectedId", …)`, `$eqPath`'s two paths, `$eqIndex` and `$dependOn` all resolve against that scope (`cart.selectedId`), not against the root. `$untracked` takes a callback, so nothing is translated there.
 
 ### Loop Index Variables (`$1`, `$2`, ...)
 

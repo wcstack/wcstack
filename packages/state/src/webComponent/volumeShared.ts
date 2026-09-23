@@ -11,6 +11,7 @@ import { DELIMITER, MODIFIER_READONLY, VOLUME_INJECTION_PROP } from "../define";
 import { raiseError } from "../raiseError";
 import { IStateElement } from "../components/types";
 import { findMountEntry, IMountEntry, translateByMountEntry } from "./mountEntries";
+import { createDollarPathApiWrapper } from "./dollarPathApis";
 
 /**
  * 予約済みスロット（D22）。キーは rootNode、値はマウントパス → 予約した要素（所有者）。
@@ -207,6 +208,15 @@ export function createVolumeChroot(mountPath: string, receiver: any, injections:
           // 読みか書きかは引数の個数で決まる（要件 B7）— 個数を変えずに渡し、書きだけ `#ro` を検査する
           return (path: string, ...rest: unknown[]): unknown =>
             receiver.$resolve(translateVolumePath(mountPath, injections, path, rest.length > 1), ...rest);
+        }
+        // パスだけを取る読みの API（`$eq` / `$eqPath` / `$eqIndex` / `$dependOn`）は共有の表で包む
+        const wrapped = createDollarPathApiWrapper(
+          prop,
+          (path) => translateVolumePath(mountPath, injections, path, false),
+          (args) => (receiver[prop] as (...a: unknown[]) => unknown)(...args),
+        );
+        if (wrapped !== null) {
+          return wrapped;
         }
         // 他の `$` は親の意味論のまま（宣言面はボリュームが登録時に翻訳する）
         return receiver[prop];

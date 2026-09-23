@@ -494,9 +494,11 @@ function locateFilterAt(binding: IPositionalBinding, offset: number, site: IExpr
   const colon = site.channel === 'attribute' ? indexOfOutsideQuotes(exprText, delimiters.propValue) : -1;
   const rhsStart = site.channel === 'attribute' ? (colon === -1 ? exprText.length : colon + 1) : 0;
 
-  // out-filter 帯: 右辺の最初の `|` 以降
+  // out-filter 帯: 右辺の最初の `|` 以降（区切りは引用符の外だけ。`rhsStart` は `:` の
+  // 直後 ＝ 引用符の外なので、そこから切り出して走査してよい）
   if (parsed.outFilters.length > 0) {
-    const firstPipe = exprText.indexOf(delimiters.filter, rhsStart);
+    const rhsPipe = indexOfOutsideQuotes(exprText.slice(rhsStart), delimiters.filter);
+    const firstPipe = rhsPipe === -1 ? -1 : rhsStart + rhsPipe;
     if (firstPipe !== -1) {
       const hit = walkFilterNames(exprText, parsed.outFilters.map((f) => f.filterName), firstPipe + 1, exprText.length, offset, binding, site);
       if (hit !== null) return hit;
@@ -504,7 +506,7 @@ function locateFilterAt(binding: IPositionalBinding, offset: number, site: IExpr
   }
   // in-filter 帯: 属性の左辺（`:` より前）の `|` 以降（embedded に左辺は無い）
   if (site.channel === 'attribute' && parsed.inFilters.length > 0 && colon !== -1) {
-    const lhsPipe = exprText.indexOf(delimiters.filter);
+    const lhsPipe = indexOfOutsideQuotes(exprText, delimiters.filter);
     if (lhsPipe !== -1 && lhsPipe < colon) {
       const hit = walkFilterNames(exprText, parsed.inFilters.map((f) => f.filterName), lhsPipe + 1, colon, offset, binding, site);
       if (hit !== null) return hit;

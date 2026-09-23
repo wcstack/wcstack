@@ -84,7 +84,6 @@ src/
 ├── dependency/             # 依存関係追跡
 ├── stateLoader/            # 状態ロード (innerScript, jsonFile, scriptFile, scriptJson)
 ├── cache/                  # キャッシュ
-├── hydrater/               # ハイドレーション
 └── version/                # バージョン管理 (変更検知)
 ```
 

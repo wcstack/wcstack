@@ -5,7 +5,7 @@
  * どの部分（プロパティ名、パス、フィルタ）の補完が必要かを判定する。
  */
 
-import { indexOfOutsideQuotes } from '../core/parser/quoteAware.js';
+import { indexOfOutsideQuotes, lastIndexOfOutsideQuotes, splitOutsideQuotes } from '../core/parser/quoteAware.js';
 
 /** カーソル位置のバインディングコンテキスト */
 export type BindingContext =
@@ -51,28 +51,13 @@ export function getBindingContext(attrValue: string, cursorOffset: number): Bind
 }
 
 /**
- * `;` でバインディング式を分割する。
- * 括弧内の `;` は無視する。
+ * `;` でバインディング式を分割する。区切りは**引用符の外**の `;` だけ（要件 B1・
+ * ランタイムの `splitBindTexts` と同値）。以前は括弧深度だけを見ていたので、
+ * `textContent: 'a;b'` のように括弧を伴わない引用符の中の `;` で割れ、カーソル位置の
+ * 式を取り違えていた（実測: 末尾で `{ kind: 'property', partial: "b'" }`）。
  */
 function splitBindings(value: string): string[] {
-  const result: string[] = [];
-  let current = '';
-  let parenDepth = 0;
-
-  for (const ch of value) {
-    if (ch === '(') {
-      parenDepth++;
-    } else if (ch === ')') {
-      parenDepth = Math.max(0, parenDepth - 1);
-    } else if (ch === ';' && parenDepth === 0) {
-      result.push(current);
-      current = '';
-      continue;
-    }
-    current += ch;
-  }
-  result.push(current);
-  return result;
+  return splitOutsideQuotes(value, ';');
 }
 
 /**
@@ -107,12 +92,15 @@ function parseBindingAtCursor(binding: string, offset: number): BindingContext {
   const afterColon = textBeforeCursor.slice(colonIndex + 1).trimStart();
 
   // `@` は v2 の parse error（名前次元は撤去）— 検出だけして補完を止める
-  const firstPipeIndex = afterColon.indexOf('|');
+  const firstPipeIndex = indexOfOutsideQuotes(afterColon, '|');
   const pathPart = firstPipeIndex !== -1 ? afterColon.slice(0, firstPipeIndex) : afterColon;
   const atIndex = pathPart.indexOf('@');
 
-  // `|` があればフィルタ部
-  const lastPipeIndex = afterColon.lastIndexOf('|');
+  // `|` があればフィルタ部。区切りは引用符の外だけ — 素の `lastIndexOf` だと
+  // `textContent: items|join('|')` の末尾で引数の中の `|` を拾い、`')` をフィルタ名の
+  // 入力中として補完してしまう（実測）。入力途中で引用符が開きっぱなしのとき
+  // （`join('`）は、その先が全部「引用符の中」になるので手前の実区切りが選ばれる。
+  const lastPipeIndex = lastIndexOfOutsideQuotes(afterColon, '|');
   if (lastPipeIndex !== -1) {
     const filterPart = afterColon.slice(lastPipeIndex + 1).trimStart();
     // 括弧内の場合はフィルタ引数（補完しない）

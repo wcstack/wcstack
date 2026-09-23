@@ -145,3 +145,18 @@ describe("entries/core — 宣言の readiness barrier", () => {
     host.remove();
   });
 });
+
+/**
+ * 機能の install はタグの定義より前（`bootstrapState()` は install → bootstrap の順）というのが
+ * 元々の約束だが、逆順は readiness barrier に当たらず**無言で壊れる**（`<wcs-ssr>` が未定義の
+ * まま残る）。約束を文書ではなく機構で守る: 後から来た definer は、すでに bootstrap 済みの
+ * レジストリへ即座に適用される（`src/registerComponents.ts`）。
+ */
+describe("entries/core — bootstrap の後の installFeatures", () => {
+  it("bootstrap 済みでも、後から入れた機能のタグが定義されること", async () => {
+    expect(customElements.get("wcs-ssr")).toBeUndefined();
+    const { default: ssr } = await import("../src/features/ssr");
+    installFeatures([ssr]);
+    expect(customElements.get("wcs-ssr")).toBeDefined();
+  });
+});

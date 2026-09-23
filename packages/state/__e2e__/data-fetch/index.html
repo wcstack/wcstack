@@ -74,7 +74,7 @@ export default {
   async $connectedCallback() {
     await this.fetchCommits();
   },
-  async $updatedCallback(paths) {
+  async $renderedCallback(paths) {
     if (paths.includes('currentBranch')) {
       await this.fetchCommits();
     }

@@ -121,6 +121,46 @@ describe("mountExport: 静的マウント（E1 / E6 / E7 / E8 / E10）", () => {
     host.remove();
   });
 
+  it("マウントされたコンポーネントの $eq / $eqPath / $dependOn がスコープ内のパスを見ること", async () => {
+    // 翻訳が無いと `$eq("selectedId", …)` はルートを読み、ルートに `selectedId` が無い
+    // ページでは作者が書いていないパスを名指しして throw する（`$` API の非対称）
+    const tag = uniqueTag("me-keyed");
+    defineComponent(tag, () => ({
+      get flags(this: any) {
+        this.$dependOn("selectedId");
+        return `${this.$eq("selectedId", 2)}/${this.$eqPath("selectedId", "chosen")}`;
+      },
+    }), `<span class="inner" data-wcs="textContent: flags"></span>`);
+    const { host, shadowRoot, rootState } = await mountHost(
+      '{"panel":{"selectedId":2,"chosen":2}}',
+      `<${tag} data-wcs="state: panel"></${tag}>`);
+    const comp = shadowRoot.querySelector(tag) as HTMLElement;
+    await readyScope(comp.shadowRoot!);
+    await flush();
+    expect(textOf(comp.shadowRoot!, ".inner")).toBe("true/true");
+
+    await write(rootState, (s) => { s["panel.selectedId"] = 3; });
+    expect(textOf(comp.shadowRoot!, ".inner")).toBe("false/false");
+    host.remove();
+  });
+
+  it("element.state（外向きの chroot）の $eq / $eqIndex も相対パスで解決すること", async () => {
+    const tag = uniqueTag("me-keyed-public");
+    defineComponent(tag, () => ({}), `<span class="inner" data-wcs="textContent: selectedId"></span>`);
+    const { host, shadowRoot } = await mountHost(
+      '{"panel":{"selectedId":7}}',
+      `<${tag} data-wcs="state: panel"></${tag}>`);
+    const comp = shadowRoot.querySelector(tag) as any;
+    await readyScope(comp.shadowRoot!);
+    await flush();
+    // 相対パス `selectedId` が `panel.selectedId` として読まれる（ルートに `selectedId` は無い）
+    expect(comp.state.$eq("selectedId", 7)).toBe(true);
+    expect(comp.state.$eq("selectedId", 8)).toBe(false);
+    // getter の外なので `$eqIndex` は行スコープが無いと名指しで落ちる（翻訳後のパスを文言に載せる）
+    expect(() => comp.state.$eqIndex("selectedId")).toThrow(/\$eqIndex\("panel\.selectedId"\) needs a list row scope/);
+    host.remove();
+  });
+
   it("E6: ツリーに同名キーがあればツリーが勝ち、登録時に warn が 1 回出ること", async () => {
     const tag = uniqueTag("me-shadowed");
     defineComponent(tag, () => ({
@@ -320,6 +360,31 @@ describe("mountExport: 行マウントと自己再帰（E2 / E3 / E4 / E5）", (
 
     await write(rootState, (s) => { s["users.1.name"] = "B"; });
     expect(outers()).toEqual(["a!", "B!"]);
+    host.remove();
+  });
+
+  it("行マウントの getter の $eqIndex が、スコープ内のパス（外側と名前が違うもの）で行を選べること", async () => {
+    const tag = uniqueTag("me-row-eqindex");
+    defineComponent(tag, () => ({
+      // `sel` は**コンポーネント側だけの名前**（ホストが `state.sel: cursor` で写す）。
+      // ルートに `sel` は無いので、翻訳が効かないと `[wcs/binding-path-missing]` で落ちる。
+      // 内側と外側で名前を変えるのが肝 — 同名（`state.cursor: cursor`）だと翻訳の有無で
+      // 結果が変わらず、番人にならない
+      get active(this: any) { return this.$eqIndex("sel") ? "on" : "off"; },
+    }), `<span data-wcs="textContent: active"></span>`);
+    const { host, shadowRoot, rootState } = await mountHost(
+      '{"cursor":1,"users":[{"name":"a"},{"name":"b"}]}',
+      `<ul><template data-wcs="for: users"><li><${tag} data-wcs="state: .; state.sel: cursor"></${tag}>` +
+      `<span class="outer" data-wcs="textContent: .active"></span></li></template></ul>`);
+    const comps = Array.from(shadowRoot.querySelectorAll(tag)) as HTMLElement[];
+    for (const c of comps) await readyScope(c.shadowRoot!);
+    await flush(); await flush();
+    const inners = () => comps.map((c) => c.shadowRoot!.querySelector("span")!.textContent);
+    // 翻訳が効いていれば `sel` は `cursor` として読めて、行 1 だけが真になる
+    expect(inners()).toEqual(["off", "on"]);
+
+    await write(rootState, (s) => { s["cursor"] = 0; });
+    expect(inners()).toEqual(["on", "off"]);
     host.remove();
   });
 

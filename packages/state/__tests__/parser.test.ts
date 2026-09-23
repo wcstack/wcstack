@@ -15,6 +15,7 @@ import {
   clearParserCaches,
   splitBindTexts,
   indexOfOutsideQuotes,
+  splitOutsideQuotes,
 } from "../src/parser";
 
 describe("parseBindTextsForElement（正本パーサの公開契約）", () => {
@@ -82,6 +83,14 @@ describe("indexOfOutsideQuotes（区切り文字探索の正本 — 要件 B1）
     expect(indexOfOutsideQuotes("a|join(';')", ";")).toBe(-1);
     expect(indexOfOutsideQuotes("a|b", "|")).toBe(1);
     expect(indexOfOutsideQuotes("abc", ":")).toBe(-1);
+  });
+
+  it("splitOutsideQuotes は同じ規則で区切ること（`;` 以外の区切りも正本で切れる）", () => {
+    expect(splitOutsideQuotes("a: x; b: y|join(';')", ";")).toEqual(["a: x", " b: y|join(';')"]);
+    expect(splitOutsideQuotes("x|join('|')|upper", "|")).toEqual(["x", "join('|')", "upper"]);
+    expect(splitOutsideQuotes("abc", ";")).toEqual(["abc"]);
+    // `splitBindTexts` は区切りを `;` に固定した同じ関数
+    expect(splitOutsideQuotes("a: x; b: y", ";")).toEqual(splitBindTexts("a: x; b: y"));
   });
 
   it("splitBindTexts と同じ判定であること（tooling が写しを持たなくて済む）", () => {

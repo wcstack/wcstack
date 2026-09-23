@@ -16,6 +16,7 @@ import {
   COMMON_EVENTS,
   EVENT_MODIFIERS,
 } from './completionData.js';
+import { lastIndexOfOutsideQuotes } from '../core/parser/quoteAware.js';
 import { getBindingContext } from './bindingContext.js';
 import { getStatePathsFromHtml, type FileReader } from './statePathResolver.js';
 import { validateDocument } from '../core/validateDocument.js';
@@ -370,8 +371,9 @@ function buildPathAndFilterCompletions(
   const cursorInExpr = offset - exprStart;
   const textBeforeCursor = expression.slice(0, cursorInExpr);
 
-  // `|` の後ならフィルタ補完
-  const lastPipeIndex = textBeforeCursor.lastIndexOf('|');
+  // `|` の後ならフィルタ補完。区切りは引用符の外だけ（bindingContext と同じ理由 —
+  // 引数の中の `|` を区切りに数えると、その後ろをフィルタ名の入力中として補完してしまう）
+  const lastPipeIndex = lastIndexOfOutsideQuotes(textBeforeCursor, '|');
   if (lastPipeIndex !== -1) {
     const filterPart = textBeforeCursor.slice(lastPipeIndex + 1).trimStart();
     if (filterPart.includes('(') && !filterPart.includes(')')) {

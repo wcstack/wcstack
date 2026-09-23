@@ -125,10 +125,17 @@ export interface WcsMessageCatalog {
   nameAlias(written: string, canonical: string): string;
   /**
    * 旧名の宣言キーを `this.` 越しに**読んだ**。宣言と違って旧名のままでは動かない —
-   * 正規化（`normalizeDeclarationAliases`）が自前プロパティの旧名を `delete` するので、
-   * 読み出しは黙って `undefined` になる。
+   * 正規化（`normalizeDeclarationAliases`）が**自前プロパティ**の旧名を `delete` するので、
+   * 読み出しは黙って `undefined` になる。オブジェクトリテラルの state（AST で読めた形）
+   * は必ずこちら。
    */
   declarationAliasRead(alias: string, canonical: string): string;
+  /**
+   * 同上だが、state の形が静的に読めず（class 構文など）**自前プロパティかプロトタイプか
+   * 断定できない**場合。ランタイムの `delete` は `owner === state` のときだけなので、
+   * class のプロトタイプに置いたメソッド / アクセサの旧名は今は読める（4.0 で外れる）。
+   */
+  declarationAliasReadUncertain(alias: string, canonical: string): string;
   /** 旧名と正式名の宣言キーを両方書いた（ランタイムは読み込み時に raiseError）。 */
   declarationAlias(alias: string, canonical: string): string;
   tagCommandUnknown(name: string, tag: string, declared: string): string;
@@ -306,7 +313,9 @@ const ja: WcsMessageCatalog = {
   nameAlias: (written, canonical) =>
     `"${written}" は "${canonical}" の旧名です。3.x の間は動きますが 4.0 で外れるので、"${canonical}" と書いてください（@wcstack/state 3.2）`,
   declarationAliasRead: (alias, canonical) =>
-    `"${alias}" の読み出しは 3.x でも動きません。"${alias}" は "${canonical}" の旧名で、ランタイムは読み込み時に "${canonical}" へ写して旧名のプロパティを削除するため、this["${alias}"] は undefined になります。"${canonical}" を読んでください（@wcstack/state 3.2）`,
+    `"${alias}" の読み出しは 3.x でも動きません。"${alias}" は "${canonical}" の旧名で、ランタイムは読み込み時に "${canonical}" へ写し、旧名の自前プロパティを削除するため、this["${alias}"] は undefined になります。"${canonical}" を読んでください（@wcstack/state 3.2）`,
+  declarationAliasReadUncertain: (alias, canonical) =>
+    `"${alias}" の読み出しは旧名のままにできません。"${alias}" は "${canonical}" の旧名で、ランタイムは読み込み時に "${canonical}" へ写します。旧名が自前プロパティなら削除されるので this["${alias}"] は undefined になり、class のプロトタイプに置いたメソッド / アクセサなら今は読めますが 4.0 で外れます。どちらの形でも "${canonical}" を読んでください（@wcstack/state 3.2）`,
   declarationAlias: (alias, canonical) =>
     `この state は "${alias}" と "${canonical}" を両方宣言しています。"${alias}" は "${canonical}" の旧名（3.x の間は動きます）なので、"${canonical}" だけを残してください（ランタイムは読み込み時に throw します）`,
   onPrefixedMember: (member, tag, modifiers) =>
@@ -532,7 +541,9 @@ const en: WcsMessageCatalog = {
   nameAlias: (written, canonical) =>
     `"${written}" is the old name of "${canonical}". It works through 3.x and goes in 4.0 — write "${canonical}" (@wcstack/state 3.2)`,
   declarationAliasRead: (alias, canonical) =>
-    `Reading "${alias}" does not work, not even in 3.x. "${alias}" is the old name of "${canonical}": the runtime maps it to "${canonical}" at load time and deletes the old property, so this["${alias}"] is undefined. Read "${canonical}" instead (@wcstack/state 3.2)`,
+    `Reading "${alias}" does not work, not even in 3.x. "${alias}" is the old name of "${canonical}": the runtime maps it to "${canonical}" at load time and deletes the old own property, so this["${alias}"] is undefined. Read "${canonical}" instead (@wcstack/state 3.2)`,
+  declarationAliasReadUncertain: (alias, canonical) =>
+    `Reading "${alias}" cannot stay on the old name. "${alias}" is the old name of "${canonical}": the runtime maps it to "${canonical}" at load time. If the old name is an own property it is deleted, so this["${alias}"] is undefined; if it sits on a class prototype (a method or accessor) it still reads today but goes in 4.0. Either way, read "${canonical}" (@wcstack/state 3.2)`,
   declarationAlias: (alias, canonical) =>
     `The state declares both "${alias}" and "${canonical}". "${alias}" is the old name of "${canonical}" (it works through 3.x) — keep "${canonical}" (the runtime throws at load time)`,
   onPrefixedMember: (member, tag, modifiers) =>

@@ -83,7 +83,40 @@ describe('registerComponents', () => {
 
     registerComponents(scoped);
 
-    expect(definer).toHaveBeenCalledTimes(1);
+    expect(definer.mock.calls.filter(([registry]) => registry === scoped)).toHaveLength(1);
+  });
+
+  /**
+   * `installFeatures([...])` を `bootstrapState()` の**後**に呼ぶ形。以前は definer を配列へ
+   * 積むだけで、`registerComponents` はもう走り終わっていたため `<wcs-ssr>` が未定義のまま
+   * 残った（宣言の readiness barrier にも当たらないので無言で壊れる）。
+   */
+  it('bootstrap 済みのレジストリには、後から登録した definer が即座に適用されること', () => {
+    const scoped = {
+      get: vi.fn(() => undefined),
+      define: vi.fn(),
+    } as unknown as CustomElementRegistry;
+    registerComponents(scoped);
+
+    const late = vi.fn();
+    registerComponentDefiner(late);
+
+    expect(late.mock.calls.filter(([registry]) => registry === scoped)).toHaveLength(1);
+  });
+
+  it('追いつかせた definer は、その後の registerComponents で二重に走らないこと', () => {
+    const scoped = {
+      get: vi.fn(() => undefined),
+      define: vi.fn(),
+    } as unknown as CustomElementRegistry;
+    registerComponents(scoped);
+    const late = vi.fn();
+    registerComponentDefiner(late);
+
+    registerComponents(scoped);
+
+    // 追いつき 1 回 + 明示の再登録 1 回。definer 自身が `registry.get` で冪等なので二重定義にはならない
+    expect(late.mock.calls.filter(([registry]) => registry === scoped)).toHaveLength(2);
   });
 
   it('bootstrapStateがregistryを素通しすること', () => {

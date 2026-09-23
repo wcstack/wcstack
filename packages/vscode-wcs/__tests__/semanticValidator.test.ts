@@ -665,7 +665,11 @@ describe("wcs/declaration-alias-read — 旧名の宣言キーの読み出し（
     expect(found[0].severity).toBe("warning");
   });
 
-  it("class 構文（AST で読めない形）ではフォールバックして info に留めること", () => {
+  // Fixed by review（サイクル 3）— 「正規化で delete されるので undefined」という文言は
+  // class 構文には当てはまらない。ランタイムの delete は `owner === state`（自前プロパティ）
+  // のときだけなので（packages/state/src/declarationAliases.ts）、プロトタイプに置いた
+  // `$updatedCallback()` / `$streams` は今も読める。経路ごとに文言を分ける。
+  it("class 構文（AST で読めない形）ではフォールバックして info に留め、両方の形を説明すること", () => {
     const html = `
     <wcs-state mount="cart"><script type="module">
       export default class Cart {
@@ -675,7 +679,42 @@ describe("wcs/declaration-alias-read — 旧名の宣言キーの読み出し（
     const found = reads(html);
     expect(found.map((d) => html.slice(d.start, d.end))).toEqual(["$streams"]);
     expect(found[0].severity).toBe("info");
+    // 自前プロパティなら undefined、プロトタイプなら今は読める — 断定しない
+    expect(found[0].message).toContain("own property");
+    expect(found[0].message).toContain("prototype");
     expect(found[0].message).toContain("undefined");
+    expect(found[0].message).not.toContain("does not work, not even in 3.x");
+  });
+
+  it("AST 経路（オブジェクトリテラル）では旧名が必ず自前プロパティなので undefined と断定すること", () => {
+    const html = `
+    <wcs-state><script type="module">
+      export default { a: 1, peek() { return this.$streams; } };
+    </script></wcs-state>`;
+    const found = reads(html);
+    expect(found[0].severity).toBe("warning");
+    expect(found[0].message).toContain("does not work, not even in 3.x");
+    expect(found[0].message).toContain("own property");
+    // プロトタイプの但し書きは付けない（リテラルにプロトタイプの旧名は無い）
+    expect(found[0].message).not.toContain("prototype");
+  });
+
+  it("日本語でも経路ごとに文言が分かれること", () => {
+    const literal = `
+    <wcs-state><script type="module">
+      export default { a: 1, peek() { return this.$streams; } };
+    </script></wcs-state>`;
+    const klass = `
+    <wcs-state><script type="module">
+      export default class C { peek() { return this.$streams; } }
+    </script></wcs-state>`;
+    const ja = (html: string) =>
+      validateSemantics(html, "wcs-state", "ja", "data-wcs")
+        .filter((d) => d.code === WcsDiagnosticCode.DeclarationAliasRead)[0].message;
+    expect(ja(literal)).toContain("3.x でも動きません");
+    expect(ja(literal)).not.toContain("プロトタイプ");
+    expect(ja(klass)).toContain("プロトタイプ");
+    expect(ja(klass)).toContain("自前プロパティ");
   });
 
   // Fixed by review（サイクル 4）— AST 化で `$watch` ハンドラの中の読み出しが

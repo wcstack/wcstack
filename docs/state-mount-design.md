@@ -269,6 +269,9 @@ R1 を採る理由: 一文で言える（「**自分で書いたキーは自分�
 |---|---|
 | `$getAll(path, indexes)` / `$setAll` / `$resolve` | 相対パス → 接頭辞合成 → ルート API。省略時の文脈既定（`[...$n]`）は Δ を除いたスコープ内の添字 |
 | `$postUpdate(path)` | 相対 → 絶対 |
+| `$eq(path, key)` / `$eqPath(path, keyPath)` / `$eqIndex(path, level?)` | 相対 → 絶対（**`$eqPath` は第 2 引数の `keyPath` も**。第 2 引数が鍵の**値**（`$eq`）や段の数値（`$eqIndex`）のものは触らない）。読みなので `#ro` の検査は掛からない |
+| `$dependOn(path)` / `$trackDependency(path)` | 相対 → 絶対 |
+| `$untracked(fn)` / `$untrackDependency(fn)` | 翻訳しない（**コールバックを取る** — パス引数が無い） |
 | `$updatedCallback(paths)` | 自分の接頭辞配下だけを**相対**で受ける |
 | `$watch` | 相対で宣言、ルート台帳に絶対で登録。`@` の拒否コードは消える |
 | `$streams` | 相対で宣言、データはツリーの `prefix.path` に落ちる |
@@ -278,6 +281,13 @@ R1 を採る理由: 一文で言える（「**自分で書いたキーは自分�
 | `$1` / `$2` / `$wildcardIndexes` | スコープ相対（§4-4） |
 
 **実装注記（2026-09-04）**: 宣言面（`$watch` / `$streams` / `$listKeys` / `$updatedCallback`）の相対サポートは**ボリュームのみ**（`$streams` はボリュームでも未対応 — 宣言は raise）。マウントされた**コンポーネントスコープ**は宣言面を実行せず、(tag, prop) につき 1 回の warn でルート／ボリュームへ誘導する（webComponent/mount.ts の `warnMountedDollarDeclarations`）。
+
+**実装注記（3.x）**: この表の「相対 → 絶対」のうち、`$eq` / `$eqPath` / `$eqIndex` / `$dependOn` の行は
+3.0（鍵付き選択）と 3.2（`$dependOn` の正式名化）で API が増えたときに**どの chroot にも載っていなかった**。
+スコープの中でルートのパスを読み、診断も出ないまま `false` を返すか、作者が書いていないパスを名指しして
+throw していた。3 つの chroot（`volumeShared.createVolumeChroot`・`overlay.ts` の `OverlayValueHandler` と
+`createPublicMountState`）が引く表は `src/webComponent/dollarPathApis.ts` の 1 つにまとめてあり、
+`proxy/traps/get.ts` の `$` API との突き合わせは `__tests__/webComponent.dollarPathApis.test.ts` が番人。
 
 **実装注記（2026-09-05）**: ルート（およびボリューム相対）の `$updatedCallback` にはマーカーパス（`#m<id>` セグメントを含む私有キーの更新アドレス）を**配送しない** — 私有キーはマウントインスタンスの私有（D20/D21）で、`#` 語彙はスコープ外へ漏らさない（漏れる id は作者に解釈不能で再初期化のたびに変わる）。可視化は devtools の `overlays()` 経由（proxy/apis/updatedCallback.ts）。
 

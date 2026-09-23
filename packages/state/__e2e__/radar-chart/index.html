@@ -62,7 +62,7 @@ export default {
   ],
 
   get statsJson() {
-    this.$trackDependency("stats.*.value");
+    this.$dependOn("stats.*.value");
     return JSON.stringify(this.stats);
   },
 

@@ -13,6 +13,8 @@
 //
 // The check reads the built `dist/split/**.js.map`. Run after `npm run build` in packages/state:
 //   node scripts/check-state-split.mjs [--check] [--update] [--allowance 0.03]
+// `--check` is the default and is accepted only so CI can state its intent; `--update` re-records
+// the baseline and refuses to run while a feature carries code that is not its own.
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, normalize, relative, resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -20,7 +22,23 @@ import { gzipSync } from 'node:zlib';
 const root = resolve(import.meta.dirname, '..');
 const splitDir = join(root, 'packages/state/dist/split');
 const baselineFile = join(root, 'scripts/state-split-baseline.json');
-const allowance = process.argv.includes('--allowance') ? Number(process.argv[process.argv.indexOf('--allowance') + 1]) : 0.03;
+const update = process.argv.includes('--update');
+// A bare `--allowance` (or a non-number) used to make the limit NaN, which compares false against
+// every size — the growth gate would switch itself off without a word.
+let allowance = 0.03;
+if (process.argv.includes('--allowance')) {
+  allowance = Number(process.argv[process.argv.indexOf('--allowance') + 1]);
+  if (!Number.isFinite(allowance) || allowance < 0) {
+    console.error('[state split] --allowance needs a non-negative number, e.g. --allowance 0.03');
+    process.exit(1);
+  }
+}
+for (const arg of process.argv.slice(2)) {
+  if (arg.startsWith('--') && !['--check', '--update', '--allowance'].includes(arg)) {
+    console.error(`[state split] unknown option ${arg}; usage: check-state-split.mjs [--check] [--update] [--allowance 0.03]`);
+    process.exit(1);
+  }
+}
 // Directories that make up the core: no feature entry may contain code from any of them.
 const CORE_DIRS = ['proxy', 'updater', 'bindings', 'apply', 'binding', 'dependency', 'list', 'structural', 'address', 'cache', 'core'];
 // Source directory -> the feature entry that owns it. A feature entry may only carry its own
@@ -114,19 +132,24 @@ for (const entry of featureEntries.sort()) {
   report.push(`${name}: ${own.length} file(s), ${gzip} B gzip of its own`);
 }
 
-if (process.argv.includes('--update')) {
+if (failures.length > 0) {
+  // `--update` でも先に報告する: 基線を取り直す人に feature 間のコード混入が伝わらないと、
+  // 「数字だけ大きい新しい基線」を固定してしまう
+  console.error(`[state split] ${failures.length} violation(s): a feature entry carries code that is not its own`);
+  for (const f of failures) console.error(`  - ${f}`);
+  if (update) {
+    console.error('[state split] refusing to re-record the baseline while a feature carries another feature; fix the import first');
+  }
+  process.exit(1);
+}
+
+if (update) {
   await writeFile(baselineFile, JSON.stringify({
     $comment: 'gzip level 9 of each @wcstack/state feature entry\'s OWN code (the entry plus the chunks the core does not already carry) at the recorded release. check-state-split.mjs --check allows +3 % over these (requirement B13). Update with --update after a release build.',
     ...current,
   }, null, 2) + '\n');
   console.log('[state split] baseline updated', JSON.stringify(current));
   process.exit(0);
-}
-
-if (failures.length > 0) {
-  console.error(`[state split] ${failures.length} violation(s): a feature entry carries code that is not its own`);
-  for (const f of failures) console.error(`  - ${f}`);
-  process.exit(1);
 }
 
 let grew = false;

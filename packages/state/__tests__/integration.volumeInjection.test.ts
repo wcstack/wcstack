@@ -11,6 +11,8 @@ import { getStateElement } from "../src/stateElementByName";
 import { readVolumeInjections } from "../src/webComponent/volume";
 import { getParseBindTextResults } from "../src/bindings/getParseBindTextResults";
 import { createVolumeChroot, relativeVolumePath, translateVolumePath } from "../src/webComponent/volumeShared";
+import { findMountEntry } from "../src/webComponent/mountEntries";
+import { getPathInfo } from "../src/address/PathInfo";
 
 beforeAll(() => {
   bootstrapState();
@@ -182,11 +184,26 @@ describe("注入口の宣言の検査", () => {
     expect(() => readVolumeInjections(bindText, "cart")).toThrow(/\[wcs\/mount-path-invalid\]/);
   });
 
-  it("宣言順によらず内側接頭辞の長い順に並べて返すこと（findMountEntry の契約）", () => {
+  it("内側キーは必ず 1 段で、同じ長さの中では宣言順が保たれること（D28）", () => {
+    // `readVolumeInjections` は戻り値を長さ降順にソートするが、D28 が内側キーを 1 段に
+    // 限っている間はどれも長さ 1 なので、ソートの有無で結果は変わらない（＝この場から
+    // ソートの番人は作れない）。ここが固定するのは D28 の制限と、安定ソートであること。
+    // ソート自体は D28 を緩めたときに `findMountEntry` の最長一致が宣言順に依存しないための
+    // 予防で、最長一致そのものの番人は `mountEntries` を直接使う下の 2 件
     const entries = readVolumeInjections("state.a: x.a; state.b: x.b; state.c: x.c", "cart");
     expect(entries.map((e) => e.innerSegments.length)).toEqual([1, 1, 1]);
-    // 同じ長さの中では宣言順が保たれる（安定ソート）
     expect(entries.map((e) => e.innerSegments[0])).toEqual(["a", "b", "c"]);
+    expect(() => readVolumeInjections("state.a.b: x.a", "cart")).toThrow(/one key at a time/);
+  });
+
+  it("findMountEntry は内側接頭辞の長い順に並んだ表で最長一致すること（ソートが守る契約）", () => {
+    // 深いエントリを含む表を直に組み、「長い順なら最長一致・そうでなければ取り違える」ことを
+    // 固定する。`readVolumeInjections` のソートはこの前提を満たすためにある
+    const deep = { innerSegments: ["a", "b"], outerPathInfo: getPathInfo("outer.b"), readonly: false };
+    const shallow = { innerSegments: ["a"], outerPathInfo: getPathInfo("outer.a"), readonly: false };
+    expect(findMountEntry([deep, shallow], ["a", "b", "c"])).toBe(deep);
+    // 短い順に並べると先頭一致で取り違える（ソートしない表の姿）
+    expect(findMountEntry([shallow, deep], ["a", "b", "c"])).toBe(shallow);
   });
 
   it("パーサ自身の診断にも要素名と mount= の文脈を付けること", () => {
@@ -303,6 +320,88 @@ describe("クラスで書いたボリューム（プロトタイプのアクセ�
     expect(text("#total")).toBe("42");
     expect(read((s) => s["cart.total"])).toBe(42);
     host.remove();
+  });
+});
+
+describe("ボリュームの $eq / $eqPath / $dependOn はスコープ内のパスを見る", () => {
+  it("$eq / $eqPath がボリューム配下のパスを比べること（ルートに同名のキーが無い形）", async () => {
+    // 翻訳が無いと `receiver.$eq("selectedId", …)` がルートを読み、ルートに `selectedId` が
+    // 無いページでは `[wcs/binding-path-missing]`（作者が書いていないパスを名指しする throw）
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { host, text, write } = await mountPage(
+      "",
+      {
+        selectedId: 2,
+        chosen: 2,
+        get total(this: any) { return `${this.$eq("selectedId", 2)}/${this.$eqPath("selectedId", "chosen")}`; },
+      },
+      { other: 1 },
+    );
+    expect(text("#total")).toBe("true/true");
+    await write((s) => { s["cart.selectedId"] = 3; });
+    expect(text("#total")).toBe("false/false");
+    expect(errors).not.toHaveBeenCalled();
+    errors.mockRestore();
+    host.remove();
+  });
+
+  it("$dependOn がボリューム配下のパスに辺を張ること（ルートの同名パスではなく）", async () => {
+    const { host, text, write } = await mountPage(
+      "",
+      {
+        subtotal: 1,
+        get total(this: any) { this.$dependOn("subtotal"); return `t${this.$untracked(() => this.subtotal)}`; },
+      },
+      { subtotal: 100 },
+    );
+    expect(text("#total")).toBe("t1");
+    // ボリューム配下の書き込みで再評価される
+    await write((s) => { s["cart.subtotal"] = 5; });
+    expect(text("#total")).toBe("t5");
+    host.remove();
+  });
+});
+
+describe("スコープの chroot が翻訳する $ API の表（webComponent/dollarPathApis.ts）", () => {
+  /** `$` API の呼び出しをそのまま記録するだけの receiver */
+  function stubReceiver() {
+    const calls: Array<[string, unknown[]]> = [];
+    const receiver = new Proxy({} as Record<string, any>, {
+      get: (_t, prop) => (...args: unknown[]) => { calls.push([String(prop), args]); return "called"; },
+    });
+    return { receiver, calls };
+  }
+
+  it("$eq / $eqPath / $eqIndex / $dependOn のパス引数を翻訳し、値・段・コールバックは素通しすること", () => {
+    const { receiver, calls } = stubReceiver();
+    const [entry] = readVolumeInjections("state.rate: settings.rate", "cart");
+    const chroot = createVolumeChroot("cart", receiver, [entry]);
+    // 第 2 引数は鍵の**値**なので翻訳しない
+    chroot.$eq("selectedId", 2);
+    // `$eqPath` は両方がパス。注入したキーは注入先（ルート）のパスへ
+    chroot.$eqPath("selectedId", "rate");
+    // `$eqIndex` の第 2 引数は段（数値）。省略形も壊さない
+    chroot.$eqIndex("selectedIndex");
+    chroot.$eqIndex("selectedIndex", 2);
+    chroot.$dependOn("subtotal");
+    chroot.$trackDependency("subtotal");
+    expect(calls).toEqual([
+      ["$eq", ["cart.selectedId", 2]],
+      ["$eqPath", ["cart.selectedId", "settings.rate"]],
+      ["$eqIndex", ["cart.selectedIndex"]],
+      ["$eqIndex", ["cart.selectedIndex", 2]],
+      ["$dependOn", ["cart.subtotal"]],
+      ["$trackDependency", ["cart.subtotal"]],
+    ]);
+  });
+
+  it("$untracked / $untrackDependency はコールバックを取るので翻訳しないこと", () => {
+    const { receiver, calls } = stubReceiver();
+    const chroot = createVolumeChroot("cart", receiver);
+    const fn = (): number => 1;
+    chroot.$untracked(fn);
+    chroot.$untrackDependency(fn);
+    expect(calls).toEqual([["$untracked", [fn]], ["$untrackDependency", [fn]]]);
   });
 });
 
