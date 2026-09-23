@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "syntax": {
     "bindAttribute": "data-wcs",
     "tagName": "wcs-state",
@@ -121,12 +121,10 @@
       ]
     },
     "not": {
-      "description": "ブール値を反転",
+      "description": "真偽性を反転（falsy → true）",
       "hasArgs": false,
       "resultType": "boolean",
-      "acceptTypes": [
-        "boolean"
-      ],
+      "acceptTypes": "any",
       "minArgs": 0,
       "maxArgs": 0
     },
@@ -362,7 +360,7 @@
       "acceptTypes": [
         "string"
       ],
-      "minArgs": 1,
+      "minArgs": 2,
       "maxArgs": 2,
       "argTypes": [
         "number",
@@ -370,7 +368,7 @@
       ]
     },
     "padStart": {
-      "description": "先頭を埋める (length[,char])",
+      "description": "先頭を埋める (length[,char]。char の既定は 0 — JS の既定は空白なので注意)",
       "hasArgs": true,
       "resultType": "string",
       "acceptTypes": [
@@ -384,7 +382,7 @@
       ]
     },
     "padEnd": {
-      "description": "末尾を埋める (length[,char])",
+      "description": "末尾を埋める (length[,char]。char の既定は空白 — JS と同じ)",
       "hasArgs": true,
       "resultType": "string",
       "acceptTypes": [
@@ -421,7 +419,7 @@
       "maxArgs": 0
     },
     "truncate": {
-      "description": "切り詰めて省略記号 (length[,suffix])",
+      "description": "切り詰めて省略記号 (length[,suffix]。suffix の既定は … — U+2026 の 1 文字)",
       "hasArgs": true,
       "resultType": "string",
       "acceptTypes": [
@@ -435,7 +433,7 @@
       ]
     },
     "join": {
-      "description": "配列を連結 ([separator])",
+      "description": "配列を連結 ([separator]。既定はカンマ + 空白)",
       "hasArgs": true,
       "resultType": "string",
       "acceptTypes": [
@@ -536,31 +534,40 @@
       ]
     },
     "date": {
-      "description": "ロケール形式の日付",
-      "hasArgs": false,
+      "description": "ロケール形式の日付 ([locale]。既定は config.locale)",
+      "hasArgs": true,
       "resultType": "string",
       "acceptTypes": "any",
       "minArgs": 0,
-      "maxArgs": 0
+      "maxArgs": 1,
+      "argTypes": [
+        "string"
+      ]
     },
     "time": {
-      "description": "ロケール形式の時刻",
-      "hasArgs": false,
+      "description": "ロケール形式の時刻 ([locale]。既定は config.locale)",
+      "hasArgs": true,
       "resultType": "string",
       "acceptTypes": "any",
       "minArgs": 0,
-      "maxArgs": 0
+      "maxArgs": 1,
+      "argTypes": [
+        "string"
+      ]
     },
     "datetime": {
-      "description": "ロケール形式の日時",
-      "hasArgs": false,
+      "description": "ロケール形式の日時 ([locale]。既定は config.locale)",
+      "hasArgs": true,
       "resultType": "string",
       "acceptTypes": "any",
       "minArgs": 0,
-      "maxArgs": 0
+      "maxArgs": 1,
+      "argTypes": [
+        "string"
+      ]
     },
     "ymd": {
-      "description": "YYYY-MM-DD 形式",
+      "description": "YYYY-MM-DD 形式 ([separator]。既定は -)",
       "hasArgs": true,
       "resultType": "string",
       "acceptTypes": "any",
@@ -571,7 +578,7 @@
       ]
     },
     "hms": {
-      "description": "HH:MM:SS 形式",
+      "description": "HH:MM:SS 形式 ([separator]。既定は :)",
       "hasArgs": true,
       "resultType": "string",
       "acceptTypes": "any",
@@ -665,6 +672,14 @@
     "rev": "reverse",
     "pad": "padStart",
     "null": "nullIfEmpty"
+  },
+  "declarationAliases": {
+    "$updatedCallback": "$renderedCallback",
+    "$streams": "$stream"
+  },
+  "apiAliases": {
+    "$trackDependency": "$dependOn",
+    "$untrackDependency": "$untracked"
   },
   "reservedLifecycle": [
     "$connectedCallback",

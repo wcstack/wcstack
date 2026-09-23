@@ -85,6 +85,17 @@ type ParseBindTextResult = IParsedBinding;
 declare function splitBindTexts(bindText: string): string[];
 declare function parseBindTextsForElement(bindText: string): ParseBindTextResult[];
 
+/**
+ * `text` の中で、引用符（`'` / `"`）の外にある最初の `char` の位置。無ければ -1（要件 B1）。
+ * 閉じていない引用符はそのまま末尾まで続く扱い — 不正な引用符はフィルタ引数の段で名指しで落ちる。
+ */
+declare function indexOfOutsideQuotes(text: string, char: string): number;
+/**
+ * `separator` で区切る。ただし引用符の中は区切らない（要件 B1）: `join(';')` や `join('|')` の
+ * 区切り文字は引数であって、バインディングやフィルタの区切りではない。
+ */
+declare function splitOutsideQuotes(text: string, separator: string): string[];
+
 declare function parseBindTextForEmbeddedNode(bindText: string): ParseBindTextResult;
 
 declare function getPathInfo(path: string): IPathInfo;
@@ -108,7 +119,10 @@ declare function getPathInfo(path: string): IPathInfo;
  *   同一パス → 同一インスタンスの保証は**このエントリのモジュールインスタンス内**でのみ
  *   成立する（`.` エントリは別バンドル＝別キャッシュ。ランタイムの PathInfo と identity
  *   比較してはならない）。キャッシュは無制限（evict なし）— 言語サーバー等の長時間
- *   プロセスでは入力パス種数に単調比例してメモリが増える点に留意。
+ *   プロセスではメモリが増え続ける点に留意（断ち方は `clearPathInfoCacheForTooling`）。
+ *   **増え方はパス種数への単調比例ではない**: `PathInfo` は自分の全ての接頭辞を intern
+ *   するので、1 本のパスが持ち込む量はその深さの 2 乗に比例する。深さは
+ *   `MAX_PATH_SEGMENTS` で頭打ちになる（超えたパスは `[wcs/binding-syntax]` で拒否）。
  * - `ParseBindTextResult.uuid` はランタイム内部（構造テンプレートのハイドレーション台帳）
  *   用のフィールドで、このパーサの戻り値では常に undefined。
  *
@@ -128,5 +142,5 @@ declare function getPathInfo(path: string): IPathInfo;
  */
 declare function clearParserCaches(): void;
 
-export { clearParserCaches, getPathInfo, parseBindTextForEmbeddedNode, parseBindTextsForElement, splitBindTexts };
+export { clearParserCaches, getPathInfo, indexOfOutsideQuotes, parseBindTextForEmbeddedNode, parseBindTextsForElement, splitBindTexts, splitOutsideQuotes };
 export type { BindingType, IFilterInfo, IPathInfo, ParseBindTextResult };

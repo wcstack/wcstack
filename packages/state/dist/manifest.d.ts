@@ -39,12 +39,26 @@ declare const builtinFilterMeta: Record<string, IFilterMeta>;
  */
 declare const builtinFilterAliases: Readonly<Record<string, string>>;
 
+declare const DECLARATION_ALIASES: Readonly<Record<string, string>>;
+
 type BindingType = 'text' | 'prop' | 'event' | 'for' | 'if' | 'elseif' | 'else' | 'radio' | 'checkbox' | 'spread';
 
 declare const STRUCTURAL_BINDING_TYPE_SET: Set<BindingType>;
 
-/** マニフェストのバージョン（構造を変えたら上げる）。 */
-declare const WCS_MANIFEST_VERSION = 1;
+/**
+ * マニフェストのバージョン（構造を変えたら上げる）。
+ *
+ * 3.1 で `syntax.bindingTypes.explicitPropertyPrefix`、3.2 で `filterAliases`、
+ * 3.x の次で `declarationAliases` / `apiAliases` を足したので 2。
+ * 消費側（vscode-wcs）はまだこの定数を参照していないが、公開している以上ドリフトさせない。
+ */
+declare const WCS_MANIFEST_VERSION = 2;
+/**
+ * state API の旧名 → 正式名（要件 B12・docs/state-3x-naming.ja.md）。正本は
+ * `proxy/traps/get.ts` の case ラベルで、ここはそれを機械可読にした写し
+ * （一致は `__tests__/manifest.test.ts` が固定する）。
+ */
+declare const STATE_API_ALIASES: Readonly<Record<string, string>>;
 interface IWcsManifest {
     version: number;
     syntax: {
@@ -109,13 +123,22 @@ interface IWcsManifest {
     filterMeta: Record<string, IFilterMeta>;
     /** 組み込みフィルタの旧名 → 正式名（要件 B12）。旧名も解決するが、ツールは正式名を提案する */
     filterAliases: Readonly<Record<string, string>>;
-    /** 予約ライフサイクルフック名 */
+    /**
+     * 宣言キーの旧名 → 正式名（要件 B12。`$updatedCallback` → `$renderedCallback`、
+     * `$streams` → `$stream`）。ランタイムは旧名も受けるが、ツールは正式名を提案する。
+     * `reservedLifecycle` / `reservedStateApi` は**正式名だけ**なので、旧名が予約かどうかは
+     * この表と併せて判断する
+     */
+    declarationAliases: Readonly<Record<string, string>>;
+    /** state API の旧名 → 正式名（`$trackDependency` → `$dependOn` 等、要件 B12） */
+    apiAliases: Readonly<Record<string, string>>;
+    /** 予約ライフサイクルフック名（正式名のみ。旧名は `declarationAliases` を見る） */
     reservedLifecycle: readonly string[];
-    /** 予約 state API（プロトコル系の `$` 名前空間） */
+    /** 予約 state API（プロトコル系の `$` 名前空間。正式名のみ） */
     reservedStateApi: readonly string[];
 }
 /** 機械可読な単一正本を返す。vscode-wcs はこれを消費する想定。 */
 declare function getWcsManifest(): IWcsManifest;
 
-export { STRUCTURAL_BINDING_TYPE_SET, WCS_MANIFEST_VERSION, builtinFilterAliases, builtinFilterMeta, getWcsManifest };
+export { DECLARATION_ALIASES, STATE_API_ALIASES, STRUCTURAL_BINDING_TYPE_SET, WCS_MANIFEST_VERSION, builtinFilterAliases, builtinFilterMeta, getWcsManifest };
 export type { FilterArgType, FilterResultType, IFilterMeta, IWcsManifest };
