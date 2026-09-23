@@ -584,18 +584,195 @@ describe("wcs/name-alias — 3.x の間だけ残る旧名（@wcstack/state 3.2�
     expect(found[0].severity).toBe("info");
   });
 
-  it("旧名の宣言キーを this. 越しに読んでも info を出すこと", () => {
+  it("宣言キー側の文言は従来どおり「3.x の間は動く」ままであること（経路の切り分け）", () => {
+    const html = `
+    <wcs-state><script type="module">
+      export default { a: 1, $streams: { s: { source() {} } } };
+    </script></wcs-state>`;
+    const found = validateSemantics(html, "wcs-state", "en", "data-wcs")
+      .filter((d) => d.code === WcsDiagnosticCode.NameAlias);
+    expect(found).toHaveLength(1);
+    expect(found[0].message).toContain("It works through 3.x");
+    expect(found[0].message).not.toContain("undefined");
+  });
+});
+
+// Fixed by review（サイクル 3）— 読み出しは宣言と違い 3.x でも動かない
+//（normalizeDeclarationAliases が正式名へ写したあと旧名を delete するので黙って undefined）。
+// `wcs/name-alias`（「動くが 4.0 で外れる」info）に相乗りしていたので code を分け、
+// 断定できる AST 経路は warning に上げた（フォールバックの正規表現経路は info のまま）。
+describe("wcs/declaration-alias-read — 旧名の宣言キーの読み出し（@wcstack/state 3.2）", () => {
+  const reads = (html: string) =>
+    validateSemantics(html, "wcs-state", "en", "data-wcs")
+      .filter((d) => d.code === WcsDiagnosticCode.DeclarationAliasRead);
+
+  it("AST 経路（export default { … }）では warning にし、文言は「動かない」趣旨にすること", () => {
     const html = `
     <wcs-state><script type="module">
       export default {
         a: 1,
         peek() { return this.$streams; },
+        get late() { return this["$updatedCallback"]; },
       };
     </script></wcs-state>`;
-    const found = validateSemantics(html, "wcs-state", "en", "data-wcs")
-      .filter((d) => d.code === WcsDiagnosticCode.NameAlias);
-    expect(found.map((d) => html.slice(d.start, d.end))).toEqual(["$streams"]);
+    const found = reads(html);
+    expect(found.map((d) => html.slice(d.start, d.end))).toEqual(["$streams", "$updatedCallback"]);
+    expect(found.every((d) => d.severity === "warning")).toBe(true);
     expect(found[0].message).toContain('"$stream"');
+    expect(found[0].message).toContain("undefined");
+    // 宣言側の「3.x の間は動きます」という言い回しは流用しない
+    expect(found[0].message).not.toContain("It works through 3.x");
+    // `wcs/name-alias`（info）へは相乗りしない
+    expect(validateSemantics(html, "wcs-state", "en", "data-wcs")
+      .filter((d) => d.code === WcsDiagnosticCode.NameAlias)).toHaveLength(0);
+  });
+
+  it("AST 経路では文字列リテラルの中と他オブジェクトのプロパティを検出しないこと（誤検出ゼロ）", () => {
+    const html = `
+    <wcs-state><script type="module">
+      export default {
+        a: 1,
+        peek(other) {
+          const note = "obj.$streams";
+          return note + other.$streams + this.$stream;
+        },
+      };
+    </script></wcs-state>`;
+    expect(reads(html)).toEqual([]);
+  });
+
+  it("入れ子の function の中の this は state ではないので検出しないこと", () => {
+    const html = `
+    <wcs-state><script type="module">
+      export default {
+        a: 1,
+        peek() { return [1].map(function () { return this.$streams; }); },
+      };
+    </script></wcs-state>`;
+    expect(reads(html)).toEqual([]);
+  });
+
+  it("アロー関数の中の this は外側を継承するので検出すること", () => {
+    const html = `
+    <wcs-state><script type="module">
+      export default {
+        a: 1,
+        peek() { return [1].map(() => this.$streams); },
+      };
+    </script></wcs-state>`;
+    const found = reads(html);
+    expect(found.map((d) => html.slice(d.start, d.end))).toEqual(["$streams"]);
+    expect(found[0].severity).toBe("warning");
+  });
+
+  it("class 構文（AST で読めない形）ではフォールバックして info に留めること", () => {
+    const html = `
+    <wcs-state mount="cart"><script type="module">
+      export default class Cart {
+        peek() { return this.$streams; }
+      }
+    </script></wcs-state>`;
+    const found = reads(html);
+    expect(found.map((d) => html.slice(d.start, d.end))).toEqual(["$streams"]);
+    expect(found[0].severity).toBe("info");
+    expect(found[0].message).toContain("undefined");
+  });
+
+  // Fixed by review（サイクル 4）— AST 化で `$watch` ハンドラの中の読み出しが
+  // 「info」から「無診断」へ落ちていた（`analyzeCallableBodies` はトップレベルしか返さず、
+  // それでも `astReads` は非 null なので正規表現フォールバックも走らなかった）。
+  // `$watch` のハンドラだけはランタイムが `this` を state に束縛して呼ぶ
+  //（packages/state/src/watch/watchRuntime.ts:404 の `entry.handler.call(state, …)`）。
+  it("$watch ハンドラ（メソッド短縮記法）の中の読み出しを warning で検出すること", () => {
+    const html = `
+    <wcs-state><script type="module">
+      export default {
+        count: 0,
+        $watch: {
+          count() { return this.$streams; },
+        },
+      };
+    </script></wcs-state>`;
+    const found = reads(html);
+    expect(found.map((d) => html.slice(d.start, d.end))).toEqual(["$streams"]);
+    expect(found[0].severity).toBe("warning");
+  });
+
+  it("$watch ハンドラを function 式で書いた形でも検出すること", () => {
+    const html = `
+    <wcs-state><script type="module">
+      export default {
+        count: 0,
+        $watch: {
+          count: function (cur, prev) { return this.$updatedCallback; },
+        },
+      };
+    </script></wcs-state>`;
+    const found = reads(html);
+    expect(found.map((d) => html.slice(d.start, d.end))).toEqual(["$updatedCallback"]);
+    expect(found[0].severity).toBe("warning");
+  });
+
+  it("$watch ハンドラをアロー関数で書いた形は検出しないこと（this は state ではない）", () => {
+    const html = `
+    <wcs-state><script type="module">
+      export default {
+        count: 0,
+        $watch: {
+          count: (cur) => this.$streams,
+        },
+      };
+    </script></wcs-state>`;
+    expect(reads(html)).toEqual([]);
+  });
+
+  it("this を束縛しない宣言面（$scan の fold / $stream の source / $on / $listKeys）は検出しないこと", () => {
+    // ランタイムはどれも素の関数呼び出し（scanRuntime.ts の fold(…) / consumeSource.ts の
+    // source(…) / Token.ts の fn(…) / mergeKeyedList.ts の spec(row)）。ここで拾うと誤検出になる
+    const html = `
+    <wcs-state><script type="module">
+      export default {
+        rows: [],
+        $eventTokens: ["tick"],
+        $stream: { feed: { source() { return this.$streams; } } },
+        $scan: { total: { from: "rows", initial: 0, fold(acc) { return this.$streams; } } },
+        $on: { tick() { return this.$updatedCallback; } },
+        $listKeys: { rows: (row) => this.$streams },
+      };
+    </script></wcs-state>`;
+    expect(reads(html)).toEqual([]);
+  });
+
+  it("severity と code の対応が経路ごとに固定されていること", () => {
+    const astRead = `
+    <wcs-state><script type="module">
+      export default { a: 1, peek() { return this.$streams; } };
+    </script></wcs-state>`;
+    const fallbackRead = `
+    <wcs-state><script type="module">
+      export default class C { peek() { return this.$streams; } }
+    </script></wcs-state>`;
+    const declaration = `
+    <wcs-state><script type="module">
+      export default { a: 1, $streams: { s: { source() {} } } };
+    </script></wcs-state>`;
+    const both = `
+    <wcs-state><script type="module">
+      export default {
+        $streams: { s: { source() {} } },
+        $stream: { t: { source() {} } },
+      };
+    </script></wcs-state>`;
+    const pick = (html: string) =>
+      validateSemantics(html, "wcs-state", "en", "data-wcs")
+        .filter((d) => d.code === WcsDiagnosticCode.DeclarationAliasRead
+          || d.code === WcsDiagnosticCode.DeclarationAlias
+          || d.code === WcsDiagnosticCode.NameAlias)
+        .map((d) => [d.code, d.severity]);
+    expect(pick(astRead)).toEqual([[WcsDiagnosticCode.DeclarationAliasRead, "warning"]]);
+    expect(pick(fallbackRead)).toEqual([[WcsDiagnosticCode.DeclarationAliasRead, "info"]]);
+    expect(pick(declaration)).toEqual([[WcsDiagnosticCode.NameAlias, "info"]]);
+    expect(pick(both)).toEqual([[WcsDiagnosticCode.DeclarationAlias, "error"]]);
   });
 });
 

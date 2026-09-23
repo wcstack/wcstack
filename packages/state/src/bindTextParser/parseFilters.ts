@@ -21,11 +21,13 @@ export function clearFilterFnCacheForTooling(): void {
  */
 /**
  * @param filterTextList 個々のフィルタの原文（`|` で切った後）
- * @param _filterIOType  入力 / 出力（実関数は引かないので現状は使わない）
- * @param sourceText     診断に埋める原文。省略時は `filterTextList` を `|` でつなぎ直したもの
- *                       （`textContent: a|` のように末尾が空だと、つなぎ直しでは文脈が消える）
+ * @param filterIOType   入力（左辺）/ 出力（右辺）。実関数は引かないが、助言の出し分けに使う
+ * @param sourceText     診断に埋める原文。呼び出し側は**その辺の全文**（`propPart` / `statePart`）を
+ *                       渡すこと。`|` より後ろだけを渡すと、`textContent: a|` のように末尾が空の形で
+ *                       空文字になり、つなぎ直し（`filterTextList.join("|")`）と同じで文脈が消える。
+ *                       省略時のつなぎ直しは、原文を持たない直接の呼び出し用のフォールバック
  */
-export function parseFilters(filterTextList: string[], _filterIOType: FilterIOType, sourceText?: string): IParsedFilter[] {
+export function parseFilters(filterTextList: string[], filterIOType: FilterIOType, sourceText?: string): IParsedFilter[] {
   const source = sourceText ?? filterTextList.join("|");
   return filterTextList.map((filterText) => {
     const openParenIndex = filterText.indexOf('(');
@@ -44,14 +46,18 @@ export function parseFilters(filterTextList: string[], _filterIOType: FilterIOTy
       raiseError(`[wcs/binding-syntax] an empty filter in "${source}" — remove the extra "|" or name the filter.${LINT_HINT}`);
     }
     if (filterName.includes(MODIFIER_SEPARATOR)) {
-      // `value|trim#ro:` — 左辺は「名前 → 修飾子 → 入力フィルタ」の順。修飾子がフィルタ名に
-      // 飲まれると `[wcs/filter-unknown] filter not found: trim#ro` になり、診断が指す先が
-      // 実際の誤りと違う（要件 B4 の並び）
+      // フィルタ名に `#` が飲まれた形。`[wcs/filter-unknown] filter not found: trim#ro` だと
+      // 診断が指す先が実際の誤りと違う（要件 B4 の並び）。
+      // 助言は辺で分ける — **修飾子は左辺にしか存在しない**ので、右辺で「修飾子をフィルタより
+      // 前に書け」と言うと成立しない直し方（`textContent#ro|trim: x`）を勧めることになる
       const [name, modifiers] = filterName.split(MODIFIER_SEPARATOR);
-      raiseError(
-        `[wcs/binding-syntax] "${filterName}" is not a filter name: a modifier list "${MODIFIER_SEPARATOR}${modifiers}" ` +
-        `comes before the filters, not inside one — write "…${MODIFIER_SEPARATOR}${modifiers}|${name}".${LINT_HINT}`,
-      );
+      raiseError(filterIOType === "input"
+        ? `[wcs/binding-syntax] "${filterName}" is not a filter name: a modifier list ` +
+          `"${MODIFIER_SEPARATOR}${modifiers}" comes before the input filters, not inside one — write ` +
+          `"<property>${MODIFIER_SEPARATOR}${modifiers}|${name}".${LINT_HINT}`
+        : `[wcs/binding-syntax] "${filterName}" is not a filter name: "${MODIFIER_SEPARATOR}" cannot appear ` +
+          `in one. Modifiers belong on the left side of the binding, before the ":" — write "${name}" ` +
+          `here.${LINT_HINT}`);
     }
     if (openParenIndex === -1) {
       // no arguments

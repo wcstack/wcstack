@@ -97,6 +97,30 @@ describe("mountExport: 静的マウント（E1 / E6 / E7 / E8 / E10）", () => {
     host.remove();
   });
 
+  it("E1（クラスで書いた state）: プロトタイプの getter も規則 1 で解決し、外からも公開されること", async () => {
+    // own descriptor しか見ていなかった頃は getterKeys が空で、`display` がホストのツリー
+    // （`session.user.display`）へ翻訳され、作者の getter が評価されなかった
+    const tag = uniqueTag("me-class-card");
+    class CardState {
+      get display(): string { return `${(this as any).name} <${(this as any).email}>`; }
+    }
+    defineComponent(tag, () => new CardState() as any, `<span class="inner" data-wcs="textContent: display"></span>`);
+    const { host, shadowRoot, rootState } = await mountHost(
+      '{"session":{"user":{"name":"Alice","email":"a@x"}}}',
+      `<${tag} data-wcs="state: session.user"></${tag}>` +
+      `<span class="outer" data-wcs="textContent: session.user.display"></span>`);
+    const card = shadowRoot.querySelector(tag) as HTMLElement;
+    await readyScope(card.shadowRoot!);
+    await flush();
+    expect(textOf(card.shadowRoot!, ".inner")).toBe("Alice <a@x>");
+    expect(textOf(shadowRoot, ".outer")).toBe("Alice <a@x>");
+
+    await write(rootState, (s) => { s["session.user.name"] = "Bob"; });
+    expect(textOf(card.shadowRoot!, ".inner")).toBe("Bob <a@x>");
+    expect(textOf(shadowRoot, ".outer")).toBe("Bob <a@x>");
+    host.remove();
+  });
+
   it("E6: ツリーに同名キーがあればツリーが勝ち、登録時に warn が 1 回出ること", async () => {
     const tag = uniqueTag("me-shadowed");
     defineComponent(tag, () => ({

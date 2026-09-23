@@ -218,7 +218,7 @@ so the browser evaluates the engine once. Integrity for this form: [docs/sri.md 
 | `@wcstack/state/features/scopes` | `bind-component`, `mount=` volumes, overlay exports, DCC (`data-wc-definition`) |
 | `@wcstack/state/features/recursion` | `$recursion` and `**` paths |
 | `@wcstack/state/features/ssr` | `enable-ssr`: server rendering and hydration |
-| `@wcstack/state/features/formats` | The formatting filters (`uc`, `date`, `round`, `truncate`, …). The core answers only `not`, which `if` / `else` need |
+| `@wcstack/state/features/formats` | The formatting filters (`upper`, `date`, `round`, `truncate`, …). The core answers only `not`, which `if` / `else` need |
 | `@wcstack/state/features/devtools` | The DevTools hook protocol source |
 | `@wcstack/state/features/diagnostics` | Development-time warnings: a bound / `$watch` / `$scan` path that does not resolve on the state is reported with a did-you-mean. Without it the page stays silent — thrown errors keep their full messages either way |
 | `@wcstack/state/define` | `defineState` and the types only — no runtime at all |
@@ -1605,8 +1605,8 @@ A filter is resolved when the bindings are planned. An unknown name throws `[wcs
 
 **Quoting rules.** Quotes (`'` or `"`) mark a literal, and the argument grammar is deliberately small:
 
-- Inside quotes, `,` `;` `|` and `:` are ordinary characters, so `join(', ')`, `replace(':','-')` and `join(';')` all parse.
-- Whitespace is trimmed **outside** the quotes only: `pad(5, ' ')` pads with a space, `fix( 2 )` is `fix(2)`.
+- Inside quotes, `,` `;` `|` and `:` are ordinary characters, so `join(', ')`, `join(': ')` and `join(';')` all parse.
+- Whitespace is trimmed **outside** the quotes only: `padStart(5, ' ')` pads with a space, `toFixed( 2 )` is `toFixed(2)`.
 - **There is no escape character.** A quote of the same kind cannot appear inside its own literal — write `"it's"` rather than `'it\'s'`. (`'it\'s'` is an unterminated quote and throws `[wcs/binding-syntax]`.)
 - Adjacent runs are concatenated into one argument: `'a' 'b'` is the single string `a b`, and `1'2'` is the string `12` (any quote in the argument makes the whole argument a string).
 - An unterminated quote is rejected; a trailing empty argument is dropped (`filter()` takes no arguments), while a leading or middle empty argument keeps its position (`defaults(,)` passes one empty string).

@@ -123,6 +123,12 @@ export interface WcsMessageCatalog {
    */
   onPrefixedMember(member: string, tag: string, modifiers?: string): string;
   nameAlias(written: string, canonical: string): string;
+  /**
+   * 旧名の宣言キーを `this.` 越しに**読んだ**。宣言と違って旧名のままでは動かない —
+   * 正規化（`normalizeDeclarationAliases`）が自前プロパティの旧名を `delete` するので、
+   * 読み出しは黙って `undefined` になる。
+   */
+  declarationAliasRead(alias: string, canonical: string): string;
   /** 旧名と正式名の宣言キーを両方書いた（ランタイムは読み込み時に raiseError）。 */
   declarationAlias(alias: string, canonical: string): string;
   tagCommandUnknown(name: string, tag: string, declared: string): string;
@@ -299,6 +305,8 @@ const ja: WcsMessageCatalog = {
     `"${prop}" は <${tag}> の wcBindable メンバーではありません（未知メンバーへのバインドは黙って無視されます）`,
   nameAlias: (written, canonical) =>
     `"${written}" は "${canonical}" の旧名です。3.x の間は動きますが 4.0 で外れるので、"${canonical}" と書いてください（@wcstack/state 3.2）`,
+  declarationAliasRead: (alias, canonical) =>
+    `"${alias}" の読み出しは 3.x でも動きません。"${alias}" は "${canonical}" の旧名で、ランタイムは読み込み時に "${canonical}" へ写して旧名のプロパティを削除するため、this["${alias}"] は undefined になります。"${canonical}" を読んでください（@wcstack/state 3.2）`,
   declarationAlias: (alias, canonical) =>
     `この state は "${alias}" と "${canonical}" を両方宣言しています。"${alias}" は "${canonical}" の旧名（3.x の間は動きます）なので、"${canonical}" だけを残してください（ランタイムは読み込み時に throw します）`,
   onPrefixedMember: (member, tag, modifiers) =>
@@ -523,6 +531,8 @@ const en: WcsMessageCatalog = {
     `"${prop}" is not a wcBindable member of <${tag}> (bindings to unknown members are silently ignored)`,
   nameAlias: (written, canonical) =>
     `"${written}" is the old name of "${canonical}". It works through 3.x and goes in 4.0 — write "${canonical}" (@wcstack/state 3.2)`,
+  declarationAliasRead: (alias, canonical) =>
+    `Reading "${alias}" does not work, not even in 3.x. "${alias}" is the old name of "${canonical}": the runtime maps it to "${canonical}" at load time and deletes the old property, so this["${alias}"] is undefined. Read "${canonical}" instead (@wcstack/state 3.2)`,
   declarationAlias: (alias, canonical) =>
     `The state declares both "${alias}" and "${canonical}". "${alias}" is the old name of "${canonical}" (it works through 3.x) — keep "${canonical}" (the runtime throws at load time)`,
   onPrefixedMember: (member, tag, modifiers) =>

@@ -36,7 +36,10 @@ export function parsePropPart(propPart: string): PropPartParseResult {
       filters = cacheFilterInfos.get(filtersText)!;
     } else {
       filterTexts = splitOutsideQuotes(filtersText, FILTER_SEPARATOR).map(trimFn);
-      filters = parseFilters(filterTexts, "input", filtersText);
+      // 診断に埋める原文は**左辺の全文**。`|` より後ろだけを渡すと `value|:` のように
+      // 末尾が空の形で空文字になる（解析結果のキャッシュ鍵は従来どおり `filtersText`。
+      // 落ちた解析はキャッシュに載らないので、原文を混ぜても鍵は汚れない）
+      filters = parseFilters(filterTexts, "input", propPart);
       cacheFilterInfos.set(filtersText, filters);
     }
   } else {

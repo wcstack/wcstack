@@ -56,7 +56,7 @@ export function splitBindTexts(bindText: string): string[] {
 export function parseBindTextsForElement(bindText: string): ParseBindTextResult[] {
   const [ ...bindTexts ] = splitBindTexts(bindText).map(trimFn).filter(s => s.length > 0);
   const results = bindTexts.map((bindText): ParseBindTextResult => {
-    // 左辺と右辺の区切りも引用符の外だけで探す（要件 B1）。`value|replace(':','-'): path` の
+    // 左辺と右辺の区切りも引用符の外だけで探す（要件 B1）。`value|defaults(':'): path` の
     // 引数の中の `:` を区切りとして拾っていた
     const separatorIndex = indexOfOutsideQuotes(bindText, PROP_VALUE_SEPARATOR);
     if (separatorIndex === -1) {

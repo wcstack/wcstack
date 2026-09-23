@@ -217,7 +217,7 @@
 | `@wcstack/state/features/scopes` | `bind-component`・`mount=` のボリューム・オーバーレイの公開 getter・DCC（`data-wc-definition`） |
 | `@wcstack/state/features/recursion` | `$recursion` と `**` パス |
 | `@wcstack/state/features/ssr` | `enable-ssr`: サーバー描画とハイドレーション |
-| `@wcstack/state/features/formats` | 書式フィルタ群（`uc`・`date`・`round`・`truncate` …）。core が答えるのは `if` / `else` が要る `not` だけ |
+| `@wcstack/state/features/formats` | 書式フィルタ群（`upper`・`date`・`round`・`truncate` …）。core が答えるのは `if` / `else` が要る `not` だけ |
 | `@wcstack/state/features/devtools` | DevTools Hook Protocol への source 登録 |
 | `@wcstack/state/features/diagnostics` | 開発時の警告: 束縛・`$watch`・`$scan` のパスが state 上で解決できないとき、did-you-mean 付きで知らせる。入れなければ静か（本番向け）。throw するエラーの文言はどちらでも変わらない |
 | `@wcstack/state/define` | `defineState` と型だけ — ランタイムは 0 |
@@ -1603,8 +1603,8 @@ export default {
 
 **引用符の規則。** 引用符（`'` / `"`）は「ここはリテラル」という宣言で、引数の文法は意図的に小さく保たれています:
 
-- 引用符の中では `,` `;` `|` `:` はただの文字です。`join(', ')`・`replace(':','-')`・`join(';')` はそのまま通ります。
-- 空白のトリムは**引用符の外側だけ**です: `pad(5, ' ')` は空白で埋め、`fix( 2 )` は `fix(2)` と同じです。
+- 引用符の中では `,` `;` `|` `:` はただの文字です。`join(', ')`・`join(': ')`・`join(';')` はそのまま通ります。
+- 空白のトリムは**引用符の外側だけ**です: `padStart(5, ' ')` は空白で埋め、`toFixed( 2 )` は `toFixed(2)` と同じです。
 - **エスケープ文字はありません。** 同じ種類の引用符をリテラルの中に入れることはできません — `'it\'s'` ではなく `"it's"` と書いてください（前者は未終端の引用符として `[wcs/binding-syntax]` で落ちます）。
 - 隣り合う並びは 1 つの引数に連結されます: `'a' 'b'` は 1 個の文字列 `a b`、`1'2'` は文字列 `12` です（引数のどこかに引用符があれば、その引数は文字列になります）。
 - 未終端の引用符は受理しません。末尾の空引数は落とされ（`filter()` は引数 0 個）、先頭・中間の空引数は位置を保ちます（`defaults(,)` は空文字 1 個を渡します）。

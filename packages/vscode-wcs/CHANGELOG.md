@@ -9,6 +9,7 @@
 ### 検証
 
 - **`wcs/declaration-alias`（新設、error）** — 旧名と正式名の宣言キーを**両方**書いた state（`$streams` と `$stream`、`$updatedCallback` と `$renderedCallback`）。ランタイムはどちらが効くか推測せず読み込み時に throw する（ページ初期化ごと止まる）のに、拡張は `wcs/name-alias`（info）を 2 件出すだけだった。3.2 への移行中（新名を足して旧名を消し忘れる）にちょうど起きる形。
+- **`wcs/declaration-alias-read`（新設、warning / info）** — 宣言キーを旧名で**読んだ**（`this.$streams`）。宣言と違い 3.x でも動かない — 正規化が正式名へ写したあと旧名の自前プロパティを `delete` するので、読み出しは例外も出さずに `undefined` になる。「動くが 4.0 で外れる」という `wcs/name-alias` とは別の事実なので code を分けた（移行中に `wcs/name-alias` を抑制したチームが、この「今日すでに壊れている」まで一緒に消さないため）。検出は AST（`this` のスコープを追い、文字列リテラルの中や他オブジェクトのプロパティには当たらない）で、断定できた場合は warning。`export default class …` のように静的に読めない形だけ正規表現へ落として info に留める。走査対象は**ランタイムが `this` を state に束縛して呼ぶ関数だけ** — トップレベルの getter / メソッドと `$watch` のハンドラ（`watchRuntime.ts` の `handler.call(state, …)`）。**宣言面のうち**再束縛するのは `$watch` だけで、`$scan` の `fold`・`$stream` の `source`・`$on` のハンドラ・`$listKeys` のキー関数は素の関数呼び出しなので対象外（`$on` は `processOnDeclaration.ts` が「`this` 束縛は行わず引数で state を渡す」と明記しており、そこでの旧名読みは TypeError でこの診断の文言が当たらない）。なお宣言面の外では、イベント束縛が解決した関数も `this` が state になる（`event/handler.ts` の `Reflect.apply(handler, state, …)`）— 通常はトップレベルのメソッドなので走査済みだが、入れ子のパス（`onclick: handlers.click`）は追わない（限界として `collectDeclarationAliasReads` の JSDoc に明記）。
 
 ### 修正
 
@@ -17,7 +18,10 @@
 - **コメントバインディング `<!--@@:…-->` が `wcs/binding-syntax` の対象から落ちていた** — v2 移行 validator の撤去に伴う退行。ランタイムは mustache と同じ経路で throw するのに lint だけが黙っていた。
 - **式の分割規則が拡張内で 2 つに割れていた** — 契約検査（`ioNodeValidator` / `bindingValidator` / `ariaValidator` / `namedStateValidator`）だけが括弧深度を見る独自実装のままで、引用符を見ていなかった。`interval: 'a;b'` を 2 式に割って偽の `wcs/tag-member-unknown` を出していた。正本（`@wcstack/state/parser` の `splitBindTexts`）へ委譲する。
 - **左辺と右辺を分ける `:` を引用符対応にした** — 入力（左辺）フィルタの引数に `:` があると左辺が `value|defaults('` で切れ、引数が消えて `wcs/filter-arity`（「引数 0 個」）を**誤報**していた（`value|defaults(':'): name` / `value|truncate(3,':'): name`）。パスも取り違えるので `wcs/binding-path-missing` まで巻き添えになる。走査は `core/parser/quoteAware.ts` に 1 本だけ置き、契約検査（`bindingValidator` / `namedStateValidator`）・補完文脈（`bindingContext`）・配線レンズ（`wiringLens`）・位置付きパーサの全消費者が同じものを使う（拡張内に素の `indexOf(':')` による左右分割は 1 つも残っていない）。
-- **宣言キーの旧名の走査を宣言側の正本に寄せた** — 正規表現ベースだったため文字列リテラルの中（`{ msg: "see $streams: docs" }`）で誤検出し、引用符付きキー（`"$streams": { … }`）を取りこぼしていた。宣言が静的に読めない形（class 構文の state — ボリューム（`mount=`）の通常形）では従来の正規表現へフォールバックして info を出す（class フィールドの `$streams = …` も見る）。フォールバック経路は誤検出しうるので `wcs/declaration-alias`（error）へは昇格させない。`this.$streams` のような旧名の読み出しにも info を付ける。
+- **フィルタ引数の区切り `,` を引用符対応にし、空引数の扱いをランタイムに合わせた** — 素の `split(',')` + 空引数の一括除去だったため、`items|join(', ')`（要件 B1 の代表例）・`join(',')` / `join('a,b')` / `defaults('a,b')` が「引数 2 個」に、`defaults(,)` が「引数 0 個」に数えられ、**正しい式に error 重大度の `wcs/filter-arity` を誤報**していた。`validateBindings` は `wcs-validate` CLI にも載るので、そのままでは正しいページで CI が exit 1 になる。ランタイムの規則（引用符の外の `,` だけで区切る／落とすのは**末尾の空引数だけ**で先頭・中間は位置を保つ）に揃えた。
+- **フィルタの区切り `|` と引数の終端 `)` も正本と同値にした** — `|` は括弧深度ではなく引用符で判定する（`join('(')|upper` で後続フィルタを見失っていた）。引数の終端はランタイムと同じく**最後の** `)`（`[^)]*` だと `join('a)b','x')` の 2 個目の引数ごと消えて arity 超過を見逃す）。mustache / コメントバインディング側の `|` 分割も同様で、`{{ items|join('|') }}` の後片を未知フィルタと誤報していた。
+- **宣言キーの旧名の走査を宣言側の正本に寄せた** — 正規表現ベースだったため文字列リテラルの中（`{ msg: "see $streams: docs" }`）で誤検出し、引用符付きキー（`"$streams": { … }`）を取りこぼしていた。宣言が静的に読めない形（class 構文の state — ボリューム（`mount=`）の通常形）では従来の正規表現へフォールバックして info を出す（class フィールドの `$streams = …` も見る）。フォールバック経路は誤検出しうるので `wcs/declaration-alias`（error）へは昇格させない。
+- **旧名の宣言キーの「読み出し」を宣言側と分けた** — 文言（「3.x の間は動きます」→「読み出しは動かないので正式名を読むこと」）に加え、code と severity も分けた（上記 `wcs/declaration-alias-read`）。
 - **同じフィルタを 2 回書いたとき、mustache の報告範囲が 2 件とも 1 個目を指していた**（`{{ name | uc | uc }}`）。
 - **`wcs/on-prefixed-member` の提案文が修飾子を落としていた** — `once#ro:` に対して `.once#ro:` と言う。また、正本パーサが `wcs/binding-syntax` で落とす形（`..once:` / `.:`）に `wcs/tag-member-unknown` を重ねない。
 - **旧名のフィルタの hover が「旧名である」ことを言わなかった** — 正式名の説明を出すだけだった。

@@ -148,21 +148,91 @@ describe('mount: translateInnerPath（§4-1 の解決規則）', () => {
     expect(translateInnerPath(r, 'save')).toBe('user.#m1.save');
   });
 
-  it('規則 2: 判定のためのプロパティ読みで作者の getter を実行しないこと（ホットパス）', () => {
-    // `isPrivateAnchor` の「メソッドか」判定は `stateObject[key]` を読む。積みで注入されたキーは
-    // 読みより前に短絡し、作者の getter は getterKeys の判定が先に当たって評価されない
+  it('規則 1: アクセサは積みの注入キーより先に当たり、判定のためのプロパティ読みも起きないこと', () => {
+    // `translateInnerPath` は規則 1（`getterKeys` / `setterKeys` の完全一致）と規則 1'（先頭
+    // セグメントの一致）を `isPrivateAnchor` より**前**に置く。注入キーと同名のアクセサは
+    // そこでマーカー配下に落ちるので、`isPrivateAnchor` の注入短絡までは届かない。
+    // 同時に、この経路では作者の getter が判定のために評価されないことも固定する
     let reads = 0;
-    const base = { get injected() { reads++; return 1; } };
-    const stateObject = Object.create(base) as Record<string, any>;
-    stateObject.own = { get lazy() { reads++; return 2; } };
+    const stateObject: Record<string, any> = {};
+    Object.defineProperty(stateObject, 'injected', { get() { reads++; return 1; }, enumerable: true, configurable: true });
     const r = record([[[] as any, 'user']], stateObject, new Set(['injected']));
-    expect(translateInnerPath(r, 'injected')).toBe('user.injected');
-    expect(translateInnerPath(r, 'injected.deep')).toBe('user.injected.deep');
+    expect(translateInnerPath(r, 'injected')).toBe('user.#m1.injected');
+    // 深いパスは規則 1'（先頭セグメントが getter）でマーカー配下へ
+    expect(translateInnerPath(r, 'injected.deep')).toBe('user.#m1.injected.deep');
     expect(reads).toBe(0);
-    // 作者の own getter も評価されない（規則 1 が先に当たる）
-    const withGetter = record([[[] as any, 'user']], { get display() { reads++; return ''; } });
-    expect(translateInnerPath(withGetter, 'display')).toBe('user.#m2.display');
-    expect(reads).toBe(0);
+  });
+
+  it('規則 2: 積みで注入された素のデータキーは私有にならずツリーへ落ちること（isPrivateAnchor の注入短絡）', () => {
+    // ホストの初期適用が作者のオブジェクトへ書き込んだキー（preCompletionWrites）は作者のもの
+    // ではない。アクセサでもメソッドでもなく、部分エントリにも覆われていない（mappedKeys に無い）
+    // ので、これを私有に落とさないのは `isPrivateAnchor` の injectedKeys 短絡ただ 1 つ —
+    // 短絡を外すと own data key として `user.#m1.profile` へ落ちる
+    const r = record([[[] as any, 'user']], { profile: { city: 'Tokyo' } }, new Set(['profile']));
+    expect(r.mappedKeys.has('profile')).toBe(false);
+    expect(r.getterKeys.has('profile')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(r.stateObject, 'profile')).toBe(true);
+    expect(translateInnerPath(r, 'profile')).toBe('user.profile');
+    expect(translateInnerPath(r, 'profile.city')).toBe('user.profile.city');
+    expect('profile' in r.privateSnapshot).toBe(false);
+  });
+
+  it('規則 1: クラスで書いた state のプロトタイプ getter / setter も作者のアクセサとして扱うこと', () => {
+    class Card {
+      items = [1, 2, 3];
+      get total(): number { return this.items.length; }
+      get draft(): string { return ''; }
+      set draft(_v: string) { /* noop */ }
+      save(): void { /* noop */ }
+    }
+    const r = record([[[] as any, 'cards.*']], new Card() as any);
+    expect([...r.getterKeys].sort()).toEqual(['draft', 'total']);
+    expect([...r.setterKeys]).toEqual(['draft']);
+    // constructor とプロトタイプメソッドはアクセサではない
+    expect(r.getterKeys.has('constructor')).toBe(false);
+    expect(r.getterKeys.has('save')).toBe(false);
+    // Object.prototype の手前で打ち切るので継承名は拾わない
+    expect(r.getterKeys.has('toString')).toBe(false);
+    // 規則 1: マーカー配下（ホストのツリー `cards.*.total` に流れない）
+    expect(translateInnerPath(r, 'total')).toBe('cards.*.#m1.total');
+    expect(translateInnerPath(r, 'draft')).toBe('cards.*.#m1.draft');
+    // own のクラスフィールドは従来どおり私有、メソッドも私有
+    expect(Object.keys(r.privateSnapshot)).toEqual(['items']);
+    expect(translateInnerPath(r, 'save')).toBe('cards.*.#m1.save');
+  });
+
+  it('規則 1: 同名の own データプロパティはプロトタイプの getter を隠すこと（解決順と同じ）', () => {
+    class Card {
+      get total(): number { return 999; }
+    }
+    const instance = new Card() as any;
+    Object.defineProperty(instance, 'total', { value: 7, enumerable: true, writable: true, configurable: true });
+    const r = record([[[] as any, 'user']], instance);
+    expect(r.getterKeys.has('total')).toBe(false);
+    expect(r.privateSnapshot).toEqual({ total: 7 });
+    expect(translateInnerPath(r, 'total')).toBe('user.#m1.total');
+  });
+
+  it('翻訳を何度呼んでも作者の getter を 1 度も評価しないこと（own / プロトタイプの両方）', () => {
+    let evals = 0;
+    class Card {
+      items = [1, 2, 3];
+      get total(): number { evals++; return this.items.length; }
+    }
+    const proto = record([[[] as any, 'cards.*']], new Card() as any);
+    for (let i = 0; i < 5; i++) {
+      expect(translateInnerPath(proto, 'total')).toBe('cards.*.#m1.total');
+      expect(translateInnerPath(proto, 'total.deep')).toBe('cards.*.#m1.total.deep');
+      translateInnerWritePath(proto, 'total');
+    }
+    expect(evals).toBe(0);
+
+    const own = record([[[] as any, 'user']], { get display() { evals++; return ''; } });
+    for (let i = 0; i < 5; i++) {
+      expect(translateInnerPath(own, 'display')).toBe('user.#m2.display');
+      translateInnerWritePath(own, 'display');
+    }
+    expect(evals).toBe(0);
   });
 
   it('規則 2: 積みで注入されたキーは作者のものでなく、ツリー（マウント表）に落ちること', () => {

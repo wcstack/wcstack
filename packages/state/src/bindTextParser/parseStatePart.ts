@@ -33,7 +33,8 @@ export function parseStatePart(statePart: string): StatePartParseResult {
       filters = cacheFilterInfos.get(filtersText)!;
     } else {
       filterTexts = splitOutsideQuotes(filtersText, FILTER_SEPARATOR).map(trimFn);
-      filters = parseFilters(filterTexts, "output", filtersText);
+      // 診断に埋める原文は**右辺の全文**（`parsePropPart` と同じ理由 — `a|` が空文字になる）
+      filters = parseFilters(filterTexts, "output", statePart);
       cacheFilterInfos.set(filtersText, filters);
     }
   } else {

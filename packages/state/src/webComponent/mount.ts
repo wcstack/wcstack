@@ -2,6 +2,7 @@ import { getPathInfo } from "../address/PathInfo";
 import { IPathInfo } from "../address/types";
 import { IStateElement } from "../components/types";
 import type { IMountOverlaySummary } from "../devtools/types";
+import { getAllPropertyDescriptors } from "../getAllPropertyDescriptors";
 import { setMountedScopeHost } from "../list/loopContextByNode";
 import { DELIMITER, MODIFIER_READONLY, RECURSION_WILDCARD, STATE_STREAM_NAME, STATE_RENDERED_CALLBACK_NAME, WILDCARD } from "../define";
 import { normalizeDeclarationAliases } from "../declarationAliases";
@@ -199,10 +200,25 @@ export function resetMountIdForTesting(): void {
   nextMountId = 0;
 }
 
+/**
+ * 作者のアクセサ名を集める。**プロトタイプ鎖込み**で見る（`class Card { get total() {} }`）。
+ *
+ * own descriptor だけを見ていた頃は、クラスで書いたコンポーネントの計算 getter が `getterKeys` に
+ * 載らず、規則 1 が当たらないまま**ホストのツリー**（`cards.*.total`）へ翻訳されていた — 作者の
+ * getter は評価されず、`exportIndex` の公開にも載らず、`isPrivateAnchor` の `typeof` 検査が
+ * 判定のたびにその getter を実行していた。同じオブジェクトに対して `components/State.ts` の
+ * `getStateInfo`（`getterPaths`）・`dcc/defineDCC.ts`・ボリュームの `splitVolumeState` はどれも
+ * 鎖込みで見ており、ここだけが外れていた（`getAllPropertyDescriptors.ts` のヘッダが言う乖離）。
+ *
+ * `getAllPropertyDescriptors` は `Object.prototype` の**手前**で打ち切るので `toString` などは
+ * 拾わず、`constructor` とプロトタイプメソッドは値が関数なのでアクセサにはならない。
+ * 同名は手前（インスタンスに近い側）が勝つ ＝ 実際のプロパティ解決と同じ順序で、
+ * own のデータキーがプロトタイプの getter を隠す形もそのまま表現できる。
+ */
 function collectAccessorKeys(stateObject: Record<string, any>): { getterKeys: Set<string>, setterKeys: Set<string> } {
   const getterKeys = new Set<string>();
   const setterKeys = new Set<string>();
-  const descriptors = Object.getOwnPropertyDescriptors(stateObject);
+  const descriptors = getAllPropertyDescriptors(stateObject as object);
   for (const [key, descriptor] of Object.entries(descriptors)) {
     if (typeof descriptor.get === "function") getterKeys.add(key);
     if (typeof descriptor.set === "function") setterKeys.add(key);
@@ -405,7 +421,8 @@ function isPrivateAnchor(record: IMountRecord, firstSegment: string): boolean {
   // 「データキーの既定値」であってメソッドではない。後ろに置くと、`state.save: x` と書いたホストが
   // 作者の `save()` を呼べなくする（`this.save` がツリーの `x` に翻訳される）。
   // `getterKeys` の判定を `typeof` の**左**に置くのは必須 — 逆順だと作者の getter が
-  // この判定のたびに評価される（副作用も毎回走る）
+  // この判定のたびに評価される（副作用も毎回走る）。`getterKeys` はプロトタイプ鎖込みなので
+  // （collectAccessorKeys）、クラスで書いた state の getter もここで止まる
   if (!record.getterKeys.has(firstSegment) && typeof record.stateObject[firstSegment] === "function") {
     return true;
   }

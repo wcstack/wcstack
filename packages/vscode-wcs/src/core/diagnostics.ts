@@ -141,6 +141,14 @@ export const WcsDiagnosticCode = {
   // 3.x の間だけ残る旧名（フィルタ `uc` → `upper`、`$trackDependency` → `$dependOn` …）を書いた（info）。
   // 動くが 4.0 で外れるので正式名を提案する（@wcstack/state 3.2・要件 B12 / 3.x 計画 D39）
   NameAlias: "wcs/name-alias",
+  // 旧名の宣言キーを `this.` 越しに**読んだ**（`this.$streams`）。宣言と違い旧名のままでは
+  // 3.x でも動かない — 正規化（@wcstack/state declarationAliases.ts）が正式名へ写したあと
+  // 旧名の自前プロパティを delete するので、読み出しは例外も出さずに undefined になる。
+  // `wcs/name-alias`（「動くが 4.0 で外れる」）とは別の事実なので code を分ける: 移行中に
+  // name-alias を抑制したチームが、この「今日すでに壊れている」まで一緒に消さないため。
+  // severity は検出経路で変わる — AST で断定できたら warning、読めない形（class 構文など）の
+  // 正規表現フォールバックは info（誤検出しうる経路を warning にしない）。
+  DeclarationAliasRead: "wcs/declaration-alias-read",
   // 旧名と正式名の宣言キーを**両方**書いた（`$streams` と `$stream` 等）。どちらが効くのか
   // 書き手に見えないので、ランタイム（@wcstack/state declarationAliases.ts）は正規化の時点で
   // 名指しで raiseError する ＝ ページ初期化ごと止まるので error。3.2 への移行中

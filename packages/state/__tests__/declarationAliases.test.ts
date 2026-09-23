@@ -32,6 +32,9 @@ async function mountPage(state: object, body: string) {
 }
 
 describe("normalizeDeclarationAliases", () => {
+  // 「移す（＝旧名は消える）」のは契約。3.x の間そのまま動くのは「宣言として書けること」で
+  // あって「旧名で読み返せること」ではない — state のコードが `this.$streams` を読んでいたら
+  // `this.$stream` に直す（docs/migration-v3.md の 3.2 の行）
   it("旧名は正式名へ移り、自前のプロパティなら旧名は消えること", () => {
     const handler = () => {};
     const state: Record<string, unknown> = { $updatedCallback: handler, $streams: { s: {} } };

@@ -77,8 +77,8 @@ describe("splitBindTexts（属性値の区切りの正本 — 要件 B1）", () 
 
 describe("indexOfOutsideQuotes（区切り文字探索の正本 — 要件 B1）", () => {
   it("引用符の中の区切り文字を拾わないこと", () => {
-    // 引数の中の `:`（位置 15）ではなく、左辺と右辺を分ける `:`（位置 22）を返す
-    expect(indexOfOutsideQuotes("value|replace(':','-'): path", ":")).toBe(22);
+    // 引数の中の `:`（位置 16）ではなく、左辺と右辺を分ける `:`（位置 19）を返す
+    expect(indexOfOutsideQuotes("value|defaults(':'): path", ":")).toBe(19);
     expect(indexOfOutsideQuotes("a|join(';')", ";")).toBe(-1);
     expect(indexOfOutsideQuotes("a|b", "|")).toBe(1);
     expect(indexOfOutsideQuotes("abc", ":")).toBe(-1);

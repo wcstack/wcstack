@@ -88,6 +88,23 @@ describe('validateTemplateSyntax — フィルタの旧名（@wcstack/state 3.2�
     expect(alias[1].start).toBe(html.indexOf('uc', alias[0].start + 1));
   });
 
+  // Fixed by review（サイクル 2）— 式を素の `split("|")` で切っていたため、
+  // `{{ items|join('|') }}` の引数が割れて後片（`')`）を未知フィルタと誤報していた。
+  it('引用符の中の `|` はフィルタの区切りではないこと（要件 B1）', () => {
+    const html = `${STATE}
+<p>{{ tags|join('|') }}</p>`;
+    expect(validateTemplateSyntax(html, 'wcs-state')
+      .filter(d => d.code === WcsDiagnosticCode.FilterUnknown)).toEqual([]);
+  });
+
+  it('引用符の外の `|` では切れ、後続の未知フィルタは報告すること（対照）', () => {
+    const html = `${STATE}
+<p>{{ tags|join('|')|zzz }}</p>`;
+    const unknown = validateTemplateSyntax(html, 'wcs-state')
+      .filter(d => d.code === WcsDiagnosticCode.FilterUnknown);
+    expect(unknown.map(d => html.slice(d.start, d.end))).toEqual(['zzz']);
+  });
+
   it('未知フィルタが 2 回でもレンジが重ならないこと', () => {
     const html = `${STATE}
 <p>{{ label | zzz | zzz }}</p>`;

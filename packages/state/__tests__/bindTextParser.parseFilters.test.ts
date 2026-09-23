@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { parseFilters } from '../src/bindTextParser/parseFilters';
 import { planFilters } from '../src/bindings/planFilters';
 import { installFormats } from '../src/formats/install';
+import { parseBindTextsForElement } from '../src/bindTextParser/parseBindTextsForElement';
 
 // 解析の段は名前と引数だけを作る（要件 D16）。実関数は束縛計画の段で登録簿から引く
 installFormats();
@@ -104,17 +105,42 @@ describe('parseFilters — 文法エラーの語彙', () => {
       .toThrow(/\[wcs\/binding-syntax\] Invalid filter format: missing opening parenthesis in "truncate3\)"/);
   });
 
-  it('空フィルタのメッセージに原文が入ること（つなぎ直しでは消える形でも）', () => {
-    // `a|` は `filterTextList` が `[""]` なので、join("|") では空文字になっていた
-    expect(() => parseFilters([''], 'output', ''))
-      .toThrow(/an empty filter in ""/);
-    expect(() => parseFilters(['', 'b'], 'output', '|b'))
-      .toThrow(/an empty filter in "\|b"/);
+  /**
+   * **実パイプライン（`parseBindTextsForElement`）で固定する。** `parseFilters` を直接叩いて
+   * `sourceText` を手渡すテストは、呼び出し側が何を渡しているかを検証しないので false green に
+   * なる（実際、呼び出し側が `|` より後ろだけを渡していた間もそのテストは通っていた）。
+   */
+  describe('空フィルタのメッセージに原文が入ること（実パイプライン）', () => {
+    it.each([
+      ['textContent: a|', 'a|'],
+      ['value|: x', 'value|'],
+      ['textContent: a||b', 'a||b'],
+      ['textContent: a|b|', 'a|b|'],
+    ])('%s のメッセージに "%s" が入ること', (bindText, source) => {
+      expect(() => parseBindTextsForElement(bindText))
+        .toThrow(`an empty filter in "${source}"`);
+    });
+
+    it('原文が空文字にならないこと（旧実装の join("|") との差）', () => {
+      expect(() => parseBindTextsForElement('textContent: a|')).not.toThrow(/an empty filter in ""/);
+    });
   });
 
-  it('フィルタ名に修飾子が飲まれた形を、修飾子の位置として名指しで落とすこと', () => {
-    expect(() => parseFilters(['trim#ro'], 'input'))
-      .toThrow(/\[wcs\/binding-syntax\] "trim#ro" is not a filter name/);
-    expect(() => parseFilters(['trim#ro'], 'input')).toThrow(/write "…#ro\|trim"/);
+  describe('フィルタ名に修飾子が飲まれた形（実パイプライン）', () => {
+    it('左辺（入力フィルタ）では、修飾子の位置を名指しで示すこと', () => {
+      expect(() => parseBindTextsForElement('value|trim#ro: x'))
+        .toThrow(/\[wcs\/binding-syntax\] "trim#ro" is not a filter name: a modifier list "#ro" comes before the input filters/);
+      expect(() => parseBindTextsForElement('value|trim#ro: x')).toThrow(/write "<property>#ro\|trim"/);
+    });
+
+    it('右辺（出力フィルタ）では、成立しない直し方を勧めないこと', () => {
+      // 修飾子は左辺にしか存在しないので、右辺で「修飾子をフィルタより前に書け」と言うと
+      // `textContent#ro|trim: x` を勧めることになり、`textContent` に `ro` は無意味
+      expect(() => parseBindTextsForElement('textContent: x|trim#ro'))
+        .toThrow(/\[wcs\/binding-syntax\] "trim#ro" is not a filter name: "#" cannot appear in one/);
+      expect(() => parseBindTextsForElement('textContent: x|trim#ro'))
+        .toThrow(/Modifiers belong on the left side of the binding, before the ":"/);
+      expect(() => parseBindTextsForElement('textContent: x|trim#ro')).not.toThrow(/comes before the input filters/);
+    });
   });
 });

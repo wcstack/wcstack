@@ -1014,6 +1014,73 @@ export default { name: "a", items: ["x"] };
   });
 });
 
+// Fixed by review（サイクル 2）— フィルタ引数を素の `split(',')` + `filter(a => a !== '')` で
+// 切っていたため、(1) 引用符の中の `,` が区切りに数えられ（`join(', ')` は要件 B1 の代表例）、
+// (2) 意図的な空引数が全部捨てられ（`defaults(,)`）、どちらも **error 重大度の
+// `wcs/filter-arity`** を誤報していた。`validateBindings` は wcs-validate CLI にも載るので、
+// 正しい式で CI が exit 1 になる形だった。
+//
+// このブロックも state の dist に依存しない（引数の分割は拡張内の quoteAware が担う）。
+describe('validateBindings — フィルタ引数の区切り（要件 B1 / 空引数の位置）', () => {
+  const page = (attr: string): string => `
+<wcs-state>
+  <script type="module">
+export default { items: ["x"], label: "a" };
+  </script>
+</wcs-state>
+<p data-wcs="${attr}"></p>`;
+
+  it('引用符の中の `,` は引数の区切りではないこと', () => {
+    for (const attr of [
+      "textContent: items|join(', ')",   // 要件 B1 の代表例（README / state 側テストが固定）
+      "textContent: items|join(',')",
+      "textContent: items|join('a,b')",
+      "textContent: label|defaults('a,b')",
+    ]) {
+      expect(validateBindings(page(attr), 'data-wcs'), attr).toEqual([]);
+    }
+  });
+
+  it('落とすのは末尾の空引数だけで、先頭・中間の空引数は位置を保つこと', () => {
+    // `defaults(,)` は引数 1 個（空文字列）— 0 個ではない
+    expect(validateBindings(page('textContent: label|defaults(,)'), 'data-wcs')).toEqual([]);
+    // `filter()` は 0 個のまま（この規則の目的）
+    expect(validateBindings(page('textContent: label|defaults()'), 'data-wcs')
+      .map(d => d.code)).toEqual([WcsDiagnosticCode.FilterArity]);
+  });
+
+  it('引数の終端は**最後の** `)`（正本と同値）— 引用符の中の `)` で引数が切れないこと', () => {
+    // 誤報しない側
+    expect(validateBindings(page("textContent: items|join('a)b')"), 'data-wcs')).toEqual([]);
+    // 見落とさない側: 最初の `)` で切ると 2 個目の引数ごと消えて arity 超過を見逃す
+    expect(validateBindings(page("textContent: items|join('a)b','x')"), 'data-wcs')
+      .map(d => d.code)).toEqual([WcsDiagnosticCode.FilterArity]);
+  });
+
+  it('引用符の中の `|` はフィルタの区切りではなく、外の `|` では切れること', () => {
+    expect(validateBindings(page("textContent: items|join('|')"), 'data-wcs')).toEqual([]);
+    // 引用符の中で括弧が閉じない形でも後続フィルタを見失わない（括弧深度を見ていた癖）
+    expect(validateBindings(page("textContent: items|join('(')|nope"), 'data-wcs')
+      .map(d => d.code)).toEqual([WcsDiagnosticCode.FilterUnknown]);
+  });
+
+  it('本物の引数超過・不足・未知フィルタは引き続き報告すること（過剰抑制していないことの対照）', () => {
+    const tooMany = validateBindings(page("textContent: items|join('a','b')"), 'data-wcs');
+    expect(tooMany.map(d => d.code)).toEqual([WcsDiagnosticCode.FilterArity]);
+    expect(tooMany[0].message).toContain('2');
+    const unknown = validateBindings(page("textContent: items|nope(', ')"), 'data-wcs');
+    expect(unknown.map(d => d.code)).toEqual([WcsDiagnosticCode.FilterUnknown]);
+  });
+
+  it('引用符付きの引数は数値ではなく文字列として型検査すること（要件 B9）', () => {
+    // `gt(5)` は数値なので通り、`gt('5')` は文字列なので filter-arg-type
+    expect(validateBindings(page('textContent: label|gt(5)'), 'data-wcs')
+      .filter(d => d.code === WcsDiagnosticCode.FilterArgType)).toHaveLength(0);
+    expect(validateBindings(page("textContent: label|gt('5')"), 'data-wcs')
+      .filter(d => d.code === WcsDiagnosticCode.FilterArgType)).toHaveLength(1);
+  });
+});
+
 describe('validateBindings — フィルタの旧名（@wcstack/state 3.2・要件 B12）', () => {
   it('旧名は正式名と同じ検査を受け、wcs/name-alias（info）で正式名を提案する', () => {
     const html = `

@@ -26,8 +26,8 @@
 import { parseWcsScriptBlocks } from '../language/htmlParse.js';
 import { getMessages } from '../core/messages.js';
 import { WcsDiagnostic, WcsDiagnosticCode } from '../core/diagnostics.js';
-import { analyzeCallableBodies, analyzeDeclarationSpans, analyzeStatePaths, isObjectLiteral } from './stateAnalyzer.js';
-import { collectGetterReads } from './scriptAst.js';
+import { analyzeCallableBodies, analyzeDeclarationSpans, analyzeStatePaths, analyzeWatchHandlerSources, hasDefaultExportObject, isObjectLiteral } from './stateAnalyzer.js';
+import { collectGetterReads, collectThisMemberRefs, collectThisMemberRefsInValue, type ThisMemberRef } from './scriptAst.js';
 import { countWildcardSegments, getInnermostForPath } from './forContext.js';
 import { buildReferenceIndex } from '../core/index/referenceIndex.js';
 import { findBuiltinTagOccurrences } from './ioNodeValidator.js';
@@ -43,8 +43,19 @@ const STATE_UPDATED_CALLBACKS: ReadonlySet<string> = new Set(['$renderedCallback
 const OLD_API_NAMES: Readonly<Record<string, string>> = { $trackDependency: '$dependOn', $untrackDependency: '$untracked' };
 const OLD_DECLARATION_KEYS: Readonly<Record<string, string>> = { $streams: '$stream', $updatedCallback: '$renderedCallback' };
 const OLD_API_CALL = /\.\s*(\$trackDependency|\$untrackDependency)\b/g;
-/** 旧名の宣言キーを `this.` 越しに読む（正規化で自前プロパティから消えるので旧名のまま残さない）。 */
+/**
+ * 旧名の宣言キーを `this.` 越しに**読む**。宣言（動く）と違い、読み出しは 3.x でも動かない —
+ * `normalizeDeclarationAliases` が正式名へ写したあと自前プロパティの旧名を `delete` するので、
+ * `this.$streams` は例外も出さずに `undefined` になる。code（`wcs/declaration-alias-read`）を
+ * 宣言側と分ける理由。
+ *
+ * これは AST（`collectThisMemberRefs`）が読めないときのフォールバック。正規表現なので
+ * 文字列リテラルの中（`"obj.$streams"`）や他オブジェクト（`other.$streams`）にも当たりうる —
+ * だからフォールバック経路は info に留め、warning へは上げない。
+ */
 const OLD_DECLARATION_MEMBER = /\.\s*(\$streams|\$updatedCallback)\b/g;
+/** メンバー参照を探す旧名の集合（AST 経路。値は `OLD_DECLARATION_KEYS` の正式名）。 */
+const OLD_DECLARATION_MEMBER_NAMES: ReadonlySet<string> = new Set(Object.keys(OLD_DECLARATION_KEYS));
 /**
  * 宣言オブジェクトが静的に読めないとき（class 構文の state — ボリューム（`mount=`）の通常形）の
  * フォールバック。オブジェクトリテラルのキー（`$streams:`）・メソッド（`$updatedCallback(…) {}`）に
@@ -55,10 +66,73 @@ const OLD_DECLARATION_MEMBER = /\.\s*(\$streams|\$updatedCallback)\b/g;
 const OLD_DECLARATION_KEY = /(^|[{,;\s])(\$streams|\$updatedCallback)(?=\s*(?:[:(]|=(?!=)))/g;
 
 /**
- * 旧名の API 呼び出しと宣言キーに `wcs/name-alias`（info）を付ける。動くが 4.0 で外れるので
- * 正式名を提案する。旧名と正式名を**両方**宣言していたら `wcs/declaration-alias`（error）—
- * ランタイム（@wcstack/state declarationAliases.ts）が正規化の時点で raiseError するので、
- * info ではなくページごと止まる側の報告にする。
+ * 旧名の宣言キーの**メンバー参照**（`this.$streams`）を AST で集める。script 相対オフセット。
+ *
+ * 断定できないときは null を返し、呼び出し側が正規表現へ落とす:
+ *   - `export default { … }` が読めない（class 構文の state など）
+ *   - 走査対象の本体のどれか 1 つでも acorn がパースできない
+ *
+ * **走査対象 ＝ ランタイムが `this` を state に束縛して呼ぶ関数だけ**:
+ *   - トップレベルの getter / メソッド（`analyzeCallableBodies`）
+ *   - `$watch` のハンドラ（`watch/watchRuntime.ts` の `entry.handler.call(state, …)`、
+ *     ボリュームは `webComponent/volume.ts` の chroot）
+ *
+ * **宣言面のうち** `this` を再束縛するのは `$watch` だけ（下の対象外一覧を参照）。ただし
+ * 「state 全体で `this` が束縛される経路が `$watch` だけ」ではない — イベント束縛も
+ * `event/handler.ts` で `Reflect.apply(handler, state, …)` する（下の既知の限界）。
+ *
+ * 他の**宣言面**は `this` を束縛しないので**意図的に対象外**（足すと誤検出になる）:
+ *   `$scan` の `fold`（`scan/scanRuntime.ts` の `fold(acc, cur, …)`）・`$stream` の `source`
+ *   （`stream/consumeSource.ts` の `source(args, signal)`）・`$on` のハンドラ
+ *   （`Token.ts` の `fn(...args)` — `event/processOnDeclaration.ts` が「`this` 束縛は行わず
+ *   引数で state を渡す」と明記しており、ESM は strict なので `this` は undefined。そこでの
+ *   旧名読みは「黙って undefined」ではなく TypeError なので、この診断の文言が当たらない）・
+ *   `$listKeys` のキー関数（`list/mergeKeyedList.ts` の `spec(row)`）。データプロパティに
+ *   置いたアロー関数（`probe: () => this.$streams`）も、そこの `this` はモジュールスコープ
+ *   （ESM では undefined）なので対象外。
+ *
+ * **既知の限界**（次に読む人が「直った」と誤解しないように）:
+ *   - `$watch` の中の入れ子（`count: { … }` のようなさらに深い構造）は追わない。
+ *   - `$watch` の値が識別子参照（`count: onCount`）だと本体が静的に読めないので黙る。
+ *   - `data-wcs="onclick: <state パス>"` が解決した関数も `this` が state になる
+ *     （`event/handler.ts` の `Reflect.apply(handler, state, …)`）。通常はトップレベルの
+ *     メソッドなので走査済みだが、入れ子のパス（`onclick: handlers.click`）は追わない。
+ *
+ * どれも「断定できないときは黙る」側の割り切りで、正規表現フォールバックは走らない
+ * （`astReads` は非 null で返る）。
+ */
+function collectDeclarationAliasReads(script: string): { name: string; start: number }[] | null {
+  if (!hasDefaultExportObject(script)) return null;
+  const out: { name: string; start: number }[] = [];
+  const take = (refs: ThisMemberRef[] | null, base: number): boolean => {
+    if (refs === null) return false;
+    for (const ref of refs) out.push({ name: ref.name, start: base + ref.start });
+    return true;
+  };
+  for (const callable of analyzeCallableBodies(script)) {
+    if (!take(collectThisMemberRefs(callable.body, OLD_DECLARATION_MEMBER_NAMES), callable.bodyStart)) return null;
+  }
+  for (const handler of analyzeWatchHandlerSources(script)) {
+    const refs = handler.kind === 'body'
+      ? collectThisMemberRefs(handler.text, OLD_DECLARATION_MEMBER_NAMES)
+      : collectThisMemberRefsInValue(handler.text, OLD_DECLARATION_MEMBER_NAMES);
+    if (!take(refs, handler.start)) return null;
+  }
+  out.sort((a, b) => a.start - b.start);
+  return out;
+}
+
+/**
+ * 旧名（@wcstack/state 3.2・要件 B12）を 3 つの経路で報告する。
+ *
+ *   - **API 呼び出し**（`this.$trackDependency(`）→ `wcs/name-alias`（info）。旧名でも動くので
+ *     「4.0 で外れる」ことだけを伝える。
+ *   - **宣言キーの読み出し**（`this.$streams`）→ `wcs/declaration-alias-read`。宣言と違い
+ *     3.x でも動かない（正規化が旧名を `delete` する ＝ 黙って `undefined`）ので code を分ける。
+ *     AST（`collectThisMemberRefs`）で断定できたら warning、読めない形は正規表現へ落として info。
+ *   - **宣言キーそのもの**（`$streams: …`）→ `wcs/name-alias`（info）。旧名と正式名を**両方**
+ *     宣言していたら `wcs/declaration-alias`（error）— ランタイムが正規化の時点で raiseError
+ *     するので、ページごと止まる側の報告にする。
  *
  * 宣言キーの走査は 2 経路のハイブリッド:
  *
@@ -67,7 +141,8 @@ const OLD_DECLARATION_KEY = /(^|[{,;\s])(\$streams|\$updatedCallback)(?=\s*(?:[:
  *      （error）への昇格はこの経路だけ（断定できる形なので）。
  *   2. 読めなかったとき（class 構文の state — ボリュームの通常形） — `OLD_DECLARATION_KEY` で
  *      拾って info だけ出す。正規表現は誤検出しうるので、ここでは error に昇格させない
- *      （ランタイムが止める形なので、error を出さないのは安全側）。
+ *      （ランタイムが止める形なので、error を出さないのは安全側）。読み出し側の warning /
+ *      info の切り替えも同じ方針（誤検出しうる経路を warning にしない）。
  */
 function validateNameAliases(script: string, scriptStart: number, locale?: string): WcsDiagnostic[] {
   const msgs = getMessages(locale);
@@ -82,13 +157,35 @@ function validateNameAliases(script: string, scriptStart: number, locale?: strin
       severity: 'info',
     });
   };
-  for (const pattern of [OLD_API_CALL, OLD_DECLARATION_MEMBER]) {
-    pattern.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = pattern.exec(scan)) !== null) {
+  /** 旧名の宣言キーの読み出し（`wcs/declaration-alias-read`）。severity は検出経路で決まる。 */
+  const pushRead = (name: string, offset: number, severity: 'warning' | 'info'): void => {
+    out.push({
+      code: WcsDiagnosticCode.DeclarationAliasRead,
+      start: scriptStart + offset,
+      end: scriptStart + offset + name.length,
+      message: msgs.declarationAliasRead(name, OLD_DECLARATION_KEYS[name]),
+      severity,
+    });
+  };
+
+  OLD_API_CALL.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = OLD_API_CALL.exec(scan)) !== null) {
+    const written = match[1];
+    push(written, OLD_API_NAMES[written], match.index + match[0].length - written.length);
+  }
+
+  // 旧名の宣言キーの**読み出し**。AST で `this.<name>` を断定できたら warning
+  // （黙って undefined になる ＝ `wcs/on-prefixed-member` などと同じ層）。
+  // 読めない形（class 構文など）だけ正規表現へ落として info に留める。
+  const astReads = collectDeclarationAliasReads(script);
+  if (astReads !== null) {
+    for (const read of astReads) pushRead(read.name, read.start, 'warning');
+  } else {
+    OLD_DECLARATION_MEMBER.lastIndex = 0;
+    while ((match = OLD_DECLARATION_MEMBER.exec(scan)) !== null) {
       const written = match[1];
-      const canonical = OLD_API_NAMES[written] ?? OLD_DECLARATION_KEYS[written];
-      push(written, canonical, match.index + match[0].length - written.length);
+      pushRead(written, match.index + match[0].length - written.length, 'info');
     }
   }
 
@@ -96,7 +193,6 @@ function validateNameAliases(script: string, scriptStart: number, locale?: strin
   if (spans.length === 0) {
     // 経路 2: 宣言が静的に読めない（class 構文など）。info だけを出す
     OLD_DECLARATION_KEY.lastIndex = 0;
-    let match: RegExpExecArray | null;
     while ((match = OLD_DECLARATION_KEY.exec(scan)) !== null) {
       push(match[2], OLD_DECLARATION_KEYS[match[2]], match.index + match[1].length);
     }

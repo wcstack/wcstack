@@ -13,6 +13,7 @@ import { BUILTIN_FILTERS, canonicalFilterName } from "./completionData.js";
 import { getStatePathsFromHtml, type FileReader } from "./statePathResolver.js";
 import { mergeSchemaCandidates, type PathCandidate } from "./stateAnalyzer.js";
 import { findAllCommentBindings, findAllMustacheSyntax } from "./templateSyntax.js";
+import { splitOutsideQuotes } from "../core/parser/quoteAware.js";
 import { isInsideForTemplate, getInnermostForPath, getAvailableWildcardRank, countWildcardSegments } from "./forContext.js";
 import { WcsDiagnosticCode, type WcsDiagnosticCodeValue } from "../core/diagnostics.js";
 import { getMessages } from "../core/messages.js";
@@ -93,7 +94,10 @@ export function validateTemplateSyntax(
 
     if (!item.expression) continue;
 
-    const parts = item.expression.split("|");
+    // フィルタの区切りは**引用符の外**の `|` だけ（要件 B1 — ランタイムの
+    // `splitOutsideQuotes`）。素の `split("|")` だと `{{ items|join('|') }}` の引数が
+    // 割れ、後片（`')`）を未知フィルタと見て `wcs/filter-unknown` を誤報する。
+    const parts = splitOutsideQuotes(item.expression, "|");
     const pathPart = (parts[0] || "").trim();
 
     // `path@name`（名前付き State セレクタ）は v2 で撤去 — runtime では parse error。

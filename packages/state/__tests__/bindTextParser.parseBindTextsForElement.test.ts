@@ -78,15 +78,15 @@ describe('parseBindTextsForElement', () => {
 
 /**
  * 引用符の中は区切りではない（要件 B1）。`;` と `|` は 3.1 で対応済みだったが、
- * 左辺と右辺を分ける `:` だけが素の `indexOf` のままで、`replace(':','-')` のような
+ * 左辺と右辺を分ける `:` だけが素の `indexOf` のままで、`defaults(':')` のような
  * 引数を書くとパースが壊れていた。
  */
 describe('parseBindTextsForElement — 引用符の中の区切り文字', () => {
   it('左辺の入力フィルタ引数の中の `:` を区切りにしないこと', () => {
-    const [result] = parseBindTextsForElement("value|replace(':','-'): path");
+    const [result] = parseBindTextsForElement("value|defaults(':'): path");
     expect(result.propName).toBe('value');
     expect(result.statePathName).toBe('path');
-    expect(result.inFilters[0]).toMatchObject({ filterName: 'replace', args: [':', '-'] });
+    expect(result.inFilters[0]).toMatchObject({ filterName: 'defaults', args: [':'] });
   });
 
   it('右辺のフィルタ引数の中の `:` を区切りにしないこと', () => {
