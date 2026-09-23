@@ -65,7 +65,11 @@ export function parseBindTextsForElement(bindText: string): ParseBindTextResult[
     const propPart = bindText.slice(0, separatorIndex).trim();
     const statePart = bindText.slice(separatorIndex + 1).trim();
     // 種別は修飾子・入力フィルタより前の名前で決める（要件 B4）。以前は左辺全体との完全一致で
-    // 判定していたので、`radio#ro:` が汎用プロパティに落ちていた
+    // 判定していたので、`radio#ro:` が汎用プロパティに落ちていた。
+    // **不変条件**: ここは素の `split` でよい — 取り出すのは最初の区切りより前の**先頭**片で、
+    // 引用符を含みうるのは入力フィルタの引数（引用符外の最初の `|` より後ろ）だけなので、
+    // `#` も `|` も引用符の中では出会わない。**修飾子の値に引用符を許す拡張を入れるなら
+    // `indexOfOutsideQuotes` に替えること**（`parsePropPart.ts` の同じ注記と対）。
     const keyword = propPart.split(MODIFIER_SEPARATOR)[0].split(FILTER_SEPARATOR)[0].trim();
     if (keyword !== propPart && KEYWORDS_WITHOUT_MODIFIERS.has(keyword)) {
       raiseError(`[wcs/binding-syntax] "${bindText}": "${keyword}" takes no modifiers or filters on its left side — write "${keyword}:".${LINT_HINT}`);
@@ -87,12 +91,15 @@ export function parseBindTextsForElement(bindText: string): ParseBindTextResult[
         bindingType: 'else',
       };
     } else if (propPart === SPREAD_PROP) {
+      // 空の右辺は spread 専用の語彙で先に落とす。`parseStatePart` の一般の空パス診断
+      // （「the right side of a binding must name a state path」）より、ここでは
+      // 「spread target path is required」のほうが直し方を指している
+      if (statePart.length === 0) {
+        raiseError(`[wcs/binding-syntax] Invalid spread binding "${bindText}": spread target path is required.${LINT_HINT}`);
+      }
       const stateResult = parseStatePart(statePart);
       if (stateResult.outFilters.length > 0) {
         raiseError(`[wcs/binding-syntax] Invalid spread binding "${bindText}": filters are not allowed on spread targets.${LINT_HINT}`);
-      }
-      if (stateResult.statePathName.length === 0) {
-        raiseError(`[wcs/binding-syntax] Invalid spread binding "${bindText}": spread target path is required.${LINT_HINT}`);
       }
       return {
         propName: SPREAD_PROP,

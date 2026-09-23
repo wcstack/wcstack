@@ -1420,8 +1420,8 @@ Every other form is refused *before* the walk writes anything, so a rejected cal
 | omitted indexes | The write API takes no context, so there is no depth to bind to — pass `[]` |
 | a mapper function | `(current, ...indexes)` has a different arity at every depth |
 | `{ spread: true }` | Handing a flat array to a tree needs the author to know the walk order |
-| `nodes.**`, `nodes.**.children`, `nodes.**.children.*`, `nodes.**.children.length` — and, for a multi-segment repeat such as `branch.children.*`, the `nodes.**.branch` on the way to the list. Index spellings fold to the same forms: `nodes.**.children.0` is a child node, `nodes.**.children.0.total` is the getter | Writing the structure itself (assigning `length` truncates the list) invalidates the child addresses this very write already resolved (`wcs/recursion-structural-write`) |
-| `nodes.**.total`, or a path inside its value | A recursive getter has no setter — write what it derives from (`wcs/recursion-readonly`) |
+| `nodes.**`, `nodes.**.children`, `nodes.**.children.*`, `nodes.**.children.length` — and, for a multi-segment repeat such as `branch.children.*`, the `nodes.**.branch` on the way to the list. Index spellings fold to the same forms, so `nodes.**.children.0` is a child node | Writing the structure itself (assigning `length` truncates the list) invalidates the child addresses this very write already resolved (`wcs/recursion-structural-write`) |
+| `nodes.**.total`, or a path inside its value — index spellings fold to the same form too, so `nodes.**.children.0.total` is the getter | A recursive getter has no setter — write what it derives from (`wcs/recursion-readonly`) |
 
 The read-only rule does not depend on spelling `**`. A recursive getter's concrete expansions — `nodes.*.total`, `nodes.*.children.*.total`, … — are refused at the write entry as well, whether the write is a fixed-arity `$setAll`, a `$resolve(path, indexes, value)` or a direct assignment, and whether or not that depth has been materialized yet. Before this check, an unmaterialized expansion looked like a plain missing key and the write landed on the node object, pinning the assigned value as the getter's cached result.
 
@@ -2265,6 +2265,7 @@ Key rules:
 - **Bounded fold** — demand never flows back to the producer (backpressure is deliberately abandoned). For infinite / long-lived streams use a bounded fold — latest, count, last-N (`(acc, chunk) => [...acc.slice(-99), chunk]`), windowed aggregates. Raw accumulation of every chunk is for finite streams only.
 - **`args` is synchronous** — returning a Promise is an error, and wildcard reads inside `args` are rejected.
 - **No self-dependency, no mutual cycles** — `args` reading the stream's own value or status raises an error. Mutual cycles between two streams (A's `args` reads B's value and vice versa) are not detected and restart forever — do not build them. One-way chains (A's value feeding B's `args`) are legitimate.
+- **The runtime owns the property** — an entry name that collides with a getter, a setter or a method declared on the state raises at declaration, the same as a `$scan` output. (Without that check the method would be silently overwritten by the start-time reset to `initial`.)
 - **SSR does not start streams** — on the server the declaration is parsed and the property is materialized with `initial`, but no source runs; the client starts streams as usual.
 
 See [docs/streams.md](docs/streams.md) for the full contract — lifecycle and ownership, restart semantics, flush granularity, and the out-of-scope list.

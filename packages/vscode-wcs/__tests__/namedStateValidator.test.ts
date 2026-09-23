@@ -117,4 +117,20 @@ describe('findStateSelector', () => {
     expect(findStateSelector('textContent: total')).toBeNull();
     expect(findStateSelector('count', true)).toBeNull();
   });
+
+  // Fixed by review（サイクル 5）— 左右を分ける `:` の引用符対応に番人が無く、素の
+  // indexOf へ戻しても 972 green だった。戻すと左辺が `value|defaults('` で切れ、
+  // 引数の中の `@` が **error 重大度**の偽 wcs/named-state-deprecated になる。
+  it('入力フィルタ引数の中の `:@` を名前付き State と誤認しないこと（誤報しない側）', () => {
+    expect(findStateSelector("value|defaults(':@x'): name")).toBeNull();
+    expect(findStateSelector("value|defaults(':'): name")).toBeNull();
+  });
+
+  it('引用符の外の `@` は従来どおり検出すること（見落とさない側）', () => {
+    const expr = "value|defaults(':'): name@cart";
+    const m = findStateSelector(expr);
+    expect(m).not.toBeNull();
+    expect(expr.slice(m!.start, m!.end)).toBe('@cart');
+    expect(m!.name).toBe('cart');
+  });
 });

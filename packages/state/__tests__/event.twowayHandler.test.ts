@@ -323,24 +323,54 @@ describe('event/twowayHandler', () => {
     input.setAttribute('type', 'text');
     const binding = createBindingInfo(input, { statePathName: 'users.*.name-detach-last' });
 
+    // detach は attach が控えた分だけを外す（宣言は live なので detach 側で作り直さない）。
+    // 台帳を手で組み立てるのではなく attach を通す
+    attachTwowayEventHandler(binding);
     const eventName = __private__.getEventName(binding);
     const key = __private__.getHandlerKey(binding, eventName, null);
-    const handler = __private__.twowayEventHandlerFunction(
-      binding.stateName,
-      binding.propName,
-      binding.statePathName,
-      binding.inFilters,
-      null
-    );
-    __private__.handlerByHandlerKey.set(key, handler);
-    __private__.bindingRegistry.add(key, binding);
-
     expect(__private__.bindingRegistry.countOf(key)).toBe(1);
+    expect(__private__.handlerByHandlerKey.has(key)).toBe(true);
 
     detachTwowayEventHandler(binding);
     expect(__private__.bindingRegistry.countOf(key)).toBe(0);
     expect(__private__.bindingRegistry.has(key, binding)).toBe(false);
     expect(__private__.handlerByHandlerKey.has(key)).toBe(false);
+  });
+
+  it('attach 後に wcBindable を差し替えても detach でリスナが外れること', () => {
+    // `wcBindable` の宣言は live（protocol/wcBindableReader.ts）。detach が宣言を読み直すと、
+    // 二方向かの判定・イベント名・ハンドラの鍵がすべてずれうる — 判定がずれれば門で早戻りし、
+    // 名前や鍵がずれれば removeEventListener が空振りして、どちらもリスナが残る。
+    // 控えた分だけを外す形になっていることを押さえる
+    class LiveDeclTw extends HTMLElement {
+      static wcBindable: any = {
+        protocol: "wc-bindable" as const,
+        version: 1,
+        properties: [{ name: 'value', event: 'tw-live-decl:first-change' }],
+      };
+    }
+    customElements.define('tw-live-decl', LiveDeclTw);
+    const element = document.createElement('tw-live-decl');
+    const binding = createBindingInfo(element, { statePathName: 'date.value-live-decl' });
+
+    const addSpy = vi.spyOn(element, 'addEventListener');
+    const removeSpy = vi.spyOn(element, 'removeEventListener');
+    attachTwowayEventHandler(binding);
+    expect(addSpy).toHaveBeenCalledWith('tw-live-decl:first-change', expect.any(Function));
+    const attachedHandler = addSpy.mock.calls[0][1];
+
+    // ここで宣言が差し替わる（composite shell は constructor.wcBindable で合成宣言を出す）
+    LiveDeclTw.wcBindable = {
+      protocol: "wc-bindable" as const,
+      version: 1,
+      properties: [{ name: 'value', event: 'tw-live-decl:second-change' }],
+    };
+
+    detachTwowayEventHandler(binding);
+    // attach したイベント名・同じ関数参照で外れていること（差し替え後の名前で空振りしていない）
+    expect(removeSpy).toHaveBeenCalledWith('tw-live-decl:first-change', attachedHandler);
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
   });
 
   it('同一キーのbindingが残る場合はハンドラを保持すること', () => {
@@ -848,5 +878,21 @@ describe('wcs/default-getter-mismatch（既定 getter と要素宣言の不整�
     expect(t.warnings()).toHaveLength(2);
     expect(t.warnings()[1]).toContain('"other"');
     t.warnSpy.mockRestore();
+  });
+});
+
+describe('detach の防御分岐', () => {
+  it('attach 済みでも共有ハンドラが既に落ちていれば静かに戻ること', () => {
+    const input = document.createElement('input');
+    input.setAttribute('type', 'text');
+    const binding = createBindingInfo(input, { statePathName: 'users.*.name-handler-gone' });
+    attachTwowayEventHandler(binding);
+    const key = __private__.getHandlerKey(binding, __private__.getEventName(binding), null);
+    // 共有ハンドラだけが先に消えている状態（台帳の不整合）でも throw しない
+    __private__.handlerByHandlerKey.delete(key);
+    const removeSpy = vi.spyOn(input, 'removeEventListener');
+    expect(() => detachTwowayEventHandler(binding)).not.toThrow();
+    expect(removeSpy).not.toHaveBeenCalled();
+    removeSpy.mockRestore();
   });
 });

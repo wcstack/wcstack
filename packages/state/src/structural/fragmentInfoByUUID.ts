@@ -31,3 +31,16 @@ export function getFragmentInfoByUUID(uuid: string): IFragmentInfo | null {
 export function getAllFragmentUUIDs(): string[] {
   return Array.from(fragmentInfoByUUID.keys());
 }
+
+/**
+ * 台帳を空にする。**サーバーのレンダリング 1 回分の後始末専用**（`ssr/buildSsrDocument.ts` の
+ * `resetSsrRenderState`）。
+ *
+ * この台帳はモジュール寿命で削除の口が無く、`renderToString` が同じプロセスで別のドキュメントを
+ * 描いても前のドキュメントのテンプレートが残り続ける。出力への混入そのものは直列化側の
+ * 到達可能性フィルタ（`Ssr.buildContent`）で閉じてあるので、ここは**メモリ**の口である。
+ * ブラウザでは呼ばない — 台帳は生きているページの構造テンプレートの正本。
+ */
+export function clearFragmentInfos(): void {
+  fragmentInfoByUUID.clear();
+}

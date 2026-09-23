@@ -210,8 +210,12 @@ jobs:
       - name: Validate data-wcs bindings (error severity fails the build)
         run: |
           set -euo pipefail
+          # test-fixture holds pages that are broken on purpose, for opening by
+          # hand in the extension. referenceIndex.test.ts's corpus walk skips it
+          # for the same reason; this scan has to agree, or a deliberately bad
+          # page fails the build the moment a new diagnostic starts catching it.
           find examples packages \
-            -type d \( -name node_modules -o -name dist -o -name coverage -o -name .tsc-out \) -prune \
+            -type d \( -name node_modules -o -name dist -o -name coverage -o -name .tsc-out -o -name test-fixture \) -prune \
             -o -type f \( -name '*.html' -o -name '*.manifest.json' \) -print0 \
             | xargs -0 -r -n 100 node packages/vscode-wcs/dist/cli.cjs --errors-only
 

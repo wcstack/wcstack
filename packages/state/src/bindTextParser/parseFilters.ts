@@ -5,6 +5,7 @@ import { FilterIOType } from "../filters/types";
 import { raiseError } from "../raiseError";
 import { IParsedFilter } from "../types";
 import { parseFilterArgsWithLiterals } from "./parseFilterArgs";
+import { indexOfOutsideQuotes, lastIndexOfOutsideQuotes } from "./utils";
 
 /** tooling 専用（parser.ts の clearParserCaches からのみ呼ぶ）。 */
 export function clearFilterFnCacheForTooling(): void {
@@ -30,14 +31,38 @@ export function clearFilterFnCacheForTooling(): void {
 export function parseFilters(filterTextList: string[], filterIOType: FilterIOType, sourceText?: string): IParsedFilter[] {
   const source = sourceText ?? filterTextList.join("|");
   return filterTextList.map((filterText) => {
-    const openParenIndex = filterText.indexOf('(');
-    const closeParenIndex = filterText.lastIndexOf(')');
+    // 括弧も引用符の外だけで探す（要件 B1）。素の `indexOf` / `lastIndexOf` だと
+    // `foo(')')` の引用符内の `)` を終端に取り、「閉じ括弧が無い」ではなく
+    // 「引用符が閉じていない」という見当違いの診断になっていた
+    const openParenIndex = indexOfOutsideQuotes(filterText, '(');
+    let closeParenIndex = lastIndexOfOutsideQuotes(filterText, ')');
+    if (closeParenIndex === -1) {
+      // 引用符の外に閉じ括弧が無い ＝ 引用符が閉じていない形（`join('x)`）か、本当に無いか。
+      // 前者で「閉じ括弧が無い」と言うのは見当違いなので素の探索へ落とし、引数の段の
+      // `[wcs/binding-syntax] unterminated ' quote` に診断させる
+      closeParenIndex = filterText.lastIndexOf(')');
+    }
     // check parentheses
     if (openParenIndex !== -1 && closeParenIndex === -1) {
       raiseError(`[wcs/binding-syntax] Invalid filter format: missing closing parenthesis in "${filterText}".${LINT_HINT}`);
     }
     if (closeParenIndex !== -1 && openParenIndex === -1) {
       raiseError(`[wcs/binding-syntax] Invalid filter format: missing opening parenthesis in "${filterText}".${LINT_HINT}`);
+    }
+    if (closeParenIndex !== -1 && closeParenIndex < openParenIndex) {
+      // `foo)1(` — 以前は `substring` が start > end で引数を入れ替えるため、フィルタ名
+      // `foo)1` として受理されていた
+      raiseError(`[wcs/binding-syntax] Invalid filter format: ")" comes before "(" in "${filterText}".${LINT_HINT}`);
+    }
+    if (closeParenIndex !== -1 && filterText.slice(closeParenIndex + 1).trim().length > 0) {
+      // 閉じ括弧の後ろの残余を**黙って捨てていた**。`n|fix(2)uc` は `uc` が消えて診断ゼロで
+      // 通り、括弧の無い `n|ucuc` は `[wcs/filter-unknown]` で落ちる — 括弧の有無で非対称だった。
+      // 実害は「`|` の打ち忘れでフィルタが 1 本消えても無診断」
+      const trailing = filterText.slice(closeParenIndex + 1).trim();
+      raiseError(
+        `[wcs/binding-syntax] "${filterText}": unexpected "${trailing}" after the filter's closing ")" — ` +
+        `separate filters with "|" (write "${filterText.slice(0, closeParenIndex + 1)}|${trailing}").${LINT_HINT}`,
+      );
     }
     const filterName = (openParenIndex === -1 ? filterText : filterText.substring(0, openParenIndex)).trim();
     if (filterName.length === 0) {

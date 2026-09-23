@@ -441,9 +441,15 @@ export function walkDependency(
   // ここは `drainKeyedWalk` を通らない。積むのは `createListDiff` の中だけで、この経路は
   // それを呼ばないので**自分が積んだ分を取り残すことはない**。理屈の上で残るのは
   // 「ウォークの外（`applyChangeToFor` / `collectWildcardIndexes`）で積まれ、そのバッチの
-  // ウォークがこの fast path だけだった」場合に限られるが、その形は現状作れない
-  // （同じリストの 2 度目の `createListDiff` はキャッシュに当たり、`moveIndexWatchers` が
-  // 早戻りして積まない）。ここに drain を足すなら保留の有無を見る `WeakMap#get` が 1 回増え、
+  // ウォークがこの fast path だけだった」場合に限られる。積む経路は 2 本あり、根拠は同じでない:
+  //   - `moveIndexWatchers`（`$eqIndex` 最内段）— 同じリストの 2 度目の `createListDiff` は
+  //     キャッシュに当たり、`oldIndexes === newIndexes` で早戻りして積まない。
+  //   - `rekeyIndexSubscriptions`（`$eqIndex` 外段）— `syncListIndexes` から呼ばれるので
+  //     **キャッシュ命中でも早戻りしない**。それでも取り残しが観測されないのは、積んだ直後の
+  //     バッチに必ず「その置換を起こした書き込み」のウォークが居て、そこで引き取られるから。
+  //     こちらは「構造上ありえない」ではなく「実測で 0」— だから下の番人が要る
+  //     （同一バッチ 2 回のリスト置換 × 外段 `$eqIndex` でも pending 0・描画も正常）。
+  // ここに drain を足すなら保留の有無を見る `WeakMap#get` が 1 回増え、
   // 実測で **+3.3 ns/回**（この判定自体が 1.9 ns）— 起こせない事象のためにホットパスへ
   // 恒久的に乗せる取引としては割に合わないので置いていない。前提が崩れていないことは
   // `__tests__/dependency.keyedAncestorIndex.test.ts` の取り残し検査が見張っており、

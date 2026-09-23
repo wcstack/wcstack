@@ -411,6 +411,27 @@ describe('wiringLens: レビュー指摘の回帰（誤 hint ゼロ）', () => {
     expect(html.slice(references[0].range.start, references[0].range.end)).toBe('$streamStatus.ticks');
   });
 
+  // Fixed by review（サイクル 5）— 正式名 `$stream` 側に番人が無く、`declarationOf('$streams')`
+  // だけに戻しても 972 green だった（テストは旧名しか使っていなかった）。
+  it('正式名 $stream でも宣言ジャンプ / references が動くこと（@wcstack/state 3.2）', () => {
+    const html = `<wcs-state><script type="module">
+    export default { $stream: { ticks: { source: 'sse' } } };
+    </script></wcs-state>
+<span data-wcs="textContent: $streamStatus.ticks"></span>`;
+    const usageOffset = html.indexOf('$streamStatus.ticks');
+
+    // 定義へ移動: 使用箇所 → `$stream` 宣言
+    const definition = getDefinitionAt(html, usageOffset + 2)!;
+    expect(definition).not.toBeNull();
+    expect(html.slice(definition.targetRange.start, definition.targetRange.end)).toBe('$stream');
+
+    // references: 宣言起点 → 使用箇所
+    const declOffset = html.indexOf('$stream:');
+    const references = getReferencesAt(html, declOffset + 2, false)!;
+    expect(references).toHaveLength(1);
+    expect(html.slice(references[0].range.start, references[0].range.end)).toBe('$streamStatus.ticks');
+  });
+
   it('空白入り key=value 修飾子（#init = element）でも hover が出ること', () => {
     const html = `<wcs-state><script type="module">export default { name: '' };</script></wcs-state>
 <input data-wcs="value#init = element: name">`;

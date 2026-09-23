@@ -114,8 +114,11 @@ describe("hydrateBindings", () => {
     await stateEl.connectedCallbackPromise;
     await new Promise(resolve => setTimeout(resolve, 200));
 
-    const div = document.querySelector("div[data-wcs-ssr-id]") as HTMLElement;
+    // 選択子に data-wcs-ssr-id は使えない — ハイドレーションは成功経路でもこの帳簿を外す
+    // （バージョン不一致の `Ssr.cleanupDom` と対称。ssr.renderIsolation.test.ts で固定）
+    const div = document.querySelector("div") as HTMLElement;
     expect(div.innerHTML).toBe("<b>bold</b>");
+    expect(div.hasAttribute("data-wcs-ssr-id")).toBe(false);
   });
 
   it("for ブロック: SSR 描画済み DOM が Content 化される", async () => {

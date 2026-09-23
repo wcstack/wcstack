@@ -1,7 +1,10 @@
 import { config } from "../config";
 import { IState } from "../types";
 import { VERSION } from "../version";
-import { getAllFragmentUUIDs, getFragmentInfoByUUID } from "../structural/fragmentInfoByUUID";
+import { getFragmentInfoByUUID } from "../structural/fragmentInfoByUUID";
+import { getNormalizedTextCommentData } from "../structural/getFragmentNodeInfos";
+import { resolveNodePath } from "../structural/resolveNodePath";
+import { IFragmentInfo } from "../structural/types";
 import { getAllSsrPropertyNodes, getSsrProperties, clearSsrPropertyStore } from "../apply/ssrPropertyStore";
 import { HTMLElementBase } from "../platform/HTMLElementBase";
 
@@ -41,6 +44,82 @@ function escapeJsonForScript(json: string): string {
     .replace(/&/g, '\\u0026')
     .replace(/\u2028/g, '\\u2028')
     .replace(/\u2029/g, '\\u2029');
+}
+
+/**
+ * **このドキュメントから到達できる**構造テンプレートの uuid だけを、文書順・幅優先で集める。
+ *
+ * `fragmentInfoByUUID` はモジュール寿命の台帳で削除の口が無く、`getAllFragmentUUIDs()` を
+ * そのまま直列化すると、同じプロセスで描いた**別のドキュメント**のテンプレートまで
+ * `<wcs-ssr>` に載る（実測: 同じページを繰り返すと 2 → 12 テンプレートに増え、ページ A の
+ * `for: secretItems` がページ B の HTML に混入した）。uuid は単調増加で再利用されないので、
+ * 「この文書のプレースホルダから辿れるか」は正確な所属判定になる。
+ *
+ * 入れ子のテンプレートは親の fragment の中にプレースホルダコメントとして居る（`if` が偽で
+ * 一度も描かれていない枝の中身も含む）ので、辿りは fragment へ再帰する。
+ */
+function collectReachableFragments(scanRoot: Node): Map<string, IFragmentInfo> {
+  const found = new Map<string, IFragmentInfo>();
+  const pending: Node[] = [scanRoot];
+  while (pending.length > 0) {
+    for (const placeholder of collectComments(pending.shift() as Node, isPlaceholder)) {
+      const data = placeholder.data;
+      const uuid = data.slice(data.indexOf(':') + 1);
+      // 入れ子のプレースホルダは行ごとに現れるので重複する。台帳に無い uuid（別の
+      // レンダリングの痕跡・後始末の順序違い）はそのまま落とす
+      if (found.has(uuid)) continue;
+      const info = getFragmentInfoByUUID(uuid);
+      if (info === null) continue;
+      found.set(uuid, info);
+      pending.push(info.fragment);
+    }
+  }
+  return found;
+}
+
+/**
+ * `root` 以下のコメントのうち `match` が真を返すものを文書順で集める。
+ *
+ * この 1 本に寄せているのは、走査の**途中で DOM を壊す**呼び手が多いからでもある
+ * （境界コメントの除去・テキスト束縛の復元・プレースホルダの差し替え）。先に集めてから
+ * 触るという規則をここに固定しておくと、各所で TreeWalker を書き写さずに済む。
+ */
+export function collectComments(root: Node, match: (data: string) => boolean): Comment[] {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
+  const found: Comment[] = [];
+  while (walker.nextNode()) {
+    const comment = walker.currentNode as Comment;
+    if (match(comment.data)) {
+      found.push(comment);
+    }
+  }
+  return found;
+}
+
+const isPlaceholder = (data: string): boolean => SSR_PLACEHOLDER_COMMENT.test(data);
+export const isBlockStart = (data: string): boolean => SSR_BLOCK_START.test(data);
+
+/**
+ * 直列化用のクローン。`getFragmentNodeInfos` がテンプレート登録時に空 Text へ潰した
+ * テキスト束縛のコメントを、**クローンの上でだけ**原文へ戻す。
+ *
+ * 戻さないと `for` / `if` テンプレートの中の `{{ }}` がマークアップから消え、
+ * ハイドレーションが束縛を復元できず、その行のテキストが**恒久的に空**になる。
+ * 元の fragment は生きているページの正本なので絶対に壊さない。
+ */
+function cloneFragmentForSnapshot(fragmentInfo: IFragmentInfo): DocumentFragment {
+  const clone = fragmentInfo.fragment.cloneNode(true) as DocumentFragment;
+  for (const nodeInfo of fragmentInfo.nodeInfos) {
+    const commentData = getNormalizedTextCommentData(
+      resolveNodePath(fragmentInfo.fragment, nodeInfo.nodePath));
+    if (commentData === null) continue;
+    // nodePath はこの fragment から採ったもので、クローンは同形。ここまで来た枝は
+    // 必ず解決でき、正規化された Text は必ず親を持つ（fragment 直下でも親は fragment）。
+    // 同じ位置への置換なので、以降の nodePath は変わらない（正規化と対称）
+    const target = resolveNodePath(clone, nodeInfo.nodePath) as Node;
+    (target.parentNode as Node).replaceChild(document.createComment(commentData), target);
+  }
+  return clone;
 }
 
 export class Ssr extends HTMLElementBase implements ISsrElement {
@@ -175,19 +254,21 @@ export class Ssr extends HTMLElementBase implements ISsrElement {
     return data;
   }
 
-  static buildContent(ssrEl: Element, stateData: Record<string, any>): void {
+  /**
+   * @param scanRoot このスナップショットが属するツリー（既定は `ssrEl` の document）。
+   *   テンプレートと props はここから到達できるものだけを載せる — モジュール寿命の台帳に
+   *   残った**別のレンダリング**の分を混ぜないため（リクエスト間のデータ漏れ）。
+   */
+  static buildContent(ssrEl: Element, stateData: Record<string, any>, scanRoot?: Node): void {
+    const root: Node = scanRoot ?? (ssrEl.ownerDocument as Document);
     // 初期データ JSON
     const jsonScript = document.createElement('script');
     jsonScript.setAttribute('type', 'application/json');
     jsonScript.textContent = escapeJsonForScript(JSON.stringify(stateData));
     ssrEl.appendChild(jsonScript);
 
-    // UUID で管理されているテンプレートを復元して格納
-    const uuids = getAllFragmentUUIDs();
-    for (const uuid of uuids) {
-      const fragmentInfo = getFragmentInfoByUUID(uuid);
-      if (!fragmentInfo) continue;
-
+    // この文書のプレースホルダから辿れるテンプレートだけを復元して格納
+    for (const [uuid, fragmentInfo] of collectReachableFragments(root)) {
       const tpl = document.createElement('template');
       tpl.setAttribute('id', uuid);
 
@@ -197,18 +278,22 @@ export class Ssr extends HTMLElementBase implements ISsrElement {
         : `${bindResult.bindingType}: ${bindResult.statePathName}`;
       tpl.setAttribute(config.bindAttributeName, bindText);
 
-      const content = fragmentInfo.fragment.cloneNode(true) as DocumentFragment;
-      tpl.content.appendChild(content);
+      tpl.content.appendChild(cloneFragmentForSnapshot(fragmentInfo));
 
       ssrEl.appendChild(tpl);
     }
 
-    // 属性で代替不可なプロパティをハイドレーション用に格納
+    // 属性で代替不可なプロパティをハイドレーション用に格納。
+    // **この文書に今も繋がっているノードだけ**を載せる — props の台帳（apply/ssrPropertyStore）は
+    // `buildContent` の末尾でしか空にならないので、`enable-ssr` の無いページを 1 枚描くと
+    // 次のレンダリングの props JSON に前のページの値が載っていた（実測）
+    const ownerDocument = ssrEl.ownerDocument;
     const ssrNodes = getAllSsrPropertyNodes();
     if (ssrNodes.length > 0) {
       const propsData: Record<string, Record<string, unknown>> = {};
       for (let i = 0; i < ssrNodes.length; i++) {
         const node = ssrNodes[i];
+        if (!node.isConnected || node.ownerDocument !== ownerDocument) continue;
         const entries = getSsrProperties(node);
         if (entries.length === 0) continue;
         const id = `wcs-ssr-${i}`;
@@ -235,15 +320,7 @@ export class Ssr extends HTMLElementBase implements ISsrElement {
    * SSR ブロック境界コメント (@@wcs-*-start/end) を除去する
    */
   static removeBlockBoundaryComments(root: Node): void {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
-    const toRemove: Comment[] = [];
-    while (walker.nextNode()) {
-      const comment = walker.currentNode as Comment;
-      if (SSR_BLOCK_START.test(comment.data) || SSR_BLOCK_END.test(comment.data)) {
-        toRemove.push(comment);
-      }
-    }
-    for (const comment of toRemove) {
+    for (const comment of collectComments(root, (d) => SSR_BLOCK_START.test(d) || SSR_BLOCK_END.test(d))) {
       comment.remove();
     }
   }
@@ -252,15 +329,7 @@ export class Ssr extends HTMLElementBase implements ISsrElement {
    * SSR の構造プレースホルダーコメント (@@wcs-for:uuid 等) を除去する
    */
   static removeStructuralComments(root: Node): void {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
-    const toRemove: Comment[] = [];
-    while (walker.nextNode()) {
-      const comment = walker.currentNode as Comment;
-      if (SSR_PLACEHOLDER_COMMENT.test(comment.data)) {
-        toRemove.push(comment);
-      }
-    }
-    for (const comment of toRemove) {
+    for (const comment of collectComments(root, isPlaceholder)) {
       comment.remove();
     }
   }
@@ -271,18 +340,8 @@ export class Ssr extends HTMLElementBase implements ISsrElement {
    * → <!--@@: path--> (バインディングシステムが認識する形式)
    */
   static restoreTextBindings(root: Node): void {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
-    const startComments: { comment: Comment, path: string }[] = [];
-
-    while (walker.nextNode()) {
-      const comment = walker.currentNode as Comment;
-      const match = SSR_TEXT_START.exec(comment.data);
-      if (match) {
-        startComments.push({ comment, path: match[1] });
-      }
-    }
-
-    for (const { comment, path } of startComments) {
+    for (const comment of collectComments(root, (d) => SSR_TEXT_START.test(d))) {
+      const path = (SSR_TEXT_START.exec(comment.data) as RegExpExecArray)[1];
       const bindComment = document.createComment(`@@: ${path}`);
       comment.parentNode!.insertBefore(bindComment, comment);
 
@@ -329,15 +388,7 @@ export class Ssr extends HTMLElementBase implements ISsrElement {
     }
 
     // SSR ブロック境界コメント間のレンダリング済みノードと境界コメントを除去
-    const walker1 = document.createTreeWalker(body, NodeFilter.SHOW_COMMENT);
-    const startComments: Comment[] = [];
-    while (walker1.nextNode()) {
-      const comment = walker1.currentNode as Comment;
-      if (SSR_BLOCK_START.test(comment.data)) {
-        startComments.push(comment);
-      }
-    }
-    for (const startComment of startComments) {
+    for (const startComment of collectComments(body, isBlockStart)) {
       const match = SSR_BLOCK_START.exec(startComment.data)!;
       const type = match[1];
       const info = match[2];
@@ -359,17 +410,8 @@ export class Ssr extends HTMLElementBase implements ISsrElement {
     Ssr.restoreTextBindings(body);
 
     // プレースホルダーコメント (@@wcs-for:uuid 等) をテンプレートに差し替え
-    const walker2 = document.createTreeWalker(body, NodeFilter.SHOW_COMMENT);
-    const placeholders: { comment: Comment, uuid: string }[] = [];
-    while (walker2.nextNode()) {
-      const comment = walker2.currentNode as Comment;
-      if (SSR_PLACEHOLDER_COMMENT.test(comment.data)) {
-        const uuid = comment.data.split(':')[1];
-        placeholders.push({ comment, uuid });
-      }
-    }
-    for (const { comment, uuid } of placeholders) {
-      const tpl = templateByUuid.get(uuid);
+    for (const comment of collectComments(body, isPlaceholder)) {
+      const tpl = templateByUuid.get(comment.data.split(':')[1]);
       if (tpl) {
         const restored = document.createElement('template') as HTMLTemplateElement;
         const bindAttr = tpl.getAttribute(config.bindAttributeName);

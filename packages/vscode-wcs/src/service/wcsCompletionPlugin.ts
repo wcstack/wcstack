@@ -139,13 +139,19 @@ export function createWcsCompletionPlugin(): LanguageServicePlugin {
               };
 
             case 'modifier': {
-              // '#' 以降のテキストを置換する範囲を計算。探索は**その属性値の中**に限り、
-              // 区切りは引用符の外だけ（`value|defaults('#')` の引数の `#` から置換範囲を
-              // 取ると、補完を選んだ瞬間にその引数を壊すテキスト編集になる）
-              const hashInValue = lastIndexOfOutsideQuotes(attrInfo.value.slice(0, cursorInAttr), '#');
+              // 置換するのは**いま入力中の修飾子 1 個**だけ。修飾子リストは `#` のあと
+              // カンマ区切り（`value#ro,wo`）なので、開始は「最後の `#` **または** `,` の次」。
+              // `#` だけを見ていると 2 個目を補完したときに `#ro,w` ごと置換されて
+              // `value#wo` になり、先に書いた `ro` が消える。
+              // 探索は**その属性値の中**に限り、区切りは引用符の外だけ
+              // （`value|defaults('#')` の引数から置換範囲を取ると、補完を選んだ瞬間に
+              // その引数を壊すテキスト編集になる）。
+              const beforeCursor = attrInfo.value.slice(0, cursorInAttr);
+              const hashInValue = lastIndexOfOutsideQuotes(beforeCursor, '#');
               if (hashInValue === -1) return undefined;
-              const hashOffset = attrInfo.valueStart + hashInValue;
-              const replaceStart = document.positionAt(hashOffset + 1);
+              const commaInValue = lastIndexOfOutsideQuotes(beforeCursor, ',');
+              const tokenStart = Math.max(hashInValue, commaInValue);
+              const replaceStart = document.positionAt(attrInfo.valueStart + tokenStart + 1);
               return {
                 isIncomplete: false,
                 items: EVENT_MODIFIERS.map(m => ({

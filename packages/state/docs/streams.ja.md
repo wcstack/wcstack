@@ -77,6 +77,7 @@ export default {
 - 各エントリ名は**フラットなプロパティ名**であること: 空文字でない・`.` を含まない・`*` を含まない・`$` で始まらない（予約名前空間）。
 - エントリ名は `Object.prototype` の継承名（`__proto__`・`constructor`・`toString`・`hasOwnProperty` など）でないこと。これらはランタイムの own プロパティ前提を破ります（特に `__proto__` は起動時に state の prototype を差し替えてしまいます）。なおオブジェクトリテラルの `__proto__:` キーは prototype 指定構文で own key にならないため、そのようなエントリはエラーにならず黙って無視されます。
 - エントリ名は state に宣言済みの getter / setter と衝突しないこと。
+- エントリ名は**メソッド**（関数値のプロパティ。own・プロトタイプ鎖上のいずれも）と衝突しないこと。判定は property descriptor で行うので getter は評価されません。検査が無いと、そのメソッドは起動時の `initial` リセットで無言に上書きされ、失敗は宣言から遠い場所（どこかの getter・`$watch`・command の中）で `not a function` として現れます。runtime 自身がそのプロパティに置いた関数値は衝突ではありません: `initial` が関数の場合や、`fold` が関数を返す場合は、再セットを跨いでそのまま動きます（[`$scan`](scan.ja.md) の出力と同じ規則）。
 - 各エントリはオブジェクト（`{ args?, source, fold?, initial? }`）であること。
 - `source` は関数であること。`fold` は（あれば）関数であること。`fold` があるのに `initial` が無ければエラー（reduce にはシード値が必要）。
 - `args` は（あれば）関数であること。

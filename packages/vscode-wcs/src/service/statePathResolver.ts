@@ -38,9 +38,12 @@ export function getStatePathsFromHtml(
 ): PathCandidate[] {
   const elements = parseWcsStateElements(html, stateTagName);
   const allPaths: PathCandidate[] = [];
+  // 合成したマウントポイントは兄弟ボリューム間で重複しうる（`shop.cart` と `shop.user` は
+  // どちらも `shop` を合成する）ので、文書全体で 1 回だけ載せる
+  const mountPoints = new Set<string>();
 
   for (const element of elements) {
-    const paths = resolveElementPaths(element, html, fileReader);
+    const paths = resolveElementPaths(element, html, mountPoints, fileReader);
     allPaths.push(...paths);
   }
 
@@ -54,6 +57,7 @@ export function getStatePathsFromHtml(
 function resolveElementPaths(
   element: WcsStateInfo,
   html: string,
+  mountPoints: Set<string>,
   fileReader?: FileReader,
 ): PathCandidate[] {
   const raw = resolveElementPathsRaw(element, html, fileReader);
@@ -80,7 +84,12 @@ function resolveElementPaths(
   if (out.length > 0) {
     const segments = element.mountPath.split('.');
     for (let i = 1; i <= segments.length; i++) {
-      out.push({ path: segments.slice(0, i).join('.'), kind: 'data', typeHint: 'object' });
+      const path = segments.slice(0, i).join('.');
+      // 兄弟ボリューム（`mount="shop.cart"` と `mount="shop.user"`）は共通の接頭辞 `shop` を
+      // それぞれ合成するので、重複させるとパス補完に同じ項目が 2 つ並ぶ
+      if (mountPoints.has(path)) continue;
+      mountPoints.add(path);
+      out.push({ path, kind: 'data', typeHint: 'object' });
     }
   }
   return out;

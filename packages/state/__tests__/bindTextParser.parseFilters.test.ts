@@ -144,3 +144,41 @@ describe('parseFilters — 文法エラーの語彙', () => {
     });
   });
 });
+
+/**
+ * 閉じ括弧の**後ろ**の残余を黙って捨てていた。`n|fix(2)uc` は `uc` が消えて診断ゼロで通り、
+ * 括弧の無い `n|ucuc` は `[wcs/filter-unknown]` で落ちる — 括弧の有無で非対称だった。
+ * 実害は「`|` の打ち忘れでフィルタが 1 本消えても無診断」。
+ */
+describe('parseFilters — 括弧の走査と残余の検査（要件 B1 / B2）', () => {
+  it('閉じ括弧の後ろに残余があると [wcs/binding-syntax] で落ちること', () => {
+    expect(() => parseFilters(['fix(2)uc'], 'output')).toThrow(/\[wcs\/binding-syntax\]/);
+    expect(() => parseFilters(['fix(2)uc'], 'output')).toThrow(/unexpected "uc" after the filter's closing/);
+  });
+
+  it('残余の診断が「"|" で区切れ」と直し方を示すこと', () => {
+    expect(() => parseFilters(["join(', ') uc"], 'output')).toThrow(/join\(', '\)\|uc/);
+  });
+
+  it('実パイプラインでも `n|fix(2)uc` が黙って uc を落とさないこと', () => {
+    expect(() => parseBindTextsForElement('textContent: n|fix(2)uc')).toThrow(/\[wcs\/binding-syntax\]/);
+  });
+
+  it('閉じ括弧が末尾なら通ること（空白は許す）', () => {
+    expect(parseFilters(['fix(2)'], 'output')[0]).toMatchObject({ filterName: 'fix', args: ['2'] });
+    expect(parseFilters(['fix(2)  '], 'output')[0]).toMatchObject({ filterName: 'fix', args: ['2'] });
+  });
+
+  it('")" が "(" より前にある形を明示的に拒否すること（以前は名前 "foo)1" として受理）', () => {
+    expect(() => parseFilters(['foo)1('], 'output')).toThrow(/"\)" comes before "\("/);
+  });
+
+  it('引用符の中の "(" / ")" を括弧と誤認しないこと', () => {
+    expect(parseFilters(["join(')')"], 'output')[0]).toMatchObject({ filterName: 'join', args: [')'] });
+    expect(parseFilters(["join('(')"], 'output')[0]).toMatchObject({ filterName: 'join', args: ['('] });
+  });
+
+  it('閉じていない引用符は「閉じ括弧が無い」ではなく unterminated quote で落ちること', () => {
+    expect(() => parseFilters(["join('x)"], 'output')).toThrow(/unterminated ' quote/);
+  });
+});

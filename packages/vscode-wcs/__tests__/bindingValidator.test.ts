@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { validateBindings } from '../src/service/bindingValidator';
+import { validateBindings, findAllBindAttributes } from '../src/service/bindingValidator';
+import { validateDocument } from '../src/core/validateDocument';
 import { WcsDiagnosticCode } from '../src/core/diagnostics';
 
 const SAMPLE_HTML = `
@@ -1057,8 +1058,22 @@ export default { items: ["x"], label: "a" };
       .map(d => d.code)).toEqual([WcsDiagnosticCode.FilterArity]);
   });
 
-  it('引用符の中の `|` はフィルタの区切りではなく、外の `|` では切れること', () => {
+  // 二方向で固定する（`join` は minArgs 0 なので「引数を失っても診断が変わらない」＝
+  // 判別子にならない。サイクル 5 の変異テストで、引用符非対応へ全面リバートしても
+  // 緑のままだったのがこの形だった）。
+  it('引用符の中の `|` はフィルタの区切りではないこと（誤報しない側）', () => {
+    // minArgs 1 のフィルタで、引数が消えたら必ず偽 filter-arity(error) になる形
+    expect(validateBindings(page("textContent: label|defaults('|')"), 'data-wcs')).toEqual([]);
+    expect(validateBindings(page("textContent: label|padStart(3,'|')"), 'data-wcs')).toEqual([]);
     expect(validateBindings(page("textContent: items|join('|')"), 'data-wcs')).toEqual([]);
+  });
+
+  it('引用符の中の `|` で引数を数え損ねないこと（見落とさない側）', () => {
+    expect(validateBindings(page("textContent: items|join('|','x')"), 'data-wcs')
+      .map(d => d.code)).toEqual([WcsDiagnosticCode.FilterArity]);
+  });
+
+  it('引用符の外の `|` では切れること', () => {
     // 引用符の中で括弧が閉じない形でも後続フィルタを見失わない（括弧深度を見ていた癖）
     expect(validateBindings(page("textContent: items|join('(')|nope"), 'data-wcs')
       .map(d => d.code)).toEqual([WcsDiagnosticCode.FilterUnknown]);
@@ -1078,6 +1093,45 @@ export default { items: ["x"], label: "a" };
       .filter(d => d.code === WcsDiagnosticCode.FilterArgType)).toHaveLength(0);
     expect(validateBindings(page("textContent: label|gt('5')"), 'data-wcs')
       .filter(d => d.code === WcsDiagnosticCode.FilterArgType)).toHaveLength(1);
+  });
+});
+
+// Fixed by review（サイクル 5）— `findAllBindAttributes` が HTML 全体を素の正規表現で
+// 走っていたため、マークアップでない場所（HTML コメントの中の説明文・`&lt;` でエスケープ
+// されたテキスト・`<script>` 本体の文字列）まで実属性として拾い、正本パーサに通して
+// 偽の `wcs/binding-syntax`(error) を出していた。リポジトリの examples が現に落ちる形。
+describe('findAllBindAttributes — 開始タグの属性だけを拾う', () => {
+  const HTML = [
+    '<!-- prose: a <template data-wcs="nocolonhere"> inside a comment -->',
+    '<p><code>&lt;template data-wcs="nocolonhere2"&gt;</code> escaped prose</p>',
+    '<script>const tpl = 1;</script>',
+    '<div data-wcs="textContent: name" title="a>b"></div>',
+    "<input data-wcs='value: name'>",
+  ].join('\n');
+
+  it('コメントの中・エスケープ済みテキスト・script 本体は拾わないこと', () => {
+    expect(findAllBindAttributes(HTML, 'data-wcs').map(a => a.value))
+      .toEqual(['textContent: name', 'value: name']);
+  });
+
+  it('valueStart が原文の値を指すこと（オフセットが崩れていない）', () => {
+    for (const attr of findAllBindAttributes(HTML, 'data-wcs')) {
+      expect(HTML.slice(attr.valueStart, attr.valueStart + attr.value.length)).toBe(attr.value);
+    }
+  });
+
+  it('属性値の中の `>` でタグを切らないこと（`title="a>b"` の後ろも読む）', () => {
+    const html = `<div title="a>b" data-wcs="textContent: name"></div>`;
+    expect(findAllBindAttributes(html, 'data-wcs').map(a => a.value)).toEqual(['textContent: name']);
+  });
+
+  it('属性名の部分一致を拾わないこと（`x-data-wcs=` は別の属性）', () => {
+    const html = `<div x-data-wcs="nope" data-wcs="textContent: name"></div>`;
+    expect(findAllBindAttributes(html, 'data-wcs').map(a => a.value)).toEqual(['textContent: name']);
+  });
+
+  it('診断も出ないこと（validateDocument 経由の対称性）', () => {
+    expect(validateDocument(HTML, { locale: 'en' })).toEqual([]);
   });
 });
 

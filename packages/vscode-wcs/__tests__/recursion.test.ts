@@ -1041,6 +1041,29 @@ describe('`**` を解釈しない消費者（代入・$postUpdate・$trackDepend
   get "nodes.**.big"() { return this["nodes.**.value"] === 5 || this["nodes.**.value"] == 6; }`))).toEqual([]);
   });
 
+  // Fixed by review（サイクル 5）— API 呼び出しの検出が `blankComments`（コメントだけ潰す）
+  // だったため、文字列リテラルに書いた例示が **error 重大度**で誤検出されていた。
+  it('コメント・文字列リテラルの中の API 呼び出しは検出しないこと', () => {
+    const inString = makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  note: "use this.$resolve('nodes.**.x')"`);
+    expect(validateRecursion(inString, 'wcs-state', 'en')).toEqual([]);
+    const inComment = makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  f() { /* this.$resolve("nodes.**.x") */ }`);
+    expect(validateRecursion(inComment, 'wcs-state', 'en')).toEqual([]);
+    // 対照: 実コードなら従来どおり error（引数のパスも原文から読めている）
+    const real = makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  f() { this.$resolve("nodes.**.x"); }`);
+    const diags = validateRecursion(real, 'wcs-state', 'en');
+    expect(codes(diags)).toEqual([WcsDiagnosticCode.RecursionUnsupported]);
+    expect(diags[0].message).toContain('nodes.**.x');
+  });
+
   it('$listKeys のキーの `**` は recursion-unsupported（runtime は宣言の処理で throw）', () => {
     const html = makeState(`
   $recursion: { "nodes.*": "children.*" },

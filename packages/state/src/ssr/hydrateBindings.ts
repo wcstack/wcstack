@@ -4,7 +4,8 @@ import { setStateListBaseline } from "../list/stateListBaseline";
 import { parseBindTextsForElement } from "../bindTextParser/parseBindTextsForElement";
 import { ParseBindTextResult } from "../bindTextParser/types";
 import { BindingSession, getOrCreateBindingSession } from "../bindings/BindingSession";
-import { collectNodesAndBindingInfos } from "../bindings/collectNodesAndBindingInfos";
+import { collectNodesAndBindingInfos, IDeferredSpreadEntry } from "../bindings/collectNodesAndBindingInfos";
+import { scheduleDeferredSpreads } from "../bindings/initializeBindings";
 import { setBindingsByContent } from "../bindings/bindingsByContent";
 import { setBindingSessionByContent } from "../bindings/bindingSessionByContent";
 import { setIndexBindingsByContent } from "../bindings/indexBindingsByContent";
@@ -12,7 +13,7 @@ import { setNodesByContent } from "../bindings/nodesByContent";
 import { bindLoopContextToContent } from "../bindings/bindLoopContextToContent";
 import { config } from "../config";
 import { WILDCARD, INDEX_BY_INDEX_NAME } from "../define";
-import { Ssr, SSR_BLOCK_START } from "./Ssr";
+import { Ssr, SSR_BLOCK_START, collectComments, isBlockStart } from "./Ssr";
 import { getStateElement } from "../stateElementByName";
 import { setLoopContextByNode } from "../list/loopContextByNode";
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
@@ -27,7 +28,7 @@ import { getFragmentNodeInfos } from "../structural/getFragmentNodeInfos";
 import { optimizeFragment } from "../structural/optimizeFragment";
 import { expandShorthandPaths } from "../structural/expandShorthandPaths";
 import { createListIndex } from "../list/createListIndex";
-import { IListIndex } from "../list/types";
+import { IListIndex, ILoopContext } from "../list/types";
 import { setListIndexesByList } from "../list/listIndexesByList";
 import { getPathInfo } from "../address/PathInfo";
 import { createStateAddress } from "../address/StateAddress";
@@ -51,18 +52,9 @@ interface ISsrBlock {
  */
 function collectSsrBlocks(root: Node): ISsrBlock[] {
   const blocks: ISsrBlock[] = [];
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
-  const startComments: Comment[] = [];
-
-  // まず全コメントを収集
-  while (walker.nextNode()) {
-    startComments.push(walker.currentNode as Comment);
-  }
-
-  for (const comment of startComments) {
-    const startMatch = SSR_BLOCK_START.exec(comment.data);
-    if (!startMatch) continue;
-
+  // 先に集めてから触る（この後で兄弟を引き剥がすため）
+  for (const comment of collectComments(root, isBlockStart)) {
+    const startMatch = SSR_BLOCK_START.exec(comment.data) as RegExpExecArray;
     const type = startMatch[1];
     const info = startMatch[2]; // "uuid:path:index" or "uuid:path"
     const parts = info.split(':');
@@ -107,10 +99,10 @@ function collectSsrBlocks(root: Node): ISsrBlock[] {
  */
 function collectBindingsFromLiveNodes(
   nodes: Node[],
-): { bindingInfos: IBindingInfo[], subscriberNodes: Node[], bindingSession: BindingSession } {
+): { bindingInfos: IBindingInfo[], subscriberNodes: Node[], bindingSession: BindingSession, deferredSpreads: IDeferredSpreadEntry[] } {
   const bindingSession = new BindingSession();
   if (nodes.length === 0) {
-    return { bindingInfos: [], subscriberNodes: [], bindingSession };
+    return { bindingInfos: [], subscriberNodes: [], bindingSession, deferredSpreads: [] };
   }
 
   // ノードの元の位置を記録
@@ -123,8 +115,9 @@ function collectBindingsFromLiveNodes(
     wrapper.appendChild(node);
   }
 
-  // バインディング収集
-  const [subscriberNodes, allBindings] = collectNodesAndBindingInfos(wrapper);
+  // バインディング収集。3 要素目（未定義カスタム要素への `...: path`）は呼び出し側が
+  // ループ文脈を確定させてから予約する（`scheduleDeferredSpreads`）
+  const [subscriberNodes, allBindings, deferredSpreads] = collectNodesAndBindingInfos(wrapper);
 
   const bindingInfos = bindingSession.initialize(allBindings, {
     registerAddress: false,
@@ -142,6 +135,7 @@ function collectBindingsFromLiveNodes(
     bindingInfos,
     subscriberNodes,
     bindingSession,
+    deferredSpreads,
   };
 }
 
@@ -161,12 +155,27 @@ function collectBindingsFromLiveNodes(
  *    integration.listLedgerParentKey.test.ts）。
  * コメントと段数の足りないバインディングは、適用しても失敗の報告をハイドレーションのたびに増やすだけになる。
  */
+/**
+ * コメントに乗った**本物のテキスト束縛**の形（`<!--@@: path-->` / `<!--@@wcs-text:path-->`）。
+ *
+ * コメントの束縛を一律に除いていたのは、テンプレートを復帰できなかった入れ子の構造プレースホルダが
+ * `text: uuid` として解釈され、適用すると `binding-path-missing` を量産するからである。それは
+ * `@@wcs-for:` のような**構造のキーワード付き**コメントなので、キーワードの有無で precise に分けられる。
+ * 分けないと、`{{ }}` から復元したテキスト束縛まで初回適用から落ち、`restoreTextBindings` が
+ * 捨てたサーバー側のテキストが戻らない。
+ */
+const TEXT_BINDING_COMMENT = /^\s*@@\s*(?:wcs-text)?\s*:/;
+
 function collectBlockBindings(out: IBindingInfo[], bindings: readonly IBindingInfo[], loopDepth: number): void {
   for (const binding of bindings) {
     if (binding.bindingType === "event" || STRUCTURAL_TYPES.has(binding.bindingType)) {
       continue;
     }
-    if (binding.node.nodeType === Node.COMMENT_NODE || binding.statePathName in INDEX_BY_INDEX_NAME) {
+    if (binding.node.nodeType === Node.COMMENT_NODE
+      && !(binding.bindingType === "text" && TEXT_BINDING_COMMENT.test((binding.node as Comment).data))) {
+      continue;
+    }
+    if (binding.statePathName in INDEX_BY_INDEX_NAME) {
       continue;
     }
     if (getPathInfo(binding.statePathName).wildcardCount > loopDepth) {
@@ -191,7 +200,7 @@ function hydrateBlocks(root: Node, blocks: ISsrBlock[]): IBindingInfo[] {
     const content = createContentFromNodes(block.nodes);
 
     // Content のバインディングを収集
-    const { bindingInfos, subscriberNodes, bindingSession } = collectBindingsFromLiveNodes(block.nodes);
+    const { bindingInfos, subscriberNodes, bindingSession, deferredSpreads } = collectBindingsFromLiveNodes(block.nodes);
     setBindingSessionByContent(content, bindingSession);
 
     // Content 内のノードに data-wcs-completed を付与
@@ -233,6 +242,8 @@ function hydrateBlocks(root: Node, blocks: ISsrBlock[]): IBindingInfo[] {
           applyOnReconnect: false,
         });
         collectBlockBindings(blockBindings, bindingInfos, pathInfo.wildcardCount);
+        // 未定義カスタム要素への `...: path` は行のループ文脈が確定してから予約する
+        scheduleDeferredSpreads(deferredSpreads, stateAddress as unknown as ILoopContext, bindingSession);
 
         // listIndex を UUID ごとに収集（後で setListIndexesByList に渡す）
         let indexes = listIndexesByUuid.get(block.uuid);
@@ -254,6 +265,7 @@ function hydrateBlocks(root: Node, blocks: ISsrBlock[]): IBindingInfo[] {
         });
         // if / elseif / else の中身はループの外（入れ子の行はここに吸収されても段数で除かれる）
         collectBlockBindings(blockBindings, bindingInfos, 0);
+        scheduleDeferredSpreads(deferredSpreads, null, bindingSession);
       }
     }
   }
@@ -291,14 +303,7 @@ function findPlaceholderComment(root: Node, type: string, uuid: string): Comment
   if (!keyword) return null;
 
   const pattern = `@@${keyword}:${uuid}`;
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
-  while (walker.nextNode()) {
-    const comment = walker.currentNode as Comment;
-    if (comment.data === pattern) {
-      return comment;
-    }
-  }
-  return null;
+  return collectComments(root, (d) => d === pattern)[0] ?? null;
 }
 
 /**
@@ -375,6 +380,14 @@ export async function hydrateBindings(root: Document): Promise<boolean> {
     restoreFragments(root, ssrNode as Ssr);
   }
 
+  // SSR テキストバインディングを @@: 形式に復元。
+  // **ブロックを集める前に**行う。後回しにしていたので、`for` / `if` の中の `{{ }}` は
+  // `collectBindingsFromLiveNodes` の時点でまだ `@@wcs-text-start/end` のコメント対であり、
+  // 行のバインディングとして登録されなかった。そのうえで `restoreTextBindings` は start/end の
+  // 間（＝サーバーが描いたテキスト）を捨てるので、**行の `{{ }}` が空になったまま二度と戻らない**
+  // （`data-wcs="textContent: …"` は属性なのでこの穴に落ちない）。
+  Ssr.restoreTextBindings(document.body);
+
   // SSR ブロック境界コメントから既存 DOM を Content 化
   const blocks = collectSsrBlocks(document.body);
   const blockBindings = hydrateBlocks(document.body, blocks);
@@ -394,11 +407,8 @@ export async function hydrateBindings(root: Document): Promise<boolean> {
   // 構造プレースホルダーコメント (@@wcs-for:uuid 等) は残す
   // → バインディング走査で拾われ、状態変化時の再レンダリングに使われる
 
-  // SSR テキストバインディングを @@: 形式に復元
-  Ssr.restoreTextBindings(document.body);
-
   // ノードとバインディングを収集
-  const [subscriberNodes, allBindings] = collectNodesAndBindingInfos(document.body);
+  const [subscriberNodes, allBindings, deferredSpreads] = collectNodesAndBindingInfos(document.body);
 
   // 収集完了したノードに data-wcs-completed 属性を付与
   // for ブロック内ノード（hydrateBlocks で登録済み）にはループコンテキストをリセットしない
@@ -420,6 +430,12 @@ export async function hydrateBindings(root: Document): Promise<boolean> {
   const structuralBindings: IBindingInfo[] = [];
   const bindingSession = getOrCreateBindingSession(document.body);
   const initializedBindings = bindingSession.initialize(allBindings);
+  // 未定義カスタム要素への `...: path` を `whenDefined` 後の配線として予約する。
+  // 通常経路（`bindings/initializeBindings.ts`）はこれを行うが、ハイドレーション経路は
+  // `collectNodesAndBindingInfos` の 3 要素目を捨てていたので、SSR したページでだけ
+  // spread が**永久に配線されなかった**（実測: 通常経路は whenDefined を予約、
+  // ハイドレーション経路は 1 件も予約しない）
+  scheduleDeferredSpreads(deferredSpreads, null, bindingSession);
 
   for (const binding of initializedBindings) {
     if (binding.bindingType === "event") continue;
@@ -464,13 +480,17 @@ export async function hydrateBindings(root: Document): Promise<boolean> {
     parent.insertBefore(el, next);
   }
 
-  // hydrateProps 復元
-  const restoredSsrElements = root.querySelectorAll(config.tagNames.ssr);
-  for (const ssrNode of restoredSsrElements) {
-    const ssrEl = ssrNode as Ssr;
-    const props = ssrEl.hydrateProps;
-    for (const [id, propMap] of Object.entries(props)) {
-      const target = root.querySelector(`[data-wcs-ssr-id="${id}"]`);
+  // hydrateProps 復元。
+  // 索引は **1 回だけ** 作る。props 1 件ごとに `querySelector('[data-wcs-ssr-id="…"]')` を
+  // 回していたので、props に載る束縛（textContent 等）の行数に対して二次だった
+  // （実測 800 / 1600 / 3200 行で 109 / 297 / 1207 ms。props が 0 件の `value` 行は線形）
+  const targetBySsrId = new Map<string, Element>();
+  for (const el of root.querySelectorAll('[data-wcs-ssr-id]')) {
+    targetBySsrId.set(el.getAttribute('data-wcs-ssr-id') as string, el);
+  }
+  for (const ssrNode of root.querySelectorAll(config.tagNames.ssr)) {
+    for (const [id, propMap] of Object.entries((ssrNode as Ssr).hydrateProps)) {
+      const target = targetBySsrId.get(id);
       if (!target) continue;
       for (const [propName, value] of Object.entries(propMap)) {
         (target as any)[propName] = value;
@@ -478,10 +498,13 @@ export async function hydrateBindings(root: Document): Promise<boolean> {
     }
   }
 
-  // ハイドレーション中の重複登録防止用属性を除去
-  const completedEls = root.querySelectorAll('[data-wcs-completed]');
-  for (const el of completedEls) {
+  // ハイドレーション中の重複登録防止用属性と、SSR の対応付け用属性を除去する。
+  // 後者は成功経路だけ残していたので、バージョン不一致のフォールバック（`Ssr.cleanupDom`）と
+  // 非対称だった — ハイドレーション済みの DOM にサーバー側の帳簿が残り、
+  // `[data-wcs-ssr-id]` を見る CSS / 再ハイドレーションに漏れる
+  for (const el of root.querySelectorAll('[data-wcs-completed],[data-wcs-ssr-id]')) {
     el.removeAttribute('data-wcs-completed');
+    el.removeAttribute('data-wcs-ssr-id');
   }
 
   return true;

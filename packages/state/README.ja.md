@@ -1417,8 +1417,8 @@ this.$setAll("nodes.**.selected", [], false);   // 全深さの全ノード
 | 添字の省略 | 書き込み API は文脈を取らないので束縛する深さが無い —— `[]` を渡す |
 | mapper 関数 | `(current, ...indexes)` の添字の本数が深さごとに変わる |
 | `{ spread: true }` | 1 次元配列を木へ配るには作者が走査順を知っている必要があり、契約として使えない |
-| `nodes.**` / `nodes.**.children` / `nodes.**.children.*` / `nodes.**.children.length` —— 反復サブパスが多段（`branch.children.*`）なら、子リストへ至る途中の `nodes.**.branch` も。添字綴りも同じ形に畳まれる（`nodes.**.children.0` は子ノード、`nodes.**.children.0.total` は getter） | 構造そのものへの書き込み（`length` への代入はリストを切り詰める）は、その書き込み自身が確定済みの子アドレスを壊す（`wcs/recursion-structural-write`） |
-| `nodes.**.total`、およびその値の内側を指すパス | 再帰 getter に setter は無い。導出元を書く（`wcs/recursion-readonly`） |
+| `nodes.**` / `nodes.**.children` / `nodes.**.children.*` / `nodes.**.children.length` —— 反復サブパスが多段（`branch.children.*`）なら、子リストへ至る途中の `nodes.**.branch` も。添字綴りも同じ形に畳まれるので `nodes.**.children.0` は子ノード | 構造そのものへの書き込み（`length` への代入はリストを切り詰める）は、その書き込み自身が確定済みの子アドレスを壊す（`wcs/recursion-structural-write`） |
+| `nodes.**.total`、およびその値の内側を指すパス —— 添字綴りも同じ形に畳まれるので `nodes.**.children.0.total` も getter | 再帰 getter に setter は無い。導出元を書く（`wcs/recursion-readonly`） |
 
 読み取り専用の規則は `**` の綴りに依存しません。再帰 getter の具体的な展開形 —— `nodes.*.total` / `nodes.*.children.*.total` / … —— への書き込みも、固定本数の `$setAll` でも値付きの `$resolve(path, indexes, value)` でも直接代入でも、またその深さが実体化済みかどうかに関わらず、書き込みの入口で拒否します。この検査が無かったときは、未実体化の展開形が「無いキー」に見えてノードのオブジェクトに書き込まれ、代入値が getter のキャッシュ結果として固定されていました。
 
@@ -2259,6 +2259,7 @@ $stream: {
 - **有界 fold** —— 需要は producer に逆流しません（backpressure は明示的に放棄）。無限 / 長寿命ストリームでは latest・count・last-N（`(acc, chunk) => [...acc.slice(-99), chunk]`）・ウィンドウ集計など有界な fold を使うこと。生の全チャンク累積は有限ストリーム限定。
 - **`args` は同期** —— Promise を返すとエラー。`args` 内での wildcard 読みも拒否されます。
 - **自己依存・相互サイクルの禁止** —— `args` が自 stream の値や status を読むとエラーになります。2 つの stream の相互サイクル（A の `args` が B の値を読み、B の `args` が A の値を読む）は検出されず無限 restart になるため組まないこと。一方向のチェイン（A の値を B の `args` が読む）は正当です。
+- **プロパティは runtime の所有物** —— エントリ名が state の getter / setter / メソッドと衝突すると、`$scan` の出力と同じく宣言時にエラーになります（検査が無いと、そのメソッドは起動時の `initial` リセットで無言に上書きされます）。
 - **SSR では起動しない** —— サーバーでは宣言のパースとプロパティの実体化（`initial`）のみ行い、source は実行されません。クライアント側は通常どおり起動します。
 
 完全な契約 —— ライフサイクルと所有権・restart セマンティクス・flush 粒度・スコープ外リスト —— は [docs/streams.ja.md](docs/streams.ja.md) を参照してください。

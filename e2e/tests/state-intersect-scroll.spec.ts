@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { collectErrors } from "./helpers";
 
-// state + intersection + $streams: 失敗ページの復帰経路を実ブラウザで検証する。
+// state + intersection + $stream: 失敗ページの復帰経路を実ブラウザで検証する。
 //
 // 回帰対象: page1 が失敗するとフィードが空 → スクロールする対象が無い →
 // IntersectionObserver は可視性の「変化」でしか発火しない → 復帰する手段が消える、
@@ -76,7 +76,7 @@ test.describe("examples/state-intersect-scroll", () => {
       requestCount++;
       if (requestCount === 1) {
         // 最初の fetch を parked にし、その間に retryNonce を変更して
-        // $streams の dependency-driven restart を起こす。
+        // $stream の dependency-driven restart を起こす。
         await holdFirst;
         await route.fulfill({
           status: 200,

@@ -33,6 +33,7 @@ import {
   STATE_STREAM_STATUS_NAMESPACE_NAME,
   STREAM_LISTENER_PRIORITY,
 } from "../define";
+import { recordOutputValue } from "../scan/initialValue";
 import { assertNoScanFeedback } from "../scan/scanFeedback";
 import { registerUpdateBatchListener } from "../updater/updater";
 import { registerFeatureHooks } from "../core/addressHooks";
@@ -100,6 +101,9 @@ export function startStream(stateElement: IStateElement, entry: IStreamEntry): v
   stateElement.createState("writable", (state) => {
     state[entry.name] = entry.definition.initial;
   });
+  // runtime が置いた関数値を記録する（再セットの宣言検査が fold / initial の関数を
+  // メソッド衝突と誤検出しないため。scan/initialValue.ts — `$scan` の D7 と共有）
+  recordOutputValue(entry.name, entry.definition.initial);
 
   updateStreamStatus(stateElement, entry, "active", null);
 
@@ -108,7 +112,9 @@ export function startStream(stateElement: IStateElement, entry: IStreamEntry): v
     fold(chunk: unknown): void {
       // fold の throw はそのまま伝播させる（consumeSource が fail 経路に回す）
       stateElement.createState("writable", (state) => {
-        state[entry.name] = definition.fold(state[entry.name], chunk);
+        const next = definition.fold(state[entry.name], chunk);
+        state[entry.name] = next;
+        recordOutputValue(entry.name, next);
       });
     },
     done(): void {

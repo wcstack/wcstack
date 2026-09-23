@@ -18,6 +18,8 @@
  *             dedup されない（abortAllStreams の無通知ミューテーションと台帳の同期 — §4-3）
  * - computed: $streamStatus を読む getter が status 変化で再計算される（$postUpdate → walkDependency）
  * - same-value skip: status/error とも変化なしの updateStreamStatus は何も通知しない
+ * - 片道ガード（§4-3）: status だけ / error だけが変わる遷移で、変化していない側の名前空間パスを
+ *   通知しない（両ガードは互いをマスクするので、両方を bind して 1 本ずつ固定する）
  */
 import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
@@ -473,6 +475,70 @@ describe("$streamStatus / $streamError の reactive 反映 end-to-end（B-3）",
     expect(shadowRoot.querySelector("#err")!.textContent).toBe(String(failure));
     expect(updatedLog.length).toBe(1);
     expect([...updatedLog[0]].sort()).toEqual(["$streamError.tokens", "$streamStatus.tokens"]);
+
+    host.remove();
+  });
+
+  it("§4-3: status だけが変わる遷移では $streamError.<name> を通知しないこと（errorChanged の片道ガード）", async () => {
+    // 名前空間パスは setByAddress を通らず sameValueGuard が効かないため、変化していない
+    // $streamError を通知すると binding が再適用され $updatedCallback の paths に混入する
+    // （README 推奨の paths.includes(...) フィルタが誤発火する）。両方を bind して固定する
+    const m = makeManualAsyncGenerator<string>();
+    const updatedLog: string[][] = [];
+    const raw: IState = {
+      $streams: { tokens: { source: () => m.iterable, fold: concatFold, initial: "" } },
+      $updatedCallback(paths: string[]) {
+        updatedLog.push(paths);
+      },
+    };
+    const { host, shadowRoot } = await connectHost(
+      `<p id="st" data-wcs="textContent: $streamStatus.tokens"></p>` +
+        `<p id="err" data-wcs="textContent: $streamError.tokens"></p>`,
+      raw,
+    );
+    await State.getBindingsReady(shadowRoot);
+    await flushAsync();
+    updatedLog.length = 0;
+
+    m.end(); // active → done。error は null のまま変化しない
+    await flushAsync();
+
+    expect(shadowRoot.querySelector("#st")!.textContent).toBe("done");
+    expect(updatedLog).toEqual([["$streamStatus.tokens"]]);
+
+    host.remove();
+  });
+
+  it("§4-3: error だけが変わる遷移では $streamStatus.<name> を通知しないこと（statusChanged の片道ガード）", async () => {
+    const m = makeManualFailableSource<string>();
+    const first = new Error("first");
+    const second = new Error("second");
+    const updatedLog: string[][] = [];
+    const raw: IState = {
+      $streams: { tokens: { source: () => m.iterable, fold: concatFold, initial: "" } },
+      $updatedCallback(paths: string[]) {
+        updatedLog.push(paths);
+      },
+    };
+    const { host, shadowRoot, stateEl } = await connectHost(
+      `<p id="st" data-wcs="textContent: $streamStatus.tokens"></p>` +
+        `<p id="err" data-wcs="textContent: $streamError.tokens"></p>`,
+      raw,
+    );
+    await State.getBindingsReady(shadowRoot);
+    await flushAsync();
+    m.fail(first);
+    await flushAsync();
+    updatedLog.length = 0;
+
+    // status は "error" のまま、error だけ差し替える
+    const entry = getStreamEntries(stateEl).get("tokens")!;
+    expect(entry.status).toBe("error");
+    updateStreamStatus(stateEl, entry, "error", second);
+    await flushAsync();
+
+    expect(shadowRoot.querySelector("#err")!.textContent).toBe(String(second));
+    expect(updatedLog).toEqual([["$streamError.tokens"]]);
 
     host.remove();
   });

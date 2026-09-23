@@ -60,6 +60,20 @@ describe('validateAriaAttributes: 基本', () => {
   });
 });
 
+// Fixed by review（サイクル 5）— 修飾子を落とす `property.split('#')[0]` に番人が無く、
+// 除去しても 972 green だった。除去すると `attr.aria-label#ro:` が偽 wcs/aria-attr-unknown になる。
+describe('validateAriaAttributes: 修飾子付きの属性名', () => {
+  it('修飾子（#ro）を属性名の一部と数えないこと（誤報しない側）', () => {
+    expect(validateAriaAttributes(`<button data-wcs="attr.aria-label#ro: name">x</button>`)).toEqual([]);
+    expect(validateAriaAttributes(`<button data-wcs="attr.aria-label#init=element,sync=connect: name">x</button>`)).toEqual([]);
+  });
+
+  it('修飾子が付いていても本物のタイポは検出すること（見落とさない側）', () => {
+    const diags = validateAriaAttributes(`<button data-wcs="attr.aria-labels#ro: name">x</button>`);
+    expect(diags.map(d => d.member)).toEqual(['aria-labels']);
+  });
+});
+
 describe('validateAriaAttributes: IDE / CLI parity', () => {
   it('validateDocument 経由でも CLI runner 経由でも同一診断が出る', () => {
     const html = `<button data-wcs="attr.aria-labels: itemLabel">x</button>`;

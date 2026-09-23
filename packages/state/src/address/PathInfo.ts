@@ -1,4 +1,4 @@
-import { RECURSION_WILDCARD, WILDCARD } from "../define.js";
+import { DELIMITER, MAX_PATH_SEGMENTS, RECURSION_WILDCARD, WILDCARD } from "../define.js";
 import { raiseError } from "../raiseError.js";
 import { IPathInfo } from "./types.js";
 
@@ -33,9 +33,37 @@ export function getPathInfo(path: string): IPathInfo {
       `argument of $getAll / $setAll — and only when the state declares a $recursion anchor.`
     );
   }
+  // 深さの上限（初回 intern のときだけ払う）。`PathInfo` は**全ての接頭辞**を intern するので
+  // 深さ N のパス 1 本で時間もメモリも O(N²) になり、上限が無いと約 4KB の属性値 1 つで
+  // タブが落ちた（実測値は `MAX_PATH_SEGMENTS` の注記）。
+  //
+  // **ワイルドカードの段数はここでは見ない。** 段数の上限（`MAX_WILDCARD_DEPTH` ＝ manifest の
+  // `indexParam.maxDepth`）は `$1..$N` の表が引けるかという別の話で、`recursion/expand.ts` の
+  // `[wcs/recursion-depth-exceeded]` と `proxy/traps/get.ts` の `$N` 範囲外診断が、原因を
+  // 名指しできる場所で受け持っている（番人: `integration.recursionPrerequisites.test.ts` が
+  // 「PathInfo 自体には段数の上限が無い」を固定している）。ここで先に落とすと、深さ超過か
+  // 循環かの切り分けが効かなくなる
+  const segmentCount = countSegments(path);
+  if (segmentCount > MAX_PATH_SEGMENTS) {
+    raiseError(
+      `[wcs/binding-syntax] "${path}" has ${segmentCount} path segments — the limit is ${MAX_PATH_SEGMENTS}. ` +
+      `Every prefix of a path is interned, so the cost grows with the square of the depth.`,
+    );
+  }
   pathInfo = Object.freeze(new PathInfo(path));
   _cache.set(path, pathInfo);
   return pathInfo;
+}
+
+/** `.` の数 + 1。`split` の配列を作らずに数える（初回 intern のときだけ通る） */
+function countSegments(path: string): number {
+  let count = 1;
+  for (let i = 0; i < path.length; i++) {
+    if (path[i] === DELIMITER) {
+      count++;
+    }
+  }
+  return count;
 }
 
 class PathInfo implements IPathInfo {

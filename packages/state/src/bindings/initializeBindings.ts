@@ -13,7 +13,13 @@ import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
 import { IInitialBindingInfo } from "./types";
 import { BindingSession, getOrCreateBindingSession } from "./BindingSession";
 
-function scheduleDeferredSpreads(
+/**
+ * 未定義カスタム要素への `...: path` を `whenDefined` 後の配線として予約する。
+ * ハイドレーション経路（`ssr/hydrateBindings.ts`）も同じ手順を通すため export している —
+ * あちらは `collectNodesAndBindingInfos` の 3 要素目を捨てていて、SSR したページでだけ
+ * spread が永久に配線されなかった。
+ */
+export function scheduleDeferredSpreads(
   deferredSpreads: IDeferredSpreadEntry[],
   parentLoopContext: ILoopContext | null,
   session: BindingSession,

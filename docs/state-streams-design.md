@@ -69,6 +69,7 @@ export default {
 - 各エントリ名（stream プロパティ名）:
   - **フラットなプロパティ名のみ**。`.`（DELIMITER）や `*`（WILDCARD）を含む名前はエラー（第 1 段スコープ外）。
   - getter / setter として宣言済みのパスと衝突しないこと（`getterPaths` / `setterPaths` を検査）。
+  - **メソッド（関数値のプロパティ）と衝突しないこと**（`$scan` の D7 と同じ規則。判定はプロトタイプ鎖込みの property descriptor ＝ `getAllPropertyDescriptors` で行い、getter は評価しない）。検査が無いと同名メソッドで `name in state` が真になって実体化（§1-3）が skip され、起動時の initial リセットがそのメソッドを**無言で上書き**する — 以後 `this.<name>()` を呼ぶ getter / `$watch` / command が、宣言から遠い場所で "not a function" で落ちる。`initial` 自身が関数の形と、runtime（実体化・起動時リセット・fold）がその値をこの出力に置いたことがある形（fold が関数を返す stream の再セット）は通す（`scan/initialValue.ts` の `recordOutputValue` / `wasPlacedOnOutput` を `$scan` と共有する）。
   - `$` で始まらないこと（予約名前空間との衝突防止）。
   - **Object.prototype の継承名でないこと**（`__proto__` / `constructor` / `toString` 等。判定は `name in Object.prototype`）。own key でなくても `name in state` が真になるため実体化（§1-3）が skip され、起動時の initial リセット（proxy 経由 `Reflect.set`）が継承 setter に化ける — 特に `__proto__` は state の prototype を差し替え、継承キーの `bindableEventMap[path]` 誤 hit と併せて接続経路を不透明に破壊するため、宣言時に一律拒否する（外部レビュー 2026-07-12 指摘 2）。なおオブジェクトリテラルの `__proto__:` キーは prototype 指定構文で own key にならず、宣言としては黙って無視される（`Object.entries` に現れないため検出不能）。
 - `source` は関数であること。`fold` は（あれば）関数であること。`fold` があるのに `initial` が無ければエラー。
@@ -81,7 +82,7 @@ export default {
 - 起動前（および SSR 時）の binding 初期レンダが `initial` を表示できる。
 - パス機構上、`tokens` は最初から普通のプロパティとして存在する（get/set トラップに特殊分岐は不要）。
 
-ユーザーが state 側に同名のデータプロパティを先に宣言していてもよいが、**起動時に値は `initial` で上書きされる**（起動 = 最初の run も restart と同一セマンティクス）。起動後のプロパティは stream runtime の所有物であり、ユーザーコードからの直接代入は禁止しない（技術的には普通のプロパティ）が動作は未定義（次の fold は代入後の値の上に畳む）と規範化する。
+ユーザーが state 側に同名の**データ**プロパティを先に宣言していてもよい（関数値は §1-2 のメソッド衝突で拒否する）が、**起動時に値は `initial` で上書きされる**（起動 = 最初の run も restart と同一セマンティクス）。起動後のプロパティは stream runtime の所有物であり、ユーザーコードからの直接代入は禁止しない（技術的には普通のプロパティ）が動作は未定義（次の fold は代入後の値の上に畳む）と規範化する。
 
 ---
 

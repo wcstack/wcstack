@@ -46,6 +46,12 @@ export function parsePropPart(propPart: string): PropPartParseResult {
     propText = propPart.trim();
   }
 
+  // **不変条件**: ここから下の `split` は素で走らせてよい。`propText` は「引用符外の最初の `|`
+  // より前」のスライスであり、引用符を含みうるのは入力フィルタの引数（`|` の後ろ）だけなので、
+  // `#` も `,` も `.` も引用符の中に現れない。**修飾子の値に引用符を許す拡張（例
+  // `value#fmt('a,b'): x`）を入れるなら、この 3 つも `splitOutsideQuotes` に替えること** —
+  // 替え忘れると `structural/expandShorthandPaths.ts` で起きた「無言で 1 行も描画されない」
+  // と同じ欠陥クラスが再発する。
   const modifierParts = propText.split(MODIFIER_SEPARATOR).map(trimFn);
   if (modifierParts.length > 2) {
     // 修飾子の並びは 1 つだけ（要件 B2）。`value#ro#wo` は以前 `ro` だけを残して黙って捨てていた

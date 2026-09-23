@@ -69,6 +69,16 @@
  *     `service/mountAttrValidator.ts` ほか）— 上記のとおりパスに引用符は現れない。
  *   - `@` の検出（`service/bindingContext.ts` / `service/bindingValidator.ts` /
  *     `service/forContext.ts`）— 引用符の外の `|` で切ったパス部分だけを見る。
+ *   - `service/templateSyntax.ts` の mustache 終端の正規表現（`:39` / `:101`）— 引用符
+ *     非対応だが、ランタイムの `mustache/convertMustacheToComments.ts` と**文字単位で同一**
+ *     なので 1:1（ここだけ厳しくすると拡張とランタイムが割れる）。同ファイルのコメント
+ *     バインディングの `:`（`:76` / `:124`）は `@@` 直後の最初の `:` で、手前に引用符が来ない。
+ *   - `service/forContext.ts:91` の `([^"']+?)` — 属性値の切り出しであって区切り走査ではない。
+ *
+ * **JS ソース側**（`<wcs-state>` スクリプト）は別モジュールの担当:
+ * `service/scriptPatterns.ts` の `execAllMasked`（コメント・文字列リテラルの中身を潰した
+ * 鏡像に対して走査し、キャプチャは原文から切り出す）。`stateAnalyzer` の
+ * `maskCommentsAndStrings` が鏡像の正本。
  *   - `service/scriptCallArgs.ts` の `splitCallArgs` — **JS ソース**の実引数分割。走査ループが
  *     自前で引用符（`'` / `"` / `` ` `` とエスケープ）を飛ばしているので既に引用符対応。
  *   - `service/stateAnalyzer.ts` のオブジェクト / 配列走査 — すべて `maskCommentsAndStrings` の

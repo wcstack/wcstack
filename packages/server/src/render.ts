@@ -103,13 +103,24 @@ export interface RenderOptions {
    */
   baseHref?: string;
   /**
-   * 1 回のレンダリングの上限（ミリ秒・既定 30,000）。`0` 以下で無効（無制限）。
+   * ページが ready になるのを待つ上限（ミリ秒・既定 30,000）。
+   *
+   * **無効（無制限）になる値**: `0` 以下・`NaN`・`2,147,483,647`（2^31−1）より大きい値
+   * （`Infinity` を含む）。上限を外したいときは `0` を渡すのが正規の書き方。
+   * 大きすぎる値を無制限に倒しているのは Node の都合で、`setTimeout` は 2^31−1 を超える
+   * delay（`Infinity` も）を **1 ms に丸める** — 「上限を上げたつもり」が即時タイムアウトに
+   * 反転するため（実測: `Infinity` で 13 ms で reject）。
    *
    * **プロセス毒性の防波堤**（サイクル 4 の指摘 3）。`renderToString` は `globalThis` を
    * 差し替えるため `renderMutex` で直列化しており、解放は `finally` にある。1 ページの
    * 不具合で `waitForReady` が永久 pending になると `finally` に到達せず、**以後そのプロセスの
    * 健全なページまで永久に返らなくなる**（実測済み）。上限を超えたら reject して `finally` へ
    * 抜け、mutex を必ず解放する。既定は十分長く取ってあり、正常なページは触れない。
+   *
+   * 実時間の最悪値は `timeoutMs + CLEANUP_MIN_TIMEOUT_MS`。ready 待ちと `finally` の
+   * 後始末（バインディング構築の drain）は**同じ予算を共有**し、後始末は残り時間、
+   * 残っていなければ最低 {@link CLEANUP_MIN_TIMEOUT_MS} だけ待つ（0 にすると
+   * 「上限なし」と同義になり mutex が漏れるため）。`0`（無制限）では後始末も無制限。
    */
   timeoutMs?: number;
 }
@@ -118,9 +129,28 @@ export interface RenderOptions {
 export const DEFAULT_RENDER_TIMEOUT_MS = 30_000;
 
 /**
+ * `setTimeout` が受け付ける最大 delay（2^31−1）。これを超える値は Node が 1 ms に丸めるので、
+ * 「上限を上げたつもりが即時タイムアウト」になる前に無制限へ倒す。
+ */
+export const MAX_RENDER_TIMEOUT_MS = 2_147_483_647;
+
+/** `finally` の後始末に必ず与える最低の上限（ms）。予算を使い切っていても mutex は解放する。 */
+export const CLEANUP_MIN_TIMEOUT_MS = 1_000;
+
+/**
+ * `RenderOptions.timeoutMs` を内部表現（`0` = 無制限、それ以外は有効な delay）へ畳む。
+ * 無効値（`NaN` / 負 / 2^31−1 超 / `Infinity`）はすべて無制限に倒す。
+ */
+export function normalizeRenderTimeout(value: number | undefined): number {
+  const ms = value ?? DEFAULT_RENDER_TIMEOUT_MS;
+  return Number.isFinite(ms) && ms > 0 && ms <= MAX_RENDER_TIMEOUT_MS ? ms : 0;
+}
+
+/**
  * `promise` を上限つきで待つ。時間切れは `onTimeout()` の値で決着させる
  * （`reject` を渡せば reject、`resolve` を渡せば「諦めて先へ進む」）。
  * 勝敗にかかわらずタイマーは必ず解除する（サーバープロセスを生かし続けない）。
+ * `ms` は `normalizeRenderTimeout` を通した値（`0` = 無制限）であること。
  */
 function withDeadline<T>(promise: Promise<T>, ms: number, onTimeout: () => T | Promise<T>): Promise<T> {
   if (!(ms > 0)) {
@@ -305,17 +335,39 @@ export async function waitForReady(root: ParentNode & Node, options?: WaitForRea
  * `<head>` や `<script>` タグは外側のテンプレートで囲む。
  */
 export async function renderToString(html: string, options?: RenderOptions): Promise<string> {
-  const timeoutMs = options?.timeoutMs ?? DEFAULT_RENDER_TIMEOUT_MS;
+  const timeoutMs = normalizeRenderTimeout(options?.timeoutMs);
   // globalThis を差し替えるため、同時に1つしか実行できない
   const releaseMutex = await renderMutex.acquire();
+  // **acquire() と releaseMutex() の間に、try の外で throw しうる文を 1 つも置かないこと。**
+  // ここは 2 文（呼び出しと try）だけで、レンダリングの本体も後始末も内側に閉じている。
+  // 以前は `new Window({ url })` と `installGlobals()` が try の前にあり、不正な `url`
+  // （オリジンを付け忘れた `"/products/1"`）の `TypeError: Invalid URL` が mutex を握ったまま
+  // 抜けて、**以後そのプロセスの全レンダリングが永久 pending** になっていた（実測・サイクル 5 指摘 2）。
+  // 番人は __tests__/render.test.ts の「mutex を try の外で漏らさない」。
+  try {
+    return await renderInWindow(html, options, timeoutMs);
+  } finally {
+    releaseMutex();
+  }
+}
 
-  const window = options?.url ? new Window({ url: options.url }) : new Window();
-  const restoreGlobals = installGlobals(window);
-  const document = window.document;
-
+/**
+ * 1 回分のレンダリング（window の生成・globals の差し替え・後始末）。mutex の外側から
+ * 呼ばれ、**この関数から抜けた時点でグローバルは必ず元に戻っている**。
+ */
+async function renderInWindow(html: string, options: RenderOptions | undefined, timeoutMs: number): Promise<string> {
+  // ready 待ちと後始末は同じ予算を共有する（JSDoc 参照）。起点は window を作る前に取る
+  const startedAt = Date.now();
+  let window: Window | null = null;
+  let restoreGlobals: (() => void) | null = null;
   let restoreBaseUrl: (() => void) | null = null;
+  let documentOrNull: Document | null = null;
 
   try {
+    window = options?.url ? new Window({ url: options.url }) : new Window();
+    restoreGlobals = installGlobals(window);
+    const document = window.document as unknown as Document;
+    documentOrNull = document;
     // url 指定時は <base href> を注入する（既定 "/"）。ブラウザで <base> を置く
     // SPA と同じ条件を再現し、深い URL での basename 誤認を防ぐ
     // （docs/ssr-router-design.md §3.1）。
@@ -383,15 +435,17 @@ export async function renderToString(html: string, options?: RenderOptions): Pro
     // 後始末はベストエフォート（rejected も含めて待つだけ待つ）
     try {
       const readyPending: Promise<void>[] = [];
-      for (const el of document.querySelectorAll('*-*')) {
+      for (const el of documentOrNull?.querySelectorAll('*-*') ?? []) {
         const ctor = el.constructor as { getBindingsReady?(root: Node): Promise<void> };
         if (typeof ctor.getBindingsReady === 'function') {
-          readyPending.push(ctor.getBindingsReady(document as unknown as Node));
+          readyPending.push(ctor.getBindingsReady(documentOrNull as unknown as Node));
         }
       }
-      // 上と同じ上限で締める。ここを裸で待つと、時間切れで抜けてきた経路がそのまま
-      // 後始末で止まり、mutex の解放（下）に到達しない — 防波堤の意味が無くなる
-      await withDeadline(Promise.allSettled(readyPending), timeoutMs, () => []);
+      // **必ず上限を付ける**。裸で待つと、ready 待ちが時間切れで抜けてきた経路がそのまま
+      // 後始末で止まり、下の restore と（呼び出し元の）mutex 解放に到達しない — 防波堤が
+      // 素通しになる。予算は ready 待ちと共有（残り時間）だが、使い切っていても
+      // CLEANUP_MIN_TIMEOUT_MS は与える（0 は「上限なし」と同義になってしまう）
+      await withDeadline(Promise.allSettled(readyPending), cleanupTimeout(timeoutMs, startedAt), () => []);
     } catch { /* best effort */ }
     // binder プロトコルの保留キュー（Symbol.for なので installGlobals の restore
     // 対象外＝プロセス寿命）を空にする。state を読み込まないページで挿入側
@@ -404,9 +458,39 @@ export async function renderToString(html: string, options?: RenderOptions): Pro
     if (Array.isArray(pendingBinds)) {
       pendingBinds.length = 0;
     }
-    restoreBaseUrl?.();
-    restoreGlobals();
-    await window.close();
-    releaseMutex();
+    // 後始末の 3 本は**それぞれ独立に**守る。1 本が投げても残りを飛ばさない
+    // （飛ばすとグローバルが差し替わったまま残り、次のレンダリングが別 realm の
+    // document を掴む）。呼び出し元の releaseMutex はこの finally の外なので、
+    // ここから投げても mutex は必ず解放される
+    for (const step of [
+      () => restoreBaseUrl?.(),
+      () => restoreGlobals?.(),
+      () => window?.close(),
+      // スナップショット提供側（state）がこのレンダリングのために貯めたモジュール大域を
+      // 捨てさせる（ssr-snapshot プロトコルの任意メンバ）。構造テンプレートの台帳は
+      // モジュール寿命で削除の口が無く、放っておくと 1 プロセスで描くたびに積み上がる。
+      // **ここが最後**なのは、直前の ready 待ちで進行中のバインディング構築がまだその
+      // 台帳を読むから — 途中で消すと描画中の for が自分のテンプレートを見失う。
+      // 出力の正しさは提供側が文書ごとにスナップショットを閉じることで担保されており、
+      // これは純粋にメモリの口。古い提供側には reset が無いので `?.` で素通しする
+      () => getSsrSnapshotBuilder()?.reset?.(),
+    ]) {
+      try {
+        await step();
+      } catch (error) {
+        console.error('[@wcstack/server] renderToString cleanup step failed.', error);
+      }
+    }
   }
+}
+
+/**
+ * `finally` の後始末に与える上限。ready 待ちと予算を共有し（残り時間）、
+ * 使い切っていても {@link CLEANUP_MIN_TIMEOUT_MS} は確保する。無制限（`0`）は無制限のまま。
+ */
+function cleanupTimeout(timeoutMs: number, startedAt: number): number {
+  if (timeoutMs <= 0) {
+    return 0;
+  }
+  return Math.max(CLEANUP_MIN_TIMEOUT_MS, timeoutMs - (Date.now() - startedAt));
 }

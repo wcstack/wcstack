@@ -7,12 +7,7 @@
  * 依存表・キャッシュ・台帳という state 全体の構造に触る。
  */
 
-import { absoluteAddressOf } from "../address/liftAddress";
-import { getPathInfo } from "../address/PathInfo";
-import { setCacheEntryByAbsoluteStateAddress } from "../cache/cacheEntryByAbsoluteStateAddress";
 import { IStateElement } from "../components/types";
-import { getListIndexesByList } from "../list/listIndexesByList";
-import { IListIndex } from "../list/types";
 
 /**
  * この機構が生やした getter。作者が手で書いた同名 getter と見分けるために使う
@@ -30,7 +25,7 @@ export function isGeneratedGetter(descriptor: PropertyDescriptor): boolean {
 }
 
 /**
- * 前世代が生やしたものを忘れる（state の再セット時に呼ぶ）。忘れるのは 3 つ。
+ * 前世代が生やしたものを忘れる（state の再セット時に呼ぶ）。忘れるのは 2 つ。
  *
  * **own の生成アクセサ。** 生成 getter は state オブジェクトの own プロパティとして残る。
  * 同じオブジェクトを `$recursion` 無し（または別アンカー）で再セットしたとき、残したままだと
@@ -46,12 +41,16 @@ export function isGeneratedGetter(descriptor: PropertyDescriptor): boolean {
  * 依存表そのものをクリアしてはならない（既存バインディングの辺まで消えて、再セット後の
  * 集計が更新されなくなる — 実測済み）。この世代が作った辺だけを外す。
  *
- * **キャッシュ。** 辺を外した以上、生成アクセサの評価結果も一緒に落とさなければ
- * ならない。同じ state オブジェクト（または同じ配列）を再セットすると、台帳は配列の
- * identity をキーにしているので ListIndex も絶対アドレスも世代を跨いで同一のまま残り、
- * 旧世代の `dirty:false` の値がそのまま次の読みに返る。辺が無いので、次に再帰 getter を
- * 読むまでの間の構造書き込み（`nodes.0.children = […]`）はそれを dirty にできない。
- * 別のオブジェクト・別の配列なら ListIndex が新しく鋳造されるので何も残らない。
+ * **評価結果のキャッシュは忘れない。** 同じ state オブジェクト（または同じ配列）の再セットでは
+ * 台帳が配列の identity をキーにしているので ListIndex も絶対アドレスも世代を跨いで同一のまま残り、
+ * かつては旧世代の `dirty:false` の値がそのまま次の読みに返っていた（第 2・第 4 サイクルで実測）。
+ * これは後から入った**世代印**（`cache/types.ts` の `generation`。`3bfb92a6`）が構造的に塞いでいる:
+ * キャッシュを載せる 2 か所（`getByAddress` / `setByAddress`）が必ず現世代の印を付け、読みは
+ * `cacheEntry.generation === stateElement.stateGeneration` の項目しかヒットにしない。この関数は
+ * `runPreCommit` から呼ばれ、`_stateGeneration++` はその**直後**（`components/State.ts`）なので、
+ * ここで消せる項目はどれみち必ず世代不一致で miss になる。掃き出しは `O(生成パス数 × 行数)` の
+ * 純粋な無駄仕事だったので外した（番人は `integration.recursionGetter.test.ts` の再セット 4 本 —
+ * 世代印を壊すとこの 4 本が落ちる）。
  */
 export function forgetGeneration(
   stateElement: IStateElement,
@@ -88,52 +87,5 @@ export function forgetGeneration(
         }
       }
     }
-  }
-  forgetCacheEntries(stateElement, previousState, generatedPaths);
-}
-
-/**
- * 生成アクセサの評価結果のキャッシュを落とす。生成パスごとに、その `wildcardParentPathInfos`
- * （`nodes` / `nodes.*.children` / … に加えて、接尾辞側のリスト `nodes.*.tags` 等）を旧 state の
- * データと台帳に沿って降り、末端の行 ListIndex で絶対アドレスを引く。
- *
- * 深さ方向だけを降りて「ノード行の ListIndex × その深さのパス」で引くのでは足りない —
- * 接尾辞にワイルドカードを持つ getter（`get "nodes.**.tags.*.up"()`）のキャッシュは
- * タグ行の ListIndex（連鎖長 depth+2）に載っていて、ノード行の ListIndex では届かない
- * （第 2 サイクルのレビューで実測: 再セット後の読みが旧値のまま残った）。
- */
-function forgetCacheEntries(
-  stateElement: IStateElement,
-  previousState: object,
-  generatedPaths: ReadonlySet<string>,
-): void {
-  for (const concretePath of generatedPaths) {
-    const pathInfo = getPathInfo(concretePath);
-    const lists = pathInfo.wildcardParentPathInfos;
-    const forget = (owner: unknown, ownerListIndex: IListIndex | null, level: number): void => {
-      if (level === lists.length) {
-        setCacheEntryByAbsoluteStateAddress(absoluteAddressOf(stateElement, pathInfo, ownerListIndex), null);
-        return;
-      }
-      // 直前のリストの行（または state のルート）から、次のリストまでの相対セグメントを辿る
-      const from = level === 0 ? 0 : lists[level - 1].segments.length + 1;
-      let list: any = owner;
-      for (const segment of lists[level].segments.slice(from)) {
-        list = list?.[segment];
-      }
-      if (!Array.isArray(list)) {
-        return;
-      }
-      // 台帳が無い ＝ 走査を一度も経ていないリスト。その行に絶対アドレスは作られていない。
-      const rows = getListIndexesByList(list);
-      if (rows === null) {
-        return;
-      }
-      const count = Math.min(rows.length, list.length);
-      for (let i = 0; i < count; i++) {
-        forget(list[i], rows[i], level + 1);
-      }
-    };
-    forget(previousState, null, 0);
   }
 }

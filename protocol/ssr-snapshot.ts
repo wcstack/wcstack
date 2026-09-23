@@ -52,6 +52,24 @@ export interface IWcsSsrSnapshotBuilder {
    * idempotent with respect to already-snapshotted elements.
    */
   build(root: Document): void;
+  /**
+   * Drop whatever the provider accumulated for **this render** in module-scoped
+   * ledgers, so a long-lived rendering process does not grow one render at a time.
+   * The renderer calls it once per render at the very end of its cleanup, after the
+   * document is beyond use — never mid-render, because work still settling (bindings
+   * finishing on a microtask chain) may read those ledgers.
+   *
+   * Optional and additive: a renderer must call it as `builder.reset?.()`, and a
+   * provider that has nothing to drop may leave it out. Correctness of the *output*
+   * must not depend on it — a provider scopes each snapshot to its own document
+   * regardless — so an old renderer paired with a new provider only keeps memory
+   * longer, it does not leak one render's content into another.
+   *
+   * It rides the protocol rather than a package import for the same reason `build`
+   * does: the symbol pins it to the copy of the provider that actually ran, whose
+   * module-scoped registries are the ones holding the garbage.
+   */
+  reset?(): void;
 }
 
 /**

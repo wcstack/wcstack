@@ -9,6 +9,7 @@
  */
 
 import { splitBindTexts } from '@wcstack/state/parser';
+import { findStartTagRegions } from '../language/htmlParse.js';
 import { indexOfOutsideQuotes, splitOutsideQuotes } from '../core/parser/quoteAware.js';
 import { BUILTIN_FILTERS, canonicalFilterName, type FilterInfo } from './completionData.js';
 import { STRUCTURAL_BINDING_TYPE_SET } from './wcsManifest.js';
@@ -433,29 +434,37 @@ export interface ParsedBinding {
 }
 
 /**
- * HTML から全てのバインド属性を検出する。
- */
-/**
  * HTML 中の全バインド属性を値の開始オフセット付きで検出する。
- * （core/index/referenceIndex が同一走査を共有するため export — 走査が
- * 二重実装になると診断とインデックスで属性の解釈が割れる。）
+ * （診断・参照インデックス・配線レンズの 6 経路が共有する単一の走査 — 二重実装になると
+ * 診断とインデックスで属性の解釈が割れる。）
+ *
+ * 探索は**開始タグの属性領域の中だけ**（`findStartTagRegions`）。以前は HTML 全体を素の
+ * 正規表現で走っていたため、マークアップでない場所まで実属性として拾っていた:
+ * HTML コメントの中の説明文（`examples/router-i18n` の `<!-- <template data-wcs="for:"> … -->`）、
+ * エスケープ済みテキスト（`examples/router-spa` の
+ * `<code>&lt;template data-wcs="if: ..."&gt;</code>` — タグですらない）、
+ * `<script>` / `<style>` 本体の文字列。どれも正本パーサに通されて偽の
+ * `wcs/binding-syntax`（error）になる形で、右辺の空セグメントを拒否する変更が
+ * ランタイムへ入った瞬間に CI の `wcs-validate` が落ちる。
  */
 export function findAllBindAttributes(html: string, attrName: string): BindAttrLocation[] {
   const attrs: BindAttrLocation[] = [];
   const escaped = attrName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const regex = new RegExp(`${escaped}\\s*=\\s*(["'])`, 'gi');
+  const regex = new RegExp(`(?:^|[\\s/])${escaped}\\s*=\\s*(["'])`, 'gi');
 
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(html)) !== null) {
-    const quote = match[1];
-    const valueStart = match.index + match[0].length;
-    const valueEnd = html.indexOf(quote, valueStart);
-    if (valueEnd === -1) continue;
-
-    attrs.push({
-      value: html.slice(valueStart, valueEnd),
-      valueStart,
-    });
+  for (const tag of findStartTagRegions(html)) {
+    const attrsText = html.slice(tag.start, tag.end);
+    regex.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(attrsText)) !== null) {
+      const quote = match[1];
+      const valueStart = tag.start + match.index + match[0].length;
+      // 値の終端は同じ属性領域の中だけで探す（タグを跨いだら属性ではない）
+      const valueEnd = html.indexOf(quote, valueStart);
+      if (valueEnd === -1 || valueEnd > tag.end) continue;
+      attrs.push({ value: html.slice(valueStart, valueEnd), valueStart });
+      regex.lastIndex = valueEnd - tag.start;
+    }
   }
 
   return attrs;

@@ -38,6 +38,7 @@ import {
   ROOT_BRACKET,
   ROOT_DOT,
   chainToDotted,
+  execAllMasked,
   isApiRoot,
 } from './scriptPatterns.js';
 
@@ -60,14 +61,16 @@ const ALTERNATIVES: Record<string, (acc: string) => string> = {
 /** メソッド呼び出しの tail（`(` は lookahead に置き、range をメソッド名末尾で終える）。 */
 const METHOD_TAIL = String.raw`\s*\??\.\s*(${DESTRUCTIVE_METHODS})(?=\s*\()`;
 
+// 走査は `execAllMasked`（コメント・文字列リテラルの中身を潰した鏡像）に対して行うので、
+// 正規表現は組み立てず**パターン文字列**のまま持つ
 // 呼び出し形（wcs/array-mutation）: ドットルート / bracket ルート
-const DOT_ROOT_CALL = new RegExp(`${ROOT_DOT}(${CHAIN})${METHOD_TAIL}`, 'g');
-const BRACKET_ROOT_CALL = new RegExp(`${ROOT_BRACKET}(${CHAIN})${METHOD_TAIL}`, 'g');
+const DOT_ROOT_CALL = `${ROOT_DOT}(${CHAIN})${METHOD_TAIL}`;
+const BRACKET_ROOT_CALL = `${ROOT_BRACKET}(${CHAIN})${METHOD_TAIL}`;
 // 代入形（wcs/array-index-assign）: `=` / 複合代入 / 後置 `++` `--`、および前置形
-const DOT_INDEX_ASSIGN = new RegExp(`${ROOT_DOT}(${BRACKETS_ONLY})${ASSIGN_TAIL}`, 'g');
-const BRACKET_INDEX_ASSIGN = new RegExp(`${ROOT_BRACKET}(${BRACKETS_ONLY})${ASSIGN_TAIL}`, 'g');
-const PRE_DOT_INDEX = new RegExp(`${PRE_INCDEC}${ROOT_DOT}(${BRACKETS_ONLY})`, 'g');
-const PRE_BRACKET_INDEX = new RegExp(`${PRE_INCDEC}${ROOT_BRACKET}(${BRACKETS_ONLY})`, 'g');
+const DOT_INDEX_ASSIGN = `${ROOT_DOT}(${BRACKETS_ONLY})${ASSIGN_TAIL}`;
+const BRACKET_INDEX_ASSIGN = `${ROOT_BRACKET}(${BRACKETS_ONLY})${ASSIGN_TAIL}`;
+const PRE_DOT_INDEX = `${PRE_INCDEC}${ROOT_DOT}(${BRACKETS_ONLY})`;
+const PRE_BRACKET_INDEX = `${PRE_INCDEC}${ROOT_BRACKET}(${BRACKETS_ONLY})`;
 
 /** メッセージ例示用のアクセサ表記。単一セグメントの識別子のみドット形、それ以外は bracket 形。 */
 function toAccessor(path: string): string {
@@ -92,18 +95,17 @@ export function validateArrayMutations(html: string, stateTagName: string = 'wcs
 
 /** 破壊的メソッド呼び出し（wcs/array-mutation）の検出。 */
 function findDestructiveCalls(script: string, baseOffset: number, msgs: WcsMessageCatalog, out: WcsDiagnostic[]): void {
-  for (const regex of [DOT_ROOT_CALL, BRACKET_ROOT_CALL]) {
-    regex.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = regex.exec(script)) !== null) {
-      const [full, root, chain, method] = match;
+  for (const pattern of [DOT_ROOT_CALL, BRACKET_ROOT_CALL]) {
+    for (const match of execAllMasked(pattern, script)) {
+      const [root, chain, method] = match.groups;
+      if (root === undefined || chain === undefined || method === undefined) continue;
       if (isApiRoot(root)) continue;
       const statePath = root + chainToDotted(chain);
       const start = baseOffset + match.index;
       out.push({
         code: WcsDiagnosticCode.ArrayMutation,
         start,
-        end: start + full.length,
+        end: start + match.length,
         message: msgs.arrayMutation(method, ALTERNATIVES[method](toAccessor(statePath))),
         severity: 'error',
         statePath,
@@ -114,18 +116,17 @@ function findDestructiveCalls(script: string, baseOffset: number, msgs: WcsMessa
 
 /** インデックス代入・複合代入・インクリメント/デクリメント（wcs/array-index-assign）の検出。 */
 function findIndexAssigns(script: string, baseOffset: number, msgs: WcsMessageCatalog, out: WcsDiagnostic[]): void {
-  for (const regex of [DOT_INDEX_ASSIGN, BRACKET_INDEX_ASSIGN, PRE_DOT_INDEX, PRE_BRACKET_INDEX]) {
-    regex.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = regex.exec(script)) !== null) {
-      const [full, root, chain] = match;
+  for (const pattern of [DOT_INDEX_ASSIGN, BRACKET_INDEX_ASSIGN, PRE_DOT_INDEX, PRE_BRACKET_INDEX]) {
+    for (const match of execAllMasked(pattern, script)) {
+      const [root, chain] = match.groups;
+      if (root === undefined || chain === undefined) continue;
       if (isApiRoot(root)) continue;
       const suggestedPath = root + chainToDotted(chain);
       const start = baseOffset + match.index;
       out.push({
         code: WcsDiagnosticCode.ArrayIndexAssign,
         start,
-        end: start + full.length,
+        end: start + match.length,
         message: msgs.arrayIndexAssign(suggestedPath),
         severity: 'error',
         statePath: suggestedPath,

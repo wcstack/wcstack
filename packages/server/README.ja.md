@@ -89,6 +89,13 @@ console.log(renderer.html);
 | `baseHref` | `<head>` へ注入する `<base href>` の値。`url` 指定時の既定は `"/"`。サブパス配備では明示する。 |
 | `baseUrl` | 相対 fetch URL の解決に使うベース URL。既定は `url` の origin。 |
 | `bootstraps` | bootstrap 関数の配列（既定は `bootstrapState`）。非同期ローダーも渡せる — モジュールスコープで `HTMLElement` を継承するクラスを持つパッケージは純 Node でトップレベル import できないため、`async () => (await import('@wcstack/fetch')).bootstrapFetch()` のように渡す（ローダーは DOM グローバル設置後に実行される）。 |
+| `timeoutMs` | ページが ready になるのを待つ上限（ミリ秒）。既定は `DEFAULT_RENDER_TIMEOUT_MS`（**30,000**）。超えると原因を名指しして reject する。**上限を外すときは `0`。** 上限として機能しえない値も「無制限」に倒す: `NaN`・`0` 以下・`MAX_RENDER_TIMEOUT_MS`（2,147,483,647）より大きい値（**`Infinity` を含む**）。Node の `setTimeout` は 2³¹−1 を超える delay を 1 ms に丸めるため、そうしないと「上限を上げたつもり」が即時タイムアウトに反転する。 |
+
+> **なぜ上限があるか。** `renderToString` は `globalThis` を差し替えるので、レンダリングは 1 本の mutex で直列化され、解放は `finally` にあります。上限が無かった頃は、ready にならないページがその `finally` に到達せず、**1 ページの不具合で以後そのプロセスの全レンダリングが永久に返らなく**なっていました。上限は mutex が必ず戻ることを保証します。
+>
+> 予算は「ready 待ち」と「`finally` の後始末（drain）」で共有します。後始末には残り時間を渡しますが、`CLEANUP_MIN_TIMEOUT_MS`（1,000 ms）は下回りません（0 は「上限なし」と同義になるため）。したがって実時間の最悪値は `timeoutMs + 1,000 ms` です。`timeoutMs: 0` では後始末も無制限になります — それが「上限を外す」の意味です。
+
+> **長時間動くプロセスについて。** 後始末の最後に、state 側がそのレンダリングのために貯めたものを捨てさせます（ssr-snapshot builder の `reset()`）。構造テンプレートとハイドレーション props の台帳がレンダリングのたびに積み上がるのを防ぐためです。ウィンドウを閉じた後に走り、任意メンバなので、これを持たない古い提供側では台帳が長く残るだけです。どちらでも**出力は変わりません** — スナップショットは常に自分の文書の中で閉じています。
 
 **レンダリングパイプライン:**
 1. happy-dom ウィンドウを作成し、ブラウザグローバルをインストール
@@ -145,6 +152,9 @@ static wcBindable = {
 |------|-------------|
 | `GLOBALS_KEYS` | SSR 中にインストールされるブラウザグローバルキーの配列（`document`、`HTMLElement`、`Node` 等） |
 | `VERSION` | `package.json` から取得したパッケージバージョン文字列 |
+| `DEFAULT_RENDER_TIMEOUT_MS` | `RenderOptions.timeoutMs` の既定値（30,000） |
+| `MAX_RENDER_TIMEOUT_MS` | Node の `setTimeout` が受け付ける最大 delay（2,147,483,647）。これを超える値は「無制限」に倒す |
+| `CLEANUP_MIN_TIMEOUT_MS` | 後始末の drain に必ず与える下限（1,000） |
 
 ## SSR 出力構造
 

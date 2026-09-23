@@ -87,6 +87,18 @@ describe("wcs/index-arity — 添字の本数", () => {
     const html = script(`{ m() { return this.$resolve("matrix.*.*", [0, 1]) + this.$getAll("items.*.price")[0]; } }`);
     expect(codes(validateSemantics(html, "wcs-state", "en"), WcsDiagnosticCode.IndexArity)).toHaveLength(0);
   });
+
+  // Fixed by review（サイクル 5）— 呼び出しの検出を原文に対して行っていたため、
+  // コメント・文字列リテラルに書いた**例示**を実コードとして数えていた。
+  it("コメント・文字列リテラルの中の呼び出しは数えないこと", () => {
+    const inComment = script(`{ matrix: [[1]], m() { /* this.$getAll("matrix.*.*", [0,1,2]) */ return 1; } }`);
+    expect(codes(validateSemantics(inComment, "wcs-state", "en"), WcsDiagnosticCode.IndexArity)).toHaveLength(0);
+    const inString = script(`{ matrix: [[1]], note: 'this.$getAll("matrix.*.*", [0,1,2])' }`);
+    expect(codes(validateSemantics(inString, "wcs-state", "en"), WcsDiagnosticCode.IndexArity)).toHaveLength(0);
+    // 対照: 同じ式を実コードで書けば従来どおり報告する（過剰抑制していない）
+    const real = script(`{ matrix: [[1]], m() { return this.$getAll("matrix.*.*", [0,1,2]); } }`);
+    expect(codes(validateSemantics(real, "wcs-state", "en"), WcsDiagnosticCode.IndexArity)).toHaveLength(1);
+  });
 });
 
 describe("wcs/getter-cycle — getter の循環参照", () => {
@@ -510,6 +522,24 @@ describe("wcs/updated-callback-unbound — 表示要素が購読の実体にな�
 });
 
 describe("wcs/name-alias — 3.x の間だけ残る旧名（@wcstack/state 3.2）", () => {
+  // Fixed by review（サイクル 5）— 走査が `blankComments`（コメントだけ潰す）だったので
+  // 文字列リテラルの中の例示に info が出ていた。`maskCommentsAndStrings` に寄せた。
+  it("文字列リテラルの中の旧名 API 呼び出しには info を出さないこと", () => {
+    const inString = `
+    <wcs-state><script type="module">
+      export default { note: "see obj.$trackDependency(x)", a: 1 };
+    </script></wcs-state>`;
+    expect(validateSemantics(inString, "wcs-state", "en", "data-wcs")
+      .filter((d) => d.code === WcsDiagnosticCode.NameAlias)).toHaveLength(0);
+    // 対照: 実コードなら従来どおり出る
+    const real = `
+    <wcs-state><script type="module">
+      export default { a: 1, get x() { this.$trackDependency("a"); return this.a; } };
+    </script></wcs-state>`;
+    expect(validateSemantics(real, "wcs-state", "en", "data-wcs")
+      .filter((d) => d.code === WcsDiagnosticCode.NameAlias)).toHaveLength(1);
+  });
+
   it("旧名の API 呼び出しと宣言キーに info で正式名を提案し、正式名とコメントの中は黙ること", () => {
     const html = `
     <wcs-state><script type="module">
@@ -566,6 +596,18 @@ describe("wcs/name-alias — 3.x の間だけ残る旧名（@wcstack/state 3.2�
     expect(found.every((d) => d.severity === "info")).toBe(true);
     expect(found[0].message).toContain('"$stream"');
     expect(found[1].message).toContain('"$renderedCallback"');
+  });
+
+  // Fixed by review（サイクル 5）— フォールバック正規表現の `;` 分岐に番人が無く、
+  // 外しても 972 green だった（`;` の直後に空白を挟まず書いた class フィールドだけが差分）。
+  it("class フィールドを `;` 区切りで詰めて書いても検出すること（正規表現の `;` 分岐）", () => {
+    const html = `
+    <wcs-state><script type="module">
+      export default class C { a = 1;$streams = { s: { source() {} } } }
+    </script></wcs-state>`;
+    const found = validateSemantics(html, "wcs-state", "en", "data-wcs")
+      .filter((d) => d.code === WcsDiagnosticCode.NameAlias);
+    expect(found.map((d) => html.slice(d.start, d.end))).toEqual(["$streams"]);
   });
 
   it("class 構文で旧名と正式名の両方を宣言しても error には昇格せず info に留まること", () => {

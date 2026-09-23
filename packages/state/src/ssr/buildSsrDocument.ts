@@ -2,6 +2,8 @@ import { config } from "../config";
 import { Ssr } from "./Ssr";
 import { VERSION } from "../version";
 import { IWcsSsrSnapshotBuilder, SSR_SNAPSHOT_BUILDER_KEY } from "../protocol/ssrSnapshot";
+import { clearSsrPropertyStore } from "../apply/ssrPropertyStore";
+import { clearFragmentInfos } from "../structural/fragmentInfoByUUID";
 
 /**
  * ssr-snapshot プロトコルの提供側（docs/ssr-router-design.md §5）。
@@ -34,15 +36,43 @@ export function buildSsrDocument(root: Document): void {
     }
     const ssrEl = document.createElement(ssrTag);
     ssrEl.setAttribute("version", VERSION);
-    Ssr.buildContent(ssrEl, Ssr.extractStateData(stateEl));
+    Ssr.buildContent(ssrEl, Ssr.extractStateData(stateEl), stateEl.getRootNode());
     stateEl.parentNode?.insertBefore(ssrEl, stateEl);
   }
+  // props の台帳は `buildContent` の末尾でも空にするが、**`enable-ssr` が 1 件も無いページ**は
+  // そこを通らない。通らないと強参照の `Set<Node>` が次のレンダリングまで残り、前のページの
+  // 値が次のリクエストの props JSON に載る（実測: `{"wcs-ssr-0":{"valueAsNumber":"PRIVATE-C"}}`）。
+  // ここはサーバーの最終パスなので、この文書の props をこの後で読む者は居ない。
+  // 構造テンプレートの台帳（fragmentInfoByUUID）はここでは消さない — この後に走る
+  // 進行中のバインディング構築がまだ読む。プロセスの後始末は `resetSsrRenderState()`
+  clearSsrPropertyStore();
+}
+
+/**
+ * サーバーのレンダリング 1 回分のモジュール大域を捨てる。**サーバー専用**。
+ *
+ * `@wcstack/server` の `renderToString` は 1 プロセスで何枚も描くが、state 側の台帳
+ * （構造テンプレート・SSR props）はモジュール寿命で削除の口が無い。出力への混入は
+ * 到達可能性フィルタ（`Ssr.buildContent`）で閉じてあるので、これは**メモリ**の口である。
+ *
+ * 呼ぶ位置: `renderToString`（正確には `renderInWindow`）の `finally` の最後 — その
+ * レンダリングの DOM をもう誰も触らないことが確定してから。ブラウザでは呼ばない。
+ */
+export function resetSsrRenderState(): void {
+  clearFragmentInfos();
+  clearSsrPropertyStore();
 }
 
 const builder: IWcsSsrSnapshotBuilder = {
   protocol: "wcs-ssr-snapshot",
   version: 1,
   build: buildSsrDocument,
+  // レンダラ（@wcstack/server）が後始末の最後に呼ぶ。パッケージの import ではなく
+  // プロトコル越しに渡すのは `build` と同じ理由 — グローバル symbol は「実際に動いた
+  // state のコピー」を指すので、捨てるべき台帳を持っている当人に必ず届く。
+  // 分割エントリを直接 import すると core がもう 1 つ読み込まれ、**別の**台帳を
+  // 空にして終わる
+  reset: resetSsrRenderState,
 };
 
 /**

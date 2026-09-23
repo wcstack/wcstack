@@ -84,6 +84,54 @@ describe('processStreamsDeclaration', () => {
       .toThrow(/\$stream entry "tokens" conflicts with a setter/);
   });
 
+  it('同名のメソッド（own の関数値プロパティ）と衝突する場合はエラーになること（$scan の D7 と同じ規則）', () => {
+    // 検査が無いと `name in state` が真になって実体化が skip され、起動時の initial リセットが
+    // メソッドを無言で上書きする（宣言から遠い場所で "not a function" として現れる）
+    const se = fakeStateElement();
+    const state = {
+      ticker() { return 'method'; },
+      $streams: { ticker: { source: noopSource, fold: (_a: unknown, c: unknown) => c, initial: 42 } },
+    } as unknown as IState;
+    expect(() => processStreamsDeclaration(se, state))
+      .toThrow(/\$stream entry "ticker" conflicts with a method \(a function-valued property\)/);
+    // 実体化も registry 登録もされない（メソッドはそのまま）
+    expect(typeof (state as unknown as Record<string, unknown>).ticker).toBe('function');
+  });
+
+  it('プロトタイプ鎖上のメソッド（クラス定義の state）と衝突する場合もエラーになること', () => {
+    class ClassState {
+      ticker(): string { return 'method'; }
+    }
+    const state = new ClassState() as unknown as Record<string, unknown>;
+    state.$streams = { ticker: { source: noopSource } };
+    expect(() => processStreamsDeclaration(fakeStateElement(), state as unknown as IState))
+      .toThrow(/\$stream entry "ticker" conflicts with a method \(a function-valued property\)/);
+  });
+
+  it('メソッド検査が getter を評価しないこと（descriptor で判定する）', () => {
+    const se = fakeStateElement();
+    const evaluated = vi.fn();
+    const state = {
+      get tokens(): unknown { evaluated(); throw new Error('getter must not run'); },
+      $streams: { tokens: { source: noopSource } },
+    } as unknown as IState;
+    // getterPaths には載っていない（stateElement の収集前に呼ばれた形）ので getter 衝突では落ちない。
+    // descriptor.value を見るだけなので getter は 1 度も評価されない
+    expect(() => processStreamsDeclaration(se, state)).not.toThrow();
+    expect(evaluated).not.toHaveBeenCalled();
+  });
+
+  it('initial 自身が関数で、その値が既に置かれている形は通すこと（同じオブジェクトの再セット）', () => {
+    const se = fakeStateElement();
+    const initial = (): string => 'seed';
+    const state = {
+      tokens: initial,
+      $streams: { tokens: { source: noopSource, fold: (_a: unknown, c: unknown) => c, initial } },
+    } as unknown as IState;
+    expect(() => processStreamsDeclaration(se, state)).not.toThrow();
+    expect(getStreamEntries(se).get('tokens')!.definition.initial).toBe(initial);
+  });
+
   it('定義がオブジェクトでない場合はエラーになること（null 含む）', () => {
     const se = fakeStateElement();
     expect(() => processStreamsDeclaration(se, { $streams: { tokens: 'x' } } as unknown as IState))

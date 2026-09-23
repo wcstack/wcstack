@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { expandShorthandPaths, expandShorthandInBindAttribute } from '../src/structural/expandShorthandPaths';
 import { parseBindTextsForElement } from '../src/bindTextParser/parseBindTextsForElement';
 import { config } from '../src/config';
+import { bootstrapState } from '../src/bootstrapState';
+import { State } from '../src/components/State';
 
 describe('expandShorthandPaths', () => {
   function createFragment(...nodes: Node[]): DocumentFragment {
@@ -228,5 +230,83 @@ describe('expandShorthandInBindAttribute', () => {
     expect(expanded).toBe('textContent: users.*.name@cart');
     expect(() => parseBindTextsForElement(expanded)).toThrow(/removed in v2/);
     expect(() => parseBindTextsForElement(expanded)).toThrow(/mount/);
+  });
+});
+
+/**
+ * 区切りの走査は**引用符の外だけ**（要件 B1）。素の `split(';')` / `indexOf(':')` /
+ * `indexOf('|')` を重ねていたので、`defaults('00:00')` のようなごく普通のフィルタ引数で
+ * 短縮展開が起きず、`for` 行が**無言で 1 つも描画されない**ことがあった
+ * （`getBindingsReady` は reject せず、コンソールに `[wcs/binding-path-missing]` が出るだけ。
+ *  lint と VS Code 拡張は自前の短縮展開で正しく解決するので緑のまま = ランタイムとの乖離）。
+ */
+describe('expandShorthandInBindAttribute — 引用符の中の区切り文字（要件 B1）', () => {
+  it("フィルタ引数の `:` を左右の区切りと誤認しないこと（`defaults('00:00')`）", () => {
+    const result = expandShorthandInBindAttribute("value|defaults('00:00'): .startTime", 'items');
+    expect(result).toBe("value|defaults('00:00'): items.*.startTime");
+  });
+
+  it("右辺のフィルタ引数の `:` でも展開されること（`join(': ')`）", () => {
+    const result = expandShorthandInBindAttribute("textContent: .parts|join(': ')", 'items');
+    expect(result).toBe("textContent: items.*.parts|join(': ')");
+  });
+
+  it("フィルタ引数の `;` をバインディングの区切りと誤認しないこと", () => {
+    const result = expandShorthandInBindAttribute("textContent: .parts|join(';')", 'items');
+    expect(result).toBe("textContent: items.*.parts|join(';')");
+  });
+
+  it("引用符の中の `|` をフィルタの区切りと誤認しないこと", () => {
+    const result = expandShorthandInBindAttribute("textContent: .parts|join('|')", 'items');
+    expect(result).toBe("textContent: items.*.parts|join('|')");
+  });
+
+  it('引用符の中のリテラルを書き換えないこと', () => {
+    // 素の走査だと `;x: .b` が 2 本目のバインディングに見え、引数の中の `.b` まで展開していた
+    const result = expandShorthandInBindAttribute("value: .a|defaults(';x: .b')", 'items');
+    expect(result).toBe("value: items.*.a|defaults(';x: .b')");
+  });
+
+  it('引用符を含むフィルタと普通のバインディングが同居しても両方正しく展開されること', () => {
+    const result = expandShorthandInBindAttribute("value|defaults('00:00'): .startTime;textContent: .label", 'items');
+    expect(result).toBe("value|defaults('00:00'): items.*.startTime;textContent: items.*.label");
+  });
+
+  it('展開後がパーサを通ること（走査の規準が正本と一致していること）', () => {
+    const expanded = expandShorthandInBindAttribute("value|defaults('00:00'): .startTime", 'items');
+    const [parsed] = parseBindTextsForElement(expanded);
+    expect(parsed.statePathName).toBe('items.*.startTime');
+    expect(parsed.inFilters[0].filterName).toBe('defaults');
+    expect(parsed.inFilters[0].args).toEqual(['00:00']);
+  });
+});
+
+/**
+ * 指摘者が報告した再現そのもの: 短縮パスが展開されないと `.startTime` のまま残り、
+ * `[wcs/binding-path-missing]` がコンソールに出るだけで **`for` の行が 1 つも描画されない**。
+ * `getBindingsReady` は reject しないので、ページは静かに空になる。
+ */
+describe('for 行 × 引用符入りフィルタ引数（無言で 0 行になる形）', () => {
+  it("value|defaults('00:00'): .startTime の for が行を描画すること", async () => {
+    bootstrapState();
+    const host = document.createElement('esp-host');
+    const shadowRoot = host.attachShadow({ mode: 'open' });
+    shadowRoot.innerHTML =
+      `<wcs-state></wcs-state><ul>` +
+      `<template data-wcs="for: items"><li>` +
+      `<input data-wcs="value|defaults('00:00'): .startTime">` +
+      `</li></template></ul>`;
+    document.body.appendChild(host);
+    const element = shadowRoot.querySelector('wcs-state') as State;
+    element.setInitialState({ items: [{ startTime: '09:30' }, { startTime: '17:45' }] });
+    await element.connectedCallbackPromise;
+    await State.getBindingsReady(shadowRoot);
+    await new Promise((r) => setTimeout(r));
+    await new Promise((r) => setTimeout(r));
+
+    const inputs = Array.from(shadowRoot.querySelectorAll('input')) as HTMLInputElement[];
+    expect(inputs).toHaveLength(2);
+    expect(inputs.map((i) => i.value)).toEqual(['09:30', '17:45']);
+    host.remove();
   });
 });

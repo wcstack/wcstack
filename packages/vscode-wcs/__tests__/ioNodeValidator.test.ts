@@ -38,6 +38,19 @@ describe('validateIoNodes: on-prefixed-member（明示のプロパティ形、@w
     expect(validateIoNodes(`<wcs-timer data-wcs=".: isOnce"></wcs-timer>`)).toHaveLength(0);
   });
 
+  // Fixed by review（サイクル 5）— 拒否語の手書きリストが 5 語で、正本の 6 語目
+  // `state`（VOLUME_INJECTION_PROP）が抜けていた。dist が src に追いついた瞬間に
+  // `.state.x:` が binding-syntax(error) + tag-member-unknown(warning) の二重報告になる。
+  it('明示プロパティ形の名前空間の語（state を含む 6 語）には tag-member-unknown を重ねないこと', () => {
+    for (const head of ['class', 'style', 'attr', 'command', 'eventToken', 'state']) {
+      expect(validateIoNodes(`<wcs-timer data-wcs=".${head}.x: v"></wcs-timer>`), head).toHaveLength(0);
+      expect(validateIoNodes(`<wcs-timer data-wcs=".${head}: v"></wcs-timer>`), head).toHaveLength(0);
+    }
+    // 名前空間でない語は従来どおり契約と突き合わせる（過剰抑制していないことの対照）
+    const diags = validateIoNodes(`<wcs-timer data-wcs=".stateish: v"></wcs-timer>`);
+    expect(diags.map(d => d.member)).toEqual(['stateish']);
+  });
+
   it('".once:" はメンバーとして照合し、未知の ".name:" は tag-member-unknown にする', () => {
     expect(validateIoNodes(`<wcs-timer data-wcs=".once: isOnce"></wcs-timer>`)).toHaveLength(0);
     const diags = validateIoNodes(`<wcs-timer data-wcs=".onse: isOnce"></wcs-timer>`);

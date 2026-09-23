@@ -23,12 +23,20 @@ const fixture = arg('--fixture', 'tracked');
 const N = Number(arg('--samples', 5));
 const port = 4304;
 const url = `http://127.0.0.1:${port}/packages/state/__e2e__/benchmark/index.html`;
+// フィクスチャの getter 本文の目印。**この綴りはフィクスチャ内で 1 度しか現れてはならない**
+// （String.replace は先頭 1 件しか置換しない — packages/state/__e2e__/benchmark/index.html の NOTE）
+const MARKER = 'this.$untrackDependency(() => this.selectedIndex)';
 const original = await readFile(join(root, 'packages/state/__e2e__/benchmark/index.html'), 'utf8');
 let html = original;
 if (fixture === 'tracked') {
-  html = original.replace('this.$untrackDependency(() => this.selectedIndex)', 'this.selectedIndex')
+  html = original.replace(MARKER, 'this.selectedIndex')
     .replace(/onSelect\(e, \$1\) \{[\s\S]*?\n  \},/, 'onSelect(e, $1) { this.selectedIndex = $1; },');
-  if (html === original) throw new Error('Fixture replacement failed');
+  // 「変わったか」ではなく**意図した場所が変わったか**を見る。短いリテラルの replace は
+  // 先頭 1 件しか置換しないので、フィクスチャのコメント等に同じ綴りが混ざると getter が
+  // 無傷のまま素通りし、tracked が manual と同一物になる（サイクル 5 指摘 3）
+  if (html === original || html.includes(MARKER)) {
+    throw new Error('Fixture replacement failed: the getter still reads the marker literal');
+  }
 }
 const withBootstrap = s => s.includes('\nbootstrapState();') ? s : s + '\nbootstrapState();\n';
 const runtimes = [['shipped', null]];

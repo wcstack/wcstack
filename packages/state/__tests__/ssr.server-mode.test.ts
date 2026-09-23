@@ -149,7 +149,11 @@ describe("Ssr.buildContent()", () => {
   });
 
   it("props script の値に </script> が含まれても同様にエスケープされる", () => {
+    // ノードは文書に繋がっていること。buildContent は**この文書に繋がっている**ノードの props だけを
+    // 載せる（前のレンダリングの置き土産を混ぜないため — ssr.renderIsolation.test.ts）。
+    // ハイドレーションは data-wcs-ssr-id で文書から引くので、外れたノードの props は元々使えない
     const node = document.createElement("div");
+    document.body.appendChild(node);
     addSsrProperty(node, "innerHTML", '</script><b>x</b>');
     trackSsrPropertyNode(node);
 
@@ -166,6 +170,7 @@ describe("Ssr.buildContent()", () => {
 
   it("ssrPropertyStore にデータがある場合 props script を追加する", () => {
     const node = document.createElement("div");
+    document.body.appendChild(node);
     addSsrProperty(node, "innerHTML", "<b>rich</b>");
     trackSsrPropertyNode(node);
 

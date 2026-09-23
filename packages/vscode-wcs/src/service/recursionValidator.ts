@@ -40,7 +40,7 @@ import {
   maskCommentsAndStrings,
   type RecursionDeclarationInfo,
 } from './stateAnalyzer.js';
-import { blankComments, createApiCallRegex, literalArrayLength, literalString, splitCallArgs } from './scriptCallArgs.js';
+import { createApiCallRegex, literalArrayLength, literalString, splitCallArgs } from './scriptCallArgs.js';
 import {
   checkNodePath,
   concreteExpansionSuffix,
@@ -389,12 +389,16 @@ function validateApiCalls(
   msgs: WcsMessageCatalog,
   out: WcsDiagnostic[],
 ): void {
-  const scan = blankComments(script);
+  // 呼び出しの**検出**はコメントも文字列リテラルも潰した鏡像で行う（注意書きやドキュメント
+  // 文字列に書いた `$resolve("nodes.**.x")` を実コードと取り違えて **error** を出していた）。
+  // 実引数は**原文**から読む — 鏡像では文字列の中身が空白になりパスが消える。
+  // 鏡像は長さを保つのでオフセットは共通。
+  const scan = maskCommentsAndStrings(script);
   const regex = createApiCallRegex(RECURSION_APIS);
   let match: RegExpExecArray | null;
   while ((match = regex.exec(scan)) !== null) {
     const api = `$${match[1]}`;
-    const parsed = splitCallArgs(scan, match.index + match[0].length);
+    const parsed = splitCallArgs(script, match.index + match[0].length);
     if (parsed === null) continue;
     regex.lastIndex = parsed.end;
     if (parsed.args.length === 0) continue;

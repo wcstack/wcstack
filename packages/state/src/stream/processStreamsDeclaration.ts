@@ -11,6 +11,12 @@
  *     （own key でなくても `in` 判定が真になり、実体化 skip ＋ 起動時 Reflect.set の
  *      継承 setter 化 — `__proto__` は prototype 差し替え — を引き起こすため）。
  *   - getter / setter として宣言済みのパスとの衝突を禁止（getterPaths / setterPaths を検査）。
+ *   - メソッド（関数値のプロパティ）との衝突を禁止（`$scan` の D7 と同じ規則）。
+ *     同名メソッドがあると `name in state` が真になって実体化（§1-3）が skip され、
+ *     起動時の initial リセットがそのメソッドを無言で上書きする（宣言から遠い場所で
+ *     "not a function" として現れる）。判定はプロトタイプ鎖込みの descriptor で行い
+ *     getter は評価しない。`initial` 自身が関数の形と、runtime（実体化・リセット・fold）が
+ *     その値を置いたことがある形（fold が関数を返す stream の再セット）は通す。
  *   - `source` は関数必須。`fold` は（あれば）関数。`fold` があるのに `initial` が無ければエラー
  *     （reduce は initial 必須。`initial` の有無は in 演算子で判定）。`args` は（あれば）関数。
  * - fold 省略時は latest（`(_acc, chunk) => chunk`）を注入する（§0 決定レコード）。
@@ -28,7 +34,9 @@
 import type { IStateElement } from "../components/types";
 import { DELIMITER, STATE_STREAM_NAME, WILDCARD } from "../define";
 import { normalizeDeclarationAliases } from "../declarationAliases";
+import { getAllPropertyDescriptors } from "../getAllPropertyDescriptors";
 import { raiseError } from "../raiseError";
+import { recordOutputValue, wasPlacedOnOutput } from "../scan/initialValue";
 import type { IState } from "../types";
 import { pruneLastNotified } from "./lastNotified";
 import { setStreamEntries } from "./streamRegistry";
@@ -53,6 +61,8 @@ export function processStreamsDeclaration(stateElement: IStateElement, state: IS
     raiseError(`${STATE_STREAM_NAME} must be an object mapping stream names to stream definitions.`);
   }
   const entries = new Map<string, IStreamEntry>();
+  // メソッド衝突検査（§1-2）用。プロトタイプ鎖込み・getter を評価しない
+  const descriptors = getAllPropertyDescriptors(state);
   for (const [name, def] of Object.entries(declared as Record<string, unknown>)) {
     if (name.length === 0) {
       raiseError(`${STATE_STREAM_NAME} entry name must be a non-empty string.`);
@@ -83,6 +93,13 @@ export function processStreamsDeclaration(stateElement: IStateElement, state: IS
       raiseError(`${STATE_STREAM_NAME} entry "${name}" must be an object ({ args?, source, fold?, initial? }).`);
     }
     const definition = def as Record<string, unknown>;
+    // メソッド衝突（`$scan` の D7 と同じ規則）。同名メソッドは実体化を skip させ、起動時の
+    // initial リセットで無言に消えるため、宣言時に落とす。`initial` 自身が関数の形と、
+    // runtime がその値を出力に置いたことがある形（fold が関数を返す stream の再セット）は通す
+    const current = descriptors[name]?.value;
+    if (typeof current === "function" && current !== definition.initial && !wasPlacedOnOutput(name, current)) {
+      raiseError(`${STATE_STREAM_NAME} entry "${name}" conflicts with a method (a function-valued property) declared on the state. The value is a property the runtime owns.`);
+    }
     if (typeof definition.source !== "function") {
       raiseError(`${STATE_STREAM_NAME} entry "${name}" source must be a function.`);
     }
@@ -113,6 +130,8 @@ export function processStreamsDeclaration(stateElement: IStateElement, state: IS
     // 値プロパティ実体化（§1-3）: ユーザーが同名プロパティを先に宣言していたら上書きしない
     if (!(name in state)) {
       state[name] = entry.definition.initial;
+      // 置いた関数値を記録する（`initial` が関数の stream の再セットをメソッド衝突としない）
+      recordOutputValue(name, entry.definition.initial);
     }
     entries.set(name, entry);
   }

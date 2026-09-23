@@ -22,7 +22,7 @@
  *   1 段先行し、同じ値で 2 回発火し得る（D12 の契約・§5-6 の差し戻し）。
  *
  * 失敗は種類ごとに閉じる（D4）: 読めない行はその行だけを捨てて連鎖を続け（`$watch` が行ごとに
- * evaluate で閉じるのと同じ）、出力の読み・fold の throw はその scan の書き込みを止める。
+ * evaluate で閉じるのと同じ）、出力の読み・行の位置引き・fold の throw はその scan の書き込みを止める。
  */
 
 import type { IAbsoluteStateAddress } from "../address/types";
@@ -182,6 +182,9 @@ function planGroup(
   try {
     stateElement.createState("readonly", (state) => {
       const start = state[entry.name];
+      // 行の位置引き（selectLandedRows）はリストを読むので throw しうる。出力の読みは
+      // 済んでいるので、ここから先の失敗は `from` 側（read-rows）として報告する
+      result.failure = "read-rows";
       const rows = source.pathInfo.wildcardCount === 0
         ? group.rows
         : selectLandedRows(state, source.pathInfo, group.rows);

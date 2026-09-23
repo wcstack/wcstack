@@ -86,11 +86,21 @@ function getterIdOf(valueGetter: ((event: Event) => any) | null): string {
 }
 
 /**
- * attach 時に決めた鍵。`wcBindable` の宣言は live と規定されている
- * （`protocol/wcBindableReader.ts`）ので、detach で作り直すと別の鍵を引きうる —
- * そうなると `removeEventListener` が空振りしてリスナが残る。
+ * attach 時に控えた「何を、どのイベント名で付けたか」。**detach はここだけを見る。**
+ *
+ * `wcBindable` の宣言は live と規定されている（`protocol/wcBindableReader.ts`）ので、attach と
+ * detach の間に差し替わりうる（composite shell は `target.constructor.wcBindable` で synthesized
+ * 宣言を出すので絵空事ではない）。detach 側で作り直すと、宣言に依存する 3 つ — 二方向かの判定
+ * （`isPossibleTwoWay`）、イベント名（`getEventName`）、ハンドラの鍵（`getHandlerKey`）— が
+ * すべてずれうる。判定がずれれば門で早戻りしてリスナが残り、イベント名や鍵がずれれば
+ * `removeEventListener` が空振りしてリスナが残る。**控えがあるかどうかが「attach したか」
+ * そのもの**なので、detach は宣言を一切読み直さない。
  */
-const keyByBinding = new WeakMap<IBindingInfo, string>();
+interface IAttachedTwoway {
+  readonly key: string;
+  readonly eventName: string;
+}
+const attachedByBinding = new WeakMap<IBindingInfo, IAttachedTwoway>();
 
 function getHandlerKey(binding: IBindingInfo, eventName: string, valueGetter: ((event: Event) => any) | null, isOccurrence: boolean): string {
   const filterKey = filterListKey(binding.inFilters);
@@ -306,7 +316,7 @@ export function attachTwowayEventHandler(binding: IBindingInfo): void {
     const valueGetter = getValueGetter(binding);
     const isOccurrence = isOccurrenceProperty(binding);
     const key = getHandlerKey(binding, eventName, valueGetter, isOccurrence);
-    keyByBinding.set(binding, key);
+    attachedByBinding.set(binding, { key, eventName });
     let twowayEventHandler = handlerByHandlerKey.get(key);
     if (typeof twowayEventHandler === "undefined") {
       twowayEventHandler = twowayEventHandlerFunction(
@@ -324,34 +334,21 @@ export function attachTwowayEventHandler(binding: IBindingInfo): void {
 }
 
 export function detachTwowayEventHandler(binding: IBindingInfo): void {
-  const customTagName = getCustomElement(binding.node as Element);
-  if (customTagName !== null) {
-    const registry = getCustomElementRegistry(binding.node);
-    const customClass = registry?.get(customTagName);
-    if (typeof customClass === "undefined") {
-      if (registry === null) {
-        return;
-      }
-      return;
-    }
+  // 控えが無い ＝ attach していない（未定義のカスタム要素、二方向でないプロパティ、`#ro`）。
+  // ここで `wcBindable` を読み直さないのが要点 — 理由は `attachedByBinding` の注記
+  const attached = attachedByBinding.get(binding);
+  if (typeof attached === "undefined") {
+    return;
   }
+  attachedByBinding.delete(binding);
+  const twowayEventHandler = handlerByHandlerKey.get(attached.key);
+  if (typeof twowayEventHandler === "undefined") {
+    return;
+  }
+  (binding.node as Element).removeEventListener(attached.eventName, twowayEventHandler);
 
-  if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf(MODIFIER_READONLY) === -1) {
-    const eventName = getEventName(binding);
-    // attach 時に決めた鍵を使う。`wcBindable` の宣言は live なので、間で書き換わると
-    // 作り直した鍵が別物になり `removeEventListener` が空振りしてリスナが残る
-    const key = keyByBinding.get(binding)
-      ?? getHandlerKey(binding, eventName, getValueGetter(binding), isOccurrenceProperty(binding));
-    keyByBinding.delete(binding);
-    const twowayEventHandler = handlerByHandlerKey.get(key);
-    if (typeof twowayEventHandler === "undefined") {
-      return;
-    }
-    (binding.node as Element).removeEventListener(eventName, twowayEventHandler);
-
-    if (bindingRegistry.remove(key, binding)) {
-      handlerByHandlerKey.delete(key);
-    }
+  if (bindingRegistry.remove(attached.key, binding)) {
+    handlerByHandlerKey.delete(attached.key);
   }
 }
 

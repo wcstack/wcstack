@@ -7,6 +7,86 @@
  * 外部依存なし。正規表現ベースのステートマシンで実装。
  */
 
+/** 開始タグ 1 個の**属性領域**（`<` の次から `>` の手前まで）。 */
+export interface StartTagRegion {
+  /** タグ名（小文字）。 */
+  readonly tagName: string;
+  /** 属性領域の開始（タグ名の直後）。 */
+  readonly start: number;
+  /** 属性領域の終了（`>` または `/>` の手前、exclusive）。 */
+  readonly end: number;
+}
+
+/**
+ * HTML の**開始タグだけ**を走査して、その属性領域を出現順に返す。
+ *
+ * 素の正規表現で `data-wcs="…"` を探すと、**マークアップではない場所**まで拾う:
+ *   - HTML コメントの中の説明文（`<!-- <template data-wcs="for:"> は … -->`）
+ *   - エスケープ済みテキスト（`<code>&lt;template data-wcs="if: ..."&gt;</code>`）— タグですらない
+ *   - `<script>` / `<style>` の本体に書かれた文字列
+ * リポジトリの `examples/router-i18n` と `examples/router-spa` は前 2 つを**説明として
+ * 正しく**書いており、走査側が拾うと正本パーサに通されて偽の `wcs/binding-syntax` になる。
+ *
+ * 走査規則: `<!--…-->` / `<!…>` / 終了タグは飛ばし、`<` + 英字だけを開始タグとみなす。
+ * タグの終端は**引用符を跨がずに**探す（`title="a>b"` で切れない）。`<script>` / `<style>` は
+ * 本体をまとめて飛ばす（`findAllMustacheSyntax` が `isInsideTag` で同じ扱いをしているのと同じ方針）。
+ */
+export function findStartTagRegions(html: string): StartTagRegion[] {
+  const out: StartTagRegion[] = [];
+  let i = 0;
+  while (i < html.length) {
+    const lt = html.indexOf('<', i);
+    if (lt === -1) break;
+    const next = html[lt + 1];
+
+    if (html.startsWith('<!--', lt)) {
+      const close = html.indexOf('-->', lt + 4);
+      i = close === -1 ? html.length : close + 3;
+      continue;
+    }
+    if (next === '!' || next === '?' || next === '/') {
+      const close = html.indexOf('>', lt + 1);
+      i = close === -1 ? html.length : close + 1;
+      continue;
+    }
+    if (next === undefined || !/[A-Za-z]/.test(next)) {
+      i = lt + 1;
+      continue;
+    }
+
+    // タグ名
+    let n = lt + 1;
+    while (n < html.length && /[^\s/>]/.test(html[n])) n++;
+    const tagName = html.slice(lt + 1, n).toLowerCase();
+
+    // 属性領域の終端（引用符の中の `>` は終端ではない）
+    let j = n;
+    let quote: string | null = null;
+    while (j < html.length) {
+      const c = html[j];
+      if (quote !== null) {
+        if (c === quote) quote = null;
+      } else if (c === '"' || c === "'") {
+        quote = c;
+      } else if (c === '>') {
+        break;
+      }
+      j++;
+    }
+    const gt = j < html.length ? j : html.length;
+    const selfClosing = html[gt - 1] === '/';
+    out.push({ tagName, start: n, end: selfClosing ? gt - 1 : gt });
+    i = gt + 1;
+
+    // raw text 要素は本体ごと飛ばす（中の文字列を属性と読まない）
+    if (tagName === 'script' || tagName === 'style') {
+      const close = html.toLowerCase().indexOf(`</${tagName}`, i);
+      i = close === -1 ? html.length : close;
+    }
+  }
+  return out;
+}
+
 /**
  * <wcs-state> 要素のメタ情報。
  * 属性（json, state, src）と内部スクリプトブロックを保持する。

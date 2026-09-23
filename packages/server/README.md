@@ -89,6 +89,13 @@ Renders an HTML string containing `@wcstack/state` templates. Returns fully-rend
 | `baseHref` | Value for the `<base href>` injected into `<head>`. Defaults to `"/"` when `url` is given. Set it explicitly for sub-path deployments. |
 | `baseUrl` | Base URL for resolving relative fetch URLs. Defaults to the origin of `url`. |
 | `bootstraps` | Array of bootstrap functions (defaults to `bootstrapState`). Async loaders are allowed — packages whose classes extend `HTMLElement` at module scope cannot be imported top-level in plain Node, so pass e.g. `async () => (await import('@wcstack/fetch')).bootstrapFetch()`; the loader runs after DOM globals are installed. |
+| `timeoutMs` | How long to wait for the page to become ready, in milliseconds. Default `DEFAULT_RENDER_TIMEOUT_MS` (**30 000**). Exceeding it rejects with a message naming the cause. **Pass `0` to disable the limit.** Values that cannot work as a limit are treated as "no limit" too: `NaN`, anything `≤ 0`, and anything above `MAX_RENDER_TIMEOUT_MS` (2 147 483 647) **including `Infinity`** — Node's `setTimeout` rounds a delay past 2³¹−1 down to 1 ms, so "raising" the limit that way would otherwise invert into an immediate timeout. |
+
+> **Why there is a limit at all.** `renderToString` swaps `globalThis`, so renders are serialised through one mutex, released in a `finally`. Before the limit, a page that never became ready never reached that `finally` — one bad page left **every later render on the process hanging forever**. The limit guarantees the mutex comes back.
+>
+> The budget is shared between waiting for readiness and the cleanup drain in `finally`; the drain gets whatever is left, but never less than `CLEANUP_MIN_TIMEOUT_MS` (1 000 ms), since a zero budget would mean "no limit" again. Worst-case wall time is therefore `timeoutMs + 1 000 ms`. With `timeoutMs: 0` the cleanup is unbounded as well — that is what disabling the limit means.
+
+> **Long-lived processes.** The last cleanup step asks the state provider to drop what it accumulated for that render (`reset()` on the ssr-snapshot builder), so structural-template and hydration-prop ledgers do not grow one render at a time. It runs after the window is closed, and it is optional: a provider that predates it simply keeps its ledgers longer. Output is unaffected either way — a snapshot is always scoped to its own document.
 
 **Rendering pipeline:**
 1. Creates a happy-dom window and installs browser globals
@@ -145,6 +152,9 @@ static wcBindable = {
 |------|-------------|
 | `GLOBALS_KEYS` | Array of browser global keys installed during SSR (`document`, `HTMLElement`, `Node`, etc.) |
 | `VERSION` | Package version string from `package.json` |
+| `DEFAULT_RENDER_TIMEOUT_MS` | Default of `RenderOptions.timeoutMs` (30 000) |
+| `MAX_RENDER_TIMEOUT_MS` | Largest delay Node's `setTimeout` honours (2 147 483 647); anything above is treated as "no limit" |
+| `CLEANUP_MIN_TIMEOUT_MS` | Floor for the cleanup drain's share of the budget (1 000) |
 
 ## SSR Output Structure
 

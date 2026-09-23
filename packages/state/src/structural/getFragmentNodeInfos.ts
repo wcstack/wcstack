@@ -3,6 +3,24 @@ import { getSubscriberNodes } from "../bindings/getSubscriberNodes";
 import { getNodePath } from "./getNodePath";
 import { IFragmentNodeInfo } from "./types";
 
+/**
+ * 正規化で捨てたコメントの原文（テキスト束縛だけ）。空 Text からは元の
+ * `<!--@@: path|filter-->` を復元できないが、SSR のスナップショットはこの fragment を
+ * **マークアップとして**直列化するので、原文が無いと `for` / `if` テンプレートの中の
+ * `{{ }}` がスナップショットから丸ごと消える（ハイドレーション後に恒久的に空になる）。
+ * 直列化の直前に原文へ戻すための控え。`Ssr.buildContent` だけが読む。
+ */
+const textCommentDataByNode = new WeakMap<Node, string>();
+
+/**
+ * 正規化前のコメント原文（テキスト束縛の空 Text に対して）。無ければ null。
+ * `null`（nodePath の解決に失敗）も受ける — `WeakMap.get` は弱く保持できないキーに
+ * `undefined` を返すので、呼び手が解決失敗を分岐で捌かずに済む。
+ */
+export function getNormalizedTextCommentData(node: Node | null): string | null {
+  return textCommentDataByNode.get(node as Node) ?? null;
+}
+
 export function getFragmentNodeInfos(fragment: DocumentFragment): IFragmentNodeInfo[] {
   const fragmnentNodeInfos: IFragmentNodeInfo[] = [];
   const subscriberNodes = getSubscriberNodes(fragment);
@@ -23,6 +41,8 @@ export function getFragmentNodeInfos(fragment: DocumentFragment): IFragmentNodeI
       && subscriberNode.parentNode !== null
     ) {
       const textNode = document.createTextNode("");
+      // 原文を控えてから捨てる（SSR の直列化が戻す — textCommentDataByNode を参照）
+      textCommentDataByNode.set(textNode, (subscriberNode as Comment).data);
       subscriberNode.parentNode.replaceChild(textNode, subscriberNode);
       node = textNode;
     }
