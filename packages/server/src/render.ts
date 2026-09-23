@@ -102,6 +102,45 @@ export interface RenderOptions {
    * （深い URL での basename 誤認を防ぐ）。サブパス配備では明示する。
    */
   baseHref?: string;
+  /**
+   * 1 回のレンダリングの上限（ミリ秒・既定 30,000）。`0` 以下で無効（無制限）。
+   *
+   * **プロセス毒性の防波堤**（サイクル 4 の指摘 3）。`renderToString` は `globalThis` を
+   * 差し替えるため `renderMutex` で直列化しており、解放は `finally` にある。1 ページの
+   * 不具合で `waitForReady` が永久 pending になると `finally` に到達せず、**以後そのプロセスの
+   * 健全なページまで永久に返らなくなる**（実測済み）。上限を超えたら reject して `finally` へ
+   * 抜け、mutex を必ず解放する。既定は十分長く取ってあり、正常なページは触れない。
+   */
+  timeoutMs?: number;
+}
+
+/** 既定のレンダリング上限（ms）。`RenderOptions.timeoutMs` で変えられる。 */
+export const DEFAULT_RENDER_TIMEOUT_MS = 30_000;
+
+/**
+ * `promise` を上限つきで待つ。時間切れは `onTimeout()` の値で決着させる
+ * （`reject` を渡せば reject、`resolve` を渡せば「諦めて先へ進む」）。
+ * 勝敗にかかわらずタイマーは必ず解除する（サーバープロセスを生かし続けない）。
+ */
+function withDeadline<T>(promise: Promise<T>, ms: number, onTimeout: () => T | Promise<T>): Promise<T> {
+  if (!(ms > 0)) {
+    return promise;
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<T>((resolve, reject) => {
+    timer = setTimeout(() => {
+      try {
+        resolve(onTimeout());
+      } catch (error) {
+        reject(error);
+      }
+    }, ms);
+    // Node のイベントループをこのタイマーだけで生かし続けない
+    (timer as unknown as { unref?: () => void }).unref?.();
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
 }
 
 async function loadDefaultBootstraps(): Promise<BootstrapFunction[]> {
@@ -266,6 +305,7 @@ export async function waitForReady(root: ParentNode & Node, options?: WaitForRea
  * `<head>` や `<script>` タグは外側のテンプレートで囲む。
  */
 export async function renderToString(html: string, options?: RenderOptions): Promise<string> {
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_RENDER_TIMEOUT_MS;
   // globalThis を差し替えるため、同時に1つしか実行できない
   const releaseMutex = await renderMutex.acquire();
 
@@ -318,7 +358,17 @@ export async function renderToString(html: string, options?: RenderOptions): Pro
     // connectedCallbackPromise / getBindingsReady プロトコルを自動検出して待つ
     // （安定化ループ + バインディング構築。取り逃すと構築の続きがグローバル復元後に
     // 走り、document 消失でクラッシュする — 手順の詳細は waitForReady 参照）
-    await waitForReady(document as unknown as ParentNode & Node);
+    await withDeadline(
+      waitForReady(document as unknown as ParentNode & Node),
+      timeoutMs,
+      () => {
+        throw new Error(
+          `[@wcstack/server] renderToString timed out after ${timeoutMs} ms waiting for the page to become ready. ` +
+          `A custom element's connectedCallbackPromise or getBindingsReady never settled. ` +
+          `Raise or disable the limit with the "timeoutMs" option.`,
+        );
+      },
+    );
 
     // スナップショット最終パス（orchestrated）: 全要素の完了とバインディング構築の
     // 後に <wcs-ssr> を生成する。inline 生成（connectedCallback 内）が取り逃がす
@@ -339,7 +389,9 @@ export async function renderToString(html: string, options?: RenderOptions): Pro
           readyPending.push(ctor.getBindingsReady(document as unknown as Node));
         }
       }
-      await Promise.allSettled(readyPending);
+      // 上と同じ上限で締める。ここを裸で待つと、時間切れで抜けてきた経路がそのまま
+      // 後始末で止まり、mutex の解放（下）に到達しない — 防波堤の意味が無くなる
+      await withDeadline(Promise.allSettled(readyPending), timeoutMs, () => []);
     } catch { /* best effort */ }
     // binder プロトコルの保留キュー（Symbol.for なので installGlobals の restore
     // 対象外＝プロセス寿命）を空にする。state を読み込まないページで挿入側

@@ -71,6 +71,18 @@ function resolveElementPaths(
     if (p.kind === 'method' || p.kind === 'eventToken') continue;
     out.push({ ...p, path: prefix + p.path });
   }
+  // マウントパス**そのもの**もツリー上のオブジェクトとして存在する。以前は接頭辞付きの
+  // 子パスしか積んでいなかったので、`state: cart`（コンポーネントの根をマウントする正規の
+  // 書き方 — state の README 参照）や `textContent: cart` が `wcs/binding-path-missing` に
+  // 誤報されていた。ネストしたマウント（`a.b`）では途中の `a` も同じ理由で載せる。
+  // 子パスが 1 つも解決できなかったときは足さない（存在の根拠がないので断定しない —
+  // `src=` 外部 state を IDE が読まない場合など、`cart.total` も同じく黙る側に揃う）。
+  if (out.length > 0) {
+    const segments = element.mountPath.split('.');
+    for (let i = 1; i <= segments.length; i++) {
+      out.push({ path: segments.slice(0, i).join('.'), kind: 'data', typeHint: 'object' });
+    }
+  }
   return out;
 }
 

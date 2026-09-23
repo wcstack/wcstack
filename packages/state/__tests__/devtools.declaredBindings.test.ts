@@ -204,3 +204,48 @@ describe('collectDeclaredBindings', () => {
     expect(fragmentEntry.node).toBeNull();
   });
 });
+
+/**
+ * 宣言の同一判定に載る**フィルタ成分**（要件 B9 の型付きリテラル・入出力の区別）。
+ *
+ * ここが空白だった間、`declarationKey` の `filters` を定数に置き換えても state の全テストが
+ * 緑のままだった（番人の空振り）。dedupe は「同じ宣言を 1 件に畳む」ためのものなので、
+ * 成分が落ちると**別の宣言が黙って消える**。実パイプライン（`parseBindTextsForElement`）の
+ * 形だけで固定する。
+ */
+describe('collectDeclaredBindings — 宣言の同一判定（フィルタ成分）', () => {
+  it('引数のリテラル型が違う宣言は別件として数えること（B9）', () => {
+    const container = document.createElement('div');
+    container.innerHTML = [
+      `<span data-wcs="textContent: amount|defaults(0)"></span>`,
+      `<b data-wcs="textContent: amount|defaults('0')"></b>`,
+    ].join('');
+    document.body.appendChild(container);
+    const declared = collectDeclaredBindings(container).filter((d) => d.statePathName === 'amount');
+    expect(declared).toHaveLength(2);
+    // 実パイプラインが literals を載せていること（型から落ちると鍵が原文比較に退行する）
+    expect(declared.map((d) => d.outFilters[0].literals)).toEqual([[0], ['0']]);
+  });
+
+  it('入力フィルタと出力フィルタは別の成分であること（連結すると片方が消える）', () => {
+    const container = document.createElement('div');
+    container.innerHTML = [
+      `<input data-wcs="value|trim: memo">`,
+      `<textarea data-wcs="value: memo|trim"></textarea>`,
+    ].join('');
+    document.body.appendChild(container);
+    const declared = collectDeclaredBindings(container).filter((d) => d.statePathName === 'memo');
+    expect(declared).toHaveLength(2);
+    expect(declared.map((d) => [d.inFilters.length, d.outFilters.length])).toEqual([[1, 0], [0, 1]]);
+  });
+
+  it('同じ宣言は従来どおり 1 件に畳むこと（dedupe が効いていること）', () => {
+    const container = document.createElement('div');
+    container.innerHTML = [
+      `<span data-wcs="textContent: amount|defaults(0)"></span>`,
+      `<b data-wcs="textContent: amount|defaults(0)"></b>`,
+    ].join('');
+    document.body.appendChild(container);
+    expect(collectDeclaredBindings(container).filter((d) => d.statePathName === 'amount')).toHaveLength(1);
+  });
+});

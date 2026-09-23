@@ -142,6 +142,15 @@ async function initializeVolume(element: IStateElement, ledger: IVolumeLedger): 
   };
   let volumeState: Record<string, any>;
   try {
+    // ルート経路と条件を揃えるための microtask 境界（#SSR ハング）。
+    // `_loadStateFromSource` は最初の await より**前に同期で** `script[type="module"]` を引く。
+    // ルートは `connectedCallback` の `await runPreparing(...)` がその手前に境界を 1 つ挟むので、
+    // パース途中の upgrade でも子の `<script>` が見えるようになってから読む。ボリュームは
+    // `runConnecting` の claim でその手前に return するため境界が無く、`script` が null に見えて
+    // 「API セット待ち」のフォールバック（`await this._setStatePromise`）に落ちる — 誰も
+    // resolve しないので connectedCallbackPromise が永久 pending になり、SSR では
+    // `waitForReady` が返らず renderMutex ごとプロセスを道連れにしていた
+    await Promise.resolve();
     volumeState = await element.loadStateFromSource!();
   } catch (error) {
     // ロード失敗（404 / JSON パースエラー / import 失敗）は 1 ボリュームに閉じる

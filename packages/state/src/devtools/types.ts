@@ -260,6 +260,14 @@ export interface IStateElementSummary {
  * レンダリング行数に比例したインスタンス列ではない。インスタンス粒度は live の
  * binding 台帳（state:binding-added）の守備範囲。
  */
+/** 宣言されたフィルタ 1 つ（`IParsedFilter` の devtools 向けの写し） */
+export interface IDeclaredFilter {
+  readonly filterName: string;
+  readonly args: readonly string[];
+  /** 引数の型付きの値（要件 B9）。省略されたら `args` で代用される */
+  readonly literals?: readonly unknown[];
+}
+
 export interface IDeclaredBindingInfo {
   /**
    * 宣言を代表するノード（要素またはコメントアンカー。同一宣言の複数出現は
@@ -270,8 +278,14 @@ export interface IDeclaredBindingInfo {
   readonly propName: string;
   readonly statePathName: string;
   readonly bindingType: string;
-  readonly inFilters: readonly { readonly filterName: string; readonly args: readonly string[] }[];
-  readonly outFilters: readonly { readonly filterName: string; readonly args: readonly string[] }[];
+  /**
+   * 宣言されたフィルタ。`literals`（引数の型付きの値・要件 B9）は宣言の同一判定
+   * （`binding/filterKey.ts`）が読む。型から落とすと、型どおりのオブジェクトを渡した瞬間に
+   * `defaults(0)` と `defaults('0')` が同じ宣言に畳まれる（`literals ?? args` のフォールバックで
+   * 黙って原文比較へ落ちるため）。
+   */
+  readonly inFilters: readonly IDeclaredFilter[];
+  readonly outFilters: readonly IDeclaredFilter[];
   readonly origin: "attribute" | "comment" | "fragment";
   /**
    * 宣言の原文。構造ディレクティブのアンカー（origin: 'comment'）は原文が DOM に

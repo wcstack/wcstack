@@ -41,6 +41,14 @@ describe("featureBridge: マウントのオーバーレイ受け口", () => {
     expect(getMountOverlays(stateElement)).toEqual([]);
   });
 
+  it("未 install のときに返す空配列は凍結されていること（共有インスタンスの汚染防止）", () => {
+    const empty = getMountOverlays(stateElement);
+    expect(Object.isFrozen(empty)).toBe(true);
+    // 凍結していないと、1 度の push が以後すべてのツリーに漏れる
+    expect(() => empty.push({ marker: "#x" } as any)).toThrow();
+    expect(getMountOverlays({ name: "other" } as any)).toEqual([]);
+  });
+
   it("install 済みなら置かれた provider に委譲すること", () => {
     const summary = [{ marker: "#m1" }] as any;
     const seen: unknown[] = [];

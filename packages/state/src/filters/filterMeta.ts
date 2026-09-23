@@ -59,12 +59,14 @@ export const builtinFilterMeta: Record<string, IFilterMeta> = {
   capitalize: { description: "先頭文字を大文字に",       hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
   trim:   { description: "前後の空白を削除",         hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
   slice:  { description: "部分文字列 (start[,end])", hasArgs: true,  resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "number"] },
-  substr: { description: "部分文字列 (pos,len)",     hasArgs: true,  resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "number"] },
+  // 長さは省略できない（実装が両方読む）。minArgs: 1 だった頃は補完・lint が `substr(0)` を
+  // 通し、実行時にだけ落ちていた
+  substr: { description: "部分文字列 (pos,len)",     hasArgs: true,  resultType: "string", acceptTypes: ["string"], minArgs: 2, maxArgs: 2, argTypes: ["number", "number"] },
   padStart: { description: "先頭を埋める (length[,char]。char の既定は 0 — JS の既定は空白なので注意)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
   padEnd: { description: "末尾を埋める (length[,char]。char の既定は空白 — JS と同じ)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
   repeat: { description: "繰り返し (count)",         hasArgs: true,  resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
   reverse: { description: "文字順を反転",             hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
-  truncate: { description: "切り詰めて省略記号 (length[,suffix]。suffix の既定は ...)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
+  truncate: { description: "切り詰めて省略記号 (length[,suffix]。suffix の既定は … — U+2026 の 1 文字)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
   join:     { description: "配列を連結 ([separator]。既定はカンマ + 空白)",             hasArgs: true, resultType: "string", acceptTypes: ["array"],  minArgs: 0, maxArgs: 1, argTypes: ["string"] },
   // 数値パース・丸め
   int:     { description: "整数にパース",         hasArgs: false, resultType: "number", acceptTypes: ["string", "number"], minArgs: 0, maxArgs: 0 },
@@ -77,9 +79,11 @@ export const builtinFilterMeta: Record<string, IFilterMeta> = {
   // それらは既に string を返すため（builtinFilters.ts の unit を参照）
   unit:    { description: "単位（接尾辞）を付加",  hasArgs: true,  resultType: "string", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["string"] },
   // 日付・時刻
-  date:     { description: "ロケール形式の日付", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
-  time:     { description: "ロケール形式の時刻", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
-  datetime: { description: "ロケール形式の日時", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
+  // `locale` と同じくロケールを 1 つ受ける（`date(ja-JP)`）。実装は最初からこれを読んでいたが、
+  // メタデータ側が maxArgs: 0 だったため lint と補完が正しい書き方を誤りとして報告していた
+  date:     { description: "ロケール形式の日付 ([locale]。既定は config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+  time:     { description: "ロケール形式の時刻 ([locale]。既定は config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+  datetime: { description: "ロケール形式の日時 ([locale]。既定は config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
   ymd:      { description: "YYYY-MM-DD 形式 ([separator]。既定は -)",   hasArgs: true,  resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
   hms:      { description: "HH:MM:SS 形式 ([separator]。既定は :)",     hasArgs: true,  resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
   // 真偽値・変換

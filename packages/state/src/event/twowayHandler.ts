@@ -64,9 +64,37 @@ function warnDefaultGetterMismatch(node: Element, propName: string, detail: unkn
   );
 }
 
-function getHandlerKey(binding: IBindingInfo, eventName: string, hasGetter: boolean, isOccurrence: boolean): string {
+/**
+ * getter 関数ごとの安定した識別子。
+ *
+ * ハンドラのクロージャは `valueGetter` の**実体**を捕捉するのに、鍵は「getter があるか」の
+ * 真偽しか持っていなかった。propName / イベント名 / state パス / フィルタ列が同じで getter だけ
+ * 違う 2 つの wc-bindable タグを同じパスに繋ぐと、後から配線した方が**先のタグの getter で
+ * 畳んだ値**を state に書く。`filterListKey` を入れて塞いだのと同じ不完全さが getter に残っていた。
+ */
+const getterIds = new WeakMap<object, number>();
+let nextGetterId = 0;
+function getterIdOf(valueGetter: ((event: Event) => any) | null): string {
+  if (valueGetter === null) {
+    return "n";
+  }
+  let id = getterIds.get(valueGetter);
+  if (typeof id === "undefined") {
+    getterIds.set(valueGetter, id = ++nextGetterId);
+  }
+  return `g${id}`;
+}
+
+/**
+ * attach 時に決めた鍵。`wcBindable` の宣言は live と規定されている
+ * （`protocol/wcBindableReader.ts`）ので、detach で作り直すと別の鍵を引きうる —
+ * そうなると `removeEventListener` が空振りしてリスナが残る。
+ */
+const keyByBinding = new WeakMap<IBindingInfo, string>();
+
+function getHandlerKey(binding: IBindingInfo, eventName: string, valueGetter: ((event: Event) => any) | null, isOccurrence: boolean): string {
   const filterKey = filterListKey(binding.inFilters);
-  return `${binding.propName}::${binding.statePathName}::${eventName}::${filterKey}::${hasGetter ? 'g' : 'n'}::${isOccurrence ? 'o' : 's'}`;
+  return `${binding.propName}::${binding.statePathName}::${eventName}::${filterKey}::${getterIdOf(valueGetter)}::${isOccurrence ? 'o' : 's'}`;
 }
 
 function getEventName(binding: IBindingInfo): string {
@@ -277,7 +305,8 @@ export function attachTwowayEventHandler(binding: IBindingInfo): void {
     const eventName = getEventName(binding);
     const valueGetter = getValueGetter(binding);
     const isOccurrence = isOccurrenceProperty(binding);
-    const key = getHandlerKey(binding, eventName, valueGetter !== null, isOccurrence);
+    const key = getHandlerKey(binding, eventName, valueGetter, isOccurrence);
+    keyByBinding.set(binding, key);
     let twowayEventHandler = handlerByHandlerKey.get(key);
     if (typeof twowayEventHandler === "undefined") {
       twowayEventHandler = twowayEventHandlerFunction(
@@ -309,8 +338,11 @@ export function detachTwowayEventHandler(binding: IBindingInfo): void {
 
   if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf(MODIFIER_READONLY) === -1) {
     const eventName = getEventName(binding);
-    const valueGetter = getValueGetter(binding);
-    const key = getHandlerKey(binding, eventName, valueGetter !== null, isOccurrenceProperty(binding));
+    // attach 時に決めた鍵を使う。`wcBindable` の宣言は live なので、間で書き換わると
+    // 作り直した鍵が別物になり `removeEventListener` が空振りしてリスナが残る
+    const key = keyByBinding.get(binding)
+      ?? getHandlerKey(binding, eventName, getValueGetter(binding), isOccurrenceProperty(binding));
+    keyByBinding.delete(binding);
     const twowayEventHandler = handlerByHandlerKey.get(key);
     if (typeof twowayEventHandler === "undefined") {
       return;

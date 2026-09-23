@@ -90,3 +90,30 @@
 - 旧名と正式名を**両方**宣言した state は、`declarationAliases.ts` が読み込み時に throw する（ページ初期化が止まる）。これを lint で前に倒すため、拡張に `wcs/declaration-alias`（error）を新設した。`wcs/name-alias`（info）は片方だけのときに出る従来どおりの提案で、両者は排他。
 - 宣言キーの走査は `analyzeDeclarationSpans`（AST）を正本とし、`export default class …` のように静的に読めない形では正規表現へフォールバックする。フォールバック経路は誤検出しうるので `wcs/name-alias`（info）に留め、error へは昇格させない。
 - manifest に `declarationAliases` と `apiAliases` を足し、`WCS_MANIFEST_VERSION` を 2 に上げた。拡張が手書きで持っている対応表（`semanticValidator` / `wiringLens` / `stateAnalyzer` / `preamble`）は、state の dist が再ビルドされた次のリリースで撤去する。
+
+**追記（2026-09-23、同上）— 旧名を書いたときのエラー文言が 2 つの規準に割れている**
+
+エイリアス（`fix` / `uc` / `inc` …）を書いてフィルタがエラーになったとき、**メッセージに出る名前が
+エラーの種類によって変わる**。これは設計判断ではなく実装の結果で、現状はこうなっている:
+
+| エラー | 出る名前 | 例（`fix` → `toFixed`） |
+|---|---|---|
+| **個数**（`[wcs/filter-arity]`） | **書いた名前** | `filter "fix" accepts at most 1 argument(s) (2 given).` |
+| **型**（オプション / 値） | **正式名** | `filter toFixed requires a number as option` |
+
+理由: 個数の検査は `core/filterRegistry.ts` の `getFilter` にあり、そこには書いた名前
+（`filterName`）が引数で届いている。一方、型の検査はフィルタの実装の中にあり、
+`FilterFactory` は `(options, literals)` しか受け取らないので、実装は自分が登録された**正式名**を
+ハードコードするしかない（`valueMustBeNumber('toFixed')`）。`[wcs/filter-unknown]` も書いた名前を出す
+（打ち間違いの案内なので当然）。
+
+**本来の着地**: `FilterFactory` に第 3 引数（書かれた名前）を足し、実装がそれを使う。
+`core/filterRegistry.ts` の呼び出しは 1 行（`factory(args, literals)` →
+`factory(args, literals, filterName)`）で、あとは 48 個のフィルタが順次乗り換える形にできる。
+今回入れなかったのは、公開型 `FilterFactory` の変更（追加引数なので後方互換だが、
+`d.ts` に出る）とフィルタ側の一斉置換がサイズ予算の議論と重なるため。次のサイクルで拾う。
+
+回避策（作者向け）: 型エラーのメッセージに見覚えのない名前が出たら、`filterAliases.ts` の
+対応表（`fix`→`toFixed`, `uc`→`upper`, `inc`→`add`, `dec`→`sub`, `lc`→`lower`,
+`cap`→`capitalize`, `rep`→`repeat`, `rev`→`reverse`, `pad`→`padStart`, `null`→`nullIfEmpty`）
+で引ける。そもそも 4.0 で旧名は外れるので、正式名へ書き換えるのが最短。

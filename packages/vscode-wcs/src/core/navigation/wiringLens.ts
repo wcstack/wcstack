@@ -563,7 +563,9 @@ function locateModifierAt(binding: IPositionalBinding, offset: number, site: IEx
   const exprText = binding.exprText;
   const colon = indexOfOutsideQuotes(exprText, delimiters.propValue);
   const lhsEnd = colon === -1 ? exprText.length : colon;
-  const hash = exprText.indexOf('#');
+  // 修飾子の区切りも引用符の外だけ（`value|defaults('#'): x` の引数を修飾子帯の開始と
+  // 誤認すると、hover / 定義ジャンプの range がずれる）
+  const hash = indexOfOutsideQuotes(exprText, delimiters.modifier);
   if (hash === -1 || hash >= lhsEnd) return null;
 
   let cursor = hash + 1;

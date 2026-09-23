@@ -274,5 +274,31 @@ export default {
       expect(pathNames).not.toContain('cart.saved');
       expect(pathNames.some(p => p.includes('$'))).toBe(false);
     });
+
+    // Fixed by review（サイクル 4）— 接頭辞付きの子パスしか積んでいなかったので、
+    // マウントパスそのものを指す `state: cart` / `textContent: cart`（state の README に
+    // 載っている正規の書き方）が `wcs/binding-path-missing` に誤報されていた。
+    it('マウントパスそのものがオブジェクト種別の候補として載ること', () => {
+      const html = `<wcs-state mount="cart" json='{"items": []}'></wcs-state>`;
+      const paths = getStatePathsFromHtml(html);
+      const mountPoint = paths.find(p => p.path === 'cart');
+      expect(mountPoint).toBeDefined();
+      expect(mountPoint!.kind).toBe('data');
+      expect(mountPoint!.typeHint).toBe('object');
+    });
+
+    it('ネストしたマウント（a.b）では途中のセグメントも載ること', () => {
+      const html = `<wcs-state mount="deep.vol" json='{"c": 3}'></wcs-state>`;
+      const pathNames = getStatePathsFromHtml(html).map(p => p.path);
+      expect(pathNames).toContain('deep');
+      expect(pathNames).toContain('deep.vol');
+      expect(pathNames).toContain('deep.vol.c');
+    });
+
+    it('子パスを 1 つも解決できなければマウントパスも足さないこと（断定しない側）', () => {
+      // src= 外部 state は IDE 経路では読まない（fileReader 無し）＝ 候補ゼロ
+      const html = `<wcs-state mount="cart" src="./cart.js"></wcs-state>`;
+      expect(getStatePathsFromHtml(html).map(p => p.path)).toEqual([]);
+    });
   });
 });

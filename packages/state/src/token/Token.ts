@@ -43,10 +43,25 @@ export class Token implements IToken {
     return this._subscribers.delete(fn);
   }
 
+  /**
+   * 全 subscriber へ配る。**1 つが throw しても残りへ配り続ける** — トークンはファンアウトの
+   * 口で、購読者どうしは互いを知らない（README の「click fans the command out to every
+   * subscriber」の例は、片方の要素が投げたらもう片方に届かない形では成り立たない）。
+   * 投げた分は握り潰さず `console.error` に載せ、結果配列にはその位置を `undefined` で残す。
+   *
+   * 握り潰しでないことの根拠は `event/captureHandlerRejection.ts` と同じ: 発火経路は
+   * ハンドラの完了を待たず、DOM イベント起点では例外を呼び出し元へ投げ返せない。
+   * 「例外の伝播」ではなく「診断可能な報告」に落とすのが state 側ハンドラの方針。
+   */
   emit(...args: unknown[]): unknown[] {
     const results: unknown[] = [];
     for (const fn of this._subscribers) {
-      results.push(fn(...args));
+      try {
+        results.push(fn(...args));
+      } catch (error) {
+        results.push(undefined);
+        console.error(`[wcstack/state] a subscriber of token "${this.name}" threw; the remaining subscribers still received it.`, error);
+      }
     }
     return results;
   }

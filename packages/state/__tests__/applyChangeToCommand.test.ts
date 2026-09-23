@@ -217,7 +217,17 @@ describe('applyChangeToCommand', () => {
     const token = new CommandToken('fetchUsers');
     applyChangeToCommand(binding, dummyContext, token);
     (el as any).fetch = 'not-a-function';
-    expect(() => token.emit()).toThrow(/not a function/);
+    // `Token.emit` はファンアウトの口なので、subscriber 1 件の throw で以降の配送を止めない
+    // （README の「click fans the command out to every subscriber」）。握り潰しではなく
+    // `console.error` へ載せる — 見えることは保たれる（`Token.ts` の emit / 指摘 18）
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      expect(() => token.emit()).not.toThrow();
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      expect((errorSpy.mock.calls[0][1] as Error).message).toMatch(/not a function/);
+    } finally {
+      errorSpy.mockRestore();
+    }
     el.remove();
   });
 

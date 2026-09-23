@@ -29,10 +29,46 @@
  *
  * ---
  *
+ * **`data-wcs` 構文で区切りになる文字はこれで全部**（`@wcstack/state` の `define.ts` の定数と
+ * manifest の `syntax` を突き合わせた全数。次の「区切り軸」を探す必要は無い）:
+ *
+ *   引用符の影響を受ける（＝このモジュール経由にする）:
+ *     - `;` バインディングの区切り（`BINDING_SEPARATOR`）
+ *     - `:` 左辺 / 右辺の区切り（`PROP_VALUE_SEPARATOR`）
+ *     - `#` 修飾子の区切り（`MODIFIER_SEPARATOR`）
+ *     - `|` フィルタの区切り（`FILTER_SEPARATOR`）
+ *     - `,` フィルタ引数の区切り（`filter(a, b)` の中）
+ *     - `(` / `)` フィルタ引数の囲み — ランタイム（`parseFilters`）自身が
+ *       `indexOf('(')` / **`lastIndexOf(')')`** で切るので、拡張もそれに 1:1 で合わせる
+ *       （`service/bindingValidator.ts` の `parseFilterSegments`）。引用符は見ない側が正本。
+ *
+ *   引用符の影響を受けない（素の走査のままでよい。理由付き）:
+ *     - `.` パス / プロパティ名前空間の区切り（`DELIMITER`）— 区切る対象はパスや
+ *       プロパティ名で、そこに引用符は現れない（引用符が出るのはフィルタ引数だけ）。
+ *     - `,` **修飾子リスト**の区切り（`#ro,wo`）— ランタイムも `propModifiersText.split(',')`
+ *       と素で切る。修飾子は入力フィルタより前なので、その区間に引用符は来ない。
+ *     - `*` / `**` ワイルドカード（`WILDCARD` / `RECURSION_WILDCARD`）・`$` 添字と API の
+ *       接頭辞（`INDEX_PARAM_PREFIX`）・`...` spread・`else` / `on` / 先頭 `.`（明示の
+ *       プロパティ形）— いずれも**トークンの一部**であって区切り文字ではない。
+ *     - `@` — v2 で撤去された名前次元。検出して報告するだけで、区切りには使わない。
+ *       走査対象は常に「最初の `|`（引用符の外）より前」に切り出したパス部分。
+ *
+ * ---
+ *
  * **拡張内の「区切り走査」の全数リスト**（次に同じ調査をする人が再調査しないで済むように。
  * `data-wcs` / mustache の区切りを見るものは**すべてこのモジュール経由**にしてある）:
  *
  * 対象外と判定したもの（引用符を見ないが、見る必要がない）:
+ *   - `service/ariaValidator.ts` / `service/ioNodeValidator.ts` / `service/bindingValidator.ts`
+ *     の `#` 走査 — どれも `parseBindingExpression` が**フィルタを分離したあとの
+ *     `property`** に対して掛かるので、走査する文字列に引用符が残っていない。
+ *   - `service/recursionPaths.ts` / `service/mountAttrValidator.ts` の `#` / `$` / `@` 検査 —
+ *     マウントパス・state パスの**予約文字**の検出であって区切りではない（パスに引用符は無い）。
+ *   - パスを `.` で切る走査（`core/index/referenceIndex.ts` / `service/forContext.ts` /
+ *     `service/recursionPaths.ts` / `service/scanDeclarationValidator.ts` /
+ *     `service/mountAttrValidator.ts` ほか）— 上記のとおりパスに引用符は現れない。
+ *   - `@` の検出（`service/bindingContext.ts` / `service/bindingValidator.ts` /
+ *     `service/forContext.ts`）— 引用符の外の `|` で切ったパス部分だけを見る。
  *   - `service/scriptCallArgs.ts` の `splitCallArgs` — **JS ソース**の実引数分割。走査ループが
  *     自前で引用符（`'` / `"` / `` ` `` とエスケープ）を飛ばしているので既に引用符対応。
  *   - `service/stateAnalyzer.ts` のオブジェクト / 配列走査 — すべて `maskCommentsAndStrings` の

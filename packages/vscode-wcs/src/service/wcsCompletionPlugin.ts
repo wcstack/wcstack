@@ -139,9 +139,12 @@ export function createWcsCompletionPlugin(): LanguageServicePlugin {
               };
 
             case 'modifier': {
-              // '#' 以降のテキストを置換する範囲を計算
-              const hashOffset = text.lastIndexOf('#', offset - 1);
-              if (hashOffset === -1) return undefined;
+              // '#' 以降のテキストを置換する範囲を計算。探索は**その属性値の中**に限り、
+              // 区切りは引用符の外だけ（`value|defaults('#')` の引数の `#` から置換範囲を
+              // 取ると、補完を選んだ瞬間にその引数を壊すテキスト編集になる）
+              const hashInValue = lastIndexOfOutsideQuotes(attrInfo.value.slice(0, cursorInAttr), '#');
+              if (hashInValue === -1) return undefined;
+              const hashOffset = attrInfo.valueStart + hashInValue;
               const replaceStart = document.positionAt(hashOffset + 1);
               return {
                 isIncomplete: false,

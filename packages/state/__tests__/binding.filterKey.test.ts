@@ -120,3 +120,55 @@ describe("ハンドラの共有（実 DOM・実パイプライン）", () => {
     host.remove();
   });
 });
+
+/**
+ * 同じ形（propName / イベント名 / state パス / フィルタ列）で **getter だけ違う** 2 つの
+ * wc-bindable タグ。ハンドラのクロージャは `valueGetter` の実体を捕捉するので、鍵が
+ * 「getter があるか」の真偽しか持たないと、後から配線した方が**先のタグの getter**で
+ * 畳んだ値を state に書く。`filterListKey` を入れて塞いだのと同じ不完全さだった。
+ */
+describe("two-way ハンドラの共有（getter の実体）", () => {
+  it("getter だけが違う 2 つのタグがハンドラを共有しないこと", async () => {
+    const declare = (tag: string, prefix: string): void => {
+      class El extends HTMLElement {
+        static wcBindable = {
+          protocol: "wc-bindable",
+          version: 1,
+          // イベント名も同じにする（鍵の他の成分を全部揃えて getter だけ違う形にする）
+          properties: [{ name: "value", event: "tw-shared:value-changed", getter: (e: Event) => `${prefix}:${(e as CustomEvent).detail}` }],
+          inputs: [{ name: "value" }],
+        };
+        value = "";
+      }
+      customElements.define(tag, El);
+    };
+    const alpha = `tw-alpha-${++seq}`;
+    const beta = `tw-beta-${seq}`;
+    declare(alpha, "ALPHA");
+    declare(beta, "BETA");
+
+    const host = document.createElement(`tw-host-${seq}`);
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML =
+      `<${alpha} id="a" data-wcs="value: shared"></${alpha}>` +
+      `<${beta} id="b" data-wcs="value: shared"></${beta}>` +
+      `<wcs-state></wcs-state>`;
+    document.body.appendChild(host);
+    const stateEl = shadowRoot.querySelector("wcs-state") as State;
+    stateEl.setInitialState({ shared: "" });
+    await stateEl.connectedCallbackPromise;
+    await State.getBindingsReady(shadowRoot);
+    const stateElement = getStateElement(shadowRoot)!;
+    const read = () => { let v: unknown; stateElement.createState("readonly", (s: any) => { v = s.shared; }); return v; };
+
+    // 後から配線された beta で発火する。鍵が衝突していると alpha の getter が使われる
+    shadowRoot.querySelector("#b")!.dispatchEvent(new CustomEvent("tw-shared:value-changed", { detail: "x" }));
+    await flush();
+    expect(read()).toBe("BETA:x");
+
+    shadowRoot.querySelector("#a")!.dispatchEvent(new CustomEvent("tw-shared:value-changed", { detail: "y" }));
+    await flush();
+    expect(read()).toBe("ALPHA:y");
+    host.remove();
+  });
+});

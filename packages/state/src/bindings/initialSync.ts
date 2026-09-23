@@ -1,12 +1,28 @@
 import { getStateAddressByBindingInfo } from "../binding/getStateAddressByBindingInfo";
 import { config } from "../config";
-import { COMMAND_NAMESPACE, MODIFIER_KEY_INIT, MODIFIER_KEY_SYNC } from "../define";
+import { ATTR_NAMESPACE, CLASS_NAMESPACE, COMMAND_NAMESPACE, MODIFIER_KEY_INIT, MODIFIER_KEY_SYNC, STYLE_NAMESPACE } from "../define";
 import { getLoopContextByNode } from "../list/loopContextByNode";
 import { hasByAddressSymbol, setLoopContextSymbol } from "../proxy/symbols";
 import { readBindableDeclaration } from "../protocol/wcBindableReader";
 import { raiseError } from "../raiseError";
 import { getStateElement } from "../stateElementByName";
 import { IBindingInfo } from "../types";
+
+/**
+ * 左辺の先頭セグメントが名前空間になる束縛 — `apply/applyChange.ts` の
+ * `applyChangeByFirstSegment` と**同じ集合**。
+ *
+ * ここが 1 つでも欠けると、欠けた名前空間が下の wcBindable プロパティ検証に落ちて
+ * `Property "class.on" is not declared by wcBindable.` が飛び、**そのルートの束縛が
+ * 1 つも立たなくなる**（`class.` / `attr.` / `style.` が実際にそうなっていた。
+ * `command.` だけが除外されていた）。
+ *
+ * 集合の一致は `__tests__/bindings.initialSync.namespaces.test.ts` が apply 層の
+ * ディスパッチ表と突き合わせて固定する（`manifest.test.ts` の drift 検出と同じ手）。
+ */
+const LEFT_HAND_NAMESPACES: ReadonlySet<string> = new Set<string>([
+  CLASS_NAMESPACE, ATTR_NAMESPACE, STYLE_NAMESPACE, COMMAND_NAMESPACE,
+]);
 
 export type InitialAuthority = "state" | "element" | "auto" | "none";
 export type ResolvedInitialAuthority = Exclude<InitialAuthority, "auto">;
@@ -92,12 +108,14 @@ export function resolveInitialSyncPolicy(binding: IBindingInfo): IInitialSyncPol
     }
     return syncOn === "call" ? NONE_CALL_POLICY : { authority: "none", syncOn, observable: false, outputOnly: false };
   }
-  // command.<name>: $command.<method> は命令的な command-token 配線。bindingType は
-  // "prop" だが propName ("command.<name>") は wcBindable property ではないため、下の
-  // property authority 検証(未宣言なら raiseError)に掛けてはならない。値の初期同期を
-  // 持たない配線なので、現行互換の "state" authority を返す(command token は従来通り
-  // 初期 apply で配線される)。
-  if (binding.propSegments[0] === COMMAND_NAMESPACE) {
+  // 左辺の名前空間（`class.` / `attr.` / `style.` / `command.`）は bindingType こそ "prop" だが、
+  // `propName` は wcBindable の property **ではない**。下の property authority 検証
+  // （未宣言なら raiseError）に掛けてはならず、掛けると wc-bindable 要素に `class.on: flag` と
+  // 書いただけで `Property "class.on" is not declared by wcBindable.` が飛び、
+  // **そのルートの束縛が 1 つも立たなくなる**（`getBindingsReady` ごと reject）。
+  // 値の初期同期を持たない配線なので、現行互換の "state" authority を返す
+  // （command token は従来どおり初期 apply で配線される）。
+  if (LEFT_HAND_NAMESPACES.has(binding.propSegments[0])) {
     return statePolicy("state", syncOn);
   }
   if (binding.bindingType !== "prop") {

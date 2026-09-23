@@ -71,9 +71,11 @@ function parseBindingAtCursor(binding: string, offset: number): BindingContext {
   const colonIndex = indexOfOutsideQuotes(binding, ':');
 
   if (colonIndex === -1 || offset <= colonIndex) {
-    // `:` の前（プロパティ部）
+    // `:` の前（プロパティ部）。修飾子の区切り `#` も引用符の外だけ — 左辺の入力フィルタの
+    // 引数に `#` があると（`value|defaults('#')`）、素の走査ではプロパティ補完のはずが
+    // イベント修飾子の補完になり、propName も `value|defaults('` というゴミになる
     const trimmed = textBeforeCursor.trimStart();
-    const hashIndex = trimmed.indexOf('#');
+    const hashIndex = indexOfOutsideQuotes(trimmed, '#');
     if (hashIndex !== -1) {
       return {
         kind: 'modifier',
@@ -84,9 +86,10 @@ function parseBindingAtCursor(binding: string, offset: number): BindingContext {
     return { kind: 'property', partial: trimmed };
   }
 
-  // プロパティ名を抽出（`#modifier` を除去）
+  // プロパティ名を抽出（`#modifier` を除去）。`#` は引用符の外だけ（上と同じ理由）
   const propPart = binding.slice(0, colonIndex).trim();
-  const propName = propPart.includes('#') ? propPart.slice(0, propPart.indexOf('#')) : propPart;
+  const propHash = indexOfOutsideQuotes(propPart, '#');
+  const propName = propHash === -1 ? propPart : propPart.slice(0, propHash);
 
   // `:` の後（パス + フィルタ部）
   const afterColon = textBeforeCursor.slice(colonIndex + 1).trimStart();

@@ -229,6 +229,28 @@ describe("B8 空値の契約（3.0 で採用: 表示の表面は undefined も n
     expect(li!.hasAttribute("title")).toBe(false);
   });
 
+  it("書式フィルタを挟んでも契約が保たれること（フィルタ 1 つで title=\"undefined\" に戻っていた）", async () => {
+    // 空値の判定はフィルタ**後**の値に対して行われるので、`String(value)` で組み立てる族が
+    // "undefined" / "null" という文字を作った瞬間に B8 の宣言そのものが破れていた。
+    const { root, stateEl } = await mount({ x: "  red  " },
+      `<span id="prop" data-wcs="textContent: x|upper"></span><span id="attr" data-wcs="attr.title: x|trim; style.color: x|trim"></span>`);
+    const snapshot = () => ({
+      property: root.querySelector("#prop")!.textContent,
+      attribute: root.querySelector("#attr")!.getAttribute("title"),
+      hasAttribute: root.querySelector("#attr")!.hasAttribute("title"),
+      style: (root.querySelector("#attr") as HTMLElement).style.color,
+    });
+    expect(snapshot()).toEqual({ property: "  RED  ", attribute: "red", hasAttribute: true, style: "red" });
+
+    for (const empty of [undefined, null]) {
+      stateEl.createState("writable", (s: any) => { s.x = "  red  "; });
+      await flush();
+      stateEl.createState("writable", (s: any) => { s.x = empty; });
+      await flush();
+      expect(snapshot(), String(empty)).toEqual({ property: "", attribute: null, hasAttribute: false, style: "" });
+    }
+  });
+
   it("要素の入力（表示以外のプロパティ）への undefined は従来どおりスキップし、null で消すこと", async () => {
     const { root, stateEl } = await mount({ v: "typed" }, `<input id="in" data-wcs="value#ro: v">`);
     const input = root.querySelector("#in") as HTMLInputElement;

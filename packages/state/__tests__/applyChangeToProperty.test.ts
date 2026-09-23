@@ -223,6 +223,63 @@ describe('applyChangeToProperty', () => {
     });
   });
 
+  /**
+   * 表示のテキストプロパティ（textContent / innerText）は IDL 側で文字列化される
+   * （textContent は nullable DOMString、innerText は [LegacyNullToEmptyString]）。
+   * 生値のまま代入して IDL に任せていたため、happy-dom の setter が**非文字列の falsy を
+   * 落とす**SSR 出力でだけ `textContent: zero` が空になっていた（ハイドレーション用 props には
+   * 正しい値が載るのでクライアントでは戻る＝ no-JS / SEO / 初回描画だけが壊れる）。
+   */
+  describe('表示のテキストプロパティを IDL と同じ規則で文字列化する', () => {
+    it.each(['textContent', 'innerText'])('%s: falsy な非文字列が消えないこと', (prop) => {
+      const el = document.createElement('span');
+      applyChangeToProperty(createBinding(el, [prop]), dummyContext, 0);
+      expect((el as any)[prop]).toBe('0');
+      applyChangeToProperty(createBinding(el, [prop]), dummyContext, false);
+      expect((el as any)[prop]).toBe('false');
+      applyChangeToProperty(createBinding(el, [prop]), dummyContext, 5);
+      expect((el as any)[prop]).toBe('5');
+    });
+
+    it('null / undefined は空文字になること', () => {
+      const el = document.createElement('span');
+      for (const empty of [null, undefined]) {
+        el.textContent = 'seed';
+        applyChangeToProperty(createBinding(el, ['textContent']), dummyContext, empty);
+        expect(el.textContent, String(empty)).toBe('');
+      }
+    });
+
+    it('SSR のハイドレーション用ストアにも文字列化した値が載ること', () => {
+      document.documentElement.setAttribute('data-wcs-server', '');
+      try {
+        const el = document.createElement('span');
+        applyChangeToProperty(createBinding(el, ['textContent']), dummyContext, 0);
+        expect(el.textContent).toBe('0');
+        expect(getSsrProperties(el)).toEqual([{ propName: 'textContent', value: '0' }]);
+      } finally {
+        document.documentElement.removeAttribute('data-wcs-server');
+        clearSsrPropertyStore();
+      }
+    });
+
+    it('innerHTML は文字列化しないこと（TrustedHTML を String() で潰すと TT 強制下で書き込みが拒否される）', () => {
+      const el = document.createElement('div');
+      let assigned: unknown = 'seed';
+      Object.defineProperty(el, 'innerHTML', {
+        configurable: true,
+        get: () => assigned,
+        set: (v: unknown) => { assigned = v; },
+      });
+      const trustedLike = { toString: () => '<i>x</i>' };
+      applyChangeToProperty(createBinding(el, ['innerHTML']), dummyContext, trustedLike);
+      expect(assigned).toBe(trustedLike);
+      // undefined を空にする従来の規則は innerHTML にも残る
+      applyChangeToProperty(createBinding(el, ['innerHTML']), dummyContext, undefined);
+      expect(assigned).toBe('');
+    });
+  });
+
   describe('wc-bindable inputs attribute mirror', () => {
     const tagName = 'mirror-host';
     beforeEach(() => {

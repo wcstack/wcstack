@@ -14,11 +14,16 @@ export { getOrCreateHookRegistry } from "./protocol/registry.js";
 export {
   DEVTOOLS_HOOK_GLOBAL, DEVTOOLS_PROTOCOL_VERSION,
 } from "./protocol/types.js";
+// プロトコルの *Like 型は全部名前で出す。IDevtoolsSourceLike を自分で実装する採用者は
+// overlays / keyedSubscriptions / getDeclaredBindings の**戻り値型を名前で書けないと**
+// 構造リテラルを手写しすることになり、それがそのままドリフトの入口になる。
 export type {
   DevtoolsEventLike, DevtoolsSinkLike,
   IDevtoolsSourceLike, IDevtoolsListenerLike, IDevtoolsHookRegistryLike,
   IStateElementSummaryLike, IBindingLike, IAbsoluteAddressLike,
   IAbsolutePathInfoLike, IListIndexLike, IPathInfoLike,
+  IMountOverlaySummaryLike, IKeyedSubscriptionSummaryLike, IDeclaredBindingLike,
+  IDeclaredFilterLike,
 } from "./protocol/types.js";
 
 // Typed element lookups (docs/typescript.md §3): `document.querySelector("wcs-devtools")`

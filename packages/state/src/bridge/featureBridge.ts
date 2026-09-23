@@ -60,7 +60,9 @@ export function setMountOverlayProvider(provider: MountOverlayProvider): void {
   mountOverlayProvider = provider;
 }
 
-const NO_OVERLAYS: IMountOverlaySummary[] = [];
+// 共有の空配列。**凍結する** — 呼び手が push すると、以後すべてのツリーがその 1 本を見る。
+// 宣言型は protocol の `overlays(): IMountOverlaySummary[]` に合わせたまま、実体だけ凍らせる
+const NO_OVERLAYS = Object.freeze([]) as unknown as IMountOverlaySummary[];
 
 /** スコープ機能の入っていないページにマウントは存在しえないので、空で正しい */
 export function getMountOverlays(stateElement: IStateElement): IMountOverlaySummary[] {

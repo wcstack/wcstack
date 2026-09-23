@@ -268,6 +268,7 @@ R1 を採る理由: 一文で言える（「**自分で書いたキーは自分�
 | API | v2 の振る舞い（コンポーネントスコープ／ボリューム） |
 |---|---|
 | `$getAll(path, indexes)` / `$setAll` / `$resolve` | 相対パス → 接頭辞合成 → ルート API。省略時の文脈既定（`[...$n]`）は Δ を除いたスコープ内の添字 |
+| `$resolve` の**添字の省略** | **コンポーネントのスコープだけ緩い**（実測 2026-09-23）。ルートとボリュームは `$resolve("x")` / `$resolve("x", null)` を「添字は省略できない」（要件 B7）で raise するが、マウントされたコンポーネントの 2 つの chroot（`overlay.ts` の `OverlayValueHandler` と `createPublicMountState`）は `indexes ?? []` に正規化して受ける。**意図的**で、スコープ側は `composeMountIndexes` がホスト行の添字を前置できる ＝ 文脈を知っているため。3.x では変えない（今まで通っていたものを落とす方向なので破壊的）。ルートに揃えて拒否するのは 4.0 の候補。番人は `__tests__/integration.resolveIndexesContract.test.ts` |
 | `$postUpdate(path)` | 相対 → 絶対 |
 | `$eq(path, key)` / `$eqPath(path, keyPath)` / `$eqIndex(path, level?)` | 相対 → 絶対（**`$eqPath` は第 2 引数の `keyPath` も**。第 2 引数が鍵の**値**（`$eq`）や段の数値（`$eqIndex`）のものは触らない）。読みなので `#ro` の検査は掛からない |
 | `$dependOn(path)` / `$trackDependency(path)` | 相対 → 絶対 |

@@ -161,14 +161,18 @@ interface IStateElementSummary {
 
 // v1 追補: 宣言レベルのバインディング 1 件（getDeclaredBindings の要素）。
 // 正本パーサの結果がそのまま流れる — filters はランタイム IFilterInfo の
-// 構造的サブセット { filterName, args } として読める。
+// 構造的サブセット { filterName, args, literals? } として読める。
 interface IDeclaredBindingInfo {
   readonly node: Node | null;   // origin "fragment" は live DOM にノードを持たないため null
   readonly propName: string;
   readonly statePathName: string;
   readonly bindingType: string;
-  readonly inFilters: readonly { filterName: string; args: readonly string[] }[];
-  readonly outFilters: readonly { filterName: string; args: readonly string[] }[];
+  // `literals` は引数の原文（args）に対する**型付きの値**（要件 B9）。フィルタの鍵は
+  // `literals ?? args` で作られ、eq / ne / defaults の比較もこれを読む。source を自作する
+  // 側が args だけ渡すと型は通るのに鍵が縮退する（`"1"` と `1` が同じ鍵になる）ので、
+  // 正本パーサが付けている literals は落とさずに流す。
+  readonly inFilters: readonly { filterName: string; args: readonly string[]; literals?: readonly unknown[] }[];
+  readonly outFilters: readonly { filterName: string; args: readonly string[]; literals?: readonly unknown[] }[];
   readonly origin: "attribute" | "comment" | "fragment";
   // 宣言の原文。構造ディレクティブのアンカーは原文が DOM に残らないため
   // レジストリ UUID、fragment 由来は空文字。

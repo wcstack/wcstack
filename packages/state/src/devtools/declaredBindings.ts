@@ -53,8 +53,10 @@ import { IDeclaredBindingInfo } from "./types";
 const COMMENT_PATTERN = /^\s*@@\s*(.*?)\s*:\s*(.+?)\s*$/;
 
 function declarationKey(info: IDeclaredBindingInfo): string {
-  // 引数は型付きの値で書き出す（要件 B9）— `defaults(0)` と `defaults('0')` を同じ宣言に畳まない
-  const filters = filterListKey([...info.inFilters, ...info.outFilters]);
+  // 引数は型付きの値で書き出す（要件 B9）— `defaults(0)` と `defaults('0')` を同じ宣言に畳まない。
+  // 入力フィルタと出力フィルタは**別の成分**にする: 連結すると `value|trim: memo`（入力）と
+  // `value: memo|trim`（出力）が同じ鍵になり、片方が宣言集合から黙って落ちる
+  const filters = `${filterListKey(info.inFilters)}\u0000${filterListKey(info.outFilters)}`;
   return [info.statePathName, info.propName, info.bindingType, filters].join("\u0000");
 }
 

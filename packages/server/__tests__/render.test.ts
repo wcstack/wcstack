@@ -102,6 +102,62 @@ describe('enable-ssr 属性', () => {
     expect(doc.querySelectorAll('wcs-ssr').length).toBe(1);
     expect(getSsrData(result)).toEqual({ x: 1, v: { y: 2 } });
   });
+
+  it('ボリュームがインライン <script type="module"> からロードしても返ること（プロセス毒性の回帰）', async () => {
+    // パース途中の upgrade ではボリュームの子 <script> がまだ見えず、状態のロードが
+    // 「API セット待ち」に落ちて connectedCallbackPromise が永久 pending になっていた。
+    // waitForReady が返らず renderToString の finally（renderMutex の解放）に到達しないため、
+    // 1 ページの不具合が以後のプロセス全体を殺していた（state の volumeLifecycle.ts で修正）。
+    // ルートのインライン script は元から動いていたので、対照として同じページに置く
+    const result = await renderToString(`
+      <wcs-state enable-ssr><script type="module">export default { title: "R" };</script></wcs-state>
+      <wcs-state mount="v"><script type="module">export default { hello: "W" };</script></wcs-state>
+      <h1 data-wcs="textContent: title">x</h1>
+      <p data-wcs="textContent: v.hello">x</p>
+    `);
+    expect(result).toContain('>R<');
+    expect(result).toContain('>W<');
+    expect(getSsrData(result)).toEqual({ title: 'R', v: { hello: 'W' } });
+  }, 20000);
+});
+
+describe('renderToString の上限（timeoutMs）', () => {
+  /** connectedCallbackPromise が決して解決しないカスタム要素を定義する bootstrap */
+  const defineHangingElement = (tag: string) => () => {
+    const scope = globalThis as unknown as {
+      HTMLElement: typeof HTMLElement;
+      customElements: CustomElementRegistry;
+    };
+    class Hanging extends scope.HTMLElement {
+      static hasConnectedCallbackPromise = true;
+      connectedCallbackPromise = new Promise<void>(() => { /* 永久 pending */ });
+    }
+    if (!scope.customElements.get(tag)) {
+      scope.customElements.define(tag, Hanging);
+    }
+  };
+
+  it('決して ready にならないページは名指しで reject し、mutex を解放して後続を通すこと', async () => {
+    await expect(
+      renderToString(`<hang-a></hang-a>`, { timeoutMs: 300, bootstraps: [defineHangingElement('hang-a')] }),
+    ).rejects.toThrow(/renderToString timed out after 300 ms/);
+
+    // ここが要点: 壊れた 1 ページが renderMutex を握ったままにしない
+    const after = await renderToString(`
+      <wcs-state json='{"m":"still alive"}'></wcs-state>
+      <div data-wcs="textContent: m">x</div>
+    `);
+    expect(after).toContain('>still alive<');
+  }, 20000);
+
+  it('timeoutMs: 0 で上限を外せること（従来どおり無制限）', async () => {
+    // 無制限でも健全なページは変わらず返る（上限の有無が正常系に触れないことの確認）
+    const result = await renderToString(
+      `<wcs-state json='{"m":"no limit"}'></wcs-state><div data-wcs="textContent: m">x</div>`,
+      { timeoutMs: 0 },
+    );
+    expect(result).toContain('>no limit<');
+  });
 });
 
 describe('wcs-ssr テンプレートコピー', () => {

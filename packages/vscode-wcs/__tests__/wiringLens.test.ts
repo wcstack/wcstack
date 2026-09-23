@@ -133,6 +133,22 @@ describe('wiringLens: hover（§5-2）', () => {
     expect(hover.markdown).toContain('read-only');
   });
 
+  // 修飾子帯の開始 `#` を引用符対応にした（サイクル 4）ことの非退行ガード。
+  // 実害の再現は作れない — ランタイムの並びが「名前 → 修飾子 → 入力フィルタ」（要件 B4）
+  // なので、修飾子があるときは本物の `#` が必ず引用符付き引数より前に来る。変更は
+  // 「拡張内に素の区切り走査を残さない」ための予防で、ここでは正常形が崩れないことを固定する
+  it('引用符付き引数と修飾子が同居しても修飾子の hover が崩れないこと', () => {
+    const html = `<wcs-state><script type="module">export default { name: 'a' };</script></wcs-state>
+<input data-wcs="value#ro|defaults('#'): name">`;
+    const attr = "value#ro|defaults('#'): name";
+    const base = html.indexOf(attr);
+    const hover = getHoverAt(html, base + attr.indexOf('ro'), { locale: 'en' })!;
+    expect(hover.markdown).toContain('#ro');
+    expect(html.slice(hover.range.start, hover.range.end)).toBe('ro');
+    // 引数の中の `#` はトークンではない
+    expect(getHoverAt(html, base + attr.indexOf("'#'") + 1)).toBeNull();
+  });
+
   it('key=value 修飾子 init= / sync= の hover が権限とタイミングを説明すること', () => {
     const initHover = getHoverAt(SAMPLE, offsetIn('value#init=element,sync=connect', 'init'), { locale: 'en' })!;
     expect(initHover.markdown).toContain('initial sync');

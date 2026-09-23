@@ -664,6 +664,8 @@ Runtime reads `customClass.wcBindable.properties + inputs` and expands each name
 
 **`undefined` is "no opinion"** — when an expanded state path resolves to `undefined` (e.g. the slot object doesn't initialize that input), the property write is **skipped** and the element keeps its own default. You only need to initialize the paths you actually use; `usersFetch: { value: null, loading: false }` is enough even though `<wcs-fetch>` also declares `method` / `manual` / `body`. To explicitly clear a value, assign `null` — `null` is always written. (This skip applies to every property binding that feeds an element input, not just spread; with `config.debug` each skipped write is logged via `console.debug`.) **Display surfaces are different (3.0):** `textContent` / `innerText` / `innerHTML`, mustache text, `attr.*`, `style.*` and `class.*` have no element default worth keeping, so `undefined` and `null` both mean "no value" there — the text becomes empty, the attribute or style is removed, and the class is taken off. Before 3.0 a `textContent:` binding skipped `undefined` too, which left the previous row's text in a reused list row, and an attribute got the string `"undefined"` / `"null"`. `class.*` is the narrow case: only `undefined` and `null` mean "no value"; **any other non-boolean still throws**, because a class binding is a boolean toggle and a truthy string is far more likely a mistake than an intent. Write `class.on: flag|truthy` when you mean "treat it as truthy".
 
+**Filters keep the contract.** The emptiness test runs on the value *after* the filters, so a filter that builds its result with `String(value)` used to turn an absent value back into the characters `"undefined"` — `attr.title: x|trim` wrote `title="undefined"` where the unfiltered `attr.title: x` removes the attribute. The formatting family (`upper`, `lower`, `capitalize`, `trim`, `slice`, `substr`, `padStart`, `padEnd`, `repeat`, `reverse`, `truncate`, `unit`) now passes `undefined` / `null` straight through, so the apply side still empties the text and removes the attribute. Three groups deliberately do **not**: the filters for which an absent value *is* the input (`defaults`, `coalesce`, `nullIfEmpty`, `boolean`, `truthy`, `falsy`, `not`, `eq`, `ne`), the conversions whose whole job is to convert (`int`, `float`, `number`, `string` — `undefined|string` is still `"undefined"`), and the filters that check the value's type (the number, date and array families, e.g. `toFixed` / `date` / `join`). Those last ones throw, which is confined to the one binding and reported through `$errorCallback` — put a `coalesce` in front when the value can legitimately be absent (`price|coalesce(0)|toFixed(2)`).
+
 **Constraints**:
 
 - Filters on the spread target (`...: target|filter`) are rejected.
@@ -1560,12 +1562,12 @@ export default {
 | `capitalize` (`cap`) | Capitalize | `name\|capitalize` |
 | `trim` | Trim whitespace | `text\|trim` |
 | `slice(n)` | Slice string | `text\|slice(5)` |
-| `substr(start, length)` | Substring | `text\|substr(0,10)` |
+| `substr(start, length)` | Substring (both arguments required) | `text\|substr(0,10)` |
 | `padStart(n, char?)` (`pad`) | Pad the start (default `0`) | `id\|padStart(5,0)` → `"00001"` |
 | `padEnd(n, char?)` | Pad the end (default a space; 3.2) | `code\|padEnd(8)` |
 | `repeat(n)` (`rep`) | Repeat | `text\|repeat(3)` |
 | `reverse` (`rev`) | Reverse | `text\|reverse` |
-| `truncate(n, suffix?)` | Shorten and append an ellipsis | `title\|truncate(20)` |
+| `truncate(n, suffix?)` | Shorten and append an ellipsis (default `…`, one U+2026 character) | `title\|truncate(20)` |
 | `join(sep?)` | Join an array (default `", "`) | `tags\|join` / `tags\|join(/)` |
 
 ### Type Conversion
@@ -1583,11 +1585,13 @@ export default {
 
 | Filter | Description | Example |
 |---|---|---|
-| `date(loc?)` | Date format | `timestamp\|date` / `timestamp\|date(ja-JP)` |
-| `time(loc?)` | Time format | `timestamp\|time` |
-| `datetime(loc?)` | Date + Time | `timestamp\|datetime(en-US)` |
-| `ymd(sep?)` | YYYY-MM-DD | `timestamp\|ymd` / `timestamp\|ymd(/)` |
-| `hms(sep?)` | HH:MM:SS | `timestamp\|hms` / `timestamp\|hms(-)` |
+| `date(loc?)` | Date format | `createdAt\|date` / `createdAt\|date(ja-JP)` |
+| `time(loc?)` | Time format | `createdAt\|time` |
+| `datetime(loc?)` | Date + Time | `createdAt\|datetime(en-US)` |
+| `ymd(sep?)` | YYYY-MM-DD (default `-`) | `createdAt\|ymd` / `createdAt\|ymd(/)` |
+| `hms(sep?)` | HH:MM:SS (default `:`) | `createdAt\|hms` / `createdAt\|hms(-)` |
+
+**All five take a `Date`,** not a timestamp — a value of any other type is rejected with "requires a date value". State loaded from JSON carries a number or an ISO string, so convert it where it is read rather than in the binding: `get createdAt() { return new Date(this.createdAtMs); }`. `loc?` defaults to `config.locale`, and the default is re-read on **every** apply, so a locale settled after the bindings were planned still takes effect (an explicit `date(ja-JP)` is part of the binding expression and is fixed when it is planned).
 
 ### Boolean / Default
 
@@ -1608,7 +1612,7 @@ Filters can be chained with `|`:
 
 A filter is resolved when the bindings are planned. An unknown name throws `[wcs/filter-unknown]` (with a did-you-mean), and — as of 3.0 — an argument count outside what the filter accepts throws `[wcs/filter-arity]` (`join(a,b)`: "accepts at most 1 argument(s) (2 given)"), the same code and bounds lint reports. Arguments are cached by their structure, so `join('a,b')` and `join(a)` are never confused.
 
-**Argument literals are typed (3.0).** An unquoted `true`, `false`, `null` or number is that value; a quoted argument is a string. The comparison filters use it for booleans and `null`: `done|eq(true)` matches `true` (before 3.0 it compared with the string `"true"` and never matched), `eq('true')` does not, and `eq(null)` matches `null`. Numbers and strings compare as before — a numeric value against the number, a string value against the text — so a form value `"1"` still matches `eq(1)`. `defaults(v)` returns the typed value: `defaults(0)` gives `0`, `defaults('0')` gives `"0"`, `defaults(null)` gives `null`.
+**Argument literals are typed (3.0).** An unquoted `true`, `false`, `null` or number is that value; a quoted argument is a string. The comparison filters use it for booleans and `null`: `done|eq(true)` matches `true` (before 3.0 it compared with the string `"true"` and never matched), `eq('true')` does not, and `eq(null)` matches `null`. Numbers and strings compare as before — a numeric value against the number, a string value against the text — so a form value `"1"` still matches `eq(1)`. A **numeric** value against a typed `true` / `false` / `null` is simply "not equal": `selectedId|eq(null)` is `true` while the id is `null` and `false` once it is a number. (Until 3.2 that combination threw `requires a number as option` on every apply, so a path that is sometimes `null` and sometimes numeric broke the binding the moment a number arrived.) Only an unquoted non-number — `eq(abc)` against a numeric value — still reports the type mismatch; `eq` accepts values of any type, so `status|eq(active)` cannot be judged before the value is known. `defaults(v)` returns the typed value: `defaults(0)` gives `0`, `defaults('0')` gives `"0"`, `defaults(null)` gives `null`.
 
 **Quoting rules.** Quotes (`'` or `"`) mark a literal, and the argument grammar is deliberately small:
 
@@ -1980,9 +1984,12 @@ interface CommandToken {
 
 `emit` returns an array of return values from each subscriber (in subscribe order). For `Promise`-returning methods, wrap with `Promise.all(token.emit(...))` to await all of them.
 
+**One subscriber throwing does not stop the others.** A token is a fan-out point and the subscribers do not know about each other, so `emit` calls every one of them: a subscriber that throws is reported with `console.error` (naming the token) and leaves `undefined` at its position in the result array, and the remaining subscribers still receive the call. The exception does **not** reach the emitter — the same rule as a state event handler, because the firing path does not wait for the handler and a DOM-event origin has no caller to throw back to. If a caller needs to know, have the subscriber return a value (or a rejected `Promise`) rather than throw. A `Promise`-returning subscriber that rejects is not caught here at all; that is what `Promise.all(token.emit(...))` is for.
+
 ### Subscription Lifecycle
 
-- The subscriber holds the element via `WeakRef`, so a removed element can still be garbage collected even while it remains in the token's subscriber set
+- The subscriber holds the element via `WeakRef`, so nothing in the token's subscriber set keeps the element alive **by itself**
+- **Caveat (current implementation):** the subscriber closure also captures its `binding`, and `binding.node` is that same element — a strong reference that defeats the `WeakRef` above. In practice a removed element is retained until its binding is released, so the `WeakRef` only pays off where the binding is gone but the token still holds the subscriber. Releasing the subscriber when its row or element goes away (rather than relying on the lazy purge below) is the fix; it is not in 3.x because the binding machinery has no element-lifecycle hook to hang it on, and the change belongs with that hook. Treat the lazy purge as the mechanism you can rely on today
 - On `emit`, if the WeakRef has been collected or the element is no longer connected (`isConnected === false`), the subscription is purged automatically (lazy purge)
 - Disconnecting the owning `<wcs-state>` keeps the token registry, so the subscriptions still receive commands after the root `<wcs-state>` is re-attached (for example when its host moves in the DOM). While it is disconnected, the state cannot be created, so nothing emits through `$command`
 
@@ -2008,7 +2015,7 @@ A command token does not have to be emitted from state code. A DOM event binding
 
 This is pure wiring: the event endpoint is connected to a command-token endpoint, with no logic in between. The `emit` arguments are passed through exactly like a handler call — the DOM `Event` first, then any enclosing list indexes — so subscribers receive `(event, ...listIndexes)`. Inside a subscriber, pull what you need from the event (`event.target.value`, `event.detail`, …).
 
-- The right-hand side must be `$command.<name>` with `<name>` declared in `$commandTokens`. A path that does not resolve to a `CommandToken` (e.g. a typo) throws at event time.
+- The right-hand side must be `$command.<name>` with `<name>` declared in `$commandTokens`. A path that does not resolve to a `CommandToken` (e.g. a typo) fails at event time. A DOM event cannot be thrown back at, so it is reported once per event with `console.error` rather than propagated (the same landing as a state handler that rejects).
 - Modifiers work unchanged: `onclick#prevent: $command.someToken` calls `preventDefault()` before emitting (`#stop` likewise).
 - This emits the same token the state emits, so element subscribers wired with `command.<method>: $command.someToken` receive it regardless of who pulled the trigger.
 

@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { 
-  optionsRequired, 
-  optionMustBeNumber, 
+// `valueMustBeString` / `valueMustBeBoolean` は 3.x で参照がゼロになったので削除した
+// （`not` が真偽性ベースになった時点で最後の利用者が消えた）。この 2 つに対するテストは
+// 死んだコードを生かしているだけで、カバレッジ 100% の偽の緑を作っていた。
+import {
+  optionsRequired,
+  optionMustBeNumber,
   valueMustBeNumber,
-  valueMustBeString,
-  valueMustBeBoolean,
   valueMustBeDate,
   valueMustBeArray
 } from '../src/formats/errorMessages';
@@ -28,20 +29,6 @@ describe('filter errorMessages', () => {
     it('エラーメッセージにフィルター名が含まれること', () => {
       expect(() => valueMustBeNumber('testFilter')).toThrow(/testFilter/);
       expect(() => valueMustBeNumber('testFilter')).toThrow(/requires a number value/);
-    });
-  });
-
-  describe('valueMustBeString', () => {
-    it('エラーメッセージにフィルター名が含まれること', () => {
-      expect(() => valueMustBeString('testFilter')).toThrow(/testFilter/);
-      expect(() => valueMustBeString('testFilter')).toThrow(/requires a string value/);
-    });
-  });
-
-  describe('valueMustBeBoolean', () => {
-    it('エラーメッセージにフィルター名が含まれること', () => {
-      expect(() => valueMustBeBoolean('testFilter')).toThrow(/testFilter/);
-      expect(() => valueMustBeBoolean('testFilter')).toThrow(/requires a boolean value/);
     });
   });
 

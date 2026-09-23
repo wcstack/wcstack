@@ -330,9 +330,10 @@ describe("bind-component 入れ子形: スコープの独立性", () => {
       Array.from(component.shadowRoot!.querySelectorAll("#inner-view li.idx")).map((li) => li.textContent));
     // 判別子は 2 つ目のコンポーネント（親スコープでは行 1）。子スコープ自身の行番号が
     // 出るなら 0、Δ が漏れているなら 1 になる。
-    // 数値 0 が "" として現れるのは happy-dom の非準拠挙動（実ブラウザは "0"）で、
-    // wcstack 側の挙動ではない。0 と 1 の区別が付けば判別子としては十分。
-    expect(indexTexts).toEqual([["", "1"], [""]]);
+    // かつてはここが `""` だった — happy-dom の textContent setter が非文字列の falsy を
+    // 落とす非準拠挙動を、このテストがそのまま固定していた。表示のテキストプロパティは
+    // IDL と同じ規則で文字列化するようになったので、実ブラウザと同じ "0" が出る。
+    expect(indexTexts).toEqual([["0", "1"], ["0"]]);
 
     host.remove();
   });

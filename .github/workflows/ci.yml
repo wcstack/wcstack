@@ -53,6 +53,24 @@ jobs:
                 selected+=("$pkg")
               fi
             done
+
+            # The unscoped `wcstack` entry bundle has almost no source of its own:
+            # rollup + node-resolve inline each member's dist/auto.min.js (the
+            # file:../ devDependencies below). So a member change is what breaks
+            # that bundle — a renamed tag fails its tag census, a member bundle
+            # that gained a static import breaks the single-SRI-hash property —
+            # yet a member-only PR never selects the wcstack job and the breakage
+            # first appears in release.yml's "Build all packages". Select it here,
+            # and the job's member rebuild step (below) is what makes the gate real.
+            members=$(node -p "Object.values(require('./packages/wcstack/package.json').devDependencies).filter((v) => v.startsWith('file:../')).map((v) => v.slice(8)).join(' ')")
+            if ! echo "$changed" | grep -qE '^packages/wcstack/'; then
+              for pkg in $members; do
+                if echo "$changed" | grep -qE "^packages/${pkg}/"; then
+                  selected+=("wcstack")
+                  break
+                fi
+              done
+            fi
           fi
 
           if [ ${#selected[@]} -eq 0 ]; then
@@ -235,6 +253,24 @@ jobs:
           rm -rf node_modules/@wcstack/state
           mkdir -p node_modules/@wcstack
           ln -s ../../../state node_modules/@wcstack/state
+      # The wcstack bundle inlines each member's committed dist/auto.min.js, and
+      # those dists are only rebuilt at release — so without this the job would
+      # gate a bundle built from last release's members and stay green while the
+      # release build breaks. detect-changes selects this job for a member-only
+      # PR too, so every member is rebuilt here, not just state: rebuilding one
+      # of five would leave the other four whiffing exactly when they are the
+      # reason the job was selected. The members are file:../ dependencies, which
+      # npm installs as symlinks, so the fresh dist is what `npm run build` below
+      # picks up with no re-linking.
+      - name: Build the bundled members from source (their committed dist lags src)
+        if: ${{ matrix.package == 'wcstack' }}
+        run: |
+          set -euo pipefail
+          members=$(node -p "Object.values(require('./package.json').devDependencies).filter((v) => v.startsWith('file:../')).map((v) => v.slice(8)).join(' ')")
+          echo "rebuilding: $members"
+          for member in $members; do
+            ( cd "../$member" && npm ci && npm run build )
+          done
       # T1 static coupling gate for @wcstack/state (docs/state-next-major-wiring-design.md
       # §7-1). Compiles src with tsc into a temporary directory and checks the value-import
       # graph against scripts/state-coupling-baseline.json: no module outside the baseline may

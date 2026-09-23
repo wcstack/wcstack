@@ -1,8 +1,34 @@
-import { describe, it, expect, afterEach } from 'vitest';
+/**
+ * filters.builtinFilters.test.ts — 組み込みフィルタ 48 本の主力単体テスト。
+ *
+ * **解決は実行時と同じ経路（`resolveFilterFn`）で行う。** 以前はここが
+ * `builtinFilterFn(name, options)(outputBuiltinFilters)` を通しており、それは
+ * builtinFilters.ts の docstring 自身が「Test / tooling only. The binding pipeline never goes
+ * through here」と書いている工場直呼びの経路だった。**引数の個数の検査（B3）を一度も通らない**
+ * ため、arity 表と実装の食い違い（`date(ja-JP)` が実際には落ちる／`substr(0)` が的外れな文言で
+ * 落ちる）をこのファイルは 1 件も検出できず、arity 表と filterMeta という 2 つの誤った表が
+ * 互いをロックしているだけの偽の緑になっていた。
+ *
+ * 工場側の番人（`optionsRequired` — 引数の個数の検査が普通は前に倒すので実行時には届かない）は
+ * `factory()` で明示的に呼び分けて固定する。
+ */
+import { describe, it, expect, afterEach, beforeAll } from 'vitest';
 import { outputBuiltinFilters, builtinFilterFn } from '../src/formats/builtinFilters';
+import { installFormats } from '../src/formats/install';
+import { resolveFilterFn } from '../src/core/filterRegistry';
+import { builtinFilterMeta } from '../src/filters/filterMeta';
 import { getConfig, setConfig } from '../src/config';
 
+beforeAll(() => {
+  installFormats();
+});
+
+/** 実行時と同じ解決（登録簿 → 旧名の解決 → 引数の個数の検査 → 工場） */
 const getFilter = (name: string, options: string[] = []) =>
+  resolveFilterFn(name, options, 'output');
+
+/** tooling 専用の工場直呼び。引数の個数の検査を経ないので、工場側の番人だけを見る */
+const factory = (name: string, options: string[] = []) =>
   builtinFilterFn(name, options)(outputBuiltinFilters);
 
 describe('builtinFilters', () => {
@@ -325,14 +351,43 @@ describe('builtinFilters', () => {
 
   describe('validation errors', () => {
     it('存在しないフィルター名はエラーになること', () => {
-      expect(() => builtinFilterFn('unknown', [])(outputBuiltinFilters)).toThrow(/filter not found/);
+      expect(() => getFilter('unknown')).toThrow(/\[wcs\/filter-unknown\] filter not found/);
+      expect(() => factory('unknown')).toThrow(/filter not found/);
     });
 
-    it('オプション必須のフィルターは未指定でエラーになること', () => {
+    it('Object.prototype のメンバはフィルタとして通らないこと', () => {
+      // 登録簿（core/filterRegistry）が Map を採っているのと同じ理由。素のオブジェクトへの
+      // ブラケット参照だと `|toString` が `"[object Undefined]"` を返し、`|valueOf` は
+      // 素の TypeError になっていた
+      for (const name of ['toString', 'valueOf', 'constructor', 'hasOwnProperty']) {
+        expect(() => factory(name), name).toThrow(/\[wcs\/filter-unknown\] filter not found/);
+        expect(() => getFilter(name), name).toThrow(/\[wcs\/filter-unknown\] filter not found/);
+      }
+    });
+
+    it('オプション必須のフィルターは、束縛計画の段で引数の個数として拒否されること', () => {
       const names = ['eq', 'ne', 'lt', 'le', 'gt', 'ge', 'inc', 'dec', 'mul', 'div', 'mod', 'slice', 'pad', 'rep', 'substr', 'defaults'];
       for (const name of names) {
-        expect(() => getFilter(name)).toThrow(/requires at least one option/);
+        expect(() => getFilter(name), name).toThrow(/\[wcs\/filter-arity\] filter ".+" requires at least \d+ argument\(s\) \(0 given\)/);
       }
+    });
+
+    it('工場を直接呼ぶ経路（tooling）では、工場側の番人が未指定を落とすこと', () => {
+      // 引数の個数の検査を経ないので `optionsRequired` が最後の砦になる
+      const names = ['eq', 'ne', 'lt', 'le', 'gt', 'ge', 'inc', 'dec', 'mul', 'div', 'mod', 'slice', 'pad', 'rep', 'substr', 'defaults', 'clamp', 'unit', 'truncate'];
+      for (const name of names) {
+        expect(() => factory(name), name).toThrow(/requires at least one option/);
+      }
+      expect(() => factory('substr', ['1'])).toThrow(/requires at least one option/);
+      expect(() => factory('clamp', ['0'])).toThrow(/requires at least one option/);
+    });
+
+    it('工場を直接呼ぶ経路には型付きの値が無いので、原文の引数で比較・置換すること', () => {
+      // builtinFilterFn は原文の引数しか取らない（docstring にある通りの限界）。
+      // 実行時は resolveFilterFn が型付きの値（B9）も渡す
+      expect(factory('eq', ['10'])(10)).toBe(true);
+      expect(factory('ne', ['10'])(10)).toBe(false);
+      expect(factory('defaults', ['0'])('')).toBe('0');
     });
 
     it('数値オプションが不正な場合はエラーになること', () => {
@@ -361,8 +416,13 @@ describe('builtinFilters', () => {
       expect(() => neFn(1)).toThrow(/requires a number as option/);
     });
 
-    it('substr: 第2引数が必須なこと', () => {
-      expect(() => getFilter('substr', ['1'])).toThrow(/requires at least one option/);
+    it('substr: 長さは省略できず、引数の個数として拒否されること', () => {
+      // 実装は第 2 引数も読む。arity が [1, 2] だった頃は検査を素通りし、工場の
+      // 「requires at least one option」という的外れな文言（[wcs/...] コード無し＝lint も
+      // 検出できない）で落ちていた
+      expect(() => getFilter('substr', ['1']))
+        .toThrow(/\[wcs\/filter-arity\] filter "substr" requires at least 2 argument\(s\) \(1 given\)/);
+      expect(getFilter('substr', ['0', '2'])('hello')).toBe('he');
     });
 
     it('not: boolean以外も真偽性で反転すること（core の実装と同一）', () => {
@@ -427,8 +487,8 @@ describe('builtinFilters', () => {
     });
 
     it('オプションが不足しているとエラーになること', () => {
-      expect(() => getFilter('clamp')).toThrow(/requires at least one option/);
-      expect(() => getFilter('clamp', ['0'])).toThrow(/requires at least one option/);
+      expect(() => getFilter('clamp')).toThrow(/\[wcs\/filter-arity\] filter "clamp" requires at least 2 argument\(s\) \(0 given\)/);
+      expect(() => getFilter('clamp', ['0'])).toThrow(/\[wcs\/filter-arity\] filter "clamp" requires at least 2 argument\(s\) \(1 given\)/);
     });
 
     it('オプションが数値でないとエラーになること', () => {
@@ -464,7 +524,7 @@ describe('builtinFilters', () => {
     });
 
     it('オプション未指定はエラーになること', () => {
-      expect(() => getFilter('unit')).toThrow(/requires at least one option/);
+      expect(() => getFilter('unit')).toThrow(/\[wcs\/filter-arity\] filter "unit" requires at least 1 argument\(s\) \(0 given\)/);
     });
   });
 
@@ -503,8 +563,16 @@ describe('builtinFilters', () => {
       expect(getFilter('truncate', ['3', ''])('abcdef')).toBe('abc');
     });
 
+    it('filterMeta が説明している既定の省略記号が、実装の既定と同じ文字であること', () => {
+      // filterMeta は vscode-wcs の補完・ホバーの正本。説明が「既定は ...」（ASCII ドット 3 つ）
+      // と書かれていた一方で実装は '…'（U+2026）で、エディタが誤った既定値を表示していた
+      const defaultSuffix = (getFilter('truncate', ['1'])('abc') as string).slice(1);
+      expect(defaultSuffix).toBe('…');
+      expect(builtinFilterMeta.truncate.description).toContain(defaultSuffix);
+    });
+
     it('オプションが不足・非数値だとエラーになること', () => {
-      expect(() => getFilter('truncate')).toThrow(/requires at least one option/);
+      expect(() => getFilter('truncate')).toThrow(/\[wcs\/filter-arity\] filter "truncate" requires at least 1 argument\(s\) \(0 given\)/);
       expect(() => getFilter('truncate', ['x'])).toThrow(/requires a number as option/);
     });
   });
@@ -526,6 +594,99 @@ describe('builtinFilters', () => {
     it('Date以外はエラーになること', () => {
       expect(() => getFilter('hms')('09:05:06' as unknown as Date)).toThrow(/requires a date value/);
     });
+  });
+});
+
+// date / time / datetime は最初からロケール引数を読んでいたのに、arity 表と filterMeta が
+// [0, 0] / maxArgs: 0 だったため、README が規範として書いている `timestamp|date(ja-JP)` が
+// 束縛計画の段で必ず [wcs/filter-arity] になっていた（2.x には検査自体が無く、3.0 の B7 で
+// 入った検査が後方互換を壊していた）。エディタ（vscode-wcs）と lint も同じ表を読む。
+describe('ロケール引数を取る日付フィルタ（要件 B3 の引数の個数）', () => {
+  const DATE = new Date(2026, 0, 30, 9, 5, 6);
+
+  it('date / time / datetime は locale と同じく引数を 1 つ受けること', () => {
+    expect(getFilter('date', ['ja-JP'])(DATE)).toBe(DATE.toLocaleDateString('ja-JP'));
+    expect(getFilter('time', ['en-US'])(DATE)).toBe(DATE.toLocaleTimeString('en-US'));
+    expect(getFilter('datetime', ['en-US'])(DATE)).toBe(DATE.toLocaleString('en-US'));
+  });
+
+  it('2 つ以上は引数の個数として拒否されること', () => {
+    expect(() => getFilter('date', ['ja-JP', 'x']))
+      .toThrow(/\[wcs\/filter-arity\] filter "date" accepts at most 1 argument\(s\) \(2 given\)/);
+  });
+});
+
+// B9 の型付きリテラルを eq / ne が無視していた。数値の値に対して `eq(null)` / `eq(true)` は
+// 「一致しない」であって「オプションが数値でない」ではない。以前は**適用のたびに** throw し、
+// null と数値の両方を取りうるパス（`selectedId|eq(null)`）はその束縛が値の型で壊れていた。
+describe('eq / ne と型付きリテラル（要件 B9）', () => {
+  const planned = (name: string, args: string[], literals: unknown[]) =>
+    resolveFilterFn(name, args, 'output', literals);
+
+  it('数値の値に対して true / false / null の型付きリテラルが例外にならないこと', () => {
+    expect(planned('eq', ['null'], [null])(5)).toBe(false);
+    expect(planned('eq', ['true'], [true])(5)).toBe(false);
+    expect(planned('eq', ['false'], [false])(0)).toBe(false);
+    expect(planned('ne', ['null'], [null])(5)).toBe(true);
+    expect(planned('ne', ['true'], [true])(5)).toBe(true);
+    expect(planned('ne', ['false'], [false])(0)).toBe(true);
+  });
+
+  it('null と数値を行き来するパスでも、値が数値になった瞬間に落ちないこと', () => {
+    const fn = planned('eq', ['null'], [null]);
+    expect(fn(null)).toBe(true);
+    expect(fn(5)).toBe(false);
+    expect(fn(null)).toBe(true);
+  });
+
+  it('数値の値と、数値リテラル・数値文字列の比べ方は変わらないこと', () => {
+    expect(planned('eq', ['1'], [1])(1)).toBe(true);
+    expect(planned('eq', ['1'], ['1'])(1)).toBe(true);
+    expect(planned('eq', ['1'], [1])('1')).toBe(true);
+    // 引用符なしの非数値（`eq(abc)`）は今も型の食い違いとして報告する。eq は値の型を選ばない
+    // ので（`status|eq(active)` は正しい）、この検査は構築時には出せない
+    expect(() => planned('eq', ['abc'], ['abc'])(1)).toThrow(/requires a number as option/);
+    expect(() => planned('ne', ['abc'], ['abc'])(1)).toThrow(/requires a number as option/);
+  });
+});
+
+// 要件 B8 の「表示面の空値」契約は、フィルタを 1 つ挟むと破れていた:
+// `attr.title: x|trim` が title="undefined" を書き（フィルタ無しなら属性は消える）、
+// `textContent: x|upper` が "UNDEFINED" を描いていた。
+describe('表示面の空値契約（要件 B8）と書式フィルタ', () => {
+  const stringFamily: ReadonlyArray<[string, string[]]> = [
+    ['upper', []], ['lower', []], ['capitalize', []], ['trim', []], ['slice', ['1']],
+    ['substr', ['0', '2']], ['padStart', ['3']], ['padEnd', ['3']], ['repeat', ['2']],
+    ['reverse', []], ['truncate', ['3']], ['unit', ['px']],
+  ];
+
+  it.each(stringFamily)('%s は null / undefined を素通しすること', (name, args) => {
+    const fn = getFilter(name, args);
+    expect(fn(undefined)).toBeUndefined();
+    expect(fn(null)).toBeNull();
+    // 素通しは空値のときだけ。通常の値の書式は変わらない
+    expect(typeof fn('ab')).toBe('string');
+  });
+
+  it('空値そのものが入力として意味を持つフィルタは素通ししないこと', () => {
+    expect(getFilter('defaults', ['N/A'])(undefined)).toBe('N/A');
+    expect(getFilter('coalesce', ['N/A'])(null)).toBe('N/A');
+    expect(getFilter('boolean')(undefined)).toBe(false);
+    expect(getFilter('truthy')(null)).toBe(false);
+    expect(getFilter('falsy')(undefined)).toBe(true);
+    expect(getFilter('not')(null)).toBe(true);
+  });
+
+  it('変換が仕事のフィルタは素通しせず変換すること（値が無いなら coalesce を前に置く）', () => {
+    expect(getFilter('string')(undefined)).toBe('undefined');
+    expect(getFilter('number')(null)).toBe(0);
+    expect(getFilter('coalesce', ['0'])(null)).toBe('0');
+  });
+
+  it('値の型を検査するフィルタは今も落ちること（1 本に閉じ込められ $errorCallback に載る）', () => {
+    expect(() => getFilter('toFixed', ['2'])(undefined)).toThrow(/requires a number value/);
+    expect(() => getFilter('join')(undefined)).toThrow(/requires an array value/);
+    expect(() => getFilter('date')(undefined)).toThrow(/requires a date value/);
   });
 });
 

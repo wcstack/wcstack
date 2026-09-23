@@ -43,19 +43,34 @@ const SSR_ATTR_PROPS: Record<string, (element: Element, value: unknown) => void>
 };
 
 /**
- * 表示のプロパティ（要件 B8）。ここへの undefined は「値が無い」ので空にする — 要素の入力と違って
- * 生かすべき既定値が無く、スキップすると、使い回した行に前の行の表示が残る。
+ * 表示のプロパティは `textContent` / `innerText` / `innerHTML` の 3 つ（要件 B8）。ここへの
+ * undefined は「値が無い」ので空にする — 要素の入力と違って生かすべき既定値が無く、
+ * スキップすると、使い回した行に前の行の表示が残る。
  *
  * `outerHTML` は **入れない**。`trustedTypes.isHtmlSinkProp` は HTML sink として認めるが、
  * `element.outerHTML = ""` は要素そのものを DOM から外すので、「空にする」では済まず束縛先の
  * ノードごと失われる（以降の更新が届かない）。値が無いときはスキップして前の描画を残す方が
  * まだ壊れ方が小さい。`outerHTML:` を表示面として正しく畳むには「置換のやり直し」の設計が要る。
  */
-const DISPLAY_PROPS = new Set<string>(["textContent", "innerText", "innerHTML"]);
-
 export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyContext, newValue: unknown): void {
-  if (typeof newValue === "undefined" && binding.propSegments.length === 1 && DISPLAY_PROPS.has(binding.propSegments[0])) {
-    newValue = "";
+  if (binding.propSegments.length === 1) {
+    const displayProp = binding.propSegments[0];
+    if (displayProp === "textContent" || displayProp === "innerText") {
+      // テキストの表示プロパティは IDL 側で文字列化される — `textContent` は nullable DOMString
+      // （null は空文字）、`innerText` は [LegacyNullToEmptyString]。ブラウザでは生値を代入しても
+      // 同じ結果になるが、SSR（happy-dom）の setter は**非文字列の falsy を落とす**ので
+      // `textContent: count` が 0 のとき、サーバ HTML だけが空になっていた（ハイドレーション用
+      // props には正しい値が載るのでクライアントでは戻る＝ no-JS / SEO / 初回描画だけが壊れる）。
+      // IDL と同じ規則にここで自分で寄せる。副次的に、比較（下の current !== newValue）も
+      // 文字列同士になり、数値を束ねた表示が毎回書き直されなくなる。
+      // `== null` は null と undefined の両方（意図的な緩い比較）
+      newValue = newValue == null ? "" : String(newValue);
+    } else if (typeof newValue === "undefined" && displayProp === "innerHTML") {
+      // `innerHTML` を上の文字列化に含めない理由: TrustedHTML を String() で潰すと Trusted Types の
+      // 強制下で書き込みが拒否される（trustedTypes.trustHtmlValue は非文字列を素通しする）。
+      // 値が無いときに空にする規則だけは表示面として共通（要件 B8）
+      newValue = "";
+    }
   }
   // 要素の入力への undefined は「状態が値を持たない＝無意見」であり、書き込み自体をスキップして
   // 要素側の既定値を生かす。書き込んでしまうと setter の文字列化で

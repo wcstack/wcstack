@@ -1081,6 +1081,44 @@ export default { items: ["x"], label: "a" };
   });
 });
 
+// Fixed by review（サイクル 4）— ボリュームの候補が接頭辞付きの子パスだけだったため、
+// マウントパスそのものを指す `state: cart`（コンポーネントの根をマウントする正規の書き方）
+// が wcs/binding-path-missing に誤報されていた。warning なので exit code には効かないが、
+// AI 向けの「exit 0 になるまで直せ」という指示が無駄な書き換えを誘う。
+describe('validateBindings — ボリューム（mount=）のマウントパス自身', () => {
+  const page = (attr: string): string => `
+<wcs-state>
+  <script type="module">export default { a: 1 };</script>
+</wcs-state>
+<wcs-state mount="cart">
+  <script type="module">export default { total: 0 };</script>
+</wcs-state>
+<user-card data-wcs="${attr}"></user-card>`;
+
+  it('`state: cart` / `textContent: cart` を誤報しないこと', () => {
+    expect(validateBindings(page('state: cart'), 'data-wcs')).toEqual([]);
+    expect(validateBindings(page('textContent: cart'), 'data-wcs')).toEqual([]);
+  });
+
+  it('マウント配下の実在パスは従来どおり通り、存在しないパスは従来どおり報告すること（対照）', () => {
+    expect(validateBindings(page('textContent: cart.total'), 'data-wcs')).toEqual([]);
+    const missing = validateBindings(page('textContent: cart.doesNotExist'), 'data-wcs');
+    expect(missing.map(d => d.code)).toEqual([WcsDiagnosticCode.BindingPathMissing]);
+  });
+
+  it('ネストしたマウント（deep.vol）では途中のセグメントも誤報しないこと', () => {
+    const html = `
+<wcs-state>
+  <script type="module">export default { a: 1 };</script>
+</wcs-state>
+<wcs-state mount="deep.vol" json='{"c": 3}'></wcs-state>
+<p data-wcs="textContent: deep"></p>
+<p data-wcs="textContent: deep.vol"></p>
+<p data-wcs="textContent: deep.vol.c"></p>`;
+    expect(validateBindings(html, 'data-wcs')).toEqual([]);
+  });
+});
+
 describe('validateBindings — フィルタの旧名（@wcstack/state 3.2・要件 B12）', () => {
   it('旧名は正式名と同じ検査を受け、wcs/name-alias（info）で正式名を提案する', () => {
     const html = `

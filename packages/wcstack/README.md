@@ -11,8 +11,10 @@ Project site: **https://wcstack.github.io** · Source: **https://github.com/wcst
 This file is a complete, self-contained guide to writing a correct wcstack app. Read it top to bottom, then **verify what you wrote**:
 
 ```bash
-npx @wcstack/lint index.html    # exit code 0 = clean. Iterate until it exits 0.
+npx @wcstack/lint index.html    # exit 0 = no error-severity finding. Iterate until it exits 0.
 ```
+
+Exit `0` does **not** mean the file is clean: warnings and info diagnostics are printed and still exit `0`. Read what it printed, or add `--strict` to make warnings fail too.
 
 Do not guess at syntax that is not documented here. wcstack has little presence in training data, so invented syntax will look plausible and be wrong. Two rules cover most failures:
 
@@ -46,6 +48,8 @@ For an app that uses the SPA core anyway, **this package ships the bundle**: `wc
 Loading the bundle alongside an individual package's `/auto` is safe: whichever copy evaluates first owns the page; the second is inert. Do **not** merge the files yourself through jsDelivr's `/combine/` endpoint — concatenated minified ESM does not even parse (`docs/sri.md` §3.1).
 
 If you want npm packages for local development, install the individual ones (`@wcstack/state`, `@wcstack/router`, …); this package publishes only the bundle and this guide.
+
+`@wcstack/state` also ships **split entries** for a page that deliberately leaves features out: import `bootstrapState` and `installFeatures` from `@wcstack/state/core`, then `installFeatures([...])` with the features you need (`features/temporal` = `$watch` / `$scan` / `$stream`, `features/scopes` = `bind-component` / `mount=` / DCC, plus `recursion`, `ssr`, `formats`, `devtools`, `diagnostics`) **before** calling `bootstrapState()`. A declaration whose feature is missing throws `[wcs/feature-not-installed]`. Load the split files from jsDelivr's plain `/npm/…/dist/split/` paths or a bundler — **never `esm.run`**, which re-bundles a separate engine into each entry. The full-package `/auto` above needs none of this and stays the default; see `npm view @wcstack/state readme`.
 
 ---
 
@@ -175,6 +179,15 @@ Multiple bindings are separated by `;`:
 | `radio` | Radio group (two-way) |
 | `checkbox` | Checkbox group bound to an array (two-way) |
 | `onclick`, `on*` | Event handler |
+| `.NAME` | Explicit property (3.1) — the same binding as `NAME:`, except it is never an event |
+
+**A property whose name starts with `on` needs the dotted form (3.1).** `online: x` is parsed as an event binding: it listens for a `"line"` event and **never writes the element's `online` property**. Put a dot in front to bind the property itself:
+
+```html
+<my-status data-wcs=".online: isOnline; onclick: refresh"></my-status>
+```
+
+`.value:` stays two-way like `value:`, and modifiers and filters work as usual. A namespace word after the dot (`.class`, `.attr`, `.style`, `.command`, `.eventToken`) or an empty name is rejected with `[wcs/binding-syntax]`.
 
 ### Modifiers
 
@@ -184,9 +197,10 @@ Multiple bindings are separated by `;`:
 | `#prevent` | `event.preventDefault()` on handlers |
 | `#stop` | `event.stopPropagation()` on handlers |
 | `#onchange` | Use `change` instead of `input` for two-way binding |
-| `#init=element` | The element owns the initial value (use with `<wcs-storage>` and monitors) |
+| `#init=<authority>` | Who wins the **initial** sync: `element` (the element's own value seeds the state — use with `<wcs-storage>` and monitors), `state`, `auto`, `none`. Without it the default comes from the member's `wcBindable` declaration |
+| `#sync=<timing>` | When an element-authority binding reads the element: `call` (default — when the binding attaches) or `connect` (once the element is in the document) |
 
-Combine after one `#`, comma separated: `value#ro,init=none: path`.
+Combine after one `#`, comma separated: `value#ro,init=none: path`, `value#init=element,sync=connect: path`. A second `#` is a parse error.
 
 ### Paths
 
@@ -196,6 +210,16 @@ Combine after one `#`, comma separated: `value#ro,init=none: path`.
 | `items.*.price` | Wildcard — the current row inside a `for:` loop |
 | `.price` | Shorthand for the current row's property inside a loop |
 | `cart.path` | Read a mounted volume (`<wcs-state mount="cart">`) by its path prefix — one tree per root, extended by mounts (`name=` / `path@name` were removed in v2) |
+
+### Splitting state across files (`mount=`)
+
+A second `<wcs-state mount="cart" src="./cart.js">` grafts its module onto the root tree at `cart`; the page then reads `cart.total`. When the volume's own code needs a path from outside its subtree, inject it on that element (3.1):
+
+```html
+<wcs-state mount="cart" src="./cart.js" data-wcs="state.taxRate: settings.taxRate"></wcs-state>
+```
+
+Inside `cart.js`, `this.taxRate` reads and writes the root's `settings.taxRate` (add `#ro` for read-only). One `state.<key>` per injection; the right side must be a static path — no wildcard, no `$`, no filter. The injected name exists only inside the volume: the page still reads `settings.taxRate`, and there is no `cart.taxRate`.
 
 ### Structural directives
 
@@ -270,6 +294,25 @@ this.items = this.items.map(t => t.id === id ? { ...t, done: true } : t);
 
 ---
 
+## Names that changed in 3.2
+
+Older names appear all over the training data. They still work through 3.x and are removed in 4.0, but `@wcstack/lint` and the VS Code extension flag each one (`wcs/name-alias`, info severity — it does **not** change the exit code, so it is easy to miss). Write the canonical name.
+
+| Canonical | Old name |
+|---|---|
+| `upper` · `lower` · `capitalize` | `uc` · `lc` · `cap` |
+| `add` · `sub` | `inc` · `dec` |
+| `toFixed` · `padStart` | `fix` · `pad` |
+| `repeat` · `reverse` | `rep` · `rev` |
+| `nullIfEmpty` | `null` |
+| `$stream` (async producer → state) | `$streams` |
+| `$renderedCallback` (hook) | `$updatedCallback` |
+| `this.$dependOn(path)` · `this.$untracked(fn)` | `$trackDependency` · `$untrackDependency` |
+
+Declaring both spellings of a state key fails with `[wcs/declaration-alias]`. `$renderedCallback` reports the **bindings that were applied**, not every state change — use `$watch` for those.
+
+---
+
 ## Verify before you finish
 
 ```bash
@@ -280,7 +323,7 @@ npx @wcstack/lint index.html
 npx @wcstack/lint --errors-only index.html
 ```
 
-Exit code `0` means clean, `1` means at least one error-severity finding, `2` means a usage or read failure. Diagnostics carry stable `wcs/*` codes and `source:line:col` ranges.
+Exit code `0` means no error-severity finding, `1` means at least one, `2` means a usage or read failure. **Warnings and info diagnostics do not change the exit code** — `0` is not the same as "no findings", so read the output too (or pass `--strict`, which makes warnings exit `1` as well). Diagnostics carry stable `wcs/*` codes and `source:line:col` ranges.
 
 ---
 

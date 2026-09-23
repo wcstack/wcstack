@@ -124,6 +124,26 @@ describe('getBindingContext', () => {
       expect(at("textContent: items|join('|")).toEqual({ kind: 'none' });
     });
 
+    // Fixed by review（サイクル 4）— `#` だけ素の走査が残っており、左辺の入力フィルタの
+    // 引数に `#` があると「イベント修飾子の補完」になり propName もゴミになっていた。
+    it('入力フィルタ引数の中の `#` は修飾子の区切りではない', () => {
+      // 修正前: { kind: 'modifier', propName: "value|defaults('", partial: "')" }
+      expect(at("value|defaults('#')").kind).toBe(at("value|defaults('x')").kind);
+      expect(at("value|defaults('#')")).toEqual({
+        kind: 'property', partial: "value|defaults('#')",
+      });
+      // `:` の後ろでも propName が切れない
+      expect(at("class.a|defaults('#'): f")).toEqual({
+        kind: 'path', propName: "class.a|defaults('#')", partial: 'f',
+      });
+    });
+
+    it('引用符の外の `#` では従来どおり修飾子文脈になる', () => {
+      expect(at('value#')).toEqual({ kind: 'modifier', propName: 'value', partial: '' });
+      expect(at('value#ro')).toEqual({ kind: 'modifier', propName: 'value', partial: 'ro' });
+      expect(at('value#ro: name')).toEqual({ kind: 'path', propName: 'value', partial: 'name' });
+    });
+
     it('引用符の中の `;` はバインディングの区切りではない', () => {
       // 修正前: { kind: 'property', partial: "b'" } — 式そのものを取り違えていた
       expect(at("textContent: 'a;b'")).toEqual({

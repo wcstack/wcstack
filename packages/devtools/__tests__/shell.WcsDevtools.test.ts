@@ -351,6 +351,7 @@ describe('WcsDevtools shell', () => {
         mountTable: [{ inner: '', outer: 'users.*' }, { inner: 'address', outer: 'addresses.*' }],
         delta: 1,
         privateKeys: ['draft'],
+        exports: ['users.*.display'],
         getterKeys: ['fullName'],
       }]);
       source.emit({ type: 'state:element-registered', rootNode: document, element: {} });
@@ -365,8 +366,29 @@ describe('WcsDevtools shell', () => {
       expect(text).toContain('address → addresses.*');
       expect(text).toContain('Δ1');
       expect(text).toContain('private: draft');
+      // 公開 getter の公開パス（オーバーレイ export）。私有面と並べて出す
+      expect(text).toContain('exports: users.*.display');
       expect(text).toContain('getters: fullName');
       expect((source as any).overlays).toHaveBeenCalledWith(document);
+    });
+
+    it('exports を持たない v2 ランタイムのマウント記録でも throw せず exports 行を出さないこと（後方互換）', () => {
+      mount();
+      // オーバーレイ export より前の v2 state = summary に exports フィールドが無い
+      (source as any).overlays = vi.fn(() => [{
+        marker: '#m1',
+        componentTag: 'user-card',
+        stateProp: 'user',
+        mountTable: [{ inner: '', outer: 'users.*' }],
+        delta: 0,
+        privateKeys: [],
+        getterKeys: [],
+      }]);
+      source.emit({ type: 'state:element-registered', rootNode: document, element: {} });
+      devtools.__flushRenderForTest();
+      const text = paneBody(devtools, 'state').textContent!;
+      expect(text).toContain('Overlays (1 mount)');
+      expect(text).not.toContain('exports:');
     });
 
     it('overlays未提供のランタイム（旧state）ではセクションごと出さないこと（後方互換）', () => {

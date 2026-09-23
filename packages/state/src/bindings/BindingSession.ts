@@ -931,13 +931,17 @@ export class BindingSession {
       this.addKnownRowBinding(anchor, binding, i);
       rowByBinding.set(binding, row);
       if (slots[i].isEvent) {
+        // 印は `attachEventHandler` の**戻り値**で立てる。今は `structural/rowPlan.ts` の
+        // 名前空間除外によって `slot.isEvent` ⟺ `isDomEventBinding` が成り立っているが、
+        // そこが緩んだ瞬間に「張っていないのに張った印」が立ち、detach が空振りする
+        let attached = false;
         try {
-          attachEventHandler(binding);
+          attached = attachEventHandler(binding);
         } catch (error) {
           row.phases[i] = SLOT_FAILED;
           throw error;
         }
-        row.flags[i] |= FLAG_EVENT_ATTACHED;
+        if (attached) row.flags[i] |= FLAG_EVENT_ATTACHED;
       }
       // 非 event スロットはプラン適格性により双方向不能・radio/checkbox 不能・
       // token 配線不能が確定しているため attach 系を一切呼ばない
@@ -976,14 +980,15 @@ export class BindingSession {
         row.phases[i] = SLOT_ACTIVE;
         row.flags[i] = 0;
         if (slots[i].isEvent) {
+          let attached = false;
           try {
-            attachEventHandler(bindings[i]);
+            attached = attachEventHandler(bindings[i]);
           } catch (error) {
             row.phases[i] = SLOT_FAILED;
             this.runRowSlotTeardowns(row, i);
             throw error;
           }
-          row.flags[i] |= FLAG_EVENT_ATTACHED;
+          if (attached) row.flags[i] |= FLAG_EVENT_ATTACHED;
         }
         this.registerRowSlot(row, i, knownRoot);
         continue;

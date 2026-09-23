@@ -18,7 +18,7 @@ import { config } from "../config.js";
 import { didYouMean, LINT_HINT } from "../errorGuidance.js";
 import { raiseError } from "../raiseError.js";
 import { optionMustBeNumber, optionsRequired, valueMustBeArray, valueMustBeDate, valueMustBeNumber } from "./errorMessages.js";
-import { FilterFn, FilterWithOptions } from "../filters/types";
+import { FilterFn, FilterWithOptions, FilterWithOptionsFn } from "../filters/types";
 import { builtinFilterAliases } from "../filters/filterAliases";
 
 function validateNumberString(value: string): boolean {
@@ -27,6 +27,49 @@ function validateNumberString(value: string): boolean {
   }
   return true;
 }
+
+/**
+ * Reads one numeric option **at construction time** and returns the number itself.
+ *
+ * Every numeric filter used to write out the same three lines (`options?.[i] ?? optionsRequired`,
+ * `validateNumberString`, `optionMustBeNumber`) and then call `Number(opt)` again on **every
+ * apply**. Folding it here keeps the option checks in one place and takes the conversion off the
+ * hot path.
+ */
+function numberOption(value: string, fnName: string): number {
+  if (!validateNumberString(value)) {optionMustBeNumber(fnName);}
+  return Number(value);
+}
+
+/** A required numeric option: missing → `optionsRequired`, non-numeric → `optionMustBeNumber`. */
+function requiredNumberOption(options: string[] | undefined, index: number, fnName: string): number {
+  return numberOption(options?.[index] ?? optionsRequired(fnName), fnName);
+}
+
+/**
+ * Extends the display-side empty-value contract (requirement B8) to the formatting filters.
+ *
+ * A filter that builds its result with `String(value)` turns `undefined` / `null` into the
+ * *characters* `"undefined"` / `"null"`, so `attr.title: x|trim` wrote `title="undefined"` where
+ * the unfiltered `attr.title: x` correctly removes the attribute — one filter was enough to undo
+ * what B8 established. This family therefore passes an absent value straight through and leaves
+ * the decision to the apply side (attribute removed, class cleared, style cleared, text emptied).
+ *
+ * Deliberately **not** wrapped:
+ * - filters for which an absent value *is* the input: `defaults` / `coalesce` / `nullIfEmpty` /
+ *   `boolean` / `truthy` / `falsy` / `not` / `eq` / `ne`;
+ * - the conversions, whose whole job is to convert: `int` / `float` / `number` / `string`;
+ * - the filters that reject a value of the wrong type (the number, date and array families).
+ *   Their throw is confined to the one binding and reported through `$errorCallback`
+ *   (`apply/applyChangeFromBindings.ts`), which is a different quality of failure from silently
+ *   painting the word "undefined" into the page.
+ */
+const nullishPassthrough = (factory: (options?: string[]) => FilterFn<string>): FilterWithOptionsFn =>
+  (options?: string[]): FilterFn => {
+    const filterFn = factory(options);
+    // `== null` は null と undefined の両方（意図的な緩い比較）
+    return (value: unknown): unknown => (value == null ? value : filterFn(value));
+  };
 
 /**
  * Equality filter - compares value with option.
@@ -41,6 +84,14 @@ const eq = (options?:string[], literals?: readonly unknown[]): FilterFn<boolean>
   return (value: unknown): boolean => {
     // Align types for comparison
     if (typeof value === 'number') {
+      // A typed literal that is not a string compares as itself (B9). A number is never equal to
+      // `true` / `false` / `null`, so `selectedId|eq(null)` is simply false once the id is a
+      // number — it used to throw `optionMustBeNumber` on **every apply**, which broke every
+      // binding on a path that is sometimes null and sometimes numeric. Only an unquoted
+      // non-number (a bare string such as `eq(abc)`) still reports the type mismatch, and it has
+      // to stay inside the closure: `eq` accepts values of any type, so `status|eq(active)` is
+      // perfectly valid and cannot be rejected at construction the way `lt` / `add` can.
+      if (typeof literal !== 'string') {return value === literal;}
       if (!validateNumberString(opt)) {optionMustBeNumber('eq');}
       return value === Number(opt);
     }
@@ -64,6 +115,9 @@ const ne = (options?:string[], literals?: readonly unknown[]): FilterFn<boolean>
   return (value: unknown): boolean => {
     // Align types for comparison
     if (typeof value === 'number') {
+      // Same as `eq`: a typed `true` / `false` / `null` compares as itself instead of being
+      // forced through `Number()` (B9)
+      if (typeof literal !== 'string') {return value !== literal;}
       if (!validateNumberString(opt)) {optionMustBeNumber('ne');}
       return value !== Number(opt);
     }
@@ -101,11 +155,10 @@ const not = (_options?:string[]): FilterFn<boolean> => {
  * @returns Filter function that returns boolean
  */
 const lt = (options?:string[]): FilterFn<boolean> => {
-  const opt = options?.[0] ?? optionsRequired('lt');
-  if (!validateNumberString(opt)) {optionMustBeNumber('lt');}
+  const opt = requiredNumberOption(options, 0, 'lt');
   return (value: unknown): boolean => {
     if (typeof value !== 'number') {valueMustBeNumber('lt');}
-    return value < Number(opt);
+    return value < opt;
   }
 }
 
@@ -116,11 +169,10 @@ const lt = (options?:string[]): FilterFn<boolean> => {
  * @returns Filter function that returns boolean
  */
 const le = (options?:string[]): FilterFn<boolean> => {
-  const opt = options?.[0] ?? optionsRequired('le');
-  if (!validateNumberString(opt)) {optionMustBeNumber('le');}
+  const opt = requiredNumberOption(options, 0, 'le');
   return (value: unknown): boolean => {
     if (typeof value !== 'number') {valueMustBeNumber('le');}
-    return value <= Number(opt);
+    return value <= opt;
   }
 }
 
@@ -131,11 +183,10 @@ const le = (options?:string[]): FilterFn<boolean> => {
  * @returns Filter function that returns boolean
  */
 const gt = (options?:string[]): FilterFn<boolean> => {
-  const opt = options?.[0] ?? optionsRequired('gt');
-  if (!validateNumberString(opt)) {optionMustBeNumber('gt');}
+  const opt = requiredNumberOption(options, 0, 'gt');
   return (value: unknown): boolean => {
     if (typeof value !== 'number') {valueMustBeNumber('gt');}
-    return value > Number(opt);
+    return value > opt;
   }
 }
 
@@ -146,11 +197,10 @@ const gt = (options?:string[]): FilterFn<boolean> => {
  * @returns Filter function that returns boolean
  */
 const ge = (options?:string[]): FilterFn<boolean> => {
-  const opt = options?.[0] ?? optionsRequired('ge');
-  if (!validateNumberString(opt)) {optionMustBeNumber('ge');}
+  const opt = requiredNumberOption(options, 0, 'ge');
   return (value: unknown): boolean => {
     if (typeof value !== 'number') {valueMustBeNumber('ge');}
-    return value >= Number(opt);
+    return value >= opt;
   }
 }
 
@@ -161,11 +211,10 @@ const ge = (options?:string[]): FilterFn<boolean> => {
  * @returns Filter function that returns incremented number
  */
 const inc = (options?:string[]): FilterFn<number> => {
-  const opt = options?.[0] ?? optionsRequired('add');
-  if (!validateNumberString(opt)) {optionMustBeNumber('add');}
+  const opt = requiredNumberOption(options, 0, 'add');
   return (value: unknown): number => {
     if (typeof value !== 'number') {valueMustBeNumber('add');}
-    return value + Number(opt);
+    return value + opt;
   }
 }
 
@@ -176,11 +225,10 @@ const inc = (options?:string[]): FilterFn<number> => {
  * @returns Filter function that returns decremented number
  */
 const dec = (options?:string[]): FilterFn<number> => {
-  const opt = options?.[0] ?? optionsRequired('sub');
-  if (!validateNumberString(opt)) {optionMustBeNumber('sub');}
+  const opt = requiredNumberOption(options, 0, 'sub');
   return (value: unknown): number => {
     if (typeof value !== 'number') {valueMustBeNumber('sub');}
-    return value - Number(opt);
+    return value - opt;
   }
 }
 
@@ -191,11 +239,10 @@ const dec = (options?:string[]): FilterFn<number> => {
  * @returns Filter function that returns multiplied number
  */
 const mul = (options?:string[]): FilterFn<number> => {
-  const opt = options?.[0] ?? optionsRequired('mul');
-  if (!validateNumberString(opt)) {optionMustBeNumber('mul');}
+  const opt = requiredNumberOption(options, 0, 'mul');
   return (value: unknown): number => {
     if (typeof value !== 'number') {valueMustBeNumber('mul');}
-    return value * Number(opt);
+    return value * opt;
   }
 }
 
@@ -206,11 +253,10 @@ const mul = (options?:string[]): FilterFn<number> => {
  * @returns Filter function that returns divided number
  */
 const div = (options?:string[]): FilterFn<number> => {
-  const opt = options?.[0] ?? optionsRequired('div');
-  if (!validateNumberString(opt)) {optionMustBeNumber('div');}
+  const opt = requiredNumberOption(options, 0, 'div');
   return (value: unknown): number => {
     if (typeof value !== 'number') {valueMustBeNumber('div');}
-    return value / Number(opt);
+    return value / opt;
   }
 }
 
@@ -221,11 +267,10 @@ const div = (options?:string[]): FilterFn<number> => {
  * @returns Filter function that returns remainder
  */
 const mod = (options?:string[]): FilterFn<number> => {
-  const opt = options?.[0] ?? optionsRequired('mod');
-  if (!validateNumberString(opt)) {optionMustBeNumber('mod');}
+  const opt = requiredNumberOption(options, 0, 'mod');
   return (value: unknown): number => {
     if (typeof value !== 'number') {valueMustBeNumber('mod');}
-    return value % Number(opt);
+    return value % opt;
   }
 }
 
@@ -253,12 +298,8 @@ const abs = (_options?:string[]): FilterFn<number> => {
  * @returns Filter function that returns the clamped number
  */
 const clamp = (options?:string[]): FilterFn<number> => {
-  const opt1 = options?.[0] ?? optionsRequired('clamp');
-  if (!validateNumberString(opt1)) {optionMustBeNumber('clamp');}
-  const opt2 = options?.[1] ?? optionsRequired('clamp');
-  if (!validateNumberString(opt2)) {optionMustBeNumber('clamp');}
-  const min = Number(opt1);
-  const max = Number(opt2);
+  const min = requiredNumberOption(options, 0, 'clamp');
+  const max = requiredNumberOption(options, 1, 'clamp');
   return (value: unknown): number => {
     if (typeof value !== 'number') {valueMustBeNumber('clamp');}
     return Math.min(Math.max(value, min), max);
@@ -272,11 +313,10 @@ const clamp = (options?:string[]): FilterFn<number> => {
  * @returns Filter function that returns formatted string
  */
 const fix = (options?:string[]): FilterFn<string> => {
-  const opt = options?.[0] ?? "0";
-  if (!validateNumberString(opt)) {optionMustBeNumber('toFixed');}
+  const opt = numberOption(options?.[0] ?? "0", 'toFixed');
   return (value: unknown): string => {
     if (typeof value !== 'number') {valueMustBeNumber('toFixed');}
-    return value.toFixed(Number(opt));
+    return value.toFixed(opt);
   }
 }
 
@@ -369,14 +409,10 @@ const trim = (_options?:string[]): FilterFn<string> => {
  * @returns Filter function that returns sliced string
  */
 const slice = (options?:string[]): FilterFn<string> => {
-  const numberedOpts: number[] = [];
-  const opt1 = options?.[0] ?? optionsRequired('slice');
-  if (!validateNumberString(opt1)) {optionMustBeNumber('slice');}
-  numberedOpts.push(Number(opt1));
+  const numberedOpts: number[] = [requiredNumberOption(options, 0, 'slice')];
   const opt2 = options?.[1];
   if (typeof opt2 !== 'undefined') {
-    if (!validateNumberString(opt2)) {optionMustBeNumber('slice');}
-    numberedOpts.push(Number(opt2));
+    numberedOpts.push(numberOption(opt2, 'slice'));
   }
   return (value: unknown): string => {
     return String(value).slice(...numberedOpts);
@@ -390,12 +426,10 @@ const slice = (options?:string[]): FilterFn<string> => {
  * @returns Filter function that returns substring
  */
 const substr = (options?:string[]): FilterFn<string> => {
-  const opt1 = options?.[0] ?? optionsRequired('substr');
-  if (!validateNumberString(opt1)) {optionMustBeNumber('substr');}
-  const opt2 = options?.[1] ?? optionsRequired('substr');
-  if (!validateNumberString(opt2)) {optionMustBeNumber('substr');}
+  const opt1 = requiredNumberOption(options, 0, 'substr');
+  const opt2 = requiredNumberOption(options, 1, 'substr');
   return (value: unknown): string => {
-    return String(value).substr(Number(opt1), Number(opt2));
+    return String(value).substr(opt1, opt2);
   }
 }
 
@@ -406,11 +440,10 @@ const substr = (options?:string[]): FilterFn<string> => {
  * @returns Filter function that returns padded string
  */
 const pad = (options?:string[]): FilterFn<string> => {
-  const opt1 = options?.[0] ?? optionsRequired('padStart');
-  if (!validateNumberString(opt1)) {optionMustBeNumber('padStart');}
+  const opt1 = requiredNumberOption(options, 0, 'padStart');
   const opt2 = options?.[1] ?? '0';
   return (value: unknown): string => {
-    return String(value).padStart(Number(opt1), opt2);
+    return String(value).padStart(opt1, opt2);
   }
 }
 
@@ -421,11 +454,10 @@ const pad = (options?:string[]): FilterFn<string> => {
  * @returns Filter function that returns padded string
  */
 const padEnd = (options?:string[]): FilterFn<string> => {
-  const opt1 = options?.[0] ?? optionsRequired('padEnd');
-  if (!validateNumberString(opt1)) {optionMustBeNumber('padEnd');}
+  const opt1 = requiredNumberOption(options, 0, 'padEnd');
   const opt2 = options?.[1] ?? ' ';
   return (value: unknown): string => {
-    return String(value).padEnd(Number(opt1), opt2);
+    return String(value).padEnd(opt1, opt2);
   }
 }
 
@@ -436,10 +468,9 @@ const padEnd = (options?:string[]): FilterFn<string> => {
  * @returns Filter function that returns repeated string
  */
 const rep = (options?:string[]): FilterFn<string> => {
-  const opt = options?.[0] ?? optionsRequired('repeat');
-  if (!validateNumberString(opt)) {optionMustBeNumber('repeat');}
+  const opt = requiredNumberOption(options, 0, 'repeat');
   return (value: unknown): string => {
-    return String(value).repeat(Number(opt));
+    return String(value).repeat(opt);
   }
 }
 
@@ -486,11 +517,9 @@ const float = (_options?:string[]): FilterFn<number> => {
  * @returns Filter function that returns rounded number
  */
 const round = (options?:string[]): FilterFn<number> => {
-  const opt = options?.[0] ?? '0';
-  if (!validateNumberString(opt)) {optionMustBeNumber('round');}
+  const optValue = Math.pow(10, numberOption(options?.[0] ?? '0', 'round'));
   return (value: unknown): number => {
     if (typeof value !== 'number') {valueMustBeNumber('round');}
-    const optValue = Math.pow(10, Number(opt));
     return Math.round(value * optValue) / optValue;
   }
 }
@@ -502,11 +531,9 @@ const round = (options?:string[]): FilterFn<number> => {
  * @returns Filter function that returns floored number
  */
 const floor = (options?:string[]): FilterFn<number> => {
-  const opt = options?.[0] ?? '0';
-  if (!validateNumberString(opt)) {optionMustBeNumber('floor');}
+  const optValue = Math.pow(10, numberOption(options?.[0] ?? '0', 'floor'));
   return (value: unknown): number => {
     if (typeof value !== 'number') {valueMustBeNumber('floor');}
-    const optValue = Math.pow(10, Number(opt));
     return Math.floor(value * optValue) / optValue;
   }
 }
@@ -518,11 +545,9 @@ const floor = (options?:string[]): FilterFn<number> => {
  * @returns Filter function that returns ceiled number
  */
 const ceil = (options?:string[]): FilterFn<number> => {
-  const opt = options?.[0] ?? '0';
-  if (!validateNumberString(opt)) {optionMustBeNumber('ceil');}
+  const optValue = Math.pow(10, numberOption(options?.[0] ?? '0', 'ceil'));
   return (value: unknown): number => {
     if (typeof value !== 'number') {valueMustBeNumber('ceil');}
-    const optValue = Math.pow(10, Number(opt));
     return Math.ceil(value * optValue) / optValue;
   }
 }
@@ -534,11 +559,10 @@ const ceil = (options?:string[]): FilterFn<number> => {
  * @returns Filter function that returns percentage string with '%'
  */
 const percent = (options?:string[]): FilterFn<string> => {
-  const opt = options?.[0] ?? '0';
-  if (!validateNumberString(opt)) {optionMustBeNumber('percent');}
+  const opt = numberOption(options?.[0] ?? '0', 'percent');
   return (value: unknown): string => {
     if (typeof value !== 'number') {valueMustBeNumber('percent');}
-    return `${(value * 100).toFixed(Number(opt))}%`;
+    return `${(value * 100).toFixed(opt)}%`;
   }
 }
 
@@ -554,16 +578,17 @@ const percent = (options?:string[]): FilterFn<string> => {
  * `fix` / `percent`, which already return strings. Rejecting non-numbers here would
  * break exactly the combination this filter exists for.
  *
- * `null` / `undefined` pass through untouched rather than becoming `"undefinedpx"`,
- * so the binding layer's "undefined skips the write, null clears" semantics survive.
+ * `null` / `undefined` pass through untouched rather than becoming `"undefinedpx"`, so the
+ * binding layer's "undefined skips the write, null clears" semantics survive. That guard is no
+ * longer written here: it is `nullishPassthrough`, shared with the rest of the `String(value)`
+ * family, which used to paint `"undefined"` into the page for exactly the same reason.
  *
  * @param options - Array with the unit/suffix as first element (required)
  * @returns Filter function that returns the value with the unit appended
  */
-const unit = (options?:string[]): FilterFn<unknown> => {
+const unit = (options?:string[]): FilterFn<string> => {
   const opt = options?.[0] ?? optionsRequired('unit');
-  return (value: unknown): unknown => {
-    if (value === null || typeof value === 'undefined') {return value;}
+  return (value: unknown): string => {
     return String(value) + opt;
   }
 }
@@ -596,9 +621,7 @@ const join = (options?:string[]): FilterFn<string> => {
  * @returns Filter function that returns the truncated string
  */
 const truncate = (options?:string[]): FilterFn<string> => {
-  const opt1 = options?.[0] ?? optionsRequired('truncate');
-  if (!validateNumberString(opt1)) {optionMustBeNumber('truncate');}
-  const maxLength = Number(opt1);
+  const maxLength = requiredNumberOption(options, 0, 'truncate');
   const suffix = options?.[1] ?? '…';
   return (value: unknown): string => {
     const v = String(value);
@@ -808,17 +831,18 @@ const builtinFilters: FilterWithOptions = {
 
   "toFixed": fix,
   "locale": locale,
-  "upper": uc,
-  "lower": lc,
-  "capitalize": cap,
-  "trim": trim,
-  "slice": slice,
-  "substr": substr,
-  "padStart": pad,
-  "padEnd": padEnd,
-  "repeat": rep,
-  "reverse": rev,
-  "truncate": truncate,
+  // `String(value)` で組み立てる族は、値が無いときに素通しする（要件 B8 — nullishPassthrough を参照）
+  "upper": nullishPassthrough(uc),
+  "lower": nullishPassthrough(lc),
+  "capitalize": nullishPassthrough(cap),
+  "trim": nullishPassthrough(trim),
+  "slice": nullishPassthrough(slice),
+  "substr": nullishPassthrough(substr),
+  "padStart": nullishPassthrough(pad),
+  "padEnd": nullishPassthrough(padEnd),
+  "repeat": nullishPassthrough(rep),
+  "reverse": nullishPassthrough(rev),
+  "truncate": nullishPassthrough(truncate),
   "join": join,
 
   "int": int,
@@ -827,7 +851,7 @@ const builtinFilters: FilterWithOptions = {
   "floor": floor,
   "ceil": ceil,
   "percent": percent,
-  "unit": unit,
+  "unit": nullishPassthrough(unit),
 
   "date": date,
   "time": time,
@@ -874,7 +898,10 @@ export const builtinFilterArity: Readonly<Record<string, readonly [number, numbe
   capitalize: [0, 0],
   trim: [0, 0],
   slice: [1, 2],
-  substr: [1, 2],
+  // `substr` は長さも必須（実装が両方読む・README も `substr(start, length)`）。
+  // [1, 2] だったころは `substr(0)` が引数の個数の検査を素通りし、工場の
+  // 「requires at least one option」という的外れな文言で落ちていた
+  substr: [2, 2],
   padStart: [1, 2],
   padEnd: [1, 2],
   repeat: [1, 1],
@@ -888,9 +915,12 @@ export const builtinFilterArity: Readonly<Record<string, readonly [number, numbe
   ceil: [0, 1],
   percent: [0, 1],
   unit: [1, 1],
-  date: [0, 0],
-  time: [0, 0],
-  datetime: [0, 0],
+  // ロケール依存の 3 つは `locale` と同じく引数 1 つ（`date(ja-JP)`）を受ける。
+  // [0, 0] だったころは、README が規範として書いている `timestamp|date(ja-JP)` が
+  // 束縛計画の段で必ず `[wcs/filter-arity]` になっていた（2.x には検査自体が無かった）
+  date: [0, 1],
+  time: [0, 1],
+  datetime: [0, 1],
   ymd: [0, 1],
   hms: [0, 1],
   falsy: [0, 0],
@@ -927,7 +957,13 @@ export const builtinFiltersByFilterIOType = {
  * @returns Function that takes FilterWithOptions and returns filter function
  */
 export const builtinFilterFn = (name:string, options: string[]) => (filters: FilterWithOptions) => {
-  const filter = filters[name] ?? filters[builtinFilterAliases[name]];
+  // 自前のキーだけを引く。素のオブジェクトへのブラケット参照だと `Object.prototype` のメンバが
+  // フィルタとして通り（`toString` / `constructor` / `valueOf`）、`[wcs/filter-unknown]` の代わりに
+  // `"[object Undefined]"` や素の TypeError が出ていた。登録簿（core/filterRegistry.ts）が
+  // まさにこの穴のために `Map` を採っているのと同じ規準
+  const own = Object.prototype.hasOwnProperty;
+  const canonical = own.call(builtinFilterAliases, name) ? builtinFilterAliases[name] : name;
+  const filter = own.call(filters, canonical) ? filters[canonical] : undefined;
   if (!filter) {
     // lint の wcs/filter-unknown と同じ語彙・同じ did-you-mean 規準（三面同語彙）。
     raiseError(`[wcs/filter-unknown] filter not found: ${name}.${didYouMean(name, Object.keys(filters))}${LINT_HINT}`);

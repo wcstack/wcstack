@@ -107,7 +107,7 @@ describe('event/twowayHandler', () => {
     detachTwowayEventHandler(binding);
     expect(removeSpy).toHaveBeenCalledWith('input', handler);
     const eventName = __private__.getEventName(binding);
-    const key = __private__.getHandlerKey(binding, eventName, false);
+    const key = __private__.getHandlerKey(binding, eventName, null);
     expect(__private__.handlerByHandlerKey.has(key)).toBe(false);
     expect(__private__.bindingRegistry.countOf(key)).toBe(0);
     expect(__private__.bindingRegistry.has(key, binding)).toBe(false);
@@ -285,6 +285,21 @@ describe('event/twowayHandler', () => {
     );
   });
 
+  /**
+   * attach していない binding の detach。鍵は attach 時に控える（wcBindable の宣言は live なので
+   * detach で作り直すと別の鍵を引きうる）が、控えが無ければ従来どおりその場で組む。
+   */
+  it('attach していない binding の detach は、鍵を組み直して静かに戻ること', () => {
+    const input = document.createElement('input');
+    input.setAttribute('type', 'text');
+    const removeSpy = vi.spyOn(input, 'removeEventListener');
+    const binding = createBindingInfo(input, { statePathName: 'never.attached.path' });
+
+    expect(() => detachTwowayEventHandler(binding)).not.toThrow();
+    // ハンドラが無いので removeEventListener までは行かない
+    expect(removeSpy).not.toHaveBeenCalled();
+    removeSpy.mockRestore();
+  });
   it('登録が無い場合はdetachでremoveEventListenerのみ行いハンドラは残ること', () => {
     const input = document.createElement('input');
     input.setAttribute('type', 'text');
@@ -293,7 +308,7 @@ describe('event/twowayHandler', () => {
 
     attachTwowayEventHandler(binding);
     const eventName = __private__.getEventName(binding);
-    const key = __private__.getHandlerKey(binding, eventName, false);
+    const key = __private__.getHandlerKey(binding, eventName, null);
     // 台帳から登録を外し、remove が false を返す経路に入れる
     __private__.bindingRegistry.remove(key, binding);
 
@@ -309,7 +324,7 @@ describe('event/twowayHandler', () => {
     const binding = createBindingInfo(input, { statePathName: 'users.*.name-detach-last' });
 
     const eventName = __private__.getEventName(binding);
-    const key = __private__.getHandlerKey(binding, eventName, false);
+    const key = __private__.getHandlerKey(binding, eventName, null);
     const handler = __private__.twowayEventHandlerFunction(
       binding.stateName,
       binding.propName,
@@ -341,7 +356,7 @@ describe('event/twowayHandler', () => {
     attachTwowayEventHandler(binding2);
 
     const eventName = __private__.getEventName(binding1);
-    const key = __private__.getHandlerKey(binding1, eventName, false);
+    const key = __private__.getHandlerKey(binding1, eventName, null);
     detachTwowayEventHandler(binding1);
     expect(__private__.handlerByHandlerKey.has(key)).toBe(true);
     expect(__private__.bindingRegistry.countOf(key)).toBe(1);
@@ -673,11 +688,16 @@ describe('event/twowayHandler', () => {
     it('ハンドラキーにgetterフラグが含まれること', () => {
       const input = document.createElement('input');
       const binding = createBindingInfo(input, { statePathName: 'x.y-flag' });
-      const keyWithGetter = __private__.getHandlerKey(binding, 'input', true);
-      const keyWithoutGetter = __private__.getHandlerKey(binding, 'input', false);
+      const getterA = (e: Event) => (e as CustomEvent).detail;
+      const getterB = (e: Event) => (e as CustomEvent).detail;
+      const keyWithGetter = __private__.getHandlerKey(binding, 'input', getterA);
+      const keyWithoutGetter = __private__.getHandlerKey(binding, 'input', null);
       expect(keyWithGetter).toContain('::g');
       expect(keyWithoutGetter).toContain('::n');
       expect(keyWithGetter).not.toBe(keyWithoutGetter);
+      // ハンドラのクロージャは getter の**実体**を捕捉するので、鍵も実体で分かれること
+      expect(__private__.getHandlerKey(binding, 'input', getterA)).toBe(keyWithGetter);
+      expect(__private__.getHandlerKey(binding, 'input', getterB)).not.toBe(keyWithGetter);
     });
   });
 
