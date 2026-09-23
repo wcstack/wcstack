@@ -88,7 +88,7 @@ wcstack の配信に `/combine/` を使ってはならない（MUST NOT）。`es
 
 ```html
 <script type="module"
-        src="https://cdn.jsdelivr.net/npm/wcstack@3.2.0/dist/auto.min.js"
+        src="https://cdn.jsdelivr.net/npm/wcstack@3.3.0/dist/auto.min.js"
         integrity="sha384-…"></script>
 ```
 
@@ -140,13 +140,13 @@ URL ごとに要る — エントリ・各機能・`dist/split/chunks/` の各�
 <script type="importmap" nonce="{RANDOM}">
 {
   "imports": {
-    "@wcstack/state/core": "https://cdn.jsdelivr.net/npm/@wcstack/state@3.2.0/dist/split/core.js",
-    "@wcstack/state/features/temporal": "https://cdn.jsdelivr.net/npm/@wcstack/state@3.2.0/dist/split/features/temporal.js"
+    "@wcstack/state/core": "https://cdn.jsdelivr.net/npm/@wcstack/state@3.3.0/dist/split/core.js",
+    "@wcstack/state/features/temporal": "https://cdn.jsdelivr.net/npm/@wcstack/state@3.3.0/dist/split/features/temporal.js"
   },
   "integrity": {
-    "https://cdn.jsdelivr.net/npm/@wcstack/state@3.2.0/dist/split/core.js": "sha384-…",
-    "https://cdn.jsdelivr.net/npm/@wcstack/state@3.2.0/dist/split/features/temporal.js": "sha384-…",
-    "https://cdn.jsdelivr.net/npm/@wcstack/state@3.2.0/dist/split/chunks/binder.js": "sha384-…"
+    "https://cdn.jsdelivr.net/npm/@wcstack/state@3.3.0/dist/split/core.js": "sha384-…",
+    "https://cdn.jsdelivr.net/npm/@wcstack/state@3.3.0/dist/split/features/temporal.js": "sha384-…",
+    "https://cdn.jsdelivr.net/npm/@wcstack/state@3.3.0/dist/split/chunks/binder.js": "sha384-…"
   }
 }
 </script>
