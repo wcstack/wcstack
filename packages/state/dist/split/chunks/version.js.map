@@ -1,1 +1,1 @@
-{"version":3,"file":"version.js","sources":["../../../../../src/version.ts"],"sourcesContent":["import pkg from \"../package.json\" with { type: \"json\" };\nexport const VERSION = pkg.version;\n"],"names":["VERSION"],"mappings":"AACO,MAAMA"}
+{"version":3,"file":"version.js","sources":["../../../../../src/version.ts"],"sourcesContent":["import pkg from \"../package.json\" with { type: \"json\" };\r\nexport const VERSION = pkg.version;\r\n"],"names":["VERSION"],"mappings":"AACO,MAAMA"}

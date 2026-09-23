@@ -191,7 +191,7 @@ this.$getAll("users.*.profiles.licenses.*.amount", { u: 2 })
 
 | | 理由 |
 |---|---|
-| `$1` / `$2` … の number 契約 | README の「0-based value」は公開契約。テンプレートの `{{ $1\|inc(1) }}` とイベントハンドラ引数も number |
+| `$1` / `$2` … の number 契約 | README の「0-based value」は公開契約。テンプレートの `{{ $1\|add(1) }}` とイベントハンドラ引数も number |
 | パス文字列の文法 | §4.1 |
 | DOM バインド経路 | `apply/getValue.ts` などが `INDEX_BY_INDEX_NAME` を見て number を直接返しており、proxy の `get` を通らない。名前は getter / イベントハンドラ内の JS からのみ見える |
 | `listIndexAtWildcard` の末尾起点 | 子スコープのスコープ相対契約の根拠。名前解決も同じ経路に合流させる |

@@ -18,7 +18,24 @@ import { gzipSync } from 'node:zlib';
 const root = resolve(import.meta.dirname, '..');
 const dist = join(root, 'packages/state/dist');
 const baselineFile = join(root, 'scripts/state-size-baseline.json');
-const allowance = process.argv.includes('--allowance') ? Number(process.argv[process.argv.indexOf('--allowance') + 1]) : 0.03;
+// 引数の硬化は姉妹スクリプト check-state-split.mjs と同じ規則にそろえる。
+// 値なしの `--allowance` は `Number(undefined)` → NaN で limit も NaN になり、
+// 比較が常に偽 ＝ ここでは 3 本とも EXCEEDED（fail-closed だが文言が意味不明）。
+// 打ち間違いのオプション（`--chek`）は黙って受理され exit 0 になっていた。
+let allowance = 0.03;
+if (process.argv.includes('--allowance')) {
+  allowance = Number(process.argv[process.argv.indexOf('--allowance') + 1]);
+  if (!Number.isFinite(allowance) || allowance < 0) {
+    console.error('[state size] --allowance needs a non-negative number, e.g. --allowance 0.03');
+    process.exit(1);
+  }
+}
+for (const arg of process.argv.slice(2)) {
+  if (arg.startsWith('--') && !['--check', '--update', '--allowance'].includes(arg)) {
+    console.error(`[state size] unknown option ${arg}; usage: check-state-size.mjs [--check] [--update] [--allowance 0.03]`);
+    process.exit(1);
+  }
+}
 const FILES = ['auto.min.js', 'index.esm.js'];
 const CLOSURES = { 'split/core.js': 'split/core (with its chunks)' };
 

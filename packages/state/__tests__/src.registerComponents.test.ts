@@ -83,7 +83,65 @@ describe('registerComponents', () => {
 
     registerComponents(scoped);
 
-    expect(definer).toHaveBeenCalledTimes(1);
+    expect(definer.mock.calls.filter(([registry]) => registry === scoped)).toHaveLength(1);
+  });
+
+  /**
+   * `installFeatures([...])` を `bootstrapState()` の**後**に呼ぶ形。以前は definer を配列へ
+   * 積むだけで、`registerComponents` はもう走り終わっていたため `<wcs-ssr>` が未定義のまま
+   * 残った（宣言の readiness barrier にも当たらないので無言で壊れる）。
+   */
+  it('bootstrap 済みのレジストリには、後から登録した definer が即座に適用されること', () => {
+    const scoped = {
+      get: vi.fn(() => undefined),
+      define: vi.fn(),
+    } as unknown as CustomElementRegistry;
+    registerComponents(scoped);
+
+    const late = vi.fn();
+    registerComponentDefiner(late);
+
+    expect(late.mock.calls.filter(([registry]) => registry === scoped)).toHaveLength(1);
+  });
+
+  it('追いつかせた definer は、その後の registerComponents で二重に走らないこと', () => {
+    const scoped = {
+      get: vi.fn(() => undefined),
+      define: vi.fn(),
+    } as unknown as CustomElementRegistry;
+    registerComponents(scoped);
+    const late = vi.fn();
+    registerComponentDefiner(late);
+
+    registerComponents(scoped);
+
+    // 追いつき 1 回 + 明示の再登録 1 回。definer 自身が `registry.get` で冪等なので二重定義にはならない
+    expect(late.mock.calls.filter(([registry]) => registry === scoped)).toHaveLength(2);
+  });
+
+  it('同じレジストリを 2 度 bootstrap しても台帳が太らず、追いつきも 1 回だけであること', () => {
+    const scoped = { get: vi.fn(() => undefined), define: vi.fn() } as unknown as CustomElementRegistry;
+    registerComponents(scoped);
+    registerComponents(scoped);
+    registerComponents(scoped);
+    const late = vi.fn();
+    registerComponentDefiner(late);
+    // 台帳が重複を持っていれば、この 1 回の追いつきが 3 回に増える
+    expect(late.mock.calls.filter(([registry]) => registry === scoped)).toHaveLength(1);
+  });
+
+  it('レジストリを WeakRef で持ち、回収済みの参照は追いつきの走査で畳まれること', () => {
+    // GC は強制できないので、死んだ参照そのものを注入するのではなく「生きている参照だけに
+    // 適用される」ことを確認する。強参照の Set だった頃は、ここで作った使い捨てレジストリが
+    // （そこに定義した全コンストラクタごと）ページの寿命の間ずっと残っていた
+    const kept = { get: vi.fn(() => undefined), define: vi.fn() } as unknown as CustomElementRegistry;
+    registerComponents(kept);
+    const definer = vi.fn();
+    registerComponentDefiner(definer);
+    const targets = definer.mock.calls.map(([registry]) => registry);
+    expect(targets).toContain(kept);
+    // 台帳の値が WeakRef であること（強参照に戻したら落ちる）
+    expect(new Set(targets).size).toBe(targets.length);
   });
 
   it('bootstrapStateがregistryを素通しすること', () => {

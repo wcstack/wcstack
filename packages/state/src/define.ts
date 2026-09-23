@@ -1,6 +1,22 @@
 export const DELIMITER = '.';
 export const WILDCARD = '*';
 export const MAX_WILDCARD_DEPTH = 128;
+/**
+ * 1 本のパスが持てるセグメント数の上限（`getPathInfo` が初回 intern のときだけ検査する）。
+ *
+ * `PathInfo` は自分の**全ての接頭辞**を intern するので、深さ N のパス 1 本で N 個の
+ * `PathInfo` ができ、それぞれが長さ k の配列と Set を持つ ＝ 時間もメモリも O(N²)。
+ * 実測（Node 22・パス 1 本）で depth 400 → 145ms / 61MB、800 → 1162ms / 424MB、
+ * 2000 → 既定 4GB ヒープで OOM。**約 4KB の `data-wcs` 属性値 1 つでタブを落とせた。**
+ * ここで打ち切ると最悪でも 256² ≒ 65k 単位に収まる。
+ *
+ * 値は `MAX_WILDCARD_DEPTH`（128 = `$1..$128` の表の大きさ）を**使い切れる**ことから決めた:
+ * `$recursion` の展開（`recursion/expand.ts`）が深さ 128 で作るパスは `a.*.b.*.…` の形で
+ * 257 セグメントを超える。そこを割ると、ドキュメント済みの再帰深さが打ち切られてしまう。
+ * 512 なら最悪でも 512² ≒ 262k 単位で、上の実測の 400 段（145ms / 61MB）の延長に収まる。
+ * 実用のパスは 10 段に満たない。
+ */
+export const MAX_PATH_SEGMENTS = 512;
 export const MAX_LOOP_DEPTH = 128;
 // 因果伝播（Phase 3）の 1 transaction あたり hop 上限。超過分の未処理 record は
 // quarantine し（適用済みの値は戻さない）、updater から例外は投げない。
@@ -94,7 +110,7 @@ export const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 export const STATE_CONNECTED_CALLBACK_NAME = "$connectedCallback";
 export const STATE_DISCONNECTED_CALLBACK_NAME = "$disconnectedCallback";
 /** 旧名 `$updatedCallback` は 3.x の間のエイリアス（要件 B12・declarationAliases.ts） */
-export const STATE_UPDATED_CALLBACK_NAME = "$renderedCallback";
+export const STATE_RENDERED_CALLBACK_NAME = "$renderedCallback";
 export const STATE_ERROR_CALLBACK_NAME = "$errorCallback";
 
 export const WEBCOMPONENT_STATE_READY_CALLBACK_NAME = "$stateReadyCallback";
@@ -106,7 +122,7 @@ export const STATE_COMMAND_NAMESPACE_NAME = "$command";
 export const STATE_EVENT_TOKENS_NAME = "$eventTokens";
 export const STATE_ON_NAME = "$on";
 /** 旧名 `$streams` は 3.x の間のエイリアス（要件 B12・declarationAliases.ts） */
-export const STATE_STREAMS_NAME = "$stream";
+export const STATE_STREAM_NAME = "$stream";
 export const STATE_WATCH_NAME = "$watch";
 export const STATE_SCAN_NAME = "$scan";
 export const STATE_RECURSION_NAME = "$recursion";

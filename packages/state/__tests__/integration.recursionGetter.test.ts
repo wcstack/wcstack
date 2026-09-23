@@ -1070,7 +1070,9 @@ describe("state の再セットでレジストリが作り直されること", (
     // `forgetGeneration`）、旧世代の `dirty:false` のキャッシュは
     // 残っていた。次に再帰 getter を読むまでの間の構造書き込みは辺が無いので dirty にできず、
     // `$getAll("nodes.**.total", [])` が `[131, 7, 8, 2]`（正しくは `[16, 7, 8, 2]`）を返した。
-    // いまは辺と一緒にキャッシュも落とす（registry.forgetGenerated）。
+    // 当時は辺と一緒にキャッシュも掃き出していたが、いまはキャッシュの**世代印**
+    // （`cache/types.ts` の `generation` — `getByAddress` は現世代の項目しかヒットにしない）が
+    // これを構造的に塞いでいる。この番人が守っているのは世代印のほう（外すとここが落ちる）。
     const state = recursionState(forest());
     const { host, stateEl } = await mount(state, NO_RENDER_HTML);
     expect(read(stateEl, (s: any) => s.$getAll("nodes.**.total", []))).toEqual([131, 110, 100, 20, 2]);

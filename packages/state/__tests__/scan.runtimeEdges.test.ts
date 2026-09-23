@@ -15,6 +15,7 @@ import { setDevtoolsSink } from "../src/platform/devtoolsSink";
 import { getPendingScanResetCount } from "../src/scan/eventReset";
 import { getScanDrainGateCount, getScanEventResetGateCount, getScanRegistry } from "../src/scan/scanRegistry";
 import { getUpdater } from "../src/updater/updater";
+import * as rowLanding from "../src/watch/rowLanding";
 import type { IState } from "../src/types";
 import { makeManualAsyncGenerator } from "./helpers/fakeStreamSources";
 import { flushAsync, flushTimes, makeConnectHost, readState, writeState } from "./helpers/streamTestUtils";
@@ -145,6 +146,47 @@ describe("出力の読み", () => {
     } finally {
       setDevtoolsSink(null);
       errorSpy.mockRestore();
+    }
+  });
+
+  it("行の位置引きが throw したら、出力の読みの失敗と区別して from 側の失敗として報告すること", async () => {
+    // `selectLandedRows`（watch/rowLanding.ts の placementOf）は `getByAddress` でリストを読むので
+    // throw しうる。出力の読みは既に済んでいるので、`read-output`（出力を読めなかった）ではなく
+    // `read-rows`（`from` の行を読めなかった）として報告する — 診断が指す先を source 側に合わせる
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const events: unknown[] = [];
+    setDevtoolsSink((event) => { events.push(event); });
+    const fold = vi.fn((acc: number, cur: number) => acc + cur);
+    const { host, stateEl } = await connectHost(
+      `<template data-wcs="for: items"><span data-wcs="textContent: items.*.qty"></span></template>`,
+      {
+        items: [{ qty: 1 }, { qty: 2 }],
+        $scan: { total: { from: "items.*.qty", initial: 0, fold } },
+      } as unknown as IState,
+    );
+    await flushTimes();
+    fold.mockClear();
+    errorSpy.mockClear();
+    events.length = 0;
+    const selectSpy = vi.spyOn(rowLanding, "selectLandedRows").mockImplementation(() => {
+      throw new Error("placement read failed");
+    });
+    try {
+      writeState(stateEl, (s) => { s.$resolve("items.*.qty", [0], 10); });
+      await flushTimes(3);
+
+      expect(selectSpy).toHaveBeenCalledTimes(1);
+      expect(fold).not.toHaveBeenCalled();
+      const messages = errorSpy.mock.calls.map((call) => String(call[0]));
+      expect(messages.some((m) => m.includes(`$scan could not read the rows of "from" for "total"`))).toBe(true);
+      expect(messages.some((m) => m.includes(`$scan could not read the output "total"`))).toBe(false);
+      expect(messages.some((m) => m.includes(`$scan fold for "total" threw`))).toBe(false);
+      expect(events).toContainEqual(expect.objectContaining({ type: "state:watch-error", phase: "evaluate", path: "$scan.total" }));
+    } finally {
+      selectSpy.mockRestore();
+      setDevtoolsSink(null);
+      errorSpy.mockRestore();
+      host.remove();
     }
   });
 });

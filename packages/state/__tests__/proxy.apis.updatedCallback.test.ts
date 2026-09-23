@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { updatedCallback } from '../src/proxy/apis/updatedCallback';
-import { STATE_UPDATED_CALLBACK_NAME } from '../src/define';
+import { STATE_RENDERED_CALLBACK_NAME } from '../src/define';
 import { IAbsoluteStateAddress, ITreePath, IPathInfo } from '../src/address/types';
 import { IStateHandler } from '../src/proxy/types';
 import { IListIndex } from '../src/list/types';
@@ -86,7 +86,7 @@ describe('proxy/apis/updatedCallback', () => {
 
   it('$updatedCallback が定義されている場合、receiver の this コンテキストで呼び出されること', () => {
     const callbackFn = vi.fn();
-    const target = { [STATE_UPDATED_CALLBACK_NAME]: callbackFn };
+    const target = { [STATE_RENDERED_CALLBACK_NAME]: callbackFn };
     const receiver = { name: 'proxy-receiver' };
     const refs: IAbsoluteStateAddress[] = [
       createAbsoluteStateAddress('default', 'user.name'),
@@ -111,7 +111,7 @@ describe('proxy/apis/updatedCallback', () => {
   });
 
   it('$updatedCallback が関数でない場合、呼び出さないこと', () => {
-    const target = { [STATE_UPDATED_CALLBACK_NAME]: 'not-a-function' };
+    const target = { [STATE_RENDERED_CALLBACK_NAME]: 'not-a-function' };
     const receiver = {};
     const refs: IAbsoluteStateAddress[] = [
       createAbsoluteStateAddress('default', 'user.name'),
@@ -124,7 +124,7 @@ describe('proxy/apis/updatedCallback', () => {
 
   it('同じ stateName の場合、パスだけを paths に追加すること', () => {
     const callbackFn = vi.fn();
-    const target = { [STATE_UPDATED_CALLBACK_NAME]: callbackFn };
+    const target = { [STATE_RENDERED_CALLBACK_NAME]: callbackFn };
     const receiver = {};
     const refs: IAbsoluteStateAddress[] = [
       createAbsoluteStateAddress('default', 'user.name'),
@@ -138,7 +138,7 @@ describe('proxy/apis/updatedCallback', () => {
 
   it('別 state 要素の ref は配送しないこと（v2: path@name 合成は撤去）', () => {
     const callbackFn = vi.fn();
-    const target = { [STATE_UPDATED_CALLBACK_NAME]: callbackFn };
+    const target = { [STATE_RENDERED_CALLBACK_NAME]: callbackFn };
     const receiver = {};
     const refs: IAbsoluteStateAddress[] = [
       createAbsoluteStateAddress('default', 'user.name'),
@@ -152,7 +152,7 @@ describe('proxy/apis/updatedCallback', () => {
 
   it('重複するパスは Set により一意になること', () => {
     const callbackFn = vi.fn();
-    const target = { [STATE_UPDATED_CALLBACK_NAME]: callbackFn };
+    const target = { [STATE_RENDERED_CALLBACK_NAME]: callbackFn };
     const receiver = {};
     const refs: IAbsoluteStateAddress[] = [
       createAbsoluteStateAddress('default', 'user.name'),
@@ -168,7 +168,7 @@ describe('proxy/apis/updatedCallback', () => {
 
   it('ワイルドカードがある場合、indexesListByPath に indexes 配列を追加すること', () => {
     const callbackFn = vi.fn();
-    const target = { [STATE_UPDATED_CALLBACK_NAME]: callbackFn };
+    const target = { [STATE_RENDERED_CALLBACK_NAME]: callbackFn };
     const receiver = {};
     const refs: IAbsoluteStateAddress[] = [
       createAbsoluteStateAddress('default', 'items.*.name', 1, createListIndex(0)),
@@ -181,7 +181,7 @@ describe('proxy/apis/updatedCallback', () => {
 
   it('同じワイルドカードパスに複数の indexes 配列を集約すること', () => {
     const callbackFn = vi.fn();
-    const target = { [STATE_UPDATED_CALLBACK_NAME]: callbackFn };
+    const target = { [STATE_RENDERED_CALLBACK_NAME]: callbackFn };
     const receiver = {};
     const refs: IAbsoluteStateAddress[] = [
       createAbsoluteStateAddress('default', 'items.*.name', 1, createListIndex(0)),
@@ -196,7 +196,7 @@ describe('proxy/apis/updatedCallback', () => {
 
   it('ワイルドカードと非ワイルドカードのパスを混在できること', () => {
     const callbackFn = vi.fn();
-    const target = { [STATE_UPDATED_CALLBACK_NAME]: callbackFn };
+    const target = { [STATE_RENDERED_CALLBACK_NAME]: callbackFn };
     const receiver = {};
     const refs: IAbsoluteStateAddress[] = [
       createAbsoluteStateAddress('default', 'user.name'),
@@ -213,7 +213,7 @@ describe('proxy/apis/updatedCallback', () => {
 
   it('別 state 要素のワイルドカード ref も配送されないこと', () => {
     const callbackFn = vi.fn();
-    const target = { [STATE_UPDATED_CALLBACK_NAME]: callbackFn };
+    const target = { [STATE_RENDERED_CALLBACK_NAME]: callbackFn };
     const receiver = {};
     const refs: IAbsoluteStateAddress[] = [
       createAbsoluteStateAddress('default', 'items.*.name', 1, createListIndex(0)),
@@ -231,7 +231,7 @@ describe('proxy/apis/updatedCallback', () => {
 
   it('空の refs 配列でも正常に動作すること', () => {
     const callbackFn = vi.fn();
-    const target = { [STATE_UPDATED_CALLBACK_NAME]: callbackFn };
+    const target = { [STATE_RENDERED_CALLBACK_NAME]: callbackFn };
     const receiver = {};
     const refs: IAbsoluteStateAddress[] = [];
 
@@ -243,7 +243,7 @@ describe('proxy/apis/updatedCallback', () => {
   it('コールバックの戻り値を返すこと', () => {
     const returnValue = { result: 'success' };
     const callbackFn = vi.fn().mockReturnValue(returnValue);
-    const target = { [STATE_UPDATED_CALLBACK_NAME]: callbackFn };
+    const target = { [STATE_RENDERED_CALLBACK_NAME]: callbackFn };
     const receiver = {};
     const refs: IAbsoluteStateAddress[] = [
       createAbsoluteStateAddress('default', 'user.name'),
@@ -257,7 +257,7 @@ describe('proxy/apis/updatedCallback', () => {
   it('コールバックが Promise を返す場合もそのまま返すこと', async () => {
     const returnValue = Promise.resolve({ result: 'success' });
     const callbackFn = vi.fn().mockReturnValue(returnValue);
-    const target = { [STATE_UPDATED_CALLBACK_NAME]: callbackFn };
+    const target = { [STATE_RENDERED_CALLBACK_NAME]: callbackFn };
     const receiver = {};
     const refs: IAbsoluteStateAddress[] = [
       createAbsoluteStateAddress('default', 'user.name'),
@@ -271,7 +271,7 @@ describe('proxy/apis/updatedCallback', () => {
 
   it('多階層ワイルドカード（categories.*.products.*.name）のフルインデックス配列を保持すること', () => {
     const callbackFn = vi.fn();
-    const target = { [STATE_UPDATED_CALLBACK_NAME]: callbackFn };
+    const target = { [STATE_RENDERED_CALLBACK_NAME]: callbackFn };
     const receiver = {};
     const refs: IAbsoluteStateAddress[] = [
       createAbsoluteStateAddress('default', 'categories.*.products.*.name', 2, createListIndex(1, [0, 1])),
@@ -286,7 +286,7 @@ describe('proxy/apis/updatedCallback', () => {
 
   it('多階層ワイルドカードで複数の更新を集約すること', () => {
     const callbackFn = vi.fn();
-    const target = { [STATE_UPDATED_CALLBACK_NAME]: callbackFn };
+    const target = { [STATE_RENDERED_CALLBACK_NAME]: callbackFn };
     const receiver = {};
     const refs: IAbsoluteStateAddress[] = [
       createAbsoluteStateAddress('default', 'categories.*.products.*.name', 2, createListIndex(1, [0, 1])),
@@ -303,7 +303,7 @@ describe('proxy/apis/updatedCallback', () => {
 
   it('listIndex.indexes が空配列の場合も正しく処理すること', () => {
     const callbackFn = vi.fn();
-    const target = { [STATE_UPDATED_CALLBACK_NAME]: callbackFn };
+    const target = { [STATE_RENDERED_CALLBACK_NAME]: callbackFn };
     const receiver = {};
     const refs: IAbsoluteStateAddress[] = [
       createAbsoluteStateAddress('default', 'items.*.name', 1, createListIndex(0, [])),
@@ -318,7 +318,7 @@ describe('proxy/apis/updatedCallback', () => {
 
   it('listIndex.indexes が undefined の場合は空配列にフォールバックすること', () => {
     const callbackFn = vi.fn();
-    const target = { [STATE_UPDATED_CALLBACK_NAME]: callbackFn };
+    const target = { [STATE_RENDERED_CALLBACK_NAME]: callbackFn };
     const receiver = {};
     const listIndexWithoutIndexes: IListIndex = {
       index: 0,
@@ -345,7 +345,7 @@ describe('proxy/apis/updatedCallback マーカーパスの非漏出（D20/D21）
   it('マーカーパスはルートの $updatedCallback に配送しないこと', () => {
     const handler = { stateElement: elementFor('default') } as IStateHandler;
     const callbackFn = vi.fn();
-    const target = { [STATE_UPDATED_CALLBACK_NAME]: callbackFn };
+    const target = { [STATE_RENDERED_CALLBACK_NAME]: callbackFn };
     const receiver = {};
     const refs: IAbsoluteStateAddress[] = [
       createAbsoluteStateAddress('default', 'users.*.#m1.editing', 1, createListIndex(0)),

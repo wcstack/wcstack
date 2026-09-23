@@ -38,9 +38,12 @@ export function getStatePathsFromHtml(
 ): PathCandidate[] {
   const elements = parseWcsStateElements(html, stateTagName);
   const allPaths: PathCandidate[] = [];
+  // 合成したマウントポイントは兄弟ボリューム間で重複しうる（`shop.cart` と `shop.user` は
+  // どちらも `shop` を合成する）ので、文書全体で 1 回だけ載せる
+  const mountPoints = new Set<string>();
 
   for (const element of elements) {
-    const paths = resolveElementPaths(element, html, fileReader);
+    const paths = resolveElementPaths(element, html, mountPoints, fileReader);
     allPaths.push(...paths);
   }
 
@@ -54,6 +57,7 @@ export function getStatePathsFromHtml(
 function resolveElementPaths(
   element: WcsStateInfo,
   html: string,
+  mountPoints: Set<string>,
   fileReader?: FileReader,
 ): PathCandidate[] {
   const raw = resolveElementPathsRaw(element, html, fileReader);
@@ -70,6 +74,23 @@ function resolveElementPaths(
     // 候補に載せると存在しないパスを補完・無警告通過させてしまう
     if (p.kind === 'method' || p.kind === 'eventToken') continue;
     out.push({ ...p, path: prefix + p.path });
+  }
+  // マウントパス**そのもの**もツリー上のオブジェクトとして存在する。以前は接頭辞付きの
+  // 子パスしか積んでいなかったので、`state: cart`（コンポーネントの根をマウントする正規の
+  // 書き方 — state の README 参照）や `textContent: cart` が `wcs/binding-path-missing` に
+  // 誤報されていた。ネストしたマウント（`a.b`）では途中の `a` も同じ理由で載せる。
+  // 子パスが 1 つも解決できなかったときは足さない（存在の根拠がないので断定しない —
+  // `src=` 外部 state を IDE が読まない場合など、`cart.total` も同じく黙る側に揃う）。
+  if (out.length > 0) {
+    const segments = element.mountPath.split('.');
+    for (let i = 1; i <= segments.length; i++) {
+      const path = segments.slice(0, i).join('.');
+      // 兄弟ボリューム（`mount="shop.cart"` と `mount="shop.user"`）は共通の接頭辞 `shop` を
+      // それぞれ合成するので、重複させるとパス補完に同じ項目が 2 つ並ぶ
+      if (mountPoints.has(path)) continue;
+      mountPoints.add(path);
+      out.push({ path, kind: 'data', typeHint: 'object' });
+    }
   }
   return out;
 }

@@ -62,9 +62,8 @@ import { errorCallback } from "../apis/errorCallback";
 import { getByAddress } from "../methods/getByAddress";
 import { hasByAddress } from "../methods/hasByAddress";
 import { getListIndex } from "../methods/getListIndex";
-import { setByAddress } from "../methods/setByAddress";
 import { setLoopContext } from "../methods/setLoopContext";
-import { connectedCallbackSymbol, disconnectedCallbackSymbol, errorCallbackSymbol, getByAddressSymbol, hasByAddressSymbol, setByAddressSymbol, setLoopContextSymbol, updatedCallbackSymbol } from "../symbols";
+import { connectedCallbackSymbol, disconnectedCallbackSymbol, errorCallbackSymbol, getByAddressSymbol, hasByAddressSymbol, setLoopContextSymbol, updatedCallbackSymbol } from "../symbols";
 import type { IBindingErrorInfo } from "../../types";
 import { IStateHandler } from "../types";
 
@@ -375,18 +374,6 @@ export function get(
           return hasByAddress(
             target,
             address,
-            receiver,
-            handler
-          );
-        }
-        break;
-      }
-      case setByAddressSymbol: {
-        api = (address: IStateAddress, value: any): void => {
-          return setByAddress(
-            target,
-            address,
-            value,
             receiver,
             handler
           );

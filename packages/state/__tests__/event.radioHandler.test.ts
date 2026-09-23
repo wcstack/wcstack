@@ -344,10 +344,15 @@ describe('event/radioHandler', () => {
 
     it('フィルター情報がキーに含まれること', () => {
       const input = document.createElement('input');
-      const inFilters = [{ filterName: 'num', args: [], filterFn: (v: any) => Number(v) }];
+      // 実パイプラインが作る形（`bindings/planFilters.ts`）と同じく、原文と型付きの値を両方持つ
+      const inFilters = [{ filterName: 'num', args: [], literals: [], filterFn: (v: any) => Number(v) }];
       const binding = createRadioBinding(input, { inFilters });
       const key = __private__.getHandlerKey(binding, 'input');
-      expect(key).toBe('selectedValue::input::num()');
+      expect(key).toBe('selectedValue::input::num([][])');
     });
+
+    // 要件 B9（`defaults(0)` と `defaults('0')` の取り違え）は、手組みの inFilters では
+    // 実装を守れない（`planFilters` が literals を落としていた間も手組みは通っていた）。
+    // 実パイプラインを通した検証は __tests__/binding.filterKey.test.ts が持つ。
   });
 });

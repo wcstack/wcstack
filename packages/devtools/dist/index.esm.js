@@ -1638,6 +1638,12 @@ class WcsDevtools extends HTMLElement {
         if (overlay.privateKeys.length > 0) {
             details.push(`private: ${overlay.privateKeys.join(", ")}`);
         }
+        // 公開 getter の公開パス。オーバーレイ export より前の v2 ランタイムは
+        // フィールドを持たないので `?? []` で受ける（protocol §3）
+        const exports = overlay.exports ?? [];
+        if (exports.length > 0) {
+            details.push(`exports: ${exports.join(", ")}`);
+        }
         if (overlay.getterKeys.length > 0) {
             details.push(`getters: ${overlay.getterKeys.join(", ")}`);
         }

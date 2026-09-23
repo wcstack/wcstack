@@ -1006,11 +1006,62 @@ describe('`**` を解釈しない消費者（代入・$postUpdate・$trackDepend
     expect(html.slice(one[0].start, one[0].end)).toBe('nodes.**.value');
   });
 
+  // Fixed by review — 正式名 `$dependOn` が RECURSION_APIS に無く、呼び出し検出の正規表現が
+  // 作られていなかったので、旧名 `$trackDependency` だけが守られるという逆転になっていた。
+  it('$dependOn（正式名）も $trackDependency（旧名）と同じく recursion-unsupported（error）になり、文言には書かれた名前が出ること', () => {
+    const canonical = validateRecursion(makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  poke() { this.$dependOn("nodes.**.x"); }`), 'wcs-state', 'en');
+    expect(codes(canonical)).toEqual([WcsDiagnosticCode.RecursionUnsupported]);
+    expect(canonical[0].severity).toBe('error');
+    expect(canonical[0].message).toContain('$dependOn(');
+    expect(canonical[0].message).not.toContain('$trackDependency(');
+
+    const legacy = validateRecursion(makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  poke() { this.$trackDependency("nodes.**.x"); }`), 'wcs-state', 'en');
+    expect(codes(legacy)).toEqual([WcsDiagnosticCode.RecursionUnsupported]);
+    expect(legacy[0].message).toContain('$trackDependency(');
+
+    // 日本語文言でも書かれた名前が出る（site を旧名へ写していた退行の番人）
+    const ja = validateRecursion(makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  poke() { this.$dependOn("nodes.**.x"); }`), 'wcs-state', 'ja');
+    expect(ja[0].message).toContain('$dependOn(');
+    expect(ja[0].message).not.toContain('$trackDependency(');
+  });
+
   it('比較（== / ===）と読み取りは代入ではない', () => {
     expect(validateRecursion(makeState(`
   $recursion: { "nodes.*": "children.*" },
   nodes: [],
   get "nodes.**.big"() { return this["nodes.**.value"] === 5 || this["nodes.**.value"] == 6; }`))).toEqual([]);
+  });
+
+  // Fixed by review（サイクル 5）— API 呼び出しの検出が `blankComments`（コメントだけ潰す）
+  // だったため、文字列リテラルに書いた例示が **error 重大度**で誤検出されていた。
+  it('コメント・文字列リテラルの中の API 呼び出しは検出しないこと', () => {
+    const inString = makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  note: "use this.$resolve('nodes.**.x')"`);
+    expect(validateRecursion(inString, 'wcs-state', 'en')).toEqual([]);
+    const inComment = makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  f() { /* this.$resolve("nodes.**.x") */ }`);
+    expect(validateRecursion(inComment, 'wcs-state', 'en')).toEqual([]);
+    // 対照: 実コードなら従来どおり error（引数のパスも原文から読めている）
+    const real = makeState(`
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [],
+  f() { this.$resolve("nodes.**.x"); }`);
+    const diags = validateRecursion(real, 'wcs-state', 'en');
+    expect(codes(diags)).toEqual([WcsDiagnosticCode.RecursionUnsupported]);
+    expect(diags[0].message).toContain('nodes.**.x');
   });
 
   it('$listKeys のキーの `**` は recursion-unsupported（runtime は宣言の処理で throw）', () => {

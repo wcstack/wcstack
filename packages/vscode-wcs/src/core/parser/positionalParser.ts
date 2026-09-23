@@ -10,9 +10,12 @@
  *    （propName / statePathName）を原文へ逆照合してスパンを返す。
  *
  * 分割規則は**ランタイムと同値**に保つ: 正本パーサの `splitBindTexts`（引用符の外の `;` だけで
- * 区切る — @wcstack/state 3.0 の要件 B1）をそのまま使う。既存の splitBindingExpressions は
- * 括弧深度を見るためランタイムより寛容で、乖離の既知源になっている。
- * 区切り文字は manifest（`@wcstack/state/manifest`）から取り、リテラルを持たない。
+ * 区切る — @wcstack/state 3.0 の要件 B1）をそのまま使う。service 側の
+ * `splitBindingExpressions` も同じ正本へ委譲済み（拡張内に分割規則は 1 つだけ）。
+ * 左辺 / 右辺を分ける `:` も同じ規則で引用符の外だけを見る（`defaults(':')` の `:` は
+ * 区切りではない）— 走査は `core/parser/quoteAware.ts` に 1 本だけ置き、拡張内の全消費者
+ * （契約検査・補完文脈・配線レンズ）が同じものを使う。区切り文字は manifest
+ * （`@wcstack/state/manifest`）から取り、リテラルを持たない。
  *
  * 注意: 「構造ディレクティブは単独バインディング」の検査は**属性全体**の性質で
  * あり、式単位のこのラッパーでは行わない。消費側が exprs.length と bindingType で
@@ -26,6 +29,7 @@ import {
   type ParseBindTextResult,
 } from '@wcstack/state/parser';
 import { getWcsManifest } from '../../service/wcsManifest.js';
+import { indexOfOutsideQuotes } from './quoteAware.js';
 
 export interface ITokenRange {
   readonly start: number;
@@ -82,7 +86,8 @@ export function parseEmbeddedTextWithPositions(expression: string): IPositionalB
   }
 
   // 右辺のみの式: パスは先頭から最初の `|` まで、`@state` はその窓内。
-  const firstPipe = expression.indexOf(delimiters.filter);
+  // 区切りは引用符の外だけ（拡張内の区切り走査は例外なく quoteAware 経由）
+  const firstPipe = indexOfOutsideQuotes(expression, delimiters.filter);
   const pathScopeEnd = firstPipe === -1 ? expression.length : firstPipe;
   const pathLocal = locate(expression, parsed.statePathName, 0, pathScopeEnd);
 
@@ -129,7 +134,8 @@ export function parseBindTextWithPositions(bindText: string): IPositionalBinding
     }
 
     // --- トークンの逆照合（すべて式内オフセット → bindText オフセットへ持ち上げ） ---
-    const colon = expr.indexOf(delimiters.propValue);
+    // 区切りの `:` は引用符の外だけ（正本 parseBindTextsForElement と同じ規則）
+    const colon = indexOfOutsideQuotes(expr, delimiters.propValue);
     const propEndLimit = colon === -1 ? expr.length : colon;
 
     // propName は propPart 先頭（trim 済み）に必ず現れる。in-filter（`value|number:`）
@@ -139,8 +145,9 @@ export function parseBindTextWithPositions(bindText: string): IPositionalBinding
     let pathLocal: ITokenRange | null = null;
     if (colon !== -1) {
       const stateBase = colon + 1;
-      const firstPipe = expr.indexOf(delimiters.filter, stateBase);
-      const pathScopeEnd = firstPipe === -1 ? expr.length : firstPipe;
+      // `stateBase` は `:` の直後 ＝ 引用符の外なので、そこから切り出して走査してよい
+      const rhsPipe = indexOfOutsideQuotes(expr.slice(stateBase), delimiters.filter);
+      const pathScopeEnd = rhsPipe === -1 ? expr.length : stateBase + rhsPipe;
       // `#else` のような合成パス（原文に現れない）は locate が null を返す。
       pathLocal = locate(expr, parsed.statePathName, stateBase, pathScopeEnd);
     }

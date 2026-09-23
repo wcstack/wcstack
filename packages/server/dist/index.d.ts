@@ -30,6 +30,27 @@ interface RenderOptions {
      * （深い URL での basename 誤認を防ぐ）。サブパス配備では明示する。
      */
     baseHref?: string;
+    /**
+     * ページが ready になるのを待つ上限（ミリ秒・既定 30,000）。
+     *
+     * **無効（無制限）になる値**: `0` 以下・`NaN`・`2,147,483,647`（2^31−1）より大きい値
+     * （`Infinity` を含む）。上限を外したいときは `0` を渡すのが正規の書き方。
+     * 大きすぎる値を無制限に倒しているのは Node の都合で、`setTimeout` は 2^31−1 を超える
+     * delay（`Infinity` も）を **1 ms に丸める** — 「上限を上げたつもり」が即時タイムアウトに
+     * 反転するため（実測: `Infinity` で 13 ms で reject）。
+     *
+     * **プロセス毒性の防波堤**（サイクル 4 の指摘 3）。`renderToString` は `globalThis` を
+     * 差し替えるため `renderMutex` で直列化しており、解放は `finally` にある。1 ページの
+     * 不具合で `waitForReady` が永久 pending になると `finally` に到達せず、**以後そのプロセスの
+     * 健全なページまで永久に返らなくなる**（実測済み）。上限を超えたら reject して `finally` へ
+     * 抜け、mutex を必ず解放する。既定は十分長く取ってあり、正常なページは触れない。
+     *
+     * 実時間の最悪値は `timeoutMs + CLEANUP_MIN_TIMEOUT_MS`。ready 待ちと `finally` の
+     * 後始末（バインディング構築の drain）は**同じ予算を共有**し、後始末は残り時間、
+     * 残っていなければ最低 {@link CLEANUP_MIN_TIMEOUT_MS} だけ待つ（0 にすると
+     * 「上限なし」と同義になり mutex が漏れるため）。`0`（無制限）では後始末も無制限。
+     */
+    timeoutMs?: number;
 }
 interface WaitForReadyOptions {
     /**

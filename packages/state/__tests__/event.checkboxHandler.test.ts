@@ -480,10 +480,12 @@ describe('event/checkboxHandler', () => {
 
     it('フィルター情報がキーに含まれること', () => {
       const input = document.createElement('input');
-      const inFilters = [{ filterName: 'num', args: [], filterFn: (v: any) => Number(v) }];
+      // 実パイプラインが作る形（`bindings/planFilters.ts`）と同じく、原文と型付きの値を両方持つ。
+      // 型の区別（要件 B9）の検証は __tests__/binding.filterKey.test.ts が実パイプラインで行う
+      const inFilters = [{ filterName: 'num', args: [], literals: [], filterFn: (v: any) => Number(v) }];
       const binding = createCheckboxBinding(input, { inFilters });
       const key = __private__.getHandlerKey(binding, 'input');
-      expect(key).toBe('selected::input::num()');
+      expect(key).toBe('selected::input::num([][])');
     });
   });
 });

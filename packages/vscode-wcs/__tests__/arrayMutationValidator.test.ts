@@ -619,4 +619,41 @@ describe('validateDocument 経由: wcs/nested-assign との境界（二重報告
     expect(nestedSide.map(d => d.code)).toContain(WcsDiagnosticCode.NestedAssign);
     expect(nestedSide.map(d => d.code)).not.toContain(WcsDiagnosticCode.ArrayIndexAssign);
   });
+
+  // Fixed by review（サイクル 5）— nestedAssign と同じ欠陥クラス。走査を
+  // `execAllMasked`（コメント・文字列リテラルの中身を潰した鏡像）に寄せた。
+  describe('コメント・文字列リテラルの中は検出しない', () => {
+    it('コメントの中の破壊的メソッド・添字代入は検出しないこと', () => {
+      const html = makeHtml(`
+  items: [],
+  // NG: this.items.push(x) / this.items[0] = x
+  /* NG: this["items"].sort(); */
+  add(x) { this.items = this.items.concat(x); }`);
+      expect(validateArrayMutations(html)).toEqual([]);
+    });
+
+    it('文字列リテラルの中も検出しないこと', () => {
+      const html = makeHtml(`
+  items: [],
+  hint: "use concat, not this.items.push(x)",
+  tpl: \`nor this.items[0] = x\``);
+      expect(validateArrayMutations(html)).toEqual([]);
+    });
+
+    it('実コードは従来どおり検出し、quoted ルートのパスもメッセージに残ること（対照）', () => {
+      const calls = validateArrayMutations(makeHtml(`
+  items: [],
+  add(x) { this["items"].push(x); }`));
+      expect(calls.map(d => d.code)).toEqual([WcsDiagnosticCode.ArrayMutation]);
+      // 鏡像では quoted キーが空白になるため、パスは**原文**から切り出す必要がある
+      expect(calls[0].statePath).toBe('items');
+      expect(calls[0].message).toContain('this.items');
+
+      const assigns = validateArrayMutations(makeHtml(`
+  items: [],
+  set0(x) { this.items[0] = x; }`));
+      expect(assigns.map(d => d.code)).toEqual([WcsDiagnosticCode.ArrayIndexAssign]);
+      expect(assigns[0].statePath).toBe('items.0');
+    });
+  });
 });

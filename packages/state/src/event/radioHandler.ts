@@ -4,6 +4,7 @@ import { raiseError } from "../raiseError";
 import { getStateElement } from "../stateElementByName";
 import { IBindingInfo, IFilterInfo } from "../types";
 import { setLoopContextSymbol } from "../proxy/symbols";
+import { filterListKey } from "../binding/filterKey";
 import { createHandlerBindingRegistry } from "./handlerBindingRegistry";
 
 const handlerByHandlerKey: Map<string, (event: Event) => any> = new Map();
@@ -11,7 +12,7 @@ const handlerByHandlerKey: Map<string, (event: Event) => any> = new Map();
 const bindingRegistry = /*#__PURE__*/ createHandlerBindingRegistry();
 
 function getHandlerKey(binding: IBindingInfo, eventName: string): string {
-  const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
+  const filterKey = filterListKey(binding.inFilters);
   return `${binding.statePathName}::${eventName}::${filterKey}`;
 }
 

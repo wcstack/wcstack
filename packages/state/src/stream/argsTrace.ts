@@ -21,7 +21,7 @@ import type { IAbsoluteStateAddress, IStateAddress } from "../address/types";
 import type { IStateElement } from "../components/types";
 import {
   DELIMITER,
-  STATE_STREAMS_NAME,
+  STATE_STREAM_NAME,
   STATE_STREAM_ERROR_NAMESPACE_NAME,
   STATE_STREAM_STATUS_NAMESPACE_NAME,
 } from "../define";
@@ -88,7 +88,7 @@ export function traceArgs(stateElement: IStateElement, entry: IStreamEntry): unk
   }
   if (argsValue instanceof Promise) {
     raiseError(
-      `${STATE_STREAMS_NAME} entry "${entry.name}" args must be synchronous (it returned a Promise).`,
+      `${STATE_STREAM_NAME} entry "${entry.name}" args must be synchronous (it returned a Promise).`,
     );
   }
   const selfStatusPath = `${STATE_STREAM_STATUS_NAMESPACE_NAME}${DELIMITER}${entry.name}`;
@@ -100,12 +100,12 @@ export function traceArgs(stateElement: IStateElement, entry: IStreamEntry): unk
       (pathInfo.path === entry.name || pathInfo.path === selfStatusPath || pathInfo.path === selfErrorPath)
     ) {
       raiseError(
-        `${STATE_STREAMS_NAME} entry "${entry.name}" args must not read the stream itself ("${pathInfo.path}"): a self-dependency would restart the stream on its own writes (infinite loop).`,
+        `${STATE_STREAM_NAME} entry "${entry.name}" args must not read the stream itself ("${pathInfo.path}"): a self-dependency would restart the stream on its own writes (infinite loop).`,
       );
     }
     if (pathInfo.wildcardCount > 0) {
       raiseError(
-        `${STATE_STREAMS_NAME} entry "${entry.name}" args must not read wildcard paths ("${pathInfo.path}"): wildcard dependencies are out of scope.`,
+        `${STATE_STREAM_NAME} entry "${entry.name}" args must not read wildcard paths ("${pathInfo.path}"): wildcard dependencies are out of scope.`,
       );
     }
   }

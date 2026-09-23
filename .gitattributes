@@ -1,0 +1,6 @@
+# Line endings are normalized to LF in the repository and checked out as LF on every
+# platform. Without this, a Windows checkout with core.autocrlf=true can commit a whole
+# file as CRLF (it happened to packages/state/src/scan/processScanDeclaration.ts in 3.2:
+# a 3-line change landed as a 951-line diff and flattened `git blame` for the file).
+# `text=auto` still leaves binary files alone — git detects them.
+* text=auto eol=lf

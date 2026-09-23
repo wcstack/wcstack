@@ -193,11 +193,40 @@ class StateHandler implements IStateHandler {
   }
 
   has(
-    target: object, 
+    target: object,
     prop  : PropertyKey
   ): boolean {
     return Reflect.has(target, prop);
 //    return Reflect.has(target, prop) || this.symbols.has(prop) || this.apis.has(prop);
+  }
+
+  /**
+   * `delete state.x` / `Object.defineProperty(state, …)` も**書き込み**（要件 B6）。
+   * この 2 つのトラップが無いと readonly のプロキシからでも通り、readonly の読みの最中に
+   * ツリーの枝を消せてしまう（次の読みが `[wcs/binding-path-missing]` で落ちる）。
+   *
+   * **writable では素の `Reflect` のまま通し、更新は通知しない。** 通知経路（enqueue・
+   * 依存ウォーク・鍵付き購読・キャッシュ無効化）は `setByAddress` にしか無く、削除は
+   * 「値が変わった」ではなく「パスが消えた」なので同じ経路には載せられない
+   * （バインドが残ったまま `[wcs/binding-path-missing]` になる）。**ツリーからキーを消さず、
+   * `null` を入れること。** 反応する削除が要るなら `$setAll` / 配列の差し替えで表現する。
+   * 反応性を一貫させる残り半分は次のマイナー以降の課題。
+   */
+  deleteProperty(
+    target: object,
+    prop  : PropertyKey
+  ): boolean {
+    assertWritable(this);
+    return Reflect.deleteProperty(target, prop);
+  }
+
+  defineProperty(
+    target    : object,
+    prop      : PropertyKey,
+    descriptor: PropertyDescriptor
+  ): boolean {
+    assertWritable(this);
+    return Reflect.defineProperty(target, prop, descriptor);
   }
 
 }

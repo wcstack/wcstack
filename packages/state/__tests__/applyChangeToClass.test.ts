@@ -48,3 +48,17 @@ describe('applyChangeToClass', () => {
     expect(() => applyChangeToClass(binding, dummyContext, 'yes')).toThrow(/Invalid value for class application/);
   });
 });
+
+/**
+ * 値が無い（undefined / null）ときはクラスを外す（要件 B8 の `attr.` と同じ語彙）。
+ * throw にしていると、使い回した行に値の無い行オブジェクトが来たときに行ごと描かれなかった。
+ */
+describe('applyChangeToClass — 値が無いとき', () => {
+  it.each([undefined, null])('%s はクラスを外すこと（throw しない）', (value) => {
+    const el = document.createElement('div');
+    el.classList.add('active');
+    const binding = createBinding(el, 'active');
+    expect(() => applyChangeToClass(binding, dummyContext, value)).not.toThrow();
+    expect(el.classList.contains('active')).toBe(false);
+  });
+});

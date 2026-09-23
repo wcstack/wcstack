@@ -36,13 +36,22 @@ export function parsePropPart(propPart: string): PropPartParseResult {
       filters = cacheFilterInfos.get(filtersText)!;
     } else {
       filterTexts = splitOutsideQuotes(filtersText, FILTER_SEPARATOR).map(trimFn);
-      filters = parseFilters(filterTexts, "input");
+      // 診断に埋める原文は**左辺の全文**。`|` より後ろだけを渡すと `value|:` のように
+      // 末尾が空の形で空文字になる（解析結果のキャッシュ鍵は従来どおり `filtersText`。
+      // 落ちた解析はキャッシュに載らないので、原文を混ぜても鍵は汚れない）
+      filters = parseFilters(filterTexts, "input", propPart);
       cacheFilterInfos.set(filtersText, filters);
     }
   } else {
     propText = propPart.trim();
   }
 
+  // **不変条件**: ここから下の `split` は素で走らせてよい。`propText` は「引用符外の最初の `|`
+  // より前」のスライスであり、引用符を含みうるのは入力フィルタの引数（`|` の後ろ）だけなので、
+  // `#` も `,` も `.` も引用符の中に現れない。**修飾子の値に引用符を許す拡張（例
+  // `value#fmt('a,b'): x`）を入れるなら、この 3 つも `splitOutsideQuotes` に替えること** —
+  // 替え忘れると `structural/expandShorthandPaths.ts` で起きた「無言で 1 行も描画されない」
+  // と同じ欠陥クラスが再発する。
   const modifierParts = propText.split(MODIFIER_SEPARATOR).map(trimFn);
   if (modifierParts.length > 2) {
     // 修飾子の並びは 1 つだけ（要件 B2）。`value#ro#wo` は以前 `ro` だけを残して黙って捨てていた
@@ -50,6 +59,17 @@ export function parsePropPart(propPart: string): PropPartParseResult {
   }
   const [propName, propModifiersText] = modifierParts;
   const propSegments = propName.split(DELIMITER).map(trimFn);
+  // 明示のプロパティ形（`.name:` — 要件 B5 / D34）だけは先頭の空セグメントが正しい形。
+  // それ以外で空のセグメントが残るのは書き間違い: 左辺が空（`": x"` / `"#ro: x"` / `"|trim: x"`）だと
+  // `element[""] = value` の expando ができて完全に沈黙し、末尾が空（`"foo.: x"`）だと適用の段で
+  // 素の TypeError になる。どちらも解析の段で名指しで落とす（`.: x` 等は下の D34 の検査が受け持つ）
+  const isExplicitProperty = propSegments.length > 1 && propSegments[0] === '';
+  if (!isExplicitProperty && (propName.length === 0 || propSegments.some((segment) => segment.length === 0))) {
+    raiseError(
+      `[wcs/binding-syntax] "${propPart}": the left side of a binding must name a property — ` +
+      `write "<property>: <path>" (modifiers and input filters come after the name).${LINT_HINT}`,
+    );
+  }
   const propModifiers = propModifiersText
     ? propModifiersText.split(',').map(trimFn)
     : [];

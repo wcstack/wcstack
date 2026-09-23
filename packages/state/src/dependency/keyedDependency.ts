@@ -71,6 +71,46 @@ const indexKeyedByListIndex = new WeakMap<IListIndex, IEntry[]>();
 let anyRegistered = false;
 
 /**
+ * リスト差分が enqueue した鍵付き購読者のアドレス。**依存ウォークの起点として使う分**。
+ *
+ * 書き込み起点の通知（`setByAddress` の `notifyKeyed`）は購読者から `walkDependency` を回して
+ * 派生先まで届けるが（`walkKeyedDependents`）、差分起点の 2 経路（`moveIndexWatchers` /
+ * `rekeyIndexSubscriptions`）は `createListDiff` から呼ばれ、そこには state proxy が無い
+ * （ウォークはリスト展開で値を読む）。そこで**積むだけ**にして、proxy を持つ地点
+ * （`walkDependency` の末尾）が引き取って回す。積む側は引き取り手を知らない。
+ *
+ * ツリー別に分ける理由が 2 つある。
+ * - 引き取り手は自分のツリーしか辿れない（`walkDependency` は 1 ツリーの依存表と proxy で回る）。
+ *   1 本の配列にすると、別ツリーのウォークが来たときに他人の分を取り出して**捨ててしまう**。
+ * - 集合（Set）にしてあるので、引き取り手が来ないまま差分が続いても、溜まるのは
+ *   「そのツリーの相異なる購読者アドレス」止まり（アドレスは intern 済み）。台帳が既に持っている
+ *   分を超えない。
+ *
+ * `WeakMap` なので、ツリーが捨てられれば取り残しごと回収される。鍵付き購読を使わないページは
+ * 積む側が `anyRegistered` で先に抜けるため、引き取り手の負担は `WeakMap#get` 1 回だけ。
+ */
+const pendingKeyedWalk = new WeakMap<IStateElement, Set<IAbsoluteStateAddress>>();
+
+function pushPendingKeyedWalk(absAddress: IAbsoluteStateAddress): void {
+  const stateElement = absAddress.absolutePathInfo.stateElement;
+  let pending = pendingKeyedWalk.get(stateElement);
+  if (typeof pending === "undefined") {
+    pendingKeyedWalk.set(stateElement, pending = new Set());
+  }
+  pending.add(absAddress);
+}
+
+/** このツリーに積まれた起点を取り出す（無ければ null）。引き取り手は proxy を持っている地点だけ */
+export function takePendingKeyedWalk(stateElement: IStateElement): Set<IAbsoluteStateAddress> | null {
+  const pending = pendingKeyedWalk.get(stateElement);
+  if (typeof pending === "undefined") {
+    return null;
+  }
+  pendingKeyedWalk.delete(stateElement);
+  return pending;
+}
+
+/**
  * リスト単位の index 監視（`$eqIndex` の最内段）。行ごとの購読を持たず、書き込みは
  * `indexes[旧値]` と `indexes[新値]` の行を、差分は「最後の値の位置にいた行と来た行」だけを
  * enqueue する。差分がリストの listIndex 配列を作り直したら監視を新しい配列へ移す。
@@ -85,6 +125,20 @@ interface IIndexWatcher {
 }
 const watchersByElement = new WeakMap<IStateElement, Map<string, Set<IIndexWatcher>>>();
 const watchersByIndexes = new WeakMap<IListIndex[], IIndexWatcher[]>();
+/**
+ * 祖先の listIndex → その配下で購読を持つ行の listIndex。
+ *
+ * 入れ子リストの**親行**が退役しても、子のリスト（`groups.*.rows`）には差分が来ない — 配列ごと
+ * 捨てられるだけなので `dropKeyedSubscriptionsByListIndex` が子には呼ばれず、台帳の強参照
+ * （`ledger.byPath` の `Set<IAbsoluteStateAddress>`）が残る。`IListIndex` は `parentListIndex`
+ * （上向き）しか持たないので、登録の時点で祖先の側に自分を載せて逆引きを作る。
+ *
+ * 集合の中身は強参照だが、**祖先が生きている間だけ**（WeakMap）で、行が落ちるときは
+ * `unlinkAncestors` で外れる。祖先自身が回収されれば集合ごと消える。
+ */
+const descendantRowsByAncestor = new WeakMap<IListIndex, Set<IListIndex>>();
+/** `$eqIndex` 最内段の監視 → それが載っているリストの親行（親の退役で監視ごと落とす） */
+const watchersByOwnerListIndex = new WeakMap<IListIndex, Set<IIndexWatcher>>();
 // 祖先パス → その配下の鍵付きパス（祖先への書き込みを配下の鍵付き購読へ届ける）
 const descendantsByElement = new WeakMap<IStateElement, Map<string, Set<string>>>();
 const EMPTY: IAbsoluteStateAddress[] = [];
@@ -167,12 +221,58 @@ function subscribe(ledger: IElementLedger, path: string, key: unknown, absAddres
   return true;
 }
 
-function pushEntry(map: WeakMap<IListIndex, IEntry[]>, listIndex: IListIndex, entry: IEntry): void {
+/** 追加して「この listIndex の最初のエントリだったか」を返す（祖先への登録は行ごとに 1 回でよい） */
+function pushEntry(map: WeakMap<IListIndex, IEntry[]>, listIndex: IListIndex, entry: IEntry): boolean {
   const entries = map.get(listIndex);
   if (typeof entries === "undefined") {
     map.set(listIndex, [entry]);
-  } else {
-    entries.push(entry);
+    return true;
+  }
+  entries.push(entry);
+  return false;
+}
+
+/**
+ * 行を祖先の逆引きへ載せる / から外す。深さぶんのループで、鍵付き購読を持つ行の登録と退役でしか
+ * 走らない（`$eq` 系を使わないページは 1 回も通らない）。
+ *
+ * 祖先は `listIndexes`（WeakRef 配列）ではなく `parentListIndex` を辿る。`parentListIndex` は
+ * 強参照なので、自分が生きていれば祖先も生きている ＝ `deref()` の空振りを考えなくてよく、
+ * `listIndexes` getter の再構築（`reparent` の世代が変わると配列を作り直す）も踏まない。
+ *
+ * **不変条件: 購読を持つ行は、生きたまま別の親へ付け替えられない。** チェーンを記録するのは
+ * 「その行の最初の購読」の 1 回だけで、外すのは行が落ちるときだけなので、途中で
+ * `reparentListIndex`（`list/listIndexesByList.ts` の `getRepairTarget`。第 1 分岐は**旧親が
+ * 退役していなくても** `home` へ付け替えうる）が走ると逆引きは古い親を指したまま残る。
+ * 破れると 2 方向に壊れる:
+ *   (a) 旧親の退役が、**生きている**行の購読を落とす（選択が効かなくなる）
+ *   (b) 実親の退役が子を落とし損ねる（＝この逆引きが塞いだリークの再発）
+ * 破れていないことは `__tests__/dependency.keyedAncestorIndex.test.ts` が検査している
+ * （記録した祖先が今も `parentListIndex` チェーン上に居るかの突き合わせ）。付け替えを
+ * 許す必要が出たら、`reparentListIndex` から `unlinkAncestors` → `linkAncestors` を
+ * 張り直す形にするのが構造的に強い。
+ */
+function linkAncestors(listIndex: IListIndex): void {
+  for (let ancestor = listIndex.parentListIndex; ancestor !== null; ancestor = ancestor.parentListIndex) {
+    let rows = descendantRowsByAncestor.get(ancestor);
+    if (typeof rows === "undefined") {
+      descendantRowsByAncestor.set(ancestor, rows = new Set());
+    }
+    rows.add(listIndex);
+  }
+}
+
+function unlinkAncestors(listIndex: IListIndex): void {
+  for (let ancestor = listIndex.parentListIndex; ancestor !== null; ancestor = ancestor.parentListIndex) {
+    const rows = descendantRowsByAncestor.get(ancestor);
+    // 祖先ごと退役した場合は、`dropKeyedSubscriptionsByListIndex` が先に集合を外している
+    if (typeof rows === "undefined") {
+      continue;
+    }
+    rows.delete(listIndex);
+    if (rows.size === 0) {
+      descendantRowsByAncestor.delete(ancestor);
+    }
   }
 }
 
@@ -183,7 +283,10 @@ function record(ledger: IElementLedger, path: string, current: unknown, absAddre
   }
   // 行の外（トップレベルの getter）からの登録は listIndex を持たず、退役で落ちることもない
   if (absAddress.listIndex !== null) {
-    pushEntry(entriesByListIndex, absAddress.listIndex, entry);
+    if (pushEntry(entriesByListIndex, absAddress.listIndex, entry)) {
+      // この行の最初の購読。祖先の逆引きへ 1 回だけ載せる
+      linkAncestors(absAddress.listIndex);
+    }
   }
   if (entry.levelListIndex !== null) {
     pushEntry(indexKeyedByListIndex, entry.levelListIndex, entry);
@@ -277,6 +380,18 @@ export function registerIndexWatcher(
     watcher = { stateElement, path, indexes, getters: new Set() };
     byList.push(watcher);
     watchers.add(watcher);
+    // 入れ子リストの監視は、そのリストを抱える**親行**に紐づける。親が退役すると
+    // この配列には差分が来ない（配列ごと捨てられる）ので、ここで持ち主を控えておかないと
+    // `watchersByElement` に死んだ監視が積み上がる。トップレベルのリスト（親が null）は
+    // 孤児にならないので紐づけない
+    const owner = indexes[0]?.parentListIndex ?? null;
+    if (owner !== null) {
+      let owned = watchersByOwnerListIndex.get(owner);
+      if (typeof owned === "undefined") {
+        watchersByOwnerListIndex.set(owner, owned = new Set());
+      }
+      owned.add(watcher);
+    }
   }
   watcher.getters.add(getterPathInfo);
 }
@@ -329,6 +444,7 @@ export function moveIndexWatchers(oldIndexes: IListIndex[], newIndexes: IListInd
         const absAddress = liftAddress(watcher.stateElement, createStateAddress(getterPathInfo, listIndex));
         dirtyCacheEntryByAbsoluteStateAddress(absAddress);
         getUpdater().enqueueAbsoluteAddress(absAddress, null);
+        pushPendingKeyedWalk(absAddress);
       }
     }
   }
@@ -421,6 +537,7 @@ export function keyedDescendantDependents(
   path: string,
   oldValue: unknown,
   newValue: unknown,
+  hasOldValue: boolean = true,
 ): IAbsoluteStateAddress[] {
   const depth = getPathInfo(path).segments.length;
   const out: IAbsoluteStateAddress[] = [];
@@ -430,7 +547,10 @@ export function keyedDescendantDependents(
       allDependents(stateElement, descendant, out);
       continue;
     }
-    for (const address of keyedDependents(stateElement, descendant, true, valueAt(oldValue, rest), valueAt(newValue, rest))) {
+    // `hasOldValue` が偽なのは `$postUpdate`（in-place 変異の通知 — 旧い親がどこにも無い）。
+    // 旧い鍵は台帳の `lastValue` から引かせる（`keyedDependents` の lastDiffers 経路）
+    const oldKey = hasOldValue ? valueAt(oldValue, rest) : undefined;
+    for (const address of keyedDependents(stateElement, descendant, hasOldValue, oldKey, valueAt(newValue, rest))) {
       out.push(address);
     }
   }
@@ -461,16 +581,16 @@ function removeIndexEntry(entry: IEntry): void {
   entries.splice(at, 1);
 }
 
-/** 差分が `listIndex` を退役させた: その行にぶら下がる購読を台帳と逆引きから落とす（復活した行は再評価で張り直す） */
-export function dropKeyedSubscriptionsByListIndex(listIndex: IListIndex): void {
-  if (!anyRegistered) {
-    return;
-  }
+/** 1 行ぶんの購読を台帳と逆引きから落とす */
+function dropRowSubscriptions(listIndex: IListIndex): void {
   const entries = entriesByListIndex.get(listIndex);
   if (typeof entries === "undefined") {
     return;
   }
   entriesByListIndex.delete(listIndex);
+  // 生きている親の下で行が出入りする形（単層リストの削除）でも、祖先の集合に死んだ行を
+  // 残さない
+  unlinkAncestors(listIndex);
   for (const entry of entries) {
     const { stateElement, path, absAddress } = entry;
     const keys = keyByPathByAddress.get(absAddress)!;
@@ -480,6 +600,60 @@ export function dropKeyedSubscriptionsByListIndex(listIndex: IListIndex): void {
     if (entry.levelListIndex !== null) {
       removeIndexEntry(entry);
     }
+  }
+}
+
+/** `listIndex` が親として抱えていたリストの `$eqIndex` 監視を落とす */
+function dropWatchersOwnedBy(listIndex: IListIndex): void {
+  const owned = watchersByOwnerListIndex.get(listIndex);
+  if (typeof owned === "undefined") {
+    return;
+  }
+  watchersByOwnerListIndex.delete(listIndex);
+  for (const watcher of owned) {
+    // 台帳の不変条件で必ず引ける: 監視を入れるのは `registerIndexWatcher` だけで両方へ同時に入れ、
+    // 抜くのはここと `moveIndexWatchers`（`watcher.indexes` と `watchersByIndexes` を同時に
+    // 付け替える）だけ。`dropRowSubscriptions` 側と同じく `!` で不変条件を宣言する
+    const byPath = watchersByElement.get(watcher.stateElement)!;
+    const watchers = byPath.get(watcher.path)!;
+    watchers.delete(watcher);
+    if (watchers.size === 0) {
+      byPath.delete(watcher.path);
+    }
+    const byList = watchersByIndexes.get(watcher.indexes)!;
+    byList.splice(byList.indexOf(watcher), 1);
+    if (byList.length === 0) {
+      watchersByIndexes.delete(watcher.indexes);
+    }
+  }
+}
+
+/**
+ * 差分が `listIndex` を退役させた: その行にぶら下がる購読を台帳と逆引きから落とす
+ * （復活した行は再評価で張り直す）。
+ *
+ * **入れ子リストの子孫も一緒に落とす。** 親が退役しても子のリストには差分が来ない
+ * （配列ごと捨てられる）ので、ここで辿らないと子行の購読が台帳に残り続ける —
+ * 描画は正しい（updater が dead アドレスを弾く）が、強参照のリークであり、D17 の
+ * pull API が「4 行のページで rows 20」という嘘を返す。
+ * 逆引きは**全段の祖先**に載せてあるので、再帰せずここで一度に落とせる。
+ */
+export function dropKeyedSubscriptionsByListIndex(listIndex: IListIndex): void {
+  if (!anyRegistered) {
+    return;
+  }
+  dropRowSubscriptions(listIndex);
+  dropWatchersOwnedBy(listIndex);
+  const descendants = descendantRowsByAncestor.get(listIndex);
+  if (typeof descendants === "undefined") {
+    return;
+  }
+  // `unlinkAncestors` が回している間に同じ集合を触るので、先に切り離す
+  descendantRowsByAncestor.delete(listIndex);
+  for (const descendant of descendants) {
+    dropRowSubscriptions(descendant);
+    dropWatchersOwnedBy(descendant);
+    descendantRowsByAncestor.delete(descendant);
   }
 }
 
@@ -507,6 +681,7 @@ export function rekeyIndexSubscriptions(listIndex: IListIndex, oldIndex: number,
     if (Object.is(last, oldIndex) || Object.is(last, newIndex)) {
       dirtyCacheEntryByAbsoluteStateAddress(absAddress);
       getUpdater().enqueueAbsoluteAddress(absAddress, null);
+      pushPendingKeyedWalk(absAddress);
     }
   }
 }

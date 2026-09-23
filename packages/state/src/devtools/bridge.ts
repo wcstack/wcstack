@@ -14,7 +14,9 @@
 import { inSsr } from "../config";
 import { DEVTOOLS_LISTENER_PRIORITY } from "../define";
 import { getStateElement, getLiveStateElements } from "../stateElementByName";
-import { getMountRecordsForStateElement } from "../webComponent/mount";
+// スコープ機能のコードは静的 import しない（要件 B13 — devtools だけのページに
+// `webComponent/*` が乗る）。受け口は bridge/featureBridge.ts で、scopes の install が置く
+import { getMountOverlays } from "../bridge/featureBridge";
 import { registerUpdateBatchListener, unregisterUpdateBatchListener, UpdateBatchListener } from "../updater/updater";
 import { raiseError } from "../raiseError";
 import { VERSION } from "../version";
@@ -201,20 +203,8 @@ export function registerDevtoolsSource(): void {
       return summaries;
     },
     overlays(rootNode: Node): IMountOverlaySummary[] {
-      const element = requireStateElement(rootNode);
-      return getMountRecordsForStateElement(element).map((record) => ({
-        marker: record.marker,
-        componentTag: record.component.tagName.toLowerCase(),
-        stateProp: record.stateProp,
-        mountTable: record.entries.map((entry) => ({
-          inner: entry.innerSegments.join("."),
-          outer: entry.outerPathInfo.path,
-        })),
-        delta: record.delta,
-        privateKeys: Object.keys(record.privateSnapshot),
-        getterKeys: [...record.getterKeys],
-        exports: [...record.exports.keys()],
-      }));
+      // スコープ機能が入っていないページにマウントは存在しえない（受け口が空なら空配列）
+      return getMountOverlays(requireStateElement(rootNode));
     },
     keyedSubscriptions(rootNode: Node) {
       return collectKeyedSubscriptions(requireStateElement(rootNode));

@@ -9,7 +9,7 @@ import { IStateElement } from "./types";
 import { setStateElement, getStateElement, getBindingsReady, markBindingsUnavailable } from "../stateElementByName";
 import { ILoopContextStack } from "../list/types";
 import { createLoopContextStack } from "../list/loopContext";
-import { DCC_DEFINITION_ATTRIBUTE, NO_SET_TIMEOUT, STATE_CONNECTED_CALLBACK_NAME, STATE_DISCONNECTED_CALLBACK_NAME, STATE_ERROR_CALLBACK_NAME, STATE_UPDATED_CALLBACK_NAME, WILDCARD } from "../define";
+import { DCC_DEFINITION_ATTRIBUTE, NO_SET_TIMEOUT, STATE_CONNECTED_CALLBACK_NAME, STATE_DISCONNECTED_CALLBACK_NAME, STATE_ERROR_CALLBACK_NAME, STATE_RENDERED_CALLBACK_NAME, WILDCARD } from "../define";
 import { normalizeDeclarationAliases } from "../declarationAliases";
 import { processCommandTokensDeclaration } from "../command/processCommandTokensDeclaration";
 import { clearCommandNamespace } from "../command/commandNamespace";
@@ -18,9 +18,10 @@ import { clearEventTokenRegistry } from "../event/eventTokenRegistry";
 import { processOnDeclaration } from "../event/processOnDeclaration";
 import { ListKeyMap, ListKeySpec, processListKeysDeclaration } from "../list/listKeys";
 import type { RecursionRegistry } from "../recursion/registry";
-import { STATE_WATCH_NAME, STATE_BINDABLES_NAME } from "../define";
+import { STATE_WATCH_NAME, STATE_BINDABLES_NAME, STATE_SCAN_NAME, STATE_STREAM_NAME, STATE_RECURSION_NAME } from "../define";
+import { featureNotInstalledMessage } from "../core/featureEntries";
 import { appendHooks, createAttachedHooks, IAttachedHooks, requireFeature } from "../core/addressHooks";
-import { createDeclarationContext, runActivate, runApply, runApplyEarly, runDeactivate, runPreCommit, runRegister, runValidate, runValidateEarly } from "../core/declarationHooks";
+import { createDeclarationContext, isDeclarationFeatureRegistered, runActivate, runApply, runApplyEarly, runDeactivate, runPreCommit, runRegister, runValidate, runValidateEarly } from "../core/declarationHooks";
 import { getPathInfo } from "../address/PathInfo";
 import { IStateProxy, Mutability } from "../proxy/types";
 import { createStateProxy } from "../proxy/StateHandler";
@@ -53,6 +54,31 @@ function getStateInfo(
   return {
     getterPaths, setterPaths
   };
+}
+
+/**
+ * 宣言キー → それを読む機能（readiness barrier、要件 D13 / 設計案 H5）。
+ *
+ * 受け口（`core/declarationHooks.ts`）は未 install なら段が空になるだけなので、core 自身が
+ * 「宣言は書かれているのに受け口が無い」を見ていないと `$watch` / `$scan` / `$stream` /
+ * `$recursion` が**黙って**素通りする。README（`Feature readiness`）と設計書は
+ * 「state が定義された時点で `[wcs/feature-not-installed]` を投げる」と約束している。
+ * 名前は正規化後（`$streams` → `$stream`）の正式名で引く。
+ */
+const DECLARATION_FEATURES: readonly (readonly [string, string])[] = [
+  [STATE_WATCH_NAME, "watch"],
+  [STATE_SCAN_NAME, "scan"],
+  [STATE_STREAM_NAME, "streams"],
+  [STATE_RECURSION_NAME, "recursion"],
+];
+
+function assertDeclarationFeaturesInstalled(value: IState): void {
+  for (let i = 0; i < DECLARATION_FEATURES.length; i++) {
+    const [declaration, feature] = DECLARATION_FEATURES[i];
+    if (declaration in value && !isDeclarationFeatureRegistered(feature)) {
+      raiseError(featureNotInstalledMessage(feature, `"${declaration}"`));
+    }
+  }
 }
 
 export class State extends HTMLElementBase implements IStateElement {
@@ -215,6 +241,9 @@ export class State extends HTMLElementBase implements IStateElement {
   private set _state(value: IState) {
     // 宣言キーの旧名（`$updatedCallback` / `$streams`）を正式名へ写す（要件 B12）— 以降の読み手は正式名だけを見る
     normalizeDeclarationAliases(value);
+    // 機能の readiness barrier（要件 D13）。宣言が書かれているのに受け口が入っていないページは、
+    // 黙って素通りさせずにここで落とす（正規化の後なので旧名で書いても同じ門に当たる）
+    assertDeclarationFeaturesInstalled(value);
     // 旧世代のデータ。再帰の生成物（辺・キャッシュ）を忘れるとき、台帳を辿る起点になる
     const previousState = this.__state;
     // 順序: **`value` しか読まない検証** → 旧世代の後始末 → 世代を進める → 差し替え → 再収集。
@@ -270,7 +299,7 @@ export class State extends HTMLElementBase implements IStateElement {
     // 注: state セット後に生オブジェクトへ直接 $updatedCallback を後付けする
     // パターンは検知できない（bindProperty / _state 再セットは検知する）。
     // ライフサイクルフックは宣言時に定義するのが規約。
-    this._hasUpdatedCallback = STATE_UPDATED_CALLBACK_NAME in value;
+    this._hasUpdatedCallback = STATE_RENDERED_CALLBACK_NAME in value;
     this._hasErrorCallback = STATE_ERROR_CALLBACK_NAME in value;
     // 再 set 時に二重 subscribe しないよう registry をクリアしてから $on を配線し直す。
     clearEventTokenRegistry(this);
@@ -572,6 +601,19 @@ export class State extends HTMLElementBase implements IStateElement {
       // full / auto では bootstrapState() が install するので起きない。どちらも初期化失敗として
       // 着地させる（要件 D23）: throw するだけだと connectedCallbackPromise が未解決のまま残り、
       // それを待つ renderToString・mount・getBindingsReady が止まる
+      // `mount=` を先に見る: ボリュームは DCC ホストの ShadowRoot 直下にも置ける形で、
+      // DCC の門を先に当てると、ボリュームがツリーの持ち主として（`ownsTree = true`）着地し、
+      // まだ来ていないルートのノードを利用不能と印付けして兄弟ボリュームまで落とす。
+      // D23 がボリュームで避けたかったのがまさにこの形（どちらの門も案内する
+      // エントリは `features/scopes` で同じなので、先に出す文言は `mount=` のほうでよい）
+      if (this.hasAttribute("mount")) {
+        try {
+          requireLifecycleFeature("scopes", `the "mount" attribute`);
+        } catch (error) {
+          // ボリュームはツリーの持ち主ではないので、ルートを巻き込まない着地
+          this._failInitializeLoudly(error, false);
+        }
+      }
       const parentNode = this.parentNode;
       if (parentNode instanceof ShadowRoot && parentNode.host.hasAttribute(DCC_DEFINITION_ATTRIBUTE)) {
         try {
@@ -579,14 +621,6 @@ export class State extends HTMLElementBase implements IStateElement {
         } catch (error) {
           // DCC のロード失敗（dcc/dccLifecycle.ts）と同じ着地
           this._failInitializeLoudly(error);
-        }
-      }
-      if (this.hasAttribute("mount")) {
-        try {
-          requireLifecycleFeature("scopes", `the "mount" attribute`);
-        } catch (error) {
-          // ボリュームはツリーの持ち主ではないので、ルートを巻き込まない着地
-          this._failInitializeLoudly(error, false);
         }
       }
       // 接続の前処理（設計案 H3 の preparing）。`bind-component` はここで走り、マウントスコープを

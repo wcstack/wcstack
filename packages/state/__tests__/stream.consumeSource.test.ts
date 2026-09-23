@@ -7,6 +7,7 @@
  * （docs/state-streams-design.md §10-1）。
  */
 import { describe, it, expect, vi } from "vitest";
+import { STATE_STREAM_NAME } from "../src/define";
 import { consumeSource } from "../src/stream/consumeSource";
 import type { IConsumeSink, StreamSource } from "../src/stream/types";
 import {
@@ -89,6 +90,9 @@ describe("consumeSource", () => {
     const e = sink.fail.mock.calls[0][0];
     expect(e).toBeInstanceOf(TypeError);
     expect((e as TypeError).message).toMatch(/AsyncIterable or a ReadableStream/);
+    // 3.2 の正規名（`$stream`）で名乗ること。旧名リテラルの取り残しを禁じる（要件 B12）
+    expect((e as TypeError).message).toContain(`${STATE_STREAM_NAME}: source must return`);
+    expect((e as TypeError).message).not.toContain("$streams");
     expect(sink.done).not.toHaveBeenCalled();
     expect(sink.fold).not.toHaveBeenCalled();
   });

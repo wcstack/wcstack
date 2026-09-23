@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { validateBindings } from '../src/service/bindingValidator';
+import { validateBindings, findAllBindAttributes } from '../src/service/bindingValidator';
+import { validateDocument } from '../src/core/validateDocument';
 import { WcsDiagnosticCode } from '../src/core/diagnostics';
 
 const SAMPLE_HTML = `
@@ -964,6 +965,214 @@ export default { count: "0", get double() { return 1; }, inc() {} };
   });
 });
 
+// Fixed by review — 左辺 / 右辺を分ける `:` が素の indexOf のままだったため、
+// 入力（左辺）フィルタの引数に `:` があると左辺が `value|defaults('` で切れ、
+// 引数が消えて `wcs/filter-arity`（引数 0 個）を誤報していた。
+//
+// このブロックは state の dist に依存しない: `validateBindings` が dist から使うのは
+// 式の区切り（`splitBindTexts`）だけで、`:` の分割は拡張内の `parseBindingExpression`
+// （core/parser/quoteAware の indexOfOutsideQuotes）が担う。正本パーサ経由の
+// `wcs/binding-syntax`（validateDocument 側）は `:` の引用符対応を含む dist の
+// 再ビルドが要るので、ここでは断言しない。
+describe('validateBindings — 引用符の中の `:` は左右の区切りではない（要件 B1）', () => {
+  const page = (attr: string): string => `
+<wcs-state>
+  <script type="module">
+export default { name: "a", items: ["x"] };
+  </script>
+</wcs-state>
+<input data-wcs="${attr}">`;
+
+  it('左辺（入力）フィルタの引数に `:` があっても filter-arity を誤報しないこと', () => {
+    for (const attr of [
+      "value|defaults('x'): name",     // `:` 無し — 元から通っていた対照
+      "value|defaults(':'): name",
+      "value|defaults('a:b'): name",
+      "value|truncate(3,':'): name",
+    ]) {
+      expect(validateBindings(page(attr), 'data-wcs'), attr).toEqual([]);
+    }
+  });
+
+  it('右辺（出力）フィルタの引数に `:` があっても診断を出さないこと', () => {
+    expect(validateBindings(page("textContent: items|join(': ')"), 'data-wcs')).toEqual([]);
+    expect(validateBindings(page("textContent: name|padStart(5,':')"), 'data-wcs')).toEqual([]);
+  });
+
+  it('本物の引数不足・未知フィルタは引き続き報告すること（黙らせていないことの対照）', () => {
+    const arity = validateBindings(page('value|defaults(): name'), 'data-wcs');
+    expect(arity.map(d => d.code)).toEqual([WcsDiagnosticCode.FilterArity]);
+    const unknown = validateBindings(page("value|nope(':'): name"), 'data-wcs');
+    expect(unknown.map(d => d.code)).toEqual([WcsDiagnosticCode.FilterUnknown]);
+  });
+
+  it('左辺の引数に `:` があってもプロパティ名とパスを取り違えないこと', () => {
+    // 取り違えると property が `value|defaults('`、path が `'): typo` になり
+    // binding-path-missing まで巻き添えで出る
+    const diags = validateBindings(page("value|defaults(':'): typo"), 'data-wcs');
+    expect(diags.map(d => d.code)).toEqual([WcsDiagnosticCode.BindingPathMissing]);
+    expect(diags[0].message).toContain('"typo"');
+  });
+});
+
+// Fixed by review（サイクル 2）— フィルタ引数を素の `split(',')` + `filter(a => a !== '')` で
+// 切っていたため、(1) 引用符の中の `,` が区切りに数えられ（`join(', ')` は要件 B1 の代表例）、
+// (2) 意図的な空引数が全部捨てられ（`defaults(,)`）、どちらも **error 重大度の
+// `wcs/filter-arity`** を誤報していた。`validateBindings` は wcs-validate CLI にも載るので、
+// 正しい式で CI が exit 1 になる形だった。
+//
+// このブロックも state の dist に依存しない（引数の分割は拡張内の quoteAware が担う）。
+describe('validateBindings — フィルタ引数の区切り（要件 B1 / 空引数の位置）', () => {
+  const page = (attr: string): string => `
+<wcs-state>
+  <script type="module">
+export default { items: ["x"], label: "a" };
+  </script>
+</wcs-state>
+<p data-wcs="${attr}"></p>`;
+
+  it('引用符の中の `,` は引数の区切りではないこと', () => {
+    for (const attr of [
+      "textContent: items|join(', ')",   // 要件 B1 の代表例（README / state 側テストが固定）
+      "textContent: items|join(',')",
+      "textContent: items|join('a,b')",
+      "textContent: label|defaults('a,b')",
+    ]) {
+      expect(validateBindings(page(attr), 'data-wcs'), attr).toEqual([]);
+    }
+  });
+
+  it('落とすのは末尾の空引数だけで、先頭・中間の空引数は位置を保つこと', () => {
+    // `defaults(,)` は引数 1 個（空文字列）— 0 個ではない
+    expect(validateBindings(page('textContent: label|defaults(,)'), 'data-wcs')).toEqual([]);
+    // `filter()` は 0 個のまま（この規則の目的）
+    expect(validateBindings(page('textContent: label|defaults()'), 'data-wcs')
+      .map(d => d.code)).toEqual([WcsDiagnosticCode.FilterArity]);
+  });
+
+  it('引数の終端は**最後の** `)`（正本と同値）— 引用符の中の `)` で引数が切れないこと', () => {
+    // 誤報しない側
+    expect(validateBindings(page("textContent: items|join('a)b')"), 'data-wcs')).toEqual([]);
+    // 見落とさない側: 最初の `)` で切ると 2 個目の引数ごと消えて arity 超過を見逃す
+    expect(validateBindings(page("textContent: items|join('a)b','x')"), 'data-wcs')
+      .map(d => d.code)).toEqual([WcsDiagnosticCode.FilterArity]);
+  });
+
+  // 二方向で固定する（`join` は minArgs 0 なので「引数を失っても診断が変わらない」＝
+  // 判別子にならない。サイクル 5 の変異テストで、引用符非対応へ全面リバートしても
+  // 緑のままだったのがこの形だった）。
+  it('引用符の中の `|` はフィルタの区切りではないこと（誤報しない側）', () => {
+    // minArgs 1 のフィルタで、引数が消えたら必ず偽 filter-arity(error) になる形
+    expect(validateBindings(page("textContent: label|defaults('|')"), 'data-wcs')).toEqual([]);
+    expect(validateBindings(page("textContent: label|padStart(3,'|')"), 'data-wcs')).toEqual([]);
+    expect(validateBindings(page("textContent: items|join('|')"), 'data-wcs')).toEqual([]);
+  });
+
+  it('引用符の中の `|` で引数を数え損ねないこと（見落とさない側）', () => {
+    expect(validateBindings(page("textContent: items|join('|','x')"), 'data-wcs')
+      .map(d => d.code)).toEqual([WcsDiagnosticCode.FilterArity]);
+  });
+
+  it('引用符の外の `|` では切れること', () => {
+    // 引用符の中で括弧が閉じない形でも後続フィルタを見失わない（括弧深度を見ていた癖）
+    expect(validateBindings(page("textContent: items|join('(')|nope"), 'data-wcs')
+      .map(d => d.code)).toEqual([WcsDiagnosticCode.FilterUnknown]);
+  });
+
+  it('本物の引数超過・不足・未知フィルタは引き続き報告すること（過剰抑制していないことの対照）', () => {
+    const tooMany = validateBindings(page("textContent: items|join('a','b')"), 'data-wcs');
+    expect(tooMany.map(d => d.code)).toEqual([WcsDiagnosticCode.FilterArity]);
+    expect(tooMany[0].message).toContain('2');
+    const unknown = validateBindings(page("textContent: items|nope(', ')"), 'data-wcs');
+    expect(unknown.map(d => d.code)).toEqual([WcsDiagnosticCode.FilterUnknown]);
+  });
+
+  it('引用符付きの引数は数値ではなく文字列として型検査すること（要件 B9）', () => {
+    // `gt(5)` は数値なので通り、`gt('5')` は文字列なので filter-arg-type
+    expect(validateBindings(page('textContent: label|gt(5)'), 'data-wcs')
+      .filter(d => d.code === WcsDiagnosticCode.FilterArgType)).toHaveLength(0);
+    expect(validateBindings(page("textContent: label|gt('5')"), 'data-wcs')
+      .filter(d => d.code === WcsDiagnosticCode.FilterArgType)).toHaveLength(1);
+  });
+});
+
+// Fixed by review（サイクル 5）— `findAllBindAttributes` が HTML 全体を素の正規表現で
+// 走っていたため、マークアップでない場所（HTML コメントの中の説明文・`&lt;` でエスケープ
+// されたテキスト・`<script>` 本体の文字列）まで実属性として拾い、正本パーサに通して
+// 偽の `wcs/binding-syntax`(error) を出していた。リポジトリの examples が現に落ちる形。
+describe('findAllBindAttributes — 開始タグの属性だけを拾う', () => {
+  const HTML = [
+    '<!-- prose: a <template data-wcs="nocolonhere"> inside a comment -->',
+    '<p><code>&lt;template data-wcs="nocolonhere2"&gt;</code> escaped prose</p>',
+    '<script>const tpl = 1;</script>',
+    '<div data-wcs="textContent: name" title="a>b"></div>',
+    "<input data-wcs='value: name'>",
+  ].join('\n');
+
+  it('コメントの中・エスケープ済みテキスト・script 本体は拾わないこと', () => {
+    expect(findAllBindAttributes(HTML, 'data-wcs').map(a => a.value))
+      .toEqual(['textContent: name', 'value: name']);
+  });
+
+  it('valueStart が原文の値を指すこと（オフセットが崩れていない）', () => {
+    for (const attr of findAllBindAttributes(HTML, 'data-wcs')) {
+      expect(HTML.slice(attr.valueStart, attr.valueStart + attr.value.length)).toBe(attr.value);
+    }
+  });
+
+  it('属性値の中の `>` でタグを切らないこと（`title="a>b"` の後ろも読む）', () => {
+    const html = `<div title="a>b" data-wcs="textContent: name"></div>`;
+    expect(findAllBindAttributes(html, 'data-wcs').map(a => a.value)).toEqual(['textContent: name']);
+  });
+
+  it('属性名の部分一致を拾わないこと（`x-data-wcs=` は別の属性）', () => {
+    const html = `<div x-data-wcs="nope" data-wcs="textContent: name"></div>`;
+    expect(findAllBindAttributes(html, 'data-wcs').map(a => a.value)).toEqual(['textContent: name']);
+  });
+
+  it('診断も出ないこと（validateDocument 経由の対称性）', () => {
+    expect(validateDocument(HTML, { locale: 'en' })).toEqual([]);
+  });
+});
+
+// Fixed by review（サイクル 4）— ボリュームの候補が接頭辞付きの子パスだけだったため、
+// マウントパスそのものを指す `state: cart`（コンポーネントの根をマウントする正規の書き方）
+// が wcs/binding-path-missing に誤報されていた。warning なので exit code には効かないが、
+// AI 向けの「exit 0 になるまで直せ」という指示が無駄な書き換えを誘う。
+describe('validateBindings — ボリューム（mount=）のマウントパス自身', () => {
+  const page = (attr: string): string => `
+<wcs-state>
+  <script type="module">export default { a: 1 };</script>
+</wcs-state>
+<wcs-state mount="cart">
+  <script type="module">export default { total: 0 };</script>
+</wcs-state>
+<user-card data-wcs="${attr}"></user-card>`;
+
+  it('`state: cart` / `textContent: cart` を誤報しないこと', () => {
+    expect(validateBindings(page('state: cart'), 'data-wcs')).toEqual([]);
+    expect(validateBindings(page('textContent: cart'), 'data-wcs')).toEqual([]);
+  });
+
+  it('マウント配下の実在パスは従来どおり通り、存在しないパスは従来どおり報告すること（対照）', () => {
+    expect(validateBindings(page('textContent: cart.total'), 'data-wcs')).toEqual([]);
+    const missing = validateBindings(page('textContent: cart.doesNotExist'), 'data-wcs');
+    expect(missing.map(d => d.code)).toEqual([WcsDiagnosticCode.BindingPathMissing]);
+  });
+
+  it('ネストしたマウント（deep.vol）では途中のセグメントも誤報しないこと', () => {
+    const html = `
+<wcs-state>
+  <script type="module">export default { a: 1 };</script>
+</wcs-state>
+<wcs-state mount="deep.vol" json='{"c": 3}'></wcs-state>
+<p data-wcs="textContent: deep"></p>
+<p data-wcs="textContent: deep.vol"></p>
+<p data-wcs="textContent: deep.vol.c"></p>`;
+    expect(validateBindings(html, 'data-wcs')).toEqual([]);
+  });
+});
+
 describe('validateBindings — フィルタの旧名（@wcstack/state 3.2・要件 B12）', () => {
   it('旧名は正式名と同じ検査を受け、wcs/name-alias（info）で正式名を提案する', () => {
     const html = `
@@ -980,5 +1189,41 @@ export default { name: "a", count: 1 };
     expect(alias[0].message).toContain('"upper"');
     // 引数の個数は正式名（repeat は 1 個）の範囲で検査する
     expect(diags.some(d => d.code === WcsDiagnosticCode.FilterArity)).toBe(true);
+  });
+
+  // Fixed by review — エイリアス正規化が validateFilterUsage にしか入っておらず、
+  // フィルタ鎖の型検査 2 か所（validateFilterChainTypes / resolveResultType）が
+  // 正式名キーだけの Map を旧名で引いて黙って中断していた（旧名を書くと型警告が消える）。
+  it('旧名でもフィルタ鎖の入力型検査（wcs/filter-input-type）が正式名と同じに出ること', () => {
+    const page = (chain: string): string => `
+<wcs-state>
+  <script type="module">
+export default { count: 1 };
+  </script>
+</wcs-state>
+<div data-wcs="textContent: ${chain}"></div>`;
+    const canonicalDiags = validateBindings(page('count|upper'), 'data-wcs');
+    const aliasDiags = validateBindings(page('count|uc'), 'data-wcs');
+    expect(canonicalDiags.some(d => d.code === WcsDiagnosticCode.FilterInputType)).toBe(true);
+    expect(aliasDiags.filter(d => d.code === WcsDiagnosticCode.FilterInputType)).toHaveLength(1);
+    // 文言・範囲は**書かれた名前**のまま（直す対象を指す）
+    const inputType = aliasDiags.find(d => d.code === WcsDiagnosticCode.FilterInputType)!;
+    expect(page('count|uc').slice(inputType.start, inputType.end)).toBe('uc');
+    // 旧名の案内（info）は従来どおり併記される
+    expect(aliasDiags.some(d => d.code === WcsDiagnosticCode.NameAlias)).toBe(true);
+  });
+
+  it('旧名でもフィルタ鎖を通した結果型でのバインド型期待（wcs/binding-type-expectation）が出ること', () => {
+    const page = (chain: string): string => `
+<wcs-state>
+  <script type="module">
+export default { count: 1 };
+  </script>
+</wcs-state>
+<div data-wcs="class.on: ${chain}"></div>`;
+    const canonicalDiags = validateBindings(page('count|upper'), 'data-wcs');
+    const aliasDiags = validateBindings(page('count|uc'), 'data-wcs');
+    expect(canonicalDiags.some(d => d.code === WcsDiagnosticCode.BindingTypeExpectation)).toBe(true);
+    expect(aliasDiags.filter(d => d.code === WcsDiagnosticCode.BindingTypeExpectation)).toHaveLength(1);
   });
 });

@@ -187,6 +187,13 @@ describe('compileRowPlan の適格性', () => {
     expect(compileRowPlan(fragmentInfoOf(fragment, nodeInfos))).toBeNull();
   });
 
+  it('束縛を 1 つも持たないテンプレート（静的な行）は不適格になること', () => {
+    // 0 スロットのプラン行は、行の帳簿（session.rows）の出入りがスロットの binding を
+    // 鍵に回るせいで解放されず、`destroyRow([])` も共有 session の全行破棄へ倒れていた
+    const fragment = fragmentFromHtml('<li class="row">static</li>');
+    expect(compileRowPlan(fragmentInfoOf(fragment, []))).toBeNull();
+  });
+
   it('カスタム要素へのバインディングを含むテンプレートは不適格になること', () => {
     const fragment = fragmentFromHtml('<my-widget data-wcs="className: items.*.v"></my-widget>');
     expect(compileRowPlan(fragmentInfoOf(fragment))).toBeNull();

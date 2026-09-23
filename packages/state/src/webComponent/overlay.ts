@@ -9,6 +9,7 @@ import { setLoopContextSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
 import { IStateHandler, IStateProxy } from "../proxy/types";
 import { composeMountIndexes, IExportEntry, IMountRecord, translateInnerPath, translateInnerWritePath } from "./mount";
+import { createDollarPathApiWrapper } from "./dollarPathApis";
 
 /**
  * webComponent/overlay.ts — マウントのオーバーレイ（D20 / D21・impl-plan §3-0 の 4）。
@@ -114,6 +115,18 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
           const composed = composeMountIndexes(record, path, translated, indexes, contextIndexes);
           return receiver[api](translated, composed, ...rest);
         };
+      }
+      // パスだけを取る読みの API（`$eq` / `$eqPath` / `$eqIndex` / `$dependOn`）は共有の表で包む。
+      // indexes を取らないので接頭辞の添字合成は要らない（§4-6 の表）
+      const record = this.record;
+      const receiver = this.receiver;
+      const wrapped = createDollarPathApiWrapper(
+        prop,
+        (path) => translateInnerPath(record, path),
+        (args) => (receiver[prop] as (...a: unknown[]) => unknown)(...args),
+      );
+      if (wrapped !== null) {
+        return wrapped;
       }
       // `$1` 等は親トラップの Δ 補正がスコープ相対にする。他の `$` API は
       // 親スコープの意味論のまま（接頭辞翻訳は P2-9 — §4-6 の表）
@@ -318,6 +331,22 @@ export function createPublicMountState(record: IMountRecord): Record<string, any
       // 先頭添字はホスト要素のループ文脈から補う
       if (prop === "$getAll" || prop === "$setAll" || prop === "$resolve" || prop === "$postUpdate") {
         return createChrootDollarApi(record, prop, withHostContext);
+      }
+      // パスだけを取る読みの API（`$eq` / `$eqPath` / `$eqIndex` / `$dependOn`）は共有の表で包む
+      const pathApi = createDollarPathApiWrapper(
+        prop,
+        (path) => translateInnerPath(record, path),
+        (args) => {
+          let out: unknown;
+          parent.createState("readonly", (state) => {
+            out = withHostContext(state as IStateProxy, () =>
+              ((state as Record<string, unknown>)[prop] as (...a: unknown[]) => unknown)(...args));
+          });
+          return out;
+        },
+      );
+      if (pathApi !== null) {
+        return pathApi;
       }
       let value: unknown;
       parent.createState("readonly", (state) => {

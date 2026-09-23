@@ -108,24 +108,135 @@ function notifyKeyed(
   oldValue: unknown,
   value: unknown,
   readOld: () => unknown,
-): void {
+): IAbsoluteStateAddress[] | null {
   const direct = hasKeyedDependents(stateElement, path);
   const descendants = hasKeyedDescendants(stateElement, path);
   if (!direct && !descendants) {
-    return;
+    return null;
   }
-  const updater = getUpdater();
-  const context = config.enablePropagationContext ? (getCurrentPropagationContext() ?? null) : null;
-  const enqueue = (absAddress: IAbsoluteStateAddress): void => {
-    dirtyCacheEntryByAbsoluteStateAddress(absAddress);
-    updater.enqueueAbsoluteAddress(absAddress, context);
-  };
+  const subscribers: IAbsoluteStateAddress[] = [];
+  const enqueue = createKeyedEnqueue(subscribers);
   if (direct) {
     keyedDependents(stateElement, path, hasOldValue, oldValue, value).forEach(enqueue);
   }
   if (descendants) {
     keyedDescendantDependents(stateElement, path, hasOldValue ? oldValue : readOld(), value).forEach(enqueue);
   }
+  return subscribers;
+}
+
+/** 鍵付き通知の伝播 context（`createKeyedEnqueue` と `walkKeyedDependents` で 1 本にする） */
+function keyedPropagationContext(): ReturnType<typeof getCurrentPropagationContext> | null {
+  return config.enablePropagationContext ? (getCurrentPropagationContext() ?? null) : null;
+}
+
+/** 集めた購読者を `collected` へ控える（依存ウォークの起点。`walkKeyedDependents` が書き込み後に使う） */
+function createKeyedEnqueue(collected: IAbsoluteStateAddress[]): (absAddress: IAbsoluteStateAddress) => void {
+  const updater = getUpdater();
+  const context = keyedPropagationContext();
+  return (absAddress: IAbsoluteStateAddress): void => {
+    dirtyCacheEntryByAbsoluteStateAddress(absAddress);
+    updater.enqueueAbsoluteAddress(absAddress, context);
+    collected.push(absAddress);
+  };
+}
+
+/**
+ * 鍵付き購読の購読者から、その**依存先**へ通知を伝播する。
+ *
+ * 鍵付き購読（`$eq` 系）は意図的に依存グラフに載らない（載せると選択の更新が全行に広がる）。
+ * その代わり `notifyKeyed` が購読者のアドレスを直に enqueue するのだが、**そこで止まっていた**ため
+ * 「鍵付き getter に依存する別の getter / バインディング」が陳腐化していた（素のツリーで再現。
+ * docs/state-keyed-derived-propagation.md）。通常の書き込みは `notifyWrite` が同じ enqueue の後に
+ * `walkDependency` を回しており、鍵付きだけが非対称だった。
+ *
+ * **収集は書き込みの前・ウォークはこの関数で書き込みの後**に分ける。`notifyKeyed` が
+ * `Reflect.set` より前に走るのは旧値の鍵で「前に選ばれていた行」を引くためで、一方
+ * `walkDependency` はリスト展開で書き込み**後**の値を読む前提（`notifyWrite` が `finally` に
+ * いるのと同じ理由）。前で walk すると書き込み前の配列で展開してしまう。
+ *
+ * ホットパス（R2）: 鍵付き選択の存在理由は「選択の更新を 2 行に抑える」ことなので、購読者ごとに
+ * 依存表を 2 回引くだけの短絡を先に置く。依存先を持つ購読者は稀で、持たなければ
+ * `createStateAddress` の割り当ても `walkDependency` の呼び出しも起きない。
+ */
+function walkKeyedDependents(
+  subscribers: IAbsoluteStateAddress[] | null,
+  receiver: any,
+  handler: IStateHandler,
+): void {
+  if (subscribers === null || subscribers.length === 0) {
+    return;
+  }
+  const stateElement = handler.stateElement;
+  const staticDependency = stateElement.staticDependency;
+  const dynamicDependency = stateElement.dynamicDependency;
+  const updater = getUpdater();
+  const context = keyedPropagationContext();
+  for (let i = 0; i < subscribers.length; i++) {
+    const treePath = subscribers[i].absolutePathInfo;
+    const path = treePath.pathInfo.path;
+    // 依存先ゼロの購読者（大多数）は Map 参照 2 回で抜ける
+    if (!staticDependency.has(path) && !dynamicDependency.has(path)) {
+      continue;
+    }
+    const address = createStateAddress(treePath.pathInfo, subscribers[i].listIndex);
+    walkDependency(
+      stateElement,
+      address,
+      staticDependency,
+      dynamicDependency,
+      stateElement.listPaths,
+      receiver as IStateProxy,
+      "new",
+      (depAddress: IStateAddress) => {
+        // 起点（購読者自身）は createKeyedEnqueue が済ませている — 二重 enqueue を避ける
+        if (depAddress === address) return;
+        const absDepAddress = liftAddress(stateElement, depAddress);
+        dirtyCacheEntryByAbsoluteStateAddress(absDepAddress);
+        updater.enqueueAbsoluteAddress(absDepAddress, context);
+      },
+      // `notifyWrite` と同じ規準。購読者は普通リストではないので実質効かないが、
+      // 万一リストでも未変更行まで展開しない
+      { listExpansion: "diff" },
+    );
+  }
+}
+
+/**
+ * `$postUpdate` の鍵付き通知（proxy/apis/postUpdate.ts）。
+ *
+ * in-place 変異を通知する正規の idiom なので、呼ばれた時点で**変異はもう起きている** —
+ * `setByAddress` と違って旧値がどこにも無い。`hasOldKey = false` で引くと、台帳が控えている
+ * 「最後に観測した鍵」（`lastValue`）が旧値の代わりになり、前に選ばれていた行も
+ * 新しく選ばれる行も一緒に再評価される。これが無いと `raw.sel.id = 2; $postUpdate("sel.id")` で
+ * 前の行が真のまま残った（2.6.0 で `setByAddress` 側に入れた修正の取りこぼし）。
+ *
+ * 現在値の読みは購読があるときだけ行う（`readCurrent` の thunk）。
+ */
+export function notifyKeyedPostUpdate(
+  stateElement: IStateHandler["stateElement"],
+  path: string,
+  readCurrent: () => unknown,
+  receiver: any,
+  handler: IStateHandler,
+): void {
+  const direct = hasKeyedDependents(stateElement, path);
+  const descendants = hasKeyedDescendants(stateElement, path);
+  if (!direct && !descendants) {
+    return;
+  }
+  const current = readCurrent();
+  const subscribers: IAbsoluteStateAddress[] = [];
+  const enqueue = createKeyedEnqueue(subscribers);
+  if (direct) {
+    keyedDependents(stateElement, path, false, undefined, current).forEach(enqueue);
+  }
+  if (descendants) {
+    keyedDescendantDependents(stateElement, path, undefined, current, false).forEach(enqueue);
+  }
+  // `$postUpdate` は変異が**もう起きた**後に呼ばれるので、収集とウォークを分ける必要がない
+  // （`setByAddress` 側だけが `Reflect.set` を跨ぐ）。派生先へ届かない穴は両方にあった
+  walkKeyedDependents(subscribers, receiver, handler);
 }
 
 function notifyWrite(
@@ -541,7 +652,9 @@ function setByAddressCore(
         devHasOldValue = true;
       }
       // key が undefined（listIndex の無い不正アドレス）なら読みは undefined — 書き込みが下で投げる
-      notifyKeyed(stateElement, path, devHasOldValue, devOldValue, value,
+      // 購読者の収集は書き込みの**前**（旧値の鍵が要る）。そこからの依存ウォークは
+      // 書き込みの**後**（下の finally の walkKeyedDependents）
+      const keyedSubscribers = notifyKeyed(stateElement, path, devHasOldValue, devOldValue, value,
         () => (parentValue as Record<PropertyKey, unknown>)[key as PropertyKey]);
       const cacheable = isCacheable(stateElement, address);
       const absAddress = liftAddress(stateElement, address);
@@ -583,6 +696,7 @@ function setByAddressCore(
         return Reflect.set(parentValue, key, value);
       } finally {
         notifyWrite(address, absAddress, receiver, handler, keyedMergePath, cacheable);
+        walkKeyedDependents(keyedSubscribers, receiver, handler);
         if (dispatchedExport) {
           // Exported row paths are cacheable but absent from getterPaths. The
           // accessor may normalize or reject the input; never pin that input.
@@ -612,7 +726,8 @@ function setByAddressCore(
     devOldValue = oldValue;
     devHasOldValue = true;
   }
-  notifyKeyed(stateElement, path, devHasOldValue, devOldValue, value, () => getByAddress(target, address, receiver, handler));
+  // 購読者の収集は書き込みの**前**（旧値の鍵が要る）。ウォークは下の finally
+  const keyedSubscribers = notifyKeyed(stateElement, path, devHasOldValue, devOldValue, value, () => getByAddress(target, address, receiver, handler));
   // --- end same-value guard ---
   const isSwappable = stateElement.elementPaths.has(address.pathInfo.path);
   const cacheable = isCacheable(stateElement, address);
@@ -634,6 +749,9 @@ function setByAddressCore(
       return _setByAddress(target, address, absAddress, value, receiver, handler, keyedMergePath, cacheable);
     }
   } finally {
+    // 鍵付き購読の派生先（`notifyWrite` は `_setByAddress` の中で済んでいる）。書き込み後なので
+    // リスト展開が新しい値を読む
+    walkKeyedDependents(keyedSubscribers, receiver, handler);
     // 要素書き込み（#4）の代入値は、書き込んだアドレスのキャッシュに固定しない。入れ替えでは listIndex が
     // 値に付いて動くので、書き込んだ時点の listIndex がこの位置に残るとは限らない — 固定すると、台帳は
     // 入れ替わったのにキャッシュだけが位置のまま交差する。notifyWrite が無効化した項目を、次の読みが

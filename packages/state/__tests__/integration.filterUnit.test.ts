@@ -14,6 +14,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
+import { parseBindTextsForElement } from "../src/bindTextParser/parseBindTextsForElement";
 
 beforeAll(() => {
   bootstrapState();
@@ -162,5 +163,45 @@ describe("フィルタ: data-wcs 経由での適用 (integration)", () => {
     expect(box.style.width).not.toBe("undefinedpx");
 
     host.remove();
+  });
+});
+
+/**
+ * README の「引用符の規則」節（フィルタ引数）に書いた例が、実パイプラインで書いたとおりに
+ * 動くことを固定する。規範文書の例は**実在するフィルタの正式名**でなければならない
+ * （かつて `replace(':','-')` という存在しないフィルタと、旧名の `pad` / `fix` が例に入っていた）。
+ */
+describe("README「引用符の規則」の例（実パイプライン）", () => {
+  it("引用符の中の `,` `;` `|` `:` は区切りではないこと", async () => {
+    const { host, shadowRoot } = await mount(
+      '{"tags":["a","b"]}',
+      `<i id="colon" data-wcs="textContent: tags|join(': ')"></i>` +
+      `<i id="semi" data-wcs="textContent: tags|join(';')"></i>` +
+      `<i id="pipe" data-wcs="textContent: tags|join(' | ')"></i>` +
+      `<i id="comma" data-wcs="textContent: tags|join(', ')"></i>`,
+    );
+    expect(shadowRoot.querySelector("#colon")!.textContent).toBe("a: b");
+    expect(shadowRoot.querySelector("#semi")!.textContent).toBe("a;b");
+    expect(shadowRoot.querySelector("#pipe")!.textContent).toBe("a | b");
+    expect(shadowRoot.querySelector("#comma")!.textContent).toBe("a, b");
+    host.remove();
+  });
+
+  it("空白のトリムは引用符の外側だけであること（`padStart(5, ' ')` / `toFixed( 2 )`）", async () => {
+    const { host, shadowRoot } = await mount(
+      '{"id":"7","price":1.2345}',
+      `<i id="pad" data-wcs="textContent: id|padStart(5, ' ')"></i>` +
+      `<i id="fix" data-wcs="textContent: price|toFixed( 2 )"></i>`,
+    );
+    expect(shadowRoot.querySelector("#pad")!.textContent).toBe("    7");
+    expect(shadowRoot.querySelector("#fix")!.textContent).toBe("1.23");
+    host.remove();
+  });
+
+  it("左辺の入力フィルタ引数の中の `:` も区切りにならないこと", () => {
+    const [result] = parseBindTextsForElement("value|defaults(':'): path");
+    expect(result.propName).toBe("value");
+    expect(result.statePathName).toBe("path");
+    expect(result.inFilters[0]).toMatchObject({ filterName: "defaults", args: [":"] });
   });
 });

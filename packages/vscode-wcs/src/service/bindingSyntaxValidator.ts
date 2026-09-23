@@ -16,7 +16,7 @@ import { parseBindTextWithPositions, parseEmbeddedTextWithPositions } from "../c
 import { WcsDiagnosticCode } from "../core/diagnostics.js";
 import { getMessages } from "../core/messages.js";
 import { findAllBindAttributes, type BindingDiagnostic } from "./bindingValidator.js";
-import { findAllMustacheSyntax } from "./templateSyntax.js";
+import { findAllCommentBindings, findAllMustacheSyntax } from "./templateSyntax.js";
 
 const CODE_MARKER = "[wcs/binding-syntax]";
 
@@ -52,13 +52,17 @@ export function validateBindingSyntax(
     }
   }
 
-  for (const mustache of findAllMustacheSyntax(html)) {
-    const detail = bindingSyntaxDetail(parseEmbeddedTextWithPositions(mustache.expression).error);
+  // テキストチャンネルは mustache とコメントバインディングの**両方**（`TemplateSyntaxMatch` は同型）。
+  // ランタイムはどちらも parseBindTextForEmbeddedNode に通すので、片方だけ回すと
+  // `<!--@@:name|join('a)-->` のような形で lint だけが黙る（templateSyntaxValidator /
+  // namedStateValidator / wiringLens は既に両方回している）。
+  for (const item of [...findAllMustacheSyntax(html), ...findAllCommentBindings(html)]) {
+    const detail = bindingSyntaxDetail(parseEmbeddedTextWithPositions(item.expression).error);
     if (detail === null) continue;
     diagnostics.push({
       code: WcsDiagnosticCode.BindingSyntax,
-      start: mustache.exprStart,
-      end: mustache.exprStart + mustache.expression.length,
+      start: item.exprStart,
+      end: item.exprStart + item.expression.length,
       message: msgs.bindingSyntax(detail),
       severity: "error",
     });

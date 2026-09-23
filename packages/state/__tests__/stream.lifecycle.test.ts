@@ -23,6 +23,8 @@
  *        connectedCallback 末尾起動が重複しない（_streamsStartedGeneration ガード）
  * - S16: stream 値を読む computed がチャンク到着で再計算される
  * - S17: $updatedCallback の paths に stream 名が載る
+ * - §1-2 メソッド衝突: 同名メソッドがある宣言は起動前（`_state` セッター）で落ち、メソッドが残る。
+ *   runtime（実体化・起動時リセット・fold）が置いた関数値は再セットで衝突としない
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
@@ -587,6 +589,87 @@ describe("$streams State ライフサイクル統合", () => {
     // 将来 startStreams に error 正規化が混入するリグレッションをここで検出する。
     shouldThrow = true;
     expect(() => startStreams(stateEl)).toThrow("eager boom");
+
+    host.remove();
+  });
+
+  it("§1-2: エントリ名が state のメソッドと衝突したら、起動前（宣言検証）に落ちてメソッドが残ること", async () => {
+    // 検査が無いと `name in state` が真で実体化が skip され、起動時の initial リセットが
+    // メソッドを無言で上書きする（typeof state.ticker が "function" → 数値に化ける）。
+    // 検出は runActivate ではなく `_state` セッター（runApply）なので、起動の失敗ではなく
+    // 初期化失敗として着地する ＝ connectedCallbackPromise は hang せず reject する
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const source = vi.fn(() => makeManualAsyncGenerator<string>().iterable);
+    const raw = {
+      ticker(): string { return "method"; },
+      $stream: { ticker: { source, fold: (_a: unknown, c: unknown) => c, initial: 42 } },
+    } as unknown as IState;
+    const host = document.createElement(`stream-lc-manual-${++manualHostSeq}`);
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML = `<wcs-state></wcs-state>`;
+    document.body.appendChild(host);
+    const stateEl = shadowRoot.querySelector("wcs-state") as State;
+    stateEl.setInitialState(raw);
+
+    await expect(stateEl.connectedCallbackPromise).rejects.toThrow(
+      /\$stream entry "ticker" conflicts with a method \(a function-valued property\)/,
+    );
+    // 起動前に落ちるので source は呼ばれず、メソッドは無傷のまま
+    expect(source).not.toHaveBeenCalled();
+    expect(typeof (raw as unknown as Record<string, unknown>).ticker).toBe("function");
+    // 診断は必ず 1 件出る（無言で壊れない）
+    expect(errorSpy.mock.calls.some((c) => String(c[0]).includes("failed to initialize"))).toBe(true);
+
+    errorSpy.mockRestore();
+    host.remove();
+  });
+
+  it("§1-2: fold が関数を返す stream は、同じオブジェクトの再セットでメソッド衝突にならないこと", async () => {
+    // runtime（実体化・initial リセット・fold）が出力に置いた関数値は累積であってメソッドではない
+    // （`$scan` の D7 / §5-9 C5-14 と同じ規則を共有する）
+    const m = makeManualAsyncGenerator<string>();
+    const raw = {
+      $stream: {
+        tokens: {
+          source: () => m.iterable,
+          fold: (_acc: unknown, chunk: unknown) => () => `n=${chunk}`,
+          initial: (): string => "initial",
+        },
+      },
+    } as unknown as IState;
+    const { host, stateEl } = await connectHost("", raw);
+    m.push("1");
+    await flushAsync();
+    expect(typeof (raw as unknown as Record<string, unknown>).tokens).toBe("function");
+    expect(((raw as unknown as Record<string, () => string>).tokens)()).toBe("n=1");
+
+    // 同じオブジェクトの再セット（宣言検証がこの関数値を見る）
+    expect(() => stateEl.setInitialState(raw)).not.toThrow();
+    await flushAsync();
+
+    host.remove();
+  });
+
+  it("§1-2: initial が関数の stream は、起動時リセットが置いた値のまま宣言を書き直して再セットしてもメソッド衝突にならないこと", async () => {
+    // 値プロパティが既にあると実体化（§1-3）は skip され、関数値は起動時の initial リセットだけが
+    // 置く。宣言を作り直した再セット（新しい initial の関数 identity）でも、置いた側の記録で通る
+    const m = makeManualAsyncGenerator<string>();
+    const raw = {
+      tokens: "placeholder", // 実体化を skip させる
+      $stream: { tokens: { source: () => m.iterable, fold: (a: unknown) => a, initial: (): string => "seed" } },
+    } as unknown as Record<string, unknown>;
+    const { host, stateEl } = await connectHost("", raw as unknown as IState);
+    await flushAsync();
+    // 起動時リセットで initial（関数）が置かれている
+    expect(typeof raw.tokens).toBe("function");
+
+    // 宣言を書き直した再セット: initial は別 identity の関数になる
+    const next = {
+      ...raw,
+      $stream: { tokens: { source: () => m.iterable, fold: (a: unknown) => a, initial: (): string => "seed" } },
+    } as unknown as IState;
+    expect(() => stateEl.setInitialState(next)).not.toThrow();
+    await flushAsync();
 
     host.remove();
   });

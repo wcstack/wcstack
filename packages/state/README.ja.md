@@ -202,6 +202,11 @@
 </script>
 ```
 
+`installFeatures([...])` は上の例のとおり `bootstrapState()` の**前**に呼びます。機能は自分のタグ
+（`<wcs-ssr>`）を登録することがあり、タグを定義するのは bootstrap だからです。逆順でもエラーには
+なりません — 後から install した機能は、すでに bootstrap 済みのレジストリへ自分のタグを定義して
+追いつきます — が、宣言どおりの順で呼べば、最初の要素が upgrade する前にすべてのタグが揃います。
+
 分割の形は、パッケージのファイルそのものから読みます — 上の例のように jsDelivr の素の `/npm/` パスで
 版を固定するか（素のパスは `exports` を読まないので、`dist/split/` 以下のファイル名を書く）、バンドラを
 通します。**`esm.run` からは読まないでください**。`+esm` はエントリごとにサーバー側で再バンドルし、
@@ -217,16 +222,19 @@
 | `@wcstack/state/features/scopes` | `bind-component`・`mount=` のボリューム・オーバーレイの公開 getter・DCC（`data-wc-definition`） |
 | `@wcstack/state/features/recursion` | `$recursion` と `**` パス |
 | `@wcstack/state/features/ssr` | `enable-ssr`: サーバー描画とハイドレーション |
-| `@wcstack/state/features/formats` | 書式フィルタ群（`uc`・`date`・`round`・`truncate` …）。core が答えるのは `if` / `else` が要る `not` だけ |
+| `@wcstack/state/features/formats` | 書式フィルタ群（`upper`・`date`・`round`・`truncate` …）。core が答えるのは `if` / `else` が要る `not` だけ |
 | `@wcstack/state/features/devtools` | DevTools Hook Protocol への source 登録 |
 | `@wcstack/state/features/diagnostics` | 開発時の警告: 束縛・`$watch`・`$scan` のパスが state 上で解決できないとき、did-you-mean 付きで知らせる。入れなければ静か（本番向け）。throw するエラーの文言はどちらでも変わらない |
 | `@wcstack/state/define` | `defineState` と型だけ — ランタイムは 0 |
 
 機能が入っていない宣言は黙って無視されません。state の定義時に
 `[wcs/feature-not-installed] … install it with installFeatures([...]) from "@wcstack/state/features/…"`
-で落ち、実装の無いフィルタは束縛計画の段で `[wcs/filter-unknown]` で落ちます。install は冪等で、
+で落ち、実装の無いフィルタは束縛計画の段で `[wcs/filter-unknown]` で落ちます。`$watch` を宣言した
+ボリューム（`<wcs-state mount=…>`）も接ぎ木の時点で同じ `[wcs/feature-not-installed]` で落ちます —
+ボリュームの state は要素自身の宣言の門を通らないためです。install は冪等で、
 どのエントリも core のチャンクを 1 つだけ共有します（機能側がエンジンの 2 つ目のコピーを抱える
-ことはありません）。
+ことも、**別の機能**のコピーを抱えることもありません — 機能をまたぐ呼び出しは、持ち主の機能が
+install 時に埋める受け口を通ります）。
 
 ## 基本的な使い方
 
@@ -652,7 +660,9 @@ export default {
 <wcs-fetch data-wcs="...: usersFetch; status: alternateStatus"></wcs-fetch>
 ```
 
-**`undefined` は「無意見」** — 展開された state パスが `undefined` に解決される場合（slot オブジェクトでその input を初期化していない場合など）、プロパティ書き込みは**スキップ**され、要素側の既定値がそのまま生きます。実際に使うパスだけ初期化すれば十分で、`<wcs-fetch>` が `method` / `manual` / `body` を宣言していても `usersFetch: { value: null, loading: false }` だけで動きます。明示的にクリアしたい場合は `null` を代入してください（`null` は常に書き込まれます）。**表示の表面は別です（3.0）:** `textContent` / `innerText` / `innerHTML`・mustache のテキスト・`attr.*`・`style.*` には生かすべき要素側の既定値が無いので、`undefined` も `null` も「値が無い」— テキストは空になり、属性やスタイルは削除されます。3.0 より前は `textContent:` も `undefined` をスキップしていたため使い回したリストの行に前の行の文字が残り、属性には文字列 `"undefined"` / `"null"` が入っていました。このスキップは spread に限らずすべてのプロパティバインディングに適用され、`config.debug` 時はスキップごとに `console.debug` でログが出ます。
+**`undefined` は「無意見」** — 展開された state パスが `undefined` に解決される場合（slot オブジェクトでその input を初期化していない場合など）、プロパティ書き込みは**スキップ**され、要素側の既定値がそのまま生きます。実際に使うパスだけ初期化すれば十分で、`<wcs-fetch>` が `method` / `manual` / `body` を宣言していても `usersFetch: { value: null, loading: false }` だけで動きます。明示的にクリアしたい場合は `null` を代入してください（`null` は常に書き込まれます）。**表示の表面は別です（3.0）:** `textContent` / `innerText` / `innerHTML`・mustache のテキスト・`attr.*`・`style.*`・`class.*` には生かすべき要素側の既定値が無いので、`undefined` も `null` も「値が無い」— テキストは空になり、属性やスタイルは削除され、クラスは外れます。3.0 より前は `textContent:` も `undefined` をスキップしていたため使い回したリストの行に前の行の文字が残り、属性には文字列 `"undefined"` / `"null"` が入っていました。`class.*` だけは範囲が狭く、「値が無い」扱いになるのは `undefined` と `null` だけです — **それ以外の非 boolean は今も throw します**。クラスの束縛は真偽の切り替えなので、truthy な文字列は意図というより書き間違いである方がずっと多いためです。「truthy として扱う」つもりなら `class.on: flag|truthy` と書いてください。このスキップは spread に限らずすべてのプロパティバインディングに適用され、`config.debug` 時はスキップごとに `console.debug` でログが出ます。
+
+**フィルタを挟んでも契約は保たれます。** 空値の判定はフィルタ**後**の値に対して行われるため、`String(value)` で結果を組み立てるフィルタは値が無いときに `"undefined"` という**文字**を作ってしまい、`attr.title: x|trim` が `title="undefined"` を書いていました（フィルタの無い `attr.title: x` は属性を消します）。書式の族（`upper` / `lower` / `capitalize` / `trim` / `slice` / `substr` / `padStart` / `padEnd` / `repeat` / `reverse` / `truncate` / `unit`）は `undefined` / `null` を素通しするようになり、適用側の「テキストは空・属性は削除」がそのまま効きます。次の 3 群は**意図的に素通ししません**: 空値そのものが入力として意味を持つフィルタ（`defaults` / `coalesce` / `nullIfEmpty` / `boolean` / `truthy` / `falsy` / `not` / `eq` / `ne`）、変換が仕事のフィルタ（`int` / `float` / `number` / `string` — `undefined|string` は今も `"undefined"`）、値の型を検査するフィルタ（数値・日付・配列の族。`toFixed` / `date` / `join` など）。最後の群は throw しますが、それは束縛 1 本に閉じ込められ `$errorCallback` に報告されます。値が無いことが正当にありうるなら前に `coalesce` を置いてください（`price|coalesce(0)|toFixed(2)`）。
 
 **制約事項**：
 
@@ -1120,6 +1130,7 @@ export default {
 - **`path` より上のオブジェクトへの書き込み** — `$eq("sel.id", …)` に対する `this.sel = { id: 2 }`: 同じく 2 行。旧いオブジェクトの下と新しいオブジェクトの下で `path` が持つ値を鍵にします。
 - **`path` が getter か getter の配下**（`get current()` に対する `$eq("current.id", …)`）: 値が書き込みなしに変わるので、依存を張る普通の読み取りに戻ります。選択は正しく保たれますが、変化のたびに全行が再評価されます（鍵付きの形を使わないのと同じ）。2 行で済ませるには、`path` を書き込まれる state（`selectedId`）に向けてください。`@wcstack/devtools` の State ペインは、path ごとの購読の数を **Keyed selection** に出し、この形に落ちた path には `tracked` バッジを付けます（3.0）。
 - **型変換はしません:** `"2"` は id `2` に一致しません。`<input>` や `<select>` は文字列を書くので、入口で変換する（`value|number: selectedId`）か、id を文字列で持ってください。
+- **スコープの中では `path` は相対**です — パスを取る他の `$` API と同じです。マウントされたコンポーネント（`bind-component`）とボリューム（`<wcs-state mount="cart">`）では、`$eq("selectedId", …)`・`$eqPath` の 2 つのパス・`$eqIndex`・`$dependOn` はどれもそのスコープ（`cart.selectedId`）に解決され、ルートには向きません。`$untracked` はコールバックを取るので翻訳の対象外です。
 
 ### ループインデックス変数（`$1`, `$2`, ...）
 
@@ -1406,8 +1417,8 @@ this.$setAll("nodes.**.selected", [], false);   // 全深さの全ノード
 | 添字の省略 | 書き込み API は文脈を取らないので束縛する深さが無い —— `[]` を渡す |
 | mapper 関数 | `(current, ...indexes)` の添字の本数が深さごとに変わる |
 | `{ spread: true }` | 1 次元配列を木へ配るには作者が走査順を知っている必要があり、契約として使えない |
-| `nodes.**` / `nodes.**.children` / `nodes.**.children.*` / `nodes.**.children.length` —— 反復サブパスが多段（`branch.children.*`）なら、子リストへ至る途中の `nodes.**.branch` も。添字綴りも同じ形に畳まれる（`nodes.**.children.0` は子ノード、`nodes.**.children.0.total` は getter） | 構造そのものへの書き込み（`length` への代入はリストを切り詰める）は、その書き込み自身が確定済みの子アドレスを壊す（`wcs/recursion-structural-write`） |
-| `nodes.**.total`、およびその値の内側を指すパス | 再帰 getter に setter は無い。導出元を書く（`wcs/recursion-readonly`） |
+| `nodes.**` / `nodes.**.children` / `nodes.**.children.*` / `nodes.**.children.length` —— 反復サブパスが多段（`branch.children.*`）なら、子リストへ至る途中の `nodes.**.branch` も。添字綴りも同じ形に畳まれるので `nodes.**.children.0` は子ノード | 構造そのものへの書き込み（`length` への代入はリストを切り詰める）は、その書き込み自身が確定済みの子アドレスを壊す（`wcs/recursion-structural-write`） |
+| `nodes.**.total`、およびその値の内側を指すパス —— 添字綴りも同じ形に畳まれるので `nodes.**.children.0.total` も getter | 再帰 getter に setter は無い。導出元を書く（`wcs/recursion-readonly`） |
 
 読み取り専用の規則は `**` の綴りに依存しません。再帰 getter の具体的な展開形 —— `nodes.*.total` / `nodes.*.children.*.total` / … —— への書き込みも、固定本数の `$setAll` でも値付きの `$resolve(path, indexes, value)` でも直接代入でも、またその深さが実体化済みかどうかに関わらず、書き込みの入口で拒否します。この検査が無かったときは、未実体化の展開形が「無いキー」に見えてノードのオブジェクトに書き込まれ、代入値が getter のキャッシュ結果として固定されていました。
 
@@ -1509,7 +1520,7 @@ export default {
 |---|---|---|
 | `eq(value)` | 等しい | `count\|eq(0)` → `true/false` |
 | `ne(value)` | 等しくない | `count\|ne(0)` |
-| `not` | 論理否定 | `isActive\|not` |
+| `not` | 真偽性を反転 — `0` / `""` / `null` / `undefined` はすべて `true`（3.x。以前は非 boolean で throw し、`else:` がどちらの枝も描かなかった） | `isActive\|not` |
 | `lt(n)` | より小さい | `count\|lt(10)` |
 | `le(n)` | 以下 | `count\|le(10)` |
 | `gt(n)` | より大きい | `count\|gt(0)` |
@@ -1548,12 +1559,12 @@ export default {
 | `capitalize`（`cap`） | 先頭大文字 | `name\|capitalize` |
 | `trim` | 空白除去 | `text\|trim` |
 | `slice(n)` | 文字列スライス | `text\|slice(5)` |
-| `substr(start, length)` | 部分文字列 | `text\|substr(0,10)` |
+| `substr(start, length)` | 部分文字列（引数は 2 つとも必須） | `text\|substr(0,10)` |
 | `padStart(n, char?)`（`pad`） | 先頭を埋める（既定 `0`） | `id\|padStart(5,0)` → `"00001"` |
 | `padEnd(n, char?)` | 末尾を埋める（既定は空白。3.2） | `code\|padEnd(8)` |
 | `repeat(n)`（`rep`） | 繰り返し | `text\|repeat(3)` |
 | `reverse`（`rev`） | 反転 | `text\|reverse` |
-| `truncate(n, suffix?)` | 切り詰めて省略記号を付加 | `title\|truncate(20)` → `"…"` 付き |
+| `truncate(n, suffix?)` | 切り詰めて省略記号を付加（既定は `…` — U+2026 の 1 文字） | `title\|truncate(20)` → `"…"` 付き |
 | `join(sep?)` | 配列を連結（既定 `", "`） | `tags\|join` / `tags\|join(/)` |
 
 ### 型変換
@@ -1571,11 +1582,13 @@ export default {
 
 | フィルタ | 説明 | 例 |
 |---|---|---|
-| `date(loc?)` | 日付フォーマット | `timestamp\|date` / `timestamp\|date(ja-JP)` |
-| `time(loc?)` | 時刻フォーマット | `timestamp\|time` |
-| `datetime(loc?)` | 日付 + 時刻 | `timestamp\|datetime(en-US)` |
-| `ymd(sep?)` | YYYY-MM-DD | `timestamp\|ymd` / `timestamp\|ymd(/)` |
-| `hms(sep?)` | HH:MM:SS | `timestamp\|hms` / `timestamp\|hms(-)` |
+| `date(loc?)` | 日付フォーマット | `createdAt\|date` / `createdAt\|date(ja-JP)` |
+| `time(loc?)` | 時刻フォーマット | `createdAt\|time` |
+| `datetime(loc?)` | 日付 + 時刻 | `createdAt\|datetime(en-US)` |
+| `ymd(sep?)` | YYYY-MM-DD（既定は `-`） | `createdAt\|ymd` / `createdAt\|ymd(/)` |
+| `hms(sep?)` | HH:MM:SS（既定は `:`） | `createdAt\|hms` / `createdAt\|hms(-)` |
+
+**5 つとも `Date` を取ります**（タイムスタンプではありません）。他の型は「requires a date value」で拒否されます。JSON から読み込んだ state は数値か ISO 文字列を持つので、束縛ではなく読み出し側で変換してください: `get createdAt() { return new Date(this.createdAtMs); }`。`loc?` の既定は `config.locale` で、**適用のたびに**読み直されるため、束縛を組み立てた後に確定したロケールも反映されます（明示引数 `date(ja-JP)` は束縛式の一部なので組み立て時に固定されます）。
 
 ### 真偽値 / デフォルト
 
@@ -1596,7 +1609,15 @@ export default {
 
 フィルタは束縛計画の段で解決されます。未知の名前は `[wcs/filter-unknown]`（did-you-mean 付き）で、3.0 からは受け付ける個数の外の引数も `[wcs/filter-arity]`（`join(a,b)`: "accepts at most 1 argument(s) (2 given)"）で落ちます — lint と同じコード・同じ範囲です。引数は構造のままキャッシュされるので、`join('a,b')` と `join(a)` を取り違えません。
 
-**引数のリテラルは型を持ちます（3.0）。** 引用符の無い `true` / `false` / `null` / 数値はその値、引用符付きの引数は文字列です。比較フィルタは真偽値と `null` の比較にこれを使います: `done|eq(true)` は `true` に一致し（3.0 より前は文字列 `"true"` と比べていて一致しなかった）、`eq('true')` は一致せず、`eq(null)` は `null` に一致します。数値と文字列の比べ方は変わりません — 数値の値は数と、文字列の値は原文と比べるので、フォームの値 `"1"` は今も `eq(1)` に一致します。`defaults(v)` は型付きの値を返します: `defaults(0)` は `0`、`defaults('0')` は `"0"`、`defaults(null)` は `null`。
+**引数のリテラルは型を持ちます（3.0）。** 引用符の無い `true` / `false` / `null` / 数値はその値、引用符付きの引数は文字列です。比較フィルタは真偽値と `null` の比較にこれを使います: `done|eq(true)` は `true` に一致し（3.0 より前は文字列 `"true"` と比べていて一致しなかった）、`eq('true')` は一致せず、`eq(null)` は `null` に一致します。数値と文字列の比べ方は変わりません — 数値の値は数と、文字列の値は原文と比べるので、フォームの値 `"1"` は今も `eq(1)` に一致します。**数値**の値と型付きの `true` / `false` / `null` は単に「一致しない」です: `selectedId|eq(null)` は id が `null` の間は `true`、数値になれば `false` になります（3.2 まではこの組み合わせが**適用のたびに** `requires a number as option` で throw していたため、null と数値の両方を取りうるパスは値が数値になった瞬間にその束縛が壊れていました）。型の食い違いとして報告されるのは、引用符の無い非数値（数値の値に対する `eq(abc)`）だけです — `eq` は値の型を選ばないので、`status|eq(active)` は値が分かるまで判定できません。`defaults(v)` は型付きの値を返します: `defaults(0)` は `0`、`defaults('0')` は `"0"`、`defaults(null)` は `null`。
+
+**引用符の規則。** 引用符（`'` / `"`）は「ここはリテラル」という宣言で、引数の文法は意図的に小さく保たれています:
+
+- 引用符の中では `,` `;` `|` `:` はただの文字です。`join(', ')`・`join(': ')`・`join(';')` はそのまま通ります。
+- 空白のトリムは**引用符の外側だけ**です: `padStart(5, ' ')` は空白で埋め、`toFixed( 2 )` は `toFixed(2)` と同じです。
+- **エスケープ文字はありません。** 同じ種類の引用符をリテラルの中に入れることはできません — `'it\'s'` ではなく `"it's"` と書いてください（前者は未終端の引用符として `[wcs/binding-syntax]` で落ちます）。
+- 隣り合う並びは 1 つの引数に連結されます: `'a' 'b'` は 1 個の文字列 `a b`、`1'2'` は文字列 `12` です（引数のどこかに引用符があれば、その引数は文字列になります）。
+- 未終端の引用符は受理しません。末尾の空引数は落とされ（`filter()` は引数 0 個）、先頭・中間の空引数は位置を保ちます（`defaults(,)` は空文字 1 個を渡します）。
 
 ## Web Component バインディング
 
@@ -1719,6 +1740,11 @@ customElements.define("user-card", UserCard);
 > 宣言しているコンポーネント（`state = { message: "" }` ＋ `state.message: ...`）もホストの値を読み、
 > 既定値は使われません（2.x では R1 によって自前のキーが私有になり、ホストの値を隠していました —
 > `wcs/mount-own-key-shadow` の警告付き）。マップしていない自前のキーは今も R1 で私有です。
+> これは**1 段のエントリ**の話です: より深いエントリ（`state.a.b: outer.b`）は `a` の私有性に
+> 触らないので、コンポーネントが `a` を自分で宣言していれば `a` とその配下は私有のままで、
+> エントリは届きません。名前がコンポーネントの getter / setter / メソッドと一致するエントリも同じで、
+> コンポーネント自身の面が勝ちます。いずれの形も `wcs/mount-own-key-shadow` で 1 回報告されます —
+> どちらかの名前を変えてください。
 >
 > **マウントの `#ro` を尊重します（3.0）:** `state#ro: user` や `state.title#ro: doc.title` では、
 > コンポーネントはそのエントリを読めても書けません — `element.state.title = …`・メソッド内の
@@ -1952,9 +1978,12 @@ interface CommandToken {
 
 `emit` は各購読者の戻り値の配列を（subscribe 順で）返します。`Promise` を返すメソッドは `Promise.all(token.emit(...))` でラップしてすべてを待ち受けてください。
 
+**1 つの購読者が throw しても、残りへの配信は止まりません。** token はファンアウトの口で購読者どうしは互いを知らないため、`emit` は全員を呼びます。投げた購読者は `console.error`（token 名つき）で報告され、結果配列のその位置は `undefined` になり、残りの購読者には届きます。例外は emitter へは**届きません** — state のイベントハンドラと同じ規則で、発火経路はハンドラの完了を待たず、DOM イベント起点では投げ返す呼び出し元が存在しないためです。呼び出し側に知らせたいときは throw ではなく戻り値（または reject した `Promise`）で返してください。`Promise` を返す購読者の reject はここでは捕捉しません。そのための `Promise.all(token.emit(...))` です。
+
 ### 購読のライフサイクル
 
-- 購読者は要素を `WeakRef` で保持するため、token の購読者セットに残っていても、取り外された要素はガベージコレクト可能
+- 購読者は要素を `WeakRef` で保持するので、token の購読者セット**それ自体**は要素を生かし続けない
+- **注意（現在の実装）:** 購読者のクロージャは `binding` も捕捉しており、`binding.node` はその同じ要素 — 上の `WeakRef` を打ち消す強参照です。実際には、取り外された要素は binding が解放されるまで残ります。つまり `WeakRef` が効くのは「binding は消えたが token に購読者が残っている」場合だけです。行や要素が消えた時点で購読者を解放するのが本筋の修正ですが、binding 機構に要素ライフサイクルのフックが無く、その追加とセットで入れるべき変更なので 3.x には入れていません。**今日頼れる仕組みは下の lazy purge**だと考えてください
 - `emit` 時、WeakRef が回収済みか要素が接続されていない（`isConnected === false`）場合、購読は自動的に破棄される（lazy purge）
 - 所有する `<wcs-state>` が disconnect されても token レジストリは保持されるので、ルート `<wcs-state>` を付け直した後（ホストを DOM 上で移動したときなど）も購読に命令が届く。切断中は state を作れないので、`$command` 経由の emit は起きない
 
@@ -1980,7 +2009,7 @@ command token は state コードから emit する必要はありません。DO
 
 これは純粋な配線です。イベント端点を command token 端点に接続するだけで、間にロジックは入りません。`emit` の引数はハンドラ呼び出しとまったく同じく透過されます —— まず DOM の `Event`、続いて内包するリストインデックス —— なので購読者は `(event, ...listIndexes)` を受け取ります。購読者の中で必要なものをイベントから取り出してください（`event.target.value`、`event.detail` など）。
 
-- 右辺は `$command.<name>` であり、`<name>` は `$commandTokens` で宣言されていること。`CommandToken` に解決されないパス（例: typo）はイベント時に throw する。
+- 右辺は `$command.<name>` であり、`<name>` は `$commandTokens` で宣言されていること。`CommandToken` に解決されないパス（例: typo）はイベント時に失敗する。DOM のイベントには投げ返せないので、伝播ではなくイベントごとに 1 回 `console.error` で報告される（reject した state ハンドラと同じ着地）。
 - 修飾子はそのまま機能する: `onclick#prevent: $command.someToken` は emit の前に `preventDefault()` を呼ぶ（`#stop` も同様）。
 - これは state が emit するのと同じ token を emit するので、`command.<method>: $command.someToken` で配線された要素の購読者は、誰がトリガを引いたかに関わらず受け取る。
 
@@ -2230,6 +2259,7 @@ $stream: {
 - **有界 fold** —— 需要は producer に逆流しません（backpressure は明示的に放棄）。無限 / 長寿命ストリームでは latest・count・last-N（`(acc, chunk) => [...acc.slice(-99), chunk]`）・ウィンドウ集計など有界な fold を使うこと。生の全チャンク累積は有限ストリーム限定。
 - **`args` は同期** —— Promise を返すとエラー。`args` 内での wildcard 読みも拒否されます。
 - **自己依存・相互サイクルの禁止** —— `args` が自 stream の値や status を読むとエラーになります。2 つの stream の相互サイクル（A の `args` が B の値を読み、B の `args` が A の値を読む）は検出されず無限 restart になるため組まないこと。一方向のチェイン（A の値を B の `args` が読む）は正当です。
+- **プロパティは runtime の所有物** —— エントリ名が state の getter / setter / メソッドと衝突すると、`$scan` の出力と同じく宣言時にエラーになります（検査が無いと、そのメソッドは起動時の `initial` リセットで無言に上書きされます）。
 - **SSR では起動しない** —— サーバーでは宣言のパースとプロパティの実体化（`initial`）のみ行い、source は実行されません。クライアント側は通常どおり起動します。
 
 完全な契約 —— ライフサイクルと所有権・restart セマンティクス・flush 粒度・スコープ外リスト —— は [docs/streams.ja.md](docs/streams.ja.md) を参照してください。

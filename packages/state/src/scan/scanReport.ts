@@ -7,20 +7,22 @@
  * emit ループを他の機構と共有しているため）。閉じた事実を console と devtools の両方に出す。
  * devtools には `$watch` と同じ `state:watch-error` を path `$scan.<出力名>` で流し、phase は
  * 直し方で分ける: 値を読めなかった（`evaluate`）・fold が契約を破った（`fold`）・出力を
- * 書けなかった（`write`）。
+ * 書けなかった（`write`）。読みの失敗は console の文言でさらに 3 つに分ける:
+ * 出力（`read-output`）・`from` の行の位置（`read-rows`）・行の値（`read-source`）。
  */
 
 import { STATE_SCAN_NAME } from "../define";
 import { devtoolsSink } from "../platform/devtoolsSink";
 
 /** 失敗の種類。原因も直し方も違うので console の文言を分ける */
-export type ScanFailure = "read-source" | "read-output" | "threw" | "returned-promise" | "write";
+export type ScanFailure = "read-source" | "read-rows" | "read-output" | "threw" | "returned-promise" | "write";
 
 type ScanPhase = "evaluate" | "fold" | "write";
 
 const SCAN_FAILURE_MESSAGE: Readonly<Record<ScanFailure, (name: string) => string>> = {
   "read-source": (name) =>
     `${STATE_SCAN_NAME} could not read a "from" value for "${name}". That landing was not folded; the other landings of the batch still were.`,
+  "read-rows": (name) => `${STATE_SCAN_NAME} could not read the rows of "from" for "${name}". Nothing was folded or written.`,
   "read-output": (name) => `${STATE_SCAN_NAME} could not read the output "${name}". Nothing was folded or written.`,
   threw: (name) => `${STATE_SCAN_NAME} fold for "${name}" threw. The output was not written.`,
   "returned-promise": (name) =>
@@ -30,6 +32,7 @@ const SCAN_FAILURE_MESSAGE: Readonly<Record<ScanFailure, (name: string) => strin
 
 const SCAN_FAILURE_PHASE: Readonly<Record<ScanFailure, ScanPhase>> = {
   "read-source": "evaluate",
+  "read-rows": "evaluate",
   "read-output": "evaluate",
   threw: "fold",
   "returned-promise": "fold",

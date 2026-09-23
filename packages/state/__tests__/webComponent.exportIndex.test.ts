@@ -88,6 +88,25 @@ describe("registerExports", () => {
     expect(parent.hasMounts).toBe(true);
   });
 
+  it("クラスで書いた state のプロトタイプ getter / setter も公開すること", () => {
+    // `collectAccessorKeys` が own descriptor だけを見ていた頃は `getterKeys` が空で、
+    // クラスで書いたコンポーネントの計算 getter は公開も私有化もされずツリーへ流れていた
+    class Card {
+      items = [1, 2, 3];
+      get total(): number { return this.items.length; }
+      set label(_v: string) { /* noop */ }
+      save(): void { /* noop */ }
+    }
+    const parent = fakeParent();
+    const r = record(parent, new Card() as any);
+    registerExports(r);
+    expect([...r.exports.keys()].sort()).toEqual(["user.label", "user.total"]);
+    expect(r.exports.get("user.total")).toEqual({
+      markerTerminalPath: `user.${r.marker}`, suffix: "total", markerPath: `user.${r.marker}.total`, exportedPath: "user.total",
+    });
+    expect(parent.dynamicDependency.get(`user.${r.marker}.total`)).toEqual(["user.total"]);
+  });
+
   it("冪等であること（2 回目は何もしない）・ルートエントリの無い部分マウントは公開しないこと", () => {
     const parent = fakeParent();
     const r = record(parent, { get display() { return 1; } });

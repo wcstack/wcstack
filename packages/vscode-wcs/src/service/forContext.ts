@@ -4,6 +4,8 @@
  * HTML 内の指定位置が <template data-wcs="for:"> の内側にあるかを判定する。
  */
 
+import { indexOfOutsideQuotes } from '../core/parser/quoteAware.js';
+
 /**
  * 指定オフセットが <template data-wcs="for: ..."> の内側にあるかを判定する。
  *
@@ -121,7 +123,10 @@ export function countWildcardSegments(path: string): number {
 /** for 属性の生テキストから state パス部分だけを取り出す（`@state` / フィルタを落とす）。 */
 function forPathOf(raw: string): string {
   let path = raw.trim();
-  const pipe = path.indexOf('|');
+  // 区切りは引用符の外だけ（拡張内の区切り走査は例外なく quoteAware 経由にする）。
+  // `for` の右辺のパスに引用符は現れないので現状の挙動は変わらないが、素の走査を
+  // 残すと同型の欠陥が入り込む余地になる
+  const pipe = indexOfOutsideQuotes(path, '|');
   if (pipe !== -1) path = path.slice(0, pipe).trim();
   const at = path.indexOf('@');
   if (at !== -1) path = path.slice(0, at).trim();

@@ -35,6 +35,22 @@ export function resolve(
   handler: IStateHandler
 ): ResolveFunction {
   return (path: string, indexes: number[], ...value: [value?: any]): any => {
+    // 添字が配列でない（省略・`null` 等）のは素の TypeError にせず、形の診断にする
+    // （`$getAll` / `$setAll` と同じ語彙）。`$resolve` は添字を省略できない — 省略形は `$getAll`
+    if (!Array.isArray(indexes)) {
+      raiseError(
+        `$resolve("${path}") requires an explicit indexes array (pass [] when the path has no wildcards) — got ` +
+        `${indexes === null ? "null" : typeof indexes}.`
+      );
+    }
+    // 読み（2 引数）か書き（3 引数）だけ。4 つ目以降は黙って捨てられていた（要件 B7 の「範囲外の
+    // 引数個数は throw」と不一致 — 書きのつもりの取り違えが readonly エラーでしか現れなかった）
+    if (value.length > 1) {
+      raiseError(
+        `$resolve("${path}") takes 2 arguments to read and 3 to write (path, indexes, value) — got ` +
+        `${2 + value.length}.`
+      );
+    }
     const pathInfo = getPathInfo(path);
     if (handler.addressStackLength > 0) {
       const lastInfo = handler.lastAddressStack?.pathInfo ?? null;

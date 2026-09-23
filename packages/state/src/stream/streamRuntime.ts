@@ -33,11 +33,12 @@ import {
   STATE_STREAM_STATUS_NAMESPACE_NAME,
   STREAM_LISTENER_PRIORITY,
 } from "../define";
+import { recordOutputValue } from "../scan/initialValue";
 import { assertNoScanFeedback } from "../scan/scanFeedback";
 import { registerUpdateBatchListener } from "../updater/updater";
 import { registerFeatureHooks } from "../core/addressHooks";
 import { IDeclarationHooks, registerDeclarationHooks } from "../core/declarationHooks";
-import { STATE_STREAMS_NAME } from "../define";
+import { STATE_STREAM_NAME } from "../define";
 import { inSsr } from "../config";
 import { processStreamsDeclaration } from "./processStreamsDeclaration";
 import { clearStreamNamespace } from "./streamNamespace";
@@ -100,6 +101,9 @@ export function startStream(stateElement: IStateElement, entry: IStreamEntry): v
   stateElement.createState("writable", (state) => {
     state[entry.name] = entry.definition.initial;
   });
+  // runtime が置いた関数値を記録する（再セットの宣言検査が fold / initial の関数を
+  // メソッド衝突と誤検出しないため。scan/initialValue.ts — `$scan` の D7 と共有）
+  recordOutputValue(entry.name, entry.definition.initial);
 
   updateStreamStatus(stateElement, entry, "active", null);
 
@@ -108,7 +112,9 @@ export function startStream(stateElement: IStateElement, entry: IStreamEntry): v
     fold(chunk: unknown): void {
       // fold の throw はそのまま伝播させる（consumeSource が fail 経路に回す）
       stateElement.createState("writable", (state) => {
-        state[entry.name] = definition.fold(state[entry.name], chunk);
+        const next = definition.fold(state[entry.name], chunk);
+        state[entry.name] = next;
+        recordOutputValue(entry.name, next);
       });
     },
     done(): void {
@@ -273,8 +279,8 @@ export const streamDeclarationHooks: IDeclarationHooks = {
     processStreamsDeclaration(element, value);
     // hook は要素の寿命の間は付いたまま（再 set で $streams が消えても、残った $streamStatus /
     // $streamError の束縛は名前空間の null を読む — 従来の core 直結と同じ振る舞い）
-    if (typeof (value as Record<string, unknown>)[STATE_STREAMS_NAME] !== "undefined") {
-      element.attachAddressHooks?.("streams", STATE_STREAMS_NAME);
+    if (typeof (value as Record<string, unknown>)[STATE_STREAM_NAME] !== "undefined") {
+      element.attachAddressHooks?.("streams", STATE_STREAM_NAME);
     }
   },
   activate(element, captured) {

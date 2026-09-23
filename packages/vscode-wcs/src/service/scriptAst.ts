@@ -28,12 +28,13 @@
  *
  * 収集規則の対応表は計画書 §1。要点:
  *   - `this.a` / `this["a.b"]` / `this?.a` / 式なしテンプレートリテラル添字 → path
- *   - `this.$getAll("p")` / `this.$resolve("p")` / `this.$trackDependency("p")` → path（文字列リテラルのみ）
+ *   - `this.$getAll("p")` / `this.$resolve("p")` / `this.$dependOn("p")`（旧名 `this.$trackDependency("p")`）
+ *     → path（文字列リテラルのみ）
  *   - `const { a } = this` / `const self = this; self.a` → path
  *   - `this.form.name` → path は `form`、chain は `["form", "name"]`（untracked-read の材料）
  *   - `this.a += 1` / `this.a++` / `this.a ??= x` → path（ランタイムは get → set の順に動く。`written: true`）
  *   - `this[key]` / 非リテラル引数 → 集めない（断定できない）
- *   - `this.$untrackDependency(fn)` の中 → 集めない（意図的な抑止）
+ *   - `this.$untracked(fn)`（旧名 `this.$untrackDependency(fn)`）の中 → 集めない（意図的な抑止）
  *   - 単純代入 `this.a = x` の左辺 → 集めない（読みではない。`wcs/nested-assign` の担当）
  *   - `$` 始まりのルート → 集めない（API 名前空間）
  */
@@ -431,4 +432,105 @@ function visitDestructure(pattern: ObjectPattern, prefix: readonly Segment[], sc
     }
     emit(out, segments, { form: 'destructure', callee: false, written: false }, property.start, property.end);
   }
+}
+
+// ============================================================
+// `this.<name>` のメンバー参照（旧名の宣言キーの読み出し検出）
+// ============================================================
+
+/** `this.<name>` / `this["<name>"]` のメンバー参照 1 件（本体テキスト相対オフセット）。 */
+export interface ThisMemberRef {
+  /** 参照されたメンバー名（引用符は含まない） */
+  readonly name: string;
+  readonly start: number;
+  readonly end: number;
+}
+
+/**
+ * getter / メソッド本体から `this.<name>` / `this["<name>"]` のメンバー参照を集める。
+ * 名前は `names` に含まれるものだけ。パースできなければ null（呼び出し側は断定しない側に倒す）。
+ *
+ * 依存解析（`collectGetterReads`）とは別物なので、エイリアス（`const self = this`）は追わず
+ * 素の `this` だけを見る — 取りこぼしても誤検出を出さない側に倒す。`this` の束縛だけは
+ * 同じ規則で扱い、入れ子の function / class の中の `this` は state ではないので見ない。
+ * 正規表現（`/\.\s*\$streams\b/`）と違い、文字列リテラルの中（`"obj.$streams"`）や
+ * 他オブジェクトのプロパティ（`other.$streams`）には当たらない。
+ */
+export function collectThisMemberRefs(body: string, names: ReadonlySet<string>): ThisMemberRef[] | null {
+  let program: AnyNode;
+  try {
+    program = parse(PREFIX + body + SUFFIX, { ecmaVersion: 'latest', sourceType: 'module' });
+  } catch {
+    return null;
+  }
+  const fn = unwrapWrapper(program);
+  if (fn === null) return null;
+  return walkThisMembers(fn.body, names, PREFIX.length);
+}
+
+const VALUE_PREFIX = '(async function* () {\n(';
+const VALUE_SUFFIX = ')\n})';
+
+/**
+ * プロパティの**値**に置かれた関数（`count: function (cur) { … }`）の中の `this.<name>` を集める。
+ *
+ * ランタイムが `.call(state, …)` で再束縛する宣言面（`$watch`）は、メソッド短縮記法だけでなく
+ * `function` 式でも `this` が state になる。アロー関数・識別子参照・その他の値は `this` が
+ * state ではない（モジュールスコープ ＝ ESM では undefined）ので**空**を返す — ここで拾うと
+ * 誤検出になる。パースできなければ null。
+ */
+export function collectThisMemberRefsInValue(value: string, names: ReadonlySet<string>): ThisMemberRef[] | null {
+  let program: AnyNode;
+  try {
+    program = parse(VALUE_PREFIX + value + VALUE_SUFFIX, { ecmaVersion: 'latest', sourceType: 'module' });
+  } catch {
+    return null;
+  }
+  const wrapper = unwrapWrapper(program);
+  if (wrapper === null || wrapper.body.body.length !== 1) return null;
+  const statement = wrapper.body.body[0];
+  if (statement.type !== 'ExpressionStatement') return null;
+  const expression = statement.expression;
+  // 通常の function 式だけが `this` を再束縛される側。アロー等は state の `this` を持たない
+  if (expression.type !== 'FunctionExpression') return [];
+  return walkThisMembers(expression.body, names, VALUE_PREFIX.length);
+}
+
+/**
+ * 関数本体（`this` が state を指すスコープ）から `this.<name>` を集める。
+ * `offsetShift` はラッパー接頭辞の長さ（返すオフセットは入力テキスト相対になる）。
+ */
+function walkThisMembers(root: AnyNode, names: ReadonlySet<string>, offsetShift: number): ThisMemberRef[] {
+  const out: ThisMemberRef[] = [];
+  const walk = (node: AnyNode, thisIsState: boolean): void => {
+    // class 本体の `this` は state ではない（中身ごと見ない）
+    if (isClassNode(node)) return;
+    if (isFunctionNode(node)) {
+      // アロー関数は外側の `this` を継承し、通常の function は自分の `this` を持つ
+      const inner = node.type === 'ArrowFunctionExpression' ? thisIsState : false;
+      forEachChild(node, (child) => walk(child, inner));
+      return;
+    }
+    if (thisIsState && node.type === 'MemberExpression' && node.object.type === 'ThisExpression') {
+      const hit = thisMemberName(node);
+      if (hit !== null && names.has(hit.name)) {
+        out.push({ name: hit.name, start: hit.start - offsetShift, end: hit.end - offsetShift });
+      }
+    }
+    forEachChild(node, (child) => walk(child, thisIsState));
+  };
+  walk(root, true);
+  return out;
+}
+
+/** `this.name` / `this["name"]` のメンバー名とそのスパン（引用符の内側）。断定できなければ null。 */
+function thisMemberName(node: MemberExpression): { name: string; start: number; end: number } | null {
+  const property = node.property;
+  if (!node.computed && property.type === 'Identifier') {
+    return { name: property.name, start: property.start, end: property.end };
+  }
+  if (node.computed && property.type === 'Literal' && typeof property.value === 'string') {
+    return { name: property.value, start: property.start + 1, end: property.end - 1 };
+  }
+  return null;
 }

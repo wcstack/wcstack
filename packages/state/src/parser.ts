@@ -17,7 +17,10 @@
  *   同一パス → 同一インスタンスの保証は**このエントリのモジュールインスタンス内**でのみ
  *   成立する（`.` エントリは別バンドル＝別キャッシュ。ランタイムの PathInfo と identity
  *   比較してはならない）。キャッシュは無制限（evict なし）— 言語サーバー等の長時間
- *   プロセスでは入力パス種数に単調比例してメモリが増える点に留意。
+ *   プロセスではメモリが増え続ける点に留意（断ち方は `clearPathInfoCacheForTooling`）。
+ *   **増え方はパス種数への単調比例ではない**: `PathInfo` は自分の全ての接頭辞を intern
+ *   するので、1 本のパスが持ち込む量はその深さの 2 乗に比例する。深さは
+ *   `MAX_PATH_SEGMENTS` で頭打ちになる（超えたパスは `[wcs/binding-syntax]` で拒否）。
  * - `ParseBindTextResult.uuid` はランタイム内部（構造テンプレートのハイドレーション台帳）
  *   用のフィールドで、このパーサの戻り値では常に undefined。
  *
@@ -29,6 +32,14 @@ export { parseBindTextsForElement } from "./bindTextParser/parseBindTextsForElem
 // 属性値をバインディングごとに区切る正本（引用符の中の `;` は区切らない — 要件 B1）。位置付きの
 // tooling（vscode-wcs の positionalParser）が、ランタイムと同じ区切りで式を切り出すために使う
 export { splitBindTexts } from "./bindTextParser/parseBindTextsForElement.js";
+// 引用符の外にある最初の区切り文字を探す正本（要件 B1）。`splitBindTexts` が `;` を、ランタイムが
+// `|`（フィルタ）と `:`（左辺と右辺）を、これで切り出す。位置付きの tooling は式の内側を自分で
+// 走査する必要があり、同じ判定を手で写すとランタイムと乖離する（vscode-wcs の positionalParser
+// が持っていた写しを、この export に寄せて消せる）
+// 同じ正本の分割版。`splitBindTexts` は `;` を固定しているので、`|`（フィルタ）や任意の
+// 区切りで同じ規則で切りたい tooling はこちらを使う。位置付きの消費側がこの 2 本を手で
+// 写すと、引用符の扱いがランタイムと乖離する
+export { indexOfOutsideQuotes, splitOutsideQuotes } from "./bindTextParser/utils.js";
 // テキストバインディング（mustache 変換後のコメント・`<!--@@:-->`）の正本経路。
 // `;` を**分割しない**（式全体が `path[|filters]` — `@state` は v2 で撤去）— 属性経路との違いは
 // 消費側が既知乖離として文書化していた点で、これで text チャネルも正本化できる。

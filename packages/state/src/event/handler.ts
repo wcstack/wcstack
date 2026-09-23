@@ -9,7 +9,7 @@ import { getScopedIndexes } from "../list/wildcardLevel";
 import { raiseError } from "../raiseError";
 import { getStateElement } from "../stateElementByName";
 import { IBindingInfo } from "../types";
-import { captureHandlerRejection } from "./captureHandlerRejection";
+import { captureHandlerRejection, reportHandlerError } from "./captureHandlerRejection";
 import { createHandlerBindingRegistry } from "./handlerBindingRegistry";
 
 // onclick: $command.<name> のように、DOM イベントから command token を直接 emit する形式かを判定する。
@@ -45,6 +45,10 @@ const stateEventHandlerFunction = (
 
   const loopContext = getLoopContextByNode(node);
   const isCommand = isCommandTokenPath(handlerName);
+  // `createStateAsync` の戻り Promise を捨てると、ハンドラの**同期 throw**（未宣言の
+  // command token・state に無いハンドラ名・作者のメソッドが投げた例外）が `async` 関数の中で
+  // reject に変わり、そのまま unhandled rejection に沈む。DOM のイベント配送には投げ返せない
+  // 経路なので、少なくとも報告へ落とす（captureHandlerRejection.ts の方針と同じ）
   stateElement.createStateAsync("writable", async (state) => {
     const results = state[setLoopContextSymbol](loopContext, () => {
       // マウントされたスコープ（v2）: 作者のハンドラが受ける添字は自スコープの
@@ -85,11 +89,27 @@ const stateEventHandlerFunction = (
     // eventTokenHandler と同じく、この経路もハンドラの完了を待たない。async な
     // state メソッド / command subscriber の reject を unhandled にせず報告へ落とす。
     captureHandlerRejection(results, `"${handlerName}"`);
-  });
+  }).catch((error: unknown) => reportHandlerError(error, `"${handlerName}"`));
+}
+
+/**
+ * DOM イベントリスナを張る束縛かを判定する（要件 B5 / D34）。
+ *
+ * 名前の綴り（`on` で始まるか）だけでは足りない: 明示のプロパティ形 `.online:` は
+ * `propName` が `"online"` でも **プロパティ束縛**（`bindingType: 'prop'`）であって
+ * `"line"` イベントの購読ではない。`spread` で配線される `once`（`<wcs-timer>` /
+ * `<wcs-raf>` …）も同じ形。種別で判定することで、`for` 行の内（`structural/rowPlan.ts`
+ * の `isEvent`）と外で同じ束縛が同じ意味になる。
+ *
+ * `eventToken.<prop>:` も `bindingType: 'event'` だが DOM イベントではない（pub/sub 配線）
+ * ので、`on` 接頭辞の検査も併せて残す。
+ */
+function isDomEventBinding(binding: IBindingInfo): boolean {
+  return binding.bindingType === 'event' && binding.propName.startsWith(EVENT_PROP_PREFIX);
 }
 
 export function attachEventHandler(binding: IBindingInfo): boolean {
-  if (!binding.propName.startsWith(EVENT_PROP_PREFIX)) {
+  if (!isDomEventBinding(binding)) {
     return false;
   }
   const key = getHandlerKey(binding);
@@ -107,7 +127,7 @@ export function attachEventHandler(binding: IBindingInfo): boolean {
 }
 
 export function detachEventHandler(binding: IBindingInfo): boolean {
-  if (!binding.propName.startsWith(EVENT_PROP_PREFIX)) {
+  if (!isDomEventBinding(binding)) {
     return false;
   }
   const key = getHandlerKey(binding);

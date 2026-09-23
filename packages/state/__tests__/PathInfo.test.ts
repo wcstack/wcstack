@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { getPathInfo } from '../src/address/PathInfo';
-import { DELIMITER, WILDCARD } from '../src/define';
+import { DELIMITER, MAX_PATH_SEGMENTS, MAX_WILDCARD_DEPTH, WILDCARD } from '../src/define';
 
 describe('PathInfo', () => {
   describe('getPathInfo', () => {
@@ -267,5 +267,46 @@ describe('PathInfo', () => {
       const pathInfo = getPathInfo('user123.address0.zip');
       expect(pathInfo.segments).toEqual(['user123', 'address0', 'zip']);
     });
+  });
+});
+
+/**
+ * 深さの上限（DoS の口を塞ぐ）。`PathInfo` は**自分の全ての接頭辞**を intern するので、
+ * 深さ N のパス 1 本で `PathInfo` が N 個でき、それぞれが長さ k の配列と Set を持つ ＝
+ * 時間もメモリも O(N²)。実測（Node 22・パス 1 本）で depth 400 → 145ms / 61MB、
+ * 800 → 1162ms / 424MB、2000 → 既定 4GB ヒープで OOM。
+ * **約 4KB の `data-wcs` 属性値 1 つでタブを落とせた。**
+ */
+describe('getPathInfo — セグメント数の上限（要件 B1 / D2）', () => {
+  it(`${MAX_PATH_SEGMENTS} セグメントまでは通ること`, () => {
+    const path = Array.from({ length: MAX_PATH_SEGMENTS }, (_, i) => `s${i}`).join('.');
+    expect(getPathInfo(path).segments).toHaveLength(MAX_PATH_SEGMENTS);
+  });
+
+  it(`${MAX_PATH_SEGMENTS + 1} セグメントは [wcs/binding-syntax] で拒否されること`, () => {
+    const path = Array.from({ length: MAX_PATH_SEGMENTS + 1 }, (_, i) => `t${i}`).join('.');
+    expect(() => getPathInfo(path)).toThrow(/\[wcs\/binding-syntax\]/);
+    expect(() => getPathInfo(path)).toThrow(new RegExp(`has ${MAX_PATH_SEGMENTS + 1} path segments`));
+  });
+
+  it('上限を超えたパスは intern されず、構築も走らないこと（O(N²) を払う前に落ちる）', () => {
+    const path = Array.from({ length: MAX_PATH_SEGMENTS * 4 }, (_, i) => `u${i}`).join('.');
+    const started = Date.now();
+    expect(() => getPathInfo(path)).toThrow();
+    // 構築に入っていれば O(N²) ぶんの時間がかかる（2048 段は実測で 1 秒超）
+    expect(Date.now() - started).toBeLessThan(200);
+    // 接頭辞も 1 つも intern されていない
+    expect(() => getPathInfo(path)).toThrow();
+  });
+
+  it(`$recursion のドキュメント済み深さ（ワイルドカード ${MAX_WILDCARD_DEPTH} 段）が上限に収まること`, () => {
+    // `a.*.b.*.…` の形で 128 段 = 1 + 128*2 = 257 セグメント。ここを割ると再帰が打ち切られる
+    const parts: string[] = ['a'];
+    for (let i = 0; i < MAX_WILDCARD_DEPTH; i++) {
+      parts.push('*', `s${i}`);
+    }
+    const path = parts.join('.');
+    expect(path.split('.').length).toBeLessThanOrEqual(MAX_PATH_SEGMENTS);
+    expect(getPathInfo(path).wildcardCount).toBe(MAX_WILDCARD_DEPTH);
   });
 });

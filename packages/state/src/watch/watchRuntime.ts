@@ -36,8 +36,9 @@ import { IDeclarationHooks, registerDeclarationHooks } from "../core/declaration
 import { STATE_SCAN_NAME, STATE_WATCH_NAME } from "../define";
 import { inSsr } from "../config";
 import { clearComputedSnapshots } from "./computedSnapshots";
-import { processWatchDeclaration } from "./processWatchDeclaration";
-import { clearWatchRegistry, deactivateWatch } from "./watchRegistry";
+import { assertValidWatchPath, processWatchDeclaration } from "./processWatchDeclaration";
+import { addVolumeWatchEntries, clearWatchRegistry, deactivateWatch } from "./watchRegistry";
+import { setVolumeWatchSupport } from "../bridge/featureBridge";
 import { registerFeatureHooks } from "../core/addressHooks";
 import { watchAddressHooks } from "./addressHooks";
 import { hasRetiredRow, selectLandedRows } from "./rowLanding";
@@ -428,6 +429,14 @@ export function installWatchRuntime(): void {
   registerUpdateBatchListener(fireWatchOnUpdateBatch, WATCH_LISTENER_PRIORITY);
   // ハンドラ実行中の書き込みだけを連鎖としてマークする（chainDepth.ts）。ハンドラ実行中でなければ即 return
   registerEnqueueListener(noteEnqueueForWatchChain);
+  // ボリュームの `$watch` 接頭辞登録（webComponent/volume.ts）はここ経由で呼ばれる。
+  // scopes が watch を静的 import すると、scopes だけのページに temporal ランタイムが
+  // 丸ごと乗る（要件 B13 / bridge/featureBridge.ts のヘッダ）
+  setVolumeWatchSupport({
+    assertValidPath: assertValidWatchPath,
+    addEntries: addVolumeWatchEntries,
+    start: startWatch,
+  });
 }
 
 /**

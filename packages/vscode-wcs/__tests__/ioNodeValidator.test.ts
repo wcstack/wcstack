@@ -13,15 +13,42 @@ ${body}
 </script></wcs-state>`;
 
 describe('validateIoNodes: on-prefixed-member（明示のプロパティ形、@wcstack/state 3.1）', () => {
-  it('"on" で始まるメンバーをドット無しで束縛すると警告し、".once:" を提案する', () => {
+  it('"on" で始まるメンバーをドット無しで束縛すると警告し、書かれた修飾子込みの形を提案する', () => {
+    // Fixed by review — 提案文が修飾子を落として ".once:" と言っていた（`#ro` を書き直す手が増える）
     const html = `<wcs-timer data-wcs="once#ro: isOnce"></wcs-timer>`;
     const diags = validateIoNodes(html);
     expect(diags).toHaveLength(1);
     expect(diags[0].code).toBe(WcsDiagnosticCode.OnPrefixedMember);
     expect(diags[0].severity).toBe('warning');
     expect(diags[0].member).toBe('once');
-    expect(diags[0].message).toContain('".once:"');
+    expect(diags[0].message).toContain('".once#ro:"');
     expect(diags[0].message).toContain('"ce"');
+  });
+
+  it('修飾子が無いときは従来どおり ".once:" を提案する', () => {
+    const diags = validateIoNodes(`<wcs-timer data-wcs="once: isOnce"></wcs-timer>`);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].message).toContain('".once:"');
+  });
+
+  // Fixed by review — 正本パーサが [wcs/binding-syntax] で落とす形に、別の理由の
+  // tag-member-unknown を重ねていた（同じ 1 か所に紛らわしい 2 件）。
+  it('正本パーサが落とす形（"..once:" / ".:"）には tag-member-unknown を重ねないこと', () => {
+    expect(validateIoNodes(`<wcs-timer data-wcs="..once: isOnce"></wcs-timer>`)).toHaveLength(0);
+    expect(validateIoNodes(`<wcs-timer data-wcs=".: isOnce"></wcs-timer>`)).toHaveLength(0);
+  });
+
+  // Fixed by review（サイクル 5）— 拒否語の手書きリストが 5 語で、正本の 6 語目
+  // `state`（VOLUME_INJECTION_PROP）が抜けていた。dist が src に追いついた瞬間に
+  // `.state.x:` が binding-syntax(error) + tag-member-unknown(warning) の二重報告になる。
+  it('明示プロパティ形の名前空間の語（state を含む 6 語）には tag-member-unknown を重ねないこと', () => {
+    for (const head of ['class', 'style', 'attr', 'command', 'eventToken', 'state']) {
+      expect(validateIoNodes(`<wcs-timer data-wcs=".${head}.x: v"></wcs-timer>`), head).toHaveLength(0);
+      expect(validateIoNodes(`<wcs-timer data-wcs=".${head}: v"></wcs-timer>`), head).toHaveLength(0);
+    }
+    // 名前空間でない語は従来どおり契約と突き合わせる（過剰抑制していないことの対照）
+    const diags = validateIoNodes(`<wcs-timer data-wcs=".stateish: v"></wcs-timer>`);
+    expect(diags.map(d => d.member)).toEqual(['stateish']);
   });
 
   it('".once:" はメンバーとして照合し、未知の ".name:" は tag-member-unknown にする', () => {
@@ -48,6 +75,23 @@ describe('validateIoNodes: tag-member-unknown', () => {
     expect(diags[0].message).toContain('"value"'); // もしかして: "value"
     // range が "valu" を指す
     expect(html.slice(diags[0].start, diags[0].end)).toBe('valu');
+  });
+
+  // Fixed by review — 式の分割が独自の括弧深度実装のままで引用符を見ておらず、
+  // フィルタ引数・パス中の `;` を区切りとして拾って偽の tag-member-unknown を出していた。
+  // 正本（@wcstack/state/parser の splitBindTexts）は引用符の外の `;` だけで区切る（要件 B1）。
+  it('引用符の中の ";" は式の区切りではない（偽陽性を出さない）', () => {
+    const html = `<wcs-timer data-wcs="interval: 'a;b'; bogus: flag"></wcs-timer>`;
+    const diags = validateIoNodes(html);
+    expect(diags.map(d => d.member)).toEqual(['bogus']);
+    expect(html.slice(diags[0].start, diags[0].end)).toBe('bogus');
+  });
+
+  it('括弧の中の ";" は区切りとして扱う（ランタイムと同値）', () => {
+    // 正本は括弧深度を見ない — `f(a;b)` は 2 式。2 つ目の左辺 "b)" が未知メンバーになる
+    const html = `<wcs-timer data-wcs="interval: n|padStart(2;0)"></wcs-timer>`;
+    const diags = validateIoNodes(html);
+    expect(diags.map(d => d.member)).toEqual(['0)']);
   });
 
   it('正しい properties / inputs へのバインドは警告しない', () => {

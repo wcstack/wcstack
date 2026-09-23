@@ -85,3 +85,78 @@ describe("entries/core — 開発時の診断", () => {
     }
   });
 });
+
+/**
+ * 機能の readiness barrier（要件 D13・設計案 H5）。README は「宣言が要求する機能が
+ * 入っていなければ **黙って通さず**、state が定義された時点で `[wcs/feature-not-installed]`
+ * を投げる」と約束している。受け口（core/declarationHooks.ts）は未 install なら段が
+ * 空になるだけなので、core 自身が宣言キーを見ていないと `$watch` / `$scan` / `$stream` /
+ * `$recursion` が素通りしていた。
+ */
+describe("entries/core — 宣言の readiness barrier", () => {
+  async function mountWithDeclaration(tag: string, state: Record<string, unknown>): Promise<{ host: HTMLElement; stateEl: State }> {
+    const host = document.createElement(tag);
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML = `<p data-wcs="textContent: count"></p><wcs-state></wcs-state>`;
+    const stateEl = shadowRoot.querySelector("wcs-state") as State;
+    stateEl.setInitialState(state);
+    document.body.appendChild(host);
+    return { host, stateEl };
+  }
+
+  it.each([
+    ["$watch", "watch", "temporal", { count: 0, $watch: { count() { /* noop */ } } }],
+    ["$scan", "scan", "temporal", { count: 0, $scan: { count: { on: "tick", reduce: (a: number) => a } } }],
+    ["$stream", "streams", "temporal", { count: 0, $stream: { count: { source: () => [] } } }],
+    ["$recursion", "recursion", "recursion", { count: 0, $recursion: { "nodes.**": "nodes.*.children" } }],
+  ])("%s を宣言したのに機能が未 install なら [wcs/feature-not-installed] で落ちること", async (declaration, feature, entry, state) => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const { host, stateEl } = await mountWithDeclaration(`core-barrier-${feature}`, state as Record<string, unknown>);
+      await expect(stateEl.connectedCallbackPromise).rejects.toThrow(
+        `[wcs/feature-not-installed] "${declaration}" needs the "${feature}" feature`,
+      );
+      await expect(stateEl.connectedCallbackPromise).rejects.toThrow(
+        `@wcstack/state/features/${entry}`,
+      );
+      host.remove();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("旧名 `$streams` で書いても同じ barrier に当たること（正規化の後に門がある）", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const { host, stateEl } = await mountWithDeclaration("core-barrier-streams-alias", {
+        count: 0,
+        $streams: { count: { source: () => [] } },
+      });
+      await expect(stateEl.connectedCallbackPromise).rejects.toThrow(/needs the "streams" feature/);
+      host.remove();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("宣言が無ければ core だけでも落ちないこと", async () => {
+    const { host, stateEl } = await mountWithDeclaration("core-barrier-none", { count: 1 });
+    await expect(stateEl.connectedCallbackPromise).resolves.toBeUndefined();
+    host.remove();
+  });
+});
+
+/**
+ * 機能の install はタグの定義より前（`bootstrapState()` は install → bootstrap の順）というのが
+ * 元々の約束だが、逆順は readiness barrier に当たらず**無言で壊れる**（`<wcs-ssr>` が未定義の
+ * まま残る）。約束を文書ではなく機構で守る: 後から来た definer は、すでに bootstrap 済みの
+ * レジストリへ即座に適用される（`src/registerComponents.ts`）。
+ */
+describe("entries/core — bootstrap の後の installFeatures", () => {
+  it("bootstrap 済みでも、後から入れた機能のタグが定義されること", async () => {
+    expect(customElements.get("wcs-ssr")).toBeUndefined();
+    const { default: ssr } = await import("../src/features/ssr");
+    installFeatures([ssr]);
+    expect(customElements.get("wcs-ssr")).toBeDefined();
+  });
+});

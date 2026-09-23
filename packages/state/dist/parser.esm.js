@@ -1,6 +1,22 @@
 const DELIMITER = '.';
 const WILDCARD = '*';
 const MAX_WILDCARD_DEPTH = 128;
+/**
+ * 1 本のパスが持てるセグメント数の上限（`getPathInfo` が初回 intern のときだけ検査する）。
+ *
+ * `PathInfo` は自分の**全ての接頭辞**を intern するので、深さ N のパス 1 本で N 個の
+ * `PathInfo` ができ、それぞれが長さ k の配列と Set を持つ ＝ 時間もメモリも O(N²)。
+ * 実測（Node 22・パス 1 本）で depth 400 → 145ms / 61MB、800 → 1162ms / 424MB、
+ * 2000 → 既定 4GB ヒープで OOM。**約 4KB の `data-wcs` 属性値 1 つでタブを落とせた。**
+ * ここで打ち切ると最悪でも 256² ≒ 65k 単位に収まる。
+ *
+ * 値は `MAX_WILDCARD_DEPTH`（128 = `$1..$128` の表の大きさ）を**使い切れる**ことから決めた:
+ * `$recursion` の展開（`recursion/expand.ts`）が深さ 128 で作るパスは `a.*.b.*.…` の形で
+ * 257 セグメントを超える。そこを割ると、ドキュメント済みの再帰深さが打ち切られてしまう。
+ * 512 なら最悪でも 512² ≒ 262k 単位で、上の実測の 400 段（145ms / 61MB）の延長に収まる。
+ * 実用のパスは 10 段に満たない。
+ */
+const MAX_PATH_SEGMENTS = 512;
 // data-wcs バインディング構文 `[prop][#mod]: [path][|filter...]` の区切り文字（単一正本・`@state` は v2 で撤去）。
 // これらは「死守の壁（構文契約）」であり値は不変。manifest.syntax.delimiters で公開される。
 const BINDING_SEPARATOR = ';'; // 複数バインディングの区切り
@@ -16,6 +32,11 @@ const ELSE_KEYWORD = 'else';
 const SPREAD_PROP = '...';
 const EVENT_PROP_PREFIX = 'on';
 const EVENT_TOKEN_NAMESPACE = 'eventToken';
+/**
+ * `<wcs-state mount>` の左辺 `state.<key>: path` — ボリュームの注入口（要件 B14③・3.x 計画 D28）。
+ * 束縛ではなくマウントの宣言なので、束縛の収集（getParseBindTextResults）は作らず、ボリュームが接ぎ木の時に読む
+ */
+const VOLUME_INJECTION_PROP = 'state';
 const COMMAND_NAMESPACE = 'command';
 const CLASS_NAMESPACE = 'class';
 const ATTR_NAMESPACE = 'attr';
@@ -76,9 +97,34 @@ function getPathInfo(path) {
             `It is only meaningful in a $recursion declaration, in a recursive getter key, and in the path ` +
             `argument of $getAll / $setAll — and only when the state declares a $recursion anchor.`);
     }
+    // 深さの上限（初回 intern のときだけ払う）。`PathInfo` は**全ての接頭辞**を intern するので
+    // 深さ N のパス 1 本で時間もメモリも O(N²) になり、上限が無いと約 4KB の属性値 1 つで
+    // タブが落ちた（実測値は `MAX_PATH_SEGMENTS` の注記）。
+    //
+    // **ワイルドカードの段数はここでは見ない。** 段数の上限（`MAX_WILDCARD_DEPTH` ＝ manifest の
+    // `indexParam.maxDepth`）は `$1..$N` の表が引けるかという別の話で、`recursion/expand.ts` の
+    // `[wcs/recursion-depth-exceeded]` と `proxy/traps/get.ts` の `$N` 範囲外診断が、原因を
+    // 名指しできる場所で受け持っている（番人: `integration.recursionPrerequisites.test.ts` が
+    // 「PathInfo 自体には段数の上限が無い」を固定している）。ここで先に落とすと、深さ超過か
+    // 循環かの切り分けが効かなくなる
+    const segmentCount = countSegments(path);
+    if (segmentCount > MAX_PATH_SEGMENTS) {
+        raiseError(`[wcs/binding-syntax] "${path}" has ${segmentCount} path segments — the limit is ${MAX_PATH_SEGMENTS}. ` +
+            `Every prefix of a path is interned, so the cost grows with the square of the depth.`);
+    }
     pathInfo = Object.freeze(new PathInfo(path));
     _cache.set(path, pathInfo);
     return pathInfo;
+}
+/** `.` の数 + 1。`split` の配列を作らずに数える（初回 intern のときだけ通る） */
+function countSegments(path) {
+    let count = 1;
+    for (let i = 0; i < path.length; i++) {
+        if (path[i] === DELIMITER) {
+            count++;
+        }
+    }
+    return count;
 }
 class PathInfo {
     id = ++id;
@@ -261,7 +307,12 @@ function toLiteral(text, quoted) {
         return null;
     return NUMBER_LITERAL.test(text) ? Number(text) : text;
 }
-/** 引数の原文と、その型付きの値（要件 B9）を一緒に返す。原文は引用符を外したもの */
+/**
+ * 引数の原文と、その型付きの値（要件 B9）を一緒に返す。原文は引用符を外したもの。
+ *
+ * 末尾の空引数だけが落ちる（`"a,"` → 1 個、`",a"` → 2 個、`","` → 1 個）。`filter()` を
+ * 「引数 0 個」と読むための規則で、先頭・中間の空引数は位置を保つために残す。
+ */
 function parseFilterArgsWithLiterals(argsText) {
     const args = [];
     const literals = [];
@@ -316,43 +367,6 @@ function parseFilterArgsWithLiterals(argsText) {
     return { args, literals };
 }
 
-/** tooling 専用（parser.ts の clearParserCaches からのみ呼ぶ）。 */
-function clearFilterFnCacheForTooling() {
-    clearFilterResolutionCache();
-}
-// format: filterName(arg1,arg2) or filterName
-/**
- * 文法の段（要件 D16）: 名前と引数だけを読む。**実関数は引かない** — 束縛計画の段で
- * 登録簿から解決する（`core/filterRegistry.ts`・`bindings/getBindingInfos.ts`）。
- * 未知のフィルタもここでは落とさない: パーサだけを使う tooling は実装を持たないので、
- * 「知らない名前」を解析の段で判定できない。
- */
-function parseFilters(filterTextList, _filterIOType) {
-    return filterTextList.map((filterText) => {
-        const openParenIndex = filterText.indexOf('(');
-        const closeParenIndex = filterText.lastIndexOf(')');
-        // check parentheses
-        if (openParenIndex !== -1 && closeParenIndex === -1) {
-            raiseError(`Invalid filter format: missing closing parenthesis in "${filterText}"`);
-        }
-        if (closeParenIndex !== -1 && openParenIndex === -1) {
-            raiseError(`Invalid filter format: missing opening parenthesis in "${filterText}"`);
-        }
-        const filterName = (openParenIndex === -1 ? filterText : filterText.substring(0, openParenIndex)).trim();
-        if (filterName.length === 0) {
-            // 空のフィルタ（`x|`・`x||y`・`x|(1)`）は文法の誤り。解析の段で名指しで落とす — 未知の
-            // フィルタとは別物で、実関数の解決（束縛計画の段）まで持ち越すと tooling の解析が素通りする
-            raiseError(`[wcs/binding-syntax] an empty filter in "${filterTextList.join("|")}" — remove the extra "|" or name the filter.${LINT_HINT}`);
-        }
-        if (openParenIndex === -1) {
-            // no arguments
-            return { filterName, args: [], literals: [] };
-        }
-        const argsText = filterText.substring(openParenIndex + 1, closeParenIndex);
-        return { filterName, ...parseFilterArgsWithLiterals(argsText) };
-    });
-}
-
 const trimFn = (s) => s.trim();
 const isQuote = (c) => c === "'" || c === '"';
 /**
@@ -375,6 +389,29 @@ function indexOfOutsideQuotes(text, char) {
         }
     }
     return -1;
+}
+/**
+ * `text` の中で、引用符の外にある**最後の** `char` の位置。無ければ -1（要件 B1）。
+ * 引用符は前からしか追えないので、前向きに走査して最後の一致を控える。
+ * フィルタの閉じ括弧を探す用（`a|foo(')')` の引用符内の `)` を終端と誤認しないため）。
+ */
+function lastIndexOfOutsideQuotes(text, char) {
+    let quote = null;
+    let found = -1;
+    for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (quote !== null) {
+            if (c === quote)
+                quote = null;
+        }
+        else if (isQuote(c)) {
+            quote = c;
+        }
+        else if (c === char) {
+            found = i;
+        }
+    }
+    return found;
 }
 /**
  * `separator` で区切る。ただし引用符の中は区切らない（要件 B1）: `join(';')` や `join('|')` の
@@ -400,6 +437,88 @@ function splitOutsideQuotes(text, separator) {
     }
     parts.push(text.slice(start));
     return parts;
+}
+
+/** tooling 専用（parser.ts の clearParserCaches からのみ呼ぶ）。 */
+function clearFilterFnCacheForTooling() {
+    clearFilterResolutionCache();
+}
+// format: filterName(arg1,arg2) or filterName
+/**
+ * 文法の段（要件 D16）: 名前と引数だけを読む。**実関数は引かない** — 束縛計画の段で
+ * 登録簿から解決する（`core/filterRegistry.ts`・`bindings/getBindingInfos.ts`）。
+ * 未知のフィルタもここでは落とさない: パーサだけを使う tooling は実装を持たないので、
+ * 「知らない名前」を解析の段で判定できない。
+ */
+/**
+ * @param filterTextList 個々のフィルタの原文（`|` で切った後）
+ * @param filterIOType   入力（左辺）/ 出力（右辺）。実関数は引かないが、助言の出し分けに使う
+ * @param sourceText     診断に埋める原文。呼び出し側は**その辺の全文**（`propPart` / `statePart`）を
+ *                       渡すこと。`|` より後ろだけを渡すと、`textContent: a|` のように末尾が空の形で
+ *                       空文字になり、つなぎ直し（`filterTextList.join("|")`）と同じで文脈が消える。
+ *                       省略時のつなぎ直しは、原文を持たない直接の呼び出し用のフォールバック
+ */
+function parseFilters(filterTextList, filterIOType, sourceText) {
+    const source = sourceText ?? filterTextList.join("|");
+    return filterTextList.map((filterText) => {
+        // 括弧も引用符の外だけで探す（要件 B1）。素の `indexOf` / `lastIndexOf` だと
+        // `foo(')')` の引用符内の `)` を終端に取り、「閉じ括弧が無い」ではなく
+        // 「引用符が閉じていない」という見当違いの診断になっていた
+        const openParenIndex = indexOfOutsideQuotes(filterText, '(');
+        let closeParenIndex = lastIndexOfOutsideQuotes(filterText, ')');
+        if (closeParenIndex === -1) {
+            // 引用符の外に閉じ括弧が無い ＝ 引用符が閉じていない形（`join('x)`）か、本当に無いか。
+            // 前者で「閉じ括弧が無い」と言うのは見当違いなので素の探索へ落とし、引数の段の
+            // `[wcs/binding-syntax] unterminated ' quote` に診断させる
+            closeParenIndex = filterText.lastIndexOf(')');
+        }
+        // check parentheses
+        if (openParenIndex !== -1 && closeParenIndex === -1) {
+            raiseError(`[wcs/binding-syntax] Invalid filter format: missing closing parenthesis in "${filterText}".${LINT_HINT}`);
+        }
+        if (closeParenIndex !== -1 && openParenIndex === -1) {
+            raiseError(`[wcs/binding-syntax] Invalid filter format: missing opening parenthesis in "${filterText}".${LINT_HINT}`);
+        }
+        if (closeParenIndex !== -1 && closeParenIndex < openParenIndex) {
+            // `foo)1(` — 以前は `substring` が start > end で引数を入れ替えるため、フィルタ名
+            // `foo)1` として受理されていた
+            raiseError(`[wcs/binding-syntax] Invalid filter format: ")" comes before "(" in "${filterText}".${LINT_HINT}`);
+        }
+        if (closeParenIndex !== -1 && filterText.slice(closeParenIndex + 1).trim().length > 0) {
+            // 閉じ括弧の後ろの残余を**黙って捨てていた**。`n|fix(2)uc` は `uc` が消えて診断ゼロで
+            // 通り、括弧の無い `n|ucuc` は `[wcs/filter-unknown]` で落ちる — 括弧の有無で非対称だった。
+            // 実害は「`|` の打ち忘れでフィルタが 1 本消えても無診断」
+            const trailing = filterText.slice(closeParenIndex + 1).trim();
+            raiseError(`[wcs/binding-syntax] "${filterText}": unexpected "${trailing}" after the filter's closing ")" — ` +
+                `separate filters with "|" (write "${filterText.slice(0, closeParenIndex + 1)}|${trailing}").${LINT_HINT}`);
+        }
+        const filterName = (openParenIndex === -1 ? filterText : filterText.substring(0, openParenIndex)).trim();
+        if (filterName.length === 0) {
+            // 空のフィルタ（`x|`・`x||y`・`x|(1)`）は文法の誤り。解析の段で名指しで落とす — 未知の
+            // フィルタとは別物で、実関数の解決（束縛計画の段）まで持ち越すと tooling の解析が素通りする
+            raiseError(`[wcs/binding-syntax] an empty filter in "${source}" — remove the extra "|" or name the filter.${LINT_HINT}`);
+        }
+        if (filterName.includes(MODIFIER_SEPARATOR)) {
+            // フィルタ名に `#` が飲まれた形。`[wcs/filter-unknown] filter not found: trim#ro` だと
+            // 診断が指す先が実際の誤りと違う（要件 B4 の並び）。
+            // 助言は辺で分ける — **修飾子は左辺にしか存在しない**ので、右辺で「修飾子をフィルタより
+            // 前に書け」と言うと成立しない直し方（`textContent#ro|trim: x`）を勧めることになる
+            const [name, modifiers] = filterName.split(MODIFIER_SEPARATOR);
+            raiseError(filterIOType === "input"
+                ? `[wcs/binding-syntax] "${filterName}" is not a filter name: a modifier list ` +
+                    `"${MODIFIER_SEPARATOR}${modifiers}" comes before the input filters, not inside one — write ` +
+                    `"<property>${MODIFIER_SEPARATOR}${modifiers}|${name}".${LINT_HINT}`
+                : `[wcs/binding-syntax] "${filterName}" is not a filter name: "${MODIFIER_SEPARATOR}" cannot appear ` +
+                    `in one. Modifiers belong on the left side of the binding, before the ":" — write "${name}" ` +
+                    `here.${LINT_HINT}`);
+        }
+        if (openParenIndex === -1) {
+            // no arguments
+            return { filterName, args: [], literals: [] };
+        }
+        const argsText = filterText.substring(openParenIndex + 1, closeParenIndex);
+        return { filterName, ...parseFilterArgsWithLiterals(argsText) };
+    });
 }
 
 const cacheFilterInfos$1 = new Map();
@@ -428,13 +547,22 @@ function parsePropPart(propPart) {
         }
         else {
             filterTexts = splitOutsideQuotes(filtersText, FILTER_SEPARATOR).map(trimFn);
-            filters = parseFilters(filterTexts);
+            // 診断に埋める原文は**左辺の全文**。`|` より後ろだけを渡すと `value|:` のように
+            // 末尾が空の形で空文字になる（解析結果のキャッシュ鍵は従来どおり `filtersText`。
+            // 落ちた解析はキャッシュに載らないので、原文を混ぜても鍵は汚れない）
+            filters = parseFilters(filterTexts, "input", propPart);
             cacheFilterInfos$1.set(filtersText, filters);
         }
     }
     else {
         propText = propPart.trim();
     }
+    // **不変条件**: ここから下の `split` は素で走らせてよい。`propText` は「引用符外の最初の `|`
+    // より前」のスライスであり、引用符を含みうるのは入力フィルタの引数（`|` の後ろ）だけなので、
+    // `#` も `,` も `.` も引用符の中に現れない。**修飾子の値に引用符を許す拡張（例
+    // `value#fmt('a,b'): x`）を入れるなら、この 3 つも `splitOutsideQuotes` に替えること** —
+    // 替え忘れると `structural/expandShorthandPaths.ts` で起きた「無言で 1 行も描画されない」
+    // と同じ欠陥クラスが再発する。
     const modifierParts = propText.split(MODIFIER_SEPARATOR).map(trimFn);
     if (modifierParts.length > 2) {
         // 修飾子の並びは 1 つだけ（要件 B2）。`value#ro#wo` は以前 `ro` だけを残して黙って捨てていた
@@ -442,6 +570,15 @@ function parsePropPart(propPart) {
     }
     const [propName, propModifiersText] = modifierParts;
     const propSegments = propName.split(DELIMITER).map(trimFn);
+    // 明示のプロパティ形（`.name:` — 要件 B5 / D34）だけは先頭の空セグメントが正しい形。
+    // それ以外で空のセグメントが残るのは書き間違い: 左辺が空（`": x"` / `"#ro: x"` / `"|trim: x"`）だと
+    // `element[""] = value` の expando ができて完全に沈黙し、末尾が空（`"foo.: x"`）だと適用の段で
+    // 素の TypeError になる。どちらも解析の段で名指しで落とす（`.: x` 等は下の D34 の検査が受け持つ）
+    const isExplicitProperty = propSegments.length > 1 && propSegments[0] === '';
+    if (!isExplicitProperty && (propName.length === 0 || propSegments.some((segment) => segment.length === 0))) {
+        raiseError(`[wcs/binding-syntax] "${propPart}": the left side of a binding must name a property — ` +
+            `write "<property>: <path>" (modifiers and input filters come after the name).${LINT_HINT}`);
+    }
     const propModifiers = propModifiersText
         ? propModifiersText.split(',').map(trimFn)
         : [];
@@ -476,7 +613,8 @@ function parseStatePart(statePart) {
         }
         else {
             filterTexts = splitOutsideQuotes(filtersText, FILTER_SEPARATOR).map(trimFn);
-            filters = parseFilters(filterTexts);
+            // 診断に埋める原文は**右辺の全文**（`parsePropPart` と同じ理由 — `a|` が空文字になる）
+            filters = parseFilters(filterTexts, "output", statePart);
             cacheFilterInfos.set(filtersText, filters);
         }
     }
@@ -489,6 +627,24 @@ function parseStatePart(statePart) {
             `Mount the named state onto the tree (<wcs-state mount="...">) and read it by its path prefix instead.`);
     }
     const statePathName = stateAndPath;
+    // 右辺も左辺（`parsePropPart`）と同じ規準で空セグメントを弾く（要件 B1）。放っておくと
+    // `a.` / `a..b` は診断ゼロで `["a","",""]` のまま intern され、`textContent:` /
+    // `textContent: |uc` は適用の段で「`Path ""` が無い」というパス名が空の診断になる。
+    //
+    // **判定の前にループ相対の短縮形を正規化する。** `.` で始まる右辺は `for` 行の相対パスで
+    // （`structural/expandShorthandPaths.ts` / `bindTextParser/expandSpread.ts` が生成し、正本の
+    // パーサは展開前の原文も解析する）、先頭の空セグメント 1 つは正当。とくに **`.` 単独は
+    // 「行そのもの」を指す正規の書き方**で、README と `examples/recursive-tree/index.html` の
+    // `state: .` がそれ — 「先頭は許すが末尾は拒否」と素朴に書くと `"."` は
+    // `["", ""]` ＝ 先頭かつ末尾なので落ちる。取り除いた残りが空でも通すこと
+    const isLoopRelative = statePathName.startsWith(DELIMITER);
+    const body = isLoopRelative ? statePathName.slice(DELIMITER.length) : statePathName;
+    const hasEmptySegment = body.length > 0 && body.split(DELIMITER).some((segment) => segment.length === 0);
+    if (hasEmptySegment || (!isLoopRelative && body.length === 0)) {
+        raiseError(`[wcs/binding-syntax] "${statePart}": the right side of a binding must name a state path — ` +
+            `write "<property>: <path>" (a path segment cannot be empty; "." alone and a leading "." are ` +
+            `the loop-relative shorthand).${LINT_HINT}`);
+    }
     const pathInfo = getPathInfo(statePathName);
     return {
         statePathName,
@@ -507,9 +663,14 @@ function parseStatePart(statePart) {
 //   ...: statePart (spread — expand wcBindable properties+inputs of target object)
 /** 左辺に修飾子も入力フィルタも取らない束縛（構造ディレクティブと spread）— 付いていれば拒否する（要件 B4） */
 const KEYWORDS_WITHOUT_MODIFIERS = new Set([ELSE_KEYWORD, 'if', 'elseif', 'for', SPREAD_PROP]);
-/** 明示のプロパティ形（`.name:`）の先頭に置けない語 — 名前空間として読まれる語（要件 B5） */
+/**
+ * 明示のプロパティ形（`.name:`）の先頭に置けない語 — 名前空間として読まれる語（要件 B5）。
+ * `state`（`VOLUME_INJECTION_PROP`）も含む: `<wcs-state mount>` 上の左辺 `state.<key>:` は
+ * 注入の宣言（要件 B14③）なので、`.state.taxRate:` はプロパティか注入か曖昧になる。
+ */
 const EXPLICIT_PROPERTY_REJECTED_HEADS = new Set([
     CLASS_NAMESPACE, ATTR_NAMESPACE, STYLE_NAMESPACE, COMMAND_NAMESPACE, EVENT_TOKEN_NAMESPACE,
+    VOLUME_INJECTION_PROP,
 ]);
 /**
  * `data-wcs` の値をバインディングごとに区切る（前後の空白は残す — tooling が位置を数えられるように）。
@@ -521,14 +682,20 @@ function splitBindTexts(bindText) {
 function parseBindTextsForElement(bindText) {
     const [...bindTexts] = splitBindTexts(bindText).map(trimFn).filter(s => s.length > 0);
     const results = bindTexts.map((bindText) => {
-        const separatorIndex = bindText.indexOf(PROP_VALUE_SEPARATOR);
+        // 左辺と右辺の区切りも引用符の外だけで探す（要件 B1）。`value|defaults(':'): path` の
+        // 引数の中の `:` を区切りとして拾っていた
+        const separatorIndex = indexOfOutsideQuotes(bindText, PROP_VALUE_SEPARATOR);
         if (separatorIndex === -1) {
-            raiseError(`Invalid bindText: "${bindText}". Missing ':' separator between propPart and statePart.`);
+            raiseError(`[wcs/binding-syntax] Invalid bindText: "${bindText}". Missing ':' separator between propPart and statePart.${LINT_HINT}`);
         }
         const propPart = bindText.slice(0, separatorIndex).trim();
         const statePart = bindText.slice(separatorIndex + 1).trim();
         // 種別は修飾子・入力フィルタより前の名前で決める（要件 B4）。以前は左辺全体との完全一致で
-        // 判定していたので、`radio#ro:` が汎用プロパティに落ちていた
+        // 判定していたので、`radio#ro:` が汎用プロパティに落ちていた。
+        // **不変条件**: ここは素の `split` でよい — 取り出すのは最初の区切りより前の**先頭**片で、
+        // 引用符を含みうるのは入力フィルタの引数（引用符外の最初の `|` より後ろ）だけなので、
+        // `#` も `|` も引用符の中では出会わない。**修飾子の値に引用符を許す拡張を入れるなら
+        // `indexOfOutsideQuotes` に替えること**（`parsePropPart.ts` の同じ注記と対）。
         const keyword = propPart.split(MODIFIER_SEPARATOR)[0].split(FILTER_SEPARATOR)[0].trim();
         if (keyword !== propPart && KEYWORDS_WITHOUT_MODIFIERS.has(keyword)) {
             raiseError(`[wcs/binding-syntax] "${bindText}": "${keyword}" takes no modifiers or filters on its left side — write "${keyword}:".${LINT_HINT}`);
@@ -551,12 +718,15 @@ function parseBindTextsForElement(bindText) {
             };
         }
         else if (propPart === SPREAD_PROP) {
+            // 空の右辺は spread 専用の語彙で先に落とす。`parseStatePart` の一般の空パス診断
+            // （「the right side of a binding must name a state path」）より、ここでは
+            // 「spread target path is required」のほうが直し方を指している
+            if (statePart.length === 0) {
+                raiseError(`[wcs/binding-syntax] Invalid spread binding "${bindText}": spread target path is required.${LINT_HINT}`);
+            }
             const stateResult = parseStatePart(statePart);
             if (stateResult.outFilters.length > 0) {
-                raiseError(`Invalid spread binding "${bindText}": filters are not allowed on spread targets.`);
-            }
-            if (stateResult.statePathName.length === 0) {
-                raiseError(`Invalid spread binding "${bindText}": spread target path is required.`);
+                raiseError(`[wcs/binding-syntax] Invalid spread binding "${bindText}": filters are not allowed on spread targets.${LINT_HINT}`);
             }
             return {
                 propName: SPREAD_PROP,
@@ -678,7 +848,10 @@ function parseBindTextForEmbeddedNode(bindText) {
  *   同一パス → 同一インスタンスの保証は**このエントリのモジュールインスタンス内**でのみ
  *   成立する（`.` エントリは別バンドル＝別キャッシュ。ランタイムの PathInfo と identity
  *   比較してはならない）。キャッシュは無制限（evict なし）— 言語サーバー等の長時間
- *   プロセスでは入力パス種数に単調比例してメモリが増える点に留意。
+ *   プロセスではメモリが増え続ける点に留意（断ち方は `clearPathInfoCacheForTooling`）。
+ *   **増え方はパス種数への単調比例ではない**: `PathInfo` は自分の全ての接頭辞を intern
+ *   するので、1 本のパスが持ち込む量はその深さの 2 乗に比例する。深さは
+ *   `MAX_PATH_SEGMENTS` で頭打ちになる（超えたパスは `[wcs/binding-syntax]` で拒否）。
  * - `ParseBindTextResult.uuid` はランタイム内部（構造テンプレートのハイドレーション台帳）
  *   用のフィールドで、このパーサの戻り値では常に undefined。
  *
@@ -702,4 +875,4 @@ function clearParserCaches() {
     clearFilterFnCacheForTooling();
 }
 
-export { clearParserCaches, getPathInfo, parseBindTextForEmbeddedNode, parseBindTextsForElement, splitBindTexts };
+export { clearParserCaches, getPathInfo, indexOfOutsideQuotes, parseBindTextForEmbeddedNode, parseBindTextsForElement, splitBindTexts, splitOutsideQuotes };

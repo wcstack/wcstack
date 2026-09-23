@@ -9,7 +9,12 @@
  * 既知限界）。トークン間の空白・改行と optional chaining（`?.` / `?.[`）を
  * 許容する。添字は quoted string 始まり以外の任意の式（ネスト bracket なし、
  * `[this.items.length]` 等の append イディオムを含む）。
+ *
+ * 走査は必ず `execAllMasked` を通す（コメント・文字列リテラルの中の**例示**を
+ * 実コードと取り違えないため）。
  */
+
+import { maskCommentsAndStrings } from './stateAnalyzer.js';
 
 /** 識別子（`$` 含む）。ルートの `$` 始まりは呼び出し側で API 名前空間としてスキップする。 */
 export const ID = String.raw`[\w$]+`;
@@ -79,4 +84,46 @@ export function hasDotSegment(chain: string): boolean {
 /** ルートが `$` 始まり（$streams / $getAll 等の API 名前空間）なら検出対象外。 */
 export function isApiRoot(root: string): boolean {
   return root.startsWith('$');
+}
+
+/** `execAllMasked` の 1 件。`groups[i]` は**原文**から切り出したキャプチャ（1 始まり）。 */
+export interface ScriptMatch {
+  /** script 内の一致開始位置（鏡像は長さを保つので原文と同じ）。 */
+  readonly index: number;
+  /** 一致全体の長さ。 */
+  readonly length: number;
+  /** キャプチャグループ（1 始まり）。未参加のグループは undefined。 */
+  readonly groups: readonly (string | undefined)[];
+}
+
+/**
+ * JS ソースを**コメント・文字列リテラルの中身を空白へ潰した鏡像**に対して走査する。
+ *
+ * 素の走査だと、コメントや文字列に書いた**例示**が実コードと同じに検出される:
+ * リポジトリの e2e フィクスチャは「`this.rows[0].name = ...` は set トラップを通らない」
+ * という注意書きをコメントで添えて、直下に推奨形を書いている — それを
+ * `wcs/nested-assign`（error）で落としていた（`--errors-only` が exit 1 になり、
+ * AGENTS.md の「exit 0 になるまで直せ」が**正しいコードを壊す**方向へ誘導する）。
+ *
+ * 鏡像（`maskCommentsAndStrings`）は**長さを保つ**のでオフセットはそのまま使える。
+ * ただしキャプチャは**原文から切り出す** — `this["items"]` の quoted キーは鏡像では
+ * 空白になっており、そのまま使うとメッセージのパスが消える。位置は `d` フラグの
+ * `indices` で取る。
+ *
+ * `data-wcs` 側の `core/parser/quoteAware.ts` と同じ方針の JS 版。
+ */
+export function execAllMasked(pattern: string, script: string): ScriptMatch[] {
+  const masked = maskCommentsAndStrings(script);
+  const regex = new RegExp(pattern, 'gd');
+  const out: ScriptMatch[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(masked)) !== null) {
+    const indices = match.indices!;
+    out.push({
+      index: match.index,
+      length: match[0].length,
+      groups: indices.slice(1).map(pair => (pair === undefined ? undefined : script.slice(pair[0], pair[1]))),
+    });
+  }
+  return out;
 }

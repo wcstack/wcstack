@@ -96,6 +96,10 @@ Most packages add a third entry from `src/auto.ts` — `dist/auto.min.js`, expos
 
 There is deliberately no `dist/index.esm.min.js`: it appeared in no `exports` map, and its only consumer was the old auto stub. A minified named-export bundle now exists only where there is no self-contained auto bundle (`@wcstack/signals`, which has no `src/auto.ts` by design).
 
+Two size gates guard `@wcstack/state`: `scripts/check-state-size.mjs` (the shipped bundles and the core closure, against `scripts/state-size-baseline.json`) and `scripts/check-state-split.mjs` (per-feature gzip against `scripts/state-split-baseline.json`, plus the rule that a feature entry carries no other feature's code). Both allow 3 % over baseline. **The split core currently has 134 B — 0.25 % — of headroom** (53,891 B against a 54,025 B limit; `auto.min.js` has 1.0 %, `index.esm.js` 0.8 %), so nearly any addition to `src/core/`, `src/proxy/`, `src/bindings/` or the other core directories will fail CI. Re-record both baselines with `--update` as part of the release; before that, treat a failure as a real signal rather than a stale baseline.
+
+`packages/state/dist` is committed, but only rebuilt at release. `packages/vscode-wcs` depends on it through `"@wcstack/state": "file:../state"` (a symlink), so it reads the *committed* dist, not `packages/state/src`. A parser change therefore does not reach the extension, the `wcs-validate` CLI, or the vsix until `npm run build` is run in `packages/state` — meanwhile the extension behaves like the old parser (missing `wcs/binding-syntax` diagnostics; `wiringLens` hover / definition / references / inlay hints and `bindingSyntaxValidator` silent on the affected forms). **Build `packages/state` before packaging or publishing the extension, and re-run the vscode-wcs tests afterwards**, since newly-appearing diagnostics can change existing expectations. CI is safe: `release.yml` and the `wcs-validate` job both build `@wcstack/state` first.
+
 ## Testing
 
 - **Framework:** Vitest with happy-dom environment

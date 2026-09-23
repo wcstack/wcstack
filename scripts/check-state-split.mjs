@@ -1,19 +1,60 @@
-// One core chunk (requirement B13, wiring design §7-1): every `@wcstack/state/features/*` entry
-// must import the core's chunk rather than carry a copy of it. A feature that re-bundles the core
-// would give the page two proxies, two updaters and two registries — the same failure as loading
-// the package twice from different URLs, but silent.
+// One core chunk, and no feature carrying another feature (requirement B13, wiring design §7-1).
 //
-// The check reads the built `dist/split/**.js.map` and fails when a FEATURE entry or a chunk that
-// only a feature imports attributes any code to a core directory (proxy/, updater/, bindings/ …).
-// Run after `npm run build` in packages/state:
-//   node scripts/check-state-split.mjs [--check]
-import { readdir, readFile, stat } from 'node:fs/promises';
+// 1. Every `@wcstack/state/features/*` entry must import the core's chunk rather than carry a copy
+//    of it. A feature that re-bundles the core would give the page two proxies, two updaters and two
+//    registries — the same failure as loading the package twice from different URLs, but silent.
+// 2. A feature entry must not carry a *different* feature's code either. A single static import
+//    across the seam (`features/scopes` → `watch/watchRuntime`) puts the whole of that other feature
+//    into a shared chunk, so a page that installed only `scopes` downloads the temporal runtime.
+//    Cross-feature calls go through `src/bridge/*` receptacles instead.
+// 3. The gzip of each feature's OWN code (its entry plus the chunks the core does not already carry)
+//    may not grow more than 3 % over scripts/state-split-baseline.json. Feature weight is invisible
+//    to check-state-size.mjs, which only measures the shipped bundles and the core closure.
+//
+// The check reads the built `dist/split/**.js.map`. Run after `npm run build` in packages/state:
+//   node scripts/check-state-split.mjs [--check] [--update] [--allowance 0.03]
+// `--check` is the default and is accepted only so CI can state its intent; `--update` re-records
+// the baseline and refuses to run while a feature carries code that is not its own.
+import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, normalize, relative, resolve } from 'node:path';
+import { gzipSync } from 'node:zlib';
 
 const root = resolve(import.meta.dirname, '..');
 const splitDir = join(root, 'packages/state/dist/split');
+const baselineFile = join(root, 'scripts/state-split-baseline.json');
+const update = process.argv.includes('--update');
+// A bare `--allowance` (or a non-number) used to make the limit NaN, which compares false against
+// every size — the growth gate would switch itself off without a word.
+let allowance = 0.03;
+if (process.argv.includes('--allowance')) {
+  allowance = Number(process.argv[process.argv.indexOf('--allowance') + 1]);
+  if (!Number.isFinite(allowance) || allowance < 0) {
+    console.error('[state split] --allowance needs a non-negative number, e.g. --allowance 0.03');
+    process.exit(1);
+  }
+}
+for (const arg of process.argv.slice(2)) {
+  if (arg.startsWith('--') && !['--check', '--update', '--allowance'].includes(arg)) {
+    console.error(`[state split] unknown option ${arg}; usage: check-state-split.mjs [--check] [--update] [--allowance 0.03]`);
+    process.exit(1);
+  }
+}
 // Directories that make up the core: no feature entry may contain code from any of them.
 const CORE_DIRS = ['proxy', 'updater', 'bindings', 'apply', 'binding', 'dependency', 'list', 'structural', 'address', 'cache', 'core'];
+// Source directory -> the feature entry that owns it. A feature entry may only carry its own
+// directories; anything else listed here belongs to another feature and fails the check.
+// Directories absent from both tables (`bridge/`, `features/`, `(root)` helpers, `platform/` …) are
+// feature-neutral: they may be shared. `bridge/` exists precisely for that — it holds the
+// receptacles through which one feature calls another without importing it.
+const FEATURE_BY_DIR = {
+  watch: 'temporal', scan: 'temporal', stream: 'temporal',
+  webComponent: 'scopes', dcc: 'scopes',
+  recursion: 'recursion',
+  ssr: 'ssr', hydrater: 'ssr',
+  devtools: 'devtools',
+  formats: 'formats', filters: 'formats',
+  diagnostics: 'diagnostics',
+};
 
 try {
   await stat(splitDir);
@@ -61,21 +102,72 @@ const featureEntries = outputs.filter((f) => /[\\/]features[\\/][^\\/]+\.js$/.te
 const coreClosure = await closure(join(splitDir, 'core.js'));
 const failures = [];
 const report = [];
-for (const entry of featureEntries) {
+const current = {};
+for (const entry of featureEntries.sort()) {
   const name = relative(splitDir, entry).replaceAll('\\', '/');
+  const feature = name.replace(/^features\//, '').replace(/\.js$/, '');
   // the entry itself plus any chunk the core does not already carry
   const own = [...(await closure(entry))].filter((f) => !coreClosure.has(f));
-  for (const file of own) {
-    const groups = [...(await groupsOf(file))].filter((g) => CORE_DIRS.includes(g));
-    if (groups.length > 0) {
-      failures.push(`${name} carries core code in ${relative(splitDir, file).replaceAll('\\', '/')}: ${groups.join(', ')}`);
+  let bytes = 0;
+  let gzip = 0;
+  for (const file of own.sort()) {
+    const where = relative(splitDir, file).replaceAll('\\', '/');
+    const buffer = await readFile(file);
+    bytes += buffer.length;
+    gzip += gzipSync(buffer, { level: 9 }).length;
+    const groups = [...(await groupsOf(file))];
+    const core = groups.filter((g) => CORE_DIRS.includes(g));
+    if (core.length > 0) {
+      failures.push(`${name} carries core code in ${where}: ${core.join(', ')}`);
+    }
+    const foreign = groups.filter((g) => FEATURE_BY_DIR[g] !== undefined && FEATURE_BY_DIR[g] !== feature);
+    if (foreign.length > 0) {
+      failures.push(
+        `${name} carries the "${[...new Set(foreign.map((g) => FEATURE_BY_DIR[g]))].join('", "')}" feature in ${where}: ` +
+        `${foreign.join(', ')} (route the call through a src/bridge/* receptacle)`,
+      );
     }
   }
-  report.push(`${name}: ${own.length} file(s) of its own`);
+  current[name] = { files: own.length, bytes, gzip };
+  report.push(`${name}: ${own.length} file(s), ${gzip} B gzip of its own`);
 }
+
 if (failures.length > 0) {
-  console.error(`[state split] ${failures.length} violation(s): a feature entry re-bundles the core`);
+  // `--update` でも先に報告する: 基線を取り直す人に feature 間のコード混入が伝わらないと、
+  // 「数字だけ大きい新しい基線」を固定してしまう
+  console.error(`[state split] ${failures.length} violation(s): a feature entry carries code that is not its own`);
   for (const f of failures) console.error(`  - ${f}`);
+  if (update) {
+    console.error('[state split] refusing to re-record the baseline while a feature carries another feature; fix the import first');
+  }
   process.exit(1);
 }
-console.log(`[state split] ok: ${featureEntries.length} feature entries share one core chunk (${report.join('; ')})`);
+
+if (update) {
+  await writeFile(baselineFile, JSON.stringify({
+    $comment: 'gzip level 9 of each @wcstack/state feature entry\'s OWN code (the entry plus the chunks the core does not already carry) at the recorded release. check-state-split.mjs --check allows +3 % over these (requirement B13). Update with --update after a release build.',
+    ...current,
+  }, null, 2) + '\n');
+  console.log('[state split] baseline updated', JSON.stringify(current));
+  process.exit(0);
+}
+
+let grew = false;
+const baseline = JSON.parse(await readFile(baselineFile, 'utf8'));
+for (const name of Object.keys(current)) {
+  if (!baseline[name]) {
+    console.error(`[state split] ${name} is not in the baseline; record it with: node scripts/check-state-split.mjs --update`);
+    grew = true;
+    continue;
+  }
+  const limit = Math.round(baseline[name].gzip * (1 + allowance));
+  if (current[name].gzip > limit) {
+    console.error(`[state split] ${name}: ${current[name].gzip} B gzip of its own (baseline ${baseline[name].gzip}, limit ${limit}) EXCEEDED`);
+    grew = true;
+  }
+}
+if (grew) {
+  console.error(`[state split] a feature entry grew by more than ${Math.round(allowance * 100)} % over the recorded release; if intended, record it with: node scripts/check-state-split.mjs --update`);
+  process.exit(1);
+}
+console.log(`[state split] ok: ${featureEntries.length} feature entries share one core chunk and carry no other feature (${report.join('; ')})`);

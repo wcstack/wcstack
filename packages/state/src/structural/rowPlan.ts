@@ -82,5 +82,12 @@ export function compileRowPlan(fragmentInfo: IFragmentInfo): IRowPlan | null {
       });
     }
   }
+  if (slots.length === 0) {
+    // 束縛を 1 つも持たないテンプレート（静的な行）はプランに載せない（設計 R3）。
+    // 行の帳簿（`session.rows`）の出入りは「スロットの binding」を鍵に回るので、0 スロットだと
+    // 登録した行を解放する手掛かりが無く、`destroyRow([])` も共有 session の全行破棄へ倒れる。
+    // 静的な行に最適化する余地は無い（適用も購読も無い）ので、従来経路に任せる方が安い
+    return null;
+  }
   return { directional, slots };
 }

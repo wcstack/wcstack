@@ -331,6 +331,55 @@ export function analyzeWatchEntries(scriptContent: string): WatchEntryInfo[] {
   }));
 }
 
+/**
+ * `$watch` のハンドラ 1 件の原文（`analyzeWatchHandlerSources`）。
+ * `kind: 'body'` はメソッド短縮記法（`count() { … }`）の**本体**、
+ * `kind: 'value'` は値に置いた式（`count: function (…) { … }` / アロー / 識別子参照）。
+ */
+export interface WatchHandlerSource {
+  readonly kind: 'body' | 'value';
+  readonly text: string;
+  /** `text` の先頭に対応する scriptContent 内のオフセット（trim しない生の位置）。 */
+  readonly start: number;
+}
+
+/**
+ * `$watch: { "<path>": handler }` のハンドラの原文を位置付きで返す。
+ *
+ * `$watch` のハンドラは宣言面の中にありながら、ランタイムが **`this` を state に束縛して**
+ * 呼ぶ（`watch/watchRuntime.ts` の `entry.handler.call(state, …)`、ボリュームは
+ * `webComponent/volume.ts` の chroot）。本体を読む検査（`wcs/declaration-alias-read`）が、
+ * トップレベルの getter / メソッド（`analyzeCallableBodies`）に加えてここも走査するために使う。
+ *
+ * 位置は `analyzeCallableBodies` と同じ規約（trim しない生の値の開始）。`analyzeObjectEntries`
+ * は data 値向けに先頭空白ぶんを進めるので、本体のオフセットには使えない。
+ */
+export function analyzeWatchHandlerSources(scriptContent: string): WatchHandlerSource[] {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return [];
+  const prop = parseTopLevelProperties(root.content).find(p => p.name === RESERVED_WATCH_KEY);
+  if (
+    !prop || prop.kind !== 'data' || !prop.value ||
+    !isObjectLiteral(prop.value) || prop.valueStart === undefined
+  ) {
+    return [];
+  }
+  // 値テキストの先頭空白ぶんだけ `{` がずれる。中身はその次から始まる。
+  const leading = prop.value.length - prop.value.trimStart().length;
+  const innerStart = root.start + prop.valueStart + leading + 1;
+
+  const out: WatchHandlerSource[] = [];
+  for (const entry of parseTopLevelProperties(extractObjectContent(prop.value))) {
+    if (entry.value === undefined || entry.valueStart === undefined) continue;
+    out.push({
+      kind: entry.kind === 'data' ? 'value' : 'body',
+      text: entry.value,
+      start: innerStart + entry.valueStart,
+    });
+  }
+  return out;
+}
+
 /** `$listKeys` の 1 エントリ（キー ＝ リストパス）と、原文での位置。 */
 export interface ListKeyEntryInfo {
   /** 宣言キー。引用符を外した生の文字列（`items` / `nodes.*.children` など） */

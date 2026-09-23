@@ -203,6 +203,12 @@ leaves features out, it can compose them instead:
 </script>
 ```
 
+Call `installFeatures([...])` **before** `bootstrapState()`, as above: a feature can register a tag of its
+own (`<wcs-ssr>`), and bootstrapping is what defines the tags. The reverse order is not an error — a
+feature installed afterwards catches up and defines its tags against the registries already
+bootstrapped — but keeping the declared order means every tag is defined before the first element
+upgrades.
+
 Load the split form from the package's own files — jsDelivr's plain, version-pinned `/npm/` path as
 above (it does not read `exports`, so name the file under `dist/split/`), or a bundler — and **never
 through `esm.run`**. Its `+esm` endpoint re-bundles every entry on the server and inlines the shared
@@ -218,7 +224,7 @@ so the browser evaluates the engine once. Integrity for this form: [docs/sri.md 
 | `@wcstack/state/features/scopes` | `bind-component`, `mount=` volumes, overlay exports, DCC (`data-wc-definition`) |
 | `@wcstack/state/features/recursion` | `$recursion` and `**` paths |
 | `@wcstack/state/features/ssr` | `enable-ssr`: server rendering and hydration |
-| `@wcstack/state/features/formats` | The formatting filters (`uc`, `date`, `round`, `truncate`, …). The core answers only `not`, which `if` / `else` need |
+| `@wcstack/state/features/formats` | The formatting filters (`upper`, `date`, `round`, `truncate`, …). The core answers only `not`, which `if` / `else` need |
 | `@wcstack/state/features/devtools` | The DevTools hook protocol source |
 | `@wcstack/state/features/diagnostics` | Development-time warnings: a bound / `$watch` / `$scan` path that does not resolve on the state is reported with a did-you-mean. Without it the page stays silent — thrown errors keep their full messages either way |
 | `@wcstack/state/define` | `defineState` and the types only — no runtime at all |
@@ -226,8 +232,11 @@ so the browser evaluates the engine once. Integrity for this form: [docs/sri.md 
 A declaration whose feature is missing does not fail quietly: it throws
 `[wcs/feature-not-installed] … install it with installFeatures([...]) from "@wcstack/state/features/…"`
 when the state is defined, and a filter with no implementation throws `[wcs/filter-unknown]` when the
-bindings are planned. Installing is idempotent, and every entry shares one core chunk (a feature
-never carries a second copy of the engine).
+bindings are planned. A volume (`<wcs-state mount=…>`) declaring `$watch` throws the same
+`[wcs/feature-not-installed]` when it grafts, because a volume's state never passes through the
+element's own declaration gate. Installing is idempotent, and every entry shares one core chunk —
+a feature never carries a second copy of the engine, and never a copy of another feature either
+(a call across that seam goes through a receptacle the owning feature fills on install).
 
 ## Basic Usage
 
@@ -653,7 +662,9 @@ Runtime reads `customClass.wcBindable.properties + inputs` and expands each name
 <wcs-fetch data-wcs="...: usersFetch; status: alternateStatus"></wcs-fetch>
 ```
 
-**`undefined` is "no opinion"** — when an expanded state path resolves to `undefined` (e.g. the slot object doesn't initialize that input), the property write is **skipped** and the element keeps its own default. You only need to initialize the paths you actually use; `usersFetch: { value: null, loading: false }` is enough even though `<wcs-fetch>` also declares `method` / `manual` / `body`. To explicitly clear a value, assign `null` — `null` is always written. (This skip applies to every property binding that feeds an element input, not just spread; with `config.debug` each skipped write is logged via `console.debug`.) **Display surfaces are different (3.0):** `textContent` / `innerText` / `innerHTML`, mustache text, `attr.*` and `style.*` have no element default worth keeping, so `undefined` and `null` both mean "no value" there — the text becomes empty and the attribute or style is removed. Before 3.0 a `textContent:` binding skipped `undefined` too, which left the previous row's text in a reused list row, and an attribute got the string `"undefined"` / `"null"`.
+**`undefined` is "no opinion"** — when an expanded state path resolves to `undefined` (e.g. the slot object doesn't initialize that input), the property write is **skipped** and the element keeps its own default. You only need to initialize the paths you actually use; `usersFetch: { value: null, loading: false }` is enough even though `<wcs-fetch>` also declares `method` / `manual` / `body`. To explicitly clear a value, assign `null` — `null` is always written. (This skip applies to every property binding that feeds an element input, not just spread; with `config.debug` each skipped write is logged via `console.debug`.) **Display surfaces are different (3.0):** `textContent` / `innerText` / `innerHTML`, mustache text, `attr.*`, `style.*` and `class.*` have no element default worth keeping, so `undefined` and `null` both mean "no value" there — the text becomes empty, the attribute or style is removed, and the class is taken off. Before 3.0 a `textContent:` binding skipped `undefined` too, which left the previous row's text in a reused list row, and an attribute got the string `"undefined"` / `"null"`. `class.*` is the narrow case: only `undefined` and `null` mean "no value"; **any other non-boolean still throws**, because a class binding is a boolean toggle and a truthy string is far more likely a mistake than an intent. Write `class.on: flag|truthy` when you mean "treat it as truthy".
+
+**Filters keep the contract.** The emptiness test runs on the value *after* the filters, so a filter that builds its result with `String(value)` used to turn an absent value back into the characters `"undefined"` — `attr.title: x|trim` wrote `title="undefined"` where the unfiltered `attr.title: x` removes the attribute. The formatting family (`upper`, `lower`, `capitalize`, `trim`, `slice`, `substr`, `padStart`, `padEnd`, `repeat`, `reverse`, `truncate`, `unit`) now passes `undefined` / `null` straight through, so the apply side still empties the text and removes the attribute. Three groups deliberately do **not**: the filters for which an absent value *is* the input (`defaults`, `coalesce`, `nullIfEmpty`, `boolean`, `truthy`, `falsy`, `not`, `eq`, `ne`), the conversions whose whole job is to convert (`int`, `float`, `number`, `string` — `undefined|string` is still `"undefined"`), and the filters that check the value's type (the number, date and array families, e.g. `toFixed` / `date` / `join`). Those last ones throw, which is confined to the one binding and reported through `$errorCallback` — put a `coalesce` in front when the value can legitimately be absent (`price|coalesce(0)|toFixed(2)`).
 
 **Constraints**:
 
@@ -1121,6 +1132,7 @@ What reaches the rows:
 - **A write to an object above `path`** — `this.sel = { id: 2 }` for `$eq("sel.id", …)`: the same two rows, keyed by the value `path` had under the old object and has under the new one.
 - **A `path` that is a getter, or sits under one** (`$eq("current.id", …)` with `get current()`): its value changes without a write to it, so the calls fall back to an ordinary tracked read. The selection stays correct, but a change re-evaluates every row, as without the keyed form. Point `path` at the written state (`selectedId`) to keep the two-row cost. The State pane of `@wcstack/devtools` counts the subscriptions per path under **Keyed selection** and marks a path that fell back this way with a `tracked` badge (3.0).
 - **No type conversion:** `"2"` does not match the id `2`. An `<input>` or `<select>` writes strings, so convert on the way in (`value|number: selectedId`) or keep the ids as strings.
+- **Inside a scope, `path` is relative** — like every other `$` API that takes a path. In a mounted component (`bind-component`) and in a volume (`<wcs-state mount="cart">`), `$eq("selectedId", …)`, `$eqPath`'s two paths, `$eqIndex` and `$dependOn` all resolve against that scope (`cart.selectedId`), not against the root. `$untracked` takes a callback, so nothing is translated there.
 
 ### Loop Index Variables (`$1`, `$2`, ...)
 
@@ -1408,8 +1420,8 @@ Every other form is refused *before* the walk writes anything, so a rejected cal
 | omitted indexes | The write API takes no context, so there is no depth to bind to — pass `[]` |
 | a mapper function | `(current, ...indexes)` has a different arity at every depth |
 | `{ spread: true }` | Handing a flat array to a tree needs the author to know the walk order |
-| `nodes.**`, `nodes.**.children`, `nodes.**.children.*`, `nodes.**.children.length` — and, for a multi-segment repeat such as `branch.children.*`, the `nodes.**.branch` on the way to the list. Index spellings fold to the same forms: `nodes.**.children.0` is a child node, `nodes.**.children.0.total` is the getter | Writing the structure itself (assigning `length` truncates the list) invalidates the child addresses this very write already resolved (`wcs/recursion-structural-write`) |
-| `nodes.**.total`, or a path inside its value | A recursive getter has no setter — write what it derives from (`wcs/recursion-readonly`) |
+| `nodes.**`, `nodes.**.children`, `nodes.**.children.*`, `nodes.**.children.length` — and, for a multi-segment repeat such as `branch.children.*`, the `nodes.**.branch` on the way to the list. Index spellings fold to the same forms, so `nodes.**.children.0` is a child node | Writing the structure itself (assigning `length` truncates the list) invalidates the child addresses this very write already resolved (`wcs/recursion-structural-write`) |
+| `nodes.**.total`, or a path inside its value — index spellings fold to the same form too, so `nodes.**.children.0.total` is the getter | A recursive getter has no setter — write what it derives from (`wcs/recursion-readonly`) |
 
 The read-only rule does not depend on spelling `**`. A recursive getter's concrete expansions — `nodes.*.total`, `nodes.*.children.*.total`, … — are refused at the write entry as well, whether the write is a fixed-arity `$setAll`, a `$resolve(path, indexes, value)` or a direct assignment, and whether or not that depth has been materialized yet. Before this check, an unmaterialized expansion looked like a plain missing key and the write landed on the node object, pinning the assigned value as the getter's cached result.
 
@@ -1511,7 +1523,7 @@ export default {
 |---|---|---|
 | `eq(value)` | Equal | `count\|eq(0)` → `true/false` |
 | `ne(value)` | Not equal | `count\|ne(0)` |
-| `not` | Boolean NOT | `isActive\|not` |
+| `not` | Invert truthiness — `0`, `""`, `null` and `undefined` all give `true` (3.x; it used to throw on a non-boolean, which made `else:` render neither branch) | `isActive\|not` |
 | `lt(n)` | Less than | `count\|lt(10)` |
 | `le(n)` | Less than or equal | `count\|le(10)` |
 | `gt(n)` | Greater than | `count\|gt(0)` |
@@ -1550,12 +1562,12 @@ export default {
 | `capitalize` (`cap`) | Capitalize | `name\|capitalize` |
 | `trim` | Trim whitespace | `text\|trim` |
 | `slice(n)` | Slice string | `text\|slice(5)` |
-| `substr(start, length)` | Substring | `text\|substr(0,10)` |
+| `substr(start, length)` | Substring (both arguments required) | `text\|substr(0,10)` |
 | `padStart(n, char?)` (`pad`) | Pad the start (default `0`) | `id\|padStart(5,0)` → `"00001"` |
 | `padEnd(n, char?)` | Pad the end (default a space; 3.2) | `code\|padEnd(8)` |
 | `repeat(n)` (`rep`) | Repeat | `text\|repeat(3)` |
 | `reverse` (`rev`) | Reverse | `text\|reverse` |
-| `truncate(n, suffix?)` | Shorten and append an ellipsis | `title\|truncate(20)` |
+| `truncate(n, suffix?)` | Shorten and append an ellipsis (default `…`, one U+2026 character) | `title\|truncate(20)` |
 | `join(sep?)` | Join an array (default `", "`) | `tags\|join` / `tags\|join(/)` |
 
 ### Type Conversion
@@ -1573,11 +1585,13 @@ export default {
 
 | Filter | Description | Example |
 |---|---|---|
-| `date(loc?)` | Date format | `timestamp\|date` / `timestamp\|date(ja-JP)` |
-| `time(loc?)` | Time format | `timestamp\|time` |
-| `datetime(loc?)` | Date + Time | `timestamp\|datetime(en-US)` |
-| `ymd(sep?)` | YYYY-MM-DD | `timestamp\|ymd` / `timestamp\|ymd(/)` |
-| `hms(sep?)` | HH:MM:SS | `timestamp\|hms` / `timestamp\|hms(-)` |
+| `date(loc?)` | Date format | `createdAt\|date` / `createdAt\|date(ja-JP)` |
+| `time(loc?)` | Time format | `createdAt\|time` |
+| `datetime(loc?)` | Date + Time | `createdAt\|datetime(en-US)` |
+| `ymd(sep?)` | YYYY-MM-DD (default `-`) | `createdAt\|ymd` / `createdAt\|ymd(/)` |
+| `hms(sep?)` | HH:MM:SS (default `:`) | `createdAt\|hms` / `createdAt\|hms(-)` |
+
+**All five take a `Date`,** not a timestamp — a value of any other type is rejected with "requires a date value". State loaded from JSON carries a number or an ISO string, so convert it where it is read rather than in the binding: `get createdAt() { return new Date(this.createdAtMs); }`. `loc?` defaults to `config.locale`, and the default is re-read on **every** apply, so a locale settled after the bindings were planned still takes effect (an explicit `date(ja-JP)` is part of the binding expression and is fixed when it is planned).
 
 ### Boolean / Default
 
@@ -1598,7 +1612,15 @@ Filters can be chained with `|`:
 
 A filter is resolved when the bindings are planned. An unknown name throws `[wcs/filter-unknown]` (with a did-you-mean), and — as of 3.0 — an argument count outside what the filter accepts throws `[wcs/filter-arity]` (`join(a,b)`: "accepts at most 1 argument(s) (2 given)"), the same code and bounds lint reports. Arguments are cached by their structure, so `join('a,b')` and `join(a)` are never confused.
 
-**Argument literals are typed (3.0).** An unquoted `true`, `false`, `null` or number is that value; a quoted argument is a string. The comparison filters use it for booleans and `null`: `done|eq(true)` matches `true` (before 3.0 it compared with the string `"true"` and never matched), `eq('true')` does not, and `eq(null)` matches `null`. Numbers and strings compare as before — a numeric value against the number, a string value against the text — so a form value `"1"` still matches `eq(1)`. `defaults(v)` returns the typed value: `defaults(0)` gives `0`, `defaults('0')` gives `"0"`, `defaults(null)` gives `null`.
+**Argument literals are typed (3.0).** An unquoted `true`, `false`, `null` or number is that value; a quoted argument is a string. The comparison filters use it for booleans and `null`: `done|eq(true)` matches `true` (before 3.0 it compared with the string `"true"` and never matched), `eq('true')` does not, and `eq(null)` matches `null`. Numbers and strings compare as before — a numeric value against the number, a string value against the text — so a form value `"1"` still matches `eq(1)`. A **numeric** value against a typed `true` / `false` / `null` is simply "not equal": `selectedId|eq(null)` is `true` while the id is `null` and `false` once it is a number. (Until 3.2 that combination threw `requires a number as option` on every apply, so a path that is sometimes `null` and sometimes numeric broke the binding the moment a number arrived.) Only an unquoted non-number — `eq(abc)` against a numeric value — still reports the type mismatch; `eq` accepts values of any type, so `status|eq(active)` cannot be judged before the value is known. `defaults(v)` returns the typed value: `defaults(0)` gives `0`, `defaults('0')` gives `"0"`, `defaults(null)` gives `null`.
+
+**Quoting rules.** Quotes (`'` or `"`) mark a literal, and the argument grammar is deliberately small:
+
+- Inside quotes, `,` `;` `|` and `:` are ordinary characters, so `join(', ')`, `join(': ')` and `join(';')` all parse.
+- Whitespace is trimmed **outside** the quotes only: `padStart(5, ' ')` pads with a space, `toFixed( 2 )` is `toFixed(2)`.
+- **There is no escape character.** A quote of the same kind cannot appear inside its own literal — write `"it's"` rather than `'it\'s'`. (`'it\'s'` is an unterminated quote and throws `[wcs/binding-syntax]`.)
+- Adjacent runs are concatenated into one argument: `'a' 'b'` is the single string `a b`, and `1'2'` is the string `12` (any quote in the argument makes the whole argument a string).
+- An unterminated quote is rejected; a trailing empty argument is dropped (`filter()` takes no arguments), while a leading or middle empty argument keeps its position (`defaults(,)` passes one empty string).
 
 ## Web Component Binding
 
@@ -1720,7 +1742,11 @@ customElements.define("user-card", UserCard);
 > component that declares a default for a mapped key (`state = { message: "" }` together with
 > `state.message: ...`) reads the host value; the default is simply not used. (In 2.x R1 made
 > that own key private and it hid the host value, with a `wcs/mount-own-key-shadow` warning.)
-> R1 still keeps every *unmapped* own key private.
+> R1 still keeps every *unmapped* own key private. This is about a **one-segment** entry: a deeper
+> entry (`state.a.b: outer.b`) does not touch the privacy of `a`, so if the component declares `a`
+> itself, `a` and everything under it stay private and the entry never reaches it. The same holds
+> for an entry whose name is a getter, a setter or a method of the component — the component's own
+> surface wins. Each of those shapes is reported once as `wcs/mount-own-key-shadow`; rename one side.
 >
 > **`#ro` on a mount is honoured (3.0):** `state#ro: user` or `state.title#ro: doc.title`
 > lets the component read the entry but not write it — `element.state.title = …`, `this.title = …`
@@ -1958,9 +1984,12 @@ interface CommandToken {
 
 `emit` returns an array of return values from each subscriber (in subscribe order). For `Promise`-returning methods, wrap with `Promise.all(token.emit(...))` to await all of them.
 
+**One subscriber throwing does not stop the others.** A token is a fan-out point and the subscribers do not know about each other, so `emit` calls every one of them: a subscriber that throws is reported with `console.error` (naming the token) and leaves `undefined` at its position in the result array, and the remaining subscribers still receive the call. The exception does **not** reach the emitter — the same rule as a state event handler, because the firing path does not wait for the handler and a DOM-event origin has no caller to throw back to. If a caller needs to know, have the subscriber return a value (or a rejected `Promise`) rather than throw. A `Promise`-returning subscriber that rejects is not caught here at all; that is what `Promise.all(token.emit(...))` is for.
+
 ### Subscription Lifecycle
 
-- The subscriber holds the element via `WeakRef`, so a removed element can still be garbage collected even while it remains in the token's subscriber set
+- The subscriber holds the element via `WeakRef`, so nothing in the token's subscriber set keeps the element alive **by itself**
+- **Caveat (current implementation):** the subscriber closure also captures its `binding`, and `binding.node` is that same element — a strong reference that defeats the `WeakRef` above. In practice a removed element is retained until its binding is released, so the `WeakRef` only pays off where the binding is gone but the token still holds the subscriber. Releasing the subscriber when its row or element goes away (rather than relying on the lazy purge below) is the fix; it is not in 3.x because the binding machinery has no element-lifecycle hook to hang it on, and the change belongs with that hook. Treat the lazy purge as the mechanism you can rely on today
 - On `emit`, if the WeakRef has been collected or the element is no longer connected (`isConnected === false`), the subscription is purged automatically (lazy purge)
 - Disconnecting the owning `<wcs-state>` keeps the token registry, so the subscriptions still receive commands after the root `<wcs-state>` is re-attached (for example when its host moves in the DOM). While it is disconnected, the state cannot be created, so nothing emits through `$command`
 
@@ -1986,7 +2015,7 @@ A command token does not have to be emitted from state code. A DOM event binding
 
 This is pure wiring: the event endpoint is connected to a command-token endpoint, with no logic in between. The `emit` arguments are passed through exactly like a handler call — the DOM `Event` first, then any enclosing list indexes — so subscribers receive `(event, ...listIndexes)`. Inside a subscriber, pull what you need from the event (`event.target.value`, `event.detail`, …).
 
-- The right-hand side must be `$command.<name>` with `<name>` declared in `$commandTokens`. A path that does not resolve to a `CommandToken` (e.g. a typo) throws at event time.
+- The right-hand side must be `$command.<name>` with `<name>` declared in `$commandTokens`. A path that does not resolve to a `CommandToken` (e.g. a typo) fails at event time. A DOM event cannot be thrown back at, so it is reported once per event with `console.error` rather than propagated (the same landing as a state handler that rejects).
 - Modifiers work unchanged: `onclick#prevent: $command.someToken` calls `preventDefault()` before emitting (`#stop` likewise).
 - This emits the same token the state emits, so element subscribers wired with `command.<method>: $command.someToken` receive it regardless of who pulled the trigger.
 
@@ -2236,6 +2265,7 @@ Key rules:
 - **Bounded fold** — demand never flows back to the producer (backpressure is deliberately abandoned). For infinite / long-lived streams use a bounded fold — latest, count, last-N (`(acc, chunk) => [...acc.slice(-99), chunk]`), windowed aggregates. Raw accumulation of every chunk is for finite streams only.
 - **`args` is synchronous** — returning a Promise is an error, and wildcard reads inside `args` are rejected.
 - **No self-dependency, no mutual cycles** — `args` reading the stream's own value or status raises an error. Mutual cycles between two streams (A's `args` reads B's value and vice versa) are not detected and restart forever — do not build them. One-way chains (A's value feeding B's `args`) are legitimate.
+- **The runtime owns the property** — an entry name that collides with a getter, a setter or a method declared on the state raises at declaration, the same as a `$scan` output. (Without that check the method would be silently overwritten by the start-time reset to `initial`.)
 - **SSR does not start streams** — on the server the declaration is parsed and the property is materialized with `initial`, but no source runs; the client starts streams as usual.
 
 See [docs/streams.md](docs/streams.md) for the full contract — lifecycle and ownership, restart semantics, flush granularity, and the out-of-scope list.

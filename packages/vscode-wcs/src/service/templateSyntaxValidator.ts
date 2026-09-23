@@ -13,6 +13,7 @@ import { BUILTIN_FILTERS, canonicalFilterName } from "./completionData.js";
 import { getStatePathsFromHtml, type FileReader } from "./statePathResolver.js";
 import { mergeSchemaCandidates, type PathCandidate } from "./stateAnalyzer.js";
 import { findAllCommentBindings, findAllMustacheSyntax } from "./templateSyntax.js";
+import { splitOutsideQuotes } from "../core/parser/quoteAware.js";
 import { isInsideForTemplate, getInnermostForPath, getAvailableWildcardRank, countWildcardSegments } from "./forContext.js";
 import { WcsDiagnosticCode, type WcsDiagnosticCodeValue } from "../core/diagnostics.js";
 import { getMessages } from "../core/messages.js";
@@ -93,7 +94,10 @@ export function validateTemplateSyntax(
 
     if (!item.expression) continue;
 
-    const parts = item.expression.split("|");
+    // フィルタの区切りは**引用符の外**の `|` だけ（要件 B1 — ランタイムの
+    // `splitOutsideQuotes`）。素の `split("|")` だと `{{ items|join('|') }}` の引数が
+    // 割れ、後片（`')`）を未知フィルタと見て `wcs/filter-unknown` を誤報する。
+    const parts = splitOutsideQuotes(item.expression, "|");
     const pathPart = (parts[0] || "").trim();
 
     // `path@name`（名前付き State セレクタ）は v2 で撤去 — runtime では parse error。
@@ -187,10 +191,15 @@ export function validateTemplateSyntax(
       }
     }
 
+    // 区間の開始は**積算**で持つ（`indexOf` だと同じフィルタを 2 回書いたとき
+    // `{{ name | uc | uc }}` の 2 件目も 1 個目の位置を指してしまう）。
+    let segmentStart = parts[0].length + 1; // parts[0] ＋ 区切りの `|`
     for (let i = 1; i < parts.length; i++) {
-      const filterName = parts[i].trim().replace(/\(.*$/, "");
+      const segment = parts[i];
+      const filterName = segment.trim().replace(/\(.*$/, "");
       // 範囲は名前の先頭から（区切りの `|` の後の空白を含めない）
-      const filterOffset = item.expression.indexOf(parts[i]) + (parts[i].length - parts[i].trimStart().length);
+      const filterOffset = segmentStart + (segment.length - segment.trimStart().length);
+      segmentStart += segment.length + 1;
       const canonical = canonicalFilterName(filterName);
       if (filterName && canonical !== filterName && filterNameSet.has(canonical)) {
         // 旧名（3.x のエイリアス）は動く — info で正式名を提案する（要件 B12）

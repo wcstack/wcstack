@@ -28,6 +28,7 @@ import {
   PRE_INCDEC,
   ROOT_DOT,
   chainToDotted,
+  execAllMasked,
   hasDotSegment,
   isApiRoot,
 } from './scriptPatterns.js';
@@ -40,8 +41,9 @@ export interface NestedAssignDiagnostic {
 }
 
 // 後置形: this.user.name = / += / ++ 等。前置形: ++this.user.count。
-const NESTED_ASSIGN = new RegExp(`${ROOT_DOT}(${CHAIN_ONE_PLUS})${ASSIGN_TAIL}`, 'g');
-const PRE_NESTED_INCDEC = new RegExp(`${PRE_INCDEC}${ROOT_DOT}(${CHAIN_ONE_PLUS})`, 'g');
+// 走査は `execAllMasked`（コメント・文字列リテラルの中身を潰した鏡像）に対して行う
+const NESTED_ASSIGN = `${ROOT_DOT}(${CHAIN_ONE_PLUS})${ASSIGN_TAIL}`;
+const PRE_NESTED_INCDEC = `${PRE_INCDEC}${ROOT_DOT}(${CHAIN_ONE_PLUS})`;
 
 /**
  * HTML 内の <wcs-state> スクリプトからネスト代入パターンを検出する。
@@ -73,11 +75,10 @@ export function validateNestedAssigns(html: string, stateTagName: string = 'wcs-
  * スクリプト内容からネスト代入パターンを検出する。
  */
 function findNestedAssigns(script: string, baseOffset: number, msgs: WcsMessageCatalog, out: NestedAssignDiagnostic[]): void {
-  for (const regex of [NESTED_ASSIGN, PRE_NESTED_INCDEC]) {
-    regex.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = regex.exec(script)) !== null) {
-      const [full, topProp, chainPart] = match;
+  for (const pattern of [NESTED_ASSIGN, PRE_NESTED_INCDEC]) {
+    for (const match of execAllMasked(pattern, script)) {
+      const [topProp, chainPart] = match.groups;
+      if (topProp === undefined || chainPart === undefined) continue;
       // `$` 始まりのルートは API 名前空間（$streams 等）なのでスキップ
       if (isApiRoot(topProp)) continue;
       // ドットセグメントの無い bracket-only チェーンは array-index-assign の担当
@@ -86,7 +87,7 @@ function findNestedAssigns(script: string, baseOffset: number, msgs: WcsMessageC
       const start = baseOffset + match.index;
       out.push({
         start,
-        end: start + full.length,
+        end: start + match.length,
         message: msgs.nestedAssign(suggestedPath),
         severity: 'error',
       });

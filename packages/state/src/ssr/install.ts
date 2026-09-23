@@ -29,7 +29,9 @@ export const ssrFeatureHooks: ISsrHooks = {
     const stateData = Ssr.extractStateData(element);
     const ssrEl = document.createElement(config.tagNames.ssr);
     ssrEl.setAttribute("version", VERSION);
-    Ssr.buildContent(ssrEl, stateData);
+    // スナップショットの範囲はこの state のツリー — モジュール寿命の台帳に残った
+    // 別のレンダリングのテンプレートを載せない（リクエスト間のデータ漏れ）
+    Ssr.buildContent(ssrEl, stateData, (element as unknown as IStateElement).rootNode);
     element.parentNode?.insertBefore(ssrEl, element);
   },
 };

@@ -14,6 +14,8 @@ import {
   getPathInfo,
   clearParserCaches,
   splitBindTexts,
+  indexOfOutsideQuotes,
+  splitOutsideQuotes,
 } from "../src/parser";
 
 describe("parseBindTextsForElement（正本パーサの公開契約）", () => {
@@ -71,6 +73,29 @@ describe("splitBindTexts（属性値の区切りの正本 — 要件 B1）", () 
   it("引用符の外の ; だけで区切り、前後の空白を残すこと（tooling が位置を数えられる）", () => {
     expect(splitBindTexts("a: x; b: y|join(';') ;")).toEqual(["a: x", " b: y|join(';') ", ""]);
     expect(parseBindTextsForElement("a: x; b: y|join(';') ;").map((r) => r.propName)).toEqual(["a", "b"]);
+  });
+});
+
+describe("indexOfOutsideQuotes（区切り文字探索の正本 — 要件 B1）", () => {
+  it("引用符の中の区切り文字を拾わないこと", () => {
+    // 引数の中の `:`（位置 16）ではなく、左辺と右辺を分ける `:`（位置 19）を返す
+    expect(indexOfOutsideQuotes("value|defaults(':'): path", ":")).toBe(19);
+    expect(indexOfOutsideQuotes("a|join(';')", ";")).toBe(-1);
+    expect(indexOfOutsideQuotes("a|b", "|")).toBe(1);
+    expect(indexOfOutsideQuotes("abc", ":")).toBe(-1);
+  });
+
+  it("splitOutsideQuotes は同じ規則で区切ること（`;` 以外の区切りも正本で切れる）", () => {
+    expect(splitOutsideQuotes("a: x; b: y|join(';')", ";")).toEqual(["a: x", " b: y|join(';')"]);
+    expect(splitOutsideQuotes("x|join('|')|upper", "|")).toEqual(["x", "join('|')", "upper"]);
+    expect(splitOutsideQuotes("abc", ";")).toEqual(["abc"]);
+    // `splitBindTexts` は区切りを `;` に固定した同じ関数
+    expect(splitOutsideQuotes("a: x; b: y", ";")).toEqual(splitBindTexts("a: x; b: y"));
+  });
+
+  it("splitBindTexts と同じ判定であること（tooling が写しを持たなくて済む）", () => {
+    const text = "a: x; b: y|join(';')";
+    expect(text.slice(0, indexOfOutsideQuotes(text, ";"))).toBe(splitBindTexts(text)[0]);
   });
 });
 

@@ -1,0 +1,38 @@
+{
+  "$comment": "gzip level 9 of each @wcstack/state feature entry's OWN code (the entry plus the chunks the core does not already carry) at the recorded release. check-state-split.mjs --check allows +3 % over these (requirement B13). Update with --update after a release build.",
+  "features/devtools.js": {
+    "files": 2,
+    "bytes": 4565,
+    "gzip": 2189
+  },
+  "features/diagnostics.js": {
+    "files": 1,
+    "bytes": 2390,
+    "gzip": 1138
+  },
+  "features/formats.js": {
+    "files": 1,
+    "bytes": 5478,
+    "gzip": 1746
+  },
+  "features/recursion.js": {
+    "files": 1,
+    "bytes": 15772,
+    "gzip": 5376
+  },
+  "features/scopes.js": {
+    "files": 2,
+    "bytes": 44769,
+    "gzip": 14193
+  },
+  "features/ssr.js": {
+    "files": 1,
+    "bytes": 11532,
+    "gzip": 4120
+  },
+  "features/temporal.js": {
+    "files": 2,
+    "bytes": 29926,
+    "gzip": 9772
+  }
+}

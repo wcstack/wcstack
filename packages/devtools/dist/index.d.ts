@@ -92,6 +92,12 @@ interface IMountOverlaySummaryLike {
     readonly delta: number;
     /** 私有キー（オーバーレイ空間に住む own data key） */
     readonly privateKeys: readonly string[];
+    /**
+     * 公開 getter の公開パス（親スコープから読める — docs/state-overlay-export-design.md）。
+     * オーバーレイ export より前の v2 ランタイムにはフィールド自体が無いため optional
+     * （protocol §3 の `summary.exports ?? []`）。
+     */
+    readonly exports?: readonly string[];
     /** マーカーパスに載る getter のキー */
     readonly getterKeys: readonly string[];
 }
@@ -114,6 +120,18 @@ interface IKeyedSubscriptionSummaryLike {
     readonly lastValue: unknown;
 }
 /**
+ * 宣言されたフィルタ 1 件（ランタイム `IFilterInfo` の構造的サブセット）。
+ * `literals`（引数の型付きの値・要件 B9）は原文 `args` と別物で、フィルタの鍵
+ * （`filterKey.ts` の `filter.literals ?? filter.args`）と `eq` / `ne` / `defaults` の
+ * 比較が読む。宣言が無いと、独自 source を TS で書く採用者が `{ filterName, args }`
+ * だけのオブジェクトを渡し、型は通るのに鍵が縮退する（`"1"` と `1` が同じ鍵になる）。
+ */
+interface IDeclaredFilterLike {
+    readonly filterName: string;
+    readonly args: readonly string[];
+    readonly literals?: readonly unknown[];
+}
+/**
  * 宣言レベルのバインディング 1 件（getDeclaredBindings の要素・protocol v1 追補）。
  * ランタイム正本パーサの結果が構造的に流れる。宣言タプルで dedupe 済みの
  * 「宣言の集合」であり、レンダリング行数に比例したインスタンス列ではない。
@@ -124,14 +142,8 @@ interface IDeclaredBindingLike {
     readonly propName: string;
     readonly statePathName: string;
     readonly bindingType: string;
-    readonly inFilters: readonly {
-        readonly filterName: string;
-        readonly args: readonly string[];
-    }[];
-    readonly outFilters: readonly {
-        readonly filterName: string;
-        readonly args: readonly string[];
-    }[];
+    readonly inFilters: readonly IDeclaredFilterLike[];
+    readonly outFilters: readonly IDeclaredFilterLike[];
     readonly origin: "attribute" | "comment" | "fragment";
     readonly raw: string;
 }
@@ -630,4 +642,4 @@ declare global {
 }
 
 export { DEVTOOLS_HOOK_GLOBAL, DEVTOOLS_PROTOCOL_VERSION, DevtoolsCore, WcsDevtools, bootstrapDevtools, formatArgs, formatValue, getOrCreateHookRegistry, scanDeclaredBindings };
-export type { CoreChangeKind, CoreChangeListener, DevtoolsEventLike, DevtoolsSinkLike, IAbsoluteAddressLike, IAbsolutePathInfoLike, IBindingLike, IDeclaredBinding, IDevtoolsCoreOptions, IDevtoolsHookRegistryLike, IDevtoolsListenerLike, IDevtoolsSourceLike, IListIndexLike, IPathInfoLike, IRosterEntry, IStateElementSummaryLike, ITimelineEntry, IWiringEntry, TimelineKind };
+export type { CoreChangeKind, CoreChangeListener, DevtoolsEventLike, DevtoolsSinkLike, IAbsoluteAddressLike, IAbsolutePathInfoLike, IBindingLike, IDeclaredBinding, IDeclaredBindingLike, IDeclaredFilterLike, IDevtoolsCoreOptions, IDevtoolsHookRegistryLike, IDevtoolsListenerLike, IDevtoolsSourceLike, IKeyedSubscriptionSummaryLike, IListIndexLike, IMountOverlaySummaryLike, IPathInfoLike, IRosterEntry, IStateElementSummaryLike, ITimelineEntry, IWiringEntry, TimelineKind };

@@ -97,6 +97,70 @@ describe("mountExport: 静的マウント（E1 / E6 / E7 / E8 / E10）", () => {
     host.remove();
   });
 
+  it("E1（クラスで書いた state）: プロトタイプの getter も規則 1 で解決し、外からも公開されること", async () => {
+    // own descriptor しか見ていなかった頃は getterKeys が空で、`display` がホストのツリー
+    // （`session.user.display`）へ翻訳され、作者の getter が評価されなかった
+    const tag = uniqueTag("me-class-card");
+    class CardState {
+      get display(): string { return `${(this as any).name} <${(this as any).email}>`; }
+    }
+    defineComponent(tag, () => new CardState() as any, `<span class="inner" data-wcs="textContent: display"></span>`);
+    const { host, shadowRoot, rootState } = await mountHost(
+      '{"session":{"user":{"name":"Alice","email":"a@x"}}}',
+      `<${tag} data-wcs="state: session.user"></${tag}>` +
+      `<span class="outer" data-wcs="textContent: session.user.display"></span>`);
+    const card = shadowRoot.querySelector(tag) as HTMLElement;
+    await readyScope(card.shadowRoot!);
+    await flush();
+    expect(textOf(card.shadowRoot!, ".inner")).toBe("Alice <a@x>");
+    expect(textOf(shadowRoot, ".outer")).toBe("Alice <a@x>");
+
+    await write(rootState, (s) => { s["session.user.name"] = "Bob"; });
+    expect(textOf(card.shadowRoot!, ".inner")).toBe("Bob <a@x>");
+    expect(textOf(shadowRoot, ".outer")).toBe("Bob <a@x>");
+    host.remove();
+  });
+
+  it("マウントされたコンポーネントの $eq / $eqPath / $dependOn がスコープ内のパスを見ること", async () => {
+    // 翻訳が無いと `$eq("selectedId", …)` はルートを読み、ルートに `selectedId` が無い
+    // ページでは作者が書いていないパスを名指しして throw する（`$` API の非対称）
+    const tag = uniqueTag("me-keyed");
+    defineComponent(tag, () => ({
+      get flags(this: any) {
+        this.$dependOn("selectedId");
+        return `${this.$eq("selectedId", 2)}/${this.$eqPath("selectedId", "chosen")}`;
+      },
+    }), `<span class="inner" data-wcs="textContent: flags"></span>`);
+    const { host, shadowRoot, rootState } = await mountHost(
+      '{"panel":{"selectedId":2,"chosen":2}}',
+      `<${tag} data-wcs="state: panel"></${tag}>`);
+    const comp = shadowRoot.querySelector(tag) as HTMLElement;
+    await readyScope(comp.shadowRoot!);
+    await flush();
+    expect(textOf(comp.shadowRoot!, ".inner")).toBe("true/true");
+
+    await write(rootState, (s) => { s["panel.selectedId"] = 3; });
+    expect(textOf(comp.shadowRoot!, ".inner")).toBe("false/false");
+    host.remove();
+  });
+
+  it("element.state（外向きの chroot）の $eq / $eqIndex も相対パスで解決すること", async () => {
+    const tag = uniqueTag("me-keyed-public");
+    defineComponent(tag, () => ({}), `<span class="inner" data-wcs="textContent: selectedId"></span>`);
+    const { host, shadowRoot } = await mountHost(
+      '{"panel":{"selectedId":7}}',
+      `<${tag} data-wcs="state: panel"></${tag}>`);
+    const comp = shadowRoot.querySelector(tag) as any;
+    await readyScope(comp.shadowRoot!);
+    await flush();
+    // 相対パス `selectedId` が `panel.selectedId` として読まれる（ルートに `selectedId` は無い）
+    expect(comp.state.$eq("selectedId", 7)).toBe(true);
+    expect(comp.state.$eq("selectedId", 8)).toBe(false);
+    // getter の外なので `$eqIndex` は行スコープが無いと名指しで落ちる（翻訳後のパスを文言に載せる）
+    expect(() => comp.state.$eqIndex("selectedId")).toThrow(/\$eqIndex\("panel\.selectedId"\) needs a list row scope/);
+    host.remove();
+  });
+
   it("E6: ツリーに同名キーがあればツリーが勝ち、登録時に warn が 1 回出ること", async () => {
     const tag = uniqueTag("me-shadowed");
     defineComponent(tag, () => ({
@@ -299,6 +363,31 @@ describe("mountExport: 行マウントと自己再帰（E2 / E3 / E4 / E5）", (
     host.remove();
   });
 
+  it("行マウントの getter の $eqIndex が、スコープ内のパス（外側と名前が違うもの）で行を選べること", async () => {
+    const tag = uniqueTag("me-row-eqindex");
+    defineComponent(tag, () => ({
+      // `sel` は**コンポーネント側だけの名前**（ホストが `state.sel: cursor` で写す）。
+      // ルートに `sel` は無いので、翻訳が効かないと `[wcs/binding-path-missing]` で落ちる。
+      // 内側と外側で名前を変えるのが肝 — 同名（`state.cursor: cursor`）だと翻訳の有無で
+      // 結果が変わらず、番人にならない
+      get active(this: any) { return this.$eqIndex("sel") ? "on" : "off"; },
+    }), `<span data-wcs="textContent: active"></span>`);
+    const { host, shadowRoot, rootState } = await mountHost(
+      '{"cursor":1,"users":[{"name":"a"},{"name":"b"}]}',
+      `<ul><template data-wcs="for: users"><li><${tag} data-wcs="state: .; state.sel: cursor"></${tag}>` +
+      `<span class="outer" data-wcs="textContent: .active"></span></li></template></ul>`);
+    const comps = Array.from(shadowRoot.querySelectorAll(tag)) as HTMLElement[];
+    for (const c of comps) await readyScope(c.shadowRoot!);
+    await flush(); await flush();
+    const inners = () => comps.map((c) => c.shadowRoot!.querySelector("span")!.textContent);
+    // 翻訳が効いていれば `sel` は `cursor` として読めて、行 1 だけが真になる
+    expect(inners()).toEqual(["off", "on"]);
+
+    await write(rootState, (s) => { s["cursor"] = 0; });
+    expect(inners()).toEqual(["on", "off"]);
+    host.remove();
+  });
+
   async function mountTree(json: string, onEvaluate?: (label: string) => void) {
     const tag = uniqueTag("me-tree");
     defineComponent(tag, () => ({
@@ -424,6 +513,38 @@ describe("mountExport: 遅延診断と devtools（E9 / X7）", () => {
     await readyScope((shadowRoot.querySelector(tag) as HTMLElement).shadowRoot!);
     const records = getMountRecordsForStateElement(rootState as any);
     expect(records.map((r) => [...r.exports.keys()])).toEqual([["user.display"]]);
+    host.remove();
+  });
+});
+
+/**
+ * プラン初期描画（設計 R2・structural/activateContent.ts の applyPlanRow）は、行オブジェクトを
+ * proxy で 1 回読んだ後、葉までを**生のプロパティアクセス**で辿る。公開 getter は
+ * `getterPaths` に載らない（webComponent/exportIndex.ts）ので `hasGetterOnPrefix` に掛からず、
+ * 素の葉として `undefined` に落ちていた。行マウントを持つリストを、プラン適格な別テンプレートが
+ * 描くときにだけ踏む（登録後に実体化する行 — ここでは `if:` の再マウント）。
+ */
+describe("mountExport: プラン適格な別テンプレートからの公開 getter", () => {
+  it("登録後に実体化したプラン行でも、公開 getter の値が描かれること", async () => {
+    const tag = uniqueTag("me-plan");
+    defineComponent(tag, () => ({
+      get display() { return `${this.name}!`; },
+    }), `<span data-wcs="textContent: display"></span>`);
+    const { host, shadowRoot, rootState } = await mountHost(
+      '{"users":[{"name":"a"},{"name":"b"}],"show":false}',
+      `<ul id="src"><template data-wcs="for: users"><li><${tag} data-wcs="state: ."></${tag}></li></template></ul>` +
+      `<template data-wcs="if: show">` +
+      `<ul id="plan"><template data-wcs="for: users"><li class="plan" data-wcs="textContent: .display"></li></template></ul>` +
+      `</template>`);
+    const comps = Array.from(shadowRoot.querySelectorAll(tag)) as HTMLElement[];
+    expect(comps).toHaveLength(2);
+    for (const c of comps) await readyScope(c.shadowRoot!);
+    await flush(); await flush();
+
+    // 公開 getter がもう登録されている状態で、プラン適格なテンプレートの行を実体化する
+    await write(rootState, (s) => { s.show = true; });
+    const planTexts = Array.from(shadowRoot.querySelectorAll(".plan")).map((e) => e.textContent);
+    expect(planTexts).toEqual(["a!", "b!"]);
     host.remove();
   });
 });

@@ -32,6 +32,10 @@ async function mountPage(state: object, body: string) {
 }
 
 describe("normalizeDeclarationAliases", () => {
+  // 「正式名へ**写し**、旧名が**自前のプロパティなら**消す」のが契約。この分岐は state の
+  // 書き方（オブジェクトリテラル / class）で観測できるので、両方を固定する（下の 2 本）。
+  // 3.x の間そのまま動くのは「宣言として旧名で書けること」であって「旧名で読み返せること」
+  // ではない（docs/migration-v3.md の 3.2 の行）
   it("旧名は正式名へ移り、自前のプロパティなら旧名は消えること", () => {
     const handler = () => {};
     const state: Record<string, unknown> = { $updatedCallback: handler, $streams: { s: {} } };
@@ -54,6 +58,34 @@ describe("normalizeDeclarationAliases", () => {
     expect(state.calls).toBe(1);
     // 同じオブジェクトは二度処理しない（プロトタイプに旧名が残っていても衝突にしない）
     expect(() => normalizeDeclarationAliases(state)).not.toThrow();
+  });
+
+  /**
+   * 「旧名が消えるか」は state の書き方で分かれる（`findOwner` が自前プロパティを返したときだけ
+   * `delete` する）。この分岐は移行ガイドが説明している契約なので、両方を明示的に固定する —
+   * 暗黙のままだと「旧名は必ず消える」という誤った説明が文書に戻ってくる。
+   */
+  describe("旧名が残るかは state の書き方で分かれる（移行ガイドの契約）", () => {
+    it("オブジェクトリテラル（自前プロパティ）では旧名が消え、読み返すと undefined になること", () => {
+      const state: Record<string, unknown> = { $updatedCallback() { /* noop */ } };
+      normalizeDeclarationAliases(state);
+      expect(Object.prototype.hasOwnProperty.call(state, "$updatedCallback")).toBe(false);
+      expect("$updatedCallback" in state).toBe(false);
+      expect(typeof state.$updatedCallback).toBe("undefined");
+      expect(typeof state.$renderedCallback).toBe("function");
+    });
+
+    it("class（プロトタイプのメソッド）では旧名も読めたまま、正式名と同じ参照になること", () => {
+      class AppState {
+        $updatedCallback(): number { return 1; }
+      }
+      const state = new AppState() as any;
+      normalizeDeclarationAliases(state);
+      // インスタンスに写しが足されるだけで、プロトタイプの旧名は消せない（4.0 で外れる）
+      expect(Object.prototype.hasOwnProperty.call(state, "$updatedCallback")).toBe(false);
+      expect(typeof state.$updatedCallback).toBe("function");
+      expect(state.$updatedCallback).toBe(state.$renderedCallback);
+    });
   });
 
   it("両方の綴りを宣言した state は [wcs/declaration-alias] で拒否すること", () => {
@@ -93,5 +125,52 @@ describe("正式名と旧名の宣言がページで同じに働くこと", () =
     expect(text("v")).toBe("5");
     expect(["active", "done"]).toContain(text("st"));
     host.remove();
+  });
+});
+
+/**
+ * state がランタイムに入る最初の関門としての防御。`src="./x.json"` は `JSON.parse("null")` の
+ * ように非オブジェクトも返しうるし（`typeof null` は "object"）、凍結した state には正式名を
+ * 足せない。どちらも素の TypeError（"Cannot use 'in' operator in null" /
+ * "object is not extensible"）ではなく、形を名指しで落とす。
+ */
+describe("normalizeDeclarationAliases — 入力の形", () => {
+  it.each([
+    ["null", null],
+    ["数値", 1],
+    ["文字列", "x"],
+    ["真偽値", true],
+    ["undefined", undefined],
+  ])("%s を渡すと形を名指しで落とすこと", (_label, value) => {
+    expect(() => normalizeDeclarationAliases(value as unknown as object))
+      .toThrow(/The state must be an object, got/);
+  });
+
+  it("null は型名ではなく null と名指しすること", () => {
+    expect(() => normalizeDeclarationAliases(null as unknown as object)).toThrow(/got null/);
+    expect(() => normalizeDeclarationAliases(1 as unknown as object)).toThrow(/got number/);
+  });
+
+  it("関数の state は受け付けること（typeof が \"function\"）", () => {
+    const state = Object.assign(function () { /* noop */ }, { $streams: {} });
+    expect(() => normalizeDeclarationAliases(state)).not.toThrow();
+    expect("$stream" in state).toBe(true);
+  });
+
+  it("凍結した state が旧名を使っていたら [wcs/declaration-alias] で案内すること", () => {
+    const frozen = Object.freeze({ $updatedCallback() { /* noop */ } });
+    expect(() => normalizeDeclarationAliases(frozen))
+      .toThrow(/\[wcs\/declaration-alias\] The state is not extensible/);
+    expect(() => normalizeDeclarationAliases(frozen)).toThrow(/Declare "\$renderedCallback" directly/);
+  });
+
+  it("凍結していても正式名だけなら通ること", () => {
+    const frozen = Object.freeze({ $renderedCallback() { /* noop */ } });
+    expect(() => normalizeDeclarationAliases(frozen)).not.toThrow();
+  });
+
+  it("両方の綴りのエラーにも lint への誘導が付くこと", () => {
+    expect(() => normalizeDeclarationAliases({ $streams: {}, $stream: {} }))
+      .toThrow(/npx @wcstack\/lint/);
   });
 });

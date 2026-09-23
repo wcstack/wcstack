@@ -162,4 +162,46 @@ describe('validateNestedAssigns', () => {
     const diags = validateNestedAssigns(html);
     expect(diags).toHaveLength(0);
   });
+
+  // Fixed by review（サイクル 5）— コメント・文字列リテラルの中の**例示**を実コードと
+  // 同じに error で検出していた。リポジトリ自身の e2e フィクスチャは「`this.rows[0].name`
+  // は set トラップを通らない」という注意書きをコメントで添えて直下に推奨形を書いており、
+  // それが 7 件 error（`--errors-only` が exit 1）になっていた。
+  describe('コメント・文字列リテラルの中は検出しない', () => {
+    it('行コメントの中のネスト代入は検出せず、実コードだけを検出すること', () => {
+      const html = makeHtml(`
+  rows: [],
+  // パス文字列で書く（\`this.rows[0].name = ...\` は set トラップを通らない）
+  renameFirst() { this["rows.0.name"] = "Carol"; }`);
+      expect(validateNestedAssigns(html)).toHaveLength(0);
+    });
+
+    it('ブロックコメントの中も検出しないこと', () => {
+      const html = makeHtml(`
+  user: { name: "a" },
+  update() {
+    /* NG: this.user.name = "Bob"; */
+    this["user.name"] = "Bob";
+  }`);
+      expect(validateNestedAssigns(html)).toHaveLength(0);
+    });
+
+    it('文字列リテラルの中も検出しないこと', () => {
+      const html = makeHtml(`
+  msg: "docs say this.user.name = 'x' is wrong",
+  tpl: \`also this.user.name = 1\`,
+  user: { name: "a" }`);
+      expect(validateNestedAssigns(html)).toHaveLength(0);
+    });
+
+    it('同じ行にコメントと実コードが並んでも実コードだけを検出すること（対照・レンジ確認）', () => {
+      const html = makeHtml(`
+  user: { name: "a" },
+  update() { this.user.name = "Bob"; // this.user.other = 1 は例示
+  }`);
+      const diags = validateNestedAssigns(html);
+      expect(diags).toHaveLength(1);
+      expect(html.slice(diags[0].start, diags[0].end)).toBe('this.user.name =');
+    });
+  });
 });

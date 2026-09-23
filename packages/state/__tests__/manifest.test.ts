@@ -6,6 +6,8 @@
  *   vscode-wcs の手リスト（completionData.ts BUILTIN_FILTERS）同期忘れを構造的に防ぐ。
  */
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { getWcsManifest, WCS_MANIFEST_VERSION } from "../src/manifest";
 import { outputBuiltinFilters } from "../src/formats/builtinFilters";
 import { builtinFilterMeta } from "../src/filters/filterMeta";
@@ -83,6 +85,38 @@ describe("wcs-manifest（単一正本・A2-1）", () => {
     expect(m.reservedStateApi).toContain("$stream");
     expect(m.reservedStateApi).toContain("$streamStatus");
     expect(m.reservedStateApi).toContain("$streamError");
+  });
+
+  /**
+   * 宣言キー / API の旧名（要件 B12）。reservedLifecycle と reservedStateApi は正式名しか
+   * 載せないので、消費側から見て `$streams` / `$updatedCallback` が予約名かどうかは
+   * この表が無いと分からなかった。
+   */
+  it("declarationAliases が宣言キーの旧名 → 正式名で、行き先が予約名であること", () => {
+    const m = getWcsManifest();
+    expect(m.declarationAliases).toEqual({
+      $updatedCallback: "$renderedCallback",
+      $streams: "$stream",
+    });
+    const canonical = new Set([...m.reservedLifecycle, ...m.reservedStateApi]);
+    for (const [alias, target] of Object.entries(m.declarationAliases)) {
+      expect(canonical.has(target), target).toBe(true);
+      expect(canonical.has(alias), alias).toBe(false);
+    }
+  });
+
+  it("apiAliases が state API の旧名 → 正式名で、proxy の case ラベルと一致すること", () => {
+    const m = getWcsManifest();
+    expect(m.apiAliases).toEqual({
+      $trackDependency: "$dependOn",
+      $untrackDependency: "$untracked",
+    });
+    // 正本は proxy/traps/get.ts の case ラベル — 旧名と正式名が両方書かれていることを固定する
+    const source = readFileSync(resolve(process.cwd(), "src/proxy/traps/get.ts"), "utf8");
+    for (const [alias, target] of Object.entries(m.apiAliases)) {
+      expect(source.includes(`case "${alias}":`), alias).toBe(true);
+      expect(source.includes(`case "${target}":`), target).toBe(true);
+    }
   });
 
   it("予約名は define.ts の `$` 定数を過不足なく網羅する（新しい予約キーの取りこぼしを検出）", () => {

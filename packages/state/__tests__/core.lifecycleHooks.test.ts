@@ -65,6 +65,26 @@ describe("core/lifecycleHooks — readiness barrier", () => {
       errorSpy.mockRestore();
     }
   });
+
+  it("mount= と DCC ホストが重なっても、ボリュームの着地（ルートを巻き込まない）が先に当たること", async () => {
+    // どちらの門も案内するエントリは features/scopes で同じ。DCC の門を先に当てると
+    // ボリュームが ownsTree=true で着地し、まだ来ていないルートのノードを利用不能と
+    // 印付けして兄弟ボリュームまで落とす（要件 D23 がボリュームで避けたかった形）
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const host = document.createElement("x-lifecycle-dcc-volume-host");
+      host.setAttribute("data-wc-definition", "");
+      const shadow = host.attachShadow({ mode: "open" });
+      const stateEl = document.createElement(STATE_TAG) as State;
+      stateEl.setAttribute("mount", "vol");
+      shadow.appendChild(stateEl);
+      await expect((stateEl as any).connectedCallback())
+        .rejects.toThrow(/\[wcs\/feature-not-installed\] the "mount" attribute needs the "scopes" feature/);
+      expect(await bindingsReadyState(shadow)).not.toBe("rejected");
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
 });
 
 describe("core/lifecycleHooks — readiness barrier（着地）", () => {

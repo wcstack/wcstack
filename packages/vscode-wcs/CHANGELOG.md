@@ -2,6 +2,42 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+3.2（名前の正典化）の追随漏れと、分割規則の二重実装を潰す。
+
+### 検証
+
+- **`wcs/declaration-alias`（新設、error）** — 旧名と正式名の宣言キーを**両方**書いた state（`$streams` と `$stream`、`$updatedCallback` と `$renderedCallback`）。ランタイムはどちらが効くか推測せず読み込み時に throw する（ページ初期化ごと止まる）のに、拡張は `wcs/name-alias`（info）を 2 件出すだけだった。3.2 への移行中（新名を足して旧名を消し忘れる）にちょうど起きる形。
+- **`wcs/declaration-alias-read`（新設、warning / info）** — 宣言キーを旧名で**読んだ**（`this.$streams`）。宣言と違い 3.x でも動かない — 正規化が正式名へ写したあと旧名の自前プロパティを `delete` するので、読み出しは例外も出さずに `undefined` になる。「動くが 4.0 で外れる」という `wcs/name-alias` とは別の事実なので code を分けた（移行中に `wcs/name-alias` を抑制したチームが、この「今日すでに壊れている」まで一緒に消さないため）。検出は AST（`this` のスコープを追い、文字列リテラルの中や他オブジェクトのプロパティには当たらない）で、断定できた場合は warning。`export default class …` のように静的に読めない形だけ正規表現へ落として info に留める。文言も経路で分ける — ランタイムの `delete` は**自前プロパティ**のときだけなので、オブジェクトリテラル（AST 経路）は必ず `undefined` と断定でき、class 構文（フォールバック経路）は**プロトタイプ**に置いたメソッド / アクセサなら今も読める（4.0 で外れる）と両方を説明する。走査対象は**ランタイムが `this` を state に束縛して呼ぶ関数だけ** — トップレベルの getter / メソッドと `$watch` のハンドラ（`watchRuntime.ts` の `handler.call(state, …)`）。**宣言面のうち**再束縛するのは `$watch` だけで、`$scan` の `fold`・`$stream` の `source`・`$on` のハンドラ・`$listKeys` のキー関数は素の関数呼び出しなので対象外（`$on` は `processOnDeclaration.ts` が「`this` 束縛は行わず引数で state を渡す」と明記しており、そこでの旧名読みは TypeError でこの診断の文言が当たらない）。なお宣言面の外では、イベント束縛が解決した関数も `this` が state になる（`event/handler.ts` の `Reflect.apply(handler, state, …)`）— 通常はトップレベルのメソッドなので走査済みだが、入れ子のパス（`onclick: handlers.click`）は追わない（限界として `collectDeclarationAliasReads` の JSDoc に明記）。
+
+### 修正
+
+- **`$dependOn` に `wcs/recursion-unsupported` が出ていなかった** — 呼び出し検出の API 一覧に正式名が無く、旧名 `$trackDependency` を書いた人だけが守られていた（ランタイムはどちらでも throw する）。文言も旧名を直書きしていたので、書かれた名前が出るようにした（ランタイムと同じ）。
+- **フィルタの旧名で型検査が黙っていた** — エイリアスの正規化がフィルタ 1 件の検査にしか入っておらず、フィルタ鎖の型検査 2 か所が正式名キーだけの表を旧名で引いて中断していた。`count|uc` で `wcs/filter-input-type` / `wcs/binding-type-expectation` / `wcs/path-type-mismatch` が消えていた。
+- **コメントバインディング `<!--@@:…-->` が `wcs/binding-syntax` の対象から落ちていた** — v2 移行 validator の撤去に伴う退行。ランタイムは mustache と同じ経路で throw するのに lint だけが黙っていた。
+- **式の分割規則が拡張内で 2 つに割れていた** — 契約検査（`ioNodeValidator` / `bindingValidator` / `ariaValidator` / `namedStateValidator`）だけが括弧深度を見る独自実装のままで、引用符を見ていなかった。`interval: 'a;b'` を 2 式に割って偽の `wcs/tag-member-unknown` を出していた。正本（`@wcstack/state/parser` の `splitBindTexts`）へ委譲する。
+- **バインド属性の走査が、HTML コメントの中の説明文とエスケープ済みテキストを実属性として拾っていた** — `findAllBindAttributes`（診断・参照インデックス・配線レンズの 6 経路が共有する単一の走査）が HTML 全体を素の正規表現で走っていたため、`examples/router-i18n` の `<!-- <template data-wcs="for:"> は … -->`（コメント）と `examples/router-spa` の `<code>&lt;template data-wcs="if: ..."&gt;</code>`（`&lt;` でエスケープされたテキスト ＝ タグですらない）を属性として正本パーサに通していた。どちらも**説明として正しく書かれた散文**で、直すべきは走査側。`<script>` / `<style>` 本体の文字列も同様。`language/htmlParse.ts` に `findStartTagRegions`（開始タグの属性領域だけを返す走査。コメント・DOCTYPE・終了タグを飛ばし、タグ終端は引用符を跨がずに探し、raw text 要素は本体ごと飛ばす）を置き、探索をそこに限定した。右辺の空セグメントを拒否する変更がランタイムへ入ると偽の `wcs/binding-syntax`（error）になり CI の `wcs-validate` が落ちる形で、実際に state を新しくビルドした dist で再現・修正後に解消を確認した。
+- **`<wcs-state>` スクリプトの検査が、コメント・文字列リテラルに書いた「例示」を実コードとして検出していた** — リポジトリ自身の e2e フィクスチャが 7 件 **error**（`wcs/nested-assign`）で落ちていた。落ちていたのは「`this.rows[0].name = ...` は set トラップを通らない」という**注意書き**で、直下には推奨形が書いてある ＝ **正解を書いた注意書きを error にしていた**。`AGENTS.md` は `--errors-only` が exit 0 になるまで回すよう指示しているので、偽 error はエージェントを正しいコードを壊す方向へ誘導する。`scriptPatterns.ts` に `execAllMasked`（コメント・文字列の中身を空白へ潰した**長さを保つ鏡像**で走査し、キャプチャは原文から切り出す）を置き、同じ欠陥クラスを全数で潰した: `wcs/nested-assign` / `wcs/array-mutation` / `wcs/array-index-assign`（error）、`wcs/recursion-unsupported`（**error** — 文字列の中の `$resolve("nodes.**.x")`）、`wcs/index-arity`（warning — コメント・文字列の両方）、`wcs/name-alias`（info）。`$renderedCallback` の `paths.includes("…")` 検査だけは**文字列リテラルそのものが検査対象**なので従来どおりコメントだけを潰す（理由をコメントに明記）。
+- **明示のプロパティ形の拒否語に `state` が無かった** — ランタイムの `EXPLICIT_PROPERTY_REJECTED_HEADS` は 6 語（`VOLUME_INJECTION_PROP` = `state` を含む）なのに拡張は 5 語で、dist が src に追いつくと `.state.x:` に `wcs/binding-syntax`(error) と `wcs/tag-member-unknown`(warning) が同じ 1 か所へ二重に出る。5 語を manifest から導出し、`state` だけ手書きにしたうえで、正本（state の src）とのずれを `__tests__/explicitPropertyHeads.drift.test.ts` が固定する。
+- **旧名テーブルのドリフト番人を置いた** — フィルタの別名は manifest 導出で止まっているのに、API（`$trackDependency` → `$dependOn`）と宣言キー（`$streams` → `$stream`）の別名は手書きでテストが 0 件だった。正本は `manifest.ts` の `STATE_API_ALIASES` と `declarationAliases.ts` の `DECLARATION_ALIASES` だが**コミット済み dist がまだ export していない**ので、`quoteAware.ts` と同じ形の TODO を置き、state の src を読んで突き合わせるテストを追加した。
+- **補完の修飾子 `textEdit` が、リストの 2 個目を補完すると先に書いた修飾子を消していた** — `value#ro,w` で `wo` を選ぶと「カーソル前の最後の `#`」から置換して `value#wo` になっていた。置換開始を「最後の `#` **または** `,` の次」にする。あわせて `provideCompletionItems`（**拡張が生成する唯一のテキスト編集経路**）のテストを新設した（これまで 0 件で、引用符対応を素の `lastIndexOf` に戻しても全テストが緑だった）。
+- **兄弟ボリュームでマウント接頭辞が重複候補になっていた** — `mount="shop.cart"` と `mount="shop.user"` で `shop` が 2 回載り、パス補完に同じ項目が並んでいた。
+- **`state: cart`（ボリュームの根へのマウント）が `wcs/binding-path-missing` に誤報されていた** — ボリューム（`mount=`）の候補が接頭辞付きの子パス（`cart.total`）だけで、**マウントパスそのもの**を積んでいなかった。`state: cart` は `@wcstack/state` の README に載っている正規の書き方で、ランタイムは解決する。ネストしたマウント（`mount="deep.vol"`）では途中の `deep` も載せる。子パスを 1 つも解決できなかったとき（IDE が読まない `src=` 外部 state など）は足さない — 存在の根拠が無いので `cart.total` と同じく黙る側に揃える。
+- **補完の文脈判定に残っていた引用符を見ない区切り走査を潰した** — `data-wcs` の値をカーソル位置で読む経路（`bindingContext` / mustache の補完）だけ素の `split` / `indexOf` / `lastIndexOf` が残っており、`textContent: items|join('|')` の末尾で「フィルタ名を入力中」と誤判定して `')` を候補の前方一致に使い、`textContent: 'a;b'` では引用符の中の `;` で式を割って別のバインディングを見ていた（どちらも実測）。診断ではないので false error にはならないが、補完が的外れになる。入力途中で引用符が開きっぱなしの形（`join('`）は、その先が全部「引用符の中」になるので手前の実区切りが選ばれ、従来どおり「引数の中なので補完しない」に落ちる。修飾子の区切り `#` も同じで、`value|defaults('#')` の引数の `#` を修飾子帯の開始と読んでプロパティ補完の代わりにイベント修飾子を出し、置換範囲もその引数の中から取っていた（選ぶと引数を壊す編集になる）。あわせて残りの区切り走査（`forContext` / `namedStateValidator` / `wiringLens` / `positionalParser`）も `quoteAware` へ寄せ、**拡張内にバインディング構文の素の区切り走査を 0 件**にした。`core/parser/quoteAware.ts` の JSDoc に、**この構文で区切りになる文字の全数**（`; : # | , ( )` が引用符の影響を受ける／`. * $ @ ...` と修飾子リストの `,` は受けない、それぞれ理由付き。`@wcstack/state` の `define.ts` と manifest と突き合わせ済み）と、対象外と判定した走査の一覧（`parseBindingExpression` 後の `property` に対する `#`・JS ソースの実引数分割・マスク済み鏡像に対する走査・JSON 字句解析・型ユニオンの `|`）を残した。
+- **左辺と右辺を分ける `:` を引用符対応にした** — 入力（左辺）フィルタの引数に `:` があると左辺が `value|defaults('` で切れ、引数が消えて `wcs/filter-arity`（「引数 0 個」）を**誤報**していた（`value|defaults(':'): name` / `value|truncate(3,':'): name`）。パスも取り違えるので `wcs/binding-path-missing` まで巻き添えになる。走査は `core/parser/quoteAware.ts` に 1 本だけ置き、契約検査（`bindingValidator` / `namedStateValidator`）・補完文脈（`bindingContext`）・配線レンズ（`wiringLens`）・位置付きパーサの全消費者が同じものを使う（拡張内に素の `indexOf(':')` による左右分割は 1 つも残っていない）。
+- **フィルタ引数の区切り `,` を引用符対応にし、空引数の扱いをランタイムに合わせた** — 素の `split(',')` + 空引数の一括除去だったため、`items|join(', ')`（要件 B1 の代表例）・`join(',')` / `join('a,b')` / `defaults('a,b')` が「引数 2 個」に、`defaults(,)` が「引数 0 個」に数えられ、**正しい式に error 重大度の `wcs/filter-arity` を誤報**していた。`validateBindings` は `wcs-validate` CLI にも載るので、そのままでは正しいページで CI が exit 1 になる。ランタイムの規則（引用符の外の `,` だけで区切る／落とすのは**末尾の空引数だけ**で先頭・中間は位置を保つ）に揃えた。
+- **フィルタの区切り `|` と引数の終端 `)` も正本と同値にした** — `|` は括弧深度ではなく引用符で判定する（`join('(')|upper` で後続フィルタを見失っていた）。引数の終端はランタイムと同じく**最後の** `)`（`[^)]*` だと `join('a)b','x')` の 2 個目の引数ごと消えて arity 超過を見逃す）。mustache / コメントバインディング側の `|` 分割も同様で、`{{ items|join('|') }}` の後片を未知フィルタと誤報していた。
+- **宣言キーの旧名の走査を宣言側の正本に寄せた** — 正規表現ベースだったため文字列リテラルの中（`{ msg: "see $streams: docs" }`）で誤検出し、引用符付きキー（`"$streams": { … }`）を取りこぼしていた。宣言が静的に読めない形（class 構文の state — ボリューム（`mount=`）の通常形）では従来の正規表現へフォールバックして info を出す（class フィールドの `$streams = …` も見る）。フォールバック経路は誤検出しうるので `wcs/declaration-alias`（error）へは昇格させない。
+- **旧名の宣言キーの「読み出し」を宣言側と分けた** — 文言（「3.x の間は動きます」→「読み出しは動かないので正式名を読むこと」）に加え、code と severity も分けた（上記 `wcs/declaration-alias-read`）。
+- **同じフィルタを 2 回書いたとき、mustache の報告範囲が 2 件とも 1 個目を指していた**（`{{ name | uc | uc }}`）。
+- **`wcs/on-prefixed-member` の提案文が修飾子を落としていた** — `once#ro:` に対して `.once#ro:` と言う。また、正本パーサが `wcs/binding-syntax` で落とす形（`..once:` / `.:`）に `wcs/tag-member-unknown` を重ねない。
+- **旧名のフィルタの hover が「旧名である」ことを言わなかった** — 正式名の説明を出すだけだった。
+
+### ドキュメント
+
+- README の例と診断表に残っていた旧名（`count|uc` / `$streams` / `$updatedCallback`）を正式名に揃えた（旧名の説明が目的の `wcs/name-alias` の行は除く）。補完候補の例と組み込みフィルタ数（48）も正本に合わせた。
+
 ## 1.18.0 — 2026-09-22
 
 `@wcstack/state` 3.2.0 の dist を同梱。3.2（名前の正典化）に追随する。

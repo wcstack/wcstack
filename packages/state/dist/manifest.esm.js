@@ -6,9 +6,98 @@ const _config = {
 // backward compatible export (read-only usage)
 const config = _config;
 
+const DELIMITER = '.';
+const WILDCARD = '*';
+const MAX_WILDCARD_DEPTH = 128;
+// data-wcs バインディング構文 `[prop][#mod]: [path][|filter...]` の区切り文字（単一正本・`@state` は v2 で撤去）。
+// これらは「死守の壁（構文契約）」であり値は不変。manifest.syntax.delimiters で公開される。
+const BINDING_SEPARATOR = ';'; // 複数バインディングの区切り
+const PROP_VALUE_SEPARATOR = ':'; // 左辺(prop)と右辺(path)の区切り
+const MODIFIER_SEPARATOR = '#'; // prop と修飾子の区切り
+const FILTER_SEPARATOR = '|'; // フィルタパイプの区切り
+// 修飾子（`#` 後）の語彙（単一正本）。manifest.syntax.modifiers で公開される。
+// フラグ形（`#prevent` — 値を取らない）とキー値形（`#init=element` — `=` で値を取る）。
+// 消費箇所（event/handler・BindingSession・twowayHandler・bindings/initialSync）は
+// この定数を参照する — 文字列リテラルの散在は tooling への収載漏れの温床だった
+// （docs/static-wiring-dx-design.md §2-2）。
+const MODIFIER_PREVENT = 'prevent';
+const MODIFIER_STOP = 'stop';
+const MODIFIER_READONLY = 'ro';
+const MODIFIER_FLAGS = Object.freeze([
+    MODIFIER_PREVENT, MODIFIER_STOP, MODIFIER_READONLY,
+]);
+const MODIFIER_KEY_INIT = 'init';
+const MODIFIER_KEY_SYNC = 'sync';
+const MODIFIER_KEYS = Object.freeze([
+    MODIFIER_KEY_INIT, MODIFIER_KEY_SYNC,
+]);
+// bindingType 判別と左辺 namespace の語彙（単一正本）。manifest.syntax.bindingTypes で
+// 公開される。パーサ（parseBindTextsForElement）とイベント層はこの定数に分岐する。
+// apply 層のディスパッチマップ（apply/applyChange.ts の applyChangeByFirstSegment）の
+// キー集合との一致は __tests__/manifest.test.ts の drift テストが強制する —
+// manifest エントリ（DOM 非依存）から apply 層を import しないための分離。
+const ELSE_KEYWORD = 'else';
+const SPREAD_PROP = '...';
+const EVENT_PROP_PREFIX = 'on';
+const EVENT_TOKEN_NAMESPACE = 'eventToken';
+const COMMAND_NAMESPACE = 'command';
+const CLASS_NAMESPACE = 'class';
+const ATTR_NAMESPACE = 'attr';
+const STYLE_NAMESPACE = 'style';
+// リストインデックス参照名（`$1`..`$N`）の接頭辞（単一正本）。
+// manifest.syntax.indexParam で公開される。
+const INDEX_PARAM_PREFIX = '$';
+/**
+ * stackIndexByIndexName
+ * インデックス名からスタックインデックスへのマッピング
+ * $1 => 0
+ * $2 => 1
+ * :
+ * ${i + 1} => i
+ * i < MAX_WILDCARD_DEPTH
+ */
+const tmpIndexByIndexName = {};
+for (let i = 0; i < MAX_WILDCARD_DEPTH; i++) {
+    tmpIndexByIndexName[`${INDEX_PARAM_PREFIX}${i + 1}`] = i;
+}
+Object.freeze(tmpIndexByIndexName);
+const STATE_CONNECTED_CALLBACK_NAME = "$connectedCallback";
+const STATE_DISCONNECTED_CALLBACK_NAME = "$disconnectedCallback";
+/** 旧名 `$updatedCallback` は 3.x の間のエイリアス（要件 B12・declarationAliases.ts） */
+const STATE_RENDERED_CALLBACK_NAME = "$renderedCallback";
+const STATE_ERROR_CALLBACK_NAME = "$errorCallback";
+const WEBCOMPONENT_STATE_READY_CALLBACK_NAME = "$stateReadyCallback";
+const STATE_BINDABLES_NAME = "$bindables";
+const STATE_COMMANDS_NAME = "$commands";
+const STATE_COMMAND_TOKENS_NAME = "$commandTokens";
+const STATE_COMMAND_NAMESPACE_NAME = "$command";
+const STATE_EVENT_TOKENS_NAME = "$eventTokens";
+const STATE_ON_NAME = "$on";
+/** 旧名 `$streams` は 3.x の間のエイリアス（要件 B12・declarationAliases.ts） */
+const STATE_STREAM_NAME = "$stream";
+const STATE_WATCH_NAME = "$watch";
+const STATE_SCAN_NAME = "$scan";
+const STATE_RECURSION_NAME = "$recursion";
+const STATE_LIST_KEYS_NAME = "$listKeys";
+const STATE_STREAM_STATUS_NAMESPACE_NAME = "$streamStatus";
+const STATE_STREAM_ERROR_NAMESPACE_NAME = "$streamError";
+
 function raiseError(message) {
     throw new Error(`[@wcstack/state] ${message}`);
 }
+
+/**
+ * declarationAliases.ts — 宣言キーの旧名 → 正式名（要件 B12・docs/state-3x-naming.ja.md V13 / V14）。
+ *
+ * `$updatedCallback` → `$renderedCallback`、`$streams` → `$stream`。旧名は 3.x の間は受け、4.0 で外す（D4）。
+ * state オブジェクトがランタイムに入る入口（State の `_state` と `_loadStateFromSource`、マウント記録）で
+ * 1 回だけ正規化し、以降のすべての読み手は正式名だけを見る。両方の綴りを宣言したらどちらが効くのか
+ * 書き手に見えないので、名指しで落とす（D38）。
+ */
+const DECLARATION_ALIASES = {
+    $updatedCallback: STATE_RENDERED_CALLBACK_NAME,
+    $streams: STATE_STREAM_NAME,
+};
 
 /**
  * errorMessages.ts
@@ -23,8 +112,8 @@ function raiseError(message) {
  * - optionsRequired: Error when required option is not specified
  * - optionMustBeNumber: Error when option value is not a number
  * - valueMustBeNumber: Error when value is not a number
- * - valueMustBeBoolean: Error when value is not boolean
  * - valueMustBeDate: Error when value is not a Date
+ * - valueMustBeArray: Error when value is not an array
  */
 /**
  * Throws error when filter requires at least one option but none provided.
@@ -52,15 +141,6 @@ function optionMustBeNumber(fnName) {
  */
 function valueMustBeNumber(fnName) {
     raiseError(`filter ${fnName} requires a number value`);
-}
-/**
- * Throws error when filter requires boolean value but non-boolean provided.
- *
- * @param fnName - Name of the filter function
- * @returns Never returns (always throws)
- */
-function valueMustBeBoolean(fnName) {
-    raiseError(`filter ${fnName} requires a boolean value`);
 }
 /**
  * Throws error when filter requires Date value but non-Date provided.
@@ -124,6 +204,47 @@ function validateNumberString(value) {
     return true;
 }
 /**
+ * Reads one numeric option **at construction time** and returns the number itself.
+ *
+ * Every numeric filter used to write out the same three lines (`options?.[i] ?? optionsRequired`,
+ * `validateNumberString`, `optionMustBeNumber`) and then call `Number(opt)` again on **every
+ * apply**. Folding it here keeps the option checks in one place and takes the conversion off the
+ * hot path.
+ */
+function numberOption(value, fnName) {
+    if (!validateNumberString(value)) {
+        optionMustBeNumber(fnName);
+    }
+    return Number(value);
+}
+/** A required numeric option: missing → `optionsRequired`, non-numeric → `optionMustBeNumber`. */
+function requiredNumberOption(options, index, fnName) {
+    return numberOption(options?.[index] ?? optionsRequired(fnName), fnName);
+}
+/**
+ * Extends the display-side empty-value contract (requirement B8) to the formatting filters.
+ *
+ * A filter that builds its result with `String(value)` turns `undefined` / `null` into the
+ * *characters* `"undefined"` / `"null"`, so `attr.title: x|trim` wrote `title="undefined"` where
+ * the unfiltered `attr.title: x` correctly removes the attribute — one filter was enough to undo
+ * what B8 established. This family therefore passes an absent value straight through and leaves
+ * the decision to the apply side (attribute removed, class cleared, style cleared, text emptied).
+ *
+ * Deliberately **not** wrapped:
+ * - filters for which an absent value *is* the input: `defaults` / `coalesce` / `nullIfEmpty` /
+ *   `boolean` / `truthy` / `falsy` / `not` / `eq` / `ne`;
+ * - the conversions, whose whole job is to convert: `int` / `float` / `number` / `string`;
+ * - the filters that reject a value of the wrong type (the number, date and array families).
+ *   Their throw is confined to the one binding and reported through `$errorCallback`
+ *   (`apply/applyChangeFromBindings.ts`), which is a different quality of failure from silently
+ *   painting the word "undefined" into the page.
+ */
+const nullishPassthrough = (factory) => (options) => {
+    const filterFn = factory(options);
+    // `== null` は null と undefined の両方（意図的な緩い比較）
+    return (value) => (value == null ? value : filterFn(value));
+};
+/**
  * Equality filter - compares value with option.
  *
  * @param options - Array with comparison value as first element
@@ -136,6 +257,16 @@ const eq = (options, literals) => {
     return (value) => {
         // Align types for comparison
         if (typeof value === 'number') {
+            // A typed literal that is not a string compares as itself (B9). A number is never equal to
+            // `true` / `false` / `null`, so `selectedId|eq(null)` is simply false once the id is a
+            // number — it used to throw `optionMustBeNumber` on **every apply**, which broke every
+            // binding on a path that is sometimes null and sometimes numeric. Only an unquoted
+            // non-number (a bare string such as `eq(abc)`) still reports the type mismatch, and it has
+            // to stay inside the closure: `eq` accepts values of any type, so `status|eq(active)` is
+            // perfectly valid and cannot be rejected at construction the way `lt` / `add` can.
+            if (typeof literal !== 'string') {
+                return value === literal;
+            }
             if (!validateNumberString(opt)) {
                 optionMustBeNumber('eq');
             }
@@ -160,6 +291,11 @@ const ne = (options, literals) => {
     return (value) => {
         // Align types for comparison
         if (typeof value === 'number') {
+            // Same as `eq`: a typed `true` / `false` / `null` compares as itself instead of being
+            // forced through `Number()` (B9)
+            if (typeof literal !== 'string') {
+                return value !== literal;
+            }
             if (!validateNumberString(opt)) {
                 optionMustBeNumber('ne');
             }
@@ -173,18 +309,22 @@ const ne = (options, literals) => {
     };
 };
 /**
- * Boolean NOT filter - inverts boolean value.
+ * Boolean NOT filter - inverts the truthiness of the value.
+ *
+ * Deliberately the same lenient `!value` as the engine-owned copy in
+ * `core/filterRegistry.ts` (`CORE_FILTERS.not`). `if:` / `else:` are built as one
+ * `if` parse result plus an engine-injected `not` (`structural/createNotFilter.ts`),
+ * and `apply/applyChangeToIf.ts` coerces the `if` side with `Boolean()`. A strict
+ * `not` therefore made `else:` throw — and render neither branch — whenever the
+ * condition was a falsy non-boolean (`0` / `""` / `undefined` / `null`). Keeping the
+ * two implementations identical also means a page behaves the same whether or not
+ * `features/formats` is installed (the split core entry registers no `not`).
  *
  * @param options - Unused
- * @returns Filter function that returns inverted boolean
+ * @returns Filter function that returns the inverted truthiness
  */
 const not = (_options) => {
-    return (value) => {
-        if (typeof value !== 'boolean') {
-            valueMustBeBoolean('not');
-        }
-        return !value;
-    };
+    return (value) => !value;
 };
 /**
  * Less than filter - checks if value is less than option.
@@ -193,15 +333,12 @@ const not = (_options) => {
  * @returns Filter function that returns boolean
  */
 const lt = (options) => {
-    const opt = options?.[0] ?? optionsRequired('lt');
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('lt');
-    }
+    const opt = requiredNumberOption(options, 0, 'lt');
     return (value) => {
         if (typeof value !== 'number') {
             valueMustBeNumber('lt');
         }
-        return value < Number(opt);
+        return value < opt;
     };
 };
 /**
@@ -211,15 +348,12 @@ const lt = (options) => {
  * @returns Filter function that returns boolean
  */
 const le = (options) => {
-    const opt = options?.[0] ?? optionsRequired('le');
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('le');
-    }
+    const opt = requiredNumberOption(options, 0, 'le');
     return (value) => {
         if (typeof value !== 'number') {
             valueMustBeNumber('le');
         }
-        return value <= Number(opt);
+        return value <= opt;
     };
 };
 /**
@@ -229,15 +363,12 @@ const le = (options) => {
  * @returns Filter function that returns boolean
  */
 const gt = (options) => {
-    const opt = options?.[0] ?? optionsRequired('gt');
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('gt');
-    }
+    const opt = requiredNumberOption(options, 0, 'gt');
     return (value) => {
         if (typeof value !== 'number') {
             valueMustBeNumber('gt');
         }
-        return value > Number(opt);
+        return value > opt;
     };
 };
 /**
@@ -247,15 +378,12 @@ const gt = (options) => {
  * @returns Filter function that returns boolean
  */
 const ge = (options) => {
-    const opt = options?.[0] ?? optionsRequired('ge');
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('ge');
-    }
+    const opt = requiredNumberOption(options, 0, 'ge');
     return (value) => {
         if (typeof value !== 'number') {
             valueMustBeNumber('ge');
         }
-        return value >= Number(opt);
+        return value >= opt;
     };
 };
 /**
@@ -265,15 +393,12 @@ const ge = (options) => {
  * @returns Filter function that returns incremented number
  */
 const inc = (options) => {
-    const opt = options?.[0] ?? optionsRequired('add');
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('add');
-    }
+    const opt = requiredNumberOption(options, 0, 'add');
     return (value) => {
         if (typeof value !== 'number') {
             valueMustBeNumber('add');
         }
-        return value + Number(opt);
+        return value + opt;
     };
 };
 /**
@@ -283,15 +408,12 @@ const inc = (options) => {
  * @returns Filter function that returns decremented number
  */
 const dec = (options) => {
-    const opt = options?.[0] ?? optionsRequired('sub');
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('sub');
-    }
+    const opt = requiredNumberOption(options, 0, 'sub');
     return (value) => {
         if (typeof value !== 'number') {
             valueMustBeNumber('sub');
         }
-        return value - Number(opt);
+        return value - opt;
     };
 };
 /**
@@ -301,15 +423,12 @@ const dec = (options) => {
  * @returns Filter function that returns multiplied number
  */
 const mul = (options) => {
-    const opt = options?.[0] ?? optionsRequired('mul');
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('mul');
-    }
+    const opt = requiredNumberOption(options, 0, 'mul');
     return (value) => {
         if (typeof value !== 'number') {
             valueMustBeNumber('mul');
         }
-        return value * Number(opt);
+        return value * opt;
     };
 };
 /**
@@ -319,15 +438,12 @@ const mul = (options) => {
  * @returns Filter function that returns divided number
  */
 const div = (options) => {
-    const opt = options?.[0] ?? optionsRequired('div');
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('div');
-    }
+    const opt = requiredNumberOption(options, 0, 'div');
     return (value) => {
         if (typeof value !== 'number') {
             valueMustBeNumber('div');
         }
-        return value / Number(opt);
+        return value / opt;
     };
 };
 /**
@@ -337,15 +453,12 @@ const div = (options) => {
  * @returns Filter function that returns remainder
  */
 const mod = (options) => {
-    const opt = options?.[0] ?? optionsRequired('mod');
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('mod');
-    }
+    const opt = requiredNumberOption(options, 0, 'mod');
     return (value) => {
         if (typeof value !== 'number') {
             valueMustBeNumber('mod');
         }
-        return value % Number(opt);
+        return value % opt;
     };
 };
 /**
@@ -373,16 +486,8 @@ const abs = (_options) => {
  * @returns Filter function that returns the clamped number
  */
 const clamp = (options) => {
-    const opt1 = options?.[0] ?? optionsRequired('clamp');
-    if (!validateNumberString(opt1)) {
-        optionMustBeNumber('clamp');
-    }
-    const opt2 = options?.[1] ?? optionsRequired('clamp');
-    if (!validateNumberString(opt2)) {
-        optionMustBeNumber('clamp');
-    }
-    const min = Number(opt1);
-    const max = Number(opt2);
+    const min = requiredNumberOption(options, 0, 'clamp');
+    const max = requiredNumberOption(options, 1, 'clamp');
     return (value) => {
         if (typeof value !== 'number') {
             valueMustBeNumber('clamp');
@@ -397,15 +502,12 @@ const clamp = (options) => {
  * @returns Filter function that returns formatted string
  */
 const fix = (options) => {
-    const opt = options?.[0] ?? "0";
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('toFixed');
-    }
+    const opt = numberOption(options?.[0] ?? "0", 'toFixed');
     return (value) => {
         if (typeof value !== 'number') {
             valueMustBeNumber('toFixed');
         }
-        return value.toFixed(Number(opt));
+        return value.toFixed(opt);
     };
 };
 /**
@@ -498,18 +600,10 @@ const trim = (_options) => {
  * @returns Filter function that returns sliced string
  */
 const slice = (options) => {
-    const numberedOpts = [];
-    const opt1 = options?.[0] ?? optionsRequired('slice');
-    if (!validateNumberString(opt1)) {
-        optionMustBeNumber('slice');
-    }
-    numberedOpts.push(Number(opt1));
+    const numberedOpts = [requiredNumberOption(options, 0, 'slice')];
     const opt2 = options?.[1];
     if (typeof opt2 !== 'undefined') {
-        if (!validateNumberString(opt2)) {
-            optionMustBeNumber('slice');
-        }
-        numberedOpts.push(Number(opt2));
+        numberedOpts.push(numberOption(opt2, 'slice'));
     }
     return (value) => {
         return String(value).slice(...numberedOpts);
@@ -522,16 +616,10 @@ const slice = (options) => {
  * @returns Filter function that returns substring
  */
 const substr = (options) => {
-    const opt1 = options?.[0] ?? optionsRequired('substr');
-    if (!validateNumberString(opt1)) {
-        optionMustBeNumber('substr');
-    }
-    const opt2 = options?.[1] ?? optionsRequired('substr');
-    if (!validateNumberString(opt2)) {
-        optionMustBeNumber('substr');
-    }
+    const opt1 = requiredNumberOption(options, 0, 'substr');
+    const opt2 = requiredNumberOption(options, 1, 'substr');
     return (value) => {
-        return String(value).substr(Number(opt1), Number(opt2));
+        return String(value).substr(opt1, opt2);
     };
 };
 /**
@@ -541,13 +629,10 @@ const substr = (options) => {
  * @returns Filter function that returns padded string
  */
 const pad = (options) => {
-    const opt1 = options?.[0] ?? optionsRequired('padStart');
-    if (!validateNumberString(opt1)) {
-        optionMustBeNumber('padStart');
-    }
+    const opt1 = requiredNumberOption(options, 0, 'padStart');
     const opt2 = options?.[1] ?? '0';
     return (value) => {
-        return String(value).padStart(Number(opt1), opt2);
+        return String(value).padStart(opt1, opt2);
     };
 };
 /**
@@ -557,13 +642,10 @@ const pad = (options) => {
  * @returns Filter function that returns padded string
  */
 const padEnd = (options) => {
-    const opt1 = options?.[0] ?? optionsRequired('padEnd');
-    if (!validateNumberString(opt1)) {
-        optionMustBeNumber('padEnd');
-    }
+    const opt1 = requiredNumberOption(options, 0, 'padEnd');
     const opt2 = options?.[1] ?? ' ';
     return (value) => {
-        return String(value).padEnd(Number(opt1), opt2);
+        return String(value).padEnd(opt1, opt2);
     };
 };
 /**
@@ -573,12 +655,9 @@ const padEnd = (options) => {
  * @returns Filter function that returns repeated string
  */
 const rep = (options) => {
-    const opt = options?.[0] ?? optionsRequired('repeat');
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('repeat');
-    }
+    const opt = requiredNumberOption(options, 0, 'repeat');
     return (value) => {
-        return String(value).repeat(Number(opt));
+        return String(value).repeat(opt);
     };
 };
 /**
@@ -621,15 +700,11 @@ const float = (_options) => {
  * @returns Filter function that returns rounded number
  */
 const round = (options) => {
-    const opt = options?.[0] ?? '0';
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('round');
-    }
+    const optValue = Math.pow(10, numberOption(options?.[0] ?? '0', 'round'));
     return (value) => {
         if (typeof value !== 'number') {
             valueMustBeNumber('round');
         }
-        const optValue = Math.pow(10, Number(opt));
         return Math.round(value * optValue) / optValue;
     };
 };
@@ -640,15 +715,11 @@ const round = (options) => {
  * @returns Filter function that returns floored number
  */
 const floor = (options) => {
-    const opt = options?.[0] ?? '0';
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('floor');
-    }
+    const optValue = Math.pow(10, numberOption(options?.[0] ?? '0', 'floor'));
     return (value) => {
         if (typeof value !== 'number') {
             valueMustBeNumber('floor');
         }
-        const optValue = Math.pow(10, Number(opt));
         return Math.floor(value * optValue) / optValue;
     };
 };
@@ -659,15 +730,11 @@ const floor = (options) => {
  * @returns Filter function that returns ceiled number
  */
 const ceil = (options) => {
-    const opt = options?.[0] ?? '0';
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('ceil');
-    }
+    const optValue = Math.pow(10, numberOption(options?.[0] ?? '0', 'ceil'));
     return (value) => {
         if (typeof value !== 'number') {
             valueMustBeNumber('ceil');
         }
-        const optValue = Math.pow(10, Number(opt));
         return Math.ceil(value * optValue) / optValue;
     };
 };
@@ -678,15 +745,12 @@ const ceil = (options) => {
  * @returns Filter function that returns percentage string with '%'
  */
 const percent = (options) => {
-    const opt = options?.[0] ?? '0';
-    if (!validateNumberString(opt)) {
-        optionMustBeNumber('percent');
-    }
+    const opt = numberOption(options?.[0] ?? '0', 'percent');
     return (value) => {
         if (typeof value !== 'number') {
             valueMustBeNumber('percent');
         }
-        return `${(value * 100).toFixed(Number(opt))}%`;
+        return `${(value * 100).toFixed(opt)}%`;
     };
 };
 /**
@@ -701,8 +765,10 @@ const percent = (options) => {
  * `fix` / `percent`, which already return strings. Rejecting non-numbers here would
  * break exactly the combination this filter exists for.
  *
- * `null` / `undefined` pass through untouched rather than becoming `"undefinedpx"`,
- * so the binding layer's "undefined skips the write, null clears" semantics survive.
+ * `null` / `undefined` pass through untouched rather than becoming `"undefinedpx"`, so the
+ * binding layer's "undefined skips the write, null clears" semantics survive. That guard is no
+ * longer written here: it is `nullishPassthrough`, shared with the rest of the `String(value)`
+ * family, which used to paint `"undefined"` into the page for exactly the same reason.
  *
  * @param options - Array with the unit/suffix as first element (required)
  * @returns Filter function that returns the value with the unit appended
@@ -710,9 +776,6 @@ const percent = (options) => {
 const unit = (options) => {
     const opt = options?.[0] ?? optionsRequired('unit');
     return (value) => {
-        if (value === null || typeof value === 'undefined') {
-            return value;
-        }
         return String(value) + opt;
     };
 };
@@ -745,11 +808,7 @@ const join = (options) => {
  * @returns Filter function that returns the truncated string
  */
 const truncate = (options) => {
-    const opt1 = options?.[0] ?? optionsRequired('truncate');
-    if (!validateNumberString(opt1)) {
-        optionMustBeNumber('truncate');
-    }
-    const maxLength = Number(opt1);
+    const maxLength = requiredNumberOption(options, 0, 'truncate');
     const suffix = options?.[1] ?? '…';
     return (value) => {
         const v = String(value);
@@ -956,17 +1015,18 @@ const builtinFilters = {
     "clamp": clamp,
     "toFixed": fix,
     "locale": locale,
-    "upper": uc,
-    "lower": lc,
-    "capitalize": cap,
-    "trim": trim,
-    "slice": slice,
-    "substr": substr,
-    "padStart": pad,
-    "padEnd": padEnd,
-    "repeat": rep,
-    "reverse": rev,
-    "truncate": truncate,
+    // `String(value)` で組み立てる族は、値が無いときに素通しする（要件 B8 — nullishPassthrough を参照）
+    "upper": nullishPassthrough(uc),
+    "lower": nullishPassthrough(lc),
+    "capitalize": nullishPassthrough(cap),
+    "trim": nullishPassthrough(trim),
+    "slice": nullishPassthrough(slice),
+    "substr": nullishPassthrough(substr),
+    "padStart": nullishPassthrough(pad),
+    "padEnd": nullishPassthrough(padEnd),
+    "repeat": nullishPassthrough(rep),
+    "reverse": nullishPassthrough(rev),
+    "truncate": nullishPassthrough(truncate),
     "join": join,
     "int": int,
     "float": float,
@@ -974,7 +1034,7 @@ const builtinFilters = {
     "floor": floor,
     "ceil": ceil,
     "percent": percent,
-    "unit": unit,
+    "unit": nullishPassthrough(unit),
     "date": date,
     "time": time,
     "datetime": datetime,
@@ -1007,7 +1067,9 @@ const builtinFilterMeta = {
     // 比較・論理
     eq: { description: "等しいか比較", hasArgs: true, resultType: "boolean", acceptTypes: "any", minArgs: 1, maxArgs: 1, argTypes: ["any"] },
     ne: { description: "異なるか比較", hasArgs: true, resultType: "boolean", acceptTypes: "any", minArgs: 1, maxArgs: 1, argTypes: ["any"] },
-    not: { description: "ブール値を反転", hasArgs: false, resultType: "boolean", acceptTypes: ["boolean"], minArgs: 0, maxArgs: 0 },
+    // `not` は真偽性（truthy / falsy）の反転。`if:` が `Boolean()` で寄せるのと同じ規則で、
+    // `else:` はこのフィルタを足した束縛として組み立てられる（structural/createNotFilter.ts）
+    not: { description: "真偽性を反転（falsy → true）", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
     lt: { description: "より小さいか", hasArgs: true, resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
     le: { description: "以下か", hasArgs: true, resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
     gt: { description: "より大きいか", hasArgs: true, resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
@@ -1029,13 +1091,15 @@ const builtinFilterMeta = {
     capitalize: { description: "先頭文字を大文字に", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
     trim: { description: "前後の空白を削除", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
     slice: { description: "部分文字列 (start[,end])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "number"] },
-    substr: { description: "部分文字列 (pos,len)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "number"] },
-    padStart: { description: "先頭を埋める (length[,char])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
-    padEnd: { description: "末尾を埋める (length[,char])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
+    // 長さは省略できない（実装が両方読む）。minArgs: 1 だった頃は補完・lint が `substr(0)` を
+    // 通し、実行時にだけ落ちていた
+    substr: { description: "部分文字列 (pos,len)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 2, maxArgs: 2, argTypes: ["number", "number"] },
+    padStart: { description: "先頭を埋める (length[,char]。char の既定は 0 — JS の既定は空白なので注意)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
+    padEnd: { description: "末尾を埋める (length[,char]。char の既定は空白 — JS と同じ)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
     repeat: { description: "繰り返し (count)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
     reverse: { description: "文字順を反転", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
-    truncate: { description: "切り詰めて省略記号 (length[,suffix])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
-    join: { description: "配列を連結 ([separator])", hasArgs: true, resultType: "string", acceptTypes: ["array"], minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+    truncate: { description: "切り詰めて省略記号 (length[,suffix]。suffix の既定は … — U+2026 の 1 文字)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
+    join: { description: "配列を連結 ([separator]。既定はカンマ + 空白)", hasArgs: true, resultType: "string", acceptTypes: ["array"], minArgs: 0, maxArgs: 1, argTypes: ["string"] },
     // 数値パース・丸め
     int: { description: "整数にパース", hasArgs: false, resultType: "number", acceptTypes: ["string", "number"], minArgs: 0, maxArgs: 0 },
     float: { description: "浮動小数点数にパース", hasArgs: false, resultType: "number", acceptTypes: ["string", "number"], minArgs: 0, maxArgs: 0 },
@@ -1047,11 +1111,13 @@ const builtinFilterMeta = {
     // それらは既に string を返すため（builtinFilters.ts の unit を参照）
     unit: { description: "単位（接尾辞）を付加", hasArgs: true, resultType: "string", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["string"] },
     // 日付・時刻
-    date: { description: "ロケール形式の日付", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
-    time: { description: "ロケール形式の時刻", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
-    datetime: { description: "ロケール形式の日時", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
-    ymd: { description: "YYYY-MM-DD 形式", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
-    hms: { description: "HH:MM:SS 形式", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+    // `locale` と同じくロケールを 1 つ受ける（`date(ja-JP)`）。実装は最初からこれを読んでいたが、
+    // メタデータ側が maxArgs: 0 だったため lint と補完が正しい書き方を誤りとして報告していた
+    date: { description: "ロケール形式の日付 ([locale]。既定は config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+    time: { description: "ロケール形式の時刻 ([locale]。既定は config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+    datetime: { description: "ロケール形式の日時 ([locale]。既定は config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+    ymd: { description: "YYYY-MM-DD 形式 ([separator]。既定は -)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+    hms: { description: "HH:MM:SS 形式 ([separator]。既定は :)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
     // 真偽値・変換
     falsy: { description: "偽値か判定", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
     truthy: { description: "真値か判定", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
@@ -1070,82 +1136,6 @@ const STRUCTURAL_BINDING_TYPE_SET = new Set([
     "for",
 ]);
 
-const DELIMITER = '.';
-const WILDCARD = '*';
-const MAX_WILDCARD_DEPTH = 128;
-// data-wcs バインディング構文 `[prop][#mod]: [path][|filter...]` の区切り文字（単一正本・`@state` は v2 で撤去）。
-// これらは「死守の壁（構文契約）」であり値は不変。manifest.syntax.delimiters で公開される。
-const BINDING_SEPARATOR = ';'; // 複数バインディングの区切り
-const PROP_VALUE_SEPARATOR = ':'; // 左辺(prop)と右辺(path)の区切り
-const MODIFIER_SEPARATOR = '#'; // prop と修飾子の区切り
-const FILTER_SEPARATOR = '|'; // フィルタパイプの区切り
-// 修飾子（`#` 後）の語彙（単一正本）。manifest.syntax.modifiers で公開される。
-// フラグ形（`#prevent` — 値を取らない）とキー値形（`#init=element` — `=` で値を取る）。
-// 消費箇所（event/handler・BindingSession・twowayHandler・bindings/initialSync）は
-// この定数を参照する — 文字列リテラルの散在は tooling への収載漏れの温床だった
-// （docs/static-wiring-dx-design.md §2-2）。
-const MODIFIER_PREVENT = 'prevent';
-const MODIFIER_STOP = 'stop';
-const MODIFIER_READONLY = 'ro';
-const MODIFIER_FLAGS = Object.freeze([
-    MODIFIER_PREVENT, MODIFIER_STOP, MODIFIER_READONLY,
-]);
-const MODIFIER_KEY_INIT = 'init';
-const MODIFIER_KEY_SYNC = 'sync';
-const MODIFIER_KEYS = Object.freeze([
-    MODIFIER_KEY_INIT, MODIFIER_KEY_SYNC,
-]);
-// bindingType 判別と左辺 namespace の語彙（単一正本）。manifest.syntax.bindingTypes で
-// 公開される。パーサ（parseBindTextsForElement）とイベント層はこの定数に分岐する。
-// apply 層のディスパッチマップ（apply/applyChange.ts の applyChangeByFirstSegment）の
-// キー集合との一致は __tests__/manifest.test.ts の drift テストが強制する —
-// manifest エントリ（DOM 非依存）から apply 層を import しないための分離。
-const ELSE_KEYWORD = 'else';
-const SPREAD_PROP = '...';
-const EVENT_PROP_PREFIX = 'on';
-const EVENT_TOKEN_NAMESPACE = 'eventToken';
-const COMMAND_NAMESPACE = 'command';
-const CLASS_NAMESPACE = 'class';
-const ATTR_NAMESPACE = 'attr';
-const STYLE_NAMESPACE = 'style';
-// リストインデックス参照名（`$1`..`$N`）の接頭辞（単一正本）。
-// manifest.syntax.indexParam で公開される。
-const INDEX_PARAM_PREFIX = '$';
-/**
- * stackIndexByIndexName
- * インデックス名からスタックインデックスへのマッピング
- * $1 => 0
- * $2 => 1
- * :
- * ${i + 1} => i
- * i < MAX_WILDCARD_DEPTH
- */
-const tmpIndexByIndexName = {};
-for (let i = 0; i < MAX_WILDCARD_DEPTH; i++) {
-    tmpIndexByIndexName[`${INDEX_PARAM_PREFIX}${i + 1}`] = i;
-}
-Object.freeze(tmpIndexByIndexName);
-const STATE_CONNECTED_CALLBACK_NAME = "$connectedCallback";
-const STATE_DISCONNECTED_CALLBACK_NAME = "$disconnectedCallback";
-/** 旧名 `$updatedCallback` は 3.x の間のエイリアス（要件 B12・declarationAliases.ts） */
-const STATE_UPDATED_CALLBACK_NAME = "$renderedCallback";
-const STATE_ERROR_CALLBACK_NAME = "$errorCallback";
-const WEBCOMPONENT_STATE_READY_CALLBACK_NAME = "$stateReadyCallback";
-const STATE_BINDABLES_NAME = "$bindables";
-const STATE_COMMANDS_NAME = "$commands";
-const STATE_COMMAND_TOKENS_NAME = "$commandTokens";
-const STATE_COMMAND_NAMESPACE_NAME = "$command";
-const STATE_EVENT_TOKENS_NAME = "$eventTokens";
-const STATE_ON_NAME = "$on";
-/** 旧名 `$streams` は 3.x の間のエイリアス（要件 B12・declarationAliases.ts） */
-const STATE_STREAMS_NAME = "$stream";
-const STATE_WATCH_NAME = "$watch";
-const STATE_SCAN_NAME = "$scan";
-const STATE_RECURSION_NAME = "$recursion";
-const STATE_LIST_KEYS_NAME = "$listKeys";
-const STATE_STREAM_STATUS_NAMESPACE_NAME = "$streamStatus";
-const STATE_STREAM_ERROR_NAMESPACE_NAME = "$streamError";
-
 /**
  * manifest.ts — `<wcs-state>` の構文・フィルタ・予約名を機械可読な単一正本として公開する。
  *
@@ -1159,8 +1149,23 @@ const STATE_STREAM_ERROR_NAMESPACE_NAME = "$streamError";
  * - 将来 `dist/wcs-manifest.json` としてビルド時に書き出し、vscode-wcs がそれを読む形に発展させる。
  * - ドリフト検出テスト（__tests__/manifest.test.ts）が、フィルタ集合の golden と実装の一致を CI で保証する。
  */
-/** マニフェストのバージョン（構造を変えたら上げる）。 */
-const WCS_MANIFEST_VERSION = 1;
+/**
+ * マニフェストのバージョン（構造を変えたら上げる）。
+ *
+ * 3.1 で `syntax.bindingTypes.explicitPropertyPrefix`、3.2 で `filterAliases`、
+ * 3.x の次で `declarationAliases` / `apiAliases` を足したので 2。
+ * 消費側（vscode-wcs）はまだこの定数を参照していないが、公開している以上ドリフトさせない。
+ */
+const WCS_MANIFEST_VERSION = 2;
+/**
+ * state API の旧名 → 正式名（要件 B12・docs/state-3x-naming.ja.md）。正本は
+ * `proxy/traps/get.ts` の case ラベルで、ここはそれを機械可読にした写し
+ * （一致は `__tests__/manifest.test.ts` が固定する）。
+ */
+const STATE_API_ALIASES = Object.freeze({
+    $trackDependency: "$dependOn",
+    $untrackDependency: "$untracked",
+});
 /** 機械可読な単一正本を返す。vscode-wcs はこれを消費する想定。 */
 function getWcsManifest() {
     return {
@@ -1205,10 +1210,12 @@ function getWcsManifest() {
         filters: Object.keys(outputBuiltinFilters),
         filterMeta: builtinFilterMeta,
         filterAliases: builtinFilterAliases,
+        declarationAliases: DECLARATION_ALIASES,
+        apiAliases: STATE_API_ALIASES,
         reservedLifecycle: [
             STATE_CONNECTED_CALLBACK_NAME,
             STATE_DISCONNECTED_CALLBACK_NAME,
-            STATE_UPDATED_CALLBACK_NAME,
+            STATE_RENDERED_CALLBACK_NAME,
             STATE_ERROR_CALLBACK_NAME,
             WEBCOMPONENT_STATE_READY_CALLBACK_NAME,
         ],
@@ -1219,7 +1226,7 @@ function getWcsManifest() {
             STATE_COMMAND_NAMESPACE_NAME,
             STATE_EVENT_TOKENS_NAME,
             STATE_ON_NAME,
-            STATE_STREAMS_NAME,
+            STATE_STREAM_NAME,
             STATE_WATCH_NAME,
             STATE_SCAN_NAME,
             STATE_LIST_KEYS_NAME,
@@ -1230,4 +1237,4 @@ function getWcsManifest() {
     };
 }
 
-export { STRUCTURAL_BINDING_TYPE_SET, WCS_MANIFEST_VERSION, builtinFilterAliases, builtinFilterMeta, getWcsManifest };
+export { DECLARATION_ALIASES, STATE_API_ALIASES, STRUCTURAL_BINDING_TYPE_SET, WCS_MANIFEST_VERSION, builtinFilterAliases, builtinFilterMeta, getWcsManifest };

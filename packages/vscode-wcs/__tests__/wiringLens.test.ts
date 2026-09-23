@@ -105,6 +105,23 @@ describe('wiringLens: hover（§5-2）', () => {
     expect(hover.markdown).toContain('number → string');
   });
 
+  // Fixed by review — 旧名に対して正式名の説明を出すだけで「旧名である」ことを言わなかった
+  it('旧名のフィルタの hover が「旧名である」ことと正式名を言うこと', () => {
+    const en = getHoverAt(SAMPLE, offsetIn('count | fix(0)"', 'fix'), { locale: 'en' })!;
+    expect(en.markdown).toContain('`fix` is the old name of `toFixed`');
+    const ja = getHoverAt(SAMPLE, offsetIn('count | fix(0)"', 'fix'), { locale: 'ja' })!;
+    expect(ja.markdown).toContain('`fix` は `toFixed` の旧名です');
+  });
+
+  it('正式名のフィルタの hover には旧名の断り書きを出さないこと', () => {
+    const html = `<wcs-state><script type="module">export default { count: 0 };</script></wcs-state>
+<span data-wcs="textContent: count | toFixed(0)"></span>`;
+    const attr = 'textContent: count | toFixed(0)';
+    const hover = getHoverAt(html, html.indexOf(attr) + attr.indexOf('toFixed'), { locale: 'en' })!;
+    expect(hover.markdown).toContain('toFixed(');
+    expect(hover.markdown).not.toContain('old name');
+  });
+
   it('mustache 内のフィルタ名でも hover が出ること', () => {
     const hover = getHoverAt(SAMPLE, offsetIn('{{ count | fix(0) }}', 'fix'))!;
     expect(hover.markdown).toContain('fix(');
@@ -114,6 +131,22 @@ describe('wiringLens: hover（§5-2）', () => {
     const hover = getHoverAt(SAMPLE, offsetIn('"value#ro: user.name"', 'ro'), { locale: 'en' })!;
     expect(hover.markdown).toContain('#ro');
     expect(hover.markdown).toContain('read-only');
+  });
+
+  // 修飾子帯の開始 `#` を引用符対応にした（サイクル 4）ことの非退行ガード。
+  // 実害の再現は作れない — ランタイムの並びが「名前 → 修飾子 → 入力フィルタ」（要件 B4）
+  // なので、修飾子があるときは本物の `#` が必ず引用符付き引数より前に来る。変更は
+  // 「拡張内に素の区切り走査を残さない」ための予防で、ここでは正常形が崩れないことを固定する
+  it('引用符付き引数と修飾子が同居しても修飾子の hover が崩れないこと', () => {
+    const html = `<wcs-state><script type="module">export default { name: 'a' };</script></wcs-state>
+<input data-wcs="value#ro|defaults('#'): name">`;
+    const attr = "value#ro|defaults('#'): name";
+    const base = html.indexOf(attr);
+    const hover = getHoverAt(html, base + attr.indexOf('ro'), { locale: 'en' })!;
+    expect(hover.markdown).toContain('#ro');
+    expect(html.slice(hover.range.start, hover.range.end)).toBe('ro');
+    // 引数の中の `#` はトークンではない
+    expect(getHoverAt(html, base + attr.indexOf("'#'") + 1)).toBeNull();
   });
 
   it('key=value 修飾子 init= / sync= の hover が権限とタイミングを説明すること', () => {
@@ -373,6 +406,27 @@ describe('wiringLens: レビュー指摘の回帰（誤 hint ゼロ）', () => {
     </script></wcs-state>
 <span data-wcs="textContent: $streamStatus.ticks"></span>`;
     const declOffset = html.indexOf('$streams');
+    const references = getReferencesAt(html, declOffset + 2, false)!;
+    expect(references).toHaveLength(1);
+    expect(html.slice(references[0].range.start, references[0].range.end)).toBe('$streamStatus.ticks');
+  });
+
+  // Fixed by review（サイクル 5）— 正式名 `$stream` 側に番人が無く、`declarationOf('$streams')`
+  // だけに戻しても 972 green だった（テストは旧名しか使っていなかった）。
+  it('正式名 $stream でも宣言ジャンプ / references が動くこと（@wcstack/state 3.2）', () => {
+    const html = `<wcs-state><script type="module">
+    export default { $stream: { ticks: { source: 'sse' } } };
+    </script></wcs-state>
+<span data-wcs="textContent: $streamStatus.ticks"></span>`;
+    const usageOffset = html.indexOf('$streamStatus.ticks');
+
+    // 定義へ移動: 使用箇所 → `$stream` 宣言
+    const definition = getDefinitionAt(html, usageOffset + 2)!;
+    expect(definition).not.toBeNull();
+    expect(html.slice(definition.targetRange.start, definition.targetRange.end)).toBe('$stream');
+
+    // references: 宣言起点 → 使用箇所
+    const declOffset = html.indexOf('$stream:');
     const references = getReferencesAt(html, declOffset + 2, false)!;
     expect(references).toHaveLength(1);
     expect(html.slice(references[0].range.start, references[0].range.end)).toBe('$streamStatus.ticks');

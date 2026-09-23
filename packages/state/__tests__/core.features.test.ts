@@ -27,13 +27,37 @@ describe("core/features — installFeatures", () => {
 
 describe("core/featureEntries — barrier の文言", () => {
   it("内部の機能名と、足すべきエントリの両方を名指しすること", () => {
-    expect(featureNotInstalledMessage("stream", '"$streams"'))
-      .toBe('[wcs/feature-not-installed] "$streams" needs the "stream" feature: ' +
+    expect(featureNotInstalledMessage("streams", '"$stream"'))
+      .toBe('[wcs/feature-not-installed] "$stream" needs the "streams" feature: ' +
         'install it with installFeatures([...]) from "@wcstack/state/features/temporal" before the state is defined.');
   });
 
   it("対応表に無い名前はそのままエントリ名として使うこと", () => {
     expect(featureNotInstalledMessage("no-such-feature", '"$nothing"'))
       .toContain('"@wcstack/state/features/no-such-feature"');
+  });
+
+  /**
+   * 対応表の鍵は登録に使う**実際の機能名**でなければならない。かつて `stream` と書かれていて
+   * （登録名は `streams`）、到達すれば `@wcstack/state/features/streams` という存在しない
+   * エントリを案内していた。
+   */
+  it.each([
+    ["watch", "temporal"],
+    ["scan", "temporal"],
+    ["streams", "temporal"],
+    ["recursion", "recursion"],
+    ["scopes", "scopes"],
+    ["dcc", "scopes"],
+    ["ssr", "ssr"],
+  ])("実際の機能名 %s が実在するエントリ %s を案内すること", (feature, entry) => {
+    expect(featureNotInstalledMessage(feature, '"$x"'))
+      .toContain(`"@wcstack/state/features/${entry}"`);
+  });
+
+  it("実在しない機能名（旧 `stream` / `bindComponent`）が表に残っていないこと", () => {
+    // 表に無い名前はそのままエントリ名になるので、その形になれば「表から消えた」と分かる
+    expect(featureNotInstalledMessage("stream", '"$x"')).toContain('"@wcstack/state/features/stream"');
+    expect(featureNotInstalledMessage("bindComponent", '"$x"')).toContain('"@wcstack/state/features/bindComponent"');
   });
 });

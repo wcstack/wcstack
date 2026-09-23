@@ -11,6 +11,7 @@ import { DELIMITER, MODIFIER_READONLY, VOLUME_INJECTION_PROP } from "../define";
 import { raiseError } from "../raiseError";
 import { IStateElement } from "../components/types";
 import { findMountEntry, IMountEntry, translateByMountEntry } from "./mountEntries";
+import { createDollarPathApiWrapper } from "./dollarPathApis";
 
 /**
  * 予約済みスロット（D22）。キーは rootNode、値はマウントパス → 予約した要素（所有者）。
@@ -148,21 +149,39 @@ export function translateVolumePath(
 /**
  * ルートの絶対パスを、ボリュームから見た相対パスへ戻す（`$updatedCallback` の相対配送）。
  * 注入したパスは内側の名前で返す（3.x 計画 D33）。ボリュームに関係なければ null、マウントポイント自身は ""。
+ *
+ * 一致は**外側パスの最長一致**（宣言順の先頭一致ではない）。読みの翻訳（`translateVolumePath` →
+ * `findMountEntry`）が内側接頭辞の最長一致なので、その逆翻訳も最長一致でないと、外側パスが
+ * 入れ子になる 2 つの注入（`state.a: settings; state.b: settings.tax`）で
+ * 「読みは `b`、`$renderedCallback` に届くのは `a.tax`」という宣言順依存の食い違いになる。
+ * マウントポイント自身も候補に含める（`mount="settings.cart"` ＋ `state.a: settings` で
+ * `settings.cart.x` が `a.cart.x` でなく `x` として届く）。
  */
 export function relativeVolumePath(mountPath: string, injections: readonly IMountEntry[], path: string): string | null {
+  let bestLength = -1;
+  let best: string | null = null;
   for (const entry of injections) {
     const outer = entry.outerPathInfo.path;
+    if (outer.length <= bestLength) {
+      continue;
+    }
     if (path === outer) {
-      return entry.innerSegments.join(DELIMITER);
-    }
-    if (path.startsWith(outer + DELIMITER)) {
-      return entry.innerSegments.join(DELIMITER) + path.slice(outer.length);
+      bestLength = outer.length;
+      best = entry.innerSegments.join(DELIMITER);
+    } else if (path.startsWith(outer + DELIMITER)) {
+      bestLength = outer.length;
+      best = entry.innerSegments.join(DELIMITER) + path.slice(outer.length);
     }
   }
-  if (path === mountPath) {
-    return "";
+  if (mountPath.length > bestLength) {
+    if (path === mountPath) {
+      return "";
+    }
+    if (path.startsWith(mountPath + DELIMITER)) {
+      return path.slice(mountPath.length + 1);
+    }
   }
-  return path.startsWith(mountPath + DELIMITER) ? path.slice(mountPath.length + 1) : null;
+  return best;
 }
 
 /**
@@ -190,6 +209,15 @@ export function createVolumeChroot(mountPath: string, receiver: any, injections:
           return (path: string, ...rest: unknown[]): unknown =>
             receiver.$resolve(translateVolumePath(mountPath, injections, path, rest.length > 1), ...rest);
         }
+        // パスだけを取る読みの API（`$eq` / `$eqPath` / `$eqIndex` / `$dependOn`）は共有の表で包む
+        const wrapped = createDollarPathApiWrapper(
+          prop,
+          (path) => translateVolumePath(mountPath, injections, path, false),
+          (args) => (receiver[prop] as (...a: unknown[]) => unknown)(...args),
+        );
+        if (wrapped !== null) {
+          return wrapped;
+        }
         // 他の `$` は親の意味論のまま（宣言面はボリュームが登録時に翻訳する）
         return receiver[prop];
       }
@@ -197,6 +225,12 @@ export function createVolumeChroot(mountPath: string, receiver: any, injections:
     },
     set(_target, prop, value): boolean {
       if (typeof prop !== "string") {
+        return true;
+      }
+      if (prop[0] === "$") {
+        // `$` の予約名前空間は親の意味論のまま（get と対称・コンポーネントの chroot と同じ）。
+        // 翻訳すると `this.$foo = 1` が `cart.$foo` というツリーのゴミキーを無言で作る
+        receiver[prop] = value;
         return true;
       }
       receiver[translateVolumePath(mountPath, injections, prop, true)] = value;

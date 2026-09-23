@@ -5,7 +5,9 @@ import { IStateAddress } from "../../address/types";
 import { dirtyCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
 import { walkDependency } from "../../dependency/walkDependency";
 import { getUpdater } from "../../updater/updater";
+import { getByAddress } from "../methods/getByAddress";
 import { getListIndex } from "../methods/getListIndex";
+import { notifyKeyedPostUpdate } from "../methods/setByAddress";
 import { IStateHandler, IStateProxy } from "../types";
 
 
@@ -25,6 +27,10 @@ export function postUpdate(
     const absAddress = liftAddress(stateElement, address);
     const updater = getUpdater();
     updater.enqueueAbsoluteAddress(absAddress);
+    // 鍵付き購読（`$eq` 系）は依存グラフに載らないので walkDependency では届かない。
+    // `setByAddress` と同じ台帳に、旧値の無い形で知らせる（setByAddress.ts の notifyKeyedPostUpdate）
+    notifyKeyedPostUpdate(stateElement, resolvedAddress.pathInfo.path,
+      () => getByAddress(target, address, receiver, handler), receiver, handler);
     // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
     walkDependency(
       handler.stateElement,

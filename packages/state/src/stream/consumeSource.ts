@@ -41,6 +41,7 @@
  * parked — it drops stale chunks but is not, by itself, a cancellation mechanism.
  */
 
+import { STATE_STREAM_NAME } from "../define";
 import type { IConsumeSink, StreamProducer, StreamSource } from "./types";
 
 export async function consumeSource(
@@ -60,18 +61,17 @@ export async function consumeSource(
   // common "generator wakes up after abort" case. The ReadableStream path is fully
   // rescued via `reader.cancel()` (see `readableToAsyncIterable`).
   let iterator: AsyncIterator<unknown> | null = null;
-  // Guard against returning the SAME iterator twice. `onAbort` is reachable two ways:
-  // the abort listener, and the explicit call below when abort raced the
-  // `await source(...)`. The guard keys on the iterator instance (not a plain "ran"
-  // flag): the listener firing with iterator still null must NOT consume the single
-  // real cleanup that the explicit call performs once the iterator exists. So we only
-  // mark an iterator returned once we have actually called `.return()` on it.
-  let returned: AsyncIterator<unknown> | null = null;
+  // `onAbort` is reachable two ways: the abort listener (registered `{ once: true }` and
+  // removed in the `finally`), and the explicit call below when abort raced the
+  // `await source(...)`. At most ONE of them can see a non-null `iterator`, so `.return()`
+  // runs at most once and no "already returned" flag is needed: `iterator` is assigned and
+  // `signal.aborted` is read in the SAME synchronous block, so the listener either already
+  // ran while `iterator` was still null (releasing nothing — hence the explicit call) or
+  // runs strictly after that block, by which time the explicit call can no longer happen.
   const onAbort = (): void => {
-    if (!iterator || iterator === returned) {
-      return; // nothing to release yet, or already released this iterator
+    if (iterator === null) {
+      return; // nothing to release yet — the explicit call below does it
     }
-    returned = iterator;
     // Fire the iterator's cleanup. Swallow any throw/rejection from `.return()` — we
     // are tearing down; a producer that rejects on return must not surface here.
     try {
@@ -135,7 +135,7 @@ function iterate(produced: StreamProducer, signal: AbortSignal): AsyncIterable<u
     return produced as AsyncIterable<unknown>;
   }
   throw new TypeError(
-    "[@wcstack/state] $streams: source must return an AsyncIterable or a ReadableStream (got neither).",
+    `[@wcstack/state] ${STATE_STREAM_NAME}: source must return an AsyncIterable or a ReadableStream (got neither).`,
   );
 }
 

@@ -45,7 +45,6 @@ interface ILoopContextStack {
 declare const setLoopContextSymbol: unique symbol;
 declare const getByAddressSymbol: unique symbol;
 declare const hasByAddressSymbol: unique symbol;
-declare const setByAddressSymbol: unique symbol;
 declare const connectedCallbackSymbol: unique symbol;
 declare const disconnectedCallbackSymbol: unique symbol;
 declare const updatedCallbackSymbol: unique symbol;
@@ -84,7 +83,6 @@ interface IStateProxy extends IState {
     [setLoopContextSymbol](loopContext: ILoopContext | null, callback: () => any): any;
     [getByAddressSymbol](address: IStateAddress): any;
     [hasByAddressSymbol](address: IStateAddress): boolean;
-    [setByAddressSymbol](address: IStateAddress, value: any): void;
     [connectedCallbackSymbol](): Promise<void>;
     [disconnectedCallbackSymbol](): void;
     [updatedCallbackSymbol](updatedAbsAddressList: IAbsoluteStateAddress[]): void;
@@ -165,6 +163,16 @@ type WrittenHook = (stateElement: IStateElement, pathInfo: IPathInfo, detail?: {
 type SwappedHook = (stateElement: IStateElement, elementAbsAddress: IAbsoluteStateAddress, displacedAbsAddress: IAbsoluteStateAddress) => void;
 type GetHook = (handler: IStateHandler, prop: string, receiver: any, target: object) => unknown;
 type IndexShiftHook = (handler: IStateHandler, lastAddress: IStateAddress) => number;
+/**
+ * ハンドラが受け取る添字の段数を決める（`event/handler.ts`）。
+ *
+ * **合成は未定義** — この hook は畳み込み（前の hook の結果が次の `wildcardCount` になる）で
+ * 呼ばれるが、現行唯一の実装（`webComponent/addressHooks.ts` の scopes）は「記録が引けて
+ * shift が無ければ 0」を返す**吸収型**で、可換でも結合的でもない。2 つ目の実装が足されると
+ * `0 - shift` のような負値になりうる。**実装は 1 つに保つこと**。2 つ目が要るなら、先に
+ * 「答えを持たない hook は次へ渡す」規約（`NOT_HANDLED` を返す形。`read` / `write` と同じ）
+ * へ寄せてから足す。
+ */
 type HandlerScopeHook = (stateElement: IStateElement, node: Node, rootNode: Node, loopContext: ILoopContext, wildcardCount: number) => number;
 type UpdatedHook = (stateElement: IStateElement, refs: IAbsoluteStateAddress[], receiver: any) => void;
 type SuppressPathDiagnosticHook = (stateElement: IStateElement, path: string) => boolean;
@@ -874,7 +882,12 @@ declare class Ssr extends HTMLElementBase implements ISsrElement {
      * wcs-state 要素から $ プレフィックスや関数を除いたデータを抽出する。
      */
     static extractStateData(stateEl: Element): Record<string, any>;
-    static buildContent(ssrEl: Element, stateData: Record<string, any>): void;
+    /**
+     * @param scanRoot このスナップショットが属するツリー（既定は `ssrEl` の document）。
+     *   テンプレートと props はここから到達できるものだけを載せる — モジュール寿命の台帳に
+     *   残った**別のレンダリング**の分を混ぜないため（リクエスト間のデータ漏れ）。
+     */
+    static buildContent(ssrEl: Element, stateData: Record<string, any>, scanRoot?: Node): void;
     /**
      * SSR ブロック境界コメント (@@wcs-*-start/end) を除去する
      */
@@ -1235,8 +1248,23 @@ interface IFilterMeta {
 /** 組み込みフィルタ名 → 構造化メタデータ。キー集合は builtinFilters と一致しなければならない。 */
 declare const builtinFilterMeta: Record<string, IFilterMeta>;
 
-/** マニフェストのバージョン（構造を変えたら上げる）。 */
-declare const WCS_MANIFEST_VERSION = 1;
+/**
+ * filters/filterAliases.ts — 組み込みフィルタの旧名 → 正式名（要件 B12・docs/state-3x-naming.ja.md V1〜V9）。
+ *
+ * 旧名は 3.x の間エイリアスとして残り、4.0 で外す（D4）。解決は登録簿（core/filterRegistry）が行い、
+ * 実装・引数の個数・メタデータは正式名だけが持つ。formats の install と manifest（tooling）の両方が読むので、
+ * 実装にもメタデータにも依存しない小さな表として独立させている。
+ */
+declare const builtinFilterAliases: Readonly<Record<string, string>>;
+
+/**
+ * マニフェストのバージョン（構造を変えたら上げる）。
+ *
+ * 3.1 で `syntax.bindingTypes.explicitPropertyPrefix`、3.2 で `filterAliases`、
+ * 3.x の次で `declarationAliases` / `apiAliases` を足したので 2。
+ * 消費側（vscode-wcs）はまだこの定数を参照していないが、公開している以上ドリフトさせない。
+ */
+declare const WCS_MANIFEST_VERSION = 2;
 interface IWcsManifest {
     version: number;
     syntax: {
@@ -1301,9 +1329,18 @@ interface IWcsManifest {
     filterMeta: Record<string, IFilterMeta>;
     /** 組み込みフィルタの旧名 → 正式名（要件 B12）。旧名も解決するが、ツールは正式名を提案する */
     filterAliases: Readonly<Record<string, string>>;
-    /** 予約ライフサイクルフック名 */
+    /**
+     * 宣言キーの旧名 → 正式名（要件 B12。`$updatedCallback` → `$renderedCallback`、
+     * `$streams` → `$stream`）。ランタイムは旧名も受けるが、ツールは正式名を提案する。
+     * `reservedLifecycle` / `reservedStateApi` は**正式名だけ**なので、旧名が予約かどうかは
+     * この表と併せて判断する
+     */
+    declarationAliases: Readonly<Record<string, string>>;
+    /** state API の旧名 → 正式名（`$trackDependency` → `$dependOn` 等、要件 B12） */
+    apiAliases: Readonly<Record<string, string>>;
+    /** 予約ライフサイクルフック名（正式名のみ。旧名は `declarationAliases` を見る） */
     reservedLifecycle: readonly string[];
-    /** 予約 state API（プロトコル系の `$` 名前空間） */
+    /** 予約 state API（プロトコル系の `$` 名前空間。正式名のみ） */
     reservedStateApi: readonly string[];
 }
 /** 機械可読な単一正本を返す。vscode-wcs はこれを消費する想定。 */
@@ -1824,5 +1861,5 @@ declare global {
     }
 }
 
-export { Ssr, TRUSTED_TYPES_POLICY_SLOT, VERSION, WCS_MANIFEST_VERSION, analyzeContract, bootstrapState, buildBindings, builtinFilterMeta, defineState, getBindingsReady, getConfig, getTrustedTypesPolicy, getWcsManifest, setTrustedTypesPolicy };
+export { Ssr, TRUSTED_TYPES_POLICY_SLOT, VERSION, WCS_MANIFEST_VERSION, analyzeContract, bootstrapState, buildBindings, builtinFilterAliases, builtinFilterMeta, defineState, getBindingsReady, getConfig, getTrustedTypesPolicy, getWcsManifest, setTrustedTypesPolicy };
 export type { ContractEvent, FilterArgType, FilterResultType, IBindingErrorInfo, IContractManifest, IFilterMeta, ISsrElement, IWcsManifest, IWcsTrustedTypesPolicy, IWritableConfig, IWritableTagNames, WcsPathValue, WcsPaths, WcsStateApi, WcsThis };

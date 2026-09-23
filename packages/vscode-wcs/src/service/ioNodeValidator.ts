@@ -22,6 +22,7 @@ import { BUILTIN_TAGS } from './generated/builtinTags.generated.js';
 import { getStatePathsFromHtml, type FileReader } from './statePathResolver.js';
 import type { PathCandidate } from './stateAnalyzer.js';
 import { splitBindingExpressions, parseBindingExpression } from './bindingValidator.js';
+import { getWcsManifest } from './wcsManifest.js';
 
 /**
  * 任意の要素で正当な DOM プロパティバインド。契約メンバーでなくても警告しない。
@@ -34,6 +35,24 @@ const DOM_COMMON_PROPERTIES = new Set([
 
 /** 構造ディレクティブ（タグ契約の検査対象外）。 */
 const STRUCTURAL_DIRECTIVES = new Set(['for', 'if', 'elseif', 'else']);
+
+/**
+ * 明示のプロパティ形（`.name:`）の先頭に置けない語 — ランタイムの
+ * `EXPLICIT_PROPERTY_REJECTED_HEADS`（`bindTextParser/parseBindTextsForElement.ts`）と同じ集合。
+ * 正本パーサが `[wcs/binding-syntax]`（error）で落とす形なので、ここで別理由の警告を重ねない。
+ *
+ * 5 語は manifest（`syntax.bindingTypes.propNamespaces`）から導出する。6 語目の `state`
+ * （`VOLUME_INJECTION_PROP` — `<wcs-state mount>` 上の `state.<key>:` は注入の宣言なので
+ * `.state.x:` が曖昧）は manifest に載っていないのでここだけ手書き。手書きが正本から
+ * ずれないことは `__tests__/explicitPropertyHeads.drift.test.ts` が state の src を読んで固定する。
+ */
+export const EXPLICIT_PROPERTY_REJECTED_HEADS: ReadonlySet<string> = new Set([
+  ...Object.values(getWcsManifest().syntax.bindingTypes.propNamespaces),
+  'state',
+]);
+const EXPLICIT_PROPERTY_REJECTED_HEADS_RE = new RegExp(
+  `^(?:${[...EXPLICIT_PROPERTY_REJECTED_HEADS].map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})(\\.|$)`,
+);
 
 /** `''` / `null` / `[]` / `{}` — storage の保存値を初期書き戻しで上書きする空値シード。 */
 const EMPTYISH_SEEDS = new Set(["''", '""', '``', 'null', '[]', '{}']);
@@ -144,11 +163,14 @@ function validateBindingAgainstContract(
   property = hashIndex === -1 ? property : property.slice(0, hashIndex);
 
   // 明示のプロパティ形（`.once:`、@wcstack/state 3.1・要件 B5）: ドットを外して同じ名前で照合する。
-  // ドットの後の名前空間の語は正本パーサが [wcs/binding-syntax] で報告するので、ここでは重ねない
+  // 正本パーサが [wcs/binding-syntax] で落とす形（ドットの後が名前空間の語・空・さらにドット
+  // ＝ `..once:`）は、ここでは重ねない — 同じ 1 か所に「未知メンバー」という別の理由の
+  // 警告を並べても、直す手がかりが増えずに紛らわしくなるだけ。
   const explicit = property.startsWith('.') && property !== '...';
   if (explicit) {
     property = property.slice(1);
-    if (/^(class|style|attr|command|eventToken)(\.|$)/.test(property)) return;
+    if (property.length === 0 || property.startsWith('.')) return;
+    if (EXPLICIT_PROPERTY_REJECTED_HEADS_RE.test(property)) return;
   }
 
   // 契約検査の対象外: スプレッド・構造ディレクティブ・DOM レベルのバインド。
@@ -161,7 +183,7 @@ function validateBindingAgainstContract(
       diagnostics.push({
         code: WcsDiagnosticCode.OnPrefixedMember,
         start, end, severity: 'warning', tag: tagName, member: property,
-        message: msgs.onPrefixedMember(property, tagName),
+        message: msgs.onPrefixedMember(property, tagName, modifiers),
       });
     }
     return;

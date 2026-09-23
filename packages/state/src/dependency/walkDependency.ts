@@ -13,6 +13,7 @@ import { listIndexAtWildcard } from "../list/wildcardLevel";
 import { getByAddressSymbol } from "../proxy/symbols";
 import { IStateProxy } from "../proxy/types";
 import { raiseError } from "../raiseError";
+import { takePendingKeyedWalk } from "./keyedDependency";
 import { getTopologicalRanks } from "./topologicalRank";
 import { SearchType } from "./types";
 
@@ -396,6 +397,31 @@ function _collectDependencies(
   }
 }
 
+/**
+ * リスト差分が積んだ鍵付き購読者を、このウォークの続きとして辿る（要件 D7 の派生先）。
+ *
+ * 鍵付き購読は意図的に依存グラフに載らない（載せると選択の更新が全行へ広がる）ので、
+ * 差分の 2 経路（`moveIndexWatchers` / `rekeyIndexSubscriptions`）は購読者のアドレスを直に
+ * enqueue するだけだった。そこで止まると「鍵付き getter に依存する別の getter」が陳腐化する。
+ *
+ * 積む側（`dependency/keyedDependency.ts`）は proxy を持たないので積むだけにし、**proxy を
+ * 持っているここ**が引き取る。`createListDiff` はこのウォークの中（リスト展開）から呼ばれるので、
+ * その場で積まれたものをウォークの末尾で拾える — 書き込みは既に済んでおり、値は新しい。
+ * `context.visited` を共有するので、既に訪問したアドレスは二度走らない。
+ * 引き取った先の展開がさらに差分を起こすことがあるため、空になるまで回す。
+ */
+function drainKeyedWalk(context: Context, callback: (address: IStateAddress) => void): void {
+  for (let guard = 0; guard < MAX_DEPENDENCY_DEPTH; guard++) {
+    const pending = takePendingKeyedWalk(context.stateElement);
+    if (pending === null) {
+      return;
+    }
+    pending.forEach((absAddress) => {
+      _walkDependency(context, createStateAddress(absAddress.absolutePathInfo.pathInfo, absAddress.listIndex), callback);
+    });
+  }
+}
+
 export function walkDependency(
   stateElement: IStateElement,
   startAddress: IStateAddress,
@@ -411,6 +437,23 @@ export function walkDependency(
   // 割り当てず、開始アドレスの callback だけで完結する。リスト行の値書き込み
   // （update ホットパス）は set 毎にここを通る。開始アドレスへの callback は
   // 従来の walk 先頭と同一で、戻り値（依存アドレス群）も従来どおり空。
+  //
+  // ここは `drainKeyedWalk` を通らない。積むのは `createListDiff` の中だけで、この経路は
+  // それを呼ばないので**自分が積んだ分を取り残すことはない**。理屈の上で残るのは
+  // 「ウォークの外（`applyChangeToFor` / `collectWildcardIndexes`）で積まれ、そのバッチの
+  // ウォークがこの fast path だけだった」場合に限られる。積む経路は 2 本あり、根拠は同じでない:
+  //   - `moveIndexWatchers`（`$eqIndex` 最内段）— 同じリストの 2 度目の `createListDiff` は
+  //     キャッシュに当たり、`oldIndexes === newIndexes` で早戻りして積まない。
+  //   - `rekeyIndexSubscriptions`（`$eqIndex` 外段）— `syncListIndexes` から呼ばれるので
+  //     **キャッシュ命中でも早戻りしない**。それでも取り残しが観測されないのは、積んだ直後の
+  //     バッチに必ず「その置換を起こした書き込み」のウォークが居て、そこで引き取られるから。
+  //     こちらは「構造上ありえない」ではなく「実測で 0」— だから下の番人が要る
+  //     （同一バッチ 2 回のリスト置換 × 外段 `$eqIndex` でも pending 0・描画も正常）。
+  // ここに drain を足すなら保留の有無を見る `WeakMap#get` が 1 回増え、
+  // 実測で **+3.3 ns/回**（この判定自体が 1.9 ns）— 起こせない事象のためにホットパスへ
+  // 恒久的に乗せる取引としては割に合わないので置いていない。前提が崩れていないことは
+  // `__tests__/dependency.keyedAncestorIndex.test.ts` の取り残し検査が見張っており、
+  // そこが落ちたらここに drain を置くこと。
   const startPath = startAddress.pathInfo.path;
   if (!staticDependency.has(startPath) && !dynamicDependency.has(startPath)) {
     callback(startAddress);
@@ -435,6 +478,7 @@ export function walkDependency(
     keyedMergePath: options?.keyedMergePath ?? null,
   };
   _walkDependency(context, startAddress, callback);
+  drainKeyedWalk(context, callback);
   // 観測したリスト値を state 側の基準として確定する（E1）。ウォークの最中に進めると
   // 同じウォーク内の 2 度目の観測が「変化なし」になるため、走査を終えてからまとめて書く
   // （`collectWildcardIndexes` の commitDiffBaseline と同じ形）。

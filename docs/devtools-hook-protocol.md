@@ -165,14 +165,19 @@ interface IStateElementSummary {
 
 // v1 addendum: one declared-level binding (element of getDeclaredBindings). The
 // canonical parser's result flows through as-is — filters are readable as the
-// structural subset { filterName, args } of the runtime's IFilterInfo.
+// structural subset { filterName, args, literals? } of the runtime's IFilterInfo.
 interface IDeclaredBindingInfo {
   readonly node: Node | null;   // null for origin "fragment" (no live-DOM node exists)
   readonly propName: string;
   readonly statePathName: string;
   readonly bindingType: string;
-  readonly inFilters: readonly { filterName: string; args: readonly string[] }[];
-  readonly outFilters: readonly { filterName: string; args: readonly string[] }[];
+  // `literals` is the *typed* value of each argument beside its source text `args`
+  // (requirement B9). The filter key is built from `literals ?? args`, and eq / ne /
+  // defaults compare against it — a source that passes only `args` type-checks while
+  // the key silently degenerates (`"1"` and `1` collapse onto one key), so the
+  // literals the canonical parser attaches MUST be carried through.
+  readonly inFilters: readonly { filterName: string; args: readonly string[]; literals?: readonly unknown[] }[];
+  readonly outFilters: readonly { filterName: string; args: readonly string[]; literals?: readonly unknown[] }[];
   readonly origin: "attribute" | "comment" | "fragment";
   // The source text. Structural-directive anchors carry the registry UUID (the
   // original text no longer exists in the DOM); fragment entries carry "".

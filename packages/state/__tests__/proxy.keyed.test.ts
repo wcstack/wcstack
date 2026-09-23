@@ -549,3 +549,54 @@ describe("書き込みが鍵を知らせない経路（2.6.0 の穴）", () => {
     host.remove();
   });
 });
+
+/**
+ * `$postUpdate` は in-place 変異を通知する正規の idiom で、set トラップを通らない。
+ * 鍵付き購読は依存グラフに載らないため、`walkDependency` だけでは行が再評価されず、
+ * **前に選ばれていた行が真のまま残っていた**（`setByAddress` 側は 2.6.0 で塞いだ穴）。
+ */
+describe("$postUpdate: 鍵付き購読への通知", () => {
+  it("葉への `$postUpdate` で旧行と新行が再評価されること", async () => {
+    const raw: any = {
+      items: [{ id: 1 }, { id: 2 }, { id: 3 }],
+      sel: { id: 1 },
+      get "items.*.selected"(this: any) { return this.$eq("sel.id", this["items.*.id"]); },
+    };
+    const { host, write, selected } = await mount(raw, ROWS);
+    expect(selected()).toEqual(["1"]);
+
+    raw.sel.id = 2;
+    await write((s) => { s.$postUpdate("sel.id"); });
+    expect(selected()).toEqual(["2"]);
+
+    raw.sel.id = 3;
+    await write((s) => { s.$postUpdate("sel.id"); });
+    expect(selected()).toEqual(["3"]);
+    host.remove();
+  });
+
+  it("祖先への `$postUpdate` でも配下の鍵付きパスへ届くこと", async () => {
+    const raw: any = {
+      items: [{ id: 1 }, { id: 2 }, { id: 3 }],
+      sel: { id: 1 },
+      get "items.*.selected"(this: any) { return this.$eq("sel.id", this["items.*.id"]); },
+    };
+    const { host, write, selected } = await mount(raw, ROWS);
+    expect(selected()).toEqual(["1"]);
+
+    raw.sel.id = 3;
+    await write((s) => { s.$postUpdate("sel"); });
+    expect(selected()).toEqual(["3"]);
+    host.remove();
+  });
+
+  it("鍵付き購読が無いパスの `$postUpdate` は従来どおり余計な仕事をしないこと", async () => {
+    const raw: any = { label: "a", items: [] as unknown[] };
+    const { host, write, shadowRoot } = await mount(raw, `<p data-wcs="textContent: label"></p>` + ROWS);
+    expect(shadowRoot.querySelector("p")!.textContent).toBe("a");
+    raw.label = "b";
+    await write((s) => { s.$postUpdate("label"); });
+    expect(shadowRoot.querySelector("p")!.textContent).toBe("b");
+    host.remove();
+  });
+});

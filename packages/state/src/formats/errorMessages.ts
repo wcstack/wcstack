@@ -11,8 +11,8 @@
  * - optionsRequired: Error when required option is not specified
  * - optionMustBeNumber: Error when option value is not a number
  * - valueMustBeNumber: Error when value is not a number
- * - valueMustBeBoolean: Error when value is not boolean
  * - valueMustBeDate: Error when value is not a Date
+ * - valueMustBeArray: Error when value is not an array
  */
 import { raiseError } from "../raiseError";
 
@@ -45,26 +45,6 @@ export function optionMustBeNumber(fnName:string): never {
 export function valueMustBeNumber(fnName:string): never {
   raiseError(`filter ${fnName} requires a number value`);
 }
-
-/**
- * Throws error when filter requires numeric value but non-number provided.
- * 
- * @param fnName - Name of the filter function
- * @returns Never returns (always throws)
- */
-export function valueMustBeString(fnName:string): never {
-  raiseError(`filter ${fnName} requires a string value`);
-}
-
-/**
- * Throws error when filter requires boolean value but non-boolean provided.
- * 
- * @param fnName - Name of the filter function
- * @returns Never returns (always throws)
- */
-export function valueMustBeBoolean(fnName:string): never {
-  raiseError(`filter ${fnName} requires a boolean value`);
-} 
 
 /**
  * Throws error when filter requires Date value but non-Date provided.

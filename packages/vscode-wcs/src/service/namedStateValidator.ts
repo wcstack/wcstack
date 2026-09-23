@@ -19,6 +19,7 @@ import { getMessages } from '../core/messages.js';
 import { parseWcsStateElements } from '../language/htmlParse.js';
 import { findAllBindAttributes, splitBindingExpressions, type BindingDiagnostic } from './bindingValidator.js';
 import { findAllCommentBindings, findAllMustacheSyntax } from './templateSyntax.js';
+import { indexOfOutsideQuotes } from '../core/parser/quoteAware.js';
 
 interface StateSelectorMatch {
   /** `@` の式内オフセット */
@@ -34,19 +35,13 @@ interface StateSelectorMatch {
  * フィルタ（括弧の外の `|`）より前だけを見る — `|default(@)` の引数の `@` は対象外。
  */
 export function findStateSelector(expr: string, embedded = false): StateSelectorMatch | null {
-  const colon = embedded ? -1 : expr.indexOf(':');
+  // 左右の境界は引用符の外の `:` だけ（正本と同値。`defaults(':')` の引数は境界ではない）
+  const colon = embedded ? -1 : indexOfOutsideQuotes(expr, ':');
   const from = colon + 1;
-  let depth = 0;
-  let end = expr.length;
-  for (let i = from; i < expr.length; i++) {
-    const ch = expr[i];
-    if (ch === '(') depth++;
-    else if (ch === ')') depth = Math.max(0, depth - 1);
-    else if (ch === '|' && depth === 0) {
-      end = i;
-      break;
-    }
-  }
+  // フィルタ帯の開始 ＝ 右辺の最初の `|`。区切りは引用符の外だけ（ランタイムの
+  // `parseStatePart` と同値。以前は括弧深度を見ていたが、正本は括弧を見ない）
+  const pipe = indexOfOutsideQuotes(expr.slice(from), '|');
+  const end = pipe === -1 ? expr.length : from + pipe;
   const at = expr.indexOf('@', from);
   if (at === -1 || at >= end) return null;
   const raw = expr.slice(at + 1, end);

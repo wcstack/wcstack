@@ -11,6 +11,7 @@ import { setLoopContextSymbol } from "../proxy/symbols";
 import { getCustomElement } from "../getCustomElement";
 import { getCustomElementRegistry } from "../platform/customElementRegistry";
 import { readBindableDeclaration } from "../protocol/wcBindableReader";
+import { filterListKey } from "../binding/filterKey";
 import { createHandlerBindingRegistry } from "./handlerBindingRegistry";
 import { beginOccurrenceWrite, endOccurrenceWrite } from "../proxy/occurrenceWrite";
 
@@ -63,9 +64,47 @@ function warnDefaultGetterMismatch(node: Element, propName: string, detail: unkn
   );
 }
 
-function getHandlerKey(binding: IBindingInfo, eventName: string, hasGetter: boolean, isOccurrence: boolean): string {
-  const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
-  return `${binding.propName}::${binding.statePathName}::${eventName}::${filterKey}::${hasGetter ? 'g' : 'n'}::${isOccurrence ? 'o' : 's'}`;
+/**
+ * getter 関数ごとの安定した識別子。
+ *
+ * ハンドラのクロージャは `valueGetter` の**実体**を捕捉するのに、鍵は「getter があるか」の
+ * 真偽しか持っていなかった。propName / イベント名 / state パス / フィルタ列が同じで getter だけ
+ * 違う 2 つの wc-bindable タグを同じパスに繋ぐと、後から配線した方が**先のタグの getter で
+ * 畳んだ値**を state に書く。`filterListKey` を入れて塞いだのと同じ不完全さが getter に残っていた。
+ */
+const getterIds = new WeakMap<object, number>();
+let nextGetterId = 0;
+function getterIdOf(valueGetter: ((event: Event) => any) | null): string {
+  if (valueGetter === null) {
+    return "n";
+  }
+  let id = getterIds.get(valueGetter);
+  if (typeof id === "undefined") {
+    getterIds.set(valueGetter, id = ++nextGetterId);
+  }
+  return `g${id}`;
+}
+
+/**
+ * attach 時に控えた「何を、どのイベント名で付けたか」。**detach はここだけを見る。**
+ *
+ * `wcBindable` の宣言は live と規定されている（`protocol/wcBindableReader.ts`）ので、attach と
+ * detach の間に差し替わりうる（composite shell は `target.constructor.wcBindable` で synthesized
+ * 宣言を出すので絵空事ではない）。detach 側で作り直すと、宣言に依存する 3 つ — 二方向かの判定
+ * （`isPossibleTwoWay`）、イベント名（`getEventName`）、ハンドラの鍵（`getHandlerKey`）— が
+ * すべてずれうる。判定がずれれば門で早戻りしてリスナが残り、イベント名や鍵がずれれば
+ * `removeEventListener` が空振りしてリスナが残る。**控えがあるかどうかが「attach したか」
+ * そのもの**なので、detach は宣言を一切読み直さない。
+ */
+interface IAttachedTwoway {
+  readonly key: string;
+  readonly eventName: string;
+}
+const attachedByBinding = new WeakMap<IBindingInfo, IAttachedTwoway>();
+
+function getHandlerKey(binding: IBindingInfo, eventName: string, valueGetter: ((event: Event) => any) | null, isOccurrence: boolean): string {
+  const filterKey = filterListKey(binding.inFilters);
+  return `${binding.propName}::${binding.statePathName}::${eventName}::${filterKey}::${getterIdOf(valueGetter)}::${isOccurrence ? 'o' : 's'}`;
 }
 
 function getEventName(binding: IBindingInfo): string {
@@ -276,7 +315,8 @@ export function attachTwowayEventHandler(binding: IBindingInfo): void {
     const eventName = getEventName(binding);
     const valueGetter = getValueGetter(binding);
     const isOccurrence = isOccurrenceProperty(binding);
-    const key = getHandlerKey(binding, eventName, valueGetter !== null, isOccurrence);
+    const key = getHandlerKey(binding, eventName, valueGetter, isOccurrence);
+    attachedByBinding.set(binding, { key, eventName });
     let twowayEventHandler = handlerByHandlerKey.get(key);
     if (typeof twowayEventHandler === "undefined") {
       twowayEventHandler = twowayEventHandlerFunction(
@@ -294,31 +334,21 @@ export function attachTwowayEventHandler(binding: IBindingInfo): void {
 }
 
 export function detachTwowayEventHandler(binding: IBindingInfo): void {
-  const customTagName = getCustomElement(binding.node as Element);
-  if (customTagName !== null) {
-    const registry = getCustomElementRegistry(binding.node);
-    const customClass = registry?.get(customTagName);
-    if (typeof customClass === "undefined") {
-      if (registry === null) {
-        return;
-      }
-      return;
-    }
+  // 控えが無い ＝ attach していない（未定義のカスタム要素、二方向でないプロパティ、`#ro`）。
+  // ここで `wcBindable` を読み直さないのが要点 — 理由は `attachedByBinding` の注記
+  const attached = attachedByBinding.get(binding);
+  if (typeof attached === "undefined") {
+    return;
   }
+  attachedByBinding.delete(binding);
+  const twowayEventHandler = handlerByHandlerKey.get(attached.key);
+  if (typeof twowayEventHandler === "undefined") {
+    return;
+  }
+  (binding.node as Element).removeEventListener(attached.eventName, twowayEventHandler);
 
-  if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf(MODIFIER_READONLY) === -1) {
-    const eventName = getEventName(binding);
-    const valueGetter = getValueGetter(binding);
-    const key = getHandlerKey(binding, eventName, valueGetter !== null, isOccurrenceProperty(binding));
-    const twowayEventHandler = handlerByHandlerKey.get(key);
-    if (typeof twowayEventHandler === "undefined") {
-      return;
-    }
-    (binding.node as Element).removeEventListener(eventName, twowayEventHandler);
-
-    if (bindingRegistry.remove(key, binding)) {
-      handlerByHandlerKey.delete(key);
-    }
+  if (bindingRegistry.remove(attached.key, binding)) {
+    handlerByHandlerKey.delete(attached.key);
   }
 }
 

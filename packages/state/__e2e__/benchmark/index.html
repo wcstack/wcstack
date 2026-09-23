@@ -24,6 +24,21 @@ export default {
   // 選択変更は onSelect が旧・新の2行のアドレスへ直接書き込むため、
   // selectedIndex 変更の全行展開（O(全行)）が起きない。$1 は追跡したままなので
   // 位置変更（swap/remove）では従来どおり該当行が再評価される。
+  //
+  // NOTE: 3.2 の正式名は `$untracked` だが、下の getter は**意図的に旧名のまま**。
+  // 計測スクリプトが scripts/ に 8 本あり（audit-state-browser / -tech-allocsample /
+  // -tech-counters / -tech-heap / -tech-heapsnapshot / -tech-keyed / -tech-profile /
+  // -tech-warmth）、どれも getter の本文を**文字列置換**して natural / tracked の
+  // バリアントを作る。うち 6 本は置換に失敗すると "Fixture replacement failed" で落ちる。
+  // このフィクスチャを走らせるスクリプト全体では 14 本。committed な
+  // 計測成果（docs/research/state-next/）との比較可能性も原文に依存している。
+  // 改名するときは計測スクリプト側と同じコミットで揃えること（4.0 で旧名が外れる前まで）。
+  //
+  // **このコメントに目印の文字列を verbatim で書かないこと。**`String.replace(<短い
+  // リテラル>, …)` は先頭 1 件しか置換しないので、コメント側に当たって getter が無傷のまま
+  // 「置換は起きた」と判定され、natural / tracked が manual と同一物になって A/B 比較が
+  // 無言で無意味になる（実測・サイクル 5 指摘 3。2026-09-23 に 1 度やらかしている）。
+  // 目印は「下の getter の本文そのもの」であって、この説明文ではない。
   get "data.*.selected"() {
     return this.$1 === this.$untrackDependency(() => this.selectedIndex);
   },

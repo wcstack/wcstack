@@ -40,6 +40,16 @@ export type WrittenHook = (stateElement: IStateElement, pathInfo: IPathInfo, det
 export type SwappedHook = (stateElement: IStateElement, elementAbsAddress: IAbsoluteStateAddress, displacedAbsAddress: IAbsoluteStateAddress) => void;
 export type GetHook = (handler: IStateHandler, prop: string, receiver: any, target: object) => unknown;
 export type IndexShiftHook = (handler: IStateHandler, lastAddress: IStateAddress) => number;
+/**
+ * ハンドラが受け取る添字の段数を決める（`event/handler.ts`）。
+ *
+ * **合成は未定義** — この hook は畳み込み（前の hook の結果が次の `wildcardCount` になる）で
+ * 呼ばれるが、現行唯一の実装（`webComponent/addressHooks.ts` の scopes）は「記録が引けて
+ * shift が無ければ 0」を返す**吸収型**で、可換でも結合的でもない。2 つ目の実装が足されると
+ * `0 - shift` のような負値になりうる。**実装は 1 つに保つこと**。2 つ目が要るなら、先に
+ * 「答えを持たない hook は次へ渡す」規約（`NOT_HANDLED` を返す形。`read` / `write` と同じ）
+ * へ寄せてから足す。
+ */
 export type HandlerScopeHook = (stateElement: IStateElement, node: Node, rootNode: Node, loopContext: ILoopContext, wildcardCount: number) => number;
 export type UpdatedHook = (stateElement: IStateElement, refs: IAbsoluteStateAddress[], receiver: any) => void;
 export type SuppressPathDiagnosticHook = (stateElement: IStateElement, path: string) => boolean;

@@ -43,3 +43,29 @@ describe('applyChangeToAttribute', () => {
     expect(el.getAttribute('data-test')).toBe('b');
   });
 });
+
+/**
+ * 属性の値は常に文字列なので、同値判定は文字列化してから行う（`applyChangeToText` と同じ）。
+ * 生値のまま比べると数値・真偽値は同値でも毎回 setAttribute が走っていた。
+ */
+describe('applyChangeToAttribute — 非文字列の同値判定', () => {
+  it.each([[1, '1'], [true, 'true'], [0, '0']])('%s は既存の "%s" と同値とみなすこと', (value, text) => {
+    const el = document.createElement('div');
+    el.setAttribute('data-test', text);
+    let writes = 0;
+    const original = el.setAttribute.bind(el);
+    (el as any).setAttribute = (...args: [string, string]) => { writes++; return original(...args); };
+    const binding = createBinding(el, 'data-test');
+    applyChangeToAttribute(binding, dummyContext, value);
+    expect(writes).toBe(0);
+    expect(el.getAttribute('data-test')).toBe(text);
+  });
+
+  it('値が変われば文字列化して書くこと', () => {
+    const el = document.createElement('div');
+    el.setAttribute('data-test', '1');
+    const binding = createBinding(el, 'data-test');
+    applyChangeToAttribute(binding, dummyContext, 2);
+    expect(el.getAttribute('data-test')).toBe('2');
+  });
+});

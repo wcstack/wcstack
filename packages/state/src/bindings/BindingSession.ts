@@ -11,6 +11,7 @@ import { getStateListBaseline, hasStateListBaseline, setStateListBaseline } from
 import { IListIndex } from "../list/types";
 import { clearStateAddressByBindingInfo } from "../binding/getStateAddressByBindingInfo";
 import { config } from "../config";
+import { filterListKey } from "../binding/filterKey";
 import { detachCheckboxEventHandler, attachCheckboxEventHandler } from "../event/checkboxHandler";
 import { detachEventTokenHandler, attachEventTokenHandler } from "../event/eventTokenHandler";
 import { detachEventHandler, attachEventHandler } from "../event/handler";
@@ -137,6 +138,8 @@ interface IRowRecord {
 }
 // 束縛 → その行の record（record が共有 session を知っている。設計 R3）
 const rowByBinding = new WeakMap<IBindingInfo, IRowRecord>();
+// 行 slot に振った record id（`getRecord` — 検査・テスト専用の経路でしか作られない）
+const rowSlotIds = new WeakMap<IRowRecord, number[]>();
 
 const recordByBinding = new WeakMap<IBindingInfo, IInternalBindingRecord>();
 const sessionByRoot = new WeakMap<Node, BindingSession>();
@@ -280,8 +283,9 @@ function getBindingOwner(root: IObservableRoot): BindingOwner {
 }
 
 function bindingKey(binding: IBindingInfo): string {
-  const inFilters = binding.inFilters.map((filter) => `${filter.filterName}(${filter.args.join(",")})`).join("|");
-  const outFilters = binding.outFilters.map((filter) => `${filter.filterName}(${filter.args.join(",")})`).join("|");
+  // 引数は型付きの値で書き出す（要件 B9）— `defaults(0)` と `defaults('0')` を取り違えない
+  const inFilters = filterListKey(binding.inFilters);
+  const outFilters = filterListKey(binding.outFilters);
   return [
     binding.bindingType,
     binding.propName,
@@ -499,11 +503,24 @@ export class BindingSession {
     return !record.outputOnlyMember && !record.observationPending;
   }
 
+  /**
+   * **検査・テスト専用**（本番の呼び出し元は無い）。行の slot には record オブジェクトが
+   * 無いので、呼ぶたびに読み取り専用の合成オブジェクトを作る — ホットパスでは使わないこと。
+   *
+   * `id` は record の id と同じ通し番号から取る。かつて `row.id * 64 + slot` で合成していたが、
+   * 1 行が 64 スロットを超えると別の行の id と衝突した（`row.id` 自身も同じ通し番号なので、
+   * 素の record の id とも衝突しうる）。台帳は WeakMap なので本番経路の割り当ては増えない。
+   */
   getRecord(binding: IBindingInfo): IBindingRecord | null {
     const row = this.rowOf(binding);
     const slot = row === null ? -1 : row.bindings.indexOf(binding);
     if (row !== null && slot >= 0) {
-      return { id: row.id * 64 + slot, info: binding, generation: row.generation, phase: SLOT_PHASE_NAMES[row.phases[slot]], teardowns: null };
+      let ids = rowSlotIds.get(row);
+      if (typeof ids === "undefined") {
+        rowSlotIds.set(row, ids = []);
+      }
+      const id = ids[slot] ?? (ids[slot] = ++nextRecordId);
+      return { id, info: binding, generation: row.generation, phase: SLOT_PHASE_NAMES[row.phases[slot]], teardowns: null };
     }
     const record = recordByBinding.get(binding);
     return record?.session === this ? record : null;
@@ -914,13 +931,17 @@ export class BindingSession {
       this.addKnownRowBinding(anchor, binding, i);
       rowByBinding.set(binding, row);
       if (slots[i].isEvent) {
+        // 印は `attachEventHandler` の**戻り値**で立てる。今は `structural/rowPlan.ts` の
+        // 名前空間除外によって `slot.isEvent` ⟺ `isDomEventBinding` が成り立っているが、
+        // そこが緩んだ瞬間に「張っていないのに張った印」が立ち、detach が空振りする
+        let attached = false;
         try {
-          attachEventHandler(binding);
+          attached = attachEventHandler(binding);
         } catch (error) {
           row.phases[i] = SLOT_FAILED;
           throw error;
         }
-        row.flags[i] |= FLAG_EVENT_ATTACHED;
+        if (attached) row.flags[i] |= FLAG_EVENT_ATTACHED;
       }
       // 非 event スロットはプラン適格性により双方向不能・radio/checkbox 不能・
       // token 配線不能が確定しているため attach 系を一切呼ばない
@@ -959,14 +980,15 @@ export class BindingSession {
         row.phases[i] = SLOT_ACTIVE;
         row.flags[i] = 0;
         if (slots[i].isEvent) {
+          let attached = false;
           try {
-            attachEventHandler(bindings[i]);
+            attached = attachEventHandler(bindings[i]);
           } catch (error) {
             row.phases[i] = SLOT_FAILED;
             this.runRowSlotTeardowns(row, i);
             throw error;
           }
-          row.flags[i] |= FLAG_EVENT_ATTACHED;
+          if (attached) row.flags[i] |= FLAG_EVENT_ATTACHED;
         }
         this.registerRowSlot(row, i, knownRoot);
         continue;

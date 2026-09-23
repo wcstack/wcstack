@@ -9,6 +9,9 @@ const require = createRequire(join(root, 'e2e/package.json'));
 const { chromium } = require('@playwright/test');
 const outDir = join(root, 'docs/research/state-next');
 const build = JSON.parse(await readFile(join(outDir, 'size-and-syntax.json'), 'utf8'));
+// フィクスチャの getter 本文の目印。**この綴りはフィクスチャ内で 1 度しか現れてはならない**
+// （String.replace は先頭 1 件しか置換しない — packages/state/__e2e__/benchmark/index.html の NOTE）
+const MARKER = 'this.$untrackDependency(() => this.selectedIndex)';
 const html = await readFile(join(root, 'packages/state/__e2e__/benchmark/index.html'), 'utf8');
 const namedCode = await readFile(join(build.temporaryBuildDirectory, 'index.esm.js'), 'utf8');
 const port = 4298;
@@ -41,9 +44,14 @@ async function pageFor({ natural = false, named = false } = {}) {
   page.on('pageerror', e => errors.push(e.message));
   let content = html;
   if (natural) {
-    content = content.replace('this.$untrackDependency(() => this.selectedIndex)', 'this.selectedIndex')
+    content = content.replace(MARKER, 'this.selectedIndex')
       .replace(/onSelect\(e, \$1\) \{[\s\S]*?\n  \},/, 'onSelect(e, $1) { this.selectedIndex = $1; },');
-    if (content === html || content.includes('onSelect(e, $1) {\r\n')) throw new Error('Fixture replacement failed');
+    // 「変わったか」ではなく**意図した場所が変わったか**を見る。短いリテラルの replace は
+    // 先頭 1 件しか置換しないので、フィクスチャのコメント等に同じ綴りが混ざると getter が
+    // 無傷のまま素通りし、natural が manual と同一物になる（サイクル 5 指摘 3）
+    if (content === html || content.includes(MARKER) || content.includes('onSelect(e, $1) {\r\n')) {
+      throw new Error('Fixture replacement failed: the getter still reads the marker literal');
+    }
   }
   await page.route('**/benchmark/index.html', route => route.fulfill({ contentType: 'text/html', body: content }));
   if (named) await page.route('**/dist/auto.min.js', route => route.fulfill({ contentType: 'text/javascript', body: namedCode + '\nbootstrapState();\n' }));

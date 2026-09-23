@@ -8,6 +8,9 @@
  * - フィルタ名が組み込みフィルタに存在するか
  */
 
+import { splitBindTexts } from '@wcstack/state/parser';
+import { findStartTagRegions } from '../language/htmlParse.js';
+import { indexOfOutsideQuotes, splitOutsideQuotes } from '../core/parser/quoteAware.js';
 import { BUILTIN_FILTERS, canonicalFilterName, type FilterInfo } from './completionData.js';
 import { STRUCTURAL_BINDING_TYPE_SET } from './wcsManifest.js';
 import { mergeSchemaCandidates, type PathCandidate } from './stateAnalyzer.js';
@@ -82,7 +85,7 @@ export function validateBindings(
     if (nonEmptyCount > 1) {
       let scanPos = 0;
       for (const b of bindings) {
-        const colon = b.indexOf(':');
+        const colon = indexOfOutsideQuotes(b, ':');
         const prop = (colon === -1 ? b : b.slice(0, colon)).trim();
         if ((STRUCTURAL_BINDING_TYPE_SET as ReadonlySet<string>).has(prop)) {
           const leading = b.length - b.trimStart().length;
@@ -431,29 +434,37 @@ export interface ParsedBinding {
 }
 
 /**
- * HTML から全てのバインド属性を検出する。
- */
-/**
  * HTML 中の全バインド属性を値の開始オフセット付きで検出する。
- * （core/index/referenceIndex が同一走査を共有するため export — 走査が
- * 二重実装になると診断とインデックスで属性の解釈が割れる。）
+ * （診断・参照インデックス・配線レンズの 6 経路が共有する単一の走査 — 二重実装になると
+ * 診断とインデックスで属性の解釈が割れる。）
+ *
+ * 探索は**開始タグの属性領域の中だけ**（`findStartTagRegions`）。以前は HTML 全体を素の
+ * 正規表現で走っていたため、マークアップでない場所まで実属性として拾っていた:
+ * HTML コメントの中の説明文（`examples/router-i18n` の `<!-- <template data-wcs="for:"> … -->`）、
+ * エスケープ済みテキスト（`examples/router-spa` の
+ * `<code>&lt;template data-wcs="if: ..."&gt;</code>` — タグですらない）、
+ * `<script>` / `<style>` 本体の文字列。どれも正本パーサに通されて偽の
+ * `wcs/binding-syntax`（error）になる形で、右辺の空セグメントを拒否する変更が
+ * ランタイムへ入った瞬間に CI の `wcs-validate` が落ちる。
  */
 export function findAllBindAttributes(html: string, attrName: string): BindAttrLocation[] {
   const attrs: BindAttrLocation[] = [];
   const escaped = attrName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const regex = new RegExp(`${escaped}\\s*=\\s*(["'])`, 'gi');
+  const regex = new RegExp(`(?:^|[\\s/])${escaped}\\s*=\\s*(["'])`, 'gi');
 
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(html)) !== null) {
-    const quote = match[1];
-    const valueStart = match.index + match[0].length;
-    const valueEnd = html.indexOf(quote, valueStart);
-    if (valueEnd === -1) continue;
-
-    attrs.push({
-      value: html.slice(valueStart, valueEnd),
-      valueStart,
-    });
+  for (const tag of findStartTagRegions(html)) {
+    const attrsText = html.slice(tag.start, tag.end);
+    regex.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(attrsText)) !== null) {
+      const quote = match[1];
+      const valueStart = tag.start + match.index + match[0].length;
+      // 値の終端は同じ属性領域の中だけで探す（タグを跨いだら属性ではない）
+      const valueEnd = html.indexOf(quote, valueStart);
+      if (valueEnd === -1 || valueEnd > tag.end) continue;
+      attrs.push({ value: html.slice(valueStart, valueEnd), valueStart });
+      regex.lastIndex = valueEnd - tag.start;
+    }
   }
 
   return attrs;
@@ -461,34 +472,30 @@ export function findAllBindAttributes(html: string, attrName: string): BindAttrL
 
 /**
  * バインディング式を `;` で分割する。
- * （ioNodeValidator が同一パーサを共有するため export — 二重実装で構文解釈が
- * 割れると IDE / CI の診断が食い違うので、必ずこちらを使うこと。）
+ * （ioNodeValidator / ariaValidator / namedStateValidator が同一パーサを共有するため
+ * export — 二重実装で構文解釈が割れると IDE / CI の診断が食い違うので、必ずこちらを使うこと。）
+ *
+ * 分割規則は**正本**（`@wcstack/state/parser` の `splitBindTexts` — 引用符の外の `;` だけで
+ * 区切る、要件 B1）に委譲する。以前はここだけ括弧深度を見る独自実装で、引用符を見なかった
+ * ため `interval: 'a;b'` を 2 式に割って偽の `wcs/tag-member-unknown` を出し、逆に
+ * `f(a;b)` は 1 式に畳んでランタイムと食い違っていた（positionalParser は既に正本へ寄せ済み）。
+ * 前後の空白と `;` 区切りは保たれるので、呼び出し側の `expr.length + 1` というオフセット
+ * 計算はそのまま成立する。
  */
 export function splitBindingExpressions(value: string): string[] {
-  const result: string[] = [];
-  let current = '';
-  let parenDepth = 0;
-
-  for (const ch of value) {
-    if (ch === '(') parenDepth++;
-    else if (ch === ')') parenDepth = Math.max(0, parenDepth - 1);
-    else if (ch === ';' && parenDepth === 0) {
-      result.push(current);
-      current = '';
-      continue;
-    }
-    current += ch;
-  }
-  result.push(current);
-  return result;
+  return splitBindTexts(value);
 }
 
 /**
  * 単一のバインディング式を解析する。
  * （ioNodeValidator が同一パーサを共有するため export。）
+ *
+ * 左辺 / 右辺の境界は**引用符の外の `:`** だけ（正本 `parseBindTextsForElement` と同値）。
+ * 素の `indexOf(':')` だと `value|defaults(':'): name` の左辺が `value|defaults('` で切れ、
+ * 入力フィルタの引数が消えて `wcs/filter-arity`（引数 0 個）の誤検出になっていた。
  */
 export function parseBindingExpression(expr: string): ParsedBinding {
-  const colonIndex = expr.indexOf(':');
+  const colonIndex = indexOfOutsideQuotes(expr, ':');
 
   if (colonIndex === -1) {
     // else ディレクティブなど（パスなし）
@@ -532,23 +539,52 @@ function parseFilterSegments(expr: string, segments: string[], searchStart: numb
 
   for (const seg of segments) {
     const trimmed = seg.trim();
-    const filterMatch = trimmed.match(/^(\w+)(?:\(([^)]*)\))?/);
-    if (filterMatch) {
+    // 名前と引数の切り出しはランタイム（bindTextParser/parseFilters.ts）と同じ:
+    // 最初の `(` と**最後の** `)` の間が引数テキスト。`[^)]*` で読むと
+    // `join('a)b')` の引用符の中の `)` で引数が切れる。
+    const open = trimmed.indexOf('(');
+    const close = trimmed.lastIndexOf(')');
+    const namePart = open === -1 ? trimmed : trimmed.slice(0, open);
+    const nameMatch = /^\w+/.exec(namePart.trim());
+    if (nameMatch !== null) {
+      const name = nameMatch[0];
       const nameOffset = expr.indexOf(trimmed, filterSearchStart);
-      const args = filterMatch[2] !== undefined
-        ? filterMatch[2].split(',').map(a => a.trim()).filter(a => a !== '')
-        : [];
+      // 括弧が揃っていない形（`join(1` / `join)`）は引数なしとして寛容に読む
+      // （正本は raiseError し、bindingSyntaxValidator が `wcs/binding-syntax` で報告する）
+      const args = open !== -1 && close > open ? parseFilterArgsText(trimmed.slice(open + 1, close)) : [];
       filters.push({
-        name: filterMatch[1],
+        name,
         offset: nameOffset >= 0 ? nameOffset : filterSearchStart,
         args,
-        argsOffset: nameOffset >= 0 ? nameOffset + filterMatch[1].length : filterSearchStart,
+        argsOffset: nameOffset >= 0 ? nameOffset + name.length : filterSearchStart,
       });
     }
     filterSearchStart += seg.length + 1; // +1 for '|'
   }
 
   return filters;
+}
+
+/**
+ * `filter(…)` の引数リストを**個数がランタイムと一致する**ように切り出す
+ * （`bindTextParser/parseFilterArgs.ts` の `parseFilterArgsWithLiterals` と同値）。
+ *
+ * 規則は 2 つ:
+ *   1. 区切りの `,` は**引用符の外**だけ（要件 B1）— `join(', ')` / `join('a,b')` は 1 個。
+ *   2. 落とすのは**末尾の空引数だけ**（`filter()` を 0 個と読むための規則）。先頭・中間の
+ *      空引数は位置を保つ — `defaults(,)` は 1 個、`f(,a)` は 2 個。
+ *
+ * 以前は素の `split(',')` + `filter(a => a !== '')` だったため、1 は複数引数、2 は 0 個に
+ * 数えられ、正しい式に error 重大度の `wcs/filter-arity` を誤報していた。
+ *
+ * 引用符は**外さない**（`inferArgType` が要件 B9 と同じく「引用符付き ＝ 文字列」を
+ * 見分けるため。`gt('5')` は数値ではない）。引用符付きの引数は必ず非空文字列になるので、
+ * 末尾判定はランタイムの `if (last || hasQuote)` と同値になる。
+ */
+function parseFilterArgsText(argsText: string): string[] {
+  const args = splitOutsideQuotes(argsText, ',').map(a => a.trim());
+  if (args[args.length - 1] === '') args.pop();
+  return args;
 }
 
 /**
@@ -621,25 +657,15 @@ function validateFilterUsage(filter: ParsedFilter, bindingStart: number, msgs: W
 }
 
 /**
- * `|` で分割する（括弧内の `|` はスキップ）。
+ * フィルタの区切り `|` で分割する。
+ *
+ * ランタイム（`parsePropPart` / `parseStatePart`）は `splitOutsideQuotes(text, '|')` —
+ * **引用符の外**の `|` だけが区切りで、括弧の深さは見ない。以前はここだけ括弧深度を
+ * 見ており、`join('(')` のように引用符の中で括弧が閉じない形で深度が戻らず、
+ * 後続のフィルタが 1 つのセグメントに飲まれていた（検査が静かに抜ける）。
  */
 function splitByPipe(value: string): string[] {
-  const result: string[] = [];
-  let current = '';
-  let parenDepth = 0;
-
-  for (const ch of value) {
-    if (ch === '(') parenDepth++;
-    else if (ch === ')') parenDepth = Math.max(0, parenDepth - 1);
-    else if (ch === '|' && parenDepth === 0) {
-      result.push(current);
-      current = '';
-      continue;
-    }
-    current += ch;
-  }
-  result.push(current);
-  return result;
+  return splitOutsideQuotes(value, '|');
 }
 
 /**
@@ -782,7 +808,8 @@ function collectStructuralTemplates(html: string, attrName: string): StructuralT
       if (valueEnd !== -1) {
         // 構造ディレクティブは単独バインディング必須（parseBindTextsForElement.ts）。
         const first = splitBindingExpressions(html.slice(valueStart, valueEnd))[0] ?? '';
-        const prop = first.split(':')[0].replace(/#.*$/, '').trim();
+        const firstColon = indexOfOutsideQuotes(first, ':');
+        const prop = (firstColon === -1 ? first : first.slice(0, firstColon)).replace(/#.*$/, '').trim();
         const type = prop === 'if' || prop === 'elseif' || prop === 'else' ? prop : 'other';
         templates.push({ valueStart, depth, type });
       }
@@ -857,6 +884,11 @@ function getExpectedType(property: string, isNegatedIf: () => boolean): TypeRequ
 
 /**
  * フィルタチェーン内の各フィルタの入力型と前のフィルタの出力型の整合性を検証する。
+ *
+ * 引くキーは必ず正式名（`canonicalFilterName`）— `filterMap` は正式名しか持たないので、
+ * 旧名（`uc` / `fix` …）を書かれた分をそのまま引くと `!info` で黙って中断し、型検査だけが
+ * 消える（`wcs/name-alias` だけが出て型警告が出ない、という退行）。文言に出す名前は
+ * **書かれた名前**のまま（書き手が直す対象を指す）。
  */
 function validateFilterChainTypes(
   path: string,
@@ -874,7 +906,7 @@ function validateFilterChainTypes(
   let currentType = pathInfo.typeHint;
 
   for (const filter of filters) {
-    const info = filterMap.get(filter.name);
+    const info = filterMap.get(canonicalFilterName(filter.name));
     if (!info) break; // 不明なフィルタ → チェーン中断
 
     // 入力型チェック
@@ -905,6 +937,10 @@ function validateFilterChainTypes(
 /**
  * パスの型をフィルタチェーンを通して解決する。
  * 型が不明な場合は null を返す（検証をスキップ）。
+ *
+ * `validateFilterChainTypes` と同じく、引くキーは正式名に正規化する
+ * （旧名で書かれたチェーンだけ型追跡が止まり `wcs/binding-type-expectation` /
+ *  `wcs/path-type-mismatch` が消えるのを防ぐ）。
  */
 function resolveResultType(
   path: string,
@@ -919,7 +955,7 @@ function resolveResultType(
 
   // フィルタチェーンを通して型を更新
   for (const filter of filters) {
-    const info = filterMap.get(filter.name);
+    const info = filterMap.get(canonicalFilterName(filter.name));
     if (!info) return null; // 不明なフィルタ → 型追跡を中止
     if (info.resultType === 'passthrough') continue;
     currentType = info.resultType;

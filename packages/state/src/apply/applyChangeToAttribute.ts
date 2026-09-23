@@ -11,7 +11,10 @@ export function applyChangeToAttribute(binding: IBindingInfo, _context: IApplyCo
     }
     return;
   }
-  if (element.getAttribute(attrName) !== newValue) {
-    element.setAttribute(attrName, newValue as string);
+  // 属性の値は常に文字列なので、比較の前に同じ規則で文字列化する（`applyChangeToText` と同じ）。
+  // 生値のまま比べると数値・真偽値を束ねた属性は同値でも毎回 setAttribute が走っていた
+  const text = String(newValue);
+  if (element.getAttribute(attrName) !== text) {
+    element.setAttribute(attrName, text);
   }
 }
