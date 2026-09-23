@@ -37,11 +37,11 @@ wcstack is buildless — load what you need from a CDN. The default is one tag p
 
 Each `/auto` script registers its custom elements and does nothing else. No initialization call, no bootstrap. Tags activate when the browser parses them. The tags fetch in parallel (every `/auto` is self-contained), so multiple tags cost requests, not a waterfall.
 
-For an app that uses the SPA core anyway, **this package ships the bundle**: `wcstack/auto` is `@wcstack/state` + `@wcstack/router` + `@wcstack/fetch` + `@wcstack/storage` + `@wcstack/autoloader` pre-linked by Rollup into one self-contained file (344 KB min / 99 KB gzip as of 3.2.0) — one request, and in production one `integrity` hash covering every line of the core that runs (digests ship with each GitHub Release; see `docs/sri.md`):
+For an app that uses the SPA core anyway, **this package ships the bundle**: `wcstack/auto` is `@wcstack/state` + `@wcstack/router` + `@wcstack/fetch` + `@wcstack/storage` + `@wcstack/autoloader` pre-linked by Rollup into one self-contained file (352 KB min / 102 KB gzip as of 3.3.0) — one request, and in production one `integrity` hash covering every line of the core that runs (digests ship with each GitHub Release; see `docs/sri.md`):
 
 ```html
 <script type="module"
-        src="https://cdn.jsdelivr.net/npm/wcstack@3.2.0/dist/auto.min.js"
+        src="https://cdn.jsdelivr.net/npm/wcstack@3.3.0/dist/auto.min.js"
         integrity="sha384-…"></script>
 ```
 

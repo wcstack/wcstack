@@ -6,7 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
-## [Unreleased]
+## [3.3.0] — 2026-09-24
+
+**3.3 is a quality pass over everything 3.0, 3.1 and 3.2 introduced.** Five reviews, each starting from a clean slate so none inherited the previous one's assumptions, raised 137 findings; 116 are fixed here. The changes are in `@wcstack/state`, `@wcstack/server` and the tooling; every other package moves to 3.3.0 only to keep the lockstep version.
+
+Most of it is forms that used to fail *silently* — a `for` row that rendered nothing, an `else:` that never appeared, a template that lost its `{{ }}` after hydration, a server that stopped answering. A few forms that 3.1 and 3.2 accepted are now refused by name, which is why this is a minor rather than a patch: `.state:` and `.state.<key>:` (the undotted `state:` / `state.<key>:` volume forms are unchanged), an empty path segment on the right of a binding (`a.`, `a..b` — a *leading* dot is still the loop shorthand), text after a filter's closing `)`, a left side that names no property, a `$stream` entry colliding with a state method, and a path over 512 segments. Each of those was already broken at run time; they now say so where you write them. Lint gains `wcs/declaration-alias` and `wcs/declaration-alias-read`, and loses a batch of false positives that made it report on correct code.
 
 ### Fixed
 
