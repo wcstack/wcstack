@@ -1,6 +1,6 @@
 {
   "engine": "@wcstack/state 3.3.0 (dist/index.esm.js)",
-  "recordedAt": "2026-09-24T13:54:48.604Z",
+  "recordedAt": "2026-09-24T18:32:59.332Z",
   "scenarios": {
     "text: textContent と mustache": [
       {
@@ -513,103 +513,103 @@
     "wc-bindable: 双方向のメンバー（初期は状態が勝つ・要素→状態・属性への反映）": [
       {
         "label": "initial",
-        "dom": "<conf-counter id=\"c\" value=\"5\"></conf-counter><p>5|</p>"
+        "dom": "<conf-counter :value=\"5\" id=\"c\" value=\"5\"></conf-counter><p>5|</p>"
       },
       {
         "label": "要素側で値が変わる",
-        "dom": "<conf-counter id=\"c\" value=\"5\"></conf-counter><p>9|</p>"
+        "dom": "<conf-counter :value=\"9\" id=\"c\" value=\"5\"></conf-counter><p>9|</p>"
       },
       {
         "label": "状態から書く",
-        "dom": "<conf-counter id=\"c\" value=\"12\"></conf-counter><p>12|</p>"
+        "dom": "<conf-counter :value=\"12\" id=\"c\" value=\"12\"></conf-counter><p>12|</p>"
       },
       {
         "label": "null",
-        "dom": "<conf-counter id=\"c\"></conf-counter><p></p>"
+        "dom": "<conf-counter :value=\"null\" id=\"c\"></conf-counter><p></p>"
       }
     ],
     "wc-bindable: 出力専用（要素の値が初期値になり、状態からは書かない）": [
       {
         "label": "initial",
-        "dom": "<conf-output id=\"o\"></conf-output><p>ready|</p>"
+        "dom": "<conf-output :status=\"ready\" id=\"o\"></conf-output><p>ready|</p>"
       },
       {
         "label": "要素がイベントを出す",
-        "dom": "<conf-output id=\"o\"></conf-output><p>busy|</p>"
+        "dom": "<conf-output :status=\"busy\" id=\"o\"></conf-output><p>busy|</p>"
       },
       {
         "label": "状態から書く（要素には届かない）",
-        "dom": "<conf-output id=\"o\"></conf-output><p>forced|</p>"
+        "dom": "<conf-output :status=\"busy\" id=\"o\"></conf-output><p>forced|</p>"
       }
     ],
     "wc-bindable: 入力専用と属性への反映": [
       {
         "label": "initial",
-        "dom": "<conf-label data=\"{&quot;id&quot;:1}\" id=\"l\" label-text=\"hello\"></conf-label>"
+        "dom": "<conf-label :data=\"{&quot;id&quot;:1}\" :labelText=\"hello\" data=\"{&quot;id&quot;:1}\" id=\"l\" label-text=\"hello\"></conf-label>"
       },
       {
         "label": "書き換え",
-        "dom": "<conf-label data=\"[1,2]\" id=\"l\" label-text=\"bye\"></conf-label>"
+        "dom": "<conf-label :data=\"[1,2]\" :labelText=\"bye\" data=\"[1,2]\" id=\"l\" label-text=\"bye\"></conf-label>"
       },
       {
         "label": "null で属性を外す",
-        "dom": "<conf-label id=\"l\"></conf-label>"
+        "dom": "<conf-label :data=\"null\" :labelText=\"null\" id=\"l\"></conf-label>"
       }
     ],
     "wc-bindable: #init=element と #init=none": [
       {
         "label": "initial",
-        "dom": "<conf-output id=\"o\"></conf-output><conf-counter id=\"c\"></conf-counter><p>seed|||0|</p>"
+        "dom": "<conf-output :status=\"ready\" id=\"o\"></conf-output><conf-counter :value=\"0\" id=\"c\"></conf-counter><p>seed|||0|</p>"
       },
       {
         "label": "両方の要素がイベントを出す",
-        "dom": "<conf-output id=\"o\"></conf-output><conf-counter id=\"c\"></conf-counter><p>x|||3|</p>"
+        "dom": "<conf-output :status=\"x\" id=\"o\"></conf-output><conf-counter :value=\"3\" id=\"c\"></conf-counter><p>x|||3|</p>"
       },
       {
         "label": "状態から count",
-        "dom": "<conf-output id=\"o\"></conf-output><conf-counter id=\"c\" value=\"40\"></conf-counter><p>x|||40|</p>"
+        "dom": "<conf-output :status=\"x\" id=\"o\"></conf-output><conf-counter :value=\"40\" id=\"c\" value=\"40\"></conf-counter><p>x|||40|</p>"
       }
     ],
     "command token: 状態から emit・DOM イベントから emit・複数の要素へ配る": [
       {
         "label": "initial",
-        "dom": "<conf-counter id=\"a\" value=\"1\"></conf-counter><conf-counter id=\"b\" value=\"10\"></conf-counter><button id=\"btn\">clear|</button><p>1|||10|</p>"
+        "dom": "<conf-counter :value=\"1\" id=\"a\" value=\"1\"></conf-counter><conf-counter :value=\"10\" id=\"b\" value=\"10\"></conf-counter><button id=\"btn\">clear|</button><p>1|||10|</p>"
       },
       {
         "label": "状態から inc(2)",
-        "dom": "<conf-counter id=\"a\" value=\"1\"></conf-counter><conf-counter id=\"b\" value=\"10\"></conf-counter><button id=\"btn\">clear|</button><p>3|||12|</p>"
+        "dom": "<conf-counter :value=\"3\" id=\"a\" value=\"1\"></conf-counter><conf-counter :value=\"12\" id=\"b\" value=\"10\"></conf-counter><button id=\"btn\">clear|</button><p>3|||12|</p>"
       },
       {
         "label": "ボタンから clear",
-        "dom": "<conf-counter id=\"a\" value=\"1\"></conf-counter><conf-counter id=\"b\" value=\"10\"></conf-counter><button id=\"btn\">clear|</button><p>3|||0|</p>"
+        "dom": "<conf-counter :value=\"3\" id=\"a\" value=\"1\"></conf-counter><conf-counter :value=\"0\" id=\"b\" value=\"10\"></conf-counter><button id=\"btn\">clear|</button><p>3|||0|</p>"
       }
     ],
     "event token: $on で受ける（行の中は添字付き）": [
       {
         "label": "initial",
-        "dom": "<conf-notifier id=\"n\"></conf-notifier><ul><li><conf-notifier></conf-notifier>r0|</li><li><conf-notifier></conf-notifier>r1|</li></ul><p></p>"
+        "dom": "<conf-notifier :created=\"null\" id=\"n\"></conf-notifier><ul><li><conf-notifier :created=\"null\"></conf-notifier>r0|</li><li><conf-notifier :created=\"null\"></conf-notifier>r1|</li></ul><p></p>"
       },
       {
         "label": "ルートの要素が出す",
-        "dom": "<conf-notifier id=\"n\"></conf-notifier><ul><li><conf-notifier></conf-notifier>r0|</li><li><conf-notifier></conf-notifier>r1|</li></ul><p>made:x;|</p>"
+        "dom": "<conf-notifier :created=\"x\" id=\"n\"></conf-notifier><ul><li><conf-notifier :created=\"null\"></conf-notifier>r0|</li><li><conf-notifier :created=\"null\"></conf-notifier>r1|</li></ul><p>made:x;|</p>"
       },
       {
         "label": "2 行目の要素が出す",
-        "dom": "<conf-notifier id=\"n\"></conf-notifier><ul><li><conf-notifier></conf-notifier>r0|</li><li><conf-notifier></conf-notifier>r1|</li></ul><p>made:x;row1:y;|</p>"
+        "dom": "<conf-notifier :created=\"x\" id=\"n\"></conf-notifier><ul><li><conf-notifier :created=\"null\"></conf-notifier>r0|</li><li><conf-notifier :created=\"y\"></conf-notifier>r1|</li></ul><p>made:x;row1:y;|</p>"
       }
     ],
     "spread: 宣言されたプロパティと入力を一度に（後の明示バインディングが勝つ）": [
       {
         "label": "initial",
-        "dom": "<conf-fetch id=\"f\"></conf-fetch><conf-fetch id=\"g\"></conf-fetch><p>||false|</p>"
+        "dom": "<conf-fetch :loading=\"false\" :url=\"/api/users\" :value=\"null\" id=\"f\"></conf-fetch><conf-fetch :loading=\"false\" :url=\"/api/alt\" :value=\"null\" id=\"g\"></conf-fetch><p>||false|</p>"
       },
       {
         "label": "load",
-        "dom": "<conf-fetch id=\"f\"></conf-fetch><conf-fetch id=\"g\"></conf-fetch><p>data from /api/users|||false|</p>"
+        "dom": "<conf-fetch :loading=\"false\" :url=\"/api/users\" :value=\"data from /api/users\" id=\"f\"></conf-fetch><conf-fetch :loading=\"false\" :url=\"/api/alt\" :value=\"null\" id=\"g\"></conf-fetch><p>data from /api/users|||false|</p>"
       },
       {
         "label": "g も load（url は altUrl）",
-        "dom": "<conf-fetch id=\"f\"></conf-fetch><conf-fetch id=\"g\"></conf-fetch><p>data from /api/alt|||false|</p>"
+        "dom": "<conf-fetch :loading=\"false\" :url=\"/api/users\" :value=\"data from /api/users\" id=\"f\"></conf-fetch><conf-fetch :loading=\"false\" :url=\"/api/alt\" :value=\"data from /api/alt\" id=\"g\"></conf-fetch><p>data from /api/alt|||false|</p>"
       }
     ],
     "$eqPath: id による選択は並べ替えと削除に追従する": [
@@ -678,6 +678,134 @@
       {
         "label": "name を入れる",
         "dom": "<p id=\"t\"></p><p>x|||0.0|||Bob|</p>"
+      }
+    ],
+    "list: 同じリストを 2 つの for で描く（先の方は if の中）": [
+      {
+        "label": "initial",
+        "dom": "<div><ul><li>item 1|</li><li>item 2|</li></ul></div><ol><li>1|:|item 1|</li><li>2|:|item 2|</li></ol>"
+      },
+      {
+        "label": "追加",
+        "dom": "<div><ul><li>item 1|</li><li>item 2|</li><li>item 3|</li></ul></div><ol><li>1|:|item 1|</li><li>2|:|item 2|</li><li>3|:|item 3|</li></ol>"
+      },
+      {
+        "label": "items.1.name",
+        "dom": "<div><ul><li>item 1|</li><li>B|</li><li>item 3|</li></ul></div><ol><li>1|:|item 1|</li><li>2|:|B|</li><li>3|:|item 3|</li></ol>"
+      },
+      {
+        "label": "先の for を消す",
+        "dom": "<div></div><ol><li>1|:|item 1|</li><li>2|:|B|</li><li>3|:|item 3|</li></ol>"
+      },
+      {
+        "label": "消えた後で items.0.name",
+        "dom": "<div></div><ol><li>1|:|A|</li><li>2|:|B|</li><li>3|:|item 3|</li></ol>"
+      },
+      {
+        "label": "消えた後で追加",
+        "dom": "<div></div><ol><li>1|:|A|</li><li>2|:|B|</li><li>3|:|item 3|</li><li>4|:|item 4|</li></ol>"
+      },
+      {
+        "label": "先の for を戻す",
+        "dom": "<div><ul><li>A|</li><li>B|</li><li>item 3|</li></ul></div><ol><li>1|:|A|</li><li>2|:|B|</li><li>3|:|item 3|</li><li>4|:|item 4|</li></ol>"
+      },
+      {
+        "label": "戻した後で items.2.name",
+        "dom": "<div><ul><li>A|</li><li>B|</li><li>C|</li></ul></div><ol><li>1|:|A|</li><li>2|:|B|</li><li>3|:|C|</li><li>4|:|item 4|</li></ol>"
+      },
+      {
+        "label": "逆順",
+        "dom": "<div><ul><li>A|</li><li>B|</li><li>C|</li></ul></div><ol><li>4|:|item 4|</li><li>3|:|C|</li><li>2|:|B|</li><li>1|:|A|</li></ol>"
+      },
+      {
+        "label": "全消去",
+        "dom": "<div><ul></ul></div><ol></ol>"
+      },
+      {
+        "label": "再作成",
+        "dom": "<div><ul><li>item 1|</li><li>item 2|</li></ul></div><ol><li>1|:|item 1|</li><li>2|:|item 2|</li></ol>"
+      }
+    ],
+    "wc-bindable: 行の中の双方向メンバー": [
+      {
+        "label": "initial",
+        "dom": "<ul><li><conf-counter :value=\"1\" value=\"1\"></conf-counter>1|</li><li><conf-counter :value=\"2\" value=\"2\"></conf-counter>2|</li></ul>"
+      },
+      {
+        "label": "状態から rows.1.n",
+        "dom": "<ul><li><conf-counter :value=\"1\" value=\"1\"></conf-counter>1|</li><li><conf-counter :value=\"20\" value=\"20\"></conf-counter>20|</li></ul>"
+      },
+      {
+        "label": "1 行目の要素側で値が変わる",
+        "dom": "<ul><li><conf-counter :value=\"9\" value=\"1\"></conf-counter>9|</li><li><conf-counter :value=\"20\" value=\"20\"></conf-counter>20|</li></ul>"
+      },
+      {
+        "label": "1 行目を削除",
+        "dom": "<ul><li><conf-counter :value=\"20\" value=\"20\"></conf-counter>20|</li></ul>"
+      },
+      {
+        "label": "残った行に状態から書く",
+        "dom": "<ul><li><conf-counter :value=\"7\" value=\"7\"></conf-counter>7|</li></ul>"
+      }
+    ],
+    "wc-bindable: 行の中の出力専用メンバー": [
+      {
+        "label": "initial",
+        "dom": "<ul></ul>"
+      },
+      {
+        "label": "状態から rows.0.st（要素には届かない）",
+        "dom": "<ul></ul>"
+      },
+      {
+        "label": "2 行目の要素がイベントを出す",
+        "error": "Cannot read properties of null (reading 'emitStatus')"
+      },
+      {
+        "label": "1 行目を削除",
+        "dom": "<ul></ul>"
+      },
+      {
+        "label": "残った行に状態から書く",
+        "dom": "<ul></ul>"
+      }
+    ],
+    "event: 行の中の入れ子・#stop・if の中・先頭要素が複数の行・外側の要素": [
+      {
+        "label": "initial",
+        "dom": "<ul><li><b>a|</b><i>i|</i><em>stop|</em></li><span>a|-s|</span><li><b>b|</b><em>stop|</em></li><span>b|-s|</span></ul><p></p>"
+      },
+      {
+        "label": "1 行目の b",
+        "dom": "<ul><li><b>a|</b><i>i|</i><em>stop|</em></li><span>a|-s|</span><li><b>b|</b><em>stop|</em></li><span>b|-s|</span></ul><p>b0;li0;outer;|</p>"
+      },
+      {
+        "label": "1 行目の if の中の i",
+        "dom": "<ul><li><b>a|</b><i>i|</i><em>stop|</em></li><span>a|-s|</span><li><b>b|</b><em>stop|</em></li><span>b|-s|</span></ul><p>b0;li0;outer;i0;li0;outer;|</p>"
+      },
+      {
+        "label": "2 行目の em（#stop）",
+        "dom": "<ul><li><b>a|</b><i>i|</i><em>stop|</em></li><span>a|-s|</span><li><b>b|</b><em>stop|</em></li><span>b|-s|</span></ul><p>b0;li0;outer;i0;li0;outer;em1;|</p>"
+      },
+      {
+        "label": "2 行目の span（行の 2 つ目の先頭要素）",
+        "dom": "<ul><li><b>a|</b><i>i|</i><em>stop|</em></li><span>a|-s|</span><li><b>b|</b><em>stop|</em></li><span>b|-s|</span></ul><p>b0;li0;outer;i0;li0;outer;em1;span1;outer;|</p>"
+      },
+      {
+        "label": "2 行目の flag を立てる",
+        "dom": "<ul><li><b>a|</b><i>i|</i><em>stop|</em></li><span>a|-s|</span><li><b>b|</b><i>i|</i><em>stop|</em></li><span>b|-s|</span></ul><p>b0;li0;outer;i0;li0;outer;em1;span1;outer;|</p>"
+      },
+      {
+        "label": "2 行目の if の中の i",
+        "dom": "<ul><li><b>a|</b><i>i|</i><em>stop|</em></li><span>a|-s|</span><li><b>b|</b><i>i|</i><em>stop|</em></li><span>b|-s|</span></ul><p>b0;li0;outer;i0;li0;outer;em1;span1;outer;i1;li1;outer;|</p>"
+      },
+      {
+        "label": "先頭行を削除して新しい 1 行目の b",
+        "dom": "<ul><li><b>b|</b><i>i|</i><em>stop|</em></li><span>b|-s|</span></ul><p>b0;li0;outer;i0;li0;outer;em1;span1;outer;i1;li1;outer;|</p>"
+      },
+      {
+        "label": "削除後の 1 行目の b",
+        "dom": "<ul><li><b>b|</b><i>i|</i><em>stop|</em></li><span>b|-s|</span></ul><p>b0;li0;outer;i0;li0;outer;em1;span1;outer;i1;li1;outer;b0;li0;outer;|</p>"
       }
     ]
   }

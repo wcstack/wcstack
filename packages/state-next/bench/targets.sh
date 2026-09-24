@@ -13,7 +13,6 @@ for r in $(seq 1 "$ROUNDS"); do
   for b in $BUNDLES; do
     case "$b" in
       next) f="$(pwd)/packages/state-next/dist/auto.min.js" ;;
-      delegate) f="$(pwd)/packages/state-next/dist/auto.delegate.min.js" ;;
       *) f="$(pwd)/packages/state/dist/auto.min.js" ;;
     esac
     echo "=== round $r $b ($(date +%H:%M:%S))"

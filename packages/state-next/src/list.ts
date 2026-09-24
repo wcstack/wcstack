@@ -13,15 +13,12 @@ export class StateRow {
   item: unknown;
   /** Getter cache by slot (row-level getters of this engine). */
   cache: unknown[] | null = null;
-  /** Version strategy: write clock at which each slot was computed. */
-  cacheAt: number[] | null = null;
-  /** Version strategy: last write inside this row, or last change of its position. */
-  clock = 0;
-  /** Version strategy: per-drain walk de-duplication by slot. */
-  seenAt: number[] | null = null;
-  /** The rendering of this row (one view per list in this engine). */
+  /** The rendering of this row by its list's first for view (see StateList.extra for the others). */
   view: RowView | null = null;
-  /** Bindings whose location is in this row (pattern depth = this row's depth), wherever they render. */
+  /**
+   * Binding objects whose location is in this row (pattern depth = this row's depth), wherever
+   * they render. Row views' slot bindings are not here: they are reached through the views.
+   */
   bindings: Binding[] | null = null;
   /** `$eq` subscriptions of getters evaluated at this row (dropped with the row). */
   eqSubs: { source: Pattern; key: unknown; sub: import("./pattern").EqSub }[] | null = null;
@@ -52,8 +49,10 @@ export class StateList {
   /** The array the rows were last reconciled against. */
   arr: unknown[] | null = null;
   rows: StateRow[] = [];
-  /** The for-view that renders this list, if any. */
+  /** The first for view that renders this list, if any (its row views are on row.view). */
   view: ForView | null = null;
+  /** Further for views rendering the same list (each keeps its row views by row). */
+  extra: ForView[] | null = null;
   /** Queued for a view update in the current drain. */
   queued = false;
 

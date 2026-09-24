@@ -1,7 +1,7 @@
 import type { Engine } from "../engine";
 import { config } from "../config";
 import { bindAttr, compilePlan, directive, elementSpecs, readChain, splitMustache, textSpec } from "./plan";
-import { attachChain, attachCustomOrPlain, Binding, ForView, K_COMMAND, K_EVENT, K_EVTTOKEN, K_PROP, K_SPREAD, ROW, type Spec } from "./view";
+import { attachChain, attachCustomOrPlain, attachEvent, Binding, ForView, K_COMMAND, K_EVENT, K_EVTTOKEN, K_PROP, K_SPREAD, type Spec } from "./view";
 import { attachCommand, attachEventToken, attachSpread, whenDefined } from "./wc";
 
 /** Binds everything under `root` (outside <wcs-state>) to `engine` and renders it. */
@@ -25,14 +25,14 @@ function walk(engine: Engine, parent: Node): void {
         if (d === null) continue;
         if (d.bindingType === "for") {
           const p = engine.pattern(d.statePathName);
-          const plan = compilePlan(engine, el as HTMLTemplateElement, p);
+          const plan = compilePlan(engine, el as HTMLTemplateElement, p, true);
           const anchor = document.createComment("wcs-for");
           el.replaceWith(anchor);
           new ForView(engine, plan, engine.rootList(p), anchor).update();
         } else if (d.bindingType === "if") {
           const { parts, end } = readChain(engine, children, i, null);
           const branches = parts.map((part) => {
-            const plan = compilePlan(engine, part.el, null);
+            const plan = compilePlan(engine, part.el, null, false);
             const anchor = document.createComment("wcs-if");
             part.el.replaceWith(anchor);
             return { plan, pattern: part.pattern, filters: part.filters, anchor };
@@ -57,8 +57,7 @@ function walk(engine: Engine, parent: Node): void {
 
 function attach(engine: Engine, spec: Spec, node: Node): void {
   if (spec.kind === K_EVENT) {
-    (node as any)[ROW] = null;
-    node.addEventListener(spec.name, spec.listener!);
+    attachEvent(engine, node, spec, null);
     return;
   }
   const el = node as Element;

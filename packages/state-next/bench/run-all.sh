@@ -14,7 +14,6 @@ bundle_path() {
   case "$1" in
     current|currentB) echo "$(pwd)/packages/state/dist/auto.min.js" ;;
     next) echo "$(pwd)/packages/state-next/dist/auto.min.js" ;;
-    version) echo "$(pwd)/packages/state-next/dist/auto.version.min.js" ;;
     *) echo "unknown bundle $1" >&2; exit 1 ;;
   esac
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { Engine, mount, DirtyStrategy, VersionStrategy, type Strategy } from "../src/index";
+import { Engine, mount, DirtyStrategy, type Strategy } from "../src/index";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
@@ -78,7 +78,6 @@ const benchState = (variant: "tracked" | "manual" | "eqIndex") => {
 
 const strategies: [string, () => Strategy][] = [
   ["dirty", () => new DirtyStrategy()],
-  ["version", () => new VersionStrategy()],
 ];
 
 describe.each(strategies)("%s strategy", (_name, make) => {

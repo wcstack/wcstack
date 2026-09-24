@@ -5,11 +5,6 @@ export interface Config {
   enableMustache: boolean;
   locale: string;
   debug: boolean;
-  /**
-   * EXPERIMENT: row event bindings of bubbling events are delegated to one listener per
-   * event type on the root. Handlers then see the root as `event.currentTarget`.
-   */
-  delegateEvents: boolean;
 }
 
 export const config: Config = {
@@ -18,7 +13,6 @@ export const config: Config = {
   enableMustache: true,
   locale: typeof document !== "undefined" ? document.documentElement?.lang || "en" : "en",
   debug: false,
-  delegateEvents: false,
 };
 
 export type PartialConfig = Partial<Omit<Config, "tagNames">> & { tagNames?: Partial<Config["tagNames"]> };

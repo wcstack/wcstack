@@ -1,7 +1,7 @@
 import { Pattern, PatternTable, parsePath, WILDCARD, type EqSub } from "./pattern";
 import { StateList, StateRow, reconcile, type ReconcileHooks } from "./list";
 import type { Strategy } from "./strategy/types";
-import { handlerKey, type Binding } from "./dom/view";
+import type { Binding } from "./dom/view";
 import { commandNamespace, eventTokens, type Token } from "./token";
 
 interface Frame {
@@ -48,17 +48,17 @@ export class Engine implements ReconcileHooks {
   readonly proxy: Record<string, any>;
   /** Number of row-level getter slots. */
   slotCount = 0;
-  /** Version strategy: global write clock. */
-  clock = 0;
   /** Drain pass counter (walk de-duplication). */
-  epoch = 0;
   /** Evaluation context: the row a getter / method / setter runs for. */
   ctx: StateRow | null = null;
   /** Writes throw while > 0: a readonly createState callback, or a getter being evaluated. */
   readonlyDepth = 0;
   /** The node the bindings were mounted on (delegated listeners live here). */
   root: Node | null = null;
-  private readonly delegated = new Set<string>();
+  /** Delegated event types → the property (per engine) their element handlers are stored under. */
+  private readonly delegated = new Map<string, symbol>();
+  /** Property (per engine) on a block's top node(s) holding the block, for delegated events. */
+  readonly blockKey = Symbol("wcs.block");
   /** The <wcs-state> element (`this.$stateElement`). */
   element: unknown = null;
   /** `$command`: the command tokens declared in `$commandTokens`. */
@@ -68,7 +68,7 @@ export class Engine implements ReconcileHooks {
   /** Binding failures of the current drain, reported after it (`$errorCallback` or console). */
   private errors: { error: unknown; binding: Binding }[] = [];
   /** Paths applied in the current drain, for `$renderedCallback` (collected only when declared). */
-  private rendered: Map<string, number[][]> | null = null;
+  rendered: Map<string, number[][]> | null = null;
   private frames: Frame[] = [];
   private depthNow = 0;
   private top: Frame | null = null;
@@ -122,6 +122,8 @@ export class Engine implements ReconcileHooks {
             const v = t[key];
             if (typeof v === "function") return v;
           }
+          // a known top-level key: no path to parse
+          if (p !== undefined && p.depth === 0) return engine.read(p, null);
         }
         engine.resolve(key, engine.ctx);
         return engine.read(engine.rp!, engine.rr);
@@ -194,7 +196,7 @@ export class Engine implements ReconcileHooks {
     if (value === l.arr) return;
     const old = reconcile(l, value, this);
     if (old === null) return;
-    if (l.view !== null && !l.queued) {
+    if ((l.view !== null || l.extra !== null) && !l.queued) {
       l.queued = true;
       this.dirtyLists.push(l);
       this.schedule();
@@ -222,7 +224,15 @@ export class Engine implements ReconcileHooks {
       for (const e of subs) e.source.eqSubs?.get(e.key)?.delete(e.sub);
       row.eqSubs = null;
     }
-    if (row.children !== null) for (const l of row.children.values()) for (const r of l.rows) this.rowRemoved(r);
+    // the rows of its nested lists go with it
+    if (row.children !== null) {
+      for (const l of row.children.values()) {
+        for (const r of l.rows) {
+          r.alive = false;
+          this.rowRemoved(r);
+        }
+      }
+    }
   }
 
   // ---------------------------------------------------------------- resolve / read
@@ -534,21 +544,32 @@ export class Engine implements ReconcileHooks {
     this.schedule();
   }
 
-  /** One listener per event type on the root, dispatching to the delegated element handlers. */
-  delegate(type: string): void {
-    if (this.delegated.has(type) || this.root === null) return;
-    this.delegated.add(type);
-    const root = this.root;
-    const key = handlerKey(type);
+  /**
+   * One listener per event type on the root, dispatching to the delegated element handlers.
+   * Returns the property the element's handler is stored under (one symbol per engine and
+   * type, so two engines never run each other's handlers).
+   */
+  delegate(type: string): symbol {
+    const known = this.delegated.get(type);
+    if (known !== undefined) return known;
+    const key = Symbol(`wcs.on${type}`);
+    this.delegated.set(type, key);
+    const root = this.root!;
+    const blockKey = this.blockKey;
     root.addEventListener(type, (e) => {
       for (let n = e.target as any; n !== null && n !== root; n = n.parentNode) {
+        // a root-level element's own handler
         const fn = n[key];
         if (fn !== undefined) {
-          fn.call(n, e);
-          if (e.cancelBubble) break;
+          fn(e, null);
+          if (e.cancelBubble) return;
         }
+        // a block's top node: the handlers of the block's elements the event passed
+        const block = n[blockKey];
+        if (block !== undefined && block.alive && block.dispatch(type, e)) return;
       }
     });
+    return key;
   }
 
   // ---------------------------------------------------------------- tokens
@@ -605,6 +626,16 @@ export class Engine implements ReconcileHooks {
     }
     const bs = row.bindings;
     if (bs !== null) for (let i = 0; i < bs.length; i++) if (bs[i].pattern.isUnder(p)) this.enqueue(bs[i]);
+    // slot bindings of the row's renderings
+    const view = row.view;
+    if (view !== null && view.slots !== null) view.enqueueSlots(this, p);
+    const extra = row.list.extra;
+    if (extra !== null) {
+      for (const fv of extra) {
+        const rv = fv.map!.get(row);
+        if (rv !== undefined && rv.slots !== null) rv.enqueueSlots(this, p);
+      }
+    }
   }
 
   walkChange(p: Pattern, row: StateRow | null, visit: Visit): void {
@@ -699,6 +730,8 @@ export class Engine implements ReconcileHooks {
       this.rootBindings.get(b.pattern)?.delete(b);
       return;
     }
+    // a row that left its list takes its registrations with it
+    if (!row.alive) return;
     const bs = row.bindings;
     if (bs === null) return;
     const i = bs.indexOf(b);
@@ -728,7 +761,6 @@ export class Engine implements ReconcileHooks {
         this.dirtyLists = [];
         return;
       }
-      this.epoch++;
       this.strategy.beforeDrain(this);
       if (this.dirtyLists.length > 0) {
         const lists = this.dirtyLists;
@@ -736,6 +768,7 @@ export class Engine implements ReconcileHooks {
         for (const l of lists) {
           l.queued = false;
           if (l.view !== null && l.view.alive) l.view.update();
+          if (l.extra !== null) for (const v of l.extra.slice()) if (v.alive) v.update();
         }
       }
       const q = this.queue;
@@ -755,6 +788,11 @@ export class Engine implements ReconcileHooks {
   // ---------------------------------------------------------------- apply, hooks, reports
 
   /** Applies one binding; a failure is confined to it and reported after the drain. */
+  /** A binding that failed to apply: reported after the drain. */
+  fail(error: unknown, b: Binding): void {
+    this.errors.push({ error, binding: b });
+  }
+
   applyBinding(b: Binding): void {
     try {
       b.apply();
@@ -762,16 +800,18 @@ export class Engine implements ReconcileHooks {
       this.errors.push({ error, binding: b });
       return;
     }
-    const rendered = this.rendered;
-    if (rendered !== null) {
-      const path = b.pattern.path;
-      let list = rendered.get(path);
-      if (list === undefined) rendered.set(path, (list = []));
-      if (b.row !== null) {
-        const idx: number[] = [];
-        for (let r: StateRow | null = b.row; r !== null; r = r.list.parentRow) idx.unshift(r.index);
-        list.push(idx);
-      }
+    if (this.rendered !== null) this.noteRendered(b.pattern, b.row);
+  }
+
+  /** Records an applied binding for `$renderedCallback`. */
+  noteRendered(p: Pattern, row: StateRow | null): void {
+    const rendered = this.rendered!;
+    let list = rendered.get(p.path);
+    if (list === undefined) rendered.set(p.path, (list = []));
+    if (row !== null) {
+      const idx: number[] = [];
+      for (let r: StateRow | null = row; r !== null; r = r.list.parentRow) idx.unshift(r.index);
+      list.push(idx);
     }
   }
 

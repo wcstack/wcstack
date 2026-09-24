@@ -1,10 +1,11 @@
 import type { Engine } from "../engine";
+import type { StateRow } from "../list";
 import { UNSET, type Pattern } from "../pattern";
 import { config } from "../config";
 import { parseBindTextForEmbeddedNode, parseBindTextsForElement, type ParsedBinding } from "../parser/index";
 import { buildFilters, type FilterFn } from "./filters";
 import {
-  K_ATTR, K_CHECKBOX, K_CLASS, K_COMMAND, K_EVENT, K_EVTTOKEN, K_FOR, K_HTML, K_IF, K_PROP, K_RADIO, K_SPREAD, K_STYLE, K_TEXT, ROW,
+  K_ATTR, K_CHECKBOX, K_CLASS, K_COMMAND, K_EVENT, K_EVTTOKEN, K_FOR, K_HTML, K_IF, K_PROP, K_RADIO, K_SPREAD, K_STYLE, K_TEXT, BUBBLING,
   type BranchSpec, type RowPlan, type Spec,
 } from "./view";
 
@@ -22,6 +23,7 @@ function blank(): Spec {
   return {
     node: 0, kind: K_PROP, name: "", pattern: null, filters: null, initial: UNSET, listener: null, plan: null, branches: null,
     inFilters: null, twoWay: null, custom: false, init: null, sync: null, ro: false, prevent: false, stop: false, token: null, exclude: null,
+    slot: -1, delegated: false,
   };
 }
 
@@ -76,14 +78,17 @@ export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, 
     // `onclick: $command.x` emits a command token; `onclick: method` calls a state method
     const command = path.startsWith(COMMAND_PREFIX) ? path.slice(COMMAND_PREFIX.length) : null;
     const { prevent, stop } = f;
+    const type = b.propName.slice(2);
+    const delegated = BUBBLING.has(type);
+    if (delegated) engine.delegate(type);
     return {
-      ...blank(), node, kind: K_EVENT, name: b.propName.slice(2),
-      listener(this: any, e: Event) {
+      ...blank(), node, kind: K_EVENT, name: type, delegated,
+      listener(e: Event, row: StateRow | null) {
         if (prevent) e.preventDefault();
         if (stop) e.stopPropagation();
         try {
-          if (command !== null) engine.emitCommand(command, e, this[ROW] ?? null);
-          else engine.invoke(path, e, this[ROW] ?? null);
+          if (command !== null) engine.emitCommand(command, e, row);
+          else engine.invoke(path, e, row);
         } catch (error) {
           console.error(error);
         }
@@ -221,7 +226,7 @@ export function readChain(engine: Engine, children: ChildNode[], start: number, 
  * bound node, and one spec per binding. Paths are resolved to patterns here, once —
  * blocks never parse or resolve anything. `list` is the enclosing `for` (for `.` paths).
  */
-export function compilePlan(engine: Engine, template: HTMLTemplateElement, list: Pattern | null): RowPlan {
+export function compilePlan(engine: Engine, template: HTMLTemplateElement, list: Pattern | null, asRow: boolean): RowPlan {
   const frag = document.importNode(template.content, true);
   const targets: Node[] = [];
   const specs: Spec[] = [];
@@ -238,14 +243,14 @@ export function compilePlan(engine: Engine, template: HTMLTemplateElement, list:
           if (d === null) continue;
           if (d.bindingType === "for") {
             const p = engine.pattern(expandPath(d.statePathName, list));
-            const sub = compilePlan(engine, el as HTMLTemplateElement, p);
+            const sub = compilePlan(engine, el as HTMLTemplateElement, p, true);
             const anchor = document.createComment("wcs-for");
             el.replaceWith(anchor);
             specs.push({ ...blank(), node: target(anchor), kind: K_FOR, pattern: p, plan: sub });
           } else if (d.bindingType === "if") {
             const { parts, end } = readChain(engine, children, i, list);
             const branches: BranchSpec[] = parts.map((part) => {
-              const branchPlan = compilePlan(engine, part.el, list);
+              const branchPlan = compilePlan(engine, part.el, list, false);
               const anchor = document.createComment("wcs-if");
               part.el.replaceWith(anchor);
               return { node: target(anchor), plan: branchPlan, pattern: part.pattern, filters: part.filters };
@@ -275,7 +280,40 @@ export function compilePlan(engine: Engine, template: HTMLTemplateElement, list:
   const nodePaths = targets.map((t) => pathOf(frag, t));
   const single = frag.childNodes.length === 1;
   const nested = specs.some((s) => s.kind === K_FOR || s.kind === K_IF);
-  return { fragment: frag, root: single ? frag.firstChild : null, nodePaths, specs, single, nested, scratch: [] };
+  const lazy: Spec[] = [];
+  if (asRow) {
+    // the row's own locations, bound by kinds that need only the node: slots (see RowView)
+    const d = list!.depth + 1;
+    for (const s of specs) {
+      const p = s.pattern;
+      if (p !== null && p.depth === d && p.lists[d] === list && isSlotKind(s)) s.slot = lazy.push(s) - 1;
+    }
+  }
+  // a node used only by delegated events is never resolved when a block is built
+  const used = new Set<number>();
+  const events: Spec[] = [];
+  for (const s of specs) {
+    if (s.kind === K_EVENT && s.delegated) events.push(s);
+    else if (s.kind === K_IF) for (const br of s.branches!) used.add(br.node);
+    else used.add(s.node);
+  }
+  const build = [...used].sort((a, b) => a - b);
+  return { fragment: frag, root: single ? frag.firstChild : null, nodePaths, build, events, specs, single, nested, scratch: [], lazy };
+}
+
+function isSlotKind(s: Spec): boolean {
+  switch (s.kind) {
+    case K_TEXT:
+    case K_CLASS:
+    case K_ATTR:
+    case K_STYLE:
+    case K_HTML:
+      return true;
+    case K_PROP:
+      return !s.custom && s.twoWay === null;
+    default:
+      return false;
+  }
 }
 
 /** Elements whose children never render as text: whitespace between their children is noise. */

@@ -50,6 +50,15 @@ export function serialize(root: Node): string {
       const any = el as any;
       if (tag === "input" || tag === "textarea" || tag === "select") attrs.push([":value", String(any.value)]);
       if (tag === "input" && (any.type === "checkbox" || any.type === "radio")) attrs.push([":checked", String(any.checked)]);
+      // wc-bindable members: what state wrote to the element (or did not)
+      const bd = (el.constructor as any).wcBindable;
+      if (bd !== null && typeof bd === "object") {
+        const names = new Set<string>([...(bd.properties ?? []), ...(bd.inputs ?? [])].map((m: { name: string }) => m.name));
+        for (const name of names) {
+          const v = any[name];
+          attrs.push([`:${name}`, v !== null && typeof v === "object" ? JSON.stringify(v) : String(v)]);
+        }
+      }
       attrs.sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0));
       out += `<${tag}${attrs.map(([k, v]) => ` ${k}="${escapeAttr(v)}"`).join("")}>`;
       visit(el);

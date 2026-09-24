@@ -11,7 +11,7 @@
  */
 import type { Engine } from "../engine";
 import type { StateRow } from "../list";
-import { Binding, K_CUSTOM, type Block, type Spec } from "./view";
+import { adopt, Binding, K_CUSTOM, type Block, type Spec } from "./view";
 // (view.ts imports this module too: the cycle is fine, everything here is used at call time)
 
 interface PropertyDecl {
@@ -93,9 +93,8 @@ export function attachProperty(engine: Engine, spec: Spec, el: Element, name: st
   const b = new Binding(engine, K_CUSTOM, el, name, pattern, row, owner, spec.filters, undefined);
   b.inFilters = spec.inFilters;
   b.attribute = input?.attribute ?? null;
-  owner?.bindings.push(b);
   // state → element (every member but an output-only one)
-  if (!outputOnly) engine.register(b);
+  adopt(engine, b, !outputOnly);
   // element → state (a declared property)
   if (out !== null && !spec.ro) {
     el.addEventListener(out.event, (e) => {

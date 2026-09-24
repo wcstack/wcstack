@@ -39,18 +39,12 @@ export class Pattern {
   slot = -1;
   /** Root-level getter cache (depth 0). */
   rootValue: unknown = UNSET;
-  /** Version strategy: write clock of the last write to this pattern. */
-  ver = 0;
-  /** Version strategy: when rootValue was computed. */
-  rootAt = -1;
   /** `$eqIndex(this path)` watchers: getters keyed on the index of their row at `level`. */
   eqIndexWatchers: { getter: Pattern; level: number }[] | null = null;
   /** On a list pattern: the `$eqIndex` registrations over its rows (re-keyed on reorder). */
   eqIndexKeys: { source: Pattern; getter: Pattern }[] | null = null;
   /** On a list pattern: getters that read the index (`$k`) of this list's rows. */
   indexWatchers: Pattern[] | null = null;
-  /** Version strategy: drain epoch of the last walk visit (root-level getters). */
-  seenEpoch = -1;
   /** `$eq(this path, key)` subscriptions: getter occurrences keyed by the value they wait for. */
   eqSubs: Map<unknown, Set<EqSub>> | null = null;
 
