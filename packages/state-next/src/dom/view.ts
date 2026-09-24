@@ -3,6 +3,7 @@ import type { Pattern } from "../pattern";
 import type { StateList, StateRow } from "../list";
 import type { FilterFn } from "./filters";
 import { isHtmlSink, trustHtml } from "../trustedTypes";
+import { autoNaming, nameBlock } from "./naming";
 
 /**
  * `on*:` bindings of bubbling events are delegated: one listener per event type on the
@@ -401,6 +402,9 @@ export function adopt(engine: Engine, b: Binding, register: boolean): void {
 /** The block built by the last buildBlock call (read right after it; saves an allocation per row). */
 export let lastBlock: Block | null = null;
 
+/** The auto-naming cap for the blocks being built (-1: none), read once per view update. */
+let naming = -1;
+
 /**
  * Clones the plan in the context of `row`, binds it and applies the initial values
  * (off-document). `fv`: the for view the block is a row of (null for an if branch).
@@ -451,6 +455,7 @@ export function buildBlock(engine: Engine, plan: RowPlan, row: StateRow | null, 
   } else {
     block = new Block(row, first, all, plan);
   }
+  if (naming >= 0) nameBlock(first, all, fv !== null ? "row" : "branch", naming);
   if (plan.events.length > 0) {
     // delegated events find the block through its top node(s)
     const key = engine.blockKey;
@@ -636,6 +641,7 @@ export class IfView {
       }
     }
     if (index === this.index) return;
+    naming = autoNaming();
     if (this.current !== null) {
       this.current.removeNodes();
       this.current.dispose(engine);
@@ -700,6 +706,7 @@ export class ForView {
     const engine = this.engine;
     const rows = this.list.rows;
     const old = this.rowViews;
+    naming = autoNaming();
     const n = rows.length;
     const o = old.length;
     const anchor = this.anchor;

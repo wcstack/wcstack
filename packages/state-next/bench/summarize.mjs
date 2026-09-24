@@ -58,14 +58,21 @@ for (const measure of Object.keys(pool).sort()) {
   rows.push(row);
 }
 
+// the floor that builds its data inside the timer is the same condition as the engine's
+// (whose state method builds it inside the timed click); floors recorded before 2026-09-25
+// have only the data-outside numbers, used then as the ratio's denominator
 const targets = {};
 if (floor) {
+  const target = (engine, dom, domExcl) => ({
+    engine: r2(engine), dom, ratio: r2(engine / dom), pass: engine / dom <= 2,
+    ...(domExcl !== dom ? { domExcl, ratioExcl: r2(engine / domExcl) } : {}),
+  });
   for (const b of other) {
-    const warm1k = median(pool["create1k warm"]?.[b]);
-    const cold10k = median(pool["create10k cold"]?.[b]);
+    const f1 = floor.create1000;
+    const f10 = floor.create10000;
     targets[b] = {
-      "create1k warm": { engine: r2(warm1k), dom: floor.create1000.warm, ratio: r2(warm1k / floor.create1000.warm), pass: warm1k / floor.create1000.warm <= 2 },
-      "create10k cold": { engine: r2(cold10k), dom: floor.create10000.cold, ratio: r2(cold10k / floor.create10000.cold), pass: cold10k / floor.create10000.cold <= 2 },
+      "create1k warm": target(median(pool["create1k warm"]?.[b]), f1.warmWithData ?? f1.warm, f1.warm),
+      "create10k cold": target(median(pool["create10k cold"]?.[b]), f10.coldWithData ?? f10.cold, f10.cold),
     };
   }
 }

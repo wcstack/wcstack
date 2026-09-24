@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # The two targets only (warm create 1,000 / cold create 10,000), more rounds, with the DOM
 # floor measured twice in the same session (before and after the engine rounds), so the
-# ratio is not decided by one noisy floor sample.
+# ratio is not decided by one noisy floor sample. The ratios use the floor that builds its
+# data inside the timer, like the benchmark's state method (same condition, since
+# 2026-09-25); the *Excl ratios use the historical floor that builds it before the timer.
 #   OUT=docs/research/state-engine/targets ROUNDS=3 bash packages/state-next/bench/targets.sh
 set -u
 ROUNDS=${ROUNDS:-3}
@@ -28,10 +30,12 @@ const pool={};
 for (const f of fs.readdirSync(d)) { const m=f.match(/statenext-(\w+)-r\d+\.json$/); if(!m) continue;
   for (const r of JSON.parse(fs.readFileSync(d+"/"+f)).results) { (pool[m[1]+" "+r.op+" cold"] ??= []).push(...r.cold.samples); (pool[m[1]+" "+r.op+" warm"] ??= []).push(...r.warm.samples); } }
 const fa=JSON.parse(fs.readFileSync(d+"/dom-floor-a.json")), fb=JSON.parse(fs.readFileSync(d+"/dom-floor-b.json"));
-const floor={ w1k: med([...fa.create1000.warmSamples,...fb.create1000.warmSamples]), c10k: med([...fa.create10000.coldSamples,...fb.create10000.coldSamples]) };
-const out={ floor };
+const floor={ w1k: med([...fa.create1000.warmWithDataSamples,...fb.create1000.warmWithDataSamples]), c10k: med([...fa.create10000.coldWithDataSamples,...fb.create10000.coldWithDataSamples]) };
+const floorExcl={ w1k: med([...fa.create1000.warmSamples,...fb.create1000.warmSamples]), c10k: med([...fa.create10000.coldSamples,...fb.create10000.coldSamples]) };
+const out={ floor, floorExcl };
 for (const b of new Set(Object.keys(pool).map((k)=>k.split(" ")[0]))) {
   const w1k=med(pool[b+" create1k warm"]), c10k=med(pool[b+" create10k cold"]);
-  out[b]={ w1k, c10k, ratioW1k:+(w1k/floor.w1k).toFixed(2), ratioC10k:+(c10k/floor.c10k).toFixed(2), n: pool[b+" create10k cold"].length };
+  out[b]={ w1k, c10k, ratioW1k:+(w1k/floor.w1k).toFixed(2), ratioC10k:+(c10k/floor.c10k).toFixed(2),
+    ratioW1kExcl:+(w1k/floorExcl.w1k).toFixed(2), ratioC10kExcl:+(c10k/floorExcl.c10k).toFixed(2), n: pool[b+" create10k cold"].length };
 }
 console.log(JSON.stringify(out)); fs.writeFileSync(d+"/targets.json", JSON.stringify(out,null,2));' "$OUT"

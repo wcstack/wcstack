@@ -4,16 +4,32 @@ import { bindAttr, compilePlan, directive, elementSpecs, readChain, splitMustach
 import { attachChain, attachCustomOrPlain, attachEvent, Binding, ForView, K_COMMAND, K_EVENT, K_EVTTOKEN, K_PROP, K_SPREAD, type Spec } from "./view";
 import { attachCommand, attachEventToken, attachSpread, whenDefined } from "./wc";
 
+/** The engine mounted on each root (document, shadow root): the binder's lookup. */
+export const engines = new WeakMap<Node, Engine>();
+
+/**
+ * Elements outside any block whose data-wcs is bound: walking a subtree again (the binder
+ * protocol hands over route content on every insertion) leaves them alone. Blocks need no
+ * record — their plans drop the attribute, so a rendered row carries nothing to bind.
+ */
+const bound = new WeakSet<Element>();
+
 /** Binds everything under `root` (outside <wcs-state>) to `engine` and renders it. */
 export function mount(engine: Engine, root: Document | ShadowRoot | Element): void {
   const container: Node = root.nodeType === 9 ? (root as Document).body : root;
   engine.root = root;
-  walk(engine, container);
+  engines.set(root, engine);
+  walk(engine, Array.from(container.childNodes));
   engine.report();
 }
 
-function walk(engine: Engine, parent: Node): void {
-  const children = Array.from(parent.childNodes);
+/** Binds a subtree that entered the document after the mount (the binder protocol). */
+export function mountSubtree(engine: Engine, subtree: Element): void {
+  walk(engine, [subtree]);
+  engine.report();
+}
+
+function walk(engine: Engine, children: ChildNode[]): void {
   for (let i = 0; i < children.length; i++) {
     const child = children[i];
     if (child.nodeType === 1) {
@@ -45,10 +61,11 @@ function walk(engine: Engine, parent: Node): void {
         continue;
       }
       const text = el.getAttribute(bindAttr());
-      if (text !== null) {
+      if (text !== null && !bound.has(el)) {
+        bound.add(el);
         for (const spec of elementSpecs(engine, text, null, el, 0)) attach(engine, spec, el);
       }
-      walk(engine, el);
+      walk(engine, Array.from(el.childNodes));
     } else if (child.nodeType === 3 && config.enableMustache && (child as Text).data.includes("{{")) {
       for (const { node, expr } of splitMustache(child as Text)) attach(engine, textSpec(engine, expr, null, 0), node);
     }

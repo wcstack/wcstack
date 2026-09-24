@@ -94,6 +94,7 @@ export async function runScenario(s: Scenario, engine: EngineEntry): Promise<Sna
         i.dispatchEvent(new Event("input", { bubbles: true }));
       },
       call: (sel, method, ...args) => (root.querySelector(sel) as any)[method](...args),
+      reset: (state) => el.setInitialState(state),
       change: (sel, apply) => {
         const i = root.querySelector(sel) as HTMLInputElement;
         apply(i);

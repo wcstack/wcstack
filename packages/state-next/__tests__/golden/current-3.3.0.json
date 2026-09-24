@@ -1,6 +1,6 @@
 {
   "engine": "@wcstack/state 3.3.0 (dist/index.esm.js)",
-  "recordedAt": "2026-09-24T18:32:59.332Z",
+  "recordedAt": "2026-09-24T19:12:42.398Z",
   "scenarios": {
     "text: textContent と mustache": [
       {
@@ -806,6 +806,70 @@
       {
         "label": "削除後の 1 行目の b",
         "dom": "<ul><li><b>b|</b><i>i|</i><em>stop|</em></li><span>b|-s|</span></ul><p>b0;li0;outer;i0;li0;outer;em1;span1;outer;i1;li1;outer;b0;li0;outer;|</p>"
+      }
+    ],
+    "re-set: 状態を丸ごと差し替え、確立済みのバインディングを反映し直す": [
+      {
+        "label": "initial",
+        "dom": "<p id=\"t\">a|||2|</p><ul><li class=\"sel\">item 1|</li><li>item 2|</li></ul><div><b>shown|a|</b></div>"
+      },
+      {
+        "label": "新しい状態へ差し替え（getter も別物）",
+        "dom": "<p class=\"on\" id=\"t\">b|||n=3|</p><ul><li>item 1|</li><li>item 2|</li><li class=\"sel\">item 3|</li></ul><div><i>hidden|</i></div>"
+      },
+      {
+        "label": "差し替え後の書き込み（依存は新しい getter から）",
+        "dom": "<p class=\"on\" id=\"t\">b|||n=3|</p><ul><li class=\"sel\">item 1|</li><li>item 2|</li><li>item 3|</li></ul><div><b>shown|b|</b></div>"
+      },
+      {
+        "label": "差し替え後に一覧を置き換え",
+        "dom": "<p class=\"on\" id=\"t\">b|||n=4|</p><ul><li class=\"sel\">item 1|</li><li>item 2|</li><li>item 3|</li><li>nine|</li></ul><div><b>shown|b|</b></div>"
+      }
+    ],
+    "re-set: 同じ配列のまま差し替える（行は保たれ、値は新しい状態から）": [
+      {
+        "label": "initial",
+        "dom": "<ul><li>item 1|:|x|</li><li>item 2|:|x|</li><li>item 3|:|x|</li></ul>"
+      },
+      {
+        "label": "同じ配列で suffix を変えて差し替え",
+        "dom": "<ul><li>item 1|:|y|</li><li>item 2|:|y|</li><li>item 3|:|y|</li></ul>"
+      },
+      {
+        "label": "差し替え後に 1 行を書く",
+        "dom": "<ul><li>item 1|:|y|</li><li>two|:|y|</li><li>item 3|:|y|</li></ul>"
+      }
+    ],
+    "re-set: command token の購読と $on は新しい状態へ": [
+      {
+        "label": "initial",
+        "dom": "<conf-counter :value=\"1\" id=\"c\" value=\"1\"></conf-counter><conf-notifier :created=\"null\" id=\"e\"></conf-notifier><p>1|||</p>"
+      },
+      {
+        "label": "差し替え",
+        "dom": "<conf-counter :value=\"10\" id=\"c\" value=\"10\"></conf-counter><conf-notifier :created=\"null\" id=\"e\"></conf-notifier><p>10|||</p>"
+      },
+      {
+        "label": "差し替え後に状態から command を出す",
+        "dom": "<conf-counter :value=\"15\" id=\"c\" value=\"10\"></conf-counter><conf-notifier :created=\"null\" id=\"e\"></conf-notifier><p>15|||</p>"
+      },
+      {
+        "label": "差し替え後に要素が event token を出す",
+        "dom": "<conf-counter :value=\"15\" id=\"c\" value=\"10\"></conf-counter><conf-notifier :created=\"z\" id=\"e\"></conf-notifier><p>15|||new:z|</p>"
+      }
+    ],
+    "re-set: 新しい状態に無いパス": [
+      {
+        "label": "initial",
+        "dom": "<p>ann|||1|</p>"
+      },
+      {
+        "label": "user の無い状態へ",
+        "dom": "<p>ann|||2|</p>"
+      },
+      {
+        "label": "user を書き足す",
+        "dom": "<p>bob|||2|</p>"
       }
     ]
   }

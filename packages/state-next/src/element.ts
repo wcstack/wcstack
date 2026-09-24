@@ -1,5 +1,6 @@
 import { Engine } from "./engine";
 import { mount } from "./dom/mount";
+import { drainBinds, installBinder } from "./dom/binder";
 import { DirtyStrategy } from "./strategy/dirty";
 import { config, setConfig, type PartialConfig } from "./config";
 import type { Strategy } from "./strategy/types";
@@ -52,6 +53,7 @@ export class WcsState extends HTMLElement {
   private resolveConnected!: () => void;
   private rejectConnected!: (e: unknown) => void;
   private started = false;
+  private failed = false;
   private initial: Record<string, any> | null = null;
   private receiveInitial: ((state: Record<string, any>) => void) | null = null;
 
@@ -80,9 +82,16 @@ export class WcsState extends HTMLElement {
     if (this.engine !== null) this.engine.callHook("$disconnectedCallback");
   }
 
-  /** Supplies the initial state (before initialization). */
+  /**
+   * Supplies the initial state; on an initialized element, replaces the whole state and
+   * re-applies every binding to it before returning (not a write: no `$renderedCallback`).
+   */
   setInitialState(state: Record<string, any>): void {
-    if (this.engine !== null) throw new Error("[state-next] re-setting an initialized state is not implemented yet");
+    if (this.failed) throw new Error("[state-next] this <wcs-state> failed to initialize and cannot be re-armed; remove it and create a new one");
+    if (this.engine !== null) {
+      this.engine.reset(state);
+      return;
+    }
     if (this.receiveInitial !== null) {
       const receive = this.receiveInitial;
       this.receiveInitial = null;
@@ -130,10 +139,12 @@ export class WcsState extends HTMLElement {
       engine.element = this;
       this.engine = engine;
       mount(engine, root as Document | ShadowRoot);
+      drainBinds();
       engine.watchRendered();
       await engine.callHook("$connectedCallback");
       this.resolveConnected();
     } catch (e) {
+      this.failed = true;
       console.error(e);
       this.rejectConnected(e);
       throw e;
@@ -142,6 +153,7 @@ export class WcsState extends HTMLElement {
 }
 
 export function define(): void {
+  installBinder();
   const tag = config.tagNames.state;
   if (customElements.get(tag) === undefined) customElements.define(tag, class extends WcsState {});
 }

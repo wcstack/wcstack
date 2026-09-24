@@ -17,6 +17,8 @@ export interface Api {
   change(selector: string, apply: (el: HTMLInputElement) => void): void;
   /** Calls a method of the element (a fixture custom element acting as the user / the network). */
   call(selector: string, method: string, ...args: unknown[]): unknown;
+  /** Re-sets the whole state (setInitialState on the initialized element). */
+  reset(state: Record<string, any>): void;
 }
 
 export interface Scenario {
@@ -528,7 +530,7 @@ export const scenarios: Scenario[] = [
       { label: "再作成", run: (a) => a.write((s) => { s.items = items(2); }) },
     ],
     differs: {
-      reason: "3.3.0 の不具合: 同じリストを別の for も描いているとき、if で消して戻した for は、消えている間に増えた行を描かず、その後の並べ替えにも追従しない（Chromium でも同じ。for が 1 つだけなら起きない）。新エンジンは戻したときの一覧を描き、以後も追従する",
+      reason: "3.3.0 の不具合（#320）: 同じリストを別の for も描いているとき、if で消して戻した for は、消えている間に増えた行を描かず、その後の並べ替えにも追従しない（Chromium でも同じ。for が 1 つだけなら起きない）。新エンジンは戻したときの一覧を描き、以後も追従する",
       dom: {
         "先の for を戻す": "<div><ul><li>A|</li><li>B|</li><li>item 3|</li><li>item 4|</li></ul></div><ol><li>1|:|A|</li><li>2|:|B|</li><li>3|:|item 3|</li><li>4|:|item 4|</li></ol>",
         "戻した後で items.2.name": "<div><ul><li>A|</li><li>B|</li><li>C|</li><li>item 4|</li></ul></div><ol><li>1|:|A|</li><li>2|:|B|</li><li>3|:|C|</li><li>4|:|item 4|</li></ol>",
@@ -558,7 +560,7 @@ export const scenarios: Scenario[] = [
       { label: "残った行に状態から書く", run: (a) => a.write((s) => { s["rows.0.st"] = "again"; }) },
     ],
     differs: {
-      reason: "3.3.0 の不具合: 行の中の出力専用メンバーの初期同期を、文書に入る前の断片の上で行って状態の木を見つけられず、for ごと描画に失敗する（Chromium でも同じ・\"No state tree found on this root for initial binding sync.\"）。新エンジンは出力専用の約束どおり、要素の値を初期値にし、状態からは書かない",
+      reason: "3.3.0 の不具合（#319）: 行の中の出力専用メンバーの初期同期を、文書に入る前の断片の上で行って状態の木を見つけられず、for ごと描画に失敗する（Chromium でも同じ・\"No state tree found on this root for initial binding sync.\"）。新エンジンは出力専用の約束どおり、要素の値を初期値にし、状態からは書かない",
       dom: {
         initial: '<ul><li><conf-output :status="ready"></conf-output>ready|</li><li><conf-output :status="ready"></conf-output>ready|</li></ul>',
         "状態から rows.0.st（要素には届かない）": '<ul><li><conf-output :status="ready"></conf-output>forced|</li><li><conf-output :status="ready"></conf-output>ready|</li></ul>',
@@ -591,5 +593,81 @@ export const scenarios: Scenario[] = [
       { label: "先頭行を削除して新しい 1 行目の b", run: (a) => { a.write((s) => { s.items = s.items.toSpliced(0, 1); }); } },
       { label: "削除後の 1 行目の b", run: (a) => a.click("li:nth-of-type(1) b") },
     ],
+  },
+  {
+    name: "re-set: 状態を丸ごと差し替え、確立済みのバインディングを反映し直す",
+    html: `<wcs-state></wcs-state><p id="t" data-wcs="class.on: on">{{ msg }}|{{ total }}</p><ul><template data-wcs="for: items"><li data-wcs="class.sel: .sel">{{ .name }}</li></template></ul><div><template data-wcs="if: show"><b>shown {{ msg }}</b></template><template data-wcs="else:"><i>hidden</i></template></div>`,
+    state: () => ({
+      msg: "a", on: false, show: true, pick: 0, items: items(2),
+      get total() { return (this as any).items.length; },
+      get "items.*.sel"() { return (this as any).$1 === (this as any).pick; },
+    }),
+    steps: [
+      {
+        label: "新しい状態へ差し替え（getter も別物）",
+        run: (a) => a.reset({
+          msg: "b", on: true, show: false, pick: 2, items: items(3),
+          get total() { return `n=${(this as any).items.length}`; },
+          get "items.*.sel"() { return (this as any).$1 === (this as any).pick; },
+        }),
+      },
+      { label: "差し替え後の書き込み（依存は新しい getter から）", run: (a) => a.write((s) => { s.pick = 0; s.show = true; }) },
+      { label: "差し替え後に一覧を置き換え", run: (a) => a.write((s) => { s.items = s.items.concat({ id: 9, name: "nine" }); }) },
+    ],
+  },
+  (() => {
+    // the same array instance handed to the re-set (rows are kept)
+    let shared: any[] = [];
+    const scenario: Scenario = {
+      name: "re-set: 同じ配列のまま差し替える（行は保たれ、値は新しい状態から）",
+      html: `<wcs-state></wcs-state><ul><template data-wcs="for: items"><li>{{ .name }}:{{ suffix }}</li></template></ul>`,
+      state: () => {
+        shared = items(3);
+        return { items: shared, suffix: "x" };
+      },
+      steps: [
+        { label: "同じ配列で suffix を変えて差し替え", run: (a) => a.reset({ items: shared, suffix: "y" }) },
+        { label: "差し替え後に 1 行を書く", run: (a) => a.write((s) => { s["items.1.name"] = "two"; }) },
+      ],
+    };
+    return scenario;
+  })(),
+  {
+    name: "re-set: command token の購読と $on は新しい状態へ",
+    html: `<wcs-state></wcs-state><conf-counter id="c" data-wcs="value: n; command.increment: $command.inc"></conf-counter><conf-notifier id="e" data-wcs="eventToken.created: made"></conf-notifier><p>{{ n }}|{{ log }}</p>`,
+    state: () => ({
+      n: 1, log: "",
+      $commandTokens: ["inc"], $eventTokens: ["made"],
+      $on: { made(state: any, e: CustomEvent) { state.log = `old:${e.detail}`; } },
+      bump(this: any) { this.$command.inc.emit(1); },
+    }),
+    steps: [
+      {
+        label: "差し替え",
+        run: (a) => a.reset({
+          n: 10, log: "",
+          $commandTokens: ["inc"], $eventTokens: ["made"],
+          $on: { made(state: any, e: CustomEvent) { state.log = `new:${e.detail}`; } },
+          bump(this: any) { this.$command.inc.emit(5); },
+        }),
+      },
+      { label: "差し替え後に状態から command を出す", run: (a) => a.write((s) => { s.bump(); }) },
+      { label: "差し替え後に要素が event token を出す", run: (a) => { a.call("#e", "fire", "z"); } },
+    ],
+  },
+  {
+    name: "re-set: 新しい状態に無いパス",
+    html: `<wcs-state></wcs-state><p>{{ user.name }}|{{ count }}</p>`,
+    state: () => ({ user: { name: "ann" }, count: 1 }),
+    steps: [
+      { label: "user の無い状態へ", run: (a) => a.reset({ count: 2 }) },
+      { label: "user を書き足す", run: (a) => a.write((s) => { s.user = { name: "bob" }; }) },
+    ],
+    differs: {
+      reason: "3.3.0 は新しい状態に無いパスの読みを失敗（`wcs/binding-path-missing`）として報告し、表示は古い値のまま残す。新エンジンのコアは無いパスを undefined として読み、空値の約束（B8）で空にする（表示と状態が食い違わない）。パスの欠落の診断は後付けの「診断」に入る（scope-classification の決定）",
+      dom: {
+        "user の無い状態へ": "<p>||2|</p>",
+      },
+    },
   },
 ];

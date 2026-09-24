@@ -58,11 +58,11 @@ const READER_TARGET_PACKAGES = ["state"];
 
 // transition-runner protocol (docs/view-transition-design.md §4): the two packages
 // that mutate the DOM on the page's behalf, plus the arbiter that installs itself.
-const TRANSITION_RUNNER_TARGET_PACKAGES = ["router", "state", "view-transition"];
+const TRANSITION_RUNNER_TARGET_PACKAGES = ["router", "state", "state-next", "view-transition"];
 
 // binder protocol (docs/binder-protocol-design.md): the package that inserts DOM on
 // the page's behalf, plus the one that owns bindings and installs itself.
-const BINDER_TARGET_PACKAGES = ["router", "state"];
+const BINDER_TARGET_PACKAGES = ["router", "state", "state-next"];
 
 // ssr-snapshot protocol (docs/ssr-router-design.md §5): the SSR renderer that
 // orchestrates the final snapshot pass, plus the state owner that provides it.

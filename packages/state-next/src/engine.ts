@@ -3,6 +3,7 @@ import { StateList, StateRow, reconcile, type ReconcileHooks } from "./list";
 import type { Strategy } from "./strategy/types";
 import type { Binding } from "./dom/view";
 import { commandNamespace, eventTokens, type Token } from "./token";
+import { runTransition } from "./protocol/transitionRunner";
 
 interface Frame {
   getter: Pattern;
@@ -42,7 +43,7 @@ export function rowAt(row: StateRow | null, depth: number): StateRow | null {
  * by the state element, because nothing is shared between engines.
  */
 export class Engine implements ReconcileHooks {
-  readonly target: Record<string, any>;
+  target: Record<string, any>;
   readonly patterns: PatternTable;
   readonly strategy: Strategy;
   readonly proxy: Record<string, any>;
@@ -62,9 +63,9 @@ export class Engine implements ReconcileHooks {
   /** The <wcs-state> element (`this.$stateElement`). */
   element: unknown = null;
   /** `$command`: the command tokens declared in `$commandTokens`. */
-  readonly commands: Readonly<Record<string, Token>>;
+  commands: Readonly<Record<string, Token>>;
   /** The event tokens declared in `$eventTokens`, with the `$on` handlers subscribed. */
-  readonly events: Map<string, Token>;
+  events: Map<string, Token>;
   /** Binding failures of the current drain, reported after it (`$errorCallback` or console). */
   private errors: { error: unknown; binding: Binding }[] = [];
   /** Paths applied in the current drain, for `$renderedCallback` (collected only when declared). */
@@ -77,11 +78,13 @@ export class Engine implements ReconcileHooks {
   private queue: Binding[] = [];
   private dirtyLists: StateList[] = [];
   private scheduled = false;
+  private draining = false;
   // out-parameters of resolve()
   private rp: Pattern | null = null;
   private rr: StateRow | null = null;
 
   private readonly drainFn = () => this.drain();
+  private readonly deliverFn = (handler: (...a: unknown[]) => unknown, args: unknown[]) => handler(this.proxy, ...args);
   private readonly untrackedFn = (fn: () => unknown) => this.untracked(fn);
   private readonly eqIndexFn = (path: string, level = 1) => this.eqIndex(path, level);
   private readonly eqFn = (path: string, key: unknown) => this.eq(path, key);
@@ -110,10 +113,12 @@ export class Engine implements ReconcileHooks {
     this.patterns = new PatternTable((p) => this.onPatternCreated(p));
     this.registerAccessors(target);
     this.commands = commandNamespace(target);
-    this.events = eventTokens(target, (handler, args) => handler(this.proxy, ...args));
+    this.events = eventTokens(target, this.deliverFn);
     const engine = this;
+    // the handler reads engine.target, not the proxy's target: a re-set swaps the state
     this.proxy = new Proxy(target, {
-      get(t, key) {
+      get(_t, key) {
+        const t = engine.target;
         if (typeof key === "symbol") return Reflect.get(t, key);
         if (key.charCodeAt(0) === 36 /* $ */) return engine.dollar(key);
         if (key.indexOf(".") < 0) {
@@ -128,8 +133,8 @@ export class Engine implements ReconcileHooks {
         engine.resolve(key, engine.ctx);
         return engine.read(engine.rp!, engine.rr);
       },
-      set(t, key, value) {
-        if (typeof key === "symbol") return Reflect.set(t, key, value);
+      set(_t, key, value) {
+        if (typeof key === "symbol") return Reflect.set(engine.target, key, value);
         engine.resolve(key, engine.ctx);
         engine.write(engine.rp!, engine.rr, value);
         return true;
@@ -572,6 +577,45 @@ export class Engine implements ReconcileHooks {
     return key;
   }
 
+  // ---------------------------------------------------------------- re-set
+
+  /**
+   * `setInitialState` on an initialized element: the state is replaced whole and every
+   * binding is re-applied to it before this returns. Not a write: no `$renderedCallback`.
+   * Everything learned from the old state goes (accessors, dependencies, caches, `$eq`
+   * keys); rows are kept where their list's array is the same instance.
+   */
+  reset(target: Record<string, any>): void {
+    this.target = target;
+    this.slotCount = 0;
+    for (const p of this.patterns.all()) p.forget();
+    this.rootEqSubs.length = 0;
+    this.registerAccessors(target);
+    this.commands = commandNamespace(target, this.commands);
+    this.events = eventTokens(target, this.deliverFn);
+    for (const bs of this.rootBindings.values()) for (const b of bs) this.enqueue(b);
+    for (const l of this.rootLists.values()) this.resetList(l);
+    const rendered = this.rendered;
+    this.rendered = null;
+    try {
+      this.drain();
+    } finally {
+      this.rendered = rendered;
+      this.watchRendered();
+    }
+  }
+
+  private resetList(l: StateList): void {
+    this.sync(l);
+    const element = this.pattern(`${l.pattern.path}.*`);
+    for (const row of l.rows) {
+      row.cache = null;
+      row.eqSubs = null;
+      this.enqueueBound(element, row);
+      if (row.children !== null) for (const c of row.children.values()) this.resetList(c);
+    }
+  }
+
   // ---------------------------------------------------------------- tokens
 
   /** The loop indexes of `row`, outermost first (`$1`, `$2`, …). */
@@ -753,36 +797,47 @@ export class Engine implements ReconcileHooks {
 
   drain(): void {
     this.scheduled = false;
-    for (let pass = 0; ; pass++) {
-      if (pass >= MAX_DRAIN_PASSES) {
-        console.error(`[state-next] updates did not settle after ${MAX_DRAIN_PASSES} passes; the rest is dropped`);
-        for (const b of this.queue) b.queued = false;
-        this.queue = [];
-        this.dirtyLists = [];
-        return;
-      }
-      this.strategy.beforeDrain(this);
-      if (this.dirtyLists.length > 0) {
+    this.draining = true;
+    try {
+      for (let pass = 0; this.queue.length > 0 || this.dirtyLists.length > 0; pass++) {
+        if (pass >= MAX_DRAIN_PASSES) {
+          console.error(`[state-next] updates did not settle after ${MAX_DRAIN_PASSES} passes; the rest is dropped`);
+          for (const b of this.queue) b.queued = false;
+          for (const l of this.dirtyLists) l.queued = false;
+          this.queue = [];
+          this.dirtyLists = [];
+          break;
+        }
         const lists = this.dirtyLists;
+        const q = this.queue;
         this.dirtyLists = [];
-        for (const l of lists) {
-          l.queued = false;
-          if (l.view !== null && l.view.alive) l.view.update();
-          if (l.extra !== null) for (const v of l.extra.slice()) if (v.alive) v.update();
-        }
-      }
-      const q = this.queue;
-      if (q.length > 0) {
         this.queue = [];
-        for (let i = 0; i < q.length; i++) {
-          const b = q[i];
-          b.queued = false;
-          if (b.owner === null || b.owner.alive) this.applyBinding(b);
-        }
+        // the DOM changes of this pass go to the page's view-transition arbiter, if any
+        // (transition-runner protocol): with none, they are applied right here. Queued
+        // entries stay marked until applied, so a write meanwhile folds into them
+        const pending = runTransition("state", () => this.applyPass(lists, q));
+        if (pending !== undefined) pending.then(undefined, (e) => console.error(e));
       }
-      if (this.queue.length === 0 && this.dirtyLists.length === 0 && !this.strategy.pending(this)) break;
+    } finally {
+      this.draining = false;
     }
     this.report();
+  }
+
+  /** The DOM work of one drain pass: list views first (they build rows), then bindings. */
+  private applyPass(lists: StateList[], q: Binding[]): void {
+    for (const l of lists) {
+      l.queued = false;
+      if (l.view !== null && l.view.alive) l.view.update();
+      if (l.extra !== null) for (const v of l.extra.slice()) if (v.alive) v.update();
+    }
+    for (let i = 0; i < q.length; i++) {
+      const b = q[i];
+      b.queued = false;
+      if (b.owner === null || b.owner.alive) this.applyBinding(b);
+    }
+    // applied later by the arbiter, outside any drain: report its failures now
+    if (!this.draining) this.report();
   }
 
   // ---------------------------------------------------------------- apply, hooks, reports
@@ -817,7 +872,7 @@ export class Engine implements ReconcileHooks {
 
   /** Starts collecting applied paths when the state declares `$renderedCallback`. */
   watchRendered(): void {
-    if (typeof this.target.$renderedCallback === "function") this.rendered = new Map();
+    this.rendered = typeof this.target.$renderedCallback === "function" ? new Map() : null;
   }
 
   /** `$renderedCallback` for the paths applied since the last report, then binding failures. */
@@ -835,11 +890,13 @@ export class Engine implements ReconcileHooks {
     this.errors = [];
     const hook = this.target.$errorCallback;
     for (const { error, binding } of errors) {
-      const info = { path: binding.pattern.path, bindingType: binding.typeName(), node: binding.node };
+      const path = binding.pattern.path;
+      const type = binding.typeName();
       if (typeof hook === "function") {
-        this.callHookDetached("$errorCallback", [error, info]);
+        // quoted keys: the author reads them (mangle.mjs shortens the unquoted ones)
+        this.callHookDetached("$errorCallback", [error, { "path": path, "bindingType": type, "node": binding.node }]);
       } else {
-        console.error(`[@wcstack/state] binding "${info.bindingType}: ${info.path}" failed to apply; the rest of this batch continues.`, error);
+        console.error(`[@wcstack/state] binding "${type}: ${path}" failed to apply; the rest of this batch continues.`, error);
       }
     }
   }

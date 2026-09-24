@@ -263,7 +263,11 @@ export function compilePlan(engine: Engine, template: HTMLTemplateElement, list:
           continue;
         }
         const text = el.getAttribute(bindAttr());
-        if (text !== null) specs.push(...elementSpecs(engine, text, list, el, target(el)));
+        if (text !== null) {
+          specs.push(...elementSpecs(engine, text, list, el, target(el)));
+          // the plan holds the bindings: blocks cloned from it carry nothing left to bind
+          el.removeAttribute(bindAttr());
+        }
         walk(el);
       } else if (child.nodeType === 3 && config.enableMustache && (child as Text).data.includes("{{")) {
         for (const { node, expr } of splitMustache(child as Text)) specs.push(textSpec(engine, expr, list, target(node)));

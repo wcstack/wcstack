@@ -81,6 +81,23 @@ export class Pattern {
     getter.sources.push(this);
   }
 
+  /** A re-set replaced the state: forget its accessors and everything learned from them. */
+  forget(): void {
+    this.getter = null;
+    this.setter = null;
+    this.slot = -1;
+    this.rootValue = UNSET;
+    this.dependents.length = 0;
+    this.dependentSet.clear();
+    this.sources.length = 0;
+    this.crossSources = null;
+    this.indexDependent = false;
+    this.eqIndexWatchers = null;
+    this.eqIndexKeys = null;
+    this.indexWatchers = null;
+    this.eqSubs = null;
+  }
+
   /** true when `this` is `ancestor` or lies under it. */
   isUnder(ancestor: Pattern): boolean {
     let p: Pattern | null = this;

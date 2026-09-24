@@ -1,0 +1,50 @@
+{
+  "label": "next-r1",
+  "variant": "tracked",
+  "bundle": "C:/Users/kikuzawa/Documents/git/wcstack/wcstack-state-engine/packages/state-next/dist/auto.min.js",
+  "timestamp": "2026-09-24T19:20:23.743Z",
+  "select10k": {
+    "median": 2.2,
+    "min": 1.8,
+    "max": 3.5,
+    "samples": [
+      2.3,
+      2.8,
+      2.1,
+      2.1,
+      2.5,
+      2.2,
+      2,
+      1.8,
+      2.7,
+      2.2,
+      1.8,
+      2.1,
+      2,
+      2.6,
+      3.5
+    ]
+  },
+  "remove1of10k": {
+    "median": 4.8,
+    "min": 3.3,
+    "max": 6.3,
+    "samples": [
+      5.7,
+      4.8,
+      4.9,
+      4.8,
+      5.2,
+      6.3,
+      4.5,
+      5.5,
+      3.3,
+      4.5,
+      4.4,
+      4.8,
+      4.7,
+      4.9,
+      5.3
+    ]
+  }
+}

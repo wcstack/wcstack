@@ -89,12 +89,6 @@ export class DirtyStrategy implements Strategy {
     return v;
   }
 
-  beforeDrain(): void {}
-
-  pending(): boolean {
-    return false;
-  }
-
   resetRow(row: StateRow): void {
     row.cache = null;
   }

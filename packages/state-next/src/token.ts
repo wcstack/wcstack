@@ -54,10 +54,13 @@ function readNames(value: unknown, key: string, reserved?: string): string[] {
   return value as string[];
 }
 
-/** `$commandTokens` → the frozen `$command` namespace (name → Token). */
-export function commandNamespace(target: Record<string, any>): Readonly<Record<string, Token>> {
+/**
+ * `$commandTokens` → the frozen `$command` namespace (name → Token). On a re-set, a name
+ * the previous state declared keeps its token: elements subscribed to it keep receiving.
+ */
+export function commandNamespace(target: Record<string, any>, prev?: Readonly<Record<string, Token>>): Readonly<Record<string, Token>> {
   const ns: Record<string, Token> = {};
-  for (const name of readNames(target.$commandTokens, "$commandTokens", "$command")) ns[name] = new Token(name);
+  for (const name of readNames(target.$commandTokens, "$commandTokens", "$command")) ns[name] = prev?.[name] ?? new Token(name);
   return Object.freeze(ns);
 }
 
