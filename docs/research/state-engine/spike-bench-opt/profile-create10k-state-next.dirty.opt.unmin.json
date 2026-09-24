@@ -1,0 +1,117 @@
+{
+  "revision": "a796d7125c3d98e04c8120c3983d5400ce396e97",
+  "timestamp": "2026-09-23T23:20:19.086Z",
+  "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+  "bundle": "state-next.dirty.opt.unmin.js",
+  "op": "create10k",
+  "fixture": "manual",
+  "samples": 3,
+  "samplingIntervalUs": 100,
+  "results": {
+    "windowMsPerRun": 70,
+    "profiledMsPerRun": 77.5,
+    "top": [
+      {
+        "fn": "cloneNode :0",
+        "msPerRun": 20.65,
+        "usPerRow": 2.06
+      },
+      {
+        "fn": "(garbage collector) :0",
+        "msPerRun": 11.48,
+        "usPerRow": 1.15
+      },
+      {
+        "fn": "insertBefore :0",
+        "msPerRun": 8.69,
+        "usPerRow": 0.87
+      },
+      {
+        "fn": "createRowView auto.min.js:958",
+        "msPerRun": 6.23,
+        "usPerRow": 0.62
+      },
+      {
+        "fn": "apply auto.min.js:897",
+        "msPerRun": 5.84,
+        "usPerRow": 0.58
+      },
+      {
+        "fn": "addEventListener :0",
+        "msPerRun": 3.22,
+        "usPerRow": 0.32
+      },
+      {
+        "fn": "(idle) :0",
+        "msPerRun": 3.16,
+        "usPerRow": 0.32
+      },
+      {
+        "fn": "(program) :0",
+        "msPerRun": 2.27,
+        "usPerRow": 0.23
+      },
+      {
+        "fn": "appendChild :0",
+        "msPerRun": 1.94,
+        "usPerRow": 0.19
+      },
+      {
+        "fn": "update auto.min.js:1027",
+        "msPerRun": 1.68,
+        "usPerRow": 0.17
+      },
+      {
+        "fn": "querySelectorAll :0",
+        "msPerRun": 1.13,
+        "usPerRow": 0.11
+      },
+      {
+        "fn": "get data.*.selected eee9058f-fa69-4ebb-b301-e5ad65ce4d2b:25",
+        "msPerRun": 1.11,
+        "usPerRow": 0.11
+      },
+      {
+        "fn": "readGetter auto.min.js:1429",
+        "msPerRun": 1.09,
+        "usPerRow": 0.11
+      },
+      {
+        "fn": "buildData buildData.js:22",
+        "msPerRun": 1,
+        "usPerRow": 0.1
+      },
+      {
+        "fn": "Binding auto.min.js:886",
+        "msPerRun": 0.81,
+        "usPerRow": 0.08
+      },
+      {
+        "fn": "resolve auto.min.js:405",
+        "msPerRun": 0.62,
+        "usPerRow": 0.06
+      },
+      {
+        "fn": "get auto.min.js:312",
+        "msPerRun": 0.6,
+        "usPerRow": 0.06
+      },
+      {
+        "fn": "innerSerialize :180",
+        "msPerRun": 0.6,
+        "usPerRow": 0.06
+      },
+      {
+        "fn": "read auto.min.js:443",
+        "msPerRun": 0.58,
+        "usPerRow": 0.06
+      },
+      {
+        "fn": "drain auto.min.js:722",
+        "msPerRun": 0.58,
+        "usPerRow": 0.06
+      }
+    ]
+  },
+  "browser": "149.0.7827.55"
+}

@@ -1,0 +1,131 @@
+{
+  "revision": "a796d7125c3d98e04c8120c3983d5400ce396e97",
+  "timestamp": "2026-09-23T22:55:25.612Z",
+  "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+  "samples": 6,
+  "bundle": "auto.dirty.min.js",
+  "fixture": "manual",
+  "sequence": "plain",
+  "method": "jsfb",
+  "setup": "input",
+  "gcBefore": false,
+  "results": [
+    {
+      "op": "create1k",
+      "cold": {
+        "median": 12.55,
+        "min": 8.4,
+        "max": 15,
+        "samples": [
+          8.4,
+          8.5,
+          11,
+          15,
+          14.5,
+          14.1
+        ]
+      },
+      "warm": {
+        "median": 8.85,
+        "min": 7.3,
+        "max": 13.9,
+        "samples": [
+          13.9,
+          9.2,
+          9,
+          7.3,
+          8.7,
+          8.1
+        ]
+      }
+    },
+    {
+      "op": "create10k",
+      "cold": {
+        "median": 103.35,
+        "min": 89.8,
+        "max": 109.3,
+        "samples": [
+          89.8,
+          108.1,
+          100.9,
+          95.6,
+          109.3,
+          105.8
+        ]
+      },
+      "warm": {
+        "median": 69.6,
+        "min": 46.6,
+        "max": 86.2,
+        "samples": [
+          61.8,
+          64.6,
+          86.2,
+          74.6,
+          74.7,
+          46.6
+        ]
+      }
+    },
+    {
+      "op": "append1k",
+      "cold": {
+        "median": 11,
+        "min": 9.8,
+        "max": 15.6,
+        "samples": [
+          9.8,
+          15.6,
+          12.3,
+          12.1,
+          9.8,
+          9.9
+        ]
+      },
+      "warm": {
+        "median": 10.1,
+        "min": 8.4,
+        "max": 17.9,
+        "samples": [
+          10.4,
+          9.8,
+          11.1,
+          17.9,
+          8.4,
+          9.5
+        ]
+      }
+    },
+    {
+      "op": "clear10k",
+      "cold": {
+        "median": 38.5,
+        "min": 38.1,
+        "max": 48.5,
+        "samples": [
+          42.1,
+          38.4,
+          38.6,
+          38.2,
+          48.5,
+          38.1
+        ]
+      },
+      "warm": {
+        "median": 50.15,
+        "min": 42.1,
+        "max": 56.1,
+        "samples": [
+          50.4,
+          52.9,
+          42.1,
+          48.3,
+          56.1,
+          49.9
+        ]
+      }
+    }
+  ],
+  "browser": "149.0.7827.55"
+}

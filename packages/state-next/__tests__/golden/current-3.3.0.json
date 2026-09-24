@@ -1,0 +1,684 @@
+{
+  "engine": "@wcstack/state 3.3.0 (dist/index.esm.js)",
+  "recordedAt": "2026-09-24T13:54:48.604Z",
+  "scenarios": {
+    "text: textContent と mustache": [
+      {
+        "label": "initial",
+        "dom": "<p>hello|</p><div>hello|/|1|</div>"
+      },
+      {
+        "label": "msg を書き換える",
+        "dom": "<p>bye|</p><div>bye|/|1|</div>"
+      },
+      {
+        "label": "count を増やす",
+        "dom": "<p>bye|</p><div>bye|/|2|</div>"
+      }
+    ],
+    "list: 置き換え・追加・削除・入れ替え・全消去": [
+      {
+        "label": "initial",
+        "dom": "<ul><li data-id=\"1\">item 1|</li><li data-id=\"2\">item 2|</li><li data-id=\"3\">item 3|</li></ul>"
+      },
+      {
+        "label": "追加",
+        "dom": "<ul><li data-id=\"1\">item 1|</li><li data-id=\"2\">item 2|</li><li data-id=\"3\">item 3|</li><li data-id=\"4\">item 4|</li></ul>"
+      },
+      {
+        "label": "先頭を削除",
+        "dom": "<ul><li data-id=\"2\">item 2|</li><li data-id=\"3\">item 3|</li><li data-id=\"4\">item 4|</li></ul>"
+      },
+      {
+        "label": "入れ替え",
+        "dom": "<ul><li data-id=\"4\">item 4|</li><li data-id=\"3\">item 3|</li><li data-id=\"2\">item 2|</li></ul>"
+      },
+      {
+        "label": "並べ替え（逆順）",
+        "dom": "<ul><li data-id=\"2\">item 2|</li><li data-id=\"3\">item 3|</li><li data-id=\"4\">item 4|</li></ul>"
+      },
+      {
+        "label": "全置き換え",
+        "dom": "<ul><li data-id=\"1\">item 1|</li><li data-id=\"2\">item 2|</li></ul>"
+      },
+      {
+        "label": "全消去",
+        "dom": "<ul></ul>"
+      },
+      {
+        "label": "再作成",
+        "dom": "<ul><li data-id=\"1\">item 1|</li><li data-id=\"2\">item 2|</li></ul>"
+      }
+    ],
+    "list: 添字付きパスへの書き込み": [
+      {
+        "label": "initial",
+        "dom": "<ul><li>item 1|</li><li>item 2|</li><li>item 3|</li><li>item 4|</li></ul>"
+      },
+      {
+        "label": "items.1.name",
+        "dom": "<ul><li>item 1|</li><li>second|</li><li>item 3|</li><li>item 4|</li></ul>"
+      },
+      {
+        "label": "偶数行に追記",
+        "dom": "<ul><li>item 1!|</li><li>second|</li><li>item 3!|</li><li>item 4|</li></ul>"
+      }
+    ],
+    "getter: 行の getter と連鎖": [
+      {
+        "label": "initial",
+        "dom": "<ul><li>1pt|</li><li>2pt|</li><li>3pt|</li></ul><p>6|</p><p>total=6|</p>"
+      },
+      {
+        "label": "unit（全行が読む）",
+        "dom": "<ul><li>1px|</li><li>2px|</li><li>3px|</li></ul><p>6|</p><p>total=6|</p>"
+      },
+      {
+        "label": "items.2.n（その行だけ）",
+        "dom": "<ul><li>1px|</li><li>2px|</li><li>30px|</li></ul><p>6|</p><p>total=6|</p>"
+      },
+      {
+        "label": "items を置き換え（total と summary）",
+        "dom": "<ul><li>1px|</li><li>2px|</li><li>30px|</li><li>4px|</li></ul><p>37|</p><p>total=37|</p>"
+      }
+    ],
+    "select: 普通の getter と $1": [
+      {
+        "label": "initial",
+        "dom": "<ul><li>item 1|</li><li>item 2|</li><li>item 3|</li><li>item 4|</li><li>item 5|</li></ul>"
+      },
+      {
+        "label": "3 行目をクリック",
+        "dom": "<ul><li>item 1|</li><li>item 2|</li><li class=\"selected\">item 3|</li><li>item 4|</li><li>item 5|</li></ul>"
+      },
+      {
+        "label": "1 行目をクリック",
+        "dom": "<ul><li class=\"selected\">item 1|</li><li>item 2|</li><li>item 3|</li><li>item 4|</li><li>item 5|</li></ul>"
+      },
+      {
+        "label": "先頭を削除（添字の選択が詰まる）",
+        "dom": "<ul><li class=\"selected\">item 2|</li><li>item 3|</li><li>item 4|</li><li>item 5|</li></ul>"
+      }
+    ],
+    "select: $eqIndex": [
+      {
+        "label": "initial",
+        "dom": "<ul><li>item 1|</li><li>item 2|</li><li>item 3|</li><li>item 4|</li><li>item 5|</li></ul>"
+      },
+      {
+        "label": "2 行目をクリック",
+        "dom": "<ul><li>item 1|</li><li class=\"selected\">item 2|</li><li>item 3|</li><li>item 4|</li><li>item 5|</li></ul>"
+      },
+      {
+        "label": "5 行目をクリック",
+        "dom": "<ul><li>item 1|</li><li>item 2|</li><li>item 3|</li><li>item 4|</li><li class=\"selected\">item 5|</li></ul>"
+      },
+      {
+        "label": "2 行目を削除",
+        "dom": "<ul><li>item 1|</li><li>item 3|</li><li>item 4|</li><li>item 5|</li></ul>"
+      }
+    ],
+    "list: 入れ子と親の行を読むバインディング": [
+      {
+        "label": "initial",
+        "dom": "<div><section><h2>a|</h2><i>a|:|1|</i><i>a|:|2|</i></section><section><h2>b|</h2><i>b|:|3|</i></section></div>"
+      },
+      {
+        "label": "groups.0.title",
+        "dom": "<div><section><h2>A|</h2><i>A|:|1|</i><i>A|:|2|</i></section><section><h2>b|</h2><i>b|:|3|</i></section></div>"
+      },
+      {
+        "label": "groups.1.items に追加",
+        "dom": "<div><section><h2>A|</h2><i>A|:|1|</i><i>A|:|2|</i></section><section><h2>b|</h2><i>b|:|3|</i><i>b|:|4|</i></section></div>"
+      },
+      {
+        "label": "groups を入れ替え",
+        "dom": "<div><section><h2>b|</h2><i>b|:|3|</i><i>b|:|4|</i></section><section><h2>A|</h2><i>A|:|1|</i><i>A|:|2|</i></section></div>"
+      }
+    ],
+    "attr / class / style": [
+      {
+        "label": "initial",
+        "dom": "<div id=\"t\" style=\"color: red;\" title=\"t1\"></div>"
+      },
+      {
+        "label": "すべて変える",
+        "dom": "<div class=\"on\" id=\"t\" style=\"color: blue;\" title=\"t2\"></div>"
+      },
+      {
+        "label": "null を入れる",
+        "dom": "<div id=\"t\"></div>"
+      }
+    ],
+    "event: 引数に $1 を受け取るメソッド": [
+      {
+        "label": "initial",
+        "dom": "<p></p><ul><li><button>item 1|</button></li><li><button>item 2|</button></li><li><button>item 3|</button></li></ul>"
+      },
+      {
+        "label": "2 行目",
+        "dom": "<p>1;|</p><ul><li><button>item 1|</button></li><li><button>item 2|</button></li><li><button>item 3|</button></li></ul>"
+      },
+      {
+        "label": "3 行目",
+        "dom": "<p>1;2;|</p><ul><li><button>item 1|</button></li><li><button>item 2|</button></li><li><button>item 3|</button></li></ul>"
+      }
+    ],
+    "要素の書き込み（その位置の値を置き換える）": [
+      {
+        "label": "initial",
+        "dom": "<ul><li>item 1|</li><li>item 2|</li><li>item 3|</li></ul>"
+      },
+      {
+        "label": "items.1 を新しい値に",
+        "dom": "<ul><li>item 1|</li><li>nine|</li><li>item 3|</li></ul>"
+      }
+    ],
+    "$getAll: ルートの集計と、行の文脈での省略": [
+      {
+        "label": "initial",
+        "dom": "<p>13|</p><ul><li>a|=|3|</li><li>b|=|10|</li></ul>"
+      },
+      {
+        "label": "regions.0.towns.1.pop",
+        "dom": "<p>31|</p><ul><li>a|=|21|</li><li>b|=|10|</li></ul>"
+      },
+      {
+        "label": "regions.1.towns に追加",
+        "dom": "<p>36|</p><ul><li>a|=|21|</li><li>b|=|15|</li></ul>"
+      }
+    ],
+    "$setAll: 全部に同じ値・マッパー・配る": [
+      {
+        "label": "initial",
+        "dom": "<ul><li>1|</li><li>2|</li><li class=\"on\">3|</li></ul>"
+      },
+      {
+        "label": "broadcast true",
+        "dom": "<ul><li class=\"on\">1|</li><li class=\"on\">2|</li><li class=\"on\">3|</li></ul>"
+      },
+      {
+        "label": "mapper で反転",
+        "dom": "<ul><li>1|</li><li>2|</li><li>3|</li></ul>"
+      },
+      {
+        "label": "mapper で先頭 2 行だけ倍",
+        "dom": "<ul><li>2|</li><li>4|</li><li>3|</li></ul>"
+      },
+      {
+        "label": "spread",
+        "dom": "<ul><li>7|</li><li>8|</li><li>9|</li></ul>"
+      }
+    ],
+    "$resolve: 明示の添字で読み書き": [
+      {
+        "label": "initial",
+        "dom": "<p></p><ul><li>A|</li><li>B|</li><li>C|</li></ul>"
+      },
+      {
+        "label": "items.* [2] を読む",
+        "dom": "<p>C|</p><ul><li>A|</li><li>B|</li><li>C|</li></ul>"
+      },
+      {
+        "label": "items.* [0] に書く",
+        "dom": "<p>C|</p><ul><li>Z|</li><li>B|</li><li>C|</li></ul>"
+      }
+    ],
+    "lifecycle: $connectedCallback が初期値を書く": [
+      {
+        "label": "initial",
+        "dom": "<p>ready|</p>"
+      }
+    ],
+    "errorCallback: getter が投げても他のバインディングは反映される": [
+      {
+        "label": "initial",
+        "dom": "<p class=\"a\"></p><p class=\"b\">1|</p><p class=\"c\">title;|</p>"
+      },
+      {
+        "label": "n を変える（title はまだ失敗）",
+        "dom": "<p class=\"a\"></p><p class=\"b\">2|</p><p class=\"c\">title;|</p>"
+      },
+      {
+        "label": "user を入れて直す",
+        "dom": "<p class=\"a\">Ann|</p><p class=\"b\">2|</p><p class=\"c\">title;|</p>"
+      }
+    ],
+    "getter の中での書き込みは失敗する": [
+      {
+        "label": "initial",
+        "dom": "<p></p><p>0|</p><p>bad;|</p>"
+      }
+    ],
+    "getter の循環は失敗として報告される": [
+      {
+        "label": "initial",
+        "dom": "<p></p><p>ok|</p><p>a;|</p>"
+      }
+    ],
+    "if / elseif / else: ルートの連鎖": [
+      {
+        "label": "initial",
+        "dom": "<div><p>zero|</p></div>"
+      },
+      {
+        "label": "1",
+        "dom": "<div><p>positive|1|</p></div>"
+      },
+      {
+        "label": "2（同じ枝のまま中身だけ）",
+        "dom": "<div><p>positive|2|</p></div>"
+      },
+      {
+        "label": "-1",
+        "dom": "<div><p>negative|</p></div>"
+      },
+      {
+        "label": "0",
+        "dom": "<div><p>zero|</p></div>"
+      }
+    ],
+    "if: 真偽でない値（JavaScript の真偽性）": [
+      {
+        "label": "initial",
+        "dom": "<div><i>no|</i></div>"
+      },
+      {
+        "label": "1",
+        "dom": "<div><b>yes|</b></div>"
+      },
+      {
+        "label": "空文字",
+        "dom": "<div><i>no|</i></div>"
+      },
+      {
+        "label": "非空文字",
+        "dom": "<div><b>yes|</b></div>"
+      },
+      {
+        "label": "null",
+        "dom": "<div><i>no|</i></div>"
+      },
+      {
+        "label": "オブジェクト",
+        "dom": "<div><b>yes|</b></div>"
+      },
+      {
+        "label": "undefined",
+        "dom": "<div><i>no|</i></div>"
+      }
+    ],
+    "if: 行の中の条件と、行の値を読む中身": [
+      {
+        "label": "initial",
+        "dom": "<ul><li><span>a|</span></li><li><s>b|</s></li><li><span>c|</span></li></ul>"
+      },
+      {
+        "label": "items.0.done",
+        "dom": "<ul><li><s>a|</s></li><li><s>b|</s></li><li><span>c|</span></li></ul>"
+      },
+      {
+        "label": "items.0.name（枝の中身だけ）",
+        "dom": "<ul><li><s>A|</s></li><li><s>b|</s></li><li><span>c|</span></li></ul>"
+      },
+      {
+        "label": "items.1.done を戻す",
+        "dom": "<ul><li><s>A|</s></li><li><span>b|</span></li><li><span>c|</span></li></ul>"
+      },
+      {
+        "label": "先頭を削除",
+        "dom": "<ul><li><span>b|</span></li><li><span>c|</span></li></ul>"
+      },
+      {
+        "label": "並べ替え",
+        "dom": "<ul><li><span>c|</span></li><li><span>b|</span></li></ul>"
+      }
+    ],
+    "if の中の for と、for の中の if の入れ子": [
+      {
+        "label": "initial",
+        "dom": "<div></div>"
+      },
+      {
+        "label": "表示する",
+        "dom": "<div><ul><li>1|</li><li>20|<em>!|</em></li></ul></div>"
+      },
+      {
+        "label": "items.0.n を大きく",
+        "dom": "<div><ul><li>30|<em>!|</em></li><li>20|<em>!|</em></li></ul></div>"
+      },
+      {
+        "label": "隠す",
+        "dom": "<div></div>"
+      },
+      {
+        "label": "隠している間に追加",
+        "dom": "<div></div>"
+      },
+      {
+        "label": "再表示",
+        "dom": "<div><ul><li>30|<em>!|</em></li><li>20|<em>!|</em></li><li>50|<em>!|</em></li></ul></div>"
+      }
+    ],
+    "two-way: input / textarea / select": [
+      {
+        "label": "initial",
+        "dom": "<input :value=\"ann\" id=\"i\"></input><textarea :value=\"n\" id=\"t\"></textarea><select :value=\"a\" id=\"s\"><option value=\"a\">A|</option><option value=\"b\">B|</option></select><p>ann|||n|||a|</p>"
+      },
+      {
+        "label": "input に入力",
+        "dom": "<input :value=\"bob\" id=\"i\"></input><textarea :value=\"n\" id=\"t\"></textarea><select :value=\"a\" id=\"s\"><option value=\"a\">A|</option><option value=\"b\">B|</option></select><p>bob|||n|||a|</p>"
+      },
+      {
+        "label": "textarea に入力",
+        "dom": "<input :value=\"bob\" id=\"i\"></input><textarea :value=\"hello\" id=\"t\"></textarea><select :value=\"a\" id=\"s\"><option value=\"a\">A|</option><option value=\"b\">B|</option></select><p>bob|||hello|||a|</p>"
+      },
+      {
+        "label": "select を変更",
+        "dom": "<input :value=\"bob\" id=\"i\"></input><textarea :value=\"hello\" id=\"t\"></textarea><select :value=\"b\" id=\"s\"><option value=\"a\">A|</option><option value=\"b\">B|</option></select><p>bob|||hello|||b|</p>"
+      },
+      {
+        "label": "状態から書く",
+        "dom": "<input :value=\"carl\" id=\"i\"></input><textarea :value=\"hello\" id=\"t\"></textarea><select :value=\"a\" id=\"s\"><option value=\"a\">A|</option><option value=\"b\">B|</option></select><p>carl|||hello|||a|</p>"
+      }
+    ],
+    "two-way: #ro と #onchange": [
+      {
+        "label": "initial",
+        "dom": "<input :value=\"a0\" id=\"ro\"></input><input :value=\"b0\" id=\"oc\"></input><p>a0|||b0|</p>"
+      },
+      {
+        "label": "#ro に入力（書き戻さない）",
+        "dom": "<input :value=\"x\" id=\"ro\"></input><input :value=\"b0\" id=\"oc\"></input><p>a0|||b0|</p>"
+      },
+      {
+        "label": "#onchange に input（書き戻さない）",
+        "dom": "<input :value=\"x\" id=\"ro\"></input><input :value=\"y\" id=\"oc\"></input><p>a0|||b0|</p>"
+      },
+      {
+        "label": "#onchange に change",
+        "dom": "<input :value=\"x\" id=\"ro\"></input><input :value=\"z\" id=\"oc\"></input><p>a0|||z|</p>"
+      }
+    ],
+    "radio: グループ": [
+      {
+        "label": "initial",
+        "dom": "<input :checked=\"true\" :value=\"red\" id=\"r1\" type=\"radio\" value=\"red\"></input><input :checked=\"false\" :value=\"blue\" id=\"r2\" type=\"radio\" value=\"blue\"></input><p>red|</p>"
+      },
+      {
+        "label": "blue を選ぶ",
+        "dom": "<input :checked=\"false\" :value=\"red\" id=\"r1\" type=\"radio\" value=\"red\"></input><input :checked=\"true\" :value=\"blue\" id=\"r2\" type=\"radio\" value=\"blue\"></input><p>blue|</p>"
+      },
+      {
+        "label": "状態から red",
+        "dom": "<input :checked=\"true\" :value=\"red\" id=\"r1\" type=\"radio\" value=\"red\"></input><input :checked=\"false\" :value=\"blue\" id=\"r2\" type=\"radio\" value=\"blue\"></input><p>red|</p>"
+      },
+      {
+        "label": "どれでもない値",
+        "dom": "<input :checked=\"false\" :value=\"red\" id=\"r1\" type=\"radio\" value=\"red\"></input><input :checked=\"false\" :value=\"blue\" id=\"r2\" type=\"radio\" value=\"blue\"></input><p>green|</p>"
+      }
+    ],
+    "radio: for の中で value: .": [
+      {
+        "label": "initial",
+        "dom": "<div><label><input :checked=\"false\" :value=\"main\" type=\"radio\" value=\"main\"></input>main|</label><label><input :checked=\"true\" :value=\"dev\" type=\"radio\" value=\"dev\"></input>dev|</label><label><input :checked=\"false\" :value=\"feat\" type=\"radio\" value=\"feat\"></input>feat|</label></div><p>dev|</p>"
+      },
+      {
+        "label": "3 つ目を選ぶ",
+        "dom": "<div><label><input :checked=\"false\" :value=\"main\" type=\"radio\" value=\"main\"></input>main|</label><label><input :checked=\"false\" :value=\"dev\" type=\"radio\" value=\"dev\"></input>dev|</label><label><input :checked=\"true\" :value=\"feat\" type=\"radio\" value=\"feat\"></input>feat|</label></div><p>feat|</p>"
+      }
+    ],
+    "checkbox: 配列へのグループと checked": [
+      {
+        "label": "initial",
+        "dom": "<input :checked=\"false\" :value=\"apple\" id=\"c1\" type=\"checkbox\" value=\"apple\"></input><input :checked=\"true\" :value=\"banana\" id=\"c2\" type=\"checkbox\" value=\"banana\"></input><input :checked=\"false\" :value=\"on\" id=\"d\" type=\"checkbox\"></input><p>banana|||false|</p>"
+      },
+      {
+        "label": "apple を付ける",
+        "dom": "<input :checked=\"true\" :value=\"apple\" id=\"c1\" type=\"checkbox\" value=\"apple\"></input><input :checked=\"true\" :value=\"banana\" id=\"c2\" type=\"checkbox\" value=\"banana\"></input><input :checked=\"false\" :value=\"on\" id=\"d\" type=\"checkbox\"></input><p>banana,apple|||false|</p>"
+      },
+      {
+        "label": "banana を外す",
+        "dom": "<input :checked=\"true\" :value=\"apple\" id=\"c1\" type=\"checkbox\" value=\"apple\"></input><input :checked=\"false\" :value=\"banana\" id=\"c2\" type=\"checkbox\" value=\"banana\"></input><input :checked=\"false\" :value=\"on\" id=\"d\" type=\"checkbox\"></input><p>apple|||false|</p>"
+      },
+      {
+        "label": "done を付ける",
+        "dom": "<input :checked=\"true\" :value=\"apple\" id=\"c1\" type=\"checkbox\" value=\"apple\"></input><input :checked=\"false\" :value=\"banana\" id=\"c2\" type=\"checkbox\" value=\"banana\"></input><input :checked=\"true\" :value=\"on\" id=\"d\" type=\"checkbox\"></input><p>apple|||true|</p>"
+      },
+      {
+        "label": "状態から置き換え",
+        "dom": "<input :checked=\"true\" :value=\"apple\" id=\"c1\" type=\"checkbox\" value=\"apple\"></input><input :checked=\"true\" :value=\"banana\" id=\"c2\" type=\"checkbox\" value=\"banana\"></input><input :checked=\"false\" :value=\"on\" id=\"d\" type=\"checkbox\"></input><p>banana,apple|||false|</p>"
+      }
+    ],
+    "html と text:": [
+      {
+        "label": "initial",
+        "dom": "<div id=\"h\"></div><p></p>"
+      },
+      {
+        "label": "書き換え",
+        "dom": "<div id=\"h\"></div><p></p>"
+      },
+      {
+        "label": "null",
+        "dom": "<div id=\"h\"></div><p></p>"
+      }
+    ],
+    "空値の約束（B8）: 表示系と要素の入力": [
+      {
+        "label": "initial",
+        "dom": "<p id=\"t\">red|</p><p id=\"a\" style=\"color: red;\" title=\"red\"></p><input :value=\"red\" id=\"i\"></input><span>red|</span>"
+      },
+      {
+        "label": "undefined",
+        "dom": "<p id=\"t\"></p><p id=\"a\"></p><input :value=\"red\" id=\"i\"></input><span></span>"
+      },
+      {
+        "label": "値に戻す",
+        "dom": "<p id=\"t\">blue|</p><p id=\"a\" style=\"color: blue;\" title=\"blue\"></p><input :value=\"blue\" id=\"i\"></input><span>blue|</span>"
+      },
+      {
+        "label": "null",
+        "dom": "<p id=\"t\"></p><p id=\"a\"></p><input :value=\"\" id=\"i\"></input><span></span>"
+      }
+    ],
+    "class: 真偽でない値は失敗として報告される": [
+      {
+        "label": "initial",
+        "dom": "<p class=\"on\" id=\"c\"></p><p></p>"
+      },
+      {
+        "label": "null（外す）",
+        "dom": "<p id=\"c\"></p><p></p>"
+      },
+      {
+        "label": "数値（失敗）",
+        "dom": "<p id=\"c\"></p><p>v;|</p>"
+      }
+    ],
+    "明示的なプロパティ .title と #prevent": [
+      {
+        "label": "initial",
+        "dom": "<div id=\"d\" title=\"tt\"></div><a href=\"#x\" id=\"a\">go|</a><p></p>"
+      },
+      {
+        "label": "クリック",
+        "dom": "<div id=\"d\" title=\"tt\"></div><a href=\"#x\" id=\"a\">go|</a><p>true|</p>"
+      },
+      {
+        "label": "title を変える",
+        "dom": "<div id=\"d\" title=\"uu\"></div><a href=\"#x\" id=\"a\">go|</a><p>true|</p>"
+      }
+    ],
+    "wc-bindable: 双方向のメンバー（初期は状態が勝つ・要素→状態・属性への反映）": [
+      {
+        "label": "initial",
+        "dom": "<conf-counter id=\"c\" value=\"5\"></conf-counter><p>5|</p>"
+      },
+      {
+        "label": "要素側で値が変わる",
+        "dom": "<conf-counter id=\"c\" value=\"5\"></conf-counter><p>9|</p>"
+      },
+      {
+        "label": "状態から書く",
+        "dom": "<conf-counter id=\"c\" value=\"12\"></conf-counter><p>12|</p>"
+      },
+      {
+        "label": "null",
+        "dom": "<conf-counter id=\"c\"></conf-counter><p></p>"
+      }
+    ],
+    "wc-bindable: 出力専用（要素の値が初期値になり、状態からは書かない）": [
+      {
+        "label": "initial",
+        "dom": "<conf-output id=\"o\"></conf-output><p>ready|</p>"
+      },
+      {
+        "label": "要素がイベントを出す",
+        "dom": "<conf-output id=\"o\"></conf-output><p>busy|</p>"
+      },
+      {
+        "label": "状態から書く（要素には届かない）",
+        "dom": "<conf-output id=\"o\"></conf-output><p>forced|</p>"
+      }
+    ],
+    "wc-bindable: 入力専用と属性への反映": [
+      {
+        "label": "initial",
+        "dom": "<conf-label data=\"{&quot;id&quot;:1}\" id=\"l\" label-text=\"hello\"></conf-label>"
+      },
+      {
+        "label": "書き換え",
+        "dom": "<conf-label data=\"[1,2]\" id=\"l\" label-text=\"bye\"></conf-label>"
+      },
+      {
+        "label": "null で属性を外す",
+        "dom": "<conf-label id=\"l\"></conf-label>"
+      }
+    ],
+    "wc-bindable: #init=element と #init=none": [
+      {
+        "label": "initial",
+        "dom": "<conf-output id=\"o\"></conf-output><conf-counter id=\"c\"></conf-counter><p>seed|||0|</p>"
+      },
+      {
+        "label": "両方の要素がイベントを出す",
+        "dom": "<conf-output id=\"o\"></conf-output><conf-counter id=\"c\"></conf-counter><p>x|||3|</p>"
+      },
+      {
+        "label": "状態から count",
+        "dom": "<conf-output id=\"o\"></conf-output><conf-counter id=\"c\" value=\"40\"></conf-counter><p>x|||40|</p>"
+      }
+    ],
+    "command token: 状態から emit・DOM イベントから emit・複数の要素へ配る": [
+      {
+        "label": "initial",
+        "dom": "<conf-counter id=\"a\" value=\"1\"></conf-counter><conf-counter id=\"b\" value=\"10\"></conf-counter><button id=\"btn\">clear|</button><p>1|||10|</p>"
+      },
+      {
+        "label": "状態から inc(2)",
+        "dom": "<conf-counter id=\"a\" value=\"1\"></conf-counter><conf-counter id=\"b\" value=\"10\"></conf-counter><button id=\"btn\">clear|</button><p>3|||12|</p>"
+      },
+      {
+        "label": "ボタンから clear",
+        "dom": "<conf-counter id=\"a\" value=\"1\"></conf-counter><conf-counter id=\"b\" value=\"10\"></conf-counter><button id=\"btn\">clear|</button><p>3|||0|</p>"
+      }
+    ],
+    "event token: $on で受ける（行の中は添字付き）": [
+      {
+        "label": "initial",
+        "dom": "<conf-notifier id=\"n\"></conf-notifier><ul><li><conf-notifier></conf-notifier>r0|</li><li><conf-notifier></conf-notifier>r1|</li></ul><p></p>"
+      },
+      {
+        "label": "ルートの要素が出す",
+        "dom": "<conf-notifier id=\"n\"></conf-notifier><ul><li><conf-notifier></conf-notifier>r0|</li><li><conf-notifier></conf-notifier>r1|</li></ul><p>made:x;|</p>"
+      },
+      {
+        "label": "2 行目の要素が出す",
+        "dom": "<conf-notifier id=\"n\"></conf-notifier><ul><li><conf-notifier></conf-notifier>r0|</li><li><conf-notifier></conf-notifier>r1|</li></ul><p>made:x;row1:y;|</p>"
+      }
+    ],
+    "spread: 宣言されたプロパティと入力を一度に（後の明示バインディングが勝つ）": [
+      {
+        "label": "initial",
+        "dom": "<conf-fetch id=\"f\"></conf-fetch><conf-fetch id=\"g\"></conf-fetch><p>||false|</p>"
+      },
+      {
+        "label": "load",
+        "dom": "<conf-fetch id=\"f\"></conf-fetch><conf-fetch id=\"g\"></conf-fetch><p>data from /api/users|||false|</p>"
+      },
+      {
+        "label": "g も load（url は altUrl）",
+        "dom": "<conf-fetch id=\"f\"></conf-fetch><conf-fetch id=\"g\"></conf-fetch><p>data from /api/alt|||false|</p>"
+      }
+    ],
+    "$eqPath: id による選択は並べ替えと削除に追従する": [
+      {
+        "label": "initial",
+        "dom": "<ul><li>1|</li><li>2|</li><li>3|</li><li>4|</li></ul><p></p>"
+      },
+      {
+        "label": "id 3 を選ぶ",
+        "dom": "<ul><li>1|</li><li>2|</li><li class=\"sel\">3|</li><li>4|</li></ul><p>3|</p>"
+      },
+      {
+        "label": "逆順",
+        "dom": "<ul><li>4|</li><li class=\"sel\">3|</li><li>2|</li><li>1|</li></ul><p>3|</p>"
+      },
+      {
+        "label": "先頭（id 4）を削除",
+        "dom": "<ul><li class=\"sel\">3|</li><li>2|</li><li>1|</li></ul><p>3|</p>"
+      },
+      {
+        "label": "id 1 を選ぶ",
+        "dom": "<ul><li>3|</li><li>2|</li><li class=\"sel\">1|</li></ul><p>1|</p>"
+      }
+    ],
+    "$eq: トップレベルの getter と、親オブジェクトの置き換え": [
+      {
+        "label": "initial",
+        "dom": "<div></div><ul><li>1|</li><li class=\"cur\">2|</li><li>3|</li></ul>"
+      },
+      {
+        "label": "role = admin",
+        "dom": "<div><b>admin|</b></div><ul><li>1|</li><li class=\"cur\">2|</li><li>3|</li></ul>"
+      },
+      {
+        "label": "sel を置き換え",
+        "dom": "<div><b>admin|</b></div><ul><li>1|</li><li>2|</li><li class=\"cur\">3|</li></ul>"
+      },
+      {
+        "label": "sel.id を書く",
+        "dom": "<div><b>admin|</b></div><ul><li class=\"cur\">1|</li><li>2|</li><li>3|</li></ul>"
+      }
+    ],
+    "フィルタ: 左辺の入力フィルタと型付きリテラル": [
+      {
+        "label": "initial",
+        "dom": "<input :value=\"1\" id=\"i\"></input><p>2|||number|||true|||true|</p><input :checked=\"false\" :value=\"2\" id=\"r\" type=\"radio\" value=\"2\"></input><p>0|</p>"
+      },
+      {
+        "label": "42 を入力",
+        "dom": "<input :value=\"42\" id=\"i\"></input><p>43|||number|||true|||true|</p><input :checked=\"false\" :value=\"2\" id=\"r\" type=\"radio\" value=\"2\"></input><p>0|</p>"
+      },
+      {
+        "label": "radio を選ぶ",
+        "dom": "<input :value=\"42\" id=\"i\"></input><p>43|||number|||true|||true|</p><input :checked=\"true\" :value=\"2\" id=\"r\" type=\"radio\" value=\"2\"></input><p>2|</p>"
+      }
+    ],
+    "フィルタ: 書式系と空値": [
+      {
+        "label": "initial",
+        "dom": "<p id=\"t\" title=\"hi\">HI|</p><p>a, b|||2.3|||Anon|</p>"
+      },
+      {
+        "label": "x = undefined, v = null",
+        "dom": "<p id=\"t\"></p><p>a, b|||0.0|||Anon|</p>"
+      },
+      {
+        "label": "name を入れる",
+        "dom": "<p id=\"t\"></p><p>x|||0.0|||Bob|</p>"
+      }
+    ]
+  }
+}

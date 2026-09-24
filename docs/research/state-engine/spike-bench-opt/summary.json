@@ -1,0 +1,178 @@
+{
+  "timestamp": "2026-09-24T13:19:54.055Z",
+  "rows": [
+    {
+      "measure": "append1k cold",
+      "current": 51.4,
+      "currentB": 37.75,
+      "aaPct": 29.35,
+      "dirty": 10.5,
+      "dirtyVsCurrentPct": -77.42
+    },
+    {
+      "measure": "append1k warm",
+      "current": 83.55,
+      "currentB": 86.7,
+      "aaPct": 3.73,
+      "dirty": 10.75,
+      "dirtyVsCurrentPct": -87.26
+    },
+    {
+      "measure": "clear10k cold",
+      "current": 51.8,
+      "currentB": 56.85,
+      "aaPct": 8.89,
+      "dirty": 51.25,
+      "dirtyVsCurrentPct": -9.77
+    },
+    {
+      "measure": "clear10k warm",
+      "current": 56.35,
+      "currentB": 56,
+      "aaPct": 0.62,
+      "dirty": 51.4,
+      "dirtyVsCurrentPct": -8.78
+    },
+    {
+      "measure": "create10k cold",
+      "current": 378.05,
+      "currentB": 372.35,
+      "aaPct": 1.52,
+      "dirty": 87.15,
+      "dirtyVsCurrentPct": -76.76
+    },
+    {
+      "measure": "create10k warm",
+      "current": 380.95,
+      "currentB": 400.3,
+      "aaPct": 5.03,
+      "dirty": 65.95,
+      "dirtyVsCurrentPct": -82.86
+    },
+    {
+      "measure": "create1k cold",
+      "current": 48,
+      "currentB": 46.2,
+      "aaPct": 3.81,
+      "dirty": 17.05,
+      "dirtyVsCurrentPct": -63.95
+    },
+    {
+      "measure": "create1k warm",
+      "current": 18.7,
+      "currentB": 20,
+      "aaPct": 6.82,
+      "dirty": 7.75,
+      "dirtyVsCurrentPct": -59.32
+    },
+    {
+      "measure": "jsfb append1kTo10k (cold page)",
+      "current": 53.8,
+      "currentB": 54.05,
+      "aaPct": 0.46,
+      "dirty": 10.55,
+      "dirtyVsCurrentPct": -80.39
+    },
+    {
+      "measure": "jsfb clear10k (cold page)",
+      "current": 65.15,
+      "currentB": 63.3,
+      "aaPct": 2.87,
+      "dirty": 52.7,
+      "dirtyVsCurrentPct": -18.23
+    },
+    {
+      "measure": "jsfb create1k (cold page)",
+      "current": 37.9,
+      "currentB": 37.5,
+      "aaPct": 1.06,
+      "dirty": 12.55,
+      "dirtyVsCurrentPct": -66.62
+    },
+    {
+      "measure": "jsfb remove1k (cold page)",
+      "current": 2.55,
+      "currentB": 2.85,
+      "aaPct": 11.11,
+      "dirty": 0.5,
+      "dirtyVsCurrentPct": -81.48
+    },
+    {
+      "measure": "jsfb replace1k (cold page)",
+      "current": 20.3,
+      "currentB": 21.35,
+      "aaPct": 5.06,
+      "dirty": 10.8,
+      "dirtyVsCurrentPct": -47.95
+    },
+    {
+      "measure": "jsfb select1k (cold page)",
+      "current": 0.1,
+      "currentB": 0.1,
+      "aaPct": 0,
+      "dirty": 0.1,
+      "dirtyVsCurrentPct": 0
+    },
+    {
+      "measure": "jsfb swap1k (cold page)",
+      "current": 1,
+      "currentB": 1.05,
+      "aaPct": 5,
+      "dirty": 0.4,
+      "dirtyVsCurrentPct": -60
+    },
+    {
+      "measure": "jsfb update10k (cold page)",
+      "current": 13.6,
+      "currentB": 13.4,
+      "aaPct": 1.49,
+      "dirty": 6.2,
+      "dirtyVsCurrentPct": -53.73
+    },
+    {
+      "measure": "keyed (1 = passed)",
+      "current": 1,
+      "currentB": 1,
+      "aaPct": 0,
+      "dirty": 1,
+      "dirtyVsCurrentPct": 0
+    },
+    {
+      "measure": "remove1of10k tracked",
+      "current": 29.45,
+      "currentB": 30.35,
+      "aaPct": 3.01,
+      "dirty": 5.3,
+      "dirtyVsCurrentPct": -82.27
+    },
+    {
+      "measure": "select10k tracked",
+      "current": 21.45,
+      "currentB": 19.9,
+      "aaPct": 7.51,
+      "dirty": 2.85,
+      "dirtyVsCurrentPct": -86.2
+    }
+  ],
+  "targets": {
+    "dirty": {
+      "create1k warm": {
+        "engine": 7.75,
+        "dom": 3.9,
+        "ratio": 1.99,
+        "pass": true
+      },
+      "create10k cold": {
+        "engine": 87.15,
+        "dom": 45.2,
+        "ratio": 1.93,
+        "pass": true
+      }
+    }
+  },
+  "size": {
+    "file": "packages/state-next/dist/auto.min.js",
+    "bytes": 24172,
+    "gzip": 8600
+  }
+}

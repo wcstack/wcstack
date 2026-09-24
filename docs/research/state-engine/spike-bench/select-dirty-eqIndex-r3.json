@@ -1,0 +1,50 @@
+{
+  "label": "dirty-r3",
+  "variant": "eqIndex",
+  "bundle": "C:/Users/kikuzawa/Documents/git/wcstack/wcstack-state-engine/packages/state-next/dist/auto.dirty.min.js",
+  "timestamp": "2026-09-23T23:02:36.570Z",
+  "select10k": {
+    "median": 7.6,
+    "min": 3.9,
+    "max": 8.7,
+    "samples": [
+      7.4,
+      7.6,
+      7.6,
+      7.5,
+      3.9,
+      4.4,
+      4.8,
+      4,
+      8.3,
+      8.3,
+      7.4,
+      8,
+      8.7,
+      8.1,
+      8.3
+    ]
+  },
+  "remove1of10k": {
+    "median": 4.8,
+    "min": 2.7,
+    "max": 11.3,
+    "samples": [
+      2.7,
+      4.8,
+      4.9,
+      5.1,
+      4.8,
+      4.7,
+      4.5,
+      4.7,
+      4.5,
+      11.3,
+      5,
+      4.7,
+      4.8,
+      4.8,
+      5
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@wcstack/state-next",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Spike: a rewritten @wcstack/state engine (addressing by ownership tree). Not published.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "golden": "node scripts/golden.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.27.2",
+    "happy-dom": "^20.0.11",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.15"
+  }
+}

@@ -1,0 +1,170 @@
+import { describe, it, expect } from 'vitest';
+import { parseFilters } from '../src/parser/parseFilters';
+import { parseBindTextsForElement } from '../src/parser/parseBindTextsForElement';
+
+// Ported from packages/state/__tests__/bindTextParser.parseFilters.test.ts.
+// Dropped (filter-function resolution is not the parser's job in the new engine):
+//   - 「束縛計画の段で解決した実関数が実行可能であること」 (planFilters + installFormats)
+//   - 「チェーンしたフィルターが正しく動作すること」 (planFilters)
+//   - the `planFilters(...)` line of 「未知のフィルタは解析では落ちず…」 (the parse half is kept)
+
+describe('parseFilters', () => {
+  it('引数なしのフィルターをパースできること', () => {
+    const result = parseFilters(['uc'], 'output');
+    expect(result.length).toBe(1);
+    expect(result[0].filterName).toBe('uc');
+    expect(result[0].args).toEqual([]);
+    // 解析の段では実関数を持たない
+    expect('filterFn' in result[0]).toBe(false);
+  });
+
+  it('引数ありのフィルターをパースできること', () => {
+    const result = parseFilters(['gt(10)'], 'output');
+    expect(result.length).toBe(1);
+    expect(result[0].filterName).toBe('gt');
+    expect(result[0].args).toEqual(['10']);
+  });
+
+  it('複数引数のフィルターをパースできること', () => {
+    const result = parseFilters(['substr(0,5)'], 'output');
+    expect(result.length).toBe(1);
+    expect(result[0].filterName).toBe('substr');
+    expect(result[0].args).toEqual(['0', '5']);
+  });
+
+  it('複数のフィルターをパースできること', () => {
+    const result = parseFilters(['uc', 'trim', 'slice(2)'], 'output');
+    expect(result.length).toBe(3);
+    expect(result[0].filterName).toBe('uc');
+    expect(result[1].filterName).toBe('trim');
+    expect(result[2].filterName).toBe('slice');
+    expect(result[2].args).toEqual(['2']);
+  });
+
+  it('閉じ括弧がない場合はエラーになること', () => {
+    expect(() => parseFilters(['gt(10'], 'output')).toThrow(/missing closing parenthesis/);
+  });
+
+  it('開き括弧がない場合はエラーになること', () => {
+    expect(() => parseFilters(['gt10)'], 'output')).toThrow(/missing opening parenthesis/);
+  });
+
+  it('未知のフィルタは解析では落ちないこと', () => {
+    const parsed = parseFilters(['nosuchfilter'], 'output');
+    expect(parsed[0].filterName).toBe('nosuchfilter');
+  });
+
+  it('ダブルクォート内のカンマを正しく扱えること', () => {
+    const result = parseFilters(['defaults("Hello, World")'], 'output');
+    expect(result[0].filterName).toBe('defaults');
+    expect(result[0].args).toEqual(['Hello, World']);
+  });
+
+  it('シングルクォート内のカンマを正しく扱えること', () => {
+    const result = parseFilters(["defaults('Hello, World')"], 'output');
+    expect(result[0].filterName).toBe('defaults');
+    expect(result[0].args).toEqual(['Hello, World']);
+  });
+
+  it('クォートなしとクォートありの引数を混在できること', () => {
+    const result = parseFilters(['substr(0, 5)'], 'output');
+    expect(result[0].args).toEqual(['0', '5']);
+  });
+
+  it('クォート付き引数と通常引数を混在できること', () => {
+    const result = parseFilters(['pad(5,"0")'], 'output');
+    expect(result[0].filterName).toBe('pad');
+    expect(result[0].args).toEqual(['5', '0']);
+  });
+});
+
+/**
+ * 文法エラーの語彙（要件 B2 / B4・三面同語彙）。vscode-wcs は `[wcs/binding-syntax]` を
+ * 含むメッセージだけを診断に変換するので、構文エラーにはコードと lint への誘導を付ける。
+ */
+describe('parseFilters — 文法エラーの語彙', () => {
+  it('括弧の不一致に [wcs/binding-syntax] と lint への誘導が付くこと', () => {
+    expect(() => parseFilters(['truncate(3'], 'output'))
+      .toThrow(/\[wcs\/binding-syntax\] Invalid filter format: missing closing parenthesis in "truncate\(3"/);
+    expect(() => parseFilters(['truncate(3'], 'output')).toThrow(/npx @wcstack\/lint/);
+    expect(() => parseFilters(['truncate3)'], 'output'))
+      .toThrow(/\[wcs\/binding-syntax\] Invalid filter format: missing opening parenthesis in "truncate3\)"/);
+  });
+
+  /**
+   * **実パイプライン（`parseBindTextsForElement`）で固定する。** `parseFilters` を直接叩いて
+   * `sourceText` を手渡すテストは、呼び出し側が何を渡しているかを検証しないので false green に
+   * なる（実際、呼び出し側が `|` より後ろだけを渡していた間もそのテストは通っていた）。
+   */
+  describe('空フィルタのメッセージに原文が入ること（実パイプライン）', () => {
+    it.each([
+      ['textContent: a|', 'a|'],
+      ['value|: x', 'value|'],
+      ['textContent: a||b', 'a||b'],
+      ['textContent: a|b|', 'a|b|'],
+    ])('%s のメッセージに "%s" が入ること', (bindText, source) => {
+      expect(() => parseBindTextsForElement(bindText))
+        .toThrow(`an empty filter in "${source}"`);
+    });
+
+    it('原文が空文字にならないこと（旧実装の join("|") との差）', () => {
+      expect(() => parseBindTextsForElement('textContent: a|')).not.toThrow(/an empty filter in ""/);
+    });
+  });
+
+  describe('フィルタ名に修飾子が飲まれた形（実パイプライン）', () => {
+    it('左辺（入力フィルタ）では、修飾子の位置を名指しで示すこと', () => {
+      expect(() => parseBindTextsForElement('value|trim#ro: x'))
+        .toThrow(/\[wcs\/binding-syntax\] "trim#ro" is not a filter name: a modifier list "#ro" comes before the input filters/);
+      expect(() => parseBindTextsForElement('value|trim#ro: x')).toThrow(/write "<property>#ro\|trim"/);
+    });
+
+    it('右辺（出力フィルタ）では、成立しない直し方を勧めないこと', () => {
+      // 修飾子は左辺にしか存在しないので、右辺で「修飾子をフィルタより前に書け」と言うと
+      // `textContent#ro|trim: x` を勧めることになり、`textContent` に `ro` は無意味
+      expect(() => parseBindTextsForElement('textContent: x|trim#ro'))
+        .toThrow(/\[wcs\/binding-syntax\] "trim#ro" is not a filter name: "#" cannot appear in one/);
+      expect(() => parseBindTextsForElement('textContent: x|trim#ro'))
+        .toThrow(/Modifiers belong on the left side of the binding, before the ":"/);
+      expect(() => parseBindTextsForElement('textContent: x|trim#ro')).not.toThrow(/comes before the input filters/);
+    });
+  });
+});
+
+/**
+ * 閉じ括弧の**後ろ**の残余を黙って捨てていた。`n|fix(2)uc` は `uc` が消えて診断ゼロで通り、
+ * 括弧の無い `n|ucuc` は `[wcs/filter-unknown]` で落ちる — 括弧の有無で非対称だった。
+ * 実害は「`|` の打ち忘れでフィルタが 1 本消えても無診断」。
+ */
+describe('parseFilters — 括弧の走査と残余の検査（要件 B1 / B2）', () => {
+  it('閉じ括弧の後ろに残余があると [wcs/binding-syntax] で落ちること', () => {
+    expect(() => parseFilters(['fix(2)uc'], 'output')).toThrow(/\[wcs\/binding-syntax\]/);
+    expect(() => parseFilters(['fix(2)uc'], 'output')).toThrow(/unexpected "uc" after the filter's closing/);
+  });
+
+  it('残余の診断が「"|" で区切れ」と直し方を示すこと', () => {
+    expect(() => parseFilters(["join(', ') uc"], 'output')).toThrow(/join\(', '\)\|uc/);
+  });
+
+  it('実パイプラインでも `n|fix(2)uc` が黙って uc を落とさないこと', () => {
+    expect(() => parseBindTextsForElement('textContent: n|fix(2)uc')).toThrow(/\[wcs\/binding-syntax\]/);
+  });
+
+  it('閉じ括弧が末尾なら通ること（空白は許す）', () => {
+    expect(parseFilters(['fix(2)'], 'output')[0]).toMatchObject({ filterName: 'fix', args: ['2'] });
+    expect(parseFilters(['fix(2)  '], 'output')[0]).toMatchObject({ filterName: 'fix', args: ['2'] });
+  });
+
+  it('")" が "(" より前にある形を明示的に拒否すること（以前は名前 "foo)1" として受理）', () => {
+    expect(() => parseFilters(['foo)1('], 'output')).toThrow(/"\)" comes before "\("/);
+  });
+
+  it('引用符の中の "(" / ")" を括弧と誤認しないこと', () => {
+    expect(parseFilters(["join(')')"], 'output')[0]).toMatchObject({ filterName: 'join', args: [')'] });
+    expect(parseFilters(["join('(')"], 'output')[0]).toMatchObject({ filterName: 'join', args: ['('] });
+  });
+
+  it('閉じていない引用符は「閉じ括弧が無い」ではなく unterminated quote で落ちること', () => {
+    expect(() => parseFilters(["join('x)"], 'output')).toThrow(/unterminated ' quote/);
+  });
+});
